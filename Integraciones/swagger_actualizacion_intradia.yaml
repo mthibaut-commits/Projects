@@ -1,0 +1,66 @@
+swagger: "2.0"
+info:
+  version: 1.0.0
+  title: "API Actualización Intradía de Tabla Interna"
+  description: Endpoint expuesto por NEX para que Security actualice la TABLA INTERNA (montada desde los archivos SFTP diarios de otorgamiento A16, verificación A10 y Plataforma 360 A11) cuando los registros varían dentro del día. Semántica upsert por RUT / par cliente-deudor / variable. Activo A22.
+host: nex.datamart.local
+basePath: /nex/tabla-interna/v1
+schemes: [https]
+paths:
+  /upsert:
+    post:
+      summary: Upsert intradía de registros de la tabla interna
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema: { $ref: "#/definitions/UpsertRequest" }
+      responses:
+        "200":
+          description: Registros aplicados
+          schema:
+            type: object
+            properties:
+              aplicados: { type: integer }
+              rechazados: { type: integer }
+              detalleRechazos: { type: array, items: { type: string } }
+              timestamp: { type: string, format: date-time }
+        "400": { description: Datos incorrectos, schema: { $ref: "#/definitions/Error" } }
+        "401": { description: No autorizado, schema: { $ref: "#/definitions/Error" } }
+  /estado:
+    get:
+      summary: Estado de la tabla interna (última carga batch y último upsert)
+      responses:
+        "200":
+          description: Ejecución exitosa
+          schema:
+            type: object
+            properties:
+              ultimaCargaBatch: { type: string, format: date-time }
+              ultimoUpsert: { type: string, format: date-time }
+              registros: { type: object, properties: { otorgamiento: { type: integer }, verificacion: { type: integer }, plataforma360: { type: integer } } }
+definitions:
+  UpsertRequest:
+    type: object
+    required: [dominio, registros]
+    properties:
+      dominio: { type: string, enum: [OTORGAMIENTO, VERIFICACION, PLATAFORMA360], description: Sección de la tabla interna a actualizar }
+      origen: { type: string, example: "SECURITY" }
+      registros:
+        type: array
+        items:
+          type: object
+          required: [rut]
+          properties:
+            rut: { type: string, description: "RUT del cliente o deudor" }
+            rutContraparte: { type: string, description: "RUT de la contraparte cuando la variable es del par cliente-deudor (opcional)" }
+            variables:
+              type: object
+              description: "Mapa variable → valor. Los nombres deben coincidir con el layout del CSV del dominio (p. ej. CMF_DIR_MOROSA_30_90, V02_PCT_PAGADO_3M, VENTAS_SII_ULT)."
+              additionalProperties: true
+            timestamp: { type: string, format: date-time }
+  Error:
+    type: object
+    properties:
+      codigo: { type: integer }
+      mensaje: { type: string }

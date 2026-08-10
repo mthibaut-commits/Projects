@@ -1,0 +1,43 @@
+swagger: "2.0"
+info:
+  version: 1.0.0
+  title: "API Montos de Líneas"
+  description: Actualización horaria de montos (uso / disponible / proyección) de las líneas vigentes cargadas por el batch CSV diario (activo A8). Consulta pull cada 1 hora por parte de NEX.
+host: lineas.factoringsecurity.local
+basePath: /factoring/lineas/v1
+schemes: [https]
+paths:
+  /montos:
+    get:
+      summary: Montos actualizados de todas las líneas vigentes
+      parameters:
+        - { name: rutCliente, in: query, type: string, required: false, description: Filtra por RUT; sin filtro devuelve todas }
+        - { name: desde, in: query, type: string, format: date-time, required: false, description: Sólo líneas con cambios desde este timestamp (delta) }
+      responses:
+        "200":
+          description: Ejecución exitosa
+          schema:
+            type: object
+            properties:
+              actualizadoEn: { type: string, format: date-time }
+              lineas:
+                type: array
+                items: { $ref: "#/definitions/MontoLinea" }
+        "500": { description: Error interno, schema: { $ref: "#/definitions/Error" } }
+definitions:
+  MontoLinea:
+    type: object
+    properties:
+      idLinea: { type: string, example: "L-0007" }
+      rutCliente: { type: string }
+      lineaAprobadaMM: { type: number }
+      usoActualMM: { type: number }
+      disponibleMM: { type: number }
+      proyeccionPostCurseMM: { type: number }
+      morosidadDias: { type: integer }
+      timestamp: { type: string, format: date-time }
+  Error:
+    type: object
+    properties:
+      codigo: { type: integer }
+      mensaje: { type: string }

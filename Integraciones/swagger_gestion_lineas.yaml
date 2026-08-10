@@ -1,0 +1,203 @@
+swagger: "2.0"
+info:
+  version: 1.0.0
+  title: "API Gestión de Solicitudes de Línea"
+  description: Inyección de solicitudes de línea al sistema de gestión (comité) y consulta de procesos. Cubre los activos A13 (inyección), A14 (listar procesos) y A15 (estado de proceso). El sistema NEX sólo inyecta y consulta; la resolución ocurre en el sistema externo.
+host: gestion-lineas.factoringsecurity.local
+basePath: /factoring/gestion-lineas/v1
+schemes:
+  - https
+tags:
+  - name: Inyeccion
+    description: Crea una nueva solicitud de línea (Crear / Renovar / Modificar)
+  - name: Procesos
+    description: Lista y consulta el estado de los procesos en gestión
+paths:
+  /solicitudes:
+    post:
+      tags: ["Inyeccion"]
+      summary: Inyecta una solicitud de línea (A13)
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/SolicitudRequest"
+      responses:
+        "201":
+          description: Solicitud creada
+          schema:
+            $ref: "#/definitions/SolicitudResponse"
+        "400": { description: Datos incorrectos, schema: { $ref: "#/definitions/Error" } }
+        "409": { description: Ya existe una solicitud en gestión para la línea, schema: { $ref: "#/definitions/Error" } }
+        "500": { description: Error interno, schema: { $ref: "#/definitions/Error" } }
+    get:
+      tags: ["Procesos"]
+      summary: Lista los procesos en gestión (A14)
+      parameters:
+        - { name: rutCliente, in: query, type: string, required: false }
+        - { name: estado, in: query, type: string, required: false, enum: [EN_GESTION, EN_ANALISIS_RIESGO, EN_COMITE, APROBADA, OBSERVADA, RECHAZADA] }
+        - { name: pagina, in: query, type: integer, required: false }
+      responses:
+        "200":
+          description: Ejecución exitosa
+          schema:
+            type: array
+            items: { $ref: "#/definitions/ProcesoResumen" }
+        "500": { description: Error interno, schema: { $ref: "#/definitions/Error" } }
+  /solicitudes/{idProceso}:
+    get:
+      tags: ["Procesos"]
+      summary: Estado de un proceso en gestión (A15 — consulta pull)
+      parameters:
+        - { name: idProceso, in: path, type: string, required: true }
+      responses:
+        "200":
+          description: Ejecución exitosa
+          schema: { $ref: "#/definitions/ProcesoDetalle" }
+        "404": { description: Proceso no encontrado, schema: { $ref: "#/definitions/Error" } }
+  /callbacks/estado-solicitud:
+    post:
+      tags: ["Procesos"]
+      summary: Actualización de estado PUSH (callback expuesto por NEX)
+      description: Endpoint que NEX expone para que el sistema de gestión NOTIFIQUE los cambios de estado de una solicitud sin esperar el pull (complementa a GET /solicitudes/{idProceso}). Idempotente por (idProceso, estado, fecha).
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            type: object
+            required: [idProceso, estado, fecha]
+            properties:
+              idProceso: { type: string, example: "PRC-2601" }
+              estado: { type: string, enum: [EN_GESTION, EN_ANALISIS_RIESGO, EN_COMITE, APROBADA, OBSERVADA, RECHAZADA] }
+              fecha: { type: string, format: date-time }
+              observacion: { type: string, description: "Obligatoria si estado = OBSERVADA o RECHAZADA" }
+              condicionesAprobadas:
+                type: object
+                description: "Presente si estado = APROBADA: condiciones finales resueltas por el comité (pueden diferir de lo solicitado)"
+                properties:
+                  lineaGlobalAprobadaMM: { type: number }
+                  lineaFactoringAprobadaMM: { type: number }
+                  lineaConfirmingAprobadaMM: { type: number }
+                  fechaVencimiento: { type: string, format: date }
+      responses:
+        "200": { description: Notificación aplicada }
+        "401": { description: No autorizado, schema: { $ref: "#/definitions/Error" } }
+        "404": { description: Proceso no encontrado, schema: { $ref: "#/definitions/Error" } }
+definitions:
+  SolicitudRequest:
+    type: object
+    required: [rutCliente, razonSocial, tipo, vigenciaMeses, lineaGlobalPropuestaMM, ejecutivo]
+    properties:
+      rutCliente: { type: string, example: "76.920.742-2" }
+      razonSocial: { type: string }
+      tipo: { type: string, enum: [CREAR, RENOVAR, MODIFICAR] }
+      subtipoModificacion: { type: string, enum: [AGREGAR_CREDITO, MODIFICAR_VENCIMIENTO, AGREGAR_DEUDORES, REGULARIZAR_DEUDORES, REBAJAR_LINEA, RATIFICAR_EXCESO], description: Obligatorio si tipo = MODIFICAR }
+      vigenciaMeses: { type: integer, example: 12 }
+      fechaPresentacionComite: { type: string, format: date }
+      requiereDirectorio: { type: string, enum: [AUTOMATICO, SI, NO] }
+      lineaGlobalPropuestaMM: { type: number }
+      lineaFactoringPropuestaMM: { type: number }
+      lineaConfirmingPropuestaMM: { type: number }
+      fechaVencimientoPropuesta: { type: string, format: date }
+      subproductosFactoring:
+        type: array
+        items:
+          type: object
+          properties:
+            tipoDocumento: { type: string, enum: [FACTURA, CHEQUE_PROPIO] }
+            montoPropuestoMM: { type: number }
+            anticipoPct: { type: number }
+            plazoMaxDias: { type: integer }
+      deudores:
+        type: array
+        items:
+          type: object
+          properties:
+            rut: { type: string }
+            razonSocial: { type: string }
+            notaDeudor: { type: number, description: "Escala 1–5 (política de compra ≥ 3,7)" }
+            politicaPctLinea: { type: integer, enum: [25, 30] }
+            montoPropuestoMM: { type: number }
+            flags:
+              type: object
+              properties:
+                verificacion: { type: boolean }
+                notificacion: { type: boolean }
+                cobranza: { type: boolean }
+                faRespaldo: { type: boolean }
+                chequePago: { type: boolean }
+            productos:
+              type: array
+              items:
+                type: object
+                properties:
+                  producto: { type: string, enum: [FACTURA, CHEQUE_PROPIO] }
+                  montoPropuestoMM: { type: number }
+      fianzasSolidarias:
+        type: array
+        items:
+          type: object
+          properties:
+            rut: { type: string }
+            nombre: { type: string }
+            regimenMatrimonial: { type: string }
+            pep: { type: boolean }
+            fatca: { type: boolean }
+      garantias:
+        type: array
+        items:
+          type: object
+          properties:
+            tipoGarantia: { type: string }
+            institucion: { type: string }
+            producto: { type: string }
+            fechaInicio: { type: string, format: date }
+            fechaTermino: { type: string, format: date }
+            montoMM: { type: number }
+            coberturaPct: { type: number }
+      notasComerciales:
+        type: object
+        properties:
+          negocioPropuesto: { type: string }
+          referenciasComerciales: { type: string }
+          antecedentesGenerales: { type: string }
+          aspectosMercado: { type: string }
+          analisisFinanciero: { type: string }
+      ejecutivo: { type: string }
+  SolicitudResponse:
+    type: object
+    properties:
+      idProceso: { type: string, example: "PRC-2601" }
+      estado: { type: string, example: "EN_GESTION" }
+      fechaCreacion: { type: string, format: date-time }
+  ProcesoResumen:
+    type: object
+    properties:
+      idProceso: { type: string }
+      rutCliente: { type: string }
+      razonSocial: { type: string }
+      tipo: { type: string }
+      subtipoModificacion: { type: string }
+      totalPropuestoMM: { type: number }
+      estado: { type: string }
+      fechaUltimaActualizacion: { type: string, format: date-time }
+  ProcesoDetalle:
+    allOf:
+      - $ref: "#/definitions/ProcesoResumen"
+      - type: object
+        properties:
+          historialEstados:
+            type: array
+            items:
+              type: object
+              properties:
+                estado: { type: string }
+                fecha: { type: string, format: date-time }
+                observacion: { type: string }
+  Error:
+    type: object
+    properties:
+      codigo: { type: integer }
+      mensaje: { type: string }

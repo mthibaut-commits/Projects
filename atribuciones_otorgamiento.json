@@ -1,0 +1,1549 @@
+{
+  "descripcion": "Atribuciones de aprobación de otorgamiento por criterio — NEX Factoring. Convención: el nivel del tramo aplicable (risk tier) es el aprobador responsable; un SUPERIOR sólo puede aprobar (sustitución de emergencia) si su nivel está definido en el risk tier de la misma regla. El super-admin cubre cualquier nivel.",
+  "generado": "2026-07-10",
+  "niveles": {
+    "1": {
+      "rol": "Jefe de Grupo Comercial",
+      "area": "comercial"
+    },
+    "2": {
+      "rol": "Gerente Comercial",
+      "area": "comercial"
+    },
+    "3": {
+      "rol": "Gerente General",
+      "area": "comercial"
+    },
+    "4": {
+      "rol": "Jefe de Riesgo",
+      "area": "riesgo"
+    },
+    "5": {
+      "rol": "Subgerente de Riesgo",
+      "area": "riesgo"
+    }
+  },
+  "total_criterios": 59,
+  "criterios": [
+    {
+      "n": 1,
+      "nombre": "Clasificación Matriz Cliente — Categoría 1",
+      "dominio": "Riesgo",
+      "tipo": "ClientSegmentation",
+      "condicion_maestra": "If $ClientClass = A1 or A2 or A3",
+      "reevaluable": true,
+      "naturaleza": "clasificacion",
+      "tramos": []
+    },
+    {
+      "n": 2,
+      "nombre": "Clasificación Matriz Cliente — Categoría 2",
+      "dominio": "Riesgo",
+      "tipo": "ClientSegmentation",
+      "condicion_maestra": "If $ClientClass = A4 or A5",
+      "reevaluable": true,
+      "naturaleza": "clasificacion",
+      "tramos": []
+    },
+    {
+      "n": 3,
+      "nombre": "Clasificación Matriz Cliente — Categoría 3",
+      "dominio": "Riesgo",
+      "tipo": "ClientSegmentation",
+      "condicion_maestra": "If $ClientClass = A6 or B1",
+      "reevaluable": true,
+      "naturaleza": "clasificacion",
+      "tramos": []
+    },
+    {
+      "n": 4,
+      "nombre": "Clasificación Matriz Cliente — Categoría 4",
+      "dominio": "Riesgo",
+      "tipo": "ClientSegmentation",
+      "condicion_maestra": "If $ClientClass = B2 or B3 or B4",
+      "reevaluable": true,
+      "naturaleza": "clasificacion",
+      "tramos": []
+    },
+    {
+      "n": 5,
+      "nombre": "Cliente sin categoría → se asigna 3",
+      "dominio": "Riesgo",
+      "tipo": "ClientSegmentation",
+      "condicion_maestra": "Si no hay clasificación, ClientClass = B3",
+      "reevaluable": true,
+      "naturaleza": "clasificacion",
+      "tramos": []
+    },
+    {
+      "n": 6,
+      "nombre": "Fecha Expiración MAC",
+      "dominio": "Riesgo",
+      "tipo": "MinimumViability",
+      "condicion_maestra": "$MACExpDate vigente",
+      "reevaluable": true,
+      "hallazgo": "Cliente posee MAC vencido",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "no MAC vigente",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 7,
+      "nombre": "Existencia de MAC Aprobado",
+      "dominio": "Operaciones",
+      "tipo": "MinimumViability",
+      "condicion_maestra": "If $MACStatus = A",
+      "reevaluable": true,
+      "hallazgo": "El estado del MAC es distinto de Aprobado",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "estado del MAC ≠ A",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 8,
+      "nombre": "Información financiera al día",
+      "dominio": "Operaciones",
+      "tipo": "MinimumViability",
+      "condicion_maestra": "$IVALastPeriod − $CurrentPeriod ≤ 2 meses",
+      "reevaluable": true,
+      "hallazgo": "Cliente no posee sus IVAs actualizados",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "no IVA al día",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 9,
+      "nombre": "Artículo 85 vigente",
+      "dominio": "Operaciones",
+      "tipo": "MinimumViability",
+      "condicion_maestra": "$Art85DueDate ≥ hoy y existe",
+      "reevaluable": true,
+      "hallazgo": "Cliente no cuenta con información de artículo 85",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "no artículo 85 vigente",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 10,
+      "nombre": "Ficha UAF vigente",
+      "dominio": "Comercial",
+      "tipo": "MinimumViability",
+      "condicion_maestra": "$UAFFormDueDate ≥ hoy y existe",
+      "reevaluable": true,
+      "hallazgo": "Cliente no cuenta con certificado UAF vigente",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "no ficha UAF vigente",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 11,
+      "nombre": "Contrato Marco vigente",
+      "dominio": "Riesgo",
+      "tipo": "MinimumViability",
+      "condicion_maestra": "$MainContractSignatureDate <> null",
+      "reevaluable": true,
+      "hallazgo": "Cliente no cuenta con contrato marco firmado",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "no contrato marco firmado",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Gerente General",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 12,
+      "nombre": "Deuda Morosa CMF Directa 30-90",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $CMFMntDirectaMorosa30-90",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee morosidades en CMF entre 30 y 90 días",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "morosidad CMF directa 30-90d = 0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "morosidad CMF directa 30-90d < $5M o morosidad CMF directa 30-90d < 5% de deuda CMF directa total",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "morosidad CMF directa 30-90d < $10M",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Gerente General",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 13,
+      "nombre": "Deuda Morosa CMF Directa 90-180",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "If $MntCMFDirectaMorosas90-180 > 0",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee morosidades en CMF entre 90 y 180 días",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "morosidad CMF directa 90-180d > 0",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 14,
+      "nombre": "Deuda Morosa CMF Directa 180-3A",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "If $MntCMFDirectaMorosas180-3Y > 0",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee morosidades en CMF entre 180 días y 3 años",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "morosidad CMF directa 180d-3a > 0",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 15,
+      "nombre": "Deuda Castigada CMF Directa",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "If $MntCMFDirectaCastigada > 0",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee castigos en su deuda CMF directa",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "deuda CMF directa castigada > 0",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 16,
+      "nombre": "Deuda Vencida CMF Indirecta",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "If $MntCMFIndirectaVencida > 0",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee deuda CMF indirecta vencida",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "deuda CMF indirecta vencida > 0",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 17,
+      "nombre": "Deuda Castigada CMF Indirecta",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "If $MntCMFIndirectaCastigada > 0",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee deuda CMF indirecta castigada",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "deuda CMF indirecta castigada > 0",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 18,
+      "nombre": "Deuda Morosa CMF Leasing",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $CMFMntLeasingMorosa",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee deuda de Leasing CMF en mora",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "mora de leasing CMF = 0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "mora de leasing CMF < $5M o mora de leasing CMF < 5% de deuda CMF directa total",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "mora de leasing CMF < $10M",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Gerente General",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 19,
+      "nombre": "Deuda Morosa Equifax",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $EFXMntDeudaMorosa",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee morosidades en Equifax (30-60 días)",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "mora en Equifax = 0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 20,
+      "nombre": "Deuda Morosa ACHEF 60-90",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $MntACHEFMorosa60-90",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee morosidades en ACHEF entre 60 y 90 días",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "mora ACHEF 60-90d = 0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "mora ACHEF 60-90d ≤ $25M",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Gerente General",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 21,
+      "nombre": "Deuda Morosa ACHEF 90-180",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $MntACHEFMorosa90-180",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee morosidades en ACHEF entre 90 y 180 días",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "mora ACHEF 90-180d = 0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "mora ACHEF 90-180d ≤ $25M",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Gerente General",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "mora ACHEF 90-180d ≤ $50M",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 22,
+      "nombre": "Deuda Morosa ACHEF +180",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $MntACHEFMorosa>180",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee morosidades en ACHEF mayores a 180 días",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "mora ACHEF +180d = 0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 23,
+      "nombre": "Protestos Vigentes Banco BICE",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $MntBICEProtestosVgte",
+      "reevaluable": true,
+      "hallazgo": "Cliente posee protestos vigentes (Banco BICE)",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "protestos vigentes BICE = 0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "protestos vigentes BICE ≤ $20M",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Gerente General",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "protestos vigentes BICE ≤ $30M",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 24,
+      "nombre": "Protestos Internos Banco BICE",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $MntBICEProtestosInterno",
+      "reevaluable": true,
+      "hallazgo": "Cliente posee protestos internos (Banco BICE)",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "protestos internos BICE = 0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "protestos internos BICE ≤ $20M",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Gerente General",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "protestos internos BICE ≤ $30M",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 25,
+      "nombre": "Infracciones Laborales",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $MntInfraccionesLaborales",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee infracciones laborales",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "infracciones laborales = 0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "infracciones laborales ≤ $10M",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "infracciones laborales ≤ $25M",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Gerente General",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "infracciones laborales ≤ $50M",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 5,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 26,
+      "nombre": "Morosidad Banco BICE",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $MntMoraBICE",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee morosidades con Banco BICE",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "mora con BICE = 0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "mora con BICE ≤ $5M o mora con BICE < 5% de deuda total con BICE",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "mora con BICE ≤ $10M o mora con BICE ≤ 10% de deuda total con BICE",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Gerente General",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 27,
+      "nombre": "Morosidad BICE Factoring",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $MntMoraBICEFactoring",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee morosidades con BICE Factoring",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "mora con BICE Factoring = 0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "mora con BICE Factoring ≤ $5M o mora con BICE Factoring < 5% de deuda total con BICE",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "mora con BICE Factoring ≤ $10M o mora con BICE Factoring ≤ 10% de deuda total con BICE",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Gerente General",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 28,
+      "nombre": "Deuda Vigente TGR",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "$MntDeudaVigenteTGR = 0 → Aprobado",
+      "reevaluable": false,
+      "hallazgo": "Existe deuda vigente en TGR (último mes)",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "deuda vigente TGR > 0",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 29,
+      "nombre": "Deuda Morosa TGR",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "$MntDeudaMorosoTGR = 0 → Aprobado",
+      "reevaluable": false,
+      "hallazgo": "Existe deuda morosa en TGR (último mes)",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "deuda morosa TGR > 0",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 30,
+      "nombre": "Cobranza Administrativa TGR",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "$MntCobranzaAdmTGR = 0 → Aprobado",
+      "reevaluable": false,
+      "hallazgo": "Existe cobranza administrativa en TGR (último mes)",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "cobranza administrativa TGR > 0",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 31,
+      "nombre": "Cobranza Judicial TGR",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "$MntCobranzaJudTGR = 0 → Aprobado",
+      "reevaluable": false,
+      "hallazgo": "Existe cobranza judicial en TGR (último mes)",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "cobranza judicial TGR > 0",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 32,
+      "nombre": "Convenios de Deuda TGR",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "$MntConveniosTGR = 0 → Aprobado",
+      "reevaluable": false,
+      "hallazgo": "Existen convenios de deuda en TGR (último mes)",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "convenios de deuda TGR > 0",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 33,
+      "nombre": "Cuotas de Convenios Impagas TGR",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "$MntConveniosCuotasImpagasTGR = 0 → Aprobado",
+      "reevaluable": false,
+      "hallazgo": "Existen convenios con cuotas impagas en TGR (último mes)",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "cuotas de convenio impagas TGR > 0",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 34,
+      "nombre": "Alta Concentración de Ventas",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $%ConcentracionVentaL6",
+      "reevaluable": false,
+      "hallazgo": "Alta concentración de ventas en un deudor",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "concentración de ventas (%) ≤ 50",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 35,
+      "nombre": "Venta Cruzada Cliente-Proveedor",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $%VentaCruzadaL6",
+      "reevaluable": false,
+      "hallazgo": "Alta venta cruzada cliente-proveedor",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "venta cruzada (%) ≤ 30",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "venta cruzada (%) ≤ 60",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 36,
+      "nombre": "Tasa de NC Alta",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $%NotaCreditoL6",
+      "reevaluable": false,
+      "hallazgo": "Tasa de notas de crédito elevada",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "tasa de notas de crédito (%) ≤ 8",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "tasa de notas de crédito (%) ≤ 30",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 37,
+      "nombre": "Tasa de Reclamos Alta",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $%ReclamoL6",
+      "reevaluable": false,
+      "hallazgo": "Tasa de reclamos elevada",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "tasa de reclamos (%) ≤ 3",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "tasa de reclamos (%) ≤ 20",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 38,
+      "nombre": "Ratio Venta vs. Monto Cedido Alto",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $%RatioCesion-Venta",
+      "reevaluable": false,
+      "hallazgo": "Ratio monto cedido vs. ventas elevado",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "ratio cesión/venta (%) ≤ 3",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "ratio cesión/venta (%) ≤ 20",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 39,
+      "nombre": "Alto Número de Factorings Operando",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $NroFactoringsLM",
+      "reevaluable": false,
+      "hallazgo": "Alto número de factorings operando",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "n° de factorings operando ≤ 3",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "n° de factorings operando ≤ 8",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 40,
+      "nombre": "Alta Cesión a Factorings Pequeños",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $%FactoringPrivadoPequeñoLM",
+      "reevaluable": false,
+      "hallazgo": "Alta cesión a factorings privados pequeños",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "% cesión a factorings pequeños ≤ 35",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "cualquier otro caso",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 41,
+      "nombre": "Deuda Morosa Equifax (tier)",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $EFXMntDeudaMorosa",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee morosidades en Equifax",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "mora en Equifax = 0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "mora en Equifax ≤ $5M",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Gerente General",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 42,
+      "nombre": "Protestos Equifax",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "Risk Tier $EFXMntProtesto",
+      "reevaluable": true,
+      "hallazgo": "Cliente posee protestos en Equifax",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "protestos en Equifax = 0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "protestos en Equifax ≤ $5M",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Gerente General",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 43,
+      "nombre": "Mala clasificación no suscrito",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "$ClientClass in (A4..B4) and $SyncSII is False",
+      "reevaluable": true,
+      "hallazgo": "Clasificación menor a A4 y no sincronizado con SII",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "clase del cliente está en {A4,A5,A6,B1,B2,B3,B4} y no sincronizado con SII",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Gerente General",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 44,
+      "nombre": "Documentos en Cartera Reclamados",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "If $MntCarteraBICEFactoringReclamada > 0 → Excepciona N1",
+      "reevaluable": true,
+      "hallazgo": "Cartera vigente con documentos reclamados por el deudor",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "documentos reclamados en cartera > 0",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 45,
+      "nombre": "Documentos en Cartera con NC",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "If $MntconBICEFactoringNC > 0 → Excepciona N1",
+      "reevaluable": true,
+      "hallazgo": "Cartera vigente con documentos con notas de crédito",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "documentos con nota de crédito en cartera > 0",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 46,
+      "nombre": "Documentos en Cartera con Mora",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "If $MntCarteraBICEFactoringMoroso > 0 → Excepciona N1",
+      "reevaluable": true,
+      "hallazgo": "Cartera vigente con documentos en mora",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "documentos en mora en cartera > 0",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 47,
+      "nombre": "Existencia de CxC pendientes",
+      "dominio": "Comercial",
+      "tipo": "Conditions",
+      "condicion_maestra": "If $MntCarteraBICEFactoringCxC > 0 → Excepciona N1",
+      "reevaluable": true,
+      "hallazgo": "Cliente posee cuentas por cobrar pendientes de liquidar",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "cuentas por cobrar pendientes > 0",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 48,
+      "nombre": "Pagaré Monto Suficiente Cartera",
+      "dominio": "Operaciones",
+      "tipo": "Conditions",
+      "condicion_maestra": "Sum($MntPagares) ≥ $MntCartera + $MntSimulacion",
+      "reevaluable": true,
+      "hallazgo": "Cliente no posee pagarés suficientes para garantizar la cartera",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "no pagarés suficientes",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 49,
+      "nombre": "Pagaré Vigente 60D Último Vencimiento",
+      "dominio": "Operaciones",
+      "tipo": "Conditions",
+      "condicion_maestra": "$FchVctoPagare ≥ Max(FchVctoFactura) + 60",
+      "reevaluable": true,
+      "hallazgo": "Garantías insuficientes hasta 60 días post vencimiento del último documento",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "no pagaré que cubre 60d post-vencimiento",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 50,
+      "nombre": "Opera con simulación asistida",
+      "dominio": "Comercial",
+      "tipo": "ClientSegmentation",
+      "condicion_maestra": "If $OperaManual = 1",
+      "reevaluable": true,
+      "naturaleza": "clasificacion",
+      "tramos": []
+    },
+    {
+      "n": 51,
+      "nombre": "Parte de Grupo Empresarial (MAC grupal)",
+      "dominio": "Comercial",
+      "tipo": "ClientSegmentation",
+      "condicion_maestra": "If $GrpEmpresarial = 1",
+      "reevaluable": true,
+      "naturaleza": "clasificacion",
+      "tramos": []
+    },
+    {
+      "n": 52,
+      "nombre": "Posee Anexo SPF Firmado",
+      "dominio": "Operaciones",
+      "tipo": "Conditions",
+      "condicion_maestra": "If $AnexoFactoring = 1",
+      "reevaluable": true,
+      "hallazgo": "Cliente no posee el anexo SPF firmado",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "anexo SPF firmado ≠ 1",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 53,
+      "nombre": "Simula por monto documento",
+      "dominio": "Comercial",
+      "tipo": "ClientSegmentation",
+      "condicion_maestra": "If $SimulaPorMntDoc = 1",
+      "reevaluable": true,
+      "naturaleza": "clasificacion",
+      "tramos": []
+    },
+    {
+      "n": 54,
+      "nombre": "Simula por monto anticipado",
+      "dominio": "Comercial",
+      "tipo": "ClientSegmentation",
+      "condicion_maestra": "If $SimulaPorMntAnt = 1",
+      "reevaluable": true,
+      "naturaleza": "clasificacion",
+      "tramos": []
+    },
+    {
+      "n": 55,
+      "nombre": "Posee MAC en dólares",
+      "dominio": "Comercial",
+      "tipo": "ClientSegmentation",
+      "condicion_maestra": "If $PoseeMACDolares = 1",
+      "reevaluable": true,
+      "naturaleza": "clasificacion",
+      "tramos": []
+    },
+    {
+      "n": 56,
+      "nombre": "Cupo excedido deudores en matriz",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "If $%ConcentracionMtz > MaxConcentracionMtz → Aprueba N2",
+      "reevaluable": true,
+      "hallazgo": "Monto solicitado excede el cupo en la matriz de riesgo para algún deudor",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "concentración en matriz (%) > máx. concentración de matriz (%)",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 57,
+      "nombre": "Apoderados para operar monto solicitado",
+      "dominio": "Comercial",
+      "tipo": "Conditions",
+      "condicion_maestra": "If $Apoderados = 1",
+      "reevaluable": true,
+      "hallazgo": "Cliente no posee poderes suficientes para autorizar esta operación",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "apoderados suficientes ≠ 1",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 58,
+      "nombre": "Cliente no evaluable por matriz",
+      "dominio": "extras",
+      "tipo": "ClientSegmentation",
+      "condicion_maestra": "If $MACCode = 3",
+      "reevaluable": true,
+      "naturaleza": "clasificacion",
+      "tramos": []
+    },
+    {
+      "n": 59,
+      "nombre": "Cupo suficiente en la línea",
+      "dominio": "Riesgo",
+      "tipo": "Conditions",
+      "condicion_maestra": "If $MntCarteraVig + $MntSimulacion > $MntLinea → Aprueba N2",
+      "reevaluable": true,
+      "hallazgo": "Cliente con cupo insuficiente en la línea",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "cartera vigente + monto de la simulación > línea de crédito aprobada",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    }
+  ]
+}
