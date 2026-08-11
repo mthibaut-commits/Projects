@@ -11702,7 +11702,6 @@ export default function PipelineComercial() {
   const [kpiShow, setKpiShow] = useState(false); // sección de indicadores OCULTA por defecto al cargar
   const [kpiOpen, setKpiOpen] = useState({}); // indicadores con detalle desplegado
   const [casosModal, setCasosModal] = useState(null); // segmento abierto en el modal de casos
-  const [exportMenu, setExportMenu] = useState(false); // dropdown de exportar
   const [cobranzaModal, setCobranzaModal] = useState(false); // modal de reporte de cobranza
   const [showCharts, setShowCharts] = useState(true); // mini-gráficas en headers del Kanban
   const [historia, setHistoria] = useState([]); // snapshots de conteo por etapa (para sparklines)
@@ -11844,6 +11843,25 @@ export default function PipelineComercial() {
       a.href = url; a.download = `casos_${id}.csv`; document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
     } catch { /* entorno sin descargas */ }
+  };
+  // Exporta la grilla del pipeline (oportunidades filtradas) a un reporte Excel (.xlsx).
+  // Si SheetJS no puede cargarse (sin red), cae a CSV con BOM (que Excel abre igual).
+  const exportarGrilla = async () => {
+    const rows = filtered;
+    const headers = ["ID", "Cliente", "Ejecutivo", "Producto", "Monto_MM", "Facturas", "Tasa", "Anticipo", "Dias_fin", "Giro_MM", "Desc_MM", "Comision_CLP", "Etapa", "Deudor_principal", "Estado"];
+    const aoa = [headers, ...rows.map((d) => [d.id, d.cliente, (EXECS[d.exec] || d.exec), d.tag, d.amountMM, d.facturas, d.tasa, d.anticipo, d.diasFin, d.giroMM, d.descMM, d.comision, (STAGES.find((s) => s.id === d.stage)?.name || d.stage), d.deudor, d.status])];
+    try {
+      const XLSX = await cargarXLSX();
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Pipeline");
+      XLSX.writeFile(wb, "pipeline_comercial.xlsx");
+      registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Pipeline", accion: "Exportar", glosa: `Exportó ${rows.length} oportunidades de la grilla a Excel`, exito: true });
+    } catch (e) {
+      const esc = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
+      const csv = String.fromCharCode(0xFEFF) + aoa.map((r) => r.map(esc).join(";")).join("\n");
+      try { const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "pipeline_comercial.csv"; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); } catch { /* sin descargas */ }
+    }
   };
 
   // ---- Acciones ----
@@ -13274,7 +13292,13 @@ export default function PipelineComercial() {
         ) : vistaApp === "panel" ? (
           <>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Gestión</div>
-            <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Gestión de Clientes</h1>
+            <div className="mt-1 mb-4 flex items-end justify-between">
+              <h1 className="text-2xl font-semibold tracking-tight">Gestión de Clientes</h1>
+              <div className="flex items-center gap-2">
+                <button onClick={() => { setAnalisis(construirAnalisis()); setReporteModal(true); }} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}><BarChart2 size={14} /> Reporte semanal</button>
+                <button onClick={() => setCobranzaModal(true)} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}><Table2 size={14} /> Reporte de cobranza</button>
+              </div>
+            </div>
             <PanelClientes soloExec={soloExec} deals={deals} usuario={usuario} />
           </>
         ) : vistaApp === "tareas" ? (
@@ -13309,17 +13333,9 @@ export default function PipelineComercial() {
           <h1 className="text-2xl font-semibold tracking-tight">Pipeline Comercial</h1>
           <div className="flex items-center gap-2">
             <button onClick={() => setVista((v) => (v === "kanban" ? "tabla" : "kanban"))} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: vista === "tabla" ? C.indigo : C.sub }}><Table2 size={14} /> {vista === "kanban" ? "Vista tabla" : "Vista kanban"}</button>
-            <div className="relative">
-              <button onClick={() => setExportMenu((v) => !v)} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
-                <Download size={14} /> Exportar <ChevronDown size={12} />
-              </button>
-              {exportMenu && (
-                <div className="absolute right-0 z-30 mt-1 w-56 rounded-lg bg-white py-1 shadow-lg" style={{ border: `1px solid ${C.line}` }}>
-                  <button onClick={() => { setAnalisis(construirAnalisis()); setReporteModal(true); setExportMenu(false); }} className="flex w-full items-center gap-2 px-3 py-2 text-left t12 hover:bg-stone-50" style={{ color: C.ink }}><BarChart2 size={13} /> Reporte semanal</button>
-                  <button onClick={() => { setCobranzaModal(true); setExportMenu(false); }} className="flex w-full items-center gap-2 px-3 py-2 text-left t12 hover:bg-stone-50" style={{ color: C.ink }}><Table2 size={13} /> Reporte de cobranza</button>
-                </div>
-              )}
-            </div>
+            <button onClick={exportarGrilla} title="Exportar la grilla a un reporte Excel" className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+              <Download size={14} /> Exportar a Excel
+            </button>
             <button className="t12 font-medium" style={{ color: C.indigo }}>Abrir Panel General →</button>
           </div>
         </div>
