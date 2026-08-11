@@ -11698,9 +11698,6 @@ export default function PipelineComercial() {
   }, [deals, usuario, misExecs, cfgVer]); // cfgVer cambia al aprobar/rechazar en el visado → recalcula
   const [draggingId, setDraggingId] = useState(null);
   const [inboundOpen, setInboundOpen] = useState(false); // colapsado por defecto
-  const [kpiAll, setKpiAll] = useState(false); // ver todo el detalle de indicadores
-  const [kpiShow, setKpiShow] = useState(false); // sección de indicadores OCULTA por defecto al cargar
-  const [kpiOpen, setKpiOpen] = useState({}); // indicadores con detalle desplegado
   const [casosModal, setCasosModal] = useState(null); // segmento abierto en el modal de casos
   const [cobranzaModal, setCobranzaModal] = useState(false); // modal de reporte de cobranza
   const [showCharts, setShowCharts] = useState(true); // mini-gráficas en headers del Kanban
@@ -13263,9 +13260,12 @@ export default function PipelineComercial() {
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Gestión</div>
             <div className="mt-1 mb-4 flex items-end justify-between">
               <h1 className="text-2xl font-semibold tracking-tight">Gestión de Clientes</h1>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 <button onClick={() => { setAnalisis(construirAnalisis()); setReporteModal(true); }} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}><BarChart2 size={14} /> Reporte semanal</button>
                 <button onClick={() => setCobranzaModal(true)} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}><Table2 size={14} /> Reporte de cobranza</button>
+                <button onClick={verResumenDiario} title="Ver resumen del día en curso" className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}><Calendar size={14} /> Resumen diario</button>
+                <button onClick={() => setComparativoModal(true)} title="Comparar por ejecutivo, zona o gerencia" className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}><Table2 size={14} /> Comparativo</button>
+                <button onClick={() => setBenchmarkModal(true)} title="Benchmark competitivo por deudor" className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}><Star size={14} /> Benchmark deudores</button>
               </div>
             </div>
             <PanelClientes soloExec={soloExec} deals={deals} usuario={usuario} />
@@ -13328,13 +13328,10 @@ export default function PipelineComercial() {
             ] },
           ];
           const tile = (k) => {
-            const open = kpiAll || kpiOpen[k.id];
             return (
-              <button key={k.id} onClick={() => setKpiOpen((o) => ({ ...o, [k.id]: !o[k.id] }))}
-                className="rounded-lg bg-white p-2 text-left transition-shadow hover:shadow-sm" style={{ border: `1px solid ${C.line}` }}>
+              <div key={k.id} className="rounded-lg bg-white p-2 text-left" style={{ border: `1px solid ${C.line}` }}>
                 <div className="flex items-start justify-between gap-1">
                   <span className="t9 font-semibold uppercase leading-tight" style={{ color: C.sub }}>{k.label}</span>
-                  {open ? <ChevronUp size={11} style={{ color: C.faint }} /> : <ChevronDown size={11} style={{ color: C.faint }} />}
                 </div>
                 <div className="flex items-end justify-between gap-1">
                   <div className="text-base font-semibold tracking-tight" style={{ color: C.ink }}>{k.value}</div>
@@ -13350,29 +13347,23 @@ export default function PipelineComercial() {
                 </div>
                 <div className="t9 truncate" style={{ color: C.faint }}>{k.sub}</div>
                 {k.serie && k.serie.length > 1 && <div className="mt-1"><Sparkline data={k.serie} color={C.indigo} /></div>}
-                {open && (
-                  <div className="mt-1.5 space-y-0.5 border-t pt-1.5" style={{ borderColor: C.line }}>
-                    {k.rows.map((r, i) => (
-                      <div key={i} className="flex items-center justify-between t9">
-                        <span style={{ color: C.sub }}>{r.k}</span>
-                        <span className="flex items-center gap-1"><span className="font-medium" style={{ color: C.ink }}>{r.v}</span>{r.d && <Delta value={r.d} up={r.up} />}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </button>
+                <div className="mt-1.5 space-y-0.5 border-t pt-1.5" style={{ borderColor: C.line }}>
+                  {k.rows.map((r, i) => (
+                    <div key={i} className="flex items-center justify-between t9">
+                      <span style={{ color: C.sub }}>{r.k}</span>
+                      <span className="flex items-center gap-1"><span className="font-medium" style={{ color: C.ink }}>{r.v}</span>{r.d && <Delta value={r.d} up={r.up} />}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             );
           };
           return (
             <div className="mt-5 space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center">
                 <span className="t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Indicadores</span>
-                <div className="flex items-center gap-3">
-                  {kpiShow && <button onClick={() => setKpiAll((v) => !v)} className="t12 font-medium" style={{ color: C.indigo }}>{kpiAll ? "Ocultar detalle" : "Ver todo el detalle"}</button>}
-                  <button onClick={() => setKpiShow((v) => !v)} className="flex items-center gap-1 t12 font-medium" style={{ color: C.sub }}>{kpiShow ? <><ChevronUp size={13} /> Ocultar indicadores</> : <><ChevronDown size={13} /> Mostrar indicadores</>}</button>
-                </div>
               </div>
-              {kpiShow && grupos.map((g) => (
+              {grupos.map((g) => (
                 <div key={g.id}>
                   <div className="mb-1.5 flex flex-wrap items-center gap-2 t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>
                     {g.titulo}
@@ -13420,21 +13411,6 @@ export default function PipelineComercial() {
               className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium"
               style={{ border: `1px solid ${showCharts ? C.indigo : C.line}`, backgroundColor: "#fff", color: showCharts ? C.indigo : C.sub }}>
               <BarChart2 size={14} /> Tendencia
-            </button>
-            <button onClick={verResumenDiario} title="Ver resumen del día en curso"
-              className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium"
-              style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.sub }}>
-              <Calendar size={14} /> Resumen diario
-            </button>
-            <button onClick={() => setComparativoModal(true)} title="Comparar por ejecutivo, zona o gerencia"
-              className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium"
-              style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.sub }}>
-              <Table2 size={14} /> Comparativo
-            </button>
-            <button onClick={() => setBenchmarkModal(true)} title="Benchmark competitivo por deudor (ganadas/perdidas y estrategia)"
-              className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium"
-              style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.sub }}>
-              <Star size={14} /> Benchmark deudores
             </button>
           </div>
         </div>
