@@ -1099,9 +1099,6 @@ const initialDeals = [
     status: "Perdido Itaú Factoring", time: "9d", channel: "Manual", exec: "CR", stale: false },
 ];
 
-// ---- Tareas ----
-// Categorías de Mis Tareas (actúan como filtro on/off con ícono de ojo).
-const TASK_CATS = ["Negocios críticos", "Nuevos negocios", "Nuevas empresas"];
 
 // ---- Contactabilidad ----
 // 14% de las empresas no son contactables y quedan estancadas en prospección.
@@ -1221,6 +1218,105 @@ function aprobar(){var u=document.getElementById('u').value,p=document.getElemen
 try{if(window.opener)window.opener.postMessage({type:'nex-cierre',dealId:${JSON.stringify(dealId)},usuario:u},'*');}catch(e){}
 document.getElementById('app').innerHTML='<div class="ok">✅ Operación aprobada y firmada.</div><div class="muted">Ya puedes volver a WhatsApp. Esta ventana se cerrará.</div>';
 setTimeout(function(){try{window.close();}catch(e){}},1600);}
+<\/script></body></html>`;
+}
+// Email de cierre SIMULADO como página STANDALONE (se abre en pestaña nueva vía blob URL, igual que el
+// WhatsApp del cliente). Branding Factoring Security. Flujo dentro de la misma pestaña: email → (CTA)
+// login → detalle → firma → éxito; al firmar avisa a la app con postMessage({type:'aceptada', neg}).
+function emailCierreHTML(deal) {
+  const neg = negDe(deal);
+  let o = {};
+  try { const c = curseDesdeDeal(deal); o = calcularOferta(deal, c.tasa, c.opts) || {}; } catch (e) { o = {}; }
+  const giro = fmtMM(o.giroMM != null ? o.giroMM : (deal.giroMM || deal.amountMM || 0));
+  const ejec = execName(deal);
+  const fecha = deal.time || hoyStr();
+  const V = "#0a7d3f"; // verde Factoring Security
+  const row = (k, v, c) => `<div class=row><span>${k}</span><b${c ? ` style="color:${c}"` : ""}>${v}</b></div>`;
+  return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Factoring Security · Firma tu operación N° ${neg}</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--v:${V}}
+*{box-sizing:border-box}body{font-family:Geist,system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#E5E7EB;color:#111827}
+.mail{max-width:480px;margin:0 auto;background:#F3F4F6;min-height:100vh}
+.logo{display:flex;align-items:center;justify-content:center;gap:8px;background:#fff;padding:18px}
+.logo .sq{width:26px;height:26px;border-radius:6px;background:var(--v);color:#fff;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center}
+.logo .nm{font-size:15px;font-weight:800;color:var(--v);letter-spacing:.02em}
+.hero{text-align:center;padding:22px 26px 16px}.hero .g{font-size:13px;color:#374151}.hero h1{font-size:21px;font-weight:800;color:#111827;line-height:1.25;margin:6px 0}.hero .t{font-size:12.5px;font-weight:600;color:var(--v)}
+.card{margin:0 20px;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);text-align:center}
+.card .top{height:6px;background:var(--v)}.card .in{padding:16px}
+.card .neg{font-size:14px;font-weight:700;color:#111827}.card .sub{font-size:11px;color:#9CA3AF;margin-top:2px}
+.card .ml{font-size:11.5px;color:#6B7280;margin-top:12px}.card .mm{font-size:24px;font-weight:800;color:var(--v)}.card .dc{font-size:11px;color:#9CA3AF}
+.cta{display:block;width:100%;margin-top:14px;padding:12px;border:0;border-radius:9999px;background:var(--v);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer;text-align:center}
+.steps{margin:14px 20px 0;background:#E5E7EB;border-radius:14px;padding:16px}.steps .h{text-align:center;font-size:12.5px;font-weight:700;color:#374151;margin-bottom:10px}
+.step{display:flex;gap:10px;align-items:flex-start;font-size:12.5px;color:#374151;margin-bottom:8px}.step .n{width:20px;height:20px;border-radius:9999px;background:var(--v);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.band{margin-top:16px;background:var(--v);color:#fff;text-align:center;padding:12px;font-size:13px}
+.sec{background:#fff;padding:16px 26px}.sec .h{text-align:center;font-size:12.5px;font-weight:700;color:#111827;margin-bottom:8px}.sec ul{margin:0;padding-left:16px;font-size:11px;color:#4B5563;line-height:1.7}
+.auto{background:#9CA3AF;color:#fff;text-align:center;font-size:10.5px;padding:12px 26px}
+.foot{background:#fff;text-align:center;padding:16px;font-size:9.5px;color:#9CA3AF;line-height:1.6}
+.foot .brands{display:flex;gap:22px;justify-content:center;margin-bottom:8px}.foot .b{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800}
+/* Login/detalle */
+.wrap{max-width:460px;margin:0 auto;padding:28px 20px}
+.box{background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08)}
+.box .hd{background:var(--v);color:#fff;padding:16px}.box .hd b{font-weight:800}.box .hd .s{font-size:12px;opacity:.85}
+.box .bd{padding:18px}.row{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;color:#4B5563}.row b{color:#111827}
+.lbl{margin-top:12px;font-weight:600;font-size:13px}input{width:100%;padding:10px;border:1px solid #E5E7EB;border-radius:9px;margin-top:5px;font-size:14px;outline:none}input:focus{border-color:var(--v)}
+.hr{height:1px;background:#E5E7EB;margin:12px 0}.muted{color:#9CA3AF;font-size:11px;margin-top:10px}.ok{color:var(--v);font-weight:800;font-size:18px;text-align:center}
+.back{display:inline-block;margin-top:14px;color:#6B7280;font-size:12.5px;cursor:pointer;text-decoration:none}
+.hidden{display:none}
+</style></head>
+<body>
+<!-- VISTA EMAIL -->
+<div class="mail" id="vista-email">
+  <div class="logo"><span class="sq">S</span><span class="nm">FACTORING <span style="font-weight:400">SECURITY</span></span></div>
+  <div class="hero"><div class="g">Estimados, <b>${deal.cliente}</b></div><h1>Tu oferta está lista<br>para firmar</h1><div class="t">¡Gracias por confiar en nosotros!</div></div>
+  <div class="card"><div class="top"></div><div class="in">
+    <div class="neg">Negocio N° ${neg}</div><div class="sub">Oferta publicada el <b>${fecha}</b></div>
+    <div class="ml">Monto a girar</div><div class="mm">${giro}</div><div class="dc">${deal.facturas || 1} documento(s) · tasa ${deal.tasa || "—"}</div>
+    <button class="cta" onclick="verLogin()">Revisar y firmar mi operación →</button>
+  </div></div>
+  <div class="steps"><div class="h">También puedes firmar directamente en nuestro portal</div>
+    <div class="step"><span class="n">1</span><span>Ingresa a <b>www.factoringsecurity.cl/curse</b></span></div>
+    <div class="step"><span class="n">2</span><span>Inicia sesión con tu cuenta y busca el negocio <b>N° ${neg}</b></span></div>
+    <div class="step"><span class="n">3</span><span>Revisa las condiciones y presiona <b>Firmar</b> — el giro se realiza el mismo día</span></div>
+  </div>
+  <div class="band">Factoring Security, <b>simple para ti.</b></div>
+  <div class="sec"><div class="h">Porque tu seguridad es lo más importante:</div><ul>
+    <li>Este mensaje <b>no contiene</b> enlaces externos fuera de Factoring Security.</li>
+    <li><b>Ingresa</b> al sitio escribiendo <b>factoringsecurity.cl</b> directamente en tu navegador.</li>
+    <li><b>NUNCA</b> te enviaremos emails ni te llamaremos solicitando tus claves o números de cuenta.</li>
+    <li><b>NUNCA</b> escribas información personal y financiera en ventanas abiertas desde un email.</li>
+    <li><b>NUNCA</b> ingreses tu clave si no estás dentro del sitio de Factoring Security.</li>
+  </ul></div>
+  <div class="auto">Este es un mail generado <b>automáticamente</b>. Ante cualquier duda contáctate con tu ejecutivo <b>${ejec}</b>.</div>
+  <div class="foot"><div class="brands"><span class="b" style="color:var(--v)"><span class="sq" style="width:18px;height:18px;font-size:10px">S</span>FACTORING SECURITY</span><span class="b" style="color:#230C65"><span class="sq" style="width:18px;height:18px;font-size:10px;background:#703EFF">N</span>NEX FACTORING</span></div>Factoring Security S.A. Infórmese sobre la garantía estatal de los depósitos en su banco o en www.cmfchile.cl</div>
+</div>
+<!-- VISTA LOGIN + DETALLE -->
+<div class="wrap hidden" id="vista-login"><div class="box">
+  <div class="hd"><b>Factoring Security</b><div class="s">Aprobación formal de la operación</div></div>
+  <div class="bd">
+    <div style="font-weight:700;font-size:15px">${deal.cliente}</div>
+    ${row("Negocio", "N° " + neg)}
+    ${row("Cantidad de facturas", deal.facturas || 1)}
+    ${o.financiadoMM != null ? row("Monto documentos", fmtMM(o.financiadoMM)) : ""}
+    ${o.tasa != null ? row("Tasa", o.tasa.toFixed(2) + "% mensual") : ""}
+    ${o.anticipo != null ? row("Anticipo · plazo", o.anticipo + "% · " + (o.diasFin || 0) + " días") : ""}
+    ${o.interesMM != null ? row("Diferencia de precio", fmtMM(o.interesMM)) : ""}
+    ${o.comision != null ? row("Comisión", fmtCLP(o.comision)) : ""}
+    <div class="hr"></div>
+    ${row("Monto a girar", giro, V)}
+    <div class="lbl">Ingresa con tu cuenta Security para firmar</div>
+    <input id="u" placeholder="Usuario / RUT"><input id="p" type="password" placeholder="Contraseña">
+    <button class="cta" style="border-radius:10px" onclick="firmar()">Aprobar y firmar operación</button>
+    <div class="muted">🔒 Enlace seguro de un solo uso, vinculado a tu operación y con expiración. No lo compartas.</div>
+    <a class="back" onclick="verEmail()">‹ Volver al correo</a>
+  </div>
+</div></div>
+<script>
+function verLogin(){document.getElementById('vista-email').classList.add('hidden');document.getElementById('vista-login').classList.remove('hidden');window.scrollTo(0,0);}
+function verEmail(){document.getElementById('vista-login').classList.add('hidden');document.getElementById('vista-email').classList.remove('hidden');window.scrollTo(0,0);}
+function firmar(){var u=document.getElementById('u').value,p=document.getElementById('p').value;if(!u||!p){alert('Ingresa tu usuario y contraseña Security');return;}
+try{if(window.opener)window.opener.postMessage({type:'aceptada',neg:${JSON.stringify(neg)},usuario:u},'*');}catch(e){}
+document.getElementById('vista-login').innerHTML='<div class="box"><div class="hd"><b>Factoring Security</b><div class="s">Operación firmada</div></div><div class="bd" style="text-align:center"><div class="ok">✅ Operación N° ${neg} firmada</div><div class="muted">El giro se realizará hoy a tu cuenta registrada. Ya puedes cerrar esta pestaña.<\/div><\/div><\/div>';}
 <\/script></body></html>`;
 }
 // --- "Socket" entre pestañas: en el demo es un BroadcastChannel (mismo origen file://); en
@@ -2021,7 +2117,7 @@ function RuleCard({ rule, onToggle, onEdit }) {
 // ============================================================
 // Panel Inbound (colapsable) — resumen de reglas + lista
 // ============================================================
-function InboundPanel({ rules, open, onToggleOpen, onToggleRule, onEditRule, onNewRule, onResetRules, oppCount = 0, oppMM = 0, taskCount = 0, taskMM = 0 }) {
+function InboundPanel({ rules, open, onToggleOpen, onToggleRule, onEditRule, onNewRule, onResetRules, oppCount = 0, oppMM = 0 }) {
   const activas = rules.filter((r) => r.activa).length;
   return (
     <div className="w-full">
@@ -2039,10 +2135,6 @@ function InboundPanel({ rules, open, onToggleOpen, onToggleRule, onEditRule, onN
           <div className="flex items-center justify-between t11">
             <span style={{ color: C.sub }}>Oportunidades</span>
             <span style={{ color: C.ink }}>{oppCount.toLocaleString("es-CL")} <span style={{ color: C.faint }}>|</span> <span className="font-semibold">{fmtMM(oppMM)}</span></span>
-          </div>
-          <div className="flex items-center justify-between t11">
-            <span style={{ color: C.sub }}>Tareas</span>
-            <span style={{ color: C.ink }}>{taskCount.toLocaleString("es-CL")} <span style={{ color: C.faint }}>|</span> <span className="font-semibold">{fmtMM(taskMM)}</span></span>
           </div>
           <div className="flex items-center justify-between t10" style={{ color: C.faint }}>
             <span>Reglas activas</span><span>{activas} / {rules.length}</span>
@@ -2073,67 +2165,6 @@ function InboundPanel({ rules, open, onToggleOpen, onToggleRule, onEditRule, onN
   );
 }
 
-// ============================================================
-// Tarjeta de tarea (panel Mis Tareas)
-// ============================================================
-function TaskCard({ task, onResolve, onReschedule, onOpen }) {
-  const [rsOpen, setRsOpen] = useState(false); // dropdown de reagendar
-  const sector = SECTOR_COLORS[task.sector] || { bg: "#F3F4F6", fg: "#4B5563" };
-  return (
-    <div onClick={() => onOpen && onOpen(task)} className="cursor-pointer rounded-lg bg-white p-2.5 transition-shadow hover:shadow-md" style={{ border: `1px solid ${C.line}` }}>
-      <div className="flex items-center justify-between">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="t10 font-medium" style={{ color: C.faint }}>{task.code}</span>
-          <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: task.origen === "tarea" ? C.taskBg : C.greenBg, color: task.origen === "tarea" ? C.indigo : C.green }}>
-            {task.origen === "tarea" ? <><Zap size={9} /> Tarea</> : <><ArrowUpRight size={9} /> Oportunidad</>}
-          </span>
-          {task.tags.map((t) => {
-            const tc = TAG_COLORS[t] || { bg: "#F3F4F6", fg: "#4B5563" };
-            return <Pill key={t} style={{ backgroundColor: tc.bg, color: tc.fg }}>{t}</Pill>;
-          })}
-        </div>
-        <span className="flex items-center gap-1 t10" style={{ color: C.faint }}>
-          {task.date}
-          <span className="flex h-4 w-4 items-center justify-center rounded-full t8 font-semibold text-white" style={{ backgroundColor: C.indigo }}>{task.exec}</span>
-        </span>
-      </div>
-      <div className="mt-1.5 t12 font-semibold" style={{ color: C.ink }}>
-        {task.isProspect ? "Prospecto: " : ""}{task.cliente}
-      </div>
-      {task.deudor && <div className="t11" style={{ color: C.sub }}>Pagador: {task.deudor}</div>}
-      {task.desconexion && <div className="t11" style={{ color: C.sub }}>Desconexión: {task.desconexion}</div>}
-      {task.opp && <div className="t11" style={{ color: C.sub }}>Oportunidad: {task.opp}</div>}
-      {task.sector && <div className="mt-1.5"><Pill style={{ backgroundColor: sector.bg, color: sector.fg }}>{task.sector}</Pill></div>}
-      {task.cat && <OppTags ev={task} />}
-      {task.otorgFirme > 0
-        ? <div className="mt-1.5 inline-flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#fef2f2", color: "#DC2626" }}><X size={10} /> Perdida · no superó reglas de otorgamiento</div>
-        : task.otorgN > 0 && <div className="mt-1.5 inline-flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}><AlertTriangle size={10} /> <span>Requiere otorgamiento</span> <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#7c3aed" }}>{task.otorgPend}</span></div>}
-      {task.tasa && (
-        <div className="mt-1.5 t10" style={{ color: C.sub }}>
-          Tasa {task.tasa} | Anticipo {task.anticipo} | Giro {task.giro} | Desc. {task.desc}
-        </div>
-      )}
-      <div className="mt-1.5 flex items-center gap-1 t10" style={{ color: C.sub }}>
-        <CircleDot size={9} style={{ color: C.green }} /> {task.note}
-      </div>
-      <div className="mt-2 flex items-center gap-2">
-        <button onClick={(e) => { e.stopPropagation(); onResolve(task.id); }} className="flex flex-1 items-center justify-center rounded-md py-1.5 t11 font-medium"
-          style={{ border: `1px solid ${C.line}`, color: C.green }}>Atender</button>
-        <div className="relative flex-1">
-          <button onClick={(e) => { e.stopPropagation(); setRsOpen((o) => !o); }} className="flex w-full items-center justify-center gap-1 rounded-md py-1.5 t11 font-medium"
-            style={{ border: `1px solid ${C.line}`, color: C.sub }}><Calendar size={12} /> Reagendar <ChevronDown size={11} /></button>
-          {rsOpen && (
-            <div onClick={(e) => e.stopPropagation()} className="absolute bottom-full right-0 z-50 mb-1 w-36 rounded-lg bg-white py-1 shadow-xl" style={{ border: `1px solid ${C.line}` }}>
-              {[["1d", "1 día"], ["2d", "2 días"], ["lunes", "Próximo lunes"], ["otra", "Otra…"]].map(([k, l]) => (
-                <button key={k} onClick={() => { setRsOpen(false); onReschedule(task.id, k); }} className="block w-full px-3 py-1.5 text-left t11 hover:bg-stone-50" style={{ color: C.ink }}>{l}</button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ============================================================
 // Drawer de detalle de negocio
@@ -3331,7 +3362,6 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [emailMenu, setEmailMenu] = useState(false); // dropdown de templates de email
   const [emailPreview, setEmailPreview] = useState(null); // template en vista previa antes de enviar
   const [openEmail, setOpenEmail] = useState(null); // índice del email expandido en el hilo
-  const [cierreMenu, setCierreMenu] = useState(false); // dropdown de canal para enviar el enlace de cierre
   const [bitExp, setBitExp] = useState({}); // bloques largos expandidos en la bitácora
   const [openCall, setOpenCall] = useState(null); // transcripción de llamada expandida (Call Center)
   const [candPage, setCandPage] = useState(0); // paginador de facturas candidatas a agregar
@@ -3339,6 +3369,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [paramTab, setParamTab] = useState("facturas"); // sub-tab de parámetros: facturas | deudores
   const [negTab, setNegTab] = useState("resumen"); // sub-tab del negocio: resumen | documentos | descuentos
   const [pubMenu, setPubMenu] = useState(false); // dropdown de canal para publicar la oferta
+  const [cierreMenu, setCierreMenu] = useState(false); // dropdown de canal para enviar el enlace de cierre
   const [pubModal, setPubModal] = useState(null); // { oferta, opts, canal, descartadas } — decisión sobre facturas descartadas recientes al publicar
   const [pubAccion, setPubAccion] = useState("nueva"); // "nueva" (abrir otra oportunidad) | "descartar"
   const [pubEspera, setPubEspera] = useState(7); // días de espera antes de reabrir (si se descartan)
@@ -3807,8 +3838,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           <div className="mt-2">
                             <div className="mb-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: "#16A34A", border: "1px solid #bbf7d0" }}><Check size={11} /> Oferta cerrada{deal.ofertaCerradaTs ? ` · ${deal.ofertaCerradaTs.split(" ")[0]}` : ""}</div>
                             <div className="flex flex-wrap gap-1.5">
+                              {!deal.negocioNum && (
                               <div className="relative">
-                                <button onClick={() => setPubMenu((v) => !v)} className="flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-medium text-white" style={{ backgroundColor: C.green }}><Check size={12} /> {deal.negocioNum ? "Republicar oferta" : "Publicar oferta de cierre"} <ChevronDown size={12} /></button>
+                                <button onClick={() => setPubMenu((v) => !v)} className="flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-medium text-white" style={{ backgroundColor: C.green }}><Check size={12} /> Publicar oferta de cierre <ChevronDown size={12} /></button>
                                 {pubMenu && (
                                   <div onClick={(e) => e.stopPropagation()} className="absolute z-50 mt-1 w-56 rounded-lg bg-white py-1 shadow-xl" style={{ border: `1px solid ${C.line}` }}>
                                     <div className="px-3 py-1 t9 uppercase tracking-wide" style={{ color: C.faint }}>Enviar propuesta de cierre por</div>
@@ -3818,6 +3850,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   </div>
                                 )}
                               </div>
+                              )}
                               {deal.negocioNum && deal.stage === "oferta" && (
                                 <div className="relative">
                                   <button onClick={() => setCierreMenu((v) => !v)} className="flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-medium text-white" style={{ backgroundColor: deal.clienteAcepto ? "#0a7d3f" : C.indigo }}><ArrowUpRight size={12} /> Enviar enlace de cierre <ChevronDown size={12} /></button>
@@ -6033,15 +6066,9 @@ function WaFlowLogin({ deal, onLogin }) {
 // ============================================================
 // Vista Tabla: grilla de oportunidades (alternativa al Kanban)
 // ============================================================
-function TablaOportunidades({ deals, tasks = [], onOpen, onMover, onReject, onResolveTask, onOpenTask, onNuevoNegocio }) {
-  const [gtab, setGtab] = useState("pipeline"); // "pipeline" | "tareas"
+function TablaOportunidades({ deals, onOpen, onMover, onReject, onNuevoNegocio }) {
   const nextStage = (id) => { const i = STAGE_ORDER.indexOf(id); return STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 2)]; };
   const cols = ["Oportunidad", "Ejecutivo", "Producto", "Monto", "Condiciones de la oferta", "Etapa", "Estrategia", "Acciones"];
-  const tcols = ["Oportunidad", "Ejecutivo", "Categoría", "Acción requerida", "Vence", "Acciones"];
-  const catColor = (c) => c === "Negocios críticos" ? { bg: "#fef2f2", fg: "#DC2626" } : c === "Nuevas empresas" ? { bg: "#eff6ff", fg: "#2563EB" } : c === "Nuevos negocios" ? { bg: "#F0FDF4", fg: "#16A34A" } : { bg: "#FAF9FB", fg: C.sub };
-  const Tab = ({ id, label, n }) => (
-    <button onClick={() => setGtab(id)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: gtab === id ? C.lilac : "#fff", color: gtab === id ? C.indigo : C.sub, border: `1px solid ${gtab === id ? C.indigo : C.line}` }}>{label} <span className="t9" style={{ opacity: 0.8 }}>{n}</span></button>
-  );
   return (
     <div className="flex flex-1 flex-col gap-2">
       {onNuevoNegocio && (
@@ -6051,43 +6078,6 @@ function TablaOportunidades({ deals, tasks = [], onOpen, onMover, onReject, onRe
           </button>
         </div>
       )}
-      {gtab === "tareas" ? (
-        <div className="flex-1 overflow-x-auto rounded-xl bg-white p-1" style={{ border: `1px solid ${C.line}` }}>
-          <table className="w-full border-collapse t11" style={{ minWidth: "940px" }}>
-            <thead><tr>{tcols.map((h) => (
-              <th key={h} className="px-2 py-2 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, backgroundColor: "#fff" }}>{h}</th>))}</tr></thead>
-            <tbody>
-              {tasks.length === 0 && <tr><td colSpan={tcols.length} className="px-2 py-6 text-center t11" style={{ color: C.faint }}>Sin tareas pendientes para los filtros actuales.</td></tr>}
-              {tasks.map((t) => {
-                const cc = catColor(t.category);
-                return (
-                  <tr key={t.id} style={{ borderBottom: `1px solid ${C.line}` }}>
-                    <td className="px-2 py-1.5 align-top">
-                      <button onClick={() => onOpenTask && onOpenTask(t)} className="text-left">
-                        <div className="font-medium" style={{ color: C.indigo }}>{t.cliente}</div>
-                        <div className="t9" style={{ color: C.faint }}>{t.code} · {t.opp}</div>
-                        <div className="t9" style={{ color: C.sub }}>Deudor: {t.deudor}</div>
-                      </button>
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-1.5 align-top" style={{ color: C.sub }}>
-                      <span className="inline-flex items-center gap-1.5"><span className="flex h-5 w-5 items-center justify-center rounded-full t9 font-semibold text-white" style={{ backgroundColor: C.indigo }}>{t.exec}</span>{EXECS[t.exec] || t.exec}</span>
-                    </td>
-                    <td className="whitespace-nowrap px-2 py-1.5 align-top"><Pill style={{ backgroundColor: cc.bg, color: cc.fg }}>{t.category}</Pill></td>
-                    <td className="px-2 py-1.5 align-top t10" style={{ color: C.sub, maxWidth: 360 }}>{t.note}</td>
-                    <td className="whitespace-nowrap px-2 py-1.5 align-top t10" style={{ color: C.sub }}>{t.date}</td>
-                    <td className="whitespace-nowrap px-2 py-1.5 align-top">
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => onOpenTask && onOpenTask(t)} className="rounded-md px-2 py-1 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.indigo, backgroundColor: "#fff" }}>Abrir</button>
-                        <button onClick={() => onResolveTask && onResolveTask(t.id)} className="rounded-md px-2 py-1 t10 font-medium text-white" style={{ backgroundColor: C.green }}>Atender</button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : (
       <div className="flex-1 overflow-x-auto rounded-xl bg-white p-1" style={{ border: `1px solid ${C.line}` }}>
       <table className="w-full border-collapse t11" style={{ minWidth: "1360px" }}>
         <thead><tr>{cols.map((h) => (
@@ -6176,7 +6166,6 @@ function TablaOportunidades({ deals, tasks = [], onOpen, onMover, onReject, onRe
         </tbody>
       </table>
       </div>
-      )}
     </div>
   );
 }
@@ -11559,7 +11548,7 @@ function CommandK({ abierto, onCerrar, deals, dealVisible, irA, onAbrirDeal }) {
   const ql = q.trim().toLowerCase();
   const ops = ql ? deals.filter(dealVisible).filter((d) => (d.cliente || "").toLowerCase().includes(ql) || String(d.id).toLowerCase().includes(ql)).slice(0, 5) : [];
   const clis = ql ? PC_CLIENTES.filter((c) => c.nombre.toLowerCase().includes(ql) || (c.rut || "").includes(q.trim())).slice(0, 4) : [];
-  const VISTAS = [["pipeline", "Pipeline"], ["tareas", "Tareas"], ["clientes", "Clientes"], ["panel", "Panel clientes"], ["operaciones", "Operaciones"], ["lineas", "Líneas"], ["otorgamientos", "Otorgamientos"], ["config", "Configuración"]];
+  const VISTAS = [["pipeline", "Pipeline"], ["tareas", "Tareas"], ["clientes", "Clientes"], ["panel", "Gestión"], ["operaciones", "Operaciones"], ["lineas", "Líneas"], ["otorgamientos", "Otorgamientos"], ["config", "Configuración"]];
   const items = [
     ...ops.map((d) => ({ tipo: "Oportunidades", label: `${d.id} · ${d.cliente}`, extra: stageById(d.stage) ? stageById(d.stage).name : d.stage, run: () => { onAbrirDeal(d); onCerrar(); } })),
     ...clis.map((c) => ({ tipo: "Clientes", label: c.nombre, extra: c.rut, run: () => { irA("clientes", "Clientes"); onCerrar(); } })),
@@ -11709,8 +11698,6 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
 
 export default function PipelineComercial() {
   const [deals, setDeals] = useState([]); // arranca vacío; el pipeline (incl. 2 casos demo de Call Center) se llena al presionar Start
-  const [tasks, setTasks] = useState([]); // Mis Tareas inicia en cero
-  const resueltasRef = useRef(new Set()); // ids de tareas ya resueltas (no regenerar)
   const cxcRef = useRef(cargarCxC()); // saldo cuentas por cobrar por cliente
   const [rules, setRules] = useState(cargarReglas);
   useEffect(() => { guardarReglas(rules); }, [rules]); // persiste reglas
@@ -11725,7 +11712,6 @@ export default function PipelineComercial() {
   const [query, setQuery] = useState("");
   const [quickFilter, setQuickFilter] = useState("todos");
   const [channel, setChannel] = useState("Manual");
-  const [taskFilter, setTaskFilter] = useState("todas");
   const [usuario, setUsuario] = useState(USUARIO); // usuario logueado
   const [logueado, setLogueado] = useState(false); // gate de login (portada spec Auth); clic en avatar = cerrar sesión
   const [cmdOpen, setCmdOpen] = useState(false); // command palette Ctrl+K (spec §38)
@@ -11768,9 +11754,7 @@ export default function PipelineComercial() {
     });
     return n;
   }, [deals, usuario, misExecs, cfgVer]); // cfgVer cambia al aprobar/rechazar en el visado → recalcula
-  const [catOff, setCatOff] = useState({}); // categorías de tareas ocultas (filtro ojo on/off)
   const [draggingId, setDraggingId] = useState(null);
-  const [showTasks, setShowTasks] = useState(true);
   const [inboundOpen, setInboundOpen] = useState(false); // colapsado por defecto
   const [kpiAll, setKpiAll] = useState(false); // ver todo el detalle de indicadores
   const [kpiShow, setKpiShow] = useState(false); // sección de indicadores OCULTA por defecto al cargar
@@ -11956,7 +11940,6 @@ export default function PipelineComercial() {
       const causa = bi ? bi.causa : (causaPerdidaDeal(d) || "El cliente rechazó la oferta");
       return { ...d, stage: "perdida", etapaPerdida: d.stage, perdidaOtorg: !!bi, motivoPerdida: motivo, subtipoBloqueo: bi ? bi.subtipo : null, bloqueosFirmes: bi ? bi.ids : d.bloqueosFirmes, causaPerdida: causa, fechaPerdida: nowStamp(), perdidaPor: (USERS[usuario] || usuario), status: causa, time: nowStamp(), historialContacto: traza(d, causa + " — operación marcada perdida.", false) };
     }));
-    setTasks((prev) => prev.filter((t) => t.code !== id && t.dealId !== id));
     setSelected(null);
   };
   // El ejecutivo envía un mensaje al cliente por WhatsApp (MODO MANUAL). No se fabrica respuesta del cliente:
@@ -11973,7 +11956,6 @@ export default function PipelineComercial() {
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
-    setTasks((prev) => prev.filter((t) => t.id !== `${id}-waresp`)); // el ejecutivo respondió: cierra la tarea de "responder"
     // Empuja el hilo al WhatsApp del cliente (si está abierto) para que vea el mensaje del ejecutivo.
     setTimeout(() => {
       const d2 = (dealsRef.current || []).find((x) => x.id === id); if (!d2) return;
@@ -12203,6 +12185,9 @@ export default function PipelineComercial() {
     // Registra el detalle de curse para que el sitio externo pueda mostrarlo y firmar.
     const d0 = (dealsRef.current || []).find((x) => x.id === id);
     if (d0) { const neg = negDe(d0); if (!cursePayloadsRef.current[neg]) { const c = curseDesdeDeal(d0); cursePayloadsRef.current[neg] = { id, tasa: c.tasa, opts: c.opts, payload: c.payload }; } }
+    if (canal === "Email" && d0) { // abre el email SIMULADO en una pestaña nueva (blob), igual que el WhatsApp del cliente
+      try { const url = URL.createObjectURL(new Blob([emailCierreHTML(d0)], { type: "text/html" })); window.open(url, "_blank"); setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 60000); } catch (_) {}
+    }
   };
   // El cliente se autentica y firma en el sitio Security: recién aquí la operación pasa a Aceptadas.
   const confirmarCierre = (id, tasa, opts, usuario) => {
@@ -12253,7 +12238,6 @@ export default function PipelineComercial() {
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
     setCierreModal(null);
-    setTasks((prev) => prev.filter((t) => t.id !== `${id}-cierre`)); // ya firmó: cierra la tarea de seguimiento
   };
   // Autoriza / rechaza UNA causa (desvío) de la operación. Valida atribución del usuario en el área.
   const autorizarCausa = (id, causaId, decision, mensaje, archivos) => {
@@ -12300,7 +12284,6 @@ export default function PipelineComercial() {
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
-    setTasks((prev) => prev.filter((t) => t.code !== id)); // cerrar tareas asociadas
   };
   // Comunicación entre pestañas vía postMessage (funciona con file://, donde cada página es un
   // origen único y BroadcastChannel/localStorage no sirven). El WhatsApp del cliente (whatsapp.html)
@@ -12505,73 +12488,6 @@ export default function PipelineComercial() {
     });
     setDraggingId(null);
   };
-  const resolveTask = (id) => { resueltasRef.current.add(id); setTasks((prev) => prev.filter((t) => t.id !== id)); };
-  const rescheduleTask = (id, opcion) => {
-    const fmt = (d) => `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${d.getFullYear()}`;
-    const d = new Date(); let etiqueta;
-    if (opcion === "1d") { d.setDate(d.getDate() + 1); etiqueta = "+1 día"; }
-    else if (opcion === "2d") { d.setDate(d.getDate() + 2); etiqueta = "+2 días"; }
-    else if (opcion === "lunes") { const add = ((8 - d.getDay()) % 7) || 7; d.setDate(d.getDate() + add); etiqueta = "próx. lunes"; }
-    else { const n = parseInt(window.prompt("Reagendar, ¿en cuántos días?", "3"), 10); if (isNaN(n)) return; d.setDate(d.getDate() + n); etiqueta = `+${n} día${n === 1 ? "" : "s"}`; }
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, date: fmt(d), note: `Reagendada (${etiqueta})` } : t)));
-  };
-
-  // Genera tareas para CR cuando sus oportunidades requieren una acción del ejecutivo.
-  const makeTask = (id, d, category, kind, note, origen) => { const _v = visadoDeal(d); return ({
-    id, code: d.id, cliente: d.cliente, deudor: d.deudor, deudores: d.deudores, amountMM: d.amountMM, facturasOp: d.facturasOp, tags: [d.tag], date: "18-06-2026", exec: d.exec,
-    opp: `${d.facturas} fac. | ${fmtMM(d.amountMM)}`, sector: d.sector, tasa: d.tasa, anticipo: d.anticipo,
-    giro: d.giro, desc: d.desc, note: note || category, category, kind, isProspect: category === "Nuevas empresas",
-    origen: origen || "oportunidad", // "oportunidad" (pipeline) | "tarea" (regla/proceso)
-    // Indicadores de negocio (mismos que la card de oportunidad): CAT, SOW, descuento y otorgamiento.
-    cat: d.cat, catLabel: d.catLabel, pctBlanca: d.pctBlanca, rutEmisor: d.rutEmisor,
-    sowTendencia: d.sowTendencia, sowFlecha: d.sowFlecha, sowActualPct: d.sowActualPct, sowTargetPct: d.sowTargetPct, sowGapPct: d.sowGapPct, superaTarget: d.superaTarget,
-    conDescuento: d.conDescuento, spreadPromo: d.spreadPromo,
-    otorgN: _v.exc.length + _v.rechReev.length, otorgPend: _v.excPend.length + _v.rechReev.length, otorgFirme: _v.rechFirme.length + _v.excRech.length,
-  }); };
-  useEffect(() => {
-    setTasks((prev) => {
-      // Si la oportunidad ya está GIRADA (operación cursada y anticipo girado), su tarea queda
-      // ATENDIDA automáticamente: no debe quedar abierta. Se elimina y se marca como resuelta.
-      const giradas = new Set(deals.filter((d) => d.stage === "giro").map((d) => d.id));
-      prev = prev.filter((t) => { if (giradas.has(t.code)) { resueltasRef.current.add(t.id); return false; } return true; });
-      // seen incluye las tareas existentes Y las que se agregan en esta misma pasada,
-      // para que una oportunidad nunca genere la misma tarea más de una vez.
-      const seen = new Set(prev.map((t) => t.id));
-      // Una oportunidad tiene como máximo UNA tarea pendiente a la vez (existente o nueva).
-      const dealsConTarea = new Set(prev.map((t) => t.code));
-      const vistosDeal = new Set(); // un deal duplicado momentáneo no genera tareas extra
-      const add = [];
-      const tryAdd = (id, d, cat, kind, note, origen) => {
-        if (seen.has(id) || resueltasRef.current.has(id) || dealsConTarea.has(d.id)) return;
-        seen.add(id); dealsConTarea.add(d.id); add.push(makeTask(id, d, cat, kind, note, origen));
-      };
-      for (const d of deals) {
-        if (!dealVisible(d) || d.stage === "perdida" || vistosDeal.has(d.id)) continue;
-        vistosDeal.add(d.id);
-        // Cierre pendiente: se envió el enlace y la oportunidad espera que el cliente ingrese al
-        // sitio Security a firmar. Tarea de seguimiento de máxima prioridad.
-        const cierrePendiente = d.stage === "oferta" && (d.cierreEnviado || (d.waSesion || []).some((m) => m.tipo === "boton"));
-        if (cierrePendiente) tryAdd(`${d.id}-cierre`, d, "Negocios críticos", "critica", "Seguimiento de cierre · el cliente debe ingresar al sitio Security a firmar", "tarea");
-        // Comunicación pendiente: el cliente respondió por WhatsApp y hay que contestarle.
-        if (d.ofertaSolicitada && !d.ofertaCerrada && !d.negocioNum) tryAdd(`${d.id}-cerraroferta`, d, "Negocios críticos", "critica", "Revisar la selección de facturas y cerrar la oferta (el cliente ya la pidió por WhatsApp)", "tarea");
-        else if (d.waPendiente) tryAdd(`${d.id}-waresp`, d, "Negocios críticos", "critica", "Responder comunicación pendiente del cliente (WhatsApp)", "tarea");
-        const esProceso = ["Enrolamiento", "Conexión SII"].includes(d.tag); // no es una oportunidad de venta
-        const esOnboarding = d.reglaId === "Rule-05"; // nuevos prospectos no clientes con potencial
-        // Escalamiento del agente WhatsApp: tarifa fuera de su atribución → negociar y publicar (tarea de proceso).
-        if (d.fueraAtribucion) tryAdd(`${d.id}-wa`, d, "Negocios críticos", "critica", "Negociar tarifa (agente WhatsApp fuera de atribución) y publicar", "tarea");
-        else if (esOnboarding && (d.stage === "prospeccion" || d.stage === "oferta")) {
-          // Rule-05: tarea de Onboarding para enrolar al nuevo prospecto con potencial.
-          tryAdd(`${d.id}-onb`, d, "Nuevas empresas", "retraso", "Onboarding · enrolar nuevo prospecto con potencial (Rule-05)", "tarea");
-        } else if (d.stage === "prospeccion") {
-          const crit = d.amountMM > 800;
-          const cat = d.esCliente === false ? "Nuevas empresas" : crit ? "Negocios críticos" : "Nuevos negocios";
-          tryAdd(`${d.id}-contacto`, d, cat, crit ? "critica" : "retraso", null, esProceso ? "tarea" : "oportunidad");
-        }
-        if (d.warning) tryAdd(`${d.id}-facturas`, d, "Negocios críticos", "critica", null, "oportunidad");
-      }
-      return add.length ? [...add, ...prev] : prev;
-    });
-  }, [deals, usuario, esAdmin]);
   const toggleRule = (id) => setRules((prev) => prev.map((r) => (r.id === id ? { ...r, activa: !r.activa } : r)));
   const newRuleId = () => {
     const nums = rules.map((r) => parseInt(String(r.id).replace(/\D/g, ""), 10)).filter((n) => !isNaN(n));
@@ -13128,7 +13044,7 @@ export default function PipelineComercial() {
   const resetStream = () => {
     // Reinicio total: todo vuelve a cero para comenzar de nuevo.
     setStreaming(false); setStreamQueue(INBOUND_STREAM); setStreamFeed([]); setAcumulado([]); setRecibidas(0); setCorridas(0);
-    setDeals([]); setTasks([]); setHistoria([]); resueltasRef.current = new Set();
+    setDeals([]); setHistoria([]);
     setSelected(null); setDiaModal(null); setReporteModal(false); setCobranzaModal(false); setCasosModal(null);
     noClasRef.current = { porPerfil: {}, porCedente: {}, total: 0, montoTotal: 0 }; reglaStatsRef.current = {}; deudorStatsRef.current = { buenos: { fac: 0, mm: 0 }, autorizados: { fac: 0, mm: 0 }, otros: { fac: 0, mm: 0 } };
     setReporte([]); setAnalisis(null); setKpiHist([]); originadasRef.current = 0; originadasMontoRef.current = 0; originadasFacRef.current = 0; accDiaRef.current = nuevoAcc(); pausaRef.current = false; iniciadoRef.current = false;
@@ -13254,10 +13170,6 @@ export default function PipelineComercial() {
   };
   const descartarEv = (id) => setStreamFeed((f) => f.filter((x) => x.id !== id));
 
-  const tasksUnicas = useMemo(() => { const v = new Set(); return tasks.filter((t) => (misExecs === null || misExecs.includes(t.exec)) && (v.has(t.id) ? false : (v.add(t.id), true))); }, [tasks, usuario, misExecs]);
-  // Ticker de 1 minuto para recalcular la frescura de las conversaciones (la ventana "< 1 hora" expira sola).
-  const [convTick, setConvTick] = useState(0);
-  useEffect(() => { const iv = setInterval(() => setConvTick((t) => t + 1), 60000); return () => clearInterval(iv); }, []);
   // INVARIANTE: si una oportunidad ya tiene una OFERTA publicada (N° de negocio o la burbuja "Oferta de
   // factoring…" en el hilo), no puede seguir en Prospección — pertenece a "Oferta y Negociación". Esto
   // corrige cualquier caso en que la oferta se publicó pero la etapa no avanzó (p. ej. interés por texto libre).
@@ -13284,7 +13196,6 @@ export default function PipelineComercial() {
       const bi = bloqueoFirmeInfo(d);
       return { ...d, stage: "perdida", etapaPerdida: d.stage, perdidaOtorg: true, motivoPerdida: "bloqueo_firme", subtipoBloqueo: bi.subtipo, causaPerdida: bi.causa, bloqueosFirmes: bi.ids, fechaPerdida: nowStamp(), perdidaPor: "sistema", status: bi.causa, time: nowStamp(), historialContacto: traza(d, bi.causa + " — operación perdida automáticamente por el sistema (bloqueo firme, no excepcionable).", false) };
     }));
-    setTasks((prev) => prev.filter((t) => !ids.has(t.code) && !ids.has(t.dealId)));
   }, [deals, cfgVer]);
   // AVANCE AUTOMÁTICO A GIRO: una operación en Otorgamiento con TODOS sus criterios aceptados (excepcionados
   // o aprobados), sin bloqueos firmes y con la aprobación formal del cliente, debe otorgarse y GIRAR. Genera
@@ -13310,29 +13221,6 @@ export default function PipelineComercial() {
   }, [deals, cfgVer]);
   // CONVERSACIONES ACTIVAS (en curso): el cliente respondió y/o se publicó una oferta hace menos de 1 hora.
   // Sirven para que el ejecutivo retome rápido el hilo antes de que se enfríe.
-  const convosActivas = useMemo(() => {
-    const HORA = 3600000, ahora = Date.now();
-    return deals.filter(dealVisible)
-      .filter((d) => !["giro", "perdida"].includes(d.stage))
-      .map((d) => {
-        const resp = d.tUltClienteResp && (ahora - d.tUltClienteResp < HORA);
-        const oferta = d.tOferta && (ahora - d.tOferta < HORA);
-        if (!resp && !oferta) return null;
-        const ult = Math.max(d.tUltClienteResp || 0, d.tOferta || 0);
-        const mins = Math.max(0, Math.round((ahora - ult) / 60000));
-        return { d, resp: !!resp, oferta: !!oferta, pendiente: !!d.waPendiente, mins, ult, contacto: (d.contacto && d.contacto.nombre) || "—" };
-      })
-      .filter(Boolean)
-      .sort((a, b) => (b.pendiente - a.pendiente) || (a.mins - b.mins));
-  }, [deals, usuario, esAdmin, convTick]);
-  const visibleTasks = tasksUnicas.filter((t) => !catOff[t.category])
-    .filter((t) => taskFilter === "todas" ? true : taskFilter === "retraso" ? t.kind === "retraso" : t.kind === "critica");
-  // Las 3 categorías fijas con su conteo (actúan como filtro on/off).
-  const taskCats = useMemo(() => {
-    const m = {}; TASK_CATS.forEach((c) => (m[c] = 0));
-    for (const t of tasksUnicas) m[t.category] = (m[t.category] || 0) + 1;
-    return TASK_CATS.map((name) => ({ name, count: m[name] || 0 }));
-  }, [tasksUnicas]);
 
   const quickFilters = [
     { id: "todos", label: "Todos", count: dealsVista.length },
@@ -13392,7 +13280,7 @@ export default function PipelineComercial() {
             <button onClick={() => irA("pipeline", "Pipeline")} style={{ color: vistaApp === "pipeline" ? C.indigo : C.sub, fontWeight: vistaApp === "pipeline" ? 600 : 400 }}>Pipeline</button>
             <button onClick={() => irA("tareas", "Tareas")} style={{ color: vistaApp === "tareas" ? C.indigo : C.sub, fontWeight: vistaApp === "tareas" ? 600 : 400 }}>Tareas</button>
             <button onClick={() => irA("clientes", "Clientes")} style={{ color: vistaApp === "clientes" ? C.indigo : C.sub, fontWeight: vistaApp === "clientes" ? 600 : 400 }}>Clientes</button>
-            <button onClick={() => irA("panel", "Panel clientes")} style={{ color: vistaApp === "panel" ? C.indigo : C.sub, fontWeight: vistaApp === "panel" ? 600 : 400 }}>Panel clientes</button>
+            <button onClick={() => irA("panel", "Gestión")} style={{ color: vistaApp === "panel" ? C.indigo : C.sub, fontWeight: vistaApp === "panel" ? 600 : 400 }}>Gestión</button>
             <button onClick={() => irA("operaciones", "Operaciones")} style={{ color: vistaApp === "operaciones" ? C.indigo : C.sub, fontWeight: vistaApp === "operaciones" ? 600 : 400 }}>Operaciones</button>
             <button onClick={() => irA("lineas", "Líneas")} style={{ color: vistaApp === "lineas" ? C.indigo : C.sub, fontWeight: vistaApp === "lineas" ? 600 : 400 }}>Líneas</button>
             <button onClick={() => irA("otorgamientos", "Otorgamientos")} className="inline-flex items-center gap-1.5" style={{ color: vistaApp === "otorgamientos" ? C.indigo : C.sub, fontWeight: vistaApp === "otorgamientos" ? 600 : 400 }}>
@@ -13448,8 +13336,8 @@ export default function PipelineComercial() {
           </>
         ) : vistaApp === "panel" ? (
           <>
-            <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Panel de Clientes</div>
-            <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Panel de Clientes</h1>
+            <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Gestión</div>
+            <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Gestión de Clientes</h1>
             <PanelClientes soloExec={soloExec} deals={deals} usuario={usuario} />
           </>
         ) : vistaApp === "tareas" ? (
@@ -13693,7 +13581,7 @@ export default function PipelineComercial() {
         </div>
 
         <div className="mt-3 flex items-start gap-3 overflow-x-auto pb-4">
-          {vista === "tabla" && <TablaOportunidades deals={filtered} tasks={visibleTasks} onOpen={setSelected} onMover={moverEtapa} onReject={reject} onResolveTask={resolveTask} onNuevoNegocio={nuevoNegocio} onOpenTask={(tk) => { const d = deals.find((x) => x.id === tk.code); if (d) setSelected(d); }} />}
+          {vista === "tabla" && <TablaOportunidades deals={filtered} onOpen={setSelected} onMover={moverEtapa} onReject={reject} onNuevoNegocio={nuevoNegocio} />}
           {vista === "kanban" && (() => {
             const col = (id, opts = {}) => (
               <StageColumn key={id} stage={stageById(id)} deals={opts.deals || dealsByStage(id)} onOpen={setSelected}
@@ -13707,8 +13595,7 @@ export default function PipelineComercial() {
                 {showInbound && (
                 <MacroColumn title="Bandeja Inbound" hint="captación">
                   <InboundPanel rules={rules} open={inboundOpen} onToggleOpen={(v) => setInboundOpen(typeof v === "boolean" ? v : !inboundOpen)} onToggleRule={toggleRule} onEditRule={setEditingRule} onNewRule={openNewRule} onResetRules={resetRules}
-                    oppCount={dealsVista.filter((d) => d._inbound).length} oppMM={dealsVista.filter((d) => d._inbound).reduce((s, d) => s + d.amountMM, 0)}
-                    taskCount={tasksUnicas.length} taskMM={tasksUnicas.reduce((s, t) => { const d = deals.find((x) => x.id === t.code); return s + (d ? d.amountMM : 0); }, 0)} />
+                    oppCount={dealsVista.filter((d) => d._inbound).length} oppMM={dealsVista.filter((d) => d._inbound).reduce((s, d) => s + d.amountMM, 0)} />
                   <MotorPerformance recibidas={recibidas} califican={acumulado.length} sinClasificar={noClasRef.current.total} originadas={originadasRef.current} originadasMM={originadasMontoRef.current} reglaStats={reglaStatsRef.current} rules={rules} />
                   <InboundStream feed={streamFeed} streaming={streaming} queueLen={streamQueue.length} total={INBOUND_STREAM.length} recibidas={recibidas} acumuladas={acumulado.length} corridas={corridas} dia={dia} horaDia={horaDia}
                     onToggle={toggleStream} onReset={resetStream} onCorrer={tickCron} onAsignar={asignarManual} onCrearRegla={crearReglaDesdeFactura} onDescartar={descartarEv} onAsignarTodas={asignarTodas} />
@@ -13732,82 +13619,6 @@ export default function PipelineComercial() {
             );
           })()}
 
-          {/* Panel Mis Tareas: solo en vista kanban (en Tabla se pidió quitarlo) */}
-          {vista === "kanban" && (showTasks ? (
-            <div className="flex w-80 shrink-0 flex-col rounded-xl p-3" style={{ backgroundColor: C.taskBg }}>
-              <div className="flex items-center justify-between">
-                <span className="t13 font-semibold" style={{ color: C.ink }}>{soloExec ? `Mis Tareas · ${soloExec}` : (JEFE_A_EXECS[usuario] ? "Tareas · Mi grupo comercial" : "Tareas · Todos los ejecutivos")}</span>
-                <div className="flex items-center gap-1.5">
-                  <span className="flex h-5 minw5 items-center justify-center rounded-full px-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.green }}>{tasksUnicas.length}</span>
-                  <button onClick={() => setShowTasks(false)} title="Ocultar Mis Tareas" className="rounded-md p-0.5 hover:bg-white" style={{ color: C.sub }}><ChevronRight size={16} /></button>
-                </div>
-              </div>
-              {convosActivas.length > 0 && (
-                <div className="mt-2.5 rounded-lg p-2" style={{ backgroundColor: "#F0FDF4", border: "1px solid #a7f3d0" }}>
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 t11 font-semibold" style={{ color: "#16A34A" }}><MessageSquare size={12} /> Conversaciones activas</span>
-                    <span className="flex h-5 items-center justify-center rounded-full px-1.5 t11 font-semibold text-white" style={{ backgroundColor: "#16A34A" }}>{convosActivas.length}</span>
-                  </div>
-                  <div className="mt-0.5 t9" style={{ color: "#16A34A" }}>En curso (menos de 1 h) · retómalas antes de que se enfríen.</div>
-                  <div className="mt-1.5 space-y-1">
-                    {convosActivas.slice(0, 6).map(({ d, pendiente, oferta, mins }) => (
-                      <button key={d.id} onClick={() => setSelected(d)} className="flex w-full items-center gap-2 rounded-md bg-white px-2 py-1 text-left" style={{ border: "1px solid #F0FDF4" }}>
-                        <span className="min-w-0 flex-1 truncate t11 font-medium" style={{ color: C.ink }} title={d.cliente}>{d.cliente}</span>
-                        <span className="shrink-0 t9 font-medium" style={{ color: pendiente ? "#DC2626" : "#16A34A" }}>{(d.ofertaSolicitada && !d.ofertaCerrada) ? "● solicita oferta" : pendiente ? "● pendiente" : oferta ? "oferta enviada" : "respondió"}</span>
-                        <span className="shrink-0 t9" style={{ color: C.faint }}>{mins === 0 ? "ahora" : mins + "m"}</span>
-                      </button>
-                    ))}
-                    {convosActivas.length > 6 && <div className="t9" style={{ color: C.faint }}>+{convosActivas.length - 6} más…</div>}
-                  </div>
-                </div>
-              )}
-              <div className="mt-2.5 space-y-1">
-                {taskCats.map((c) => {
-                  const off = !!catOff[c.name];
-                  return (
-                    <button key={c.name} onClick={() => setCatOff((o) => ({ ...o, [c.name]: !o[c.name] }))}
-                      title={off ? "Mostrar" : "Ocultar"}
-                      className="flex w-full items-center justify-between t11" style={{ color: off ? C.faint : C.sub }}>
-                      <span className="flex items-center gap-1.5">
-                        {off ? <EyeOff size={12} /> : <Eye size={12} />}
-                        <span style={{ textDecoration: off ? "line-through" : "none" }}>{c.name}</span>
-                      </span>
-                      <span className="font-semibold" style={{ color: off ? C.faint : C.ink }}>{c.count}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="mt-3 flex gap-1.5">
-                {[{ id: "todas", label: "Todas", count: tasksUnicas.length },
-                  { id: "retraso", label: "Retraso", count: tasksUnicas.filter((t) => t.kind === "retraso").length },
-                  { id: "criticas", label: "Críticas", count: tasksUnicas.filter((t) => t.kind === "critica").length }].map((f) => {
-                  const on = taskFilter === f.id;
-                  return (
-                    <button key={f.id} onClick={() => setTaskFilter(f.id)} className="flex items-center gap-1 rounded-full px-2.5 py-1 t11 font-medium"
-                      style={{ backgroundColor: on ? C.lilac : "#fff", color: on ? C.indigo : C.sub, border: `1px solid ${on ? C.indigo : C.line}` }}>
-                      {f.label} <span style={{ opacity: 0.7 }}>{f.count}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="mt-3 flex flex-col gap-2 overflow-y-auto">
-                {visibleTasks.map((t) => <TaskCard key={t.id} task={t} onResolve={resolveTask} onReschedule={rescheduleTask} onOpen={(tk) => { const d = deals.find((x) => x.id === tk.code); if (d) setSelected(d); }} />)}
-                {visibleTasks.length === 0 && (
-                  <div className="rounded-lg border border-dashed bgw50 py-8 text-center t12" style={{ borderColor: "#F0FDF4", color: C.green }}>
-                    <Check size={18} className="mx-auto mb-1" /> ¡Todo al día!
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <button onClick={() => setShowTasks(true)} title="Mostrar Mis Tareas"
-              className="flex w-9 shrink-0 flex-col items-center gap-2 rounded-xl py-3 transition-colors hover:brightness-95"
-              style={{ backgroundColor: C.taskBg, border: `1px solid ${C.line}` }}>
-              <ChevronLeft size={14} style={{ color: C.sub }} />
-              <span className="flex h-5 minw5 items-center justify-center rounded-full px-1.5 t10 font-semibold text-white" style={{ backgroundColor: C.green }}>{tasks.length}</span>
-              <span className="t11 font-semibold" style={{ color: C.sub, writingMode: "vertical-rl" }}>Mis Tareas</span>
-            </button>
-          ))}
         </div>
         </>)}
       </main>
