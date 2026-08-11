@@ -1230,23 +1230,25 @@ function emailCierreHTML(deal) {
   const giro = fmtMM(o.giroMM != null ? o.giroMM : (deal.giroMM || deal.amountMM || 0));
   const ejec = execName(deal);
   const fecha = deal.time || hoyStr();
-  const V = "#0a7d3f"; // verde Factoring Security
+  const V = "#4a2596"; // violeta de marca Factoring Security (filial BICE)
+  const A = "#1d4ed8"; // azul de acción (CTA, montos), como en el portal
   const row = (k, v, c) => `<div class=row><span>${k}</span><b${c ? ` style="color:${c}"` : ""}>${v}</b></div>`;
   return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Factoring Security · Firma tu operación N° ${neg}</title>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
-:root{--v:${V}}
+:root{--v:${V};--a:${A}}
 *{box-sizing:border-box}body{font-family:Geist,system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#E5E7EB;color:#111827}
 .mail{max-width:480px;margin:0 auto;background:#F3F4F6;min-height:100vh}
-.logo{display:flex;align-items:center;justify-content:center;gap:8px;background:#fff;padding:18px}
-.logo .sq{width:26px;height:26px;border-radius:6px;background:var(--v);color:#fff;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center}
-.logo .nm{font-size:15px;font-weight:800;color:var(--v);letter-spacing:.02em}
+.logo{display:flex;align-items:center;justify-content:center;gap:9px;background:#fff;padding:18px}
+.logo .sq{width:28px;height:28px;border-radius:6px;background:var(--v);color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center}
+.logo .nm{font-size:16px;font-weight:800;color:var(--v);letter-spacing:.02em;line-height:1.05}
+.logo .bice{font-size:9px;font-weight:600;color:#6B7280;letter-spacing:.04em}
 .hero{text-align:center;padding:22px 26px 16px}.hero .g{font-size:13px;color:#374151}.hero h1{font-size:21px;font-weight:800;color:#111827;line-height:1.25;margin:6px 0}.hero .t{font-size:12.5px;font-weight:600;color:var(--v)}
 .card{margin:0 20px;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);text-align:center}
 .card .top{height:6px;background:var(--v)}.card .in{padding:16px}
 .card .neg{font-size:14px;font-weight:700;color:#111827}.card .sub{font-size:11px;color:#9CA3AF;margin-top:2px}
-.card .ml{font-size:11.5px;color:#6B7280;margin-top:12px}.card .mm{font-size:24px;font-weight:800;color:var(--v)}.card .dc{font-size:11px;color:#9CA3AF}
-.cta{display:block;width:100%;margin-top:14px;padding:12px;border:0;border-radius:9999px;background:var(--v);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer;text-align:center}
+.card .ml{font-size:11.5px;color:#6B7280;margin-top:12px}.card .mm{font-size:24px;font-weight:800;color:var(--a)}.card .dc{font-size:11px;color:#9CA3AF}
+.cta{display:block;width:100%;margin-top:14px;padding:12px;border:0;border-radius:9999px;background:var(--a);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer;text-align:center}
 .steps{margin:14px 20px 0;background:#E5E7EB;border-radius:14px;padding:16px}.steps .h{text-align:center;font-size:12.5px;font-weight:700;color:#374151;margin-bottom:10px}
 .step{display:flex;gap:10px;align-items:flex-start;font-size:12.5px;color:#374151;margin-bottom:8px}.step .n{width:20px;height:20px;border-radius:9999px;background:var(--v);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .band{margin-top:16px;background:var(--v);color:#fff;text-align:center;padding:12px;font-size:13px}
@@ -1267,7 +1269,7 @@ function emailCierreHTML(deal) {
 <body>
 <!-- VISTA EMAIL -->
 <div class="mail" id="vista-email">
-  <div class="logo"><span class="sq">S</span><span class="nm">FACTORING <span style="font-weight:400">SECURITY</span></span></div>
+  <div class="logo"><span class="sq">S</span><span><span class="nm">FACTORING <span style="font-weight:400">SECURITY</span></span><br><span class="bice">de ▦ BICE</span></span></div>
   <div class="hero"><div class="g">Estimados, <b>${deal.cliente}</b></div><h1>Tu oferta está lista<br>para firmar</h1><div class="t">¡Gracias por confiar en nosotros!</div></div>
   <div class="card"><div class="top"></div><div class="in">
     <div class="neg">Negocio N° ${neg}</div><div class="sub">Oferta publicada el <b>${fecha}</b></div>
@@ -1303,7 +1305,7 @@ function emailCierreHTML(deal) {
     ${o.interesMM != null ? row("Diferencia de precio", fmtMM(o.interesMM)) : ""}
     ${o.comision != null ? row("Comisión", fmtCLP(o.comision)) : ""}
     <div class="hr"></div>
-    ${row("Monto a girar", giro, V)}
+    ${row("Monto a girar", giro, A)}
     <div class="lbl">Ingresa con tu cuenta Security para firmar</div>
     <input id="u" placeholder="Usuario / RUT"><input id="p" type="password" placeholder="Contraseña">
     <button class="cta" style="border-radius:10px" onclick="firmar()">Aprobar y firmar operación</button>
