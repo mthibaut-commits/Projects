@@ -13239,7 +13239,7 @@ export default function PipelineComercial() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
         /* Escala tipográfica Datamart: t8-t10=Micro 11px, t11=Caption 12px, t12=Small 13px, t13=Body 14px, t15=16px */
-        .t8{font-size:11px;line-height:1.3}.t9{font-size:11px;line-height:1.3}.t10{font-size:11px;line-height:1.3}
+        .t8{font-size:11px;line-height:1.3}.t9{font-size:10px;line-height:1.3}.t10{font-size:11px;line-height:1.3}
         .t11{font-size:12px;line-height:1.4}.t12{font-size:13px;line-height:1.4}.t13{font-size:14px;line-height:1.5}
         .t15{font-size:16px;line-height:1.4}.minw5{min-width:1.25rem}.ovl{background-color:rgba(0,0,0,0.2)}
         .btn-cta{background:linear-gradient(to right,#EE2EFF,#FF814B);color:#fff;border-radius:9999px;font-weight:600;border:none}
