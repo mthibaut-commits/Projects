@@ -3368,7 +3368,6 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [openCall, setOpenCall] = useState(null); // transcripción de llamada expandida (Call Center)
   const [candPage, setCandPage] = useState(0); // paginador de facturas candidatas a agregar
   const [factTab, setFactTab] = useState("candidatas"); // sub-tab de facturas: candidatas | todas
-  const [paramTab, setParamTab] = useState("facturas"); // sub-tab de parámetros: facturas | deudores
   const [negTab, setNegTab] = useState("resumen"); // sub-tab del negocio: resumen | documentos | descuentos
   const [pubMenu, setPubMenu] = useState(false); // dropdown de canal para publicar la oferta
   const [cierreMenu, setCierreMenu] = useState(false); // dropdown de canal para enviar el enlace de cierre
@@ -3613,65 +3612,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                       {negTab === "resumen" && <SimResumen deal={deal} o={o} montoDocs={montoValido} cantFacturas={validas.length} usuario={USERS[usuario] || usuario} bloqueado={bloqueado} antic={antic} setAntic={setAntic} comisO={comisO} setComisO={setComisO} tasaPond={tasaPond} diasPond={diasPond} />}
                       {negTab === "descuentos" && <SimDescuentos deal={deal} o={o} />}
                       {negTab === "documentos" && (<>
-                      {/* Parámetros: tabs Deudores / Facturas */}
+                      {/* Documentos: facturas incluidas en la oferta */}
                       <div className="mt-2 border-t pt-1.5" style={{ borderColor: "#FED7AA" }}>
-                        <div className="flex items-center gap-1.5">
-                          {[["facturas", "Facturas"], ["deudores", "Deudores"]].map(([k, l]) => (
-                            <button key={k} onClick={() => setParamTab(k)} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ backgroundColor: paramTab === k ? C.lilac : "#fff", color: paramTab === k ? C.indigo : C.sub, border: `1px solid ${paramTab === k ? C.indigo : C.line}` }}>{l}</button>
-                          ))}
-                        </div>
-                        {paramTab === "deudores" ? (
-                        <>
-                        <div className="mt-1.5 t10 uppercase tracking-wide" style={{ color: C.faint }}>Por deudor · clasificación, nota, verificación, facturas y monto + spread/días (tasa = spread + {COSTO_FONDO.toFixed(2)}% costo fondo)</div>
-                        {(() => { const a = SOW_AJUSTE[sowEstado(deal)] || SOW_AJUSTE.estable; return (
-                          <div className="mt-1 rounded-lg p-2 t9" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.sub }}>
-                            <b style={{ color: C.ink }}>Precio sugerido por SOW:</b> spread estándar {SPREAD_ESTANDAR.toFixed(2)}% − {a.pts.toFixed(2)} pts ({a.l}) = <b style={{ color: C.ink }}>{(SPREAD_ESTANDAR - a.pts).toFixed(2)}%</b>. El spread mínimo de cada deudor (piso de riesgo) trunca el descuento: si lo perfora, manda el piso.
-                          </div>
-                        ); })()}
-                        {(() => { const req = deudoresUnicos.filter((dn) => !verifDeudor(dn, tipoDeudorDisp(facturasOp.filter((f) => f.deudor === dn)[0])).verificada).length; return (
-                          <div className="mt-1 rounded-lg p-2 t9" style={{ backgroundColor: req ? "#FFF7ED" : "#F0FDF4", border: `1px solid ${req ? "#FED7AA" : "#bbf7d0"}`, color: req ? "#C2410C" : "#16A34A" }}>
-                            {req > 0
-                              ? <><AlertTriangle size={10} className="mr-0.5 inline align-[-1px]" /><b>{req}</b> de {deudoresUnicos.length} deudor(es) <b>requieren verificación telefónica</b> (existencia de la factura, recepción y fecha de pago); el resto quedó <b>verificado</b> por el modelo de riesgo del deudor.</>
-                              : <><Check size={10} className="mr-0.5 inline align-[-1px]" />Los {deudoresUnicos.length} deudor(es) quedaron <b>verificados</b> por el modelo: no requieren verificación telefónica.</>}
-                          </div>
-                        ); })()}
-                        <div className="mt-1 space-y-1">
-                          {deudoresUnicos.map((dn) => {
-                            const fs = facturasOp.filter((f) => f.deudor === dn);
-                            const pn = fs.length, pmm = +fs.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
-                            const sc = scoreDeudor(dn, tipoDeudorDisp(fs[0])); const chip = DEUDOR_CHIP[sc.tipo] || DEUDOR_CHIP["Otro"]; const vf = verifDeudor(dn, sc.tipo);
-                            return (
-                            <div key={dn} className="flex items-center gap-1.5 t11">
-                              <span className="min-w-0 flex-1 truncate" style={{ color: C.sub }} title={dn}>{dn}</span>
-                              <span className="shrink-0 inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 t9 font-semibold" title={vf.verificada ? "Verificada · el deudor cumple el modelo, no requiere verificación telefónica." : "Requiere verificación telefónica — no cumple:\n" + vf.crit.filter((c) => !c.ok).map((c) => `• ${c.l} (req. ${c.req})`).join("\n")} style={{ backgroundColor: vf.verificada ? "#F0FDF4" : "#FFF7ED", color: vf.verificada ? "#16A34A" : "#C2410C", cursor: "help" }}>{vf.verificada ? <Check size={9} /> : <AlertTriangle size={9} />}{vf.verificada ? "Verificada" : "Req. verif."}</span>
-                              <span className="shrink-0 rounded-full px-1 py-0.5 t9 font-medium" style={{ backgroundColor: chip.bg, color: chip.fg }}>{DEUDOR_LABEL[sc.tipo] || "Otro"}</span>
-                              <span className="w-8 shrink-0 text-right font-semibold" title={`Nota del deudor: ${notaFromScore(sc.score)} / 5 · modelo de riesgo Security (5 = mejor pagador)`} style={{ color: NOTA_COLOR(notaFromScore(sc.score)) }}>{notaFromScore(sc.score)}</span>
-                              <span className="w-8 shrink-0 text-right t10" style={{ color: C.faint }}>×{pn}</span>
-                              <span className="w-16 shrink-0 text-right t10 font-medium" style={{ color: C.ink }}>{fmtMM(pmm)}</span>
-                              <div className="flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
-                                <span className="t9" style={{ color: C.faint }}>spread</span>
-                                {(() => { const sg = spreadSugerido(dn, deal); return (
-                                <input type="number" step="0.01" disabled={bloqueado} title={`Sugerido por SOW: ${sg.spread.toFixed(2)}% — estándar ${SPREAD_ESTANDAR.toFixed(2)}% − ${sg.ajuste.toFixed(2)} pts (${sg.label}).\nSpread mínimo de ${dn}: ${sg.piso.toFixed(2)}% (piso de riesgo).${sg.topado ? "\n⚠ El piso de riesgo truncó el descuento comercial." : ""}`} value={spreadDeudor[dn] != null ? spreadDeudor[dn] : sg.spread} onChange={(e) => setSpreadDeudor((m) => ({ ...m, [dn]: Math.max(0, +e.target.value || 0) }))} className="w-12 bg-transparent text-right outline-none disabled:opacity-60" style={{ color: (spreadDeudor[dn] != null ? spreadDeudor[dn] : sg.spread) < sg.piso ? C.red : C.ink }} />
-                                ); })()}
-                                <span className="t9" style={{ color: C.faint }}>%</span>
-                              </div>
-                              <div className="flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
-                                <input type="number" step="1" disabled={bloqueado} value={vencDias[dn] != null ? vencDias[dn] : diasPagoDeudor(dn)} onChange={(e) => setVencDias((m) => ({ ...m, [dn]: Math.max(1, +e.target.value || 0) }))} className="w-10 bg-transparent text-right outline-none disabled:opacity-60" style={{ color: C.ink }} />
-                                <span className="t9" style={{ color: C.faint }}>días</span>
-                              </div>
-                              <span className="w-14 shrink-0 text-right font-semibold" style={{ color: C.ink }}>{tasaDe(dn).toFixed(2)}%</span>
-                            </div>
-                            );
-                          })}
-                          <div className="flex items-center gap-1.5 t10 font-semibold" style={{ color: C.ink, borderTop: `1px solid #FED7AA`, paddingTop: 4 }}>
-                            <span className="min-w-0 flex-1">Total ({deudoresUnicos.length} deudores)</span>
-                            <span className="w-8 shrink-0 text-right">×{facturasOp.length}</span>
-                            <span className="w-16 shrink-0 text-right">{fmtMM(montoOrig)}</span>
-                          </div>
-                        </div>
-                        </>
-                        ) : (
-                        <>
                         <div className="mt-1.5 t10 uppercase tracking-wide" style={{ color: C.faint }}>Facturas incluidas en la oferta ({validas.length}{excluidas.length ? ` · ${excluidas.length} excluida(s)` : ""})</div>
                         <div className="mt-1 overflow-x-auto"><div style={{ minWidth: 880 }}>
                         {(() => { const GC = "78px 66px minmax(130px,1fr) 34px 96px 140px 108px 104px 52px 68px 22px"; return (<>
@@ -3709,8 +3651,6 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         </div>
                         </>); })()}
                         </div></div>
-                        </>
-                        )}
                       </div>
                       {/* Separación: documentos que PODRÍAN incorporarse (distinto de los ya considerados arriba) */}
                       <div className="mt-4 rounded-lg p-2.5" style={{ backgroundColor: "#fff", border: `1px dashed #F97316` }}>
@@ -6089,9 +6029,9 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, onNuevoNegocio }
           {deals.map((d) => {
             const ns = nextStage(d.stage); const terminal = d.stage === "giro" || d.stage === "perdida";
             return (
-              <tr key={d.id} onClick={() => onOpen(d)} title="Abrir detalle de la operación" className="cursor-pointer hover:bg-stone-50" style={{ borderBottom: `1px solid ${C.line}` }}>
+              <tr key={d.id} onClick={() => onOpen(d)} title="Abrir detalle de la operación" className="pl-row cursor-pointer" style={{ borderBottom: `1px solid ${C.line}` }}>
                 {/* Oportunidad */}
-                <td className="px-2 py-1.5 align-top">
+                <td className="px-2 py-2.5 align-top">
                   <button onClick={() => onOpen(d)} className="text-left">
                     <div className="font-medium" style={{ color: C.indigo }}>{d.cliente}</div>
                     <div className="t9" style={{ color: C.faint }}>{d.id}</div>
@@ -6099,18 +6039,18 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, onNuevoNegocio }
                   </button>
                 </td>
                 {/* Ejecutivo */}
-                <td className="whitespace-nowrap px-2 py-1.5 align-top" style={{ color: C.sub }}>
+                <td className="whitespace-nowrap px-2 py-2.5 align-top" style={{ color: C.sub }}>
                   <span className="inline-flex items-center gap-1.5"><span className="flex h-5 w-5 items-center justify-center rounded-full t9 font-semibold text-white" style={{ backgroundColor: C.indigo }}>{d.exec}</span>{EXECS[d.exec] || d.exec}</span>
                 </td>
                 {/* Producto financiero */}
-                <td className="whitespace-nowrap px-2 py-1.5 align-top"><Pill style={{ backgroundColor: TAG_COLORS[d.tag]?.bg || "#F3F4F6", color: TAG_COLORS[d.tag]?.fg || C.sub }}>{d.tag}</Pill></td>
+                <td className="whitespace-nowrap px-2 py-2.5 align-top"><Pill style={{ backgroundColor: TAG_COLORS[d.tag]?.bg || "#F3F4F6", color: TAG_COLORS[d.tag]?.fg || C.sub }}>{d.tag}</Pill></td>
                 {/* Monto de la oportunidad + nº de facturas */}
-                <td className="whitespace-nowrap px-2 py-1.5 align-top">
+                <td className="whitespace-nowrap px-2 py-2.5 align-top">
                   <div className="font-semibold" style={{ color: C.ink }}>{fmtMM(d.amountMM)}</div>
                   <div className="t9" style={{ color: C.faint }}>{d.facturas} factura{d.facturas === 1 ? "" : "s"}</div>
                 </td>
                 {/* Condiciones de la oferta */}
-                <td className="px-2 py-1.5 align-top" style={{ color: C.sub }}>
+                <td className="px-2 py-2.5 align-top" style={{ color: C.sub }}>
                   {d.cat && (() => { const cd = catDisp(d); return <div className="mb-1"><span className="inline-flex items-center rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: catMeta(cd.cat).bg, color: catMeta(cd.cat).fg, cursor: "help" }} title={`${cd.label} · ${cd.q}. ${catMeta(cd.cat).desc}`}>{cd.label} · {cd.q}</span></div>; })()}
                   {d.simulado ? (
                     <div className="t10 leading-5">
@@ -6120,7 +6060,7 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, onNuevoNegocio }
                   ) : <span className="t10" style={{ color: C.faint }}>Sin simular</span>}
                 </td>
                 {/* Etapa — Oferta en morado con degradé según otorgamiento pendiente (el naranja se leía como pérdida) */}
-                <td className="whitespace-nowrap px-2 py-1.5 align-top">
+                <td className="whitespace-nowrap px-2 py-2.5 align-top">
                   {(() => {
                     const vis = ["prospeccion", "oferta", "aceptadas", "otorgamiento"].includes(d.stage) ? visadoDeal(d) : null;
                     const nPend = vis ? vis.exc.length + vis.rechReev.length : 0;
@@ -6137,7 +6077,7 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, onNuevoNegocio }
                   })()}
                 </td>
                 {/* Estrategia (Share of Wallet) */}
-                <td className="px-2 py-1.5 align-top" style={{ maxWidth: 240 }}>
+                <td className="px-2 py-2.5 align-top" style={{ maxWidth: 240 }}>
                   {(() => {
                     const sm = sowEstrategia(d);
                     if (!sm) return <span className="t10" style={{ color: C.faint }}>—</span>;
@@ -6151,13 +6091,13 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, onNuevoNegocio }
                   })()}
                 </td>
                 {/* Acciones · Next Best Action */}
-                <td className="px-2 py-1.5 align-top">
+                <td className="px-2 py-2.5 align-top">
                   {(() => {
                     const nba = nextBestAction(d);
                     if (!nba) return <button onClick={() => onOpen(d)} className="rounded-md px-2 py-1 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.indigo, backgroundColor: "#fff" }}>Abrir</button>;
                     return (
-                      <button onClick={() => onOpen(d)} title={nba.detalle} className="flex max-w-[240px] items-center gap-1 rounded-md px-2 py-1 t10 font-medium text-left" style={{ backgroundColor: nba.color + "14", color: nba.color, border: `1px solid ${nba.color}33` }}>
-                        <Sparkles size={10} className="shrink-0" /><span className="truncate"><b>NBA:</b> {nba.label}</span>
+                      <button onClick={() => onOpen(d)} title={nba.detalle} className="flex max-w-[240px] items-center gap-1 rounded-md px-2 py-1 t10 font-medium text-left" style={{ backgroundColor: "#F3F4F6", color: C.sub, border: `1px solid ${C.line}` }}>
+                        <Sparkles size={10} className="shrink-0" style={{ color: C.faint }} /><span className="truncate"><b>NBA:</b> {nba.label}</span>
                       </button>
                     );
                   })()}
@@ -11814,8 +11754,6 @@ export default function PipelineComercial() {
       let matchF = true;
       if (quickFilter === "encurso") matchF = !["perdida"].includes(d.stage);
       else if (quickFilter === "negociacion") matchF = d.stage === "oferta";
-      else if (quickFilter === "grandes") matchF = d.amountMM > 100;
-      else if (quickFilter === "estancados") matchF = d.stale;
       else if (quickFilter === "sinclasificar") matchF = (d.status === "Sin clasificar");
       const matchDeudor = fDeudor === "todos" || (fDeudor === "buenos" ? esBuenDeudor(d) : !esBuenDeudor(d));
       const matchJef = fJefatura === "todas" || jefaturaOf(d) === fJefatura;
@@ -11890,8 +11828,6 @@ export default function PipelineComercial() {
     return deals.filter((d) => {
       if (id === "encurso") return d.stage !== "perdida";
       if (id === "negociacion") return d.stage === "oferta";
-      if (id === "grandes") return d.amountMM > 100;
-      if (id === "estancados") return d.stale;
       return true; // todos
     });
   };
@@ -13228,8 +13164,6 @@ export default function PipelineComercial() {
     { id: "todos", label: "Todos", count: dealsVista.length },
     { id: "encurso", label: "En Curso", count: activeCount },
     { id: "negociacion", label: "Negociación", count: dealsVista.filter((d) => d.stage === "oferta").length },
-    { id: "grandes", label: ">100 MM", count: dealsVista.filter((d) => d.amountMM > 100).length },
-    { id: "estancados", label: "Estancados", count: dealsVista.filter((d) => d.stale).length },
     { id: "sinclasificar", label: "Sin clasificar", count: streamFeed.length },
   ];
 
@@ -13257,6 +13191,7 @@ export default function PipelineComercial() {
         .hover\\:shadow-md:hover{box-shadow:0 4px 12px rgba(0,0,0,0.10)}
         .hover\\:shadow-sm:hover{box-shadow:0 1px 3px rgba(0,0,0,0.08)}
         /* Skeleton shimmer (estado de carga spec) */
+        .pl-row{transition:background-color .12s} .pl-row:hover{background-color:#F5F3FF}
         .skel{position:relative;overflow:hidden;background:#F3F4F6;border-radius:8px}
         .skel::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.7),transparent);animation:skel 1.1s infinite}
         @keyframes skel{100%{transform:translateX(100%)}}
