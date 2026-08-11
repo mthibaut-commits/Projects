@@ -11777,43 +11777,12 @@ export default function PipelineComercial() {
   const vsBudget = BUDGET_MES_MM ? +(ventaMensualMM / BUDGET_MES_MM * 100).toFixed(1) : 0;
   // Forecast = venta girada + 30% del pipeline en curso (estimación de cierre).
   const forecastMM = useMemo(() => +(ventaMensualMM + totalPipeline * 0.3).toFixed(0), [ventaMensualMM, totalPipeline]);
-  const vsPpto = BUDGET_MES_MM ? +(forecastMM / BUDGET_MES_MM * 100).toFixed(1) : 0;
   // Win/Loss rate: ganados (aceptadas/cesión/giro) vs perdidos, sobre el total resuelto.
   const winLoss = useMemo(() => {
     const ganados = dealsVista.filter((d) => ["aceptadas", "cesion", "giro"].includes(d.stage)).length;
     const perdidos = dealsVista.filter((d) => d.stage === "perdida").length;
     const tot = ganados + perdidos;
     return { ganados, perdidos, win: tot ? Math.round(ganados / tot * 100) : 0, loss: tot ? Math.round(perdidos / tot * 100) : 0 };
-  }, [dealsVista]);
-  // ---- Cartera de clientes: se construye al CURSAR (cesión/giro). El prospecto
-  // se transforma en cliente y sus facturas financiadas pasan a la cartera.
-  // Riesgo = facturas que no se pagan a la fecha de vencimiento (atraso > 0).
-  // Tasa promedio = ponderada por monto financiado × duración del financiamiento.
-  const cartera = useMemo(() => {
-    // La cartera sólo considera operaciones GIRADAS (Giro: Girado), idéntico criterio a la venta
-    // mensual y usando el mismo monto (amountMM), por lo que cartera == venta del mes.
-    const cursados = dealsVista.filter((d) => d.stage === "giro" && subEstadoDe(d) === "girado");
-    const clientes = new Set(cursados.map((d) => d.cliente));
-    let carteraMM = 0, riesgoMM = 0, vigenteMM = 0, mora030 = 0, mora3060 = 0, moraP60 = 0;
-    let wNum = 0, wDen = 0; // tasa ponderada: Σ(tasa·monto·días) / Σ(monto·días)
-    for (const d of cursados) {
-      const fin = d.amountMM != null ? d.amountMM : d.financiadoMM;
-      const dias = d.diasFin || 30;
-      const tasa = d.tasaDescuento != null ? d.tasaDescuento : parseFloat(d.tasa) || 1.5;
-      carteraMM += fin;
-      wNum += tasa * fin * dias; wDen += fin * dias;
-      if (d.atrasoDias > 0) {
-        riesgoMM += fin;
-        if (d.atrasoDias <= 30) mora030 += fin; else if (d.atrasoDias <= 60) mora3060 += fin; else moraP60 += fin;
-      } else { vigenteMM += fin; }
-    }
-    return {
-      clientes: clientes.size, nuevos: cursados.length,
-      carteraMM: +carteraMM.toFixed(1), riesgoMM: +riesgoMM.toFixed(1),
-      vigenteMM: +vigenteMM.toFixed(1), mora030: +mora030.toFixed(1), mora3060: +mora3060.toFixed(1), moraP60: +moraP60.toFixed(1),
-      morosidadPct: carteraMM ? +(riesgoMM / carteraMM * 100).toFixed(2) : 0,
-      tasaPond: wDen ? +(wNum / wDen).toFixed(2) : 0,
-    };
   }, [dealsVista]);
   const clearAll = () => { setQuery(""); setQuickFilter("todos"); setFDeudor("todos"); setFJefatura("todas"); setFLinea("todas"); setFEjecutivo("todos"); };
 
@@ -13336,7 +13305,6 @@ export default function PipelineComercial() {
             <button onClick={exportarGrilla} title="Exportar la grilla a un reporte Excel" className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
               <Download size={14} /> Exportar a Excel
             </button>
-            <button className="t12 font-medium" style={{ color: C.indigo }}>Abrir Panel General →</button>
           </div>
         </div>
 
@@ -13345,17 +13313,6 @@ export default function PipelineComercial() {
         {/* ===== Indicadores agrupados (compactos, con detalle desplegable) ===== */}
         {(() => {
           const grupos = [
-            { id: "cartera", titulo: "Cartera de clientes", estado: cartera.morosidadPct > 5 ? "En riesgo" : "Sana", eBg: cartera.morosidadPct > 5 ? C.amberBg : C.greenBg, eFg: cartera.morosidadPct > 5 ? C.amber : C.green, nota: `${cartera.clientes} clientes · ${cartera.nuevos} op. cursadas`, cards: [
-              { id: "clientes", label: "CLIENTES", value: cartera.clientes.toLocaleString("es-CL"), sub: "cursados (cesión/giro)", rows: [
-                { k: "Clientes nuevos", v: cartera.clientes.toLocaleString("es-CL") }, { k: "Operaciones cursadas", v: cartera.nuevos.toLocaleString("es-CL") }] },
-              { id: "cartera", label: "CARTERA", value: fmtMM(cartera.carteraMM), sub: `${cartera.nuevos} op. financiadas`, rows: [
-                { k: "Financiado total", v: fmtMM(cartera.carteraMM) }, { k: "Vigente", v: fmtMM(cartera.vigenteMM) }, { k: "En mora", v: fmtMM(cartera.riesgoMM) }] },
-              { id: "riesgo", label: "RIESGO CARTERA", value: fmtMM(cartera.riesgoMM), sub: `${cartera.morosidadPct}% Morosidad`, rows: [
-                { k: "Vigente", v: fmtMM(cartera.vigenteMM) }, { k: "Mora 0-30", v: fmtMM(cartera.mora030) },
-                { k: "Mora 30-60", v: fmtMM(cartera.mora3060) }, { k: "Mora +60", v: fmtMM(cartera.moraP60) }] },
-              { id: "tasa", label: "TASA PROM. POND.", value: `${cartera.tasaPond.toFixed(2).replace(".", ",")}%`, sub: "pond. monto × plazo", rows: [
-                { k: "Tasa ponderada", v: `${cartera.tasaPond.toFixed(2).replace(".", ",")}%` }, { k: "Base de cálculo", v: "monto financiado × días" }] },
-            ] },
             { id: "pipeline", titulo: "Pipeline de clientes", estado: "Fluido", eBg: C.greenBg, eFg: C.green, nota: `${activeCount} oport · 2 estancadas`, cards: [
               { id: "oport", label: "OPORTUNIDADES", value: activeCount.toLocaleString("es-CL"), sub: "en curso (Kanban)", serie: kpiHist.map((h) => h.oport), rows: [
                 { k: "En curso", v: activeCount.toLocaleString("es-CL") }, { k: "Prospección", v: deals.filter((d) => d.stage === "prospeccion").length },
@@ -13368,8 +13325,6 @@ export default function PipelineComercial() {
                 { k: "Venta (Girado)", v: fmtMM(ventaMensualMM) }, { k: "Budget (+15% 2025)", v: fmtMM(BUDGET_MES_MM) }, { k: "vs Budget", v: `${vsBudget}%` }] },
               { id: "budget", label: "BUDGET / CUMPL.", value: `${vsBudget}%`, sub: `${fmtMM(ventaMensualMM)} / ${fmtMM(BUDGET_MES_MM)}`, serie: kpiHist.map((h) => h.cumpl), rows: [
                 { k: "Budget (+15% 2025)", v: fmtMM(BUDGET_MES_MM) }, { k: "Venta del mes", v: fmtMM(ventaMensualMM) }, { k: "Cumplimiento", v: `${vsBudget}%` }] },
-              { id: "forecast", label: "FORECAST CIERRE", value: fmtMM(forecastMM), sub: `${vsPpto}% vs Ppto`, serie: kpiHist.map((h) => h.forecast), rows: [
-                { k: "Forecast", v: fmtMM(forecastMM) }, { k: "Budget (+15% 2025)", v: fmtMM(BUDGET_MES_MM) }, { k: "vs Ppto", v: `${vsPpto}%` }] },
             ] },
           ];
           const tile = (k) => {
