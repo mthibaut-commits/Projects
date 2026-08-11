@@ -25,7 +25,7 @@ const C = {
 // ---- Etapas del pipeline (Inbound es aparte: son reglas, no negocios) ----
 const STAGES = [
   { id: "prospeccion", name: "Prospección", dot: "#9CA3AF" },
-  { id: "oferta", name: "Oferta y Negociación", dot: C.amber },
+  { id: "oferta", name: "Oferta y Negociación", dot: "#703EFF" }, // morado: el ámbar/naranja se leía como pérdida
   { id: "aceptadas", name: "Aceptada", dot: C.green },
   { id: "cesion", name: "Cesión", dot: C.green },
   { id: "otorgamiento", name: "Otorgamiento", dot: "#7c3aed" },
@@ -34,6 +34,7 @@ const STAGES = [
 ];
 const STAGE_ORDER = STAGES.map((s) => s.id);
 const stageById = (id) => STAGES.find((s) => s.id === id);
+const stageName = (id) => (stageById(id) || {}).name || id; // a nivel de módulo: la usan DealCard (tarjetas perdidas) y TablaOportunidades
 const PAGE_SIZE = 8; // tarjetas por página en cada etapa (optimizado para 1800px)
 
 // ---- Diálogo de confirmación destructiva (Datamart spec §26): nunca borrar a un clic ----
@@ -3179,7 +3180,7 @@ function DealMensajeria({ deal, usuario }) {
         <div className="mt-2">
           <div className="mb-2 flex items-center gap-2">
             <div className="flex flex-1 items-center gap-1.5 rounded-full px-2 py-1.5" style={{ border: `1px solid ${C.line}` }}><Search size={13} style={{ color: C.faint }} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar conversación…" className="w-full outline-none t11" style={{ color: C.ink, backgroundColor: "transparent" }} /></div>
-            <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>{[["activos", "Activos"], ["todos", "Todos"]].map(([k, l]) => <button key={k} onClick={() => setFiltro(k)} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ backgroundColor: filtro === k ? "#fff" : "transparent", color: filtro === k ? C.indigo : C.sub }}>{l}</button>)}</div>
+            <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>{[["activos", "Activos"], ["todos", "Todos"]].map(([k, l]) => <button key={k} onClick={() => setFiltro(k)} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ backgroundColor: filtro === k ? C.indigo : "transparent", color: filtro === k ? "#fff" : C.sub }}>{l}</button>)}</div>
           </div>
           {hilos.length === 0 ? <div className="rounded-xl p-6 text-center t11" style={{ color: C.faint, backgroundColor: C.page, border: `1px solid ${C.line}` }}>{q || filtro === "activos" ? "No hay conversaciones para este filtro." : "Sin conversaciones en esta operación. Inicia una nueva."}</div> : <div className="space-y-1.5">{hilos.map((h) => { const noL = hiloNoLeido(h, usuario); const last = h.mensajes[h.mensajes.length - 1]; return (
             <button key={h.id} onClick={() => setSel(h.id)} className="w-full rounded-lg p-2.5 text-left" style={{ border: `1px solid ${noL ? C.indigo : C.line}`, backgroundColor: noL ? "#F1ECFF" : "#fff" }}>
@@ -3519,7 +3520,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   </div>
                   {/* Barra: uso actual + esta operación vs línea aprobada */}
                   <div className="mt-2 flex h-3 w-full overflow-hidden rounded-full" style={{ backgroundColor: "#E5E7EB" }}>
-                    <div style={{ width: `${usoPct}%`, backgroundColor: "#9CA3AF" }} />
+                    <div style={{ width: `${usoPct}%`, backgroundColor: usoPct > 95 ? "#DC2626" : usoPct > 80 ? "#F97316" : "#703EFF" }} />
                     <div style={{ width: `${opPct}%`, backgroundColor: lc.fueraDeLinea ? C.amber : C.indigo }} />
                     {overPct > 0 && <div style={{ width: `${overPct}%`, backgroundColor: C.red }} />}
                   </div>
@@ -5531,7 +5532,7 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
                     </div>
                     <div className="mt-3 inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
                       {[["pegar", "Pegar folios"], ["excel", "Cargar Excel"]].map(([k, l]) => (
-                        <button key={k} onClick={() => setMasivaTab(k)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: masivaTab === k ? "#fff" : "transparent", color: masivaTab === k ? C.indigo : C.sub }}>{l}</button>
+                        <button key={k} onClick={() => setMasivaTab(k)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: masivaTab === k ? C.indigo : "transparent", color: masivaTab === k ? "#fff" : C.sub }}>{l}</button>
                       ))}
                     </div>
                     {masivaTab === "pegar" ? (
@@ -5789,7 +5790,7 @@ function BenchmarkDeudoresModal({ deals, onClose }) {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
               {[["deudor", "Empresas Deudoras"], ["cliente", "Empresas Clientes"]].map(([k, l]) => (
-                <button key={k} onClick={() => setBy(k)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: by === k ? "#fff" : "transparent", color: by === k ? C.indigo : C.sub }}>{l}</button>
+                <button key={k} onClick={() => setBy(k)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: by === k ? C.indigo : "transparent", color: by === k ? "#fff" : C.sub }}>{l}</button>
               ))}
             </div>
             <div className="relative flex-1" style={{ minWidth: "220px" }}>
@@ -6034,7 +6035,6 @@ function WaFlowLogin({ deal, onLogin }) {
 // ============================================================
 function TablaOportunidades({ deals, tasks = [], onOpen, onMover, onReject, onResolveTask, onOpenTask, onNuevoNegocio }) {
   const [gtab, setGtab] = useState("pipeline"); // "pipeline" | "tareas"
-  const stageName = (id) => (STAGES.find((s) => s.id === id) || {}).name || id;
   const nextStage = (id) => { const i = STAGE_ORDER.indexOf(id); return STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 2)]; };
   const cols = ["Oportunidad", "Ejecutivo", "Producto", "Monto", "Condiciones de la oferta", "Etapa", "Estrategia", "Acciones"];
   const tcols = ["Oportunidad", "Ejecutivo", "Categoría", "Acción requerida", "Vence", "Acciones"];
@@ -6127,12 +6127,22 @@ function TablaOportunidades({ deals, tasks = [], onOpen, onMover, onReject, onRe
                     </div>
                   ) : <span className="t10" style={{ color: C.faint }}>Sin simular</span>}
                 </td>
-                {/* Etapa */}
+                {/* Etapa — Oferta en morado con degradé según otorgamiento pendiente (el naranja se leía como pérdida) */}
                 <td className="whitespace-nowrap px-2 py-1.5 align-top">
-                  <span className="inline-flex items-center gap-1" style={{ color: C.ink }}><span className="h-2 w-2 rounded-full" style={{ backgroundColor: (STAGES.find((s) => s.id === d.stage) || {}).dot }} />{stageName(d.stage)}</span>
-                  {["prospeccion", "oferta", "aceptadas", "otorgamiento"].includes(d.stage) && (() => { const vis = visadoDeal(d); if (vis.rechFirme.length || vis.excRech.length) return <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#fef2f2", color: "#DC2626", cursor: "help" }} title={"No superó reglas de otorgamiento (bloqueo firme):\n" + [...vis.rechFirme, ...vis.excRech].map((r, i) => `${i + 1}) #${r.n} ${r.nombre}`).join("\n")}><X size={10} /> Perdida · reglas de otorgamiento</div>; if (!vis.exc.length && !vis.rechReev.length) return null; const tip = "Requiere otorgamiento — reglas con excepción/rechazo re-evaluable:\n" + [...vis.exc, ...vis.rechReev].map((e, i) => `${i + 1}) #${e.n} ${e.nombre}`).join("\n"); return (
-                    <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED", cursor: "help" }} title={tip}><AlertTriangle size={10} /> Requiere otorgamiento <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#7c3aed" }}>{vis.exc.length + vis.rechReev.length}</span></div>
-                  ); })()}
+                  {(() => {
+                    const vis = ["prospeccion", "oferta", "aceptadas", "otorgamiento"].includes(d.stage) ? visadoDeal(d) : null;
+                    const nPend = vis ? vis.exc.length + vis.rechReev.length : 0;
+                    const bloqueo = vis && (vis.rechFirme.length || vis.excRech.length);
+                    const dotStyle = d.stage === "oferta"
+                      ? { background: nPend ? "linear-gradient(135deg,#C4B5FD,#703EFF)" : "linear-gradient(135deg,#703EFF,#230C65)" }
+                      : { backgroundColor: (STAGES.find((s) => s.id === d.stage) || {}).dot };
+                    return (<>
+                      <span className="inline-flex items-center gap-1" style={{ color: C.ink }}><span className="h-2 w-2 rounded-full" style={dotStyle} />{stageName(d.stage)}</span>
+                      {bloqueo ? <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#fef2f2", color: "#DC2626", cursor: "help" }} title={"No superó reglas de otorgamiento (bloqueo firme):\n" + [...vis.rechFirme, ...vis.excRech].map((r, i) => `${i + 1}) #${r.n} ${r.nombre}`).join("\n")}><X size={10} /> Perdida · reglas de otorgamiento</div>
+                      : nPend > 0 ? <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED", cursor: "help" }} title={"Requiere otorgamiento — reglas con excepción/rechazo re-evaluable:\n" + [...vis.exc, ...vis.rechReev].map((e, i) => `${i + 1}) #${e.n} ${e.nombre}`).join("\n")}><AlertTriangle size={10} /> Requiere otorgamiento <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#7c3aed" }}>{nPend}</span></div>
+                      : null}
+                    </>);
+                  })()}
                 </td>
                 {/* Estrategia (Share of Wallet) */}
                 <td className="px-2 py-1.5 align-top" style={{ maxWidth: 240 }}>
@@ -7125,7 +7135,7 @@ function CentroMensajeria({ usuario, deals, onClose, onOpenDeal, onChange }) {
               <button onClick={() => setNuevo(true)} className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Plus size={13} /> Nueva conversación</button>
               <div className="mb-2 flex items-center gap-2">
                 <div className="flex flex-1 items-center gap-1.5 rounded-full px-2 py-1.5" style={{ border: `1px solid ${C.line}` }}><Search size={13} style={{ color: C.faint }} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar conversación…" className="w-full outline-none t11" style={{ color: C.ink, backgroundColor: "transparent" }} /></div>
-                <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>{[["activos", "Activos"], ["todos", "Todos"]].map(([k, l]) => <button key={k} onClick={() => setFiltro(k)} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ backgroundColor: filtro === k ? "#fff" : "transparent", color: filtro === k ? C.indigo : C.sub }}>{l}</button>)}</div>
+                <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>{[["activos", "Activos"], ["todos", "Todos"]].map(([k, l]) => <button key={k} onClick={() => setFiltro(k)} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ backgroundColor: filtro === k ? C.indigo : "transparent", color: filtro === k ? "#fff" : C.sub }}>{l}</button>)}</div>
               </div>
               {hilos.length === 0 ? <div className="rounded-xl p-6 text-center t11" style={{ color: C.faint, backgroundColor: C.page, border: `1px solid ${C.line}` }}>{q || filtro === "activos" ? "No hay conversaciones para este filtro." : "No tienes conversaciones. Inicia una nueva."}</div> : <div className="space-y-1.5">{hilos.map((h) => { const noL = hiloNoLeido(h, usuario); const last = h.mensajes[h.mensajes.length - 1]; return (
                 <button key={h.id} onClick={() => { if (h.dealId && onOpenDeal) { const d = deals.find((x) => x.id === h.dealId); if (d) { onOpenDeal(d, "mensajeria"); return; } } setSel(h.id); }} className="w-full rounded-lg p-2.5 text-left" style={{ border: `1px solid ${noL ? C.indigo : C.line}`, backgroundColor: noL ? "#F1ECFF" : "#fff" }}>
@@ -7941,7 +7951,7 @@ function PCsankey({ deals = [], execsFiltrados = [], hayFiltro, soloExec, usuari
           <label className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Medir por</label>
           <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
             {[["cantidad", "N° oportunidades"], ["monto", "Monto (MM$)"]].map(([k, l]) => (
-              <button key={k} onClick={() => setMetrica(k)} className="rounded-md px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: metrica === k ? "#fff" : "transparent", color: metrica === k ? C.indigo : C.sub }}>{l}</button>
+              <button key={k} onClick={() => setMetrica(k)} className="rounded-md px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: metrica === k ? C.indigo : "transparent", color: metrica === k ? "#fff" : C.sub }}>{l}</button>
             ))}
           </div>
         </div>
@@ -7949,7 +7959,7 @@ function PCsankey({ deals = [], execsFiltrados = [], hayFiltro, soloExec, usuari
           <label className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Desglose</label>
           <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
             {[["orig", "Originación (día)"], ["cat", "CAT (1-5)"]].map(([k, l]) => (
-              <button key={k} onClick={() => setCol2(k)} className="rounded-md px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: col2 === k ? "#fff" : "transparent", color: col2 === k ? C.indigo : C.sub }}>{l}</button>
+              <button key={k} onClick={() => setCol2(k)} className="rounded-md px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: col2 === k ? C.indigo : "transparent", color: col2 === k ? "#fff" : C.sub }}>{l}</button>
             ))}
           </div>
         </div>
@@ -8362,9 +8372,12 @@ function ClientesView({ soloExec }) {
   const [fEstado, setFEstado] = useState("todos");
   const [editar, setEditar] = useState(null); // empresa a editar, o { nuevo:true }, o null (listado)
   const [histCli, setHistCli] = useState(null); // empresa cuyo historial de búsqueda se muestra
+  const [confirmElim, setConfirmElim] = useState(null); // empresa a eliminar (ConfirmDialog §26 — nunca borrar a un clic)
+  const [bajas, setBajas] = useState(() => new Set()); // empIds dados de baja en la sesión (demo: baja local)
   if (editar) return <EmpresaEditor empresa={editar} soloExec={soloExec} onBack={() => setEditar(null)} />;
   const base = soloExec ? PC_EMPRESAS.filter((e) => e.ej === soloExec) : PC_EMPRESAS;
   const rows = base.filter((e) =>
+    !bajas.has(e.empId) &&
     (fEstado === "todos" || (fEstado === "activa" ? e.activa : !e.activa)) &&
     (!q || e.nombre.toLowerCase().includes(q.toLowerCase()) || e.rut.includes(q) || String(e.empId).includes(q) || e.ej.toLowerCase().includes(q.toLowerCase()))
   ).sort((a, b) => b.fechaSort - a.fechaSort);
@@ -8421,7 +8434,7 @@ function ClientesView({ soloExec }) {
                 <td className="px-3 py-3"><div className="flex flex-wrap gap-1" style={{ maxWidth: 240 }}>{productosDe(e.nombre).map((pid) => { const p = PRODUCTOS_CAT.find((x) => x.id === pid); return p ? <span key={pid} className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: p.bg, color: p.color }}>{p.nombre}</span> : null; })}</div></td>
                 <td className="px-3 py-3 t12" style={{ color: C.sub }}>{e.usuarios}</td>
                 <td className="whitespace-nowrap px-3 py-3 t12" style={{ color: C.sub }}>{e.ej}</td>
-                <td className="px-3 py-3"><div className="flex items-center justify-end gap-1.5"><AccBtn Icon={Search} title="Ver" onClick={() => setEditar(e)} /><AccBtn Icon={Pencil} title="Editar" onClick={() => setEditar(e)} /><AccBtn Icon={Trash2} color="#dc2626" title="Eliminar" /></div></td>
+                <td className="px-3 py-3"><div className="flex items-center justify-end gap-1.5"><AccBtn Icon={Search} title="Ver" onClick={() => setEditar(e)} /><AccBtn Icon={Pencil} title="Editar" onClick={() => setEditar(e)} /><AccBtn Icon={Trash2} color="#dc2626" title="Eliminar" onClick={() => setConfirmElim(e)} /></div></td>
               </tr>
             ))}
             {rows.length === 0 && <tr><td colSpan={cols.length} className="px-3 py-8 text-center t11" style={{ color: C.faint }}>Sin empresas para el filtro.</td></tr>}
@@ -8456,6 +8469,11 @@ function ClientesView({ soloExec }) {
           </div>
         </>
       ); })()}
+      <ConfirmDialog abierto={!!confirmElim} titulo="¿Eliminar esta empresa?"
+        descripcion={confirmElim ? `${confirmElim.nombre} (${confirmElim.rut}) saldrá del listado y sus usuarios pierden acceso a los productos.` : ""}
+        etiquetaConfirmar="Eliminar empresa"
+        onConfirmar={() => { setBajas((s) => new Set([...s, confirmElim.empId])); registrarAuditoria({ usuario: soloExec || "Super Administrador (ve todo)", modulo: "Empresa", accion: "Eliminar", glosa: `Eliminó la empresa ${confirmElim.nombre}`, exito: true, empresaId: String(confirmElim.empId || "") }); setConfirmElim(null); }}
+        onCancelar={() => setConfirmElim(null)} />
     </div>
   );
 }
@@ -8529,8 +8547,9 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
     { id: 1998249, nombre: "Confirming", desc: "Portal Proveedores", estado: "Habilitado", codigo: 3 },
     { id: 1998250, nombre: "Crédito directo", desc: "Portal Administración", estado: "Deshabilitado", codigo: 5 },
   ];
-  const uDisp = Array.from({ length: 6 }, (_, i) => ({ id: "ud" + i, nombre: ["Mauricio Thibaut", "Camila Soto", "Diego Rojas", "Paula Vega", "Andrés Muñoz", "Valentina Díaz"][i], rut: "1" + (2345670 + i * 137) }));
-  const uAgr = Array.from({ length: 5 }, (_, i) => ({ id: "ua" + i, nombre: ["Carla Rivas", "Raúl López", "José Torres", "Marta Silva", "Nicolás Bravo"][i], rut: "9" + (8765430 + i * 211) }));
+  const [uDisp, setUDisp] = useState(() => Array.from({ length: 6 }, (_, i) => ({ id: "ud" + i, nombre: ["Mauricio Thibaut", "Camila Soto", "Diego Rojas", "Paula Vega", "Andrés Muñoz", "Valentina Díaz"][i], rut: "1" + (2345670 + i * 137) })));
+  const [uAgr, setUAgr] = useState(() => Array.from({ length: 5 }, (_, i) => ({ id: "ua" + i, nombre: ["Carla Rivas", "Raúl López", "José Torres", "Marta Silva", "Nicolás Bravo"][i], rut: "9" + (8765430 + i * 211) })));
+  const [confirmQuitarU, setConfirmQuitarU] = useState(null); // usuario a quitar de la empresa (ConfirmDialog §26)
   return (
     <div className="space-y-4">
       {/* Header local */}
@@ -8739,7 +8758,7 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
                 {uDisp.map((u) => (
                   <div key={u.id} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ border: `1px solid ${C.line}` }}>
                     <div><div className="t13 font-medium" style={{ color: C.ink }}>{u.nombre}</div><div className="t10" style={{ color: C.faint }}>{u.rut}</div></div>
-                    <button className="rounded-lg px-4 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Agregar</button>
+                    <button onClick={() => { setUDisp((p) => p.filter((x) => x.id !== u.id)); setUAgr((p) => [...p, u]); }} className="rounded-lg px-4 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Agregar</button>
                   </div>
                 ))}
               </div>
@@ -8753,7 +8772,7 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
                     <div className="flex-1 t12" style={{ color: C.sub }}>{u.rut}</div>
                     <div className="flex items-center gap-1.5">
                       <button className="rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Roles</button>
-                      <button className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ border: "1px solid #fecaca", color: "#dc2626", backgroundColor: "#fff" }}><Trash2 size={14} /></button>
+                      <button onClick={() => setConfirmQuitarU(u)} title="Quitar de la empresa" className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ border: "1px solid #fecaca", color: "#dc2626", backgroundColor: "#fff" }}><Trash2 size={14} /></button>
                     </div>
                   </div>
                 ))}
@@ -8817,11 +8836,16 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
           </div>
         </div>
       )}
+      <ConfirmDialog abierto={!!confirmQuitarU} titulo="¿Quitar este usuario de la empresa?"
+        descripcion={confirmQuitarU ? `${confirmQuitarU.nombre} perderá el acceso a los productos de esta empresa. Volverá al listado de usuarios disponibles.` : ""}
+        etiquetaConfirmar="Quitar usuario"
+        onConfirmar={() => { setUAgr((p) => p.filter((x) => x.id !== confirmQuitarU.id)); setUDisp((p) => [...p, confirmQuitarU]); registrarAuditoria({ usuario: soloExec || "Super Administrador (ve todo)", modulo: "Empresa", accion: "Quitar usuario", glosa: `Quitó a ${confirmQuitarU.nombre} de ${empresa && empresa.nombre ? empresa.nombre : "la empresa"}`, exito: true }); setConfirmQuitarU(null); }}
+        onCancelar={() => setConfirmQuitarU(null)} />
     </div>
   );
 }
 // ============================================================
-// CONFIGURACIÓN — menú de administración. Incluye la Auditoría del sistema (log de todas las acciones).
+// CONFIGURACIÓN — menú de administración. Incluye la Auditoría del sistema (log de todas lasacciones).
 // ============================================================
 const CFG_SECCIONES = [
   { k: "auditoria", label: "Auditoría", Icon: Eye },
@@ -10653,7 +10677,7 @@ function OperacionesView({ deals, onOpen, soloExec }) {
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex rounded-lg p-0.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F3F4F6" }}>
           {[["operaciones", "Operaciones"], ["facturas", "Apertura por factura"]].map(([k, l]) => (
-            <button key={k} onClick={() => setVista(k)} className="rounded-md px-3 py-1 t12 font-semibold" style={{ backgroundColor: vista === k ? "#fff" : "transparent", color: vista === k ? C.indigo : C.sub, boxShadow: vista === k ? "0 1px 2px rgba(0,0,0,.08)" : "none" }}>{l}</button>
+            <button key={k} onClick={() => setVista(k)} className="rounded-md px-3 py-1 t12 font-semibold" style={{ backgroundColor: vista === k ? C.indigo : "transparent", color: vista === k ? "#fff" : C.sub, boxShadow: vista === k ? "0 1px 2px rgba(0,0,0,.08)" : "none" }}>{l}</button>
           ))}
         </div>
         <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
@@ -11524,9 +11548,74 @@ function ReportesView({ deals, onOpen, soloExec }) {
     </div>
   );
 }
+// ---- Command palette Ctrl+K (Datamart spec §38): oportunidades, clientes y vistas desde el teclado ----
+function CommandK({ abierto, onCerrar, deals, dealVisible, irA, onAbrirDeal }) {
+  const [q, setQ] = useState("");
+  const [idx, setIdx] = useState(0);
+  const inputRef = useRef(null);
+  useEffect(() => { if (abierto) { setQ(""); setIdx(0); setTimeout(() => inputRef.current && inputRef.current.focus(), 0); } }, [abierto]);
+  useEffect(() => { setIdx(0); }, [q]);
+  if (!abierto) return null;
+  const ql = q.trim().toLowerCase();
+  const ops = ql ? deals.filter(dealVisible).filter((d) => (d.cliente || "").toLowerCase().includes(ql) || String(d.id).toLowerCase().includes(ql)).slice(0, 5) : [];
+  const clis = ql ? PC_CLIENTES.filter((c) => c.nombre.toLowerCase().includes(ql) || (c.rut || "").includes(q.trim())).slice(0, 4) : [];
+  const VISTAS = [["pipeline", "Pipeline"], ["tareas", "Tareas"], ["clientes", "Clientes"], ["panel", "Panel clientes"], ["operaciones", "Operaciones"], ["lineas", "Líneas"], ["otorgamientos", "Otorgamientos"], ["config", "Configuración"]];
+  const items = [
+    ...ops.map((d) => ({ tipo: "Oportunidades", label: `${d.id} · ${d.cliente}`, extra: stageById(d.stage) ? stageById(d.stage).name : d.stage, run: () => { onAbrirDeal(d); onCerrar(); } })),
+    ...clis.map((c) => ({ tipo: "Clientes", label: c.nombre, extra: c.rut, run: () => { irA("clientes", "Clientes"); onCerrar(); } })),
+    ...VISTAS.filter(([, l]) => !ql || l.toLowerCase().includes(ql)).map(([id, l]) => ({ tipo: "Ir a", label: l, extra: "", run: () => { irA(id, l); onCerrar(); } })),
+  ];
+  let lastTipo = null;
+  return (
+    <div className="fixed inset-0 flex items-start justify-center ovl" style={{ zIndex: 80, paddingTop: "12vh" }} onClick={onCerrar}>
+      <div onClick={(e) => e.stopPropagation()} className="w-full overflow-hidden bg-white" style={{ maxWidth: 460, borderRadius: 14, boxShadow: "0 20px 60px rgba(0,0,0,0.18)", border: `1px solid ${C.line}` }}>
+        <div className="flex items-center gap-2.5 px-4 py-3" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <Search size={16} style={{ color: C.faint }} />
+          <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "ArrowDown") { e.preventDefault(); setIdx((i) => Math.min(i + 1, items.length - 1)); } else if (e.key === "ArrowUp") { e.preventDefault(); setIdx((i) => Math.max(i - 1, 0)); } else if (e.key === "Enter" && items[idx]) { items[idx].run(); } }}
+            placeholder="Buscar oportunidad, cliente o vista…" className="flex-1 bg-transparent t13 outline-none" style={{ color: C.ink }} />
+          <span className="t9" style={{ color: C.faint, border: `1px solid ${C.line}`, borderRadius: 6, padding: "2px 6px", fontFamily: "ui-monospace,monospace" }}>ESC</span>
+        </div>
+        <div className="overflow-y-auto p-1.5" style={{ maxHeight: 300 }}>
+          {items.length === 0 && <div className="px-3 py-6 text-center t11" style={{ color: C.faint }}>Sin resultados para «{q}»</div>}
+          {items.map((it, i) => { const showTipo = it.tipo !== lastTipo; lastTipo = it.tipo; return (
+            <Fragment key={it.tipo + it.label + i}>
+              {showTipo && <div className="px-2.5 pb-1 pt-2 t9 font-medium" style={{ color: C.faint }}>{it.tipo}</div>}
+              <button onClick={it.run} onMouseEnter={() => setIdx(i)} className="flex w-full items-center gap-2.5 px-2.5 py-2 text-left t12" style={{ borderRadius: 8, backgroundColor: i === idx ? C.lilac : "transparent", color: C.ink }}>
+                <span className="flex-1 truncate font-medium">{it.label}</span>
+                {it.extra && <span className="t10" style={{ color: i === idx ? C.indigo : C.faint }}>{it.extra}</span>}
+              </button>
+            </Fragment>
+          ); })}
+        </div>
+        <div className="flex items-center px-4 py-2 t9" style={{ gap: 14, backgroundColor: "#FAF9FB", borderTop: `1px solid ${C.line}`, color: C.faint }}>
+          <span><b style={{ color: C.sub }}>↑↓</b> navegar</span><span><b style={{ color: C.sub }}>↵</b> abrir</span><span><b style={{ color: C.sub }}>esc</b> cerrar</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---- Login (Datamart spec Auth): formulario a la izquierda + panel gradiente a la derecha. Portada del demo ----
 function LoginScreen({ usuarioInicial, onIngresar }) {
   const [u, setU] = useState(usuarioInicial || "CR");
+  const [paso, setPaso] = useState("cred"); // "cred" → "otp" (2FA §44) · "ms-conectando" → "ms-cuentas" (SSO Entra ID)
+  const [clave, setClave] = useState("demo·factoring"); // credencial demo (no se valida)
+  const [org, setOrg] = useState(""); // organización requerida ANTES del botón Microsoft
+  const ORGS = ["Factoring Security", "BICE Corporativo", "Datamart"];
+  const OTP_DEMO = ["4", "8", "1", "9", "2", "7"]; // código demo determinista, precargado
+  // Cuentas del tenant Entra ID de la organización (mock del App Service Authentication /.auth/login/aad)
+  const CUENTAS_MS = [
+    { key: "CR", nombre: "Carla Rivas", mail: "carla.rivas@factoringsecurity.cl" },
+    { key: "JG", nombre: "Sofía Herrera", mail: "sofia.herrera@factoringsecurity.cl" },
+    { key: "ADMIN", nombre: "Super Administrador", mail: "admin@factoringsecurity.cl" },
+  ];
+  const MsLogo = ({ size = 15 }) => (
+    <svg width={size} height={size} viewBox="0 0 21 21" aria-hidden="true">
+      <rect x="1" y="1" width="9" height="9" fill="#F25022" /><rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00A4EF" /><rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+    </svg>
+  );
   return (
     <div className="flex min-h-screen w-full bg-white" style={{ fontFamily: "'Geist', ui-sans-serif, system-ui, sans-serif", color: C.ink }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');`}</style>
@@ -11537,14 +11626,73 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
           <span style={{ fontSize: 16, fontWeight: 600, color: C.navy }}>NEX Factoring</span>
         </div>
         <div className="w-full">
-          <div style={{ fontSize: 48, fontWeight: 700, lineHeight: 1.1, color: C.navy }}>Bienvenido</div>
-          <div className="mt-2" style={{ fontSize: 14, color: C.sub }}>Ingresa a la plataforma comercial de factoring.</div>
-          <label className="mt-8 block" style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Usuario</label>
-          <select value={u} onChange={(e) => setU(e.target.value)} className="mt-1.5 w-full px-3" style={{ height: 40, border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, color: C.ink, backgroundColor: "#fff", outline: "none" }}>
-            {Object.entries(USERS).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
-          </select>
-          <button onClick={() => onIngresar(u)} className="mt-6 w-full py-2.5 text-white" style={{ background: "linear-gradient(to right, #EE2EFF, #FF814B)", borderRadius: 9999, fontSize: 14, fontWeight: 600, border: "none" }}>Ingresar</button>
-          <div className="mt-4 text-center"><span style={{ fontSize: 13, fontWeight: 500, color: C.indigo, cursor: "pointer" }}>¿Problemas para ingresar? Contacta a soporte</span></div>
+          {paso === "cred" ? (<>
+            <div style={{ fontSize: 48, fontWeight: 700, lineHeight: 1.1, color: C.navy }}>Bienvenido</div>
+            <div className="mt-2" style={{ fontSize: 14, color: C.sub }}>Ingresa a la plataforma comercial de factoring.</div>
+            <label className="mt-6 block" style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Usuario</label>
+            <select value={u} onChange={(e) => setU(e.target.value)} className="mt-1.5 w-full px-3" style={{ height: 40, border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, color: C.ink, backgroundColor: "#fff", outline: "none" }}>
+              {Object.entries(USERS).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
+            </select>
+            <label className="mt-3 block" style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Contraseña</label>
+            <input type="password" value={clave} onChange={(e) => setClave(e.target.value)} className="mt-1.5 w-full px-3" style={{ height: 40, border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, color: C.ink, backgroundColor: "#fff", outline: "none" }} />
+            <button onClick={() => setPaso("otp")} className="mt-5 w-full py-2.5 text-white" style={{ background: "linear-gradient(to right, #EE2EFF, #FF814B)", borderRadius: 9999, fontSize: 14, fontWeight: 600, border: "none" }}>Ingresar</button>
+            {/* SSO corporativo: Microsoft Entra ID vía Azure App Service Authentication (mock). La organización es requisito ANTES del botón. */}
+            <div className="my-5 flex items-center gap-3"><span style={{ height: 1, flex: 1, backgroundColor: C.line }} /><span style={{ fontSize: 12, color: C.faint }}>o continúa con</span><span style={{ height: 1, flex: 1, backgroundColor: C.line }} /></div>
+            <label className="block" style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Organización</label>
+            <select value={org} onChange={(e) => setOrg(e.target.value)} className="mt-1.5 w-full px-3" style={{ height: 40, border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, color: org ? C.ink : C.faint, backgroundColor: "#fff", outline: "none" }}>
+              <option value="">Selecciona tu organización…</option>
+              {ORGS.map((o) => <option key={o} value={o} style={{ color: C.ink }}>{o}</option>)}
+            </select>
+            <button disabled={!org} onClick={() => { setPaso("ms-conectando"); setTimeout(() => setPaso("ms-cuentas"), 900); }}
+              title={org ? "Autenticación federada con Microsoft Entra ID" : "Selecciona tu organización para continuar"}
+              className="mt-3 flex w-full items-center justify-center gap-2.5 py-2.5 disabled:cursor-not-allowed disabled:opacity-45"
+              style={{ backgroundColor: "#fff", border: `1.5px solid ${C.line}`, borderRadius: 9999, fontSize: 14, fontWeight: 500, color: C.ink }}>
+              <MsLogo /> Iniciar sesión con Microsoft
+            </button>
+            <div className="mt-4 text-center"><span style={{ fontSize: 13, fontWeight: 500, color: C.indigo, cursor: "pointer" }}>¿Problemas para ingresar? Contacta a soporte</span></div>
+          </>) : paso === "ms-conectando" ? (<>
+            <div className="flex flex-col items-center text-center" style={{ paddingTop: 40, paddingBottom: 40 }}>
+              <MsLogo size={34} />
+              <div className="mt-5" style={{ fontSize: 20, fontWeight: 700, color: C.navy }}>Conectando con Microsoft Entra ID…</div>
+              <div className="mt-1.5" style={{ fontSize: 13, color: C.sub }}>Azure App Service Authentication · {org}</div>
+              <svg viewBox="0 0 24 24" className="mt-6" style={{ width: 22, height: 22, animation: "dm-spin .7s linear infinite" }}>
+                <circle cx="12" cy="12" r="9" fill="none" stroke="#E5E7EB" strokeWidth="3" />
+                <path d="M12 3a9 9 0 0 1 9 9" fill="none" stroke="#703EFF" strokeWidth="3" strokeLinecap="round" />
+              </svg>
+            </div>
+            <style>{`@keyframes dm-spin{to{transform:rotate(360deg)}}`}</style>
+          </>) : paso === "ms-cuentas" ? (<>
+            <div className="flex items-center gap-2.5"><MsLogo size={20} /><span style={{ fontSize: 15, fontWeight: 600, color: "#5E5E5E" }}>Microsoft</span></div>
+            <div className="mt-5" style={{ fontSize: 22, fontWeight: 700, color: C.ink }}>Elige una cuenta</div>
+            <div className="mt-1" style={{ fontSize: 13, color: C.sub }}>para continuar en <b style={{ color: C.ink }}>{org || "Factoring Security"}</b> · NEX Factoring</div>
+            <div className="mt-5 flex flex-col" style={{ border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden" }}>
+              {CUENTAS_MS.map((c, i) => (
+                <button key={c.key} onClick={() => onIngresar(c.key)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-stone-50" style={{ borderTop: i ? `1px solid ${C.line}` : "none" }}>
+                  <span className="flex items-center justify-center text-white" style={{ width: 34, height: 34, borderRadius: 9999, backgroundColor: "#0078D4", fontSize: 13, fontWeight: 600, flexShrink: 0 }}>{c.nombre.split(" ").map((p) => p[0]).slice(0, 2).join("")}</span>
+                  <span className="min-w-0"><span className="block truncate" style={{ fontSize: 14, fontWeight: 500, color: C.ink }}>{c.nombre}</span><span className="block truncate" style={{ fontSize: 12, color: C.sub }}>{c.mail}</span></span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-4" style={{ fontSize: 12, color: C.faint }}>Autenticación federada · la verificación en dos pasos la gestiona tu organización en Entra ID.</div>
+            <button onClick={() => setPaso("cred")} className="mt-3" style={{ fontSize: 13, fontWeight: 500, color: C.sub }}>‹ Volver</button>
+          </>) : (<>
+            {/* Paso 2FA (spec §44): código precargado en el demo — basta Verificar */}
+            <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.2, color: C.navy }}>Verifica tu identidad</div>
+            <div className="mt-2" style={{ fontSize: 14, color: C.sub }}>Enviamos un código de 6 dígitos a <b style={{ color: C.ink }}>•••@nexfactoring.cl</b></div>
+            <div className="mt-8 flex items-center" style={{ gap: 8 }}>
+              {OTP_DEMO.map((d, i) => (
+                <Fragment key={i}>
+                  {i === 3 && <span style={{ width: 10, height: 1.5, backgroundColor: "#D1D5DB", flexShrink: 0 }} />}
+                  <input maxLength={1} defaultValue={d} className="text-center" style={{ width: 46, height: 52, fontSize: 20, fontWeight: 600, color: C.ink, border: `1px solid ${C.line}`, borderRadius: 10, backgroundColor: "#fff", outline: "none" }} />
+                </Fragment>
+              ))}
+            </div>
+            <button onClick={() => onIngresar(u)} className="mt-6 w-full py-2.5 text-white" style={{ background: "linear-gradient(to right, #EE2EFF, #FF814B)", borderRadius: 9999, fontSize: 14, fontWeight: 600, border: "none" }}>Verificar y entrar</button>
+            <div className="mt-4 flex items-center justify-between" style={{ fontSize: 13 }}>
+              <button onClick={() => setPaso("cred")} style={{ color: C.sub, fontWeight: 500 }}>‹ Volver</button>
+              <span style={{ color: C.sub }}>¿No lo recibiste? <span style={{ color: C.indigo, fontWeight: 500, cursor: "pointer" }}>Reenviar</span></span>
+            </div>
+          </>)}
         </div>
         <div style={{ fontSize: 11, color: C.faint }}>© 2026 Datamart · NEX Factoring — demo con datos sintéticos</div>
       </div>
@@ -11580,6 +11728,11 @@ export default function PipelineComercial() {
   const [taskFilter, setTaskFilter] = useState("todas");
   const [usuario, setUsuario] = useState(USUARIO); // usuario logueado
   const [logueado, setLogueado] = useState(false); // gate de login (portada spec Auth); clic en avatar = cerrar sesión
+  const [cmdOpen, setCmdOpen] = useState(false); // command palette Ctrl+K (spec §38)
+  useEffect(() => {
+    const h = (e) => { if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); setCmdOpen((o) => !o); } else if (e.key === "Escape") setCmdOpen(false); };
+    window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h);
+  }, []);
   const [solicOpen, setSolicOpen] = useState(false); // bandeja lateral de requerimientos de información
   const [prioOpen, setPrioOpen] = useState(false); // panel lateral de oportunidades con prioridad de curse
   const [, setNotifTick] = useState(0); // re-render al responder/leer requerimientos
@@ -12821,7 +12974,9 @@ export default function PipelineComercial() {
   const tickCron = () => { if (pausaRef.current) return; correrProceso(); evaluarPerdidas(); setCorridas((n) => n + 1); };
   const cronRef = useRef(tickCron);
   cronRef.current = tickCron;
-  useEffect(() => { const iv = setInterval(() => { if (!pausaRef.current && streamingRef.current) cronRef.current(); }, CRON_MS); return () => clearInterval(iv); }, []);
+  // El cron sigue activo mientras la simulación esté INICIADA (no solo mientras ingesta el stream): drena el
+  // acumulado del inbound y evalúa pérdidas (AECSync / oferta no aceptada) también después de que el stream termina.
+  useEffect(() => { const iv = setInterval(() => { if (!pausaRef.current && (streamingRef.current || iniciadoRef.current)) cronRef.current(); }, CRON_MS); return () => clearInterval(iv); }, []);
   // Timer continuo de transiciones del pipeline (independiente del cron horario).
   const avanzarRef = useRef(avanzarPipeline);
   avanzarRef.current = avanzarPipeline;
@@ -13242,11 +13397,14 @@ export default function PipelineComercial() {
             <button onClick={() => irA("lineas", "Líneas")} style={{ color: vistaApp === "lineas" ? C.indigo : C.sub, fontWeight: vistaApp === "lineas" ? 600 : 400 }}>Líneas</button>
             <button onClick={() => irA("otorgamientos", "Otorgamientos")} className="inline-flex items-center gap-1.5" style={{ color: vistaApp === "otorgamientos" ? C.indigo : C.sub, fontWeight: vistaApp === "otorgamientos" ? 600 : 400 }}>
               Otorgamientos
-              {otorgPendientes > 0 && <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#7c3aed" }}>{otorgPendientes}</span>}
+              {otorgPendientes > 0 && <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#7C3AED" }}>{otorgPendientes}</span>}
             </button>
           </nav>
         </div>
         <div className="flex items-center gap-3">
+          <button onClick={() => setCmdOpen(true)} title="Buscar (Ctrl+K)" className="flex items-center gap-2 rounded-full px-3 py-1.5 t11" style={{ border: `1px solid ${C.line}`, color: C.faint, backgroundColor: "#fff" }}>
+            <Search size={13} /> Buscar… <span className="t9" style={{ fontFamily: "ui-monospace,monospace", border: `1px solid ${C.line}`, borderRadius: 5, padding: "0 4px" }}>Ctrl K</span>
+          </button>
           <button onClick={() => irA("config", "Configuración")} title="Configuración" className="flex h-9 w-9 items-center justify-center rounded-lg hover:bg-stone-50" style={{ color: vistaApp === "config" ? C.indigo : C.sub, backgroundColor: vistaApp === "config" ? C.lilac : "transparent" }}>
             <Settings size={18} />
           </button>
@@ -13574,7 +13732,8 @@ export default function PipelineComercial() {
             );
           })()}
 
-          {showTasks ? (
+          {/* Panel Mis Tareas: solo en vista kanban (en Tabla se pidió quitarlo) */}
+          {vista === "kanban" && (showTasks ? (
             <div className="flex w-80 shrink-0 flex-col rounded-xl p-3" style={{ backgroundColor: C.taskBg }}>
               <div className="flex items-center justify-between">
                 <span className="t13 font-semibold" style={{ color: C.ink }}>{soloExec ? `Mis Tareas · ${soloExec}` : (JEFE_A_EXECS[usuario] ? "Tareas · Mi grupo comercial" : "Tareas · Todos los ejecutivos")}</span>
@@ -13648,7 +13807,7 @@ export default function PipelineComercial() {
               <span className="flex h-5 minw5 items-center justify-center rounded-full px-1.5 t10 font-semibold text-white" style={{ backgroundColor: C.green }}>{tasks.length}</span>
               <span className="t11 font-semibold" style={{ color: C.sub, writingMode: "vertical-rl" }}>Mis Tareas</span>
             </button>
-          )}
+          ))}
         </div>
         </>)}
       </main>
@@ -13667,6 +13826,7 @@ export default function PipelineComercial() {
       {prioOpen && <PrioridadesPanel items={deals.filter(dealVisible).filter((d) => tienePrioridadCurse(d.id))} onClose={() => setPrioOpen(false)} onOpen={(d) => { setSelected(d); setPrioOpen(false); }} />}
       {comparativoModal && <ComparativoModal deals={deals} onClose={() => setComparativoModal(false)} />}
       {benchmarkModal && <BenchmarkDeudoresModal deals={deals} onClose={() => setBenchmarkModal(false)} />}
+      <CommandK abierto={cmdOpen} onCerrar={() => setCmdOpen(false)} deals={deals} dealVisible={dealVisible} irA={irA} onAbrirDeal={(d) => setSelected(d)} />
     </div>
   );
 }
