@@ -3,7 +3,7 @@ import {
   Search, Filter, Download, Table2, Bell, ChevronRight, ChevronDown,
   ChevronUp, ChevronLeft, X, Check, Calendar, Star, ArrowUpRight, ArrowDownRight,
   CircleDot, Sparkles, User, MessageSquare, Plus, Pencil, Zap, Clock,
-  Play, Pause, RotateCcw, Radio, ArrowRight, AlertTriangle, Calculator, Eye, EyeOff, BarChart2, Trash2, Target, ShieldCheck,
+  Play, Pause, RotateCcw, Radio, ArrowRight, AlertTriangle, Calculator, Eye, EyeOff, BarChart2, Trash2, Target, ShieldCheck, Settings,
 } from "lucide-react";
 import { ComposedChart, Bar, Line, XAxis, YAxis, ReferenceLine, ResponsiveContainer, CartesianGrid, Tooltip, Cell } from "recharts";
 import { sankey as d3sankey, sankeyLinkHorizontal, sankeyLeft } from "d3-sankey";
@@ -14,16 +14,17 @@ import { sankey as d3sankey, sankeyLinkHorizontal, sankeyLeft } from "d3-sankey"
    Prototipo interactivo con datos de ejemplo. Cliente: BICE Factoring.
    ============================================================ */
 
-// ---- Paleta de marca ----
+// ---- Paleta de marca (Datamart UI: purple #703EFF, navy #230C65, neutrales fríos) ----
 const C = {
-  page: "#FAF8F3", ink: "#1c1917", sub: "#78716c", faint: "#a8a29e", line: "#ece8e1",
-  indigo: "#4f46e5", green: "#16a34a", greenBg: "#ecfdf5", amber: "#d97706", amberBg: "#fffbeb",
-  red: "#dc2626", redBg: "#fef2f2", taskBg: "#eafaf1", ruleBg: "#f3f1ec",
+  page: "#FFFFFF", ink: "#050015", sub: "#6B7280", faint: "#9CA3AF", line: "#E5E7EB",
+  indigo: "#703EFF", green: "#16a34a", greenBg: "#F0FDF4", amber: "#C2410C", amberBg: "#FFF7ED",
+  red: "#dc2626", redBg: "#fef2f2", taskBg: "#F0FDF4", ruleBg: "#FAF9FB",
+  navy: "#230C65", lilac: "#F1ECFF",
 };
 
 // ---- Etapas del pipeline (Inbound es aparte: son reglas, no negocios) ----
 const STAGES = [
-  { id: "prospeccion", name: "Prospección", dot: "#a8a29e" },
+  { id: "prospeccion", name: "Prospección", dot: "#9CA3AF" },
   { id: "oferta", name: "Oferta y Negociación", dot: C.amber },
   { id: "aceptadas", name: "Aceptada", dot: C.green },
   { id: "cesion", name: "Cesión", dot: C.green },
@@ -34,6 +35,26 @@ const STAGES = [
 const STAGE_ORDER = STAGES.map((s) => s.id);
 const stageById = (id) => STAGES.find((s) => s.id === id);
 const PAGE_SIZE = 8; // tarjetas por página en cada etapa (optimizado para 1800px)
+
+// ---- Diálogo de confirmación destructiva (Datamart spec §26): nunca borrar a un clic ----
+function ConfirmDialog({ abierto, titulo, descripcion, etiquetaConfirmar, onConfirmar, onCancelar }) {
+  if (!abierto) return null;
+  return (
+    <div className="fixed inset-0 flex items-center justify-center ovl p-6" style={{ zIndex: 70 }} onClick={onCancelar}>
+      <div onClick={(e) => e.stopPropagation()} className="w-full bg-white p-8 text-center" style={{ maxWidth: 480, borderRadius: 20, boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }}>
+        <div className="mx-auto mb-5 flex items-center justify-center rounded-full" style={{ width: 52, height: 52, border: "2px solid #DC2626" }}>
+          <X size={24} style={{ color: "#DC2626" }} />
+        </div>
+        <div className="font-bold" style={{ fontSize: 22, color: C.ink }}>{titulo}</div>
+        <div className="mt-2 t13" style={{ color: C.sub }}>{descripcion}</div>
+        <div className="mt-6 flex justify-end gap-2">
+          <button onClick={onCancelar} className="rounded-full px-6 py-2 t13 font-medium" style={{ border: `1.5px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>Volver</button>
+          <button onClick={onConfirmar} className="rounded-full px-6 py-2 t13 font-semibold text-white" style={{ backgroundColor: "#EF4444" }}>{etiquetaConfirmar || "Eliminar"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Sub-estados por etapa (con su icono-ojo como filtro on/off).
 const UMBRAL_DEMORA_MS = 8000; // >3 horas de simulación sin avanzar -> "Demorado"
@@ -66,17 +87,17 @@ function subEstadoDe(d) {
 
 // ---- Colores de etiquetas ----
 const SECTOR_COLORS = {
-  "Buenos Deudores - Minería": { bg: "#ecfdf5", fg: "#15803d" },
-  "Buenos Deudores - Retail": { bg: "#eff6ff", fg: "#1d4ed8" },
-  "Buenos Deudores - Industriales": { bg: "#f5f3ff", fg: "#6d28d9" },
-  Retail: { bg: "#f5f5f4", fg: "#57534e" },
+  "Buenos Deudores - Minería": { bg: "#F0FDF4", fg: "#16A34A" },
+  "Buenos Deudores - Retail": { bg: "#eff6ff", fg: "#2563EB" },
+  "Buenos Deudores - Industriales": { bg: "#f5f3ff", fg: "#7C3AED" },
+  Retail: { bg: "#F3F4F6", fg: "#4B5563" },
 };
 const TAG_COLORS = {
-  Factoring: { bg: "#eef2ff", fg: "#4338ca" },
-  Confirming: { bg: "#eff6ff", fg: "#1d4ed8" },
+  Factoring: { bg: "#F1ECFF", fg: "#5B21D6" },
+  Confirming: { bg: "#eff6ff", fg: "#2563EB" },
   Enrolamiento: { bg: "#f0fdfa", fg: "#0f766e" },
-  "Conexión SII": { bg: "#fef3c7", fg: "#b45309" },
-  "Nuevo negocio": { bg: "#ecfdf5", fg: "#15803d" },
+  "Conexión SII": { bg: "#FFF7ED", fg: "#C2410C" },
+  "Nuevo negocio": { bg: "#F0FDF4", fg: "#16A34A" },
 };
 
 // ---- Ejecutivos, jefaturas y calidad de deudor (dimensiones de filtros) ----
@@ -157,8 +178,8 @@ let CFG_TRAMOS = [
 ];
 const AREA_LBL = { riesgo: "Riesgo", comercial: "Comercial", operaciones: "Operaciones" };
 const GRAV_LBL = { leve: "Leve", moderado: "Moderado", grave: "Grave", critico: "Crítico" };
-const GRAV_COLOR = { leve: { bg: "#ecfdf5", fg: "#047857" }, moderado: { bg: "#fffbeb", fg: "#b45309" }, grave: { bg: "#fff7ed", fg: "#c2410c" }, critico: { bg: "#fef2f2", fg: "#b91c1c" } };
-const AREA_COLOR = { riesgo: { bg: "#fef2f2", bg2: "#fee2e2", fg: "#b91c1c" }, comercial: { bg: "#eef2ff", bg2: "#e0e7ff", fg: "#4338ca" }, operaciones: { bg: "#f0fdfa", bg2: "#ccfbf1", fg: "#0f766e" } };
+const GRAV_COLOR = { leve: { bg: "#F0FDF4", fg: "#16A34A" }, moderado: { bg: "#FFF7ED", fg: "#C2410C" }, grave: { bg: "#fff7ed", fg: "#c2410c" }, critico: { bg: "#fef2f2", fg: "#DC2626" } };
+const AREA_COLOR = { riesgo: { bg: "#fef2f2", bg2: "#FECACA", fg: "#DC2626" }, comercial: { bg: "#F1ECFF", bg2: "#E4DBFF", fg: "#5B21D6" }, operaciones: { bg: "#f0fdfa", bg2: "#ccfbf1", fg: "#0f766e" } };
 // Atribución por usuario (área → nivel) y tipo (pipeline = comercial dueña; aprobador = mesa Riesgo/Operaciones).
 let ATRIB_USUARIO = {
   // Ejecutivos (pipeline): originan y gestionan operaciones, NO aprueban excepciones — sin atribución.
@@ -195,9 +216,9 @@ const tipoActivo = (cod) => { const t = TIPOS_DESVIO.find((x) => x.codigo === co
 // Cada rango define un tope (hasta) y una disposición: aprobada / sujeto (a aprobación) / rechazada.
 // Los rangos "sujeto" requieren un nivel de atribución; los aprobadores se cruzan por área+nivel.
 const DISP_META = {
-  aprobada:  { l: "Aprobada", bg: "#ecfdf5", fg: "#047857" },
-  sujeto:    { l: "Sujeto a aprobación", bg: "#f5f5f4", fg: "#57534e" },
-  rechazada: { l: "Rechazada", bg: "#fef2f2", fg: "#b91c1c" },
+  aprobada:  { l: "Aprobada", bg: "#F0FDF4", fg: "#16A34A" },
+  sujeto:    { l: "Sujeto a aprobación", bg: "#F3F4F6", fg: "#4B5563" },
+  rechazada: { l: "Rechazada", bg: "#fef2f2", fg: "#DC2626" },
 };
 const UNIDADES_CRIT = ["$", "MM", "%", "pp", "días", "meses"];
 // Operadores de comparación para cada rango del criterio (se evalúan en orden; primer match gana).
@@ -320,9 +341,9 @@ const INBOUND_RULES = [
     periodicidad: "Evento", nueva: "Cada ocurrencia", canales: ["Auto", "Facturas", "Ejecutivo"], accion: "Pipeline Factoring", activa: true },
 ];
 const RULE_CANAL_COLORS = {
-  Auto: { bg: "#eef2ff", fg: "#4338ca" }, Facturas: { bg: "#eef2ff", fg: "#4338ca" },
-  Empresas: { bg: "#eef2ff", fg: "#4338ca" }, "AI Agent": { bg: "#f0fdfa", fg: "#0f766e" },
-  Ejecutivo: { bg: "#eff6ff", fg: "#1d4ed8" },
+  Auto: { bg: "#F1ECFF", fg: "#5B21D6" }, Facturas: { bg: "#F1ECFF", fg: "#5B21D6" },
+  Empresas: { bg: "#F1ECFF", fg: "#5B21D6" }, "AI Agent": { bg: "#f0fdfa", fg: "#0f766e" },
+  Ejecutivo: { bg: "#eff6ff", fg: "#2563EB" },
 };
 
 // ============================================================
@@ -567,16 +588,16 @@ function catDeMix(nCat1, nCat4) {
 // CAT de la OPORTUNIDAD según la Nota Deudor (modelo de riesgo Security), ponderada por monto de las facturas.
 // Tramos por nota: A muy bueno (>4,6) · B normal (3,7–4,6) · C límite de compra (3,2–3,7) · D malo/sin nota (<3,2).
 const CAT_META = {
-  "CAT-1": { bg: "#ecfdf5", fg: "#047857", q: "muy buenos", desc: "Al menos 80% del monto en deudores muy buenos (Nota > 4,6)." },
-  "CAT-2": { bg: "#eff6ff", fg: "#1d4ed8", q: "mayoría muy buenos", desc: "Al menos 50% del monto en deudores muy buenos (Nota > 4,6)." },
+  "CAT-1": { bg: "#F0FDF4", fg: "#16A34A", q: "muy buenos", desc: "Al menos 80% del monto en deudores muy buenos (Nota > 4,6)." },
+  "CAT-2": { bg: "#eff6ff", fg: "#2563EB", q: "mayoría muy buenos", desc: "Al menos 50% del monto en deudores muy buenos (Nota > 4,6)." },
   "CAT-3": { bg: "#ecfeff", fg: "#0e7490", q: "buenos/normales", desc: "Al menos 80% del monto en deudores buenos o normales (Nota ≥ 3,7)." },
   "CAT-4": { bg: "#fff7ed", fg: "#c2410c", q: "límite de compra", desc: "Peso relevante de deudores en el límite inferior de compra (Nota 3,2–3,7)." },
-  "CAT-5": { bg: "#fef2f2", fg: "#b91c1c", q: "deudor malo / sin nota", desc: "La operación incorpora facturas de deudores con Nota < 3,2 o sin nota por sobre la tolerancia del 5% del monto → gatilla otorgamiento. El subtipo 5A–5D indica la CAT del resto de la operación." },
+  "CAT-5": { bg: "#fef2f2", fg: "#DC2626", q: "deudor malo / sin nota", desc: "La operación incorpora facturas de deudores con Nota < 3,2 o sin nota por sobre la tolerancia del 5% del monto → gatilla otorgamiento. El subtipo 5A–5D indica la CAT del resto de la operación." },
 };
 const catMeta = (c) => CAT_META[c] || CAT_META[(c || "").slice(0, 5)] || CAT_META["CAT-1"];
 // Clasificación corta + chip de color por tipo de deudor.
 const DEUDOR_LABEL = { "Lista Blanca": "Lista Blanca", "Deudor Autorizado": "Autorizada", "Histórico BICE": "Histórico BICE", "Histórico": "Histórico", "Otro": "Otro" };
-const DEUDOR_CHIP = { "Lista Blanca": { bg: "#ecfdf5", fg: "#15803d" }, "Deudor Autorizado": { bg: "#eff6ff", fg: "#1d4ed8" }, "Histórico BICE": { bg: "#ecfeff", fg: "#0e7490" }, "Histórico": { bg: "#fff7ed", fg: "#c2410c" }, "Otro": { bg: "#f5f5f4", fg: "#57534e" } };
+const DEUDOR_CHIP = { "Lista Blanca": { bg: "#F0FDF4", fg: "#16A34A" }, "Deudor Autorizado": { bg: "#eff6ff", fg: "#2563EB" }, "Histórico BICE": { bg: "#ecfeff", fg: "#0e7490" }, "Histórico": { bg: "#fff7ed", fg: "#c2410c" }, "Otro": { bg: "#F3F4F6", fg: "#4B5563" } };
 // Tipo de deudor para MOSTRAR (chip/score): los históricos del último año NO son "Otro" — se distinguen
 // como "Histórico BICE" (ya factorizado con nosotros) o "Histórico" (con otro factor). El resto usa su lista.
 function tipoDeudorDisp(f) {
@@ -595,11 +616,11 @@ function scoreDeudor(name, tipoArg) {
   const score = Math.max(20, Math.min(99, Math.round(base - atraso * 1.7 + ((h >> 4) % 5) - 2)));
   return { tipo, atraso, score };
 }
-const scoreColor = (s) => (s >= 85 ? "#0a7d3f" : s >= 70 ? "#b45309" : "#b91c1c");
+const scoreColor = (s) => (s >= 85 ? "#0a7d3f" : s >= 70 ? "#C2410C" : "#DC2626");
 // ── NOTA DEUDOR (modelo de riesgo Security): calificación 1–5, siendo 5 el mejor pagador. Se deriva del
 // score de pago del deudor. La Nota y la verificación son POR DEUDOR (no por factura).
 const notaFromScore = (s) => Math.max(1, Math.min(5, +(1 + (s - 20) / 79 * 4).toFixed(1)));
-const NOTA_COLOR = (n) => (n >= 4 ? "#0a7d3f" : n >= 3 ? "#b45309" : "#b91c1c");
+const NOTA_COLOR = (n) => (n >= 4 ? "#0a7d3f" : n >= 3 ? "#C2410C" : "#DC2626");
 // VERIFICACIÓN por deudor: Security contacta al deudor para verificar telefónicamente que la factura existe,
 // que los bienes/servicios fueron recibidos y la fecha de pago. Para no hacerlo con todas las facturas, un
 // segundo modelo evalúa qué tan buen pagador es el deudor: si cumple todos los criterios, la operación queda
@@ -1176,7 +1197,7 @@ function candidatasDe(deal) {
 function htmlAprobacion(deal, o, dealId, cantidad) {
   const r = (k, v, c) => `<div class=row><span>${k}</span><b${c ? ` style="color:${c}"` : ""}>${v}</b></div>`;
   return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Aprobación · Factoring Security</title>
-<style>body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#f4f4f5;color:#1c1917}.wrap{max-width:460px;margin:24px auto;background:#fff;border:1px solid #e7e5e4;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08)}.hd{background:#0a7d3f;color:#fff;padding:16px}.bd{padding:16px}.row{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;color:#57534e}.row b{color:#1c1917}.lbl{margin-top:10px;font-weight:600;font-size:13px}input{width:100%;box-sizing:border-box;padding:9px;border:1px solid #e7e5e4;border-radius:8px;margin-top:4px;font-size:14px}.btn{width:100%;margin-top:14px;padding:11px;border:0;border-radius:10px;background:#0a7d3f;color:#fff;font-weight:600;font-size:14px;cursor:pointer}.muted{color:#a8a29e;font-size:11px;margin-top:8px}.ok{color:#16a34a;font-weight:700;font-size:16px}.hr{height:1px;background:#e7e5e4;margin:10px 0}</style></head>
+<style>body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#F9FAFB;color:#050015}.wrap{max-width:460px;margin:24px auto;background:#fff;border:1px solid #E5E7EB;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08)}.hd{background:#0a7d3f;color:#fff;padding:16px}.bd{padding:16px}.row{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;color:#4B5563}.row b{color:#050015}.lbl{margin-top:10px;font-weight:600;font-size:13px}input{width:100%;box-sizing:border-box;padding:9px;border:1px solid #E5E7EB;border-radius:8px;margin-top:4px;font-size:14px}.btn{width:100%;margin-top:14px;padding:11px;border:0;border-radius:10px;background:#0a7d3f;color:#fff;font-weight:600;font-size:14px;cursor:pointer}.muted{color:#9CA3AF;font-size:11px;margin-top:8px}.ok{color:#16a34a;font-weight:700;font-size:16px}.hr{height:1px;background:#E5E7EB;margin:10px 0}</style></head>
 <body><div class="wrap"><div class="hd"><div style="font-weight:700">Factoring Security</div><div style="font-size:12px;opacity:.85">Aprobación formal de la operación</div></div>
 <div class="bd" id="app">
 <div style="font-weight:600;font-size:15px">${deal.cliente}</div>
@@ -1534,7 +1555,7 @@ function simular(amountMM) {
 
 function Pill({ children, style, className = "" }) {
   return (
-    <span className={`inline-flex items-center rounded px-1.5 py-0.5 t10 font-medium ${className}`} style={style}>
+    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 t10 font-medium ${className}`} style={style}>
       {children}
     </span>
   );
@@ -1582,8 +1603,8 @@ function DealCard({ deal, onOpen, onDragStart }) {
   const [tipDeud, setTipDeud] = useState(false); // tooltip de deudores sobre el chip
   const [tipCont, setTipCont] = useState(false); // tooltip con datos de contacto en error de contactabilidad
   const [tipComp, setTipComp] = useState(false); // tooltip del competidor en oportunidades perdidas
-  const sector = SECTOR_COLORS[deal.sector] || { bg: "#f5f5f4", fg: "#57534e" };
-  const tag = TAG_COLORS[deal.tag] || { bg: "#f5f5f4", fg: "#57534e" };
+  const sector = SECTOR_COLORS[deal.sector] || { bg: "#F3F4F6", fg: "#4B5563" };
+  const tag = TAG_COLORS[deal.tag] || { bg: "#F3F4F6", fg: "#4B5563" };
   const isPerdida = deal.stage === "perdida";
   const accent = isPerdida ? C.red : deal.contactable === false ? C.red : deal.fueraAtribucion ? C.amber : deal.stage === "oferta" ? C.amber : C.green;
   return (
@@ -1633,7 +1654,7 @@ function DealCard({ deal, onOpen, onDragStart }) {
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         {deal.waPendiente && (
-          <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 t10 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca" }} title="El cliente respondió por WhatsApp y la conversación está pendiente de respuesta del ejecutivo.">
+          <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t10 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#DC2626", border: "1px solid #fecaca" }} title="El cliente respondió por WhatsApp y la conversación está pendiente de respuesta del ejecutivo.">
             <MessageSquare size={11} /> Conversación pendiente
           </span>
         )}
@@ -1641,7 +1662,7 @@ function DealCard({ deal, onOpen, onDragStart }) {
       {deal.cat && <OppTags ev={deal} />}
       {/* Estado terminal Perdida: badge con la CAUSA ESPECÍFICA (nunca el genérico "no superó reglas"). */}
       {isPerdida && (
-        <div className="mt-1.5 flex items-start gap-1 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#fef2f2", color: "#b91c1c", cursor: "help" }} title={`Origen: ${stageName(deal.etapaPerdida || "prospeccion")} · ${deal.fechaPerdida || ""}`}>
+        <div className="mt-1.5 flex items-start gap-1 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#fef2f2", color: "#DC2626", cursor: "help" }} title={`Origen: ${stageName(deal.etapaPerdida || "prospeccion")} · ${deal.fechaPerdida || ""}`}>
           <X size={10} className="mt-0.5 shrink-0" /> <span>Perdida · {causaPerdidaDeal(deal)}</span>
         </div>
       )}
@@ -1649,14 +1670,14 @@ function DealCard({ deal, onOpen, onDragStart }) {
       {["prospeccion", "oferta", "aceptadas", "otorgamiento"].includes(deal.stage) && (() => {
         const vis = visadoDeal(deal);
         if (vis.rechFirme.length || vis.excRech.length) { const tip = "No superó las reglas de otorgamiento (bloqueo firme):\n" + [...vis.rechFirme, ...vis.excRech].map((r, i) => `${i + 1}) #${r.n} ${r.nombre}`).join("\n"); return (
-          <div className="mt-1.5 flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#fef2f2", color: "#b91c1c", cursor: "help" }} title={tip}>
+          <div className="mt-1.5 flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#fef2f2", color: "#DC2626", cursor: "help" }} title={tip}>
             <X size={10} /> Perdida · Bloqueo firme: {[...vis.rechFirme, ...vis.excRech].map((r) => `${r.nombre} (#${r.n})`).join("; ")}
           </div>
         ); }
         if (!vis.exc.length && !vis.rechReev.length) return null;
         const tip = "Requiere otorgamiento — reglas con excepción/rechazo re-evaluable:\n" + [...vis.exc, ...vis.rechReev].map((e, i) => `${i + 1}) #${e.n} ${e.nombre}${e.nivel ? ` → N${e.nivel} ${AREA_LBL[e.area]}` : " (re-evaluable)"}`).join("\n");
         return (
-          <div className="mt-1.5 flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#6d28d9", cursor: "help" }} title={tip}>
+          <div className="mt-1.5 flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED", cursor: "help" }} title={tip}>
             <AlertTriangle size={10} />
             <span>Requiere otorgamiento</span>
             <span className="ml-auto flex h-4 minw5 items-center justify-center rounded-full px-1.5 t9 font-bold text-white" style={{ backgroundColor: "#7c3aed" }}>{vis.excPend.length + vis.rechReev.length}</span>
@@ -1664,8 +1685,8 @@ function DealCard({ deal, onOpen, onDragStart }) {
         );
       })()}
       {!isPerdida && (() => { const vr = verifResumenDeal(deal); return vr.pend > 0 ? (
-        <div className="mt-1.5 flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#fffbeb", color: "#b45309" }} title={`${vr.pend} de ${vr.total} factura(s) en verificación telefónica pendiente/en curso. Desaparece al completar la verificación de todas.`}>
-          <AlertTriangle size={10} /> <span>Requiere Verificación</span> <span className="ml-auto flex h-4 minw5 items-center justify-center rounded-full px-1.5 t9 font-bold text-white" style={{ backgroundColor: "#d97706", fontVariantNumeric: "tabular-nums" }}>{vr.pend}/{vr.total}</span>
+        <div className="mt-1.5 flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }} title={`${vr.pend} de ${vr.total} factura(s) en verificación telefónica pendiente/en curso. Desaparece al completar la verificación de todas.`}>
+          <AlertTriangle size={10} /> <span>Requiere Verificación</span> <span className="ml-auto flex h-4 minw5 items-center justify-center rounded-full px-1.5 t9 font-bold text-white" style={{ backgroundColor: "#C2410C", fontVariantNumeric: "tabular-nums" }}>{vr.pend}/{vr.total}</span>
         </div>
       ) : null; })()}
       <div className="mt-2 border-t pt-1.5 t10" style={{ borderColor: C.line, color: C.sub }}>
@@ -1677,7 +1698,7 @@ function DealCard({ deal, onOpen, onDragStart }) {
         </div>
       )}
       {deal.warning && ["prospeccion", "oferta"].includes(deal.stage) && (
-        <div className="mt-1.5 flex items-center gap-1 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#fffbeb", color: "#b45309" }}>
+        <div className="mt-1.5 flex items-center gap-1 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>
           <AlertTriangle size={10} /> {deal.nuevasFacturas} factura(s) nueva(s) · {fmtMM(deal.nuevasFacturasMontoMM || 0)} sin incorporar
         </div>
       )}
@@ -1698,12 +1719,12 @@ function DealCard({ deal, onOpen, onDragStart }) {
         </div>
       )}
       {deal.fueraAtribucion && (
-        <div className="mt-1.5 flex items-center gap-1 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: C.amberBg, color: "#b45309" }}>
+        <div className="mt-1.5 flex items-center gap-1 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: C.amberBg, color: "#C2410C" }}>
           <MessageSquare size={10} /> Derivado de WhatsApp · negociar tarifa
         </div>
       )}
       {!isPerdida && deal.cedidasOtro > 0 && deal.cedidasOtro < deal.facturas && (
-        <div className="mt-1.5 flex items-center gap-1 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: C.amberBg, color: "#b45309" }}>
+        <div className="mt-1.5 flex items-center gap-1 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: C.amberBg, color: "#C2410C" }}>
           <AlertTriangle size={10} /> {deal.cedidasOtro} de {deal.facturas} factura(s) cedida(s) a {deal.cedidaCompetidor}
         </div>
       )}
@@ -1750,8 +1771,8 @@ function DealCard({ deal, onOpen, onDragStart }) {
         </span>
         <div className="flex items-center gap-1">
           {deal.channel === "IA"
-            ? <Pill style={{ backgroundColor: "#f5f3ff", color: "#6d28d9" }}><Sparkles size={9} className="mr-0.5" /> IA</Pill>
-            : <Pill style={{ backgroundColor: "#f5f5f4", color: C.sub }}>Manual</Pill>}
+            ? <Pill style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}><Sparkles size={9} className="mr-0.5" /> IA</Pill>
+            : <Pill style={{ backgroundColor: "#F3F4F6", color: C.sub }}>Manual</Pill>}
           <span className="flex h-5 w-5 items-center justify-center rounded-full t9 font-semibold text-white"
             style={{ backgroundColor: deal.exec === "—" ? C.faint : C.indigo }}>{deal.exec}</span>
         </div>
@@ -1819,7 +1840,7 @@ function StageColumn({ stage, deals, onOpen, onDragStart, onDrop, serie, serieSe
       <div onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
         onDrop={(e) => { e.preventDefault(); setOver(false); onDrop(stage.id); }}
         className="flex w-full flex-col rounded-xl p-2 transition-colors"
-        style={{ backgroundColor: over ? "#f1efe9" : "transparent" }}>
+        style={{ backgroundColor: over ? "#E5E7EB" : "transparent" }}>
         <button onClick={() => setColapsado(false)} className="mb-1.5 flex w-full items-center justify-between px-1">
           <span className="flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full" style={{ backgroundColor: stage.dot }} />
@@ -1843,7 +1864,7 @@ function StageColumn({ stage, deals, onOpen, onDragStart, onDrop, serie, serieSe
                     <span className="truncate" style={{ maxWidth: "62%" }} title={f.name}>{f.name}</span>
                     <span style={{ color: C.faint }}>{f.count} · {fmtMM(f.mm)}</span>
                   </div>
-                  <div className="mt-0.5 h-2 w-full rounded-full" style={{ backgroundColor: "#f1efe9" }}>
+                  <div className="mt-0.5 h-2 w-full rounded-full" style={{ backgroundColor: "#E5E7EB" }}>
                     <div className="h-2 rounded-full" style={{ width: `${Math.max(6, (f.mm / maxMM) * 100)}%`, backgroundColor: stage.dot }} />
                   </div>
                 </div>
@@ -1865,7 +1886,7 @@ function StageColumn({ stage, deals, onOpen, onDragStart, onDrop, serie, serieSe
     <div onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
       onDrop={(e) => { e.preventDefault(); setOver(false); onDrop(stage.id); }}
       className="flex w-full flex-col rounded-xl p-2 transition-colors"
-      style={{ backgroundColor: over ? "#f1efe9" : "transparent" }}>
+      style={{ backgroundColor: over ? "#E5E7EB" : "transparent" }}>
       <div className="mb-1.5 flex items-center justify-between px-1">
         <div className="flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: stage.dot }} />
@@ -1953,13 +1974,13 @@ function StageColumn({ stage, deals, onOpen, onDragStart, onDrop, serie, serieSe
 // ============================================================
 function RuleCard({ rule, onToggle, onEdit }) {
   const accion = rule.accion.startsWith("Pipeline")
-    ? { bg: "#d1fae5", fg: "#065f46" } : { bg: "#ccfbf1", fg: "#115e59" };
+    ? { bg: "#F0FDF4", fg: "#065f46" } : { bg: "#ccfbf1", fg: "#115e59" };
   return (
     <div className="rounded-lg bg-white p-2.5" style={{ border: `1px solid ${C.line}`, borderLeft: `3px solid ${rule.activa ? C.indigo : C.faint}`, opacity: rule.activa ? 1 : 0.62 }}>
       <div className="flex items-center justify-between">
         <span className="t10 font-medium" style={{ color: C.faint }}>{rule.id}</span>
         <div className="flex items-center gap-1.5">
-          <Pill style={{ backgroundColor: "#f5f5f4", color: C.sub }}>{rule.unidad}</Pill>
+          <Pill style={{ backgroundColor: "#F3F4F6", color: C.sub }}>{rule.unidad}</Pill>
           <span className="t12 font-semibold" style={{ color: C.ink }}>{rule.monto}</span>
         </div>
       </div>
@@ -1968,7 +1989,7 @@ function RuleCard({ rule, onToggle, onEdit }) {
       <div className="mt-1.5 t10" style={{ color: C.sub }}>Criterio:</div>
       <div className="mt-1 flex flex-wrap gap-1">
         {rule.criterio.map((c) => (
-          <span key={c} className="rounded px-1.5 py-0.5 t10" style={{ backgroundColor: "#f3f1ec", color: C.sub }}>{c}</span>
+          <span key={c} className="rounded-full px-1.5 py-0.5 t10" style={{ backgroundColor: "#FAF9FB", color: C.sub }}>{c}</span>
         ))}
       </div>
       <div className="mt-2 t10" style={{ color: C.sub }}>
@@ -1978,7 +1999,7 @@ function RuleCard({ rule, onToggle, onEdit }) {
       <div className="mt-2 flex items-center justify-between border-t pt-2" style={{ borderColor: C.line }}>
         <div className="flex items-center gap-1.5">
           {rule.canales.map((c) => {
-            const cc = RULE_CANAL_COLORS[c] || { bg: "#f5f5f4", fg: C.sub };
+            const cc = RULE_CANAL_COLORS[c] || { bg: "#F3F4F6", fg: C.sub };
             return <span key={c} className="t10 font-semibold" style={{ color: cc.fg }}>{c}</span>;
           })}
         </div>
@@ -2056,17 +2077,17 @@ function InboundPanel({ rules, open, onToggleOpen, onToggleRule, onEditRule, onN
 // ============================================================
 function TaskCard({ task, onResolve, onReschedule, onOpen }) {
   const [rsOpen, setRsOpen] = useState(false); // dropdown de reagendar
-  const sector = SECTOR_COLORS[task.sector] || { bg: "#f5f5f4", fg: "#57534e" };
+  const sector = SECTOR_COLORS[task.sector] || { bg: "#F3F4F6", fg: "#4B5563" };
   return (
     <div onClick={() => onOpen && onOpen(task)} className="cursor-pointer rounded-lg bg-white p-2.5 transition-shadow hover:shadow-md" style={{ border: `1px solid ${C.line}` }}>
       <div className="flex items-center justify-between">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="t10 font-medium" style={{ color: C.faint }}>{task.code}</span>
-          <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: task.origen === "tarea" ? C.taskBg : C.greenBg, color: task.origen === "tarea" ? C.indigo : C.green }}>
+          <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: task.origen === "tarea" ? C.taskBg : C.greenBg, color: task.origen === "tarea" ? C.indigo : C.green }}>
             {task.origen === "tarea" ? <><Zap size={9} /> Tarea</> : <><ArrowUpRight size={9} /> Oportunidad</>}
           </span>
           {task.tags.map((t) => {
-            const tc = TAG_COLORS[t] || { bg: "#f5f5f4", fg: "#57534e" };
+            const tc = TAG_COLORS[t] || { bg: "#F3F4F6", fg: "#4B5563" };
             return <Pill key={t} style={{ backgroundColor: tc.bg, color: tc.fg }}>{t}</Pill>;
           })}
         </div>
@@ -2084,8 +2105,8 @@ function TaskCard({ task, onResolve, onReschedule, onOpen }) {
       {task.sector && <div className="mt-1.5"><Pill style={{ backgroundColor: sector.bg, color: sector.fg }}>{task.sector}</Pill></div>}
       {task.cat && <OppTags ev={task} />}
       {task.otorgFirme > 0
-        ? <div className="mt-1.5 inline-flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#fef2f2", color: "#b91c1c" }}><X size={10} /> Perdida · no superó reglas de otorgamiento</div>
-        : task.otorgN > 0 && <div className="mt-1.5 inline-flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#6d28d9" }}><AlertTriangle size={10} /> <span>Requiere otorgamiento</span> <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#7c3aed" }}>{task.otorgPend}</span></div>}
+        ? <div className="mt-1.5 inline-flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#fef2f2", color: "#DC2626" }}><X size={10} /> Perdida · no superó reglas de otorgamiento</div>
+        : task.otorgN > 0 && <div className="mt-1.5 inline-flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}><AlertTriangle size={10} /> <span>Requiere otorgamiento</span> <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#7c3aed" }}>{task.otorgPend}</span></div>}
       {task.tasa && (
         <div className="mt-1.5 t10" style={{ color: C.sub }}>
           Tasa {task.tasa} | Anticipo {task.anticipo} | Giro {task.giro} | Desc. {task.desc}
@@ -2174,7 +2195,7 @@ function EmailPreviewModal({ deal, template, onSend, onClose }) {
             <div className="mt-2 rounded-lg p-3 t11" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.ink, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{cuerpo}</div>
           </div>
           <div className="flex items-center justify-end gap-2 px-4 py-3" style={{ borderTop: `1px solid ${C.line}` }}>
-            <button onClick={onClose} className="rounded-md px-3 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button>
+            <button onClick={onClose} className="rounded-full px-4 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button>
             <button onClick={onSend} className="flex items-center gap-1 rounded-md px-3 py-1.5 t11 font-medium text-white" style={{ backgroundColor: C.green }}><ArrowRight size={13} /> Enviar email</button>
           </div>
         </div>
@@ -2283,17 +2304,17 @@ function nextBestAction(deal) {
   if (deal.sowTendencia === "Decreciente") sec.push("SOW a la baja: promueve una mejor tasa para recuperar participación frente a la competencia.");
   if ((deal.facturasDisponibles || []).length) sec.push(`Existen facturas de otros deudores disponibles para incluir manualmente (irán a Otorgamiento).`);
   const out = (label, detalle, color, goTab) => ({ label, detalle, color, goTab, sec });
-  if (deal.stage === "perdida") return out("Re-prospectar más adelante", deal.perdidaCesion ? `Perdida ante ${deal.cedidaCompetidor || "la competencia"}. Monitorea AECSync y vuelve a ofertar cuando el cliente emita nuevas facturas.` : "El cliente no avanzó. Re-contáctalo en una próxima ventana con una mejor propuesta.", "#b91c1c", "bitacora");
+  if (deal.stage === "perdida") return out("Re-prospectar más adelante", deal.perdidaCesion ? `Perdida ante ${deal.cedidaCompetidor || "la competencia"}. Monitorea AECSync y vuelve a ofertar cuando el cliente emita nuevas facturas.` : "El cliente no avanzó. Re-contáctalo en una próxima ventana con una mejor propuesta.", "#DC2626", "bitacora");
   if (deal.stage === "giro") return out("Seguimiento de pago (cobranza)", `Operación girada por ${fmtMM(deal.giroMM || 0)}. Monitorea el pago del deudor al vencimiento y la cobranza.`, "#16a34a", "cobranza");
-  if (noVerif) return out("Reparar el contacto", "El contacto está NO verificado / con error. Edita el teléfono o el correo y reinicia el contacto: hasta verificarlo no puedes publicar oferta ni enviar comunicaciones.", "#b45309", "contacto");
+  if (noVerif) return out("Reparar el contacto", "El contacto está NO verificado / con error. Edita el teléfono o el correo y reinicia el contacto: hasta verificarlo no puedes publicar oferta ni enviar comunicaciones.", "#C2410C", "contacto");
   if (deal.ofertaSolicitada && !deal.ofertaCerrada && !deal.negocioNum) return out("Revisar selección y cerrar la oferta", "El cliente pidió ver la oferta por WhatsApp. Revisa las facturas del paquete y presiona «Cerrar oferta»: hasta cerrarla, ni tú ni el Agente IA pueden enviársela.", "#dc2626", "negocio");
   if (deal.waPendiente) return out("Responder al cliente", "El cliente respondió por WhatsApp y la conversación quedó PENDIENTE. Respóndele por el chat (modo manual) para no perder el cierre.", "#dc2626", "comunicaciones");
-  if (deal.stage === "otorgamiento") return out("Coordinar Otorgamiento", "La operación está en la mesa de crédito. Coordina con Riesgo/Operaciones para autorizar las causas de desvío y liberar el giro.", "#6d28d9", "otorgamiento");
+  if (deal.stage === "otorgamiento") return out("Coordinar Otorgamiento", "La operación está en la mesa de crédito. Coordina con Riesgo/Operaciones para autorizar las causas de desvío y liberar el giro.", "#7C3AED", "otorgamiento");
   if (deal.stage === "cesion") return out("Seguimiento de la cesión", "Aceptada y firmada. Verifica la inscripción de la cesión electrónica (AEC) para avanzar a Otorgamiento/Giro.", "#0d9488", "bitacora");
   if (deal.stage === "aceptadas") return out("Gestionar la cesión", "El cliente firmó el cierre. Gestiona la cesión de las facturas a Factoring Security para cursar el giro.", "#0ea5e9", "contacto");
-  if (deal.fueraAtribucion || deal.chatLibre) return out("Negociar la tasa y re-publicar", `El caso se escaló a ejecutivo: el cliente pide una tasa bajo el mínimo del Agente IA${deal.tasaSolicitada ? ` (${deal.tasaSolicitada.toFixed(2)}% mensual)` : ""}. Ajusta % anticipo / comisión / tasa y vuelve a publicar la oferta.`, "#b45309", "contacto");
-  if (hasOffer) return out("Seguimiento del cierre", "La oferta ya está publicada. Recuérdale al cliente firmar en el sitio de Factoring Security para cursar la operación.", "#4f46e5", "comunicaciones");
-  if (contactado) return out("Publicar la oferta", "El cliente fue contactado y mostró interés. Publica la oferta (% anticipo, tasa y monto a girar) para avanzar a Oferta y Negociación.", "#4f46e5", "contacto");
+  if (deal.fueraAtribucion || deal.chatLibre) return out("Negociar la tasa y re-publicar", `El caso se escaló a ejecutivo: el cliente pide una tasa bajo el mínimo del Agente IA${deal.tasaSolicitada ? ` (${deal.tasaSolicitada.toFixed(2)}% mensual)` : ""}. Ajusta % anticipo / comisión / tasa y vuelve a publicar la oferta.`, "#C2410C", "contacto");
+  if (hasOffer) return out("Seguimiento del cierre", "La oferta ya está publicada. Recuérdale al cliente firmar en el sitio de Factoring Security para cursar la operación.", "#703EFF", "comunicaciones");
+  if (contactado) return out("Publicar la oferta", "El cliente fue contactado y mostró interés. Publica la oferta (% anticipo, tasa y monto a girar) para avanzar a Oferta y Negociación.", "#703EFF", "contacto");
   return out("Iniciar el contacto", "Inicia el contacto con el cliente por su canal (WhatsApp / Email / Call Center) para presentar la oportunidad y captar su interés.", "#0ea5e9", "contacto");
 }
 // Datos de SOW de una oportunidad: la serie REAL (SOW_POR_RUT por RUT) o, si no existe pero el deal trae
@@ -2327,7 +2348,7 @@ function sowDeDeal(deal) {
 }
 // ---- Estado de Share of Wallet del cliente (semáforo + detalle mensual minimalista) ----
 // Color del número del mes según el SOW de ese mes respecto del target.
-const SOW_EST_COLOR = { ok: "#059669", info: "#ca8a04", warn: "#ea580c", bad: "#dc2626", sd: "#a8a29e" };
+const SOW_EST_COLOR = { ok: "#16A34A", info: "#ca8a04", warn: "#ea580c", bad: "#dc2626", sd: "#9CA3AF" };
 // Tarjeta de competencia (cesiones a otros factores): SIEMPRE muestra BICE + los 3 primeros competidores
 // y colapsa el resto tras un botón. Se usa en todos los estados de SOW (en target, bajando, riesgo, nuevo).
 function CompetenciaCard({ cm, sow, compact }) {
@@ -2347,25 +2368,25 @@ function CompetenciaCard({ cm, sow, compact }) {
         {filas.map((f, i) => (
           <div key={i}>
             <div className="flex items-center justify-between t10">
-              <span style={{ color: f.bice ? "#047857" : C.ink, fontWeight: f.bice ? 600 : 400 }}>{f.name}</span>
+              <span style={{ color: f.bice ? "#16A34A" : C.ink, fontWeight: f.bice ? 600 : 400 }}>{f.name}</span>
               <span style={{ color: C.sub }}>{fmtMM(f.montoMM)} · {f.pct}%</span>
             </div>
             <div className={`mt-0.5 ${compact ? "h-1.5" : "h-2"} w-full overflow-hidden rounded-full`} style={{ backgroundColor: C.page }}>
-              <div className="h-full rounded-full" style={{ width: `${Math.min(100, f.pct)}%`, backgroundColor: f.bice ? "#10b981" : "#94a3b8" }} />
+              <div className="h-full rounded-full" style={{ width: `${Math.min(100, f.pct)}%`, backgroundColor: f.bice ? "#16A34A" : "#9CA3AF" }} />
             </div>
           </div>
         ))}
       </div>
       {comps.length > 3 && (
-        <button onClick={() => setExp((v) => !v)} className="mt-2 flex items-center gap-1 t10 font-medium" style={{ color: "#1d4ed8" }}>
+        <button onClick={() => setExp((v) => !v)} className="mt-2 flex items-center gap-1 t10 font-medium" style={{ color: "#2563EB" }}>
           {exp ? <><ChevronUp size={12} /> Ver menos</> : <><ChevronDown size={12} /> Ver {ocultos} competidor{ocultos === 1 ? "" : "es"} más</>}
         </button>
       )}
       {sow && sow.SOWTargetPct != null && (
         <div className="mt-2 t10" style={{ color: C.sub }}>
-          Seguimiento SOW: BICE <b style={{ color: "#047857" }}>{Math.round(cm.bicePct || 0)}%</b> · target <b style={{ color: C.ink }}>{Math.round(sow.SOWTargetPct)}%</b>
+          Seguimiento SOW: BICE <b style={{ color: "#16A34A" }}>{Math.round(cm.bicePct || 0)}%</b> · target <b style={{ color: C.ink }}>{Math.round(sow.SOWTargetPct)}%</b>
           {(cm.bicePct || 0) < sow.SOWTargetPct
-            ? <> · brecha <b style={{ color: "#b45309" }}>{Math.round(sow.SOWTargetPct - (cm.bicePct || 0))} pts</b> a recuperar de la competencia.</>
+            ? <> · brecha <b style={{ color: "#C2410C" }}>{Math.round(sow.SOWTargetPct - (cm.bicePct || 0))} pts</b> a recuperar de la competencia.</>
             : <> · en/ sobre el target ✓</>}
         </div>
       )}
@@ -2379,13 +2400,13 @@ function ConversacionActivaItem({ info, onOpen }) {
   const { d, pendiente, oferta, mins, ult, contacto } = info;
   const hora = ult ? new Date(ult).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" }) : "—";
   const estadoTxt = pendiente ? "Pendiente de respuesta" : oferta ? "Oferta enviada" : "Cliente respondió";
-  const estadoCol = pendiente ? "#b91c1c" : "#047857";
+  const estadoCol = pendiente ? "#DC2626" : "#16A34A";
   const etapa = (STAGES.find((s) => s.id === d.stage) || {}).name || d.stage;
   const lastM = (d.waSesion || []).filter((m) => m.text).slice(-1)[0];
   const lastFrom = lastM ? (lastM.from === "cliente" ? "Cliente" : lastM.from === "ejecutivo" ? "Ejecutivo" : lastM.from === "agente" ? "Agente IA" : "Sistema") : null;
   const nba = nextBestAction(d);
   return (
-    <div className="rounded-md bg-white" style={{ border: "1px solid #d1fae5" }}>
+    <div className="rounded-md bg-white" style={{ border: "1px solid #F0FDF4" }}>
       <button onClick={() => setOpen((v) => !v)} className="flex w-full items-start gap-2 px-2 py-1.5 text-left">
         <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: estadoCol }} />
         <span className="min-w-0 flex-1">
@@ -2395,11 +2416,11 @@ function ConversacionActivaItem({ info, onOpen }) {
         {open ? <ChevronUp size={13} style={{ color: C.faint }} /> : <ChevronDown size={13} style={{ color: C.faint }} />}
       </button>
       {open && (
-        <div className="px-2 py-1.5 t9" style={{ borderTop: "1px solid #ecfdf5", color: C.sub }}>
+        <div className="px-2 py-1.5 t9" style={{ borderTop: "1px solid #F0FDF4", color: C.sub }}>
           <div className="flex items-center justify-between"><span style={{ color: estadoCol, fontWeight: 600 }}>{estadoTxt}</span><span style={{ color: C.faint }}>{etapa} · {fmtMM(d.amountMM)}</span></div>
           {lastM && <div className="mt-1 truncate" title={lastM.text}><b style={{ color: C.ink }}>{lastFrom}:</b> {lastM.text}</div>}
           {nba && <div className="mt-1 font-medium" style={{ color: nba.color }}>NBA: {nba.label}</div>}
-          <button onClick={() => onOpen(d)} className="mt-1.5 w-full rounded-md py-1 t9 font-semibold text-white" style={{ backgroundColor: "#059669" }}>Abrir conversación</button>
+          <button onClick={() => onOpen(d)} className="mt-1.5 w-full rounded-md py-1 t9 font-semibold text-white" style={{ backgroundColor: "#16A34A" }}>Abrir conversación</button>
         </div>
       )}
     </div>
@@ -2419,16 +2440,16 @@ function SowStatusPanel({ deal, sinCompetencia }) {
       <div className="mt-4">
         <div className="flex items-baseline gap-2">
           <span className="t13 font-semibold" style={{ color: C.ink }}>SOW</span>
-          <span className="t11 font-medium" style={{ color: cm ? "#b91c1c" : "#1d4ed8" }}>{cm ? "Nuevo · 0% BICE" : "Nuevo"}</span>
+          <span className="t11 font-medium" style={{ color: cm ? "#DC2626" : "#2563EB" }}>{cm ? "Nuevo · 0% BICE" : "Nuevo"}</span>
           <span className="t10" style={{ color: C.faint }}>{cm ? `opera con la competencia · ${fmtMM(cm.totalMM)} cedido (6m)` : "sin historia de Share of Wallet"}</span>
         </div>
         {cm ? (
           <div className="mt-1.5">
             <CompetenciaCard cm={cm} compact />
-            <div className="mt-1.5 t9" style={{ color: "#b45309" }}>Oportunidad de captura: el cliente cede a la competencia y nada a BICE.</div>
+            <div className="mt-1.5 t9" style={{ color: "#C2410C" }}>Oportunidad de captura: el cliente cede a la competencia y nada a BICE.</div>
           </div>
         ) : (
-          <div className="mt-1.5 rounded-lg p-2 t10" style={{ backgroundColor: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}>
+          <div className="mt-1.5 rounded-lg p-2 t10" style={{ backgroundColor: "#eff6ff", color: "#2563EB", border: "1px solid #bfdbfe" }}>
             Cliente nuevo para NEX, sin operaciones de factoring registradas (ni con BICE ni con la competencia). El SOW se medirá desde la primera operación cursada.
           </div>
         )}
@@ -2436,7 +2457,7 @@ function SowStatusPanel({ deal, sinCompetencia }) {
     );
   }
   const est = sow.EstadoSOW;
-  const nivCol = ({ green: "#047857", yellow: "#b45309", red: "#b91c1c", gray: "#78716c" })[est.Nivel] || "#78716c";
+  const nivCol = ({ green: "#16A34A", yellow: "#C2410C", red: "#DC2626", gray: "#6B7280" })[est.Nivel] || "#6B7280";
   const nivTxt = ({ green: "Saludable", yellow: "Atención · bajando", red: "Riesgo alto", gray: "Sin datos" })[est.Nivel] || "Sin datos";
   const meses = sow.HistoricoMensual || [];
   return (
@@ -2538,7 +2559,7 @@ function CurseModal({ deal, onClose, onFirmar }) {
           )}
           {paso === "ok" && (
             <div className="py-6 text-center">
-              <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: "#ecfdf5" }}><Check size={26} style={{ color: "#0a7d3f" }} /></div>
+              <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: "#F0FDF4" }}><Check size={26} style={{ color: "#0a7d3f" }} /></div>
               <div className="t13 font-semibold" style={{ color: C.ink }}>Operación aceptada y firmada</div>
               <div className="mt-1 t11" style={{ color: C.sub }}>Tu aprobación quedó registrada. BICE procederá con la cesión y el giro.</div>
               <button onClick={() => onFirmar(mail)} className="mt-3 rounded-lg px-4 py-2 t12 font-semibold text-white" style={{ backgroundColor: "#6a2c91" }}>Volver al panel</button>
@@ -2566,9 +2587,9 @@ function WaClienteModal({ deal, onClose, onAprobar }) {
           <button onClick={onClose} className="rounded p-1 hover:bg-white/10"><X size={16} /></button>
         </div>
         <div className="flex-1 space-y-1.5 overflow-y-auto p-2" style={{ backgroundColor: "#ece5dd" }}>
-          {wa.length === 0 && <div className="mx-auto mt-2 w-fit rounded px-2 py-0.5 t9" style={{ backgroundColor: "#fff8c4", color: "#7c6f1e" }}>Sin conversación todavía.</div>}
+          {wa.length === 0 && <div className="mx-auto mt-2 w-fit rounded-full px-2 py-0.5 t9" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>Sin conversación todavía.</div>}
           {wa.map((m, i) => {
-            if (m.from === "sistema") return <div key={i} className="mx-auto w-fit rounded px-2 py-0.5 t9" style={{ backgroundColor: "#fff8c4", color: "#7c6f1e" }}>{m.text}</div>;
+            if (m.from === "sistema") return <div key={i} className="mx-auto w-fit rounded-full px-2 py-0.5 t9" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>{m.text}</div>;
             const izq = m.from === "agente" || m.from === "ejecutivo"; // óptica del cliente: el ejecutivo/IA va a la izquierda
             return (
               <div key={i} className={`flex ${izq ? "justify-start" : "justify-end"}`}>
@@ -2583,7 +2604,7 @@ function WaClienteModal({ deal, onClose, onAprobar }) {
               </div>
             );
           })}
-          {!hayBoton && wa.length > 0 && <div className="mx-auto mt-2 w-fit rounded px-2 py-0.5 t9" style={{ backgroundColor: "#fff8c4", color: "#7c6f1e" }}>Aún no hay oferta para aprobar.</div>}
+          {!hayBoton && wa.length > 0 && <div className="mx-auto mt-2 w-fit rounded-full px-2 py-0.5 t9" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>Aún no hay oferta para aprobar.</div>}
         </div>
         {hayBoton && (
           <div className="p-2" style={{ borderTop: `1px solid ${C.line}` }}>
@@ -2597,10 +2618,10 @@ function WaClienteModal({ deal, onClose, onAprobar }) {
 // Pestaña SOW del detalle: KPIs, gráfico de evolución (SOW mensual vs target) y la tira mensual.
 // Mismo set de flechas/iconos que la etiqueta SOW del chip (OppTags), para usarlo en el KPI Tendencia.
 function sowFlechaIcon(tend) {
-  if (tend === "Creciendo") return { Icon: ArrowUpRight, c: "#047857", lab: "creciendo" };
-  if (tend === "Decreciente") return { Icon: ArrowDownRight, c: "#b91c1c", lab: "bajando" };
-  if (tend === "Nuevo") return { Icon: Sparkles, c: "#1d4ed8", lab: "nuevo" };
-  return { Icon: ArrowRight, c: "#b45309", lab: "estable" };
+  if (tend === "Creciendo") return { Icon: ArrowUpRight, c: "#16A34A", lab: "creciendo" };
+  if (tend === "Decreciente") return { Icon: ArrowDownRight, c: "#DC2626", lab: "bajando" };
+  if (tend === "Nuevo") return { Icon: Sparkles, c: "#2563EB", lab: "nuevo" };
+  return { Icon: ArrowRight, c: "#C2410C", lab: "estable" };
 }
 function SowTab({ deal }) {
   const sow = sowDeDeal(deal);
@@ -2633,7 +2654,7 @@ function SowTab({ deal }) {
       <div className="mt-4 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-lg font-bold" style={{ color: C.ink }}>Share of Wallet</span>
-          <span className="rounded-full px-2.5 py-0.5 t11 font-medium" style={{ backgroundColor: "#fef2f2", color: "#b91c1c" }}>Riesgo alto · 0%</span>
+          <span className="rounded-full px-2.5 py-0.5 t11 font-medium" style={{ backgroundColor: "#fef2f2", color: "#DC2626" }}>Riesgo alto · 0%</span>
         </div>
         <div className="rounded-lg p-3 t12" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b" }}>
           BICE tiene <b>0% de participación</b> en este cliente: cede {fmtMM(cm.totalMM)} a la competencia (últimos 6 meses) y nada a BICE. Oportunidad de captura.
@@ -2647,18 +2668,18 @@ function SowTab({ deal }) {
   const an = sow.Analisis || {};
   const sem = sow.HistoricoSemanal || [];
   const ult = sem.length ? sem[sem.length - 1] : {};
-  const nivCol = ({ green: "#047857", yellow: "#b45309", red: "#b91c1c", gray: "#78716c" })[est.Nivel] || "#78716c";
+  const nivCol = ({ green: "#16A34A", yellow: "#C2410C", red: "#DC2626", gray: "#6B7280" })[est.Nivel] || "#6B7280";
   const target = est.TargetPct != null ? est.TargetPct : (sow.SOWTargetPct || 0);
   const W = 620, H = 210, padL = 30, padR = 14, padT = 14, padB = 26, n = m.length || 1;
   const X = (i) => padL + (n > 1 ? i * (W - padL - padR) / (n - 1) : 0);
   const Y = (v) => padT + (100 - Math.max(0, Math.min(100, v || 0))) / 100 * (H - padT - padB);
   const pts = m.map((x, i) => `${X(i).toFixed(1)},${Y(x.SOWPct).toFixed(1)}`).join(" ");
-  const lineCol = sow.SOWTendencia === "Creciendo" ? "#059669" : sow.SOWTendencia === "Decreciente" ? "#dc2626" : "#4f46e5";
+  const lineCol = sow.SOWTendencia === "Creciendo" ? "#16A34A" : sow.SOWTendencia === "Decreciente" ? "#dc2626" : "#703EFF";
   const fI = sowFlechaIcon(sow.SOWTendencia); const FlechaSow = fI.Icon;
   const kpis = [
     { l: "SOW actual", v: est.ActualPct != null ? Math.round(est.ActualPct) + "%" : "—", c: nivCol },
     { l: "Target", v: target ? Math.round(target) + "%" : "—", c: C.ink },
-    { l: "Brecha al target", v: sow.GapPct != null ? sow.GapPct + " pts" : "—", c: sow.GapPct > 0 ? "#b45309" : "#047857" },
+    { l: "Brecha al target", v: sow.GapPct != null ? sow.GapPct + " pts" : "—", c: sow.GapPct > 0 ? "#C2410C" : "#16A34A" },
     { l: "Tendencia", v: <span className="inline-flex items-center gap-1"><FlechaSow size={15} /> SOW {fI.lab}</span>, c: fI.c },
     { l: "Cedido BICE 6m", v: ult.MontoBICEMM != null ? fmtMM(ult.MontoBICEMM) : "—", c: C.ink },
     { l: "Total cedido 6m", v: ult.MontoTotalMM != null ? fmtMM(ult.MontoTotalMM) : "—", c: C.ink },
@@ -2814,17 +2835,17 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
         </div>
       </div>
       {/* Condiciones comerciales — referencia (actuales); se editan con el botón "Editar condiciones" */}
-      <div className="mx-4 mt-3 rounded-lg p-3" style={{ backgroundColor: "#fffdf5", border: "1px solid #fde68a" }}>
+      <div className="mx-4 mt-3 rounded-lg p-3" style={{ backgroundColor: "#F9FAFB", border: "1px solid #FED7AA" }}>
         <div className="flex items-center justify-between">
-          <span className="t10 font-semibold uppercase tracking-wide" style={{ color: "#b45309" }}>Condiciones comerciales</span>
-          {!bloqueado && <button onClick={() => setEditCond((v) => !v)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t10 font-semibold" style={{ border: "1px solid #f59e0b", color: "#b45309", backgroundColor: "#fff" }}>{editCond ? <><Check size={11} /> Listo</> : <><Pencil size={11} /> Editar condiciones</>}</button>}
+          <span className="t10 font-semibold uppercase tracking-wide" style={{ color: "#C2410C" }}>Condiciones comerciales</span>
+          {!bloqueado && <button onClick={() => setEditCond((v) => !v)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t10 font-semibold" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}>{editCond ? <><Check size={11} /> Listo</> : <><Pencil size={11} /> Editar condiciones</>}</button>}
         </div>
         {editCond ? (
           <table className="mt-2 w-full border-collapse t11">
             <thead><tr>
               <th className="px-1 py-1 text-left font-semibold" style={{ color: C.sub }}>Criterio</th>
               <th className="px-1 py-1 text-right font-semibold" style={{ color: C.faint }}>Condiciones originales</th>
-              <th className="px-1 py-1 text-right font-semibold" style={{ color: "#b45309" }}>Nuevas condiciones</th>
+              <th className="px-1 py-1 text-right font-semibold" style={{ color: "#C2410C" }}>Nuevas condiciones</th>
             </tr></thead>
             <tbody>
               {[{ k: "tasa", l: "Tasa de negocio", suf: "%" }, { k: "antic", l: "Porcentaje de anticipo", suf: "%" }, { k: "pctCom", l: "Porcentaje de comisión", suf: "%" }, { k: "comMin", l: "Comisión mínima", sub: "Unidad de fomento" }, { k: "comMax", l: "Comisión máxima", sub: "Unidad de fomento" }, { k: "gastoOp", l: "Gasto por operación", sub: "Peso chileno" }, { k: "gastoDoc", l: "Gasto por documento", sub: "Peso chileno" }].map((cr) => (
@@ -2867,7 +2888,7 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
           )}
         </div>
         <div className="flex items-center justify-between py-2.5"><span className="t13 font-bold" style={{ color: C.ink }}>Monto a Girar</span><span className="t14 font-bold" style={{ color: C.indigo }}>{fmtCLP(giroCLP)}</span></div>
-        <div className="t10" style={{ color: "#6d28d9" }}>Retenciones: esta simulación considera una retención de {fmtCLP(retencionCLP)}, la cual se liberará si las facturas se pagan en la fecha informada.</div>
+        <div className="t10" style={{ color: "#7C3AED" }}>Retenciones: esta simulación considera una retención de {fmtCLP(retencionCLP)}, la cual se liberará si las facturas se pagan en la fecha informada.</div>
         {/* Comparativo: últimas operaciones cursadas y sus condiciones (referencia para fijar la tarifa) */}
         {histOps.length > 0 && (
           <div className="mt-4 border-t pt-3" style={{ borderColor: C.line }}>
@@ -2913,7 +2934,7 @@ function SimDescuentos({ deal, o }) {
       <div className="rounded-xl" style={{ border: `1px solid ${C.line}` }}>
         <div className="flex flex-wrap items-center justify-between gap-3 p-3" style={{ borderBottom: ab ? `1px solid ${C.line}` : "none" }}>
           <div className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full" style={{ backgroundColor: "#fee2e2", color: "#dc2626" }}><X size={13} /></span>
+            <span className="flex h-6 w-6 items-center justify-center rounded-full" style={{ backgroundColor: "#FECACA", color: "#dc2626" }}><X size={13} /></span>
             <div><div className="t12 font-bold" style={{ color: C.ink }}>{titulo}</div><div className="t9" style={{ color: C.faint }}>{sub}: {ejec}</div></div>
           </div>
           <div className="flex items-center gap-5">
@@ -3004,9 +3025,9 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const reevPend = [...vis.excPend, ...vis.rechReev];
   const firmes = vis.rechFirme;
   const puede = reevPend.length > 0;
-  const palV = (e) => (e === "rechazada" ? { bg: "#fef2f2", fg: "#b91c1c" } : e === "sujeta" ? { bg: "#fffbeb", fg: "#b45309" } : { bg: C.greenBg, fg: C.green });
+  const palV = (e) => (e === "rechazada" ? { bg: "#fef2f2", fg: "#DC2626" } : e === "sujeta" ? { bg: "#FFF7ED", fg: "#C2410C" } : { bg: C.greenBg, fg: C.green });
   const dLbl = { aprobado: "Aprobado", excepcion: "Sujeto a excepción", rechazado: "Rechazado", clasificacion: "Clasificación" };
-  const dCol = { aprobado: C.green, excepcion: "#6d28d9", rechazado: "#b91c1c", clasificacion: C.faint };
+  const dCol = { aprobado: C.green, excepcion: "#7C3AED", rechazado: "#DC2626", clasificacion: C.faint };
   const varDiff = prev ? Object.keys(ver.vars).filter((k) => JSON.stringify(ver.vars[k]) !== JSON.stringify(prev.vars[k])) : [];
   const dispPrev = prev ? Object.fromEntries((prev.res || []).map((x) => [x.n, x.disp])) : {};
   const reglaDiff = prev ? (ver.res || []).filter((x) => dispPrev[x.n] !== x.disp) : [];
@@ -3025,16 +3046,16 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
     <div className="rounded-lg p-3" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
       <div className="flex items-center justify-between gap-2">
         <div className="t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Re-evaluación de la simulación</div>
-        <span className="shrink-0 rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#eef2ff", color: C.indigo }}>{shown.length} versión{shown.length === 1 ? "" : "es"}</span>
+        <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: C.indigo }}>{shown.length} versión{shown.length === 1 ? "" : "es"}</span>
       </div>
       <div className="mt-1.5 t10" style={{ color: C.sub, lineHeight: 1.5 }}>Cuando el ejecutivo obtiene el <b>contrato firmado</b>, el sistema de origen se actualiza. Al re-evaluar se vuelve a invocar la API y se guarda una <b>nueva versión</b> con los valores del JSON. Las reglas re-evaluables <b>no dejan la operación en pérdida</b> (su dato puede cambiar en el origen); sólo los bloqueos firmes (mora, castigos, protestos) son definitivos.</div>
-      {reevPend.length > 0 && <div className="mt-2 t10" style={{ color: "#6d28d9" }}>♻ Re-evaluables ({reevPend.length}): {reevPend.map((x) => "#" + x.n).join(", ")}</div>}
-      {firmes.length > 0 && <div className="mt-1 t10 font-semibold" style={{ color: "#b91c1c" }}>🔒 Operación en pérdida · {firmes.length} bloqueo(s) firme(s): {firmes.map((x) => "#" + x.n).join(", ")}</div>}
+      {reevPend.length > 0 && <div className="mt-2 t10" style={{ color: "#7C3AED" }}>♻ Re-evaluables ({reevPend.length}): {reevPend.map((x) => "#" + x.n).join(", ")}</div>}
+      {firmes.length > 0 && <div className="mt-1 t10 font-semibold" style={{ color: "#DC2626" }}>🔒 Operación en pérdida · {firmes.length} bloqueo(s) firme(s): {firmes.map((x) => "#" + x.n).join(", ")}</div>}
       <div className="mt-2 flex items-center gap-2">
         {(() => { const puedeRe = puede && deal.stage !== "perdida"; return (
         <button onClick={() => { if (deal.stage === "perdida") return; reevaluarCliente(deal, usuario); setVerSel(-1); onReev && onReev(); }} disabled={!puedeRe}
           className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t11 font-semibold"
-          style={{ backgroundColor: puedeRe ? C.indigo : "#e7e5e4", color: puedeRe ? "#fff" : C.faint, cursor: puedeRe ? "pointer" : "not-allowed" }}>
+          style={{ backgroundColor: puedeRe ? C.indigo : "#E5E7EB", color: puedeRe ? "#fff" : C.faint, cursor: puedeRe ? "pointer" : "not-allowed" }}>
           <RotateCcw size={12} /> Re-evaluar simulación
         </button>
         ); })()}
@@ -3043,25 +3064,25 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
       <div className="mt-3 flex items-center gap-1.5 flex-wrap">
         <span className="t10 font-semibold" style={{ color: C.sub }}>Versión:</span>
         {shown.map((vv, i) => { const sel = i === effIdx; const pp = palV(vv.estado); return (
-          <button key={vv.v} onClick={() => setVerSel(i)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t10 font-semibold" style={{ border: `1px solid ${sel ? C.indigo : C.line}`, backgroundColor: sel ? "#eef2ff" : "#fff", color: sel ? C.indigo : C.sub }}>v{vv.v}<span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: pp.fg }} /></button>
+          <button key={vv.v} onClick={() => setVerSel(i)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t10 font-semibold" style={{ border: `1px solid ${sel ? C.indigo : C.line}`, backgroundColor: sel ? "#F1ECFF" : "#fff", color: sel ? C.indigo : C.sub }}>v{vv.v}<span className="inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: pp.fg }} /></button>
         ); })}
         {shown.length > 1 && <span className="t9" style={{ color: C.faint }}>· selecciona una versión para ver su detalle</span>}
       </div>
-      <div className="mt-2 flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5" style={{ backgroundColor: "#fafaf9", border: `1px solid ${C.line}` }}>
+      <div className="mt-2 flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5" style={{ backgroundColor: "#F9FAFB", border: `1px solid ${C.line}` }}>
         <div className="min-w-0 t10"><b style={{ color: C.ink }}>v{ver.v}</b> <span style={{ color: C.faint }}>· {ver.origen}{ver.ts instanceof Date ? " · " + ver.ts.toLocaleString("es-CL") : ""}</span></div>
         <div className="flex items-center gap-2 shrink-0 t10">
           <span className="inline-flex items-center gap-2" style={{ color: C.faint }}>
             <span title="Reglas aprobadas" className="inline-flex items-center gap-1" style={{ cursor: "help" }}><span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: C.green }} />{ver.nApr}</span>
-            <span title="Reglas que requieren aprobación (excepción)" className="inline-flex items-center gap-0.5" style={{ cursor: "help", color: "#6d28d9" }}><Check size={11} />{ver.nExc}</span>
-            <span title="Reglas rechazadas (bloqueo firme)" className="inline-flex items-center gap-0.5" style={{ cursor: "help", color: "#b91c1c" }}><X size={11} />{ver.nRech}</span>
+            <span title="Reglas que requieren aprobación (excepción)" className="inline-flex items-center gap-0.5" style={{ cursor: "help", color: "#7C3AED" }}><Check size={11} />{ver.nExc}</span>
+            <span title="Reglas rechazadas (bloqueo firme)" className="inline-flex items-center gap-0.5" style={{ cursor: "help", color: "#DC2626" }}><X size={11} />{ver.nRech}</span>
           </span>
         </div>
       </div>
       {prev && (varDiff.length > 0 || reglaDiff.length > 0) && (
         <div className="mt-2 rounded-md p-2.5" style={{ backgroundColor: "#f0fdf4", border: "1px solid #bbf7d0" }}>
           <div className="flex items-center gap-1.5">
-            <button onClick={() => setShowDiff((s) => !s)} className="flex items-center gap-1 t10 font-semibold" style={{ color: "#15803d" }}>{showDiff ? <ChevronUp size={12} /> : <ChevronDown size={12} />} Cambios respecto de v{prev.v} · {reglaDiff.length} regla(s)</button>
-            {varDiff.length > 0 && <span title={varDiffTip} className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full t8" style={{ border: "1px solid #15803d", color: "#15803d", cursor: "help" }}>i</span>}
+            <button onClick={() => setShowDiff((s) => !s)} className="flex items-center gap-1 t10 font-semibold" style={{ color: "#16A34A" }}>{showDiff ? <ChevronUp size={12} /> : <ChevronDown size={12} />} Cambios respecto de v{prev.v} · {reglaDiff.length} regla(s)</button>
+            {varDiff.length > 0 && <span title={varDiffTip} className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full t8" style={{ border: "1px solid #16A34A", color: "#16A34A", cursor: "help" }}>i</span>}
             {varDiff.length > 0 && <span className="t9" style={{ color: C.faint }}>{varDiff.length} variable(s) cambiaron</span>}
           </div>
           {showDiff && <div className="mt-1.5 space-y-1">
@@ -3075,7 +3096,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="t10 font-semibold" style={{ color: C.sub }}>Resultado por regla · v{ver.v}</div>
           <div className="flex items-center gap-1 flex-wrap">{chips.map(([k, l]) => { const sel = filtro === k; return (
-            <button key={k} onClick={() => setFiltro(k)} className="rounded-md px-2 py-0.5 t9 font-semibold" style={{ border: `1px solid ${sel ? C.indigo : C.line}`, backgroundColor: sel ? "#eef2ff" : "#fff", color: sel ? C.indigo : C.sub }}>{l}</button>
+            <button key={k} onClick={() => setFiltro(k)} className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ border: `1px solid ${sel ? C.indigo : C.line}`, backgroundColor: sel ? "#F1ECFF" : "#fff", color: sel ? C.indigo : C.sub }}>{l}</button>
           ); })}</div>
         </div>
         <div className="mt-1.5 space-y-1.5">{listSort.length === 0 ? <div className="t10" style={{ color: C.faint }}>Sin reglas para este filtro.</div> : listSort.map((x) => {
@@ -3090,20 +3111,20 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
                   <span title={x.reev ? "Re-evaluable: el dato de origen puede cambiar" : "Bloqueo firme: no se re-evalúa"} style={{ cursor: "help" }}>{x.reev ? "♻" : "🔒"}</span>
                   <span title={tip} className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full t8" style={{ border: `1px solid ${C.faint}`, color: C.faint, cursor: "help" }}>i</span>
                 </div>
-                <span className="shrink-0 rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dCol[x.disp] + "1a", color: dCol[x.disp] }}>{dLbl[x.disp]}{x.nivel ? " · N" + x.nivel : ""}</span>
+                <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dCol[x.disp] + "1a", color: dCol[x.disp] }}>{dLbl[x.disp]}{x.nivel ? " · N" + x.nivel : ""}</span>
               </div>
               {x.disp !== "aprobado" && x.hallazgo && <div className="mt-0.5 t10" style={{ color: C.sub }}>{x.hallazgo}</div>}
-              {x.disp === "excepcion" && <div className="mt-0.5 t9" style={{ color: C.faint }}>Dominio: <b>{AREA_LBL[x.area]}</b> · Aprueba: <b style={{ color: otraArea ? "#6d28d9" : C.sub }}>N{x.nivel} · {nr.rol} ({AREA_LBL[nr.area]})</b>{otraArea && <span className="ml-1 rounded px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#6d28d9" }}>↗ otra área</span>}</div>}
+              {x.disp === "excepcion" && <div className="mt-0.5 t9" style={{ color: C.faint }}>Dominio: <b>{AREA_LBL[x.area]}</b> · Aprueba: <b style={{ color: otraArea ? "#7C3AED" : C.sub }}>N{x.nivel} · {nr.rol} ({AREA_LBL[nr.area]})</b>{otraArea && <span className="ml-1 rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>↗ otra área</span>}</div>}
             </div>
           );
         })}</div>
         <div className="mt-1 t9" style={{ color: C.faint }}>La aprobación de excepciones se realiza desde <b>Otorgamientos → Visado Cliente</b>. Pasa el cursor sobre <b>i</b> para ver el criterio y las variables.</div>
       </div>
       {usuario === "ADMIN" && (<>
-        <button onClick={() => setShowJson((s) => !s)} className="mt-2 flex items-center gap-1 t10 font-semibold" style={{ color: C.indigo }}>{showJson ? <ChevronUp size={12} /> : <ChevronDown size={12} />} {showJson ? "Ocultar" : "Ver"} todas las variables del JSON (API) · v{ver.v} <span className="rounded px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#eef2ff", color: C.indigo }}>super admin</span></button>
-        {showJson && <div className="mt-1 grid grid-cols-2 gap-x-3 rounded-md p-2" style={{ backgroundColor: "#fafaf9", border: `1px solid ${C.line}`, maxHeight: 220, overflowY: "auto" }}>
+        <button onClick={() => setShowJson((s) => !s)} className="mt-2 flex items-center gap-1 t10 font-semibold" style={{ color: C.indigo }}>{showJson ? <ChevronUp size={12} /> : <ChevronDown size={12} />} {showJson ? "Ocultar" : "Ver"} todas las variables del JSON (API) · v{ver.v} <span className="rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: C.indigo }}>super admin</span></button>
+        {showJson && <div className="mt-1 grid grid-cols-2 gap-x-3 rounded-md p-2" style={{ backgroundColor: "#F9FAFB", border: `1px solid ${C.line}`, maxHeight: 220, overflowY: "auto" }}>
           {Object.keys(ver.vars).map((k) => { const chg = prev && JSON.stringify(ver.vars[k]) !== JSON.stringify(prev.vars[k]); return (
-            <div key={k} className="flex items-center justify-between gap-1 py-0.5 t9" style={{ borderBottom: `1px solid ${C.line}` }}><span style={{ color: C.faint }}>${k}</span><b style={{ color: chg ? "#15803d" : C.ink }}>{fmtVarCli(k, ver.vars[k])}</b></div>
+            <div key={k} className="flex items-center justify-between gap-1 py-0.5 t9" style={{ borderBottom: `1px solid ${C.line}` }}><span style={{ color: C.faint }}>${k}</span><b style={{ color: chg ? "#16A34A" : C.ink }}>{fmtVarCli(k, ver.vars[k])}</b></div>
           ); })}
         </div>}
       </>)}
@@ -3138,7 +3159,7 @@ function DealMensajeria({ deal, usuario }) {
           <label className="flex flex-col gap-1 t9" style={{ color: C.faint }}>Tipo de mensaje<select value={nf.tipo} onChange={(e) => setNf((s) => ({ ...s, tipo: e.target.value }))} className="rounded-md px-2 py-1.5 t11 outline-none" style={inp}>{Object.entries(MSG_TIPOS).map(([k, v]) => <option key={k} value={k}>{v.l}</option>)}</select></label>
           <label className="flex flex-col gap-1 t9" style={{ color: C.faint }}>Para<select value={nf.dest} onChange={(e) => setNf((s) => ({ ...s, dest: e.target.value }))} className="rounded-md px-2 py-1.5 t11 outline-none" style={inp}><option value="">Selecciona un usuario…</option>{userOpts.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>
           <textarea value={nf.msg} onChange={(e) => setNf((s) => ({ ...s, msg: e.target.value }))} rows={3} placeholder="Escribe el mensaje…" className="w-full resize-none rounded-md px-2 py-1.5 t11 outline-none" style={inp} />
-          <div className="flex gap-2"><button disabled={!nf.dest || !nf.msg.trim()} onClick={crear} className="rounded-md px-3 py-1.5 t10 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: C.indigo }}>Iniciar conversación</button><button onClick={() => setNuevo(false)} className="rounded-md px-3 py-1.5 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button></div>
+          <div className="flex gap-2"><button disabled={!nf.dest || !nf.msg.trim()} onClick={crear} className="rounded-full px-4 py-1.5 t10 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: C.indigo }}>Iniciar conversación</button><button onClick={() => setNuevo(false)} className="rounded-full px-4 py-1.5 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button></div>
         </div>
       ) : selHilo ? (
         <div className="mt-2 rounded-lg p-3" style={{ border: `1px solid ${C.line}` }}>
@@ -3157,12 +3178,12 @@ function DealMensajeria({ deal, usuario }) {
       ) : (
         <div className="mt-2">
           <div className="mb-2 flex items-center gap-2">
-            <div className="flex flex-1 items-center gap-1.5 rounded-md px-2 py-1.5" style={{ border: `1px solid ${C.line}` }}><Search size={13} style={{ color: C.faint }} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar conversación…" className="w-full outline-none t11" style={{ color: C.ink, backgroundColor: "transparent" }} /></div>
-            <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#f3f1ec", border: `1px solid ${C.line}` }}>{[["activos", "Activos"], ["todos", "Todos"]].map(([k, l]) => <button key={k} onClick={() => setFiltro(k)} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ backgroundColor: filtro === k ? C.ink : "transparent", color: filtro === k ? "#fff" : C.sub }}>{l}</button>)}</div>
+            <div className="flex flex-1 items-center gap-1.5 rounded-full px-2 py-1.5" style={{ border: `1px solid ${C.line}` }}><Search size={13} style={{ color: C.faint }} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar conversación…" className="w-full outline-none t11" style={{ color: C.ink, backgroundColor: "transparent" }} /></div>
+            <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>{[["activos", "Activos"], ["todos", "Todos"]].map(([k, l]) => <button key={k} onClick={() => setFiltro(k)} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ backgroundColor: filtro === k ? "#fff" : "transparent", color: filtro === k ? C.indigo : C.sub }}>{l}</button>)}</div>
           </div>
           {hilos.length === 0 ? <div className="rounded-xl p-6 text-center t11" style={{ color: C.faint, backgroundColor: C.page, border: `1px solid ${C.line}` }}>{q || filtro === "activos" ? "No hay conversaciones para este filtro." : "Sin conversaciones en esta operación. Inicia una nueva."}</div> : <div className="space-y-1.5">{hilos.map((h) => { const noL = hiloNoLeido(h, usuario); const last = h.mensajes[h.mensajes.length - 1]; return (
-            <button key={h.id} onClick={() => setSel(h.id)} className="w-full rounded-lg p-2.5 text-left" style={{ border: `1px solid ${noL ? C.indigo : C.line}`, backgroundColor: noL ? "#eef2ff" : "#fff" }}>
-              <div className="flex items-center justify-between gap-2"><span className="t11 font-semibold truncate" style={{ color: C.ink }}>{h.asunto || MSG_TIPOS[h.tipo].l}</span><div className="flex shrink-0 items-center gap-1.5">{h.estado === "terminado" && <span className="rounded px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: C.page, color: C.faint }}>Terminada</span>}{noL && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#ef4444" }} />}</div></div>
+            <button key={h.id} onClick={() => setSel(h.id)} className="w-full rounded-lg p-2.5 text-left" style={{ border: `1px solid ${noL ? C.indigo : C.line}`, backgroundColor: noL ? "#F1ECFF" : "#fff" }}>
+              <div className="flex items-center justify-between gap-2"><span className="t11 font-semibold truncate" style={{ color: C.ink }}>{h.asunto || MSG_TIPOS[h.tipo].l}</span><div className="flex shrink-0 items-center gap-1.5">{h.estado === "terminado" && <span className="rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: C.page, color: C.faint }}>Terminada</span>}{noL && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#ef4444" }} />}</div></div>
               <div className="t9" style={{ color: C.faint }}>{h.participantes.map((p) => USERS[p] || p).join(", ")}</div>
               {last && <div className="mt-0.5 t9 truncate" style={{ color: C.sub }}>{last.de === usuario ? "Tú: " : last.deNombre + ": "}{last.texto || (last.arch ? "📎 " + last.arch : "")}</div>}
             </button>
@@ -3186,53 +3207,53 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado }) {
   const nHard = items.filter((x) => x.v.hard).length;
   const telEstadoDe = (x) => telReg[x.f.id] ? { estado: "Completada", checks: [1, 1, 1], who: `${((typeof EXECS !== "undefined" && EXECS[deal.exec]) || "Ejecutivo")} · ${telReg[x.f.id]}` } : x.v.tel;
   const vistos = items.filter((x) => filtro === "tel" ? x.v.est === "tel" : filtro === "ok" ? x.v.est === "ok" : filtro === "fail" ? x.v.fallidas.length : true);
-  const notaCol = (n) => n >= 4 ? "#0a7d3f" : n >= 3 ? "#b45309" : "#b91c1c";
+  const notaCol = (n) => n >= 4 ? "#0a7d3f" : n >= 3 ? "#C2410C" : "#DC2626";
   const CHECKS = ["Existencia de la factura", "Recepción conforme", "Fecha de pago comprometida"];
   return (
     <>
       <div className="mt-1.5 t10 uppercase tracking-wide" style={{ color: C.faint }}>Por documento · folio, deudor, reglas del modelo (V0–V5), verificación telefónica y estado</div>
-      <div className="mt-1 rounded-lg p-2 t9" style={{ backgroundColor: nTel ? "#fffbeb" : "#ecfdf5", border: `1px solid ${nTel ? "#fde68a" : "#bbf7d0"}`, color: nTel ? "#b45309" : "#047857" }}>
+      <div className="mt-1 rounded-lg p-2 t9" style={{ backgroundColor: nTel ? "#FFF7ED" : "#F0FDF4", border: `1px solid ${nTel ? "#FED7AA" : "#bbf7d0"}`, color: nTel ? "#C2410C" : "#16A34A" }}>
         {nTel ? <><AlertTriangle size={10} className="mr-0.5 inline align-[-1px]" /><b>{nTel}</b> de {items.length} factura(s) <b>requieren verificación telefónica</b> (existencia, recepción y fecha de pago); el resto quedó <b>verificado</b> por el modelo. Una factura con <b>regla dura fallida</b> no se cursa sin verificación completada + excepción.</> : <><Check size={10} className="mr-0.5 inline align-[-1px]" />Las {items.length} factura(s) quedaron <b>verificadas</b> por el modelo: no requieren verificación telefónica.</>}
       </div>
       <div className="mt-2 rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-        <div className="flex items-center justify-between t10 font-bold uppercase tracking-wide" style={{ color: C.ink }}>Verificación del modelo · API de riesgo <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#eef2ff", color: "#4338ca" }}>Actualizado {refrescado}</span></div>
+        <div className="flex items-center justify-between t10 font-bold uppercase tracking-wide" style={{ color: C.ink }}>Verificación del modelo · API de riesgo <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#5B21D6" }}>Actualizado {refrescado}</span></div>
         <p className="mt-1 t10" style={{ color: C.sub }}>El resultado por documento proviene de la <b style={{ color: C.ink }}>API de riesgo</b> (par cliente-deudor, 3M). <b style={{ color: C.ink }}>V1 es regla dura</b>: su fallo deja la factura sujeta a verificación telefónica + excepción. Refresca para volver a consultar la API; la verificación telefónica registrada <b style={{ color: C.ink }}>no se pierde</b>.</p>
         <button disabled={bloqueado} onClick={() => setRefrescado(nowStamp())} className="mt-1 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t11 font-semibold text-white disabled:opacity-50" style={{ backgroundColor: C.indigo }}><RotateCcw size={12} /> Refrescar</button>
-        <div className="mt-1.5 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.sub }}>Consulta a la API de riesgo · {refrescado}<span className="ml-auto flex gap-3 t10 font-semibold"><span style={{ color: C.ink }}>● {items.length}</span><span style={{ color: "#047857" }}>✓ {nOk}</span><span style={{ color: "#b45309" }}>⚠ {nTel}</span><span style={{ color: "#b91c1c" }}>✕ {nHard}</span></span></div>
+        <div className="mt-1.5 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.sub }}>Consulta a la API de riesgo · {refrescado}<span className="ml-auto flex gap-3 t10 font-semibold"><span style={{ color: C.ink }}>● {items.length}</span><span style={{ color: "#16A34A" }}>✓ {nOk}</span><span style={{ color: "#C2410C" }}>⚠ {nTel}</span><span style={{ color: "#DC2626" }}>✕ {nHard}</span></span></div>
       </div>
       <div className="mt-2 flex items-center justify-between">
         <span className="t10 uppercase tracking-wide" style={{ color: C.faint }}>Resultado por factura</span>
         <div className="flex gap-1.5">
           {[["tel", "Verif. telefónica"], ["ok", "Verificadas · modelo"], ["fail", "Reglas fallidas"], ["all", "Todas"]].map(([k, l]) => (
-            <button key={k} onClick={() => setFiltro(k)} className="rounded-full px-2.5 py-1 t10 font-medium" style={{ backgroundColor: filtro === k ? C.ink : "#fff", color: filtro === k ? "#fff" : C.sub, border: `1px solid ${filtro === k ? C.ink : C.line}` }}>{l}</button>
+            <button key={k} onClick={() => setFiltro(k)} className="rounded-full px-2.5 py-1 t10 font-medium" style={{ backgroundColor: filtro === k ? C.lilac : "#fff", color: filtro === k ? C.indigo : C.sub, border: `1px solid ${filtro === k ? C.indigo : C.line}` }}>{l}</button>
           ))}
         </div>
       </div>
       <div className="mt-1">
         {vistos.map((x) => {
           const f = x.f, v = x.v, isOpen = !!open[f.id]; const chip = DEUDOR_CHIP[v.tipo] || DEUDOR_CHIP["Otro"]; const tel = telEstadoDe(x);
-          const estPill = v.est === "ok" ? { bg: "#ecfdf5", fg: "#047857", t: "✓ Verificada" } : v.hard ? { bg: "#fef2f2", fg: "#b91c1c", t: "✕ Regla dura · verif. + excepción" } : { bg: "#fffbeb", fg: "#b45309", t: "⚠ Req. verif." };
+          const estPill = v.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : v.hard ? { bg: "#fef2f2", fg: "#DC2626", t: "✕ Regla dura · verif. + excepción" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
           return (
           <div key={f.id} style={{ borderBottom: `1px solid ${C.line}` }}>
             <div onClick={() => setOpen((o) => ({ ...o, [f.id]: !o[f.id] }))} className="flex items-center gap-2 py-1.5 t11" style={{ cursor: "pointer" }}>
               <ChevronRight size={11} style={{ color: C.faint, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
-              <span className="shrink-0 rounded px-1 py-0.5 t9 font-medium" style={{ backgroundColor: chip.bg, color: chip.fg }}>{DEUDOR_LABEL[v.tipo] || "Otro"}</span>
+              <span className="shrink-0 rounded-full px-1 py-0.5 t9 font-medium" style={{ backgroundColor: chip.bg, color: chip.fg }}>{DEUDOR_LABEL[v.tipo] || "Otro"}</span>
               <span className="w-8 shrink-0 text-right font-semibold" style={{ color: notaCol(v.nota) }}>{v.nota}</span>
               <span className="min-w-0 flex-1 truncate" style={{ color: C.sub }}>{f.deudor} <span className="t9" style={{ color: C.faint }}>· #{f.folio}</span></span>
               <span className="w-16 shrink-0 text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.montoMM)}</span>
-              <span className="shrink-0 rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: estPill.bg, color: estPill.fg }}>{estPill.t}</span>
+              <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: estPill.bg, color: estPill.fg }}>{estPill.t}</span>
             </div>
             {isOpen && (
               <div className="grid gap-3 rounded-lg p-3 mb-1.5" style={{ backgroundColor: C.page, gridTemplateColumns: "1.3fr .85fr" }}>
                 <div>
                   <div className="t9 font-bold uppercase tracking-wide mb-1.5" style={{ color: C.ink }}>Reglas de verificación · cliente-deudor (3M)</div>
                   {v.evals.map((e) => {
-                    const rc = e.st === "ok" ? { bg: "#ecfdf5", fg: "#047857", t: `✓ ${e.r.fmt(e.v)}` } : e.st === "no" ? { bg: "#fef2f2", fg: "#b91c1c", t: `✕ ${e.r.fmt(e.v)} · umbral ${e.r.thr}` } : { bg: "#f3f1ec", fg: "#78716c", t: "? sin información" };
+                    const rc = e.st === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: `✓ ${e.r.fmt(e.v)}` } : e.st === "no" ? { bg: "#fef2f2", fg: "#DC2626", t: `✕ ${e.r.fmt(e.v)} · umbral ${e.r.thr}` } : { bg: "#FAF9FB", fg: "#6B7280", t: "? sin información" };
                     return (
                     <div key={e.r.id} className="mb-1.5 rounded-lg bg-white p-2" style={{ border: `1px solid ${C.line}` }}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="t10 font-semibold" style={{ color: C.ink }}>{e.r.id} · {e.r.name} {e.r.dura ? "🔒" : ""}</div>
-                        <span className="shrink-0 rounded px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: rc.bg, color: rc.fg }}>{rc.t}</span>
+                        <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: rc.bg, color: rc.fg }}>{rc.t}</span>
                       </div>
                       <div className="t9" style={{ color: C.sub }}>{e.r.desc}</div>
                       <div className="t9" style={{ color: C.faint }}>Dominio: <b style={{ color: C.sub }}>{e.r.dom}</b> · Umbral: <b style={{ color: C.sub }}>{e.r.thr}</b>{e.r.dura ? " · Regla dura — su fallo exige verificación + excepción" : ""}</div>
@@ -3242,18 +3263,18 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado }) {
                 </div>
                 <div>
                   <div className="rounded-lg bg-white p-2.5 mb-2" style={{ border: `1px solid ${C.line}` }}>
-                    <div className="t10 font-bold" style={{ color: C.ink }}>{v.est === "ok" ? <><span className="rounded px-1.5 py-0.5 t9" style={{ backgroundColor: "#ecfdf5", color: "#047857" }}>✓ Verificada</span> por el modelo</> : v.hard ? <><span className="rounded px-1.5 py-0.5 t9" style={{ backgroundColor: "#fef2f2", color: "#b91c1c" }}>✕ Regla dura fallida</span> no comprar</> : <><span className="rounded px-1.5 py-0.5 t9" style={{ backgroundColor: "#fffbeb", color: "#b45309" }}>⚠ Req. verif.</span> verificación telefónica</>}</div>
+                    <div className="t10 font-bold" style={{ color: C.ink }}>{v.est === "ok" ? <><span className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#F0FDF4", color: "#16A34A" }}>✓ Verificada</span> por el modelo</> : v.hard ? <><span className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#fef2f2", color: "#DC2626" }}>✕ Regla dura fallida</span> no comprar</> : <><span className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>⚠ Req. verif.</span> verificación telefónica</>}</div>
                     <div className="mt-1 t9" style={{ color: C.sub }}>{v.est === "ok" ? "Todas las reglas dentro de umbral. Puede continuar a cesión y curse." : v.motivo}</div>
-                    {v.exc && <div className="mt-1.5 rounded-md px-2 py-1 t9" style={{ backgroundColor: "#eef0fd", border: "1px solid #d9dcfa", color: "#4338ca" }}>🔒 Cursar requiere verificación completada + <b>{v.exc}</b></div>}
+                    {v.exc && <div className="mt-1.5 rounded-md px-2 py-1 t9" style={{ backgroundColor: "#F1ECFF", border: "1px solid #F1ECFF", color: "#5B21D6" }}>🔒 Cursar requiere verificación completada + <b>{v.exc}</b></div>}
                   </div>
                   {tel && (
                     <div className="rounded-lg bg-white p-2.5" style={{ border: `1px solid ${C.line}` }}>
-                      <div className="flex items-center justify-between mb-1"><span className="t9 font-bold uppercase tracking-wide" style={{ color: C.ink }}>Verificación telefónica</span><span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: tel.estado === "Completada" ? "#ecfdf5" : tel.estado === "En curso" ? "#fffbeb" : "#f3f1ec", color: tel.estado === "Completada" ? "#047857" : tel.estado === "En curso" ? "#b45309" : "#78716c" }}>{tel.estado}</span></div>
+                      <div className="flex items-center justify-between mb-1"><span className="t9 font-bold uppercase tracking-wide" style={{ color: C.ink }}>Verificación telefónica</span><span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: tel.estado === "Completada" ? "#F0FDF4" : tel.estado === "En curso" ? "#FFF7ED" : "#FAF9FB", color: tel.estado === "Completada" ? "#16A34A" : tel.estado === "En curso" ? "#C2410C" : "#6B7280" }}>{tel.estado}</span></div>
                       {CHECKS.map((c, i) => (
-                        <div key={i} className="flex items-center gap-2 py-1 t10" style={{ borderBottom: i < 2 ? `1px solid ${C.line}` : "none", color: C.sub }}><span className="flex h-4 w-4 items-center justify-center rounded" style={{ border: `1.5px solid ${tel.checks[i] ? "#16a34a" : "#cfd4da"}`, backgroundColor: tel.checks[i] ? "#16a34a" : "#fff", color: "#fff", fontSize: 9, fontWeight: 700 }}>{tel.checks[i] ? "✓" : ""}</span>{c}</div>
+                        <div key={i} className="flex items-center gap-2 py-1 t10" style={{ borderBottom: i < 2 ? `1px solid ${C.line}` : "none", color: C.sub }}><span className="flex h-4 w-4 items-center justify-center rounded" style={{ border: `1.5px solid ${tel.checks[i] ? "#16a34a" : "#D1D5DB"}`, backgroundColor: tel.checks[i] ? "#16a34a" : "#fff", color: "#fff", fontSize: 9, fontWeight: 700 }}>{tel.checks[i] ? "✓" : ""}</span>{c}</div>
                       ))}
                       {tel.who && <div className="mt-1.5 t9" style={{ color: C.faint }}>Registrado por {tel.who}</div>}
-                      {!bloqueado && tel.estado !== "Completada" && <button onClick={() => setTelReg((m) => ({ ...m, [f.id]: nowStamp() }))} className="mt-2 rounded-md px-3 py-1.5 t10 font-semibold" style={{ border: "1px solid #d9dcfa", color: "#4338ca", backgroundColor: "#fff" }}>Registrar verificación</button>}
+                      {!bloqueado && tel.estado !== "Completada" && <button onClick={() => setTelReg((m) => ({ ...m, [f.id]: nowStamp() }))} className="mt-2 rounded-md px-3 py-1.5 t10 font-semibold" style={{ border: "1px solid #F1ECFF", color: "#5B21D6", backgroundColor: "#fff" }}>Registrar verificación</button>}
                     </div>
                   )}
                 </div>
@@ -3270,6 +3291,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado }) {
 function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorporarFacturas, onRetirarFactura, onPublicar, onCerrarOferta, onEnviarCierre, onContactar, onEditarContacto, onEnviarWA, onMover, cierre, onConfirmCierre, usuario, onAutorizarCausa, onOtorgarOperacion, tabInicial, onIrOtorgamientos }) {
   const [tab, setTab] = useState(tabInicial || (deal && deal.stage === "otorgamiento" ? "otorgamiento" : "contacto"));
   useEffect(() => { if (tabInicial) setTab(tabInicial); }, [tabInicial, deal && deal.id]);
+  const [confirmRetiro, setConfirmRetiro] = useState(null); // factura a retirar de la oferta (ConfirmDialog spec §26)
   const [otorgNota, setOtorgNota] = useState(""); // nota del especialista en Otorgamiento
   const [otorgArch, setOtorgArch] = useState([]); // archivos de soporte adjuntos
   const [reevTick, setReevTick] = useState(0); // fuerza re-render tras re-evaluar la simulación
@@ -3335,7 +3357,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [editC, setEditC] = useState(false); // edición de datos de contacto
   const [draftC, setDraftC] = useState(() => ({ nombre: "", cargo: "", telefono: "", email: "", ...(deal && deal.contacto) }));
   if (!deal) return null;
-  const sector = SECTOR_COLORS[deal.sector] || { bg: "#f5f5f4", fg: "#57534e" };
+  const sector = SECTOR_COLORS[deal.sector] || { bg: "#F3F4F6", fg: "#4B5563" };
   const stageIdx = STAGE_ORDER.indexOf(deal.stage);
   const nextStage = STAGES[stageIdx + 1];
   const progresoStages = STAGES.filter((s) => s.id !== "perdida");
@@ -3362,14 +3384,14 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               {(() => {
                 const on = tienePreEval(deal.id);
                 return (
-                  <button onClick={() => { const nv = !on; setPreEval(deal.id, usuario, nv); if (nv) avisarPreEval(deal, usuario); setReevTick((x) => x + 1); }} title={on ? "Cancelar la solicitud de pre-evaluación de otorgamiento" : "Solicitar iniciar formalmente la revisión de otorgamiento (pre-evaluación)"} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 t11 font-semibold" style={{ border: `1px solid ${on ? "#c4b5fd" : C.line}`, backgroundColor: on ? "#f5f3ff" : "#fff", color: on ? "#6d28d9" : C.sub }}><ShieldCheck size={14} style={{ color: on ? "#6d28d9" : C.faint }} /> Pre-evaluación</button>
+                  <button onClick={() => { const nv = !on; setPreEval(deal.id, usuario, nv); if (nv) avisarPreEval(deal, usuario); setReevTick((x) => x + 1); }} title={on ? "Cancelar la solicitud de pre-evaluación de otorgamiento" : "Solicitar iniciar formalmente la revisión de otorgamiento (pre-evaluación)"} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 t11 font-semibold" style={{ border: `1px solid ${on ? "#c4b5fd" : C.line}`, backgroundColor: on ? "#f5f3ff" : "#fff", color: on ? "#7C3AED" : C.sub }}><ShieldCheck size={14} style={{ color: on ? "#7C3AED" : C.faint }} /> Pre-evaluación</button>
                 );
               })()}
               {(() => {
                 const on = tienePrioridadCurse(deal.id);
                 const puede = esJefeComercial(usuario); // jefaturas/gerencia solicitan; ejecutivo solo la ve
                 return (
-                  <button onClick={puede ? () => { setPrioridadCurse(deal.id, usuario, !on); setReevTick((x) => x + 1); } : undefined} title={puede ? (on ? "Quitar prioridad de curse" : "Solicitar prioridad de curse al ejecutivo") : (on ? `Prioridad de curse solicitada por ${PRIORIDAD_CURSE[deal.id].porNombre}` : "La prioridad de curse la solicita una jefatura")} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 t11 font-semibold" style={{ border: `1px solid ${on ? "#fcd34d" : C.line}`, backgroundColor: on ? "#fffbeb" : "#fff", color: on ? "#b45309" : C.sub, cursor: puede ? "pointer" : "default" }}><Star size={14} style={{ color: on ? "#d97706" : C.faint, fill: on ? "#f59e0b" : "none" }} /> Prioridad</button>
+                  <button onClick={puede ? () => { setPrioridadCurse(deal.id, usuario, !on); setReevTick((x) => x + 1); } : undefined} title={puede ? (on ? "Quitar prioridad de curse" : "Solicitar prioridad de curse al ejecutivo") : (on ? `Prioridad de curse solicitada por ${PRIORIDAD_CURSE[deal.id].porNombre}` : "La prioridad de curse la solicita una jefatura")} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 t11 font-semibold" style={{ border: `1px solid ${on ? "#FED7AA" : C.line}`, backgroundColor: on ? "#FFF7ED" : "#fff", color: on ? "#C2410C" : C.sub, cursor: puede ? "pointer" : "default" }}><Star size={14} style={{ color: on ? "#C2410C" : C.faint, fill: on ? "#F97316" : "none" }} /> Prioridad</button>
                 );
               })()}
               <button onClick={onClose} className="rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>
@@ -3378,11 +3400,11 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           <div className="mt-3 flex flex-wrap gap-1.5">
             <Pill style={{ backgroundColor: TAG_COLORS[deal.tag]?.bg, color: TAG_COLORS[deal.tag]?.fg }}>{deal.tag}</Pill>
             {deal.cat && (() => { const cd = catDisp(deal); return <Pill style={{ backgroundColor: catMeta(cd.cat).bg, color: catMeta(cd.cat).fg }}>{cd.label} · {cd.q}</Pill>; })()}
-            {deal.channel === "IA" && <Pill style={{ backgroundColor: "#f5f3ff", color: "#6d28d9" }}><Sparkles size={9} className="mr-0.5" />Agente IA</Pill>}
+            {deal.channel === "IA" && <Pill style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}><Sparkles size={9} className="mr-0.5" />Agente IA</Pill>}
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {[["contacto", "Empresa"], ["negocio", "Negocio"], ["comunicaciones", "Comunicaciones"], ["bitacora", "Bitácora"], ["sow", "SOW"], ["cobranza", "Cobranza"], ["mensajeria", "Mensajería"], ...((deal.facturasOp && deal.facturasOp.length) ? [["verificacion", "Verificación"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => (
-              <button key={k} onClick={() => setTab(k)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: tab === k ? C.ink : "#fff", color: tab === k ? "#fff" : C.sub, border: `1px solid ${tab === k ? C.ink : C.line}` }}>{l}</button>
+              <button key={k} onClick={() => setTab(k)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: tab === k ? C.lilac : "#fff", color: tab === k ? C.indigo : C.sub, border: `1px solid ${tab === k ? C.indigo : C.line}` }}>{l}</button>
             ))}
           </div>
         </div>
@@ -3431,12 +3453,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               <div className="mt-4 space-y-3">
                 {deal.stage === "perdida" ? (
                   <div className="rounded-lg p-3" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca" }}>
-                    <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#b91c1c" }}><X size={12} /> ⛔ Operación perdida{deal.bloqueosFirmes && deal.bloqueosFirmes.length ? ` · ${deal.bloqueosFirmes.length} bloqueo(s) firme(s): ${deal.bloqueosFirmes.map((n) => "#" + n).join(", ")}` : ""}{deal.fechaPerdida ? ` · ${deal.fechaPerdida}` : ""}</div>
+                    <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#DC2626" }}><X size={12} /> ⛔ Operación perdida{deal.bloqueosFirmes && deal.bloqueosFirmes.length ? ` · ${deal.bloqueosFirmes.length} bloqueo(s) firme(s): ${deal.bloqueosFirmes.map((n) => "#" + n).join(", ")}` : ""}{deal.fechaPerdida ? ` · ${deal.fechaPerdida}` : ""}</div>
                     <div className="mt-1.5 t12" style={{ color: C.ink, lineHeight: 1.5 }}>{causaPerdidaDeal(deal)}. Estado terminal: los bloqueos firmes <b>no admiten excepción</b> por ningún nivel de atribución. El historial de versiones queda en <b>solo lectura</b>. Para reactivar el negocio se crea una operación nueva con referencia a ésta.</div>
                   </div>
                 ) : (
                 <div className="rounded-lg p-3" style={{ backgroundColor: "#f5f3ff", border: "1px solid #ddd6fe" }}>
-                  <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#6d28d9" }}><AlertTriangle size={12} /> Requiere otorgamiento · {nReglas} regla{nReglas === 1 ? "" : "s"} del cliente{preview && <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fffbeb", color: "#b45309" }}>Vista previa</span>}</div>
+                  <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#7C3AED" }}><AlertTriangle size={12} /> Requiere otorgamiento · {nReglas} regla{nReglas === 1 ? "" : "s"} del cliente{preview && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>Vista previa</span>}</div>
                   <div className="mt-1.5 t12" style={{ color: C.ink, lineHeight: 1.5 }}>{preview ? "Según la simulación actual, al aceptarse esta operación quedará en otorgamiento por las siguientes reglas del cliente. " : "Esta operación fue aceptada pero no puede cursarse automáticamente. A continuación, las reglas del cliente que la dejaron en otorgamiento. "}<b>La aprobación la realizan las áreas responsables desde el menú Otorgamientos</b>; esta vista es informativa.</div>
                 </div>
                 )}
@@ -3446,10 +3468,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   const misExc = vis0.exc.filter((e) => !st0[e.n]).filter((e) => puedeAprobarExc(usuario, REGLAS_CLIENTE.find((r) => r.n === e.n), e.nivel || 4));
                   if (!misExc.length) return null;
                   return (
-                    <div className="rounded-lg p-3" style={{ backgroundColor: "#eef2ff", border: "1px solid #c7d2fe" }}>
+                    <div className="rounded-lg p-3" style={{ backgroundColor: "#F1ECFF", border: "1px solid #D9CCFF" }}>
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 t11 font-semibold" style={{ color: "#4338ca" }}><ShieldCheck size={13} /> Tienes {misExc.length} criterio(s) por excepcionar en esta operación</div>
+                          <div className="flex items-center gap-1.5 t11 font-semibold" style={{ color: "#5B21D6" }}><ShieldCheck size={13} /> Tienes {misExc.length} criterio(s) por excepcionar en esta operación</div>
                           <div className="mt-0.5 t10" style={{ color: C.sub }}>Según tu atribución ({USERS[usuario] || usuario}), puedes aprobar o rechazar estas excepciones desde la Bandeja de aprobaciones.</div>
                         </div>
                         {onIrOtorgamientos && <button onClick={onIrOtorgamientos} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Ir a aprobar <ChevronRight size={13} /></button>}
@@ -3462,8 +3484,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             );
           })()}
           {tab === "contacto" && (<>
-          <div className="mt-4 rounded-lg p-3" style={{ backgroundColor: "#f5f3ff", border: "1px solid #e9d5ff" }}>
-            <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#6d28d9" }}>
+          <div className="mt-4 rounded-lg p-3" style={{ backgroundColor: "#f5f3ff", border: "1px solid #DDD6FE" }}>
+            <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#7C3AED" }}>
               <Zap size={12} /> Resumen IA de la operación
             </div>
             <div className="mt-2 space-y-1.5">
@@ -3485,7 +3507,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               <div className="mt-4">
                 <div className="flex items-center justify-between">
                   <div className="t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Línea de crédito</div>
-                  {lc.fueraDeLinea && <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red }}>Fuera de línea · exceso {fmtMM(lc.excesoProyectado)}</span>}
+                  {lc.fueraDeLinea && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red }}>Fuera de línea · exceso {fmtMM(lc.excesoProyectado)}</span>}
                 </div>
                 <div className="mt-1.5 rounded-lg p-3" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
                   <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 t11">
@@ -3496,13 +3518,13 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                     <div className="col-span-2 flex items-center justify-between"><span style={{ color: C.sub }}>Proyección post-curse</span><span className="font-bold" style={{ color: lc.fueraDeLinea ? C.red : C.ink }}>{fmtMM(lc.proyectado)} / {fmtMM(lc.aprobada)}</span></div>
                   </div>
                   {/* Barra: uso actual + esta operación vs línea aprobada */}
-                  <div className="mt-2 flex h-3 w-full overflow-hidden rounded-full" style={{ backgroundColor: "#f1efe9" }}>
-                    <div style={{ width: `${usoPct}%`, backgroundColor: "#94a3b8" }} />
+                  <div className="mt-2 flex h-3 w-full overflow-hidden rounded-full" style={{ backgroundColor: "#E5E7EB" }}>
+                    <div style={{ width: `${usoPct}%`, backgroundColor: "#9CA3AF" }} />
                     <div style={{ width: `${opPct}%`, backgroundColor: lc.fueraDeLinea ? C.amber : C.indigo }} />
                     {overPct > 0 && <div style={{ width: `${overPct}%`, backgroundColor: C.red }} />}
                   </div>
                   <div className="mt-1 flex items-center gap-3 t8" style={{ color: C.faint }}>
-                    <span className="inline-flex items-center gap-1"><span className="inline-block h-1.5 w-1.5 rounded-sm" style={{ backgroundColor: "#94a3b8" }} />Uso actual</span>
+                    <span className="inline-flex items-center gap-1"><span className="inline-block h-1.5 w-1.5 rounded-sm" style={{ backgroundColor: "#9CA3AF" }} />Uso actual</span>
                     <span className="inline-flex items-center gap-1"><span className="inline-block h-1.5 w-1.5 rounded-sm" style={{ backgroundColor: lc.fueraDeLinea ? C.amber : C.indigo }} />Esta operación</span>
                     {overPct > 0 && <span className="inline-flex items-center gap-1"><span className="inline-block h-1.5 w-1.5 rounded-sm" style={{ backgroundColor: C.red }} />Exceso</span>}
                   </div>
@@ -3546,22 +3568,22 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   const bloqueado = ["aceptadas", "cesion", "giro", "perdida"].includes(deal.stage);
                   return (
                     <div className="mt-4">
-                      <div className="flex items-center justify-between gap-1.5 t11 font-semibold" style={{ color: "#b45309" }}><span className="flex items-center gap-1.5"><MessageSquare size={12} /> Simulación</span>{bloqueado && <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>🔒 Aceptada · bloqueada</span>}</div>
+                      <div className="flex items-center justify-between gap-1.5 t11 font-semibold" style={{ color: "#C2410C" }}><span className="flex items-center gap-1.5"><MessageSquare size={12} /> Simulación</span>{bloqueado && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>🔒 Aceptada · bloqueada</span>}</div>
                       {bloqueado && <div className="mt-1 t9" style={{ color: C.sub }}>La operación ya fue aceptada formalmente: no se pueden modificar las condiciones ni agregar/retirar facturas.</div>}
                       {/* Sub-tabs del negocio: Resumen · Documentos · Descuentos */}
                       <div className="mt-2 flex items-center gap-1.5">
                         {[["resumen", "Resumen"], ["documentos", "Documentos"], ["descuentos", "Descuentos"]].map(([k, l]) => (
-                          <button key={k} onClick={() => setNegTab(k)} className="rounded-lg px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: negTab === k ? C.ink : "#fff", color: negTab === k ? "#fff" : C.sub, border: `1px solid ${negTab === k ? C.ink : C.line}` }}>{l}</button>
+                          <button key={k} onClick={() => setNegTab(k)} className="rounded-lg px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: negTab === k ? C.lilac : "#fff", color: negTab === k ? C.indigo : C.sub, border: `1px solid ${negTab === k ? C.indigo : C.line}` }}>{l}</button>
                         ))}
                       </div>
                       {negTab === "resumen" && <SimResumen deal={deal} o={o} montoDocs={montoValido} cantFacturas={validas.length} usuario={USERS[usuario] || usuario} bloqueado={bloqueado} antic={antic} setAntic={setAntic} comisO={comisO} setComisO={setComisO} tasaPond={tasaPond} diasPond={diasPond} />}
                       {negTab === "descuentos" && <SimDescuentos deal={deal} o={o} />}
                       {negTab === "documentos" && (<>
                       {/* Parámetros: tabs Deudores / Facturas */}
-                      <div className="mt-2 border-t pt-1.5" style={{ borderColor: "#fde68a" }}>
+                      <div className="mt-2 border-t pt-1.5" style={{ borderColor: "#FED7AA" }}>
                         <div className="flex items-center gap-1.5">
                           {[["facturas", "Facturas"], ["deudores", "Deudores"]].map(([k, l]) => (
-                            <button key={k} onClick={() => setParamTab(k)} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ backgroundColor: paramTab === k ? C.ink : "#fff", color: paramTab === k ? "#fff" : C.sub, border: `1px solid ${paramTab === k ? C.ink : C.line}` }}>{l}</button>
+                            <button key={k} onClick={() => setParamTab(k)} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ backgroundColor: paramTab === k ? C.lilac : "#fff", color: paramTab === k ? C.indigo : C.sub, border: `1px solid ${paramTab === k ? C.indigo : C.line}` }}>{l}</button>
                           ))}
                         </div>
                         {paramTab === "deudores" ? (
@@ -3573,7 +3595,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           </div>
                         ); })()}
                         {(() => { const req = deudoresUnicos.filter((dn) => !verifDeudor(dn, tipoDeudorDisp(facturasOp.filter((f) => f.deudor === dn)[0])).verificada).length; return (
-                          <div className="mt-1 rounded-lg p-2 t9" style={{ backgroundColor: req ? "#fffbeb" : "#ecfdf5", border: `1px solid ${req ? "#fde68a" : "#bbf7d0"}`, color: req ? "#b45309" : "#047857" }}>
+                          <div className="mt-1 rounded-lg p-2 t9" style={{ backgroundColor: req ? "#FFF7ED" : "#F0FDF4", border: `1px solid ${req ? "#FED7AA" : "#bbf7d0"}`, color: req ? "#C2410C" : "#16A34A" }}>
                             {req > 0
                               ? <><AlertTriangle size={10} className="mr-0.5 inline align-[-1px]" /><b>{req}</b> de {deudoresUnicos.length} deudor(es) <b>requieren verificación telefónica</b> (existencia de la factura, recepción y fecha de pago); el resto quedó <b>verificado</b> por el modelo de riesgo del deudor.</>
                               : <><Check size={10} className="mr-0.5 inline align-[-1px]" />Los {deudoresUnicos.length} deudor(es) quedaron <b>verificados</b> por el modelo: no requieren verificación telefónica.</>}
@@ -3587,19 +3609,19 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             return (
                             <div key={dn} className="flex items-center gap-1.5 t11">
                               <span className="min-w-0 flex-1 truncate" style={{ color: C.sub }} title={dn}>{dn}</span>
-                              <span className="shrink-0 inline-flex items-center gap-0.5 rounded px-1 py-0.5 t9 font-semibold" title={vf.verificada ? "Verificada · el deudor cumple el modelo, no requiere verificación telefónica." : "Requiere verificación telefónica — no cumple:\n" + vf.crit.filter((c) => !c.ok).map((c) => `• ${c.l} (req. ${c.req})`).join("\n")} style={{ backgroundColor: vf.verificada ? "#ecfdf5" : "#fffbeb", color: vf.verificada ? "#047857" : "#b45309", cursor: "help" }}>{vf.verificada ? <Check size={9} /> : <AlertTriangle size={9} />}{vf.verificada ? "Verificada" : "Req. verif."}</span>
-                              <span className="shrink-0 rounded px-1 py-0.5 t9 font-medium" style={{ backgroundColor: chip.bg, color: chip.fg }}>{DEUDOR_LABEL[sc.tipo] || "Otro"}</span>
+                              <span className="shrink-0 inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 t9 font-semibold" title={vf.verificada ? "Verificada · el deudor cumple el modelo, no requiere verificación telefónica." : "Requiere verificación telefónica — no cumple:\n" + vf.crit.filter((c) => !c.ok).map((c) => `• ${c.l} (req. ${c.req})`).join("\n")} style={{ backgroundColor: vf.verificada ? "#F0FDF4" : "#FFF7ED", color: vf.verificada ? "#16A34A" : "#C2410C", cursor: "help" }}>{vf.verificada ? <Check size={9} /> : <AlertTriangle size={9} />}{vf.verificada ? "Verificada" : "Req. verif."}</span>
+                              <span className="shrink-0 rounded-full px-1 py-0.5 t9 font-medium" style={{ backgroundColor: chip.bg, color: chip.fg }}>{DEUDOR_LABEL[sc.tipo] || "Otro"}</span>
                               <span className="w-8 shrink-0 text-right font-semibold" title={`Nota del deudor: ${notaFromScore(sc.score)} / 5 · modelo de riesgo Security (5 = mejor pagador)`} style={{ color: NOTA_COLOR(notaFromScore(sc.score)) }}>{notaFromScore(sc.score)}</span>
                               <span className="w-8 shrink-0 text-right t10" style={{ color: C.faint }}>×{pn}</span>
                               <span className="w-16 shrink-0 text-right t10 font-medium" style={{ color: C.ink }}>{fmtMM(pmm)}</span>
-                              <div className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+                              <div className="flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
                                 <span className="t9" style={{ color: C.faint }}>spread</span>
                                 {(() => { const sg = spreadSugerido(dn, deal); return (
                                 <input type="number" step="0.01" disabled={bloqueado} title={`Sugerido por SOW: ${sg.spread.toFixed(2)}% — estándar ${SPREAD_ESTANDAR.toFixed(2)}% − ${sg.ajuste.toFixed(2)} pts (${sg.label}).\nSpread mínimo de ${dn}: ${sg.piso.toFixed(2)}% (piso de riesgo).${sg.topado ? "\n⚠ El piso de riesgo truncó el descuento comercial." : ""}`} value={spreadDeudor[dn] != null ? spreadDeudor[dn] : sg.spread} onChange={(e) => setSpreadDeudor((m) => ({ ...m, [dn]: Math.max(0, +e.target.value || 0) }))} className="w-12 bg-transparent text-right outline-none disabled:opacity-60" style={{ color: (spreadDeudor[dn] != null ? spreadDeudor[dn] : sg.spread) < sg.piso ? C.red : C.ink }} />
                                 ); })()}
                                 <span className="t9" style={{ color: C.faint }}>%</span>
                               </div>
-                              <div className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+                              <div className="flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
                                 <input type="number" step="1" disabled={bloqueado} value={vencDias[dn] != null ? vencDias[dn] : diasPagoDeudor(dn)} onChange={(e) => setVencDias((m) => ({ ...m, [dn]: Math.max(1, +e.target.value || 0) }))} className="w-10 bg-transparent text-right outline-none disabled:opacity-60" style={{ color: C.ink }} />
                                 <span className="t9" style={{ color: C.faint }}>días</span>
                               </div>
@@ -3607,7 +3629,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             </div>
                             );
                           })}
-                          <div className="flex items-center gap-1.5 t10 font-semibold" style={{ color: C.ink, borderTop: `1px solid #fde68a`, paddingTop: 4 }}>
+                          <div className="flex items-center gap-1.5 t10 font-semibold" style={{ color: C.ink, borderTop: `1px solid #FED7AA`, paddingTop: 4 }}>
                             <span className="min-w-0 flex-1">Total ({deudoresUnicos.length} deudores)</span>
                             <span className="w-8 shrink-0 text-right">×{facturasOp.length}</span>
                             <span className="w-16 shrink-0 text-right">{fmtMM(montoOrig)}</span>
@@ -3628,8 +3650,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
                           const he = Math.abs(hashStr("em" + f.folio)) % 20 + 3; const em = new Date(Date.now() - he * 86400000).toLocaleDateString("es-CL");
                           const reqOtorg = f.inboundBucket === "OTRO" || tipoDeudorDisp(f) === "Otro";
-                          const oto = reqOtorg ? { bg: "#f5f3ff", fg: "#6d28d9", t: "Otorgamiento" } : { bg: "#ecfdf5", fg: "#047857", t: "Automático" };
-                          const vf = verifFactura(f, deal); const vv = vf.est === "ok" ? { bg: "#ecfdf5", fg: "#047857", t: "✓ Verificada" } : { bg: "#fffbeb", fg: "#b45309", t: "⚠ Req. verif." };
+                          const oto = reqOtorg ? { bg: "#f5f3ff", fg: "#7C3AED", t: "Otorgamiento" } : { bg: "#F0FDF4", fg: "#16A34A", t: "Automático" };
+                          const vf = verifFactura(f, deal); const vv = vf.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
                           const tasaF = ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + COSTO_FONDO).toFixed(2);
                           return (
                           <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: GC, borderBottom: `1px solid ${C.line}` }}>
@@ -3638,12 +3660,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             <span className="truncate" style={{ color: C.sub }} title={f.deudor}>{f.deudor}</span>
                             <span className="text-right font-semibold" title={`Nota del deudor: ${nota} / 5`} style={{ color: NOTA_COLOR(nota) }}>{nota}</span>
                             <span className="t9" style={{ color: C.faint }}>{em}</span>
-                            <input type="date" disabled={bloqueado} value={vencFecha[f.id] || ""} onChange={(e) => setVencFecha((m) => ({ ...m, [f.id]: e.target.value }))} title="Fecha de vencimiento (editable)" className="rounded-md px-1 py-0.5 t9 outline-none disabled:opacity-60" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }} />
-                            <span className="justify-self-start rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: oto.bg, color: oto.fg }}>{oto.t}</span>
-                            <span className="justify-self-start rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: vv.bg, color: vv.fg }}>{vv.t}</span>
+                            <input type="date" disabled={bloqueado} value={vencFecha[f.id] || ""} onChange={(e) => setVencFecha((m) => ({ ...m, [f.id]: e.target.value }))} title="Fecha de vencimiento (editable)" className="rounded-full px-1 py-0.5 t9 outline-none disabled:opacity-60" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }} />
+                            <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: oto.bg, color: oto.fg }}>{oto.t}</span>
+                            <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: vv.bg, color: vv.fg }}>{vv.t}</span>
                             <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
                             <span className="text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.montoMM)}</span>
-                            {!bloqueado ? <button onClick={() => onRetirarFactura(deal.id, f)} disabled={validas.length <= 1} title={validas.length <= 1 ? "La oferta debe tener al menos una factura" : "Retirar de la oferta"} className="justify-self-center rounded p-0.5 disabled:opacity-30" style={{ color: C.red }}><Trash2 size={12} /></button> : <span></span>}
+                            {!bloqueado ? <button onClick={() => setConfirmRetiro(f)} disabled={validas.length <= 1} title={validas.length <= 1 ? "La oferta debe tener al menos una factura" : "Retirar de la oferta"} className="justify-self-center rounded p-0.5 disabled:opacity-30" style={{ color: C.red }}><Trash2 size={12} /></button> : <span></span>}
                           </div>
                           );
                         })}
@@ -3657,8 +3679,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         )}
                       </div>
                       {/* Separación: documentos que PODRÍAN incorporarse (distinto de los ya considerados arriba) */}
-                      <div className="mt-4 rounded-lg p-2.5" style={{ backgroundColor: "#fff", border: `1px dashed #f59e0b` }}>
-                        <div className="t10 font-semibold uppercase tracking-wide" style={{ color: "#b45309" }}>Otras facturas del cliente</div>
+                      <div className="mt-4 rounded-lg p-2.5" style={{ backgroundColor: "#fff", border: `1px dashed #F97316` }}>
+                        <div className="t10 font-semibold uppercase tracking-wide" style={{ color: "#C2410C" }}>Otras facturas del cliente</div>
                         <div className="mt-1.5">
                         {(() => {
                           const cands = candidatasDe(deal);
@@ -3677,15 +3699,15 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             <>
                               <div className="flex items-center gap-1.5">
                                 {[["candidatas", `Candidatas (${cands.length})`], ["todas", `Todas las facturas (${todas.length})`]].map(([k, l]) => (
-                                  <button key={k} onClick={() => setFactTab(k)} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ backgroundColor: factTab === k ? C.ink : "#fff", color: factTab === k ? "#fff" : C.sub, border: `1px solid ${factTab === k ? C.ink : C.line}` }}>{l}</button>
+                                  <button key={k} onClick={() => setFactTab(k)} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ backgroundColor: factTab === k ? C.lilac : "#fff", color: factTab === k ? C.indigo : C.sub, border: `1px solid ${factTab === k ? C.indigo : C.line}` }}>{l}</button>
                                 ))}
                                 {factTab === "candidatas" && cands.some((f) => !f.otro) && !bloqueado && (
                                   // "Agregar todas" sólo incluye las candidatas elegibles; las de "Otros deudores"
                                   // (f.otro) se agregan una a una de forma manual, nunca en bloque.
-                                  <button onClick={() => onIncorporarFacturas(deal.id, cands.filter((f) => !f.otro))} className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md px-2 py-1 t9 font-medium" style={{ border: "1px solid #f59e0b", color: "#b45309", backgroundColor: "#fff" }}><Plus size={10} /> Agregar todas las elegibles</button>
+                                  <button onClick={() => onIncorporarFacturas(deal.id, cands.filter((f) => !f.otro))} className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md px-2 py-1 t9 font-medium" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar todas las elegibles</button>
                                 )}
                               </div>
-                              <div className="mt-1.5 flex items-center gap-1.5 rounded-md px-2 py-1" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+                              <div className="mt-1.5 flex items-center gap-1.5 rounded-full px-2 py-1" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
                                 <Search size={12} style={{ color: C.faint }} />
                                 <input value={factQuery} onChange={(e) => setFactQuery(e.target.value)} placeholder="Buscar por folio o empresa deudora…" className="w-full bg-transparent t11 outline-none" style={{ color: C.ink }} />
                                 {factQuery && <button onClick={() => setFactQuery("")} style={{ color: C.faint }}><X size={12} /></button>}
@@ -3699,18 +3721,18 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     <div className="mt-1.5 space-y-1">
                                       {candsVis.map((f) => { const { sc, ch } = clasif(f); return (
                                         <div key={f.id} className="flex items-center gap-2 t11">
-                                          <span className="shrink-0 rounded px-1 py-0.5 t9 font-medium" style={{ backgroundColor: ch.bg, color: ch.fg }}>{DEUDOR_LABEL[sc.tipo] || "Otro"}</span>
+                                          <span className="shrink-0 rounded-full px-1 py-0.5 t9 font-medium" style={{ backgroundColor: ch.bg, color: ch.fg }}>{DEUDOR_LABEL[sc.tipo] || "Otro"}</span>
                                           <span className="w-8 shrink-0 text-right font-semibold" title={`Nota del deudor: ${notaFromScore(sc.score)} / 5 · modelo de riesgo Security (5 = mejor pagador)`} style={{ color: NOTA_COLOR(notaFromScore(sc.score)) }}>{notaFromScore(sc.score)}</span>
                                           <span className="min-w-0 flex-1 truncate" style={{ color: C.sub }}>{f.deudor} <span className="t9" style={{ color: C.faint }}>· #{f.folio} · {fmtMM(f.montoMM)}</span></span>
-                                          {!bloqueado && <button onClick={() => onIncorporarFacturas(deal.id, [f])} className="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 t9 font-semibold" style={{ border: "1px solid #f59e0b", color: "#b45309", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button>}
+                                          {!bloqueado && <button onClick={() => onIncorporarFacturas(deal.id, [f])} className="flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button>}
                                         </div>
                                       ); })}
                                     </div>
                                     {totalPg > 1 && (
                                       <div className="mt-1.5 flex items-center justify-end gap-2 t10" style={{ color: C.faint }}>
-                                        <button onClick={() => setCandPage(Math.max(0, pg - 1))} disabled={pg === 0} title="Anterior" className="disabled:opacity-30" style={{ color: "#b45309" }}><ChevronLeft size={14} /></button>
+                                        <button onClick={() => setCandPage(Math.max(0, pg - 1))} disabled={pg === 0} title="Anterior" className="disabled:opacity-30" style={{ color: "#C2410C" }}><ChevronLeft size={14} /></button>
                                         <span>{pg + 1}/{totalPg}</span>
-                                        <button onClick={() => setCandPage(Math.min(totalPg - 1, pg + 1))} disabled={pg >= totalPg - 1} title="Siguiente" className="disabled:opacity-30" style={{ color: "#b45309" }}><ChevronRight size={14} /></button>
+                                        <button onClick={() => setCandPage(Math.min(totalPg - 1, pg + 1))} disabled={pg >= totalPg - 1} title="Siguiente" className="disabled:opacity-30" style={{ color: "#C2410C" }}><ChevronRight size={14} /></button>
                                       </div>
                                     )}
                                   </>
@@ -3722,15 +3744,15 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     {todasF.map((f) => { const { sc, ch } = clasif(f); const ok = xmlOk[f.id] !== false; return (
                                       <div key={f.id} className="flex items-center gap-2 t11" style={{ opacity: f.excl ? 0.6 : 1 }}>
                                         <span title={f.candidata ? "Es candidata · disponible para agregar a la oferta" : "Ya está en la oferta"} className="shrink-0 flex items-center">
-                                          <Star size={13} style={{ color: f.candidata ? "#f59e0b" : C.faint }} fill={f.candidata ? "#f59e0b" : "none"} />
+                                          <Star size={13} style={{ color: f.candidata ? "#F97316" : C.faint }} fill={f.candidata ? "#F97316" : "none"} />
                                         </span>
-                                        <span className="shrink-0 rounded px-1 py-0.5 t9 font-medium" style={{ backgroundColor: ch.bg, color: ch.fg }}>{DEUDOR_LABEL[sc.tipo] || "Otro"}</span>
+                                        <span className="shrink-0 rounded-full px-1 py-0.5 t9 font-medium" style={{ backgroundColor: ch.bg, color: ch.fg }}>{DEUDOR_LABEL[sc.tipo] || "Otro"}</span>
                                         <span className="w-8 shrink-0 text-right font-semibold" title={`Nota del deudor: ${notaFromScore(sc.score)} / 5 · modelo de riesgo Security (5 = mejor pagador)`} style={{ color: NOTA_COLOR(notaFromScore(sc.score)) }}>{notaFromScore(sc.score)}</span>
                                         <span className="min-w-0 flex-1 truncate" style={{ color: C.sub }}>{f.deudor} <span className="t9" style={{ color: C.faint }}>· #{f.folio} · {f.excl ? <span style={{ textDecoration: "line-through" }}>{fmtMM(f.montoMM)}</span> : fmtMM(f.montoMM)}</span></span>
-                                        {f.excl && <span title={`Excluida: ${f.excl}`} className="shrink-0 rounded px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red, border: "1px solid #fecaca", cursor: "help" }}>{f.excl} ✕</span>}
+                                        {f.excl && <span title={`Excluida: ${f.excl}`} className="shrink-0 rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red, border: "1px solid #fecaca", cursor: "help" }}>{f.excl} ✕</span>}
                                         {f.candidata
-                                          ? (!bloqueado && <button onClick={() => onIncorporarFacturas(deal.id, [f])} className="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 t9 font-semibold" style={{ border: "1px solid #f59e0b", color: "#b45309", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button>)
-                                          : <button onClick={() => setXmlOk((m) => ({ ...m, [f.id]: !ok }))} title={ok ? "Con XML" : "Sin XML"} disabled={!!f.excl || bloqueado} className="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: ok ? C.greenBg : "#fef2f2", color: ok ? C.green : C.red, border: `1px solid ${ok ? "#bbf7d0" : "#fecaca"}` }}>{ok ? <Check size={10} /> : <X size={10} />} XML</button>}
+                                          ? (!bloqueado && <button onClick={() => onIncorporarFacturas(deal.id, [f])} className="flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button>)
+                                          : <button onClick={() => setXmlOk((m) => ({ ...m, [f.id]: !ok }))} title={ok ? "Con XML" : "Sin XML"} disabled={!!f.excl || bloqueado} className="flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: ok ? C.greenBg : "#fef2f2", color: ok ? C.green : C.red, border: `1px solid ${ok ? "#bbf7d0" : "#fecaca"}` }}>{ok ? <Check size={10} /> : <X size={10} />} XML</button>}
                                       </div>
                                     ); })}
                                     {todasF.length === 0 && <div className="t10" style={{ color: C.faint }}>Sin resultados para “{factQuery}”.</div>}
@@ -3757,8 +3779,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                       )}
                       </>)}
                       {!bloqueado && (bloqueoComs ? (
-                        <div className="mt-2 rounded-lg p-2.5" style={{ backgroundColor: C.amberBg, border: "1px solid #fde68a" }}>
-                          <div className="flex items-center gap-1.5 t11 font-semibold" style={{ color: "#b45309" }}><AlertTriangle size={12} /> {modificado ? "Contacto modificado · pendiente de verificar" : "Contacto no verificado"}</div>
+                        <div className="mt-2 rounded-lg p-2.5" style={{ backgroundColor: C.amberBg, border: "1px solid #FED7AA" }}>
+                          <div className="flex items-center gap-1.5 t11 font-semibold" style={{ color: "#C2410C" }}><AlertTriangle size={12} /> {modificado ? "Contacto modificado · pendiente de verificar" : "Contacto no verificado"}</div>
                           <div className="mt-0.5 t10" style={{ color: C.sub }}>{modificado ? "Reinicia el contacto desde la pestaña Comunicaciones: si el cliente responde quedará verificado y se habilitará publicar y comunicar." : "No se puede publicar la oferta ni enviar comunicaciones hasta verificar el contacto. Edita sus datos o márcalo como verificado (pestaña Comunicaciones)."}</div>
                           <button onClick={() => onEditarContacto(deal.id, {})} className="mt-2 rounded-md px-3 py-1.5 t10 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Marcar como verificado</button>
                         </div>
@@ -3776,13 +3798,13 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               <button onClick={intentarCerrar} className="flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-semibold text-white" style={{ backgroundColor: C.green }}><Check size={12} /> Cerrar oferta</button>
                               <button disabled title="Primero cierra la oferta para poder publicarla" className="flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-medium text-white cursor-not-allowed" style={{ backgroundColor: C.green, opacity: 0.4 }}><Check size={12} /> Publicar oferta de cierre <ChevronDown size={12} /></button>
                             </div>
-                            <div className="mt-1.5 rounded-lg p-2.5 t9" style={{ backgroundColor: C.amberBg, border: "1px solid #fde68a", color: "#b45309" }}>Confirma la selección de facturas acordada con el cliente. Hasta cerrar la oferta, «Publicar oferta de cierre» queda deshabilitado y el Agente IA de WhatsApp tampoco puede enviarla — así te aseguras de revisar el paquete antes de que salga.</div>
-                            {deal.ofertaSolicitada && <div className="mt-1.5 flex items-center gap-1.5 t9 font-semibold" style={{ color: "#b91c1c" }}><MessageSquare size={11} /> El cliente ya pidió la oferta por WhatsApp · revisa y ciérrala para poder enviársela.</div>}
+                            <div className="mt-1.5 rounded-lg p-2.5 t9" style={{ backgroundColor: C.amberBg, border: "1px solid #FED7AA", color: "#C2410C" }}>Confirma la selección de facturas acordada con el cliente. Hasta cerrar la oferta, «Publicar oferta de cierre» queda deshabilitado y el Agente IA de WhatsApp tampoco puede enviarla — así te aseguras de revisar el paquete antes de que salga.</div>
+                            {deal.ofertaSolicitada && <div className="mt-1.5 flex items-center gap-1.5 t9 font-semibold" style={{ color: "#DC2626" }}><MessageSquare size={11} /> El cliente ya pidió la oferta por WhatsApp · revisa y ciérrala para poder enviársela.</div>}
                           </div>
                         );
                         return (
                           <div className="mt-2">
-                            <div className="mb-1.5 inline-flex items-center gap-1 rounded-md px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: "#047857", border: "1px solid #bbf7d0" }}><Check size={11} /> Oferta cerrada{deal.ofertaCerradaTs ? ` · ${deal.ofertaCerradaTs.split(" ")[0]}` : ""}</div>
+                            <div className="mb-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: "#16A34A", border: "1px solid #bbf7d0" }}><Check size={11} /> Oferta cerrada{deal.ofertaCerradaTs ? ` · ${deal.ofertaCerradaTs.split(" ")[0]}` : ""}</div>
                             <div className="flex flex-wrap gap-1.5">
                               <div className="relative">
                                 <button onClick={() => setPubMenu((v) => !v)} className="flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-medium text-white" style={{ backgroundColor: C.green }}><Check size={12} /> {deal.negocioNum ? "Republicar oferta" : "Publicar oferta de cierre"} <ChevronDown size={12} /></button>
@@ -3845,7 +3867,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                 </div>
               ) : (
                 <>
-                  <div className="mt-1.5 flex items-center gap-2"><span className="t13 font-semibold" style={{ color: C.ink }}>{cont ? cont.nombre : "—"} {cont && <span className="t11 font-normal" style={{ color: C.sub }}>· {cont.cargo}</span>}</span>{verificado ? <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>Verificado ✔</span> : modificado ? <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#eff6ff", color: "#1d4ed8" }}>Modificado · reiniciar para verificar</span> : noVerif ? <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red }}>No verificado</span> : null}</div>
+                  <div className="mt-1.5 flex items-center gap-2"><span className="t13 font-semibold" style={{ color: C.ink }}>{cont ? cont.nombre : "—"} {cont && <span className="t11 font-normal" style={{ color: C.sub }}>· {cont.cargo}</span>}</span>{verificado ? <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>Verificado ✔</span> : modificado ? <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#eff6ff", color: "#2563EB" }}>Modificado · reiniciar para verificar</span> : noVerif ? <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red }}>No verificado</span> : null}</div>
                   <div className="mt-1 grid grid-cols-1 gap-0.5 t11" style={{ color: C.sub }}>
                     <div className="flex items-center gap-1">Tel: {cont ? cont.telefono : "—"}{telValidado && <span title="Teléfono validado · el cliente respondió por este canal"><Star size={11} style={{ color: "#2563eb" }} fill="#2563eb" /></span>}</div>
                     <div className="flex items-center gap-1"><span className="truncate">Email: {cont ? cont.email : "—"}</span>{mailValidado && <span title="Email validado · el cliente respondió por este canal" className="shrink-0"><Star size={11} style={{ color: "#2563eb" }} fill="#2563eb" /></span>}</div>
@@ -3853,8 +3875,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                 </>
               )}
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <span className="rounded px-2 py-0.5 t10 font-medium" style={{ backgroundColor: "#eef2ff", color: "#4338ca" }}>Canal: {canal}</span>
-                <span className="rounded px-2 py-0.5 t10 font-medium" style={{ backgroundColor: deal.contactable === false ? C.amberBg : C.greenBg, color: deal.contactable === false ? C.amber : C.green }}>
+                <span className="rounded-full px-2 py-0.5 t10 font-medium" style={{ backgroundColor: "#F1ECFF", color: "#5B21D6" }}>Canal: {canal}</span>
+                <span className="rounded-full px-2 py-0.5 t10 font-medium" style={{ backgroundColor: deal.contactable === false ? C.amberBg : C.greenBg, color: deal.contactable === false ? C.amber : C.green }}>
                   {deal.contactable === false ? "No contactable · estancado en prospección" : deal.fueraAtribucion ? "Contactado · requiere negociación" : deal.contactoExitoso ? "Contacto exitoso" : "En gestión"}
                 </span>
               </div>
@@ -3873,8 +3895,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   <div className="flex items-center gap-1.5 t11 font-semibold" style={{ color: C.amber }}><AlertTriangle size={12} /> Contactabilidad con error</div>
                   <div className="mt-0.5 t10" style={{ color: C.sub }}>El dato de contacto está errado. Para <b>reintentar</b> debes primero corregirlo en <b>Editar</b>: WhatsApp y Call Center requieren cambiar el <b>teléfono</b>; Email requiere cambiar el <b>correo</b>. Al reiniciar, la conversación de WhatsApp parte de cero.</div>
                   <div className="mt-1.5 flex flex-wrap gap-1.5 t9">
-                    <span className="rounded px-1.5 py-0.5 font-medium" style={{ backgroundColor: telCambiado ? C.greenBg : "#fff", color: telCambiado ? C.green : C.faint, border: `1px solid ${telCambiado ? "#bbf7d0" : C.line}` }}>{telCambiado ? "✓ Teléfono actualizado" : "Teléfono sin cambios"}</span>
-                    <span className="rounded px-1.5 py-0.5 font-medium" style={{ backgroundColor: emailCambiado ? C.greenBg : "#fff", color: emailCambiado ? C.green : C.faint, border: `1px solid ${emailCambiado ? "#bbf7d0" : C.line}` }}>{emailCambiado ? "✓ Email actualizado" : "Email sin cambios"}</span>
+                    <span className="rounded-full px-1.5 py-0.5 font-medium" style={{ backgroundColor: telCambiado ? C.greenBg : "#fff", color: telCambiado ? C.green : C.faint, border: `1px solid ${telCambiado ? "#bbf7d0" : C.line}` }}>{telCambiado ? "✓ Teléfono actualizado" : "Teléfono sin cambios"}</span>
+                    <span className="rounded-full px-1.5 py-0.5 font-medium" style={{ backgroundColor: emailCambiado ? C.greenBg : "#fff", color: emailCambiado ? C.green : C.faint, border: `1px solid ${emailCambiado ? "#bbf7d0" : C.line}` }}>{emailCambiado ? "✓ Email actualizado" : "Email sin cambios"}</span>
                   </div>
                   <div className="mt-2 relative" style={{ width: "fit-content" }}>
                     <button onClick={() => setRetryMenu((v) => !v)} className="flex items-center gap-1 rounded-md px-2.5 py-1.5 t10 font-semibold text-white" style={{ backgroundColor: C.indigo }}><ArrowUpRight size={12} /> Reintentar contacto <ChevronDown size={12} /></button>
@@ -4019,7 +4041,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                 </div>
                 <div className="mt-1.5 space-y-1.5 rounded-lg p-2" style={{ backgroundColor: "#ece5dd" }}>
                   {wa.map((m, i) => {
-                    if (m.from === "sistema") return <div key={i} className="mx-auto w-fit rounded px-2 py-0.5 t9" style={{ backgroundColor: "#fff8c4", color: "#7c6f1e" }}>{m.text}</div>;
+                    if (m.from === "sistema") return <div key={i} className="mx-auto w-fit rounded-full px-2 py-0.5 t9" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>{m.text}</div>;
                     const mine = m.from === "agente" || m.from === "ejecutivo";
                     return (
                       <div key={i} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
@@ -4035,7 +4057,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             </>
                           )}
                           <div className="mt-0.5 flex items-center justify-end gap-1 t8" style={{ color: C.faint }}>
-                            {mine && m.estado && (<span title={m.estado === "read" ? "Leído por el cliente" : m.estado === "delivered" ? "Entregado al teléfono (no leído aún)" : m.estado === "fallido" ? "No entregado · el teléfono no recibió el mensaje (número errado)" : m.estado === "sent" ? "Enviado al servidor (aún no entregado)" : "Pendiente de envío"} style={{ color: m.estado === "read" ? "#34b7f1" : m.estado === "fallido" ? "#b91c1c" : C.faint, fontWeight: 700 }}>{m.estado === "reloj" ? "🕐" : m.estado === "fallido" ? "⚠ no entregado" : m.estado === "sent" ? "✓" : "✓✓"}</span>)}
+                            {mine && m.estado && (<span title={m.estado === "read" ? "Leído por el cliente" : m.estado === "delivered" ? "Entregado al teléfono (no leído aún)" : m.estado === "fallido" ? "No entregado · el teléfono no recibió el mensaje (número errado)" : m.estado === "sent" ? "Enviado al servidor (aún no entregado)" : "Pendiente de envío"} style={{ color: m.estado === "read" ? "#34b7f1" : m.estado === "fallido" ? "#DC2626" : C.faint, fontWeight: 700 }}>{m.estado === "reloj" ? "🕐" : m.estado === "fallido" ? "⚠ no entregado" : m.estado === "sent" ? "✓" : "✓✓"}</span>)}
                             {m.time && <span>{fmtStamp(m.time)}</span>}
                           </div>
                         </div>
@@ -4077,8 +4099,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   ))}
                 </div>
                 {/* Input de envío del ejecutivo: directamente bajo la sesión de WhatsApp */}
-                {bloqueoComs && <div className="mt-2 rounded-lg p-2 t10" style={{ backgroundColor: C.amberBg, color: "#b45309", border: "1px solid #fde68a" }}>{modificado ? "Contacto modificado: reinicia el contacto para verificar. El envío libre se habilita cuando el cliente responda." : "Contacto no verificado: no puedes enviar comunicaciones. Edita los datos del contacto o márcalo como verificado para habilitar el envío."}</div>}
-                <div className="mt-2 flex items-end gap-1.5 rounded-xl px-2 py-2" style={{ backgroundColor: bloqueoComs ? "#f8f7f4" : "#fff", border: `1px solid ${C.line}`, opacity: bloqueoComs ? 0.6 : 1 }}>
+                {bloqueoComs && <div className="mt-2 rounded-lg p-2 t10" style={{ backgroundColor: C.amberBg, color: "#C2410C", border: "1px solid #FED7AA" }}>{modificado ? "Contacto modificado: reinicia el contacto para verificar. El envío libre se habilita cuando el cliente responda." : "Contacto no verificado: no puedes enviar comunicaciones. Edita los datos del contacto o márcalo como verificado para habilitar el envío."}</div>}
+                <div className="mt-2 flex items-end gap-1.5 rounded-xl px-2 py-2" style={{ backgroundColor: bloqueoComs ? "#F9FAFB" : "#fff", border: `1px solid ${C.line}`, opacity: bloqueoComs ? 0.6 : 1 }}>
                   <textarea value={waMsg} disabled={bloqueoComs} onChange={(e) => setWaMsg(e.target.value)}
                     rows={Math.max(1, (waMsg.match(/\n/g) || []).length + 1)}
                     onKeyDown={(e) => { if (!bloqueoComs && e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (waMsg.trim()) { onEnviarWA(deal.id, waMsg.trim()); setWaMsg(""); } } }}
@@ -4111,8 +4133,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                       <div className="min-w-0 flex-1 pb-2">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="t10 font-semibold" style={{ color: colorActor(m.actor) }}>{m.actor}</span>
-                          <span className="rounded px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: m.tipo === "Comunicaciones" ? "#ecfdf5" : m.tipo === "Análisis" ? "#f5f3ff" : m.tipo === "Evento" ? "#fffbeb" : "#eef2ff", color: m.tipo === "Comunicaciones" ? C.green : m.tipo === "Análisis" ? "#6d28d9" : m.tipo === "Evento" ? "#b45309" : C.indigo }}>{m.tipo}</span>
-                          <span className="rounded px-1.5 py-0.5 t8 font-medium" style={{ backgroundColor: C.page, color: C.sub }}>{m.canal}</span>
+                          <span className="rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: m.tipo === "Comunicaciones" ? "#F0FDF4" : m.tipo === "Análisis" ? "#f5f3ff" : m.tipo === "Evento" ? "#FFF7ED" : "#F1ECFF", color: m.tipo === "Comunicaciones" ? C.green : m.tipo === "Análisis" ? "#7C3AED" : m.tipo === "Evento" ? "#C2410C" : C.indigo }}>{m.tipo}</span>
+                          <span className="rounded-full px-1.5 py-0.5 t8 font-medium" style={{ backgroundColor: C.page, color: C.sub }}>{m.canal}</span>
                           {m.time && <span className="t8" style={{ color: C.faint }}>{fmtStamp(m.time)}</span>}
                         </div>
                         {(() => {
@@ -4209,7 +4231,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           </div>
         </div>
         <div className="flex items-center justify-end gap-2 p-4">
-          {otorgBloqueado(deal) && <div className="mr-auto flex items-center gap-1.5 rounded-md px-2.5 py-1.5 t11 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#b91c1c" }}><X size={12} /> Rechazada por reglas de otorgamiento · sólo puede rechazarse</div>}
+          {otorgBloqueado(deal) && <div className="mr-auto flex items-center gap-1.5 rounded-md px-2.5 py-1.5 t11 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#DC2626" }}><X size={12} /> Rechazada por reglas de otorgamiento · sólo puede rechazarse</div>}
           <button onClick={() => onReject(deal.id)} className="rounded-md px-3 py-2 t12 font-medium" style={{ color: C.red, border: `1px solid ${C.line}` }}>Rechazar</button>
           <button onClick={onClose} className="rounded-md px-3 py-2 t12 font-medium" style={{ color: C.sub, border: `1px solid ${C.line}` }}>Guardar borrador</button>
           <div className="flex items-center gap-1.5">
@@ -4229,7 +4251,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           <div className="fixed left-1/2 top-1/2 w-[520px] max-w-[94vw] -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white p-5 shadow-2xl" style={{ zIndex: 71, maxHeight: "88vh", overflowY: "auto" }}>
             <div className="flex items-start justify-between gap-2">
               <div>
-                <div className="flex items-center gap-1.5 text-lg font-bold" style={{ color: C.ink }}><AlertTriangle size={16} style={{ color: "#b45309" }} /> Facturas fuera del paquete</div>
+                <div className="flex items-center gap-1.5 text-lg font-bold" style={{ color: C.ink }}><AlertTriangle size={16} style={{ color: "#C2410C" }} /> Facturas fuera del paquete</div>
                 <div className="mt-0.5 t10" style={{ color: C.faint }}>Al cerrar la oferta quedan <b style={{ color: C.sub }}>{pubModal.descartadas.length}</b> factura(s) con menos de 8 días de emisión fuera del paquete acordado. ¿Qué deseas hacer con ellas?</div>
               </div>
               <button onClick={() => setPubModal(null)} className="rounded-md p-1" style={{ color: C.faint }}><X size={18} /></button>
@@ -4241,7 +4263,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               <label className="flex items-start gap-2" style={{ cursor: "pointer" }}><input type="radio" checked={pubAccion === "nueva"} onChange={() => setPubAccion("nueva")} className="mt-0.5" /><span className="t11" style={{ color: C.ink }}><b>Abrir una nueva oportunidad</b> con estas facturas descartadas.</span></label>
               <label className="flex items-start gap-2" style={{ cursor: "pointer" }}><input type="radio" checked={pubAccion === "descartar"} onChange={() => setPubAccion("descartar")} className="mt-0.5" /><span className="t11" style={{ color: C.ink }}><b>Descartarlas</b> por ahora.</span></label>
               {pubAccion === "descartar" && (
-                <div className="ml-6 rounded-lg p-2.5" style={{ backgroundColor: "#fffbeb", border: "1px solid #fde68a" }}>
+                <div className="ml-6 rounded-lg p-2.5" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA" }}>
                   <div className="flex flex-wrap items-center gap-2"><span className="t10" style={{ color: C.sub }}>Esperar</span><input type="number" min={1} value={pubEspera} onChange={(e) => setPubEspera(Math.max(1, parseInt(e.target.value || "7", 10) || 7))} className="w-16 rounded-md px-2 py-1 t11 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink }} /><span className="t10" style={{ color: C.sub }}>día(s) antes de reabrir una nueva oportunidad.</span></div>
                   <div className="mt-1 t9" style={{ color: C.faint }}>El cliente ya operó: se recomienda esperar al menos 7 días antes de volver a ofertar estas facturas.</div>
                 </div>
@@ -4259,6 +4281,11 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           onSend={() => { onContactar(deal.id, "Email", emailPreview); setEmailPreview(null); }}
           onClose={() => setEmailPreview(null)} />
       )}
+      <ConfirmDialog abierto={!!confirmRetiro} titulo="¿Retirar esta factura de la oferta?"
+        descripcion={confirmRetiro ? `Folio ${confirmRetiro.folio || confirmRetiro.id || ""} · ${fmtMM(confirmRetiro.montoMM || 0)}. La factura sale de la oferta y el CAT se recalcula.` : ""}
+        etiquetaConfirmar="Retirar factura"
+        onConfirmar={() => { onRetirarFactura(deal.id, confirmRetiro); setConfirmRetiro(null); }}
+        onCancelar={() => setConfirmRetiro(null)} />
     </>
   );
 }
@@ -4279,12 +4306,12 @@ function sowEstrategia(ev) {
   const act = ev.sowActualPct != null ? ev.sowActualPct : (cmp0 && cmp0.totalMM > 0 ? 0 : null);
   if (!t && act == null && !ev.superaTarget) return null; // sin información de SOW
   let sm;
-  if (ev.superaTarget) sm = { Icon: Check, bg: "#ecfdf5", fg: "#047857", lab: "en target", desc: "La participación de BICE está en o sobre el objetivo.", estr: "Defender la cuenta; tasa estándar (no se requiere descuento)." };
-  else if (act === 0) sm = { Icon: ArrowDownRight, bg: "#fef2f2", fg: "#b91c1c", lab: "0% · en competencia", desc: "BICE no tiene participación; el cliente cede sus facturas a la competencia.", estr: "Capturar SOW: oferta competitiva para arrebatar el negocio a la competencia." };
-  else if (t === "Creciendo") sm = { Icon: ArrowUpRight, bg: "#ecfdf5", fg: "#047857", lab: "creciendo", desc: "BICE está ganando participación en este cliente.", estr: "Mantener el servicio; descuento mínimo." };
-  else if (t === "Decreciente") sm = { Icon: ArrowDownRight, bg: "#fef2f2", fg: "#b91c1c", lab: "bajando", desc: "BICE está perdiendo participación frente a la competencia.", estr: "Oferta con descuento promocional para recuperar el SOW." };
-  else if (t === "Nuevo") sm = { Icon: Sparkles, bg: "#eff6ff", fg: "#1d4ed8", lab: "nuevo", desc: "Cliente nuevo, sin historial de factoring con BICE ni con la competencia.", estr: "Captar la primera operación para abrir la relación." };
-  else sm = { Icon: ArrowRight, bg: "#fffbeb", fg: "#b45309", lab: "estable", desc: "Participación estable, pero por debajo del objetivo.", estr: "Descuento moderado para capturar más participación." };
+  if (ev.superaTarget) sm = { Icon: Check, bg: "#F0FDF4", fg: "#16A34A", lab: "en target", desc: "La participación de BICE está en o sobre el objetivo.", estr: "Defender la cuenta; tasa estándar (no se requiere descuento)." };
+  else if (act === 0) sm = { Icon: ArrowDownRight, bg: "#fef2f2", fg: "#DC2626", lab: "0% · en competencia", desc: "BICE no tiene participación; el cliente cede sus facturas a la competencia.", estr: "Capturar SOW: oferta competitiva para arrebatar el negocio a la competencia." };
+  else if (t === "Creciendo") sm = { Icon: ArrowUpRight, bg: "#F0FDF4", fg: "#16A34A", lab: "creciendo", desc: "BICE está ganando participación en este cliente.", estr: "Mantener el servicio; descuento mínimo." };
+  else if (t === "Decreciente") sm = { Icon: ArrowDownRight, bg: "#fef2f2", fg: "#DC2626", lab: "bajando", desc: "BICE está perdiendo participación frente a la competencia.", estr: "Oferta con descuento promocional para recuperar el SOW." };
+  else if (t === "Nuevo") sm = { Icon: Sparkles, bg: "#eff6ff", fg: "#2563EB", lab: "nuevo", desc: "Cliente nuevo, sin historial de factoring con BICE ni con la competencia.", estr: "Captar la primera operación para abrir la relación." };
+  else sm = { Icon: ArrowRight, bg: "#FFF7ED", fg: "#C2410C", lab: "estable", desc: "Participación estable, pero por debajo del objetivo.", estr: "Descuento moderado para capturar más participación." };
   const nums = (act != null && ev.sowTargetPct != null) ? `SOW actual ${Math.round(act)}% · target ${Math.round(ev.sowTargetPct)}%${ev.sowGapPct ? ` · brecha ${ev.sowGapPct} pts` : ""}\n` : (act === 0 ? "SOW actual 0% (todo en la competencia)\n" : "");
   const tip = `Share of Wallet — ${sm.lab}\n${nums}${sm.desc}\nEstrategia comercial: ${sm.estr}`;
   return { ...sm, act, tip };
@@ -4293,17 +4320,17 @@ function OppTags({ ev }) {
   if (!ev || !ev.cat) return null;
   const cd = catDisp(ev);
   const catCol = catMeta(cd.cat);
-  const sm = sowEstrategia(ev) || { Icon: ArrowRight, bg: "#fffbeb", fg: "#b45309", lab: "estable", tip: "" };
+  const sm = sowEstrategia(ev) || { Icon: ArrowRight, bg: "#FFF7ED", fg: "#C2410C", lab: "estable", tip: "" };
   const SIcon = sm.Icon;
   const sowTip = sm.tip;
   return (
     <div className="mt-1 flex flex-wrap items-center gap-1">
-      <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: catCol.bg, color: catCol.fg, cursor: "help" }} title={`${cd.label} · ${cd.q}. ${catMeta(cd.cat).desc}`}>{cd.label}</span>
+      <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: catCol.bg, color: catCol.fg, cursor: "help" }} title={`${cd.label} · ${cd.q}. ${catMeta(cd.cat).desc}`}>{cd.label}</span>
       {ev.stage !== "perdida" && (<>
-      <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: sm.bg, color: sm.fg, cursor: "help" }} title={sowTip}><SIcon size={11} /> SOW {sm.lab}</span>
+      <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: sm.bg, color: sm.fg, cursor: "help" }} title={sowTip}><SIcon size={11} /> SOW {sm.lab}</span>
       {(() => { const a = SOW_AJUSTE[sowEstado(ev)] || SOW_AJUSTE.estable; return a.pts > 0
-        ? <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fffbeb", color: "#b45309", cursor: "help" }} title={`Descuento comercial por SOW: −${a.pts.toFixed(2)} pts sobre el spread estándar de ${SPREAD_ESTANDAR.toFixed(2)}% (${a.l}). El spread mínimo de cada deudor trunca el descuento.`}>{`Tasa c/desc ${a.pts.toFixed(2)} pts`}</span>
-        : <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f3f1ec", color: "#78716c", cursor: "help" }} title={`Tasa estándar: spread ${SPREAD_ESTANDAR.toFixed(2)}% sin descuento comercial (${a.l}).`}>Tasa estándar</span>; })()}
+        ? <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#FFF7ED", color: "#C2410C", cursor: "help" }} title={`Descuento comercial por SOW: −${a.pts.toFixed(2)} pts sobre el spread estándar de ${SPREAD_ESTANDAR.toFixed(2)}% (${a.l}). El spread mínimo de cada deudor trunca el descuento.`}>{`Tasa c/desc ${a.pts.toFixed(2)} pts`}</span>
+        : <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#FAF9FB", color: "#6B7280", cursor: "help" }} title={`Tasa estándar: spread ${SPREAD_ESTANDAR.toFixed(2)}% sin descuento comercial (${a.l}).`}>Tasa estándar</span>; })()}
       </>)}
     </div>
   );
@@ -4313,13 +4340,13 @@ function BandejaCard({ ev, onAsignar, onCrearRegla, onDescartar }) {
   return (
     <div className="rounded-lg p-2" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, borderLeft: `3px solid ${C.amber}` }}>
       <div className="flex items-center justify-between">
-        <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fffbeb", color: "#b45309" }}>Sin clasificar</span>
+        <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>Sin clasificar</span>
         <span className="t9" style={{ color: C.faint }}>{ev.id}</span>
       </div>
       <div className="mt-1 t12 font-semibold" style={{ color: C.ink }}>{ev.cedente}</div>
       <div className="flex items-center gap-1 t10" style={{ color: C.sub }}>
         <ArrowRight size={9} /> Deudor: {ev.pagador}{ev.nDeudores > 1 ? ` (+${ev.nDeudores - 1})` : ""}
-        {!ev.esCliente && <span className="ml-1 rounded px-1 t9" style={{ backgroundColor: "#fef3c7", color: "#b45309" }}>No cliente</span>}
+        {!ev.esCliente && <span className="ml-1 rounded px-1 t9" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>No cliente</span>}
       </div>
       <OppTags ev={ev} />
       <div className="mt-1 flex items-center justify-between">
@@ -4358,14 +4385,14 @@ function MotorPerformance({ recibidas, califican, sinClasificar, originadas, ori
   return (
     <div className="mt-2 rounded-xl bg-white p-2.5" style={{ border: `1px solid ${C.line}` }}>
       <div className="flex items-center gap-1.5">
-        <Zap size={13} style={{ color: "#6d28d9" }} />
+        <Zap size={13} style={{ color: "#7C3AED" }} />
         <span className="t12 font-semibold" style={{ color: C.ink }}>Rendimiento del motor</span>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-1.5">
         {kpi("Facturas procesadas", (recibidas || 0).toLocaleString("es-CL"))}
-        {kpi("Califican", (califican || 0).toLocaleString("es-CL"), "#4338ca")}
-        {kpi("Oportunidades", (originadas || 0).toLocaleString("es-CL"), "#047857")}
-        {kpi("Monto detectado", fmtMM(originadasMM || 0), "#047857")}
+        {kpi("Califican", (califican || 0).toLocaleString("es-CL"), "#5B21D6")}
+        {kpi("Oportunidades", (originadas || 0).toLocaleString("es-CL"), "#16A34A")}
+        {kpi("Monto detectado", fmtMM(originadasMM || 0), "#16A34A")}
       </div>
       <div className="mt-1.5 t10" style={{ color: C.faint }}>Tasa de captura <b style={{ color: C.ink }}>{capturaPct}%</b>{sinClasificar ? <> · <b style={{ color: C.ink }}>{(sinClasificar).toLocaleString("es-CL")}</b> sin clasificar</> : null}</div>
       <div className="mt-2 t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Capturas por regla</div>
@@ -4379,8 +4406,8 @@ function MotorPerformance({ recibidas, califican, sinClasificar, originadas, ori
                 <span className="truncate" style={{ maxWidth: "62%" }} title={`${f.id} · ${f.name}`}>{f.id} · {f.name}</span>
                 <span style={{ color: C.faint }}>{f.count.toLocaleString("es-CL")} · {fmtMM(f.montoMM)}</span>
               </div>
-              <div className="mt-0.5 h-2 w-full rounded-full" style={{ backgroundColor: "#f1efe9" }}>
-                <div className="h-2 rounded-full" style={{ width: `${Math.max(6, (f.count / maxC) * 100)}%`, backgroundColor: "#6366f1" }} />
+              <div className="mt-0.5 h-2 w-full rounded-full" style={{ backgroundColor: "#E5E7EB" }}>
+                <div className="h-2 rounded-full" style={{ width: `${Math.max(6, (f.count / maxC) * 100)}%`, backgroundColor: "#8A63FF" }} />
               </div>
             </div>
           ))}
@@ -4418,9 +4445,9 @@ function InboundStream({ feed, streaming, queueLen, total, recibidas, acumuladas
       <div className="mt-1 t9" style={{ color: C.faint }}>
         Las facturas que califican una regla se acumulan y pasan a Prospección en la corrida horaria (agrupadas por cliente). Las que no, quedan aquí para asignar o crear una regla.
       </div>
-      <div className="mt-2 flex items-center justify-between rounded-md px-2 py-1" style={{ backgroundColor: "#eef2ff" }}>
+      <div className="mt-2 flex items-center justify-between rounded-md px-2 py-1" style={{ backgroundColor: "#F1ECFF" }}>
         <span className="t10" style={{ color: C.indigo }}>Día {dia} · hora {horaDia}/8 · {acumuladas} en cola</span>
-        <button onClick={onCorrer} disabled={!acumuladas} className="rounded px-2 py-0.5 t10 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: C.indigo }}>Correr ahora</button>
+        <button onClick={onCorrer} disabled={!acumuladas} className="rounded-full px-2 py-0.5 t10 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: C.indigo }}>Correr ahora</button>
       </div>
       {feed.length > 0 && (
         <button onClick={onAsignarTodas} className="mt-2 w-full rounded-md py-1 t10 font-medium text-white" style={{ backgroundColor: C.green }}>
@@ -4476,7 +4503,7 @@ function RuleEditor({ rule, onClose, onSave }) {
             <div className="mt-1.5 flex flex-wrap gap-1">
               {draft.criterio.length === 0 && <span className="t11" style={{ color: C.faint }}>Sin criterios — descríbelos abajo</span>}
               {draft.criterio.map((c) => (
-                <span key={c} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 t10" style={{ backgroundColor: "#f3f1ec", color: C.sub }}>
+                <span key={c} className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t10" style={{ backgroundColor: "#FAF9FB", color: C.sub }}>
                   {c}<button onClick={() => quitarChip(c)} className="hover:opacity-60"><X size={10} /></button>
                 </span>
               ))}
@@ -4531,7 +4558,7 @@ function RuleEditor({ rule, onClose, onSave }) {
                 const on = draft.canales.includes(c);
                 return (
                   <button key={c} onClick={() => toggleCanal(c)} className="rounded-full px-2.5 py-1 t10 font-medium"
-                    style={{ border: `1px solid ${on ? C.indigo : C.line}`, backgroundColor: on ? "#eef2ff" : "#fff", color: on ? C.indigo : C.sub }}>{c}</button>
+                    style={{ border: `1px solid ${on ? C.indigo : C.line}`, backgroundColor: on ? "#F1ECFF" : "#fff", color: on ? C.indigo : C.sub }}>{c}</button>
                 );
               })}
             </div>
@@ -4624,9 +4651,9 @@ function CasosModal({ titulo, casos, onClose, onExport }) {
 // Modal de cierre de día (aceptación) y reporte semanal (gráfico).
 // ============================================================
 const REPORTE_METRICAS = [
-  { key: "originacion", label: "Originación", color: "#4f46e5" },
-  { key: "prospeccion", label: "Prospección", color: "#a8a29e" },
-  { key: "curse", label: "Curse", color: "#d97706" },
+  { key: "originacion", label: "Originación", color: "#703EFF" },
+  { key: "prospeccion", label: "Prospección", color: "#9CA3AF" },
+  { key: "curse", label: "Curse", color: "#C2410C" },
   { key: "giro", label: "Giro", color: "#16a34a" },
   { key: "perdida", label: "Pérdida", color: "#dc2626" },
 ];
@@ -4686,9 +4713,9 @@ function DiaModal({ info, ultimo, reporte, deals = [], onAceptar, onClose }) {
               if (execF === "todos") {
                 const e = s.embudo || {};
                 fdata = [
-                  { label: "Inbound", v: e.inbound || 0, color: "#6366f1" },
-                  { label: "Prospección", v: e.prospeccion || 0, color: "#a8a29e" },
-                  { label: "Oferta", v: e.oferta || 0, color: "#d97706" },
+                  { label: "Inbound", v: e.inbound || 0, color: "#8A63FF" },
+                  { label: "Prospección", v: e.prospeccion || 0, color: "#9CA3AF" },
+                  { label: "Oferta", v: e.oferta || 0, color: "#C2410C" },
                   { label: "Aceptadas", v: e.aceptadas || 0, color: "#0ea5e9" },
                   { label: "Cesión", v: e.cesion || 0, color: "#14b8a6" },
                   { label: "Giro", v: e.giro || 0, color: "#16a34a" },
@@ -4706,9 +4733,9 @@ function DiaModal({ info, ultimo, reporte, deals = [], onAceptar, onClose }) {
                   }).length;
                 };
                 fdata = [
-                  { label: "Inbound", v: scope.length, color: "#6366f1" },
-                  { label: "Prospección", v: reached("prospeccion"), color: "#a8a29e" },
-                  { label: "Oferta", v: reached("oferta"), color: "#d97706" },
+                  { label: "Inbound", v: scope.length, color: "#8A63FF" },
+                  { label: "Prospección", v: reached("prospeccion"), color: "#9CA3AF" },
+                  { label: "Oferta", v: reached("oferta"), color: "#C2410C" },
                   { label: "Aceptadas", v: reached("aceptadas"), color: "#0ea5e9" },
                   { label: "Cesión", v: reached("cesion"), color: "#14b8a6" },
                   { label: "Giro", v: reached("giro"), color: "#16a34a" },
@@ -4837,7 +4864,7 @@ function ReporteModal({ reporte, analisis, onClose, onRecomendar }) {
           </div>
           <div className="no-print mt-2 flex gap-1.5">
             {[["resumen", "Resumen"], ["cobranza", "Cobranza"]].map(([k, lbl]) => (
-              <button key={k} onClick={() => setTab(k)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: tab === k ? C.ink : "#fff", color: tab === k ? "#fff" : C.sub, border: `1px solid ${tab === k ? C.ink : C.line}` }}>{lbl}</button>
+              <button key={k} onClick={() => setTab(k)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: tab === k ? C.lilac : "#fff", color: tab === k ? C.indigo : C.sub, border: `1px solid ${tab === k ? C.indigo : C.line}` }}>{lbl}</button>
             ))}
           </div>
           {tab === "resumen" && (<>
@@ -4847,13 +4874,13 @@ function ReporteModal({ reporte, analisis, onClose, onRecomendar }) {
             ))}
           </div>
           <svg viewBox={`0 0 ${W} ${H}`} className="mt-3 w-full">
-            <line x1={padX} y1={H - padY} x2={W - padX} y2={H - padY} stroke="#ece8e1" />
+            <line x1={padX} y1={H - padY} x2={W - padX} y2={H - padY} stroke="#E5E7EB" />
             {reporte.map((d, di) => REPORTE_METRICAS.map((m, mi) => {
               const bh = ((d[m.key] || 0) / max) * innerH;
               return <rect key={`${di}-${mi}`} x={padX + di * gw + mi * bw + gw * 0.1} y={H - padY - bh} width={Math.max(1, bw - 1)} height={bh} fill={m.color} rx="1" />;
             }))}
             {reporte.map((d, di) => (
-              <text key={di} x={padX + di * gw + gw / 2} y={H - padY + 14} textAnchor="middle" fontSize="10" fill="#a8a29e">Día {d.dia}</text>
+              <text key={di} x={padX + di * gw + gw / 2} y={H - padY + 14} textAnchor="middle" fontSize="10" fill="#9CA3AF">Día {d.dia}</text>
             ))}
           </svg>
 
@@ -4873,10 +4900,10 @@ function ReporteModal({ reporte, analisis, onClose, onRecomendar }) {
                   <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: C.red }} />Loss Rate</span>
                 </div>
                 <svg viewBox={`0 0 ${w2} ${h2}`} className="mt-1 w-full">
-                  {[0, 25, 50, 75, 100].map((g) => (<g key={g}><line x1={px} y1={yy(g)} x2={w2 - px} y2={yy(g)} stroke="#ece8e1" /><text x={px - 4} y={yy(g) + 3} textAnchor="end" fontSize="9" fill="#a8a29e">{g}%</text></g>))}
+                  {[0, 25, 50, 75, 100].map((g) => (<g key={g}><line x1={px} y1={yy(g)} x2={w2 - px} y2={yy(g)} stroke="#E5E7EB" /><text x={px - 4} y={yy(g) + 3} textAnchor="end" fontSize="9" fill="#9CA3AF">{g}%</text></g>))}
                   <path d={path("wr")} fill="none" stroke={C.green} strokeWidth="2" />
                   <path d={path("lr")} fill="none" stroke={C.red} strokeWidth="2" />
-                  {dias.map((d, i) => (<g key={i}><circle cx={xx(i)} cy={yy(d.wr)} r="2.5" fill={C.green} /><circle cx={xx(i)} cy={yy(d.lr)} r="2.5" fill={C.red} /><text x={xx(i)} y={h2 - py + 13} textAnchor="middle" fontSize="9" fill="#a8a29e">D{d.dia}</text></g>))}
+                  {dias.map((d, i) => (<g key={i}><circle cx={xx(i)} cy={yy(d.wr)} r="2.5" fill={C.green} /><circle cx={xx(i)} cy={yy(d.lr)} r="2.5" fill={C.red} /><text x={xx(i)} y={h2 - py + 13} textAnchor="middle" fontSize="9" fill="#9CA3AF">D{d.dia}</text></g>))}
                 </svg>
               </>
             );
@@ -4887,8 +4914,8 @@ function ReporteModal({ reporte, analisis, onClose, onRecomendar }) {
             const agg = { inbound: 0, prospeccion: 0, oferta: 0, aceptadas: 0, cesion: 0, giro: 0, perdida: 0 };
             reporte.forEach((d) => { const e = d.embudo || {}; Object.keys(agg).forEach((k) => (agg[k] += e[k] || 0)); });
             const fdata = [
-              { label: "Inbound", v: agg.inbound, color: "#6366f1" }, { label: "Prospección", v: agg.prospeccion, color: "#a8a29e" },
-              { label: "Oferta", v: agg.oferta, color: "#d97706" }, { label: "Aceptadas", v: agg.aceptadas, color: "#0ea5e9" },
+              { label: "Inbound", v: agg.inbound, color: "#8A63FF" }, { label: "Prospección", v: agg.prospeccion, color: "#9CA3AF" },
+              { label: "Oferta", v: agg.oferta, color: "#C2410C" }, { label: "Aceptadas", v: agg.aceptadas, color: "#0ea5e9" },
               { label: "Cesión", v: agg.cesion, color: "#14b8a6" }, { label: "Giro", v: agg.giro, color: "#16a34a" },
             ];
             const fmax = Math.max(1, ...fdata.map((d) => d.v)), top = fdata[0].v || 0;
@@ -4929,19 +4956,19 @@ function ReporteModal({ reporte, analisis, onClose, onRecomendar }) {
                         <div className="t10" style={{ color: C.sub }}>{fmtMM(dd.buenosMM)}</div>
                       </div>
                       <div className="rounded-lg p-2.5" style={{ backgroundColor: "#eff6ff", border: "1px solid #bfdbfe" }}>
-                        <div className="t10 font-semibold" style={{ color: "#1d4ed8" }}>Autorizados</div>
+                        <div className="t10 font-semibold" style={{ color: "#2563EB" }}>Autorizados</div>
                         <div className="mt-0.5 t13 font-bold" style={{ color: C.ink }}>{(dd.autorizadosFac || 0).toLocaleString("es-CL")} fact. <span className="t10 font-normal" style={{ color: C.sub }}>({pct(dd.autorizadosFac || 0)}%)</span></div>
                         <div className="t10" style={{ color: C.sub }}>{fmtMM(dd.autorizadosMM || 0)}</div>
                       </div>
                       <div className="rounded-lg p-2.5" style={{ backgroundColor: "#fff7ed", border: "1px solid #fed7aa" }}>
-                        <div className="t10 font-semibold" style={{ color: "#b45309" }}>Otros deudores</div>
+                        <div className="t10 font-semibold" style={{ color: "#C2410C" }}>Otros deudores</div>
                         <div className="mt-0.5 t13 font-bold" style={{ color: C.ink }}>{dd.otrosFac.toLocaleString("es-CL")} fact. <span className="t10 font-normal" style={{ color: C.sub }}>({pct(dd.otrosFac)}%)</span></div>
                         <div className="t10" style={{ color: C.sub }}>{fmtMM(dd.otrosMM)}</div>
                       </div>
                     </div>
                     <div className="mt-1.5 flex h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: "#fed7aa" }}>
                       <div style={{ width: `${pct(dd.buenosFac)}%`, backgroundColor: C.green }} />
-                      <div style={{ width: `${pct(dd.autorizadosFac || 0)}%`, backgroundColor: "#3b82f6" }} />
+                      <div style={{ width: `${pct(dd.autorizadosFac || 0)}%`, backgroundColor: "#2563EB" }} />
                     </div>
                     <div className="mt-1 t9" style={{ color: C.faint }}>Total recibido: {dd.totalFac.toLocaleString("es-CL")} facturas · {fmtMM(dd.totalMM)}. Lista Blanca = buenos pagadores (menor riesgo); Autorizados = deudores aprobados; Otros = fuera de las listas.</div>
                   </>
@@ -4988,7 +5015,7 @@ function ReporteModal({ reporte, analisis, onClose, onRecomendar }) {
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <div className="flex flex-wrap gap-1">
-                          {p.criterios.map((c) => <span key={c} className="rounded px-1.5 py-0.5 t9" style={{ backgroundColor: "#fff", color: C.sub, border: `1px solid ${C.line}` }}>{c}</span>)}
+                          {p.criterios.map((c) => <span key={c} className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#fff", color: C.sub, border: `1px solid ${C.line}` }}>{c}</span>)}
                         </div>
                         <div className="mt-0.5 t9" style={{ color: C.faint }}>{p.count} facturas · {fmtMM(p.montoMM)} · {(p.empresas || []).length} empresas</div>
                       </div>
@@ -5115,7 +5142,7 @@ function MacroColumn({ title, hint, children }) {
         <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>{title}</span>
         {hint && <span className="t9" style={{ color: C.faint }}>{hint}</span>}
       </div>
-      <div className="flex flex-col gap-2 rounded-xl p-1.5" style={{ backgroundColor: "#f3f1ec80", border: `1px solid ${C.line}` }}>
+      <div className="flex flex-col gap-2 rounded-xl p-1.5" style={{ backgroundColor: "#FAF9FB80", border: `1px solid ${C.line}` }}>
         {children}
       </div>
     </div>
@@ -5445,8 +5472,8 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
                 {resultados.length === 0 && <div className="rounded-lg border border-dashed py-6 text-center t11" style={{ borderColor: C.line, color: C.faint }}>Sin clientes en tu cartera para esa búsqueda.</div>}
               </div>
               {abierta && (() => { const et = (STAGES.find((s) => s.id === abierta.stage) || {}).name || abierta.stage; return (
-                <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: C.amberBg, border: "1px solid #fde68a" }}>
-                  <div className="flex items-center gap-1.5 t12 font-semibold" style={{ color: "#b45309" }}><AlertTriangle size={14} /> Este cliente ya tiene una oportunidad abierta</div>
+                <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: C.amberBg, border: "1px solid #FED7AA" }}>
+                  <div className="flex items-center gap-1.5 t12 font-semibold" style={{ color: "#C2410C" }}><AlertTriangle size={14} /> Este cliente ya tiene una oportunidad abierta</div>
                   <div className="mt-0.5 t11" style={{ color: C.sub }}><b style={{ color: C.ink }}>{abierta.id}</b> · {et} · {abierta.facturas} factura(s) · {fmtMM(abierta.amountMM || 0)}. No crees un negocio nuevo: toma esa oportunidad y modifícala incorporándole las facturas.</div>
                   <button onClick={() => onOpenDeal && onOpenDeal(abierta)} className="mt-2 inline-flex items-center gap-1 rounded-lg px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}><ArrowUpRight size={13} /> Abrir la oportunidad</button>
                 </div>
@@ -5486,7 +5513,7 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
               </div>
               <input ref={xmlRef} type="file" accept=".xml" multiple style={{ display: "none" }} onChange={(e) => { onXML(e.target.files); e.target.value = ""; }} />
               {avisoCarga && (
-                <div className="mx-6 mt-3 flex items-start gap-2 rounded-lg p-2.5 t11" style={{ backgroundColor: avisoCarga.ok ? C.greenBg : C.amberBg, border: `1px solid ${avisoCarga.ok ? "#bbf7d0" : "#fde68a"}`, color: avisoCarga.ok ? "#047857" : "#b45309" }}>
+                <div className="mx-6 mt-3 flex items-start gap-2 rounded-lg p-2.5 t11" style={{ backgroundColor: avisoCarga.ok ? C.greenBg : C.amberBg, border: `1px solid ${avisoCarga.ok ? "#bbf7d0" : "#FED7AA"}`, color: avisoCarga.ok ? "#16A34A" : "#C2410C" }}>
                   {avisoCarga.ok ? <Check size={13} className="mt-0.5 shrink-0" /> : <AlertTriangle size={13} className="mt-0.5 shrink-0" />}
                   <span className="flex-1">{avisoCarga.texto}</span>
                   <button onClick={() => setAvisoCarga(null)} style={{ color: "inherit", opacity: 0.7 }}><X size={13} /></button>
@@ -5502,9 +5529,9 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
                       </div>
                       <button onClick={() => setMasivaOpen(false)} style={{ color: C.faint }}><X size={18} /></button>
                     </div>
-                    <div className="mt-3 inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#f3f1ec", border: `1px solid ${C.line}` }}>
+                    <div className="mt-3 inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
                       {[["pegar", "Pegar folios"], ["excel", "Cargar Excel"]].map(([k, l]) => (
-                        <button key={k} onClick={() => setMasivaTab(k)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: masivaTab === k ? C.ink : "transparent", color: masivaTab === k ? "#fff" : C.sub }}>{l}</button>
+                        <button key={k} onClick={() => setMasivaTab(k)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: masivaTab === k ? "#fff" : "transparent", color: masivaTab === k ? C.indigo : C.sub }}>{l}</button>
                       ))}
                     </div>
                     {masivaTab === "pegar" ? (
@@ -5760,9 +5787,9 @@ function BenchmarkDeudoresModal({ deals, onClose }) {
           </div>
           {/* Filtro: agrupar por empresa Deudora (pagador) o por empresa Cliente (cedente) + buscador. */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#f3f1ec", border: `1px solid ${C.line}` }}>
+            <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
               {[["deudor", "Empresas Deudoras"], ["cliente", "Empresas Clientes"]].map(([k, l]) => (
-                <button key={k} onClick={() => setBy(k)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: by === k ? C.ink : "transparent", color: by === k ? "#fff" : C.sub }}>{l}</button>
+                <button key={k} onClick={() => setBy(k)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: by === k ? "#fff" : "transparent", color: by === k ? C.indigo : C.sub }}>{l}</button>
               ))}
             </div>
             <div className="relative flex-1" style={{ minWidth: "220px" }}>
@@ -5777,8 +5804,8 @@ function BenchmarkDeudoresModal({ deals, onClose }) {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="t13 font-semibold" style={{ color: C.ink }}>{g.key}</div>
                 <div className="flex items-center gap-2 t10">
-                  <span className="rounded px-1.5 py-0.5 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>Ganadas {g.won}</span>
-                  <span className="rounded px-1.5 py-0.5 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red }}>Perdidas {g.lost}</span>
+                  <span className="rounded-full px-1.5 py-0.5 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>Ganadas {g.won}</span>
+                  <span className="rounded-full px-1.5 py-0.5 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red }}>Perdidas {g.lost}</span>
                   <span className="font-semibold" style={{ color: g.wr >= 50 ? C.green : C.amber }}>Win rate {g.wr}%</span>
                 </div>
               </div>
@@ -5801,8 +5828,8 @@ function BenchmarkDeudoresModal({ deals, onClose }) {
                   ))}
                 </tbody>
               </table>
-              <div className="mt-2 rounded-lg p-2.5" style={{ backgroundColor: "#f5f3ff", border: "1px solid #e9d5ff" }}>
-                <div className="flex items-center gap-1.5 t10 font-semibold uppercase tracking-wide" style={{ color: "#6d28d9" }}><Zap size={12} /> Estrategia IA</div>
+              <div className="mt-2 rounded-lg p-2.5" style={{ backgroundColor: "#f5f3ff", border: "1px solid #DDD6FE" }}>
+                <div className="flex items-center gap-1.5 t10 font-semibold uppercase tracking-wide" style={{ color: "#7C3AED" }}><Zap size={12} /> Estrategia IA</div>
                 <div className="mt-1 t11" style={{ color: C.ink, lineHeight: 1.5 }}>{g.estrategia}</div>
               </div>
             </div>
@@ -5937,7 +5964,7 @@ function CierreFormalModal({ deal, tasa, opts, onConfirm, onClose }) {
               </div>
             </div>
             <div className="mt-3 flex items-center gap-2 rounded-lg p-2.5" style={{ backgroundColor: estado === "firmado" ? C.greenBg : "#eff6ff", border: `1px solid ${estado === "firmado" ? "#bbf7d0" : "#bfdbfe"}` }}>
-              <span className="t11" style={{ color: estado === "firmado" ? C.green : "#1d4ed8" }}>
+              <span className="t11" style={{ color: estado === "firmado" ? C.green : "#2563EB" }}>
                 {estado === "enviado" && `Esperando que ${cliente} se autentique y firme en WhatsApp…`}
                 {estado === "autenticando" && "Verificando identidad y permisos del cliente…"}
                 {estado === "firmado" && "✅ Cliente autenticado y cierre firmado. Cursando operación…"}
@@ -6011,15 +6038,15 @@ function TablaOportunidades({ deals, tasks = [], onOpen, onMover, onReject, onRe
   const nextStage = (id) => { const i = STAGE_ORDER.indexOf(id); return STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 2)]; };
   const cols = ["Oportunidad", "Ejecutivo", "Producto", "Monto", "Condiciones de la oferta", "Etapa", "Estrategia", "Acciones"];
   const tcols = ["Oportunidad", "Ejecutivo", "Categoría", "Acción requerida", "Vence", "Acciones"];
-  const catColor = (c) => c === "Negocios críticos" ? { bg: "#fef2f2", fg: "#b91c1c" } : c === "Nuevas empresas" ? { bg: "#eff6ff", fg: "#1d4ed8" } : c === "Nuevos negocios" ? { bg: "#ecfdf5", fg: "#047857" } : { bg: "#f3f1ec", fg: C.sub };
+  const catColor = (c) => c === "Negocios críticos" ? { bg: "#fef2f2", fg: "#DC2626" } : c === "Nuevas empresas" ? { bg: "#eff6ff", fg: "#2563EB" } : c === "Nuevos negocios" ? { bg: "#F0FDF4", fg: "#16A34A" } : { bg: "#FAF9FB", fg: C.sub };
   const Tab = ({ id, label, n }) => (
-    <button onClick={() => setGtab(id)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: gtab === id ? C.ink : "#fff", color: gtab === id ? "#fff" : C.sub, border: `1px solid ${gtab === id ? C.ink : C.line}` }}>{label} <span className="t9" style={{ opacity: 0.8 }}>{n}</span></button>
+    <button onClick={() => setGtab(id)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: gtab === id ? C.lilac : "#fff", color: gtab === id ? C.indigo : C.sub, border: `1px solid ${gtab === id ? C.indigo : C.line}` }}>{label} <span className="t9" style={{ opacity: 0.8 }}>{n}</span></button>
   );
   return (
     <div className="flex flex-1 flex-col gap-2">
       {onNuevoNegocio && (
         <div className="flex items-center justify-end">
-          <button onClick={onNuevoNegocio} className="inline-flex items-center gap-1 rounded-lg border border-dashed px-3 py-1.5 t11 font-medium transition-colors hover:bg-white" style={{ borderColor: C.faint, color: C.sub }}>
+          <button onClick={onNuevoNegocio} className="btn-cta inline-flex items-center gap-1 px-4 py-1.5 t11">
             <Plus size={13} /> Nuevo negocio
           </button>
         </div>
@@ -6084,7 +6111,7 @@ function TablaOportunidades({ deals, tasks = [], onOpen, onMover, onReject, onRe
                   <span className="inline-flex items-center gap-1.5"><span className="flex h-5 w-5 items-center justify-center rounded-full t9 font-semibold text-white" style={{ backgroundColor: C.indigo }}>{d.exec}</span>{EXECS[d.exec] || d.exec}</span>
                 </td>
                 {/* Producto financiero */}
-                <td className="whitespace-nowrap px-2 py-1.5 align-top"><Pill style={{ backgroundColor: TAG_COLORS[d.tag]?.bg || "#f5f5f4", color: TAG_COLORS[d.tag]?.fg || C.sub }}>{d.tag}</Pill></td>
+                <td className="whitespace-nowrap px-2 py-1.5 align-top"><Pill style={{ backgroundColor: TAG_COLORS[d.tag]?.bg || "#F3F4F6", color: TAG_COLORS[d.tag]?.fg || C.sub }}>{d.tag}</Pill></td>
                 {/* Monto de la oportunidad + nº de facturas */}
                 <td className="whitespace-nowrap px-2 py-1.5 align-top">
                   <div className="font-semibold" style={{ color: C.ink }}>{fmtMM(d.amountMM)}</div>
@@ -6092,7 +6119,7 @@ function TablaOportunidades({ deals, tasks = [], onOpen, onMover, onReject, onRe
                 </td>
                 {/* Condiciones de la oferta */}
                 <td className="px-2 py-1.5 align-top" style={{ color: C.sub }}>
-                  {d.cat && (() => { const cd = catDisp(d); return <div className="mb-1"><span className="inline-flex items-center rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: catMeta(cd.cat).bg, color: catMeta(cd.cat).fg, cursor: "help" }} title={`${cd.label} · ${cd.q}. ${catMeta(cd.cat).desc}`}>{cd.label} · {cd.q}</span></div>; })()}
+                  {d.cat && (() => { const cd = catDisp(d); return <div className="mb-1"><span className="inline-flex items-center rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: catMeta(cd.cat).bg, color: catMeta(cd.cat).fg, cursor: "help" }} title={`${cd.label} · ${cd.q}. ${catMeta(cd.cat).desc}`}>{cd.label} · {cd.q}</span></div>; })()}
                   {d.simulado ? (
                     <div className="t10 leading-5">
                       <span>Tasa <b style={{ color: C.ink }}>{d.tasa}</b> · Anticipo {d.anticipo} · {d.diasFin}d</span><br />
@@ -6103,8 +6130,8 @@ function TablaOportunidades({ deals, tasks = [], onOpen, onMover, onReject, onRe
                 {/* Etapa */}
                 <td className="whitespace-nowrap px-2 py-1.5 align-top">
                   <span className="inline-flex items-center gap-1" style={{ color: C.ink }}><span className="h-2 w-2 rounded-full" style={{ backgroundColor: (STAGES.find((s) => s.id === d.stage) || {}).dot }} />{stageName(d.stage)}</span>
-                  {["prospeccion", "oferta", "aceptadas", "otorgamiento"].includes(d.stage) && (() => { const vis = visadoDeal(d); if (vis.rechFirme.length || vis.excRech.length) return <div className="mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#fef2f2", color: "#b91c1c", cursor: "help" }} title={"No superó reglas de otorgamiento (bloqueo firme):\n" + [...vis.rechFirme, ...vis.excRech].map((r, i) => `${i + 1}) #${r.n} ${r.nombre}`).join("\n")}><X size={10} /> Perdida · reglas de otorgamiento</div>; if (!vis.exc.length && !vis.rechReev.length) return null; const tip = "Requiere otorgamiento — reglas con excepción/rechazo re-evaluable:\n" + [...vis.exc, ...vis.rechReev].map((e, i) => `${i + 1}) #${e.n} ${e.nombre}`).join("\n"); return (
-                    <div className="mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#6d28d9", cursor: "help" }} title={tip}><AlertTriangle size={10} /> Requiere otorgamiento <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#7c3aed" }}>{vis.exc.length + vis.rechReev.length}</span></div>
+                  {["prospeccion", "oferta", "aceptadas", "otorgamiento"].includes(d.stage) && (() => { const vis = visadoDeal(d); if (vis.rechFirme.length || vis.excRech.length) return <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#fef2f2", color: "#DC2626", cursor: "help" }} title={"No superó reglas de otorgamiento (bloqueo firme):\n" + [...vis.rechFirme, ...vis.excRech].map((r, i) => `${i + 1}) #${r.n} ${r.nombre}`).join("\n")}><X size={10} /> Perdida · reglas de otorgamiento</div>; if (!vis.exc.length && !vis.rechReev.length) return null; const tip = "Requiere otorgamiento — reglas con excepción/rechazo re-evaluable:\n" + [...vis.exc, ...vis.rechReev].map((e, i) => `${i + 1}) #${e.n} ${e.nombre}`).join("\n"); return (
+                    <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED", cursor: "help" }} title={tip}><AlertTriangle size={10} /> Requiere otorgamiento <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#7c3aed" }}>{vis.exc.length + vis.rechReev.length}</span></div>
                   ); })()}
                 </td>
                 {/* Estrategia (Share of Wallet) */}
@@ -6115,7 +6142,7 @@ function TablaOportunidades({ deals, tasks = [], onOpen, onMover, onReject, onRe
                     const SIcon = sm.Icon;
                     return (
                       <div title={sm.tip} style={{ cursor: "help" }}>
-                        <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: sm.bg, color: sm.fg }}><SIcon size={11} /> SOW {sm.lab}</span>
+                        <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: sm.bg, color: sm.fg }}><SIcon size={11} /> SOW {sm.lab}</span>
                         <div className="mt-1 t9" style={{ color: C.sub, lineHeight: 1.35 }}>{sm.estr}</div>
                       </div>
                     );
@@ -6660,7 +6687,7 @@ function faseOtorgDeal(deal) {
 }
 // ── Mensajería interna: hilos de conversación entre usuarios, opcionalmente atados a una operación.
 let HILOS = []; // [{ id, tipo, dealId, cliente, reglaN, asunto, participantes:[codes], mensajes:[...], creadoPor, ts, leido:{} }]
-const MSG_TIPOS = { requerimiento: { l: "Requerimiento de información para otorgamiento", c: "#4338ca", bg: "#eef2ff" }, general: { l: "Mensaje interno", c: "#0f766e", bg: "#f0fdfa" } };
+const MSG_TIPOS = { requerimiento: { l: "Requerimiento de información para otorgamiento", c: "#5B21D6", bg: "#F1ECFF" }, general: { l: "Mensaje interno", c: "#0f766e", bg: "#f0fdfa" } };
 function hiloNuevo({ tipo, dealId, cliente, reglaN, asunto, participantes, creadoPor }) {
   const h = { id: "H" + (HILOS.length + 1001), tipo: tipo || "general", dealId: dealId || null, cliente: cliente || "", reglaN: reglaN || null, asunto: asunto || "", participantes: Array.from(new Set((participantes || []).filter(Boolean))), mensajes: [], creadoPor, ts: Date.now(), leido: {}, estado: "abierto" };
   HILOS.push(h); return h;
@@ -6792,8 +6819,8 @@ function VisadoClienteView({ deals, usuario, onChange }) {
   baseFase.forEach((o) => { faseCount[o.fase]++; });
   const ops = baseFase.filter((o) => fFase === "todas" || o.fase === fFase).sort((a, b) => (b.mias.length - a.mias.length) || (b.excPend.length - a.excPend.length));
   const conAcciones = ops.filter((o) => o.mias.length).length;
-  const stMeta = (e) => ({ rechazada: { l: "Rechazada", bg: "#fef2f2", fg: "#b91c1c" }, sujeta: { l: "Sujeta a aprobación", bg: "#fffbeb", fg: "#b45309" }, aprobada: { l: "Aprobada", bg: "#ecfdf5", fg: "#047857" } })[e];
-  const FASE_META = { preevaluacion: { l: "Pre-evaluación", c: "#7c3aed", bg: "#f5f3ff" }, evaluacion: { l: "En evaluación", c: "#b45309", bg: "#fffbeb" }, finalizada: { l: "Finalizada", c: "#047857", bg: "#ecfdf5" } };
+  const stMeta = (e) => ({ rechazada: { l: "Rechazada", bg: "#fef2f2", fg: "#DC2626" }, sujeta: { l: "Sujeta a aprobación", bg: "#FFF7ED", fg: "#C2410C" }, aprobada: { l: "Aprobada", bg: "#F0FDF4", fg: "#16A34A" } })[e];
+  const FASE_META = { preevaluacion: { l: "Pre-evaluación", c: "#7c3aed", bg: "#f5f3ff" }, evaluacion: { l: "En evaluación", c: "#C2410C", bg: "#FFF7ED" }, finalizada: { l: "Finalizada", c: "#16A34A", bg: "#F0FDF4" } };
   return (
     <div className="mt-4 space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -6805,7 +6832,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
           const on = fFase === k;
           return <button key={k} onClick={() => setFFase(k)} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t11 font-medium" style={{ border: `1px solid ${on ? C.indigo : C.line}`, backgroundColor: on ? C.indigo : "#fff", color: on ? "#fff" : C.ink }}>{l}<span className="rounded px-1 t10" style={{ backgroundColor: on ? "rgba(255,255,255,.2)" : C.page, color: on ? "#fff" : C.sub }}>{n}</span></button>;
         })}
-        <button onClick={() => setSoloMias((v) => !v)} title="Muestra sólo las operaciones con excepciones que puedes aprobar según tu atribución" className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 t11 font-semibold" style={{ border: `1px solid ${soloMias ? C.indigo : C.line}`, backgroundColor: soloMias ? "#eef2ff" : "#fff", color: soloMias ? C.indigo : C.sub }}>{soloMias ? <Check size={13} /> : <Eye size={13} />} Sólo mis pendientes</button>
+        <button onClick={() => setSoloMias((v) => !v)} title="Muestra sólo las operaciones con excepciones que puedes aprobar según tu atribución" className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 t11 font-semibold" style={{ border: `1px solid ${soloMias ? C.indigo : C.line}`, backgroundColor: soloMias ? "#F1ECFF" : "#fff", color: soloMias ? C.indigo : C.sub }}>{soloMias ? <Check size={13} /> : <Eye size={13} />} Sólo mis pendientes</button>
       </div>
       {ops.length === 0 && <div className="rounded-xl p-6 text-center t11" style={{ color: C.faint, backgroundColor: C.page, border: `1px solid ${C.line}` }}>{soloMias ? "No tienes operaciones con acciones pendientes. Quita “Sólo mis pendientes” para ver todas." : "No hay operaciones en esta fase de otorgamiento."}</div>}
       {ops.map((o) => {
@@ -6817,12 +6844,12 @@ function VisadoClienteView({ deals, usuario, onChange }) {
         const excOtros = soloMias ? o.exc.filter((x) => !stOp[x.regla.n] && !puede(x.regla, x.nivel || 4)) : [];
         return (
           <div key={o.deal.id} className="overflow-hidden rounded-xl" style={{ border: `1px solid ${o.mias.length ? C.indigo : C.line}` }}>
-            <button onClick={() => setOpenOp(open ? null : o.deal.id)} className="flex w-full items-center justify-between gap-2 px-3 py-2.5" style={{ backgroundColor: open ? "#fafaf9" : "#fff" }}>
+            <button onClick={() => setOpenOp(open ? null : o.deal.id)} className="flex w-full items-center justify-between gap-2 px-3 py-2.5" style={{ backgroundColor: open ? "#F9FAFB" : "#fff" }}>
               <div className="min-w-0 text-left">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="t12 font-semibold" style={{ color: C.ink }}>{o.deal.id} · {o.deal.cliente}</span>
-                  {fm && <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: fm.bg, color: fm.c }}>{o.fase === "preevaluacion" && <ShieldCheck size={10} />}{fm.l}</span>}
-                  <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: sm.bg, color: sm.fg }}>{sm.l}</span>
+                  {fm && <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: fm.bg, color: fm.c }}>{o.fase === "preevaluacion" && <ShieldCheck size={10} />}{fm.l}</span>}
+                  <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: sm.bg, color: sm.fg }}>{sm.l}</span>
                 </div>
                 <div className="mt-0.5 t9" style={{ color: C.faint }}>{o.excPend.length} excepción(es) pendiente(s){o.rechReev.length ? ` · ${o.rechReev.length} rechazo(s) re-evaluable(s)` : ""}</div>
               </div>
@@ -6833,25 +6860,25 @@ function VisadoClienteView({ deals, usuario, onChange }) {
             </button>
             {open && <div className="space-y-2 p-3" style={{ borderTop: `1px solid ${C.line}` }}>
               {!soloMias && o.rechFirme.length > 0 && <div>
-                <div className="t11 font-semibold uppercase tracking-wide" style={{ color: "#b91c1c" }}>Rechazos firmes — bloquean el curse ({o.rechFirme.length})</div>
+                <div className="t11 font-semibold uppercase tracking-wide" style={{ color: "#DC2626" }}>Rechazos firmes — bloquean el curse ({o.rechFirme.length})</div>
                 <div className="mt-1 space-y-1">{o.rechFirme.map((x) => (
                   <div key={x.regla.n} className="rounded-lg p-2" style={{ border: "1px solid #fecaca", borderLeft: "3px solid #dc2626", backgroundColor: "#fff" }}>
-                    <div className="t11 font-semibold" style={{ color: C.ink }}>#{x.regla.n} · {x.regla.nombre} <span className="ml-1 rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: AREA_COLOR[x.regla.area].bg2, color: AREA_COLOR[x.regla.area].fg }}>{AREA_LBL[x.regla.area]}</span></div>
-                    <div className="mt-0.5 t10" style={{ color: "#b91c1c" }}>{x.regla.hallazgo}</div>
+                    <div className="t11 font-semibold" style={{ color: C.ink }}>#{x.regla.n} · {x.regla.nombre} <span className="ml-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: AREA_COLOR[x.regla.area].bg2, color: AREA_COLOR[x.regla.area].fg }}>{AREA_LBL[x.regla.area]}</span></div>
+                    <div className="mt-0.5 t10" style={{ color: "#DC2626" }}>{x.regla.hallazgo}</div>
                   </div>
                 ))}</div>
               </div>}
               {!soloMias && o.rechReev.length > 0 && <div>
-                <div className="t11 font-semibold uppercase tracking-wide" style={{ color: "#b45309" }}>Rechazos re-evaluables — no bloquean el visado ({o.rechReev.length})</div>
+                <div className="t11 font-semibold uppercase tracking-wide" style={{ color: "#C2410C" }}>Rechazos re-evaluables — no bloquean el visado ({o.rechReev.length})</div>
                 <div className="mt-1 space-y-1">{o.rechReev.map((x) => (
-                  <div key={x.regla.n} className="rounded-lg p-2" style={{ border: "1px solid #fde68a", borderLeft: "3px solid #f59e0b", backgroundColor: "#fffbeb" }}>
-                    <div className="t11 font-semibold" style={{ color: C.ink }}>#{x.regla.n} · {x.regla.nombre} <span className="ml-1 rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: AREA_COLOR[x.regla.area].bg2, color: AREA_COLOR[x.regla.area].fg }}>{AREA_LBL[x.regla.area]}</span></div>
-                    <div className="mt-0.5 t10" style={{ color: "#b45309" }}>{x.regla.hallazgo} · se regulariza al re-evaluar {reevMotivo(x.regla)}.</div>
+                  <div key={x.regla.n} className="rounded-lg p-2" style={{ border: "1px solid #FED7AA", borderLeft: "3px solid #F97316", backgroundColor: "#FFF7ED" }}>
+                    <div className="t11 font-semibold" style={{ color: C.ink }}>#{x.regla.n} · {x.regla.nombre} <span className="ml-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: AREA_COLOR[x.regla.area].bg2, color: AREA_COLOR[x.regla.area].fg }}>{AREA_LBL[x.regla.area]}</span></div>
+                    <div className="mt-0.5 t10" style={{ color: "#C2410C" }}>{x.regla.hallazgo} · se regulariza al re-evaluar {reevMotivo(x.regla)}.</div>
                   </div>
                 ))}</div>
               </div>}
               {excShow.length > 0 && <div>
-                <div className="t11 font-semibold uppercase tracking-wide" style={{ color: "#b45309" }}>Excepciones a aprobar ({excShow.length}){!soloMias && <span style={{ color: C.indigo }}> · {o.mias.length} con tu atribución</span>}</div>
+                <div className="t11 font-semibold uppercase tracking-wide" style={{ color: "#C2410C" }}>Excepciones a aprobar ({excShow.length}){!soloMias && <span style={{ color: C.indigo }}> · {o.mias.length} con tu atribución</span>}</div>
                 <div className="mt-1 space-y-1.5">{excShow.map((x) => {
                   const key = o.deal.id + "-" + x.regla.n;
                   const f = form[key] || {};
@@ -6863,18 +6890,18 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                   const dests = destinatariosDe(o.deal);
                   const sols = hilosDeDeal(o.deal.id).filter((h) => h.tipo === "requerimiento" && h.reglaN === x.regla.n);
                   return (
-                    <div key={x.regla.n} className="rounded-lg p-2.5" style={{ border: `1px solid ${accionable ? C.indigo : C.line}`, borderLeft: `3px solid ${ee === "aprobado" ? C.green : ee === "rechazado" ? C.red : accionable ? C.indigo : "#f59e0b"}`, backgroundColor: accionable ? "#f5f3ff" : "#fff" }}>
+                    <div key={x.regla.n} className="rounded-lg p-2.5" style={{ border: `1px solid ${accionable ? C.indigo : C.line}`, borderLeft: `3px solid ${ee === "aprobado" ? C.green : ee === "rechazado" ? C.red : accionable ? C.indigo : "#F97316"}`, backgroundColor: accionable ? "#f5f3ff" : "#fff" }}>
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <div className="t11 font-semibold" style={{ color: C.ink }}>#{x.regla.n} · {x.regla.nombre}{accionable && <span className="ml-1.5 rounded px-1.5 py-0.5 t9 font-bold text-white" style={{ backgroundColor: C.indigo }}>Puedes aprobar</span>}</div>
+                          <div className="t11 font-semibold" style={{ color: C.ink }}>#{x.regla.n} · {x.regla.nombre}{accionable && <span className="ml-1.5 rounded-full px-1.5 py-0.5 t9 font-bold text-white" style={{ backgroundColor: C.indigo }}>Puedes aprobar</span>}</div>
                           <div className="mt-0.5 t10" style={{ color: C.sub }}>{x.regla.hallazgo}</div>
-                          <div className="mt-0.5 t9" style={{ color: C.faint }}>Dominio: <b>{AREA_LBL[x.regla.area]}</b> · Aprueba: <b style={{ color: otraArea ? "#6d28d9" : C.sub }}>N{niv} · {nr.rol} ({AREA_LBL[nr.area]})</b>{otraArea && <span className="ml-1 rounded px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#6d28d9" }}>↗ otra área</span>}</div>
+                          <div className="mt-0.5 t9" style={{ color: C.faint }}>Dominio: <b>{AREA_LBL[x.regla.area]}</b> · Aprueba: <b style={{ color: otraArea ? "#7C3AED" : C.sub }}>N{niv} · {nr.rol} ({AREA_LBL[nr.area]})</b>{otraArea && <span className="ml-1 rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>↗ otra área</span>}</div>
                           <div className="mt-0.5 t9" style={{ color: C.faint }}>{aps.length ? "Aprueban: " + aps.join(", ") : "Sin usuarios con esta atribución"}</div>
                         </div>
-                        <span className="shrink-0 rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: ee === "aprobado" ? C.greenBg : ee === "rechazado" ? "#fef2f2" : "#fffbeb", color: ee === "aprobado" ? C.green : ee === "rechazado" ? "#b91c1c" : "#b45309" }}>{ee === "aprobado" ? "Aprobada" : ee === "rechazado" ? "Rechazada" : "Pendiente"}</span>
+                        <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: ee === "aprobado" ? C.greenBg : ee === "rechazado" ? "#fef2f2" : "#FFF7ED", color: ee === "aprobado" ? C.green : ee === "rechazado" ? "#DC2626" : "#C2410C" }}>{ee === "aprobado" ? "Aprobada" : ee === "rechazado" ? "Rechazada" : "Pendiente"}</span>
                       </div>
                       {det && (det.msg || det.arch) && <div className="mt-1.5 rounded-md px-2 py-1.5 t9" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.sub }}>{ee === "aprobado" ? "Aprobada" : "Rechazada"} por <b>{det.por}</b> · {det.fecha}{det.msg ? ` — “${det.msg}”` : ""}{det.arch ? ` · 📎 ${det.arch}` : ""}</div>}
-                      {sols.map((h) => { const otros = h.participantes.filter((p) => p !== usuario).map((p) => USERS[p] || p).join(", "); const last = h.mensajes[h.mensajes.length - 1]; return <div key={h.id} className="mt-1.5 flex flex-wrap items-center gap-1 rounded-md px-2 py-1.5 t9" style={{ backgroundColor: "#eef2ff", color: "#4338ca" }}>📩 Requerimiento a <b>{otros}</b> · {h.mensajes.length} mensaje(s){last ? ` · último ${last.fecha}` : ""}</div>; })}
+                      {sols.map((h) => { const otros = h.participantes.filter((p) => p !== usuario).map((p) => USERS[p] || p).join(", "); const last = h.mensajes[h.mensajes.length - 1]; return <div key={h.id} className="mt-1.5 flex flex-wrap items-center gap-1 rounded-md px-2 py-1.5 t9" style={{ backgroundColor: "#F1ECFF", color: "#5B21D6" }}>📩 Requerimiento a <b>{otros}</b> · {h.mensajes.length} mensaje(s){last ? ` · último ${last.fecha}` : ""}</div>; })}
                       {ee === "pendiente" && !f.open && <div className="mt-2 flex flex-wrap gap-1.5">
                         {puedeYo && <button onClick={() => setF(key, { open: "decision", dec: "aprobado", msg: "", arch: null })} className="rounded-md px-2.5 py-1 t10 font-semibold text-white" style={{ backgroundColor: C.green }}>Aprobar</button>}
                         {puedeYo && <button onClick={() => setF(key, { open: "decision", dec: "rechazado", msg: "", arch: null })} className="rounded-md px-2.5 py-1 t10 font-semibold text-white" style={{ backgroundColor: C.red }}>Rechazar</button>}
@@ -6905,7 +6932,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                         {!(f.msg || "").trim() && <div className="mt-1 t9" style={{ color: C.red }}>El detalle es obligatorio.</div>}
                         <div className="mt-1 t9" style={{ color: C.faint }}>Se creará una tarea pendiente para el destinatario, asociada al otorgamiento de esta operación.</div>
                         <div className="mt-2 flex gap-2">
-                          <button disabled={!(f.msg || "").trim()} onClick={() => { const dd = dests.find((d) => d.id === (f.dest || "ejecutivo")) || dests[0]; solicitarInfo(o.deal, x, dd.id, dd.label, f.msg, f.arch); setF(key, { open: null, msg: "", arch: null }); }} className="rounded-md px-3 py-1.5 t10 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: C.indigo }}>Enviar solicitud</button>
+                          <button disabled={!(f.msg || "").trim()} onClick={() => { const dd = dests.find((d) => d.id === (f.dest || "ejecutivo")) || dests[0]; solicitarInfo(o.deal, x, dd.id, dd.label, f.msg, f.arch); setF(key, { open: null, msg: "", arch: null }); }} className="rounded-full px-4 py-1.5 t10 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: C.indigo }}>Enviar solicitud</button>
                           <button onClick={() => setF(key, { open: null })} className="rounded-md px-3 py-1.5 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button>
                         </div>
                       </div>}
@@ -6916,8 +6943,8 @@ function VisadoClienteView({ deals, usuario, onChange }) {
               {excOtros.length > 0 && <div>
                 <div className="t11 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Excepciones de otros aprobadores ({excOtros.length}) · solo lectura</div>
                 <div className="mt-1 space-y-1">{excOtros.map((x) => { const niv = x.nivel || 4; const nr = NIVEL_ROL[niv] || NIVEL_ROL[4]; return (
-                  <div key={x.regla.n} className="rounded-lg p-2" style={{ border: `1px solid ${C.line}`, borderLeft: "3px solid #cbd5e1", backgroundColor: "#fafaf9" }}>
-                    <div className="t11 font-semibold" style={{ color: C.ink }}>#{x.regla.n} · {x.regla.nombre} <span className="ml-1 rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: AREA_COLOR[x.regla.area].bg2, color: AREA_COLOR[x.regla.area].fg }}>{AREA_LBL[x.regla.area]}</span></div>
+                  <div key={x.regla.n} className="rounded-lg p-2" style={{ border: `1px solid ${C.line}`, borderLeft: "3px solid #D1D5DB", backgroundColor: "#F9FAFB" }}>
+                    <div className="t11 font-semibold" style={{ color: C.ink }}>#{x.regla.n} · {x.regla.nombre} <span className="ml-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: AREA_COLOR[x.regla.area].bg2, color: AREA_COLOR[x.regla.area].fg }}>{AREA_LBL[x.regla.area]}</span></div>
                     <div className="mt-0.5 t10" style={{ color: C.sub }}>{x.regla.hallazgo}</div>
                     <div className="mt-0.5 t9" style={{ color: C.faint }}>Aprueba: <b style={{ color: C.sub }}>N{niv} · {nr.rol} ({AREA_LBL[nr.area]})</b> · {aprobadoresExc(x.regla, niv).join(", ") || "—"}</div>
                   </div>
@@ -6928,7 +6955,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                 <div className="mt-1 space-y-1">{o.aprob.map((x) => (
                   <div key={x.regla.n} className="flex items-center justify-between rounded-md px-2 py-1 t9" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
                     <span style={{ color: C.sub }}>#{x.regla.n} · {x.regla.nombre}</span>
-                    <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>Aprobado</span>
+                    <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>Aprobado</span>
                   </div>
                 ))}</div>
               </details>
@@ -6940,7 +6967,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
   );
 }
 // Chat reutilizable de un hilo: lista de mensajes + caja de envío. Marca el hilo como leído al abrirse.
-const MSG_AVATAR = ["#25D366", "#128C7E", "#34B7F1", "#6d28d9", "#ea580c", "#0891b2", "#b45309", "#db2777"];
+const MSG_AVATAR = ["#25D366", "#128C7E", "#34B7F1", "#7C3AED", "#ea580c", "#0891b2", "#C2410C", "#db2777"];
 const iniDe = (n) => (n || "").split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 const colorDeUsuario = (code) => MSG_AVATAR[Math.abs(hashStr(code || "x")) % MSG_AVATAR.length];
 const soloHora = (f) => { const p = (f || "").split(", "); return p.length > 1 ? p[p.length - 1].replace(/\s*a\.?\s*m\.?/i, " AM").replace(/\s*p\.?\s*m\.?/i, " PM").trim() : f; };
@@ -6953,7 +6980,7 @@ function MsgTexto({ texto, menciones }) {
   if (!names.length) return <>{texto}</>;
   const re = new RegExp("(@(?:" + names.map(escRe).join("|") + "))", "g");
   const parts = (texto || "").split(re);
-  return <>{parts.map((p, i) => (p.startsWith("@") && names.includes(p.slice(1))) ? <span key={i} className="font-semibold" style={{ color: "#4338ca" }}>{p}</span> : <span key={i}>{p}</span>)}</>;
+  return <>{parts.map((p, i) => (p.startsWith("@") && names.includes(p.slice(1))) ? <span key={i} className="font-semibold" style={{ color: "#5B21D6" }}>{p}</span> : <span key={i}>{p}</span>)}</>;
 }
 // Chat estilo WhatsApp de un hilo: burbujas, avatares y hora. Marca el hilo como leído al abrirse.
 // Muestra la regla del modelo de otorgamiento que gatilló el requerimiento (ej. mora CMF),
@@ -6967,7 +6994,7 @@ function HiloReglaInfo({ hilo }) {
     <div className="mt-1.5 rounded-md px-2 py-1.5" style={{ backgroundColor: "#fff7ed", border: "1px solid #fed7aa" }}>
       <div className="flex items-center gap-1.5 t8 font-semibold" style={{ color: "#c2410c" }}>
         <AlertTriangle size={11} /> Regla que gatilló el requerimiento
-        <span className="rounded px-1 py-0.5 t8 font-bold" style={{ backgroundColor: ac.bg2, color: ac.fg }}>#{r.n} · {AREA_LBL[r.area] || r.area}</span>
+        <span className="rounded-full px-1 py-0.5 t8 font-bold" style={{ backgroundColor: ac.bg2, color: ac.fg }}>#{r.n} · {AREA_LBL[r.area] || r.area}</span>
       </div>
       <div className="mt-0.5 t9 font-semibold" style={{ color: C.ink }}>{r.nombre}</div>
       {r.hallazgo && <div className="t8" style={{ color: C.sub }}>{r.hallazgo}</div>}
@@ -7076,7 +7103,7 @@ function CentroMensajeria({ usuario, deals, onClose, onOpenDeal, onChange }) {
               </label>
               <textarea value={nf.msg} onChange={(e) => setNf((s) => ({ ...s, msg: e.target.value }))} rows={3} placeholder="Escribe el mensaje…" className="w-full resize-none rounded-md px-2 py-1.5 t11 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
               {nf.dealId && <div className="t9" style={{ color: C.faint }}>Quedará atachado a la operación: se abrirá su ficha en la pestaña Mensajería.</div>}
-              <div className="flex gap-2"><button disabled={!nf.dest || !nf.msg.trim()} onClick={crear} className="rounded-md px-3 py-1.5 t10 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: C.indigo }}>Iniciar conversación</button><button onClick={() => setNuevo(false)} className="rounded-md px-3 py-1.5 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button></div>
+              <div className="flex gap-2"><button disabled={!nf.dest || !nf.msg.trim()} onClick={crear} className="rounded-full px-4 py-1.5 t10 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: C.indigo }}>Iniciar conversación</button><button onClick={() => setNuevo(false)} className="rounded-full px-4 py-1.5 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button></div>
             </div>
           ) : selHilo ? (
             <div>
@@ -7097,14 +7124,14 @@ function CentroMensajeria({ usuario, deals, onClose, onOpenDeal, onChange }) {
             <div>
               <button onClick={() => setNuevo(true)} className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Plus size={13} /> Nueva conversación</button>
               <div className="mb-2 flex items-center gap-2">
-                <div className="flex flex-1 items-center gap-1.5 rounded-md px-2 py-1.5" style={{ border: `1px solid ${C.line}` }}><Search size={13} style={{ color: C.faint }} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar conversación…" className="w-full outline-none t11" style={{ color: C.ink, backgroundColor: "transparent" }} /></div>
-                <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#f3f1ec", border: `1px solid ${C.line}` }}>{[["activos", "Activos"], ["todos", "Todos"]].map(([k, l]) => <button key={k} onClick={() => setFiltro(k)} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ backgroundColor: filtro === k ? C.ink : "transparent", color: filtro === k ? "#fff" : C.sub }}>{l}</button>)}</div>
+                <div className="flex flex-1 items-center gap-1.5 rounded-full px-2 py-1.5" style={{ border: `1px solid ${C.line}` }}><Search size={13} style={{ color: C.faint }} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar conversación…" className="w-full outline-none t11" style={{ color: C.ink, backgroundColor: "transparent" }} /></div>
+                <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>{[["activos", "Activos"], ["todos", "Todos"]].map(([k, l]) => <button key={k} onClick={() => setFiltro(k)} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ backgroundColor: filtro === k ? "#fff" : "transparent", color: filtro === k ? C.indigo : C.sub }}>{l}</button>)}</div>
               </div>
               {hilos.length === 0 ? <div className="rounded-xl p-6 text-center t11" style={{ color: C.faint, backgroundColor: C.page, border: `1px solid ${C.line}` }}>{q || filtro === "activos" ? "No hay conversaciones para este filtro." : "No tienes conversaciones. Inicia una nueva."}</div> : <div className="space-y-1.5">{hilos.map((h) => { const noL = hiloNoLeido(h, usuario); const last = h.mensajes[h.mensajes.length - 1]; return (
-                <button key={h.id} onClick={() => { if (h.dealId && onOpenDeal) { const d = deals.find((x) => x.id === h.dealId); if (d) { onOpenDeal(d, "mensajeria"); return; } } setSel(h.id); }} className="w-full rounded-lg p-2.5 text-left" style={{ border: `1px solid ${noL ? C.indigo : C.line}`, backgroundColor: noL ? "#eef2ff" : "#fff" }}>
+                <button key={h.id} onClick={() => { if (h.dealId && onOpenDeal) { const d = deals.find((x) => x.id === h.dealId); if (d) { onOpenDeal(d, "mensajeria"); return; } } setSel(h.id); }} className="w-full rounded-lg p-2.5 text-left" style={{ border: `1px solid ${noL ? C.indigo : C.line}`, backgroundColor: noL ? "#F1ECFF" : "#fff" }}>
                   <div className="flex items-center justify-between gap-2">
                     <span className="t11 font-semibold truncate" style={{ color: C.ink }}>{h.asunto || MSG_TIPOS[h.tipo].l}</span>
-                    <div className="flex shrink-0 items-center gap-1.5">{h.estado === "terminado" && <span className="rounded px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: C.page, color: C.faint }}>Terminada</span>}{noL && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#ef4444" }} />}</div>
+                    <div className="flex shrink-0 items-center gap-1.5">{h.estado === "terminado" && <span className="rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: C.page, color: C.faint }}>Terminada</span>}{noL && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#ef4444" }} />}</div>
                   </div>
                   <div className="t9" style={{ color: C.faint }}>{h.cliente ? h.cliente + (h.dealId ? " · " + h.dealId : "") : "Mensaje directo"} · {h.participantes.map((p) => USERS[p] || p).join(", ")}</div>
                   {last && <div className="mt-0.5 t9 truncate" style={{ color: C.sub }}>{last.de === usuario ? "Tú: " : last.deNombre + ": "}{last.texto || (last.arch ? "📎 " + last.arch : "")}</div>}
@@ -7125,9 +7152,9 @@ function ReglasClienteCatalogo() {
   const [modal, setModal] = useState(null); // regla en consulta (solo lectura)
   const areas = ["operaciones", "comercial", "riesgo", "extras"];
   const areaLbl = { operaciones: "Operaciones", comercial: "Comercial", riesgo: "Riesgo", extras: "Extras" };
-  const areaCol = (a) => AREA_COLOR[a] || { bg2: "#e7e5e4", fg: "#57534e" };
+  const areaCol = (a) => AREA_COLOR[a] || { bg2: "#E5E7EB", fg: "#4B5563" };
   const dis = { border: `1px solid ${C.line}`, color: C.sub, backgroundColor: C.page, cursor: "not-allowed" };
-  const tierChip = (t) => { const disp = t[1], niv = t[2]; if (disp === "aprobado") return { l: "Aprobado", bg: "#ecfdf5", fg: "#047857" }; if (disp === "rechazado") return { l: "Rechazado", bg: "#fef2f2", fg: "#b91c1c" }; return { l: `Sujeto a excepción · N${niv}`, bg: "#fffbeb", fg: "#b45309" }; };
+  const tierChip = (t) => { const disp = t[1], niv = t[2]; if (disp === "aprobado") return { l: "Aprobado", bg: "#F0FDF4", fg: "#16A34A" }; if (disp === "rechazado") return { l: "Rechazado", bg: "#fef2f2", fg: "#DC2626" }; return { l: `Sujeto a excepción · N${niv}`, bg: "#FFF7ED", fg: "#C2410C" }; };
   return (
     <div>
       <div className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Criterios de verificación (visado) por área</div>
@@ -7150,16 +7177,16 @@ function ReglasClienteCatalogo() {
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="t9 font-bold" style={{ color: C.faint }}>#{r.n}</span>
                         <div className="t11 font-medium" style={{ color: C.ink }}>{r.nombre}</div>
-                        <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#eef6ff", color: "#1d4ed8" }}>Automática</span>
-                        <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f5f4", color: C.sub }}>Criticidad: Mínima</span>
-                        <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#6d28d9" }}>Cliente</span>
-                        {r.clasif && <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#eef2ff", color: "#4338ca" }}>Clasificación interna</span>}
+                        <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#EFF6FF", color: "#2563EB" }}>Automática</span>
+                        <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F3F4F6", color: C.sub }}>Criticidad: Mínima</span>
+                        <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>Cliente</span>
+                        {r.clasif && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#5B21D6" }}>Clasificación interna</span>}
                       </div>
                       {(r.hallazgo || r.cond) && <div className="t9" style={{ color: C.sub }}>{r.hallazgo || r.cond}</div>}
-                      {r.clasif ? <div className="mt-1"><span className="rounded px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#6d28d9" }}>Clasificación (no decide)</span></div>
+                      {r.clasif ? <div className="mt-1"><span className="rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>Clasificación (no decide)</span></div>
                         : <div className="mt-1.5 space-y-0.5">{(r.tiers || []).map((t, i) => { const c = tierChip(t); return (
                           <div key={i} className="flex items-start gap-1.5 t9">
-                            <span className="shrink-0 rounded px-1.5 py-0.5 font-semibold" style={{ backgroundColor: c.bg, color: c.fg, whiteSpace: "nowrap" }}>{c.l}</span>
+                            <span className="shrink-0 rounded-full px-1.5 py-0.5 font-semibold" style={{ backgroundColor: c.bg, color: c.fg, whiteSpace: "nowrap" }}>{c.l}</span>
                             <span style={{ color: C.sub }}>si <b style={{ color: C.ink, fontFamily: "ui-monospace, monospace" }}>{tramoCond(t[0])}</b></span>
                           </div>
                         ); })}</div>}
@@ -7190,9 +7217,9 @@ function ReglasClienteCatalogo() {
               </label>
             </div>
             <div className="mt-3 flex flex-wrap items-start gap-6">
-              <div><div className="t10" style={{ color: C.faint }}>Tipo de verificación</div><div className="mt-1 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t10 font-semibold" style={{ backgroundColor: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}>Automática (API)</div></div>
-              <div><div className="t10" style={{ color: C.faint }}>Entidad</div><div className="mt-1 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t10 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#6d28d9", border: "1px solid #e9d5ff" }}>Cliente</div></div>
-              <div><div className="t10" style={{ color: C.faint }}>Reevaluación</div><div className="mt-1 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t10 font-semibold" style={{ backgroundColor: reglaReev(r.n) ? "#fffbeb" : "#fef2f2", color: reglaReev(r.n) ? "#b45309" : "#b91c1c", border: `1px solid ${reglaReev(r.n) ? "#fde68a" : "#fecaca"}` }}>{reglaReev(r.n) ? "♻ Re-evaluable" : "🔒 Bloqueo firme"}</div></div>
+              <div><div className="t10" style={{ color: C.faint }}>Tipo de verificación</div><div className="mt-1 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t10 font-semibold" style={{ backgroundColor: "#eff6ff", color: "#2563EB", border: "1px solid #bfdbfe" }}>Automática (API)</div></div>
+              <div><div className="t10" style={{ color: C.faint }}>Entidad</div><div className="mt-1 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t10 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED", border: "1px solid #DDD6FE" }}>Cliente</div></div>
+              <div><div className="t10" style={{ color: C.faint }}>Reevaluación</div><div className="mt-1 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t10 font-semibold" style={{ backgroundColor: reglaReev(r.n) ? "#FFF7ED" : "#fef2f2", color: reglaReev(r.n) ? "#C2410C" : "#DC2626", border: `1px solid ${reglaReev(r.n) ? "#FED7AA" : "#fecaca"}` }}>{reglaReev(r.n) ? "♻ Re-evaluable" : "🔒 Bloqueo firme"}</div></div>
             </div>
             <label className="mt-3 flex flex-col gap-1 t10" style={{ color: C.faint }}>Criticidad
               <input value="Mínima" disabled readOnly className="rounded-md px-2 py-1.5 t11 outline-none" style={{ ...dis, maxWidth: 220 }} />
@@ -7213,7 +7240,7 @@ function ReglasClienteCatalogo() {
                   <tr key={i} style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: c.bg }}>
                     <td className="px-1.5 py-1.5" style={{ color: C.sub }}>{i + 1}</td>
                     <td className="px-1.5 py-1.5" style={{ color: C.ink, fontFamily: "ui-monospace, monospace" }}>{tramoCond(t[0])}</td>
-                    <td className="px-1.5 py-1.5"><span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: c.bg, color: c.fg }}>{c.l}</span></td>
+                    <td className="px-1.5 py-1.5"><span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: c.bg, color: c.fg }}>{c.l}</span></td>
                     <td className="px-1.5 py-1.5">{disp === "excepcion" ? <div className="flex flex-col gap-0.5"><span className="t10" style={{ color: C.sub }}>N{niv} · {nr.rol} ({AREA_LBL[nr.area]})</span><span className="t9" style={{ color: C.faint }}>{aps.length ? "Aprueban: " + aps.join(", ") : "—"}</span></div> : <span className="t9" style={{ color: C.faint }}>—</span>}</td>
                   </tr>
                 ); })}
@@ -7253,9 +7280,9 @@ function OtorgamientosView({ deals, usuario, onOpen, onAutorizarCausa, onCfgChan
         <h1 className="text-2xl font-semibold tracking-tight">Otorgamientos</h1>
         <div className="t12" style={{ color: C.sub }}>{USERS[usuario] || usuario}{atrLbl ? " · " + atrLbl : ""}</div>
       </div>
-      <div className="mt-3 flex gap-1.5">
+      <div className="mt-3 flex gap-6" style={{ borderBottom: `1px solid ${C.line}` }}>
         {[["visado", "Bandeja de aprobaciones"], ["mantenedores", "Mantenedores"]].map(([k, l]) => (
-          <button key={k} onClick={() => setSub(k)} className="rounded-md px-3 py-1 t12 font-medium" style={{ backgroundColor: sub === k ? C.ink : "#fff", color: sub === k ? "#fff" : C.sub, border: `1px solid ${sub === k ? C.ink : C.line}` }}>{l}</button>
+          <button key={k} onClick={() => setSub(k)} className="px-1 pb-2 t12" style={{ borderBottom: `2px solid ${sub === k ? C.indigo : "transparent"}`, color: sub === k ? C.indigo : C.sub, fontWeight: sub === k ? 600 : 400, marginBottom: -1 }}>{l}</button>
         ))}
       </div>
       {sub === "mantenedores" ? <MantenedoresOtorg onCfgChange={onCfgChange} /> : <VisadoClienteView deals={deals} usuario={usuario} onChange={onCfgChange} />}
@@ -7286,11 +7313,11 @@ function CriteriosVerifMantenedor() {
                 <div key={c.id} className="rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, borderLeft: `3px solid ${AREA_COLOR[area].fg}`, backgroundColor: "#fff" }}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2"><div className="t11 font-medium" style={{ color: C.ink }}>{c.nombre}</div><span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: c.modo === "manual" ? "#fffbeb" : "#eef6ff", color: c.modo === "manual" ? "#b45309" : "#1d4ed8" }}>{c.modo === "manual" ? "Manual · queda pendiente" : "Automática"}</span><span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f5f4", color: C.sub }}>Criticidad: {c.criticidad === "minima" ? "Mínima" : "Opcional"}</span><span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#6d28d9" }}>{c.entidad === "deudor" ? "Deudor" : "Cliente"}</span></div>
+                      <div className="flex flex-wrap items-center gap-2"><div className="t11 font-medium" style={{ color: C.ink }}>{c.nombre}</div><span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: c.modo === "manual" ? "#FFF7ED" : "#EFF6FF", color: c.modo === "manual" ? "#C2410C" : "#2563EB" }}>{c.modo === "manual" ? "Manual · queda pendiente" : "Automática"}</span><span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F3F4F6", color: C.sub }}>Criticidad: {c.criticidad === "minima" ? "Mínima" : "Opcional"}</span><span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>{c.entidad === "deudor" ? "Deudor" : "Cliente"}</span></div>
                       {c.descripcion && <div className="t9" style={{ color: C.sub }}>{c.descripcion}</div>}
                       <div className="mt-1 flex flex-wrap gap-1">
                         {c.rangos.map((r, ri) => { const dm = DISP_META[r.disp] || DISP_META.aprobada; const opl = (OPERADORES.find((o) => o.v === r.op) || {}).l || r.op; return (
-                          <span key={ri} className="rounded px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: dm.bg, color: dm.fg }}>{opl} {r.valor}{c.unidad} → {dm.l}{r.disp === "sujeto" ? ` · N${r.nivel}` : ""}</span>
+                          <span key={ri} className="rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: dm.bg, color: dm.fg }}>{opl} {r.valor}{c.unidad} → {dm.l}{r.disp === "sujeto" ? ` · N${r.nivel}` : ""}</span>
                         ); })}
                       </div>
                     </div>
@@ -7323,14 +7350,14 @@ function CriteriosVerifMantenedor() {
             <div className="mt-3 flex flex-wrap items-start gap-6">
               <div>
                 <div className="t10" style={{ color: C.faint }}>Tipo de verificación</div>
-                <div className="mt-1 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t10 font-semibold" style={{ backgroundColor: c.modo === "manual" ? "#fffbeb" : "#eff6ff", color: c.modo === "manual" ? "#b45309" : "#1d4ed8", border: `1px solid ${c.modo === "manual" ? "#fde68a" : "#bfdbfe"}` }}>{c.modo === "manual" ? "Manual (encargado)" : "Automática (API)"}</div>
+                <div className="mt-1 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t10 font-semibold" style={{ backgroundColor: c.modo === "manual" ? "#FFF7ED" : "#eff6ff", color: c.modo === "manual" ? "#C2410C" : "#2563EB", border: `1px solid ${c.modo === "manual" ? "#FED7AA" : "#bfdbfe"}` }}>{c.modo === "manual" ? "Manual (encargado)" : "Automática (API)"}</div>
               </div>
               <div>
                 <div className="t10" style={{ color: C.faint }}>Entidad</div>
-                <div className="mt-1 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t10 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#6d28d9", border: "1px solid #e9d5ff" }}>{c.entidad === "deudor" ? "Deudor" : "Cliente"}</div>
+                <div className="mt-1 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t10 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED", border: "1px solid #DDD6FE" }}>{c.entidad === "deudor" ? "Deudor" : "Cliente"}</div>
               </div>
             </div>
-            {c.modo === "manual" && <div className="mt-1 t9" style={{ color: "#b45309" }}>Verificación manual: en cada evaluación queda <b>pendiente</b> hasta que el encargado (según su nivel de atribución) la resuelva como <b>Aprobado</b>, <b>Excepcionado</b> o <b>Rechazado</b>. Una excepción puede ser <b>con seguimiento</b> (queda abierta hasta que Operaciones verifique el cumplimiento) o <b>sin seguimiento</b>.</div>}
+            {c.modo === "manual" && <div className="mt-1 t9" style={{ color: "#C2410C" }}>Verificación manual: en cada evaluación queda <b>pendiente</b> hasta que el encargado (según su nivel de atribución) la resuelva como <b>Aprobado</b>, <b>Excepcionado</b> o <b>Rechazado</b>. Una excepción puede ser <b>con seguimiento</b> (queda abierta hasta que Operaciones verifique el cumplimiento) o <b>sin seguimiento</b>.</div>}
             <label className="mt-3 flex flex-col gap-1 t10" style={{ color: C.faint }}>Criticidad
               <input value={c.criticidad === "minima" ? "Mínima" : "Opcional"} disabled readOnly className="rounded-md px-2 py-1.5 t11 outline-none" style={{ ...dis, maxWidth: 220 }} />
             </label>
@@ -7357,7 +7384,7 @@ function CriteriosVerifMantenedor() {
                   <tr key={ri} style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: dm.bg }}>
                     <td className="px-1.5 py-1.5" style={{ color: C.sub }}>{ri + 1}</td>
                     <td className="px-1.5 py-1.5 font-medium" style={{ color: C.ink }}>{opl} {r.valor}{c.unidad}</td>
-                    <td className="px-1.5 py-1.5"><span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dm.bg, color: dm.fg }}>{dm.l}</span></td>
+                    <td className="px-1.5 py-1.5"><span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dm.bg, color: dm.fg }}>{dm.l}</span></td>
                     <td className="px-1.5 py-1.5">{r.disp === "sujeto" ? (
                       <div className="flex flex-col gap-0.5">
                         <span className="t10" style={{ color: C.sub }}>N{r.nivel} atribución</span>
@@ -7386,10 +7413,10 @@ function SeguimientoExcepciones({ usuario }) {
   const pend = SEGUIMIENTOS_EXC.filter((s) => s.estado === "pendiente");
   const cum = SEGUIMIENTOS_EXC.filter((s) => s.estado === "cumplido");
   const Item = ({ s }) => (
-    <div className="rounded-lg p-3" style={{ border: `1px solid ${C.line}`, borderLeft: `3px solid ${s.estado === "cumplido" ? C.green : "#f59e0b"}`, backgroundColor: "#fff" }}>
+    <div className="rounded-lg p-3" style={{ border: `1px solid ${C.line}`, borderLeft: `3px solid ${s.estado === "cumplido" ? C.green : "#F97316"}`, backgroundColor: "#fff" }}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2"><span className="t11 font-bold" style={{ color: C.ink }}>{s.criterio}</span><span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: s.estado === "cumplido" ? C.greenBg : "#fffbeb", color: s.estado === "cumplido" ? C.green : "#b45309" }}>{s.estado === "cumplido" ? "Cumplido" : "Pendiente"}</span><span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: AREA_COLOR[s.area].bg2, color: AREA_COLOR[s.area].fg }}>{AREA_LBL[s.area]}</span></div>
+          <div className="flex flex-wrap items-center gap-2"><span className="t11 font-bold" style={{ color: C.ink }}>{s.criterio}</span><span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: s.estado === "cumplido" ? C.greenBg : "#FFF7ED", color: s.estado === "cumplido" ? C.green : "#C2410C" }}>{s.estado === "cumplido" ? "Cumplido" : "Pendiente"}</span><span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: AREA_COLOR[s.area].bg2, color: AREA_COLOR[s.area].fg }}>{AREA_LBL[s.area]}</span></div>
           <div className="mt-0.5 t9" style={{ color: C.faint }}>{s.operacion} · {s.cliente} · aprobó {s.aprobadoPor} (N{s.nivel}) · {s.fecha}</div>
           <div className="mt-1 t10" style={{ color: C.sub }}>Condición a verificar: {s.condicion}</div>
           {s.estado === "cumplido" && <div className="mt-0.5 t9" style={{ color: C.green }}>✓ Verificado por {s.cumplidoPor} · {s.cumplidoFecha}</div>}
@@ -7429,7 +7456,7 @@ function buildAtribucionesJSON() {
 // Mantenedor: atribuciones de aprobación por criterio (solo lectura + descarga del JSON de configuración).
 function AtribucionesMantenedor() {
   const [fArea, setFArea] = useState("todas");
-  const dispMeta = { aprobado: { l: "Aprobado", bg: "#ecfdf5", fg: "#047857" }, excepcion: { l: "Excepción", bg: "#fffbeb", fg: "#b45309" }, rechazado: { l: "Rechazado", bg: "#fef2f2", fg: "#b91c1c" }, clasificacion: { l: "Clasificación", bg: "#eef2ff", fg: "#4338ca" } };
+  const dispMeta = { aprobado: { l: "Aprobado", bg: "#F0FDF4", fg: "#16A34A" }, excepcion: { l: "Excepción", bg: "#FFF7ED", fg: "#C2410C" }, rechazado: { l: "Rechazado", bg: "#fef2f2", fg: "#DC2626" }, clasificacion: { l: "Clasificación", bg: "#F1ECFF", fg: "#5B21D6" } };
   const rules = REGLAS_CLIENTE.filter((r) => !r.clasif && (r.tiers || []).some((t) => t[1] === "excepcion"));
   const list = rules.filter((r) => fArea === "todas" || r.area === fArea);
   const areas = [["todas", "Todas"], ["riesgo", "Riesgo"], ["comercial", "Comercial"], ["operaciones", "Operaciones"]];
@@ -7453,8 +7480,8 @@ function AtribucionesMantenedor() {
             <div key={r.n} className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="t12 font-semibold" style={{ color: C.ink }}>#{r.n} · {r.nombre}</span>
-                <span className="rounded px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: ac.bg2, color: ac.fg }}>{AREA_LBL[r.area]}</span>
-                <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: reglaReev(r.n) ? "#fffbeb" : "#f5f5f4", color: reglaReev(r.n) ? "#b45309" : C.faint }}>{reglaReev(r.n) ? "Re-evaluable" : "Bloqueo firme"}</span>
+                <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: ac.bg2, color: ac.fg }}>{AREA_LBL[r.area]}</span>
+                <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: reglaReev(r.n) ? "#FFF7ED" : "#F3F4F6", color: reglaReev(r.n) ? "#C2410C" : C.faint }}>{reglaReev(r.n) ? "Re-evaluable" : "Bloqueo firme"}</span>
               </div>
               {r.hallazgo && <div className="mt-0.5 t10" style={{ color: C.sub }}>{r.hallazgo}</div>}
               <table className="mt-1.5 w-full border-collapse t10">
@@ -7466,7 +7493,7 @@ function AtribucionesMantenedor() {
                   return (
                     <tr key={i} style={{ borderBottom: `1px solid ${C.line}` }}>
                       <td className="px-2 py-1" style={{ color: C.ink }}>{tramoCond(t[0])}</td>
-                      <td className="px-2 py-1"><span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dm.bg, color: dm.fg }}>{dm.l}</span></td>
+                      <td className="px-2 py-1"><span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dm.bg, color: dm.fg }}>{dm.l}</span></td>
                       <td className="px-2 py-1" style={{ color: C.sub }}>{nr ? `N${niv} · ${nr.rol}` : "—"}</td>
                       <td className="px-2 py-1" style={{ color: C.sub }}>{aps.length ? aps.join(", ") : "—"}</td>
                     </tr>
@@ -7490,7 +7517,7 @@ function MantenedoresOtorg({ onCfgChange }) {
       <div className="t11" style={{ color: C.faint }}>Configuración paramétrica del otorgamiento. Los cambios aplican a las próximas evaluaciones (nivel requerido y atribución). Cada rol aprueba exclusivamente su nivel (el que define el risk tier); el super-admin cubre todos.</div>
       <div className="flex flex-wrap items-center gap-1.5">
         {mtabs.map(([k, l]) => (
-          <button key={k} onClick={() => setMtab(k)} className="rounded-lg px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: mtab === k ? C.ink : "#fff", color: mtab === k ? "#fff" : C.sub, border: `1px solid ${mtab === k ? C.ink : C.line}` }}>{l}</button>
+          <button key={k} onClick={() => setMtab(k)} className="rounded-lg px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: mtab === k ? C.lilac : "#fff", color: mtab === k ? C.indigo : C.sub, border: `1px solid ${mtab === k ? C.indigo : C.line}` }}>{l}</button>
         ))}
       </div>
 
@@ -7559,9 +7586,9 @@ const SK_CIERRE = (d) => { const m = String(d.time || "").match(/^(\d{2})-(\d{2}
 // ── TAREAS Y NOTAS DEL PANEL (jefatura / gerencia). Se crean desde el Sankey: notas libres con menciones a
 // personas de la organización, o tareas masivas sobre las oportunidades de un nodo del gráfico.
 const TAREA_AREAS = [
-  { id: "comercial", l: "Comercial", c: "#4f46e5", bg: "#eef2ff", bd: "#c7d2fe" },
-  { id: "riesgo", l: "Riesgo", c: "#b91c1c", bg: "#fef2f2", bd: "#fecaca" },
-  { id: "operaciones", l: "Operaciones", c: "#0369a1", bg: "#e0f2fe", bd: "#bae6fd" },
+  { id: "comercial", l: "Comercial", c: "#703EFF", bg: "#F1ECFF", bd: "#D9CCFF" },
+  { id: "riesgo", l: "Riesgo", c: "#DC2626", bg: "#fef2f2", bd: "#fecaca" },
+  { id: "operaciones", l: "Operaciones", c: "#2563EB", bg: "#EFF6FF", bd: "#BFDBFE" },
 ];
 const areaMeta = (id) => TAREA_AREAS.find((a) => a.id === id) || TAREA_AREAS[0];
 const TAREA_VENC = [{ d: 1, l: "1 día" }, { d: 2, l: "2 días" }, { d: 5, l: "5 días" }, { d: 15, l: "15 días" }, { d: 30, l: "1 mes" }];
@@ -7594,7 +7621,7 @@ const personasOrg = () => {
 // Etiqueta corta de la categoría de la oportunidad según la mezcla de deudores de sus facturas.
 const SK_CAT_LBL = { "CAT-1": "CAT-1 · muy buenos", "CAT-2": "CAT-2 · mayoría muy buenos", "CAT-3": "CAT-3 · buenos/normales", "CAT-4": "CAT-4 · límite de compra", "CAT-5": "CAT-5 · deudor malo/sin nota" };
 const SK_ETAPA_LBL = { prospeccion: "Prospección", oferta: "Oferta / Negociación" };
-const SK_ETAPA_COL = { prospeccion: "#a8a29e", oferta: "#d97706" };
+const SK_ETAPA_COL = { prospeccion: "#9CA3AF", oferta: "#C2410C" };
 // Etapa comercial EN CURSO: sólo Prospección u Oferta/Negociación. Las que avanzaron más (aceptada, cesión,
 // otorgamiento, giro) pasaron por Oferta/Negociación; su resultado se refleja en el Desenlace. Para las
 // perdidas se usa la etapa en la que se perdieron (etapaPerdida se graba al pasar a Perdida).
@@ -7617,13 +7644,13 @@ const skCadena = (d, diaSel) => {
     const n3 = { id: "D:PE", label: "Perdida", color: "#dc2626" };
     const comp = d.cedidaCompetidor || (d.perdidaCesion ? "Otro factoring" : null);
     if (comp) return { n3, n4: { id: "C:CO", label: "Competencia", color: "#dc2626" }, n5: { id: `X:CO:${comp}`, label: comp, color: "#ef4444" } };
-    return { n3, n4: { id: "C:CL", label: "Desistimiento del cliente", color: "#b45309" }, n5: null };
+    return { n3, n4: { id: "C:CL", label: "Desistimiento del cliente", color: "#C2410C" }, n5: null };
   }
   if (d.stage === "giro") {
     const c = SK_CIERRE(d);
     return { n3: { id: "D:CU", label: "Otorgada", color: "#16a34a" }, n4: c === diaSel ? { id: "C:CH", label: "Cerrada el día", color: "#16a34a" } : { id: "C:CA", label: "Cerrada días anteriores", color: "#0a7d3f" }, n5: null };
   }
-  return { n3: { id: "D:AB", label: "Abierta (en curso)", color: "#3b82f6" }, n4: null, n5: null };
+  return { n3: { id: "D:AB", label: "Abierta (en curso)", color: "#2563EB" }, n4: null, n5: null };
 };
 // Sankey con la librería d3-sankey: ella resuelve el layout (profundidad, alturas y rutas de los enlaces).
 // Se usa alineación `sankeyLeft` para que cada nodo quede en la columna que le corresponde por su
@@ -7740,38 +7767,38 @@ function PanelTareas({ usuario, esJefe, onCambio }) {
           </div>
           <div className="mt-1.5 flex flex-wrap gap-1">
             {TAREA_AREAS.map((a) => (
-              <button key={a.id} onClick={() => setCat(a.id)} className="rounded-md px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: cat === a.id ? a.c : a.bg, color: cat === a.id ? "#fff" : a.c, border: `1px solid ${a.bd}` }}>{a.l}</button>
+              <button key={a.id} onClick={() => setCat(a.id)} className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: cat === a.id ? a.c : a.bg, color: cat === a.id ? "#fff" : a.c, border: `1px solid ${a.bd}` }}>{a.l}</button>
             ))}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-1">
             <span className="t9" style={{ color: C.faint }}>Vence en</span>
             {TAREA_VENC.map((v) => (
-              <button key={v.d} onClick={() => setDias(v.d)} className="rounded-md px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dias === v.d ? C.ink : "#fff", color: dias === v.d ? "#fff" : C.sub, border: `1px solid ${C.line}` }}>{v.l}</button>
+              <button key={v.d} onClick={() => setDias(v.d)} className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dias === v.d ? C.lilac : "#fff", color: dias === v.d ? C.indigo : C.sub, border: `1px solid ${C.line}` }}>{v.l}</button>
             ))}
           </div>
-          <button onClick={crear} disabled={!txt.trim()} className="mt-2 w-full rounded-lg py-1.5 t11 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: C.indigo }}>Crear tarea</button>
+          <button onClick={crear} disabled={!txt.trim()} className="mt-2 w-full rounded-full py-1.5 t11 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: C.indigo }}>Crear tarea</button>
         </div>
       ) : (
-        <div className="mt-2 rounded-lg p-2 t9" style={{ backgroundColor: C.amberBg, border: "1px solid #fde68a", color: "#b45309" }}>Sólo las jefaturas y la gerencia pueden crear tareas. Aquí ves las asignadas.</div>
+        <div className="mt-2 rounded-lg p-2 t9" style={{ backgroundColor: C.amberBg, border: "1px solid #FED7AA", color: "#C2410C" }}>Sólo las jefaturas y la gerencia pueden crear tareas. Aquí ves las asignadas.</div>
       )}
       <div className="mt-2 flex flex-wrap gap-1">
         {[["todas", "Todas"], ...TAREA_AREAS.map((a) => [a.id, a.l])].map(([k, l]) => (
-          <button key={k} onClick={() => setFCat(k)} className="rounded-md px-2 py-0.5 t9 font-medium" style={{ backgroundColor: fCat === k ? C.ink : "#fff", color: fCat === k ? "#fff" : C.sub, border: `1px solid ${C.line}` }}>{l}</button>
+          <button key={k} onClick={() => setFCat(k)} className="rounded-full px-2 py-0.5 t9 font-medium" style={{ backgroundColor: fCat === k ? C.lilac : "#fff", color: fCat === k ? C.indigo : C.sub, border: `1px solid ${C.line}` }}>{l}</button>
         ))}
       </div>
       <div className="mt-2 space-y-1.5" style={{ maxHeight: 420, overflowY: "auto" }}>
         {lista.length === 0 && <div className="rounded-lg border border-dashed py-6 text-center t10" style={{ borderColor: C.line, color: C.faint }}>Sin tareas. Crea una nota o selecciona un nodo del gráfico.</div>}
         {lista.map((t) => { const a = areaMeta(t.cat); const venc = t.venceTs < Date.now(); return (
-          <div key={t.id} className="rounded-lg p-2" style={{ border: `1px solid ${C.line}`, borderLeft: `3px solid ${a.c}`, backgroundColor: t.hecha ? "#fafaf9" : "#fff", opacity: t.hecha ? 0.6 : 1 }}>
+          <div key={t.id} className="rounded-lg p-2" style={{ border: `1px solid ${C.line}`, borderLeft: `3px solid ${a.c}`, backgroundColor: t.hecha ? "#F9FAFB" : "#fff", opacity: t.hecha ? 0.6 : 1 }}>
             <div className="flex items-center justify-between gap-1">
-              <span className="rounded px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: a.bg, color: a.c }}>{a.l}</span>
+              <span className="rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: a.bg, color: a.c }}>{a.l}</span>
               <span className="t9 font-semibold" style={{ color: t.hecha ? C.faint : venc ? C.red : C.sub }}>{t.hecha ? "hecha" : fmtVence(t.venceTs)}</span>
             </div>
             <div className="mt-1 t10" style={{ color: C.ink, textDecoration: t.hecha ? "line-through" : "none" }}>{t.texto}</div>
-            {t.para && t.para.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{t.para.map((p, i) => <span key={i} className="rounded px-1 py-0.5 t8 font-semibold" style={{ backgroundColor: "#efeafe", color: "#6d4ef0" }}>@{p}</span>)}</div>}
+            {t.para && t.para.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{t.para.map((p, i) => <span key={i} className="rounded-full px-1 py-0.5 t8 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>@{p}</span>)}</div>}
             <div className="mt-1 flex items-center justify-between gap-1 t8" style={{ color: C.faint }}>
               <span>{t.autor}{t.nodo ? ` · ${t.nodo}` : ""}{t.ops && t.ops.length ? ` · ${t.ops.length} op.` : ""}</span>
-              <button onClick={() => { t.hecha = !t.hecha; onCambio && onCambio(); }} className="rounded px-1.5 py-0.5 t8 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub }}>{t.hecha ? "Reabrir" : "Marcar hecha"}</button>
+              <button onClick={() => { t.hecha = !t.hecha; onCambio && onCambio(); }} className="rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub }}>{t.hecha ? "Reabrir" : "Marcar hecha"}</button>
             </div>
           </div>
         ); })}
@@ -7818,37 +7845,37 @@ function NodoTareasModal({ nodo, onClose, usuario, esJefe, onCambio }) {
         </div>
         <div className="mt-1.5 space-y-1" style={{ maxHeight: 240, overflowY: "auto" }}>
           {nodo.deals.map((d) => { const on = sel.has(d.id); return (
-            <button key={d.id} onClick={() => toggle(d.id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left" style={{ border: `1px solid ${on ? C.indigo : C.line}`, backgroundColor: on ? "#eef2ff" : "#fff" }}>
+            <button key={d.id} onClick={() => toggle(d.id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left" style={{ border: `1px solid ${on ? C.indigo : C.line}`, backgroundColor: on ? "#F1ECFF" : "#fff" }}>
               <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded" style={{ border: `1px solid ${on ? C.indigo : C.line}`, backgroundColor: on ? C.indigo : "#fff" }}>{on && <Check size={11} style={{ color: "#fff" }} />}</span>
               <span className="min-w-0 flex-1"><span className="block truncate t11 font-semibold" style={{ color: C.ink }}>{d.cliente}</span><span className="t9" style={{ color: C.faint }}>{d.id} · {EXECS[d.exec] || "Agente IA"} · {d.facturas || 0} fac.</span></span>
               <span className="shrink-0 t11 font-semibold" style={{ color: C.ink }}>{fmtMM(d.amountMM || 0)}</span>
             </button>
           ); })}
         </div>
-        {!esJefe && <div className="mt-3 rounded-lg p-2 t10" style={{ backgroundColor: C.amberBg, border: "1px solid #fde68a", color: "#b45309" }}>Sólo las jefaturas y la gerencia pueden asignar tareas.</div>}
+        {!esJefe && <div className="mt-3 rounded-lg p-2 t10" style={{ backgroundColor: C.amberBg, border: "1px solid #FED7AA", color: "#C2410C" }}>Sólo las jefaturas y la gerencia pueden asignar tareas.</div>}
         <div className="mt-3 t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Tarea a asignar</div>
-        <select value={pre} onChange={(e) => elegirPre(e.target.value)} disabled={!esJefe} className="mt-1 w-full rounded-lg px-3 py-2 t12 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: esJefe ? "#fff" : "#f8fafc" }}>
+        <select value={pre} onChange={(e) => elegirPre(e.target.value)} disabled={!esJefe} className="mt-1 w-full rounded-lg px-3 py-2 t12 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: esJefe ? "#fff" : "#F9FAFB" }}>
           {TAREAS_PREDEF.map((t) => <option key={t.l} value={t.l}>{t.l}</option>)}
         </select>
-        <input value={extra} onChange={(e) => setExtra(e.target.value)} disabled={!esJefe} placeholder="Nota adicional (opcional)…" className="mt-1.5 w-full rounded-lg px-3 py-1.5 t11 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: esJefe ? "#fff" : "#f8fafc" }} />
+        <input value={extra} onChange={(e) => setExtra(e.target.value)} disabled={!esJefe} placeholder="Nota adicional (opcional)…" className="mt-1.5 w-full rounded-lg px-3 py-1.5 t11 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: esJefe ? "#fff" : "#F9FAFB" }} />
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <div className="flex flex-wrap gap-1">
-            {TAREA_AREAS.map((a) => <button key={a.id} onClick={() => setCat(a.id)} disabled={!esJefe} className="rounded-md px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: cat === a.id ? a.c : a.bg, color: cat === a.id ? "#fff" : a.c, border: `1px solid ${a.bd}` }}>{a.l}</button>)}
+            {TAREA_AREAS.map((a) => <button key={a.id} onClick={() => setCat(a.id)} disabled={!esJefe} className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: cat === a.id ? a.c : a.bg, color: cat === a.id ? "#fff" : a.c, border: `1px solid ${a.bd}` }}>{a.l}</button>)}
           </div>
           <div className="flex flex-wrap items-center gap-1">
             <span className="t9" style={{ color: C.faint }}>Vence en</span>
-            {TAREA_VENC.map((v) => <button key={v.d} onClick={() => setDias(v.d)} disabled={!esJefe} className="rounded-md px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dias === v.d ? C.ink : "#fff", color: dias === v.d ? "#fff" : C.sub, border: `1px solid ${C.line}` }}>{v.l}</button>)}
+            {TAREA_VENC.map((v) => <button key={v.d} onClick={() => setDias(v.d)} disabled={!esJefe} className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dias === v.d ? C.lilac : "#fff", color: dias === v.d ? C.indigo : C.sub, border: `1px solid ${C.line}` }}>{v.l}</button>)}
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className="t9" style={{ color: C.faint }}>Asignar a</span>
           {[["ejec", "Ejecutivo que la gestiona", aEjec, setAEjec], ["jefe", "Jefatura", aJefe, setAJefe]].map(([k, l, on, set]) => (
-            <button key={k} onClick={() => set(!on)} disabled={!esJefe} className="rounded-md px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: on ? "#efeafe" : "#fff", color: on ? "#6d4ef0" : C.sub, border: `1px solid ${on ? "#ddd6fe" : C.line}` }}>{on ? "✓ " : ""}{l}</button>
+            <button key={k} onClick={() => set(!on)} disabled={!esJefe} className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: on ? "#F1ECFF" : "#fff", color: on ? "#703EFF" : C.sub, border: `1px solid ${on ? "#ddd6fe" : C.line}` }}>{on ? "✓ " : ""}{l}</button>
           ))}
         </div>
         <div className="mt-4 flex items-center justify-end gap-3">
           <button onClick={onClose} className="t12 font-semibold" style={{ color: C.sub }}>Cancelar</button>
-          <button onClick={crear} disabled={!esJefe || !elegidas.length || (!aEjec && !aJefe)} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 t12 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.indigo }}><Check size={13} /> Crear {elegidas.length} tarea(s)</button>
+          <button onClick={crear} disabled={!esJefe || !elegidas.length || (!aEjec && !aJefe)} className="inline-flex items-center gap-1.5 rounded-full px-5 py-2 t12 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.indigo }}><Check size={13} /> Crear {elegidas.length} tarea(s)</button>
         </div>
       </div>
     </div>
@@ -7880,14 +7907,14 @@ function PCsankey({ deals = [], execsFiltrados = [], hayFiltro, soloExec, usuari
     scope.forEach((d) => {
       const v = val(d); mTot += d.amountMM || 0;
       const rid = d.reglaId, rr = rid ? INBOUND_RULES.find((r) => r.id === rid) : null;
-      const o = reg({ id: rid ? `O:${rid}` : "O:MAN", label: rid ? `${rid} · ${rr ? rr.title : "Regla"}` : "Manual (ejecutivo)", color: rid ? "#6d4ef0" : "#0d9488" });
+      const o = reg({ id: rid ? `O:${rid}` : "O:MAN", label: rid ? `${rid} · ${rr ? rr.title : "Regla"}` : "Manual (ejecutivo)", color: rid ? "#703EFF" : "#0d9488" });
       const esHoy = !!(d.tProsp && SK_DIA(d.tProsp) === diaSel);
       if (esHoy) nHoy++; else nAnt++;
       // 2ª columna según el desglose elegido: antigüedad de la originación, o la CAT de la oportunidad.
       const ct = catDeal(d).cat;
       const a = col2 === "cat"
         ? reg({ id: `K:${ct}`, label: SK_CAT_LBL[ct] || ct, color: (CAT_META[ct] || {}).fg || C.faint })
-        : reg({ id: esHoy ? "A:H" : "A:A", label: esHoy ? "Originada el día" : "De días anteriores", color: esHoy ? "#4f46e5" : "#a8a29e" });
+        : reg({ id: esHoy ? "A:H" : "A:A", label: esHoy ? "Originada el día" : "De días anteriores", color: esHoy ? "#703EFF" : "#9CA3AF" });
       const e = skEtapa(d);
       const et = reg({ id: `E:${e}`, label: SK_ETAPA_LBL[e] || e, color: SK_ETAPA_COL[e] || C.faint });
       const { n3, n4, n5 } = skCadena(d, diaSel);
@@ -7912,17 +7939,17 @@ function PCsankey({ deals = [], execsFiltrados = [], hayFiltro, soloExec, usuari
         </div>
         <div className="flex flex-col gap-1">
           <label className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Medir por</label>
-          <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#f3f1ec", border: `1px solid ${C.line}` }}>
+          <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
             {[["cantidad", "N° oportunidades"], ["monto", "Monto (MM$)"]].map(([k, l]) => (
-              <button key={k} onClick={() => setMetrica(k)} className="rounded-md px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: metrica === k ? C.ink : "transparent", color: metrica === k ? "#fff" : C.sub }}>{l}</button>
+              <button key={k} onClick={() => setMetrica(k)} className="rounded-md px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: metrica === k ? "#fff" : "transparent", color: metrica === k ? C.indigo : C.sub }}>{l}</button>
             ))}
           </div>
         </div>
         <div className="flex flex-col gap-1">
           <label className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Desglose</label>
-          <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#f3f1ec", border: `1px solid ${C.line}` }}>
+          <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
             {[["orig", "Originación (día)"], ["cat", "CAT (1-5)"]].map(([k, l]) => (
-              <button key={k} onClick={() => setCol2(k)} className="rounded-md px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: col2 === k ? C.ink : "transparent", color: col2 === k ? "#fff" : C.sub }}>{l}</button>
+              <button key={k} onClick={() => setCol2(k)} className="rounded-md px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: col2 === k ? "#fff" : "transparent", color: col2 === k ? C.indigo : C.sub }}>{l}</button>
             ))}
           </div>
         </div>
@@ -7931,10 +7958,10 @@ function PCsankey({ deals = [], execsFiltrados = [], hayFiltro, soloExec, usuari
       <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
         {[
           { t: "Oportunidades", v: kpis.total.toLocaleString("es-CL"), s: fmtMMc(kpis.mTot), col: C.ink, bg: "#fff", bd: C.line },
-          { t: "Originadas el día", v: kpis.nHoy.toLocaleString("es-CL"), s: `${kpis.nAnt.toLocaleString("es-CL")} de días anteriores`, col: "#4f46e5", bg: "#eef2ff", bd: "#c7d2fe" },
-          { t: "Abiertas", v: kpis.nAbi.toLocaleString("es-CL"), s: "siguen en curso", col: "#0369a1", bg: "#e0f2fe", bd: "#bae6fd" },
-          { t: "Otorgadas", v: kpis.nCur.toLocaleString("es-CL"), s: "otorgadas y giradas", col: "#047857", bg: "#ecfdf5", bd: "#bbf7d0" },
-          { t: "Descartadas", v: kpis.nDes.toLocaleString("es-CL"), s: "no superaron otorgamiento", col: "#7c3aed", bg: "#f3e8ff", bd: "#ddd6fe" },
+          { t: "Originadas el día", v: kpis.nHoy.toLocaleString("es-CL"), s: `${kpis.nAnt.toLocaleString("es-CL")} de días anteriores`, col: "#703EFF", bg: "#F1ECFF", bd: "#D9CCFF" },
+          { t: "Abiertas", v: kpis.nAbi.toLocaleString("es-CL"), s: "siguen en curso", col: "#2563EB", bg: "#EFF6FF", bd: "#BFDBFE" },
+          { t: "Otorgadas", v: kpis.nCur.toLocaleString("es-CL"), s: "otorgadas y giradas", col: "#16A34A", bg: "#F0FDF4", bd: "#bbf7d0" },
+          { t: "Descartadas", v: kpis.nDes.toLocaleString("es-CL"), s: "no superaron otorgamiento", col: "#7c3aed", bg: "#F1ECFF", bd: "#ddd6fe" },
           { t: "Perdidas", v: kpis.nPer.toLocaleString("es-CL"), s: "competencia · desistimiento", col: "#dc2626", bg: "#fef2f2", bd: "#fecaca" },
         ].map((k, i) => (
           <div key={i} className="rounded-xl p-3" style={{ backgroundColor: k.bg, border: `1px solid ${k.bd}` }}>
@@ -7985,7 +8012,7 @@ function PanelClientes({ soloExec, deals = [], usuario }) {
     </div>
   );
   const Tab = ({ id, label }) => (
-    <button onClick={() => setSeccion(id)} className="rounded-lg px-4 py-1.5 t12 font-semibold" style={{ backgroundColor: seccion === id ? C.ink : "#fff", color: seccion === id ? "#fff" : C.sub, border: `1px solid ${seccion === id ? C.ink : C.line}` }}>{label}</button>
+    <button onClick={() => setSeccion(id)} className="px-1 pb-2 t12" style={{ borderBottom: `2px solid ${seccion === id ? C.indigo : "transparent"}`, color: seccion === id ? C.indigo : C.sub, fontWeight: seccion === id ? 600 : 400, marginBottom: -1 }}>{label}</button>
   );
   return (
     <div className="space-y-5">
@@ -7993,23 +8020,23 @@ function PanelClientes({ soloExec, deals = [], usuario }) {
       <div className="flex flex-wrap items-end gap-4 rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
         <span className="t10 font-bold uppercase tracking-widest" style={{ color: C.faint, alignSelf: "center" }}>Drill-down</span>
         {soloExec ? (
-          <div className="flex items-center gap-2"><User size={14} style={{ color: C.faint }} /><span className="t12" style={{ color: C.sub }}>Alcance:</span><span className="rounded-full px-3 py-1 t12 font-semibold" style={{ backgroundColor: "#efeafe", color: "#6d4ef0" }}>{soloExec}</span><span className="t10" style={{ color: C.faint }}>(tu cartera)</span></div>
+          <div className="flex items-center gap-2"><User size={14} style={{ color: C.faint }} /><span className="t12" style={{ color: C.sub }}>Alcance:</span><span className="rounded-full px-3 py-1 t12 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec}</span><span className="t10" style={{ color: C.faint }}>(tu cartera)</span></div>
         ) : (
           <>
             <Sel label="Zona comercial" value={fZona} onChange={(v) => { setFZona(v); setFJefatura("todas"); setFEjec("todos"); }} options={[{ v: "todas", l: "Todas las zonas" }, ...zonas.map((z) => ({ v: z, l: z }))]} />
             <Sel label="Jefatura" value={fJefatura} onChange={(v) => { setFJefatura(v); setFEjec("todos"); }} options={[{ v: "todas", l: "Todas las jefaturas" }, ...jefaturas.map((j) => ({ v: j, l: j }))]} />
             <Sel label="Ejecutivo" value={fEjec} onChange={setFEjec} options={[{ v: "todos", l: "Todos los ejecutivos" }, ...execsFiltrados.map((e) => ({ v: e.nombre, l: e.nombre }))]} />
-            <button onClick={() => { setFZona("todas"); setFJefatura("todas"); setFEjec("todos"); }} className="ml-auto rounded-lg px-4 py-2 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Limpiar filtros</button>
+            <button onClick={() => { setFZona("todas"); setFJefatura("todas"); setFEjec("todos"); }} className="ml-auto rounded-full px-4 py-2 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Limpiar filtros</button>
           </>
         )}
       </div>
-      {/* Secciones */}
-      <div className="flex items-center gap-2">
+      {/* Secciones (tabs underline spec §3) */}
+      <div className="flex items-center gap-6" style={{ borderBottom: `1px solid ${C.line}` }}>
         <Tab id="cliente" label="Cliente" />
         <Tab id="sow" label="SOW" />
         <Tab id="desempeno" label="Desempeño" />
         <Tab id="sankey" label="Origen → Cierre" />
-        {hayFiltro && <span className="ml-1 rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#efeafe", color: "#6d4ef0" }}>{fEjec !== "todos" ? fEjec : fJefatura !== "todas" ? fJefatura : fZona} · {agg.clientes.toLocaleString("es-CL")} clientes</span>}
+        {hayFiltro && <span className="mb-1.5 ml-1 rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{fEjec !== "todos" ? fEjec : fJefatura !== "todas" ? fJefatura : fZona} · {agg.clientes.toLocaleString("es-CL")} clientes</span>}
       </div>
 
       {seccion === "cliente" && <PCcliente agg={agg} hayFiltro={hayFiltro} />}
@@ -8022,30 +8049,30 @@ function PanelClientes({ soloExec, deals = [], usuario }) {
 // --- Sección CLIENTE: alerta NEX AI, resumen de cartera, segmentación, volumen cedido, SoW ---
 function PCcliente({ agg, hayFiltro }) {
   const kpis = [
-    { v: hayFiltro ? agg.clientes.toLocaleString("es-CL") : "6.096", l: "Clientes", s: "en el alcance", Icon: User, col: "#6d4ef0" },
-    { v: hayFiltro ? agg.activos.toLocaleString("es-CL") : "589", l: "Operan con Security", s: "activos Q4", Icon: Check, col: "#16b981" },
-    { v: "2.748", l: "Solo competencia", s: "wallet no capturado", Icon: ArrowUpRight, col: "#f59e0b" },
+    { v: hayFiltro ? agg.clientes.toLocaleString("es-CL") : "6.096", l: "Clientes", s: "en el alcance", Icon: User, col: "#703EFF" },
+    { v: hayFiltro ? agg.activos.toLocaleString("es-CL") : "589", l: "Operan con Security", s: "activos Q4", Icon: Check, col: "#16A34A" },
+    { v: "2.748", l: "Solo competencia", s: "wallet no capturado", Icon: ArrowUpRight, col: "#F97316" },
     { v: hayFiltro ? agg.fuga.toLocaleString("es-CL") : "2.759", l: "Inactivos / fugados", s: "522 ex-Security", Icon: Clock, col: "#ef4444" },
-    { v: "24%", l: "Share of Wallet", s: "$616.032 MM / $2,55 B", Icon: BarChart2, col: "#3b82f6" },
-    { v: hayFiltro ? fmtMMc(agg.brecha) : "$842.792 MM", l: "Brecha de wallet", s: "por capturar vs target", Icon: ArrowUpRight, col: "#f59e0b" },
+    { v: "24%", l: "Share of Wallet", s: "$616.032 MM / $2,55 B", Icon: BarChart2, col: "#2563EB" },
+    { v: hayFiltro ? fmtMMc(agg.brecha) : "$842.792 MM", l: "Brecha de wallet", s: "por capturar vs target", Icon: ArrowUpRight, col: "#F97316" },
   ];
   const segmentos = [
-    { tipo: "Operando con Security", sub: "cedieron a 76562786-9 en Q4", col: "#16b981", Icon: Check, clientes: "589", cedido: "$1,13 B", buenos: 479, malos: 110, buenosMM: "$1,04 B", malosMM: "$91.452 MM" },
-    { tipo: "Operando con competencia", sub: "ceden solo a otras factorings", col: "#f59e0b", Icon: ArrowUpRight, clientes: "2.748", cedido: "$981.280 MM", buenos: 2213, malos: 535, buenosMM: "$854.016 MM", malosMM: "$127.264 MM" },
-    { tipo: "Sin operar (inactivos)", sub: "no operaron con nadie en Q4", col: "#ef4444", Icon: Clock, clientes: "2.759", cedido: "$436.611 MM", buenos: 2209, malos: 550, buenosMM: "$358.748 MM", malosMM: "$77.863 MM" },
+    { tipo: "Operando con Security", sub: "cedieron a 76562786-9 en Q4", col: "#16A34A", Icon: Check, clientes: "589", cedido: "$1,13 B", buenos: 479, malos: 110, buenosMM: "$1,04 B", malosMM: "$91.452 MM" },
+    { tipo: "Operando con competencia", sub: "ceden solo a otras factorings", col: "#F97316", Icon: ArrowUpRight, clientes: "2.748", cedido: "$981.280 MM", buenos: 2213, malos: 535, buenosMM: "$854.016 MM", malosMM: "$127.264 MM" },
+    { tipo: "Sin operar (inactivos)", sub: "no operaron con nadie en Q4", col: "#DC2626", Icon: Clock, clientes: "2.759", cedido: "$436.611 MM", buenos: 2209, malos: 550, buenosMM: "$358.748 MM", malosMM: "$77.863 MM" },
   ];
   return (
     <div className="space-y-5">
       {/* Alerta NEX AI */}
-      <div className="flex flex-wrap items-center gap-4 rounded-2xl p-4" style={{ background: "linear-gradient(100deg,#fef0f0,#fdf4f1 55%,#fff7f0)", border: "1px solid #fbdada" }}>
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: "#fdeaea", color: "#ef4444" }}><AlertTriangle size={20} /></div>
+      <div className="flex flex-wrap items-center gap-4 rounded-xl p-4" style={{ backgroundColor: "#FEF2F2", border: "1px solid #FECACA" }}>
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: "#fff", color: "#DC2626", border: "1px solid #FECACA" }}><AlertTriangle size={20} /></div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 t12 font-bold" style={{ color: C.ink }}>NEX AI <span className="rounded-full px-2 py-0.5 t9 font-bold" style={{ backgroundColor: "#fbdcdc", color: "#c2392f" }}>522 clientes fugados</span></div>
+          <div className="flex items-center gap-2 t12 font-bold" style={{ color: C.ink }}>NEX AI <span className="rounded-full px-2 py-0.5 t9 font-bold" style={{ backgroundColor: "#FEF2F2", color: "#DC2626" }}>522 clientes fugados</span></div>
           <div className="mt-0.5 t11" style={{ color: C.sub }}><b style={{ color: C.ink }}>522</b> ex-clientes ya no operan con Security · <b style={{ color: C.ink }}>$842.792 MM</b> de wallet por capturar vs target · <b style={{ color: C.ink }}>2.748</b> clientes operan solo con la competencia</div>
         </div>
         <div className="flex shrink-0 gap-2">
-          <button className="rounded-lg px-4 py-2 t12 font-semibold" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}>Ver cartera</button>
-          <button className="rounded-lg px-4 py-2 t12 font-semibold text-white" style={{ backgroundColor: C.ink }}>Plan de acción →</button>
+          <button className="rounded-full px-4 py-2 t12 font-medium" style={{ border: `1.5px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}>Ver cartera</button>
+          <button className="rounded-full px-4 py-2 t12 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Plan de acción →</button>
         </div>
       </div>
       {/* Resumen de cartera */}
@@ -8069,7 +8096,7 @@ function PCcliente({ agg, hayFiltro }) {
           {segmentos.map((s, i) => {
             const tot = s.buenos + s.malos; const pct = Math.round(s.buenos / tot * 100);
             return (
-              <div key={i} className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}`, borderTop: `3px solid ${s.col}` }}>
+              <div key={i} className="rounded-2xl p-4 shadow-sm" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
                 <div className="flex items-center gap-2">
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ backgroundColor: s.col + "1a", color: s.col }}><s.Icon size={15} /></div>
                   <div><div className="t13 font-bold" style={{ color: C.ink }}>{s.tipo}</div><div className="t9" style={{ color: C.faint }}>{s.sub}</div></div>
@@ -8077,9 +8104,9 @@ function PCcliente({ agg, hayFiltro }) {
                 <div className="mt-3 text-2xl font-bold" style={{ color: C.ink }}>{s.clientes} <span className="t11 font-medium" style={{ color: C.faint }}>clientes</span></div>
                 <div className="t10" style={{ color: C.sub }}>{s.cedido} cedidos en el año</div>
                 <div className="mt-3 space-y-2">
-                  <div className="flex items-center justify-between t11"><span style={{ color: C.sub }}><span className="mr-1.5 inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: "#3b82f6" }} />Buenos deudores</span><b style={{ color: C.ink }}>{s.buenos.toLocaleString("es-CL")}</b></div>
-                  <div className="h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: "#a78bfa" }}><div className="h-full rounded-full" style={{ width: pct + "%", backgroundColor: "#3b82f6" }} /></div>
-                  <div className="flex items-center justify-between t11"><span style={{ color: C.sub }}><span className="mr-1.5 inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: "#a78bfa" }} />Con malos deudores</span><b style={{ color: C.ink }}>{s.malos.toLocaleString("es-CL")}</b></div>
+                  <div className="flex items-center justify-between t11"><span style={{ color: C.sub }}><span className="mr-1.5 inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: "#16A34A" }} />Buenos deudores</span><b style={{ color: C.ink }}>{s.buenos.toLocaleString("es-CL")}</b></div>
+                  <div className="flex h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: "#E5E7EB" }}><div className="h-full" style={{ width: pct + "%", backgroundColor: "#16A34A" }} /><div className="h-full" style={{ width: (100 - pct) + "%", backgroundColor: "#F97316" }} /></div>
+                  <div className="flex items-center justify-between t11"><span style={{ color: C.sub }}><span className="mr-1.5 inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: "#F97316" }} />Con malos deudores</span><b style={{ color: C.ink }}>{s.malos.toLocaleString("es-CL")}</b></div>
                 </div>
                 <div className="mt-2 t9" style={{ color: C.faint }}>Buenos: <b style={{ color: C.sub }}>{s.buenosMM}</b> · Malos: <b style={{ color: C.sub }}>{s.malosMM}</b></div>
               </div>
@@ -8092,7 +8119,7 @@ function PCcliente({ agg, hayFiltro }) {
         <div className="rounded-2xl p-4 lg:col-span-2" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
           <div className="flex items-center justify-between">
             <div><div className="t13 font-bold" style={{ color: C.ink }}>Volumen cedido — Mercado vs Security</div><div className="t9" style={{ color: C.faint }}>CLP mensual · 2025</div></div>
-            <div className="flex gap-3 t10" style={{ color: C.sub }}><span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#9499a8" }} /> Mercado</span><span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#6d4ef0" }} /> Security</span></div>
+            <div className="flex gap-3 t10" style={{ color: C.sub }}><span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#9CA3AF" }} /> Mercado</span><span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#703EFF" }} /> Security</span></div>
           </div>
           <PCarea mercado={PC_MERCADO} security={PC_SECURITY} />
         </div>
@@ -8102,7 +8129,7 @@ function PCcliente({ agg, hayFiltro }) {
           <div className="mt-3 flex items-center gap-4">
             <PCdonut pct={24} />
             <div className="flex-1 space-y-2 t11">
-              <div className="flex items-center justify-between"><span style={{ color: C.sub }}><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: "#6d4ef0" }} />Security</span><b style={{ color: C.ink }}>$616.032 MM</b></div>
+              <div className="flex items-center justify-between"><span style={{ color: C.sub }}><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: "#703EFF" }} />Security</span><b style={{ color: C.ink }}>$616.032 MM</b></div>
               <div className="flex items-center justify-between"><span style={{ color: C.sub }}><span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: "#e5e7eb" }} />Competencia</span><b style={{ color: C.ink }}>$1,93 B</b></div>
             </div>
           </div>
@@ -8115,12 +8142,12 @@ function PCcliente({ agg, hayFiltro }) {
 function PCsow() {
   const [modo, setModo] = useState("vol"); // vol | sow
   const desviacion = [
-    { l: "Defendidos · SoW ≥ target", v: 357, col: "#16b981" },
-    { l: "Brecha moderada · hasta 20 pp bajo target", v: 269, col: "#f59e0b" },
+    { l: "Defendidos · SoW ≥ target", v: 357, col: "#16A34A" },
+    { l: "Brecha moderada · hasta 20 pp bajo target", v: 269, col: "#F97316" },
     { l: "Brecha crítica · más de 20 pp bajo target", v: 481, col: "#ef4444" },
   ];
   const maxComp = Math.max(...PC_COMPETIDORES.map((c) => c.mm));
-  const zonaCols = { Norte: "#6d4ef0", Centro: "#16b981", Sur: "#f59e0b" };
+  const zonaCols = { Norte: "#703EFF", Centro: "#16A34A", Sur: "#F97316" };
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
@@ -8143,7 +8170,7 @@ function PCsow() {
             {PC_COMPETIDORES.map((c, i) => (
               <div key={i} className="flex items-center gap-3">
                 <span className="w-40 shrink-0 t11 font-semibold" style={{ color: C.ink }}>{c.name}</span>
-                <div className="h-3 flex-1 overflow-hidden rounded-full" style={{ backgroundColor: C.page }}><div className="h-full rounded-full" style={{ width: Math.max(8, c.mm / maxComp * 100) + "%", background: "linear-gradient(90deg,#fca5a5,#ef4444)" }} /></div>
+                <div className="h-3 flex-1 overflow-hidden rounded-full" style={{ backgroundColor: C.page }}><div className="h-full rounded-full" style={{ width: Math.max(8, c.mm / maxComp * 100) + "%", background: "linear-gradient(90deg,#FECACA,#ef4444)" }} /></div>
                 <span className="w-28 shrink-0 text-right t11 font-semibold" style={{ color: C.sub }}>{fmtMMc(c.mm)}</span>
               </div>
             ))}
@@ -8154,7 +8181,7 @@ function PCsow() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div><div className="t14 font-bold" style={{ color: C.ink }}>Tendencia mensual por zona</div><div className="t10" style={{ color: C.faint }}>Volumen cedido a Security (CLP) · 2025</div></div>
           <div className="flex gap-1.5">
-            {[["vol", "Volumen Security"], ["sow", "Share of Wallet"]].map(([k, l]) => <button key={k} onClick={() => setModo(k)} className="rounded-lg px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: modo === k ? C.ink : "#fff", color: modo === k ? "#fff" : C.sub, border: `1px solid ${modo === k ? C.ink : C.line}` }}>{l}</button>)}
+            {[["vol", "Volumen Security"], ["sow", "Share of Wallet"]].map(([k, l]) => <button key={k} onClick={() => setModo(k)} className="rounded-lg px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: modo === k ? C.lilac : "#fff", color: modo === k ? C.indigo : C.sub, border: `1px solid ${modo === k ? C.indigo : C.line}` }}>{l}</button>)}
           </div>
         </div>
         <div className="mt-2 flex gap-4 t11" style={{ color: C.sub }}>{Object.keys(PC_ZONA).map((z) => <span key={z} className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: zonaCols[z] }} />{z}</span>)}</div>
@@ -8173,7 +8200,7 @@ function PCdesempeno({ execs }) {
         {execs.map((e) => (
           <div key={e.ini} className="rounded-xl p-3.5" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
             <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg t11 font-bold text-white" style={{ backgroundColor: "#6d4ef0" }}>{e.ini}</span>
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg t11 font-bold text-white" style={{ backgroundColor: "#703EFF" }}>{e.ini}</span>
               <div><div className="t12 font-bold" style={{ color: C.ink }}>{e.nombre}</div><div className="t9" style={{ color: C.faint }}>{e.zona} · {e.jefatura}</div></div>
             </div>
             <div className="mt-3 space-y-1.5 t11">
@@ -8199,8 +8226,8 @@ function PCarea({ mercado, security }) {
   const area = (arr) => `${padL},${H - padB} ${path(arr)} ${W - padR},${H - padB}`;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="mt-2 w-full" style={{ maxHeight: 230 }}>
-      <polygon points={area(mercado)} fill="#9499a833" /><polyline points={path(mercado)} fill="none" stroke="#9499a8" strokeWidth="2" />
-      <polygon points={area(security)} fill="#6d4ef033" /><polyline points={path(security)} fill="none" stroke="#6d4ef0" strokeWidth="2.5" />
+      <polygon points={area(mercado)} fill="#9CA3AF33" /><polyline points={path(mercado)} fill="none" stroke="#9CA3AF" strokeWidth="2" />
+      <polygon points={area(security)} fill="#703EFF33" /><polyline points={path(security)} fill="none" stroke="#703EFF" strokeWidth="2.5" />
       {mercado.map((v, i) => (i % 1 === 0) && <text key={i} x={X(i)} y={H - 6} textAnchor="middle" fontSize="9" fill={C.faint}>{String(i + 1).padStart(2, "0")}</text>)}
     </svg>
   );
@@ -8209,8 +8236,8 @@ function PCdonut({ pct }) {
   const r = 46, c = 2 * Math.PI * r, dash = c * pct / 100;
   return (
     <svg viewBox="0 0 120 120" width="120" height="120">
-      <circle cx="60" cy="60" r={r} fill="none" stroke="#eceef3" strokeWidth="14" />
-      <circle cx="60" cy="60" r={r} fill="none" stroke="#6d4ef0" strokeWidth="14" strokeLinecap="round" strokeDasharray={`${dash} ${c - dash}`} transform="rotate(-90 60 60)" />
+      <circle cx="60" cy="60" r={r} fill="none" stroke="#F3F4F6" strokeWidth="14" />
+      <circle cx="60" cy="60" r={r} fill="none" stroke="#703EFF" strokeWidth="14" strokeLinecap="round" strokeDasharray={`${dash} ${c - dash}`} transform="rotate(-90 60 60)" />
       <text x="60" y="58" textAnchor="middle" fontSize="22" fontWeight="800" fill={C.ink}>{pct}%</text>
       <text x="60" y="76" textAnchor="middle" fontSize="9" fill={C.faint}>SoW Security</text>
     </svg>
@@ -8311,11 +8338,11 @@ function setBusqueda(nombre, estado, motivo, actor) { busquedaSeed(); const b = 
 // cliente; aquí se representa con un catálogo + una asignación determinística por cliente (Factoring lo
 // tienen todos; el resto según la definición del cliente).
 const PRODUCTOS_CAT = [
-  { id: "factoring", nombre: "Factoring", color: "#4f46e5", bg: "#eef2ff" },
-  { id: "confirming", nombre: "Confirming", color: "#0369a1", bg: "#e0f2fe" },
-  { id: "ordering", nombre: "Ordering", color: "#7c3aed", bg: "#f3e8ff" },
-  { id: "credito", nombre: "Crédito directo", color: "#047857", bg: "#ecfdf5" },
-  { id: "cheque", nombre: "Cheque", color: "#b45309", bg: "#fffbeb" },
+  { id: "factoring", nombre: "Factoring", color: "#703EFF", bg: "#F1ECFF" },
+  { id: "confirming", nombre: "Confirming", color: "#2563EB", bg: "#EFF6FF" },
+  { id: "ordering", nombre: "Ordering", color: "#7c3aed", bg: "#F1ECFF" },
+  { id: "credito", nombre: "Crédito directo", color: "#16A34A", bg: "#F0FDF4" },
+  { id: "cheque", nombre: "Cheque", color: "#C2410C", bg: "#FFF7ED" },
 ];
 let PRODUCTOS_CLIENTE = {}; // { [nombre]: ["factoring", ...] } — productos habilitados según la definición del cliente
 function productosSeed() {
@@ -8352,8 +8379,8 @@ function ClientesView({ soloExec }) {
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         {[
           { t: "Empresas", v: base.length.toLocaleString("es-CL"), s: "clientes en cartera", col: C.ink, bg: "#fff", bd: C.line },
-          { t: "Activas", v: nActivas.toLocaleString("es-CL"), s: "con operación vigente", col: "#047857", bg: "#ecfdf5", bd: "#bbf7d0" },
-          { t: "Inactivas", v: (base.length - nActivas).toLocaleString("es-CL"), s: "sin operación reciente", col: "#b45309", bg: "#fff", bd: C.line },
+          { t: "Activas", v: nActivas.toLocaleString("es-CL"), s: "con operación vigente", col: "#16A34A", bg: "#F0FDF4", bd: "#bbf7d0" },
+          { t: "Inactivas", v: (base.length - nActivas).toLocaleString("es-CL"), s: "sin operación reciente", col: "#C2410C", bg: "#fff", bd: C.line },
           { t: "Usuarios", v: nUsuarios.toLocaleString("es-CL"), s: "habilitados en el portal", col: C.indigo, bg: "#fff", bd: C.line },
         ].map((k, i) => (
           <div key={i} className="rounded-xl p-3" style={{ backgroundColor: k.bg, border: `1px solid ${k.bd}` }}>
@@ -8365,7 +8392,7 @@ function ClientesView({ soloExec }) {
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-lg px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+          <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
             <Search size={13} style={{ color: C.faint }} />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por empresa, RUT, Id o ejecutivo…" className="w-64 bg-transparent t12 outline-none" style={{ color: C.ink }} />
           </div>
@@ -8384,14 +8411,14 @@ function ClientesView({ soloExec }) {
                 <td className="whitespace-nowrap px-3 py-3 font-semibold" style={{ color: C.ink }}>{e.empId}</td>
                 <td className="px-3 py-3"><div className="t9" style={{ color: C.faint }}>{e.rut}</div><div className="t12 font-semibold" style={{ color: C.ink }}>{e.nombre}</div></td>
                 <td className="whitespace-nowrap px-3 py-3"><div className="t12 font-medium" style={{ color: C.ink }}>{e.fechaReg}</div><div className="t9" style={{ color: C.faint }}>{e.horaReg}</div></td>
-                <td className="whitespace-nowrap px-3 py-3"><span className="rounded-md px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: e.activa ? "#ecfdf5" : "#f5f5f4", color: e.activa ? "#047857" : "#78716c" }}>{e.estadoEmp}</span></td>
+                <td className="whitespace-nowrap px-3 py-3"><span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: e.activa ? "#F0FDF4" : "#F3F4F6", color: e.activa ? "#16A34A" : "#6B7280" }}>{e.estadoEmp}</span></td>
                 <td className="whitespace-nowrap px-3 py-3">{(() => { const b = busquedaDe(e.nombre); const act = b.estado === "activa"; const last = b.historial[0]; return (
                   <div className="flex flex-col items-start gap-0.5">
-                    <button onClick={() => setHistCli(e)} title={`Búsqueda ${act ? "activa" : "pausada"}${b.desde ? " desde " + b.desde : ""}${last ? " · " + last.motivo : ""} — clic para ver el historial`} className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: act ? "#ecfdf5" : "#fffbeb", color: act ? "#047857" : "#b45309", border: `1px solid ${act ? "#bbf7d0" : "#fde68a"}` }}>{act ? <Radio size={10} /> : <Pause size={10} />} {act ? "Activa" : "Pausada"}</button>
+                    <button onClick={() => setHistCli(e)} title={`Búsqueda ${act ? "activa" : "pausada"}${b.desde ? " desde " + b.desde : ""}${last ? " · " + last.motivo : ""} — clic para ver el historial`} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: act ? "#F0FDF4" : "#FFF7ED", color: act ? "#16A34A" : "#C2410C", border: `1px solid ${act ? "#bbf7d0" : "#FED7AA"}` }}>{act ? <Radio size={10} /> : <Pause size={10} />} {act ? "Activa" : "Pausada"}</button>
                     {b.desde && <span className="t9" style={{ color: C.faint }}>{b.desde.split(" ")[0]}</span>}
                   </div>
                 ); })()}</td>
-                <td className="px-3 py-3"><div className="flex flex-wrap gap-1" style={{ maxWidth: 240 }}>{productosDe(e.nombre).map((pid) => { const p = PRODUCTOS_CAT.find((x) => x.id === pid); return p ? <span key={pid} className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: p.bg, color: p.color }}>{p.nombre}</span> : null; })}</div></td>
+                <td className="px-3 py-3"><div className="flex flex-wrap gap-1" style={{ maxWidth: 240 }}>{productosDe(e.nombre).map((pid) => { const p = PRODUCTOS_CAT.find((x) => x.id === pid); return p ? <span key={pid} className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: p.bg, color: p.color }}>{p.nombre}</span> : null; })}</div></td>
                 <td className="px-3 py-3 t12" style={{ color: C.sub }}>{e.usuarios}</td>
                 <td className="whitespace-nowrap px-3 py-3 t12" style={{ color: C.sub }}>{e.ej}</td>
                 <td className="px-3 py-3"><div className="flex items-center justify-end gap-1.5"><AccBtn Icon={Search} title="Ver" onClick={() => setEditar(e)} /><AccBtn Icon={Pencil} title="Editar" onClick={() => setEditar(e)} /><AccBtn Icon={Trash2} color="#dc2626" title="Eliminar" /></div></td>
@@ -8408,20 +8435,20 @@ function ClientesView({ soloExec }) {
             <div className="flex items-start justify-between gap-2">
               <div>
                 <div className="text-lg font-bold" style={{ color: C.ink }}>Búsqueda de oportunidades · {histCli.nombre}</div>
-                <div className="mt-0.5 t10" style={{ color: C.faint }}>Estado actual: <b style={{ color: act ? "#047857" : "#b45309" }}>{act ? "Activa" : "Pausada"}</b>{b.desde ? ` · desde ${b.desde}` : ""}. La búsqueda se reactiva sola si el cliente cede una factura a un competidor durante una pausa.</div>
+                <div className="mt-0.5 t10" style={{ color: C.faint }}>Estado actual: <b style={{ color: act ? "#16A34A" : "#C2410C" }}>{act ? "Activa" : "Pausada"}</b>{b.desde ? ` · desde ${b.desde}` : ""}. La búsqueda se reactiva sola si el cliente cede una factura a un competidor durante una pausa.</div>
               </div>
               <button onClick={() => setHistCli(null)} className="rounded-md p-1" style={{ color: C.faint }}><X size={18} /></button>
             </div>
             <div className="mt-3 t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Historial de cambios ({b.historial.length})</div>
             <div className="mt-1.5 space-y-1.5">
               {b.historial.map((h, i) => { const ha = h.estado === "activa"; const auto = h.actor === "Sistema"; return (
-                <div key={i} className="rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, borderLeft: `3px solid ${ha ? "#10b981" : "#f59e0b"}`, backgroundColor: "#fff" }}>
+                <div key={i} className="rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, borderLeft: `3px solid ${ha ? "#16A34A" : "#F97316"}`, backgroundColor: "#fff" }}>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1 t10 font-semibold" style={{ color: ha ? "#047857" : "#b45309" }}>{ha ? <Radio size={11} /> : <Pause size={11} />} {ha ? "Activada" : "Pausada"}</span>
+                    <span className="inline-flex items-center gap-1 t10 font-semibold" style={{ color: ha ? "#16A34A" : "#C2410C" }}>{ha ? <Radio size={11} /> : <Pause size={11} />} {ha ? "Activada" : "Pausada"}</span>
                     <span className="t9" style={{ color: C.faint }}>{h.ts}</span>
                   </div>
                   <div className="mt-0.5 t10" style={{ color: C.sub }}>{h.motivo}</div>
-                  <div className="mt-0.5 t9" style={{ color: C.faint }}><span className="rounded px-1 py-0.5 t8 font-semibold" style={{ backgroundColor: auto ? "#eef2ff" : "#f0fdfa", color: auto ? "#4338ca" : "#0f766e" }}>{auto ? "Automático" : "Ejecutivo"}</span> {h.actor}</div>
+                  <div className="mt-0.5 t9" style={{ color: C.faint }}><span className="rounded-full px-1 py-0.5 t8 font-semibold" style={{ backgroundColor: auto ? "#F1ECFF" : "#f0fdfa", color: auto ? "#5B21D6" : "#0f766e" }}>{auto ? "Automático" : "Ejecutivo"}</span> {h.actor}</div>
                 </div>
               ); })}
               {b.historial.length === 0 && <div className="rounded-lg border border-dashed py-6 text-center t10" style={{ borderColor: C.line, color: C.faint }}>Sin cambios registrados.</div>}
@@ -8455,7 +8482,7 @@ function EmpSelect({ label, value, onChange, options, placeholder }) {
 function EmpToggle({ on, onChange, label }) {
   return (
     <button onClick={() => onChange && onChange(!on)} className="flex items-center gap-3">
-      <span className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors" style={{ backgroundColor: on ? C.indigo : "#94a3b8" }}>
+      <span className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors" style={{ backgroundColor: on ? C.indigo : "#9CA3AF" }}>
         <span className="inline-block h-5 w-5 rounded-full bg-white transition-transform" style={{ transform: on ? "translateX(22px)" : "translateX(2px)" }} />
       </span>
       <span className="t13" style={{ color: C.ink }}>{label}</span>
@@ -8512,7 +8539,7 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
           <button onClick={onBack} className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ border: `1px solid ${C.line}`, color: C.indigo, backgroundColor: "#eff6ff" }}><ChevronLeft size={18} /></button>
           <h1 className="text-2xl font-semibold tracking-tight">{nuevo ? "Agregar empresa" : (empresa.nombre || "Empresa")}</h1>
         </div>
-        <button onClick={() => { registrarAuditoria({ usuario: soloExec || "Super Administrador (ve todo)", modulo: "Empresa", accion: "Persistir", glosa: `${nuevo ? "Crear" : "Actualizar"} empresa ${razon || "(sin nombre)"}`, exito: true, empresaId: nuevo ? "" : String(empresa.empId || "") }); onBack(); }} className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 t13 font-semibold text-white" style={{ backgroundColor: C.indigo }}>{nuevo && <Plus size={14} />}{nuevo ? "Agregar empresa" : "Guardar cambios"}</button>
+        <button onClick={() => { registrarAuditoria({ usuario: soloExec || "Super Administrador (ve todo)", modulo: "Empresa", accion: "Persistir", glosa: `${nuevo ? "Crear" : "Actualizar"} empresa ${razon || "(sin nombre)"}`, exito: true, empresaId: nuevo ? "" : String(empresa.empId || "") }); onBack(); }} className="inline-flex items-center gap-1.5 rounded-full px-5 py-2 t13 font-semibold text-white" style={{ backgroundColor: C.indigo }}>{nuevo && <Plus size={14} />}{nuevo ? "Agregar empresa" : "Guardar cambios"}</button>
       </div>
       {/* Tabs */}
       <div className="flex items-center gap-8 overflow-x-auto" style={{ borderBottom: `1px solid ${C.line}` }}>
@@ -8634,8 +8661,8 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
                 <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
                   {(() => { const glob = parseFloat(linea.global) || 0; const usado = Math.round(glob * 0.42); const disp = glob - usado; return [
                     { t: "Aprobada", v: glob, col: C.ink, bg: C.page },
-                    { t: "Utilizada", v: usado, col: "#b45309", bg: "#fffbeb" },
-                    { t: "Disponible", v: disp, col: "#047857", bg: "#ecfdf5" },
+                    { t: "Utilizada", v: usado, col: "#C2410C", bg: "#FFF7ED" },
+                    { t: "Disponible", v: disp, col: "#16A34A", bg: "#F0FDF4" },
                   ].map((k) => (
                     <div key={k.t} className="rounded-xl px-4 py-3" style={{ backgroundColor: k.bg, border: `1px solid ${C.line}` }}>
                       <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{k.t}</div>
@@ -8657,8 +8684,8 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
                         <tr key={i} style={{ borderBottom: `1px solid ${C.line}` }}>
                           <td className="px-4 py-3 t13 font-medium" style={{ color: C.ink }}>{r[0]}</td>
                           <td className="px-4 py-3 t13" style={{ color: C.sub }}>${r[1]} MM</td>
-                          <td className="px-4 py-3 t13" style={{ color: "#b45309" }}>${r[2]} MM</td>
-                          <td className="px-4 py-3 t13 font-semibold" style={{ color: "#047857" }}>${r[1] - r[2]} MM</td>
+                          <td className="px-4 py-3 t13" style={{ color: "#C2410C" }}>${r[2]} MM</td>
+                          <td className="px-4 py-3 t13 font-semibold" style={{ color: "#16A34A" }}>${r[1] - r[2]} MM</td>
                         </tr>
                       ))}
                     </tbody>
@@ -8688,7 +8715,7 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
                     <td className="px-4 py-3 font-semibold" style={{ color: C.ink }}>{p.id}</td>
                     <td className="px-4 py-3 t13" style={{ color: C.ink }}>{p.nombre}</td>
                     <td className="px-4 py-3 t13" style={{ color: C.sub }}>{p.desc}</td>
-                    <td className="px-4 py-3"><span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 t11 font-semibold" style={{ backgroundColor: hab ? "#dcfce7" : "#f1f5f9", color: hab ? "#16a34a" : "#64748b" }}>{hab && <Check size={12} />}{p.estado}</span></td>
+                    <td className="px-4 py-3"><span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 t11 font-semibold" style={{ backgroundColor: hab ? "#F0FDF4" : "#F3F4F6", color: hab ? "#16a34a" : "#64748b" }}>{hab && <Check size={12} />}{p.estado}</span></td>
                     <td className="px-4 py-3 t13" style={{ color: C.sub }}>{p.codigo}</td>
                     <td className="px-4 py-3 text-right"><button className="rounded-lg px-4 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Agregar</button></td>
                   </tr>
@@ -8785,7 +8812,7 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
             </div>
             <div className="mt-6 flex items-center justify-end gap-3">
               <button onClick={() => setModalUser(false)} className="t13 font-semibold" style={{ color: "#38bdf8" }}>Cancelar</button>
-              <button onClick={() => setModalUser(false)} className="rounded-lg px-5 py-2.5 t13 font-semibold text-white" style={{ background: "linear-gradient(90deg,#22d3ee,#4f46e5)" }}>Crear nuevo usuario</button>
+              <button onClick={() => setModalUser(false)} className="rounded-lg px-5 py-2.5 t13 font-semibold text-white" style={{ background: "linear-gradient(90deg,#22d3ee,#703EFF)" }}>Crear nuevo usuario</button>
             </div>
           </div>
         </div>
@@ -8838,7 +8865,7 @@ function AuditoriaView({ usuario }) {
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         {[
           { t: "Eventos", v: rows.length, s: "en el filtro actual", col: C.ink, bg: "#fff" },
-          { t: "Exitosos", v: nOk, s: "acciones completadas", col: "#047857", bg: "#ecfdf5" },
+          { t: "Exitosos", v: nOk, s: "acciones completadas", col: "#16A34A", bg: "#F0FDF4" },
           { t: "Fallidos", v: rows.length - nOk, s: "con error o rechazo", col: "#dc2626", bg: "#fef2f2" },
           { t: "Usuarios", v: usuarios.length, s: "con actividad registrada", col: C.indigo, bg: "#fff" },
         ].map((k, i) => (
@@ -8858,7 +8885,7 @@ function AuditoriaView({ usuario }) {
             <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="bg-transparent t12 outline-none" style={{ color: C.ink }} />
           </div>
         </div>
-        <div className="flex items-center gap-1.5 rounded-lg px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+        <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
           <Search size={13} style={{ color: C.faint }} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar glosa, usuario, módulo…" className="w-52 bg-transparent t12 outline-none" style={{ color: C.ink }} />
         </div>
@@ -8887,7 +8914,7 @@ function AuditoriaView({ usuario }) {
                 <td className="whitespace-nowrap px-3 py-2.5 t12" style={{ color: C.ink }}>{e.modulo}</td>
                 <td className="px-3 py-2.5"><div className="t12" style={{ color: C.ink }}>{e.glosa}</div><div className="t9" style={{ color: C.faint }}>{e.accion}</div></td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>{e.empresaId || "—"}</td>
-                <td className="whitespace-nowrap px-3 py-2.5"><span className="rounded-md px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: e.exito ? "#ecfdf5" : "#fef2f2", color: e.exito ? "#047857" : "#dc2626" }}>{e.exito ? "Sí" : "No"}</span></td>
+                <td className="whitespace-nowrap px-3 py-2.5"><span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: e.exito ? "#F0FDF4" : "#fef2f2", color: e.exito ? "#16A34A" : "#dc2626" }}>{e.exito ? "Sí" : "No"}</span></td>
                 <td className="px-3 py-2.5 text-right"><button onClick={() => setDet(e)} className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg hover:bg-stone-50" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}><Search size={14} /></button></td>
               </tr>
             ))}
@@ -8906,7 +8933,7 @@ function AuditoriaView({ usuario }) {
               {[["Usuario", det.usuario], ["Módulo", det.modulo], ["Acción", det.accion], ["Glosa", det.glosa], ["Id. empresa", det.empresaId || "—"], ["Fecha", det.fecha], ["Hora", det.hora], ["Resultado", det.exito ? "Éxito" : "Fallido"]].map(([l, v]) => (
                 <div key={l} className="flex justify-between gap-4">
                   <span className="t11 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>{l}</span>
-                  <span className="t13 text-right" style={{ color: l === "Resultado" ? (det.exito ? "#047857" : "#dc2626") : C.ink, fontWeight: 500 }}>{v}</span>
+                  <span className="t13 text-right" style={{ color: l === "Resultado" ? (det.exito ? "#16A34A" : "#dc2626") : C.ink, fontWeight: 500 }}>{v}</span>
                 </div>
               ))}
             </div>
@@ -8944,7 +8971,7 @@ function ConfiguracionView({ usuario }) {
 const TAREA_CATS = {
   responder: { label: "Responder", desc: "Conversaciones activas del pipeline: el cliente respondió y espera tu gestión.", color: "#dc2626", Icon: MessageSquare },
   contactabilidad: { label: "Contactabilidad", desc: "Contactos no verificados o con error: repara el teléfono/correo para poder operar.", color: "#0891b2", Icon: Bell },
-  cerrar: { label: "Oferta / Negociación", desc: "Oportunidades en oferta / aceptada / otorgamiento por cursar y girar.", color: "#4f46e5", Icon: Check },
+  cerrar: { label: "Oferta / Negociación", desc: "Oportunidades en oferta / aceptada / otorgamiento por cursar y girar.", color: "#703EFF", Icon: Check },
   retener: { label: "Retener", desc: "Clientes en fuga o caída: recupéralos antes de perderlos ante la competencia.", color: "#ea580c", Icon: AlertTriangle },
   capturar: { label: "Nuevas empresas", desc: "Nuevas empresas que operan con la competencia: captura de wallet (brecha de Share of Wallet).", color: "#2563eb", Icon: ArrowUpRight },
   reactivar: { label: "Reactivar", desc: "Clientes inactivos: reabrir la relación comercial.", color: "#7c3aed", Icon: Clock },
@@ -9050,7 +9077,7 @@ function PCtreemap({ tareas, deals, onSelectTask, hoverId, setHoverId }) {
             <rect x={tr.x + 0.5} y={tr.y + 0.5} width={Math.max(0, tr.w - 1)} height={Math.max(0, tr.h - 1)} fill={m.color} opacity={hl ? 1 : tr.prio === "critica" ? 0.95 : tr.prio === "alta" ? 0.82 : 0.68} stroke={hl ? C.ink : "none"} strokeWidth={hl ? 2 : 0} rx="2.5">
               <title>{tr.cliente} · {m.label} · {TAREA_PRIO[tr.prio].l} · Impacto {fmtMMc(tr.impacto)} · (clic para atender)</title>
             </rect>
-            {tr.w > 50 && tr.h > 20 && <text x={tr.x + 4.5} y={tr.y + 12} fontSize="8" fontWeight="700" fill="#fff">{tr.dealId && tienePrioridadCurse(tr.dealId) && <tspan fill="#fde047">★ </tspan>}{trunc(tr.cliente, tr.w)}</text>}
+            {tr.w > 50 && tr.h > 20 && <text x={tr.x + 4.5} y={tr.y + 12} fontSize="8" fontWeight="700" fill="#fff">{tr.dealId && tienePrioridadCurse(tr.dealId) && <tspan fill="#FED7AA">★ </tspan>}{trunc(tr.cliente, tr.w)}</text>}
             {tr.w > 50 && tr.h > 30 && <text x={tr.x + 4.5} y={tr.y + 22} fontSize="7" fill="#ffffffd8">{fmtMMc(tr.impacto)}{tr.facturas != null ? ` · ${tr.facturas} fac.` : ""}</text>}
           </g>
         ); })}
@@ -9064,7 +9091,7 @@ function PCtreemap({ tareas, deals, onSelectTask, hoverId, setHoverId }) {
   const splitActivo = conExceso.length > 0 && sinExceso.length > 0;
   const supers = [
     { key: "sin", label: "Dentro de línea", color: "#0f766e", tasks: sinExceso },
-    { key: "con", label: "Fuera de línea", color: "#b45309", tasks: conExceso },
+    { key: "con", label: "Fuera de línea", color: "#C2410C", tasks: conExceso },
   ].filter((s) => s.tasks.length).map((s) => ({ ...s, v: s.tasks.reduce((a, t) => a + Math.max(1, t.impacto || 0), 0) }));
   // Reparto por ANCHO proporcional al monto, pero con un ancho mínimo para que el título de cada
   // bloque siempre sea legible (si un grupo es muy chico, no se aplasta a una franja ilegible).
@@ -9123,7 +9150,7 @@ function TareaPanel({ tarea, deals, onClose, onOpenDeal, onAtender }) {
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="flex h-6 w-6 items-center justify-center rounded-lg" style={{ backgroundColor: m.color + "1a", color: m.color }}><m.Icon size={13} /></span>
               <span className="t10 font-bold uppercase tracking-wide" style={{ color: m.color }}>{m.label}</span>
-              <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: p.c + "1a", color: p.c }}>{p.l}</span>
+              <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: p.c + "1a", color: p.c }}>{p.l}</span>
             </div>
             <div className="mt-1 text-lg font-bold leading-tight" style={{ color: C.ink }}>{tarea.cliente}</div>
             <div className="t10" style={{ color: C.faint }}>{tarea.exec} · {tarea.fuente === "pipeline" ? "Pipeline · " + tarea.dealId : "Cartera de clientes"}</div>
@@ -9191,17 +9218,17 @@ function PrioridadesPanel({ items, onClose, onOpen }) {
     <>
       <div className="fixed inset-0 ovl" style={{ zIndex: 60 }} onClick={onClose} />
       <div className="fixed right-0 top-0 flex h-full w-[460px] max-w-[94vw] flex-col bg-white shadow-2xl" style={{ zIndex: 61 }}>
-        <div className="flex items-start justify-between p-4" style={{ borderBottom: `1px solid ${C.line}`, borderTop: "4px solid #f59e0b" }}>
+        <div className="flex items-start justify-between p-4" style={{ borderBottom: `1px solid ${C.line}`, borderTop: "4px solid #F97316" }}>
           <div>
-            <div className="flex items-center gap-1.5 text-lg font-bold tracking-tight" style={{ color: C.ink }}><Star size={16} style={{ color: "#d97706", fill: "#f59e0b" }} /> Oportunidades con prioridad</div>
+            <div className="flex items-center gap-1.5 text-lg font-bold tracking-tight" style={{ color: C.ink }}><Star size={16} style={{ color: "#C2410C", fill: "#F97316" }} /> Oportunidades con prioridad</div>
             <div className="t10" style={{ color: C.faint }}>{lista.length} marcada(s) por jefaturas/gerencia para priorizar el curse.</div>
           </div>
           <button onClick={onClose} className="rounded-md p-1" style={{ color: C.faint }}><X size={18} /></button>
         </div>
         <div className="flex-1 space-y-1.5 overflow-y-auto p-4">
           {lista.map((d) => { const pr = PRIORIDAD_CURSE[d.id]; return (
-            <button key={d.id} onClick={() => { onOpen && onOpen(d); onClose(); }} className="flex w-full items-center gap-2 rounded-lg p-2.5 text-left" style={{ border: "1px solid #fde68a", backgroundColor: "#fffbeb" }}>
-              <Star size={14} style={{ color: "#d97706", fill: "#f59e0b" }} />
+            <button key={d.id} onClick={() => { onOpen && onOpen(d); onClose(); }} className="flex w-full items-center gap-2 rounded-lg p-2.5 text-left" style={{ border: "1px solid #FED7AA", backgroundColor: "#FFF7ED" }}>
+              <Star size={14} style={{ color: "#C2410C", fill: "#F97316" }} />
               <div className="min-w-0 flex-1">
                 <div className="t11 font-semibold truncate" style={{ color: C.ink }}>{d.cliente}</div>
                 <div className="t9" style={{ color: C.faint }}>{EXECS[d.exec] || d.exec} · {fmtMM(d.amountMM)} · {stageMeta(d.stage).name}{pr ? ` · pedida por ${pr.porNombre}` : ""}</div>
@@ -9231,8 +9258,8 @@ function ReporteDiaPanel({ deals, execFilter, onClose, onOpen }) {
   const sumMM = (arr) => arr.reduce((s, d) => s + (d.amountMM || 0), 0);
   const nConPrio = scope.filter((d) => tienePrioridadCurse(d.id)).length;
   const kpis = [
-    { t: "Abiertas", v: abiertas.length, mm: sumMM(abiertas), col: "#4338ca", bg: "#eef2ff", bd: "#c7d2fe" },
-    { t: "Ganadas · giro", v: ganadas.length, mm: sumMM(ganadas), col: "#047857", bg: "#ecfdf5", bd: "#bbf7d0" },
+    { t: "Abiertas", v: abiertas.length, mm: sumMM(abiertas), col: "#5B21D6", bg: "#F1ECFF", bd: "#D9CCFF" },
+    { t: "Ganadas · giro", v: ganadas.length, mm: sumMM(ganadas), col: "#16A34A", bg: "#F0FDF4", bd: "#bbf7d0" },
     { t: "Perdidas", v: perdidas.length, mm: sumMM(perdidas), col: "#dc2626", bg: "#fef2f2", bd: "#fecaca" },
   ];
   const stageMeta = (s) => (STAGES.find((x) => x.id === s) || { name: s });
@@ -9241,7 +9268,7 @@ function ReporteDiaPanel({ deals, execFilter, onClose, onOpen }) {
     <>
       <div className="fixed inset-0 ovl" style={{ zIndex: 60 }} onClick={onClose} />
       <div className="fixed right-0 top-0 flex h-full w-[520px] max-w-[96vw] flex-col bg-white shadow-2xl" style={{ zIndex: 61 }}>
-        <div className="flex items-start justify-between p-4" style={{ borderBottom: `1px solid ${C.line}`, borderTop: "4px solid #4338ca" }}>
+        <div className="flex items-start justify-between p-4" style={{ borderBottom: `1px solid ${C.line}`, borderTop: "4px solid #5B21D6" }}>
           <div>
             <div className="text-lg font-bold tracking-tight" style={{ color: C.ink }}>Reporte del día</div>
             <div className="t10" style={{ color: C.faint }}>{new Date().toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "long" })} · {execFilter === "todos" ? "Todos los ejecutivos" : execFilter} · {nConPrio} con prioridad</div>
@@ -9251,7 +9278,7 @@ function ReporteDiaPanel({ deals, execFilter, onClose, onOpen }) {
         <div className="flex items-center gap-1.5 px-4 py-2.5" style={{ borderBottom: `1px solid ${C.line}` }}>
           <span className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Prioridad</span>
           {[["todas", "Todas"], ["con", "Con prioridad"], ["sin", "Sin prioridad"]].map(([k, l]) => (
-            <button key={k} onClick={() => setFPrio(k)} className="rounded-md px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: fPrio === k ? C.ink : "#fff", color: fPrio === k ? "#fff" : C.sub, border: `1px solid ${fPrio === k ? C.ink : C.line}` }}>{l}</button>
+            <button key={k} onClick={() => setFPrio(k)} className="rounded-md px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: fPrio === k ? C.lilac : "#fff", color: fPrio === k ? C.indigo : C.sub, border: `1px solid ${fPrio === k ? C.indigo : C.line}` }}>{l}</button>
           ))}
         </div>
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
@@ -9273,16 +9300,16 @@ function ReporteDiaPanel({ deals, execFilter, onClose, onOpen }) {
               {lista.map((d) => {
                 const prio = tienePrioridadCurse(d.id);
                 const won = d.stage === "giro", lost = d.stage === "perdida";
-                const eCol = won ? "#047857" : lost ? "#dc2626" : "#4338ca";
-                const eBg = won ? "#ecfdf5" : lost ? "#fef2f2" : "#eef2ff";
+                const eCol = won ? "#16A34A" : lost ? "#dc2626" : "#5B21D6";
+                const eBg = won ? "#F0FDF4" : lost ? "#fef2f2" : "#F1ECFF";
                 return (
-                  <button key={d.id} onClick={() => { onOpen && onOpen(d); onClose(); }} className="flex w-full items-center gap-2 rounded-lg p-2 text-left" style={{ border: `1px solid ${prio ? "#fde68a" : C.line}`, backgroundColor: prio ? "#fffbeb" : "#fff" }}>
-                    {prio && <Star size={13} style={{ color: "#d97706", fill: "#f59e0b" }} />}
+                  <button key={d.id} onClick={() => { onOpen && onOpen(d); onClose(); }} className="flex w-full items-center gap-2 rounded-lg p-2 text-left" style={{ border: `1px solid ${prio ? "#FED7AA" : C.line}`, backgroundColor: prio ? "#FFF7ED" : "#fff" }}>
+                    {prio && <Star size={13} style={{ color: "#C2410C", fill: "#F97316" }} />}
                     <div className="min-w-0 flex-1">
                       <div className="t11 font-semibold truncate" style={{ color: C.ink }}>{d.cliente}</div>
                       <div className="t9" style={{ color: C.faint }}>{EXECS[d.exec] || d.exec} · {fmtMM(d.amountMM)}</div>
                     </div>
-                    <span className="shrink-0 rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: eBg, color: eCol }}>{won ? "Ganada" : lost ? "Perdida" : stageMeta(d.stage).name}</span>
+                    <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: eBg, color: eCol }}>{won ? "Ganada" : lost ? "Perdida" : stageMeta(d.stage).name}</span>
                   </button>
                 );
               })}
@@ -9338,31 +9365,31 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
       {/* Resumen del alcance (KPIs de solo lectura) — cada uno con su explicación */}
       <div className="mt-3 t9 font-bold uppercase tracking-widest" style={{ color: C.faint }}>Resumen del alcance · impacto de atender la bandeja</div>
       <div className="mt-1.5 grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
-        <button onClick={nMsg ? onOpenSolic : undefined} className="rounded-xl p-3 text-left" style={{ backgroundColor: nMsg ? "#eef2ff" : "#fff", border: `1px solid ${nMsg ? "#c7d2fe" : C.line}`, cursor: nMsg ? "pointer" : "default" }}>
-          <div className="flex items-center gap-1.5 t9 font-bold uppercase tracking-wide" style={{ color: nMsg ? "#4338ca" : C.faint }}><Bell size={11} /> Mensajes por responder</div>
-          <div className="text-xl font-bold" style={{ color: nMsg ? "#4338ca" : C.ink }}>{nMsg}</div>
+        <button onClick={nMsg ? onOpenSolic : undefined} className="rounded-xl p-3 text-left" style={{ backgroundColor: nMsg ? "#F1ECFF" : "#fff", border: `1px solid ${nMsg ? "#D9CCFF" : C.line}`, cursor: nMsg ? "pointer" : "default" }}>
+          <div className="flex items-center gap-1.5 t9 font-bold uppercase tracking-wide" style={{ color: nMsg ? "#5B21D6" : C.faint }}><Bell size={11} /> Mensajes por responder</div>
+          <div className="text-xl font-bold" style={{ color: nMsg ? "#5B21D6" : C.ink }}>{nMsg}</div>
           <div className="mt-1 t9" style={{ color: C.faint, lineHeight: 1.35 }}>{nMsg ? "Requerimientos de información del otorgamiento asignados a ti. Click para responder." : "Sin requerimientos de información pendientes."}</div>
         </button>
         {(() => { const nLinTot = nLineas + nFueraLinea; return (
-        <button onClick={nLinTot ? onIrLineas : undefined} className="rounded-xl p-3 text-left" style={{ backgroundColor: nLinTot ? "#fffbeb" : "#fff", border: `1px solid ${nLinTot ? "#fde68a" : C.line}`, cursor: nLinTot ? "pointer" : "default" }}>
-          <div className="flex items-center gap-1.5 t9 font-bold uppercase tracking-wide" style={{ color: nLinTot ? "#b45309" : C.faint }}><AlertTriangle size={11} /> Líneas por gestionar</div>
-          <div className="text-xl font-bold" style={{ color: nLinTot ? "#b45309" : C.ink }}>{nLinTot}</div>
+        <button onClick={nLinTot ? onIrLineas : undefined} className="rounded-xl p-3 text-left" style={{ backgroundColor: nLinTot ? "#FFF7ED" : "#fff", border: `1px solid ${nLinTot ? "#FED7AA" : C.line}`, cursor: nLinTot ? "pointer" : "default" }}>
+          <div className="flex items-center gap-1.5 t9 font-bold uppercase tracking-wide" style={{ color: nLinTot ? "#C2410C" : C.faint }}><AlertTriangle size={11} /> Líneas por gestionar</div>
+          <div className="text-xl font-bold" style={{ color: nLinTot ? "#C2410C" : C.ink }}>{nLinTot}</div>
           <div className="mt-1 t9" style={{ color: C.faint, lineHeight: 1.35 }}><b style={{ color: C.sub }}>{nLineas}</b> líneas que requieren atención para asegurar el SOW · <b style={{ color: C.sub }}>{nFueraLinea}</b> líneas puntuales para el curse de las oportunidades detectadas.</div>
         </button>
         ); })()}
-        <div className="rounded-xl p-3" style={{ backgroundColor: "#fff", border: `1px solid ${nPrio ? "#fde68a" : C.line}` }}>
+        <div className="rounded-xl p-3" style={{ backgroundColor: "#fff", border: `1px solid ${nPrio ? "#FED7AA" : C.line}` }}>
           <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.ink }}>Tareas por atender</div>
           <div className="flex items-baseline gap-1.5">
             <span className="text-xl font-bold" style={{ color: C.ink }}>{delEjec.length.toLocaleString("es-CL")}</span>
             <span className="t10" style={{ color: C.faint }}>oportunidades</span>
-            <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: nPrio ? "#fffbeb" : C.page, color: nPrio ? "#b45309" : C.faint }}><Star size={10} style={{ fill: nPrio ? "#f59e0b" : "none", color: nPrio ? "#d97706" : C.faint }} /> {nPrio} con prioridad</span>
+            <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: nPrio ? "#FFF7ED" : C.page, color: nPrio ? "#C2410C" : C.faint }}><Star size={10} style={{ fill: nPrio ? "#F97316" : "none", color: nPrio ? "#C2410C" : C.faint }} /> {nPrio} con prioridad</span>
           </div>
           <div className="mt-1 t9" style={{ color: C.faint, lineHeight: 1.35 }}>Oportunidades del pipeline pendientes de gestión (ciclo de 24-48 h). Las jefaturas y gerencias marcan las prioritarias para el curse.</div>
         </div>
         {[
-          { t: "Impacto potencial", v: fmtMMc(totalImp), s: "Volumen (CLP) que podrías cursar o recuperar si atiendes TODAS las tareas.", col: "#6d4ef0", bg: "#f5f3ff", bd: "#ddd6fe" },
+          { t: "Impacto potencial", v: fmtMMc(totalImp), s: "Volumen (CLP) que podrías cursar o recuperar si atiendes TODAS las tareas.", col: "#703EFF", bg: "#f5f3ff", bd: "#ddd6fe" },
           { t: "Impacto crítico", v: fmtMMc(critImp), s: "Parte de ese volumen en tareas de prioridad crítica (fugas y conversaciones activas). Atiéndelas primero.", col: "#dc2626", bg: "#fef2f2", bd: "#fecaca" },
-          { t: "Ganancia estimada", v: fmtMMc(Math.round(totalImp * 0.0033)), s: "Ingreso aproximado aplicando un spread de 33 pbs (0,33%) sobre el impacto potencial.", col: "#047857", bg: "#ecfdf5", bd: "#bbf7d0" },
+          { t: "Ganancia estimada", v: fmtMMc(Math.round(totalImp * 0.0033)), s: "Ingreso aproximado aplicando un spread de 33 pbs (0,33%) sobre el impacto potencial.", col: "#16A34A", bg: "#F0FDF4", bd: "#bbf7d0" },
         ].map((k, i) => (
           <div key={i} className="rounded-xl p-3" style={{ backgroundColor: k.bg, border: `1px solid ${k.bd}` }}>
             <div className="t9 font-bold uppercase tracking-wide" style={{ color: k.col }}>{k.t}</div>
@@ -9375,7 +9402,7 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <span className="t9 font-bold uppercase tracking-widest" style={{ color: C.faint }}>Filtrar por categoría</span>
         <span className="h-px flex-1" style={{ backgroundColor: C.line }} />
-        <div className="flex items-center gap-1.5 rounded-lg px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+        <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
           <Search size={13} style={{ color: C.faint }} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar cliente, deudor, ejecutivo…" className="w-56 bg-transparent t12 outline-none" style={{ color: C.ink }} />
           {q && <button onClick={() => setQ("")} title="Limpiar" style={{ color: C.faint, lineHeight: 0 }}><X size={13} /></button>}
@@ -9403,9 +9430,9 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="t12 font-bold" style={{ color: C.ink }}>{t.cliente}</span>
-                <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: m.color + "1a", color: m.color }}>{m.label}</span>
-                <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: p.c + "1a", color: p.c }}>{p.l}</span>
-                {t.dealId && tienePrioridadCurse(t.dealId) && <span className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: "#fffbeb", color: "#b45309" }} title={`Prioridad de curse solicitada por ${PRIORIDAD_CURSE[t.dealId].porNombre}`}><Star size={9} style={{ fill: "#f59e0b", color: "#d97706" }} /> Prioridad</span>}
+                <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: m.color + "1a", color: m.color }}>{m.label}</span>
+                <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: p.c + "1a", color: p.c }}>{p.l}</span>
+                {t.dealId && tienePrioridadCurse(t.dealId) && <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }} title={`Prioridad de curse solicitada por ${PRIORIDAD_CURSE[t.dealId].porNombre}`}><Star size={9} style={{ fill: "#F97316", color: "#C2410C" }} /> Prioridad</span>}
                 <span className="t9" style={{ color: C.faint }}>· {t.exec}</span>
               </div>
               <div className="mt-0.5 t10" style={{ color: C.sub }}>{t.detalle}</div>
@@ -9415,11 +9442,11 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
                 const d = t.dealId ? (deals || []).find((x) => x.id === t.dealId) : null;
                 if (!d) return (
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 t9" style={{ color: C.faint }}>
-                    {t.catOp && <span className="rounded px-1.5 py-0.5 font-semibold" style={{ backgroundColor: catMeta(t.catOp).bg, color: catMeta(t.catOp).fg }}>{t.catOp}</span>}
+                    {t.catOp && <span className="rounded-full px-1.5 py-0.5 font-semibold" style={{ backgroundColor: catMeta(t.catOp).bg, color: catMeta(t.catOp).fg }}>{t.catOp}</span>}
                     <span><b style={{ color: C.sub }}>Deudor:</b> {t.deudor}{t.nDeud > 1 ? ` +${t.nDeud - 1}` : ""}</span>
                     <span>· {t.facturas} fac.</span>
                     {t.tasa && <span>· Tasa <b style={{ color: C.sub }}>{t.tasa}</b></span>}
-                    {t.giro != null && <span>· Giro <b style={{ color: "#047857" }}>{fmtMM(t.giro)}</b></span>}
+                    {t.giro != null && <span>· Giro <b style={{ color: "#16A34A" }}>{fmtMM(t.giro)}</b></span>}
                     <span>· {t.etapa}</span>
                   </div>
                 );
@@ -9428,11 +9455,11 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
                   <div className="mt-1">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="t9 font-medium" style={{ color: C.faint }}>{d.id}</span>
-                      <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: (TAG_COLORS[d.tag] || {}).bg || C.page, color: (TAG_COLORS[d.tag] || {}).fg || C.sub }}>{d.tag}</span>
+                      <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: (TAG_COLORS[d.tag] || {}).bg || C.page, color: (TAG_COLORS[d.tag] || {}).fg || C.sub }}>{d.tag}</span>
                     </div>
                     <OppTags ev={d} />
                     {nOtorg > 0 && (
-                      <div className="mt-1 inline-flex items-center gap-1.5 rounded px-1.5 py-1 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#6d28d9" }}>
+                      <div className="mt-1 inline-flex items-center gap-1.5 rounded px-1.5 py-1 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>
                         <AlertTriangle size={10} />
                         <span>Requiere otorgamiento</span>
                         <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#7c3aed" }}>{vis.excPend.length + vis.rechReev.length}</span>
@@ -9440,14 +9467,14 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
                     )}
                     <div className="mt-1 t9" style={{ color: C.faint }}><b style={{ color: C.sub }}>Deudor:</b> {t.deudor}{t.nDeud > 1 ? ` +${t.nDeud - 1}` : ""} · {d.facturas} fac. · {t.etapa}</div>
                     <div className="mt-0.5 t9" style={{ color: C.faint }}>Tasa <b style={{ color: C.sub }}>{d.tasa}</b> | Anticipo {d.anticipo} | Desc. {d.simulado ? fmtMM(d.descMM) : "—"}</div>
-                    {d.simulado && <div className="t9" style={{ color: C.faint }}>Giro <b style={{ color: "#047857" }}>{fmtMM(d.giroMM)}</b> · {d.diasFin}d fin. · vence {d.fechaVenc}</div>}
+                    {d.simulado && <div className="t9" style={{ color: C.faint }}>Giro <b style={{ color: "#16A34A" }}>{fmtMM(d.giroMM)}</b> · {d.diasFin}d fin. · vence {d.fechaVenc}</div>}
                   </div>
                 );
               })()}
             </div>
             <div className="shrink-0 text-right"><div className="t8 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Impacto</div><div className="t13 font-bold" style={{ color: m.color }}>{fmtMMc(t.impacto)}</div><div className="t9" style={{ color: C.faint }}>{t.fuente === "pipeline" ? "pipeline" : "cartera"}</div></div>
             {t.dealId && puedeMarcar && (() => { const on = tienePrioridadCurse(t.dealId); return (
-              <button onClick={(e) => { e.stopPropagation(); togglePrio(t.dealId); }} title={on ? "Quitar prioridad de curse" : "Solicitar prioridad de curse al ejecutivo"} className="flex shrink-0 items-center justify-center rounded-md p-1.5" style={{ border: `1px solid ${on ? "#fcd34d" : C.line}`, backgroundColor: on ? "#fffbeb" : "#fff" }}><Star size={15} style={{ color: on ? "#d97706" : C.faint, fill: on ? "#f59e0b" : "none" }} /></button>
+              <button onClick={(e) => { e.stopPropagation(); togglePrio(t.dealId); }} title={on ? "Quitar prioridad de curse" : "Solicitar prioridad de curse al ejecutivo"} className="flex shrink-0 items-center justify-center rounded-md p-1.5" style={{ border: `1px solid ${on ? "#FED7AA" : C.line}`, backgroundColor: on ? "#FFF7ED" : "#fff" }}><Star size={15} style={{ color: on ? "#C2410C" : C.faint, fill: on ? "#F97316" : "none" }} /></button>
             ); })()}
           </div>
         ); })}
@@ -9482,7 +9509,7 @@ function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, o
   // Roster unificado para el filtro: cartera + ejecutivos del pipeline.
   const execOpts = useMemo(() => [...new Set([...PC_EXECS.map((e) => e.nombre), ...Object.values(EXECS)])], []);
   const Tab = ({ id, label }) => (
-    <button onClick={() => setTab(id)} className="rounded-lg px-4 py-1.5 t12 font-semibold" style={{ backgroundColor: tab === id ? C.ink : "#fff", color: tab === id ? "#fff" : C.sub, border: `1px solid ${tab === id ? C.ink : C.line}` }}>{label}</button>
+    <button onClick={() => setTab(id)} className="rounded-lg px-4 py-1.5 t12 font-semibold" style={{ backgroundColor: tab === id ? C.lilac : "#fff", color: tab === id ? C.indigo : C.sub, border: `1px solid ${tab === id ? C.indigo : C.line}` }}>{label}</button>
   );
   return (
     <div className="space-y-4">
@@ -9491,7 +9518,7 @@ function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, o
         <Tab id="retencion" label="Plan Mensual" />
         <Tab id="plan" label="Plan por ejecutivo" />
         <div className="ml-auto flex items-center gap-1.5"><User size={14} style={{ color: C.faint }} />{soloExec
-          ? <span className="rounded-lg px-3 py-1.5 t12 font-semibold" style={{ backgroundColor: "#efeafe", color: "#6d4ef0" }}>{soloExec}</span>
+          ? <span className="rounded-lg px-3 py-1.5 t12 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec}</span>
           : <select value={fEjec} onChange={(e) => setFEjec(e.target.value)} className="rounded-lg px-3 py-1.5 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}><option value="todos">Todos los ejecutivos</option>{execOpts.map((n) => <option key={n} value={n}>{n}</option>)}</select>}</div>
       </div>
       {tab === "bandeja" ? <PCbandeja deals={deals} execFilter={ejec} onOpen={onOpen} ambito="diaria" usuario={usuario} onOpenSolic={onOpenSolic} onIrLineas={onIrLineas} />
@@ -9502,11 +9529,11 @@ function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, o
 }
 // Metadatos por estado del cliente (icono + chip) para renderizar cualquier tipo en la lista.
 const RET_ESTADO = {
-  FUGA: { Icon: AlertTriangle, bg: "#fdeaea", fg: "#ef4444", chipBg: "#fdeaea", chipFg: "#c2392f", chip: "FUGA" },
-  CAÍDA: { Icon: ArrowDownRight, bg: "#fdf3e0", fg: "#f59e0b", chipBg: "#fdf3e0", chipFg: "#b45309", chip: "CAÍDA" },
-  Competencia: { Icon: ArrowUpRight, bg: "#e7f0fe", fg: "#2563eb", chipBg: "#e7f0fe", chipFg: "#1d4ed8", chip: "Competencia" },
-  Inactivo: { Icon: Clock, bg: "#f3e8ff", fg: "#7c3aed", chipBg: "#f3e8ff", chipFg: "#7c3aed", chip: "Inactivo" },
-  Security: { Icon: Check, bg: "#e6f6ee", fg: "#047857", chipBg: "#e6f6ee", chipFg: "#047857", chip: "Activo" },
+  FUGA: { Icon: AlertTriangle, bg: "#FEF2F2", fg: "#ef4444", chipBg: "#FEF2F2", chipFg: "#DC2626", chip: "FUGA" },
+  CAÍDA: { Icon: ArrowDownRight, bg: "#FFF7ED", fg: "#F97316", chipBg: "#FFF7ED", chipFg: "#C2410C", chip: "CAÍDA" },
+  Competencia: { Icon: ArrowUpRight, bg: "#EFF6FF", fg: "#2563eb", chipBg: "#EFF6FF", chipFg: "#2563EB", chip: "Competencia" },
+  Inactivo: { Icon: Clock, bg: "#F1ECFF", fg: "#7c3aed", chipBg: "#F1ECFF", chipFg: "#7c3aed", chip: "Inactivo" },
+  Security: { Icon: Check, bg: "#F0FDF4", fg: "#16A34A", chipBg: "#F0FDF4", chipFg: "#16A34A", chip: "Activo" },
 };
 const retKey = (c) => c.tag === "FUGA" ? "FUGA" : c.tag === "CAÍDA" ? "CAÍDA" : c.estado;
 function RetencionExecCard({ e, plan = {} }) {
@@ -9522,12 +9549,12 @@ function RetencionExecCard({ e, plan = {} }) {
   const clientes = todos.filter(filtroFn[f]).sort((a, b) => b.vol - a.vol);
   // Chips-filtro (clickeables) — fusionan retención (fuga/caída) + prioritarios (todos los estados).
   const chips = [
-    { k: "todos", label: `Todos ${todos.length}`, on: { bg: C.ink, fg: "#fff" }, off: { bg: "#f1f5f9", fg: C.sub } },
-    { k: "fuga", label: `${cnt.fuga} fugados`, on: { bg: "#ef4444", fg: "#fff" }, off: { bg: "#fdeaea", fg: "#c2392f" } },
-    { k: "caida", label: `${cnt.caida} en caída`, on: { bg: "#f59e0b", fg: "#fff" }, off: { bg: "#fdf3e0", fg: "#b45309" } },
-    { k: "competencia", label: `${cnt.competencia} competencia`, on: { bg: "#2563eb", fg: "#fff" }, off: { bg: "#e7f0fe", fg: "#1d4ed8" } },
-    { k: "inactivos", label: `${cnt.inactivos} inactivos`, on: { bg: "#7c3aed", fg: "#fff" }, off: { bg: "#f3e8ff", fg: "#7c3aed" } },
-    { k: "activos", label: `${cnt.activos} activos`, on: { bg: "#047857", fg: "#fff" }, off: { bg: "#e6f6ee", fg: "#047857" } },
+    { k: "todos", label: `Todos ${todos.length}`, on: { bg: C.ink, fg: "#fff" }, off: { bg: "#F3F4F6", fg: C.sub } },
+    { k: "fuga", label: `${cnt.fuga} fugados`, on: { bg: "#ef4444", fg: "#fff" }, off: { bg: "#FEF2F2", fg: "#DC2626" } },
+    { k: "caida", label: `${cnt.caida} en caída`, on: { bg: "#F97316", fg: "#fff" }, off: { bg: "#FFF7ED", fg: "#C2410C" } },
+    { k: "competencia", label: `${cnt.competencia} competencia`, on: { bg: "#2563eb", fg: "#fff" }, off: { bg: "#EFF6FF", fg: "#2563EB" } },
+    { k: "inactivos", label: `${cnt.inactivos} inactivos`, on: { bg: "#7c3aed", fg: "#fff" }, off: { bg: "#F1ECFF", fg: "#7c3aed" } },
+    { k: "activos", label: `${cnt.activos} activos`, on: { bg: "#16A34A", fg: "#fff" }, off: { bg: "#F0FDF4", fg: "#16A34A" } },
   ];
   const descDe = (c, k) => k === "FUGA" ? <>Cedió históricamente <b style={{ color: C.ink }}>{fmtMMc(Math.round(c.vol * 0.4))}</b> a Security y <b style={{ color: C.ink }}>dejó de operar</b>. <b style={{ color: C.ink }}>Acción:</b> contacto directo, oferta de tasa de negocio y revisión de línea/Prct Anticipo.</>
     : k === "CAÍDA" ? <>Redujo sus operaciones Security y derivó facturas a la competencia. <b style={{ color: C.ink }}>Acción:</b> visita de retención e igualar condiciones del competidor.</>
@@ -9536,8 +9563,8 @@ function RetencionExecCard({ e, plan = {} }) {
     : <>Cliente activo (<b style={{ color: C.ink }}>SoW {c.sow}%</b> vs {c.target}% target). <b style={{ color: C.ink }}>Acción:</b> sostener y crecer la colocación.</>;
   return (
     <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-      <div className="flex flex-wrap items-center gap-3 rounded-xl p-3" style={{ background: "linear-gradient(100deg,#faf7ff,#f5f7ff)" }}>
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl t12 font-bold text-white" style={{ backgroundColor: "#6d4ef0" }}>{e.ini}</span>
+      <div className="flex flex-wrap items-center gap-3 rounded-xl p-3" style={{ background: "linear-gradient(100deg,#F1ECFF,#F1ECFF)" }}>
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl t12 font-bold text-white" style={{ backgroundColor: "#703EFF" }}>{e.ini}</span>
         <div className="min-w-0 flex-1"><div className="t15 font-bold" style={{ color: C.ink }}>{e.nombre}</div><div className="t10" style={{ color: C.faint }}>{e.zona} · {e.jefatura} · jefe {PC_JEFES[e.jefatura]}</div></div>
         <div className="text-right"><div className="text-xl font-bold" style={{ color: "#ef4444" }}>{fmtMMc(riesgo)}</div><div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Security en riesgo</div></div>
       </div>
@@ -9547,8 +9574,8 @@ function RetencionExecCard({ e, plan = {} }) {
         ); })}
         <span className="mx-1 h-4 w-px" style={{ backgroundColor: C.line }} />
         <span className="t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Totales:</span>
-        <span className="rounded-full px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: "#e7f0fe", color: "#1d4ed8" }}>Captura potencial {fmtMMc(capturaTot)}</span>
-        <span className="rounded-full px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: "#e4f7ef", color: "#047857" }}>Ganancia 33 pbs {fmtMMc(gananciaTot)}</span>
+        <span className="rounded-full px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: "#EFF6FF", color: "#2563EB" }}>Captura potencial {fmtMMc(capturaTot)}</span>
+        <span className="rounded-full px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A" }}>Ganancia 33 pbs {fmtMMc(gananciaTot)}</span>
       </div>
       <div className="mt-2 divide-y" style={{ borderColor: C.line }}>
         {clientes.map((c) => {
@@ -9558,7 +9585,7 @@ function RetencionExecCard({ e, plan = {} }) {
           const meta = plan[c.id];
           const mm = ptmMetrics(c, meta, sig);
           const cumpl = meta.metaColoc ? Math.round(mm.colocReal / meta.metaColoc * 100) : 0;
-          const cumplC = cumpl >= 90 ? "#047857" : cumpl >= 60 ? "#b45309" : "#c2392f";
+          const cumplC = cumpl >= 90 ? "#16A34A" : cumpl >= 60 ? "#C2410C" : "#DC2626";
           const mantiene = c.estado === "Security"; // mantener colocación (no recuperar SOW)
           return (
             <div key={c.id} className="flex gap-3 py-3">
@@ -9566,14 +9593,14 @@ function RetencionExecCard({ e, plan = {} }) {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-stretch gap-2 xl:flex-nowrap">
                   <div className="min-w-0" style={{ flex: "3 1 300px" }}>
-                    <div className="flex flex-wrap items-center gap-2"><span className="t12 font-bold" style={{ color: C.ink }}>{c.nombre}</span><span className="rounded px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: em.chipBg, color: em.chipFg }}>{em.chip}</span></div>
+                    <div className="flex flex-wrap items-center gap-2"><span className="t12 font-bold" style={{ color: C.ink }}>{c.nombre}</span><span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: em.chipBg, color: em.chipFg }}>{em.chip}</span></div>
                     <div className="t9" style={{ color: C.faint }}>{c.rut} · {fmtMMc(c.vol)} volumen</div>
                     <div className="mt-1 t10" style={{ color: C.sub, lineHeight: 1.45 }}>{descDe(c, k)}</div>
                   </div>
-                  <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1.5 1 160px", backgroundColor: "#f5f3ff", border: "1px solid #e7e0ff" }}>
-                    <div className="flex items-center justify-between gap-1"><span className="t8 font-bold uppercase tracking-wide" style={{ color: "#6d4ef0" }}>Cumplim. colocación</span><span className="t12 font-bold" style={{ color: cumplC }}>{cumpl}%</span></div>
+                  <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1.5 1 160px", backgroundColor: "#f5f3ff", border: "1px solid #F1ECFF" }}>
+                    <div className="flex items-center justify-between gap-1"><span className="t8 font-bold uppercase tracking-wide" style={{ color: "#703EFF" }}>Cumplim. colocación</span><span className="t12 font-bold" style={{ color: cumplC }}>{cumpl}%</span></div>
                     <div className="mt-0.5 t9 font-semibold" style={{ color: C.sub }}>{fmtMMc(mm.colocReal)} <span style={{ color: C.faint }}>/ {fmtMMc(meta.metaColoc)} meta</span></div>
-                    <div className="mt-1 h-1.5 w-full rounded-full" style={{ backgroundColor: "#e7e0ff" }}><div className="h-full rounded-full" style={{ width: Math.min(100, cumpl) + "%", backgroundColor: cumplC }} /></div>
+                    <div className="mt-1 h-1.5 w-full rounded-full" style={{ backgroundColor: "#F1ECFF" }}><div className="h-full rounded-full" style={{ width: Math.min(100, cumpl) + "%", backgroundColor: cumplC }} /></div>
                   </div>
                   {mm.bloqueado
                     ? <div className="flex flex-col justify-center rounded-lg px-3 py-2 text-right" style={{ flex: "1 1 110px", backgroundColor: "#fef2f2" }}>
@@ -9581,19 +9608,19 @@ function RetencionExecCard({ e, plan = {} }) {
                         <div className="t12 font-bold" style={{ color: "#dc2626" }}>{c.sow}% → {mm.sowReal}% ↓</div>
                       </div>
                     : mantiene
-                    ? <div className="flex flex-col justify-center rounded-lg px-3 py-2 text-right" style={{ flex: "1 1 110px", backgroundColor: "#e6f6ee" }}>
-                        <div className="t8 font-bold uppercase tracking-wide" style={{ color: "#047857" }}>SOW actual → meta</div>
-                        <div className="t12 font-bold" style={{ color: "#047857" }}>{c.sow}% → {meta.metaSow}%</div>
+                    ? <div className="flex flex-col justify-center rounded-lg px-3 py-2 text-right" style={{ flex: "1 1 110px", backgroundColor: "#F0FDF4" }}>
+                        <div className="t8 font-bold uppercase tracking-wide" style={{ color: "#16A34A" }}>SOW actual → meta</div>
+                        <div className="t12 font-bold" style={{ color: "#16A34A" }}>{c.sow}% → {meta.metaSow}%</div>
                       </div>
-                    : <div className="flex flex-col justify-center rounded-lg px-3 py-2 text-right" style={{ flex: "1 1 110px", backgroundColor: "#fef9c3" }}>
-                        <div className="t8 font-bold uppercase tracking-wide" style={{ color: "#a16207" }}>Va a</div>
-                        <div className="t12 font-bold" style={{ color: "#a16207" }}>{c.vaA}</div>
+                    : <div className="flex flex-col justify-center rounded-lg px-3 py-2 text-right" style={{ flex: "1 1 110px", backgroundColor: "#FFF7ED" }}>
+                        <div className="t8 font-bold uppercase tracking-wide" style={{ color: "#C2410C" }}>Va a</div>
+                        <div className="t12 font-bold" style={{ color: "#C2410C" }}>{c.vaA}</div>
                       </div>}
-                  <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 110px", backgroundColor: "#e0f2fe" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#0369a1" }}>Línea disp.</div><div className="t12 font-bold" style={{ color: "#0369a1" }}>{fmtMMc(sig.lineaDisp)} <span className="t9 font-semibold">· {sig.lineaPct}%</span></div></div>
+                  <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 110px", backgroundColor: "#EFF6FF" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#2563EB" }}>Línea disp.</div><div className="t12 font-bold" style={{ color: "#2563EB" }}>{fmtMMc(sig.lineaDisp)} <span className="t9 font-semibold">· {sig.lineaPct}%</span></div></div>
                   <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 100px", backgroundColor: sig.riesgo.bg }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: sig.riesgo.c }}>Riesgo</div><div className="t12 font-bold" style={{ color: sig.riesgo.c }}>{sig.riesgo.l}</div></div>
-                  <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 110px", backgroundColor: "#efeafe" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#6d4ef0" }}>SOW posible</div><div className="t12 font-bold" style={{ color: "#6d4ef0" }}>{sowPos}% · +{ppGap} pp</div></div>
-                  <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 120px", backgroundColor: "#e0f2fe" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#0369a1" }}>Volumen capturable</div><div className="t12 font-bold" style={{ color: "#0369a1" }}>{fmtMMc(captur)}</div></div>
-                  <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 100px", backgroundColor: "#e4f7ef" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#047857" }}>Ganancia · 33 pbs</div><div className="t12 font-bold" style={{ color: "#047857" }}>{fmtMMc(gan)}</div></div>
+                  <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 110px", backgroundColor: "#F1ECFF" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#703EFF" }}>SOW posible</div><div className="t12 font-bold" style={{ color: "#703EFF" }}>{sowPos}% · +{ppGap} pp</div></div>
+                  <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 120px", backgroundColor: "#EFF6FF" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#2563EB" }}>Volumen capturable</div><div className="t12 font-bold" style={{ color: "#2563EB" }}>{fmtMMc(captur)}</div></div>
+                  <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 100px", backgroundColor: "#F0FDF4" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#16A34A" }}>Ganancia · 33 pbs</div><div className="t12 font-bold" style={{ color: "#16A34A" }}>{fmtMMc(gan)}</div></div>
                 </div>
               </div>
             </div>
@@ -9622,9 +9649,9 @@ function PCprioritarios({ filtrEjec, fEstado, setFEstado }) {
   const rows = PC_CLIENTES.filter(filtrEjec).filter(mapEstado[fEstado]).slice(0, 60);
   // Estilo de icono/estado homologado con "Plan de retención por ejecutivo".
   const estadoMeta = {
-    Security: { label: "Security", bg: "#e4f7ef", fg: "#047857", Icon: Check },
-    Competencia: { label: "Competencia", bg: "#fdf3e0", fg: "#b45309", Icon: ArrowUpRight },
-    Inactivo: { label: "Inactivo", bg: "#fdeaea", fg: "#c2392f", Icon: Clock },
+    Security: { label: "Security", bg: "#F0FDF4", fg: "#16A34A", Icon: Check },
+    Competencia: { label: "Competencia", bg: "#FFF7ED", fg: "#C2410C", Icon: ArrowUpRight },
+    Inactivo: { label: "Inactivo", bg: "#FEF2F2", fg: "#DC2626", Icon: Clock },
   };
   return (
     <div>
@@ -9632,7 +9659,7 @@ function PCprioritarios({ filtrEjec, fEstado, setFEstado }) {
       <div className="t11" style={{ color: C.faint }}>Top {rows.length} por brecha de wallet y riesgo de fuga · 6.096 clientes en el alcance</div>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {[["todos", "Todos"], ["security", "Operan con Security"], ["competencia", "Solo competencia"], ["inactivos", "Inactivos / fugados"]].map(([k, l]) => (
-          <button key={k} onClick={() => setFEstado(k)} className="rounded-lg px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: fEstado === k ? C.ink : "#fff", color: fEstado === k ? "#fff" : C.sub, border: `1px solid ${fEstado === k ? C.ink : C.line}` }}>{l}</button>
+          <button key={k} onClick={() => setFEstado(k)} className="rounded-lg px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: fEstado === k ? C.lilac : "#fff", color: fEstado === k ? C.indigo : C.sub, border: `1px solid ${fEstado === k ? C.indigo : C.line}` }}>{l}</button>
         ))}
       </div>
       <div className="mt-4 space-y-3">
@@ -9649,8 +9676,8 @@ function PCprioritarios({ filtrEjec, fEstado, setFEstado }) {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="t13 font-bold" style={{ color: C.ink }}>{c.nombre}</span>
-                      <span className="rounded-md px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: m.bg, color: m.fg }}>{m.label}</span>
-                      {c.tag && <span className="rounded px-1.5 py-0.5 t8 font-bold" style={{ backgroundColor: c.tag === "FUGA" ? "#fdeaea" : "#fdf3e0", color: c.tag === "FUGA" ? "#c2392f" : "#b45309" }}>{c.tag}</span>}
+                      <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: m.bg, color: m.fg }}>{m.label}</span>
+                      {c.tag && <span className="rounded-full px-1.5 py-0.5 t8 font-bold" style={{ backgroundColor: c.tag === "FUGA" ? "#FEF2F2" : "#FFF7ED", color: c.tag === "FUGA" ? "#DC2626" : "#C2410C" }}>{c.tag}</span>}
                     </div>
                     <div className="mt-0.5 t9" style={{ color: C.faint }}>{c.rut} · {c.ej} · {c.zona} · {fmtMMc(c.vol)} volumen</div>
                     <div className="mt-1 t10" style={{ color: C.sub, lineHeight: 1.45 }}>
@@ -9663,19 +9690,19 @@ function PCprioritarios({ filtrEjec, fEstado, setFEstado }) {
                   </div>
                 </div>
                 {/* Columnas de indicadores (llenan el resto del ancho) */}
-                <div className="flex flex-col justify-center rounded-lg px-3 py-2 text-right" style={{ flex: "1 1 110px", backgroundColor: "#fef9c3" }}>
-                  <div className="t8 font-bold uppercase tracking-wide" style={{ color: "#a16207" }}>Va a</div>
-                  <div className="t12 font-bold" style={{ color: "#a16207" }}>{c.vaA}</div>
+                <div className="flex flex-col justify-center rounded-lg px-3 py-2 text-right" style={{ flex: "1 1 110px", backgroundColor: "#FFF7ED" }}>
+                  <div className="t8 font-bold uppercase tracking-wide" style={{ color: "#C2410C" }}>Va a</div>
+                  <div className="t12 font-bold" style={{ color: "#C2410C" }}>{c.vaA}</div>
                 </div>
                 <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 140px", backgroundColor: C.page }}>
                   <div className="t8 font-bold uppercase tracking-wide" style={{ color: C.faint }}>SoW · target</div>
                   <div className="t12 font-bold" style={{ color: C.ink }}>{c.sow}% <span style={{ color: C.faint }}>/ {c.target}%</span></div>
-                  <div className="mt-1 h-2 w-full rounded-full" style={{ backgroundColor: "#fff", position: "relative" }}><div className="h-full rounded-full" style={{ width: Math.min(100, c.sow) + "%", backgroundColor: "#16b981" }} /><span style={{ position: "absolute", left: c.target + "%", top: -1, width: 2, height: 10, backgroundColor: C.ink }} /></div>
+                  <div className="mt-1 h-2 w-full rounded-full" style={{ backgroundColor: "#fff", position: "relative" }}><div className="h-full rounded-full" style={{ width: Math.min(100, c.sow) + "%", backgroundColor: "#16A34A" }} /><span style={{ position: "absolute", left: c.target + "%", top: -1, width: 2, height: 10, backgroundColor: C.ink }} /></div>
                 </div>
-                <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 110px", backgroundColor: "#efeafe" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#6d4ef0" }}>SOW posible</div><div className="t12 font-bold" style={{ color: "#6d4ef0" }}>{c.target}% · +{Math.max(0, ppGap)} pp</div></div>
-                <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 120px", backgroundColor: "#e0f2fe" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#0369a1" }}>Volumen capturable</div><div className="t12 font-bold" style={{ color: "#0369a1" }}>{fmtMMc(captur)}</div></div>
-                <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 100px", backgroundColor: c.malos ? "#f3e8ff" : "#e7f0fe" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: c.malos ? "#7c3aed" : "#1d4ed8" }}>Deudores</div><div className="t12 font-bold" style={{ color: c.malos ? "#7c3aed" : "#1d4ed8" }}>{c.malos ? `Malos ${c.malosPct}%` : "Buenos"}</div></div>
-                <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 100px", backgroundColor: "#e4f7ef" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#047857" }}>Ganancia · 33 pbs</div><div className="t12 font-bold" style={{ color: "#047857" }}>{fmtMMc(gan)}</div></div>
+                <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 110px", backgroundColor: "#F1ECFF" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#703EFF" }}>SOW posible</div><div className="t12 font-bold" style={{ color: "#703EFF" }}>{c.target}% · +{Math.max(0, ppGap)} pp</div></div>
+                <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 120px", backgroundColor: "#EFF6FF" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#2563EB" }}>Volumen capturable</div><div className="t12 font-bold" style={{ color: "#2563EB" }}>{fmtMMc(captur)}</div></div>
+                <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 100px", backgroundColor: c.malos ? "#F1ECFF" : "#EFF6FF" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: c.malos ? "#7c3aed" : "#2563EB" }}>Deudores</div><div className="t12 font-bold" style={{ color: c.malos ? "#7c3aed" : "#2563EB" }}>{c.malos ? `Malos ${c.malosPct}%` : "Buenos"}</div></div>
+                <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 100px", backgroundColor: "#F0FDF4" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#16A34A" }}>Ganancia · 33 pbs</div><div className="t12 font-bold" style={{ color: "#16A34A" }}>{fmtMMc(gan)}</div></div>
               </div>
             </div>
           );
@@ -9700,7 +9727,7 @@ const nuevasEmpRealMes = (ini, mi) => 2 + (hashStr("nuevasEmp-" + ini + "-" + mi
 const mesCerrado = (mi) => mi < MES_ACT; // sólo los meses ya cerrados se cuantifican
 const nuevasEmpMetaMes = (inis, mi) => (inis || []).reduce((s, ini) => s + ((META_NUEVAS_EMP[ini] || [])[mi] || 0), 0);
 const nuevasEmpAgg = (inis) => { let metaYTD = 0, realYTD = 0; (inis || []).forEach((ini) => { for (let mi = 0; mi < MES_ACT; mi++) { metaYTD += (META_NUEVAS_EMP[ini] || [])[mi] || 0; realYTD += nuevasEmpRealMes(ini, mi); } }); return { metaYTD, realYTD, cumpl: metaYTD ? Math.round((realYTD / metaYTD) * 100) : 0 }; };
-const ptmTipo = (c) => c.tag === "FUGA" ? { l: "Recuperar (fuga)", bg: "#fdeaea", fg: "#c2392f" } : c.tag === "CAÍDA" ? { l: "Retener (caída)", bg: "#fdf3e0", fg: "#b45309" } : c.estado === "Competencia" ? { l: "Aumentar SOW", bg: "#e7f0fe", fg: "#1d4ed8" } : c.estado === "Inactivo" ? { l: "Reactivar", bg: "#f3e8ff", fg: "#7c3aed" } : { l: "Crecer", bg: "#ecfdf5", fg: "#047857" };
+const ptmTipo = (c) => c.tag === "FUGA" ? { l: "Recuperar (fuga)", bg: "#FEF2F2", fg: "#DC2626" } : c.tag === "CAÍDA" ? { l: "Retener (caída)", bg: "#FFF7ED", fg: "#C2410C" } : c.estado === "Competencia" ? { l: "Aumentar SOW", bg: "#EFF6FF", fg: "#2563EB" } : c.estado === "Inactivo" ? { l: "Reactivar", bg: "#F1ECFF", fg: "#7c3aed" } : { l: "Crecer", bg: "#F0FDF4", fg: "#16A34A" };
 function ptmMetrics(c, meta, sig) {
   const r = pcRng(hashStr("ptm" + c.id));
   const metaSow = +meta.metaSow || 0, metaColoc = +meta.metaColoc || 0;
@@ -9744,7 +9771,7 @@ function ptmMetrics(c, meta, sig) {
   const perdido = serieLost[serieLost.length - 1] || 0;
   return { metaSow, metaColoc, colocReal, sowReal, rentReal, rentMeta, pctColoc, serie, serieLost, perdido, emitio, bloqueado, sowActual: c.sow };
 }
-const ptmStatus = (pct) => pct >= 100 ? { l: "Meta cumplida", c: "#047857", bg: "#ecfdf5" } : pct >= 70 ? { l: "En buen ritmo", c: "#1d4ed8", bg: "#eff6ff" } : pct >= 40 ? { l: "En curso", c: "#b45309", bg: "#fffbeb" } : { l: "Rezagado", c: "#dc2626", bg: "#fef2f2" };
+const ptmStatus = (pct) => pct >= 100 ? { l: "Meta cumplida", c: "#16A34A", bg: "#F0FDF4" } : pct >= 70 ? { l: "En buen ritmo", c: "#2563EB", bg: "#eff6ff" } : pct >= 40 ? { l: "En curso", c: "#C2410C", bg: "#FFF7ED" } : { l: "Rezagado", c: "#dc2626", bg: "#fef2f2" };
 // ── PLAN POR EJECUTIVO (tabla) ───────────────────────────────────────────────────────────────────────
 // Resultado del mes por cliente contra su plan (metas). Meses ya cerrados: siembra determinística que se
 // PERSISTE en CIERRE_MES (para recuperar cómo fue, comparar la evolución de los últimos meses y exportar).
@@ -9780,10 +9807,10 @@ function planFilaMes(c, meta, mi) {
   return calc();
 }
 const PPE_TEND = {
-  Subiendo: { l: "Subiendo", c: "#047857", bg: "#ecfdf5", Icon: ArrowUpRight },
+  Subiendo: { l: "Subiendo", c: "#16A34A", bg: "#F0FDF4", Icon: ArrowUpRight },
   Bajando: { l: "Bajando", c: "#dc2626", bg: "#fef2f2", Icon: ArrowDownRight },
-  Estable: { l: "Estable", c: "#b45309", bg: "#fffbeb", Icon: ArrowRight },
-  Nuevo: { l: "Nuevo", c: "#7c3aed", bg: "#f3e8ff", Icon: Sparkles },
+  Estable: { l: "Estable", c: "#C2410C", bg: "#FFF7ED", Icon: ArrowRight },
+  Nuevo: { l: "Nuevo", c: "#7c3aed", bg: "#F1ECFF", Icon: Sparkles },
 };
 function sowTendMes(c, meta, mi) {
   if (hashStr("nuevocli" + c.id) % 7 === 0 || mi <= 0) return PPE_TEND.Nuevo;
@@ -9791,7 +9818,7 @@ function sowTendMes(c, meta, mi) {
   return d > 2 ? PPE_TEND.Subiendo : d < -2 ? PPE_TEND.Bajando : PPE_TEND.Estable;
 }
 function planScoreSerie(c, meta, mi, back = 6) { const out = []; for (let m = Math.max(0, mi - back + 1); m <= mi; m++) out.push(planFilaMes(c, meta, m).score); return out; }
-const metaScoreColor = (s) => s >= 80 ? "#047857" : s >= 55 ? "#1d4ed8" : s >= 35 ? "#b45309" : "#dc2626";
+const metaScoreColor = (s) => s >= 80 ? "#16A34A" : s >= 55 ? "#2563EB" : s >= 35 ? "#C2410C" : "#dc2626";
 function GaugeMeta({ score, size = 50 }) {
   const col = metaScoreColor(score), r = size / 2 - 5, cx = size / 2, cy = size / 2, circ = 2 * Math.PI * r, frac = Math.max(0, Math.min(1, score / 100));
   return (
@@ -9828,7 +9855,7 @@ function PtmMesBars({ serie, serieLost, meta }) {
           </g>
         );
       })}
-      {metaY != null && <line x1="0" y1={metaY} x2={W} y2={metaY} stroke="#6d4ef0" strokeWidth="1.5" strokeDasharray="4 3" />}
+      {metaY != null && <line x1="0" y1={metaY} x2={W} y2={metaY} stroke="#703EFF" strokeWidth="1.5" strokeDasharray="4 3" />}
     </svg>
   );
 }
@@ -9842,9 +9869,9 @@ function ptmSignals(c) {
   const lineaPct = lineaAprob ? Math.round(lineaDisp / lineaAprob * 100) : 0;
   const moraDias = r() < 0.22 ? 5 + Math.floor(r() * 60) : 0;
   const riesgo = moraDias >= 30 ? { l: `Moroso ${moraDias}d`, c: "#dc2626", bg: "#fef2f2" }
-    : moraDias > 0 ? { l: `Atención ${moraDias}d`, c: "#b45309", bg: "#fffbeb" }
-    : r() < 0.15 ? { l: "En observación", c: "#b45309", bg: "#fffbeb" }
-    : { l: "Buen comportamiento", c: "#047857", bg: "#ecfdf5" };
+    : moraDias > 0 ? { l: `Atención ${moraDias}d`, c: "#C2410C", bg: "#FFF7ED" }
+    : r() < 0.15 ? { l: "En observación", c: "#C2410C", bg: "#FFF7ED" }
+    : { l: "Buen comportamiento", c: "#16A34A", bg: "#F0FDF4" };
   const emitioBuenos = r() > 0.28;   // ¿emitió facturas de deudores buenos (lista blanca/priorizados/históricos) este mes?
   const cedioComp = (c.tag === "FUGA" || c.estado === "Competencia") ? r() > 0.32 : r() < 0.18;
   const compRapida = r() < 0.5;      // la competencia reaccionó más rápido (ejecutivo se demoró)
@@ -9862,10 +9889,10 @@ function ptmInsight(c, cm, s) {
     v = { v: "Meta exigente para el SOW actual", c: "#dc2626", bg: "#fef2f2" };
     partes.push(`Aun capturando al SOW actual (${sowAct}%) todo el flujo estadístico de buenos deudores, la proyección máxima al cierre (${fmtMMc(cm.maxEnd)}) queda ${fmtMMc(cm.meta - cm.maxEnd)} bajo la meta. ${colocarTxt} Como al SOW actual no alcanza, subir el SOW hacia ${sowMeta}% (mejor tasa/contacto/anticipo) o la jefatura revisar la meta.`);
   } else if (cm.colocHoy >= cm.meta * 0.98) {
-    v = { v: "En meta", c: "#047857", bg: "#ecfdf5" };
+    v = { v: "En meta", c: "#16A34A", bg: "#F0FDF4" };
     partes.push(`La colocación de hoy (${fmtMMc(cm.colocHoy)}) está en el nivel de la meta, pero no basta con quedarse quieto: ${colocarTxt}`);
   } else {
-    v = { v: "Alcanzable con gestión", c: "#1d4ed8", bg: "#eff6ff" };
+    v = { v: "Alcanzable con gestión", c: "#2563EB", bg: "#eff6ff" };
     partes.push(`La meta (${fmtMMc(cm.meta)}) es alcanzable (proyección máxima ${fmtMMc(cm.maxEnd)}). ${colocarTxt}`);
   }
   if (s.lineaDisp < c.vol * 0.15) partes.push(`Ojo: la línea disponible es baja (${fmtMMc(s.lineaDisp)}) y puede frenar la colocación; evaluar una ampliación.`);
@@ -9938,20 +9965,20 @@ function ColocacionChart({ model, h = 150 }) {
   ];
   const recMin = Math.min(0, ...data.map((r) => r.rec || 0));
   const yTop = Math.max(meta, maxEnd, ...dias.map((x) => x.coloc), ...data.map((r) => (r.gan || 0) + (r.resto || 0))) * 1.08;
-  const col = { gan: "#e4af84", ganP: "#f3d8b6", resto: "#cbdef6", restoP: "#e6eefb", rec: "#66ad82", recP: "#cceccf" };
+  const col = { gan: "#e4af84", ganP: "#f3d8b6", resto: "#EFF6FF", restoP: "#EFF6FF", rec: "#66ad82", recP: "#F0FDF4" };
   return (
     <div style={{ width: "100%", height: h }}>
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={data} margin={{ top: 14, right: 72, bottom: 2, left: 2 }} barCategoryGap="16%">
-          <CartesianGrid vertical={false} stroke="#f2f4f7" />
+          <CartesianGrid vertical={false} stroke="#F9FAFB" />
           <XAxis dataKey="d" hide padding={{ left: 26, right: 26 }} />
           <YAxis width={30} domain={[recMin * 1.25, yTop]} tickFormatter={(v) => Math.round(v / 1000) + "k"} tick={{ fontSize: 8, fill: "#b4bac2" }} axisLine={false} tickLine={false} />
           <Tooltip content={<ColocacionTooltip />} cursor={{ fill: "rgba(0,0,0,.03)" }} />
           <Bar dataKey="gan" stackId="fac" maxBarSize={13} isAnimationActive={false} radius={[2, 2, 0, 0]}>{data.map((e, i) => <Cell key={i} fill={e.fase === "p" ? col.ganP : col.gan} />)}</Bar>
           <Bar dataKey="resto" stackId="fac" maxBarSize={13} isAnimationActive={false} radius={[2, 2, 0, 0]}>{data.map((e, i) => <Cell key={i} fill={e.fase === "p" ? col.restoP : col.resto} />)}</Bar>
           <Bar dataKey="rec" stackId="fac" maxBarSize={13} isAnimationActive={false} radius={[0, 0, 2, 2]}>{data.map((e, i) => <Cell key={i} fill={e.fase === "p" ? col.recP : col.rec} />)}</Bar>
-          <ReferenceLine y={meta} stroke="#a99cf2" strokeDasharray="4 4" strokeWidth={1.2} label={{ value: `Meta ${fmtMMc(meta)}`, position: "right", fill: "#6d4ef0", fontSize: 9, fontWeight: 700 }} />
-          <ReferenceLine x={hoy} stroke="#cbd0d8" strokeDasharray="3 3" label={{ value: "HOY", position: "top", fill: "#334155", fontSize: 9, fontWeight: 700 }} />
+          <ReferenceLine y={meta} stroke="#a99cf2" strokeDasharray="4 4" strokeWidth={1.2} label={{ value: `Meta ${fmtMMc(meta)}`, position: "right", fill: "#703EFF", fontSize: 9, fontWeight: 700 }} />
+          <ReferenceLine x={hoy} stroke="#D1D5DB" strokeDasharray="3 3" label={{ value: "HOY", position: "top", fill: "#334155", fontSize: 9, fontWeight: 700 }} />
           <Line dataKey="coloc" stroke="#2563eb" strokeWidth={2} dot={false} connectNulls={false} isAnimationActive={false} />
           <Line dataKey="max" stroke="#c2557f" strokeWidth={1.8} strokeDasharray="5 3" dot={false} connectNulls={false} isAnimationActive={false} />
           <Line dataKey="min" stroke="#dda0bd" strokeWidth={1.8} strokeDasharray="5 3" dot={false} connectNulls={false} isAnimationActive={false} />
@@ -10023,10 +10050,10 @@ function PlanMensual({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
   const metaMesEmp = nuevasEmpMetaMes(inisScope, MES_ACT); // meta del mes en curso para el alcance
   const metaSowProm = met.length ? Math.round(met.reduce((s, x) => s + x.m.metaSow, 0) / met.length) : 0;
   const sowRealProm = met.length ? Math.round(met.reduce((s, x) => s + x.m.sowReal, 0) / met.length) : 0;
-  const Bar = ({ pct, col }) => <div className="h-2 w-full rounded-full" style={{ backgroundColor: "#f1f5f9" }}><div className="h-full rounded-full" style={{ width: Math.min(100, pct) + "%", backgroundColor: col }} /></div>;
+  const Bar = ({ pct, col }) => <div className="h-2 w-full rounded-full" style={{ backgroundColor: "#F3F4F6" }}><div className="h-full rounded-full" style={{ width: Math.min(100, pct) + "%", backgroundColor: col }} /></div>;
   // Barra con marca vertical en la meta mensual definida.
   const MetaBar = ({ value, meta, max, col }) => { const mx = max || Math.max(value, meta, 1); return (
-    <div className="relative h-2.5 w-full rounded-full" style={{ backgroundColor: "#f1f5f9" }}>
+    <div className="relative h-2.5 w-full rounded-full" style={{ backgroundColor: "#F3F4F6" }}>
       <div className="h-full rounded-full" style={{ width: Math.min(100, value / mx * 100) + "%", backgroundColor: col }} />
       <span title={`Meta: ${meta}`} style={{ position: "absolute", left: `calc(${Math.min(100, meta / mx * 100)}% - 1px)`, top: -2, width: 2, height: 14, backgroundColor: C.ink, borderRadius: 1 }} />
     </div>
@@ -10046,9 +10073,9 @@ function PlanMensual({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
   );
   // Tiles alineados con el gráfico (modelo de colocación): SOW actual→meta, colocación de hoy vs meta, rentabilidad.
   const metaTiles = (m, cm) => { const sowAct = Math.round(cm.sowAct * 100); const rentHoy = +(cm.colocHoy * 0.0033).toFixed(1), rentMeta = +(cm.meta * 0.0033).toFixed(1); const pctHoy = cm.meta ? Math.round(cm.colocHoy / cm.meta * 100) : 0; return [
-    { label: "Meta SOW", val: `${m.metaSow}%`, sub: `actual ${sowAct}%`, value: sowAct, meta: m.metaSow, max: 100, col: "#6d4ef0", bg: "#f5f3ff" },
-    { label: "Meta colocación", val: fmtMMc(cm.meta), sub: `hoy ${pctHoy}%`, value: cm.colocHoy, meta: cm.meta, max: cm.meta * 1.15, col: "#0369a1", bg: "#e0f2fe" },
-    { label: "Meta Rentabilidad", val: fmtMMc(rentHoy), sub: `obj ${fmtMMc(rentMeta)}`, value: rentHoy, meta: rentMeta, max: rentMeta * 1.15, col: "#047857", bg: "#ecfdf5" },
+    { label: "Meta SOW", val: `${m.metaSow}%`, sub: `actual ${sowAct}%`, value: sowAct, meta: m.metaSow, max: 100, col: "#703EFF", bg: "#f5f3ff" },
+    { label: "Meta colocación", val: fmtMMc(cm.meta), sub: `hoy ${pctHoy}%`, value: cm.colocHoy, meta: cm.meta, max: cm.meta * 1.15, col: "#2563EB", bg: "#EFF6FF" },
+    { label: "Meta Rentabilidad", val: fmtMMc(rentHoy), sub: `obj ${fmtMMc(rentMeta)}`, value: rentHoy, meta: rentMeta, max: rentMeta * 1.15, col: "#16A34A", bg: "#F0FDF4" },
   ]; };
   const chartLegend = () => (
     <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 t8" style={{ color: C.sub }}>
@@ -10056,25 +10083,25 @@ function PlanMensual({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
       <span className="flex items-center gap-1"><span className="inline-block h-0 w-3" style={{ borderTop: "2px dashed #c2557f" }} /> Máx</span>
       <span className="flex items-center gap-1"><span className="inline-block h-0 w-3" style={{ borderTop: "2px dashed #d98cae" }} /> Mín</span>
       <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ backgroundColor: "#e4af84" }} /> Ganadas</span>
-      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ backgroundColor: "#cbdef6" }} /> Total facturas</span>
+      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ backgroundColor: "#EFF6FF" }} /> Total facturas</span>
       <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm" style={{ backgroundColor: "#66ad82" }} /> Recaud.</span>
     </div>
   );
   // Insights del gráfico (sin duplicar SOW ni colocación, que ya están en las metas): proyección al cierre.
   const insightChips = (cm) => [
-    { l: "Proy. máx cierre", v: fmtMMc(cm.maxEnd), c: "#047857", bg: "#e6f6ee" },
-    { l: "Proy. mín cierre", v: fmtMMc(cm.minEnd), c: "#c2392f", bg: "#fdeaea" },
+    { l: "Proy. máx cierre", v: fmtMMc(cm.maxEnd), c: "#16A34A", bg: "#F0FDF4" },
+    { l: "Proy. mín cierre", v: fmtMMc(cm.minEnd), c: "#DC2626", bg: "#FEF2F2" },
   ];
-  const Chip = ({ l, v, c, bg }) => <span className="rounded-md px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: bg, color: c }}>{l ? `${l}: ` : ""}{v}</span>;
+  const Chip = ({ l, v, c, bg }) => <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: bg, color: c }}>{l ? `${l}: ` : ""}{v}</span>;
   const CardHeader = ({ c, tp, st, sig, nCambios }) => (
     <div className="flex items-start gap-2">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="t13 font-bold" style={{ color: C.ink }}>{c.nombre}</span>
-          <span className="rounded-md px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: tp.bg, color: tp.fg }}>{tp.l}</span>
-          <span className="rounded-md px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: st.bg, color: st.c }}>{st.l}</span>
-          <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#e0f2fe", color: "#0369a1" }}>Línea {fmtMMc(sig.lineaDisp)}·{sig.lineaPct}%</span>
-          <span className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: sig.riesgo.bg, color: sig.riesgo.c }}>Riesgo: {sig.riesgo.l}</span>
+          <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: tp.bg, color: tp.fg }}>{tp.l}</span>
+          <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: st.bg, color: st.c }}>{st.l}</span>
+          <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#EFF6FF", color: "#2563EB" }}>Línea {fmtMMc(sig.lineaDisp)}·{sig.lineaPct}%</span>
+          <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: sig.riesgo.bg, color: sig.riesgo.c }}>Riesgo: {sig.riesgo.l}</span>
         </div>
         <div className="mt-0.5 t9" style={{ color: C.faint }}>{c.rut} · {c.ej} · {c.zona} · va a {c.vaA}</div>
       </div>
@@ -10084,11 +10111,11 @@ function PlanMensual({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
       </div>
     </div>
   );
-  const AccionChip = ({ cm }) => <span className="rounded-md px-2 py-0.5 t9 font-bold" style={{ backgroundColor: "#eef2ff", color: "#4f46e5" }}>Para la meta: colocar {fmtMMc(cm.faltante)} hasta el cierre</span>;
+  const AccionChip = ({ cm }) => <span className="rounded-full px-2 py-0.5 t9 font-bold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>Para la meta: colocar {fmtMMc(cm.faltante)} hasta el cierre</span>;
   const IARow = ({ ins }) => (
-    <div className="mt-2 flex items-start gap-2 rounded-xl p-2.5" style={{ backgroundColor: "#faf7ff", border: "1px solid #ede9fe" }}>
-      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: "#efeafe", color: "#6d4ef0" }}><Sparkles size={13} /></span>
-      <div className="min-w-0 flex-1 t10" style={{ color: C.sub, lineHeight: 1.45 }}><b className="uppercase" style={{ color: "#6d4ef0", fontSize: "9px" }}>IA · {ins.v} </b>{ins.texto}</div>
+    <div className="mt-2 flex items-start gap-2 rounded-xl p-2.5" style={{ backgroundColor: "#F1ECFF", border: "1px solid #F1ECFF" }}>
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}><Sparkles size={13} /></span>
+      <div className="min-w-0 flex-1 t10" style={{ color: C.sub, lineHeight: 1.45 }}><b className="uppercase" style={{ color: "#703EFF", fontSize: "9px" }}>IA · {ins.v} </b>{ins.texto}</div>
     </div>
   );
   const ChartTitle = () => <div className="t8 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Evolución de la colocación (stock) · mes</div>;
@@ -10098,9 +10125,9 @@ function PlanMensual({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
     const ins = ptmInsight(c, cm, sig);
     const pctHoy = cm.meta ? Math.round(cm.colocHoy / cm.meta * 100) : 0;
     const st = sig.moraDias >= 30 ? { l: "Bloqueo por riesgo", c: "#dc2626", bg: "#fef2f2" }
-      : cm.maxEnd < cm.meta ? { l: "Meta exigente", c: "#b45309", bg: "#fffbeb" }
-      : pctHoy >= 98 ? { l: "En meta", c: "#047857", bg: "#ecfdf5" }
-      : { l: "Alcanzable", c: "#1d4ed8", bg: "#eff6ff" };
+      : cm.maxEnd < cm.meta ? { l: "Meta exigente", c: "#C2410C", bg: "#FFF7ED" }
+      : pctHoy >= 98 ? { l: "En meta", c: "#16A34A", bg: "#F0FDF4" }
+      : { l: "Alcanzable", c: "#2563EB", bg: "#eff6ff" };
     return (
       <div key={c.id} className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
         <CardHeader c={c} tp={tp} st={st} sig={sig} nCambios={nCambios} />
@@ -10121,9 +10148,9 @@ function PlanMensual({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
               <div className="grid grid-cols-1 gap-1.5">{insightChips(cm).map((x, i) => <Chip key={i} l={x.l} v={x.v} c={x.c} bg={x.bg} />)}</div>
               <div className="mt-1.5"><AccionChip cm={cm} /></div>
             </div>
-            <div className="flex items-start gap-2 rounded-xl p-2.5" style={{ backgroundColor: "#faf7ff", border: "1px solid #ede9fe" }}>
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: "#efeafe", color: "#6d4ef0" }}><Sparkles size={13} /></span>
-              <div className="min-w-0 flex-1 t10" style={{ color: C.sub, lineHeight: 1.45 }}><b className="uppercase" style={{ color: "#6d4ef0", fontSize: "9px" }}>IA · {ins.v} </b>{ins.texto}</div>
+            <div className="flex items-start gap-2 rounded-xl p-2.5" style={{ backgroundColor: "#F1ECFF", border: "1px solid #F1ECFF" }}>
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}><Sparkles size={13} /></span>
+              <div className="min-w-0 flex-1 t10" style={{ color: C.sub, lineHeight: 1.45 }}><b className="uppercase" style={{ color: "#703EFF", fontSize: "9px" }}>IA · {ins.v} </b>{ins.texto}</div>
             </div>
           </div>
         </div>
@@ -10137,15 +10164,15 @@ function PlanMensual({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
           <div className="text-2xl font-bold tracking-tight" style={{ color: C.ink }}>Plan de trabajo mensual</div>
           <div className="t11" style={{ color: C.faint }}>La jefatura selecciona candidatos a recuperar / crecer, fija metas de SOW y colocación, y se mide la evolución vs. la meta durante el mes.</div>
         </div>
-        <div className="flex items-center gap-1.5 rounded-lg px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}><Calendar size={14} style={{ color: C.indigo }} /><span className="t12 font-semibold" style={{ color: C.ink }}>{PTM_MES}</span></div>
+        <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}><Calendar size={14} style={{ color: C.indigo }} /><span className="t12 font-semibold" style={{ color: C.ink }}>{PTM_MES}</span></div>
       </div>
       {/* KPIs del plan */}
       <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
         {[
           { t: "Clientes en el plan", v: planClients.length.toLocaleString("es-CL"), s: "candidatos seleccionados por jefatura", col: C.ink, bg: "#fff", bd: C.line },
-          { t: "Meta colocación", v: fmtMMc(metaColocTot), s: `real ${fmtMMc(colocRealTot)} · avance ${avanceGlobal}%`, col: "#0369a1", bg: "#e0f2fe", bd: "#bae6fd" },
-          { t: "SOW meta / real", v: `${metaSowProm}% / ${sowRealProm}%`, s: "promedio ponderado del plan", col: "#6d4ef0", bg: "#f5f3ff", bd: "#ddd6fe" },
-          { t: "Rentabilidad", v: `${fmtMMc(rentRealTot)}`, s: `objetivo ${fmtMMc(rentMetaTot)} (spread 33 pbs)`, col: "#047857", bg: "#ecfdf5", bd: "#bbf7d0" },
+          { t: "Meta colocación", v: fmtMMc(metaColocTot), s: `real ${fmtMMc(colocRealTot)} · avance ${avanceGlobal}%`, col: "#2563EB", bg: "#EFF6FF", bd: "#BFDBFE" },
+          { t: "SOW meta / real", v: `${metaSowProm}% / ${sowRealProm}%`, s: "promedio ponderado del plan", col: "#703EFF", bg: "#f5f3ff", bd: "#ddd6fe" },
+          { t: "Rentabilidad", v: `${fmtMMc(rentRealTot)}`, s: `objetivo ${fmtMMc(rentMetaTot)} (spread 33 pbs)`, col: "#16A34A", bg: "#F0FDF4", bd: "#bbf7d0" },
         ].map((k, i) => (
           <div key={i} className="rounded-xl p-3" style={{ backgroundColor: k.bg, border: `1px solid ${k.bd}` }}>
             <div className="t9 font-bold uppercase tracking-wide" style={{ color: k.col }}>{k.t}</div>
@@ -10153,13 +10180,13 @@ function PlanMensual({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
             <div className="mt-0.5 t9" style={{ color: C.faint }}>{k.s}</div>
           </div>
         ))}
-        <div className="rounded-xl p-3" style={{ backgroundColor: "#fffbeb", border: "1px solid #fde68a" }}>
+        <div className="rounded-xl p-3" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA" }}>
           <div className="flex items-start justify-between gap-2">
-            <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#b45309" }}>Meta nuevas empresas</div>
-            {esJefe && <button onClick={() => { setMetaEmpDraft(JSON.parse(JSON.stringify(META_NUEVAS_EMP))); setMetaEmpExec(inisScope[0] || PC_EXECS[0].ini); setMetaEmpOpen(true); }} className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 t9 font-semibold" style={{ border: "1px solid #fcd34d", color: "#b45309", backgroundColor: "#fff" }}><Pencil size={10} /> Editar meta</button>}
+            <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#C2410C" }}>Meta nuevas empresas</div>
+            {esJefe && <button onClick={() => { setMetaEmpDraft(JSON.parse(JSON.stringify(META_NUEVAS_EMP))); setMetaEmpExec(inisScope[0] || PC_EXECS[0].ini); setMetaEmpOpen(true); }} className="inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ border: "1px solid #FED7AA", color: "#C2410C", backgroundColor: "#fff" }}><Pencil size={10} /> Editar meta</button>}
           </div>
-          <div className="text-xl font-bold" style={{ color: "#b45309" }}>{metaMesEmp}</div>
-          <div className="mt-0.5 t9" style={{ color: C.faint }}>meta {MES_NOM[MES_ACT]} · {ejec === "todos" ? `${inisScope.length} ejecutivo(s)` : ejec} · YTD real {nuevoEmp.realYTD}/{nuevoEmp.metaYTD} · cumpl <b style={{ color: nuevoEmp.cumpl >= 100 ? "#047857" : nuevoEmp.cumpl >= 80 ? "#b45309" : "#dc2626" }}>{nuevoEmp.cumpl}%</b></div>
+          <div className="text-xl font-bold" style={{ color: "#C2410C" }}>{metaMesEmp}</div>
+          <div className="mt-0.5 t9" style={{ color: C.faint }}>meta {MES_NOM[MES_ACT]} · {ejec === "todos" ? `${inisScope.length} ejecutivo(s)` : ejec} · YTD real {nuevoEmp.realYTD}/{nuevoEmp.metaYTD} · cumpl <b style={{ color: nuevoEmp.cumpl >= 100 ? "#16A34A" : nuevoEmp.cumpl >= 80 ? "#C2410C" : "#dc2626" }}>{nuevoEmp.cumpl}%</b></div>
         </div>
       </div>
       {metaEmpOpen && (
@@ -10182,30 +10209,30 @@ function PlanMensual({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
             </div>
             <div className="mt-2 space-y-1">
               {MES_NOM.map((mn, mi) => { const cerr = mesCerrado(mi); const real = cerr ? nuevasEmpRealMes(metaEmpExec, mi) : null; const meta = (metaEmpDraft[metaEmpExec] || [])[mi] || 0; const cumpl = cerr && meta ? Math.round((real / meta) * 100) : null; return (
-                <div key={mi} className="flex items-center gap-2 rounded-lg px-2 py-1.5" style={{ backgroundColor: mi === MES_ACT ? "#eef2ff" : cerr ? "#fafaf9" : "#fff", border: `1px solid ${mi === MES_ACT ? "#c7d2fe" : C.line}` }}>
+                <div key={mi} className="flex items-center gap-2 rounded-lg px-2 py-1.5" style={{ backgroundColor: mi === MES_ACT ? "#F1ECFF" : cerr ? "#F9FAFB" : "#fff", border: `1px solid ${mi === MES_ACT ? "#D9CCFF" : C.line}` }}>
                   <span className="w-8 t11 font-semibold" style={{ color: C.ink }}>{mn}</span>
                   <span className="t9" style={{ color: C.faint }}>Meta</span>
                   <input type="number" value={(metaEmpDraft[metaEmpExec] || [])[mi] ?? 0} onChange={(e) => setMetaEmpDraft((d) => { const nd = { ...d, [metaEmpExec]: [...(d[metaEmpExec] || Array(12).fill(0))] }; nd[metaEmpExec][mi] = Math.max(0, parseInt(e.target.value || "0", 10) || 0); return nd; })} className="w-16 rounded-md px-2 py-1 t11 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
                   {cerr
-                    ? <span className="ml-auto t10" style={{ color: C.sub }}>real <b style={{ color: C.ink }}>{real}</b> · cumpl <b style={{ color: cumpl >= 100 ? "#047857" : cumpl >= 80 ? "#b45309" : "#dc2626" }}>{cumpl}%</b></span>
+                    ? <span className="ml-auto t10" style={{ color: C.sub }}>real <b style={{ color: C.ink }}>{real}</b> · cumpl <b style={{ color: cumpl >= 100 ? "#16A34A" : cumpl >= 80 ? "#C2410C" : "#dc2626" }}>{cumpl}%</b></span>
                     : <span className="ml-auto t9" style={{ color: C.faint }}>{mi === MES_ACT ? "en curso" : "pendiente"}</span>}
                 </div>
               ); })}
             </div>
             <div className="mt-4 flex justify-end gap-2">
-              <button onClick={() => setMetaEmpOpen(false)} className="rounded-lg px-3 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button>
-              <button onClick={() => { META_NUEVAS_EMP = JSON.parse(JSON.stringify(metaEmpDraft)); registrarAuditoria({ usuario: usuarioNombre, modulo: "Plan mensual", accion: "Editar meta nuevas empresas", glosa: "Actualizó las metas mensuales de nuevas empresas por ejecutivo", exito: true }); setMetaEmpOpen(false); }} className="rounded-lg px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Guardar</button>
+              <button onClick={() => setMetaEmpOpen(false)} className="rounded-full px-4 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button>
+              <button onClick={() => { META_NUEVAS_EMP = JSON.parse(JSON.stringify(metaEmpDraft)); registrarAuditoria({ usuario: usuarioNombre, modulo: "Plan mensual", accion: "Editar meta nuevas empresas", glosa: "Actualizó las metas mensuales de nuevas empresas por ejecutivo", exito: true }); setMetaEmpOpen(false); }} className="rounded-full px-4 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Guardar</button>
             </div>
           </div>
         </>
       )}
       <div>
-        <div className="mb-1 flex items-center justify-between t10"><span className="font-semibold" style={{ color: C.sub }}>Avance global de colocación del mes</span><span className="font-bold" style={{ color: "#0369a1" }}>{avanceGlobal}%</span></div>
+        <div className="mb-1 flex items-center justify-between t10"><span className="font-semibold" style={{ color: C.sub }}>Avance global de colocación del mes</span><span className="font-bold" style={{ color: "#2563EB" }}>{avanceGlobal}%</span></div>
         <Bar pct={avanceGlobal} col="#0ea5e9" />
       </div>
       {/* Filtro + búsqueda: una sola lista de empresas */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1.5 rounded-lg px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+        <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
           <Search size={13} style={{ color: C.faint }} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar empresa…" className="w-56 bg-transparent t12 outline-none" style={{ color: C.ink }} />
         </div>
@@ -10218,10 +10245,10 @@ function PlanMensual({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
         {listaFiltrada.map(({ c, inPlan }) => {
           const tp = ptmTipo(c); const sig = ptmSignals(c);
           if (!inPlan) { const captur = Math.round(c.vol * 0.8), gan = Math.round(captur * 0.0033 / 10), ppGap = Math.max(0, c.target - c.sow); const excl = excluidos.has(c.id); return (
-            <div key={c.id} className="rounded-2xl p-4" style={{ backgroundColor: excl ? "#fafafa" : "#fff", border: `1px solid ${excl ? "#fecaca" : C.line}`, opacity: excl ? 0.72 : 1 }}>
+            <div key={c.id} className="rounded-2xl p-4" style={{ backgroundColor: excl ? "#F9FAFB" : "#fff", border: `1px solid ${excl ? "#fecaca" : C.line}`, opacity: excl ? 0.72 : 1 }}>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="min-w-0 flex-1" style={{ minWidth: 220 }}>
-                  <div className="flex flex-wrap items-center gap-2"><span className="t13 font-bold" style={{ color: C.ink }}>{c.nombre}</span><span className="rounded-md px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: tp.bg, color: tp.fg }}>{tp.l}</span>{excl ? <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#dc2626" }}><EyeOff size={11} /> No considerar</span> : <span className="rounded-md px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f1f5f9", color: C.sub }}>Fuera del plan</span>}</div>
+                  <div className="flex flex-wrap items-center gap-2"><span className="t13 font-bold" style={{ color: C.ink }}>{c.nombre}</span><span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: tp.bg, color: tp.fg }}>{tp.l}</span>{excl ? <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#dc2626" }}><EyeOff size={11} /> No considerar</span> : <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F3F4F6", color: C.sub }}>Fuera del plan</span>}</div>
                   <div className="mt-0.5 t9" style={{ color: C.faint }}>{c.rut} · {c.ej} · {c.zona} · SoW {c.sow}%/{c.target}% · {fmtMMc(c.vol)}</div>
                 </div>
                 {excl
@@ -10229,12 +10256,12 @@ function PlanMensual({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
                   : <button onClick={() => abrirModal(c)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-4 py-2 t12 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Plus size={14} /> Agregar al plan</button>}
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-                <div className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#fef9c3" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#a16207" }}>Va a</div><div className="t11 font-bold" style={{ color: "#a16207" }}>{c.vaA}</div></div>
-                <div className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#e0f2fe" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#0369a1" }}>Línea disp.</div><div className="t11 font-bold" style={{ color: "#0369a1" }}>{fmtMMc(sig.lineaDisp)} · {sig.lineaPct}%</div></div>
+                <div className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#FFF7ED" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#C2410C" }}>Va a</div><div className="t11 font-bold" style={{ color: "#C2410C" }}>{c.vaA}</div></div>
+                <div className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#EFF6FF" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#2563EB" }}>Línea disp.</div><div className="t11 font-bold" style={{ color: "#2563EB" }}>{fmtMMc(sig.lineaDisp)} · {sig.lineaPct}%</div></div>
                 <div className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: sig.riesgo.bg }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: sig.riesgo.c }}>Riesgo</div><div className="t11 font-bold" style={{ color: sig.riesgo.c }}>{sig.riesgo.l}</div></div>
-                <div className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#efeafe" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#6d4ef0" }}>SOW posible</div><div className="t11 font-bold" style={{ color: "#6d4ef0" }}>{c.target}% · +{ppGap} pp</div></div>
-                <div className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#e6f6ee" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#047857" }}>Vol. capturable</div><div className="t11 font-bold" style={{ color: "#047857" }}>{fmtMMc(captur)}</div></div>
-                <div className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#ecfdf5" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#047857" }}>Ganancia · 33 pbs</div><div className="t11 font-bold" style={{ color: "#047857" }}>{fmtMMc(gan)}</div></div>
+                <div className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#F1ECFF" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#703EFF" }}>SOW posible</div><div className="t11 font-bold" style={{ color: "#703EFF" }}>{c.target}% · +{ppGap} pp</div></div>
+                <div className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#F0FDF4" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#16A34A" }}>Vol. capturable</div><div className="t11 font-bold" style={{ color: "#16A34A" }}>{fmtMMc(captur)}</div></div>
+                <div className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#F0FDF4" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#16A34A" }}>Ganancia · 33 pbs</div><div className="t11 font-bold" style={{ color: "#16A34A" }}>{fmtMMc(gan)}</div></div>
               </div>
             </div>
           ); }
@@ -10252,16 +10279,16 @@ function PlanMensual({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
               <button onClick={() => setModalCand(null)} style={{ color: C.faint }}><X size={18} /></button>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2 t10">
-              <span className="rounded-md px-2 py-0.5 font-semibold" style={{ backgroundColor: tp.bg, color: tp.fg }}>{tp.l}</span>
+              <span className="rounded-full px-2 py-0.5 font-semibold" style={{ backgroundColor: tp.bg, color: tp.fg }}>{tp.l}</span>
               <span style={{ color: C.faint }}>{modalCand.rut} · {modalCand.ej} · {modalCand.zona}</span>
               <span style={{ color: C.faint }}>· SoW actual <b style={{ color: C.ink }}>{modalCand.sow}%</b> / target {modalCand.target}%</span>
               <span style={{ color: C.faint }}>· va a {modalCand.vaA}</span>
             </div>
             {/* 2 indicadores a la vista al seleccionar: línea disponible y comportamiento de riesgo */}
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="rounded-xl p-3" style={{ backgroundColor: "#e0f2fe", border: "1px solid #bae6fd" }}>
-                <div className="t8 font-bold uppercase tracking-wide" style={{ color: "#0369a1" }}>Línea de crédito disponible</div>
-                <div className="t14 font-bold" style={{ color: "#0369a1" }}>{fmtMMc(sig.lineaDisp)}</div>
+              <div className="rounded-xl p-3" style={{ backgroundColor: "#EFF6FF", border: "1px solid #BFDBFE" }}>
+                <div className="t8 font-bold uppercase tracking-wide" style={{ color: "#2563EB" }}>Línea de crédito disponible</div>
+                <div className="t14 font-bold" style={{ color: "#2563EB" }}>{fmtMMc(sig.lineaDisp)}</div>
                 <div className="t9" style={{ color: C.faint }}>{sig.lineaPct}% de {fmtMMc(sig.lineaAprob)} aprobada</div>
               </div>
               <div className="rounded-xl p-3" style={{ backgroundColor: sig.riesgo.bg, border: `1px solid ${sig.riesgo.c}33` }}>
@@ -10283,27 +10310,27 @@ function PlanMensual({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
             <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <div className="mb-1.5 t12" style={{ color: C.sub }}>Meta SOW (%){criterio === "colocacion" ? " · calculado" : ""}</div>
-                <div className="flex items-center gap-1.5"><input type="number" disabled={criterio !== "sow"} value={form.metaSow} onChange={(e) => { const v = Math.max(0, Math.min(100, parseInt(e.target.value || "0", 10) || 0)); setForm({ metaSow: v, metaColoc: Math.round(v / 100 * flujo) }); }} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: criterio === "sow" ? "#fff" : "#f8fafc" }} /><span className="t13 font-semibold" style={{ color: C.sub }}>%</span></div>
+                <div className="flex items-center gap-1.5"><input type="number" disabled={criterio !== "sow"} value={form.metaSow} onChange={(e) => { const v = Math.max(0, Math.min(100, parseInt(e.target.value || "0", 10) || 0)); setForm({ metaSow: v, metaColoc: Math.round(v / 100 * flujo) }); }} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: criterio === "sow" ? "#fff" : "#F9FAFB" }} /><span className="t13 font-semibold" style={{ color: C.sub }}>%</span></div>
                 <div className="mt-1 t9" style={{ color: sowExcede ? "#dc2626" : C.faint }}>{criterio === "sow" ? `Brecha objetivo: +${gap} pp sobre el SoW actual.` : sowExcede ? "La colocación supera el flujo de facturas: el SOW se limitó a 100%." : `Participación sobre el flujo de buenas facturas.`}</div>
               </div>
               <div>
                 <div className="mb-1.5 t12" style={{ color: C.sub }}>Meta colocación (MM$){criterio === "sow" ? " · estimado" : ""}</div>
-                <input type="number" disabled={criterio !== "colocacion"} value={form.metaColoc} onChange={(e) => { const v = Math.max(0, parseInt(e.target.value || "0", 10) || 0); setForm({ metaColoc: v, metaSow: Math.min(100, Math.round(v / flujo * 100)) }); }} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: criterio === "colocacion" ? "#fff" : "#f8fafc" }} />
+                <input type="number" disabled={criterio !== "colocacion"} value={form.metaColoc} onChange={(e) => { const v = Math.max(0, parseInt(e.target.value || "0", 10) || 0); setForm({ metaColoc: v, metaSow: Math.min(100, Math.round(v / flujo * 100)) }); }} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: criterio === "colocacion" ? "#fff" : "#F9FAFB" }} />
                 <div className="mt-1 t9" style={{ color: C.faint }}>{criterio === "sow" ? `Estimado = SOW × facturas buenas (prom. 3 meses: ${fmtMMc(flujo)}).` : `Facturas buenas emitidas (prom. 3 meses): ${fmtMMc(flujo)}.`}</div>
               </div>
             </div>
             {/* Estimación de colocación según SOW + flujo de pagos de las facturas en cartera */}
             <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: "#eff6ff", border: "1px solid #bfdbfe" }}>
-              <div className="t8 font-bold uppercase tracking-wide" style={{ color: "#1d4ed8" }}>Colocación estimada · SOW + flujo de pagos</div>
+              <div className="t8 font-bold uppercase tracking-wide" style={{ color: "#2563EB" }}>Colocación estimada · SOW + flujo de pagos</div>
               <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                <span className="t13" style={{ color: "#1d4ed8" }}>Hoy <b>{fmtMMc(cmEst.colocHoy)}</b></span>
-                <span className="t13" style={{ color: "#1d4ed8" }}>· al cierre entre <b style={{ color: "#c2392f" }}>{fmtMMc(cmEst.minEnd)}</b> y <b style={{ color: "#047857" }}>{fmtMMc(cmEst.maxEnd)}</b></span>
+                <span className="t13" style={{ color: "#2563EB" }}>Hoy <b>{fmtMMc(cmEst.colocHoy)}</b></span>
+                <span className="t13" style={{ color: "#2563EB" }}>· al cierre entre <b style={{ color: "#DC2626" }}>{fmtMMc(cmEst.minEnd)}</b> y <b style={{ color: "#16A34A" }}>{fmtMMc(cmEst.maxEnd)}</b></span>
               </div>
               <div className="t9" style={{ color: C.faint }}>Mín = sin captar nuevo (solo cobros de facturas que vencen); Máx = capturando al SOW actual ({modalCand.sow}%) el flujo estadístico de buenos deudores. Para llegar a la meta debe colocar <b style={{ color: C.sub }}>{fmtMMc(cmEst.faltante)}</b> en el mes.</div>
             </div>
-            <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: "#ecfdf5", border: "1px solid #bbf7d0" }}>
-              <div className="t8 font-bold uppercase tracking-wide" style={{ color: "#047857" }}>Rentabilidad objetivo · spread 33 pbs</div>
-              <div className="t14 font-bold" style={{ color: "#047857" }}>{fmtMMc(rentObj)}</div>
+            <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0" }}>
+              <div className="t8 font-bold uppercase tracking-wide" style={{ color: "#16A34A" }}>Rentabilidad objetivo · spread 33 pbs</div>
+              <div className="t14 font-bold" style={{ color: "#16A34A" }}>{fmtMMc(rentObj)}</div>
               <div className="t9" style={{ color: C.faint }}>Se calcula como 0,33% sobre la meta de colocación definida.</div>
             </div>
             <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
@@ -10328,18 +10355,18 @@ function PlanMensual({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
               <button onClick={() => setEditMeta(null)} style={{ color: C.faint }}><X size={18} /></button>
             </div>
             {!esJefe && (
-              <div className="mt-3 flex items-center gap-2 rounded-xl p-2.5 t11" style={{ backgroundColor: "#fffbeb", border: "1px solid #fde68a", color: "#b45309" }}>
+              <div className="mt-3 flex items-center gap-2 rounded-xl p-2.5 t11" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#C2410C" }}>
                 <AlertTriangle size={14} /> Solo la jefatura puede editar las metas. Cambia al perfil administrador para modificarlas; puedes solicitar la autorización a tu jefe.
               </div>
             )}
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <div className="mb-1.5 t12" style={{ color: C.sub }}>Meta SOW (%)</div>
-                <input type="number" disabled={!esJefe} value={ef.metaSow} onChange={(e) => setEfK("metaSow", e.target.value)} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: esJefe ? "#fff" : "#f8fafc" }} />
+                <input type="number" disabled={!esJefe} value={ef.metaSow} onChange={(e) => setEfK("metaSow", e.target.value)} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: esJefe ? "#fff" : "#F9FAFB" }} />
               </div>
               <div>
                 <div className="mb-1.5 t12" style={{ color: C.sub }}>Meta colocación (MM$)</div>
-                <input type="number" disabled={!esJefe} value={ef.metaColoc} onChange={(e) => setEfK("metaColoc", e.target.value)} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: esJefe ? "#fff" : "#f8fafc" }} />
+                <input type="number" disabled={!esJefe} value={ef.metaColoc} onChange={(e) => setEfK("metaColoc", e.target.value)} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: esJefe ? "#fff" : "#F9FAFB" }} />
               </div>
             </div>
             <div className="mt-4">
@@ -10356,7 +10383,7 @@ function PlanMensual({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
             </div>
             <div className="mt-5 flex items-center justify-end gap-3">
               <button onClick={() => setEditMeta(null)} className="t13 font-semibold" style={{ color: C.sub }}>Cerrar</button>
-              <button onClick={guardarEdit} disabled={!esJefe} className="inline-flex items-center gap-1.5 rounded-lg px-5 py-2.5 t13 font-semibold text-white" style={{ backgroundColor: esJefe ? C.indigo : "#cbd5e1", cursor: esJefe ? "pointer" : "not-allowed" }}><Check size={14} /> Guardar cambios</button>
+              <button onClick={guardarEdit} disabled={!esJefe} className="inline-flex items-center gap-1.5 rounded-lg px-5 py-2.5 t13 font-semibold text-white" style={{ backgroundColor: esJefe ? C.indigo : "#D1D5DB", cursor: esJefe ? "pointer" : "not-allowed" }}><Check size={14} /> Guardar cambios</button>
             </div>
           </div>
         </div>
@@ -10376,6 +10403,7 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
   const [mesSel, setMesSel] = useState(MES_ACT);
   const [q, setQ] = useState("");
   const [editMeta, setEditMeta] = useState(null);
+  const [confirmQuitar, setConfirmQuitar] = useState(null); // { id, nombre } cliente a quitar del plan (ConfirmDialog spec §26)
   const [ef, setEf] = useState({ metaSow: 0, metaColoc: 0 });
   const [criterio, setCriterio] = useState("sow"); // "sow" | "colocacion": por qué campo se fija la meta
   const flujoBuenasMes = (c) => Math.round((c.vol || 0) * 0.6 * 100 / (c.target || 60)); // prom. facturas buenas/mes
@@ -10419,7 +10447,7 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
     registrarAuditoria({ usuario: usuarioNombre, modulo: "Plan por ejecutivo", accion: "Exportar CSV", glosa: `Exportó el plan por ejecutivo (${MES_NOM[mesSel]})`, exito: true });
   };
   const Cell2 = ({ meta, real, ok }) => (
-    <div className="leading-tight"><div className="t9" style={{ color: C.faint }}>meta {meta}</div><div className="t12 font-semibold" style={{ color: ok ? "#047857" : C.ink }}>{real}</div></div>
+    <div className="leading-tight"><div className="t9" style={{ color: C.faint }}>meta {meta}</div><div className="t12 font-semibold" style={{ color: ok ? "#16A34A" : C.ink }}>{real}</div></div>
   );
   const estadoCli = (c) => c.estado !== "Inactivo";
   let lastEj = null;
@@ -10432,19 +10460,19 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
           <div className="t10" style={{ color: C.faint }}>Metas del mes por cliente y su cumplimiento. {cerrado ? "Mes cerrado (histórico)." : "Mes en curso: colocación acumulada a hoy."}</div>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-lg px-2 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}><Calendar size={14} style={{ color: C.indigo }} /><select value={mesSel} onChange={(e) => setMesSel(+e.target.value)} className="t12 font-semibold outline-none" style={{ color: C.ink, backgroundColor: "#fff" }}>{mesesDisp.slice().reverse().map((m) => <option key={m} value={m}>{MES_NOM[m]} {new Date().getFullYear()}{m === MES_ACT ? " · en curso" : ""}</option>)}</select></div>
-          <div className="flex items-center gap-1.5 rounded-lg px-2 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}><Search size={13} style={{ color: C.faint }} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar cliente…" className="t12 outline-none" style={{ color: C.ink, width: 150 }} /></div>
-          {esJefe && <button onClick={() => setAddOpen(true)} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Plus size={13} /> Agregar cliente</button>}
-          {esJefe && <button onClick={() => { setMetaEmpDraft(JSON.parse(JSON.stringify(META_NUEVAS_EMP))); setMetaEmpExec(inisScope[0] || PC_EXECS[0].ini); setMetaEmpOpen(true); }} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 t11 font-semibold" style={{ border: "1px solid #fcd34d", color: "#b45309", backgroundColor: "#fffbeb" }}><Pencil size={12} /> Meta nuevas empresas</button>}
+          <div className="flex items-center gap-1.5 rounded-full px-2 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}><Calendar size={14} style={{ color: C.indigo }} /><select value={mesSel} onChange={(e) => setMesSel(+e.target.value)} className="t12 font-semibold outline-none" style={{ color: C.ink, backgroundColor: "#fff" }}>{mesesDisp.slice().reverse().map((m) => <option key={m} value={m}>{MES_NOM[m]} {new Date().getFullYear()}{m === MES_ACT ? " · en curso" : ""}</option>)}</select></div>
+          <div className="flex items-center gap-1.5 rounded-full px-2 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}><Search size={13} style={{ color: C.faint }} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar cliente…" className="t12 outline-none" style={{ color: C.ink, width: 150 }} /></div>
+          {esJefe && <button onClick={() => setAddOpen(true)} className="btn-cta inline-flex items-center gap-1 px-4 py-1.5 t11"><Plus size={13} /> Agregar cliente</button>}
+          {esJefe && <button onClick={() => { setMetaEmpDraft(JSON.parse(JSON.stringify(META_NUEVAS_EMP))); setMetaEmpExec(inisScope[0] || PC_EXECS[0].ini); setMetaEmpOpen(true); }} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 t11 font-semibold" style={{ border: "1px solid #FED7AA", color: "#C2410C", backgroundColor: "#FFF7ED" }}><Pencil size={12} /> Meta nuevas empresas</button>}
           <button onClick={exportarCSV} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 t11 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}><Download size={13} /> Exportar</button>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         {[
           { t: "Clientes en el plan", v: filas.length.toLocaleString("es-CL"), s: ejec === "todos" ? `${inisScope.length} ejecutivo(s)` : ejec, col: C.ink, bg: "#fff", bd: C.line },
-          { t: `Colocación ${MES_NOM[mesSel]}`, v: fmtMMc(colocRealTot), s: `meta ${fmtMMc(colocMetaTot)} · ${colocMetaTot ? Math.round(colocRealTot / colocMetaTot * 100) : 0}%`, col: "#0369a1", bg: "#e0f2fe", bd: "#bae6fd" },
+          { t: `Colocación ${MES_NOM[mesSel]}`, v: fmtMMc(colocRealTot), s: `meta ${fmtMMc(colocMetaTot)} · ${colocMetaTot ? Math.round(colocRealTot / colocMetaTot * 100) : 0}%`, col: "#2563EB", bg: "#EFF6FF", bd: "#BFDBFE" },
           { t: "Status promedio", v: `${scoreProm}`, s: "ponderación de las 4 metas (0–100)", col: metaScoreColor(scoreProm), bg: "#fff", bd: C.line },
-          { t: "Meta nuevas empresas", v: `${metaMesEmp}`, s: `${MES_NOM[MES_ACT]} · YTD ${nuevoEmp.realYTD}/${nuevoEmp.metaYTD} · cumpl ${nuevoEmp.cumpl}%`, col: "#b45309", bg: "#fffbeb", bd: "#fde68a" },
+          { t: "Meta nuevas empresas", v: `${metaMesEmp}`, s: `${MES_NOM[MES_ACT]} · YTD ${nuevoEmp.realYTD}/${nuevoEmp.metaYTD} · cumpl ${nuevoEmp.cumpl}%`, col: "#C2410C", bg: "#FFF7ED", bd: "#FED7AA" },
         ].map((k, i) => (
           <div key={i} className="rounded-xl p-3" style={{ backgroundColor: k.bg, border: `1px solid ${k.bd}` }}><div className="t9 font-bold uppercase tracking-wide" style={{ color: k.col }}>{k.t}</div><div className="text-xl font-bold" style={{ color: k.col }}>{k.v}</div><div className="mt-0.5 t9" style={{ color: C.faint }}>{k.s}</div></div>
         ))}
@@ -10454,22 +10482,22 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
           <thead><tr style={{ borderBottom: `1px solid ${C.line}` }}>{cols.map((c, i) => <th key={i} className="px-3 py-2 text-left t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{c}</th>)}</tr></thead>
           <tbody>
             {filas.map(({ c, f, tend, serie, busq, sig }) => {
-              const grp = ejec === "todos" && c.ej !== lastEj; if (grp) lastEj = c.ej; const act = estadoCli(c); const bAct = busq.estado === "activa"; const Tend = tend.Icon; const uso = 100 - sig.lineaPct; const usoCol = uso >= 90 ? "#dc2626" : uso >= 70 ? "#b45309" : "#0369a1";
+              const grp = ejec === "todos" && c.ej !== lastEj; if (grp) lastEj = c.ej; const act = estadoCli(c); const bAct = busq.estado === "activa"; const Tend = tend.Icon; const uso = 100 - sig.lineaPct; const usoCol = uso >= 90 ? "#dc2626" : uso >= 70 ? "#C2410C" : "#2563EB";
               return (
                 <Fragment key={c.id}>
-                  {grp && <tr style={{ backgroundColor: "#faf8f3" }}><td colSpan={cols.length} className="px-3 py-1.5 t10 font-bold" style={{ color: C.indigo }}>{c.ej}</td></tr>}
+                  {grp && <tr style={{ backgroundColor: "#FAF9FB" }}><td colSpan={cols.length} className="px-3 py-1.5 t10 font-bold" style={{ color: C.indigo }}>{c.ej}</td></tr>}
                   <tr className="cursor-pointer hover:bg-stone-50" style={{ borderBottom: `1px solid ${C.line}` }} onClick={() => abrirEdit(c)}>
                     <td className="px-3 py-2.5"><div className="t12 font-semibold" style={{ color: C.ink }}>{c.nombre}</div><div className="t9" style={{ color: C.faint }}>{c.rut}</div></td>
-                    <td className="px-3 py-2.5"><span className="rounded-md px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: act ? "#ecfdf5" : "#f5f5f4", color: act ? "#047857" : "#78716c" }}>{act ? "Activa" : "Inactiva"}</span></td>
-                    <td className="px-3 py-2.5"><span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: bAct ? "#ecfdf5" : "#fffbeb", color: bAct ? "#047857" : "#b45309", border: `1px solid ${bAct ? "#bbf7d0" : "#fde68a"}` }}>{bAct ? <Radio size={9} /> : <Pause size={9} />} {bAct ? "Activa" : "Pausada"}</span></td>
+                    <td className="px-3 py-2.5"><span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: act ? "#F0FDF4" : "#F3F4F6", color: act ? "#16A34A" : "#6B7280" }}>{act ? "Activa" : "Inactiva"}</span></td>
+                    <td className="px-3 py-2.5"><span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: bAct ? "#F0FDF4" : "#FFF7ED", color: bAct ? "#16A34A" : "#C2410C", border: `1px solid ${bAct ? "#bbf7d0" : "#FED7AA"}` }}>{bAct ? <Radio size={9} /> : <Pause size={9} />} {bAct ? "Activa" : "Pausada"}</span></td>
                     <td className="px-3 py-2.5"><Cell2 meta={fmtMMc(f.metaFact)} real={fmtMMc(f.realFact)} ok={f.realFact >= f.metaFact} /></td>
                     <td className="px-3 py-2.5"><Cell2 meta={fmtMMc(f.metaColoc)} real={fmtMMc(f.realColoc)} ok={f.realColoc >= f.metaColoc} /></td>
                     <td className="px-3 py-2.5"><div className="leading-tight"><div className="t9" style={{ color: C.faint }}>aprob {fmtMMc(sig.lineaAprob)}</div><div className="flex items-center gap-1.5"><span className="t12 font-semibold" style={{ color: usoCol }}>{uso}%</span><div style={{ width: 40, height: 5, borderRadius: 3, backgroundColor: "#efeae2", overflow: "hidden" }}><div style={{ width: `${uso}%`, height: "100%", backgroundColor: usoCol }} /></div></div><div className="t8" style={{ color: C.faint }}>uso {fmtMMc(sig.lineaUso)} · disp {fmtMMc(sig.lineaDisp)}</div></div></td>
                     <td className="px-3 py-2.5"><Cell2 meta={`${f.metaTasa}%`} real={`${f.realTasa}%`} ok={f.realTasa >= f.metaTasa} /></td>
-                    <td className="px-3 py-2.5"><div className="leading-tight"><div className="t9" style={{ color: C.faint }}>meta {f.metaSow}%</div><div className="flex items-center gap-1"><span className="t12 font-semibold" style={{ color: C.ink }}>{f.sowReal}%</span><span className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 t8 font-semibold" style={{ backgroundColor: tend.bg, color: tend.c }}><Tend size={9} /> {tend.l}</span></div></div></td>
+                    <td className="px-3 py-2.5"><div className="leading-tight"><div className="t9" style={{ color: C.faint }}>meta {f.metaSow}%</div><div className="flex items-center gap-1"><span className="t12 font-semibold" style={{ color: C.ink }}>{f.sowReal}%</span><span className="inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 t8 font-semibold" style={{ backgroundColor: tend.bg, color: tend.c }}><Tend size={9} /> {tend.l}</span></div></div></td>
                     <td className="px-3 py-2.5"><GaugeMeta score={f.score} /></td>
                     <td className="px-3 py-2.5"><ScoreSpark serie={serie} /></td>
-                    <td className="px-3 py-2.5 text-right">{esJefe && <button onClick={(e) => { e.stopPropagation(); quitar(c.id, c.nombre); }} title="Quitar del plan" className="rounded-md p-1" style={{ color: C.faint }}><Trash2 size={13} /></button>}</td>
+                    <td className="px-3 py-2.5 text-right">{esJefe && <button onClick={(e) => { e.stopPropagation(); setConfirmQuitar({ id: c.id, nombre: c.nombre }); }} title="Quitar del plan" className="rounded-md p-1" style={{ color: C.faint }}><Trash2 size={13} /></button>}</td>
                   </tr>
                 </Fragment>
               );
@@ -10483,20 +10511,20 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(15,23,42,.55)" }} onClick={() => setEditMeta(null)}>
           <div className="w-full max-w-2xl rounded-2xl p-6" style={{ backgroundColor: "#fff", maxHeight: "92vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between" style={{ borderBottom: `1px solid ${C.line}`, paddingBottom: 12 }}><div><h3 className="text-lg font-bold" style={{ color: C.ink }}>Definir plan · {editMeta.nombre}</h3><p className="t11" style={{ color: C.faint }}>{editMeta.ej} · {editMeta.zona} · SoW {editMeta.sow}%/{editMeta.target}% · {PTM_MES}</p></div><button onClick={() => setEditMeta(null)} style={{ color: C.faint }}><X size={18} /></button></div>
-            {!esJefe && <div className="mt-3 flex items-center gap-2 rounded-xl p-2.5 t11" style={{ backgroundColor: "#fffbeb", border: "1px solid #fde68a", color: "#b45309" }}><AlertTriangle size={14} /> Solo la jefatura puede editar las metas.</div>}
-            <div className="mt-3"><div className="mb-1 flex flex-wrap items-center justify-between gap-2"><span className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Evolución de la cartera · colocación del mes</span><span className="t9" style={{ color: C.faint }}>Hoy <b style={{ color: "#1d4ed8" }}>{fmtMMc(cmEdit.colocHoy)}</b> · al cierre entre <b style={{ color: "#c2392f" }}>{fmtMMc(cmEdit.minEnd)}</b> y <b style={{ color: "#047857" }}>{fmtMMc(cmEdit.maxEnd)}</b></span></div><ColocacionChart model={cmEdit} h={150} /></div>
+            {!esJefe && <div className="mt-3 flex items-center gap-2 rounded-xl p-2.5 t11" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#C2410C" }}><AlertTriangle size={14} /> Solo la jefatura puede editar las metas.</div>}
+            <div className="mt-3"><div className="mb-1 flex flex-wrap items-center justify-between gap-2"><span className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Evolución de la cartera · colocación del mes</span><span className="t9" style={{ color: C.faint }}>Hoy <b style={{ color: "#2563EB" }}>{fmtMMc(cmEdit.colocHoy)}</b> · al cierre entre <b style={{ color: "#DC2626" }}>{fmtMMc(cmEdit.minEnd)}</b> y <b style={{ color: "#16A34A" }}>{fmtMMc(cmEdit.maxEnd)}</b></span></div><ColocacionChart model={cmEdit} h={150} /></div>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="rounded-xl p-3" style={{ backgroundColor: "#e0f2fe", border: "1px solid #bae6fd" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#0369a1" }}>Línea de crédito disponible</div><div className="t14 font-bold" style={{ color: "#0369a1" }}>{fmtMMc(sig.lineaDisp)}</div><div className="t9" style={{ color: C.faint }}>{sig.lineaPct}% de {fmtMMc(sig.lineaAprob)} aprobada</div></div>
+              <div className="rounded-xl p-3" style={{ backgroundColor: "#EFF6FF", border: "1px solid #BFDBFE" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#2563EB" }}>Línea de crédito disponible</div><div className="t14 font-bold" style={{ color: "#2563EB" }}>{fmtMMc(sig.lineaDisp)}</div><div className="t9" style={{ color: C.faint }}>{sig.lineaPct}% de {fmtMMc(sig.lineaAprob)} aprobada</div></div>
               <div className="rounded-xl p-3" style={{ backgroundColor: sig.riesgo.bg, border: `1px solid ${sig.riesgo.c}33` }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: sig.riesgo.c }}>Comportamiento de riesgo</div><div className="t14 font-bold" style={{ color: sig.riesgo.c }}>{sig.riesgo.l}</div><div className="t9" style={{ color: C.faint }}>{sig.moraDias > 0 ? `Morosidad ${sig.moraDias} días` : "Sin morosidad vigente"}</div></div>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-4"><span className="t12 font-semibold" style={{ color: C.sub }}>Definir la meta por:</span>{[["sow", "SOW (%)"], ["colocacion", "Colocación (MM$)"]].map(([k, l]) => (<label key={k} className="flex cursor-pointer items-center gap-1.5 t12" style={{ color: criterio === k ? C.ink : C.sub }}><input type="radio" name="critMetaPPE" disabled={!esJefe} checked={criterio === k} onChange={() => setCriterio(k)} style={{ accentColor: C.indigo }} /><span className={criterio === k ? "font-semibold" : ""}>{l}</span></label>))}</div>
             <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div><div className="mb-1.5 t12" style={{ color: C.sub }}>Meta SOW (%){criterio === "colocacion" ? " · calculado" : ""}</div><input type="number" disabled={!esJefe || criterio !== "sow"} value={ef.metaSow} onChange={(e) => { const v = Math.max(0, Math.min(100, parseInt(e.target.value || "0", 10) || 0)); setEf({ metaSow: v, metaColoc: Math.round(v / 100 * flujo) }); }} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: (esJefe && criterio === "sow") ? "#fff" : "#f8fafc" }} /><div className="mt-1 t9" style={{ color: sowExcede ? "#dc2626" : C.faint }}>{criterio === "sow" ? `Brecha objetivo: +${gap} pp sobre el SoW actual.` : sowExcede ? "La colocación supera el flujo: SOW limitado a 100%." : "Participación sobre el flujo de buenas facturas."}</div></div>
-              <div><div className="mb-1.5 t12" style={{ color: C.sub }}>Meta colocación (MM$){criterio === "sow" ? " · estimado" : ""}</div><input type="number" disabled={!esJefe || criterio !== "colocacion"} value={ef.metaColoc} onChange={(e) => { const v = Math.max(0, parseInt(e.target.value || "0", 10) || 0); setEf({ metaColoc: v, metaSow: Math.min(100, Math.round(v / (flujo || 1) * 100)) }); }} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: (esJefe && criterio === "colocacion") ? "#fff" : "#f8fafc" }} /><div className="mt-1 t9" style={{ color: C.faint }}>{criterio === "sow" ? `Estimado = SOW × facturas buenas (prom. 3m: ${fmtMMc(flujo)}).` : `Facturas buenas (prom. 3m): ${fmtMMc(flujo)}.`}</div></div>
+              <div><div className="mb-1.5 t12" style={{ color: C.sub }}>Meta SOW (%){criterio === "colocacion" ? " · calculado" : ""}</div><input type="number" disabled={!esJefe || criterio !== "sow"} value={ef.metaSow} onChange={(e) => { const v = Math.max(0, Math.min(100, parseInt(e.target.value || "0", 10) || 0)); setEf({ metaSow: v, metaColoc: Math.round(v / 100 * flujo) }); }} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: (esJefe && criterio === "sow") ? "#fff" : "#F9FAFB" }} /><div className="mt-1 t9" style={{ color: sowExcede ? "#dc2626" : C.faint }}>{criterio === "sow" ? `Brecha objetivo: +${gap} pp sobre el SoW actual.` : sowExcede ? "La colocación supera el flujo: SOW limitado a 100%." : "Participación sobre el flujo de buenas facturas."}</div></div>
+              <div><div className="mb-1.5 t12" style={{ color: C.sub }}>Meta colocación (MM$){criterio === "sow" ? " · estimado" : ""}</div><input type="number" disabled={!esJefe || criterio !== "colocacion"} value={ef.metaColoc} onChange={(e) => { const v = Math.max(0, parseInt(e.target.value || "0", 10) || 0); setEf({ metaColoc: v, metaSow: Math.min(100, Math.round(v / (flujo || 1) * 100)) }); }} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: (esJefe && criterio === "colocacion") ? "#fff" : "#F9FAFB" }} /><div className="mt-1 t9" style={{ color: C.faint }}>{criterio === "sow" ? `Estimado = SOW × facturas buenas (prom. 3m: ${fmtMMc(flujo)}).` : `Facturas buenas (prom. 3m): ${fmtMMc(flujo)}.`}</div></div>
             </div>
-            <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: "#ecfdf5", border: "1px solid #bbf7d0" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#047857" }}>Rentabilidad objetivo · spread 33 pbs</div><div className="t14 font-bold" style={{ color: "#047857" }}>{fmtMMc(rentObj)}</div><div className="t9" style={{ color: C.faint }}>0,33% sobre la meta de colocación definida. Para sostener la meta al cierre debe colocar {fmtMMc(cmEdit.faltante)} en el mes.</div></div>
+            <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#16A34A" }}>Rentabilidad objetivo · spread 33 pbs</div><div className="t14 font-bold" style={{ color: "#16A34A" }}>{fmtMMc(rentObj)}</div><div className="t9" style={{ color: C.faint }}>0,33% sobre la meta de colocación definida. Para sostener la meta al cierre debe colocar {fmtMMc(cmEdit.faltante)} en el mes.</div></div>
             <div className="mt-4"><div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Bitácora de cambios</div><div className="mt-1.5 space-y-1.5" style={{ maxHeight: 120, overflowY: "auto" }}>{log.length === 0 && <div className="t10" style={{ color: C.faint }}>Sin cambios registrados.</div>}{log.map((ch, i) => { const d = new Date(ch.ts); const p2 = (n) => String(n).padStart(2, "0"); return (<div key={i} className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 t10" style={{ backgroundColor: C.page }}><span style={{ color: C.ink }}><b>{ch.campo}</b>: {ch.de} → <b style={{ color: C.indigo }}>{ch.a}</b></span><span style={{ color: C.faint }}>{ch.usuario} · {p2(d.getDate())}/{p2(d.getMonth() + 1)} {p2(d.getHours())}:{p2(d.getMinutes())}</span></div>); })}</div></div>
-            <div className="mt-5 flex items-center justify-end gap-3"><button onClick={() => setEditMeta(null)} className="t13 font-semibold" style={{ color: C.sub }}>Cerrar</button><button onClick={guardarEdit} disabled={!esJefe} className="inline-flex items-center gap-1.5 rounded-lg px-5 py-2.5 t13 font-semibold text-white" style={{ backgroundColor: esJefe ? C.indigo : "#cbd5e1", cursor: esJefe ? "pointer" : "not-allowed" }}><Check size={14} /> Guardar cambios</button></div>
+            <div className="mt-5 flex items-center justify-end gap-3"><button onClick={() => setEditMeta(null)} className="t13 font-semibold" style={{ color: C.sub }}>Cerrar</button><button onClick={guardarEdit} disabled={!esJefe} className="inline-flex items-center gap-1.5 rounded-lg px-5 py-2.5 t13 font-semibold text-white" style={{ backgroundColor: esJefe ? C.indigo : "#D1D5DB", cursor: esJefe ? "pointer" : "not-allowed" }}><Check size={14} /> Guardar cambios</button></div>
           </div>
         </div>
       ); })()}
@@ -10504,7 +10532,7 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(15,23,42,.55)" }} onClick={() => setAddOpen(false)}>
           <div className="w-full max-w-lg rounded-2xl p-5" style={{ backgroundColor: "#fff", maxHeight: "88vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between"><div><h3 className="text-lg font-bold" style={{ color: C.ink }}>Agregar cliente al plan</h3><p className="t10" style={{ color: C.faint }}>Selecciona un cliente candidato. Se agrega con metas por defecto (editables al hacer clic en su fila).</p></div><button onClick={() => setAddOpen(false)} style={{ color: C.faint }}><X size={18} /></button></div>
-            <div className="mt-3 flex items-center gap-1.5 rounded-lg px-2 py-1.5" style={{ border: `1px solid ${C.line}` }}><Search size={13} style={{ color: C.faint }} /><input autoFocus value={qAdd} onChange={(e) => setQAdd(e.target.value)} placeholder="Buscar empresa…" className="t12 outline-none w-full" style={{ color: C.ink }} /></div>
+            <div className="mt-3 flex items-center gap-1.5 rounded-full px-2 py-1.5" style={{ border: `1px solid ${C.line}` }}><Search size={13} style={{ color: C.faint }} /><input autoFocus value={qAdd} onChange={(e) => setQAdd(e.target.value)} placeholder="Buscar empresa…" className="t12 outline-none w-full" style={{ color: C.ink }} /></div>
             <div className="mt-2 space-y-1" style={{ maxHeight: 320, overflowY: "auto" }}>{candidatos.map((c) => (<button key={c.id} onClick={() => agregarCliente(c)} className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-stone-50" style={{ border: `1px solid ${C.line}` }}><span><span className="t12 font-semibold" style={{ color: C.ink }}>{c.nombre}</span><span className="ml-1.5 t9" style={{ color: C.faint }}>{c.ej} · {fmtMMc(c.vol)}</span></span><Plus size={14} style={{ color: C.indigo }} /></button>))}{candidatos.length === 0 && <div className="py-6 text-center t11" style={{ color: C.faint }}>Sin candidatos para agregar.</div>}</div>
           </div>
         </div>
@@ -10516,16 +10544,21 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
             <div className="flex items-start justify-between"><div><div className="text-lg font-bold" style={{ color: C.ink }}>Meta de nuevas empresas por ejecutivo</div><div className="t10" style={{ color: C.faint }}>Fija, para cada ejecutivo a cargo, cuántas empresas nuevas espera por mes. Los meses cerrados muestran el real y el cumplimiento.</div></div><button onClick={() => setMetaEmpOpen(false)} className="rounded-md p-1" style={{ color: C.faint }}><X size={18} /></button></div>
             <div className="mt-3 flex items-center gap-2"><span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Ejecutivo</span><select value={metaEmpExec || ""} onChange={(e) => setMetaEmpExec(e.target.value)} className="rounded-md px-2 py-1.5 t11 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink }}>{(inisScope.length ? inisScope : PC_EXECS.map((e) => e.ini)).map((ini) => { const ex = PC_EXECS.find((e) => e.ini === ini); return <option key={ini} value={ini}>{ex ? ex.nombre : ini}</option>; })}</select><span className="ml-auto t9" style={{ color: C.faint }}>Total anual: <b style={{ color: C.sub }}>{(metaEmpDraft[metaEmpExec] || []).reduce((s, v) => s + (v || 0), 0)}</b></span></div>
             <div className="mt-2 space-y-1">{MES_NOM.map((mn, mi) => { const cerr = mesCerrado(mi); const real = cerr ? nuevasEmpRealMes(metaEmpExec, mi) : null; const meta = (metaEmpDraft[metaEmpExec] || [])[mi] || 0; const cumpl = cerr && meta ? Math.round((real / meta) * 100) : null; return (
-              <div key={mi} className="flex items-center gap-2 rounded-lg px-2 py-1.5" style={{ backgroundColor: mi === MES_ACT ? "#eef2ff" : cerr ? "#fafaf9" : "#fff", border: `1px solid ${mi === MES_ACT ? "#c7d2fe" : C.line}` }}>
+              <div key={mi} className="flex items-center gap-2 rounded-lg px-2 py-1.5" style={{ backgroundColor: mi === MES_ACT ? "#F1ECFF" : cerr ? "#F9FAFB" : "#fff", border: `1px solid ${mi === MES_ACT ? "#D9CCFF" : C.line}` }}>
                 <span className="w-8 t11 font-semibold" style={{ color: C.ink }}>{mn}</span><span className="t9" style={{ color: C.faint }}>Meta</span>
                 <input type="number" value={(metaEmpDraft[metaEmpExec] || [])[mi] ?? 0} onChange={(e) => setMetaEmpDraft((d) => { const nd = { ...d, [metaEmpExec]: [...(d[metaEmpExec] || Array(12).fill(0))] }; nd[metaEmpExec][mi] = Math.max(0, parseInt(e.target.value || "0", 10) || 0); return nd; })} className="w-16 rounded-md px-2 py-1 t11 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
-                {cerr ? <span className="ml-auto t10" style={{ color: C.sub }}>real <b style={{ color: C.ink }}>{real}</b> · cumpl <b style={{ color: cumpl >= 100 ? "#047857" : cumpl >= 80 ? "#b45309" : "#dc2626" }}>{cumpl}%</b></span> : <span className="ml-auto t9" style={{ color: C.faint }}>{mi === MES_ACT ? "en curso" : "pendiente"}</span>}
+                {cerr ? <span className="ml-auto t10" style={{ color: C.sub }}>real <b style={{ color: C.ink }}>{real}</b> · cumpl <b style={{ color: cumpl >= 100 ? "#16A34A" : cumpl >= 80 ? "#C2410C" : "#dc2626" }}>{cumpl}%</b></span> : <span className="ml-auto t9" style={{ color: C.faint }}>{mi === MES_ACT ? "en curso" : "pendiente"}</span>}
               </div>
             ); })}</div>
-            <div className="mt-4 flex justify-end gap-2"><button onClick={() => setMetaEmpOpen(false)} className="rounded-lg px-3 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button><button onClick={() => { META_NUEVAS_EMP = JSON.parse(JSON.stringify(metaEmpDraft)); registrarAuditoria({ usuario: usuarioNombre, modulo: "Plan por ejecutivo", accion: "Editar meta nuevas empresas", glosa: "Actualizó las metas mensuales de nuevas empresas por ejecutivo", exito: true }); setMetaEmpOpen(false); }} className="rounded-lg px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Guardar</button></div>
+            <div className="mt-4 flex justify-end gap-2"><button onClick={() => setMetaEmpOpen(false)} className="rounded-full px-4 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button><button onClick={() => { META_NUEVAS_EMP = JSON.parse(JSON.stringify(metaEmpDraft)); registrarAuditoria({ usuario: usuarioNombre, modulo: "Plan por ejecutivo", accion: "Editar meta nuevas empresas", glosa: "Actualizó las metas mensuales de nuevas empresas por ejecutivo", exito: true }); setMetaEmpOpen(false); }} className="rounded-full px-4 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Guardar</button></div>
           </div>
         </>
       )}
+      <ConfirmDialog abierto={!!confirmQuitar} titulo="¿Quitar este cliente del plan?"
+        descripcion={confirmQuitar ? `${confirmQuitar.nombre} saldrá del plan del ejecutivo. Sus metas y seguimiento de SOW dejan de contar para este mes.` : ""}
+        etiquetaConfirmar="Quitar del plan"
+        onConfirmar={() => { quitar(confirmQuitar.id, confirmQuitar.nombre); setConfirmQuitar(null); }}
+        onCancelar={() => setConfirmQuitar(null)} />
     </div>
   );
 }
@@ -10597,18 +10630,18 @@ function OperacionesView({ deals, onOpen, soloExec }) {
   const facRows = facTodas.filter((f) => (fCliente === "todos" || f.cliente === fCliente) && (!q || f.cliente.toLowerCase().includes(q.toLowerCase()) || (f.deudor || "").toLowerCase().includes(q.toLowerCase()) || String(f.folio).includes(q) || String(f.neg).includes(q)));
   const montoGirado = todas.reduce((s, o) => s + (o.giroMM || 0), 0);
   const nGiradas = todas.filter(esGirada).length;
-  const estColor = { "Girada": { bg: "#ecfdf5", fg: "#047857" }, "En cesión": { bg: "#f0fdfa", fg: "#0f766e" }, "Aceptada": { bg: "#eff6ff", fg: "#1d4ed8" }, "En otorgamiento": { bg: "#f5f3ff", fg: "#6d28d9" } };
+  const estColor = { "Girada": { bg: "#F0FDF4", fg: "#16A34A" }, "En cesión": { bg: "#f0fdfa", fg: "#0f766e" }, "Aceptada": { bg: "#eff6ff", fg: "#2563EB" }, "En otorgamiento": { bg: "#f5f3ff", fg: "#7C3AED" } };
   const cols = ["N° operación", "Cliente / Deudor", "Facturas", "Monto docs", "Tasa", "Monto girado", "Fecha", "Estado", "Cobranza", "Ejecutivo"];
   const facCols = ["Folio", "N° operación", "Cliente / Deudor", "Monto", "Vencimiento", "Cobranza", "Ejecutivo"];
-  const pagoCol = { "Pagada": { bg: "#ecfdf5", fg: "#047857" }, "Parcial": { bg: "#fffbeb", fg: "#b45309" }, "Pendiente": { bg: "#f5f5f4", fg: "#57534e" } };
+  const pagoCol = { "Pagada": { bg: "#F0FDF4", fg: "#16A34A" }, "Parcial": { bg: "#FFF7ED", fg: "#C2410C" }, "Pendiente": { bg: "#F3F4F6", fg: "#4B5563" } };
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         {[
           { t: "Operaciones", v: todas.length.toLocaleString("es-CL"), s: "cursadas en el período", col: C.ink, bg: "#fff", bd: C.line },
-          { t: "Monto girado", v: fmtMM(montoGirado), s: "total desembolsado a clientes", col: "#047857", bg: "#ecfdf5", bd: "#bbf7d0" },
+          { t: "Monto girado", v: fmtMM(montoGirado), s: "total desembolsado a clientes", col: "#16A34A", bg: "#F0FDF4", bd: "#bbf7d0" },
           { t: "Giradas", v: nGiradas.toLocaleString("es-CL"), s: "operaciones ya desembolsadas", col: "#16a34a", bg: "#fff", bd: C.line },
-          { t: "En proceso", v: (todas.length - nGiradas).toLocaleString("es-CL"), s: "aceptadas / cesión / otorgamiento", col: "#6d28d9", bg: "#fff", bd: C.line },
+          { t: "En proceso", v: (todas.length - nGiradas).toLocaleString("es-CL"), s: "aceptadas / cesión / otorgamiento", col: "#7C3AED", bg: "#fff", bd: C.line },
         ].map((k, i) => (
           <div key={i} className="rounded-xl p-3" style={{ backgroundColor: k.bg, border: `1px solid ${k.bd}` }}>
             <div className="t9 font-bold uppercase tracking-wide" style={{ color: k.col }}>{k.t}</div>
@@ -10618,12 +10651,12 @@ function OperacionesView({ deals, onOpen, soloExec }) {
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-lg p-0.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#f5f5f4" }}>
+        <div className="inline-flex rounded-lg p-0.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F3F4F6" }}>
           {[["operaciones", "Operaciones"], ["facturas", "Apertura por factura"]].map(([k, l]) => (
             <button key={k} onClick={() => setVista(k)} className="rounded-md px-3 py-1 t12 font-semibold" style={{ backgroundColor: vista === k ? "#fff" : "transparent", color: vista === k ? C.indigo : C.sub, boxShadow: vista === k ? "0 1px 2px rgba(0,0,0,.08)" : "none" }}>{l}</button>
           ))}
         </div>
-        <div className="flex items-center gap-1.5 rounded-lg px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+        <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
           <Search size={13} style={{ color: C.faint }} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por cliente, deudor, folio o N°…" className="w-52 bg-transparent t12 outline-none" style={{ color: C.ink }} />
         </div>
@@ -10642,19 +10675,19 @@ function OperacionesView({ deals, onOpen, soloExec }) {
           <tbody>
             {rows.map((o) => { const ec = estColor[o.estado] || estColor["Girada"]; return (
               <tr key={o.id} onClick={() => o.deal && onOpen && onOpen(o.deal)} className={o.deal ? "cursor-pointer hover:bg-stone-50" : ""} style={{ borderBottom: `1px solid ${C.line}` }}>
-                <td className="whitespace-nowrap px-3 py-2.5"><div className="flex items-center gap-1.5"><span className="font-semibold" style={{ color: C.ink }}>N° {o.neg}</span>{o.nueva && <span className="rounded px-1.5 py-0.5 t8 font-bold" style={{ backgroundColor: "#fef9c3", color: "#a16207" }}>NUEVA</span>}</div></td>
+                <td className="whitespace-nowrap px-3 py-2.5"><div className="flex items-center gap-1.5"><span className="font-semibold" style={{ color: C.ink }}>N° {o.neg}</span>{o.nueva && <span className="rounded-full px-1.5 py-0.5 t8 font-bold" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>NUEVA</span>}</div></td>
                 <td className="px-3 py-2.5"><div className="t12 font-medium" style={{ color: C.ink }}>{o.cliente}</div><div className="t9" style={{ color: C.faint }}>Deudor: {o.deudor}</div></td>
                 <td className="px-3 py-2.5 t11" style={{ color: C.sub }}>{o.facturas}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11 font-medium" style={{ color: C.ink }}>{fmtMM(o.montoMM)}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>{o.tasa}</td>
-                <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: "#047857" }}>{fmtMM(o.giroMM)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: "#16A34A" }}>{fmtMM(o.giroMM)}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>{o.fecha}</td>
                 <td className="whitespace-nowrap px-3 py-2.5"><span className="rounded-md px-2 py-1 t10 font-semibold" style={{ backgroundColor: ec.bg, color: ec.fg }}>{o.estado}</span></td>
                 <td className="whitespace-nowrap px-3 py-2.5">{(() => { const pc = pagoCol[o.estadoPago] || pagoCol["Pendiente"]; return (
                   <div>
-                    <span className="rounded-md px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: pc.bg, color: pc.fg }}>{o.estadoPago}{o.estadoPago !== "Pendiente" ? ` · ${o.pctPagado}%` : ""}</span>
+                    <span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: pc.bg, color: pc.fg }}>{o.estadoPago}{o.estadoPago !== "Pendiente" ? ` · ${o.pctPagado}%` : ""}</span>
                     {o.estadoPago !== "Pendiente" && <div className="mt-0.5 t9" style={{ color: C.faint }}>{fmtMM(o.montoPagado)}</div>}
-                    {o.aTiempo === true && <div className="t9 font-semibold" style={{ color: "#047857" }}>A tiempo ✓</div>}
+                    {o.aTiempo === true && <div className="t9 font-semibold" style={{ color: "#16A34A" }}>A tiempo ✓</div>}
                     {o.aTiempo === false && <div className="t9 font-semibold" style={{ color: "#dc2626" }}>Atrasada +{o.diasAtraso}d</div>}
                   </div>
                 ); })()}</td>
@@ -10683,9 +10716,9 @@ function OperacionesView({ deals, onOpen, soloExec }) {
                 <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>{f.venc}</td>
                 <td className="whitespace-nowrap px-3 py-2.5">{(() => { const pc = pagoCol[f.estadoPago] || pagoCol["Pendiente"]; return (
                   <div>
-                    <span className="rounded-md px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: pc.bg, color: pc.fg }}>{f.estadoPago}{f.estadoPago === "Pagada" ? ` · ${f.pctPagado}%` : ""}</span>
+                    <span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: pc.bg, color: pc.fg }}>{f.estadoPago}{f.estadoPago === "Pagada" ? ` · ${f.pctPagado}%` : ""}</span>
                     {f.estadoPago === "Pagada" && <div className="mt-0.5 t9" style={{ color: C.faint }}>{fmtMM(f.montoPagado)}</div>}
-                    {f.aTiempo === true && <div className="t9 font-semibold" style={{ color: "#047857" }}>A tiempo ✓</div>}
+                    {f.aTiempo === true && <div className="t9 font-semibold" style={{ color: "#16A34A" }}>A tiempo ✓</div>}
                     {f.aTiempo === false && <div className="t9 font-semibold" style={{ color: "#dc2626" }}>Atrasada +{f.diasAtraso}d</div>}
                   </div>
                 ); })()}</td>
@@ -10727,11 +10760,11 @@ const LINEAS_DATA = (() => {
 function lineaRecomendacion(l) {
   const disponible = l.aprobada - l.uso;
   if (l.morosidadDias >= 30) return { tipo: "Bloquear línea", color: "#dc2626", bg: "#fef2f2", texto: `Morosidad grave (${l.morosidadDias} días): bloquear la línea y suspender nuevas operaciones hasta regularizar.` };
-  if (l.morosidadDias > 0) return { tipo: "Sujeto a aprobación", color: "#b45309", bg: "#fffbeb", texto: `Morosidad de ${l.morosidadDias} días: dejar las nuevas operaciones sujetas a aprobación y evaluar una reducción de la línea.` };
+  if (l.morosidadDias > 0) return { tipo: "Sujeto a aprobación", color: "#C2410C", bg: "#FFF7ED", texto: `Morosidad de ${l.morosidadDias} días: dejar las nuevas operaciones sujetas a aprobación y evaluar una reducción de la línea.` };
   const faltante = Math.max(0, l.demandaBuenos - disponible);
-  if (faltante > 0 && l.sowActual < l.sowTarget) return { tipo: "Aumentar línea", color: "#1d4ed8", bg: "#eff6ff", texto: `Tiene ${fmtMM(faltante)} en facturas de buenos deudores sin financiar por límite insuficiente; frena el SOW (${l.sowActual}% vs ${l.sowTarget}% target). Se recomienda ampliar la línea.` };
-  if (l.proyeccion > l.aprobada) return { tipo: "Revisar / ampliar", color: "#b45309", bg: "#fffbeb", texto: `La proyección post-curse (${fmtMM(l.proyeccion)}) supera la línea aprobada (${fmtMM(l.aprobada)}): requiere otorgamiento o ampliar el límite.` };
-  return { tipo: "Mantener", color: "#047857", bg: "#ecfdf5", texto: "Línea adecuada al comportamiento y volumen actual. Mantener." };
+  if (faltante > 0 && l.sowActual < l.sowTarget) return { tipo: "Aumentar línea", color: "#2563EB", bg: "#eff6ff", texto: `Tiene ${fmtMM(faltante)} en facturas de buenos deudores sin financiar por límite insuficiente; frena el SOW (${l.sowActual}% vs ${l.sowTarget}% target). Se recomienda ampliar la línea.` };
+  if (l.proyeccion > l.aprobada) return { tipo: "Revisar / ampliar", color: "#C2410C", bg: "#FFF7ED", texto: `La proyección post-curse (${fmtMM(l.proyeccion)}) supera la línea aprobada (${fmtMM(l.aprobada)}): requiere otorgamiento o ampliar el límite.` };
+  return { tipo: "Mantener", color: "#16A34A", bg: "#F0FDF4", texto: "Línea adecuada al comportamiento y volumen actual. Mantener." };
 }
 function lineaSalud(l) {
   if (l.morosidadDias >= 30) return { label: "Crítica", color: "#dc2626" };
@@ -10808,12 +10841,12 @@ function generarNotasIA(ctx) {
 // Panel del patrón interactivo: RECUPERAR (API) → ACEPTAR Y CARGAR → editar → confirmar el paso.
 function PanelRecupera({ fuente, resumen, cargado, onCargar, preview }) {
   return cargado ? (
-    <div className="mb-2 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#ecfdf5", border: "1px solid #bbf7d0", color: "#047857" }}>
+    <div className="mb-2 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0", color: "#16A34A" }}>
       <Check size={11} /> Información de <b>{fuente}</b> cargada · {nowStamp()}
     </div>
   ) : (
     <div className="mb-2 rounded-lg p-3" style={{ backgroundColor: "#eff6ff", border: "1px solid #bfdbfe" }}>
-      <div className="t11 font-semibold" style={{ color: "#1d4ed8" }}>Recuperamos esta información de {fuente}</div>
+      <div className="t11 font-semibold" style={{ color: "#2563EB" }}>Recuperamos esta información de {fuente}</div>
       <div className="mt-0.5 t10" style={{ color: C.sub }}>{resumen}. Revísala y acéptala para vaciarla en la sección; luego podrás editar los campos propuestos.</div>
       {preview && preview.length > 0 && (
         <div className="mt-2 grid gap-x-4 gap-y-0.5 rounded-lg bg-white p-2.5 md:grid-cols-2" style={{ border: "1px solid #bfdbfe" }}>
@@ -10825,7 +10858,7 @@ function PanelRecupera({ fuente, resumen, cargado, onCargar, preview }) {
           ))}
         </div>
       )}
-      <button onClick={onCargar} className="mt-2 rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: "#1d4ed8" }}>Aceptar y cargar</button>
+      <button onClick={onCargar} className="mt-2 rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: "#2563EB" }}>Aceptar y cargar</button>
     </div>
   );
 }
@@ -10891,19 +10924,22 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
   const inpSty = { border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" };
   const Fila = ({ k, v }) => <div className="flex items-center justify-between gap-3 py-1 t11" style={{ borderBottom: `1px solid ${C.line}` }}><span style={{ color: C.sub }}>{k}</span><span className="text-right font-medium" style={{ color: C.ink }}>{v}</span></div>;
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto ovl p-6" onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-4xl rounded-2xl bg-white p-5 shadow-2xl" style={{ border: `1px solid ${C.line}` }}>
-        <div className="flex items-start justify-between">
-          <div>
-            <div className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Crear presentación al comité · {rut}</div>
-            <div className="t15 font-bold" style={{ color: C.ink }}>{cliente || "Nueva línea"}</div>
-          </div>
-          <button onClick={onClose} className="rounded-md p-1 hover:bg-stone-100" style={{ color: C.sub }}><X size={16} /></button>
-        </div>
+    <div className="w-full">
+      {/* Página standalone (patrón FormDetail): breadcrumb nivel 3 + encabezado de página, sin card envolvente */}
+      <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>
+        Comercial <ChevronRight size={12} />
+        <button onClick={onClose} className="font-medium hover:underline" style={{ color: C.indigo }}>Líneas de crédito</button>
+        <ChevronRight size={12} /> Presentación al comité
+      </div>
+      <div className="mt-1 mb-4">
+        <h1 className="text-2xl font-semibold tracking-tight" style={{ color: C.navy }}>{cliente || "Nueva línea"}</h1>
+        <div className="mt-0.5 t11" style={{ color: C.sub }}>Crear presentación al comité · {rut}</div>
+      </div>
+      <div className="w-full">
         {/* Chevrons de progreso con check de sección confirmada */}
         <div className="mt-3 flex flex-wrap gap-1">
           {PASOS.map((p, i) => (
-            <button key={p} onClick={() => setPaso(i)} className="flex items-center gap-1 rounded-md px-2.5 py-1.5 t10 font-semibold" style={{ backgroundColor: paso === i ? "#6d28d9" : ok[i] ? "#ecfdf5" : C.page, color: paso === i ? "#fff" : ok[i] ? "#047857" : C.sub, border: `1px solid ${paso === i ? "#6d28d9" : ok[i] ? "#bbf7d0" : C.line}` }}>
+            <button key={p} onClick={() => setPaso(i)} className="flex items-center gap-1 rounded-md px-2.5 py-1.5 t10 font-semibold" style={{ backgroundColor: paso === i ? "#703EFF" : ok[i] ? "#F0FDF4" : C.page, color: paso === i ? "#fff" : ok[i] ? "#16A34A" : C.sub, border: `1px solid ${paso === i ? "#703EFF" : ok[i] ? "#bbf7d0" : C.line}` }}>
               {ok[i] && paso !== i ? <Check size={10} /> : null}{i + 1}. {p}
             </button>
           ))}
@@ -10911,12 +10947,12 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
         <div className="mt-3" style={{ minHeight: 340 }}>
           {paso === 0 && (
             <>
-              <div className="mb-2 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#ecfdf5", border: "1px solid #bbf7d0", color: "#047857" }}>
+              <div className="mb-2 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0", color: "#16A34A" }}>
                 <Check size={11} /> Información recuperada automáticamente de <b>API 4 · Plataforma 360 + API 5 · Documental</b> — firmográfica, comercial, {api4.socios.length} socio(s) y {api5d.length} documento(s) · {nowStamp()}
               </div>
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                  <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#6d28d9" }}>Información RUT y solicitud</div>
+                  <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Información RUT y solicitud</div>
                   <Fila k="Rut / Nombre" v={`${rut} · ${cliente}`} />
                   <Fila k="Estado de línea" v={linea ? "Línea Vigente" : "Sin línea (nueva)"} />
                   <div className="flex items-center justify-between gap-3 py-1 t11" style={{ borderBottom: `1px solid ${C.line}` }}><span style={{ color: C.sub }}>Motivo</span>
@@ -10929,7 +10965,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                     </select></div>}
                   <Fila k="Vigencia" v="12 meses" />
                   {carg[0] && <>
-                    <div className="t9 font-bold uppercase tracking-wide mt-2 mb-1" style={{ color: "#6d28d9" }}>Cliente · Plataforma 360</div>
+                    <div className="t9 font-bold uppercase tracking-wide mt-2 mb-1" style={{ color: "#7C3AED" }}>Cliente · Plataforma 360</div>
                     <Fila k="Actividad económica" v={api4.firmografica.actividad} />
                     <Fila k="Sector" v={api4.firmografica.sector} />
                     <Fila k="N° trabajadores" v={api4.firmografica.trabajadores} />
@@ -10939,15 +10975,15 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                   </>}
                 </div>
                 <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                  <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#6d28d9" }}>Documentos adjuntos · repositorio</div>
+                  <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Documentos adjuntos · repositorio</div>
                   {carg[0] ? api5d.map((d, i) => (
                     <div key={i} className="flex items-center justify-between gap-2 py-1 t10" style={{ borderBottom: `1px solid ${C.line}` }}>
-                      <span className="truncate" style={{ color: C.ink }}><span className="rounded px-1 py-0.5 t9 font-semibold mr-1" style={{ backgroundColor: C.page, color: C.sub }}>{d.tipo}</span>{d.nombre}</span>
+                      <span className="truncate" style={{ color: C.ink }}><span className="rounded-full px-1 py-0.5 t9 font-semibold mr-1" style={{ backgroundColor: C.page, color: C.sub }}>{d.tipo}</span>{d.nombre}</span>
                       <span className="shrink-0 t9" style={{ color: C.faint }}>v{d.version} · vence {d.vencimiento}</span>
                     </div>
                   )) : <div className="t10 py-3" style={{ color: C.faint }}>Acepta la recuperación para ver los documentos.</div>}
                   {carg[0] && <>
-                    <div className="t9 font-bold uppercase tracking-wide mt-2 mb-1" style={{ color: "#6d28d9" }}>Socios</div>
+                    <div className="t9 font-bold uppercase tracking-wide mt-2 mb-1" style={{ color: "#7C3AED" }}>Socios</div>
                     {api4.socios.map((s, i) => <Fila key={i} k={s.nombre} v={`${s.participacion}% · PEP ${s.pep} · ${s.aprobLegal}`} />)}
                   </>}
                 </div>
@@ -10967,7 +11003,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                 return (
                 <div className="space-y-3">
                   <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                    <div className="t9 font-bold uppercase tracking-wide mb-1.5" style={{ color: "#6d28d9" }}>Información financiera <span className="ml-1 font-normal normal-case" style={{ color: C.faint }}>· editable — corrige lo que difiera de la información del cliente</span></div>
+                    <div className="t9 font-bold uppercase tracking-wide mb-1.5" style={{ color: "#7C3AED" }}>Información financiera <span className="ml-1 font-normal normal-case" style={{ color: C.faint }}>· editable — corrige lo que difiera de la información del cliente</span></div>
                     <div className="grid gap-2 md:grid-cols-4">
                       <Lb t="Deuda directa (MM$)"><input {...fld("directa")} /></Lb>
                       <Lb t="Deuda indirecta (MM$)"><input {...fld("indirecta")} /></Lb>
@@ -10991,20 +11027,20 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                   </div>
                   <div className="grid gap-3 md:grid-cols-3">
                     <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                      <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#6d28d9" }}>Ratios <span className="font-normal normal-case" style={{ color: C.faint }}>(calculados)</span></div>
+                      <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Ratios <span className="font-normal normal-case" style={{ color: C.faint }}>(calculados)</span></div>
                       <Fila k="Línea / Patrimonio" v={ratio(propGlobal, fin.patrimonio)} />
                       <Fila k="Línea / Ventas" v={ratio(propGlobal, ventasUltMM)} />
                       <Fila k="Deuda / Ventas" v={ratio(deudaMM, ventasUltMM)} />
                       <Fila k="Línea / Deuda" v={ratio(propGlobal, deudaMM)} />
                     </div>
                     <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                      <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#6d28d9" }}>Índices internos factoring</div>
+                      <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Índices internos factoring</div>
                       <Fila k="Morosidad" v={api6.morosidadInterna.toFixed(2)} />
                       <Fila k="Protesto %" v={api6.protestoPctInterno.toFixed(2)} />
                       <Fila k="Boletín / Protestos / Previsional" v={`${api6.boletinComercial} · ${api6.protestos} · ${api6.deudaPrevisional > 0 ? "$" + (api6.deudaPrevisional / 1e6).toFixed(1) + "MM" : "0"}`} />
                     </div>
                     <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                      <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#6d28d9" }}>Informes comerciales cliente</div>
+                      <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Informes comerciales cliente</div>
                       <div className="flex items-center justify-between gap-3 py-1 t11" style={{ borderBottom: `1px solid ${C.line}` }}><span style={{ color: C.sub }}>Históricos</span>
                         <select value={fin.historicos} onChange={(e) => setFin((f) => ({ ...f, historicos: e.target.value }))} className="rounded-md px-2 py-1 t11" style={inpSty}><option>No</option><option>Sí</option></select></div>
                       <Fila k="Vigentes" v={api6.boletinComercial > 0 ? `${api6.boletinComercial} anotación(es)` : "Sin anotaciones"} />
@@ -11012,7 +11048,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                     </div>
                   </div>
                   <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                    <div className="t9 font-bold uppercase tracking-wide mb-1.5" style={{ color: "#6d28d9" }}>Riesgo con otras empresas de factoring (ACHEF) <span className="font-normal normal-case" style={{ color: C.faint }}>· editable</span></div>
+                    <div className="t9 font-bold uppercase tracking-wide mb-1.5" style={{ color: "#7C3AED" }}>Riesgo con otras empresas de factoring (ACHEF) <span className="font-normal normal-case" style={{ color: C.faint }}>· editable</span></div>
                     <div className="grid items-end gap-2" style={{ gridTemplateColumns: "140px 90px repeat(6, 1fr) 90px" }}>
                       <Lb t="Fecha inf."><input type="date" value={fin.achefFecha} onChange={(e) => setFin((f) => ({ ...f, achefFecha: e.target.value }))} className="w-full rounded-md px-2 py-1 t10 outline-none" style={inpSty} /></Lb>
                       <Lb t="Nro empresas"><input {...fld("achefN", "1")} /></Lb>
@@ -11022,7 +11058,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                       <Lb t="Cheques MM$"><input {...fld("achefChq")} /></Lb>
                       <Lb t="Letras MM$"><input {...fld("achefLet")} /></Lb>
                       <Lb t="Otros MM$"><input {...fld("achefOtr")} /></Lb>
-                      <div className="t10 text-right font-bold" style={{ color: fin.achefMor > 0 ? "#b91c1c" : C.ink }}>Total: {achefTot} MM</div>
+                      <div className="t10 text-right font-bold" style={{ color: fin.achefMor > 0 ? "#DC2626" : C.ink }}>Total: {achefTot} MM</div>
                     </div>
                   </div>
                 </div>
@@ -11032,28 +11068,28 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
           )}
           {paso === 2 && (
             <>
-              <div className="mb-2 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.sub }}><Check size={11} style={{ color: "#047857" }} /> Datos internos de línea · CSV SFTP diario + montos vía API cada 1 h. La propuesta es editable.</div>
+              <div className="mb-2 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.sub }}><Check size={11} style={{ color: "#16A34A" }} /> Datos internos de línea · CSV SFTP diario + montos vía API cada 1 h. La propuesta es editable.</div>
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                  <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#6d28d9" }}>Situación actual</div>
+                  <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Situación actual</div>
                   <Fila k="Línea global actual" v={linea ? fmtMM(linea.aprobada) : "—"} />
                   <Fila k="Utilizada" v={linea ? `${fmtMM(linea.uso)} (${Math.round(linea.uso / linea.aprobada * 100)}%)` : "—"} />
                   <Fila k="Proyección post-curse" v={linea ? fmtMM(linea.proyeccion) : "—"} />
                   <Fila k="Morosidad" v={linea && linea.morosidadDias > 0 ? `${linea.morosidadDias} días ⚠` : "Sin morosidad"} />
                 </div>
                 <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                  <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#6d28d9" }}>Propuesta (editable)</div>
+                  <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Propuesta (editable)</div>
                   <div className="grid grid-cols-2 gap-2">
                     <label className="t10" style={{ color: C.sub }}>Línea global propuesta (MM)<input type="number" className={inp} style={inpSty} value={propGlobal} onChange={(e) => setPropGlobal(+e.target.value || 0)} /></label>
                     <label className="t10" style={{ color: C.sub }}>Vencimiento propuesto<input type="date" className={inp} style={inpSty} value={vencProp} onChange={(e) => setVencProp(e.target.value)} /></label>
                     <label className="t10" style={{ color: C.sub }}>Línea Factoring (MM)<input type="number" className={inp} style={inpSty} value={propFactoring} onChange={(e) => setPropFactoring(+e.target.value || 0)} /></label>
                     <label className="t10" style={{ color: C.sub }}>Línea Confirming (MM)<input type="number" className={inp} style={inpSty} value={propConfirming} onChange={(e) => setPropConfirming(+e.target.value || 0)} /></label>
                   </div>
-                  <div className="mt-2 rounded-lg px-3 py-1.5 t11 font-bold" style={{ backgroundColor: "#f5f3ff", color: "#6d28d9" }}>Total propuesto: {fmtMM(totalPropuesto)}</div>
+                  <div className="mt-2 rounded-lg px-3 py-1.5 t11 font-bold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>Total propuesto: {fmtMM(totalPropuesto)}</div>
                 </div>
               </div>
               <div className="mt-3 rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                <div className="flex items-center justify-between"><div className="t9 font-bold uppercase tracking-wide" style={{ color: "#6d28d9" }}>Subproducto Factoring</div>
+                <div className="flex items-center justify-between"><div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>Subproducto Factoring</div>
                   <button onClick={() => setSubprod((p) => [...p, { tipoDoc: "CHEQUE PROPIO", aprobado: 0, utilizado: 0, propuesta: 50, anticipo: 100, plazoMax: 120 }])} className="t10 font-semibold" style={{ color: C.indigo }}>+ Agregar producto</button></div>
                 <div className="mt-1 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "1fr 90px 90px 110px 70px 90px 20px", color: C.faint }}><span>Tipo documento</span><span>Aprobado</span><span>Utilizado</span><span>Propuesta</span><span>Antic.%</span><span>Plazo máx</span><span></span></div>
                 {subprod.map((s, i) => (
@@ -11072,7 +11108,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
           )}
           {paso === 3 && (
             <>
-              <div className="mb-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#fffbeb", border: "1px solid #fde68a", color: "#b45309" }}>Agrega <b>buenos deudores según la Nota Deudor</b> (política: nota ≥ 3,7). Al agregar cada deudor se consulta la <b>API 4 · Plataforma 360</b>; acepta su información antes de editarla.</div>
+              <div className="mb-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#C2410C" }}>Agrega <b>buenos deudores según la Nota Deudor</b> (política: nota ≥ 3,7). Al agregar cada deudor se consulta la <b>API 4 · Plataforma 360</b>; acepta su información antes de editarla.</div>
               <div className="flex items-center gap-2">
                 <select value={addSel} onChange={(e) => { setAddSel(e.target.value); if (e.target.value) pedirDeudor(e.target.value); }} className="rounded-md px-2 py-1.5 t11" style={inpSty}>
                   <option value="">+ Agregar deudor factoring…</option>
@@ -11081,10 +11117,10 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
               </div>
               {addPrev && (
                 <div className="mt-2 rounded-lg p-3" style={{ backgroundColor: "#eff6ff", border: "1px solid #bfdbfe" }}>
-                  <div className="t11 font-semibold" style={{ color: "#1d4ed8" }}>Recuperamos de API 4 · Plataforma 360: {addPrev.nombre}</div>
+                  <div className="t11 font-semibold" style={{ color: "#2563EB" }}>Recuperamos de API 4 · Plataforma 360: {addPrev.nombre}</div>
                   <div className="mt-0.5 t10" style={{ color: C.sub }}>Nota {addPrev.nota} · Deuda directa $ {(addPrev.deudaDirecta / 1e6).toFixed(1)} MM · indirecta $ {(addPrev.deudaIndirecta / 1e6).toFixed(1)} MM · propuesta sugerida {fmtMM(addPrev.propuesta)}</div>
                   <div className="mt-2 flex gap-2">
-                    <button onClick={aceptarDeudor} className="rounded-md px-3 py-1.5 t10 font-semibold text-white" style={{ backgroundColor: "#1d4ed8" }}>Aceptar y cargar</button>
+                    <button onClick={aceptarDeudor} className="rounded-md px-3 py-1.5 t10 font-semibold text-white" style={{ backgroundColor: "#2563EB" }}>Aceptar y cargar</button>
                     <button onClick={() => { setAddPrev(null); setAddSel(""); }} className="rounded-md px-3 py-1.5 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Descartar</button>
                   </div>
                 </div>
@@ -11097,22 +11133,22 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                   const conc = propFactoring > 0 ? Math.round((d.propuesta || 0) / propFactoring * 100) : 0;
                   return (
                   <div key={d.nombre} className="mt-1 grid items-center gap-2" style={{ gridTemplateColumns: DG }}>
-                    <span className="rounded px-1.5 py-0.5 t10 font-bold text-center" style={{ backgroundColor: d.nota >= 4 ? "#ecfdf5" : d.nota >= 3.7 ? "#eff6ff" : "#fffbeb", color: NOTA_COLOR(d.nota) }}>{d.nota}</span>
+                    <span className="rounded-full px-1.5 py-0.5 t10 font-bold text-center" style={{ backgroundColor: d.nota >= 4 ? "#F0FDF4" : d.nota >= 3.7 ? "#eff6ff" : "#FFF7ED", color: NOTA_COLOR(d.nota) }}>{d.nota}</span>
                     <span className="flex gap-0.5" title={d.esCliente ? "Cliente y Deudor a la vez: la empresa cede facturas como cliente y además paga como deudor." : "Sólo Deudor (pagador de las facturas)."}>
-                      <span className="flex h-4 w-4 items-center justify-center rounded-full t8 font-bold" style={{ backgroundColor: d.esCliente ? "#6d28d9" : "#e7e5e4", color: d.esCliente ? "#fff" : "#a8a29e" }}>C</span>
-                      <span className="flex h-4 w-4 items-center justify-center rounded-full t8 font-bold text-white" style={{ backgroundColor: "#6d28d9" }}>D</span>
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full t8 font-bold" style={{ backgroundColor: d.esCliente ? "#7C3AED" : "#E5E7EB", color: d.esCliente ? "#fff" : "#9CA3AF" }}>C</span>
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full t8 font-bold text-white" style={{ backgroundColor: "#7C3AED" }}>D</span>
                     </span>
                     <span className="t10" style={{ color: C.sub, fontVariantNumeric: "tabular-nums" }}>{d.rut}</span>
                     <span className="truncate t11 font-medium" style={{ color: C.ink }} title={d.nombre}>{d.nombre}</span>
                     <span className="flex gap-1" title="Política de concentración por deudor: el ejecutivo elige 25% o 30% de la línea.">
-                      {[25, 30].map((v) => <button key={v} onClick={() => updDeu(i, { politicaPct: v })} className="rounded px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: d.politicaPct === v ? "#4c1d95" : "#f3f1ec", color: d.politicaPct === v ? "#fff" : "#a8a29e" }}>{v}%</button>)}
+                      {[25, 30].map((v) => <button key={v} onClick={() => updDeu(i, { politicaPct: v })} className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: d.politicaPct === v ? "#4c1d95" : "#FAF9FB", color: d.politicaPct === v ? "#fff" : "#9CA3AF" }}>{v}%</button>)}
                     </span>
                     <span className="t10 text-right" style={{ color: C.sub }}>{d.anterior ? fmtMM(d.anterior) : "—"}</span>
                     <span className="t10 text-right" style={{ color: C.sub }}>{d.utilizado ? fmtMM(d.utilizado) : "0"}</span>
                     <input type="number" className="rounded-md px-2 py-1 t11 text-right" style={inpSty} value={d.propuesta} onChange={(e) => updDeu(i, { propuesta: +e.target.value || 0 })} />
                     <span className="t10 text-right" style={{ color: d.deudaDirecta > 0 ? C.ink : C.faint }}>{d.deudaDirecta > 0 ? "$" + (d.deudaDirecta / 1e6).toFixed(1) + "MM" : "---"}</span>
                     <span className="t10 text-right" style={{ color: d.deudaIndirecta > 0 ? C.ink : C.faint }}>{d.deudaIndirecta > 0 ? "$" + (d.deudaIndirecta / 1e6).toFixed(1) + "MM" : "---"}</span>
-                    <span className="t10 text-right font-semibold" style={{ color: conc > d.politicaPct ? "#b91c1c" : C.ink }} title={conc > d.politicaPct ? `Excede la política (${d.politicaPct}% de la línea)` : "Concentración sobre la línea factoring propuesta"}>{conc}%</span>
+                    <span className="t10 text-right font-semibold" style={{ color: conc > d.politicaPct ? "#DC2626" : C.ink }} title={conc > d.politicaPct ? `Excede la política (${d.politicaPct}% de la línea)` : "Concentración sobre la línea factoring propuesta"}>{conc}%</span>
                     <span className="flex gap-1.5">{["V", "N", "C", "FR", "CP"].map((f) => <label key={f} className="flex items-center gap-0.5 t9" style={{ color: C.sub }}><input type="checkbox" checked={!!d.flags[f]} onChange={(e) => updDeu(i, { flags: { ...d.flags, [f]: e.target.checked } })} />{f}</label>)}</span>
                     <span className="flex gap-1">
                       <button onClick={() => setEditDeu(i)} title="Editar deudor factoring" className="rounded p-0.5" style={{ color: C.indigo }}>✎</button>
@@ -11124,14 +11160,14 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                 {deudores.length === 0 && <div className="py-3 t10" style={{ color: C.faint }}>Sin deudores. Agrega al menos uno para confirmar la sección.</div>}
                 <div className="mt-2 grid items-center gap-2 t10" style={{ gridTemplateColumns: DG, borderTop: `1px solid ${C.line}`, paddingTop: 6 }}>
                   <span></span><span></span><span></span>
-                  <span className="font-semibold" style={{ color: C.ink }}>Otros Deudores Límite Máx. <input type="number" value={otrosLimite} onChange={(e) => setOtrosLimite(+e.target.value || 0)} className="mx-1 w-12 rounded-md px-1 py-0.5 t10 text-right outline-none" style={inpSty} />%</span>
+                  <span className="font-semibold" style={{ color: C.ink }}>Otros Deudores Límite Máx. <input type="number" value={otrosLimite} onChange={(e) => setOtrosLimite(+e.target.value || 0)} className="mx-1 w-12 rounded-full px-1 py-0.5 t10 text-right outline-none" style={inpSty} />%</span>
                   <span></span>
                   <span className="text-right" style={{ color: C.sub }}>{fmtMM(deudores.reduce((s, d) => s + (d.anterior || 0), 0))}</span>
                   <span className="text-right" style={{ color: C.sub }}>{fmtMM(deudores.reduce((s, d) => s + (d.utilizado || 0), 0))}</span>
                   <span className="text-right font-bold" style={{ color: C.ink }}>{fmtMM(deudores.reduce((s, d) => s + (d.propuesta || 0), 0))}</span>
                   <span></span><span></span><span></span><span></span><span></span>
                 </div>
-                {deudores.length > 0 && <div className="mt-1.5 t10 font-semibold" style={{ color: C.ink }}>Prom. Ponderado: <span style={{ color: NOTA_COLOR(promNota) }}>{promNota}</span>{promNota < 3.7 && <span className="ml-2" style={{ color: "#b45309" }}>⚠ bajo el límite de compra (3,7)</span>}</div>}
+                {deudores.length > 0 && <div className="mt-1.5 t10 font-semibold" style={{ color: C.ink }}>Prom. Ponderado: <span style={{ color: NOTA_COLOR(promNota) }}>{promNota}</span>{promNota < 3.7 && <span className="ml-2" style={{ color: "#C2410C" }}>⚠ bajo el límite de compra (3,7)</span>}</div>}
                 </>); })()}
                 </div>
               </div>
@@ -11157,7 +11193,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                     ))}</div>
                     <div className="mt-3 rounded-xl p-2.5" style={{ border: `1px solid ${C.line}` }}>
                       <div className="flex items-center justify-between">
-                        <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#6d28d9" }}>Listado de productos</div>
+                        <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>Listado de productos</div>
                         <button onClick={() => updDeu(editDeu, { productos: [...d.productos, { producto: "CHEQUE PROPIO", anterior: 0, utilizado: 0, propuesto: 0 }] })} className="t10 font-semibold" style={{ color: C.indigo }}>+ Agregar producto</button>
                       </div>
                       <div className="mt-1 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "1fr 100px 100px 110px 20px", color: C.faint }}><span>Producto</span><span className="text-right">Mto. anterior</span><span className="text-right">Mto. utilizado</span><span className="text-right">Mto. propuesto</span><span></span></div>
@@ -11184,7 +11220,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
             <div className="space-y-3">
               <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
                 <div className="flex items-center justify-between">
-                  <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#6d28d9" }}>Fianza solidaria</div>
+                  <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>Fianza solidaria</div>
                   <button onClick={() => setFianzas((p) => [...p, { rut: "", nombre: "", regimen: "Sociedad conyugal", pep: "No", fatca: "No" }])} className="t10 font-semibold" style={{ color: C.indigo }}>+ Agregar fianza solidaria</button>
                 </div>
                 {fianzas.length > 0 && <div className="mt-1 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "130px 1fr 170px 70px 70px 20px", color: C.faint }}><span>Rut</span><span>Nombre / Razón social</span><span>Régimen matrimonial</span><span>PEP</span><span>FATCA</span><span></span></div>}
@@ -11202,7 +11238,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
               </div>
               <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
                 <div className="flex items-center justify-between">
-                  <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#6d28d9" }}>Garantías</div>
+                  <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>Garantías</div>
                   <button onClick={() => setGarantias((p) => [...p, { tipo: "Hipoteca", institucion: "Factoring Security", producto: "Factoring", idGar: "G-" + (1000 + p.length + 1), fIni: hoyISO, fTer: vencProp, monto: 100, cobertura: 100 }])} className="t10 font-semibold" style={{ color: C.indigo }}>+ Agregar garantía</button>
                 </div>
                 {garantias.length > 0 && <div className="mt-1 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "150px 1fr 110px 80px 125px 125px 90px 80px 20px", color: C.faint }}><span>Tipo garantía</span><span>Institución</span><span>Producto</span><span>ID</span><span>F. inicio</span><span>F. término</span><span>Monto MM$</span><span>% Cobert.</span><span></span></div>}
@@ -11232,20 +11268,20 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
               ); })()}
               {notasCargadas && notas && [["negocio", "Negocio propuesto"], ["referencias", "Referencias comerciales"], ["antecedentes", "Antecedentes generales"], ["mercado", "Aspectos de mercado"], ["financiero", "Análisis financiero"]].map(([k, l]) => (
                 <div key={k} className="mt-2">
-                  <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#6d28d9" }}>{l} <span className="ml-1 rounded px-1 py-0.5 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#6d28d9" }}>✦ IA</span></div>
+                  <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>{l} <span className="ml-1 rounded-full px-1 py-0.5 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>✦ IA</span></div>
                   <textarea value={notas[k]} onChange={(e) => setNotas((n) => ({ ...n, [k]: e.target.value }))} rows={3} className="mt-0.5 w-full rounded-lg px-2.5 py-1.5 t11 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, lineHeight: 1.5 }} />
                 </div>
               ))}
             </>
           )}
         </div>
-        <div className="mt-3 flex items-center justify-between gap-2 border-t pt-3" style={{ borderColor: C.line }}>
+        <div className="mt-3 flex items-center justify-between gap-2 border-t pt-3 pb-3" style={{ borderColor: C.line, position: "sticky", bottom: 0, backgroundColor: "#fff", zIndex: 5 }}>
           <div className="t9" style={{ color: C.faint }}>{SOLIC_TIPOS[tipo]}{subtipo ? ` · ${SOLIC_SUBTIPOS[subtipo]}` : ""} · Total propuesto {fmtMM(totalPropuesto)}{deudores.length ? ` · ${deudores.length} deudor(es) · nota ${promNota}` : ""}</div>
           <div className="flex gap-2">
-            <button onClick={onClose} className="rounded-md px-3 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button>
-            {paso > 0 && <button onClick={() => setPaso(paso - 1)} className="rounded-md px-3 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.ink }}>‹ Anterior</button>}
-            {paso < 5 && <button onClick={confirmar} disabled={!confirmable} className="rounded-md px-3 py-1.5 t11 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: "#6d28d9" }} title={confirmable ? "Confirmar sección y avanzar" : "Completa la sección para avanzar (recupera/acepta la información requerida)"}>Confirmar sección · Siguiente ›</button>}
-            {paso === 5 && <button onClick={inyectar} disabled={!notasCargadas || deudores.length === 0 || (tipo === "modificar" && !subtipo)} className="rounded-md px-3 py-1.5 t11 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: "#16a34a" }} title="Solicitar visto bueno e inyectar la solicitud (API 1)">Solicitar VB · Inyectar</button>}
+            <button onClick={onClose} className="rounded-full px-4 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button>
+            {paso > 0 && <button onClick={() => setPaso(paso - 1)} className="rounded-full px-4 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.ink }}>‹ Anterior</button>}
+            {paso < 5 && <button onClick={confirmar} disabled={!confirmable} className="rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: "#7C3AED" }} title={confirmable ? "Confirmar sección y avanzar" : "Completa la sección para avanzar (recupera/acepta la información requerida)"}>Confirmar sección · Siguiente ›</button>}
+            {paso === 5 && <button onClick={inyectar} disabled={!notasCargadas || deudores.length === 0 || (tipo === "modificar" && !subtipo)} className="rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: "#16a34a" }} title="Solicitar visto bueno e inyectar la solicitud (API 1)">Solicitar VB · Inyectar</button>}
           </div>
         </div>
       </div>
@@ -11253,26 +11289,26 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
   );
 }
 // Sub-tab EN PROCESO — Bandeja de solicitudes en gestión (API 2 lista · API 3 estado). Solo consulta.
-function LineasBandeja({ onNueva, tick, onRefrescar }) {
+function LineasBandeja({ onNueva, tick, onRefrescar, cargando }) {
   const sols = api2ListarProcesos();
-  const EST_COL = { "En gestión": { bg: "#eff6ff", fg: "#1d4ed8" }, "En análisis de Riesgo": { bg: "#fffbeb", fg: "#b45309" }, "En comité": { bg: "#f5f3ff", fg: "#6d28d9" }, "Aprobada": { bg: "#ecfdf5", fg: "#047857" }, "Observada": { bg: "#fef2f2", fg: "#b91c1c" } };
+  const EST_COL = { "En gestión": { bg: "#eff6ff", fg: "#2563EB" }, "En análisis de Riesgo": { bg: "#FFF7ED", fg: "#C2410C" }, "En comité": { bg: "#f5f3ff", fg: "#7C3AED" }, "Aprobada": { bg: "#F0FDF4", fg: "#16A34A" }, "Observada": { bg: "#fef2f2", fg: "#DC2626" } };
   return (
     <div className="rounded-2xl p-3" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
       <div className="flex items-center justify-between">
         <div className="t10 font-bold uppercase tracking-wide" style={{ color: C.sub }}>Solicitudes en gestión · sistema externo (API 2 / API 3) — solo consulta</div>
         <div className="flex gap-2">
-          <button onClick={onRefrescar} className="flex items-center gap-1 rounded-md px-2.5 py-1.5 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}><RotateCcw size={11} /> Consultar estados</button>
+          <button onClick={onRefrescar} disabled={cargando} className="flex items-center gap-1 rounded-md px-2.5 py-1.5 t10 font-medium disabled:opacity-50" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}><RotateCcw size={11} className={cargando ? "animate-spin" : ""} /> {cargando ? "Consultando…" : "Consultar estados"}</button>
           <button onClick={onNueva} className="rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>+ Nueva línea</button>
         </div>
       </div>
       <div className="mt-2 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "90px 1fr 170px 110px 130px 140px", color: C.faint, borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}><span>Proceso</span><span>Cliente</span><span>Tipo</span><span>Propuesto</span><span>Estado</span><span>Últ. actualización</span></div>
-      {sols.map((s) => { const ec = EST_COL[s.estado] || EST_COL["En gestión"]; return (
+      {cargando ? [0, 1, 2].map((i) => <div key={"sk" + i} className="skel my-2" style={{ height: 34 }} />) : sols.map((s) => { const ec = EST_COL[s.estado] || EST_COL["En gestión"]; return (
         <div key={s.idProceso} className="grid items-center gap-2 py-1.5 t11" style={{ gridTemplateColumns: "90px 1fr 170px 110px 130px 140px", borderBottom: `1px solid ${C.line}` }}>
           <span className="font-semibold" style={{ color: C.ink }}>{s.idProceso}</span>
           <span className="truncate" style={{ color: C.ink }}>{s.cliente}<span className="t9 ml-1" style={{ color: C.faint }}>{s.rut}</span></span>
           <span className="t10" style={{ color: C.sub }}>{SOLIC_TIPOS[s.tipo]}{s.subtipo ? ` · ${SOLIC_SUBTIPOS[s.subtipo]}` : ""}</span>
           <span className="font-medium" style={{ color: C.ink }}>{fmtMM(s.totalPropuesto || 0)}</span>
-          <span><span className="rounded-md px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: ec.bg, color: ec.fg }}>{s.estado}</span></span>
+          <span><span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: ec.bg, color: ec.fg }}>{s.estado}</span></span>
           <span className="t9" style={{ color: C.faint }}>{s.tsEstado || s.ts}</span>
         </div>
       ); })}
@@ -11291,6 +11327,8 @@ function LineasView({ soloExec }) {
   const [nuevaQ, setNuevaQ] = useState("");       // búsqueda por razón social / RUT en Crear Línea
   const [nuevaRut, setNuevaRut] = useState("");   // RUT de empresa NUEVA (fuera del listado)
   const refrescarEstados = () => { api2ListarProcesos().forEach((s) => { s.refrescos = (s.refrescos || 0) + 1; api3EstadoProceso(s.idProceso); }); setBTick((t) => t + 1); };
+  const [refrescando, setRefrescando] = useState(false); // skeleton ~700ms al consultar estados (estado de carga spec)
+  const refrescarConCarga = () => { if (refrescando) return; setRefrescando(true); setTimeout(() => { refrescarEstados(); setRefrescando(false); }, 700); };
   const recASubtipo = (rec) => rec === "Aumentar línea" ? { tipo: "modificar", subtipo: "agregar_credito" } : rec === "Revisar / ampliar" ? { tipo: "modificar", subtipo: "ratificar_exceso" } : (rec === "Sujeto a aprobación" || rec === "Bloquear línea") ? { tipo: "modificar", subtipo: "rebajar_linea" } : { tipo: "renovar", subtipo: null };
   const conSolicitud = new Set(api2ListarProcesos().map((s) => s.lineaId).filter(Boolean));
   const rows0 = LINEAS_DATA.filter((l) => !soloExec || l.exec === soloExec).map((l) => ({ ...l, rec: lineaRecomendacion(l), salud: lineaSalud(l) }));
@@ -11300,17 +11338,28 @@ function LineasView({ soloExec }) {
   const cols = ["Cliente", "Línea aprobada", "Uso actual", "Disponible", "Proyección post-curse", "Recomendación", "Salud", "Acciones"];
   const kpis = [
     { t: "Líneas", v: rows0.length.toLocaleString("es-CL"), s: "clientes con línea aprobada", col: C.ink, bg: "#fff", bd: C.line },
-    { t: "Línea total aprobada", v: fmtMM(totalAprob), s: `uso ${Math.round(totalUso / totalAprob * 100)}% · disponible ${fmtMM(totalAprob - totalUso)}`, col: "#6d4ef0", bg: "#f5f3ff", bd: "#ddd6fe" },
-    { t: "Aumentos recomendados", v: aumentos.toLocaleString("es-CL"), s: "buenos deudores sin financiar · afectan SOW", col: "#1d4ed8", bg: "#eff6ff", bd: "#bfdbfe" },
+    { t: "Línea total aprobada", v: fmtMM(totalAprob), s: `uso ${Math.round(totalUso / totalAprob * 100)}% · disponible ${fmtMM(totalAprob - totalUso)}`, col: "#703EFF", bg: "#f5f3ff", bd: "#ddd6fe" },
+    { t: "Aumentos recomendados", v: aumentos.toLocaleString("es-CL"), s: "buenos deudores sin financiar · afectan SOW", col: "#2563EB", bg: "#eff6ff", bd: "#bfdbfe" },
     { t: "Con morosidad", v: morosos.toLocaleString("es-CL"), s: "evaluar reducción / bloqueo / aprobación", col: "#dc2626", bg: "#fef2f2", bd: "#fecaca" },
   ];
+  // Wizard de presentación al comité: vista standalone que REEMPLAZA el contenido de Líneas (no es modal)
+  if (wiz && (wiz.linea || wiz.cliente)) return (
+    <PresentacionComite linea={wiz.linea || null} clienteInicial={wiz.cliente || null} rutInicial={wiz.rut || null} tipoInicial={wiz.tipo} subtipoInicial={wiz.subtipo}
+      usuarioNombre={soloExec || "Ejecutivo"}
+      onClose={() => { setWiz(null); setNuevaCli(""); }}
+      onInyectada={() => { setWiz(null); setNuevaCli(""); setSub("enproceso"); setBTick((t) => t + 1); }} />
+  );
   return (
     <div className="space-y-4">
+      <div>
+        <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Líneas de crédito</div>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Líneas de crédito</h1>
+      </div>
       {/* Sub-tabs: Vigentes (CSV SFTP diario + montos API 1h) | En proceso (Bandeja API 2/3) */}
       <div className="flex items-center justify-between">
-        <div className="flex gap-1.5">
+        <div className="flex gap-6" style={{ borderBottom: `1px solid ${C.line}` }}>
           {[["vigentes", "Vigentes"], ["enproceso", `En proceso${api2ListarProcesos().length ? " · " + api2ListarProcesos().length : ""}`]].map(([k, l]) => (
-            <button key={k} onClick={() => setSub(k)} className="rounded-lg px-4 py-1.5 t12 font-semibold" style={{ backgroundColor: sub === k ? C.ink : "#fff", color: sub === k ? "#fff" : C.sub, border: `1px solid ${sub === k ? C.ink : C.line}` }}>{l}</button>
+            <button key={k} onClick={() => setSub(k)} className="px-1 pb-2 t12" style={{ borderBottom: `2px solid ${sub === k ? C.indigo : "transparent"}`, color: sub === k ? C.indigo : C.sub, fontWeight: sub === k ? 600 : 400, marginBottom: -1 }}>{l}</button>
           ))}
         </div>
         <div className="t9" style={{ color: C.faint }}>Última carga CSV (SFTP): hoy 06:15 · Montos actualizados vía API: {new Date().getHours()}:00 · Para modificar/renovar, haz clic en una línea; las líneas nuevas se crean en «En proceso».</div>
@@ -11326,7 +11375,7 @@ function LineasView({ soloExec }) {
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1.5 rounded-lg px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+        <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
           <Search size={13} style={{ color: C.faint }} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar cliente o RUT…" className="w-52 bg-transparent t12 outline-none" style={{ color: C.ink }} />
         </div>
         {["todos", "Saludable", "Subutilizada", "Atención", "En riesgo", "Crítica"].map((k) => (
@@ -11339,21 +11388,21 @@ function LineasView({ soloExec }) {
           <tbody>
             {rows.map((l) => { const base = Math.max(l.proyeccion, l.aprobada) || 1; const fuera = l.proyeccion > l.aprobada; const enCurso = conSolicitud.has(l.id); return (
               <tr key={l.id} onClick={() => { if (!enCurso) { const rs = recASubtipo(l.rec.tipo); setWiz({ linea: l, tipo: rs.tipo, subtipo: rs.subtipo }); } }} className="cursor-pointer hover:bg-stone-50" title={enCurso ? "Esta línea ya tiene una solicitud en gestión (ver «En proceso»)" : "Iniciar solicitud de modificación / renovación de esta línea"} style={{ borderBottom: `1px solid ${C.line}`, opacity: enCurso ? 0.6 : 1 }}>
-                <td className="px-3 py-2.5"><div className="t12 font-medium" style={{ color: C.ink }}>{l.cliente}{enCurso && <span className="ml-1.5 rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#6d28d9" }}>Solicitud en curso</span>}</div><div className="t9" style={{ color: C.faint }}>{l.rut} · {l.exec}</div></td>
+                <td className="px-3 py-2.5"><div className="t12 font-medium" style={{ color: C.ink }}>{l.cliente}{enCurso && <span className="ml-1.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>Solicitud en curso</span>}</div><div className="t9" style={{ color: C.faint }}>{l.rut} · {l.exec}</div></td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: C.ink }}>{fmtMM(l.aprobada)}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>{fmtMM(l.uso)} <span className="t9" style={{ color: C.faint }}>({Math.round(l.uso / l.aprobada * 100)}%)</span></td>
-                <td className="whitespace-nowrap px-3 py-2.5 t11 font-medium" style={{ color: l.disponible > 0 ? "#047857" : "#dc2626" }}>{fmtMM(l.disponible)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 t11 font-medium" style={{ color: l.disponible > 0 ? "#16A34A" : "#dc2626" }}>{fmtMM(l.disponible)}</td>
                 <td className="px-3 py-2.5" style={{ minWidth: 180 }}>
                   <div className="t10 font-semibold" style={{ color: fuera ? "#dc2626" : C.ink }}>{fmtMM(l.proyeccion)} <span style={{ color: C.faint }}>/ {fmtMM(l.aprobada)}</span></div>
                   <div className="relative mt-1 h-2 w-full rounded-full" style={{ backgroundColor: C.page }}>
                     <div className="absolute left-0 top-0 h-2 rounded-l-full" style={{ width: Math.min(100, l.uso / base * 100) + "%", backgroundColor: "#9ca3af" }} />
-                    <div className="absolute top-0 h-2" style={{ left: (l.uso / base * 100) + "%", width: (l.montoOp / base * 100) + "%", backgroundColor: fuera ? "#dc2626" : "#6366f1" }} />
+                    <div className="absolute top-0 h-2" style={{ left: (l.uso / base * 100) + "%", width: (l.montoOp / base * 100) + "%", backgroundColor: fuera ? "#dc2626" : "#8A63FF" }} />
                     <span style={{ position: "absolute", left: (l.aprobada / base * 100) + "%", top: -1, width: 2, height: 10, backgroundColor: C.ink }} />
                   </div>
                   {fuera && <div className="mt-0.5 t9 font-semibold" style={{ color: "#dc2626" }}>Fuera de línea +{fmtMM(l.proyeccion - l.aprobada)}</div>}
                 </td>
                 <td className="px-3 py-2.5" style={{ minWidth: 300, maxWidth: 340 }}>
-                  <span className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 t10 font-bold" style={{ backgroundColor: l.rec.bg, color: l.rec.color }}>{(l.rec.tipo === "Bloquear línea" || l.rec.tipo === "Sujeto a aprobación") ? <AlertTriangle size={11} /> : l.rec.tipo === "Aumentar línea" ? <ArrowUpRight size={11} /> : <Check size={11} />}{l.rec.tipo}</span>
+                  <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t10 font-bold" style={{ backgroundColor: l.rec.bg, color: l.rec.color }}>{(l.rec.tipo === "Bloquear línea" || l.rec.tipo === "Sujeto a aprobación") ? <AlertTriangle size={11} /> : l.rec.tipo === "Aumentar línea" ? <ArrowUpRight size={11} /> : <Check size={11} />}{l.rec.tipo}</span>
                   <div className="mt-1 t9" style={{ color: C.sub, lineHeight: 1.4 }}>{l.rec.texto}</div>
                 </td>
                 <td className="whitespace-nowrap px-3 py-2.5"><span className="inline-flex items-center gap-1.5 t11 font-semibold" style={{ color: l.salud.color }}><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: l.salud.color }} />{l.salud.label}</span></td>
@@ -11380,14 +11429,14 @@ function LineasView({ soloExec }) {
         </table>
       </div>
       </>)}
-      {sub === "enproceso" && <LineasBandeja tick={bTick} onRefrescar={refrescarEstados} onNueva={() => setWiz({ nueva: true })} />}
+      {sub === "enproceso" && <LineasBandeja tick={bTick} cargando={refrescando} onRefrescar={refrescarConCarga} onNueva={() => setWiz({ nueva: true })} />}
       {/* Selector de cliente para Crear Línea (cliente sin línea vigente) */}
       {wiz && wiz.nueva && !wiz.cliente && (
         <div className="fixed inset-0 z-50 flex items-center justify-center ovl p-6" onClick={() => setWiz(null)}>
           <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-2xl bg-white p-4 shadow-2xl" style={{ border: `1px solid ${C.line}` }}>
             <div className="t12 font-bold" style={{ color: C.ink }}>Crear Línea — nueva</div>
             <div className="mt-0.5 t10" style={{ color: C.sub }}>Busca por <b>razón social o RUT</b>. Si la empresa es nueva y no está en el listado, ingrésala abajo.</div>
-            <div className="mt-2 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5" style={{ border: `1px solid ${C.line}` }}>
+            <div className="mt-2 flex items-center gap-1.5 rounded-full px-2.5 py-1.5" style={{ border: `1px solid ${C.line}` }}>
               <Search size={13} style={{ color: C.faint }} />
               <input value={nuevaQ} onChange={(e) => { setNuevaQ(e.target.value); setNuevaCli(""); }} placeholder="Razón social o RUT…" className="w-full bg-transparent t11 outline-none" style={{ color: C.ink }} />
             </div>
@@ -11398,7 +11447,7 @@ function LineasView({ soloExec }) {
               return (
                 <div className="mt-1.5 max-h-44 overflow-y-auto rounded-lg" style={{ border: `1px solid ${C.line}` }}>
                   {cands.map((c) => (
-                    <button key={c.id} onClick={() => { setNuevaCli(c.nombre); setNuevaQ(c.nombre); }} className="flex w-full items-center justify-between px-2.5 py-1.5 text-left t11 hover:bg-stone-50" style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: nuevaCli === c.nombre ? "#eef2ff" : "#fff" }}>
+                    <button key={c.id} onClick={() => { setNuevaCli(c.nombre); setNuevaQ(c.nombre); }} className="flex w-full items-center justify-between px-2.5 py-1.5 text-left t11 hover:bg-stone-50" style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: nuevaCli === c.nombre ? "#F1ECFF" : "#fff" }}>
                       <span className="font-medium" style={{ color: C.ink }}>{c.nombre}</span><span className="t9" style={{ color: C.faint }}>{c.rut}</span>
                     </button>
                   ))}
@@ -11414,17 +11463,11 @@ function LineasView({ soloExec }) {
               </div>
             </div>
             <div className="mt-3 flex justify-end gap-2">
-              <button onClick={() => { setWiz(null); setNuevaQ(""); setNuevaRut(""); }} className="rounded-md px-3 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button>
-              <button disabled={!nuevaCli} onClick={() => { const cc = PC_CLIENTES.find((c) => c.nombre === nuevaCli); setWiz({ nueva: true, cliente: nuevaCli, rut: cc ? cc.rut : (nuevaRut || null) }); }} className="rounded-md px-3 py-1.5 t11 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: C.indigo }}>Continuar</button>
+              <button onClick={() => { setWiz(null); setNuevaQ(""); setNuevaRut(""); }} className="rounded-full px-4 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button>
+              <button disabled={!nuevaCli} onClick={() => { const cc = PC_CLIENTES.find((c) => c.nombre === nuevaCli); setWiz({ nueva: true, cliente: nuevaCli, rut: cc ? cc.rut : (nuevaRut || null) }); }} className="rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: C.indigo }}>Continuar</button>
             </div>
           </div>
         </div>
-      )}
-      {wiz && (wiz.linea || wiz.cliente) && (
-        <PresentacionComite linea={wiz.linea || null} clienteInicial={wiz.cliente || null} rutInicial={wiz.rut || null} tipoInicial={wiz.tipo} subtipoInicial={wiz.subtipo}
-          usuarioNombre={soloExec || "Ejecutivo"}
-          onClose={() => { setWiz(null); setNuevaCli(""); }}
-          onInyectada={() => { setWiz(null); setNuevaCli(""); setSub("enproceso"); setBTick((t) => t + 1); }} />
       )}
     </div>
   );
@@ -11460,7 +11503,7 @@ function ReportesView({ deals, onOpen, soloExec }) {
             <div className="t9 font-bold uppercase tracking-widest" style={{ color: C.faint }}>{g.cat}</div>
             <div className="mt-1.5 space-y-1.5">
               {g.items.map((it) => { const on = sel === it.id; return (
-                <button key={it.id} onClick={() => setSel(it.id)} className="w-full rounded-xl p-3 text-left transition-colors" style={{ backgroundColor: on ? C.ink : "#fff", border: `1px solid ${on ? C.ink : C.line}` }}>
+                <button key={it.id} onClick={() => setSel(it.id)} className="w-full rounded-xl p-3 text-left transition-colors" style={{ backgroundColor: on ? C.ink : "#fff", border: `1px solid ${on ? C.indigo : C.line}` }}>
                   <div className="flex items-center gap-1.5 t12 font-bold" style={{ color: on ? "#fff" : C.ink }}><BarChart2 size={13} style={{ color: on ? "#fff" : C.indigo }} /> {it.label}</div>
                   <div className="mt-0.5 t9" style={{ color: on ? "#ffffffcc" : C.faint, lineHeight: 1.35 }}>{it.desc}</div>
                 </button>
@@ -11481,6 +11524,41 @@ function ReportesView({ deals, onOpen, soloExec }) {
     </div>
   );
 }
+// ---- Login (Datamart spec Auth): formulario a la izquierda + panel gradiente a la derecha. Portada del demo ----
+function LoginScreen({ usuarioInicial, onIngresar }) {
+  const [u, setU] = useState(usuarioInicial || "CR");
+  return (
+    <div className="flex min-h-screen w-full bg-white" style={{ fontFamily: "'Geist', ui-sans-serif, system-ui, sans-serif", color: C.ink }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');`}</style>
+      {/* Columna formulario */}
+      <div className="flex flex-col justify-between px-10 py-8" style={{ width: 460, flexShrink: 0 }}>
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center text-white" style={{ backgroundColor: C.indigo, borderRadius: 8, fontSize: 14, fontWeight: 700 }}>N</span>
+          <span style={{ fontSize: 16, fontWeight: 600, color: C.navy }}>NEX Factoring</span>
+        </div>
+        <div className="w-full">
+          <div style={{ fontSize: 48, fontWeight: 700, lineHeight: 1.1, color: C.navy }}>Bienvenido</div>
+          <div className="mt-2" style={{ fontSize: 14, color: C.sub }}>Ingresa a la plataforma comercial de factoring.</div>
+          <label className="mt-8 block" style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Usuario</label>
+          <select value={u} onChange={(e) => setU(e.target.value)} className="mt-1.5 w-full px-3" style={{ height: 40, border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, color: C.ink, backgroundColor: "#fff", outline: "none" }}>
+            {Object.entries(USERS).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
+          </select>
+          <button onClick={() => onIngresar(u)} className="mt-6 w-full py-2.5 text-white" style={{ background: "linear-gradient(to right, #EE2EFF, #FF814B)", borderRadius: 9999, fontSize: 14, fontWeight: 600, border: "none" }}>Ingresar</button>
+          <div className="mt-4 text-center"><span style={{ fontSize: 13, fontWeight: 500, color: C.indigo, cursor: "pointer" }}>¿Problemas para ingresar? Contacta a soporte</span></div>
+        </div>
+        <div style={{ fontSize: 11, color: C.faint }}>© 2026 Datamart · NEX Factoring — demo con datos sintéticos</div>
+      </div>
+      {/* Panel gradiente decorativo */}
+      <div className="m-3 flex flex-1 items-center justify-center overflow-hidden" style={{ borderRadius: 20, background: "linear-gradient(135deg, #EE2EFF 0%, #FF814B 55%, #C4B5FD 100%)" }}>
+        <div className="px-14 text-white" style={{ maxWidth: 560 }}>
+          <div style={{ fontSize: 30, fontWeight: 700, lineHeight: 1.25 }}>Pipeline comercial, otorgamiento y curse en un solo lugar.</div>
+          <div className="mt-3" style={{ fontSize: 14, opacity: 0.92 }}>Oportunidades del inbound SII, ofertas con pricing por deudor, verificación predictiva y líneas al comité — con datos al día.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PipelineComercial() {
   const [deals, setDeals] = useState([]); // arranca vacío; el pipeline (incl. 2 casos demo de Call Center) se llena al presionar Start
   const [tasks, setTasks] = useState([]); // Mis Tareas inicia en cero
@@ -11501,6 +11579,7 @@ export default function PipelineComercial() {
   const [channel, setChannel] = useState("Manual");
   const [taskFilter, setTaskFilter] = useState("todas");
   const [usuario, setUsuario] = useState(USUARIO); // usuario logueado
+  const [logueado, setLogueado] = useState(false); // gate de login (portada spec Auth); clic en avatar = cerrar sesión
   const [solicOpen, setSolicOpen] = useState(false); // bandeja lateral de requerimientos de información
   const [prioOpen, setPrioOpen] = useState(false); // panel lateral de oportunidades con prioridad de curse
   const [, setNotifTick] = useState(0); // re-render al responder/leer requerimientos
@@ -13109,12 +13188,33 @@ export default function PipelineComercial() {
     { id: "sinclasificar", label: "Sin clasificar", count: streamFeed.length },
   ];
 
+  if (!logueado) return <LoginScreen usuarioInicial={usuario} onIngresar={(u) => { setUsuario(u); setLogueado(true); }} />;
   return (
-    <div className="min-h-screen w-full" style={{ backgroundColor: C.page, color: C.ink, fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
+    <div className="min-h-screen w-full" style={{ backgroundColor: C.page, color: C.ink, fontFamily: "'Geist', ui-sans-serif, system-ui, sans-serif" }}>
       <style>{`
-        .t8{font-size:8px;line-height:1.2}.t9{font-size:9px;line-height:1.2}.t10{font-size:10px;line-height:1.3}
-        .t11{font-size:11px;line-height:1.35}.t12{font-size:12px;line-height:1.4}.t13{font-size:13px;line-height:1.4}
-        .t15{font-size:15px;line-height:1.4}.minw5{min-width:1.25rem}.ovl{background-color:rgba(0,0,0,0.2)}
+        @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
+        /* Escala tipográfica Datamart: t8-t10=Micro 11px, t11=Caption 12px, t12=Small 13px, t13=Body 14px, t15=16px */
+        .t8{font-size:11px;line-height:1.3}.t9{font-size:11px;line-height:1.3}.t10{font-size:11px;line-height:1.3}
+        .t11{font-size:12px;line-height:1.4}.t12{font-size:13px;line-height:1.4}.t13{font-size:14px;line-height:1.5}
+        .t15{font-size:16px;line-height:1.4}.minw5{min-width:1.25rem}.ovl{background-color:rgba(0,0,0,0.2)}
+        .btn-cta{background:linear-gradient(to right,#EE2EFF,#FF814B);color:#fff;border-radius:9999px;font-weight:600;border:none}
+        .btn-cta:hover{filter:brightness(1.06)}
+        /* Geometría Datamart (design-tokens): inputs/cards chicas 10px, cards 14px, modales/cards grandes 20px */
+        .rounded-lg{border-radius:10px}.rounded-xl{border-radius:14px}.rounded-2xl{border-radius:20px}
+        /* Sombras spec: modal 0 20px 60px .18 · dropdown 0 8px 24px .12 · card 0 1px 3px .08 */
+        .shadow-2xl{box-shadow:0 20px 60px rgba(0,0,0,0.18)}.shadow-xl{box-shadow:0 8px 24px rgba(0,0,0,0.12)}
+        .shadow-lg{box-shadow:0 8px 24px rgba(0,0,0,0.12)}.shadow-sm{box-shadow:0 1px 3px rgba(0,0,0,0.08)}
+        /* Focus ring Datamart (spec Inputs): anillo purple suave; los inputs embebidos en pills usan focus-within del contenedor */
+        input:focus,select:focus,textarea:focus{outline:none;box-shadow:0 0 0 3px rgba(112,62,255,0.12)}
+        input.bg-transparent:focus{box-shadow:none}
+        div.rounded-full:focus-within{box-shadow:0 0 0 3px rgba(112,62,255,0.12)}
+        /* Hover de card spec: 0 4px 12px .10 */
+        .hover\\:shadow-md:hover{box-shadow:0 4px 12px rgba(0,0,0,0.10)}
+        .hover\\:shadow-sm:hover{box-shadow:0 1px 3px rgba(0,0,0,0.08)}
+        /* Skeleton shimmer (estado de carga spec) */
+        .skel{position:relative;overflow:hidden;background:#F3F4F6;border-radius:8px}
+        .skel::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.7),transparent);animation:skel 1.1s infinite}
+        @keyframes skel{100%{transform:translateX(100%)}}
         .bgw50{background-color:rgba(255,255,255,0.5)}
         @media print {
           body * { visibility: hidden !important; }
@@ -13125,12 +13225,14 @@ export default function PipelineComercial() {
       `}</style>
 
       {/* ===== Top bar ===== */}
-      <header className="flex items-center justify-between px-6 py-3" style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
-        <div className="flex items-center gap-8">
+      <header style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+      <div className="mx-auto flex h-16 w-full items-center justify-between px-6" style={{ maxWidth: 1600 }}>
+        <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg t13 font-bold text-white" style={{ backgroundColor: C.indigo }}>N</span>
-            <span className="t15 font-semibold">NEX Factoring</span>
+            <span className="flex h-8 w-8 items-center justify-center t13 font-bold text-white" style={{ backgroundColor: C.indigo, borderRadius: 8 }}>N</span>
+            <span className="t15 font-semibold" style={{ color: C.navy }}>NEX Factoring</span>
           </div>
+          <span aria-hidden="true" style={{ width: 1, height: 28, backgroundColor: "#ADA8BD" }} />
           <nav className="hidden items-center gap-5 t13 md:flex" style={{ color: C.sub }}>
             <button onClick={() => irA("pipeline", "Pipeline")} style={{ color: vistaApp === "pipeline" ? C.indigo : C.sub, fontWeight: vistaApp === "pipeline" ? 600 : 400 }}>Pipeline</button>
             <button onClick={() => irA("tareas", "Tareas")} style={{ color: vistaApp === "tareas" ? C.indigo : C.sub, fontWeight: vistaApp === "tareas" ? 600 : 400 }}>Tareas</button>
@@ -13142,10 +13244,12 @@ export default function PipelineComercial() {
               Otorgamientos
               {otorgPendientes > 0 && <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#7c3aed" }}>{otorgPendientes}</span>}
             </button>
-            <button onClick={() => irA("config", "Configuración")} style={{ color: vistaApp === "config" ? C.indigo : C.sub, fontWeight: vistaApp === "config" ? 600 : 400 }}>Configuración</button>
           </nav>
         </div>
         <div className="flex items-center gap-3">
+          <button onClick={() => irA("config", "Configuración")} title="Configuración" className="flex h-9 w-9 items-center justify-center rounded-lg hover:bg-stone-50" style={{ color: vistaApp === "config" ? C.indigo : C.sub, backgroundColor: vistaApp === "config" ? C.lilac : "transparent" }}>
+            <Settings size={18} />
+          </button>
           {(() => { const n = notifSolic(usuario, deals).total; return (
             <button onClick={() => setSolicOpen(true)} title="Requerimientos de información" style={{ position: "relative", lineHeight: 0 }}>
               <Bell size={18} style={{ color: n ? C.indigo : C.sub }} />
@@ -13154,13 +13258,13 @@ export default function PipelineComercial() {
           ); })()}
           {(() => { const nP = deals.filter(dealVisible).filter((d) => tienePrioridadCurse(d.id)).length; return (
             <button onClick={() => setPrioOpen(true)} title="Oportunidades con prioridad de curse" style={{ position: "relative", lineHeight: 0 }}>
-              <Star size={18} style={{ color: nP ? "#d97706" : C.sub, fill: nP ? "#f59e0b" : "none" }} />
-              {nP > 0 && <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ position: "absolute", top: -6, right: -6, backgroundColor: "#f59e0b" }}>{nP}</span>}
+              <Star size={18} style={{ color: nP ? "#C2410C" : C.sub, fill: nP ? "#F97316" : "none" }} />
+              {nP > 0 && <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ position: "absolute", top: -6, right: -6, backgroundColor: "#F97316" }}>{nP}</span>}
             </button>
           ); })()}
           {(() => { const nO = otorgPendientes; return (
             <button onClick={() => irA("otorgamientos", "Otorgamientos")} title="Operaciones de otorgamiento con acciones pendientes para ti" style={{ position: "relative", lineHeight: 0 }}>
-              <ShieldCheck size={18} style={{ color: nO ? "#6d28d9" : C.sub }} />
+              <ShieldCheck size={18} style={{ color: nO ? "#7C3AED" : C.sub }} />
               {nO > 0 && <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ position: "absolute", top: -6, right: -6, backgroundColor: "#7c3aed" }}>{nO}</span>}
             </button>
           ); })()}
@@ -13171,11 +13275,13 @@ export default function PipelineComercial() {
               {Object.entries(USERS).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
             </select>
           </div>
-          <span className="flex h-8 w-8 items-center justify-center rounded-full t11 font-semibold text-white" style={{ backgroundColor: esAdmin ? C.ink : C.indigo }}>{esAdmin ? "SA" : usuario}</span>
+          <button onClick={() => setLogueado(false)} title="Cerrar sesión" className="flex h-8 w-8 items-center justify-center t11 font-semibold text-white" style={{ backgroundColor: esAdmin ? C.navy : C.indigo, borderRadius: 8 }}>{esAdmin ? "SA" : usuario}</button>
         </div>
+      </div>
       </header>
 
-      <main className="px-6 py-4">
+      {/* Contenedor de página: la app se diseña a 1600px y se centra en pantallas más anchas */}
+      <main className="mx-auto w-full px-6 py-4" style={{ maxWidth: 1600 }}>
         {vistaApp === "clientes" ? (
           <>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Clientes</div>
@@ -13207,11 +13313,7 @@ export default function PipelineComercial() {
             <ReportesView deals={deals} onOpen={setSelected} soloExec={soloExec} />
           </>
         ) : vistaApp === "lineas" ? (
-          <>
-            <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Líneas de crédito</div>
-            <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Líneas de crédito</h1>
-            <LineasView soloExec={soloExec} />
-          </>
+          <LineasView soloExec={soloExec} />
         ) : vistaApp === "config" ? (
           <>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Administración <ChevronRight size={12} /> Configuración</div>
@@ -13285,7 +13387,7 @@ export default function PipelineComercial() {
                   {k.side && (
                     <div className="flex shrink-0 items-center gap-1.5">
                       {k.side.map((s) => (
-                        <span key={s.label} title={s.hint} className="flex items-center gap-0.5 rounded px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: s.up ? C.greenBg : C.amberBg, color: s.up ? C.green : C.red }}>
+                        <span key={s.label} title={s.hint} className="flex items-center gap-0.5 rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: s.up ? C.greenBg : C.amberBg, color: s.up ? C.green : C.red }}>
                           {s.label} {s.v} · {s.n}
                         </span>
                       ))}
@@ -13336,7 +13438,7 @@ export default function PipelineComercial() {
         <div className="mt-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h2 className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Pipeline Comercial</h2>
-            <span className="rounded-full px-2 py-0.5 t10 font-medium" style={{ backgroundColor: anyFilter ? "#eef2ff" : C.page, color: anyFilter ? C.indigo : C.faint }}>
+            <span className="rounded-full px-2 py-0.5 t10 font-medium" style={{ backgroundColor: anyFilter ? "#F1ECFF" : C.page, color: anyFilter ? C.indigo : C.faint }}>
               {filtered.length} de {deals.length} negocios{anyFilter ? " · filtrado" : ""}
             </span>
           </div>
@@ -13482,17 +13584,17 @@ export default function PipelineComercial() {
                 </div>
               </div>
               {convosActivas.length > 0 && (
-                <div className="mt-2.5 rounded-lg p-2" style={{ backgroundColor: "#ecfdf5", border: "1px solid #a7f3d0" }}>
+                <div className="mt-2.5 rounded-lg p-2" style={{ backgroundColor: "#F0FDF4", border: "1px solid #a7f3d0" }}>
                   <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 t11 font-semibold" style={{ color: "#047857" }}><MessageSquare size={12} /> Conversaciones activas</span>
-                    <span className="flex h-5 items-center justify-center rounded-full px-1.5 t11 font-semibold text-white" style={{ backgroundColor: "#059669" }}>{convosActivas.length}</span>
+                    <span className="flex items-center gap-1.5 t11 font-semibold" style={{ color: "#16A34A" }}><MessageSquare size={12} /> Conversaciones activas</span>
+                    <span className="flex h-5 items-center justify-center rounded-full px-1.5 t11 font-semibold text-white" style={{ backgroundColor: "#16A34A" }}>{convosActivas.length}</span>
                   </div>
-                  <div className="mt-0.5 t9" style={{ color: "#047857" }}>En curso (menos de 1 h) · retómalas antes de que se enfríen.</div>
+                  <div className="mt-0.5 t9" style={{ color: "#16A34A" }}>En curso (menos de 1 h) · retómalas antes de que se enfríen.</div>
                   <div className="mt-1.5 space-y-1">
                     {convosActivas.slice(0, 6).map(({ d, pendiente, oferta, mins }) => (
-                      <button key={d.id} onClick={() => setSelected(d)} className="flex w-full items-center gap-2 rounded-md bg-white px-2 py-1 text-left" style={{ border: "1px solid #d1fae5" }}>
+                      <button key={d.id} onClick={() => setSelected(d)} className="flex w-full items-center gap-2 rounded-md bg-white px-2 py-1 text-left" style={{ border: "1px solid #F0FDF4" }}>
                         <span className="min-w-0 flex-1 truncate t11 font-medium" style={{ color: C.ink }} title={d.cliente}>{d.cliente}</span>
-                        <span className="shrink-0 t9 font-medium" style={{ color: pendiente ? "#b91c1c" : "#047857" }}>{(d.ofertaSolicitada && !d.ofertaCerrada) ? "● solicita oferta" : pendiente ? "● pendiente" : oferta ? "oferta enviada" : "respondió"}</span>
+                        <span className="shrink-0 t9 font-medium" style={{ color: pendiente ? "#DC2626" : "#16A34A" }}>{(d.ofertaSolicitada && !d.ofertaCerrada) ? "● solicita oferta" : pendiente ? "● pendiente" : oferta ? "oferta enviada" : "respondió"}</span>
                         <span className="shrink-0 t9" style={{ color: C.faint }}>{mins === 0 ? "ahora" : mins + "m"}</span>
                       </button>
                     ))}
@@ -13523,7 +13625,7 @@ export default function PipelineComercial() {
                   const on = taskFilter === f.id;
                   return (
                     <button key={f.id} onClick={() => setTaskFilter(f.id)} className="flex items-center gap-1 rounded-full px-2.5 py-1 t11 font-medium"
-                      style={{ backgroundColor: on ? C.ink : "#fff", color: on ? "#fff" : C.sub, border: `1px solid ${on ? C.ink : C.line}` }}>
+                      style={{ backgroundColor: on ? C.lilac : "#fff", color: on ? C.indigo : C.sub, border: `1px solid ${on ? C.indigo : C.line}` }}>
                       {f.label} <span style={{ opacity: 0.7 }}>{f.count}</span>
                     </button>
                   );
@@ -13532,7 +13634,7 @@ export default function PipelineComercial() {
               <div className="mt-3 flex flex-col gap-2 overflow-y-auto">
                 {visibleTasks.map((t) => <TaskCard key={t.id} task={t} onResolve={resolveTask} onReschedule={rescheduleTask} onOpen={(tk) => { const d = deals.find((x) => x.id === tk.code); if (d) setSelected(d); }} />)}
                 {visibleTasks.length === 0 && (
-                  <div className="rounded-lg border border-dashed bgw50 py-8 text-center t12" style={{ borderColor: "#cdeedd", color: C.green }}>
+                  <div className="rounded-lg border border-dashed bgw50 py-8 text-center t12" style={{ borderColor: "#F0FDF4", color: C.green }}>
                     <Check size={18} className="mx-auto mb-1" /> ¡Todo al día!
                   </div>
                 )}
