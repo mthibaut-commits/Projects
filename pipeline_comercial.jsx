@@ -6834,6 +6834,11 @@ function VisadoClienteView({ deals, usuario, onChange }) {
         const stOp = VISADO_STATE[o.deal.id] || {};
         const excShow = soloMias ? o.exc.filter((x) => puede(x.regla, x.nivel || 4)) : o.exc;
         const excOtros = soloMias ? o.exc.filter((x) => !stOp[x.regla.n] && !puede(x.regla, x.nivel || 4)) : [];
+        // Agrupación de las excepciones: primero las reglas del CLIENTE, luego las de DEUDORES (par
+        // cliente-deudor, códigos D2x). Razón social de los deudores de la operación para el subtítulo.
+        const esReglaDeudor = (r) => (r.n >= 200 && r.n < 300) || /par c-d|deudor/i.test(r.nombre || "");
+        const deudorNoms = (() => { const s = new Set(); (o.deal.deudores || []).forEach((d) => { const n = (d && (d.nombre || d.razon)) || (typeof d === "string" ? d : ""); if (n) s.add(n); }); if (!s.size && o.deal.deudor) s.add(o.deal.deudor); return [...s]; })();
+        const excSorted = [...excShow].sort((a, b) => (esReglaDeudor(a.regla) - esReglaDeudor(b.regla)) || (a.regla.n - b.regla.n));
         return (
           <div key={o.deal.id} className="overflow-hidden rounded-xl" style={{ border: `1px solid ${o.mias.length ? C.indigo : C.line}` }}>
             <button onClick={() => setOpenOp(open ? null : o.deal.id)} className="flex w-full items-center justify-between gap-2 px-3 py-2.5" style={{ backgroundColor: open ? "#F9FAFB" : "#fff" }}>
@@ -6871,7 +6876,9 @@ function VisadoClienteView({ deals, usuario, onChange }) {
               </div>}
               {excShow.length > 0 && <div>
                 <div className="t11 font-semibold uppercase tracking-wide" style={{ color: "#C2410C" }}>Excepciones a aprobar ({excShow.length}){!soloMias && <span style={{ color: C.indigo }}> · {o.mias.length} con tu atribución</span>}</div>
-                <div className="mt-1 space-y-1.5">{excShow.map((x) => {
+                <div className="mt-1 space-y-1.5">{excSorted.map((x, _i) => {
+                  const _grpD = esReglaDeudor(x.regla);
+                  const _hdr = _i === 0 || esReglaDeudor(excSorted[_i - 1].regla) !== _grpD;
                   const key = o.deal.id + "-" + x.regla.n;
                   const f = form[key] || {};
                   const ee = (VISADO_STATE[o.deal.id] || {})[x.regla.n] || "pendiente";
@@ -6882,7 +6889,9 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                   const dests = destinatariosDe(o.deal);
                   const sols = hilosDeDeal(o.deal.id).filter((h) => h.tipo === "requerimiento" && h.reglaN === x.regla.n);
                   return (
-                    <div key={x.regla.n} className="rounded-lg p-2.5" style={{ border: `1px solid ${accionable ? C.indigo : C.line}`, borderLeft: `3px solid ${ee === "aprobado" ? C.green : ee === "rechazado" ? C.red : accionable ? C.indigo : "#F97316"}`, backgroundColor: accionable ? "#f5f3ff" : "#fff" }}>
+                    <Fragment key={x.regla.n}>
+                    {_hdr && <div className="mt-2 first:mt-0"><div className="t9 font-bold uppercase tracking-wide" style={{ color: _grpD ? "#7C3AED" : C.indigo }}>{_grpD ? `Reglas de deudores${deudorNoms.length ? ` · ${deudorNoms.join(", ")}` : ""}` : "Reglas del cliente"}</div></div>}
+                    <div className="rounded-lg p-2.5" style={{ border: `1px solid ${accionable ? C.indigo : C.line}`, borderLeft: `3px solid ${ee === "aprobado" ? C.green : ee === "rechazado" ? C.red : accionable ? C.indigo : "#F97316"}`, backgroundColor: accionable ? "#f5f3ff" : "#fff" }}>
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div className="min-w-0">
                           <div className="t11 font-semibold" style={{ color: C.ink }}>#{x.regla.n} · {x.regla.nombre}{accionable && <span className="ml-1.5 rounded-full px-1.5 py-0.5 t9 font-bold text-white" style={{ backgroundColor: C.indigo }}>Puedes aprobar</span>}</div>
@@ -6929,6 +6938,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                         </div>
                       </div>}
                     </div>
+                    </Fragment>
                   );
                 })}</div>
               </div>}
@@ -10825,7 +10835,7 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
       <div className="flex flex-wrap items-center gap-2">
         <div>
           <div className="text-lg font-bold" style={{ color: C.ink }}>Plan por ejecutivo</div>
-          <div className="t10" style={{ color: C.faint }}>Metas del mes por cliente y su cumplimiento. {cerrado ? "Mes cerrado (histórico)." : "Mes en curso: colocación acumulada a hoy."}</div>
+          <div className="t12" style={{ color: C.faint }}>Metas del mes por cliente y su cumplimiento. {cerrado ? "Mes cerrado (histórico)." : "Mes en curso: colocación acumulada a hoy."}</div>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5 rounded-full px-2 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}><Calendar size={14} style={{ color: C.indigo }} /><select value={mesSel} onChange={(e) => setMesSel(+e.target.value)} className="t12 font-semibold outline-none" style={{ color: C.ink, backgroundColor: "#fff" }}>{mesesDisp.slice().reverse().map((m) => <option key={m} value={m}>{MES_NOM[m]} {new Date().getFullYear()}{m === MES_ACT ? " · en curso" : ""}</option>)}</select></div>
