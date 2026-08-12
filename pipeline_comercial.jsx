@@ -9594,17 +9594,17 @@ function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, o
   );
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl px-4 pt-2.5" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-          <Tab id="bandeja" label="Oportunidades" Icon={Calendar} />
-          <Tab id="retencion" label="Plan Mensual" Icon={Target} />
-          <div className="mb-1.5 ml-auto flex items-center gap-1.5"><User size={14} style={{ color: C.faint }} />{soloExec
-            ? <span className="rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec}</span>
-            : <select value={fEjec} onChange={(e) => setFEjec(e.target.value)} className="rounded-lg px-3 py-1.5 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}><option value="todos">Todos los ejecutivos</option>{execOpts.map((n) => <option key={n} value={n}>{n}</option>)}</select>}</div>
-        </div>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <Tab id="bandeja" label="Oportunidades" Icon={Calendar} />
+        <Tab id="retencion" label="Plan Mensual" Icon={Target} />
+        <div className="mb-1.5 ml-auto flex items-center gap-1.5"><User size={14} style={{ color: C.faint }} />{soloExec
+          ? <span className="rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec}</span>
+          : <select value={fEjec} onChange={(e) => setFEjec(e.target.value)} className="rounded-lg px-3 py-1.5 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}><option value="todos">Todos los ejecutivos</option>{execOpts.map((n) => <option key={n} value={n}>{n}</option>)}</select>}</div>
       </div>
-      {tab === "bandeja" ? <PCbandeja deals={deals} execFilter={ejec} onOpen={onOpen} ambito="diaria" usuario={usuario} onOpenSolic={onOpenSolic} onIrLineas={onIrLineas} />
-        : <PCretencion fEjec={ejec} plan={plan} />}
+      <div className="w-full rounded-2xl bg-white p-5" style={{ border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
+        {tab === "bandeja" ? <PCbandeja deals={deals} execFilter={ejec} onOpen={onOpen} ambito="diaria" usuario={usuario} onOpenSolic={onOpenSolic} onIrLineas={onIrLineas} />
+          : <PCretencion fEjec={ejec} plan={plan} />}
+      </div>
     </div>
   );
 }
