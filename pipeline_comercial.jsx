@@ -9541,7 +9541,6 @@ function RetencionExecCard({ e, plan = {} }) {
           const mm = ptmMetrics(c, meta, sig);
           const cumpl = meta.metaColoc ? Math.round(mm.colocReal / meta.metaColoc * 100) : 0;
           const cumplC = cumpl >= 90 ? "#16A34A" : cumpl >= 60 ? "#C2410C" : "#DC2626";
-          const mantiene = c.estado === "Security"; // mantener colocación (no recuperar SOW)
           return (
             <div key={c.id} className="flex gap-3 py-3">
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: em.bg, color: em.fg }}><em.Icon size={13} /></span>
@@ -9557,20 +9556,26 @@ function RetencionExecCard({ e, plan = {} }) {
                     <div className="mt-0.5 t9 font-semibold" style={{ color: C.sub }}>{fmtMMc(mm.colocReal)} <span style={{ color: C.faint }}>/ {fmtMMc(meta.metaColoc)} meta</span></div>
                     <div className="mt-1 h-1.5 w-full rounded-full" style={{ backgroundColor: "#F1ECFF" }}><div className="h-full rounded-full" style={{ width: Math.min(100, cumpl) + "%", backgroundColor: cumplC }} /></div>
                   </div>
-                  {mm.bloqueado
-                    ? <div className="flex flex-col justify-center rounded-lg px-3 py-2 text-right" style={{ flex: "1 1 110px", backgroundColor: "#fef2f2" }}>
-                        <div className="t8 font-bold uppercase tracking-wide" style={{ color: "#dc2626" }}>SOW · línea bloqueada</div>
-                        <div className="t12 font-bold" style={{ color: "#dc2626" }}>{c.sow}% → {mm.sowReal}% ↓</div>
+                  {(() => {
+                    // Chip SOW unificado (mismo lenguaje visual que Tareas): en target / creciendo / bajando / nuevo.
+                    let sm;
+                    if (k === "Security") sm = c.sow >= c.target
+                      ? { Icon: Check, bg: "#F0FDF4", fg: "#16A34A", lab: "en target" }
+                      : { Icon: ArrowUpRight, bg: "#F0FDF4", fg: "#16A34A", lab: "creciendo" };
+                    else if (k === "Inactivo") sm = { Icon: Sparkles, bg: "#EFF6FF", fg: "#2563EB", lab: "nuevo" };
+                    else sm = { Icon: ArrowDownRight, bg: "#FEF2F2", fg: "#DC2626", lab: "bajando" };
+                    const SIcon = sm.Icon;
+                    return (
+                      <div className="flex flex-col items-end justify-center gap-1 rounded-lg px-3 py-2 text-right" style={{ flex: "1 1 130px", backgroundColor: sm.bg }}>
+                        <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fff", color: sm.fg }}><SIcon size={11} /> SOW {sm.lab}</span>
+                        {sm.lab === "bajando"
+                          ? <span className="t9 font-semibold" style={{ color: sm.fg }}>va a {c.vaA}</span>
+                          : sm.lab === "nuevo"
+                          ? <span className="t9 font-semibold" style={{ color: sm.fg }}>sin operar</span>
+                          : <span className="t9 font-bold" style={{ color: sm.fg }}>{c.sow}% → {meta.metaSow}%</span>}
                       </div>
-                    : mantiene
-                    ? <div className="flex flex-col justify-center rounded-lg px-3 py-2 text-right" style={{ flex: "1 1 110px", backgroundColor: "#F0FDF4" }}>
-                        <div className="t8 font-bold uppercase tracking-wide" style={{ color: "#16A34A" }}>SOW actual → meta</div>
-                        <div className="t12 font-bold" style={{ color: "#16A34A" }}>{c.sow}% → {meta.metaSow}%</div>
-                      </div>
-                    : <div className="flex flex-col justify-center rounded-lg px-3 py-2 text-right" style={{ flex: "1 1 110px", backgroundColor: "#FFF7ED" }}>
-                        <div className="t8 font-bold uppercase tracking-wide" style={{ color: "#C2410C" }}>Va a</div>
-                        <div className="t12 font-bold" style={{ color: "#C2410C" }}>{c.vaA}</div>
-                      </div>}
+                    );
+                  })()}
                   <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 110px", backgroundColor: "#EFF6FF" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#2563EB" }}>Línea disp.</div><div className="t12 font-bold" style={{ color: "#2563EB" }}>{fmtMMc(sig.lineaDisp)} <span className="t9 font-semibold">· {sig.lineaPct}%</span></div></div>
                   <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 100px", backgroundColor: sig.riesgo.bg }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: sig.riesgo.c }}>Riesgo</div><div className="t12 font-bold" style={{ color: sig.riesgo.c }}>{sig.riesgo.l}</div></div>
                   <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 110px", backgroundColor: "#F1ECFF" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#703EFF" }}>SOW posible</div><div className="t12 font-bold" style={{ color: "#703EFF" }}>{sowPos}% · +{ppGap} pp</div></div>
@@ -11700,7 +11705,6 @@ export default function PipelineComercial() {
   const [inboundOpen, setInboundOpen] = useState(false); // colapsado por defecto
   const [casosModal, setCasosModal] = useState(null); // segmento abierto en el modal de casos
   const [cobranzaModal, setCobranzaModal] = useState(false); // modal de reporte de cobranza
-  const [showCharts, setShowCharts] = useState(true); // mini-gráficas en headers del Kanban
   const [historia, setHistoria] = useState([]); // snapshots de conteo por etapa (para sparklines)
   const [reporte, setReporte] = useState([]); // estadísticas por día
   const [diaModal, setDiaModal] = useState(null); // modal de cierre de día (aceptación)
@@ -11744,20 +11748,35 @@ export default function PipelineComercial() {
   // Vista según usuario logueado: el admin ve todo; un ejecutivo solo sus oportunidades.
   const dealsVista = useMemo(() => (misExecs === null ? deals : deals.filter((d) => misExecs.includes(d.exec))), [deals, usuario, misExecs]);
   const filtered = useMemo(() => {
-    return dealsVista.filter((d) => {
-      const q = query.toLowerCase();
+    const q = query.toLowerCase();
+    // "Sin clasificar" vive en el streamFeed del inbound (facturas que aún no califican una regla),
+    // NO en `deals`. Se muestran como filas mapeadas y solo si el toggle Inbound está activo.
+    const streamComoFilas = () => streamFeed
+      .filter((ev) => (!q || (ev.cedente || "").toLowerCase().includes(q) || (ev.pagador || "").toLowerCase().includes(q) || String(ev.id || "").toLowerCase().includes(q))
+        && (fLinea === "todas" || ev.tag === fLinea)
+        && (fDeudor === "todos" || (fDeudor === "buenos" ? esBuenDeudor(ev) : !esBuenDeudor(ev))))
+      .map((ev) => ({
+        id: ev.id, cliente: ev.cedente, deudor: ev.pagador,
+        deudores: [{ name: ev.pagador, facturas: ev.nFacturas || 1, montoMM: ev.monto || 0 }],
+        sector: ev.sector, stage: "Sin clasificar", status: "Sin clasificar", exec: "—",
+        tag: ev.tag, facturas: ev.nFacturas || 1, amountMM: ev.monto || 0, tasa: ev.tasa,
+        anticipo: ev.anticipo || "100%", esCliente: ev.esCliente, sinClasificar: true,
+      }));
+    if (quickFilter === "sinclasificar") return showInbound ? streamComoFilas() : [];
+    const dealRows = dealsVista.filter((d) => {
       const matchQ = !q || d.cliente.toLowerCase().includes(q) || d.deudor.toLowerCase().includes(q) || d.id.toLowerCase().includes(q);
       let matchF = true;
       if (quickFilter === "encurso") matchF = !["perdida"].includes(d.stage);
       else if (quickFilter === "negociacion") matchF = d.stage === "oferta";
-      else if (quickFilter === "sinclasificar") matchF = (d.status === "Sin clasificar");
       const matchDeudor = fDeudor === "todos" || (fDeudor === "buenos" ? esBuenDeudor(d) : !esBuenDeudor(d));
       const matchJef = fJefatura === "todas" || jefaturaOf(d) === fJefatura;
       const matchLinea = fLinea === "todas" || d.tag === fLinea;
       const matchEje = fEjecutivo === "todos" || execName(d) === fEjecutivo;
       return matchQ && matchF && matchDeudor && matchJef && matchLinea && matchEje;
     });
-  }, [dealsVista, query, quickFilter, fDeudor, fJefatura, fLinea, fEjecutivo]);
+    // "Todos" con Inbound activo incluye también las facturas sin clasificar del inbound.
+    return (quickFilter === "todos" && showInbound) ? [...dealRows, ...streamComoFilas()] : dealRows;
+  }, [dealsVista, query, quickFilter, fDeudor, fJefatura, fLinea, fEjecutivo, streamFeed, showInbound]);
 
   const dealsByStage = (id) => filtered.filter((d) => d.stage === id);
 
@@ -13144,11 +13163,13 @@ export default function PipelineComercial() {
   // CONVERSACIONES ACTIVAS (en curso): el cliente respondió y/o se publicó una oferta hace menos de 1 hora.
   // Sirven para que el ejecutivo retome rápido el hilo antes de que se enfríe.
 
+  // Las "Sin clasificar" solo cuentan/aparecen cuando el toggle Inbound está activo.
+  const inboundCount = showInbound ? streamFeed.length : 0;
   const quickFilters = [
-    { id: "todos", label: "Todos", count: dealsVista.length },
+    { id: "todos", label: "Todos", count: dealsVista.length + inboundCount },
     { id: "encurso", label: "En Curso", count: activeCount },
     { id: "negociacion", label: "Negociación", count: dealsVista.filter((d) => d.stage === "oferta").length },
-    { id: "sinclasificar", label: "Sin clasificar", count: streamFeed.length },
+    ...(showInbound ? [{ id: "sinclasificar", label: "Sin clasificar", count: streamFeed.length }] : []),
   ];
 
   if (!logueado) return <LoginScreen usuarioInicial={usuario} onIngresar={(u) => { setUsuario(u); setLogueado(true); }} />;
@@ -13298,15 +13319,7 @@ export default function PipelineComercial() {
           </>
         ) : vistaApp === "otorgamientos" ? <OtorgamientosView deals={deals} usuario={usuario} onOpen={setSelected} onAutorizarCausa={autorizarCausa} onCfgChange={() => setCfgVer((v) => v + 1)} /> : (<>
         <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Pipeline</div>
-        <div className="mt-1 flex items-end justify-between">
-          <h1 className="text-2xl font-semibold tracking-tight">Pipeline Comercial</h1>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setVista((v) => (v === "kanban" ? "tabla" : "kanban"))} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: vista === "tabla" ? C.indigo : C.sub }}><Table2 size={14} /> {vista === "kanban" ? "Vista tabla" : "Vista kanban"}</button>
-            <button onClick={exportarGrilla} title="Exportar la grilla a un reporte Excel" className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
-              <Download size={14} /> Exportar a Excel
-            </button>
-          </div>
-        </div>
+        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Pipeline Comercial</h1>
 
         {/* Barra de filtros: movida junto al Kanban (abajo) */}
 
@@ -13314,17 +13327,17 @@ export default function PipelineComercial() {
         {(() => {
           const grupos = [
             { id: "pipeline", titulo: "Pipeline de clientes", estado: "Fluido", eBg: C.greenBg, eFg: C.green, nota: `${activeCount} oport · 2 estancadas`, cards: [
-              { id: "oport", label: "OPORTUNIDADES", value: activeCount.toLocaleString("es-CL"), sub: "en curso (Kanban)", serie: kpiHist.map((h) => h.oport), rows: [
+              { id: "oport", label: "OPORTUNIDADES", value: activeCount.toLocaleString("es-CL"), sub: "", serie: kpiHist.map((h) => h.oport), rows: [
                 { k: "En curso", v: activeCount.toLocaleString("es-CL") }, { k: "Prospección", v: deals.filter((d) => d.stage === "prospeccion").length },
                 { k: "Negociación", v: deals.filter((d) => d.stage === "oferta").length }, { k: "Perdidas", v: deals.filter((d) => d.stage === "perdida").length }] },
-              { id: "piptotal", label: "PIPELINE TOTAL", value: fmtMM(totalPipeline), sub: "previas a aceptar", serie: kpiHist.map((h) => h.pipeline),
+              { id: "piptotal", label: "PIPELINE TOTAL", value: fmtMM(totalPipeline), sub: "", serie: kpiHist.map((h) => h.pipeline),
                 side: [{ label: "WR", v: `${winLoss.win}%`, n: winLoss.ganados, up: true, hint: `${winLoss.ganados} ganados` }, { label: "LR", v: `${winLoss.loss}%`, n: winLoss.perdidos, up: false, hint: `${winLoss.perdidos} perdidos` }], rows: [
                 { k: "Prospección", v: fmtMM(deals.filter((d) => d.stage === "prospeccion").reduce((s, d) => s + d.amountMM, 0)) },
                 { k: "Negociación", v: fmtMM(deals.filter((d) => d.stage === "oferta").reduce((s, d) => s + d.amountMM, 0)) }] },
-              { id: "venta", label: "VENTA MENSUAL", value: fmtMM(ventaMensualMM), sub: `${vsBudget}% vs Budget`, serie: kpiHist.map((h) => h.venta), rows: [
-                { k: "Venta (Girado)", v: fmtMM(ventaMensualMM) }, { k: "Budget (+15% 2025)", v: fmtMM(BUDGET_MES_MM) }, { k: "vs Budget", v: `${vsBudget}%` }] },
-              { id: "budget", label: "BUDGET / CUMPL.", value: `${vsBudget}%`, sub: `${fmtMM(ventaMensualMM)} / ${fmtMM(BUDGET_MES_MM)}`, serie: kpiHist.map((h) => h.cumpl), rows: [
-                { k: "Budget (+15% 2025)", v: fmtMM(BUDGET_MES_MM) }, { k: "Venta del mes", v: fmtMM(ventaMensualMM) }, { k: "Cumplimiento", v: `${vsBudget}%` }] },
+              { id: "venta", label: "VENTA MENSUAL", value: fmtMM(ventaMensualMM), sub: "", serie: kpiHist.map((h) => h.venta), rows: [
+                { k: "Venta (Girado)", v: fmtMM(ventaMensualMM) }, { k: "Budget", v: fmtMM(BUDGET_MES_MM) }, { k: "vs Budget", v: `${vsBudget}%` }] },
+              { id: "budget", label: "BUDGET / CUMPL.", value: `${vsBudget}%`, sub: "", serie: kpiHist.map((h) => h.cumpl), rows: [
+                { k: "Budget", v: fmtMM(BUDGET_MES_MM) }, { k: "Venta del mes", v: fmtMM(ventaMensualMM) }, { k: "Cumplimiento", v: `${vsBudget}%` }] },
             ] },
           ];
           const tile = (k) => {
@@ -13345,7 +13358,7 @@ export default function PipelineComercial() {
                     </div>
                   )}
                 </div>
-                <div className="t9 truncate" style={{ color: C.faint }}>{k.sub}</div>
+                {k.sub && <div className="t9 truncate" style={{ color: C.faint }}>{k.sub}</div>}
                 {k.serie && k.serie.length > 1 && <div className="mt-1"><Sparkline data={k.serie} color={C.indigo} /></div>}
                 <div className="mt-1.5 space-y-0.5 border-t pt-1.5" style={{ borderColor: C.line }}>
                   {k.rows.map((r, i) => (
@@ -13360,13 +13373,9 @@ export default function PipelineComercial() {
           };
           return (
             <div className="mt-5 space-y-3">
-              <div className="flex items-center">
-                <span className="t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Indicadores</span>
-              </div>
               {grupos.map((g) => (
                 <div key={g.id}>
                   <div className="mb-1.5 flex flex-wrap items-center gap-2 t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>
-                    {g.titulo}
                     <Pill style={{ backgroundColor: g.eBg, color: g.eFg }}>● {g.estado}</Pill>
                     <span className="font-normal normal-case" style={{ color: C.faint }}>{g.nota}</span>
                   </div>
@@ -13384,7 +13393,7 @@ export default function PipelineComercial() {
           <div className="flex items-center gap-2">
             <h2 className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Pipeline Comercial</h2>
             <span className="rounded-full px-2 py-0.5 t10 font-medium" style={{ backgroundColor: anyFilter ? "#F1ECFF" : C.page, color: anyFilter ? C.indigo : C.faint }}>
-              {filtered.length} de {deals.length} negocios{anyFilter ? " · filtrado" : ""}
+              {filtered.length} de {deals.length + inboundCount} negocios{anyFilter ? " · filtrado" : ""}
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -13396,22 +13405,25 @@ export default function PipelineComercial() {
               className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.sub }}>
               <RotateCcw size={14} /> Reiniciar
             </button>
-            <button onClick={() => setShowInbound((v) => !v)} title={showInbound ? "Ocultar columna Inbound (más espacio)" : "Mostrar columna Inbound"}
+            <button onClick={() => setShowInbound((v) => { const nv = !v; if (!nv && quickFilter === "sinclasificar") setQuickFilter("todos"); return nv; })} title={showInbound ? "Ocultar columna Inbound (más espacio)" : "Mostrar columna Inbound"}
               className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${showInbound ? C.indigo : C.line}`, backgroundColor: "#fff", color: showInbound ? C.indigo : C.sub }}>
               <Radio size={14} /> Inbound
             </button>
             <span className="mx-1 h-5 w-px" style={{ backgroundColor: C.line }} />
+            <button onClick={() => setVista((v) => (v === "kanban" ? "tabla" : "kanban"))} title="Cambiar entre vista Kanban y Tabla"
+              className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: vista === "tabla" ? C.indigo : C.sub }}>
+              <Table2 size={14} /> {vista === "kanban" ? "Tabla" : "Kanban"}
+            </button>
+            <button onClick={exportarGrilla} title="Exportar la grilla a un reporte Excel"
+              className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.sub }}>
+              <Download size={14} /> Exportar
+            </button>
             {reporte.length > 0 && (
               <button onClick={() => setReporteModal(true)} className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium"
                 style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.indigo }}>
                 <BarChart2 size={14} /> Reporte ({reporte.length}d)
               </button>
             )}
-            <button onClick={() => setShowCharts((v) => !v)} title="Mostrar/ocultar tendencia por etapa"
-              className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium"
-              style={{ border: `1px solid ${showCharts ? C.indigo : C.line}`, backgroundColor: "#fff", color: showCharts ? C.indigo : C.sub }}>
-              <BarChart2 size={14} /> Tendencia
-            </button>
           </div>
         </div>
 
@@ -13470,7 +13482,7 @@ export default function PipelineComercial() {
             const col = (id, opts = {}) => (
               <StageColumn key={id} stage={stageById(id)} deals={opts.deals || dealsByStage(id)} onOpen={setSelected}
                 onDragStart={(e, did) => setDraggingId(did)} onDrop={moveTo}
-                showChart={showCharts} serie={historia.map((s) => s[id] || 0)}
+                showChart={true} serie={historia.map((s) => s[id] || 0)}
                 serieSel={esAdmin ? undefined : historia.map((s) => (s.byExec && s.byExec[usuario] && s.byExec[usuario][id]) || 0)}
                 onNuevoNegocio={id === "oferta" ? nuevoNegocio : undefined} colapsable={opts.colapsable} />
             );
