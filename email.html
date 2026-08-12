@@ -1,0 +1,108 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Factoring Security · Firma tu operación</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--v:#4a2596;--a:#1d4ed8}
+*{box-sizing:border-box}body{font-family:Geist,system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#F6F8FC;color:#111827}
+.gm{max-width:1100px;margin:0 auto;background:#fff;min-height:100vh}
+.gm-top{display:flex;align-items:center;justify-content:space-between;padding:6px 16px;border-bottom:1px solid #E5E7EB;color:#5f6368}
+.gm-top-l{display:flex;gap:2px}.gm-top-r{display:flex;align-items:center;gap:4px;font-size:12px}
+.gm-ic{display:inline-flex;width:34px;height:34px;align-items:center;justify-content:center;border-radius:9999px;font-size:15px;cursor:pointer}.gm-ic:hover{background:#F1F3F4}
+.gm-thread{padding:16px 28px 48px}
+.gm-subj{display:flex;align-items:center;gap:12px;margin-bottom:18px}.gm-subj h2{font-size:22px;font-weight:400;color:#202124;margin:0}
+.gm-lab{font-size:11px;background:#E8EAED;color:#3c4043;border-radius:4px;padding:2px 7px}
+.gm-hdr{display:flex;align-items:flex-start;gap:12px}
+.gm-av{width:40px;height:40px;border-radius:9999px;background:var(--v);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.gm-fromwrap{flex:1;min-width:0}.gm-from{font-size:14px;color:#202124}.gm-email{color:#5f6368;font-size:12px}.gm-to{font-size:12px;color:#5f6368;margin-top:1px}
+.gm-meta{text-align:right;font-size:12px;color:#5f6368;white-space:nowrap}.gm-acts{margin-top:4px;font-size:16px;color:#5f6368}
+.gm-body{margin-top:14px}
+.mail{max-width:960px;margin:0 auto;background:#F3F4F6;border-radius:12px;overflow:hidden;border:1px solid #E5E7EB}
+.logo{display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;padding:20px}
+.logo .fs{font-size:22px;font-weight:800;letter-spacing:.5px;color:var(--v)}.logo .fs span{color:#111827}
+.logo .de{font-size:11px;color:#6B7280;border-left:1px solid #E5E7EB;padding-left:10px}
+.hero{text-align:center;padding:22px 26px 16px}.hero .g{font-size:13px;color:#374151}.hero h1{font-size:21px;font-weight:800;color:#111827;line-height:1.25;margin:6px 0}.hero .t{font-size:12.5px;font-weight:600;color:var(--v)}
+.card{margin:0 20px;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);text-align:center}
+.card .top{height:6px;background:var(--v)}.card .in{padding:16px}
+.card .neg{font-size:14px;font-weight:700;color:#111827}.card .sub{font-size:11px;color:#9CA3AF;margin-top:2px}
+.card .ml{font-size:11.5px;color:#6B7280;margin-top:12px}.card .mm{font-size:24px;font-weight:800;color:var(--a)}.card .dc{font-size:11px;color:#9CA3AF}
+.otp{margin-top:14px;border-top:1px dashed #E5E7EB;padding-top:12px}
+.otp .k{font-size:11.5px;color:#6B7280}.otp .code{font-size:28px;font-weight:800;color:var(--a);letter-spacing:7px}.otp .h{font-size:10.5px;color:#9CA3AF;margin-top:6px}
+.cta{display:block;width:100%;margin-top:14px;padding:12px;border:0;border-radius:9999px;background:var(--a);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none}
+.steps{margin:14px 20px 0;background:#E5E7EB;border-radius:14px;padding:16px}.steps .h{text-align:center;font-size:12.5px;font-weight:700;color:#374151;margin-bottom:10px}
+.step{display:flex;gap:10px;align-items:flex-start;font-size:12.5px;color:#374151;margin-bottom:8px}.step .n{width:20px;height:20px;border-radius:9999px;background:var(--v);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.band{margin-top:16px;background:var(--v);color:#fff;text-align:center;padding:12px;font-size:13px}
+.sec{background:#fff;padding:16px 26px}.sec .h{text-align:center;font-size:12.5px;font-weight:700;color:#111827;margin-bottom:8px}.sec ul{margin:0;padding-left:16px;font-size:11px;color:#4B5563;line-height:1.7}
+.auto{background:#9CA3AF;color:#fff;text-align:center;font-size:10.5px;padding:12px 26px}
+.foot{background:#fff;text-align:center;padding:16px;font-size:9.5px;color:#9CA3AF;line-height:1.6}
+</style></head>
+<body>
+<div class="gm">
+  <div class="gm-top">
+    <div class="gm-top-l"><span class="gm-ic">&larr;</span><span class="gm-ic">&#128451;</span><span class="gm-ic">&#128465;</span><span class="gm-ic">&#9993;</span><span class="gm-ic">&#8943;</span></div>
+    <div class="gm-top-r">1 de 128 <span class="gm-ic">&lsaquo;</span><span class="gm-ic">&rsaquo;</span></div>
+  </div>
+  <div class="gm-thread">
+    <div class="gm-subj"><h2>Tu oferta está lista para firmar · Negocio N° <span id="neg1">—</span></h2><span class="gm-lab">Recibidos</span></div>
+    <div class="gm-hdr">
+      <div class="gm-av">S</div>
+      <div class="gm-fromwrap"><div class="gm-from"><b>Factoring Security</b> <span class="gm-email">&lt;notificaciones@factoringsecurity.cl&gt;</span></div><div class="gm-to">para mí ▾</div></div>
+      <div class="gm-meta"><span id="fecha">—</span><div class="gm-acts">☆&nbsp;&nbsp;↩</div></div>
+    </div>
+    <div class="gm-body">
+<div class="mail">
+  <div class="logo"><span class="fs">FACTORING <span>security</span></span><span class="de">de BICE</span></div>
+  <div class="hero"><div class="g">Estimados, <b id="cli">—</b></div><h1>Tu oferta está lista<br>para firmar</h1><div class="t">¡Gracias por confiar en nosotros!</div></div>
+  <div class="card"><div class="top"></div><div class="in">
+    <div class="neg">Negocio N° <span id="neg2">—</span></div><div class="sub">Oferta publicada el <b id="fecha2">—</b></div>
+    <div class="ml">Monto a girar</div><div class="mm" id="giro">—</div><div class="dc"><span id="ndoc">—</span> documento(s) · tasa <span id="tasa">—</span></div>
+    <div class="otp">
+      <div class="k">Clave de un solo uso (OTP)</div>
+      <div class="code" id="otp">——————</div>
+      <div class="h">Ingrésala en el portal junto al código de negocio N° <span id="neg3">—</span>, tu RUT y clave.</div>
+    </div>
+    <a class="cta" id="cta" href="#">Ir al portal a firmar →</a>
+  </div></div>
+  <div class="steps"><div class="h">Cómo firmar tu operación de forma segura</div>
+    <div class="step"><span class="n">1</span><span>Ingresa <b>por tu cuenta</b> a <b>www.factoringsecurity.cl/curse</b> (escríbelo en tu navegador).</span></div>
+    <div class="step"><span class="n">2</span><span>Inicia sesión con tu <b>RUT y clave</b>, y escribe el <b>código de negocio N° <span id="neg4">—</span></b> y la <b>clave de un solo uso (OTP) <span id="otp2">——</span></b>.</span></div>
+    <div class="step"><span class="n">3</span><span>Revisa las condiciones y presiona <b>Firmar</b> — el giro se realiza el mismo día.</span></div>
+  </div>
+  <div class="band">Factoring Security, <b>simple para ti.</b></div>
+  <div class="sec"><div class="h">Porque tu seguridad es lo más importante:</div><ul>
+    <li>Este mensaje <b>no contiene</b> enlaces a sitios externos fuera de Factoring Security.</li>
+    <li><b>Ingresa</b> al sitio escribiendo <b>factoringsecurity.cl</b> directamente en tu navegador.</li>
+    <li><b>NUNCA</b> te enviaremos emails ni te llamaremos solicitando tus claves o números de cuenta.</li>
+    <li><b>NUNCA</b> escribas información personal y financiera en ventanas abiertas desde un email.</li>
+    <li><b>NUNCA</b> ingreses tu clave si no estás dentro del sitio de Factoring Security.</li>
+  </ul></div>
+  <div class="auto">Este es un mail generado <b>automáticamente</b>. Ante cualquier duda contáctate con tu ejecutivo <b id="ejec">—</b>.</div>
+  <div class="foot">Factoring Security S.A. Infórmese sobre la garantía estatal de los depósitos en su banco o en www.cmfchile.cl</div>
+</div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  function decode(){ try{ var h=location.hash||""; var i=h.indexOf("d="); if(i<0) return null; return JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(h.slice(i+2)))))); }catch(e){ return null; } }
+  var D = decode() || {};
+  var P = D.payload || {};
+  var neg = (new URLSearchParams(location.search)).get("n") || D.neg || P.neg || "—";
+  var otp = D.otp || "——————";
+  function clp(n){ n=Math.round(n||0); return "CLP "+n.toLocaleString("es-CL"); }
+  function set(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; }
+  set("neg1",neg); set("neg2",neg); set("neg3",neg); set("neg4",neg);
+  set("otp",otp); set("otp2",otp);
+  set("cli", P.empresa || "cliente");
+  set("ejec", P.ejecutivo || "tu ejecutivo");
+  set("fecha", P.fecha || ""); set("fecha2", P.fecha || "");
+  set("giro", clp(P.montoAGirar || 0));
+  var nd = P.cantidad || (P.facturas ? P.facturas.length : 0);
+  set("ndoc", nd);
+  set("tasa", (P.tasa != null ? (Number(P.tasa).toFixed(2) + "% mensual") : "—"));
+  // El portal de curse (curse.html) avisa 'aceptada' a su opener (esta pestaña); se relaya a la app.
+  window.addEventListener("message", function(ev){ if(ev && ev.data && ev.data.type === "aceptada"){ try{ if(window.opener) window.opener.postMessage(ev.data, "*"); }catch(e){} } });
+  // El botón abre el portal de curse en una pestaña nueva (archivo servido → sin bloqueo de pop-up).
+  document.getElementById("cta").addEventListener("click", function(e){ e.preventDefault(); window.open("curse.html?n=" + encodeURIComponent(neg), "_blank"); });
+})();
+</script>
+</body></html>

@@ -1331,7 +1331,7 @@ function emailCierreHTML(deal) {
       <div style="font-size:28px;font-weight:800;color:var(--a);letter-spacing:7px">${otp}</div>
       <div style="font-size:10.5px;color:#9CA3AF;margin-top:6px">Ingrésala en el portal junto al código de negocio N° ${neg}, tu RUT y clave.</div>
     </div>
-    <a class="cta" href="${curseAbs}" target="_blank" style="text-decoration:none;margin-top:14px">Ir al portal a firmar →</a>
+    <a class="cta" href="${curseAbs}" style="text-decoration:none;margin-top:14px">Ir al portal a firmar →</a>
   </div></div>
   <div class="steps"><div class="h">Cómo firmar tu operación de forma segura</div>
     <div class="step"><span class="n">1</span><span>Ingresa <b>por tu cuenta</b> a <b>www.factoringsecurity.cl/curse</b> (escríbelo en tu navegador).</span></div>
@@ -1401,7 +1401,9 @@ function makeBus(name) {
   };
 }
 // Número de negocio que agrupa las condiciones de curse (aparece en la URL del sitio Security).
-const negDe = (d) => (d && d.id === "OP-DEMO-CR") ? "14245114" : String(14000000 + (hashStr((d && d.id) || "x") % 999999));
+// El "N° de negocio" del cierre ES el número de operación que la oportunidad ya tiene en la plataforma
+// (p. ej. OP-D3982): así el cliente y el ejecutivo usan un único identificador end-to-end.
+const negDe = (d) => (d && d.id != null) ? String(d.id) : "—";
 // URLs del flujo de cierre. En el demo son archivos hermanos (mismo origen). El path "público"
 // equivalente del sitio de aprobación es www.factoringsecurity.cl/curse/<neg>.
 // Clave de un solo uso (OTP) determinista por negocio: identifica el negocio en el portal de curse.
@@ -1429,6 +1431,17 @@ const waHrefDe = (deal) => {
     const enc = b64utf8(JSON.stringify({ mensajes, payload }));
     return enc ? `whatsapp.html?n=${neg}#d=${encodeURIComponent(enc)}` : `whatsapp.html?n=${neg}`;
   } catch (e) { return `whatsapp.html?n=${neg}`; }
+};
+// Enlace al SIMULADOR DE EMAIL del cliente (archivo servido email.html, igual que WhatsApp): payload + OTP
+// embebidos en el hash. Al ser un archivo servido (no blob:), su botón puede abrir curse.html sin bloqueo.
+const emailHref = (deal) => {
+  const neg = negDe(deal);
+  let payload = null;
+  try { const c = curseDesdeDeal(deal); payload = c ? c.payload : null; } catch (e) { payload = null; }
+  try {
+    const enc = b64utf8(JSON.stringify({ payload, otp: otpDe(neg), neg }));
+    return enc ? `email.html?n=${neg}#d=${encodeURIComponent(enc)}` : `email.html?n=${neg}`;
+  } catch (e) { return `email.html?n=${neg}`; }
 };
 // Marca de fecha y hora real (reemplaza el uso de "ahora" en trazas y eventos). Guarda segundos y
 // milisegundos (NO se muestran: fmtStamp recorta a minuto) para que la bitácora pueda ordenar los
@@ -5757,9 +5770,10 @@ function benchmarkPor(deals, by = "deudor") {
     return { key, entries, won: won.length, lost: lost.length, wr, avgWon, avgLostOurs, avgComp, minTasa, minSpread, objetivoTasa, objetivoSpread, estrategia };
   }).sort((a, b) => b.entries.length - a.entries.length);
 }
-function BenchmarkDeudoresModal({ deals, onClose, inline }) {
+function BenchmarkDeudoresModal({ deals, onClose, inline, usuario, esJefe }) {
   const [by, setBy] = useState("deudor"); // "deudor" (pagador) | "cliente" (cedente)
   const [q, setQ] = useState(""); // búsqueda por nombre de empresa (cliente o deudor)
+  const [tareaEmp, setTareaEmp] = useState(null); // empresa (cliente/deudor) para asignar tarea
   const grupos = useMemo(() => benchmarkPor(deals, by), [deals, by]);
   const ffecha = (ts) => { const d = new Date(ts); const p = (n) => String(n).padStart(2, "0"); return `${p(d.getDate())}/${p(d.getMonth() + 1)}`; };
   const otraCol = by === "cliente" ? "Deudor" : "Cliente"; // columna que muestra la otra dimensión
@@ -5797,7 +5811,7 @@ function BenchmarkDeudoresModal({ deals, onClose, inline }) {
           {filtrados.map((g) => (
             <div key={g.key} className="mt-4 rounded-lg p-3" style={{ border: `1px solid ${C.line}` }}>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-base font-bold" style={{ color: C.ink }}>{g.key}</div>
+                <div className="flex items-center gap-1.5"><span className="text-base font-bold" style={{ color: C.ink }}>{g.key}</span><button onClick={() => setTareaEmp(g.key)} title="Asignar tarea a esta empresa" className="rounded-md p-0.5 hover:bg-stone-100" style={{ color: C.indigo }}><ClipboardList size={14} /></button></div>
                 <div className="flex items-center gap-2 t10">
                   <span className="rounded-full px-1.5 py-0.5 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>Ganadas {g.won}</span>
                   <span className="rounded-full px-1.5 py-0.5 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red }}>Perdidas {g.lost}</span>
@@ -5831,6 +5845,9 @@ function BenchmarkDeudoresModal({ deals, onClose, inline }) {
           ))}
         </div>
       </div>
+      {tareaEmp && <NodoTareasModal
+        nodo={{ name: tareaEmp, deals: (deals || []).filter((d) => d.cliente === tareaEmp || d.deudor === tareaEmp || (d.deudores || []).some((x) => (x.nombre || x) === tareaEmp)) }}
+        usuario={usuario} esJefe={esJefe} onCambio={() => {}} onClose={() => setTareaEmp(null)} />}
     </>
   );
 }
@@ -12532,7 +12549,7 @@ export default function PipelineComercial() {
     const updated = makeUpdated(d0);
     try {
       let href = null;
-      if (canal === "Email") { const url = URL.createObjectURL(new Blob([emailCierreHTML(updated)], { type: "text/html" })); href = url; setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 60000); }
+      if (canal === "Email") { href = emailHref(updated); }
       else if (canal === "WhatsApp") { href = waHrefDe(updated); }
       if (href) { if (win) win.location.href = href; else window.open(href, "_blank"); }
       else if (win) { try { win.close(); } catch (_) {} }
@@ -13706,7 +13723,7 @@ export default function PipelineComercial() {
                 ) : reporteGestion === "benchEjec" ? (
                   <ComparativoModal inline deals={deals} onClose={() => setReporteGestion(null)} />
                 ) : reporteGestion === "benchDeudores" ? (
-                  <BenchmarkDeudoresModal inline deals={deals} onClose={() => setReporteGestion(null)} />
+                  <BenchmarkDeudoresModal inline deals={deals} usuario={usuario} esJefe={esJefeComercial(usuario)} onClose={() => setReporteGestion(null)} />
                 ) : null
               } />
           </>
