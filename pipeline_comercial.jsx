@@ -11913,8 +11913,9 @@ export default function PipelineComercial() {
     const dealRows = dealsVista.filter((d) => {
       const matchQ = !q || d.cliente.toLowerCase().includes(q) || d.deudor.toLowerCase().includes(q) || d.id.toLowerCase().includes(q);
       let matchF = true;
-      if (quickFilter === "encurso") matchF = !["perdida"].includes(d.stage);
-      else if (quickFilter === "negociacion") matchF = d.stage === "oferta";
+      if (quickFilter === "activas") matchF = !["prospeccion", "perdida"].includes(d.stage); // Oferta y Negociación → Giro
+      else if (quickFilter === "prospectos") matchF = d.stage === "prospeccion";
+      else if (quickFilter === "perdidas") matchF = d.stage === "perdida";
       const matchDeudor = fDeudor === "todos" || (fDeudor === "buenos" ? esBuenDeudor(d) : !esBuenDeudor(d));
       const matchJef = fJefatura === "todas" || jefaturaOf(d) === fJefatura;
       const matchLinea = fLinea === "todas" || d.tag === fLinea;
@@ -11957,8 +11958,9 @@ export default function PipelineComercial() {
       exec: "—", status: "Sin clasificar", simulado: false,
     }));
     return deals.filter((d) => {
-      if (id === "encurso") return d.stage !== "perdida";
-      if (id === "negociacion") return d.stage === "oferta";
+      if (id === "activas") return !["prospeccion", "perdida"].includes(d.stage);
+      if (id === "prospectos") return d.stage === "prospeccion";
+      if (id === "perdidas") return d.stage === "perdida";
       return true; // todos
     });
   };
@@ -13317,8 +13319,9 @@ export default function PipelineComercial() {
   const inboundCount = showInbound ? streamFeed.length : 0;
   const quickFilters = [
     { id: "todos", label: "Todos", count: dealsVista.length + inboundCount },
-    { id: "encurso", label: "En Curso", count: activeCount },
-    { id: "negociacion", label: "Negociación", count: dealsVista.filter((d) => d.stage === "oferta").length },
+    { id: "activas", label: "Activas", count: dealsVista.filter((d) => !["prospeccion", "perdida"].includes(d.stage)).length },
+    { id: "prospectos", label: "Prospectos", count: dealsVista.filter((d) => d.stage === "prospeccion").length },
+    { id: "perdidas", label: "Perdidas", count: dealsVista.filter((d) => d.stage === "perdida").length },
     ...(showInbound ? [{ id: "sinclasificar", label: "Sin clasificar", count: streamFeed.length }] : []),
   ];
 
