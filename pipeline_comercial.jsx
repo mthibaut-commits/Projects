@@ -1249,15 +1249,15 @@ function emailCierreHTML(deal) {
   const giro = fmtMM(o.giroMM != null ? o.giroMM : (deal.giroMM || deal.amountMM || 0));
   const ejec = execName(deal);
   const fecha = deal.time || hoyStr();
-  // Enlace ABSOLUTO al portal de curse (curse.html) con el payload en el hash: es el MISMO proceso de
-  // aceptación formal (login → certificado → cuenta de abono → firma) que abre el botón de WhatsApp.
-  // Absoluto porque el correo se abre como blob: y un enlace relativo no resolvería al archivo servido.
+  // Clave de un solo uso (OTP) que identifica el negocio: el cliente la escribe en el portal junto al
+  // código de negocio, RUT y clave. Para el demo el correo incluye un botón que abre el portal (curse.html);
+  // el enlace es ABSOLUTO porque el correo se abre como blob:. El payload viaja también por localStorage.
+  const otp = otpDe(neg);
+  // URL CORTA y absoluta al portal (el payload viaja por localStorage, no en el hash): un enlace corto
+  // evita que el navegador bloquee la navegación desde el correo (blob:) por URL demasiado larga.
   let curseAbs;
-  try {
-    const enc = b64utf8(JSON.stringify({ mensajes: (deal.waSesion ? hiloDe(deal.waSesion) : []), payload: (curseDesdeDeal(deal) || {}).payload || null }));
-    const base = (typeof window !== "undefined" && window.location) ? window.location.href : "";
-    curseAbs = (base ? new URL(`curse.html?n=${neg}`, base).href : `curse.html?n=${neg}`) + (enc ? `#d=${encodeURIComponent(enc)}` : "");
-  } catch (e) { curseAbs = `curse.html?n=${neg}`; }
+  try { const base = (typeof window !== "undefined" && window.location) ? window.location.href : ""; curseAbs = base ? new URL(`curse.html?n=${neg}`, base).href : `curse.html?n=${neg}`; }
+  catch (e) { curseAbs = `curse.html?n=${neg}`; }
   const V = "#4a2596"; // violeta de marca Factoring Security (filial BICE)
   const A = "#1d4ed8"; // azul de acción (CTA, montos), como en el portal
   const row = (k, v, c) => `<div class=row><span>${k}</span><b${c ? ` style="color:${c}"` : ""}>${v}</b></div>`;
@@ -1326,12 +1326,17 @@ function emailCierreHTML(deal) {
   <div class="card"><div class="top"></div><div class="in">
     <div class="neg">Negocio N° ${neg}</div><div class="sub">Oferta publicada el <b>${fecha}</b></div>
     <div class="ml">Monto a girar</div><div class="mm">${giro}</div><div class="dc">${deal.facturas || 1} documento(s) · tasa ${deal.tasa || "—"}</div>
-    <button class="cta" onclick="window.open('${curseAbs}','_blank')">Revisar y firmar mi operación →</button>
+    <div style="margin-top:14px;border-top:1px dashed #E5E7EB;padding-top:12px">
+      <div style="font-size:11.5px;color:#6B7280">Clave de un solo uso (OTP)</div>
+      <div style="font-size:28px;font-weight:800;color:var(--a);letter-spacing:7px">${otp}</div>
+      <div style="font-size:10.5px;color:#9CA3AF;margin-top:6px">Ingrésala en el portal junto al código de negocio N° ${neg}, tu RUT y clave.</div>
+    </div>
+    <a class="cta" href="${curseAbs}" target="_blank" style="text-decoration:none;margin-top:14px">Ir al portal a firmar →</a>
   </div></div>
-  <div class="steps"><div class="h">También puedes firmar directamente en nuestro portal</div>
-    <div class="step"><span class="n">1</span><span>Ingresa a <b>www.factoringsecurity.cl/curse</b></span></div>
-    <div class="step"><span class="n">2</span><span>Inicia sesión con tu cuenta y busca el negocio <b>N° ${neg}</b></span></div>
-    <div class="step"><span class="n">3</span><span>Revisa las condiciones y presiona <b>Firmar</b> — el giro se realiza el mismo día</span></div>
+  <div class="steps"><div class="h">Cómo firmar tu operación de forma segura</div>
+    <div class="step"><span class="n">1</span><span>Ingresa <b>por tu cuenta</b> a <b>www.factoringsecurity.cl/curse</b> (escríbelo en tu navegador).</span></div>
+    <div class="step"><span class="n">2</span><span>Inicia sesión con tu <b>RUT y clave</b>, y escribe el <b>código de negocio N° ${neg}</b> y la <b>clave de un solo uso (OTP) ${otp}</b>.</span></div>
+    <div class="step"><span class="n">3</span><span>Revisa las condiciones y presiona <b>Firmar</b> — el giro se realiza el mismo día.</span></div>
   </div>
   <div class="band">Factoring Security, <b>simple para ti.</b></div>
   <div class="sec"><div class="h">Porque tu seguridad es lo más importante:</div><ul>
@@ -1399,6 +1404,8 @@ function makeBus(name) {
 const negDe = (d) => (d && d.id === "OP-DEMO-CR") ? "14245114" : String(14000000 + (hashStr((d && d.id) || "x") % 999999));
 // URLs del flujo de cierre. En el demo son archivos hermanos (mismo origen). El path "público"
 // equivalente del sitio de aprobación es www.factoringsecurity.cl/curse/<neg>.
+// Clave de un solo uso (OTP) determinista por negocio: identifica el negocio en el portal de curse.
+const otpDe = (neg) => String(100000 + (hashStr("otp-" + neg) % 900000));
 const curseURL = (neg) => `curse.html?n=${neg}`;
 const curseURLPublica = (neg) => `www.factoringsecurity.cl/curse/${neg}`;
 const waClienteURL = (neg) => `whatsapp.html?n=${neg}`;
@@ -12470,24 +12477,29 @@ export default function PipelineComercial() {
   };
   // El ejecutivo envía el mensaje de cierre + el botón "Aprobar operación" que deriva al sitio de curse.
   const enviarCierre = (id, canal = "WhatsApp") => {
+    // Abrimos la pestaña del canal INMEDIATAMENTE (dentro del gesto del clic) para que el navegador no
+    // la bloquee como pop-up; luego le fijamos la URL una vez calculada. Si el bloqueador igual la impide,
+    // caemos a window.open directo.
+    let win = null; try { win = window.open("", "_blank"); } catch (_) { win = null; }
     const stamp = nowStamp();
     // Genera el deal actualizado de forma pura (mismo stamp) para reutilizarlo en el estado y al abrir el canal.
     const makeUpdated = (d) => {
       const neg = negDe(d);
-      const link = curseURLPublica(neg);
+      const otp = otpDe(neg);
+      const portal = "www.factoringsecurity.cl/curse";
       let wa = d.waSesion; let emailThread = d.emailThread; let detalle = "";
       if (canal === "WhatsApp") {
         if (!(d.waSesion || []).some((m) => m.tipo === "boton")) {
-          detalle = `Para cerrar formalmente la operación ingresa a Factoring Security (${link}), inicia sesión y firma. [Botón: Aprobar operación]`;
+          detalle = `Para firmar, ingresa a ${portal}, inicia sesión con tu RUT y clave y escribe el código de negocio N° ${neg} y la clave de un solo uso (OTP) ${otp}.`;
           wa = [...(d.waSesion || []),
-            { from: "ejecutivo", text: `Para cerrar formalmente la operación debes ingresar a la plataforma de Factoring Security a cursar (${link}). Inicia sesión con tu cuenta y firma 🔒:`, time: stamp, canal: "WhatsApp" },
-            { from: "ejecutivo", tipo: "boton", boton: "Aprobar operación", url: waClienteURL(neg), neg, text: `Negocio N° ${neg} · Factoring Security`, time: stamp, canal: "WhatsApp" },
+            { from: "ejecutivo", text: `Para firmar tu operación ingresa a la plataforma de Factoring Security (${portal}). Inicia sesión con tu RUT y clave, y escribe tu 🔑 código de negocio N° ${neg} y tu clave de un solo uso (OTP): *${otp}* 🔒`, time: stamp, canal: "WhatsApp" },
+            { from: "ejecutivo", tipo: "boton", boton: "Ir al portal a firmar", url: waClienteURL(neg), neg, text: `Negocio N° ${neg} · OTP ${otp} · Factoring Security`, time: stamp, canal: "WhatsApp" },
           ];
         }
       } else { // Email
         const asunto = `Firma tu operación de factoring N° ${neg}`;
-        const cuerpo = `Hola ${(d.contacto && d.contacto.nombre) || "estimado/a"},\n\nPara cerrar formalmente tu operación ingresa a la plataforma de Factoring Security:\n${link}\n\nInicia sesión con tu cuenta y firma; el giro se realiza el mismo día.\n\nSaludos,\n${execName(d)}\nNEX Factoring · Factoring Security`;
-        emailThread = [...(d.emailThread || []), { from: "ejecutivo", asunto, cuerpo, template: "Enlace de cierre", time: stamp }];
+        const cuerpo = `Hola ${(d.contacto && d.contacto.nombre) || "estimado/a"},\n\nTu oferta está lista para firmar. Por tu seguridad, este correo NO contiene enlaces: ingresa por tu cuenta a la plataforma de Factoring Security (${portal}).\n\n• Código de negocio: N° ${neg}\n• Clave de un solo uso (OTP): ${otp}\n\nInicia sesión con tu RUT y clave, escribe el código de negocio y el OTP, revisa las condiciones y firma; el giro se realiza el mismo día.\n\nSaludos,\n${execName(d)}\nNEX Factoring · Factoring Security`;
+        emailThread = [...(d.emailThread || []), { from: "ejecutivo", asunto, cuerpo, template: "Código de negocio + OTP", time: stamp }];
         detalle = `Asunto: ${asunto}\n\n${cuerpo}`;
       }
       const hist = [...(d.historialContacto || []), { fecha: stamp, canal, resultado: `Oferta comunicada por ${canal} · enlace para firmar enviado (N° ${neg})`, detalle, exito: true }];
@@ -12499,12 +12511,18 @@ export default function PipelineComercial() {
     if (!d0) return;
     const neg = negDe(d0);
     if (!cursePayloadsRef.current[neg]) { const c = curseDesdeDeal(d0); cursePayloadsRef.current[neg] = { id, tasa: c.tasa, opts: c.opts, payload: c.payload }; }
-    // Abre el canal del cliente en una pestaña nueva (_blank): WhatsApp del cliente o el simulador de email.
+    // Persistimos el payload + OTP por negocio (mismo origen) para que el portal de curse.html lo recupere
+    // cuando el cliente ingresa a firmar con su código de negocio y la clave de un solo uso.
+    try { localStorage.setItem("fs_curse_" + neg, JSON.stringify({ neg, otp: otpDe(neg), payload: cursePayloadsRef.current[neg].payload, ts: Date.now() })); } catch (_) {}
+    // Navega la pestaña ya abierta (win) al canal del cliente: simulador de email o WhatsApp del cliente.
     const updated = makeUpdated(d0);
     try {
-      if (canal === "Email") { const url = URL.createObjectURL(new Blob([emailCierreHTML(updated)], { type: "text/html" })); window.open(url, "_blank"); setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 60000); }
-      else if (canal === "WhatsApp") { window.open(waHrefDe(updated), "_blank"); }
-    } catch (_) {}
+      let href = null;
+      if (canal === "Email") { const url = URL.createObjectURL(new Blob([emailCierreHTML(updated)], { type: "text/html" })); href = url; setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 60000); }
+      else if (canal === "WhatsApp") { href = waHrefDe(updated); }
+      if (href) { if (win) win.location.href = href; else window.open(href, "_blank"); }
+      else if (win) { try { win.close(); } catch (_) {} }
+    } catch (_) { if (win) { try { win.close(); } catch (_) {} } }
   };
   // El cliente se autentica y firma en el sitio Security: recién aquí la operación pasa a Aceptadas.
   const confirmarCierre = (id, tasa, opts, usuario) => {

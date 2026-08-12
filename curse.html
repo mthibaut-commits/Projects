@@ -101,8 +101,10 @@ td{padding:12px;border-bottom:1px solid #f0f1f5;font-size:13px;color:var(--ink);
     <div class="logo" id="logo-slot"></div>
     <h2>Te damos la bienvenida a</h2>
     <h1>Plataforma comercial de factoring</h1>
+    <div class="fld"><label>Número de negocio</label><div class="inp"><input id="lg-neg" placeholder="Ej: 14000000" oninput="lgCheck()"></div></div>
     <div class="fld"><label>RUT</label><div class="inp"><input id="lg-rut" placeholder="Ingresa el RUT" oninput="lgCheck()"></div></div>
     <div class="fld"><label>Clave internet</label><div class="inp"><input id="lg-pass" type="password" placeholder="Ingresa la clave" oninput="lgCheck()"><span style="color:#c3c8d6">&#128100;</span></div></div>
+    <div class="fld"><label>Clave de un solo uso (OTP)</label><div class="inp"><input id="lg-otp" placeholder="Código enviado por correo / WhatsApp" oninput="lgCheck()"></div></div>
     <button class="btn-primary" id="lg-btn" disabled onclick="goPortal()">Ingresar</button>
     <a class="help" href="javascript:void(0)">¿Tienes problemas con tu clave internet?</a>
     <div class="fono">&#128222; 600 400 1010</div>
@@ -216,11 +218,15 @@ document.getElementById('logo-slot2').innerHTML=LOGO;
 function decode(){try{var h=location.hash||"";var i=h.indexOf("d=");if(i<0)return null;return JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(h.slice(i+2))))));}catch(e){return null;}}
 var DATA=decode()||{}; var P=DATA.payload||DATA||{};
 var NEG=(new URLSearchParams(location.search)).get("n")||P.neg||"—";
+// El payload persiste por negocio en localStorage (mismo origen que la app). Es la fuente preferida:
+// el cliente ingresa su código de negocio + OTP y el portal recupera la operación (simula el backend).
+function loadStore(neg){ try{ return JSON.parse(localStorage.getItem('fs_curse_'+neg)||'null'); }catch(e){ return null; } }
+var STORE=loadStore(NEG); if(STORE&&STORE.payload){ P=STORE.payload; }
 function clp(n){n=Math.round(n||0);return "CLP "+n.toLocaleString("es-CL");}
 function set(id,v){var e=document.getElementById(id);if(e)e.textContent=v;}
 
 // Fill portal from payload
-(function(){
+function fillPortal(){
   set('pt-emp',(P.empresa||'EMPRESA').toUpperCase()); set('pt-rut',P.rut||'—');
   set('pt-ejec',P.ejecutivo||'Ejecutivo'); set('pt-fecha',P.fecha||'—');
   set('pt-sim', String(NEG));
@@ -243,11 +249,29 @@ function set(id,v){var e=document.getElementById(id);if(e)e.textContent=v;}
   tb.innerHTML=fs.length?fs.map(function(f){return '<tr><td>'+(f.tipo||'Factura electrónica')+' #'+(f.folio||'')+'<div class="badge">Curse express</div></td><td>'+(f.deudor||'')+'</td><td>'+(f.venc?f.venc+' días':'—')+'</td><td style="text-align:right;font-weight:700">'+clp(f.monto)+'</td></tr>';}).join(''):'<tr><td colspan="4" style="color:#9ca3af;text-align:center;padding:18px">Sin documentos en el payload.</td></tr>';
   // cert name
   set('cert-nombre', (P.contacto&&P.contacto.nombre)||P.ejecutivo||'Titular'); set('cert-nm',(P.contacto&&P.contacto.nombre)||P.ejecutivo||'Titular');
-})();
+}
+fillPortal();
+// Prefill del número de negocio (viene en la URL); el cliente completa RUT, clave y OTP.
+(function(){ var n=document.getElementById('lg-neg'); if(n&&NEG&&NEG!=='—') n.value=NEG; })();
 
-// Login
-function lgCheck(){document.getElementById('lg-btn').disabled=!(document.getElementById('lg-rut').value.trim()&&document.getElementById('lg-pass').value.trim());}
-function goPortal(){document.getElementById('scr-login').classList.add('hidden');document.getElementById('scr-portal').classList.remove('hidden');window.scrollTo(0,0);}
+// Login: requiere código de negocio + RUT + clave + OTP. El OTP es la llave que identifica el negocio.
+function lgCheck(){var g=document.getElementById('lg-neg').value.trim(),r=document.getElementById('lg-rut').value.trim(),p=document.getElementById('lg-pass').value.trim(),o=document.getElementById('lg-otp').value.trim();document.getElementById('lg-btn').disabled=!(g&&r&&p&&o);}
+function showPortal(){document.getElementById('scr-login').classList.add('hidden');document.getElementById('scr-portal').classList.remove('hidden');window.scrollTo(0,0);}
+function goPortal(){
+  var neg=document.getElementById('lg-neg').value.trim();
+  var otp=document.getElementById('lg-otp').value.trim();
+  var st=loadStore(neg);
+  if(st){
+    if(String(st.otp)!==otp){ alert('La clave de un solo uso (OTP) no corresponde al negocio N° '+neg+'. Revísala en el correo o WhatsApp que te enviamos.'); return; }
+    P=st.payload||P; NEG=neg; fillPortal();
+  } else if(P&&(String(P.neg)===neg||String(NEG)===neg)){
+    // Sin registro local (otro navegador): se acepta con el payload del enlace, sin poder validar el OTP.
+    NEG=neg; fillPortal();
+  } else {
+    alert('No encontramos el negocio N° '+neg+'. Verifica el código de negocio enviado por Factoring Security.'); return;
+  }
+  showPortal();
+}
 function showLogin(){document.getElementById('scr-portal').classList.add('hidden');document.getElementById('scr-login').classList.remove('hidden');}
 
 // Cesión + cuenta -> habilitar cursar
