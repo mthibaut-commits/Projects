@@ -4652,21 +4652,35 @@ const REPORTE_METRICAS = [
   { key: "giro", label: "Giro", color: "#16a34a" },
   { key: "perdida", label: "Pérdida", color: "#dc2626" },
 ];
-function DiaModal({ info, ultimo, reporte, deals = [], onAceptar, onClose }) {
+function DiaModal({ info, ultimo, reporte, deals = [], onAceptar, onClose, inline }) {
   const s = info.stats;
   const [execF, setExecF] = useState("todos"); // filtro del embudo por ejecutivo
+  // Rango de fechas del Funnel Comercial (vista inline): por defecto el mes en curso.
+  const [desde, setDesde] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; });
+  const [hasta, setHasta] = useState(() => { const d = new Date(); const p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; });
   const hist7 = [...(reporte || []).slice(-6), s]; // últimos 7 días (incluye el actual)
   return (
     <>
-      <div className="fixed inset-0 z-50 ovl" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-        <div onClick={(e) => e.stopPropagation()} className="w-full rounded-xl bg-white p-5 shadow-2xl" style={{ maxWidth: "720px", maxHeight: "90vh", overflowY: "auto", border: `1px solid ${C.line}` }}>
-          <div className="flex items-start justify-between">
+      {!inline && <div className="fixed inset-0 z-50 ovl" onClick={onClose} />}
+      <div className={inline ? "" : "fixed inset-0 z-50 flex items-center justify-center p-4"} onClick={inline ? undefined : onClose}>
+        <div onClick={(e) => e.stopPropagation()} className="w-full bg-white p-5" style={inline ? { borderRadius: 16, border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" } : { maxWidth: "720px", maxHeight: "90vh", overflowY: "auto", borderRadius: 16, border: `1px solid ${C.line}`, boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="text-lg font-semibold" style={{ color: C.ink }}>Día {info.dia} cerrado</div>
-              <div className="t12" style={{ color: C.faint }}>Resumen del día y tendencia (últimos {hist7.length} días)</div>
+              <div className="text-lg font-semibold" style={{ color: C.ink }}>{inline ? "Funnel Comercial" : `Día ${info.dia} cerrado`}</div>
+              <div className="t12" style={{ color: C.faint }}>{inline ? "Embudo comercial y tendencia en el rango seleccionado" : `Resumen del día y tendencia (últimos ${hist7.length} días)`}</div>
             </div>
-            <button onClick={onClose} className="rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>
+            {inline ? (
+              <div className="flex items-end gap-2">
+                <label className="flex flex-col t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Desde
+                  <input type="date" value={desde} max={hasta} onChange={(e) => setDesde(e.target.value)} className="mt-1 rounded-lg px-2 py-1.5 t12" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }} />
+                </label>
+                <label className="flex flex-col t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Hasta
+                  <input type="date" value={hasta} min={desde} onChange={(e) => setHasta(e.target.value)} className="mt-1 rounded-lg px-2 py-1.5 t12" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }} />
+                </label>
+              </div>
+            ) : (
+              <button onClick={onClose} className="rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>
+            )}
           </div>
           {(() => {
             const e = s.embudo || {}; const won = e.aceptadas || 0, lost = e.perdida || 0, tot = won + lost;
@@ -4763,9 +4777,9 @@ function DiaModal({ info, ultimo, reporte, deals = [], onAceptar, onClose }) {
               );
             })()}
           </div>
-          <button onClick={info.soloVista ? onClose : onAceptar} className="mt-4 w-full rounded-lg py-2 t12 font-semibold text-white" style={{ backgroundColor: C.ink }}>
+          {!inline && <button onClick={info.soloVista ? onClose : onAceptar} className="mt-4 w-full rounded-lg py-2 t12 font-semibold text-white" style={{ backgroundColor: C.ink }}>
             {info.soloVista ? "Cerrar" : ultimo ? "Ver reporte semanal →" : `Aceptar y continuar al Día ${info.dia + 1} →`}
-          </button>
+          </button>}
         </div>
       </div>
     </>
@@ -5079,57 +5093,6 @@ function ReporteModal({ reporte, analisis, onClose, onRecomendar }) {
 }
 
 // Reporte de cobranza standalone (con exportar a PDF).
-function CobranzaModal({ cobranza, onClose }) {
-  const sems = [1, 2, 3, 4, 5, 6, 7, 8];
-  const deudores = Object.keys(cobranza || {});
-  return (
-    <>
-      <div className="fixed inset-0 z-40 ovl no-print" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-        <div onClick={(e) => e.stopPropagation()} className="print-area w-full rounded-xl bg-white p-5 shadow-2xl" style={{ maxWidth: "900px", maxHeight: "88vh", overflowY: "auto", border: `1px solid ${C.line}` }}>
-          <div className="flex items-center justify-between">
-            <div className="text-lg font-semibold" style={{ color: C.ink }}>Reporte de cobranza · monto y facturas por deudor y semana de vencimiento</div>
-            <div className="no-print flex items-center gap-2">
-              <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium text-white" style={{ backgroundColor: C.indigo }}><Download size={14} /> Exportar PDF</button>
-              <button onClick={onClose} className="rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>
-            </div>
-          </div>
-          {deudores.length === 0 ? (
-            <div className="mt-4 t12" style={{ color: C.faint }}>Sin cuentas por cobrar aún (no hay negocios cedidos/girados).</div>
-          ) : (
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full border-collapse t10">
-                <thead><tr>
-                  <th className="px-2 py-1 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>Deudor</th>
-                  {sems.map((w) => <th key={w} className="px-2 py-1 text-right font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{w === 1 ? "Próx. sem" : `${w} sem`}</th>)}
-                  <th className="px-2 py-1 text-right font-semibold" style={{ color: C.ink, borderBottom: `1px solid ${C.line}` }}>Total</th>
-                </tr></thead>
-                <tbody>
-                  {deudores.map((deudor) => {
-                    const row = cobranza[deudor];
-                    const tot = sems.reduce((acc, w) => ({ monto: acc.monto + (row[w] ? row[w].monto : 0), fac: acc.fac + (row[w] ? row[w].fac : 0) }), { monto: 0, fac: 0 });
-                    return (
-                      <tr key={deudor} style={{ borderBottom: `1px solid ${C.line}` }}>
-                        <td className="whitespace-nowrap px-2 py-1 font-medium" style={{ color: C.ink }}>{deudor}</td>
-                        {sems.map((w) => (
-                          <td key={w} className="whitespace-nowrap px-2 py-1 text-right" style={{ color: C.sub }}>
-                            {row[w] ? <span>{fmtMM(row[w].monto)}<span style={{ color: C.faint }}> · {row[w].fac}f</span></span> : "—"}
-                          </td>
-                        ))}
-                        <td className="whitespace-nowrap px-2 py-1 text-right font-semibold" style={{ color: C.ink }}>{fmtMM(tot.monto)} · {tot.fac}f</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
 function MacroColumn({ title, hint, children }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col">
@@ -5757,7 +5720,7 @@ function benchmarkPor(deals, by = "deudor") {
     return { key, entries, won: won.length, lost: lost.length, wr, avgWon, avgLostOurs, avgComp, minTasa, minSpread, objetivoTasa, objetivoSpread, estrategia };
   }).sort((a, b) => b.entries.length - a.entries.length);
 }
-function BenchmarkDeudoresModal({ deals, onClose }) {
+function BenchmarkDeudoresModal({ deals, onClose, inline }) {
   const [by, setBy] = useState("deudor"); // "deudor" (pagador) | "cliente" (cedente)
   const [q, setQ] = useState(""); // búsqueda por nombre de empresa (cliente o deudor)
   const grupos = useMemo(() => benchmarkPor(deals, by), [deals, by]);
@@ -5770,15 +5733,15 @@ function BenchmarkDeudoresModal({ deals, onClose }) {
     : grupos;
   return (
     <>
-      <div className="fixed inset-0 z-50 ovl" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-        <div onClick={(e) => e.stopPropagation()} className="w-full rounded-xl bg-white p-5 shadow-2xl" style={{ maxWidth: "960px", maxHeight: "90vh", overflowY: "auto", border: `1px solid ${C.line}` }}>
+      {!inline && <div className="fixed inset-0 z-50 ovl" onClick={onClose} />}
+      <div className={inline ? "" : "fixed inset-0 z-50 flex items-center justify-center p-4"} onClick={inline ? undefined : onClose}>
+        <div onClick={(e) => e.stopPropagation()} className="w-full bg-white p-5" style={inline ? { borderRadius: 16, border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" } : { maxWidth: "960px", maxHeight: "90vh", overflowY: "auto", borderRadius: 16, border: `1px solid ${C.line}`, boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
           <div className="flex items-start justify-between">
             <div>
               <div className="text-lg font-semibold" style={{ color: C.ink }}>Benchmark competitivo por {by === "cliente" ? "cliente" : "deudor"}</div>
               <div className="t12" style={{ color: C.faint }}>Operaciones cursadas y perdidas ante la competencia · tasa ofertada · orden cronológico</div>
             </div>
-            <button onClick={onClose} className="rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>
+            {!inline && <button onClick={onClose} className="rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>}
           </div>
           {/* Filtro: agrupar por empresa Deudora (pagador) o por empresa Cliente (cedente) + buscador. */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -5834,7 +5797,7 @@ function BenchmarkDeudoresModal({ deals, onClose }) {
     </>
   );
 }
-function ComparativoModal({ deals, onClose }) {
+function ComparativoModal({ deals, onClose, inline }) {
   const [dim, setDim] = useState("ejecutivo");
   const dims = {
     ejecutivo: { label: "Ejecutivo", fn: (d) => EXECS[d.exec] || d.exec || "Inbound / IA" },
@@ -5859,9 +5822,9 @@ function ComparativoModal({ deals, onClose }) {
   const totWr = (tot.ganados + tot.perdidos) ? Math.round(tot.ganados / (tot.ganados + tot.perdidos) * 100) : 0;
   return (
     <>
-      <div className="fixed inset-0 z-50 ovl" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-        <div onClick={(e) => e.stopPropagation()} className="w-full rounded-xl bg-white p-5 shadow-2xl" style={{ maxWidth: "920px", maxHeight: "90vh", overflowY: "auto", border: `1px solid ${C.line}` }}>
+      {!inline && <div className="fixed inset-0 z-50 ovl" onClick={onClose} />}
+      <div className={inline ? "" : "fixed inset-0 z-50 flex items-center justify-center p-4"} onClick={inline ? undefined : onClose}>
+        <div onClick={(e) => e.stopPropagation()} className="w-full bg-white p-5" style={inline ? { borderRadius: 16, border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" } : { maxWidth: "920px", maxHeight: "90vh", overflowY: "auto", borderRadius: 16, border: `1px solid ${C.line}`, boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
           <div className="flex items-start justify-between">
             <div>
               <div className="text-lg font-semibold" style={{ color: C.ink }}>Benchmark ejecutivo</div>
@@ -5871,43 +5834,43 @@ function ComparativoModal({ deals, onClose }) {
               <select value={dim} onChange={(e) => setDim(e.target.value)} className="rounded-md px-2 py-1.5 t12" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
                 {Object.entries(dims).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
               </select>
-              <button onClick={onClose} className="rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>
+              {!inline && <button onClick={onClose} className="rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>}
             </div>
           </div>
-          <table className="mt-3 w-full border-collapse t11">
+          <table className="mt-3 w-full border-collapse t13">
             <thead><tr>
               {[dims[dim].label, "Oport.", "Pipeline", "Cursadas", "Venta girada", "Win rate", "Pérdidas"].map((h, i) => (
-                <th key={i} className={`px-2 py-1.5 font-semibold ${i === 0 ? "text-left" : "text-right"}`} style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>
+                <th key={i} className={`px-3 py-2.5 t11 font-semibold uppercase tracking-wide ${i === 0 ? "text-left" : "text-right"}`} style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>
               ))}
             </tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.nombre} style={{ borderBottom: `1px solid ${C.line}` }}>
-                  <td className="px-2 py-1.5" style={{ color: C.ink }}>{r.nombre}</td>
-                  <td className="px-2 py-1.5 text-right" style={{ color: C.sub }}>{r.opp}</td>
-                  <td className="px-2 py-1.5 text-right" style={{ color: C.sub }}>{fmtMM(r.pipeMM)}</td>
-                  <td className="px-2 py-1.5 text-right" style={{ color: C.sub }}>{r.cursado}</td>
-                  <td className="px-2 py-1.5 text-right">
-                    <span className="flex items-center justify-end gap-1.5">
-                      <span className="hidden h-1.5 rounded-full sm:block" style={{ width: `${Math.max(6, (r.ventaMM / maxVenta) * 70)}px`, backgroundColor: C.green }} />
-                      <span className="font-medium" style={{ color: C.ink }}>{fmtMM(r.ventaMM)}</span>
+                  <td className="px-3 py-3.5 font-medium" style={{ color: C.ink }}>{r.nombre}</td>
+                  <td className="px-3 py-3.5 text-right" style={{ color: C.sub }}>{r.opp}</td>
+                  <td className="px-3 py-3.5 text-right" style={{ color: C.sub }}>{fmtMM(r.pipeMM)}</td>
+                  <td className="px-3 py-3.5 text-right" style={{ color: C.sub }}>{r.cursado}</td>
+                  <td className="px-3 py-3.5 text-right">
+                    <span className="flex items-center justify-end gap-2">
+                      <span className="hidden h-2 rounded-full sm:block" style={{ width: `${Math.max(6, (r.ventaMM / maxVenta) * 70)}px`, backgroundColor: C.green }} />
+                      <span className="font-semibold" style={{ color: C.ink }}>{fmtMM(r.ventaMM)}</span>
                     </span>
                   </td>
-                  <td className="px-2 py-1.5 text-right font-medium" style={{ color: r.wr >= 50 ? C.green : C.amber }}>{r.wr}%</td>
-                  <td className="px-2 py-1.5 text-right" style={{ color: C.red }}>{r.perdidos}</td>
+                  <td className="px-3 py-3.5 text-right font-semibold" style={{ color: r.wr >= 50 ? C.green : C.amber }}>{r.wr}%</td>
+                  <td className="px-3 py-3.5 text-right font-medium" style={{ color: C.red }}>{r.perdidos}</td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={7} className="px-2 py-4 text-center t11" style={{ color: C.faint }}>Sin datos todavía — el pipeline se llena con la simulación.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center t12" style={{ color: C.faint }}>Sin datos todavía — el pipeline se llena con la simulación.</td></tr>}
             </tbody>
             {rows.length > 0 && (
               <tfoot><tr style={{ borderTop: `2px solid ${C.line}` }}>
-                <td className="px-2 py-1.5 font-semibold" style={{ color: C.ink }}>Total</td>
-                <td className="px-2 py-1.5 text-right font-semibold" style={{ color: C.ink }}>{tot.opp}</td>
-                <td className="px-2 py-1.5 text-right font-semibold" style={{ color: C.ink }}>{fmtMM(+tot.pipeMM.toFixed(1))}</td>
-                <td className="px-2 py-1.5 text-right font-semibold" style={{ color: C.ink }}>{tot.cursado}</td>
-                <td className="px-2 py-1.5 text-right font-bold" style={{ color: C.ink }}>{fmtMM(+tot.ventaMM.toFixed(1))}</td>
-                <td className="px-2 py-1.5 text-right font-semibold" style={{ color: C.ink }}>{totWr}%</td>
-                <td className="px-2 py-1.5 text-right font-semibold" style={{ color: C.red }}>{tot.perdidos}</td>
+                <td className="px-3 py-3 font-semibold" style={{ color: C.ink }}>Total</td>
+                <td className="px-3 py-3 text-right font-semibold" style={{ color: C.ink }}>{tot.opp}</td>
+                <td className="px-3 py-3 text-right font-semibold" style={{ color: C.ink }}>{fmtMM(+tot.pipeMM.toFixed(1))}</td>
+                <td className="px-3 py-3 text-right font-semibold" style={{ color: C.ink }}>{tot.cursado}</td>
+                <td className="px-3 py-3 text-right font-bold" style={{ color: C.ink }}>{fmtMM(+tot.ventaMM.toFixed(1))}</td>
+                <td className="px-3 py-3 text-right font-semibold" style={{ color: C.ink }}>{totWr}%</td>
+                <td className="px-3 py-3 text-right font-semibold" style={{ color: C.red }}>{tot.perdidos}</td>
               </tr></tfoot>
             )}
           </table>
@@ -7946,8 +7909,8 @@ function PCsankey({ deals = [], execsFiltrados = [], hayFiltro, soloExec, usuari
     </div>
   );
 }
-function PanelClientes({ soloExec, deals = [], usuario, reportes = {} }) {
-  const [seccion, setSeccion] = useState("cliente"); // cliente | sow | desempeno | sankey
+function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, onReporte = () => {}, reporteNode = null }) {
+  const [seccion, setSeccion] = useState("cliente"); // cliente | sow | desempeno | sankey (+ reportes como pestañas)
   const [fZona, setFZona] = useState("todas");
   const [fJefatura, setFJefatura] = useState("todas");
   const [fEjec, setFEjec] = useState("todos");
@@ -7971,8 +7934,14 @@ function PanelClientes({ soloExec, deals = [], usuario, reportes = {} }) {
       <select value={value} onChange={(e) => onChange(e.target.value)} className="rounded-lg px-3 py-2 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", minWidth: 180 }}>{options.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}</select>
     </div>
   );
-  const Tab = ({ id, label }) => (
-    <button onClick={() => setSeccion(id)} className="px-1 pb-2 t12" style={{ borderBottom: `2px solid ${seccion === id ? C.indigo : "transparent"}`, color: seccion === id ? C.indigo : C.sub, fontWeight: seccion === id ? 600 : 400, marginBottom: -1 }}>{label}</button>
+  // Una pestaña de SECCIÓN está activa solo si no hay reporte abierto; abrir sección cierra el reporte.
+  const secActiva = (id) => !reporteActivo && seccion === id;
+  const Tab = ({ id, label, Icon }) => (
+    <button onClick={() => { setSeccion(id); onReporte(null); }} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${secActiva(id) ? C.indigo : "transparent"}`, color: secActiva(id) ? C.indigo : C.sub, fontWeight: secActiva(id) ? 600 : 400, marginBottom: -1 }}>{Icon && <Icon size={13} />} {label}</button>
+  );
+  // Reportes de Gestión como pestañas al mismo nivel que las secciones (mismo estilo underline).
+  const RepTab = ({ id, label, Icon }) => (
+    <button onClick={() => onReporte(id)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${reporteActivo === id ? C.indigo : "transparent"}`, color: reporteActivo === id ? C.indigo : C.sub, fontWeight: reporteActivo === id ? 600 : 400, marginBottom: -1 }}><Icon size={13} /> {label}</button>
   );
   return (
     <div className="space-y-5">
@@ -7990,24 +7959,27 @@ function PanelClientes({ soloExec, deals = [], usuario, reportes = {} }) {
           </>
         )}
       </div>
-      {/* Secciones (tabs underline spec §3) + accesos a reportes al mismo nivel */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
-        <Tab id="cliente" label="Cliente" />
-        <Tab id="sow" label="SOW" />
-        <Tab id="desempeno" label="Desempeño" />
-        <Tab id="sankey" label="Origen → Cierre" />
-        {hayFiltro && <span className="mb-1.5 rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{fEjec !== "todos" ? fEjec : fJefatura !== "todas" ? fJefatura : fZona} · {agg.clientes.toLocaleString("es-CL")} clientes</span>}
-        <div className="mb-1.5 ml-auto flex flex-wrap items-center gap-1.5">
-          {[["planEjec", "Plan Mensual Ejecutivo", Target], ["semanal", "Reporte semanal", BarChart2], ["cobranza", "Reporte de cobranza", Table2], ["resumen", "Resumen diario", Calendar], ["benchEjec", "Benchmark ejecutivo", Table2], ["benchDeudores", "Benchmark deudores", Star]].map(([k, l, Ic]) => (
-            <button key={k} onClick={reportes[k]} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.sub }}><Ic size={13} /> {l}</button>
-          ))}
-        </div>
+      {/* Secciones y reportes: TODOS pestañas underline al mismo nivel (spec §3) */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <RepTab id="planEjec" label="Plan Mensual Ejecutivo" Icon={Target} />
+        <Tab id="cliente" label="Cliente" Icon={User} />
+        <Tab id="sow" label="SOW" Icon={BarChart2} />
+        <Tab id="sankey" label="Origen → Cierre" Icon={Filter} />
+        <RepTab id="benchEjec" label="Benchmark ejecutivo" Icon={Table2} />
+        <RepTab id="benchDeudores" label="Benchmark deudores" Icon={Star} />
+        <RepTab id="resumen" label="Funnel Comercial" Icon={Filter} />
+        {hayFiltro && <span className="mb-1.5 ml-auto rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{fEjec !== "todos" ? fEjec : fJefatura !== "todas" ? fJefatura : fZona} · {agg.clientes.toLocaleString("es-CL")} clientes</span>}
       </div>
 
-      {seccion === "cliente" && <PCcliente agg={agg} hayFiltro={hayFiltro} />}
-      {seccion === "sow" && <PCsow />}
-      {seccion === "desempeno" && <PCdesempeno execs={execsFiltrados} onZona={setFZona} />}
-      {seccion === "sankey" && <PCsankey deals={deals} execsFiltrados={execsFiltrados} hayFiltro={hayFiltro} soloExec={soloExec} usuario={usuario} esJefe={esJefeComercial(usuario)} />}
+      {reporteActivo ? (
+        <div>{reporteNode}</div>
+      ) : (
+        <>
+          {seccion === "cliente" && <PCcliente agg={agg} hayFiltro={hayFiltro} />}
+          {seccion === "sow" && <PCsow />}
+          {seccion === "sankey" && <PCsankey deals={deals} execsFiltrados={execsFiltrados} hayFiltro={hayFiltro} soloExec={soloExec} usuario={usuario} esJefe={esJefeComercial(usuario)} />}
+        </>
+      )}
     </div>
   );
 }
@@ -8069,9 +8041,9 @@ function PCcliente({ agg, hayFiltro }) {
                 <div className="mt-3 text-2xl font-bold" style={{ color: C.ink }}>{s.clientes} <span className="t11 font-medium" style={{ color: C.faint }}>clientes</span></div>
                 <div className="t10" style={{ color: C.sub }}>{s.cedido} cedidos en el año</div>
                 <div className="mt-3 space-y-2">
-                  <div className="flex items-center justify-between t11"><span style={{ color: C.sub }}><span className="mr-1.5 inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: "#16A34A" }} />Buenos deudores</span><b style={{ color: C.ink }}>{s.buenos.toLocaleString("es-CL")}</b></div>
-                  <div className="flex h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: "#E5E7EB" }}><div className="h-full" style={{ width: pct + "%", backgroundColor: "#16A34A" }} /><div className="h-full" style={{ width: (100 - pct) + "%", backgroundColor: "#F97316" }} /></div>
-                  <div className="flex items-center justify-between t11"><span style={{ color: C.sub }}><span className="mr-1.5 inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: "#F97316" }} />Con malos deudores</span><b style={{ color: C.ink }}>{s.malos.toLocaleString("es-CL")}</b></div>
+                  <div className="flex items-center justify-between t11"><span style={{ color: C.sub }}><span className="mr-1.5 inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: "#703EFF" }} />Buenos deudores</span><b style={{ color: C.ink }}>{s.buenos.toLocaleString("es-CL")}</b></div>
+                  <div className="flex h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: "#F1ECFF" }}><div className="h-full" style={{ width: pct + "%", backgroundColor: "#703EFF" }} /><div className="h-full" style={{ width: (100 - pct) + "%", backgroundColor: "#FF814B" }} /></div>
+                  <div className="flex items-center justify-between t11"><span style={{ color: C.sub }}><span className="mr-1.5 inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: "#FF814B" }} />Con malos deudores</span><b style={{ color: C.ink }}>{s.malos.toLocaleString("es-CL")}</b></div>
                 </div>
                 <div className="mt-2 t9" style={{ color: C.faint }}>Buenos: <b style={{ color: C.sub }}>{s.buenosMM}</b> · Malos: <b style={{ color: C.sub }}>{s.malosMM}</b></div>
               </div>
@@ -8081,12 +8053,34 @@ function PCcliente({ agg, hayFiltro }) {
       </div>
       {/* Volumen cedido + SoW */}
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <div className="rounded-2xl p-4 lg:col-span-2" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-          <div className="flex items-center justify-between">
-            <div><div className="t13 font-bold" style={{ color: C.ink }}>Volumen cedido — Mercado vs Security</div><div className="t9" style={{ color: C.faint }}>CLP mensual · 2025</div></div>
-            <div className="flex gap-3 t10" style={{ color: C.sub }}><span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#9CA3AF" }} /> Mercado</span><span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#703EFF" }} /> Security</span></div>
-          </div>
+        <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+          <div><div className="t13 font-bold" style={{ color: C.ink }}>Volumen cedido — Mercado vs Security</div><div className="t9" style={{ color: C.faint }}>CLP mensual · 2025</div></div>
+          <div className="mt-1 flex gap-3 t10" style={{ color: C.sub }}><span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#9CA3AF" }} /> Mercado</span><span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#703EFF" }} /> Security</span></div>
           <PCarea mercado={PC_MERCADO} security={PC_SECURITY} />
+        </div>
+        <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+          <div className="t13 font-bold" style={{ color: C.ink }}>Clientes por estado · por zona</div>
+          <div className="t9" style={{ color: C.faint }}>Composición Security / competencia / inactivos</div>
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 t10" style={{ color: C.sub }}>
+            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#703EFF" }} /> Security</span>
+            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#FF814B" }} /> Competencia</span>
+            <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#ADA8BD" }} /> Inactivos</span>
+          </div>
+          <div className="mt-3 space-y-3">
+            {[{ zona: "Norte", sec: 210, comp: 980, inact: 900 }, { zona: "Centro", sec: 236, comp: 1010, inact: 1050 }, { zona: "Sur", sec: 143, comp: 758, inact: 809 }].map((z) => {
+              const tot = z.sec + z.comp + z.inact; const pctSec = Math.round(z.sec / tot * 100);
+              return (
+                <div key={z.zona}>
+                  <div className="flex items-center justify-between t11"><b style={{ color: C.ink }}>{z.zona}</b><span style={{ color: C.faint }}><b style={{ color: "#703EFF" }}>{pctSec}%</b> Security · {tot.toLocaleString("es-CL")}</span></div>
+                  <div className="mt-1 flex h-3 w-full overflow-hidden rounded-full" style={{ backgroundColor: "#F1ECFF" }}>
+                    <div className="h-full" style={{ width: z.sec / tot * 100 + "%", backgroundColor: "#703EFF" }} />
+                    <div className="h-full" style={{ width: z.comp / tot * 100 + "%", backgroundColor: "#FF814B" }} />
+                    <div className="h-full" style={{ width: z.inact / tot * 100 + "%", backgroundColor: "#ADA8BD" }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
         <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
           <div className="t13 font-bold" style={{ color: C.ink }}>Share of Wallet</div>
@@ -8135,7 +8129,7 @@ function PCsow() {
             {PC_COMPETIDORES.map((c, i) => (
               <div key={i} className="flex items-center gap-3">
                 <span className="w-40 shrink-0 t11 font-semibold" style={{ color: C.ink }}>{c.name}</span>
-                <div className="h-3 flex-1 overflow-hidden rounded-full" style={{ backgroundColor: C.page }}><div className="h-full rounded-full" style={{ width: Math.max(8, c.mm / maxComp * 100) + "%", background: "linear-gradient(90deg,#FECACA,#ef4444)" }} /></div>
+                <div className="h-3 flex-1 overflow-hidden rounded-full" style={{ backgroundColor: C.page }}><div className="h-full rounded-full" style={{ width: Math.max(8, c.mm / maxComp * 100) + "%", background: "linear-gradient(90deg,#FED7AA,#FF814B)" }} /></div>
                 <span className="w-28 shrink-0 text-right t11 font-semibold" style={{ color: C.sub }}>{fmtMMc(c.mm)}</span>
               </div>
             ))}
@@ -11704,7 +11698,9 @@ export default function PipelineComercial() {
   const [usuario, setUsuario] = useState(USUARIO); // usuario logueado
   const [logueado, setLogueado] = useState(false); // gate de login (portada spec Auth); clic en avatar = cerrar sesión
   const [cmdOpen, setCmdOpen] = useState(false); // command palette Ctrl+K (spec §38)
-  const [planEjecModal, setPlanEjecModal] = useState(false); // reporte "Plan Mensual Ejecutivo" (desde Gestión)
+  // Reportes de Gestión: se abren INLINE en la vista (no como modal). Un solo estado con la clave activa.
+  const [reporteGestion, setReporteGestion] = useState(null); // null | "planEjec" | "semanal" | "cobranza" | "resumen" | "benchEjec" | "benchDeudores"
+  const [resumenInfo, setResumenInfo] = useState(null); // { dia, stats } para el reporte "Resumen diario" inline
   // Metas del plan mensual por cliente — estado elevado al root para compartirse entre la vista Tareas
   // (Plan Mensual/retención) y el reporte "Plan Mensual Ejecutivo" en Gestión.
   const [planMensual, setPlanMensual] = useState(() => {
@@ -11755,15 +11751,12 @@ export default function PipelineComercial() {
   const [draggingId, setDraggingId] = useState(null);
   const [inboundOpen, setInboundOpen] = useState(false); // colapsado por defecto
   const [casosModal, setCasosModal] = useState(null); // segmento abierto en el modal de casos
-  const [cobranzaModal, setCobranzaModal] = useState(false); // modal de reporte de cobranza
   const [historia, setHistoria] = useState([]); // snapshots de conteo por etapa (para sparklines)
   const [reporte, setReporte] = useState([]); // estadísticas por día
   const [diaModal, setDiaModal] = useState(null); // modal de cierre de día (aceptación)
   const [reporteModal, setReporteModal] = useState(false); // modal de reporte semanal
   const [wizardOpen, setWizardOpen] = useState(false); // wizard de "Nuevo negocio"
   const [wizardDeal, setWizardDeal] = useState(null); // deal en modo "incorporar facturas"
-  const [comparativoModal, setComparativoModal] = useState(false); // reporte comparativo por ejecutivo/zona/gerencia
-  const [benchmarkModal, setBenchmarkModal] = useState(false); // benchmark competitivo por deudor
   const [cierreModal, setCierreModal] = useState(null); // cierre formal con autenticación (sitio Security)
   const waSourcesRef = useRef({});        // { [neg]: window } ventana de WhatsApp del cliente (postMessage; funciona en file://)
   const cursePayloadsRef = useRef({});    // { [neg]: { id, tasa, opts, payload } } para responder al sitio Security
@@ -12938,7 +12931,8 @@ export default function PipelineComercial() {
   // Abre el resumen del día EN CURSO sin cerrar el día (solo vista).
   const verResumenDiario = () => {
     const diaActual = Math.floor(corridas / HORAS_DIA) + 1;
-    setDiaModal({ dia: diaActual, stats: statsDelDia(diaActual), soloVista: true });
+    setResumenInfo({ dia: diaActual, stats: statsDelDia(diaActual), soloVista: true });
+    setReporteGestion("resumen");
   };
   const cerrarDiaRef = useRef(null);
   cerrarDiaRef.current = () => {
@@ -13037,7 +13031,7 @@ export default function PipelineComercial() {
     // Reinicio total: todo vuelve a cero para comenzar de nuevo.
     setStreaming(false); setStreamQueue(INBOUND_STREAM); setStreamFeed([]); setAcumulado([]); setRecibidas(0); setCorridas(0);
     setDeals([]); setHistoria([]);
-    setSelected(null); setDiaModal(null); setReporteModal(false); setCobranzaModal(false); setCasosModal(null);
+    setSelected(null); setDiaModal(null); setReporteModal(false); setReporteGestion(null); setCasosModal(null);
     noClasRef.current = { porPerfil: {}, porCedente: {}, total: 0, montoTotal: 0 }; reglaStatsRef.current = {}; deudorStatsRef.current = { buenos: { fac: 0, mm: 0 }, autorizados: { fac: 0, mm: 0 }, otros: { fac: 0, mm: 0 } };
     setReporte([]); setAnalisis(null); setKpiHist([]); originadasRef.current = 0; originadasMontoRef.current = 0; originadasFacRef.current = 0; accDiaRef.current = nuevoAcc(); pausaRef.current = false; iniciadoRef.current = false;
   };
@@ -13332,14 +13326,25 @@ export default function PipelineComercial() {
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Gestión</div>
             <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Gestión de Clientes</h1>
             <PanelClientes soloExec={soloExec} deals={deals} usuario={usuario}
-              reportes={{
-                planEjec: () => setPlanEjecModal(true),
-                semanal: () => { setAnalisis(construirAnalisis()); setReporteModal(true); },
-                cobranza: () => setCobranzaModal(true),
-                resumen: verResumenDiario,
-                benchEjec: () => setComparativoModal(true),
-                benchDeudores: () => setBenchmarkModal(true),
-              }} />
+              reporteActivo={reporteGestion}
+              onReporte={(k) => {
+                if (!k) { setReporteGestion(null); return; }
+                if (k === "resumen") { verResumenDiario(); return; }
+                setReporteGestion(k);
+              }}
+              reporteNode={
+                reporteGestion === "planEjec" ? (
+                  <div className="rounded-2xl bg-white p-5" style={{ border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
+                    <PlanPorEjecutivo ejec={soloExec || "todos"} soloExec={soloExec} esJefe={esJefeComercial(usuario)} usuarioNombre={USERS[usuario]} plan={planMensual} setPlan={setPlanMensual} />
+                  </div>
+                ) : reporteGestion === "resumen" ? (
+                  resumenInfo ? <DiaModal inline info={resumenInfo} reporte={reporte} deals={deals} onClose={() => setReporteGestion(null)} /> : null
+                ) : reporteGestion === "benchEjec" ? (
+                  <ComparativoModal inline deals={deals} onClose={() => setReporteGestion(null)} />
+                ) : reporteGestion === "benchDeudores" ? (
+                  <BenchmarkDeudoresModal inline deals={deals} onClose={() => setReporteGestion(null)} />
+                ) : null
+              } />
           </>
         ) : vistaApp === "tareas" ? (
           <>
@@ -13376,8 +13381,10 @@ export default function PipelineComercial() {
         {/* ===== Indicadores agrupados (compactos, con detalle desplegable) ===== */}
         {(() => {
           const grupos = [
-            { id: "pipeline", titulo: "Pipeline de clientes", estado: "Fluido", eBg: C.greenBg, eFg: C.green, nota: `${activeCount} oport · 2 estancadas`, cards: [
-              { id: "oport", label: "OPORTUNIDADES", value: activeCount.toLocaleString("es-CL"), sub: "", serie: kpiHist.map((h) => h.oport), rows: [
+            { id: "pipeline", cards: [
+              { id: "oport", label: "OPORTUNIDADES", value: activeCount.toLocaleString("es-CL"), sub: "",
+                side: [{ text: "Fluido", up: true, dot: true, hint: "Estado del pipeline" }, { text: "2 estancadas", up: false, hint: "Oportunidades estancadas en prospección" }],
+                serie: kpiHist.map((h) => h.oport), rows: [
                 { k: "En curso", v: activeCount.toLocaleString("es-CL") }, { k: "Prospección", v: deals.filter((d) => d.stage === "prospeccion").length },
                 { k: "Negociación", v: deals.filter((d) => d.stage === "oferta").length }, { k: "Perdidas", v: deals.filter((d) => d.stage === "perdida").length }] },
               { id: "piptotal", label: "PIPELINE TOTAL", value: fmtMM(totalPipeline), sub: "", serie: kpiHist.map((h) => h.pipeline),
@@ -13399,10 +13406,11 @@ export default function PipelineComercial() {
                 <div className="flex items-end justify-between gap-1">
                   <div className="text-base font-semibold tracking-tight" style={{ color: C.ink }}>{k.value}</div>
                   {k.side && (
-                    <div className="flex shrink-0 items-center gap-1.5">
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                       {k.side.map((s) => (
-                        <span key={s.label} title={s.hint} className="flex items-center gap-0.5 rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: s.up ? C.greenBg : C.amberBg, color: s.up ? C.green : C.red }}>
-                          {s.label} {s.v} · {s.n}
+                        <span key={s.label || s.text} title={s.hint} className="flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: s.up ? C.greenBg : C.amberBg, color: s.up ? C.green : C.red }}>
+                          {s.dot && <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: s.up ? C.green : C.red }} />}
+                          {s.text != null ? s.text : `${s.label} ${s.v} · ${s.n}`}
                         </span>
                       ))}
                     </div>
@@ -13425,10 +13433,6 @@ export default function PipelineComercial() {
             <div className="mt-5 space-y-3">
               {grupos.map((g) => (
                 <div key={g.id}>
-                  <div className="mb-1.5 flex flex-wrap items-center gap-2 t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>
-                    <Pill style={{ backgroundColor: g.eBg, color: g.eFg }}>● {g.estado}</Pill>
-                    <span className="font-normal normal-case" style={{ color: C.faint }}>{g.nota}</span>
-                  </div>
                   <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${g.cards.length}, minmax(0, 1fr))` }}>
                     {g.cards.map((k) => tile(k))}
                   </div>
@@ -13577,25 +13581,9 @@ export default function PipelineComercial() {
       )}
       {diaModal && <DiaModal info={diaModal} ultimo={diaModal.dia >= DIAS_SEMANA} reporte={reporte} deals={deals} onAceptar={aceptarDia} onClose={() => setDiaModal(null)} />}
       {reporteModal && <ReporteModal reporte={reporte} analisis={analisis} onClose={() => setReporteModal(false)} onRecomendar={recomendarRegla} />}
-      {cobranzaModal && <CobranzaModal cobranza={construirCobranza()} onClose={() => setCobranzaModal(false)} />}
       {wizardOpen && <NuevoNegocioWizard usuario={esAdmin ? USUARIO : usuario} deal={wizardDeal} deals={deals} onOpenDeal={(d) => { setWizardOpen(false); setWizardDeal(null); setSelected(d); }} onClose={() => { setWizardOpen(false); setWizardDeal(null); }} onConfirm={crearNegocioWizard} />}
       {solicOpen && <CentroMensajeria usuario={usuario} deals={deals} onClose={() => setSolicOpen(false)} onOpenDeal={(d, t) => { setSelected(d); setDealTabInicial(t || "mensajeria"); setSolicOpen(false); }} onChange={() => setNotifTick((t) => t + 1)} />}
       {prioOpen && <PrioridadesPanel items={deals.filter(dealVisible).filter((d) => tienePrioridadCurse(d.id))} onClose={() => setPrioOpen(false)} onOpen={(d) => { setSelected(d); setPrioOpen(false); }} />}
-      {comparativoModal && <ComparativoModal deals={deals} onClose={() => setComparativoModal(false)} />}
-      {benchmarkModal && <BenchmarkDeudoresModal deals={deals} onClose={() => setBenchmarkModal(false)} />}
-      {planEjecModal && (
-        <div className="fixed inset-0 flex items-start justify-center ovl p-4" style={{ zIndex: 60 }} onClick={() => setPlanEjecModal(false)}>
-          <div onClick={(e) => e.stopPropagation()} className="flex w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" style={{ maxWidth: 1400, maxHeight: "92vh", border: `1px solid ${C.line}` }}>
-            <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: `1px solid ${C.line}` }}>
-              <div className="text-lg font-semibold" style={{ color: C.ink }}>Plan Mensual Ejecutivo</div>
-              <button onClick={() => setPlanEjecModal(false)} className="rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>
-            </div>
-            <div className="overflow-y-auto px-5 py-4">
-              <PlanPorEjecutivo ejec={soloExec || "todos"} soloExec={soloExec} esJefe={esJefeComercial(usuario)} usuarioNombre={USERS[usuario]} plan={planMensual} setPlan={setPlanMensual} />
-            </div>
-          </div>
-        </div>
-      )}
       <CommandK abierto={cmdOpen} onCerrar={() => setCmdOpen(false)} deals={deals} dealVisible={dealVisible} irA={irA} onAbrirDeal={(d) => setSelected(d)} />
     </div>
   );
