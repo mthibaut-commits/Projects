@@ -9699,11 +9699,21 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre }) {
     cliente: op ? op.cliente : (t.nodo || "General"), ref: op ? op.id : (t.nodo || ""), detalle: t.texto,
     monto: op ? (op.amountMM || 0) : null, quien: t.autor, at: null, hecha: t.hecha, venceTs: t.venceTs,
   }); });
-  const todas = [...rowsPrio, ...rowsTask];
-  // Importancia de una tarea activa (mayor = más importante): las prioridades de la jefatura primero,
-  // luego urgencia por vencimiento (más cerca/vencida pesa más) y el monto de la oportunidad.
+  // Solicitudes de LÍNEA urgentes para el curse: operaciones activas cuya proyección supera la línea
+  // aprobada (fuera de línea). No se pueden cursar hasta ampliar/aprobar la línea → van al tab Tareas.
+  const rowsLinea = deals.filter((d) => enScope(d) && ["oferta", "aceptadas", "cesion", "otorgamiento"].includes(d.stage) && lineaCreditoDe(d).fueraDeLinea)
+    .map((d) => { const lc = lineaCreditoDe(d); return ({
+      kind: "linea", id: "L-" + d.id, deal: d, tipo: "Línea", tipoCol: "#2563EB", tipoBg: "#EFF6FF", star: false,
+      cliente: d.cliente, ref: `${d.id} · ${EXECS[d.exec] || "Agente IA"}`,
+      detalle: `Ampliar/aprobar línea para poder cursar · exceso ${fmtMM(lc.excesoProyectado)} sobre ${fmtMM(lc.aprobada)} aprobada`,
+      monto: lc.excesoProyectado, quien: "Riesgo", at: null, hecha: false, venceTs: Date.now() + 86400000, exceso: lc.excesoProyectado,
+    }); });
+  const todas = [...rowsPrio, ...rowsLinea, ...rowsTask];
+  // Importancia de una tarea activa (mayor = más importante): las líneas urgentes (bloquean el curse) y
+  // las prioridades de la jefatura primero, luego urgencia por vencimiento y el monto.
   const importancia = (r) => {
     let s = 0;
+    if (r.kind === "linea") s += 2e9;
     if (r.kind === "prio") s += 1e9;
     if (r.venceTs) { const dias = (r.venceTs - Date.now()) / 86400000; s += Math.max(0, 30 - dias) * 1000; }
     s += (r.monto || 0);
@@ -9718,12 +9728,14 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre }) {
   const nPrioAt = rowsPrio.filter((r) => r.hecha).length;
   const nTaskPend = rowsTask.filter((r) => !r.hecha).length;
   const kpis = [
+    { t: "Líneas urgentes", v: rowsLinea.length, s: "Operaciones fuera de línea: requieren ampliarla para cursar.", col: "#2563EB", Icon: AlertTriangle },
     { t: "Tareas asignadas", v: nTaskPend, s: "Pendientes, asignadas desde Gestión.", col: "#703EFF", Icon: ClipboardList },
     { t: "Prioridades por atender", v: nPrioPend, s: "Priorizadas por la jefatura para el curse.", col: "#C2410C", Icon: Star },
     { t: "Prioridades atendidas", v: nPrioAt, s: "Cursadas, cedidas o con bloqueo firme.", col: "#16A34A", Icon: Check },
   ];
   // Estado (pill) de una fila.
   const estadoPill = (r) => {
+    if (r.kind === "linea") return { l: "Urgente para el curse", c: "#2563EB", bg: "#EFF6FF" };
     if (r.kind === "prio") return r.at.atendida ? { l: r.at.label, c: r.at.col, bg: r.at.bg } : { l: "Por atender", c: "#C2410C", bg: "#FFF7ED" };
     return r.hecha ? { l: "Hecha", c: "#16A34A", bg: "#F0FDF4" } : { l: "Pendiente", c: "#703EFF", bg: "#F1ECFF" };
   };
@@ -9733,10 +9745,10 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre }) {
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <div className="text-lg font-bold" style={{ color: C.ink }}>Tareas</div>
-          <div className="t12" style={{ color: C.faint }}>Tareas asignadas y oportunidades priorizadas por la jefatura · las prioridades se atienden solas al cursar, ceder o bloquearse.</div>
+          <div className="t12" style={{ color: C.faint }}>Solicitudes de línea urgentes, tareas asignadas y oportunidades priorizadas por la jefatura · las prioridades se atienden solas al cursar, ceder o bloquearse.</div>
         </div>
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {kpis.map((k, i) => <KpiStat key={i} Icon={k.Icon} col={k.col} v={k.v} l={k.t} s={k.s} />)}
       </div>
       {/* Dos vistas: Activas (por gestionar, ordenadas por importancia) y Resueltas / completadas */}
@@ -9813,9 +9825,9 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre }) {
                   {r.monto != null && <span className="t11 font-semibold" style={{ color: C.ink }}>{fmtMM(r.monto)}</span>}
                 </div>
                 <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}`, backgroundColor: C.page }}>
-                  <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{r.kind === "prio" ? "Motivo de la prioridad" : "Detalle de la tarea"}</div>
+                  <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{r.kind === "prio" ? "Motivo de la prioridad" : r.kind === "linea" ? "Solicitud de línea para el curse" : "Detalle de la tarea"}</div>
                   <div className="mt-1 t12" style={{ color: C.ink, lineHeight: 1.5 }}>{r.detalle}</div>
-                  <div className="mt-2 t11" style={{ color: C.sub }}>{r.kind === "prio" ? <>Priorizada para el curse por <b style={{ color: C.ink }}>{r.quien}</b>.</> : <>Asignada por <b style={{ color: C.ink }}>{r.quien}</b>{r.task.nodo ? <> · nodo <b style={{ color: C.ink }}>{r.task.nodo}</b></> : ""}.</>}</div>
+                  <div className="mt-2 t11" style={{ color: C.sub }}>{r.kind === "prio" ? <>Priorizada para el curse por <b style={{ color: C.ink }}>{r.quien}</b>.</> : r.kind === "linea" ? <>La operación queda <b style={{ color: C.ink }}>fuera de línea</b>: requiere ampliar/aprobar la línea en <b style={{ color: C.ink }}>Riesgo</b> antes de poder cursar. Abre la oportunidad para gestionar la solicitud.</> : <>Asignada por <b style={{ color: C.ink }}>{r.quien}</b>{r.task && r.task.nodo ? <> · nodo <b style={{ color: C.ink }}>{r.task.nodo}</b></> : ""}.</>}</div>
                   {r.kind === "task" && r.task.para && r.task.para.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{r.task.para.map((p, i) => <span key={i} className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>@{p}</span>)}</div>}
                   {r.kind === "prio" && r.at.atendida && r.at.detalle && <div className="mt-2 t11" style={{ color: C.sub, lineHeight: 1.4 }}>{r.at.detalle}</div>}
                 </div>
