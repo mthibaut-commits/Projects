@@ -11625,8 +11625,8 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
         </div>
         <div style={{ fontSize: 11, color: C.faint }}>© 2026 Datamart · NEX Factoring — demo con datos sintéticos</div>
       </div>
-      {/* Panel gradiente decorativo */}
-      <div className="m-3 flex flex-1 items-center justify-center overflow-hidden" style={{ borderRadius: 20, background: "linear-gradient(135deg, #EE2EFF 0%, #FF814B 55%, #C4B5FD 100%)" }}>
+      {/* Panel gradiente decorativo (flota con margen inferior mayor) */}
+      <div className="mt-6 mr-6 mb-12 ml-3 flex flex-1 items-center justify-center overflow-hidden" style={{ borderRadius: 20, background: "linear-gradient(135deg, #EE2EFF 0%, #FF814B 55%, #C4B5FD 100%)" }}>
         <div className="px-14 text-white" style={{ maxWidth: 560 }}>
           <div style={{ fontSize: 30, fontWeight: 700, lineHeight: 1.25 }}>Pipeline comercial, otorgamiento y curse en un solo lugar.</div>
           <div className="mt-3" style={{ fontSize: 14, opacity: 0.92 }}>Oportunidades del inbound SII, ofertas con pricing por deudor, verificación predictiva y líneas al comité — con datos al día.</div>
