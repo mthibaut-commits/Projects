@@ -7554,6 +7554,12 @@ const TAREAS_PREDEF = [
   { l: "Actualizar la línea de crédito del cliente", cat: "riesgo", d: 15 },
   { l: "Regularizar la documentación de la operación", cat: "operaciones", d: 5 },
   { l: "Verificar la inscripción de la cesión electrónica (AEC)", cat: "operaciones", d: 2 },
+  { l: "Ajustar línea", cat: "riesgo", d: 5 },
+  { l: "Revisar tasa", cat: "comercial", d: 1 },
+  { l: "Agendar reunión con el cliente", cat: "comercial", d: 2 },
+  { l: "Visita", cat: "comercial", d: 5 },
+  { l: "Llevar a comité de riesgo", cat: "riesgo", d: 5 },
+  { l: "Otro", cat: "comercial", d: 1 },
 ];
 let PANEL_TAREAS = []; // [{ id, ts, venceTs, texto, cat, autor, para:[], ops:[], nodo, hecha }]
 let PANEL_TAREAS_SEQ = 1;
@@ -11726,7 +11732,7 @@ export default function PipelineComercial() {
   const [logueado, setLogueado] = useState(false); // gate de login (portada spec Auth); clic en avatar = cerrar sesión
   const [cmdOpen, setCmdOpen] = useState(false); // command palette Ctrl+K (spec §38)
   // Reportes de Gestión: se abren INLINE en la vista (no como modal). Un solo estado con la clave activa.
-  const [reporteGestion, setReporteGestion] = useState(null); // null | "planEjec" | "semanal" | "cobranza" | "resumen" | "benchEjec" | "benchDeudores"
+  const [reporteGestion, setReporteGestion] = useState("planEjec"); // reporte inline por defecto al abrir Gestión; null = secciones (Cliente/SOW/…)
   const [resumenInfo, setResumenInfo] = useState(null); // { dia, stats } para el reporte "Resumen diario" inline
   // Metas del plan mensual por cliente — estado elevado al root para compartirse entre la vista Tareas
   // (Plan Mensual/retención) y el reporte "Plan Mensual Ejecutivo" en Gestión.
