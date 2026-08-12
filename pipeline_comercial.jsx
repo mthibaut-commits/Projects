@@ -3,7 +3,7 @@ import {
   Search, Filter, Download, Table2, Bell, ChevronRight, ChevronDown,
   ChevronUp, ChevronLeft, X, Check, Calendar, Star, ArrowUpRight, ArrowDownRight,
   CircleDot, Sparkles, User, MessageSquare, Plus, Pencil, Zap, Clock,
-  Play, Pause, RotateCcw, Radio, ArrowRight, AlertTriangle, Calculator, Eye, EyeOff, BarChart2, Trash2, Target, ShieldCheck, Settings,
+  Play, Pause, RotateCcw, Radio, ArrowRight, AlertTriangle, Calculator, Eye, EyeOff, BarChart2, Trash2, Target, ShieldCheck, Settings, ClipboardList,
 } from "lucide-react";
 import { ComposedChart, Bar, Line, XAxis, YAxis, ReferenceLine, ResponsiveContainer, CartesianGrid, Tooltip, Cell } from "recharts";
 import { sankey as d3sankey, sankeyLinkHorizontal, sankeyLeft } from "d3-sankey";
@@ -7232,8 +7232,8 @@ function OtorgamientosView({ deals, usuario, onOpen, onAutorizarCausa, onCfgChan
         <div className="t12" style={{ color: C.sub }}>{USERS[usuario] || usuario}{atrLbl ? " · " + atrLbl : ""}</div>
       </div>
       <div className="mt-3 flex gap-6" style={{ borderBottom: `1px solid ${C.line}` }}>
-        {[["visado", "Bandeja de aprobaciones"], ["mantenedores", "Mantenedores"]].map(([k, l]) => (
-          <button key={k} onClick={() => setSub(k)} className="px-1 pb-2 t12" style={{ borderBottom: `2px solid ${sub === k ? C.indigo : "transparent"}`, color: sub === k ? C.indigo : C.sub, fontWeight: sub === k ? 600 : 400, marginBottom: -1 }}>{l}</button>
+        {[["visado", "Bandeja de aprobaciones", ShieldCheck], ["mantenedores", "Mantenedores", Settings]].map(([k, l, Ic]) => (
+          <button key={k} onClick={() => setSub(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${sub === k ? C.indigo : "transparent"}`, color: sub === k ? C.indigo : C.sub, fontWeight: sub === k ? 600 : 400, marginBottom: -1 }}><Ic size={13} /> {l}</button>
         ))}
       </div>
       {sub === "mantenedores" ? <MantenedoresOtorg onCfgChange={onCfgChange} /> : <VisadoClienteView deals={deals} usuario={usuario} onChange={onCfgChange} />}
@@ -7658,7 +7658,7 @@ function SankeyFlow({ nodes, links, fmtVal, titulos = [], h = 470, onNodo }) {
   );
 }
 // Panel lateral de tareas/notas: sólo jefaturas y gerencia pueden crear; el resto ve el listado.
-function PanelTareas({ usuario, esJefe, onCambio }) {
+function PanelTareas({ usuario, esJefe, onCambio, onClose }) {
   const [txt, setTxt] = useState("");
   const [cat, setCat] = useState("comercial");
   const [dias, setDias] = useState(1);
@@ -7688,7 +7688,7 @@ function PanelTareas({ usuario, esJefe, onCambio }) {
   };
   const lista = PANEL_TAREAS.filter((t) => fCat === "todas" || t.cat === fCat);
   const abiertas = PANEL_TAREAS.filter((t) => !t.hecha).length;
-  if (!abierto) return (
+  if (!abierto && !onClose) return (
     <button onClick={() => setAbierto(true)} title="Mostrar Tareas y notas"
       className="flex w-9 shrink-0 flex-col items-center gap-2 rounded-2xl py-3 transition-colors hover:brightness-95"
       style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
@@ -7698,12 +7698,12 @@ function PanelTareas({ usuario, esJefe, onCambio }) {
     </button>
   );
   return (
-    <div className="flex w-80 shrink-0 flex-col rounded-2xl p-3" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+    <div className={onClose ? "flex h-full w-full flex-col p-4" : "flex w-80 shrink-0 flex-col rounded-2xl p-3"} style={onClose ? { backgroundColor: "#fff" } : { backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
       <div className="flex items-center justify-between">
         <span className="t12 font-bold" style={{ color: C.ink }}>Tareas y notas</span>
         <div className="flex items-center gap-1.5">
           <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.page, color: C.sub }}>{abiertas} abiertas</span>
-          <button onClick={() => setAbierto(false)} title="Ocultar Tareas y notas" className="rounded-md p-0.5 hover:bg-stone-100" style={{ color: C.sub }}><ChevronRight size={16} /></button>
+          <button onClick={onClose || (() => setAbierto(false))} title="Cerrar Tareas y notas" className="rounded-md p-0.5 hover:bg-stone-100" style={{ color: C.sub }}>{onClose ? <X size={16} /> : <ChevronRight size={16} />}</button>
         </div>
       </div>
       {esJefe ? (
@@ -7844,6 +7844,7 @@ function PCsankey({ deals = [], execsFiltrados = [], hayFiltro, soloExec, usuari
   const [metrica, setMetrica] = useState("cantidad"); // cantidad | monto
   const [col2, setCol2] = useState("orig"); // desglose de la 2ª columna: orig (día) | cat (CAT-1..4)
   const [nodoSel, setNodoSel] = useState(null); // nodo abierto en el modal de tareas
+  const [tareasOpen, setTareasOpen] = useState(false); // drawer lateral de Tareas y notas
   const [ver, force] = useState(0); // refresca el panel al crear/cerrar tareas (store a nivel de módulo)
   const diaSel = SK_DIA_STR(fecha);
   const inis = useMemo(() => new Set(execsFiltrados.map((e) => e.ini)), [execsFiltrados]);
@@ -7928,16 +7929,26 @@ function PCsankey({ deals = [], execsFiltrados = [], hayFiltro, soloExec, usuari
           </div>
         ))}
       </div>
-      <div className="flex items-start gap-3">
-        <div className="min-w-0 flex-1 overflow-x-auto rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-          <div style={{ minWidth: 1320 }}>
-            <SankeyFlow nodes={nodes} links={links} fmtVal={fmtVal} onNodo={(id, name) => setNodoSel({ id, name, deals: nodeDeals[id] || [] })}
-              titulos={["Origen", col2 === "cat" ? "CAT de la oportunidad" : "Originación", "En curso", "Desenlace", "Causa", "Detalle"]} />
-          </div>
-          <div className="mt-1 t9" style={{ color: C.faint }}>Haz clic en cualquier nodo para ver sus oportunidades y asignarles tareas.</div>
-        </div>
-        <PanelTareas usuario={usuario} esJefe={esJefe} onCambio={() => force((x) => x + 1)} />
+      <div className="flex items-center justify-end">
+        <button onClick={() => setTareasOpen(true)} className="flex items-center gap-1.5 rounded-full px-3 py-1.5 t11 font-semibold" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.sub }}>
+          <ClipboardList size={13} /> Tareas y notas
+          <span className="flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 t10 font-semibold" style={{ backgroundColor: "#F1ECFF", color: C.indigo }}>{PANEL_TAREAS.filter((t) => !t.hecha).length}</span>
+        </button>
       </div>
+      <div className="overflow-x-auto rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div style={{ minWidth: 1320 }}>
+          <SankeyFlow nodes={nodes} links={links} fmtVal={fmtVal} onNodo={(id, name) => setNodoSel({ id, name, deals: nodeDeals[id] || [] })}
+            titulos={["Origen", col2 === "cat" ? "CAT de la oportunidad" : "Originación", "En curso", "Desenlace", "Causa", "Detalle"]} />
+        </div>
+        <div className="mt-1 t9" style={{ color: C.faint }}>Haz clic en cualquier nodo para ver sus oportunidades y asignarles tareas.</div>
+      </div>
+      {tareasOpen && (
+        <div className="fixed inset-0 ovl" style={{ zIndex: 60 }} onClick={() => setTareasOpen(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="fixed right-0 top-0 flex h-full w-96 max-w-full flex-col overflow-y-auto bg-white shadow-2xl" style={{ borderLeft: `1px solid ${C.line}` }}>
+            <PanelTareas usuario={usuario} esJefe={esJefe} onCambio={() => force((x) => x + 1)} onClose={() => setTareasOpen(false)} />
+          </div>
+        </div>
+      )}
       {nodoSel && <NodoTareasModal nodo={nodoSel} usuario={usuario} esJefe={esJefe} onClose={() => setNodoSel(null)} onCambio={() => force((x) => x + 1)} />}
       <div className="t9" style={{ color: C.faint }}>El grosor de cada flujo es proporcional a {metrica === "monto" ? "el monto" : "la cantidad de oportunidades"}. {col2 === "cat" ? <>La 2ª columna muestra la <b style={{ color: C.sub }}>CAT</b> de cada oportunidad según la Nota Deudor de sus facturas, ponderada por monto (CAT-1 muy buenos → CAT-5 con deudor malo/sin nota), para ver qué calidad origina cada regla y cómo termina cada categoría.</> : <>«Originada el día» compara la fecha de entrada a Prospección con el día de referencia.</>} <b style={{ color: C.sub }}>En curso</b> es la etapa comercial (Prospección u Oferta/Negociación). El desenlace se abre en <b style={{ color: C.sub }}>Abierta / Otorgada / Descartada / Perdida</b>: las otorgadas se abren por día de cierre; las <b style={{ color: C.sub }}>descartadas</b> son las que no superaron un criterio de otorgamiento y se detallan por la regla que las bloqueó; las <b style={{ color: C.sub }}>perdidas</b> se abren por competencia (con el factoring que se llevó las facturas) o desistimiento del cliente. Pasa el cursor sobre un nodo o flujo para ver el texto completo.</div>
     </div>
@@ -9532,16 +9543,16 @@ function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, o
   const filtrEjec = (c) => ejec === "todos" || c.ej === ejec;
   // Roster unificado para el filtro: cartera + ejecutivos del pipeline.
   const execOpts = useMemo(() => [...new Set([...PC_EXECS.map((e) => e.nombre), ...Object.values(EXECS)])], []);
-  const Tab = ({ id, label }) => (
-    <button onClick={() => setTab(id)} className="rounded-lg px-4 py-1.5 t12 font-semibold" style={{ backgroundColor: tab === id ? C.lilac : "#fff", color: tab === id ? C.indigo : C.sub, border: `1px solid ${tab === id ? C.indigo : C.line}` }}>{label}</button>
+  const Tab = ({ id, label, Icon }) => (
+    <button onClick={() => setTab(id)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${tab === id ? C.indigo : "transparent"}`, color: tab === id ? C.indigo : C.sub, fontWeight: tab === id ? 600 : 400, marginBottom: -1 }}>{Icon && <Icon size={13} />} {label}</button>
   );
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Tab id="bandeja" label="Bandeja diaria" />
-        <Tab id="retencion" label="Plan Mensual" />
-        <div className="ml-auto flex items-center gap-1.5"><User size={14} style={{ color: C.faint }} />{soloExec
-          ? <span className="rounded-lg px-3 py-1.5 t12 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec}</span>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <Tab id="bandeja" label="Bandeja diaria" Icon={Calendar} />
+        <Tab id="retencion" label="Plan Mensual" Icon={Target} />
+        <div className="mb-1.5 ml-auto flex items-center gap-1.5"><User size={14} style={{ color: C.faint }} />{soloExec
+          ? <span className="rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec}</span>
           : <select value={fEjec} onChange={(e) => setFEjec(e.target.value)} className="rounded-lg px-3 py-1.5 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}><option value="todos">Todos los ejecutivos</option>{execOpts.map((n) => <option key={n} value={n}>{n}</option>)}</select>}</div>
       </div>
       {tab === "bandeja" ? <PCbandeja deals={deals} execFilter={ejec} onOpen={onOpen} ambito="diaria" usuario={usuario} onOpenSolic={onOpenSolic} onIrLineas={onIrLineas} />
@@ -11384,8 +11395,8 @@ function LineasView({ soloExec }) {
       {/* Sub-tabs: Vigentes (CSV SFTP diario + montos API 1h) | En proceso (Bandeja API 2/3) */}
       <div className="flex items-center justify-between">
         <div className="flex gap-6" style={{ borderBottom: `1px solid ${C.line}` }}>
-          {[["vigentes", "Vigentes"], ["enproceso", `En proceso${api2ListarProcesos().length ? " · " + api2ListarProcesos().length : ""}`]].map(([k, l]) => (
-            <button key={k} onClick={() => setSub(k)} className="px-1 pb-2 t12" style={{ borderBottom: `2px solid ${sub === k ? C.indigo : "transparent"}`, color: sub === k ? C.indigo : C.sub, fontWeight: sub === k ? 600 : 400, marginBottom: -1 }}>{l}</button>
+          {[["vigentes", "Vigentes", Check], ["enproceso", `En proceso${api2ListarProcesos().length ? " · " + api2ListarProcesos().length : ""}`, Clock]].map(([k, l, Ic]) => (
+            <button key={k} onClick={() => setSub(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${sub === k ? C.indigo : "transparent"}`, color: sub === k ? C.indigo : C.sub, fontWeight: sub === k ? 600 : 400, marginBottom: -1 }}><Ic size={13} /> {l}</button>
           ))}
         </div>
         <div className="t9" style={{ color: C.faint }}>Última carga CSV (SFTP): hoy 06:15 · Montos actualizados vía API: {new Date().getHours()}:00 · Para modificar/renovar, haz clic en una línea; las líneas nuevas se crean en «En proceso».</div>
