@@ -81,18 +81,24 @@ body{font-family:Geist,system-ui,Segoe UI,Roboto,sans-serif;background:#0b141a;d
     }
   });
 
+  function marcarAprobada(){
+    if(document.getElementById("wa-done")) return;
+    chat.insertAdjacentHTML("beforeend",
+      '<div class="msg out" id="wa-done">✅ Operación N° '+esc(neg)+' aprobada y firmada.<span class="tm">ahora</span></div>');
+    var b = document.getElementById("approve"); if(b) b.remove();
+    var f = document.querySelector(".foot"); if(f){ f.outerHTML = '<div class="done">✔ Operación cursada · puedes cerrar esta ventana</div>'; }
+    chat.scrollTop = chat.scrollHeight;
+  }
+  // El portal de curse (curse.html) avisa cuando el cliente firma; se relaya al app y se marca el hilo.
+  window.addEventListener("message", function(ev){
+    if(ev.data && ev.data.type === "aceptada"){ try{ if(window.opener) window.opener.postMessage(ev.data, "*"); }catch(e){} marcarAprobada(); }
+  });
   var btn = document.getElementById("approve");
   if(btn){
     btn.addEventListener("click", function(){
-      btn.disabled = true; btn.textContent = "Procesando…";
-      try{ if(window.opener) window.opener.postMessage({ type:"aceptada", neg: neg }, "*"); }catch(e){}
-      setTimeout(function(){
-        chat.insertAdjacentHTML("beforeend",
-          '<div class="msg out">✅ Operación N° '+esc(neg)+' aprobada y firmada.<span class="tm">ahora</span></div>');
-        btn.remove();
-        var f = document.querySelector(".foot"); if(f){ f.outerHTML = '<div class="done">✔ Operación cursada · puedes cerrar esta ventana</div>'; }
-        chat.scrollTop = chat.scrollHeight;
-      }, 900);
+      // Deriva a la plataforma de Factoring Security a cursar (login → oferta → firma), pasando el payload.
+      var hi = location.hash.indexOf("d="); var enc = hi >= 0 ? location.hash.slice(hi + 2) : "";
+      window.open("curse.html?n=" + encodeURIComponent(neg) + (enc ? ("#d=" + enc) : ""), "_blank");
     });
   }
   chat.scrollTop = chat.scrollHeight;

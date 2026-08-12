@@ -1,0 +1,280 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Factoring Security · Cursar operación</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--pur:#6A2E92;--nav:#232272;--blue:#1d4ed8;--blue2:#2563EB;--ink:#2d2b3a;--sub:#6b7280;--line:#e5e7eb;--bg:#f7f7fb}
+*{box-sizing:border-box}body{margin:0;font-family:Geist,system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+.hidden{display:none!important}
+button{font-family:inherit;cursor:pointer}
+/* ---- LOGIN ---- */
+.login{min-height:100vh;display:flex;align-items:center;position:relative;overflow:hidden;background:#fff}
+.login .panel{position:absolute;left:0;top:0;bottom:0;width:38%;background:var(--pur);border-bottom-right-radius:120px}
+.login .back{position:absolute;left:28px;top:24px;color:#fff;font-size:15px;font-weight:600;background:none;border:0;display:flex;gap:8px;align-items:center}
+.login .card{position:relative;z-index:2;margin-left:8%;width:440px;max-width:90vw;background:#fff;border-radius:20px;box-shadow:0 20px 60px rgba(20,20,60,.12);padding:34px 40px}
+.login .logo{display:flex;justify-content:center;margin-bottom:18px}
+.login h2{text-align:center;font-size:13px;color:var(--sub);font-weight:600;margin:0}
+.login h1{text-align:center;font-size:26px;font-weight:800;color:var(--ink);margin:2px 0 22px}
+.fld{margin-bottom:16px}.fld label{display:block;font-size:13px;font-weight:700;color:#8a8fa3;margin-bottom:6px}
+.fld .inp{display:flex;align-items:center;border:1px solid #cfd3e0;border-radius:10px;padding:0 12px;height:52px}
+.fld input{flex:1;border:0;outline:0;font-size:17px;color:var(--ink);background:none}
+.fld .inp:focus-within{border-color:var(--blue2)}
+.btn-primary{width:100%;height:52px;border:0;border-radius:10px;background:var(--blue);color:#fff;font-size:16px;font-weight:700}
+.btn-primary:disabled{background:#eef0f5;color:#b9bdca}
+.login .help{display:block;text-align:center;color:var(--blue2);font-size:13px;font-weight:600;margin-top:16px;text-decoration:none}
+.login .fono{text-align:center;color:var(--ink);font-size:15px;font-weight:700;margin-top:14px}
+.dots{position:absolute;right:6%;top:8%;color:#bcd0ff}
+/* ---- PORTAL ---- */
+.top{background:#f3f4fb;display:flex;align-items:stretch;height:64px;border-bottom:1px solid var(--line)}
+.top .lg{display:flex;align-items:center;padding:0 20px}
+.tabs{display:flex;align-items:flex-end;gap:6px;padding-left:8px}
+.tab{padding:0 22px;height:64px;display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;color:var(--pur);position:relative}
+.tab.on{background:linear-gradient(#7d3aa8,#6A2E92);color:#fff;border-top-left-radius:12px;border-top-right-radius:12px}
+.tab .n{background:rgba(255,255,255,.25);border-radius:9999px;padding:1px 9px;font-size:12px}
+.tab:not(.on) .n{background:#e7e3f0;color:var(--pur)}
+.top .menu{margin-left:auto;align-self:center;margin-right:18px;width:40px;height:40px;border-radius:9999px;background:var(--pur);color:#fff;border:0;font-size:18px}
+.subbar{background:var(--pur);color:#fff;display:flex;align-items:center;padding:12px 26px;font-weight:700}
+.subbar .back{background:none;border:0;color:#fff;font-weight:600;display:flex;gap:8px;align-items:center;font-size:15px}
+.subbar .emp{margin-left:auto;font-size:15px;letter-spacing:.02em}
+.wrap{max-width:1180px;margin:0 auto;padding:22px 20px 60px}
+.sec{background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(20,20,60,.06);padding:22px 26px;margin-bottom:18px}
+.sec h3{margin:0 0 2px;font-size:19px;font-weight:800;color:var(--ink)}
+.sec .desc{color:var(--sub);font-size:14px;margin-bottom:14px}
+.rowd{display:flex;justify-content:space-between;align-items:flex-start;padding:16px 0;border-bottom:1px solid #eceef3}
+.rowd:last-child{border-bottom:0}
+.rowd .k{font-size:16px;color:var(--ink)}.rowd .kf{font-weight:800;font-size:17px}
+.rowd .v{text-align:right;font-weight:800;font-size:16px}.rowd .v .s{display:block;font-size:12px;color:var(--sub);font-weight:500}
+.rowd .vblue{color:var(--blue2);font-size:20px}
+.det{background:#f6f7fb;border-radius:12px;margin-top:6px}
+.det .li{display:flex;justify-content:space-between;padding:10px 16px;font-size:14px;color:var(--sub)}
+.info{display:flex;gap:10px;background:#f2f6ff;border-left:3px solid var(--blue2);border-radius:8px;padding:12px 14px;font-size:13px;color:#3b4256;margin-top:6px}
+.info b{color:var(--ink)}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:12px;color:var(--sub);font-weight:700;padding:10px 12px;border-bottom:1px solid var(--line)}
+td{padding:12px;border-bottom:1px solid #f0f1f5;font-size:13px;color:var(--ink);vertical-align:top}
+.badge{display:inline-block;background:#eef2ff;color:var(--nav);font-size:11px;font-weight:700;border-radius:6px;padding:2px 7px;margin-top:3px}
+.warn{background:#fff8e6;border-radius:8px;padding:10px 14px;font-size:13px;color:#7a6a2f;margin-top:2px}
+.tabsub{display:flex;gap:24px;border-bottom:1px solid var(--line);margin-bottom:8px}
+.tabsub button{background:none;border:0;padding:8px 2px;font-size:14px;font-weight:700;color:var(--sub);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabsub button.on{color:var(--blue2);border-bottom-color:var(--blue2)}
+.opt{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:12px;padding:16px;cursor:pointer;flex:1}
+.opt.on{border-color:var(--blue2);background:#f5f8ff}
+.opt .rd{width:20px;height:20px;border-radius:9999px;border:2px solid #c3c8d6;flex-shrink:0;margin-top:1px;position:relative}
+.opt.on .rd{border-color:var(--blue2)}.opt.on .rd:after{content:"";position:absolute;inset:3px;border-radius:9999px;background:var(--blue2)}
+.opt .ti{font-weight:700;font-size:15px}.opt .ds{font-size:13px;color:var(--sub);margin-top:2px}
+.optrow{display:flex;gap:16px}
+.select{width:100%;border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:15px;color:var(--ink);background:#fff;margin-top:6px}
+.tc{font-size:12px;color:var(--sub);line-height:1.6}
+.accept{display:flex;align-items:center;justify-content:space-between;background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(20,20,60,.06);padding:20px 26px}
+.certcard{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:8px;display:flex;justify-content:space-between;align-items:center}
+.certcard .ok{color:#16a34a;font-weight:700}
+.btn-line{width:100%;border:1px solid var(--line);background:#fff;border-radius:10px;padding:12px;color:var(--blue2);font-weight:700;margin-top:8px;display:flex;justify-content:center;gap:8px}
+/* ---- MODALES ---- */
+.ovl{position:fixed;inset:0;background:rgba(20,20,45,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
+.modal{background:#fff;border-radius:16px;max-width:620px;width:100%;padding:28px 30px;box-shadow:0 30px 80px rgba(0,0,0,.3)}
+.modal h3{margin:0;font-size:24px;font-weight:800}.modal .sub{color:var(--sub);font-size:16px;margin:6px 0 18px}
+.modal hr{border:0;border-top:1px solid var(--line);margin:0 0 20px}
+.chk{display:flex;gap:12px;align-items:center;font-size:15px;color:var(--ink);margin:18px 0}
+.chk .box{width:26px;height:26px;border:2px solid #c3c8d6;border-radius:7px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff}
+.chk.on .box{background:var(--blue2);border-color:var(--blue2)}
+.mbtns{display:flex;gap:14px;margin-top:8px}.mbtns button{flex:1;height:56px;border-radius:12px;font-size:17px;font-weight:800}
+.b-out{background:#fff;border:1px solid var(--line);color:var(--blue2)}
+.b-fill{background:var(--blue);border:0;color:#fff}.b-fill:disabled{background:#eef0f5;color:#b9bdca}
+/* processing */
+.proc{position:fixed;inset:0;background:#fff;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px}
+.spin{width:64px;height:44px;position:relative;margin-bottom:26px}
+.spin i{position:absolute;height:7px;border-radius:4px;background:var(--nav);animation:sh 1s infinite ease-in-out}
+.spin i:nth-child(1){top:0;left:8px;width:48px}.spin i:nth-child(2){top:14px;left:0;width:40px;background:var(--blue2);animation-delay:.15s}
+.spin i:nth-child(3){top:28px;left:14px;width:12px;animation-delay:.3s}
+@keyframes sh{0%,100%{opacity:.4}50%{opacity:1}}
+.proc h2{font-size:26px;font-weight:800;margin:0 0 8px}.proc p{color:var(--sub);font-size:17px;margin:0}
+.done .ck{width:76px;height:76px;border-radius:9999px;background:#16a34a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:40px;margin-bottom:22px}
+.done .box2{border:1px solid #dbe4ff;border-radius:12px;padding:14px 16px;font-size:14px;color:var(--sub);max-width:420px;margin:8px 0 20px}
+.done .w{max-width:420px;width:100%}
+</style></head>
+<body>
+
+<!-- ================= LOGIN ================= -->
+<section class="login" id="scr-login">
+  <div class="panel"></div>
+  <button class="back" onclick="history.length>1?history.back():window.close()">&larr; Volver</button>
+  <div class="card">
+    <div class="logo" id="logo-slot"></div>
+    <h2>Te damos la bienvenida a</h2>
+    <h1>Plataforma comercial de factoring</h1>
+    <div class="fld"><label>RUT</label><div class="inp"><input id="lg-rut" placeholder="Ingresa el RUT" oninput="lgCheck()"></div></div>
+    <div class="fld"><label>Clave internet</label><div class="inp"><input id="lg-pass" type="password" placeholder="Ingresa la clave" oninput="lgCheck()"><span style="color:#c3c8d6">&#128100;</span></div></div>
+    <button class="btn-primary" id="lg-btn" disabled onclick="goPortal()">Ingresar</button>
+    <a class="help" href="javascript:void(0)">¿Tienes problemas con tu clave internet?</a>
+    <div class="fono">&#128222; 600 400 1010</div>
+  </div>
+</section>
+
+<!-- ================= PORTAL ================= -->
+<section id="scr-portal" class="hidden">
+  <div class="top">
+    <div class="lg" id="logo-slot2"></div>
+    <div class="tabs">
+      <div class="tab on">Factoring <span class="n" id="cnt-fac">7</span></div>
+      <div class="tab">Confirming <span class="n">41</span></div>
+      <div class="tab">Ordering <span class="n">0</span></div>
+      <div class="tab">Capital de trabajo <span class="n">0</span></div>
+    </div>
+    <button class="menu">&#9776;</button>
+  </div>
+  <div class="subbar">
+    <button class="back" onclick="showLogin()">&larr; Volver</button>
+    <div class="emp"><span id="pt-emp">EMPRESA</span> &nbsp;|&nbsp; <span id="pt-rut">76.761.199-1</span></div>
+  </div>
+  <div class="wrap">
+    <!-- Resultado simulación -->
+    <div class="sec">
+      <h3>Resultado de la simulación N° <span id="pt-sim">1829312</span></h3>
+      <div class="desc">Generada el <span id="pt-fecha">hoy</span> por <span id="pt-ejec">Ejecutivo</span></div>
+      <div class="rowd"><div class="k">Monto simulado</div><div class="v" id="pt-msim">CLP 0<span class="s"><span id="pt-ndoc">0</span> documentos</span></div></div>
+      <div class="rowd"><div class="k">Monto anticipo</div><div class="v" id="pt-mant">CLP 0<span class="s">Anticipo del <span id="pt-antp">100</span>%</span></div></div>
+      <div class="rowd" style="cursor:pointer" onclick="document.getElementById('pt-det').classList.toggle('hidden')"><div class="k">Descuentos</div><div class="v" id="pt-desc">CLP 0 &#9650;</div></div>
+      <div class="det hidden" id="pt-det"></div>
+      <div class="rowd"><div class="k kf">Monto a girar</div><div class="v vblue" id="pt-girar">CLP 0</div></div>
+      <div class="info">&#9432;&nbsp;<div>Esta simulación considera una retención de <b id="pt-ret">CLP 0</b>. El monto indicado se liberará en su totalidad si las facturas se pagan en la fecha informada.</div></div>
+    </div>
+    <!-- Documentos -->
+    <div class="sec">
+      <h3>Documentos simulados</h3><div class="desc">Adjunta los soportes de las facturas de tu operación.</div>
+      <div class="tabsub"><button class="on">Simulados <span id="pt-nd2">0</span></button><button>Retirados 0</button></div>
+      <table><thead><tr><th>Factura</th><th>Cliente</th><th>Vencimiento</th><th style="text-align:right">Monto</th></tr></thead><tbody id="pt-facs"></tbody></table>
+    </div>
+    <!-- Cesión -->
+    <div class="sec">
+      <h3>Cesión de documentos</h3><div class="desc">Selecciona cómo se realizará la cesión de los documentos.</div>
+      <div class="optrow">
+        <div class="opt" id="ces-sis" onclick="pickCesion('sis')"><span class="rd"></span><div><div class="ti">Desde nuestro sistema</div><div class="ds">Requiere el uso de un certificado digital, solo debes cargarlo o solicitarlo aquí.</div></div></div>
+        <div class="opt" id="ces-fac" onclick="pickCesion('fac')"><span class="rd"></span><div><div class="ti">Desde mi facturador</div><div class="ds">Debes ir por tu cuenta a tu facturador y hacer la cesión de forma manual.</div></div></div>
+      </div>
+      <div id="cert-zone" class="hidden" style="margin-top:16px">
+        <div style="font-weight:700;font-size:15px;margin-bottom:2px">Certificado digital utilizado</div>
+        <div class="certcard"><div><b id="cert-nm">—</b><div class="ok">&#10003; Válido desde el 26/08/2025 hasta el 26/08/2028</div></div><span style="color:var(--sub)">&#8942;</span></div>
+      </div>
+      <button id="cert-req" class="btn-line hidden" onclick="openCert()">&#128179; Solicitar / usar certificado digital</button>
+    </div>
+    <!-- Cuenta de abono -->
+    <div class="sec">
+      <h3>Cuenta de abono</h3><div class="desc">Ingresa los datos de la cuenta en la que se abonará el monto a girar de tu operación.</div>
+      <div class="info" style="margin-bottom:12px">&#9776;&nbsp;<div><b>Hemos detectado que eres cliente BICE.</b> Al abonar a tu cuenta BICE, recibirás tus abonos más rápido y sin costos de giro.</div></div>
+      <div class="optrow">
+        <div class="opt on" id="ab-bice" onclick="pickAbono('bice')"><span class="rd"></span><div><div class="ti">Cuenta Banco BICE</div><div class="ds">Abona a tu cuenta BICE y opera más rápido y sin costos de giro.</div></div></div>
+        <div class="opt" id="ab-otro" onclick="pickAbono('otro')"><span class="rd"></span><div><div class="ti">Cuenta de otro banco</div><div class="ds">Podrían existir costos de transferencia según montos y giros.</div></div></div>
+      </div>
+      <div style="margin-top:14px"><label style="font-size:12px;color:var(--sub)">Cuenta de abono</label>
+      <select class="select"><option>Cuenta Corriente BICE N° **** **** 1234</option></select></div>
+    </div>
+    <!-- Giro -->
+    <div class="sec"><h3>Información de giro</h3><div class="desc">Conoce cómo recibirás los abonos de tu operación.</div>
+      <div class="rowd"><div class="k"><b>Giro express</b><div style="font-size:13px;color:var(--sub)">Recibe el abono en menos de 30 minutos el monto asociado a los deudores con buen historial de pago.</div></div><div class="v" id="pt-giro2">CLP 0<span class="s">Recibirás</span></div></div>
+    </div>
+    <!-- T&C -->
+    <div class="sec"><h3>Términos y condiciones</h3>
+      <div class="tc">Autorizo a realizar la(s) cesión(es) que se originará(n) a partir de esta solicitud de operación, las cuales se realizará(n) bajo el amparo del contrato "Marco de Factoring" suscrito entre Factoring Security y la Empresa. En el evento que por cualquier causa no se pague una o más de las facturas, o el deudor de las mismas pague directamente al Cedente, Security Factoring descontará su valor del saldo de precio de la cesión, o dicho valor le será reembolsado directamente por el Cedente.</div>
+    </div>
+    <div class="accept"><div style="font-weight:700">Estoy de acuerdo con el resultado de esta simulación</div>
+      <button class="btn-primary" style="width:220px" id="pt-cursar" disabled onclick="cursar()">Aceptar y cursar &rsaquo;</button></div>
+  </div>
+</section>
+
+<!-- Modal certificado -->
+<div class="ovl hidden" id="mdl-cert"><div class="modal">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start"><div><h3>Obtén tu certificado digital</h3><div class="sub">Completa los datos para gestionar tu certificado digital en E-cert Chile</div></div><button style="background:none;border:0;font-size:22px;color:var(--sub)" onclick="closeCert()">&times;</button></div>
+  <hr>
+  <label style="font-size:14px;font-weight:700;color:#8a8fa3">Certificado a nombre de</label>
+  <div class="select" style="font-weight:800;font-size:18px;display:flex;justify-content:space-between;align-items:center"><span id="cert-nombre">—</span><span style="color:var(--sub)">&#9662;</span></div>
+  <div style="font-size:13px;color:var(--sub);margin:6px 0 18px">Hemos detectado que esta persona cuenta con facultades para ceder facturas en el SII</div>
+  <label style="font-size:14px;font-weight:700;color:#8a8fa3">Número de documento</label>
+  <div class="fld"><div class="inp"><input id="cert-doc" placeholder="Ingresa el número de documento de la cédula" oninput="certCheck()"><span style="color:#c3c8d6">&#9432;</span></div></div>
+  <div class="chk" id="cert-chk" onclick="toggleCertChk()"><span class="box">&#10003;</span><span>Acepto las condiciones de la compra del certificado digital en E-Cert Chile.</span></div>
+  <div class="mbtns"><button class="b-out" onclick="closeCert()">&lsaquo; Volver</button><button class="b-fill" id="cert-ok" disabled onclick="obtainCert()">Obtener certificado</button></div>
+</div></div>
+
+<!-- Processing overlay -->
+<div class="proc hidden" id="proc"><div class="spin"><i></i><i></i><i></i></div><h2 id="proc-t">Procesando…</h2><p>Te notificaremos cuando terminemos</p></div>
+
+<!-- Success overlay -->
+<div class="proc hidden done" id="done">
+  <div class="ck">&#10003;</div>
+  <h2 style="max-width:520px">La operación <span id="op-num">21-212</span><br>ha sido creada exitosamente</h2>
+  <p style="max-width:440px;margin-top:8px">Te estaremos notificando sobre el estado de avance de tu operación.</p>
+  <div class="w">
+    <div class="box2">&#128222;&nbsp; Para consultas, contáctanos al <b>800 800 0234</b> o a través de Whatsapp al <b>+56 9 1324 3225</b></div>
+    <button class="btn-primary" onclick="finalizar()">Finalizar</button>
+    <button class="btn-line" onclick="return false">&#8595; Descargar comprobante</button>
+  </div>
+</div>
+
+<script>
+var LOGO='<svg viewBox="0 0 207 45" height="40" xmlns="http://www.w3.org/2000/svg"><rect x="103" width="104" height="30" fill="#232272"/><rect width="103" height="30" fill="#6A2E92"/><text x="52" y="20" fill="#fff" font-family="Geist,Arial" font-size="15" font-weight="800" text-anchor="middle" letter-spacing="1">FACTORING</text><text x="155" y="20" fill="#fff" font-family="Geist,Arial" font-size="15" font-weight="500" text-anchor="middle">security</text><text x="103" y="42" fill="#316094" font-family="Geist,Arial" font-size="12" font-weight="700" text-anchor="middle">de &#9636; BICE</text></svg>';
+document.getElementById('logo-slot').innerHTML=LOGO;
+document.getElementById('logo-slot2').innerHTML=LOGO;
+
+function decode(){try{var h=location.hash||"";var i=h.indexOf("d=");if(i<0)return null;return JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(h.slice(i+2))))));}catch(e){return null;}}
+var DATA=decode()||{}; var P=DATA.payload||DATA||{};
+var NEG=(new URLSearchParams(location.search)).get("n")||P.neg||"—";
+function clp(n){n=Math.round(n||0);return "CLP "+n.toLocaleString("es-CL");}
+function set(id,v){var e=document.getElementById(id);if(e)e.textContent=v;}
+
+// Fill portal from payload
+(function(){
+  set('pt-emp',(P.empresa||'EMPRESA').toUpperCase()); set('pt-rut',P.rut||'—');
+  set('pt-ejec',P.ejecutivo||'Ejecutivo'); set('pt-fecha',P.fecha||'—');
+  set('pt-sim', String(NEG));
+  var ndoc=P.cantidad||(P.facturas?P.facturas.length:0);
+  set('pt-ndoc',ndoc); set('pt-nd2',ndoc); set('pt-fac' ,'');
+  document.getElementById('pt-nd2').textContent=ndoc;
+  var msim=P.montoDocumentos||0, mant=P.montoAntipo||P.montoAnticipo||msim, girar=P.montoAGirar||0;
+  var desc=P.subtotalDescuentos||0, ret=P.retencion||0;
+  document.getElementById('pt-msim').innerHTML=clp(msim)+'<span class="s">'+ndoc+' documentos</span>';
+  document.getElementById('pt-mant').innerHTML=clp(mant)+'<span class="s">Anticipo del '+(P.anticipoPct||100)+'%</span>';
+  document.getElementById('pt-desc').innerHTML=clp(desc)+' &#9650;';
+  set('pt-girar',clp(girar)); set('pt-ret',clp(ret));
+  document.getElementById('pt-giro2').innerHTML=clp(girar)+'<span class="s">Recibirás</span>';
+  set('op-num', NEG);
+  // desglose descuentos
+  var det=document.getElementById('pt-det'); var rows=[['Diferencia de precio',P.diferenciaPrecio],['Comisión',P.comision],['Cuentas por cobrar',P.cuentasPorCobrar]];
+  det.innerHTML=rows.filter(function(r){return r[1]!=null;}).map(function(r){return '<div class="li"><span>'+r[0]+'</span><span>'+clp(r[1])+'</span></div>';}).join('');
+  // facturas
+  var tb=document.getElementById('pt-facs'); var fs=P.facturas||[];
+  tb.innerHTML=fs.length?fs.map(function(f){return '<tr><td>'+(f.tipo||'Factura electrónica')+' #'+(f.folio||'')+'<div class="badge">Curse express</div></td><td>'+(f.deudor||'')+'</td><td>'+(f.venc?f.venc+' días':'—')+'</td><td style="text-align:right;font-weight:700">'+clp(f.monto)+'</td></tr>';}).join(''):'<tr><td colspan="4" style="color:#9ca3af;text-align:center;padding:18px">Sin documentos en el payload.</td></tr>';
+  // cert name
+  set('cert-nombre', (P.contacto&&P.contacto.nombre)||P.ejecutivo||'Titular'); set('cert-nm',(P.contacto&&P.contacto.nombre)||P.ejecutivo||'Titular');
+})();
+
+// Login
+function lgCheck(){document.getElementById('lg-btn').disabled=!(document.getElementById('lg-rut').value.trim()&&document.getElementById('lg-pass').value.trim());}
+function goPortal(){document.getElementById('scr-login').classList.add('hidden');document.getElementById('scr-portal').classList.remove('hidden');window.scrollTo(0,0);}
+function showLogin(){document.getElementById('scr-portal').classList.add('hidden');document.getElementById('scr-login').classList.remove('hidden');}
+
+// Cesión + cuenta -> habilitar cursar
+var cesion=null, abono='bice', cert=false;
+function upd(){document.getElementById('pt-cursar').disabled=!(cesion&&abono&&(cesion!=='sis'||cert));}
+function pickCesion(v){cesion=v;document.getElementById('ces-sis').classList.toggle('on',v==='sis');document.getElementById('ces-fac').classList.toggle('on',v==='fac');
+  document.getElementById('cert-req').classList.toggle('hidden',v!=='sis'||cert);
+  document.getElementById('cert-zone').classList.toggle('hidden',!(v==='sis'&&cert));upd();}
+function pickAbono(v){abono=v;document.getElementById('ab-bice').classList.toggle('on',v==='bice');document.getElementById('ab-otro').classList.toggle('on',v==='otro');upd();}
+
+// Certificado modal
+var certDoc=false,certAcc=false;
+function openCert(){document.getElementById('mdl-cert').classList.remove('hidden');}
+function closeCert(){document.getElementById('mdl-cert').classList.add('hidden');}
+function certCheck(){certDoc=!!document.getElementById('cert-doc').value.trim();document.getElementById('cert-ok').disabled=!(certDoc&&certAcc);}
+function toggleCertChk(){certAcc=!certAcc;document.getElementById('cert-chk').classList.toggle('on',certAcc);certCheck();}
+function obtainCert(){cert=true;closeCert();document.getElementById('cert-req').classList.add('hidden');document.getElementById('cert-zone').classList.remove('hidden');upd();}
+
+// Cursar -> 3 etapas -> éxito
+function cursar(){
+  var proc=document.getElementById('proc'), t=document.getElementById('proc-t');
+  var steps=['Firmando Comprobante de Aceptación de Términos y Condiciones','Iniciando la cesión de facturas','Creando la operación '+NEG];
+  proc.classList.remove('hidden'); var i=0; t.textContent=steps[0];
+  var iv=setInterval(function(){ i++; if(i<steps.length){ t.textContent=steps[i]; } else { clearInterval(iv); proc.classList.add('hidden'); document.getElementById('done').classList.remove('hidden');
+    try{ var w=window.opener; while(w){ w.postMessage({type:'aceptada',neg:NEG},'*'); w=(w!==w.opener)?w.opener:null; } }catch(e){}
+  } }, 1400);
+}
+function finalizar(){ try{window.close();}catch(e){} document.getElementById('done').innerHTML='<div class="ck">&#10003;</div><h2>Puedes cerrar esta ventana</h2>'; }
+</script>
+</body></html>
