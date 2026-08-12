@@ -5845,7 +5845,7 @@ function ComparativoModal({ deals, onClose }) {
         <div onClick={(e) => e.stopPropagation()} className="w-full rounded-xl bg-white p-5 shadow-2xl" style={{ maxWidth: "920px", maxHeight: "90vh", overflowY: "auto", border: `1px solid ${C.line}` }}>
           <div className="flex items-start justify-between">
             <div>
-              <div className="text-lg font-semibold" style={{ color: C.ink }}>Comparativo diario</div>
+              <div className="text-lg font-semibold" style={{ color: C.ink }}>Benchmark ejecutivo</div>
               <div className="t12" style={{ color: C.faint }}>Estadística por {dims[dim].label.toLowerCase()} (estado actual del pipeline)</div>
             </div>
             <div className="flex items-center gap-2">
@@ -7927,7 +7927,7 @@ function PCsankey({ deals = [], execsFiltrados = [], hayFiltro, soloExec, usuari
     </div>
   );
 }
-function PanelClientes({ soloExec, deals = [], usuario }) {
+function PanelClientes({ soloExec, deals = [], usuario, reportes = {} }) {
   const [seccion, setSeccion] = useState("cliente"); // cliente | sow | desempeno | sankey
   const [fZona, setFZona] = useState("todas");
   const [fJefatura, setFJefatura] = useState("todas");
@@ -7971,13 +7971,18 @@ function PanelClientes({ soloExec, deals = [], usuario }) {
           </>
         )}
       </div>
-      {/* Secciones (tabs underline spec §3) */}
-      <div className="flex items-center gap-6" style={{ borderBottom: `1px solid ${C.line}` }}>
+      {/* Secciones (tabs underline spec §3) + accesos a reportes al mismo nivel */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
         <Tab id="cliente" label="Cliente" />
         <Tab id="sow" label="SOW" />
         <Tab id="desempeno" label="Desempeño" />
         <Tab id="sankey" label="Origen → Cierre" />
-        {hayFiltro && <span className="mb-1.5 ml-1 rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{fEjec !== "todos" ? fEjec : fJefatura !== "todas" ? fJefatura : fZona} · {agg.clientes.toLocaleString("es-CL")} clientes</span>}
+        {hayFiltro && <span className="mb-1.5 rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{fEjec !== "todos" ? fEjec : fJefatura !== "todas" ? fJefatura : fZona} · {agg.clientes.toLocaleString("es-CL")} clientes</span>}
+        <div className="mb-1.5 ml-auto flex flex-wrap items-center gap-1.5">
+          {[["planEjec", "Plan Mensual Ejecutivo", Target], ["semanal", "Reporte semanal", BarChart2], ["cobranza", "Reporte de cobranza", Table2], ["resumen", "Resumen diario", Calendar], ["benchEjec", "Benchmark ejecutivo", Table2], ["benchDeudores", "Benchmark deudores", Star]].map(([k, l, Ic]) => (
+            <button key={k} onClick={reportes[k]} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.sub }}><Ic size={13} /> {l}</button>
+          ))}
+        </div>
       </div>
 
       {seccion === "cliente" && <PCcliente agg={agg} hayFiltro={hayFiltro} />}
@@ -9305,7 +9310,6 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
   const countCat = (cat) => delEjec.filter((t) => t.cat === cat).length;
   const impCat = (cat) => delEjec.filter((t) => t.cat === cat).reduce((s, t) => s + (t.impacto || 0), 0);
   const totalImp = delEjec.reduce((s, t) => s + (t.impacto || 0), 0);
-  const critImp = delEjec.filter((t) => t.prio === "critica").reduce((s, t) => s + (t.impacto || 0), 0);
   const nPrio = delEjec.filter((t) => t.dealId && tienePrioridadCurse(t.dealId)).length; // oportunidades marcadas con prioridad
   const nFueraLinea = delEjec.filter((t) => tareaRequiereExcesoLinea(t, deals)).length; // operaciones fuera de línea (requieren aprobar exceso)
   return (
@@ -9343,7 +9347,6 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
         </div>
         {[
           { t: "Impacto potencial", v: fmtMMc(totalImp), s: "Volumen (CLP) que podrías cursar o recuperar si atiendes TODAS las tareas.", col: "#703EFF", bg: "#f5f3ff", bd: "#ddd6fe" },
-          { t: "Impacto crítico", v: fmtMMc(critImp), s: "Parte de ese volumen en tareas de prioridad crítica (fugas y conversaciones activas). Atiéndelas primero.", col: "#dc2626", bg: "#fef2f2", bd: "#fecaca" },
           { t: "Ganancia estimada", v: fmtMMc(Math.round(totalImp * 0.0033)), s: "Ingreso aproximado aplicando un spread de 33 pbs (0,33%) sobre el impacto potencial.", col: "#16A34A", bg: "#F0FDF4", bd: "#bbf7d0" },
         ].map((k, i) => (
           <div key={i} className="rounded-xl p-3" style={{ backgroundColor: k.bg, border: `1px solid ${k.bd}` }}>
@@ -9445,22 +9448,12 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
     </div>
   );
 }
-function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, onOpenSolic, onIrLineas }) {
-  const [tab, setTab] = useState("bandeja"); // bandeja | retencion | prioritarios
+function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, onOpenSolic, onIrLineas, plan = {}, setPlan = () => {} }) {
+  const [tab, setTab] = useState("bandeja"); // bandeja | retencion
   const [fEjec, setFEjec] = useState("todos");
   const [fEstado, setFEstado] = useState("todos");
   const ejec = soloExec || fEjec; // si hay usuario logueado, se fuerza a sus registros
   const filtrEjec = (c) => ejec === "todos" || c.ej === ejec;
-  // Metas del plan mensual — estado elevado a TareasView para compartirlo entre
-  // "Definir Plan" (donde se agregan/editan) y "Plan Mensual" (donde se visualizan).
-  const [plan, setPlan] = useState(() => {
-    const esCand = (c) => c.tag || c.estado !== "Security";
-    const seed = {};
-    // Semilla del plan: los ~5 clientes candidatos de mayor volumen POR ejecutivo (para que la tabla
-    // "Plan por ejecutivo" tenga filas para cada uno; la vista luego filtra por el ejecutivo seleccionado).
-    PC_EXECS.forEach((e) => { PC_CLIENTES.filter((c) => c.ej === e.nombre && esCand(c)).sort((a, b) => b.vol - a.vol).slice(0, 5).forEach((c) => { seed[c.id] = { metaSow: c.target, metaColoc: Math.round(c.vol * 0.6) }; }); });
-    return seed;
-  });
   // Roster unificado para el filtro: cartera + ejecutivos del pipeline.
   const execOpts = useMemo(() => [...new Set([...PC_EXECS.map((e) => e.nombre), ...Object.values(EXECS)])], []);
   const Tab = ({ id, label }) => (
@@ -9471,13 +9464,11 @@ function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, o
       <div className="flex flex-wrap items-center gap-2">
         <Tab id="bandeja" label="Bandeja diaria" />
         <Tab id="retencion" label="Plan Mensual" />
-        <Tab id="plan" label="Plan por ejecutivo" />
         <div className="ml-auto flex items-center gap-1.5"><User size={14} style={{ color: C.faint }} />{soloExec
           ? <span className="rounded-lg px-3 py-1.5 t12 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec}</span>
           : <select value={fEjec} onChange={(e) => setFEjec(e.target.value)} className="rounded-lg px-3 py-1.5 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}><option value="todos">Todos los ejecutivos</option>{execOpts.map((n) => <option key={n} value={n}>{n}</option>)}</select>}</div>
       </div>
       {tab === "bandeja" ? <PCbandeja deals={deals} execFilter={ejec} onOpen={onOpen} ambito="diaria" usuario={usuario} onOpenSolic={onOpenSolic} onIrLineas={onIrLineas} />
-        : tab === "plan" ? <PlanPorEjecutivo ejec={ejec} soloExec={soloExec} esJefe={esJefe} usuarioNombre={usuarioNombre} plan={plan} setPlan={setPlan} />
         : <PCretencion fEjec={ejec} plan={plan} />}
     </div>
   );
@@ -11553,10 +11544,12 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
     </svg>
   );
   return (
-    <div className="flex min-h-screen w-full bg-white" style={{ fontFamily: "'Geist', ui-sans-serif, system-ui, sans-serif", color: C.ink }}>
+    <div className="min-h-screen w-full bg-white" style={{ fontFamily: "'Geist', ui-sans-serif, system-ui, sans-serif", color: C.ink }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');`}</style>
+      {/* Contenedor a 1600px, centrado en pantallas más anchas */}
+      <div className="mx-auto flex min-h-screen" style={{ maxWidth: 1600 }}>
       {/* Columna formulario */}
-      <div className="flex flex-col justify-between px-10 py-8" style={{ width: 460, flexShrink: 0 }}>
+      <div className="flex flex-col justify-between px-14 py-12" style={{ width: 512, flexShrink: 0 }}>
         <div className="flex items-center gap-2">
           <span className="flex h-8 w-8 items-center justify-center text-white" style={{ backgroundColor: C.indigo, borderRadius: 8, fontSize: 14, fontWeight: 700 }}>N</span>
           <span style={{ fontSize: 16, fontWeight: 600, color: C.navy }}>NEX Factoring</span>
@@ -11566,22 +11559,22 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
             <div style={{ fontSize: 48, fontWeight: 700, lineHeight: 1.1, color: C.navy }}>Bienvenido</div>
             <div className="mt-2" style={{ fontSize: 14, color: C.sub }}>Ingresa a la plataforma comercial de factoring.</div>
             <label className="mt-6 block" style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Usuario</label>
-            <select value={u} onChange={(e) => setU(e.target.value)} className="mt-1.5 w-full px-3" style={{ height: 40, border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, color: C.ink, backgroundColor: "#fff", outline: "none" }}>
+            <select value={u} onChange={(e) => setU(e.target.value)} className="mt-2 w-full px-3" style={{ height: 44, border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, color: C.ink, backgroundColor: "#fff", outline: "none" }}>
               {Object.entries(USERS).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
             </select>
-            <label className="mt-3 block" style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Contraseña</label>
-            <input type="password" value={clave} onChange={(e) => setClave(e.target.value)} className="mt-1.5 w-full px-3" style={{ height: 40, border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, color: C.ink, backgroundColor: "#fff", outline: "none" }} />
-            <button onClick={() => setPaso("otp")} className="mt-5 w-full py-2.5 text-white" style={{ background: "linear-gradient(to right, #EE2EFF, #FF814B)", borderRadius: 9999, fontSize: 14, fontWeight: 600, border: "none" }}>Ingresar</button>
+            <label className="mt-4 block" style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Contraseña</label>
+            <input type="password" value={clave} onChange={(e) => setClave(e.target.value)} className="mt-2 w-full px-3" style={{ height: 44, border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, color: C.ink, backgroundColor: "#fff", outline: "none" }} />
+            <button onClick={() => setPaso("otp")} className="mt-6 w-full py-3 text-white" style={{ background: "linear-gradient(to right, #EE2EFF, #FF814B)", borderRadius: 9999, fontSize: 14, fontWeight: 600, border: "none" }}>Ingresar</button>
             {/* SSO corporativo: Microsoft Entra ID vía Azure App Service Authentication (mock). La organización es requisito ANTES del botón. */}
-            <div className="my-5 flex items-center gap-3"><span style={{ height: 1, flex: 1, backgroundColor: C.line }} /><span style={{ fontSize: 12, color: C.faint }}>o continúa con</span><span style={{ height: 1, flex: 1, backgroundColor: C.line }} /></div>
+            <div className="my-6 flex items-center gap-3"><span style={{ height: 1, flex: 1, backgroundColor: C.line }} /><span style={{ fontSize: 12, color: C.faint }}>o continúa con</span><span style={{ height: 1, flex: 1, backgroundColor: C.line }} /></div>
             <label className="block" style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Organización</label>
-            <select value={org} onChange={(e) => setOrg(e.target.value)} className="mt-1.5 w-full px-3" style={{ height: 40, border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, color: org ? C.ink : C.faint, backgroundColor: "#fff", outline: "none" }}>
+            <select value={org} onChange={(e) => setOrg(e.target.value)} className="mt-2 w-full px-3" style={{ height: 44, border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, color: org ? C.ink : C.faint, backgroundColor: "#fff", outline: "none" }}>
               <option value="">Selecciona tu organización…</option>
               {ORGS.map((o) => <option key={o} value={o} style={{ color: C.ink }}>{o}</option>)}
             </select>
             <button disabled={!org} onClick={() => { setPaso("ms-conectando"); setTimeout(() => setPaso("ms-cuentas"), 900); }}
               title={org ? "Autenticación federada con Microsoft Entra ID" : "Selecciona tu organización para continuar"}
-              className="mt-3 flex w-full items-center justify-center gap-2.5 py-2.5 disabled:cursor-not-allowed disabled:opacity-45"
+              className="mt-4 flex w-full items-center justify-center gap-2.5 py-3 disabled:cursor-not-allowed disabled:opacity-45"
               style={{ backgroundColor: "#fff", border: `1.5px solid ${C.line}`, borderRadius: 9999, fontSize: 14, fontWeight: 500, color: C.ink }}>
               <MsLogo /> Iniciar sesión con Microsoft
             </button>
@@ -11639,6 +11632,7 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
           <div className="mt-3" style={{ fontSize: 14, opacity: 0.92 }}>Oportunidades del inbound SII, ofertas con pricing por deudor, verificación predictiva y líneas al comité — con datos al día.</div>
         </div>
       </div>
+      </div>
     </div>
   );
 }
@@ -11662,6 +11656,15 @@ export default function PipelineComercial() {
   const [usuario, setUsuario] = useState(USUARIO); // usuario logueado
   const [logueado, setLogueado] = useState(false); // gate de login (portada spec Auth); clic en avatar = cerrar sesión
   const [cmdOpen, setCmdOpen] = useState(false); // command palette Ctrl+K (spec §38)
+  const [planEjecModal, setPlanEjecModal] = useState(false); // reporte "Plan Mensual Ejecutivo" (desde Gestión)
+  // Metas del plan mensual por cliente — estado elevado al root para compartirse entre la vista Tareas
+  // (Plan Mensual/retención) y el reporte "Plan Mensual Ejecutivo" en Gestión.
+  const [planMensual, setPlanMensual] = useState(() => {
+    const esCand = (c) => c.tag || c.estado !== "Security";
+    const seed = {};
+    PC_EXECS.forEach((e) => { PC_CLIENTES.filter((c) => c.ej === e.nombre && esCand(c)).sort((a, b) => b.vol - a.vol).forEach((c) => { seed[c.id] = { metaSow: c.target, metaColoc: Math.round(c.vol * 0.6) }; }); });
+    return seed;
+  });
   useEffect(() => {
     const h = (e) => { if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); setCmdOpen((o) => !o); } else if (e.key === "Escape") setCmdOpen(false); };
     window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h);
@@ -13279,23 +13282,22 @@ export default function PipelineComercial() {
         ) : vistaApp === "panel" ? (
           <>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Gestión</div>
-            <div className="mt-1 mb-4 flex items-end justify-between">
-              <h1 className="text-2xl font-semibold tracking-tight">Gestión de Clientes</h1>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <button onClick={() => { setAnalisis(construirAnalisis()); setReporteModal(true); }} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}><BarChart2 size={14} /> Reporte semanal</button>
-                <button onClick={() => setCobranzaModal(true)} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}><Table2 size={14} /> Reporte de cobranza</button>
-                <button onClick={verResumenDiario} title="Ver resumen del día en curso" className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}><Calendar size={14} /> Resumen diario</button>
-                <button onClick={() => setComparativoModal(true)} title="Comparar por ejecutivo, zona o gerencia" className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}><Table2 size={14} /> Comparativo</button>
-                <button onClick={() => setBenchmarkModal(true)} title="Benchmark competitivo por deudor" className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}><Star size={14} /> Benchmark deudores</button>
-              </div>
-            </div>
-            <PanelClientes soloExec={soloExec} deals={deals} usuario={usuario} />
+            <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Gestión de Clientes</h1>
+            <PanelClientes soloExec={soloExec} deals={deals} usuario={usuario}
+              reportes={{
+                planEjec: () => setPlanEjecModal(true),
+                semanal: () => { setAnalisis(construirAnalisis()); setReporteModal(true); },
+                cobranza: () => setCobranzaModal(true),
+                resumen: verResumenDiario,
+                benchEjec: () => setComparativoModal(true),
+                benchDeudores: () => setBenchmarkModal(true),
+              }} />
           </>
         ) : vistaApp === "tareas" ? (
           <>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Tareas</div>
             <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Tareas comerciales</h1>
-            <TareasView deals={misExecs === null ? deals : deals.filter(dealVisible)} onOpen={setSelected} soloExec={soloExec} esJefe={esJefeComercial(usuario)} usuarioNombre={USERS[usuario]} usuario={usuario} onOpenSolic={() => setSolicOpen(true)} onIrLineas={() => irA("lineas", "Líneas")} />
+            <TareasView deals={misExecs === null ? deals : deals.filter(dealVisible)} onOpen={setSelected} soloExec={soloExec} esJefe={esJefeComercial(usuario)} usuarioNombre={USERS[usuario]} usuario={usuario} onOpenSolic={() => setSolicOpen(true)} onIrLineas={() => irA("lineas", "Líneas")} plan={planMensual} setPlan={setPlanMensual} />
           </>
         ) : vistaApp === "operaciones" ? (
           <>
@@ -13533,6 +13535,19 @@ export default function PipelineComercial() {
       {prioOpen && <PrioridadesPanel items={deals.filter(dealVisible).filter((d) => tienePrioridadCurse(d.id))} onClose={() => setPrioOpen(false)} onOpen={(d) => { setSelected(d); setPrioOpen(false); }} />}
       {comparativoModal && <ComparativoModal deals={deals} onClose={() => setComparativoModal(false)} />}
       {benchmarkModal && <BenchmarkDeudoresModal deals={deals} onClose={() => setBenchmarkModal(false)} />}
+      {planEjecModal && (
+        <div className="fixed inset-0 flex items-start justify-center ovl p-4" style={{ zIndex: 60 }} onClick={() => setPlanEjecModal(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="flex w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" style={{ maxWidth: 1400, maxHeight: "92vh", border: `1px solid ${C.line}` }}>
+            <div className="flex items-center justify-between px-5 py-3" style={{ borderBottom: `1px solid ${C.line}` }}>
+              <div className="text-lg font-semibold" style={{ color: C.ink }}>Plan Mensual Ejecutivo</div>
+              <button onClick={() => setPlanEjecModal(false)} className="rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>
+            </div>
+            <div className="overflow-y-auto px-5 py-4">
+              <PlanPorEjecutivo ejec={soloExec || "todos"} soloExec={soloExec} esJefe={esJefeComercial(usuario)} usuarioNombre={USERS[usuario]} plan={planMensual} setPlan={setPlanMensual} />
+            </div>
+          </div>
+        </div>
+      )}
       <CommandK abierto={cmdOpen} onCerrar={() => setCmdOpen(false)} deals={deals} dealVisible={dealVisible} irA={irA} onAbrirDeal={(d) => setSelected(d)} />
     </div>
   );
