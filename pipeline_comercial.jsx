@@ -10731,23 +10731,22 @@ function OperacionesView({ deals, onOpen, soloExec }) {
 // bloqueo / aprobación) e indicador de salud según comportamiento.
 // ============================================================
 const LINEAS_DATA = (() => {
-  const rnd = pcRng(20260702); const out = [];
-  const pref = ["Constructora", "Transportes", "Comercial", "Servicios", "Industrias", "Distribuidora", "Ingeniería", "Agrícola", "Maestranza", "Inversiones", "Packaging", "Aceros"];
-  const mid = ["del Sur", "Andina", "Pacífico", "Central", "del Valle", "Austral", "Cordillera", "del Maipo", "San Pedro", "Los Andes", "El Roble", "del Biobío"];
-  const suf = ["SpA", "Ltda", "S.A.", "EIRL"];
-  for (let i = 0; i < 38; i++) {
-    const cliente = `${pref[Math.floor(rnd() * pref.length)]} ${mid[Math.floor(rnd() * mid.length)]} ${suf[Math.floor(rnd() * suf.length)]}`;
-    const rut = `${76000000 + Math.floor(rnd() * 3900000)}-${"0123456789K"[Math.floor(rnd() * 11)]}`;
+  // Las líneas de crédito pertenecen a los CLIENTES de la cartera: misma empresa, mismo ejecutivo y
+  // mismo SOW que PC_CLIENTES. Tienen línea aprobada los que operan (no los prospectos inactivos),
+  // de modo que la cantidad de líneas por ejecutivo es coherente con su cartera de clientes activos.
+  const out = [];
+  PC_CLIENTES.filter((c) => c.estado !== "Inactivo").forEach((c) => {
+    const rnd = pcRng(hashStr("linea" + c.id));
     const aprobada = 300 + Math.floor(rnd() * 20) * 50;
     const uso = Math.round(aprobada * (0.25 + rnd() * 0.62));
     const montoOp = Math.round(rnd() * aprobada * 0.55);
     const demandaBuenos = Math.round(rnd() * aprobada * 1.4); // volumen de facturas de BUENOS deudores por financiar
     const morosidadDias = rnd() < 0.22 ? 5 + Math.floor(rnd() * 70) : 0;
-    const sowActual = 18 + Math.floor(rnd() * 62);
-    const sowTarget = rnd() < 0.2 ? 80 : 60;
-    const exec = PC_EXECS[Math.floor(rnd() * PC_EXECS.length)];
-    out.push({ id: "L-" + i, cliente, rut, aprobada, uso, disponible: aprobada - uso, montoOp, proyeccion: uso + montoOp, demandaBuenos, morosidadDias, sowActual, sowTarget, exec: exec.nombre, zona: exec.zona });
-  }
+    const sowActual = c.sow != null ? c.sow : 18 + Math.floor(rnd() * 62);
+    const sowTarget = c.target || 60;
+    const ex = PC_EXECS.find((e) => e.nombre === c.ej) || PC_EXECS[0];
+    out.push({ id: "L-" + c.id, cliente: c.nombre, rut: c.rut, aprobada, uso, disponible: aprobada - uso, montoOp, proyeccion: uso + montoOp, demandaBuenos, morosidadDias, sowActual, sowTarget, exec: c.ej, zona: ex.zona });
+  });
   return out;
 })();
 function lineaRecomendacion(l) {
