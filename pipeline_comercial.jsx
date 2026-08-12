@@ -7772,9 +7772,12 @@ function NodoTareasModal({ nodo, onClose, usuario, esJefe, onCambio }) {
   const [aEjec, setAEjec] = useState(true);
   const [aJefe, setAJefe] = useState(false);
   const [extra, setExtra] = useState("");
+  const [q, setQ] = useState(""); // filtro por nombre de empresa
   const elegirPre = (l) => { const p = TAREAS_PREDEF.find((x) => x.l === l); setPre(l); if (p) { setCat(p.cat); setDias(p.d); } };
   const toggle = (id) => setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const elegidas = nodo.deals.filter((d) => sel.has(d.id));
+  const ql = q.trim().toLowerCase();
+  const visibles = ql ? nodo.deals.filter((d) => (d.cliente || "").toLowerCase().includes(ql) || (d.id || "").toLowerCase().includes(ql)) : nodo.deals;
   const crear = () => {
     if (!elegidas.length || !esJefe) return;
     elegidas.forEach((d) => {
@@ -7796,12 +7799,18 @@ function NodoTareasModal({ nodo, onClose, usuario, esJefe, onCambio }) {
           </div>
           <button onClick={onClose} style={{ color: C.faint }}><X size={18} /></button>
         </div>
-        <div className="mt-2 flex items-center justify-between">
-          <button onClick={() => setSel(sel.size === nodo.deals.length ? new Set() : new Set(nodo.deals.map((d) => d.id)))} className="t10 font-semibold" style={{ color: C.indigo }}>{sel.size === nodo.deals.length ? "Deseleccionar todas" : "Seleccionar todas"}</button>
-          <span className="t10" style={{ color: C.faint }}>{sel.size} seleccionada(s)</span>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <div className="flex flex-1 items-center gap-1.5 rounded-full px-3 py-1.5" style={{ border: `1px solid ${C.line}`, minWidth: 220 }}>
+            <Search size={13} style={{ color: C.faint }} />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filtrar por nombre de empresa…" className="w-full t11 outline-none" style={{ color: C.ink, backgroundColor: "transparent" }} />
+          </div>
+          <button onClick={() => setSel((s) => { const n = new Set(s); visibles.forEach((d) => n.add(d.id)); return n; })} className="rounded-full px-3 py-1.5 t10 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.indigo, backgroundColor: "#fff" }}>Seleccionar todas</button>
+          <button onClick={() => setSel((s) => { const n = new Set(s); visibles.forEach((d) => n.delete(d.id)); return n; })} className="rounded-full px-3 py-1.5 t10 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Deseleccionar todas</button>
+          <span className="t10" style={{ color: C.faint }}>{sel.size} seleccionada(s){ql ? ` · ${visibles.length} visibles` : ""}</span>
         </div>
         <div className="mt-1.5 space-y-1" style={{ maxHeight: 240, overflowY: "auto" }}>
-          {nodo.deals.map((d) => { const on = sel.has(d.id); return (
+          {visibles.length === 0 && <div className="px-2 py-4 text-center t10" style={{ color: C.faint }}>Ninguna empresa coincide con «{q}».</div>}
+          {visibles.map((d) => { const on = sel.has(d.id); return (
             <button key={d.id} onClick={() => toggle(d.id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left" style={{ border: `1px solid ${on ? C.indigo : C.line}`, backgroundColor: on ? "#F1ECFF" : "#fff" }}>
               <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded" style={{ border: `1px solid ${on ? C.indigo : C.line}`, backgroundColor: on ? C.indigo : "#fff" }}>{on && <Check size={11} style={{ color: "#fff" }} />}</span>
               <span className="min-w-0 flex-1"><span className="block truncate t11 font-semibold" style={{ color: C.ink }}>{d.cliente}</span><span className="t9" style={{ color: C.faint }}>{d.id} · {EXECS[d.exec] || "Agente IA"} · {d.facturas || 0} fac.</span></span>
@@ -9440,7 +9449,7 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
     <div>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <div className="text-2xl font-bold tracking-tight" style={{ color: C.ink }}>Bandeja diaria</div>
+          <div className="text-2xl font-bold tracking-tight" style={{ color: C.ink }}>Oportunidades</div>
           <div className="t11" style={{ color: C.faint }}>{delEjec.length} tareas del día a día · oportunidades del pipeline que se cursan en 24-48 h · impacto potencial de atenderlas</div>
         </div>
         {puedeMarcar && <button onClick={() => setReporteOpen(true)} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}><BarChart2 size={14} /> Reporte del día</button>}
@@ -9585,12 +9594,14 @@ function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, o
   );
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
-        <Tab id="bandeja" label="Bandeja diaria" Icon={Calendar} />
-        <Tab id="retencion" label="Plan Mensual" Icon={Target} />
-        <div className="mb-1.5 ml-auto flex items-center gap-1.5"><User size={14} style={{ color: C.faint }} />{soloExec
-          ? <span className="rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec}</span>
-          : <select value={fEjec} onChange={(e) => setFEjec(e.target.value)} className="rounded-lg px-3 py-1.5 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}><option value="todos">Todos los ejecutivos</option>{execOpts.map((n) => <option key={n} value={n}>{n}</option>)}</select>}</div>
+      <div className="rounded-2xl px-4 pt-2.5" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <Tab id="bandeja" label="Oportunidades" Icon={Calendar} />
+          <Tab id="retencion" label="Plan Mensual" Icon={Target} />
+          <div className="mb-1.5 ml-auto flex items-center gap-1.5"><User size={14} style={{ color: C.faint }} />{soloExec
+            ? <span className="rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec}</span>
+            : <select value={fEjec} onChange={(e) => setFEjec(e.target.value)} className="rounded-lg px-3 py-1.5 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}><option value="todos">Todos los ejecutivos</option>{execOpts.map((n) => <option key={n} value={n}>{n}</option>)}</select>}</div>
+        </div>
       </div>
       {tab === "bandeja" ? <PCbandeja deals={deals} execFilter={ejec} onOpen={onOpen} ambito="diaria" usuario={usuario} onOpenSolic={onOpenSolic} onIrLineas={onIrLineas} />
         : <PCretencion fEjec={ejec} plan={plan} />}
