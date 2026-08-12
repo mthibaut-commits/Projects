@@ -1531,7 +1531,7 @@ function canalDeRegla(regla) {
   if (c.includes("AI Agent")) return "WhatsApp";
   if (c.includes("Ejecutivo")) return "Ejecutivo";
   if (c.includes("Empresas")) return "Email";
-  return "Llamada";
+  return "WhatsApp"; // Call Center se implementará más adelante
 }
 // Construye la conversación de WhatsApp del bot con la OFERTA DETALLADA (misma estructura que la
 // que publica el ejecutivo): saludo → interés → condiciones completas → acepta o escala.
@@ -2396,7 +2396,7 @@ function nextBestAction(deal) {
   if (deal.fueraAtribucion || deal.chatLibre) return out("Negociar la tasa y re-publicar", `El caso se escaló a ejecutivo: el cliente pide una tasa bajo el mínimo del Agente IA${deal.tasaSolicitada ? ` (${deal.tasaSolicitada.toFixed(2)}% mensual)` : ""}. Ajusta % anticipo / comisión / tasa y vuelve a publicar la oferta.`, "#C2410C", "contacto");
   if (hasOffer) return out("Seguimiento del cierre", "La oferta ya está publicada. Recuérdale al cliente firmar en el sitio de Factoring Security para cursar la operación.", "#703EFF", "comunicaciones");
   if (contactado) return out("Publicar la oferta", "El cliente fue contactado y mostró interés. Publica la oferta (% anticipo, tasa y monto a girar) para avanzar a Oferta y Negociación.", "#703EFF", "contacto");
-  return out("Iniciar el contacto", "Inicia el contacto con el cliente por su canal (WhatsApp / Email / Call Center) para presentar la oportunidad y captar su interés.", "#0ea5e9", "contacto");
+  return out("Iniciar el contacto", "Inicia el contacto con el cliente por su canal (WhatsApp / Email) para presentar la oportunidad y captar su interés.", "#0ea5e9", "contacto");
 }
 // Datos de SOW de una oportunidad: la serie REAL (SOW_POR_RUT por RUT) o, si no existe pero el deal trae
 // sus indicadores (sowActualPct/Target/Tendencia), una serie SINTÉTICA coherente — así los deals sembrados
@@ -3433,7 +3433,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const confirmarPub = () => { if (!pubModal) return; const n = pubModal.descartadas.length; onCerrarOferta(deal.id, { accion: pubAccion, espera: pubEspera, descartadas: n }); setPubModal(null); };
   const [retryMenu, setRetryMenu] = useState(false); // dropdown de canal para reintentar contacto
   const [factQuery, setFactQuery] = useState(""); // buscador por folio o deudor en facturas
-  const [subCanal, setSubCanal] = useState(() => (deal && deal.canalContacto === "Llamada") ? "Llamada" : (deal && deal.canalContacto === "Email") ? "Email" : "WhatsApp"); // canal activo en Contactabilidad
+  const [subCanal, setSubCanal] = useState(() => (deal && deal.canalContacto === "Email") ? "Email" : "WhatsApp"); // canal activo en Contactabilidad (Call Center: más adelante)
   const [editC, setEditC] = useState(false); // edición de datos de contacto
   const [draftC, setDraftC] = useState(() => ({ nombre: "", cargo: "", telefono: "", email: "", ...(deal && deal.contacto) }));
   if (!deal) return null;
@@ -3846,7 +3846,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   {cierreMenu && (
                                     <div onClick={(e) => e.stopPropagation()} className="absolute z-50 mt-1 w-52 rounded-lg bg-white py-1 shadow-xl" style={{ border: `1px solid ${C.line}` }}>
                                       <div className="px-3 py-1 t9 uppercase tracking-wide" style={{ color: C.faint }}>Enviar por</div>
-                                      {[["WhatsApp", "WhatsApp"], ["Email", "Email"], ["SMS", "SMS (Call Center)"]].map(([c, l]) => (
+                                      {[["WhatsApp", "WhatsApp"], ["Email", "Email"]].map(([c, l]) => (
                                         <button key={c} onClick={() => { setCierreMenu(false); onEnviarCierre(deal.id, c); }} className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left t11 hover:bg-stone-50" style={{ color: C.ink }}><ArrowUpRight size={11} style={{ color: C.indigo }} /> {l}</button>
                                       ))}
                                     </div>
@@ -3910,13 +3910,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                 const emailCambiado = modificado || ((cont && cont.email) || "") !== (origContacto.current.email || "");
                 const opciones = [
                   { c: "WhatsApp", l: "WhatsApp", ok: telCambiado, req: "Edita el contacto para habilitarlo" },
-                  { c: "Llamada", l: "Call Center", ok: telCambiado, req: "Edita el contacto para habilitarlo" },
                   { c: "Email", l: "Email", ok: emailCambiado, req: "Edita el contacto para habilitarlo" },
                 ];
                 return (
                 <div className="mt-2 rounded-lg p-2.5" style={{ backgroundColor: C.amberBg, border: `1px solid ${C.amber}` }}>
                   <div className="flex items-center gap-1.5 t11 font-semibold" style={{ color: C.amber }}><AlertTriangle size={12} /> Contactabilidad con error</div>
-                  <div className="mt-0.5 t10" style={{ color: C.sub }}>El dato de contacto está errado. Para <b>reintentar</b> debes primero corregirlo en <b>Editar</b>: WhatsApp y Call Center requieren cambiar el <b>teléfono</b>; Email requiere cambiar el <b>correo</b>. Al reiniciar, la conversación de WhatsApp parte de cero.</div>
+                  <div className="mt-0.5 t10" style={{ color: C.sub }}>El dato de contacto está errado. Para <b>reintentar</b> debes primero corregirlo en <b>Editar</b>: WhatsApp requiere cambiar el <b>teléfono</b>; Email requiere cambiar el <b>correo</b>. Al reiniciar, la conversación de WhatsApp parte de cero.</div>
                   <div className="mt-1.5 flex flex-wrap gap-1.5 t9">
                     <span className="rounded-full px-1.5 py-0.5 font-medium" style={{ backgroundColor: telCambiado ? C.greenBg : "#fff", color: telCambiado ? C.green : C.faint, border: `1px solid ${telCambiado ? "#bbf7d0" : C.line}` }}>{telCambiado ? "✓ Teléfono actualizado" : "Teléfono sin cambios"}</span>
                     <span className="rounded-full px-1.5 py-0.5 font-medium" style={{ backgroundColor: emailCambiado ? C.greenBg : "#fff", color: emailCambiado ? C.green : C.faint, border: `1px solid ${emailCambiado ? "#bbf7d0" : C.line}` }}>{emailCambiado ? "✓ Email actualizado" : "Email sin cambios"}</span>
@@ -3947,7 +3946,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               return (
                 <>
                   <div className="mt-4 flex gap-1.5">
-                    {[["WhatsApp", "WhatsApp"], ["Llamada", "Call Center"], ["Email", "Email"]].map(([k, l]) => {
+                    {[["WhatsApp", "WhatsApp"], ["Email", "Email"]].map(([k, l]) => {
                       const on = subCanal === k;
                       return (
                         <button key={k} onClick={() => setSubCanal(k)} className="flex items-center gap-1.5 rounded-md px-2.5 py-1 t11 font-medium" style={{ backgroundColor: on ? C.indigo : "#fff", color: on ? "#fff" : C.sub, border: `1px solid ${on ? C.indigo : C.line}` }}>
@@ -7902,6 +7901,7 @@ function PCsankey({ deals = [], execsFiltrados = [], filtrosDeal = {}, hayFiltro
   }, [scope, metrica, diaSel, col2]);
   return (
     <div className="space-y-3">
+      <div><div className="text-lg font-bold" style={{ color: C.ink }}>Origen → Cierre</div><div className="t12" style={{ color: C.faint }}>Flujo de oportunidades desde la originación hasta el desenlace (cursada, descartada o perdida)</div></div>
       <div className="flex flex-wrap items-end gap-4 rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
         <div className="flex flex-col gap-1">
           <label className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Día de referencia</label>
@@ -7975,7 +7975,16 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
   const [fSow, setFSow] = useState("todos");          // target | creciendo | bajando | nuevo
   const [fDeudor, setFDeudor] = useState("todos");    // pagador (filtra oportunidades)
   const [fLinea, setFLinea] = useState("todos");      // Factoring | Confirming | ... (filtra oportunidades)
+  const [filtrosOpen, setFiltrosOpen] = useState(false); // panel de filtros colapsable (ahorra espacio)
   const zonas = ["Norte", "Centro", "Sur"];
+  const estadoLbl = { Security: "Operan con Security", Competencia: "Solo competencia", Inactivo: "Inactivos / prospectos" };
+  const filtrosActivos = [
+    fEstado !== "todos" && { key: "estado", label: "Estado", val: estadoLbl[fEstado] || fEstado, clear: () => setFEstado("todos") },
+    fSow !== "todos" && { key: "sow", label: "Segmento SOW", val: fSow, clear: () => setFSow("todos") },
+    fDeudor !== "todos" && { key: "deudor", label: "Deudor", val: fDeudor, clear: () => setFDeudor("todos") },
+    fLinea !== "todos" && { key: "linea", label: "Línea", val: fLinea, clear: () => setFLinea("todos") },
+  ].filter(Boolean);
+  const limpiarFiltros = () => { setFEstado("todos"); setFSow("todos"); setFDeudor("todos"); setFLinea("todos"); };
   // ALCANCE POR ROL (una sola fuente de verdad): ejecutivo → su cartera; jefe de grupo → sus
   // ejecutivos; gerencia / admin → todos. El ejecutivo NO puede cambiar el alcance (zona/jefatura/ejec).
   const jefeInis = JEFE_A_EXECS[usuario];
@@ -8043,13 +8052,26 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
             </>
           )}
         </div>
-        <div className="mt-3 flex flex-wrap items-end gap-4 border-t pt-3" style={{ borderColor: C.line }}>
-          <span className="t10 font-bold uppercase tracking-widest" style={{ color: C.faint, alignSelf: "center" }}>Filtros</span>
-          <Sel label="Estado del cliente" value={fEstado} onChange={setFEstado} options={[{ v: "todos", l: "Todos los estados" }, { v: "Security", l: "Operan con Security" }, { v: "Competencia", l: "Solo competencia" }, { v: "Inactivo", l: "Inactivos / prospectos" }]} />
-          <Sel label="Segmento SOW" value={fSow} onChange={setFSow} options={[{ v: "todos", l: "Todos los segmentos" }, { v: "target", l: "En target" }, { v: "creciendo", l: "Creciendo" }, { v: "bajando", l: "Bajando" }, { v: "nuevo", l: "Nuevo" }]} />
-          <Sel label="Deudor" value={fDeudor} onChange={setFDeudor} options={[{ v: "todos", l: "Todos los deudores" }, ...deudorOpts.map((d) => ({ v: d, l: d }))]} />
-          <Sel label="Línea de negocio" value={fLinea} onChange={setFLinea} options={[{ v: "todos", l: "Todas las líneas" }, ...lineaOpts.map((l) => ({ v: l, l: l }))]} />
-          <button onClick={() => { setFZona("todas"); setFJefatura("todas"); setFEjec("todos"); setFEstado("todos"); setFSow("todos"); setFDeudor("todos"); setFLinea("todos"); }} className="ml-auto rounded-full px-4 py-2 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Limpiar filtros</button>
+        <div className="mt-3 border-t pt-3" style={{ borderColor: C.line }}>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="t10 font-bold uppercase tracking-widest" style={{ color: C.faint }}>Filtros</span>
+            <button onClick={() => setFiltrosOpen((v) => !v)} className="flex items-center gap-1.5 rounded-full px-3 py-1.5 t11 font-semibold" style={{ border: `1px solid ${filtrosOpen || filtrosActivos.length ? C.indigo : C.line}`, color: filtrosOpen || filtrosActivos.length ? C.indigo : C.sub, backgroundColor: "#fff" }}>
+              <Filter size={13} /> {filtrosOpen ? "Ocultar filtros" : "Filtrar"}{filtrosActivos.length > 0 && <span className="rounded-full px-1.5 t9 font-bold" style={{ backgroundColor: "#F1ECFF", color: C.indigo }}>{filtrosActivos.length}</span>}<ChevronDown size={12} style={{ transform: filtrosOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+            </button>
+            {!filtrosOpen && filtrosActivos.map((a) => (
+              <span key={a.key} className="flex items-center gap-1 rounded-full px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{a.label}: {a.val}<button onClick={a.clear} title="Quitar" className="ml-0.5"><X size={11} /></button></span>
+            ))}
+            {filtrosActivos.length > 0 && <button onClick={limpiarFiltros} className="t10 font-semibold" style={{ color: C.sub }}>Limpiar filtros</button>}
+          </div>
+          {filtrosOpen && (
+            <div className="mt-3 flex flex-wrap items-end gap-4">
+              <Sel label="Estado del cliente" value={fEstado} onChange={setFEstado} options={[{ v: "todos", l: "Todos los estados" }, { v: "Security", l: "Operan con Security" }, { v: "Competencia", l: "Solo competencia" }, { v: "Inactivo", l: "Inactivos / prospectos" }]} />
+              <Sel label="Segmento SOW" value={fSow} onChange={setFSow} options={[{ v: "todos", l: "Todos los segmentos" }, { v: "target", l: "En target" }, { v: "creciendo", l: "Creciendo" }, { v: "bajando", l: "Bajando" }, { v: "nuevo", l: "Nuevo" }]} />
+              <Sel label="Deudor" value={fDeudor} onChange={setFDeudor} options={[{ v: "todos", l: "Todos los deudores" }, ...deudorOpts.map((d) => ({ v: d, l: d }))]} />
+              <Sel label="Línea de negocio" value={fLinea} onChange={setFLinea} options={[{ v: "todos", l: "Todas las líneas" }, ...lineaOpts.map((l) => ({ v: l, l: l }))]} />
+              {filtrosActivos.length > 0 && <button onClick={limpiarFiltros} className="ml-auto rounded-full px-4 py-2 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Limpiar filtros</button>}
+            </div>
+          )}
         </div>
       </div>
       {/* Secciones y reportes: TODOS pestañas underline al mismo nivel (spec §3) */}
@@ -8089,18 +8111,7 @@ function PCcliente({ resumen, hayFiltro }) {
   const segmentos = resumen.segmentos;
   return (
     <div className="space-y-5">
-      {/* Alerta NEX AI */}
-      <div className="flex flex-wrap items-center gap-4 rounded-xl p-4" style={{ backgroundColor: "#FEF2F2", border: "1px solid #FECACA" }}>
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: "#fff", color: "#DC2626", border: "1px solid #FECACA" }}><AlertTriangle size={20} /></div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 t12 font-bold" style={{ color: C.ink }}>NEX AI <span className="rounded-full px-2 py-0.5 t9 font-bold" style={{ backgroundColor: "#FEF2F2", color: "#DC2626" }}>{resumen.inac.toLocaleString("es-CL")} sin operar</span></div>
-          <div className="mt-0.5 t11" style={{ color: C.sub }}><b style={{ color: C.ink }}>{resumen.inac.toLocaleString("es-CL")}</b> clientes no operan con Security · <b style={{ color: C.ink }}>{fmtMMc(resumen.brecha)}</b> de wallet por capturar vs target · <b style={{ color: C.ink }}>{resumen.comp.toLocaleString("es-CL")}</b> operan solo con la competencia</div>
-        </div>
-        <div className="flex shrink-0 gap-2">
-          <button className="rounded-full px-4 py-2 t12 font-medium" style={{ border: `1.5px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}>Ver cartera</button>
-          <button className="rounded-full px-4 py-2 t12 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Plan de acción →</button>
-        </div>
-      </div>
+      <div><div className="text-lg font-bold" style={{ color: C.ink }}>Cartera de clientes</div><div className="t12" style={{ color: C.faint }}>Resumen, segmentación y share of wallet del alcance seleccionado</div></div>
       {/* Resumen de cartera */}
       <div>
         <div className="mb-2 t10 font-bold uppercase tracking-widest" style={{ color: C.faint }}>Resumen de cartera</div>
@@ -8200,6 +8211,7 @@ function PCsow({ clientes = [] }) {
   const zonaCols = { Norte: "#703EFF", Centro: "#16A34A", Sur: "#F97316" };
   return (
     <div className="space-y-5">
+      <div><div className="text-lg font-bold" style={{ color: C.ink }}>Share of Wallet</div><div className="t12" style={{ color: C.faint }}>Desviación vs target, competidores capturando cartera y tendencia por zona</div></div>
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
           <div className="t14 font-bold" style={{ color: C.ink }}>Desviación de SoW vs target</div>
@@ -9603,7 +9615,7 @@ function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, o
       </div>
       <div className="w-full rounded-2xl bg-white p-5" style={{ border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
         {tab === "bandeja" ? <PCbandeja deals={deals} execFilter={ejec} onOpen={onOpen} ambito="diaria" usuario={usuario} onOpenSolic={onOpenSolic} onIrLineas={onIrLineas} />
-          : <PCretencion fEjec={ejec} plan={plan} />}
+          : <PlanPorEjecutivo ejec={ejec} soloExec={soloExec} esJefe={esJefe} usuarioNombre={usuarioNombre} plan={plan} setPlan={setPlan} defMetas={false} />}
       </div>
     </div>
   );
@@ -10482,7 +10494,7 @@ function PlanMensual({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
 // vs. el real del mes, con status ponderado (gauge 0–100), selector de mes (cierre persistido), sparkline de
 // evolución y exportación. Al hacer clic en una fila se abre el modal para definir/editar el plan del cliente.
 // ============================================================
-function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
+function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan, defMetas = true }) {
   const enScope = (c) => (ejec === "todos" || c.ej === ejec);
   const esCandidato = (c) => c.tag || c.estado !== "Security";
   const defMeta = (c) => ({ metaSow: c.target, metaColoc: Math.round(c.vol * 0.6) });
@@ -10548,8 +10560,7 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5 rounded-full px-2 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}><Calendar size={14} style={{ color: C.indigo }} /><select value={mesSel} onChange={(e) => setMesSel(+e.target.value)} className="t12 font-semibold outline-none" style={{ color: C.ink, backgroundColor: "#fff" }}>{mesesDisp.slice().reverse().map((m) => <option key={m} value={m}>{MES_NOM[m]} {new Date().getFullYear()}{m === MES_ACT ? " · en curso" : ""}</option>)}</select></div>
           <div className="flex items-center gap-1.5 rounded-full px-2 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}><Search size={13} style={{ color: C.faint }} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar cliente…" className="t12 outline-none" style={{ color: C.ink, width: 150 }} /></div>
-          {esJefe && <button onClick={() => setAddOpen(true)} className="btn-cta inline-flex items-center gap-1 px-4 py-1.5 t11"><Plus size={13} /> Agregar cliente</button>}
-          {esJefe && <button onClick={() => { setMetaEmpDraft(JSON.parse(JSON.stringify(META_NUEVAS_EMP))); setMetaEmpExec(inisScope[0] || PC_EXECS[0].ini); setMetaEmpOpen(true); }} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 t11 font-semibold" style={{ border: "1px solid #FED7AA", color: "#C2410C", backgroundColor: "#FFF7ED" }}><Pencil size={12} /> Meta nuevas empresas</button>}
+          {esJefe && defMetas && <button onClick={() => { setMetaEmpDraft(JSON.parse(JSON.stringify(META_NUEVAS_EMP))); setMetaEmpExec(inisScope[0] || PC_EXECS[0].ini); setMetaEmpOpen(true); }} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 t11 font-semibold" style={{ border: "1px solid #FED7AA", color: "#C2410C", backgroundColor: "#FFF7ED" }}><Pencil size={12} /> Definir metas</button>}
           <button onClick={exportarCSV} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 t11 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}><Download size={13} /> Exportar</button>
         </div>
       </div>
@@ -10588,7 +10599,7 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
                 </Fragment>
               );
             })}
-            {filas.length === 0 && <tr><td colSpan={cols.length} className="px-3 py-8 text-center t11" style={{ color: C.faint }}>No hay clientes en el plan para este filtro.{esJefe ? " Usa «Agregar cliente» para incorporarlos." : ""}</td></tr>}
+            {filas.length === 0 && <tr><td colSpan={cols.length} className="px-3 py-8 text-center t11" style={{ color: C.faint }}>No hay clientes en el plan para este filtro.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -12233,38 +12244,41 @@ export default function PipelineComercial() {
   };
   // El ejecutivo envía el mensaje de cierre + el botón "Aprobar operación" que deriva al sitio de curse.
   const enviarCierre = (id, canal = "WhatsApp") => {
-    const upd = (d) => {
-      if (d.id !== id) return d;
+    const stamp = nowStamp();
+    // Genera el deal actualizado de forma pura (mismo stamp) para reutilizarlo en el estado y al abrir el canal.
+    const makeUpdated = (d) => {
       const neg = negDe(d);
       const link = curseURLPublica(neg);
-      const cl = canal === "Llamada" ? "Call Center" : canal;
       let wa = d.waSesion; let emailThread = d.emailThread; let detalle = "";
       if (canal === "WhatsApp") {
-        if ((d.waSesion || []).some((m) => m.tipo === "boton")) return d; // ya enviado por WhatsApp
-        detalle = `Para cerrar formalmente la operación ingresa a Factoring Security (${link}), inicia sesión y firma. [Botón: Aprobar operación]`;
-        wa = [...(d.waSesion || []),
-          { from: "ejecutivo", text: `Para cerrar formalmente la operación debes ingresar a la plataforma de Factoring Security a cursar (${link}). Inicia sesión con tu cuenta y firma 🔒:`, time: nowStamp(), canal: "WhatsApp" },
-          { from: "ejecutivo", tipo: "boton", boton: "Aprobar operación", url: waClienteURL(neg), neg, text: `Negocio N° ${neg} · Factoring Security`, time: nowStamp(), canal: "WhatsApp" },
-        ];
-      } else if (canal === "Email") {
+        if (!(d.waSesion || []).some((m) => m.tipo === "boton")) {
+          detalle = `Para cerrar formalmente la operación ingresa a Factoring Security (${link}), inicia sesión y firma. [Botón: Aprobar operación]`;
+          wa = [...(d.waSesion || []),
+            { from: "ejecutivo", text: `Para cerrar formalmente la operación debes ingresar a la plataforma de Factoring Security a cursar (${link}). Inicia sesión con tu cuenta y firma 🔒:`, time: stamp, canal: "WhatsApp" },
+            { from: "ejecutivo", tipo: "boton", boton: "Aprobar operación", url: waClienteURL(neg), neg, text: `Negocio N° ${neg} · Factoring Security`, time: stamp, canal: "WhatsApp" },
+          ];
+        }
+      } else { // Email
         const asunto = `Firma tu operación de factoring N° ${neg}`;
         const cuerpo = `Hola ${(d.contacto && d.contacto.nombre) || "estimado/a"},\n\nPara cerrar formalmente tu operación ingresa a la plataforma de Factoring Security:\n${link}\n\nInicia sesión con tu cuenta y firma; el giro se realiza el mismo día.\n\nSaludos,\n${execName(d)}\nNEX Factoring · Factoring Security`;
-        emailThread = [...(d.emailThread || []), { from: "ejecutivo", asunto, cuerpo, template: "Enlace de cierre", time: nowStamp() }];
+        emailThread = [...(d.emailThread || []), { from: "ejecutivo", asunto, cuerpo, template: "Enlace de cierre", time: stamp }];
         detalle = `Asunto: ${asunto}\n\n${cuerpo}`;
-      } else {
-        detalle = `SMS: Factoring Security — para firmar tu operación N° ${neg} ingresa a ${link} e inicia sesión con tu cuenta.`;
       }
-      const hist = [...(d.historialContacto || []), { fecha: nowStamp(), canal, resultado: `Enlace de cierre enviado por ${cl} (N° ${neg})`, detalle, exito: true }];
-      return { ...d, waSesion: wa, emailThread, historialContacto: hist, waPendiente: false, cierreEnviado: true, status: `Enlace de cierre enviado por ${cl} · pendiente firma del cliente` };
+      const hist = [...(d.historialContacto || []), { fecha: stamp, canal, resultado: `Enlace de cierre enviado por ${canal} (N° ${neg})`, detalle, exito: true }];
+      return { ...d, waSesion: wa, emailThread, historialContacto: hist, waPendiente: false, cierreEnviado: true, status: `Enlace de cierre enviado por ${canal} · pendiente firma del cliente` };
     };
-    setDeals((prev) => prev.map(upd));
-    setSelected((s) => (s ? upd(s) : s));
-    // Registra el detalle de curse para que el sitio externo pueda mostrarlo y firmar.
-    const d0 = (dealsRef.current || []).find((x) => x.id === id);
-    if (d0) { const neg = negDe(d0); if (!cursePayloadsRef.current[neg]) { const c = curseDesdeDeal(d0); cursePayloadsRef.current[neg] = { id, tasa: c.tasa, opts: c.opts, payload: c.payload }; } }
-    if (canal === "Email" && d0) { // abre el email SIMULADO en una pestaña nueva (blob), igual que el WhatsApp del cliente
-      try { const url = URL.createObjectURL(new Blob([emailCierreHTML(d0)], { type: "text/html" })); window.open(url, "_blank"); setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 60000); } catch (_) {}
-    }
+    setDeals((prev) => prev.map((d) => d.id === id ? makeUpdated(d) : d));
+    setSelected((s) => (s && s.id === id ? makeUpdated(s) : s));
+    const d0 = (dealsRef.current || []).find((x) => x.id === id) || (selected && selected.id === id ? selected : null);
+    if (!d0) return;
+    const neg = negDe(d0);
+    if (!cursePayloadsRef.current[neg]) { const c = curseDesdeDeal(d0); cursePayloadsRef.current[neg] = { id, tasa: c.tasa, opts: c.opts, payload: c.payload }; }
+    // Abre el canal del cliente en una pestaña nueva (_blank): WhatsApp del cliente o el simulador de email.
+    const updated = makeUpdated(d0);
+    try {
+      if (canal === "Email") { const url = URL.createObjectURL(new Blob([emailCierreHTML(updated)], { type: "text/html" })); window.open(url, "_blank"); setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 60000); }
+      else if (canal === "WhatsApp") { window.open(waHrefDe(updated), "_blank"); }
+    } catch (_) {}
   };
   // El cliente se autentica y firma en el sitio Security: recién aquí la operación pasa a Aceptadas.
   const confirmarCierre = (id, tasa, opts, usuario) => {
@@ -13115,8 +13129,7 @@ export default function PipelineComercial() {
     const primerInicio = !streaming && !iniciadoRef.current; // primer Start de la sesión (o tras Reiniciar)
     if (!streaming) { pausaRef.current = false; iniciadoRef.current = true; } // al iniciar/reanudar: arranca el motor de fondo
     if (!streaming && streamQueue.length === 0 && streamFeed.length === 0 && acumulado.length === 0) { setStreamQueue(INBOUND_STREAM); setRecibidas(0); setCorridas(0); }
-    // Al iniciar por primera vez, incorpora los 2 casos demo de Call Center (con grabación + transcript).
-    if (primerInicio) setDeals((prev) => prev.some((d) => d.id === "OP-CALL-01") ? prev : [...CASOS_LLAMADAS.map((d) => ({ ...d })), ...prev]);
+    // (Call Center se implementará más adelante: no se inyectan los casos demo con grabación.)
     setStreaming((s) => !s);
   };
   const resetStream = () => {
