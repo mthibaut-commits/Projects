@@ -5811,7 +5811,7 @@ function BenchmarkDeudoresModal({ deals, onClose, inline, usuario, esJefe }) {
           {filtrados.map((g) => (
             <div key={g.key} className="mt-4 rounded-lg p-3" style={{ border: `1px solid ${C.line}` }}>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5"><span className="text-base font-bold" style={{ color: C.ink }}>{g.key}</span><button onClick={() => setTareaEmp(g.key)} title="Asignar tarea a esta empresa" className="rounded-md p-0.5 hover:bg-stone-100" style={{ color: C.indigo }}><ClipboardList size={14} /></button></div>
+                <div className="flex items-center gap-1.5"><span className="text-base font-bold" style={{ color: C.ink }}>{g.key}</span><button onClick={() => setTareaEmp(g.key)} title={by === "cliente" ? "Asignar tarea a este cliente" : "Asignar tarea a este deudor (ej.: bloquear deudor)"} className="rounded-md p-0.5 hover:bg-stone-100" style={{ color: C.indigo }}><ClipboardList size={14} /></button></div>
                 <div className="flex items-center gap-2 t10">
                   <span className="rounded-full px-1.5 py-0.5 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>Ganadas {g.won}</span>
                   <span className="rounded-full px-1.5 py-0.5 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red }}>Perdidas {g.lost}</span>
@@ -5828,7 +5828,7 @@ function BenchmarkDeudoresModal({ deals, onClose, inline, usuario, esJefe }) {
                   {g.entries.map((e, i) => (
                     <tr key={i} style={{ borderBottom: `1px solid ${C.line}` }}>
                       <td className="px-3 py-3.5" style={{ color: C.sub }}>{ffecha(e.fecha)}</td>
-                      <td className="px-3 py-3.5 font-medium" style={{ color: C.ink }}>{by === "cliente" ? e.deudor : e.cliente}</td>
+                      <td className="px-3 py-3.5 font-medium" style={{ color: C.ink }}><span className="inline-flex items-center gap-1.5">{by === "cliente" ? e.deudor : e.cliente}<button onClick={() => setTareaEmp(by === "cliente" ? e.deudor : e.cliente)} title={by === "cliente" ? "Asignar tarea a este deudor (ej.: bloquear deudor)" : "Asignar tarea a este cliente"} className="rounded-md p-0.5 hover:bg-stone-100" style={{ color: C.indigo }}><ClipboardList size={12} /></button></span></td>
                       <td className="px-3 py-3.5 text-right" style={{ color: C.sub }}>{fmtMM(e.montoMM)}</td>
                       <td className="px-3 py-3.5 text-right font-medium" style={{ color: C.ink }}>{e.tasa.toFixed(2)}%</td>
                       <td className="px-3 py-3.5 text-right font-semibold" style={{ color: e.ganada ? C.green : C.red }}>{e.ganada ? "BICE ✓" : `Perdida · ${e.competidor}`}</td>
@@ -7600,6 +7600,8 @@ const TAREAS_PREDEF = [
   { l: "Agendar reunión con el cliente", cat: "comercial", d: 2 },
   { l: "Visita", cat: "comercial", d: 5 },
   { l: "Llevar a comité de riesgo", cat: "riesgo", d: 5 },
+  { l: "Bloquear deudor", cat: "riesgo", d: 1 },
+  { l: "Revisar exposición / línea del deudor", cat: "riesgo", d: 3 },
   { l: "Otro", cat: "comercial", d: 1 },
 ];
 let PANEL_TAREAS = []; // [{ id, ts, venceTs, texto, cat, autor, para:[], ops:[], nodo, hecha }]
