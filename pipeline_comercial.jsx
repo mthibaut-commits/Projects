@@ -7838,7 +7838,7 @@ function NodoTareasModal({ nodo, onClose, usuario, esJefe, onCambio }) {
     </div>
   );
 }
-function PCsankey({ deals = [], execsFiltrados = [], hayFiltro, soloExec, usuario, esJefe }) {
+function PCsankey({ deals = [], execsFiltrados = [], filtrosDeal = {}, hayFiltro, soloExec, usuario, esJefe }) {
   const hoyISO = () => { const d = new Date(); const p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
   const [fecha, setFecha] = useState(hoyISO);
   const [metrica, setMetrica] = useState("cantidad"); // cantidad | monto
@@ -7849,7 +7849,10 @@ function PCsankey({ deals = [], execsFiltrados = [], hayFiltro, soloExec, usuari
   const diaSel = SK_DIA_STR(fecha);
   const inis = useMemo(() => new Set(execsFiltrados.map((e) => e.ini)), [execsFiltrados]);
   // Alcance: los ejecutivos del drill-down. Sin filtro se suman las oportunidades sin ejecutivo (Agente IA).
-  const scope = useMemo(() => (deals || []).filter((d) => inis.has(d.exec) || (!hayFiltro && !EXECS[d.exec])), [deals, inis, hayFiltro]);
+  const fd = filtrosDeal || {};
+  const scope = useMemo(() => (deals || []).filter((d) => (inis.has(d.exec) || (!hayFiltro && !EXECS[d.exec]))
+    && (!fd.deudor || fd.deudor === "todos" || (d.deudor || d.pagador) === fd.deudor)
+    && (!fd.linea || fd.linea === "todos" || d.tag === fd.linea)), [deals, inis, hayFiltro, fd.deudor, fd.linea]);
   const fmtVal = (v) => (metrica === "monto" ? fmtMMc(v) : `${Math.round(v)} op.`);
   const { nodes, links, kpis, nodeDeals } = useMemo(() => {
     const val = (d) => (metrica === "monto" ? (d.amountMM || 0) : 1);
@@ -7959,20 +7962,46 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
   const [fZona, setFZona] = useState("todas");
   const [fJefatura, setFJefatura] = useState("todas");
   const [fEjec, setFEjec] = useState("todos");
+  const [fEstado, setFEstado] = useState("todos");   // Security | Competencia | Inactivo
+  const [fSow, setFSow] = useState("todos");          // target | creciendo | bajando | nuevo
+  const [fDeudor, setFDeudor] = useState("todos");    // pagador (filtra oportunidades)
+  const [fLinea, setFLinea] = useState("todos");      // Factoring | Confirming | ... (filtra oportunidades)
   const zonas = ["Norte", "Centro", "Sur"];
-  // Si hay usuario logueado, el roster se acota a ese ejecutivo.
-  const base = soloExec ? PC_EXECS.filter((e) => e.nombre === soloExec) : PC_EXECS;
-  const jefaturas = useMemo(() => [...new Set(base.filter((e) => fZona === "todas" || e.zona === fZona).map((e) => e.jefatura))], [fZona, soloExec]);
-  const execsFiltrados = useMemo(() => base.filter((e) => (fZona === "todas" || e.zona === fZona) && (fJefatura === "todas" || e.jefatura === fJefatura) && (fEjec === "todos" || e.nombre === fEjec)), [fZona, fJefatura, fEjec, soloExec]);
-  const hayFiltro = !!soloExec || fZona !== "todas" || fJefatura !== "todas" || fEjec !== "todos";
-  // Agregados del alcance seleccionado (escala desde los ejecutivos filtrados).
-  const agg = useMemo(() => {
-    const clientes = execsFiltrados.reduce((s, e) => s + e.clientes, 0);
-    const activos = execsFiltrados.reduce((s, e) => s + e.activos, 0);
-    const fuga = execsFiltrados.reduce((s, e) => s + e.fuga, 0);
-    const brecha = execsFiltrados.reduce((s, e) => s + e.brecha, 0);
-    return { clientes, activos, fuga, brecha };
-  }, [execsFiltrados]);
+  // ALCANCE POR ROL (una sola fuente de verdad): ejecutivo → su cartera; jefe de grupo → sus
+  // ejecutivos; gerencia / admin → todos. El ejecutivo NO puede cambiar el alcance (zona/jefatura/ejec).
+  const jefeInis = JEFE_A_EXECS[usuario];
+  const base = soloExec
+    ? PC_EXECS.filter((e) => e.nombre === soloExec)
+    : jefeInis ? PC_EXECS.filter((e) => jefeInis.includes(e.ini)) : PC_EXECS;
+  const jefaturas = useMemo(() => [...new Set(base.filter((e) => fZona === "todas" || e.zona === fZona).map((e) => e.jefatura))], [fZona, soloExec, usuario]);
+  const execsFiltrados = useMemo(() => base.filter((e) => (fZona === "todas" || e.zona === fZona) && (fJefatura === "todas" || e.jefatura === fJefatura) && (fEjec === "todos" || e.nombre === fEjec)), [fZona, fJefatura, fEjec, soloExec, usuario]);
+  // Segmento SOW de un cliente (mismo vocabulario que Tareas / pipeline).
+  const segSow = (c) => c.estado === "Inactivo" ? "nuevo" : c.estado === "Competencia" ? "bajando" : (c.sow >= c.target ? "target" : "creciendo");
+  // CARTERA en el alcance: clientes reales (PC_CLIENTES) del/los ejecutivo(s), filtrados por estado y SOW.
+  const clientesScope = useMemo(() => {
+    const nombres = new Set(execsFiltrados.map((e) => e.nombre));
+    return PC_CLIENTES.filter((c) => nombres.has(c.ej)
+      && (fEstado === "todos" || c.estado === fEstado)
+      && (fSow === "todos" || segSow(c) === fSow));
+  }, [execsFiltrados, fEstado, fSow]);
+  const hayFiltro = !!soloExec || !!jefeInis || fZona !== "todas" || fJefatura !== "todas" || fEjec !== "todos" || fEstado !== "todos" || fSow !== "todos";
+  const filtrosDeal = { deudor: fDeudor, linea: fLinea };
+  // Agregados derivados del alcance — reemplazan los números fijos: ahora responden a los filtros.
+  const resumen = useMemo(() => {
+    const g = (est) => clientesScope.filter((c) => c.estado === est);
+    const mm = (arr) => arr.reduce((s, c) => s + (c.vol || 0), 0);
+    const seg = (arr, tipo, sub, col, Icon) => ({ tipo, sub, col, Icon, clientes: arr.length.toLocaleString("es-CL"), cedido: fmtMMc(mm(arr)), buenos: arr.filter((c) => !c.malos).length, malos: arr.filter((c) => c.malos).length, buenosMM: fmtMMc(mm(arr.filter((c) => !c.malos))), malosMM: fmtMMc(mm(arr.filter((c) => c.malos))) });
+    const sec = g("Security"), comp = g("Competencia"), inac = g("Inactivo");
+    const sowProm = clientesScope.length ? Math.round(clientesScope.reduce((s, c) => s + (c.sow || 0), 0) / clientesScope.length) : 0;
+    const brecha = clientesScope.reduce((s, c) => s + Math.max(0, c.target - c.sow) / 100 * (c.vol || 0), 0);
+    const porZona = zonas.map((z) => { const zc = clientesScope.filter((c) => c.zona === z); return { zona: z, sec: zc.filter((c) => c.estado === "Security").length, comp: zc.filter((c) => c.estado === "Competencia").length, inact: zc.filter((c) => c.estado === "Inactivo").length }; });
+    return { total: clientesScope.length, sec: sec.length, comp: comp.length, inac: inac.length, sowProm, brecha, cedido: mm(clientesScope),
+      segmentos: [seg(sec, "Operando con Security", "operan con Security", "#703EFF", Check), seg(comp, "Operando con competencia", "ceden solo a la competencia", "#FF814B", ArrowUpRight), seg(inac, "Sin operar (inactivos / prospectos)", "no operan con Security aún", "#ADA8BD", Clock)],
+      porZona };
+  }, [clientesScope]);
+  const agg = { clientes: resumen.total };
+  const deudorOpts = useMemo(() => [...new Set((deals || []).map((d) => d.deudor || d.pagador).filter(Boolean))].sort().slice(0, 40), [deals]);
+  const lineaOpts = useMemo(() => [...new Set((deals || []).map((d) => d.tag).filter(Boolean))], [deals]);
   const Sel = ({ label, value, onChange, options }) => (
     <div className="flex flex-col gap-1">
       <label className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{label}</label>
@@ -7990,19 +8019,29 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
   );
   return (
     <div className="space-y-5">
-      {/* Drill-down */}
-      <div className="flex flex-wrap items-end gap-4 rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
-        <span className="t10 font-bold uppercase tracking-widest" style={{ color: C.faint, alignSelf: "center" }}>Drill-down</span>
-        {soloExec ? (
-          <div className="flex items-center gap-2"><User size={14} style={{ color: C.faint }} /><span className="t12" style={{ color: C.sub }}>Alcance:</span><span className="rounded-full px-3 py-1 t12 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec}</span><span className="t10" style={{ color: C.faint }}>(tu cartera)</span></div>
-        ) : (
-          <>
-            <Sel label="Zona comercial" value={fZona} onChange={(v) => { setFZona(v); setFJefatura("todas"); setFEjec("todos"); }} options={[{ v: "todas", l: "Todas las zonas" }, ...zonas.map((z) => ({ v: z, l: z }))]} />
-            <Sel label="Jefatura" value={fJefatura} onChange={(v) => { setFJefatura(v); setFEjec("todos"); }} options={[{ v: "todas", l: "Todas las jefaturas" }, ...jefaturas.map((j) => ({ v: j, l: j }))]} />
-            <Sel label="Ejecutivo" value={fEjec} onChange={setFEjec} options={[{ v: "todos", l: "Todos los ejecutivos" }, ...execsFiltrados.map((e) => ({ v: e.nombre, l: e.nombre }))]} />
-            <button onClick={() => { setFZona("todas"); setFJefatura("todas"); setFEjec("todos"); }} className="ml-auto rounded-full px-4 py-2 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Limpiar filtros</button>
-          </>
-        )}
+      {/* Drill-down: ALCANCE (por rol) + FILTROS (disponibles para todos los roles) */}
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
+        <div className="flex flex-wrap items-end gap-4">
+          <span className="t10 font-bold uppercase tracking-widest" style={{ color: C.faint, alignSelf: "center" }}>Alcance</span>
+          {soloExec ? (
+            <div className="flex items-center gap-2"><User size={14} style={{ color: C.faint }} /><span className="rounded-full px-3 py-1 t12 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec}</span><span className="t10" style={{ color: C.faint }}>(tu cartera)</span></div>
+          ) : (
+            <>
+              {jefeInis && <span className="rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>Tu grupo · {base.length} ejecutivos</span>}
+              <Sel label="Zona comercial" value={fZona} onChange={(v) => { setFZona(v); setFJefatura("todas"); setFEjec("todos"); }} options={[{ v: "todas", l: "Todas las zonas" }, ...zonas.map((z) => ({ v: z, l: z }))]} />
+              <Sel label="Jefatura" value={fJefatura} onChange={(v) => { setFJefatura(v); setFEjec("todos"); }} options={[{ v: "todas", l: "Todas las jefaturas" }, ...jefaturas.map((j) => ({ v: j, l: j }))]} />
+              <Sel label="Ejecutivo" value={fEjec} onChange={setFEjec} options={[{ v: "todos", l: "Todos los ejecutivos" }, ...execsFiltrados.map((e) => ({ v: e.nombre, l: e.nombre }))]} />
+            </>
+          )}
+        </div>
+        <div className="mt-3 flex flex-wrap items-end gap-4 border-t pt-3" style={{ borderColor: C.line }}>
+          <span className="t10 font-bold uppercase tracking-widest" style={{ color: C.faint, alignSelf: "center" }}>Filtros</span>
+          <Sel label="Estado del cliente" value={fEstado} onChange={setFEstado} options={[{ v: "todos", l: "Todos los estados" }, { v: "Security", l: "Operan con Security" }, { v: "Competencia", l: "Solo competencia" }, { v: "Inactivo", l: "Inactivos / prospectos" }]} />
+          <Sel label="Segmento SOW" value={fSow} onChange={setFSow} options={[{ v: "todos", l: "Todos los segmentos" }, { v: "target", l: "En target" }, { v: "creciendo", l: "Creciendo" }, { v: "bajando", l: "Bajando" }, { v: "nuevo", l: "Nuevo" }]} />
+          <Sel label="Deudor" value={fDeudor} onChange={setFDeudor} options={[{ v: "todos", l: "Todos los deudores" }, ...deudorOpts.map((d) => ({ v: d, l: d }))]} />
+          <Sel label="Línea de negocio" value={fLinea} onChange={setFLinea} options={[{ v: "todos", l: "Todas las líneas" }, ...lineaOpts.map((l) => ({ v: l, l: l }))]} />
+          <button onClick={() => { setFZona("todas"); setFJefatura("todas"); setFEjec("todos"); setFEstado("todos"); setFSow("todos"); setFDeudor("todos"); setFLinea("todos"); }} className="ml-auto rounded-full px-4 py-2 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Limpiar filtros</button>
+        </div>
       </div>
       {/* Secciones y reportes: TODOS pestañas underline al mismo nivel (spec §3) */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
@@ -8020,37 +8059,33 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
         <div>{reporteNode}</div>
       ) : (
         <>
-          {seccion === "cliente" && <PCcliente agg={agg} hayFiltro={hayFiltro} />}
-          {seccion === "sow" && <PCsow />}
-          {seccion === "sankey" && <PCsankey deals={deals} execsFiltrados={execsFiltrados} hayFiltro={hayFiltro} soloExec={soloExec} usuario={usuario} esJefe={esJefeComercial(usuario)} />}
+          {seccion === "cliente" && <PCcliente resumen={resumen} hayFiltro={hayFiltro} />}
+          {seccion === "sow" && <PCsow clientes={clientesScope} />}
+          {seccion === "sankey" && <PCsankey deals={deals} execsFiltrados={execsFiltrados} filtrosDeal={filtrosDeal} hayFiltro={hayFiltro} soloExec={soloExec} usuario={usuario} esJefe={esJefeComercial(usuario)} />}
         </>
       )}
     </div>
   );
 }
 // --- Sección CLIENTE: alerta NEX AI, resumen de cartera, segmentación, volumen cedido, SoW ---
-function PCcliente({ agg, hayFiltro }) {
+function PCcliente({ resumen, hayFiltro }) {
   const kpis = [
-    { v: hayFiltro ? agg.clientes.toLocaleString("es-CL") : "6.096", l: "Clientes", s: "en el alcance", Icon: User, col: "#703EFF" },
-    { v: hayFiltro ? agg.activos.toLocaleString("es-CL") : "589", l: "Operan con Security", s: "activos Q4", Icon: Check, col: "#16A34A" },
-    { v: "2.748", l: "Solo competencia", s: "wallet no capturado", Icon: ArrowUpRight, col: "#F97316" },
-    { v: hayFiltro ? agg.fuga.toLocaleString("es-CL") : "2.759", l: "Inactivos / fugados", s: "522 ex-Security", Icon: Clock, col: "#ef4444" },
-    { v: "24%", l: "Share of Wallet", s: "$616.032 MM / $2,55 B", Icon: BarChart2, col: "#2563EB" },
-    { v: hayFiltro ? fmtMMc(agg.brecha) : "$842.792 MM", l: "Brecha de wallet", s: "por capturar vs target", Icon: ArrowUpRight, col: "#F97316" },
+    { v: resumen.total.toLocaleString("es-CL"), l: "Clientes", s: "en el alcance", Icon: User, col: "#703EFF" },
+    { v: resumen.sec.toLocaleString("es-CL"), l: "Operan con Security", s: "clientes activos", Icon: Check, col: "#16A34A" },
+    { v: resumen.comp.toLocaleString("es-CL"), l: "Solo competencia", s: "wallet no capturado", Icon: ArrowUpRight, col: "#F97316" },
+    { v: resumen.inac.toLocaleString("es-CL"), l: "Inactivos / prospectos", s: "no operan con Security", Icon: Clock, col: "#ef4444" },
+    { v: resumen.sowProm + "%", l: "SOW promedio", s: "share of wallet medio", Icon: BarChart2, col: "#2563EB" },
+    { v: fmtMMc(resumen.brecha), l: "Brecha de wallet", s: "por capturar vs target", Icon: ArrowUpRight, col: "#F97316" },
   ];
-  const segmentos = [
-    { tipo: "Operando con Security", sub: "cedieron a 76562786-9 en Q4", col: "#16A34A", Icon: Check, clientes: "589", cedido: "$1,13 B", buenos: 479, malos: 110, buenosMM: "$1,04 B", malosMM: "$91.452 MM" },
-    { tipo: "Operando con competencia", sub: "ceden solo a otras factorings", col: "#F97316", Icon: ArrowUpRight, clientes: "2.748", cedido: "$981.280 MM", buenos: 2213, malos: 535, buenosMM: "$854.016 MM", malosMM: "$127.264 MM" },
-    { tipo: "Sin operar (inactivos)", sub: "no operaron con nadie en Q4", col: "#DC2626", Icon: Clock, clientes: "2.759", cedido: "$436.611 MM", buenos: 2209, malos: 550, buenosMM: "$358.748 MM", malosMM: "$77.863 MM" },
-  ];
+  const segmentos = resumen.segmentos;
   return (
     <div className="space-y-5">
       {/* Alerta NEX AI */}
       <div className="flex flex-wrap items-center gap-4 rounded-xl p-4" style={{ backgroundColor: "#FEF2F2", border: "1px solid #FECACA" }}>
         <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ backgroundColor: "#fff", color: "#DC2626", border: "1px solid #FECACA" }}><AlertTriangle size={20} /></div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 t12 font-bold" style={{ color: C.ink }}>NEX AI <span className="rounded-full px-2 py-0.5 t9 font-bold" style={{ backgroundColor: "#FEF2F2", color: "#DC2626" }}>522 clientes fugados</span></div>
-          <div className="mt-0.5 t11" style={{ color: C.sub }}><b style={{ color: C.ink }}>522</b> ex-clientes ya no operan con Security · <b style={{ color: C.ink }}>$842.792 MM</b> de wallet por capturar vs target · <b style={{ color: C.ink }}>2.748</b> clientes operan solo con la competencia</div>
+          <div className="flex items-center gap-2 t12 font-bold" style={{ color: C.ink }}>NEX AI <span className="rounded-full px-2 py-0.5 t9 font-bold" style={{ backgroundColor: "#FEF2F2", color: "#DC2626" }}>{resumen.inac.toLocaleString("es-CL")} sin operar</span></div>
+          <div className="mt-0.5 t11" style={{ color: C.sub }}><b style={{ color: C.ink }}>{resumen.inac.toLocaleString("es-CL")}</b> clientes no operan con Security · <b style={{ color: C.ink }}>{fmtMMc(resumen.brecha)}</b> de wallet por capturar vs target · <b style={{ color: C.ink }}>{resumen.comp.toLocaleString("es-CL")}</b> operan solo con la competencia</div>
         </div>
         <div className="flex shrink-0 gap-2">
           <button className="rounded-full px-4 py-2 t12 font-medium" style={{ border: `1.5px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}>Ver cartera</button>
@@ -8112,8 +8147,8 @@ function PCcliente({ agg, hayFiltro }) {
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#ADA8BD" }} /> Inactivos</span>
           </div>
           <div className="mt-3 space-y-3">
-            {[{ zona: "Norte", sec: 210, comp: 980, inact: 900 }, { zona: "Centro", sec: 236, comp: 1010, inact: 1050 }, { zona: "Sur", sec: 143, comp: 758, inact: 809 }].map((z) => {
-              const tot = z.sec + z.comp + z.inact; const pctSec = Math.round(z.sec / tot * 100);
+            {resumen.porZona.map((z) => {
+              const tot = z.sec + z.comp + z.inact || 1; const pctSec = Math.round(z.sec / tot * 100);
               return (
                 <div key={z.zona}>
                   <div className="flex items-center justify-between t11"><b style={{ color: C.ink }}>{z.zona}</b><span style={{ color: C.faint }}><b style={{ color: "#703EFF" }}>{pctSec}%</b> Security · {tot.toLocaleString("es-CL")}</span></div>
@@ -8143,12 +8178,14 @@ function PCcliente({ agg, hayFiltro }) {
   );
 }
 // --- Sección SOW: desviación vs target, competidores, tendencia por zona ---
-function PCsow() {
+function PCsow({ clientes = [] }) {
   const [modo, setModo] = useState("vol"); // vol | sow
+  // Desviación de SoW derivada de los clientes en el alcance (responde a los filtros).
+  const sec = clientes.filter((c) => c.estado === "Security");
   const desviacion = [
-    { l: "Defendidos · SoW ≥ target", v: 357, col: "#16A34A" },
-    { l: "Brecha moderada · hasta 20 pp bajo target", v: 269, col: "#F97316" },
-    { l: "Brecha crítica · más de 20 pp bajo target", v: 481, col: "#ef4444" },
+    { l: "Defendidos · SoW ≥ target", v: sec.filter((c) => c.sow >= c.target).length, col: "#16A34A" },
+    { l: "Brecha moderada · hasta 20 pp bajo target", v: sec.filter((c) => c.sow < c.target && c.target - c.sow <= 20).length, col: "#F97316" },
+    { l: "Brecha crítica · más de 20 pp bajo target", v: sec.filter((c) => c.target - c.sow > 20).length, col: "#ef4444" },
   ];
   const maxComp = Math.max(...PC_COMPETIDORES.map((c) => c.mm));
   const zonaCols = { Norte: "#703EFF", Centro: "#16A34A", Sur: "#F97316" };
