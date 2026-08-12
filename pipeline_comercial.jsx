@@ -5794,28 +5794,28 @@ function BenchmarkDeudoresModal({ deals, onClose, inline }) {
           {filtrados.map((g) => (
             <div key={g.key} className="mt-4 rounded-lg p-3" style={{ border: `1px solid ${C.line}` }}>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="t13 font-semibold" style={{ color: C.ink }}>{g.key}</div>
+                <div className="text-base font-bold" style={{ color: C.ink }}>{g.key}</div>
                 <div className="flex items-center gap-2 t10">
                   <span className="rounded-full px-1.5 py-0.5 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>Ganadas {g.won}</span>
                   <span className="rounded-full px-1.5 py-0.5 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red }}>Perdidas {g.lost}</span>
                   <span className="font-semibold" style={{ color: g.wr >= 50 ? C.green : C.amber }}>Win rate {g.wr}%</span>
                 </div>
               </div>
-              <table className="mt-2 w-full border-collapse t10">
+              <table className="mt-2 w-full border-collapse t13">
                 <thead><tr>
                   {["Fecha", otraCol, "Monto", "Tasa BICE", "Resultado", "Tasa competencia"].map((h, i) => (
-                    <th key={i} className={`px-2 py-1 font-semibold ${i === 0 || i === 1 ? "text-left" : "text-right"}`} style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>
+                    <th key={i} className={`px-3 py-2.5 t11 font-semibold uppercase tracking-wide ${i === 0 || i === 1 ? "text-left" : "text-right"}`} style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>
                   ))}
                 </tr></thead>
                 <tbody>
                   {g.entries.map((e, i) => (
-                    <tr key={i} style={{ backgroundColor: e.ganada ? C.greenBg : "transparent", borderBottom: `1px solid ${C.line}` }}>
-                      <td className="px-2 py-1" style={{ color: C.sub }}>{ffecha(e.fecha)}</td>
-                      <td className="px-2 py-1" style={{ color: C.ink }}>{by === "cliente" ? e.deudor : e.cliente}</td>
-                      <td className="px-2 py-1 text-right" style={{ color: C.sub }}>{fmtMM(e.montoMM)}</td>
-                      <td className="px-2 py-1 text-right font-medium" style={{ color: C.ink }}>{e.tasa.toFixed(2)}%</td>
-                      <td className="px-2 py-1 text-right font-semibold" style={{ color: e.ganada ? C.green : C.red }}>{e.ganada ? "BICE ✓" : `Perdida · ${e.competidor}`}</td>
-                      <td className="px-2 py-1 text-right" style={{ color: C.sub }}>{e.ganada ? "—" : (e.tasaComp != null ? e.tasaComp.toFixed(2) + "%" : "—")}</td>
+                    <tr key={i} style={{ borderBottom: `1px solid ${C.line}` }}>
+                      <td className="px-3 py-3.5" style={{ color: C.sub }}>{ffecha(e.fecha)}</td>
+                      <td className="px-3 py-3.5 font-medium" style={{ color: C.ink }}>{by === "cliente" ? e.deudor : e.cliente}</td>
+                      <td className="px-3 py-3.5 text-right" style={{ color: C.sub }}>{fmtMM(e.montoMM)}</td>
+                      <td className="px-3 py-3.5 text-right font-medium" style={{ color: C.ink }}>{e.tasa.toFixed(2)}%</td>
+                      <td className="px-3 py-3.5 text-right font-semibold" style={{ color: e.ganada ? C.green : C.red }}>{e.ganada ? "BICE ✓" : `Perdida · ${e.competidor}`}</td>
+                      <td className="px-3 py-3.5 text-right" style={{ color: C.sub }}>{e.ganada ? "—" : (e.tasaComp != null ? e.tasaComp.toFixed(2) + "%" : "—")}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -7588,6 +7588,13 @@ function addPanelTarea(t) {
   const dias = t.dias || 1;
   PANEL_TAREAS.unshift({ id: `PT-${PANEL_TAREAS_SEQ++}`, ts: Date.now(), venceTs: Date.now() + dias * 86400000, hecha: false, para: [], ops: [], ...t });
 }
+// Bitácora de gestión: comentarios que el ejecutivo anota por ítem de tarea (id = dealId para
+// prioridades, PT-x para tareas asignadas). Persistente a nivel de módulo durante la sesión.
+let TAREA_NOTAS = {};
+function addTareaNota(itemId, texto, autor) {
+  if (!TAREA_NOTAS[itemId]) TAREA_NOTAS[itemId] = [];
+  TAREA_NOTAS[itemId].unshift({ texto, autor, ts: nowStamp() });
+}
 const fmtVence = (ts) => { const d = Math.ceil((ts - Date.now()) / 86400000); return d < 0 ? `venció hace ${-d} d` : d === 0 ? "vence hoy" : `vence en ${d} d`; };
 // Roster de la organización para las menciones (@): aprobadores/jefaturas + ejecutivos de la cartera.
 const personasOrg = () => {
@@ -7949,19 +7956,13 @@ function PCsankey({ deals = [], execsFiltrados = [], filtrosDeal = {}, hayFiltro
       </div>
       <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
         {[
-          { t: "Oportunidades", v: kpis.total.toLocaleString("es-CL"), s: fmtMMc(kpis.mTot), col: C.ink, bg: "#fff", bd: C.line },
-          { t: "Originadas el día", v: kpis.nHoy.toLocaleString("es-CL"), s: `${kpis.nAnt.toLocaleString("es-CL")} de días anteriores`, col: "#703EFF", bg: "#F1ECFF", bd: "#D9CCFF" },
-          { t: "Abiertas", v: kpis.nAbi.toLocaleString("es-CL"), s: "siguen en curso", col: "#2563EB", bg: "#EFF6FF", bd: "#BFDBFE" },
-          { t: "Otorgadas", v: kpis.nCur.toLocaleString("es-CL"), s: "otorgadas y giradas", col: "#16A34A", bg: "#F0FDF4", bd: "#bbf7d0" },
-          { t: "Descartadas", v: kpis.nDes.toLocaleString("es-CL"), s: "no superaron otorgamiento", col: "#7c3aed", bg: "#F1ECFF", bd: "#ddd6fe" },
-          { t: "Perdidas", v: kpis.nPer.toLocaleString("es-CL"), s: "competencia · desistimiento", col: "#dc2626", bg: "#fef2f2", bd: "#fecaca" },
-        ].map((k, i) => (
-          <div key={i} className="rounded-xl p-3" style={{ backgroundColor: k.bg, border: `1px solid ${k.bd}` }}>
-            <div className="t9 font-bold uppercase tracking-wide" style={{ color: k.col }}>{k.t}</div>
-            <div className="text-xl font-bold" style={{ color: k.col }}>{k.v}</div>
-            <div className="mt-0.5 t9" style={{ color: C.faint }}>{k.s}</div>
-          </div>
-        ))}
+          { t: "Oportunidades", v: kpis.total.toLocaleString("es-CL"), s: fmtMMc(kpis.mTot), col: "#703EFF", Icon: CircleDot },
+          { t: "Originadas el día", v: kpis.nHoy.toLocaleString("es-CL"), s: `${kpis.nAnt.toLocaleString("es-CL")} de días anteriores`, col: "#703EFF", Icon: Zap },
+          { t: "Abiertas", v: kpis.nAbi.toLocaleString("es-CL"), s: "siguen en curso", col: "#2563EB", Icon: Clock },
+          { t: "Otorgadas", v: kpis.nCur.toLocaleString("es-CL"), s: "otorgadas y giradas", col: "#16A34A", Icon: Check },
+          { t: "Descartadas", v: kpis.nDes.toLocaleString("es-CL"), s: "no superaron otorgamiento", col: "#7c3aed", Icon: AlertTriangle },
+          { t: "Perdidas", v: kpis.nPer.toLocaleString("es-CL"), s: "competencia · desistimiento", col: "#dc2626", Icon: ArrowDownRight },
+        ].map((k, i) => <KpiStat key={i} Icon={k.Icon} col={k.col} v={k.v} l={k.t} s={k.s} />)}
       </div>
       <div className="flex items-center justify-end">
         <button onClick={() => setTareasOpen(true)} className="flex items-center gap-1.5 rounded-full px-3 py-1.5 t11 font-semibold" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.sub }}>
@@ -8122,6 +8123,18 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
     </div>
   );
 }
+// Card KPI homogénea (spec datamart-ui): blanca, borde 1px, radio 2xl, ícono lucide en chip tintado,
+// valor grande en tinta neutra, label uppercase + sub. Un solo componente para todos los reportes de Gestión.
+function KpiStat({ Icon, col = "#703EFF", v, l, s }) {
+  return (
+    <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+      {Icon && <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ backgroundColor: col + "1a", color: col }}><Icon size={15} /></div>}
+      <div className="mt-3 text-xl font-bold" style={{ color: C.ink }}>{v}</div>
+      <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{l}</div>
+      {s && <div className="t9" style={{ color: C.faint }}>{s}</div>}
+    </div>
+  );
+}
 // --- Sección CLIENTE: alerta NEX AI, resumen de cartera, segmentación, volumen cedido, SoW ---
 function PCcliente({ resumen, hayFiltro }) {
   const kpis = [
@@ -8140,14 +8153,7 @@ function PCcliente({ resumen, hayFiltro }) {
       <div>
         <div className="mb-2 t10 font-bold uppercase tracking-widest" style={{ color: C.faint }}>Resumen de cartera</div>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-          {kpis.map((k, i) => (
-            <div key={i} className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ backgroundColor: k.col + "1a", color: k.col }}><k.Icon size={15} /></div>
-              <div className="mt-3 text-xl font-bold" style={{ color: C.ink }}>{k.v}</div>
-              <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{k.l}</div>
-              <div className="t9" style={{ color: C.faint }}>{k.s}</div>
-            </div>
-          ))}
+          {kpis.map((k, i) => <KpiStat key={i} Icon={k.Icon} col={k.col} v={k.v} l={k.l} s={k.s} />)}
         </div>
       </div>
       {/* Segmentación */}
@@ -8496,17 +8502,11 @@ function ClientesView({ soloExec }) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         {[
-          { t: "Empresas", v: base.length.toLocaleString("es-CL"), s: "clientes en cartera", col: C.ink, bg: "#fff", bd: C.line },
-          { t: "Activas", v: nActivas.toLocaleString("es-CL"), s: "con operación vigente", col: "#16A34A", bg: "#F0FDF4", bd: "#bbf7d0" },
-          { t: "Inactivas", v: (base.length - nActivas).toLocaleString("es-CL"), s: "sin operación reciente", col: "#C2410C", bg: "#fff", bd: C.line },
-          { t: "Usuarios", v: nUsuarios.toLocaleString("es-CL"), s: "habilitados en el portal", col: C.indigo, bg: "#fff", bd: C.line },
-        ].map((k, i) => (
-          <div key={i} className="rounded-xl p-3" style={{ backgroundColor: k.bg, border: `1px solid ${k.bd}` }}>
-            <div className="t9 font-bold uppercase tracking-wide" style={{ color: k.col }}>{k.t}</div>
-            <div className="text-xl font-bold" style={{ color: k.col }}>{k.v}</div>
-            <div className="mt-0.5 t9" style={{ color: C.faint }}>{k.s}</div>
-          </div>
-        ))}
+          { t: "Empresas", v: base.length.toLocaleString("es-CL"), s: "clientes en cartera", col: "#703EFF", Icon: User },
+          { t: "Activas", v: nActivas.toLocaleString("es-CL"), s: "con operación vigente", col: "#16A34A", Icon: Check },
+          { t: "Inactivas", v: (base.length - nActivas).toLocaleString("es-CL"), s: "sin operación reciente", col: "#C2410C", Icon: Clock },
+          { t: "Usuarios", v: nUsuarios.toLocaleString("es-CL"), s: "habilitados en el portal", col: "#2563EB", Icon: ShieldCheck },
+        ].map((k, i) => <KpiStat key={i} Icon={k.Icon} col={k.col} v={k.v} l={k.t} s={k.s} />)}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -9639,124 +9639,177 @@ function seedTareasDemo(deals, ejecName) {
   acts.forEach((d, i) => { const t = tpl[i] || tpl[0]; addPanelTarea({ texto: `${t.pre} · ${d.cliente}`, cat: t.cat, dias: t.d, autor: jefe, para: [EXECS[d.exec] || "Ejecutivo"], ops: [d.id], nodo: stageName(d.stage) }); });
 }
 
-// Tab «Tareas»: bandeja de trabajo del ejecutivo. Consolida (1) las tareas asignadas desde el sistema
-// de gestión (Sankey / panel de tareas) y (2) las oportunidades marcadas con prioridad de curse por la
-// jefatura. Las prioridades se auto-atienden cuando cursan, se pierden por cesión, o quedan con bloqueo firme.
-function PCtareas({ deals, execFilter, onOpen, esJefe }) {
+// Tab «Tareas»: bandeja de trabajo del ejecutivo, como una LISTA tipo pipeline (tipo de tarea + detalle
+// en columnas). Consolida (1) las tareas asignadas desde el sistema de gestión y (2) las oportunidades
+// marcadas con prioridad de curse por la jefatura (se auto-atienden al cursar / ceder / bloquearse).
+// Cada fila abre un DRAWER lateral con el detalle completo y una BITÁCORA de comentarios de gestión.
+function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre }) {
   const [, force] = useState(0); const bump = () => force((v) => v + 1);
+  const [sel, setSel] = useState(null);   // { kind, id } — ítem abierto en el drawer
+  const [vista, setVista] = useState("activas"); // activas | resueltas
+  const [nota, setNota] = useState("");
   const enScope = (d) => execFilter === "todos" || EXECS[d.exec] === execFilter;
-  const prios = deals.filter((d) => tienePrioridadCurse(d.id) && enScope(d))
-    .map((d) => ({ d, at: estadoAtencionPrioridad(d), prio: PRIORIDAD_CURSE[d.id] }))
-    .sort((a, b) => (a.at.atendida - b.at.atendida) || ((b.d.amountMM || 0) - (a.d.amountMM || 0)));
-  const prioPend = prios.filter((p) => !p.at.atendida);
-  const prioAt = prios.filter((p) => p.at.atendida);
+  const dealDe = (id) => deals.find((x) => x.id === id);
+  const prios = deals.filter((d) => tienePrioridadCurse(d.id) && enScope(d)).map((d) => ({ d, at: estadoAtencionPrioridad(d), prio: PRIORIDAD_CURSE[d.id] }));
   const relev = (t) => {
     if (execFilter === "todos") return true;
     if ((t.para || []).includes(execFilter)) return true;
-    return (t.ops || []).some((id) => { const d = deals.find((x) => x.id === id); return d && EXECS[d.exec] === execFilter; });
+    return (t.ops || []).some((id) => { const d = dealDe(id); return d && EXECS[d.exec] === execFilter; });
   };
   const tareas = PANEL_TAREAS.filter(relev);
-  const tareasPend = tareas.filter((t) => !t.hecha);
-  const tareasHechas = tareas.filter((t) => t.hecha);
-  const dealDe = (id) => deals.find((x) => x.id === id);
+  // Modelo de fila unificado (prioridad ó tarea asignada).
+  const rowsPrio = prios.map(({ d, at, prio }) => ({
+    kind: "prio", id: d.id, deal: d, tipo: "Prioridad", tipoCol: "#C2410C", tipoBg: "#FFF7ED", star: true,
+    cliente: d.cliente, ref: `${d.id} · ${EXECS[d.exec] || "Agente IA"}`, detalle: `${stageName(d.stage)}${d.deudor ? ` · ${d.deudor}` : ""}`,
+    monto: d.amountMM || 0, quien: prio.porNombre, at, hecha: at.atendida, venceTs: null,
+  }));
+  const rowsTask = tareas.map((t) => { const op = (t.ops || []).map(dealDe).filter(Boolean)[0]; const a = areaMeta(t.cat); return ({
+    kind: "task", id: t.id, task: t, deal: op, tipo: a.l, tipoCol: a.c, tipoBg: a.bg, star: false,
+    cliente: op ? op.cliente : (t.nodo || "General"), ref: op ? op.id : (t.nodo || ""), detalle: t.texto,
+    monto: op ? (op.amountMM || 0) : null, quien: t.autor, at: null, hecha: t.hecha, venceTs: t.venceTs,
+  }); });
+  const todas = [...rowsPrio, ...rowsTask];
+  // Importancia de una tarea activa (mayor = más importante): las prioridades de la jefatura primero,
+  // luego urgencia por vencimiento (más cerca/vencida pesa más) y el monto de la oportunidad.
+  const importancia = (r) => {
+    let s = 0;
+    if (r.kind === "prio") s += 1e9;
+    if (r.venceTs) { const dias = (r.venceTs - Date.now()) / 86400000; s += Math.max(0, 30 - dias) * 1000; }
+    s += (r.monto || 0);
+    return s;
+  };
+  const activas = todas.filter((r) => !r.hecha).sort((a, b) => importancia(b) - importancia(a));
+  const resueltas = todas.filter((r) => r.hecha).sort((a, b) => (b.monto || 0) - (a.monto || 0));
+  const rows = vista === "resueltas" ? resueltas : activas;
+  const selRow = sel ? todas.find((r) => r.kind === sel.kind && r.id === sel.id) : null;
+  const marcarHecha = (r) => { if (r.kind === "task") r.task.hecha = !r.task.hecha; bump(); };
+  const nPrioPend = rowsPrio.filter((r) => !r.hecha).length;
+  const nPrioAt = rowsPrio.filter((r) => r.hecha).length;
+  const nTaskPend = rowsTask.filter((r) => !r.hecha).length;
   const kpis = [
-    { t: "Tareas asignadas", v: tareasPend.length, s: "Pendientes, asignadas desde el sistema de Gestión.", col: "#703EFF", bg: "#f5f3ff", bd: "#ddd6fe" },
-    { t: "Prioridades por atender", v: prioPend.length, s: "Oportunidades priorizadas por la jefatura para el curse.", col: "#C2410C", bg: "#FFF7ED", bd: "#FED7AA" },
-    { t: "Prioridades atendidas", v: prioAt.length, s: "Cursadas, cedidas a otro factoring o con bloqueo firme.", col: "#16A34A", bg: "#F0FDF4", bd: "#BBF7D0" },
+    { t: "Tareas asignadas", v: nTaskPend, s: "Pendientes, asignadas desde Gestión.", col: "#703EFF", Icon: ClipboardList },
+    { t: "Prioridades por atender", v: nPrioPend, s: "Priorizadas por la jefatura para el curse.", col: "#C2410C", Icon: Star },
+    { t: "Prioridades atendidas", v: nPrioAt, s: "Cursadas, cedidas o con bloqueo firme.", col: "#16A34A", Icon: Check },
   ];
+  // Estado (pill) de una fila.
+  const estadoPill = (r) => {
+    if (r.kind === "prio") return r.at.atendida ? { l: r.at.label, c: r.at.col, bg: r.at.bg } : { l: "Por atender", c: "#C2410C", bg: "#FFF7ED" };
+    return r.hecha ? { l: "Hecha", c: "#16A34A", bg: "#F0FDF4" } : { l: "Pendiente", c: "#703EFF", bg: "#F1ECFF" };
+  };
+  const vistas = [["activas", "Activas", activas.length], ["resueltas", "Resueltas / completadas", resueltas.length]];
   return (
     <div className="space-y-5">
-      <div>
-        <div className="text-lg font-bold" style={{ color: C.ink }}>Tareas</div>
-        <div className="t11" style={{ color: C.faint }}>Tus tareas asignadas y las oportunidades priorizadas por la jefatura · las prioridades se atienden solas al cursar, ceder o bloquearse.</div>
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <div className="text-lg font-bold" style={{ color: C.ink }}>Tareas</div>
+          <div className="t12" style={{ color: C.faint }}>Tareas asignadas y oportunidades priorizadas por la jefatura · las prioridades se atienden solas al cursar, ceder o bloquearse.</div>
+        </div>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {kpis.map((k) => (
-          <div key={k.t} className="rounded-2xl p-4" style={{ backgroundColor: k.bg, border: `1px solid ${k.bd}` }}>
-            <div className="t9 font-bold uppercase tracking-wide" style={{ color: k.col }}>{k.t}</div>
-            <div className="mt-1 text-3xl font-bold" style={{ color: k.col }}>{k.v}</div>
-            <div className="mt-1 t9" style={{ color: C.sub, lineHeight: 1.35 }}>{k.s}</div>
-          </div>
-        ))}
+        {kpis.map((k, i) => <KpiStat key={i} Icon={k.Icon} col={k.col} v={k.v} l={k.t} s={k.s} />)}
       </div>
+      {/* Dos vistas: Activas (por gestionar, ordenadas por importancia) y Resueltas / completadas */}
+      <div className="flex flex-wrap items-center gap-x-5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        {vistas.map(([k, l, n]) => { const on = vista === k; return (
+          <button key={k} onClick={() => setVista(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>{l}<span className="rounded-full px-1.5 t9 font-bold" style={{ backgroundColor: on ? "#F1ECFF" : C.page, color: on ? C.indigo : C.sub }}>{n}</span></button>
+        ); })}
+      </div>
+      {/* Lista tipo pipeline */}
+      {rows.length === 0 ? (
+        <div className="rounded-2xl border border-dashed py-12 text-center t12" style={{ borderColor: C.line, color: C.faint }}>{vista === "resueltas" ? "Aún no hay tareas resueltas ni completadas en tu alcance." : "No tienes tareas activas. La jefatura asigna tareas desde Gestión y prioriza oportunidades con la estrella (★)."}</div>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+          <table className="w-full border-collapse">
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${C.line}` }}>
+                {["Tipo", "Cliente / Oportunidad", "Detalle de la tarea", "Asignó", "Estado", "Vence", ""].map((h, i) => (
+                  <th key={i} className="px-4 py-3 text-left t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => { const est = estadoPill(r); return (
+                <tr key={r.kind + r.id} onClick={() => { setSel({ kind: r.kind, id: r.id }); setNota(""); }} className="cursor-pointer transition-colors hover:bg-stone-50" style={{ borderBottom: `1px solid ${C.line}`, opacity: r.hecha ? 0.72 : 1 }}>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: r.tipoBg, color: r.tipoCol }}>{r.star && <Star size={11} style={{ fill: "#F97316", color: "#C2410C" }} />}{r.tipo}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="t13 font-semibold" style={{ color: C.ink }}>{r.cliente}</div>
+                    <div className="t10" style={{ color: C.faint }}>{r.ref}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="t12 truncate" style={{ color: C.sub, maxWidth: 340, textDecoration: r.hecha && r.kind === "task" ? "line-through" : "none" }}>{r.detalle}</div>
+                  </td>
+                  <td className="px-4 py-3 t12" style={{ color: C.sub }}>{r.quien}</td>
+                  <td className="px-4 py-3"><span className="inline-block rounded-full px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: est.bg, color: est.c }}>{est.l}</span></td>
+                  <td className="px-4 py-3 t12" style={{ color: r.venceTs && r.venceTs < Date.now() && !r.hecha ? C.red : C.sub }}>{r.venceTs ? fmtVence(r.venceTs) : "—"}</td>
+                  <td className="px-4 py-3 text-right"><ChevronRight size={16} style={{ color: C.faint }} /></td>
+                </tr>
+              ); })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-      {/* ── Oportunidades con prioridad ── */}
-      <div>
-        <div className="mb-2 flex items-center gap-1.5"><Star size={15} style={{ color: "#C2410C", fill: "#F97316" }} /><span className="t13 font-bold" style={{ color: C.ink }}>Oportunidades con prioridad</span><span className="t10" style={{ color: C.faint }}>· marcadas por la jefatura/gerencia para el curse</span></div>
-        {prios.length === 0 ? (
-          <div className="rounded-xl border border-dashed py-8 text-center t11" style={{ borderColor: C.line, color: C.faint }}>Sin oportunidades priorizadas en tu alcance. La jefatura las marca con la estrella (★) en Oportunidades.</div>
-        ) : (
-          <div className="space-y-3">
-            {prioPend.length > 0 && (
-              <div>
-                <div className="mb-1.5 t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Por atender · {prioPend.length}</div>
-                <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-                  {prioPend.map(({ d, prio }) => (
-                    <div key={d.id} className="rounded-xl p-3" style={{ border: `1px solid ${C.line}`, borderLeft: "3px solid #F97316", backgroundColor: "#fff" }}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="truncate t12 font-bold" style={{ color: C.ink }}>{d.cliente}</div>
-                          <div className="t9" style={{ color: C.faint }}>{d.id} · {EXECS[d.exec] || "Agente IA"} · {stageName(d.stage)}{d.deudor ? ` · ${d.deudor}` : ""}</div>
-                        </div>
-                        <span className="shrink-0 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{fmtMM(d.amountMM || 0)}</span>
-                      </div>
-                      <div className="mt-2 flex items-center justify-between gap-2">
-                        <span className="inline-flex items-center gap-1 t9" style={{ color: C.faint }}><Star size={10} style={{ color: "#C2410C", fill: "#F97316" }} /> Prioridad de {prio.porNombre}</span>
-                        <button onClick={() => onOpen(d)} className="rounded-full px-3 py-1 t10 font-semibold" style={{ border: `1px solid ${C.indigo}`, color: C.indigo, backgroundColor: "#fff" }}>Abrir oportunidad</button>
-                      </div>
-                    </div>
-                  ))}
+      {/* ── Drawer lateral: detalle + bitácora de gestión ── */}
+      {selRow && (() => {
+        const r = selRow; const est = estadoPill(r); const notas = TAREA_NOTAS[r.id] || [];
+        const agregar = () => { const t = nota.trim(); if (!t) return; addTareaNota(r.id, t, usuarioNombre || "Ejecutivo"); setNota(""); bump(); };
+        return (
+          <div className="fixed inset-0 z-50" onClick={() => setSel(null)}>
+            <div className="absolute inset-0" style={{ backgroundColor: "rgba(15,23,42,.45)" }} />
+            <div onClick={(e) => e.stopPropagation()} className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col bg-white" style={{ boxShadow: "-8px 0 32px rgba(15,23,42,.18)" }}>
+              {/* Header con acciones */}
+              <div className="p-5" style={{ borderBottom: `1px solid ${C.line}` }}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: r.tipoBg, color: r.tipoCol }}>{r.star && <Star size={11} style={{ fill: "#F97316", color: "#C2410C" }} />}{r.tipo}</span>
+                    <div className="mt-2 text-lg font-bold" style={{ color: C.ink }}>{r.cliente}</div>
+                    <div className="t11" style={{ color: C.faint }}>{r.ref}</div>
+                  </div>
+                  <button onClick={() => setSel(null)} className="rounded-md p-1 hover:bg-stone-100" style={{ color: C.sub }}><X size={18} /></button>
+                </div>
+                <div className="mt-3 flex gap-2">
+                  {r.deal && <button onClick={() => onOpen(r.deal)} className="flex-1 rounded-full px-4 py-2 t12 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Abrir oportunidad</button>}
+                  {r.kind === "task" && <button onClick={() => marcarHecha(r)} className="flex-1 rounded-full px-4 py-2 t12 font-semibold" style={{ border: `1px solid ${r.hecha ? C.line : C.indigo}`, color: r.hecha ? C.sub : C.indigo, backgroundColor: "#fff" }}>{r.hecha ? "Abrir tarea" : "Cerrar tarea"}</button>}
                 </div>
               </div>
-            )}
-            {prioAt.length > 0 && (
-              <div>
-                <div className="mb-1.5 t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Atendidas · {prioAt.length}</div>
-                <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-                  {prioAt.map(({ d, at, prio }) => (
-                    <div key={d.id} className="rounded-xl p-3" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="truncate t12 font-bold" style={{ color: C.ink }}>{d.cliente}</div>
-                          <div className="t9" style={{ color: C.faint }}>{d.id} · {EXECS[d.exec] || "Agente IA"}</div>
-                        </div>
-                        <span className="shrink-0 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: at.bg, color: at.col }}>{at.label}</span>
+              {/* Cuerpo scrollable */}
+              <div className="flex-1 space-y-4 overflow-y-auto p-5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: est.bg, color: est.c }}>{est.l}</span>
+                  {r.venceTs && <span className="t11" style={{ color: r.venceTs < Date.now() && !r.hecha ? C.red : C.sub }}>{fmtVence(r.venceTs)}</span>}
+                  {r.monto != null && <span className="t11 font-semibold" style={{ color: C.ink }}>{fmtMM(r.monto)}</span>}
+                </div>
+                <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}`, backgroundColor: C.page }}>
+                  <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{r.kind === "prio" ? "Motivo de la prioridad" : "Detalle de la tarea"}</div>
+                  <div className="mt-1 t12" style={{ color: C.ink, lineHeight: 1.5 }}>{r.detalle}</div>
+                  <div className="mt-2 t11" style={{ color: C.sub }}>{r.kind === "prio" ? <>Priorizada para el curse por <b style={{ color: C.ink }}>{r.quien}</b>.</> : <>Asignada por <b style={{ color: C.ink }}>{r.quien}</b>{r.task.nodo ? <> · nodo <b style={{ color: C.ink }}>{r.task.nodo}</b></> : ""}.</>}</div>
+                  {r.kind === "task" && r.task.para && r.task.para.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{r.task.para.map((p, i) => <span key={i} className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>@{p}</span>)}</div>}
+                  {r.kind === "prio" && r.at.atendida && r.at.detalle && <div className="mt-2 t11" style={{ color: C.sub, lineHeight: 1.4 }}>{r.at.detalle}</div>}
+                </div>
+                {/* Bitácora de gestión */}
+                <div>
+                  <div className="mb-1.5 flex items-center gap-1.5"><MessageSquare size={14} style={{ color: C.indigo }} /><span className="t12 font-bold" style={{ color: C.ink }}>Bitácora de gestión</span><span className="t10" style={{ color: C.faint }}>· {notas.length}</span></div>
+                  <div className="rounded-xl p-2" style={{ border: `1px solid ${C.line}` }}>
+                    <textarea value={nota} onChange={(e) => setNota(e.target.value)} rows={2} placeholder="Anota la gestión realizada (llamada, visita, acuerdo, próximos pasos)…" className="w-full resize-none rounded-lg px-2 py-1.5 t12 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
+                    <div className="mt-1.5 flex justify-end"><button onClick={agregar} disabled={!nota.trim()} className="rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: C.indigo }}>Agregar comentario</button></div>
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    {notas.length === 0 && <div className="rounded-lg border border-dashed py-5 text-center t10" style={{ borderColor: C.line, color: C.faint }}>Sin comentarios aún. Registra aquí cada gestión sobre esta tarea.</div>}
+                    {notas.map((n, i) => (
+                      <div key={i} className="rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, borderLeft: `3px solid ${C.indigo}` }}>
+                        <div className="t12" style={{ color: C.ink, lineHeight: 1.45 }}>{n.texto}</div>
+                        <div className="mt-1 t9" style={{ color: C.faint }}>{n.autor} · {n.ts}</div>
                       </div>
-                      {at.detalle && <div className="mt-1.5 t9" style={{ color: C.sub, lineHeight: 1.4 }}>{at.detalle}</div>}
-                      <div className="mt-1.5 inline-flex items-center gap-1 t8" style={{ color: C.faint }}><Star size={9} style={{ color: "#C2410C", fill: "#F97316" }} /> Prioridad de {prio.porNombre} · atendida automáticamente</div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
-            )}
+            </div>
           </div>
-        )}
-      </div>
-
-      {/* ── Tareas asignadas desde Gestión ── */}
-      <div>
-        <div className="mb-2 flex items-center gap-1.5"><ClipboardList size={15} style={{ color: C.indigo }} /><span className="t13 font-bold" style={{ color: C.ink }}>Tareas asignadas</span><span className="t10" style={{ color: C.faint }}>· desde el sistema de gestión (Sankey / panel de tareas)</span></div>
-        {tareas.length === 0 ? (
-          <div className="rounded-xl border border-dashed py-8 text-center t11" style={{ borderColor: C.line, color: C.faint }}>Sin tareas asignadas en tu alcance. Las jefaturas las asignan desde el gráfico Origen → Cierre en Gestión.</div>
-        ) : (
-          <div className="space-y-1.5">
-            {[...tareasPend, ...tareasHechas].map((t) => { const a = areaMeta(t.cat); const venc = t.venceTs < Date.now(); const op = (t.ops || []).map(dealDe).filter(Boolean)[0]; return (
-              <div key={t.id} className="rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, borderLeft: `3px solid ${a.c}`, backgroundColor: t.hecha ? "#F9FAFB" : "#fff", opacity: t.hecha ? 0.65 : 1 }}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: a.bg, color: a.c }}>{a.l}</span>
-                  <span className="t9 font-semibold" style={{ color: t.hecha ? C.faint : venc ? C.red : C.sub }}>{t.hecha ? "hecha" : fmtVence(t.venceTs)}</span>
-                </div>
-                <div className="mt-1 t11" style={{ color: C.ink, textDecoration: t.hecha ? "line-through" : "none" }}>{t.texto}</div>
-                {t.para && t.para.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{t.para.map((p, i) => <span key={i} className="rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>@{p}</span>)}</div>}
-                <div className="mt-1.5 flex items-center justify-between gap-2 t8" style={{ color: C.faint }}>
-                  <span className="min-w-0 truncate">{t.autor}{t.nodo ? ` · ${t.nodo}` : ""}{op ? " · " : ""}{op && <button onClick={() => onOpen(op)} className="font-semibold" style={{ color: C.indigo }}>{op.cliente}</button>}</span>
-                  <button onClick={() => { t.hecha = !t.hecha; bump(); }} className="shrink-0 rounded-full px-2 py-0.5 t8 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub }}>{t.hecha ? "Reabrir" : "Marcar hecha"}</button>
-                </div>
-              </div>
-            ); })}
-          </div>
-        )}
-      </div>
+        );
+      })()}
     </div>
   );
 }
@@ -9785,7 +9838,7 @@ function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, o
           : <select value={fEjec} onChange={(e) => setFEjec(e.target.value)} className="rounded-lg px-3 py-1.5 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}><option value="todos">Todos los ejecutivos</option>{execOpts.map((n) => <option key={n} value={n}>{n}</option>)}</select>}</div>
       </div>
       <div className="w-full rounded-2xl bg-white p-5" style={{ border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
-        {tab === "tareas" ? <PCtareas deals={deals} execFilter={ejec} onOpen={onOpen} esJefe={esJefe} />
+        {tab === "tareas" ? <PCtareas deals={deals} execFilter={ejec} onOpen={onOpen} esJefe={esJefe} usuarioNombre={usuarioNombre} />
           : tab === "bandeja" ? <PCbandeja deals={deals} execFilter={ejec} onOpen={onOpen} ambito="diaria" usuario={usuario} onOpenSolic={onOpenSolic} onIrLineas={onIrLineas} />
           : <PlanPorEjecutivo ejec={ejec} soloExec={soloExec} esJefe={esJefe} usuarioNombre={usuarioNombre} plan={plan} setPlan={setPlan} defMetas={false} />}
       </div>
@@ -10738,13 +10791,11 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
       </div>
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         {[
-          { t: "Clientes en el plan", v: filas.length.toLocaleString("es-CL"), s: ejec === "todos" ? `${inisScope.length} ejecutivo(s)` : ejec, col: C.ink, bg: "#fff", bd: C.line },
-          { t: `Colocación ${MES_NOM[mesSel]}`, v: fmtMMc(colocRealTot), s: `meta ${fmtMMc(colocMetaTot)} · ${colocMetaTot ? Math.round(colocRealTot / colocMetaTot * 100) : 0}%`, col: "#2563EB", bg: "#EFF6FF", bd: "#BFDBFE" },
-          { t: "Status promedio", v: `${scoreProm}`, s: "ponderación de las 4 metas (0–100)", col: metaScoreColor(scoreProm), bg: "#fff", bd: C.line },
-          { t: "Meta nuevas empresas", v: `${metaMesEmp}`, s: `${MES_NOM[MES_ACT]} · YTD ${nuevoEmp.realYTD}/${nuevoEmp.metaYTD} · cumpl ${nuevoEmp.cumpl}%`, col: "#C2410C", bg: "#FFF7ED", bd: "#FED7AA" },
-        ].map((k, i) => (
-          <div key={i} className="rounded-xl p-3" style={{ backgroundColor: k.bg, border: `1px solid ${k.bd}` }}><div className="t9 font-bold uppercase tracking-wide" style={{ color: k.col }}>{k.t}</div><div className="text-xl font-bold" style={{ color: k.col }}>{k.v}</div><div className="mt-0.5 t9" style={{ color: C.faint }}>{k.s}</div></div>
-        ))}
+          { t: "Clientes en el plan", v: filas.length.toLocaleString("es-CL"), s: ejec === "todos" ? `${inisScope.length} ejecutivo(s)` : ejec, col: "#703EFF", Icon: User },
+          { t: `Colocación ${MES_NOM[mesSel]}`, v: fmtMMc(colocRealTot), s: `meta ${fmtMMc(colocMetaTot)} · ${colocMetaTot ? Math.round(colocRealTot / colocMetaTot * 100) : 0}%`, col: "#2563EB", Icon: BarChart2 },
+          { t: "Status promedio", v: `${scoreProm}`, s: "ponderación de las 4 metas (0–100)", col: metaScoreColor(scoreProm), Icon: Target },
+          { t: "Meta nuevas empresas", v: `${metaMesEmp}`, s: `${MES_NOM[MES_ACT]} · YTD ${nuevoEmp.realYTD}/${nuevoEmp.metaYTD} · cumpl ${nuevoEmp.cumpl}%`, col: "#C2410C", Icon: Plus },
+        ].map((k, i) => <KpiStat key={i} Icon={k.Icon} col={k.col} v={k.v} l={k.t} s={k.s} />)}
       </div>
       <div className="overflow-x-auto rounded-xl" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
         <table className="w-full border-collapse">
