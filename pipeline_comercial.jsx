@@ -1242,148 +1242,6 @@ setTimeout(function(){try{window.close();}catch(e){}},1600);}
 // Email de cierre SIMULADO como página STANDALONE (se abre en pestaña nueva vía blob URL, igual que el
 // WhatsApp del cliente). Branding Factoring Security. Flujo dentro de la misma pestaña: email → (CTA)
 // login → detalle → firma → éxito; al firmar avisa a la app con postMessage({type:'aceptada', neg}).
-function emailCierreHTML(deal) {
-  const neg = negDe(deal);
-  let o = {};
-  try { const c = curseDesdeDeal(deal); o = calcularOferta(deal, c.tasa, c.opts) || {}; } catch (e) { o = {}; }
-  const giro = fmtMM(o.giroMM != null ? o.giroMM : (deal.giroMM || deal.amountMM || 0));
-  const ejec = execName(deal);
-  const fecha = deal.time || hoyStr();
-  // Clave de un solo uso (OTP) que identifica el negocio: el cliente la escribe en el portal junto al
-  // código de negocio, RUT y clave. Para el demo el correo incluye un botón que abre el portal (curse.html);
-  // el enlace es ABSOLUTO porque el correo se abre como blob:. El payload viaja también por localStorage.
-  const otp = otpDe(neg);
-  // URL CORTA y absoluta al portal (el payload viaja por localStorage, no en el hash): un enlace corto
-  // evita que el navegador bloquee la navegación desde el correo (blob:) por URL demasiado larga.
-  let curseAbs;
-  try { const base = (typeof window !== "undefined" && window.location) ? window.location.href : ""; curseAbs = base ? new URL(`curse.html?n=${neg}`, base).href : `curse.html?n=${neg}`; }
-  catch (e) { curseAbs = `curse.html?n=${neg}`; }
-  const V = "#4a2596"; // violeta de marca Factoring Security (filial BICE)
-  const A = "#1d4ed8"; // azul de acción (CTA, montos), como en el portal
-  const row = (k, v, c) => `<div class=row><span>${k}</span><b${c ? ` style="color:${c}"` : ""}>${v}</b></div>`;
-  return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Factoring Security · Firma tu operación N° ${neg}</title>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;600;700;800&display=swap" rel="stylesheet">
-<style>
-:root{--v:${V};--a:${A}}
-*{box-sizing:border-box}body{font-family:Geist,system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#F6F8FC;color:#111827}
-/* --- Lector de correo estilo Gmail --- */
-.gm{max-width:1100px;margin:0 auto;background:#fff;min-height:100vh}
-.gm-top{display:flex;align-items:center;justify-content:space-between;padding:6px 16px;border-bottom:1px solid #E5E7EB;color:#5f6368}
-.gm-top-l{display:flex;gap:2px}.gm-top-r{display:flex;align-items:center;gap:4px;font-size:12px}
-.gm-ic{display:inline-flex;width:34px;height:34px;align-items:center;justify-content:center;border-radius:9999px;font-size:15px;cursor:pointer}.gm-ic:hover{background:#F1F3F4}
-.gm-thread{padding:16px 28px 48px}
-.gm-subj{display:flex;align-items:center;gap:12px;margin-bottom:18px}.gm-subj h2{font-size:22px;font-weight:400;color:#202124;margin:0}
-.gm-lab{font-size:11px;background:#E8EAED;color:#3c4043;border-radius:4px;padding:2px 7px}
-.gm-hdr{display:flex;align-items:flex-start;gap:12px}
-.gm-av{width:40px;height:40px;border-radius:9999px;background:var(--v);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.gm-fromwrap{flex:1;min-width:0}.gm-from{font-size:14px;color:#202124}.gm-email{color:#5f6368;font-size:12px}.gm-to{font-size:12px;color:#5f6368;margin-top:1px}
-.gm-meta{text-align:right;font-size:12px;color:#5f6368;white-space:nowrap}.gm-acts{margin-top:4px;font-size:16px;color:#5f6368}
-.gm-body{margin-top:14px}
-.mail{max-width:960px;margin:0 auto;background:#F3F4F6;border-radius:12px;overflow:hidden;border:1px solid #E5E7EB}
-.logo svg{height:42px;width:auto;display:block}
-.logo{display:flex;align-items:center;justify-content:center;gap:9px;background:#fff;padding:18px}
-.hero{text-align:center;padding:22px 26px 16px}.hero .g{font-size:13px;color:#374151}.hero h1{font-size:21px;font-weight:800;color:#111827;line-height:1.25;margin:6px 0}.hero .t{font-size:12.5px;font-weight:600;color:var(--v)}
-.card{margin:0 20px;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);text-align:center}
-.card .top{height:6px;background:var(--v)}.card .in{padding:16px}
-.card .neg{font-size:14px;font-weight:700;color:#111827}.card .sub{font-size:11px;color:#9CA3AF;margin-top:2px}
-.card .ml{font-size:11.5px;color:#6B7280;margin-top:12px}.card .mm{font-size:24px;font-weight:800;color:var(--a)}.card .dc{font-size:11px;color:#9CA3AF}
-.cta{display:block;width:100%;margin-top:14px;padding:12px;border:0;border-radius:9999px;background:var(--a);color:#fff;font-size:13.5px;font-weight:700;cursor:pointer;text-align:center}
-.steps{margin:14px 20px 0;background:#E5E7EB;border-radius:14px;padding:16px}.steps .h{text-align:center;font-size:12.5px;font-weight:700;color:#374151;margin-bottom:10px}
-.step{display:flex;gap:10px;align-items:flex-start;font-size:12.5px;color:#374151;margin-bottom:8px}.step .n{width:20px;height:20px;border-radius:9999px;background:var(--v);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.band{margin-top:16px;background:var(--v);color:#fff;text-align:center;padding:12px;font-size:13px}
-.sec{background:#fff;padding:16px 26px}.sec .h{text-align:center;font-size:12.5px;font-weight:700;color:#111827;margin-bottom:8px}.sec ul{margin:0;padding-left:16px;font-size:11px;color:#4B5563;line-height:1.7}
-.auto{background:#9CA3AF;color:#fff;text-align:center;font-size:10.5px;padding:12px 26px}
-.foot{background:#fff;text-align:center;padding:16px;font-size:9.5px;color:#9CA3AF;line-height:1.6}
-/* Login/detalle */
-.wrap{max-width:460px;margin:0 auto;padding:28px 20px}
-.box{background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.08)}
-.box .hd{background:var(--v);color:#fff;padding:16px}.box .hd b{font-weight:800}.box .hd .s{font-size:12px;opacity:.85}
-.box .bd{padding:18px}.row{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;color:#4B5563}.row b{color:#111827}
-.lbl{margin-top:12px;font-weight:600;font-size:13px}input{width:100%;padding:10px;border:1px solid #E5E7EB;border-radius:9px;margin-top:5px;font-size:14px;outline:none}input:focus{border-color:var(--v)}
-.hr{height:1px;background:#E5E7EB;margin:12px 0}.muted{color:#9CA3AF;font-size:11px;margin-top:10px}.ok{color:var(--v);font-weight:800;font-size:18px;text-align:center}
-.back{display:inline-block;margin-top:14px;color:#6B7280;font-size:12.5px;cursor:pointer;text-decoration:none}
-.hidden{display:none}
-</style></head>
-<body>
-<!-- VISTA EMAIL (lector de correo estilo Gmail) -->
-<div id="vista-email">
- <div class="gm">
-  <div class="gm-top">
-    <div class="gm-top-l"><span class="gm-ic">←</span><span class="gm-ic">🗄</span><span class="gm-ic">🗑</span><span class="gm-ic">✉</span><span class="gm-ic">⋯</span></div>
-    <div class="gm-top-r">1 de 128 <span class="gm-ic">‹</span><span class="gm-ic">›</span></div>
-  </div>
-  <div class="gm-thread">
-    <div class="gm-subj"><h2>Tu oferta está lista para firmar · Negocio N° ${neg}</h2><span class="gm-lab">Recibidos</span></div>
-    <div class="gm-hdr">
-      <div class="gm-av">S</div>
-      <div class="gm-fromwrap"><div class="gm-from"><b>Factoring Security</b> <span class="gm-email">&lt;notificaciones@factoringsecurity.cl&gt;</span></div><div class="gm-to">para mí ▾</div></div>
-      <div class="gm-meta">${fecha}<div class="gm-acts">☆&nbsp;&nbsp;↩</div></div>
-    </div>
-    <div class="gm-body">
-<div class="mail">
-  <div class="logo"><svg viewBox="0 0 207 45" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Factoring Security"><g clip-path="url(#fsclip)"><path d="M206.326 0H102.992V29.9222H206.326V0Z" fill="#232272"/><path d="M103.317 0H0.488281V29.9222H103.317V0Z" fill="#6A2E92"/><path d="M117.322 12.8057V9.8335H116.845C116.702 10.1613 116.507 10.2946 116.254 10.2946C115.577 10.2946 115.267 9.8335 114.228 9.8335C112.57 9.8335 111.186 11.1168 111.186 12.6113C111.186 15.8779 116.478 15.1446 116.478 17.8446C116.478 18.8002 115.72 19.5057 114.733 19.5057C113.494 19.5057 111.944 18.7168 111.525 16.7002H111.043V19.9946H111.525C111.554 19.6391 111.806 19.3391 112.174 19.3391C112.65 19.3391 113.608 20.0502 114.705 20.0502C116.421 20.0502 117.855 18.6891 117.855 17.0779C117.855 13.4835 112.621 14.1335 112.621 11.6835C112.621 10.8946 113.298 10.3779 114.28 10.3779C115.462 10.3779 116.558 11.1946 116.753 12.8002H117.316L117.322 12.8057Z" fill="white"/><path d="M121.349 13.4057C121.464 11.6057 122.445 10.4113 124.109 10.4113C125.378 10.4113 126.864 11.2835 126.784 13.4057H121.349ZM128.666 13.8668C128.81 11.6335 126.669 9.8335 124.362 9.8335C121.544 9.8335 119.352 12.1224 119.352 15.0391C119.352 17.9557 121.601 20.0502 124.729 20.0502C126.474 20.0502 127.627 19.4779 128.838 17.9779V17.2724C127.404 18.8279 126.698 19.2891 125.32 19.2891C123.943 19.2891 121.291 18.2002 121.349 13.8668H128.666Z" fill="white"/><path d="M139.239 9.8335H138.762C138.59 10.1891 138.338 10.3779 138.085 10.3779C137.58 10.3779 136.759 9.8335 135.267 9.8335C132.426 9.8335 130.113 12.2057 130.113 15.1724C130.113 18.1391 132.168 20.0502 135.124 20.0502C136.926 20.0502 138.447 19.3446 139.514 17.9279V17.2168C138.475 18.6057 137.012 19.2335 135.795 19.2335C133.769 19.2335 132.053 17.0279 132.053 14.3835C132.053 12.0113 133.436 10.3779 135.405 10.3779C137.063 10.3779 138.332 11.4946 138.756 13.2391H139.233V9.8335H139.239Z" fill="white"/><path d="M150.927 9.8335H150.45L147.07 10.1335V10.6002C148.786 10.6279 149.015 10.7891 149.015 12.1279V17.3335C148.201 18.3946 147.328 18.9113 146.37 18.9113C145.021 18.9113 144.12 18.0946 144.12 16.7335V9.83905H143.638L140.43 10.1391V10.6057C141.864 10.6057 142.203 10.9613 142.203 11.8835V16.8168C142.203 18.6168 143.5 20.0613 145.469 20.0613C146.823 20.0613 147.977 19.4335 148.958 18.1835H149.015V19.7668H152.648V19.3002C151.3 19.3002 150.932 19.0002 150.932 17.9391V9.84461L150.927 9.8335Z" fill="white"/><path d="M157.591 12.5888C158.492 11.7443 159.054 11.4165 159.703 11.4165C160.351 11.4165 161.252 11.8276 162.067 12.261L162.831 10.5443C162.326 10.1054 161.562 9.7832 161 9.7832C160.323 9.7832 159.45 10.3276 157.591 11.8832V9.7832H157.114L153.625 10.0832V10.5499C155.312 10.5499 155.68 10.711 155.68 12.1276V17.6276C155.68 19.0999 155.507 19.4832 153.992 19.4832V19.9443H159.255V19.4832C157.935 19.4832 157.591 19.1832 157.591 18.1221V12.5943V12.5888Z" fill="white"/><path d="M166.719 6.18896C166.042 6.18896 165.48 6.70563 165.48 7.36119C165.48 8.01674 166.042 8.56119 166.719 8.56119C167.397 8.56119 167.93 8.01674 167.93 7.36119C167.93 6.70563 167.397 6.18896 166.719 6.18896ZM167.649 9.80563H167.167L163.844 10.1056V10.5723C165.307 10.5723 165.732 10.7501 165.732 12.089V18.0001C165.732 19.1445 165.365 19.4779 163.844 19.4779V19.9445H169.308V19.4779C167.902 19.4779 167.649 18.9501 167.649 18.0001V9.80563Z" fill="white"/><path d="M181.485 12.0556C181.118 11.2334 181.347 10.7278 182.11 10.6222V9.91113H177.312V10.6222C178.472 10.65 178.925 10.9389 179.43 12.0556L182.925 19.8834L182.26 21.5667C181.64 23.2611 180.934 23.9445 179.723 23.9445C179.384 23.9445 179.161 23.8889 178.765 23.7278L178.116 25.3945C178.621 25.6945 178.937 25.8056 179.356 25.8056C180.567 25.8056 181.869 24.5222 182.661 22.2834L186.013 12.7056C186.576 11.0945 187.224 10.4389 188.297 10.4389V9.91669H184.768V10.4389C185.87 10.4945 185.956 11.1222 185.56 12.2667L183.809 17.3722L181.491 12.0556H181.485Z" fill="white"/><path d="M173.838 6.68359H173.356C172.512 8.35026 171.382 9.52804 170.027 10.178V10.6447H171.915V17.1225C171.915 18.7892 173.103 19.9392 174.796 19.9392C175.927 19.9392 176.943 19.3892 177.815 18.328L177.505 17.9725C176.914 18.628 176.375 18.9003 175.646 18.9003C174.544 18.9003 173.838 18.2169 173.838 16.878V10.6503H177.327V9.93915H173.838V6.68915V6.68359Z" fill="white"/><path d="M169.167 35.0225H159.312V36.3836H169.167V35.0225Z" fill="#316094"/><path d="M169.167 43.2002H159.312V44.5613H169.167V43.2002Z" fill="#316094"/><path d="M143.075 37.3834C143.643 37.3834 144.125 37.4889 144.527 37.7C144.929 37.9111 145.193 38.1834 145.313 38.5278V34.9111H146.989V44.3945H145.313V43.4C145.193 43.7389 144.929 44.0167 144.527 44.2334C144.125 44.45 143.643 44.55 143.075 44.55C142.088 44.55 141.25 44.2111 140.567 43.5278C139.895 42.8334 139.562 41.9778 139.562 40.9722C139.562 39.9667 139.895 39.1111 140.567 38.4278C141.25 37.7389 142.082 37.3889 143.075 37.3889V37.3834ZM143.293 43.0556C143.901 43.0556 144.406 42.8556 144.82 42.4556C145.239 42.0611 145.445 41.5611 145.445 40.9611C145.445 40.3611 145.239 39.8611 144.82 39.4667C144.412 39.0667 143.901 38.8667 143.293 38.8667C142.685 38.8667 142.214 39.0667 141.801 39.4667C141.411 39.8611 141.215 40.3611 141.215 40.9611C141.215 41.5611 141.411 42.0611 141.801 42.4556C142.208 42.8556 142.708 43.0556 143.293 43.0556Z" fill="#316094"/><path d="M148.137 41.0165V40.9609C148.137 39.8831 148.481 39.0109 149.17 38.3387C149.864 37.672 150.748 37.3442 151.816 37.3442C152.883 37.3442 153.675 37.6776 154.312 38.3387C154.961 38.9998 155.288 39.8165 155.288 40.7942C155.288 40.9387 155.276 41.1276 155.259 41.3665H149.795C149.824 41.9109 150.025 42.3498 150.409 42.6776C150.794 43.0053 151.293 43.172 151.907 43.172C152.63 43.172 153.268 42.9109 153.807 42.3831L154.806 43.3331C154.008 44.1553 153.021 44.5609 151.856 44.5609C150.754 44.5609 149.858 44.2387 149.17 43.5887C148.481 42.9387 148.137 42.0831 148.137 41.0165ZM149.836 40.2276H153.583C153.583 39.8276 153.405 39.4776 153.055 39.1831C152.705 38.8831 152.292 38.7331 151.816 38.7331C151.299 38.7331 150.851 38.8776 150.467 39.172C150.088 39.4665 149.876 39.8165 149.836 40.2276Z" fill="#316094"/><path d="M169.167 37.75H159.312V39.1111H169.167V37.75Z" fill="#316094"/><path d="M169.251 40.5723H159.219V41.9556H169.251V40.5723Z" fill="#316094"/><path d="M177.291 42.7113C178.02 42.7113 178.559 42.2058 178.559 41.5502C178.559 40.8947 178.037 40.4336 177.28 40.4336H175.42V42.7113H177.291ZM176.838 38.8169C177.458 38.8169 177.894 38.3947 177.894 37.8058C177.894 37.2169 177.458 36.8225 176.855 36.8225H175.42V38.8113H176.843L176.838 38.8169ZM173.291 35.028H177.188C178.749 35.028 179.989 36.0502 179.989 37.4502C179.989 38.3614 179.524 39.0836 178.737 39.3558C180.029 39.5725 180.706 40.528 180.706 41.7113C180.706 43.3225 179.438 44.5169 177.722 44.5169H173.285V35.0225L173.291 35.028Z" fill="#316094"/><path d="M185.412 35.0225H183.242V44.5169H185.412V35.0225Z" fill="#316094"/><path d="M193.262 34.8721C194.852 34.8721 196.258 35.5554 197.228 36.6443L195.747 37.861C195.128 37.1943 194.244 36.7832 193.257 36.7832C191.512 36.7832 190.146 38.061 190.146 39.7776C190.146 41.4943 191.512 42.761 193.257 42.761C194.244 42.761 195.145 42.3499 195.759 41.6721L197.24 42.8832C196.27 43.9887 194.846 44.6721 193.257 44.6721C190.341 44.6721 187.977 42.611 187.977 39.7776C187.977 36.9443 190.341 34.8721 193.257 34.8721" fill="#316094"/><path d="M199.52 35.0225V44.5225H206.32V42.6113H201.689V40.5836H205.924V38.7169H201.689V36.9336H206.223V35.0225H199.52Z" fill="#316094"/><path d="M28.9034 19.8109C28.9034 19.8109 26.2232 12.5942 26.1428 12.2609C26.0682 12.6109 23.3995 19.8109 23.3995 19.8109H21.5859L25.4484 9.7998H26.7914L30.8662 19.8109H28.8976H28.9034Z" fill="white"/><path d="M15.7773 9.92773V20.0111H17.6713V15.6833H20.9828V14.1222H17.6713V11.4888H21.0459L21.5682 9.92773H15.7773Z" fill="white"/><path d="M39.5585 17.9111L40.0808 19.3666C39.0822 19.8944 37.986 20.1611 36.7865 20.1611C35.1279 20.1611 33.8366 19.6944 32.9126 18.7611C31.9943 17.8278 31.5352 16.6 31.5352 15.0833C31.5352 13.5666 32.0402 12.35 33.0503 11.3444C34.0604 10.3389 35.3861 9.83887 37.0218 9.83887C38.0721 9.83887 38.9846 9.99998 39.7479 10.3278V12.0389C38.8985 11.6 38.0032 11.3833 37.0677 11.3833C35.9658 11.3833 35.0992 11.7333 34.4794 12.4333C33.8595 13.1333 33.5496 14 33.5496 15.0389C33.5496 16.0778 33.8653 16.9722 34.4908 17.6333C35.1164 18.2889 35.9543 18.6222 37.0046 18.6222C37.8655 18.6222 38.7206 18.3889 39.5585 17.9166" fill="white"/><path d="M44.3662 20.0111V11.4888H41.3359V9.92773H49.5544L49.0321 11.4888H46.2544V20.0111H44.3662Z" fill="white"/><path d="M54.9549 18.6168C55.9249 18.6168 56.6997 18.2946 57.2908 17.6502C57.8819 17.0057 58.1746 16.1279 58.1746 15.0057C58.1746 13.8835 57.8877 13.0113 57.308 12.3613C56.7284 11.7113 55.9478 11.3835 54.9607 11.3835C53.9735 11.3835 53.2045 11.7057 52.6191 12.3446C52.0337 12.9891 51.7467 13.8724 51.7467 15.0057C51.7467 16.1391 52.0394 17.0113 52.6191 17.6502C53.2045 18.2946 53.985 18.6168 54.9607 18.6168M54.9607 20.1613C53.4226 20.1613 52.1714 19.6891 51.19 18.7391C50.2144 17.7891 49.7266 16.5446 49.7266 15.0057C49.7266 13.4668 50.2144 12.2335 51.1843 11.2724C52.1542 10.3168 53.4168 9.8335 54.9607 9.8335C56.5045 9.8335 57.75 10.3168 58.7313 11.2779C59.707 12.2446 60.2006 13.4835 60.2006 15.0057C60.2006 16.5279 59.707 17.7779 58.7256 18.7335C57.7442 19.6835 56.4873 20.1613 54.9664 20.1613" fill="white"/><path d="M63.4955 14.5779H64.3449C64.7868 14.5779 65.1713 14.489 65.4985 14.3168C65.9806 14.0501 66.2216 13.6113 66.2216 12.989C66.2216 12.4057 65.992 11.9835 65.5272 11.7168C65.2345 11.5224 64.8442 11.4279 64.3621 11.4279H63.4955V14.5779ZM61.6016 20.0057V9.92236H64.4425C65.3378 9.92236 66.0781 10.0613 66.6693 10.3335C67.7023 10.8057 68.2131 11.6224 68.2131 12.7946C68.2131 13.4501 68.0294 13.9946 67.6621 14.439C67.2948 14.8835 66.8013 15.2001 66.1814 15.3946V15.4279C66.4856 15.589 66.916 16.139 67.4727 17.0668L69.206 20.0057H67.0308L65.5329 17.4501C65.0623 16.6057 64.6835 16.1446 64.3965 16.0724H63.4955V20.0057H61.6016Z" fill="white"/><path d="M72.7064 9.92773H70.8125V20.0111H72.7064V9.92773Z" fill="white"/><path d="M84.4383 20.0114H82.7223L78.2113 14.2614C78.108 14.128 77.7177 13.6169 77.0463 12.7336H77.0118C77.0348 13.0003 77.0463 13.5169 77.0463 14.2947V20.0169H75.1523V9.93359H77.029L81.3793 15.4558C81.9475 16.2003 82.332 16.7225 82.5329 17.0169H82.5616C82.5387 16.3058 82.5329 15.7391 82.5329 15.3169V9.93359H84.4383V20.0169V20.0114Z" fill="white"/><path d="M95.6489 15.1165V19.3554C94.5355 19.8942 93.2729 20.1665 91.861 20.1665C90.1909 20.1665 88.8652 19.6998 87.8952 18.7665C86.9196 17.8331 86.4375 16.6276 86.4375 15.1498C86.4375 13.672 86.9655 12.3276 88.0158 11.3331C89.066 10.3387 90.4434 9.84424 92.148 9.84424C93.1868 9.84424 94.1911 10.0109 95.161 10.3498V12.0665C94.237 11.6165 93.2786 11.3942 92.2915 11.3942C91.069 11.3942 90.1278 11.7276 89.462 12.3887C88.7963 13.0498 88.4577 13.9331 88.4577 15.0331C88.4577 16.1331 88.7733 17.0109 89.4047 17.6554C90.036 18.2998 90.9026 18.6276 92.0045 18.6276C92.7104 18.6276 93.2901 18.5276 93.7377 18.322V15.1276H95.6489V15.1165Z" fill="white"/></g><defs><clipPath id="fsclip"><rect width="207" height="45" fill="white"/></clipPath></defs></svg></div>
-  <div class="hero"><div class="g">Estimados, <b>${deal.cliente}</b></div><h1>Tu oferta está lista<br>para firmar</h1><div class="t">¡Gracias por confiar en nosotros!</div></div>
-  <div class="card"><div class="top"></div><div class="in">
-    <div class="neg">Negocio N° ${neg}</div><div class="sub">Oferta publicada el <b>${fecha}</b></div>
-    <div class="ml">Monto a girar</div><div class="mm">${giro}</div><div class="dc">${deal.facturas || 1} documento(s) · tasa ${deal.tasa || "—"}</div>
-    <div style="margin-top:14px;border-top:1px dashed #E5E7EB;padding-top:12px">
-      <div style="font-size:11.5px;color:#6B7280">Clave de un solo uso (OTP)</div>
-      <div style="font-size:28px;font-weight:800;color:var(--a);letter-spacing:7px">${otp}</div>
-      <div style="font-size:10.5px;color:#9CA3AF;margin-top:6px">Ingrésala en el portal junto al código de negocio N° ${neg}, tu RUT y clave.</div>
-    </div>
-    <a class="cta" href="${curseAbs}" style="text-decoration:none;margin-top:14px">Ir al portal a firmar →</a>
-  </div></div>
-  <div class="steps"><div class="h">Cómo firmar tu operación de forma segura</div>
-    <div class="step"><span class="n">1</span><span>Ingresa <b>por tu cuenta</b> a <b>www.factoringsecurity.cl/curse</b> (escríbelo en tu navegador).</span></div>
-    <div class="step"><span class="n">2</span><span>Inicia sesión con tu <b>RUT y clave</b>, y escribe el <b>código de negocio N° ${neg}</b> y la <b>clave de un solo uso (OTP) ${otp}</b>.</span></div>
-    <div class="step"><span class="n">3</span><span>Revisa las condiciones y presiona <b>Firmar</b> — el giro se realiza el mismo día.</span></div>
-  </div>
-  <div class="band">Factoring Security, <b>simple para ti.</b></div>
-  <div class="sec"><div class="h">Porque tu seguridad es lo más importante:</div><ul>
-    <li>Este mensaje <b>no contiene</b> enlaces externos fuera de Factoring Security.</li>
-    <li><b>Ingresa</b> al sitio escribiendo <b>factoringsecurity.cl</b> directamente en tu navegador.</li>
-    <li><b>NUNCA</b> te enviaremos emails ni te llamaremos solicitando tus claves o números de cuenta.</li>
-    <li><b>NUNCA</b> escribas información personal y financiera en ventanas abiertas desde un email.</li>
-    <li><b>NUNCA</b> ingreses tu clave si no estás dentro del sitio de Factoring Security.</li>
-  </ul></div>
-  <div class="auto">Este es un mail generado <b>automáticamente</b>. Ante cualquier duda contáctate con tu ejecutivo <b>${ejec}</b>.</div>
-  <div class="foot">Factoring Security S.A. Infórmese sobre la garantía estatal de los depósitos en su banco o en www.cmfchile.cl</div>
-</div><!-- .mail -->
-    </div><!-- .gm-body -->
-  </div><!-- .gm-thread -->
- </div><!-- .gm -->
-</div><!-- #vista-email -->
-<!-- VISTA LOGIN + DETALLE -->
-<div class="wrap hidden" id="vista-login"><div class="box">
-  <div class="hd"><b>Factoring Security</b><div class="s">Aprobación formal de la operación</div></div>
-  <div class="bd">
-    <div style="font-weight:700;font-size:15px">${deal.cliente}</div>
-    ${row("Negocio", "N° " + neg)}
-    ${row("Cantidad de facturas", deal.facturas || 1)}
-    ${o.financiadoMM != null ? row("Monto documentos", fmtMM(o.financiadoMM)) : ""}
-    ${o.tasa != null ? row("Tasa", o.tasa.toFixed(2) + "% mensual") : ""}
-    ${o.anticipo != null ? row("Anticipo · plazo", o.anticipo + "% · " + (o.diasFin || 0) + " días") : ""}
-    ${o.interesMM != null ? row("Diferencia de precio", fmtMM(o.interesMM)) : ""}
-    ${o.comision != null ? row("Comisión", fmtCLP(o.comision)) : ""}
-    <div class="hr"></div>
-    ${row("Monto a girar", giro, A)}
-    <div class="lbl">Ingresa con tu cuenta Security para firmar</div>
-    <input id="u" placeholder="Usuario / RUT"><input id="p" type="password" placeholder="Contraseña">
-    <button class="cta" style="border-radius:10px" onclick="firmar()">Aprobar y firmar operación</button>
-    <div class="muted">🔒 Enlace seguro de un solo uso, vinculado a tu operación y con expiración. No lo compartas.</div>
-    <a class="back" onclick="verEmail()">‹ Volver al correo</a>
-  </div>
-</div></div>
-<script>
-// El portal de curse (curse.html) avisa 'aceptada' a su opener (esta pestaña de correo); se relaya a la app.
-window.addEventListener('message',function(ev){if(ev&&ev.data&&ev.data.type==='aceptada'){try{if(window.opener)window.opener.postMessage(ev.data,'*');}catch(e){}}});
-function verLogin(){document.getElementById('vista-email').classList.add('hidden');document.getElementById('vista-login').classList.remove('hidden');window.scrollTo(0,0);}
-function verEmail(){document.getElementById('vista-login').classList.add('hidden');document.getElementById('vista-email').classList.remove('hidden');window.scrollTo(0,0);}
-function firmar(){var u=document.getElementById('u').value,p=document.getElementById('p').value;if(!u||!p){alert('Ingresa tu usuario y contraseña Security');return;}
-try{if(window.opener)window.opener.postMessage({type:'aceptada',neg:${JSON.stringify(neg)},usuario:u},'*');}catch(e){}
-document.getElementById('vista-login').innerHTML='<div class="box"><div class="hd"><b>Factoring Security</b><div class="s">Operación firmada</div></div><div class="bd" style="text-align:center"><div class="ok">✅ Operación N° ${neg} firmada</div><div class="muted">El giro se realizará hoy a tu cuenta registrada. Ya puedes cerrar esta pestaña.<\/div><\/div><\/div>';}
-<\/script></body></html>`;
-}
 // --- "Socket" entre pestañas: en el demo es un BroadcastChannel (mismo origen file://); en
 // producción este canal es el WebSocket al backend de Factoring Security. ---
 const BUS_NAME = "factoringsecurity-curse";
@@ -1408,7 +1266,6 @@ const negDe = (d) => (d && d.id != null) ? String(d.id) : "—";
 // equivalente del sitio de aprobación es www.factoringsecurity.cl/curse/<neg>.
 // Clave de un solo uso (OTP) determinista por negocio: identifica el negocio en el portal de curse.
 const otpDe = (neg) => String(100000 + (hashStr("otp-" + neg) % 900000));
-const curseURL = (neg) => `curse.html?n=${neg}`;
 const curseURLPublica = (neg) => `www.factoringsecurity.cl/curse/${neg}`;
 const waClienteURL = (neg) => `whatsapp.html?n=${neg}`;
 const hoyStr = () => { const d = new Date(); const p = (n) => String(n).padStart(2, "0"); return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`; };
@@ -1523,37 +1380,6 @@ function cursePayload(d, o, opts, neg, wa) {
   };
 }
 // Oportunidad demo (Carla Rivas) en Oferta con 2 facturas sin XML, para mostrar la solicitud de XML.
-const DEMO_DEAL_CR = {
-  id: "OP-DEMO-CR", stage: "oferta", tag: "Factoring", facturas: 4, amountMM: 590, cliente: "Urzúa y Ahumada SpA",
-  deudor: "Codelco", sector: "Buenos Deudores - Minería", esCliente: true, reglaId: "Rule-01",
-  deudores: [
-    { name: "Codelco", facturas: 2, montoMM: 320 },
-    { name: "Walmart Chile S.A.", facturas: 1, montoMM: 180 },
-    { name: "Adidas Chile Limitada", facturas: 1, montoMM: 90 },
-  ],
-  facturasOp: [
-    { id: "F-12312001", folio: 12312001, tipo: "Factura electrónica (33)", deudor: "Codelco", montoMM: 200, venc: 60, sinXml: true },
-    { id: "F-12312002", folio: 12312002, tipo: "Factura electrónica (33)", deudor: "Codelco", montoMM: 120, venc: 60, notaCredito: true },
-    { id: "F-12312003", folio: 12312003, tipo: "Factura electrónica (33)", deudor: "Walmart Chile S.A.", montoMM: 180, venc: 35, sinXml: true },
-    { id: "F-12312004", folio: 12312004, tipo: "Factura electrónica (33)", deudor: "Adidas Chile Limitada", montoMM: 90, venc: 60, reclamada: true },
-  ],
-  tasa: "1.65%", anticipo: "100%", status: "Escalado a ejecutivo · negociar tasa", time: nowStamp(), channel: "Manual", exec: "CR",
-  stale: false, important: false, _inbound: true, perdedor: false, subSeed: 0.3, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, tProsp: Date.now(),
-  contactable: true, contactoExitoso: true, fueraAtribucion: true, canalContacto: "WhatsApp",
-  contacto: { nombre: "Francisca Vera", cargo: "Tesorera", telefono: "+56 9 5556 6134", email: "francisca.vera@urzuayahumada.cl" },
-  historialContacto: [
-    { fecha: "Día 1 · 09:00", canal: "WhatsApp", resultado: "Contacto exitoso (Agente IA)", exito: true },
-    { fecha: "Día 1 · 09:09", canal: "WhatsApp", resultado: "Tarifa fuera de atribución — derivado a ejecutivo", exito: false },
-  ],
-  waSesion: [
-    { from: "agente", text: "Hola Francisca, soy el asistente de NEX Factoring 👋. Tenemos facturas listas para anticipar.", time: "09:01" },
-    { from: "cliente", text: "Hola, sí. Me interesa, ¿me envían las condiciones?", time: "09:05" },
-    { from: "agente", text: "Claro 🙌. Condiciones generales para anticipar tus facturas:\n• Cantidad de documentos: 4\n• Monto documentos: $590M\n• % Anticipo: 100%\n• Tasa: 1,65% mensual\n• Diferencia de precio: $15,6M\n• Descuentos: $0M\n• Comisiones: $240.000\n• Monto a girar: $574,2M\nFacturas consideradas:\n   • #12312001 · Codelco · $200M\n   • #12312002 · Codelco · $120M\n   • #12312003 · Walmart Chile S.A. · $180M\n   • #12312004 · Adidas Chile Limitada · $90M\n¿Avanzamos en estas condiciones?", time: "09:06" },
-    { from: "cliente", text: "La tasa me parece alta. ¿Pueden mejorarla?", time: "09:08" },
-    { from: "agente", text: "Esa tarifa está fuera de mi rango autorizado. Derivo tu caso a un ejecutivo para negociarla. 🙌", time: "09:09" },
-  ],
-  simulado: true, tasaDescuento: 1.65, comision: 240000, diasFin: 48, financiadoMM: 590, interesMM: 15.6, montoDescuentoMM: 15.6, comisionMM: 0.24, descMM: 15.84, descCxCMM: 0, giroMM: 574.2, fechaVenc: "—", atrasoDias: 0,
-};
 const NOMBRES_CONTACTO = ["María González", "Juan Pérez", "Camila Rojas", "Pedro Soto", "Andrea Muñoz", "Luis Fuentes", "Daniela Reyes", "Carlos Díaz", "Francisca Vera", "Matías Lagos"];
 const CARGOS_CONTACTO = ["Gerente de Finanzas", "Tesorero", "Jefe de Cobranzas", "Contador General", "Gerente General", "Analista de Tesorería"];
 // El canal de contacto se asigna según la regla de prospección que capturó la factura.
@@ -1854,10 +1680,10 @@ function DealCard({ deal, onOpen, onDragStart }) {
         if (!vis.exc.length && !vis.rechReev.length) return null;
         const tip = "Requiere otorgamiento — reglas con excepción/rechazo re-evaluable:\n" + [...vis.exc, ...vis.rechReev].map((e, i) => `${i + 1}) #${e.n} ${e.nombre}${e.nivel ? ` → N${e.nivel} ${AREA_LBL[e.area]}` : " (re-evaluable)"}`).join("\n");
         return (
-          <div className="mt-1.5 flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED", cursor: "help" }} title={tip}>
+          <div className="mt-1.5 flex items-center gap-1.5 rounded px-1.5 py-1 t7 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED", cursor: "help" }} title={tip}>
             <AlertTriangle size={10} />
             <span>Requiere otorgamiento</span>
-            <span className="ml-auto flex h-4 minw5 items-center justify-center rounded-full px-1.5 t9 font-bold text-white" style={{ backgroundColor: "#7c3aed" }}>{vis.excPend.length + vis.rechReev.length}</span>
+            <span className="ml-auto flex h-4 minw5 items-center justify-center rounded-full px-1.5 t7 font-bold text-white" style={{ backgroundColor: "#7c3aed" }}>{vis.excPend.length + vis.rechReev.length}</span>
           </div>
         );
       })()}
@@ -6149,63 +5975,6 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, onNuevoNegocio }
 }
 
 // ---- Casos demo de Call Center con grabación de la llamada (audio + transcripción) ----
-const CASOS_LLAMADAS = [
-  {
-    id: "OP-CALL-01", stage: "oferta", tag: "Factoring", facturas: 6, amountMM: 342.5,
-    cliente: "Áridos del Maipo SpA", deudor: "Codelco", deudores: [{ name: "Codelco", facturas: 6, montoMM: 342.5 }],
-    sector: "Minería", tasa: "1.65%", anticipo: "100%", esCliente: true, exec: "CR", channel: "Manual",
-    cat: "CAT-1", catLabel: "CAT-1", pctBlanca: 100, sowTendencia: "Creciendo", sowFlecha: "SOW ↑", sowActualPct: 64, sowTargetPct: 80, sowGapPct: 16,
-    conDescuento: false, contactable: true, contactoExitoso: true, canalContacto: "Llamada",
-    _inbound: true, negocioNum: 14501001, cesionEval: true, ofertaEval: true, perdedor: false, subSeed: 0.3,
-    simulado: true, tasaDescuento: 1.65, comision: 250000, diasFin: 35, giroMM: 336.1, descMM: 6.4, financiadoMM: 342.5, interesMM: 6.6, montoDescuentoMM: 6.6, comisionMM: 0.25, fechaVenc: "28-07-2026",
-    contacto: { nombre: "Andrés Cáceres", cargo: "Gerente de Finanzas", telefono: "+56 9 6621 4587", email: "andres.caceres@aridosdelmaipo.cl" },
-    historialContacto: [
-      { fecha: "Día 1 · 09:02", canal: "Llamada", resultado: "Llamada de oferta · contacto exitoso", exito: true, duracion: "02:18", audioUrl: CALL_AUDIO,
-        detalle: "El ejecutivo presenta la oferta de anticipo de las facturas a Codelco.",
-        transcript: [
-          { who: "Ejecutivo", t: "Hola, ¿hablo con don Andrés? Le habla Carla Rivas, de Factoring Security." },
-          { who: "Cliente", t: "Sí, con él. Dígame." },
-          { who: "Ejecutivo", t: "Detectamos que emitió 6 facturas a Codelco por unos 342 millones. Podemos anticiparle el 100% hoy, con tasa 1,65% mensual a 35 días." },
-          { who: "Cliente", t: "Me interesa. ¿Qué necesitan de mi parte?" },
-          { who: "Ejecutivo", t: "Solo validar las facturas; le envío la oferta por WhatsApp y la firma en el sitio de Factoring Security. El giro queda hoy mismo en su cuenta." },
-          { who: "Cliente", t: "Perfecto, quedo atento al WhatsApp." },
-        ] },
-    ],
-    status: "Oferta enviada · contactado por Call Center", time: nowStamp(), important: false, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false,
-  },
-  {
-    id: "OP-CALL-02", stage: "oferta", tag: "Factoring", facturas: 9, amountMM: 721.4,
-    cliente: "Transportes Andinos Ltda", deudor: "Escondida (BHP)", deudores: [{ name: "Escondida (BHP)", facturas: 9, montoMM: 721.4 }],
-    sector: "Minería", tasa: "1.58%", anticipo: "100%", esCliente: true, exec: "CR", channel: "Manual",
-    cat: "CAT-1", catLabel: "CAT-1", pctBlanca: 100, sowTendencia: "Decreciente", sowFlecha: "SOW ↓", sowActualPct: 48, sowTargetPct: 82, sowGapPct: 34,
-    conDescuento: true, spreadPromo: 0.82, contactable: true, contactoExitoso: true, canalContacto: "Llamada",
-    _inbound: true, negocioNum: 14501002, cesionEval: true, ofertaEval: true, perdedor: false, subSeed: 0.5,
-    simulado: true, tasaDescuento: 1.58, comision: 300000, diasFin: 35, giroMM: 708.9, descMM: 12.5, financiadoMM: 721.4, interesMM: 12.8, montoDescuentoMM: 12.8, comisionMM: 0.3, fechaVenc: "28-07-2026",
-    contacto: { nombre: "Paula Méndez", cargo: "Tesorera", telefono: "+56 9 7741 9032", email: "paula.mendez@transportesandinos.cl" },
-    historialContacto: [
-      { fecha: "Día 1 · 10:05", canal: "Llamada", resultado: "Llamada de oferta · contacto exitoso", exito: true, duracion: "01:54", audioUrl: CALL_AUDIO,
-        detalle: "Primer contacto: presentación de la oferta.",
-        transcript: [
-          { who: "Ejecutivo", t: "Hola Paula, te llama Carla de Factoring Security. Vi que tienes 9 facturas a Escondida por unos 721 millones." },
-          { who: "Cliente", t: "Hola Carla, sí. ¿Qué me ofrecen?" },
-          { who: "Ejecutivo", t: "Anticipo 100% a tasa 1,65% mensual, 35 días. Te dejamos el giro hoy." },
-          { who: "Cliente", t: "Está un poco alta la tasa, la competencia me ofrece menos. Lo voy a pensar." },
-          { who: "Ejecutivo", t: "Entiendo, déjame revisarlo y te vuelvo a llamar con una mejor propuesta." },
-        ] },
-      { fecha: "Día 1 · 11:20", canal: "Llamada", resultado: "Llamada de negociación · acuerdo de tasa", exito: true, duracion: "02:41", audioUrl: CALL_AUDIO,
-        detalle: "Segunda llamada: negociación de tasa y cierre.",
-        transcript: [
-          { who: "Ejecutivo", t: "Paula, te tengo novedades: por tu volumen y el buen pagador, bajamos la tasa a 1,58% mensual con descuento promocional." },
-          { who: "Cliente", t: "Eso suena mejor. ¿El anticipo sigue siendo 100%?" },
-          { who: "Ejecutivo", t: "Sí, 100% de anticipo y giro hoy. Es nuestra mejor tarifa para mantenerte con nosotros." },
-          { who: "Cliente", t: "Ok, avancemos entonces. ¿Cómo firmo?" },
-          { who: "Ejecutivo", t: "Te envío la oferta por WhatsApp con el enlace; inicias sesión en el sitio de Factoring Security y firmas. Listo." },
-          { who: "Cliente", t: "Perfecto, gracias Carla." },
-        ] },
-    ],
-    status: "Negociación · tasa acordada con descuento", time: nowStamp(), important: true, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false,
-  },
-];
 // ============================================================
 // MOTOR DE REGLAS DE VALIDACIÓN DEL CLIENTE (visado) — reglas del Excel "Rules Cliente".
 // Las variables llegan por API (aquí sintéticas y deterministas por operación). Cada regla resuelve en
@@ -10007,87 +9776,6 @@ function RetencionExecCard({ e, plan = {} }) {
     </div>
   );
 }
-function PCretencion({ fEjec, plan = {} }) {
-  const execs = PC_EXECS.filter((e) => (fEjec === "todos" || e.nombre === fEjec) && PC_CLIENTES.some((c) => c.ej === e.nombre && plan[c.id]));
-  return (
-    <div>
-      <div className="text-2xl font-bold tracking-tight" style={{ color: C.ink }}>Plan de retención por ejecutivo</div>
-      <div className="t11" style={{ color: C.faint }}>Clientes prioritarios de cada ejecutivo —fugados, en caída, en competencia, inactivos y activos— con su plan de acción. Filtra por estado en cada tarjeta.</div>
-      <div className="mt-4 space-y-4">
-        {execs.map((e) => <RetencionExecCard key={e.ini} e={e} plan={plan} />)}
-        {execs.length === 0 && <div className="rounded-2xl p-6 text-center t11" style={{ color: C.faint, backgroundColor: "#fff", border: `1px solid ${C.line}` }}>Sin clientes en el alcance seleccionado.</div>}
-      </div>
-    </div>
-  );
-}
-function PCprioritarios({ filtrEjec, fEstado, setFEstado }) {
-  const mapEstado = { todos: () => true, security: (c) => c.estado === "Security", competencia: (c) => c.estado === "Competencia", inactivos: (c) => c.estado === "Inactivo" };
-  const rows = PC_CLIENTES.filter(filtrEjec).filter(mapEstado[fEstado]).slice(0, 60);
-  // Estilo de icono/estado homologado con "Plan de retención por ejecutivo".
-  const estadoMeta = {
-    Security: { label: "Security", bg: "#F0FDF4", fg: "#16A34A", Icon: Check },
-    Competencia: { label: "Competencia", bg: "#FFF7ED", fg: "#C2410C", Icon: ArrowUpRight },
-    Inactivo: { label: "Inactivo", bg: "#FEF2F2", fg: "#DC2626", Icon: Clock },
-  };
-  return (
-    <div>
-      <div className="text-2xl font-bold tracking-tight" style={{ color: C.ink }}>Clientes prioritarios</div>
-      <div className="t11" style={{ color: C.faint }}>Top {rows.length} por brecha de wallet y riesgo de fuga · 6.096 clientes en el alcance</div>
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {[["todos", "Todos"], ["security", "Operan con Security"], ["competencia", "Solo competencia"], ["inactivos", "Inactivos / fugados"]].map(([k, l]) => (
-          <button key={k} onClick={() => setFEstado(k)} className="rounded-lg px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: fEstado === k ? C.lilac : "#fff", color: fEstado === k ? C.indigo : C.sub, border: `1px solid ${fEstado === k ? C.indigo : C.line}` }}>{l}</button>
-        ))}
-      </div>
-      <div className="mt-4 space-y-3">
-        {rows.map((c) => {
-          const m = estadoMeta[c.estado];
-          const captur = Math.round(c.vol * 0.8), gan = Math.round(captur * 0.0033 / 10), ppGap = c.target - c.sow;
-          const enTarget = c.sow >= c.target;
-          return (
-            <div key={c.id} className="rounded-2xl p-3" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-              <div className="flex flex-wrap items-stretch gap-2 xl:flex-nowrap">
-                {/* Identidad + descripción (columna flexible, más ancha) */}
-                <div className="flex min-w-0 items-start gap-3" style={{ flex: "3 1 300px" }}>
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: m.bg, color: m.fg }}><m.Icon size={16} /></span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="t13 font-bold" style={{ color: C.ink }}>{c.nombre}</span>
-                      <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: m.bg, color: m.fg }}>{m.label}</span>
-                      {c.tag && <span className="rounded-full px-1.5 py-0.5 t8 font-bold" style={{ backgroundColor: c.tag === "FUGA" ? "#FEF2F2" : "#FFF7ED", color: c.tag === "FUGA" ? "#DC2626" : "#C2410C" }}>{c.tag}</span>}
-                    </div>
-                    <div className="mt-0.5 t9" style={{ color: C.faint }}>{c.rut} · {c.ej} · {c.zona} · {fmtMMc(c.vol)} volumen</div>
-                    <div className="mt-1 t10" style={{ color: C.sub, lineHeight: 1.45 }}>
-                      {c.estado === "Security"
-                        ? <>Opera con Security con un SOW de <b style={{ color: C.ink }}>{c.sow}%</b>{enTarget ? <> (en target).</> : <> frente al target de <b style={{ color: C.ink }}>{c.target}%</b>.</>} {c.malos ? <>Tiene <b style={{ color: C.ink }}>{c.malosPct}%</b> de deudores malos a monitorear.</> : <>Deudores de buena calidad.</>}</>
-                        : c.estado === "Competencia"
-                          ? <>Deriva su volumen a <b style={{ color: C.ink }}>{c.vaA}</b>. Brecha de wallet de <b style={{ color: C.ink }}>+{ppGap} pp</b> hasta el target de {c.target}%.</>
-                          : <>Cliente <b style={{ color: C.ink }}>inactivo</b>: hoy su volumen se va a <b style={{ color: C.ink }}>{c.vaA}</b>. Reactivar con oferta de tasa y revisión de línea.</>}
-                    </div>
-                  </div>
-                </div>
-                {/* Columnas de indicadores (llenan el resto del ancho) */}
-                <div className="flex flex-col justify-center rounded-lg px-3 py-2 text-right" style={{ flex: "1 1 110px", backgroundColor: "#FFF7ED" }}>
-                  <div className="t8 font-bold uppercase tracking-wide" style={{ color: "#C2410C" }}>Va a</div>
-                  <div className="t12 font-bold" style={{ color: "#C2410C" }}>{c.vaA}</div>
-                </div>
-                <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 140px", backgroundColor: C.page }}>
-                  <div className="t8 font-bold uppercase tracking-wide" style={{ color: C.faint }}>SoW · target</div>
-                  <div className="t12 font-bold" style={{ color: C.ink }}>{c.sow}% <span style={{ color: C.faint }}>/ {c.target}%</span></div>
-                  <div className="mt-1 h-2 w-full rounded-full" style={{ backgroundColor: "#fff", position: "relative" }}><div className="h-full rounded-full" style={{ width: Math.min(100, c.sow) + "%", backgroundColor: "#16A34A" }} /><span style={{ position: "absolute", left: c.target + "%", top: -1, width: 2, height: 10, backgroundColor: C.ink }} /></div>
-                </div>
-                <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 110px", backgroundColor: "#F1ECFF" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#703EFF" }}>SOW posible</div><div className="t12 font-bold" style={{ color: "#703EFF" }}>{c.target}% · +{Math.max(0, ppGap)} pp</div></div>
-                <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 120px", backgroundColor: "#EFF6FF" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#2563EB" }}>Volumen capturable</div><div className="t12 font-bold" style={{ color: "#2563EB" }}>{fmtMMc(captur)}</div></div>
-                <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 100px", backgroundColor: c.malos ? "#F1ECFF" : "#EFF6FF" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: c.malos ? "#7c3aed" : "#2563EB" }}>Deudores</div><div className="t12 font-bold" style={{ color: c.malos ? "#7c3aed" : "#2563EB" }}>{c.malos ? `Malos ${c.malosPct}%` : "Buenos"}</div></div>
-                <div className="flex flex-col justify-center rounded-lg px-3 py-2" style={{ flex: "1 1 100px", backgroundColor: "#F0FDF4" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#16A34A" }}>Ganancia · 33 pbs</div><div className="t12 font-bold" style={{ color: "#16A34A" }}>{fmtMMc(gan)}</div></div>
-              </div>
-            </div>
-          );
-        })}
-        {rows.length === 0 && <div className="rounded-2xl p-6 text-center t11" style={{ color: C.faint, backgroundColor: "#fff", border: `1px solid ${C.line}` }}>Sin clientes para el filtro seleccionado.</div>}
-      </div>
-    </div>
-  );
-}
 // ============================================================
 // PLAN DE TRABAJO MENSUAL — a diferencia de la bandeja diaria (pipeline, 24-48 h), acá la jefatura
 // cura una vez al mes una lista de clientes a recuperar / crecer, fija metas (SOW, colocación y
@@ -10785,8 +10473,6 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
   const [criterio, setCriterio] = useState("sow"); // "sow" | "colocacion": por qué campo se fija la meta
   const flujoBuenasMes = (c) => Math.round((c.vol || 0) * 0.6 * 100 / (c.target || 60)); // prom. facturas buenas/mes
   const [bitacora, setBitacora] = useState({});
-  const [addOpen, setAddOpen] = useState(false);
-  const [qAdd, setQAdd] = useState("");
   const [metaEmpOpen, setMetaEmpOpen] = useState(false);
   const [metaEmpDraft, setMetaEmpDraft] = useState(() => JSON.parse(JSON.stringify(META_NUEVAS_EMP)));
   const [metaEmpExec, setMetaEmpExec] = useState(null);
@@ -10805,7 +10491,6 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
     }
     setEditMeta(null);
   };
-  const agregarCliente = (c) => { setPlan((p) => ({ ...p, [c.id]: defMeta(c) })); registrarAuditoria({ usuario: usuarioNombre, modulo: "Plan por ejecutivo", accion: "Agregar al plan", glosa: `Agregó ${c.nombre} al plan`, exito: true }); setAddOpen(false); setQAdd(""); };
   const quitar = (id, nombre) => { setPlan((p) => { const n = { ...p }; delete n[id]; return n; }); registrarAuditoria({ usuario: usuarioNombre, modulo: "Plan por ejecutivo", accion: "Quitar del plan", glosa: `Quitó ${nombre} del plan`, exito: true }); };
   const inisScope = useMemo(() => (ejec === "todos" ? PC_EXECS.map((e) => e.ini) : PC_EXECS.filter((e) => e.nombre === ejec).map((e) => e.ini)), [ejec]);
   const nuevoEmp = nuevasEmpAgg(inisScope), metaMesEmp = nuevasEmpMetaMes(inisScope, MES_ACT);
@@ -10814,7 +10499,6 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
   const filas = planClients.map((c) => ({ c, f: planFilaMes(c, plan[c.id], mesSel), tend: sowTendMes(c, plan[c.id], mesSel), serie: planScoreSerie(c, plan[c.id], mesSel), busq: busquedaDe(c.nombre), sig: ptmSignals(c) })).sort((a, b) => (a.c.ej === b.c.ej ? b.f.metaColoc - a.f.metaColoc : a.c.ej.localeCompare(b.c.ej)));
   const scoreProm = filas.length ? Math.round(filas.reduce((s, x) => s + x.f.score, 0) / filas.length) : 0;
   const colocMetaTot = filas.reduce((s, x) => s + x.f.metaColoc, 0), colocRealTot = filas.reduce((s, x) => s + x.f.realColoc, 0);
-  const candidatos = PC_CLIENTES.filter((c) => enScope(c) && esCandidato(c) && !plan[c.id] && (!qAdd || c.nombre.toLowerCase().includes(qAdd.toLowerCase()))).sort((a, b) => b.vol - a.vol).slice(0, 30);
   const mesesDisp = []; for (let m = 0; m <= MES_ACT; m++) mesesDisp.push(m);
   const exportarCSV = () => {
     const sep = ";", BOM = String.fromCharCode(0xFEFF);
@@ -10903,15 +10587,6 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
           </div>
         </div>
       ); })()}
-      {addOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(15,23,42,.55)" }} onClick={() => setAddOpen(false)}>
-          <div className="w-full max-w-lg rounded-2xl p-5" style={{ backgroundColor: "#fff", maxHeight: "88vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start justify-between"><div><h3 className="text-lg font-bold" style={{ color: C.ink }}>Agregar cliente al plan</h3><p className="t10" style={{ color: C.faint }}>Selecciona un cliente candidato. Se agrega con metas por defecto (editables al hacer clic en su fila).</p></div><button onClick={() => setAddOpen(false)} style={{ color: C.faint }}><X size={18} /></button></div>
-            <div className="mt-3 flex items-center gap-1.5 rounded-full px-2 py-1.5" style={{ border: `1px solid ${C.line}` }}><Search size={13} style={{ color: C.faint }} /><input autoFocus value={qAdd} onChange={(e) => setQAdd(e.target.value)} placeholder="Buscar empresa…" className="t12 outline-none w-full" style={{ color: C.ink }} /></div>
-            <div className="mt-2 space-y-1" style={{ maxHeight: 320, overflowY: "auto" }}>{candidatos.map((c) => (<button key={c.id} onClick={() => agregarCliente(c)} className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-stone-50" style={{ border: `1px solid ${C.line}` }}><span><span className="t12 font-semibold" style={{ color: C.ink }}>{c.nombre}</span><span className="ml-1.5 t9" style={{ color: C.faint }}>{c.ej} · {fmtMMc(c.vol)}</span></span><Plus size={14} style={{ color: C.indigo }} /></button>))}{candidatos.length === 0 && <div className="py-6 text-center t11" style={{ color: C.faint }}>Sin candidatos para agregar.</div>}</div>
-          </div>
-        </div>
-      )}
       {metaEmpOpen && (
         <>
           <div className="fixed inset-0 ovl" style={{ zIndex: 60 }} onClick={() => setMetaEmpOpen(false)} />
@@ -13627,8 +13302,8 @@ export default function PipelineComercial() {
     <div className="min-h-screen w-full" style={{ backgroundColor: C.page, color: C.ink, fontFamily: "'Geist', ui-sans-serif, system-ui, sans-serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
-        /* Escala tipográfica Datamart: t8-t10=Micro 11px, t11=Caption 12px, t12=Small 13px, t13=Body 14px, t15=16px */
-        .t8{font-size:11px;line-height:1.3}.t9{font-size:10px;line-height:1.3}.t10{font-size:11px;line-height:1.3}
+        /* Escala tipográfica Datamart: t7=Nano 9px, t8-t10=Micro 11px, t11=Caption 12px, t12=Small 13px, t13=Body 14px, t15=16px */
+        .t7{font-size:9px;line-height:1.3}.t8{font-size:11px;line-height:1.3}.t9{font-size:10px;line-height:1.3}.t10{font-size:11px;line-height:1.3}
         .t11{font-size:12px;line-height:1.4}.t12{font-size:13px;line-height:1.4}.t13{font-size:14px;line-height:1.5}
         .t15{font-size:16px;line-height:1.4}.minw5{min-width:1.25rem}.ovl{background-color:rgba(0,0,0,0.2)}
         .btn-cta{background:linear-gradient(to right,#EE2EFF,#FF814B);color:#fff;border-radius:9999px;font-weight:600;border:none}
