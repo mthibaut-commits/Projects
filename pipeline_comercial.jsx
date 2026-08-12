@@ -9719,12 +9719,12 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre }) {
       monto: lc.excesoProyectado, quien: "Riesgo", at: null, hecha: false, venceTs: Date.now() + 86400000, exceso: lc.excesoProyectado,
     }); });
   const todas = [...rowsPrio, ...rowsLinea, ...rowsTask];
-  // Importancia de una tarea activa (mayor = más importante): las líneas urgentes (bloquean el curse) y
-  // las prioridades de la jefatura primero, luego urgencia por vencimiento y el monto.
+  // Importancia de una tarea activa (mayor = más importante): primero las prioridades de la jefatura y
+  // las tareas asignadas (por vencimiento/monto); las solicitudes de línea van al final del listado.
   const importancia = (r) => {
     let s = 0;
-    if (r.kind === "linea") s += 2e9;
     if (r.kind === "prio") s += 1e9;
+    if (r.kind === "linea") s -= 1e9; // líneas al final
     if (r.venceTs) { const dias = (r.venceTs - Date.now()) / 86400000; s += Math.max(0, 30 - dias) * 1000; }
     s += (r.monto || 0);
     return s;
