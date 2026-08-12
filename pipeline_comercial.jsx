@@ -4679,9 +4679,12 @@ const REPORTE_METRICAS = [
   { key: "giro", label: "Giro", color: "#16a34a" },
   { key: "perdida", label: "Pérdida", color: "#dc2626" },
 ];
-function DiaModal({ info, ultimo, reporte, deals = [], onAceptar, onClose, inline }) {
+function DiaModal({ info, ultimo, reporte, deals = [], onAceptar, onClose, inline, execFijo = null }) {
   const s = info.stats;
-  const [execF, setExecF] = useState("todos"); // filtro del embudo por ejecutivo
+  // Filtro del embudo por ejecutivo. Si el alcance superior fija un ejecutivo (rol ejecutivo),
+  // el Funnel queda bloqueado a su cartera y no muestra el selector.
+  const [execFState, setExecF] = useState("todos");
+  const execF = execFijo || execFState;
   // Rango de fechas del Funnel Comercial (vista inline): por defecto el mes en curso.
   const [desde, setDesde] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; });
   const [hasta, setHasta] = useState(() => { const d = new Date(); const p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; });
@@ -4736,10 +4739,14 @@ function DiaModal({ info, ultimo, reporte, deals = [], onAceptar, onClose, inlin
           <div className="mt-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Embudo del pipeline {execF === "todos" ? "(día) · oportunidades que pasaron por cada etapa" : "· oportunidades del ejecutivo por etapa alcanzada"}</div>
-              <select value={execF} onChange={(e) => setExecF(e.target.value)} className="rounded-md px-2 py-1 t10 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
-                <option value="todos">Todos los ejecutivos</option>
-                {Object.keys(EXECS).map((k) => <option key={k} value={k}>{EXECS[k]}</option>)}
-              </select>
+              {execFijo ? (
+                <span className="rounded-full px-3 py-1 t10 font-semibold" style={{ backgroundColor: "#F1ECFF", color: C.indigo }}>{EXECS[execFijo] || execFijo} · alcance activo</span>
+              ) : (
+                <select value={execF} onChange={(e) => setExecF(e.target.value)} className="rounded-md px-2 py-1 t10 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
+                  <option value="todos">Todos los ejecutivos</option>
+                  {Object.keys(EXECS).map((k) => <option key={k} value={k}>{EXECS[k]}</option>)}
+                </select>
+              )}
             </div>
             {(() => {
               // "Todos": embudo de FLUJO del día (acumulador). Por ejecutivo: como no hay acumulador por
@@ -8039,20 +8046,22 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
     <div className="space-y-5">
       {/* Drill-down: ALCANCE (por rol) + FILTROS (disponibles para todos los roles) */}
       <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
-        <div className="flex flex-wrap items-end gap-4">
-          <span className="t10 font-bold uppercase tracking-widest" style={{ color: C.faint, alignSelf: "center" }}>Alcance</span>
-          {soloExec ? (
-            <div className="flex items-center gap-2"><User size={14} style={{ color: C.faint }} /><span className="rounded-full px-3 py-1 t12 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec}</span><span className="t10" style={{ color: C.faint }}>(tu cartera)</span></div>
-          ) : (
-            <>
-              {jefeInis && <span className="rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>Tu grupo · {base.length} ejecutivos</span>}
-              <Sel label="Zona comercial" value={fZona} onChange={(v) => { setFZona(v); setFJefatura("todas"); setFEjec("todos"); }} options={[{ v: "todas", l: "Todas las zonas" }, ...zonas.map((z) => ({ v: z, l: z }))]} />
-              <Sel label="Jefatura" value={fJefatura} onChange={(v) => { setFJefatura(v); setFEjec("todos"); }} options={[{ v: "todas", l: "Todas las jefaturas" }, ...jefaturas.map((j) => ({ v: j, l: j }))]} />
-              <Sel label="Ejecutivo" value={fEjec} onChange={setFEjec} options={[{ v: "todos", l: "Todos los ejecutivos" }, ...execsFiltrados.map((e) => ({ v: e.nombre, l: e.nombre }))]} />
-            </>
-          )}
-        </div>
-        <div className="mt-3 border-t pt-3" style={{ borderColor: C.line }}>
+        {/* Alcance + Filtros en una sola fila horizontal (compacto al colapsar) */}
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="t10 font-bold uppercase tracking-widest" style={{ color: C.faint }}>Alcance</span>
+            {soloExec ? (
+              <div className="flex items-center gap-2"><User size={14} style={{ color: C.faint }} /><span className="rounded-full px-3 py-1 t12 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec}</span><span className="t10" style={{ color: C.faint }}>(tu cartera)</span></div>
+            ) : (
+              <>
+                {jefeInis && <span className="rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>Tu grupo · {base.length} ejecutivos</span>}
+                <Sel label="Zona comercial" value={fZona} onChange={(v) => { setFZona(v); setFJefatura("todas"); setFEjec("todos"); }} options={[{ v: "todas", l: "Todas las zonas" }, ...zonas.map((z) => ({ v: z, l: z }))]} />
+                <Sel label="Jefatura" value={fJefatura} onChange={(v) => { setFJefatura(v); setFEjec("todos"); }} options={[{ v: "todas", l: "Todas las jefaturas" }, ...jefaturas.map((j) => ({ v: j, l: j }))]} />
+                <Sel label="Ejecutivo" value={fEjec} onChange={setFEjec} options={[{ v: "todos", l: "Todos los ejecutivos" }, ...execsFiltrados.map((e) => ({ v: e.nombre, l: e.nombre }))]} />
+              </>
+            )}
+          </div>
+          <span className="h-7 w-px self-center" style={{ backgroundColor: C.line }} />
           <div className="flex flex-wrap items-center gap-2">
             <span className="t10 font-bold uppercase tracking-widest" style={{ color: C.faint }}>Filtros</span>
             <button onClick={() => setFiltrosOpen((v) => !v)} className="flex items-center gap-1.5 rounded-full px-3 py-1.5 t11 font-semibold" style={{ border: `1px solid ${filtrosOpen || filtrosActivos.length ? C.indigo : C.line}`, color: filtrosOpen || filtrosActivos.length ? C.indigo : C.sub, backgroundColor: "#fff" }}>
@@ -8063,15 +8072,16 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
             ))}
             {filtrosActivos.length > 0 && <button onClick={limpiarFiltros} className="t10 font-semibold" style={{ color: C.sub }}>Limpiar filtros</button>}
           </div>
-          {filtrosOpen && (
-            <div className="mt-3 flex flex-wrap items-end gap-4">
-              <Sel label="Estado del cliente" value={fEstado} onChange={setFEstado} options={[{ v: "todos", l: "Todos los estados" }, { v: "Security", l: "Operan con Security" }, { v: "Competencia", l: "Solo competencia" }, { v: "Inactivo", l: "Inactivos / prospectos" }]} />
-              <Sel label="Segmento SOW" value={fSow} onChange={setFSow} options={[{ v: "todos", l: "Todos los segmentos" }, { v: "target", l: "En target" }, { v: "creciendo", l: "Creciendo" }, { v: "bajando", l: "Bajando" }, { v: "nuevo", l: "Nuevo" }]} />
-              <Sel label="Deudor" value={fDeudor} onChange={setFDeudor} options={[{ v: "todos", l: "Todos los deudores" }, ...deudorOpts.map((d) => ({ v: d, l: d }))]} />
-              <Sel label="Línea de negocio" value={fLinea} onChange={setFLinea} options={[{ v: "todos", l: "Todas las líneas" }, ...lineaOpts.map((l) => ({ v: l, l: l }))]} />
-              {filtrosActivos.length > 0 && <button onClick={limpiarFiltros} className="ml-auto rounded-full px-4 py-2 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Limpiar filtros</button>}
-            </div>
-          )}
+        </div>
+        {filtrosOpen && (
+          <div className="mt-3 flex flex-wrap items-end gap-4 border-t pt-3" style={{ borderColor: C.line }}>
+            <Sel label="Estado del cliente" value={fEstado} onChange={setFEstado} options={[{ v: "todos", l: "Todos los estados" }, { v: "Security", l: "Operan con Security" }, { v: "Competencia", l: "Solo competencia" }, { v: "Inactivo", l: "Inactivos / prospectos" }]} />
+            <Sel label="Segmento SOW" value={fSow} onChange={setFSow} options={[{ v: "todos", l: "Todos los segmentos" }, { v: "target", l: "En target" }, { v: "creciendo", l: "Creciendo" }, { v: "bajando", l: "Bajando" }, { v: "nuevo", l: "Nuevo" }]} />
+            <Sel label="Deudor" value={fDeudor} onChange={setFDeudor} options={[{ v: "todos", l: "Todos los deudores" }, ...deudorOpts.map((d) => ({ v: d, l: d }))]} />
+            <Sel label="Línea de negocio" value={fLinea} onChange={setFLinea} options={[{ v: "todos", l: "Todas las líneas" }, ...lineaOpts.map((l) => ({ v: l, l: l }))]} />
+            {filtrosActivos.length > 0 && <button onClick={limpiarFiltros} className="ml-auto rounded-full px-4 py-2 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Limpiar filtros</button>}
+          </div>
+        )}
         </div>
       </div>
       {/* Secciones y reportes: TODOS pestañas underline al mismo nivel (spec §3) */}
@@ -8089,11 +8099,11 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
       {reporteActivo ? (
         <div>{reporteNode}</div>
       ) : (
-        <>
+        <div className="w-full bg-white p-5" style={{ borderRadius: 16, border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
           {seccion === "cliente" && <PCcliente resumen={resumen} hayFiltro={hayFiltro} />}
           {seccion === "sow" && <PCsow clientes={clientesScope} />}
           {seccion === "sankey" && <PCsankey deals={deals} execsFiltrados={execsFiltrados} filtrosDeal={filtrosDeal} hayFiltro={hayFiltro} soloExec={soloExec} usuario={usuario} esJefe={esJefeComercial(usuario)} />}
-        </>
+        </div>
       )}
     </div>
   );
@@ -13446,7 +13456,7 @@ export default function PipelineComercial() {
                     <PlanPorEjecutivo ejec={soloExec || "todos"} soloExec={soloExec} esJefe={esJefeComercial(usuario)} usuarioNombre={USERS[usuario]} plan={planMensual} setPlan={setPlanMensual} />
                   </div>
                 ) : reporteGestion === "resumen" ? (
-                  resumenInfo ? <DiaModal inline info={resumenInfo} reporte={reporte} deals={deals} onClose={() => setReporteGestion(null)} /> : null
+                  resumenInfo ? <DiaModal inline info={resumenInfo} reporte={reporte} deals={deals} execFijo={soloExec ? (EXEC_INI_POR_NOMBRE[soloExec] || null) : null} onClose={() => setReporteGestion(null)} /> : null
                 ) : reporteGestion === "benchEjec" ? (
                   <ComparativoModal inline deals={deals} onClose={() => setReporteGestion(null)} />
                 ) : reporteGestion === "benchDeudores" ? (
