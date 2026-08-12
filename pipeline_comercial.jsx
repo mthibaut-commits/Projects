@@ -1249,6 +1249,15 @@ function emailCierreHTML(deal) {
   const giro = fmtMM(o.giroMM != null ? o.giroMM : (deal.giroMM || deal.amountMM || 0));
   const ejec = execName(deal);
   const fecha = deal.time || hoyStr();
+  // Enlace ABSOLUTO al portal de curse (curse.html) con el payload en el hash: es el MISMO proceso de
+  // aceptación formal (login → certificado → cuenta de abono → firma) que abre el botón de WhatsApp.
+  // Absoluto porque el correo se abre como blob: y un enlace relativo no resolvería al archivo servido.
+  let curseAbs;
+  try {
+    const enc = b64utf8(JSON.stringify({ mensajes: (deal.waSesion ? hiloDe(deal.waSesion) : []), payload: (curseDesdeDeal(deal) || {}).payload || null }));
+    const base = (typeof window !== "undefined" && window.location) ? window.location.href : "";
+    curseAbs = (base ? new URL(`curse.html?n=${neg}`, base).href : `curse.html?n=${neg}`) + (enc ? `#d=${encodeURIComponent(enc)}` : "");
+  } catch (e) { curseAbs = `curse.html?n=${neg}`; }
   const V = "#4a2596"; // violeta de marca Factoring Security (filial BICE)
   const A = "#1d4ed8"; // azul de acción (CTA, montos), como en el portal
   const row = (k, v, c) => `<div class=row><span>${k}</span><b${c ? ` style="color:${c}"` : ""}>${v}</b></div>`;
@@ -1317,7 +1326,7 @@ function emailCierreHTML(deal) {
   <div class="card"><div class="top"></div><div class="in">
     <div class="neg">Negocio N° ${neg}</div><div class="sub">Oferta publicada el <b>${fecha}</b></div>
     <div class="ml">Monto a girar</div><div class="mm">${giro}</div><div class="dc">${deal.facturas || 1} documento(s) · tasa ${deal.tasa || "—"}</div>
-    <button class="cta" onclick="verLogin()">Revisar y firmar mi operación →</button>
+    <button class="cta" onclick="window.open('${curseAbs}','_blank')">Revisar y firmar mi operación →</button>
   </div></div>
   <div class="steps"><div class="h">También puedes firmar directamente en nuestro portal</div>
     <div class="step"><span class="n">1</span><span>Ingresa a <b>www.factoringsecurity.cl/curse</b></span></div>
@@ -1361,6 +1370,8 @@ function emailCierreHTML(deal) {
   </div>
 </div></div>
 <script>
+// El portal de curse (curse.html) avisa 'aceptada' a su opener (esta pestaña de correo); se relaya a la app.
+window.addEventListener('message',function(ev){if(ev&&ev.data&&ev.data.type==='aceptada'){try{if(window.opener)window.opener.postMessage(ev.data,'*');}catch(e){}}});
 function verLogin(){document.getElementById('vista-email').classList.add('hidden');document.getElementById('vista-login').classList.remove('hidden');window.scrollTo(0,0);}
 function verEmail(){document.getElementById('vista-login').classList.add('hidden');document.getElementById('vista-email').classList.remove('hidden');window.scrollTo(0,0);}
 function firmar(){var u=document.getElementById('u').value,p=document.getElementById('p').value;if(!u||!p){alert('Ingresa tu usuario y contraseña Security');return;}
@@ -3826,38 +3837,24 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           <div className="mt-2">
                             <div className="mb-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: "#16A34A", border: "1px solid #bbf7d0" }}><Check size={11} /> Oferta publicada{deal.negocioNum ? ` · N° ${deal.negocioNum}` : ""}</div>
                             <div className="flex flex-wrap gap-1.5">
-                              {deal.negocioNum && !comunicada && (
+                              {deal.negocioNum && deal.stage === "oferta" && (
                               <div className="relative">
-                                <button onClick={() => setPubMenu((v) => !v)} className="flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-medium text-white" style={{ backgroundColor: C.green }}><ArrowUpRight size={12} /> Comunicar oferta por <ChevronDown size={12} /></button>
+                                <button onClick={() => setPubMenu((v) => !v)} className="flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-medium text-white" style={{ backgroundColor: C.green }}><ArrowUpRight size={12} /> {comunicada ? "Reenviar oferta por" : "Comunicar oferta por"} <ChevronDown size={12} /></button>
                                 {pubMenu && (
                                   <div onClick={(e) => e.stopPropagation()} className="absolute z-50 mt-1 w-56 rounded-lg bg-white py-1 shadow-xl" style={{ border: `1px solid ${C.line}` }}>
                                     <div className="px-3 py-1 t9 uppercase tracking-wide" style={{ color: C.faint }}>Comunicar la oferta por</div>
                                     {[["WhatsApp", "WhatsApp"], ["Email", "Email"]].map(([c, l]) => (
-                                      <button key={c} onClick={() => { setPubMenu(false); intentarPublicar(c, +oferta, opts); }} className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left t11 hover:bg-stone-50" style={{ color: C.ink }}><ArrowUpRight size={11} style={{ color: C.green }} /> {l}</button>
+                                      <button key={c} onClick={() => { setPubMenu(false); onEnviarCierre(deal.id, c); }} className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left t11 hover:bg-stone-50" style={{ color: C.ink }}><ArrowUpRight size={11} style={{ color: C.green }} /> {l}</button>
                                     ))}
                                   </div>
                                 )}
                               </div>
                               )}
-                              {deal.negocioNum && comunicada && deal.stage === "oferta" && (
-                                <div className="relative">
-                                  <button onClick={() => setCierreMenu((v) => !v)} className="flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-medium text-white" style={{ backgroundColor: deal.clienteAcepto ? "#0a7d3f" : C.indigo }}><ArrowUpRight size={12} /> Enviar enlace de cierre <ChevronDown size={12} /></button>
-                                  {cierreMenu && (
-                                    <div onClick={(e) => e.stopPropagation()} className="absolute z-50 mt-1 w-52 rounded-lg bg-white py-1 shadow-xl" style={{ border: `1px solid ${C.line}` }}>
-                                      <div className="px-3 py-1 t9 uppercase tracking-wide" style={{ color: C.faint }}>Enviar por</div>
-                                      {[["WhatsApp", "WhatsApp"], ["Email", "Email"]].map(([c, l]) => (
-                                        <button key={c} onClick={() => { setCierreMenu(false); onEnviarCierre(deal.id, c); }} className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left t11 hover:bg-stone-50" style={{ color: C.ink }}><ArrowUpRight size={11} style={{ color: C.indigo }} /> {l}</button>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
                             </div>
                             <div className="mt-1 t9" style={{ color: C.faint }}>
-                              {!comunicada ? "Negocio creado. Elige el canal para comunicarle la oferta al cliente (WhatsApp o Email)."
-                                : (botonEnviado || deal.cierreEnviado) ? "Enlace de cierre enviado. Puedes reenviarlo por otro canal; el cliente debe ingresar a la plataforma y firmar."
-                                : deal.clienteAcepto ? "El cliente aceptó. Envíale el enlace por WhatsApp o Email para que firme en la plataforma de Factoring Security."
-                                : "Oferta comunicada. Cuando el cliente acepte, envíale el enlace de cierre para que firme en la plataforma."}
+                              {!comunicada ? "Negocio creado. Elige el canal para comunicarle la oferta al cliente: se abrirá su WhatsApp o Email con el enlace para ingresar a la plataforma y firmar."
+                                : deal.clienteAcepto ? "El cliente aceptó. Puedes reenviarle el enlace por otro canal; debe ingresar a la plataforma de Factoring Security y firmar."
+                                : "Oferta comunicada por su canal. El cliente debe ingresar a la plataforma y firmar; puedes reenviarla si es necesario."}
                             </div>
                           </div>
                         );
@@ -12493,8 +12490,8 @@ export default function PipelineComercial() {
         emailThread = [...(d.emailThread || []), { from: "ejecutivo", asunto, cuerpo, template: "Enlace de cierre", time: stamp }];
         detalle = `Asunto: ${asunto}\n\n${cuerpo}`;
       }
-      const hist = [...(d.historialContacto || []), { fecha: stamp, canal, resultado: `Enlace de cierre enviado por ${canal} (N° ${neg})`, detalle, exito: true }];
-      return { ...d, waSesion: wa, emailThread, historialContacto: hist, waPendiente: false, cierreEnviado: true, status: `Enlace de cierre enviado por ${canal} · pendiente firma del cliente` };
+      const hist = [...(d.historialContacto || []), { fecha: stamp, canal, resultado: `Oferta comunicada por ${canal} · enlace para firmar enviado (N° ${neg})`, detalle, exito: true }];
+      return { ...d, waSesion: wa, emailThread, historialContacto: hist, waPendiente: false, cierreEnviado: true, ofertaComunicada: true, status: `Oferta comunicada por ${canal} · pendiente firma del cliente` };
     };
     setDeals((prev) => prev.map((d) => d.id === id ? makeUpdated(d) : d));
     setSelected((s) => (s && s.id === id ? makeUpdated(s) : s));
@@ -13728,8 +13725,6 @@ export default function PipelineComercial() {
                 { k: "Negociación", v: fmtMM(deals.filter((d) => d.stage === "oferta").reduce((s, d) => s + d.amountMM, 0)) }] },
               { id: "venta", label: "VENTA MENSUAL", value: fmtMM(ventaMensualMM), sub: "", serie: kpiHist.map((h) => h.venta), rows: [
                 { k: "Venta (Girado)", v: fmtMM(ventaMensualMM) }, { k: "Budget", v: fmtMM(BUDGET_MES_MM) }, { k: "vs Budget", v: `${vsBudget}%` }] },
-              { id: "budget", label: "BUDGET / CUMPL.", value: `${vsBudget}%`, sub: "", serie: kpiHist.map((h) => h.cumpl), rows: [
-                { k: "Budget", v: fmtMM(BUDGET_MES_MM) }, { k: "Venta del mes", v: fmtMM(ventaMensualMM) }, { k: "Cumplimiento", v: `${vsBudget}%` }] },
             ] },
           ];
           const tile = (k) => {
