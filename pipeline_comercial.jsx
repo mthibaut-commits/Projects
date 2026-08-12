@@ -294,9 +294,14 @@ const ZONA_EJECUTIVOS = { norte: ["CR", "RF"], centro: ["JT", "MS"], sur: ["NB",
 const SECTOR_ZONA = { "Buenos Deudores - Minería": "norte", "Buenos Deudores - Retail": "centro", "Buenos Deudores - Industriales": "sur" };
 function asignarEjecutivo(ev) {
   // La cartera se asigna SIEMPRE por CLIENTE (cedente); el deudor no influye en la decisión.
+  // 1) Maestro de cartera (SOW inyectado): si la empresa es cliente, va SIEMPRE a su ejecutivo dueño.
+  //    Así el ejecutivo del deal coincide con el de la cartera (misma fuente de verdad).
+  const dueno = ejecutivoDeCartera(ev.rutEmisor, ev.cedente);
+  if (dueno) return dueno;
+  // 2) Mapa explícito de cartera para las empresas de la semilla curada.
   if (EMPRESA_EJECUTIVO[ev.cedente]) return EMPRESA_EJECUTIVO[ev.cedente];
-  // Cliente sin dueño explícito: se reparte de forma estable entre todos los ejecutivos por el
-  // identificador del cliente (mismo cliente → mismo ejecutivo), independiente del deudor.
+  // 3) Prospecto sin dueño en el maestro: reparto estable entre todos los ejecutivos por el
+  //    identificador del cliente (mismo cliente → mismo ejecutivo), independiente del deudor.
   const ks = Object.keys(EXECS);
   return ks[hashStr(ev.cedente || ev.rutEmisor || ev.id || "") % ks.length];
 }
@@ -803,6 +808,20 @@ const SOW_POR_RUT = (() => {
   const m = {}; const arr = (typeof window !== "undefined" && Array.isArray(window.SHARE_OF_WALLET)) ? window.SHARE_OF_WALLET : [];
   for (const s of arr) m[s.RUTCliente] = s; return m;
 })();
+// Índice del maestro de cartera por razón social (para resolver el ejecutivo cuando sólo se conoce el nombre).
+const SOW_POR_NOMBRE = (() => {
+  const m = {}; const arr = (typeof window !== "undefined" && Array.isArray(window.SHARE_OF_WALLET)) ? window.SHARE_OF_WALLET : [];
+  for (const s of arr) m[s.RazonSocialCliente] = s; return m;
+})();
+// Iniciales del ejecutivo a partir de su nombre (inverso de EXECS).
+const EXEC_INI_POR_NOMBRE = Object.fromEntries(Object.entries(EXECS).map(([ini, nom]) => [nom, ini]));
+// Ejecutivo DUEÑO de la empresa según el maestro de cartera (SOW inyectado). Devuelve las iniciales
+// del ejecutivo, o null si la empresa no es cliente en el maestro (prospecto). Es la única fuente de
+// verdad de la asignación cliente→ejecutivo: la usan por igual el pipeline y la cartera.
+function ejecutivoDeCartera(rutEmisor, nombre) {
+  const s = (rutEmisor && SOW_POR_RUT[rutEmisor]) || (nombre && SOW_POR_NOMBRE[nombre]);
+  return s ? (EXEC_INI_POR_NOMBRE[s.Ejecutivo] || null) : null;
+}
 // Índice de estrategia de precio promocional por clave RUTCliente|TipoLinea.
 const PRECIO_POR_CLAVE = (() => {
   const m = {}; const arr = (typeof window !== "undefined" && Array.isArray(window.ESTRATEGIA_PRECIO)) ? window.ESTRATEGIA_PRECIO : [];
@@ -8215,6 +8234,35 @@ const PC_COMPET_NAMES = ["Bci Factoring", "Banco De Chile", "BICE Factoring", "B
 function pcRng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 // Cartera sintética determinista de clientes (para Clientes prioritarios y Plan de retención).
 const PC_CLIENTES = (() => {
+  // CARTERA = MAESTRO. El universo de empresas es el mismo que alimenta el pipeline: los emisores
+  // distintos de DTESync. Cada empresa se asigna a su ejecutivo con la MISMA regla que el pipeline
+  // (asignarEjecutivo → dueño del maestro SOW; prospecto → hash estable), de modo que TODA empresa
+  // con oportunidades queda en la cartera de su ejecutivo (consistencia por construcción).
+  const dte = (typeof window !== "undefined" && Array.isArray(window.DTESYNC)) ? window.DTESYNC : [];
+  if (dte.length) {
+    const vistos = new Map(); // RUTEmisor -> RznSoc (empresa)
+    for (const r of dte) { if (r && r.RUTEmisor && !vistos.has(r.RUTEmisor)) vistos.set(r.RUTEmisor, r.RznSoc); }
+    const out = []; let i = 0;
+    for (const [rut, nombre] of vistos) {
+      const ini = asignarEjecutivo({ cedente: nombre, rutEmisor: rut });
+      const ex = PC_EXECS.find((e) => e.ini === ini) || PC_EXECS[0];
+      const r = pcRng(hashStr("cli" + rut));
+      const s = SOW_POR_RUT[rut] || null;                 // SOW real si es cliente; null si prospecto
+      const act = s ? Math.round(s.SOWActualPct || 0) : 0;
+      const tgt = s ? Math.round(s.SOWTargetPct || 60) : 60;
+      const tend = s ? String(s.SOWTendencia || "").toLowerCase() : "";
+      let estado, tag = null;
+      if (!s || tend.includes("nuevo")) { estado = "Inactivo"; }                       // prospecto / SOW nuevo → chip "nuevo"
+      else if (tend.includes("baj") || act < tgt - 10) { estado = "Competencia"; tag = "FUGA"; } // fuga a la competencia → "bajando"
+      else { estado = "Security"; tag = act < tgt ? "CAÍDA" : null; }                   // cliente sano / en caída leve
+      const vol = Math.round((5 + r() * 60) * 1000);
+      const malos = r() < 0.18; const malosPct = 28 + Math.floor(r() * 14);
+      const vaA = PC_COMPET_NAMES[Math.floor(r() * PC_COMPET_NAMES.length)];
+      out.push({ id: i++, nombre, rut, estado, tag, ej: ex.nombre, ejIni: ex.ini, zona: ex.zona, jefatura: ex.jefatura, vol, malos, malosPct, sow: act, target: tgt, vaA });
+    }
+    return out.sort((a, b) => b.vol - a.vol);
+  }
+  // Fallback sintético (sin inyección de datos): universo determinista de 80 empresas.
   const rnd = pcRng(20260630); const out = [];
   const pref = ["CONSTRUCTORA", "INGENIERIA", "TRANSPORTES", "COMERCIAL", "SERVICIOS", "INVERSIONES", "DISTRIBUIDORA", "DESARROLLOS", "INDUSTRIAS", "MAESTRANZA", "AGRICOLA", "SOCIEDAD", "INGENIERIA Y CONSTRUCCION"];
   const mid = ["CERRO NEVADO", "DEL SUR", "ANDINA", "PACIFICO", "CENTRAL", "DEL VALLE", "AUSTRAL", "CORDILLERA", "DEL MAIPO", "SAN PEDRO", "LOS ANDES", "EL ROBLE", "BAPA GRAMATE", "AVA MONTAJES", "MST", "L Y D", "DIGUA", "QUILIN"];
