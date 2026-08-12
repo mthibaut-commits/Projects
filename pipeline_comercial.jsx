@@ -6597,6 +6597,21 @@ function setPrioridadCurse(dealId, code, on) {
   else delete PRIORIDAD_CURSE[dealId];
 }
 const tienePrioridadCurse = (dealId) => !!PRIORIDAD_CURSE[dealId];
+// Estado de atención de una oportunidad marcada con prioridad de curse. Una prioridad se "atiende"
+// SOLA cuando: (1) el cliente cursa (la operación se concreta), (2) se pierde por cesión a otro
+// factoring, o (3) el motor de otorgamiento la bloquea con un criterio firme (no excepcionable ni
+// re-evaluable). En cualquier otro caso sigue pendiente de gestión del ejecutivo.
+function estadoAtencionPrioridad(deal) {
+  if (!deal) return { k: "pendiente", label: "Pendiente de gestión", atendida: false, col: "#703EFF", bg: "#F1ECFF" };
+  if (["aceptadas", "cesion", "giro"].includes(deal.stage)) return { k: "cursada", label: "Cursada", atendida: true, detalle: "El cliente aceptó y la operación se está cursando.", col: "#16A34A", bg: "#F0FDF4" };
+  const bi = bloqueoFirmeInfo(deal);
+  if (bi) return { k: "bloqueo", label: "Bloqueo fuerte de otorgamiento", atendida: true, detalle: bi.causa, col: "#DC2626", bg: "#FEF2F2" };
+  if (deal.stage === "perdida") {
+    if (deal.perdidaCesion || deal.cedidaCompetidor || /cesión externa|competencia/i.test(causaPerdidaDeal(deal))) return { k: "cedida", label: "Cedida a otro factoring", atendida: true, detalle: causaPerdidaDeal(deal), col: "#C2410C", bg: "#FFF7ED" };
+    return { k: "perdida", label: "Perdida", atendida: true, detalle: causaPerdidaDeal(deal), col: "#C2410C", bg: "#FFF7ED" };
+  }
+  return { k: "pendiente", label: "Pendiente de gestión", atendida: false, col: "#703EFF", bg: "#F1ECFF" };
+}
 // ── Pre-evaluación: el ejecutivo solicita iniciar formalmente la revisión de otorgamiento de una
 // oportunidad con altas chances de cursarse, para adelantar la aprobación antes de la aceptación formal.
 let PRE_EVAL = {};
@@ -8082,7 +8097,6 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
             {filtrosActivos.length > 0 && <button onClick={limpiarFiltros} className="ml-auto rounded-full px-4 py-2 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Limpiar filtros</button>}
           </div>
         )}
-        </div>
       </div>
       {/* Secciones y reportes: TODOS pestañas underline al mismo nivel (spec §3) */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
@@ -9603,11 +9617,157 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
     </div>
   );
 }
+// Semilla de demo (una sola vez): marca algunas oportunidades con prioridad de curse — como si la
+// jefatura las hubiera priorizado — y asigna un par de tareas de gestión, para que el tab «Tareas»
+// muestre contenido sin necesidad de recorrer el flujo completo. Determinista: elige por impacto.
+let _TAREAS_SEEDED = false;
+function seedTareasDemo(deals, ejecName) {
+  if (_TAREAS_SEEDED) return;
+  if (!deals || !deals.length) return; // aún sin oportunidades: reintenta en el próximo render
+  _TAREAS_SEEDED = true;
+  const jefe = (USERS.JG || "Jefatura Comercial").split(" · ")[0];
+  const mios = ejecName && ejecName !== "todos" ? deals.filter((d) => EXECS[d.exec] === ejecName) : deals;
+  const base = mios.length ? mios : deals;
+  const marcar = (d) => { if (d && !tienePrioridadCurse(d.id)) PRIORIDAD_CURSE[d.id] = { por: "JG", porNombre: jefe, ts: nowStamp() }; };
+  const pick = (pred, n) => base.filter(pred).sort((a, b) => (b.amountMM || 0) - (a.amountMM || 0)).slice(0, n);
+  pick((d) => ["oferta", "prospeccion"].includes(d.stage), 3).forEach(marcar); // pendientes
+  pick((d) => ["aceptadas", "cesion", "giro"].includes(d.stage), 1).forEach(marcar); // cursada
+  pick((d) => d.stage === "perdida", 1).forEach(marcar); // cedida / bloqueo
+  // Tareas de gestión asignadas de ejemplo (como si un jefe las creara desde el Sankey).
+  const acts = pick((d) => ["oferta", "prospeccion"].includes(d.stage), 2);
+  const tpl = [{ pre: "Revisar tasa", cat: "comercial", d: 1 }, { pre: "Llevar a comité de riesgo", cat: "riesgo", d: 5 }];
+  acts.forEach((d, i) => { const t = tpl[i] || tpl[0]; addPanelTarea({ texto: `${t.pre} · ${d.cliente}`, cat: t.cat, dias: t.d, autor: jefe, para: [EXECS[d.exec] || "Ejecutivo"], ops: [d.id], nodo: stageName(d.stage) }); });
+}
+
+// Tab «Tareas»: bandeja de trabajo del ejecutivo. Consolida (1) las tareas asignadas desde el sistema
+// de gestión (Sankey / panel de tareas) y (2) las oportunidades marcadas con prioridad de curse por la
+// jefatura. Las prioridades se auto-atienden cuando cursan, se pierden por cesión, o quedan con bloqueo firme.
+function PCtareas({ deals, execFilter, onOpen, esJefe }) {
+  const [, force] = useState(0); const bump = () => force((v) => v + 1);
+  const enScope = (d) => execFilter === "todos" || EXECS[d.exec] === execFilter;
+  const prios = deals.filter((d) => tienePrioridadCurse(d.id) && enScope(d))
+    .map((d) => ({ d, at: estadoAtencionPrioridad(d), prio: PRIORIDAD_CURSE[d.id] }))
+    .sort((a, b) => (a.at.atendida - b.at.atendida) || ((b.d.amountMM || 0) - (a.d.amountMM || 0)));
+  const prioPend = prios.filter((p) => !p.at.atendida);
+  const prioAt = prios.filter((p) => p.at.atendida);
+  const relev = (t) => {
+    if (execFilter === "todos") return true;
+    if ((t.para || []).includes(execFilter)) return true;
+    return (t.ops || []).some((id) => { const d = deals.find((x) => x.id === id); return d && EXECS[d.exec] === execFilter; });
+  };
+  const tareas = PANEL_TAREAS.filter(relev);
+  const tareasPend = tareas.filter((t) => !t.hecha);
+  const tareasHechas = tareas.filter((t) => t.hecha);
+  const dealDe = (id) => deals.find((x) => x.id === id);
+  const kpis = [
+    { t: "Tareas asignadas", v: tareasPend.length, s: "Pendientes, asignadas desde el sistema de Gestión.", col: "#703EFF", bg: "#f5f3ff", bd: "#ddd6fe" },
+    { t: "Prioridades por atender", v: prioPend.length, s: "Oportunidades priorizadas por la jefatura para el curse.", col: "#C2410C", bg: "#FFF7ED", bd: "#FED7AA" },
+    { t: "Prioridades atendidas", v: prioAt.length, s: "Cursadas, cedidas a otro factoring o con bloqueo firme.", col: "#16A34A", bg: "#F0FDF4", bd: "#BBF7D0" },
+  ];
+  return (
+    <div className="space-y-5">
+      <div>
+        <div className="text-lg font-bold" style={{ color: C.ink }}>Tareas</div>
+        <div className="t11" style={{ color: C.faint }}>Tus tareas asignadas y las oportunidades priorizadas por la jefatura · las prioridades se atienden solas al cursar, ceder o bloquearse.</div>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {kpis.map((k) => (
+          <div key={k.t} className="rounded-2xl p-4" style={{ backgroundColor: k.bg, border: `1px solid ${k.bd}` }}>
+            <div className="t9 font-bold uppercase tracking-wide" style={{ color: k.col }}>{k.t}</div>
+            <div className="mt-1 text-3xl font-bold" style={{ color: k.col }}>{k.v}</div>
+            <div className="mt-1 t9" style={{ color: C.sub, lineHeight: 1.35 }}>{k.s}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Oportunidades con prioridad ── */}
+      <div>
+        <div className="mb-2 flex items-center gap-1.5"><Star size={15} style={{ color: "#C2410C", fill: "#F97316" }} /><span className="t13 font-bold" style={{ color: C.ink }}>Oportunidades con prioridad</span><span className="t10" style={{ color: C.faint }}>· marcadas por la jefatura/gerencia para el curse</span></div>
+        {prios.length === 0 ? (
+          <div className="rounded-xl border border-dashed py-8 text-center t11" style={{ borderColor: C.line, color: C.faint }}>Sin oportunidades priorizadas en tu alcance. La jefatura las marca con la estrella (★) en Oportunidades.</div>
+        ) : (
+          <div className="space-y-3">
+            {prioPend.length > 0 && (
+              <div>
+                <div className="mb-1.5 t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Por atender · {prioPend.length}</div>
+                <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                  {prioPend.map(({ d, prio }) => (
+                    <div key={d.id} className="rounded-xl p-3" style={{ border: `1px solid ${C.line}`, borderLeft: "3px solid #F97316", backgroundColor: "#fff" }}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate t12 font-bold" style={{ color: C.ink }}>{d.cliente}</div>
+                          <div className="t9" style={{ color: C.faint }}>{d.id} · {EXECS[d.exec] || "Agente IA"} · {stageName(d.stage)}{d.deudor ? ` · ${d.deudor}` : ""}</div>
+                        </div>
+                        <span className="shrink-0 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{fmtMM(d.amountMM || 0)}</span>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center gap-1 t9" style={{ color: C.faint }}><Star size={10} style={{ color: "#C2410C", fill: "#F97316" }} /> Prioridad de {prio.porNombre}</span>
+                        <button onClick={() => onOpen(d)} className="rounded-full px-3 py-1 t10 font-semibold" style={{ border: `1px solid ${C.indigo}`, color: C.indigo, backgroundColor: "#fff" }}>Abrir oportunidad</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {prioAt.length > 0 && (
+              <div>
+                <div className="mb-1.5 t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Atendidas · {prioAt.length}</div>
+                <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                  {prioAt.map(({ d, at, prio }) => (
+                    <div key={d.id} className="rounded-xl p-3" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate t12 font-bold" style={{ color: C.ink }}>{d.cliente}</div>
+                          <div className="t9" style={{ color: C.faint }}>{d.id} · {EXECS[d.exec] || "Agente IA"}</div>
+                        </div>
+                        <span className="shrink-0 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: at.bg, color: at.col }}>{at.label}</span>
+                      </div>
+                      {at.detalle && <div className="mt-1.5 t9" style={{ color: C.sub, lineHeight: 1.4 }}>{at.detalle}</div>}
+                      <div className="mt-1.5 inline-flex items-center gap-1 t8" style={{ color: C.faint }}><Star size={9} style={{ color: "#C2410C", fill: "#F97316" }} /> Prioridad de {prio.porNombre} · atendida automáticamente</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Tareas asignadas desde Gestión ── */}
+      <div>
+        <div className="mb-2 flex items-center gap-1.5"><ClipboardList size={15} style={{ color: C.indigo }} /><span className="t13 font-bold" style={{ color: C.ink }}>Tareas asignadas</span><span className="t10" style={{ color: C.faint }}>· desde el sistema de gestión (Sankey / panel de tareas)</span></div>
+        {tareas.length === 0 ? (
+          <div className="rounded-xl border border-dashed py-8 text-center t11" style={{ borderColor: C.line, color: C.faint }}>Sin tareas asignadas en tu alcance. Las jefaturas las asignan desde el gráfico Origen → Cierre en Gestión.</div>
+        ) : (
+          <div className="space-y-1.5">
+            {[...tareasPend, ...tareasHechas].map((t) => { const a = areaMeta(t.cat); const venc = t.venceTs < Date.now(); const op = (t.ops || []).map(dealDe).filter(Boolean)[0]; return (
+              <div key={t.id} className="rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, borderLeft: `3px solid ${a.c}`, backgroundColor: t.hecha ? "#F9FAFB" : "#fff", opacity: t.hecha ? 0.65 : 1 }}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: a.bg, color: a.c }}>{a.l}</span>
+                  <span className="t9 font-semibold" style={{ color: t.hecha ? C.faint : venc ? C.red : C.sub }}>{t.hecha ? "hecha" : fmtVence(t.venceTs)}</span>
+                </div>
+                <div className="mt-1 t11" style={{ color: C.ink, textDecoration: t.hecha ? "line-through" : "none" }}>{t.texto}</div>
+                {t.para && t.para.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{t.para.map((p, i) => <span key={i} className="rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>@{p}</span>)}</div>}
+                <div className="mt-1.5 flex items-center justify-between gap-2 t8" style={{ color: C.faint }}>
+                  <span className="min-w-0 truncate">{t.autor}{t.nodo ? ` · ${t.nodo}` : ""}{op ? " · " : ""}{op && <button onClick={() => onOpen(op)} className="font-semibold" style={{ color: C.indigo }}>{op.cliente}</button>}</span>
+                  <button onClick={() => { t.hecha = !t.hecha; bump(); }} className="shrink-0 rounded-full px-2 py-0.5 t8 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub }}>{t.hecha ? "Reabrir" : "Marcar hecha"}</button>
+                </div>
+              </div>
+            ); })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, onOpenSolic, onIrLineas, plan = {}, setPlan = () => {} }) {
-  const [tab, setTab] = useState("bandeja"); // bandeja | retencion
+  const [tab, setTab] = useState("tareas"); // tareas | bandeja | retencion
   const [fEjec, setFEjec] = useState("todos");
   const [fEstado, setFEstado] = useState("todos");
+  const [, forceT] = useState(0);
   const ejec = soloExec || fEjec; // si hay usuario logueado, se fuerza a sus registros
+  // Semilla de demo (una vez): prioridades + tareas asignadas para poblar el tab «Tareas».
+  useEffect(() => { seedTareasDemo(deals, ejec); forceT((v) => v + 1); }, []); // eslint-disable-line
   const filtrEjec = (c) => ejec === "todos" || c.ej === ejec;
   // Roster unificado para el filtro: cartera + ejecutivos del pipeline.
   const execOpts = useMemo(() => [...new Set([...PC_EXECS.map((e) => e.nombre), ...Object.values(EXECS)])], []);
@@ -9617,6 +9777,7 @@ function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, o
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <Tab id="tareas" label="Tareas" Icon={ClipboardList} />
         <Tab id="bandeja" label="Oportunidades" Icon={Calendar} />
         <Tab id="retencion" label="Plan Mensual" Icon={Target} />
         <div className="mb-1.5 ml-auto flex items-center gap-1.5"><User size={14} style={{ color: C.faint }} />{soloExec
@@ -9624,7 +9785,8 @@ function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, o
           : <select value={fEjec} onChange={(e) => setFEjec(e.target.value)} className="rounded-lg px-3 py-1.5 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}><option value="todos">Todos los ejecutivos</option>{execOpts.map((n) => <option key={n} value={n}>{n}</option>)}</select>}</div>
       </div>
       <div className="w-full rounded-2xl bg-white p-5" style={{ border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
-        {tab === "bandeja" ? <PCbandeja deals={deals} execFilter={ejec} onOpen={onOpen} ambito="diaria" usuario={usuario} onOpenSolic={onOpenSolic} onIrLineas={onIrLineas} />
+        {tab === "tareas" ? <PCtareas deals={deals} execFilter={ejec} onOpen={onOpen} esJefe={esJefe} />
+          : tab === "bandeja" ? <PCbandeja deals={deals} execFilter={ejec} onOpen={onOpen} ambito="diaria" usuario={usuario} onOpenSolic={onOpenSolic} onIrLineas={onIrLineas} />
           : <PlanPorEjecutivo ejec={ejec} soloExec={soloExec} esJefe={esJefe} usuarioNombre={usuarioNombre} plan={plan} setPlan={setPlan} defMetas={false} />}
       </div>
     </div>
