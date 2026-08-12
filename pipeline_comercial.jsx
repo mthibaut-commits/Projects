@@ -3813,26 +3813,25 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                       ) : (() => {
                         const botonEnviado = (deal.waSesion || []).some((m) => m.tipo === "boton");
                         const cerrada = !!(deal.ofertaCerrada || deal.negocioNum);
+                        // "Comunicada" = el ejecutivo ya envió la oferta por un canal (o el Agente IA la publicó).
+                        const comunicada = !!deal.ofertaComunicada || (deal.waSesion || []).some((m) => /Oferta de factoring/i.test(m.text || ""));
                         if (!cerrada) return (
                           <div className="mt-2">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <button onClick={intentarCerrar} className="flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-semibold text-white" style={{ backgroundColor: C.green }}><Check size={12} /> Cerrar oferta</button>
-                              <button disabled title="Primero cierra la oferta para poder publicarla" className="flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-medium text-white cursor-not-allowed" style={{ backgroundColor: C.green, opacity: 0.4 }}><Check size={12} /> Publicar oferta de cierre <ChevronDown size={12} /></button>
-                            </div>
-                            <div className="mt-1.5 rounded-lg p-2.5 t9" style={{ backgroundColor: C.amberBg, border: "1px solid #FED7AA", color: "#C2410C" }}>Confirma la selección de facturas acordada con el cliente. Hasta cerrar la oferta, «Publicar oferta de cierre» queda deshabilitado y el Agente IA de WhatsApp tampoco puede enviarla — así te aseguras de revisar el paquete antes de que salga.</div>
+                            <button onClick={intentarCerrar} className="flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-semibold text-white" style={{ backgroundColor: C.green }}><Check size={12} /> Cerrar oferta y crear negocio</button>
+                            <div className="mt-1.5 rounded-lg p-2.5 t9" style={{ backgroundColor: C.amberBg, border: "1px solid #FED7AA", color: "#C2410C" }}>Confirma la selección de facturas acordada con el cliente. Al cerrar la oferta se <b>crea el N° de negocio</b>; luego eliges el canal (WhatsApp / Email) para comunicársela.</div>
                             {deal.ofertaSolicitada && <div className="mt-1.5 flex items-center gap-1.5 t9 font-semibold" style={{ color: "#DC2626" }}><MessageSquare size={11} /> El cliente ya pidió la oferta por WhatsApp · revisa y ciérrala para poder enviársela.</div>}
                           </div>
                         );
                         return (
                           <div className="mt-2">
-                            <div className="mb-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: "#16A34A", border: "1px solid #bbf7d0" }}><Check size={11} /> Oferta cerrada{deal.ofertaCerradaTs ? ` · ${deal.ofertaCerradaTs.split(" ")[0]}` : ""}</div>
+                            <div className="mb-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: "#16A34A", border: "1px solid #bbf7d0" }}><Check size={11} /> Oferta publicada{deal.negocioNum ? ` · N° ${deal.negocioNum}` : ""}</div>
                             <div className="flex flex-wrap gap-1.5">
-                              {!deal.negocioNum && (
+                              {deal.negocioNum && !comunicada && (
                               <div className="relative">
-                                <button onClick={() => setPubMenu((v) => !v)} className="flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-medium text-white" style={{ backgroundColor: C.green }}><Check size={12} /> Publicar oferta de cierre <ChevronDown size={12} /></button>
+                                <button onClick={() => setPubMenu((v) => !v)} className="flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-medium text-white" style={{ backgroundColor: C.green }}><ArrowUpRight size={12} /> Comunicar oferta por <ChevronDown size={12} /></button>
                                 {pubMenu && (
                                   <div onClick={(e) => e.stopPropagation()} className="absolute z-50 mt-1 w-56 rounded-lg bg-white py-1 shadow-xl" style={{ border: `1px solid ${C.line}` }}>
-                                    <div className="px-3 py-1 t9 uppercase tracking-wide" style={{ color: C.faint }}>Enviar propuesta de cierre por</div>
+                                    <div className="px-3 py-1 t9 uppercase tracking-wide" style={{ color: C.faint }}>Comunicar la oferta por</div>
                                     {[["WhatsApp", "WhatsApp"], ["Email", "Email"]].map(([c, l]) => (
                                       <button key={c} onClick={() => { setPubMenu(false); intentarPublicar(c, +oferta, opts); }} className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left t11 hover:bg-stone-50" style={{ color: C.ink }}><ArrowUpRight size={11} style={{ color: C.green }} /> {l}</button>
                                     ))}
@@ -3840,7 +3839,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 )}
                               </div>
                               )}
-                              {deal.negocioNum && deal.stage === "oferta" && (
+                              {deal.negocioNum && comunicada && deal.stage === "oferta" && (
                                 <div className="relative">
                                   <button onClick={() => setCierreMenu((v) => !v)} className="flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-medium text-white" style={{ backgroundColor: deal.clienteAcepto ? "#0a7d3f" : C.indigo }}><ArrowUpRight size={12} /> Enviar enlace de cierre <ChevronDown size={12} /></button>
                                   {cierreMenu && (
@@ -3855,10 +3854,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               )}
                             </div>
                             <div className="mt-1 t9" style={{ color: C.faint }}>
-                              {!deal.negocioNum ? `Publica la oferta; el cliente la recibirá por su canal de contacto (${subCanal === "Llamada" ? "Call Center" : subCanal}).`
+                              {!comunicada ? "Negocio creado. Elige el canal para comunicarle la oferta al cliente (WhatsApp o Email)."
                                 : (botonEnviado || deal.cierreEnviado) ? "Enlace de cierre enviado. Puedes reenviarlo por otro canal; el cliente debe ingresar a la plataforma y firmar."
-                                : deal.clienteAcepto ? "El cliente aceptó. Envíale el enlace por WhatsApp, Email o SMS para que firme en la plataforma de Factoring Security."
-                                : "Cuando el cliente acepte, envíale el enlace de cierre (WhatsApp, Email o SMS) para que firme en la plataforma."}
+                                : deal.clienteAcepto ? "El cliente aceptó. Envíale el enlace por WhatsApp o Email para que firme en la plataforma de Factoring Security."
+                                : "Oferta comunicada. Cuando el cliente acepte, envíale el enlace de cierre para que firme en la plataforma."}
                             </div>
                           </div>
                         );
@@ -12428,7 +12427,7 @@ export default function PipelineComercial() {
       const stage = d.stage === "prospeccion" ? "oferta" : d.stage;
       // Publicar la oferta reactiva el flujo por botones (aunque el cliente estuviera en chat libre): ahora
       // corresponde mostrar las opciones de cierre para que confirme.
-      return { ...d, stage, negocioNum: neg, waSesion: wa, historialContacto: hist, chatLibre: false, tOferta: Date.now(), tasa: nuevaTasa.toFixed(2) + "%", tasaDescuento: nuevaTasa, status: "Oferta publicada · esperando aceptación del cliente" };
+      return { ...d, stage, negocioNum: neg, ofertaComunicada: true, waSesion: wa, historialContacto: hist, chatLibre: false, tOferta: Date.now(), tasa: nuevaTasa.toFixed(2) + "%", tasaDescuento: nuevaTasa, status: `Oferta comunicada por ${canal} · esperando aceptación del cliente` };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
@@ -12458,14 +12457,19 @@ export default function PipelineComercial() {
       if (d.id !== id) return d;
       const hist = [...(d.historialContacto || [])];
       hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Ejecutivo", esEvento: true, resultado: "Oferta cerrada · el ejecutivo confirmó la selección de facturas acordada con el cliente", detalle: accion === "descartar" ? `${descartadas} factura(s) fuera del paquete descartada(s); búsqueda pausada · reabrir en ${espera} día(s).` : accion === "nueva" ? `${descartadas} factura(s) fuera del paquete derivada(s) a una nueva oportunidad.` : "Todas las facturas candidatas quedaron dentro del paquete.", exito: true });
-      return { ...d, ofertaCerrada: true, ofertaCerradaTs: nowStamp(), ofertaSolicitada: false, historialContacto: hist, status: d.negocioNum ? d.status : "Oferta cerrada · lista para publicar" };
+      // Cerrar la oferta CREA el negocio (asigna N° y avanza a Oferta y Negociación). Todavía NO se
+      // comunica al cliente: el ejecutivo elige después el canal (WhatsApp / Email) para enviarla.
+      const neg = d.negocioNum || negDe(d);
+      const stage = d.stage === "prospeccion" ? "oferta" : d.stage;
+      if (!d.negocioNum) hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Ejecutivo", esEvento: true, resultado: `Negocio creado · N° ${neg} (oferta publicada, pendiente de comunicar al cliente)`, exito: true });
+      return { ...d, ofertaCerrada: true, ofertaCerradaTs: nowStamp(), ofertaSolicitada: false, negocioNum: neg, stage, tOferta: d.tOferta || Date.now(), historialContacto: hist, status: d.negocioNum ? d.status : `Oferta publicada · N° ${neg} · elige el canal para comunicarla` };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
     const d0 = (dealsRef.current || []).find((x) => x.id === id);
     const cli = d0 ? d0.cliente : "";
     if (accion === "descartar" && cli) setBusqueda(cli, "pausada", `El ejecutivo descartó ${descartadas} factura(s) fuera del paquete al cerrar la oferta · reabrir la búsqueda en ${espera} día(s). Se reactiva antes si el cliente cede una factura (lista blanca, priorizada o histórica) a un competidor durante la espera.`, nom);
-    registrarAuditoria({ usuario: nom, modulo: "Oferta", accion: "Cerrar oferta", glosa: `${cli}: oferta cerrada (selección de facturas confirmada)${accion === "descartar" ? ` · ${descartadas} descartada(s), búsqueda pausada ${espera}d` : accion === "nueva" ? ` · ${descartadas} a nueva oportunidad` : ""}`, exito: true });
+    registrarAuditoria({ usuario: nom, modulo: "Oferta", accion: "Cerrar oferta · crear negocio", glosa: `${cli}: oferta cerrada y negocio creado (selección de facturas confirmada)${accion === "descartar" ? ` · ${descartadas} descartada(s), búsqueda pausada ${espera}d` : accion === "nueva" ? ` · ${descartadas} a nueva oportunidad` : ""}`, exito: true });
   };
   // El ejecutivo envía el mensaje de cierre + el botón "Aprobar operación" que deriva al sitio de curse.
   const enviarCierre = (id, canal = "WhatsApp") => {
