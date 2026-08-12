@@ -7810,14 +7810,23 @@ function NodoTareasModal({ nodo, onClose, usuario, esJefe, onCambio }) {
   const ql = q.trim().toLowerCase();
   const visibles = ql ? nodo.deals.filter((d) => (d.cliente || "").toLowerCase().includes(ql) || (d.id || "").toLowerCase().includes(ql)) : nodo.deals;
   const crear = () => {
-    if (!elegidas.length || !esJefe) return;
-    elegidas.forEach((d) => {
+    if (!esJefe) return;
+    const pre0 = extra.trim() ? extra.trim() + " — " : "";
+    if (elegidas.length) {
+      elegidas.forEach((d) => {
+        const para = [];
+        if (aEjec) para.push(EXECS[d.exec] || "Agente IA");
+        if (aJefe) { const pe = PC_EXECS.find((e) => e.ini === d.exec); para.push(pe ? pe.jefatura : "Jefatura"); }
+        addPanelTarea({ texto: `${pre0}${pre} · ${d.cliente}`, cat, dias, autor: USERS[usuario] || usuario, para, ops: [d.id], nodo: nodo.name });
+      });
+    } else if (!nodo.deals.length) {
+      // Empresa sin oportunidades activas (p. ej. desde el Plan Mensual): tarea general para la empresa.
       const para = [];
-      if (aEjec) para.push(EXECS[d.exec] || "Agente IA");
-      if (aJefe) { const pe = PC_EXECS.find((e) => e.ini === d.exec); para.push(pe ? pe.jefatura : "Jefatura"); }
-      addPanelTarea({ texto: `${extra.trim() ? extra.trim() + " — " : ""}${pre} · ${d.cliente}`, cat, dias, autor: USERS[usuario] || usuario, para, ops: [d.id], nodo: nodo.name });
-    });
-    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Panel clientes", accion: "Asignar tareas desde el Sankey", glosa: `${elegidas.length} tarea(s) «${pre}» sobre el nodo «${nodo.name}» (${areaMeta(cat).l}, vence en ${dias} d)`, exito: true });
+      if (aEjec && nodo.ejec) para.push(nodo.ejec);
+      if (aJefe && nodo.jefatura) para.push(nodo.jefatura);
+      addPanelTarea({ texto: `${pre0}${pre} · ${nodo.name}`, cat, dias, autor: USERS[usuario] || usuario, para, ops: [], nodo: nodo.name });
+    } else { return; }
+    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Gestión", accion: "Asignar tarea", glosa: `${elegidas.length || 1} tarea(s) «${pre}» sobre «${nodo.name}» (${areaMeta(cat).l}, vence en ${dias} d)`, exito: true });
     onCambio && onCambio(); onClose();
   };
   return (
@@ -7825,8 +7834,8 @@ function NodoTareasModal({ nodo, onClose, usuario, esJefe, onCambio }) {
       <div className="w-full max-w-2xl rounded-2xl p-5" style={{ backgroundColor: "#fff", maxHeight: "90vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between" style={{ borderBottom: `1px solid ${C.line}`, paddingBottom: 10 }}>
           <div>
-            <h3 className="text-lg font-bold" style={{ color: C.ink }}>{nodo.name}</h3>
-            <p className="t10" style={{ color: C.faint }}>{nodo.deals.length} oportunidad(es) en este nodo. Selecciona y asigna una tarea al ejecutivo que la gestiona y/o a su jefatura.</p>
+            <h3 className="text-lg font-bold" style={{ color: C.ink }}>Asignar tarea</h3>
+            <p className="t10" style={{ color: C.faint }}>{nodo.name} · {nodo.deals.length} oportunidad(es). Selecciona y asigna una tarea al ejecutivo que la gestiona y/o a su jefatura.</p>
           </div>
           <button onClick={onClose} style={{ color: C.faint }}><X size={18} /></button>
         </div>
@@ -7872,7 +7881,7 @@ function NodoTareasModal({ nodo, onClose, usuario, esJefe, onCambio }) {
         </div>
         <div className="mt-4 flex items-center justify-end gap-3">
           <button onClick={onClose} className="t12 font-semibold" style={{ color: C.sub }}>Cancelar</button>
-          <button onClick={crear} disabled={!esJefe || !elegidas.length || (!aEjec && !aJefe)} className="inline-flex items-center gap-1.5 rounded-full px-5 py-2 t12 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.indigo }}><Check size={13} /> Crear {elegidas.length} tarea(s)</button>
+          <button onClick={crear} disabled={!esJefe || (nodo.deals.length > 0 && !elegidas.length) || (!aEjec && !aJefe)} className="inline-flex items-center gap-1.5 rounded-full px-5 py-2 t12 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.indigo }}><Check size={13} /> Crear {elegidas.length || 1} tarea(s)</button>
         </div>
       </div>
     </div>
@@ -9843,7 +9852,7 @@ function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, o
       <div className="w-full rounded-2xl bg-white p-5" style={{ border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
         {tab === "tareas" ? <PCtareas deals={deals} execFilter={ejec} onOpen={onOpen} esJefe={esJefe} usuarioNombre={usuarioNombre} />
           : tab === "bandeja" ? <PCbandeja deals={deals} execFilter={ejec} onOpen={onOpen} ambito="diaria" usuario={usuario} onOpenSolic={onOpenSolic} onIrLineas={onIrLineas} />
-          : <PlanPorEjecutivo ejec={ejec} soloExec={soloExec} esJefe={esJefe} usuarioNombre={usuarioNombre} plan={plan} setPlan={setPlan} defMetas={false} />}
+          : <PlanPorEjecutivo ejec={ejec} soloExec={soloExec} esJefe={esJefe} usuarioNombre={usuarioNombre} plan={plan} setPlan={setPlan} defMetas={false} deals={deals} />}
       </div>
     </div>
   );
@@ -10722,7 +10731,8 @@ function PlanMensual({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan }) {
 // vs. el real del mes, con status ponderado (gauge 0–100), selector de mes (cierre persistido), sparkline de
 // evolución y exportación. Al hacer clic en una fila se abre el modal para definir/editar el plan del cliente.
 // ============================================================
-function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan, defMetas = true }) {
+function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan, defMetas = true, deals = [] }) {
+  const [tareaEmp, setTareaEmp] = useState(null); // empresa para asignar tarea (ícono junto a la razón social)
   const enScope = (c) => (ejec === "todos" || c.ej === ejec);
   const esCandidato = (c) => c.tag || c.estado !== "Security";
   const defMeta = (c) => ({ metaSow: c.target, metaColoc: Math.round(c.vol * 0.6) });
@@ -10740,7 +10750,8 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
   const [metaEmpDraft, setMetaEmpDraft] = useState(() => JSON.parse(JSON.stringify(META_NUEVAS_EMP)));
   const [metaEmpExec, setMetaEmpExec] = useState(null);
   const setEfK = (k, v) => setEf((f) => ({ ...f, [k]: Math.max(0, parseInt(v || "0", 10) || 0) }));
-  const abrirEdit = (c) => { setEditMeta(c); setEf({ ...(plan[c.id] || defMeta(c)) }); setCriterio("sow"); };
+  // Definir plan (editar metas) es exclusivo de jefaturas/gerencia: el ejecutivo no puede abrir el modal.
+  const abrirEdit = (c) => { if (!esJefe) return; setEditMeta(c); setEf({ ...(plan[c.id] || defMeta(c)) }); setCriterio("sow"); };
   const guardarEdit = () => {
     if (!editMeta || !esJefe) return;
     const id = editMeta.id, prev = plan[id] || defMeta(editMeta), ts = Date.now(), cambios = [];
@@ -10810,7 +10821,7 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
                 <Fragment key={c.id}>
                   {grp && <tr style={{ backgroundColor: "#FAF9FB" }}><td colSpan={cols.length} className="px-3 py-1.5 t10 font-bold" style={{ color: C.indigo }}>{c.ej}</td></tr>}
                   <tr className="cursor-pointer hover:bg-stone-50" style={{ borderBottom: `1px solid ${C.line}` }} onClick={() => abrirEdit(c)}>
-                    <td className="px-3 py-2.5"><div className="t12 font-semibold" style={{ color: C.ink }}>{c.nombre}</div><div className="t9" style={{ color: C.faint }}>{c.rut}</div></td>
+                    <td className="px-3 py-2.5"><div className="flex items-center gap-1.5"><span className="t12 font-semibold" style={{ color: C.ink }}>{c.nombre}</span><button onClick={(e) => { e.stopPropagation(); setTareaEmp(c); }} title="Asignar tarea a esta empresa" className="rounded-md p-0.5 hover:bg-stone-100" style={{ color: C.indigo }}><ClipboardList size={13} /></button></div><div className="t9" style={{ color: C.faint }}>{c.rut}</div></td>
                     <td className="px-3 py-2.5"><span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: act ? "#F0FDF4" : "#F3F4F6", color: act ? "#16A34A" : "#6B7280" }}>{act ? "Activa" : "Inactiva"}</span></td>
                     <td className="px-3 py-2.5"><span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: bAct ? "#F0FDF4" : "#FFF7ED", color: bAct ? "#16A34A" : "#C2410C", border: `1px solid ${bAct ? "#bbf7d0" : "#FED7AA"}` }}>{bAct ? <Radio size={9} /> : <Pause size={9} />} {bAct ? "Activa" : "Pausada"}</span></td>
                     <td className="px-3 py-2.5"><Cell2 meta={fmtMMc(f.metaFact)} real={fmtMMc(f.realFact)} ok={f.realFact >= f.metaFact} /></td>
@@ -10882,6 +10893,9 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
         etiquetaConfirmar="Quitar del plan"
         onConfirmar={() => { quitar(confirmQuitar.id, confirmQuitar.nombre); setConfirmQuitar(null); }}
         onCancelar={() => setConfirmQuitar(null)} />
+      {tareaEmp && <NodoTareasModal
+        nodo={{ name: tareaEmp.nombre, deals: (deals || []).filter((d) => d.cliente === tareaEmp.nombre), ejec: tareaEmp.ej, jefatura: (PC_EXECS.find((e) => e.nombre === tareaEmp.ej) || {}).jefatura }}
+        usuario={usuarioNombre} esJefe={esJefe} onCambio={() => {}} onClose={() => setTareaEmp(null)} />}
     </div>
   );
 }
@@ -13685,7 +13699,7 @@ export default function PipelineComercial() {
               reporteNode={
                 reporteGestion === "planEjec" ? (
                   <div className="rounded-2xl bg-white p-5" style={{ border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
-                    <PlanPorEjecutivo ejec={soloExec || "todos"} soloExec={soloExec} esJefe={esJefeComercial(usuario)} usuarioNombre={USERS[usuario]} plan={planMensual} setPlan={setPlanMensual} />
+                    <PlanPorEjecutivo ejec={soloExec || "todos"} soloExec={soloExec} esJefe={esJefeComercial(usuario)} usuarioNombre={USERS[usuario]} plan={planMensual} setPlan={setPlanMensual} deals={deals} />
                   </div>
                 ) : reporteGestion === "resumen" ? (
                   resumenInfo ? <DiaModal inline info={resumenInfo} reporte={reporte} deals={deals} execFijo={soloExec ? (EXEC_INI_POR_NOMBRE[soloExec] || null) : null} onClose={() => setReporteGestion(null)} /> : null
