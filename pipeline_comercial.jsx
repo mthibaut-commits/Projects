@@ -1267,6 +1267,22 @@ const negDe = (d) => (d && d.id != null) ? String(d.id) : "—";
 // Clave de un solo uso (OTP) determinista por negocio: identifica el negocio en el portal de curse.
 const otpDe = (neg) => String(100000 + (hashStr("otp-" + neg) % 900000));
 const curseURLPublica = (neg) => `www.factoringsecurity.cl/curse/${neg}`;
+// Store de cierre por negocio (payload+OTP) en localStorage. Se PODA al escribir para no crecer sin
+// límite en el navegador del demo: elimina entradas vencidas (TTL) y limita el total a las más recientes.
+const CURSE_TTL_MS = 14 * 86400000, CURSE_MAX = 40;
+function cursePersist(neg, obj) {
+  try {
+    localStorage.setItem("fs_curse_" + neg, JSON.stringify(obj));
+    const now = Date.now(), entries = [];
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf("fs_curse_") === 0) { let ts = 0; try { ts = (JSON.parse(localStorage.getItem(k)) || {}).ts || 0; } catch (_) {} entries.push({ k, ts }); } }
+    const borrar = new Set();
+    entries.forEach((e) => { if (e.ts && now - e.ts > CURSE_TTL_MS) borrar.add(e.k); });
+    entries.filter((e) => !borrar.has(e.k)).sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(CURSE_MAX).forEach((e) => borrar.add(e.k));
+    borrar.forEach((k) => { try { localStorage.removeItem(k); } catch (_) {} });
+  } catch (_) {}
+}
+// La operación ya se cursó/firmó → su payload+OTP dejan de ser necesarios.
+const curseForget = (neg) => { try { localStorage.removeItem("fs_curse_" + neg); } catch (_) {} };
 const waClienteURL = (neg) => `whatsapp.html?n=${neg}`;
 const hoyStr = () => { const d = new Date(); const p = (n) => String(n).padStart(2, "0"); return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`; };
 // Hilo de conversación que se envía al WhatsApp del cliente (incluye el botón de cierre como
@@ -11850,7 +11866,7 @@ export default function PipelineComercial() {
     if (!cursePayloadsRef.current[neg]) { const c = curseDesdeDeal(d0); cursePayloadsRef.current[neg] = { id, tasa: c.tasa, opts: c.opts, payload: c.payload }; }
     // Persistimos el payload + OTP por negocio (mismo origen) para que el portal de curse.html lo recupere
     // cuando el cliente ingresa a firmar con su código de negocio y la clave de un solo uso.
-    try { localStorage.setItem("fs_curse_" + neg, JSON.stringify({ neg, otp: otpDe(neg), payload: cursePayloadsRef.current[neg].payload, ts: Date.now() })); } catch (_) {}
+    cursePersist(neg, { neg, otp: otpDe(neg), payload: cursePayloadsRef.current[neg].payload, ts: Date.now() });
     // Navega la pestaña ya abierta (win) al canal del cliente: simulador de email o WhatsApp del cliente.
     const updated = makeUpdated(d0);
     try {
@@ -11910,6 +11926,7 @@ export default function PipelineComercial() {
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
     setCierreModal(null);
+    curseForget(negDe({ id })); // operación cursada: su payload+OTP del cierre ya no se necesitan
   };
   // Autoriza / rechaza UNA causa (desvío) de la operación. Valida atribución del usuario en el área.
   const autorizarCausa = (id, causaId, decision, mensaje, archivos) => {
