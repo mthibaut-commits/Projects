@@ -7851,7 +7851,7 @@ function PCsankey({ deals = [], execsFiltrados = [], filtrosDeal = {}, hayFiltro
     </div>
   );
 }
-function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, onReporte = () => {}, reporteNode = null }) {
+function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, onReporte = () => {}, reporteRender = null }) {
   const [seccion, setSeccion] = useState("cliente"); // cliente | sow | desempeno | sankey (+ reportes como pestañas)
   const [fZona, setFZona] = useState("todas");
   const [fJefatura, setFJefatura] = useState("todas");
@@ -7889,6 +7889,20 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
   }, [execsFiltrados, fEstado, fSow]);
   const hayFiltro = !!soloExec || !!jefeInis || fZona !== "todas" || fJefatura !== "todas" || fEjec !== "todos" || fEstado !== "todos" || fSow !== "todos";
   const filtrosDeal = { deudor: fDeudor, linea: fLinea };
+  // Oportunidades del ALCANCE + FILTROS de Gestión, para alimentar los reportes (Benchmark / Funnel):
+  // ejecutivo(s) del alcance + deudor + línea + (estado/SOW del cliente cuando esos filtros están activos).
+  const dealsGestion = useMemo(() => {
+    const execInis = new Set(execsFiltrados.map((e) => e.ini));
+    const execScoped = !!soloExec || !!jefeInis || fZona !== "todas" || fJefatura !== "todas" || fEjec !== "todos";
+    const clientesFiltro = (fEstado !== "todos" || fSow !== "todos") ? new Set(clientesScope.map((c) => c.nombre)) : null;
+    return (deals || []).filter((d) =>
+      (!execScoped || execInis.has(d.exec))
+      && (fDeudor === "todos" || d.deudor === fDeudor || (d.deudores || []).some((x) => (x.name || x.nombre || x) === fDeudor))
+      && (fLinea === "todos" || d.tag === fLinea)
+      && (!clientesFiltro || clientesFiltro.has(d.cliente)));
+  }, [deals, execsFiltrados, fDeudor, fLinea, fEstado, fSow, clientesScope, soloExec, jefeInis, fZona, fJefatura, fEjec]);
+  // Ejecutivo a fijar en el Funnel (embudo) cuando el alcance apunta a uno solo.
+  const execFijoIni = soloExec ? (EXEC_INI_POR_NOMBRE[soloExec] || null) : (fEjec !== "todos" ? (EXEC_INI_POR_NOMBRE[fEjec] || null) : null);
   // Agregados derivados del alcance — reemplazan los números fijos: ahora responden a los filtros.
   const resumen = useMemo(() => {
     const g = (est) => clientesScope.filter((c) => c.estado === est);
@@ -7974,7 +7988,7 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
       </div>
 
       {reporteActivo ? (
-        <div>{reporteNode}</div>
+        <div>{reporteRender ? reporteRender(dealsGestion, execFijoIni) : null}</div>
       ) : (
         <div className="w-full bg-white p-5" style={{ borderRadius: 16, border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
           {seccion === "cliente" && <PCcliente resumen={resumen} hayFiltro={hayFiltro} />}
@@ -13036,17 +13050,17 @@ export default function PipelineComercial() {
                 if (k === "resumen") { verResumenDiario(); return; }
                 setReporteGestion(k);
               }}
-              reporteNode={
+              reporteRender={(dealsF, execFijo) =>
                 reporteGestion === "planEjec" ? (
                   <div className="rounded-2xl bg-white p-5" style={{ border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
-                    <PlanPorEjecutivo ejec={soloExec || "todos"} soloExec={soloExec} esJefe={esJefeComercial(usuario)} usuarioNombre={USERS[usuario]} plan={planMensual} setPlan={setPlanMensual} deals={deals} />
+                    <PlanPorEjecutivo ejec={soloExec || "todos"} soloExec={soloExec} esJefe={esJefeComercial(usuario)} usuarioNombre={USERS[usuario]} plan={planMensual} setPlan={setPlanMensual} deals={dealsF} />
                   </div>
                 ) : reporteGestion === "resumen" ? (
-                  resumenInfo ? <DiaModal inline info={resumenInfo} reporte={reporte} deals={deals} execFijo={soloExec ? (EXEC_INI_POR_NOMBRE[soloExec] || null) : null} onClose={() => setReporteGestion(null)} /> : null
+                  resumenInfo ? <DiaModal inline info={resumenInfo} reporte={reporte} deals={dealsF} execFijo={execFijo} onClose={() => setReporteGestion(null)} /> : null
                 ) : reporteGestion === "benchEjec" ? (
-                  <ComparativoModal inline deals={deals} onClose={() => setReporteGestion(null)} />
+                  <ComparativoModal inline deals={dealsF} onClose={() => setReporteGestion(null)} />
                 ) : reporteGestion === "benchDeudores" ? (
-                  <BenchmarkDeudoresModal inline deals={deals} usuario={usuario} esJefe={esJefeComercial(usuario)} onClose={() => setReporteGestion(null)} />
+                  <BenchmarkDeudoresModal inline deals={dealsF} usuario={usuario} esJefe={esJefeComercial(usuario)} onClose={() => setReporteGestion(null)} />
                 ) : null
               } />
           </>
