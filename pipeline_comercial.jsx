@@ -3402,7 +3402,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                 {(() => {
                   // Acceso directo para el aprobador que tiene criterios por excepcionar en ESTA operación (según su atribución).
                   const st0 = VISADO_STATE[deal.id] || {};
-                  const misExc = vis0.exc.filter((e) => !st0[e.n]).filter((e) => puedeAprobarExc(usuario, REGLAS_CLIENTE.find((r) => r.n === e.n), e.nivel || 4));
+                  const misExc = vis0.exc.filter((e) => !st0[e.stKey]).filter((e) => puedeAprobarExc(usuario, REGLAS_CLIENTE.find((r) => r.n === e.n), e.nivel || 4));
                   if (!misExc.length) return null;
                   return (
                     <div className="rounded-lg p-3" style={{ backgroundColor: "#F1ECFF", border: "1px solid #D9CCFF" }}>
@@ -6091,23 +6091,54 @@ const REGLAS_CLIENTE = [
 // EN RUNTIME (mutación del array const). Homologación de niveles: la política usa N1..N5 (N5=máxima)
 // + Comité; el módulo usa nivel 1=máxima ⇒ nivelMod = 6 − N (Comité→1). HARD_BLOCK ⇒ rechazo firme
 // (no re-evaluable, no excepcionable ⇒ pérdida). INFORMATIVE ⇒ clasificación (sólo informa).
-function varsModeloExt(deal) {
-  const h = Math.abs(hashStr("mr2" + ((deal && deal.id) || "")));
-  const rng = pcRng(h); const r = () => rng();
-  const amt = (p, max) => (r() < p ? Math.round(r() * max) : 0);
-  const dn = (deal && (deal.deudor || (deal.deudores && deal.deudores[0] && deal.deudores[0].name))) || "";
-  const rngD = pcRng(Math.abs(hashStr("mrD" + dn))); const rd = () => rngD();
+// Variables de comportamiento de UN deudor (CMF/DICOM/ACHEF/mora interna) + par cliente-deudor (venta
+// cruzada, NC, reclamos). Deterministas por nombre del deudor → cada deudor tiene su propio perfil de riesgo.
+function deudorBlock(dn) {
+  const rngD = pcRng(Math.abs(hashStr("mrD" + (dn || "")))); const rd = () => rngD();
   const amtD = (p, max) => (rd() < p ? Math.round(rd() * max) : 0);
   return {
-    pagareFirmado: r() < 0.94, lineaExt: r() < 0.08, clienteNuevo: r() < 0.1,
-    varVenta: Math.round((r() - 0.55) * 80), notaCliente: +(3 + r() * 3).toFixed(1),
-    moraInt25: amt(0.15, 4e6), moraInt3090: amt(0.1, 12e6), moraInt90180: amt(0.05, 8e6), moraInt1803a: amt(0.03, 6e6), deudaIntTotal: 30e6 + Math.round(r() * 400e6),
-    juicios: r() < 0.15 ? 1 + (h % 3) : 0,
     dNota: notaFromScore(scoreDeudor(dn).score), dCmf3090: amtD(0.12, 12e6), dCmf90180: amtD(0.05, 8e6), dCmf1803a: amtD(0.03, 6e6), dCmfCast: amtD(0.02, 6e6), dCmfIndVenc: amtD(0.06, 8e6), dCmfIndCast: amtD(0.02, 5e6), dCmfLeasing: amtD(0.06, 9e6), dCmfTotal: 50e6 + Math.round(rd() * 900e6),
     dEfxMora: amtD(0.08, 8e6), dAchef6090: amtD(0.07, 40e6), dAchef90180: amtD(0.04, 60e6), dAchefMas180: amtD(0.02, 30e6), dInfr: amtD(0.05, 40e6),
     dMoraInt25: amtD(0.12, 4e6), dMoraInt3090: amtD(0.08, 12e6), dMoraInt90180: amtD(0.04, 8e6), dMoraInt1803a: amtD(0.02, 6e6), dDeudaIntTotal: 20e6 + Math.round(rd() * 300e6),
     sociosComunes: rd() < 0.05, dNC: +(rd() * 14).toFixed(1), dReclamo: +(rd() * 8).toFixed(1),
     cdCruzada: Math.round(rd() * 45), cdNC: +(rd() * 14).toFixed(1), cdReclamo: +(rd() * 8).toFixed(1),
+  };
+}
+// Lista de deudores DISTINTOS de una operación (razón social + RUT).
+function deudoresDeDeal(deal) {
+  const out = [], seen = new Set();
+  const add = (nombre, rut) => { if (!nombre) return; const k = rut || nombre; if (seen.has(k)) return; seen.add(k); out.push({ nombre, rut: rut || "" }); };
+  if (deal && deal.facturasOp && deal.facturasOp.length) deal.facturasOp.forEach((f) => add(f.deudor, f.rutRecep));
+  else if (deal && deal.deudores && deal.deudores.length) deal.deudores.forEach((d) => add(d.name || d.nombre, d.rut));
+  else if (deal && deal.deudor) add(deal.deudor, null);
+  return out.length ? out : [{ nombre: (deal && deal.deudor) || "Deudor", rut: "" }];
+}
+// ¿La regla es del DEUDOR / par cliente-deudor? (códigos D01..D23). El resto son del cliente/operación.
+const esReglaDeudor = (regla) => /^D/.test((regla && regla.cond) || "");
+// Evalúa el catálogo de otorgamiento devolviendo ITEMS: las reglas del cliente una vez (deudor=null), y
+// las reglas de deudor UNA VEZ POR CADA DEUDOR de la operación, con sus propias variables de riesgo.
+// `stKey` identifica cada ítem para el estado de aprobación (regla-n para cliente; regla-n@rut para deudor).
+function evaluarOtorgItems(deal) {
+  const vCli = { ...varsClienteActual(deal), ...varsModeloExt(deal) };
+  const deudores = deudoresDeDeal(deal);
+  const items = [];
+  REGLAS_CLIENTE.forEach((r) => {
+    if (!esReglaDeudor(r)) { items.push({ regla: r, ...evalReglaCli(r, vCli), deudor: null, stKey: String(r.n) }); }
+    else deudores.forEach((d) => { items.push({ regla: r, ...evalReglaCli(r, { ...vCli, ...deudorBlock(d.nombre) }), deudor: d, stKey: r.n + "@" + (d.rut || d.nombre) }); });
+  });
+  return items;
+}
+function varsModeloExt(deal) {
+  const h = Math.abs(hashStr("mr2" + ((deal && deal.id) || "")));
+  const rng = pcRng(h); const r = () => rng();
+  const amt = (p, max) => (r() < p ? Math.round(r() * max) : 0);
+  const dn = (deal && (deal.deudor || (deal.deudores && deal.deudores[0] && deal.deudores[0].name))) || "";
+  return {
+    pagareFirmado: r() < 0.94, lineaExt: r() < 0.08, clienteNuevo: r() < 0.1,
+    varVenta: Math.round((r() - 0.55) * 80), notaCliente: +(3 + r() * 3).toFixed(1),
+    moraInt25: amt(0.15, 4e6), moraInt3090: amt(0.1, 12e6), moraInt90180: amt(0.05, 8e6), moraInt1803a: amt(0.03, 6e6), deudaIntTotal: 30e6 + Math.round(r() * 400e6),
+    juicios: r() < 0.15 ? 1 + (h % 3) : 0,
+    ...deudorBlock(dn),
     spreadBajoBanda: r() < 0.08, comisionBajoMin: r() < 0.07, cxcSinAplicar: r() < 0.06, clienteBloqueado: r() < 0.03,
   };
 }
@@ -6313,14 +6344,14 @@ function reevaluarCliente(deal, usuario) {
 function evaluarReglasCliente(deal) { const v = { ...varsClienteActual(deal), ...varsModeloExt(deal) }; return REGLAS_CLIENTE.map((r) => ({ regla: r, ...evalReglaCli(r, v) })); }
 // Resumen del visado por operación (excepciones que requieren aprobación, rechazos y estado global).
 function visadoDeal(deal) {
-  const res = evaluarReglasCliente(deal);
-  const exc = res.filter((x) => x.disp === "excepcion").map((x) => ({ n: x.regla.n, nombre: x.regla.nombre, hallazgo: x.regla.hallazgo, area: x.regla.area, nivel: x.nivel || 4, reev: reglaReev(x.regla.n) }));
-  const rech = res.filter((x) => x.disp === "rechazado").map((x) => ({ n: x.regla.n, nombre: x.regla.nombre, hallazgo: x.regla.hallazgo, area: x.regla.area, reev: reglaReev(x.regla.n) }));
+  const res = evaluarOtorgItems(deal);
+  const exc = res.filter((x) => x.disp === "excepcion").map((x) => ({ n: x.regla.n, stKey: x.stKey, deudor: x.deudor, nombre: x.regla.nombre, hallazgo: x.regla.hallazgo, area: x.regla.area, nivel: x.nivel || 4, reev: reglaReev(x.regla.n) }));
+  const rech = res.filter((x) => x.disp === "rechazado").map((x) => ({ n: x.regla.n, stKey: x.stKey, deudor: x.deudor, nombre: x.regla.nombre, hallazgo: x.regla.hallazgo, area: x.regla.area, reev: reglaReev(x.regla.n) }));
   const aprob = res.filter((x) => x.disp === "aprobado").length;
   const clasif = res.filter((x) => x.disp === "clasificacion").length;
   const st = (typeof VISADO_STATE !== "undefined" && VISADO_STATE[deal.id]) || {};
-  const excRech = exc.filter((e) => st[e.n] === "rechazado");
-  const excPend = exc.filter((e) => !st[e.n]);
+  const excRech = exc.filter((e) => st[e.stKey] === "rechazado");
+  const excPend = exc.filter((e) => !st[e.stKey]);
   const rechFirme = rech.filter((r) => !r.reev); // rechazos definitivos → pérdida
   const rechReev = rech.filter((r) => r.reev);   // rechazos re-evaluables → NO pérdida (el dato puede cambiar)
   const estado = (rechFirme.length || excRech.length) ? "rechazada" : (excPend.length || rechReev.length) ? "sujeta" : "aprobada";
@@ -6412,9 +6443,9 @@ const tienePreEval = (dealId) => !!PRE_EVAL[dealId];
 // El ejecutivo solicita la pre-evaluación: registra el evento en la bitácora (hora completa) y avisa por
 // la mensajería de la operación a los aprobadores involucrados (los responsables de las excepciones pendientes).
 function avisarPreEval(deal, execCode) {
-  const res = evaluarReglasCliente(deal);
+  const res = evaluarOtorgItems(deal);
   const st = VISADO_STATE[deal.id] || {};
-  const excPend = res.filter((x) => x.disp === "excepcion" && !st[x.regla.n]);
+  const excPend = res.filter((x) => x.disp === "excepcion" && !st[x.stKey]);
   logOtorgEvento(deal.id, USERS[execCode] || execCode, `${USERS[execCode] || execCode} solicitó la pre-evaluación de otorgamiento (${excPend.length} criterio(s) por excepcionar)`, "");
   if (!excPend.length) return;
   const codes = new Set();
@@ -6429,13 +6460,13 @@ function avisarPreEval(deal, execCode) {
 // Fase de otorgamiento de una oportunidad: "preevaluacion" | "evaluacion" | "finalizada" | null.
 // Misma lógica que la bandeja de otorgamiento (VisadoClienteView), disponible para indicadores.
 function faseOtorgDeal(deal) {
-  const res = evaluarReglasCliente(deal);
+  const res = evaluarOtorgItems(deal);
   const rechFirme = res.filter((x) => x.disp === "rechazado" && !reglaReev(x.regla.n));
   const rechReev = res.filter((x) => x.disp === "rechazado" && reglaReev(x.regla.n));
   const exc = res.filter((x) => x.disp === "excepcion");
   const st = VISADO_STATE[deal.id] || {};
-  const excRech = exc.filter((x) => st[x.regla.n] === "rechazado");
-  const excPend = exc.filter((x) => !st[x.regla.n]);
+  const excRech = exc.filter((x) => st[x.stKey] === "rechazado");
+  const excPend = exc.filter((x) => !st[x.stKey]);
   const estado = (rechFirme.length || excRech.length) ? "rechazada" : (excPend.length || rechReev.length) ? "sujeta" : "aprobada";
   const requiere = exc.length > 0 || rechReev.length > 0 || rechFirme.length > 0;
   const aceptada = ["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage);
@@ -6507,9 +6538,9 @@ function VisadoClienteView({ deals, usuario, onChange }) {
   // Al completar su parte, el aprobador avisa al ejecutivo por la mensajería de la operación. Si aún quedan
   // excepciones de OTROS aprobadores, el mensaje indica quién (rol/nivel) y cuántas reglas faltan, para coordinar.
   const avisarAvanceOtorg = (deal) => {
-    const res = evaluarReglasCliente(deal);
+    const res = evaluarOtorgItems(deal);
     const st = VISADO_STATE[deal.id] || {};
-    const excPend = res.filter((x) => x.disp === "excepcion" && !st[x.regla.n]);
+    const excPend = res.filter((x) => x.disp === "excepcion" && !st[x.stKey]);
     const misPend = excPend.filter((x) => puede(x.regla, x.nivel || 4));
     if (misPend.length > 0) return; // aún le quedan excepciones a ESTE aprobador → no completó su parte
     const porNivel = {};
@@ -6525,18 +6556,19 @@ function VisadoClienteView({ deals, usuario, onChange }) {
     if (prev && !h.participantes.includes(usuario)) h.participantes.push(usuario);
     hiloEnviar(h, usuario, texto, null);
   };
-  const setExc = (deal, n, area, nivel, val, msg, arch) => {
-    const st = VISADO_STATE[deal.id] || (VISADO_STATE[deal.id] = {}); st[n] = val;
-    const det = VISADO_DETALLE[deal.id] || (VISADO_DETALLE[deal.id] = {}); det[n] = { msg: msg || "", arch: arch || null, por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL") };
-    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Visado Cliente", accion: val === "aprobado" ? "Excepción aprobada" : "Excepción rechazada", glosa: `Regla ${n} · ${AREA_LBL[area]} N${nivel} · ${deal.cliente}${msg ? " · " + msg : ""}`, exito: val === "aprobado" });
-    const reglaN = REGLAS_CLIENTE.find((r) => r.n === n);
-    logOtorgEvento(deal.id, USERS[usuario] || usuario, `${USERS[usuario] || usuario} ${val === "aprobado" ? "aprobó" : "rechazó"} la excepción de otorgamiento · regla #${n}${reglaN ? " " + reglaN.nombre : ""} (${AREA_LBL[area]} N${nivel})${arch ? " · con respaldo adjunto" : ""}`, msg || "");
+  const setExc = (deal, x, val, msg, arch) => {
+    const k = x.stKey, area = x.regla.area, nivel = x.nivel || 4;
+    const st = VISADO_STATE[deal.id] || (VISADO_STATE[deal.id] = {}); st[k] = val;
+    const det = VISADO_DETALLE[deal.id] || (VISADO_DETALLE[deal.id] = {}); det[k] = { msg: msg || "", arch: arch || null, por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL") };
+    const dtxt = x.deudor ? ` · deudor ${x.deudor.nombre}` : "";
+    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Visado Cliente", accion: val === "aprobado" ? "Excepción aprobada" : "Excepción rechazada", glosa: `Regla ${x.regla.n} · ${AREA_LBL[area]} N${nivel} · ${deal.cliente}${dtxt}${msg ? " · " + msg : ""}`, exito: val === "aprobado" });
+    logOtorgEvento(deal.id, USERS[usuario] || usuario, `${USERS[usuario] || usuario} ${val === "aprobado" ? "aprobó" : "rechazó"} la excepción de otorgamiento · regla #${x.regla.n} ${x.regla.nombre}${dtxt} (${AREA_LBL[area]} N${nivel})${arch ? " · con respaldo adjunto" : ""}`, msg || "");
     avisarAvanceOtorg(deal); bump();
   };
-  const revertirExc = (deal, n) => { const st = VISADO_STATE[deal.id]; if (st) delete st[n]; const det = VISADO_DETALLE[deal.id]; if (det) delete det[n]; bump(); };
+  const revertirExc = (deal, k) => { const st = VISADO_STATE[deal.id]; if (st) delete st[k]; const det = VISADO_DETALLE[deal.id]; if (det) delete det[k]; bump(); };
   const solicitarInfo = (deal, x, destId, destLabel, msg, arch) => {
     const dc = destCodeDe(destId, deal);
-    const h = hiloNuevo({ tipo: "requerimiento", dealId: deal.id, cliente: deal.cliente, reglaN: x.regla.n, asunto: `Requerimiento · regla #${x.regla.n} ${x.regla.nombre}`, participantes: [usuario, dc], creadoPor: usuario });
+    const h = hiloNuevo({ tipo: "requerimiento", dealId: deal.id, cliente: deal.cliente, reglaN: x.stKey, asunto: `Requerimiento · regla #${x.regla.n} ${x.regla.nombre}${x.deudor ? " · " + x.deudor.nombre : ""}`, participantes: [usuario, dc], creadoPor: usuario });
     hiloEnviar(h, usuario, msg || "", arch); bump();
   };
   const destinatariosDe = (deal) => { const ejec = EXECS[deal.exec] || deal.exec || "Ejecutivo"; return [
@@ -6550,15 +6582,15 @@ function VisadoClienteView({ deals, usuario, onChange }) {
   // Sólo las operaciones que requieren aprobación (con excepciones o rechazos). Para cada una, cuántas
   // excepciones pendientes puede accionar ESTE usuario según su atribución.
   const opsAll = cands.map((deal) => {
-    const res = evaluarReglasCliente(deal);
+    const res = evaluarOtorgItems(deal);
     const rechazosAll = res.filter((x) => x.disp === "rechazado");
     const rechFirme = rechazosAll.filter((x) => !reglaReev(x.regla.n)); // bloqueos firmes → pérdida, no visables
     const rechReev = rechazosAll.filter((x) => reglaReev(x.regla.n));   // re-evaluables → se regularizan al re-evaluar
     const exc = res.filter((x) => x.disp === "excepcion");
     const aprob = res.filter((x) => x.disp === "aprobado");
     const st = VISADO_STATE[deal.id] || {};
-    const excRech = exc.filter((x) => st[x.regla.n] === "rechazado");
-    const excPend = exc.filter((x) => !st[x.regla.n]);
+    const excRech = exc.filter((x) => st[x.stKey] === "rechazado");
+    const excPend = exc.filter((x) => !st[x.stKey]);
     // Sólo un rechazo FIRME (no excepcionable / no re-evaluable) deja la operación rechazada. Si el criterio
     // rechazado es re-evaluable o hay excepciones por aprobar, la operación queda "sujeta", no rechazada.
     const estado = (rechFirme.length || excRech.length) ? "rechazada" : (excPend.length || rechReev.length) ? "sujeta" : "aprobada";
@@ -6602,12 +6634,17 @@ function VisadoClienteView({ deals, usuario, onChange }) {
         // accionar; las de otros aprobadores se listan aparte (solo lectura) para ver el panorama completo.
         const stOp = VISADO_STATE[o.deal.id] || {};
         const excShow = soloMias ? o.exc.filter((x) => puede(x.regla, x.nivel || 4)) : o.exc;
-        const excOtros = soloMias ? o.exc.filter((x) => !stOp[x.regla.n] && !puede(x.regla, x.nivel || 4)) : [];
-        // Agrupación de las excepciones: primero las reglas del CLIENTE, luego las de DEUDORES (par
-        // cliente-deudor, códigos D2x). Razón social de los deudores de la operación para el subtítulo.
-        const esReglaDeudor = (r) => (r.n >= 200 && r.n < 300) || /par c-d|deudor/i.test(r.nombre || "");
-        const deudorNoms = (() => { const s = new Set(); (o.deal.deudores || []).forEach((d) => { const n = (d && (d.nombre || d.razon)) || (typeof d === "string" ? d : ""); if (n) s.add(n); }); if (!s.size && o.deal.deudor) s.add(o.deal.deudor); return [...s]; })();
-        const excSorted = [...excShow].sort((a, b) => (esReglaDeudor(a.regla) - esReglaDeudor(b.regla)) || (a.regla.n - b.regla.n));
+        const excOtros = soloMias ? o.exc.filter((x) => !stOp[x.stKey] && !puede(x.regla, x.nivel || 4)) : [];
+        // Agrupación de las excepciones: primero las reglas del CLIENTE, luego una SECCIÓN POR CADA DEUDOR
+        // (razón social), cada regla de deudor evaluada con las variables de ESE deudor.
+        const grpKey = (x) => x.deudor ? (x.deudor.rut || x.deudor.nombre) : "__cli";
+        const grpLabel = (x) => x.deudor ? x.deudor.nombre : "Reglas del cliente";
+        const excSorted = [...excShow].sort((a, b) => {
+          const ad = a.deudor ? 1 : 0, bd = b.deudor ? 1 : 0;
+          if (ad !== bd) return ad - bd;
+          if (ad && grpKey(a) !== grpKey(b)) return grpLabel(a).localeCompare(grpLabel(b));
+          return a.regla.n - b.regla.n;
+        });
         return (
           <div key={o.deal.id} className="overflow-hidden rounded-xl" style={{ border: `1px solid ${o.mias.length ? C.indigo : C.line}` }}>
             <button onClick={() => setOpenOp(open ? null : o.deal.id)} className="flex w-full items-center justify-between gap-2 px-3 py-2.5" style={{ backgroundColor: open ? "#F9FAFB" : "#fff" }}>
@@ -6646,20 +6683,19 @@ function VisadoClienteView({ deals, usuario, onChange }) {
               {excShow.length > 0 && <div>
                 <div className="t11 font-semibold uppercase tracking-wide" style={{ color: "#C2410C" }}>Excepciones a aprobar ({excShow.length}){!soloMias && <span style={{ color: C.indigo }}> · {o.mias.length} con tu atribución</span>}</div>
                 <div className="mt-1 space-y-1.5">{excSorted.map((x, _i) => {
-                  const _grpD = esReglaDeudor(x.regla);
-                  const _hdr = _i === 0 || esReglaDeudor(excSorted[_i - 1].regla) !== _grpD;
-                  const key = o.deal.id + "-" + x.regla.n;
+                  const _hdr = _i === 0 || grpKey(excSorted[_i - 1]) !== grpKey(x);
+                  const key = o.deal.id + "-" + x.stKey;
                   const f = form[key] || {};
-                  const ee = (VISADO_STATE[o.deal.id] || {})[x.regla.n] || "pendiente";
-                  const det = (VISADO_DETALLE[o.deal.id] || {})[x.regla.n];
+                  const ee = (VISADO_STATE[o.deal.id] || {})[x.stKey] || "pendiente";
+                  const det = (VISADO_DETALLE[o.deal.id] || {})[x.stKey];
                   const niv = x.nivel || 4; const nr = NIVEL_ROL[niv] || NIVEL_ROL[4]; const otraArea = nr.area !== x.regla.area;
                   const aps = aprobadoresExc(x.regla, niv); const puedeYo = puede(x.regla, niv);
                   const accionable = puedeYo && ee === "pendiente";
                   const dests = destinatariosDe(o.deal);
-                  const sols = hilosDeDeal(o.deal.id).filter((h) => h.tipo === "requerimiento" && h.reglaN === x.regla.n);
+                  const sols = hilosDeDeal(o.deal.id).filter((h) => h.tipo === "requerimiento" && h.reglaN === x.stKey);
                   return (
-                    <Fragment key={x.regla.n}>
-                    {_hdr && <div className="mt-2 first:mt-0"><div className="t9 font-bold uppercase tracking-wide" style={{ color: _grpD ? "#7C3AED" : C.indigo }}>{_grpD ? `Reglas de deudores${deudorNoms.length ? ` · ${deudorNoms.join(", ")}` : ""}` : "Reglas del cliente"}</div></div>}
+                    <Fragment key={x.stKey}>
+                    {_hdr && <div className="mt-2 first:mt-0"><div className="flex items-center gap-1.5 t9 font-bold uppercase tracking-wide" style={{ color: x.deudor ? "#7C3AED" : C.indigo }}>{x.deudor ? <><span>Deudor · {x.deudor.nombre}</span>{x.deudor.rut && <span className="font-medium normal-case" style={{ color: C.faint }}>RUT {x.deudor.rut}</span>}</> : "Reglas del cliente"}</div></div>}
                     <div className="rounded-lg p-2.5" style={{ border: `1px solid ${accionable ? C.indigo : C.line}`, borderLeft: `3px solid ${ee === "aprobado" ? C.green : ee === "rechazado" ? C.red : accionable ? C.indigo : "#F97316"}`, backgroundColor: accionable ? "#f5f3ff" : "#fff" }}>
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div className="min-w-0">
@@ -6678,7 +6714,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                         <button onClick={() => setF(key, { open: "info", dest: "ejecutivo", msg: "", arch: null })} className="rounded-md px-2.5 py-1 t10 font-semibold" style={{ border: `1px solid ${C.indigo}`, color: C.indigo, backgroundColor: "#fff" }}>Solicitar más información</button>
                         {!puedeYo && <span className="self-center t9" style={{ color: C.faint }}>Sin atribución para aprobar; puedes solicitar información.</span>}
                       </div>}
-                      {ee !== "pendiente" && <div className="mt-2"><button onClick={() => revertirExc(o.deal, x.regla.n)} className="rounded-md px-2 py-1 t9 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Revertir</button></div>}
+                      {ee !== "pendiente" && <div className="mt-2"><button onClick={() => revertirExc(o.deal, x.stKey)} className="rounded-md px-2 py-1 t9 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Revertir</button></div>}
                       {f.open === "decision" && <div className="mt-2 rounded-md p-2.5" style={{ border: `1px solid ${C.line}`, backgroundColor: C.page }}>
                         <div className="flex gap-1.5">
                           <button onClick={() => setF(key, { dec: "aprobado" })} className="rounded-md px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: f.dec === "aprobado" ? "#0a7d3f" : "#fff", color: f.dec === "aprobado" ? "#fff" : C.sub, border: `1px solid ${f.dec === "aprobado" ? "#0a7d3f" : C.line}` }}>Aprobar</button>
@@ -6688,7 +6724,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                         <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 t10 font-medium" style={{ color: C.indigo, width: "fit-content" }}><Plus size={11} /> {f.arch || "Adjuntar respaldo"}<input type="file" className="hidden" onChange={(e) => setF(key, { arch: e.target.files && e.target.files[0] ? e.target.files[0].name : null })} /></label>
                         {!(f.msg || "").trim() && <div className="mt-1 t9" style={{ color: C.red }}>La justificación es obligatoria.</div>}
                         <div className="mt-2 flex gap-2">
-                          <button disabled={!(f.msg || "").trim()} onClick={() => { setExc(o.deal, x.regla.n, nr.area, niv, f.dec || "aprobado", f.msg, f.arch); setF(key, { open: null, msg: "", arch: null }); }} className="rounded-md px-3 py-1.5 t10 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: "#7c3aed" }}>Registrar decisión</button>
+                          <button disabled={!(f.msg || "").trim()} onClick={() => { setExc(o.deal, x, f.dec || "aprobado", f.msg, f.arch); setF(key, { open: null, msg: "", arch: null }); }} className="rounded-md px-3 py-1.5 t10 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: "#7c3aed" }}>Registrar decisión</button>
                           <button onClick={() => setF(key, { open: null })} className="rounded-md px-3 py-1.5 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button>
                         </div>
                       </div>}
@@ -11370,9 +11406,9 @@ export default function PipelineComercial() {
     let n = 0;
     deals.filter(dealVisible).forEach((d) => {
       if (!faseOtorgDeal(d)) return; // no está en la bandeja de otorgamiento
-      const res = evaluarReglasCliente(d);
+      const res = evaluarOtorgItems(d);
       const st = VISADO_STATE[d.id] || {};
-      const excPend = res.filter((x) => x.disp === "excepcion" && !st[x.regla.n]);
+      const excPend = res.filter((x) => x.disp === "excepcion" && !st[x.stKey]);
       const mias = excPend.filter((x) => puedeU(x.regla, x.nivel || 4));
       if (mias.length) n++;
     });
