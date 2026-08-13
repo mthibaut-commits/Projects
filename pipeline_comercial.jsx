@@ -11502,12 +11502,16 @@ export default function PipelineComercial() {
         tag: ev.tag, facturas: ev.nFacturas || 1, amountMM: ev.monto || 0, tasa: ev.tasa,
         anticipo: ev.anticipo || "100%", esCliente: ev.esCliente, sinClasificar: true,
       }));
-    if (quickFilter === "sinclasificar") return showInbound ? streamComoFilas() : [];
+    // "Otras facturas": facturas de clientes de la cartera aún no priorizadas por una regla (inbound sin clasificar).
+    if (quickFilter === "otrasfacturas") return streamComoFilas();
     const dealRows = dealsVista.filter((d) => {
       const matchQ = !q || d.cliente.toLowerCase().includes(q) || d.deudor.toLowerCase().includes(q) || d.id.toLowerCase().includes(q);
       let matchF = true;
-      if (quickFilter === "activas") matchF = !["prospeccion", "perdida"].includes(d.stage); // Oferta y Negociación → Giro
-      else if (quickFilter === "prospectos") matchF = d.stage === "prospeccion";
+      // Con línea / Sin línea: oportunidades en Oferta y Negociación; "sin línea" = la operación excede la
+      // línea aprobada (fuera de línea) → requiere aprobar/ampliar la línea en el comité.
+      if (quickFilter === "conlinea") matchF = d.stage === "oferta" && !lineaCreditoDe(d).fueraDeLinea;
+      else if (quickFilter === "sinlinea") matchF = d.stage === "oferta" && lineaCreditoDe(d).fueraDeLinea;
+      else if (quickFilter === "pendgiro") matchF = ["aceptadas", "cesion", "otorgamiento"].includes(d.stage) || (d.stage === "giro" && d.giroPendiente);
       else if (quickFilter === "perdidas") matchF = d.stage === "perdida";
       const matchDeudor = fDeudor === "todos" || (fDeudor === "buenos" ? esBuenDeudor(d) : !esBuenDeudor(d));
       const matchJef = fJefatura === "todas" || jefaturaOf(d) === fJefatura;
@@ -11545,14 +11549,15 @@ export default function PipelineComercial() {
 
   // Casos por segmento (para el modal de detalle / exportación).
   const casosDe = (id) => {
-    if (id === "sinclasificar") return streamFeed.map((ev) => ({
+    if (id === "otrasfacturas") return streamFeed.map((ev) => ({
       id: ev.id, cliente: ev.cedente, deudor: ev.pagador, sector: ev.sector, stage: "—",
       facturas: ev.nFacturas, amountMM: ev.monto, tasa: ev.tasa, diasFin: 0,
       exec: "—", status: "Sin clasificar", simulado: false,
     }));
     return deals.filter((d) => {
-      if (id === "activas") return !["prospeccion", "perdida"].includes(d.stage);
-      if (id === "prospectos") return d.stage === "prospeccion";
+      if (id === "conlinea") return d.stage === "oferta" && !lineaCreditoDe(d).fueraDeLinea;
+      if (id === "sinlinea") return d.stage === "oferta" && lineaCreditoDe(d).fueraDeLinea;
+      if (id === "pendgiro") return ["aceptadas", "cesion", "otorgamiento"].includes(d.stage) || (d.stage === "giro" && d.giroPendiente);
       if (id === "perdidas") return d.stage === "perdida";
       return true; // todos
     });
@@ -12929,10 +12934,11 @@ export default function PipelineComercial() {
   const inboundCount = showInbound ? streamFeed.length : 0;
   const quickFilters = [
     { id: "todos", label: "Todos", count: dealsVista.length + inboundCount },
-    { id: "activas", label: "Activas", count: dealsVista.filter((d) => !["prospeccion", "perdida"].includes(d.stage)).length },
-    { id: "prospectos", label: "Prospectos", count: dealsVista.filter((d) => d.stage === "prospeccion").length },
+    { id: "conlinea", label: "Con línea", count: dealsVista.filter((d) => d.stage === "oferta" && !lineaCreditoDe(d).fueraDeLinea).length },
+    { id: "sinlinea", label: "Sin línea", count: dealsVista.filter((d) => d.stage === "oferta" && lineaCreditoDe(d).fueraDeLinea).length },
+    { id: "pendgiro", label: "Pendientes de giro", count: dealsVista.filter((d) => ["aceptadas", "cesion", "otorgamiento"].includes(d.stage) || (d.stage === "giro" && d.giroPendiente)).length },
     { id: "perdidas", label: "Perdidas", count: dealsVista.filter((d) => d.stage === "perdida").length },
-    ...(showInbound ? [{ id: "sinclasificar", label: "Sin clasificar", count: streamFeed.length }] : []),
+    { id: "otrasfacturas", label: "Otras facturas", count: streamFeed.length },
   ];
 
   if (!logueado) return <LoginScreen usuarioInicial={usuario} onIngresar={(u) => { setUsuario(u); setLogueado(true); }} />;
@@ -13175,7 +13181,7 @@ export default function PipelineComercial() {
               className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.sub }}>
               <RotateCcw size={14} /> Reiniciar
             </button>
-            <button onClick={() => setShowInbound((v) => { const nv = !v; if (!nv && quickFilter === "sinclasificar") setQuickFilter("todos"); return nv; })} title={showInbound ? "Ocultar columna Inbound (más espacio)" : "Mostrar columna Inbound"}
+            <button onClick={() => setShowInbound((v) => !v)} title={showInbound ? "Ocultar columna Inbound (más espacio)" : "Mostrar columna Inbound"}
               className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${showInbound ? C.indigo : C.line}`, backgroundColor: "#fff", color: showInbound ? C.indigo : C.sub }}>
               <Radio size={14} /> Inbound
             </button>
