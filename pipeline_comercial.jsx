@@ -2260,7 +2260,7 @@ function nextBestAction(deal) {
   const out = (label, detalle, color, goTab) => ({ label, detalle, color, goTab, sec });
   if (deal.stage === "perdida") return out("Re-prospectar más adelante", deal.perdidaCesion ? `Perdida ante ${deal.cedidaCompetidor || "la competencia"}. Monitorea AECSync y vuelve a ofertar cuando el cliente emita nuevas facturas.` : "El cliente no avanzó. Re-contáctalo en una próxima ventana con una mejor propuesta.", "#DC2626", "bitacora");
   if (deal.stage === "giro") return out("Seguimiento de pago (cobranza)", `Operación girada por ${fmtMM(deal.giroMM || 0)}. Monitorea el pago del deudor al vencimiento y la cobranza.`, "#16a34a", "cobranza");
-  if (noVerif) return out("Reparar el contacto", "El contacto está NO verificado / con error. Edita el teléfono o el correo y reinicia el contacto: hasta verificarlo no puedes publicar oferta ni enviar comunicaciones.", "#C2410C", "contacto");
+  if (noVerif) return out("Gestión comercial directa", "El contacto automático no se concretó, pero la oportunidad sigue viva: hay un paquete de facturas y un deudor con potencial. Retómala tú mismo — busca al cliente por una vía alternativa (referido, visita, LinkedIn) y avanza a la oferta apoyándote en su potencial, sin depender del dato de contacto.", "#703EFF", "negocio");
   if (deal.ofertaSolicitada && !deal.ofertaCerrada && !deal.negocioNum) return out("Revisar selección y cerrar la oferta", "El cliente pidió ver la oferta por WhatsApp. Revisa las facturas del paquete y presiona «Cerrar oferta»: hasta cerrarla, ni tú ni el Agente IA pueden enviársela.", "#dc2626", "negocio");
   if (deal.waPendiente) return out("Responder al cliente", "El cliente respondió por WhatsApp y la conversación quedó PENDIENTE. Respóndele por el chat (modo manual) para no perder el cierre.", "#dc2626", "comunicaciones");
   if (deal.stage === "otorgamiento") return out("Coordinar Otorgamiento", "La operación está en la mesa de crédito. Coordina con Riesgo/Operaciones para autorizar las causas de desvío y liberar el giro.", "#7C3AED", "otorgamiento");
@@ -11502,15 +11502,35 @@ export default function PipelineComercial() {
         tag: ev.tag, facturas: ev.nFacturas || 1, amountMM: ev.monto || 0, tasa: ev.tasa,
         anticipo: ev.anticipo || "100%", esCliente: ev.esCliente, sinClasificar: true,
       }));
-    // "Otras facturas": facturas de clientes de la cartera aún no priorizadas por una regla (inbound sin clasificar).
-    if (quickFilter === "otrasfacturas") return streamComoFilas();
+    // "Otras facturas": facturas de clientes de la cartera aún no priorizadas por una regla (inbound sin
+    // clasificar), AGRUPADAS por cliente (cedente): una fila por cliente con sus facturas y deudores sumados.
+    const streamAgrupadoCliente = () => {
+      const map = new Map();
+      streamFeed
+        .filter((ev) => (!q || (ev.cedente || "").toLowerCase().includes(q) || (ev.pagador || "").toLowerCase().includes(q) || String(ev.id || "").toLowerCase().includes(q))
+          && (fLinea === "todas" || ev.tag === fLinea)
+          && (fDeudor === "todos" || (fDeudor === "buenos" ? esBuenDeudor(ev) : !esBuenDeudor(ev))))
+        .forEach((ev) => {
+          const k = ev.cedente || "—";
+          let g = map.get(k); if (!g) { g = { cliente: k, facturas: 0, monto: 0, deudores: new Map(), tags: new Set(), sector: ev.sector, esCliente: ev.esCliente }; map.set(k, g); }
+          g.facturas += ev.nFacturas || 1; g.monto += ev.monto || 0; if (ev.tag) g.tags.add(ev.tag);
+          const dk = ev.pagador || "—"; const d = g.deudores.get(dk) || { name: dk, facturas: 0, montoMM: 0 }; d.facturas += ev.nFacturas || 1; d.montoMM += ev.monto || 0; g.deudores.set(dk, d);
+        });
+      return [...map.values()].sort((a, b) => b.monto - a.monto).map((g) => { const deudores = [...g.deudores.values()].sort((a, b) => b.montoMM - a.montoMM); return {
+        id: "OF-" + (hashStr(g.cliente) % 100000), cliente: g.cliente, deudor: deudores[0] ? deudores[0].name : "—",
+        deudores, sector: g.sector, stage: "Sin clasificar", status: `${g.facturas} factura(s) · ${deudores.length} deudor(es)`, exec: "—",
+        tag: g.tags.size === 1 ? [...g.tags][0] : "Varios", facturas: g.facturas, amountMM: +g.monto.toFixed(1),
+        esCliente: g.esCliente, sinClasificar: true, agrupado: true,
+      }; });
+    };
+    if (quickFilter === "otrasfacturas") return streamAgrupadoCliente();
     const dealRows = dealsVista.filter((d) => {
       const matchQ = !q || d.cliente.toLowerCase().includes(q) || d.deudor.toLowerCase().includes(q) || d.id.toLowerCase().includes(q);
       let matchF = true;
-      // Con línea / Sin línea: oportunidades en Oferta y Negociación; "sin línea" = la operación excede la
-      // línea aprobada (fuera de línea) → requiere aprobar/ampliar la línea en el comité.
-      if (quickFilter === "conlinea") matchF = d.stage === "oferta" && !lineaCreditoDe(d).fueraDeLinea;
-      else if (quickFilter === "sinlinea") matchF = d.stage === "oferta" && lineaCreditoDe(d).fueraDeLinea;
+      // Con línea / Sin línea: oportunidades en Oferta y Negociación + Prospección; "sin línea" = la operación
+      // excede la línea aprobada (fuera de línea) → requiere aprobar/ampliar la línea en el comité.
+      if (quickFilter === "conlinea") matchF = ["oferta", "prospeccion"].includes(d.stage) && !lineaCreditoDe(d).fueraDeLinea;
+      else if (quickFilter === "sinlinea") matchF = ["oferta", "prospeccion"].includes(d.stage) && lineaCreditoDe(d).fueraDeLinea;
       else if (quickFilter === "pendgiro") matchF = ["aceptadas", "cesion", "otorgamiento"].includes(d.stage) || (d.stage === "giro" && d.giroPendiente);
       else if (quickFilter === "perdidas") matchF = d.stage === "perdida";
       const matchDeudor = fDeudor === "todos" || (fDeudor === "buenos" ? esBuenDeudor(d) : !esBuenDeudor(d));
@@ -11555,8 +11575,8 @@ export default function PipelineComercial() {
       exec: "—", status: "Sin clasificar", simulado: false,
     }));
     return deals.filter((d) => {
-      if (id === "conlinea") return d.stage === "oferta" && !lineaCreditoDe(d).fueraDeLinea;
-      if (id === "sinlinea") return d.stage === "oferta" && lineaCreditoDe(d).fueraDeLinea;
+      if (id === "conlinea") return ["oferta", "prospeccion"].includes(d.stage) && !lineaCreditoDe(d).fueraDeLinea;
+      if (id === "sinlinea") return ["oferta", "prospeccion"].includes(d.stage) && lineaCreditoDe(d).fueraDeLinea;
       if (id === "pendgiro") return ["aceptadas", "cesion", "otorgamiento"].includes(d.stage) || (d.stage === "giro" && d.giroPendiente);
       if (id === "perdidas") return d.stage === "perdida";
       return true; // todos
@@ -12933,12 +12953,12 @@ export default function PipelineComercial() {
   // Las "Sin clasificar" solo cuentan/aparecen cuando el toggle Inbound está activo.
   const inboundCount = showInbound ? streamFeed.length : 0;
   const quickFilters = [
-    { id: "todos", label: "Todos", count: dealsVista.length + inboundCount },
-    { id: "conlinea", label: "Con línea", count: dealsVista.filter((d) => d.stage === "oferta" && !lineaCreditoDe(d).fueraDeLinea).length },
-    { id: "sinlinea", label: "Sin línea", count: dealsVista.filter((d) => d.stage === "oferta" && lineaCreditoDe(d).fueraDeLinea).length },
+    { id: "conlinea", label: "Con línea", count: dealsVista.filter((d) => ["oferta", "prospeccion"].includes(d.stage) && !lineaCreditoDe(d).fueraDeLinea).length },
+    { id: "sinlinea", label: "Sin línea", count: dealsVista.filter((d) => ["oferta", "prospeccion"].includes(d.stage) && lineaCreditoDe(d).fueraDeLinea).length },
     { id: "pendgiro", label: "Pendientes de giro", count: dealsVista.filter((d) => ["aceptadas", "cesion", "otorgamiento"].includes(d.stage) || (d.stage === "giro" && d.giroPendiente)).length },
     { id: "perdidas", label: "Perdidas", count: dealsVista.filter((d) => d.stage === "perdida").length },
     { id: "otrasfacturas", label: "Otras facturas", count: streamFeed.length },
+    { id: "todos", label: "Todos", count: dealsVista.length + inboundCount },
   ];
 
   if (!logueado) return <LoginScreen usuarioInicial={usuario} onIngresar={(u) => { setUsuario(u); setLogueado(true); }} />;
