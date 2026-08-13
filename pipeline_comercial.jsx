@@ -1120,7 +1120,9 @@ const initialDeals = [
 
 
 // ---- Contactabilidad ----
-// 14% de las empresas no son contactables y quedan estancadas en prospección.
+// Toda empresa del pipeline está en la cartera del ejecutivo ⇒ está enrolada (tiene ≥1 usuario con email
+// validado) ⇒ siempre es alcanzable. El "sin contacto / no puede loguear" sólo aplica a empresas FUERA de
+// cartera (no clientes), que aparecen en el tab "Otras facturas"; ahí la NBA es "Hacer cliente para ofertar".
 const PISO_TASA = 0.9; // tasa mensual mínima viable; bajo este piso, la operación es inviable.
 // Competidores (cesionarios) a los que se puede perder una oportunidad.
 const COMPETIDORES = ["BCI Factoring", "Banchile Factoring", "Security Factoring", "Tanner Servicios Financieros", "Incofin", "Eurocapital", "Factotal", "Coface Chile"];
@@ -1442,7 +1444,7 @@ function curseDesdeDeal(deal) {
 }
 function generarContactabilidad(cliente, canal, deudor) {
   const h = hashStr((cliente || "") + "|" + canal);
-  const contactable = (h % 100) >= 14; // 14% no contactable
+  const contactable = true; // cartera enrolada: siempre alcanzable (el "sin contacto" vive en Otras facturas, no en el pipeline)
   const nombre = NOMBRES_CONTACTO[h % NOMBRES_CONTACTO.length];
   const cargo = CARGOS_CONTACTO[(h >> 3) % CARGOS_CONTACTO.length];
   const slug = (cliente || "empresa").toLowerCase().replace(/[^a-z]/g, "").slice(0, 12) || "empresa";
@@ -1455,27 +1457,19 @@ function generarContactabilidad(cliente, canal, deudor) {
   // La derivación a ejecutivo (fuera de atribución) NO se pre-marca al crear: es event-driven, ocurre
   // recién cuando el cliente presiona "Contactar a ejecutivo" o pide una tasa bajo el mínimo tras la oferta.
   const fueraAtribucion = false;
-  // Regla de reintentos: si el mensaje NO se entrega (dato de contacto errado), 1 solo intento → Error de
-  // contactabilidad (no vale la pena reintentar si no se entrega). Sólo se reintenta cuando se entrega y no responde.
-  const intentos = contactable ? 1 + (h % 2) : 1;
-  const canalLbl = canal === "Llamada" ? "Call Center" : canal;
-  const fechasNoResp = ["Día 1 · 09:01", "Día 1 · 09:40", "Día 1 · 10:30"]; // mismas marcas que el hilo de WhatsApp
+  // Empresa enrolada: el contacto se entrega y el cliente responde. Puede tomar 1–2 intentos dentro del Día 1
+  // antes de manifestar interés (09:05) y recibir la oferta (09:06).
+  const intentos = 1 + (h % 2);
   const historialContacto = [];
   let ultFecha = "";
   for (let i = 0; i < intentos; i++) {
-    const ok = contactable && i === intentos - 1;
-    // Contactable: intentos dentro de Día 1 antes del interés (09:05) y la oferta (09:06). No contactable:
-    // 3 intentos espaciados que terminan en la conclusión de contacto errado.
-    ultFecha = contactable ? (i === intentos - 1 ? "Día 1 · 09:05" : "Día 1 · 09:0" + i) : (fechasNoResp[i] || "Día 2 · 10:00");
-    // No contactable: cada intento es un mensaje del Agente IA SIN respuesta; el "contacto errado" recién
-    // se concluye en el 3er intento (no se asume el error sin haber intentado).
-    const resultado = !contactable
-      ? `Intento de contacto por ${canalLbl} · mensaje NO entregado → el dato de contacto está errado; requiere gestión del ejecutivo (no se reintenta si el mensaje no se entrega)`
-      : ok ? (fueraAtribucion ? "Contactado · tarifa fuera de atribución" : "Contacto exitoso") : "Sin respuesta, reintento";
-    historialContacto.push({ fecha: ultFecha, canal, actor: !contactable ? "Agente IA" : undefined, esEvento: !contactable, resultado, exito: ok });
+    const ok = i === intentos - 1;
+    ultFecha = ok ? "Día 1 · 09:05" : "Día 1 · 09:0" + i;
+    const resultado = ok ? (fueraAtribucion ? "Contactado · tarifa fuera de atribución" : "Contacto exitoso") : "Sin respuesta, reintento";
+    historialContacto.push({ fecha: ultFecha, canal, resultado, exito: ok });
   }
   // El cliente respondió por su canal → el Sistema valida el dato de contacto (teléfono o email).
-  if (contactable) {
+  {
     const campo = canal === "Email" ? "email" : "teléfono";
     historialContacto.push({ fecha: ultFecha, canal: "Sistema", actor: "Sistema", esEvento: true, resultado: `Contacto validado: el cliente respondió por ${canal === "Llamada" ? "Call Center" : canal}; ${campo} validado ✔`, exito: true });
   }
@@ -2251,7 +2245,6 @@ function resumenIA(deal) {
 function nextBestAction(deal) {
   if (!deal) return null;
   const verificado = !!(deal.telValidado || deal.emailValidado || deal.verifManual);
-  const noVerif = deal.contactable === false && !verificado;
   const hasOffer = (deal.waSesion || []).some((m) => /Oferta de factoring/i.test(m.text || "")) || !!deal.negocioNum;
   const contactado = deal.contactable !== false && (verificado || deal.contactoExitoso);
   const sec = [];
@@ -2260,7 +2253,10 @@ function nextBestAction(deal) {
   const out = (label, detalle, color, goTab) => ({ label, detalle, color, goTab, sec });
   if (deal.stage === "perdida") return out("Re-prospectar más adelante", deal.perdidaCesion ? `Perdida ante ${deal.cedidaCompetidor || "la competencia"}. Monitorea AECSync y vuelve a ofertar cuando el cliente emita nuevas facturas.` : "El cliente no avanzó. Re-contáctalo en una próxima ventana con una mejor propuesta.", "#DC2626", "bitacora");
   if (deal.stage === "giro") return out("Seguimiento de pago (cobranza)", `Operación girada por ${fmtMM(deal.giroMM || 0)}. Monitorea el pago del deudor al vencimiento y la cobranza.`, "#16a34a", "cobranza");
-  if (noVerif) return out("Gestión comercial directa", "El contacto automático no se concretó, pero la oportunidad sigue viva: hay un paquete de facturas y un deudor con potencial. Retómala tú mismo — busca al cliente por una vía alternativa (referido, visita, LinkedIn) y avanza a la oferta apoyándote en su potencial, sin depender del dato de contacto.", "#703EFF", "negocio");
+  // Empresa fuera de cartera: no es cliente del factoring, no está enrolada y por tanto no tiene acceso al
+  // portal. Aunque la contactes, la oferta no se puede cerrar porque el cliente no tendría cómo loguearse
+  // para firmar. Primero hay que convertirla en cliente (enrolamiento valida a su primer usuario).
+  if (deal.esCliente === false) return out("Hacer cliente para ofertar", "Esta empresa no está en la cartera (no es cliente del factoring): no está enrolada y no tiene acceso al portal, por lo que la oportunidad no se puede cerrar — el cliente no tendría cómo loguearse para firmar. Conviértela primero en cliente (el enrolamiento valida a su primer usuario) y recién ahí levanta la oferta.", "#C2410C", "negocio");
   if (deal.ofertaSolicitada && !deal.ofertaCerrada && !deal.negocioNum) return out("Revisar selección y cerrar la oferta", "El cliente pidió ver la oferta por WhatsApp. Revisa las facturas del paquete y presiona «Cerrar oferta»: hasta cerrarla, ni tú ni el Agente IA pueden enviársela.", "#dc2626", "negocio");
   if (deal.waPendiente) return out("Responder al cliente", "El cliente respondió por WhatsApp y la conversación quedó PENDIENTE. Respóndele por el chat (modo manual) para no perder el cierre.", "#dc2626", "comunicaciones");
   if (deal.stage === "otorgamiento") return out("Coordinar Otorgamiento", "La operación está en la mesa de crédito. Coordina con Riesgo/Operaciones para autorizar las causas de desvío y liberar el giro.", "#7C3AED", "otorgamiento");
@@ -3311,7 +3307,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [draftC, setDraftC] = useState(() => ({ nombre: "", cargo: "", telefono: "", email: "", ...(deal && deal.contacto) }));
   if (!deal) return null;
   const sector = SECTOR_COLORS[deal.sector] || { bg: "#F3F4F6", fg: "#4B5563" };
-  const stageIdx = STAGE_ORDER.indexOf(deal.stage);
+  // Las filas agregadas de "Otras facturas" traen stage "Sin clasificar" (no está en STAGE_ORDER): cae a 0
+  // (Prospección) para no romper los accesos a STAGES[stageIdx] en el encabezado y la barra de progreso.
+  const stageIdx = Math.max(0, STAGE_ORDER.indexOf(deal.stage));
   const nextStage = STAGES[stageIdx + 1];
   const progresoStages = STAGES.filter((s) => s.id !== "perdida");
   const cont = deal.contacto || null;
