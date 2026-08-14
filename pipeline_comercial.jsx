@@ -2968,6 +2968,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const [otorgTab, setOtorgTab] = useState("cli"); // tab activo: "cli" (cliente) o "d:<key>" (deudor)
   const [carrusel, setCarrusel] = useState(0); // ventana del carrusel de tabs de deudor
   const [showApr, setShowApr] = useState(false); // muestra/oculta las reglas aprobadas (DIV colapsable)
+  const [, forceV] = useState(0); // re-render tras visar una excepción desde el detalle
   const vs = SIM_VERSIONS[deal.id] || [];
   const shown = vs.length ? vs : [snapVersionCli(deal, 0)];
   const effIdx = verSel < 0 || verSel >= shown.length ? shown.length - 1 : verSel;
@@ -2986,11 +2987,26 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const varDiffTip = varDiff.map((k) => `$${k}: ${fmtVarCli(k, prev.vars[k])} → ${fmtVarCli(k, ver.vars[k])}`).join("\n");
   const p = palV(ver.estado);
   const orden = { rechazado: 0, excepcion: 1, aprobado: 2 };
-  const reqAprob = (x) => x.disp === "excepcion" || x.disp === "rechazado";
+  // Estado de visado (aprobación de excepciones) de esta operación, por stKey.
+  const visSt = (typeof VISADO_STATE !== "undefined" && VISADO_STATE[deal.id]) || {};
+  // "Requiere aprobación" = es excepción/rechazo Y aún no fue resuelta por un apoderado (visado).
+  const reqAprob = (x) => (x.disp === "excepcion" || x.disp === "rechazado") && !visSt[x.stKey];
   // Ordena: primero las que requieren autorización (excepción/rechazo), luego por severidad y número.
   const ordenBy = (arr) => arr.slice().sort((a, b) => (reqAprob(b) - reqAprob(a)) || (orden[a.disp] - orden[b.disp]) || (a.n - b.n));
+  // Aprobar/rechazar una excepción DIRECTAMENTE desde el detalle (si el usuario tiene la atribución). Escribe el
+  // visado (mismo estado que la mesa de Otorgamientos), registra auditoría + bitácora y re-renderiza.
+  const aprobarExc = (x, val) => {
+    if (!x.stKey || !x.regla) return;
+    const st = VISADO_STATE[deal.id] || (VISADO_STATE[deal.id] = {}); st[x.stKey] = val;
+    const det = VISADO_DETALLE[deal.id] || (VISADO_DETALLE[deal.id] = {}); det[x.stKey] = { msg: "", arch: null, por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL") };
+    const dtxt = x.deudor ? ` · deudor ${x.deudor.nombre}` : "";
+    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Visado Cliente (detalle)", accion: val === "aprobado" ? "Excepción aprobada" : "Excepción rechazada", glosa: `Regla ${x.regla.n} · ${AREA_LBL[x.regla.area]} N${x.nivel || 4} · ${deal.cliente}${dtxt}`, exito: val === "aprobado" });
+    logOtorgEvento(deal.id, USERS[usuario] || usuario, `${USERS[usuario] || usuario} ${val === "aprobado" ? "aprobó" : "rechazó"} la excepción desde el detalle · regla #${x.regla.n} ${x.regla.nombre}${dtxt} (${AREA_LBL[x.regla.area]} N${x.nivel || 4})`, "");
+    forceV((v) => v + 1); onReev && onReev();
+  };
+  const revertirVisado = (x) => { const st = VISADO_STATE[deal.id]; if (st) delete st[x.stKey]; const det = VISADO_DETALLE[deal.id]; if (det) delete det[x.stKey]; forceV((v) => v + 1); onReev && onReev(); };
   // DIV 1 — reglas del CLIENTE (snapshot versionado, ya sin reglas de deudor).
-  const cliRules = ordenBy((ver.res || []).filter((x) => x.disp !== "clasificacion"));
+  const cliRules = ordenBy((ver.res || []).filter((x) => x.disp !== "clasificacion").map((x) => ({ ...x, stKey: String(x.n), regla: REGLAS_CLIENTE.find((r) => r.n === x.n), deudor: null })));
   const cliReqN = cliRules.filter(reqAprob).length;
   // DIV 2 — reglas de los DEUDORES: se evalúan por deudor con sus propias variables y se agrupan por deudor.
   const dItems = evaluarOtorgItems(deal).filter((it) => it.deudor);
@@ -2999,7 +3015,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
     const k = it.deudor.rut || it.deudor.nombre;
     let g = deudMap.get(k);
     if (!g) { g = { key: k, nombre: it.deudor.nombre, rows: [] }; deudMap.set(k, g); }
-    g.rows.push({ n: it.regla.n, nombre: it.regla.nombre, area: it.regla.area, cond: it.regla.cond, hallazgo: it.regla.hallazgo, disp: it.disp, nivel: it.nivel, reev: reglaReev(it.regla.n) });
+    g.rows.push({ n: it.regla.n, nombre: it.regla.nombre, area: it.regla.area, cond: it.regla.cond, hallazgo: it.regla.hallazgo, disp: it.disp, nivel: it.nivel, reev: reglaReev(it.regla.n), stKey: it.stKey, regla: it.regla, deudor: it.deudor });
   });
   const deudGrupos = [...deudMap.values()];
   deudGrupos.forEach((g) => { g.rows = ordenBy(g.rows.filter((x) => x.disp !== "clasificacion")); g.req = g.rows.filter(reqAprob).length; g.total = g.rows.length; });
@@ -3021,6 +3037,24 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         </div>
         {x.disp !== "aprobado" && x.hallazgo && <div className="mt-0.5 t10" style={{ color: C.sub }}>{x.hallazgo}</div>}
         {x.disp === "excepcion" && <div className="mt-0.5 t9" style={{ color: C.faint }}>Dominio: <b>{AREA_LBL[x.area]}</b> · Aprueba: <b style={{ color: otraArea ? "#7C3AED" : C.sub }}>N{x.nivel} · {nr.rol} ({AREA_LBL[nr.area]})</b>{otraArea && <span className="ml-1 rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>↗ otra área</span>}</div>}
+        {x.disp === "excepcion" && (() => {
+          const estado = visSt[x.stKey]; // "aprobado" | "rechazado" | undefined
+          const puedeVisar = x.regla && puedeAprobarExc(usuario, x.regla, x.nivel || 4);
+          if (estado) return (
+            <div className="mt-1.5 flex items-center justify-between gap-2 rounded-md px-2 py-1" style={{ backgroundColor: estado === "aprobado" ? C.greenBg : "#FEF2F2" }}>
+              <span className="t9 font-semibold" style={{ color: estado === "aprobado" ? C.green : C.red }}>{estado === "aprobado" ? "✓ Excepción aprobada" : "✕ Excepción rechazada"}{(VISADO_DETALLE[deal.id] || {})[x.stKey]?.por ? ` · ${(VISADO_DETALLE[deal.id] || {})[x.stKey].por}` : ""}</span>
+              {puedeVisar && <button onClick={() => revertirVisado(x)} className="rounded-md px-2 py-0.5 t9 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Revertir</button>}
+            </div>
+          );
+          if (!puedeVisar) return null;
+          return (
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <span className="t9 font-semibold" style={{ color: "#5B21D6" }}>Tu atribución permite visar:</span>
+              <button onClick={() => aprobarExc(x, "aprobado")} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold text-white" style={{ backgroundColor: "#7C3AED" }}><Check size={11} /> Aprobar excepción</button>
+              <button onClick={() => aprobarExc(x, "rechazado")} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold" style={{ border: "1px solid #DC2626", color: "#DC2626", backgroundColor: "#fff" }}><X size={11} /> Rechazar</button>
+            </div>
+          );
+        })()}
       </div>
     );
   };
