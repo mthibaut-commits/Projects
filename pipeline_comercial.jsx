@@ -1400,6 +1400,32 @@ function cursePayload(d, o, opts, neg, wa) {
 // Oportunidad demo (Carla Rivas) en Oferta con 2 facturas sin XML, para mostrar la solicitud de XML.
 const NOMBRES_CONTACTO = ["María González", "Juan Pérez", "Camila Rojas", "Pedro Soto", "Andrea Muñoz", "Luis Fuentes", "Daniela Reyes", "Carlos Díaz", "Francisca Vera", "Matías Lagos"];
 const CARGOS_CONTACTO = ["Gerente de Finanzas", "Tesorero", "Jefe de Cobranzas", "Contador General", "Gerente General", "Analista de Tesorería"];
+// ── API "Usuarios y Apoderados de la Empresa" (nueva sección de Plataforma360 · ver spec de integraciones) ──
+// La empresa expone sus USUARIOS (contactos y usuarios con acceso al portal). El flag APODERADO se resuelve por
+// LEFT JOIN contra la TABLA DE APODERADOS (informe de poderes vigentes). Determinista por empresa.
+function apoderadosDeEmpresa(deal) {
+  const nom = (deal && deal.cliente) || "";
+  const h = Math.abs(hashStr("apoderados|" + nom)); const rng = pcRng(h);
+  const set = new Set();
+  if (deal && deal.contacto && rng() < 0.55) set.add(deal.contacto.nombre); // el contacto principal suele tener poder
+  if (rng() < 0.4) set.add(NOMBRES_CONTACTO[(h >> 3) % NOMBRES_CONTACTO.length]); // un apoderado adicional
+  return set;
+}
+function usuariosDeEmpresa(deal) {
+  const apo = apoderadosDeEmpresa(deal);
+  const nom = (deal && deal.cliente) || "";
+  const h = Math.abs(hashStr("usuarios|" + nom)); const rng = pcRng(h);
+  const slug = nom.toLowerCase().replace(/[^a-z]/g, "").slice(0, 12) || "empresa";
+  const out = []; const seen = new Set();
+  const telDe = (n) => { const x = Math.abs(hashStr(n)); return `+56 9 ${4000 + (x % 5999)} ${1000 + ((x >> 5) % 8999)}`; };
+  const push = (nombre, cargo, tipo, tel, email) => { if (!nombre || seen.has(nombre)) return; seen.add(nombre); out.push({ id: "u" + out.length, nombre, cargo, telefono: tel || telDe(nombre), email: email || `${nombre.toLowerCase().replace(/ /g, ".")}@${slug}.cl`, tipo, apoderado: apo.has(nombre) }); };
+  const c = deal && deal.contacto;
+  if (c) push(c.nombre, c.cargo || "Contacto comercial", "usuario", c.telefono, c.email); // el contacto de la operación = usuario+contacto
+  const extra = 1 + Math.floor(rng() * 3);
+  for (let i = 0; i < extra; i++) push(NOMBRES_CONTACTO[(h + i * 7) % NOMBRES_CONTACTO.length], CARGOS_CONTACTO[(h + i * 3) % CARGOS_CONTACTO.length], rng() < 0.5 ? "usuario" : "contacto");
+  apo.forEach((nombre) => { if (!seen.has(nombre)) push(nombre, "Apoderado", "usuario"); out.forEach((u) => { if (u.nombre === nombre) u.apoderado = true; }); }); // todo apoderado es al menos usuario
+  return out;
+}
 // El canal de contacto se asigna según la regla de prospección que capturó la factura.
 function canalDeRegla(regla) {
   const c = (regla && regla.canales) || [];
@@ -3461,6 +3487,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [subCanal, setSubCanal] = useState(() => (deal && deal.canalContacto === "Email") ? "Email" : "WhatsApp"); // canal activo en Contactabilidad (Call Center: más adelante)
   const [editC, setEditC] = useState(false); // edición de datos de contacto
   const [draftC, setDraftC] = useState(() => ({ nombre: "", cargo: "", telefono: "", email: "", ...(deal && deal.contacto) }));
+  const [usuariosNuevos, setUsuariosNuevos] = useState([]); // usuarios agregados manualmente en la pestaña Usuarios
+  const [addUser, setAddUser] = useState(false); // formulario "Agregar usuario" abierto
+  const [nu, setNu] = useState({ nombre: "", cargo: "", telefono: "", email: "", tipo: "contacto" }); // nuevo usuario en edición
   if (!deal) return null;
   const sector = SECTOR_COLORS[deal.sector] || { bg: "#F3F4F6", fg: "#4B5563" };
   // Las filas agregadas de "Otras facturas" traen stage "Sin clasificar" (no está en STAGE_ORDER): cae a 0
@@ -3551,7 +3580,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             {deal.channel === "IA" && <Pill style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}><Sparkles size={9} className="mr-0.5" />Agente IA</Pill>}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1" style={{ borderBottom: `1px solid ${C.line}` }}>
-            {[["contacto", "Empresa"], ["negocio", "Negocio"], ["comunicaciones", "Comunicaciones"], ["bitacora", "Bitácora"], ["sow", "SOW"], ["cobranza", "Cobranza"], ["mensajeria", "Mensajería"], ...((deal.facturasOp && deal.facturasOp.length) ? [["verificacion", "Verificación"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
+            {[["contacto", "Empresa"], ["negocio", "Negocio"], ["usuarios", "Usuarios"], ["bitacora", "Bitácora"], ["sow", "SOW"], ["cobranza", "Cobranza"], ["mensajeria", "Mensajería"], ...((deal.facturasOp && deal.facturasOp.length) ? [["verificacion", "Verificación"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
               <button key={k} onClick={() => setTab(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
                 {l}
                 {k === "otorgamiento" && otorgPend > 0 && <span title={`${otorgPend} regla(s) que debes visar tú (cliente + deudores)`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#DC2626" }}>{otorgPend}</span>}
@@ -3905,6 +3934,64 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           })()}
 
           </>)}
+
+          {tab === "usuarios" && (() => {
+            const base = usuariosDeEmpresa(deal);
+            const todos = [...base, ...usuariosNuevos];
+            const tipoLbl = { contacto: "Contacto", usuario: "Usuario y contacto" };
+            return (
+              <div className="mt-4 space-y-3">
+                <div className="rounded-lg p-3" style={{ backgroundColor: "#f5f3ff", border: "1px solid #DDD6FE" }}>
+                  <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#7C3AED" }}><User size={12} /> Usuarios de la empresa</div>
+                  <div className="mt-1 t10" style={{ color: C.sub }}>Contactos y usuarios con acceso al portal de <b>{deal.cliente}</b>. El atributo <b>Apoderado</b> se resuelve por un cruce (left join) con la <b>tabla de apoderados</b> (informe de poderes) de la API de la empresa.</div>
+                </div>
+                <div className="rounded-lg" style={{ border: `1px solid ${C.line}`, overflow: "hidden" }}>
+                  <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
+                    <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>{todos.length} usuario(s)</span>
+                    {!addUser && <button onClick={() => { setNu({ nombre: "", cargo: "", telefono: "", email: "", tipo: "contacto" }); setAddUser(true); }} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 t10 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Plus size={12} /> Agregar usuario</button>}
+                  </div>
+                  {addUser && (
+                    <div className="p-3" style={{ borderBottom: `1px solid ${C.line}` }}>
+                      <div className="t10 font-semibold" style={{ color: C.ink }}>Nuevo usuario</div>
+                      <div className="mt-1.5 grid grid-cols-2 gap-2">
+                        {[["nombre", "Nombre"], ["cargo", "Cargo"], ["telefono", "Teléfono"], ["email", "Email"]].map(([k, l]) => (
+                          <div key={k}><label className="t9" style={{ color: C.faint }}>{l}</label><input value={nu[k]} onChange={(e) => setNu((s) => ({ ...s, [k]: e.target.value }))} className="mt-0.5 w-full rounded-md px-2 py-1 t11 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, color: C.ink }} /></div>
+                        ))}
+                      </div>
+                      <div className="mt-2">
+                        <label className="t9" style={{ color: C.faint }}>Tipo de usuario</label>
+                        <div className="mt-0.5 flex gap-1.5">
+                          {[["contacto", "Sólo contacto"], ["usuario", "Usuario y contacto"]].map(([v, l]) => (
+                            <button key={v} onClick={() => setNu((s) => ({ ...s, tipo: v }))} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ border: `1px solid ${nu.tipo === v ? C.indigo : C.line}`, backgroundColor: nu.tipo === v ? "#F1ECFF" : "#fff", color: nu.tipo === v ? C.indigo : C.sub }}>{l}</button>
+                          ))}
+                        </div>
+                        <div className="mt-1 t9" style={{ color: C.faint }}>El atributo <b>Apoderado</b> no se define aquí: proviene del cruce con la tabla de apoderados (informe de poderes) de la API de la empresa.</div>
+                      </div>
+                      <div className="mt-2 flex gap-1.5">
+                        <button disabled={!nu.nombre.trim()} onClick={() => { const apo = apoderadosDeEmpresa(deal); setUsuariosNuevos((u) => [...u, { id: "n" + u.length, nombre: nu.nombre.trim(), cargo: nu.cargo.trim() || (nu.tipo === "usuario" ? "Usuario" : "Contacto"), telefono: nu.telefono.trim(), email: nu.email.trim(), tipo: nu.tipo, apoderado: apo.has(nu.nombre.trim()) }]); setAddUser(false); }} className="rounded-md px-3 py-1 t10 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: C.indigo }}>Agregar</button>
+                        <button onClick={() => setAddUser(false)} className="rounded-md px-3 py-1 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button>
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    {todos.map((u, i) => (
+                      <div key={u.id} className="flex items-start justify-between gap-2 px-3 py-2" style={{ borderTop: i ? `1px solid ${C.line}` : "none" }}>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="t12 font-semibold" style={{ color: C.ink }}>{u.nombre}</span>
+                            <span className="t10" style={{ color: C.sub }}>· {u.cargo}</span>
+                            <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: u.tipo === "usuario" ? "#F1ECFF" : "#F3F4F6", color: u.tipo === "usuario" ? C.indigo : C.sub }}>{tipoLbl[u.tipo]}</span>
+                            {u.apoderado && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>Apoderado</span>}
+                          </div>
+                          <div className="mt-0.5 t10" style={{ color: C.sub }}>Tel: {u.telefono || "—"} · Email: {u.email || "—"}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {tab === "comunicaciones" && (<>
             <div className="mt-4 rounded-lg p-3" style={{ backgroundColor: C.page, border: `1px solid ${C.line}` }}>
