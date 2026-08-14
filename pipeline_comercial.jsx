@@ -11444,6 +11444,7 @@ export default function PipelineComercial() {
   const [reporteModal, setReporteModal] = useState(false); // modal de reporte semanal
   const [wizardOpen, setWizardOpen] = useState(false); // wizard de "Nuevo negocio"
   const [wizardDeal, setWizardDeal] = useState(null); // deal en modo "incorporar facturas"
+  const [filtrosAvOpen, setFiltrosAvOpen] = useState(false); // modal de filtros avanzados (Deudor / Jefatura / Línea)
   const [cierreModal, setCierreModal] = useState(null); // cierre formal con autenticación (sitio Security)
   const waSourcesRef = useRef({});        // { [neg]: window } ventana de WhatsApp del cliente (postMessage; funciona en file://)
   const cursePayloadsRef = useRef({});    // { [neg]: { id, tasa, opts, payload } } para responder al sitio Security
@@ -13217,28 +13218,19 @@ export default function PipelineComercial() {
             const selBase = "appearance-none rounded-lg pl-3 pr-7 py-1.5 t12 outline-none focus:ring-2 cursor-pointer";
             const sty = (active) => ({ border: `1px solid ${active ? C.indigo : C.line}`, backgroundColor: "#fff", color: active ? C.indigo : C.sub, fontWeight: active ? 600 : 400 });
             const Chev = () => <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" size={12} style={{ color: C.faint }} />;
+            const nAv = (fDeudor !== "todos" ? 1 : 0) + (fJefatura !== "todas" ? 1 : 0) + (fLinea !== "todas" ? 1 : 0);
             return (
               <>
-                <div className="relative">
-                  <select value={fDeudor} onChange={(e) => setFDeudor(e.target.value)} className={selBase} style={sty(fDeudor !== "todos")}>
-                    <option value="todos">Todos los deudores</option><option value="buenos">Buenos deudores</option><option value="otros">Otros deudores</option>
-                  </select><Chev />
-                </div>
-                <div className="relative">
-                  <select value={fJefatura} onChange={(e) => setFJefatura(e.target.value)} className={selBase} style={sty(fJefatura !== "todas")}>
-                    <option value="todas">Todas las jefaturas</option>{jefaturas.map((j) => <option key={j} value={j}>{j}</option>)}
-                  </select><Chev />
-                </div>
-                <div className="relative">
-                  <select value={fLinea} onChange={(e) => setFLinea(e.target.value)} className={selBase} style={sty(fLinea !== "todas")}>
-                    <option value="todas">Línea Negocio</option>{lineas.map((l) => <option key={l} value={l}>{l}</option>)}
-                  </select><Chev />
-                </div>
                 <div className="relative">
                   <select value={fEjecutivo} onChange={(e) => setFEjecutivo(e.target.value)} className={selBase} style={sty(fEjecutivo !== "todos")}>
                     <option value="todos">Todos los ejecutivos</option>{ejecutivos.map((ex) => <option key={ex} value={ex}>{ex}</option>)}
                   </select><Chev />
                 </div>
+                <button onClick={() => setFiltrosAvOpen(true)} title="Más filtros: deudor, jefatura y línea de negocio"
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${nAv ? C.indigo : C.line}`, backgroundColor: "#fff", color: nAv ? C.indigo : C.sub }}>
+                  <Filter size={13} /> Filtros avanzados
+                  {nAv > 0 && <span className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: C.indigo }}>{nAv}</span>}
+                </button>
               </>
             );
           })()}
@@ -13311,6 +13303,40 @@ export default function PipelineComercial() {
       {diaModal && <DiaModal info={diaModal} ultimo={diaModal.dia >= DIAS_SEMANA} reporte={reporte} deals={deals} onAceptar={aceptarDia} onClose={() => setDiaModal(null)} />}
       {reporteModal && <ReporteModal reporte={reporte} analisis={analisis} onClose={() => setReporteModal(false)} onRecomendar={recomendarRegla} />}
       {wizardOpen && <NuevoNegocioWizard usuario={esAdmin ? USUARIO : usuario} deal={wizardDeal} deals={deals} onOpenDeal={(d) => { setWizardOpen(false); setWizardDeal(null); setSelected(d); }} onClose={() => { setWizardOpen(false); setWizardDeal(null); }} onConfirm={crearNegocioWizard} />}
+      {filtrosAvOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(17,24,39,.45)" }} onClick={() => setFiltrosAvOpen(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5" style={{ boxShadow: "0 20px 60px rgba(20,25,45,.25)" }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 t14 font-semibold" style={{ color: C.ink }}><Filter size={16} style={{ color: C.indigo }} /> Filtros avanzados</div>
+              <button onClick={() => setFiltrosAvOpen(false)} className="rounded-md p-1 hover:bg-stone-100"><X size={16} style={{ color: C.sub }} /></button>
+            </div>
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Deudor</label>
+                <select value={fDeudor} onChange={(e) => setFDeudor(e.target.value)} className="mt-1 w-full rounded-lg px-3 py-2 t12 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}>
+                  <option value="todos">Todos los deudores</option><option value="buenos">Buenos deudores</option><option value="otros">Otros deudores</option>
+                </select>
+              </div>
+              <div>
+                <label className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Jefatura</label>
+                <select value={fJefatura} onChange={(e) => setFJefatura(e.target.value)} className="mt-1 w-full rounded-lg px-3 py-2 t12 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}>
+                  <option value="todas">Todas las jefaturas</option>{jefaturas.map((j) => <option key={j} value={j}>{j}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Línea de negocio</label>
+                <select value={fLinea} onChange={(e) => setFLinea(e.target.value)} className="mt-1 w-full rounded-lg px-3 py-2 t12 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink }}>
+                  <option value="todas">Todas las líneas</option>{lineas.map((l) => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="mt-5 flex items-center justify-between">
+              <button onClick={() => { setFDeudor("todos"); setFJefatura("todas"); setFLinea("todas"); }} className="t12 font-medium" style={{ color: C.sub }}>Limpiar estos</button>
+              <button onClick={() => setFiltrosAvOpen(false)} className="rounded-full px-5 py-2 t12 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Listo</button>
+            </div>
+          </div>
+        </div>
+      )}
       {solicOpen && <CentroMensajeria usuario={usuario} deals={deals} onClose={() => setSolicOpen(false)} onOpenDeal={(d, t) => { setSelected(d); setDealTabInicial(t || "mensajeria"); setSolicOpen(false); }} onChange={() => setNotifTick((t) => t + 1)} />}
       {prioOpen && <PrioridadesPanel items={deals.filter(dealVisible).filter((d) => tienePrioridadCurse(d.id))} onClose={() => setPrioOpen(false)} onOpen={(d) => { setSelected(d); setPrioOpen(false); }} />}
       <CommandK abierto={cmdOpen} onCerrar={() => setCmdOpen(false)} deals={deals} dealVisible={dealVisible} irA={irA} onAbrirDeal={(d) => setSelected(d)} />
