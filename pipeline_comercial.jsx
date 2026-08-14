@@ -1125,6 +1125,54 @@ const initialDeals = [
 // validado) ⇒ siempre es alcanzable. El "sin contacto / no puede loguear" sólo aplica a empresas FUERA de
 // cartera (no clientes), que aparecen en el tab "Otras facturas"; ahí la NBA es "Hacer cliente para ofertar".
 const PISO_TASA = 0.9; // tasa mensual mínima viable; bajo este piso, la operación es inviable.
+// ============================================================
+// ATRIBUCIONES DE DESCUENTO DEL EJECUTIVO (bandas por tasa) — configuración editable (JSON).
+// Los controles se aplican sobre las CONDICIONES COMERCIALES (tasa, comisión y descuentos). Para la
+// banda de la tasa de referencia de la operación: `descEjec` = % de descuento que el ejecutivo autoriza
+// por sí mismo; `descMax` = % máximo alcanzable CON autorización explícita de la jefatura. Bajo
+// `tasaMinAbsoluta` la operación no se autoriza nunca (ni con jefatura). Mientras más baja la tasa,
+// menor la atribución del ejecutivo.
+const CFG_ATRIB_DESCUENTO = {
+  tasaMinAbsoluta: 0.78,
+  bandas: [
+    { tMin: 0.78, tMax: 0.96, descEjec: 5, descMax: 16 },
+    { tMin: 0.97, tMax: 1.23, descEjec: 8, descMax: 13 },
+    { tMin: 1.24, tMax: 1.67, descEjec: 9, descMax: 15 },
+    { tMin: 1.68, tMax: 1.92, descEjec: 10, descMax: 17 },
+    { tMin: 1.93, tMax: 2.23, descEjec: 12, descMax: 18 },
+    { tMin: 2.24, tMax: Infinity, descEjec: 14, descMax: 20 },
+  ],
+};
+const bandaDescuentoDeTasa = (tasaRef) => { const t = +tasaRef || 0; return CFG_ATRIB_DESCUENTO.bandas.find((b) => t >= b.tMin && t <= b.tMax) || null; };
+// Evalúa un cambio de una condición (comercial) respecto de su valor original. El % de descuento es cuánto
+// BAJA el valor nuevo respecto del original; la banda la fija la tasa de referencia de la operación.
+//  · ok           → dentro de la atribución del ejecutivo.
+//  · requiereJefe → sobre la atribución del ejecutivo pero ≤ descuento máximo: la jefatura debe autorizar.
+//  · fueraMax     → sobre el descuento máximo: no se puede ofertar.
+//  · bajoMinimo   → sólo para tasa: cae bajo la tasa mínima absoluta: nunca.
+function evalAtribucion(orig, nueva, tasaBanda, esTasa) {
+  const o = +orig || 0, n = +nueva || 0;
+  const banda = bandaDescuentoDeTasa(tasaBanda);
+  const pctDesc = o > 0 ? +(((o - n) / o) * 100).toFixed(1) : 0;
+  if (esTasa && n > 0 && n < CFG_ATRIB_DESCUENTO.tasaMinAbsoluta) return { estado: "bajoMinimo", pctDesc, banda };
+  if (pctDesc <= 0 || !banda) return { estado: "ok", pctDesc: Math.max(0, pctDesc), banda };
+  if (pctDesc <= banda.descEjec) return { estado: "ok", pctDesc, banda };
+  if (pctDesc <= banda.descMax) return { estado: "requiereJefe", pctDesc, banda };
+  return { estado: "fueraMax", pctDesc, banda };
+}
+// Estado global de atribución de una edición de condiciones (peor caso entre tasa y comisión).
+const ATRIB_CHIP = {
+  ok: { fg: "#16A34A", lbl: "dentro de atribución", icon: "✓" },
+  requiereJefe: { fg: "#C2410C", lbl: "requiere jefatura", icon: "▲" },
+  fueraMax: { fg: "#DC2626", lbl: "fuera del máximo", icon: "✕" },
+  bajoMinimo: { fg: "#DC2626", lbl: "bajo la tasa mínima", icon: "✕" },
+};
+const ORDEN_ATRIB = { ok: 0, requiereJefe: 1, fueraMax: 2, bajoMinimo: 3 };
+function atribResumen(evals) {
+  let peor = { estado: "ok" };
+  for (const e of evals) if (ORDEN_ATRIB[e.estado] > ORDEN_ATRIB[peor.estado]) peor = e;
+  return peor;
+}
 // Competidores (cesionarios) a los que se puede perder una oportunidad.
 const COMPETIDORES = ["BCI Factoring", "Banchile Factoring", "Security Factoring", "Tanner Servicios Financieros", "Incofin", "Eurocapital", "Factotal", "Coface Chile"];
 const competidorDe = (d) => COMPETIDORES[hashStr(d.id || "x") % COMPETIDORES.length];
@@ -2796,8 +2844,10 @@ function descuentosDeal(deal, o) {
   const sum = (a) => a.reduce((s, x) => s + (x.desc || 0), 0);
   return { otros, mora, cxc, totOtros: sum(otros), totMora: sum(mora), totCxc: sum(cxc) };
 }
-function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, antic, setAntic, comisO, setComisO, tasaPond, diasPond, reevalPend, onReevaluar }) {
+function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, antic, setAntic, comisO, setComisO, tasaPond, diasPond, reevalPend, onReevaluar, esJefe, usuarioCod, deudoresOp }) {
   const [open, setOpen] = useState(true);
+  const [autorizSig, setAutorizSig] = useState(null); // firma de condiciones autorizadas por la jefatura
+  const [solicSig, setSolicSig] = useState(null); // firma de condiciones con autorización solicitada
   const [editCond, setEditCond] = useState(false); // edición de condiciones bajo demanda (botón)
   const [reevaluando, setReevaluando] = useState(false); // corriendo el re-check de otorgamiento/verificación
   // Al agregar/quitar facturas, las condiciones quedan a re-evaluar: se deshabilitan hasta correr el re-check.
@@ -2813,6 +2863,27 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
   const [orig] = useState(() => ({ tasa: +(tasaPond || 0).toFixed(2), antic, pctCom: 0, comMin: 2, comMax: 2, gastoOp: 26000, gastoDoc: 0 }));
   const [nc, setNc] = useState(orig);
   const setNcK = (k, v) => setNc((s) => ({ ...s, [k]: Math.max(0, +v || 0) }));
+  // ── Atribuciones de descuento del ejecutivo (bandas por tasa de referencia) ──
+  // El descuento (baja respecto de la condición original) se clasifica por la banda de la tasa original.
+  const evalTasa = evalAtribucion(orig.tasa, nc.tasa, orig.tasa, true);
+  const evalCom = evalAtribucion(orig.comMin, nc.comMin, orig.tasa, false);
+  const atrib = atribResumen([evalTasa, evalCom]);
+  const bandaRef = bandaDescuentoDeTasa(orig.tasa);
+  const condSig = `${nc.tasa}|${nc.comMin}|${nc.comMax}|${nc.pctCom}`;
+  const autorizado = autorizSig === condSig;         // la jefatura autorizó exactamente estas condiciones
+  const solicitado = solicSig === condSig;           // el ejecutivo ya solicitó autorización de estas condiciones
+  const requiereJefe = atrib.estado === "requiereJefe";
+  const bloqueoDuro = atrib.estado === "fueraMax" || atrib.estado === "bajoMinimo"; // no ofertar nunca
+  const solicitarAutorizacion = () => {
+    setSolicSig(condSig);
+    registrarAuditoria({ usuario: usuario, modulo: "Condiciones comerciales", accion: "Solicitar autorización", glosa: `Descuento ${atrib.pctDesc}% sobre condiciones de «${deal.cliente}» (atrib. ${bandaRef ? bandaRef.descEjec : "—"}% / máx ${bandaRef ? bandaRef.descMax : "—"}%) → tarea a la jefatura`, empresaId: deal.id, exito: true });
+    if (deal) { deal.condReqAutJefe = true; deal.condAutJefe = false; } // marca la operación: no publicar hasta autorizar
+  };
+  const autorizarJefe = () => {
+    setAutorizSig(condSig);
+    registrarAuditoria({ usuario: usuario, modulo: "Condiciones comerciales", accion: "Autorizar condiciones", glosa: `Jefatura autoriza descuento ${atrib.pctDesc}% en «${deal.cliente}» (tasa ${nc.tasa}%, comisión mín ${nc.comMin} UF)`, empresaId: deal.id, exito: true });
+    if (deal) { deal.condReqAutJefe = false; deal.condAutJefe = true; }
+  };
   const anticipoCLP = Math.round(nc.antic / 100 * montoDocsCLP);
   const difPrecioCLP = Math.round((nc.tasa / 100) * (nc.antic / 100) * montoDocsCLP);
   const comisionRaw = Math.round(nc.pctCom / 100 * montoDocsCLP);
@@ -2865,7 +2936,10 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
                 <tr key={cr.k} style={{ borderBottom: `1px solid ${C.line}` }}>
                   <td className="px-1 py-1.5"><div style={{ color: C.ink }}>{cr.l}</div>{cr.sub && <div className="t9" style={{ color: C.faint }}>{cr.sub}</div>}</td>
                   <td className="px-1 py-1.5 text-right" style={{ color: C.faint }}>{orig[cr.k]}{cr.suf || ""}</td>
-                  <td className="px-1 py-1.5 text-right"><input type="number" step={cr.k === "tasa" || cr.k === "pctCom" ? "0.01" : "1"} value={nc[cr.k]} onChange={(e) => { setNcK(cr.k, e.target.value); if (cr.k === "antic") setAntic(Math.max(0, Math.min(100, +e.target.value || 0))); }} className="w-24 rounded-md px-2 py-1 t11 text-right outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink }} /></td>
+                  <td className="px-1 py-1.5 text-right">
+                    <input type="number" step={cr.k === "tasa" || cr.k === "pctCom" ? "0.01" : "1"} value={nc[cr.k]} onChange={(e) => { setNcK(cr.k, e.target.value); if (cr.k === "antic") setAntic(Math.max(0, Math.min(100, +e.target.value || 0))); }} className="w-24 rounded-md px-2 py-1 t11 text-right outline-none" style={{ border: `1px solid ${(cr.k === "tasa" ? evalTasa : cr.k === "comMin" ? evalCom : null) && (cr.k === "tasa" ? evalTasa : evalCom).estado !== "ok" ? ATRIB_CHIP[(cr.k === "tasa" ? evalTasa : evalCom).estado].fg : C.line}`, color: C.ink }} />
+                    {(cr.k === "tasa" || cr.k === "comMin") && (() => { const ev = cr.k === "tasa" ? evalTasa : evalCom; if (ev.estado === "ok" && ev.pctDesc <= 0) return null; const m = ATRIB_CHIP[ev.estado]; return <div className="mt-0.5 t9 font-semibold" style={{ color: m.fg }}>{m.icon} {ev.pctDesc > 0 ? `−${ev.pctDesc}% · ` : ""}{m.lbl}</div>; })()}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -2878,6 +2952,35 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
                 <div className="mt-0.5 t14 font-semibold" style={{ color: C.ink }}>{v}</div>
               </div>
             ))}
+          </div>
+        )}
+        {/* Atribución del ejecutivo por banda de tasa + autorización de jefatura cuando se excede. */}
+        {bandaRef && (
+          <div className="mt-2 t9" style={{ color: C.faint }}>
+            Atribución (banda tasa {bandaRef.tMin}%–{bandaRef.tMax === Infinity ? "+" : bandaRef.tMax + "%"}): descuento ejecutivo <b style={{ color: C.sub }}>{bandaRef.descEjec}%</b> · máximo con jefatura <b style={{ color: C.sub }}>{bandaRef.descMax}%</b> · tasa mínima absoluta {CFG_ATRIB_DESCUENTO.tasaMinAbsoluta}%.
+          </div>
+        )}
+        {atrib.estado !== "ok" && (
+          <div className="mt-2 rounded-lg p-2.5" style={{ backgroundColor: bloqueoDuro ? "#fef2f2" : "#FFF7ED", border: `1px solid ${bloqueoDuro ? "#fecaca" : "#FED7AA"}` }}>
+            <div className="flex items-center gap-1.5 t11 font-semibold" style={{ color: bloqueoDuro ? "#DC2626" : "#C2410C" }}>
+              <AlertTriangle size={12} /> {atrib.estado === "bajoMinimo" ? "Tasa bajo el mínimo permitido — no ofertable" : bloqueoDuro ? "Descuento fuera del máximo autorizado — no ofertable" : "Descuento sobre tu atribución — requiere autorización de jefatura"}
+            </div>
+            <div className="mt-1 t10" style={{ color: C.sub }}>Descuento aplicado <b>{atrib.pctDesc}%</b>{bandaRef && <> · tu atribución <b>{bandaRef.descEjec}%</b> · máximo con jefatura <b>{bandaRef.descMax}%</b></>}. Controlado sobre tasa y comisión.</div>
+            {esJefe && !bloqueoDuro && <div className="mt-1 t9" style={{ color: C.faint }}>Operación: {[...new Set((deudoresOp || []).map((f) => f.deudor))].slice(0, 4).join(", ") || deal.deudor} · {(deudoresOp || []).length || deal.facturas} factura(s) · {fmtMM((deudoresOp || []).reduce((s, f) => s + (f.montoMM || 0), 0) || deal.amountMM)}.</div>}
+            {bloqueoDuro ? (
+              <div className="mt-1.5 t9" style={{ color: "#DC2626" }}>Ajusta la tasa/comisión dentro del máximo autorizado para poder ofertar.</div>
+            ) : autorizado ? (
+              <div className="mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}><Check size={10} /> Condiciones autorizadas por la jefatura</div>
+            ) : esJefe ? (
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                <button onClick={autorizarJefe} className="inline-flex items-center gap-1 rounded-full px-3 py-1 t10 font-semibold text-white" style={{ backgroundColor: "#16A34A" }}><Check size={11} /> Autorizar condiciones</button>
+                <span className="t9" style={{ color: C.faint }}>Como jefatura puedes autorizar o ajustar la tasa/comisión aquí mismo.</span>
+              </div>
+            ) : solicitado ? (
+              <div className="mt-1.5 t9 font-medium" style={{ color: "#C2410C" }}>⏳ Autorización solicitada · pendiente de la jefatura. La oferta no se publica hasta que se autorice.</div>
+            ) : (
+              <button onClick={solicitarAutorizacion} className="mt-1.5 inline-flex items-center gap-1 rounded-full px-3 py-1 t10 font-semibold" style={{ border: "1px solid #C2410C", color: "#C2410C", backgroundColor: "#fff" }}><AlertTriangle size={11} /> Solicitar autorización de jefatura</button>
+            )}
           </div>
         )}
         </div>
@@ -3783,7 +3886,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           <button key={k} onClick={() => setNegTab(k)} className="rounded-lg px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: negTab === k ? C.lilac : "#fff", color: negTab === k ? C.indigo : C.sub, border: `1px solid ${negTab === k ? C.indigo : C.line}` }}>{l}</button>
                         ))}
                       </div>
-                      {negTab === "resumen" && <SimResumen deal={deal} o={o} montoDocs={montoValido} cantFacturas={validas.length} usuario={USERS[usuario] || usuario} bloqueado={bloqueado} antic={antic} setAntic={setAntic} comisO={comisO} setComisO={setComisO} tasaPond={tasaPond} diasPond={diasPond} reevalPend={reevalPend} onReevaluar={() => setReevalPend(false)} />}
+                      {negTab === "resumen" && <SimResumen deal={deal} o={o} montoDocs={montoValido} cantFacturas={validas.length} usuario={USERS[usuario] || usuario} bloqueado={bloqueado} antic={antic} setAntic={setAntic} comisO={comisO} setComisO={setComisO} tasaPond={tasaPond} diasPond={diasPond} reevalPend={reevalPend} onReevaluar={() => setReevalPend(false)} esJefe={esJefeComercial(usuario)} usuarioCod={usuario} deudoresOp={validas} />}
                       {negTab === "descuentos" && <SimDescuentos deal={deal} o={o} />}
                       {negTab === "documentos" && (<>
                       {/* Documentos: facturas incluidas en la oferta */}
