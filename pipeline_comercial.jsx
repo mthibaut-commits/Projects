@@ -780,7 +780,8 @@ function lineaAprobadaDe(deal) {
 function lineaCreditoDe(deal) {
   const aprobada = lineaAprobadaDe(deal);
   const h = hashStr((deal.rutEmisor || deal.cliente || "") + "uso");
-  const usoActual = +(aprobada * (0.20 + (h % 50) / 100)).toFixed(1); // 20%–70% ya utilizado
+  // Cliente nuevo (nunca ha operado): línea sin uso previo → uso actual 0, disponible = línea completa.
+  const usoActual = esClienteNuevoNEX(deal) ? 0 : +(aprobada * (0.20 + (h % 50) / 100)).toFixed(1); // 20%–70% ya utilizado
   const montoOp = +(deal.amountMM || 0).toFixed(1);
   const proyectado = +(usoActual + montoOp).toFixed(1);
   const disponible = +(aprobada - usoActual).toFixed(1);
@@ -2322,6 +2323,11 @@ function sowDeDeal(deal) {
     Analisis: { Diagnostico: tend === "Creciendo" ? "SOW en crecimiento hacia el target." : tend === "Decreciente" ? "SOW a la baja: la competencia gana participación." : actual >= target ? "SOW saludable, en o sobre el target." : "SOW estable, por debajo del target." },
   };
 }
+// Cliente NUEVO para NEX/BICE: sin historia de operaciones de factoring (SOW no medible aún). Se usa para
+// no mostrar datos inconsistentes (operaciones cursadas, línea utilizada) en empresas que nunca han operado.
+function esClienteNuevoNEX(deal) {
+  return sowDeDeal(deal) == null;
+}
 // ---- Estado de Share of Wallet del cliente (semáforo + detalle mensual minimalista) ----
 // Color del número del mes según el SOW de ese mes respecto del target.
 const SOW_EST_COLOR = { ok: "#16A34A", info: "#ca8a04", warn: "#ea580c", bad: "#dc2626", sd: "#9CA3AF" };
@@ -2707,11 +2713,14 @@ function SowTab({ deal }) {
 // Tabla de historial de deudores (monto · n° facturas por mes). Reutilizada en el tab "Empresa"
 // (bajo Línea de crédito) y en el tab "Deudores".
 function DeudoresHistorialTable({ deal }) {
-  const dh = deudoresHistorial(deal.cliente, deal.deudores);
+  // Facturación (emisión de DTE/SII) del cliente hacia sus principales deudores — mide la RECURRENCIA
+  // comercial. Es información válida aun para clientes nuevos (que facturan pero no han cursado factoring).
+  // Se muestran los 10 deudores con mayor facturación.
+  const dh = deudoresHistorial(deal.cliente, deal.deudores).slice(0, 10);
   const LBL = ["1 mes", "2 m", "3 m", "4 m", "5 m", "6 m", "+6 m"];
   return (
     <>
-      <div className="mt-4 t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Principales deudores · cursado por mes (monto · n° facturas)</div>
+      <div className="mt-4 t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Principales deudores · facturación por mes (monto · n° facturas)</div>
       <div className="mt-1.5 overflow-x-auto">
         <table className="w-full border-collapse t9" style={{ minWidth: "560px" }}>
           <thead><tr>
@@ -2732,7 +2741,7 @@ function DeudoresHistorialTable({ deal }) {
           </tbody>
         </table>
       </div>
-      <div className="mt-1 t9" style={{ color: C.faint }}>Montos y facturas cursadas por cada deudor en los últimos 6 meses y en periodos anteriores (+6 m).</div>
+      <div className="mt-1 t9" style={{ color: C.faint }}>Montos y facturas emitidas (facturación SII) a cada deudor en los últimos 6 meses y en periodos anteriores (+6 m). Refleja la recurrencia comercial del cliente.</div>
     </>
   );
 }
@@ -3682,7 +3691,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             );
           })()}
           <DeudoresHistorialTable deal={deal} />
-          <HistorialComercialTable deal={deal} />
+          {/* Un cliente nuevo no tiene operaciones cursadas previas: no se muestra el historial de operaciones. */}
+          {!esClienteNuevoNEX(deal) && <HistorialComercialTable deal={deal} />}
           </>)}
 
           {tab === "negocio" && (<>
@@ -10800,7 +10810,11 @@ function resumenEmpresa(deal) {
   const out = [];
   out.push(`${deal.cliente} opera en el sector ${(f.sector || "").toLowerCase()} (${(f.actividad || "").toLowerCase()}), con ~${f.trabajadores} trabajadores${f.clienteBanco === "Sí" ? " y es cliente del banco" : ""}. Ingresó a la cartera el ${f.fechaIngreso}.`);
   out.push(`Facturación anual (SII) ~${fmtMM(ventaAnualMM)} · segmento ${c.segmento} (quintil ${(c.quintil || 0) + 1}/5). Patrimonio ~${fmtMM(patrimonioMM)}, leverage ${x.leverage}×, margen últimos 12 m ${c.margen12m}%.`);
-  out.push(`Comportamiento con factoring: colocación promedio 12 m ${fmtMM(colocMM)}, spread real ${c.spreadReal12m}%, tasa última operación ${c.tasaUltOp}%. En esta oportunidad opera sobre ${nDeud} deudor(es).`);
+  // Comportamiento con factoring solo si el cliente YA ha operado con NEX/BICE (un cliente nuevo no lo tiene).
+  if (esClienteNuevoNEX(deal))
+    out.push(`Cliente nuevo para NEX: aún sin operaciones de factoring cursadas, por lo que no registra colocación ni spread histórico. En esta oportunidad opera sobre ${nDeud} deudor(es).`);
+  else
+    out.push(`Comportamiento con factoring: colocación promedio 12 m ${fmtMM(colocMM)}, spread real ${c.spreadReal12m}%, tasa última operación ${c.tasaUltOp}%. En esta oportunidad opera sobre ${nDeud} deudor(es).`);
   if (deal.esCliente === false) out.push(`Empresa fuera de cartera (aún no es cliente del factoring): requiere enrolamiento para poder cursar.`);
   return out;
 }
