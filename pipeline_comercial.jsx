@@ -3160,11 +3160,11 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         const bulk = excForm[bulkKey] || {};
         const tabBtn = (key, label, req, total, isCli, mias) => { const on = active.key === key; return (
           <button key={key} onClick={() => setOtorgTab(key)} title={`${label} · ${req} de ${total} requieren excepción/reevaluación${mias ? ` · ${mias} que TÚ debes visar` : ""}`} className="flex shrink-0 items-center gap-1.5 px-1 pb-2 t11" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
+            {mias > 0 && <span title={`${mias} regla(s) que debes visar tú`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#DC2626" }}>{mias}</span>}
             {isCli ? label : truncD(label, 16)}
             <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: req ? "#FEF2F2" : C.greenBg }}>
               <span style={{ color: req ? "#DC2626" : C.green }}>{req}</span><span style={{ color: C.sub }}>/{total}</span>
             </span>
-            {mias > 0 && <span title={`${mias} regla(s) que debes visar tú`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#DC2626" }}>{mias}</span>}
           </button>
         ); };
         return (
