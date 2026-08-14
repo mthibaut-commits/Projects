@@ -3468,6 +3468,20 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const stageIdx = Math.max(0, STAGE_ORDER.indexOf(deal.stage));
   const nextStage = STAGES[stageIdx + 1];
   const progresoStages = STAGES.filter((s) => s.id !== "perdida");
+  // Total de reglas excepcionables PENDIENTES que ESTE usuario puede visar (cliente + todos los deudores) →
+  // badge rojo en el tab Otorgamiento, para que sepa que tiene pendientes sin entrar. Recalcula al re-render
+  // (tras visar/re-evaluar, reevTick bumpea el estado del drawer).
+  const otorgPend = (() => {
+    try {
+      const st = (typeof VISADO_STATE !== "undefined" && VISADO_STATE[deal.id]) || {};
+      const puede = (r, n) => r && puedeAprobarExc(usuario, r, n || 4);
+      const vs = (typeof SIM_VERSIONS !== "undefined" && SIM_VERSIONS[deal.id]) || [];
+      const ver = vs.length ? vs[vs.length - 1] : snapVersionCli(deal, 0);
+      const cliN = (ver.res || []).filter((x) => (x.disp === "excepcion" || x.disp === "rechazado") && !st[String(x.n)] && puede(REGLAS_CLIENTE.find((r) => r.n === x.n), x.nivel)).length;
+      const dN = evaluarOtorgItems(deal).filter((it) => it.deudor && (it.disp === "excepcion" || it.disp === "rechazado") && !st[it.stKey] && puede(it.regla, it.nivel)).length;
+      return cliN + dN;
+    } catch (e) { return 0; }
+  })();
   const cont = deal.contacto || null;
   // Contacto validado: el cliente respondió por ese canal (WhatsApp/Call → teléfono; Email → correo).
   const telValidado = !!deal.telValidado || (deal.waSesion || []).some((m) => m.from === "cliente");
@@ -3536,10 +3550,13 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             {deal.cat && (() => { const cd = catDisp(deal); return <Pill style={{ backgroundColor: catMeta(cd.cat).bg, color: catMeta(cd.cat).fg }}>{cd.label} · {cd.q}</Pill>; })()}
             {deal.channel === "IA" && <Pill style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}><Sparkles size={9} className="mr-0.5" />Agente IA</Pill>}
           </div>
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {[["contacto", "Empresa"], ["negocio", "Negocio"], ["comunicaciones", "Comunicaciones"], ["bitacora", "Bitácora"], ["sow", "SOW"], ["cobranza", "Cobranza"], ["mensajeria", "Mensajería"], ...((deal.facturasOp && deal.facturasOp.length) ? [["verificacion", "Verificación"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => (
-              <button key={k} onClick={() => setTab(k)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: tab === k ? C.lilac : "#fff", color: tab === k ? C.indigo : C.sub, border: `1px solid ${tab === k ? C.indigo : C.line}` }}>{l}</button>
-            ))}
+          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1" style={{ borderBottom: `1px solid ${C.line}` }}>
+            {[["contacto", "Empresa"], ["negocio", "Negocio"], ["comunicaciones", "Comunicaciones"], ["bitacora", "Bitácora"], ["sow", "SOW"], ["cobranza", "Cobranza"], ["mensajeria", "Mensajería"], ...((deal.facturasOp && deal.facturasOp.length) ? [["verificacion", "Verificación"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
+              <button key={k} onClick={() => setTab(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
+                {l}
+                {k === "otorgamiento" && otorgPend > 0 && <span title={`${otorgPend} regla(s) que debes visar tú (cliente + deudores)`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#DC2626" }}>{otorgPend}</span>}
+              </button>
+            ); })}
           </div>
         </div>
         <div className={fullPage ? "p-5" : "flex-1 overflow-y-auto p-5"}>
