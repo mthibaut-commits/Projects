@@ -3412,6 +3412,24 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const canal = deal.canalContacto || "—";
   const hist = deal.historialContacto || [];
   const wa = deal.waSesion || null;
+  // Barra de acciones de la operación (Rechazar / Guardar borrador / avanzar de etapa). En modo pestaña
+  // completa va en el encabezado; en el panel lateral va al pie.
+  const accionesBar = (
+    <div className="flex items-center justify-end gap-2">
+      {otorgBloqueado(deal) && <div className="mr-auto flex items-center gap-1.5 rounded-md px-2.5 py-1.5 t11 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#DC2626" }}><X size={12} /> Rechazada por reglas de otorgamiento · sólo puede rechazarse</div>}
+      <button onClick={() => onReject(deal.id)} className="rounded-md px-3 py-2 t12 font-medium" style={{ color: C.red, border: `1px solid ${C.line}` }}>Rechazar</button>
+      <button onClick={onClose} className="rounded-md px-3 py-2 t12 font-medium" style={{ color: C.sub, border: `1px solid ${C.line}` }}>Guardar borrador</button>
+      <div className="flex items-center gap-1.5">
+        <select value={avanzarA} onChange={(e) => setAvanzarA(e.target.value)} disabled={otorgBloqueado(deal)} title="La etapa «Aceptada» la fija el cliente al firmar el cierre formal; no está disponible como avance manual." className="rounded-md px-2 py-2 t12 disabled:opacity-40" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
+          {STAGES.filter((s) => s.id !== deal.stage && s.id !== "aceptadas").map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <button onClick={() => onMover(deal.id, avanzarA)} disabled={otorgBloqueado(deal) || deal.stage === "perdida" || deal.stage === "giro"} title={otorgBloqueado(deal) ? "La operación tiene bloqueos firmes de otorgamiento: debe rechazarse, no puede avanzar" : deal.stage === "giro" ? "Operación girada: etapa final, no puede avanzar más" : undefined}
+          className="flex items-center gap-1 rounded-md px-3 py-2 t12 font-medium text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.ink }}>
+          Avanzar <ChevronRight size={14} />
+        </button>
+      </div>
+    </div>
+  );
   return (
     <>
       {!fullPage && <div className="fixed inset-0 z-40 ovl" style={{ cursor: "pointer" }} onClick={onClose} title="Cerrar (clic fuera del panel)" />}
@@ -3438,7 +3456,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   <button onClick={puede ? () => { setPrioridadCurse(deal.id, usuario, !on); setReevTick((x) => x + 1); } : undefined} title={puede ? (on ? "Quitar prioridad de curse" : "Solicitar prioridad de curse al ejecutivo") : (on ? `Prioridad de curse solicitada por ${PRIORIDAD_CURSE[deal.id].porNombre}` : "La prioridad de curse la solicita una jefatura")} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 t11 font-semibold" style={{ border: `1px solid ${on ? "#FED7AA" : C.line}`, backgroundColor: on ? "#FFF7ED" : "#fff", color: on ? "#C2410C" : C.sub, cursor: puede ? "pointer" : "default" }}><Star size={14} style={{ color: on ? "#C2410C" : C.faint, fill: on ? "#F97316" : "none" }} /> Prioridad</button>
                 );
               })()}
-              <button onClick={onClose} className="rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>
+              {!fullPage && <button onClick={onClose} className="rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>}
             </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
@@ -3451,6 +3469,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               <button key={k} onClick={() => setTab(k)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: tab === k ? C.lilac : "#fff", color: tab === k ? C.indigo : C.sub, border: `1px solid ${tab === k ? C.indigo : C.line}` }}>{l}</button>
             ))}
           </div>
+          {/* En pestaña completa, las acciones de la operación van en el encabezado (no al pie). */}
+          {fullPage && <div className="mt-3">{accionesBar}</div>}
         </div>
         <div className={fullPage ? "p-5" : "flex-1 overflow-y-auto p-5"}>
           {(() => {
@@ -4201,20 +4221,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             Etapa {Math.min(stageIdx + 1, progresoStages.length)} de {progresoStages.length} — {STAGES[stageIdx].name}
           </div>
         </div>
-        <div className="flex items-center justify-end gap-2 p-4">
-          {otorgBloqueado(deal) && <div className="mr-auto flex items-center gap-1.5 rounded-md px-2.5 py-1.5 t11 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#DC2626" }}><X size={12} /> Rechazada por reglas de otorgamiento · sólo puede rechazarse</div>}
-          <button onClick={() => onReject(deal.id)} className="rounded-md px-3 py-2 t12 font-medium" style={{ color: C.red, border: `1px solid ${C.line}` }}>Rechazar</button>
-          <button onClick={onClose} className="rounded-md px-3 py-2 t12 font-medium" style={{ color: C.sub, border: `1px solid ${C.line}` }}>Guardar borrador</button>
-          <div className="flex items-center gap-1.5">
-            <select value={avanzarA} onChange={(e) => setAvanzarA(e.target.value)} disabled={otorgBloqueado(deal)} title="La etapa «Aceptada» la fija el cliente al firmar el cierre formal; no está disponible como avance manual." className="rounded-md px-2 py-2 t12 disabled:opacity-40" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
-              {STAGES.filter((s) => s.id !== deal.stage && s.id !== "aceptadas").map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-            <button onClick={() => onMover(deal.id, avanzarA)} disabled={otorgBloqueado(deal) || deal.stage === "perdida" || deal.stage === "giro"} title={otorgBloqueado(deal) ? "La operación tiene bloqueos firmes de otorgamiento: debe rechazarse, no puede avanzar" : deal.stage === "giro" ? "Operación girada: etapa final, no puede avanzar más" : undefined}
-              className="flex items-center gap-1 rounded-md px-3 py-2 t12 font-medium text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.ink }}>
-              Avanzar <ChevronRight size={14} />
-            </button>
-          </div>
-        </div>
+        {!fullPage && <div className="p-4">{accionesBar}</div>}
       </aside>
       {pubModal && (
         <>
@@ -13081,9 +13088,9 @@ export default function PipelineComercial() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
         /* Escala tipográfica Datamart: t7=Nano 9px, t8-t10=Micro 11px, t11=Caption 12px, t12=Small 13px, t13=Body 14px, t15=16px */
-        .t7{font-size:9px;line-height:1.3}.t8{font-size:11px;line-height:1.3}.t9{font-size:10px;line-height:1.3}.t10{font-size:11px;line-height:1.3}
-        .t11{font-size:12px;line-height:1.4}.t12{font-size:13px;line-height:1.4}.t13{font-size:14px;line-height:1.5}
-        .t15{font-size:16px;line-height:1.4}.minw5{min-width:1.25rem}.ovl{background-color:rgba(0,0,0,0.2)}
+        .t7{font-size:10.5px;line-height:1.3}.t8{font-size:12.5px;line-height:1.3}.t9{font-size:11.5px;line-height:1.3}.t10{font-size:12.5px;line-height:1.3}
+        .t11{font-size:14px;line-height:1.4}.t12{font-size:15px;line-height:1.4}.t13{font-size:16px;line-height:1.5}
+        .t15{font-size:18px;line-height:1.4}.minw5{min-width:1.25rem}.ovl{background-color:rgba(0,0,0,0.2)}
         .btn-cta{background:linear-gradient(to right,#EE2EFF,#FF814B);color:#fff;border-radius:9999px;font-weight:600;border:none}
         .btn-cta:hover{filter:brightness(1.06)}
         /* Geometría Datamart (design-tokens): inputs/cards chicas 10px, cards 14px, modales/cards grandes 20px */
@@ -13101,7 +13108,7 @@ export default function PipelineComercial() {
         /* Skeleton shimmer (estado de carga spec) */
         .pl-row{transition:background-color .12s} .pl-row:hover{background-color:#F5F3FF}
         /* Detalle en pestaña propia (_blank): homogeniza la tipografía al tamaño del sitio padre (los tiers chicos del drawer se veían más pequeños) */
-        .dp-detalle .t9{font-size:11px;line-height:1.4}.dp-detalle .t10{font-size:12px;line-height:1.4}.dp-detalle .t11{font-size:13px;line-height:1.45}.dp-detalle .t12{font-size:13.5px}
+        .dp-detalle .t9{font-size:13.5px;line-height:1.4}.dp-detalle .t10{font-size:14px;line-height:1.4}.dp-detalle .t11{font-size:15px;line-height:1.45}.dp-detalle .t12{font-size:15px}
         /* Última fila sin divisor inferior: evita la doble línea contra el borde del contenedor de la tabla */
         tbody tr:last-child{border-bottom:0 !important} tbody tr:last-child>td{border-bottom:0 !important}
         .skel{position:relative;overflow:hidden;background:#F3F4F6;border-radius:8px}
@@ -13130,7 +13137,6 @@ export default function PipelineComercial() {
                   <div className="truncate t13 font-semibold" style={{ color: C.ink }}>{selected.cliente} <span className="t11 font-normal" style={{ color: C.sub }}>· {selected.id} · {stageName(selected.stage)}</span></div>
                 </div>
               </div>
-              <button onClick={() => window.close()} className="shrink-0 rounded-lg px-3 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cerrar pestaña</button>
             </div>
           </header>
           <div className="mx-auto w-full px-6" style={{ maxWidth: 1600 }}>
