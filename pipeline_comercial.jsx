@@ -3378,8 +3378,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const wa = deal.waSesion || null;
   return (
     <>
-      <div className="fixed inset-0 z-40 ovl" style={{ cursor: "pointer" }} onClick={onClose} title="Cerrar (clic fuera del panel)" />
-      <aside onClick={(e) => e.stopPropagation()} className="fixed right-0 top-0 z-50 flex h-full w-full flex-col bg-white shadow-2xl" style={{ maxWidth: "60rem", borderLeft: `1px solid ${C.line}` }}>
+      {!fullPage && <div className="fixed inset-0 z-40 ovl" style={{ cursor: "pointer" }} onClick={onClose} title="Cerrar (clic fuera del panel)" />}
+      <aside onClick={(e) => e.stopPropagation()} className={fullPage ? "flex w-full flex-col bg-white" : "fixed right-0 top-0 z-50 flex h-full w-full flex-col bg-white shadow-2xl"} style={fullPage ? { height: "calc(100vh - 56px)", width: "100%" } : { maxWidth: "60rem", borderLeft: `1px solid ${C.line}` }}>
         {/* Encabezado fijo: título + pills + barra de tabs (no scrollea con el contenido) */}
         <div className="p-5 pb-3" style={{ borderBottom: `1px solid ${C.line}` }}>
           <div className="flex items-start justify-between">
@@ -11437,11 +11437,17 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
 }
 
 export default function PipelineComercial() {
-  const [deals, setDeals] = useState([]); // arranca vacío; el pipeline (incl. 2 casos demo de Call Center) se llena al presionar Start
+  // Detalle en pestaña propia (_blank): con ?deal=<id> se abre SÓLO el detalle de esa oportunidad a pantalla
+  // completa (viewport amplio). El deal se pasa por localStorage al abrir la pestaña.
+  const detallePayload = useMemo(() => {
+    try { const id = new URLSearchParams(location.search).get("deal"); if (!id) return null; const raw = localStorage.getItem("fs_deal_" + id); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+  }, []);
+  const soloDetalle = !!(detallePayload && detallePayload.deal);
+  const [deals, setDeals] = useState(soloDetalle ? [detallePayload.deal] : []); // arranca vacío; el pipeline se llena al presionar Start (en modo detalle, sembrado con la oportunidad)
   const cxcRef = useRef(cargarCxC()); // saldo cuentas por cobrar por cliente
   const [rules, setRules] = useState(cargarReglas);
   useEffect(() => { guardarReglas(rules); }, [rules]); // persiste reglas
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = useState(soloDetalle ? detallePayload.deal : null);
   // Mantiene el modal lateral sincronizado en vivo: si la oportunidad abierta cambia por la
   // simulación o cualquier acción de fondo, el detalle se actualiza sin cerrar/reabrir el modal.
   useEffect(() => {
@@ -11449,11 +11455,13 @@ export default function PipelineComercial() {
     const fresh = deals.find((d) => d.id === selected.id);
     if (fresh && fresh !== selected) setSelected(fresh);
   }, [deals]); // eslint-disable-line react-hooks/exhaustive-deps
+  // En modo detalle (_blank), el título de la pestaña deja claro qué oportunidad/cliente es.
+  useEffect(() => { if (soloDetalle && selected) { try { document.title = `Detalle · ${selected.id} · ${selected.cliente} — NEX Factoring`; } catch (e) {} } }, [soloDetalle, selected]);
   const [query, setQuery] = useState("");
   const [quickFilter, setQuickFilter] = useState("conlinea"); // arranca en el tab "Con línea"
   const [channel, setChannel] = useState("Manual");
-  const [usuario, setUsuario] = useState(USUARIO); // usuario logueado
-  const [logueado, setLogueado] = useState(false); // gate de login (portada spec Auth); clic en avatar = cerrar sesión
+  const [usuario, setUsuario] = useState(soloDetalle && detallePayload.usuario ? detallePayload.usuario : USUARIO); // usuario logueado
+  const [logueado, setLogueado] = useState(soloDetalle ? true : false); // gate de login (portada spec Auth); clic en avatar = cerrar sesión; en modo detalle ya viene autenticado
   const [cmdOpen, setCmdOpen] = useState(false); // command palette Ctrl+K (spec §38)
   // Reportes de Gestión: se abren INLINE en la vista (no como modal). Un solo estado con la clave activa.
   const [reporteGestion, setReporteGestion] = useState("planEjec"); // reporte inline por defecto al abrir Gestión; null = secciones (Cliente/SOW/…)
@@ -12871,6 +12879,14 @@ export default function PipelineComercial() {
   };
   // Alta manual de un negocio: abre el wizard (producto -> cliente -> facturas -> simulación).
   const nuevoNegocio = () => { setWizardDeal(null); setWizardOpen(true); };
+  // Abre el detalle de la oportunidad en una PESTAÑA propia (_blank) → viewport amplio. El deal se pasa por
+  // localStorage; la nueva pestaña (?deal=<id>) lo lee y muestra sólo el detalle a pantalla completa.
+  const abrirDetalle = (d) => {
+    if (!d) return;
+    try { localStorage.setItem("fs_deal_" + d.id, JSON.stringify({ deal: d, usuario, ts: Date.now() })); } catch (e) {}
+    const win = (() => { try { return window.open(location.pathname + "?deal=" + encodeURIComponent(d.id), "_blank"); } catch (e) { return null; } })();
+    if (!win) setSelected(d); // si el navegador bloquea el pop-up, cae al panel lateral
+  };
   const abrirIncorporar = (d) => { setWizardDeal(d); setWizardOpen(true); };
   // Incorpora facturas candidatas a la oferta (una o todas), recalculando con la MISMA tasa.
   const incorporarFacturasOferta = (id, facs) => {
@@ -13063,6 +13079,24 @@ export default function PipelineComercial() {
         }
       `}</style>
 
+      {soloDetalle ? (!selected ? (
+        <div className="flex min-h-screen items-center justify-center t13" style={{ color: C.sub }}>Oportunidad no encontrada.</div>
+      ) : (
+        <>
+          {/* Encabezado del detalle en pestaña propia: deja claro qué oportunidad/cliente es */}
+          <header className="flex items-center justify-between gap-3 bg-white px-5" style={{ height: 56, borderBottom: `1px solid ${C.line}` }}>
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-7 w-7 items-center justify-center text-white" style={{ backgroundColor: C.indigo, borderRadius: 7, fontSize: 13, fontWeight: 700 }}>N</span>
+              <div className="min-w-0">
+                <div className="t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>NEX Factoring · Detalle de Oportunidad</div>
+                <div className="truncate t13 font-semibold" style={{ color: C.ink }}>{selected.cliente} <span className="t11 font-normal" style={{ color: C.sub }}>· {selected.id} · {stageName(selected.stage)}</span></div>
+              </div>
+            </div>
+            <button onClick={() => window.close()} className="shrink-0 rounded-lg px-3 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cerrar pestaña</button>
+          </header>
+          <DealDrawer key={selected.id} deal={selected} fullPage onClose={() => window.close()} onAdvance={advance} onReject={reject} onIncorporar={abrirIncorporar} onIncorporarFacturas={incorporarFacturasOferta} onRetirarFactura={retirarFacturaOferta} onPublicar={publicarOferta} onCerrarOferta={cerrarOferta} onEnviarCierre={enviarCierre} onContactar={iniciarContacto} onEditarContacto={editarContacto} onEnviarWA={enviarWA} onMover={moverEtapa} cierre={cierreModal} onConfirmCierre={confirmarCierre} usuario={usuario} onAutorizarCausa={autorizarCausa} onOtorgarOperacion={otorgarOperacion} tabInicial={dealTabInicial} onIrOtorgamientos={() => {}} />
+        </>
+      )) : (<>
       {/* ===== Top bar ===== */}
       <header style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
       <div className="mx-auto flex h-16 w-full items-center justify-between px-6" style={{ maxWidth: 1600 }}>
@@ -13327,10 +13361,10 @@ export default function PipelineComercial() {
         </div>
 
         <div className="mt-3 flex items-start gap-3 overflow-x-auto pb-4">
-          {vista === "tabla" && <TablaOportunidades deals={filtered} onOpen={setSelected} onMover={moverEtapa} onReject={reject} />}
+          {vista === "tabla" && <TablaOportunidades deals={filtered} onOpen={abrirDetalle} onMover={moverEtapa} onReject={reject} />}
           {vista === "kanban" && (() => {
             const col = (id, opts = {}) => (
-              <StageColumn key={id} stage={stageById(id)} deals={opts.deals || dealsByStage(id)} onOpen={setSelected}
+              <StageColumn key={id} stage={stageById(id)} deals={opts.deals || dealsByStage(id)} onOpen={abrirDetalle}
                 onDragStart={(e, did) => setDraggingId(did)} onDrop={moveTo}
                 showChart={true} serie={historia.map((s) => s[id] || 0)}
                 serieSel={esAdmin ? undefined : historia.map((s) => (s.byExec && s.byExec[usuario] && s.byExec[usuario][id]) || 0)}
@@ -13415,6 +13449,7 @@ export default function PipelineComercial() {
       {solicOpen && <CentroMensajeria usuario={usuario} deals={deals} onClose={() => setSolicOpen(false)} onOpenDeal={(d, t) => { setSelected(d); setDealTabInicial(t || "mensajeria"); setSolicOpen(false); }} onChange={() => setNotifTick((t) => t + 1)} />}
       {prioOpen && <PrioridadesPanel items={deals.filter(dealVisible).filter((d) => tienePrioridadCurse(d.id))} onClose={() => setPrioOpen(false)} onOpen={(d) => { setSelected(d); setPrioOpen(false); }} />}
       <CommandK abierto={cmdOpen} onCerrar={() => setCmdOpen(false)} deals={deals} dealVisible={dealVisible} irA={irA} onAbrirDeal={(d) => setSelected(d)} />
+      </>)}
     </div>
   );
 }
