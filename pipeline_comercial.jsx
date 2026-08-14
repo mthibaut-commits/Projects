@@ -3073,14 +3073,14 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
               <div className="t9 font-semibold" style={{ color: ef.open === "aprobado" ? "#7C3AED" : "#DC2626" }}>{ef.open === "aprobado" ? "Aprobar excepción" : "Rechazar excepción"} · comentario y respaldo</div>
               <textarea value={ef.msg || ""} onChange={(e) => setEF(x.stKey, { msg: e.target.value })} placeholder="Comentario / justificación de la decisión…" className="mt-1 w-full rounded-md p-2 t10 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, minHeight: 54, backgroundColor: "#fff", color: C.ink }} />
               <div className="mt-1.5 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <button onClick={() => setEF(x.stKey, { open: null })} className="rounded-md px-2 py-1 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
+                  <button onClick={() => { aprobarExc(x, ef.open, ef.msg, ef.arch); setEF(x.stKey, { open: null, msg: "", arch: null }); }} className="rounded-md px-3 py-1 t9 font-semibold text-white" style={{ backgroundColor: ef.open === "aprobado" ? "#16A34A" : "#DC2626" }}>Confirmar {ef.open === "aprobado" ? "aprobación" : "rechazo"}</button>
+                </div>
                 <label className="inline-flex cursor-pointer items-center gap-1 t9 font-medium" style={{ color: C.indigo }}>
                   📎 {ef.arch ? ef.arch : "Adjuntar respaldo"}
                   <input type="file" className="hidden" onChange={(e) => setEF(x.stKey, { arch: (e.target.files && e.target.files[0] && e.target.files[0].name) || null })} />
                 </label>
-                <div className="flex items-center gap-1.5">
-                  <button onClick={() => setEF(x.stKey, { open: null })} className="rounded-md px-2 py-1 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
-                  <button onClick={() => { aprobarExc(x, ef.open, ef.msg, ef.arch); setEF(x.stKey, { open: null, msg: "", arch: null }); }} className="rounded-md px-3 py-1 t9 font-semibold text-white" style={{ backgroundColor: ef.open === "aprobado" ? "#7C3AED" : "#DC2626" }}>Confirmar {ef.open === "aprobado" ? "aprobación" : "rechazo"}</button>
-                </div>
               </div>
             </div>
           );
@@ -3448,14 +3448,14 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const accionesBar = (
     <div className="flex items-center justify-end gap-2">
       {otorgBloqueado(deal) && <div className="mr-auto flex items-center gap-1.5 rounded-md px-2.5 py-1.5 t11 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#DC2626" }}><X size={12} /> Rechazada por reglas de otorgamiento · sólo puede rechazarse</div>}
-      <button onClick={() => onReject(deal.id)} className="rounded-md px-3 py-2 t12 font-medium" style={{ color: C.red, border: `1px solid ${C.line}` }}>Rechazar</button>
-      <button onClick={onClose} className="rounded-md px-3 py-2 t12 font-medium" style={{ color: C.sub, border: `1px solid ${C.line}` }}>Guardar borrador</button>
+      <button onClick={() => onReject(deal.id)} className="rounded-lg px-3 py-2 t12 font-medium" style={{ color: C.red, border: `1px solid ${C.line}` }}>Rechazar</button>
+      <button onClick={onClose} className="rounded-lg px-3 py-2 t12 font-medium" style={{ color: C.sub, border: `1px solid ${C.line}` }}>Guardar borrador</button>
       <div className="flex items-center gap-1.5">
-        <select value={avanzarA} onChange={(e) => setAvanzarA(e.target.value)} disabled={otorgBloqueado(deal)} title="La etapa «Aceptada» la fija el cliente al firmar el cierre formal; no está disponible como avance manual." className="rounded-md px-2 py-2 t12 disabled:opacity-40" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
+        <select value={avanzarA} onChange={(e) => setAvanzarA(e.target.value)} disabled={otorgBloqueado(deal)} title="La etapa «Aceptada» la fija el cliente al firmar el cierre formal; no está disponible como avance manual." className="rounded-lg px-3 py-2 t12 disabled:opacity-40" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
           {STAGES.filter((s) => s.id !== deal.stage && s.id !== "aceptadas").map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
         <button onClick={() => onMover(deal.id, avanzarA)} disabled={otorgBloqueado(deal) || deal.stage === "perdida" || deal.stage === "giro"} title={otorgBloqueado(deal) ? "La operación tiene bloqueos firmes de otorgamiento: debe rechazarse, no puede avanzar" : deal.stage === "giro" ? "Operación girada: etapa final, no puede avanzar más" : undefined}
-          className="flex items-center gap-1 rounded-md px-3 py-2 t12 font-medium text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.ink }}>
+          className="flex items-center gap-1 rounded-lg px-3 py-2 t12 font-medium text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.ink }}>
           Avanzar <ChevronRight size={14} />
         </button>
       </div>
@@ -3485,14 +3485,14 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               {(() => {
                 const on = tienePreEval(deal.id);
                 return (
-                  <button onClick={() => { const nv = !on; setPreEval(deal.id, usuario, nv); if (nv) avisarPreEval(deal, usuario); setReevTick((x) => x + 1); }} title={on ? "Cancelar la solicitud de pre-evaluación de otorgamiento" : "Solicitar iniciar formalmente la revisión de otorgamiento (pre-evaluación)"} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 t11 font-semibold" style={{ border: `1px solid ${on ? "#c4b5fd" : C.line}`, backgroundColor: on ? "#f5f3ff" : "#fff", color: on ? "#7C3AED" : C.sub }}><ShieldCheck size={14} style={{ color: on ? "#7C3AED" : C.faint }} /> Pre-evaluación</button>
+                  <button onClick={() => { const nv = !on; setPreEval(deal.id, usuario, nv); if (nv) avisarPreEval(deal, usuario); setReevTick((x) => x + 1); }} title={on ? "Cancelar la solicitud de pre-evaluación de otorgamiento" : "Solicitar iniciar formalmente la revisión de otorgamiento (pre-evaluación)"} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 t12 font-medium" style={{ border: `1px solid ${on ? "#c4b5fd" : C.line}`, backgroundColor: on ? "#f5f3ff" : "#fff", color: on ? "#7C3AED" : C.sub }}><ShieldCheck size={14} style={{ color: on ? "#7C3AED" : C.faint }} /> Pre-evaluación</button>
                 );
               })()}
               {(() => {
                 const on = tienePrioridadCurse(deal.id);
                 const puede = esJefeComercial(usuario); // jefaturas/gerencia solicitan; ejecutivo solo la ve
                 return (
-                  <button onClick={puede ? () => { setPrioridadCurse(deal.id, usuario, !on); setReevTick((x) => x + 1); } : undefined} title={puede ? (on ? "Quitar prioridad de curse" : "Solicitar prioridad de curse al ejecutivo") : (on ? `Prioridad de curse solicitada por ${PRIORIDAD_CURSE[deal.id].porNombre}` : "La prioridad de curse la solicita una jefatura")} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 t11 font-semibold" style={{ border: `1px solid ${on ? "#FED7AA" : C.line}`, backgroundColor: on ? "#FFF7ED" : "#fff", color: on ? "#C2410C" : C.sub, cursor: puede ? "pointer" : "default" }}><Star size={14} style={{ color: on ? "#C2410C" : C.faint, fill: on ? "#F97316" : "none" }} /> Prioridad</button>
+                  <button onClick={puede ? () => { setPrioridadCurse(deal.id, usuario, !on); setReevTick((x) => x + 1); } : undefined} title={puede ? (on ? "Quitar prioridad de curse" : "Solicitar prioridad de curse al ejecutivo") : (on ? `Prioridad de curse solicitada por ${PRIORIDAD_CURSE[deal.id].porNombre}` : "La prioridad de curse la solicita una jefatura")} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 t12 font-medium" style={{ border: `1px solid ${on ? "#FED7AA" : C.line}`, backgroundColor: on ? "#FFF7ED" : "#fff", color: on ? "#C2410C" : C.sub, cursor: puede ? "pointer" : "default" }}><Star size={14} style={{ color: on ? "#C2410C" : C.faint, fill: on ? "#F97316" : "none" }} /> Prioridad</button>
                 );
               })()}
               {fullPage && accionesBar}
@@ -13357,7 +13357,7 @@ export default function PipelineComercial() {
           const grupos = [
             { id: "pipeline", cards: [
               { id: "oport", label: "OPORTUNIDADES", value: activeCount.toLocaleString("es-CL"), sub: "",
-                side: [{ text: "Fluido", up: true, dot: true, hint: "Estado del pipeline" }, { text: "2 estancadas", up: false, hint: "Oportunidades estancadas en prospección" }],
+                side: [{ text: "Fluido", up: true, dot: true, hint: "Estado del pipeline" }, ...(() => { const n = deals.filter((d) => d.stage === "prospeccion" && d.stale).length; return n > 0 ? [{ text: n + (n === 1 ? " estancada" : " estancadas"), up: false, hint: "Oportunidades estancadas en prospección" }] : []; })()],
                 serie: kpiHist.map((h) => h.oport) },
               { id: "piptotal", label: "PIPELINE TOTAL", value: fmtMM(totalPipeline), sub: "", serie: kpiHist.map((h) => h.pipeline),
                 side: [{ label: "WR", v: `${winLoss.win}%`, n: winLoss.ganados, up: true, hint: `${winLoss.ganados} ganados` }, { label: "LR", v: `${winLoss.loss}%`, n: winLoss.perdidos, up: false, hint: `${winLoss.perdidos} perdidos` }] },
