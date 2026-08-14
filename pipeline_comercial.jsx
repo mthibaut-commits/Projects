@@ -3022,8 +3022,11 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
     if (!g) { g = { key: k, nombre: it.deudor.nombre, rows: [] }; deudMap.set(k, g); }
     g.rows.push({ n: it.regla.n, nombre: it.regla.nombre, area: it.regla.area, cond: it.regla.cond, hallazgo: it.regla.hallazgo, disp: it.disp, nivel: it.nivel, reev: reglaReev(it.regla.n), stKey: it.stKey, regla: it.regla, deudor: it.deudor });
   });
+  // Reglas pendientes que ESTE usuario puede visar según su atribución (para el badge rojo "para ti" por tab).
+  const puedeVisarX = (x) => reqAprob(x) && x.regla && puedeAprobarExc(usuario, x.regla, x.nivel || 4);
+  const cliMias = cliRules.filter(puedeVisarX).length;
   const deudGrupos = [...deudMap.values()];
-  deudGrupos.forEach((g) => { g.rows = ordenBy(g.rows.filter((x) => x.disp !== "clasificacion")); g.req = g.rows.filter(reqAprob).length; g.total = g.rows.length; });
+  deudGrupos.forEach((g) => { g.rows = ordenBy(g.rows.filter((x) => x.disp !== "clasificacion")); g.req = g.rows.filter(reqAprob).length; g.total = g.rows.length; g.mias = g.rows.filter(puedeVisarX).length; });
   const truncD = (s, n) => (s && s.length > n ? s.slice(0, n).trim() + "…" : s);
   // Tarjeta de regla reutilizable (cliente y deudor).
   const reglaCard = (x, kpref) => {
@@ -3149,22 +3152,23 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         const off = Math.min(carrusel, maxOff);
         const visDeud = deudSorted.slice(off, off + VIS);
         const masDer = deudSorted.length - (off + VIS);
-        const tabBtn = (key, label, req, total, isCli) => { const on = active.key === key; return (
-          <button key={key} onClick={() => setOtorgTab(key)} title={`${label} · ${req} de ${total} requieren excepción/reevaluación`} className="flex shrink-0 items-center gap-1.5 px-1 pb-2 t11" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
+        const tabBtn = (key, label, req, total, isCli, mias) => { const on = active.key === key; return (
+          <button key={key} onClick={() => setOtorgTab(key)} title={`${label} · ${req} de ${total} requieren excepción/reevaluación${mias ? ` · ${mias} que TÚ debes visar` : ""}`} className="flex shrink-0 items-center gap-1.5 px-1 pb-2 t11" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
             {isCli ? label : truncD(label, 16)}
             <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: req ? "#FEF2F2" : C.greenBg }}>
               <span style={{ color: req ? "#DC2626" : C.green }}>{req}</span><span style={{ color: C.sub }}>/{total}</span>
             </span>
+            {mias > 0 && <span title={`${mias} regla(s) que debes visar tú`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#DC2626" }}>{mias}</span>}
           </button>
         ); };
         return (
           <div className="mt-3 rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
             <div className="t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Reglas de otorgamiento · v{ver.v}</div>
             <div className="mt-2 flex items-center gap-x-3" style={{ borderBottom: `1px solid ${C.line}` }}>
-              {tabBtn("cli", "Cliente", cliReqN, cliRules.length, true)}
+              {tabBtn("cli", "Cliente", cliReqN, cliRules.length, true, cliMias)}
               {deudSorted.length > 0 && <span className="mb-1.5 h-4 w-px shrink-0" style={{ backgroundColor: C.line }} />}
               {off > 0 && <button onClick={() => setCarrusel(off - 1)} title="Deudores anteriores" className="mb-1 shrink-0 rounded-md px-1 py-0.5" style={{ color: C.sub }}><ChevronLeft size={15} /></button>}
-              {visDeud.map((g) => tabBtn("d:" + g.key, g.nombre, g.req, g.total, false))}
+              {visDeud.map((g) => tabBtn("d:" + g.key, g.nombre, g.req, g.total, false, g.mias))}
               {masDer > 0 && (
                 <button onClick={() => setCarrusel(off + 1)} title={`Ver ${masDer} deudor(es) más`} className="mb-1 flex shrink-0 items-center gap-0.5 rounded-md px-1 py-0.5 t10 font-semibold" style={{ color: C.indigo }}>
                   <ChevronRight size={15} /><span className="rounded-full px-1 t9 font-bold" style={{ backgroundColor: "#F1ECFF" }}>+{masDer}</span>
