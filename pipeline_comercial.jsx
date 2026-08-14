@@ -3241,10 +3241,9 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
             <span title={x.reev ? "Re-evaluable: el dato de origen puede cambiar" : "Bloqueo firme: no se re-evalúa"} style={{ cursor: "help" }}>{x.reev ? "♻" : "🔒"}</span>
             <span title={tip} className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full t8" style={{ border: `1px solid ${C.faint}`, color: C.faint, cursor: "help" }}>i</span>
           </div>
-          <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dCol[x.disp] + "1a", color: dCol[x.disp] }}>{dLbl[x.disp]}{x.nivel ? " · N" + x.nivel : ""}</span>
+          <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dCol[x.disp] + "1a", color: dCol[x.disp] }} title={otraArea ? `Aprueba otra área (dominio de la regla: ${AREA_LBL[x.area]})` : undefined}>{dLbl[x.disp]}{x.nivel ? " · N" + x.nivel : ""}{x.disp === "excepcion" ? ` · ${nr.rol} (${AREA_LBL[nr.area]})` : ""}</span>
         </div>
         {x.disp !== "aprobado" && x.hallazgo && <div className="mt-0.5 t10" style={{ color: C.sub }}>{x.hallazgo}</div>}
-        {x.disp === "excepcion" && <div className="mt-0.5 t9" style={{ color: C.faint }}>Dominio: <b>{AREA_LBL[x.area]}</b> · Aprueba: <b style={{ color: otraArea ? "#7C3AED" : C.sub }}>N{x.nivel} · {nr.rol} ({AREA_LBL[nr.area]})</b>{otraArea && <span className="ml-1 rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>↗ otra área</span>}</div>}
         {x.disp === "excepcion" && (() => {
           const estado = visSt[x.stKey]; // "aprobado" | "rechazado" | undefined
           const puedeVisar = x.regla && puedeAprobarExc(usuario, x.regla, x.nivel || 4);
