@@ -3801,11 +3801,50 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           const matchQ = (f) => !q || String(f.folio).includes(q) || (f.deudor || "").toLowerCase().includes(q);
                           const candsF = cands.filter(matchQ);
                           const todasF = todas.filter(matchQ);
-                          const clasif = (f) => { const sc = scoreDeudor(f.deudor, tipoDeudorDisp(f)); const ch = DEUDOR_CHIP[sc.tipo] || DEUDOR_CHIP["Otro"]; return { sc, ch }; };
                           const CAND_PP = 8;
                           const totalPg = Math.max(1, Math.ceil(candsF.length / CAND_PP));
                           const pg = Math.min(candPage, totalPg - 1);
                           const candsVis = candsF.slice(pg * CAND_PP, pg * CAND_PP + CAND_PP);
+                          // "Otras facturas" se modela como la tabla de "Facturas incluidas en la oferta":
+                          // mismas columnas (Tipo doc · Folio · Razón social · Nota · F. emisión · F. vencim · Otorg · Verif · Tasa · Monto),
+                          // con una columna de acción (Agregar para candidatas · XML para las que ya están en la oferta).
+                          const GC_OTRAS = "16px 74px 58px minmax(120px,1fr) 30px 90px 90px 106px 100px 48px 66px 84px";
+                          const HeadOtras = (
+                            <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: GC_OTRAS, color: C.faint, borderBottom: `1px solid ${C.line}` }}>
+                              <span></span><span>Tipo doc.</span><span>Folio</span><span>Razón social</span><span className="text-right">Nota</span><span>F. emisión</span><span>F. vencim.</span><span>Otorg.</span><span>Verif.</span><span className="text-right">Tasa</span><span className="text-right">Monto</span><span></span>
+                            </div>
+                          );
+                          const filaOtra = (f) => {
+                            const sc = scoreDeudor(f.deudor, tipoDeudorDisp(f)); const nota = notaFromScore(sc.score);
+                            const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
+                            const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
+                            const he = Math.abs(hashStr("em" + f.folio)) % 20 + 3; const emD = new Date(Date.now() - he * 86400000);
+                            const em = emD.toLocaleDateString("es-CL"); const venc = new Date(emD.getTime() + 60 * 86400000).toLocaleDateString("es-CL");
+                            const reqOtorg = f.inboundBucket === "OTRO" || tipoDeudorDisp(f) === "Otro";
+                            const oto = reqOtorg ? { bg: "#f5f3ff", fg: "#7C3AED", t: "Otorgamiento" } : { bg: "#F0FDF4", fg: "#16A34A", t: "Automático" };
+                            const vf = verifFactura(f, deal); const vv = vf.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
+                            const tasaF = ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + COSTO_FONDO).toFixed(2);
+                            const ok = xmlOk[f.id] !== false;
+                            const accion = f.candidata
+                              ? (!bloqueado ? <button onClick={() => onIncorporarFacturas(deal.id, [f])} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button> : <span></span>)
+                              : <button onClick={() => setXmlOk((m) => ({ ...m, [f.id]: !ok }))} title={ok ? "Con XML" : "Sin XML"} disabled={!!f.excl || bloqueado} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: ok ? C.greenBg : "#fef2f2", color: ok ? C.green : C.red, border: `1px solid ${ok ? "#bbf7d0" : "#fecaca"}` }}>{ok ? <Check size={10} /> : <X size={10} />} XML</button>;
+                            return (
+                              <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: GC_OTRAS, borderBottom: `1px solid ${C.line}`, opacity: f.excl ? 0.6 : 1 }}>
+                                <span className="flex items-center" title={f.candidata ? "Candidata · disponible para agregar a la oferta" : "Ya está en la oferta"}><Star size={12} style={{ color: f.candidata ? "#F97316" : C.faint }} fill={f.candidata ? "#F97316" : "none"} /></span>
+                                <span className="truncate t9" style={{ color: C.sub }} title={tdoc}>{tdoc}</span>
+                                <span className="font-medium" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>#{f.folio}</span>
+                                <span className="truncate" style={{ color: C.sub }} title={f.deudor}>{f.deudor}</span>
+                                <span className="text-right font-semibold" title={`Nota del deudor: ${nota} / 5`} style={{ color: NOTA_COLOR(nota) }}>{nota}</span>
+                                <span className="t9" style={{ color: C.faint }}>{em}</span>
+                                <span className="t9" style={{ color: C.faint }}>{venc}</span>
+                                <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: oto.bg, color: oto.fg }}>{oto.t}</span>
+                                <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: vv.bg, color: vv.fg }}>{vv.t}</span>
+                                <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
+                                <span className="text-right font-medium" title={f.excl ? `Excluida: ${f.excl}` : undefined} style={{ color: C.ink, textDecoration: f.excl ? "line-through" : "none" }}>{fmtMM(f.montoMM)}</span>
+                                {accion}
+                              </div>
+                            );
+                          };
                           return (
                             <>
                               <div className="flex items-center gap-1.5">
@@ -3829,16 +3868,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 ) : (
                                   <>
                                     <div className="mt-1 t9" style={{ color: C.faint }}>Documentos del cliente que aún NO son parte de la oferta. Las facturas de deudores <b>Otro</b> (fuera de Lista Blanca/Autorizados y sin factoring el último año) no abren oportunidad por sí solas: al agregarlas, la operación pasará por <b>Otorgamiento</b>.</div>
-                                    <div className="mt-1.5 space-y-1">
-                                      {candsVis.map((f) => { const { sc, ch } = clasif(f); return (
-                                        <div key={f.id} className="flex items-center gap-2 t11">
-                                          <span className="shrink-0 rounded-full px-1 py-0.5 t9 font-medium" style={{ backgroundColor: ch.bg, color: ch.fg }}>{DEUDOR_LABEL[sc.tipo] || "Otro"}</span>
-                                          <span className="w-8 shrink-0 text-right font-semibold" title={`Nota del deudor: ${notaFromScore(sc.score)} / 5 · modelo de riesgo Security (5 = mejor pagador)`} style={{ color: NOTA_COLOR(notaFromScore(sc.score)) }}>{notaFromScore(sc.score)}</span>
-                                          <span className="min-w-0 flex-1 truncate" style={{ color: C.sub }}>{f.deudor} <span className="t9" style={{ color: C.faint }}>· #{f.folio} · {fmtMM(f.montoMM)}</span></span>
-                                          {!bloqueado && <button onClick={() => onIncorporarFacturas(deal.id, [f])} className="flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button>}
-                                        </div>
-                                      ); })}
-                                    </div>
+                                    <div className="mt-1.5 overflow-x-auto"><div style={{ minWidth: 900 }}>
+                                      {HeadOtras}
+                                      {candsVis.map((f) => filaOtra({ ...f, candidata: true }))}
+                                    </div></div>
                                     {totalPg > 1 && (
                                       <div className="mt-1.5 flex items-center justify-end gap-2 t10" style={{ color: C.faint }}>
                                         <button onClick={() => setCandPage(Math.max(0, pg - 1))} disabled={pg === 0} title="Anterior" className="disabled:opacity-30" style={{ color: "#C2410C" }}><ChevronLeft size={14} /></button>
@@ -3851,23 +3884,13 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               ) : (
                                 <>
                                   <div className="mt-1 t9" style={{ color: C.faint }}>{validas.length} en la oferta · {cands.length} candidatas (★ = candidata). Orden: de la más nueva a la más antigua.</div>
-                                  <div className="mt-1.5 space-y-1 overflow-y-auto pr-1" style={{ maxHeight: "360px" }}>
-                                    {todasF.map((f) => { const { sc, ch } = clasif(f); const ok = xmlOk[f.id] !== false; return (
-                                      <div key={f.id} className="flex items-center gap-2 t11" style={{ opacity: f.excl ? 0.6 : 1 }}>
-                                        <span title={f.candidata ? "Es candidata · disponible para agregar a la oferta" : "Ya está en la oferta"} className="shrink-0 flex items-center">
-                                          <Star size={13} style={{ color: f.candidata ? "#F97316" : C.faint }} fill={f.candidata ? "#F97316" : "none"} />
-                                        </span>
-                                        <span className="shrink-0 rounded-full px-1 py-0.5 t9 font-medium" style={{ backgroundColor: ch.bg, color: ch.fg }}>{DEUDOR_LABEL[sc.tipo] || "Otro"}</span>
-                                        <span className="w-8 shrink-0 text-right font-semibold" title={`Nota del deudor: ${notaFromScore(sc.score)} / 5 · modelo de riesgo Security (5 = mejor pagador)`} style={{ color: NOTA_COLOR(notaFromScore(sc.score)) }}>{notaFromScore(sc.score)}</span>
-                                        <span className="min-w-0 flex-1 truncate" style={{ color: C.sub }}>{f.deudor} <span className="t9" style={{ color: C.faint }}>· #{f.folio} · {f.excl ? <span style={{ textDecoration: "line-through" }}>{fmtMM(f.montoMM)}</span> : fmtMM(f.montoMM)}</span></span>
-                                        {f.excl && <span title={`Excluida: ${f.excl}`} className="shrink-0 rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red, border: "1px solid #fecaca", cursor: "help" }}>{f.excl} ✕</span>}
-                                        {f.candidata
-                                          ? (!bloqueado && <button onClick={() => onIncorporarFacturas(deal.id, [f])} className="flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button>)
-                                          : <button onClick={() => setXmlOk((m) => ({ ...m, [f.id]: !ok }))} title={ok ? "Con XML" : "Sin XML"} disabled={!!f.excl || bloqueado} className="flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: ok ? C.greenBg : "#fef2f2", color: ok ? C.green : C.red, border: `1px solid ${ok ? "#bbf7d0" : "#fecaca"}` }}>{ok ? <Check size={10} /> : <X size={10} />} XML</button>}
-                                      </div>
-                                    ); })}
-                                    {todasF.length === 0 && <div className="t10" style={{ color: C.faint }}>Sin resultados para “{factQuery}”.</div>}
-                                  </div>
+                                  <div className="mt-1.5 overflow-x-auto"><div style={{ minWidth: 900 }}>
+                                    {HeadOtras}
+                                    <div className="overflow-y-auto pr-1" style={{ maxHeight: "360px" }}>
+                                      {todasF.map((f) => filaOtra(f))}
+                                      {todasF.length === 0 && <div className="t10 py-2" style={{ color: C.faint }}>Sin resultados para “{factQuery}”.</div>}
+                                    </div>
+                                  </div></div>
                                   {(() => {
                                     const faltantes = facturasOp.filter((f) => xmlOk[f.id] === false);
                                     if (!faltantes.length) return null;
