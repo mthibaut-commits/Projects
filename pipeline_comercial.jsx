@@ -3436,13 +3436,21 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
       <aside onClick={(e) => e.stopPropagation()} className={fullPage ? "flex w-full flex-col bg-white" : "fixed right-0 top-0 z-50 flex h-full w-full flex-col bg-white shadow-2xl"} style={fullPage ? { width: "100%" } : { maxWidth: "60rem", borderLeft: `1px solid ${C.line}` }}>
         {/* Encabezado fijo: título + pills + barra de tabs (no scrollea con el contenido) */}
         <div className="p-5 pb-3" style={{ borderBottom: `1px solid ${C.line}`, ...(fullPage ? { position: "sticky", top: 0, zIndex: 5, backgroundColor: "#fff" } : {}) }}>
-          <div className="flex items-start justify-between">
+          {fullPage && (
+            <div className="-mx-5 -mt-5 mb-3 px-5 pt-3">
+              <div className="flex items-center gap-1">
+                {progresoStages.map((s, i) => <div key={s.id} className="h-1.5 flex-1 rounded-full" style={{ backgroundColor: i <= stageIdx ? C.indigo : C.line }} />)}
+              </div>
+              <div className="mt-1 t9" style={{ color: C.faint }}>Etapa {Math.min(stageIdx + 1, progresoStages.length)} de {progresoStages.length} — {STAGES[stageIdx].name}</div>
+            </div>
+          )}
+          <div className="flex items-start justify-between gap-3">
             <div>
               <div className="t11 font-medium" style={{ color: C.faint }}>{deal.id}</div>
               <h2 className="mt-1 text-xl font-semibold" style={{ color: C.ink }}>{deal.cliente}</h2>
               <div className="mt-0.5 t12" style={{ color: C.sub }}>Paquete de facturas · {STAGES[stageIdx].name}</div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               {(() => {
                 const on = tienePreEval(deal.id);
                 return (
@@ -3456,6 +3464,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   <button onClick={puede ? () => { setPrioridadCurse(deal.id, usuario, !on); setReevTick((x) => x + 1); } : undefined} title={puede ? (on ? "Quitar prioridad de curse" : "Solicitar prioridad de curse al ejecutivo") : (on ? `Prioridad de curse solicitada por ${PRIORIDAD_CURSE[deal.id].porNombre}` : "La prioridad de curse la solicita una jefatura")} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 t11 font-semibold" style={{ border: `1px solid ${on ? "#FED7AA" : C.line}`, backgroundColor: on ? "#FFF7ED" : "#fff", color: on ? "#C2410C" : C.sub, cursor: puede ? "pointer" : "default" }}><Star size={14} style={{ color: on ? "#C2410C" : C.faint, fill: on ? "#F97316" : "none" }} /> Prioridad</button>
                 );
               })()}
+              {fullPage && accionesBar}
               {!fullPage && <button onClick={onClose} className="rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>}
             </div>
           </div>
@@ -3469,8 +3478,6 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               <button key={k} onClick={() => setTab(k)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: tab === k ? C.lilac : "#fff", color: tab === k ? C.indigo : C.sub, border: `1px solid ${tab === k ? C.indigo : C.line}` }}>{l}</button>
             ))}
           </div>
-          {/* En pestaña completa, las acciones de la operación van en el encabezado (no al pie). */}
-          {fullPage && <div className="mt-3">{accionesBar}</div>}
         </div>
         <div className={fullPage ? "p-5" : "flex-1 overflow-y-auto p-5"}>
           {(() => {
@@ -4210,6 +4217,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           })()}
 
         </div>
+        {!fullPage && (
         <div className="px-4 pt-3" style={{ borderTop: `1px solid ${C.line}` }}>
           <div className="t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Progreso</div>
           <div className="mt-2 flex items-center gap-1">
@@ -4221,6 +4229,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             Etapa {Math.min(stageIdx + 1, progresoStages.length)} de {progresoStages.length} — {STAGES[stageIdx].name}
           </div>
         </div>
+        )}
         {!fullPage && <div className="p-4">{accionesBar}</div>}
       </aside>
       {pubModal && (
