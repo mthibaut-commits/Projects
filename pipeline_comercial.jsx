@@ -3522,16 +3522,11 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             const preview = deal.stage !== "otorgamiento";
             return (
               <div className="mt-4 space-y-3">
-                {deal.stage === "perdida" ? (
+                {deal.stage === "perdida" && (
                   <div className="rounded-lg p-3" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca" }}>
                     <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#DC2626" }}><X size={12} /> ⛔ Operación perdida{deal.bloqueosFirmes && deal.bloqueosFirmes.length ? ` · ${deal.bloqueosFirmes.length} bloqueo(s) firme(s): ${deal.bloqueosFirmes.map((n) => "#" + n).join(", ")}` : ""}{deal.fechaPerdida ? ` · ${deal.fechaPerdida}` : ""}</div>
                     <div className="mt-1.5 t12" style={{ color: C.ink, lineHeight: 1.5 }}>{causaPerdidaDeal(deal)}. Estado terminal: los bloqueos firmes <b>no admiten excepción</b> por ningún nivel de atribución. El historial de versiones queda en <b>solo lectura</b>. Para reactivar el negocio se crea una operación nueva con referencia a ésta.</div>
                   </div>
-                ) : (
-                <div className="rounded-lg p-3" style={{ backgroundColor: "#f5f3ff", border: "1px solid #ddd6fe" }}>
-                  <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#7C3AED" }}><AlertTriangle size={12} /> Requiere otorgamiento · {nReglas} regla{nReglas === 1 ? "" : "s"} del cliente{preview && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>Vista previa</span>}</div>
-                  <div className="mt-1.5 t12" style={{ color: C.ink, lineHeight: 1.5 }}>{preview ? "Según la simulación actual, al aceptarse esta operación quedará en otorgamiento por las siguientes reglas del cliente. " : "Esta operación fue aceptada pero no puede cursarse automáticamente. A continuación, las reglas del cliente que la dejaron en otorgamiento. "}<b>La aprobación la realizan las áreas responsables desde el menú Otorgamientos</b>; esta vista es informativa.</div>
-                </div>
                 )}
                 {(() => {
                   // Acceso directo para el aprobador que tiene criterios por excepcionar en ESTA operación (según su atribución).
@@ -13138,7 +13133,7 @@ export default function PipelineComercial() {
         <div className="dp-detalle">
           {/* Encabezado del detalle en pestaña propia: deja claro qué oportunidad/cliente es. Mismo ancho (1600px) que el sitio. */}
           <header className="bg-white" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <div className="mx-auto flex items-center justify-between gap-3 px-6" style={{ height: 56, maxWidth: 1600 }}>
+            <div className="mx-auto flex items-center justify-between gap-3 px-5" style={{ height: 56, maxWidth: 1600 }}>
               <div className="flex min-w-0 items-center gap-3">
                 <span className="flex h-7 w-7 items-center justify-center text-white" style={{ backgroundColor: C.indigo, borderRadius: 7, fontSize: 13, fontWeight: 700 }}>N</span>
                 <div className="min-w-0">
@@ -13157,7 +13152,7 @@ export default function PipelineComercial() {
               </div>
             </div>
           </header>
-          <div className="mx-auto w-full px-6" style={{ maxWidth: 1600 }}>
+          <div className="mx-auto w-full" style={{ maxWidth: 1600 }}>
             <DealDrawer key={selected.id} deal={selected} fullPage onClose={() => window.close()} onAdvance={advance} onReject={reject} onIncorporar={abrirIncorporar} onIncorporarFacturas={incorporarFacturasOferta} onRetirarFactura={retirarFacturaOferta} onPublicar={publicarOferta} onCerrarOferta={cerrarOferta} onEnviarCierre={enviarCierre} onContactar={iniciarContacto} onEditarContacto={editarContacto} onEnviarWA={enviarWA} onMover={moverEtapa} cierre={cierreModal} onConfirmCierre={confirmarCierre} usuario={usuario} onAutorizarCausa={autorizarCausa} onOtorgarOperacion={otorgarOperacion} tabInicial={(detallePayload && detallePayload.tab) || dealTabInicial} onIrOtorgamientos={() => {}} />
           </div>
         </div>
