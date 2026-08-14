@@ -12757,6 +12757,7 @@ export default function PipelineComercial() {
   const toggleStream = () => {
     const primerInicio = !streaming && !iniciadoRef.current; // primer Start de la sesión (o tras Reiniciar)
     if (!streaming) { pausaRef.current = false; iniciadoRef.current = true; } // al iniciar/reanudar: arranca el motor de fondo
+    else { pausaRef.current = true; } // PAUSA explícita del usuario: detiene TAMBIÉN el motor de fondo (cron/pérdidas), no solo la ingesta
     if (!streaming && streamQueue.length === 0 && streamFeed.length === 0 && acumulado.length === 0) { setStreamQueue(INBOUND_STREAM); setRecibidas(0); setCorridas(0); }
     // (Call Center se implementará más adelante: no se inyectan los casos demo con grabación.)
     setStreaming((s) => !s);
