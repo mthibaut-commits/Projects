@@ -3089,9 +3089,11 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         const visDeud = deudSorted.slice(off, off + VIS);
         const masDer = deudSorted.length - (off + VIS);
         const tabBtn = (key, label, req, total, isCli) => { const on = active.key === key; return (
-          <button key={key} onClick={() => setOtorgTab(key)} title={label} className="flex shrink-0 items-center gap-1.5 px-1 pb-2 t11" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
+          <button key={key} onClick={() => setOtorgTab(key)} title={`${label} · ${req} de ${total} requieren excepción/reevaluación`} className="flex shrink-0 items-center gap-1.5 px-1 pb-2 t11" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
             {isCli ? label : truncD(label, 16)}
-            <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: req ? "#f5f3ff" : C.greenBg, color: req ? "#7C3AED" : C.green }}>{req}/{total}</span>
+            <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: req ? "#FEF2F2" : C.greenBg }}>
+              <span style={{ color: req ? "#DC2626" : C.green }}>{req}</span><span style={{ color: C.sub }}>/{total}</span>
+            </span>
           </button>
         ); };
         return (
@@ -12881,11 +12883,10 @@ export default function PipelineComercial() {
   const nuevoNegocio = () => { setWizardDeal(null); setWizardOpen(true); };
   // Abre el detalle de la oportunidad en una PESTAÑA propia (_blank) → viewport amplio. El deal se pasa por
   // localStorage; la nueva pestaña (?deal=<id>) lo lee y muestra sólo el detalle a pantalla completa.
-  const abrirDetalle = (d) => {
+  const abrirDetalle = (d, tab) => {
     if (!d) return;
-    try { localStorage.setItem("fs_deal_" + d.id, JSON.stringify({ deal: d, usuario, ts: Date.now() })); } catch (e) {}
-    const win = (() => { try { return window.open(location.pathname + "?deal=" + encodeURIComponent(d.id), "_blank"); } catch (e) { return null; } })();
-    if (!win) setSelected(d); // si el navegador bloquea el pop-up, cae al panel lateral
+    try { localStorage.setItem("fs_deal_" + d.id, JSON.stringify({ deal: d, usuario, tab: tab || null, ts: Date.now() })); } catch (e) {}
+    try { window.open(location.pathname + "?deal=" + encodeURIComponent(d.id), "_blank"); } catch (e) {}
   };
   const abrirIncorporar = (d) => { setWizardDeal(d); setWizardOpen(true); };
   // Incorpora facturas candidatas a la oferta (una o todas), recalculando con la MISMA tasa.
@@ -12954,7 +12955,7 @@ export default function PipelineComercial() {
       accDiaRef.current.embudo.inbound++; accDiaRef.current.embudo.prospeccion++; if (accDiaRef.current.embudo.oferta != null) accDiaRef.current.embudo.oferta++;
       setDeals((prev) => [nd, ...prev]);
     }
-    setWizardOpen(false); setWizardDeal(null); setSelected(nd);
+    setWizardOpen(false); setWizardDeal(null); abrirDetalle(nd);
   };
   const crearReglaDesdeFactura = (ev) => setEditingRule({
     id: newRuleId(), title: `Regla desde ${ev.cedente}`, unidad: "0 fact.", monto: "$0",
@@ -13065,6 +13066,8 @@ export default function PipelineComercial() {
         .hover\\:shadow-sm:hover{box-shadow:0 1px 3px rgba(0,0,0,0.08)}
         /* Skeleton shimmer (estado de carga spec) */
         .pl-row{transition:background-color .12s} .pl-row:hover{background-color:#F5F3FF}
+        /* Detalle en pestaña propia (_blank): homogeniza la tipografía al tamaño del sitio padre (los tiers chicos del drawer se veían más pequeños) */
+        .dp-detalle .t9{font-size:11px;line-height:1.4}.dp-detalle .t10{font-size:12px;line-height:1.4}.dp-detalle .t11{font-size:13px;line-height:1.45}.dp-detalle .t12{font-size:13.5px}
         /* Última fila sin divisor inferior: evita la doble línea contra el borde del contenedor de la tabla */
         tbody tr:last-child{border-bottom:0 !important} tbody tr:last-child>td{border-bottom:0 !important}
         .skel{position:relative;overflow:hidden;background:#F3F4F6;border-radius:8px}
@@ -13082,20 +13085,24 @@ export default function PipelineComercial() {
       {soloDetalle ? (!selected ? (
         <div className="flex min-h-screen items-center justify-center t13" style={{ color: C.sub }}>Oportunidad no encontrada.</div>
       ) : (
-        <>
-          {/* Encabezado del detalle en pestaña propia: deja claro qué oportunidad/cliente es */}
-          <header className="flex items-center justify-between gap-3 bg-white px-5" style={{ height: 56, borderBottom: `1px solid ${C.line}` }}>
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="flex h-7 w-7 items-center justify-center text-white" style={{ backgroundColor: C.indigo, borderRadius: 7, fontSize: 13, fontWeight: 700 }}>N</span>
-              <div className="min-w-0">
-                <div className="t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>NEX Factoring · Detalle de Oportunidad</div>
-                <div className="truncate t13 font-semibold" style={{ color: C.ink }}>{selected.cliente} <span className="t11 font-normal" style={{ color: C.sub }}>· {selected.id} · {stageName(selected.stage)}</span></div>
+        <div className="dp-detalle">
+          {/* Encabezado del detalle en pestaña propia: deja claro qué oportunidad/cliente es. Mismo ancho (1600px) que el sitio. */}
+          <header className="bg-white" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <div className="mx-auto flex items-center justify-between gap-3 px-6" style={{ height: 56, maxWidth: 1600 }}>
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-7 w-7 items-center justify-center text-white" style={{ backgroundColor: C.indigo, borderRadius: 7, fontSize: 13, fontWeight: 700 }}>N</span>
+                <div className="min-w-0">
+                  <div className="t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>NEX Factoring · Detalle de Oportunidad</div>
+                  <div className="truncate t13 font-semibold" style={{ color: C.ink }}>{selected.cliente} <span className="t11 font-normal" style={{ color: C.sub }}>· {selected.id} · {stageName(selected.stage)}</span></div>
+                </div>
               </div>
+              <button onClick={() => window.close()} className="shrink-0 rounded-lg px-3 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cerrar pestaña</button>
             </div>
-            <button onClick={() => window.close()} className="shrink-0 rounded-lg px-3 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cerrar pestaña</button>
           </header>
-          <DealDrawer key={selected.id} deal={selected} fullPage onClose={() => window.close()} onAdvance={advance} onReject={reject} onIncorporar={abrirIncorporar} onIncorporarFacturas={incorporarFacturasOferta} onRetirarFactura={retirarFacturaOferta} onPublicar={publicarOferta} onCerrarOferta={cerrarOferta} onEnviarCierre={enviarCierre} onContactar={iniciarContacto} onEditarContacto={editarContacto} onEnviarWA={enviarWA} onMover={moverEtapa} cierre={cierreModal} onConfirmCierre={confirmarCierre} usuario={usuario} onAutorizarCausa={autorizarCausa} onOtorgarOperacion={otorgarOperacion} tabInicial={dealTabInicial} onIrOtorgamientos={() => {}} />
-        </>
+          <div className="mx-auto w-full px-6" style={{ maxWidth: 1600 }}>
+            <DealDrawer key={selected.id} deal={selected} fullPage onClose={() => window.close()} onAdvance={advance} onReject={reject} onIncorporar={abrirIncorporar} onIncorporarFacturas={incorporarFacturasOferta} onRetirarFactura={retirarFacturaOferta} onPublicar={publicarOferta} onCerrarOferta={cerrarOferta} onEnviarCierre={enviarCierre} onContactar={iniciarContacto} onEditarContacto={editarContacto} onEnviarWA={enviarWA} onMover={moverEtapa} cierre={cierreModal} onConfirmCierre={confirmarCierre} usuario={usuario} onAutorizarCausa={autorizarCausa} onOtorgarOperacion={otorgarOperacion} tabInicial={(detallePayload && detallePayload.tab) || dealTabInicial} onIrOtorgamientos={() => {}} />
+          </div>
+        </div>
       )) : (<>
       {/* ===== Top bar ===== */}
       <header style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
@@ -13193,19 +13200,19 @@ export default function PipelineComercial() {
           <>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Tareas</div>
             <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Tareas comerciales</h1>
-            <TareasView deals={misExecs === null ? deals : deals.filter(dealVisible)} onOpen={setSelected} soloExec={soloExec} esJefe={esJefeComercial(usuario)} usuarioNombre={USERS[usuario]} usuario={usuario} onOpenSolic={() => setSolicOpen(true)} onIrLineas={() => irA("lineas", "Líneas")} plan={planMensual} setPlan={setPlanMensual} />
+            <TareasView deals={misExecs === null ? deals : deals.filter(dealVisible)} onOpen={abrirDetalle} soloExec={soloExec} esJefe={esJefeComercial(usuario)} usuarioNombre={USERS[usuario]} usuario={usuario} onOpenSolic={() => setSolicOpen(true)} onIrLineas={() => irA("lineas", "Líneas")} plan={planMensual} setPlan={setPlanMensual} />
           </>
         ) : vistaApp === "operaciones" ? (
           <>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Operaciones</div>
             <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Operaciones</h1>
-            <OperacionesView deals={deals} onOpen={setSelected} soloExec={soloExec} />
+            <OperacionesView deals={deals} onOpen={abrirDetalle} soloExec={soloExec} />
           </>
         ) : vistaApp === "reportes" ? (
           <>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Reportes</div>
             <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Reportes</h1>
-            <ReportesView deals={deals} onOpen={setSelected} soloExec={soloExec} />
+            <ReportesView deals={deals} onOpen={abrirDetalle} soloExec={soloExec} />
           </>
         ) : vistaApp === "lineas" ? (
           <LineasView soloExec={soloExec} />
@@ -13215,7 +13222,7 @@ export default function PipelineComercial() {
             <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Configuración</h1>
             <ConfiguracionView usuario={usuario} />
           </>
-        ) : vistaApp === "otorgamientos" ? <OtorgamientosView deals={deals} usuario={usuario} onOpen={setSelected} onAutorizarCausa={autorizarCausa} onCfgChange={() => setCfgVer((v) => v + 1)} /> : (<>
+        ) : vistaApp === "otorgamientos" ? <OtorgamientosView deals={deals} usuario={usuario} onOpen={abrirDetalle} onAutorizarCausa={autorizarCausa} onCfgChange={() => setCfgVer((v) => v + 1)} /> : (<>
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Pipeline</div>
@@ -13403,7 +13410,7 @@ export default function PipelineComercial() {
         </>)}
       </main>
 
-      <DealDrawer key={selected ? selected.id : "none"} deal={selected} onClose={() => { setSelected(null); setDealTabInicial(null); }} onAdvance={advance} onReject={reject} onIncorporar={abrirIncorporar} onIncorporarFacturas={incorporarFacturasOferta} onRetirarFactura={retirarFacturaOferta} onPublicar={publicarOferta} onCerrarOferta={cerrarOferta} onEnviarCierre={enviarCierre} onContactar={iniciarContacto} onEditarContacto={editarContacto} onEnviarWA={enviarWA} onMover={moverEtapa} cierre={cierreModal} onConfirmCierre={confirmarCierre} usuario={usuario} onAutorizarCausa={autorizarCausa} onOtorgarOperacion={otorgarOperacion} tabInicial={dealTabInicial} onIrOtorgamientos={() => { setSelected(null); setDealTabInicial(null); irA("otorgamientos", "Otorgamientos"); }} />
+      {/* El detalle de la oportunidad se atiende SIEMPRE en pestaña propia (_blank), no en modal. */}
       {editingRule && <RuleEditor key={editingRule.id} rule={editingRule} onClose={() => setEditingRule(null)} onSave={saveRule} />}
       {casosModal && (
         <CasosModal titulo={`Casos · ${(quickFilters.find((f) => f.id === casosModal)?.label) || casosModal}`}
@@ -13411,7 +13418,7 @@ export default function PipelineComercial() {
       )}
       {diaModal && <DiaModal info={diaModal} ultimo={diaModal.dia >= DIAS_SEMANA} reporte={reporte} deals={deals} onAceptar={aceptarDia} onClose={() => setDiaModal(null)} />}
       {reporteModal && <ReporteModal reporte={reporte} analisis={analisis} onClose={() => setReporteModal(false)} onRecomendar={recomendarRegla} />}
-      {wizardOpen && <NuevoNegocioWizard usuario={esAdmin ? USUARIO : usuario} deal={wizardDeal} deals={deals} onOpenDeal={(d) => { setWizardOpen(false); setWizardDeal(null); setSelected(d); }} onClose={() => { setWizardOpen(false); setWizardDeal(null); }} onConfirm={crearNegocioWizard} />}
+      {wizardOpen && <NuevoNegocioWizard usuario={esAdmin ? USUARIO : usuario} deal={wizardDeal} deals={deals} onOpenDeal={(d) => { setWizardOpen(false); setWizardDeal(null); abrirDetalle(d); }} onClose={() => { setWizardOpen(false); setWizardDeal(null); }} onConfirm={crearNegocioWizard} />}
       {filtrosAvOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(17,24,39,.45)" }} onClick={() => setFiltrosAvOpen(false)}>
           <div className="w-full max-w-md rounded-2xl bg-white p-5" style={{ boxShadow: "0 20px 60px rgba(20,25,45,.25)" }} onClick={(e) => e.stopPropagation()}>
@@ -13446,9 +13453,9 @@ export default function PipelineComercial() {
           </div>
         </div>
       )}
-      {solicOpen && <CentroMensajeria usuario={usuario} deals={deals} onClose={() => setSolicOpen(false)} onOpenDeal={(d, t) => { setSelected(d); setDealTabInicial(t || "mensajeria"); setSolicOpen(false); }} onChange={() => setNotifTick((t) => t + 1)} />}
-      {prioOpen && <PrioridadesPanel items={deals.filter(dealVisible).filter((d) => tienePrioridadCurse(d.id))} onClose={() => setPrioOpen(false)} onOpen={(d) => { setSelected(d); setPrioOpen(false); }} />}
-      <CommandK abierto={cmdOpen} onCerrar={() => setCmdOpen(false)} deals={deals} dealVisible={dealVisible} irA={irA} onAbrirDeal={(d) => setSelected(d)} />
+      {solicOpen && <CentroMensajeria usuario={usuario} deals={deals} onClose={() => setSolicOpen(false)} onOpenDeal={(d, t) => { abrirDetalle(d, t || "mensajeria"); setSolicOpen(false); }} onChange={() => setNotifTick((t) => t + 1)} />}
+      {prioOpen && <PrioridadesPanel items={deals.filter(dealVisible).filter((d) => tienePrioridadCurse(d.id))} onClose={() => setPrioOpen(false)} onOpen={(d) => { abrirDetalle(d); setPrioOpen(false); }} />}
+      <CommandK abierto={cmdOpen} onCerrar={() => setCmdOpen(false)} deals={deals} dealVisible={dealVisible} irA={irA} onAbrirDeal={(d) => abrirDetalle(d)} />
       </>)}
     </div>
   );
