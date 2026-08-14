@@ -3577,7 +3577,6 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           <div className="mt-3 flex flex-wrap gap-1.5">
             <Pill style={{ backgroundColor: TAG_COLORS[deal.tag]?.bg, color: TAG_COLORS[deal.tag]?.fg }}>{deal.tag}</Pill>
             {deal.cat && (() => { const cd = catDisp(deal); return <Pill style={{ backgroundColor: catMeta(cd.cat).bg, color: catMeta(cd.cat).fg }}>{cd.label} · {cd.q}</Pill>; })()}
-            {deal.channel === "IA" && <Pill style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}><Sparkles size={9} className="mr-0.5" />Agente IA</Pill>}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1" style={{ borderBottom: `1px solid ${C.line}` }}>
             {[["contacto", "Empresa"], ["negocio", "Negocio"], ["usuarios", "Usuarios"], ["bitacora", "Bitácora"], ["sow", "SOW"], ["cobranza", "Cobranza"], ["mensajeria", "Mensajería"], ...((deal.facturasOp && deal.facturasOp.length) ? [["verificacion", "Verificación"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
@@ -3635,14 +3634,14 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           {tab === "contacto" && (<>
           <div className="mt-4 rounded-lg p-3" style={{ backgroundColor: "#f5f3ff", border: "1px solid #DDD6FE" }}>
             <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#7C3AED" }}>
-              <Zap size={12} /> Resumen IA de la operación
+              <Zap size={12} /> Resumen de la empresa
             </div>
             <div className="mt-2 space-y-1.5">
-              {resumenIA(deal).map((p, i) => (
+              {resumenEmpresa(deal).map((p, i) => (
                 <p key={i} className="t12" style={{ color: C.ink, lineHeight: 1.55 }}>{p}</p>
               ))}
             </div>
-            <div className="mt-2 t9" style={{ color: C.faint }}>Generado automáticamente a partir del historial de la oportunidad (prospección → estado actual).</div>
+            <div className="mt-2 t9" style={{ color: C.faint }}>Generado a partir del perfil de la empresa (Plataforma360: firmografía, facturación SII, segmento y comportamiento comercial).</div>
           </div>
           <SowStatusPanel deal={deal} />
           {(() => {
@@ -3943,7 +3942,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               <div className="mt-4 space-y-3">
                 <div className="rounded-lg p-3" style={{ backgroundColor: "#f5f3ff", border: "1px solid #DDD6FE" }}>
                   <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#7C3AED" }}><User size={12} /> Usuarios de la empresa</div>
-                  <div className="mt-1 t10" style={{ color: C.sub }}>Contactos y usuarios con acceso al portal de <b>{deal.cliente}</b>. El atributo <b>Apoderado</b> se resuelve por un cruce (left join) con la <b>tabla de apoderados</b> (informe de poderes) de la API de la empresa.</div>
+                  <div className="mt-1 t10" style={{ color: C.sub }}>Usuarios y contactos de la empresa. Los usuarios listados cuentan con acceso al portal según el rol asignado. El atributo de <b>Apoderado</b> se obtiene en base a los registros almacenados en <b>Plataforma 360</b>.</div>
                 </div>
                 <div className="rounded-lg" style={{ border: `1px solid ${C.line}`, overflow: "hidden" }}>
                   <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
@@ -10769,6 +10768,22 @@ function api4Empresa360(rut, nombre) {
     socios,
     indices: { pasExGen: +(3 + (h % 60) / 10).toFixed(2), patrimonio: 200000000 + (h % 800) * 1000000, generacion: 50000000 + (h % 300) * 500000, leverage: +(0.8 + (h % 30) / 10).toFixed(1), ventas: [380000 + (h % 90000), 400000 + (h % 90000), (h % 3 === 0) ? 0 : 420000 + (h % 90000)], ventasSII: [380000 + (h % 90000), 402000 + (h % 90000), 440000 + (h % 90000)] },
   };
+}
+// Resumen de la EMPRESA (perfil), en base a su facturación/segmento/comportamiento (Plataforma360). Determinista.
+function resumenEmpresa(deal) {
+  if (!deal) return [];
+  const e = api4Empresa360(deal.rutEmisor || deal.cliente, deal.cliente);
+  const f = e.firmografica, c = e.comercial, x = e.indices;
+  const ventaAnualMM = Math.round((x.ventasSII[1] || x.ventasSII[0] || 0) / 1000);
+  const patrimonioMM = Math.round((x.patrimonio || 0) / 1e6);
+  const colocMM = Math.round((c.colocProm12m || 0) / 1000);
+  const nDeud = (deal.deudores && deal.deudores.length) || 1;
+  const out = [];
+  out.push(`${deal.cliente} opera en el sector ${(f.sector || "").toLowerCase()} (${(f.actividad || "").toLowerCase()}), con ~${f.trabajadores} trabajadores${f.clienteBanco === "Sí" ? " y es cliente del banco" : ""}. Ingresó a la cartera el ${f.fechaIngreso}.`);
+  out.push(`Facturación anual (SII) ~${fmtMM(ventaAnualMM)} · segmento ${c.segmento} (quintil ${(c.quintil || 0) + 1}/5). Patrimonio ~${fmtMM(patrimonioMM)}, leverage ${x.leverage}×, margen últimos 12 m ${c.margen12m}%.`);
+  out.push(`Comportamiento con factoring: colocación promedio 12 m ${fmtMM(colocMM)}, spread real ${c.spreadReal12m}%, tasa última operación ${c.tasaUltOp}%. En esta oportunidad opera sobre ${nDeud} deudor(es).`);
+  if (deal.esCliente === false) out.push(`Empresa fuera de cartera (aún no es cliente del factoring): requiere enrolamiento para poder cursar.`);
+  return out;
 }
 function api5Documentos(rut) {
   const h = Math.abs(hashStr("doc" + rut));
