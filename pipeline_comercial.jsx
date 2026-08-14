@@ -2965,7 +2965,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const [verSel, setVerSel] = useState(-1); // -1 = última versión
   const [showJson, setShowJson] = useState(false);
   const [showDiff, setShowDiff] = useState(true);
-  const [filtro, setFiltro] = useState("resultados"); // resultados | excepcion | reev | todas
+  const [deudorTab, setDeudorTab] = useState(0); // tab de deudor activo en la sección "Reglas de los deudores"
   const vs = SIM_VERSIONS[deal.id] || [];
   const shown = vs.length ? vs : [snapVersionCli(deal, 0)];
   const effIdx = verSel < 0 || verSel >= shown.length ? shown.length - 1 : verSel;
@@ -2983,15 +2983,46 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const reglaDiff = prev ? (ver.res || []).filter((x) => dispPrev[x.n] !== x.disp) : [];
   const varDiffTip = varDiff.map((k) => `$${k}: ${fmtVarCli(k, prev.vars[k])} → ${fmtVarCli(k, ver.vars[k])}`).join("\n");
   const p = palV(ver.estado);
-  // Lista unificada de resultados de la versión seleccionada, con filtro.
-  const all = (ver.res || []).filter((x) => x.disp !== "clasificacion");
-  const list = (filtro === "todas" ? all
-    : filtro === "excepcion" ? all.filter((x) => x.disp === "excepcion")
-    : filtro === "reev" ? all.filter((x) => x.reev && (x.disp === "excepcion" || x.disp === "rechazado"))
-    : all.filter((x) => x.disp === "excepcion" || x.disp === "rechazado")); // "resultados" (default)
   const orden = { rechazado: 0, excepcion: 1, aprobado: 2 };
-  const listSort = list.slice().sort((a, b) => (orden[a.disp] - orden[b.disp]) || (a.n - b.n));
-  const chips = [["resultados", "Con decisión"], ["excepcion", "Requieren excepción"], ["reev", "Re-evaluables"], ["todas", "Todas"]];
+  const reqAprob = (x) => x.disp === "excepcion" || x.disp === "rechazado";
+  // Ordena: primero las que requieren autorización (excepción/rechazo), luego por severidad y número.
+  const ordenBy = (arr) => arr.slice().sort((a, b) => (reqAprob(b) - reqAprob(a)) || (orden[a.disp] - orden[b.disp]) || (a.n - b.n));
+  // DIV 1 — reglas del CLIENTE (snapshot versionado, ya sin reglas de deudor).
+  const cliRules = ordenBy((ver.res || []).filter((x) => x.disp !== "clasificacion"));
+  const cliReqN = cliRules.filter(reqAprob).length;
+  // DIV 2 — reglas de los DEUDORES: se evalúan por deudor con sus propias variables y se agrupan por deudor.
+  const dItems = evaluarOtorgItems(deal).filter((it) => it.deudor);
+  const deudMap = new Map();
+  dItems.forEach((it) => {
+    const k = it.deudor.rut || it.deudor.nombre;
+    let g = deudMap.get(k);
+    if (!g) { g = { key: k, nombre: it.deudor.nombre, rows: [] }; deudMap.set(k, g); }
+    g.rows.push({ n: it.regla.n, nombre: it.regla.nombre, area: it.regla.area, cond: it.regla.cond, hallazgo: it.regla.hallazgo, disp: it.disp, nivel: it.nivel, reev: reglaReev(it.regla.n) });
+  });
+  const deudGrupos = [...deudMap.values()];
+  deudGrupos.forEach((g) => { g.rows = ordenBy(g.rows.filter((x) => x.disp !== "clasificacion")); g.req = g.rows.filter(reqAprob).length; g.total = g.rows.length; });
+  const dTab = Math.min(deudorTab, Math.max(0, deudGrupos.length - 1));
+  const truncD = (s, n) => (s && s.length > n ? s.slice(0, n).trim() + "…" : s);
+  // Tarjeta de regla reutilizable (cliente y deudor).
+  const reglaCard = (x, kpref) => {
+    const nr = NIVEL_ROL[x.nivel] || NIVEL_ROL[4];
+    const otraArea = x.disp === "excepcion" && nr.area !== x.area;
+    const tip = `${x.cond} · Tramo ${typeof x.tierIdx === "number" ? x.tierIdx + 1 : "—"}`;
+    return (
+      <div key={(kpref || "") + x.n} className="rounded-md p-2" style={{ border: `1px solid ${C.line}`, borderLeft: `3px solid ${dCol[x.disp]}`, backgroundColor: "#fff" }}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="t11 font-semibold" style={{ color: C.ink }}>#{x.n} · {x.nombre}</span>
+            <span title={x.reev ? "Re-evaluable: el dato de origen puede cambiar" : "Bloqueo firme: no se re-evalúa"} style={{ cursor: "help" }}>{x.reev ? "♻" : "🔒"}</span>
+            <span title={tip} className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full t8" style={{ border: `1px solid ${C.faint}`, color: C.faint, cursor: "help" }}>i</span>
+          </div>
+          <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dCol[x.disp] + "1a", color: dCol[x.disp] }}>{dLbl[x.disp]}{x.nivel ? " · N" + x.nivel : ""}</span>
+        </div>
+        {x.disp !== "aprobado" && x.hallazgo && <div className="mt-0.5 t10" style={{ color: C.sub }}>{x.hallazgo}</div>}
+        {x.disp === "excepcion" && <div className="mt-0.5 t9" style={{ color: C.faint }}>Dominio: <b>{AREA_LBL[x.area]}</b> · Aprueba: <b style={{ color: otraArea ? "#7C3AED" : C.sub }}>N{x.nivel} · {nr.rol} ({AREA_LBL[nr.area]})</b>{otraArea && <span className="ml-1 rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>↗ otra área</span>}</div>}
+      </div>
+    );
+  };
   return (
     <div className="rounded-lg p-3" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
       <div className="flex items-center justify-between gap-2">
@@ -3042,34 +3073,32 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
           </div>}
         </div>
       )}
-      <div className="mt-3">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="t10 font-semibold" style={{ color: C.sub }}>Resultado por regla · v{ver.v}</div>
-          <div className="flex items-center gap-1 flex-wrap">{chips.map(([k, l]) => { const sel = filtro === k; return (
-            <button key={k} onClick={() => setFiltro(k)} className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ border: `1px solid ${sel ? C.indigo : C.line}`, backgroundColor: sel ? "#F1ECFF" : "#fff", color: sel ? C.indigo : C.sub }}>{l}</button>
-          ); })}</div>
+      {/* DIV 1 — Reglas del cliente (requieren aprobación primero) */}
+      <div className="mt-3 rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Reglas del cliente · v{ver.v}</div>
+          <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: cliReqN ? "#f5f3ff" : C.greenBg, color: cliReqN ? "#7C3AED" : C.green }}>{cliReqN}/{cliRules.length} requieren aprobación</span>
         </div>
-        <div className="mt-1.5 space-y-1.5">{listSort.length === 0 ? <div className="t10" style={{ color: C.faint }}>Sin reglas para este filtro.</div> : listSort.map((x) => {
-          const nr = NIVEL_ROL[x.nivel] || NIVEL_ROL[4];
-          const otraArea = x.disp === "excepcion" && nr.area !== x.area;
-          const tip = `${x.cond} · Tramo ${typeof x.tierIdx === "number" ? x.tierIdx + 1 : "—"}\n` + varsDeReglaCli(x.n, ver.vars).map((v) => `$${v.k} = ${v.txt}`).join(" · ");
-          return (
-            <div key={x.n} className="rounded-md p-2" style={{ border: `1px solid ${C.line}`, borderLeft: `3px solid ${dCol[x.disp]}`, backgroundColor: "#fff" }}>
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="t11 font-semibold" style={{ color: C.ink }}>#{x.n} · {x.nombre}</span>
-                  <span title={x.reev ? "Re-evaluable: el dato de origen puede cambiar" : "Bloqueo firme: no se re-evalúa"} style={{ cursor: "help" }}>{x.reev ? "♻" : "🔒"}</span>
-                  <span title={tip} className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full t8" style={{ border: `1px solid ${C.faint}`, color: C.faint, cursor: "help" }}>i</span>
-                </div>
-                <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dCol[x.disp] + "1a", color: dCol[x.disp] }}>{dLbl[x.disp]}{x.nivel ? " · N" + x.nivel : ""}</span>
-              </div>
-              {x.disp !== "aprobado" && x.hallazgo && <div className="mt-0.5 t10" style={{ color: C.sub }}>{x.hallazgo}</div>}
-              {x.disp === "excepcion" && <div className="mt-0.5 t9" style={{ color: C.faint }}>Dominio: <b>{AREA_LBL[x.area]}</b> · Aprueba: <b style={{ color: otraArea ? "#7C3AED" : C.sub }}>N{x.nivel} · {nr.rol} ({AREA_LBL[nr.area]})</b>{otraArea && <span className="ml-1 rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>↗ otra área</span>}</div>}
-            </div>
-          );
-        })}</div>
-        <div className="mt-1 t9" style={{ color: C.faint }}>La aprobación de excepciones se realiza desde <b>Otorgamientos → Visado Cliente</b>. Pasa el cursor sobre <b>i</b> para ver el criterio y las variables.</div>
+        <div className="mt-2 space-y-1.5">
+          {cliRules.length === 0 ? <div className="t10" style={{ color: C.faint }}>Sin reglas del cliente.</div> : cliRules.map((x) => reglaCard(x, "cli-"))}
+        </div>
       </div>
+      {/* DIV 2 — Reglas de los deudores (un tab por deudor, badge requieren/total) */}
+      {deudGrupos.length > 0 && (
+        <div className="mt-3 rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
+          <div className="t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Reglas de los deudores</div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1" style={{ borderBottom: `1px solid ${C.line}` }}>
+            {deudGrupos.map((g, i) => { const on = i === dTab; return (
+              <button key={g.key} onClick={() => setDeudorTab(i)} title={g.nombre} className="flex items-center gap-1.5 px-1 pb-2 t11" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
+                {truncD(g.nombre, 18)}
+                <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: g.req ? "#f5f3ff" : C.greenBg, color: g.req ? "#7C3AED" : C.green }}>{g.req}/{g.total}</span>
+              </button>
+            ); })}
+          </div>
+          {deudGrupos[dTab] && <div className="mt-2 space-y-1.5">{deudGrupos[dTab].rows.map((x) => reglaCard(x, "d" + dTab + "-"))}</div>}
+        </div>
+      )}
+      <div className="mt-2 t9" style={{ color: C.faint }}>La aprobación de excepciones se realiza desde <b>Otorgamientos → Visado Cliente / por deudor</b>. Pasa el cursor sobre <b>i</b> para ver el criterio.</div>
       {usuario === "ADMIN" && (<>
         <button onClick={() => setShowJson((s) => !s)} className="mt-2 flex items-center gap-1 t10 font-semibold" style={{ color: C.indigo }}>{showJson ? <ChevronUp size={12} /> : <ChevronDown size={12} />} {showJson ? "Ocultar" : "Ver"} todas las variables del JSON (API) · v{ver.v} <span className="rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: C.indigo }}>super admin</span></button>
         {showJson && <div className="mt-1 grid grid-cols-2 gap-x-3 rounded-md p-2" style={{ backgroundColor: "#F9FAFB", border: `1px solid ${C.line}`, maxHeight: 220, overflowY: "auto" }}>
@@ -6322,7 +6351,20 @@ function varsDeReglaCli(n, vars) { return (REGLA_VARS[n] || []).map((k) => ({ k,
 let SIM_VERSIONS = {}; // { [dealId]: [ { v, rev, ts, origen, vars, estado, nApr, nExc, nRech } ] }
 function snapVersionCli(deal, rev) {
   const vars = apiVarsCliente(deal, rev);
-  const res = REGLAS_CLIENTE.map((r) => { const e = evalReglaCli(r, vars); return { n: r.n, nombre: r.nombre, area: r.area, cond: r.cond, hallazgo: r.hallazgo, disp: e.disp, nivel: e.nivel, tierIdx: e.tierIdx, label: e.label, reev: reglaReev(r.n) }; });
+  // Sólo reglas del CLIENTE: las reglas de deudor (D01–D23) requieren variables del deudor (deudorBlock) y
+  // se evalúan por deudor aparte (evaluarOtorgItems / sección "Reglas de los deudores"). Si se evaluaran aquí
+  // con variables de cliente, caerían al tramo catch-all "excepcion" → excepciones espurias que inflan el
+  // conteo y no mejoran al re-evaluar.
+  const res = REGLAS_CLIENTE.filter((r) => !esReglaDeudor(r)).map((r) => {
+    const e = evalReglaCli(r, vars);
+    let disp = e.disp, nivel = e.nivel;
+    const reev = reglaReev(r.n);
+    // Re-evaluación (rev ≥ 1): tras la firma el sistema de origen se regulariza → las reglas RE-EVALUABLES que
+    // estaban en excepción/rechazo quedan APROBADAS (su dato mejora en el origen). Los bloqueos firmes
+    // (no re-evaluables: mora, castigos, protestos) se mantienen: una firma no borra un dato de bureau.
+    if ((rev || 0) >= 1 && reev && (disp === "excepcion" || disp === "rechazado")) { disp = "aprobado"; nivel = undefined; }
+    return { n: r.n, nombre: r.nombre, area: r.area, cond: r.cond, hallazgo: r.hallazgo, disp, nivel, tierIdx: e.tierIdx, label: e.label, reev };
+  });
   const nExc = res.filter((x) => x.disp === "excepcion").length;
   const nRech = res.filter((x) => x.disp === "rechazado").length;
   const nRechFirme = res.filter((x) => x.disp === "rechazado" && !x.reev).length;
