@@ -11380,7 +11380,7 @@ export default function PipelineComercial() {
     if (fresh && fresh !== selected) setSelected(fresh);
   }, [deals]); // eslint-disable-line react-hooks/exhaustive-deps
   const [query, setQuery] = useState("");
-  const [quickFilter, setQuickFilter] = useState("todos");
+  const [quickFilter, setQuickFilter] = useState("conlinea"); // arranca en el tab "Con línea"
   const [channel, setChannel] = useState("Manual");
   const [usuario, setUsuario] = useState(USUARIO); // usuario logueado
   const [logueado, setLogueado] = useState(false); // gate de login (portada spec Auth); clic en avatar = cerrar sesión
@@ -12978,6 +12978,8 @@ export default function PipelineComercial() {
         .hover\\:shadow-sm:hover{box-shadow:0 1px 3px rgba(0,0,0,0.08)}
         /* Skeleton shimmer (estado de carga spec) */
         .pl-row{transition:background-color .12s} .pl-row:hover{background-color:#F5F3FF}
+        /* Última fila sin divisor inferior: evita la doble línea contra el borde del contenedor de la tabla */
+        tbody tr:last-child{border-bottom:0 !important} tbody tr:last-child>td{border-bottom:0 !important}
         .skel{position:relative;overflow:hidden;background:#F3F4F6;border-radius:8px}
         .skel::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.7),transparent);animation:skel 1.1s infinite}
         @keyframes skel{100%{transform:translateX(100%)}}
@@ -13207,48 +13209,50 @@ export default function PipelineComercial() {
           );
         })()}
 
-        {/* ===== Barra de filtros (afecta principalmente al Kanban) ===== */}
-        <div className="mt-5 flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: C.faint }} />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por cedente, pagador, ID…"
-              className="w-64 rounded-lg py-1.5 pl-8 pr-3 t12 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }} />
-          </div>
-          {(() => {
-            const selBase = "appearance-none rounded-lg pl-3 pr-7 py-1.5 t12 outline-none focus:ring-2 cursor-pointer";
-            const sty = (active) => ({ border: `1px solid ${active ? C.indigo : C.line}`, backgroundColor: "#fff", color: active ? C.indigo : C.sub, fontWeight: active ? 600 : 400 });
-            const Chev = () => <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" size={12} style={{ color: C.faint }} />;
-            const nAv = (fDeudor !== "todos" ? 1 : 0) + (fJefatura !== "todas" ? 1 : 0) + (fLinea !== "todas" ? 1 : 0);
-            return (
-              <>
-                <div className="relative">
-                  <select value={fEjecutivo} onChange={(e) => setFEjecutivo(e.target.value)} className={selBase} style={sty(fEjecutivo !== "todos")}>
-                    <option value="todos">Todos los ejecutivos</option>{ejecutivos.map((ex) => <option key={ex} value={ex}>{ex}</option>)}
-                  </select><Chev />
-                </div>
-                <button onClick={() => setFiltrosAvOpen(true)} title="Más filtros: deudor, jefatura y línea de negocio"
-                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${nAv ? C.indigo : C.line}`, backgroundColor: "#fff", color: nAv ? C.indigo : C.sub }}>
-                  <Filter size={13} /> Filtros avanzados
-                  {nAv > 0 && <span className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: C.indigo }}>{nAv}</span>}
+        {/* ===== Tabs de agrupación + filtros, en UNA sola fila (compacto en alto) ===== */}
+        <div className="mt-5 flex flex-wrap items-end justify-between gap-x-4 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
+          {/* Tabs underline (izquierda) */}
+          <div className="flex flex-wrap items-center gap-x-5">
+            {quickFilters.map((f) => {
+              const on = quickFilter === f.id;
+              return (
+                <button key={f.id} onClick={() => setQuickFilter(f.id)} title="Filtrar oportunidades" className="flex items-center gap-1.5 px-1 pb-2 t12"
+                  style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
+                  {f.label}
+                  <span className="t10" style={{ color: on ? C.indigo : C.faint, fontWeight: 400 }}>{f.count}</span>
                 </button>
-              </>
-            );
-          })()}
-          <button onClick={clearAll} className="t12 font-medium" style={{ color: anyFilter ? C.indigo : C.faint }}>Limpiar</button>
-        </div>
-
-        {/* ===== Tabs de agrupación (estilo underline, como Tareas/Oportunidades/Plan Mensual) ===== */}
-        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
-          {quickFilters.map((f) => {
-            const on = quickFilter === f.id;
-            return (
-              <button key={f.id} onClick={() => setQuickFilter(f.id)} title="Filtrar oportunidades" className="flex items-center gap-1.5 px-1 pb-2 t12"
-                style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
-                {f.label}
-                <span className="t10" style={{ color: on ? C.indigo : C.faint, fontWeight: 400 }}>{f.count}</span>
-              </button>
-            );
-          })}
+              );
+            })}
+          </div>
+          {/* Filtros (derecha) */}
+          <div className="flex flex-wrap items-center gap-2 pb-2">
+            <div className="relative">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: C.faint }} />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por cedente, pagador, ID…"
+                className="w-56 rounded-lg py-1.5 pl-8 pr-3 t12 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }} />
+            </div>
+            {(() => {
+              const selBase = "appearance-none rounded-lg pl-3 pr-7 py-1.5 t12 outline-none focus:ring-2 cursor-pointer";
+              const sty = (active) => ({ border: `1px solid ${active ? C.indigo : C.line}`, backgroundColor: "#fff", color: active ? C.indigo : C.sub, fontWeight: active ? 600 : 400 });
+              const Chev = () => <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" size={12} style={{ color: C.faint }} />;
+              const nAv = (fDeudor !== "todos" ? 1 : 0) + (fJefatura !== "todas" ? 1 : 0) + (fLinea !== "todas" ? 1 : 0);
+              return (
+                <>
+                  <div className="relative">
+                    <select value={fEjecutivo} onChange={(e) => setFEjecutivo(e.target.value)} className={selBase} style={sty(fEjecutivo !== "todos")}>
+                      <option value="todos">Todos los ejecutivos</option>{ejecutivos.map((ex) => <option key={ex} value={ex}>{ex}</option>)}
+                    </select><Chev />
+                  </div>
+                  <button onClick={() => setFiltrosAvOpen(true)} title="Más filtros: deudor, jefatura y línea de negocio"
+                    className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${nAv ? C.indigo : C.line}`, backgroundColor: "#fff", color: nAv ? C.indigo : C.sub }}>
+                    <Filter size={13} /> Filtros avanzados
+                    {nAv > 0 && <span className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: C.indigo }}>{nAv}</span>}
+                  </button>
+                </>
+              );
+            })()}
+            <button onClick={clearAll} className="t12 font-medium" style={{ color: anyFilter ? C.indigo : C.faint }}>Limpiar</button>
+          </div>
         </div>
 
         <div className="mt-3 flex items-start gap-3 overflow-x-auto pb-4">
