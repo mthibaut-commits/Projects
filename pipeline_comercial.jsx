@@ -2339,7 +2339,7 @@ function CompetenciaCard({ cm, sow, compact }) {
   const comps = cm.comp || [];
   const visibles = exp ? comps : comps.slice(0, 3);
   const ocultos = comps.length - visibles.length;
-  const filas = [{ name: "BICE (nosotros)", montoMM: cm.biceMM || 0, pct: cm.bicePct || 0, bice: true }, ...visibles];
+  const filas = [{ name: "Security (nosotros)", montoMM: cm.biceMM || 0, pct: cm.bicePct || 0, bice: true }, ...visibles];
   return (
     <div className="rounded-lg p-3" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
       <div className="flex flex-wrap items-center justify-between gap-1">
@@ -2366,7 +2366,7 @@ function CompetenciaCard({ cm, sow, compact }) {
       )}
       {sow && sow.SOWTargetPct != null && (
         <div className="mt-2 t10" style={{ color: C.sub }}>
-          Seguimiento SOW: BICE <b style={{ color: "#16A34A" }}>{Math.round(cm.bicePct || 0)}%</b> · target <b style={{ color: C.ink }}>{Math.round(sow.SOWTargetPct)}%</b>
+          Seguimiento SOW: Security <b style={{ color: "#16A34A" }}>{Math.round(cm.bicePct || 0)}%</b> · target <b style={{ color: C.ink }}>{Math.round(sow.SOWTargetPct)}%</b>
           {(cm.bicePct || 0) < sow.SOWTargetPct
             ? <> · brecha <b style={{ color: "#C2410C" }}>{Math.round(sow.SOWTargetPct - (cm.bicePct || 0))} pts</b> a recuperar de la competencia.</>
             : <> · en/ sobre el target ✓</>}
@@ -2422,17 +2422,17 @@ function SowStatusPanel({ deal, sinCompetencia }) {
       <div className="mt-4">
         <div className="flex items-baseline gap-2">
           <span className="t13 font-semibold" style={{ color: C.ink }}>SOW</span>
-          <span className="t11 font-medium" style={{ color: cm ? "#DC2626" : "#2563EB" }}>{cm ? "Nuevo · 0% BICE" : "Nuevo"}</span>
+          <span className="t11 font-medium" style={{ color: cm ? "#DC2626" : "#2563EB" }}>{cm ? "Nuevo · 0% Security" : "Nuevo"}</span>
           <span className="t10" style={{ color: C.faint }}>{cm ? `opera con la competencia · ${fmtMM(cm.totalMM)} cedido (6m)` : "sin historia de Share of Wallet"}</span>
         </div>
         {cm ? (
           <div className="mt-1.5">
             <CompetenciaCard cm={cm} compact />
-            <div className="mt-1.5 t9" style={{ color: "#C2410C" }}>Oportunidad de captura: el cliente cede a la competencia y nada a BICE.</div>
+            <div className="mt-1.5 t9" style={{ color: "#C2410C" }}>Oportunidad de captura: el cliente cede a la competencia y nada a Security.</div>
           </div>
         ) : (
           <div className="mt-1.5 rounded-lg p-2 t10" style={{ backgroundColor: "#eff6ff", color: "#2563EB", border: "1px solid #bfdbfe" }}>
-            Cliente nuevo para NEX, sin operaciones de factoring registradas (ni con BICE ni con la competencia). El SOW se medirá desde la primera operación cursada.
+            Cliente nuevo para NEX, sin operaciones de factoring registradas (ni con Security ni con la competencia). El SOW se medirá desde la primera operación cursada.
           </div>
         )}
       </div>
@@ -2631,7 +2631,7 @@ function SowTab({ deal }) {
     }
     // Sin historia de SOW con BICE: si el cliente cede a la competencia, el SOW es 0% (no "sin datos").
     const cm = competenciaDeDeal(deal);
-    if (!cm || cm.totalMM <= 0) return <div className="mt-4 rounded-lg p-4 t12" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.faint }}>Sin historial de factoring: prospecto nuevo, no ha cedido facturas ni a BICE ni a la competencia.</div>;
+    if (!cm || cm.totalMM <= 0) return <div className="mt-4 rounded-lg p-4 t12" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.faint }}>Sin historial de factoring: prospecto nuevo, no ha cedido facturas ni a Security ni a la competencia.</div>;
     return (
       <div className="mt-4 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -2639,7 +2639,7 @@ function SowTab({ deal }) {
           <span className="rounded-full px-2.5 py-0.5 t11 font-medium" style={{ backgroundColor: "#fef2f2", color: "#DC2626" }}>Riesgo alto · 0%</span>
         </div>
         <div className="rounded-lg p-3 t12" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b" }}>
-          BICE tiene <b>0% de participación</b> en este cliente: cede {fmtMM(cm.totalMM)} a la competencia (últimos 6 meses) y nada a BICE. Oportunidad de captura.
+          Security tiene <b>0% de participación</b> en este cliente: cede {fmtMM(cm.totalMM)} a la competencia (últimos 6 meses) y nada a Security. Oportunidad de captura.
         </div>
         <CompetenciaCard cm={cm} />
       </div>
@@ -2663,7 +2663,7 @@ function SowTab({ deal }) {
     { l: "Target", v: target ? Math.round(target) + "%" : "—", c: C.ink },
     { l: "Brecha al target", v: sow.GapPct != null ? sow.GapPct + " pts" : "—", c: sow.GapPct > 0 ? "#C2410C" : "#16A34A" },
     { l: "Tendencia", v: <span className="inline-flex items-center gap-1"><FlechaSow size={15} /> SOW {fI.lab}</span>, c: fI.c },
-    { l: "Cedido BICE 6m", v: ult.MontoBICEMM != null ? fmtMM(ult.MontoBICEMM) : "—", c: C.ink },
+    { l: "Cedido Security 6m", v: ult.MontoBICEMM != null ? fmtMM(ult.MontoBICEMM) : "—", c: C.ink },
     { l: "Total cedido 6m", v: ult.MontoTotalMM != null ? fmtMM(ult.MontoTotalMM) : "—", c: C.ink },
   ];
   return (
@@ -2717,7 +2717,7 @@ function DeudoresHistorialTable({ deal }) {
   // comercial. Es información válida aun para clientes nuevos (que facturan pero no han cursado factoring).
   // Se muestran los 10 deudores con mayor facturación.
   const dh = deudoresHistorial(deal.cliente, deal.deudores).slice(0, 10);
-  const LBL = ["1 mes", "2 m", "3 m", "4 m", "5 m", "6 m", "+6 m"];
+  const LBL = ["Mes pasado", "-2 mes", "-3 mes", "-4 mes", "-5 mes", "-6 mes", "+6 m"];
   return (
     <>
       <div className="mt-4 t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Principales deudores · facturación por mes (monto · n° facturas)</div>
@@ -4450,11 +4450,11 @@ function sowEstrategia(ev) {
   const act = ev.sowActualPct != null ? ev.sowActualPct : (cmp0 && cmp0.totalMM > 0 ? 0 : null);
   if (!t && act == null && !ev.superaTarget) return null; // sin información de SOW
   let sm;
-  if (ev.superaTarget) sm = { Icon: Check, bg: "#F0FDF4", fg: "#16A34A", lab: "en target", desc: "La participación de BICE está en o sobre el objetivo.", estr: "Defender la cuenta; tasa estándar (no se requiere descuento)." };
-  else if (act === 0) sm = { Icon: ArrowDownRight, bg: "#fef2f2", fg: "#DC2626", lab: "0% · en competencia", desc: "BICE no tiene participación; el cliente cede sus facturas a la competencia.", estr: "Capturar SOW: oferta competitiva para arrebatar el negocio a la competencia." };
-  else if (t === "Creciendo") sm = { Icon: ArrowUpRight, bg: "#F0FDF4", fg: "#16A34A", lab: "creciendo", desc: "BICE está ganando participación en este cliente.", estr: "Mantener el servicio; descuento mínimo." };
-  else if (t === "Decreciente") sm = { Icon: ArrowDownRight, bg: "#fef2f2", fg: "#DC2626", lab: "bajando", desc: "BICE está perdiendo participación frente a la competencia.", estr: "Oferta con descuento promocional para recuperar el SOW." };
-  else if (t === "Nuevo") sm = { Icon: Sparkles, bg: "#eff6ff", fg: "#2563EB", lab: "nuevo", desc: "Cliente nuevo, sin historial de factoring con BICE ni con la competencia.", estr: "Captar la primera operación para abrir la relación." };
+  if (ev.superaTarget) sm = { Icon: Check, bg: "#F0FDF4", fg: "#16A34A", lab: "en target", desc: "La participación de Security está en o sobre el objetivo.", estr: "Defender la cuenta; tasa estándar (no se requiere descuento)." };
+  else if (act === 0) sm = { Icon: ArrowDownRight, bg: "#fef2f2", fg: "#DC2626", lab: "0% · en competencia", desc: "Security no tiene participación; el cliente cede sus facturas a la competencia.", estr: "Capturar SOW: oferta competitiva para arrebatar el negocio a la competencia." };
+  else if (t === "Creciendo") sm = { Icon: ArrowUpRight, bg: "#F0FDF4", fg: "#16A34A", lab: "creciendo", desc: "Security está ganando participación en este cliente.", estr: "Mantener el servicio; descuento mínimo." };
+  else if (t === "Decreciente") sm = { Icon: ArrowDownRight, bg: "#fef2f2", fg: "#DC2626", lab: "bajando", desc: "Security está perdiendo participación frente a la competencia.", estr: "Oferta con descuento promocional para recuperar el SOW." };
+  else if (t === "Nuevo") sm = { Icon: Sparkles, bg: "#eff6ff", fg: "#2563EB", lab: "nuevo", desc: "Cliente nuevo, sin historial de factoring con Security ni con la competencia.", estr: "Captar la primera operación para abrir la relación." };
   else sm = { Icon: ArrowRight, bg: "#FFF7ED", fg: "#C2410C", lab: "estable", desc: "Participación estable, pero por debajo del objetivo.", estr: "Descuento moderado para capturar más participación." };
   const nums = (act != null && ev.sowTargetPct != null) ? `SOW actual ${Math.round(act)}% · target ${Math.round(ev.sowTargetPct)}%${ev.sowGapPct ? ` · brecha ${ev.sowGapPct} pts` : ""}\n` : (act === 0 ? "SOW actual 0% (todo en la competencia)\n" : "");
   const tip = `Share of Wallet — ${sm.lab}\n${nums}${sm.desc}\nEstrategia comercial: ${sm.estr}`;
