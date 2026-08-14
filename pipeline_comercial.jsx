@@ -3415,9 +3415,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   return (
     <>
       {!fullPage && <div className="fixed inset-0 z-40 ovl" style={{ cursor: "pointer" }} onClick={onClose} title="Cerrar (clic fuera del panel)" />}
-      <aside onClick={(e) => e.stopPropagation()} className={fullPage ? "flex w-full flex-col bg-white" : "fixed right-0 top-0 z-50 flex h-full w-full flex-col bg-white shadow-2xl"} style={fullPage ? { height: "calc(100vh - 56px)", width: "100%" } : { maxWidth: "60rem", borderLeft: `1px solid ${C.line}` }}>
+      <aside onClick={(e) => e.stopPropagation()} className={fullPage ? "flex w-full flex-col bg-white" : "fixed right-0 top-0 z-50 flex h-full w-full flex-col bg-white shadow-2xl"} style={fullPage ? { width: "100%" } : { maxWidth: "60rem", borderLeft: `1px solid ${C.line}` }}>
         {/* Encabezado fijo: título + pills + barra de tabs (no scrollea con el contenido) */}
-        <div className="p-5 pb-3" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <div className="p-5 pb-3" style={{ borderBottom: `1px solid ${C.line}`, ...(fullPage ? { position: "sticky", top: 0, zIndex: 5, backgroundColor: "#fff" } : {}) }}>
           <div className="flex items-start justify-between">
             <div>
               <div className="t11 font-medium" style={{ color: C.faint }}>{deal.id}</div>
@@ -3452,7 +3452,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             ))}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className={fullPage ? "p-5" : "flex-1 overflow-y-auto p-5"}>
           {(() => {
             // NBA sólo en las pestañas Empresa (contacto) y Negocio; se oculta en el resto.
             if (tab !== "contacto" && tab !== "negocio") return null;
