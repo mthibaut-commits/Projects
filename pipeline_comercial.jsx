@@ -13108,82 +13108,17 @@ export default function PipelineComercial() {
             <ConfiguracionView usuario={usuario} />
           </>
         ) : vistaApp === "otorgamientos" ? <OtorgamientosView deals={deals} usuario={usuario} onOpen={setSelected} onAutorizarCausa={autorizarCausa} onCfgChange={() => setCfgVer((v) => v + 1)} /> : (<>
-        <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Pipeline</div>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Pipeline Comercial</h1>
-
-        {/* Barra de filtros: movida junto al Kanban (abajo) */}
-
-        {/* ===== Indicadores agrupados (compactos, con detalle desplegable) ===== */}
-        {(() => {
-          const grupos = [
-            { id: "pipeline", cards: [
-              { id: "oport", label: "OPORTUNIDADES", value: activeCount.toLocaleString("es-CL"), sub: "",
-                side: [{ text: "Fluido", up: true, dot: true, hint: "Estado del pipeline" }, { text: "2 estancadas", up: false, hint: "Oportunidades estancadas en prospección" }],
-                serie: kpiHist.map((h) => h.oport), rows: [
-                { k: "En curso", v: activeCount.toLocaleString("es-CL") }, { k: "Prospección", v: deals.filter((d) => d.stage === "prospeccion").length },
-                { k: "Negociación", v: deals.filter((d) => d.stage === "oferta").length }, { k: "Perdidas", v: deals.filter((d) => d.stage === "perdida").length }] },
-              { id: "piptotal", label: "PIPELINE TOTAL", value: fmtMM(totalPipeline), sub: "", serie: kpiHist.map((h) => h.pipeline),
-                side: [{ label: "WR", v: `${winLoss.win}%`, n: winLoss.ganados, up: true, hint: `${winLoss.ganados} ganados` }, { label: "LR", v: `${winLoss.loss}%`, n: winLoss.perdidos, up: false, hint: `${winLoss.perdidos} perdidos` }], rows: [
-                { k: "Prospección", v: fmtMM(deals.filter((d) => d.stage === "prospeccion").reduce((s, d) => s + d.amountMM, 0)) },
-                { k: "Negociación", v: fmtMM(deals.filter((d) => d.stage === "oferta").reduce((s, d) => s + d.amountMM, 0)) }] },
-              { id: "venta", label: "VENTA MENSUAL", value: fmtMM(ventaMensualMM), sub: "", serie: kpiHist.map((h) => h.venta), rows: [
-                { k: "Venta (Girado)", v: fmtMM(ventaMensualMM) }, { k: "Budget", v: fmtMM(BUDGET_MES_MM) }, { k: "vs Budget", v: `${vsBudget}%` }] },
-            ] },
-          ];
-          const tile = (k) => {
-            return (
-              <div key={k.id} className="rounded-lg bg-white p-2 text-left" style={{ border: `1px solid ${C.line}` }}>
-                <div className="flex items-start justify-between gap-1">
-                  <span className="t9 font-semibold uppercase leading-tight" style={{ color: C.sub }}>{k.label}</span>
-                </div>
-                <div className="flex items-end justify-between gap-1">
-                  <div className="text-base font-semibold tracking-tight" style={{ color: C.ink }}>{k.value}</div>
-                  {k.side && (
-                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                      {k.side.map((s) => (
-                        <span key={s.label || s.text} title={s.hint} className="flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: s.up ? C.greenBg : C.amberBg, color: s.up ? C.green : C.red }}>
-                          {s.dot && <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: s.up ? C.green : C.red }} />}
-                          {s.text != null ? s.text : `${s.label} ${s.v} · ${s.n}`}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                {k.sub && <div className="t9 truncate" style={{ color: C.faint }}>{k.sub}</div>}
-                {k.serie && k.serie.length > 1 && <div className="mt-1"><Sparkline data={k.serie} color={C.indigo} /></div>}
-                <div className="mt-1.5 space-y-0.5 border-t pt-1.5" style={{ borderColor: C.line }}>
-                  {k.rows.map((r, i) => (
-                    <div key={i} className="flex items-center justify-between t9">
-                      <span style={{ color: C.sub }}>{r.k}</span>
-                      <span className="flex items-center gap-1"><span className="font-medium" style={{ color: C.ink }}>{r.v}</span>{r.d && <Delta value={r.d} up={r.up} />}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          };
-          return (
-            <div className="mt-5 space-y-3">
-              {grupos.map((g) => (
-                <div key={g.id}>
-                  <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${g.cards.length}, minmax(0, 1fr))` }}>
-                    {g.cards.map((k) => tile(k))}
-                  </div>
-                </div>
-              ))}
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Pipeline</div>
+            <div className="mt-1 flex items-center gap-2">
+              <h1 className="text-2xl font-semibold tracking-tight">Pipeline Comercial</h1>
+              <span className="rounded-full px-2 py-0.5 t10 font-medium" style={{ backgroundColor: anyFilter ? "#F1ECFF" : C.page, color: anyFilter ? C.indigo : C.faint }}>
+                {filtered.length} de {deals.length + inboundCount} negocios{anyFilter ? " · filtrado" : ""}
+              </span>
             </div>
-          );
-        })()}
-
-        {/* ===== Pipeline Kanban + Inbound + Mis Tareas ===== */}
-        <div className="mt-6 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h2 className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Pipeline Comercial</h2>
-            <span className="rounded-full px-2 py-0.5 t10 font-medium" style={{ backgroundColor: anyFilter ? "#F1ECFF" : C.page, color: anyFilter ? C.indigo : C.faint }}>
-              {filtered.length} de {deals.length + inboundCount} negocios{anyFilter ? " · filtrado" : ""}
-            </span>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
             <button onClick={toggleStream} title={streaming ? "Pausar simulación" : "Iniciar simulación inbound (Start)"}
               className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: streaming ? C.amber : C.green }}>
               {streaming ? <><Pause size={14} /> Pausar</> : <><Play size={14} /> Start</>}
@@ -13218,8 +13153,61 @@ export default function PipelineComercial() {
           </div>
         </div>
 
+        {/* ===== Indicadores agrupados (compactos, con detalle desplegable) ===== */}
+        {(() => {
+          const grupos = [
+            { id: "pipeline", cards: [
+              { id: "oport", label: "OPORTUNIDADES", value: activeCount.toLocaleString("es-CL"), sub: "",
+                side: [{ text: "Fluido", up: true, dot: true, hint: "Estado del pipeline" }, { text: "2 estancadas", up: false, hint: "Oportunidades estancadas en prospección" }],
+                serie: kpiHist.map((h) => h.oport) },
+              { id: "piptotal", label: "PIPELINE TOTAL", value: fmtMM(totalPipeline), sub: "", serie: kpiHist.map((h) => h.pipeline),
+                side: [{ label: "WR", v: `${winLoss.win}%`, n: winLoss.ganados, up: true, hint: `${winLoss.ganados} ganados` }, { label: "LR", v: `${winLoss.loss}%`, n: winLoss.perdidos, up: false, hint: `${winLoss.perdidos} perdidos` }] },
+              { id: "venta", label: "VENTA MENSUAL", value: fmtMM(ventaMensualMM), budget: fmtMM(BUDGET_MES_MM), pct: vsBudget, sub: "", serie: kpiHist.map((h) => h.venta) },
+            ] },
+          ];
+          const tile = (k) => {
+            return (
+              <div key={k.id} className="rounded-lg bg-white p-2 text-left" style={{ border: `1px solid ${C.line}` }}>
+                <div className="flex items-start justify-between gap-1">
+                  <span className="t9 font-semibold uppercase leading-tight" style={{ color: C.sub }}>{k.label}</span>
+                </div>
+                <div className="flex items-end justify-between gap-1">
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="text-base font-semibold tracking-tight" style={{ color: C.ink }}>{k.value}</span>
+                    {k.budget != null && <span className="t11 font-medium" style={{ color: C.faint }}>/ {k.budget}</span>}
+                    {k.pct != null && <span className="t10 font-bold" title="Cumplimiento vs budget del mes" style={{ color: C.indigo }}>({k.pct}%)</span>}
+                  </div>
+                  {k.side && (
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                      {k.side.map((s) => (
+                        <span key={s.label || s.text} title={s.hint} className="flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: s.up ? C.greenBg : C.amberBg, color: s.up ? C.green : C.red }}>
+                          {s.dot && <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: s.up ? C.green : C.red }} />}
+                          {s.text != null ? s.text : `${s.label} ${s.v} · ${s.n}`}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {k.sub && <div className="t9 truncate" style={{ color: C.faint }}>{k.sub}</div>}
+                {k.serie && k.serie.length > 1 && <div className="mt-1"><Sparkline data={k.serie} color={C.indigo} /></div>}
+              </div>
+            );
+          };
+          return (
+            <div className="mt-5 space-y-3">
+              {grupos.map((g) => (
+                <div key={g.id}>
+                  <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${g.cards.length}, minmax(0, 1fr))` }}>
+                    {g.cards.map((k) => tile(k))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+
         {/* ===== Barra de filtros (afecta principalmente al Kanban) ===== */}
-        <div className="mt-2 flex flex-wrap items-center gap-2">
+        <div className="mt-5 flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: C.faint }} />
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por cedente, pagador, ID…"
