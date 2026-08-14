@@ -1212,6 +1212,28 @@ function candidatasDe(deal) {
   }
   return out;
 }
+// Estado de una factura CANDIDATA respecto de si puede incorporarse a la operación (determinista por folio):
+//  · notaAnula  → nota de crédito que ANULA el documento: bloqueada (no se puede agregar).
+//  · notaParcial→ nota de crédito parcial: se puede agregar, pero el monto neto = factura − nota de crédito.
+//  · cedida     → cedida a un tercero antes de esta operación: bloqueada.
+//  · otraOp     → ya es parte de otra operación de Security: bloqueada.
+//  · ok         → disponible para agregar con su monto total.
+function estadoCandidata(f, deal) {
+  const monto = f.montoMM || 0;
+  const h = Math.abs(hashStr("estCand" + ((deal && deal.id) || "") + "|" + (f.folio || f.id || "")));
+  const b = h % 100;
+  if (f.notaCredito === true || b < 7)
+    return { clave: "notaAnula", bloqueada: true, agregable: false, label: "Anulada por NC", tono: "red", montoNeto: 0, ncMonto: monto };
+  if (b < 15) {
+    const nc = +(monto * (0.2 + (h % 30) / 100)).toFixed(1); // NC parcial: 20%–49% del monto
+    return { clave: "notaParcial", bloqueada: false, agregable: true, label: "NC parcial", tono: "amber", ncMonto: nc, montoNeto: +Math.max(0, monto - nc).toFixed(1) };
+  }
+  if (f.cedida === true || (b >= 15 && b < 22))
+    return { clave: "cedida", bloqueada: true, agregable: false, label: "Cedida a terceros", tono: "red", montoNeto: monto, ncMonto: 0 };
+  if (b >= 22 && b < 29)
+    return { clave: "otraOp", bloqueada: true, agregable: false, label: "En otra operación", tono: "red", montoNeto: monto, ncMonto: 0 };
+  return { clave: "ok", bloqueada: false, agregable: true, label: null, montoNeto: monto, ncMonto: 0 };
+}
 // Página externa de aprobación (sitio Factoring Security). Se sirve como blob URL y se abre en
 // pestaña nueva desde el botón de WhatsApp. Al aprobar, avisa a la app vía window.opener.postMessage.
 function htmlAprobacion(deal, o, dealId, cantidad) {
@@ -2774,9 +2796,12 @@ function descuentosDeal(deal, o) {
   const sum = (a) => a.reduce((s, x) => s + (x.desc || 0), 0);
   return { otros, mora, cxc, totOtros: sum(otros), totMora: sum(mora), totCxc: sum(cxc) };
 }
-function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, antic, setAntic, comisO, setComisO, tasaPond, diasPond }) {
+function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, antic, setAntic, comisO, setComisO, tasaPond, diasPond, reevalPend, onReevaluar }) {
   const [open, setOpen] = useState(true);
   const [editCond, setEditCond] = useState(false); // edición de condiciones bajo demanda (botón)
+  const [reevaluando, setReevaluando] = useState(false); // corriendo el re-check de otorgamiento/verificación
+  // Al agregar/quitar facturas, las condiciones quedan a re-evaluar: se deshabilitan hasta correr el re-check.
+  const lanzarReeval = () => { setReevaluando(true); setTimeout(() => { setReevaluando(false); if (onReevaluar) onReevaluar(); }, 900); };
   const histOps = historialComercial(deal.cliente, deal.deudor).slice(0, 5); // referencia de condiciones
   const toCLP = (mm) => Math.round((mm || 0) * 1e6);
   const UF = 38000; // valor UF referencial (CLP)
@@ -2819,8 +2844,11 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
           <div className="t10" style={{ color: C.faint }}>{fecha} · Generada por {usuario}</div>
         </div>
       </div>
-      {/* Condiciones comerciales — referencia (actuales); se editan con el botón "Editar condiciones" */}
-      <div className="mx-4 mt-3 rounded-lg p-3" style={{ backgroundColor: "#F9FAFB", border: "1px solid #FED7AA" }}>
+      {/* Condiciones comerciales — referencia (actuales); se editan con el botón "Editar condiciones".
+          Al agregar/quitar facturas quedan a re-evaluar: se deshabilitan (opacidad) con un botón
+          "Re-evaluar operación" al centro que dispara el re-check de otorgamiento/verificación. */}
+      <div className="relative mx-4 mt-3 rounded-lg p-3" style={{ backgroundColor: "#F9FAFB", border: "1px solid #FED7AA" }}>
+        <div style={{ opacity: reevalPend ? 0.4 : 1, pointerEvents: reevalPend ? "none" : "auto" }}>
         <div className="flex items-center justify-between">
           <span className="t10 font-semibold uppercase tracking-wide" style={{ color: "#C2410C" }}>Condiciones comerciales</span>
           {!bloqueado && <button onClick={() => setEditCond((v) => !v)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t10 font-semibold" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}>{editCond ? <><Check size={11} /> Listo</> : <><Pencil size={11} /> Editar condiciones</>}</button>}
@@ -2850,6 +2878,14 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
                 <div className="mt-0.5 t14 font-semibold" style={{ color: C.ink }}>{v}</div>
               </div>
             ))}
+          </div>
+        )}
+        </div>
+        {reevalPend && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-lg" style={{ backgroundColor: "rgba(249,250,251,0.55)" }}>
+            <button onClick={lanzarReeval} disabled={reevaluando} className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 t11 font-semibold text-white" style={{ backgroundColor: reevaluando ? C.faint : "#C2410C", boxShadow: "0 6px 16px rgba(194,65,12,.25)" }}>
+              <RotateCcw size={13} className={reevaluando ? "animate-spin" : ""} /> {reevaluando ? "Re-evaluando…" : "Re-evaluar operación"}
+            </button>
           </div>
         )}
       </div>
@@ -3476,6 +3512,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [candPage, setCandPage] = useState(0); // paginador de facturas candidatas a agregar
   const [factTab, setFactTab] = useState("candidatas"); // sub-tab de facturas: candidatas | todas
   const [negTab, setNegTab] = useState("resumen"); // sub-tab del negocio: resumen | documentos | descuentos
+  const [reevalPend, setReevalPend] = useState(false); // se agregaron/quitaron facturas → condiciones a re-evaluar
   const [pubMenu, setPubMenu] = useState(false); // dropdown de canal para publicar la oferta
   const [cierreMenu, setCierreMenu] = useState(false); // dropdown de canal para enviar el enlace de cierre
   const [pubModal, setPubModal] = useState(null); // { oferta, opts, canal, descartadas } — decisión sobre facturas descartadas recientes al publicar
@@ -3746,7 +3783,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           <button key={k} onClick={() => setNegTab(k)} className="rounded-lg px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: negTab === k ? C.lilac : "#fff", color: negTab === k ? C.indigo : C.sub, border: `1px solid ${negTab === k ? C.indigo : C.line}` }}>{l}</button>
                         ))}
                       </div>
-                      {negTab === "resumen" && <SimResumen deal={deal} o={o} montoDocs={montoValido} cantFacturas={validas.length} usuario={USERS[usuario] || usuario} bloqueado={bloqueado} antic={antic} setAntic={setAntic} comisO={comisO} setComisO={setComisO} tasaPond={tasaPond} diasPond={diasPond} />}
+                      {negTab === "resumen" && <SimResumen deal={deal} o={o} montoDocs={montoValido} cantFacturas={validas.length} usuario={USERS[usuario] || usuario} bloqueado={bloqueado} antic={antic} setAntic={setAntic} comisO={comisO} setComisO={setComisO} tasaPond={tasaPond} diasPond={diasPond} reevalPend={reevalPend} onReevaluar={() => setReevalPend(false)} />}
                       {negTab === "descuentos" && <SimDescuentos deal={deal} o={o} />}
                       {negTab === "documentos" && (<>
                       {/* Documentos: facturas incluidas en la oferta */}
@@ -3808,28 +3845,38 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           // "Otras facturas" se modela como la tabla de "Facturas incluidas en la oferta":
                           // mismas columnas (Tipo doc · Folio · Razón social · Nota · F. emisión · F. vencim · Otorg · Verif · Tasa · Monto),
                           // con una columna de acción (Agregar para candidatas · XML para las que ya están en la oferta).
-                          const GC_OTRAS = "16px 74px 58px minmax(120px,1fr) 30px 90px 90px 106px 100px 48px 66px 84px";
+                          const GC_OTRAS = "16px 74px 58px minmax(110px,1fr) 30px 86px 86px 104px 98px 46px 64px 104px";
                           const HeadOtras = (
                             <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: GC_OTRAS, color: C.faint, borderBottom: `1px solid ${C.line}` }}>
                               <span></span><span>Tipo doc.</span><span>Folio</span><span>Razón social</span><span className="text-right">Nota</span><span>F. emisión</span><span>F. vencim.</span><span>Otorg.</span><span>Verif.</span><span className="text-right">Tasa</span><span className="text-right">Monto</span><span></span>
                             </div>
                           );
+                          const SHORT_EST = { notaAnula: "Anulada", cedida: "Cedida", otraOp: "Otra op.", notaParcial: "NC parcial" };
                           const filaOtra = (f) => {
                             const sc = scoreDeudor(f.deudor, tipoDeudorDisp(f)); const nota = notaFromScore(sc.score);
                             const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                             const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
-                            const he = Math.abs(hashStr("em" + f.folio)) % 20 + 3; const emD = new Date(Date.now() - he * 86400000);
-                            const em = emD.toLocaleDateString("es-CL"); const venc = new Date(emD.getTime() + 60 * 86400000).toLocaleDateString("es-CL");
+                            // Las candidatas tienen 60 días de antigüedad; las ya incluidas conservan su emisión reciente.
+                            const he = f.candidata ? 60 : (Math.abs(hashStr("em" + f.folio)) % 20 + 3); const emD = new Date(Date.now() - he * 86400000);
+                            const plazo = f.venc != null ? f.venc : 30;
+                            const em = emD.toLocaleDateString("es-CL"); const venc = new Date(emD.getTime() + plazo * 86400000).toLocaleDateString("es-CL");
                             const reqOtorg = f.inboundBucket === "OTRO" || tipoDeudorDisp(f) === "Otro";
                             const oto = reqOtorg ? { bg: "#f5f3ff", fg: "#7C3AED", t: "Otorgamiento" } : { bg: "#F0FDF4", fg: "#16A34A", t: "Automático" };
                             const vf = verifFactura(f, deal); const vv = vf.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
                             const tasaF = ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + COSTO_FONDO).toFixed(2);
                             const ok = xmlOk[f.id] !== false;
+                            const est = f.candidata ? estadoCandidata(f, deal) : { clave: "ok", bloqueada: false, agregable: true, montoNeto: f.montoMM, ncMonto: 0 };
+                            const bloq = f.candidata && est.bloqueada;
+                            const agregarF = () => { onIncorporarFacturas(deal.id, [est.clave === "notaParcial" ? { ...f, montoMM: est.montoNeto, _ncAplicada: est.ncMonto } : f]); setReevalPend(true); };
                             const accion = f.candidata
-                              ? (!bloqueado ? <button onClick={() => onIncorporarFacturas(deal.id, [f])} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button> : <span></span>)
+                              ? (bloq
+                                  ? <span title={`${est.label} · no se puede agregar a la operación`} className="justify-self-start inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red, border: "1px solid #fecaca", cursor: "help" }}>🔒 {SHORT_EST[est.clave]}</span>
+                                  : (!bloqueado ? <button onClick={agregarF} title={est.clave === "notaParcial" ? `Se agregará por el monto neto (${fmtMM(est.montoNeto)} = factura − nota de crédito)` : "Agregar a la operación"} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button> : <span></span>))
                               : <button onClick={() => setXmlOk((m) => ({ ...m, [f.id]: !ok }))} title={ok ? "Con XML" : "Sin XML"} disabled={!!f.excl || bloqueado} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: ok ? C.greenBg : "#fef2f2", color: ok ? C.green : C.red, border: `1px solid ${ok ? "#bbf7d0" : "#fecaca"}` }}>{ok ? <Check size={10} /> : <X size={10} />} XML</button>;
+                            const parcial = f.candidata && est.clave === "notaParcial";
+                            const anulMonto = f.candidata && est.clave === "notaAnula";
                             return (
-                              <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: GC_OTRAS, borderBottom: `1px solid ${C.line}`, opacity: f.excl ? 0.6 : 1 }}>
+                              <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: GC_OTRAS, borderBottom: `1px solid ${C.line}`, opacity: (f.excl || bloq) ? 0.55 : 1 }}>
                                 <span className="flex items-center" title={f.candidata ? "Candidata · disponible para agregar a la oferta" : "Ya está en la oferta"}><Star size={12} style={{ color: f.candidata ? "#F97316" : C.faint }} fill={f.candidata ? "#F97316" : "none"} /></span>
                                 <span className="truncate t9" style={{ color: C.sub }} title={tdoc}>{tdoc}</span>
                                 <span className="font-medium" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>#{f.folio}</span>
@@ -3840,7 +3887,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: oto.bg, color: oto.fg }}>{oto.t}</span>
                                 <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: vv.bg, color: vv.fg }}>{vv.t}</span>
                                 <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
-                                <span className="text-right font-medium" title={f.excl ? `Excluida: ${f.excl}` : undefined} style={{ color: C.ink, textDecoration: f.excl ? "line-through" : "none" }}>{fmtMM(f.montoMM)}</span>
+                                <span className="text-right font-medium" title={parcial ? `Factura ${fmtMM(f.montoMM)} − NC ${fmtMM(est.ncMonto)} = ${fmtMM(est.montoNeto)}` : (f.excl ? `Excluida: ${f.excl}` : anulMonto ? "Documento anulado por nota de crédito" : undefined)} style={{ color: parcial ? "#C2410C" : C.ink, textDecoration: (f.excl || anulMonto) ? "line-through" : "none" }}>{fmtMM(parcial ? est.montoNeto : f.montoMM)}</span>
                                 {accion}
                               </div>
                             );
@@ -3851,10 +3898,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 {[["candidatas", `Candidatas (${cands.length})`], ["todas", `Todas las facturas (${todas.length})`]].map(([k, l]) => (
                                   <button key={k} onClick={() => setFactTab(k)} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ backgroundColor: factTab === k ? C.lilac : "#fff", color: factTab === k ? C.indigo : C.sub, border: `1px solid ${factTab === k ? C.indigo : C.line}` }}>{l}</button>
                                 ))}
-                                {factTab === "candidatas" && cands.some((f) => !f.otro) && !bloqueado && (
-                                  // "Agregar todas" sólo incluye las candidatas elegibles; las de "Otros deudores"
-                                  // (f.otro) se agregan una a una de forma manual, nunca en bloque.
-                                  <button onClick={() => onIncorporarFacturas(deal.id, cands.filter((f) => !f.otro))} className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md px-2 py-1 t9 font-medium" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar todas las elegibles</button>
+                                {factTab === "candidatas" && cands.some((f) => !f.otro && estadoCandidata(f, deal).agregable) && !bloqueado && (
+                                  // "Agregar todas" sólo incluye las candidatas elegibles: excluye "Otros deudores"
+                                  // (f.otro, se agregan una a una) y las bloqueadas (anuladas/cedidas/en otra operación).
+                                  <button onClick={() => { const eleg = cands.filter((f) => !f.otro && estadoCandidata(f, deal).agregable).map((f) => { const e = estadoCandidata(f, deal); return e.clave === "notaParcial" ? { ...f, montoMM: e.montoNeto, _ncAplicada: e.ncMonto } : f; }); onIncorporarFacturas(deal.id, eleg); setReevalPend(true); }} className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md px-2 py-1 t9 font-medium" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar todas las elegibles</button>
                                 )}
                               </div>
                               <div className="mt-1.5 flex items-center gap-1.5 rounded-full px-2 py-1" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
@@ -4451,7 +4498,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
       <ConfirmDialog abierto={!!confirmRetiro} titulo="¿Retirar esta factura de la oferta?"
         descripcion={confirmRetiro ? `Folio ${confirmRetiro.folio || confirmRetiro.id || ""} · ${fmtMM(confirmRetiro.montoMM || 0)}. La factura sale de la oferta y el CAT se recalcula.` : ""}
         etiquetaConfirmar="Retirar factura"
-        onConfirmar={() => { onRetirarFactura(deal.id, confirmRetiro); setConfirmRetiro(null); }}
+        onConfirmar={() => { onRetirarFactura(deal.id, confirmRetiro); setReevalPend(true); setConfirmRetiro(null); }}
         onCancelar={() => setConfirmRetiro(null)} />
     </>
   );
