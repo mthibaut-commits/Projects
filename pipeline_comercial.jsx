@@ -2969,6 +2969,11 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const [carrusel, setCarrusel] = useState(0); // ventana del carrusel de tabs de deudor
   const [showApr, setShowApr] = useState(false); // muestra/oculta las reglas aprobadas (DIV colapsable)
   const [, forceV] = useState(0); // re-render tras visar una excepción desde el detalle
+  const [excForm, setExcForm] = useState({}); // { [stKey]: { open:"aprobado"|"rechazado", msg, arch } } — comentario/adjunto al visar
+  const setEF = (k, patch) => setExcForm((m) => ({ ...m, [k]: { ...(m[k] || {}), ...patch } }));
+  // La aprobación desde el detalle sólo se habilita cuando la operación está en la BANDEJA de otorgamiento:
+  // aceptada por el cliente, o con Pre-evaluación solicitada por el ejecutivo (igual que la mesa de Otorgamientos).
+  const enBandeja = ["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage) || tienePreEval(deal.id);
   const vs = SIM_VERSIONS[deal.id] || [];
   const shown = vs.length ? vs : [snapVersionCli(deal, 0)];
   const effIdx = verSel < 0 || verSel >= shown.length ? shown.length - 1 : verSel;
@@ -2995,13 +3000,13 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const ordenBy = (arr) => arr.slice().sort((a, b) => (reqAprob(b) - reqAprob(a)) || (orden[a.disp] - orden[b.disp]) || (a.n - b.n));
   // Aprobar/rechazar una excepción DIRECTAMENTE desde el detalle (si el usuario tiene la atribución). Escribe el
   // visado (mismo estado que la mesa de Otorgamientos), registra auditoría + bitácora y re-renderiza.
-  const aprobarExc = (x, val) => {
+  const aprobarExc = (x, val, msg, arch) => {
     if (!x.stKey || !x.regla) return;
     const st = VISADO_STATE[deal.id] || (VISADO_STATE[deal.id] = {}); st[x.stKey] = val;
-    const det = VISADO_DETALLE[deal.id] || (VISADO_DETALLE[deal.id] = {}); det[x.stKey] = { msg: "", arch: null, por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL") };
+    const det = VISADO_DETALLE[deal.id] || (VISADO_DETALLE[deal.id] = {}); det[x.stKey] = { msg: msg || "", arch: arch || null, por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL") };
     const dtxt = x.deudor ? ` · deudor ${x.deudor.nombre}` : "";
-    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Visado Cliente (detalle)", accion: val === "aprobado" ? "Excepción aprobada" : "Excepción rechazada", glosa: `Regla ${x.regla.n} · ${AREA_LBL[x.regla.area]} N${x.nivel || 4} · ${deal.cliente}${dtxt}`, exito: val === "aprobado" });
-    logOtorgEvento(deal.id, USERS[usuario] || usuario, `${USERS[usuario] || usuario} ${val === "aprobado" ? "aprobó" : "rechazó"} la excepción desde el detalle · regla #${x.regla.n} ${x.regla.nombre}${dtxt} (${AREA_LBL[x.regla.area]} N${x.nivel || 4})`, "");
+    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Visado Cliente (detalle)", accion: val === "aprobado" ? "Excepción aprobada" : "Excepción rechazada", glosa: `Regla ${x.regla.n} · ${AREA_LBL[x.regla.area]} N${x.nivel || 4} · ${deal.cliente}${dtxt}${msg ? " · " + msg : ""}`, exito: val === "aprobado" });
+    logOtorgEvento(deal.id, USERS[usuario] || usuario, `${USERS[usuario] || usuario} ${val === "aprobado" ? "aprobó" : "rechazó"} la excepción desde el detalle · regla #${x.regla.n} ${x.regla.nombre}${dtxt} (${AREA_LBL[x.regla.area]} N${x.nivel || 4})${arch ? " · con respaldo adjunto" : ""}`, msg || "");
     forceV((v) => v + 1); onReev && onReev();
   };
   const revertirVisado = (x) => { const st = VISADO_STATE[deal.id]; if (st) delete st[x.stKey]; const det = VISADO_DETALLE[deal.id]; if (det) delete det[x.stKey]; forceV((v) => v + 1); onReev && onReev(); };
@@ -3040,18 +3045,40 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         {x.disp === "excepcion" && (() => {
           const estado = visSt[x.stKey]; // "aprobado" | "rechazado" | undefined
           const puedeVisar = x.regla && puedeAprobarExc(usuario, x.regla, x.nivel || 4);
-          if (estado) return (
-            <div className="mt-1.5 flex items-center justify-between gap-2 rounded-md px-2 py-1" style={{ backgroundColor: estado === "aprobado" ? C.greenBg : "#FEF2F2" }}>
-              <span className="t9 font-semibold" style={{ color: estado === "aprobado" ? C.green : C.red }}>{estado === "aprobado" ? "✓ Excepción aprobada" : "✕ Excepción rechazada"}{(VISADO_DETALLE[deal.id] || {})[x.stKey]?.por ? ` · ${(VISADO_DETALLE[deal.id] || {})[x.stKey].por}` : ""}</span>
-              {puedeVisar && <button onClick={() => revertirVisado(x)} className="rounded-md px-2 py-0.5 t9 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Revertir</button>}
+          if (estado) { const dt = (VISADO_DETALLE[deal.id] || {})[x.stKey] || {}; return (
+            <div className="mt-1.5 rounded-md px-2 py-1.5" style={{ backgroundColor: estado === "aprobado" ? C.greenBg : "#FEF2F2" }}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="t9 font-semibold" style={{ color: estado === "aprobado" ? C.green : C.red }}>{estado === "aprobado" ? "✓ Excepción aprobada" : "✕ Excepción rechazada"}{dt.por ? ` · ${dt.por}` : ""}{dt.fecha ? ` · ${dt.fecha}` : ""}</span>
+                {puedeVisar && <button onClick={() => revertirVisado(x)} className="rounded-md px-2 py-0.5 t9 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Revertir</button>}
+              </div>
+              {dt.msg && <div className="mt-0.5 t9" style={{ color: C.sub }}>“{dt.msg}”</div>}
+              {dt.arch && <div className="mt-0.5 t9" style={{ color: C.faint }}>📎 {dt.arch}</div>}
             </div>
-          );
+          ); }
           if (!puedeVisar) return null;
-          return (
+          if (!enBandeja) return <div className="mt-1.5 t9" style={{ color: C.faint }}>La aprobación se habilita al solicitar <b>Pre-evaluación</b> o tras la aceptación del cliente (para que también aparezca en la mesa de Otorgamientos).</div>;
+          const ef = excForm[x.stKey] || {};
+          if (!ef.open) return (
             <div className="mt-1.5 flex items-center gap-1.5">
               <span className="t9 font-semibold" style={{ color: "#5B21D6" }}>Tu atribución permite visar:</span>
-              <button onClick={() => aprobarExc(x, "aprobado")} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold text-white" style={{ backgroundColor: "#7C3AED" }}><Check size={11} /> Aprobar excepción</button>
-              <button onClick={() => aprobarExc(x, "rechazado")} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold" style={{ border: "1px solid #DC2626", color: "#DC2626", backgroundColor: "#fff" }}><X size={11} /> Rechazar</button>
+              <button onClick={() => setEF(x.stKey, { open: "aprobado" })} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold text-white" style={{ backgroundColor: "#7C3AED" }}><Check size={11} /> Aprobar excepción</button>
+              <button onClick={() => setEF(x.stKey, { open: "rechazado" })} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold" style={{ border: "1px solid #DC2626", color: "#DC2626", backgroundColor: "#fff" }}><X size={11} /> Rechazar</button>
+            </div>
+          );
+          return (
+            <div className="mt-1.5 rounded-md p-2" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
+              <div className="t9 font-semibold" style={{ color: ef.open === "aprobado" ? "#7C3AED" : "#DC2626" }}>{ef.open === "aprobado" ? "Aprobar excepción" : "Rechazar excepción"} · comentario y respaldo</div>
+              <textarea value={ef.msg || ""} onChange={(e) => setEF(x.stKey, { msg: e.target.value })} placeholder="Comentario / justificación de la decisión…" className="mt-1 w-full rounded-md p-2 t10 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, minHeight: 54, backgroundColor: "#fff", color: C.ink }} />
+              <div className="mt-1.5 flex items-center justify-between gap-2">
+                <label className="inline-flex cursor-pointer items-center gap-1 t9 font-medium" style={{ color: C.indigo }}>
+                  📎 {ef.arch ? ef.arch : "Adjuntar respaldo"}
+                  <input type="file" className="hidden" onChange={(e) => setEF(x.stKey, { arch: (e.target.files && e.target.files[0] && e.target.files[0].name) || null })} />
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <button onClick={() => setEF(x.stKey, { open: null })} className="rounded-md px-2 py-1 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
+                  <button onClick={() => { aprobarExc(x, ef.open, ef.msg, ef.arch); setEF(x.stKey, { open: null, msg: "", arch: null }); }} className="rounded-md px-3 py-1 t9 font-semibold text-white" style={{ backgroundColor: ef.open === "aprobado" ? "#7C3AED" : "#DC2626" }}>Confirmar {ef.open === "aprobado" ? "aprobación" : "rechazo"}</button>
+                </div>
+              </div>
             </div>
           );
         })()}
