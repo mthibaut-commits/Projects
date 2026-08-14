@@ -5884,18 +5884,11 @@ function WaFlowLogin({ deal, onLogin }) {
 // ============================================================
 // Vista Tabla: grilla de oportunidades (alternativa al Kanban)
 // ============================================================
-function TablaOportunidades({ deals, onOpen, onMover, onReject, onNuevoNegocio }) {
+function TablaOportunidades({ deals, onOpen, onMover, onReject }) {
   const nextStage = (id) => { const i = STAGE_ORDER.indexOf(id); return STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 2)]; };
   const cols = ["Oportunidad", "Ejecutivo", "Producto", "Monto", "Condiciones de la oferta", "Etapa", "Estrategia", "Acciones"];
   return (
     <div className="flex flex-1 flex-col gap-2">
-      {onNuevoNegocio && (
-        <div className="flex items-center justify-end">
-          <button onClick={onNuevoNegocio} className="btn-cta inline-flex items-center gap-1 px-4 py-1.5 t11">
-            <Plus size={13} /> Nuevo negocio
-          </button>
-        </div>
-      )}
       <div className="flex-1 overflow-x-auto rounded-xl bg-white p-1" style={{ border: `1px solid ${C.line}` }}>
       <table className="w-full border-collapse t11" style={{ minWidth: "1360px" }}>
         <thead><tr>{cols.map((h) => (
@@ -13218,6 +13211,10 @@ export default function PipelineComercial() {
                 <BarChart2 size={14} /> Reporte ({reporte.length}d)
               </button>
             )}
+            <span className="mx-1 h-5 w-px" style={{ backgroundColor: C.line }} />
+            <button onClick={nuevoNegocio} className="btn-cta inline-flex items-center gap-1 px-4 py-1.5 t11">
+              <Plus size={14} /> Nuevo negocio
+            </button>
           </div>
         </div>
 
@@ -13228,16 +13225,6 @@ export default function PipelineComercial() {
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por cedente, pagador, ID…"
               className="w-64 rounded-lg py-1.5 pl-8 pr-3 t12 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }} />
           </div>
-          {quickFilters.map((f) => {
-            const on = quickFilter === f.id;
-            return (
-              <button key={f.id} onClick={() => setQuickFilter(on ? "todos" : f.id)} title="Filtrar oportunidades" className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium transition-colors"
-                style={{ border: `1px solid ${on ? C.indigo : C.line}`, backgroundColor: on ? C.indigo : "#fff", color: on ? "#fff" : C.ink }}>
-                {f.label}
-                <span className="rounded px-1 t10" style={{ backgroundColor: on ? "rgba(255,255,255,.2)" : C.page, color: on ? "#fff" : C.sub }}>{f.count}</span>
-              </button>
-            );
-          })}
           {(() => {
             const selBase = "appearance-none rounded-lg pl-3 pr-7 py-1.5 t12 outline-none focus:ring-2 cursor-pointer";
             const sty = (active) => ({ border: `1px solid ${active ? C.indigo : C.line}`, backgroundColor: "#fff", color: active ? C.indigo : C.sub, fontWeight: active ? 600 : 400 });
@@ -13270,8 +13257,22 @@ export default function PipelineComercial() {
           <button onClick={clearAll} className="t12 font-medium" style={{ color: anyFilter ? C.indigo : C.faint }}>Limpiar</button>
         </div>
 
+        {/* ===== Tabs de agrupación (estilo underline, como Tareas/Oportunidades/Plan Mensual) ===== */}
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
+          {quickFilters.map((f) => {
+            const on = quickFilter === f.id;
+            return (
+              <button key={f.id} onClick={() => setQuickFilter(f.id)} title="Filtrar oportunidades" className="flex items-center gap-1.5 px-1 pb-2 t12"
+                style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
+                {f.label}
+                <span className="t10" style={{ color: on ? C.indigo : C.faint, fontWeight: 400 }}>{f.count}</span>
+              </button>
+            );
+          })}
+        </div>
+
         <div className="mt-3 flex items-start gap-3 overflow-x-auto pb-4">
-          {vista === "tabla" && <TablaOportunidades deals={filtered} onOpen={setSelected} onMover={moverEtapa} onReject={reject} onNuevoNegocio={nuevoNegocio} />}
+          {vista === "tabla" && <TablaOportunidades deals={filtered} onOpen={setSelected} onMover={moverEtapa} onReject={reject} />}
           {vista === "kanban" && (() => {
             const col = (id, opts = {}) => (
               <StageColumn key={id} stage={stageById(id)} deals={opts.deals || dealsByStage(id)} onOpen={setSelected}
