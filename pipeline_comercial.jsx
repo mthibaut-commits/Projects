@@ -6140,7 +6140,7 @@ function WaFlowLogin({ deal, onLogin }) {
 // ============================================================
 // Vista Tabla: grilla de oportunidades (alternativa al Kanban)
 // ============================================================
-function TablaOportunidades({ deals, onOpen, onMover, onReject }) {
+function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onAsignarExec }) {
   const nextStage = (id) => { const i = STAGE_ORDER.indexOf(id); return STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 2)]; };
   const cols = ["Oportunidad", "Ejecutivo", "Producto", "Monto", "Condiciones de la oferta", "Etapa", "Estrategia", "Acciones"];
   return (
@@ -6165,7 +6165,13 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject }) {
                 </td>
                 {/* Ejecutivo */}
                 <td className="whitespace-nowrap px-2 py-2.5 align-top" style={{ color: C.sub }}>
-                  <span className="inline-flex items-center gap-1.5"><span className="flex h-5 w-5 items-center justify-center rounded-full t9 font-semibold text-white" style={{ backgroundColor: C.indigo }}>{d.exec}</span>{EXECS[d.exec] || d.exec}</span>
+                  {(() => {
+                    // Fila agrupada de "Otras facturas": la jefatura ve "Sin asignar" (aún sin dueño); el
+                    // ejecutivo ve estas empresas como suyas (su cartera, sin priorizar) → muestra al dueño.
+                    if (d.agrupado && modoAsignar) return <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#FFF7ED", color: "#C2410C", border: "1px solid #FED7AA" }}>Sin asignar</span>;
+                    const ex = d.agrupado ? (d.execSugerido || d.exec) : d.exec;
+                    return <span className="inline-flex items-center gap-1.5"><span className="flex h-5 w-5 items-center justify-center rounded-full t9 font-semibold text-white" style={{ backgroundColor: C.indigo }}>{ex}</span>{EXECS[ex] || ex}</span>;
+                  })()}
                 </td>
                 {/* Producto financiero */}
                 <td className="whitespace-nowrap px-2 py-2.5 align-top"><Pill style={{ backgroundColor: TAG_COLORS[d.tag]?.bg || "#F3F4F6", color: TAG_COLORS[d.tag]?.fg || C.sub }}>{d.tag}</Pill></td>
@@ -6215,9 +6221,22 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject }) {
                     );
                   })()}
                 </td>
-                {/* Acciones · Next Best Action */}
-                <td className="px-2 py-2.5 align-top">
-                  {(() => {
+                {/* Acciones · Next Best Action / Asignar a ejecutivo (jefatura en "Otras facturas") */}
+                <td className="px-2 py-2.5 align-top" onClick={(e) => { if (modoAsignar && d.agrupado) e.stopPropagation(); }}>
+                  {modoAsignar && d.agrupado ? (
+                    <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <div className="relative">
+                        <select value="" onChange={(e) => { const v = e.target.value; if (v) onAsignarExec(d.cliente, v); }}
+                          title="Asignar estas facturas a un ejecutivo (crea la oportunidad en Prospección)"
+                          className="appearance-none rounded-full pl-3 pr-7 py-1 t10 font-medium outline-none focus:ring-2 cursor-pointer" style={{ border: `1px solid ${C.indigo}`, color: C.indigo, backgroundColor: "#fff" }}>
+                          <option value="">Asignar a…</option>
+                          {d.execSugerido && <option value={d.execSugerido}>★ {EXECS[d.execSugerido]} (sugerido)</option>}
+                          {Object.entries(EXECS).map(([ini, nom]) => <option key={ini} value={ini}>{nom}</option>)}
+                        </select>
+                        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" size={12} style={{ color: C.indigo }} />
+                      </div>
+                    </div>
+                  ) : (() => {
                     const nba = nextBestAction(d);
                     if (!nba) return <button onClick={() => onOpen(d)} className="rounded-md px-2 py-1 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.indigo, backgroundColor: "#fff" }}>Abrir</button>;
                     return (
@@ -11715,6 +11734,12 @@ export default function PipelineComercial() {
   const misExecs = execsVisiblesDe(usuario); // null = ve todo
   const verTodo = misExecs === null;
   const dealVisible = (d) => misExecs === null || misExecs.includes(d.exec);
+  // El tab de facturas no priorizadas se reparte por ROL:
+  //  · Ejecutivo  → "Otras Empresas": facturas de empresas de SU cartera (clientes) que no se priorizaron.
+  //  · Jefatura/Gerencia → "Otras facturas": facturas SIN asignar (empresas fuera de cartera / prospectos),
+  //    que la jefatura debe repartir a un ejecutivo desde la grilla.
+  const esEjecutivoSesion = !!EXECS[usuario];
+  const ofOtrasVisible = (ev) => esEjecutivoSesion ? (ev.esCliente && asignarEjecutivo(ev) === usuario) : !ev.esCliente;
   const [vistaApp, setVistaApp] = useState("pipeline"); // vista principal in-page: "pipeline" | "otorgamientos"
   // Navega a un módulo y registra la acción del usuario en la auditoría (con su nombre).
   const irA = (v, label) => { setVistaApp(v); registrarAuditoria({ usuario: USERS[usuario], modulo: label, accion: "Ingreso al módulo", glosa: `El usuario ingresó al módulo ${label}`, exito: true }); };
@@ -11801,12 +11826,13 @@ export default function PipelineComercial() {
     const streamAgrupadoCliente = () => {
       const map = new Map();
       streamFeed
-        .filter((ev) => (!q || (ev.cedente || "").toLowerCase().includes(q) || (ev.pagador || "").toLowerCase().includes(q) || String(ev.id || "").toLowerCase().includes(q))
+        .filter((ev) => ofOtrasVisible(ev)
+          && (!q || (ev.cedente || "").toLowerCase().includes(q) || (ev.pagador || "").toLowerCase().includes(q) || String(ev.id || "").toLowerCase().includes(q))
           && (fLinea === "todas" || ev.tag === fLinea)
           && (fDeudor === "todos" || (fDeudor === "buenos" ? esBuenDeudor(ev) : !esBuenDeudor(ev))))
         .forEach((ev) => {
           const k = ev.cedente || "—";
-          let g = map.get(k); if (!g) { g = { cliente: k, facturas: 0, monto: 0, deudores: new Map(), tags: new Set(), sector: ev.sector, esCliente: ev.esCliente }; map.set(k, g); }
+          let g = map.get(k); if (!g) { g = { cliente: k, facturas: 0, monto: 0, deudores: new Map(), tags: new Set(), sector: ev.sector, esCliente: ev.esCliente, execSugerido: asignarEjecutivo(ev) }; map.set(k, g); }
           g.facturas += ev.nFacturas || 1; g.monto += ev.monto || 0; if (ev.tag) g.tags.add(ev.tag);
           const dk = ev.pagador || "—"; const d = g.deudores.get(dk) || { name: dk, facturas: 0, montoMM: 0 }; d.facturas += ev.nFacturas || 1; d.montoMM += ev.monto || 0; g.deudores.set(dk, d);
         });
@@ -11814,7 +11840,7 @@ export default function PipelineComercial() {
         id: "OF-" + (hashStr(g.cliente) % 100000), cliente: g.cliente, deudor: deudores[0] ? deudores[0].name : "—",
         deudores, sector: g.sector, stage: "Sin clasificar", status: `${g.facturas} factura(s) · ${deudores.length} deudor(es)`, exec: "—",
         tag: g.tags.size === 1 ? [...g.tags][0] : "Varios", facturas: g.facturas, amountMM: +g.monto.toFixed(1),
-        esCliente: g.esCliente, sinClasificar: true, agrupado: true,
+        esCliente: g.esCliente, sinClasificar: true, agrupado: true, execSugerido: g.execSugerido,
       }; });
     };
     if (quickFilter === "otrasfacturas") return streamAgrupadoCliente();
@@ -11835,7 +11861,7 @@ export default function PipelineComercial() {
     });
     // "Todos" con Inbound activo incluye también las facturas sin clasificar del inbound.
     return (quickFilter === "todos" && showInbound) ? [...dealRows, ...streamComoFilas()] : dealRows;
-  }, [dealsVista, query, quickFilter, fDeudor, fJefatura, fLinea, fEjecutivo, streamFeed, showInbound]);
+  }, [dealsVista, query, quickFilter, fDeudor, fJefatura, fLinea, fEjecutivo, streamFeed, showInbound, usuario, esEjecutivoSesion]);
 
   const dealsByStage = (id) => filtered.filter((d) => d.stage === id);
 
@@ -11863,7 +11889,7 @@ export default function PipelineComercial() {
 
   // Casos por segmento (para el modal de detalle / exportación).
   const casosDe = (id) => {
-    if (id === "otrasfacturas") return streamFeed.map((ev) => ({
+    if (id === "otrasfacturas") return streamFeed.filter(ofOtrasVisible).map((ev) => ({
       id: ev.id, cliente: ev.cedente, deudor: ev.pagador, sector: ev.sector, stage: "—",
       facturas: ev.nFacturas, amountMM: ev.monto, tasa: ev.tasa, diasFin: 0,
       exec: "—", status: "Sin clasificar", simulado: false,
@@ -13091,6 +13117,22 @@ export default function PipelineComercial() {
     setDeals((prev) => (prev.some((d) => d.id === ev.opId) ? prev : [nd, ...prev]));
     setStreamFeed((f) => f.filter((x) => x.id !== ev.id));
   };
+  // Jefatura/gerencia reparte una empresa NO priorizada ("Otras facturas") a un ejecutivo: agrega sus
+  // facturas del feed en una oportunidad de Prospección con el dueño elegido y la retira del pool.
+  const asignarClienteAExec = (cliente, execIni) => {
+    const evs = streamFeed.filter((ev) => (ev.cedente || "—") === cliente);
+    if (!evs.length || !execIni) return;
+    const base = evs.slice().sort((a, b) => (b.monto || 0) - (a.monto || 0))[0];
+    const agg = { ...base, nFacturas: evs.reduce((s, e) => s + (e.nFacturas || 1), 0), monto: evs.reduce((s, e) => s + (e.monto || 0), 0) };
+    const nd = dealManual(agg, execIni);
+    originadasRef.current += 1;
+    originadasMontoRef.current += (agg.monto || 0);
+    originadasFacRef.current += (agg.nFacturas || 1);
+    accDiaRef.current.embudo.inbound++; accDiaRef.current.embudo.prospeccion++;
+    setDeals((prev) => (prev.some((d) => d.id === nd.id) ? prev : [nd, ...prev]));
+    setStreamFeed((f) => f.filter((ev) => (ev.cedente || "—") !== cliente));
+    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Pipeline", accion: "Asignar oportunidad", glosa: `Asignó las facturas no priorizadas de «${cliente}» a ${EXECS[execIni] || execIni}`, exito: true });
+  };
   const asignarTodas = () => {
     const ids = new Set(deals.map((d) => d.id));
     const nuevos = streamFeed.filter((ev) => !ids.has(ev.opId)).map((ev) => dealManual(ev, asignarEjecutivo(ev)));
@@ -13259,7 +13301,7 @@ export default function PipelineComercial() {
     { id: "sinlinea", label: "Sin línea", count: dealsVista.filter((d) => ["oferta", "prospeccion"].includes(d.stage) && lineaCreditoDe(d).fueraDeLinea).length },
     { id: "pendgiro", label: "Pendientes de giro", count: dealsVista.filter((d) => ["aceptadas", "cesion", "otorgamiento"].includes(d.stage) || (d.stage === "giro" && d.giroPendiente)).length },
     { id: "perdidas", label: "Perdidas", count: dealsVista.filter((d) => d.stage === "perdida").length },
-    { id: "otrasfacturas", label: "Otras facturas", count: streamFeed.length },
+    { id: "otrasfacturas", label: esEjecutivoSesion ? "Otras Empresas" : "Otras facturas", count: streamFeed.filter(ofOtrasVisible).length },
     { id: "todos", label: "Todos", count: dealsVista.length + inboundCount },
   ];
 
@@ -13598,7 +13640,7 @@ export default function PipelineComercial() {
         </div>
 
         <div className="mt-3 flex items-start gap-3 overflow-x-auto pb-4">
-          {vista === "tabla" && <TablaOportunidades deals={filtered} onOpen={abrirDetalle} onMover={moverEtapa} onReject={reject} />}
+          {vista === "tabla" && <TablaOportunidades deals={filtered} onOpen={abrirDetalle} onMover={moverEtapa} onReject={reject} modoAsignar={!esEjecutivoSesion && quickFilter === "otrasfacturas"} onAsignarExec={asignarClienteAExec} />}
           {vista === "kanban" && (() => {
             const col = (id, opts = {}) => (
               <StageColumn key={id} stage={stageById(id)} deals={opts.deals || dealsByStage(id)} onOpen={abrirDetalle}
