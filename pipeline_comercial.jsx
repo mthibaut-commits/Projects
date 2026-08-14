@@ -6456,20 +6456,29 @@ function varsDeReglaCli(n, vars) { return (REGLA_VARS[n] || []).map((k) => ({ k,
 // cuyos valores actualizados pueden reparar las excepciones re-evaluables desde el origen.
 let SIM_VERSIONS = {}; // { [dealId]: [ { v, rev, ts, origen, vars, estado, nApr, nExc, nRech } ] }
 function snapVersionCli(deal, rev) {
-  const vars = apiVarsCliente(deal, rev);
-  // Sólo reglas del CLIENTE: las reglas de deudor (D01–D23) requieren variables del deudor (deudorBlock) y
-  // se evalúan por deudor aparte (evaluarOtorgItems / sección "Reglas de los deudores"). Si se evaluaran aquí
-  // con variables de cliente, caerían al tramo catch-all "excepcion" → excepciones espurias que inflan el
-  // conteo y no mejoran al re-evaluar.
+  // Mismo set de variables que la evaluación en vivo: documental (apiVarsCliente) + comportamiento
+  // (varsModeloExt: varVenta, notaCliente, mora interna, pagaré firmado, cliente nuevo, línea, precios…).
+  // Así el snapshot versionado coincide con lo que muestran las reglas y el diff de VARIABLES es consistente
+  // con el diff de REGLAS (antes faltaba varsModeloExt → esas reglas caían a excepción espuria y al re-evaluar
+  // cambiaban sin que ninguna variable del JSON lo reflejara).
+  const vars = { ...apiVarsCliente(deal, rev), ...varsModeloExt(deal) };
+  if ((rev || 0) >= 1) {
+    // Re-evaluación: tras la firma, el origen regulariza las variables RE-EVALUABLES (documentación, garantías,
+    // vigencias, estado y comportamiento comercial ajustable). Los datos de bureau FIRMES (CMF/ACHEF/TGR/DICOM
+    // mora y castigos) NO cambian → sus reglas (no re-evaluables) siguen en excepción/rechazo.
+    Object.assign(vars, {
+      pagareFirmado: true, lineaExt: false, clienteNuevo: false, varVenta: 0, notaCliente: 5,
+      moraInt25: 0, moraInt3090: 0, moraInt90180: 0, moraInt1803a: 0, juicios: 0,
+      spreadBajoBanda: false, comisionBajoMin: false, cxcSinAplicar: false, clienteBloqueado: false,
+      concentracionVenta: 20, ventaCruzada: 10, notaCredito: 2, reclamo: 1, ratioCesionVenta: 1, nroFactorings: 1, factoringPeqPct: 10, concentracionMtz: 30,
+    });
+    vars.mntLinea = vars.carteraVig + vars.mntSimulacion + 50e6; // línea aprobada por el comité → cupo suficiente
+  }
+  // Sólo reglas del CLIENTE (las de deudor se evalúan por deudor aparte en evaluarOtorgItems). Ya sin forzar el
+  // disp: las reglas re-evaluables mejoran porque su VARIABLE se reparó arriba (consistente con el diff).
   const res = REGLAS_CLIENTE.filter((r) => !esReglaDeudor(r)).map((r) => {
     const e = evalReglaCli(r, vars);
-    let disp = e.disp, nivel = e.nivel;
-    const reev = reglaReev(r.n);
-    // Re-evaluación (rev ≥ 1): tras la firma el sistema de origen se regulariza → las reglas RE-EVALUABLES que
-    // estaban en excepción/rechazo quedan APROBADAS (su dato mejora en el origen). Los bloqueos firmes
-    // (no re-evaluables: mora, castigos, protestos) se mantienen: una firma no borra un dato de bureau.
-    if ((rev || 0) >= 1 && reev && (disp === "excepcion" || disp === "rechazado")) { disp = "aprobado"; nivel = undefined; }
-    return { n: r.n, nombre: r.nombre, area: r.area, cond: r.cond, hallazgo: r.hallazgo, disp, nivel, tierIdx: e.tierIdx, label: e.label, reev };
+    return { n: r.n, nombre: r.nombre, area: r.area, cond: r.cond, hallazgo: r.hallazgo, disp: e.disp, nivel: e.nivel, tierIdx: e.tierIdx, label: e.label, reev: reglaReev(r.n) };
   });
   const nExc = res.filter((x) => x.disp === "excepcion").length;
   const nRech = res.filter((x) => x.disp === "rechazado").length;
