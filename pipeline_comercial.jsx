@@ -1282,6 +1282,32 @@ function estadoCandidata(f, deal) {
     return { clave: "otraOp", bloqueada: true, agregable: false, label: "En otra operación", tono: "red", montoNeto: monto, ncMonto: 0 };
   return { clave: "ok", bloqueada: false, agregable: true, label: null, montoNeto: monto, ncMonto: 0 };
 }
+// Libro de ventas del cliente en la ventana de 60 días: las facturas candidatas (aún no incluidas en la
+// oferta) forman un tramo de folios CONSECUTIVOS (sin saltos), de la más nueva a la más antigua. El folio
+// más alto se ancla sobre las facturas ya en oferta; las emisiones se reparten a lo largo de los 60 días.
+// Determinista por operación. El listado se pagina (lote óptimo) para no renderizar todo el libro de una vez.
+function candidatasLibro(deal, enOferta) {
+  const reales = candidatasDe(deal); // candidatas reales (Otro / nuevas / retiradas) — conservan su folio
+  const deudores = (deal.deudores && deal.deudores.length ? deal.deudores.map((d) => d.name) : [deal.deudor]).filter(Boolean);
+  const pool = deudores.length ? deudores : ["Deudor"];
+  const folioTope = Math.max(0, ...(enOferta || []).map((f) => +f.folio || 0), ...reales.map((f) => +f.folio || 0));
+  const N = 40 + (Math.abs(hashStr("libro" + (deal.id || ""))) % 41); // 40–80 facturas en 60 días
+  const topFolio = (folioTope || 100000) + N + 6; // el folio más nuevo queda sobre lo ya en oferta
+  const usados = new Set((reales || []).map((f) => +f.folio));
+  const out = [];
+  for (let i = 0; i < N; i++) {
+    const folio = topFolio - i; // contiguo descendente, sin saltos
+    if (usados.has(folio)) continue;
+    const h = Math.abs(hashStr((deal.id || "") + "lib" + folio));
+    const deudor = pool[h % pool.length];
+    const montoMM = +(0.8 + (h % 900) / 100).toFixed(1);
+    const diasEmision = Math.round((i / Math.max(1, N - 1)) * 60); // 0 (más nueva) .. 60 (más antigua)
+    out.push({ id: `LIB-${deal.id}-${folio}`, folio, tipo: "Factura electrónica (33)", deudor, montoMM, venc: diasPagoDeudor(deudor), candidata: true, otro: (h % 5 === 0), diasEmision });
+  }
+  // Las candidatas reales (Otro/retiradas) se integran al libro conservando su folio.
+  for (const f of reales) out.push({ ...f, diasEmision: f.diasEmision != null ? f.diasEmision : 60 });
+  return out.sort((a, b) => (b.folio || 0) - (a.folio || 0));
+}
 // Página externa de aprobación (sitio Factoring Security). Se sirve como blob URL y se abre en
 // pestaña nueva desde el botón de WhatsApp. Al aprobar, avisa a la app vía window.opener.postMessage.
 function htmlAprobacion(deal, o, dealId, cantidad) {
@@ -3934,24 +3960,28 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         <div className="t10 font-semibold uppercase tracking-wide" style={{ color: "#C2410C" }}>Otras facturas del cliente</div>
                         <div className="mt-1.5">
                         {(() => {
-                          const cands = candidatasDe(deal);
                           const enOferta = facturasMarcadas.map((f) => ({ ...f, candidata: false }));
-                          const todas = [...enOferta, ...cands.map((f) => ({ ...f, candidata: true }))].sort((a, b) => (b.folio || 0) - (a.folio || 0));
+                          // Libro de ventas del cliente (60 días): candidatas con folios CONSECUTIVOS (sin saltos).
+                          const cands = candidatasLibro(deal, enOferta);
+                          const todas = [...enOferta, ...cands].sort((a, b) => (b.folio || 0) - (a.folio || 0));
                           const q = factQuery.trim().toLowerCase();
                           const matchQ = (f) => !q || String(f.folio).includes(q) || (f.deudor || "").toLowerCase().includes(q);
                           const candsF = cands.filter(matchQ);
                           const todasF = todas.filter(matchQ);
-                          const CAND_PP = 8;
-                          const totalPg = Math.max(1, Math.ceil(candsF.length / CAND_PP));
+                          const CAND_PP = 10; // lote de paginación
+                          // Paginación compartida por ambas pestañas (Candidatas / Todas): lote óptimo, sin scroll infinito.
+                          const listaPg = factTab === "candidatas" ? candsF : todasF;
+                          const totalPg = Math.max(1, Math.ceil(listaPg.length / CAND_PP));
                           const pg = Math.min(candPage, totalPg - 1);
                           const candsVis = candsF.slice(pg * CAND_PP, pg * CAND_PP + CAND_PP);
+                          const todasVis = todasF.slice(pg * CAND_PP, pg * CAND_PP + CAND_PP);
                           // "Otras facturas" se modela como la tabla de "Facturas incluidas en la oferta":
                           // mismas columnas (Tipo doc · Folio · Razón social · Nota · F. emisión · F. vencim · Otorg · Verif · Tasa · Monto),
                           // con una columna de acción (Agregar para candidatas · XML para las que ya están en la oferta).
-                          const GC_OTRAS = "16px 74px 58px minmax(110px,1fr) 30px 86px 86px 104px 98px 46px 64px 104px";
+                          const GC_OTRAS = "16px 72px 56px minmax(100px,1fr) 28px 84px 84px 100px 96px 44px 62px 96px 92px";
                           const HeadOtras = (
                             <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: GC_OTRAS, color: C.faint, borderBottom: `1px solid ${C.line}` }}>
-                              <span></span><span>Tipo doc.</span><span>Folio</span><span>Razón social</span><span className="text-right">Nota</span><span>F. emisión</span><span>F. vencim.</span><span>Otorg.</span><span>Verif.</span><span className="text-right">Tasa</span><span className="text-right">Monto</span><span></span>
+                              <span></span><span>Tipo doc.</span><span>Folio</span><span>Razón social</span><span className="text-right">Nota</span><span>F. emisión</span><span>F. vencim.</span><span>Otorg.</span><span>Verif.</span><span className="text-right">Tasa</span><span className="text-right">Monto</span><span>Estado</span><span>Acción</span>
                             </div>
                           );
                           const SHORT_EST = { notaAnula: "Anulada", cedida: "Cedida", otraOp: "Otra op.", notaParcial: "NC parcial" };
@@ -3959,8 +3989,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             const sc = scoreDeudor(f.deudor, tipoDeudorDisp(f)); const nota = notaFromScore(sc.score);
                             const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                             const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
-                            // Las candidatas tienen 60 días de antigüedad; las ya incluidas conservan su emisión reciente.
-                            const he = f.candidata ? 60 : (Math.abs(hashStr("em" + f.folio)) % 20 + 3); const emD = new Date(Date.now() - he * 86400000);
+                            // Candidatas: emisión repartida en la ventana de 60 días (diasEmision); las ya incluidas
+                            // conservan su emisión reciente.
+                            const he = f.candidata ? (f.diasEmision != null ? f.diasEmision : 60) : (Math.abs(hashStr("em" + f.folio)) % 20 + 3); const emD = new Date(Date.now() - he * 86400000);
                             const plazo = f.venc != null ? f.venc : 30;
                             const em = emD.toLocaleDateString("es-CL"); const venc = new Date(emD.getTime() + plazo * 86400000).toLocaleDateString("es-CL");
                             const reqOtorg = f.inboundBucket === "OTRO" || tipoDeudorDisp(f) === "Otro";
@@ -3971,13 +4002,18 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             const est = f.candidata ? estadoCandidata(f, deal) : { clave: "ok", bloqueada: false, agregable: true, montoNeto: f.montoMM, ncMonto: 0 };
                             const bloq = f.candidata && est.bloqueada;
                             const agregarF = () => { onIncorporarFacturas(deal.id, [est.clave === "notaParcial" ? { ...f, montoMM: est.montoNeto, _ncAplicada: est.ncMonto } : f]); setReevalPend(true); };
-                            const accion = f.candidata
-                              ? (bloq
-                                  ? <span title={`${est.label} · no se puede agregar a la operación`} className="justify-self-start inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red, border: "1px solid #fecaca", cursor: "help" }}>🔒 {SHORT_EST[est.clave]}</span>
-                                  : (!bloqueado ? <button onClick={agregarF} title={est.clave === "notaParcial" ? `Se agregará por el monto neto (${fmtMM(est.montoNeto)} = factura − nota de crédito)` : "Agregar a la operación"} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button> : <span></span>))
-                              : <button onClick={() => setXmlOk((m) => ({ ...m, [f.id]: !ok }))} title={ok ? "Con XML" : "Sin XML"} disabled={!!f.excl || bloqueado} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: ok ? C.greenBg : "#fef2f2", color: ok ? C.green : C.red, border: `1px solid ${ok ? "#bbf7d0" : "#fecaca"}` }}>{ok ? <Check size={10} /> : <X size={10} />} XML</button>;
                             const parcial = f.candidata && est.clave === "notaParcial";
                             const anulMonto = f.candidata && est.clave === "notaAnula";
+                            // Columna ESTADO (eventos del documento): XML de las ya incluidas · bloqueo/NC de las candidatas.
+                            let estadoNode;
+                            if (!f.candidata) estadoNode = <button onClick={() => setXmlOk((m) => ({ ...m, [f.id]: !ok }))} title={ok ? "Con XML" : "Sin XML"} disabled={!!f.excl || bloqueado} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold disabled:opacity-60" style={{ backgroundColor: ok ? C.greenBg : "#fef2f2", color: ok ? C.green : C.red, border: `1px solid ${ok ? "#bbf7d0" : "#fecaca"}` }}>{ok ? <Check size={10} /> : <X size={10} />} XML</button>;
+                            else if (bloq) estadoNode = <span title={`${est.label} · no se puede agregar`} className="justify-self-start inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red, border: "1px solid #fecaca", cursor: "help" }}>🔒 {SHORT_EST[est.clave]}</span>;
+                            else if (parcial) estadoNode = <span title={`Nota de crédito parcial · monto neto ${fmtMM(est.montoNeto)}`} className="justify-self-start inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#FFF7ED", color: "#C2410C", border: "1px solid #FED7AA", cursor: "help" }}>NC parcial</span>;
+                            else estadoNode = <span className="t9" style={{ color: C.faint }}>—</span>;
+                            // Columna ACCIÓN: el botón "Agregar" está SIEMPRE presente en candidatas (habilitado o no).
+                            const accionNode = f.candidata
+                              ? <button onClick={agregarF} disabled={bloq || bloqueado} title={bloq ? `${est.label} · no se puede agregar` : parcial ? `Se agregará por el monto neto (${fmtMM(est.montoNeto)} = factura − nota de crédito)` : "Agregar a la operación"} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold disabled:opacity-40 disabled:cursor-not-allowed" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button>
+                              : <span className="justify-self-start inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#F3F4F6", color: C.faint }}>En oferta</span>;
                             return (
                               <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: GC_OTRAS, borderBottom: `1px solid ${C.line}`, opacity: (f.excl || bloq) ? 0.55 : 1 }}>
                                 <span className="flex items-center" title={f.candidata ? "Candidata · disponible para agregar a la oferta" : "Ya está en la oferta"}><Star size={12} style={{ color: f.candidata ? "#F97316" : C.faint }} fill={f.candidata ? "#F97316" : "none"} /></span>
@@ -3991,7 +4027,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: vv.bg, color: vv.fg }}>{vv.t}</span>
                                 <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
                                 <span className="text-right font-medium" title={parcial ? `Factura ${fmtMM(f.montoMM)} − NC ${fmtMM(est.ncMonto)} = ${fmtMM(est.montoNeto)}` : (f.excl ? `Excluida: ${f.excl}` : anulMonto ? "Documento anulado por nota de crédito" : undefined)} style={{ color: parcial ? "#C2410C" : C.ink, textDecoration: (f.excl || anulMonto) ? "line-through" : "none" }}>{fmtMM(parcial ? est.montoNeto : f.montoMM)}</span>
-                                {accion}
+                                {estadoNode}
+                                {accionNode}
                               </div>
                             );
                           };
@@ -3999,7 +4036,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             <>
                               <div className="flex items-center gap-1.5">
                                 {[["candidatas", `Candidatas (${cands.length})`], ["todas", `Todas las facturas (${todas.length})`]].map(([k, l]) => (
-                                  <button key={k} onClick={() => setFactTab(k)} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ backgroundColor: factTab === k ? C.lilac : "#fff", color: factTab === k ? C.indigo : C.sub, border: `1px solid ${factTab === k ? C.indigo : C.line}` }}>{l}</button>
+                                  <button key={k} onClick={() => { setFactTab(k); setCandPage(0); }} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ backgroundColor: factTab === k ? C.lilac : "#fff", color: factTab === k ? C.indigo : C.sub, border: `1px solid ${factTab === k ? C.indigo : C.line}` }}>{l}</button>
                                 ))}
                                 {factTab === "candidatas" && cands.some((f) => !f.otro && estadoCandidata(f, deal).agregable) && !bloqueado && (
                                   // "Agregar todas" sólo incluye las candidatas elegibles: excluye "Otros deudores"
@@ -4018,7 +4055,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 ) : (
                                   <>
                                     <div className="mt-1 t9" style={{ color: C.faint }}>Documentos del cliente que aún NO son parte de la oferta. Las facturas de deudores <b>Otro</b> (fuera de Lista Blanca/Autorizados y sin factoring el último año) no abren oportunidad por sí solas: al agregarlas, la operación pasará por <b>Otorgamiento</b>.</div>
-                                    <div className="mt-1.5 overflow-x-auto"><div style={{ minWidth: 900 }}>
+                                    <div className="mt-1.5 overflow-x-auto"><div style={{ minWidth: 1040 }}>
                                       {HeadOtras}
                                       {candsVis.map((f) => filaOtra({ ...f, candidata: true }))}
                                     </div></div>
@@ -4033,14 +4070,19 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 )
                               ) : (
                                 <>
-                                  <div className="mt-1 t9" style={{ color: C.faint }}>{validas.length} en la oferta · {cands.length} candidatas (★ = candidata). Orden: de la más nueva a la más antigua.</div>
-                                  <div className="mt-1.5 overflow-x-auto"><div style={{ minWidth: 900 }}>
+                                  <div className="mt-1 t9" style={{ color: C.faint }}>{validas.length} en la oferta · {cands.length} candidatas del libro (★ = candidata) · folios consecutivos, de la más nueva a la más antigua (60 días).</div>
+                                  <div className="mt-1.5 overflow-x-auto"><div style={{ minWidth: 1040 }}>
                                     {HeadOtras}
-                                    <div className="overflow-y-auto pr-1" style={{ maxHeight: "360px" }}>
-                                      {todasF.map((f) => filaOtra(f))}
-                                      {todasF.length === 0 && <div className="t10 py-2" style={{ color: C.faint }}>Sin resultados para “{factQuery}”.</div>}
-                                    </div>
+                                    {todasVis.map((f) => filaOtra(f))}
+                                    {todasF.length === 0 && <div className="t10 py-2" style={{ color: C.faint }}>Sin resultados para “{factQuery}”.</div>}
                                   </div></div>
+                                  {totalPg > 1 && (
+                                    <div className="mt-1.5 flex items-center justify-end gap-2 t10" style={{ color: C.faint }}>
+                                      <button onClick={() => setCandPage(Math.max(0, pg - 1))} disabled={pg === 0} title="Anterior" className="disabled:opacity-30" style={{ color: "#C2410C" }}><ChevronLeft size={14} /></button>
+                                      <span>{pg + 1}/{totalPg}</span>
+                                      <button onClick={() => setCandPage(Math.min(totalPg - 1, pg + 1))} disabled={pg >= totalPg - 1} title="Siguiente" className="disabled:opacity-30" style={{ color: "#C2410C" }}><ChevronRight size={14} /></button>
+                                    </div>
+                                  )}
                                   {(() => {
                                     const faltantes = facturasOp.filter((f) => xmlOk[f.id] === false);
                                     if (!faltantes.length) return null;
