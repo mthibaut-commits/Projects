@@ -3152,6 +3152,12 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         const off = Math.min(carrusel, maxOff);
         const visDeud = deudSorted.slice(off, off + VIS);
         const masDer = deudSorted.length - (off + VIS);
+        // Excepciones pendientes que este usuario puede visar en el TAB ACTIVO (cliente o el deudor abierto) →
+        // "Aprobar todo" es por tab, no global.
+        const todasMias = active.rows.filter(puedeVisarX);
+        const bulkScope = active.key === "cli" ? "del cliente" : "de " + truncD(active.label, 14);
+        const bulkKey = "bulk:" + active.key;
+        const bulk = excForm[bulkKey] || {};
         const tabBtn = (key, label, req, total, isCli, mias) => { const on = active.key === key; return (
           <button key={key} onClick={() => setOtorgTab(key)} title={`${label} · ${req} de ${total} requieren excepción/reevaluación${mias ? ` · ${mias} que TÚ debes visar` : ""}`} className="flex shrink-0 items-center gap-1.5 px-1 pb-2 t11" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
             {isCli ? label : truncD(label, 16)}
@@ -3163,7 +3169,28 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         ); };
         return (
           <div className="mt-3 rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
-            <div className="t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Reglas de otorgamiento · v{ver.v}</div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Reglas de otorgamiento · v{ver.v}</div>
+              {enBandeja && todasMias.length > 0 && !bulk.open && (
+                <button onClick={() => setEF(bulkKey, { open: true })} title={`Aprobar de una vez todas las excepciones ${bulkScope} que puedes visar, con el mismo comentario y respaldo`} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 t9 font-semibold text-white" style={{ backgroundColor: "#16A34A" }}><Check size={12} /> Aprobar todo {bulkScope} ({todasMias.length})</button>
+              )}
+            </div>
+            {enBandeja && todasMias.length > 0 && bulk.open && (
+              <div className="mt-2 rounded-md p-2" style={{ border: "1px solid #bbf7d0", backgroundColor: "#F0FDF4" }}>
+                <div className="t9 font-semibold" style={{ color: "#16A34A" }}>Aprobar {todasMias.length} excepción(es) {bulkScope} · el comentario y el respaldo se aplican a TODAS</div>
+                <textarea value={bulk.msg || ""} onChange={(e) => setEF(bulkKey, { msg: e.target.value })} placeholder="Comentario / justificación (se repite en cada regla excepcionada)…" className="mt-1 w-full rounded-md p-2 t10 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, minHeight: 54, backgroundColor: "#fff", color: C.ink }} />
+                <div className="mt-1.5 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => setEF(bulkKey, { open: false })} className="rounded-md px-2 py-1 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
+                    <button onClick={() => { todasMias.forEach((x) => aprobarExc(x, "aprobado", bulk.msg, bulk.arch)); setEF(bulkKey, { open: false, msg: "", arch: null }); }} className="rounded-md px-3 py-1 t9 font-semibold text-white" style={{ backgroundColor: "#16A34A" }}>Confirmar aprobación de {todasMias.length}</button>
+                  </div>
+                  <label className="inline-flex cursor-pointer items-center gap-1 t9 font-medium" style={{ color: C.indigo }}>
+                    📎 {bulk.arch ? bulk.arch : "Adjuntar respaldo"}
+                    <input type="file" className="hidden" onChange={(e) => setEF(bulkKey, { arch: (e.target.files && e.target.files[0] && e.target.files[0].name) || null })} />
+                  </label>
+                </div>
+              </div>
+            )}
             <div className="mt-2 flex items-center gap-x-3" style={{ borderBottom: `1px solid ${C.line}` }}>
               {tabBtn("cli", "Cliente", cliReqN, cliRules.length, true, cliMias)}
               {deudSorted.length > 0 && <span className="mb-1.5 h-4 w-px shrink-0" style={{ backgroundColor: C.line }} />}
