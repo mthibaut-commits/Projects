@@ -3169,28 +3169,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         ); };
         return (
           <div className="mt-3 rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Reglas de otorgamiento · v{ver.v}</div>
-              {enBandeja && todasMias.length > 0 && !bulk.open && (
-                <button onClick={() => setEF(bulkKey, { open: true })} title={`Aprobar de una vez todas las excepciones ${bulkScope} que puedes visar, con el mismo comentario y respaldo`} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 t9 font-semibold text-white" style={{ backgroundColor: "#16A34A" }}><Check size={12} /> Aprobar todo {bulkScope} ({todasMias.length})</button>
-              )}
-            </div>
-            {enBandeja && todasMias.length > 0 && bulk.open && (
-              <div className="mt-2 rounded-md p-2" style={{ border: "1px solid #bbf7d0", backgroundColor: "#F0FDF4" }}>
-                <div className="t9 font-semibold" style={{ color: "#16A34A" }}>Aprobar {todasMias.length} excepción(es) {bulkScope} · el comentario y el respaldo se aplican a TODAS</div>
-                <textarea value={bulk.msg || ""} onChange={(e) => setEF(bulkKey, { msg: e.target.value })} placeholder="Comentario / justificación (se repite en cada regla excepcionada)…" className="mt-1 w-full rounded-md p-2 t10 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, minHeight: 54, backgroundColor: "#fff", color: C.ink }} />
-                <div className="mt-1.5 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <button onClick={() => setEF(bulkKey, { open: false })} className="rounded-md px-2 py-1 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
-                    <button onClick={() => { todasMias.forEach((x) => aprobarExc(x, "aprobado", bulk.msg, bulk.arch)); setEF(bulkKey, { open: false, msg: "", arch: null }); }} className="rounded-md px-3 py-1 t9 font-semibold text-white" style={{ backgroundColor: "#16A34A" }}>Confirmar aprobación de {todasMias.length}</button>
-                  </div>
-                  <label className="inline-flex cursor-pointer items-center gap-1 t9 font-medium" style={{ color: C.indigo }}>
-                    📎 {bulk.arch ? bulk.arch : "Adjuntar respaldo"}
-                    <input type="file" className="hidden" onChange={(e) => setEF(bulkKey, { arch: (e.target.files && e.target.files[0] && e.target.files[0].name) || null })} />
-                  </label>
-                </div>
-              </div>
-            )}
+            <div className="t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Reglas de otorgamiento · v{ver.v}</div>
             <div className="mt-2 flex items-center gap-x-3" style={{ borderBottom: `1px solid ${C.line}` }}>
               {tabBtn("cli", "Cliente", cliReqN, cliRules.length, true, cliMias)}
               {deudSorted.length > 0 && <span className="mb-1.5 h-4 w-px shrink-0" style={{ backgroundColor: C.line }} />}
@@ -3202,6 +3181,32 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
                 </button>
               )}
             </div>
+            {/* Visar TODO (por tab): aprobar o rechazar de una vez todas las excepciones visables de este cliente/deudor. */}
+            {enBandeja && todasMias.length > 0 && !bulk.open && (
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md px-3 py-2" style={{ border: "1px solid #bbf7d0", backgroundColor: "#F0FDF4" }}>
+                <span className="t10" style={{ color: "#166534" }}>A través de esta opción podrás aprobar o rechazar todas las excepciones {active.key === "cli" ? "del Cliente" : "del Deudor"} según corresponda.</span>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <button onClick={() => setEF(bulkKey, { open: true, action: "aprobado" })} className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-semibold text-white" style={{ backgroundColor: "#16A34A" }}><Check size={13} /> Aprobar todo ({todasMias.length})</button>
+                  <button onClick={() => setEF(bulkKey, { open: true, action: "rechazado" })} className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-semibold" style={{ border: "1px solid #DC2626", color: "#DC2626", backgroundColor: "#fff" }}><X size={13} /> Rechazar todo ({todasMias.length})</button>
+                </div>
+              </div>
+            )}
+            {enBandeja && todasMias.length > 0 && bulk.open && (() => { const rechaza = bulk.action === "rechazado"; return (
+              <div className="mt-2 rounded-md p-2" style={{ border: `1px solid ${rechaza ? "#fecaca" : "#bbf7d0"}`, backgroundColor: rechaza ? "#FEF2F2" : "#F0FDF4" }}>
+                <div className="t9 font-semibold" style={{ color: rechaza ? "#DC2626" : "#166534" }}>{rechaza ? "Rechazar" : "Aprobar"} {todasMias.length} excepción(es) {bulkScope} · el comentario y el respaldo se aplican a TODAS</div>
+                <textarea value={bulk.msg || ""} onChange={(e) => setEF(bulkKey, { msg: e.target.value })} placeholder="Comentario / justificación (se repite en cada regla excepcionada)…" className="mt-1 w-full rounded-md p-2 t10 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, minHeight: 54, backgroundColor: "#fff", color: C.ink }} />
+                <div className="mt-1.5 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => setEF(bulkKey, { open: false })} className="rounded-md px-2 py-1 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
+                    <button onClick={() => { todasMias.forEach((x) => aprobarExc(x, bulk.action || "aprobado", bulk.msg, bulk.arch)); setEF(bulkKey, { open: false, msg: "", arch: null }); }} className="rounded-md px-3 py-1 t9 font-semibold text-white" style={{ backgroundColor: rechaza ? "#DC2626" : "#16A34A" }}>Confirmar {rechaza ? "rechazo" : "aprobación"} de {todasMias.length}</button>
+                  </div>
+                  <label className="inline-flex cursor-pointer items-center gap-1 t9 font-medium" style={{ color: C.indigo }}>
+                    📎 {bulk.arch ? bulk.arch : "Adjuntar respaldo"}
+                    <input type="file" className="hidden" onChange={(e) => setEF(bulkKey, { arch: (e.target.files && e.target.files[0] && e.target.files[0].name) || null })} />
+                  </label>
+                </div>
+              </div>
+            ); })()}
             <div className="mt-2 space-y-1.5">
               {active.rows.length === 0 ? <div className="t10" style={{ color: C.faint }}>Sin reglas para {active.key === "cli" ? "el cliente" : "este deudor"}.</div> : (<>
                 {reqRows.length === 0 && <div className="rounded-md px-2 py-1.5 t10" style={{ backgroundColor: C.greenBg, color: C.green }}>✓ Todas las reglas de {active.key === "cli" ? "el cliente" : "este deudor"} están aprobadas.</div>}
