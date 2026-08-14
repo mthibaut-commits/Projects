@@ -2965,7 +2965,9 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const [verSel, setVerSel] = useState(-1); // -1 = última versión
   const [showJson, setShowJson] = useState(false);
   const [showDiff, setShowDiff] = useState(true);
-  const [deudorTab, setDeudorTab] = useState(0); // tab de deudor activo en la sección "Reglas de los deudores"
+  const [otorgTab, setOtorgTab] = useState("cli"); // tab activo: "cli" (cliente) o "d:<key>" (deudor)
+  const [carrusel, setCarrusel] = useState(0); // ventana del carrusel de tabs de deudor
+  const [showApr, setShowApr] = useState(false); // muestra/oculta las reglas aprobadas (DIV colapsable)
   const vs = SIM_VERSIONS[deal.id] || [];
   const shown = vs.length ? vs : [snapVersionCli(deal, 0)];
   const effIdx = verSel < 0 || verSel >= shown.length ? shown.length - 1 : verSel;
@@ -3001,7 +3003,6 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   });
   const deudGrupos = [...deudMap.values()];
   deudGrupos.forEach((g) => { g.rows = ordenBy(g.rows.filter((x) => x.disp !== "clasificacion")); g.req = g.rows.filter(reqAprob).length; g.total = g.rows.length; });
-  const dTab = Math.min(deudorTab, Math.max(0, deudGrupos.length - 1));
   const truncD = (s, n) => (s && s.length > n ? s.slice(0, n).trim() + "…" : s);
   // Tarjeta de regla reutilizable (cliente y deudor).
   const reglaCard = (x, kpref) => {
@@ -3073,31 +3074,58 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
           </div>}
         </div>
       )}
-      {/* DIV 1 — Reglas del cliente (requieren aprobación primero) */}
-      <div className="mt-3 rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
-        <div className="flex items-center justify-between gap-2">
-          <div className="t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Reglas del cliente · v{ver.v}</div>
-          <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: cliReqN ? "#f5f3ff" : C.greenBg, color: cliReqN ? "#7C3AED" : C.green }}>{cliReqN}/{cliRules.length} requieren aprobación</span>
-        </div>
-        <div className="mt-2 space-y-1.5">
-          {cliRules.length === 0 ? <div className="t10" style={{ color: C.faint }}>Sin reglas del cliente.</div> : cliRules.map((x) => reglaCard(x, "cli-"))}
-        </div>
-      </div>
-      {/* DIV 2 — Reglas de los deudores (un tab por deudor, badge requieren/total) */}
-      {deudGrupos.length > 0 && (
-        <div className="mt-3 rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
-          <div className="t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Reglas de los deudores</div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1" style={{ borderBottom: `1px solid ${C.line}` }}>
-            {deudGrupos.map((g, i) => { const on = i === dTab; return (
-              <button key={g.key} onClick={() => setDeudorTab(i)} title={g.nombre} className="flex items-center gap-1.5 px-1 pb-2 t11" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
-                {truncD(g.nombre, 18)}
-                <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: g.req ? "#f5f3ff" : C.greenBg, color: g.req ? "#7C3AED" : C.green }}>{g.req}/{g.total}</span>
-              </button>
-            ); })}
+      {/* Reglas de otorgamiento: un solo set de tabs — Cliente (primero) + un tab por deudor (carrusel). */}
+      {(() => {
+        // Deudores ordenados: los que tienen reglas excepcionables/reevaluables primero; los "todo OK" al final.
+        const deudSorted = deudGrupos.slice().sort((a, b) => ((b.req > 0) - (a.req > 0)) || (b.req - a.req) || String(a.nombre).localeCompare(String(b.nombre)));
+        const tabsAll = [{ key: "cli", label: "Cliente", rows: cliRules, req: cliReqN, total: cliRules.length }, ...deudSorted.map((g) => ({ key: "d:" + g.key, label: g.nombre, rows: g.rows, req: g.req, total: g.total }))];
+        const active = tabsAll.find((t) => t.key === otorgTab) || tabsAll[0];
+        const reqRows = active.rows.filter(reqAprob);
+        const okRows = active.rows.filter((x) => !reqAprob(x));
+        // Carrusel sobre los tabs de deudor (el de Cliente queda siempre fijo a la izquierda).
+        const VIS = 3;
+        const maxOff = Math.max(0, deudSorted.length - VIS);
+        const off = Math.min(carrusel, maxOff);
+        const visDeud = deudSorted.slice(off, off + VIS);
+        const masDer = deudSorted.length - (off + VIS);
+        const tabBtn = (key, label, req, total, isCli) => { const on = active.key === key; return (
+          <button key={key} onClick={() => setOtorgTab(key)} title={label} className="flex shrink-0 items-center gap-1.5 px-1 pb-2 t11" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
+            {isCli ? label : truncD(label, 16)}
+            <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: req ? "#f5f3ff" : C.greenBg, color: req ? "#7C3AED" : C.green }}>{req}/{total}</span>
+          </button>
+        ); };
+        return (
+          <div className="mt-3 rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
+            <div className="t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Reglas de otorgamiento · v{ver.v}</div>
+            <div className="mt-2 flex items-center gap-x-3" style={{ borderBottom: `1px solid ${C.line}` }}>
+              {tabBtn("cli", "Cliente", cliReqN, cliRules.length, true)}
+              {deudSorted.length > 0 && <span className="mb-1.5 h-4 w-px shrink-0" style={{ backgroundColor: C.line }} />}
+              {off > 0 && <button onClick={() => setCarrusel(off - 1)} title="Deudores anteriores" className="mb-1 shrink-0 rounded-md px-1 py-0.5" style={{ color: C.sub }}><ChevronLeft size={15} /></button>}
+              {visDeud.map((g) => tabBtn("d:" + g.key, g.nombre, g.req, g.total, false))}
+              {masDer > 0 && (
+                <button onClick={() => setCarrusel(off + 1)} title={`Ver ${masDer} deudor(es) más`} className="mb-1 flex shrink-0 items-center gap-0.5 rounded-md px-1 py-0.5 t10 font-semibold" style={{ color: C.indigo }}>
+                  <ChevronRight size={15} /><span className="rounded-full px-1 t9 font-bold" style={{ backgroundColor: "#F1ECFF" }}>+{masDer}</span>
+                </button>
+              )}
+            </div>
+            <div className="mt-2 space-y-1.5">
+              {active.rows.length === 0 ? <div className="t10" style={{ color: C.faint }}>Sin reglas para {active.key === "cli" ? "el cliente" : "este deudor"}.</div> : (<>
+                {reqRows.length === 0 && <div className="rounded-md px-2 py-1.5 t10" style={{ backgroundColor: C.greenBg, color: C.green }}>✓ Todas las reglas de {active.key === "cli" ? "el cliente" : "este deudor"} están aprobadas.</div>}
+                {reqRows.map((x) => reglaCard(x, active.key + "-"))}
+                {okRows.length > 0 && (
+                  <div className="rounded-md" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+                    <button onClick={() => setShowApr((s) => !s)} className="flex w-full items-center justify-between px-2 py-1.5 t10 font-semibold" style={{ color: C.sub }}>
+                      <span className="flex items-center gap-1">{showApr ? <ChevronUp size={13} /> : <ChevronDown size={13} />} {okRows.length} regla(s) aprobada(s)</span>
+                      <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: C.greenBg, color: C.green }}>OK</span>
+                    </button>
+                    {showApr && <div className="space-y-1.5 px-2 pb-2">{okRows.map((x) => reglaCard(x, active.key + "-ok-"))}</div>}
+                  </div>
+                )}
+              </>)}
+            </div>
           </div>
-          {deudGrupos[dTab] && <div className="mt-2 space-y-1.5">{deudGrupos[dTab].rows.map((x) => reglaCard(x, "d" + dTab + "-"))}</div>}
-        </div>
-      )}
+        );
+      })()}
       <div className="mt-2 t9" style={{ color: C.faint }}>La aprobación de excepciones se realiza desde <b>Otorgamientos → Visado Cliente / por deudor</b>. Pasa el cursor sobre <b>i</b> para ver el criterio.</div>
       {usuario === "ADMIN" && (<>
         <button onClick={() => setShowJson((s) => !s)} className="mt-2 flex items-center gap-1 t10 font-semibold" style={{ color: C.indigo }}>{showJson ? <ChevronUp size={12} /> : <ChevronDown size={12} />} {showJson ? "Ocultar" : "Ver"} todas las variables del JSON (API) · v{ver.v} <span className="rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: C.indigo }}>super admin</span></button>
@@ -3267,7 +3295,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado }) {
     </>
   );
 }
-function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorporarFacturas, onRetirarFactura, onPublicar, onCerrarOferta, onEnviarCierre, onContactar, onEditarContacto, onEnviarWA, onMover, cierre, onConfirmCierre, usuario, onAutorizarCausa, onOtorgarOperacion, tabInicial, onIrOtorgamientos }) {
+function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorporarFacturas, onRetirarFactura, onPublicar, onCerrarOferta, onEnviarCierre, onContactar, onEditarContacto, onEnviarWA, onMover, cierre, onConfirmCierre, usuario, onAutorizarCausa, onOtorgarOperacion, tabInicial, onIrOtorgamientos, fullPage }) {
   const [tab, setTab] = useState(tabInicial || (deal && deal.stage === "otorgamiento" ? "otorgamiento" : "contacto"));
   useEffect(() => { if (tabInicial) setTab(tabInicial); }, [tabInicial, deal && deal.id]);
   const [confirmRetiro, setConfirmRetiro] = useState(null); // factura a retirar de la oferta (ConfirmDialog spec §26)
