@@ -13146,6 +13146,15 @@ export default function PipelineComercial() {
                   <div className="truncate t13 font-semibold" style={{ color: C.ink }}>{selected.cliente} <span className="t11 font-normal" style={{ color: C.sub }}>· {selected.id} · {stageName(selected.stage)}</span></div>
                 </div>
               </div>
+              {/* Usuario de la sesión: define la atribución para visar excepciones de otorgamiento en esta pestaña. */}
+              <div className="flex shrink-0 items-center gap-1.5">
+                <User size={14} style={{ color: C.faint }} />
+                <select value={usuario} onChange={(e) => setUsuario(e.target.value)} title="Sesión de usuario · define tu atribución para aprobar excepciones de otorgamiento"
+                  className="rounded-lg px-2 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
+                  {Object.entries(USERS).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
+                </select>
+                <span className="flex h-8 w-8 items-center justify-center t11 font-semibold text-white" style={{ backgroundColor: esAdmin ? C.navy : C.indigo, borderRadius: 8 }}>{esAdmin ? "SA" : usuario}</span>
+              </div>
             </div>
           </header>
           <div className="mx-auto w-full px-6" style={{ maxWidth: 1600 }}>
