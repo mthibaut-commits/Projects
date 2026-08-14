@@ -3560,32 +3560,6 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           </div>
         </div>
         <div className={fullPage ? "p-5" : "flex-1 overflow-y-auto p-5"}>
-          {(() => {
-            // NBA sólo en las pestañas Empresa (contacto) y Negocio; se oculta en el resto.
-            if (tab !== "contacto" && tab !== "negocio") return null;
-            const nba = nextBestAction(deal);
-            if (!nba) return null;
-            return (
-              <div className="mb-4 rounded-lg p-3" style={{ backgroundColor: nba.color + "12", border: `1px solid ${nba.color}40` }}>
-                <div className="flex items-start gap-2">
-                  <Sparkles size={14} style={{ color: nba.color, marginTop: 2 }} />
-                  <div className="min-w-0 flex-1">
-                    <div className="t9 font-semibold uppercase tracking-wide" style={{ color: nba.color }}>Next Best Action · recomendación para el ejecutivo</div>
-                    <div className="mt-0.5 t13 font-semibold" style={{ color: C.ink }}>{nba.label}</div>
-                    <div className="mt-0.5 t11" style={{ color: C.sub, lineHeight: 1.45 }}>{nba.detalle}</div>
-                    {nba.sec && nba.sec.length > 0 && (
-                      <ul className="mt-1 space-y-0.5">
-                        {nba.sec.map((sIt, i) => <li key={i} className="t10" style={{ color: C.faint }}>· {sIt}</li>)}
-                      </ul>
-                    )}
-                  </div>
-                  {nba.goTab && nba.goTab !== tab && (
-                    <button onClick={() => setTab(nba.goTab)} className="flex shrink-0 items-center gap-0.5 rounded-md px-2 py-1 t10 font-semibold text-white" style={{ backgroundColor: nba.color }}>Ir <ChevronRight size={12} /></button>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
           {tab === "mensajeria" && <DealMensajeria deal={deal} usuario={usuario} />}
           {tab === "verificacion" && <div className="mt-2"><VerificacionTab deal={deal} facturasOp={deal.facturasOp || []} bloqueado={["giro", "perdida"].includes(deal.stage)} /></div>}
           {tab === "otorgamiento" && deal.otorgAuto && (
@@ -3684,6 +3658,18 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           </>)}
 
           {tab === "negocio" && (<>
+          {/* Resumen IA de la operación (reemplaza al Next Best Action en esta pestaña). */}
+          <div className="mb-4 rounded-lg p-3" style={{ backgroundColor: "#f5f3ff", border: "1px solid #DDD6FE" }}>
+            <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#7C3AED" }}>
+              <Zap size={12} /> Resumen IA de la operación
+            </div>
+            <div className="mt-2 space-y-1.5">
+              {resumenIA(deal).map((p, i) => (
+                <p key={i} className="t12" style={{ color: C.ink, lineHeight: 1.55 }}>{p}</p>
+              ))}
+            </div>
+            <div className="mt-2 t9" style={{ color: C.faint }}>Generado automáticamente a partir del historial de la oportunidad (prospección → estado actual).</div>
+          </div>
           {/* Simulación del negocio: condiciones, deudores y facturas de la operación. */}
           {(() => {
                   const deudoresUnicos = [...new Set(facturasOp.map((f) => f.deudor))];
