@@ -8552,16 +8552,19 @@ function ReportePerformance({ usuario, inline, onClose }) {
       let total = 0, ganado = 0, ops = 0; hs.forEach((w) => { total += w.MontoTotalMM || 0; ganado += w.MontoBICEMM || 0; ops += w.NumCesiones || 0; });
       const perdido = Math.max(0, total - ganado); const perdBanco = perdido * ratioBanco;
       const bpct = buenShare[s.RUTCliente] != null ? buenShare[s.RUTCliente] : (s.Segmento === "Top" ? 0.85 : s.Segmento === "Medio" ? 0.6 : 0.4);
+      // Facturación EMITIDA del cliente (mayor que lo cedido a factoring): tasa de cesión determinista por RUT.
+      const tasaCesion = 0.5 + (Math.abs(hashStr(s.RUTCliente + "fac")) % 30) / 100; // 0.50–0.79 = cedido / emitido
+      const facturado = total > 0 ? +(total / tasaCesion).toFixed(1) : 0;
       return { rut: s.RUTCliente, cliente: s.RazonSocialCliente, execCod, jefatura: EXEC_JEFATURA[execCod], segmento: s.Segmento, prime: s.Segmento === "Top", tendencia: s.SOWTendencia,
-        emitido: total, ganado, perdido, perdBanco, perdOtros: perdido - perdBanco, ops, sowPct: total > 0 ? ganado / total * 100 : 0, buenasMM: total * bpct, activo: ops > 0 || total > 0, hs };
+        emitido: total, ganado, perdido, perdBanco, perdOtros: perdido - perdBanco, ops, sowPct: total > 0 ? ganado / total * 100 : 0, buenasMM: total * bpct, facturado, facturadoBuenas: +(facturado * bpct).toFixed(1), activo: ops > 0 || total > 0, hs };
     }).filter(Boolean);
   }, [desde, hasta, buenShare]);
   const jefaturasScope = useMemo(() => [...new Set(clientes.map((c) => c.jefatura))].sort(), [clientes]);
   const execsDe = (jef) => Object.keys(EXECS).filter((e) => EXEC_JEFATURA[e] === jef && (!execScope || execScope.includes(e)));
   // Agrega métricas de un conjunto de clientes.
-  const agg = (cs) => { const r = { n: cs.length, emitieron: 0, ops: 0, emitido: 0, ganado: 0, perdBanco: 0, perdOtros: 0, buenasMM: 0, prime: 0 };
-    cs.forEach((c) => { if (c.activo) r.emitieron++; r.ops += c.ops; r.emitido += c.emitido; r.ganado += c.ganado; r.perdBanco += c.perdBanco; r.perdOtros += c.perdOtros; r.buenasMM += c.buenasMM; if (c.prime) r.prime++; });
-    r.perdido = r.perdBanco + r.perdOtros; r.sowPct = r.emitido > 0 ? r.ganado / r.emitido * 100 : 0; r.primePct = r.n > 0 ? Math.round(r.prime / r.n * 100) : 0; r.buenasPct = r.emitido > 0 ? Math.round(r.buenasMM / r.emitido * 100) : 0; return r; };
+  const agg = (cs) => { const r = { n: cs.length, emitieron: 0, ops: 0, emitido: 0, ganado: 0, perdBanco: 0, perdOtros: 0, buenasMM: 0, facturado: 0, facturadoBuenas: 0, prime: 0 };
+    cs.forEach((c) => { if (c.activo) r.emitieron++; r.ops += c.ops; r.emitido += c.emitido; r.ganado += c.ganado; r.perdBanco += c.perdBanco; r.perdOtros += c.perdOtros; r.buenasMM += c.buenasMM; r.facturado += c.facturado; r.facturadoBuenas += c.facturadoBuenas; if (c.prime) r.prime++; });
+    r.perdido = r.perdBanco + r.perdOtros; r.sowPct = r.emitido > 0 ? r.ganado / r.emitido * 100 : 0; r.primePct = r.n > 0 ? Math.round(r.prime / r.n * 100) : 0; r.buenasPct = r.emitido > 0 ? Math.round(r.buenasMM / r.emitido * 100) : 0; r.facturadoBuenasPct = r.facturado > 0 ? Math.round(r.facturadoBuenas / r.facturado * 100) : 0; return r; };
   // Alcance actual según el drill.
   const scope = clientes.filter((c) => (path.length < 1 || c.jefatura === path[0]) && (path.length < 2 || c.execCod === path[1]));
   const kpi = agg(scope);
@@ -8616,14 +8619,14 @@ function ReportePerformance({ usuario, inline, onClose }) {
           </span>
         ))}
       </div>
-      {/* KPIs del alcance */}
+      {/* KPIs del alcance (depurados): clientes · buenos deudores · emitidas · cedido · ganado · perdido */}
       <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        <KpiStat Icon={BarChart2} col="#2563EB" v={fmtMMc(kpi.emitido)} l="Cedido a factoring" s={`${kpi.emitieron} clientes activos`} />
+        <KpiStat Icon={User} col="#703EFF" v={kpi.n.toLocaleString("es-CL")} l="Clientes" s={`${kpi.emitieron} activos · ${kpi.ops} operaciones`} />
+        <KpiStat Icon={Check} col="#0891b2" v={kpi.facturadoBuenasPct + "%"} l="Facturas de buenos deudores" s={`${fmtMMc(kpi.facturadoBuenas)} emitidos`} />
+        <KpiStat Icon={BarChart2} col="#2563EB" v={fmtMMc(kpi.facturado)} l="Facturas emitidas" s={`${fmtMMc(kpi.facturadoBuenas)} de buenos deudores`} />
+        <KpiStat Icon={BarChart2} col="#7C3AED" v={fmtMMc(kpi.emitido)} l="Cedido a factoring" s={`${fmtMMc(kpi.buenasMM)} de buenos deudores`} />
         <KpiStat Icon={Check} col="#16A34A" v={fmtMMc(kpi.ganado)} l="Ganado (Security)" s={`SOW ${Math.round(kpi.sowPct)}%`} />
-        <KpiStat Icon={ArrowDownRight} col="#DC2626" v={fmtMMc(kpi.perdBanco)} l="Perdido a bancos" s="BCI / Banco de Chile" />
-        <KpiStat Icon={ArrowUpRight} col="#C2410C" v={fmtMMc(kpi.perdOtros)} l="Perdido a otros" s="otros factorings" />
-        <KpiStat Icon={Star} col="#7C3AED" v={kpi.primePct + "%"} l="Cartera prime" s={`${kpi.prime} de ${kpi.n} · segmento Top`} />
-        <KpiStat Icon={Check} col="#0891b2" v={kpi.buenasPct + "%"} l="Buenos deudores" s="del monto cedido" />
+        <KpiStat Icon={ArrowDownRight} col="#DC2626" v={fmtMMc(kpi.perdido)} l="Perdido" s={`${fmtMMc(kpi.perdBanco)} a BCI / Banco de Chile · ${fmtMMc(kpi.perdOtros)} otros`} />
       </div>
       {/* Panel: pelear con BCI y Banco de Chile */}
       {kpi.perdBanco > 0 && (
