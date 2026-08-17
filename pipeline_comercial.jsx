@@ -8638,18 +8638,6 @@ function ReportePerformance({ usuario, inline, onClose }) {
         <KpiStat Icon={Check} col="#16A34A" v={fmtMMc(kpi.ganado)} l="Ganado (Security)" s={`SOW ${Math.round(kpi.sowPct)}%`} />
         <KpiStat Icon={ArrowDownRight} col="#DC2626" v={fmtMMc(kpi.perdido)} l="Perdido" s={`${fmtMMc(kpi.perdBanco)} a BCI / Banco de Chile · ${fmtMMc(kpi.perdOtros)} otros`} />
       </div>
-      {/* Panel: pelear con BCI y Banco de Chile */}
-      {kpi.perdBanco > 0 && (
-        <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca" }}>
-          <div className="flex items-center gap-1.5 t12 font-bold" style={{ color: "#DC2626" }}><AlertTriangle size={14} /> Pelear con BCI y Banco de Chile · recuperable {fmtMMc(kpi.perdBanco)}</div>
-          <div className="mt-0.5 t10" style={{ color: C.sub }}>Facturas que <b>BCI Factoring</b> o <b>Banchile (Banco de Chile)</b> compraron y nosotros no. Son el estándar de riesgo: si ellos financiaron, Security también debía. Foco de recuperación por {nivel.toLowerCase()}:</div>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {filas.slice().sort((a, b) => b.perdBanco - a.perdBanco).filter((f) => f.perdBanco > 0).slice(0, 6).map((f) => (
-              <button key={f.key} onClick={() => bajar(f)} className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fff", border: "1px solid #fecaca", color: "#DC2626", cursor: f.drill ? "pointer" : "default" }}>{(f.label || "").length > 22 ? (f.label.slice(0, 22) + "…") : f.label} · {fmtMMc(f.perdBanco)}</button>
-            ))}
-          </div>
-        </div>
-      )}
       {/* Tabla drill-down (Resumen) */}
       <div className="mt-3 overflow-x-auto">
           <table className="w-full border-collapse t11" style={{ minWidth: 880 }}>
@@ -8659,9 +8647,10 @@ function ReportePerformance({ usuario, inline, onClose }) {
               {filasOrden.map((f, i) => (
                 <tr key={f.key} onClick={() => bajar(f)} className={f.drill ? "cursor-pointer" : ""} style={{ borderBottom: i === filasOrden.length - 1 ? "none" : `1px solid ${C.line}` }}>
                   <td className="px-2 py-2">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <span className="inline-flex items-center gap-1.5 font-medium" style={{ color: f.drill ? C.indigo : C.ink }}>{f.drill && <ChevronRight size={12} />}{f.label}</span>
                       {path.length === 2 && f.empresa && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: f.empresa.activo ? "#F0FDF4" : "#F3F4F6", color: f.empresa.activo ? "#16A34A" : C.faint }}>{f.empresa.activo ? "Activo" : "Inactivo"}</span>}
+                      {path.length === 2 && f.perdBanco > 0 && <span title={`Cede a BCI / Banco de Chile — negocio recuperable ${fmtMMc(f.perdBanco)}. Si ellos financiaron, Security también debía.`} className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#DC2626", border: "1px solid #fecaca", cursor: "help" }}><AlertTriangle size={9} /> Riesgo comercial</span>}
                     </div>
                     {f.drill && <div className="t9" style={{ color: C.faint }}>{f.emitieron}/{f.n} clientes activos</div>}
                   </td>
