@@ -8493,6 +8493,7 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
         <Tab id="cliente" label="Cliente" Icon={User} />
         <Tab id="sow" label="SOW" Icon={BarChart2} />
         <Tab id="sankey" label="Origen → Cierre" Icon={Filter} />
+        <RepTab id="performance" label="Performance comercial" Icon={BarChart2} />
         <RepTab id="benchEjec" label="Benchmark ejecutivo" Icon={Table2} />
         <RepTab id="benchDeudores" label="Benchmark deudores" Icon={Star} />
         <RepTab id="resumen" label="Funnel Comercial" Icon={Filter} />
@@ -8506,6 +8507,191 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
           {seccion === "cliente" && <PCcliente resumen={resumen} hayFiltro={hayFiltro} />}
           {seccion === "sow" && <PCsow clientes={clientesScope} />}
           {seccion === "sankey" && <PCsankey deals={deals} execsFiltrados={execsFiltrados} filtrosDeal={filtrosDeal} hayFiltro={hayFiltro} soloExec={soloExec} usuario={usuario} esJefe={esJefeComercial(usuario)} />}
+        </div>
+      )}
+    </div>
+  );
+}
+// ============================================================
+// REPORTE DE PERFORMANCE COMERCIAL (drill-down Gerencia → Jefatura → Ejecutivo → Empresa).
+// Big picture del desempeño comercial en un rango de semanas: cuánto cede la cartera de cada unidad a
+// factoring, qué SOW capturamos, cuánto perdimos ante los factorings BANCARIOS de referencia (BCI
+// Factoring y Banchile/Banco de Chile — el estándar de riesgo: si ellos compran, debíamos ganarlo) y
+// cuánto ante otros, con % de cartera prime. Variante SEMANAL para ver si subimos o bajamos participación.
+// Datos reales: window.SHARE_OF_WALLET (SOW semanal por cliente) + window.AECSYNC (cesiones por factoring).
+// ============================================================
+const BANCOS_REF = ["BCI Factoring", "Banchile Factoring"]; // Banchile = Banco de Chile
+const esFactoringBanco = (name) => { const n = (name || "").toLowerCase(); return n.includes("bci") || n.includes("banchile") || n.includes("banco de chile"); };
+const wkLbl = (s) => { const p = (s || "").split("-"); return p.length === 3 ? `${p[2]}/${p[1]}` : s; };
+function ReportePerformance({ usuario, inline, onClose }) {
+  const semanas = useMemo(() => { const set = new Set(); (window.SHARE_OF_WALLET || []).forEach((s) => (s.HistoricoSemanal || []).forEach((w) => set.add(w.Semana))); return [...set].sort(); }, []);
+  const nSem = semanas.length;
+  const [rDesde, setRDesde] = useState(0);
+  const [rHasta, setRHasta] = useState(Math.max(0, nSem - 1));
+  const [vista, setVista] = useState("resumen"); // "resumen" | "semanal"
+  const [path, setPath] = useState([]); // [] gerencia · [jefatura] · [jefatura, execCod]
+  const desde = semanas[Math.min(rDesde, rHasta)] || semanas[0];
+  const hasta = semanas[Math.max(rDesde, rHasta)] || semanas[nSem - 1];
+  // Alcance por rol: ejecutivo → su cartera; jefe de grupo → sus ejecutivos; gerencia/admin → todo.
+  const execScope = EXECS[usuario] ? [usuario] : (JEFE_A_EXECS[usuario] || null);
+  // % de buenos deudores (Lista Blanca / Autorizado) sobre lo cedido, por cliente (real, desde AECSync).
+  const buenShare = useMemo(() => {
+    const m = {};
+    (window.AECSYNC || []).forEach((a) => { if (!a || !a.RUTEmisor) return; const g = m[a.RUTEmisor] || (m[a.RUTEmisor] = { t: 0, b: 0 }); const mm = (a.MontoCesion || 0) / 1e6; g.t += mm; const td = tipoDeudor(a.RUTReceptor, a.RazonSocialReceptor); if (td === "Lista Blanca" || td === "Deudor Autorizado") g.b += mm; });
+    const out = {}; for (const k in m) out[k] = m[k].t > 0 ? m[k].b / m[k].t : 0; return out;
+  }, []);
+  // Registro por cliente, agregado en el rango de semanas seleccionado.
+  const clientes = useMemo(() => {
+    return (window.SHARE_OF_WALLET || []).map((s) => {
+      const execCod = EXEC_INI_POR_NOMBRE[s.Ejecutivo] || null;
+      if (!execCod || (execScope && !execScope.includes(execCod))) return null;
+      const cm = competenciaDe(s.RUTCliente);
+      let ratioBanco = 0;
+      if (cm) { const perd = Math.max(0, cm.totalMM - cm.biceMM); const banco = (cm.comp || []).filter((c) => esFactoringBanco(c.name)).reduce((a, c) => a + c.montoMM, 0); ratioBanco = perd > 0 ? Math.min(1, banco / perd) : 0; }
+      const hs = (s.HistoricoSemanal || []).filter((w) => w.Semana >= desde && w.Semana <= hasta);
+      let total = 0, ganado = 0, ops = 0; hs.forEach((w) => { total += w.MontoTotalMM || 0; ganado += w.MontoBICEMM || 0; ops += w.NumCesiones || 0; });
+      const perdido = Math.max(0, total - ganado); const perdBanco = perdido * ratioBanco;
+      const bpct = buenShare[s.RUTCliente] != null ? buenShare[s.RUTCliente] : (s.Segmento === "Top" ? 0.85 : s.Segmento === "Medio" ? 0.6 : 0.4);
+      return { rut: s.RUTCliente, cliente: s.RazonSocialCliente, execCod, jefatura: EXEC_JEFATURA[execCod], segmento: s.Segmento, prime: s.Segmento === "Top", tendencia: s.SOWTendencia,
+        emitido: total, ganado, perdido, perdBanco, perdOtros: perdido - perdBanco, ops, sowPct: total > 0 ? ganado / total * 100 : 0, buenasMM: total * bpct, activo: ops > 0 || total > 0, hs };
+    }).filter(Boolean);
+  }, [desde, hasta, buenShare]);
+  const jefaturasScope = useMemo(() => [...new Set(clientes.map((c) => c.jefatura))].sort(), [clientes]);
+  const execsDe = (jef) => Object.keys(EXECS).filter((e) => EXEC_JEFATURA[e] === jef && (!execScope || execScope.includes(e)));
+  // Agrega métricas de un conjunto de clientes.
+  const agg = (cs) => { const r = { n: cs.length, emitieron: 0, ops: 0, emitido: 0, ganado: 0, perdBanco: 0, perdOtros: 0, buenasMM: 0, prime: 0 };
+    cs.forEach((c) => { if (c.activo) r.emitieron++; r.ops += c.ops; r.emitido += c.emitido; r.ganado += c.ganado; r.perdBanco += c.perdBanco; r.perdOtros += c.perdOtros; r.buenasMM += c.buenasMM; if (c.prime) r.prime++; });
+    r.perdido = r.perdBanco + r.perdOtros; r.sowPct = r.emitido > 0 ? r.ganado / r.emitido * 100 : 0; r.primePct = r.n > 0 ? Math.round(r.prime / r.n * 100) : 0; r.buenasPct = r.emitido > 0 ? Math.round(r.buenasMM / r.emitido * 100) : 0; return r; };
+  // Alcance actual según el drill.
+  const scope = clientes.filter((c) => (path.length < 1 || c.jefatura === path[0]) && (path.length < 2 || c.execCod === path[1]));
+  const kpi = agg(scope);
+  // Filas hijas del nivel actual.
+  const nivel = path.length === 0 ? "Jefaturas" : path.length === 1 ? "Ejecutivos" : "Empresas";
+  const filas = path.length === 0
+    ? jefaturasScope.map((j) => ({ key: j, label: j, drill: true, ...agg(clientes.filter((c) => c.jefatura === j)) }))
+    : path.length === 1
+      ? execsDe(path[0]).map((e) => ({ key: e, label: EXECS[e], drill: true, ...agg(clientes.filter((c) => c.execCod === e)) }))
+      : scope.slice().sort((a, b) => b.emitido - a.emitido).map((c) => ({ key: c.rut, label: c.cliente, drill: false, n: 1, emitieron: c.activo ? 1 : 0, ops: c.ops, emitido: c.emitido, ganado: c.ganado, perdBanco: c.perdBanco, perdOtros: c.perdOtros, perdido: c.perdido, sowPct: c.sowPct, prime: c.prime ? 1 : 0, primePct: c.prime ? 100 : 0, buenasMM: c.buenasMM, buenasPct: c.emitido > 0 ? Math.round(c.buenasMM / c.emitido * 100) : 0, empresa: c }));
+  const filasOrden = filas.slice().sort((a, b) => b.emitido - a.emitido);
+  const bajar = (f) => { if (!f.drill) return; setPath((p) => [...p, f.key]); };
+  // Serie semanal agregada del alcance (para la variante SOW por semana).
+  const serie = useMemo(() => semanas.filter((sm) => sm >= desde && sm <= hasta).map((sm) => {
+    let total = 0, ganado = 0, banco = 0, buenas = 0;
+    scope.forEach((c) => { const w = c.hs.find((x) => x.Semana === sm); if (!w) return; const t = w.MontoTotalMM || 0, g = w.MontoBICEMM || 0; total += t; ganado += g; const perd = Math.max(0, t - g); const rb = c.perdido > 0 ? c.perdBanco / c.perdido : 0; banco += perd * rb; buenas += t * (c.emitido > 0 ? c.buenasMM / c.emitido : 0); });
+    const perdido = Math.max(0, total - ganado);
+    return { sem: sm, emitido: total, buenas, ganado, perdBanco: banco, perdOtros: perdido - banco, sowPct: total > 0 ? ganado / total * 100 : 0 };
+  }), [scope, desde, hasta, semanas]);
+  const sowIni = serie.length ? serie[0].sowPct : 0, sowFin = serie.length ? serie[serie.length - 1].sowPct : 0;
+  const delta = +(sowFin - sowIni).toFixed(1);
+  const crumbs = [{ label: "Comercial", to: 0 }, ...(path.length >= 1 ? [{ label: path[0], to: 1 }] : []), ...(path.length >= 2 ? [{ label: EXECS[path[1]], to: 2 }] : [])];
+  const Sel = ({ value, onChange, from }) => (
+    <select value={value} onChange={(e) => onChange(+e.target.value)} className="rounded-lg px-2 py-1 t11 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
+      {semanas.map((s, i) => (from == null || i >= from) && <option key={s} value={i}>{wkLbl(s)}</option>)}
+    </select>
+  );
+  return (
+    <div className={inline ? "" : "rounded-2xl bg-white p-5"} style={inline ? {} : { border: `1px solid ${C.line}` }}>
+      {/* Encabezado + filtro de rango + toggle de vista */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-lg font-bold" style={{ color: C.ink }}>Performance comercial</div>
+          <div className="t10" style={{ color: C.faint }}>Del general al detalle · {kpi.n.toLocaleString("es-CL")} clientes en el alcance · rango {wkLbl(desde)}–{wkLbl(hasta)}</div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="t10" style={{ color: C.faint }}>Semanas</span>
+          <Sel value={rDesde} onChange={setRDesde} from={null} /><span className="t10" style={{ color: C.faint }}>a</span><Sel value={rHasta} onChange={setRHasta} from={rDesde} />
+          <div className="ml-1 flex items-center gap-1 rounded-full p-0.5" style={{ border: `1px solid ${C.line}` }}>
+            {[["resumen", "Resumen"], ["semanal", "SOW semanal"]].map(([k, l]) => (
+              <button key={k} onClick={() => setVista(k)} className="rounded-full px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: vista === k ? C.indigo : "transparent", color: vista === k ? "#fff" : C.sub }}>{l}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+      {/* Breadcrumb del drill */}
+      <div className="mt-3 flex items-center gap-1 t11 flex-wrap">
+        {crumbs.map((c, i) => (
+          <span key={i} className="flex items-center gap-1">
+            {i > 0 && <ChevronRight size={12} style={{ color: C.faint }} />}
+            <button onClick={() => setPath(path.slice(0, c.to))} className="font-semibold" style={{ color: i === crumbs.length - 1 ? C.ink : C.indigo }}>{c.label}</button>
+          </span>
+        ))}
+      </div>
+      {/* KPIs del alcance */}
+      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+        <KpiStat Icon={BarChart2} col="#2563EB" v={fmtMMc(kpi.emitido)} l="Cedido a factoring" s={`${kpi.emitieron} clientes activos`} />
+        <KpiStat Icon={Check} col="#16A34A" v={fmtMMc(kpi.ganado)} l="Ganado (Security)" s={`SOW ${Math.round(kpi.sowPct)}%`} />
+        <KpiStat Icon={ArrowDownRight} col="#DC2626" v={fmtMMc(kpi.perdBanco)} l="Perdido a bancos" s="BCI / Banco de Chile" />
+        <KpiStat Icon={ArrowUpRight} col="#C2410C" v={fmtMMc(kpi.perdOtros)} l="Perdido a otros" s="otros factorings" />
+        <KpiStat Icon={Star} col="#7C3AED" v={kpi.primePct + "%"} l="Cartera prime" s={`${kpi.prime} de ${kpi.n} · segmento Top`} />
+        <KpiStat Icon={Check} col="#0891b2" v={kpi.buenasPct + "%"} l="Buenos deudores" s="del monto cedido" />
+      </div>
+      {/* Panel: pelear con BCI y Banco de Chile */}
+      {kpi.perdBanco > 0 && (
+        <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca" }}>
+          <div className="flex items-center gap-1.5 t12 font-bold" style={{ color: "#DC2626" }}><AlertTriangle size={14} /> Pelear con BCI y Banco de Chile · recuperable {fmtMMc(kpi.perdBanco)}</div>
+          <div className="mt-0.5 t10" style={{ color: C.sub }}>Facturas que <b>BCI Factoring</b> o <b>Banchile (Banco de Chile)</b> compraron y nosotros no. Son el estándar de riesgo: si ellos financiaron, Security también debía. Foco de recuperación por {nivel.toLowerCase()}:</div>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {filas.slice().sort((a, b) => b.perdBanco - a.perdBanco).filter((f) => f.perdBanco > 0).slice(0, 6).map((f) => (
+              <button key={f.key} onClick={() => bajar(f)} className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fff", border: "1px solid #fecaca", color: "#DC2626", cursor: f.drill ? "pointer" : "default" }}>{(f.label || "").length > 22 ? (f.label.slice(0, 22) + "…") : f.label} · {fmtMMc(f.perdBanco)}</button>
+            ))}
+          </div>
+        </div>
+      )}
+      {vista === "resumen" ? (
+        /* Tabla drill-down */
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full border-collapse t11" style={{ minWidth: 880 }}>
+            <thead><tr>{[nivel, "Clientes", "Operac.", "Cedido", "Ganado", "SOW", "Perd. bancos", "Perd. otros", "% Prime"].map((h, i) => (
+              <th key={h} className={`px-2 py-2 font-semibold ${i === 0 ? "text-left" : "text-right"}`} style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>))}</tr></thead>
+            <tbody>
+              {filasOrden.map((f, i) => (
+                <tr key={f.key} onClick={() => bajar(f)} className={f.drill ? "cursor-pointer" : ""} style={{ borderBottom: i === filasOrden.length - 1 ? "none" : `1px solid ${C.line}` }}>
+                  <td className="px-2 py-2">
+                    <span className="inline-flex items-center gap-1.5 font-medium" style={{ color: f.drill ? C.indigo : C.ink }}>{f.drill && <ChevronRight size={12} />}{f.label}</span>
+                    {path.length === 2 && f.empresa && <span className="ml-1 rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: f.empresa.prime ? "#F1ECFF" : "#F3F4F6", color: f.empresa.prime ? "#7C3AED" : C.faint }}>{f.empresa.segmento}</span>}
+                  </td>
+                  <td className="px-2 py-2 text-right" style={{ color: C.sub }}>{path.length === 2 ? (f.emitieron ? "activo" : "—") : `${f.emitieron}/${f.n}`}</td>
+                  <td className="px-2 py-2 text-right" style={{ color: C.sub }}>{f.ops}</td>
+                  <td className="px-2 py-2 text-right font-medium" style={{ color: C.ink }}>{fmtMMc(f.emitido)}</td>
+                  <td className="px-2 py-2 text-right font-medium" style={{ color: "#16A34A" }}>{fmtMMc(f.ganado)}</td>
+                  <td className="px-2 py-2 text-right font-semibold" style={{ color: f.sowPct >= 60 ? "#16A34A" : f.sowPct >= 35 ? "#C2410C" : "#DC2626" }}>{Math.round(f.sowPct)}%</td>
+                  <td className="px-2 py-2 text-right font-medium" style={{ color: f.perdBanco > 0 ? "#DC2626" : C.faint }}>{fmtMMc(f.perdBanco)}</td>
+                  <td className="px-2 py-2 text-right" style={{ color: C.sub }}>{fmtMMc(f.perdOtros)}</td>
+                  <td className="px-2 py-2 text-right" style={{ color: C.sub }}>{f.primePct}%</td>
+                </tr>
+              ))}
+              {filasOrden.length === 0 && <tr><td colSpan={9} className="px-2 py-6 text-center t10" style={{ color: C.faint }}>Sin datos en el alcance/rango.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        /* Variante SOW por semana */
+        <div className="mt-3">
+          <div className="flex items-center gap-2 t11">
+            <span className="font-semibold" style={{ color: C.ink }}>Evolución del SOW por semana</span>
+            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: delta >= 0 ? "#F0FDF4" : "#fef2f2", color: delta >= 0 ? "#16A34A" : "#DC2626" }}>{delta >= 0 ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />} {delta >= 0 ? "+" : ""}{delta} pts</span>
+            <span className="t9" style={{ color: C.faint }}>{delta >= 0 ? "estamos ganando participación" : "estamos perdiendo participación"} en el rango</span>
+          </div>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full border-collapse t10" style={{ minWidth: 760 }}>
+              <thead><tr>{["Semana", "Emitido (cedido)", "De buenos deudores", "Ganado", "Perd. bancos", "Perd. otros", "SOW"].map((h, i) => (
+                <th key={h} className={`px-2 py-1.5 font-semibold ${i === 0 ? "text-left" : "text-right"}`} style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>))}</tr></thead>
+              <tbody>
+                {serie.map((w, i) => (
+                  <tr key={w.sem} style={{ borderBottom: i === serie.length - 1 ? "none" : `1px solid ${C.line}` }}>
+                    <td className="px-2 py-1.5 font-medium" style={{ color: C.ink }}>{wkLbl(w.sem)}</td>
+                    <td className="px-2 py-1.5 text-right" style={{ color: C.sub }}>{fmtMMc(w.emitido)}</td>
+                    <td className="px-2 py-1.5 text-right" style={{ color: "#0891b2" }}>{fmtMMc(w.buenas)}</td>
+                    <td className="px-2 py-1.5 text-right font-medium" style={{ color: "#16A34A" }}>{fmtMMc(w.ganado)}</td>
+                    <td className="px-2 py-1.5 text-right" style={{ color: w.perdBanco > 0 ? "#DC2626" : C.faint }}>{fmtMMc(w.perdBanco)}</td>
+                    <td className="px-2 py-1.5 text-right" style={{ color: C.sub }}>{fmtMMc(w.perdOtros)}</td>
+                    <td className="px-2 py-1.5 text-right font-semibold" style={{ color: w.sowPct >= 60 ? "#16A34A" : w.sowPct >= 35 ? "#C2410C" : "#DC2626" }}>{Math.round(w.sowPct)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-1.5 t9" style={{ color: C.faint }}>Ganado = Security · Perd. bancos = BCI Factoring + Banchile (Banco de Chile) · Perd. otros = resto de factorings. SOW = Ganado / Cedido.</div>
         </div>
       )}
     </div>
@@ -13689,6 +13875,10 @@ export default function PipelineComercial() {
                   </div>
                 ) : reporteGestion === "resumen" ? (
                   resumenInfo ? <DiaModal inline info={resumenInfo} reporte={reporte} deals={dealsF} execFijo={execFijo} onClose={() => setReporteGestion(null)} /> : null
+                ) : reporteGestion === "performance" ? (
+                  <div className="rounded-2xl bg-white p-5" style={{ border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
+                    <ReportePerformance inline usuario={usuario} onClose={() => setReporteGestion(null)} />
+                  </div>
                 ) : reporteGestion === "benchEjec" ? (
                   <ComparativoModal inline deals={dealsF} onClose={() => setReporteGestion(null)} />
                 ) : reporteGestion === "benchDeudores" ? (
