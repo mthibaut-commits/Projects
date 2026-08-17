@@ -8647,7 +8647,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
       {/* Tabla drill-down (Resumen) */}
       <div className="mt-3 overflow-x-auto">
           <table className="w-full border-collapse t11" style={{ minWidth: 880 }}>
-            <thead><tr>{[nivel, "Clientes", "Operac.", "Cedido", "Ganado", "SOW", "Perd. bancos", "Perd. otros"].map((h, i) => (
+            <thead><tr>{[nivel, "Clientes", "Operac.", "Cedido", "Ganado", "Perdidos", "SOW", "Perd. bancos", "Perd. otros"].map((h, i) => (
               <th key={h} className={`px-2 py-2 font-semibold ${i === 0 ? "text-left" : "text-right"}`} style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>))}</tr></thead>
             <tbody>
               {filasOrden.map((f, i) => (
@@ -8660,12 +8660,13 @@ function ReportePerformance({ usuario, inline, onClose }) {
                   <td className="px-2 py-2 text-right" style={{ color: C.sub }}>{f.ops}</td>
                   <td className="px-2 py-2 text-right font-medium" style={{ color: C.ink }}>{fmtMMc(f.emitido)}</td>
                   <td className="px-2 py-2 text-right font-medium" style={{ color: "#16A34A" }}>{fmtMMc(f.ganado)}</td>
+                  <td className="px-2 py-2 text-right font-medium" style={{ color: C.sub }}>{fmtMMc(f.perdido)}</td>
                   <td className="px-2 py-2 text-right font-semibold" style={{ color: f.sowPct >= 60 ? "#16A34A" : f.sowPct >= 35 ? "#C2410C" : "#DC2626" }}>{Math.round(f.sowPct)}%</td>
                   <td className="px-2 py-2 text-right font-medium" style={{ color: f.perdBanco > 0 ? "#DC2626" : C.faint }}>{fmtMMc(f.perdBanco)}</td>
                   <td className="px-2 py-2 text-right" style={{ color: C.sub }}>{fmtMMc(f.perdOtros)}</td>
                 </tr>
               ))}
-              {filasOrden.length === 0 && <tr><td colSpan={8} className="px-2 py-6 text-center t10" style={{ color: C.faint }}>Sin datos en el alcance/rango.</td></tr>}
+              {filasOrden.length === 0 && <tr><td colSpan={9} className="px-2 py-6 text-center t10" style={{ color: C.faint }}>Sin datos en el alcance/rango.</td></tr>}
             </tbody>
           </table>
         </div>
