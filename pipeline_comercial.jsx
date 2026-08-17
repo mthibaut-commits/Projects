@@ -11626,7 +11626,7 @@ function LineasView({ soloExec }) {
                   <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t10 font-bold" style={{ backgroundColor: l.rec.bg, color: l.rec.color }}>{(l.rec.tipo === "Bloquear línea" || l.rec.tipo === "Sujeto a aprobación") ? <AlertTriangle size={11} /> : l.rec.tipo === "Aumentar línea" ? <ArrowUpRight size={11} /> : <Check size={11} />}{l.rec.tipo}</span>
                   <div className="mt-1 t9" style={{ color: C.sub, lineHeight: 1.4 }}>{l.rec.texto}</div>
                 </td>
-                <td className="whitespace-nowrap px-3 py-2.5"><span className="inline-flex items-center gap-1.5 t11 font-semibold" style={{ color: l.salud.color }}><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: l.salud.color }} />{l.salud.label}</span></td>
+                <td className="whitespace-nowrap px-3 py-2.5"><span className="inline-flex items-center gap-1.5 t10 font-semibold" style={{ color: l.salud.color }}><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: l.salud.color }} />{l.salud.label}</span></td>
                 <td className="whitespace-nowrap px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
                   <div className="relative inline-block">
                     <button disabled={enCurso} onClick={() => setAccOpen(accOpen === l.id ? null : l.id)}
