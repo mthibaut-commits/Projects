@@ -8579,15 +8579,21 @@ function ReportePerformance({ usuario, inline, onClose }) {
   // Filas hijas del nivel actual.
   const nivel = path.length === 0 ? "Jefaturas" : path.length === 1 ? "Ejecutivos" : "Empresas";
   const filas = path.length === 0
-    ? jefaturasScope.map((j) => ({ key: j, label: j, drill: true, ...agg(clientes.filter((c) => c.jefatura === j)) }))
+    ? jefaturasScope.map((j) => { const cs = clientes.filter((c) => c.jefatura === j); return { key: j, label: j, drill: true, cs, ...agg(cs) }; })
     : path.length === 1
-      ? execsDe(path[0]).map((e) => ({ key: e, label: EXECS[e], drill: true, ...agg(clientes.filter((c) => c.execCod === e)) }))
-      : scope.slice().sort((a, b) => b.emitido - a.emitido).map((c) => ({ key: c.rut, label: c.cliente, drill: false, n: 1, emitieron: c.activo ? 1 : 0, ops: c.ops, emitido: c.emitido, ganado: c.ganado, perdBanco: c.perdBanco, perdOtros: c.perdOtros, perdido: c.perdido, sowPct: c.sowPct, prime: c.prime ? 1 : 0, primePct: c.prime ? 100 : 0, buenasMM: c.buenasMM, buenasPct: c.emitido > 0 ? Math.round(c.buenasMM / c.emitido * 100) : 0, empresa: c }));
+      ? execsDe(path[0]).map((e) => { const cs = clientes.filter((c) => c.execCod === e); return { key: e, label: EXECS[e], drill: true, cs, ...agg(cs) }; })
+      : scope.slice().sort((a, b) => b.emitido - a.emitido).map((c) => ({ key: c.rut, label: c.cliente, drill: false, cs: [c], n: 1, emitieron: c.activo ? 1 : 0, ops: c.ops, emitido: c.emitido, ganado: c.ganado, perdBanco: c.perdBanco, perdOtros: c.perdOtros, perdido: c.perdido, sowPct: c.sowPct, prime: c.prime ? 1 : 0, primePct: c.prime ? 100 : 0, buenasMM: c.buenasMM, buenasPct: c.emitido > 0 ? Math.round(c.buenasMM / c.emitido * 100) : 0, empresa: c }));
   const filasOrden = filas.slice().sort((a, b) => b.emitido - a.emitido);
   const bajar = (f) => { if (!f.drill) return; setPath((p) => [...p, f.key]); };
   // Serie SEMANAL del alcance: SIEMPRE las últimas 4 semanas hasta la fecha de fin del rango (sin importar
   // cuán largo sea el rango seleccionado para los agregados del resumen).
   const sem4 = useMemo(() => semanas.filter((sm) => sm <= hasta).slice(-4), [semanas, hasta]);
+  // Tendencia del SOW en las últimas 4 semanas de un conjunto de clientes: puntos semanales + delta (fin−ini).
+  const tendSow4 = (cs) => {
+    const pts = sem4.map((sm) => { let t = 0, g = 0; (cs || []).forEach((c) => { const w = c.hs.find((x) => x.Semana === sm); if (w) { t += w.MontoTotalMM || 0; g += w.MontoBICEMM || 0; } }); return t > 0 ? g / t * 100 : 0; });
+    const ini = pts[0] || 0, fin = pts[pts.length - 1] || 0;
+    return { pts, delta: +(fin - ini).toFixed(1) };
+  };
   const serie = useMemo(() => sem4.map((sm) => {
     let total = 0, ganado = 0, banco = 0, buenas = 0;
     scope.forEach((c) => { const w = c.hs.find((x) => x.Semana === sm); if (!w) return; const t = w.MontoTotalMM || 0, g = w.MontoBICEMM || 0; total += t; ganado += g; const perd = Math.max(0, t - g); const rb = c.perdido > 0 ? c.perdBanco / c.perdido : 0; banco += perd * rb; buenas += t * (c.emitido > 0 ? c.buenasMM / c.emitido : 0); });
@@ -8647,21 +8653,29 @@ function ReportePerformance({ usuario, inline, onClose }) {
       {/* Tabla drill-down (Resumen) */}
       <div className="mt-3 overflow-x-auto">
           <table className="w-full border-collapse t11" style={{ minWidth: 880 }}>
-            <thead><tr>{[nivel, "Clientes", "Operac.", "Cedido", "Ganado", "Perdidos", "SOW", "Perd. bancos", "Perd. otros"].map((h, i) => (
+            <thead><tr>{[nivel, "Operac.", "Cedido", "Ganado", "Perdidos", "SOW", "Tend. 4 sem", "Perd. bancos", "Perd. otros"].map((h, i) => (
               <th key={h} className={`px-2 py-2 font-semibold ${i === 0 ? "text-left" : "text-right"}`} style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>))}</tr></thead>
             <tbody>
               {filasOrden.map((f, i) => (
                 <tr key={f.key} onClick={() => bajar(f)} className={f.drill ? "cursor-pointer" : ""} style={{ borderBottom: i === filasOrden.length - 1 ? "none" : `1px solid ${C.line}` }}>
                   <td className="px-2 py-2">
-                    <span className="inline-flex items-center gap-1.5 font-medium" style={{ color: f.drill ? C.indigo : C.ink }}>{f.drill && <ChevronRight size={12} />}{f.label}</span>
-                    {path.length === 2 && f.empresa && <span className="ml-1 rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: f.empresa.prime ? "#F1ECFF" : "#F3F4F6", color: f.empresa.prime ? "#7C3AED" : C.faint }}>{f.empresa.segmento}</span>}
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1.5 font-medium" style={{ color: f.drill ? C.indigo : C.ink }}>{f.drill && <ChevronRight size={12} />}{f.label}</span>
+                      {path.length === 2 && f.empresa && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: f.empresa.activo ? "#F0FDF4" : "#F3F4F6", color: f.empresa.activo ? "#16A34A" : C.faint }}>{f.empresa.activo ? "Activo" : "Inactivo"}</span>}
+                    </div>
+                    {f.drill && <div className="t9" style={{ color: C.faint }}>{f.emitieron}/{f.n} clientes activos</div>}
                   </td>
-                  <td className="px-2 py-2 text-right" style={{ color: C.sub }}>{path.length === 2 ? (f.emitieron ? "activo" : "—") : `${f.emitieron}/${f.n}`}</td>
                   <td className="px-2 py-2 text-right" style={{ color: C.sub }}>{f.ops}</td>
                   <td className="px-2 py-2 text-right font-medium" style={{ color: C.ink }}>{fmtMMc(f.emitido)}</td>
                   <td className="px-2 py-2 text-right font-medium" style={{ color: "#16A34A" }}>{fmtMMc(f.ganado)}</td>
                   <td className="px-2 py-2 text-right font-medium" style={{ color: C.sub }}>{fmtMMc(f.perdido)}</td>
                   <td className="px-2 py-2 text-right font-semibold" style={{ color: f.sowPct >= 60 ? "#16A34A" : f.sowPct >= 35 ? "#C2410C" : "#DC2626" }}>{Math.round(f.sowPct)}%</td>
+                  <td className="px-2 py-2">{(() => { const tr = tendSow4(f.cs); const up = tr.delta >= 0; return (
+                    <div className="flex items-center justify-end gap-1.5">
+                      <span style={{ width: 42, display: "inline-block" }}><Sparkline data={tr.pts} color={up ? "#16A34A" : "#DC2626"} /></span>
+                      <span className="t9 font-semibold inline-flex items-center gap-0.5" title={`SOW ${tr.pts.map((p) => Math.round(p) + "%").join(" → ")}`} style={{ color: up ? "#16A34A" : "#DC2626" }}>{up ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}{up ? "+" : ""}{tr.delta}</span>
+                    </div>
+                  ); })()}</td>
                   <td className="px-2 py-2 text-right font-medium" style={{ color: f.perdBanco > 0 ? "#DC2626" : C.faint }}>{fmtMMc(f.perdBanco)}</td>
                   <td className="px-2 py-2 text-right" style={{ color: C.sub }}>{fmtMMc(f.perdOtros)}</td>
                 </tr>
