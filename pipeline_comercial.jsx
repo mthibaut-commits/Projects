@@ -8626,7 +8626,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
       {/* KPIs del alcance (depurados): clientes · buenos deudores · emitidas · cedido · ganado · perdido */}
       <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         <KpiStat Icon={User} col="#703EFF" v={kpi.n.toLocaleString("es-CL")} l="Clientes" s={`${kpi.emitieron} activos · ${kpi.ops} operaciones`} />
-        <KpiStat Icon={Check} col="#0891b2" v={kpi.facturadoBuenasPct + "%"} l="Facturas de buenos deudores" s={`${fmtMMc(kpi.facturadoBuenas)} emitidos`} />
+        <KpiStat Icon={Check} col="#0891b2" v={fmtMMc(kpi.facturadoBuenas)} l="Facturas de buenos deudores" s={`${kpi.facturadoBuenasPct}% de ${fmtMMc(kpi.facturado)} emitido`} />
         <KpiStat Icon={BarChart2} col="#2563EB" v={fmtMMc(kpi.facturado)} l="Facturas emitidas" s={`${fmtMMc(kpi.facturadoBuenas)} de buenos deudores`} />
         <KpiStat Icon={BarChart2} col="#7C3AED" v={fmtMMc(kpi.emitido)} l="Cedido a factoring" s={`${fmtMMc(kpi.buenasMM)} de buenos deudores`} />
         <KpiStat Icon={Check} col="#16A34A" v={fmtMMc(kpi.ganado)} l="Ganado (Security)" s={`SOW ${Math.round(kpi.sowPct)}%`} />
