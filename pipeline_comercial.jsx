@@ -8670,12 +8670,23 @@ function ReportePerformance({ usuario, inline, onClose }) {
                   <td className="px-2 py-2 text-right font-medium" style={{ color: "#16A34A" }}>{fmtMMc(f.ganado)}</td>
                   <td className="px-2 py-2 text-right font-medium" style={{ color: C.sub }}>{fmtMMc(f.perdido)}</td>
                   <td className="px-2 py-2 text-right font-semibold" style={{ color: f.sowPct >= 60 ? "#16A34A" : f.sowPct >= 35 ? "#C2410C" : "#DC2626" }}>{Math.round(f.sowPct)}%</td>
-                  <td className="px-2 py-2">{(() => { const tr = tendSow4(f.cs); const up = tr.delta >= 0; return (
-                    <div className="flex items-center justify-end gap-1.5">
-                      <span style={{ width: 42, display: "inline-block" }}><Sparkline data={tr.pts} color={up ? "#16A34A" : "#DC2626"} /></span>
-                      <span className="t9 font-semibold inline-flex items-center gap-0.5" title={`SOW ${tr.pts.map((p) => Math.round(p) + "%").join(" → ")}`} style={{ color: up ? "#16A34A" : "#DC2626" }}>{up ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}{up ? "+" : ""}{tr.delta}</span>
-                    </div>
-                  ); })()}</td>
+                  <td className="px-2 py-2">{(() => {
+                    const tr = tendSow4(f.cs); const up = tr.delta >= 0; const col = up ? "#16A34A" : "#DC2626";
+                    const pts = tr.pts.length ? tr.pts : [0]; const n = pts.length;
+                    const W = 56, H = 20, pad = 3; const mn = Math.min(...pts), mx = Math.max(...pts), rng = (mx - mn) || 1;
+                    const X = (i) => n <= 1 ? W / 2 : 1 + (i / (n - 1)) * (W - 2);
+                    const Y = (v) => H - pad - ((v - mn) / rng) * (H - 2 * pad);
+                    const linePts = pts.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+                    return (
+                      <div className="flex items-center justify-end gap-1.5">
+                        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ overflow: "visible" }}>
+                          <polyline points={linePts} fill="none" stroke={col} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" opacity="0.9" />
+                          <circle cx={X(n - 1)} cy={Y(pts[n - 1])} r="2" fill={col} />
+                        </svg>
+                        <span className="t9 font-semibold inline-flex items-center gap-0.5" title={`SOW ${pts.map((p) => Math.round(p) + "%").join(" → ")}`} style={{ color: col }}>{up ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />}{up ? "+" : ""}{tr.delta}</span>
+                      </div>
+                    );
+                  })()}</td>
                   <td className="px-2 py-2 text-right font-medium" style={{ color: f.perdBanco > 0 ? "#DC2626" : C.faint }}>{fmtMMc(f.perdBanco)}</td>
                   <td className="px-2 py-2 text-right" style={{ color: C.sub }}>{fmtMMc(f.perdOtros)}</td>
                 </tr>
