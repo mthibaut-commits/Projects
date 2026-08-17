@@ -8526,12 +8526,20 @@ const wkLbl = (s) => { const p = (s || "").split("-"); return p.length === 3 ? `
 function ReportePerformance({ usuario, inline, onClose }) {
   const semanas = useMemo(() => { const set = new Set(); (window.SHARE_OF_WALLET || []).forEach((s) => (s.HistoricoSemanal || []).forEach((w) => set.add(w.Semana))); return [...set].sort(); }, []);
   const nSem = semanas.length;
-  const [rDesde, setRDesde] = useState(0);
-  const [rHasta, setRHasta] = useState(Math.max(0, nSem - 1));
+  const semMin = semanas[0] || "", semMax = semanas[nSem - 1] || "";
+  const [fDesde, setFDesde] = useState(semMin); // rango por CALENDARIO (fecha ISO)
+  const [fHasta, setFHasta] = useState(semMax);
   const [vista, setVista] = useState("resumen"); // "resumen" | "semanal"
-  const [path, setPath] = useState([]); // [] gerencia · [jefatura] · [jefatura, execCod]
-  const desde = semanas[Math.min(rDesde, rHasta)] || semanas[0];
-  const hasta = semanas[Math.max(rDesde, rHasta)] || semanas[nSem - 1];
+  // Nivel inicial del drill según el rol logueado: un ejecutivo parte directo en SUS empresas; un jefe de
+  // grupo con una sola jefatura, en sus ejecutivos; gerencia/admin, en el nivel Gerencia (todas las jefaturas).
+  const [path, setPath] = useState(() => {
+    if (EXECS[usuario]) return [EXEC_JEFATURA[usuario], usuario]; // ejecutivo → sus empresas
+    const g = JEFE_A_EXECS[usuario];
+    if (g && g.length) { const jefs = [...new Set(g.map((e) => EXEC_JEFATURA[e]))]; if (jefs.length === 1) return [jefs[0]]; }
+    return [];
+  }); // [] gerencia · [jefatura] · [jefatura, execCod]
+  const desde = (fDesde <= fHasta ? fDesde : fHasta) || semMin;
+  const hasta = (fDesde <= fHasta ? fHasta : fDesde) || semMax;
   // Alcance por rol: ejecutivo → su cartera; jefe de grupo → sus ejecutivos; gerencia/admin → todo.
   const execScope = EXECS[usuario] ? [usuario] : (JEFE_A_EXECS[usuario] || null);
   // % de buenos deudores (Lista Blanca / Autorizado) sobre lo cedido, por cliente (real, desde AECSync).
@@ -8548,15 +8556,16 @@ function ReportePerformance({ usuario, inline, onClose }) {
       const cm = competenciaDe(s.RUTCliente);
       let ratioBanco = 0;
       if (cm) { const perd = Math.max(0, cm.totalMM - cm.biceMM); const banco = (cm.comp || []).filter((c) => esFactoringBanco(c.name)).reduce((a, c) => a + c.montoMM, 0); ratioBanco = perd > 0 ? Math.min(1, banco / perd) : 0; }
-      const hs = (s.HistoricoSemanal || []).filter((w) => w.Semana >= desde && w.Semana <= hasta);
-      let total = 0, ganado = 0, ops = 0; hs.forEach((w) => { total += w.MontoTotalMM || 0; ganado += w.MontoBICEMM || 0; ops += w.NumCesiones || 0; });
+      const hsFull = s.HistoricoSemanal || [];
+      const inR = hsFull.filter((w) => w.Semana >= desde && w.Semana <= hasta);
+      let total = 0, ganado = 0, ops = 0; inR.forEach((w) => { total += w.MontoTotalMM || 0; ganado += w.MontoBICEMM || 0; ops += w.NumCesiones || 0; });
       const perdido = Math.max(0, total - ganado); const perdBanco = perdido * ratioBanco;
       const bpct = buenShare[s.RUTCliente] != null ? buenShare[s.RUTCliente] : (s.Segmento === "Top" ? 0.85 : s.Segmento === "Medio" ? 0.6 : 0.4);
       // Facturación EMITIDA del cliente (mayor que lo cedido a factoring): tasa de cesión determinista por RUT.
       const tasaCesion = 0.5 + (Math.abs(hashStr(s.RUTCliente + "fac")) % 30) / 100; // 0.50–0.79 = cedido / emitido
       const facturado = total > 0 ? +(total / tasaCesion).toFixed(1) : 0;
       return { rut: s.RUTCliente, cliente: s.RazonSocialCliente, execCod, jefatura: EXEC_JEFATURA[execCod], segmento: s.Segmento, prime: s.Segmento === "Top", tendencia: s.SOWTendencia,
-        emitido: total, ganado, perdido, perdBanco, perdOtros: perdido - perdBanco, ops, sowPct: total > 0 ? ganado / total * 100 : 0, buenasMM: total * bpct, facturado, facturadoBuenas: +(facturado * bpct).toFixed(1), activo: ops > 0 || total > 0, hs };
+        emitido: total, ganado, perdido, perdBanco, perdOtros: perdido - perdBanco, ops, sowPct: total > 0 ? ganado / total * 100 : 0, buenasMM: total * bpct, facturado, facturadoBuenas: +(facturado * bpct).toFixed(1), activo: ops > 0 || total > 0, hs: hsFull };
     }).filter(Boolean);
   }, [desde, hasta, buenShare]);
   const jefaturasScope = useMemo(() => [...new Set(clientes.map((c) => c.jefatura))].sort(), [clientes]);
@@ -8577,20 +8586,21 @@ function ReportePerformance({ usuario, inline, onClose }) {
       : scope.slice().sort((a, b) => b.emitido - a.emitido).map((c) => ({ key: c.rut, label: c.cliente, drill: false, n: 1, emitieron: c.activo ? 1 : 0, ops: c.ops, emitido: c.emitido, ganado: c.ganado, perdBanco: c.perdBanco, perdOtros: c.perdOtros, perdido: c.perdido, sowPct: c.sowPct, prime: c.prime ? 1 : 0, primePct: c.prime ? 100 : 0, buenasMM: c.buenasMM, buenasPct: c.emitido > 0 ? Math.round(c.buenasMM / c.emitido * 100) : 0, empresa: c }));
   const filasOrden = filas.slice().sort((a, b) => b.emitido - a.emitido);
   const bajar = (f) => { if (!f.drill) return; setPath((p) => [...p, f.key]); };
-  // Serie semanal agregada del alcance (para la variante SOW por semana).
-  const serie = useMemo(() => semanas.filter((sm) => sm >= desde && sm <= hasta).map((sm) => {
+  // Serie SEMANAL del alcance: SIEMPRE las últimas 4 semanas hasta la fecha de fin del rango (sin importar
+  // cuán largo sea el rango seleccionado para los agregados del resumen).
+  const sem4 = useMemo(() => semanas.filter((sm) => sm <= hasta).slice(-4), [semanas, hasta]);
+  const serie = useMemo(() => sem4.map((sm) => {
     let total = 0, ganado = 0, banco = 0, buenas = 0;
     scope.forEach((c) => { const w = c.hs.find((x) => x.Semana === sm); if (!w) return; const t = w.MontoTotalMM || 0, g = w.MontoBICEMM || 0; total += t; ganado += g; const perd = Math.max(0, t - g); const rb = c.perdido > 0 ? c.perdBanco / c.perdido : 0; banco += perd * rb; buenas += t * (c.emitido > 0 ? c.buenasMM / c.emitido : 0); });
     const perdido = Math.max(0, total - ganado);
     return { sem: sm, emitido: total, buenas, ganado, perdBanco: banco, perdOtros: perdido - banco, sowPct: total > 0 ? ganado / total * 100 : 0 };
-  }), [scope, desde, hasta, semanas]);
+  }), [scope, sem4]);
   const sowIni = serie.length ? serie[0].sowPct : 0, sowFin = serie.length ? serie[serie.length - 1].sowPct : 0;
   const delta = +(sowFin - sowIni).toFixed(1);
   const crumbs = [{ label: "Comercial", to: 0 }, ...(path.length >= 1 ? [{ label: path[0], to: 1 }] : []), ...(path.length >= 2 ? [{ label: EXECS[path[1]], to: 2 }] : [])];
-  const Sel = ({ value, onChange, from }) => (
-    <select value={value} onChange={(e) => onChange(+e.target.value)} className="rounded-lg px-2 py-1 t11 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
-      {semanas.map((s, i) => (from == null || i >= from) && <option key={s} value={i}>{wkLbl(s)}</option>)}
-    </select>
+  const fmtFecha = (s) => { const p = (s || "").split("-"); return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : s; };
+  const DateInput = ({ value, onChange }) => (
+    <input type="date" value={value} min={semMin} max={semMax} onChange={(e) => onChange(e.target.value || value)} className="rounded-lg px-2 py-1 t11 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }} />
   );
   return (
     <div className={inline ? "" : "rounded-2xl bg-white p-5"} style={inline ? {} : { border: `1px solid ${C.line}` }}>
@@ -8598,11 +8608,11 @@ function ReportePerformance({ usuario, inline, onClose }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-lg font-bold" style={{ color: C.ink }}>Performance comercial</div>
-          <div className="t10" style={{ color: C.faint }}>Del general al detalle · {kpi.n.toLocaleString("es-CL")} clientes en el alcance · rango {wkLbl(desde)}–{wkLbl(hasta)}</div>
+          <div className="t10" style={{ color: C.faint }}>Del general al detalle · {kpi.n.toLocaleString("es-CL")} clientes en el alcance · rango {fmtFecha(desde)} a {fmtFecha(hasta)}</div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="t10" style={{ color: C.faint }}>Semanas</span>
-          <Sel value={rDesde} onChange={setRDesde} from={null} /><span className="t10" style={{ color: C.faint }}>a</span><Sel value={rHasta} onChange={setRHasta} from={rDesde} />
+          <span className="t10" style={{ color: C.faint }}>Rango</span>
+          <DateInput value={fDesde} onChange={setFDesde} /><span className="t10" style={{ color: C.faint }}>a</span><DateInput value={fHasta} onChange={setFHasta} />
           <div className="ml-1 flex items-center gap-1 rounded-full p-0.5" style={{ border: `1px solid ${C.line}` }}>
             {[["resumen", "Resumen"], ["semanal", "SOW semanal"]].map(([k, l]) => (
               <button key={k} onClick={() => setVista(k)} className="rounded-full px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: vista === k ? C.indigo : "transparent", color: vista === k ? "#fff" : C.sub }}>{l}</button>
@@ -8671,7 +8681,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
         /* Variante SOW por semana */
         <div className="mt-3">
           <div className="flex items-center gap-2 t11">
-            <span className="font-semibold" style={{ color: C.ink }}>Evolución del SOW por semana</span>
+            <span className="font-semibold" style={{ color: C.ink }}>Evolución del SOW · últimas 4 semanas al {fmtFecha(hasta)}</span>
             <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: delta >= 0 ? "#F0FDF4" : "#fef2f2", color: delta >= 0 ? "#16A34A" : "#DC2626" }}>{delta >= 0 ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />} {delta >= 0 ? "+" : ""}{delta} pts</span>
             <span className="t9" style={{ color: C.faint }}>{delta >= 0 ? "estamos ganando participación" : "estamos perdiendo participación"} en el rango</span>
           </div>
