@@ -8529,7 +8529,6 @@ function ReportePerformance({ usuario, inline, onClose }) {
   const semMin = semanas[0] || "", semMax = semanas[nSem - 1] || "";
   const [fDesde, setFDesde] = useState(semMin); // rango por CALENDARIO (fecha ISO)
   const [fHasta, setFHasta] = useState(semMax);
-  const [vista, setVista] = useState("resumen"); // "resumen" | "semanal"
   // Nivel inicial del drill según el rol logueado: un ejecutivo parte directo en SUS empresas; un jefe de
   // grupo con una sola jefatura, en sus ejecutivos; gerencia/admin, en el nivel Gerencia (todas las jefaturas).
   const [path, setPath] = useState(() => {
@@ -8613,11 +8612,6 @@ function ReportePerformance({ usuario, inline, onClose }) {
         <div className="flex flex-wrap items-center gap-2">
           <span className="t10" style={{ color: C.faint }}>Rango</span>
           <DateInput value={fDesde} onChange={setFDesde} /><span className="t10" style={{ color: C.faint }}>a</span><DateInput value={fHasta} onChange={setFHasta} />
-          <div className="ml-1 flex items-center gap-1 rounded-full p-0.5" style={{ border: `1px solid ${C.line}` }}>
-            {[["resumen", "Resumen"], ["semanal", "SOW semanal"]].map(([k, l]) => (
-              <button key={k} onClick={() => setVista(k)} className="rounded-full px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: vista === k ? C.indigo : "transparent", color: vista === k ? "#fff" : C.sub }}>{l}</button>
-            ))}
-          </div>
         </div>
       </div>
       {/* Breadcrumb del drill */}
@@ -8650,9 +8644,8 @@ function ReportePerformance({ usuario, inline, onClose }) {
           </div>
         </div>
       )}
-      {vista === "resumen" ? (
-        /* Tabla drill-down */
-        <div className="mt-3 overflow-x-auto">
+      {/* Tabla drill-down (Resumen) */}
+      <div className="mt-3 overflow-x-auto">
           <table className="w-full border-collapse t11" style={{ minWidth: 880 }}>
             <thead><tr>{[nivel, "Clientes", "Operac.", "Cedido", "Ganado", "SOW", "Perd. bancos", "Perd. otros"].map((h, i) => (
               <th key={h} className={`px-2 py-2 font-semibold ${i === 0 ? "text-left" : "text-right"}`} style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>))}</tr></thead>
@@ -8676,13 +8669,12 @@ function ReportePerformance({ usuario, inline, onClose }) {
             </tbody>
           </table>
         </div>
-      ) : (
-        /* Variante SOW por semana */
-        <div className="mt-3">
+      {/* Variante SOW por semana · SIEMPRE visible bajo el resumen (una sola vista) */}
+      <div className="mt-5 border-t pt-4" style={{ borderColor: C.line }}>
           <div className="flex items-center gap-2 t11">
             <span className="font-semibold" style={{ color: C.ink }}>Evolución del SOW · últimas 4 semanas al {fmtFecha(hasta)}</span>
             <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: delta >= 0 ? "#F0FDF4" : "#fef2f2", color: delta >= 0 ? "#16A34A" : "#DC2626" }}>{delta >= 0 ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />} {delta >= 0 ? "+" : ""}{delta} pts</span>
-            <span className="t9" style={{ color: C.faint }}>{delta >= 0 ? "estamos ganando participación" : "estamos perdiendo participación"} en el rango</span>
+            <span className="t9" style={{ color: C.faint }}>{delta >= 0 ? "estamos ganando participación" : "estamos perdiendo participación"} en las últimas 4 semanas</span>
           </div>
           <div className="mt-2 overflow-x-auto">
             <table className="w-full border-collapse t10" style={{ minWidth: 760 }}>
@@ -8704,8 +8696,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
             </table>
           </div>
           <div className="mt-1.5 t9" style={{ color: C.faint }}>Ganado = Security · Perd. bancos = BCI Factoring + Banchile (Banco de Chile) · Perd. otros = resto de factorings. SOW = Ganado / Cedido.</div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
