@@ -8599,10 +8599,10 @@ function RangoFechas({ desde, hasta, min, max, onChange, presets }) {
         <div onClick={() => { setAbierto(false); setPend(null); }} style={{ position: "fixed", inset: 0, zIndex: 55 }} />
         <div className="rounded-xl p-3" style={{ position: "absolute", right: 0, top: "112%", zIndex: 56, backgroundColor: "#fff", border: `1px solid ${C.line}`, boxShadow: "0 12px 32px rgba(20,25,45,.18)" }}>
           {presets && <div className="mb-2 flex flex-wrap gap-1">{presets.map((p) => <button key={p.k} onClick={() => { onChange(p.desde, p.hasta); setPend(null); setAbierto(false); }} className="rounded-full px-2 py-0.5 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>{p.l}</button>)}</div>}
-          <div className="relative flex items-center justify-center">
-            <button onClick={() => setMesBase((b) => addMes(b, -1))} className="absolute left-0" style={{ color: C.indigo }}><ChevronLeft size={18} /></button>
-            <div className="flex gap-5"><Mes y={mesBase.y} m={mesBase.m} /><Mes {...addMes(mesBase, 1)} /></div>
-            <button onClick={() => setMesBase((b) => addMes(b, 1))} className="absolute right-0" style={{ color: C.indigo }}><ChevronRight size={18} /></button>
+          <div className="relative flex items-center">
+            <button onClick={() => setMesBase((b) => addMes(b, -1))} className="absolute left-0 z-10 rounded-md p-1 hover:bg-stone-100" title="Mes anterior" style={{ color: C.indigo, top: "50%", transform: "translateY(-50%)" }}><ChevronLeft size={18} /></button>
+            <div className="mx-auto flex gap-5" style={{ padding: "0 28px" }}><Mes y={mesBase.y} m={mesBase.m} /><Mes {...addMes(mesBase, 1)} /></div>
+            <button onClick={() => setMesBase((b) => addMes(b, 1))} className="absolute right-0 z-10 rounded-md p-1 hover:bg-stone-100" title="Mes siguiente" style={{ color: C.indigo, top: "50%", transform: "translateY(-50%)" }}><ChevronRight size={18} /></button>
           </div>
           <div className="mt-2 t9" style={{ color: C.faint }}>{pend ? "Selecciona la fecha de término" : `Rango: ${fmt(desde)} → ${fmt(hasta)}`}</div>
         </div>
