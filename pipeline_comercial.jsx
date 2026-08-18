@@ -8526,27 +8526,30 @@ const esFactoringBanco = (name) => { const n = (name || "").toLowerCase(); retur
 const wkLbl = (s) => { const p = (s || "").split("-"); return p.length === 3 ? `${p[2]}/${p[1]}` : s; };
 // Tooltip enriquecido (tarjeta flotante) con el desglose de un monto: título + filas nombre/monto alineadas.
 // Posición fija junto al disparador (no se recorta con el overflow de la tabla).
-function TipDesglose({ titulo, items, color = "#DC2626", children }) {
+function TipDesglose({ titulo, items, nota, color = "#DC2626", children }) {
   const [rect, setRect] = useState(null);
   const ref = useRef(null);
-  const W = 260;
+  const W = 270;
   const vw = (typeof window !== "undefined" && window.innerWidth) || 1200;
   const left = rect ? Math.max(8, Math.min(rect.right + 8, vw - W - 8)) : 0;
   const top = rect ? Math.max(8, rect.top - 4) : 0;
   return (
-    <span ref={ref} onMouseEnter={() => { const r = ref.current && ref.current.getBoundingClientRect(); if (r) setRect(r); }} onMouseLeave={() => setRect(null)} className="inline-flex items-center justify-end gap-1" style={{ cursor: "help" }}>
+    <span ref={ref} onMouseEnter={() => { const r = ref.current && ref.current.getBoundingClientRect(); if (r) setRect(r); }} onMouseLeave={() => setRect(null)} className="inline-flex items-center gap-1" style={{ cursor: "help" }}>
       {children}
       {rect && (
-        <div style={{ position: "fixed", left, top, width: W, zIndex: 60, backgroundColor: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, boxShadow: "0 8px 24px rgba(20,25,45,.14)", padding: 10 }}>
+        <div style={{ position: "fixed", left, top, width: W, zIndex: 60, backgroundColor: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, boxShadow: "0 8px 24px rgba(20,25,45,.14)", padding: 10, textAlign: "left" }}>
           <div className="t9 font-bold uppercase tracking-wide" style={{ color }}>{titulo}</div>
-          <div className="mt-1" style={{ maxHeight: 220, overflowY: "auto" }}>
-            {items && items.length ? items.map((it, i) => (
-              <div key={i} className="flex items-center justify-between gap-4 py-0.5 t10" style={{ borderTop: i ? `1px solid ${C.line}` : "none" }}>
-                <span className="truncate" style={{ color: C.sub }}>{it.name}</span>
-                <span className="shrink-0 font-semibold" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>{it.val}</span>
-              </div>
-            )) : <div className="t9" style={{ color: C.faint }}>Sin detalle en el rango.</div>}
-          </div>
+          {nota && <div className="mt-1 t9" style={{ color: C.sub, lineHeight: 1.45 }}>{nota}</div>}
+          {items && (
+            <div className={nota ? "mt-1.5" : "mt-1"} style={{ maxHeight: 220, overflowY: "auto" }}>
+              {items.length ? items.map((it, i) => (
+                <div key={i} className="flex items-start justify-between gap-4 py-0.5 t10" style={{ borderTop: i ? `1px solid ${C.line}` : "none" }}>
+                  <span className="min-w-0"><span className="block truncate" style={{ color: C.sub }}>{it.name}</span>{it.sub && <span className="block truncate t9" style={{ color: C.faint }}>{it.sub}</span>}</span>
+                  <span className="shrink-0 font-semibold" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>{it.val}</span>
+                </div>
+              )) : <div className="t9" style={{ color: C.faint }}>Sin detalle en el rango.</div>}
+            </div>
+          )}
         </div>
       )}
     </span>
@@ -8577,13 +8580,16 @@ function ReportePerformance({ usuario, inline, onClose }) {
     const m = {};
     (window.AECSYNC || []).forEach((a) => {
       if (!a || !a.RUTEmisor) return;
-      const g = m[a.RUTEmisor] || (m[a.RUTEmisor] = { t: 0, b: 0, deudorPrime: {}, factTarget: {} });
+      const g = m[a.RUTEmisor] || (m[a.RUTEmisor] = { t: 0, b: 0, deudorPrime: {}, deudorFact: {}, factTarget: {} });
       const mm = (a.MontoCesion || 0) / 1e6; g.t += mm;
       const td = tipoDeudor(a.RUTReceptor, a.RazonSocialReceptor); const esPrime = td === "Lista Blanca" || td === "Deudor Autorizado";
       if (esPrime) g.b += mm;
       const esNuestro = a.RUTFactoring === BICE_RUT;
       if (!esNuestro) { // cesión perdida ante la competencia
-        if (esPrime) { const d = a.RazonSocialReceptor || "Deudor"; g.deudorPrime[d] = (g.deudorPrime[d] || 0) + mm; }
+        if (esPrime) {
+          const d = a.RazonSocialReceptor || "Deudor"; g.deudorPrime[d] = (g.deudorPrime[d] || 0) + mm;
+          const fn = a.RazonSocialFactoring || "Factoring"; const df = g.deudorFact[d] || (g.deudorFact[d] = {}); df[fn] = (df[fn] || 0) + mm;
+        }
         if (esFactoringBanco(a.RazonSocialFactoring)) { const f = a.RazonSocialFactoring || "Factoring"; g.factTarget[f] = (g.factTarget[f] || 0) + mm; }
       }
     });
@@ -8606,10 +8612,10 @@ function ReportePerformance({ usuario, inline, onClose }) {
       // Facturación EMITIDA del cliente (mayor que lo cedido a factoring): tasa de cesión determinista por RUT.
       const tasaCesion = 0.5 + (Math.abs(hashStr(s.RUTCliente + "fac")) % 30) / 100; // 0.50–0.79 = cedido / emitido
       const facturado = total > 0 ? +(total / tasaCesion).toFixed(1) : 0;
-      const idx = aecIdx[s.RUTCliente] || { deudorPrime: {}, factTarget: {} };
+      const idx = aecIdx[s.RUTCliente] || { deudorPrime: {}, deudorFact: {}, factTarget: {} };
       const perdidoPrime = +(perdido * bpct).toFixed(1); // pérdida sobre deudores prime (buenos)
       return { rut: s.RUTCliente, cliente: s.RazonSocialCliente, execCod, jefatura: EXEC_JEFATURA[execCod], segmento: s.Segmento, prime: s.Segmento === "Top", tendencia: s.SOWTendencia,
-        emitido: total, ganado, perdido, perdBanco, perdOtros: perdido - perdBanco, perdidoPrime, ops, sowPct: total > 0 ? ganado / total * 100 : 0, buenasMM: total * bpct, facturado, facturadoBuenas: +(facturado * bpct).toFixed(1), activo: ops > 0 || total > 0, hs: hsFull, deudorPrime: idx.deudorPrime, factTarget: idx.factTarget };
+        emitido: total, ganado, perdido, perdBanco, perdOtros: perdido - perdBanco, perdidoPrime, ops, sowPct: total > 0 ? ganado / total * 100 : 0, buenasMM: total * bpct, facturado, facturadoBuenas: +(facturado * bpct).toFixed(1), activo: ops > 0 || total > 0, hs: hsFull, deudorPrime: idx.deudorPrime, deudorFact: idx.deudorFact, factTarget: idx.factTarget };
     }).filter(Boolean);
   }, [desde, hasta, buenShare, aecIdx]);
   const jefaturasScope = useMemo(() => [...new Set(clientes.map((c) => c.jefatura))].sort(), [clientes]);
@@ -8647,6 +8653,24 @@ function ReportePerformance({ usuario, inline, onClose }) {
     const suma = arr.reduce((s, e) => s + e[1], 0); const f = suma > 0 ? montoFila / suma : 0;
     const vis = tope ? arr.slice(0, tope) : arr;
     const items = vis.map((e) => ({ name: e[0], val: fmtMMc(e[1] * f) }));
+    if (tope && arr.length > tope) items.push({ name: `+${arr.length - tope} más`, val: "" });
+    return items;
+  };
+  // Igual que desgloseItems para deudores prime, pero agrega el factoring con que se perdió cada deudor (sub).
+  const desgloseDeudorPrime = (cs, montoFila, tope) => {
+    const m = {}, fac = {};
+    (cs || []).forEach((c) => {
+      const d = c.deudorPrime || {}; for (const k in d) m[k] = (m[k] || 0) + d[k];
+      const df = c.deudorFact || {}; for (const k in df) { const t = fac[k] || (fac[k] = {}); for (const fn in df[k]) t[fn] = (t[fn] || 0) + df[k][fn]; }
+    });
+    const arr = Object.entries(m).sort((a, b) => b[1] - a[1]);
+    const suma = arr.reduce((s, e) => s + e[1], 0); const f = suma > 0 ? montoFila / suma : 0;
+    const vis = tope ? arr.slice(0, tope) : arr;
+    const items = vis.map((e) => {
+      const facts = Object.entries(fac[e[0]] || {}).sort((a, b) => b[1] - a[1]);
+      const sub = facts.length ? (facts[0][0] + (facts.length > 1 ? ` +${facts.length - 1}` : "")) : "—";
+      return { name: e[0], sub, val: fmtMMc(e[1] * f) };
+    });
     if (tope && arr.length > tope) items.push({ name: `+${arr.length - tope} más`, val: "" });
     return items;
   };
@@ -8702,7 +8726,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
                 <th colSpan={6} />
                 <th colSpan={3} className="px-2 pb-1 text-center t10 font-bold uppercase tracking-wide" style={{ color: "#DC2626", borderBottom: `1px solid ${C.line}`, borderLeft: `1px solid ${C.line}` }}>Perdido</th>
               </tr>
-              <tr>{[nivel, "Operac.", "Cedido", "Ganado", "SOW", "Tend. 4 sem", "Total", "Deudores Prime", "Factoring Target"].map((h, i) => (
+              <tr>{[nivel, "Operac.", "Total Cedido", "Ganado", "SOW", "Tend. 4 sem", "Total", "Deudores Prime", "Factoring Target"].map((h, i) => (
                 <th key={h} className={`px-2 py-2 font-semibold ${i === 0 ? "text-left" : "text-right"}`} style={{ color: C.sub, borderBottom: `1px solid ${C.line}`, borderLeft: i === 6 ? `1px solid ${C.line}` : undefined }}>{h}</th>))}</tr>
             </thead>
             <tbody>
@@ -8712,7 +8736,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="inline-flex items-center gap-1.5 font-medium" style={{ color: f.drill ? C.indigo : C.ink }}>{f.drill && <ChevronRight size={12} />}{f.label}</span>
                       {path.length === 2 && f.empresa && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: f.empresa.activo ? "#F0FDF4" : "#F3F4F6", color: f.empresa.activo ? "#16A34A" : C.faint }}>{f.empresa.activo ? "Activo" : "Inactivo"}</span>}
-                      {path.length === 2 && f.perdBanco > 0 && <span title={`Cede a factoring target (BCI · Banco de Chile · Itaú) — negocio recuperable ${fmtMMc(f.perdBanco)}. Si ellos financiaron, Security también debía.`} className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#DC2626", border: "1px solid #fecaca", cursor: "help" }}><AlertTriangle size={9} /> Riesgo comercial</span>}
+                      {path.length === 2 && f.perdBanco > 0 && <span onClick={(e) => e.stopPropagation()}><TipDesglose titulo="Alerta comercial" color="#DC2626" nota={`Esta empresa cede facturas al factoring target (BCI · Banco de Chile · Itaú), el estándar de riesgo de Security: si ellos financiaron, nosotros también debíamos. Negocio recuperable ${fmtMMc(f.perdBanco)}. Detalle por factoring:`} items={desgloseItems(f.cs, "factTarget", f.perdBanco)}><span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#DC2626", border: "1px solid #fecaca" }}><AlertTriangle size={9} /> Alerta comercial</span></TipDesglose></span>}
                     </div>
                     {f.drill && <div className="t9" style={{ color: C.faint }}>{f.emitieron}/{f.n} clientes activos</div>}
                   </td>
@@ -8739,7 +8763,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
                   })()}</td>
                   <td className="px-2 py-2 text-right font-semibold" style={{ color: C.ink, borderLeft: `1px solid ${C.line}` }}>{fmtMMc(f.perdido)}</td>
                   <td className="px-2 py-2 text-right" style={{ color: C.sub }}>
-                    <TipDesglose titulo="Perdido por deudor prime" color="#0891b2" items={desgloseItems(f.cs, "deudorPrime", f.perdidoPrime, 12)}>{fmtMMc(f.perdidoPrime)}<span className="t8" style={{ color: C.faint }}>ⓘ</span></TipDesglose>
+                    <TipDesglose titulo="Perdido por deudor prime" nota="Deudor · factoring con que se perdió" color="#0891b2" items={desgloseDeudorPrime(f.cs, f.perdidoPrime, 12)}>{fmtMMc(f.perdidoPrime)}<span className="t8" style={{ color: C.faint }}>ⓘ</span></TipDesglose>
                   </td>
                   <td className="px-2 py-2 text-right font-medium" style={{ color: f.perdBanco > 0 ? "#DC2626" : C.faint }}>
                     <TipDesglose titulo="Perdido por factoring target" color="#DC2626" items={desgloseItems(f.cs, "factTarget", f.perdBanco)}>{fmtMMc(f.perdBanco)}<span className="t8" style={{ color: f.perdBanco > 0 ? "#DC2626" : C.faint }}>ⓘ</span></TipDesglose>
