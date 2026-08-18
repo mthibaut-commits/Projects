@@ -8520,8 +8520,9 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
 // cuánto ante otros, con % de cartera prime. Variante SEMANAL para ver si subimos o bajamos participación.
 // Datos reales: window.SHARE_OF_WALLET (SOW semanal por cliente) + window.AECSYNC (cesiones por factoring).
 // ============================================================
-const BANCOS_REF = ["BCI Factoring", "Banchile Factoring"]; // Banchile = Banco de Chile
-const esFactoringBanco = (name) => { const n = (name || "").toLowerCase(); return n.includes("bci") || n.includes("banchile") || n.includes("banco de chile"); };
+// "Factoring Target" (Prime): los factorings de referencia de riesgo — si ellos compran, Security también debía.
+const BANCOS_REF = ["BCI Factoring", "Banchile Factoring", "Banco Itaú"]; // Banchile = Banco de Chile
+const esFactoringBanco = (name) => { const n = (name || "").toLowerCase(); return n.includes("bci") || n.includes("banchile") || n.includes("banco de chile") || n.includes("ita"); };
 const wkLbl = (s) => { const p = (s || "").split("-"); return p.length === 3 ? `${p[2]}/${p[1]}` : s; };
 function ReportePerformance({ usuario, inline, onClose }) {
   const semanas = useMemo(() => { const set = new Set(); (window.SHARE_OF_WALLET || []).forEach((s) => (s.HistoricoSemanal || []).forEach((w) => set.add(w.Semana))); return [...set].sort(); }, []);
@@ -8541,12 +8542,26 @@ function ReportePerformance({ usuario, inline, onClose }) {
   const hasta = (fDesde <= fHasta ? fHasta : fDesde) || semMax;
   // Alcance por rol: ejecutivo → su cartera; jefe de grupo → sus ejecutivos; gerencia/admin → todo.
   const execScope = EXECS[usuario] ? [usuario] : (JEFE_A_EXECS[usuario] || null);
-  // % de buenos deudores (Lista Blanca / Autorizado) sobre lo cedido, por cliente (real, desde AECSync).
-  const buenShare = useMemo(() => {
+  // Índice AECSync por cliente: (a) % de buenos deudores sobre lo cedido; (b) pérdida (cesiones a la
+  // competencia) sobre deudores PRIME (Lista Blanca / Autorizado) desglosada por deudor; (c) cesiones a los
+  // factorings TARGET (BCI / Banco de Chile / Itaú) desglosadas por factoring. Deudores prime = buenos deudores.
+  const aecIdx = useMemo(() => {
     const m = {};
-    (window.AECSYNC || []).forEach((a) => { if (!a || !a.RUTEmisor) return; const g = m[a.RUTEmisor] || (m[a.RUTEmisor] = { t: 0, b: 0 }); const mm = (a.MontoCesion || 0) / 1e6; g.t += mm; const td = tipoDeudor(a.RUTReceptor, a.RazonSocialReceptor); if (td === "Lista Blanca" || td === "Deudor Autorizado") g.b += mm; });
-    const out = {}; for (const k in m) out[k] = m[k].t > 0 ? m[k].b / m[k].t : 0; return out;
+    (window.AECSYNC || []).forEach((a) => {
+      if (!a || !a.RUTEmisor) return;
+      const g = m[a.RUTEmisor] || (m[a.RUTEmisor] = { t: 0, b: 0, deudorPrime: {}, factTarget: {} });
+      const mm = (a.MontoCesion || 0) / 1e6; g.t += mm;
+      const td = tipoDeudor(a.RUTReceptor, a.RazonSocialReceptor); const esPrime = td === "Lista Blanca" || td === "Deudor Autorizado";
+      if (esPrime) g.b += mm;
+      const esNuestro = a.RUTFactoring === BICE_RUT;
+      if (!esNuestro) { // cesión perdida ante la competencia
+        if (esPrime) { const d = a.RazonSocialReceptor || "Deudor"; g.deudorPrime[d] = (g.deudorPrime[d] || 0) + mm; }
+        if (esFactoringBanco(a.RazonSocialFactoring)) { const f = a.RazonSocialFactoring || "Factoring"; g.factTarget[f] = (g.factTarget[f] || 0) + mm; }
+      }
+    });
+    return m;
   }, []);
+  const buenShare = useMemo(() => { const out = {}; for (const k in aecIdx) out[k] = aecIdx[k].t > 0 ? aecIdx[k].b / aecIdx[k].t : 0; return out; }, [aecIdx]);
   // Registro por cliente, agregado en el rango de semanas seleccionado.
   const clientes = useMemo(() => {
     return (window.SHARE_OF_WALLET || []).map((s) => {
@@ -8563,15 +8578,17 @@ function ReportePerformance({ usuario, inline, onClose }) {
       // Facturación EMITIDA del cliente (mayor que lo cedido a factoring): tasa de cesión determinista por RUT.
       const tasaCesion = 0.5 + (Math.abs(hashStr(s.RUTCliente + "fac")) % 30) / 100; // 0.50–0.79 = cedido / emitido
       const facturado = total > 0 ? +(total / tasaCesion).toFixed(1) : 0;
+      const idx = aecIdx[s.RUTCliente] || { deudorPrime: {}, factTarget: {} };
+      const perdidoPrime = +(perdido * bpct).toFixed(1); // pérdida sobre deudores prime (buenos)
       return { rut: s.RUTCliente, cliente: s.RazonSocialCliente, execCod, jefatura: EXEC_JEFATURA[execCod], segmento: s.Segmento, prime: s.Segmento === "Top", tendencia: s.SOWTendencia,
-        emitido: total, ganado, perdido, perdBanco, perdOtros: perdido - perdBanco, ops, sowPct: total > 0 ? ganado / total * 100 : 0, buenasMM: total * bpct, facturado, facturadoBuenas: +(facturado * bpct).toFixed(1), activo: ops > 0 || total > 0, hs: hsFull };
+        emitido: total, ganado, perdido, perdBanco, perdOtros: perdido - perdBanco, perdidoPrime, ops, sowPct: total > 0 ? ganado / total * 100 : 0, buenasMM: total * bpct, facturado, facturadoBuenas: +(facturado * bpct).toFixed(1), activo: ops > 0 || total > 0, hs: hsFull, deudorPrime: idx.deudorPrime, factTarget: idx.factTarget };
     }).filter(Boolean);
-  }, [desde, hasta, buenShare]);
+  }, [desde, hasta, buenShare, aecIdx]);
   const jefaturasScope = useMemo(() => [...new Set(clientes.map((c) => c.jefatura))].sort(), [clientes]);
   const execsDe = (jef) => Object.keys(EXECS).filter((e) => EXEC_JEFATURA[e] === jef && (!execScope || execScope.includes(e)));
   // Agrega métricas de un conjunto de clientes.
-  const agg = (cs) => { const r = { n: cs.length, emitieron: 0, ops: 0, emitido: 0, ganado: 0, perdBanco: 0, perdOtros: 0, buenasMM: 0, facturado: 0, facturadoBuenas: 0, prime: 0 };
-    cs.forEach((c) => { if (c.activo) r.emitieron++; r.ops += c.ops; r.emitido += c.emitido; r.ganado += c.ganado; r.perdBanco += c.perdBanco; r.perdOtros += c.perdOtros; r.buenasMM += c.buenasMM; r.facturado += c.facturado; r.facturadoBuenas += c.facturadoBuenas; if (c.prime) r.prime++; });
+  const agg = (cs) => { const r = { n: cs.length, emitieron: 0, ops: 0, emitido: 0, ganado: 0, perdBanco: 0, perdOtros: 0, perdidoPrime: 0, buenasMM: 0, facturado: 0, facturadoBuenas: 0, prime: 0 };
+    cs.forEach((c) => { if (c.activo) r.emitieron++; r.ops += c.ops; r.emitido += c.emitido; r.ganado += c.ganado; r.perdBanco += c.perdBanco; r.perdOtros += c.perdOtros; r.perdidoPrime += c.perdidoPrime || 0; r.buenasMM += c.buenasMM; r.facturado += c.facturado; r.facturadoBuenas += c.facturadoBuenas; if (c.prime) r.prime++; });
     r.perdido = r.perdBanco + r.perdOtros; r.sowPct = r.emitido > 0 ? r.ganado / r.emitido * 100 : 0; r.primePct = r.n > 0 ? Math.round(r.prime / r.n * 100) : 0; r.buenasPct = r.emitido > 0 ? Math.round(r.buenasMM / r.emitido * 100) : 0; r.facturadoBuenasPct = r.facturado > 0 ? Math.round(r.facturadoBuenas / r.facturado * 100) : 0; return r; };
   // Alcance actual según el drill.
   const scope = clientes.filter((c) => (path.length < 1 || c.jefatura === path[0]) && (path.length < 2 || c.execCod === path[1]));
@@ -8582,7 +8599,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
     ? jefaturasScope.map((j) => { const cs = clientes.filter((c) => c.jefatura === j); return { key: j, label: j, drill: true, cs, ...agg(cs) }; })
     : path.length === 1
       ? execsDe(path[0]).map((e) => { const cs = clientes.filter((c) => c.execCod === e); return { key: e, label: EXECS[e], drill: true, cs, ...agg(cs) }; })
-      : scope.slice().sort((a, b) => b.emitido - a.emitido).map((c) => ({ key: c.rut, label: c.cliente, drill: false, cs: [c], n: 1, emitieron: c.activo ? 1 : 0, ops: c.ops, emitido: c.emitido, ganado: c.ganado, perdBanco: c.perdBanco, perdOtros: c.perdOtros, perdido: c.perdido, sowPct: c.sowPct, prime: c.prime ? 1 : 0, primePct: c.prime ? 100 : 0, buenasMM: c.buenasMM, buenasPct: c.emitido > 0 ? Math.round(c.buenasMM / c.emitido * 100) : 0, empresa: c }));
+      : scope.slice().sort((a, b) => b.emitido - a.emitido).map((c) => ({ key: c.rut, label: c.cliente, drill: false, cs: [c], n: 1, emitieron: c.activo ? 1 : 0, ops: c.ops, emitido: c.emitido, ganado: c.ganado, perdBanco: c.perdBanco, perdOtros: c.perdOtros, perdidoPrime: c.perdidoPrime, perdido: c.perdido, sowPct: c.sowPct, prime: c.prime ? 1 : 0, primePct: c.prime ? 100 : 0, buenasMM: c.buenasMM, buenasPct: c.emitido > 0 ? Math.round(c.buenasMM / c.emitido * 100) : 0, empresa: c }));
   const filasOrden = filas.slice().sort((a, b) => b.emitido - a.emitido);
   const bajar = (f) => { if (!f.drill) return; setPath((p) => [...p, f.key]); };
   // Serie SEMANAL del alcance: SIEMPRE las últimas 4 semanas hasta la fecha de fin del rango (sin importar
@@ -8593,6 +8610,17 @@ function ReportePerformance({ usuario, inline, onClose }) {
     const pts = sem4.map((sm) => { let t = 0, g = 0; (cs || []).forEach((c) => { const w = c.hs.find((x) => x.Semana === sm); if (w) { t += w.MontoTotalMM || 0; g += w.MontoBICEMM || 0; } }); return t > 0 ? g / t * 100 : 0; });
     const ini = pts[0] || 0, fin = pts[pts.length - 1] || 0;
     return { pts, delta: +(fin - ini).toFixed(1) };
+  };
+  // Desglose (para tooltips): suma un mapa {clave: MM} sobre los clientes de la fila y lo escala al monto
+  // de la fila (para que el detalle cuadre con el valor mostrado); devuelve líneas "clave: $X MM".
+  const desglose = (cs, campo, montoFila, tope) => {
+    const m = {}; (cs || []).forEach((c) => { const d = c[campo] || {}; for (const k in d) m[k] = (m[k] || 0) + d[k]; });
+    const arr = Object.entries(m).sort((a, b) => b[1] - a[1]);
+    const suma = arr.reduce((s, e) => s + e[1], 0); const f = suma > 0 ? montoFila / suma : 0;
+    const vis = tope ? arr.slice(0, tope) : arr;
+    const lineas = vis.map((e) => `${e[0]}: ${fmtMMc(e[1] * f)}`);
+    if (tope && arr.length > tope) lineas.push(`+${arr.length - tope} más`);
+    return lineas.length ? lineas.join("\n") : "Sin detalle en el rango.";
   };
   const serie = useMemo(() => sem4.map((sm) => {
     let total = 0, ganado = 0, banco = 0, buenas = 0;
@@ -8636,13 +8664,19 @@ function ReportePerformance({ usuario, inline, onClose }) {
         <KpiStat Icon={BarChart2} col="#2563EB" v={fmtMMc(kpi.facturado)} l="Facturas emitidas" s={`${fmtMMc(kpi.facturadoBuenas)} de buenos deudores`} />
         <KpiStat Icon={BarChart2} col="#7C3AED" v={fmtMMc(kpi.emitido)} l="Cedido a factoring" s={`${fmtMMc(kpi.buenasMM)} de buenos deudores`} />
         <KpiStat Icon={Check} col="#16A34A" v={fmtMMc(kpi.ganado)} l="Ganado (Security)" s={`SOW ${Math.round(kpi.sowPct)}%`} />
-        <KpiStat Icon={ArrowDownRight} col="#DC2626" v={fmtMMc(kpi.perdido)} l="Perdido" s={`${fmtMMc(kpi.perdBanco)} a BCI / Banco de Chile · ${fmtMMc(kpi.perdOtros)} otros`} />
+        <KpiStat Icon={ArrowDownRight} col="#DC2626" v={fmtMMc(kpi.perdido)} l="Perdido" s={`${fmtMMc(kpi.perdBanco)} a factoring target (BCI/Chile/Itaú) · ${fmtMMc(kpi.perdOtros)} otros`} />
       </div>
       {/* Tabla drill-down (Resumen) */}
       <div className="mt-3 overflow-x-auto">
           <table className="w-full border-collapse t11" style={{ minWidth: 880 }}>
-            <thead><tr>{[nivel, "Operac.", "Cedido", "Ganado", "Perdidos", "SOW", "Tend. 4 sem", "Perd. bancos", "Perd. otros"].map((h, i) => (
-              <th key={h} className={`px-2 py-2 font-semibold ${i === 0 ? "text-left" : "text-right"}`} style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>))}</tr></thead>
+            <thead>
+              <tr>
+                <th colSpan={7} />
+                <th colSpan={2} className="px-2 pb-1 text-center t10 font-bold uppercase tracking-wide" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>Detalle Perdido</th>
+              </tr>
+              <tr>{[nivel, "Operac.", "Cedido", "Ganado", "Perdidos", "SOW", "Tend. 4 sem", "Deudores Prime", "Factoring Target"].map((h, i) => (
+                <th key={h} className={`px-2 py-2 font-semibold ${i === 0 ? "text-left" : "text-right"}`} style={{ color: C.sub, borderBottom: `1px solid ${C.line}`, borderLeft: i === 7 ? `1px solid ${C.line}` : undefined }}>{h}</th>))}</tr>
+            </thead>
             <tbody>
               {filasOrden.map((f, i) => (
                 <tr key={f.key} onClick={() => bajar(f)} className={f.drill ? "cursor-pointer" : ""} style={{ borderBottom: i === filasOrden.length - 1 ? "none" : `1px solid ${C.line}` }}>
@@ -8650,7 +8684,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="inline-flex items-center gap-1.5 font-medium" style={{ color: f.drill ? C.indigo : C.ink }}>{f.drill && <ChevronRight size={12} />}{f.label}</span>
                       {path.length === 2 && f.empresa && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: f.empresa.activo ? "#F0FDF4" : "#F3F4F6", color: f.empresa.activo ? "#16A34A" : C.faint }}>{f.empresa.activo ? "Activo" : "Inactivo"}</span>}
-                      {path.length === 2 && f.perdBanco > 0 && <span title={`Cede a BCI / Banco de Chile — negocio recuperable ${fmtMMc(f.perdBanco)}. Si ellos financiaron, Security también debía.`} className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#DC2626", border: "1px solid #fecaca", cursor: "help" }}><AlertTriangle size={9} /> Riesgo comercial</span>}
+                      {path.length === 2 && f.perdBanco > 0 && <span title={`Cede a factoring target (BCI · Banco de Chile · Itaú) — negocio recuperable ${fmtMMc(f.perdBanco)}. Si ellos financiaron, Security también debía.`} className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#DC2626", border: "1px solid #fecaca", cursor: "help" }}><AlertTriangle size={9} /> Riesgo comercial</span>}
                     </div>
                     {f.drill && <div className="t9" style={{ color: C.faint }}>{f.emitieron}/{f.n} clientes activos</div>}
                   </td>
@@ -8676,8 +8710,12 @@ function ReportePerformance({ usuario, inline, onClose }) {
                       </div>
                     );
                   })()}</td>
-                  <td className="px-2 py-2 text-right font-medium" style={{ color: f.perdBanco > 0 ? "#DC2626" : C.faint }}>{fmtMMc(f.perdBanco)}</td>
-                  <td className="px-2 py-2 text-right" style={{ color: C.sub }}>{fmtMMc(f.perdOtros)}</td>
+                  <td className="px-2 py-2 text-right" style={{ color: C.sub, borderLeft: `1px solid ${C.line}` }}>
+                    <span className="inline-flex items-center justify-end gap-1" title={"Perdido por deudor prime (buenos deudores):\n" + desglose(f.cs, "deudorPrime", f.perdidoPrime, 8)} style={{ cursor: "help" }}>{fmtMMc(f.perdidoPrime)}<span className="t8" style={{ color: C.faint }}>ⓘ</span></span>
+                  </td>
+                  <td className="px-2 py-2 text-right font-medium" style={{ color: f.perdBanco > 0 ? "#DC2626" : C.faint }}>
+                    <span className="inline-flex items-center justify-end gap-1" title={"Perdido por factoring target (BCI · Banco de Chile · Itaú):\n" + desglose(f.cs, "factTarget", f.perdBanco)} style={{ cursor: "help" }}>{fmtMMc(f.perdBanco)}<span className="t8" style={{ color: f.perdBanco > 0 ? "#DC2626" : C.faint }}>ⓘ</span></span>
+                  </td>
                 </tr>
               ))}
               {filasOrden.length === 0 && <tr><td colSpan={9} className="px-2 py-6 text-center t10" style={{ color: C.faint }}>Sin datos en el alcance/rango.</td></tr>}
@@ -8710,7 +8748,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
               </tbody>
             </table>
           </div>
-          <div className="mt-1.5 t9" style={{ color: C.faint }}>Ganado = Security · Perd. bancos = BCI Factoring + Banchile (Banco de Chile) · Perd. otros = resto de factorings. SOW = Ganado / Cedido.</div>
+          <div className="mt-1.5 t9" style={{ color: C.faint }}>Ganado = Security · Perd. bancos = factoring target (BCI + Banchile/Banco de Chile + Itaú) · Perd. otros = resto de factorings. SOW = Ganado / Cedido.</div>
       </div>
     </div>
   );
