@@ -8559,8 +8559,23 @@ function ReportePerformance({ usuario, inline, onClose }) {
   const semanas = useMemo(() => { const set = new Set(); (window.SHARE_OF_WALLET || []).forEach((s) => (s.HistoricoSemanal || []).forEach((w) => set.add(w.Semana))); return [...set].sort(); }, []);
   const nSem = semanas.length;
   const semMin = semanas[0] || "", semMax = semanas[nSem - 1] || "";
-  const [fDesde, setFDesde] = useState(semMin); // rango por CALENDARIO (fecha ISO)
-  const [fHasta, setFHasta] = useState(semMax);
+  // Presets de rango (un solo selector). "hoy" = última semana con datos (semMax). Por defecto: mes en curso.
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const [Ymax, Mmax] = (semMax || "2026-01-01").split("-").map(Number);
+  const mesIni = `${Ymax}-${pad2(Mmax)}-01`;
+  const dPrev = new Date(Ymax, Mmax - 1, 0); // último día del mes anterior (componentes locales, determinista)
+  const prevIni = `${dPrev.getFullYear()}-${pad2(dPrev.getMonth() + 1)}-01`;
+  const prevFin = `${dPrev.getFullYear()}-${pad2(dPrev.getMonth() + 1)}-${pad2(dPrev.getDate())}`;
+  const PRESETS_RANGO = [
+    { k: "mes", l: "Mes en curso", desde: mesIni, hasta: semMax },
+    { k: "mesAnt", l: "Mes anterior", desde: prevIni, hasta: prevFin },
+    { k: "s4", l: "Últimas 4 semanas", desde: (semanas.slice(-4)[0] || semMin), hasta: semMax },
+    { k: "s8", l: "Últimas 8 semanas", desde: (semanas.slice(-8)[0] || semMin), hasta: semMax },
+    { k: "todo", l: "Todo el histórico", desde: semMin, hasta: semMax },
+  ];
+  const [rangoK, setRangoK] = useState("mes");
+  const pr = PRESETS_RANGO.find((p) => p.k === rangoK) || PRESETS_RANGO[0];
+  const fDesde = pr.desde, fHasta = pr.hasta;
   // Nivel inicial del drill según el rol logueado: un ejecutivo parte directo en SUS empresas; un jefe de
   // grupo con una sola jefatura, en sus ejecutivos; gerencia/admin, en el nivel Gerencia (todas las jefaturas).
   const [path, setPath] = useState(() => {
@@ -8684,9 +8699,6 @@ function ReportePerformance({ usuario, inline, onClose }) {
   const delta = +(sowFin - sowIni).toFixed(1);
   const crumbs = [{ label: "Comercial", to: 0 }, ...(path.length >= 1 ? [{ label: path[0], to: 1 }] : []), ...(path.length >= 2 ? [{ label: EXECS[path[1]], to: 2 }] : [])];
   const fmtFecha = (s) => { const p = (s || "").split("-"); return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : s; };
-  const DateInput = ({ value, onChange }) => (
-    <input type="date" value={value} min={semMin} max={semMax} onChange={(e) => onChange(e.target.value || value)} className="rounded-lg px-2 py-1 t11 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }} />
-  );
   return (
     <div className={inline ? "" : "rounded-2xl bg-white p-5"} style={inline ? {} : { border: `1px solid ${C.line}` }}>
       {/* Encabezado + filtro de rango + toggle de vista */}
@@ -8697,7 +8709,9 @@ function ReportePerformance({ usuario, inline, onClose }) {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="t10" style={{ color: C.faint }}>Rango</span>
-          <DateInput value={fDesde} onChange={setFDesde} /><span className="t10" style={{ color: C.faint }}>a</span><DateInput value={fHasta} onChange={setFHasta} />
+          <select value={rangoK} onChange={(e) => setRangoK(e.target.value)} className="rounded-lg px-2 py-1.5 t11 outline-none cursor-pointer" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
+            {PRESETS_RANGO.map((p) => <option key={p.k} value={p.k}>{p.l} ({fmtFecha(p.desde)}–{fmtFecha(p.hasta)})</option>)}
+          </select>
         </div>
       </div>
       {/* Breadcrumb del drill */}
@@ -12229,7 +12243,7 @@ export default function PipelineComercial() {
   const [logueado, setLogueado] = useState(soloDetalle ? true : false); // gate de login (portada spec Auth); clic en avatar = cerrar sesión; en modo detalle ya viene autenticado
   const [cmdOpen, setCmdOpen] = useState(false); // command palette Ctrl+K (spec §38)
   // Reportes de Gestión: se abren INLINE en la vista (no como modal). Un solo estado con la clave activa.
-  const [reporteGestion, setReporteGestion] = useState("planEjec"); // reporte inline por defecto al abrir Gestión; null = secciones (Cliente/SOW/…)
+  const [reporteGestion, setReporteGestion] = useState("performance"); // reporte inline por defecto al abrir Gestión; null = secciones (Cliente/SOW/…)
   const [resumenInfo, setResumenInfo] = useState(null); // { dia, stats } para el reporte "Resumen diario" inline
   // Metas del plan mensual por cliente — estado elevado al root para compartirse entre la vista Tareas
   // (Plan Mensual/retención) y el reporte "Plan Mensual Ejecutivo" en Gestión.
