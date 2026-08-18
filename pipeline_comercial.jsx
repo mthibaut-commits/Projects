@@ -8489,11 +8489,11 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
       </div>
       {/* Secciones y reportes: TODOS pestañas underline al mismo nivel (spec §3) */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <RepTab id="performance" label="Performance comercial" Icon={BarChart2} />
         <RepTab id="planEjec" label="Plan Mensual Ejecutivo" Icon={Target} />
         <Tab id="cliente" label="Cliente" Icon={User} />
         <Tab id="sow" label="SOW" Icon={BarChart2} />
         <Tab id="sankey" label="Origen → Cierre" Icon={Filter} />
-        <RepTab id="performance" label="Performance comercial" Icon={BarChart2} />
         <RepTab id="benchEjec" label="Benchmark ejecutivo" Icon={Table2} />
         <RepTab id="benchDeudores" label="Benchmark deudores" Icon={Star} />
         <RepTab id="resumen" label="Funnel Comercial" Icon={Filter} />
@@ -8555,6 +8555,61 @@ function TipDesglose({ titulo, items, nota, color = "#DC2626", children }) {
     </span>
   );
 }
+// Selector de rango de fechas con calendario de DOS meses (estilo Desde/Hasta), atajos de preset y
+// selección start→end con resaltado del tramo. Acotado a [min, max]. Determinista (fechas por componentes).
+function RangoFechas({ desde, hasta, min, max, onChange, presets }) {
+  const [abierto, setAbierto] = useState(false);
+  const [pend, setPend] = useState(null);
+  const pad = (n) => String(n).padStart(2, "0");
+  const ds = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`;
+  const parse = (s) => { const p = (s || "").split("-").map(Number); return { y: p[0], m: p[1], d: p[2] }; };
+  const b0 = parse(desde);
+  const [mesBase, setMesBase] = useState({ y: b0.y || 2026, m: b0.m || 1 });
+  const MES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+  const DOW = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
+  const grid = (y, m) => { const lead = (new Date(y, m - 1, 1).getDay() + 6) % 7; const dd = new Date(y, m, 0).getDate(); const c = []; for (let i = 0; i < lead; i++) c.push(null); for (let d = 1; d <= dd; d++) c.push(d); return c; };
+  const addMes = (b, delta) => { const dt = new Date(b.y, b.m - 1 + delta, 1); return { y: dt.getFullYear(), m: dt.getMonth() + 1 }; };
+  const fmt = (s) => { const p = (s || "").split("-"); return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : s; };
+  const effStart = pend || desde, effEnd = pend ? null : hasta;
+  const clic = (y, m, d) => { const s = ds(y, m, d); if (s < min || s > max) return; if (!pend) setPend(s); else if (s >= pend) { onChange(pend, s); setPend(null); setAbierto(false); } else setPend(s); };
+  const abrir = () => { const p = parse(desde); setMesBase({ y: p.y || 2026, m: p.m || 1 }); setPend(null); setAbierto(true); };
+  const Campo = ({ lbl, val }) => (
+    <div className="flex-1 rounded-lg px-2.5 py-1" style={{ border: `1px solid ${abierto ? C.indigo : C.line}`, backgroundColor: "#fff" }}>
+      <div className="t8 uppercase tracking-wide" style={{ color: C.faint }}>{lbl}</div>
+      <div className="t11 font-medium" style={{ color: C.ink }}>{fmt(val)}</div>
+    </div>
+  );
+  const Mes = ({ y, m }) => (
+    <div style={{ width: 226 }}>
+      <div className="text-center t12 font-semibold" style={{ color: C.indigo }}>{MES[m - 1]} {y}</div>
+      <div className="mt-1.5 grid grid-cols-7 gap-0.5">
+        {DOW.map((d) => <div key={d} className="text-center t9 font-semibold" style={{ color: C.faint }}>{d}</div>)}
+        {grid(y, m).map((d, i) => { if (d == null) return <div key={i} />; const s = ds(y, m, d); const dis = s < min || s > max; const edge = s === effStart || s === effEnd; const inR = effEnd && s > effStart && s < effEnd; return (
+          <button key={i} disabled={dis} onClick={() => clic(y, m, d)} className="h-7 rounded-md t10 disabled:opacity-25" style={{ backgroundColor: edge ? C.indigo : inR ? C.lilac : "transparent", color: edge ? "#fff" : C.ink, fontWeight: edge ? 700 : 400, cursor: dis ? "default" : "pointer" }}>{d}</button>
+        ); })}
+      </div>
+    </div>
+  );
+  return (
+    <div style={{ position: "relative" }}>
+      <div onClick={abrir} className="flex items-center gap-2" style={{ cursor: "pointer", minWidth: 260 }}>
+        <Campo lbl="Desde" val={desde} /><span style={{ color: C.faint }}>–</span><Campo lbl="Hasta" val={hasta} />
+      </div>
+      {abierto && (<>
+        <div onClick={() => { setAbierto(false); setPend(null); }} style={{ position: "fixed", inset: 0, zIndex: 55 }} />
+        <div className="rounded-xl p-3" style={{ position: "absolute", right: 0, top: "112%", zIndex: 56, backgroundColor: "#fff", border: `1px solid ${C.line}`, boxShadow: "0 12px 32px rgba(20,25,45,.18)" }}>
+          {presets && <div className="mb-2 flex flex-wrap gap-1">{presets.map((p) => <button key={p.k} onClick={() => { onChange(p.desde, p.hasta); setPend(null); setAbierto(false); }} className="rounded-full px-2 py-0.5 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>{p.l}</button>)}</div>}
+          <div className="relative flex items-center justify-center">
+            <button onClick={() => setMesBase((b) => addMes(b, -1))} className="absolute left-0" style={{ color: C.indigo }}><ChevronLeft size={18} /></button>
+            <div className="flex gap-5"><Mes y={mesBase.y} m={mesBase.m} /><Mes {...addMes(mesBase, 1)} /></div>
+            <button onClick={() => setMesBase((b) => addMes(b, 1))} className="absolute right-0" style={{ color: C.indigo }}><ChevronRight size={18} /></button>
+          </div>
+          <div className="mt-2 t9" style={{ color: C.faint }}>{pend ? "Selecciona la fecha de término" : `Rango: ${fmt(desde)} → ${fmt(hasta)}`}</div>
+        </div>
+      </>)}
+    </div>
+  );
+}
 function ReportePerformance({ usuario, inline, onClose }) {
   const semanas = useMemo(() => { const set = new Set(); (window.SHARE_OF_WALLET || []).forEach((s) => (s.HistoricoSemanal || []).forEach((w) => set.add(w.Semana))); return [...set].sort(); }, []);
   const nSem = semanas.length;
@@ -8573,9 +8628,8 @@ function ReportePerformance({ usuario, inline, onClose }) {
     { k: "s8", l: "Últimas 8 semanas", desde: (semanas.slice(-8)[0] || semMin), hasta: semMax },
     { k: "todo", l: "Todo el histórico", desde: semMin, hasta: semMax },
   ];
-  const [rangoK, setRangoK] = useState("mes");
-  const pr = PRESETS_RANGO.find((p) => p.k === rangoK) || PRESETS_RANGO[0];
-  const fDesde = pr.desde, fHasta = pr.hasta;
+  const [fDesde, setFDesde] = useState(PRESETS_RANGO[0].desde); // por defecto: mes en curso (día 1 al actual)
+  const [fHasta, setFHasta] = useState(PRESETS_RANGO[0].hasta);
   // Nivel inicial del drill según el rol logueado: un ejecutivo parte directo en SUS empresas; un jefe de
   // grupo con una sola jefatura, en sus ejecutivos; gerencia/admin, en el nivel Gerencia (todas las jefaturas).
   const [path, setPath] = useState(() => {
@@ -8709,9 +8763,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="t10" style={{ color: C.faint }}>Rango</span>
-          <select value={rangoK} onChange={(e) => setRangoK(e.target.value)} className="rounded-lg px-2 py-1.5 t11 outline-none cursor-pointer" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
-            {PRESETS_RANGO.map((p) => <option key={p.k} value={p.k}>{p.l} ({fmtFecha(p.desde)}–{fmtFecha(p.hasta)})</option>)}
-          </select>
+          <RangoFechas desde={fDesde} hasta={fHasta} min={semMin} max={semMax} presets={PRESETS_RANGO} onChange={(d, h) => { setFDesde(d); setFHasta(h); }} />
         </div>
       </div>
       {/* Breadcrumb del drill */}
@@ -8728,7 +8780,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
         <KpiStat Icon={User} col="#703EFF" v={kpi.n.toLocaleString("es-CL")} l="Clientes" s={`${kpi.emitieron} activos · ${kpi.ops} operaciones`} />
         <KpiStat Icon={Check} col="#0891b2" v={fmtMMc(kpi.facturadoBuenas)} l="Facturas de buenos deudores" s={`${kpi.facturadoBuenasPct}% de ${fmtMMc(kpi.facturado)} emitido`} />
         <KpiStat Icon={BarChart2} col="#2563EB" v={fmtMMc(kpi.facturado)} l="Facturas emitidas" s={`${fmtMMc(kpi.facturadoBuenas)} de buenos deudores`} />
-        <KpiStat Icon={BarChart2} col="#7C3AED" v={fmtMMc(kpi.emitido)} l="Cedido a factoring" s={`${fmtMMc(kpi.buenasMM)} de buenos deudores`} />
+        <KpiStat Icon={BarChart2} col="#7C3AED" v={fmtMMc(kpi.emitido)} l="Total Cedido" s={`${fmtMMc(kpi.buenasMM)} de buenos deudores`} />
         <KpiStat Icon={Check} col="#16A34A" v={fmtMMc(kpi.ganado)} l="Ganado (Security)" s={`SOW ${Math.round(kpi.sowPct)}%`} />
         <KpiStat Icon={ArrowDownRight} col="#DC2626" v={fmtMMc(kpi.perdido)} l="Perdido" s={`${fmtMMc(kpi.perdBanco)} a factoring target (BCI/Chile/Itaú) · ${fmtMMc(kpi.perdOtros)} otros`} />
       </div>
