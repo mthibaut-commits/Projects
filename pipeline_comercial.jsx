@@ -8776,13 +8776,14 @@ function ReportePerformance({ usuario, inline, onClose }) {
         ))}
       </div>
       {/* KPIs del alcance (depurados): clientes · buenos deudores · emitidas · cedido · ganado · perdido */}
-      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
+      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
         <KpiStat Icon={User} col="#703EFF" v={kpi.n.toLocaleString("es-CL")} l="Clientes" s={`${kpi.emitieron} activos · ${kpi.ops} operaciones`} />
-        <KpiStat Icon={Check} col="#0891b2" v={fmtMMc(kpi.facturadoBuenas)} l="Facturas de buenos deudores" s={`${kpi.facturadoBuenasPct}% de ${fmtMMc(kpi.facturado)} emitido`} />
+        <KpiStat Icon={Check} col="#0891b2" v={<>{fmtMMc(kpi.facturado)} <span className="t10 font-normal" style={{ color: C.faint }}>emitido</span></>} l="Facturas de buenos deudores" s={`por ${fmtMMc(kpi.facturadoBuenas)} · ${kpi.facturadoBuenasPct}%`} />
         <KpiStat Icon={BarChart2} col="#2563EB" v={fmtMMc(kpi.facturado)} l="Facturas emitidas" s={`${fmtMMc(kpi.facturadoBuenas)} de buenos deudores`} />
         <KpiStat Icon={BarChart2} col="#7C3AED" v={fmtMMc(kpi.emitido)} l="Total Cedido" s={`${fmtMMc(kpi.buenasMM)} de buenos deudores`} />
         <KpiStat Icon={Check} col="#16A34A" v={fmtMMc(kpi.ganado)} l="Ganado (Security)" s={`SOW ${Math.round(kpi.sowPct)}%`} />
         <KpiStat Icon={ArrowDownRight} col="#DC2626" v={fmtMMc(kpi.perdido)} l="Perdido" s={`${fmtMMc(kpi.perdBanco)} a factoring target (BCI/Chile/Itaú) · ${fmtMMc(kpi.perdOtros)} otros`} />
+        <KpiStat Icon={BarChart2} col="#2563EB" v={`${Math.round(kpi.sowPct)}%`} l="SOW Target Deudores Prime" s={`${fmtMMc(kpi.ganado)} de ${fmtMMc(kpi.emitido)} cedido`} />
       </div>
       {/* Tabla drill-down (Resumen) */}
       <div className="mt-3 overflow-x-auto">
