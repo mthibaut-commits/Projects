@@ -8524,6 +8524,34 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
 const BANCOS_REF = ["BCI Factoring", "Banchile Factoring", "Banco Itaú"]; // Banchile = Banco de Chile
 const esFactoringBanco = (name) => { const n = (name || "").toLowerCase(); return n.includes("bci") || n.includes("banchile") || n.includes("banco de chile") || n.includes("ita"); };
 const wkLbl = (s) => { const p = (s || "").split("-"); return p.length === 3 ? `${p[2]}/${p[1]}` : s; };
+// Tooltip enriquecido (tarjeta flotante) con el desglose de un monto: título + filas nombre/monto alineadas.
+// Posición fija junto al disparador (no se recorta con el overflow de la tabla).
+function TipDesglose({ titulo, items, color = "#DC2626", children }) {
+  const [rect, setRect] = useState(null);
+  const ref = useRef(null);
+  const W = 260;
+  const vw = (typeof window !== "undefined" && window.innerWidth) || 1200;
+  const left = rect ? Math.max(8, Math.min(rect.right + 8, vw - W - 8)) : 0;
+  const top = rect ? Math.max(8, rect.top - 4) : 0;
+  return (
+    <span ref={ref} onMouseEnter={() => { const r = ref.current && ref.current.getBoundingClientRect(); if (r) setRect(r); }} onMouseLeave={() => setRect(null)} className="inline-flex items-center justify-end gap-1" style={{ cursor: "help" }}>
+      {children}
+      {rect && (
+        <div style={{ position: "fixed", left, top, width: W, zIndex: 60, backgroundColor: "#fff", border: `1px solid ${C.line}`, borderRadius: 12, boxShadow: "0 8px 24px rgba(20,25,45,.14)", padding: 10 }}>
+          <div className="t9 font-bold uppercase tracking-wide" style={{ color }}>{titulo}</div>
+          <div className="mt-1" style={{ maxHeight: 220, overflowY: "auto" }}>
+            {items && items.length ? items.map((it, i) => (
+              <div key={i} className="flex items-center justify-between gap-4 py-0.5 t10" style={{ borderTop: i ? `1px solid ${C.line}` : "none" }}>
+                <span className="truncate" style={{ color: C.sub }}>{it.name}</span>
+                <span className="shrink-0 font-semibold" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>{it.val}</span>
+              </div>
+            )) : <div className="t9" style={{ color: C.faint }}>Sin detalle en el rango.</div>}
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
 function ReportePerformance({ usuario, inline, onClose }) {
   const semanas = useMemo(() => { const set = new Set(); (window.SHARE_OF_WALLET || []).forEach((s) => (s.HistoricoSemanal || []).forEach((w) => set.add(w.Semana))); return [...set].sort(); }, []);
   const nSem = semanas.length;
@@ -8613,14 +8641,14 @@ function ReportePerformance({ usuario, inline, onClose }) {
   };
   // Desglose (para tooltips): suma un mapa {clave: MM} sobre los clientes de la fila y lo escala al monto
   // de la fila (para que el detalle cuadre con el valor mostrado); devuelve líneas "clave: $X MM".
-  const desglose = (cs, campo, montoFila, tope) => {
+  const desgloseItems = (cs, campo, montoFila, tope) => {
     const m = {}; (cs || []).forEach((c) => { const d = c[campo] || {}; for (const k in d) m[k] = (m[k] || 0) + d[k]; });
     const arr = Object.entries(m).sort((a, b) => b[1] - a[1]);
     const suma = arr.reduce((s, e) => s + e[1], 0); const f = suma > 0 ? montoFila / suma : 0;
     const vis = tope ? arr.slice(0, tope) : arr;
-    const lineas = vis.map((e) => `${e[0]}: ${fmtMMc(e[1] * f)}`);
-    if (tope && arr.length > tope) lineas.push(`+${arr.length - tope} más`);
-    return lineas.length ? lineas.join("\n") : "Sin detalle en el rango.";
+    const items = vis.map((e) => ({ name: e[0], val: fmtMMc(e[1] * f) }));
+    if (tope && arr.length > tope) items.push({ name: `+${arr.length - tope} más`, val: "" });
+    return items;
   };
   const serie = useMemo(() => sem4.map((sm) => {
     let total = 0, ganado = 0, banco = 0, buenas = 0;
@@ -8671,11 +8699,11 @@ function ReportePerformance({ usuario, inline, onClose }) {
           <table className="w-full border-collapse t11" style={{ minWidth: 880 }}>
             <thead>
               <tr>
-                <th colSpan={7} />
-                <th colSpan={2} className="px-2 pb-1 text-center t10 font-bold uppercase tracking-wide" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>Detalle Perdido</th>
+                <th colSpan={6} />
+                <th colSpan={3} className="px-2 pb-1 text-center t10 font-bold uppercase tracking-wide" style={{ color: "#DC2626", borderBottom: `1px solid ${C.line}`, borderLeft: `1px solid ${C.line}` }}>Perdido</th>
               </tr>
-              <tr>{[nivel, "Operac.", "Cedido", "Ganado", "Perdidos", "SOW", "Tend. 4 sem", "Deudores Prime", "Factoring Target"].map((h, i) => (
-                <th key={h} className={`px-2 py-2 font-semibold ${i === 0 ? "text-left" : "text-right"}`} style={{ color: C.sub, borderBottom: `1px solid ${C.line}`, borderLeft: i === 7 ? `1px solid ${C.line}` : undefined }}>{h}</th>))}</tr>
+              <tr>{[nivel, "Operac.", "Cedido", "Ganado", "SOW", "Tend. 4 sem", "Total", "Deudores Prime", "Factoring Target"].map((h, i) => (
+                <th key={h} className={`px-2 py-2 font-semibold ${i === 0 ? "text-left" : "text-right"}`} style={{ color: C.sub, borderBottom: `1px solid ${C.line}`, borderLeft: i === 6 ? `1px solid ${C.line}` : undefined }}>{h}</th>))}</tr>
             </thead>
             <tbody>
               {filasOrden.map((f, i) => (
@@ -8691,7 +8719,6 @@ function ReportePerformance({ usuario, inline, onClose }) {
                   <td className="px-2 py-2 text-right" style={{ color: C.sub }}>{f.ops}</td>
                   <td className="px-2 py-2 text-right font-medium" style={{ color: C.ink }}>{fmtMMc(f.emitido)}</td>
                   <td className="px-2 py-2 text-right font-medium" style={{ color: "#16A34A" }}>{fmtMMc(f.ganado)}</td>
-                  <td className="px-2 py-2 text-right font-medium" style={{ color: C.sub }}>{fmtMMc(f.perdido)}</td>
                   <td className="px-2 py-2 text-right font-semibold" style={{ color: f.sowPct >= 60 ? "#16A34A" : f.sowPct >= 35 ? "#C2410C" : "#DC2626" }}>{Math.round(f.sowPct)}%</td>
                   <td className="px-2 py-2">{(() => {
                     const tr = tendSow4(f.cs); const up = tr.delta >= 0; const col = up ? "#16A34A" : "#DC2626";
@@ -8710,11 +8737,12 @@ function ReportePerformance({ usuario, inline, onClose }) {
                       </div>
                     );
                   })()}</td>
-                  <td className="px-2 py-2 text-right" style={{ color: C.sub, borderLeft: `1px solid ${C.line}` }}>
-                    <span className="inline-flex items-center justify-end gap-1" title={"Perdido por deudor prime (buenos deudores):\n" + desglose(f.cs, "deudorPrime", f.perdidoPrime, 8)} style={{ cursor: "help" }}>{fmtMMc(f.perdidoPrime)}<span className="t8" style={{ color: C.faint }}>ⓘ</span></span>
+                  <td className="px-2 py-2 text-right font-semibold" style={{ color: C.ink, borderLeft: `1px solid ${C.line}` }}>{fmtMMc(f.perdido)}</td>
+                  <td className="px-2 py-2 text-right" style={{ color: C.sub }}>
+                    <TipDesglose titulo="Perdido por deudor prime" color="#0891b2" items={desgloseItems(f.cs, "deudorPrime", f.perdidoPrime, 12)}>{fmtMMc(f.perdidoPrime)}<span className="t8" style={{ color: C.faint }}>ⓘ</span></TipDesglose>
                   </td>
                   <td className="px-2 py-2 text-right font-medium" style={{ color: f.perdBanco > 0 ? "#DC2626" : C.faint }}>
-                    <span className="inline-flex items-center justify-end gap-1" title={"Perdido por factoring target (BCI · Banco de Chile · Itaú):\n" + desglose(f.cs, "factTarget", f.perdBanco)} style={{ cursor: "help" }}>{fmtMMc(f.perdBanco)}<span className="t8" style={{ color: f.perdBanco > 0 ? "#DC2626" : C.faint }}>ⓘ</span></span>
+                    <TipDesglose titulo="Perdido por factoring target" color="#DC2626" items={desgloseItems(f.cs, "factTarget", f.perdBanco)}>{fmtMMc(f.perdBanco)}<span className="t8" style={{ color: f.perdBanco > 0 ? "#DC2626" : C.faint }}>ⓘ</span></TipDesglose>
                   </td>
                 </tr>
               ))}
