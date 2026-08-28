@@ -3995,7 +3995,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
                           const he = Math.abs(hashStr("em" + f.folio)) % 20 + 3; const em = new Date(Date.now() - he * 86400000).toLocaleDateString("es-CL");
                           const reqOtorg = f.inboundBucket === "OTRO" || tipoDeudorDisp(f) === "Otro";
-                          const oto = reqOtorg ? { bg: "#f5f3ff", fg: "#7C3AED", t: "Otorgamiento" } : { bg: "#F0FDF4", fg: "#16A34A", t: "Automático" };
+                          const oto = reqOtorg ? { bg: "#FFF7ED", fg: "#C2410C", t: "⚠", title: "El deudor de esta factura requiere otorgamiento" } : { bg: "#F0FDF4", fg: "#16A34A", t: "✓", title: "El deudor no requiere otorgamiento (automático)" };
                           const vf = verifFactura(f, deal); const vv = vf.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
                           const tasaF = ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + COSTO_FONDO).toFixed(2);
                           return (
@@ -4006,7 +4006,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             <span className="text-right font-semibold" title={`Nota del deudor: ${nota} / 5`} style={{ color: NOTA_COLOR(nota) }}>{nota}</span>
                             <span className="t9" style={{ color: C.faint }}>{em}</span>
                             <input type="date" disabled={bloqueado} value={vencFecha[f.id] || ""} onChange={(e) => setVencFecha((m) => ({ ...m, [f.id]: e.target.value }))} title="Fecha de vencimiento (editable)" className="rounded-full px-1 py-0.5 t9 outline-none disabled:opacity-60" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }} />
-                            <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: oto.bg, color: oto.fg }}>{oto.t}</span>
+                            <span className="flex h-5 w-5 items-center justify-center justify-self-start rounded-full t10 font-bold" title={oto.title} style={{ backgroundColor: oto.bg, color: oto.fg, cursor: "help" }}>{oto.t}</span>
                             <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: vv.bg, color: vv.fg }}>{vv.t}</span>
                             <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
                             <span className="text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.montoMM)}</span>
@@ -4061,7 +4061,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             const plazo = f.venc != null ? f.venc : 30;
                             const em = emD.toLocaleDateString("es-CL"); const venc = new Date(emD.getTime() + plazo * 86400000).toLocaleDateString("es-CL");
                             const reqOtorg = f.inboundBucket === "OTRO" || tipoDeudorDisp(f) === "Otro";
-                            const oto = reqOtorg ? { bg: "#f5f3ff", fg: "#7C3AED", t: "Otorgamiento" } : { bg: "#F0FDF4", fg: "#16A34A", t: "Automático" };
+                            const oto = reqOtorg ? { bg: "#FFF7ED", fg: "#C2410C", t: "⚠", title: "El deudor de esta factura requiere otorgamiento" } : { bg: "#F0FDF4", fg: "#16A34A", t: "✓", title: "El deudor no requiere otorgamiento (automático)" };
                             const vf = verifFactura(f, deal); const vv = vf.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
                             const tasaF = ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + COSTO_FONDO).toFixed(2);
                             const ok = xmlOk[f.id] !== false;
@@ -4089,7 +4089,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 <span className="text-right font-semibold" title={`Nota del deudor: ${nota} / 5`} style={{ color: NOTA_COLOR(nota) }}>{nota}</span>
                                 <span className="t9" style={{ color: C.faint }}>{em}</span>
                                 <span className="t9" style={{ color: C.faint }}>{venc}</span>
-                                <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: oto.bg, color: oto.fg }}>{oto.t}</span>
+                                <span className="flex h-5 w-5 items-center justify-center justify-self-start rounded-full t10 font-bold" title={oto.title} style={{ backgroundColor: oto.bg, color: oto.fg, cursor: "help" }}>{oto.t}</span>
                                 <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: vv.bg, color: vv.fg }}>{vv.t}</span>
                                 <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
                                 <span className="text-right font-medium" title={parcial ? `Factura ${fmtMM(f.montoMM)} − NC ${fmtMM(est.ncMonto)} = ${fmtMM(est.montoNeto)}` : (f.excl ? `Excluida: ${f.excl}` : anulMonto ? "Documento anulado por nota de crédito" : undefined)} style={{ color: parcial ? "#C2410C" : C.ink, textDecoration: (f.excl || anulMonto) ? "line-through" : "none" }}>{fmtMM(parcial ? est.montoNeto : f.montoMM)}</span>
