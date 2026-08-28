@@ -3,7 +3,7 @@ import {
   Search, Filter, Download, Table2, Bell, ChevronRight, ChevronDown,
   ChevronUp, ChevronLeft, X, Check, Calendar, Star, ArrowUpRight, ArrowDownRight,
   CircleDot, Sparkles, User, MessageSquare, Plus, Pencil, Zap, Clock,
-  Play, Pause, RotateCcw, Radio, ArrowRight, AlertTriangle, Calculator, Eye, EyeOff, BarChart2, Trash2, Target, ShieldCheck, Settings, ClipboardList,
+  Play, Pause, RotateCcw, Radio, ArrowRight, AlertTriangle, Calculator, Eye, EyeOff, BarChart2, Trash2, Target, ShieldCheck, Settings, ClipboardList, Send,
 } from "lucide-react";
 import { ComposedChart, Bar, Line, XAxis, YAxis, ReferenceLine, ResponsiveContainer, CartesianGrid, Tooltip, Cell } from "recharts";
 import { sankey as d3sankey, sankeyLinkHorizontal, sankeyLeft } from "d3-sankey";
@@ -3160,8 +3160,19 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const [carrusel, setCarrusel] = useState(0); // ventana del carrusel de tabs de deudor
   const [showApr, setShowApr] = useState(false); // muestra/oculta las reglas aprobadas (DIV colapsable)
   const [, forceV] = useState(0); // re-render tras visar una excepción desde el detalle
-  const [excForm, setExcForm] = useState({}); // { [stKey]: { open:"aprobado"|"rechazado", msg, arch } } — comentario/adjunto al visar
+  const [excForm, setExcForm] = useState({}); // { [key]: { open, msg, archs:[] } } — key = stKey (visado), "sol:"+stKey (solicitud ejec), "bulk:"+tab
   const setEF = (k, patch) => setExcForm((m) => ({ ...m, [k]: { ...(m[k] || {}), ...patch } }));
+  // Adjuntos múltiples: agrega/quita nombres de archivo del formulario de una key.
+  const pushArchs = (k, fileList) => { const names = Array.from(fileList || []).map((f) => f.name); if (!names.length) return; setExcForm((m) => { const cur = m[k] || {}; return { ...m, [k]: { ...cur, archs: [...(cur.archs || []), ...names] } }; }); };
+  const removeArch = (k, i) => setExcForm((m) => { const cur = m[k] || {}; return { ...m, [k]: { ...cur, archs: (cur.archs || []).filter((_, j) => j !== i) } }; });
+  const archChips = (k, archs) => (archs && archs.length > 0) ? (
+    <div className="mt-1 flex flex-wrap gap-1">{archs.map((a, i) => (
+      <span key={i} className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#F1ECFF", color: "#5B21D6" }}>📎 {a}<button onClick={() => removeArch(k, i)} title="Quitar" style={{ color: "#7C3AED", lineHeight: 1 }}>×</button></span>
+    ))}</div>
+  ) : null;
+  const adjuntarLabel = (k) => (
+    <label className="inline-flex cursor-pointer items-center gap-1 t9 font-medium" style={{ color: C.indigo }}>📎 Adjuntar archivos<input type="file" multiple className="hidden" onChange={(e) => { pushArchs(k, e.target.files); e.target.value = ""; }} /></label>
+  );
   // La aprobación desde el detalle sólo se habilita cuando la operación está en la BANDEJA de otorgamiento:
   // aceptada por el cliente, o con Pre-evaluación solicitada por el ejecutivo (igual que la mesa de Otorgamientos).
   const enBandeja = ["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage) || tienePreEval(deal.id);
@@ -3191,13 +3202,14 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const ordenBy = (arr) => arr.slice().sort((a, b) => (reqAprob(b) - reqAprob(a)) || (orden[a.disp] - orden[b.disp]) || (a.n - b.n));
   // Aprobar/rechazar una excepción DIRECTAMENTE desde el detalle (si el usuario tiene la atribución). Escribe el
   // visado (mismo estado que la mesa de Otorgamientos), registra auditoría + bitácora y re-renderiza.
-  const aprobarExc = (x, val, msg, arch) => {
+  const aprobarExc = (x, val, msg, archs) => {
     if (!x.stKey || !x.regla) return;
+    const arr = Array.isArray(archs) ? archs.filter(Boolean) : (archs ? [archs] : []);
     const st = VISADO_STATE[deal.id] || (VISADO_STATE[deal.id] = {}); st[x.stKey] = val;
-    const det = VISADO_DETALLE[deal.id] || (VISADO_DETALLE[deal.id] = {}); det[x.stKey] = { msg: msg || "", arch: arch || null, por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL") };
+    const det = VISADO_DETALLE[deal.id] || (VISADO_DETALLE[deal.id] = {}); det[x.stKey] = { msg: msg || "", archs: arr, por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL") };
     const dtxt = x.deudor ? ` · deudor ${x.deudor.nombre}` : "";
-    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Visado Cliente (detalle)", accion: val === "aprobado" ? "Excepción aprobada" : "Excepción rechazada", glosa: `Regla ${x.regla.n} · ${AREA_LBL[x.regla.area]} N${x.nivel || 4} · ${deal.cliente}${dtxt}${msg ? " · " + msg : ""}`, exito: val === "aprobado" });
-    logOtorgEvento(deal.id, USERS[usuario] || usuario, `${USERS[usuario] || usuario} ${val === "aprobado" ? "aprobó" : "rechazó"} la excepción desde el detalle · regla #${x.regla.n} ${x.regla.nombre}${dtxt} (${AREA_LBL[x.regla.area]} N${x.nivel || 4})${arch ? " · con respaldo adjunto" : ""}`, msg || "");
+    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Visado Cliente (detalle)", accion: val === "aprobado" ? "Excepción aprobada" : "Excepción rechazada", glosa: `Regla ${x.regla.n} · ${AREA_LBL[x.regla.area]} N${x.nivel || 4} · ${deal.cliente}${dtxt}${msg ? " · " + msg : ""}${arr.length ? " · " + arr.length + " adjunto(s)" : ""}`, exito: val === "aprobado" });
+    logOtorgEvento(deal.id, USERS[usuario] || usuario, `${USERS[usuario] || usuario} ${val === "aprobado" ? "aprobó" : "rechazó"} la excepción desde el detalle · regla #${x.regla.n} ${x.regla.nombre}${dtxt} (${AREA_LBL[x.regla.area]} N${x.nivel || 4})${arr.length ? " · con " + arr.length + " respaldo(s)" : ""}`, msg || "");
     forceV((v) => v + 1); onReev && onReev();
   };
   const revertirVisado = (x) => { const st = VISADO_STATE[deal.id]; if (st) delete st[x.stKey]; const det = VISADO_DETALLE[deal.id]; if (det) delete det[x.stKey]; forceV((v) => v + 1); onReev && onReev(); };
@@ -3238,39 +3250,76 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         {x.disp === "excepcion" && (() => {
           const estado = visSt[x.stKey]; // "aprobado" | "rechazado" | undefined
           const puedeVisar = x.regla && puedeAprobarExc(usuario, x.regla, x.nivel || 4);
+          const sol = (SOLICITUD_EXC[deal.id] || {})[x.stKey]; // solicitud del ejecutivo (comentario + adjuntos)
+          const solBlock = sol ? (
+            <div className="mt-1.5 rounded-md px-2 py-1.5" style={{ backgroundColor: "#F1ECFF" }}>
+              <div className="t9 font-semibold" style={{ color: "#5B21D6" }}>📨 Aprobación solicitada por {sol.por} · {sol.fecha} → {sol.rol} (N{sol.nivel})</div>
+              {sol.comentario && <div className="mt-0.5 t9" style={{ color: C.sub }}>“{sol.comentario}”</div>}
+              {sol.archivos && sol.archivos.length > 0 && <div className="mt-0.5 flex flex-wrap gap-2">{sol.archivos.map((a, i) => <span key={i} className="t9" style={{ color: C.faint }}>📎 {a}</span>)}</div>}
+            </div>
+          ) : null;
+          const dtArchsView = (dt) => { const a = dt.archs && dt.archs.length ? dt.archs : (dt.arch ? [dt.arch] : []); return a.length ? <div className="mt-0.5 flex flex-wrap gap-2">{a.map((f, i) => <span key={i} className="t9" style={{ color: C.faint }}>📎 {f}</span>)}</div> : null; };
+          // (A) RESUELTA por el apoderado — muestra la solicitud del ejecutivo (si hubo) y la decisión.
           if (estado) { const dt = (VISADO_DETALLE[deal.id] || {})[x.stKey] || {}; return (
+            <>{solBlock}
             <div className="mt-1.5 rounded-md px-2 py-1.5" style={{ backgroundColor: estado === "aprobado" ? C.greenBg : "#FEF2F2" }}>
               <div className="flex items-center justify-between gap-2">
                 <span className="t9 font-semibold" style={{ color: estado === "aprobado" ? C.green : C.red }}>{estado === "aprobado" ? "✓ Excepción aprobada" : "✕ Excepción rechazada"}{dt.por ? ` · ${dt.por}` : ""}{dt.fecha ? ` · ${dt.fecha}` : ""}</span>
                 {puedeVisar && <button onClick={() => revertirVisado(x)} className="rounded-md px-2 py-0.5 t9 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Revertir</button>}
               </div>
               {dt.msg && <div className="mt-0.5 t9" style={{ color: C.sub }}>“{dt.msg}”</div>}
-              {dt.arch && <div className="mt-0.5 t9" style={{ color: C.faint }}>📎 {dt.arch}</div>}
-            </div>
+              {dtArchsView(dt)}
+            </div></>
           ); }
-          if (!puedeVisar) return null;
-          if (!enBandeja) return <div className="mt-1.5 t9" style={{ color: C.faint }}>La aprobación se habilita al solicitar <b>Pre-evaluación</b> o tras la aceptación del cliente (para que también aparezca en la mesa de Otorgamientos).</div>;
-          const ef = excForm[x.stKey] || {};
-          if (!ef.open) return (
-            <div className="mt-1.5 flex items-center gap-1.5">
-              <span className="t9 font-semibold" style={{ color: "#5B21D6" }}>Tu atribución permite visar:</span>
-              <button onClick={() => setEF(x.stKey, { open: "aprobado" })} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold text-white" style={{ backgroundColor: "#7C3AED" }}><Check size={11} /> Aprobar excepción</button>
-              <button onClick={() => setEF(x.stKey, { open: "rechazado" })} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold" style={{ border: "1px solid #DC2626", color: "#DC2626", backgroundColor: "#fff" }}><X size={11} /> Rechazar</button>
+          // (B) APODERADO con atribución para visar esta excepción (aprueba/rechaza con comentario + adjuntos).
+          if (puedeVisar) {
+            if (!enBandeja) return <>{solBlock}<div className="mt-1.5 t9" style={{ color: C.faint }}>La aprobación se habilita al solicitar <b>Pre-evaluación</b> o tras la aceptación del cliente (para que también aparezca en la mesa de Otorgamientos).</div></>;
+            const ef = excForm[x.stKey] || {};
+            if (!ef.open) return (
+              <>{solBlock}
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <span className="t9 font-semibold" style={{ color: "#5B21D6" }}>Tu atribución permite visar:</span>
+                <button onClick={() => setEF(x.stKey, { open: "aprobado" })} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold text-white" style={{ backgroundColor: "#7C3AED" }}><Check size={11} /> Aprobar excepción</button>
+                <button onClick={() => setEF(x.stKey, { open: "rechazado" })} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold" style={{ border: "1px solid #DC2626", color: "#DC2626", backgroundColor: "#fff" }}><X size={11} /> Rechazar</button>
+              </div></>
+            );
+            return (
+              <>{solBlock}
+              <div className="mt-1.5 rounded-md p-2" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
+                <div className="t9 font-semibold" style={{ color: ef.open === "aprobado" ? "#7C3AED" : "#DC2626" }}>{ef.open === "aprobado" ? "Aprobar excepción" : "Rechazar excepción"} · comentario y respaldo</div>
+                <textarea value={ef.msg || ""} onChange={(e) => setEF(x.stKey, { msg: e.target.value })} placeholder="Comentario / justificación de la decisión…" className="mt-1 w-full rounded-md p-2 t10 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, minHeight: 54, backgroundColor: "#fff", color: C.ink }} />
+                {archChips(x.stKey, ef.archs)}
+                <div className="mt-1.5 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => setEF(x.stKey, { open: null })} className="rounded-md px-2 py-1 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
+                    <button onClick={() => { aprobarExc(x, ef.open, ef.msg, ef.archs); setEF(x.stKey, { open: null, msg: "", archs: [] }); }} className="rounded-md px-3 py-1 t9 font-semibold text-white" style={{ backgroundColor: ef.open === "aprobado" ? "#16A34A" : "#DC2626" }}>Confirmar {ef.open === "aprobado" ? "aprobación" : "rechazo"}</button>
+                  </div>
+                  {adjuntarLabel(x.stKey)}
+                </div>
+              </div></>
+            );
+          }
+          // (C) EJECUTIVO (sin atribución): completa comentario + adjuntos y SOLICITA la aprobación al apoderado.
+          if (sol) return solBlock; // ya solicitada, esperando decisión del apoderado
+          const sk = "sol:" + x.stKey;
+          const sf = excForm[sk] || {};
+          if (!sf.open) return (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <span className="t9" style={{ color: C.sub }}>Requiere visto bueno de <b style={{ color: "#5B21D6" }}>{nr.rol} (N{x.nivel || 4})</b>.</span>
+              <button onClick={() => setEF(sk, { open: true })} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Send size={11} /> Solicitar aprobación</button>
             </div>
           );
           return (
-            <div className="mt-1.5 rounded-md p-2" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
-              <div className="t9 font-semibold" style={{ color: ef.open === "aprobado" ? "#7C3AED" : "#DC2626" }}>{ef.open === "aprobado" ? "Aprobar excepción" : "Rechazar excepción"} · comentario y respaldo</div>
-              <textarea value={ef.msg || ""} onChange={(e) => setEF(x.stKey, { msg: e.target.value })} placeholder="Comentario / justificación de la decisión…" className="mt-1 w-full rounded-md p-2 t10 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, minHeight: 54, backgroundColor: "#fff", color: C.ink }} />
+            <div className="mt-1.5 rounded-md p-2" style={{ border: "1px solid #DDD6FE", backgroundColor: "#F5F3FF" }}>
+              <div className="t9 font-semibold" style={{ color: "#5B21D6" }}>Solicitar aprobación al {nr.rol} (N{x.nivel || 4}) · comentario y respaldo</div>
+              <textarea value={sf.msg || ""} onChange={(e) => setEF(sk, { msg: e.target.value })} placeholder="Comentario / justificación para el apoderado…" className="mt-1 w-full rounded-md p-2 t10 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, minHeight: 54, backgroundColor: "#fff", color: C.ink }} />
+              {archChips(sk, sf.archs)}
               <div className="mt-1.5 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
-                  <button onClick={() => setEF(x.stKey, { open: null })} className="rounded-md px-2 py-1 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
-                  <button onClick={() => { aprobarExc(x, ef.open, ef.msg, ef.arch); setEF(x.stKey, { open: null, msg: "", arch: null }); }} className="rounded-md px-3 py-1 t9 font-semibold text-white" style={{ backgroundColor: ef.open === "aprobado" ? "#16A34A" : "#DC2626" }}>Confirmar {ef.open === "aprobado" ? "aprobación" : "rechazo"}</button>
+                  <button onClick={() => setEF(sk, { open: false })} className="rounded-md px-2 py-1 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
+                  <button onClick={() => { solicitarAprobacionExc(deal, x, usuario, sf.msg, sf.archs); setEF(sk, { open: false, msg: "", archs: [] }); forceV((v) => v + 1); onReev && onReev(); }} className="inline-flex items-center gap-1 rounded-md px-3 py-1 t9 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Send size={11} /> Enviar solicitud</button>
                 </div>
-                <label className="inline-flex cursor-pointer items-center gap-1 t9 font-medium" style={{ color: C.indigo }}>
-                  📎 {ef.arch ? ef.arch : "Adjuntar respaldo"}
-                  <input type="file" className="hidden" onChange={(e) => setEF(x.stKey, { arch: (e.target.files && e.target.files[0] && e.target.files[0].name) || null })} />
-                </label>
+                {adjuntarLabel(sk)}
               </div>
             </div>
           );
@@ -3372,7 +3421,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
               )}
             </div>
             {/* Visar TODO (por tab): aprobar o rechazar de una vez todas las excepciones visables de este cliente/deudor. */}
-            {enBandeja && todasMias.length > 0 && !bulk.open && (
+            {aprobMasivaHabilitada(usuario) && enBandeja && todasMias.length > 0 && !bulk.open && (
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md px-3 py-2" style={{ border: "1px solid #bbf7d0", backgroundColor: "#F0FDF4" }}>
                 <span className="t10" style={{ color: "#166534" }}>A través de esta opción podrás aprobar o rechazar todas las excepciones {active.key === "cli" ? "del Cliente" : "del Deudor"} según corresponda.</span>
                 <div className="flex shrink-0 items-center gap-1.5">
@@ -3381,19 +3430,17 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
                 </div>
               </div>
             )}
-            {enBandeja && todasMias.length > 0 && bulk.open && (() => { const rechaza = bulk.action === "rechazado"; return (
+            {aprobMasivaHabilitada(usuario) && enBandeja && todasMias.length > 0 && bulk.open && (() => { const rechaza = bulk.action === "rechazado"; return (
               <div className="mt-2 rounded-md p-2" style={{ border: `1px solid ${rechaza ? "#fecaca" : "#bbf7d0"}`, backgroundColor: rechaza ? "#FEF2F2" : "#F0FDF4" }}>
                 <div className="t9 font-semibold" style={{ color: rechaza ? "#DC2626" : "#166534" }}>{rechaza ? "Rechazar" : "Aprobar"} {todasMias.length} excepción(es) {bulkScope} · el comentario y el respaldo se aplican a TODAS</div>
                 <textarea value={bulk.msg || ""} onChange={(e) => setEF(bulkKey, { msg: e.target.value })} placeholder="Comentario / justificación (se repite en cada regla excepcionada)…" className="mt-1 w-full rounded-md p-2 t10 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, minHeight: 54, backgroundColor: "#fff", color: C.ink }} />
+                {archChips(bulkKey, bulk.archs)}
                 <div className="mt-1.5 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5">
                     <button onClick={() => setEF(bulkKey, { open: false })} className="rounded-md px-2 py-1 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
-                    <button onClick={() => { todasMias.forEach((x) => aprobarExc(x, bulk.action || "aprobado", bulk.msg, bulk.arch)); setEF(bulkKey, { open: false, msg: "", arch: null }); }} className="rounded-md px-3 py-1 t9 font-semibold text-white" style={{ backgroundColor: rechaza ? "#DC2626" : "#16A34A" }}>Confirmar {rechaza ? "rechazo" : "aprobación"} de {todasMias.length}</button>
+                    <button onClick={() => { todasMias.forEach((x) => aprobarExc(x, bulk.action || "aprobado", bulk.msg, bulk.archs)); setEF(bulkKey, { open: false, msg: "", archs: [] }); }} className="rounded-md px-3 py-1 t9 font-semibold text-white" style={{ backgroundColor: rechaza ? "#DC2626" : "#16A34A" }}>Confirmar {rechaza ? "rechazo" : "aprobación"} de {todasMias.length}</button>
                   </div>
-                  <label className="inline-flex cursor-pointer items-center gap-1 t9 font-medium" style={{ color: C.indigo }}>
-                    📎 {bulk.arch ? bulk.arch : "Adjuntar respaldo"}
-                    <input type="file" className="hidden" onChange={(e) => setEF(bulkKey, { arch: (e.target.files && e.target.files[0] && e.target.files[0].name) || null })} />
-                  </label>
+                  {adjuntarLabel(bulkKey)}
                 </div>
               </div>
             ); })()}
@@ -6355,13 +6402,15 @@ function WaFlowLogin({ deal, onLogin }) {
 // ============================================================
 // Vista Tabla: grilla de oportunidades (alternativa al Kanban)
 // ============================================================
-function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onAsignarExec }) {
+function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onAsignarExec, mostrarEjec = true }) {
   const nextStage = (id) => { const i = STAGE_ORDER.indexOf(id); return STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 2)]; };
-  const cols = ["Oportunidad", "Ejecutivo", "Producto", "Monto", "Condiciones de la oferta", "Etapa", "Estrategia", "Acciones"];
+  // Ejecutivo: sólo se muestra a jefaturas/gerencias (más de un ejecutivo). Producto va dentro de
+  // "Oportunidad" (p. ej. «Factoring OP-D922»). La columna de acciones sólo existe para asignar (Otras Empresas).
+  const cols = ["Oportunidad", ...(mostrarEjec ? ["Ejecutivo"] : []), "Monto", "Condiciones de la oferta", "Etapa", "Estrategia", ...(modoAsignar ? ["Asignar"] : [])];
   return (
     <div className="flex flex-1 flex-col gap-2">
       <div className="flex-1 overflow-x-auto rounded-xl bg-white p-1" style={{ border: `1px solid ${C.line}` }}>
-      <table className="w-full border-collapse t11" style={{ minWidth: "1360px" }}>
+      <table className="w-full border-collapse t11" style={{ minWidth: mostrarEjec ? "1180px" : "1040px" }}>
         <thead><tr>{cols.map((h) => (
           <th key={h} className="px-2 py-2 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, backgroundColor: "#fff" }}>{h}</th>))}</tr></thead>
         <tbody>
@@ -6370,15 +6419,16 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
             const ns = nextStage(d.stage); const terminal = d.stage === "giro" || d.stage === "perdida";
             return (
               <tr key={d.id} onClick={() => onOpen(d)} title="Abrir detalle de la operación" className="pl-row cursor-pointer" style={{ borderBottom: `1px solid ${C.line}` }}>
-                {/* Oportunidad */}
+                {/* Oportunidad — incluye el producto junto al folio (p. ej. «Factoring OP-D922») */}
                 <td className="px-2 py-2.5 align-top">
                   <button onClick={() => onOpen(d)} className="text-left">
                     <div className="font-medium" style={{ color: C.indigo }}>{d.cliente}</div>
-                    <div className="t9" style={{ color: C.faint }}>{d.id}</div>
+                    <div className="t9" style={{ color: C.faint }}><span className="font-semibold" style={{ color: TAG_COLORS[d.tag]?.fg || C.sub }}>{d.tag}</span> {d.id}</div>
                     <div className="t9" style={{ color: C.sub }}>Deudores: {d.deudores && d.deudores[0] ? d.deudores[0].name : d.deudor}{d.deudores && d.deudores.length > 1 ? ` +${d.deudores.length - 1}` : ""}</div>
                   </button>
                 </td>
-                {/* Ejecutivo */}
+                {/* Ejecutivo — sólo visible para jefaturas/gerencias (más de un ejecutivo) */}
+                {mostrarEjec && (
                 <td className="whitespace-nowrap px-2 py-2.5 align-top" style={{ color: C.sub }}>
                   {(() => {
                     // Fila agrupada de "Otras facturas": la jefatura ve "Sin asignar" (aún sin dueño); el
@@ -6388,8 +6438,7 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                     return <span className="inline-flex items-center gap-1.5"><span className="flex h-5 w-5 items-center justify-center rounded-full t9 font-semibold text-white" style={{ backgroundColor: C.indigo }}>{ex}</span>{EXECS[ex] || ex}</span>;
                   })()}
                 </td>
-                {/* Producto financiero */}
-                <td className="whitespace-nowrap px-2 py-2.5 align-top"><Pill style={{ backgroundColor: TAG_COLORS[d.tag]?.bg || "#F3F4F6", color: TAG_COLORS[d.tag]?.fg || C.sub }}>{d.tag}</Pill></td>
+                )}
                 {/* Monto de la oportunidad + nº de facturas */}
                 <td className="whitespace-nowrap px-2 py-2.5 align-top">
                   <div className="font-semibold" style={{ color: C.ink }}>{fmtMM(d.amountMM)}</div>
@@ -6415,7 +6464,7 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                       ? { background: nPend ? "linear-gradient(135deg,#C4B5FD,#703EFF)" : "linear-gradient(135deg,#703EFF,#230C65)" }
                       : { backgroundColor: (STAGES.find((s) => s.id === d.stage) || {}).dot };
                     return (<>
-                      <span className="inline-flex items-center gap-1" style={{ color: C.ink }}><span className="h-2 w-2 rounded-full" style={dotStyle} />{stageName(d.stage)}</span>
+                      <div className="flex items-center gap-1" style={{ color: C.ink }}><span className="h-2 w-2 rounded-full" style={dotStyle} />{stageName(d.stage)}</div>
                       {bloqueo ? <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#fef2f2", color: "#DC2626", cursor: "help" }} title={"No superó reglas de otorgamiento (bloqueo firme):\n" + [...vis.rechFirme, ...vis.excRech].map((r, i) => `${i + 1}) #${r.n} ${r.nombre}`).join("\n")}><X size={10} /> Perdida · reglas de otorgamiento</div>
                       : nPend > 0 ? <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED", cursor: "help" }} title={"Requiere otorgamiento — reglas con excepción/rechazo re-evaluable:\n" + [...vis.exc, ...vis.rechReev].map((e, i) => `${i + 1}) #${e.n} ${e.nombre}`).join("\n")}><AlertTriangle size={10} /> Requiere otorgamiento <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#7c3aed" }}>{nPend}</span></div>
                       : null}
@@ -6436,9 +6485,10 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                     );
                   })()}
                 </td>
-                {/* Acciones · Next Best Action / Asignar a ejecutivo (jefatura en "Otras facturas") */}
-                <td className="px-2 py-2.5 align-top" onClick={(e) => { if (modoAsignar && d.agrupado) e.stopPropagation(); }}>
-                  {modoAsignar && d.agrupado ? (
+                {/* Asignar a ejecutivo — sólo en "Otras Empresas" (jefatura asigna las facturas sin dueño) */}
+                {modoAsignar && (
+                <td className="px-2 py-2.5 align-top" onClick={(e) => { if (d.agrupado) e.stopPropagation(); }}>
+                  {d.agrupado ? (
                     <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                       <div className="relative">
                         <select value="" onChange={(e) => { const v = e.target.value; if (v) onAsignarExec(d.cliente, v); }}
@@ -6451,16 +6501,9 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                         <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2" size={12} style={{ color: C.indigo }} />
                       </div>
                     </div>
-                  ) : (() => {
-                    const nba = nextBestAction(d);
-                    if (!nba) return <button onClick={() => onOpen(d)} className="rounded-md px-2 py-1 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.indigo, backgroundColor: "#fff" }}>Abrir</button>;
-                    return (
-                      <button onClick={() => onOpen(d)} title={nba.detalle} className="flex max-w-[240px] items-center gap-1 rounded-md px-2 py-1 t10 font-medium text-left" style={{ backgroundColor: "#F3F4F6", color: C.sub, border: `1px solid ${C.line}` }}>
-                        <Sparkles size={10} className="shrink-0" style={{ color: C.faint }} /><span className="truncate"><b>NBA:</b> {nba.label}</span>
-                      </button>
-                    );
-                  })()}
+                  ) : <button onClick={() => onOpen(d)} className="rounded-md px-2 py-1 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.indigo, backgroundColor: "#fff" }}>Abrir</button>}
                 </td>
+                )}
               </tr>
             );
           })}
@@ -6920,7 +6963,16 @@ function otorgamientoCompleto(deal) {
   return v.exc.length > 0 && v.estado === "aprobada";
 }
 let VISADO_STATE = {}; // { [dealId]: { [ruleN]: "aprobado"|"rechazado" } } — resolución de excepciones
-let VISADO_DETALLE = {}; // { [dealId]: { [ruleN]: { msg, arch, por, fecha } } } — comentario/respaldo de la decisión
+let VISADO_DETALLE = {}; // { [dealId]: { [ruleN]: { msg, archs:[], por, fecha } } } — comentario/respaldo de la DECISIÓN del apoderado
+// Solicitud de aprobación de una excepción que el EJECUTIVO envía al apoderado responsable (N1–N5):
+// comentario + archivos de respaldo. Precede a la decisión (VISADO_STATE/DETALLE) que toma el apoderado.
+let SOLICITUD_EXC = {}; // { [dealId]: { [stKey]: { comentario, archivos:[], por, porCode, fecha, nivel, rol } } }
+// ── Configuración POR USUARIO: habilita/oculta la aceptación masiva ("Aprobar/Rechazar todo") de
+// excepciones de otorgamiento. Por defecto habilitada para todos los apoderados. Persistente en localStorage.
+function cargarCfgAprobMasiva() { try { if (storageDisponible()) { const r = localStorage.getItem("pc_cfg_aprob_masiva"); if (r) return JSON.parse(r); } } catch (e) {} return {}; }
+let CFG_APROB_MASIVA = cargarCfgAprobMasiva();
+function guardarCfgAprobMasiva() { try { if (storageDisponible()) localStorage.setItem("pc_cfg_aprob_masiva", JSON.stringify(CFG_APROB_MASIVA)); } catch (e) {} }
+const aprobMasivaHabilitada = (code) => code === "ADMIN" || CFG_APROB_MASIVA[code] !== false; // default: habilitada
 // ── Eventos de otorgamiento por operación (para la bitácora). Se guardan con hora completa (nowStamp, con segundos).
 let OTORG_EVENTOS = {}; // { [dealId]: [{ fecha, canal:"Otorgamiento", actor, resultado, detalle, esEvento:true }] }
 function logOtorgEvento(dealId, actor, resultado, detalle) {
@@ -6975,6 +7027,27 @@ function avisarPreEval(deal, execCode) {
   const h = prev || hiloNuevo({ tipo: "requerimiento", dealId: deal.id, cliente: deal.cliente, asunto, participantes: [execCode, ...dests], creadoPor: execCode });
   dests.forEach((c) => { if (!h.participantes.includes(c)) h.participantes.push(c); });
   hiloEnviar(h, execCode, `${USERS[execCode] || execCode} solicitó iniciar la PRE-EVALUACIÓN de otorgamiento de ${deal.cliente} (${deal.id}). Hay ${excPend.length} criterio(s) por excepcionar; por favor revisen y gestionen sus aprobaciones para adelantar el curse.`, null);
+}
+// El EJECUTIVO solicita al apoderado responsable (N1–N5) la aprobación de UNA excepción, adjuntando su
+// comentario y archivos de respaldo. Guarda la solicitud, adelanta la operación a la bandeja (pre-eval),
+// registra auditoría/bitácora, avisa por Mensajería interna y genera una tarea a los apoderados hábiles.
+function solicitarAprobacionExc(deal, x, execCode, comentario, archivos) {
+  if (!x || !x.stKey || !x.regla) return;
+  const nr = NIVEL_ROL[x.nivel] || NIVEL_ROL[4];
+  const sol = SOLICITUD_EXC[deal.id] || (SOLICITUD_EXC[deal.id] = {});
+  sol[x.stKey] = { comentario: comentario || "", archivos: (archivos || []).slice(), por: USERS[execCode] || execCode, porCode: execCode, fecha: new Date().toLocaleString("es-CL"), nivel: x.nivel || 4, rol: nr.rol };
+  if (!tienePreEval(deal.id)) setPreEval(deal.id, execCode, true); // habilita la bandeja para que el apoderado pueda visar
+  const dtxt = x.deudor ? ` · deudor ${x.deudor.nombre}` : "";
+  registrarAuditoria({ usuario: USERS[execCode] || execCode, modulo: "Otorgamiento · Solicitud de excepción", accion: "Solicitar aprobación", glosa: `Regla #${x.regla.n} ${x.regla.nombre} · ${AREA_LBL[nr.area]} N${x.nivel || 4} (${nr.rol}) · ${deal.cliente}${dtxt}${comentario ? " · " + comentario : ""}${(archivos && archivos.length) ? " · " + archivos.length + " adjunto(s)" : ""}`, empresaId: deal.id, exito: true });
+  logOtorgEvento(deal.id, USERS[execCode] || execCode, `${USERS[execCode] || execCode} solicitó al ${nr.rol} (N${x.nivel || 4}) la aprobación de la excepción #${x.regla.n} ${x.regla.nombre}${dtxt}${(archivos && archivos.length) ? " · con " + archivos.length + " respaldo(s)" : ""}`, comentario || "");
+  // Apoderados hábiles para visar esta excepción → aviso + tarea.
+  const dests = Object.keys(ATRIB_USUARIO).filter((k) => k !== "ADMIN" && USERS[k] && puedeAprobarExc(k, x.regla, x.nivel || 4));
+  const asunto = `Aprobación de excepciones · ${deal.id}`;
+  const prev = hilosDeDeal(deal.id).find((h) => h.asunto === asunto);
+  const h = prev || hiloNuevo({ tipo: "requerimiento", dealId: deal.id, cliente: deal.cliente, asunto, participantes: [execCode, ...dests], creadoPor: execCode });
+  dests.forEach((c) => { if (!h.participantes.includes(c)) h.participantes.push(c); });
+  hiloEnviar(h, execCode, `${USERS[execCode] || execCode} solicita tu aprobación de la excepción #${x.regla.n} ${x.regla.nombre}${dtxt} de ${deal.cliente} (${deal.id}). ${comentario ? "“" + comentario + "” " : ""}${(archivos && archivos.length) ? "Adjunta " + archivos.length + " respaldo(s). " : ""}Revísala en el Otorgamiento de la operación.`.trim(), (archivos && archivos[0]) || null);
+  if (dests.length) addPanelTarea({ texto: `Aprobar excepción #${x.regla.n} ${x.regla.nombre}${dtxt} · ${deal.cliente} · ${nr.rol} (N${x.nivel || 4}) · solicitada por ${(USERS[execCode] || execCode).split(" · ")[0]}`, cat: "cerrar", autor: USERS[execCode] || execCode, para: dests.map((c) => (USERS[c] || c).split(" · ")[0]), ops: [deal.id], nodo: "Otorgamiento" });
 }
 // Fase de otorgamiento de una oportunidad: "preevaluacion" | "evaluacion" | "finalizada" | null.
 // Misma lógica que la bandeja de otorgamiento (VisadoClienteView), disponible para indicadores.
@@ -7585,7 +7658,7 @@ function ReglasClienteCatalogo() {
 // ============================================================
 function OtorgamientosView({ deals, usuario, onOpen, onAutorizarCausa, onCfgChange }) {
   const [form, setForm] = useState({}); // formulario por causa: { [cid]: {open, dec, msg, arch} }
-  const [sub, setSub] = useState("visado"); // "visado" (Bandeja de aprobaciones) | "seguimiento" | "mantenedores"
+  // La configuración (mantenedores de otorgamiento y apoderados) se movió a Configuración → Otorgamiento.
   const [filtro, setFiltro] = useState("todos"); // "todos" | "accionables" | "anticipadas"
   const setF = (cid, patch) => setForm((m) => ({ ...m, [cid]: { ...(m[cid] || { dec: "si" }), ...patch } }));
   const esPipeline = atribDe(usuario).tipo === "pipeline";
@@ -7606,12 +7679,10 @@ function OtorgamientosView({ deals, usuario, onOpen, onAutorizarCausa, onCfgChan
         <h1 className="text-2xl font-semibold tracking-tight">Otorgamientos</h1>
         <div className="t12" style={{ color: C.sub }}>{USERS[usuario] || usuario}{atrLbl ? " · " + atrLbl : ""}</div>
       </div>
-      <div className="mt-3 flex gap-6" style={{ borderBottom: `1px solid ${C.line}` }}>
-        {[["visado", "Bandeja de aprobaciones", ShieldCheck], ["mantenedores", "Mantenedores", Settings]].map(([k, l, Ic]) => (
-          <button key={k} onClick={() => setSub(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${sub === k ? C.indigo : "transparent"}`, color: sub === k ? C.indigo : C.sub, fontWeight: sub === k ? 600 : 400, marginBottom: -1 }}><Ic size={13} /> {l}</button>
-        ))}
+      <div className="mt-3 flex items-center gap-1.5 t12 font-semibold" style={{ color: C.indigo, borderBottom: `1px solid ${C.line}`, paddingBottom: 8 }}><ShieldCheck size={13} /> Bandeja de aprobaciones</div>
+      <div className="mt-3">
+        <VisadoClienteView deals={deals} usuario={usuario} onChange={onCfgChange} />
       </div>
-      {sub === "mantenedores" ? <MantenedoresOtorg onCfgChange={onCfgChange} /> : <VisadoClienteView deals={deals} usuario={usuario} onChange={onCfgChange} />}
     </div>
   );
 }
@@ -7836,6 +7907,7 @@ function AtribucionesMantenedor() {
 function MantenedoresOtorg({ onCfgChange }) {
   const bump = () => onCfgChange && onCfgChange();
   const setAtrib = (code, area, v) => { const n = +v; if (!ATRIB_USUARIO[code]) return; if (!n) delete ATRIB_USUARIO[code].atrib[area]; else ATRIB_USUARIO[code].atrib[area] = Math.max(1, Math.min(5, n)); bump(); };
+  const setMasiva = (code, on) => { CFG_APROB_MASIVA[code] = on; guardarCfgAprobMasiva(); bump(); };
   const [mtab, setMtab] = useState("criterios");
   const mtabs = [["criterios", "Criterios de verificación"], ["atribuciones", "Atribuciones de aprobación"], ["usuarios", "Usuarios y atribuciones"]];
   return (
@@ -7852,18 +7924,24 @@ function MantenedoresOtorg({ onCfgChange }) {
       {mtab === "atribuciones" && <AtribucionesMantenedor />}
 
       {mtab === "usuarios" && (<div>
-        <div className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Usuarios y atribuciones (nivel por área; 0 = sin atribución)</div>
+        <div className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Apoderados y atribuciones (nivel por área; 0 = sin atribución)</div>
+        <div className="t10" style={{ color: C.faint }}>Define quién puede excepcionar y en qué nivel (N1–N5). <b>Aceptación masiva</b> habilita/oculta el botón «Aprobar/Rechazar todo» de excepciones para cada apoderado.</div>
         <table className="mt-1.5 w-full border-collapse t11">
-          <thead><tr>{["Usuario", "Tipo", "Riesgo", "Comercial", "Operaciones"].map((h) => <th key={h} className="px-2 py-1 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
-          <tbody>{Object.keys(ATRIB_USUARIO).filter((k) => USERS[k]).map((k) => (
+          <thead><tr>{["Usuario", "Tipo", "Riesgo", "Comercial", "Operaciones", "Aceptación masiva"].map((h) => <th key={h} className="px-2 py-1 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
+          <tbody>{Object.keys(ATRIB_USUARIO).filter((k) => USERS[k]).map((k) => { const esAprob = atribDe(k).tipo === "aprobador"; const on = aprobMasivaHabilitada(k); return (
             <tr key={k} style={{ borderBottom: `1px solid ${C.line}` }}>
               <td className="px-2 py-1 font-medium" style={{ color: C.ink }}>{USERS[k]}</td>
-              <td className="px-2 py-1" style={{ color: C.sub }}>{atribDe(k).tipo === "pipeline" ? "Pipeline" : "Aprobador"}</td>
+              <td className="px-2 py-1" style={{ color: C.sub }}>{esAprob ? "Aprobador" : "Pipeline"}</td>
               {["riesgo", "comercial", "operaciones"].map((a) => (
                 <td key={a} className="px-2 py-1"><input type="number" min={0} max={5} value={atribDe(k).atrib[a] || 0} onChange={(e) => setAtrib(k, a, e.target.value)} className="rounded-md px-1.5 py-1 t11 text-center outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, width: 48 }} /></td>
               ))}
+              <td className="px-2 py-1">{!esAprob ? <span style={{ color: C.faint }}>—</span> : k === "ADMIN" ? (
+                <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A", border: "1px solid #bbf7d0" }}>Habilitada</span>
+              ) : (
+                <button onClick={() => setMasiva(k, !on)} title={on ? "Clic para OCULTAR la aceptación masiva a este apoderado" : "Clic para HABILITAR la aceptación masiva a este apoderado"} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: on ? "#F0FDF4" : "#F3F4F6", color: on ? "#16A34A" : C.faint, border: `1px solid ${on ? "#bbf7d0" : C.line}` }}>{on ? <Check size={10} /> : <X size={10} />}{on ? "Habilitada" : "Oculta"}</button>
+              )}</td>
             </tr>
-          ))}</tbody>
+          ); })}</tbody>
         </table>
       </div>)}
     </div>
@@ -9696,6 +9774,7 @@ const CFG_SECCIONES = [
   { k: "auditoria", label: "Auditoría", Icon: Eye },
   { k: "usuarios", label: "Usuarios", Icon: User },
   { k: "roles", label: "Roles", Icon: Star },
+  { k: "otorgamiento", label: "Otorgamiento", Icon: ShieldCheck },
   { k: "productos", label: "Productos", Icon: Zap },
   { k: "monedas", label: "Monedas", Icon: Calculator },
   { k: "costofondo", label: "Costo de fondo", Icon: BarChart2 },
@@ -9814,6 +9893,7 @@ function AuditoriaView({ usuario }) {
 }
 function ConfiguracionView({ usuario }) {
   const [sec, setSec] = useState("auditoria");
+  const [, force] = useState(0);
   const activa = CFG_SECCIONES.find((s) => s.k === sec) || CFG_SECCIONES[0];
   return (
     <div className="grid gap-4" style={{ gridTemplateColumns: "220px minmax(0,1fr)" }}>
@@ -9825,7 +9905,13 @@ function ConfiguracionView({ usuario }) {
         ))}
       </aside>
       <div>
-        {sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : (
+        {sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "otorgamiento" ? (
+          <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+            <div className="text-lg font-semibold" style={{ color: C.ink }}>Otorgamiento · apoderados y atribuciones</div>
+            <div className="mt-0.5 t12" style={{ color: C.faint }}>Criterios de verificación, atribuciones de aprobación por criterio y los apoderados que pueden excepcionar (nivel por área). Aquí también se habilita/oculta la aceptación masiva por usuario.</div>
+            <MantenedoresOtorg onCfgChange={() => force((x) => x + 1)} />
+          </div>
+        ) : (
           <div className="rounded-2xl p-10 text-center" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
             <activa.Icon size={26} style={{ color: C.faint }} className="mx-auto mb-3" />
             <div className="text-lg font-semibold" style={{ color: C.ink }}>{activa.label}</div>
@@ -12129,7 +12215,7 @@ function CommandK({ abierto, onCerrar, deals, dealVisible, irA, onAbrirDeal }) {
   const ql = q.trim().toLowerCase();
   const ops = ql ? deals.filter(dealVisible).filter((d) => (d.cliente || "").toLowerCase().includes(ql) || String(d.id).toLowerCase().includes(ql)).slice(0, 5) : [];
   const clis = ql ? PC_CLIENTES.filter((c) => c.nombre.toLowerCase().includes(ql) || (c.rut || "").includes(q.trim())).slice(0, 4) : [];
-  const VISTAS = [["pipeline", "Tubo Negocios"], ["tareas", "Tareas"], ["clientes", "Clientes"], ["panel", "Gestión"], ["operaciones", "Operaciones"], ["lineas", "Líneas"], ["otorgamientos", "Otorgamientos"], ["config", "Configuración"]];
+  const VISTAS = [["pipeline", "Tubo Diario"], ["tareas", "Tareas"], ["clientes", "Clientes"], ["panel", "Gestión"], ["operaciones", "Operaciones"], ["lineas", "Líneas"], ["otorgamientos", "Otorgamientos"], ["config", "Configuración"]];
   const items = [
     ...ops.map((d) => ({ tipo: "Oportunidades", label: `${d.id} · ${d.cliente}`, extra: stageById(d.stage) ? stageById(d.stage).name : d.stage, run: () => { onAbrirDeal(d); onCerrar(); } })),
     ...clis.map((c) => ({ tipo: "Clientes", label: c.nombre, extra: c.rut, run: () => { irA("clientes", "Clientes"); onCerrar(); } })),
@@ -13987,7 +14073,7 @@ export default function PipelineComercial() {
           </div>
           <span aria-hidden="true" style={{ width: 1, height: 28, backgroundColor: "#ADA8BD" }} />
           <nav className="hidden items-center gap-5 t13 md:flex" style={{ color: C.sub }}>
-            <button onClick={() => irA("pipeline", "Tubo Negocios")} style={{ color: vistaApp === "pipeline" ? C.indigo : C.sub, fontWeight: vistaApp === "pipeline" ? 600 : 400 }}>Tubo Negocios</button>
+            <button onClick={() => irA("pipeline", "Tubo Diario")} style={{ color: vistaApp === "pipeline" ? C.indigo : C.sub, fontWeight: vistaApp === "pipeline" ? 600 : 400 }}>Tubo Diario</button>
             <button onClick={() => irA("tareas", "Tareas")} style={{ color: vistaApp === "tareas" ? C.indigo : C.sub, fontWeight: vistaApp === "tareas" ? 600 : 400 }}>Tareas</button>
             <button onClick={() => irA("clientes", "Clientes")} style={{ color: vistaApp === "clientes" ? C.indigo : C.sub, fontWeight: vistaApp === "clientes" ? 600 : 400 }}>Clientes</button>
             <button onClick={() => irA("panel", "Gestión")} style={{ color: vistaApp === "panel" ? C.indigo : C.sub, fontWeight: vistaApp === "panel" ? 600 : 400 }}>Gestión</button>
@@ -14102,9 +14188,9 @@ export default function PipelineComercial() {
         ) : vistaApp === "otorgamientos" ? <OtorgamientosView deals={deals} usuario={usuario} onOpen={abrirDetalle} onAutorizarCausa={autorizarCausa} onCfgChange={() => setCfgVer((v) => v + 1)} /> : (<>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Tubo Negocios</div>
+            <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Tubo Diario</div>
             <div className="mt-1 flex items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight">Tubo Negocios Comercial</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">Tubo Diario Comercial</h1>
               <span className="rounded-full px-2 py-0.5 t10 font-medium" style={{ backgroundColor: anyFilter ? "#F1ECFF" : C.page, color: anyFilter ? C.indigo : C.faint }}>
                 {filtered.length} de {deals.length + inboundCount} negocios{anyFilter ? " · filtrado" : ""}
               </span>
@@ -14245,7 +14331,7 @@ export default function PipelineComercial() {
         </div>
 
         <div className="mt-3 flex items-start gap-3 overflow-x-auto pb-4">
-          {vista === "tabla" && <TablaOportunidades deals={filtered} onOpen={abrirDetalle} onMover={moverEtapa} onReject={reject} modoAsignar={!esEjecutivoSesion && quickFilter === "otrasfacturas"} onAsignarExec={asignarClienteAExec} />}
+          {vista === "tabla" && <TablaOportunidades deals={filtered} onOpen={abrirDetalle} onMover={moverEtapa} onReject={reject} modoAsignar={!esEjecutivoSesion && quickFilter === "otrasfacturas"} onAsignarExec={asignarClienteAExec} mostrarEjec={!esEjecutivoSesion} />}
           {vista === "kanban" && (() => {
             const col = (id, opts = {}) => (
               <StageColumn key={id} stage={stageById(id)} deals={opts.deals || dealsByStage(id)} onOpen={abrirDetalle}
