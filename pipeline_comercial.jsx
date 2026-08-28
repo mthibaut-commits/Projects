@@ -12117,7 +12117,7 @@ function CommandK({ abierto, onCerrar, deals, dealVisible, irA, onAbrirDeal }) {
   const ql = q.trim().toLowerCase();
   const ops = ql ? deals.filter(dealVisible).filter((d) => (d.cliente || "").toLowerCase().includes(ql) || String(d.id).toLowerCase().includes(ql)).slice(0, 5) : [];
   const clis = ql ? PC_CLIENTES.filter((c) => c.nombre.toLowerCase().includes(ql) || (c.rut || "").includes(q.trim())).slice(0, 4) : [];
-  const VISTAS = [["pipeline", "Pipeline"], ["tareas", "Tareas"], ["clientes", "Clientes"], ["panel", "Gestión"], ["operaciones", "Operaciones"], ["lineas", "Líneas"], ["otorgamientos", "Otorgamientos"], ["config", "Configuración"]];
+  const VISTAS = [["pipeline", "Tubo Negocios"], ["tareas", "Tareas"], ["clientes", "Clientes"], ["panel", "Gestión"], ["operaciones", "Operaciones"], ["lineas", "Líneas"], ["otorgamientos", "Otorgamientos"], ["config", "Configuración"]];
   const items = [
     ...ops.map((d) => ({ tipo: "Oportunidades", label: `${d.id} · ${d.cliente}`, extra: stageById(d.stage) ? stageById(d.stage).name : d.stage, run: () => { onAbrirDeal(d); onCerrar(); } })),
     ...clis.map((c) => ({ tipo: "Clientes", label: c.nombre, extra: c.rut, run: () => { irA("clientes", "Clientes"); onCerrar(); } })),
@@ -13975,7 +13975,7 @@ export default function PipelineComercial() {
           </div>
           <span aria-hidden="true" style={{ width: 1, height: 28, backgroundColor: "#ADA8BD" }} />
           <nav className="hidden items-center gap-5 t13 md:flex" style={{ color: C.sub }}>
-            <button onClick={() => irA("pipeline", "Pipeline")} style={{ color: vistaApp === "pipeline" ? C.indigo : C.sub, fontWeight: vistaApp === "pipeline" ? 600 : 400 }}>Pipeline</button>
+            <button onClick={() => irA("pipeline", "Tubo Negocios")} style={{ color: vistaApp === "pipeline" ? C.indigo : C.sub, fontWeight: vistaApp === "pipeline" ? 600 : 400 }}>Tubo Negocios</button>
             <button onClick={() => irA("tareas", "Tareas")} style={{ color: vistaApp === "tareas" ? C.indigo : C.sub, fontWeight: vistaApp === "tareas" ? 600 : 400 }}>Tareas</button>
             <button onClick={() => irA("clientes", "Clientes")} style={{ color: vistaApp === "clientes" ? C.indigo : C.sub, fontWeight: vistaApp === "clientes" ? 600 : 400 }}>Clientes</button>
             <button onClick={() => irA("panel", "Gestión")} style={{ color: vistaApp === "panel" ? C.indigo : C.sub, fontWeight: vistaApp === "panel" ? 600 : 400 }}>Gestión</button>
@@ -14090,9 +14090,9 @@ export default function PipelineComercial() {
         ) : vistaApp === "otorgamientos" ? <OtorgamientosView deals={deals} usuario={usuario} onOpen={abrirDetalle} onAutorizarCausa={autorizarCausa} onCfgChange={() => setCfgVer((v) => v + 1)} /> : (<>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Pipeline</div>
+            <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Tubo Negocios</div>
             <div className="mt-1 flex items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight">Pipeline Comercial</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">Tubo Negocios Comercial</h1>
               <span className="rounded-full px-2 py-0.5 t10 font-medium" style={{ backgroundColor: anyFilter ? "#F1ECFF" : C.page, color: anyFilter ? C.indigo : C.faint }}>
                 {filtered.length} de {deals.length + inboundCount} negocios{anyFilter ? " · filtrado" : ""}
               </span>
