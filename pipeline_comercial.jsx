@@ -1129,27 +1129,27 @@ const PISO_TASA = 0.9; // tasa mensual mínima viable; bajo este piso, la operac
 // ATRIBUCIONES DE DESCUENTO DEL EJECUTIVO (bandas por tasa) — configuración editable (JSON).
 // Los controles se aplican sobre las CONDICIONES COMERCIALES (tasa, comisión y descuentos). Para la
 // banda de la tasa de referencia de la operación: `descEjec` = % de descuento que el ejecutivo autoriza
-// por sí mismo; `descMax` = % máximo alcanzable CON autorización explícita de la jefatura. Bajo
-// `tasaMinAbsoluta` la operación no se autoriza nunca (ni con jefatura). Mientras más baja la tasa,
-// menor la atribución del ejecutivo.
+// por sí mismo; `descMax` = % máximo alcanzable CON autorización de la JEFATURA. Un descuento SOBRE el
+// máximo de jefatura requiere la atribución del GERENTE COMERCIAL. Bajo `tasaMinAbsoluta` la operación
+// no se autoriza nunca. Las atribuciones son HOMOGÉNEAS para todas las tasas (mismo % en todos los tramos).
 const CFG_ATRIB_DESCUENTO = {
   tasaMinAbsoluta: 0.78,
   bandas: [
-    { tMin: 0.78, tMax: 0.96, descEjec: 5, descMax: 16 },
-    { tMin: 0.97, tMax: 1.23, descEjec: 8, descMax: 13 },
-    { tMin: 1.24, tMax: 1.67, descEjec: 9, descMax: 15 },
-    { tMin: 1.68, tMax: 1.92, descEjec: 10, descMax: 17 },
-    { tMin: 1.93, tMax: 2.23, descEjec: 12, descMax: 18 },
-    { tMin: 2.24, tMax: Infinity, descEjec: 14, descMax: 20 },
+    { tMin: 0.78, tMax: 0.96, descEjec: 10, descMax: 16 },
+    { tMin: 0.97, tMax: 1.23, descEjec: 10, descMax: 16 },
+    { tMin: 1.24, tMax: 1.67, descEjec: 10, descMax: 16 },
+    { tMin: 1.68, tMax: 1.92, descEjec: 10, descMax: 16 },
+    { tMin: 1.93, tMax: 2.23, descEjec: 10, descMax: 16 },
+    { tMin: 2.24, tMax: Infinity, descEjec: 10, descMax: 16 },
   ],
 };
 const bandaDescuentoDeTasa = (tasaRef) => { const t = +tasaRef || 0; return CFG_ATRIB_DESCUENTO.bandas.find((b) => t >= b.tMin && t <= b.tMax) || null; };
 // Evalúa un cambio de una condición (comercial) respecto de su valor original. El % de descuento es cuánto
 // BAJA el valor nuevo respecto del original; la banda la fija la tasa de referencia de la operación.
-//  · ok           → dentro de la atribución del ejecutivo.
-//  · requiereJefe → sobre la atribución del ejecutivo pero ≤ descuento máximo: la jefatura debe autorizar.
-//  · fueraMax     → sobre el descuento máximo: no se puede ofertar.
-//  · bajoMinimo   → sólo para tasa: cae bajo la tasa mínima absoluta: nunca.
+//  · ok             → dentro de la atribución del ejecutivo.
+//  · requiereJefe   → sobre la atribución del ejecutivo pero ≤ descuento máximo: la jefatura autoriza.
+//  · requiereGerente→ sobre el máximo de jefatura: requiere la atribución del Gerente Comercial.
+//  · bajoMinimo     → sólo para tasa: cae bajo la tasa mínima absoluta: nunca.
 function evalAtribucion(orig, nueva, tasaBanda, esTasa) {
   const o = +orig || 0, n = +nueva || 0;
   const banda = bandaDescuentoDeTasa(tasaBanda);
@@ -1158,16 +1158,16 @@ function evalAtribucion(orig, nueva, tasaBanda, esTasa) {
   if (pctDesc <= 0 || !banda) return { estado: "ok", pctDesc: Math.max(0, pctDesc), banda };
   if (pctDesc <= banda.descEjec) return { estado: "ok", pctDesc, banda };
   if (pctDesc <= banda.descMax) return { estado: "requiereJefe", pctDesc, banda };
-  return { estado: "fueraMax", pctDesc, banda };
+  return { estado: "requiereGerente", pctDesc, banda };
 }
 // Estado global de atribución de una edición de condiciones (peor caso entre tasa y comisión).
 const ATRIB_CHIP = {
   ok: { fg: "#16A34A", lbl: "dentro de atribución", icon: "✓" },
   requiereJefe: { fg: "#C2410C", lbl: "requiere jefatura", icon: "▲" },
-  fueraMax: { fg: "#DC2626", lbl: "fuera del máximo", icon: "✕" },
+  requiereGerente: { fg: "#DC2626", lbl: "requiere gerente comercial", icon: "▲" },
   bajoMinimo: { fg: "#DC2626", lbl: "bajo la tasa mínima", icon: "✕" },
 };
-const ORDEN_ATRIB = { ok: 0, requiereJefe: 1, fueraMax: 2, bajoMinimo: 3 };
+const ORDEN_ATRIB = { ok: 0, requiereJefe: 1, requiereGerente: 2, bajoMinimo: 3 };
 function atribResumen(evals) {
   let peor = { estado: "ok" };
   for (const e of evals) if (ORDEN_ATRIB[e.estado] > ORDEN_ATRIB[peor.estado]) peor = e;
@@ -2890,15 +2890,19 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
   const autorizado = autorizSig === condSig;         // la jefatura autorizó exactamente estas condiciones
   const solicitado = solicSig === condSig;           // el ejecutivo ya solicitó autorización de estas condiciones
   const requiereJefe = atrib.estado === "requiereJefe";
-  const bloqueoDuro = atrib.estado === "fueraMax" || atrib.estado === "bajoMinimo"; // no ofertar nunca
+  const requiereGerente = atrib.estado === "requiereGerente"; // sobre el máximo de jefatura → Gerente Comercial
+  const bloqueoDuro = atrib.estado === "bajoMinimo"; // sólo la tasa mínima absoluta no es ofertable nunca
+  const esGerente = esGerenteComercial(usuarioCod); // atribución de Gerente Comercial (N2+)
+  const puedeAutorizar = requiereGerente ? esGerente : esJefe; // quién puede visar según el nivel del descuento
+  const rolAut = requiereGerente ? "Gerente Comercial" : "jefatura"; // rol requerido para autorizar
   const solicitarAutorizacion = () => {
     setSolicSig(condSig);
-    registrarAuditoria({ usuario: usuario, modulo: "Condiciones comerciales", accion: "Solicitar autorización", glosa: `Descuento ${atrib.pctDesc}% sobre condiciones de «${deal.cliente}» (atrib. ${bandaRef ? bandaRef.descEjec : "—"}% / máx ${bandaRef ? bandaRef.descMax : "—"}%) → tarea a la jefatura`, empresaId: deal.id, exito: true });
+    registrarAuditoria({ usuario: usuario, modulo: "Condiciones comerciales", accion: "Solicitar autorización", glosa: `Descuento ${atrib.pctDesc}% sobre condiciones de «${deal.cliente}» (atrib. ${bandaRef ? bandaRef.descEjec : "—"}% / máx jefatura ${bandaRef ? bandaRef.descMax : "—"}%) → autorización de ${rolAut}`, empresaId: deal.id, exito: true });
     if (deal) { deal.condReqAutJefe = true; deal.condAutJefe = false; } // marca la operación: no publicar hasta autorizar
   };
   const autorizarJefe = () => {
     setAutorizSig(condSig);
-    registrarAuditoria({ usuario: usuario, modulo: "Condiciones comerciales", accion: "Autorizar condiciones", glosa: `Jefatura autoriza descuento ${atrib.pctDesc}% en «${deal.cliente}» (tasa ${nc.tasa}%, comisión mín ${nc.comMin} UF)`, empresaId: deal.id, exito: true });
+    registrarAuditoria({ usuario: usuario, modulo: "Condiciones comerciales", accion: "Autorizar condiciones", glosa: `${requiereGerente ? "Gerente Comercial" : "Jefatura"} autoriza descuento ${atrib.pctDesc}% en «${deal.cliente}» (tasa ${nc.tasa}%, comisión mín ${nc.comMin} UF)`, empresaId: deal.id, exito: true });
     if (deal) { deal.condReqAutJefe = false; deal.condAutJefe = true; }
   };
   const anticipoCLP = Math.round(nc.antic / 100 * montoDocsCLP);
@@ -2979,24 +2983,24 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
         )}
         {atrib.estado !== "ok" && (
           <div className="mt-2 rounded-lg p-2.5" style={{ backgroundColor: bloqueoDuro ? "#fef2f2" : "#FFF7ED", border: `1px solid ${bloqueoDuro ? "#fecaca" : "#FED7AA"}` }}>
-            <div className="flex items-center gap-1.5 t11 font-semibold" style={{ color: bloqueoDuro ? "#DC2626" : "#C2410C" }}>
-              <AlertTriangle size={12} /> {atrib.estado === "bajoMinimo" ? "Tasa bajo el mínimo permitido — no ofertable" : bloqueoDuro ? "Descuento fuera del máximo autorizado — no ofertable" : "Descuento sobre tu atribución — requiere autorización de jefatura"}
+            <div className="flex items-center gap-1.5 t11 font-semibold" style={{ color: bloqueoDuro ? "#DC2626" : requiereGerente ? "#DC2626" : "#C2410C" }}>
+              <AlertTriangle size={12} /> {atrib.estado === "bajoMinimo" ? "Tasa bajo el mínimo permitido — no ofertable" : requiereGerente ? "Descuento sobre el máximo de jefatura — requiere autorización del Gerente Comercial" : "Descuento sobre tu atribución — requiere autorización de jefatura"}
             </div>
-            <div className="mt-1 t10" style={{ color: C.sub }}>Descuento aplicado <b>{atrib.pctDesc}%</b>{bandaRef && <> · tu atribución <b>{bandaRef.descEjec}%</b> · máximo con jefatura <b>{bandaRef.descMax}%</b></>}. Controlado sobre tasa y comisión.</div>
-            {esJefe && !bloqueoDuro && <div className="mt-1 t9" style={{ color: C.faint }}>Operación: {[...new Set((deudoresOp || []).map((f) => f.deudor))].slice(0, 4).join(", ") || deal.deudor} · {(deudoresOp || []).length || deal.facturas} factura(s) · {fmtMM((deudoresOp || []).reduce((s, f) => s + (f.montoMM || 0), 0) || deal.amountMM)}.</div>}
+            <div className="mt-1 t10" style={{ color: C.sub }}>Descuento aplicado <b>{atrib.pctDesc}%</b>{bandaRef && <> · tu atribución <b>{bandaRef.descEjec}%</b> · máximo con jefatura <b>{bandaRef.descMax}%</b></>}{requiereGerente && <> · sobre el máximo requiere <b>Gerente Comercial</b></>}. Controlado sobre tasa y comisión.</div>
+            {puedeAutorizar && !bloqueoDuro && <div className="mt-1 t9" style={{ color: C.faint }}>Operación: {[...new Set((deudoresOp || []).map((f) => f.deudor))].slice(0, 4).join(", ") || deal.deudor} · {(deudoresOp || []).length || deal.facturas} factura(s) · {fmtMM((deudoresOp || []).reduce((s, f) => s + (f.montoMM || 0), 0) || deal.amountMM)}.</div>}
             {bloqueoDuro ? (
-              <div className="mt-1.5 t9" style={{ color: "#DC2626" }}>Ajusta la tasa/comisión dentro del máximo autorizado para poder ofertar.</div>
+              <div className="mt-1.5 t9" style={{ color: "#DC2626" }}>Ajusta la tasa dentro de la tasa mínima permitida para poder ofertar.</div>
             ) : autorizado ? (
-              <div className="mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}><Check size={10} /> Condiciones autorizadas por la jefatura</div>
-            ) : esJefe ? (
+              <div className="mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}><Check size={10} /> Condiciones autorizadas por {requiereGerente ? "el Gerente Comercial" : "la jefatura"}</div>
+            ) : puedeAutorizar ? (
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <button onClick={autorizarJefe} className="inline-flex items-center gap-1 rounded-full px-3 py-1 t10 font-semibold text-white" style={{ backgroundColor: "#16A34A" }}><Check size={11} /> Autorizar condiciones</button>
-                <span className="t9" style={{ color: C.faint }}>Como jefatura puedes autorizar o ajustar la tasa/comisión aquí mismo.</span>
+                <span className="t9" style={{ color: C.faint }}>Como {rolAut} puedes autorizar o ajustar la tasa/comisión aquí mismo.</span>
               </div>
             ) : solicitado ? (
-              <div className="mt-1.5 t9 font-medium" style={{ color: "#C2410C" }}>⏳ Autorización solicitada · pendiente de la jefatura. La oferta no se publica hasta que se autorice.</div>
+              <div className="mt-1.5 t9 font-medium" style={{ color: "#C2410C" }}>⏳ Autorización solicitada · pendiente de {rolAut === "jefatura" ? "la jefatura" : "el Gerente Comercial"}. La oferta no se publica hasta que se autorice.</div>
             ) : (
-              <button onClick={solicitarAutorizacion} className="mt-1.5 inline-flex items-center gap-1 rounded-full px-3 py-1 t10 font-semibold" style={{ border: "1px solid #C2410C", color: "#C2410C", backgroundColor: "#fff" }}><AlertTriangle size={11} /> Solicitar autorización de jefatura</button>
+              <button onClick={solicitarAutorizacion} className="mt-1.5 inline-flex items-center gap-1 rounded-full px-3 py-1 t10 font-semibold" style={{ border: "1px solid #C2410C", color: "#C2410C", backgroundColor: "#fff" }}><AlertTriangle size={11} /> Solicitar autorización de {rolAut === "jefatura" ? "jefatura" : "Gerente Comercial"}</button>
             )}
           </div>
         )}
@@ -3632,7 +3636,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado }) {
   );
 }
 function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorporarFacturas, onRetirarFactura, onPublicar, onCerrarOferta, onEnviarCierre, onContactar, onEditarContacto, onEnviarWA, onMover, cierre, onConfirmCierre, usuario, onAutorizarCausa, onOtorgarOperacion, tabInicial, onIrOtorgamientos, fullPage }) {
-  const [tab, setTab] = useState(tabInicial || (deal && deal.stage === "otorgamiento" ? "otorgamiento" : "contacto"));
+  const [tab, setTab] = useState(tabInicial || (deal && deal.stage === "otorgamiento" ? "otorgamiento" : "negocio"));
   useEffect(() => { if (tabInicial) setTab(tabInicial); }, [tabInicial, deal && deal.id]);
   const [confirmRetiro, setConfirmRetiro] = useState(null); // factura a retirar de la oferta (ConfirmDialog spec §26)
   const [otorgNota, setOtorgNota] = useState(""); // nota del especialista en Otorgamiento
@@ -3679,6 +3683,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [factTab, setFactTab] = useState("candidatas"); // sub-tab de facturas: candidatas | todas
   const [negTab, setNegTab] = useState("resumen"); // sub-tab del negocio: resumen | documentos | descuentos
   const [reevalPend, setReevalPend] = useState(false); // se agregaron/quitaron facturas → condiciones a re-evaluar
+  const [iaOpen, setIaOpen] = useState(false); // Resumen IA de la operación colapsable (colapsado por defecto para no ocupar viewport)
   const [pubMenu, setPubMenu] = useState(false); // dropdown de canal para publicar la oferta
   const [cierreMenu, setCierreMenu] = useState(false); // dropdown de canal para enviar el enlace de cierre
   const [pubModal, setPubModal] = useState(null); // { oferta, opts, canal, descartadas } — decisión sobre facturas descartadas recientes al publicar
@@ -3791,7 +3796,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             {deal.cat && (() => { const cd = catDisp(deal); return <Pill style={{ backgroundColor: catMeta(cd.cat).bg, color: catMeta(cd.cat).fg }}>{cd.label} · {cd.q}</Pill>; })()}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1" style={{ borderBottom: `1px solid ${C.line}` }}>
-            {[["contacto", "Empresa"], ["negocio", "Negocio"], ["usuarios", "Usuarios"], ["bitacora", "Bitácora"], ["sow", "SOW"], ["cobranza", "Cobranza"], ["mensajeria", "Mensajería"], ...((deal.facturasOp && deal.facturasOp.length) ? [["verificacion", "Verificación"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
+            {[["negocio", "Negocio"], ["contacto", "Linea"], ["usuarios", "Usuarios"], ["bitacora", "Bitácora"], ["sow", "SOW"], ["cobranza", "Cobranza"], ["mensajeria", "Mensajería"], ...((deal.facturasOp && deal.facturasOp.length) ? [["verificacion", "Verificación"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
               <button key={k} onClick={() => setTab(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
                 {l}
                 {k === "otorgamiento" && otorgPend > 0 && <span title={`${otorgPend} regla(s) que debes visar tú (cliente + deudores)`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#DC2626" }}>{otorgPend}</span>}
@@ -3899,17 +3904,22 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           </>)}
 
           {tab === "negocio" && (<>
-          {/* Resumen IA de la operación (reemplaza al Next Best Action en esta pestaña). */}
-          <div className="mb-4 rounded-lg p-3" style={{ backgroundColor: "#f5f3ff", border: "1px solid #DDD6FE" }}>
-            <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#7C3AED" }}>
-              <Zap size={12} /> Resumen IA de la operación
-            </div>
-            <div className="mt-2 space-y-1.5">
-              {resumenIA(deal).map((p, i) => (
-                <p key={i} className="t12" style={{ color: C.ink, lineHeight: 1.55 }}>{p}</p>
-              ))}
-            </div>
-            <div className="mt-2 t9" style={{ color: C.faint }}>Generado automáticamente a partir del historial de la oportunidad (prospección → estado actual).</div>
+          {/* Resumen IA de la operación — colapsable (colapsado por defecto para no ocupar viewport). */}
+          <div className="mb-4 rounded-lg" style={{ backgroundColor: "#f5f3ff", border: "1px solid #DDD6FE" }}>
+            <button onClick={() => setIaOpen((v) => !v)} className="flex w-full items-center justify-between gap-2 p-3 text-left">
+              <span className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#7C3AED" }}><Zap size={12} /> Resumen IA de la operación</span>
+              <span className="flex items-center gap-1 t9" style={{ color: "#7C3AED" }}>{iaOpen ? "Ocultar" : "Ver"} {iaOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</span>
+            </button>
+            {iaOpen && (
+              <div className="px-3 pb-3">
+                <div className="space-y-1.5">
+                  {resumenIA(deal).map((p, i) => (
+                    <p key={i} className="t12" style={{ color: C.ink, lineHeight: 1.55 }}>{p}</p>
+                  ))}
+                </div>
+                <div className="mt-2 t9" style={{ color: C.faint }}>Generado automáticamente a partir del historial de la oportunidad (prospección → estado actual).</div>
+              </div>
+            )}
           </div>
           {/* Simulación del negocio: condiciones, deudores y facturas de la operación. */}
           {(() => {
@@ -3949,6 +3959,25 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           <button key={k} onClick={() => setNegTab(k)} className="rounded-lg px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: negTab === k ? C.lilac : "#fff", color: negTab === k ? C.indigo : C.sub, border: `1px solid ${negTab === k ? C.indigo : C.line}` }}>{l}</button>
                         ))}
                       </div>
+                      {/* Resumen de condiciones comerciales (referencia read-only) — se mantiene visible en Documentos y Descuentos. */}
+                      {negTab !== "resumen" && (() => {
+                        const UF = 38000, comMiniCLP = 2 * UF, gastMiniCLP = 26000; // condiciones base (mismos defaults del Resumen)
+                        const bRef = bandaDescuentoDeTasa(tasaPond);
+                        return (
+                          <div className="mt-2 rounded-lg p-2.5" style={{ backgroundColor: "#F9FAFB", border: "1px solid #FED7AA" }}>
+                            <div className="t9 font-semibold uppercase tracking-wide" style={{ color: "#C2410C" }}>Condiciones comerciales</div>
+                            <div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                              {[["Tasa de negocio", `${tasaPond}%`], ["% Anticipo", `${antic}%`], ["Comisión", fmtCLP(comMiniCLP)], ["Gastos", fmtCLP(gastMiniCLP)]].map(([l, v]) => (
+                                <div key={l} className="rounded-lg p-2" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+                                  <div className="t9 uppercase tracking-wide" style={{ color: C.faint }}>{l}</div>
+                                  <div className="mt-0.5 t13 font-semibold" style={{ color: C.ink }}>{v}</div>
+                                </div>
+                              ))}
+                            </div>
+                            {bRef && <div className="mt-1.5 t9" style={{ color: C.faint }}>Atribución (banda tasa {bRef.tMin}%–{bRef.tMax === Infinity ? "+" : bRef.tMax + "%"}): descuento ejecutivo <b style={{ color: C.sub }}>{bRef.descEjec}%</b> · máximo con jefatura <b style={{ color: C.sub }}>{bRef.descMax}%</b> · sobre el máximo requiere Gerente Comercial. Edita las condiciones en el sub-tab <b style={{ color: C.sub }}>Resumen</b>.</div>}
+                          </div>
+                        );
+                      })()}
                       {negTab === "resumen" && <SimResumen deal={deal} o={o} montoDocs={montoValido} cantFacturas={validas.length} usuario={USERS[usuario] || usuario} bloqueado={bloqueado} antic={antic} setAntic={setAntic} comisO={comisO} setComisO={setComisO} tasaPond={tasaPond} diasPond={diasPond} reevalPend={reevalPend} onReevaluar={() => setReevalPend(false)} esJefe={esJefeComercial(usuario)} usuarioCod={usuario} deudoresOp={validas} />}
                       {negTab === "descuentos" && <SimDescuentos deal={deal} o={o} />}
                       {negTab === "documentos" && (<>
@@ -6983,6 +7012,8 @@ function logOtorgEvento(dealId, actor, resultado, detalle) {
 let PRIORIDAD_CURSE = {};
 // ¿El usuario es jefatura o gerencia comercial (puede pedir/quitar prioridad)? Los ejecutivos no.
 const esJefeComercial = (code) => code === "ADMIN" || atribDe(code).atrib.comercial != null;
+// Gerente Comercial (o superior): atribución comercial N2+ (autoriza descuentos sobre el máximo de jefatura).
+const esGerenteComercial = (code) => code === "ADMIN" || (atribDe(code).atrib.comercial != null && atribDe(code).atrib.comercial >= 2);
 function setPrioridadCurse(dealId, code, on) {
   if (on) PRIORIDAD_CURSE[dealId] = { por: code, porNombre: USERS[code] || code, ts: nowStamp() };
   else delete PRIORIDAD_CURSE[dealId];
