@@ -11276,7 +11276,7 @@ function facturasDeOp(op) {
     const diasAtraso = aTiempo === false ? (op.diasAtraso || (1 + Math.floor(r() * 45))) : 0;
     const vd = new Date(2026, 6, 30); vd.setDate(vd.getDate() - Math.floor(r() * 90));
     const venc = `${String(vd.getDate()).padStart(2, "0")}-${String(vd.getMonth() + 1).padStart(2, "0")}-${vd.getFullYear()}`;
-    out.push({ id: op.id + "-f" + i, folio: 100000 + Math.floor(r() * 8999999), neg: op.neg, cliente: op.cliente, deudor: op.deudor, montoMM: monto, montoPagado: +(monto * pctPagado / 100).toFixed(1), pctPagado, estadoPago, aTiempo, diasAtraso, venc, exec: op.exec });
+    out.push({ id: op.id + "-f" + i, folio: 100000 + Math.floor(r() * 8999999), neg: op.neg, cliente: op.cliente, deudor: op.deudor, montoMM: monto, montoPagado: +(monto * pctPagado / 100).toFixed(1), pctPagado, estadoPago, aTiempo, diasAtraso, venc, exec: op.exec, ts: op.ts });
   }
   return out;
 }
@@ -11286,6 +11286,10 @@ function OperacionesView({ deals, onOpen, soloExec }) {
   const [fEstado, setFEstado] = useState("todos");
   const [vista, setVista] = useState("operaciones");
   const [fCliente, setFCliente] = useState("todos");
+  const [fDesde, setFDesde] = useState(""); // filtro por fecha de la operación (rango desde–hasta)
+  const [fHasta, setFHasta] = useState("");
+  // ¿La operación (por su timestamp) cae dentro del rango seleccionado? Rango inclusivo por día.
+  const enRango = (ts) => { if (!ts) return true; const t = +ts; if (fDesde && t < new Date(fDesde + "T00:00:00").getTime()) return false; if (fHasta && t > new Date(fHasta + "T23:59:59").getTime()) return false; return true; };
   const estadoDe = (s) => s === "giro" ? "Girada" : s === "cesion" ? "En cesión" : s === "aceptadas" ? "Aceptada" : "En otorgamiento";
   const vivas = useMemo(() => (deals || []).filter((d) => ["aceptadas", "cesion", "otorgamiento", "giro"].includes(d.stage) && (!soloExec || (EXECS[d.exec] || "Agente IA") === soloExec)).map((d) => ({
     id: d.id, deal: d, neg: d.negocioNum || d.id, cliente: d.cliente, deudor: (d.deudores && d.deudores[0] ? d.deudores[0].name : d.deudor), facturas: d.facturas,
@@ -11295,12 +11299,14 @@ function OperacionesView({ deals, onOpen, soloExec }) {
   const todas = [...vivas, ...OP_SINTETICAS.filter((o) => !soloExec || o.exec === soloExec)];
   const esGirada = (o) => o.estado === "Girada";
   const clientes = Array.from(new Set(todas.map((o) => o.cliente))).sort((a, b) => a.localeCompare(b, "es"));
-  const rows = todas.filter((o) => (!q || o.cliente.toLowerCase().includes(q.toLowerCase()) || (o.deudor || "").toLowerCase().includes(q.toLowerCase()) || String(o.neg).includes(q)) && (fEstado === "todos" || (fEstado === "girada" ? esGirada(o) : !esGirada(o))) && (fCliente === "todos" || o.cliente === fCliente));
+  const rows = todas.filter((o) => (!q || o.cliente.toLowerCase().includes(q.toLowerCase()) || (o.deudor || "").toLowerCase().includes(q.toLowerCase()) || String(o.neg).includes(q)) && (fEstado === "todos" || (fEstado === "girada" ? esGirada(o) : !esGirada(o))) && (fCliente === "todos" || o.cliente === fCliente) && enRango(o.ts));
   // Apertura por factura: expande las operaciones vivas + sintéticas en sus facturas
   const facTodas = [...vivas.flatMap(facturasDeOp), ...OP_FACTURAS.filter((f) => !soloExec || f.exec === soloExec)];
-  const facRows = facTodas.filter((f) => (fCliente === "todos" || f.cliente === fCliente) && (!q || f.cliente.toLowerCase().includes(q.toLowerCase()) || (f.deudor || "").toLowerCase().includes(q.toLowerCase()) || String(f.folio).includes(q) || String(f.neg).includes(q)));
-  const montoGirado = todas.reduce((s, o) => s + (o.giroMM || 0), 0);
-  const nGiradas = todas.filter(esGirada).length;
+  const facRows = facTodas.filter((f) => (fCliente === "todos" || f.cliente === fCliente) && (!q || f.cliente.toLowerCase().includes(q.toLowerCase()) || (f.deudor || "").toLowerCase().includes(q.toLowerCase()) || String(f.folio).includes(q) || String(f.neg).includes(q)) && enRango(f.ts));
+  // KPIs del período: reflejan el rango de fechas (no los filtros de búsqueda/estado).
+  const enPeriodo = todas.filter((o) => enRango(o.ts));
+  const montoGirado = enPeriodo.reduce((s, o) => s + (o.giroMM || 0), 0);
+  const nGiradas = enPeriodo.filter(esGirada).length;
   const estColor = { "Girada": { bg: "#F0FDF4", fg: "#16A34A" }, "En cesión": { bg: "#f0fdfa", fg: "#0f766e" }, "Aceptada": { bg: "#eff6ff", fg: "#2563EB" }, "En otorgamiento": { bg: "#f5f3ff", fg: "#7C3AED" } };
   const cols = ["N° operación", "Cliente / Deudor", "Facturas", "Monto docs", "Tasa", "Monto girado", "Fecha", "Estado", "Cobranza", "Ejecutivo"];
   const facCols = ["Folio", "N° operación", "Cliente / Deudor", "Monto", "Vencimiento", "Cobranza", "Ejecutivo"];
@@ -11309,10 +11315,10 @@ function OperacionesView({ deals, onOpen, soloExec }) {
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         {[
-          { t: "Operaciones", v: todas.length.toLocaleString("es-CL"), s: "cursadas en el período", col: C.ink, bg: "#fff", bd: C.line },
+          { t: "Operaciones", v: enPeriodo.length.toLocaleString("es-CL"), s: "cursadas en el período", col: C.ink, bg: "#fff", bd: C.line },
           { t: "Monto girado", v: fmtMM(montoGirado), s: "total desembolsado a clientes", col: "#16A34A", bg: "#F0FDF4", bd: "#bbf7d0" },
           { t: "Giradas", v: nGiradas.toLocaleString("es-CL"), s: "operaciones ya desembolsadas", col: "#16a34a", bg: "#fff", bd: C.line },
-          { t: "En proceso", v: (todas.length - nGiradas).toLocaleString("es-CL"), s: "aceptadas / cesión / otorgamiento", col: "#7C3AED", bg: "#fff", bd: C.line },
+          { t: "En proceso", v: (enPeriodo.length - nGiradas).toLocaleString("es-CL"), s: "aceptadas / cesión / otorgamiento", col: "#7C3AED", bg: "#fff", bd: C.line },
         ].map((k, i) => (
           <div key={i} className="rounded-xl p-3" style={{ backgroundColor: k.bg, border: `1px solid ${k.bd}` }}>
             <div className="t9 font-bold uppercase tracking-wide" style={{ color: k.col }}>{k.t}</div>
@@ -11335,6 +11341,14 @@ function OperacionesView({ deals, onOpen, soloExec }) {
           <option value="todos">Todos los clientes</option>
           {clientes.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
+        <div className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 t12" style={{ border: `1px solid ${(fDesde || fHasta) ? C.indigo : C.line}`, backgroundColor: "#fff" }}>
+          <Calendar size={13} style={{ color: (fDesde || fHasta) ? C.indigo : C.faint }} />
+          <span className="t10" style={{ color: C.faint }}>Desde</span>
+          <input type="date" value={fDesde} max={fHasta || undefined} onChange={(e) => setFDesde(e.target.value)} className="bg-transparent t11 outline-none" style={{ color: C.ink }} />
+          <span className="t10" style={{ color: C.faint }}>Hasta</span>
+          <input type="date" value={fHasta} min={fDesde || undefined} onChange={(e) => setFHasta(e.target.value)} className="bg-transparent t11 outline-none" style={{ color: C.ink }} />
+          {(fDesde || fHasta) && <button onClick={() => { setFDesde(""); setFHasta(""); }} title="Limpiar rango de fechas" className="rounded p-0.5" style={{ color: C.sub }}><X size={12} /></button>}
+        </div>
         {vista === "operaciones" && [["todos", "Todas"], ["girada", "Giradas"], ["proceso", "En proceso"]].map(([k, l]) => (
           <button key={k} onClick={() => setFEstado(k)} className="rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${fEstado === k ? C.indigo : C.line}`, backgroundColor: fEstado === k ? C.indigo : "#fff", color: fEstado === k ? "#fff" : C.ink }}>{l}</button>
         ))}
