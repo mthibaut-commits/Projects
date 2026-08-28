@@ -1652,6 +1652,32 @@ function deudoresHistorial(cliente, deudores) {
     return { name, meses, totFac, totMonto: +totMonto.toFixed(1) };
   }).sort((a, b) => b.totMonto - a.totMonto);
 }
+// Percentil (interpolación lineal) de un arreglo de números. p en [0,1].
+function percentilArr(arr, p) {
+  const a = (arr || []).filter((x) => x != null).slice().sort((x, y) => x - y);
+  if (!a.length) return 0;
+  const idx = (a.length - 1) * p, lo = Math.floor(idx), hi = Math.ceil(idx);
+  return lo === hi ? a[lo] : a[lo] + (a[hi] - a[lo]) * (idx - lo);
+}
+// Venta L6M (últimos 6 meses): rango TÍPICO mensual de monto y n° de facturas emitidas al deudor.
+// El rango usa el percentil 40–90 para descartar los meses extremos y reflejar la relación habitual
+// (p. ej. "5–8 facturas y $50–80M por mes"). Recibe un registro de deudoresHistorial().
+function ventaL6M(dh) {
+  const m6 = (dh && dh.meses ? dh.meses : []).slice(0, 6); // "Mes pasado" … "-6 mes"
+  const facs = m6.map((m) => m.fac), montos = m6.map((m) => m.monto);
+  return {
+    facMin: Math.round(percentilArr(facs, 0.40)), facMax: Math.round(percentilArr(facs, 0.90)),
+    montoMin: percentilArr(montos, 0.40), montoMax: percentilArr(montos, 0.90),
+    activos: m6.filter((m) => m.fac > 0).length, // meses (de 6) con facturación
+  };
+}
+// Deudores con flujo comercial RECURRENTE del cliente en los últimos 6 meses. Se usan para pre-cargar
+// la sección de deudores de la presentación de línea (el ejecutivo sólo ingresa la información de línea).
+// Recurrente = facturó en ≥ 4 de los últimos 6 meses. Ordenados por facturación total (deudoresHistorial).
+function deudoresRecurrentesLinea(cliente) {
+  const cand = Object.keys(SPREAD_MIN_DEUDOR).map((name) => ({ name }));
+  return deudoresHistorial(cliente, cand).filter((h) => h.meses.slice(0, 6).filter((m) => m.fac > 0).length >= 4).slice(0, 5);
+}
 const initialTasks = [
   { id: "T-01", code: "PKG-0379", cliente: "Minera Cordillera Ltda", deudor: "BHP",
     tags: ["Factoring", "Nuevo negocio"], date: "18-06-2026", exec: "JT",
@@ -2806,41 +2832,6 @@ function SowTab({ deal }) {
     </div>
   );
 }
-// Tabla de historial de deudores (monto · n° facturas por mes). Reutilizada en el tab "Empresa"
-// (bajo Línea de crédito) y en el tab "Deudores".
-function DeudoresHistorialTable({ deal }) {
-  // Facturación (emisión de DTE/SII) del cliente hacia sus principales deudores — mide la RECURRENCIA
-  // comercial. Es información válida aun para clientes nuevos (que facturan pero no han cursado factoring).
-  // Se muestran los 10 deudores con mayor facturación.
-  const dh = deudoresHistorial(deal.cliente, deal.deudores).slice(0, 10);
-  const LBL = ["Mes pasado", "-2 mes", "-3 mes", "-4 mes", "-5 mes", "-6 mes", "+6 m"];
-  return (
-    <>
-      <div className="mt-4 t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Principales deudores · facturación por mes (monto · n° facturas)</div>
-      <div className="mt-1.5 overflow-x-auto">
-        <table className="w-full border-collapse t9" style={{ minWidth: "560px" }}>
-          <thead><tr>
-            <th className="px-1.5 py-1 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>Deudor</th>
-            {LBL.map((l) => <th key={l} className="px-1.5 py-1 text-right font-semibold" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{l}</th>)}
-            <th className="px-1.5 py-1 text-right font-semibold" style={{ color: C.ink, borderBottom: `1px solid ${C.line}` }}>Total</th>
-          </tr></thead>
-          <tbody>
-            {dh.map((d) => (
-              <tr key={d.name} style={{ borderBottom: `1px solid ${C.line}` }}>
-                <td className="whitespace-nowrap px-1.5 py-1 font-medium" style={{ color: C.ink }}>{d.name}</td>
-                {d.meses.map((m, i) => (
-                  <td key={i} className="whitespace-nowrap px-1.5 py-1 text-right" style={{ color: C.sub }}>{m.fac ? <span>{fmtMM(m.monto)}<span style={{ color: C.faint }}> · {m.fac}f</span></span> : "—"}</td>
-                ))}
-                <td className="whitespace-nowrap px-1.5 py-1 text-right font-semibold" style={{ color: C.ink }}>{fmtMM(d.totMonto)} · {d.totFac}f</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="mt-1 t9" style={{ color: C.faint }}>Montos y facturas emitidas (facturación SII) a cada deudor en los últimos 6 meses y en periodos anteriores (+6 m). Refleja la recurrencia comercial del cliente.</div>
-    </>
-  );
-}
 // ── Sub-tab "Resumen" del Negocio: réplica de la pantalla "Resultado de la simulación".
 // Desglose de descuentos (diferencia de precio, comisión, gastos, IVA, recargos, descuentos, CxC),
 // monto a girar y retención. Recibe los valores ya calculados de la simulación (o).
@@ -3855,7 +3846,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               </div>
             );
           })()}
-          <DeudoresHistorialTable deal={deal} />
+          {/* La facturación mensual a los principales deudores se movió al paso «Deudores» del wizard de Línea. */}
           {/* Un cliente nuevo no tiene operaciones cursadas previas: no se muestra el historial de operaciones. */}
           {!esClienteNuevoNEX(deal) && <HistorialComercialTable deal={deal} />}
           </>)}
@@ -11473,19 +11464,25 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
   const [vencProp, setVencProp] = useState(() => { const d = new Date(); return new Date(d.getFullYear() + 1, d.getMonth(), d.getDate()).toISOString().slice(0, 10); });
   const [subprod, setSubprod] = useState(() => [{ tipoDoc: "FACTURA", aprobado: linea ? linea.aprobada : 300, utilizado: linea ? linea.uso : 0, propuesta: linea ? linea.aprobada : 300, anticipo: 100, plazoMax: 90 }]);
   const totalPropuesto = propFactoring + propConfirming;
-  // Paso 4 — deudores (agregar dispara API 4 en miniatura: recuperar → aceptar → editar)
-  const [deudores, setDeudores] = useState([]);
+  // Paso 4 — deudores. Construye la fila de un deudor (datos API 4 · Plataforma 360) e incorpora la
+  // Venta L6M (facturación mensual al deudor: historial + rango típico p40–p90). Sirve tanto para los
+  // deudores recurrentes pre-cargados como para los que el ejecutivo agrega manualmente.
+  const construirDeudorLinea = (nombre) => {
+    const h = Math.abs(hashStr("deu" + nombre)); const prop = 50 + (h % 20) * 10; const ant = (h % 2) ? 50 + (h % 10) * 10 : 0;
+    const esCliente = typeof PC_CLIENTES !== "undefined" && PC_CLIENTES.some((c) => c.nombre === nombre) ? true : (h % 3 === 0);
+    const hist = deudoresHistorial(cliente, [{ name: nombre }])[0];
+    return { nombre, rut: `${76000000 + (h % 20000000)}-${"0123456789K"[h % 11]}`, nota: notaFromScore(scoreDeudor(nombre).score), esCliente, politicaPct: 25 + (h % 2) * 5, anterior: ant, utilizado: ant ? Math.round(ant * ((h % 60) / 100)) : 0, deudaDirecta: (h % 500) * 100000, deudaIndirecta: (h % 7 === 0) ? (h % 200) * 100000 : 0, propuesta: prop, fechaInf: hoyISO, productos: [{ producto: "FACTURA", anterior: ant, utilizado: 0, propuesto: prop }], hist, l6m: ventaL6M(hist) };
+  };
+  // Pre-carga: los deudores con flujo recurrente ya vienen incorporados; el ejecutivo sólo ingresa la
+  // información de línea (propuesta, política, productos). Puede agregar otros con el combo o eliminarlos.
+  const [deudores, setDeudores] = useState(() => deudoresRecurrentesLinea(cliente).map((hh) => ({ ...construirDeudorLinea(hh.name), flags: { V: true, N: true, C: true, FR: false, CP: false }, recurrente: true })));
   const [addSel, setAddSel] = useState("");
   const [addPrev, setAddPrev] = useState(null); // preview API 4 del deudor por aceptar
   const [editDeu, setEditDeu] = useState(null);       // índice del deudor en edición (modal Editar Deudor Factoring)
   const [otrosLimite, setOtrosLimite] = useState(10); // Otros Deudores Límite Máx. %
   const candidatosDeu = Object.keys(SPREAD_MIN_DEUDOR).filter((n) => !deudores.some((d) => d.nombre === n));
   const promNota = deudores.length ? +(deudores.reduce((s, d) => s + d.nota * (d.propuesta || 1), 0) / deudores.reduce((s, d) => s + (d.propuesta || 1), 0)).toFixed(2) : 0;
-  const pedirDeudor = (nombre) => {
-    const h = Math.abs(hashStr("deu" + nombre)); const prop = 50 + (h % 20) * 10; const ant = (h % 2) ? 50 + (h % 10) * 10 : 0;
-    const esCliente = typeof PC_CLIENTES !== "undefined" && PC_CLIENTES.some((c) => c.nombre === nombre) ? true : (h % 3 === 0);
-    setAddPrev({ nombre, rut: `${76000000 + (h % 20000000)}-${"0123456789K"[h % 11]}`, nota: notaFromScore(scoreDeudor(nombre).score), esCliente, politicaPct: 25 + (h % 2) * 5, anterior: ant, utilizado: ant ? Math.round(ant * ((h % 60) / 100)) : 0, deudaDirecta: (h % 500) * 100000, deudaIndirecta: (h % 7 === 0) ? (h % 200) * 100000 : 0, propuesta: prop, fechaInf: hoyISO, productos: [{ producto: "FACTURA", anterior: ant, utilizado: 0, propuesto: prop }] });
-  };
+  const pedirDeudor = (nombre) => setAddPrev(construirDeudorLinea(nombre));
   const aceptarDeudor = () => { if (!addPrev) return; setDeudores((p) => [...p, { ...addPrev, flags: { V: true, N: true, C: true, FR: false, CP: false } }]); setAddPrev(null); setAddSel(""); };
   const updDeu = (i, patch) => setDeudores((p) => p.map((x, j) => j === i ? { ...x, ...patch } : x));
   const updDeuProd = (i, pi, patch) => setDeudores((p) => p.map((x, j) => { if (j !== i) return x; const productos = x.productos.map((pr, k) => k === pi ? { ...pr, ...patch } : pr); return { ...x, productos, propuesta: productos.reduce((s, pr) => s + (pr.propuesto || 0), 0) }; }));
@@ -11690,7 +11687,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
           )}
           {paso === 3 && (
             <>
-              <div className="mb-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#C2410C" }}>Agrega <b>buenos deudores según la Nota Deudor</b> (política: nota ≥ 3,7). Al agregar cada deudor se consulta la <b>API 4 · Plataforma 360</b>; acepta su información antes de editarla.</div>
+              <div className="mb-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#C2410C" }}>Los <b>deudores con flujo recurrente</b> (facturación en ≥ 4 de los últimos 6 meses) ya vienen incorporados: sólo ingresa la <b>información de línea</b> (propuesta, política y productos). La columna <b>Venta L6M</b> muestra el rango típico mensual (facturas y monto) — pasa el mouse sobre el nombre para ver el detalle por mes. Agrega otros <b>buenos deudores</b> (nota ≥ 3,7) con el selector; cada uno consulta la <b>API 4 · Plataforma 360</b>.</div>
               <div className="flex items-center gap-2">
                 <select value={addSel} onChange={(e) => { setAddSel(e.target.value); if (e.target.value) pedirDeudor(e.target.value); }} className="rounded-md px-2 py-1.5 t11" style={inpSty}>
                   <option value="">+ Agregar deudor factoring…</option>
@@ -11708,9 +11705,9 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                 </div>
               )}
               <div className="mt-2 overflow-x-auto rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                <div style={{ minWidth: 1060 }}>
-                {(() => { const DG = "40px 44px 92px minmax(150px,1fr) 84px 76px 76px 96px 78px 78px 56px 128px 44px"; return (<>
-                <div className="grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: DG, color: C.faint, borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}><span>Nota</span><span title="C = Cliente · D = Deudor. Ambos encendidos: la empresa es cliente y deudor a la vez.">Cli/Deu</span><span>Rut</span><span>Nombre / Razón social</span><span>Pol. %L</span><span className="text-right">M. anterior</span><span className="text-right">M. utilizado</span><span className="text-right">Propuesta MM</span><span className="text-right">D. directa</span><span className="text-right">D. indirecta</span><span className="text-right">Conc. %</span><span>V · N · C · FR · CP</span><span></span></div>
+                <div style={{ minWidth: 1320 }}>
+                {(() => { const DG = "40px 44px 92px minmax(140px,1fr) 84px 120px 82px 74px 74px 92px 74px 74px 52px 122px 40px"; const LBL7 = ["Mes pasado", "-2 mes", "-3 mes", "-4 mes", "-5 mes", "-6 mes", "+6 m"]; return (<>
+                <div className="grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: DG, color: C.faint, borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}><span>Nota</span><span title="C = Cliente · D = Deudor. Ambos encendidos: la empresa es cliente y deudor a la vez.">Cli/Deu</span><span>Rut</span><span>Nombre / Razón social</span><span className="text-right" title="Venta L6M · n° de facturas emitidas al deudor por mes en los últimos 6 meses (rango típico p40–p90).">L6M f/mes</span><span className="text-right" title="Venta L6M · monto facturado al deudor por mes en los últimos 6 meses (rango típico p40–p90).">L6M $/mes</span><span>Pol. %L</span><span className="text-right">M. anterior</span><span className="text-right">M. utilizado</span><span className="text-right">Propuesta MM</span><span className="text-right">D. directa</span><span className="text-right">D. indirecta</span><span className="text-right">Conc. %</span><span>V · N · C · FR · CP</span><span></span></div>
                 {deudores.map((d, i) => {
                   const conc = propFactoring > 0 ? Math.round((d.propuesta || 0) / propFactoring * 100) : 0;
                   return (
@@ -11721,7 +11718,14 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                       <span className="flex h-4 w-4 items-center justify-center rounded-full t8 font-bold text-white" style={{ backgroundColor: "#7C3AED" }}>D</span>
                     </span>
                     <span className="t10" style={{ color: C.sub, fontVariantNumeric: "tabular-nums" }}>{d.rut}</span>
-                    <span className="truncate t11 font-medium" style={{ color: C.ink }} title={d.nombre}>{d.nombre}</span>
+                    <span className="flex min-w-0 items-center gap-1 overflow-hidden">
+                      <TipDesglose color="#7C3AED" titulo={`Facturación mensual · ${d.nombre}`} nota={d.l6m.facMax > 0 ? `Últimos 6 meses: ${d.l6m.facMin}–${d.l6m.facMax} facturas y ${fmtMM(d.l6m.montoMin)}–${fmtMM(d.l6m.montoMax)} por mes (rango típico p40–p90). Facturó ${d.l6m.activos}/6 meses. Total 7m: ${fmtMM(d.hist.totMonto)} · ${d.hist.totFac}f.` : "Sin facturación registrada en el periodo."} items={d.hist.meses.map((m, k) => ({ name: LBL7[k], val: m.fac ? `${fmtMM(m.monto)} · ${m.fac}f` : "—" }))}>
+                        <span className="truncate t11 font-medium" style={{ color: C.ink, borderBottom: `1px dotted ${C.faint}`, cursor: "help" }} title={d.nombre}>{d.nombre}</span>
+                      </TipDesglose>
+                      {d.recurrente && <span className="shrink-0 rounded-full px-1 py-0.5 t8 font-bold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A" }} title="Deudor con flujo recurrente: pre-incorporado automáticamente.">REC</span>}
+                    </span>
+                    <span className="t10 text-right" style={{ color: C.sub }} title="Rango típico de facturas emitidas al deudor por mes (últimos 6 meses)">{d.l6m.facMax > 0 ? (d.l6m.facMin === d.l6m.facMax ? `${d.l6m.facMax}` : `${d.l6m.facMin}–${d.l6m.facMax}`) : "—"}<span style={{ color: C.faint }}> f</span></span>
+                    <span className="t10 text-right" style={{ color: C.sub }} title="Rango típico de monto facturado al deudor por mes (últimos 6 meses)">{d.l6m.montoMax > 0 ? `${fmtMM(d.l6m.montoMin)}–${fmtMM(d.l6m.montoMax)}` : "—"}</span>
                     <span className="flex gap-1" title="Política de concentración por deudor: el ejecutivo elige 25% o 30% de la línea.">
                       {[25, 30].map((v) => <button key={v} onClick={() => updDeu(i, { politicaPct: v })} className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: d.politicaPct === v ? "#4c1d95" : "#FAF9FB", color: d.politicaPct === v ? "#fff" : "#9CA3AF" }}>{v}%</button>)}
                     </span>
@@ -11743,6 +11747,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                 <div className="mt-2 grid items-center gap-2 t10" style={{ gridTemplateColumns: DG, borderTop: `1px solid ${C.line}`, paddingTop: 6 }}>
                   <span></span><span></span><span></span>
                   <span className="font-semibold" style={{ color: C.ink }}>Otros Deudores Límite Máx. <input type="number" value={otrosLimite} onChange={(e) => setOtrosLimite(+e.target.value || 0)} className="mx-1 w-12 rounded-full px-1 py-0.5 t10 text-right outline-none" style={inpSty} />%</span>
+                  <span></span><span></span>
                   <span></span>
                   <span className="text-right" style={{ color: C.sub }}>{fmtMM(deudores.reduce((s, d) => s + (d.anterior || 0), 0))}</span>
                   <span className="text-right" style={{ color: C.sub }}>{fmtMM(deudores.reduce((s, d) => s + (d.utilizado || 0), 0))}</span>
