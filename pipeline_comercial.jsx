@@ -11436,25 +11436,30 @@ function PanelRecupera({ fuente, resumen, cargado, onCargar, preview }) {
   );
 }
 // Asistente CREAR PRESENTACIÓN (6 pasos, patrón chevrons). linea=null → Crear Línea.
-function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, subtipoInicial, usuarioNombre, onClose, onInyectada }) {
+function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, subtipoInicial, usuarioNombre, esAdmin = false, onClose, onInyectada }) {
   const cliente = linea ? linea.cliente : (clienteInicial || "");
   const rut = linea ? linea.rut : (rutInicial || ("76." + (100000 + Math.abs(hashStr(cliente)) % 899999)));
   const [paso, setPaso] = useState(0);
   const [ok, setOk] = useState({});      // pasos confirmados
-  const [carg, setCarg] = useState({ 0: true });  // recuperaciones aceptadas por paso · Paso 1 carga automático (sin aceptación)
+  // Modo debug (super admin): muestra los pasos intermedios de "recuperar → aceptar" cada API antes de
+  // vaciarla en la sección. Modo uso (resto de usuarios): la información llega ya cargada y editable; el
+  // ejecutivo recorre el wizard sin confirmar cada call — sólo ingresa/edita la información de línea.
+  const [carg, setCarg] = useState(esAdmin ? { 0: true } : { 0: true, 1: true });
   const [tipo, setTipo] = useState(tipoInicial || (linea ? "renovar" : "crear"));
   const [subtipo, setSubtipo] = useState(subtipoInicial || null);
   const api4 = useMemo(() => api4Empresa360(rut, cliente), [rut, cliente]);
   const api5d = useMemo(() => api5Documentos(rut), [rut]);
   const api6 = useMemo(() => api6RiesgoBICE(rut), [rut]);
-  // Paso 2 — formulario financiero EDITABLE: al aceptar la recuperación, los valores de las APIs se
-  // vacían en los campos (como en la pantalla actual) y el ejecutivo puede corregirlos.
-  const [fin, setFin] = useState(null);
+  // Paso 2 — formulario financiero EDITABLE: los valores de las APIs se vacían en los campos y el
+  // ejecutivo puede corregirlos. En modo debug (admin) esto ocurre al aceptar la recuperación; en modo
+  // uso llegan pre-cargados.
   const hoyISO = new Date().toISOString().slice(0, 10);
+  const finDesdeAPIs = () => ({ directa: +(api6.deudaDirecta / 1e6).toFixed(1), indirecta: +(api6.deudaIndirecta / 1e6).toFixed(1), leasingUF: 0, fInfo: hoyISO, fBalance: "2025-12-31",
+    pasExGen: api4.indices.pasExGen, patrimonio: Math.round(api4.indices.patrimonio / 1e6), generacion: Math.round(api4.indices.generacion / 1e6), leverage: api4.indices.leverage,
+    historicos: "No", achefFecha: hoyISO, achefN: api6.moraACHEF.nroEmpresas, achefVig: +(api6.moraACHEF.vigente / 1e6).toFixed(1), achefMor: +(api6.moraACHEF.morosas / 1e6).toFixed(1), achefFac: +(api6.moraACHEF.facturas / 1e6).toFixed(1), achefChq: 0, achefLet: 0, achefOtr: 0 });
+  const [fin, setFin] = useState(() => esAdmin ? null : finDesdeAPIs());
   const cargarFin = () => {
-    setFin({ directa: +(api6.deudaDirecta / 1e6).toFixed(1), indirecta: +(api6.deudaIndirecta / 1e6).toFixed(1), leasingUF: 0, fInfo: hoyISO, fBalance: "2025-12-31",
-      pasExGen: api4.indices.pasExGen, patrimonio: Math.round(api4.indices.patrimonio / 1e6), generacion: Math.round(api4.indices.generacion / 1e6), leverage: api4.indices.leverage,
-      historicos: "No", achefFecha: hoyISO, achefN: api6.moraACHEF.nroEmpresas, achefVig: +(api6.moraACHEF.vigente / 1e6).toFixed(1), achefMor: +(api6.moraACHEF.morosas / 1e6).toFixed(1), achefFac: +(api6.moraACHEF.facturas / 1e6).toFixed(1), achefChq: 0, achefLet: 0, achefOtr: 0 });
+    setFin(finDesdeAPIs());
     setCarg((c) => ({ ...c, 1: true }));
   };
   // Paso 3 — propuesta de línea
@@ -11489,9 +11494,10 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
   // Paso 5 — Bienes: Fianza Solidaria y Garantías (editables, opcionales)
   const [fianzas, setFianzas] = useState([]);
   const [garantias, setGarantias] = useState([]);
-  // Paso 6 — notas IA
-  const [notas, setNotas] = useState(null);
-  const [notasCargadas, setNotasCargadas] = useState(false);
+  // Paso 6 — notas IA. En modo uso llegan pre-generadas (borrador editable); en modo debug (admin) el
+  // ejecutivo acepta el borrador antes de verlas.
+  const [notas, setNotas] = useState(() => esAdmin ? null : generarNotasIA({ cliente, api4, api6, tipo, subtipo, totalPropuesto, nDeudores: deudores.length, promNota }));
+  const [notasCargadas, setNotasCargadas] = useState(!esAdmin);
   const PASOS = ["Comité y Cliente", "Financieros y Riesgo", "Información de Línea", "Deudores", "Bienes", "Presentación Comercial"];
   const confirmable = paso === 0 ? !!carg[0] : paso === 1 ? !!carg[1] : paso === 3 ? deudores.length > 0 : paso === 5 ? !!notasCargadas : true;
   const confirmar = () => { setOk((o) => ({ ...o, [paso]: true })); if (paso < 5) setPaso(paso + 1); };
@@ -11571,8 +11577,8 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
           )}
           {paso === 1 && (
             <>
-              <PanelRecupera fuente="API 6 · Riesgo BICE + API 4 · Plataforma 360" resumen="Deuda CMF directa/indirecta, mora ACHEF, boletín comercial, previsional, protestos, índices y ventas SII" cargado={!!carg[1]} onCargar={cargarFin}
-                preview={[["Clasificación deudora", api6.clasificacion], ["Deuda directa / indirecta", `$ ${(api6.deudaDirecta / 1e6).toFixed(1)} MM / $ ${(api6.deudaIndirecta / 1e6).toFixed(1)} MM`], ["Mora CMF", api6.moraCMF > 0 ? `$ ${(api6.moraCMF / 1e6).toFixed(1)} MM ⚠` : "Sin mora"], ["Mora ACHEF", api6.moraACHEF.morosas > 0 ? `$ ${(api6.moraACHEF.morosas / 1e6).toFixed(1)} MM · ${api6.moraACHEF.nroEmpresas} empresa(s) ⚠` : `Sin mora · ${api6.moraACHEF.nroEmpresas} empresa(s)`], ["Boletín comercial", api6.boletinComercial > 0 ? `${api6.boletinComercial} anotación(es) ⚠` : "Sin anotaciones"], ["Deuda previsional", api6.deudaPrevisional > 0 ? `$ ${(api6.deudaPrevisional / 1e6).toFixed(1)} MM ⚠` : "Sin deuda"], ["Protestos no aclarados", api6.protestos || 0], ["Leverage / Patrimonio", `${api4.indices.leverage}x · $ ${(api4.indices.patrimonio / 1e6).toFixed(0)} MM`], ["Ventas SII (últ. año)", "M$ " + api4.indices.ventasSII[1].toLocaleString("es-CL")], ["Morosidad interna / Protesto %", `${api6.morosidadInterna} / ${api6.protestoPctInterno}`]]} />
+              {esAdmin && <PanelRecupera fuente="API 6 · Riesgo BICE + API 4 · Plataforma 360" resumen="Deuda CMF directa/indirecta, mora ACHEF, boletín comercial, previsional, protestos, índices y ventas SII" cargado={!!carg[1]} onCargar={cargarFin}
+                preview={[["Clasificación deudora", api6.clasificacion], ["Deuda directa / indirecta", `$ ${(api6.deudaDirecta / 1e6).toFixed(1)} MM / $ ${(api6.deudaIndirecta / 1e6).toFixed(1)} MM`], ["Mora CMF", api6.moraCMF > 0 ? `$ ${(api6.moraCMF / 1e6).toFixed(1)} MM ⚠` : "Sin mora"], ["Mora ACHEF", api6.moraACHEF.morosas > 0 ? `$ ${(api6.moraACHEF.morosas / 1e6).toFixed(1)} MM · ${api6.moraACHEF.nroEmpresas} empresa(s) ⚠` : `Sin mora · ${api6.moraACHEF.nroEmpresas} empresa(s)`], ["Boletín comercial", api6.boletinComercial > 0 ? `${api6.boletinComercial} anotación(es) ⚠` : "Sin anotaciones"], ["Deuda previsional", api6.deudaPrevisional > 0 ? `$ ${(api6.deudaPrevisional / 1e6).toFixed(1)} MM ⚠` : "Sin deuda"], ["Protestos no aclarados", api6.protestos || 0], ["Leverage / Patrimonio", `${api4.indices.leverage}x · $ ${(api4.indices.patrimonio / 1e6).toFixed(0)} MM`], ["Ventas SII (últ. año)", "M$ " + api4.indices.ventasSII[1].toLocaleString("es-CL")], ["Morosidad interna / Protesto %", `${api6.morosidadInterna} / ${api6.protestoPctInterno}`]]} />}
               {carg[1] && fin && (() => {
                 const fld = (k, step) => ({ value: fin[k], onChange: (e) => setFin((f) => ({ ...f, [k]: +e.target.value || 0 })), type: "number", step: step || "0.1", className: "w-full rounded-md px-2 py-1 t11 text-right outline-none", style: inpSty });
                 const ventasUltMM = api4.indices.ventasSII[2] / 1000, deudaMM = (fin.directa || 0) + (fin.indirecta || 0);
@@ -11689,7 +11695,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
             <>
               <div className="mb-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#C2410C" }}>Los <b>deudores con flujo recurrente</b> (facturación en ≥ 4 de los últimos 6 meses) ya vienen incorporados: sólo ingresa la <b>información de línea</b> (propuesta, política y productos). La columna <b>Venta L6M</b> muestra el rango típico mensual (facturas y monto) — pasa el mouse sobre el nombre para ver el detalle por mes. Agrega otros <b>buenos deudores</b> (nota ≥ 3,7) con el selector; cada uno consulta la <b>API 4 · Plataforma 360</b>.</div>
               <div className="flex items-center gap-2">
-                <select value={addSel} onChange={(e) => { setAddSel(e.target.value); if (e.target.value) pedirDeudor(e.target.value); }} className="rounded-md px-2 py-1.5 t11" style={inpSty}>
+                <select value={addSel} onChange={(e) => { const v = e.target.value; setAddSel(v); if (!v) return; if (esAdmin) { pedirDeudor(v); } else { setDeudores((p) => [...p, { ...construirDeudorLinea(v), flags: { V: true, N: true, C: true, FR: false, CP: false } }]); setAddSel(""); } }} className="rounded-md px-2 py-1.5 t11" style={inpSty}>
                   <option value="">+ Agregar deudor factoring…</option>
                   {candidatosDeu.map((n) => <option key={n} value={n}>{n} · nota {notaFromScore(scoreDeudor(n).score)}</option>)}
                 </select>
@@ -11722,7 +11728,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                       <TipDesglose color="#7C3AED" titulo={`Facturación mensual · ${d.nombre}`} nota={d.l6m.facMax > 0 ? `Últimos 6 meses: ${d.l6m.facMin}–${d.l6m.facMax} facturas y ${fmtMM(d.l6m.montoMin)}–${fmtMM(d.l6m.montoMax)} por mes (rango típico p40–p90). Facturó ${d.l6m.activos}/6 meses. Total 7m: ${fmtMM(d.hist.totMonto)} · ${d.hist.totFac}f.` : "Sin facturación registrada en el periodo."} items={d.hist.meses.map((m, k) => ({ name: LBL7[k], val: m.fac ? `${fmtMM(m.monto)} · ${m.fac}f` : "—" }))}>
                         <span className="truncate t11 font-medium" style={{ color: C.ink, borderBottom: `1px dotted ${C.faint}`, cursor: "help" }} title={d.nombre}>{d.nombre}</span>
                       </TipDesglose>
-                      {d.recurrente && <span className="shrink-0 rounded-full px-1 py-0.5 t8 font-bold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A" }} title="Deudor con flujo recurrente: pre-incorporado automáticamente.">REC</span>}
+                      {d.recurrente && <span className="shrink-0 rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A" }} title="Deudor con flujo comercial recurrente (facturó en ≥ 4 de los últimos 6 meses): pre-incorporado automáticamente. El ejecutivo sólo ingresa la información de línea.">Recurrente</span>}
                     </span>
                     <span className="t10 text-right" style={{ color: C.sub }} title="Rango típico de facturas emitidas al deudor por mes (últimos 6 meses)">{d.l6m.facMax > 0 ? (d.l6m.facMin === d.l6m.facMax ? `${d.l6m.facMax}` : `${d.l6m.facMin}–${d.l6m.facMax}`) : "—"}<span style={{ color: C.faint }}> f</span></span>
                     <span className="t10 text-right" style={{ color: C.sub }} title="Rango típico de monto facturado al deudor por mes (últimos 6 meses)">{d.l6m.montoMax > 0 ? `${fmtMM(d.l6m.montoMin)}–${fmtMM(d.l6m.montoMax)}` : "—"}</span>
@@ -11849,10 +11855,11 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
           )}
           {paso === 5 && (
             <>
-              {(() => { const prevN = generarNotasIA({ cliente, api4, api6, tipo, subtipo, totalPropuesto, nDeudores: deudores.length, promNota }); return (
+              {esAdmin && (() => { const prevN = generarNotasIA({ cliente, api4, api6, tipo, subtipo, totalPropuesto, nDeudores: deudores.length, promNota }); return (
               <PanelRecupera fuente="IA · sobre API 4 + la presentación" resumen="Borrador de las 5 notas comerciales generado con la información firmográfica, comercial, financiera, la línea propuesta y los deudores" cargado={notasCargadas} onCargar={() => { setNotas(prevN); setNotasCargadas(true); }}
                 preview={[["Negocio propuesto", prevN.negocio], ["Referencias comerciales", prevN.referencias], ["Antecedentes generales", prevN.antecedentes], ["Aspectos de mercado", prevN.mercado], ["Análisis financiero", prevN.financiero]]} />
               ); })()}
+              {!esAdmin && <div className="mb-2 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#f5f3ff", border: "1px solid #DDD6FE", color: "#7C3AED" }}><Zap size={11} /> Borrador de las 5 notas comerciales generado por IA · revísalo y edítalo antes de solicitar el VB.</div>}
               {notasCargadas && notas && [["negocio", "Negocio propuesto"], ["referencias", "Referencias comerciales"], ["antecedentes", "Antecedentes generales"], ["mercado", "Aspectos de mercado"], ["financiero", "Análisis financiero"]].map(([k, l]) => (
                 <div key={k} className="mt-2">
                   <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>{l} <span className="ml-1 rounded-full px-1 py-0.5 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>✦ IA</span></div>
@@ -11903,7 +11910,7 @@ function LineasBandeja({ onNueva, tick, onRefrescar, cargando }) {
     </div>
   );
 }
-function LineasView({ soloExec }) {
+function LineasView({ soloExec, usuario }) {
   const [q, setQ] = useState("");
   const [fSalud, setFSalud] = useState("todos");
   const [sub, setSub] = useState("vigentes");     // vigentes | enproceso
@@ -11932,7 +11939,7 @@ function LineasView({ soloExec }) {
   // Wizard de presentación al comité: vista standalone que REEMPLAZA el contenido de Líneas (no es modal)
   if (wiz && (wiz.linea || wiz.cliente)) return (
     <PresentacionComite linea={wiz.linea || null} clienteInicial={wiz.cliente || null} rutInicial={wiz.rut || null} tipoInicial={wiz.tipo} subtipoInicial={wiz.subtipo}
-      usuarioNombre={soloExec || "Ejecutivo"}
+      usuarioNombre={soloExec || "Ejecutivo"} esAdmin={usuario === "ADMIN"}
       onClose={() => { setWiz(null); setNuevaCli(""); }}
       onInyectada={() => { setWiz(null); setNuevaCli(""); setSub("enproceso"); setBTick((t) => t + 1); }} />
   );
@@ -14085,7 +14092,7 @@ export default function PipelineComercial() {
             <ReportesView deals={deals} onOpen={abrirDetalle} soloExec={soloExec} />
           </>
         ) : vistaApp === "lineas" ? (
-          <LineasView soloExec={soloExec} />
+          <LineasView soloExec={soloExec} usuario={usuario} />
         ) : vistaApp === "config" ? (
           <>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Administración <ChevronRight size={12} /> Configuración</div>
