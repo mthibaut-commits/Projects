@@ -13857,10 +13857,24 @@ export default function PipelineComercial() {
   };
   const cerrarDiaRef = useRef(null);
   cerrarDiaRef.current = () => {
+    // Cierre de día AUTOMÁTICO (sin modal): acumula el resumen del día y continúa la simulación al día
+    // siguiente sin interrumpir. Sólo al terminar la SEMANA se detiene y se muestra el reporte semanal.
     const diaCerrado = corridas / HORAS_DIA;
-    pausaRef.current = true;
-    setStreaming(false);
-    setDiaModal({ dia: diaCerrado, stats: statsDelDia(diaCerrado) });
+    const stats = statsDelDia(diaCerrado);
+    setReporte((r) => [...r, stats]);
+    setKpiHist((h) => [...h, { dia: diaCerrado, oport: activeCount, pipeline: totalPipeline, venta: ventaMensualMM, forecast: forecastMM, cumpl: vsBudget }].slice(-14));
+    originadasRef.current = 0;
+    originadasMontoRef.current = 0;
+    originadasFacRef.current = 0;
+    accDiaRef.current = nuevoAcc();
+    if (diaCerrado >= DIAS_SEMANA) {
+      pausaRef.current = true;
+      setStreaming(false);
+      setAnalisis(construirAnalisis());
+      setReporteModal(true);
+    } else {
+      rolloverDia(diaCerrado + 1); // la simulación sigue corriendo (no se pausa)
+    }
   };
   useEffect(() => {
     if (corridas > 0 && corridas % HORAS_DIA === 0) cerrarDiaRef.current();
@@ -13896,28 +13910,6 @@ export default function PipelineComercial() {
     setReporteModal(false);
     setEditingRule({ id: newRuleId(), title: "Regla recomendada (análisis)", unidad: "0 fact.", monto: "$0",
       criterio: criterios, periodicidad: "Evento", nueva: "Cada ocurrencia", canales: ["Auto", "Facturas"], accion: "Pipeline Factoring", activa: true, _nuevo: true });
-  };
-  const aceptarDia = () => {
-    if (!diaModal) return;
-    setReporte((r) => [...r, diaModal.stats]);
-    setKpiHist((h) => [...h, { dia: diaModal.dia, oport: activeCount, pipeline: totalPipeline, venta: ventaMensualMM, forecast: forecastMM, cumpl: vsBudget }].slice(-14));
-    originadasRef.current = 0;
-    originadasMontoRef.current = 0;
-    originadasFacRef.current = 0;
-    accDiaRef.current = nuevoAcc();
-    const finSemana = diaModal.dia >= DIAS_SEMANA;
-    setDiaModal(null);
-    if (finSemana) {
-      // Semana terminada: detener la simulación (no avanzar a día 6/7) y mostrar el reporte.
-      setStreaming(false);
-      pausaRef.current = true; // mantiene el cron detenido
-      setAnalisis(construirAnalisis());
-      setReporteModal(true);
-    } else {
-      rolloverDia(diaModal.dia + 1);
-      pausaRef.current = false;
-      setStreaming(true);
-    }
   };
   // Muestreo continuo del conteo por etapa (ventana móvil que avanza con el tiempo).
   const dealsRef = useRef(deals);
@@ -14551,7 +14543,7 @@ export default function PipelineComercial() {
         <CasosModal titulo={`Casos · ${(quickFilters.find((f) => f.id === casosModal)?.label) || casosModal}`}
           casos={casosDe(casosModal)} onClose={() => setCasosModal(null)} onExport={() => exportarCasos(casosModal)} />
       )}
-      {diaModal && <DiaModal info={diaModal} ultimo={diaModal.dia >= DIAS_SEMANA} reporte={reporte} deals={deals} onAceptar={aceptarDia} onClose={() => setDiaModal(null)} />}
+      {/* El modal de "Día X cerrado" se eliminó: el cierre de día es automático (ver cerrarDiaRef). */}
       {reporteModal && <ReporteModal reporte={reporte} analisis={analisis} onClose={() => setReporteModal(false)} onRecomendar={recomendarRegla} />}
       {wizardOpen && <NuevoNegocioWizard usuario={esAdmin ? USUARIO : usuario} deal={wizardDeal} deals={deals} onOpenDeal={(d) => { setWizardOpen(false); setWizardDeal(null); abrirDetalle(d); }} onClose={() => { setWizardOpen(false); setWizardDeal(null); }} onConfirm={crearNegocioWizard} />}
       {filtrosAvOpen && (
