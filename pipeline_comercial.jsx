@@ -3704,9 +3704,6 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [subCanal, setSubCanal] = useState(() => (deal && deal.canalContacto === "Email") ? "Email" : "WhatsApp"); // canal activo en Contactabilidad (Call Center: más adelante)
   const [editC, setEditC] = useState(false); // edición de datos de contacto
   const [draftC, setDraftC] = useState(() => ({ nombre: "", cargo: "", telefono: "", email: "", ...(deal && deal.contacto) }));
-  const [usuariosNuevos, setUsuariosNuevos] = useState([]); // usuarios agregados manualmente en la pestaña Usuarios
-  const [addUser, setAddUser] = useState(false); // formulario "Agregar usuario" abierto
-  const [nu, setNu] = useState({ nombre: "", cargo: "", telefono: "", email: "", tipo: "contacto" }); // nuevo usuario en edición
   if (!deal) return null;
   const sector = SECTOR_COLORS[deal.sector] || { bg: "#F3F4F6", fg: "#4B5563" };
   // Las filas agregadas de "Otras facturas" traen stage "Sin clasificar" (no está en STAGE_ORDER): cae a 0
@@ -3796,7 +3793,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             {deal.cat && (() => { const cd = catDisp(deal); return <Pill style={{ backgroundColor: catMeta(cd.cat).bg, color: catMeta(cd.cat).fg }}>{cd.label} · {cd.q}</Pill>; })()}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1" style={{ borderBottom: `1px solid ${C.line}` }}>
-            {[["negocio", "Negocio"], ["contacto", "Linea"], ["usuarios", "Usuarios"], ["bitacora", "Bitácora"], ["sow", "SOW"], ["cobranza", "Cobranza"], ["mensajeria", "Mensajería"], ...((deal.facturasOp && deal.facturasOp.length) ? [["verificacion", "Verificación"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
+            {[["negocio", "Negocio"], ["contacto", "Linea"], ["bitacora", "Bitácora"], ["sow", "SOW"], ["cobranza", "Cobranza"], ["mensajeria", "Mensajería"], ...((deal.facturasOp && deal.facturasOp.length) ? [["verificacion", "Verificación"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
               <button key={k} onClick={() => setTab(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
                 {l}
                 {k === "otorgamiento" && otorgPend > 0 && <span title={`${otorgPend} regla(s) que debes visar tú (cliente + deudores)`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#DC2626" }}>{otorgPend}</span>}
@@ -4225,63 +4222,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
 
           </>)}
 
-          {tab === "usuarios" && (() => {
-            const base = usuariosDeEmpresa(deal);
-            const todos = [...base, ...usuariosNuevos];
-            const tipoLbl = { contacto: "Contacto", usuario: "Usuario y contacto" };
-            return (
-              <div className="mt-4 space-y-3">
-                <div className="rounded-lg p-3" style={{ backgroundColor: "#f5f3ff", border: "1px solid #DDD6FE" }}>
-                  <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#7C3AED" }}><User size={12} /> Usuarios de la empresa</div>
-                  <div className="mt-1 t10" style={{ color: C.sub }}>Usuarios y contactos de la empresa. Los usuarios listados cuentan con acceso al portal según el rol asignado. El atributo de <b>Apoderado</b> se obtiene en base a los registros almacenados en <b>Plataforma 360</b>.</div>
-                </div>
-                <div className="rounded-lg" style={{ border: `1px solid ${C.line}`, overflow: "hidden" }}>
-                  <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
-                    <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>{todos.length} usuario(s)</span>
-                    {!addUser && <button onClick={() => { setNu({ nombre: "", cargo: "", telefono: "", email: "", tipo: "contacto" }); setAddUser(true); }} className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 t10 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Plus size={12} /> Agregar usuario</button>}
-                  </div>
-                  {addUser && (
-                    <div className="p-3" style={{ borderBottom: `1px solid ${C.line}` }}>
-                      <div className="t10 font-semibold" style={{ color: C.ink }}>Nuevo usuario</div>
-                      <div className="mt-1.5 grid grid-cols-2 gap-2">
-                        {[["nombre", "Nombre"], ["cargo", "Cargo"], ["telefono", "Teléfono"], ["email", "Email"]].map(([k, l]) => (
-                          <div key={k}><label className="t9" style={{ color: C.faint }}>{l}</label><input value={nu[k]} onChange={(e) => setNu((s) => ({ ...s, [k]: e.target.value }))} className="mt-0.5 w-full rounded-md px-2 py-1 t11 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, color: C.ink }} /></div>
-                        ))}
-                      </div>
-                      <div className="mt-2">
-                        <label className="t9" style={{ color: C.faint }}>Tipo de usuario</label>
-                        <div className="mt-0.5 flex gap-1.5">
-                          {[["contacto", "Sólo contacto"], ["usuario", "Usuario y contacto"]].map(([v, l]) => (
-                            <button key={v} onClick={() => setNu((s) => ({ ...s, tipo: v }))} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ border: `1px solid ${nu.tipo === v ? C.indigo : C.line}`, backgroundColor: nu.tipo === v ? "#F1ECFF" : "#fff", color: nu.tipo === v ? C.indigo : C.sub }}>{l}</button>
-                          ))}
-                        </div>
-                        <div className="mt-1 t9" style={{ color: C.faint }}>El atributo <b>Apoderado</b> no se define aquí: proviene del cruce con la tabla de apoderados (informe de poderes) de la API de la empresa.</div>
-                      </div>
-                      <div className="mt-2 flex gap-1.5">
-                        <button disabled={!nu.nombre.trim()} onClick={() => { const apo = apoderadosDeEmpresa(deal); setUsuariosNuevos((u) => [...u, { id: "n" + u.length, nombre: nu.nombre.trim(), cargo: nu.cargo.trim() || (nu.tipo === "usuario" ? "Usuario" : "Contacto"), telefono: nu.telefono.trim(), email: nu.email.trim(), tipo: nu.tipo, apoderado: apo.has(nu.nombre.trim()) }]); setAddUser(false); }} className="rounded-md px-3 py-1 t10 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: C.indigo }}>Agregar</button>
-                        <button onClick={() => setAddUser(false)} className="rounded-md px-3 py-1 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button>
-                      </div>
-                    </div>
-                  )}
-                  <div>
-                    {todos.map((u, i) => (
-                      <div key={u.id} className="flex items-start justify-between gap-2 px-3 py-2" style={{ borderTop: i ? `1px solid ${C.line}` : "none" }}>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="t12 font-semibold" style={{ color: C.ink }}>{u.nombre}</span>
-                            <span className="t10" style={{ color: C.sub }}>· {u.cargo}</span>
-                            <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: u.tipo === "usuario" ? "#F1ECFF" : "#F3F4F6", color: u.tipo === "usuario" ? C.indigo : C.sub }}>{tipoLbl[u.tipo]}</span>
-                            {u.apoderado && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>Apoderado</span>}
-                          </div>
-                          <div className="mt-0.5 t10" style={{ color: C.sub }}>Tel: {u.telefono || "—"} · Email: {u.email || "—"}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
+          {/* El tab "Usuarios" se movió a Clientes → Empresa → Usuarios (usuarios + contactos). */}
 
           {tab === "comunicaciones" && (<>
             <div className="mt-4 rounded-lg p-3" style={{ backgroundColor: C.page, border: `1px solid ${C.line}` }}>
@@ -9470,7 +9411,13 @@ const EMP_CLAS = ["A1 — Riesgo bajo", "A2 — Riesgo bajo", "B — Riesgo medi
 function EmpresaEditor({ empresa, soloExec, onBack }) {
   const nuevo = !!empresa.nuevo;
   const [tab, setTab] = useState("empresa");
-  const [modalUser, setModalUser] = useState(false);
+  // --- Tab Usuarios (usuarios + contactos de la empresa; se movió desde el detalle de la operación) ---
+  const [usuariosNuevos, setUsuariosNuevos] = useState([]); // usuarios/contactos agregados manualmente
+  const [addUser, setAddUser] = useState(false);
+  const [nu, setNu] = useState({ nombre: "", cargo: "", telefono: "", email: "", tipo: "contacto" });
+  // --- Tab Otros: ERP del cliente ---
+  const [erp, setErp] = useState("");        // ERP seleccionado
+  const [erpOtro, setErpOtro] = useState(""); // ERP personalizado (opción "Otro")
   // --- Tab Empresa ---
   const [pais, setPais] = useState("Chile");
   const [razon, setRazon] = useState(nuevo ? "" : (empresa.nombre || ""));
@@ -9501,9 +9448,6 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
     { id: 1998249, nombre: "Confirming", desc: "Portal Proveedores", estado: "Habilitado", codigo: 3 },
     { id: 1998250, nombre: "Crédito directo", desc: "Portal Administración", estado: "Deshabilitado", codigo: 5 },
   ];
-  const [uDisp, setUDisp] = useState(() => Array.from({ length: 6 }, (_, i) => ({ id: "ud" + i, nombre: ["Mauricio Thibaut", "Camila Soto", "Diego Rojas", "Paula Vega", "Andrés Muñoz", "Valentina Díaz"][i], rut: "1" + (2345670 + i * 137) })));
-  const [uAgr, setUAgr] = useState(() => Array.from({ length: 5 }, (_, i) => ({ id: "ua" + i, nombre: ["Carla Rivas", "Raúl López", "José Torres", "Marta Silva", "Nicolás Bravo"][i], rut: "9" + (8765430 + i * 211) })));
-  const [confirmQuitarU, setConfirmQuitarU] = useState(null); // usuario a quitar de la empresa (ConfirmDialog §26)
   return (
     <div className="space-y-4">
       {/* Header local */}
@@ -9698,49 +9642,91 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
           </div>
         </div>
       )}
-      {/* ==================== TAB USUARIOS ==================== */}
-      {tab === "usuarios" && (
+      {/* ==================== TAB USUARIOS (usuarios + contactos) ==================== */}
+      {tab === "usuarios" && (() => {
+        const dealLike = { cliente: empresa.nombre || razon || "la empresa" };
+        const base = usuariosDeEmpresa(dealLike);
+        const todos = [...base, ...usuariosNuevos];
+        const tipoLbl = { contacto: "Contacto", usuario: "Usuario y contacto" };
+        const agregar = () => { const apo = apoderadosDeEmpresa(dealLike); setUsuariosNuevos((u) => [...u, { id: "n" + u.length, nombre: nu.nombre.trim(), cargo: nu.cargo.trim() || (nu.tipo === "usuario" ? "Usuario" : "Contacto"), telefono: nu.telefono.trim(), email: nu.email.trim(), tipo: nu.tipo, apoderado: apo.has(nu.nombre.trim()), manual: true }]); registrarAuditoria({ usuario: soloExec || "Super Administrador (ve todo)", modulo: "Empresa", accion: "Agregar usuario/contacto", glosa: `${nu.tipo === "usuario" ? "Usuario y contacto" : "Contacto"} ${nu.nombre.trim()} en ${dealLike.cliente}`, exito: true }); setAddUser(false); };
+        return (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="rounded-2xl p-5" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-              <div className="mb-3 flex items-center justify-between"><h3 className="text-base font-bold" style={{ color: C.ink }}>Usuarios disponibles</h3><span className="t11" style={{ color: C.faint }}>32 disponibles</span></div>
-              <div className="mb-3 flex items-center gap-1.5 rounded-lg px-3 py-2" style={{ border: `1px solid ${C.line}` }}>
-                <input placeholder="Nombre o apellido" className="w-full bg-transparent t12 outline-none" style={{ color: C.ink }} />
-                <Search size={14} style={{ color: C.faint }} />
+          <div className="rounded-2xl p-5" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+            <div className="flex items-center gap-1.5"><User size={16} style={{ color: "#7C3AED" }} /><h3 className="text-base font-bold" style={{ color: C.ink }}>Usuarios y contactos</h3></div>
+            <div className="mt-0.5 t12" style={{ color: C.faint }}>Agrega <b>usuarios</b> (con acceso al portal según su rol) y <b>contactos</b> de la empresa. El atributo <b>Apoderado</b> proviene del cruce con la tabla de poderes (Plataforma 360).</div>
+            <div className="mt-3 rounded-xl" style={{ border: `1px solid ${C.line}`, overflow: "hidden" }}>
+              <div className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
+                <span className="t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>{todos.length} usuario(s) / contacto(s)</span>
+                {!addUser && <button onClick={() => { setNu({ nombre: "", cargo: "", telefono: "", email: "", tipo: "contacto" }); setAddUser(true); }} className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 t12 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Plus size={13} /> Agregar usuario / contacto</button>}
               </div>
-              <div className="space-y-2">
-                {uDisp.map((u) => (
-                  <div key={u.id} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ border: `1px solid ${C.line}` }}>
-                    <div><div className="t13 font-medium" style={{ color: C.ink }}>{u.nombre}</div><div className="t10" style={{ color: C.faint }}>{u.rut}</div></div>
-                    <button onClick={() => { setUDisp((p) => p.filter((x) => x.id !== u.id)); setUAgr((p) => [...p, u]); }} className="rounded-lg px-4 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Agregar</button>
+              {addUser && (
+                <div className="p-4" style={{ borderBottom: `1px solid ${C.line}` }}>
+                  <div className="t12 font-semibold" style={{ color: C.ink }}>Nuevo usuario / contacto</div>
+                  <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    {[["nombre", "Nombre"], ["cargo", "Cargo"], ["telefono", "Teléfono"], ["email", "Email"]].map(([k, l]) => (
+                      <div key={k}><label className="t10" style={{ color: C.faint }}>{l}</label><input value={nu[k]} onChange={(e) => setNu((s) => ({ ...s, [k]: e.target.value }))} className="mt-0.5 w-full rounded-lg px-3 py-2 t12 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, color: C.ink }} /></div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-2xl p-5" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-              <div className="mb-3 flex items-center justify-between"><h3 className="text-base font-bold" style={{ color: C.ink }}>Usuarios agregados</h3><span className="t11" style={{ color: C.faint }}>15 agregados</span></div>
-              <div className="space-y-2">
-                {uAgr.map((u) => (
-                  <div key={u.id} className="flex items-center justify-between rounded-xl px-4 py-3" style={{ border: `1px solid ${C.line}` }}>
-                    <div className="flex-1"><div className="t13 font-medium" style={{ color: C.ink }}>{u.nombre}</div></div>
-                    <div className="flex-1 t12" style={{ color: C.sub }}>{u.rut}</div>
-                    <div className="flex items-center gap-1.5">
-                      <button className="rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Roles</button>
-                      <button onClick={() => setConfirmQuitarU(u)} title="Quitar de la empresa" className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ border: "1px solid #fecaca", color: "#dc2626", backgroundColor: "#fff" }}><Trash2 size={14} /></button>
+                  <div className="mt-3">
+                    <label className="t10" style={{ color: C.faint }}>Tipo</label>
+                    <div className="mt-0.5 flex gap-1.5">
+                      {[["contacto", "Sólo contacto"], ["usuario", "Usuario y contacto"]].map(([v, l]) => (
+                        <button key={v} onClick={() => setNu((s) => ({ ...s, tipo: v }))} className="rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${nu.tipo === v ? C.indigo : C.line}`, backgroundColor: nu.tipo === v ? "#F1ECFF" : "#fff", color: nu.tipo === v ? C.indigo : C.sub }}>{l}</button>
+                      ))}
                     </div>
+                    <div className="mt-1 t10" style={{ color: C.faint }}>El atributo <b>Apoderado</b> no se define aquí: proviene del cruce con la tabla de apoderados (informe de poderes) de la API de la empresa.</div>
+                  </div>
+                  <div className="mt-3 flex gap-1.5">
+                    <button disabled={!nu.nombre.trim()} onClick={agregar} className="rounded-lg px-4 py-2 t12 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: C.indigo }}>Agregar</button>
+                    <button onClick={() => setAddUser(false)} className="rounded-lg px-4 py-2 t12 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button>
+                  </div>
+                </div>
+              )}
+              <div>
+                {todos.map((u, i) => (
+                  <div key={u.id} className="flex items-start justify-between gap-2 px-4 py-3" style={{ borderTop: i ? `1px solid ${C.line}` : "none" }}>
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="t13 font-semibold" style={{ color: C.ink }}>{u.nombre}</span>
+                        <span className="t11" style={{ color: C.sub }}>· {u.cargo}</span>
+                        <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: u.tipo === "usuario" ? "#F1ECFF" : "#F3F4F6", color: u.tipo === "usuario" ? C.indigo : C.sub }}>{tipoLbl[u.tipo]}</span>
+                        {u.apoderado && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>Apoderado</span>}
+                      </div>
+                      <div className="mt-0.5 t11" style={{ color: C.sub }}>Tel: {u.telefono || "—"} · Email: {u.email || "—"}</div>
+                    </div>
+                    {u.manual && <button onClick={() => setUsuariosNuevos((p) => p.filter((x) => x.id !== u.id))} title="Quitar" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ border: "1px solid #fecaca", color: "#dc2626", backgroundColor: "#fff" }}><Trash2 size={14} /></button>}
                   </div>
                 ))}
               </div>
             </div>
-          </div>
-          <div className="flex justify-end">
-            <button onClick={() => setModalUser(true)} className="rounded-lg px-4 py-2 t13 font-semibold text-white" style={{ backgroundColor: "#38bdf8" }}>Crear nuevo usuario</button>
           </div>
         </div>
-      )}
+        );
+      })()}
       {/* ==================== TAB OTROS ==================== */}
       {tab === "otros" && (
         <div className="space-y-4">
+          {/* ERP del cliente: sistema de gestión que usa la empresa (para integración/conciliación). */}
+          <div className="rounded-2xl p-5" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+            <h3 className="text-base font-bold" style={{ color: C.ink }}>ERP del cliente</h3>
+            <div className="mt-0.5 t12" style={{ color: C.faint }}>Sistema de gestión (ERP) que utiliza la empresa. Se usa para la integración y conciliación de documentos.</div>
+            <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="t11" style={{ color: C.faint }}>ERP</label>
+                <select value={erp} onChange={(e) => { setErp(e.target.value); if (e.target.value !== "Otro") setErpOtro(""); }} className="mt-1 w-full rounded-lg px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${erp ? C.indigo : C.line}`, backgroundColor: "#fff", color: C.ink }}>
+                  <option value="">Seleccionar ERP…</option>
+                  {["SAP", "Softland", "Defontana", "Manager", "Bsale", "Nubox", "Laudus", "Flexline", "Rakeic", "Ninguno", "Otro"].map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+              {erp === "Otro" && (
+                <div>
+                  <label className="t11" style={{ color: C.faint }}>Especificar ERP</label>
+                  <input value={erpOtro} onChange={(e) => setErpOtro(e.target.value)} placeholder="Nombre del ERP" className="mt-1 w-full rounded-lg px-3 py-2.5 t13 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
+                </div>
+              )}
+            </div>
+            {(erp && erp !== "Otro") || (erp === "Otro" && erpOtro.trim()) ? <div className="mt-2 t11" style={{ color: C.sub }}>ERP registrado: <b style={{ color: C.ink }}>{erp === "Otro" ? erpOtro.trim() : erp}</b></div> : null}
+          </div>
           {[
             { t: "Certificados", btn: "Agregar", cols: ["Nombre", "Identificador", "Emisión", "Vencimiento", "Para ceder", "Quitar"] },
             { t: "Sincronización", btn: "Sincronización DTES", cols: ["Tipo", "Estado", "Proveedor", "Identificador", "Texto", "Vigencia", "Revisión"] },
@@ -9762,39 +9748,6 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
           ))}
         </div>
       )}
-      {/* ==================== MODAL CREAR USUARIO ==================== */}
-      {modalUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(15,23,42,.55)" }} onClick={() => setModalUser(false)}>
-          <div className="w-full max-w-2xl rounded-2xl p-7" style={{ backgroundColor: "#fff" }} onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start justify-between" style={{ borderBottom: `1px solid ${C.line}`, paddingBottom: 16 }}>
-              <div><h3 className="text-xl font-bold" style={{ color: C.ink }}>Crear nuevo usuario</h3><p className="mt-0.5 t12" style={{ color: C.faint }}>Indica los datos del nuevo usuario</p></div>
-              <button onClick={() => setModalUser(false)} style={{ color: C.faint }}><X size={20} /></button>
-            </div>
-            <div className="mt-5 space-y-5">
-              <EmpInput label="Nombre" placeholder="Nombre y apellido" onChange={() => {}} />
-              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                <EmpInput label="Identificador (Rut/Ruc/Dni)" placeholder="12.345.678-9" onChange={() => {}} />
-                <EmpInput label="Correo electrónico" placeholder="usuario@empresa.cl" onChange={() => {}} />
-                <EmpInput label="Contraseña" placeholder="••••••••" onChange={() => {}} />
-                <EmpInput label="Repetir contraseña" placeholder="••••••••" onChange={() => {}} />
-              </div>
-              <div className="flex flex-col gap-3">
-                <EmpToggle on={true} onChange={() => {}} label="Habilitar" />
-                <EmpToggle on={true} onChange={() => {}} label="Es usuario de sistema (no visible en SPF)" />
-              </div>
-            </div>
-            <div className="mt-6 flex items-center justify-end gap-3">
-              <button onClick={() => setModalUser(false)} className="t13 font-semibold" style={{ color: "#38bdf8" }}>Cancelar</button>
-              <button onClick={() => setModalUser(false)} className="rounded-lg px-5 py-2.5 t13 font-semibold text-white" style={{ background: "linear-gradient(90deg,#22d3ee,#703EFF)" }}>Crear nuevo usuario</button>
-            </div>
-          </div>
-        </div>
-      )}
-      <ConfirmDialog abierto={!!confirmQuitarU} titulo="¿Quitar este usuario de la empresa?"
-        descripcion={confirmQuitarU ? `${confirmQuitarU.nombre} perderá el acceso a los productos de esta empresa. Volverá al listado de usuarios disponibles.` : ""}
-        etiquetaConfirmar="Quitar usuario"
-        onConfirmar={() => { setUAgr((p) => p.filter((x) => x.id !== confirmQuitarU.id)); setUDisp((p) => [...p, confirmQuitarU]); registrarAuditoria({ usuario: soloExec || "Super Administrador (ve todo)", modulo: "Empresa", accion: "Quitar usuario", glosa: `Quitó a ${confirmQuitarU.nombre} de ${empresa && empresa.nombre ? empresa.nombre : "la empresa"}`, exito: true }); setConfirmQuitarU(null); }}
-        onCancelar={() => setConfirmQuitarU(null)} />
     </div>
   );
 }
