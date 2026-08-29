@@ -46,10 +46,23 @@ function dealDisbursement(d) {
   if (d.stage === "aceptadas" || d.stage === "cesion") return "pending";
   return null;
 }
+// Motivos de cierre (close_reason) — clave en inglés, etiqueta al usuario en español. `inactivity` marca la
+// operación como EXPIRED (caducada por inacción), separada de las pérdidas comerciales para el win rate.
+const CLOSE_REASONS = [
+  { k: "client_withdrawal", label: "Desistimiento del cliente", result: "lost" },
+  { k: "competitor", label: "Cedida a la competencia", result: "lost" },
+  { k: "price_rate", label: "Precio / tasa", result: "lost" },
+  { k: "documentation", label: "Documentación", result: "lost" },
+  { k: "grant_block", label: "Bloqueo de otorgamiento", result: "lost" },
+  { k: "inactivity", label: "Caducada por inactividad", result: "expired" },
+  { k: "other", label: "Otro", result: "lost" },
+];
+const closeReasonLabel = (k) => { const r = CLOSE_REASONS.find((x) => x.k === k); return r ? r.label : null; };
 function dealResult(d) {
   if (!d) return null;
   if (dealDisbursement(d) === "disbursed") return "won"; // girada = desembolsada = ganada
   if (d.stage === "perdida") {
+    if (d.closeReason) { const r = CLOSE_REASONS.find((x) => x.k === d.closeReason); if (r) return r.result; }
     const c = String((typeof causaPerdidaDeal === "function" ? causaPerdidaDeal(d) : (d.causaPerdida || d.status || ""))).toLowerCase();
     if (d.expired || /sin contacto|inactiv|caduc|expir|no respond|intentos.*agotad/.test(c)) return "expired";
     return "lost";
@@ -1956,6 +1969,11 @@ function DealCard({ deal, onOpen, onDragStart }) {
           })()}
         </div>
       )}
+      {!isPerdida && dealDisbursement(deal) && (
+        <div className="mt-1.5">
+          <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dealDisbursement(deal) === "disbursed" ? "#F0FDF4" : "#FFF7ED", color: dealDisbursement(deal) === "disbursed" ? "#16A34A" : "#C2410C" }} title={dealDisbursement(deal) === "disbursed" ? "Operación girada (desembolsada)" : "Aceptada · giro pendiente de desembolso"}>{DISBURSEMENT_LBL[dealDisbursement(deal)]}</span>
+        </div>
+      )}
       <div className="mt-1.5 flex items-center justify-between">
         <span className="flex items-center gap-1 t10" style={{ color: isPerdida ? C.red : C.sub }}>
           <CircleDot size={9} style={{ color: accent }} />{fmtStamp(deal.time)} · {deal.status}
@@ -3793,6 +3811,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const intentarCerrar = () => { const desc = candidatasDe(deal).filter((f) => diasEmiCand(f) < 8); if (desc.length) { setPubModal({ descartadas: desc }); setPubAccion("nueva"); setPubEspera(7); } else { onCerrarOferta(deal.id, {}); } };
   const confirmarPub = () => { if (!pubModal) return; const n = pubModal.descartadas.length; onCerrarOferta(deal.id, { accion: pubAccion, espera: pubEspera, descartadas: n }); setPubModal(null); };
   const [retryMenu, setRetryMenu] = useState(false); // dropdown de canal para reintentar contacto
+  const [rejectMenu, setRejectMenu] = useState(false); // dropdown de motivo de cierre (close_reason) al rechazar
   const [factQuery, setFactQuery] = useState(""); // buscador por folio o deudor en facturas
   const [subCanal, setSubCanal] = useState(() => (deal && deal.canalContacto === "Email") ? "Email" : "WhatsApp"); // canal activo en Contactabilidad (Call Center: más adelante)
   const [editC, setEditC] = useState(false); // edición de datos de contacto
@@ -3804,6 +3823,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const stageIdx = Math.max(0, STAGE_ORDER.indexOf(deal.stage));
   const nextStage = STAGES[stageIdx + 1];
   const progresoStages = STAGES.filter((s) => s.id !== "perdida");
+  const stageLbl = deal.stage === "giro" ? "Aceptada · Girada" : (STAGES[stageIdx] || {}).name; // "Giro" se muestra como sub-estado de Aceptada
   // Total de reglas excepcionables PENDIENTES que ESTE usuario puede visar (cliente + todos los deudores) →
   // badge rojo en el tab Otorgamiento, para que sepa que tiene pendientes sin entrar. Recalcula al re-render
   // (tras visar/re-evaluar, reevTick bumpea el estado del drawer).
@@ -3830,11 +3850,24 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const accionesBar = (
     <div className="flex items-center justify-end gap-2">
       {otorgBloqueado(deal) && <div className="mr-auto flex items-center gap-1.5 rounded-md px-2.5 py-1.5 t11 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#DC2626" }}><X size={12} /> Rechazada por reglas de otorgamiento · sólo puede rechazarse</div>}
-      <button onClick={() => onReject(deal.id)} className="rounded-lg px-3 py-2 t12 font-medium" style={{ color: C.red, border: `1px solid ${C.line}` }}>Rechazar</button>
+      <div className="relative">
+        <button onClick={() => (otorgBloqueado(deal) ? onReject(deal.id) : setRejectMenu((v) => !v))} className="rounded-lg px-3 py-2 t12 font-medium" style={{ color: C.red, border: `1px solid ${C.line}` }}>Rechazar</button>
+        {rejectMenu && !otorgBloqueado(deal) && (
+          <div className="absolute right-0 z-30 mt-1 w-60 rounded-lg bg-white p-1 shadow-xl" style={{ border: `1px solid ${C.line}` }} onMouseLeave={() => setRejectMenu(false)}>
+            <div className="px-2 py-1 t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Motivo de cierre</div>
+            {CLOSE_REASONS.filter((r) => r.k !== "grant_block").map((r) => (
+              <button key={r.k} onClick={() => { setRejectMenu(false); onReject(deal.id, r.k); }} className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 t11 text-left hover:bg-stone-50" style={{ color: C.ink }}>
+                <span>{r.label}</span>
+                <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: RESULT_COL[r.result].bg, color: RESULT_COL[r.result].fg }}>{RESULT_LBL[r.result]}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <button onClick={onClose} className="rounded-lg px-3 py-2 t12 font-medium" style={{ color: C.sub, border: `1px solid ${C.line}` }}>Guardar borrador</button>
       <div className="flex items-center gap-1.5">
         <select value={avanzarA} onChange={(e) => setAvanzarA(e.target.value)} disabled={otorgBloqueado(deal)} title="La etapa «Aceptada» la fija el cliente al firmar el cierre formal; no está disponible como avance manual." className="rounded-lg px-3 py-2 t12 disabled:opacity-40" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
-          {STAGES.filter((s) => s.id !== deal.stage && s.id !== "aceptadas").map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          {STAGES.filter((s) => s.id !== deal.stage && s.id !== "aceptadas").map((s) => <option key={s.id} value={s.id}>{s.id === "giro" ? "Girar (desembolsar)" : s.name}</option>)}
         </select>
         <button onClick={() => onMover(deal.id, avanzarA)} disabled={otorgBloqueado(deal) || deal.stage === "perdida" || deal.stage === "giro"} title={otorgBloqueado(deal) ? "La operación tiene bloqueos firmes de otorgamiento: debe rechazarse, no puede avanzar" : deal.stage === "giro" ? "Operación girada: etapa final, no puede avanzar más" : undefined}
           className="flex items-center gap-1 rounded-lg px-3 py-2 t12 font-medium text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.ink }}>
@@ -3854,7 +3887,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               <div className="flex items-center gap-1">
                 {progresoStages.map((s, i) => <div key={s.id} className="h-1.5 flex-1 rounded-full" style={{ backgroundColor: i <= stageIdx ? C.indigo : C.line }} />)}
               </div>
-              <div className="mt-1 t9" style={{ color: C.faint }}>Etapa {Math.min(stageIdx + 1, progresoStages.length)} de {progresoStages.length} — {STAGES[stageIdx].name}</div>
+              <div className="mt-1 t9" style={{ color: C.faint }}>Etapa {Math.min(stageIdx + 1, progresoStages.length)} de {progresoStages.length} — {stageLbl}</div>
             </div>
           )}
           <div className="flex items-start justify-between gap-3">
@@ -4698,7 +4731,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             ))}
           </div>
           <div className="mt-1 t11" style={{ color: C.faint }}>
-            Etapa {Math.min(stageIdx + 1, progresoStages.length)} de {progresoStages.length} — {STAGES[stageIdx].name}
+            Etapa {Math.min(stageIdx + 1, progresoStages.length)} de {progresoStages.length} — {stageLbl}
           </div>
         </div>
         )}
@@ -12761,13 +12794,14 @@ export default function PipelineComercial() {
     });
     setSelected(null);
   };
-  const reject = (id) => {
+  const reject = (id, closeReason) => {
     setDeals((prev) => prev.map((d) => {
       if (d.id !== id) return d;
       const bi = bloqueoFirmeInfo(d);
+      const cr = closeReason || (bi ? "grant_block" : null); // motivo de cierre (close_reason) elegido / derivado
       const motivo = bi ? "bloqueo_firme" : "cliente_declino";
-      const causa = bi ? bi.causa : (causaPerdidaDeal(d) || "El cliente rechazó la oferta");
-      return { ...d, stage: "perdida", etapaPerdida: d.stage, perdidaOtorg: !!bi, motivoPerdida: motivo, subtipoBloqueo: bi ? bi.subtipo : null, bloqueosFirmes: bi ? bi.ids : d.bloqueosFirmes, causaPerdida: causa, fechaPerdida: nowStamp(), perdidaPor: (USERS[usuario] || usuario), status: causa, time: nowStamp(), historialContacto: traza(d, causa + " — operación marcada perdida.", false) };
+      const causa = closeReasonLabel(cr) || (bi ? bi.causa : (causaPerdidaDeal(d) || "El cliente rechazó la oferta"));
+      return { ...d, stage: "perdida", etapaPerdida: d.stage, perdidaOtorg: !!bi, motivoPerdida: motivo, closeReason: cr, subtipoBloqueo: bi ? bi.subtipo : null, bloqueosFirmes: bi ? bi.ids : d.bloqueosFirmes, causaPerdida: causa, fechaPerdida: nowStamp(), perdidaPor: (USERS[usuario] || usuario), status: causa, time: nowStamp(), historialContacto: traza(d, causa + " — operación marcada perdida.", false) };
     }));
     setSelected(null);
   };
