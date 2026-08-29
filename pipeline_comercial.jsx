@@ -3945,7 +3945,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             {deal.cat && (() => { const cd = catDisp(deal); return <Pill style={{ backgroundColor: catMeta(cd.cat).bg, color: catMeta(cd.cat).fg }}>{cd.label} · {cd.q}</Pill>; })()}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1" style={{ borderBottom: `1px solid ${C.line}` }}>
-            {[["negocio", "Negocio"], ["contacto", "Linea"], ["bitacora", "Bitácora"], ["sow", "SOW"], ["cobranza", "Cobranza"], ["mensajeria", "Mensajería"], ...((deal.facturasOp && deal.facturasOp.length) ? [["verificacion", "Verificación"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
+            {[["negocio", "Negocio"], ["contacto", "Linea"], ...(puedeVerBitacora(usuario) ? [["bitacora", "Bitácora"]] : []), ["sow", "SOW"], ["cobranza", "Cobranza"], ["mensajeria", "Mensajería"], ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
               <button key={k} onClick={() => setTab(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
                 {l}
                 {k === "otorgamiento" && otorgPend > 0 && <span title={`${otorgPend} regla(s) que debes visar tú (cliente + deudores)`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#DC2626" }}>{otorgPend}</span>}
@@ -4073,6 +4073,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           {/* Simulación del negocio: condiciones, deudores y facturas de la operación. */}
           {(() => {
                   const deudoresUnicos = [...new Set(facturasOp.map((f) => f.deudor))];
+                  // Reglas de otorgamiento por deudor (para la columna OTORG. de las facturas): cuántas
+                  // cumplieron (aprobadas) vs total. Se evalúa una sola vez y se indexa por nombre de deudor.
+                  const deudorOtorgMap = (() => { const m = {}; evaluarOtorgItems(deal).filter((it) => it.deudor).forEach((it) => { const k = it.deudor.nombre; const g = m[k] || (m[k] = { total: 0, ok: 0 }); g.total++; if (it.disp === "aprobado") g.ok++; }); return m; })();
+                  const otorgDeFactura = (f) => { const g = deudorOtorgMap[f.deudor] || { total: 0, ok: 0 }; const allOk = g.total > 0 && g.ok === g.total; return { total: g.total, ok: g.ok, allOk }; };
                   const tasaDe = (deudor) => +((spreadDeudor[deudor] != null ? spreadDeudor[deudor] : spreadSugerido(deudor, deal).spread) + COSTO_FONDO).toFixed(2);
                   const diasDe = (deudor) => (vencDias[deudor] != null ? vencDias[deudor] : diasPagoDeudor(deudor));
                   // Motivo de exclusión: una factura cedida / reclamada / con nota de crédito no entra al negocio.
@@ -4150,8 +4154,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                           const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
                           const he = Math.abs(hashStr("em" + f.folio)) % 20 + 3; const em = new Date(Date.now() - he * 86400000).toLocaleDateString("es-CL");
-                          const reqOtorg = f.inboundBucket === "OTRO" || tipoDeudorDisp(f) === "Otro";
-                          const oto = reqOtorg ? { bg: "#FFF7ED", fg: "#C2410C", t: "⚠", title: "El deudor de esta factura requiere otorgamiento" } : { bg: "#F0FDF4", fg: "#16A34A", t: "✓", title: "El deudor no requiere otorgamiento (automático)" };
+                          const og = otorgDeFactura(f); // reglas de otorgamiento del deudor: cumplidas / total
                           const vf = verifFactura(f, deal); const vv = vf.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
                           const tasaF = ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + COSTO_FONDO).toFixed(2);
                           return (
@@ -4162,7 +4165,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             <span className="text-right font-semibold" title={`Nota del deudor: ${nota} / 5`} style={{ color: NOTA_COLOR(nota) }}>{nota}</span>
                             <span className="t9" style={{ color: C.faint }}>{em}</span>
                             <input type="date" disabled={bloqueado} value={vencFecha[f.id] || ""} onChange={(e) => setVencFecha((m) => ({ ...m, [f.id]: e.target.value }))} title="Fecha de vencimiento (editable)" className="rounded-full px-1 py-0.5 t9 outline-none disabled:opacity-60" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }} />
-                            <span className="flex h-5 w-5 items-center justify-center justify-self-start rounded-full t10 font-bold" title={oto.title} style={{ backgroundColor: oto.bg, color: oto.fg, cursor: "help" }}>{oto.t}</span>
+                            {og.total === 0 ? <span className="justify-self-start t10" style={{ color: C.faint }}>—</span> : <span className="inline-flex items-center gap-1 justify-self-start t10 font-bold" title={og.allOk ? `Todas las reglas de otorgamiento del deudor cumplieron (${og.ok}/${og.total})` : `${og.ok} de ${og.total} reglas de otorgamiento cumplieron · ${og.total - og.ok} pendiente(s)`} style={{ cursor: "help" }}><span style={{ color: og.allOk ? "#16A34A" : "#DC2626" }}>{og.allOk ? "✓" : "⚠"}</span><span style={{ fontVariantNumeric: "tabular-nums" }}><span style={{ color: og.allOk ? "#16A34A" : "#DC2626" }}>{og.ok}</span><span style={{ color: C.sub }}>/{og.total}</span></span></span>}
                             <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: vv.bg, color: vv.fg }}>{vv.t}</span>
                             <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
                             <span className="text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.montoMM)}</span>
@@ -4216,8 +4219,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             const he = f.candidata ? (f.diasEmision != null ? f.diasEmision : 60) : (Math.abs(hashStr("em" + f.folio)) % 20 + 3); const emD = new Date(Date.now() - he * 86400000);
                             const plazo = f.venc != null ? f.venc : 30;
                             const em = emD.toLocaleDateString("es-CL"); const venc = new Date(emD.getTime() + plazo * 86400000).toLocaleDateString("es-CL");
-                            const reqOtorg = f.inboundBucket === "OTRO" || tipoDeudorDisp(f) === "Otro";
-                            const oto = reqOtorg ? { bg: "#FFF7ED", fg: "#C2410C", t: "⚠", title: "El deudor de esta factura requiere otorgamiento" } : { bg: "#F0FDF4", fg: "#16A34A", t: "✓", title: "El deudor no requiere otorgamiento (automático)" };
+                            const og = otorgDeFactura(f);
                             const vf = verifFactura(f, deal); const vv = vf.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
                             const tasaF = ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + COSTO_FONDO).toFixed(2);
                             const ok = xmlOk[f.id] !== false;
@@ -4245,7 +4247,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 <span className="text-right font-semibold" title={`Nota del deudor: ${nota} / 5`} style={{ color: NOTA_COLOR(nota) }}>{nota}</span>
                                 <span className="t9" style={{ color: C.faint }}>{em}</span>
                                 <span className="t9" style={{ color: C.faint }}>{venc}</span>
-                                <span className="flex h-5 w-5 items-center justify-center justify-self-start rounded-full t10 font-bold" title={oto.title} style={{ backgroundColor: oto.bg, color: oto.fg, cursor: "help" }}>{oto.t}</span>
+                                {og.total === 0 ? <span className="justify-self-start t10" style={{ color: C.faint }}>—</span> : <span className="inline-flex items-center gap-1 justify-self-start t10 font-bold" title={og.allOk ? `Todas las reglas de otorgamiento del deudor cumplieron (${og.ok}/${og.total})` : `${og.ok} de ${og.total} reglas de otorgamiento cumplieron · ${og.total - og.ok} pendiente(s)`} style={{ cursor: "help" }}><span style={{ color: og.allOk ? "#16A34A" : "#DC2626" }}>{og.allOk ? "✓" : "⚠"}</span><span style={{ fontVariantNumeric: "tabular-nums" }}><span style={{ color: og.allOk ? "#16A34A" : "#DC2626" }}>{og.ok}</span><span style={{ color: C.sub }}>/{og.total}</span></span></span>}
                                 <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: vv.bg, color: vv.fg }}>{vv.t}</span>
                                 <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
                                 <span className="text-right font-medium" title={parcial ? `Factura ${fmtMM(f.montoMM)} − NC ${fmtMM(est.ncMonto)} = ${fmtMM(est.montoNeto)}` : (f.excl ? `Excluida: ${f.excl}` : anulMonto ? "Documento anulado por nota de crédito" : undefined)} style={{ color: parcial ? "#C2410C" : C.ink, textDecoration: (f.excl || anulMonto) ? "line-through" : "none" }}>{fmtMM(parcial ? est.montoNeto : f.montoMM)}</span>
@@ -7127,6 +7129,12 @@ function cargarCfgExcVerif() { try { if (storageDisponible()) { const r = localS
 let CFG_EXC_VERIF = cargarCfgExcVerif();
 function guardarCfgExcVerif() { try { if (storageDisponible()) localStorage.setItem("pc_cfg_exc_verif", JSON.stringify(CFG_EXC_VERIF)); } catch (e) {} }
 const puedeExcepcionarVerif = (code) => code === "ADMIN" || CFG_EXC_VERIF[code] === true; // default sólo GC
+// Configuración POR USUARIO: quién puede VER el tab "Bitácora" del detalle de la operación. Oculto por
+// defecto; sólo los apoderados (y el super-admin) lo ven, editable en el mantenedor de usuarios.
+function cargarCfgVerBitacora() { try { if (storageDisponible()) { const r = localStorage.getItem("pc_cfg_ver_bitacora"); if (r) return JSON.parse(r); } } catch (e) {} return { JG: true, GC: true, GG: true, RG: true, SR: true, OP: true }; }
+let CFG_VER_BITACORA = cargarCfgVerBitacora();
+function guardarCfgVerBitacora() { try { if (storageDisponible()) localStorage.setItem("pc_cfg_ver_bitacora", JSON.stringify(CFG_VER_BITACORA)); } catch (e) {} }
+const puedeVerBitacora = (code) => code === "ADMIN" || CFG_VER_BITACORA[code] === true;
 // ── Configuración POR USUARIO: habilita/oculta la aceptación masiva ("Aprobar/Rechazar todo") de
 // excepciones de otorgamiento. Por defecto habilitada para todos los apoderados. Persistente en localStorage.
 function cargarCfgAprobMasiva() { try { if (storageDisponible()) { const r = localStorage.getItem("pc_cfg_aprob_masiva"); if (r) return JSON.parse(r); } } catch (e) {} return {}; }
@@ -8081,6 +8089,7 @@ function MantenedoresOtorg({ onCfgChange }) {
   const setAtrib = (code, area, v) => { const n = +v; if (!ATRIB_USUARIO[code]) return; if (!n) delete ATRIB_USUARIO[code].atrib[area]; else ATRIB_USUARIO[code].atrib[area] = Math.max(1, Math.min(5, n)); bump(); };
   const setMasiva = (code, on) => { CFG_APROB_MASIVA[code] = on; guardarCfgAprobMasiva(); bump(); };
   const setExcVerif = (code, on) => { CFG_EXC_VERIF[code] = on; guardarCfgExcVerif(); bump(); };
+  const setVerBitacora = (code, on) => { CFG_VER_BITACORA[code] = on; guardarCfgVerBitacora(); bump(); };
   const [mtab, setMtab] = useState("criterios");
   const mtabs = [["criterios", "Criterios de verificación"], ["atribuciones", "Atribuciones de aprobación"], ["usuarios", "Usuarios y atribuciones"]];
   return (
@@ -8100,8 +8109,8 @@ function MantenedoresOtorg({ onCfgChange }) {
         <div className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Apoderados y atribuciones (nivel por área; 0 = sin atribución)</div>
         <div className="t10" style={{ color: C.faint }}>Define quién puede excepcionar y en qué nivel (N1–N5). <b>Aceptación masiva</b> habilita/oculta el botón «Aprobar/Rechazar todo» de excepciones. <b>Excepción de verificación</b> habilita eximir facturas de la verificación telefónica (por defecto sólo el Gerente Comercial).</div>
         <table className="mt-1.5 w-full border-collapse t11">
-          <thead><tr>{["Usuario", "Tipo", "Riesgo", "Comercial", "Operaciones", "Aceptación masiva", "Excepción verificación"].map((h) => <th key={h} className="px-2 py-1 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
-          <tbody>{Object.keys(ATRIB_USUARIO).filter((k) => USERS[k]).map((k) => { const esAprob = atribDe(k).tipo === "aprobador"; const on = aprobMasivaHabilitada(k); const ev = puedeExcepcionarVerif(k); return (
+          <thead><tr>{["Usuario", "Tipo", "Riesgo", "Comercial", "Operaciones", "Aceptación masiva", "Excepción verificación", "Ver Bitácora"].map((h) => <th key={h} className="px-2 py-1 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
+          <tbody>{Object.keys(ATRIB_USUARIO).filter((k) => USERS[k]).map((k) => { const esAprob = atribDe(k).tipo === "aprobador"; const on = aprobMasivaHabilitada(k); const ev = puedeExcepcionarVerif(k); const vb = puedeVerBitacora(k); return (
             <tr key={k} style={{ borderBottom: `1px solid ${C.line}` }}>
               <td className="px-2 py-1 font-medium" style={{ color: C.ink }}>{USERS[k]}</td>
               <td className="px-2 py-1" style={{ color: C.sub }}>{esAprob ? "Aprobador" : "Pipeline"}</td>
@@ -8117,6 +8126,11 @@ function MantenedoresOtorg({ onCfgChange }) {
                 <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A", border: "1px solid #bbf7d0" }}>Habilitada</span>
               ) : (
                 <button onClick={() => setExcVerif(k, !ev)} title={ev ? "Clic para QUITAR la atribución de excepción de verificación" : "Clic para OTORGAR la atribución de excepción de verificación"} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: ev ? "#F0FDF4" : "#F3F4F6", color: ev ? "#16A34A" : C.faint, border: `1px solid ${ev ? "#bbf7d0" : C.line}` }}>{ev ? <Check size={10} /> : <X size={10} />}{ev ? "Habilitada" : "—"}</button>
+              )}</td>
+              <td className="px-2 py-1">{k === "ADMIN" ? (
+                <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A", border: "1px solid #bbf7d0" }}>Habilitada</span>
+              ) : (
+                <button onClick={() => setVerBitacora(k, !vb)} title={vb ? "Clic para OCULTAR el tab Bitácora a este usuario" : "Clic para PERMITIR ver el tab Bitácora a este usuario"} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: vb ? "#F0FDF4" : "#F3F4F6", color: vb ? "#16A34A" : C.faint, border: `1px solid ${vb ? "#bbf7d0" : C.line}` }}>{vb ? <Check size={10} /> : <X size={10} />}{vb ? "Visible" : "Oculto"}</button>
               )}</td>
             </tr>
           ); })}</tbody>
