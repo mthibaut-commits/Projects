@@ -3163,6 +3163,8 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const [otorgTab, setOtorgTab] = useState("cli"); // tab activo: "cli" (cliente) o "d:<key>" (deudor)
   const [carrusel, setCarrusel] = useState(0); // ventana del carrusel de tabs de deudor
   const [showApr, setShowApr] = useState(false); // muestra/oculta las reglas aprobadas (DIV colapsable)
+  const [showVerifOk, setShowVerifOk] = useState(false); // colapsable de facturas que NO requieren verificación
+  const [verifMsg, setVerifMsg] = useState({}); // { [facturaId]: comentario de la excepción de verificación }
   const [, forceV] = useState(0); // re-render tras visar una excepción desde el detalle
   const [excForm, setExcForm] = useState({}); // { [key]: { open, msg, archs:[] } } — key = stKey (visado), "sol:"+stKey (solicitud ejec), "bulk:"+tab
   const setEF = (k, patch) => setExcForm((m) => ({ ...m, [k]: { ...(m[k] || {}), ...patch } }));
@@ -3217,6 +3219,14 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
     forceV((v) => v + 1); onReev && onReev();
   };
   const revertirVisado = (x) => { const st = VISADO_STATE[deal.id]; if (st) delete st[x.stKey]; const det = VISADO_DETALLE[deal.id]; if (det) delete det[x.stKey]; forceV((v) => v + 1); onReev && onReev(); };
+  // Excepción de VERIFICACIÓN de una factura (exime la verificación telefónica) — atribución del Gerente Comercial.
+  const excepcionarVerif = (f, msg) => {
+    const m = VERIF_EXC[deal.id] || (VERIF_EXC[deal.id] = {}); m[f.id] = { por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL"), msg: msg || "" };
+    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Verificación (excepción)", accion: "Excepcionar verificación", glosa: `Factura #${f.folio} · deudor ${f.deudor} · ${deal.cliente}${msg ? " · " + msg : ""}`, empresaId: deal.id, exito: true });
+    logOtorgEvento(deal.id, USERS[usuario] || usuario, `${USERS[usuario] || usuario} excepcionó la verificación de la factura #${f.folio} (deudor ${f.deudor})`, msg || "");
+    forceV((v) => v + 1); onReev && onReev();
+  };
+  const revertirVerif = (f) => { const m = VERIF_EXC[deal.id]; if (m) delete m[f.id]; forceV((v) => v + 1); onReev && onReev(); };
   // DIV 1 — reglas del CLIENTE (snapshot versionado, ya sin reglas de deudor).
   const cliRules = ordenBy((ver.res || []).filter((x) => x.disp !== "clasificacion").map((x) => ({ ...x, stKey: String(x.n), regla: REGLAS_CLIENTE.find((r) => r.n === x.n), deudor: null })));
   const cliReqN = cliRules.filter(reqAprob).length;
@@ -3463,6 +3473,60 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
                 )}
               </>)}
             </div>
+            {/* Categoría de excepciones "Verificación": facturas del deudor que requieren verificación telefónica.
+                El Gerente Comercial (u otro apoderado habilitado) puede excepcionarlas; las verificadas van a un colapsable. */}
+            {active.key !== "cli" && (() => {
+              const facs = (deal.facturasOp || []).filter((f) => f.deudor === active.label);
+              if (!facs.length) return null;
+              const excMap = VERIF_EXC[deal.id] || {};
+              const puedeExc = puedeExcepcionarVerif(usuario);
+              const enriched = facs.map((f) => ({ f, vf: verifFactura(f, deal), exc: excMap[f.id] }));
+              const requieren = enriched.filter((e) => e.vf.est === "tel");
+              const okFacs = enriched.filter((e) => e.vf.est !== "tel");
+              return (
+                <div className="mt-3 rounded-md p-2" style={{ border: "1px solid #FED7AA", backgroundColor: "#fff" }}>
+                  <div className="flex items-center gap-1.5 t10 font-semibold uppercase tracking-wide" style={{ color: "#C2410C" }}><ShieldCheck size={12} /> Verificación de facturas · {active.label}</div>
+                  <div className="mt-0.5 t9" style={{ color: C.faint }}>Facturas de este deudor que requieren verificación telefónica antes del giro. {puedeExc ? "Con tu atribución puedes excepcionar la verificación." : "La excepción la realiza el Gerente Comercial."}</div>
+                  <div className="mt-2 space-y-1.5">
+                    {requieren.length === 0 && <div className="rounded-md px-2 py-1.5 t10" style={{ backgroundColor: C.greenBg, color: C.green }}>✓ Ninguna factura de este deudor requiere verificación.</div>}
+                    {requieren.map(({ f, vf, exc }) => (
+                      <div key={f.id} className="rounded-md p-2" style={{ border: `1px solid ${C.line}`, borderLeft: `3px solid ${exc ? C.green : "#C2410C"}`, backgroundColor: "#fff" }}>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="t11 font-semibold" style={{ color: C.ink }}>Factura #{f.folio} · {fmtMM(f.montoMM)}</span>
+                          <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: exc ? C.greenBg : "#FFF7ED", color: exc ? C.green : "#C2410C" }}>{exc ? "Verificación excepcionada" : "Requiere verificación"}</span>
+                        </div>
+                        <div className="mt-0.5 t9" style={{ color: C.sub }}>{vf.motivo}</div>
+                        {exc ? (
+                          <div className="mt-1 flex items-center justify-between gap-2 rounded-md px-2 py-1 t9" style={{ backgroundColor: C.greenBg, color: C.green }}>
+                            <span>✓ Excepcionada por {exc.por} · {exc.fecha}{exc.msg ? ` — “${exc.msg}”` : ""}</span>
+                            {puedeExc && <button onClick={() => revertirVerif(f)} className="rounded-md px-2 py-0.5 t9 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Revertir</button>}
+                          </div>
+                        ) : puedeExc ? (
+                          <div className="mt-1.5 flex items-center gap-1.5">
+                            <input value={verifMsg[f.id] || ""} onChange={(e) => setVerifMsg((m) => ({ ...m, [f.id]: e.target.value }))} placeholder="Motivo (opcional)…" className="min-w-0 flex-1 rounded-md px-2 py-1 t9 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
+                            <button onClick={() => { excepcionarVerif(f, verifMsg[f.id]); setVerifMsg((m) => ({ ...m, [f.id]: "" })); }} className="inline-flex shrink-0 items-center gap-1 rounded-md px-2.5 py-1 t9 font-semibold text-white" style={{ backgroundColor: "#C2410C" }}><Check size={11} /> Excepcionar verificación</button>
+                          </div>
+                        ) : <div className="mt-1 t9" style={{ color: C.faint }}>La excepción de verificación la realiza el Gerente Comercial.</div>}
+                      </div>
+                    ))}
+                    {okFacs.length > 0 && (
+                      <div className="rounded-md" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+                        <button onClick={() => setShowVerifOk((s) => !s)} className="flex w-full items-center justify-between px-2 py-1.5 t10 font-semibold" style={{ color: C.sub }}>
+                          <span className="flex items-center gap-1">{showVerifOk ? <ChevronUp size={13} /> : <ChevronDown size={13} />} {okFacs.length} factura(s) sin verificación requerida</span>
+                          <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: C.greenBg, color: C.green }}>OK</span>
+                        </button>
+                        {showVerifOk && <div className="space-y-1 px-2 pb-2">{okFacs.map(({ f }) => (
+                          <div key={f.id} className="flex items-center justify-between gap-2 py-0.5 t9" style={{ borderTop: `1px solid ${C.line}` }}>
+                            <span style={{ color: C.sub }}>Factura #{f.folio} · {fmtMM(f.montoMM)}</span>
+                            <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>Verificada por modelo</span>
+                          </div>
+                        ))}</div>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         );
       })()}
@@ -6937,6 +7001,15 @@ let VISADO_DETALLE = {}; // { [dealId]: { [ruleN]: { msg, archs:[], por, fecha }
 // Solicitud de aprobación de una excepción que el EJECUTIVO envía al apoderado responsable (N1–N5):
 // comentario + archivos de respaldo. Precede a la decisión (VISADO_STATE/DETALLE) que toma el apoderado.
 let SOLICITUD_EXC = {}; // { [dealId]: { [stKey]: { comentario, archivos:[], por, porCode, fecha, nivel, rol } } }
+// Excepción de VERIFICACIÓN por factura: el Gerente Comercial (u otro apoderado habilitado) exime a una
+// factura de la verificación telefónica antes del giro. { [dealId]: { [facturaId]: { por, fecha, msg } } }
+let VERIF_EXC = {};
+// Configuración POR USUARIO: quién puede EXCEPCIONAR la verificación de facturas. Por defecto sólo el
+// Gerente Comercial (GC) y el super-admin; editable en el mantenedor de apoderados. Persistente.
+function cargarCfgExcVerif() { try { if (storageDisponible()) { const r = localStorage.getItem("pc_cfg_exc_verif"); if (r) return JSON.parse(r); } } catch (e) {} return { GC: true }; }
+let CFG_EXC_VERIF = cargarCfgExcVerif();
+function guardarCfgExcVerif() { try { if (storageDisponible()) localStorage.setItem("pc_cfg_exc_verif", JSON.stringify(CFG_EXC_VERIF)); } catch (e) {} }
+const puedeExcepcionarVerif = (code) => code === "ADMIN" || CFG_EXC_VERIF[code] === true; // default sólo GC
 // ── Configuración POR USUARIO: habilita/oculta la aceptación masiva ("Aprobar/Rechazar todo") de
 // excepciones de otorgamiento. Por defecto habilitada para todos los apoderados. Persistente en localStorage.
 function cargarCfgAprobMasiva() { try { if (storageDisponible()) { const r = localStorage.getItem("pc_cfg_aprob_masiva"); if (r) return JSON.parse(r); } } catch (e) {} return {}; }
@@ -7880,6 +7953,7 @@ function MantenedoresOtorg({ onCfgChange }) {
   const bump = () => onCfgChange && onCfgChange();
   const setAtrib = (code, area, v) => { const n = +v; if (!ATRIB_USUARIO[code]) return; if (!n) delete ATRIB_USUARIO[code].atrib[area]; else ATRIB_USUARIO[code].atrib[area] = Math.max(1, Math.min(5, n)); bump(); };
   const setMasiva = (code, on) => { CFG_APROB_MASIVA[code] = on; guardarCfgAprobMasiva(); bump(); };
+  const setExcVerif = (code, on) => { CFG_EXC_VERIF[code] = on; guardarCfgExcVerif(); bump(); };
   const [mtab, setMtab] = useState("criterios");
   const mtabs = [["criterios", "Criterios de verificación"], ["atribuciones", "Atribuciones de aprobación"], ["usuarios", "Usuarios y atribuciones"]];
   return (
@@ -7897,10 +7971,10 @@ function MantenedoresOtorg({ onCfgChange }) {
 
       {mtab === "usuarios" && (<div>
         <div className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Apoderados y atribuciones (nivel por área; 0 = sin atribución)</div>
-        <div className="t10" style={{ color: C.faint }}>Define quién puede excepcionar y en qué nivel (N1–N5). <b>Aceptación masiva</b> habilita/oculta el botón «Aprobar/Rechazar todo» de excepciones para cada apoderado.</div>
+        <div className="t10" style={{ color: C.faint }}>Define quién puede excepcionar y en qué nivel (N1–N5). <b>Aceptación masiva</b> habilita/oculta el botón «Aprobar/Rechazar todo» de excepciones. <b>Excepción de verificación</b> habilita eximir facturas de la verificación telefónica (por defecto sólo el Gerente Comercial).</div>
         <table className="mt-1.5 w-full border-collapse t11">
-          <thead><tr>{["Usuario", "Tipo", "Riesgo", "Comercial", "Operaciones", "Aceptación masiva"].map((h) => <th key={h} className="px-2 py-1 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
-          <tbody>{Object.keys(ATRIB_USUARIO).filter((k) => USERS[k]).map((k) => { const esAprob = atribDe(k).tipo === "aprobador"; const on = aprobMasivaHabilitada(k); return (
+          <thead><tr>{["Usuario", "Tipo", "Riesgo", "Comercial", "Operaciones", "Aceptación masiva", "Excepción verificación"].map((h) => <th key={h} className="px-2 py-1 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
+          <tbody>{Object.keys(ATRIB_USUARIO).filter((k) => USERS[k]).map((k) => { const esAprob = atribDe(k).tipo === "aprobador"; const on = aprobMasivaHabilitada(k); const ev = puedeExcepcionarVerif(k); return (
             <tr key={k} style={{ borderBottom: `1px solid ${C.line}` }}>
               <td className="px-2 py-1 font-medium" style={{ color: C.ink }}>{USERS[k]}</td>
               <td className="px-2 py-1" style={{ color: C.sub }}>{esAprob ? "Aprobador" : "Pipeline"}</td>
@@ -7911,6 +7985,11 @@ function MantenedoresOtorg({ onCfgChange }) {
                 <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A", border: "1px solid #bbf7d0" }}>Habilitada</span>
               ) : (
                 <button onClick={() => setMasiva(k, !on)} title={on ? "Clic para OCULTAR la aceptación masiva a este apoderado" : "Clic para HABILITAR la aceptación masiva a este apoderado"} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: on ? "#F0FDF4" : "#F3F4F6", color: on ? "#16A34A" : C.faint, border: `1px solid ${on ? "#bbf7d0" : C.line}` }}>{on ? <Check size={10} /> : <X size={10} />}{on ? "Habilitada" : "Oculta"}</button>
+              )}</td>
+              <td className="px-2 py-1">{k === "ADMIN" ? (
+                <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A", border: "1px solid #bbf7d0" }}>Habilitada</span>
+              ) : (
+                <button onClick={() => setExcVerif(k, !ev)} title={ev ? "Clic para QUITAR la atribución de excepción de verificación" : "Clic para OTORGAR la atribución de excepción de verificación"} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: ev ? "#F0FDF4" : "#F3F4F6", color: ev ? "#16A34A" : C.faint, border: `1px solid ${ev ? "#bbf7d0" : C.line}` }}>{ev ? <Check size={10} /> : <X size={10} />}{ev ? "Habilitada" : "—"}</button>
               )}</td>
             </tr>
           ); })}</tbody>
