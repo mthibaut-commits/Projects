@@ -3828,6 +3828,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const confirmarPub = () => { if (!pubModal) return; const n = pubModal.descartadas.length; onCerrarOferta(deal.id, { accion: pubAccion, espera: pubEspera, descartadas: n }); setPubModal(null); };
   const [retryMenu, setRetryMenu] = useState(false); // dropdown de canal para reintentar contacto
   const [rejectMenu, setRejectMenu] = useState(false); // dropdown de motivo de cierre (close_reason) al rechazar
+  const [preEvalWarn, setPreEvalWarn] = useState(null); // dialog de advertencia al pre-evaluar con excepciones sin comentario
   const [factQuery, setFactQuery] = useState(""); // buscador por folio o deudor en facturas
   const [subCanal, setSubCanal] = useState(() => (deal && deal.canalContacto === "Email") ? "Email" : "WhatsApp"); // canal activo en Contactabilidad (Call Center: más adelante)
   const [editC, setEditC] = useState(false); // edición de datos de contacto
@@ -3915,8 +3916,17 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             <div className="flex flex-wrap items-center justify-end gap-2">
               {(() => {
                 const on = tienePreEval(deal.id);
+                // Envío explícito al proceso de excepción. Si hay excepciones pendientes sin comentario/respaldo
+                // del ejecutivo, primero se advierte con un diálogo (puede enviar igual tras el warning).
+                const enviarPreEval = () => { setPreEval(deal.id, usuario, true); avisarPreEval(deal, usuario); setPreEvalWarn(null); setReevTick((x) => x + 1); };
+                const onClickPreEval = () => {
+                  if (on) { setPreEval(deal.id, usuario, false); setReevTick((x) => x + 1); return; } // cancelar
+                  const faltan = excepcionesSinComentario(deal);
+                  if (faltan.length > 0) { setPreEvalWarn({ count: faltan.length, enviar: enviarPreEval }); return; }
+                  enviarPreEval();
+                };
                 return (
-                  <button onClick={() => { const nv = !on; setPreEval(deal.id, usuario, nv); if (nv) avisarPreEval(deal, usuario); setReevTick((x) => x + 1); }} title={on ? "Cancelar la solicitud de pre-evaluación de otorgamiento" : "Solicitar iniciar formalmente la revisión de otorgamiento (pre-evaluación)"} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 t12 font-medium" style={{ border: `1px solid ${on ? "#c4b5fd" : C.line}`, backgroundColor: on ? "#f5f3ff" : "#fff", color: on ? "#7C3AED" : C.sub }}><ShieldCheck size={14} style={{ color: on ? "#7C3AED" : C.faint }} /> Pre-evaluación</button>
+                  <button onClick={onClickPreEval} title={on ? "Cancelar la solicitud de pre-evaluación de otorgamiento" : "Enviar la operación al proceso de excepción (pre-evaluación de otorgamiento)"} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 t12 font-medium" style={{ border: `1px solid ${on ? "#c4b5fd" : C.line}`, backgroundColor: on ? "#f5f3ff" : "#fff", color: on ? "#7C3AED" : C.sub }}><ShieldCheck size={14} style={{ color: on ? "#7C3AED" : C.faint }} /> Pre-evaluación</button>
                 );
               })()}
               {(() => {
@@ -4801,6 +4811,25 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
         etiquetaConfirmar="Retirar factura"
         onConfirmar={() => { onRetirarFactura(deal.id, confirmRetiro); setReevalPend(true); setConfirmRetiro(null); }}
         onCancelar={() => setConfirmRetiro(null)} />
+      {/* Advertencia al pre-evaluar: excepciones pendientes sin comentario/respaldo del ejecutivo. */}
+      {preEvalWarn && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center ovl p-6" onClick={() => setPreEvalWarn(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl" style={{ border: `1px solid ${C.line}` }}>
+            <div className="flex items-start gap-2.5">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}><AlertTriangle size={18} /></span>
+              <div>
+                <div className="t14 font-bold" style={{ color: C.ink }}>Excepciones sin comentario</div>
+                <div className="mt-1 t12" style={{ color: C.sub, lineHeight: 1.5 }}>Hay <b>{preEvalWarn.count}</b> tarea(s) de excepción sin comentarios ni respaldo que deberías revisar antes de enviarlas al proceso de excepción. Revísalas en el tab <b>Otorgamiento</b> o envíalas igualmente.</div>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+              <button onClick={() => setPreEvalWarn(null)} className="rounded-lg px-3 py-2 t12 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button>
+              <button onClick={() => { setTab("otorgamiento"); setPreEvalWarn(null); }} className="rounded-lg px-3 py-2 t12 font-semibold" style={{ border: "1px solid #7C3AED", color: "#7C3AED", backgroundColor: "#fff" }}>Ir a revisar</button>
+              <button onClick={() => preEvalWarn.enviar && preEvalWarn.enviar()} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 t12 font-semibold text-white" style={{ backgroundColor: "#7C3AED" }}><ShieldCheck size={13} /> Enviar de todos modos</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -7160,6 +7189,16 @@ function avisarPreEval(deal, execCode) {
   const h = prev || hiloNuevo({ tipo: "requerimiento", dealId: deal.id, cliente: deal.cliente, asunto, participantes: [execCode, ...dests], creadoPor: execCode });
   dests.forEach((c) => { if (!h.participantes.includes(c)) h.participantes.push(c); });
   hiloEnviar(h, execCode, `${USERS[execCode] || execCode} solicitó iniciar la PRE-EVALUACIÓN de otorgamiento de ${deal.cliente} (${deal.id}). Hay ${excPend.length} criterio(s) por excepcionar; por favor revisen y gestionen sus aprobaciones para adelantar el curse.`, null);
+}
+// Excepciones de la operación PENDIENTES (no resueltas por un apoderado) que el ejecutivo AÚN no comentó
+// ni respaldó (sin SOLICITUD_EXC con comentario/archivo). Al pre-evaluar se advierte de estas "tareas".
+function excepcionesSinComentario(deal) {
+  if (!deal) return [];
+  const st = (typeof VISADO_STATE !== "undefined" && VISADO_STATE[deal.id]) || {};
+  const sol = (typeof SOLICITUD_EXC !== "undefined" && SOLICITUD_EXC[deal.id]) || {};
+  return evaluarOtorgItems(deal)
+    .filter((it) => it.disp === "excepcion" && !st[it.stKey])
+    .filter((it) => { const s = sol[it.stKey]; return !s || (!((s.comentario || "").trim()) && !(s.archivos && s.archivos.length)); });
 }
 // El EJECUTIVO solicita al apoderado responsable (N1–N5) la aprobación de UNA excepción, adjuntando su
 // comentario y archivos de respaldo. Guarda la solicitud, adelanta la operación a la bandeja (pre-eval),
