@@ -5146,7 +5146,7 @@ const REPORTE_METRICAS = [
   { key: "originacion", label: "Originación", color: "#703EFF" },
   { key: "prospeccion", label: "Prospección", color: "#9CA3AF" },
   { key: "curse", label: "Curse", color: "#C2410C" },
-  { key: "giro", label: "Giro", color: "#16a34a" },
+  { key: "giro", label: "Girada", color: "#16a34a" },
   { key: "perdida", label: "Pérdida", color: "#dc2626" },
 ];
 function DiaModal({ info, ultimo, reporte, deals = [], onAceptar, onClose, inline, execFijo = null }) {
@@ -5231,7 +5231,7 @@ function DiaModal({ info, ultimo, reporte, deals = [], onAceptar, onClose, inlin
                   { label: "Oferta", v: e.oferta || 0, color: "#C2410C" },
                   { label: "Aceptadas", v: e.aceptadas || 0, color: "#0ea5e9" },
                   { label: "Cesión", v: e.cesion || 0, color: "#14b8a6" },
-                  { label: "Giro", v: e.giro || 0, color: "#16a34a" },
+                  { label: "Girada", v: e.giro || 0, color: "#16a34a" },
                 ];
                 perdida = e.perdida || 0;
               } else {
@@ -5251,7 +5251,7 @@ function DiaModal({ info, ultimo, reporte, deals = [], onAceptar, onClose, inlin
                   { label: "Oferta", v: reached("oferta"), color: "#C2410C" },
                   { label: "Aceptadas", v: reached("aceptadas"), color: "#0ea5e9" },
                   { label: "Cesión", v: reached("cesion"), color: "#14b8a6" },
-                  { label: "Giro", v: reached("giro"), color: "#16a34a" },
+                  { label: "Girada", v: reached("giro"), color: "#16a34a" },
                 ];
                 perdida = scope.filter((d) => d.stage === "perdida").length;
               }
@@ -5429,7 +5429,7 @@ function ReporteModal({ reporte, analisis, onClose, onRecomendar }) {
             const fdata = [
               { label: "Inbound", v: agg.inbound, color: "#8A63FF" }, { label: "Prospección", v: agg.prospeccion, color: "#9CA3AF" },
               { label: "Oferta", v: agg.oferta, color: "#C2410C" }, { label: "Aceptadas", v: agg.aceptadas, color: "#0ea5e9" },
-              { label: "Cesión", v: agg.cesion, color: "#14b8a6" }, { label: "Giro", v: agg.giro, color: "#16a34a" },
+              { label: "Cesión", v: agg.cesion, color: "#14b8a6" }, { label: "Girada", v: agg.giro, color: "#16a34a" },
             ];
             const fmax = Math.max(1, ...fdata.map((d) => d.v)), top = fdata[0].v || 0;
             return (
