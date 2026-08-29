@@ -11440,6 +11440,160 @@ function facturasDeOp(op) {
   return out;
 }
 const OP_FACTURAS = OP_SINTETICAS.flatMap(facturasDeOp);
+// ============================================================
+// DETALLE DE LA OPERACIÓN (pestaña propia · _blank con ?op=<id>). Estilo del gestor pipeline
+// (paleta C, tarjetas), con la estructura/contenido del "Detalle del otorgamiento".
+// ============================================================
+function OperacionDetalle({ op, onClose, onDescargar }) {
+  const [descOpen, setDescOpen] = useState(true);
+  const fmt = (n) => "$" + Math.round(n || 0).toLocaleString("es-CL");
+  const montoCLP = Math.round((op.montoMM || 0) * 1e6);
+  const anticipoCLP = montoCLP;                 // anticipo 100%
+  const giroCLP = Math.round((op.giroMM || 0) * 1e6);
+  const descTotal = Math.max(0, anticipoCLP - giroCLP);
+  // Desglose de descuentos con proporciones tipo mockup; la suma cuadra exacta (cxc = residual).
+  const P = { dif: 0.456, com: 0.039, gas: 0.139, iva: 0.073, rec: 0.034, des: 0.060 };
+  const c = {}; let acc = 0;
+  Object.keys(P).forEach((k) => { c[k] = Math.round(descTotal * P[k]); acc += c[k]; });
+  c.cxc = Math.max(0, descTotal - acc);
+  const descRows = [["Diferencia de precio", c.dif], ["Comisión", c.com], ["Gastos", c.gas], ["IVA", c.iva], ["Recargos", c.rec], ["Descuentos", c.des], ["Cuentas por cobrar", c.cxc]];
+  const retencion = Math.round(montoCLP * 0.138);
+  const facturas = facturasDeOp(op);
+  const estadoLbl = op.sub || op.estado || "En proceso";
+  const estCol = estadoLbl === "Girada" ? { bg: C.greenBg, fg: C.green } : estadoLbl === "Giro pendiente" ? { bg: "#FFF7ED", fg: "#C2410C" } : { bg: "#eff6ff", fg: "#2563EB" };
+  const girada = estadoLbl === "Girada";
+  const firmantes = [["JG", "Sofía Herrera"], ["GC", "Dante Montes"], ["RG", "Carolina Vergara"], ["SR", "Paula Reyes"]];
+  const rutCliente = (op.deal && op.deal.rutEmisor) || op.rut || "76.761.199-1";
+  const Card = ({ children, className = "" }) => <div className={"rounded-2xl bg-white p-5 " + className} style={{ border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>{children}</div>;
+  const Kpi = ({ l, v, s }) => <div><div className="t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>{l}</div><div className="mt-0.5 text-lg font-bold" style={{ color: C.ink }}>{v}</div>{s && <div className="t9" style={{ color: C.faint }}>{s}</div>}</div>;
+  return (
+    <div style={{ backgroundColor: C.page, minHeight: "100vh" }}>
+      {/* Encabezado */}
+      <header className="bg-white" style={{ borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, zIndex: 5 }}>
+        <div className="mx-auto flex items-center justify-between gap-3 px-5" style={{ height: 56, maxWidth: 1120 }}>
+          <div className="flex min-w-0 items-center gap-3">
+            <button onClick={() => window.close()} className="flex items-center gap-1 t12 font-medium" style={{ color: C.indigo }}><ChevronLeft size={16} /> Volver</button>
+            <span aria-hidden style={{ width: 1, height: 22, backgroundColor: C.line }} />
+            <div className="min-w-0">
+              <div className="t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>NEX Factoring · Detalle de la operación</div>
+              <div className="truncate t13 font-semibold" style={{ color: C.ink }}>N° {op.neg} <span className="t11 font-normal" style={{ color: C.sub }}>· {op.cliente} · {rutCliente}</span></div>
+            </div>
+          </div>
+          <button onClick={() => onDescargar && onDescargar(op)} title="Descargar el detalle en PDF (formato Security)" className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 t12 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Download size={14} /> Descargar PDF</button>
+        </div>
+      </header>
+
+      <div className="mx-auto w-full px-5 py-5" style={{ maxWidth: 1120 }}>
+        <h1 className="text-2xl font-semibold tracking-tight" style={{ color: C.navy }}>Detalle de la operación</h1>
+
+        {/* Banner de estado */}
+        <div className="mt-3 flex items-start gap-2.5 rounded-xl p-3.5" style={{ backgroundColor: girada ? C.greenBg : "#eff6ff", border: `1px solid ${girada ? "#bbf7d0" : "#bfdbfe"}` }}>
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white" style={{ backgroundColor: girada ? C.green : "#2563EB" }}>i</span>
+          <div>
+            <div className="t12 font-semibold" style={{ color: girada ? "#166534" : "#1e40af" }}>{girada ? "Operación girada" : "Operación aceptada · giro pendiente"}</div>
+            <div className="t11" style={{ color: C.sub }}>{girada ? "El anticipo fue desembolsado al cliente. Seguimiento de pago en cobranza." : "La operación fue aceptada; el desembolso está pendiente de autorización de los apoderados."}</div>
+          </div>
+        </div>
+
+        {/* Resumen (Factoring) */}
+        <Card className="mt-4">
+          <div className="grid gap-4 md:grid-cols-5">
+            <div className="flex items-center gap-2.5 md:col-span-1">
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ backgroundColor: "#eff6ff", color: C.indigo }}><ClipboardList size={18} /></span>
+              <div><div className="t13 font-bold" style={{ color: C.ink }}>Factoring</div><span className="mt-0.5 inline-flex rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: estCol.bg, color: estCol.fg }}>{estadoLbl}</span></div>
+            </div>
+            <Kpi l="Operación" v={"N° " + op.neg} s={op.fecha} />
+            <Kpi l="Creada por" v={op.exec} />
+            <Kpi l="Monto a girar" v={fmt(giroCLP)} s={facturas.length + " documento" + (facturas.length === 1 ? "" : "s")} />
+            <Kpi l="Tasa negocio" v={op.tasa} />
+          </div>
+        </Card>
+
+        {/* Quién debe firmar */}
+        <Card className="mt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="t13 font-bold" style={{ color: C.ink }}>Quién debe firmar</div>
+              <div className="t11" style={{ color: C.faint }}>Apoderados que autorizan el giro de la operación.</div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex -space-x-1.5">
+                {firmantes.map(([ini, nom]) => <span key={ini} title={nom} className="flex h-8 w-8 items-center justify-center rounded-full t10 font-semibold text-white" style={{ backgroundColor: C.indigo, border: "2px solid #fff", cursor: "help" }}>{ini}</span>)}
+              </div>
+              <button className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 t12 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Check size={14} /> Autorizar</button>
+            </div>
+          </div>
+        </Card>
+
+        {/* Condiciones del negocio */}
+        <Card className="mt-4">
+          <div className="t13 font-bold" style={{ color: C.ink }}>Condiciones del negocio</div>
+          <div className="mt-3 rounded-xl" style={{ border: `1px solid ${C.line}`, overflow: "hidden" }}>
+            <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${C.line}` }}><span className="t12" style={{ color: C.sub }}>Monto simulado</span><div className="text-right"><div className="t13 font-bold" style={{ color: C.ink }}>{fmt(montoCLP)}</div><div className="t9" style={{ color: C.faint }}>{facturas.length} documento{facturas.length === 1 ? "" : "s"}</div></div></div>
+            <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${C.line}` }}><span className="t12" style={{ color: C.sub }}>Monto anticipo</span><div className="text-right"><div className="t13 font-bold" style={{ color: C.ink }}>{fmt(anticipoCLP)}</div><div className="t9" style={{ color: C.faint }}>Anticipo del 100%</div></div></div>
+            <button onClick={() => setDescOpen((v) => !v)} className="flex w-full items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${C.line}` }}><span className="flex items-center gap-1 t12 font-semibold" style={{ color: C.sub }}>Descuentos {descOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}</span><span className="t13 font-bold" style={{ color: C.ink }}>{fmt(descTotal)}</span></button>
+            {descOpen && (
+              <div style={{ backgroundColor: C.page, borderBottom: `1px solid ${C.line}` }}>
+                {descRows.map(([l, v]) => <div key={l} className="flex items-center justify-between px-6 py-2 t11"><span style={{ color: C.sub }}>{l}</span><span className="font-medium" style={{ color: C.ink }}>{fmt(v)}</span></div>)}
+              </div>
+            )}
+            <div className="flex items-center justify-between px-4 py-3.5" style={{ backgroundColor: "#eff6ff" }}><span className="t13 font-bold" style={{ color: C.ink }}>Monto a girar</span><span className="text-lg font-bold" style={{ color: C.indigo }}>{fmt(giroCLP)}</span></div>
+          </div>
+          <div className="mt-3 flex items-start gap-2 rounded-lg p-3 t11" style={{ backgroundColor: "#eff6ff", borderLeft: "3px solid #2563EB", color: C.sub }}>
+            <span className="font-semibold" style={{ color: "#1e40af" }}>Esta simulación considera una retención de {fmt(retencion)}.</span> El monto indicado se liberará en su totalidad si las facturas se pagan en la fecha informada.
+          </div>
+        </Card>
+
+        {/* Documentos */}
+        <Card className="mt-4">
+          <div className="t13 font-bold" style={{ color: C.ink }}>Documentos de la operación</div>
+          <div className="t11" style={{ color: C.faint }}>Facturas cedidas en esta operación.</div>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full border-collapse t11" style={{ minWidth: 640 }}>
+              <thead><tr>{["Factura", "Cliente / Deudor", "Vencimiento", "Monto"].map((h, i) => <th key={h} className={"px-3 py-2 t9 font-bold uppercase tracking-wide " + (i === 3 ? "text-right" : "text-left")} style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
+              <tbody>{facturas.map((f) => (
+                <tr key={f.id} style={{ borderBottom: `1px solid ${C.line}` }}>
+                  <td className="px-3 py-2.5"><div className="font-medium" style={{ color: C.ink }}>Factura Electrónica #{f.folio}</div></td>
+                  <td className="px-3 py-2.5" style={{ color: C.sub }}>{f.deudor}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5" style={{ color: C.sub }}>{f.venc}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold" style={{ color: C.ink }}>{fmt((f.montoMM || 0) * 1e6)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </Card>
+
+        {/* Detalle de giros */}
+        <Card className="mt-4">
+          <div className="t13 font-bold" style={{ color: C.ink }}>Detalle de giros</div>
+          <div className="t11" style={{ color: C.faint }}>Giros asociados a esta operación.</div>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full border-collapse t11" style={{ minWidth: 560 }}>
+              <thead><tr>{["Fecha", "Giro", "Monto"].map((h, i) => <th key={h} className={"px-3 py-2 t9 font-bold uppercase tracking-wide " + (i === 2 ? "text-right" : "text-left")} style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
+              <tbody>{facturas.map((f) => (
+                <tr key={f.id} style={{ borderBottom: `1px solid ${C.line}` }}>
+                  <td className="whitespace-nowrap px-3 py-2.5" style={{ color: C.sub }}>{f.venc}</td>
+                  <td className="px-3 py-2.5"><div style={{ color: C.ink }}>BANCO BICE</div><div className="t9" style={{ color: C.faint }}>Cuenta Corriente #1234145</div></td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold" style={{ color: C.green }}>{fmt((f.montoMM || 0) * 1e6)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </Card>
+
+        {/* Términos y condiciones */}
+        <Card className="mt-4">
+          <div className="t13 font-bold" style={{ color: C.ink }}>Términos y condiciones</div>
+          <p className="mt-2 t11" style={{ color: C.sub, lineHeight: 1.6 }}>Autorizo a realizar la(s) cesión(es) que se originará(n) a partir de esta solicitud de operación, las cuales se realizará(n) bajo el amparo del contrato «Marco de Factoring» suscrito entre Factoring Security y {op.cliente}. En el evento que por cualquier causa no se pague una o más de las facturas, o el deudor de las mismas pague directamente al Cedente, Security Factoring descontará su valor del saldo de precio de la cesión, o dicho valor le será reembolsado directamente por el Cedente, aumentándose el valor de la factura que se descuenta o reembolsa con el interés máximo convencional para operaciones no reajustables en moneda nacional de menos de noventa días, considerando el número de días transcurrido entre la fecha estipulada para el pago de la factura y el día en que se efectúe el descuento o reembolso.</p>
+          <div className="mt-3 grid grid-cols-2 gap-4">
+            <div><div className="t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Aceptación</div><div className="t12 font-medium" style={{ color: C.ink }}>{op.fecha}</div></div>
+            <div><div className="t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Firma</div><div className="t12 font-medium" style={{ color: C.ink }}>{op.exec}</div></div>
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
 function OperacionesView({ deals, onOpen, soloExec }) {
   const [q, setQ] = useState("");
   const [fEstado, setFEstado] = useState("todos");
@@ -11470,8 +11624,16 @@ function OperacionesView({ deals, onOpen, soloExec }) {
   const nGiradas = enPeriodo.filter(esGirada).length;
   const estColor = { "Aceptada": { bg: "#eff6ff", fg: "#2563EB" }, "En otorgamiento": { bg: "#f5f3ff", fg: "#7C3AED" } };
   const subColor = { "Girada": { bg: "#F0FDF4", fg: "#16A34A" }, "Giro pendiente": { bg: "#FFF7ED", fg: "#C2410C" } };
-  const cols = ["N° operación", "Cliente / Deudor", "Facturas", "Monto docs", "Tasa", "Monto girado", "Fecha", "Estado", "Cobranza", "Ejecutivo"];
+  const cols = ["N° operación", "Cliente / Deudor", "Facturas", "Monto docs", "Tasa", "Monto girado", "Fecha", "Estado", "Cobranza", "Ejecutivo", ""];
   const facCols = ["Folio", "N° operación", "Cliente / Deudor", "Monto", "Vencimiento", "Cobranza", "Ejecutivo"];
+  // Abre el DETALLE de la operación en una pestaña propia (_blank · ?op=<id>). El op se pasa por localStorage.
+  const abrirOperacion = (o) => {
+    try {
+      const slim = { id: o.id, neg: o.neg, cliente: o.cliente, deudor: o.deudor, facturas: o.facturas, montoMM: o.montoMM, tasa: o.tasa, giroMM: o.giroMM, fecha: o.fecha, estado: o.estado, sub: o.sub, exec: o.exec, estadoPago: o.estadoPago, pctPagado: o.pctPagado, montoPagado: o.montoPagado, aTiempo: o.aTiempo, diasAtraso: o.diasAtraso, ts: o.ts, rut: (o.deal && o.deal.rutEmisor) || o.rut };
+      localStorage.setItem("fs_op_" + o.id, JSON.stringify({ op: slim, ts: Date.now() }));
+    } catch (e) {}
+    try { window.open(location.pathname + "?op=" + encodeURIComponent(o.id), "_blank"); } catch (e) {}
+  };
   const pagoCol = { "Pagada": { bg: "#F0FDF4", fg: "#16A34A" }, "Parcial": { bg: "#FFF7ED", fg: "#C2410C" }, "Pendiente": { bg: "#F3F4F6", fg: "#4B5563" } };
   return (
     <div className="space-y-4">
@@ -11539,6 +11701,7 @@ function OperacionesView({ deals, onOpen, soloExec }) {
                   </div>
                 ); })()}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>{o.exec}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 text-right"><button onClick={(e) => { e.stopPropagation(); abrirOperacion(o); }} title="Abrir el detalle de la operación en una pestaña nueva" className="inline-flex h-7 w-7 items-center justify-center rounded-lg" style={{ border: `1px solid ${C.line}`, color: C.indigo, backgroundColor: "#fff" }}><ArrowRight size={14} /></button></td>
               </tr>
             ); })}
             {rows.length === 0 && <tr><td colSpan={cols.length} className="px-3 py-8 text-center t11" style={{ color: C.faint }}>Sin operaciones para el filtro.</td></tr>}
@@ -12579,6 +12742,10 @@ export default function PipelineComercial() {
   const detallePayload = useMemo(() => {
     try { const id = new URLSearchParams(location.search).get("deal"); if (!id) return null; const raw = localStorage.getItem("fs_deal_" + id); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
   }, []);
+  const opPayload = useMemo(() => {
+    try { const id = new URLSearchParams(location.search).get("op"); if (!id) return null; const raw = localStorage.getItem("fs_op_" + id); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+  }, []);
+  const soloOpDetalle = !!(opPayload && opPayload.op); // pestaña propia con el DETALLE DE LA OPERACIÓN (?op=)
   const soloDetalle = !!(detallePayload && detallePayload.deal);
   const [deals, setDeals] = useState(soloDetalle ? [detallePayload.deal] : []); // arranca vacío; el pipeline se llena al presionar Start (en modo detalle, sembrado con la oportunidad)
   const cxcRef = useRef(cargarCxC()); // saldo cuentas por cobrar por cliente
@@ -12598,7 +12765,7 @@ export default function PipelineComercial() {
   const [quickFilter, setQuickFilter] = useState("conlinea"); // arranca en el tab "Con línea"
   const [channel, setChannel] = useState("Manual");
   const [usuario, setUsuario] = useState(soloDetalle && detallePayload.usuario ? detallePayload.usuario : USUARIO); // usuario logueado
-  const [logueado, setLogueado] = useState(soloDetalle ? true : false); // gate de login (portada spec Auth); clic en avatar = cerrar sesión; en modo detalle ya viene autenticado
+  const [logueado, setLogueado] = useState(soloDetalle || soloOpDetalle ? true : false); // gate de login; en modo detalle (deal u operación) ya viene autenticado
   const [cmdOpen, setCmdOpen] = useState(false); // command palette Ctrl+K (spec §38)
   // Reportes de Gestión: se abren INLINE en la vista (no como modal). Un solo estado con la clave activa.
   const [reporteGestion, setReporteGestion] = useState("performance"); // reporte inline por defecto al abrir Gestión; null = secciones (Cliente/SOW/…)
@@ -14041,6 +14208,102 @@ export default function PipelineComercial() {
     try { localStorage.setItem("fs_deal_" + d.id, JSON.stringify({ deal: d, usuario, tab: tab || null, ts: Date.now() })); } catch (e) {}
     try { window.open(location.pathname + "?deal=" + encodeURIComponent(d.id), "_blank"); } catch (e) {}
   };
+  // Descarga del detalle de la operación en PDF con el estilo de marca Security (vista imprimible → Imprimir/Guardar como PDF).
+  const descargarOperacionPDF = (o) => {
+    const fmt = (n) => "$" + Math.round(n || 0).toLocaleString("es-CL");
+    const esc = (s) => String(s == null ? "" : s).replace(/[&<>]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m]));
+    const montoCLP = Math.round((o.montoMM || 0) * 1e6), giroCLP = Math.round((o.giroMM || 0) * 1e6);
+    const descTotal = Math.max(0, montoCLP - giroCLP);
+    const P = { dif: 0.456, com: 0.039, gas: 0.139, iva: 0.073, rec: 0.034, des: 0.060 };
+    const c = {}; let acc = 0; Object.keys(P).forEach((k) => { c[k] = Math.round(descTotal * P[k]); acc += c[k]; }); c.cxc = Math.max(0, descTotal - acc);
+    const retencion = Math.round(montoCLP * 0.138);
+    const facturas = facturasDeOp(o);
+    const rut = o.rut || "76.761.199-1";
+    const nDocs = facturas.length;
+    const descRows = [["Diferencia de precio", c.dif], ["Comisión", c.com], ["Gastos", c.gas], ["IVA", c.iva], ["Recargos", c.rec], ["Descuentos", c.des], ["Cuentas por cobrar", c.cxc]];
+    const row2 = (l, v, s) => `<tr><td class="k">${esc(l)}</td><td class="v">${fmt(v)}${s ? `<div class="sub">${esc(s)}</div>` : ""}</td></tr>`;
+    const docsRows = facturas.map((f) => `<tr><td><b>Factura Electrónica #${esc(f.folio)}</b></td><td>${esc(f.deudor)}</td><td>${esc(f.venc)}</td><td class="num"><b>${fmt((f.montoMM || 0) * 1e6)}</b></td></tr>`).join("");
+    const girosRows = facturas.map((f) => `<tr><td>${esc(f.venc)}</td><td>BANCO BICE<div class="sub">Cuenta Corriente #1234145</div></td><td class="num"><b>${fmt((f.montoMM || 0) * 1e6)}</b></td></tr>`).join("");
+    const descBody = descRows.map(([l, v]) => `<tr><td class="dk">${esc(l)}</td><td class="dv">${fmt(v)}</td></tr>`).join("");
+    const firmantes = ["AA", "AA", "AA", "AA"].map(() => `<span class="ava"></span>`).join("");
+    const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Otorgamiento N° ${esc(o.neg)} · Security Factoring</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { margin: 0; background: #F8FBFF; color: #333840; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-size: 12px; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 0 0 24px; }
+  .hdr { background: linear-gradient(90deg,#6A2E92,#703EFF); color: #fff; padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .hdr .logo { font-weight: 800; letter-spacing: .5px; font-size: 13px; opacity: .85; }
+  .hdr h1 { margin: 4px 0 0; font-size: 22px; font-weight: 700; }
+  .hdr .co { text-align: right; font-size: 12px; }
+  .hdr .co b { font-size: 13px; letter-spacing: .3px; }
+  .card { background: #fff; border: 1px solid #DDE3ED; border-radius: 12px; padding: 18px 20px; margin: 16px 24px 0; }
+  .banner { background: #E9F2FF; border: 1px solid #BFDBFE; border-radius: 10px; padding: 12px 16px; margin: 16px 24px 0; }
+  .banner b { color: #1976D2; }
+  .banner .sub { color: #58606E; margin-top: 2px; }
+  .kpis { display: flex; gap: 24px; flex-wrap: wrap; }
+  .kpi .l { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: #7F90AF; font-weight: 700; }
+  .kpi .b { font-size: 16px; font-weight: 800; color: #232272; margin-top: 2px; }
+  .kpi .s { font-size: 10px; color: #7F90AF; }
+  .chip { display: inline-block; background: #EBEFF5; color: #316094; border-radius: 999px; padding: 2px 10px; font-size: 10px; font-weight: 700; margin-top: 4px; }
+  .sect { font-size: 15px; font-weight: 800; color: #232272; margin: 0 0 10px; }
+  .cond { border: 1px solid #DDE3ED; border-radius: 10px; overflow: hidden; }
+  .cond table { width: 100%; border-collapse: collapse; }
+  .cond td { padding: 11px 16px; border-bottom: 1px solid #EBEFF5; }
+  .cond td.k { color: #58606E; } .cond td.v { text-align: right; font-weight: 800; color: #232272; }
+  .cond td.v .sub { font-weight: 400; font-size: 10px; color: #7F90AF; }
+  .cond .desc td { background: #F5F7FA; }
+  .cond td.dk { color: #58606E; padding-left: 28px; font-weight: 400; } .cond td.dv { text-align: right; font-weight: 600; color: #333840; }
+  .cond .tot td { background: #EEF3FF; }
+  .cond .tot td.k { font-weight: 800; color: #232272; } .cond .tot td.v { color: #703EFF; font-size: 16px; }
+  .note { background: #E9F2FF; border-left: 3px solid #1976D2; border-radius: 8px; padding: 10px 14px; margin-top: 12px; color: #58606E; }
+  .note b { color: #1976D2; }
+  table.grid { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  table.grid th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: #7F90AF; border-bottom: 1px solid #DDE3ED; padding: 8px 10px; font-weight: 700; }
+  table.grid td { padding: 10px; border-bottom: 1px solid #EBEFF5; color: #58606E; }
+  table.grid td b { color: #333840; }
+  table.grid .num, table.grid th.num { text-align: right; }
+  .signers { display: flex; align-items: center; gap: 14px; }
+  .ava { display: inline-block; width: 30px; height: 30px; border-radius: 999px; background: #C8D1E0; border: 2px solid #fff; margin-left: -6px; }
+  .btn { background: #703EFF; color: #fff; border-radius: 8px; padding: 8px 16px; font-weight: 700; font-size: 12px; }
+  .tyc { color: #58606E; line-height: 1.6; }
+  .firma { display: flex; gap: 48px; margin-top: 14px; }
+  .firma .l { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: #7F90AF; font-weight: 700; }
+  .firma .v { font-weight: 600; color: #333840; }
+  .bar { display: flex; align-items: center; justify-content: space-between; }
+</style></head><body><div class="wrap">
+  <div class="hdr">
+    <div><div class="logo">SECURITY · FACTORING</div><h1>Detalle del otorgamiento</h1></div>
+    <div class="co"><b>${esc(o.cliente)}</b><div>${esc(rut)}</div></div>
+  </div>
+  <div class="banner"><b>Operación pendiente de firma</b><div class="sub">La operación debe ser autorizada por los apoderados.</div></div>
+  <div class="card"><div class="bar"><div class="kpis">
+    <div class="kpi"><div class="l">Operación</div><div class="b">N° ${esc(o.neg)}</div><div class="s">${esc(o.fecha)}</div><span class="chip">${esc(o.sub || o.estado)}</span></div>
+    <div class="kpi"><div class="l">Creada por</div><div class="b">${esc(o.exec)}</div></div>
+    <div class="kpi"><div class="l">Monto a girar</div><div class="b">${fmt(giroCLP)}</div><div class="s">${nDocs} documento${nDocs === 1 ? "" : "s"}</div></div>
+    <div class="kpi"><div class="l">Tasa negocio</div><div class="b">${esc(o.tasa)}</div></div>
+  </div></div></div>
+  <div class="card"><div class="bar"><div><div class="sect" style="margin:0">Quién debe firmar</div><div style="color:#7F90AF">Apoderados que autorizan el giro.</div></div><div class="signers">${firmantes}<span class="btn">Autorizar</span></div></div></div>
+  <div class="card">
+    <div class="sect">Condiciones del negocio</div>
+    <div class="cond"><table>
+      <tr><td class="k">Monto simulado</td><td class="v">${fmt(montoCLP)}<div class="sub">${nDocs} documento${nDocs === 1 ? "" : "s"}</div></td></tr>
+      <tr><td class="k">Monto anticipo</td><td class="v">${fmt(montoCLP)}<div class="sub">Anticipo del 100%</div></td></tr>
+      <tr><td class="k" style="font-weight:700;color:#232272">Descuentos</td><td class="v">${fmt(descTotal)}</td></tr>
+      ${descBody.replace(/<tr>/g, '<tr class="desc">')}
+      <tr class="tot"><td class="k">Monto a girar</td><td class="v">${fmt(giroCLP)}</td></tr>
+    </table></div>
+    <div class="note"><b>Esta simulación considera una retención de ${fmt(retencion)}.</b> El monto indicado se liberará en su totalidad si las facturas se pagan en la fecha informada.</div>
+  </div>
+  <div class="card"><div class="sect">Documentos simulados</div><table class="grid"><thead><tr><th>Factura</th><th>Cliente</th><th>Vencimiento</th><th class="num">Monto</th></tr></thead><tbody>${docsRows}</tbody></table></div>
+  <div class="card"><div class="sect">Detalle de giros</div><table class="grid"><thead><tr><th>Fecha</th><th>Giro</th><th class="num">Monto</th></tr></thead><tbody>${girosRows}</tbody></table></div>
+  <div class="card"><div class="sect">Términos y condiciones</div><p class="tyc">Autorizo a realizar la(s) cesión(es) que se originará(n) a partir de esta solicitud de operación, bajo el amparo del contrato «Marco de Factoring» suscrito entre Factoring Security y ${esc(o.cliente)}. En el evento que por cualquier causa no se pague una o más de las facturas, o el deudor de las mismas pague directamente al Cedente, Security Factoring descontará su valor del saldo de precio de la cesión, o dicho valor le será reembolsado directamente por el Cedente, aumentándose el valor de la factura que se descuenta o reembolsa con el interés máximo convencional para operaciones no reajustables en moneda nacional de menos de noventa días.</p><div class="firma"><div><div class="l">Aceptación</div><div class="v">${esc(o.fecha)}</div></div><div><div class="l">Firma</div><div class="v">${esc(o.exec)}</div></div></div></div>
+</div></body></html>`;
+    let w = null; try { w = window.open("", "_blank"); } catch (e) { w = null; }
+    if (!w) return;
+    w.document.open(); w.document.write(html); w.document.close(); w.focus();
+    setTimeout(() => { try { w.print(); } catch (e) {} }, 350);
+  };
   const abrirIncorporar = (d) => { setWizardDeal(d); setWizardOpen(true); };
   // Incorpora facturas candidatas a la oferta (una o todas), recalculando con la MISMA tasa.
   const incorporarFacturasOferta = (id, facs) => {
@@ -14235,7 +14498,9 @@ export default function PipelineComercial() {
         }
       `}</style>
 
-      {soloDetalle ? (!selected ? (
+      {soloOpDetalle ? (
+        <OperacionDetalle op={opPayload.op} onDescargar={(o) => descargarOperacionPDF(o)} />
+      ) : soloDetalle ? (!selected ? (
         <div className="flex min-h-screen items-center justify-center t13" style={{ color: C.sub }}>Oportunidad no encontrada.</div>
       ) : (
         <div className="dp-detalle">
