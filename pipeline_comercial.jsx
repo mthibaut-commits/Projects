@@ -35,6 +35,35 @@ const STAGES = [
 const STAGE_ORDER = STAGES.map((s) => s.id);
 const stageById = (id) => STAGES.find((s) => s.id === id);
 const stageName = (id) => (stageById(id) || {}).name || id; // a nivel de módulo: la usan DealCard (tarjetas perdidas) y TablaOportunidades
+// ── Eje de NEGOCIO de una operación (además del `stage` = motor de estados): status + result + disbursement.
+// El motor `stage` se conserva como atributo; el tablero se filtra por status = open.
+//  · status:       open | closed
+//  · result:       (sólo si closed) won | lost | expired   — expired (caducada por inacción) se separa de lost.
+//  · disbursement: (operación aceptada) pending | disbursed — "Giro" deja de ser etapa: es sub-estado de Aceptada.
+function dealDisbursement(d) {
+  if (!d) return null;
+  if (d.stage === "giro") return d.giroPendiente ? "pending" : "disbursed";
+  if (d.stage === "aceptadas" || d.stage === "cesion") return "pending";
+  return null;
+}
+function dealResult(d) {
+  if (!d) return null;
+  if (dealDisbursement(d) === "disbursed") return "won"; // girada = desembolsada = ganada
+  if (d.stage === "perdida") {
+    const c = String((typeof causaPerdidaDeal === "function" ? causaPerdidaDeal(d) : (d.causaPerdida || d.status || ""))).toLowerCase();
+    if (d.expired || /sin contacto|inactiv|caduc|expir|no respond|intentos.*agotad/.test(c)) return "expired";
+    return "lost";
+  }
+  return null;
+}
+const dealStatus = (d) => (dealResult(d) ? "closed" : "open");
+// Etapa a MOSTRAR en tablero/tabla: "giro" ya no es etapa visible → se muestra como "Aceptada".
+const displayStageId = (d) => (d && d.stage === "giro" ? "aceptadas" : (d && d.stage));
+// Etiquetas para el usuario (español).
+const STATUS_LBL = { open: "Abierta", closed: "Cerrada" };
+const RESULT_LBL = { won: "Ganada", lost: "Perdida", expired: "Expirada" };
+const RESULT_COL = { won: { bg: "#F0FDF4", fg: "#16A34A" }, lost: { bg: "#fef2f2", fg: "#DC2626" }, expired: { bg: "#FFF7ED", fg: "#C2410C" } };
+const DISBURSEMENT_LBL = { pending: "Giro pendiente", disbursed: "Girada" };
 const PAGE_SIZE = 8; // tarjetas por página en cada etapa (optimizado para 1800px)
 
 // ---- Diálogo de confirmación destructiva (Datamart spec §26): nunca borrar a un clic ----
@@ -6259,7 +6288,7 @@ function ComparativoModal({ deals, onClose, inline }) {
       if (d.stage === "cesion" || d.stage === "giro") g.cursado++;
       if (d.stage === "giro") g.ventaMM += d.amountMM || 0;
       if (["aceptadas", "cesion", "giro"].includes(d.stage)) g.ganados++;
-      if (d.stage === "perdida") g.perdidos++;
+      if (dealResult(d) === "lost") g.perdidos++; // expiradas (caducadas por inacción) fuera de la tasa de pérdida
     });
     return Object.values(map).map((g) => ({ ...g, pipeMM: +g.pipeMM.toFixed(1), ventaMM: +g.ventaMM.toFixed(1), wr: (g.ganados + g.perdidos) ? Math.round(g.ganados / (g.ganados + g.perdidos) * 100) : 0 })).sort((a, b) => b.ventaMM - a.ventaMM);
   }, [deals, dim]);
@@ -6494,11 +6523,14 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                     const vis = ["prospeccion", "oferta", "aceptadas", "otorgamiento"].includes(d.stage) ? visadoDeal(d) : null;
                     const nPend = vis ? vis.exc.length + vis.rechReev.length : 0;
                     const bloqueo = vis && (vis.rechFirme.length || vis.excRech.length);
+                    const dstage = displayStageId(d); const disb = dealDisbursement(d); const res = dealResult(d);
                     const dotStyle = d.stage === "oferta"
                       ? { background: nPend ? "linear-gradient(135deg,#C4B5FD,#703EFF)" : "linear-gradient(135deg,#703EFF,#230C65)" }
-                      : { backgroundColor: (STAGES.find((s) => s.id === d.stage) || {}).dot };
+                      : { backgroundColor: (STAGES.find((s) => s.id === dstage) || {}).dot };
                     return (<>
-                      <div className="flex items-center gap-1" style={{ color: C.ink }}><span className="h-2 w-2 rounded-full" style={dotStyle} />{stageName(d.stage)}</div>
+                      <div className="flex items-center gap-1" style={{ color: C.ink }}><span className="h-2 w-2 rounded-full" style={dotStyle} />{stageName(dstage)}</div>
+                      {disb && <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: disb === "disbursed" ? "#F0FDF4" : "#eff6ff", color: disb === "disbursed" ? "#16A34A" : "#2563EB" }} title={disb === "disbursed" ? "Operación girada (desembolsada)" : "Aceptada · giro pendiente de desembolso"}>{DISBURSEMENT_LBL[disb]}</div>}
+                      {res === "expired" && <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: RESULT_COL.expired.bg, color: RESULT_COL.expired.fg }}>Expirada</div>}
                       {bloqueo ? <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#fef2f2", color: "#DC2626", cursor: "help" }} title={"No superó reglas de otorgamiento (bloqueo firme):\n" + [...vis.rechFirme, ...vis.excRech].map((r, i) => `${i + 1}) #${r.n} ${r.nombre}`).join("\n")}><X size={10} /> Perdida · reglas de otorgamiento</div>
                       : nPend > 0 ? <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED", cursor: "help" }} title={"Requiere otorgamiento — reglas con excepción/rechazo re-evaluable:\n" + [...vis.exc, ...vis.rechReev].map((e, i) => `${i + 1}) #${e.n} ${e.nombre}`).join("\n")}><AlertTriangle size={10} /> Requiere otorgamiento <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#7c3aed" }}>{nPend}</span></div>
                       : null}
@@ -10268,10 +10300,10 @@ function ReporteDiaPanel({ deals, execFilter, onClose, onOpen }) {
   const enPrio = (d) => fPrio === "todas" || (fPrio === "con" ? tienePrioridadCurse(d.id) : !tienePrioridadCurse(d.id));
   const scope = (deals || []).filter(enExec);
   const base = scope.filter(enPrio);
-  const abiertas = base.filter((d) => !["giro", "perdida"].includes(d.stage));
-  const ganadas = base.filter((d) => d.stage === "giro");
-  const perdidas = base.filter((d) => d.stage === "perdida");
-  const cerradas = ganadas.length + perdidas.length;
+  const abiertas = base.filter((d) => dealStatus(d) === "open");
+  const ganadas = base.filter((d) => dealResult(d) === "won");
+  const perdidas = base.filter((d) => dealResult(d) === "lost");
+  const cerradas = ganadas.length + perdidas.length; // expiradas fuera de la tasa de cierre
   const winRate = cerradas ? Math.round((ganadas.length / cerradas) * 100) : 0;
   const sumMM = (arr) => arr.reduce((s, d) => s + (d.amountMM || 0), 0);
   const nConPrio = scope.filter((d) => tienePrioridadCurse(d.id)).length;
@@ -11290,7 +11322,7 @@ const OP_SINTETICAS = (() => {
     const montoPagado = +(montoMM * pctPagado / 100).toFixed(1);
     const aTiempo = estadoPago === "Pendiente" ? null : rnd() < 0.72;
     const diasAtraso = aTiempo === false ? 1 + Math.floor(rnd() * 45) : 0;
-    out.push({ id: "OPS-" + i, neg: 14500000 + Math.floor(rnd() * 90000), cliente, deudor: deudores[Math.floor(rnd() * deudores.length)], facturas, montoMM, tasa: tasaN.toFixed(2) + "%", giroMM, fecha, estado: "Girada", exec: execs[Math.floor(rnd() * execs.length)], ts: d.getTime(), estadoPago, pctPagado, montoPagado, aTiempo, diasAtraso });
+    out.push({ id: "OPS-" + i, neg: 14500000 + Math.floor(rnd() * 90000), cliente, deudor: deudores[Math.floor(rnd() * deudores.length)], facturas, montoMM, tasa: tasaN.toFixed(2) + "%", giroMM, fecha, estado: "Aceptada", sub: "Girada", exec: execs[Math.floor(rnd() * execs.length)], ts: d.getTime(), estadoPago, pctPagado, montoPagado, aTiempo, diasAtraso });
   }
   return out.sort((a, b) => b.ts - a.ts);
 })();
@@ -11322,14 +11354,16 @@ function OperacionesView({ deals, onOpen, soloExec }) {
   const [fHasta, setFHasta] = useState("");
   // ¿La operación (por su timestamp) cae dentro del rango seleccionado? Rango inclusivo por día.
   const enRango = (ts) => { if (!ts) return true; const t = +ts; if (fDesde && t < new Date(fDesde + "T00:00:00").getTime()) return false; if (fHasta && t > new Date(fHasta + "T23:59:59").getTime()) return false; return true; };
-  const estadoDe = (s) => s === "giro" ? "Girada" : s === "cesion" ? "En cesión" : s === "aceptadas" ? "Aceptada" : "En otorgamiento";
+  // Nuevo eje: estado "Aceptada" (aceptadas/cesión/giro) o "En otorgamiento"; el desembolso es un SUB-ESTADO
+  // (Giro pendiente / Girada). Girada ya no es un estado propio, es un sub-estado de Aceptada.
+  const estadoDe = (s) => s === "otorgamiento" ? "En otorgamiento" : "Aceptada";
   const vivas = useMemo(() => (deals || []).filter((d) => ["aceptadas", "cesion", "otorgamiento", "giro"].includes(d.stage) && (!soloExec || (EXECS[d.exec] || "Agente IA") === soloExec)).map((d) => ({
     id: d.id, deal: d, neg: d.negocioNum || d.id, cliente: d.cliente, deudor: (d.deudores && d.deudores[0] ? d.deudores[0].name : d.deudor), facturas: d.facturas,
-    montoMM: d.amountMM || 0, tasa: d.tasa || "—", giroMM: d.giroMM || 0, fecha: ((d.time || "").match(/\d{2}-\d{2}-\d{4}/) || ["Hoy"])[0], estado: estadoDe(d.stage), exec: EXECS[d.exec] || "Agente IA", nueva: true, ts: Date.now(),
+    montoMM: d.amountMM || 0, tasa: d.tasa || "—", giroMM: d.giroMM || 0, fecha: ((d.time || "").match(/\d{2}-\d{2}-\d{4}/) || ["Hoy"])[0], estado: estadoDe(d.stage), sub: DISBURSEMENT_LBL[dealDisbursement(d)] || null, exec: EXECS[d.exec] || "Agente IA", nueva: true, ts: Date.now(),
     estadoPago: "Pendiente", pctPagado: 0, montoPagado: 0, aTiempo: null, diasAtraso: 0, // recién cursada: aún no vence / no cobrada
   })), [deals, soloExec]);
   const todas = [...vivas, ...OP_SINTETICAS.filter((o) => !soloExec || o.exec === soloExec)];
-  const esGirada = (o) => o.estado === "Girada";
+  const esGirada = (o) => o.sub === "Girada";
   const clientes = Array.from(new Set(todas.map((o) => o.cliente))).sort((a, b) => a.localeCompare(b, "es"));
   const rows = todas.filter((o) => (!q || o.cliente.toLowerCase().includes(q.toLowerCase()) || (o.deudor || "").toLowerCase().includes(q.toLowerCase()) || String(o.neg).includes(q)) && (fEstado === "todos" || (fEstado === "girada" ? esGirada(o) : !esGirada(o))) && (fCliente === "todos" || o.cliente === fCliente) && enRango(o.ts));
   // Apertura por factura: expande las operaciones vivas + sintéticas en sus facturas
@@ -11339,7 +11373,8 @@ function OperacionesView({ deals, onOpen, soloExec }) {
   const enPeriodo = todas.filter((o) => enRango(o.ts));
   const montoGirado = enPeriodo.reduce((s, o) => s + (o.giroMM || 0), 0);
   const nGiradas = enPeriodo.filter(esGirada).length;
-  const estColor = { "Girada": { bg: "#F0FDF4", fg: "#16A34A" }, "En cesión": { bg: "#f0fdfa", fg: "#0f766e" }, "Aceptada": { bg: "#eff6ff", fg: "#2563EB" }, "En otorgamiento": { bg: "#f5f3ff", fg: "#7C3AED" } };
+  const estColor = { "Aceptada": { bg: "#eff6ff", fg: "#2563EB" }, "En otorgamiento": { bg: "#f5f3ff", fg: "#7C3AED" } };
+  const subColor = { "Girada": { bg: "#F0FDF4", fg: "#16A34A" }, "Giro pendiente": { bg: "#FFF7ED", fg: "#C2410C" } };
   const cols = ["N° operación", "Cliente / Deudor", "Facturas", "Monto docs", "Tasa", "Monto girado", "Fecha", "Estado", "Cobranza", "Ejecutivo"];
   const facCols = ["Folio", "N° operación", "Cliente / Deudor", "Monto", "Vencimiento", "Cobranza", "Ejecutivo"];
   const pagoCol = { "Pagada": { bg: "#F0FDF4", fg: "#16A34A" }, "Parcial": { bg: "#FFF7ED", fg: "#C2410C" }, "Pendiente": { bg: "#F3F4F6", fg: "#4B5563" } };
@@ -11390,7 +11425,7 @@ function OperacionesView({ deals, onOpen, soloExec }) {
         <table className="w-full border-collapse t11" style={{ minWidth: "1160px" }}>
           <thead><tr>{cols.map((h) => <th key={h} className="px-3 py-2.5 text-left t9 font-bold uppercase tracking-wide" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
           <tbody>
-            {rows.map((o) => { const ec = estColor[o.estado] || estColor["Girada"]; return (
+            {rows.map((o) => { const ec = estColor[o.estado] || estColor["Aceptada"]; return (
               <tr key={o.id} onClick={() => o.deal && onOpen && onOpen(o.deal)} className={o.deal ? "cursor-pointer hover:bg-stone-50" : ""} style={{ borderBottom: `1px solid ${C.line}` }}>
                 <td className="whitespace-nowrap px-3 py-2.5"><div className="flex items-center gap-1.5"><span className="font-semibold" style={{ color: C.ink }}>N° {o.neg}</span>{o.nueva && <span className="rounded-full px-1.5 py-0.5 t8 font-bold" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>NUEVA</span>}</div></td>
                 <td className="px-3 py-2.5"><div className="t12 font-medium" style={{ color: C.ink }}>{o.cliente}</div><div className="t9" style={{ color: C.faint }}>Deudor: {o.deudor}</div></td>
@@ -11399,7 +11434,7 @@ function OperacionesView({ deals, onOpen, soloExec }) {
                 <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>{o.tasa}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: "#16A34A" }}>{fmtMM(o.giroMM)}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>{o.fecha}</td>
-                <td className="whitespace-nowrap px-3 py-2.5"><span className="rounded-md px-2 py-1 t10 font-semibold" style={{ backgroundColor: ec.bg, color: ec.fg }}>{o.estado}</span></td>
+                <td className="whitespace-nowrap px-3 py-2.5"><div className="flex flex-wrap items-center gap-1"><span className="rounded-md px-2 py-1 t10 font-semibold" style={{ backgroundColor: ec.bg, color: ec.fg }}>{o.estado}</span>{o.sub && (() => { const sc = subColor[o.sub] || subColor["Giro pendiente"]; return <span className="rounded-md px-2 py-1 t10 font-semibold" style={{ backgroundColor: sc.bg, color: sc.fg }}>{o.sub}</span>; })()}</div></td>
                 <td className="whitespace-nowrap px-3 py-2.5">{(() => { const pc = pagoCol[o.estadoPago] || pagoCol["Pendiente"]; return (
                   <div>
                     <span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: pc.bg, color: pc.fg }}>{o.estadoPago}{o.estadoPago !== "Pendiente" ? ` · ${o.pctPagado}%` : ""}</span>
@@ -12642,12 +12677,14 @@ export default function PipelineComercial() {
   const vsBudget = BUDGET_MES_MM ? +(ventaMensualMM / BUDGET_MES_MM * 100).toFixed(1) : 0;
   // Forecast = venta girada + 30% del pipeline en curso (estimación de cierre).
   const forecastMM = useMemo(() => +(ventaMensualMM + totalPipeline * 0.3).toFixed(0), [ventaMensualMM, totalPipeline]);
-  // Win/Loss rate: ganados (aceptadas/cesión/giro) vs perdidos, sobre el total resuelto.
+  // Win/Loss rate: ganados (aceptadas/cesión/giro) vs perdidos comerciales. Las EXPIRADAS (caducadas por
+  // inacción) se separan y NO entran en la tasa, para no inflar la pérdida comercial con temas operativos.
   const winLoss = useMemo(() => {
     const ganados = dealsVista.filter((d) => ["aceptadas", "cesion", "giro"].includes(d.stage)).length;
-    const perdidos = dealsVista.filter((d) => d.stage === "perdida").length;
+    const perdidos = dealsVista.filter((d) => dealResult(d) === "lost").length;
+    const expiradas = dealsVista.filter((d) => dealResult(d) === "expired").length;
     const tot = ganados + perdidos;
-    return { ganados, perdidos, win: tot ? Math.round(ganados / tot * 100) : 0, loss: tot ? Math.round(perdidos / tot * 100) : 0 };
+    return { ganados, perdidos, expiradas, win: tot ? Math.round(ganados / tot * 100) : 0, loss: tot ? Math.round(perdidos / tot * 100) : 0 };
   }, [dealsVista]);
   const clearAll = () => { setQuery(""); setQuickFilter("todos"); setFDeudor("todos"); setFJefatura("todas"); setFLinea("todas"); setFEjecutivo("todos"); };
 
@@ -14434,13 +14471,14 @@ export default function PipelineComercial() {
                 <MacroColumn title="Oferta y Negociación" hint="en curso">
                   {col("oferta")}
                 </MacroColumn>
-                <MacroColumn title="Aceptada / Perdida" hint="resolución">
-                  {col("aceptadas", { deals: [...dealsByStage("aceptadas"), ...dealsByStage("cesion")] })}
-                  {col("perdida", { colapsable: true })}
-                </MacroColumn>
-                <MacroColumn title="Otorgamiento y Giro" hint="operación">
+                <MacroColumn title="Otorgamiento" hint="operación">
                   {col("otorgamiento")}
-                  {col("giro")}
+                </MacroColumn>
+                {/* "Giro" ya no es columna: las operaciones GIRADAS (ganadas) salen del tablero y se ven en
+                    Operaciones. Las de giro PENDIENTE siguen abiertas dentro de Aceptada. */}
+                <MacroColumn title="Aceptada / Perdida" hint="resolución">
+                  {col("aceptadas", { deals: [...dealsByStage("aceptadas"), ...dealsByStage("cesion"), ...filtered.filter((d) => d.stage === "giro" && d.giroPendiente)] })}
+                  {col("perdida", { colapsable: true })}
                 </MacroColumn>
               </>
             );
