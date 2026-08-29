@@ -1654,6 +1654,15 @@ function historialComercial(cliente, deudor) {
   }
   return out;
 }
+// Tasa del ÚLTIMO negocio cursado del cliente (el más reciente del historial comercial). null si es cliente
+// nuevo NEX (sin operaciones cursadas). Sirve para no ofertar por debajo de la tasa histórica del cliente.
+function tasaUltimoNegocio(deal) {
+  if (!deal || esClienteNuevoNEX(deal)) return null;
+  const h = historialComercial(deal.cliente, deal.deudor);
+  if (!h.length) return null;
+  const t = parseFloat(h[0].tasa);
+  return isFinite(t) ? { tasa: +t.toFixed(2), id: h[0].id, fecha: h[0].fecha } : null;
+}
 // Posición de cobranza: facturas financiadas en el pasado clasificadas por morosidad.
 // CxC (cuentas por cobrar) = monto pendiente × (tasa negocio × 1,5) × (días de atraso / 30).
 // RUT chileno sintético y determinista a partir de un nombre (número + dígito verificador módulo 11).
@@ -2908,7 +2917,7 @@ function descuentosDeal(deal, o) {
   const sum = (a) => a.reduce((s, x) => s + (x.desc || 0), 0);
   return { otros, mora, cxc, totOtros: sum(otros), totMora: sum(mora), totCxc: sum(cxc) };
 }
-function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, antic, setAntic, comisO, setComisO, tasaPond, diasPond, reevalPend, onReevaluar, esJefe, usuarioCod, deudoresOp }) {
+function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, antic, setAntic, comisO, setComisO, tasaPond, diasPond, reevalPend, onReevaluar, esJefe, usuarioCod, deudoresOp, tasaFuente }) {
   const [open, setOpen] = useState(true);
   const [autorizSig, setAutorizSig] = useState(null); // firma de condiciones autorizadas por la jefatura
   const [solicSig, setSolicSig] = useState(null); // firma de condiciones con autorización solicitada
@@ -2988,9 +2997,16 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
           "Re-evaluar operación" al centro que dispara el re-check de otorgamiento/verificación. */}
       <div className="relative mx-4 mt-3 rounded-lg p-3" style={{ backgroundColor: "#F9FAFB", border: "1px solid #FED7AA" }}>
         <div style={{ opacity: reevalPend ? 0.4 : 1, pointerEvents: reevalPend ? "none" : "auto" }}>
-        <div className="flex items-center justify-between">
-          <span className="t10 font-semibold uppercase tracking-wide" style={{ color: "#C2410C" }}>Condiciones comerciales</span>
-          {!bloqueado && <button onClick={() => setEditCond((v) => !v)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t10 font-semibold" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}>{editCond ? <><Check size={11} /> Listo</> : <><Pencil size={11} /> Editar condiciones</>}</button>}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="t10 font-semibold uppercase tracking-wide" style={{ color: "#C2410C" }}>Condiciones comerciales</span>
+            {tasaFuente && (tasaFuente.usaUltNeg ? (
+              <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#eff6ff", color: "#2563EB", border: "1px solid #bfdbfe", cursor: "help" }} title={`La tasa ponderada por riesgo (${tasaFuente.riesgo}%) es menor a la del último negocio cursado (${tasaFuente.ultNeg ? tasaFuente.ultNeg.tasa : "—"}%${tasaFuente.ultNeg ? " · " + tasaFuente.ultNeg.id + " · " + tasaFuente.ultNeg.fecha : ""}): la simulación usa la tasa del último negocio.`}>↺ Tasa Últ. Negocio {tasaFuente.ultNeg ? tasaFuente.ultNeg.tasa + "%" : ""}</span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green, border: "1px solid #bbf7d0", cursor: "help" }} title={`Tasa ponderada por riesgo del deudor y plazo (${tasaFuente.riesgo}%)${tasaFuente.ultNeg ? " · igual o mayor a la del último negocio (" + tasaFuente.ultNeg.tasa + "%)" : " · cliente sin negocios previos"}.`}>⚖ Tasa ponderada riesgo</span>
+            ))}
+          </div>
+          {!bloqueado && <button onClick={() => setEditCond((v) => !v)} className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 t10 font-semibold" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}>{editCond ? <><Check size={11} /> Listo</> : <><Pencil size={11} /> Editar condiciones</>}</button>}
         </div>
         {editCond ? (
           <table className="mt-2 w-full border-collapse t11">
@@ -4066,10 +4082,17 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                     interesMM += fin * (tF / 100) * (dias / 30); tNum += (f.montoMM || 0) * tF;
                   });
                   interesMM = +interesMM.toFixed(2);
-                  const tasaPond = +(tNum / wDen).toFixed(2);
+                  // Tasa ponderada por riesgo del deudor + plazo (Σ monto×tasa_deudor / Σ monto).
+                  const tasaPondRiesgo = +(tNum / wDen).toFixed(2);
+                  // Regla comercial: no ofertar por debajo de la tasa del ÚLTIMO negocio cursado del cliente.
+                  // Si la ponderada por riesgo es menor, la simulación usa la tasa del último negocio.
+                  const tul = tasaUltimoNegocio(deal);
+                  const usaUltNeg = !!(tul && tasaPondRiesgo < tul.tasa);
+                  const tasaPond = usaUltNeg ? tul.tasa : tasaPondRiesgo; // tasa EFECTIVA de la simulación
+                  if (usaUltNeg && tasaPondRiesgo > 0) interesMM = +(interesMM * (tasaPond / tasaPondRiesgo)).toFixed(2); // escala el interés a la tasa efectiva
                   const opts = { anticipo: +antic, dias: diasPond, comision: +comisO, interesMM, montoValido, cantidad: validas.length };
                   const o = calcularOferta(deal, tasaPond, opts);
-                  const oferta = tasaPond; // tasa de la operación (ponderada)
+                  const oferta = tasaPond; // tasa de la operación (efectiva)
                   const inputCls = "w-20 rounded-md px-2 py-1 t11 text-right outline-none disabled:opacity-60 disabled:cursor-not-allowed";
                   const bloqueado = ["aceptadas", "cesion", "giro", "perdida"].includes(deal.stage);
                   return (
@@ -4101,7 +4124,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           </div>
                         );
                       })()}
-                      {negTab === "resumen" && <SimResumen deal={deal} o={o} montoDocs={montoValido} cantFacturas={validas.length} usuario={USERS[usuario] || usuario} bloqueado={bloqueado} antic={antic} setAntic={setAntic} comisO={comisO} setComisO={setComisO} tasaPond={tasaPond} diasPond={diasPond} reevalPend={reevalPend} onReevaluar={() => setReevalPend(false)} esJefe={esJefeComercial(usuario)} usuarioCod={usuario} deudoresOp={validas} />}
+                      {negTab === "resumen" && <SimResumen deal={deal} o={o} montoDocs={montoValido} cantFacturas={validas.length} usuario={USERS[usuario] || usuario} bloqueado={bloqueado} antic={antic} setAntic={setAntic} comisO={comisO} setComisO={setComisO} tasaPond={tasaPond} diasPond={diasPond} reevalPend={reevalPend} onReevaluar={() => setReevalPend(false)} esJefe={esJefeComercial(usuario)} usuarioCod={usuario} deudoresOp={validas} tasaFuente={{ usaUltNeg, riesgo: tasaPondRiesgo, ultNeg: tul }} />}
                       {negTab === "descuentos" && <SimDescuentos deal={deal} o={o} />}
                       {negTab === "documentos" && (<>
                       {/* Documentos: facturas incluidas en la oferta */}
