@@ -4203,10 +4203,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           // "Otras facturas" se modela como la tabla de "Facturas incluidas en la oferta":
                           // mismas columnas (Tipo doc · Folio · Razón social · Nota · F. emisión · F. vencim · Otorg · Verif · Tasa · Monto),
                           // con una columna de acción (Agregar para candidatas · XML para las que ya están en la oferta).
-                          const GC_OTRAS = "16px 72px 56px minmax(100px,1fr) 28px 84px 84px 100px 96px 44px 62px 96px 92px";
+                          const GC_OTRAS = "16px 72px 56px minmax(100px,1fr) 28px 84px 84px 44px 62px 96px 92px";
                           const HeadOtras = (
                             <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: GC_OTRAS, color: C.faint, borderBottom: `1px solid ${C.line}` }}>
-                              <span></span><span>Tipo doc.</span><span>Folio</span><span>Razón social</span><span className="text-right">Nota</span><span>F. emisión</span><span>F. vencim.</span><span>Otorg.</span><span>Verif.</span><span className="text-right">Tasa</span><span className="text-right">Monto</span><span>Estado</span><span>Acción</span>
+                              <span></span><span>Tipo doc.</span><span>Folio</span><span>Razón social</span><span className="text-right">Nota</span><span>F. emisión</span><span>F. vencim.</span><span className="text-right">Tasa</span><span className="text-right">Monto</span><span>Estado</span><span>Acción</span>
                             </div>
                           );
                           const SHORT_EST = { notaAnula: "Anulada", cedida: "Cedida", otraOp: "Otra op.", notaParcial: "NC parcial" };
@@ -4219,8 +4219,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             const he = f.candidata ? (f.diasEmision != null ? f.diasEmision : 60) : (Math.abs(hashStr("em" + f.folio)) % 20 + 3); const emD = new Date(Date.now() - he * 86400000);
                             const plazo = f.venc != null ? f.venc : 30;
                             const em = emD.toLocaleDateString("es-CL"); const venc = new Date(emD.getTime() + plazo * 86400000).toLocaleDateString("es-CL");
-                            const og = otorgDeFactura(f);
-                            const vf = verifFactura(f, deal); const vv = vf.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
+                            // Estas facturas NO son parte de la simulación → no se calcula otorgamiento ni verificación
+                            // (esos estados sólo se evalúan al simular). Ahorra cómputo por fila.
                             const tasaF = ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + COSTO_FONDO).toFixed(2);
                             const ok = xmlOk[f.id] !== false;
                             const est = f.candidata ? estadoCandidata(f, deal) : { clave: "ok", bloqueada: false, agregable: true, montoNeto: f.montoMM, ncMonto: 0 };
@@ -4247,8 +4247,6 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 <span className="text-right font-semibold" title={`Nota del deudor: ${nota} / 5`} style={{ color: NOTA_COLOR(nota) }}>{nota}</span>
                                 <span className="t9" style={{ color: C.faint }}>{em}</span>
                                 <span className="t9" style={{ color: C.faint }}>{venc}</span>
-                                {og.total === 0 ? <span className="justify-self-start t10" style={{ color: C.faint }}>—</span> : <span className="inline-flex items-center gap-1 justify-self-start t10 font-bold" title={og.allOk ? `Todas las reglas de otorgamiento del deudor cumplieron (${og.ok}/${og.total})` : `${og.ok} de ${og.total} reglas de otorgamiento cumplieron · ${og.total - og.ok} pendiente(s)`} style={{ cursor: "help" }}><span style={{ color: og.allOk ? "#16A34A" : "#DC2626" }}>{og.allOk ? "✓" : "⚠"}</span><span style={{ fontVariantNumeric: "tabular-nums" }}><span style={{ color: og.allOk ? "#16A34A" : "#DC2626" }}>{og.ok}</span><span style={{ color: C.sub }}>/{og.total}</span></span></span>}
-                                <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: vv.bg, color: vv.fg }}>{vv.t}</span>
                                 <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
                                 <span className="text-right font-medium" title={parcial ? `Factura ${fmtMM(f.montoMM)} − NC ${fmtMM(est.ncMonto)} = ${fmtMM(est.montoNeto)}` : (f.excl ? `Excluida: ${f.excl}` : anulMonto ? "Documento anulado por nota de crédito" : undefined)} style={{ color: parcial ? "#C2410C" : C.ink, textDecoration: (f.excl || anulMonto) ? "line-through" : "none" }}>{fmtMM(parcial ? est.montoNeto : f.montoMM)}</span>
                                 {estadoNode}
