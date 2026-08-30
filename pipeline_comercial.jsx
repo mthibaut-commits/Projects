@@ -4,6 +4,7 @@ import {
   ChevronUp, ChevronLeft, X, Check, Calendar, Star, ArrowUpRight, ArrowDownRight,
   CircleDot, Sparkles, User, MessageSquare, Plus, Pencil, Zap, Clock,
   Play, Pause, RotateCcw, Radio, ArrowRight, AlertTriangle, Calculator, Eye, EyeOff, BarChart2, Trash2, Target, ShieldCheck, Settings, ClipboardList, Send,
+  LayoutGrid, Grid3x3,
 } from "lucide-react";
 import { ComposedChart, Bar, Line, XAxis, YAxis, ReferenceLine, ResponsiveContainer, CartesianGrid, Tooltip, Cell } from "recharts";
 import { sankey as d3sankey, sankeyLinkHorizontal, sankeyLeft } from "d3-sankey";
@@ -10687,7 +10688,7 @@ function seedTareasDemo(deals, ejecName) {
 // en columnas). Consolida (1) las tareas asignadas desde el sistema de gestión y (2) las oportunidades
 // marcadas con prioridad de curse por la jefatura (se auto-atienden al cursar / ceder / bloquearse).
 // Cada fila abre un DRAWER lateral con el detalle completo y una BITÁCORA de comentarios de gestión.
-function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre }) {
+function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, onOpenSolic, onIrLineas }) {
   const [, force] = useState(0); const bump = () => force((v) => v + 1);
   const [sel, setSel] = useState(null);   // { kind, id } — ítem abierto en el drawer
   const [vista, setVista] = useState("activas"); // activas | resueltas
@@ -10740,12 +10741,15 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre }) {
   const nPrioPend = rowsPrio.filter((r) => !r.hecha).length;
   const nPrioAt = rowsPrio.filter((r) => r.hecha).length;
   const nTaskPend = rowsTask.filter((r) => !r.hecha).length;
-  const kpis = [
-    { t: "Líneas urgentes", v: rowsLinea.length, s: "Operaciones fuera de línea: requieren ampliarla para cursar.", col: "#2563EB", Icon: AlertTriangle },
-    { t: "Tareas asignadas", v: nTaskPend, s: "Pendientes, asignadas desde Gestión.", col: "#703EFF", Icon: ClipboardList },
-    { t: "Prioridades por atender", v: nPrioPend, s: "Priorizadas por la jefatura para el curse.", col: "#C2410C", Icon: Star },
-    { t: "Prioridades atendidas", v: nPrioAt, s: "Cursadas, cedidas o con bloqueo firme.", col: "#16A34A", Icon: Check },
-  ];
+  // Resumen unificado (fusiona las cards de «Tareas» con las de la antigua bandeja «Oportunidades»):
+  // impacto del pipeline, mensajes y líneas por gestionar + las tareas/prioridades de este panel.
+  const tareasPipe = generarTareasConsolidadas(deals).filter((t) => t.fuente === "pipeline" && (execFilter === "todos" || t.exec === execFilter));
+  const impactoPot = tareasPipe.reduce((s, t) => s + (t.impacto || 0), 0);
+  const nOportPipe = tareasPipe.length;
+  const nMsg = usuario ? notifSolic(usuario).porResponder.length : 0;
+  const nFueraLinea = rowsLinea.length;
+  const nLineasSOW = LINEAS_DATA.filter((l) => (execFilter === "todos" || l.exec === execFilter) && lineaSalud(l).label === "Atención").length;
+  const nLineasGest = nLineasSOW + nFueraLinea;
   // Estado (pill) de una fila.
   const estadoPill = (r) => {
     if (r.kind === "linea") return { l: "Urgente para el curse", c: "#2563EB", bg: "#EFF6FF" };
@@ -10761,8 +10765,43 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre }) {
           <div className="t12" style={{ color: C.faint }}>Solicitudes de línea urgentes, tareas asignadas y oportunidades priorizadas por la jefatura · las prioridades se atienden solas al cursar, ceder o bloquearse.</div>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {kpis.map((k, i) => <KpiStat key={i} Icon={k.Icon} col={k.col} v={k.v} l={k.t} s={k.s} />)}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+        {/* Mensajes por responder */}
+        <button onClick={nMsg ? onOpenSolic : undefined} className="rounded-xl p-3 text-left" style={{ backgroundColor: nMsg ? "#F1ECFF" : "#fff", border: `1px solid ${nMsg ? "#D9CCFF" : C.line}`, cursor: nMsg && onOpenSolic ? "pointer" : "default" }}>
+          <div className="flex items-center gap-1.5 t9 font-bold uppercase tracking-wide" style={{ color: nMsg ? "#5B21D6" : C.faint }}><Bell size={11} /> Mensajes por responder</div>
+          <div className="text-xl font-bold" style={{ color: nMsg ? "#5B21D6" : C.ink }}>{nMsg}</div>
+          <div className="mt-1 t9" style={{ color: C.faint, lineHeight: 1.35 }}>{nMsg ? "Requerimientos de información del otorgamiento asignados a ti. Click para responder." : "Sin requerimientos de información pendientes."}</div>
+        </button>
+        {/* Líneas por gestionar (SOW + fuera de línea) */}
+        <button onClick={nLineasGest && onIrLineas ? onIrLineas : undefined} className="rounded-xl p-3 text-left" style={{ backgroundColor: nLineasGest ? "#FFF7ED" : "#fff", border: `1px solid ${nLineasGest ? "#FED7AA" : C.line}`, cursor: nLineasGest && onIrLineas ? "pointer" : "default" }}>
+          <div className="flex items-center gap-1.5 t9 font-bold uppercase tracking-wide" style={{ color: nLineasGest ? "#C2410C" : C.faint }}><AlertTriangle size={11} /> Líneas por gestionar</div>
+          <div className="text-xl font-bold" style={{ color: nLineasGest ? "#C2410C" : C.ink }}>{nLineasGest}</div>
+          <div className="mt-1 t9" style={{ color: C.faint, lineHeight: 1.35 }}><b style={{ color: C.sub }}>{nLineasSOW}</b> líneas que requieren atención para asegurar el SOW · <b style={{ color: C.sub }}>{nFueraLinea}</b> operaciones fuera de línea urgentes para el curse.</div>
+        </button>
+        {/* Prioridades por atender (jefatura) */}
+        <div className="rounded-xl p-3" style={{ backgroundColor: "#fff", border: `1px solid ${nPrioPend ? "#FED7AA" : C.line}` }}>
+          <div className="flex items-center gap-1.5 t9 font-bold uppercase tracking-wide" style={{ color: C.ink }}><Star size={11} style={{ color: nPrioPend ? "#C2410C" : C.faint, fill: nPrioPend ? "#F97316" : "none" }} /> Prioridades por atender</div>
+          <div className="flex items-baseline gap-1.5"><span className="text-xl font-bold" style={{ color: C.ink }}>{nPrioPend}</span>{nPrioAt > 0 && <span className="t9 font-semibold" style={{ color: "#16A34A" }}>· {nPrioAt} atendidas</span>}</div>
+          <div className="mt-1 t9" style={{ color: C.faint, lineHeight: 1.35 }}>Oportunidades priorizadas por la jefatura para el curse. Se atienden solas al cursar, ceder o bloquearse.</div>
+        </div>
+        {/* Tareas asignadas */}
+        <div className="rounded-xl p-3" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+          <div className="flex items-center gap-1.5 t9 font-bold uppercase tracking-wide" style={{ color: C.ink }}><ClipboardList size={11} style={{ color: "#703EFF" }} /> Tareas asignadas</div>
+          <div className="text-xl font-bold" style={{ color: C.ink }}>{nTaskPend}</div>
+          <div className="mt-1 t9" style={{ color: C.faint, lineHeight: 1.35 }}>Pendientes, asignadas desde Gestión.</div>
+        </div>
+        {/* Impacto potencial */}
+        <div className="rounded-xl p-3" style={{ backgroundColor: "#f5f3ff", border: "1px solid #ddd6fe" }}>
+          <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#703EFF" }}>Impacto potencial</div>
+          <div className="text-xl font-bold" style={{ color: "#703EFF" }}>{fmtMMc(impactoPot)}</div>
+          <div className="mt-1 t9" style={{ color: C.faint, lineHeight: 1.35 }}>Volumen (CLP) de las <b style={{ color: C.sub }}>{nOportPipe}</b> oportunidades del pipeline por gestionar (ciclo 24-48 h).</div>
+        </div>
+        {/* Ganancia estimada */}
+        <div className="rounded-xl p-3" style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0" }}>
+          <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#16A34A" }}>Ganancia estimada</div>
+          <div className="text-xl font-bold" style={{ color: "#16A34A" }}>{fmtMMc(Math.round(impactoPot * 0.0033))}</div>
+          <div className="mt-1 t9" style={{ color: C.faint, lineHeight: 1.35 }}>Ingreso aproximado aplicando un spread de 33 pbs (0,33%) sobre el impacto potencial.</div>
+        </div>
       </div>
       {/* Dos vistas: Activas (por gestionar, ordenadas por importancia) y Resueltas / completadas */}
       <div className="flex flex-wrap items-center gap-x-5" style={{ borderBottom: `1px solid ${C.line}` }}>
@@ -10870,33 +10909,24 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre }) {
   );
 }
 function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, onOpenSolic, onIrLineas, plan = {}, setPlan = () => {} }) {
-  const [tab, setTab] = useState("tareas"); // tareas | bandeja | retencion
   const [fEjec, setFEjec] = useState("todos");
-  const [fEstado, setFEstado] = useState("todos");
   const [, forceT] = useState(0);
   const ejec = soloExec || fEjec; // si hay usuario logueado, se fuerza a sus registros
-  // Semilla de demo (una vez): prioridades + tareas asignadas para poblar el tab «Tareas».
+  // Semilla de demo (una vez): prioridades + tareas asignadas para poblar el panel de Tareas.
   useEffect(() => { seedTareasDemo(deals, ejec); forceT((v) => v + 1); }, []); // eslint-disable-line
-  const filtrEjec = (c) => ejec === "todos" || c.ej === ejec;
   // Roster unificado para el filtro: cartera + ejecutivos del pipeline.
   const execOpts = useMemo(() => [...new Set([...PC_EXECS.map((e) => e.nombre), ...Object.values(EXECS)])], []);
-  const Tab = ({ id, label, Icon }) => (
-    <button onClick={() => setTab(id)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${tab === id ? C.indigo : "transparent"}`, color: tab === id ? C.indigo : C.sub, fontWeight: tab === id ? 600 : 400, marginBottom: -1 }}>{Icon && <Icon size={13} />} {label}</button>
-  );
+  // El menú «Tareas» ya no tiene sub-tabs: muestra directamente el panel de Tareas (con las cards del
+  // resumen fusionadas). El mapa por tamaño se movió a Tubo Diario y el Plan Mensual a Gestión.
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
-        <Tab id="tareas" label="Tareas" Icon={ClipboardList} />
-        <Tab id="bandeja" label="Oportunidades" Icon={Calendar} />
-        <Tab id="retencion" label="Plan Mensual" Icon={Target} />
-        <div className="mb-1.5 ml-auto flex items-center gap-1.5"><User size={14} style={{ color: C.faint }} />{soloExec
+      <div className="flex flex-wrap items-center justify-end gap-x-5 gap-y-2">
+        <div className="flex items-center gap-1.5"><User size={14} style={{ color: C.faint }} />{soloExec
           ? <span className="rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec}</span>
           : <select value={fEjec} onChange={(e) => setFEjec(e.target.value)} className="rounded-lg px-3 py-1.5 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}><option value="todos">Todos los ejecutivos</option>{execOpts.map((n) => <option key={n} value={n}>{n}</option>)}</select>}</div>
       </div>
       <div className="w-full rounded-2xl bg-white p-5" style={{ border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
-        {tab === "tareas" ? <PCtareas deals={deals} execFilter={ejec} onOpen={onOpen} esJefe={esJefe} usuarioNombre={usuarioNombre} />
-          : tab === "bandeja" ? <PCbandeja deals={deals} execFilter={ejec} onOpen={onOpen} ambito="diaria" usuario={usuario} onOpenSolic={onOpenSolic} onIrLineas={onIrLineas} />
-          : <PlanPorEjecutivo ejec={ejec} soloExec={soloExec} esJefe={esJefe} usuarioNombre={usuarioNombre} plan={plan} setPlan={setPlan} defMetas={false} deals={deals} />}
+        <PCtareas deals={deals} execFilter={ejec} onOpen={onOpen} esJefe={esJefe} usuarioNombre={usuarioNombre} usuario={usuario} onOpenSolic={onOpenSolic} onIrLineas={onIrLineas} />
       </div>
     </div>
   );
@@ -12833,7 +12863,9 @@ export default function PipelineComercial() {
   // Navega a un módulo y registra la acción del usuario en la auditoría (con su nombre).
   const irA = (v, label) => { setVistaApp(v); registrarAuditoria({ usuario: USERS[usuario], modulo: label, accion: "Ingreso al módulo", glosa: `El usuario ingresó al módulo ${label}`, exito: true }); };
   const [cfgVer, setCfgVer] = useState(0); // fuerza re-render al editar catálogos de Mantenedores
-  const [vista, setVista] = useState("tabla"); // "kanban" | "tabla" — por defecto carga en tabla
+  const [vista, setVista] = useState("tabla"); // "kanban" | "tabla" | "tamaño" — por defecto carga en tabla
+  const [vistaMenu, setVistaMenu] = useState(false); // dropdown selector de vista del tubo
+  const [treeHover, setTreeHover] = useState(null); // hover en la vista "Tamaño" (treemap)
   // Causas pendientes donde el usuario logueado (aprobador) tiene atribución → badge del menú Otorgamientos.
   // Operaciones en la bandeja de otorgamiento (visibles para el usuario) con al menos una excepción
   // que ÉL puede aprobar según su atribución. Alineado con "con acciones para ti" de la bandeja.
@@ -14639,7 +14671,7 @@ export default function PipelineComercial() {
               reporteRender={(dealsF, execFijo) =>
                 reporteGestion === "planEjec" ? (
                   <div className="rounded-2xl bg-white p-5" style={{ border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
-                    <PlanPorEjecutivo ejec={soloExec || "todos"} soloExec={soloExec} esJefe={esJefeComercial(usuario)} usuarioNombre={USERS[usuario]} plan={planMensual} setPlan={setPlanMensual} deals={dealsF} />
+                    <PlanPorEjecutivo ejec={soloExec || "todos"} soloExec={soloExec} esJefe={esJefeComercial(usuario)} usuarioNombre={USERS[usuario]} plan={planMensual} setPlan={setPlanMensual} defMetas={esJefeComercial(usuario)} deals={dealsF} />
                   </div>
                 ) : reporteGestion === "resumen" ? (
                   resumenInfo ? <DiaModal inline info={resumenInfo} reporte={reporte} deals={dealsF} execFijo={execFijo} onClose={() => setReporteGestion(null)} /> : null
@@ -14705,10 +14737,31 @@ export default function PipelineComercial() {
               <Radio size={14} /> Inbound
             </button>
             <span className="mx-1 h-5 w-px" style={{ backgroundColor: C.line }} />
-            <button onClick={() => setVista((v) => (v === "kanban" ? "tabla" : "kanban"))} title="Cambiar entre vista Kanban y Tabla"
-              className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: vista === "tabla" ? C.indigo : C.sub }}>
-              <Table2 size={14} /> {vista === "kanban" ? "Tabla" : "Kanban"}
-            </button>
+            {(() => {
+              const VOPTS = [["tabla", "Tabla", Table2], ["kanban", "Kanban", LayoutGrid], ["tamaño", "Tamaño", Grid3x3]];
+              const cur = VOPTS.find((o) => o[0] === vista) || VOPTS[0];
+              const CurIcon = cur[2];
+              return (
+                <div className="relative">
+                  <button onClick={() => setVistaMenu((v) => !v)} title="Cambiar la vista del tubo (Tabla / Kanban / Tamaño)"
+                    className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${vistaMenu ? C.indigo : C.line}`, backgroundColor: "#fff", color: C.indigo }}>
+                    <CurIcon size={14} /> {cur[1]} <ChevronDown size={13} style={{ color: C.sub }} />
+                  </button>
+                  {vistaMenu && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setVistaMenu(false)} />
+                      <div className="absolute right-0 z-50 mt-1 w-40 overflow-hidden rounded-xl bg-white py-1" style={{ border: `1px solid ${C.line}`, boxShadow: "0 12px 32px rgba(20,25,45,.16)" }}>
+                        {VOPTS.map(([k, l, Ic]) => { const on = vista === k; return (
+                          <button key={k} onClick={() => { setVista(k); setVistaMenu(false); }} className="flex w-full items-center gap-2 px-3 py-1.5 t11 font-medium" style={{ backgroundColor: on ? "#F1ECFF" : "transparent", color: on ? C.indigo : C.sub }}>
+                            <Ic size={14} /> {l}{on && <Check size={13} className="ml-auto" style={{ color: C.indigo }} />}
+                          </button>
+                        ); })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
             <button onClick={exportarGrilla} title="Exportar la grilla a un reporte Excel"
               className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.sub }}>
               <Download size={14} /> Exportar
@@ -14862,6 +14915,18 @@ export default function PipelineComercial() {
                   {col("perdida", { colapsable: true })}
                 </MacroColumn>
               </>
+            );
+          })()}
+          {vista === "tamaño" && (() => {
+            // Mapa por tamaño: mismas oportunidades del tubo (respetando filtros), dimensionadas por monto
+            // y agrupadas por Dentro/Fuera de línea → categoría (reutiliza el treemap de la bandeja).
+            const tareasTree = generarTareasConsolidadas(filtered).filter((t) => t.fuente === "pipeline");
+            return tareasTree.length ? (
+              <div className="w-full rounded-2xl bg-white p-2" style={{ border: `1px solid ${C.line}`, height: "72vh" }}>
+                <PCtreemap tareas={tareasTree} deals={deals} onSelectTask={(t) => { const d = deals.find((x) => x.id === t.dealId); if (d) abrirDetalle(d); }} hoverId={treeHover} setHoverId={setTreeHover} />
+              </div>
+            ) : (
+              <div className="flex h-64 w-full items-center justify-center rounded-2xl border border-dashed t12" style={{ borderColor: C.line, color: C.faint }}>Sin oportunidades para el mapa con los filtros actuales.</div>
             );
           })()}
 
