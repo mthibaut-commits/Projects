@@ -3945,7 +3945,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             {deal.cat && (() => { const cd = catDisp(deal); return <Pill style={{ backgroundColor: catMeta(cd.cat).bg, color: catMeta(cd.cat).fg }}>{cd.label} · {cd.q}</Pill>; })()}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1" style={{ borderBottom: `1px solid ${C.line}` }}>
-            {[["negocio", "Negocio"], ["contacto", "Linea"], ...(puedeVerBitacora(usuario) ? [["bitacora", "Bitácora"]] : []), ["sow", "SOW"], ["cobranza", "Cobranza"], ["mensajeria", "Mensajería"], ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
+            {[["negocio", "Negocio"], ["contacto", "Linea"], ...(puedeVerBitacora(usuario) ? [["bitacora", "Bitácora"]] : []), ["sow", "SOW"], ...(puedeVerCobranza(usuario) ? [["cobranza", "Cobranza"]] : []), ...(puedeVerMensajeria(usuario) ? [["mensajeria", "Mensajería"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
               <button key={k} onClick={() => setTab(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
                 {l}
                 {k === "otorgamiento" && otorgPend > 0 && <span title={`${otorgPend} regla(s) que debes visar tú (cliente + deudores)`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#DC2626" }}>{otorgPend}</span>}
@@ -4009,7 +4009,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             </div>
             <div className="mt-2 t9" style={{ color: C.faint }}>Generado a partir del perfil de la empresa (Plataforma360: firmografía, facturación SII, segmento y comportamiento comercial).</div>
           </div>
-          <SowStatusPanel deal={deal} />
+          {/* El estado de SOW se muestra en su propio tab «SOW» (antes se duplicaba aquí). */}
           {(() => {
             // Línea de crédito del cliente: actual y proyectada después del curse de esta operación.
             const lc = lineaCreditoDe(deal);
@@ -4047,9 +4047,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               </div>
             );
           })()}
-          {/* La facturación mensual a los principales deudores se movió al paso «Deudores» del wizard de Línea. */}
-          {/* Un cliente nuevo no tiene operaciones cursadas previas: no se muestra el historial de operaciones. */}
-          {!esClienteNuevoNEX(deal) && <HistorialComercialTable deal={deal} />}
+          {/* «Negocios cursados anteriormente» se movió al sub-tab «Operaciones anteriores» del tab Negocio. */}
           </>)}
 
           {tab === "negocio" && (<>
@@ -4113,14 +4111,15 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                     <div className="mt-4">
                       <div className="flex items-center justify-between gap-1.5 t11 font-semibold" style={{ color: "#C2410C" }}><span className="flex items-center gap-1.5"><MessageSquare size={12} /> Simulación</span>{bloqueado && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>🔒 Aceptada · bloqueada</span>}</div>
                       {bloqueado && <div className="mt-1 t9" style={{ color: C.sub }}>La operación ya fue aceptada formalmente: no se pueden modificar las condiciones ni agregar/retirar facturas.</div>}
-                      {/* Sub-tabs del negocio: Resumen · Documentos · Descuentos */}
-                      <div className="mt-2 flex items-center gap-1.5">
-                        {[["resumen", "Resumen"], ["documentos", "Documentos"], ["descuentos", "Descuentos"]].map(([k, l]) => (
+                      {/* Sub-tabs del negocio: Resumen · Documentos · Descuentos · (Operaciones anteriores si el cliente tiene historial) */}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        {[["resumen", "Resumen"], ["documentos", "Documentos"], ["descuentos", "Descuentos"], ...(!esClienteNuevoNEX(deal) ? [["anteriores", "Operaciones anteriores"]] : [])].map(([k, l]) => (
                           <button key={k} onClick={() => setNegTab(k)} className="rounded-lg px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: negTab === k ? C.lilac : "#fff", color: negTab === k ? C.indigo : C.sub, border: `1px solid ${negTab === k ? C.indigo : C.line}` }}>{l}</button>
                         ))}
                       </div>
+                      {negTab === "anteriores" && <HistorialComercialTable deal={deal} />}
                       {/* Resumen de condiciones comerciales (referencia read-only) — se mantiene visible en Documentos y Descuentos. */}
-                      {negTab !== "resumen" && (() => {
+                      {negTab !== "resumen" && negTab !== "anteriores" && (() => {
                         const UF = 38000, comMiniCLP = 2 * UF, gastMiniCLP = 26000; // condiciones base (mismos defaults del Resumen)
                         const bRef = bandaDescuentoDeTasa(tasaPond);
                         return (
@@ -7133,6 +7132,14 @@ function cargarCfgVerBitacora() { try { if (storageDisponible()) { const r = loc
 let CFG_VER_BITACORA = cargarCfgVerBitacora();
 function guardarCfgVerBitacora() { try { if (storageDisponible()) localStorage.setItem("pc_cfg_ver_bitacora", JSON.stringify(CFG_VER_BITACORA)); } catch (e) {} }
 const puedeVerBitacora = (code) => code === "ADMIN" || CFG_VER_BITACORA[code] === true;
+// Tabs "Mensajería" y "Cobranza" del detalle: ocultos por defecto (sólo super-admin); visibilidad por usuario.
+function cargarCfgVerTab(key) { try { if (storageDisponible()) { const r = localStorage.getItem(key); if (r) return JSON.parse(r); } } catch (e) {} return {}; }
+let CFG_VER_MENSAJERIA = cargarCfgVerTab("pc_cfg_ver_mensajeria");
+function guardarCfgVerMensajeria() { try { if (storageDisponible()) localStorage.setItem("pc_cfg_ver_mensajeria", JSON.stringify(CFG_VER_MENSAJERIA)); } catch (e) {} }
+const puedeVerMensajeria = (code) => code === "ADMIN" || CFG_VER_MENSAJERIA[code] === true;
+let CFG_VER_COBRANZA = cargarCfgVerTab("pc_cfg_ver_cobranza");
+function guardarCfgVerCobranza() { try { if (storageDisponible()) localStorage.setItem("pc_cfg_ver_cobranza", JSON.stringify(CFG_VER_COBRANZA)); } catch (e) {} }
+const puedeVerCobranza = (code) => code === "ADMIN" || CFG_VER_COBRANZA[code] === true;
 // ── Configuración POR USUARIO: habilita/oculta la aceptación masiva ("Aprobar/Rechazar todo") de
 // excepciones de otorgamiento. Por defecto habilitada para todos los apoderados. Persistente en localStorage.
 function cargarCfgAprobMasiva() { try { if (storageDisponible()) { const r = localStorage.getItem("pc_cfg_aprob_masiva"); if (r) return JSON.parse(r); } } catch (e) {} return {}; }
@@ -8088,6 +8095,9 @@ function MantenedoresOtorg({ onCfgChange }) {
   const setMasiva = (code, on) => { CFG_APROB_MASIVA[code] = on; guardarCfgAprobMasiva(); bump(); };
   const setExcVerif = (code, on) => { CFG_EXC_VERIF[code] = on; guardarCfgExcVerif(); bump(); };
   const setVerBitacora = (code, on) => { CFG_VER_BITACORA[code] = on; guardarCfgVerBitacora(); bump(); };
+  const setVerMensajeria = (code, on) => { CFG_VER_MENSAJERIA[code] = on; guardarCfgVerMensajeria(); bump(); };
+  const setVerCobranza = (code, on) => { CFG_VER_COBRANZA[code] = on; guardarCfgVerCobranza(); bump(); };
+  const tabToggle = (on, onClick, offLabel) => <button onClick={onClick} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: on ? "#F0FDF4" : "#F3F4F6", color: on ? "#16A34A" : C.faint, border: `1px solid ${on ? "#bbf7d0" : C.line}` }}>{on ? <Check size={10} /> : <X size={10} />}{on ? "Visible" : (offLabel || "Oculto")}</button>;
   const [mtab, setMtab] = useState("criterios");
   const mtabs = [["criterios", "Criterios de verificación"], ["atribuciones", "Atribuciones de aprobación"], ["usuarios", "Usuarios y atribuciones"]];
   return (
@@ -8107,8 +8117,8 @@ function MantenedoresOtorg({ onCfgChange }) {
         <div className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Apoderados y atribuciones (nivel por área; 0 = sin atribución)</div>
         <div className="t10" style={{ color: C.faint }}>Define quién puede excepcionar y en qué nivel (N1–N5). <b>Aceptación masiva</b> habilita/oculta el botón «Aprobar/Rechazar todo» de excepciones. <b>Excepción de verificación</b> habilita eximir facturas de la verificación telefónica (por defecto sólo el Gerente Comercial).</div>
         <table className="mt-1.5 w-full border-collapse t11">
-          <thead><tr>{["Usuario", "Tipo", "Riesgo", "Comercial", "Operaciones", "Aceptación masiva", "Excepción verificación", "Ver Bitácora"].map((h) => <th key={h} className="px-2 py-1 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
-          <tbody>{Object.keys(ATRIB_USUARIO).filter((k) => USERS[k]).map((k) => { const esAprob = atribDe(k).tipo === "aprobador"; const on = aprobMasivaHabilitada(k); const ev = puedeExcepcionarVerif(k); const vb = puedeVerBitacora(k); return (
+          <thead><tr>{["Usuario", "Tipo", "Riesgo", "Comercial", "Operaciones", "Aceptación masiva", "Excepción verificación", "Ver Bitácora", "Ver Mensajería", "Ver Cobranza"].map((h) => <th key={h} className="px-2 py-1 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
+          <tbody>{Object.keys(ATRIB_USUARIO).filter((k) => USERS[k]).map((k) => { const esAprob = atribDe(k).tipo === "aprobador"; const on = aprobMasivaHabilitada(k); const ev = puedeExcepcionarVerif(k); const vb = puedeVerBitacora(k); const vm = puedeVerMensajeria(k); const vc = puedeVerCobranza(k); return (
             <tr key={k} style={{ borderBottom: `1px solid ${C.line}` }}>
               <td className="px-2 py-1 font-medium" style={{ color: C.ink }}>{USERS[k]}</td>
               <td className="px-2 py-1" style={{ color: C.sub }}>{esAprob ? "Aprobador" : "Pipeline"}</td>
@@ -8130,6 +8140,12 @@ function MantenedoresOtorg({ onCfgChange }) {
               ) : (
                 <button onClick={() => setVerBitacora(k, !vb)} title={vb ? "Clic para OCULTAR el tab Bitácora a este usuario" : "Clic para PERMITIR ver el tab Bitácora a este usuario"} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: vb ? "#F0FDF4" : "#F3F4F6", color: vb ? "#16A34A" : C.faint, border: `1px solid ${vb ? "#bbf7d0" : C.line}` }}>{vb ? <Check size={10} /> : <X size={10} />}{vb ? "Visible" : "Oculto"}</button>
               )}</td>
+              <td className="px-2 py-1">{k === "ADMIN" ? (
+                <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A", border: "1px solid #bbf7d0" }}>Visible</span>
+              ) : tabToggle(vm, () => setVerMensajeria(k, !vm))}</td>
+              <td className="px-2 py-1">{k === "ADMIN" ? (
+                <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A", border: "1px solid #bbf7d0" }}>Visible</span>
+              ) : tabToggle(vc, () => setVerCobranza(k, !vc))}</td>
             </tr>
           ); })}</tbody>
         </table>
