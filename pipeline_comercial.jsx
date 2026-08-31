@@ -2902,6 +2902,8 @@ function SowTab({ deal }) {
           </div>
         ))}
       </div>
+      {/* Tira SOW mensual (evolutivo): entre los KPIs y el gráfico «SOW mensual vs target». */}
+      <SowStatusPanel deal={deal} sinCompetencia />
       <div className="flex flex-col gap-3 lg:flex-row lg:items-stretch">
       <div className="rounded-lg p-3 lg:flex-1" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
         <div className="flex flex-wrap items-center justify-between gap-1">
@@ -2933,11 +2935,7 @@ function SowTab({ deal }) {
         </div>
       ) : null; })()}
       </div>
-      <div className="rounded-lg p-3 t11" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.sub }}>
-        <span className="font-semibold" style={{ color: C.ink }}>Diagnóstico: </span>{an.Diagnostico || "—"}{an.AsintotaEstimadaPct != null ? ` · Asíntota estimada ${an.AsintotaEstimadaPct}%` : ""}{an.SemanasParaTarget != null ? ` · Semanas al target: ${an.SemanasParaTarget}` : ""}
-      </div>
       <CompetenciaCard cm={competenciaDeDeal(deal)} sow={sow} />
-      <SowStatusPanel deal={deal} sinCompetencia />
     </div>
   );
 }
