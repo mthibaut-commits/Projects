@@ -3969,7 +3969,16 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                 const on = tienePreEval(deal.id);
                 // Envío explícito al proceso de excepción. Si hay excepciones pendientes sin comentario/respaldo
                 // del ejecutivo, primero se advierte con un diálogo (puede enviar igual tras el warning).
-                const enviarPreEval = () => { setPreEval(deal.id, usuario, true); avisarPreEval(deal, usuario); setPreEvalWarn(null); setReevTick((x) => x + 1); };
+                const enviarPreEval = () => {
+                  // Al enviar a pre-evaluación, cada regla «sujeta a excepción» que aún no fue solicitada
+                  // queda enviada a su(s) apoderado(s) facultado(s) — sin comentario si el ejecutivo no lo puso.
+                  const st = (typeof VISADO_STATE !== "undefined" && VISADO_STATE[deal.id]) || {};
+                  const sol = (typeof SOLICITUD_EXC !== "undefined" && SOLICITUD_EXC[deal.id]) || {};
+                  evaluarOtorgItems(deal)
+                    .filter((it) => it.disp === "excepcion" && !st[it.stKey] && !sol[it.stKey])
+                    .forEach((it) => solicitarAprobacionExc(deal, it, usuario, "", []));
+                  setPreEval(deal.id, usuario, true); avisarPreEval(deal, usuario); setPreEvalWarn(null); setReevTick((x) => x + 1);
+                };
                 const onClickPreEval = () => {
                   if (on) { setPreEval(deal.id, usuario, false); setReevTick((x) => x + 1); return; } // cancelar
                   const faltan = excepcionesSinComentario(deal);
@@ -4872,7 +4881,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}><AlertTriangle size={18} /></span>
               <div>
                 <div className="t14 font-bold" style={{ color: C.ink }}>Excepciones sin comentario</div>
-                <div className="mt-1 t12" style={{ color: C.sub, lineHeight: 1.5 }}>Hay <b>{preEvalWarn.count}</b> tarea(s) de excepción sin comentarios ni respaldo que deberías revisar antes de enviarlas al proceso de excepción. Revísalas en el tab <b>Otorgamiento</b> o envíalas igualmente.</div>
+                <div className="mt-1 t12" style={{ color: C.sub, lineHeight: 1.5 }}>Hay <b>{preEvalWarn.count}</b> tarea(s) de excepción sin comentarios ni respaldo que deberías revisar antes de enviarlas al proceso de excepción. Puedes revisarlas en el tab <b>Otorgamiento</b> o, si continúas, quedarán <b>enviadas a cada apoderado facultado</b> sin comentario.</div>
               </div>
             </div>
             <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
