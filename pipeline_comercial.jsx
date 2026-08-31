@@ -14837,9 +14837,7 @@ export default function PipelineComercial() {
           </nav>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => setCmdOpen(true)} title="Buscar (Ctrl+K)" className="flex items-center gap-2 rounded-full px-3 py-1.5 t11" style={{ border: `1px solid ${C.line}`, color: C.faint, backgroundColor: "#fff" }}>
-            <Search size={13} /> Buscar… <span className="t9" style={{ fontFamily: "ui-monospace,monospace", border: `1px solid ${C.line}`, borderRadius: 5, padding: "0 4px" }}>Ctrl K</span>
-          </button>
+          {/* El buscador del header se removió; la paleta de comandos sigue disponible con Ctrl+K. */}
           <button onClick={() => irA("config", "Configuración")} title="Configuración" className="flex h-9 w-9 items-center justify-center rounded-lg hover:bg-stone-50" style={{ color: vistaApp === "config" ? C.indigo : C.sub, backgroundColor: vistaApp === "config" ? C.lilac : "transparent" }}>
             <Settings size={18} />
           </button>
