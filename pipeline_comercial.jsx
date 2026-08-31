@@ -7203,6 +7203,13 @@ const puedeVerMensajeria = (code) => code === "ADMIN" || CFG_VER_MENSAJERIA[code
 let CFG_VER_COBRANZA = cargarCfgVerTab("pc_cfg_ver_cobranza");
 function guardarCfgVerCobranza() { try { if (storageDisponible()) localStorage.setItem("pc_cfg_ver_cobranza", JSON.stringify(CFG_VER_COBRANZA)); } catch (e) {} }
 const puedeVerCobranza = (code) => code === "ADMIN" || CFG_VER_COBRANZA[code] === true;
+// Reportes de Gestión «Plan Mensual Ejecutivo» y «Funnel Comercial»: ocultos por defecto (solo super-admin).
+let CFG_VER_PLANEJEC = cargarCfgVerTab("pc_cfg_ver_planejec");
+function guardarCfgVerPlanEjec() { try { if (storageDisponible()) localStorage.setItem("pc_cfg_ver_planejec", JSON.stringify(CFG_VER_PLANEJEC)); } catch (e) {} }
+const puedeVerPlanEjec = (code) => code === "ADMIN" || CFG_VER_PLANEJEC[code] === true;
+let CFG_VER_FUNNEL = cargarCfgVerTab("pc_cfg_ver_funnel");
+function guardarCfgVerFunnel() { try { if (storageDisponible()) localStorage.setItem("pc_cfg_ver_funnel", JSON.stringify(CFG_VER_FUNNEL)); } catch (e) {} }
+const puedeVerFunnel = (code) => code === "ADMIN" || CFG_VER_FUNNEL[code] === true;
 // ── Configuración POR USUARIO: habilita/oculta la aceptación masiva ("Aprobar/Rechazar todo") de
 // excepciones de otorgamiento. Por defecto habilitada para todos los apoderados. Persistente en localStorage.
 function cargarCfgAprobMasiva() { try { if (storageDisponible()) { const r = localStorage.getItem("pc_cfg_aprob_masiva"); if (r) return JSON.parse(r); } } catch (e) {} return {}; }
@@ -8160,6 +8167,8 @@ function MantenedoresOtorg({ onCfgChange }) {
   const setVerBitacora = (code, on) => { CFG_VER_BITACORA[code] = on; guardarCfgVerBitacora(); bump(); };
   const setVerMensajeria = (code, on) => { CFG_VER_MENSAJERIA[code] = on; guardarCfgVerMensajeria(); bump(); };
   const setVerCobranza = (code, on) => { CFG_VER_COBRANZA[code] = on; guardarCfgVerCobranza(); bump(); };
+  const setVerPlanEjec = (code, on) => { CFG_VER_PLANEJEC[code] = on; guardarCfgVerPlanEjec(); bump(); };
+  const setVerFunnel = (code, on) => { CFG_VER_FUNNEL[code] = on; guardarCfgVerFunnel(); bump(); };
   const tabToggle = (on, onClick, offLabel) => <button onClick={onClick} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: on ? "#F0FDF4" : "#F3F4F6", color: on ? "#16A34A" : C.faint, border: `1px solid ${on ? "#bbf7d0" : C.line}` }}>{on ? <Check size={10} /> : <X size={10} />}{on ? "Visible" : (offLabel || "Oculto")}</button>;
   const [mtab, setMtab] = useState("criterios");
   const mtabs = [["criterios", "Criterios de verificación"], ["atribuciones", "Atribuciones de aprobación"], ["usuarios", "Usuarios y atribuciones"]];
@@ -8180,8 +8189,8 @@ function MantenedoresOtorg({ onCfgChange }) {
         <div className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Apoderados y atribuciones (nivel por área; 0 = sin atribución)</div>
         <div className="t10" style={{ color: C.faint }}>Define quién puede excepcionar y en qué nivel (N1–N5). <b>Aceptación masiva</b> habilita/oculta el botón «Aprobar/Rechazar todo» de excepciones. <b>Excepción de verificación</b> habilita eximir facturas de la verificación telefónica (por defecto sólo el Gerente Comercial).</div>
         <table className="mt-1.5 w-full border-collapse t11">
-          <thead><tr>{["Usuario", "Tipo", "Riesgo", "Comercial", "Operaciones", "Aceptación masiva", "Excepción verificación", "Ver Bitácora", "Ver Mensajería", "Ver Cobranza"].map((h) => <th key={h} className="px-2 py-1 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
-          <tbody>{Object.keys(ATRIB_USUARIO).filter((k) => USERS[k]).map((k) => { const esAprob = atribDe(k).tipo === "aprobador"; const on = aprobMasivaHabilitada(k); const ev = puedeExcepcionarVerif(k); const vb = puedeVerBitacora(k); const vm = puedeVerMensajeria(k); const vc = puedeVerCobranza(k); return (
+          <thead><tr>{["Usuario", "Tipo", "Riesgo", "Comercial", "Operaciones", "Aceptación masiva", "Excepción verificación", "Ver Bitácora", "Ver Mensajería", "Ver Cobranza", "Ver Plan Mensual", "Ver Funnel"].map((h) => <th key={h} className="px-2 py-1 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
+          <tbody>{Object.keys(ATRIB_USUARIO).filter((k) => USERS[k]).map((k) => { const esAprob = atribDe(k).tipo === "aprobador"; const on = aprobMasivaHabilitada(k); const ev = puedeExcepcionarVerif(k); const vb = puedeVerBitacora(k); const vm = puedeVerMensajeria(k); const vc = puedeVerCobranza(k); const vpe = puedeVerPlanEjec(k); const vf = puedeVerFunnel(k); return (
             <tr key={k} style={{ borderBottom: `1px solid ${C.line}` }}>
               <td className="px-2 py-1 font-medium" style={{ color: C.ink }}>{USERS[k]}</td>
               <td className="px-2 py-1" style={{ color: C.sub }}>{esAprob ? "Aprobador" : "Pipeline"}</td>
@@ -8209,6 +8218,12 @@ function MantenedoresOtorg({ onCfgChange }) {
               <td className="px-2 py-1">{k === "ADMIN" ? (
                 <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A", border: "1px solid #bbf7d0" }}>Visible</span>
               ) : tabToggle(vc, () => setVerCobranza(k, !vc))}</td>
+              <td className="px-2 py-1">{k === "ADMIN" ? (
+                <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A", border: "1px solid #bbf7d0" }}>Visible</span>
+              ) : tabToggle(vpe, () => setVerPlanEjec(k, !vpe))}</td>
+              <td className="px-2 py-1">{k === "ADMIN" ? (
+                <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A", border: "1px solid #bbf7d0" }}>Visible</span>
+              ) : tabToggle(vf, () => setVerFunnel(k, !vf))}</td>
             </tr>
           ); })}</tbody>
         </table>
@@ -8828,13 +8843,13 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
       {/* Secciones y reportes: TODOS pestañas underline al mismo nivel (spec §3) */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
         <RepTab id="performance" label="Performance comercial" Icon={BarChart2} />
-        <RepTab id="planEjec" label="Plan Mensual Ejecutivo" Icon={Target} />
+        {puedeVerPlanEjec(usuario) && <RepTab id="planEjec" label="Plan Mensual Ejecutivo" Icon={Target} />}
         <Tab id="cliente" label="Cliente" Icon={User} />
         <Tab id="sow" label="SOW" Icon={BarChart2} />
         <Tab id="sankey" label="Origen → Cierre" Icon={Filter} />
         <RepTab id="benchEjec" label="Benchmark ejecutivo" Icon={Table2} />
         <RepTab id="benchDeudores" label="Benchmark deudores" Icon={Star} />
-        <RepTab id="resumen" label="Funnel Comercial" Icon={Filter} />
+        {puedeVerFunnel(usuario) && <RepTab id="resumen" label="Funnel Comercial" Icon={Filter} />}
         {hayFiltro && <span className="mb-1.5 ml-auto rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{fEjec !== "todos" ? fEjec : fJefatura !== "todas" ? fJefatura : fZona} · {agg.clientes.toLocaleString("es-CL")} clientes</span>}
       </div>
 
@@ -8970,7 +8985,7 @@ function DashSpark({ serie, col = "#703EFF", w = 74, h = 24 }) {
   return (<svg width={w} height={h} style={{ display: "block" }}><polyline points={pts} fill="none" stroke={col} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" /><circle cx={((serie.length - 1) * step).toFixed(1)} cy={y(last).toFixed(1)} r={2} fill={col} /></svg>);
 }
 const dashCumplCol = (p) => p >= 100 ? "#16A34A" : p >= 70 ? "#2563EB" : p >= 40 ? "#C2410C" : "#DC2626";
-function dashboardKPIs(usuario) {
+function dashboardKPIs(usuario, deals) {
   const soloExec = EXECS[usuario] || null;                                  // nombre del ejecutivo, o null (jefe/gerencia/admin → todo)
   const execScope = EXECS[usuario] ? [usuario] : (JEFE_A_EXECS[usuario] || null); // códigos visibles, o null = todos
   const inis = execScope || Object.keys(EXECS);
@@ -9040,11 +9055,21 @@ function dashboardKPIs(usuario) {
   // alcanzara el SOW target sobre todo lo cedido (cedido × target%). Cumplimiento = ganado / meta.
   const colocReal = Math.round(kpi.ganado);
   const colocMeta = Math.round(kpi.cedido * targetProm / 100);
+  // ── Tareas (mismos indicadores del menú «Tareas», filtrados por el ejecutivo) ──
+  const inScopeDeal = (dd) => !execScope || execScope.includes(dd.exec);
+  const nLineasSOW = LINEAS_DATA.filter((l) => (!soloExec || l.exec === soloExec) && lineaSalud(l).label === "Atención").length;
+  const nFueraLinea = (deals || []).filter((dd) => inScopeDeal(dd) && ["oferta", "aceptadas", "cesion", "otorgamiento"].includes(dd.stage) && lineaCreditoDe(dd).fueraDeLinea).length;
+  const lineasGest = nLineasSOW + nFueraLinea;
+  const prioritarios = (deals || []).filter((dd) => inScopeDeal(dd) && tienePrioridadCurse(dd.id) && !estadoAtencionPrioridad(dd).atendida).length;
+  const relevTarea = (t) => !soloExec || (t.para || []).includes(soloExec) || (t.ops || []).some((id) => { const dd = (deals || []).find((x) => x.id === id); return dd && EXECS[dd.exec] === soloExec; });
+  const tareasPend = PANEL_TAREAS.filter((t) => !t.hecha && relevTarea(t)).length;
+  const msgResponder = notifSolic(usuario).porResponder.length;
   return {
     nombre: soloExec || "Todos los ejecutivos",
     empresas: { total, activas, inactivas, operanOtros, candidatas, nuevasMes, ops: kpi.ops },
     operaciones: kpi, sowPrimePct, serieSem,
     metas: { colocReal, colocMeta, nvReal: nuevasMes, nvMeta, opReal: activas, opMeta: total, sowReal: kpi.sowPct, sowPrimeReal: sowPrimePct, sowTargetReal: kpi.sowTargetPct, targetProm },
+    tareas: { lineasGest, nLineasSOW, nFueraLinea, prioritarios, tareasPend, msgResponder },
   };
 }
 function DashCard({ Icon, col, valor, label, sub, serie, meta }) {
@@ -9066,9 +9091,12 @@ function DashCard({ Icon, col, valor, label, sub, serie, meta }) {
     </div>
   );
 }
-function DashboardView({ usuario }) {
-  const d = useMemo(() => dashboardKPIs(usuario), [usuario]);
-  const o = d.operaciones, m = d.metas;
+function DashboardView({ usuario, deals }) {
+  const [tick, setTick] = useState(0);
+  // Siembra (una vez) prioridades + tareas asignadas de demo para que los indicadores de «Tareas» tengan datos.
+  useEffect(() => { seedTareasDemo(deals, EXECS[usuario] || "todos"); setTick((t) => t + 1); }, []); // eslint-disable-line
+  const d = useMemo(() => dashboardKPIs(usuario, deals), [usuario, deals, tick]);
+  const o = d.operaciones, m = d.metas, t = d.tareas;
   const sow = Math.round(o.sowPct), sowPrime = Math.round(d.sowPrimePct), sowTarget = Math.round(o.sowTargetPct);
   const pct = (real, meta) => meta > 0 ? Math.round(real / meta * 100) : 0;
   const emp = d.empresas;
@@ -9094,6 +9122,12 @@ function DashboardView({ usuario }) {
         <DashCard Icon={Check} col="#16A34A" valor={fmtMMc(o.ganado)} label="Ganado (Security)" sub={`SOW ${sow}%`} serie={d.serieSem.map((x) => x.ganado)} />
         <DashCard Icon={ArrowDownRight} col="#DC2626" valor={fmtMMc(o.perdido)} label="Perdido" sub={`${fmtMMc(o.perdBanco)} a factoring target · ${fmtMMc(o.perdOtros)} otros`} serie={d.serieSem.map((x) => x.perdido)} />
         <DashCard Icon={Target} col="#2563EB" valor={`${sow}%`} label="SOW" sub={`${sowPrime}% en deudores prime`} serie={d.serieSem.map((x) => x.sowPct)} />
+      </Section>
+      <Section title="Tareas">
+        <DashCard Icon={AlertTriangle} col="#C2410C" valor={t.lineasGest.toLocaleString("es-CL")} label="Líneas por gestionar" sub={`${t.nLineasSOW} SOW · ${t.nFueraLinea} fuera de línea`} serie={dashSerie(t.lineasGest, "t-lin-" + usuario)} />
+        <DashCard Icon={Star} col="#7C3AED" valor={t.prioritarios.toLocaleString("es-CL")} label="Negocios prioritarios" sub="priorizados por la jefatura" serie={dashSerie(t.prioritarios, "t-prio-" + usuario)} />
+        <DashCard Icon={ClipboardList} col="#2563EB" valor={t.tareasPend.toLocaleString("es-CL")} label="Tareas pendientes" sub="asignadas desde Gestión" serie={dashSerie(t.tareasPend, "t-task-" + usuario)} />
+        <DashCard Icon={Bell} col="#703EFF" valor={t.msgResponder.toLocaleString("es-CL")} label="Mensajes por responder" sub="requerimientos de otorgamiento" serie={dashSerie(t.msgResponder, "t-msg-" + usuario)} />
       </Section>
       <Section title="Metas del mes">
         <DashCard Icon={Zap} col="#703EFF" valor={<>{fmtMMc(m.colocReal)} <span className="t10 font-normal" style={{ color: C.faint }}>/ {fmtMMc(m.colocMeta)}</span></>} label="Colocación" meta={{ pct: pct(m.colocReal, m.colocMeta) }} serie={dashSerie(m.colocReal, "meta-coloc-" + usuario)} />
@@ -9272,10 +9306,9 @@ function ReportePerformance({ usuario, inline, onClose }) {
         ))}
       </div>
       {/* KPIs del alcance (depurados): clientes · buenos deudores · emitidas · cedido · ganado · perdido */}
-      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-7">
+      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         <KpiStat Icon={User} col="#703EFF" v={kpi.n.toLocaleString("es-CL")} l="Clientes" s={`${kpi.emitieron} activos · ${kpi.ops} operaciones`} />
         <KpiStat Icon={Check} col="#0891b2" v={<>{fmtMMc(kpi.facturado)} <span className="t10 font-normal" style={{ color: C.faint }}>emitido</span></>} l="Facturas de buenos deudores" s={`por ${fmtMMc(kpi.facturadoBuenas)} · ${kpi.facturadoBuenasPct}%`} />
-        <KpiStat Icon={BarChart2} col="#2563EB" v={fmtMMc(kpi.facturado)} l="Facturas emitidas" s={`${fmtMMc(kpi.facturadoBuenas)} de buenos deudores`} />
         <KpiStat Icon={BarChart2} col="#7C3AED" v={fmtMMc(kpi.emitido)} l="Total Cedido" s={`${fmtMMc(kpi.buenasMM)} de buenos deudores`} />
         <KpiStat Icon={Check} col="#16A34A" v={fmtMMc(kpi.ganado)} l="Ganado (Security)" s={`SOW ${Math.round(kpi.sowPct)}%`} />
         <KpiStat Icon={ArrowDownRight} col="#DC2626" v={fmtMMc(kpi.perdido)} l="Perdido" s={`${fmtMMc(kpi.perdBanco)} a factoring target (BCI/Chile/Itaú) · ${fmtMMc(kpi.perdOtros)} otros`} />
@@ -9745,12 +9778,11 @@ function ClientesView({ soloExec }) {
   );
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         {[
           { t: "Empresas", v: base.length.toLocaleString("es-CL"), s: "clientes en cartera", col: "#703EFF", Icon: User },
           { t: "Activas", v: nActivas.toLocaleString("es-CL"), s: "con operación vigente", col: "#16A34A", Icon: Check },
           { t: "Inactivas", v: (base.length - nActivas).toLocaleString("es-CL"), s: "sin operación reciente", col: "#C2410C", Icon: Clock },
-          { t: "Usuarios", v: nUsuarios.toLocaleString("es-CL"), s: "habilitados en el portal", col: "#2563EB", Icon: ShieldCheck },
         ].map((k, i) => <KpiStat key={i} Icon={k.Icon} col={k.col} v={k.v} l={k.t} s={k.s} />)}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -11013,18 +11045,6 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
           <div className="flex items-center gap-1.5 t9 font-bold uppercase tracking-wide" style={{ color: C.ink }}><ClipboardList size={11} style={{ color: "#703EFF" }} /> Tareas asignadas</div>
           <div className="text-xl font-bold" style={{ color: C.ink }}>{nTaskPend}</div>
           <div className="mt-1 t9" style={{ color: C.faint, lineHeight: 1.35 }}>Pendientes, asignadas desde Gestión.</div>
-        </div>
-        {/* Impacto potencial */}
-        <div className="rounded-xl p-3" style={{ backgroundColor: "#f5f3ff", border: "1px solid #ddd6fe" }}>
-          <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#703EFF" }}>Impacto potencial</div>
-          <div className="text-xl font-bold" style={{ color: "#703EFF" }}>{fmtMMc(impactoPot)}</div>
-          <div className="mt-1 t9" style={{ color: C.faint, lineHeight: 1.35 }}>Volumen (CLP) de las <b style={{ color: C.sub }}>{nOportPipe}</b> oportunidades del pipeline por gestionar (ciclo 24-48 h).</div>
-        </div>
-        {/* Ganancia estimada */}
-        <div className="rounded-xl p-3" style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0" }}>
-          <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#16A34A" }}>Ganancia estimada</div>
-          <div className="text-xl font-bold" style={{ color: "#16A34A" }}>{fmtMMc(Math.round(impactoPot * 0.0033))}</div>
-          <div className="mt-1 t9" style={{ color: C.faint, lineHeight: 1.35 }}>Ingreso aproximado aplicando un spread de 33 pbs (0,33%) sobre el impacto potencial.</div>
         </div>
       </div>
       {/* Dos vistas: Activas (por gestionar, ordenadas por importancia) y Resueltas / completadas */}
@@ -14880,7 +14900,7 @@ export default function PipelineComercial() {
               <h1 className="text-2xl font-semibold tracking-tight">Dashboard comercial</h1>
               <span className="rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec || "Todos los ejecutivos"}</span>
             </div>
-            <DashboardView usuario={usuario} />
+            <DashboardView usuario={usuario} deals={deals} />
           </>
         ) : vistaApp === "clientes" ? (
           <>
