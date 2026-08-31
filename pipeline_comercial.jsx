@@ -2776,6 +2776,49 @@ function WaClienteModal({ deal, onClose, onAprobar }) {
     </div>
   );
 }
+// Paleta para los competidores en el pie de distribución del SOW (Security siempre en verde).
+const PIE_COMP_COLORS = ["#9CA3AF", "#6B7280", "#C2410C", "#2563EB", "#7C3AED", "#F97316", "#0EA5E9"];
+// Pie/donut con la distribución porcentual de los factorings que participan del SOW del cliente
+// (Security + competencia), a partir de las cesiones de los últimos 6 meses (competenciaDeDeal).
+function SowPieCompetencia({ cm }) {
+  if (!cm || !cm.totalMM) return null;
+  const parts = [{ name: "Security (nosotros)", pct: cm.bicePct || 0, montoMM: cm.biceMM || 0, color: "#16A34A" }]
+    .concat((cm.comp || []).map((c, i) => ({ name: c.name, pct: c.pct || 0, montoMM: c.montoMM || 0, color: PIE_COMP_COLORS[i % PIE_COMP_COLORS.length] })))
+    .filter((p) => p.pct > 0)
+    .sort((a, b) => b.pct - a.pct);
+  if (!parts.length) return null;
+  const sec = parts.find((p) => p.name === "Security (nosotros)") || { pct: cm.bicePct || 0 }; // «nuestra» participación
+  const cx = 62, cy = 62, R = 54, r = 32, grosor = R - r;
+  const polar = (rad, ang) => [cx + rad * Math.cos((ang - 90) * Math.PI / 180), cy + rad * Math.sin((ang - 90) * Math.PI / 180)];
+  const total = parts.reduce((s, p) => s + p.pct, 0) || 1;
+  let acc = 0;
+  const dom = parts[0].pct / total >= 0.999; // un solo factoring concentra ~100% → anillo completo
+  return (
+    <div className="flex flex-col items-center">
+      <svg viewBox="0 0 124 124" style={{ width: 124, height: 124 }}>
+        {dom ? (
+          <circle cx={cx} cy={cy} r={(R + r) / 2} fill="none" stroke={parts[0].color} strokeWidth={grosor} />
+        ) : parts.map((p, i) => {
+          const sweep = p.pct / total * 360;
+          const a0 = acc, a1 = acc + sweep; acc = a1;
+          const large = sweep > 180 ? 1 : 0;
+          const [x1, y1] = polar(R, a0), [x2, y2] = polar(R, a1), [x3, y3] = polar(r, a1), [x4, y4] = polar(r, a0);
+          return <path key={i} d={`M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${R} ${R} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} L ${x3.toFixed(2)} ${y3.toFixed(2)} A ${r} ${r} 0 ${large} 0 ${x4.toFixed(2)} ${y4.toFixed(2)} Z`} fill={p.color}><title>{p.name}: {p.pct}%</title></path>;
+        })}
+        <text x={cx} y={cy - 3} textAnchor="middle" fontSize="17" fontWeight="700" fill="#16A34A">{Math.round(sec.pct)}%</text>
+        <text x={cx} y={cy + 11} textAnchor="middle" fontSize="7.5" fill={C.faint}>Security</text>
+      </svg>
+      <div className="mt-1 w-full space-y-1">
+        {parts.map((p, i) => (
+          <div key={i} className="flex items-center justify-between gap-2 t9">
+            <span className="flex min-w-0 items-center gap-1.5"><span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: p.color }} /><span className="truncate" style={{ color: p.name === "Security (nosotros)" ? "#16A34A" : C.sub, fontWeight: p.name === "Security (nosotros)" ? 600 : 400 }}>{p.name}</span></span>
+            <span className="shrink-0 font-semibold" style={{ color: C.ink }}>{p.pct}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 // Pestaña SOW del detalle: KPIs, gráfico de evolución (SOW mensual vs target) y la tira mensual.
 // Mismo set de flechas/iconos que la etiqueta SOW del chip (OppTags), para usarlo en el KPI Tendencia.
 function sowFlechaIcon(tend) {
@@ -2859,7 +2902,8 @@ function SowTab({ deal }) {
           </div>
         ))}
       </div>
-      <div className="rounded-lg p-3" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-stretch">
+      <div className="rounded-lg p-3 lg:flex-1" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
         <div className="flex flex-wrap items-center justify-between gap-1">
           <div className="t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>SOW mensual vs target <span className="t9 font-normal" style={{ color: C.faint }}>(rodante 6m · últimos {n} meses)</span></div>
           <div className="flex items-center gap-3 t9" style={{ color: C.faint }}>
@@ -2880,6 +2924,14 @@ function SowTab({ deal }) {
           {m.map((x, i) => (<circle key={i} cx={X(i)} cy={Y(x.SOWPct)} r="3" fill={SOW_EST_COLOR[x.Estado] || lineCol} />))}
           {m.map((x, i) => (i % 2 === 0 || i === n - 1) ? (<text key={"l" + i} x={X(i)} y={H - 8} textAnchor="middle" fontSize="9" fill={C.faint}>{(x.Label || "").replace(" ", "")}</text>) : null)}
         </svg>
+      </div>
+      {/* Pie: distribución % de los factorings que participan del SOW (Security vs competencia) */}
+      {(() => { const cm = competenciaDeDeal(deal); return cm && cm.totalMM ? (
+        <div className="rounded-lg p-3 lg:w-56 lg:shrink-0" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+          <div className="t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Distribución del SOW <span className="t9 font-normal" style={{ color: C.faint }}>(cesiones 6m)</span></div>
+          <div className="mt-2"><SowPieCompetencia cm={cm} /></div>
+        </div>
+      ) : null; })()}
       </div>
       <div className="rounded-lg p-3 t11" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.sub }}>
         <span className="font-semibold" style={{ color: C.ink }}>Diagnóstico: </span>{an.Diagnostico || "—"}{an.AsintotaEstimadaPct != null ? ` · Asíntota estimada ${an.AsintotaEstimadaPct}%` : ""}{an.SemanasParaTarget != null ? ` · Semanas al target: ${an.SemanasParaTarget}` : ""}
@@ -3946,7 +3998,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             {deal.cat && (() => { const cd = catDisp(deal); return <Pill style={{ backgroundColor: catMeta(cd.cat).bg, color: catMeta(cd.cat).fg }}>{cd.label} · {cd.q}</Pill>; })()}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1" style={{ borderBottom: `1px solid ${C.line}` }}>
-            {[["negocio", "Negocio"], ["contacto", "Linea"], ...(puedeVerBitacora(usuario) ? [["bitacora", "Bitácora"]] : []), ["sow", "SOW"], ...(puedeVerCobranza(usuario) ? [["cobranza", "Cobranza"]] : []), ...(puedeVerMensajeria(usuario) ? [["mensajeria", "Mensajería"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
+            {[["negocio", "Negocio"], ["contacto", "Linea"], ...(!esClienteNuevoNEX(deal) ? [["anteriores", "Operaciones anteriores"]] : []), ...(puedeVerBitacora(usuario) ? [["bitacora", "Bitácora"]] : []), ["sow", "SOW"], ...(puedeVerCobranza(usuario) ? [["cobranza", "Cobranza"]] : []), ...(puedeVerMensajeria(usuario) ? [["mensajeria", "Mensajería"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
               <button key={k} onClick={() => setTab(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
                 {l}
                 {k === "otorgamiento" && otorgPend > 0 && <span title={`${otorgPend} regla(s) que debes visar tú (cliente + deudores)`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#DC2626" }}>{otorgPend}</span>}
@@ -4112,15 +4164,15 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                     <div className="mt-4">
                       <div className="flex items-center justify-between gap-1.5 t11 font-semibold" style={{ color: "#C2410C" }}><span className="flex items-center gap-1.5"><MessageSquare size={12} /> Simulación</span>{bloqueado && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>🔒 Aceptada · bloqueada</span>}</div>
                       {bloqueado && <div className="mt-1 t9" style={{ color: C.sub }}>La operación ya fue aceptada formalmente: no se pueden modificar las condiciones ni agregar/retirar facturas.</div>}
-                      {/* Sub-tabs del negocio: Resumen · Documentos · Descuentos · (Operaciones anteriores si el cliente tiene historial) */}
+                      {/* Sub-tabs del negocio: Resumen · Documentos · Descuentos. «Operaciones anteriores» se
+                          promovió a un Tab propio del detalle (fuera de Negocio). */}
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        {[["resumen", "Resumen"], ["documentos", "Documentos"], ["descuentos", "Descuentos"], ...(!esClienteNuevoNEX(deal) ? [["anteriores", "Operaciones anteriores"]] : [])].map(([k, l]) => (
+                        {[["resumen", "Resumen"], ["documentos", "Documentos"], ["descuentos", "Descuentos"]].map(([k, l]) => (
                           <button key={k} onClick={() => setNegTab(k)} className="rounded-lg px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: negTab === k ? C.lilac : "#fff", color: negTab === k ? C.indigo : C.sub, border: `1px solid ${negTab === k ? C.indigo : C.line}` }}>{l}</button>
                         ))}
                       </div>
-                      {negTab === "anteriores" && <HistorialComercialTable deal={deal} />}
                       {/* Resumen de condiciones comerciales (referencia read-only) — se mantiene visible en Documentos y Descuentos. */}
-                      {negTab !== "resumen" && negTab !== "anteriores" && (() => {
+                      {negTab !== "resumen" && (() => {
                         const UF = 38000, comMiniCLP = 2 * UF, gastMiniCLP = 26000; // condiciones base (mismos defaults del Resumen)
                         const bRef = bandaDescuentoDeTasa(tasaPond);
                         return (
@@ -4651,6 +4703,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           </>)}
 
           {tab === "sow" && <SowTab deal={deal} />}
+
+          {/* Tab «Operaciones anteriores»: negocios cursados históricamente por el cliente. */}
+          {tab === "anteriores" && <div className="rounded-2xl bg-white p-5" style={{ border: `1px solid ${C.line}` }}><HistorialComercialTable deal={deal} /></div>}
 
           {tab === "bitacora" && (() => {
             const ev = bitacoraDe(deal);
@@ -10495,7 +10550,7 @@ function ReporteDiaPanel({ deals, execFilter, onClose, onOpen }) {
     </>
   );
 }
-function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOpenSolic, onIrLineas }) {
+function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOpenSolic, onIrLineas, soloMapa = false }) {
   const nMsg = usuario ? notifSolic(usuario, deals).porResponder.length : 0;
   const nLineas = LINEAS_DATA.filter((l) => (execFilter === "todos" || l.exec === execFilter) && lineaSalud(l).label === "Atención").length;
   const [catSel, setCatSel] = useState("todas");
@@ -10528,6 +10583,9 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
   const nFueraLinea = delEjec.filter((t) => tareaRequiereExcesoLinea(t, deals)).length; // operaciones fuera de línea (requieren aprobar exceso)
   return (
     <div>
+      {/* En Tubo Diario (vista «Área») se muestra sólo el filtro + lista + mapa: el título y las summary
+          cards se ocultan porque esas cards ya viven fusionadas en el menú Tareas. */}
+      {!soloMapa && (<>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="text-2xl font-bold tracking-tight" style={{ color: C.ink }}>Oportunidades</div>
@@ -10570,8 +10628,9 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
           </div>
         ))}
       </div>
+      </>)}
       {/* Filtro por categoría — barra de "pills" clickeables (distinta de los KPIs de arriba) */}
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div className={soloMapa ? "flex flex-wrap items-center gap-2" : "mt-4 flex flex-wrap items-center gap-2"}>
         <span className="t9 font-bold uppercase tracking-widest" style={{ color: C.faint }}>Filtrar por categoría</span>
         <span className="h-px flex-1" style={{ backgroundColor: C.line }} />
         <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
@@ -10593,7 +10652,7 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
         })}
       </div>
       {catSel !== "todas" && <div className="mt-2 t10" style={{ color: C.faint }}>{TAREA_CATS[catSel].desc}</div>}
-      <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-stretch" style={{ height: "calc(100vh - 360px)", minHeight: 440 }}>
+      <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-stretch" style={{ height: soloMapa ? "calc(100vh - 230px)" : "calc(100vh - 360px)", minHeight: 440 }}>
       {/* Izquierda (1/3): lista de tareas — hace scroll independiente */}
       <div className="space-y-2 overflow-y-auto px-1.5 py-1.5 lg:w-1/3" style={{ minHeight: 0 }}>
         {sorted.map((t) => { const m = TAREA_CATS[t.cat], p = TAREA_PRIO[t.prio]; const hl = hoverId === t.id; return (
@@ -12865,7 +12924,6 @@ export default function PipelineComercial() {
   const [cfgVer, setCfgVer] = useState(0); // fuerza re-render al editar catálogos de Mantenedores
   const [vista, setVista] = useState("tabla"); // "kanban" | "tabla" | "tamaño" — por defecto carga en tabla
   const [vistaMenu, setVistaMenu] = useState(false); // dropdown selector de vista del tubo
-  const [treeHover, setTreeHover] = useState(null); // hover en la vista "Tamaño" (treemap)
   // Causas pendientes donde el usuario logueado (aprobador) tiene atribución → badge del menú Otorgamientos.
   // Operaciones en la bandeja de otorgamiento (visibles para el usuario) con al menos una excepción
   // que ÉL puede aprobar según su atribución. Alineado con "con acciones para ti" de la bandeja.
@@ -14738,7 +14796,7 @@ export default function PipelineComercial() {
             </button>
             <span className="mx-1 h-5 w-px" style={{ backgroundColor: C.line }} />
             {(() => {
-              const VOPTS = [["tabla", "Tabla", Table2], ["kanban", "Kanban", LayoutGrid], ["tamaño", "Tamaño", Grid3x3]];
+              const VOPTS = [["tabla", "Tabla", Table2], ["kanban", "Kanban", LayoutGrid], ["area", "Área", Grid3x3]];
               const cur = VOPTS.find((o) => o[0] === vista) || VOPTS[0];
               const CurIcon = cur[2];
               return (
@@ -14917,18 +14975,13 @@ export default function PipelineComercial() {
               </>
             );
           })()}
-          {vista === "tamaño" && (() => {
-            // Mapa por tamaño: mismas oportunidades del tubo (respetando filtros), dimensionadas por monto
-            // y agrupadas por Dentro/Fuera de línea → categoría (reutiliza el treemap de la bandeja).
-            const tareasTree = generarTareasConsolidadas(filtered).filter((t) => t.fuente === "pipeline");
-            return tareasTree.length ? (
-              <div className="w-full rounded-2xl bg-white p-2" style={{ border: `1px solid ${C.line}`, height: "72vh" }}>
-                <PCtreemap tareas={tareasTree} deals={deals} onSelectTask={(t) => { const d = deals.find((x) => x.id === t.dealId); if (d) abrirDetalle(d); }} hoverId={treeHover} setHoverId={setTreeHover} />
-              </div>
-            ) : (
-              <div className="flex h-64 w-full items-center justify-center rounded-2xl border border-dashed t12" style={{ borderColor: C.line, color: C.faint }}>Sin oportunidades para el mapa con los filtros actuales.</div>
-            );
-          })()}
+          {vista === "area" && (
+            // Vista «Área»: recupera la bandeja de oportunidades (columna de tarjetas + mapa por área/monto),
+            // respetando los filtros del tubo. Sin las summary cards (viven en el menú Tareas).
+            <div className="w-full">
+              <PCbandeja soloMapa deals={filtered} execFilter="todos" onOpen={abrirDetalle} usuario={usuario} />
+            </div>
+          )}
 
         </div>
         </>)}
