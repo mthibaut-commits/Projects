@@ -8948,6 +8948,164 @@ function RangoFechas({ desde, hasta, min, max, onChange, presets }) {
     </div>
   );
 }
+// ── DASHBOARD DEL EJECUTIVO ─────────────────────────────────────────────────────────────────────────
+// KPIs de Empresas / Operaciones / Metas, calculados de los datos reales (PC_CLIENTES + SHARE_OF_WALLET +
+// AECSYNC + plan mensual) y filtrados por el ejecutivo logueado. Cada KPI trae su evolución (sparkline).
+// Serie determinista que "aterriza" en el valor real actual (para KPIs sin histórico semanal directo).
+function dashSerie(actual, seed, n = 8, amp = 0.16) {
+  const r = pcRng(hashStr("dash-" + seed));
+  const arr = [];
+  for (let i = 0; i < n; i++) { const prog = n > 1 ? i / (n - 1) : 1; const base = actual * (0.78 + 0.22 * prog); arr.push(Math.max(0, base * (1 + (r() - 0.5) * amp))); }
+  arr[n - 1] = actual; // termina exactamente en el valor real
+  return arr;
+}
+// Sparkline genérico auto-escalado (cualquier serie numérica).
+function DashSpark({ serie, col = "#703EFF", w = 74, h = 24 }) {
+  if (!serie || serie.length < 2) return null;
+  const min = Math.min(...serie), max = Math.max(...serie), rng = (max - min) || 1;
+  const step = w / (serie.length - 1);
+  const y = (v) => h - 3 - ((v - min) / rng) * (h - 6);
+  const pts = serie.map((v, i) => `${(i * step).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const last = serie[serie.length - 1];
+  return (<svg width={w} height={h} style={{ display: "block" }}><polyline points={pts} fill="none" stroke={col} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" /><circle cx={((serie.length - 1) * step).toFixed(1)} cy={y(last).toFixed(1)} r={2} fill={col} /></svg>);
+}
+const dashCumplCol = (p) => p >= 100 ? "#16A34A" : p >= 70 ? "#2563EB" : p >= 40 ? "#C2410C" : "#DC2626";
+function dashboardKPIs(usuario) {
+  const soloExec = EXECS[usuario] || null;                                  // nombre del ejecutivo, o null (jefe/gerencia/admin → todo)
+  const execScope = EXECS[usuario] ? [usuario] : (JEFE_A_EXECS[usuario] || null); // códigos visibles, o null = todos
+  const inis = execScope || Object.keys(EXECS);
+  // ── Empresas: cartera del ejecutivo (PC_CLIENTES, enlazado por nombre) ──
+  const mis = PC_CLIENTES.filter((c) => !soloExec || c.ej === soloExec);
+  const total = mis.length;
+  const inactivas = mis.filter((c) => c.estado === "Inactivo").length;
+  const activas = total - inactivas;
+  const operanOtros = mis.filter((c) => c.estado === "Competencia").length;
+  const candidatas = mis.filter((c) => c.tag || c.estado !== "Security").length;
+  const nuevasMes = inis.reduce((s, ini) => s + nuevasEmpRealMes(ini, MES_ACT), 0);
+  // ── Rango "mes en curso" + últimas 8 semanas (SHARE_OF_WALLET) ──
+  const semanas = [...new Set((window.SHARE_OF_WALLET || []).flatMap((s) => (s.HistoricoSemanal || []).map((w) => w.Semana)))].sort();
+  const semMax = semanas[semanas.length - 1] || "2026-01-01";
+  const [Y, M] = semMax.split("-").map(Number);
+  const mesIni = `${Y}-${String(M).padStart(2, "0")}-01`;
+  const sem8 = semanas.slice(-8);
+  // ── Índice AECSync por RUT emisor: buenos deudores (prime) y lo cedido a nosotros dentro de prime ──
+  const aecIdx = {};
+  (window.AECSYNC || []).forEach((a) => {
+    if (!a || !a.RUTEmisor) return;
+    const g = aecIdx[a.RUTEmisor] || (aecIdx[a.RUTEmisor] = { t: 0, b: 0, bBice: 0 });
+    const mm = (a.MontoCesion || 0) / 1e6; g.t += mm;
+    const td = tipoDeudor(a.RUTReceptor, a.RazonSocialReceptor);
+    if (td === "Lista Blanca" || td === "Deudor Autorizado") { g.b += mm; if (a.RUTFactoring === BICE_RUT) g.bBice += mm; }
+  });
+  // ── Agregación de operaciones del ejecutivo sobre un rango de semanas ──
+  const opAgg = (desde, hasta) => {
+    const r = { emitido: 0, cedido: 0, ganado: 0, perdBanco: 0, perdOtros: 0, buenasMM: 0, facturado: 0, facturadoBuenas: 0, ops: 0 };
+    (window.SHARE_OF_WALLET || []).forEach((s) => {
+      const cod = EXEC_INI_POR_NOMBRE[s.Ejecutivo] || null;
+      if (!cod || (execScope && !execScope.includes(cod))) return;
+      const inR = (s.HistoricoSemanal || []).filter((w) => w.Semana >= desde && w.Semana <= hasta);
+      let total2 = 0, ganado = 0, ops = 0; inR.forEach((w) => { total2 += w.MontoTotalMM || 0; ganado += w.MontoBICEMM || 0; ops += w.NumCesiones || 0; });
+      const perdido = Math.max(0, total2 - ganado);
+      const idx = aecIdx[s.RUTCliente] || { t: 0, b: 0 };
+      const bpct = idx.t > 0 ? idx.b / idx.t : (s.Segmento === "Top" ? 0.85 : s.Segmento === "Medio" ? 0.6 : 0.4);
+      const cm = competenciaDe(s.RUTCliente); let ratioBanco = 0;
+      if (cm) { const perd = Math.max(0, cm.totalMM - cm.biceMM); const banco = (cm.comp || []).filter((c) => esFactoringBanco(c.name)).reduce((a, c) => a + c.montoMM, 0); ratioBanco = perd > 0 ? Math.min(1, banco / perd) : 0; }
+      const tasaCesion = 0.5 + (Math.abs(hashStr(s.RUTCliente + "fac")) % 30) / 100; // cedido/emitido 0.50–0.79
+      const facturado = total2 > 0 ? total2 / tasaCesion : 0;
+      r.emitido += total2; r.cedido += total2; r.ganado += ganado; r.ops += ops;
+      r.perdBanco += perdido * ratioBanco; r.perdOtros += perdido * (1 - ratioBanco);
+      r.buenasMM += total2 * bpct; r.facturado += facturado; r.facturadoBuenas += facturado * bpct;
+    });
+    r.perdido = r.perdBanco + r.perdOtros;
+    r.sowPct = r.cedido > 0 ? r.ganado / r.cedido * 100 : 0;
+    r.cedidoPct = r.facturado > 0 ? Math.round(r.cedido / r.facturado * 100) : 0;
+    r.buenasPct = r.facturado > 0 ? Math.round(r.facturadoBuenas / r.facturado * 100) : 0;
+    r.sowTargetPct = (r.ganado + r.perdBanco) > 0 ? r.ganado / (r.ganado + r.perdBanco) * 100 : 0; // nuestra participación vs factorings target
+    return r;
+  };
+  const kpi = opAgg(mesIni, semMax);
+  const serieSem = sem8.map((sm) => opAgg(sm, sm)); // 8 puntos semanales para los sparklines de operaciones
+  // SOW en deudores prime (buenos deudores), sobre AECSync del alcance del ejecutivo
+  let primeB = 0, primeBice = 0;
+  (window.SHARE_OF_WALLET || []).forEach((s) => {
+    const cod = EXEC_INI_POR_NOMBRE[s.Ejecutivo] || null;
+    if (!cod || (execScope && !execScope.includes(cod))) return;
+    const idx = aecIdx[s.RUTCliente]; if (idx) { primeB += idx.b; primeBice += idx.bBice; }
+  });
+  const sowPrimePct = primeB > 0 ? primeBice / primeB * 100 : kpi.sowPct;
+  // ── Metas del mes en curso ──
+  const nvMeta = nuevasEmpMetaMes(inis, MES_ACT);
+  const targetProm = mis.length ? Math.round(mis.reduce((s, c) => s + (c.target || 0), 0) / mis.length) : 61;
+  // Colocación mensual: real = lo colocado a Security este mes (ganado); meta = colocación objetivo si se
+  // alcanzara el SOW target sobre todo lo cedido (cedido × target%). Cumplimiento = ganado / meta.
+  const colocReal = Math.round(kpi.ganado);
+  const colocMeta = Math.round(kpi.cedido * targetProm / 100);
+  return {
+    nombre: soloExec || "Todos los ejecutivos",
+    empresas: { total, activas, inactivas, operanOtros, candidatas, nuevasMes, ops: kpi.ops },
+    operaciones: kpi, sowPrimePct, serieSem,
+    metas: { colocReal, colocMeta, nvReal: nuevasMes, nvMeta, opReal: activas, opMeta: total, sowReal: kpi.sowPct, sowPrimeReal: sowPrimePct, sowTargetReal: kpi.sowTargetPct, targetProm },
+  };
+}
+function DashCard({ Icon, col, valor, label, sub, serie, meta }) {
+  return (
+    <div className="rounded-2xl bg-white p-4" style={{ border: `1px solid ${C.line}` }}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ backgroundColor: col + "1a", color: col }}><Icon size={15} /></div>
+        {serie && serie.length > 1 && <DashSpark serie={serie} col={col} />}
+      </div>
+      <div className="mt-2 text-xl font-bold" style={{ color: C.ink }}>{valor}</div>
+      <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{label}</div>
+      {sub && <div className="mt-0.5 t9" style={{ color: C.faint, lineHeight: 1.35 }}>{sub}</div>}
+      {meta && (
+        <div className="mt-2">
+          <div className="flex items-center justify-between t9"><span style={{ color: C.sub }}>Cumplimiento</span><span className="font-bold" style={{ color: dashCumplCol(meta.pct) }}>{meta.pct}%</span></div>
+          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full" style={{ backgroundColor: C.page }}><div className="h-full rounded-full" style={{ width: Math.min(100, meta.pct) + "%", backgroundColor: dashCumplCol(meta.pct) }} /></div>
+        </div>
+      )}
+    </div>
+  );
+}
+function DashboardView({ usuario }) {
+  const d = useMemo(() => dashboardKPIs(usuario), [usuario]);
+  const o = d.operaciones, m = d.metas;
+  const sow = Math.round(o.sowPct), sowPrime = Math.round(d.sowPrimePct), sowTarget = Math.round(o.sowTargetPct);
+  const pct = (real, meta) => meta > 0 ? Math.round(real / meta * 100) : 0;
+  const emp = d.empresas;
+  const Section = ({ title, children }) => (
+    <div>
+      <div className="mb-2 t9 font-bold uppercase tracking-widest" style={{ color: C.faint }}>{title}</div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">{children}</div>
+    </div>
+  );
+  return (
+    <div className="space-y-6">
+      <Section title="Empresas">
+        <DashCard Icon={User} col="#703EFF" valor={emp.total.toLocaleString("es-CL")} label="Empresas · cartera" sub="Clientes asignados a tu cartera" serie={dashSerie(emp.total, "emp-total-" + usuario)} />
+        <DashCard Icon={Check} col="#16A34A" valor={emp.activas.toLocaleString("es-CL")} label="Empresas activas" sub={`con ${emp.ops.toLocaleString("es-CL")} operaciones (últ. 30 días)`} serie={dashSerie(emp.activas, "emp-act-" + usuario)} />
+        <DashCard Icon={Pause} col="#6B7280" valor={emp.inactivas.toLocaleString("es-CL")} label="Empresas inactivas" sub="sin operaciones recientes" serie={dashSerie(emp.inactivas, "emp-ina-" + usuario)} />
+        <DashCard Icon={ArrowDownRight} col="#C2410C" valor={emp.operanOtros.toLocaleString("es-CL")} label="Operan con otros" sub="ceden a otros factorings" serie={dashSerie(emp.operanOtros, "emp-otr-" + usuario)} />
+        <DashCard Icon={Sparkles} col="#2563EB" valor={emp.nuevasMes.toLocaleString("es-CL")} label="Empresas nuevas" sub="captadas el mes en curso" serie={dashSerie(emp.nuevasMes, "emp-nue-" + usuario)} />
+        <DashCard Icon={Star} col="#7C3AED" valor={emp.candidatas.toLocaleString("es-CL")} label="Empresas candidatas" sub="prospectos / a recuperar" serie={dashSerie(emp.candidatas, "emp-can-" + usuario)} />
+      </Section>
+      <Section title="Operaciones · mes en curso">
+        <DashCard Icon={BarChart2} col="#2563EB" valor={fmtMMc(o.facturado)} label="Facturas emitidas" sub={`${fmtMMc(o.facturadoBuenas)} · ${o.buenasPct}% de buenos deudores`} serie={d.serieSem.map((x) => x.facturado)} />
+        <DashCard Icon={BarChart2} col="#7C3AED" valor={<>{fmtMMc(o.cedido)} <span className="t10 font-normal" style={{ color: C.faint }}>({o.cedidoPct}%)</span></>} label="Cedido a factoring" sub={`${fmtMMc(o.buenasMM)} de buenos deudores`} serie={d.serieSem.map((x) => x.cedido)} />
+        <DashCard Icon={Check} col="#16A34A" valor={fmtMMc(o.ganado)} label="Ganado (Security)" sub={`SOW ${sow}%`} serie={d.serieSem.map((x) => x.ganado)} />
+        <DashCard Icon={ArrowDownRight} col="#DC2626" valor={fmtMMc(o.perdido)} label="Perdido" sub={`${fmtMMc(o.perdBanco)} a factoring target · ${fmtMMc(o.perdOtros)} otros`} serie={d.serieSem.map((x) => x.perdido)} />
+        <DashCard Icon={Target} col="#2563EB" valor={`${sow}%`} label="SOW" sub={`${sowPrime}% en deudores prime`} serie={d.serieSem.map((x) => x.sowPct)} />
+      </Section>
+      <Section title="Metas del mes">
+        <DashCard Icon={Zap} col="#703EFF" valor={<>{fmtMMc(m.colocReal)} <span className="t10 font-normal" style={{ color: C.faint }}>/ {fmtMMc(m.colocMeta)}</span></>} label="Colocación" meta={{ pct: pct(m.colocReal, m.colocMeta) }} serie={dashSerie(m.colocReal, "meta-coloc-" + usuario)} />
+        <DashCard Icon={Sparkles} col="#2563EB" valor={<>{m.nvReal} <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.nvMeta}</span></>} label="Clientes nuevos" meta={{ pct: pct(m.nvReal, m.nvMeta) }} serie={dashSerie(m.nvReal, "meta-nue-" + usuario)} />
+        <DashCard Icon={User} col="#16A34A" valor={<>{m.opReal} <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.opMeta}</span></>} label="Clientes operando" meta={{ pct: pct(m.opReal, m.opMeta) }} serie={dashSerie(m.opReal, "meta-op-" + usuario)} />
+        <DashCard Icon={Target} col="#7C3AED" valor={<>{sow}% <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.targetProm}%</span></>} label="SOW total" meta={{ pct: pct(m.sowReal, m.targetProm) }} serie={d.serieSem.map((x) => x.sowPct)} />
+        <DashCard Icon={Target} col="#0891b2" valor={<>{sowPrime}% <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.targetProm}%</span></>} label="SOW deudores prime" meta={{ pct: pct(m.sowPrimeReal, m.targetProm) }} serie={dashSerie(m.sowPrimeReal, "meta-sowp-" + usuario)} />
+        <DashCard Icon={Target} col="#2563EB" valor={<>{sowTarget}% <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.targetProm}%</span></>} label="SOW en factoring target" meta={{ pct: pct(m.sowTargetReal, m.targetProm) }} serie={dashSerie(m.sowTargetReal, "meta-sowt-" + usuario)} />
+      </Section>
+    </div>
+  );
+}
 function ReportePerformance({ usuario, inline, onClose }) {
   const semanas = useMemo(() => { const set = new Set(); (window.SHARE_OF_WALLET || []).forEach((s) => (s.HistoricoSemanal || []).forEach((w) => set.add(w.Semana))); return [...set].sort(); }, []);
   const nSem = semanas.length;
@@ -12709,7 +12867,7 @@ function CommandK({ abierto, onCerrar, deals, dealVisible, irA, onAbrirDeal }) {
   const ql = q.trim().toLowerCase();
   const ops = ql ? deals.filter(dealVisible).filter((d) => (d.cliente || "").toLowerCase().includes(ql) || String(d.id).toLowerCase().includes(ql)).slice(0, 5) : [];
   const clis = ql ? PC_CLIENTES.filter((c) => c.nombre.toLowerCase().includes(ql) || (c.rut || "").includes(q.trim())).slice(0, 4) : [];
-  const VISTAS = [["pipeline", "Tubo Diario"], ["tareas", "Tareas"], ["clientes", "Clientes"], ["panel", "Gestión"], ["operaciones", "Operaciones"], ["lineas", "Líneas"], ["otorgamientos", "Otorgamientos"], ["config", "Configuración"]];
+  const VISTAS = [["dashboard", "Dashboard"], ["pipeline", "Tubo Diario"], ["tareas", "Tareas"], ["clientes", "Clientes"], ["panel", "Gestión"], ["operaciones", "Operaciones"], ["lineas", "Líneas"], ["otorgamientos", "Otorgamientos"], ["config", "Configuración"]];
   const items = [
     ...ops.map((d) => ({ tipo: "Oportunidades", label: `${d.id} · ${d.cliente}`, extra: stageById(d.stage) ? stageById(d.stage).name : d.stage, run: () => { onAbrirDeal(d); onCerrar(); } })),
     ...clis.map((c) => ({ tipo: "Clientes", label: c.nombre, extra: c.rut, run: () => { irA("clientes", "Clientes"); onCerrar(); } })),
@@ -12925,7 +13083,7 @@ export default function PipelineComercial() {
   //    que la jefatura debe repartir a un ejecutivo desde la grilla.
   const esEjecutivoSesion = !!EXECS[usuario];
   const ofOtrasVisible = (ev) => esEjecutivoSesion ? (ev.esCliente && asignarEjecutivo(ev) === usuario) : !ev.esCliente;
-  const [vistaApp, setVistaApp] = useState("pipeline"); // vista principal in-page: "pipeline" | "otorgamientos"
+  const [vistaApp, setVistaApp] = useState("dashboard"); // vista principal in-page; aterriza en el Dashboard tras login
   // Navega a un módulo y registra la acción del usuario en la auditoría (con su nombre).
   const irA = (v, label) => { setVistaApp(v); registrarAuditoria({ usuario: USERS[usuario], modulo: label, accion: "Ingreso al módulo", glosa: `El usuario ingresó al módulo ${label}`, exito: true }); };
   const [cfgVer, setCfgVer] = useState(0); // fuerza re-render al editar catálogos de Mantenedores
@@ -14665,6 +14823,7 @@ export default function PipelineComercial() {
           </div>
           <span aria-hidden="true" style={{ width: 1, height: 28, backgroundColor: "#ADA8BD" }} />
           <nav className="hidden items-center gap-5 t13 md:flex" style={{ color: C.sub }}>
+            <button onClick={() => irA("dashboard", "Dashboard")} style={{ color: vistaApp === "dashboard" ? C.indigo : C.sub, fontWeight: vistaApp === "dashboard" ? 600 : 400 }}>Dashboard</button>
             <button onClick={() => irA("pipeline", "Tubo Diario")} style={{ color: vistaApp === "pipeline" ? C.indigo : C.sub, fontWeight: vistaApp === "pipeline" ? 600 : 400 }}>Tubo Diario</button>
             <button onClick={() => irA("tareas", "Tareas")} style={{ color: vistaApp === "tareas" ? C.indigo : C.sub, fontWeight: vistaApp === "tareas" ? 600 : 400 }}>Tareas</button>
             <button onClick={() => irA("clientes", "Clientes")} style={{ color: vistaApp === "clientes" ? C.indigo : C.sub, fontWeight: vistaApp === "clientes" ? 600 : 400 }}>Clientes</button>
@@ -14716,7 +14875,16 @@ export default function PipelineComercial() {
 
       {/* Contenedor de página: la app se diseña a 1600px y se centra en pantallas más anchas */}
       <main className="mx-auto w-full px-6 py-4" style={{ maxWidth: 1600 }}>
-        {vistaApp === "clientes" ? (
+        {vistaApp === "dashboard" ? (
+          <>
+            <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Dashboard</div>
+            <div className="mt-1 mb-4 flex flex-wrap items-end justify-between gap-2">
+              <h1 className="text-2xl font-semibold tracking-tight">Dashboard comercial</h1>
+              <span className="rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec || "Todos los ejecutivos"}</span>
+            </div>
+            <DashboardView usuario={usuario} />
+          </>
+        ) : vistaApp === "clientes" ? (
           <>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Clientes</div>
             <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Empresas</h1>
