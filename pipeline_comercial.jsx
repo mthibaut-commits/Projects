@@ -9078,9 +9078,10 @@ function dashboardKPIs(usuario, deals) {
     tareas: { lineasGest, nLineasSOW, nFueraLinea, prioritarios, tareasPend, msgResponder },
   };
 }
-function DashCard({ Icon, col, valor, label, sub, serie, meta }) {
+function DashCard({ Icon, col, valor, label, sub, serie, meta, onClick }) {
+  const clickable = typeof onClick === "function";
   return (
-    <div className="rounded-2xl bg-white p-4" style={{ border: `1px solid ${C.line}` }}>
+    <div onClick={clickable ? onClick : undefined} title={clickable ? "Ver en el Tubo Diario" : undefined} className="rounded-2xl bg-white p-4 transition-shadow" style={{ border: `1px solid ${C.line}`, cursor: clickable ? "pointer" : "default", boxShadow: clickable ? "0 1px 2px rgba(20,25,45,.04)" : "none" }} onMouseEnter={clickable ? (e) => { e.currentTarget.style.boxShadow = `0 0 0 1.5px ${col}, 0 6px 18px ${col}22`; } : undefined} onMouseLeave={clickable ? (e) => { e.currentTarget.style.boxShadow = "0 1px 2px rgba(20,25,45,.04)"; } : undefined}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ backgroundColor: col + "1a", color: col }}><Icon size={15} /></div>
         {serie && serie.length > 1 && <DashSpark serie={serie} col={col} />}
@@ -9102,7 +9103,7 @@ function DashCard({ Icon, col, valor, label, sub, serie, meta }) {
     </div>
   );
 }
-function DashboardView({ usuario, deals }) {
+function DashboardView({ usuario, deals, onVerPrioritarios }) {
   const [tick, setTick] = useState(0);
   // Siembra (una vez) prioridades + tareas asignadas de demo para que los indicadores de «Tareas» tengan datos.
   useEffect(() => { seedTareasDemo(deals, EXECS[usuario] || "todos"); setTick((t) => t + 1); }, []); // eslint-disable-line
@@ -9135,7 +9136,7 @@ function DashboardView({ usuario, deals }) {
       </Section>
       <Section title="Tareas">
         <DashCard Icon={AlertTriangle} col="#C2410C" valor={t.lineasGest.toLocaleString("es-CL")} label="Líneas por gestionar" sub={`${t.nLineasSOW} SOW · ${t.nFueraLinea} fuera de línea`} />
-        <DashCard Icon={Star} col="#7C3AED" valor={t.prioritarios.toLocaleString("es-CL")} label="Negocios prioritarios" sub="priorizados por la jefatura" />
+        <DashCard Icon={Star} col="#7C3AED" valor={t.prioritarios.toLocaleString("es-CL")} label="Negocios prioritarios" sub="priorizados por la jefatura" onClick={t.prioritarios > 0 ? onVerPrioritarios : undefined} />
         <DashCard Icon={ClipboardList} col="#2563EB" valor={t.tareasPend.toLocaleString("es-CL")} label="Acciones pendientes" sub="asignadas desde Gestión" />
         <DashCard Icon={Bell} col="#703EFF" valor={t.msgResponder.toLocaleString("es-CL")} label="Mensajes por responder" sub="requerimientos de otorgamiento" />
       </Section>
@@ -13238,6 +13239,7 @@ export default function PipelineComercial() {
       else if (quickFilter === "sinlinea") matchF = ["oferta", "prospeccion"].includes(d.stage) && lineaCreditoDe(d).fueraDeLinea;
       else if (quickFilter === "pendgiro") matchF = ["aceptadas", "cesion", "otorgamiento"].includes(d.stage) || (d.stage === "giro" && d.giroPendiente);
       else if (quickFilter === "perdidas") matchF = d.stage === "perdida";
+      else if (quickFilter === "prioritarios") matchF = tienePrioridadCurse(d.id); // negocios priorizados por la jefatura (desde el Dashboard)
       const matchDeudor = fDeudor === "todos" || (fDeudor === "buenos" ? esBuenDeudor(d) : !esBuenDeudor(d));
       const matchJef = fJefatura === "todas" || jefaturaOf(d) === fJefatura;
       const matchLinea = fLinea === "todas" || d.tag === fLinea;
@@ -14772,7 +14774,9 @@ export default function PipelineComercial() {
 
   // Las "Sin clasificar" solo cuentan/aparecen cuando el toggle Inbound está activo.
   const inboundCount = showInbound ? streamFeed.length : 0;
+  const nPrioTubo = dealsVista.filter((d) => tienePrioridadCurse(d.id)).length;
   const quickFilters = [
+    ...(nPrioTubo > 0 || quickFilter === "prioritarios" ? [{ id: "prioritarios", label: "Prioritarios", count: nPrioTubo }] : []),
     { id: "conlinea", label: "Con línea", count: dealsVista.filter((d) => ["oferta", "prospeccion"].includes(d.stage) && !lineaCreditoDe(d).fueraDeLinea).length },
     { id: "sinlinea", label: "Sin línea", count: dealsVista.filter((d) => ["oferta", "prospeccion"].includes(d.stage) && lineaCreditoDe(d).fueraDeLinea).length },
     { id: "pendgiro", label: "Pendientes de giro", count: dealsVista.filter((d) => ["aceptadas", "cesion", "otorgamiento"].includes(d.stage) || (d.stage === "giro" && d.giroPendiente)).length },
@@ -14921,7 +14925,7 @@ export default function PipelineComercial() {
               <h1 className="text-2xl font-semibold tracking-tight">Te damos la bienvenida, {(soloExec || (USERS[usuario] || "").split(" · ")[0] || "").split(" ")[0] || "equipo"}</h1>
               <span className="rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec || "Todos los ejecutivos"}</span>
             </div>
-            <DashboardView usuario={usuario} deals={deals} />
+            <DashboardView usuario={usuario} deals={deals} onVerPrioritarios={() => { setVista("tabla"); setQuickFilter("prioritarios"); irA("pipeline", "Tubo Diario"); }} />
           </>
         ) : vistaApp === "clientes" ? (
           <>
