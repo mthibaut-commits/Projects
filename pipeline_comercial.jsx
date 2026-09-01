@@ -9067,6 +9067,7 @@ function dashboardKPIs(usuario, deals) {
   const nFueraLinea = (deals || []).filter((dd) => inScopeDeal(dd) && ["oferta", "aceptadas", "cesion", "otorgamiento"].includes(dd.stage) && lineaCreditoDe(dd).fueraDeLinea).length;
   const lineasGest = nLineasSOW + nFueraLinea;
   const prioritarios = (deals || []).filter((dd) => inScopeDeal(dd) && tienePrioridadCurse(dd.id) && !estadoAtencionPrioridad(dd).atendida).length;
+  const nTubo = (deals || []).filter((dd) => inScopeDeal(dd) && dd.stage !== "perdida" && !(dd.stage === "giro" && !dd.giroPendiente)).length; // negocios abiertos en el tubo
   const relevTarea = (t) => !soloExec || (t.para || []).includes(soloExec) || (t.ops || []).some((id) => { const dd = (deals || []).find((x) => x.id === id); return dd && EXECS[dd.exec] === soloExec; });
   const tareasPend = PANEL_TAREAS.filter((t) => !t.hecha && relevTarea(t)).length;
   const msgResponder = notifSolic(usuario).porResponder.length;
@@ -9075,7 +9076,7 @@ function dashboardKPIs(usuario, deals) {
     empresas: { total, activas, inactivas, operanOtros, candidatas, nuevasMes, ops: kpi.ops },
     operaciones: kpi, sowPrimePct, serieSem,
     metas: { colocReal, colocMeta, nvReal: nuevasMes, nvMeta, opReal: activas, opMeta: total, sowReal: kpi.sowPct, sowPrimeReal: sowPrimePct, targetProm, compTargetReal: compTargetPrimePct, compTargetMeta: Math.max(1, Math.round((100 - targetProm) * 0.5)) },
-    tareas: { lineasGest, nLineasSOW, nFueraLinea, prioritarios, tareasPend, msgResponder },
+    tareas: { lineasGest, nLineasSOW, nFueraLinea, prioritarios, nTubo, tareasPend, msgResponder },
   };
 }
 function DashCard({ Icon, col, valor, label, sub, serie, meta, onClick }) {
@@ -9135,8 +9136,8 @@ function DashboardView({ usuario, deals, onVerPrioritarios }) {
         <DashCard Icon={Target} col="#2563EB" valor={`${sow}%`} label="SOW" sub={`${sowPrime}% en deudores prime`} serie={d.serieSem.map((x) => x.sowPct)} />
       </Section>
       <Section title="Tareas">
+        <DashCard Icon={Star} col="#7C3AED" valor={t.prioritarios.toLocaleString("es-CL")} label="Negocios prioritarios" sub={`de ${t.nTubo.toLocaleString("es-CL")} negocios en el tubo · priorizados por la jefatura`} onClick={t.prioritarios > 0 ? onVerPrioritarios : undefined} />
         <DashCard Icon={AlertTriangle} col="#C2410C" valor={t.lineasGest.toLocaleString("es-CL")} label="Líneas por gestionar" sub={`${t.nLineasSOW} SOW · ${t.nFueraLinea} fuera de línea`} />
-        <DashCard Icon={Star} col="#7C3AED" valor={t.prioritarios.toLocaleString("es-CL")} label="Negocios prioritarios" sub="priorizados por la jefatura" onClick={t.prioritarios > 0 ? onVerPrioritarios : undefined} />
         <DashCard Icon={ClipboardList} col="#2563EB" valor={t.tareasPend.toLocaleString("es-CL")} label="Acciones pendientes" sub="asignadas desde Gestión" />
         <DashCard Icon={Bell} col="#703EFF" valor={t.msgResponder.toLocaleString("es-CL")} label="Mensajes por responder" sub="requerimientos de otorgamiento" />
       </Section>
