@@ -10990,7 +10990,16 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
       detalle: `Ampliar/aprobar línea para poder cursar · exceso ${fmtMM(lc.excesoProyectado)} sobre ${fmtMM(lc.aprobada)} aprobada`,
       monto: lc.excesoProyectado, quien: "Riesgo", at: null, hecha: false, venceTs: Date.now() + 86400000, exceso: lc.excesoProyectado,
     }); });
-  const todas = [...rowsPrio, ...rowsLinea, ...rowsTask];
+  // Líneas de la cartera en estado «Atención»: requieren gestión (ampliar/liberar cupo) para asegurar el
+  // SOW. No están ligadas a una operación puntual; se listan junto a las solicitudes de línea del curse.
+  const rowsLineaSOW = LINEAS_DATA.filter((l) => (execFilter === "todos" || l.exec === execFilter) && lineaSalud(l).label === "Atención")
+    .map((l) => { const rec = lineaRecomendacion(l); return ({
+      kind: "linea", id: l.id, sow: true, tipo: "Línea", tipoCol: "#C2410C", tipoBg: "#FFF7ED", star: false,
+      cliente: l.cliente, ref: `${l.rut} · ${l.exec}`,
+      detalle: (rec && rec.texto) ? rec.texto : `Gestionar la línea para asegurar el SOW (${l.sowActual}% vs ${l.sowTarget}% target).`,
+      monto: l.demandaBuenos || 0, quien: "Riesgo", at: null, hecha: false, venceTs: null, lineaSow: l,
+    }); });
+  const todas = [...rowsPrio, ...rowsLinea, ...rowsLineaSOW, ...rowsTask];
   // Importancia de una tarea activa (mayor = más importante): primero las prioridades de la jefatura y
   // las tareas asignadas (por vencimiento/monto); las solicitudes de línea van al final del listado.
   const importancia = (r) => {
@@ -11016,11 +11025,11 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
   const nOportPipe = tareasPipe.length;
   const nMsg = usuario ? notifSolic(usuario).porResponder.length : 0;
   const nFueraLinea = rowsLinea.length;
-  const nLineasSOW = LINEAS_DATA.filter((l) => (execFilter === "todos" || l.exec === execFilter) && lineaSalud(l).label === "Atención").length;
+  const nLineasSOW = rowsLineaSOW.length;
   const nLineasGest = nLineasSOW + nFueraLinea;
   // Estado (pill) de una fila.
   const estadoPill = (r) => {
-    if (r.kind === "linea") return { l: "Urgente para el curse", c: "#2563EB", bg: "#EFF6FF" };
+    if (r.kind === "linea") return r.sow ? { l: "Asegurar SOW", c: "#C2410C", bg: "#FFF7ED" } : { l: "Urgente para el curse", c: "#2563EB", bg: "#EFF6FF" };
     if (r.kind === "prio") return r.at.atendida ? { l: r.at.label, c: r.at.col, bg: r.at.bg } : { l: "Por atender", c: "#C2410C", bg: "#FFF7ED" };
     return r.hecha ? { l: "Hecha", c: "#16A34A", bg: "#F0FDF4" } : { l: "Pendiente", c: "#703EFF", bg: "#F1ECFF" };
   };
@@ -11133,9 +11142,9 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
                   {r.monto != null && <span className="t11 font-semibold" style={{ color: C.ink }}>{fmtMM(r.monto)}</span>}
                 </div>
                 <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}`, backgroundColor: C.page }}>
-                  <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{r.kind === "prio" ? "Motivo de la prioridad" : r.kind === "linea" ? "Solicitud de línea para el curse" : "Detalle de la tarea"}</div>
+                  <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{r.kind === "prio" ? "Motivo de la prioridad" : r.kind === "linea" ? (r.sow ? "Línea por gestionar para asegurar el SOW" : "Solicitud de línea para el curse") : "Detalle de la tarea"}</div>
                   <div className="mt-1 t12" style={{ color: C.ink, lineHeight: 1.5 }}>{r.detalle}</div>
-                  <div className="mt-2 t11" style={{ color: C.sub }}>{r.kind === "prio" ? <>Priorizada para el curse por <b style={{ color: C.ink }}>{r.quien}</b>.</> : r.kind === "linea" ? <>La operación queda <b style={{ color: C.ink }}>fuera de línea</b>: requiere ampliar/aprobar la línea en <b style={{ color: C.ink }}>Riesgo</b> antes de poder cursar. Abre la oportunidad para gestionar la solicitud.</> : <>Asignada por <b style={{ color: C.ink }}>{r.quien}</b>{r.task && r.task.nodo ? <> · nodo <b style={{ color: C.ink }}>{r.task.nodo}</b></> : ""}.</>}</div>
+                  <div className="mt-2 t11" style={{ color: C.sub }}>{r.kind === "prio" ? <>Priorizada para el curse por <b style={{ color: C.ink }}>{r.quien}</b>.</> : r.kind === "linea" ? (r.sow ? <>La línea del cliente está en <b style={{ color: C.ink }}>Atención</b>: gestiona con <b style={{ color: C.ink }}>Riesgo</b> la ampliación/liberación de cupo para no frenar la colocación de buenos deudores y asegurar el SOW.</> : <>La operación queda <b style={{ color: C.ink }}>fuera de línea</b>: requiere ampliar/aprobar la línea en <b style={{ color: C.ink }}>Riesgo</b> antes de poder cursar. Abre la oportunidad para gestionar la solicitud.</>) : <>Asignada por <b style={{ color: C.ink }}>{r.quien}</b>{r.task && r.task.nodo ? <> · nodo <b style={{ color: C.ink }}>{r.task.nodo}</b></> : ""}.</>}</div>
                   {r.kind === "task" && r.task.para && r.task.para.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{r.task.para.map((p, i) => <span key={i} className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>@{p}</span>)}</div>}
                   {r.kind === "prio" && r.at.atendida && r.at.detalle && <div className="mt-2 t11" style={{ color: C.sub, lineHeight: 1.4 }}>{r.at.detalle}</div>}
                 </div>
