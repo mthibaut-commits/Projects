@@ -9123,7 +9123,7 @@ function DashboardView({ usuario, deals, onVerPrioritarios }) {
     <div className="space-y-6">
       <Section title="Empresas">
         <DashCard Icon={User} col="#703EFF" valor={emp.total.toLocaleString("es-CL")} label="Empresas · cartera" sub="Clientes asignados a tu cartera" serie={dashSerie(emp.total, "emp-total-" + usuario)} />
-        <DashCard Icon={Check} col="#16A34A" valor={emp.activas.toLocaleString("es-CL")} label="Empresas activas" sub={`con ${emp.ops.toLocaleString("es-CL")} operaciones (últ. 30 días)`} serie={dashSerie(emp.activas, "emp-act-" + usuario)} />
+        <DashCard Icon={Check} col="#16A34A" valor={emp.activas.toLocaleString("es-CL")} label="Empresas activas" sub={`${emp.ops.toLocaleString("es-CL")} operaciones (este mes)`} serie={dashSerie(emp.activas, "emp-act-" + usuario)} />
         <DashCard Icon={ArrowDownRight} col="#C2410C" valor={emp.operanOtros.toLocaleString("es-CL")} label="Operan con otros" sub="ceden a otros factorings" serie={dashSerie(emp.operanOtros, "emp-otr-" + usuario)} />
         <DashCard Icon={Sparkles} col="#2563EB" valor={emp.nuevasMes.toLocaleString("es-CL")} label="Empresas nuevas" sub="captadas el mes en curso" serie={dashSerie(emp.nuevasMes, "emp-nue-" + usuario)} />
         <DashCard Icon={Star} col="#7C3AED" valor={emp.candidatas.toLocaleString("es-CL")} label="Empresas candidatas" sub="a recuperar (fugas y caídas)" serie={dashSerie(emp.candidatas, "emp-can-" + usuario)} />
@@ -9136,10 +9136,10 @@ function DashboardView({ usuario, deals, onVerPrioritarios }) {
         <DashCard Icon={Target} col="#2563EB" valor={`${sow}%`} label="SOW" sub={`${sowPrime}% en deudores prime`} serie={d.serieSem.map((x) => x.sowPct)} />
       </Section>
       <Section title="Tareas">
-        <DashCard Icon={Star} col="#7C3AED" valor={t.prioritarios.toLocaleString("es-CL")} label="Negocios prioritarios" sub={`de ${t.nTubo.toLocaleString("es-CL")} negocios en el tubo · priorizados por la jefatura`} onClick={t.prioritarios > 0 ? onVerPrioritarios : undefined} />
-        <DashCard Icon={AlertTriangle} col="#C2410C" valor={t.lineasGest.toLocaleString("es-CL")} label="Líneas por gestionar" sub={`${t.nLineasSOW} SOW · ${t.nFueraLinea} fuera de línea`} />
-        <DashCard Icon={ClipboardList} col="#2563EB" valor={t.tareasPend.toLocaleString("es-CL")} label="Acciones pendientes" sub="asignadas desde Gestión" />
-        <DashCard Icon={Bell} col="#703EFF" valor={t.msgResponder.toLocaleString("es-CL")} label="Mensajes por responder" sub="requerimientos de otorgamiento" />
+        <DashCard Icon={Star} col="#7C3AED" valor={t.prioritarios.toLocaleString("es-CL")} label="Negocios prioritarios" sub={`de ${t.nTubo.toLocaleString("es-CL")} negocios en el tubo`} onClick={t.prioritarios > 0 ? onVerPrioritarios : undefined} />
+        <DashCard Icon={AlertTriangle} col="#C2410C" valor={t.lineasGest.toLocaleString("es-CL")} label="Líneas por gestionar" sub="requeridos para aprobar negocios" />
+        <DashCard Icon={ClipboardList} col="#2563EB" valor={t.tareasPend.toLocaleString("es-CL")} label="Acciones pendientes" sub="asociadas a tus clientes" />
+        <DashCard Icon={Bell} col="#703EFF" valor={t.msgResponder.toLocaleString("es-CL")} label="Mensajes en tu bandeja" sub="enviados por tus compañeros" />
       </Section>
       <Section title="Metas del mes">
         <DashCard Icon={Zap} col="#703EFF" valor={<>{fmtMMc(m.colocReal)} <span className="t10 font-normal" style={{ color: C.faint }}>/ {fmtMMc(m.colocMeta)}</span></>} label="Colocación" meta={{ pct: pct(m.colocReal, m.colocMeta) }} serie={dashSerie(m.colocReal, "meta-coloc-" + usuario)} />
