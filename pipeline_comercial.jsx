@@ -3006,6 +3006,7 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
     setSolicSig(condSig);
     registrarAuditoria({ usuario: usuario, modulo: "Condiciones comerciales", accion: "Solicitar autorización", glosa: `Descuento ${atrib.pctDesc}% sobre condiciones de «${deal.cliente}» (atrib. ${bandaRef ? bandaRef.descEjec : "—"}% / máx jefatura ${bandaRef ? bandaRef.descMax : "—"}%) → autorización de ${rolAut}`, empresaId: deal.id, exito: true });
     if (deal) { deal.condReqAutJefe = true; deal.condAutJefe = false; } // marca la operación: no publicar hasta autorizar
+    setEditCond(false); // cierra la edición: la acción de enviar a autorización confirma las condiciones
   };
   const autorizarJefe = () => {
     setAutorizSig(condSig);
@@ -3057,7 +3058,7 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
               <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green, border: "1px solid #bbf7d0", cursor: "help" }} title={`Tasa ponderada por riesgo del deudor y plazo (${tasaFuente.riesgo}%)${tasaFuente.ultNeg ? " · igual o mayor a la del último negocio (" + tasaFuente.ultNeg.tasa + "%)" : " · cliente sin negocios previos"}.`}>⚖ Tasa ponderada riesgo</span>
             ))}
           </div>
-          {!bloqueado && <button onClick={() => setEditCond((v) => !v)} className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 t10 font-semibold" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}>{editCond ? <><Check size={11} /> Listo</> : <><Pencil size={11} /> Editar condiciones</>}</button>}
+          {!bloqueado && !editCond && <button onClick={() => setEditCond(true)} className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 t10 font-semibold" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Pencil size={11} /> Editar condiciones</button>}
         </div>
         {editCond ? (
           <table className="mt-2 w-full border-collapse t11">
@@ -3117,6 +3118,11 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
               <button onClick={solicitarAutorizacion} className="mt-1.5 inline-flex items-center gap-1 rounded-full px-3 py-1 t10 font-semibold" style={{ border: "1px solid #C2410C", color: "#C2410C", backgroundColor: "#fff" }}><AlertTriangle size={11} /> Solicitar autorización de {rolAut === "jefatura" ? "jefatura" : "Gerente Comercial"}</button>
             )}
           </div>
+        )}
+        {/* Acción de la edición SIEMPRE abajo (no se duplica con «Listo» arriba). Cuando hay que pedir
+            aprobación, el botón de arriba es «Solicitar autorización»; si no, se muestra «Listo». */}
+        {editCond && !bloqueado && !(atrib.estado !== "ok" && !bloqueoDuro && !autorizado && !puedeAutorizar && !solicitado) && (
+          <button onClick={() => setEditCond(false)} className="mt-2.5 inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 t10 font-semibold text-white" style={{ backgroundColor: "#16A34A" }}><Check size={12} /> Listo · aplicar condiciones</button>
         )}
         </div>
         {reevalPend && (
