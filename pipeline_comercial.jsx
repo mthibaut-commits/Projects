@@ -9111,16 +9111,15 @@ function DashboardView({ usuario, deals }) {
       <Section title="Empresas">
         <DashCard Icon={User} col="#703EFF" valor={emp.total.toLocaleString("es-CL")} label="Empresas · cartera" sub="Clientes asignados a tu cartera" serie={dashSerie(emp.total, "emp-total-" + usuario)} />
         <DashCard Icon={Check} col="#16A34A" valor={emp.activas.toLocaleString("es-CL")} label="Empresas activas" sub={`con ${emp.ops.toLocaleString("es-CL")} operaciones (últ. 30 días)`} serie={dashSerie(emp.activas, "emp-act-" + usuario)} />
-        <DashCard Icon={Pause} col="#6B7280" valor={emp.inactivas.toLocaleString("es-CL")} label="Empresas inactivas" sub="sin operaciones recientes" serie={dashSerie(emp.inactivas, "emp-ina-" + usuario)} />
         <DashCard Icon={ArrowDownRight} col="#C2410C" valor={emp.operanOtros.toLocaleString("es-CL")} label="Operan con otros" sub="ceden a otros factorings" serie={dashSerie(emp.operanOtros, "emp-otr-" + usuario)} />
         <DashCard Icon={Sparkles} col="#2563EB" valor={emp.nuevasMes.toLocaleString("es-CL")} label="Empresas nuevas" sub="captadas el mes en curso" serie={dashSerie(emp.nuevasMes, "emp-nue-" + usuario)} />
         <DashCard Icon={Star} col="#7C3AED" valor={emp.candidatas.toLocaleString("es-CL")} label="Empresas candidatas" sub="prospectos / a recuperar" serie={dashSerie(emp.candidatas, "emp-can-" + usuario)} />
       </Section>
       <Section title="Operaciones · mes en curso">
         <DashCard Icon={BarChart2} col="#2563EB" valor={fmtMMc(o.facturado)} label="Facturas emitidas" sub={`${fmtMMc(o.facturadoBuenas)} · ${o.buenasPct}% de buenos deudores`} serie={d.serieSem.map((x) => x.facturado)} />
-        <DashCard Icon={BarChart2} col="#7C3AED" valor={<>{fmtMMc(o.cedido)} <span className="t10 font-normal" style={{ color: C.faint }}>({o.cedidoPct}%)</span></>} label="Cedido a factoring" sub={`${fmtMMc(o.buenasMM)} de buenos deudores`} serie={d.serieSem.map((x) => x.cedido)} />
-        <DashCard Icon={Check} col="#16A34A" valor={fmtMMc(o.ganado)} label="Ganado (Security)" sub={`SOW ${sow}%`} serie={d.serieSem.map((x) => x.ganado)} />
-        <DashCard Icon={ArrowDownRight} col="#DC2626" valor={fmtMMc(o.perdido)} label="Perdido" sub={`${fmtMMc(o.perdBanco)} a factoring target · ${fmtMMc(o.perdOtros)} otros`} serie={d.serieSem.map((x) => x.perdido)} />
+        <DashCard Icon={BarChart2} col="#7C3AED" valor={<>{fmtMMc(o.cedido)} <span className="t10 font-normal" style={{ color: C.faint }}>({o.cedidoPct}%)</span></>} label="Total cedido" sub={`${fmtMMc(o.buenasMM)} de buenos deudores`} serie={d.serieSem.map((x) => x.cedido)} />
+        <DashCard Icon={Check} col="#16A34A" valor={fmtMMc(o.ganado)} label="Cedido a Security" sub={`SOW ${sow}%`} serie={d.serieSem.map((x) => x.ganado)} />
+        <DashCard Icon={ArrowDownRight} col="#DC2626" valor={fmtMMc(o.perdido)} label="Cedido a otros factoring" sub={`${fmtMMc(o.perdBanco)} a factoring target · ${fmtMMc(o.perdOtros)} otros`} serie={d.serieSem.map((x) => x.perdido)} />
         <DashCard Icon={Target} col="#2563EB" valor={`${sow}%`} label="SOW" sub={`${sowPrime}% en deudores prime`} serie={d.serieSem.map((x) => x.sowPct)} />
       </Section>
       <Section title="Tareas">
@@ -14897,7 +14896,7 @@ export default function PipelineComercial() {
           <>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Dashboard</div>
             <div className="mt-1 mb-4 flex flex-wrap items-end justify-between gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight">Dashboard comercial</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">Te damos la bienvenida, {(soloExec || (USERS[usuario] || "").split(" · ")[0] || "").split(" ")[0] || "equipo"}</h1>
               <span className="rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec || "Todos los ejecutivos"}</span>
             </div>
             <DashboardView usuario={usuario} deals={deals} />
