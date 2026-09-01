@@ -8995,7 +8995,7 @@ function dashboardKPIs(usuario, deals) {
   const inactivas = mis.filter((c) => c.estado === "Inactivo").length;
   const activas = total - inactivas;
   const operanOtros = mis.filter((c) => c.estado === "Competencia").length;
-  const candidatas = mis.filter((c) => c.tag || c.estado !== "Security").length;
+  const candidatas = mis.filter((c) => c.tag === "FUGA" || c.tag === "CAÍDA").length; // solo «a recuperar» (fugas y caídas), sin prospectos
   const nuevasMes = inis.reduce((s, ini) => s + nuevasEmpRealMes(ini, MES_ACT), 0);
   // ── Rango "mes en curso" + últimas 8 semanas (SHARE_OF_WALLET) ──
   const semanas = [...new Set((window.SHARE_OF_WALLET || []).flatMap((s) => (s.HistoricoSemanal || []).map((w) => w.Semana)))].sort();
@@ -9007,10 +9007,14 @@ function dashboardKPIs(usuario, deals) {
   const aecIdx = {};
   (window.AECSYNC || []).forEach((a) => {
     if (!a || !a.RUTEmisor) return;
-    const g = aecIdx[a.RUTEmisor] || (aecIdx[a.RUTEmisor] = { t: 0, b: 0, bBice: 0 });
+    const g = aecIdx[a.RUTEmisor] || (aecIdx[a.RUTEmisor] = { t: 0, b: 0, bBice: 0, bBanco: 0 });
     const mm = (a.MontoCesion || 0) / 1e6; g.t += mm;
     const td = tipoDeudor(a.RUTReceptor, a.RazonSocialReceptor);
-    if (td === "Lista Blanca" || td === "Deudor Autorizado") { g.b += mm; if (a.RUTFactoring === BICE_RUT) g.bBice += mm; }
+    if (td === "Lista Blanca" || td === "Deudor Autorizado") { // deudor prime
+      g.b += mm;
+      if (a.RUTFactoring === BICE_RUT) g.bBice += mm;                     // prime cedido a nosotros
+      else if (esFactoringBanco(a.RazonSocialFactoring)) g.bBanco += mm;  // prime cedido al factoring target (competencia)
+    }
   });
   // ── Agregación de operaciones del ejecutivo sobre un rango de semanas ──
   const opAgg = (desde, hasta) => {
@@ -9041,13 +9045,15 @@ function dashboardKPIs(usuario, deals) {
   const kpi = opAgg(mesIni, semMax);
   const serieSem = sem8.map((sm) => opAgg(sm, sm)); // 8 puntos semanales para los sparklines de operaciones
   // SOW en deudores prime (buenos deudores), sobre AECSync del alcance del ejecutivo
-  let primeB = 0, primeBice = 0;
+  let primeB = 0, primeBice = 0, primeBanco = 0;
   (window.SHARE_OF_WALLET || []).forEach((s) => {
     const cod = EXEC_INI_POR_NOMBRE[s.Ejecutivo] || null;
     if (!cod || (execScope && !execScope.includes(cod))) return;
-    const idx = aecIdx[s.RUTCliente]; if (idx) { primeB += idx.b; primeBice += idx.bBice; }
+    const idx = aecIdx[s.RUTCliente]; if (idx) { primeB += idx.b; primeBice += idx.bBice; primeBanco += idx.bBanco; }
   });
   const sowPrimePct = primeB > 0 ? primeBice / primeB * 100 : kpi.sowPct;
+  // Participación del FACTORING TARGET (competencia: BCI/Chile/Itaú) en los deudores prime → se busca REDUCIR.
+  const compTargetPrimePct = primeB > 0 ? primeBanco / primeB * 100 : 0;
   // ── Metas del mes en curso ──
   const nvMeta = nuevasEmpMetaMes(inis, MES_ACT);
   const targetProm = mis.length ? Math.round(mis.reduce((s, c) => s + (c.target || 0), 0) / mis.length) : 61;
@@ -9068,7 +9074,7 @@ function dashboardKPIs(usuario, deals) {
     nombre: soloExec || "Todos los ejecutivos",
     empresas: { total, activas, inactivas, operanOtros, candidatas, nuevasMes, ops: kpi.ops },
     operaciones: kpi, sowPrimePct, serieSem,
-    metas: { colocReal, colocMeta, nvReal: nuevasMes, nvMeta, opReal: activas, opMeta: total, sowReal: kpi.sowPct, sowPrimeReal: sowPrimePct, sowTargetReal: kpi.sowTargetPct, targetProm },
+    metas: { colocReal, colocMeta, nvReal: nuevasMes, nvMeta, opReal: activas, opMeta: total, sowReal: kpi.sowPct, sowPrimeReal: sowPrimePct, targetProm, compTargetReal: compTargetPrimePct, compTargetMeta: Math.max(1, Math.round((100 - targetProm) * 0.5)) },
     tareas: { lineasGest, nLineasSOW, nFueraLinea, prioritarios, tareasPend, msgResponder },
   };
 }
@@ -9082,12 +9088,17 @@ function DashCard({ Icon, col, valor, label, sub, serie, meta }) {
       <div className="mt-2 text-xl font-bold" style={{ color: C.ink }}>{valor}</div>
       <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{label}</div>
       {sub && <div className="mt-0.5 t9" style={{ color: C.faint, lineHeight: 1.35 }}>{sub}</div>}
-      {meta && (
+      {meta && (() => {
+        // Métricas normales: mayor cumplimiento = mejor. Invertidas (meta.invert): es un TECHO, superar el
+        // 100% (pasarse de la meta) es malo → se colorea al revés.
+        const col = meta.invert ? (meta.pct <= 100 ? "#16A34A" : "#DC2626") : dashCumplCol(meta.pct);
+        return (
         <div className="mt-2">
-          <div className="flex items-center justify-between t9"><span style={{ color: C.sub }}>Cumplimiento</span><span className="font-bold" style={{ color: dashCumplCol(meta.pct) }}>{meta.pct}%</span></div>
-          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full" style={{ backgroundColor: C.page }}><div className="h-full rounded-full" style={{ width: Math.min(100, meta.pct) + "%", backgroundColor: dashCumplCol(meta.pct) }} /></div>
+          <div className="flex items-center justify-between t9"><span style={{ color: C.sub }}>{meta.invert ? "Uso de la meta" : "Cumplimiento"}</span><span className="font-bold" style={{ color: col }}>{meta.pct}%</span></div>
+          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full" style={{ backgroundColor: C.page }}><div className="h-full rounded-full" style={{ width: Math.min(100, meta.pct) + "%", backgroundColor: col }} /></div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
@@ -9097,7 +9108,7 @@ function DashboardView({ usuario, deals }) {
   useEffect(() => { seedTareasDemo(deals, EXECS[usuario] || "todos"); setTick((t) => t + 1); }, []); // eslint-disable-line
   const d = useMemo(() => dashboardKPIs(usuario, deals), [usuario, deals, tick]);
   const o = d.operaciones, m = d.metas, t = d.tareas;
-  const sow = Math.round(o.sowPct), sowPrime = Math.round(d.sowPrimePct), sowTarget = Math.round(o.sowTargetPct);
+  const sow = Math.round(o.sowPct), sowPrime = Math.round(d.sowPrimePct);
   const pct = (real, meta) => meta > 0 ? Math.round(real / meta * 100) : 0;
   const emp = d.empresas;
   const Section = ({ title, children }) => (
@@ -9113,7 +9124,7 @@ function DashboardView({ usuario, deals }) {
         <DashCard Icon={Check} col="#16A34A" valor={emp.activas.toLocaleString("es-CL")} label="Empresas activas" sub={`con ${emp.ops.toLocaleString("es-CL")} operaciones (últ. 30 días)`} serie={dashSerie(emp.activas, "emp-act-" + usuario)} />
         <DashCard Icon={ArrowDownRight} col="#C2410C" valor={emp.operanOtros.toLocaleString("es-CL")} label="Operan con otros" sub="ceden a otros factorings" serie={dashSerie(emp.operanOtros, "emp-otr-" + usuario)} />
         <DashCard Icon={Sparkles} col="#2563EB" valor={emp.nuevasMes.toLocaleString("es-CL")} label="Empresas nuevas" sub="captadas el mes en curso" serie={dashSerie(emp.nuevasMes, "emp-nue-" + usuario)} />
-        <DashCard Icon={Star} col="#7C3AED" valor={emp.candidatas.toLocaleString("es-CL")} label="Empresas candidatas" sub="prospectos / a recuperar" serie={dashSerie(emp.candidatas, "emp-can-" + usuario)} />
+        <DashCard Icon={Star} col="#7C3AED" valor={emp.candidatas.toLocaleString("es-CL")} label="Empresas candidatas" sub="a recuperar (fugas y caídas)" serie={dashSerie(emp.candidatas, "emp-can-" + usuario)} />
       </Section>
       <Section title="Operaciones · mes en curso">
         <DashCard Icon={BarChart2} col="#2563EB" valor={fmtMMc(o.facturado)} label="Facturas emitidas" sub={`${fmtMMc(o.facturadoBuenas)} · ${o.buenasPct}% de buenos deudores`} serie={d.serieSem.map((x) => x.facturado)} />
@@ -9123,10 +9134,10 @@ function DashboardView({ usuario, deals }) {
         <DashCard Icon={Target} col="#2563EB" valor={`${sow}%`} label="SOW" sub={`${sowPrime}% en deudores prime`} serie={d.serieSem.map((x) => x.sowPct)} />
       </Section>
       <Section title="Tareas">
-        <DashCard Icon={AlertTriangle} col="#C2410C" valor={t.lineasGest.toLocaleString("es-CL")} label="Líneas por gestionar" sub={`${t.nLineasSOW} SOW · ${t.nFueraLinea} fuera de línea`} serie={dashSerie(t.lineasGest, "t-lin-" + usuario)} />
-        <DashCard Icon={Star} col="#7C3AED" valor={t.prioritarios.toLocaleString("es-CL")} label="Negocios prioritarios" sub="priorizados por la jefatura" serie={dashSerie(t.prioritarios, "t-prio-" + usuario)} />
-        <DashCard Icon={ClipboardList} col="#2563EB" valor={t.tareasPend.toLocaleString("es-CL")} label="Tareas pendientes" sub="asignadas desde Gestión" serie={dashSerie(t.tareasPend, "t-task-" + usuario)} />
-        <DashCard Icon={Bell} col="#703EFF" valor={t.msgResponder.toLocaleString("es-CL")} label="Mensajes por responder" sub="requerimientos de otorgamiento" serie={dashSerie(t.msgResponder, "t-msg-" + usuario)} />
+        <DashCard Icon={AlertTriangle} col="#C2410C" valor={t.lineasGest.toLocaleString("es-CL")} label="Líneas por gestionar" sub={`${t.nLineasSOW} SOW · ${t.nFueraLinea} fuera de línea`} />
+        <DashCard Icon={Star} col="#7C3AED" valor={t.prioritarios.toLocaleString("es-CL")} label="Negocios prioritarios" sub="priorizados por la jefatura" />
+        <DashCard Icon={ClipboardList} col="#2563EB" valor={t.tareasPend.toLocaleString("es-CL")} label="Acciones pendientes" sub="asignadas desde Gestión" />
+        <DashCard Icon={Bell} col="#703EFF" valor={t.msgResponder.toLocaleString("es-CL")} label="Mensajes por responder" sub="requerimientos de otorgamiento" />
       </Section>
       <Section title="Metas del mes">
         <DashCard Icon={Zap} col="#703EFF" valor={<>{fmtMMc(m.colocReal)} <span className="t10 font-normal" style={{ color: C.faint }}>/ {fmtMMc(m.colocMeta)}</span></>} label="Colocación" meta={{ pct: pct(m.colocReal, m.colocMeta) }} serie={dashSerie(m.colocReal, "meta-coloc-" + usuario)} />
@@ -9134,7 +9145,7 @@ function DashboardView({ usuario, deals }) {
         <DashCard Icon={User} col="#16A34A" valor={<>{m.opReal} <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.opMeta}</span></>} label="Clientes operando" meta={{ pct: pct(m.opReal, m.opMeta) }} serie={dashSerie(m.opReal, "meta-op-" + usuario)} />
         <DashCard Icon={Target} col="#7C3AED" valor={<>{sow}% <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.targetProm}%</span></>} label="SOW total" meta={{ pct: pct(m.sowReal, m.targetProm) }} serie={d.serieSem.map((x) => x.sowPct)} />
         <DashCard Icon={Target} col="#0891b2" valor={<>{sowPrime}% <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.targetProm}%</span></>} label="SOW deudores prime" meta={{ pct: pct(m.sowPrimeReal, m.targetProm) }} serie={dashSerie(m.sowPrimeReal, "meta-sowp-" + usuario)} />
-        <DashCard Icon={Target} col="#2563EB" valor={<>{sowTarget}% <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.targetProm}%</span></>} label="SOW en factoring target" meta={{ pct: pct(m.sowTargetReal, m.targetProm) }} serie={dashSerie(m.sowTargetReal, "meta-sowt-" + usuario)} />
+        <DashCard Icon={Target} col="#DC2626" valor={<>{Math.round(m.compTargetReal)}% <span className="t10 font-normal" style={{ color: C.faint }}>/ ≤ {m.compTargetMeta}%</span></>} label="Factoring target en prime" sub="participación de la competencia · menor es mejor" meta={{ pct: pct(m.compTargetReal, m.compTargetMeta), invert: true }} serie={dashSerie(m.compTargetReal, "meta-comp-" + usuario)} />
       </Section>
     </div>
   );
@@ -10825,8 +10836,9 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
         ))}
       </div>
       </>)}
-      {/* Filtro por categoría — barra de "pills" clickeables (distinta de los KPIs de arriba) */}
-      <div className={soloMapa ? "flex flex-wrap items-center gap-2" : "mt-4 flex flex-wrap items-center gap-2"}>
+      {/* Filtro por categoría — barra de "pills" clickeables. En la vista «Área» (soloMapa) se oculta. */}
+      {!soloMapa && (<>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
         <span className="t9 font-bold uppercase tracking-widest" style={{ color: C.faint }}>Filtrar por categoría</span>
         <span className="h-px flex-1" style={{ backgroundColor: C.line }} />
         <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
@@ -10848,7 +10860,8 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
         })}
       </div>
       {catSel !== "todas" && <div className="mt-2 t10" style={{ color: C.faint }}>{TAREA_CATS[catSel].desc}</div>}
-      <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-stretch" style={{ height: soloMapa ? "calc(100vh - 230px)" : "calc(100vh - 360px)", minHeight: 440 }}>
+      </>)}
+      <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-stretch" style={{ height: soloMapa ? "calc(100vh - 200px)" : "calc(100vh - 360px)", minHeight: 440 }}>
       {/* Izquierda (1/3): lista de tareas — hace scroll independiente */}
       <div className="space-y-2 overflow-y-auto px-1.5 py-1.5 lg:w-1/3" style={{ minHeight: 0 }}>
         {sorted.map((t) => { const m = TAREA_CATS[t.cat], p = TAREA_PRIO[t.prio]; const hl = hoverId === t.id; return (
@@ -15084,9 +15097,10 @@ export default function PipelineComercial() {
 
         {/* ===== Tabs de agrupación + filtros, en UNA sola fila (compacto en alto) ===== */}
         <div className="mt-5 flex flex-wrap items-end justify-between gap-x-4 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
-          {/* Tabs underline (izquierda) */}
+          {/* Tabs underline (izquierda): Con línea / Sin línea / … Se ocultan en la vista «Área» (son
+              propios de la Tabla); en Área el mapa ya agrupa por categoría. */}
           <div className="flex flex-wrap items-center gap-x-5">
-            {quickFilters.map((f) => {
+            {vista !== "area" && quickFilters.map((f) => {
               const on = quickFilter === f.id;
               return (
                 <button key={f.id} onClick={() => setQuickFilter(f.id)} title="Filtrar oportunidades" className="flex items-center gap-1.5 px-1 pb-2 t12"
