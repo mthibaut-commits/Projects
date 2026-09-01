@@ -15029,12 +15029,6 @@ export default function PipelineComercial() {
               className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.sub }}>
               <Download size={14} /> Exportar
             </button>
-            {reporte.length > 0 && (
-              <button onClick={() => setReporteModal(true)} className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium"
-                style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.indigo }}>
-                <BarChart2 size={14} /> Reporte ({reporte.length}d)
-              </button>
-            )}
             <span className="mx-1 h-5 w-px" style={{ backgroundColor: C.line }} />
             <button onClick={nuevoNegocio} className="btn-cta inline-flex items-center gap-1 px-4 py-1.5 t11">
               <Plus size={14} /> Nuevo negocio
@@ -15097,10 +15091,10 @@ export default function PipelineComercial() {
 
         {/* ===== Tabs de agrupación + filtros, en UNA sola fila (compacto en alto) ===== */}
         <div className="mt-5 flex flex-wrap items-end justify-between gap-x-4 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
-          {/* Tabs underline (izquierda): Con línea / Sin línea / … Se ocultan en la vista «Área» (son
-              propios de la Tabla); en Área el mapa ya agrupa por categoría. */}
+          {/* Tabs underline (izquierda): Con línea / Sin línea / … Sólo se muestran en la vista Tabla; en
+              Kanban y Área se ocultan (el tablero y el mapa ya agrupan por etapa/categoría). */}
           <div className="flex flex-wrap items-center gap-x-5">
-            {vista !== "area" && quickFilters.map((f) => {
+            {vista === "tabla" && quickFilters.map((f) => {
               const on = quickFilter === f.id;
               return (
                 <button key={f.id} onClick={() => setQuickFilter(f.id)} title="Filtrar oportunidades" className="flex items-center gap-1.5 px-1 pb-2 t12"
