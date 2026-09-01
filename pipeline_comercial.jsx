@@ -12948,7 +12948,8 @@ function CommandK({ abierto, onCerrar, deals, dealVisible, irA, onAbrirDeal }) {
 
 // ---- Login (Datamart spec Auth): formulario a la izquierda + panel gradiente a la derecha. Portada del demo ----
 function LoginScreen({ usuarioInicial, onIngresar }) {
-  const [u, setU] = useState(usuarioInicial || "CR");
+  const [u, setU] = useState(usuarioInicial || "CR"); // código real de la sesión (no visible)
+  const [email, setEmail] = useState("carla.rivas@security.cl"); // usuario visible (email); el login usa `u`
   const [paso, setPaso] = useState("cred"); // "cred" → "otp" (2FA §44) · "ms-conectando" → "ms-cuentas" (SSO Entra ID)
   const [clave, setClave] = useState("demo·factoring"); // credencial demo (no se valida)
   const [org, setOrg] = useState(""); // organización requerida ANTES del botón Microsoft
@@ -12982,9 +12983,7 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
             <div style={{ fontSize: 48, fontWeight: 700, lineHeight: 1.1, color: C.navy }}>Bienvenido</div>
             <div className="mt-2" style={{ fontSize: 14, color: C.sub }}>Ingresa a la plataforma comercial de factoring.</div>
             <label className="mt-6 block" style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Usuario</label>
-            <select value={u} onChange={(e) => setU(e.target.value)} className="mt-2 w-full px-3" style={{ height: 44, border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, color: C.ink, backgroundColor: "#fff", outline: "none" }}>
-              {Object.entries(USERS).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
-            </select>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu.correo@security.cl" className="mt-2 w-full px-3" style={{ height: 44, border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, color: C.ink, backgroundColor: "#fff", outline: "none" }} />
             <label className="mt-4 block" style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Contraseña</label>
             <input type="password" value={clave} onChange={(e) => setClave(e.target.value)} className="mt-2 w-full px-3" style={{ height: 44, border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, color: C.ink, backgroundColor: "#fff", outline: "none" }} />
             <button onClick={() => setPaso("otp")} className="mt-6 w-full py-3 text-white" style={{ background: "linear-gradient(to right, #EE2EFF, #FF814B)", borderRadius: 9999, fontSize: 14, fontWeight: 600, border: "none" }}>Ingresar</button>
@@ -13030,7 +13029,7 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
           </>) : (<>
             {/* Paso 2FA (spec §44): código precargado en el demo — basta Verificar */}
             <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.2, color: C.navy }}>Verifica tu identidad</div>
-            <div className="mt-2" style={{ fontSize: 14, color: C.sub }}>Enviamos un código de 6 dígitos a <b style={{ color: C.ink }}>•••@nexfactoring.cl</b></div>
+            <div className="mt-2" style={{ fontSize: 14, color: C.sub }}>Enviamos un código de 6 dígitos a <b style={{ color: C.ink }}>•••@security.cl</b></div>
             <div className="mt-8 flex items-center" style={{ gap: 8 }}>
               {OTP_DEMO.map((d, i) => (
                 <Fragment key={i}>
