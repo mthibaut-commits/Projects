@@ -10131,7 +10131,7 @@ function DashCard({ Icon, col, valor, label, sub, serie, meta, onClick }) {
         const col = meta.invert ? (meta.pct <= 100 ? "#16A34A" : "#DC2626") : dashCumplCol(meta.pct);
         return (
         <div className="mt-2">
-          <div className="flex items-center justify-between t9"><span style={{ color: C.sub }}>{meta.invert ? "Uso de la meta" : "Cumplimiento"}</span><span className="font-bold" style={{ color: col }}>{meta.pct}%</span></div>
+          <div className="flex items-center justify-between t9"><span style={{ color: C.sub }}>Cumplimiento</span><span className="font-bold" style={{ color: col }}>{meta.pct}%</span></div>
           <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full" style={{ backgroundColor: C.page }}><div className="h-full rounded-full" style={{ width: Math.min(100, meta.pct) + "%", backgroundColor: col }} /></div>
         </div>
         );
@@ -10181,7 +10181,7 @@ function DashboardView({ usuario, deals, onVerPrioritarios }) {
         <DashCard Icon={User} col="#16A34A" valor={<>{m.opReal} <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.opMeta}</span></>} label="Clientes operando" meta={{ pct: pct(m.opReal, m.opMeta) }} serie={dashSerie(m.opReal, "meta-op-" + usuario)} />
         <DashCard Icon={Target} col="#7C3AED" valor={<>{sow}% <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.targetProm}%</span></>} label="SOW total" meta={{ pct: pct(m.sowReal, m.targetProm) }} serie={d.serieSem.map((x) => x.sowPct)} />
         <DashCard Icon={Target} col="#0891b2" valor={<>{sowPrime}% <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.targetProm}%</span></>} label="SOW deudores prime" meta={{ pct: pct(m.sowPrimeReal, m.targetProm) }} serie={dashSerie(m.sowPrimeReal, "meta-sowp-" + usuario)} />
-        <DashCard Icon={Target} col="#DC2626" valor={<>{Math.round(m.compTargetReal)}% <span className="t10 font-normal" style={{ color: C.faint }}>/ ≤ {m.compTargetMeta}%</span></>} label="Factoring target en prime" sub="participación de la competencia" meta={{ pct: pct(m.compTargetReal, m.compTargetMeta), invert: true }} serie={dashSerie(m.compTargetReal, "meta-comp-" + usuario)} />
+        <DashCard Icon={Target} col="#DC2626" valor={<>{Math.round(m.compTargetReal)}% <span className="t10 font-normal" style={{ color: C.faint }}>/ ≤ {m.compTargetMeta}%</span></>} label="Factoring target en prime" sub="SOW competencia" meta={{ pct: pct(m.compTargetReal, m.compTargetMeta), invert: true }} serie={dashSerie(m.compTargetReal, "meta-comp-" + usuario)} />
       </Section>
     </div>
   );
