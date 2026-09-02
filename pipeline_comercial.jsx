@@ -10126,13 +10126,26 @@ function DashCard({ Icon, col, valor, label, sub, serie, meta, onClick }) {
       <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{label}</div>
       {sub && <div className="mt-0.5 t9" style={{ color: C.faint, lineHeight: 1.35 }}>{sub}</div>}
       {meta && (() => {
-        // Métricas normales: mayor cumplimiento = mejor. Invertidas (meta.invert): es un TECHO, superar el
-        // 100% (pasarse de la meta) es malo → se colorea al revés.
-        const col = meta.invert ? (meta.pct <= 100 ? "#16A34A" : "#DC2626") : dashCumplCol(meta.pct);
+        // Métricas normales: la meta es un PISO, el cumplimiento es real/meta y pasarse es bueno.
+        //
+        // Métricas invertidas (meta.invert): la meta es un TECHO. Antes se usaba la misma razón
+        // real/meta, y eso invertía el sentido del indicador: 23% de participación con un techo de 15%
+        // se mostraba como «cumplimiento 154%» —se leía como sobrecumplimiento— cuando en realidad es
+        // un INCUMPLIMIENTO: la competencia está 8 puntos por encima del máximo tolerado.
+        // El cumplimiento de un techo se mide al revés (objetivo/real) y se topa en 100%: estar por
+        // debajo del techo es cumplir, no sobrecumplir. Así 23% vs ≤15% da 65%, en rojo.
+        const excedido = meta.invert && meta.real > meta.objetivo;
+        const cumpl = meta.invert
+          ? Math.min(100, Math.round((meta.objetivo / Math.max(meta.real, 0.01)) * 100))
+          : meta.pct;
+        const col = meta.invert ? (excedido ? "#DC2626" : "#16A34A") : dashCumplCol(cumpl);
         return (
         <div className="mt-2">
-          <div className="flex items-center justify-between t9"><span style={{ color: C.sub }}>Cumplimiento</span><span className="font-bold" style={{ color: col }}>{meta.pct}%</span></div>
-          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full" style={{ backgroundColor: C.page }}><div className="h-full rounded-full" style={{ width: Math.min(100, meta.pct) + "%", backgroundColor: col }} /></div>
+          <div className="flex items-center justify-between t9">
+            <span style={{ color: C.sub }}>{excedido ? "Excedido" : "Cumplimiento"}</span>
+            <span className="font-bold" style={{ color: col }}>{cumpl}%</span>
+          </div>
+          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full" style={{ backgroundColor: C.page }}><div className="h-full rounded-full" style={{ width: Math.min(100, cumpl) + "%", backgroundColor: col }} /></div>
         </div>
         );
       })()}
@@ -10181,7 +10194,7 @@ function DashboardView({ usuario, deals, onVerPrioritarios }) {
         <DashCard Icon={User} col="#16A34A" valor={<>{m.opReal} <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.opMeta}</span></>} label="Clientes operando" meta={{ pct: pct(m.opReal, m.opMeta) }} serie={dashSerie(m.opReal, "meta-op-" + usuario)} />
         <DashCard Icon={Target} col="#7C3AED" valor={<>{sow}% <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.targetProm}%</span></>} label="SOW total" meta={{ pct: pct(m.sowReal, m.targetProm) }} serie={d.serieSem.map((x) => x.sowPct)} />
         <DashCard Icon={Target} col="#0891b2" valor={<>{sowPrime}% <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.targetProm}%</span></>} label="SOW deudores prime" meta={{ pct: pct(m.sowPrimeReal, m.targetProm) }} serie={dashSerie(m.sowPrimeReal, "meta-sowp-" + usuario)} />
-        <DashCard Icon={Target} col="#DC2626" valor={<>{Math.round(m.compTargetReal)}% <span className="t10 font-normal" style={{ color: C.faint }}>/ ≤ {m.compTargetMeta}%</span></>} label="SOW factoring target" sub="Cartera prime" meta={{ pct: pct(m.compTargetReal, m.compTargetMeta), invert: true }} serie={dashSerie(m.compTargetReal, "meta-comp-" + usuario)} />
+        <DashCard Icon={Target} col="#DC2626" valor={<>{Math.round(m.compTargetReal)}% <span className="t10 font-normal" style={{ color: C.faint }}>/ ≤ {m.compTargetMeta}%</span></>} label="SOW factoring target" sub="Cartera prime" meta={{ invert: true, real: m.compTargetReal, objetivo: m.compTargetMeta }} serie={dashSerie(m.compTargetReal, "meta-comp-" + usuario)} />
       </Section>
     </div>
   );
