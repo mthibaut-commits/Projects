@@ -33,6 +33,44 @@ const APP_VERSION = "1.1.0";
 const APP_BUILD = (typeof window !== "undefined" && window.__NEX_BUILD__) || { fecha: "dev", commit: "local", rama: "-" };
 const APP_VERSION_FULL = `v${APP_VERSION} · ${APP_BUILD.fecha} · ${APP_BUILD.commit}`;
 
+// ── LOG TÉCNICO DEL SISTEMA (consulta desde la app) ─────────────────────────────────────────────
+// La Auditoría responde «quién hizo qué» (negocio: usuario, módulo, glosa). Esto responde la otra
+// pregunta, la de soporte: «qué estuvo haciendo la aplicación» — el cron que corrió, el lote de
+// facturas que se clasificó, el recálculo en background, el cierre de día, la migración de un dato
+// guardado, una escritura que falló.
+// Son cosas distintas y no deben mezclarse en la misma bitácora.
+// Antes esto sólo existía en la consola del navegador, o sea se perdía. Ahora es consultable desde la
+// propia app, que es lo que hace falta cuando quien reporta la incidencia no puede abrir DevTools.
+// Se declara ANTES que todo lo demás porque la carga de configuración y las migraciones de esquema ya
+// emiten eventos durante la inicialización del módulo.
+// SERVER-SIDE: este buffer es el log estructurado del backend (una línea JSON por evento →
+// Loki/Datadog); `fuente` es el servicio emisor y `datos` los campos indexables.
+const SYS_LOG = [];       // más reciente primero
+const SYS_LOG_MAX = 800;  // ring buffer: cota de memoria del navegador
+const SYS_SUBS = new Set();
+let SYS_SEQ = 0;
+const LOG_NIVELES = [
+  { k: "error", label: "Error", color: "#DC2626", bg: "#FEF2F2" },
+  { k: "warn", label: "Aviso", color: "#C2410C", bg: "#FFF7ED" },
+  { k: "info", label: "Info", color: "#2563EB", bg: "#EFF6FF" },
+  { k: "debug", label: "Detalle", color: "#6B7280", bg: "#F3F4F6" },
+];
+const nivelMeta = (k) => LOG_NIVELES.find((n) => n.k === k) || LOG_NIVELES[2];
+// Subsistema emisor. Se declara la lista completa para que el filtro del visor sea estable aunque una
+// fuente todavía no haya emitido nada en esta sesión.
+const LOG_FUENTES = ["app", "motor", "inbound", "background", "cierre-dia", "storage", "politica", "repositorio", "otorgamiento", "curse"];
+function logSys(nivel, fuente, mensaje, datos) {
+  const ts = Date.now();
+  const d = new Date(ts); const p = (n) => String(n).padStart(2, "0");
+  SYS_LOG.unshift({
+    id: ++SYS_SEQ, ts, nivel, fuente, mensaje, datos: datos || null,
+    fecha: `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`,
+    hora: `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`,
+  });
+  if (SYS_LOG.length > SYS_LOG_MAX) SYS_LOG.length = SYS_LOG_MAX;
+  SYS_SUBS.forEach((fn) => { try { fn(); } catch (x) { /* noop */ } });
+}
+
 // ── Versión de la POLÍTICA de negocio ───────────────────────────────────────────────────────────
 // Una operación aprobada en marzo con la política de marzo debe poder auditarse en julio: por eso cada
 // versión de simulación (SIM_VERSIONS) estampa con qué política se evaluó. `vigenteDesde` permite
@@ -40,13 +78,98 @@ const APP_VERSION_FULL = `v${APP_VERSION} · ${APP_BUILD.fecha} · ${APP_BUILD.c
 // Hoy la política vive repartida en el código (catálogo de reglas, CFG_ACTIVA, matrices de atribución).
 // Cuando se externalice a politica.<tenant>.json, este objeto se lee del JSON en vez de declararse acá,
 // y `politicaVigente(tenant, fecha)` devuelve la que corresponda al momento de la evaluación.
-const POLITICA_VERSION = {
-  version: "2026.07",             // versión de negocio (año.mes de entrada en vigencia)
-  vigenteDesde: "2026-07-10",     // fecha en que el comité la puso en vigencia
-  catalogoReglas: "v2",           // C01–C52 / D01–D23 / O01–O04 (el JSON exportado aún refleja el v1)
-  tenant: "security",
-};
-const politicaEtiqueta = () => `${POLITICA_VERSION.version} (${POLITICA_VERSION.catalogoReglas})`;
+// Formato de versión: AAAA-MM-DD.N
+//   · AAAA-MM-DD = día de entrada en vigencia (ordenable lexicográficamente);
+//   · .N         = correlativo INTRADÍA. Una política puede publicarse más de una vez el mismo día
+//                  (ej. se corrige un umbral en la mañana y otro en la tarde) y ambas versiones tienen
+//                  que ser distinguibles sin ambigüedad. Un esquema AAAA.MM —o incluso AAAA-MM-DD—
+//                  colapsa esos casos y hace imposible saber con cuál se evaluó una operación.
+// `vigenteDesde` es un INSTANTE con zona horaria, no una fecha: es lo que permite ordenar dos versiones
+// del mismo día y resolver la política aplicable al momento exacto de la evaluación.
+const POLITICA_RE = /^\d{4}-\d{2}-\d{2}\.\d+$/;
+// Catálogo de política versionado. Las TRES políticas de decisión de la plataforma usan exactamente la
+// misma disciplina, porque las tres las edita el negocio y las tres determinan resultados auditables:
+//   · riesgo        — catálogo de otorgamiento C01–C52 / D01–D23 / O01–O04 + pricing;
+//   · inbound       — reglas de descubrimiento/clasificación de facturas (Rule-01..Rule-07);
+//   · otorgamiento  — criterios de visado, tramos de gravedad y matriz de atribución por nivel.
+// Historial INMUTABLE: corregir una política es publicar una versión nueva, nunca editar la anterior.
+// Cuando esto viva en politica.<tenant>.json, cada `historial` es un array del archivo.
+function crearCatalogoPolitica(id, etiqueta, historial) {
+  const vigenteEn = (ts, tenant) => {
+    const t = ts instanceof Date ? ts.getTime() : (typeof ts === "number" ? ts : Date.parse(ts));
+    const cand = historial
+      .filter((p) => (!tenant || p.tenant === tenant) && Date.parse(p.vigenteDesde) <= t)
+      .sort((a, b) => Date.parse(a.vigenteDesde) - Date.parse(b.vigenteDesde));
+    return cand.length ? cand[cand.length - 1] : historial[historial.length - 1];
+  };
+  // Valida formato, unicidad e instantes estrictamente crecientes. Dos versiones con el mismo
+  // `vigenteDesde` hacen indeterminable cuál rige: es un error de datos que hay que ver en el panel de
+  // diagnóstico, no descubrirlo en una auditoría meses después.
+  const validar = () => {
+    const problemas = [];
+    const vistos = new Set();
+    historial.forEach((p) => {
+      if (!POLITICA_RE.test(p.version)) problemas.push(`${id}: «${p.version}» no cumple el formato AAAA-MM-DD.N`);
+      const k = p.tenant + "|" + p.version;
+      if (vistos.has(k)) problemas.push(`${id}: versión duplicada ${p.version}`);
+      vistos.add(k);
+      if (isNaN(Date.parse(p.vigenteDesde))) problemas.push(`${id}: «${p.version}» tiene vigenteDesde inválido (${p.vigenteDesde})`);
+      // El día declarado en el identificador debe coincidir con el día de vigencia: si no, miente.
+      else if (p.version.slice(0, 10) !== String(p.vigenteDesde).slice(0, 10)) problemas.push(`${id}: «${p.version}» no coincide con su fecha de vigencia (${String(p.vigenteDesde).slice(0, 10)})`);
+    });
+    const porTenant = {};
+    historial.forEach((p) => { (porTenant[p.tenant] = porTenant[p.tenant] || []).push(p); });
+    Object.entries(porTenant).forEach(([tn, arr]) => {
+      const ord = arr.slice().sort((a, b) => Date.parse(a.vigenteDesde) - Date.parse(b.vigenteDesde));
+      for (let i = 1; i < ord.length; i++) {
+        if (Date.parse(ord[i].vigenteDesde) === Date.parse(ord[i - 1].vigenteDesde)) problemas.push(`${id}/${tn}: ${ord[i - 1].version} y ${ord[i].version} entran en vigencia en el mismo instante`);
+      }
+    });
+    return problemas;
+  };
+  // Siguiente identificador para publicar HOY: respeta el correlativo intradía. Es la función que usa
+  // el mantenedor al guardar un cambio de política, para no tener que inventar el número a mano.
+  const siguienteVersion = (tenant, ahora) => {
+    const d = ahora ? new Date(ahora) : new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    const dia = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    const n = historial.filter((x) => x.tenant === tenant && x.version.slice(0, 10) === dia).length + 1;
+    return `${dia}.${n}`;
+  };
+  return { id, etiqueta, historial, vigenteEn, validar, siguienteVersion };
+}
+const POLITICA_RIESGO = crearCatalogoPolitica("riesgo", "Riesgo y pricing", [
+  { version: "2026-07-10.1", vigenteDesde: "2026-07-10T09:00:00-04:00", tenant: "security", catalogoReglas: "v2", nota: "Catálogo C01–C52 / D01–D23 / O01–O04" },
+]);
+const POLITICA_INBOUND = crearCatalogoPolitica("inbound", "Reglas de inbound", [
+  { version: "2026-07-10.1", vigenteDesde: "2026-07-10T09:00:00-04:00", tenant: "security", catalogoReglas: "v3", nota: "Rule-01..Rule-07 · históricos BICE/otro factor y elegibilidad por bucket" },
+]);
+const POLITICA_OTORGAMIENTO = crearCatalogoPolitica("otorgamiento", "Criterios y atribuciones", [
+  { version: "2026-07-10.1", vigenteDesde: "2026-07-10T09:00:00-04:00", tenant: "security", catalogoReglas: "v1", nota: "Criterios de visado, tramos de gravedad y matriz de atribución N1–N5" },
+]);
+const CATALOGOS_POLITICA = [POLITICA_RIESGO, POLITICA_INBOUND, POLITICA_OTORGAMIENTO];
+const validarPoliticas = () => CATALOGOS_POLITICA.reduce((acc, c) => acc.concat(c.validar()), []);
+// Se resuelve con el tenant literal porque TENANT_ACTUAL se declara más abajo; la API real para el
+// resto del código es `politicaVigenteEn(instante, tenant)`, no esta constante.
+const politicaVigenteEn = (ts, tenant) => POLITICA_RIESGO.vigenteEn(ts, tenant);
+const POLITICA_VERSION = politicaVigenteEn(Date.now(), "security");
+// Estampa completa: las tres políticas vigentes en un instante. Es lo que se guarda en cada versión de
+// simulación — con la de riesgo sola no se puede reconstruir por qué entró la oportunidad ni quién
+// debía aprobarla.
+const estampaPoliticas = (ts, tenant) => ({
+  riesgo: POLITICA_RIESGO.vigenteEn(ts, tenant).version,
+  inbound: POLITICA_INBOUND.vigenteEn(ts, tenant).version,
+  otorgamiento: POLITICA_OTORGAMIENTO.vigenteEn(ts, tenant).version,
+});
+const politicaEtiqueta = (p) => { const x = p || POLITICA_VERSION; return `${x.version} (${x.catalogoReglas})`; };
+// Arranque: deja constancia del build y de las políticas vigentes, y falla ruidosamente si el historial
+// de políticas es inconsistente. Es la primera línea del log en cualquier incidencia.
+logSys("info", "app", `Inicio de sesión de la app · v${APP_VERSION} · build ${APP_BUILD.fecha} (${APP_BUILD.commit}, rama ${APP_BUILD.rama})`, { app: APP_VERSION, ...APP_BUILD });
+CATALOGOS_POLITICA.forEach((c) => {
+  const v = c.vigenteEn(Date.now(), "security");
+  logSys("info", "politica", `Política «${c.etiqueta}» vigente: ${v.version} (desde ${v.vigenteDesde})`, { catalogo: c.id, version: v.version, vigenteDesde: v.vigenteDesde });
+});
+validarPoliticas().forEach((p) => logSys("error", "politica", `Historial de políticas inconsistente: ${p}`));
 
 // ── Esquema de las colecciones persistidas ──────────────────────────────────────────────────────
 // Se sube el número cuando cambia la FORMA del dato guardado (campo renombrado, semántica distinta,
@@ -113,6 +236,7 @@ function diagStorage(entrada) {
   if (DIAG_STORAGE.some((d) => d._k === clave)) return;
   if (DIAG_STORAGE.length >= 50) return; // cota: si hay 50 incidencias distintas, el problema es otro
   DIAG_STORAGE.push({ ...entrada, _k: clave, ts: Date.now() });
+  logSys(entrada.resultado === "migrado" ? "info" : "warn", "storage", entrada.detalle, { coleccion: entrada.coleccion, desde: entrada.desde, hasta: entrada.hasta });
 }
 function migrarDatos(coleccion, datos, desde, hasta) {
   if (desde === hasta) return datos;
@@ -331,6 +455,12 @@ function usarAuditoria() {
   const [, setV] = useState(0);
   useEffect(() => { const fn = () => setV((v) => v + 1); AUDIT_SUBS.add(fn); return () => { AUDIT_SUBS.delete(fn); }; }, []);
   return AUDIT_LOG;
+}
+
+function usarSysLog() {
+  const [, setV] = useState(0);
+  useEffect(() => { const fn = () => setV((v) => v + 1); SYS_SUBS.add(fn); return () => { SYS_SUBS.delete(fn); }; }, []);
+  return SYS_LOG;
 }
 // Semilla determinística de eventos históricos del sistema.
 (function seedAuditoria() {
@@ -7725,8 +7855,12 @@ function snapVersionCli(deal, rev) {
   // AUDITABILIDAD: la versión estampa CON QUÉ POLÍTICA y con qué build se evaluó. Sin esto, comparar la
   // v1 con la v2 después de un cambio de umbrales produce un diff que miente: las reglas se movieron,
   // no los datos. Y una operación aprobada hace meses no se puede reconstruir.
-  return { v: rev + 1, rev, ts: new Date(), origen: rev === 0 ? "Evaluación inicial (simulación)" : "Re-evaluación · JSON API actualizado tras firma", vars, res, estado, nApr, nExc, nRech,
-    politica: { ...POLITICA_VERSION }, app: APP_VERSION, build: APP_BUILD.commit };
+  // Se estampa la política vigente EN EL INSTANTE de la evaluación (no la actual): si hoy hubo dos
+  // publicaciones, la versión de la mañana y la de la tarde quedan asociadas a la que realmente regía.
+  const tsEval = new Date();
+  const pol = politicaVigenteEn(tsEval, TENANT_ACTUAL);
+  return { v: rev + 1, rev, ts: tsEval, origen: rev === 0 ? "Evaluación inicial (simulación)" : "Re-evaluación · JSON API actualizado tras firma", vars, res, estado, nApr, nExc, nRech,
+    politica: { ...pol }, politicas: estampaPoliticas(tsEval, TENANT_ACTUAL), app: APP_VERSION, build: APP_BUILD.commit };
 }
 function varsClienteActual(deal) {
   const vs = deal && SIM_VERSIONS[deal.id];
@@ -10984,8 +11118,8 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
 // CONFIGURACIÓN — menú de administración. Incluye la Auditoría del sistema (log de todas lasacciones).
 // ============================================================
 const CFG_SECCIONES = [
-  { k: "version", label: "Versión", Icon: ShieldCheck },
   { k: "operacion", label: "Operación", Icon: Clock },
+  { k: "sistema", label: "Logs y versión", Icon: ShieldCheck },
   { k: "auditoria", label: "Auditoría", Icon: Eye },
   { k: "usuarios", label: "Usuarios", Icon: User },
   { k: "roles", label: "Roles", Icon: Star },
@@ -11223,9 +11357,88 @@ function CfgOperacion({ cfgOper, setCfgOper }) {
 // Primera pantalla que hay que pedir en un reporte de incidencia: identifica el build exacto, la
 // política con la que se está evaluando, el esquema de cada dato guardado en el navegador y el estado
 // de los contratos con las integraciones. Sin esto, "no me aparecen oportunidades" es irreproducible.
+// Visor del log técnico. Filtros por nivel y fuente + búsqueda, detalle expandible y exportación.
+// Es la herramienta de soporte: se filtra por «error», se copia el resultado y se adjunta al ticket.
+function LogsView() {
+  const log = usarSysLog();
+  const [nivel, setNivel] = useState("todos");
+  const [fuente, setFuente] = useState("todas");
+  const [q, setQ] = useState("");
+  const [abierto, setAbierto] = useState(null);
+  const [auto, setAuto] = useState(true);
+  const rows = log.filter((e) =>
+    (nivel === "todos" || e.nivel === nivel) &&
+    (fuente === "todas" || e.fuente === fuente) &&
+    (!q || (e.mensaje + " " + e.fuente + " " + JSON.stringify(e.datos || {})).toLowerCase().includes(q.toLowerCase()))
+  );
+  const conteo = LOG_NIVELES.map((n) => ({ ...n, n: log.filter((e) => e.nivel === n.k).length }));
+  const exportar = () => {
+    // JSON Lines: el mismo formato que emitirá el backend, así el análisis no cambia al migrar.
+    const txt = rows.map((e) => JSON.stringify({ ts: new Date(e.ts).toISOString(), nivel: e.nivel, fuente: e.fuente, mensaje: e.mensaje, datos: e.datos, app: APP_VERSION, build: APP_BUILD.commit })).join("\n");
+    try {
+      const blob = new Blob([txt], { type: "application/x-ndjson;charset=utf-8;" });
+      const url = URL.createObjectURL(blob); const a = document.createElement("a");
+      a.href = url; a.download = `nex-logs-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "")}.jsonl`;
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    } catch (e) { /* sin descargas */ }
+  };
+  const selCls = "rounded-lg px-3 py-1.5 t12 font-medium outline-none";
+  return (
+    <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-lg font-semibold" style={{ color: C.ink }}>Log técnico del sistema</div>
+          <div className="mt-0.5 t12" style={{ color: C.faint }}>Qué estuvo haciendo la aplicación: corridas del motor, recálculos en background, cierre de día, migraciones de datos guardados y errores. Distinto de Auditoría, que registra quién hizo qué.</div>
+        </div>
+        <button onClick={exportar} className="shrink-0 rounded-full px-3.5 py-1.5 t12 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo, border: "none" }}>Exportar ({rows.length})</button>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {conteo.map((n) => (
+          <button key={n.k} onClick={() => setNivel(nivel === n.k ? "todos" : n.k)} className="rounded-full px-2.5 py-1 t11 font-semibold"
+            style={{ backgroundColor: nivel === n.k ? n.color : n.bg, color: nivel === n.k ? "#fff" : n.color, border: "none" }}>{n.label} {n.n}</button>
+        ))}
+        <select value={fuente} onChange={(e) => setFuente(e.target.value)} className={selCls} style={{ border: `1px solid ${C.line}`, color: C.sub }}>
+          <option value="todas">Todas las fuentes</option>
+          {LOG_FUENTES.map((f) => <option key={f} value={f}>{f}</option>)}
+        </select>
+        <div className="flex flex-1 items-center gap-1.5 rounded-full px-3 py-1.5" style={{ border: `1px solid ${C.line}`, minWidth: 180 }}>
+          <Search size={13} style={{ color: C.faint }} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar en el mensaje o en los datos…" className="w-full t12 outline-none" style={{ border: "none", color: C.ink }} />
+        </div>
+        <label className="flex items-center gap-1.5 t11" style={{ color: C.sub }}>
+          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> En vivo
+        </label>
+      </div>
+      <div className="mt-3" style={{ maxHeight: 520, overflowY: "auto" }}>
+        {rows.length === 0 ? (
+          <div className="py-10 text-center t12" style={{ color: C.faint }}>Sin eventos para estos filtros.</div>
+        ) : rows.slice(0, 300).map((e) => {
+          const m = nivelMeta(e.nivel);
+          const open = abierto === e.id;
+          return (
+            <div key={e.id} style={{ borderBottom: `1px solid ${C.line}` }}>
+              <button onClick={() => setAbierto(open ? null : e.id)} className="flex w-full items-start gap-2.5 py-2 text-left" style={{ background: "none", border: "none" }}>
+                <span className="shrink-0 rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: m.bg, color: m.color }}>{m.label}</span>
+                <span className="shrink-0 t11" style={{ color: C.faint, fontVariantNumeric: "tabular-nums" }}>{e.hora}</span>
+                <span className="shrink-0 t11 font-medium" style={{ color: C.indigo }}>{e.fuente}</span>
+                <span className="t12" style={{ color: C.ink }}>{e.mensaje}</span>
+              </button>
+              {open && e.datos && (
+                <pre className="mb-2 overflow-x-auto rounded-lg p-2.5 t11" style={{ backgroundColor: "#F9FAFB", color: C.sub, border: `1px solid ${C.line}` }}>{JSON.stringify(e.datos, null, 2)}</pre>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {rows.length > 300 && <div className="mt-2 t11" style={{ color: C.faint }}>Mostrando los 300 más recientes de {rows.length}. Usa los filtros o exporta para ver el resto.</div>}
+      <div className="mt-2 t11" style={{ color: C.faint }}>Buffer en memoria de {SYS_LOG_MAX} eventos: se pierde al recargar. En producción el log va al backend con retención por política.</div>
+    </div>
+  );
+}
 function CfgVersion() {
   const [, force] = useState(0);
   const contratos = useMemo(() => validarContratosDatos(), []);
+  const problemasPolitica = useMemo(() => validarPoliticas(), []);
   const Fila = ({ k, v, mono }) => (
     <div className="flex items-baseline justify-between gap-4 py-1.5" style={{ borderBottom: `1px solid ${C.line}` }}>
       <span className="t12" style={{ color: C.sub }}>{k}</span>
@@ -11244,7 +11457,7 @@ function CfgVersion() {
   // Resumen copiable: lo que se pega en el ticket. Evita el ida y vuelta de "¿qué versión tienes?".
   const resumen = [
     `App: v${APP_VERSION} · build ${APP_BUILD.fecha} · commit ${APP_BUILD.commit} · rama ${APP_BUILD.rama}`,
-    `Política: ${politicaEtiqueta()} · vigente desde ${POLITICA_VERSION.vigenteDesde} · tenant ${TENANT_ACTUAL}`,
+    `Políticas: ${CATALOGOS_POLITICA.map((c) => `${c.id}=${c.vigenteEn(Date.now(), TENANT_ACTUAL).version}`).join(" · ")} · tenant ${TENANT_ACTUAL}`,
     `Esquemas: ${Object.entries(SCHEMA_VERSION).map(([k, v]) => `${k}=${v}`).join(" · ")}`,
     `Contratos: ${contratos.map((c) => `${c.coleccion}=${c.estado}`).join(" · ")}`,
     `Incidencias de carga: ${DIAG_STORAGE.length}`,
@@ -11260,11 +11473,30 @@ function CfgVersion() {
         <Fila k="Rama" v={APP_BUILD.rama} />
         <button onClick={copiar} className="mt-3 rounded-full px-3.5 py-1.5 t12 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo, border: "none" }}>Copiar diagnóstico para el ticket</button>
       </Caja>
-      <Caja titulo="Política de negocio" sub="Con qué versión de la política se están evaluando las operaciones. Cada versión de simulación queda estampada con estos valores, para poder auditar una operación aprobada meses atrás.">
-        <Fila k="Versión" v={POLITICA_VERSION.version} />
-        <Fila k="Vigente desde" v={POLITICA_VERSION.vigenteDesde} mono />
-        <Fila k="Catálogo de reglas" v={POLITICA_VERSION.catalogoReglas} />
-        <Fila k="Tenant" v={TENANT_ACTUAL} />
+      <Caja titulo="Políticas de decisión" sub="Las tres políticas que determinan resultados auditables. Identificador AAAA-MM-DD.N: el correlativo intradía permite publicar más de una versión el mismo día sin ambigüedad. Cada versión de simulación queda estampada con las tres, para poder reconstruir una operación aprobada meses atrás.">
+        {CATALOGOS_POLITICA.map((cat) => {
+          const v = cat.vigenteEn(Date.now(), TENANT_ACTUAL);
+          return (
+            <div key={cat.id} className="mt-2 rounded-xl p-3" style={{ backgroundColor: "#F9FAFB", border: `1px solid ${C.line}` }}>
+              <div className="flex items-center justify-between gap-3">
+                <span className="t12 font-semibold" style={{ color: C.ink }}>{cat.etiqueta}</span>
+                <span className="rounded-full px-2.5 py-0.5 t11 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo, fontVariantNumeric: "tabular-nums" }}>{v.version}</span>
+              </div>
+              <div className="mt-1 t11" style={{ color: C.sub }}>Vigente desde <b style={{ color: C.ink }}>{v.vigenteDesde}</b> · catálogo {v.catalogoReglas}</div>
+              {v.nota && <div className="mt-0.5 t11" style={{ color: C.faint }}>{v.nota}</div>}
+              <div className="mt-1.5 t11" style={{ color: C.faint }}>
+                {cat.historial.length} versión(es) en el historial · próxima de hoy: <b style={{ color: C.sub }}>{cat.siguienteVersion(TENANT_ACTUAL)}</b>
+              </div>
+            </div>
+          );
+        })}
+        <div className="mt-3"><Fila k="Tenant" v={TENANT_ACTUAL} /></div>
+        {problemasPolitica.length > 0 && (
+          <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: C.redBg, border: "1px solid #FECACA" }}>
+            <div className="t12 font-semibold" style={{ color: C.red }}>Historial de políticas inconsistente</div>
+            {problemasPolitica.map((p, i) => <div key={i} className="mt-1 t11" style={{ color: C.sub }}>· {p}</div>)}
+          </div>
+        )}
       </Caja>
       <Caja titulo="Esquemas de datos guardados" sub="Versión de cada colección persistida en el navegador. Al subir un esquema, los datos viejos se migran o se descartan de forma explícita — nunca se cargan a medias.">
         {Object.entries(SCHEMA_VERSION).map(([k, v]) => <Fila key={k} k={k} v={`esquema ${v}`} mono />)}
@@ -11290,8 +11522,25 @@ function CfgVersion() {
     </div>
   );
 }
+// Consola de sistema: log técnico + versionado, en un solo lugar y consultable desde la app.
+function CfgSistema() {
+  const [tab, setTab] = useState("logs");
+  const nErr = SYS_LOG.filter((e) => e.nivel === "error").length;
+  const tabs = [["logs", `Logs${nErr ? ` · ${nErr} error(es)` : ""}`], ["version", "Versión y diagnóstico"]];
+  return (
+    <div className="grid gap-4">
+      <div className="flex items-center gap-4" style={{ borderBottom: `1px solid ${C.line}` }}>
+        {tabs.map(([k, l]) => (
+          <button key={k} onClick={() => setTab(k)} className="pb-2 t13 font-semibold"
+            style={{ background: "none", border: "none", borderBottom: tab === k ? `2px solid ${C.indigo}` : "2px solid transparent", color: tab === k ? C.indigo : C.sub }}>{l}</button>
+        ))}
+      </div>
+      {tab === "logs" ? <LogsView /> : <CfgVersion />}
+    </div>
+  );
+}
 function ConfiguracionView({ usuario, cfgOper, setCfgOper }) {
-  const [sec, setSec] = useState("version");
+  const [sec, setSec] = useState("operacion");
   const [, force] = useState(0);
   const activa = CFG_SECCIONES.find((s) => s.k === sec) || CFG_SECCIONES[0];
   return (
@@ -11304,7 +11553,7 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper }) {
         ))}
       </aside>
       <div>
-        {sec === "version" ? <CfgVersion /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "otorgamiento" ? (
+        {sec === "sistema" ? <CfgSistema /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "otorgamiento" ? (
           <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
             <div className="text-lg font-semibold" style={{ color: C.ink }}>Otorgamiento · apoderados y atribuciones</div>
             <div className="mt-0.5 t12" style={{ color: C.faint }}>Criterios de verificación, atribuciones de aprobación por criterio y los apoderados que pueden excepcionar (nivel por área). Aquí también se habilita/oculta la aceptación masiva por usuario.</div>
@@ -14526,6 +14775,8 @@ export default function PipelineComercial() {
     // código distinto y el que ve el cliente no sería el validado. El valor en claro sólo viaja por el
     // canal; en el store del portal queda únicamente el hash.
     const otpClaro = emitirOtp(negDe({ id }));
+    // Nunca se registra el código en claro: sólo que se emitió, para quién y con qué vigencia.
+    logSys("info", "curse", `OTP emitido para el negocio N° ${negDe({ id })} · vigencia ${Math.round(OTP_TTL_MS / 60000)} min · canal ${canal}`, { negocio: negDe({ id }), canal, ttlMin: Math.round(OTP_TTL_MS / 60000) });
     // Genera el deal actualizado de forma pura (mismo stamp) para reutilizarlo en el estado y al abrir el canal.
     const makeUpdated = (d) => {
       const neg = negDe(d);
@@ -15068,6 +15319,8 @@ export default function PipelineComercial() {
     // en estado «actualizando» y el resultado re-simulado llega tras una latencia proporcional al
     // volumen de documentos — anticipando operaciones con miles de facturas.
     const idsWarn = Object.keys(warn);
+    logSys("info", "motor", `Corrida del inbound: ${nuevos.length} oportunidad(es) nueva(s), ${idsWarn.length} con facturas por incorporar, ${pendientes.length} documento(s) re-encolados`,
+      { nuevas: nuevos.length, conWarning: idsWarn.length, reencolados: pendientes.length, topeCorrida: cfgT.topeDocsCorrida });
     setDeals((prev) => {
       const ids = new Set(prev.map((d) => d.id));
       const arr = prev.map((d) => (warn[d.id] ? { ...d, actualizando: true } : d));
@@ -15076,10 +15329,15 @@ export default function PipelineComercial() {
     if (idsWarn.length) {
       const totalDocs = idsWarn.reduce((s, k) => s + (warn[k].add || 0), 0);
       const latencia = Math.min(6000, cfgT.latenciaBaseMs + totalDocs * cfgT.latenciaPorDocMs); // latencia API + cómputo (config del tenant)
+      logSys("info", "background", `Recalculando ${idsWarn.length} oportunidad(es) por ${totalDocs} documento(s) nuevo(s) · latencia estimada ${latencia} ms`,
+        { operaciones: idsWarn, documentos: totalDocs, latenciaMs: latencia });
       const aplicar = (d) => (warn[d.id]
         ? { ...d, actualizando: false, nuevasFacturas: (d.nuevasFacturas || 0) + warn[d.id].add, nuevasFacturasMontoMM: +((d.nuevasFacturasMontoMM || 0) + warn[d.id].monto).toFixed(1), warning: true, historialContacto: traza(d, `Llegaron ${warn[d.id].add} factura(s) nueva(s) del cliente (${fmtMM(warn[d.id].monto)}) — candidatas para agregar`) }
         : d);
-      setTimeout(() => { setDeals((prev) => prev.map(aplicar)); setSelected((s) => (s ? aplicar(s) : s)); }, latencia);
+      setTimeout(() => {
+        setDeals((prev) => prev.map(aplicar)); setSelected((s) => (s ? aplicar(s) : s));
+        logSys("info", "background", `Recálculo aplicado en ${idsWarn.length} oportunidad(es)`, { operaciones: idsWarn, latenciaMs: latencia });
+      }, latencia);
     }
     setAcumulado(pendientes); // lo que excedió el tope de la hora queda para la próxima corrida
   };
@@ -15328,8 +15586,9 @@ export default function PipelineComercial() {
   // tenía más las que llegaron durante el día y no se incorporaron. En producción sería un job nocturno
   // del backend que cierra y re-origina, notificando por socket a las sesiones abiertas.
   const rolloverDia = (nDia) => {
-    if (!cfgT.reaperturaDiaria) return;
+    if (!cfgT.reaperturaDiaria) { logSys("info", "cierre-dia", `Día ${nDia}: reapertura diaria deshabilitada en la configuración del tenant`); return; }
     const etapaNG = cfgT.etapaNoGestionada || "prospeccion";
+    let reabiertas = 0;
     setDeals((prev) => prev.map((d) => {
       if (!(d._inbound && d.stage === etapaNG)) return d;
       const amountMM = +((d.amountMM || 0) + (d.nuevasFacturasMontoMM || 0)).toFixed(1);
@@ -15338,12 +15597,15 @@ export default function PipelineComercial() {
       const factor = (d.amountMM || 0) > 0 ? amountMM / d.amountMM : 1;
       const deudores = (d.deudores || []).map((x) => ({ ...x, montoMM: +((x.montoMM || 0) * factor).toFixed(1), facturas: Math.max(1, Math.round((x.facturas || 1) * factor)) }));
       const nid = `OP-R${nDia}${(d.id || "").replace(/[^0-9]/g, "").slice(-4)}`;
+      reabiertas++;
       return { ...d, id: nid, reabiertaDe: d.id, stage: etapaNG, amountMM, facturas, deudores,
         facturasOp: undefined, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, actualizando: false,
         status: `Reabierta (día ${nDia}) · paquete actualizado`, time: nowStamp(), tProsp: Date.now(), subSeed: rndDet("seed|" + nid),
         historialContacto: traza(d, `No gestionada al cierre del día ${nDia - 1}: se cierra y se reabre con el paquete vigente en la BD (${facturas} doc. · ${fmtMM(amountMM)})`),
         ...finanzasDe(d.cliente, d.deudor, amountMM) };
     }));
+    logSys("info", "cierre-dia", `Cierre del día ${nDia - 1}: ${reabiertas} oportunidad(es) no gestionada(s) en «${stageName(etapaNG)}» se cerraron y reabrieron con el paquete vigente`,
+      { dia: nDia, reabiertas, etapaNoGestionada: etapaNG });
   };
   // Al cerrar un día: pausar, calcular estadísticas y pedir aceptación.
   const statsDelDia = (diaNum) => {
