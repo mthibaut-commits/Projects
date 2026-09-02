@@ -220,7 +220,18 @@ var DATA=decode()||{}; var P=DATA.payload||DATA||{};
 var NEG=(new URLSearchParams(location.search)).get("n")||P.neg||"—";
 // El payload persiste por negocio en localStorage (mismo origen que la app). Es la fuente preferida:
 // el cliente ingresa su código de negocio + OTP y el portal recupera la operación (simula el backend).
-function loadStore(neg){ try{ return JSON.parse(localStorage.getItem('fs_curse_'+neg)||'null'); }catch(e){ return null; } }
+// Esquema esperado del registro de curse. v2 guarda otpHash/otpExp/otpUsado; un registro v1 traía el
+// OTP en claro y ya no se acepta: el enlace se considera vencido y hay que reenviarlo desde la app.
+var CURSE_SCHEMA=2;
+function loadStore(neg){
+  try{
+    var st=JSON.parse(localStorage.getItem('fs_curse_'+neg)||'null');
+    if(!st) return null;
+    var v=st._v||1;
+    if(v!==CURSE_SCHEMA){ console.warn('[curse] registro de esquema '+v+', se esperaba '+CURSE_SCHEMA+': se ignora'); return null; }
+    return st;
+  }catch(e){ return null; }
+}
 var STORE=loadStore(NEG); if(STORE&&STORE.payload){ P=STORE.payload; }
 function clp(n){n=Math.round(n||0);return "CLP "+n.toLocaleString("es-CL");}
 function set(id,v){var e=document.getElementById(id);if(e)e.textContent=v;}

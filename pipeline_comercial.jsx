@@ -15,6 +15,152 @@ import { sankey as d3sankey, sankeyLinkHorizontal, sankeyLeft } from "d3-sankey"
    Prototipo interactivo con datos de ejemplo. Cliente: BICE Factoring.
    ============================================================ */
 
+// ============================================================
+// VERSIONADO (ciclo de mejora y gestión de incidencias)
+// Sin esto, un reporte de incidencia («el KPI muestra un dato viejo») no se puede reproducir: no hay
+// forma de saber qué build está mirando quien reporta, con qué política se evaluó una operación ni si
+// los datos guardados en el navegador corresponden al esquema actual.
+// Cinco ejes, cada uno con su propia cadencia:
+//   1. APP_VERSION      — semver de la aplicación. Cambia en cada release.
+//   2. APP_BUILD        — fecha + commit, lo inyecta build_app.ps1. Identifica el binario exacto.
+//   3. SCHEMA_VERSION   — esquema de cada colección persistida. Cambia cuando cambia la FORMA del dato.
+//   4. POLITICA_VERSION — política de riesgo/pricing vigente. Cambia cuando el negocio cambia una regla.
+//   5. CONTRATOS_DATOS  — contrato de las integraciones externas. Cambia cuando cambia el proveedor.
+// ============================================================
+const APP_VERSION = "1.1.0";
+// Inyectado por build_app.ps1 al generar el HTML (fecha de build + commit corto de git). En desarrollo
+// —abriendo el .jsx sin build— cae a "dev/local", que es en sí mismo un dato útil en una incidencia.
+const APP_BUILD = (typeof window !== "undefined" && window.__NEX_BUILD__) || { fecha: "dev", commit: "local", rama: "-" };
+const APP_VERSION_FULL = `v${APP_VERSION} · ${APP_BUILD.fecha} · ${APP_BUILD.commit}`;
+
+// ── Versión de la POLÍTICA de negocio ───────────────────────────────────────────────────────────
+// Una operación aprobada en marzo con la política de marzo debe poder auditarse en julio: por eso cada
+// versión de simulación (SIM_VERSIONS) estampa con qué política se evaluó. `vigenteDesde` permite
+// resolver la política aplicable a una FECHA, no sólo la actual.
+// Hoy la política vive repartida en el código (catálogo de reglas, CFG_ACTIVA, matrices de atribución).
+// Cuando se externalice a politica.<tenant>.json, este objeto se lee del JSON en vez de declararse acá,
+// y `politicaVigente(tenant, fecha)` devuelve la que corresponda al momento de la evaluación.
+const POLITICA_VERSION = {
+  version: "2026.07",             // versión de negocio (año.mes de entrada en vigencia)
+  vigenteDesde: "2026-07-10",     // fecha en que el comité la puso en vigencia
+  catalogoReglas: "v2",           // C01–C52 / D01–D23 / O01–O04 (el JSON exportado aún refleja el v1)
+  tenant: "security",
+};
+const politicaEtiqueta = () => `${POLITICA_VERSION.version} (${POLITICA_VERSION.catalogoReglas})`;
+
+// ── Esquema de las colecciones persistidas ──────────────────────────────────────────────────────
+// Se sube el número cuando cambia la FORMA del dato guardado (campo renombrado, semántica distinta,
+// unidad distinta). NO se sube por agregar un campo opcional: para eso está el merge con los defaults.
+// Cada entrada necesita su función de migración en MIGRACIONES; si no hay ruta de migración, el dato
+// viejo se DESCARTA de forma explícita y queda registrado — nunca se carga a medias.
+const SCHEMA_VERSION = {
+  cxc: 1,            // saldo CxC por cliente
+  reglasInbound: 3,  // reglas de clasificación del inbound
+  cfgOper: 1,        // configuración operativa y de pricing por tenant
+  permisos: 1,       // permisos de visibilidad por usuario
+  curse: 2,          // payload de curse por negocio (v2: OTP hasheado en vez de OTP en claro)
+  snapshot: 1,       // snapshots de deal/operación para abrir en otra pestaña
+};
+
+// ── Contratos de datos externos ─────────────────────────────────────────────────────────────────
+// Colecciones que inyecta el webhook/SFTP (datos_inyectados.js). Se declara el contrato ESPERADO y se
+// valida al arrancar: si el proveedor cambia un campo, hoy la app simplemente deja de clasificar
+// facturas sin decir por qué. Con esto queda un diagnóstico legible en Configuración › Versión.
+const CONTRATOS_DATOS = [
+  { coleccion: "DTESYNC", esquema: 1, requeridos: ["RUTEmisor", "RznSoc", "Folio", "FchEmis", "RUTRecep", "RznSocRecep", "MntTotal"] },
+  { coleccion: "AECSYNC", esquema: 1, requeridos: [] },
+  { coleccion: "LISTA_BLANCA", esquema: 1, requeridos: [] },
+  { coleccion: "DEUDORES_AUTORIZADOS", esquema: 1, requeridos: [] },
+  { coleccion: "SHARE_OF_WALLET", esquema: 1, requeridos: [] },
+  { coleccion: "ESTRATEGIA_PRECIO", esquema: 1, requeridos: [] },
+  { coleccion: "LINEA_DISPONIBLE", esquema: 1, requeridos: [] },
+];
+// Estado de cada contrato: ausente | ok | campos_faltantes. Se calcula una vez al cargar el módulo y se
+// muestra en el panel de diagnóstico; es lo primero que hay que mirar cuando "no entran oportunidades".
+function validarContratosDatos() {
+  const meta = (typeof window !== "undefined" && window.NEX_DATOS_META) || null;
+  return CONTRATOS_DATOS.map((c) => {
+    const col = (typeof window !== "undefined" && window[c.coleccion]) || null;
+    if (!col || (Array.isArray(col) && !col.length)) return { ...c, estado: "ausente", n: 0, faltantes: [] };
+    const n = Array.isArray(col) ? col.length : Object.keys(col).length;
+    const muestra = Array.isArray(col) ? col[0] : null;
+    const faltantes = (muestra && c.requeridos.length) ? c.requeridos.filter((k) => !(k in muestra)) : [];
+    return { ...c, estado: faltantes.length ? "campos_faltantes" : "ok", n, faltantes, esquemaRecibido: meta ? meta[c.coleccion] : undefined };
+  });
+}
+
+// ── Almacenamiento versionado ───────────────────────────────────────────────────────────────────
+// Antes cada clave se leía con `JSON.parse` + un catch vacío, y el único control era la forma: p. ej.
+// `Array.isArray(parsed) && parsed.length ? parsed : DEFAULT`. Si el esquema cambiaba pero el dato
+// seguía siendo un array no vacío, se cargaba contenido viejo con forma nueva y el fallo aparecía
+// mucho después, en otro lugar. Ahora todo va envuelto: { _v, _app, _ts, datos }.
+// Los valores SIN envoltorio se tratan como esquema 0 (los que ya están en los navegadores de la demo).
+const DIAG_STORAGE = []; // incidencias de carga, visibles en Configuración › Versión
+// Migraciones por colección: { [coleccion]: { [versionDestino]: (datos, desde) => datos | null } }
+// Devolver null = no hay ruta de migración ⇒ se descarta y se usan los valores por defecto.
+const MIGRACIONES = {
+  // El esquema v3 de reglas de inbound agregó reglas de histórico (BICE / otro factor) y elegibilidad
+  // por bucket. Una configuración v0/v1/v2 no tiene esos campos: se descarta y se re-siembra el catálogo.
+  reglasInbound: { 3: (datos, desde) => (desde >= 3 ? datos : null) },
+  // El payload de curse v2 guarda otpHash/otpExp/otpUsado en vez del OTP en claro. Un registro v1
+  // contiene un OTP en claro: se descarta (además de estar obsoleto, es material sensible).
+  curse: { 2: (datos, desde) => (desde >= 2 ? datos : null) },
+};
+// Registra una incidencia SIN duplicar: la misma colección puede leerse muchas veces en un arranque y
+// el diagnóstico tiene que ser un inventario de problemas distintos, no un contador de lecturas.
+function diagStorage(entrada) {
+  const clave = `${entrada.coleccion}|${entrada.desde}|${entrada.hasta}|${entrada.resultado}`;
+  if (DIAG_STORAGE.some((d) => d._k === clave)) return;
+  if (DIAG_STORAGE.length >= 50) return; // cota: si hay 50 incidencias distintas, el problema es otro
+  DIAG_STORAGE.push({ ...entrada, _k: clave, ts: Date.now() });
+}
+function migrarDatos(coleccion, datos, desde, hasta) {
+  if (desde === hasta) return datos;
+  const ruta = (MIGRACIONES[coleccion] || {})[hasta];
+  const out = ruta ? ruta(datos, desde) : null;
+  diagStorage({
+    coleccion, desde, hasta,
+    resultado: out ? "migrado" : "descartado",
+    detalle: out ? `Migrado de esquema ${desde} a ${hasta}` : `Sin ruta de migración de ${desde} a ${hasta}: se descartó y se usaron los valores por defecto`,
+  });
+  return out;
+}
+// Lee una clave versionada. Devuelve `porDefecto` si no existe, si no se puede migrar o si falla el parse.
+function leerVersionado(key, coleccion, porDefecto) {
+  try {
+    if (!storageDisponible()) return porDefecto;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return porDefecto;
+    const parsed = JSON.parse(raw);
+    const esperado = SCHEMA_VERSION[coleccion];
+    // Valor legado sin envoltorio ⇒ esquema 0.
+    const conEnvoltorio = parsed && typeof parsed === "object" && !Array.isArray(parsed) && "_v" in parsed && "datos" in parsed;
+    const desde = conEnvoltorio ? parsed._v : 0;
+    const datos = conEnvoltorio ? parsed.datos : parsed;
+    if (desde === esperado) return datos;
+    const migrado = migrarDatos(coleccion, datos, desde, esperado);
+    // Un dato que no se pudo migrar es basura: se ELIMINA. Si se dejara, cada lectura volvería a
+    // fallar y el diagnóstico reportaría el mismo problema para siempre.
+    if (migrado == null) { try { window.localStorage.removeItem(key); } catch (_) {} return porDefecto; }
+    return migrado;
+  } catch (e) {
+    diagStorage({ coleccion, resultado: "ilegible", detalle: `No se pudo leer «${key}»: ${e && e.message}` });
+    try { window.localStorage.removeItem(key); } catch (_) {}
+    return porDefecto;
+  }
+}
+function escribirVersionado(key, coleccion, datos) {
+  try {
+    if (!storageDisponible()) return false;
+    window.localStorage.setItem(key, JSON.stringify({ _v: SCHEMA_VERSION[coleccion], _app: APP_VERSION, _ts: Date.now(), datos }));
+    return true;
+  } catch (e) {
+    // Antes esto era un catch vacío: el usuario creía que había guardado y no. Ahora queda en el panel.
+    diagStorage({ coleccion, resultado: "no_guardado", detalle: `No se pudo guardar «${key}»: ${e && e.message}` });
+    return false;
+  }
+}
+
 // ---- Paleta de marca (Datamart UI: purple #703EFF, navy #230C65, neutrales fríos) ----
 const C = {
   page: "#FFFFFF", ink: "#050015", sub: "#6B7280", faint: "#9CA3AF", line: "#E5E7EB",
@@ -504,13 +650,11 @@ const VENTA_2025_MES_MM = 249356;
 const BUDGET_MES_MM = +(VENTA_2025_MES_MM * 1.15).toFixed(0); // meta +15%
 
 // ---- Cuentas por cobrar por cliente (saldo adeudado al factoring por atrasos) ----
+// El sufijo "_v1" del nombre es legado: la versión real del esquema vive en el envoltorio
+// ({_v, _app, _ts, datos}) que gestionan leerVersionado/escribirVersionado, no en el nombre de la clave.
 const CXC_KEY = "nex_cxc_clientes_v1";
-function cargarCxC() {
-  try { if (typeof window === "undefined" || !window.localStorage) return {}; const raw = window.localStorage.getItem(CXC_KEY); return raw ? JSON.parse(raw) : {}; } catch { return {}; }
-}
-function guardarCxC(map) {
-  try { if (typeof window !== "undefined" && window.localStorage) window.localStorage.setItem(CXC_KEY, JSON.stringify(map)); } catch { /* noop */ }
-}
+function cargarCxC() { return leerVersionado(CXC_KEY, "cxc", {}); }
+function guardarCxC(map) { escribirVersionado(CXC_KEY, "cxc", map); }
 // tipo "factura": factura emitida a un buen deudor que califica en una regla.
 // tipo "empresa": descubrimiento de un proveedor de un gran pagador que aún NO es cliente.
 // STREAM_SEED: casos curados; el generador añade el resto hasta ~300.
@@ -1056,16 +1200,13 @@ function storageDisponible() {
   try { return typeof window !== "undefined" && !!window.localStorage; } catch { return false; }
 }
 function cargarReglas() {
-  try {
-    if (!storageDisponible()) return INBOUND_RULES;
-    const raw = window.localStorage.getItem(RULES_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    return Array.isArray(parsed) && parsed.length ? parsed : INBOUND_RULES;
-  } catch { return INBOUND_RULES; }
+  // El chequeo de forma anterior (`Array.isArray(parsed) && parsed.length`) NO detectaba un cambio de
+  // esquema: un catálogo viejo seguía siendo un array no vacío y se cargaba igual. Ahora el esquema es
+  // explícito y, sin ruta de migración, se re-siembra el catálogo por defecto dejando traza.
+  const r = leerVersionado(RULES_KEY, "reglasInbound", INBOUND_RULES);
+  return Array.isArray(r) && r.length ? r : INBOUND_RULES;
 }
-function guardarReglas(reglas) {
-  try { if (storageDisponible()) window.localStorage.setItem(RULES_KEY, JSON.stringify(reglas)); } catch { /* sin persistencia */ }
-}
+function guardarReglas(reglas) { escribirVersionado(RULES_KEY, "reglasInbound", reglas); }
 function borrarReglas() {
   try { if (storageDisponible()) window.localStorage.removeItem(RULES_KEY); } catch { /* noop */ }
 }
@@ -1121,19 +1262,15 @@ const CFG_OPER_DEFAULT = { security: { ...CFG_OPER_BASE } };
 let CFG_ACTIVA = { ...CFG_OPER_BASE };
 const aplicarCfgActiva = (c) => { CFG_ACTIVA = { ...CFG_OPER_BASE, ...(c || {}) }; };
 function cargarCfgOper() {
-  try {
-    if (!storageDisponible()) return CFG_OPER_DEFAULT;
-    const raw = window.localStorage.getItem(CFG_OPER_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    if (!parsed || typeof parsed !== "object") return CFG_OPER_DEFAULT;
-    const out = {};
-    TENANTS.forEach((t) => { out[t.id] = { ...CFG_OPER_BASE, ...(parsed[t.id] || {}) }; });
-    return out;
-  } catch { return CFG_OPER_DEFAULT; }
+  const parsed = leerVersionado(CFG_OPER_KEY, "cfgOper", null);
+  if (!parsed || typeof parsed !== "object") return CFG_OPER_DEFAULT;
+  // El merge sobre CFG_OPER_BASE absorbe claves NUEVAS sin subir el esquema; subir SCHEMA_VERSION.cfgOper
+  // queda reservado para cuando una clave cambie de nombre, de unidad o de significado.
+  const out = {};
+  TENANTS.forEach((t) => { out[t.id] = { ...CFG_OPER_BASE, ...(parsed[t.id] || {}) }; });
+  return out;
 }
-function guardarCfgOper(cfg) {
-  try { if (storageDisponible()) window.localStorage.setItem(CFG_OPER_KEY, JSON.stringify(cfg)); } catch { /* sin persistencia */ }
-}
+function guardarCfgOper(cfg) { escribirVersionado(CFG_OPER_KEY, "cfgOper", cfg); }
 
 // ============================================================
 // ESTADOS DE CARGA (server-side ready)
@@ -1582,7 +1719,9 @@ const curseURLPublica = (neg) => `www.factoringsecurity.cl/curse/${neg}`;
 const CURSE_TTL_MS = 14 * 86400000, CURSE_MAX = 40;
 function cursePersist(neg, obj) {
   try {
-    localStorage.setItem("fs_curse_" + neg, JSON.stringify(obj));
+    // El registro lo lee curse.html (otra página): por eso lleva el esquema DENTRO del objeto y no en un
+    // envoltorio. v2 = OTP hasheado; un registro v1 (OTP en claro) queda obsoleto y el portal lo rechaza.
+    localStorage.setItem("fs_curse_" + neg, JSON.stringify({ ...obj, _v: SCHEMA_VERSION.curse, _app: APP_VERSION }));
     const now = Date.now(), entries = [];
     for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf("fs_curse_") === 0) { let ts = 0; try { ts = (JSON.parse(localStorage.getItem(k)) || {}).ts || 0; } catch (_) {} entries.push({ k, ts }); } }
     const borrar = new Set();
@@ -7583,7 +7722,11 @@ function snapVersionCli(deal, rev) {
   // Una versión sólo queda "rechazada" (pérdida) por rechazos FIRMES (no re-evaluables): un rechazo
   // re-evaluable puede repararse desde el origen, así que deja la operación "sujeta", no perdida.
   const estado = nRechFirme ? "rechazada" : (nExc || nRech) ? "sujeta" : "aprobada";
-  return { v: rev + 1, rev, ts: new Date(), origen: rev === 0 ? "Evaluación inicial (simulación)" : "Re-evaluación · JSON API actualizado tras firma", vars, res, estado, nApr, nExc, nRech };
+  // AUDITABILIDAD: la versión estampa CON QUÉ POLÍTICA y con qué build se evaluó. Sin esto, comparar la
+  // v1 con la v2 después de un cambio de umbrales produce un diff que miente: las reglas se movieron,
+  // no los datos. Y una operación aprobada hace meses no se puede reconstruir.
+  return { v: rev + 1, rev, ts: new Date(), origen: rev === 0 ? "Evaluación inicial (simulación)" : "Re-evaluación · JSON API actualizado tras firma", vars, res, estado, nApr, nExc, nRech,
+    politica: { ...POLITICA_VERSION }, app: APP_VERSION, build: APP_BUILD.commit };
 }
 function varsClienteActual(deal) {
   const vs = deal && SIM_VERSIONS[deal.id];
@@ -7591,10 +7734,12 @@ function varsClienteActual(deal) {
   return apiVarsCliente(deal, 0);
 }
 function reevaluarCliente(deal, usuario) {
-  const vs = SIM_VERSIONS[deal.id] || (SIM_VERSIONS[deal.id] = []);
-  if (!vs.length) vs.push(snapVersionCli(deal, 0)); // persiste la evaluación inicial (v1)
-  const nv = snapVersionCli(deal, vs.length); // siguiente rev → v2, v3, …
-  vs.push(nv);
+  // Escritura vía repositorio: cada versión es un registro INMUTABLE (append-only), nunca se edita una
+  // versión ya emitida. SERVER-SIDE: insert en `simulacion_version`, que es evidencia de la decisión.
+  const vs = repoSimVersions.get(deal.id) || [];
+  if (!vs.length) repoSimVersions.push(deal.id, snapVersionCli(deal, 0)); // persiste la evaluación inicial (v1)
+  const nv = snapVersionCli(deal, (repoSimVersions.get(deal.id) || []).length); // siguiente rev → v2, v3, …
+  repoSimVersions.push(deal.id, nv);
   // NO se tocan las excepciones ya resueltas manualmente por los apoderados (VISADO_STATE). Re-evaluar sólo
   // trae datos frescos del origen; las reglas ya excepcionadas conservan su resolución para no re-abrir
   // trabajo hecho ni perder la excepción si la API devolviera el valor original.
@@ -7727,6 +7872,11 @@ const repoVisadoDetalle = crearRepo("otorgamiento_visado_detalle");
 const repoSolicitudExc = crearRepo("solicitud_excepcion");
 const repoVerifExc = crearRepo("verificacion_excepcion");
 const repoOtorgEventos = crearRepo("otorgamiento_evento");
+// SIM_VERSIONS se declara más arriba (lo usan varias funciones antes de este punto); acá se reapunta a
+// su repositorio. Es el histórico versionado de la decisión de riesgo: hoy se pierde al recargar, y en
+// producción tiene que ser una tabla inmutable con snapshot jsonb.
+const repoSimVersions = crearRepo("simulacion_version");
+SIM_VERSIONS = repoSimVersions.all();
 let VISADO_STATE = repoVisado.all(); // { [dealId]: { [ruleN]: "aprobado"|"rechazado" } } — resolución de excepciones
 let VISADO_DETALLE = repoVisadoDetalle.all(); // { [dealId]: { [ruleN]: { msg, archs:[], por, fecha } } } — comentario/respaldo de la DECISIÓN del apoderado
 // Solicitud de aprobación de una excepción que el EJECUTIVO envía al apoderado responsable (N1–N5):
@@ -7740,7 +7890,7 @@ let VERIF_EXC = repoVerifExc.all();
 function reapuntarRepos() {
   VISADO_STATE = repoVisado.all(); VISADO_DETALLE = repoVisadoDetalle.all();
   SOLICITUD_EXC = repoSolicitudExc.all(); VERIF_EXC = repoVerifExc.all();
-  OTORG_EVENTOS = repoOtorgEventos.all(); invalidarVisado();
+  OTORG_EVENTOS = repoOtorgEventos.all(); SIM_VERSIONS = repoSimVersions.all(); invalidarVisado();
 }
 // ── PERMISOS DE LA SESIÓN (UX ONLY — la autorización real es del servidor) ──────────────────────
 // Antes esto eran SIETE claves sueltas de localStorage. Un usuario podía auto-otorgarse la aprobación
@@ -7761,11 +7911,11 @@ const PERMISOS_DEFAULT = {
 };
 function cargarPermisos() {
   const base = JSON.parse(JSON.stringify(PERMISOS_DEFAULT));
-  try { if (storageDisponible()) { const r = localStorage.getItem(PERMISOS_KEY); if (r) return { ...base, ...JSON.parse(r) }; } } catch (e) {}
-  return base;
+  const guardado = leerVersionado(PERMISOS_KEY, "permisos", null);
+  return guardado && typeof guardado === "object" ? { ...base, ...guardado } : base;
 }
 let PERMISOS = cargarPermisos();
-function guardarPermisos() { try { if (storageDisponible()) localStorage.setItem(PERMISOS_KEY, JSON.stringify(PERMISOS)); } catch (e) {} }
+function guardarPermisos() { escribirVersionado(PERMISOS_KEY, "permisos", PERMISOS); }
 // Vistas por referencia sobre la única fuente: el mantenedor sigue mutando `CFG_X[code] = on` y todos
 // los guardados terminan en `guardarPermisos()`.
 let CFG_EXC_VERIF = PERMISOS.excVerif;
@@ -10834,6 +10984,7 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
 // CONFIGURACIÓN — menú de administración. Incluye la Auditoría del sistema (log de todas lasacciones).
 // ============================================================
 const CFG_SECCIONES = [
+  { k: "version", label: "Versión", Icon: ShieldCheck },
   { k: "operacion", label: "Operación", Icon: Clock },
   { k: "auditoria", label: "Auditoría", Icon: Eye },
   { k: "usuarios", label: "Usuarios", Icon: User },
@@ -11068,8 +11219,79 @@ function CfgOperacion({ cfgOper, setCfgOper }) {
     </div>
   );
 }
+// ── Configuración › Versión (diagnóstico para gestión de incidencias) ───────────────────────────
+// Primera pantalla que hay que pedir en un reporte de incidencia: identifica el build exacto, la
+// política con la que se está evaluando, el esquema de cada dato guardado en el navegador y el estado
+// de los contratos con las integraciones. Sin esto, "no me aparecen oportunidades" es irreproducible.
+function CfgVersion() {
+  const [, force] = useState(0);
+  const contratos = useMemo(() => validarContratosDatos(), []);
+  const Fila = ({ k, v, mono }) => (
+    <div className="flex items-baseline justify-between gap-4 py-1.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+      <span className="t12" style={{ color: C.sub }}>{k}</span>
+      <span className="t12 font-semibold" style={{ color: C.ink, fontVariantNumeric: mono ? "tabular-nums" : undefined }}>{v}</span>
+    </div>
+  );
+  const Caja = ({ titulo, sub, children }) => (
+    <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+      <div className="text-lg font-semibold" style={{ color: C.ink }}>{titulo}</div>
+      {sub && <div className="mt-0.5 mb-2 t12" style={{ color: C.faint }}>{sub}</div>}
+      {children}
+    </div>
+  );
+  const colorEstado = (e) => (e === "ok" ? C.green : e === "ausente" ? C.red : C.amber);
+  const textoEstado = (c) => (c.estado === "ok" ? `OK · ${c.n.toLocaleString("es-CL")} registros` : c.estado === "ausente" ? "Ausente — no se inyectó" : `Faltan campos: ${c.faltantes.join(", ")}`);
+  // Resumen copiable: lo que se pega en el ticket. Evita el ida y vuelta de "¿qué versión tienes?".
+  const resumen = [
+    `App: v${APP_VERSION} · build ${APP_BUILD.fecha} · commit ${APP_BUILD.commit} · rama ${APP_BUILD.rama}`,
+    `Política: ${politicaEtiqueta()} · vigente desde ${POLITICA_VERSION.vigenteDesde} · tenant ${TENANT_ACTUAL}`,
+    `Esquemas: ${Object.entries(SCHEMA_VERSION).map(([k, v]) => `${k}=${v}`).join(" · ")}`,
+    `Contratos: ${contratos.map((c) => `${c.coleccion}=${c.estado}`).join(" · ")}`,
+    `Incidencias de carga: ${DIAG_STORAGE.length}`,
+    `Navegador: ${typeof navigator !== "undefined" ? navigator.userAgent : "—"}`,
+  ].join("\n");
+  const copiar = () => { try { navigator.clipboard.writeText(resumen); } catch (e) {} force((x) => x + 1); };
+  return (
+    <div className="grid gap-4">
+      <Caja titulo="Aplicación" sub="Identifica el build exacto que está corriendo. Es el primer dato de cualquier reporte de incidencia.">
+        <Fila k="Versión" v={`v${APP_VERSION}`} />
+        <Fila k="Fecha de build" v={APP_BUILD.fecha} mono />
+        <Fila k="Commit" v={APP_BUILD.commit} mono />
+        <Fila k="Rama" v={APP_BUILD.rama} />
+        <button onClick={copiar} className="mt-3 rounded-full px-3.5 py-1.5 t12 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo, border: "none" }}>Copiar diagnóstico para el ticket</button>
+      </Caja>
+      <Caja titulo="Política de negocio" sub="Con qué versión de la política se están evaluando las operaciones. Cada versión de simulación queda estampada con estos valores, para poder auditar una operación aprobada meses atrás.">
+        <Fila k="Versión" v={POLITICA_VERSION.version} />
+        <Fila k="Vigente desde" v={POLITICA_VERSION.vigenteDesde} mono />
+        <Fila k="Catálogo de reglas" v={POLITICA_VERSION.catalogoReglas} />
+        <Fila k="Tenant" v={TENANT_ACTUAL} />
+      </Caja>
+      <Caja titulo="Esquemas de datos guardados" sub="Versión de cada colección persistida en el navegador. Al subir un esquema, los datos viejos se migran o se descartan de forma explícita — nunca se cargan a medias.">
+        {Object.entries(SCHEMA_VERSION).map(([k, v]) => <Fila key={k} k={k} v={`esquema ${v}`} mono />)}
+        {DIAG_STORAGE.length > 0 && (
+          <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: C.amberBg, border: "1px solid #FED7AA" }}>
+            <div className="t12 font-semibold" style={{ color: C.amber }}>{DIAG_STORAGE.length} incidencia(s) al cargar datos guardados</div>
+            {DIAG_STORAGE.slice(0, 8).map((d, i) => (
+              <div key={i} className="mt-1 t11" style={{ color: C.sub }}>· <b>{d.coleccion}</b> — {d.detalle}</div>
+            ))}
+          </div>
+        )}
+      </Caja>
+      <Caja titulo="Contratos con integraciones" sub="Colecciones que inyecta el webhook/SFTP. Si una queda «ausente» o con campos faltantes, el inbound deja de clasificar facturas y el pipeline aparece vacío.">
+        {contratos.map((c) => (
+          <div key={c.coleccion} className="flex items-center justify-between gap-4 py-1.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <span className="t12" style={{ color: C.sub }}>{c.coleccion} <span style={{ color: C.faint }}>· esquema {c.esquema}</span></span>
+            <span className="flex items-center gap-1.5 t12 font-semibold" style={{ color: colorEstado(c.estado) }}>
+              <span style={{ width: 7, height: 7, borderRadius: 9999, backgroundColor: colorEstado(c.estado) }} />{textoEstado(c)}
+            </span>
+          </div>
+        ))}
+      </Caja>
+    </div>
+  );
+}
 function ConfiguracionView({ usuario, cfgOper, setCfgOper }) {
-  const [sec, setSec] = useState("operacion");
+  const [sec, setSec] = useState("version");
   const [, force] = useState(0);
   const activa = CFG_SECCIONES.find((s) => s.k === sec) || CFG_SECCIONES[0];
   return (
@@ -11082,7 +11304,7 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper }) {
         ))}
       </aside>
       <div>
-        {sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "otorgamiento" ? (
+        {sec === "version" ? <CfgVersion /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "otorgamiento" ? (
           <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
             <div className="text-lg font-semibold" style={{ color: C.ink }}>Otorgamiento · apoderados y atribuciones</div>
             <div className="mt-0.5 t12" style={{ color: C.faint }}>Criterios de verificación, atribuciones de aprobación por criterio y los apoderados que pueden excepcionar (nivel por área). Aquí también se habilita/oculta la aceptación masiva por usuario.</div>
@@ -12649,7 +12871,7 @@ function OperacionesView({ deals, onOpen, soloExec }) {
   const abrirOperacion = (o) => {
     try {
       const slim = { id: o.id, neg: o.neg, cliente: o.cliente, deudor: o.deudor, facturas: o.facturas, montoMM: o.montoMM, tasa: o.tasa, giroMM: o.giroMM, fecha: o.fecha, estado: o.estado, sub: o.sub, exec: o.exec, estadoPago: o.estadoPago, pctPagado: o.pctPagado, montoPagado: o.montoPagado, aTiempo: o.aTiempo, diasAtraso: o.diasAtraso, ts: o.ts, rut: (o.deal && o.deal.rutEmisor) || o.rut };
-      localStorage.setItem("fs_op_" + o.id, JSON.stringify({ op: slim, ts: Date.now() }));
+      localStorage.setItem("fs_op_" + o.id, JSON.stringify({ op: slim, ts: Date.now(), _v: SCHEMA_VERSION.snapshot, _app: APP_VERSION }));
     } catch (e) {}
     try { window.open(location.pathname + "?op=" + encodeURIComponent(o.id), "_blank"); } catch (e) {}
   };
@@ -13740,7 +13962,8 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
             </div>
           </>)}
         </div>
-        <div style={{ fontSize: 11, color: C.faint }}>© 2026 Datamart · NEX Factoring — demo con datos sintéticos</div>
+        {/* La versión va en el login porque es la pantalla que siempre aparece en una captura de reporte. */}
+        <div style={{ fontSize: 11, color: C.faint }}>© 2026 Datamart · NEX Factoring — demo con datos sintéticos · <span style={{ fontVariantNumeric: "tabular-nums" }}>{APP_VERSION_FULL}</span></div>
       </div>
       {/* Panel gradiente decorativo (flota con margen inferior mayor) */}
       <div className="mt-6 mr-6 mb-12 ml-3 flex flex-1 items-center justify-center overflow-hidden" style={{ borderRadius: 20, background: "linear-gradient(135deg, #EE2EFF 0%, #FF814B 55%, #C4B5FD 100%)" }}>
@@ -13757,12 +13980,22 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
 export default function PipelineComercial() {
   // Detalle en pestaña propia (_blank): con ?deal=<id> se abre SÓLO el detalle de esa oportunidad a pantalla
   // completa (viewport amplio). El deal se pasa por localStorage al abrir la pestaña.
-  const detallePayload = useMemo(() => {
-    try { const id = new URLSearchParams(location.search).get("deal"); if (!id) return null; const raw = localStorage.getItem("fs_deal_" + id); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
-  }, []);
-  const opPayload = useMemo(() => {
-    try { const id = new URLSearchParams(location.search).get("op"); if (!id) return null; const raw = localStorage.getItem("fs_op_" + id); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
-  }, []);
+  // El snapshot lo escribió la pestaña padre con el esquema vigente. Si viene de un build anterior con
+  // otra forma, se descarta: es preferible abrir la pestaña vacía que pintar un detalle inconsistente.
+  const leerSnapshot = (param, prefijo) => {
+    try {
+      const id = new URLSearchParams(location.search).get(param); if (!id) return null;
+      const raw = localStorage.getItem(prefijo + id); if (!raw) return null;
+      const p = JSON.parse(raw);
+      if ((p._v || 0) !== SCHEMA_VERSION.snapshot) {
+        diagStorage({ coleccion: "snapshot", desde: p._v || 0, hasta: SCHEMA_VERSION.snapshot, resultado: "descartado", detalle: `Snapshot «${prefijo}${id}» de esquema ${p._v || 0}, se esperaba ${SCHEMA_VERSION.snapshot}` });
+        return null;
+      }
+      return p;
+    } catch (e) { return null; }
+  };
+  const detallePayload = useMemo(() => leerSnapshot("deal", "fs_deal_"), []);
+  const opPayload = useMemo(() => leerSnapshot("op", "fs_op_"), []);
   const soloOpDetalle = !!(opPayload && opPayload.op); // pestaña propia con el DETALLE DE LA OPERACIÓN (?op=)
   const soloDetalle = !!(detallePayload && detallePayload.deal);
   const [deals, setDeals] = useState(soloDetalle ? [detallePayload.deal] : []); // arranca vacío; el pipeline se llena al presionar Start (en modo detalle, sembrado con la oportunidad)
@@ -15275,7 +15508,7 @@ export default function PipelineComercial() {
   // localStorage; la nueva pestaña (?deal=<id>) lo lee y muestra sólo el detalle a pantalla completa.
   const abrirDetalle = (d, tab) => {
     if (!d) return;
-    try { localStorage.setItem("fs_deal_" + d.id, JSON.stringify({ deal: d, usuario, tab: tab || null, ts: Date.now() })); } catch (e) {}
+    try { localStorage.setItem("fs_deal_" + d.id, JSON.stringify({ deal: d, usuario, tab: tab || null, ts: Date.now(), _v: SCHEMA_VERSION.snapshot, _app: APP_VERSION })); } catch (e) {}
     try { window.open(location.pathname + "?deal=" + encodeURIComponent(d.id), "_blank"); } catch (e) {}
   };
   // Descarga del detalle de la operación en PDF con el estilo de marca Security (vista imprimible → Imprimir/Guardar como PDF).

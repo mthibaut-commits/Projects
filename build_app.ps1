@@ -42,6 +42,29 @@ try {
         $tailwindJs = [System.IO.File]::ReadAllText($twPath, [System.Text.Encoding]::UTF8)
     }
 
+    # ---- Estampa de build (VERSIONADO) ----------------------------------------------------------
+    # Gestion de incidencias: el HTML generado debe poder identificarse a si mismo. Se inyecta
+    # window.__NEX_BUILD__ ANTES del bundle, para que APP_BUILD lo lea al evaluar sus constantes.
+    # Si el repo no esta disponible (copia suelta del build), cae a "sin-git" en vez de fallar.
+    $buildFecha = (Get-Date).ToString("yyyy-MM-dd HH:mm")
+    $buildCommit = "sin-git"
+    $buildRama = "-"
+    try {
+        $c = & git -C $root rev-parse --short HEAD 2>$null
+        if ($LASTEXITCODE -eq 0 -and $c) { $buildCommit = $c.Trim() }
+        $b = & git -C $root rev-parse --abbrev-ref HEAD 2>$null
+        if ($LASTEXITCODE -eq 0 -and $b) { $buildRama = $b.Trim() }
+        # Marca el build como sucio si hay cambios sin commitear: un HTML generado sobre el working
+        # tree no corresponde a ningun commit y eso tiene que verse en el diagnostico.
+        $st = & git -C $root status --porcelain 2>$null
+        if ($LASTEXITCODE -eq 0 -and $st) { $buildCommit = $buildCommit + "+local" }
+    } catch { }
+    # Ademas del objeto global, se deja un <meta name="nex-build"> para poder identificar el archivo
+    # desde "ver codigo fuente" sin abrir la app ni la consola.
+    $buildMeta = $buildFecha + ' | ' + $buildCommit + ' | ' + $buildRama
+    $buildJs = 'window.__NEX_BUILD__={fecha:"' + $buildFecha + '",commit:"' + $buildCommit + '",rama:"' + $buildRama + '"};' + "`n" +
+               'try{var m=document.createElement("meta");m.name="nex-build";m.content="' + $buildMeta + '";document.head.appendChild(m);}catch(e){}'
+
     # Colecciones de datos del webhook/SFTP (window.DTESYNC, LISTA_BLANCA, DEUDORES_AUTORIZADOS,
     # AECSYNC, SHARE_OF_WALLET, ESTRATEGIA_PRECIO, LINEA_DISPONIBLE). Sin ellas el inbound no
     # clasifica ninguna factura y el pipeline queda vacio (rescatadas del build original de Cowork).
@@ -109,7 +132,12 @@ ReactDOM.createRoot(document.getElementById("root")).render(<PipelineComercial /
 
     # Bloque de datos inyectados: va ANTES del bundle de la app, como script clasico,
     # para que window.DTESYNC y demas existan cuando el modulo evalue sus constantes.
-    $datosBlock = if ($datosJs) { '</script>' + "`n" + '<script>' + "`n" + $datosJs + "`n" + '</script>' + "`n" + '<script>' + "`n" } else { '' }
+    # La estampa de build va PRIMERO, antes incluso de los datos inyectados.
+    $datosBlock = if ($datosJs) {
+        '</script>' + "`n" + '<script>' + "`n" + $buildJs + "`n" + $datosJs + "`n" + '</script>' + "`n" + '<script>' + "`n"
+    } else {
+        '</script>' + "`n" + '<script>' + "`n" + $buildJs + "`n" + '</script>' + "`n" + '<script>' + "`n"
+    }
 
     # Si falta algun recurso local, cae a CDN online como respaldo.
     $babelBlock = if ($babelJs) {
@@ -131,6 +159,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(<PipelineComercial /
     [System.IO.File]::WriteAllText($outPath, $html, $utf8NoBom)
 
     Write-Host "OK: generado $outPath"
+    Write-Host "    build $buildFecha | commit $buildCommit | rama $buildRama"
     exit 0
 }
 catch {
