@@ -10528,41 +10528,41 @@ function PCtreemap({ tareas, deals, onSelectTask, hoverId, setHoverId }) {
       </g>
     );
   };
-  // Nivel 1: separa las oportunidades en las que la operación NO requiere aprobar un exceso de línea
-  // de crédito vs. las que SÍ lo requieren (otorgamiento). Sólo se divide cuando ambos grupos existen.
+  // Nivel 1: agrupa VERTICALMENTE en dos secciones apiladas — "Dentro de línea" (la operación NO
+  // requiere aprobar un exceso de cupo) arriba, y "Fuera de línea" (SÍ requiere otorgamiento por
+  // exceso) abajo. Cada sección se subdivide por categoría. Se muestran las secciones existentes.
   const conExceso = tareas.filter((t) => tareaRequiereExcesoLinea(t, deals));
   const sinExceso = tareas.filter((t) => !tareaRequiereExcesoLinea(t, deals));
-  const splitActivo = conExceso.length > 0 && sinExceso.length > 0;
   const supers = [
     { key: "sin", label: "Dentro de línea", color: "#0f766e", tasks: sinExceso },
     { key: "con", label: "Fuera de línea", color: "#C2410C", tasks: conExceso },
   ].filter((s) => s.tasks.length).map((s) => ({ ...s, v: s.tasks.reduce((a, t) => a + Math.max(1, t.impacto || 0), 0) }));
-  // Reparto por ANCHO proporcional al monto, pero con un ancho mínimo para que el título de cada
-  // bloque siempre sea legible (si un grupo es muy chico, no se aplasta a una franja ilegible).
-  const MINSUPW = 290;
+  // Reparto por ALTO proporcional al monto, con un alto mínimo para que el título y las categorías
+  // de cada sección siempre sean legibles (si una sección es chica, no se aplasta a una franja ilegible).
+  const MINSUPH = Math.min(H / Math.max(1, supers.length), 160);
   const totSupV = supers.reduce((a, s) => a + s.v, 0) || 1;
-  let supW = supers.map((s) => Math.max(MINSUPW, (s.v / totSupV) * W));
-  { const sum = supW.reduce((a, b) => a + b, 0); if (sum > W) { const slack = supW.map((w) => w - MINSUPW); const ts = slack.reduce((a, b) => a + b, 0) || 1; const over = sum - W; supW = supW.map((w, i) => w - (slack[i] / ts) * over); } }
-  const supX = []; { let cx = 0; for (const w of supW) { supX.push(cx); cx += w; } }
+  let supH = supers.map((s) => Math.max(MINSUPH, (s.v / totSupV) * H));
+  { const sum = supH.reduce((a, b) => a + b, 0); if (sum > H) { const slack = supH.map((h) => h - MINSUPH); const ts = slack.reduce((a, b) => a + b, 0) || 1; const over = sum - H; supH = supH.map((h, i) => h - (slack[i] / ts) * over); } }
+  const supY = []; { let cy = 0; for (const h of supH) { supY.push(cy); cy += h; } }
   return (
     <div className="flex h-full flex-col">
       <div ref={wrapRef} className="flex-1" style={{ minHeight: 0 }}>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="block h-full w-full rounded-xl" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-        {splitActivo
+        {supers.length
           ? supers.map((s, si) => {
-              const x0 = supX[si], w0 = supW[si]; const spad = 3.5; const slblH = H > 44 && w0 > 108 ? 17 : 0;
-              const sinner = { x: x0 + spad, y: spad + slblH, w: Math.max(1, w0 - spad * 2), h: Math.max(1, H - spad * 2 - slblH) };
+              const y0 = supY[si], h0 = supH[si]; const spad = 3.5; const slblH = h0 > 44 ? 17 : 0;
+              const sinner = { x: spad, y: y0 + spad + slblH, w: Math.max(1, W - spad * 2), h: Math.max(1, h0 - spad * 2 - slblH) };
               const catRects = squarify(buildCats(s.tasks), sinner.x, sinner.y, sinner.w, sinner.h);
               const sMonto = s.tasks.reduce((a, t) => a + (t.impacto || 0), 0);
               return (
                 <g key={"s" + si}>
-                  <rect x={x0 + 1} y={1} width={Math.max(0, w0 - 2)} height={Math.max(0, H - 2)} fill={s.color + "0a"} strokeWidth="0" rx="7" />
-                  {slblH > 0 && <><rect x={x0 + 2} y={2} width={Math.max(0, w0 - 4)} height={slblH - 1} fill={s.color} rx="5" /><text x={x0 + 8} y={13.5} fill="#fff"><tspan fontSize="10" fontWeight="600">{s.label}</tspan><tspan fontSize="8.5" fontWeight="400" dx="6">{s.tasks.length} oport. · {fmtMMc(sMonto)}</tspan></text></>}
+                  <rect x={1} y={y0 + 1} width={Math.max(0, W - 2)} height={Math.max(0, h0 - 2)} fill={s.color + "0a"} strokeWidth="0" rx="7" />
+                  {slblH > 0 && <><rect x={2} y={y0 + 2} width={Math.max(0, W - 4)} height={slblH - 1} fill={s.color} rx="5" /><text x={8} y={y0 + 13.5} fill="#fff"><tspan fontSize="10" fontWeight="600">{s.label}</tspan><tspan fontSize="8.5" fontWeight="400" dx="6">{s.tasks.length} oport. · {fmtMMc(sMonto)}</tspan></text></>}
                   {catRects.map((cr, ci) => paintCat(cr, "s" + si + "c" + ci))}
                 </g>
               );
             })
-          : squarify(buildCats(tareas), 0, 0, W, H).map((cr, ci) => paintCat(cr, "c" + ci))}
+          : null}
       </svg>
       </div>
     </div>
@@ -10920,7 +10920,7 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
                 );
               })()}
             </div>
-            <div className="shrink-0 text-right"><div className="t8 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Impacto</div><div className="t13 font-bold" style={{ color: m.color }}>{fmtMMc(t.impacto)}</div><div className="t9" style={{ color: C.faint }}>{t.fuente === "pipeline" ? "pipeline" : "cartera"}</div></div>
+            <div className="shrink-0 text-right"><div className="t11 font-bold" style={{ color: m.color }}>{fmtMMc(t.impacto)}</div></div>
             {t.dealId && puedeMarcar && (() => { const on = tienePrioridadCurse(t.dealId); return (
               <button onClick={(e) => { e.stopPropagation(); togglePrio(t.dealId); }} title={on ? "Quitar prioridad de curse" : "Solicitar prioridad de curse al ejecutivo"} className="flex shrink-0 items-center justify-center rounded-md p-1.5" style={{ border: `1px solid ${on ? "#FED7AA" : C.line}`, backgroundColor: on ? "#FFF7ED" : "#fff" }}><Star size={15} style={{ color: on ? "#C2410C" : C.faint, fill: on ? "#F97316" : "none" }} /></button>
             ); })()}
@@ -11102,7 +11102,7 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
                     <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: r.tipoBg, color: r.tipoCol }}>{r.star && <Star size={11} style={{ fill: "#F97316", color: "#C2410C" }} />}{r.tipo}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="t13 font-semibold" style={{ color: C.ink }}>{r.cliente}</div>
+                    <div className="t12 font-semibold" style={{ color: C.ink }}>{r.cliente}</div>
                     <div className="t10" style={{ color: C.faint }}>{r.ref}</div>
                   </td>
                   <td className="px-4 py-3">
@@ -11796,7 +11796,7 @@ function OperacionDetalle({ op, onClose, onDescargar }) {
   const firmantes = [["JG", "Sofía Herrera"], ["GC", "Dante Montes"], ["RG", "Carolina Vergara"], ["SR", "Paula Reyes"]];
   const rutCliente = (op.deal && op.deal.rutEmisor) || op.rut || "76.761.199-1";
   const Card = ({ children, className = "" }) => <div className={"rounded-2xl bg-white p-5 " + className} style={{ border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>{children}</div>;
-  const Kpi = ({ l, v, s }) => <div><div className="t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>{l}</div><div className="mt-0.5 text-lg font-bold" style={{ color: C.ink }}>{v}</div>{s && <div className="t9" style={{ color: C.faint }}>{s}</div>}</div>;
+  const Kpi = ({ l, v, s }) => <div><div className="t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>{l}</div><div className="mt-0.5 t12 font-bold" style={{ color: C.ink }}>{v}</div>{s && <div className="t9" style={{ color: C.faint }}>{s}</div>}</div>;
   return (
     <div style={{ backgroundColor: C.page, minHeight: "100vh" }}>
       {/* Encabezado */}
@@ -11815,7 +11815,7 @@ function OperacionDetalle({ op, onClose, onDescargar }) {
       </header>
 
       <div className="mx-auto w-full px-5 py-5" style={{ maxWidth: 1120 }}>
-        <h1 className="text-2xl font-semibold tracking-tight" style={{ color: C.navy }}>Detalle de la operación</h1>
+        <h1 className="text-xl font-semibold tracking-tight" style={{ color: C.navy }}>Detalle de la operación</h1>
 
         {/* Banner de estado */}
         <div className="mt-3 flex items-start gap-2.5 rounded-xl p-3.5" style={{ backgroundColor: girada ? C.greenBg : "#eff6ff", border: `1px solid ${girada ? "#bbf7d0" : "#bfdbfe"}` }}>
@@ -11868,7 +11868,7 @@ function OperacionDetalle({ op, onClose, onDescargar }) {
                 {descRows.map(([l, v]) => <div key={l} className="flex items-center justify-between px-6 py-2 t11"><span style={{ color: C.sub }}>{l}</span><span className="font-medium" style={{ color: C.ink }}>{fmt(v)}</span></div>)}
               </div>
             )}
-            <div className="flex items-center justify-between px-4 py-3.5" style={{ backgroundColor: "#eff6ff" }}><span className="t13 font-bold" style={{ color: C.ink }}>Monto a girar</span><span className="text-lg font-bold" style={{ color: C.indigo }}>{fmt(giroCLP)}</span></div>
+            <div className="flex items-center justify-between px-4 py-3.5" style={{ backgroundColor: "#eff6ff" }}><span className="t12 font-bold" style={{ color: C.ink }}>Monto a girar</span><span className="t13 font-bold" style={{ color: C.indigo }}>{fmt(giroCLP)}</span></div>
           </div>
           <div className="mt-3 flex items-start gap-2 rounded-lg p-3 t11" style={{ backgroundColor: "#eff6ff", borderLeft: "3px solid #2563EB", color: C.sub }}>
             <span className="font-semibold" style={{ color: "#1e40af" }}>Esta simulación considera una retención de {fmt(retencion)}.</span> El monto indicado se liberará en su totalidad si las facturas se pagan en la fecha informada.
@@ -14560,13 +14560,14 @@ export default function PipelineComercial() {
     const firmantes = ["AA", "AA", "AA", "AA"].map(() => `<span class="ava"></span>`).join("");
     const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Otorgamiento N° ${esc(o.neg)} · Security Factoring</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Mona+Sans:wght@400;500;600;700;800&display=swap');
   @page { size: A4; margin: 14mm; }
   * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  body { margin: 0; background: #F8FBFF; color: #333840; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-size: 12px; }
+  body { margin: 0; background: #F8FBFF; color: #333840; font-family: 'Mona Sans', -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-size: 11.5px; }
   .wrap { max-width: 900px; margin: 0 auto; padding: 0 0 24px; }
   .hdr { background: linear-gradient(90deg,#6A2E92,#703EFF); color: #fff; padding: 20px 24px; display: flex; align-items: center; justify-content: space-between; }
-  .hdr .logo { font-weight: 800; letter-spacing: .5px; font-size: 13px; opacity: .85; }
-  .hdr h1 { margin: 4px 0 0; font-size: 22px; font-weight: 700; }
+  .hdr .logo { font-weight: 800; letter-spacing: .5px; font-size: 12px; opacity: .85; }
+  .hdr h1 { margin: 4px 0 0; font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
   .hdr .co { text-align: right; font-size: 12px; }
   .hdr .co b { font-size: 13px; letter-spacing: .3px; }
   .card { background: #fff; border: 1px solid #DDE3ED; border-radius: 12px; padding: 18px 20px; margin: 16px 24px 0; }
@@ -14575,10 +14576,10 @@ export default function PipelineComercial() {
   .banner .sub { color: #58606E; margin-top: 2px; }
   .kpis { display: flex; gap: 24px; flex-wrap: wrap; }
   .kpi .l { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: #7F90AF; font-weight: 700; }
-  .kpi .b { font-size: 16px; font-weight: 800; color: #232272; margin-top: 2px; }
+  .kpi .b { font-size: 14px; font-weight: 800; color: #232272; margin-top: 2px; }
   .kpi .s { font-size: 10px; color: #7F90AF; }
   .chip { display: inline-block; background: #EBEFF5; color: #316094; border-radius: 999px; padding: 2px 10px; font-size: 10px; font-weight: 700; margin-top: 4px; }
-  .sect { font-size: 15px; font-weight: 800; color: #232272; margin: 0 0 10px; }
+  .sect { font-size: 13px; font-weight: 800; color: #232272; margin: 0 0 10px; }
   .cond { border: 1px solid #DDE3ED; border-radius: 10px; overflow: hidden; }
   .cond table { width: 100%; border-collapse: collapse; }
   .cond td { padding: 11px 16px; border-bottom: 1px solid #EBEFF5; }
