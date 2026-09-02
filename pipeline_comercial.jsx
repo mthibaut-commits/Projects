@@ -6910,14 +6910,13 @@ const soloDigitos = (s) => String(s || "").replace(/[^\d]/g, "");
 const parseFilasTexto = (txt) => String(txt || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
   .map((l) => l.split(/[;,\t]/).map((c) => c.trim().replace(/^"|"$/g, "")))
   .filter((r, i) => !(i === 0 && /rut/i.test(r[0] || "")));
-// SheetJS bajo demanda (sólo si el ejecutivo sube un .xlsx). Sin conexión se pide guardar como CSV.
+// SheetJS. Antes se inyectaba un <script> a cdnjs la primera vez que el ejecutivo subía un .xlsx:
+// una dependencia de un tercero cargada en caliente, sin integridad y sin control de versión efectivo
+// (OWASP A08). Ahora viene vendorizada en el bundle, así que ya está disponible y no hay red de por
+// medio — que además es lo único compatible con la CSP (`script-src 'self'`).
 const cargarXLSX = () => new Promise((res, rej) => {
   if (typeof window !== "undefined" && window.XLSX) return res(window.XLSX);
-  const s = document.createElement("script");
-  s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
-  s.onload = () => (window.XLSX ? res(window.XLSX) : rej(new Error("XLSX")));
-  s.onerror = () => rej(new Error("XLSX"));
-  document.head.appendChild(s);
+  rej(new Error("XLSX no disponible en el bundle"));
 });
 function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onOpenDeal }) {
   const incorporar = !!deal; // modo "incorporar facturas a un negocio existente"

@@ -3,9 +3,9 @@
   ---------------------------------------------------------------
   Genera pipeline_comercial.html a partir de pipeline_comercial.jsx.
 
-  No hay paso de build/bundling: el HTML resultante carga
-  React 18 + lucide-react + recharts + d3-sankey via importmap (ESM,
-  esm.sh) y transpila el JSX en el navegador con Babel Standalone
+  No hay paso de build/bundling: el HTML resultante embebe
+  React 18 + lucide-react + recharts + d3-sankey desde vendor/ (builds
+  UMD, sin CDN en runtime) y transpila el JSX con Babel Standalone
   (embebido localmente desde babel.min.js.descarga). Tailwind se
   incluye embebido localmente desde saved_resource (script CDN de
   tailwindcss.com, clases base, sin config extra).
@@ -74,6 +74,22 @@ try {
         $datosJs = [System.IO.File]::ReadAllText($datosPath, [System.Text.Encoding]::UTF8)
     }
 
+    # ---- Dependencias VENDORIZADAS (OWASP A08) ------------------------------------------------
+    # Antes React, recharts, lucide y d3-sankey se cargaban desde esm.sh por importmap, SIN integrity.
+    # Un import map no permite proteger la cadena completa: la URL de entrada de esm.sh es un shim de
+    # ~130 bytes que re-exporta desde otra ruta, de modo que un SRI ahi cubre el shim y no el codigo.
+    # Ademas la app se abre por file:// (ver Iniciar_NEX_Factoring.bat), donde los modulos ES locales
+    # quedan bloqueados por CORS. Por eso se usan los builds UMD, embebidos en el HTML: se elimina la
+    # dependencia de un tercero en tiempo de ejecucion y el archivo sigue siendo autocontenido.
+    # Actualizar una libreria = volver a bajar el archivo a vendor/ y revisar el diff.
+    $vendorOrden = @("react.js","react-dom.js","prop-types.js","_alias.js","d3-path.js","d3-array.js","d3-shape.js","d3-sankey.js","lucide-react.js","recharts.js","xlsx.js")
+    $vendorJs = ""
+    foreach ($v in $vendorOrden) {
+        $vp = Join-Path $root "vendor\$v"
+        if (-not (Test-Path $vp)) { throw "Falta la dependencia vendorizada: vendor\$v" }
+        $vendorJs = $vendorJs + "`n/* vendor: $v */`n" + [System.IO.File]::ReadAllText($vp, [System.Text.Encoding]::UTF8)
+    }
+
     # Feed DIARIO de proveedores de clientes (proveedores_clientes.json). Es un archivo JSON puro
     # —el mismo artefacto que se deja cada manana para cargar en la BD interna— y aca se embebe como
     # window.PROVEEDORES_CLIENTES para que el demo funcione sin backend ni fetch (que file:// bloquea).
@@ -84,6 +100,23 @@ try {
         $provJson = [System.IO.File]::ReadAllText($provPath, [System.Text.Encoding]::UTF8)
         $provJs = "window.PROVEEDORES_CLIENTES=" + $provJson + ";"
     }
+
+    # Los `import` del .jsx se traducen a destructuring de los globales UMD. El fuente se mantiene con
+    # imports (es lo que entiende el chequeo de tipos); la traduccion ocurre solo al construir.
+    $globalDe = @{ "react" = "React"; "react-dom" = "ReactDOM"; "lucide-react" = "LucideReact"; "recharts" = "Recharts"; "d3-sankey" = "d3" }
+    $jsxSource = [regex]::Replace($jsxSource, 'import\s*\{([\s\S]*?)\}\s*from\s*"([^"]+)";', {
+        param($m)
+        $mod = $m.Groups[2].Value
+        $g = $globalDe[$mod]
+        if (-not $g) { throw "Import sin global UMD conocido: $mod" }
+        $names = $m.Groups[1].Value -replace '\s+as\s+', ': '
+        'const {' + $names + '} = ' + $g + ';'
+    })
+
+    # El fuente declara `export default function PipelineComercial`, valido cuando el bundle era un
+    # modulo ES. Ahora es un script clasico y `export` seria un SyntaxError, asi que se quita al
+    # construir; el .jsx conserva el export porque es lo que espera el chequeo de tipos.
+    $jsxSource = $jsxSource -replace 'export default function PipelineComercial', 'function PipelineComercial'
 
     # ---- Fragmentos de HTML (single-quoted: sin interpolacion de PowerShell) ----
     # Importante: todo lo que viene de archivos externos (jsx, babel, tailwind) se
@@ -103,21 +136,9 @@ try {
      compilado y ambos se quitan, que es el mayor beneficio de sacar Babel del runtime.
      Nota: frame-ancestors se IGNORA en <meta>; contra clickjacking hay que mandarlo como cabecera
      HTTP (o X-Frame-Options) desde el servidor/CDN, junto con HSTS y Referrer-Policy. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://esm.sh; child-src blob:; frame-src blob:; object-src 'none'; base-uri 'self'; form-action 'self'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; child-src blob:; frame-src blob:; object-src 'none'; base-uri 'self'; form-action 'self'" />
 <meta name="referrer" content="strict-origin-when-cross-origin" />
 <title>NEX Factoring - Pipeline Comercial</title>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@18.3.1",
-    "react-dom": "https://esm.sh/react-dom@18.3.1",
-    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
-    "lucide-react": "https://esm.sh/lucide-react@0.383.0?external=react",
-    "recharts": "https://esm.sh/recharts@2.12.7?external=react,react-dom",
-    "d3-sankey": "https://esm.sh/d3-sankey@0.12.3"
-  }
-}
-</script>
 <style>
   html, body, #root { height: 100%; }
   body { margin: 0; }
@@ -135,9 +156,7 @@ try {
 </head>
 <body>
 <div id="root"></div>
-<script type="text/babel" data-type="module" data-presets="react">
-import React from "react";
-import ReactDOM from "react-dom/client";
+<script type="text/babel" data-presets="react">
 
 '@
 
@@ -152,7 +171,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(<PipelineComercial /
     # Bloque de datos inyectados: va ANTES del bundle de la app, como script clasico,
     # para que window.DTESYNC y demas existan cuando el modulo evalue sus constantes.
     # La estampa de build va PRIMERO, antes incluso de los datos inyectados.
-    $payload = $buildJs
+    $payload = $buildJs + "`n" + $vendorJs
     if ($datosJs) { $payload = $payload + "`n" + $datosJs }
     if ($provJs)  { $payload = $payload + "`n" + $provJs }
     $datosBlock = '</script>' + "`n" + '<script>' + "`n" + $payload + "`n" + '</script>' + "`n" + '<script>' + "`n"
@@ -167,7 +186,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(<PipelineComercial /
     $tailwindBlock = if ($tailwindJs) {
         $babelBlock + $tailwindJs + $head3
     } else {
-        $babelBlock + '</script>' + "`n" + '<script src="https://cdn.tailwindcss.com"></script>' + "`n" + '<script type="text/babel" data-type="module" data-presets="react">' + "`n" + 'import React from "react";' + "`n" + 'import ReactDOM from "react-dom/client";' + "`n`n"
+        $babelBlock + '</script>' + "`n" + '<script src="https://cdn.tailwindcss.com"></script>' + "`n" + '<script type="text/babel" data-presets="react">' + "`n`n"
     }
 
     $html = $tailwindBlock + $jsxSource + $tail
