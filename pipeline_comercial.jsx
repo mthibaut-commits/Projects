@@ -10155,16 +10155,26 @@ function dashboardKPIs(usuario, deals) {
     tareas: { lineasGest, nLineasSOW, nFueraLinea, prioritarios, nTubo, tareasPend, msgResponder },
   };
 }
-function DashCard({ Icon, col, valor, label, sub, serie, meta, onClick }) {
+// `tag` tipifica la meta (Colocaciones · Clientes · Principalidad · SOW General · SOW Prime · SOW
+// Competencia). Va arriba de todo, alineada a la izquierda sobre el ícono, en gris neutro: agrupa las
+// cards por familia sin competir con el dato, que es lo que el ejecutivo tiene que leer primero.
+function DashCard({ Icon, col, valor, label, sub, serie, meta, onClick, tag }) {
   const clickable = typeof onClick === "function";
   return (
-    <div onClick={clickable ? onClick : undefined} title={clickable ? "Ver en el Tubo Diario" : undefined} className="rounded-2xl bg-white p-4 transition-shadow" style={{ border: `1px solid ${C.line}`, cursor: clickable ? "pointer" : "default", boxShadow: clickable ? "0 1px 2px rgba(20,25,45,.04)" : "none" }} onMouseEnter={clickable ? (e) => { e.currentTarget.style.boxShadow = `0 0 0 1.5px ${col}, 0 6px 18px ${col}22`; } : undefined} onMouseLeave={clickable ? (e) => { e.currentTarget.style.boxShadow = "0 1px 2px rgba(20,25,45,.04)"; } : undefined}>
+    // Columna flex de alto completo: la grilla ya iguala la altura de las cards, pero sin esto el
+    // contenido queda arriba y la barra de cumplimiento aparece a distinta altura en cada una (el valor
+    // de «Colocaciones» envuelve a dos líneas y corre todo lo de abajo). El bloque de meta se ancla al
+    // fondo con marginTop:auto, así las barras quedan alineadas en toda la fila.
+    <div onClick={clickable ? onClick : undefined} title={clickable ? "Ver en el Tubo Diario" : undefined} className="rounded-2xl bg-white p-4 transition-shadow" style={{ border: `1px solid ${C.line}`, cursor: clickable ? "pointer" : "default", boxShadow: clickable ? "0 1px 2px rgba(20,25,45,.04)" : "none", display: "flex", flexDirection: "column", height: "100%" }} onMouseEnter={clickable ? (e) => { e.currentTarget.style.boxShadow = `0 0 0 1.5px ${col}, 0 6px 18px ${col}22`; } : undefined} onMouseLeave={clickable ? (e) => { e.currentTarget.style.boxShadow = "0 1px 2px rgba(20,25,45,.04)"; } : undefined}>
+      {/* Altura fija y sin salto de línea: si una etiqueta larga («SOW Competencia») envuelve, esa card
+          crece y la fila entera se desalinea. Se recorta con elipsis antes que descuadrar la grilla. */}
+      {tag && <div className="mb-1.5 t9 font-semibold uppercase" style={{ color: C.faint, letterSpacing: ".04em", height: 13, lineHeight: "13px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{tag}</div>}
       <div className="flex items-start justify-between gap-2">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ backgroundColor: col + "1a", color: col }}><Icon size={15} /></div>
         {serie && serie.length > 1 && <DashSpark serie={serie} col={col} />}
       </div>
       <div className="mt-2 text-xl font-bold" style={{ color: C.ink }}>{valor}</div>
-      <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{label}</div>
+      {label ? <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{label}</div> : null}
       {sub && <div className="mt-0.5 t9" style={{ color: C.faint, lineHeight: 1.35 }}>{sub}</div>}
       {meta && (() => {
         // Métricas normales: la meta es un PISO, el cumplimiento es real/meta y pasarse es bueno.
@@ -10181,7 +10191,7 @@ function DashCard({ Icon, col, valor, label, sub, serie, meta, onClick }) {
           : meta.pct;
         const col = meta.invert ? (excedido ? "#DC2626" : "#16A34A") : dashCumplCol(cumpl);
         return (
-        <div className="mt-2">
+        <div style={{ marginTop: "auto", paddingTop: 8 }}>
           <div className="flex items-center justify-between t9">
             <span style={{ color: C.sub }}>{excedido ? "Excedido" : "Cumplimiento"}</span>
             <span className="font-bold" style={{ color: col }}>{cumpl}%</span>
@@ -10230,12 +10240,12 @@ function DashboardView({ usuario, deals, onVerPrioritarios }) {
         <DashCard Icon={Bell} col="#703EFF" valor={t.msgResponder.toLocaleString("es-CL")} label="Mensajes en tu bandeja" sub="enviados por tus compañeros" />
       </Section>
       <Section title="Metas del mes">
-        <DashCard Icon={Zap} col="#703EFF" valor={<>{fmtMMc(m.colocReal)} <span className="t10 font-normal" style={{ color: C.faint }}>/ {fmtMMc(m.colocMeta)}</span></>} label="Colocación" meta={{ pct: pct(m.colocReal, m.colocMeta) }} serie={dashSerie(m.colocReal, "meta-coloc-" + usuario)} />
-        <DashCard Icon={Sparkles} col="#2563EB" valor={<>{m.nvReal} <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.nvMeta}</span></>} label="Clientes nuevos" meta={{ pct: pct(m.nvReal, m.nvMeta) }} serie={dashSerie(m.nvReal, "meta-nue-" + usuario)} />
-        <DashCard Icon={User} col="#16A34A" valor={<>{m.opReal} <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.opMeta}</span></>} label="Clientes operando" meta={{ pct: pct(m.opReal, m.opMeta) }} serie={dashSerie(m.opReal, "meta-op-" + usuario)} />
-        <DashCard Icon={Target} col="#7C3AED" valor={<>{sow}% <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.targetProm}%</span></>} label="SOW total" meta={{ pct: pct(m.sowReal, m.targetProm) }} serie={d.serieSem.map((x) => x.sowPct)} />
-        <DashCard Icon={Target} col="#0891b2" valor={<>{sowPrime}% <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.targetProm}%</span></>} label="SOW deudores prime" meta={{ pct: pct(m.sowPrimeReal, m.targetProm) }} serie={dashSerie(m.sowPrimeReal, "meta-sowp-" + usuario)} />
-        <DashCard Icon={Target} col="#DC2626" valor={<>{Math.round(m.compTargetReal)}% <span className="t10 font-normal" style={{ color: C.faint }}>/ ≤ {m.compTargetMeta}%</span></>} label="SOW factoring target" sub="Cartera prime" meta={{ invert: true, real: m.compTargetReal, objetivo: m.compTargetMeta }} serie={dashSerie(m.compTargetReal, "meta-comp-" + usuario)} />
+        <DashCard Icon={Zap} col="#703EFF" tag="Colocaciones" valor={<>{fmtMMc(m.colocReal)} <span className="t10 font-normal" style={{ color: C.faint }}>/ {fmtMMc(m.colocMeta)}</span></>} label="" meta={{ pct: pct(m.colocReal, m.colocMeta) }} serie={dashSerie(m.colocReal, "meta-coloc-" + usuario)} />
+        <DashCard Icon={Sparkles} col="#2563EB" tag="Clientes" valor={<>{m.nvReal} <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.nvMeta}</span></>} label="Clientes nuevos" meta={{ pct: pct(m.nvReal, m.nvMeta) }} serie={dashSerie(m.nvReal, "meta-nue-" + usuario)} />
+        <DashCard Icon={User} col="#16A34A" tag="Principalidad" valor={<>{m.opReal} <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.opMeta}</span></>} label="Clientes operando" meta={{ pct: pct(m.opReal, m.opMeta) }} serie={dashSerie(m.opReal, "meta-op-" + usuario)} />
+        <DashCard Icon={Target} col="#7C3AED" tag="SOW General" valor={<>{sow}% <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.targetProm}%</span></>} label="SOW total" meta={{ pct: pct(m.sowReal, m.targetProm) }} serie={d.serieSem.map((x) => x.sowPct)} />
+        <DashCard Icon={Target} col="#0891b2" tag="SOW Prime" valor={<>{sowPrime}% <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.targetProm}%</span></>} label="SOW deudores prime" meta={{ pct: pct(m.sowPrimeReal, m.targetProm) }} serie={dashSerie(m.sowPrimeReal, "meta-sowp-" + usuario)} />
+        <DashCard Icon={Target} col="#DC2626" tag="SOW Competencia" valor={<>{Math.round(m.compTargetReal)}% <span className="t10 font-normal" style={{ color: C.faint }}>/ ≤ {m.compTargetMeta}%</span></>} label="SOW factoring target" sub="Cartera prime" meta={{ invert: true, real: m.compTargetReal, objetivo: m.compTargetMeta }} serie={dashSerie(m.compTargetReal, "meta-comp-" + usuario)} />
       </Section>
     </div>
   );
