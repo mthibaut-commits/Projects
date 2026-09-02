@@ -318,6 +318,11 @@ const CONTRATOS_DATOS = [
   { coleccion: "SHARE_OF_WALLET", esquema: 1, requeridos: [] },
   { coleccion: "ESTRATEGIA_PRECIO", esquema: 1, requeridos: [] },
   { coleccion: "LINEA_DISPONIBLE", esquema: 1, requeridos: [] },
+  // Feed DIARIO complementario a Plataforma 360: P360 describe a la EMPRESA; esto describe QUIÉN LE
+  // VENDE. DTESync sólo trae documentos emitidos (EmitidoRecibido = 1) —las facturas que el cliente
+  // le hace a sus deudores—, así que los proveedores del cliente no salen de ninguna fuente actual.
+  // Se deja cada mañana como archivo JSON, se carga a la BD interna y la app lo consume por API.
+  { coleccion: "PROVEEDORES_CLIENTES", esquema: 1, requeridos: [], objeto: true },
 ];
 // Estado de cada contrato: ausente | ok | campos_faltantes. Se calcula una vez al cargar el módulo y se
 // muestra en el panel de diagnóstico; es lo primero que hay que mirar cuando "no entran oportunidades".
@@ -326,6 +331,13 @@ function validarContratosDatos() {
   return CONTRATOS_DATOS.map((c) => {
     const col = (typeof window !== "undefined" && window[c.coleccion]) || null;
     if (!col || (Array.isArray(col) && !col.length)) return { ...c, estado: "ausente", n: 0, faltantes: [] };
+    // Colecciones con envoltorio ({esquema, generado, …, clientes:[…]}): se cuenta el detalle y se
+    // contrasta el esquema DECLARADO por el proveedor contra el esperado.
+    if (c.objeto) {
+      const n = Array.isArray(col.clientes) ? col.clientes.length : 0;
+      const desal = col.esquema != null && col.esquema !== c.esquema;
+      return { ...c, estado: desal ? "campos_faltantes" : (n ? "ok" : "ausente"), n, faltantes: desal ? [`esquema ${col.esquema}, se esperaba ${c.esquema}`] : [], generado: col.generado, esquemaRecibido: col.esquema };
+    }
     const n = Array.isArray(col) ? col.length : Object.keys(col).length;
     const muestra = Array.isArray(col) ? col[0] : null;
     const faltantes = (muestra && c.requeridos.length) ? c.requeridos.filter((k) => !(k in muestra)) : [];
@@ -427,6 +439,16 @@ CATALOGOS_POLITICA.forEach((c) => {
   logSys("info", "politica", `Política «${c.etiqueta}» vigente: ${v.version} (desde ${v.vigenteDesde})`, { catalogo: c.id, version: v.version, vigenteDesde: v.vigenteDesde });
 });
 validarPoliticas().forEach((p) => logSys("error", "politica", `Historial de políticas inconsistente: ${p}`));
+// El feed diario de proveedores alimenta el KPI de empresas candidatas. Si no llegó, el KPI queda en 0
+// y hay que verlo en el log: un cero silencioso se confunde con «no hay prospectos».
+(() => {
+  const f = (typeof window !== "undefined" && window.PROVEEDORES_CLIENTES) || null;
+  if (!f || !Array.isArray(f.clientes) || !f.clientes.length) {
+    logSys("warn", "inbound", "No llegó el feed diario PROVEEDORES_CLIENTES: «empresas candidatas» queda en 0 hasta la próxima carga");
+  } else {
+    logSys("info", "inbound", `Feed de proveedores de clientes cargado: ${f.clientes.length} cliente(s), generado ${f.generado || "sin fecha"}`, { clientes: f.clientes.length, esquema: f.esquema, generado: f.generado, ventanaDias: f.ventanaDias });
+  }
+})();
 // Volcado al cerrar/ocultar la pestaña: sin esto se perderían los últimos eventos (los que quedaron
 // dentro de la ventana de agrupación), que son justamente los de interés cuando algo falla al final.
 if (typeof window !== "undefined") {
@@ -10030,7 +10052,26 @@ function dashboardKPIs(usuario, deals) {
   const inactivas = mis.filter((c) => c.estado === "Inactivo").length;
   const activas = total - inactivas;
   const operanOtros = mis.filter((c) => c.estado === "Competencia").length;
-  const candidatas = mis.filter((c) => c.tag === "FUGA" || c.tag === "CAÍDA").length; // solo «a recuperar» (fugas y caídas), sin prospectos
+  // ── Empresas candidatas = PROVEEDORES DE LOS CLIENTES que todavía no operan con nosotros ─────────
+  // Antes esto contaba clientes propios marcados FUGA/CAÍDA, o sea cartera A RECUPERAR. Eso no es un
+  // candidato: es un cliente que ya tenemos y se está yendo (y ya se mide en «operan con otros»).
+  // El candidato real del factoring es el PROVEEDOR GRANDE de un cliente nuestro: le vende a una
+  // empresa cuyo comportamiento de pago ya conocemos, y todavía no es cliente.
+  // Fuente: feed diario PROVEEDORES_CLIENTES (top 10 proveedores por cliente). Se cuentan proveedores
+  // DISTINTOS —un mismo proveedor puede venderle a varios clientes de la cartera y es un solo
+  // prospecto— y se excluyen los que ya están en el maestro de empresas.
+  const candidatas = (() => {
+    const feed = (typeof window !== "undefined" && window.PROVEEDORES_CLIENTES) || null;
+    if (!feed || !Array.isArray(feed.clientes)) return 0; // sin feed no se inventa el número: es 0 y queda en el log
+    const rutsCartera = new Set(mis.map((c) => c.rut));            // clientes del ejecutivo (alcance)
+    const rutsMaestro = new Set(PC_CLIENTES.map((c) => c.rut));    // universo de empresas ya conocidas
+    const prospectos = new Set();
+    for (const cli of feed.clientes) {
+      if (!rutsCartera.has(cli.rut)) continue;
+      for (const p of (cli.proveedores || [])) if (!rutsMaestro.has(p.rut)) prospectos.add(p.rut);
+    }
+    return prospectos.size;
+  })();
   const nuevasMes = inis.reduce((s, ini) => s + nuevasEmpRealMes(ini, MES_ACT), 0);
   // ── Rango "mes en curso" + últimas 8 semanas (SHARE_OF_WALLET) ──
   const semanas = [...new Set((window.SHARE_OF_WALLET || []).flatMap((s) => (s.HistoricoSemanal || []).map((w) => w.Semana)))].sort();
@@ -10173,7 +10214,7 @@ function DashboardView({ usuario, deals, onVerPrioritarios }) {
         <DashCard Icon={User} col="#703EFF" valor={emp.total.toLocaleString("es-CL")} label="Empresas · cartera" sub="Clientes asignados a tu cartera" serie={dashSerie(emp.total, "emp-total-" + usuario)} />
         <DashCard Icon={Check} col="#16A34A" valor={emp.activas.toLocaleString("es-CL")} label="Empresas activas" sub={`${emp.ops.toLocaleString("es-CL")} operaciones (este mes)`} serie={dashSerie(emp.activas, "emp-act-" + usuario)} />
         <DashCard Icon={ArrowDownRight} col="#C2410C" valor={emp.operanOtros.toLocaleString("es-CL")} label="Operan con otros" sub="ceden a otros factorings" serie={dashSerie(emp.operanOtros, "emp-otr-" + usuario)} />
-        <DashCard Icon={Star} col="#7C3AED" valor={emp.candidatas.toLocaleString("es-CL")} label="Empresas candidatas" sub="a recuperar (fugas y caídas)" serie={dashSerie(emp.candidatas, "emp-can-" + usuario)} />
+        <DashCard Icon={Star} col="#7C3AED" valor={emp.candidatas.toLocaleString("es-CL")} label="Empresas candidatas" sub="proveedores de clientes" serie={dashSerie(emp.candidatas, "emp-can-" + usuario)} />
       </Section>
       <Section title="Operaciones · mes en curso">
         <DashCard Icon={BarChart2} col="#2563EB" valor={fmtMMc(o.facturado)} label="Facturas emitidas" sub={`${fmtMMc(o.facturadoBuenas)} · ${o.buenasPct}% de buenos deudores`} serie={d.serieSem.map((x) => x.facturado)} />

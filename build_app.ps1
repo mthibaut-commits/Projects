@@ -74,6 +74,17 @@ try {
         $datosJs = [System.IO.File]::ReadAllText($datosPath, [System.Text.Encoding]::UTF8)
     }
 
+    # Feed DIARIO de proveedores de clientes (proveedores_clientes.json). Es un archivo JSON puro
+    # —el mismo artefacto que se deja cada manana para cargar en la BD interna— y aca se embebe como
+    # window.PROVEEDORES_CLIENTES para que el demo funcione sin backend ni fetch (que file:// bloquea).
+    # En produccion la app NO lo embebe: lo pide por API.
+    $provPath = Join-Path $root "proveedores_clientes.json"
+    $provJs = $null
+    if (Test-Path $provPath) {
+        $provJson = [System.IO.File]::ReadAllText($provPath, [System.Text.Encoding]::UTF8)
+        $provJs = "window.PROVEEDORES_CLIENTES=" + $provJson + ";"
+    }
+
     # ---- Fragmentos de HTML (single-quoted: sin interpolacion de PowerShell) ----
     # Importante: todo lo que viene de archivos externos (jsx, babel, tailwind) se
     # concatena tal cual con "+", nunca se interpola dentro de un here-string de
@@ -133,11 +144,10 @@ ReactDOM.createRoot(document.getElementById("root")).render(<PipelineComercial /
     # Bloque de datos inyectados: va ANTES del bundle de la app, como script clasico,
     # para que window.DTESYNC y demas existan cuando el modulo evalue sus constantes.
     # La estampa de build va PRIMERO, antes incluso de los datos inyectados.
-    $datosBlock = if ($datosJs) {
-        '</script>' + "`n" + '<script>' + "`n" + $buildJs + "`n" + $datosJs + "`n" + '</script>' + "`n" + '<script>' + "`n"
-    } else {
-        '</script>' + "`n" + '<script>' + "`n" + $buildJs + "`n" + '</script>' + "`n" + '<script>' + "`n"
-    }
+    $payload = $buildJs
+    if ($datosJs) { $payload = $payload + "`n" + $datosJs }
+    if ($provJs)  { $payload = $payload + "`n" + $provJs }
+    $datosBlock = '</script>' + "`n" + '<script>' + "`n" + $payload + "`n" + '</script>' + "`n" + '<script>' + "`n"
 
     # Si falta algun recurso local, cae a CDN online como respaldo.
     $babelBlock = if ($babelJs) {
