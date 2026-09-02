@@ -254,6 +254,19 @@ fillPortal();
 // Prefill del número de negocio (viene en la URL); el cliente completa RUT, clave y OTP.
 (function(){ var n=document.getElementById('lg-neg'); if(n&&NEG&&NEG!=='—') n.value=NEG; })();
 
+// Validación del OTP replicando lo que hace el backend: se compara el HASH del código escrito contra
+// el hash guardado, se exige vigencia (TTL) y se invalida al primer uso. hashStr NO es criptográfico:
+// en producción es argon2/bcrypt y la comparación ocurre en el servidor.
+function hashStr(s){var h=0;for(var i=0;i<(s||"").length;i++)h=(h*31+s.charCodeAt(i))>>>0;return h;}
+function otpHash(neg,code){return String(hashStr("otp$"+neg+"$"+code));}
+function validarOtpPortal(st,neg,code){
+  if(!st.otpHash) return {ok:false,error:'No hay una clave vigente para este negocio'};
+  if(st.otpUsado) return {ok:false,error:'La clave de un solo uso ya fue utilizada'};
+  if(st.otpExp&&Date.now()>st.otpExp) return {ok:false,error:'La clave de un solo uso expiró'};
+  if(otpHash(neg,code)!==String(st.otpHash)) return {ok:false,error:'La clave de un solo uso no corresponde al negocio'};
+  st.otpUsado=true; try{localStorage.setItem('fs_curse_'+neg,JSON.stringify(st));}catch(e){}
+  return {ok:true};
+}
 // Login: requiere código de negocio + RUT + clave + OTP. El OTP es la llave que identifica el negocio.
 function lgCheck(){var g=document.getElementById('lg-neg').value.trim(),r=document.getElementById('lg-rut').value.trim(),p=document.getElementById('lg-pass').value.trim(),o=document.getElementById('lg-otp').value.trim();document.getElementById('lg-btn').disabled=!(g&&r&&p&&o);}
 function showPortal(){document.getElementById('scr-login').classList.add('hidden');document.getElementById('scr-portal').classList.remove('hidden');window.scrollTo(0,0);}
@@ -262,7 +275,10 @@ function goPortal(){
   var otp=document.getElementById('lg-otp').value.trim();
   var st=loadStore(neg);
   if(st){
-    if(String(st.otp)!==otp){ alert('La clave de un solo uso (OTP) no corresponde al negocio N° '+neg+'. Revísala en el correo o WhatsApp que te enviamos.'); return; }
+    // Validación del OTP contra el HASH (el código en claro nunca queda guardado), con vencimiento y
+    // un solo uso. En producción esta verificación ocurre en el backend, no en esta página.
+    var v=validarOtpPortal(st,neg,otp);
+    if(!v.ok){ alert(v.error+' (negocio N° '+neg+'). Revisa el código en el correo o WhatsApp que te enviamos.'); return; }
     P=st.payload||P; NEG=neg; fillPortal();
   } else if(P&&(String(P.neg)===neg||String(NEG)===neg)){
     // Sin registro local (otro navegador): se acepta con el payload del enlace, sin poder validar el OTP.

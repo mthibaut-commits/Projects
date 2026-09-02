@@ -172,9 +172,12 @@ function auditFechaHora(ts) {
   const d = new Date(ts); const p = (n) => String(n).padStart(2, "0");
   return { fecha: `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`, hora: `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}` };
 }
+// Secuencia del log de auditoría: el id es monótono, no aleatorio (dos eventos del mismo ms mantienen
+// su orden real). SERVER-SIDE: es el bigserial de la tabla audit_log.
+let AUDIT_SEQ = 0;
 function registrarAuditoria(e) {
   const ts = e.ts || Date.now();
-  AUDIT_LOG.unshift({ id: "au" + ts + "_" + Math.random().toString(36).slice(2, 6), usuario: e.usuario || "-- Sistema --", modulo: e.modulo || "Sistema", glosa: e.glosa || "", accion: e.accion || "Navegación", exito: e.exito !== false, empresaId: e.empresaId || "", ts, ...auditFechaHora(ts) });
+  AUDIT_LOG.unshift({ id: "au" + ts + "_" + (++AUDIT_SEQ).toString(36), usuario: e.usuario || "-- Sistema --", modulo: e.modulo || "Sistema", glosa: e.glosa || "", accion: e.accion || "Navegación", exito: e.exito !== false, empresaId: e.empresaId || "", ts, ...auditFechaHora(ts) });
   if (AUDIT_LOG.length > 500) AUDIT_LOG.length = 500;
   AUDIT_SUBS.forEach((fn) => { try { fn(); } catch (x) { /* noop */ } });
 }
@@ -1500,7 +1503,7 @@ ${r("Monto a girar", fmtMM(o.giroMM), "#0a7d3f")}
 </div></div>
 <script>
 function aprobar(){var u=document.getElementById('u').value,p=document.getElementById('p').value;if(!u||!p){alert('Ingresa tu usuario y contraseña Security');return;}
-try{if(window.opener)window.opener.postMessage({type:'nex-cierre',dealId:${JSON.stringify(dealId)},usuario:u},'*');}catch(e){}
+try{if(window.opener)window.opener.postMessage({type:'nex-cierre',dealId:${JSON.stringify(dealId)},usuario:u},${JSON.stringify(ORIGEN_APP)});}catch(e){}
 document.getElementById('app').innerHTML='<div class="ok">✅ Operación aprobada y firmada.</div><div class="muted">Ya puedes volver a WhatsApp. Esta ventana se cerrará.</div>';
 setTimeout(function(){try{window.close();}catch(e){}},1600);}
 <\/script></body></html>`;
@@ -1510,6 +1513,14 @@ setTimeout(function(){try{window.close();}catch(e){}},1600);}
 // login → detalle → firma → éxito; al firmar avisa a la app con postMessage({type:'aceptada', neg}).
 // --- "Socket" entre pestañas: en el demo es un BroadcastChannel (mismo origen file://); en
 // producción este canal es el WebSocket al backend de Factoring Security. ---
+// ── Origen confiable de la mensajería entre pestañas (SEGURIDAD) ────────────────────────────────
+// Enviar con "*" deja que cualquier página lea el payload de la operación, y aceptar cualquier
+// ev.origin deja que cualquier página CONFIRME una firma. En producción `ORIGEN_APP` es el origen
+// exacto de la app (https://…) y la confirmación de firma no llega por postMessage sino por un
+// webhook server-to-server autenticado del portal de firma.
+// En el demo file:// el origen del navegador es "null" y postMessage exige "*": ahí, y sólo ahí, se degrada.
+const ORIGEN_APP = (typeof location !== "undefined" && location.origin && location.origin !== "null") ? location.origin : "*";
+const origenConfiable = (o) => ORIGEN_APP === "*" || o === ORIGEN_APP;
 const BUS_NAME = "factoringsecurity-curse";
 function makeBus(name) {
   let bc = null;
@@ -1530,8 +1541,41 @@ function makeBus(name) {
 const negDe = (d) => (d && d.id != null) ? String(d.id) : "—";
 // URLs del flujo de cierre. En el demo son archivos hermanos (mismo origen). El path "público"
 // equivalente del sitio de aprobación es www.factoringsecurity.cl/curse/<neg>.
-// Clave de un solo uso (OTP) determinista por negocio: identifica el negocio en el portal de curse.
-const otpDe = (neg) => String(100000 + (hashStr("otp-" + neg) % 900000));
+// ── Servicio de OTP del portal de curse (SERVER-SIDE) ───────────────────────────────────────────
+// Modela lo que en producción vive en el backend, NO en el navegador:
+//   · el código se genera con un CSPRNG (crypto.getRandomValues), nunca se deriva del N° de negocio;
+//   · se guarda HASHEADO — el valor en claro existe una sola vez, para entregarlo por el canal
+//     (WhatsApp / email) al cliente;
+//   · expira (TTL) y se invalida al primer uso.
+// hashStr NO es un hash criptográfico: en producción esto es argon2/bcrypt y la validación ocurre
+// en el servidor, no comparando contra un registro que el cliente puede leer.
+const OTP_TTL_MS = 30 * 60000; // vigencia del código entregado al cliente
+const OTP_LARGO = 6;
+let OTP_STORE = {}; // { [neg]: { hash, exp, usado, emitido } } — en producción: tabla otp(neg, hash, exp, usado)
+function otpAleatorio(n) {
+  const d = new Uint32Array(n);
+  try { (window.crypto || window.msCrypto).getRandomValues(d); }
+  catch (_) { for (let i = 0; i < n; i++) d[i] = Math.floor(Math.random() * 4294967296); } // fallback sin crypto
+  let s = ""; for (let i = 0; i < n; i++) s += String(d[i] % 10);
+  return s;
+}
+const otpHash = (neg, code) => String(hashStr("otp$" + neg + "$" + code));
+// Emite el OTP del negocio. Devuelve el código en claro UNA vez (para el canal); sólo se guarda el hash.
+function emitirOtp(neg) {
+  const code = otpAleatorio(OTP_LARGO);
+  OTP_STORE[neg] = { hash: otpHash(neg, code), exp: Date.now() + OTP_TTL_MS, usado: false, emitido: Date.now() };
+  return code;
+}
+// Valida y consume el OTP. En producción esta función es un resolver del backend.
+function validarOtp(neg, code) {
+  const r = OTP_STORE[neg];
+  if (!r) return { ok: false, error: "No hay una clave vigente para este negocio" };
+  if (r.usado) return { ok: false, error: "La clave de un solo uso ya fue utilizada" };
+  if (Date.now() > r.exp) return { ok: false, error: "La clave de un solo uso expiró" };
+  if (r.hash !== otpHash(neg, String(code || ""))) return { ok: false, error: "La clave de un solo uso no corresponde al negocio" };
+  r.usado = true;
+  return { ok: true };
+}
 const curseURLPublica = (neg) => `www.factoringsecurity.cl/curse/${neg}`;
 // Store de cierre por negocio (payload+OTP) en localStorage. Se PODA al escribir para no crecer sin
 // límite en el navegador del demo: elimina entradas vencidas (TTL) y limita el total a las más recientes.
@@ -1577,8 +1621,11 @@ const emailHref = (deal) => {
   const neg = negDe(deal);
   let payload = null;
   try { const c = curseDesdeDeal(deal); payload = c ? c.payload : null; } catch (e) { payload = null; }
+  // El OTP que muestra el simulador es el que REALMENTE viajó en ese correo (se guarda en el mensaje
+  // al enviarlo). No se recalcula ni se deriva del N° de negocio: el código sólo existe en el canal.
+  const ultimo = (deal.emailThread || []).slice(-1)[0] || {};
   try {
-    const enc = b64utf8(JSON.stringify({ payload, otp: otpDe(neg), neg }));
+    const enc = b64utf8(JSON.stringify({ payload, otp: ultimo.otp || "", neg }));
     return enc ? `email.html?n=${neg}#d=${encodeURIComponent(enc)}` : `email.html?n=${neg}`;
   } catch (e) { return `email.html?n=${neg}`; }
 };
@@ -1884,9 +1931,12 @@ const fmtMM = (n) =>
     : `$${(n || 0).toLocaleString("es-CL", { maximumFractionDigits: 1 })}M`;
 const fmtCLP = (n) => "$" + Math.round(n).toLocaleString("es-CL");
 // Simulación del negocio: tasa de descuento mensual 0,9%–1,9% + comisión fija $100k–$350k.
-function simular(amountMM) {
-  const tasaDescuento = +(0.9 + Math.random() * 1.0).toFixed(2);
-  const comision = 100000 + Math.floor(Math.random() * 250001);
+// `clave` identifica el negocio (cliente|deudor): la misma oportunidad devuelve SIEMPRE la misma tasa
+// y comisión. SERVER-SIDE: esto es la mutation `simularOferta`, que aplica el pricing del tenant.
+function simular(amountMM, clave) {
+  const k = String(clave == null ? amountMM : clave);
+  const tasaDescuento = +rndDetEntre("tasa|" + k, 0.9, 1.9).toFixed(2);
+  const comision = 100000 + rndDetInt("comision|" + k, 0, 250000);
   const montoDescuentoMM = +(amountMM * tasaDescuento / 100).toFixed(2);
   return { tasaDescuento, comision, montoDescuentoMM, simulado: true };
 }
@@ -3458,25 +3508,35 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const ordenBy = (arr) => arr.slice().sort((a, b) => (reqAprob(b) - reqAprob(a)) || (orden[a.disp] - orden[b.disp]) || (a.n - b.n));
   // Aprobar/rechazar una excepción DIRECTAMENTE desde el detalle (si el usuario tiene la atribución). Escribe el
   // visado (mismo estado que la mesa de Otorgamientos), registra auditoría + bitácora y re-renderiza.
-  const aprobarExc = (x, val, msg, archs) => {
+  // Escribe la DECISIÓN del apoderado (evidencia regulatoria) vía repositorio: la cache se actualiza de
+  // forma optimista y se espera la confirmación. SERVER-SIDE: es la mutation `resolverExcepcion`, que
+  // además debe resolver el 409 cuando dos apoderados deciden la misma excepción a la vez.
+  const aprobarExc = async (x, val, msg, archs) => {
     if (!x.stKey || !x.regla) return;
     const arr = Array.isArray(archs) ? archs.filter(Boolean) : (archs ? [archs] : []);
-    const st = VISADO_STATE[deal.id] || (VISADO_STATE[deal.id] = {}); st[x.stKey] = val;
-    const det = VISADO_DETALLE[deal.id] || (VISADO_DETALLE[deal.id] = {}); det[x.stKey] = { msg: msg || "", archs: arr, por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL") };
+    const st = { ...(repoVisado.get(deal.id) || {}), [x.stKey]: val };
+    const det = { ...(repoVisadoDetalle.get(deal.id) || {}), [x.stKey]: { msg: msg || "", archs: arr, por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL") } };
+    await Promise.all([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
     const dtxt = x.deudor ? ` · deudor ${x.deudor.nombre}` : "";
     registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Visado Cliente (detalle)", accion: val === "aprobado" ? "Excepción aprobada" : "Excepción rechazada", glosa: `Regla ${x.regla.n} · ${AREA_LBL[x.regla.area]} N${x.nivel || 4} · ${deal.cliente}${dtxt}${msg ? " · " + msg : ""}${arr.length ? " · " + arr.length + " adjunto(s)" : ""}`, exito: val === "aprobado" });
     logOtorgEvento(deal.id, USERS[usuario] || usuario, `${USERS[usuario] || usuario} ${val === "aprobado" ? "aprobó" : "rechazó"} la excepción desde el detalle · regla #${x.regla.n} ${x.regla.nombre}${dtxt} (${AREA_LBL[x.regla.area]} N${x.nivel || 4})${arr.length ? " · con " + arr.length + " respaldo(s)" : ""}`, msg || "");
-    forceV((v) => v + 1); onReev && onReev();
+    invalidarVisado(); forceV((v) => v + 1); onReev && onReev();
   };
-  const revertirVisado = (x) => { const st = VISADO_STATE[deal.id]; if (st) delete st[x.stKey]; const det = VISADO_DETALLE[deal.id]; if (det) delete det[x.stKey]; forceV((v) => v + 1); onReev && onReev(); };
+  const revertirVisado = async (x) => {
+    const st = { ...(repoVisado.get(deal.id) || {}) }; delete st[x.stKey];
+    const det = { ...(repoVisadoDetalle.get(deal.id) || {}) }; delete det[x.stKey];
+    await Promise.all([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
+    invalidarVisado(); forceV((v) => v + 1); onReev && onReev();
+  };
   // Excepción de VERIFICACIÓN de una factura (exime la verificación telefónica) — atribución del Gerente Comercial.
-  const excepcionarVerif = (f, msg) => {
-    const m = VERIF_EXC[deal.id] || (VERIF_EXC[deal.id] = {}); m[f.id] = { por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL"), msg: msg || "" };
+  const excepcionarVerif = async (f, msg) => {
+    const m = { ...(repoVerifExc.get(deal.id) || {}), [f.id]: { por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL"), msg: msg || "" } };
+    await repoVerifExc.set(deal.id, m);
     registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Verificación (excepción)", accion: "Excepcionar verificación", glosa: `Factura #${f.folio} · deudor ${f.deudor} · ${deal.cliente}${msg ? " · " + msg : ""}`, empresaId: deal.id, exito: true });
     logOtorgEvento(deal.id, USERS[usuario] || usuario, `${USERS[usuario] || usuario} excepcionó la verificación de la factura #${f.folio} (deudor ${f.deudor})`, msg || "");
     forceV((v) => v + 1); onReev && onReev();
   };
-  const revertirVerif = (f) => { const m = VERIF_EXC[deal.id]; if (m) delete m[f.id]; forceV((v) => v + 1); onReev && onReev(); };
+  const revertirVerif = async (f) => { const m = { ...(repoVerifExc.get(deal.id) || {}) }; delete m[f.id]; await repoVerifExc.set(deal.id, m); forceV((v) => v + 1); onReev && onReev(); };
   // DIV 1 — reglas del CLIENTE (snapshot versionado, ya sin reglas de deudor).
   const cliRules = ordenBy((ver.res || []).filter((x) => x.disp !== "clasificacion").map((x) => ({ ...x, stKey: String(x.n), regla: REGLAS_CLIENTE.find((r) => r.n === x.n), deudor: null })));
   const cliReqN = cliRules.filter(reqAprob).length;
@@ -5768,6 +5828,23 @@ function ultimos6Meses() {
   return out;
 }
 function hashStr(s) { let h = 0; for (let i = 0; i < (s || "").length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; }
+// ── Azar DETERMINISTA por clave estable (SERVER-SIDE) ───────────────────────────────────────────
+// Reemplaza Math.random() en toda la lógica de dominio. Con Math.random() el mismo negocio mostraba
+// cifras distintas en cada render, en cada sesión y en cada navegador: no se podía comparar dos
+// pantallas ni escribir una prueba de regresión. Con una clave estable (id del negocio, folio, día
+// simulado) el resultado es siempre el mismo.
+// Cada llamada a rndDet* marca el punto exacto donde, en producción, entra un dato real: una columna
+// de la BD, la respuesta de una integración o el resultado de una mutation. NO es para criptografía
+// (el OTP usa crypto.getRandomValues, ver `otpAleatorio`).
+const rndDet = (clave) => pcRng(hashStr(String(clave)))();
+const rndDetEntre = (clave, min, max) => min + rndDet(clave) * (max - min);
+const rndDetInt = (clave, min, max) => Math.floor(min + rndDet(clave) * (max - min + 1));
+const rndDetBool = (clave, p) => rndDet(clave) < p;
+// Corrida del motor de pipeline: es la "clave de tiempo" de las decisiones deterministas. El mismo
+// negocio en la misma corrida resuelve siempre igual, aunque React invoque el updater de setDeals más
+// de una vez (StrictMode) — el descuadre que documenta el comentario de `evaluarPerdidas`.
+// SERVER-SIDE: es el id de la corrida del worker (job run id).
+let PIPELINE_TICK = 0;
 // Reparte monto/facturas en 6 meses de forma determinista (a partir del nombre).
 function mensualizar(montoMM, fac, seed) {
   const h = hashStr(seed); const w = []; let sw = 0;
@@ -6099,23 +6176,27 @@ const rutDe = (s) => {
   const cuerpo = 50000000 + (h % 49000000);
   return `${cuerpo.toLocaleString("es-CL")}-${"0123456789K"[h % 11]}`;
 };
-function genFacturasCliente() {
-  const n = 6 + Math.floor(Math.random() * 8);
+// Libro de ventas del cliente para el alta manual. Determinista por cliente: el mismo cliente muestra
+// siempre las mismas facturas. SERVER-SIDE: es `query libroVentas(rutCedente)` sobre los DTE del SII.
+function genFacturasCliente(cliente) {
+  const kc = "libro|" + String(cliente || "");
+  const n = rndDetInt(kc, 6, 13);
   const pesoTotal = BUENOS_PAGADORES.reduce((s, p) => s + p.share, 0);
   const out = [];
   for (let i = 0; i < n; i++) {
-    let r = Math.random() * pesoTotal, pag = BUENOS_PAGADORES[0];
+    const k = `${kc}|${i}`;
+    let r = rndDet("pag" + k) * pesoTotal, pag = BUENOS_PAGADORES[0];
     for (const p of BUENOS_PAGADORES) { if ((r -= p.share) <= 0) { pag = p; break; } }
     const dias = diasPagoDeudor(pag.name);
-    const emis = new Date(Date.now() - (5 + Math.floor(Math.random() * 40)) * 86400000);
+    const emis = new Date(Date.now() - rndDetInt("em" + k, 5, 44) * 86400000);
     const venc = new Date(emis.getTime() + dias * 86400000);
     out.push({
-      id: `F${Date.now() % 100000}-${i}`, folio: 10000000 + Math.floor(Math.random() * 8999999),
-      tipo: Math.random() < 0.7 ? "Factura Electrónica Afecta" : "Factura Electrónica Exenta",
+      id: `F${hashStr(kc) % 100000}-${i}`, folio: 10000000 + rndDetInt("fo" + k, 0, 8999998),
+      tipo: rndDetBool("ti" + k, 0.7) ? "Factura Electrónica Afecta" : "Factura Electrónica Exenta",
       deudor: pag.name, sector: pag.sector, rutDeudor: rutDe(pag.name),
       emis: fmtFecha(emis), venc, vencStr: fmtFecha(venc),
       diasVenc: Math.round((venc - Date.now()) / 86400000),
-      montoCLP: (1 + Math.floor(Math.random() * 40)) * 500000 + Math.floor(Math.random() * 500000),
+      montoCLP: rndDetInt("m1" + k, 1, 40) * 500000 + rndDetInt("m2" + k, 0, 499999),
     });
   }
   return out;
@@ -6134,18 +6215,21 @@ function genFacturasIncorporar(deal) {
   const totalCLP = Math.round((deal.nuevasFacturasMontoMM || 0) * 1e6);
   const dias = diasPagoDeudor(deal.deudor);
   const facturas = [], sel = {};
+  const kd = "inc|" + String(deal.id);
   for (let i = 0; i < n; i++) {
-    const emis = new Date(Date.now() - (3 + Math.floor(Math.random() * 20)) * 86400000);
+    const k = `${kd}|N${i}`;
+    const emis = new Date(Date.now() - rndDetInt("em" + k, 3, 22) * 86400000);
     const venc = new Date(emis.getTime() + dias * 86400000);
-    const monto = i === n - 1 ? totalCLP - facturas.reduce((s, f) => s + f.montoCLP, 0) : Math.round(totalCLP / n * (0.7 + Math.random() * 0.6));
-    facturas.push({ id: `FN-${deal.id}-${i}`, folio: 10000000 + Math.floor(Math.random() * 8999999), tipo: "Factura Electrónica Afecta", deudor: deal.deudor, sector: (deal.sector || "").replace("Buenos Deudores - ", ""), rutDeudor: rutDe(deal.deudor), emis: fmtFecha(emis), venc, vencStr: fmtFecha(venc), diasVenc: Math.round((venc - Date.now()) / 86400000), montoCLP: Math.max(100000, monto), nueva: true });
+    const monto = i === n - 1 ? totalCLP - facturas.reduce((s, f) => s + f.montoCLP, 0) : Math.round(totalCLP / n * rndDetEntre("mo" + k, 0.7, 1.3));
+    facturas.push({ id: `FN-${deal.id}-${i}`, folio: 10000000 + rndDetInt("fo" + k, 0, 8999998), tipo: "Factura Electrónica Afecta", deudor: deal.deudor, sector: (deal.sector || "").replace("Buenos Deudores - ", ""), rutDeudor: rutDe(deal.deudor), emis: fmtFecha(emis), venc, vencStr: fmtFecha(venc), diasVenc: Math.round((venc - Date.now()) / 86400000), montoCLP: Math.max(100000, monto), nueva: true });
     sel[facturas[i].id] = true;
   }
   // Extra disponibles (sin marcar) para que el ejecutivo pueda agregar más.
   for (let i = 0; i < 4; i++) {
-    const emis = new Date(Date.now() - (5 + Math.floor(Math.random() * 30)) * 86400000);
+    const k = `${kd}|X${i}`;
+    const emis = new Date(Date.now() - rndDetInt("em" + k, 5, 34) * 86400000);
     const venc = new Date(emis.getTime() + dias * 86400000);
-    facturas.push({ id: `FX-${deal.id}-${i}`, folio: 10000000 + Math.floor(Math.random() * 8999999), tipo: Math.random() < 0.7 ? "Factura Electrónica Afecta" : "Factura Electrónica Exenta", deudor: deal.deudor, sector: (deal.sector || "").replace("Buenos Deudores - ", ""), rutDeudor: rutDe(deal.deudor), emis: fmtFecha(emis), venc, vencStr: fmtFecha(venc), diasVenc: Math.round((venc - Date.now()) / 86400000), montoCLP: (1 + Math.floor(Math.random() * 30)) * 500000 });
+    facturas.push({ id: `FX-${deal.id}-${i}`, folio: 10000000 + rndDetInt("fo" + k, 0, 8999998), tipo: rndDetBool("ti" + k, 0.7) ? "Factura Electrónica Afecta" : "Factura Electrónica Exenta", deudor: deal.deudor, sector: (deal.sector || "").replace("Buenos Deudores - ", ""), rutDeudor: rutDe(deal.deudor), emis: fmtFecha(emis), venc, vencStr: fmtFecha(venc), diasVenc: Math.round((venc - Date.now()) / 86400000), montoCLP: rndDetInt("m" + k, 1, 30) * 500000 });
   }
   return { facturas, sel };
 }
@@ -6185,7 +6269,7 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
   const [comision, setComision] = useState(incorporar ? Math.round((deal.comisionMM || 0.03) * 1e6) : 30000);
   const [gastos, setGastos] = useState(0);
   const [otros, setOtros] = useState(0);
-  const [pendientes] = useState(() => Math.random() < 0.4);
+  const [pendientes] = useState(() => rndDetBool("pend|" + (incorporar && deal ? deal.id : "alta-manual"), 0.4));
   // Carga manual de facturas (Opciones): XML del DTE y selección masiva por folios.
   const xmlRef = useRef(null);
   const [optMenu, setOptMenu] = useState(false);
@@ -6294,7 +6378,9 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
         const emisD = g("FchEmis"), vencD = g("FchVenc");
         const venc = vencD ? new Date(vencD) : new Date(Date.now() + 30 * 86400000);
         add.push({
-          id: `XML-${folio}-${Math.random().toString(36).slice(2, 7)}`,
+          // Id derivado del archivo + folio (no aleatorio): reimportar el mismo XML da el mismo id y no
+          // duplica la factura. SERVER-SIDE: la PK la asigna el backend al recibir el DTE.
+          id: `XML-${folio}-${hashStr(file.name + "|" + folio).toString(36)}`,
           folio: +folio, tipo: tipoDeCodigo(g("TipoDTE")) || "Factura Electrónica Afecta",
           deudor: g("RznSocRecep") || "Deudor sin nombre", sector: "—", rutDeudor: g("RUTRecep") || "—",
           emis: fmtFecha(emisD ? new Date(emisD) : new Date()), venc, vencStr: fmtFecha(venc),
@@ -6338,7 +6424,7 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
       tasa: tasa.toFixed(2) + "%", anticipo: "100%",
       status: "Nuevo negocio (manual)", time: nowStamp(), channel: "Manual", exec: usuario,
       stale: false, important: fin.financiadoMM > 800, _inbound: true,
-      perdedor: Math.random() < 0.2, subSeed: Math.random(), nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false,
+      perdedor: rndDetBool(`perd|${cliente}|${deudor}`, 0.2), subSeed: rndDet(`seed|${cliente}|${deudor}`), nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false,
       simulado: true, tasaDescuento: tasa, comision,
       diasFin: dias, financiadoMM: +fin.financiadoMM.toFixed(2), interesMM: +fin.difMM.toFixed(2),
       montoDescuentoMM: +fin.difMM.toFixed(2), comisionMM: +(comision / 1e6).toFixed(3),
@@ -6413,7 +6499,7 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
               ); })()}
               <div className="mt-4 flex items-center justify-between">
                 <button onClick={() => setStep(1)} className="flex items-center gap-1 t12 font-medium" style={{ color: C.sub }}><ChevronLeft size={14} /> Volver</button>
-                <button disabled={!cliente || !!abierta} title={abierta ? "El cliente ya tiene una oportunidad abierta: tómala y modifícala en vez de crear un negocio nuevo." : undefined} onClick={() => { setFacturas(genFacturasCliente()); setSel({}); setStep(3); }}
+                <button disabled={!cliente || !!abierta} title={abierta ? "El cliente ya tiene una oportunidad abierta: tómala y modifícala en vez de crear un negocio nuevo." : undefined} onClick={() => { setFacturas(genFacturasCliente(cliente)); setSel({}); setStep(3); }}
                   className="rounded-lg px-5 py-2 t13 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.indigo }}>Continuar</button>
               </div>
             </div>
@@ -6561,7 +6647,9 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
                   <button onClick={() => setStep(3)} className="rounded-md p-1 hover:bg-stone-100"><ChevronLeft size={18} style={{ color: C.sub }} /></button>
                   <div>
                     <div className="text-lg font-bold" style={{ color: C.ink }}>Resultado nueva simulación</div>
-                    <div className="t11" style={{ color: C.faint }}>Simulación #{Math.floor(40000 + Math.random() * 9999)} · {cliente}</div>
+                    {/* El N° de simulación se calculaba con Math.random() DENTRO del render: cambiaba en
+                        cada repintado. SERVER-SIDE: lo devuelve la mutation `crearSimulacion`. */}
+                    <div className="t11" style={{ color: C.faint }}>Simulación #{rndDetInt("sim|" + cliente, 40000, 49999)} · {cliente}</div>
                   </div>
                 </div>
                 <button onClick={onClose} className="rounded-md p-1 hover:bg-stone-100"><X size={20} style={{ color: C.sub }} /></button>
@@ -7514,8 +7602,34 @@ function reevaluarCliente(deal, usuario) {
   return nv;
 }
 function evaluarReglasCliente(deal) { const v = { ...varsClienteActual(deal), ...varsModeloExt(deal) }; return REGLAS_CLIENTE.map((r) => ({ regla: r, ...evalReglaCli(r, v) })); }
+// ── Cache del visado (RENDIMIENTO / SERVER-SIDE) ────────────────────────────────────────────────
+// `visadoDeal` evalúa ~60 reglas × N deudores y se llamaba POR FILA de la tabla y POR TARJETA del
+// kanban, además de dentro de tres useEffect que recorren la lista completa. Con miles de negocios
+// eso son millones de evaluaciones por render y la tabla no alcanza a pintar.
+// Aquí se memoiza por una huella del negocio + la versión del visado/configuración. Es exactamente el
+// campo que en producción viene PRECALCULADO desde el backend (`deal.visadoEstado`,
+// `deal.excepcionesPendientes`), resuelto por el motor de reglas al crear o actualizar la operación:
+// cuando eso exista, este cache se borra y se lee el campo de la query.
+let VISADO_VER = 0;
+const VISADO_CACHE = new Map();
+// Invalida el cache: se llama en CADA escritura de VISADO_STATE/VISADO_DETALLE y al editar los
+// catálogos de Mantenedores (que cambian el resultado de las reglas).
+const invalidarVisado = () => { VISADO_VER++; VISADO_CACHE.clear(); };
+// Huella barata del negocio: sólo los campos de los que dependen las reglas de otorgamiento.
+const visadoKey = (deal) =>
+  `${deal.id}|${deal.stage}|${deal.amountMM}|${deal.facturas}|${(deal.deudores || []).length}|${(deal.facturasOp || []).length}|${deal.subSeed}|${VISADO_VER}`;
 // Resumen del visado por operación (excepciones que requieren aprobación, rechazos y estado global).
 function visadoDeal(deal) {
+  if (!deal || deal.id == null) return visadoDealCalc(deal);
+  const k = visadoKey(deal);
+  const hit = VISADO_CACHE.get(k);
+  if (hit) return hit;
+  const out = visadoDealCalc(deal);
+  if (VISADO_CACHE.size > 5000) VISADO_CACHE.clear(); // cota de memoria: se recalcula lo que haga falta
+  VISADO_CACHE.set(k, out);
+  return out;
+}
+function visadoDealCalc(deal) {
   const res = evaluarOtorgItems(deal);
   const exc = res.filter((x) => x.disp === "excepcion").map((x) => ({ n: x.regla.n, stKey: x.stKey, deudor: x.deudor, nombre: x.regla.nombre, hallazgo: x.regla.hallazgo, area: x.regla.area, nivel: x.nivel || 4, reev: reglaReev(x.regla.n) }));
   const rech = res.filter((x) => x.disp === "rechazado").map((x) => ({ n: x.regla.n, stKey: x.stKey, deudor: x.deudor, nombre: x.regla.nombre, hallazgo: x.regla.hallazgo, area: x.regla.area, reev: reglaReev(x.regla.n) }));
@@ -7572,51 +7686,112 @@ function otorgamientoCompleto(deal) {
   const v = visadoDeal(deal);
   return v.exc.length > 0 && v.estado === "aprobada";
 }
-let VISADO_STATE = {}; // { [dealId]: { [ruleN]: "aprobado"|"rechazado" } } — resolución de excepciones
-let VISADO_DETALLE = {}; // { [dealId]: { [ruleN]: { msg, archs:[], por, fecha } } } — comentario/respaldo de la DECISIÓN del apoderado
+// ── CAPA DE REPOSITORIOS (SERVER-SIDE) ──────────────────────────────────────────────────────────
+// Los objetos de módulo que vienen a continuación NO son estado de UI: son TABLAS. Hoy viven en la
+// memoria del bundle, sin `tenant_id`, sin control de concurrencia, sin auditoría transaccional, y se
+// pierden al recargar la página. Varios de ellos son evidencia regulatoria (quién aprobó qué, con qué
+// respaldo y cuándo).
+//
+// Esta capa les da la forma que van a tener contra el backend:
+//   · LECTURAS síncronas    → es la cache normalizada del cliente (lo que resuelve useQuery/Apollo).
+//   · ESCRITURAS asíncronas → son mutations: se aplican de forma OPTIMISTA en la cache y devuelven una
+//     promesa de confirmación. Quien escribe puede `await`-earla para mostrar "guardando…", revertir
+//     si falla, o manejar un 409 cuando dos apoderados deciden a la vez.
+// Cuando exista la API, lo único que cambia es el cuerpo de `confirmar`: en vez de un timer, la
+// llamada real; y `revertir` deja de ser un no-op para volver la cache al valor previo.
+const LATENCIA_MUTACION_MS = 120; // latencia simulada: obliga a que la UI trate la escritura como algo que TARDA
+const REPOS = {};
+function crearRepo(nombre) {
+  const datos = {}; // { [tenantId]: { [id]: valor } } — el scope por tenant es la futura columna tenant_id
+  const tabla = (t) => (datos[t || TENANT_ACTUAL] = datos[t || TENANT_ACTUAL] || {});
+  const confirmar = (op, id) => new Promise((res) => setTimeout(() => res({ ok: true, repo: nombre, op, id }), LATENCIA_MUTACION_MS));
+  const r = {
+    nombre,
+    // Lecturas (cache local)
+    get: (id) => tabla()[id],
+    all: (t) => tabla(t),
+    // Escrituras (optimistas; la promesa es la confirmación del servidor)
+    set(id, valor) { tabla()[id] = valor; return confirmar("set", id); },
+    patch(id, parcial) { const t = tabla(); t[id] = { ...(t[id] || {}), ...parcial }; return confirmar("patch", id); },
+    del(id) { delete tabla()[id]; return confirmar("del", id); },
+    push(id, item) { const t = tabla(); (t[id] = t[id] || []).push(item); return confirmar("push", id); },
+  };
+  REPOS[nombre] = r;
+  return r;
+}
+// Repositorios del otorgamiento. Los alias `VISADO_STATE`/`VISADO_DETALLE`/… apuntan a la tabla del
+// tenant activo, de modo que el código existente sigue leyendo igual; las ESCRITURAS ya pasan por el
+// repo. Al cambiar de tenant hay que reapuntar los alias (ver `reapuntarRepos`).
+const repoVisado = crearRepo("otorgamiento_visado");
+const repoVisadoDetalle = crearRepo("otorgamiento_visado_detalle");
+const repoSolicitudExc = crearRepo("solicitud_excepcion");
+const repoVerifExc = crearRepo("verificacion_excepcion");
+const repoOtorgEventos = crearRepo("otorgamiento_evento");
+let VISADO_STATE = repoVisado.all(); // { [dealId]: { [ruleN]: "aprobado"|"rechazado" } } — resolución de excepciones
+let VISADO_DETALLE = repoVisadoDetalle.all(); // { [dealId]: { [ruleN]: { msg, archs:[], por, fecha } } } — comentario/respaldo de la DECISIÓN del apoderado
 // Solicitud de aprobación de una excepción que el EJECUTIVO envía al apoderado responsable (N1–N5):
 // comentario + archivos de respaldo. Precede a la decisión (VISADO_STATE/DETALLE) que toma el apoderado.
-let SOLICITUD_EXC = {}; // { [dealId]: { [stKey]: { comentario, archivos:[], por, porCode, fecha, nivel, rol } } }
+let SOLICITUD_EXC = repoSolicitudExc.all(); // { [dealId]: { [stKey]: { comentario, archivos:[], por, porCode, fecha, nivel, rol } } }
 // Excepción de VERIFICACIÓN por factura: el Gerente Comercial (u otro apoderado habilitado) exime a una
 // factura de la verificación telefónica antes del giro. { [dealId]: { [facturaId]: { por, fecha, msg } } }
-let VERIF_EXC = {};
-// Configuración POR USUARIO: quién puede EXCEPCIONAR la verificación de facturas. Por defecto sólo el
-// Gerente Comercial (GC) y el super-admin; editable en el mantenedor de apoderados. Persistente.
-function cargarCfgExcVerif() { try { if (storageDisponible()) { const r = localStorage.getItem("pc_cfg_exc_verif"); if (r) return JSON.parse(r); } } catch (e) {} return { GC: true }; }
-let CFG_EXC_VERIF = cargarCfgExcVerif();
-function guardarCfgExcVerif() { try { if (storageDisponible()) localStorage.setItem("pc_cfg_exc_verif", JSON.stringify(CFG_EXC_VERIF)); } catch (e) {} }
-const puedeExcepcionarVerif = (code) => code === "ADMIN" || CFG_EXC_VERIF[code] === true; // default sólo GC
-// Configuración POR USUARIO: quién puede VER el tab "Bitácora" del detalle de la operación. Oculto por
-// defecto; sólo los apoderados (y el super-admin) lo ven, editable en el mantenedor de usuarios.
-function cargarCfgVerBitacora() { try { if (storageDisponible()) { const r = localStorage.getItem("pc_cfg_ver_bitacora"); if (r) return JSON.parse(r); } } catch (e) {} return { JG: true, GC: true, GG: true, RG: true, SR: true, OP: true }; }
-let CFG_VER_BITACORA = cargarCfgVerBitacora();
-function guardarCfgVerBitacora() { try { if (storageDisponible()) localStorage.setItem("pc_cfg_ver_bitacora", JSON.stringify(CFG_VER_BITACORA)); } catch (e) {} }
+let VERIF_EXC = repoVerifExc.all();
+// Reapunta los alias a la tabla del tenant activo. Se llama al cambiar de tenant; con un solo tenant
+// (Security) hoy no se ejecuta, pero deja explícito qué hay que hacer cuando entre el segundo factoring.
+function reapuntarRepos() {
+  VISADO_STATE = repoVisado.all(); VISADO_DETALLE = repoVisadoDetalle.all();
+  SOLICITUD_EXC = repoSolicitudExc.all(); VERIF_EXC = repoVerifExc.all();
+  OTORG_EVENTOS = repoOtorgEventos.all(); invalidarVisado();
+}
+// ── PERMISOS DE LA SESIÓN (UX ONLY — la autorización real es del servidor) ──────────────────────
+// Antes esto eran SIETE claves sueltas de localStorage. Un usuario podía auto-otorgarse la aprobación
+// masiva de excepciones editando el storage del navegador, porque el flag era a la vez la fuente de
+// verdad y el control de acceso. Ahora hay UNA sola fuente (`PERMISOS`), scopeada por tenant.
+//
+// SERVER-SIDE: en producción estos flags llegan RESUELTOS en el token de sesión y el backend los
+// vuelve a evaluar en cada resolver (field-level authz). Alterarlos en el cliente sólo hace que la UI
+// muestre un tab de más: el servidor no devuelve el dato ni acepta la mutación. Todo lo que hay
+// debajo es exclusivamente para decidir qué se PINTA.
+const PERMISOS_KEY = "pc_permisos_" + TENANT_ACTUAL;
+const PERMISOS_DEFAULT = {
+  excVerif: { GC: true },                                            // excepcionar la verificación telefónica: sólo Gerente Comercial
+  verBitacora: { JG: true, GC: true, GG: true, RG: true, SR: true, OP: true }, // tab Bitácora: apoderados
+  verMensajeria: {}, verCobranza: {},                                // tabs del detalle: ocultos por defecto
+  verPlanEjec: {}, verFunnel: {},                                    // reportes de Gestión: ocultos por defecto
+  aprobMasiva: {},                                                   // "Aprobar/Rechazar todo": habilitada salvo desmarca explícita
+};
+function cargarPermisos() {
+  const base = JSON.parse(JSON.stringify(PERMISOS_DEFAULT));
+  try { if (storageDisponible()) { const r = localStorage.getItem(PERMISOS_KEY); if (r) return { ...base, ...JSON.parse(r) }; } } catch (e) {}
+  return base;
+}
+let PERMISOS = cargarPermisos();
+function guardarPermisos() { try { if (storageDisponible()) localStorage.setItem(PERMISOS_KEY, JSON.stringify(PERMISOS)); } catch (e) {} }
+// Vistas por referencia sobre la única fuente: el mantenedor sigue mutando `CFG_X[code] = on` y todos
+// los guardados terminan en `guardarPermisos()`.
+let CFG_EXC_VERIF = PERMISOS.excVerif;
+let CFG_VER_BITACORA = PERMISOS.verBitacora;
+let CFG_VER_MENSAJERIA = PERMISOS.verMensajeria;
+let CFG_VER_COBRANZA = PERMISOS.verCobranza;
+let CFG_VER_PLANEJEC = PERMISOS.verPlanEjec;
+let CFG_VER_FUNNEL = PERMISOS.verFunnel;
+let CFG_APROB_MASIVA = PERMISOS.aprobMasiva;
+const guardarCfgExcVerif = guardarPermisos, guardarCfgVerBitacora = guardarPermisos, guardarCfgVerMensajeria = guardarPermisos;
+const guardarCfgVerCobranza = guardarPermisos, guardarCfgVerPlanEjec = guardarPermisos, guardarCfgVerFunnel = guardarPermisos;
+const guardarCfgAprobMasiva = guardarPermisos;
+const puedeExcepcionarVerif = (code) => code === "ADMIN" || CFG_EXC_VERIF[code] === true;
 const puedeVerBitacora = (code) => code === "ADMIN" || CFG_VER_BITACORA[code] === true;
-// Tabs "Mensajería" y "Cobranza" del detalle: ocultos por defecto (sólo super-admin); visibilidad por usuario.
-function cargarCfgVerTab(key) { try { if (storageDisponible()) { const r = localStorage.getItem(key); if (r) return JSON.parse(r); } } catch (e) {} return {}; }
-let CFG_VER_MENSAJERIA = cargarCfgVerTab("pc_cfg_ver_mensajeria");
-function guardarCfgVerMensajeria() { try { if (storageDisponible()) localStorage.setItem("pc_cfg_ver_mensajeria", JSON.stringify(CFG_VER_MENSAJERIA)); } catch (e) {} }
 const puedeVerMensajeria = (code) => code === "ADMIN" || CFG_VER_MENSAJERIA[code] === true;
-let CFG_VER_COBRANZA = cargarCfgVerTab("pc_cfg_ver_cobranza");
-function guardarCfgVerCobranza() { try { if (storageDisponible()) localStorage.setItem("pc_cfg_ver_cobranza", JSON.stringify(CFG_VER_COBRANZA)); } catch (e) {} }
 const puedeVerCobranza = (code) => code === "ADMIN" || CFG_VER_COBRANZA[code] === true;
-// Reportes de Gestión «Plan Mensual Ejecutivo» y «Funnel Comercial»: ocultos por defecto (solo super-admin).
-let CFG_VER_PLANEJEC = cargarCfgVerTab("pc_cfg_ver_planejec");
-function guardarCfgVerPlanEjec() { try { if (storageDisponible()) localStorage.setItem("pc_cfg_ver_planejec", JSON.stringify(CFG_VER_PLANEJEC)); } catch (e) {} }
 const puedeVerPlanEjec = (code) => code === "ADMIN" || CFG_VER_PLANEJEC[code] === true;
-let CFG_VER_FUNNEL = cargarCfgVerTab("pc_cfg_ver_funnel");
-function guardarCfgVerFunnel() { try { if (storageDisponible()) localStorage.setItem("pc_cfg_ver_funnel", JSON.stringify(CFG_VER_FUNNEL)); } catch (e) {} }
 const puedeVerFunnel = (code) => code === "ADMIN" || CFG_VER_FUNNEL[code] === true;
-// ── Configuración POR USUARIO: habilita/oculta la aceptación masiva ("Aprobar/Rechazar todo") de
-// excepciones de otorgamiento. Por defecto habilitada para todos los apoderados. Persistente en localStorage.
-function cargarCfgAprobMasiva() { try { if (storageDisponible()) { const r = localStorage.getItem("pc_cfg_aprob_masiva"); if (r) return JSON.parse(r); } } catch (e) {} return {}; }
-let CFG_APROB_MASIVA = cargarCfgAprobMasiva();
-function guardarCfgAprobMasiva() { try { if (storageDisponible()) localStorage.setItem("pc_cfg_aprob_masiva", JSON.stringify(CFG_APROB_MASIVA)); } catch (e) {} }
 const aprobMasivaHabilitada = (code) => code === "ADMIN" || CFG_APROB_MASIVA[code] !== false; // default: habilitada
 // ── Eventos de otorgamiento por operación (para la bitácora). Se guardan con hora completa (nowStamp, con segundos).
-let OTORG_EVENTOS = {}; // { [dealId]: [{ fecha, canal:"Otorgamiento", actor, resultado, detalle, esEvento:true }] }
+let OTORG_EVENTOS = repoOtorgEventos.all(); // { [dealId]: [{ fecha, canal:"Otorgamiento", actor, resultado, detalle, esEvento:true }] }
+// Bitácora append-only del otorgamiento. Devuelve la promesa de confirmación: hoy nadie la espera
+// (el evento se pinta de inmediato, optimista), pero es el punto donde el backend debe garantizar la
+// escritura — es evidencia regulatoria y no puede perderse en un recargo de página.
 function logOtorgEvento(dealId, actor, resultado, detalle) {
-  (OTORG_EVENTOS[dealId] = OTORG_EVENTOS[dealId] || []).push({ fecha: nowStamp(), canal: "Otorgamiento", actor, resultado, detalle: detalle || "", esEvento: true });
+  return repoOtorgEventos.push(dealId, { fecha: nowStamp(), canal: "Otorgamiento", actor, resultado, detalle: detalle || "", esEvento: true });
 }
 // ── Prioridad de curse: una jefatura/gerencia comercial marca oportunidades del pipeline para que el
 // ejecutivo las priorice. { [dealId]: { por, porNombre, ts } }. Se conserva aunque la op se gane/pierda.
@@ -7686,8 +7861,10 @@ function excepcionesSinComentario(deal) {
 function solicitarAprobacionExc(deal, x, execCode, comentario, archivos) {
   if (!x || !x.stKey || !x.regla) return;
   const nr = NIVEL_ROL[x.nivel] || NIVEL_ROL[4];
-  const sol = SOLICITUD_EXC[deal.id] || (SOLICITUD_EXC[deal.id] = {});
-  sol[x.stKey] = { comentario: comentario || "", archivos: (archivos || []).slice(), por: USERS[execCode] || execCode, porCode: execCode, fecha: new Date().toLocaleString("es-CL"), nivel: x.nivel || 4, rol: nr.rol };
+  // Escritura optimista + confirmación (la promesa no se espera aquí: la función es síncrona por sus
+  // muchos call sites; el punto de await queda listo para cuando la mutation sea real).
+  const sol = { ...(repoSolicitudExc.get(deal.id) || {}), [x.stKey]: { comentario: comentario || "", archivos: (archivos || []).slice(), por: USERS[execCode] || execCode, porCode: execCode, fecha: new Date().toLocaleString("es-CL"), nivel: x.nivel || 4, rol: nr.rol } };
+  repoSolicitudExc.set(deal.id, sol);
   if (!tienePreEval(deal.id)) setPreEval(deal.id, execCode, true); // habilita la bandeja para que el apoderado pueda visar
   const dtxt = x.deudor ? ` · deudor ${x.deudor.nombre}` : "";
   registrarAuditoria({ usuario: USERS[execCode] || execCode, modulo: "Otorgamiento · Solicitud de excepción", accion: "Solicitar aprobación", glosa: `Regla #${x.regla.n} ${x.regla.nombre} · ${AREA_LBL[nr.area]} N${x.nivel || 4} (${nr.rol}) · ${deal.cliente}${dtxt}${comentario ? " · " + comentario : ""}${(archivos && archivos.length) ? " · " + archivos.length + " adjunto(s)" : ""}`, empresaId: deal.id, exito: true });
@@ -7800,16 +7977,23 @@ function VisadoClienteView({ deals, usuario, onChange }) {
     if (prev && !h.participantes.includes(usuario)) h.participantes.push(usuario);
     hiloEnviar(h, usuario, texto, null);
   };
-  const setExc = (deal, x, val, msg, arch) => {
+  // Decisión del apoderado desde la mesa de Otorgamientos. Misma mutation que en el detalle (`aprobarExc`).
+  const setExc = async (deal, x, val, msg, arch) => {
     const k = x.stKey, area = x.regla.area, nivel = x.nivel || 4;
-    const st = VISADO_STATE[deal.id] || (VISADO_STATE[deal.id] = {}); st[k] = val;
-    const det = VISADO_DETALLE[deal.id] || (VISADO_DETALLE[deal.id] = {}); det[k] = { msg: msg || "", arch: arch || null, por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL") };
+    const st = { ...(repoVisado.get(deal.id) || {}), [k]: val };
+    const det = { ...(repoVisadoDetalle.get(deal.id) || {}), [k]: { msg: msg || "", arch: arch || null, por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL") } };
+    await Promise.all([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
     const dtxt = x.deudor ? ` · deudor ${x.deudor.nombre}` : "";
     registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Visado Cliente", accion: val === "aprobado" ? "Excepción aprobada" : "Excepción rechazada", glosa: `Regla ${x.regla.n} · ${AREA_LBL[area]} N${nivel} · ${deal.cliente}${dtxt}${msg ? " · " + msg : ""}`, exito: val === "aprobado" });
     logOtorgEvento(deal.id, USERS[usuario] || usuario, `${USERS[usuario] || usuario} ${val === "aprobado" ? "aprobó" : "rechazó"} la excepción de otorgamiento · regla #${x.regla.n} ${x.regla.nombre}${dtxt} (${AREA_LBL[area]} N${nivel})${arch ? " · con respaldo adjunto" : ""}`, msg || "");
-    avisarAvanceOtorg(deal); bump();
+    invalidarVisado(); avisarAvanceOtorg(deal); bump();
   };
-  const revertirExc = (deal, k) => { const st = VISADO_STATE[deal.id]; if (st) delete st[k]; const det = VISADO_DETALLE[deal.id]; if (det) delete det[k]; bump(); };
+  const revertirExc = async (deal, k) => {
+    const st = { ...(repoVisado.get(deal.id) || {}) }; delete st[k];
+    const det = { ...(repoVisadoDetalle.get(deal.id) || {}) }; delete det[k];
+    await Promise.all([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
+    invalidarVisado(); bump();
+  };
   const solicitarInfo = (deal, x, destId, destLabel, msg, arch) => {
     const dc = destCodeDe(destId, deal);
     const h = hiloNuevo({ tipo: "requerimiento", dealId: deal.id, cliente: deal.cliente, reglaN: x.stKey, asunto: `Requerimiento · regla #${x.regla.n} ${x.regla.nombre}${x.deudor ? " · " + x.deudor.nombre : ""}`, participantes: [usuario, dc], creadoPor: usuario });
@@ -10902,7 +11086,7 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper }) {
           <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
             <div className="text-lg font-semibold" style={{ color: C.ink }}>Otorgamiento · apoderados y atribuciones</div>
             <div className="mt-0.5 t12" style={{ color: C.faint }}>Criterios de verificación, atribuciones de aprobación por criterio y los apoderados que pueden excepcionar (nivel por área). Aquí también se habilita/oculta la aceptación masiva por usuario.</div>
-            <MantenedoresOtorg onCfgChange={() => force((x) => x + 1)} />
+            <MantenedoresOtorg onCfgChange={() => { invalidarVisado(); force((x) => x + 1); }} />
           </div>
         ) : (
           <div className="rounded-2xl p-10 text-center" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
@@ -13845,10 +14029,11 @@ export default function PipelineComercial() {
   // NUEVA oportunidad en prospección para el mismo cliente con esas facturas.
   const dealPendiente = (d) => {
     const monto = d.nuevasFacturasMontoMM || 0;
-    return { ...d, id: `OP-S${Date.now() % 100000}-${(d.id || "").slice(-3)}`, stage: "prospeccion",
+    const nid = `OP-S${Date.now() % 100000}-${(d.id || "").slice(-3)}`;
+    return { ...d, id: nid, stage: "prospeccion",
       facturas: d.nuevasFacturas, amountMM: +monto.toFixed(1), important: monto > 800,
       status: "Facturas pendientes · nueva oportunidad", time: nowStamp(), warning: false,
-      nuevasFacturas: 0, nuevasFacturasMontoMM: 0, subSeed: Math.random(), ...finanzasDe(d.cliente, d.deudor, monto) };
+      nuevasFacturas: 0, nuevasFacturasMontoMM: 0, subSeed: rndDet("seed|" + nid), ...finanzasDe(d.cliente, d.deudor, monto) };
   };
   const advance = (id) => {
     setDeals((prev) => {
@@ -13893,7 +14078,7 @@ export default function PipelineComercial() {
     setTimeout(() => {
       const d2 = (dealsRef.current || []).find((x) => x.id === id); if (!d2) return;
       const neg = negDe(d2); const w = waSourcesRef.current[neg];
-      if (w) { lastThreadRef.current[neg] = null; try { w.postMessage({ type: "wa-thread", neg, mensajes: hiloDe(d2.waSesion) }, "*"); } catch (_) {} }
+      if (w) { lastThreadRef.current[neg] = null; try { w.postMessage({ type: "wa-thread", neg, mensajes: hiloDe(d2.waSesion) }, ORIGEN_APP); } catch (_) {} }
     }, 80);
   };
   // El ejecutivo edita los datos de contacto de la empresa.
@@ -13931,7 +14116,9 @@ export default function PipelineComercial() {
       // Un email se considera enviado. Para WhatsApp/Call el resultado es aleatorio (el número corregido puede
       // seguir errado). IMPORTANTE: si el contacto queda NO contactable, los mensajes de WhatsApp NO se marcan
       // como «enviado»; quedan como «no entregado» (el teléfono no los recibió) — coherente con el estado.
-      const exito = esEmail ? true : Math.random() < 0.6;
+      // Determinista por (operación, canal, intento): el mismo reintento da siempre el mismo resultado.
+      // SERVER-SIDE: esto lo resuelve el webhook del proveedor (Twilio / BSP de WhatsApp), no el cliente.
+      const exito = esEmail ? true : rndDetBool(`contacto|${d.id}|${canal}|${(d.historialContacto || []).length}`, 0.6);
       const tlabel = template ? ` · ${template}` : "";
       const hist = [...(d.historialContacto || [])];
       let wa = d.waSesion; let pend = d.waPendiente; let emailThread = d.emailThread;
@@ -13975,7 +14162,9 @@ export default function PipelineComercial() {
         const { asunto, cuerpo } = emailTemplateContent(d, template);
         emailThread = [...(d.emailThread || []), { from: "ejecutivo", asunto, cuerpo, template, time: nowStamp() }];
         hist.push({ fecha: nowStamp(), canal: "Email", resultado: `Email enviado${tlabel}`, detalle: `Asunto: ${asunto}\n\n${cuerpo}`, exito: true });
-        if (Math.random() < 0.6) {
+        // ¿El cliente responde el correo? Determinista por (operación, plantilla, nº de correos previos).
+        // SERVER-SIDE: es el webhook de respuesta del proveedor de email.
+        if (rndDetBool(`reply|${d.id}|${template}|${(d.emailThread || []).length}`, 0.6)) {
           const reply = respuestaEmailCliente(template, d);
           emailThread.push({ from: "cliente", asunto: "RE: " + asunto, cuerpo: reply, time: nowStamp() });
           hist.push({ fecha: nowStamp(), canal: "Email", resultado: "Cliente respondió el email", detalle: reply, exito: true });
@@ -14012,7 +14201,7 @@ export default function PipelineComercial() {
       setTimeout(() => {
         const d2 = (dealsRef.current || []).find((x) => x.id === id); if (!d2) return;
         const neg = negDe(d2); const w2 = waSourcesRef.current[neg];
-        if (w2) { lastThreadRef.current[neg] = null; try { w2.postMessage({ type: "wa-thread", neg, mensajes: hiloDe(d2.waSesion) }, "*"); } catch (_) {} }
+        if (w2) { lastThreadRef.current[neg] = null; try { w2.postMessage({ type: "wa-thread", neg, mensajes: hiloDe(d2.waSesion) }, ORIGEN_APP); } catch (_) {} }
       }, 80);
     }
   };
@@ -14056,13 +14245,13 @@ export default function PipelineComercial() {
       cursePayloadsRef.current[pub.neg] = { id, tasa: pub.tasa, opts: pub.opts, payload: pub.payload };
       lastThreadRef.current[pub.neg] = null;
       const w = waSourcesRef.current[pub.neg]; // si el WhatsApp del cliente ya está abierto, le mandamos el detalle
-      if (w) { try { w.postMessage({ type: "deal-data", neg: pub.neg, payload: pub.payload }, "*"); } catch (_) {} }
+      if (w) { try { w.postMessage({ type: "deal-data", neg: pub.neg, payload: pub.payload }, ORIGEN_APP); } catch (_) {} }
       // Push explícito del hilo actualizado: garantiza que whatsapp.html re-renderice y muestre los botones
       // de interés/cierre tras publicar la oferta (sin depender solo del espejo en vivo).
       setTimeout(() => {
         const d2 = (dealsRef.current || []).find((x) => negDe(x) === pub.neg);
         const w2 = waSourcesRef.current[pub.neg];
-        if (d2 && w2) { lastThreadRef.current[pub.neg] = null; try { w2.postMessage({ type: "wa-thread", neg: pub.neg, mensajes: hiloDe(d2.waSesion) }, "*"); } catch (_) {} }
+        if (d2 && w2) { lastThreadRef.current[pub.neg] = null; try { w2.postMessage({ type: "wa-thread", neg: pub.neg, mensajes: hiloDe(d2.waSesion) }, ORIGEN_APP); } catch (_) {} }
       }, 80);
       setCierreModal({ id, tasa: pub.tasa, opts: pub.opts, neg: pub.neg });
     }
@@ -14099,10 +14288,15 @@ export default function PipelineComercial() {
     // caemos a window.open directo.
     let win = null; try { win = window.open("", "_blank"); } catch (_) { win = null; }
     const stamp = nowStamp();
+    // El OTP se emite UNA sola vez por envío (server-side: mutation `emitirOtp`). `makeUpdated` es puro
+    // y se ejecuta varias veces (setDeals + setSelected): si emitiera adentro, cada llamada generaría un
+    // código distinto y el que ve el cliente no sería el validado. El valor en claro sólo viaja por el
+    // canal; en el store del portal queda únicamente el hash.
+    const otpClaro = emitirOtp(negDe({ id }));
     // Genera el deal actualizado de forma pura (mismo stamp) para reutilizarlo en el estado y al abrir el canal.
     const makeUpdated = (d) => {
       const neg = negDe(d);
-      const otp = otpDe(neg);
+      const otp = otpClaro;
       const portal = "www.factoringsecurity.cl/curse";
       let wa = d.waSesion; let emailThread = d.emailThread; let detalle = "";
       if (canal === "WhatsApp") {
@@ -14116,7 +14310,7 @@ export default function PipelineComercial() {
       } else { // Email
         const asunto = `Firma tu operación de factoring N° ${neg}`;
         const cuerpo = `Hola ${(d.contacto && d.contacto.nombre) || "estimado/a"},\n\nTu oferta está lista para firmar. Por tu seguridad, este correo NO contiene enlaces: ingresa por tu cuenta a la plataforma de Factoring Security (${portal}).\n\n• Código de negocio: N° ${neg}\n• Clave de un solo uso (OTP): ${otp}\n\nInicia sesión con tu RUT y clave, escribe el código de negocio y el OTP, revisa las condiciones y firma; el giro se realiza el mismo día.\n\nSaludos,\n${execName(d)}\nNEX Factoring · Factoring Security`;
-        emailThread = [...(d.emailThread || []), { from: "ejecutivo", asunto, cuerpo, template: "Código de negocio + OTP", time: stamp }];
+        emailThread = [...(d.emailThread || []), { from: "ejecutivo", asunto, cuerpo, template: "Código de negocio + OTP", time: stamp, otp }];
         detalle = `Asunto: ${asunto}\n\n${cuerpo}`;
       }
       const hist = [...(d.historialContacto || []), { fecha: stamp, canal, resultado: `Oferta comunicada por ${canal} · enlace para firmar enviado (N° ${neg})`, detalle, exito: true }];
@@ -14128,9 +14322,11 @@ export default function PipelineComercial() {
     if (!d0) return;
     const neg = negDe(d0);
     if (!cursePayloadsRef.current[neg]) { const c = curseDesdeDeal(d0); cursePayloadsRef.current[neg] = { id, tasa: c.tasa, opts: c.opts, payload: c.payload }; }
-    // Persistimos el payload + OTP por negocio (mismo origen) para que el portal de curse.html lo recupere
-    // cuando el cliente ingresa a firmar con su código de negocio y la clave de un solo uso.
-    cursePersist(neg, { neg, otp: otpDe(neg), payload: cursePayloadsRef.current[neg].payload, ts: Date.now() });
+    // Persistimos el payload por negocio para que el portal de curse.html lo recupere cuando el cliente
+    // ingresa a firmar. Del OTP se guarda SÓLO el hash + su vencimiento y la marca de uso: el código en
+    // claro nunca queda en reposo. (Server-side: esto es la tabla otp(neg, hash, exp, usado) del backend.)
+    const otpReg = OTP_STORE[neg] || {};
+    cursePersist(neg, { neg, otpHash: otpReg.hash, otpExp: otpReg.exp, otpUsado: false, payload: cursePayloadsRef.current[neg].payload, ts: Date.now() });
     // Navega la pestaña ya abierta (win) al canal del cliente: simulador de email o WhatsApp del cliente.
     const updated = makeUpdated(d0);
     try {
@@ -14243,6 +14439,9 @@ export default function PipelineComercial() {
   // se abre con opener = este panel; responde el detalle/hilo y recibe mensajes y la aceptación.
   useEffect(() => {
     const onMsg = (ev) => {
+      // SEGURIDAD: sólo se atienden mensajes del origen de la app. Sin esta guarda cualquier página
+      // abierta por el usuario podría pedir el payload de una operación o confirmar una firma.
+      if (!origenConfiable(ev.origin)) return;
       const m = ev.data;
       if (!m || !m.neg) return;
       if (m.type === "request-deal") {
@@ -14258,8 +14457,8 @@ export default function PipelineComercial() {
           cursePayloadsRef.current[m.neg] = e;
         }
         try {
-          if (e && ev.source) ev.source.postMessage({ type: "deal-data", neg: m.neg, payload: e.payload }, "*");
-          else if (d && ev.source) ev.source.postMessage({ type: "wa-thread", neg: m.neg, mensajes: hiloDe(d.waSesion) }, "*");
+          if (e && ev.source) ev.source.postMessage({ type: "deal-data", neg: m.neg, payload: e.payload }, ORIGEN_APP);
+          else if (d && ev.source) ev.source.postMessage({ type: "wa-thread", neg: m.neg, mensajes: hiloDe(d.waSesion) }, ORIGEN_APP);
         } catch (_) {}
         return;
       }
@@ -14334,7 +14533,7 @@ export default function PipelineComercial() {
           setTimeout(() => {
             const d2 = (dealsRef.current || []).find((x) => negDe(x) === m.neg);
             const w = waSourcesRef.current[m.neg];
-            if (d2 && w) { lastThreadRef.current[m.neg] = null; try { w.postMessage({ type: "wa-thread", neg: m.neg, mensajes: hiloDe(d2.waSesion) }, "*"); } catch (_) {} }
+            if (d2 && w) { lastThreadRef.current[m.neg] = null; try { w.postMessage({ type: "wa-thread", neg: m.neg, mensajes: hiloDe(d2.waSesion) }, ORIGEN_APP); } catch (_) {} }
           }, 80);
         }
         return;
@@ -14363,7 +14562,7 @@ export default function PipelineComercial() {
           setTimeout(() => {
             const d2 = (dealsRef.current || []).find((x) => negDe(x) === m.neg);
             const w = waSourcesRef.current[m.neg];
-            if (d2 && w) { lastThreadRef.current[m.neg] = null; try { w.postMessage({ type: "wa-thread", neg: m.neg, mensajes: hiloDe(d2.waSesion) }, "*"); } catch (_) {} }
+            if (d2 && w) { lastThreadRef.current[m.neg] = null; try { w.postMessage({ type: "wa-thread", neg: m.neg, mensajes: hiloDe(d2.waSesion) }, ORIGEN_APP); } catch (_) {} }
           }, 80);
         }
         return;
@@ -14387,7 +14586,7 @@ export default function PipelineComercial() {
           setTimeout(() => {
             const d2 = (dealsRef.current || []).find((x) => negDe(x) === m.neg);
             const w = waSourcesRef.current[m.neg];
-            if (d2 && w) { lastThreadRef.current[m.neg] = null; try { w.postMessage({ type: "wa-thread", neg: m.neg, mensajes: hiloDe(d2.waSesion) }, "*"); } catch (_) {} }
+            if (d2 && w) { lastThreadRef.current[m.neg] = null; try { w.postMessage({ type: "wa-thread", neg: m.neg, mensajes: hiloDe(d2.waSesion) }, ORIGEN_APP); } catch (_) {} }
           }, 80);
         }
       }
@@ -14407,7 +14606,7 @@ export default function PipelineComercial() {
       const key = JSON.stringify(msgs);
       if (lastThreadRef.current[neg] === key) return; // sin cambios, no re-emitir
       lastThreadRef.current[neg] = key;
-      try { w.postMessage({ type: "wa-thread", neg, mensajes: msgs }, "*"); } catch (_) {}
+      try { w.postMessage({ type: "wa-thread", neg, mensajes: msgs }, ORIGEN_APP); } catch (_) {}
     });
   }, [deals]);
   // Avance explícito desde el drawer a una etapa elegida (con la regla de facturas pendientes al aceptar).
@@ -14515,14 +14714,17 @@ export default function PipelineComercial() {
     const giroMM = +(financiadoMM - interesMM - comisionMM - descCxCMM).toFixed(2);
     const venc = new Date(Date.now() + diasFin * 86400000);
     const fechaVenc = `${String(venc.getDate()).padStart(2, "0")}-${String(venc.getMonth() + 1).padStart(2, "0")}-${venc.getFullYear()}`;
-    const atrasoDias = Math.random() < 0.14 ? 1 + Math.floor(Math.random() * 16) : 0; // 14% se atrasa 1-16 días
+    // 14% se atrasa 1-16 días. Determinista por operación: antes, cada recálculo movía el saldo CxC
+    // del cliente. SERVER-SIDE: el atraso es un hecho de la BD (fecha de pago real del deudor).
+    const kAtr = `atraso|${cliente}|${deudor}|${amountMM}`;
+    const atrasoDias = rndDetBool(kAtr, 0.14) ? rndDetInt("d" + kAtr, 1, 16) : 0;
     const nuevaCxCMM = atrasoDias ? +(financiadoMM * (tasaDescuento / 100) * (atrasoDias / 30)).toFixed(2) : 0;
     cxcRef.current = { ...cxcRef.current, [cliente]: nuevaCxCMM };      // saldo a recuperar en la próxima operación
     guardarCxC(cxcRef.current);
     return { diasFin, financiadoMM, interesMM, montoDescuentoMM: interesMM, comisionMM, descMM, descCxCMM, giroMM, fechaVenc, atrasoDias };
   };
   const finanzasDe = (cliente, deudor, amountMM) => {
-    const sim = simular(amountMM);
+    const sim = simular(amountMM, `${cliente}|${deudor}`);
     return { ...sim, ...calcularFinanzas(cliente, deudor, amountMM, sim.tasaDescuento, sim.comision) };
   };
 
@@ -14577,7 +14779,7 @@ export default function PipelineComercial() {
           cliente, deudor: deudores[0].name, deudores, sector: ev.sector, tasa: ev.tasa, anticipo: ev.anticipo, esCliente: ev.esCliente, reglaId: ev.reglaId,
           rutEmisor: ev.rutEmisor, cat, catLabel: cat, pctBlanca, nCat1, nCat4, pctCat1, sowTendencia: ev.sowTendencia, sowFlecha: ev.sowFlecha, sowActualPct: ev.sowActualPct, sowTargetPct: ev.sowTargetPct, sowGapPct: ev.sowGapPct, superaTarget: ev.superaTarget, conDescuento: ev.conDescuento, spreadPromo: ev.spreadPromo,
           status: "Simulada · Inbound", time: nowStamp(), channel: "IA", exec: asignarEjecutivo(ev),
-          stale: false, important: sumMonto > 800, _inbound: true, perdedor: !contact.fueraAtribucion && Math.random() < 0.12, subSeed: Math.random(),
+          stale: false, important: sumMonto > 800, _inbound: true, perdedor: !contact.fueraAtribucion && rndDetBool(`perd|${ev.opId}`, 0.12), subSeed: rndDet(`seed|${ev.opId}`),
           nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, tProsp: Date.now(),
           facturasOp: fopReal.length ? fopReal : undefined, // facturas reales (DTESync) para itemizar
           facturasDisponibles: disponibles.length ? disponibles : undefined, // Otros deudores (excluidos): el ejecutivo puede agregarlas manualmente
@@ -14653,6 +14855,7 @@ export default function PipelineComercial() {
   // Transiciones continuas (oferta, negociación, aceptación, pérdida, cesión, giro).
   // No dependen del cron horario: corren en su propio timer, etapa por etapa.
   const avanzarPipeline = () => {
+    PIPELINE_TICK++; // una corrida = una clave de tiempo para las decisiones deterministas de abajo
     const acc = accDiaRef.current;
     const e = acc.embudo;
     const sumar = (k, d) => { acc[k].op++; acc[k].fac += d.facturas || 0; acc[k].mm += d.amountMM || 0; };
@@ -14680,7 +14883,7 @@ export default function PipelineComercial() {
         // otro factoring registrada, hay una probabilidad de perder la operación ante la competencia.
         if (["prospeccion", "oferta", "aceptadas"].includes(d.stage) && !d.cesionEval) {
           const comp = d.cedidaCompetidor || (d.rutEmisor ? aecCompetidorDe(d) : competidorDe(d));
-          if (comp && Math.random() < 0.12) { sumar("perdida", d); e.perdida++; return { ...d, stage: "perdida", etapaPerdida: d.stage, cesionEval: true, status: `Perdido · facturas financiadas por ${comp}`, cedidaCompetidor: comp, perdidaCesion: true, time: nowStamp(), historialContacto: traza(d, `AECSync: las facturas fueron financiadas por ${comp}. Oportunidad perdida ante la competencia.`, false) }; }
+          if (comp && rndDetBool(`aec|${d.id}`, 0.12)) { sumar("perdida", d); e.perdida++; return { ...d, stage: "perdida", etapaPerdida: d.stage, cesionEval: true, status: `Perdido · facturas financiadas por ${comp}`, cedidaCompetidor: comp, perdidaCesion: true, time: nowStamp(), historialContacto: traza(d, `AECSync: las facturas fueron financiadas por ${comp}. Oportunidad perdida ante la competencia.`, false) }; }
           d = { ...d, cesionEval: true };
         }
         if (d.stage === "prospeccion" && d.contactable === false) return d; // 14% no contactable: estancado en prospección
@@ -14775,7 +14978,8 @@ export default function PipelineComercial() {
         // confirmarCierre. Sólo así la oportunidad se considera aceptada/cursada.
         if (d.stage === "oferta") return d;
         const idx = STAGE_ORDER.indexOf(d.stage);
-        if (Math.random() < 0.18) {
+        // Determinista por (negocio, etapa, corrida): el updater puede ejecutarse dos veces y decide igual.
+        if (rndDetBool(`avance|${d.id}|${d.stage}|${PIPELINE_TICK}`, 0.18)) {
           const ns = STAGE_ORDER[idx + 1];
           if (ns === "oferta") sumar("prospeccion", d);       // completó prospección
           else if (ns === "aceptadas") sumar("curse", d);     // cursada
@@ -14788,19 +14992,20 @@ export default function PipelineComercial() {
             e.inbound++; e.prospeccion++; // la nueva oportunidad también entró por inbound
             // y cuenta como originación del día (para que la tabla cuadre con el embudo)
             originadasRef.current += 1; originadasMontoRef.current += monto; originadasFacRef.current += d.nuevasFacturas || 0;
+            const nidS = `OP-S${Date.now() % 100000}-${(d.id || "").slice(-3)}`;
             splits.push({
-              ...d, id: `OP-S${Date.now() % 100000}-${(d.id || "").slice(-3)}`, stage: "prospeccion",
+              ...d, id: nidS, stage: "prospeccion",
               facturas: d.nuevasFacturas, amountMM: +monto.toFixed(1), important: monto > 800,
               deudores: [{ name: d.deudor, facturas: d.nuevasFacturas, montoMM: +monto.toFixed(1) }],
               status: "Facturas pendientes · nueva oportunidad", time: nowStamp(), warning: false, tProsp: Date.now(),
-              nuevasFacturas: 0, nuevasFacturasMontoMM: 0, subSeed: Math.random(),
+              nuevasFacturas: 0, nuevasFacturasMontoMM: 0, subSeed: rndDet("seed|" + nidS),
               ...finanzasDe(d.cliente, d.deudor, monto),
             });
             return { ...d, stage: ns, time: nowStamp(), stale: false, status: STATUS_ETAPA[ns] || d.status, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, historialContacto: traza(d, `Avanzó a ${STATUS_ETAPA[ns] || ns}`, true, DET_ETAPA[ns]) };
           }
           // Cesión externa: una parte de las operaciones en cesión se inscribe por otro factoring
           // (el cliente la cedió afuera). Se marca como sub-estado "Cesión externa" dentro de Aceptada.
-          if (ns === "cesion" && !d.cesionExterna && Math.random() < 0.15) {
+          if (ns === "cesion" && !d.cesionExterna && rndDetBool(`cesionExt|${d.id}`, 0.15)) {
             const comp = d.cedidaCompetidor || (d.rutEmisor ? aecCompetidorDe(d) : competidorDe(d)) || "otro factoring";
             return { ...d, stage: ns, time: nowStamp(), stale: false, cesionExterna: true, cedidaCompetidor: comp, status: `Cesión externa · inscrita por ${comp}`, historialContacto: traza(d, `Cesión externa: las facturas fueron inscritas por ${comp}`, false) };
           }
@@ -14834,7 +15039,7 @@ export default function PipelineComercial() {
       // hay ~12% de perder la operación. Se evalúa una sola vez por oportunidad.
       if (["prospeccion", "oferta", "aceptadas"].includes(d.stage) && !d.cesionEval) {
         const comp = d.cedidaCompetidor || (d.rutEmisor ? aecCompetidorDe(d) : competidorDe(d));
-        if (comp && Math.random() < 0.12) {
+        if (comp && rndDetBool(`aec|${d.id}`, 0.12)) {
           sumar("perdida", d); e.perdida++;
           patches[d.id] = { stage: "perdida", etapaPerdida: d.stage, cesionEval: true, status: `Perdido · facturas financiadas por ${comp}`, cedidaCompetidor: comp, perdidaCesion: true, time: nowStamp(), historialContacto: traza(d, `AECSync: las facturas fueron financiadas por ${comp}. Oportunidad perdida ante la competencia.`, false) };
           continue;
@@ -14902,7 +15107,7 @@ export default function PipelineComercial() {
       const nid = `OP-R${nDia}${(d.id || "").replace(/[^0-9]/g, "").slice(-4)}`;
       return { ...d, id: nid, reabiertaDe: d.id, stage: etapaNG, amountMM, facturas, deudores,
         facturasOp: undefined, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, actualizando: false,
-        status: `Reabierta (día ${nDia}) · paquete actualizado`, time: nowStamp(), tProsp: Date.now(), subSeed: Math.random(),
+        status: `Reabierta (día ${nDia}) · paquete actualizado`, time: nowStamp(), tProsp: Date.now(), subSeed: rndDet("seed|" + nid),
         historialContacto: traza(d, `No gestionada al cierre del día ${nDia - 1}: se cierra y se reabre con el paquete vigente en la BD (${facturas} doc. · ${fmtMM(amountMM)})`),
         ...finanzasDe(d.cliente, d.deudor, amountMM) };
     }));
@@ -15026,7 +15231,7 @@ export default function PipelineComercial() {
     cliente: ev.cedente, deudor: ev.pagador, deudores: [{ name: ev.pagador, facturas: ev.nFacturas || 1, montoMM: ev.monto || 0 }], sector: ev.sector, tasa: ev.tasa, anticipo: ev.anticipo, esCliente: ev.esCliente,
     rutEmisor: ev.rutEmisor, cat: ev.cat, catLabel: ev.cat, pctBlanca: ev.pctBlanca, sowTendencia: ev.sowTendencia, sowFlecha: ev.sowFlecha, sowActualPct: ev.sowActualPct, sowTargetPct: ev.sowTargetPct, sowGapPct: ev.sowGapPct, superaTarget: ev.superaTarget, conDescuento: ev.conDescuento, spreadPromo: ev.spreadPromo, facturasOp: ev.facturasOp,
     status: "Asignada por admin", time: nowStamp(), channel: "Manual", exec: execIni || asignarEjecutivo(ev),
-    stale: false, important: (ev.monto || 0) > 800, _inbound: true, perdedor: Math.random() < 0.18 + Math.random() * 0.03, subSeed: Math.random(), nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, tProsp: Date.now(),
+    stale: false, important: (ev.monto || 0) > 800, _inbound: true, perdedor: rndDetBool(`perd|${ev.cedente}|${ev.pagador}`, 0.195), subSeed: rndDet(`seed|${ev.cedente}|${ev.pagador}`), nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, tProsp: Date.now(),
     ...finanzasDe(ev.cedente, ev.pagador, ev.monto || 0),
   });
   const asignarManual = (ev, execIni) => {
@@ -15529,7 +15734,7 @@ export default function PipelineComercial() {
             <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Configuración</h1>
             <ConfiguracionView usuario={usuario} cfgOper={cfgOper} setCfgOper={setCfgOper} />
           </>
-        ) : vistaApp === "otorgamientos" ? <OtorgamientosView deals={deals} usuario={usuario} onOpen={abrirDetalle} onAutorizarCausa={autorizarCausa} onCfgChange={() => setCfgVer((v) => v + 1)} /> : (<>
+        ) : vistaApp === "otorgamientos" ? <OtorgamientosView deals={deals} usuario={usuario} onOpen={abrirDetalle} onAutorizarCausa={autorizarCausa} onCfgChange={() => { invalidarVisado(); setCfgVer((v) => v + 1); }} /> : (<>
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Tubo Diario</div>
