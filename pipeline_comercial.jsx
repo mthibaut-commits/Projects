@@ -1778,6 +1778,11 @@ const CFG_OPER_BASE = {
   marcaLogo: "security",                                        // "nex" | "security"
   marcaNombre: "Factoring Security",
   // — Banderas de DEMO (no van a producción) —
+  // Interruptor MAESTRO. El demo trae un motor de simulación —el stream de facturas del inbound, el
+  // reloj que avanza el día, el Start/Pausar— que NO existe en producción: allí las oportunidades
+  // llegan por API desde el backend, no las genera el navegador. Apagarlo esconde esos controles y
+  // deja el tubo alimentado sólo por datos reales, que es como se ve en el despliegue del cliente.
+  modoDemo: true,
   // Suplantación de usuario desde la barra superior: cambia la identidad de la sesión sin ninguna
   // verificación. Es útil para mostrar atribuciones en una demo y es, literalmente, un escalamiento de
   // privilegios en un desplegable. Se apaga por tenant y no debe existir en el despliegue real.
@@ -12162,6 +12167,7 @@ function CfgFuncionalidades({ cfgOper, setCfgOper }) {
       <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.amberBg === "#FFF7ED" ? "#FED7AA" : C.line}` }}>
         <div className="t12 font-semibold" style={{ color: C.amber }}>Sólo demo · no va a producción</div>
         <div className="mt-0.5 mb-2 t11" style={{ color: C.faint }}>Funciones que existen para poder mostrar el producto y que en un despliegue real deben estar apagadas.</div>
+        <Toggle k="modoDemo" label="Modo demo (interruptor maestro)" desc="Enciende el motor de simulación: el botón Start/Pausar del tubo, Reiniciar, la columna Inbound y el reloj que avanza el día. En producción las oportunidades llegan por API desde el backend y no hay nada que iniciar desde la UI. Apagarlo desactiva también todo lo de abajo." />
         <Toggle k="demoSuplantarUsuario" label="Cambiar de usuario desde la barra superior" desc="Cambia la identidad de la sesión sin ninguna verificación, incluido el super-admin. En producción la identidad la fija el token: no puede haber un control de UI que la cambie." />
       </div>
     </div>
@@ -15208,7 +15214,9 @@ export default function PipelineComercial() {
   const [analisis, setAnalisis] = useState(null); // análisis/recomendación de fin de semana
   const [editingRule, setEditingRule] = useState(null);
   const [streaming, setStreaming] = useState(false); // arranca detenido: la simulación inbound parte al presionar Start
-  const [showInbound, setShowInbound] = useState(true); // columna Inbound visible por defecto (toggle abierto)
+  // Sin modo demo no hay stream simulado que mostrar: la columna Inbound arranca oculta y su toggle
+  // ni siquiera se pinta (el tubo queda alimentado sólo por lo que exista de verdad).
+  const [showInbound, setShowInbound] = useState(CFG_ACTIVA.modoDemo !== false);
   const [streamQueue, setStreamQueue] = useState(INBOUND_STREAM);
   const [streamFeed, setStreamFeed] = useState([]);
   const [recibidas, setRecibidas] = useState(0);
@@ -16421,7 +16429,14 @@ export default function PipelineComercial() {
   // El cron sigue activo mientras la simulación esté INICIADA (no solo mientras ingesta el stream): drena el
   // acumulado del inbound y evalúa pérdidas (AECSync / oferta no aceptada) también después de que el stream termina.
   // El timer se reinicia si cambia la frecuencia configurada del tenant (Configuración › Operación).
-  useEffect(() => { const iv = setInterval(() => { if (!pausaRef.current && (streamingRef.current || iniciadoRef.current)) cronRef.current(); }, CRON_MS); return () => clearInterval(iv); }, [CRON_MS]);
+  // El cron es parte del MOTOR DE SIMULACIÓN: sin modo demo no corre. En producción el equivalente es
+  // un job del backend y la UI sólo recibe los cambios por socket; dejar un reloj generando datos en
+  // el navegador del ejecutivo sería inventar oportunidades que no existen en la BD.
+  useEffect(() => {
+    if (CFG_ACTIVA.modoDemo === false) return;
+    const iv = setInterval(() => { if (!pausaRef.current && (streamingRef.current || iniciadoRef.current)) cronRef.current(); }, CRON_MS);
+    return () => clearInterval(iv);
+  }, [CRON_MS]);
   // Timer continuo de transiciones del pipeline (independiente del cron horario).
   const avanzarRef = useRef(avanzarPipeline);
   avanzarRef.current = avanzarPipeline;
@@ -17016,7 +17031,7 @@ export default function PipelineComercial() {
               En producción NO va: la identidad la fija el token y no hay control de UI que la cambie.
               Si un día se necesita "ver como" para soporte, es una función del backend, auditada,
               reservada a un rol específico y con el impersonador registrado en cada acción. */}
-          {CFG_ACTIVA.demoSuplantarUsuario !== false ? (
+          {CFG_ACTIVA.modoDemo !== false && CFG_ACTIVA.demoSuplantarUsuario !== false ? (
             <div className="flex items-center gap-1.5" title="Sólo demo: cambia la identidad de la sesión sin verificación">
               <User size={14} style={{ color: C.faint }} />
               <select value={usuario} onChange={(e) => setUsuario(e.target.value)} title="Sesión de usuario (sólo demo)"
@@ -17119,19 +17134,24 @@ export default function PipelineComercial() {
             </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-            <button onClick={toggleStream} title={streaming ? "Pausar simulación" : "Iniciar simulación inbound (Start)"}
-              className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: streaming ? C.amber : C.green }}>
-              {streaming ? <><Pause size={14} /> Pausar</> : <><Play size={14} /> Start</>}
-            </button>
-            <button onClick={resetStream} title="Reiniciar simulación (todo a cero)"
-              className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.sub }}>
-              <RotateCcw size={14} /> Reiniciar
-            </button>
-            <button onClick={() => setShowInbound((v) => !v)} title={showInbound ? "Ocultar columna Inbound (más espacio)" : "Mostrar columna Inbound"}
-              className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${showInbound ? C.indigo : C.line}`, backgroundColor: "#fff", color: showInbound ? C.indigo : C.sub }}>
-              <Radio size={14} /> Inbound
-            </button>
-            <span className="mx-1 h-5 w-px" style={{ backgroundColor: C.line }} />
+            {/* Controles del MOTOR DE SIMULACIÓN: sólo en modo demo. En producción las oportunidades
+                llegan por API desde el backend y no hay nada que iniciar, pausar ni reiniciar desde la
+                UI; la columna Inbound sigue existiendo, pero alimentada por el stream real. */}
+            {CFG_ACTIVA.modoDemo !== false && (<>
+              <button onClick={toggleStream} title={streaming ? "Sólo demo · pausar la simulación" : "Sólo demo · iniciar la simulación del inbound"}
+                className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: streaming ? C.amber : C.green }}>
+                {streaming ? <><Pause size={14} /> Pausar</> : <><Play size={14} /> Start</>}
+              </button>
+              <button onClick={resetStream} title="Sólo demo · reiniciar la simulación (todo a cero)"
+                className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.sub }}>
+                <RotateCcw size={14} /> Reiniciar
+              </button>
+              <button onClick={() => setShowInbound((v) => !v)} title={showInbound ? "Ocultar columna Inbound (más espacio)" : "Mostrar columna Inbound"}
+                className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${showInbound ? C.indigo : C.line}`, backgroundColor: "#fff", color: showInbound ? C.indigo : C.sub }}>
+                <Radio size={14} /> Inbound
+              </button>
+              <span className="mx-1 h-5 w-px" style={{ backgroundColor: C.line }} />
+            </>)}
             {(() => {
               const VOPTS = [["tabla", "Tabla", Table2], ["kanban", "Kanban", LayoutGrid], ["area", "Área", Grid3x3]];
               const cur = VOPTS.find((o) => o[0] === vista) || VOPTS[0];
