@@ -296,10 +296,15 @@ function descargarArchivoLog(entradas) {
     return true;
   } catch (e) { return false; }
 }
+// Vacía SÓLO el log técnico (herramienta de soporte). La AUDITORÍA no se puede vaciar desde la app:
+// es evidencia, y un botón que borra evidencia no debería existir. Además, vaciar el log técnico es en
+// sí mismo un hecho auditable, así que queda registrado en la auditoría.
 function vaciarSysLog() {
+  const n = SYS_LOG.length;
   SYS_LOG.length = 0;
   try { if (storageDisponible()) window.localStorage.removeItem(LOG_KEY); } catch (_) {}
-  logSys("info", "app", "Log vaciado manualmente desde la consola de sistema");
+  registrarAuditoria({ usuario: (SESION && USERS[SESION.usuario]) || "-- Sistema --", modulo: "Sistema · Log técnico", accion: "Vaciar log", glosa: `Se vaciaron ${n} evento(s) del log técnico. La auditoría no se ve afectada.`, exito: true });
+  logSys("info", "app", `Log técnico vaciado manualmente (${n} eventos). La auditoría no se toca.`);
 }
 
 // ── Versión de la POLÍTICA de negocio ───────────────────────────────────────────────────────────
@@ -407,6 +412,7 @@ const SCHEMA_VERSION = {
   reglasInbound: 3,  // reglas de clasificación del inbound
   cfgOper: 1,        // configuración operativa y de pricing por tenant
   permisos: 1,       // permisos de visibilidad por usuario
+  auditoria: 1,      // bitacora de auditoria encadenada
   auth: 1,           // intentos fallidos y bloqueo por cuenta
   curse: 2,          // payload de curse por negocio (v2: OTP hasheado en vez de OTP en claro)
   snapshot: 1,       // snapshots de deal/operación para abrir en otra pestaña
@@ -743,10 +749,46 @@ function auditFechaHora(ts) {
 // Secuencia del log de auditoría: el id es monótono, no aleatorio (dos eventos del mismo ms mantienen
 // su orden real). SERVER-SIDE: es el bigserial de la tabla audit_log.
 let AUDIT_SEQ = 0;
+// ── Integridad de la auditoría (OWASP A09) ──────────────────────────────────────────────────────
+// La auditoría es EVIDENCIA: quién aprobó una excepción, quién cambió un privilegio, quién entró.
+// Antes vivía sólo en memoria, se truncaba a 500 registros en silencio y se perdía al recargar: un
+// log que desaparece al apretar F5 no sirve para responder «¿quién hizo esto?».
+//
+// Ahora cada registro encadena el hash del anterior. Si alguien edita o borra un registro del
+// storage, la cadena deja de cuadrar y la app lo DETECTA y lo muestra en el diagnóstico.
+// Honestamente: esto es evidencia de manipulación, no prevención. hashStr no es criptográfico y el
+// usuario podría recalcular la cadena entera. La integridad real es del servidor: tabla append-only,
+// sin UPDATE ni DELETE para la aplicación, y firma/WORM si el regulador lo exige.
+const AUDIT_KEY = "nex_auditoria";
+const AUDIT_MAX = 1000;          // cota de lo que se conserva en el navegador
+let AUDIT_DESCARTADOS = 0;       // cuántos se soltaron por la cota: nunca en silencio
+let AUDIT_INTEGRIDAD = null;     // null = sin verificar · {ok} · {ok:false, en}
+let AUDIT_FLUSH_T = null;
+const auditHuella = (r, previo) => String(hashStr([previo || "", r.id, r.ts, r.usuario, r.modulo, r.accion, r.glosa, r.empresaId, r.exito ? "1" : "0"].join("|")));
+function persistirAuditoria() {
+  try {
+    if (!storageDisponible()) return;
+    window.localStorage.setItem(AUDIT_KEY, JSON.stringify({ _v: SCHEMA_VERSION.auditoria, _app: APP_VERSION, _ts: Date.now(), descartados: AUDIT_DESCARTADOS, datos: AUDIT_LOG.slice(0, AUDIT_MAX) }));
+  } catch (e) { /* sin logSys: registrar el fallo dispararía otra persistencia */ }
+}
+// Recorre la cadena del más antiguo al más nuevo y comprueba cada eslabón.
+function verificarAuditoria(lista) {
+  const arr = (lista || AUDIT_LOG).slice().reverse(); // cronológico
+  let previo = "";
+  for (const r of arr) {
+    if (!r.h) continue; // registros de la semilla histórica, sin cadena
+    if (r.h !== auditHuella(r, previo)) return { ok: false, en: r.id, ts: r.ts };
+    previo = r.h;
+  }
+  return { ok: true, n: arr.length };
+}
 function registrarAuditoria(e) {
   const ts = e.ts || Date.now();
-  AUDIT_LOG.unshift({ id: "au" + ts + "_" + (++AUDIT_SEQ).toString(36), usuario: e.usuario || "-- Sistema --", modulo: e.modulo || "Sistema", glosa: e.glosa || "", accion: e.accion || "Navegación", exito: e.exito !== false, empresaId: e.empresaId || "", ts, ...auditFechaHora(ts) });
-  if (AUDIT_LOG.length > 500) AUDIT_LOG.length = 500;
+  const r = { id: "au" + ts + "_" + (++AUDIT_SEQ).toString(36), usuario: e.usuario || "-- Sistema --", modulo: e.modulo || "Sistema", glosa: e.glosa || "", accion: e.accion || "Navegación", exito: e.exito !== false, empresaId: e.empresaId || "", ts, ...auditFechaHora(ts) };
+  r.h = auditHuella(r, AUDIT_LOG.length ? AUDIT_LOG[0].h : "");
+  AUDIT_LOG.unshift(r);
+  if (AUDIT_LOG.length > AUDIT_MAX) { AUDIT_DESCARTADOS += AUDIT_LOG.length - AUDIT_MAX; AUDIT_LOG.length = AUDIT_MAX; }
+  if (AUDIT_FLUSH_T == null) AUDIT_FLUSH_T = setTimeout(() => { AUDIT_FLUSH_T = null; persistirAuditoria(); }, 1200);
   AUDIT_SUBS.forEach((fn) => { try { fn(); } catch (x) { /* noop */ } });
 }
 function usarAuditoria() {
@@ -754,6 +796,23 @@ function usarAuditoria() {
   useEffect(() => { const fn = () => setV((v) => v + 1); AUDIT_SUBS.add(fn); return () => { AUDIT_SUBS.delete(fn); }; }, []);
   return AUDIT_LOG;
 }
+
+// Restauración de la AUDITORÍA y verificación de su cadena. Se hace antes de la higiene de storage
+// para que, si la cadena viene rota, quede registrado con el resto del arranque.
+(() => {
+  const prev = leerVersionado(AUDIT_KEY, "auditoria", null);
+  const raw = (() => { try { return JSON.parse(localStorage.getItem(AUDIT_KEY) || "null"); } catch (e) { return null; } })();
+  if (Array.isArray(prev) && prev.length) {
+    AUDIT_LOG.push(...prev.slice(0, AUDIT_MAX));
+    AUDIT_DESCARTADOS = (raw && raw.descartados) || 0;
+    AUDIT_INTEGRIDAD = verificarAuditoria();
+    if (AUDIT_INTEGRIDAD.ok) logSys("info", "app", `Auditoría recuperada: ${prev.length} registro(s), cadena de integridad correcta`, { registros: prev.length, descartados: AUDIT_DESCARTADOS });
+    else logSys("error", "app", `AUDITORÍA ALTERADA: la cadena de integridad se rompe en el registro ${AUDIT_INTEGRIDAD.en}. Alguien editó o eliminó registros del almacenamiento.`, { registro: AUDIT_INTEGRIDAD.en });
+  } else {
+    AUDIT_INTEGRIDAD = { ok: true, n: 0 };
+  }
+  if (AUDIT_DESCARTADOS) logSys("warn", "app", `Se descartaron ${AUDIT_DESCARTADOS} registro(s) de auditoría por la cota local de ${AUDIT_MAX}. En producción la auditoría no se descarta: va a una tabla append-only con retención por política.`, { descartados: AUDIT_DESCARTADOS });
+})();
 
 function usarSysLog() {
   const [, setV] = useState(0);
@@ -9422,13 +9481,25 @@ function AtribucionesMantenedor() {
 function MantenedoresOtorg({ onCfgChange }) {
   const bump = () => onCfgChange && onCfgChange();
   const setAtrib = (code, area, v) => { const n = +v; if (!ATRIB_USUARIO[code]) return; if (!n) delete ATRIB_USUARIO[code].atrib[area]; else ATRIB_USUARIO[code].atrib[area] = Math.max(1, Math.min(5, n)); bump(); };
-  const setMasiva = (code, on) => { CFG_APROB_MASIVA[code] = on; guardarCfgAprobMasiva(); bump(); };
-  const setExcVerif = (code, on) => { CFG_EXC_VERIF[code] = on; guardarCfgExcVerif(); bump(); };
-  const setVerBitacora = (code, on) => { CFG_VER_BITACORA[code] = on; guardarCfgVerBitacora(); bump(); };
-  const setVerMensajeria = (code, on) => { CFG_VER_MENSAJERIA[code] = on; guardarCfgVerMensajeria(); bump(); };
-  const setVerCobranza = (code, on) => { CFG_VER_COBRANZA[code] = on; guardarCfgVerCobranza(); bump(); };
-  const setVerPlanEjec = (code, on) => { CFG_VER_PLANEJEC[code] = on; guardarCfgVerPlanEjec(); bump(); };
-  const setVerFunnel = (code, on) => { CFG_VER_FUNNEL[code] = on; guardarCfgVerFunnel(); bump(); };
+  // Cambiar un privilegio es de las acciones MÁS sensibles del sistema y no dejaba ningún rastro:
+  // se podía habilitar la aprobación masiva a alguien y no había forma de saber quién ni cuándo.
+  // Cada cambio queda ahora en la auditoría (evidencia) y en el log técnico (soporte).
+  const auditarPriv = (permiso, code, on) => {
+    // Quién lo hizo sale de la SESIÓN, no de una prop: la auditoría debe registrar la identidad
+    // autenticada, no lo que la pantalla creyera en ese momento.
+    const actor = (SESION && SESION.usuario) || "—";
+    const quien = USERS[actor] || actor;
+    registrarAuditoria({ usuario: quien, modulo: "Otorgamiento · Privilegios", accion: on ? "Otorgar privilegio" : "Revocar privilegio",
+      glosa: `${on ? "Habilitó" : "Deshabilitó"} «${permiso}» para ${USERS[code] || code}`, exito: true });
+    logSys("warn", "otorgamiento", `Privilegio ${on ? "otorgado" : "revocado"}: «${permiso}» para ${USERS[code] || code} por ${quien}`, { permiso, usuario: code, otorgado: !!on, por: actor });
+  };
+  const setMasiva = (code, on) => { CFG_APROB_MASIVA[code] = on; guardarCfgAprobMasiva(); auditarPriv("Aprobación masiva de excepciones", code, on); bump(); };
+  const setExcVerif = (code, on) => { CFG_EXC_VERIF[code] = on; guardarCfgExcVerif(); auditarPriv("Excepcionar verificación de facturas", code, on); bump(); };
+  const setVerBitacora = (code, on) => { CFG_VER_BITACORA[code] = on; guardarCfgVerBitacora(); auditarPriv("Ver bitácora de la operación", code, on); bump(); };
+  const setVerMensajeria = (code, on) => { CFG_VER_MENSAJERIA[code] = on; guardarCfgVerMensajeria(); auditarPriv("Ver mensajería", code, on); bump(); };
+  const setVerCobranza = (code, on) => { CFG_VER_COBRANZA[code] = on; guardarCfgVerCobranza(); auditarPriv("Ver cobranza", code, on); bump(); };
+  const setVerPlanEjec = (code, on) => { CFG_VER_PLANEJEC[code] = on; guardarCfgVerPlanEjec(); auditarPriv("Ver plan mensual del ejecutivo", code, on); bump(); };
+  const setVerFunnel = (code, on) => { CFG_VER_FUNNEL[code] = on; guardarCfgVerFunnel(); auditarPriv("Ver funnel comercial", code, on); bump(); };
   const tabToggle = (on, onClick, offLabel) => <button onClick={onClick} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: on ? "#F0FDF4" : "#F3F4F6", color: on ? "#16A34A" : C.faint, border: `1px solid ${on ? "#bbf7d0" : C.line}` }}>{on ? <Check size={10} /> : <X size={10} />}{on ? "Visible" : (offLabel || "Oculto")}</button>;
   const [mtab, setMtab] = useState("criterios");
   const mtabs = [["criterios", "Criterios de verificación"], ["atribuciones", "Atribuciones de aprobación"], ["usuarios", "Usuarios y atribuciones"]];
@@ -11824,7 +11895,7 @@ function LogsView() {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button onClick={() => descargarArchivoLog(rows)} className="rounded-full px-3.5 py-1.5 t12 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo, border: "none" }}>Descargar .log ({rows.length})</button>
-          <button onClick={vaciar} className="rounded-full px-3 py-1.5 t12 font-medium" style={{ backgroundColor: "#fff", color: C.sub, border: `1px solid ${C.line}` }}>Vaciar</button>
+          <button onClick={vaciar} title="Vacía sólo el log técnico. La auditoría es evidencia y no se puede borrar desde la app." className="rounded-full px-3 py-1.5 t12 font-medium" style={{ backgroundColor: "#fff", color: C.sub, border: `1px solid ${C.line}` }}>Vaciar log técnico</button>
         </div>
       </div>
       {/* Estado de la persistencia: qué sobrevive a una recarga y dónde se está escribiendo. */}
@@ -11970,6 +12041,28 @@ function CfgVersion() {
             ))}
           </div>
         )}
+      </Caja>
+      {/* Integridad de la auditoría: lo primero que hay que mirar si se cuestiona un registro. */}
+      <Caja titulo="Auditoría · integridad" sub="Cada registro encadena el hash del anterior. Si alguien edita o elimina registros del almacenamiento, la cadena deja de cuadrar y se detecta acá.">
+        <Fila k="Registros conservados" v={`${AUDIT_LOG.length} de ${AUDIT_MAX}`} mono />
+        <Fila k="Descartados por la cota" v={AUDIT_DESCARTADOS ? `${AUDIT_DESCARTADOS} — en producción no se descarta` : "0"} mono />
+        <div className="mt-2 rounded-xl p-3" style={{ backgroundColor: (AUDIT_INTEGRIDAD && AUDIT_INTEGRIDAD.ok !== false) ? C.greenBg : C.redBg, border: `1px solid ${(AUDIT_INTEGRIDAD && AUDIT_INTEGRIDAD.ok !== false) ? "#BBF7D0" : "#FECACA"}` }}>
+          <div className="t12 font-semibold" style={{ color: (AUDIT_INTEGRIDAD && AUDIT_INTEGRIDAD.ok !== false) ? C.green : C.red }}>
+            {(AUDIT_INTEGRIDAD && AUDIT_INTEGRIDAD.ok !== false)
+              ? "Cadena de integridad correcta"
+              : `Cadena rota en el registro ${AUDIT_INTEGRIDAD && AUDIT_INTEGRIDAD.en}`}
+          </div>
+          <div className="mt-1 t11" style={{ color: C.sub }}>
+            {(AUDIT_INTEGRIDAD && AUDIT_INTEGRIDAD.ok !== false)
+              ? "Ningún registro fue alterado desde que se escribió."
+              : "Se editaron o eliminaron registros del almacenamiento del navegador."}
+          </div>
+        </div>
+        <div className="mt-2 t11" style={{ color: C.faint }}>
+          Esto es evidencia de manipulación, no prevención: el hash no es criptográfico y quien controle
+          el navegador puede recalcular la cadena. La integridad real es del servidor — tabla append-only,
+          sin UPDATE ni DELETE para la aplicación.
+        </div>
       </Caja>
       <Caja titulo="Contratos con integraciones" sub="Colecciones que inyecta el webhook/SFTP. Si una queda «ausente» o con campos faltantes, el inbound deja de clasificar facturas y el pipeline aparece vacío.">
         {contratos.map((c) => (
