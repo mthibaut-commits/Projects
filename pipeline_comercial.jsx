@@ -1534,6 +1534,14 @@ const CFG_OPER_BASE = {
   otrosDeudoresPct: 10,       // % máximo para «otros deudores»
   vigenciaLineaMeses: 12,
   ventanaLibroDias: 60,       // ventana del libro de ventas para buscar facturas candidatas
+  // — Funcionalidades visibles (por tenant) —
+  // Qué sub-tabs del Negocio ve el ejecutivo. Son decisiones de PRODUCTO de cada factoring, no del
+  // código: Security va a retirar «Documentos» porque el sub-tab «Detalle» —agrupado por deudor— ya
+  // cubre su flujo, pero otro factoring con un proceso documental distinto puede querer conservarlo.
+  // Por eso se apaga por configuración y no se borra.
+  tabDocumentos: false,
+  tabDetalle: true,
+  tabDescuentos: true,
 };
 const CFG_OPER_DEFAULT = { security: { ...CFG_OPER_BASE } };
 // Config del TENANT VIGENTE accesible desde las funciones puras de dominio (pricing, simulación,
@@ -4475,6 +4483,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [candPage, setCandPage] = useState(0); // paginador de facturas candidatas a agregar
   const [factTab, setFactTab] = useState("candidatas"); // sub-tab de facturas: candidatas | todas
   const [negTab, setNegTab] = useState("resumen"); // sub-tab del negocio: resumen | documentos | detalle | descuentos
+  // Si el tenant apaga el sub-tab que estaba abierto, se vuelve a «Resumen», que siempre existe.
+  // Sin esto la pantalla quedaría en blanco al cambiar la configuración con el detalle abierto.
+  useEffect(() => {
+    const habilitado = { resumen: true, documentos: CFG_ACTIVA.tabDocumentos !== false, detalle: CFG_ACTIVA.tabDetalle !== false, descuentos: CFG_ACTIVA.tabDescuentos !== false };
+    if (!habilitado[negTab]) setNegTab("resumen");
+  }, [negTab]);
   const [detOpen, setDetOpen] = useState({}); // acordeones del sub-tab Detalle (por deudor): abiertos por defecto; false = colapsado
   const [detQuery, setDetQuery] = useState(""); // buscador por empresa deudora (filtra ambas secciones del sub-tab Detalle)
   const [detOtrasPage, setDetOtrasPage] = useState(0); // paginador de «Otras facturas disponibles» (20 deudores por página)
@@ -4613,7 +4627,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               inline a la derecha, sobre la misma divisoria. */}
           <div className="mt-3 flex flex-wrap items-end justify-between gap-x-6 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
-              {[["negocio", "Negocio"], ["contacto", "Linea"], ...(puedeVerBitacora(usuario) ? [["bitacora", "Bitácora"]] : []), ["sow", "SOW"], ...(puedeVerCobranza(usuario) ? [["cobranza", "Cobranza"]] : []), ...(puedeVerMensajeria(usuario) ? [["mensajeria", "Mensajería"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : []), ...(!esClienteNuevoNEX(deal) ? [["anteriores", "Operaciones anteriores"]] : [])].map(([k, l]) => { const on = tab === k; return (
+              {[["negocio", "Negocio"], ["contacto", "Linea"], ...(puedeVerBitacora(usuario) ? [["bitacora", "Bitácora"]] : []), ["sow", "SOW"], ...(puedeVerCobranza(usuario) ? [["cobranza", "Cobranza"]] : []), ...(puedeVerMensajeria(usuario) ? [["mensajeria", "Mensajería"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
                 <button key={k} onClick={() => setTab(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
                   {l}
                   {k === "otorgamiento" && otorgPend > 0 && <span title={`${otorgPend} regla(s) que debes visar tú (cliente + deudores)`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#DC2626" }}>{otorgPend}</span>}
@@ -4830,10 +4844,11 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                     <div className="mt-4">
                       <div className="flex items-center justify-between gap-1.5 t11 font-semibold" style={{ color: "#C2410C" }}><span className="flex items-center gap-1.5"><MessageSquare size={12} /> Simulación</span>{bloqueado && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>🔒 Aceptada · bloqueada</span>}</div>
                       {bloqueado && <div className="mt-1 t9" style={{ color: C.sub }}>La operación ya fue aceptada formalmente: no se pueden modificar las condiciones ni agregar/retirar facturas.</div>}
-                      {/* Sub-tabs del negocio: Resumen · Documentos · Descuentos. «Operaciones anteriores» se
-                          promovió a un Tab propio del detalle (fuera de Negocio). */}
+                      {/* Sub-tabs del negocio. Cuáles se muestran es configuración del tenant
+                          (Configuración › Funcionalidades), no una decisión del código: «Resumen»
+                          siempre está; los demás se habilitan por factoring. */}
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        {[["resumen", "Resumen"], ["documentos", "Documentos"], ["detalle", "Detalle"], ["descuentos", "Descuentos"]].map(([k, l]) => (
+                        {[["resumen", "Resumen", true], ["documentos", "Documentos", CFG_ACTIVA.tabDocumentos], ["detalle", "Detalle", CFG_ACTIVA.tabDetalle], ["descuentos", "Descuentos", CFG_ACTIVA.tabDescuentos]].filter(([, , on]) => on !== false).map(([k, l]) => (
                           <button key={k} onClick={() => setNegTab(k)} className="rounded-lg px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: negTab === k ? C.lilac : "#fff", color: negTab === k ? C.indigo : C.sub, border: `1px solid ${negTab === k ? C.indigo : C.line}` }}>{l}</button>
                         ))}
                       </div>
@@ -5551,8 +5566,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
 
           {tab === "sow" && <SowTab deal={deal} />}
 
-          {/* Tab «Operaciones anteriores»: negocios cursados históricamente por el cliente. */}
-          {tab === "anteriores" && <div className="rounded-2xl bg-white p-5" style={{ border: `1px solid ${C.line}` }}><HistorialComercialTable deal={deal} /></div>}
+          {/* El tab «Operaciones anteriores» se eliminó: el histórico que el ejecutivo necesita para
+              decidir cuánto cobrar ya está en el Resumen del negocio («Últimas operaciones cursadas ·
+              referencia de condiciones»), y tenerlo además como tab duplicaba la misma información. */}
 
           {tab === "bitacora" && (() => {
             const ev = bitacoraDe(deal);
@@ -11701,6 +11717,59 @@ function CfgVersion() {
     </div>
   );
 }
+// ── Configuración › Funcionalidades ─────────────────────────────────────────────────────────────
+// Qué partes del producto ve cada factoring. No son preferencias de usuario: son decisiones de
+// producto por TENANT, y por eso viven junto al resto de la configuración operativa y se guardan con
+// la misma clave versionada. Apagar algo acá no borra el código: otro tenant puede encenderlo.
+function CfgFuncionalidades({ cfgOper, setCfgOper }) {
+  const [tenant, setTenant] = useState(TENANT_ACTUAL);
+  const cfg = (cfgOper && cfgOper[tenant]) || CFG_OPER_BASE;
+  const set = (k, v) => setCfgOper((prev) => ({ ...prev, [tenant]: { ...((prev && prev[tenant]) || CFG_OPER_BASE), [k]: v } }));
+  const t = TENANTS.find((x) => x.id === tenant) || TENANTS[0];
+  const Toggle = ({ k, label, desc, bloqueado }) => {
+    const on = bloqueado ? true : cfg[k] !== false;
+    return (
+      <div className="flex items-start justify-between gap-4 py-2.5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <div style={{ maxWidth: 560 }}>
+          <div className="t12 font-semibold" style={{ color: C.ink }}>{label}</div>
+          <div className="mt-0.5 t11" style={{ color: C.faint }}>{desc}</div>
+        </div>
+        <button
+          onClick={bloqueado ? undefined : () => set(k, !on)}
+          title={bloqueado ? "Siempre visible: es la vista base del negocio" : (on ? "Ocultar para este factoring" : "Mostrar para este factoring")}
+          className="shrink-0 rounded-full px-3 py-1 t11 font-semibold"
+          style={{
+            backgroundColor: on ? C.greenBg : "#F3F4F6", color: on ? C.green : C.sub,
+            border: `1px solid ${on ? "#BBF7D0" : C.line}`, cursor: bloqueado ? "default" : "pointer", opacity: bloqueado ? 0.7 : 1,
+          }}>{on ? "Visible" : "Oculto"}</button>
+      </div>
+    );
+  };
+  return (
+    <div className="grid gap-4">
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-lg font-semibold" style={{ color: C.ink }}>Funcionalidades por factoring</div>
+            <div className="mt-0.5 t12" style={{ color: C.faint }}>Qué módulos y vistas ve el ejecutivo. Cada factoring tiene su propio flujo: lo que uno retira, otro puede necesitarlo.</div>
+          </div>
+          <select value={tenant} onChange={(e) => setTenant(e.target.value)} className="rounded-lg px-3 py-1.5 t12 font-medium outline-none" style={{ border: `1px solid ${C.line}`, color: C.sub }}>
+            {TENANTS.map((x) => <option key={x.id} value={x.id}>{x.nombre}</option>)}
+          </select>
+        </div>
+        <div className="mt-1 t11" style={{ color: C.faint }}>Tenant: <b style={{ color: C.sub }}>{t.nombre}</b> · {t.rut}</div>
+      </div>
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div className="t12 font-semibold" style={{ color: C.ink }}>Detalle de la oportunidad · sub-tabs del Negocio</div>
+        <div className="mt-0.5 mb-2 t11" style={{ color: C.faint }}>Vistas de la simulación dentro del tab «Negocio».</div>
+        <Toggle k="__resumen" label="Resumen" desc="Condiciones comerciales, descuentos y monto a girar. Es la vista base del negocio." bloqueado />
+        <Toggle k="tabDocumentos" label="Documentos" desc="Listado plano de las facturas de la oferta, con el libro de ventas para incorporar más. Security lo retira porque «Detalle» ya cubre su flujo." />
+        <Toggle k="tabDetalle" label="Detalle" desc="Las mismas facturas agrupadas en acordeones por deudor, con línea, otorgamiento y verificación de cada uno." />
+        <Toggle k="tabDescuentos" label="Descuentos" desc="Desglose de la nota de cobro: diferencia de precio, comisión, gastos, IVA, recargos y CxC." />
+      </div>
+    </div>
+  );
+}
 // Consola de sistema: log técnico + versionado, en un solo lugar y consultable desde la app.
 function CfgSistema() {
   const [tab, setTab] = useState("logs");
@@ -11732,7 +11801,7 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper }) {
         ))}
       </aside>
       <div>
-        {sec === "sistema" ? <CfgSistema /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "otorgamiento" ? (
+        {sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "otorgamiento" ? (
           <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
             <div className="text-lg font-semibold" style={{ color: C.ink }}>Otorgamiento · apoderados y atribuciones</div>
             <div className="mt-0.5 t12" style={{ color: C.faint }}>Criterios de verificación, atribuciones de aprobación por criterio y los apoderados que pueden excepcionar (nivel por área). Aquí también se habilita/oculta la aceptación masiva por usuario.</div>
