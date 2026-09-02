@@ -7769,24 +7769,25 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                   <div className="font-semibold" style={{ color: C.ink }}>{fmtMM(d.amountMM)}</div>
                   <div className="t9" style={{ color: C.faint }}>{d.facturas} factura{d.facturas === 1 ? "" : "s"}</div>
                 </td>
-                {/* Línea proyectada al cursar la operación: uso actual (gris) + monto de la operación (morado/rojo) vs. línea aprobada del cliente (marca). */}
+                {/* Línea del cliente: APROBADA y DISPONIBLE. Antes esta columna mostraba la proyección
+                    post-curse (uso + esta operación) contra la línea aprobada; era un dato derivado de la
+                    oferta y no el estado de la línea. El ejecutivo necesita saber cuánto tiene aprobado y
+                    cuánto le queda: si la operación cabe o no ya se lo dice el tag de otorgamiento. */}
                 <td className="whitespace-nowrap px-2 py-2.5 align-top">
                   {(() => {
                     const L = lineaCreditoDe(d);
                     if (!L.aprobada) return <span className="t9" style={{ color: C.faint }}>Sin línea</span>;
-                    const base = Math.max(L.proyectado, L.aprobada) || 1;
-                    const opCol = L.fueraDeLinea ? "#DC2626" : "#8A63FF";
+                    const usoPct = Math.max(0, Math.min(100, L.usoActual / L.aprobada * 100));
+                    const sinCupo = L.disponible <= 0;
                     return (
-                      <div style={{ width: 148 }} title={`Línea aprobada ${fmtMM(L.aprobada)} · uso actual ${fmtMM(L.usoActual)} · esta operación ${fmtMM(L.montoOp)} · proyección post-curse ${fmtMM(L.proyectado)}`}>
-                        <div className="t10 font-semibold" style={{ color: L.fueraDeLinea ? "#DC2626" : C.ink }}>{fmtMM(L.proyectado)} <span style={{ color: C.faint }}>/ {fmtMM(L.aprobada)}</span></div>
+                      <div style={{ width: 148 }} title={`Línea aprobada ${fmtMM(L.aprobada)} · utilizada ${fmtMM(L.usoActual)} · disponible ${fmtMM(L.disponible)}`}>
+                        <div className="t10 font-semibold" style={{ color: C.ink }}>{fmtMM(L.aprobada)} <span className="font-normal" style={{ color: C.faint }}>aprobada</span></div>
                         <div className="relative mt-1 h-1.5 w-full rounded-full" style={{ backgroundColor: "#EDEBF2" }}>
-                          <div className="absolute left-0 top-0 h-1.5 rounded-l-full" style={{ width: Math.min(100, L.usoActual / base * 100) + "%", backgroundColor: "#9CA3AF" }} />
-                          <div className="absolute top-0 h-1.5" style={{ left: (L.usoActual / base * 100) + "%", width: (L.montoOp / base * 100) + "%", backgroundColor: opCol }} />
-                          <span style={{ position: "absolute", left: (L.aprobada / base * 100) + "%", top: -2, width: 2, height: 9.5, backgroundColor: C.ink }} />
+                          <div className="absolute left-0 top-0 h-1.5 rounded-full" style={{ width: usoPct + "%", backgroundColor: "#9CA3AF" }} />
                         </div>
-                        {L.fueraDeLinea
-                          ? <div className="mt-0.5 t9 font-semibold" style={{ color: "#DC2626" }}>Fuera de línea +{fmtMM(L.excesoProyectado)}</div>
-                          : <div className="mt-0.5 t9 font-semibold" style={{ color: "#16A34A" }}>Dentro · disp. {fmtMM(+(L.aprobada - L.proyectado).toFixed(1))}</div>}
+                        <div className="mt-0.5 t9 font-semibold" style={{ color: sinCupo ? "#DC2626" : "#16A34A" }}>
+                          {sinCupo ? "Sin cupo disponible" : `Disponible ${fmtMM(L.disponible)}`}
+                        </div>
                       </div>
                     );
                   })()}
