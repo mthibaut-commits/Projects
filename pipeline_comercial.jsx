@@ -45,10 +45,18 @@ const APP_VERSION_FULL = `v${APP_VERSION} · ${APP_BUILD.fecha} · ${APP_BUILD.c
 // emiten eventos durante la inicialización del módulo.
 // SERVER-SIDE: este buffer es el log estructurado del backend (una línea JSON por evento →
 // Loki/Datadog); `fuente` es el servicio emisor y `datos` los campos indexables.
-const SYS_LOG = [];       // más reciente primero
-const SYS_LOG_MAX = 800;  // ring buffer: cota de memoria del navegador
+const SYS_LOG = [];        // más reciente primero
+const SYS_LOG_MAX = 1500;  // ring buffer en memoria
 const SYS_SUBS = new Set();
 let SYS_SEQ = 0;
+// Id de la SESIÓN. Al persistir el log entre recargas, sin esto no se distinguiría dónde terminó una
+// sesión y empezó otra — y ese corte es justamente lo que se busca al investigar una incidencia.
+// Va en cada línea del archivo, igual que el request-id de un log de servidor.
+const SESION_ID = (() => {
+  const d = new Uint32Array(2);
+  try { (window.crypto || window.msCrypto).getRandomValues(d); } catch (_) { d[0] = Date.now() >>> 0; d[1] = 1; }
+  return (d[0].toString(36) + d[1].toString(36)).slice(0, 8);
+})();
 const LOG_NIVELES = [
   { k: "error", label: "Error", color: "#DC2626", bg: "#FEF2F2" },
   { k: "warn", label: "Aviso", color: "#C2410C", bg: "#FFF7ED" },
@@ -59,16 +67,133 @@ const nivelMeta = (k) => LOG_NIVELES.find((n) => n.k === k) || LOG_NIVELES[2];
 // Subsistema emisor. Se declara la lista completa para que el filtro del visor sea estable aunque una
 // fuente todavía no haya emitido nada en esta sesión.
 const LOG_FUENTES = ["app", "motor", "inbound", "background", "cierre-dia", "storage", "politica", "repositorio", "otorgamiento", "curse"];
+// ── Formato de línea de log ─────────────────────────────────────────────────────────────────────
+// Se escribe como un log de servidor de verdad, no como un volcado de JSON: timestamp ISO con offset,
+// nivel alineado, sesión, fuente y mensaje; los datos estructurados van al final tras « | ». Así el
+// archivo se puede leer de corrido, y a la vez `grep`/`awk` funcionan por columnas.
+//   2026-09-02T07:23:43.117-04:00 INFO  [a1b2c3d4] motor        Corrida del inbound: … | {"nuevas":40}
+const p2 = (n) => String(n).padStart(2, "0");
+function offsetIso(d) {
+  const o = -d.getTimezoneOffset(), s = o >= 0 ? "+" : "-", a = Math.abs(o);
+  return `${s}${p2(Math.floor(a / 60))}:${p2(a % 60)}`;
+}
+function tsIso(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, "0")}${offsetIso(d)}`;
+}
+function lineaLog(e) {
+  const nivel = String(e.nivel || "info").toUpperCase().padEnd(5);
+  const fuente = String(e.fuente || "-").padEnd(12);
+  return `${tsIso(e.ts)} ${nivel} [${e.sesion || "--------"}] ${fuente} ${e.mensaje}${e.datos ? " | " + JSON.stringify(e.datos) : ""}`;
+}
+
+// ── Persistencia del log ────────────────────────────────────────────────────────────────────────
+// Dos niveles, porque resuelven cosas distintas:
+//  1. localStorage — el log sobrevive a una recarga y al cierre de la pestaña. Es lo que permite pedir
+//     «abre Configuración › Logs y cuéntame qué dice» DESPUÉS de que la incidencia ocurrió.
+//  2. Archivo .log — el usuario vincula un archivo real una vez (File System Access API) y desde ahí
+//     cada evento se APENDEA en disco, con formato de log. Es lo más cercano a un log de servidor que
+//     puede hacer una app de navegador, y es lo que se adjunta a un ticket.
+// El navegador no puede escribir en una ruta arbitraria sin permiso: la vinculación exige un gesto del
+// usuario (una vez). Si la API no está disponible (p. ej. abriendo el HTML por file://), queda la
+// exportación manual.
+const LOG_KEY = "nex_syslog";
+const LOG_PERSIST_MAX = 800;   // eventos que se conservan entre sesiones (cota de cuota de localStorage)
+let LOG_PERSIST_ERROR = null;  // último fallo de persistencia (se muestra en el visor)
+let LOG_FLUSH_T = null;
+function persistirSysLog() {
+  try {
+    if (!storageDisponible()) return;
+    window.localStorage.setItem(LOG_KEY, JSON.stringify({ _v: SCHEMA_VERSION.syslog, _app: APP_VERSION, _ts: Date.now(), datos: SYS_LOG.slice(0, LOG_PERSIST_MAX) }));
+    LOG_PERSIST_ERROR = null;
+  } catch (e) {
+    // Deliberadamente NO se usa logSys acá: registrar el fallo dispararía otra persistencia y con la
+    // cuota llena eso es un bucle. Se guarda el motivo y el visor lo muestra.
+    LOG_PERSIST_ERROR = (e && e.message) || "error desconocido";
+  }
+}
+// Archivo .log vinculado por el usuario.
+let LOG_FH = null, LOG_FH_NOMBRE = null, LOG_FH_LINEAS = 0, LOG_FH_ERROR = null;
+let LOG_COLA = [], LOG_ESCRIBIENDO = false;
+const soportaArchivoLog = () => typeof window !== "undefined" && typeof window.showSaveFilePicker === "function";
+async function escribirEnArchivo(texto, desdeCero) {
+  const f = await LOG_FH.getFile();
+  const w = await LOG_FH.createWritable({ keepExistingData: !desdeCero });
+  if (!desdeCero) await w.write({ type: "seek", position: f.size }); // append: nunca se reescribe lo ya escrito
+  await w.write(texto);
+  await w.close();
+}
+async function drenarArchivoLog() {
+  if (!LOG_FH || LOG_ESCRIBIENDO || !LOG_COLA.length) return;
+  LOG_ESCRIBIENDO = true;
+  const lote = LOG_COLA; LOG_COLA = [];
+  try {
+    await escribirEnArchivo(lote.join("\n") + "\n", false);
+    LOG_FH_LINEAS += lote.length; LOG_FH_ERROR = null;
+  } catch (e) {
+    // Permiso revocado, archivo borrado o disco lleno: se suelta el handle para no reintentar en bucle.
+    LOG_FH_ERROR = (e && e.message) || "no se pudo escribir"; LOG_FH = null;
+  }
+  LOG_ESCRIBIENDO = false;
+  SYS_SUBS.forEach((fn) => { try { fn(); } catch (x) { /* noop */ } });
+  if (LOG_COLA.length) drenarArchivoLog();
+}
+// Vincula (o crea) el archivo de log y vuelca lo que ya hay en memoria, para no empezar con un archivo
+// a medias. A partir de ahí sólo se apendea.
+async function vincularArchivoLog() {
+  if (!soportaArchivoLog()) return { ok: false, error: "El navegador no permite escribir un archivo continuo" };
+  try {
+    const d = new Date(); const nombre = `nex-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${SESION_ID}.log`;
+    LOG_FH = await window.showSaveFilePicker({ suggestedName: nombre, types: [{ description: "Archivo de log", accept: { "text/plain": [".log"] } }] });
+    LOG_FH_NOMBRE = LOG_FH.name; LOG_FH_ERROR = null;
+    const previas = SYS_LOG.slice().reverse().map(lineaLog); // del más antiguo al más nuevo, como un log real
+    const cab = `# NEX Factoring · log técnico · app v${APP_VERSION} · build ${APP_BUILD.fecha} (${APP_BUILD.commit}) · sesión ${SESION_ID}`;
+    await escribirEnArchivo([cab, ...previas].join("\n") + "\n", true);
+    LOG_FH_LINEAS = previas.length + 1;
+    logSys("info", "app", `Log vinculado al archivo «${LOG_FH_NOMBRE}»: los eventos se escriben en disco a medida que ocurren`, { archivo: LOG_FH_NOMBRE, volcadoInicial: previas.length });
+    return { ok: true };
+  } catch (e) {
+    // AbortError = el usuario canceló el diálogo; no es un fallo que valga la pena reportar.
+    if (e && e.name === "AbortError") { LOG_FH = null; return { ok: false, cancelado: true }; }
+    LOG_FH = null; LOG_FH_ERROR = (e && e.message) || "no se pudo vincular";
+    return { ok: false, error: LOG_FH_ERROR };
+  }
+}
+function desvincularArchivoLog() { LOG_FH = null; LOG_FH_NOMBRE = null; LOG_FH_LINEAS = 0; LOG_FH_ERROR = null; }
 function logSys(nivel, fuente, mensaje, datos) {
   const ts = Date.now();
-  const d = new Date(ts); const p = (n) => String(n).padStart(2, "0");
-  SYS_LOG.unshift({
-    id: ++SYS_SEQ, ts, nivel, fuente, mensaje, datos: datos || null,
-    fecha: `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`,
-    hora: `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`,
-  });
+  const d = new Date(ts);
+  const e = {
+    id: ++SYS_SEQ, ts, nivel, fuente, mensaje, datos: datos || null, sesion: SESION_ID,
+    fecha: `${p2(d.getDate())}/${p2(d.getMonth() + 1)}/${d.getFullYear()}`,
+    hora: `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`,
+  };
+  SYS_LOG.unshift(e);
   if (SYS_LOG.length > SYS_LOG_MAX) SYS_LOG.length = SYS_LOG_MAX;
+  // Archivo: se encola y se drena por lotes; escribir en disco por evento sería un cuello de botella.
+  if (LOG_FH) { LOG_COLA.push(lineaLog(e)); if (LOG_COLA.length >= 20) drenarArchivoLog(); }
+  // localStorage: se agrupa para no serializar el buffer completo en cada evento (el motor emite ráfagas).
+  if (LOG_FLUSH_T == null) LOG_FLUSH_T = setTimeout(() => { LOG_FLUSH_T = null; persistirSysLog(); drenarArchivoLog(); }, 1200);
   SYS_SUBS.forEach((fn) => { try { fn(); } catch (x) { /* noop */ } });
+}
+// Descarga el log completo como archivo plano. Alternativa a la vinculación cuando la API no está
+// disponible, y forma rápida de adjuntar el log a un ticket.
+function descargarArchivoLog(entradas) {
+  const cab = `# NEX Factoring · log técnico · app v${APP_VERSION} · build ${APP_BUILD.fecha} (${APP_BUILD.commit}) · sesión ${SESION_ID}`;
+  const txt = [cab, ...entradas.slice().reverse().map(lineaLog)].join("\n") + "\n";
+  try {
+    const blob = new Blob([txt], { type: "text/plain;charset=utf-8;" });
+    const url = URL.createObjectURL(blob); const a = document.createElement("a");
+    const d = new Date();
+    a.href = url; a.download = `nex-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${SESION_ID}.log`;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    return true;
+  } catch (e) { return false; }
+}
+function vaciarSysLog() {
+  SYS_LOG.length = 0;
+  try { if (storageDisponible()) window.localStorage.removeItem(LOG_KEY); } catch (_) {}
+  logSys("info", "app", "Log vaciado manualmente desde la consola de sistema");
 }
 
 // ── Versión de la POLÍTICA de negocio ───────────────────────────────────────────────────────────
@@ -162,14 +287,9 @@ const estampaPoliticas = (ts, tenant) => ({
   otorgamiento: POLITICA_OTORGAMIENTO.vigenteEn(ts, tenant).version,
 });
 const politicaEtiqueta = (p) => { const x = p || POLITICA_VERSION; return `${x.version} (${x.catalogoReglas})`; };
-// Arranque: deja constancia del build y de las políticas vigentes, y falla ruidosamente si el historial
-// de políticas es inconsistente. Es la primera línea del log en cualquier incidencia.
-logSys("info", "app", `Inicio de sesión de la app · v${APP_VERSION} · build ${APP_BUILD.fecha} (${APP_BUILD.commit}, rama ${APP_BUILD.rama})`, { app: APP_VERSION, ...APP_BUILD });
-CATALOGOS_POLITICA.forEach((c) => {
-  const v = c.vigenteEn(Date.now(), "security");
-  logSys("info", "politica", `Política «${c.etiqueta}» vigente: ${v.version} (desde ${v.vigenteDesde})`, { catalogo: c.id, version: v.version, vigenteDesde: v.vigenteDesde });
-});
-validarPoliticas().forEach((p) => logSys("error", "politica", `Historial de políticas inconsistente: ${p}`));
+// El registro de arranque (restaurar el log previo y dejar constancia de build y políticas) vive más
+// abajo, en `arrancarDiagnostico()`: necesita los helpers de almacenamiento versionado, que se declaran
+// después de este bloque.
 
 // ── Esquema de las colecciones persistidas ──────────────────────────────────────────────────────
 // Se sube el número cuando cambia la FORMA del dato guardado (campo renombrado, semántica distinta,
@@ -183,6 +303,7 @@ const SCHEMA_VERSION = {
   permisos: 1,       // permisos de visibilidad por usuario
   curse: 2,          // payload de curse por negocio (v2: OTP hasheado en vez de OTP en claro)
   snapshot: 1,       // snapshots de deal/operación para abrir en otra pestaña
+  syslog: 1,         // log técnico persistido entre sesiones
 };
 
 // ── Contratos de datos externos ─────────────────────────────────────────────────────────────────
@@ -283,6 +404,35 @@ function escribirVersionado(key, coleccion, datos) {
     diagStorage({ coleccion, resultado: "no_guardado", detalle: `No se pudo guardar «${key}»: ${e && e.message}` });
     return false;
   }
+}
+
+// ── Arranque del diagnóstico ────────────────────────────────────────────────────────────────────
+// Se ejecuta acá, y no junto a la declaración del log, porque necesita `leerVersionado` y
+// `SCHEMA_VERSION`, que se declaran justo arriba.
+// Primero RESTAURA el log de sesiones anteriores —los eventos que explican una incidencia suelen ser
+// de antes de la recarga— y recién después registra el inicio de esta sesión, para que el corte entre
+// sesiones quede visible en orden cronológico.
+const LOG_RESTAURADOS = (() => {
+  const prev = leerVersionado(LOG_KEY, "syslog", null);
+  if (!Array.isArray(prev) || !prev.length) return 0;
+  const viejos = prev.slice(0, LOG_PERSIST_MAX);
+  SYS_LOG.push(...viejos); // SYS_LOG es «más reciente primero»: lo restaurado va al final
+  if (SYS_LOG.length > SYS_LOG_MAX) SYS_LOG.length = SYS_LOG_MAX;
+  return viejos.length;
+})();
+logSys("info", "app", `Inicio de sesión de la app · v${APP_VERSION} · build ${APP_BUILD.fecha} (${APP_BUILD.commit}, rama ${APP_BUILD.rama}) · sesión ${SESION_ID}`, { app: APP_VERSION, sesion: SESION_ID, ...APP_BUILD });
+if (LOG_RESTAURADOS) logSys("info", "app", `Se recuperaron ${LOG_RESTAURADOS} evento(s) de sesiones anteriores`, { eventos: LOG_RESTAURADOS });
+CATALOGOS_POLITICA.forEach((c) => {
+  const v = c.vigenteEn(Date.now(), "security");
+  logSys("info", "politica", `Política «${c.etiqueta}» vigente: ${v.version} (desde ${v.vigenteDesde})`, { catalogo: c.id, version: v.version, vigenteDesde: v.vigenteDesde });
+});
+validarPoliticas().forEach((p) => logSys("error", "politica", `Historial de políticas inconsistente: ${p}`));
+// Volcado al cerrar/ocultar la pestaña: sin esto se perderían los últimos eventos (los que quedaron
+// dentro de la ventana de agrupación), que son justamente los de interés cuando algo falla al final.
+if (typeof window !== "undefined") {
+  const volcarLog = () => { persistirSysLog(); drenarArchivoLog(); };
+  window.addEventListener("beforeunload", volcarLog);
+  window.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") volcarLog(); });
 }
 
 // ---- Paleta de marca (Datamart UI: purple #703EFF, navy #230C65, neutrales fríos) ----
@@ -4459,7 +4609,18 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               <button onClick={onClose} className="rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>
             )}
           </div>
-          <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+          {/* Tabs y acciones comparten la línea: los tabs ocupan sólo su ancho y las acciones quedan
+              inline a la derecha, sobre la misma divisoria. */}
+          <div className="mt-3 flex flex-wrap items-end justify-between gap-x-6 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+              {[["negocio", "Negocio"], ["contacto", "Linea"], ...(puedeVerBitacora(usuario) ? [["bitacora", "Bitácora"]] : []), ["sow", "SOW"], ...(puedeVerCobranza(usuario) ? [["cobranza", "Cobranza"]] : []), ...(puedeVerMensajeria(usuario) ? [["mensajeria", "Mensajería"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : []), ...(!esClienteNuevoNEX(deal) ? [["anteriores", "Operaciones anteriores"]] : [])].map(([k, l]) => { const on = tab === k; return (
+                <button key={k} onClick={() => setTab(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
+                  {l}
+                  {k === "otorgamiento" && otorgPend > 0 && <span title={`${otorgPend} regla(s) que debes visar tú (cliente + deudores)`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#DC2626" }}>{otorgPend}</span>}
+                </button>
+              ); })}
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 pb-2">
               {(() => {
                 const on = tienePreEval(deal.id);
                 // Envío explícito al proceso de excepción. Si hay excepciones pendientes sin comentario/respaldo
@@ -4493,13 +4654,6 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               })()}
               {fullPage && accionesBar}
             </div>
-          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1" style={{ borderBottom: `1px solid ${C.line}` }}>
-            {[["negocio", "Negocio"], ["contacto", "Linea"], ...(puedeVerBitacora(usuario) ? [["bitacora", "Bitácora"]] : []), ["sow", "SOW"], ...(puedeVerCobranza(usuario) ? [["cobranza", "Cobranza"]] : []), ...(puedeVerMensajeria(usuario) ? [["mensajeria", "Mensajería"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : []), ...(!esClienteNuevoNEX(deal) ? [["anteriores", "Operaciones anteriores"]] : [])].map(([k, l]) => { const on = tab === k; return (
-              <button key={k} onClick={() => setTab(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
-                {l}
-                {k === "otorgamiento" && otorgPend > 0 && <span title={`${otorgPend} regla(s) que debes visar tú (cliente + deudores)`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#DC2626" }}>{otorgPend}</span>}
-              </button>
-            ); })}
           </div>
         </div>
         <div className={fullPage ? "p-5" : "flex-1 overflow-y-auto p-5"}>
@@ -11372,16 +11526,11 @@ function LogsView() {
     (!q || (e.mensaje + " " + e.fuente + " " + JSON.stringify(e.datos || {})).toLowerCase().includes(q.toLowerCase()))
   );
   const conteo = LOG_NIVELES.map((n) => ({ ...n, n: log.filter((e) => e.nivel === n.k).length }));
-  const exportar = () => {
-    // JSON Lines: el mismo formato que emitirá el backend, así el análisis no cambia al migrar.
-    const txt = rows.map((e) => JSON.stringify({ ts: new Date(e.ts).toISOString(), nivel: e.nivel, fuente: e.fuente, mensaje: e.mensaje, datos: e.datos, app: APP_VERSION, build: APP_BUILD.commit })).join("\n");
-    try {
-      const blob = new Blob([txt], { type: "application/x-ndjson;charset=utf-8;" });
-      const url = URL.createObjectURL(blob); const a = document.createElement("a");
-      a.href = url; a.download = `nex-logs-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "")}.jsonl`;
-      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    } catch (e) { /* sin descargas */ }
-  };
+  const [, force] = useState(0);
+  const refrescar = () => force((x) => x + 1);
+  const vincular = async () => { await vincularArchivoLog(); refrescar(); };
+  const desvincular = () => { desvincularArchivoLog(); refrescar(); };
+  const vaciar = () => { vaciarSysLog(); refrescar(); };
   const selCls = "rounded-lg px-3 py-1.5 t12 font-medium outline-none";
   return (
     <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
@@ -11390,7 +11539,34 @@ function LogsView() {
           <div className="text-lg font-semibold" style={{ color: C.ink }}>Log técnico del sistema</div>
           <div className="mt-0.5 t12" style={{ color: C.faint }}>Qué estuvo haciendo la aplicación: corridas del motor, recálculos en background, cierre de día, migraciones de datos guardados y errores. Distinto de Auditoría, que registra quién hizo qué.</div>
         </div>
-        <button onClick={exportar} className="shrink-0 rounded-full px-3.5 py-1.5 t12 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo, border: "none" }}>Exportar ({rows.length})</button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button onClick={() => descargarArchivoLog(rows)} className="rounded-full px-3.5 py-1.5 t12 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo, border: "none" }}>Descargar .log ({rows.length})</button>
+          <button onClick={vaciar} className="rounded-full px-3 py-1.5 t12 font-medium" style={{ backgroundColor: "#fff", color: C.sub, border: `1px solid ${C.line}` }}>Vaciar</button>
+        </div>
+      </div>
+      {/* Estado de la persistencia: qué sobrevive a una recarga y dónde se está escribiendo. */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl px-3 py-2.5" style={{ backgroundColor: "#F9FAFB", border: `1px solid ${C.line}` }}>
+        <span className="flex items-center gap-1.5 t11" style={{ color: C.sub }}>
+          <span style={{ width: 7, height: 7, borderRadius: 9999, backgroundColor: LOG_PERSIST_ERROR ? C.red : C.green }} />
+          {LOG_PERSIST_ERROR
+            ? <>No se pudo guardar el log en el navegador: {LOG_PERSIST_ERROR}</>
+            : <>Se conservan los últimos <b style={{ color: C.ink }}>{LOG_PERSIST_MAX}</b> eventos entre recargas · sesión <b style={{ color: C.ink }}>{SESION_ID}</b></>}
+        </span>
+        {LOG_FH_NOMBRE && !LOG_FH_ERROR ? (
+          <span className="flex items-center gap-2 t11" style={{ color: C.sub }}>
+            <span style={{ width: 7, height: 7, borderRadius: 9999, backgroundColor: C.green }} />
+            Escribiendo en <b style={{ color: C.ink }}>{LOG_FH_NOMBRE}</b> · {LOG_FH_LINEAS} línea(s)
+            <button onClick={desvincular} className="t11 font-semibold" style={{ background: "none", border: "none", color: C.indigo }}>Desvincular</button>
+          </span>
+        ) : soportaArchivoLog() ? (
+          <span className="flex items-center gap-2 t11" style={{ color: C.sub }}>
+            {LOG_FH_ERROR && <span style={{ color: C.red }}>Se perdió el acceso al archivo: {LOG_FH_ERROR}.</span>}
+            <button onClick={vincular} className="rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo, border: "none" }}>Vincular archivo .log</button>
+            <span style={{ color: C.faint }}>escribe cada evento en disco a medida que ocurre</span>
+          </span>
+        ) : (
+          <span className="t11" style={{ color: C.faint }}>Este navegador no permite escribir un archivo continuo (requiere http/https, no funciona por file://). Usa «Descargar .log».</span>
+        )}
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {conteo.map((n) => (
@@ -11431,7 +11607,10 @@ function LogsView() {
         })}
       </div>
       {rows.length > 300 && <div className="mt-2 t11" style={{ color: C.faint }}>Mostrando los 300 más recientes de {rows.length}. Usa los filtros o exporta para ver el resto.</div>}
-      <div className="mt-2 t11" style={{ color: C.faint }}>Buffer en memoria de {SYS_LOG_MAX} eventos: se pierde al recargar. En producción el log va al backend con retención por política.</div>
+      <div className="mt-2 t11" style={{ color: C.faint }}>
+        {SYS_LOG.length} evento(s) en memoria (máx. {SYS_LOG_MAX}) · los {LOG_PERSIST_MAX} más recientes se guardan en el navegador y se recuperan al volver a entrar.
+        {" "}En producción el log va al backend, con retención por política y sin depender del navegador del usuario.
+      </div>
     </div>
   );
 }
