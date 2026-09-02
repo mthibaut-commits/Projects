@@ -14917,6 +14917,66 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
   );
 }
 
+// ============================================================
+// WEB COMPONENT — contrato de embebido (guía de integración Datamart)
+// NEX hoy es una página autónoma, pero el destino es un asset estático en CDN que el portal del
+// cliente monta. Este elemento implementa YA el contrato de la guía para que integrarlo no requiera
+// rediseñar nada:
+//   · Configuración por atributo `parameters` (JSON serializado)  → §6 de la guía
+//   · Token por CustomEvent `nex:set-token`, NUNCA por atributo   → §5 y §7
+//   · El payload va congelado y el evento no sale del componente  → bubbles/composed en false
+//
+// SOBRE EL SHADOW DOM — por qué todavía no se activa (medido, no supuesto):
+// La guía recomienda Shadow Root para que no colisionen los estilos, y es lo correcto. Pero esta app
+// usa Tailwind por CDN, que genera el CSS BAJO DEMANDA observando el DOM del documento — y no ve
+// dentro de un shadow root. Comprobado: las clases `p-9`/`rounded-3xl` dentro de un shadow root NO
+// generan regla, y las mismas en light DOM sí. Montar la app en shadow hoy la dejaría sin estilos.
+// El shadow se habilita solo cuando exista una hoja PRECOMPILADA (`window.__NEX_CSS__`), que es lo
+// que produce el paso de build que ya hace falta para el bundle de CDN. Mientras tanto monta en light
+// DOM y lo deja dicho en el log, en vez de romper el estilo sin avisar.
+const NEX_TAG = "nex-pipeline";
+let NEX_TOKEN = null; // token de la sesión inyectado por el host; nunca se persiste ni se loguea
+function definirWebComponent(React, ReactDOM, App) {
+  if (typeof window === "undefined" || !window.customElements || customElements.get(NEX_TAG)) return;
+  class NexPipeline extends HTMLElement {
+    connectedCallback() {
+      if (this._montado) return;
+      this._montado = true;
+      // El token JAMÁS por atributo: quedaría visible en el DOM y en cualquier captura del HTML.
+      if (this.hasAttribute("token")) {
+        this.removeAttribute("token");
+        logSys("error", "app", "Se pasó un token como atributo del web component: se ignoró y se eliminó del DOM. Debe enviarse por el evento nex:set-token.");
+      }
+      // §5 — el host entrega el token por CustomEvent. Se escucha en el propio elemento.
+      this.addEventListener("nex:set-token", (ev) => {
+        const t = ev && ev.detail && ev.detail.token;
+        if (!t) return;
+        NEX_TOKEN = t;
+        // Se registra que llegó y su vigencia, nunca el valor.
+        logSys("info", "app", "Token de sesión recibido del host", { largo: String(t).length, via: "nex:set-token" });
+      });
+      // §6 — configuración por `parameters`, JSON serializado. Si viene inválido se ignora y se avisa:
+      // arrancar con una configuración a medias es peor que arrancar con la de por defecto.
+      let params = {};
+      try { params = JSON.parse(this.getAttribute("parameters") || "{}") || {}; }
+      catch (e) { logSys("warn", "app", `El atributo «parameters» no es JSON válido: se ignoró (${e && e.message})`); }
+      if (params.tenant && TENANTS.some((t) => t.id === params.tenant)) { TENANT_ACTUAL = params.tenant; aplicarCfgActiva((cargarCfgOper() || {})[TENANT_ACTUAL]); }
+      // Modo de montaje: shadow sólo con hoja precompilada (ver la nota de arriba).
+      const cssPrecompilado = (typeof window !== "undefined" && window.__NEX_CSS__) || null;
+      let destino = this;
+      if (cssPrecompilado) {
+        const sr = this.attachShadow({ mode: "open" });
+        const st = document.createElement("style"); st.textContent = cssPrecompilado; sr.appendChild(st);
+        destino = document.createElement("div"); sr.appendChild(destino);
+        logSys("info", "app", "Web component montado con Shadow DOM (estilos encapsulados)");
+      } else {
+        logSys("warn", "app", "Web component montado en light DOM: sin hoja precompilada, Tailwind no genera CSS dentro de un shadow root. Los estilos de la página anfitriona pueden colisionar.");
+      }
+      ReactDOM.createRoot(destino).render(<App />);
+    }
+  }
+  customElements.define(NEX_TAG, NexPipeline);
+}
 export default function PipelineComercial() {
   // Detalle en pestaña propia (_blank): la URL lleva «?t=<uuid>», un ticket OPACO de un solo uso que
   // sólo esta app puede resolver. El id del negocio no viaja en la URL, así que no hay nada que un

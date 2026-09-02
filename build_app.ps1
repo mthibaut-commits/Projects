@@ -162,7 +162,11 @@ try {
 
     $tail = @'
 
-ReactDOM.createRoot(document.getElementById("root")).render(<PipelineComercial />);
+// La app se monta a traves del web component <nex-pipeline>: asi el contrato de embebido de la
+// guia de integracion (parameters + nex:set-token) esta VIVO y no es solo documentacion.
+// Standalone es el mismo camino, sin atributos.
+definirWebComponent(React, ReactDOM, PipelineComercial);
+document.getElementById("root").appendChild(document.createElement("nex-pipeline"));
 </script>
 </body>
 </html>
