@@ -97,6 +97,14 @@ try {
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<!-- Content Security Policy (OWASP A05). Acota DE DONDE puede cargarse codigo: sin esto, cualquier
+     inyeccion puede traer un script de cualquier host. Se permite 'unsafe-inline'/'unsafe-eval'
+     porque el demo transpila JSX en el navegador con Babel Standalone; en produccion el bundle va
+     compilado y ambos se quitan, que es el mayor beneficio de sacar Babel del runtime.
+     Nota: frame-ancestors se IGNORA en <meta>; contra clickjacking hay que mandarlo como cabecera
+     HTTP (o X-Frame-Options) desde el servidor/CDN, junto con HSTS y Referrer-Policy. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://esm.sh; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://esm.sh; child-src blob:; frame-src blob:; object-src 'none'; base-uri 'self'; form-action 'self'" />
+<meta name="referrer" content="strict-origin-when-cross-origin" />
 <title>NEX Factoring - Pipeline Comercial</title>
 <script type="importmap">
 {

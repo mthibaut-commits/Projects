@@ -1649,7 +1649,36 @@ function borrarReglas() {
 const TENANTS = [
   { id: "security", nombre: "Factoring Security", rut: "96.684.990-8", activo: true },
 ];
-const TENANT_ACTUAL = "security"; // en producción vendría del token de sesión, no del cliente
+// ── Resolución del TENANT (SEGURIDAD / CDN) ─────────────────────────────────────────────────────
+// El tenant NO puede estar escrito en el bundle. La app va a ser un asset estático servido por CDN,
+// el MISMO archivo para todos los factorings: si el id del tenant viene compilado adentro, o hay un
+// bundle por cliente (y deja de ser estático), o cambiar de tenant es editar una variable.
+// El tenant es una afirmación de la SESIÓN, no del cliente. Orden de resolución:
+//   1. `window.__NEX_SESION__.tenant` — lo inyecta el host tras autenticar (en producción sale del
+//      claim del JWT/Entra ID, y el backend lo vuelve a aplicar en cada consulta vía RLS).
+//   2. El subdominio (security.nex.cl → "security"), útil para entornos por cliente.
+//   3. Fallback al primer tenant configurado, dejando AVISO en el log: si esto se ejecuta en
+//      producción, es un error de despliegue, no un default aceptable.
+// Nota: resolverlo acá sigue siendo una decisión del navegador. El control real es del servidor —
+// esto sólo evita que el bundle sea específico de un cliente y deja el punto de inyección explícito.
+function resolverTenant() {
+  try {
+    const s = (typeof window !== "undefined" && window.__NEX_SESION__) || null;
+    if (s && s.tenant && TENANTS.some((t) => t.id === s.tenant)) return s.tenant;
+    const host = (typeof location !== "undefined" && location.hostname) || "";
+    const sub = host.split(".")[0];
+    if (sub && TENANTS.some((t) => t.id === sub)) return sub;
+  } catch (e) {}
+  return TENANTS[0].id;
+}
+let TENANT_ACTUAL = resolverTenant();
+// Si el tenant no vino de la sesión, la app corre con un default: en producción eso es un error de
+// despliegue (el bundle es el mismo para todos y nadie dijo de quién es esta pantalla).
+(() => {
+  const s = (typeof window !== "undefined" && window.__NEX_SESION__) || null;
+  if (s && s.tenant) logSys("info", "app", `Tenant resuelto desde la sesión: ${TENANT_ACTUAL}`, { tenant: TENANT_ACTUAL, origen: "sesion" });
+  else logSys("warn", "app", `Tenant no informado por la sesión: se usó el default «${TENANT_ACTUAL}». En producción debe venir del token.`, { tenant: TENANT_ACTUAL, origen: "default" });
+})();
 const CFG_OPER_KEY = "fs_cfg_oper";
 const CFG_OPER_BASE = {
   horaInicio: "08:00",        // ventana horaria de operación (inbound + actualizaciones)
@@ -1688,6 +1717,11 @@ const CFG_OPER_BASE = {
   // Todo lo visual del cliente vive acá para que dar de alta un factoring nuevo no toque el código.
   marcaLogo: "security",                                        // "nex" | "security"
   marcaNombre: "Factoring Security",
+  // — Banderas de DEMO (no van a producción) —
+  // Suplantación de usuario desde la barra superior: cambia la identidad de la sesión sin ninguna
+  // verificación. Es útil para mostrar atribuciones en una demo y es, literalmente, un escalamiento de
+  // privilegios en un desplegable. Se apaga por tenant y no debe existir en el despliegue real.
+  demoSuplantarUsuario: true,
   marcaAnchoMaxNav: 132,                                        // tope del logo en la barra superior (px)
   marcaAnchoMaxLogin: 220,                                      // tope del logo en el panel del login (px)
   marcaPrimario: "#4F46E5",                                     // color de acento de la marca del tenant
@@ -12031,6 +12065,11 @@ function CfgFuncionalidades({ cfgOper, setCfgOper }) {
         <Toggle k="tabDetalle" label="Detalle" desc="Las mismas facturas agrupadas en acordeones por deudor, con línea, otorgamiento y verificación de cada uno." />
         <Toggle k="tabDescuentos" label="Descuentos" desc="Desglose de la nota de cobro: diferencia de precio, comisión, gastos, IVA, recargos y CxC." />
       </div>
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.amberBg === "#FFF7ED" ? "#FED7AA" : C.line}` }}>
+        <div className="t12 font-semibold" style={{ color: C.amber }}>Sólo demo · no va a producción</div>
+        <div className="mt-0.5 mb-2 t11" style={{ color: C.faint }}>Funciones que existen para poder mostrar el producto y que en un despliegue real deben estar apagadas.</div>
+        <Toggle k="demoSuplantarUsuario" label="Cambiar de usuario desde la barra superior" desc="Cambia la identidad de la sesión sin ninguna verificación, incluido el super-admin. En producción la identidad la fija el token: no puede haber un control de UI que la cambie." />
+      </div>
     </div>
   );
 }
@@ -16678,13 +16717,27 @@ export default function PipelineComercial() {
               {nO > 0 && <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ position: "absolute", top: -6, right: -6, backgroundColor: "#7c3aed" }}>{nO}</span>}
             </button>
           ); })()}
-          <div className="flex items-center gap-1.5">
-            <User size={14} style={{ color: C.faint }} />
-            <select value={usuario} onChange={(e) => setUsuario(e.target.value)} title="Sesión de usuario"
-              className="rounded-lg px-2 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
-              {Object.entries(USERS).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
-            </select>
-          </div>
+          {/* SUPLANTACIÓN DE USUARIO — sólo demo. Cambiar de usuario acá cambia la identidad de la
+              sesión sin ninguna verificación, incluido el super-admin: es un escalamiento de
+              privilegios servido en un desplegable. Existe para poder mostrar las atribuciones en la
+              demo y está detrás de una bandera del tenant (Configuración › Funcionalidades).
+              En producción NO va: la identidad la fija el token y no hay control de UI que la cambie.
+              Si un día se necesita "ver como" para soporte, es una función del backend, auditada,
+              reservada a un rol específico y con el impersonador registrado en cada acción. */}
+          {CFG_ACTIVA.demoSuplantarUsuario !== false ? (
+            <div className="flex items-center gap-1.5" title="Sólo demo: cambia la identidad de la sesión sin verificación">
+              <User size={14} style={{ color: C.faint }} />
+              <select value={usuario} onChange={(e) => setUsuario(e.target.value)} title="Sesión de usuario (sólo demo)"
+                className="rounded-lg px-2 py-1.5 t12 font-medium" style={{ border: `1px dashed ${C.amber}`, color: C.ink, backgroundColor: "#fff" }}>
+                {Object.entries(USERS).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
+              </select>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <User size={14} style={{ color: C.faint }} />
+              <span className="t12 font-medium" style={{ color: C.ink }}>{USERS[usuario] || usuario}</span>
+            </div>
+          )}
           <button onClick={() => setLogueado(false)} title="Cerrar sesión" className="flex h-8 w-8 items-center justify-center t11 font-semibold text-white" style={{ backgroundColor: esAdmin ? C.navy : C.indigo, borderRadius: 8 }}>{esAdmin ? "SA" : usuario}</button>
         </div>
       </div>
