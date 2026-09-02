@@ -407,6 +407,7 @@ const SCHEMA_VERSION = {
   reglasInbound: 3,  // reglas de clasificación del inbound
   cfgOper: 1,        // configuración operativa y de pricing por tenant
   permisos: 1,       // permisos de visibilidad por usuario
+  auth: 1,           // intentos fallidos y bloqueo por cuenta
   curse: 2,          // payload de curse por negocio (v2: OTP hasheado en vez de OTP en claro)
   snapshot: 1,       // snapshots de deal/operación para abrir en otra pestaña
   syslog: 1,         // log técnico persistido entre sesiones
@@ -2216,10 +2217,10 @@ function emitirOtp(neg) {
 // Valida y consume el OTP. En producción esta función es un resolver del backend.
 function validarOtp(neg, code) {
   const r = OTP_STORE[neg];
-  if (!r) return { ok: false, error: "No hay una clave vigente para este negocio" };
-  if (r.usado) return { ok: false, error: "La clave de un solo uso ya fue utilizada" };
-  if (Date.now() > r.exp) return { ok: false, error: "La clave de un solo uso expiró" };
-  if (r.hash !== otpHash(neg, String(code || ""))) return { ok: false, error: "La clave de un solo uso no corresponde al negocio" };
+  if (!r) return { ok: false, error: "No hay un código vigente" };
+  if (r.usado) return { ok: false, error: "Ese código ya fue utilizado" };
+  if (Date.now() > r.exp) return { ok: false, error: "El código expiró" };
+  if (r.hash !== otpHash(neg, String(code || ""))) return { ok: false, error: "El código no es correcto" };
   r.usado = true;
   return { ok: true };
 }
@@ -14663,14 +14664,141 @@ function CommandK({ abierto, onCerrar, deals, dealVisible, irA, onAbrirDeal }) {
 }
 
 // ---- Login (Datamart spec Auth): formulario a la izquierda + panel gradiente a la derecha. Portada del demo ----
+// ============================================================
+// AUTENTICACIÓN (OWASP A07) — verificación, 2FA real, bloqueo y sesión con expiración
+// Antes el login era decorativo: el botón «Ingresar» pasaba al 2FA sin mirar la contraseña, el código
+// venía PRECARGADO en los inputs y bastaba «Verificar». No había sesión, ni expiración, ni límite de
+// intentos: cualquiera con la pantalla delante entraba, y entraba como quien quisiera.
+//
+// SERVER-SIDE: nada de esto puede vivir en el cliente. La verificación es un POST al backend contra el
+// hash almacenado (argon2/bcrypt), el rate limiting es por cuenta Y por IP, el bloqueo es de servidor
+// (uno de cliente se salta borrando el storage), y la sesión es un JWT de vida corta en cookie
+// httpOnly+Secure+SameSite con refresh rotativo. Acá se implementa la MECÁNICA y los estados de la UI
+// para que al conectar el backend sólo cambie de dónde viene el veredicto.
+const AUTH_MAX_INTENTOS = 5;          // intentos fallidos antes de bloquear la cuenta
+const AUTH_BLOQUEO_MS = 60000;        // duración del bloqueo
+const AUTH_OTP_MAX = 3;               // intentos de código antes de volver a credenciales
+const SESION_ABSOLUTA_MS = 8 * 3600000;  // vida máxima de la sesión, se renueve o no
+const SESION_INACTIVIDAD_MS = 30 * 60000; // cierre por inactividad
+// Cuentas del demo. En producción NO existe un directorio en el bundle: el backend resuelve el usuario.
+const CUENTAS_DEMO = {
+  "carla.rivas@security.cl": "CR", "sofia.herrera@security.cl": "JG", "dante.montes@security.cl": "GC",
+  "federico.diaz@security.cl": "GG", "carolina.vergara@security.cl": "RG", "paula.reyes@security.cl": "SR",
+  "andres.mella@security.cl": "OP", "admin@security.cl": "ADMIN",
+};
+const CLAVE_DEMO = "demo·factoring";
+// Estado de intentos por cuenta. Persiste para que recargar no limpie el bloqueo — aunque un bloqueo
+// de cliente siempre es evitable: el de verdad lo aplica el servidor.
+const AUTH_KEY = "nex_auth_intentos";
+function authEstado() { return leerVersionado(AUTH_KEY, "auth", {}) || {}; }
+function authGuardar(e) { escribirVersionado(AUTH_KEY, "auth", e); }
+function authBloqueo(email) {
+  const e = authEstado()[String(email || "").toLowerCase()];
+  if (!e || !e.hasta || Date.now() > e.hasta) return 0;
+  return e.hasta - Date.now();
+}
+function authFallo(email) {
+  const k = String(email || "").toLowerCase(); const st = authEstado();
+  const e = st[k] || { n: 0, hasta: 0 };
+  e.n += 1;
+  if (e.n >= AUTH_MAX_INTENTOS) { e.hasta = Date.now() + AUTH_BLOQUEO_MS; e.n = 0; }
+  st[k] = e; authGuardar(st);
+  logSys(e.hasta ? "error" : "warn", "app", e.hasta ? `Cuenta bloqueada por intentos fallidos: ${k}` : `Credenciales incorrectas para ${k}`, { cuenta: k, bloqueada: !!e.hasta });
+  registrarAuditoria({ usuario: k, modulo: "Autenticación", accion: "Inicio de sesión", glosa: e.hasta ? "Cuenta bloqueada tras intentos fallidos" : "Credenciales incorrectas", exito: false });
+  return e.hasta ? AUTH_BLOQUEO_MS : 0;
+}
+function authExito(email) {
+  const k = String(email || "").toLowerCase(); const st = authEstado(); delete st[k]; authGuardar(st);
+}
+// Verificación de credenciales. Asíncrona a propósito: contra el backend lo es, y la UI tiene que
+// tener el estado «verificando» desde ya.
+function verificarCredenciales(email, clave) {
+  return new Promise((res) => setTimeout(() => {
+    const k = String(email || "").trim().toLowerCase();
+    const ms = authBloqueo(k);
+    if (ms > 0) return res({ ok: false, motivo: "bloqueada", segundos: Math.ceil(ms / 1000) });
+    const code = CUENTAS_DEMO[k];
+    // Mensaje único para usuario inexistente y clave incorrecta: distinguirlos permite enumerar cuentas.
+    if (!code || String(clave) !== CLAVE_DEMO) { const b = authFallo(k); return res({ ok: false, motivo: b ? "bloqueada" : "credenciales", segundos: Math.ceil(b / 1000) }); }
+    res({ ok: true, code });
+  }, 420));
+}
+// ── Sesión ──────────────────────────────────────────────────────────────────────────────────────
+// Dos relojes: uno ABSOLUTO (la sesión muere aunque estés trabajando) y uno de INACTIVIDAD. Sin el
+// absoluto, una pestaña abierta es una sesión eterna.
+let SESION = null;
+function abrirSesion(code, via) {
+  const ahora = Date.now();
+  SESION = { usuario: code, via, iniciada: ahora, expira: ahora + SESION_ABSOLUTA_MS, actividad: ahora };
+  logSys("info", "app", `Sesión iniciada · ${USERS[code] || code} (${via})`, { usuario: code, via, expiraEn: SESION_ABSOLUTA_MS });
+  registrarAuditoria({ usuario: USERS[code] || code, modulo: "Autenticación", accion: "Inicio de sesión", glosa: `Ingreso exitoso vía ${via}`, exito: true });
+  return SESION;
+}
+function cerrarSesion(motivo) {
+  if (SESION) {
+    logSys("info", "app", `Sesión cerrada (${motivo})`, { usuario: SESION.usuario, motivo });
+    registrarAuditoria({ usuario: USERS[SESION.usuario] || SESION.usuario, modulo: "Autenticación", accion: "Cierre de sesión", glosa: motivo, exito: true });
+  }
+  SESION = null;
+}
+const tocarSesion = () => { if (SESION) SESION.actividad = Date.now(); };
+// Devuelve null si sigue vigente, o el motivo por el que caducó.
+function sesionCaducada() {
+  if (!SESION) return null;
+  const ahora = Date.now();
+  if (ahora > SESION.expira) return "expiró la sesión (8 h)";
+  if (ahora - SESION.actividad > SESION_INACTIVIDAD_MS) return "inactividad (30 min)";
+  return null;
+}
 function LoginScreen({ usuarioInicial, onIngresar }) {
-  const [u, setU] = useState(usuarioInicial || "CR"); // código real de la sesión (no visible)
-  const [email, setEmail] = useState("carla.rivas@security.cl"); // usuario visible (email); el login usa `u`
-  const [paso, setPaso] = useState("cred"); // "cred" → "otp" (2FA §44) · "ms-conectando" → "ms-cuentas" (SSO Entra ID)
-  const [clave, setClave] = useState("demo·factoring"); // credencial demo (no se valida)
+  const [u, setU] = useState(usuarioInicial || "CR"); // código de la sesión, resuelto al verificar
+  const [email, setEmail] = useState("carla.rivas@security.cl"); // el usuario visible es el email
+  const [paso, setPaso] = useState("cred"); // "cred" → "otp" (2FA) · "ms-conectando" → "ms-cuentas" (SSO Entra ID)
+  const [clave, setClave] = useState(CLAVE_DEMO); // precargada para la demo; AHORA sí se verifica
   const [org, setOrg] = useState(""); // organización requerida ANTES del botón Microsoft
+  const [error, setError] = useState(null);      // mensaje de fallo de credenciales / bloqueo
+  const [verificando, setVerificando] = useState(false);
+  const [otp, setOtp] = useState(["", "", "", "", "", ""]); // el código se escribe: ya no viene precargado
+  const [otpDemo, setOtpDemo] = useState("");    // valor emitido, visible sólo como ayuda de demo
+  const [otpIntentos, setOtpIntentos] = useState(0);
   const ORGS = ["Factoring Security", "BICE Corporativo", "Datamart"];
-  const OTP_DEMO = ["4", "8", "1", "9", "2", "7"]; // código demo determinista, precargado
+  const otpRef = useRef(null);
+  // Paso 1: verificar credenciales. Si pasa, se EMITE un OTP real (CSPRNG, hasheado, con TTL y de un
+  // solo uso — el mismo servicio que usa el portal de curse) y recién ahí se muestra el paso 2FA.
+  const entrar = async () => {
+    setError(null); setVerificando(true);
+    const r = await verificarCredenciales(email, clave);
+    setVerificando(false);
+    if (!r.ok) {
+      setError(r.motivo === "bloqueada"
+        ? `Cuenta bloqueada por intentos fallidos. Reintenta en ${r.segundos} s.`
+        : "Usuario o contraseña incorrectos.");
+      return;
+    }
+    setU(r.code);
+    const code = emitirOtp("login:" + String(email).toLowerCase());
+    setOtpDemo(code); setOtp(["", "", "", "", "", ""]); setOtpIntentos(0); setPaso("otp");
+  };
+  // Paso 2: validar el código. Se consume (un solo uso) y a los 3 fallos vuelve a credenciales.
+  const verificarOtp = () => {
+    const v = validarOtp("login:" + String(email).toLowerCase(), otp.join(""));
+    if (!v.ok) {
+      const n = otpIntentos + 1; setOtpIntentos(n);
+      logSys("warn", "app", `Código 2FA inválido (${v.error})`, { cuenta: String(email).toLowerCase(), intento: n });
+      if (n >= AUTH_OTP_MAX) { setError("Demasiados intentos con el código. Vuelve a ingresar tus credenciales."); setPaso("cred"); return; }
+      // El OTP se consume al validarlo; si fue incorrecto hay que emitir uno nuevo para reintentar.
+      setOtpDemo(emitirOtp("login:" + String(email).toLowerCase()));
+      setOtp(["", "", "", "", "", ""]);
+      setError(`${v.error}. Te enviamos un código nuevo.`);
+      return;
+    }
+    authExito(email); abrirSesion(u, "credenciales + 2FA"); onIngresar(u);
+  };
+  const setOtpDigito = (i, val) => {
+    const d = String(val || "").replace(/\D/g, "").slice(-1);
+    setOtp((prev) => { const n = prev.slice(); n[i] = d; return n; });
+    setError(null);
+  };
   // Cuentas del tenant Entra ID de la organización (mock del App Service Authentication /.auth/login/aad)
   const CUENTAS_MS = [
     { key: "CR", nombre: "Carla Rivas", mail: "carla.rivas@factoringsecurity.cl" },
@@ -14701,7 +14829,10 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu.correo@security.cl" className="mt-2 w-full px-3" style={{ height: 44, border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, color: C.ink, backgroundColor: "#fff", outline: "none" }} />
             <label className="mt-4 block" style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Contraseña</label>
             <input type="password" value={clave} onChange={(e) => setClave(e.target.value)} className="mt-2 w-full px-3" style={{ height: 44, border: `1px solid ${C.line}`, borderRadius: 10, fontSize: 14, color: C.ink, backgroundColor: "#fff", outline: "none" }} />
-            <button onClick={() => setPaso("otp")} className="mt-6 w-full py-3 text-white" style={{ background: CFG_ACTIVA.marcaCta, borderRadius: 9999, fontSize: 14, fontWeight: 600, border: "none" }}>Ingresar</button>
+            {error && (
+              <div className="mt-4 rounded-xl px-3 py-2.5" style={{ backgroundColor: C.redBg, border: "1px solid #FECACA", fontSize: 13, color: C.red }}>{error}</div>
+            )}
+            <button onClick={entrar} disabled={verificando} className="mt-6 w-full py-3 text-white disabled:opacity-60" style={{ background: CFG_ACTIVA.marcaCta, borderRadius: 9999, fontSize: 14, fontWeight: 600, border: "none" }}>{verificando ? "Verificando…" : "Ingresar"}</button>
             {/* SSO corporativo: Microsoft Entra ID vía Azure App Service Authentication (mock). La organización es requisito ANTES del botón. */}
             <div className="my-6 flex items-center gap-3"><span style={{ height: 1, flex: 1, backgroundColor: C.line }} /><span style={{ fontSize: 12, color: C.faint }}>o continúa con</span><span style={{ height: 1, flex: 1, backgroundColor: C.line }} /></div>
             <label className="block" style={{ fontSize: 13, fontWeight: 500, color: "#374151" }}>Organización</label>
@@ -14733,7 +14864,7 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
             <div className="mt-1" style={{ fontSize: 13, color: C.sub }}>para continuar en <b style={{ color: C.ink }}>{org || "Factoring Security"}</b> · NEX Factoring</div>
             <div className="mt-5 flex flex-col" style={{ border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden" }}>
               {CUENTAS_MS.map((c, i) => (
-                <button key={c.key} onClick={() => onIngresar(c.key)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-stone-50" style={{ borderTop: i ? `1px solid ${C.line}` : "none" }}>
+                <button key={c.key} onClick={() => { abrirSesion(c.key, "SSO Entra ID"); onIngresar(c.key); }} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-stone-50" style={{ borderTop: i ? `1px solid ${C.line}` : "none" }}>
                   <span className="flex items-center justify-center text-white" style={{ width: 34, height: 34, borderRadius: 9999, backgroundColor: "#0078D4", fontSize: 13, fontWeight: 600, flexShrink: 0 }}>{c.nombre.split(" ").map((p) => p[0]).slice(0, 2).join("")}</span>
                   <span className="min-w-0"><span className="block truncate" style={{ fontSize: 14, fontWeight: 500, color: C.ink }}>{c.nombre}</span><span className="block truncate" style={{ fontSize: 12, color: C.sub }}>{c.mail}</span></span>
                 </button>
@@ -14742,18 +14873,26 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
             <div className="mt-4" style={{ fontSize: 12, color: C.faint }}>Autenticación federada · la verificación en dos pasos la gestiona tu organización en Entra ID.</div>
             <button onClick={() => setPaso("cred")} className="mt-3" style={{ fontSize: 13, fontWeight: 500, color: C.sub }}>‹ Volver</button>
           </>) : (<>
-            {/* Paso 2FA (spec §44): código precargado en el demo — basta Verificar */}
+            {/* Paso 2FA. El código YA NO viene precargado: se emite con CSPRNG, se guarda hasheado y con
+                TTL, y se consume al validarlo. Como en el demo no hay SMS ni correo real, se muestra en
+                un aviso marcado como sólo-demo — pero hay que escribirlo, y si es incorrecto no entra. */}
             <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1.2, color: C.navy }}>Verifica tu identidad</div>
             <div className="mt-2" style={{ fontSize: 14, color: C.sub }}>Enviamos un código de 6 dígitos a <b style={{ color: C.ink }}>•••@security.cl</b></div>
-            <div className="mt-8 flex items-center" style={{ gap: 8 }}>
-              {OTP_DEMO.map((d, i) => (
+            <div className="mt-4 rounded-xl px-3 py-2.5" style={{ backgroundColor: C.amberBg, border: "1px solid #FED7AA", fontSize: 12.5, color: C.amber }}>
+              Sólo demo · el código enviado es <b style={{ letterSpacing: ".18em" }}>{otpDemo}</b>. En producción llega por SMS/correo y no se muestra en pantalla.
+            </div>
+            <div className="mt-6 flex items-center" style={{ gap: 8 }}>
+              {otp.map((d, i) => (
                 <Fragment key={i}>
                   {i === 3 && <span style={{ width: 10, height: 1.5, backgroundColor: "#D1D5DB", flexShrink: 0 }} />}
-                  <input maxLength={1} defaultValue={d} className="text-center" style={{ width: 46, height: 52, fontSize: 20, fontWeight: 600, color: C.ink, border: `1px solid ${C.line}`, borderRadius: 10, backgroundColor: "#fff", outline: "none" }} />
+                  <input maxLength={1} inputMode="numeric" value={d} onChange={(e) => setOtpDigito(i, e.target.value)} className="text-center" style={{ width: 46, height: 52, fontSize: 20, fontWeight: 600, color: C.ink, border: `1px solid ${C.line}`, borderRadius: 10, backgroundColor: "#fff", outline: "none" }} />
                 </Fragment>
               ))}
             </div>
-            <button onClick={() => onIngresar(u)} className="mt-6 w-full py-2.5 text-white" style={{ background: CFG_ACTIVA.marcaCta, borderRadius: 9999, fontSize: 14, fontWeight: 600, border: "none" }}>Verificar y entrar</button>
+            {error && (
+              <div className="mt-4 rounded-xl px-3 py-2.5" style={{ backgroundColor: C.redBg, border: "1px solid #FECACA", fontSize: 13, color: C.red }}>{error}</div>
+            )}
+            <button onClick={verificarOtp} disabled={otp.some((d) => !d)} className="mt-6 w-full py-2.5 text-white disabled:opacity-50" style={{ background: CFG_ACTIVA.marcaCta, borderRadius: 9999, fontSize: 14, fontWeight: 600, border: "none" }}>Verificar y entrar</button>
             <div className="mt-4 flex items-center justify-between" style={{ fontSize: 13 }}>
               <button onClick={() => setPaso("cred")} style={{ color: C.sub, fontWeight: 500 }}>‹ Volver</button>
               <span style={{ color: C.sub }}>¿No lo recibiste? <span style={{ color: C.indigo, fontWeight: 500, cursor: "pointer" }}>Reenviar</span></span>
