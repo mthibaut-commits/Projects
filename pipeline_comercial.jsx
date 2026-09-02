@@ -193,6 +193,7 @@ function emitirTicketDetalle(tipo, id, usuario, payload) {
       _v: SCHEMA_VERSION.snapshot, _app: APP_VERSION, tipo, id, usuario, exp: Date.now() + TICKET_TTL_MS, payload,
     }));
   } catch (e) { diagStorage({ coleccion: "snapshot", resultado: "no_guardado", detalle: `No se pudo emitir el ticket de detalle: ${e && e.message}` }); }
+  TICKETS_EMITIDOS[uuid] = { tipo, id, usuario, payload }; // para poder re-emitir si vence (ver `pedirRefrescoTicket`)
   logSys("info", "app", `Ticket de detalle emitido para ${tipo} ${id}`, { tipo, id, usuario, ttlMs: TICKET_TTL_MS });
   return uuid;
 }
@@ -218,6 +219,52 @@ function ticketDeLaUrl() {
   try { const t = new URLSearchParams(location.search).get("t"); if (t) out = canjearTicketDetalle(t); } catch (e) { out = null; }
   _ticketUrl = out;
   return out;
+}
+const uuidDeLaUrl = () => { try { return new URLSearchParams(location.search).get("t"); } catch (e) { return null; } };
+
+// ── Canje asíncrono y REFRESH del ticket ────────────────────────────────────────────────────────
+// Acá el canje lee localStorage y es instantáneo, pero contra el backend es una llamada de red: la
+// pestaña abre SIN datos y tiene que mostrar un esqueleto mientras el resolver responde. Se modela con
+// la misma latencia simulada del resto para que la UI ya contemple ese estado y no haya que inventarlo
+// al conectar la API.
+const TICKET_LATENCIA_MS = 420;
+function resolverTicketAsync(uuidPresente) {
+  return new Promise((res) => setTimeout(() => {
+    if (!uuidPresente) return res({ estado: "sin-ticket" });
+    res(ticketDeLaUrl() ? { estado: "ok" } : { estado: "expirado" });
+  }, TICKET_LATENCIA_MS));
+}
+// Registro de los tickets que ESTA pestaña emitió: uuid → qué negocio y para quién. Es lo que permite
+// refrescar sin volver a poner el id en la URL. En producción vive en el backend (la misma tabla
+// `detalle_ticket`), y el refresh es un endpoint autenticado que re-emite contra la SESIÓN del usuario
+// —equivalente al refresh_token de OAuth—, nunca contra el ticket vencido, que ya no vale nada.
+const TICKETS_EMITIDOS = {};
+const TICKET_REFRESH_TIMEOUT_MS = 3000;
+// La pestaña del detalle le pide a quien la abrió un ticket nuevo para el mismo negocio. El emisor
+// tiene la sesión; la pestaña sólo tiene el uuid vencido, que por sí solo no autoriza nada.
+function pedirRefrescoTicket(uuid) {
+  return new Promise((res) => {
+    let listo = false;
+    const alRecibir = (ev) => {
+      if (!origenConfiable(ev.origin)) return;
+      const m = ev.data;
+      if (!m || m.type !== "nex-ticket-refrescado" || m.uuid !== uuid) return;
+      listo = true; window.removeEventListener("message", alRecibir);
+      if (m.ok && m.registro) {
+        try { localStorage.setItem("fs_tk_" + m.nuevo, JSON.stringify(m.registro)); } catch (_) {}
+        // Se reescribe la URL con el ticket nuevo (sin recargar) para que un F5 vuelva a funcionar.
+        try { history.replaceState(null, "", location.pathname + "?t=" + encodeURIComponent(m.nuevo)); } catch (_) {}
+        _ticketUrl = undefined; // permite un canje nuevo
+      }
+      res(!!m.ok);
+    };
+    window.addEventListener("message", alRecibir);
+    try {
+      if (window.opener) window.opener.postMessage({ type: "nex-ticket-refrescar", uuid }, ORIGEN_APP);
+      else { window.removeEventListener("message", alRecibir); return res(false); }
+    } catch (_) { window.removeEventListener("message", alRecibir); return res(false); }
+    setTimeout(() => { if (!listo) { window.removeEventListener("message", alRecibir); res(false); } }, TICKET_REFRESH_TIMEOUT_MS);
+  });
 }
 function logSys(nivel, fuente, mensaje, datos) {
   const ts = Date.now();
@@ -1641,6 +1688,8 @@ const CFG_OPER_BASE = {
   // Todo lo visual del cliente vive acá para que dar de alta un factoring nuevo no toque el código.
   marcaLogo: "security",                                        // "nex" | "security"
   marcaNombre: "Factoring Security",
+  marcaAnchoMaxNav: 132,                                        // tope del logo en la barra superior (px)
+  marcaAnchoMaxLogin: 220,                                      // tope del logo en el panel del login (px)
   marcaPrimario: "#4F46E5",                                     // color de acento de la marca del tenant
   marcaCta: "linear-gradient(to right, #4F46E5, #6D5BFF)",      // botón principal del login
   marcaPanel: "linear-gradient(135deg, #5B21B6 0%, #6D28D9 45%, #7C3AED 100%)", // panel del login
@@ -1693,8 +1742,12 @@ function Marca({ variante, tono = "oscuro", size = "md" }) {
   const v = variante || CFG_ACTIVA.marcaLogo || "nex";
   const chico = size === "sm";
   if (v === "security") {
+    // Alto nominal + ANCHO MÁXIMO. El logotipo de cada factoring tiene su propia proporción y uno
+    // ancho empujaba el menú hasta montarse con los íconos de la derecha. Con `objectFit: contain` el
+    // SVG se escala dentro de la caja conservando la proporción: si topa el ancho, baja de alto solo.
     const h = size === "sm" ? 26 : 40;
-    return <img src={tono === "claro" ? LOGO_SECURITY_BLANCO : LOGO_SECURITY_COLOR} alt={CFG_ACTIVA.marcaNombre || "Factoring Security"} style={{ height: h, width: "auto", display: "block" }} />;
+    const mw = size === "sm" ? (CFG_ACTIVA.marcaAnchoMaxNav || 132) : (CFG_ACTIVA.marcaAnchoMaxLogin || 220);
+    return <img src={tono === "claro" ? LOGO_SECURITY_BLANCO : LOGO_SECURITY_COLOR} alt={CFG_ACTIVA.marcaNombre || "Factoring Security"} style={{ height: h, width: "auto", maxWidth: mw, objectFit: "contain", display: "block", flexShrink: 0 }} />;
   }
   return (
     <div className="flex items-center gap-2">
@@ -14694,6 +14747,22 @@ export default function PipelineComercial() {
   const tk = ticketDeLaUrl();
   const detallePayload = tk && tk.tipo === "deal" ? tk.payload : null;
   const opPayload = tk && tk.tipo === "op" ? tk.payload : null;
+  // Estado del canje. Hoy el dato ya está resuelto (localStorage es síncrono), pero la pantalla se
+  // comporta como se va a comportar contra la API: esqueleto mientras el resolver responde, y una
+  // salida explícita si el ticket venció, con reintento vía refresh contra la sesión del emisor.
+  const [tkEstado, setTkEstado] = useState(() => (uuidDeLaUrl() ? "resolviendo" : "sin-ticket"));
+  useEffect(() => {
+    const uuid = uuidDeLaUrl(); if (!uuid) return;
+    let vivo = true;
+    resolverTicketAsync(uuid).then((r) => { if (vivo) setTkEstado(r.estado); });
+    return () => { vivo = false; };
+  }, []);
+  const reintentarTicket = async () => {
+    setTkEstado("resolviendo");
+    const ok = await pedirRefrescoTicket(uuidDeLaUrl());
+    setTkEstado(ok ? "recargar" : "expirado");
+    if (ok) { try { location.reload(); } catch (_) {} }
+  };
   const soloOpDetalle = !!(opPayload && opPayload.op); // pestaña propia con el DETALLE DE LA OPERACIÓN
   const soloDetalle = !!(detallePayload && detallePayload.deal);
   const [deals, setDeals] = useState(soloDetalle ? [detallePayload.deal] : []); // arranca vacío; el pipeline se llena al presionar Start (en modo detalle, sembrado con la oportunidad)
@@ -15376,6 +15445,21 @@ export default function PipelineComercial() {
       // abierta por el usuario podría pedir el payload de una operación o confirmar una firma.
       if (!origenConfiable(ev.origin)) return;
       const m = ev.data;
+      // Refresh del ticket del detalle: la pestaña hija tiene un uuid vencido y pide uno nuevo. Quien
+      // autoriza es ESTA ventana, que es la que tiene la sesión — el ticket vencido no autoriza nada,
+      // sólo sirve para saber QUÉ negocio se estaba mirando. (SERVER-SIDE: endpoint autenticado.)
+      if (m && m.type === "nex-ticket-refrescar" && m.uuid) {
+        const reg = TICKETS_EMITIDOS[m.uuid];
+        if (!reg || reg.usuario !== usuario) {
+          logSys("warn", "app", "Refresh de ticket rechazado: no fue emitido por esta sesión", { uuid: m.uuid });
+          try { ev.source && ev.source.postMessage({ type: "nex-ticket-refrescado", uuid: m.uuid, ok: false }, ORIGEN_APP); } catch (_) {}
+          return;
+        }
+        const nuevo = emitirTicketDetalle(reg.tipo, reg.id, reg.usuario, reg.payload);
+        let registro = null; try { registro = JSON.parse(localStorage.getItem("fs_tk_" + nuevo)); } catch (_) {}
+        try { ev.source && ev.source.postMessage({ type: "nex-ticket-refrescado", uuid: m.uuid, ok: true, nuevo, registro }, ORIGEN_APP); } catch (_) {}
+        return;
+      }
       if (!m || !m.neg) return;
       if (m.type === "request-deal") {
         waSourcesRef.current[m.neg] = ev.source;       // ventana para empujar actualizaciones en vivo
@@ -16516,7 +16600,28 @@ export default function PipelineComercial() {
         }
       `}</style>
 
-      {soloOpDetalle ? (
+      {/* La pestaña abierta con un ticket no pinta nada hasta que el resolver responde: esqueleto
+          mientras resuelve, y una salida explícita —con reintento— si el ticket venció. */}
+      {tkEstado === "resolviendo" || tkEstado === "recargar" ? (
+        <div className="mx-auto w-full p-6" style={{ maxWidth: 1600 }}>
+          <div className="flex items-center gap-3"><Skel w={36} h={36} r={10} /><div className="flex-1"><Skel w={220} h={13} /><div className="mt-2" /><Skel w={340} h={11} /></div></div>
+          <div className="mt-5"><Skel w="100%" h={8} r={9999} /></div>
+          <div className="mt-6 flex gap-5">{[70, 54, 46, 96].map((w, i) => <Skel key={i} w={w} h={12} />)}</div>
+          <div className="mt-6 rounded-2xl p-5" style={{ border: `1px solid ${C.line}` }}>
+            <Skel w={180} h={12} /><div className="mt-4 grid gap-4" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>{[0, 1, 2, 3].map((i) => <div key={i}><Skel w={90} h={10} /><div className="mt-2" /><Skel w={120} h={18} /></div>)}</div>
+          </div>
+          <div className="mt-4 t11" style={{ color: C.faint }}>Verificando el acceso a la oportunidad…</div>
+        </div>
+      ) : tkEstado === "expirado" ? (
+        <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-6 text-center">
+          <div className="t15 font-semibold" style={{ color: C.ink }}>El enlace de esta pestaña expiró</div>
+          <div className="t12" style={{ color: C.sub, maxWidth: 460 }}>
+            Los enlaces al detalle son de un solo uso y de corta duración. Puedes pedir uno nuevo si la pestaña
+            original sigue abierta; si no, vuelve a abrir la oportunidad desde el tubo.
+          </div>
+          <button onClick={reintentarTicket} className="mt-1 rounded-full px-4 py-2 t12 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo, border: "none" }}>Pedir un enlace nuevo</button>
+        </div>
+      ) : soloOpDetalle ? (
         <OperacionDetalle op={opPayload.op} onDescargar={(o) => descargarOperacionPDF(o)} />
       ) : soloDetalle ? (!selected ? (
         <div className="flex min-h-screen items-center justify-center t13" style={{ color: C.sub }}>Oportunidad no encontrada.</div>
