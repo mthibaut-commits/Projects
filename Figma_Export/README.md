@@ -1,5 +1,13 @@
 # Export a Figma — NEX Factoring
 
+> **De dónde tiene que salir el export: de `Capturas_UI/`.**
+> Esos archivos son el DOM real de un build de `main`, capturados por `capturar_pantallas.mjs`, y
+> cada uno lleva estampado el commit del que salió. Los HTML de ESTA carpeta están escritos a mano
+> y por eso se desfasaron sin que nadie lo notara: llegaron a dibujar el detalle de la operación
+> como drawer sobre overlay dos semanas después de que dejara de serlo, y el tubo en Kanban cuando
+> carga por defecto en Tabla. Para actualizar el export, regenerar las capturas y partir de ahí; si
+> una pantalla se ve mal, el arreglo va en `pipeline_comercial.jsx`, no en un HTML de maqueta.
+
 HTML estático de las pantallas y del UI Kit, escrito con los tokens reales de
 `pipeline_comercial.jsx`, para importarlo a Figma con el plugin **html.to.design**
 (MCP `Html_to_design` → `import-html`).
