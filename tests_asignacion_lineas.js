@@ -1,15 +1,16 @@
 /* ============================================================================================
    PRUEBAS DEL MOTOR DE ASIGNACIÓN DE LÍNEAS
-   Cubre los 10 casos del §9 de spec-asignacion-lineas.md más cinco que el spec no enumera pero
+   Cubre los 10 casos del §9 de spec-asignacion-lineas.md, más cinco que el spec no enumera pero
    que el modelo corregido introduce (línea de otros deudores suspendida y como no-colchón, tope
-   del cliente, y cliente en estado A con sólo LF1).
+   del cliente, y cliente en estado A con sólo LF1), más cinco del DIFF entre versiones (§4.3): qué
+   se movió respecto de la evaluación anterior, sin que esa versión altere jamás la asignación.
 
    CÓMO SE CORREN: abrir pipeline_comercial.html, iniciar sesión, abrir la consola del navegador y
    pegar el contenido de este archivo. No requiere datos del pipeline: cada caso inyecta su propio
    estado de líneas por el tercer parámetro de `asignarLineas`, así que el resultado no depende de
    qué oportunidades haya generado el motor de entrada.
 
-   Última corrida: 15/15 PASA.
+   Última corrida: 20/20 PASA.
    ============================================================================================ */
 (() => {
   const out = [];
@@ -97,6 +98,59 @@
   // 15 · cliente en estado A: la LF1 sólo admite deudores prime y sólo hasta $30M
   r = asignarLineas([fac("f1", alto.rut, 18), facOtro("f2", noPrime, 5)], "X", { estado: estA(), deudores: { [alto.rut]: dl(alto.rut, 900), [noPrime]: dl(noPrime, 900) } });
   ok("15 la LF1 sólo cubre deudores prime", r.cursable === 18 && r.facturas.find((f) => f.id === "f2").motivo === "lf1", "cursable " + r.cursable);
+
+  // ══ DIFF CONTRA LA VERSIÓN ANTERIOR (informativo, NUNCA vinculante) ═══════════════════════════
+  // Lo que trae la API es la verdad y sobre eso se asigna. La versión anterior sólo sirve para poder
+  // DECIRLE al ejecutivo qué se movió: que le ampliaron la línea y ya no necesita comité, o que el
+  // cupo se consumió en otro negocio cursado por otro canal y ahora califican menos facturas.
+  const previa = (facs) => ({ facturas: facs });
+  const snap = (res) => res.facturas.map((f) => ({ id: f.id, estado: f.estado, origen: f.origen }));
+
+  // 16 · nada cambió entre una evaluación y la otra → el diff no reporta movimientos
+  const inj16 = () => ({ estado: estB([L("LF2-d1", "LF2", LB[5], 200)], 5000), deudores: { [LB[5]]: dl(LB[5], 900) } });
+  const v1_16 = asignarLineas([fac("f1", LB[5], 60)], "X", inj16());
+  r = asignarLineas([fac("f1", LB[5], 60)], "X", { ...inj16(), previa: previa(snap(v1_16)) });
+  ok("16 sin movimientos el diff no reporta nada",
+     r.diff && !r.diff.hayCambios && r.diff.iguales === 1 && r.facturas[0].cambio === "igual",
+     "iguales " + r.diff.iguales);
+
+  // 17 · entre las dos evaluaciones el comité AMPLIÓ la línea → lo que iba a comité ahora se cursa
+  const antes17 = asignarLineas([fac("f1", LB[6], 80)], "X", { estado: estB([L("LF2-a1", "LF2", LB[6], 50)], 5000), deudores: { [LB[6]]: dl(LB[6], 900) } });
+  r = asignarLineas([fac("f1", LB[6], 80)], "X", { estado: estB([L("LF2-a1", "LF2", LB[6], 300)], 5000), deudores: { [LB[6]]: dl(LB[6], 900) }, previa: previa(snap(antes17)) });
+  ok("17 la línea se amplió: ya no necesita comité",
+     antes17.cursable === 0 && r.cursable === 80 && r.diff.ganaron === 1 && r.diff.montoGanado === 80
+     && r.diff.perdieron === 0 && r.facturas[0].cambio === "gano_linea",
+     "ganaron " + r.diff.ganaron + " por " + r.diff.montoGanado);
+
+  // 18 · el cupo se consumió en OTRO negocio (cursado por otro canal) → ahora califican menos
+  const antes18 = asignarLineas([fac("f1", LB[7], 80)], "X", { estado: estB([L("LF2-c1", "LF2", LB[7], 300)], 5000), deudores: { [LB[7]]: dl(LB[7], 900) } });
+  r = asignarLineas([fac("f1", LB[7], 80)], "X", { estado: estB([L("LF2-c1", "LF2", LB[7], 300, 260)], 5000), deudores: { [LB[7]]: dl(LB[7], 900) }, previa: previa(snap(antes18)) });
+  ok("18 otro negocio consumió el cupo: ahora va a comité",
+     antes18.cursable === 80 && r.cursable === 0 && r.diff.perdieron === 1 && r.diff.montoPerdido === 80
+     && r.facturas[0].cambio === "perdio_linea",
+     "perdieron " + r.diff.perdieron + " por " + r.diff.montoPerdido);
+
+  // 19 · la puntual se agotó entre versiones → la misma factura se financia ahora con la normal
+  const antes19 = asignarLineas([fac("f1", LB[8], 40)], "X", { estado: estB([L("LF3-x1", "LF3", LB[8], 60), L("LF2-x1", "LF2", LB[8], 200)], 5000), deudores: { [LB[8]]: dl(LB[8], 900) } });
+  r = asignarLineas([fac("f1", LB[8], 40)], "X", { estado: estB([L("LF3-x1", "LF3", LB[8], 60, 60), L("LF2-x1", "LF2", LB[8], 200)], 5000), deudores: { [LB[8]]: dl(LB[8], 900) }, previa: previa(snap(antes19)) });
+  ok("19 cambió la línea que la financia",
+     antes19.facturas[0].origen[0].tipo === "LF3" && r.facturas[0].origen[0].tipo === "LF2"
+     && r.diff.cambiaron === 1 && r.facturas[0].cambio === "cambio_de_linea",
+     "LF3 → " + r.facturas[0].origen[0].tipo);
+
+  // 20 · GUARDARRAÍL: la versión anterior NO es vinculante. Con y sin previa el motor asigna
+  //      exactamente lo mismo — lo único que agrega es la explicación de qué se movió.
+  const inj20 = () => ({ estado: estB([L("LF2-g1", "LF2", LB[9], 100)], 5000), deudores: { [LB[9]]: dl(LB[9], 900) } });
+  const facs20 = [fac("f1", LB[9], 60), fac("f2", LB[9], 80)];
+  const sinPrevia20 = asignarLineas(facs20, "X", inj20());
+  // Una previa que dice justo lo contrario de lo que corresponde hoy: si mandara, el resultado
+  // cambiaría. No manda.
+  const mentira = previa([{ id: "f1", estado: "CON_LINEA", origen: [{ lineaId: "LF2-g1", tipo: "LF2", monto: 60 }] }, { id: "f2", estado: "CON_LINEA", origen: [{ lineaId: "LF2-g1", tipo: "LF2", monto: 80 }] }]);
+  r = asignarLineas(facs20, "X", { ...inj20(), previa: mentira });
+  ok("20 la versión anterior no altera la asignación",
+     JSON.stringify(snap(sinPrevia20)) === JSON.stringify(snap(r)) && sinPrevia20.cursable === r.cursable
+     && r.diff.perdieron === 1,
+     "cursable " + sinPrevia20.cursable + " = " + r.cursable + " · el diff sí reporta la que perdió línea");
 
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");

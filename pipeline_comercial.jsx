@@ -6175,7 +6175,14 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         // agregar un deudor de mejor nota puede cambiar el resultado de todos los de atrás.
                         // Con `reevalPend` activo NO se calcula: la selección cambió y el ejecutivo todavía no
                         // pidió re-evaluar. Ver la tarjeta de veredicto.
-                        const evalLin = reevalPend ? null : asignarLineas(validas, deal.rutEmisor);
+                        // La asignación se calcula SIEMPRE contra lo que trae el origen: la versión anterior
+                        // no reserva cupo ni le da preferencia a ninguna factura. Se le pasa sólo para que el
+                        // motor pueda DECIR qué se movió entre una versión y la otra — que le ampliaron la
+                        // línea y ya no necesita comité, o que el cupo se consumió en otro negocio cursado por
+                        // otro canal y ahora califican menos facturas. Eso el ejecutivo no puede deducirlo
+                        // mirando sólo el resultado nuevo.
+                        const vsLin = SIM_VERSIONS[deal.id] || [];
+                        const evalLin = reevalPend ? null : asignarLineas(validas, deal.rutEmisor, { previa: vsLin.length ? vsLin[vsLin.length - 1].linea : null });
                         // El motor agrupa por RUT del deudor (§3.4) y estos acordeones por razón social. Si un
                         // mismo nombre llega con más de un RUT, quedarse con el último grupo mostraría «1 de 1
                         // con línea» en una fila que tiene cuatro facturas. Se agregan.
@@ -6582,6 +6589,17 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 : evalLin.requiereComite === 0 ? { tono: "con_linea", tit: `Se puede cursar la oferta completa · ${fmtMM(evalLin.cursable)}`, sub: "Todas las facturas de la oferta tienen línea disponible." }
                                 : evalLin.cursable === 0 ? { tono: "sin_linea", tit: "No se puede cursar nada de esta oferta", sub: `Las ${nComite} facturas por ${fmtMM(evalLin.requiereComite)} necesitan aprobación del comité de riesgo.` }
                                 : { tono: "parcial", tit: `Se puede cursar ${fmtMM(evalLin.cursable)} de ${fmtMM(totalOf)}`, sub: `${nComite} factura(s) por ${fmtMM(evalLin.requiereComite)} no tienen línea disponible. Puedes enviarlas a comité o quitarlas y cursar el resto hoy.` };
+                              // Qué se movió respecto de la versión anterior. Es lo único que el ejecutivo no
+                              // puede deducir del resultado nuevo: si ganó cupo (le ampliaron la línea) o si lo
+                              // perdió porque otro negocio lo consumió por otro canal.
+                              const dl = evalLin && evalLin.diff;
+                              if (dl && dl.hayCambios) {
+                                const ps = [];
+                                if (dl.ganaron) ps.push(`${dl.ganaron} por ${fmtMM(dl.montoGanado)} que antes iban a comité ahora tienen línea`);
+                                if (dl.perdieron) ps.push(`${dl.perdieron} por ${fmtMM(dl.montoPerdido)} que antes tenían línea ahora van a comité`);
+                                if (dl.cambiaron) ps.push(`${dl.cambiaron} se financian con otra línea`);
+                                vd.sub += ` Respecto de la evaluación anterior: ${ps.join(" · ")}.`;
+                              }
                               const t = TONO_LIN[vd.tono];
                               // Cada compuerta se lee igual: rótulo, estado y «pendientes/total». En verde
                               // cuando no queda nada por hacer, en su color de nivel cuando sí.
@@ -9859,7 +9877,29 @@ function snapVersionCli(deal, rev) {
   // publicaciones, la versión de la mañana y la de la tarde quedan asociadas a la que realmente regía.
   const tsEval = new Date();
   const pol = politicaVigenteEn(tsEval, TENANT_ACTUAL);
+  // La versión no es sólo del otorgamiento. Cada simulación fija TAMBIÉN con qué líneas se financió
+  // cada factura y qué dijo el predictor de verificación: son las otras dos decisiones que dependen
+  // de datos externos que se mueven solos —el comité amplía una línea, otro negocio consume el cupo,
+  // el batch refresca el par cliente-deudor—, así que sin snapshot no hay manera de explicar por qué
+  // la MISMA oferta da distinto entre una evaluación y la siguiente. La asignación se recalcula
+  // siempre contra lo que trae el origen: la versión anterior es evidencia, no reserva.
+  const fsOp = (deal && deal.facturasOp) || [];
+  let linea = null, verificacion = null;
+  try {
+    if (fsOp.length && deal && deal.rutEmisor) {
+      const ev = asignarLineas(fsOp, deal.rutEmisor);
+      linea = {
+        cursable: ev.cursable, requiereComite: ev.requiereComite, oferta: ev.oferta,
+        facturas: ev.facturas.map((f) => ({ id: f.id, estado: f.estado, motivo: f.motivo || null, origen: (f.origen || []).map((o) => ({ lineaId: o.lineaId, tipo: o.tipo, monto: o.monto })) })),
+        solicitudes: (ev.solicitudes || []).map((x) => ({ rutDeudor: x.rutDeudor, deudor: x.deudor, motivo: x.motivo, pide: x.pide, monto: x.monto })),
+      };
+    }
+  } catch (e) { linea = null; }
+  try {
+    if (fsOp.length) verificacion = { ...verifResumenDeal(deal), facturas: fsOp.map((f) => { const vf = verifFactura(f, deal); return { id: f.id, deudor: f.deudor, est: vf.est, segmento: vf.segmento, razon: vf.razon || null }; }) };
+  } catch (e) { verificacion = null; }
   return { v: rev + 1, rev, ts: tsEval, origen: rev === 0 ? "Evaluación inicial (simulación)" : "Re-evaluación · JSON API actualizado tras firma", vars, res, estado, nApr, nExc, nRech,
+    linea, verificacion,
     politica: { ...pol }, politicas: estampaPoliticas(tsEval, TENANT_ACTUAL), app: APP_VERSION, build: APP_BUILD.commit };
 }
 function varsClienteActual(deal) {
@@ -16490,7 +16530,7 @@ function asignarLineas(facturas, rutCliente, inyecta) {
   const dispClienteInicial = dispCliente;
 
   if (!sel.length) {
-    return { vacia: true, cursable: 0, requiereComite: 0, oferta: 0, estadoCliente: st.estado, dispCliente, deudores: [], facturas: [], solicitudes: [], lineasUsadas: [] };
+    return { vacia: true, cursable: 0, requiereComite: 0, oferta: 0, estadoCliente: st.estado, dispCliente, deudores: [], facturas: [], solicitudes: [], lineasUsadas: [], diff: null };
   }
 
   // Agrupar por deudor y ordenar por NOTA DESC; desempate por monto seleccionado DESC. El orden
@@ -16519,7 +16559,7 @@ function asignarLineas(facturas, rutCliente, inyecta) {
 
   for (const g of orden) {
     // Cascada por deudor.
-    let cascada = [], sinCascada = null;
+    let cascada = [], sinCascada = null, tienePropia = false;
     if (st.estado === "A") {
       // Estado A: sólo LF1, y sólo para deudores prime. La LF1 existe para desbloquear la venta a
       // clientes nuevos; todo lo demás necesita que el comité asigne líneas.
@@ -16527,10 +16567,18 @@ function asignarLineas(facturas, rutCliente, inyecta) {
       if (g.prime && lf1) cascada = [lf1]; else sinCascada = "lf1";
     } else {
       const pares = lineas.filter((l) => l.granularidad === "par" && l.rutDeudor === g.rut);
-      // La puntual primero: se aprobó para este negocio y es de un solo uso. La normal complementa.
-      const lf3 = pares.filter((l) => l.tipo === "LF3"), lf2 = pares.filter((l) => l.tipo === "LF2");
-      if (lf3.length || lf2.length) cascada = lf3.concat(lf2);
-      else {
+      tienePropia = pares.length > 0;
+      if (tienePropia) {
+        // Una línea SUSPENDIDA conserva su vigente —la suspensión no libera lo ya cedido— pero no
+        // admite operaciones nuevas, así que sale de la cascada. La regla ya valía para la de otros
+        // deudores y no para las del par, que igual recibían facturas nuevas.
+        const vivas = pares.filter((l) => !l.suspendida);
+        // La puntual primero: se aprobó para este negocio y es de un solo uso. La normal complementa.
+        cascada = vivas.filter((l) => l.tipo === "LF3").concat(vivas.filter((l) => l.tipo === "LF2"));
+        // Tener línea propia suspendida NO habilita la de otros deudores: sigue siendo un deudor con
+        // línea, y lo que corresponde pedir es reactivarla, no financiarlo por el pozo comodín.
+        if (!cascada.length) sinCascada = "par";
+      } else {
         // La línea de otros deudores NUNCA actúa como colchón de un deudor que ya tiene línea propia: es
         // exclusivamente el camino de los RUT sin LF2 ni LF3.
         const comodin = lineas.find((l) => l.granularidad === "comodin" && l.categoria === tipoLineaDeDeudor(g.tipo));
@@ -16632,7 +16680,9 @@ function asignarLineas(facturas, rutCliente, inyecta) {
       // Con línea PROPIA (LF2/LF3 del par) o sin ella (la de otros deudores, o ninguna). No es lo
       // mismo aunque las dos terminen en cupo 0: la primera se AMPLÍA y la segunda hay que CREARLA,
       // y son dos resoluciones distintas del comité (ver RESOLUCION_COMITE, motivos `par` y `lf4`).
-      conLineaPropia: !!(cascada.length && cascada[0].granularidad === "par"),
+      // Se mira si el par TIENE línea, no si quedó en la cascada: una LF2 suspendida sigue siendo
+      // línea propia, y confundirla con «no tiene» manda al comité a crear una que ya existe.
+      conLineaPropia: tienePropia,
       saldoPuntual: Math.min(lf3Saldo, holgura),
       lineasUsadas: cascada.filter((l) => l.usado > 0).map((l) => ({ lineaId: l.id, tipo: l.tipo, monto: l.usado })),
     });
@@ -16663,6 +16713,42 @@ function asignarLineas(facturas, rutCliente, inyecta) {
     s.monto = mmRound(s.monto + f.monto); s.nFacturas++;
   }
 
+  // ── DIFF CONTRA LA VERSIÓN ANTERIOR · INFORMATIVO, NUNCA VINCULANTE ──────────────────────────
+  // La verdad es lo que trae la API de líneas, y sobre eso se asigna: la evaluación anterior no
+  // reserva nada ni le da preferencia a ninguna factura. El diff existe porque hay dos movimientos
+  // que el ejecutivo NO puede deducir mirando sólo el resultado nuevo:
+  //   · le ampliaron la línea (o se liberó cupo) → facturas que iban a comité ahora se cursan;
+  //   · el cupo se consumió en otro negocio, cursado por otro canal → ahora califican menos.
+  // El motor devuelve exactamente el mismo resultado con y sin `previa`; lo único que agrega es la
+  // explicación de qué se movió entre una versión y la otra.
+  let diff = null;
+  const prevF = new Map();
+  for (const x of (inyecta && inyecta.previa && inyecta.previa.facturas) || []) if (x && x.id != null) prevF.set(x.id, x);
+  if (prevF.size) {
+    const claveOrigen = (og) => (og || []).map((o) => o.lineaId + ":" + o.monto).join("|");
+    const gan = [], per = [], camb = [];
+    let iguales = 0, nuevas = 0;
+    for (const f of resFacturas) {
+      const p = prevF.get(f.id);
+      if (!p) { nuevas++; f.cambio = "nueva"; continue; }
+      const antes = p.estado === "CON_LINEA", ahora = f.estado === "CON_LINEA";
+      if (!antes && ahora) { gan.push(f); f.cambio = "gano_linea"; }
+      else if (antes && !ahora) { per.push(f); f.cambio = "perdio_linea"; }
+      else if (antes && claveOrigen(p.origen) !== claveOrigen(f.origen)) { camb.push(f); f.cambio = "cambio_de_linea"; }
+      else { iguales++; f.cambio = "igual"; }
+    }
+    // Las que ya no están en la selección: el ejecutivo las quitó, no las perdió por cupo.
+    const vivas = new Set(resFacturas.map((f) => f.id));
+    const retiradas = [...prevF.keys()].filter((id) => !vivas.has(id)).length;
+    const mm = (arr) => mmRound(arr.reduce((s, x) => s + x.monto, 0));
+    diff = {
+      ganaron: gan.length, montoGanado: mm(gan),
+      perdieron: per.length, montoPerdido: mm(per),
+      cambiaron: camb.length, iguales, nuevas, retiradas,
+      hayCambios: !!(gan.length || per.length || camb.length),
+    };
+  }
+
   return {
     vacia: false, estadoCliente: st.estado,
     // El total y el cursable se redondean; lo que va a comité se DERIVA de la resta. Redondeando las
@@ -16673,7 +16759,7 @@ function asignarLineas(facturas, rutCliente, inyecta) {
     dispCliente, dispClienteInicial,
     deudores: resDeudores, facturas: resFacturas,
     solicitudes: [...solMap.values()].sort((a, b) => b.monto - a.monto),
-    lineasUsadas,
+    lineasUsadas, diff,
   };
 }
 function lineaRecomendacion(l) {
