@@ -154,9 +154,18 @@ Al cerrar la asignación, toda línea LF1 o LF3 con `usado > 0` se marca consumi
 
 ### 3.7 Vigencia de la asignación
 
-- La reserva **vive hasta el cierre del día**. Si la operación no se cursa, la asignación caduca.
-- Al día siguiente la operación **se reasigna desde cero** sobre el estado de líneas de ese día.
-- **Excepción a definir:** las operaciones en sub-estados de curse (en proceso de cesión, esperando firma) no deberían perder la reserva. Matarla y reasignar puede dejar sin cupo una operación que el cliente ya firmó.
+**La reserva no la administra este módulo.** El ciclo de vida del cupo es del sistema de gestión de líneas, y lo cierra el core:
+
+1. Mientras el cliente no acepta, lo que existe es una **evaluación**, no una reserva. Este motor es consulta pura (§5.2) y no persiste nada.
+2. **El cliente acepta** → el sistema de gestión de líneas **crea la reserva**.
+3. **Operaciones aprueba en el core** → el core **commitea la reserva**: la elimina y la convierte en línea utilizada, que pasa a engrosar `vigente_no_pagado`.
+
+Consecuencias:
+
+- La reasignación diaria desde cero aplica **solo a las operaciones que el cliente todavía no acepta**. Una operación aceptada no pierde cupo: su reserva ya vive en el sistema de líneas y no depende de que este motor vuelva a calcularla.
+- El término `reservado` de §3.2 se **lee** del sistema de líneas (§5.1). Este módulo no lo lleva ni lo escribe.
+
+Esto cierra la excepción que esta sección dejaba abierta: no hay que proteger la reserva de las operaciones en curse, porque nunca estuvo en manos de este motor.
 
 ### 3.8 Moneda
 
@@ -363,7 +372,7 @@ La operación pasa a estado `requiere_resimulacion`, con el diff visible, y vuel
 | Tope propio del cliente | Sin definir. Sin él, el nivel 1 nunca bloquea (§2.3). |
 | Umbral de utilización de la puntual | Propuesto: si la operación consume menos de X% de la LF3, marcar la asignación y exigir confirmación explícita del ejecutivo. No bloquea, obliga a que sea una decisión y no un efecto del orden de llegada. |
 | Vigencia obligatoria en LF3 | Una puntual sin operación asociada y sin expiración queda flotando ocupando cupo aprobado. |
-| Reserva en operaciones en curse | §3.7. |
+| Reserva en operaciones en curse | **Resuelto.** La reserva es del sistema de gestión de líneas y la commitea el core al aprobar Operaciones. Ver §3.7. |
 | Caída de nota bajo 4,2 con línea aprobada | Recomendación: no tocar la línea, bloquear vía motor de reglas y generar tarea de Riesgo para revisar el cupo. |
 | Orden entre operaciones del mismo cliente | La reasignación diaria debe decidir cuál de varias operaciones abiertas toca primero el pozo LF4. Sin regla explícita queda determinado por el orden de proceso. |
 | Facturas en moneda extranjera | Tipo de cambio y momento de conversión sin definir. |
