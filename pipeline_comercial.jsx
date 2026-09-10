@@ -1563,7 +1563,11 @@ function verifFactura(f, deal) {
   const r = verifEvaluar(par, facturasDeudorEnDeal(deal, nombre) || [f]);
   let tel = null;
   if (r.est === "tel") { const idx = par.h % 3; const estl = ["Completada", "En curso", "Pendiente"][idx]; tel = { estado: estl, checks: estl === "Completada" ? [1, 1, 1] : estl === "En curso" ? [1, 0, 0] : [0, 0, 0], who: estl === "Pendiente" ? null : `${(typeof EXECS !== "undefined" && EXECS[deal && deal.exec]) || "Ejecutivo"} · ${nowStamp()}` }; }
-  return { vals: r.vals, evals: r.evals, fallidas: r.fallidas, hard: false, est: r.est, motivo: r.motivo, tel, exc: null,
+  // `motivo` es el TEXTO para la UI y `razon` el CÓDIGO de por qué se verifica ("protocolo" o
+  // "criterio_incumplido"). Se propagan los dos: con sólo el texto, quien consume esto no puede
+  // distinguir la compuerta del protocolo —que no deja criterios fallidos— de un veredicto sin
+  // causas, y la mesa de verificación mostraba «0 causas» justo en los deudores con protocolo propio.
+  return { vals: r.vals, evals: r.evals, fallidas: r.fallidas, hard: false, est: r.est, motivo: r.motivo, razon: r.razon, tel, exc: null,
     nombre, tipo: par.tipo, nota: par.nota, sc: par.sc, segmento: par.segmento };
 }
 // Resumen por operación para el chip de la card y el banner: totales, en verificación telefónica pendiente.
@@ -1572,6 +1576,63 @@ function verifResumenDeal(deal) {
   let tel = 0, ok = 0, hard = 0, pend = 0;
   fs.forEach((f) => { const vf = verifFactura(f, deal); if (vf.est === "ok") ok++; else { tel++; if (vf.hard) hard++; if (vf.tel && vf.tel.estado !== "Completada") pend++; } });
   return { total: fs.length, tel, ok, hard, pend };
+}
+// ── MESA DE VERIFICACIÓN ────────────────────────────────────────────────────────────────────────
+// La unidad es el DEUDOR dentro de la operación, no la factura: una llamada cubre todas sus
+// facturas y todas comparten veredicto (spec de verificación §2.1). Por eso el equipo marca por
+// deudor y no folio por folio.
+//
+// CAUSAS: se muestran todas las que gatillaron el contacto, no sólo la primera. Quien llama tiene
+// que confirmar todo lo que quedó fuera de umbral en esa misma llamada; ver una sola causa lo hace
+// volver a llamar por la segunda.
+function causasVerif(v) {
+  // El protocolo propio del deudor es una COMPUERTA (§4.1): cuando aplica es la ÚNICA causa y no se
+  // evaluó ninguna otra regla, así que listar más sería inventar criterios que nadie miró.
+  if (v && v.razon === "protocolo") {
+    return [{ id: "V01", nombre: "Protocolo de verificación propio del deudor", valor: "existe", umbral: "se sigue siempre", dura: true, sinDato: false,
+      desc: "El deudor tiene un protocolo de confirmación propio: se verifica siguiéndolo, sin evaluar el resto de los criterios." }];
+  }
+  return ((v && v.fallidas) || []).map((e) => ({
+    id: e.r.id, nombre: e.r.name,
+    // Un criterio sin dato NO es un criterio cumplido: la spec lo trata como incumplimiento (§4.3),
+    // y decirlo explícito evita que el equipo lo lea como "no aplica".
+    valor: e.dato ? e.r.fmt(e.v) : "sin dato", umbral: e.r.thr, desc: e.r.desc,
+    dura: !!e.r.dura, sinDato: !e.dato,
+  }));
+}
+// Filas de la mesa: un deudor por operación, sólo los que el predictor mandó a verificación
+// telefónica. Los que el modelo dio por verificados no aparecen — no hay nada que llamar.
+function filasVerificacion(deals) {
+  const out = [];
+  for (const d of deals || []) {
+    const fs = (d && d.facturasOp) || [];
+    if (!fs.length) continue;
+    const grupos = new Map();
+    for (const f of fs) {
+      const k = f.rutRecep || f.deudor || "";
+      let g = grupos.get(k); if (!g) { g = []; grupos.set(k, g); }
+      g.push(f);
+    }
+    const tel = (typeof VERIF_TEL !== "undefined" && VERIF_TEL[d.id]) || {};
+    const vet = (typeof NO_CONFIRMADAS !== "undefined" && NO_CONFIRMADAS[d.id]) || {};
+    for (const [k, suyas] of grupos) {
+      const v = verifFactura(suyas[0], d);
+      if (v.est !== "tel") continue;
+      const nTel = suyas.filter((f) => tel[f.id]).length;
+      const nVet = suyas.filter((f) => vet[f.id]).length;
+      out.push({
+        id: d.id + "|" + k, deal: d, cliente: d.cliente || d.company || d.id, op: d.id,
+        rutDeudor: suyas[0].rutRecep || "", deudor: v.nombre, tipo: v.tipo, nota: v.nota,
+        segmento: v.segmento, facturas: suyas, exec: d.exec,
+        monto: mmRound(suyas.reduce((s, f) => s + (f.montoMM || 0), 0)),
+        causas: causasVerif(v), nTel, nVet,
+        estado: nVet ? "no_verificada" : (nTel === suyas.length ? "verificada" : "pendiente"),
+      });
+    }
+  }
+  // Primero lo que falta hacer, y dentro de eso lo más grande: es el orden en que conviene llamar.
+  const ord = { pendiente: 0, no_verificada: 1, verificada: 2 };
+  return out.sort((a, b) => (ord[a.estado] - ord[b.estado]) || (b.monto - a.monto));
 }
 // ── CAT por Nota Deudor ─────────────────────────────────────────────────────────────────────────
 // Tramo de riesgo del deudor según su Nota (1–5): A muy bueno · B normal · C límite · D malo/sin nota.
@@ -11091,6 +11152,136 @@ function ReglasClienteCatalogo() {
 // ============================================================
 // Vista Otorgamientos (mesa de decisión) — se carga in-page al elegir el menú Otorgamientos
 // ============================================================
+// Mesa del EQUIPO DE VERIFICACIÓN, hermana de Otorgamientos. Marca por DEUDOR, no por factura: una
+// llamada cubre todas sus facturas (spec §2.1). Es una vista de trabajo, no de análisis — por eso
+// el orden por defecto es «lo que falta llamar, de mayor monto a menor».
+function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }) {
+  const [tick, force] = useState(0);
+  const [filtro, setFiltro] = useState("pendiente");
+  const [q, setQ] = useState("");
+  const [abierto, setAbierto] = useState({});
+  const [confirmNo, setConfirmNo] = useState(null);
+  const filas = useMemo(() => filasVerificacion(deals), [deals, tick]);
+  const nPend = filas.filter((f) => f.estado === "pendiente").length;
+  const nOk = filas.filter((f) => f.estado === "verificada").length;
+  const nNo = filas.filter((f) => f.estado === "no_verificada").length;
+  const montoPend = mmRound(filas.filter((f) => f.estado === "pendiente").reduce((s, f) => s + f.monto, 0));
+  const ql = q.trim().toLowerCase();
+  const vistas = filas.filter((f) => (filtro === "todas" || f.estado === filtro)
+    && (!ql || f.cliente.toLowerCase().includes(ql) || f.deudor.toLowerCase().includes(ql) || String(f.op).toLowerCase().includes(ql)));
+  const EST = {
+    pendiente: { lbl: "Por verificar", bg: "#FFF7ED", fg: "#C2410C", bd: "#FED7AA" },
+    verificada: { lbl: "Verificada", bg: "#F0FDF4", fg: "#16A34A", bd: "#bbf7d0" },
+    no_verificada: { lbl: "No verificada", bg: "#fef2f2", fg: "#EF4444", bd: "#fecaca" },
+  };
+  const marcarOk = async (f) => { if (onVerificar) await onVerificar(f); force((v) => v + 1); };
+  const marcarNo = (f) => { if (onNoConfirmar) onNoConfirmar(f); setConfirmNo(null); force((v) => v + 1); };
+  const kpi = (lbl, val, sub, col) => (
+    <div className="rounded-lg bg-white p-2 text-left" style={{ border: `1px solid ${C.line}` }}>
+      <span className="t9 font-semibold uppercase leading-tight" style={{ color: C.sub }}>{lbl}</span>
+      <div className="flex items-baseline gap-1.5"><span className="text-base font-semibold tracking-tight" style={{ color: col || C.ink }}>{val}</span>
+      {sub && <span className="t10 font-medium" style={{ color: C.faint }}>{sub}</span>}</div>
+    </div>
+  );
+  return (
+    <>
+      <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Riesgo <ChevronRight size={12} /> Verificación</div>
+      <h1 className="mt-1 text-2xl font-semibold tracking-tight">Mesa de verificación</h1>
+      <p className="mt-1 t11" style={{ color: C.sub }}>
+        El contacto con el deudor busca dejar por escrito o grabado que pagará. La decisión es <b style={{ color: C.ink }}>por deudor</b>:
+        una llamada cubre todas sus facturas en la operación. Cada fila trae <b style={{ color: C.ink }}>las causas</b> que la gatillaron —
+        si son varias, hay que confirmarlas todas en la misma llamada.
+      </p>
+      <div className="mt-4 grid gap-2" style={{ gridTemplateColumns: "repeat(3, minmax(0,1fr))" }}>
+        {kpi("Por verificar", nPend, montoPend ? fmtMM(montoPend) : "", nPend ? "#C2410C" : C.ink)}
+        {kpi("Verificadas", nOk, "", nOk ? "#16A34A" : C.ink)}
+        {kpi("No verificadas", nNo, nNo ? "facturas retiradas" : "", nNo ? "#EF4444" : C.ink)}
+      </div>
+      <div className="mt-4 flex flex-wrap items-end justify-between gap-x-4 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <div className="flex flex-wrap items-center gap-x-5">
+          {[["pendiente", "Por verificar", nPend], ["verificada", "Verificadas", nOk], ["no_verificada", "No verificadas", nNo], ["todas", "Todas", filas.length]].map(([k, l, n]) => (
+            <button key={k} onClick={() => setFiltro(k)} className="flex items-center gap-1.5 px-1 pb-2 t12"
+              style={{ borderBottom: `2px solid ${filtro === k ? C.indigo : "transparent"}`, color: filtro === k ? C.indigo : C.sub, fontWeight: filtro === k ? 600 : 400, marginBottom: -1 }}>
+              {l}<span className="t10" style={{ color: filtro === k ? C.indigo : C.faint }}>{n}</span>
+            </button>
+          ))}
+        </div>
+        <div className="relative pb-2">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: C.faint, marginTop: -4 }} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por cliente, deudor u operación…"
+            className="w-72 rounded-lg py-1.5 pl-8 pr-3 t12 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}` }} />
+        </div>
+      </div>
+      {!vistas.length ? (
+        <div className="mt-6 rounded-xl p-12 text-center t12" style={{ border: `1px dashed ${C.line}`, color: C.faint }}>
+          {filtro === "pendiente" ? "No hay deudores esperando verificación telefónica." : "Sin resultados para este filtro."}
+        </div>
+      ) : (
+        <div className="mt-3 space-y-2 pb-8">
+          {vistas.map((f) => {
+            const e = EST[f.estado];
+            const abrir = !!abierto[f.id];
+            return (
+              <div key={f.id} className="rounded-xl bg-white" style={{ border: `1px solid ${C.line}` }}>
+                <div className="flex flex-wrap items-start justify-between gap-3 p-3">
+                  <div style={{ minWidth: 260 }}>
+                    <div className="flex items-center gap-2">
+                      <span className="t13 font-semibold" style={{ color: C.ink }}>{f.deudor}</span>
+                      <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}>{f.segmento}</span>
+                      <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: NOTA_COLOR ? NOTA_COLOR(f.nota) : C.sub }}>Nota {String(f.nota).replace(".", ",")}</span>
+                    </div>
+                    <div className="mt-0.5 t10" style={{ color: C.sub }}>{f.rutDeudor || "—"} · {f.tipo}</div>
+                    <button onClick={() => onOpen && onOpen(f.deal)} className="mt-1 t11 font-medium" style={{ color: C.indigo }}>{f.cliente} · {f.op}</button>
+                  </div>
+                  <div className="text-right" style={{ minWidth: 150 }}>
+                    <div className="t13 font-semibold" style={{ color: C.ink }}>{fmtMM(f.monto)}</div>
+                    <div className="t10" style={{ color: C.sub }}>{f.facturas.length} factura(s)</div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: e.bg, color: e.fg, border: `1px solid ${e.bd}` }}>{e.lbl}</span>
+                    {f.estado === "pendiente" && (<>
+                      <button onClick={() => marcarOk(f)} className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: "#16A34A" }}><Check size={12} /> Verificada</button>
+                      <button onClick={() => setConfirmNo(f)} className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 t11 font-semibold" style={{ border: `1px solid ${C.red}`, color: C.red, backgroundColor: "#fff" }}>No verificada</button>
+                    </>)}
+                  </div>
+                </div>
+                {/* Las causas SIEMPRE visibles en resumen; el detalle (qué mide y por qué) se abre a
+                    demanda: el que llama necesita el titular, el analista necesita el fundamento. */}
+                <div className="px-3 pb-3">
+                  <button onClick={() => setAbierto((m) => ({ ...m, [f.id]: !abrir }))} className="flex w-full items-center gap-1.5 t10 uppercase tracking-wide" style={{ color: C.faint }}>
+                    {f.causas.length === 1 ? "Causa que gatilló la verificación" : `${f.causas.length} causas que gatillaron la verificación`}
+                    <ChevronRight size={11} style={{ transform: abrir ? "rotate(90deg)" : "none" }} />
+                  </button>
+                  <ul className="mt-1.5 space-y-1">
+                    {f.causas.map((c) => (
+                      <li key={c.id} className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                          <span className="t10 font-bold" style={{ color: C.indigo }}>{c.id}</span>
+                          <span className="t11 font-medium" style={{ color: C.ink }}>{c.nombre}</span>
+                          {c.dura && <span className="rounded-full px-1.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red }}>regla dura</span>}
+                          <span className="ml-auto t10 font-semibold" style={{ color: c.sinDato ? C.faint : C.red }}>{c.valor}</span>
+                          <span className="t10" style={{ color: C.faint }}>umbral {c.umbral}</span>
+                        </div>
+                        {abrir && <div className="mt-1 t10" style={{ color: C.sub }}>{c.desc}{c.sinDato ? " · Sin dato disponible: la política lo trata como incumplimiento, no como «no aplica»." : ""}</div>}
+                      </li>
+                    ))}
+                  </ul>
+                  {f.estado === "verificada" && <div className="mt-1.5 t10" style={{ color: "#16A34A" }}>Confirmada con el deudor: sus {f.facturas.length} factura(s) quedan habilitadas para girar.</div>}
+                  {f.estado === "no_verificada" && <div className="mt-1.5 t10" style={{ color: C.red }}>El deudor no confirmó: {f.nVet} factura(s) retiradas de la operación y vetadas para ella.</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {/* Marcar «no verificada» retira facturas de una operación viva: va con confirmación. */}
+      <ConfirmDialog abierto={!!confirmNo} titulo="¿El deudor no confirmó estas facturas?"
+        descripcion={confirmNo ? `${confirmNo.deudor} · ${confirmNo.facturas.length} factura(s) por ${fmtMM(confirmNo.monto)} de ${confirmNo.cliente}. Salen de la operación, bajan el monto a girar y quedan vetadas: no se podrán volver a seleccionar en esta operación. Las facturas de los demás deudores conservan su línea.${(confirmNo.deal.facturasOp || []).length <= confirmNo.facturas.length ? " OJO: son todas las facturas de la operación, y una oferta no puede quedar vacía — retira primero las que correspondan o cierra la operación como pérdida." : ""}` : ""}
+        etiquetaConfirmar="Retirar facturas no confirmadas"
+        onConfirmar={() => marcarNo(confirmNo)} onCancelar={() => setConfirmNo(null)} />
+    </>
+  );
+}
 function OtorgamientosView({ deals, usuario, onOpen, onAutorizarCausa, onCfgChange }) {
   const [form, setForm] = useState({}); // formulario por causa: { [cid]: {open, dec, msg, arch} }
   // La configuración (mantenedores de otorgamiento y apoderados) se movió a Configuración → Otorgamiento.
@@ -17780,7 +17971,7 @@ function CommandK({ abierto, onCerrar, deals, dealVisible, irA, onAbrirDeal }) {
   const ql = q.trim().toLowerCase();
   const ops = ql ? deals.filter(dealVisible).filter((d) => (d.cliente || "").toLowerCase().includes(ql) || String(d.id).toLowerCase().includes(ql)).slice(0, 5) : [];
   const clis = ql ? PC_CLIENTES.filter((c) => c.nombre.toLowerCase().includes(ql) || (c.rut || "").includes(q.trim())).slice(0, 4) : [];
-  const VISTAS = [["dashboard", "Dashboard"], ["pipeline", "Tubo diario"], ["tareas", "Tareas"], ["clientes", "Clientes"], ["panel", "Gestión"], ["operaciones", "Operaciones"], ["lineas", "Líneas"], ["otorgamientos", "Otorgamientos"], ["config", "Configuración"]];
+  const VISTAS = [["dashboard", "Dashboard"], ["pipeline", "Tubo diario"], ["tareas", "Tareas"], ["clientes", "Clientes"], ["panel", "Gestión"], ["operaciones", "Operaciones"], ["lineas", "Líneas"], ["otorgamientos", "Otorgamientos"], ["verificacion", "Verificación"], ["config", "Configuración"]];
   const items = [
     ...ops.map((d) => ({ tipo: "Oportunidades", label: `${d.id} · ${d.cliente}`, extra: stageById(d.stage) ? stageById(d.stage).name : d.stage, run: () => { onAbrirDeal(d); onCerrar(); } })),
     ...clis.map((c) => ({ tipo: "Clientes", label: c.nombre, extra: c.rut, run: () => { irA("clientes", "Clientes"); onCerrar(); } })),
@@ -18265,11 +18456,15 @@ export default function PipelineComercial() {
     registrarAuditoria({ usuario: USERS[usuario], modulo: label, accion: "Ingreso al módulo", glosa: `El usuario ingresó al módulo ${label}`, exito: true });
   };
   const [cfgVer, setCfgVer] = useState(0); // fuerza re-render al editar catálogos de Mantenedores
+  // La mesa de verificación escribe en repositorios, no en estado de React: sin este tick el badge
+  // de la navbar seguiría mostrando pendientes ya resueltos hasta el próximo cambio de `deals`.
+  const [verifVer, setVerifVer] = useState(0);
   const [vista, setVista] = useState("tabla"); // "kanban" | "tabla" | "tamaño" — por defecto carga en tabla
   const [vistaMenu, setVistaMenu] = useState(false); // dropdown selector de vista del tubo
   // Causas pendientes donde el usuario logueado (aprobador) tiene atribución → badge del menú Otorgamientos.
   // Operaciones en la bandeja de otorgamiento (visibles para el usuario) con al menos una excepción
   // que ÉL puede aprobar según su atribución. Alineado con "con acciones para ti" de la bandeja.
+  const verifPendientes = useMemo(() => filasVerificacion(deals).filter((x) => x.estado === "pendiente").length, [deals, verifVer]);
   const otorgPendientes = useMemo(() => {
     if (atribDe(usuario).tipo === "pipeline") return 0; // ejecutivos no aprueban
     const puedeU = (regla, nivel) => puedeAprobarExc(usuario, regla, nivel);
@@ -20070,6 +20265,25 @@ export default function PipelineComercial() {
     try { if (patch && window.opener) window.opener.postMessage({ type: "nex-simulado", dealId: id, patch }, ORIGEN_APP); } catch (e) {}
   };
   // Retira una factura de la oferta y la deja disponible como candidata en "Otras facturas".
+  // MESA DE VERIFICACIÓN. Se marca por DEUDOR porque una llamada cubre todas sus facturas (regla 6).
+  // «Verificada» registra el contacto de todas ellas; «no verificada» las retira y las veta, que es
+  // el camino que ya recorta la asignación y emite versión nueva.
+  const verificarDeudor = async (fila) => {
+    if (!fila) return;
+    const m = { ...(repoVerifTel.get(fila.deal.id) || {}) };
+    for (const f of fila.facturas) m[f.id] = { por: USERS[usuario] || usuario, fecha: nowStamp() };
+    const conf = await confirmarEscrituras([repoVerifTel.set(fila.deal.id, m)]);
+    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Verificación de facturas",
+      accion: conf.ok ? "Deudor verificado telefónicamente" : "Verificación rechazada por el contrato",
+      glosa: `${fila.cliente} · ${fila.deudor} · ${fila.facturas.length} factura(s) por ${fmtMM(fila.monto)} · causas: ${fila.causas.map((c) => c.id).join(", ") || "—"}`,
+      exito: !!conf.ok });
+    setVerifVer((v) => v + 1);
+  };
+  const noConfirmoDeudor = (fila) => {
+    if (!fila) return;
+    fila.facturas.forEach((f) => retirarFacturaOferta(fila.deal.id, f, "noConfirmada"));
+    setVerifVer((v) => v + 1);
+  };
   const retirarFacturaOferta = (id, fac, motivo) => {
     if (!fac) return;
     // El deudor no la confirmó: queda VETADA para esta operación. No se puede volver a seleccionar,
@@ -20316,6 +20530,10 @@ export default function PipelineComercial() {
               Otorgamientos
               {otorgPendientes > 0 && <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#7C3AED" }}>{otorgPendientes}</span>}
             </button>
+            <button onClick={() => irA("verificacion", "Verificación")} title="Deudores esperando verificación telefónica" className="inline-flex items-center gap-1.5" style={{ color: vistaApp === "verificacion" ? C.indigo : C.sub, fontWeight: vistaApp === "verificacion" ? 600 : 400 }}>
+              Verificación
+              {verifPendientes > 0 && <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#C2410C" }}>{verifPendientes}</span>}
+            </button>
           </nav>
         </div>
         <div className="flex items-center gap-3">
@@ -20446,7 +20664,8 @@ export default function PipelineComercial() {
             <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Configuración</h1>
             <ConfiguracionView usuario={usuario} cfgOper={cfgOper} setCfgOper={setCfgOper} />
           </>
-        ) : vistaApp === "otorgamientos" ? <OtorgamientosView deals={deals} usuario={usuario} onOpen={abrirDetalle} onAutorizarCausa={autorizarCausa} onCfgChange={() => { invalidarVisado(); setCfgVer((v) => v + 1); }} /> : (<>
+        ) : vistaApp === "otorgamientos" ? <OtorgamientosView deals={deals} usuario={usuario} onOpen={abrirDetalle} onAutorizarCausa={autorizarCausa} onCfgChange={() => { invalidarVisado(); setCfgVer((v) => v + 1); }} />
+        : vistaApp === "verificacion" ? <VerificacionView deals={deals} usuario={usuario} onOpen={abrirDetalle} onVerificar={verificarDeudor} onNoConfirmar={noConfirmoDeudor} /> : (<>
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Tubo diario</div>

@@ -7,14 +7,15 @@
    tres del RECORTE de una operación ya aceptada (§9 del spec de verificación): tras la firma la
    operación sólo encoge, y recortar no vuelve a asignar contra el estado nuevo de las líneas, más
    tres de la REAPERTURA: reabrir revoca la firma del cliente y las facturas que el deudor no
-   confirmó quedan vetadas para esa operación.
+   confirmó quedan vetadas para esa operación, más cuatro de la MESA DE VERIFICACIÓN: que se listen
+   todas las causas que gatillaron el contacto y que las filas se agrupen por deudor.
 
    CÓMO SE CORREN: abrir pipeline_comercial.html, iniciar sesión, abrir la consola del navegador y
    pegar el contenido de este archivo. No requiere datos del pipeline: cada caso inyecta su propio
    estado de líneas por el tercer parámetro de `asignarLineas`, así que el resultado no depende de
    qué oportunidades haya generado el motor de entrada.
 
-   Última corrida: 26/26 PASA.
+   Última corrida: 30/30 PASA.
    ============================================================================================ */
 (() => {
   const out = [];
@@ -223,6 +224,41 @@
   ok("26 volver a firmar restituye la aprobación",
      aprobacionFormalCliente({ ...reabierto24, reabierta: undefined, stage: "cesion" }) === true,
      "");
+
+  // ══ MESA DE VERIFICACIÓN ══════════════════════════════════════════════════════════════════════
+  // La vista muestra las causas que gatillaron el contacto. Si son varias van TODAS, porque el que
+  // llama tiene que confirmarlas en la misma llamada.
+
+  // 27 · con varios criterios fallidos se listan todos, con su valor y su umbral
+  const cs27 = causasVerif({ razon: "criterio_incumplido", fallidas: [
+    { r: VERIF_RULES.find((r) => r.id === "V04"), v: 1.14, dato: true },
+    { r: VERIF_RULES.find((r) => r.id === "V05"), v: 2, dato: true },
+  ] });
+  ok("27 se listan todas las causas, no sólo la primera",
+     cs27.length === 2 && cs27[0].id === "V04" && cs27[1].id === "V05"
+     && cs27[0].umbral === "< 1,0" && cs27[1].valor === "2 meses",
+     cs27.map((c) => c.id + " " + c.valor).join(" · "));
+
+  // 28 · el protocolo propio del deudor es COMPUERTA: es la única causa, porque no se evaluó nada más
+  const cs28 = causasVerif({ razon: "protocolo", fallidas: [] });
+  ok("28 el protocolo propio es la única causa", cs28.length === 1 && cs28[0].id === "V01" && cs28[0].dura === true, cs28[0].nombre);
+
+  // 29 · un criterio SIN DATO se muestra como incumplimiento, no como «no aplica» (§4.3)
+  const cs29 = causasVerif({ razon: "criterio_incumplido", fallidas: [{ r: VERIF_RULES.find((r) => r.id === "V10"), v: null, dato: false }] });
+  ok("29 el criterio sin dato se marca como tal", cs29.length === 1 && cs29[0].sinDato === true && cs29[0].valor === "sin dato", cs29[0].valor);
+
+  // 30 · filasVerificacion agrupa POR DEUDOR y sólo trae los que requieren llamada
+  const deudorTel = LB.map((r) => ({ r, v: verifFactura(fac("x", r, 10), { id: "T-30", rutEmisor: "76.111.111-1" }) })).find((x) => x.v.est === "tel");
+  if (!deudorTel) { ok("30 filasVerificacion agrupa por deudor", false, "ningún deudor de prueba requiere verificación"); }
+  else {
+    const deal30 = { id: "T-30", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba",
+      facturasOp: [fac("f1", deudorTel.r, 30), fac("f2", deudorTel.r, 20)] };
+    const fs30 = filasVerificacion([deal30]);
+    const fila = fs30.find((x) => x.rutDeudor === deudorTel.r);
+    ok("30 filasVerificacion agrupa por deudor",
+       !!fila && fila.facturas.length === 2 && fila.monto === 50 && fila.estado === "pendiente" && fila.causas.length >= 1,
+       fila ? `1 fila · ${fila.facturas.length} facturas · ${fila.causas.length} causa(s) · ${fila.estado}` : "sin fila");
+  }
 
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
