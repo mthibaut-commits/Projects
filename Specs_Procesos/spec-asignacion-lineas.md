@@ -34,9 +34,11 @@ Todas las líneas de factoring son objetos del **par cliente-deudor**, identific
   "monto_aprobado": 360000000,
   "moneda": "CLP",
   "vigente_no_pagado": 200000000,
+  "monto_reservado": 0,
+  "monto_disponible": 160000000,
   "vigencia_desde": "2026-03-01",
   "vigencia_hasta": "2027-03-01",
-  "estado": "vigente | caducada | anulada",
+  "estado": "vigente | suspendida | caducada | anulada",
   "solicitud_id": "SOL-00412",
   "version": 17
 }
@@ -122,6 +124,8 @@ disponible = monto_aprobado − vigente_no_pagado − reservado
 
 - El cupo se libera **solo cuando el deudor paga la factura al vencimiento**.
 - Una factura vencida e impaga **sigue consumiendo cupo**. No hay liberación por mora.
+- El término `reservado` **se lee** del sistema de gestión de líneas (§5.1); este módulo no lo lleva ni lo escribe. Ver §3.7.
+- Una línea **suspendida** conserva su `vigente_no_pagado` —la suspensión no libera lo ya cedido— pero no admite operaciones nuevas: su disponible es 0.
 
 ### 3.3 Asignación por factura completa
 
@@ -285,21 +289,62 @@ Lo único exclusivo de un deudor es su línea del par. Mantener dos caminos de c
 
 ### 5.1 Consultar disponibles
 
+Una sola llamada por evaluación, con **todos** los RUT deudores involucrados. No una por deudor: el recálculo es completo (§4.2) y N llamadas devuelven N snapshots distintos.
+
+La respuesta trae los **tres niveles que compara la regla de validación** (§3.1), cada uno con los cuatro montos, para que el consumidor no tenga que derivarlos:
+
 ```
-POST /api/lineas/disponibles
+disponible = aprobada − utilizada − reservada
+```
+
+```
+POST /api/lineas/consulta
 {
   "rut_cliente": "76.129.440-2",
   "producto": "factoring",
-  "ruts_deudor": ["64.492.386-2", "18.869.288-9", "..."]
+  "ruts_deudor": ["64.492.386-2", "18.869.288-9"]
 }
 → {
-  "lineas": [ ... ],
-  "paraguas": [ ... ],
-  "consultado_en": "2026-09-03T14:22:10-03:00"
+  "consultado_en": "2026-09-03T14:22:10-03:00",
+  "rut_cliente": "76.129.440-2",
+
+  "cliente": {                          ← nivel 1 · comodines LF1 y LF4
+    "aprobada": 1200000000,
+    "utilizada":  780000000,
+    "reservada":   45000000,
+    "disponible": 375000000,
+    "tope_propio": false,
+    "lineas": [ { "id": "LF1-...", "tipo": "LF1", "solo_prime": true, ... },
+                { "id": "LF4-...", "tipo": "LF4", ... } ]
+  },
+
+  "cliente_deudor": [                   ← nivel 2 · un elemento por RUT deudor pedido
+    { "rut_deudor": "64.492.386-2",
+      "sin_linea_propia": false,
+      "aprobada": 360000000, "utilizada": 200000000, "reservada": 0, "disponible": 160000000,
+      "lineas": [ { "id": "LF3-0003", "tipo": "LF3", "un_solo_uso": true, ... },
+                  { "id": "LF2-0002", "tipo": "LF2", ... } ] }
+  ],
+
+  "deudor": [                           ← nivel 3 · exposición global, compartida entre carteras
+    { "rut_deudor": "64.492.386-2", "nombre": "...",
+      "aprobada": 6000000000, "utilizada": 5700000000, "reservada": 120000000, "disponible": 180000000,
+      "n_clientes_cediendo": 7 }
+  ]
 }
 ```
 
-Una sola llamada por evaluación, con todos los RUT deudores involucrados.
+Swagger: `Integraciones/swagger_consulta_lineas.yaml` (activo **A23**). Detalle de campos en `Integraciones/spec_swagger_consulta_lineas.md`.
+
+**Reglas del contrato:**
+
+- **El nivel cliente viene una sola vez, no por deudor.** LF1 y LF4 son pozos comodín compartidos entre todos los deudores de la operación; repetirlos por deudor y sumarlos duplica cupo que no existe.
+- **Snapshot único.** `consultado_en` vale para los tres niveles. Armarlos desde lecturas de instantes distintos hace que el `min(...)` compare estados que nunca coexistieron.
+- **El par sin línea propia se devuelve igual**, con montos en cero y `sin_linea_propia: true`. El motor lo necesita para saber que el único camino es la LF4 y que el motivo del rechazo sería `lf4`, no `par`.
+- **La línea suspendida no se omite**, viene con `disponible: 0`. Hay que poder distinguir «suspendida» de «inexistente» para explicar el rechazo.
+- **`tope_propio: false`** confirma que el nivel cliente es un consolidado de reporte y no puede bloquear por sí solo (§2.3).
+- **La reserva es de lectura.** Ver §3.7: la crea el sistema de gestión de líneas al aceptar el cliente y la commitea el core al aprobar Operaciones.
+- **Ante error o timeout la evaluación no se completa** y el resultado queda en «Por evaluar» (§8.4). Mostrar un cursable calculado con cupos viejos es peor: el ejecutivo compromete plazos de giro sobre esa cifra.
 
 ### 5.2 Evaluar
 

@@ -16,6 +16,7 @@
 | A6 | Estrategia de precio | Dataset (JSON) | Entrada | Diaria |
 | A7 | Líneas de crédito vigentes | **Archivo CSV vía SFTP** | Entrada | **Diaria (batch)** |
 | A8 | Montos de líneas (uso/disponible) | API REST | Entrada | **Cada 1 hora** |
+| A23 | Consulta de líneas 3 niveles (cliente / cliente-deudor / deudor) | API REST | Entrada | Bajo demanda (1 por evaluación) |
 | A9 | API Riesgo Crédito BICE (swagger) | API REST (9 endpoints) | Entrada | Bajo demanda |
 | A10 | Datos de verificación (predictor V01–V10) | **Archivo vía SFTP → tabla interna** | Entrada | **Diaria (batch)** |
 | A11 | Plataforma 360 — empresa | **Archivo vía SFTP → tabla interna** | Entrada | **Diaria (batch)** |
@@ -76,6 +77,14 @@
 - **Tipo:** API REST.
 - **Frecuencia:** **cada 1 hora** refresca uso/disponible de las líneas cargadas por A7.
 - **Consumen:** tab Líneas (montos), proyección post-curse.
+
+### A23 · Consulta de líneas en 3 niveles — API de disponibilidad ⭐ EVALUACIÓN
+- **Tipo:** API REST (`POST /consulta`, swagger `Integraciones/swagger_consulta_lineas.yaml`).
+- **Frecuencia:** bajo demanda, **una sola llamada por evaluación** con todos los RUT deudores de la operación (no una por deudor: el motor reevalúa la operación completa y N llamadas dan N snapshots distintos).
+- **Devuelve** los tres niveles que compara la regla de validación —línea del **cliente** (comodines LF1/LF4), línea **cliente-deudor** (LF2/LF3) y línea del **deudor** (exposición global compartida entre carteras)— cada uno con **aprobada, utilizada, reservada y disponible**, donde `disponible = aprobada − utilizada − reservada`.
+- **La reserva no es de NEX:** la crea el sistema de gestión de líneas cuando el cliente acepta y el core la commitea al aprobar Operaciones, convirtiéndola en utilizada. Acá sólo se lee.
+- **Diferencia con A7/A8:** A7 (batch diario) da la estructura y A8 (horario) refresca montos, ambos por cliente y sin nivel deudor ni reservado; alimentan la vista «Líneas», que es fotografía de cartera. A23 alimenta la **decisión de cursar**, que exige dato fresco, el reservado y la exposición global del deudor.
+- **Consumen:** motor de asignación de líneas, armado de la oferta, modal de confirmación de curse.
 
 ### A9 · API Riesgo Crédito BICE (swagger `riesgo-credito/v1`)
 - **Tipo:** API REST — 9 endpoints: clasificación deudora, consolidado, deuda BICE, boletín comercial, deuda previsional, protestos, tipo de cambio (UF/USD), mora ACHEF, mora CMF.

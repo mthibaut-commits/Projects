@@ -1,0 +1,166 @@
+swagger: "2.0"
+info:
+  version: 1.0.0
+  title: "API Consulta de Líneas (3 niveles)"
+  description: >
+    Consulta bajo demanda del cupo disponible para evaluar una oferta. Devuelve los TRES niveles que
+    la regla de validación necesita —línea del CLIENTE, línea CLIENTE-DEUDOR y línea del DEUDOR— cada
+    uno con monto aprobado, utilizado, reservado y disponible (activo A23). Una sola llamada por
+    evaluación, con todos los RUT deudores de la operación. NEX sólo lee: la reserva la administra el
+    sistema de gestión de líneas y la commitea el core.
+host: lineas.factoringsecurity.local
+basePath: /factoring/lineas/v1
+schemes:
+  - https
+tags:
+  - name: Consulta
+    description: Disponibilidad de cupo en los tres niveles, para evaluar una oferta
+paths:
+  /consulta:
+    post:
+      tags: ["Consulta"]
+      summary: Cupo disponible en los tres niveles para un cliente y sus deudores (A23)
+      description: >
+        Una llamada por evaluación. La respuesta es un SNAPSHOT: los tres niveles deben leerse en el
+        mismo instante, porque la regla de validación los compara entre sí y mezclar estados de
+        momentos distintos deja pasar operaciones sobre cupo inexistente.
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/ConsultaRequest"
+      responses:
+        "200":
+          description: Ejecución exitosa
+          schema:
+            $ref: "#/definitions/ConsultaResponse"
+        "400": { description: Datos incorrectos, schema: { $ref: "#/definitions/Error" } }
+        "404": { description: Cliente no enrolado, schema: { $ref: "#/definitions/Error" } }
+        "500": { description: Error interno, schema: { $ref: "#/definitions/Error" } }
+definitions:
+
+  ConsultaRequest:
+    type: object
+    required: [rutCliente, rutsDeudor]
+    properties:
+      rutCliente: { type: string, example: "76.129.440-2" }
+      producto: { type: string, enum: [factoring], default: factoring }
+      rutsDeudor:
+        type: array
+        description: Todos los RUT deudores de la operación. Una sola llamada por evaluación, no una por deudor.
+        items: { type: string }
+        example: ["64.492.386-2", "18.869.288-9"]
+
+  ConsultaResponse:
+    type: object
+    properties:
+      consultadoEn:
+        type: string
+        format: date-time
+        description: Instante del snapshot. Los tres niveles corresponden a este mismo instante.
+      rutCliente: { type: string }
+      cliente:
+        $ref: "#/definitions/NivelCliente"
+      clienteDeudor:
+        type: array
+        description: Un elemento por RUT deudor solicitado. Si el par no tiene línea propia, viene con montos en cero y sinLineaPropia = true.
+        items: { $ref: "#/definitions/NivelClienteDeudor" }
+      deudor:
+        type: array
+        description: Un elemento por RUT deudor solicitado. Es la exposición GLOBAL del factoring a ese deudor, compartida por todos los clientes que le ceden.
+        items: { $ref: "#/definitions/NivelDeudor" }
+
+  NivelCliente:
+    type: object
+    description: >
+      Nivel 1. Agrupa las líneas COMODÍN del cliente (LF1 inicial y LF4 otros deudores), que no llevan
+      RUT deudor porque aplican a cualquiera. Viene UNA sola vez: es un pozo compartido entre todos los
+      deudores de la operación y sumarlo por deudor duplica cupo.
+    properties:
+      aprobadaMM: { type: number, example: 1200.0 }
+      utilizadaMM: { type: number, example: 780.0 }
+      reservadaMM: { type: number, example: 45.0 }
+      disponibleMM: { type: number, example: 375.0 }
+      topePropio:
+        type: boolean
+        description: >
+          true si el comité asignó al cliente un tope propio inferior a la suma de sus cupos. Si es
+          false, este nivel es un consolidado de reporte y no puede bloquear por sí solo.
+      lineas:
+        type: array
+        items: { $ref: "#/definitions/Linea" }
+
+  NivelClienteDeudor:
+    type: object
+    description: Nivel 2. Líneas del par (LF2 normal y LF3 puntual). Es lo único exclusivo de un deudor.
+    properties:
+      rutDeudor: { type: string }
+      sinLineaPropia:
+        type: boolean
+        description: true si el par no tiene LF2 ni LF3. En ese caso el único camino es la LF4 del nivel cliente.
+      aprobadaMM: { type: number }
+      utilizadaMM: { type: number }
+      reservadaMM: { type: number }
+      disponibleMM: { type: number }
+      lineas:
+        type: array
+        items: { $ref: "#/definitions/Linea" }
+
+  NivelDeudor:
+    type: object
+    description: >
+      Nivel 3. Exposición máxima del factoring a ese deudor, COMPARTIDA por todos los clientes que le
+      ceden. Su disponible puede estar consumido por carteras de otros ejecutivos, que el usuario no ve.
+    properties:
+      rutDeudor: { type: string }
+      nombre: { type: string }
+      aprobadaMM: { type: number, example: 6000.0 }
+      utilizadaMM: { type: number, example: 5700.0 }
+      reservadaMM: { type: number, example: 120.0 }
+      disponibleMM: { type: number, example: 180.0 }
+      nClientesCediendo:
+        type: integer
+        description: Cuántos clientes tienen exposición viva con este deudor. Explica por qué el disponible no depende sólo de esta cartera.
+
+  Linea:
+    type: object
+    properties:
+      idLinea: { type: string, example: "LF3-0003" }
+      tipo:
+        type: string
+        enum: [LF1, LF2, LF3, LF4]
+        description: >
+          LF1 inicial (comodín, un solo uso, sólo deudores prime) · LF2 normal del par (revolvente) ·
+          LF3 puntual del par (un solo uso, se consume completa aunque se ocupe parcialmente) ·
+          LF4 otros deudores (comodín del CLIENTE, sólo para pares sin LF2 ni LF3).
+      granularidad: { type: string, enum: [par, comodin] }
+      rutDeudor:
+        type: string
+        description: Nulo en LF1 y LF4, que por definición aplican a cualquier deudor.
+      aprobadaMM: { type: number }
+      utilizadaMM: { type: number }
+      reservadaMM: { type: number }
+      disponibleMM: { type: number }
+      estado:
+        type: string
+        enum: [vigente, suspendida, caducada, anulada]
+        description: >
+          Una línea SUSPENDIDA conserva su utilizado —la suspensión no libera lo ya cedido— pero no
+          admite operaciones nuevas, así que devuelve disponibleMM = 0.
+      unSoloUso:
+        type: boolean
+        description: true en LF1 y LF3. Al cerrar la asignación se consumen completas y el saldo caduca.
+      soloPrime:
+        type: boolean
+        description: true en LF1. Restricción de elegibilidad, expuesta acá para que el motor no la lleve en duro.
+      vigenciaHasta: { type: string, format: date }
+      version:
+        type: integer
+        description: Para el control de concurrencia optimista al cursar.
+
+  Error:
+    type: object
+    properties:
+      codigo: { type: integer }
+      mensaje: { type: string }
