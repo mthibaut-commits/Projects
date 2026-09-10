@@ -1,0 +1,135 @@
+<html><head><style>
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;background:#FFFFFF;color:#050015;width:1600px}
+.t9{font-size:11.5px;line-height:1.3}.t10{font-size:12.5px;line-height:1.3}.t11{font-size:14px;line-height:1.4}
+.t12{font-size:15px;line-height:1.4}.t13{font-size:16px;line-height:1.5}
+.sub{color:#6B7280}.faint{color:#9CA3AF}.b{font-weight:600}.bb{font-weight:700}
+.nav{color:#6B7280;font-size:16px}.nav-on{color:#703EFF;font-size:16px;font-weight:600}
+.tab{display:inline-flex;align-items:center;gap:6px;padding:0 4px 8px;font-size:15px;color:#6B7280;border-bottom:2px solid transparent}
+.tab-on{display:inline-flex;align-items:center;gap:6px;padding:0 4px 8px;font-size:15px;color:#703EFF;font-weight:600;border-bottom:2px solid #703EFF}
+.kpi{flex:1;border-radius:14px;padding:12px}
+.qf{border:1px solid #E5E7EB;background:#fff;color:#050015;border-radius:10px;padding:6px 12px;font-size:14px;font-weight:500}
+.qf-on{border:1px solid #703EFF;background:#703EFF;color:#fff;border-radius:10px;padding:6px 12px;font-size:14px;font-weight:500}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{padding:10px 12px;text-align:left;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9CA3AF;border-bottom:1px solid #E5E7EB}
+td{padding:10px 12px;border-bottom:1px solid #E5E7EB;vertical-align:top}
+.rec{display:inline-flex;align-items:center;gap:4px;border-radius:9999px;padding:2px 8px;font-size:12.5px;font-weight:700}
+.salud{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600}
+.sdot{width:10px;height:10px;border-radius:9999px}
+.bar{position:relative;height:8px;border-radius:9999px;background:#FFFFFF;border:1px solid #F3F4F6;margin-top:5px}
+.btn-out{border:1px solid #703EFF;color:#703EFF;background:#fff;border-radius:10px;padding:6px 10px;font-size:14px;font-weight:600;display:inline-flex;gap:6px;align-items:center}
+</style></head><body>
+
+<div style="border-bottom:1px solid #E5E7EB;background:#fff">
+  <div style="max-width:1600px;height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 24px">
+    <div style="display:flex;align-items:center;gap:24px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="background:#703EFF;color:#fff;border-radius:7px;width:28px;height:28px;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center">N</span>
+        <span style="font-size:13px;font-weight:600;color:#230C65">NEX Factoring</span></div>
+      <span style="width:1px;height:28px;background:#ADA8BD"></span>
+      <div style="display:flex;align-items:center;gap:20px">
+        <span class="nav">Dashboard</span><span class="nav">Tubo diario</span><span class="nav">Tareas</span><span class="nav">Clientes</span>
+        <span class="nav">Gestión</span><span class="nav">Operaciones</span><span class="nav-on">Líneas</span>
+        <span class="nav" style="display:inline-flex;align-items:center;gap:6px">Otorgamientos <span style="background:#7c3aed;color:#fff;border-radius:9999px;padding:0 5px;font-size:11.5px;font-weight:700">4</span></span>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <span class="sub">⚙</span><span style="color:#703EFF">🔔</span><span class="sub">★</span><span style="color:#7C3AED">🛡</span>
+      <span style="display:flex;align-items:center;gap:6px"><span class="faint">👤</span><span style="border:1px dashed #C2410C;border-radius:10px;padding:6px 8px;font-size:15px;font-weight:500;background:#fff">Carla Rivas · Ejecutivo</span></span>
+      <span style="width:32px;height:32px;border-radius:8px;background:#703EFF;color:#fff;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center">CR</span>
+    </div>
+  </div>
+</div>
+
+<div style="max-width:1600px;padding:16px 24px">
+  <div class="t11 faint">Comercial › Líneas de crédito</div>
+  <h1 style="font-size:24px;font-weight:600;letter-spacing:-.02em;margin-top:4px">Líneas de crédito</h1>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px">
+    <div style="display:flex;gap:24px;border-bottom:1px solid #E5E7EB">
+      <span class="tab-on">✓ Vigentes</span><span class="tab">◷ En proceso · 3</span>
+    </div>
+    <div class="t9 faint">Última carga CSV (SFTP): hoy 06:15 · Montos actualizados vía API: 11:00 · Para modificar/renovar, haz clic en una línea; las líneas nuevas se crean en «En proceso».</div>
+  </div>
+
+  <div style="display:flex;gap:8px;margin-top:16px">
+    <div class="kpi" style="background:#fff;border:1px solid #E5E7EB"><div class="t9 faint bb" style="text-transform:uppercase;letter-spacing:.05em">Líneas</div><div style="font-size:26px;font-weight:600;margin-top:4px">128</div><div class="t9 sub" style="margin-top:3px">clientes con línea aprobada</div></div>
+    <div class="kpi" style="background:#f5f3ff;border:1px solid #ddd6fe"><div class="t9 bb" style="text-transform:uppercase;letter-spacing:.05em;color:#703EFF">Línea total aprobada</div><div style="font-size:26px;font-weight:600;margin-top:4px;color:#703EFF">MM$ 48.320</div><div class="t9 sub" style="margin-top:3px">uso 62% · disponible MM$ 18.361</div></div>
+    <div class="kpi" style="background:#eff6ff;border:1px solid #bfdbfe"><div class="t9 bb" style="text-transform:uppercase;letter-spacing:.05em;color:#2563EB">Aumentos recomendados</div><div style="font-size:26px;font-weight:600;margin-top:4px;color:#2563EB">19</div><div class="t9 sub" style="margin-top:3px">buenos deudores sin financiar · afectan SOW</div></div>
+    <div class="kpi" style="background:#fef2f2;border:1px solid #fecaca"><div class="t9 bb" style="text-transform:uppercase;letter-spacing:.05em;color:#dc2626">Con morosidad</div><div style="font-size:26px;font-weight:600;margin-top:4px;color:#dc2626">7</div><div class="t9 sub" style="margin-top:3px">evaluar reducción / bloqueo / aprobación</div></div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:8px;margin-top:16px">
+    <span style="border:1px solid #E5E7EB;border-radius:9999px;padding:8px 14px;font-size:14px;color:#9CA3AF;width:300px">🔍 Buscar por razón social o RUT…</span>
+    <span class="qf-on">Todas</span><span class="qf">Saludable</span><span class="qf">Subutilizada</span><span class="qf">Atención</span><span class="qf">En riesgo</span><span class="qf">Crítica</span>
+    <span style="margin-left:auto;background:linear-gradient(to right,#EE2EFF,#FF814B);color:#fff;border-radius:9999px;padding:8px 16px;font-size:14px;font-weight:600">+ Crear línea</span>
+  </div>
+
+  <div style="border:1px solid #E5E7EB;border-radius:20px;background:#fff;margin-top:16px;overflow:hidden">
+    <table>
+      <thead><tr><th>Cliente</th><th>Línea aprobada</th><th>Uso actual</th><th>Disponible</th><th>Proyección post-curse</th><th>Recomendación</th><th>Salud</th><th>Acciones</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><div class="t12 b">Comercial Andes SpA</div><div class="t9 faint">76.541.220-8 · Carla Rivas</div></td>
+          <td class="t11 b" style="white-space:nowrap">MM$ 900,0</td>
+          <td class="t11 sub" style="white-space:nowrap">MM$ 612,0 <span class="t9 faint">(68%)</span></td>
+          <td class="t11 b" style="white-space:nowrap;color:#16A34A">MM$ 288,0</td>
+          <td style="min-width:180px"><div class="t10 b">MM$ 796,2 <span class="faint">/ MM$ 900,0</span></div>
+            <div class="bar"><div style="position:absolute;left:0;top:0;height:8px;width:68%;background:#9ca3af;border-radius:9999px 0 0 9999px"></div><div style="position:absolute;left:68%;top:0;height:8px;width:20%;background:#8A63FF"></div><span style="position:absolute;left:100%;top:-1px;width:2px;height:10px;background:#050015"></span></div></td>
+          <td style="min-width:300px;max-width:340px"><span class="rec" style="background:#F0FDF4;color:#16A34A">✓ Mantener</span><div class="t9 sub" style="margin-top:4px;line-height:1.4">Uso estable en torno al 68% y sin morosidad: la línea acompaña bien el nivel de cesión.</div></td>
+          <td style="white-space:nowrap"><span class="salud" style="color:#16A34A"><span class="sdot" style="background:#16A34A"></span>Saludable</span></td>
+          <td style="white-space:nowrap"><span class="btn-out">Solicitar ⌄</span></td>
+        </tr>
+        <tr>
+          <td><div class="t12 b">Transportes del Maipo Ltda.</div><div class="t9 faint">78.220.910-K · Sofía Herrera</div></td>
+          <td class="t11 b" style="white-space:nowrap">MM$ 450,0</td>
+          <td class="t11 sub" style="white-space:nowrap">MM$ 431,0 <span class="t9 faint">(96%)</span></td>
+          <td class="t11 b" style="white-space:nowrap;color:#dc2626">MM$ 19,0</td>
+          <td style="min-width:180px"><div class="t10 b" style="color:#dc2626">MM$ 512,4 <span class="faint">/ MM$ 450,0</span></div>
+            <div class="bar"><div style="position:absolute;left:0;top:0;height:8px;width:84%;background:#9ca3af;border-radius:9999px 0 0 9999px"></div><div style="position:absolute;left:84%;top:0;height:8px;width:16%;background:#dc2626"></div><span style="position:absolute;left:88%;top:-1px;width:2px;height:10px;background:#050015"></span></div>
+            <div class="t9 b" style="color:#dc2626;margin-top:3px">Fuera de línea +MM$ 62,4</div></td>
+          <td style="min-width:300px;max-width:340px"><span class="rec" style="background:#eff6ff;color:#2563EB">↗ Aumentar línea</span><div class="t9 sub" style="margin-top:4px;line-height:1.4">La operación en curso excede la línea aprobada: presentar aumento al comité antes del curse.</div></td>
+          <td style="white-space:nowrap"><span class="salud" style="color:#C2410C"><span class="sdot" style="background:#C2410C"></span>Atención</span></td>
+          <td style="white-space:nowrap"><span class="btn-out">Solicitar ⌄</span></td>
+        </tr>
+        <tr style="opacity:.6">
+          <td><div class="t12 b">Ingeniería Ríos del Sur S.A. <span style="background:#f5f3ff;color:#7C3AED;border-radius:9999px;padding:2px 6px;font-size:11.5px;font-weight:600;margin-left:6px">Solicitud en curso</span></div><div class="t9 faint">77.918.440-2 · Carla Rivas</div></td>
+          <td class="t11 b" style="white-space:nowrap">MM$ 1.200,0</td>
+          <td class="t11 sub" style="white-space:nowrap">MM$ 384,0 <span class="t9 faint">(32%)</span></td>
+          <td class="t11 b" style="white-space:nowrap;color:#16A34A">MM$ 816,0</td>
+          <td style="min-width:180px"><div class="t10 b">MM$ 786,9 <span class="faint">/ MM$ 1.200,0</span></div>
+            <div class="bar"><div style="position:absolute;left:0;top:0;height:8px;width:32%;background:#9ca3af;border-radius:9999px 0 0 9999px"></div><div style="position:absolute;left:32%;top:0;height:8px;width:33%;background:#8A63FF"></div><span style="position:absolute;left:100%;top:-1px;width:2px;height:10px;background:#050015"></span></div></td>
+          <td style="min-width:300px;max-width:340px"><span class="rec" style="background:#eff6ff;color:#2563EB">↗ Revisar / ampliar</span><div class="t9 sub" style="margin-top:4px;line-height:1.4">Buenos deudores sin financiar en la cartera: hay espacio para crecer sin aumentar riesgo.</div></td>
+          <td style="white-space:nowrap"><span class="salud" style="color:#2563EB"><span class="sdot" style="background:#2563EB"></span>Subutilizada</span></td>
+          <td style="white-space:nowrap"><span class="btn-out" style="opacity:.4">Solicitar ⌄</span></td>
+        </tr>
+        <tr>
+          <td><div class="t12 b">Áridos Cordillera S.A.</div><div class="t9 faint">76.004.771-5 · Sofía Herrera</div></td>
+          <td class="t11 b" style="white-space:nowrap">MM$ 300,0</td>
+          <td class="t11 sub" style="white-space:nowrap">MM$ 297,0 <span class="t9 faint">(99%)</span></td>
+          <td class="t11 b" style="white-space:nowrap;color:#dc2626">MM$ 3,0</td>
+          <td style="min-width:180px"><div class="t10 b" style="color:#dc2626">MM$ 355,4 <span class="faint">/ MM$ 300,0</span></div>
+            <div class="bar"><div style="position:absolute;left:0;top:0;height:8px;width:83%;background:#9ca3af;border-radius:9999px 0 0 9999px"></div><div style="position:absolute;left:83%;top:0;height:8px;width:17%;background:#dc2626"></div><span style="position:absolute;left:84%;top:-1px;width:2px;height:10px;background:#050015"></span></div>
+            <div class="t9 b" style="color:#dc2626;margin-top:3px">Fuera de línea +MM$ 55,4</div></td>
+          <td style="min-width:300px;max-width:340px"><span class="rec" style="background:#fef2f2;color:#dc2626">⚠ Sujeto a aprobación</span><div class="t9 sub" style="margin-top:4px;line-height:1.4">Morosidad vigente de 18 días: la ampliación queda sujeta a revisión de mesa de riesgo.</div></td>
+          <td style="white-space:nowrap"><span class="salud" style="color:#dc2626"><span class="sdot" style="background:#dc2626"></span>En riesgo</span></td>
+          <td style="white-space:nowrap"><span class="btn-out">Solicitar ⌄</span></td>
+        </tr>
+        <tr>
+          <td><div class="t12 b">Distribuidora Kayser Ltda.</div><div class="t9 faint">79.887.100-4 · Carla Rivas</div></td>
+          <td class="t11 b" style="white-space:nowrap">MM$ 750,0</td>
+          <td class="t11 sub" style="white-space:nowrap">MM$ 502,5 <span class="t9 faint">(67%)</span></td>
+          <td class="t11 b" style="white-space:nowrap;color:#16A34A">MM$ 247,5</td>
+          <td style="min-width:180px"><div class="t10 b">MM$ 765,0 <span class="faint">/ MM$ 750,0</span></div>
+            <div class="bar"><div style="position:absolute;left:0;top:0;height:8px;width:66%;background:#9ca3af;border-radius:9999px 0 0 9999px"></div><div style="position:absolute;left:66%;top:0;height:8px;width:34%;background:#dc2626"></div><span style="position:absolute;left:98%;top:-1px;width:2px;height:10px;background:#050015"></span></div>
+            <div class="t9 b" style="color:#dc2626;margin-top:3px">Fuera de línea +MM$ 15,0</div></td>
+          <td style="min-width:300px;max-width:340px"><span class="rec" style="background:#F0FDF4;color:#16A34A">✓ Renovar</span><div class="t9 sub" style="margin-top:4px;line-height:1.4">La línea vence en 34 días con buen comportamiento de pago: renovar en las mismas condiciones.</div></td>
+          <td style="white-space:nowrap"><span class="salud" style="color:#16A34A"><span class="sdot" style="background:#16A34A"></span>Saludable</span></td>
+          <td style="white-space:nowrap"><span class="btn-out">Solicitar ⌄</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</body></html>

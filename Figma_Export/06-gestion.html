@@ -1,0 +1,139 @@
+<html><head><style>
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;background:#FFFFFF;color:#050015;width:1600px}
+.t9{font-size:11.5px;line-height:1.3}.t10{font-size:12.5px;line-height:1.3}.t11{font-size:14px;line-height:1.4}
+.t12{font-size:15px;line-height:1.4}.t13{font-size:16px;line-height:1.5}
+.sub{color:#6B7280}.faint{color:#9CA3AF}.b{font-weight:600}.bb{font-weight:700}
+.nav{color:#6B7280;font-size:16px}.nav-on{color:#703EFF;font-size:16px;font-weight:600}
+.tab{display:inline-flex;align-items:center;gap:6px;padding:0 4px 8px;font-size:15px;color:#6B7280;border-bottom:2px solid transparent}
+.tab-on{display:inline-flex;align-items:center;gap:6px;padding:0 4px 8px;font-size:15px;color:#703EFF;font-weight:600;border-bottom:2px solid #703EFF}
+.lab{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9CA3AF}
+.sel{height:38px;border:1px solid #E5E7EB;border-radius:10px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;font-size:14px;background:#fff;margin-top:6px}
+.chip{display:inline-flex;align-items:center;gap:4px;background:#F1ECFF;color:#703EFF;border-radius:9999px;padding:4px 10px;font-size:12.5px;font-weight:600}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{padding:8px;font-weight:600;color:#6B7280;border-bottom:1px solid #E5E7EB}
+td{padding:8px;border-bottom:1px solid #E5E7EB}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.bl{border-left:1px solid #E5E7EB}
+</style></head><body>
+
+<div style="border-bottom:1px solid #E5E7EB;background:#fff">
+  <div style="max-width:1600px;height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 24px">
+    <div style="display:flex;align-items:center;gap:24px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="background:#703EFF;color:#fff;border-radius:7px;width:28px;height:28px;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center">N</span>
+        <span style="font-size:13px;font-weight:600;color:#230C65">NEX Factoring</span></div>
+      <span style="width:1px;height:28px;background:#ADA8BD"></span>
+      <div style="display:flex;align-items:center;gap:20px">
+        <span class="nav">Dashboard</span><span class="nav">Tubo diario</span><span class="nav">Tareas</span><span class="nav">Clientes</span>
+        <span class="nav-on">Gestión</span><span class="nav">Operaciones</span><span class="nav">Líneas</span>
+        <span class="nav" style="display:inline-flex;align-items:center;gap:6px">Otorgamientos <span style="background:#7c3aed;color:#fff;border-radius:9999px;padding:0 5px;font-size:11.5px;font-weight:700">4</span></span>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <span class="sub">⚙</span><span style="color:#703EFF">🔔</span><span class="sub">★</span><span style="color:#7C3AED">🛡</span>
+      <span style="display:flex;align-items:center;gap:6px"><span class="faint">👤</span><span style="border:1px dashed #C2410C;border-radius:10px;padding:6px 8px;font-size:15px;font-weight:500;background:#fff">Rodrigo Peña · Jefe comercial</span></span>
+      <span style="width:32px;height:32px;border-radius:8px;background:#230C65;color:#fff;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center">RP</span>
+    </div>
+  </div>
+</div>
+
+<div style="max-width:1600px;padding:16px 24px">
+  <div class="t11 faint">Comercial › Gestión</div>
+  <h1 style="font-size:24px;font-weight:600;letter-spacing:-.02em;margin:4px 0 16px">Gestión de Clientes</h1>
+
+  <div style="border:1px solid #E5E7EB;border-radius:20px;padding:14px;background:#fff">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <span class="t12 b">Filtros</span>
+      <span class="t11" style="color:#703EFF;font-weight:500">Limpiar filtros</span>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:10px">
+      <div style="flex:1"><div class="lab">Zona comercial</div><div class="sel">Todas las zonas <span class="faint">⌄</span></div></div>
+      <div style="flex:1"><div class="lab">Jefatura</div><div class="sel">Jefatura Centro <span class="faint">⌄</span></div></div>
+      <div style="flex:1"><div class="lab">Ejecutivo</div><div class="sel">Todos los ejecutivos <span class="faint">⌄</span></div></div>
+      <div style="flex:1"><div class="lab">Estado del cliente</div><div class="sel">Operan con Security <span class="faint">⌄</span></div></div>
+      <div style="flex:1"><div class="lab">Segmento SOW</div><div class="sel">Todos los segmentos <span class="faint">⌄</span></div></div>
+      <div style="flex:1"><div class="lab">Línea de negocio</div><div class="sel">Todas las líneas <span class="faint">⌄</span></div></div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
+      <span class="chip">Jefatura: Centro ✕</span><span class="chip">Estado: Operan con Security ✕</span>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:24px;border-bottom:1px solid #E5E7EB;margin-top:20px">
+    <span class="tab">▤ Resumen diario</span><span class="tab">▥ Performance comercial</span><span class="tab">◎ Plan Mensual Ejecutivo</span>
+    <span class="tab-on">👤 Cliente</span><span class="tab">▥ SOW</span><span class="tab">⑂ Origen → Cierre</span>
+  </div>
+
+  <div style="display:flex;gap:8px;margin-top:16px">
+    <div style="flex:1;border:1px solid #E5E7EB;border-radius:14px;padding:12px"><div class="lab">Empresas en alcance</div><div style="font-size:26px;font-weight:600;margin-top:4px">312</div><div class="t9 sub" style="margin-top:3px">de 4 ejecutivos · jefatura Centro</div></div>
+    <div style="flex:1;border:1px solid #ddd6fe;background:#f5f3ff;border-radius:14px;padding:12px"><div class="lab" style="color:#703EFF">Total cedido (4 sem)</div><div style="font-size:26px;font-weight:600;margin-top:4px;color:#703EFF">MM$ 24.180</div><div class="t9 sub" style="margin-top:3px">emisión electrónica del cedente</div></div>
+    <div style="flex:1;border:1px solid #bbf7d0;background:#F0FDF4;border-radius:14px;padding:12px"><div class="lab" style="color:#16A34A">Ganado por Security</div><div style="font-size:26px;font-weight:600;margin-top:4px;color:#16A34A">MM$ 8.702</div><div class="t9 sub" style="margin-top:3px">SOW 36,0% · target 45%</div></div>
+    <div style="flex:1;border:1px solid #fecaca;background:#fef2f2;border-radius:14px;padding:12px"><div class="lab" style="color:#dc2626">Perdido a factoring target</div><div style="font-size:26px;font-weight:600;margin-top:4px;color:#dc2626">MM$ 6.415</div><div class="t9 sub" style="margin-top:3px">BCI · Banco de Chile · Itaú</div></div>
+  </div>
+
+  <div style="border:1px solid #E5E7EB;border-radius:20px;background:#fff;margin-top:16px;padding:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div><div class="t12 b">Cartera por ejecutivo</div><div class="t9 faint" style="margin-top:2px">Haz clic en una fila para bajar a jefatura → ejecutivo → empresa.</div></div>
+      <span class="t11 faint">Comercial › Jefatura Centro</span>
+    </div>
+    <table style="margin-top:10px;min-width:880px">
+      <thead>
+        <tr><th colspan="6" style="border:none"></th>
+          <th colspan="3" style="text-align:center;font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#DC2626;border-left:1px solid #E5E7EB;border-bottom:1px solid #E5E7EB;padding-bottom:4px">Perdido</th></tr>
+        <tr>
+          <th style="text-align:left">Ejecutivo</th><th class="num">Operac.</th><th class="num">Total Cedido</th><th class="num">Ganado</th><th class="num">SOW</th><th class="num">Tend. 4 sem</th>
+          <th class="num bl">Total</th><th class="num">Deudores Prime</th><th class="num">Factoring Target</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><span style="color:#703EFF;font-weight:500">› Carla Rivas</span></td><td class="num">128</td><td class="num">MM$ 7.420</td><td class="num b">MM$ 3.116</td><td class="num b" style="color:#16A34A">42,0%</td><td class="num" style="color:#16A34A">▲ +3,1 pp</td><td class="num bl">MM$ 1.842</td><td class="num">MM$ 1.104</td><td class="num" style="color:#dc2626">MM$ 1.518</td></tr>
+        <tr><td><span style="color:#703EFF;font-weight:500">› Sofía Herrera</span></td><td class="num">96</td><td class="num">MM$ 6.180</td><td class="num b">MM$ 2.164</td><td class="num b" style="color:#C2410C">35,0%</td><td class="num" style="color:#dc2626">▼ −1,4 pp</td><td class="num bl">MM$ 2.007</td><td class="num">MM$ 1.386</td><td class="num" style="color:#dc2626">MM$ 1.702</td></tr>
+        <tr><td><span style="color:#703EFF;font-weight:500">› Matías Fuentes</span></td><td class="num">74</td><td class="num">MM$ 5.940</td><td class="num b">MM$ 1.960</td><td class="num b" style="color:#C2410C">33,0%</td><td class="num" style="color:#16A34A">▲ +0,6 pp</td><td class="num bl">MM$ 1.604</td><td class="num">MM$ 902</td><td class="num" style="color:#dc2626">MM$ 1.421</td></tr>
+        <tr><td><span style="color:#703EFF;font-weight:500">› Valentina Soto</span></td><td class="num">61</td><td class="num">MM$ 4.640</td><td class="num b">MM$ 1.462</td><td class="num b" style="color:#dc2626">31,5%</td><td class="num" style="color:#dc2626">▼ −2,2 pp</td><td class="num bl">MM$ 962</td><td class="num">MM$ 640</td><td class="num" style="color:#dc2626">MM$ 774</td></tr>
+        <tr style="border-bottom:none"><td class="b">Total jefatura Centro</td><td class="num b">359</td><td class="num b">MM$ 24.180</td><td class="num b">MM$ 8.702</td><td class="num b">36,0%</td><td class="num"></td><td class="num b bl">MM$ 6.415</td><td class="num b">MM$ 4.032</td><td class="num b" style="color:#dc2626">MM$ 5.415</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div style="display:flex;gap:16px;margin-top:16px">
+    <div style="flex:1;border:1px solid #E5E7EB;border-radius:20px;background:#fff;padding:14px">
+      <div class="t12 b">Evolución semanal de la cartera</div>
+      <div class="t9 faint" style="margin-top:2px">Emitido (cedido) vs. ganado por Security · últimas 8 semanas</div>
+      <div style="display:flex;align-items:flex-end;gap:14px;height:180px;margin-top:16px;padding:0 4px">
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:3px"><div style="height:96px;background:#E9D5FF;border-radius:6px 6px 0 0"></div><div style="height:38px;background:#703EFF;border-radius:0 0 6px 6px"></div><div class="t9 faint" style="text-align:center">S1</div></div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:3px"><div style="height:82px;background:#E9D5FF;border-radius:6px 6px 0 0"></div><div style="height:34px;background:#703EFF;border-radius:0 0 6px 6px"></div><div class="t9 faint" style="text-align:center">S2</div></div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:3px"><div style="height:104px;background:#E9D5FF;border-radius:6px 6px 0 0"></div><div style="height:44px;background:#703EFF;border-radius:0 0 6px 6px"></div><div class="t9 faint" style="text-align:center">S3</div></div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:3px"><div style="height:88px;background:#E9D5FF;border-radius:6px 6px 0 0"></div><div style="height:41px;background:#703EFF;border-radius:0 0 6px 6px"></div><div class="t9 faint" style="text-align:center">S4</div></div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:3px"><div style="height:112px;background:#E9D5FF;border-radius:6px 6px 0 0"></div><div style="height:49px;background:#703EFF;border-radius:0 0 6px 6px"></div><div class="t9 faint" style="text-align:center">S5</div></div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:3px"><div style="height:98px;background:#E9D5FF;border-radius:6px 6px 0 0"></div><div style="height:46px;background:#703EFF;border-radius:0 0 6px 6px"></div><div class="t9 faint" style="text-align:center">S6</div></div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:3px"><div style="height:120px;background:#E9D5FF;border-radius:6px 6px 0 0"></div><div style="height:54px;background:#703EFF;border-radius:0 0 6px 6px"></div><div class="t9 faint" style="text-align:center">S7</div></div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:3px"><div style="height:108px;background:#E9D5FF;border-radius:6px 6px 0 0"></div><div style="height:52px;background:#703EFF;border-radius:0 0 6px 6px"></div><div class="t9 faint" style="text-align:center">S8</div></div>
+      </div>
+      <div style="display:flex;gap:16px;margin-top:12px">
+        <span class="t10 sub" style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:3px;background:#E9D5FF"></span>Emitido (cedido)</span>
+        <span class="t10 sub" style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:3px;background:#703EFF"></span>Ganado por Security</span>
+      </div>
+    </div>
+
+    <div style="width:420px;border:1px solid #E5E7EB;border-radius:20px;background:#fff;padding:14px">
+      <div class="t12 b">Alertas comerciales</div>
+      <div class="t9 faint" style="margin-top:2px">Empresas que ceden al factoring target</div>
+      <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+        <div style="border:1px solid #fecaca;background:#fef2f2;border-radius:14px;padding:10px">
+          <div style="display:flex;justify-content:space-between;gap:8px"><span class="t12 b">Pesquera Bío Bío Ltda.</span><span class="t11 b" style="color:#dc2626">MM$ 412</span></div>
+          <div class="t10 sub" style="margin-top:3px">Cede a BCI · negocio recuperable · SOW 12%</div>
+        </div>
+        <div style="border:1px solid #fecaca;background:#fef2f2;border-radius:14px;padding:10px">
+          <div style="display:flex;justify-content:space-between;gap:8px"><span class="t12 b">Metalúrgica San Joaquín</span><span class="t11 b" style="color:#dc2626">MM$ 288</span></div>
+          <div class="t10 sub" style="margin-top:3px">Cede a Banco de Chile · SOW 19%</div>
+        </div>
+        <div style="border:1px solid #E5E7EB;border-radius:14px;padding:10px">
+          <div style="display:flex;justify-content:space-between;gap:8px"><span class="t12 b">Servicios Austral SpA</span><span class="t11 b">MM$ 164</span></div>
+          <div class="t10 sub" style="margin-top:3px">Deudores Prime sin financiar · sin línea vigente</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body></html>
