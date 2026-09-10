@@ -49,6 +49,16 @@ disponible = aprobada − utilizada − reservada
 
 Consecuencia para el consumidor: una operación ya aceptada no depende de que NEX vuelva a evaluarla para conservar su cupo.
 
+### El consumidor no puede contar su propio cupo dos veces
+
+`reservadaMM` **incluye la reserva de la operación que se está evaluando**. Al reevaluar esa operación, el disponible efectivo para ella es:
+
+```
+disponible_para_esta_operacion = disponibleMM + reservado_de_esta_operacion_en_esa_linea
+```
+
+El segundo término no lo da esta API —no sabe qué operación pregunta—: sale del registro que la **operación** guarda de con qué línea y qué monto financió cada factura. Sin sumarlo, la operación compite contra sí misma y manda a comité facturas que ya tenían cupo reservado. Ver §4.3 del spec de asignación de líneas.
+
 ---
 
 ## Reglas de la respuesta

@@ -102,6 +102,8 @@ Una factura puede tener **más de una asignación** cuando su monto se reparte e
 
 `nota_deudor_usada` y `periodo_nota` se guardan como snapshot. Si se lee la nota viva, una asignación del mes pasado deja de ser reproducible y la traza pierde valor como evidencia.
 
+**Esta entidad se modela acá, pero este módulo no la persiste.** El motor es consulta pura (§5.2) y el cupo lo administra el sistema de gestión de líneas (§3.7). Lo que sí persiste es la **operación**, que guarda por cada factura **con qué línea y con qué monto la financió** (`origen: [{ linea_id, monto }]`). Ese registro no es documentación: es la mitad interna del control doble que hace posible reevaluar sin romper lo ya asignado. Ver §4.3.
+
 ---
 
 ## 3. Reglas de negocio
@@ -283,6 +285,53 @@ Un aumento de paraguas no se resuelve con una puntual del cliente. Son resolucio
 
 Lo único exclusivo de un deudor es su línea del par. Mantener dos caminos de cálculo (parcial y completo) garantiza que en algún momento diverjan, y el síntoma es una operación cursada contra cupo inexistente. El costo es despreciable: decenas de deudores y cientos de facturas en memoria. La restricción real son las llamadas a la API de líneas, que se resuelven pidiendo todos los disponibles **una vez por evaluación**.
 
+### 4.3 Reevaluación con asignación previa · control doble
+
+Reevaluar **no es recalcular de cero** cuando la operación ya tiene asignación. El sistema debe reconocer que la línea de ciertas facturas **ya está asignada**, y para eso cruza dos controles que tienen que coincidir:
+
+| Control | Quién lo tiene | Qué dice |
+|---|---|---|
+| **Interno** | La **operación** | Con qué línea y qué monto financió cada factura: `origen: [{ linea_id, monto }]` |
+| **Externo** | El sistema de gestión de líneas (**A23**) | Qué es hoy de esas líneas: si existen, su estado y su disponible |
+
+#### Conciliación, factura por factura
+
+```
+para cada factura con origen guardado:
+    si TODAS sus líneas de origen:
+         siguen existiendo
+         y su estado es vigente          (no suspendida, caducada ni anulada)
+         y su cupo cubre el monto que esta factura tiene tomado en ellas
+    entonces  -> SE MANTIENE   (misma línea, mismo monto: no se toca)
+    si no     -> SE REASIGNA   (vuelve al pool y pasa por la cascada normal)
+```
+
+Lo que se reasigna y no cabe termina en `REQUIERE_COMITE` con su motivo, como cualquier factura nueva.
+
+#### El cupo propio no se cuenta dos veces
+
+`reservada` de A23 **incluye la reserva de esta misma operación** cuando el cliente ya aceptó. Si el motor reevalúa contra el `disponible` crudo, la operación **compite contra sí misma** y manda a comité facturas que ya tenían cupo. Por eso:
+
+```
+disponible_para_esta_operacion(linea) = disponible(linea) + reservado_de_esta_operacion_en(linea)
+```
+
+El segundo término sale del control interno. Ésa es la razón de fondo por la que el control tiene que ser doble: con el dato externo solo, el número está mal.
+
+#### Orden
+
+La conciliación corre **antes** de la cascada. Las facturas que se mantienen consumen su cupo primero y el motor asigna el resto sobre lo que queda. Al revés, una factura recién agregada puede quedarse con el cupo de una que ya estaba asignada y forzar a reasignarla sin necesidad.
+
+#### Dos regímenes, según si el cliente aceptó
+
+| | Antes de aceptar | Después de aceptar |
+|---|---|---|
+| Reserva | No existe | Existe, contra líneas concretas |
+| La asignación guardada es… | Una **preferencia de estabilidad**: se respeta si la línea sigue sirviendo, para que la factura no salte de línea sin razón visible | **Vinculante**: hay reserva puesta sobre esas líneas y hay que sumarla de vuelta al disponible |
+| Si una línea dejó de servir | Se reasigna sin consecuencia | Se reasigna, y si eso cambia el monto a girar respecto de lo firmado, la operación pasa a `requiere_resimulacion` (§6) |
+
+La reasignación diaria desde cero (§3.7) es el caso particular de esto **sin** asignación previa vigente.
+
 ---
 
 ## 5. API
@@ -348,17 +397,35 @@ Swagger: `Integraciones/swagger_consulta_lineas.yaml` (activo **A23**). Detalle 
 
 ### 5.2 Evaluar
 
+La petición lleva la selección **y la asignación previa** de la operación: sin ella el motor no puede conciliar (§4.3) y reasigna todo de cero cada vez.
+
 ```
 POST /api/operaciones/{id}/evaluar-linea
-{ "facturas": ["F-107032", "F-107044", "..."] }
+{
+  "facturas": ["F-107032", "F-107044", "..."],
+  "asignacion_previa": [
+    { "factura_id": "F-107032",
+      "origen": [ { "linea_id": "LF3-0011", "monto": 60000000 },
+                  { "linea_id": "LF2-0004", "monto": 70000000 } ] }
+  ]
+}
 → {
   "cursable": 324200000,
   "requiere_comite": 199300000,
   "deudores": [ { "rut_deudor", "estado", "asignado", "holgura", "topes", "tramos" } ],
-  "facturas": [ { "factura_id", "estado", "origen": [{ "linea_id", "monto" }], "motivo" } ],
+  "facturas": [
+    { "factura_id": "F-107032",
+      "estado": "CON_LINEA",
+      "origen": [{ "linea_id", "monto" }],
+      "conciliacion": "mantenida",        // mantenida | reasignada | nueva
+      "motivo_reasignacion": null,        // linea_inexistente | linea_suspendida | linea_caducada | cupo_insuficiente
+      "motivo": null }
+  ],
   "solicitudes": [ { "rut_deudor", "tipo_resolucion", "monto", "alcance" } ]
 }
 ```
+
+`conciliacion` y `motivo_reasignacion` alimentan el banner de diff (§8.4): el ejecutivo tiene que ver **qué se movió de línea y por qué**, no solo cómo cambiaron los totales. Una factura que pasa de `mantenida` a `reasignada` sin explicación es indistinguible de un bug del motor.
 
 No persiste reservas. Es consulta.
 
@@ -558,3 +625,8 @@ Datos sintéticos del prototipo. Cliente Comercial del Valle S.A. con 7 deudores
 | 8 | Quitar todas las facturas de un deudor | Sale de la oferta, libera cupo, los siguientes pueden mejorar. |
 | 9 | Modificar la selección | Resultado marcado como desactualizado. Montos aritméticos actualizados, cifras de línea en "Por evaluar", acciones dependientes deshabilitadas. |
 | 10 | Curse concurrente sobre el mismo paraguas | La segunda transacción reevalúa, detecta menos cupo y deriva a `requiere_resimulacion`. |
+| 11 | Reevaluar sin cambios, con asignación previa | Todas las facturas salen `mantenida`, misma línea y mismo monto. El motor es estable: reevaluar dos veces seguidas no mueve nada. |
+| 12 | La LF3 del origen quedó suspendida | Esa factura sale `reasignada` con `motivo_reasignacion: linea_suspendida`; cae a LF2 si alcanza, o a comité. Las demás siguen `mantenida`. |
+| 13 | Operación aceptada, con reserva puesta | El disponible efectivo suma de vuelta la reserva propia. Sin ese término las facturas ya reservadas se irían a comité: la operación competiría contra sí misma. |
+| 14 | Agregar una factura nueva a una operación ya asignada | Las previas se mantienen y consumen su cupo primero; la nueva se asigna sobre el resto. La nueva no puede desplazar a una ya asignada. |
+| 15 | Reasignación cambia el monto a girar de una operación firmada | `requiere_resimulacion`, con el diff visible. No se aprueba en silencio un subconjunto distinto. |
