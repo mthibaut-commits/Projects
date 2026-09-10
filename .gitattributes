@@ -1,0 +1,12 @@
+# El fuente vive en LF, venga de donde venga el checkout.
+*.jsx text eol=lf
+*.js  text eol=lf
+*.mjs text eol=lf
+*.md  text eol=lf
+
+# ATENCION: en .gitattributes gana la ULTIMA regla que calza, asi que este bloque va al final.
+# Las dependencias de vendor/ estan fijadas por sha256 en vendor/SBOM.json y el build verifica
+# cada hash antes de embeberlas. Git no debe normalizarles el fin de linea: cualquier conversion
+# cambia los bytes, el hash deja de calzar y el build falla en un clon limpio.
+# (vendor/_alias.js es CRLF a proposito: asi lo registra el SBOM.)
+vendor/** -text

@@ -90,8 +90,19 @@ body{font-family:Geist,system-ui,Segoe UI,Roboto,sans-serif;background:#0b141a;d
     chat.scrollTop = chat.scrollHeight;
   }
   // El portal de curse (curse.html) avisa cuando el cliente firma; se relaya al app y se marca el hilo.
+  // Chrome en file:// devuelve location.origin === "file://", PERO los mensajes que salen de una pagina
+  // file:// llegan con ev.origin === "null", y un targetOrigin "file://" no se entrega (se descarta en
+  // silencio). Comparando contra location.origin, el relay quedaba muerto justo en el modo con que se
+  // abre la demo. Se detecta por PROTOCOLO; servido por http(s) la comparacion sigue siendo estricta.
+  var ES_FILE = (location.protocol === "file:" || location.origin === "null" || !location.origin);
+  var ORIGEN_OK = ES_FILE ? "*" : location.origin;
+  var origenConfiable = function (o) { return ES_FILE || o === location.origin; };
   window.addEventListener("message", function(ev){
-    if(ev.data && ev.data.type === "aceptada"){ try{ if(window.opener) window.opener.postMessage(ev.data, "*"); }catch(e){} marcarAprobada(); }
+    // SEGURIDAD: sólo se relaya lo que viene del MISMO origen (el portal de curse). Sin esta guarda
+    // cualquier página con un handle a esta ventana podía forjar la firma del cliente, porque la app
+    // confía en este relay por ser del mismo origen que ella (diputado confundido).
+    if(!origenConfiable(ev.origin)) return;
+    if(ev.data && ev.data.type === "aceptada"){ try{ if(window.opener) window.opener.postMessage(ev.data, ORIGEN_OK); }catch(e){} marcarAprobada(); }
   });
   var btn = document.getElementById("approve");
   if(btn){

