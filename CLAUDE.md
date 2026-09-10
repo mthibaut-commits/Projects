@@ -21,7 +21,7 @@ Demo de un pipeline comercial de factoring chileno para Datamart. UI en español
 1. `npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx` — sin errores TS1.
 2. Duplicados: `grep -oE "^(function|const|let|var) [A-Za-z0-9_]+" pipeline_comercial.jsx | awk '{print $2}' | sort | uniq -d` debe salir vacío.
 3. `node build_app.mjs` — construye y valida los hashes del vendor.
-4. `tests_asignacion_lineas.js` — 15 casos del motor de asignación de líneas. Se pegan en la consola del navegador con el HTML abierto (o se evalúan con Playwright/Chromium sobre `file://`). Última corrida: **15/15 PASA**.
+4. `tests_asignacion_lineas.js` — **20 casos** del motor de asignación de líneas: los 15 de la asignación misma más 5 del **diff entre versiones** (§4.3), donde el caso 20 fija que la versión anterior NO altera el resultado. Se pegan en la consola del navegador con el HTML abierto, o se evalúan con Playwright/Chromium sobre `file://` (Chromium viene en el contenedor: `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`). Última corrida: **20/20 PASA**.
 
 ## Convenciones del código
 
