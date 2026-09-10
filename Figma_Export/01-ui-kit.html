@@ -1,0 +1,289 @@
+<html><head><style>
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;background:#FFFFFF;color:#050015;width:1440px;padding:48px 56px}
+.t7{font-size:10.5px;line-height:1.3}.t8{font-size:12.5px;line-height:1.3}.t9{font-size:11.5px;line-height:1.3}
+.t10{font-size:12.5px;line-height:1.3}.t11{font-size:14px;line-height:1.4}.t12{font-size:15px;line-height:1.4}
+.t13{font-size:16px;line-height:1.5}.t15{font-size:18px;line-height:1.4}
+.sub{color:#6B7280}.faint{color:#9CA3AF}.ink{color:#050015}.b{font-weight:600}.bb{font-weight:700}
+.sec{margin-top:44px}
+.sec-t{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9CA3AF;padding-bottom:8px;border-bottom:1px solid #E5E7EB;margin-bottom:18px}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start}
+.sw{width:150px}
+.sw-c{height:64px;border-radius:10px;border:1px solid #E5E7EB}
+.sw-n{font-size:12.5px;font-weight:600;margin-top:7px}
+.sw-h{font-size:11.5px;color:#9CA3AF;font-variant-numeric:tabular-nums}
+.pill{display:inline-flex;align-items:center;border-radius:9999px;padding:2px 6px;font-size:12.5px;font-weight:500}
+.pill-lg{display:inline-flex;align-items:center;gap:4px;border-radius:9999px;padding:2px 8px;font-size:12.5px;font-weight:700}
+.btn-cta{background:linear-gradient(to right,#EE2EFF,#FF814B);color:#fff;border-radius:9999px;font-weight:600;border:none;padding:6px 16px;font-size:14px}
+.btn-ink{background:#050015;color:#fff;border:none;border-radius:10px;padding:8px 12px;font-size:15px;font-weight:500}
+.btn-out{background:#fff;border:1px solid #703EFF;color:#703EFF;border-radius:10px;padding:6px 10px;font-size:14px;font-weight:600}
+.btn-gh{background:#fff;border:1px solid #E5E7EB;color:#6B7280;border-radius:10px;padding:8px 12px;font-size:15px;font-weight:500}
+.btn-dash{background:#fff;border:1px dashed #9CA3AF;color:#6B7280;border-radius:10px;padding:8px 14px;font-size:14px;font-weight:500}
+.btn-dis{background:#050015;color:#fff;border:none;border-radius:10px;padding:8px 12px;font-size:15px;font-weight:500;opacity:.4}
+.btn-login{background:linear-gradient(to right,#4F46E5,#6D5BFF);color:#fff;border:none;border-radius:9999px;padding:12px 24px;font-size:14px;font-weight:600}
+.inp{height:44px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;color:#050015;background:#fff;padding:0 12px;width:280px;display:flex;align-items:center}
+.inp-f{height:44px;border:1px solid #E5E7EB;border-radius:10px;font-size:14px;color:#050015;background:#fff;padding:0 12px;width:280px;display:flex;align-items:center;box-shadow:0 0 0 3px rgba(112,62,255,.12)}
+.otp{width:46px;height:52px;border:1px solid #E5E7EB;border-radius:10px;font-size:20px;font-weight:600;display:flex;align-items:center;justify-content:center}
+.tab{padding:0 4px 8px;font-size:15px;color:#6B7280;border-bottom:2px solid transparent}
+.tab-on{padding:0 4px 8px;font-size:15px;color:#703EFF;font-weight:600;border-bottom:2px solid #703EFF}
+.card{background:#fff;border:1px solid #E5E7EB;border-radius:10px;padding:10px;width:268px}
+.kpi{border-radius:14px;padding:12px;width:264px}
+.skel{background:#F3F4F6;border-radius:8px}
+.dot{width:8px;height:8px;border-radius:9999px;display:inline-block}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{padding:10px 12px;text-align:left;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9CA3AF;border-bottom:1px solid #E5E7EB}
+td{padding:10px 12px;border-bottom:1px solid #E5E7EB;vertical-align:top}
+</style></head><body>
+
+<div style="display:flex;align-items:center;gap:12px">
+  <span style="background:#703EFF;color:#fff;border-radius:8px;width:32px;height:32px;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center">N</span>
+  <span style="font-size:16px;font-weight:600;color:#230C65">NEX Factoring</span>
+</div>
+<h1 style="font-size:34px;font-weight:600;letter-spacing:-.02em;margin-top:18px">UI Kit — Datamart / NEX Factoring</h1>
+<div class="t13 sub" style="margin-top:6px;max-width:760px">Tokens y componentes extraídos de <b>pipeline_comercial.jsx</b>. Tipografía Geist · escala t7–t15 · radios 10/14/20 px · acento morado de marca #703EFF.</div>
+
+<div class="sec"><div class="sec-t">Paleta base · objeto C</div><div class="row">
+  <div class="sw"><div class="sw-c" style="background:#050015"></div><div class="sw-n">ink</div><div class="sw-h">#050015</div></div>
+  <div class="sw"><div class="sw-c" style="background:#6B7280"></div><div class="sw-n">sub</div><div class="sw-h">#6B7280</div></div>
+  <div class="sw"><div class="sw-c" style="background:#9CA3AF"></div><div class="sw-n">faint</div><div class="sw-h">#9CA3AF</div></div>
+  <div class="sw"><div class="sw-c" style="background:#E5E7EB"></div><div class="sw-n">line</div><div class="sw-h">#E5E7EB</div></div>
+  <div class="sw"><div class="sw-c" style="background:#FFFFFF"></div><div class="sw-n">page</div><div class="sw-h">#FFFFFF</div></div>
+  <div class="sw"><div class="sw-c" style="background:#703EFF"></div><div class="sw-n">indigo (purple marca)</div><div class="sw-h">#703EFF</div></div>
+  <div class="sw"><div class="sw-c" style="background:#230C65"></div><div class="sw-n">navy</div><div class="sw-h">#230C65</div></div>
+  <div class="sw"><div class="sw-c" style="background:#F1ECFF"></div><div class="sw-n">lilac</div><div class="sw-h">#F1ECFF</div></div>
+  <div class="sw"><div class="sw-c" style="background:#16a34a"></div><div class="sw-n">green</div><div class="sw-h">#16a34a</div></div>
+  <div class="sw"><div class="sw-c" style="background:#C2410C"></div><div class="sw-n">amber (naranja spec)</div><div class="sw-h">#C2410C</div></div>
+  <div class="sw"><div class="sw-c" style="background:#dc2626"></div><div class="sw-n">red</div><div class="sw-h">#dc2626</div></div>
+  <div class="sw"><div class="sw-c" style="background:#FAF9FB"></div><div class="sw-n">ruleBg</div><div class="sw-h">#FAF9FB</div></div>
+</div>
+<div class="row" style="margin-top:14px">
+  <div class="sw"><div class="sw-c" style="background:#F0FDF4"></div><div class="sw-n">greenBg</div><div class="sw-h">#F0FDF4</div></div>
+  <div class="sw"><div class="sw-c" style="background:#FFF7ED"></div><div class="sw-n">amberBg</div><div class="sw-h">#FFF7ED</div></div>
+  <div class="sw"><div class="sw-c" style="background:#fef2f2"></div><div class="sw-n">redBg</div><div class="sw-h">#fef2f2</div></div>
+  <div class="sw"><div class="sw-c" style="background:linear-gradient(to right,#EE2EFF,#FF814B)"></div><div class="sw-n">CTA gradiente</div><div class="sw-h">#EE2EFF → #FF814B</div></div>
+  <div class="sw"><div class="sw-c" style="background:linear-gradient(135deg,#5B21B6 0%,#6D28D9 45%,#7C3AED 100%)"></div><div class="sw-n">panel login</div><div class="sw-h">#5B21B6 → #7C3AED</div></div>
+  <div class="sw"><div class="sw-c" style="background:linear-gradient(to right,#4F46E5,#6D5BFF)"></div><div class="sw-n">CTA login (tenant)</div><div class="sw-h">#4F46E5 → #6D5BFF</div></div>
+</div></div>
+
+<div class="sec"><div class="sec-t">Etapas del pipeline</div><div class="row" style="gap:26px">
+  <span style="display:flex;align-items:center;gap:7px"><span class="dot" style="background:#9CA3AF"></span><span class="t12 b">Prospección</span></span>
+  <span style="display:flex;align-items:center;gap:7px"><span class="dot" style="background:#703EFF"></span><span class="t12 b">Oferta y Negociación</span></span>
+  <span style="display:flex;align-items:center;gap:7px"><span class="dot" style="background:#16a34a"></span><span class="t12 b">Aceptada</span></span>
+  <span style="display:flex;align-items:center;gap:7px"><span class="dot" style="background:#16a34a"></span><span class="t12 b">Cesión</span></span>
+  <span style="display:flex;align-items:center;gap:7px"><span class="dot" style="background:#7c3aed"></span><span class="t12 b">Otorgamiento</span></span>
+  <span style="display:flex;align-items:center;gap:7px"><span class="dot" style="background:#16a34a"></span><span class="t12 b">Giro</span></span>
+  <span style="display:flex;align-items:center;gap:7px"><span class="dot" style="background:#dc2626"></span><span class="t12 b">Perdida</span></span>
+</div></div>
+
+<div class="sec"><div class="sec-t">Tipografía · Geist</div>
+  <div style="display:flex;gap:56px">
+    <div style="flex:1">
+      <div style="display:flex;align-items:baseline;gap:16px;padding:7px 0;border-bottom:1px solid #E5E7EB"><span class="t9 faint" style="width:112px">t7 · 10,5 px</span><span class="t7">Nano — badges de conteo</span></div>
+      <div style="display:flex;align-items:baseline;gap:16px;padding:7px 0;border-bottom:1px solid #E5E7EB"><span class="t9 faint" style="width:112px">t9 · 11,5 px</span><span class="t9">Micro — metadatos, RUT, timestamps</span></div>
+      <div style="display:flex;align-items:baseline;gap:16px;padding:7px 0;border-bottom:1px solid #E5E7EB"><span class="t9 faint" style="width:112px">t8 / t10 · 12,5 px</span><span class="t10">Micro — pills, notas al pie de tarjeta</span></div>
+      <div style="display:flex;align-items:baseline;gap:16px;padding:7px 0;border-bottom:1px solid #E5E7EB"><span class="t9 faint" style="width:112px">t11 · 14 px</span><span class="t11">Caption — breadcrumb, filtros, tablas</span></div>
+      <div style="display:flex;align-items:baseline;gap:16px;padding:7px 0;border-bottom:1px solid #E5E7EB"><span class="t9 faint" style="width:112px">t12 · 15 px</span><span class="t12">Small — tabs, botones, títulos de columna</span></div>
+      <div style="display:flex;align-items:baseline;gap:16px;padding:7px 0;border-bottom:1px solid #E5E7EB"><span class="t9 faint" style="width:112px">t13 · 16 px</span><span class="t13">Body — nombre de cliente, navbar</span></div>
+      <div style="display:flex;align-items:baseline;gap:16px;padding:7px 0;border-bottom:1px solid #E5E7EB"><span class="t9 faint" style="width:112px">t15 · 18 px</span><span class="t15 b">Destacado — montos totales</span></div>
+      <div style="display:flex;align-items:baseline;gap:16px;padding:7px 0"><span class="t9 faint" style="width:112px">h1 · 24 px</span><span style="font-size:24px;font-weight:600;letter-spacing:-.02em">Título de vista</span></div>
+    </div>
+    <div style="width:360px">
+      <div class="t9 faint bb" style="text-transform:uppercase;letter-spacing:.05em">Pesos</div>
+      <div class="t13" style="font-weight:300;margin-top:8px">300 Light — Aa Bb Cc 0123</div>
+      <div class="t13" style="font-weight:400;margin-top:4px">400 Regular — Aa Bb Cc 0123</div>
+      <div class="t13" style="font-weight:500;margin-top:4px">500 Medium — Aa Bb Cc 0123</div>
+      <div class="t13" style="font-weight:600;margin-top:4px">600 Semibold — Aa Bb Cc 0123</div>
+      <div class="t13" style="font-weight:700;margin-top:4px">700 Bold — Aa Bb Cc 0123</div>
+      <div class="t9 faint bb" style="text-transform:uppercase;letter-spacing:.05em;margin-top:22px">Cifras · tabular-nums</div>
+      <div class="t15 b" style="font-variant-numeric:tabular-nums;margin-top:8px">MM$ 1.284,6 · 12,4% · 0,58%</div>
+    </div>
+  </div>
+</div>
+
+<div class="sec"><div class="sec-t">Geometría y sombras</div><div class="row" style="gap:20px">
+  <div style="width:180px"><div style="height:70px;background:#F1ECFF;border:1px solid #E5E7EB;border-radius:10px"></div><div class="sw-n">rounded-lg</div><div class="sw-h">10 px — inputs, cards chicas</div></div>
+  <div style="width:180px"><div style="height:70px;background:#F1ECFF;border:1px solid #E5E7EB;border-radius:14px"></div><div class="sw-n">rounded-xl</div><div class="sw-h">14 px — cards</div></div>
+  <div style="width:180px"><div style="height:70px;background:#F1ECFF;border:1px solid #E5E7EB;border-radius:20px"></div><div class="sw-n">rounded-2xl</div><div class="sw-h">20 px — modales, tablas</div></div>
+  <div style="width:180px"><div style="height:70px;background:#fff;border-radius:14px;box-shadow:0 1px 3px rgba(0,0,0,.08)"></div><div class="sw-n">shadow-sm</div><div class="sw-h">0 1px 3px / .08</div></div>
+  <div style="width:180px"><div style="height:70px;background:#fff;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.12)"></div><div class="sw-n">shadow-xl</div><div class="sw-h">0 8px 24px / .12</div></div>
+  <div style="width:180px"><div style="height:70px;background:#fff;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.18)"></div><div class="sw-n">shadow-2xl</div><div class="sw-h">0 20px 60px / .18</div></div>
+</div></div>
+
+<div class="sec"><div class="sec-t">Badges · tabla semántica</div>
+  <div class="t9 faint bb" style="text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Línea de negocio (TAG)</div>
+  <div class="row">
+    <span class="pill" style="background:#F1ECFF;color:#5B21D6">Factoring</span>
+    <span class="pill" style="background:#eff6ff;color:#2563EB">Confirming</span>
+    <span class="pill" style="background:#f0fdfa;color:#0f766e">Enrolamiento</span>
+    <span class="pill" style="background:#FFF7ED;color:#C2410C">Conexión SII</span>
+    <span class="pill" style="background:#F0FDF4;color:#16A34A">Nuevo negocio</span>
+  </div>
+  <div class="t9 faint bb" style="text-transform:uppercase;letter-spacing:.05em;margin:18px 0 8px">CAT 1–5 · nota ponderada por monto</div>
+  <div class="row">
+    <span class="pill" style="background:#F0FDF4;color:#16A34A">CAT-1 · muy buenos</span>
+    <span class="pill" style="background:#eff6ff;color:#2563EB">CAT-2 · mayoría muy buenos</span>
+    <span class="pill" style="background:#ecfeff;color:#0e7490">CAT-3 · buenos/normales</span>
+    <span class="pill" style="background:#fff7ed;color:#c2410c">CAT-4 · límite de compra</span>
+    <span class="pill" style="background:#fef2f2;color:#DC2626">CAT-5 · deudor malo / sin nota</span>
+  </div>
+  <div class="t9 faint bb" style="text-transform:uppercase;letter-spacing:.05em;margin:18px 0 8px">Tipo de deudor · reglas de prospección</div>
+  <div class="row">
+    <span class="pill" style="background:#F0FDF4;color:#16A34A">Lista Blanca</span>
+    <span class="pill" style="background:#eff6ff;color:#2563EB">Autorizada</span>
+    <span class="pill" style="background:#ecfeff;color:#0e7490">Histórico BICE</span>
+    <span class="pill" style="background:#fff7ed;color:#c2410c">Histórico</span>
+    <span class="pill" style="background:#F3F4F6;color:#4B5563">Otro</span>
+  </div>
+  <div class="t9 faint bb" style="text-transform:uppercase;letter-spacing:.05em;margin:18px 0 8px">Estados accionables · nota deudor 1–5</div>
+  <div class="row" style="align-items:center">
+    <span class="pill-lg" style="background:#f5f3ff;color:#7C3AED">Requiere otorgamiento <span style="background:#7c3aed;color:#fff;border-radius:9999px;padding:0 6px;font-size:10.5px;font-weight:700">3</span></span>
+    <span class="pill-lg" style="background:#FFF7ED;color:#C2410C">Requiere Verificación <span style="background:#C2410C;color:#fff;border-radius:9999px;padding:0 6px;font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums">2/7</span></span>
+    <span class="pill-lg" style="background:#fef2f2;color:#DC2626">Perdida · No tomó la oferta</span>
+    <span class="pill-lg" style="background:#fef2f2;color:#DC2626;border:1px solid #fecaca">Conversación pendiente</span>
+    <span class="t10 bb" style="color:#0a7d3f">Nota 4,3</span>
+    <span class="t10 bb" style="color:#C2410C">Nota 3,4</span>
+    <span class="t10 bb" style="color:#DC2626">Nota 2,8</span>
+  </div>
+  <div class="t9 faint bb" style="text-transform:uppercase;letter-spacing:.05em;margin:18px 0 8px">Salud de línea · recomendación</div>
+  <div class="row" style="align-items:center">
+    <span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:#16A34A"><span style="width:10px;height:10px;border-radius:9999px;background:#16A34A"></span>Saludable</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:#2563EB"><span style="width:10px;height:10px;border-radius:9999px;background:#2563EB"></span>Subutilizada</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:#C2410C"><span style="width:10px;height:10px;border-radius:9999px;background:#C2410C"></span>Atención</span>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:#dc2626"><span style="width:10px;height:10px;border-radius:9999px;background:#dc2626"></span>En riesgo</span>
+    <span class="pill-lg" style="background:#eff6ff;color:#2563EB;margin-left:12px">↗ Aumentar línea</span>
+    <span class="pill-lg" style="background:#fef2f2;color:#dc2626">⚠ Sujeto a aprobación</span>
+  </div>
+</div>
+
+<div class="sec"><div class="sec-t">Botones</div><div class="row" style="align-items:center;gap:14px">
+  <button class="btn-cta">+ Nuevo negocio</button>
+  <button class="btn-ink">Avanzar ›</button>
+  <button class="btn-out">Solicitar ⌄</button>
+  <button class="btn-gh">Guardar borrador</button>
+  <button class="btn-dash">+ Nuevo negocio</button>
+  <button class="btn-dis">Avanzar ›</button>
+  <button class="btn-login">Ingresar</button>
+  <span style="display:inline-flex;align-items:center;gap:10px;background:#fff;border:1.5px solid #E5E7EB;border-radius:9999px;padding:12px 20px;font-size:14px;font-weight:500">
+    <svg width="15" height="15" viewBox="0 0 21 21"><rect x="1" y="1" width="9" height="9" fill="#F25022"/><rect x="11" y="1" width="9" height="9" fill="#7FBA00"/><rect x="1" y="11" width="9" height="9" fill="#00A4EF"/><rect x="11" y="11" width="9" height="9" fill="#FFB900"/></svg>
+    Iniciar sesión con Microsoft</span>
+</div>
+<div class="row" style="align-items:center;gap:10px;margin-top:16px">
+  <span style="border:1px solid #703EFF;background:#703EFF;color:#fff;border-radius:10px;padding:6px 12px;font-size:14px;font-weight:500">Todas</span>
+  <span style="border:1px solid #E5E7EB;background:#fff;color:#050015;border-radius:10px;padding:6px 12px;font-size:14px;font-weight:500">Saludable</span>
+  <span style="border:1px solid #E5E7EB;background:#fff;color:#050015;border-radius:10px;padding:6px 12px;font-size:14px;font-weight:500">Atención</span>
+  <span style="background:#F1ECFF;color:#703EFF;border-radius:9999px;padding:4px 12px;font-size:14px;font-weight:600;margin-left:14px">Carla Rivas</span>
+  <span style="display:inline-flex;align-items:center;gap:4px;background:#F1ECFF;color:#703EFF;border-radius:9999px;padding:4px 10px;font-size:12.5px;font-weight:600">Estado: Operan con Security ✕</span>
+</div></div>
+
+<div class="sec"><div class="sec-t">Tabs underline · inputs</div>
+  <div style="display:flex;gap:24px;border-bottom:1px solid #E5E7EB;width:640px">
+    <span class="tab-on">Negocio</span><span class="tab">Linea</span><span class="tab">Bitácora</span><span class="tab">SOW</span><span class="tab">Cobranza</span><span class="tab">Otorgamiento</span>
+  </div>
+  <div class="row" style="margin-top:22px;gap:22px">
+    <div><div class="t11 b" style="color:#374151;margin-bottom:8px">Usuario</div><div class="inp faint">tu.correo@security.cl</div></div>
+    <div><div class="t11 b" style="color:#374151;margin-bottom:8px">Contraseña · focus</div><div class="inp-f">••••••••••</div></div>
+    <div><div class="t11 b" style="color:#374151;margin-bottom:8px">Organización</div><div class="inp" style="justify-content:space-between">Factoring Security <span class="faint">⌄</span></div></div>
+  </div>
+  <div class="row" style="margin-top:18px;align-items:center;gap:8px">
+    <div class="otp">4</div><div class="otp">8</div><div class="otp">2</div>
+    <span style="width:10px;height:1.5px;background:#D1D5DB"></span>
+    <div class="otp">9</div><div class="otp">1</div><div class="otp">7</div>
+    <div style="margin-left:26px;width:300px"><div class="skel" style="height:12px"></div><div class="skel" style="height:12px;width:70%;margin-top:8px"></div><div class="t9 faint" style="margin-top:8px">Skeleton · consultando estados (~700 ms)</div></div>
+  </div>
+</div>
+
+<div class="sec"><div class="sec-t">KPI cards</div><div class="row">
+  <div class="kpi" style="background:#fff;border:1px solid #E5E7EB"><div class="t9 faint bb" style="text-transform:uppercase;letter-spacing:.05em">Líneas</div><div style="font-size:26px;font-weight:600;margin-top:4px">128</div><div class="t9 sub" style="margin-top:3px">clientes con línea aprobada</div></div>
+  <div class="kpi" style="background:#f5f3ff;border:1px solid #ddd6fe"><div class="t9 bb" style="text-transform:uppercase;letter-spacing:.05em;color:#703EFF">Línea total aprobada</div><div style="font-size:26px;font-weight:600;margin-top:4px;color:#703EFF">MM$ 48.320</div><div class="t9 sub" style="margin-top:3px">uso 62% · disponible MM$ 18.361</div></div>
+  <div class="kpi" style="background:#eff6ff;border:1px solid #bfdbfe"><div class="t9 bb" style="text-transform:uppercase;letter-spacing:.05em;color:#2563EB">Aumentos recomendados</div><div style="font-size:26px;font-weight:600;margin-top:4px;color:#2563EB">19</div><div class="t9 sub" style="margin-top:3px">buenos deudores sin financiar · afectan SOW</div></div>
+  <div class="kpi" style="background:#fef2f2;border:1px solid #fecaca"><div class="t9 bb" style="text-transform:uppercase;letter-spacing:.05em;color:#dc2626">Con morosidad</div><div style="font-size:26px;font-weight:600;margin-top:4px;color:#dc2626">7</div><div class="t9 sub" style="margin-top:3px">evaluar reducción / bloqueo / aprobación</div></div>
+</div></div>
+
+<div class="sec"><div class="sec-t">DealCard · variantes</div><div class="row" style="gap:20px">
+
+  <div class="card" style="border-left:3px solid #16a34a">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <span style="display:flex;align-items:center;gap:6px"><span class="t10 faint" style="font-weight:500">OP-2418</span><span class="pill" style="background:#F1ECFF;color:#5B21D6">Factoring</span></span>
+      <span class="t10 faint">7 fac.</span></div>
+    <div style="display:flex;justify-content:space-between;gap:8px;margin-top:6px">
+      <div><div class="t13 b">Comercial Andes SpA</div><div class="t11 sub">Deudores: Codelco <span style="border:1px solid #E5E7EB;border-radius:4px;padding:0 4px;font-size:11.5px">+2</span></div></div>
+      <div class="t13 b" style="white-space:nowrap">MM$ 184,2</div></div>
+    <div style="margin-top:6px"><span class="pill" style="background:#F0FDF4;color:#16A34A">CAT-1 · muy buenos</span></div>
+    <div class="t10 sub" style="margin-top:8px;border-top:1px solid #E5E7EB;padding-top:6px">Tasa 0,92% | Anticipo 90% | Desc. MM$ 4,1</div>
+    <div class="t10 sub" style="margin-top:4px">Giro MM$ 161,7 · 42d fin. · vence 22-10-2026</div>
+  </div>
+
+  <div class="card" style="border-left:3px solid #C2410C">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <span style="display:flex;align-items:center;gap:6px"><span class="t10 faint" style="font-weight:500">OP-2431</span><span class="pill" style="background:#eff6ff;color:#2563EB">Confirming</span>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="#C2410C"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg></span>
+      <span class="t10 faint">12 fac.</span></div>
+    <div style="display:flex;justify-content:space-between;gap:8px;margin-top:6px">
+      <div><div class="t13 b">Transportes del Maipo Ltda.</div><div class="t11 sub">Deudores: Falabella <span style="border:1px solid #E5E7EB;border-radius:4px;padding:0 4px;font-size:11.5px">+4</span></div></div>
+      <div class="t13 b" style="white-space:nowrap">MM$ 312,8</div></div>
+    <div style="margin-top:6px"><span class="pill" style="background:#fff7ed;color:#c2410c">CAT-4 · límite de compra</span></div>
+    <div style="display:flex;align-items:center;gap:6px;background:#f5f3ff;color:#7C3AED;border-radius:4px;padding:4px 6px;font-size:10.5px;font-weight:500;margin-top:6px">
+      ⚠ <span>Requiere otorgamiento</span><span style="margin-left:auto;background:#7c3aed;color:#fff;border-radius:9999px;padding:0 6px;font-size:10.5px;font-weight:700">3</span></div>
+    <div style="display:flex;align-items:center;gap:6px;background:#FFF7ED;color:#C2410C;border-radius:4px;padding:4px 6px;font-size:12.5px;font-weight:500;margin-top:6px">
+      ⚠ <span>Requiere Verificación</span><span style="margin-left:auto;background:#C2410C;color:#fff;border-radius:9999px;padding:0 6px;font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums">4/12</span></div>
+    <div class="t10 sub" style="margin-top:8px;border-top:1px solid #E5E7EB;padding-top:6px">Tasa 1,08% | Anticipo 85% | Desc. MM$ 9,4</div>
+  </div>
+
+  <div class="card" style="border-left:3px solid #dc2626">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <span style="display:flex;align-items:center;gap:6px"><span class="t10 faint" style="font-weight:500">OP-2377</span><span class="pill" style="background:#F1ECFF;color:#5B21D6">Factoring</span></span>
+      <span class="t10 faint">3 fac.</span></div>
+    <div style="display:flex;justify-content:space-between;gap:8px;margin-top:6px">
+      <div><div class="t13 b">Áridos Cordillera S.A.</div><div class="t11 sub">Deudores: Constructora PyL SpA</div></div>
+      <div class="t13 b" style="white-space:nowrap">MM$ 58,4</div></div>
+    <div style="display:flex;align-items:flex-start;gap:5px;background:#fef2f2;color:#DC2626;border-radius:4px;padding:5px 6px;font-size:12.5px;font-weight:500;margin-top:6px">
+      ✕ <span>Perdida · Cedida a otro factoring</span></div>
+    <div class="t10 sub" style="margin-top:8px;border-top:1px solid #E5E7EB;padding-top:6px">Tasa 1,24% | Anticipo 80% | Desc. —</div>
+  </div>
+</div></div>
+
+<div class="sec"><div class="sec-t">Columna Kanban · macro columna</div>
+<div style="width:300px">
+  <div style="display:flex;align-items:center;gap:6px;padding:0 6px;margin-bottom:4px">
+    <span class="t10 bb sub" style="text-transform:uppercase;letter-spacing:.05em">Oferta y Negociación</span><span class="t9 faint">en curso</span></div>
+  <div style="background:#FAF9FB;border:1px solid #E5E7EB;border-radius:14px;padding:6px">
+    <div style="padding:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0 4px;margin-bottom:6px">
+        <span style="display:flex;align-items:center;gap:6px"><span class="dot" style="background:#703EFF"></span><span class="t12 b">Oferta y Negociación</span></span>
+        <span style="display:flex;align-items:center;gap:6px;font-size:14px;color:#6B7280"><span>14</span><span class="b ink">MM$ 1.284,6</span></span></div>
+      <div style="padding:0 4px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:#6B7280"><span>👁 Publicada</span><span style="display:flex;gap:6px"><span>6</span><span class="b ink">MM$ 512,0</span></span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:#6B7280;margin-top:2px"><span>👁 En negociación</span><span style="display:flex;gap:6px"><span>8</span><span class="b ink">MM$ 772,6</span></span></div>
+      </div>
+      <button class="btn-dash" style="width:100%">+ Nuevo negocio</button>
+    </div>
+  </div>
+</div></div>
+
+<div class="sec"><div class="sec-t">Tabla · barra de proyección de línea</div>
+<div style="border:1px solid #E5E7EB;border-radius:20px;background:#fff;overflow:hidden">
+<table><thead><tr><th>Cliente</th><th>Línea aprobada</th><th>Uso actual</th><th>Disponible</th><th>Proyección post-curse</th><th>Salud</th></tr></thead>
+<tbody>
+<tr><td><div class="t12 b">Comercial Andes SpA</div><div class="t9 faint">76.541.220-8 · Carla Rivas</div></td>
+<td class="t11 b">MM$ 900,0</td><td class="t11 sub">MM$ 612,0 <span class="t9 faint">(68%)</span></td>
+<td class="t11 b" style="color:#16A34A">MM$ 288,0</td>
+<td style="min-width:200px"><div class="t10 b">MM$ 796,2 <span class="faint">/ MM$ 900,0</span></div>
+<div style="position:relative;height:8px;border-radius:9999px;background:#FFFFFF;border:1px solid #F3F4F6;margin-top:5px">
+<div style="position:absolute;left:0;top:0;height:8px;width:68%;background:#9ca3af;border-radius:9999px 0 0 9999px"></div>
+<div style="position:absolute;left:68%;top:0;height:8px;width:20%;background:#8A63FF"></div>
+<span style="position:absolute;left:100%;top:-1px;width:2px;height:10px;background:#050015"></span></div></td>
+<td><span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:#16A34A"><span style="width:10px;height:10px;border-radius:9999px;background:#16A34A"></span>Saludable</span></td></tr>
+<tr><td><div class="t12 b">Transportes del Maipo Ltda.</div><div class="t9 faint">78.220.910-K · Sofía Herrera</div></td>
+<td class="t11 b">MM$ 450,0</td><td class="t11 sub">MM$ 431,0 <span class="t9 faint">(96%)</span></td>
+<td class="t11 b" style="color:#dc2626">MM$ 19,0</td>
+<td style="min-width:200px"><div class="t10 b" style="color:#dc2626">MM$ 512,4 <span class="faint">/ MM$ 450,0</span></div>
+<div style="position:relative;height:8px;border-radius:9999px;background:#FFFFFF;border:1px solid #F3F4F6;margin-top:5px">
+<div style="position:absolute;left:0;top:0;height:8px;width:84%;background:#9ca3af;border-radius:9999px 0 0 9999px"></div>
+<div style="position:absolute;left:84%;top:0;height:8px;width:16%;background:#dc2626"></div>
+<span style="position:absolute;left:88%;top:-1px;width:2px;height:10px;background:#050015"></span></div>
+<div class="t9 b" style="color:#dc2626;margin-top:3px">Fuera de línea +MM$ 62,4</div></td>
+<td><span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:#dc2626"><span style="width:10px;height:10px;border-radius:9999px;background:#dc2626"></span>En riesgo</span></td></tr>
+</tbody></table></div></div>
+
+</body></html>
