@@ -1,0 +1,95 @@
+{
+  "esquema": 1,
+  "descripcion": "SBOM de las dependencias vendorizadas en vendor/. build_app.ps1 verifica cada sha256 al construir: si un archivo cambia sin actualizar este manifiesto, el build falla.",
+  "generado": "2026-09-03T09:35:57",
+  "componentes": [
+    {
+      "archivo": "_alias.js",
+      "paquete": "(local)",
+      "version": "-",
+      "bytes": 496,
+      "sha256": "d8b19fd13f66542dd8e9bf3044d90af948b80ea17fea409ae61fe3e1a7284a31",
+      "nota": "Shim propio: expone React/ReactDOM en minusculas para lucide-react UMD."
+    },
+    {
+      "archivo": "d3-array.js",
+      "paquete": "d3-array",
+      "version": "3.x",
+      "bytes": 17204,
+      "sha256": "80aa70d0cd17dabddf6d056494ea17926a45a69da8b7850220aace331bad671d",
+      "nota": "Dependencia de d3-sankey."
+    },
+    {
+      "archivo": "d3-path.js",
+      "paquete": "d3-path",
+      "version": "3.x",
+      "bytes": 2433,
+      "sha256": "28d70841c60f313c3e6411fe0831e539ed6cea51eaee951d62d88908c40619c2",
+      "nota": "Dependencia de d3-shape."
+    },
+    {
+      "archivo": "d3-sankey.js",
+      "paquete": "d3-sankey",
+      "version": "0.12.x",
+      "bytes": 5652,
+      "sha256": "8286db5d6aa049cc6e8a546708943b79dfb4daaefb0ccf42af674ec0ee4c86be",
+      "nota": "Diagrama Origen -> Cierre."
+    },
+    {
+      "archivo": "d3-shape.js",
+      "paquete": "d3-shape",
+      "version": "3.x",
+      "bytes": 30898,
+      "sha256": "49236896e989f251dd36679ea4a879538e9ca2ece3a90a82740f953cac4a3fa5",
+      "nota": "Dependencia de d3-sankey/recharts."
+    },
+    {
+      "archivo": "lucide-react.js",
+      "paquete": "lucide-react",
+      "version": "0.4xx",
+      "bytes": 477537,
+      "sha256": "e440236a32c2970b81010faca7993a8c4a385f0c98f2315460c09652fda24766",
+      "nota": "Iconografia."
+    },
+    {
+      "archivo": "prop-types.js",
+      "paquete": "prop-types",
+      "version": "15.x",
+      "bytes": 1722,
+      "sha256": "e653471aba824786aee5dce1bcb5a86ed30c8518d346d2ace0460a5633a9cbdb",
+      "nota": "Requerido por recharts; version no declarada en el bundle."
+    },
+    {
+      "archivo": "react-dom.js",
+      "paquete": "react-dom",
+      "version": "18.3.1",
+      "bytes": 131835,
+      "sha256": "35f4f974f4b2bcd44da73963347f8952e341f83909e4498227d4e26b98f66f0d",
+      "nota": "UMD de produccion."
+    },
+    {
+      "archivo": "react.js",
+      "paquete": "react",
+      "version": "18.3.1",
+      "bytes": 10751,
+      "sha256": "d949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd",
+      "nota": "UMD de produccion."
+    },
+    {
+      "archivo": "recharts.js",
+      "paquete": "recharts",
+      "version": "2.x",
+      "bytes": 498814,
+      "sha256": "d9aa8577cf67317ed7d27f10f5ce88d56e4bfc15d37ba5ba62f8dedf24edae4d",
+      "nota": "Graficos del dashboard y reportes."
+    },
+    {
+      "archivo": "xlsx.js",
+      "paquete": "xlsx (SheetJS)",
+      "version": "1.15.0",
+      "bytes": 881727,
+      "sha256": "c9506197caf809a075b6dee1da0d36fb19da7158ffe8a88e7b0c96c5d8623c99",
+      "nota": "RIESGO: version de 2019 que PARSEA archivos .xlsx subidos por el usuario. Afectada por CVE-2023-30533 (prototype pollution) y CVE-2024-22363 (ReDoS). Actualizar a la linea mantenida (>= 0.20.2, desde cdn.sheetjs.com; el paquete npm xlsx esta congelado)."
+    }
+  ]
+}

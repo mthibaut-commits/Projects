@@ -220,23 +220,37 @@ var DATA=decode()||{}; var P=DATA.payload||DATA||{};
 var NEG=(new URLSearchParams(location.search)).get("n")||P.neg||"—";
 // El payload persiste por negocio en localStorage (mismo origen que la app). Es la fuente preferida:
 // el cliente ingresa su código de negocio + OTP y el portal recupera la operación (simula el backend).
-// Esquema esperado del registro de curse. v2 guarda otpHash/otpExp/otpUsado; un registro v1 traía el
-// OTP en claro y ya no se acepta: el enlace se considera vencido y hay que reenviarlo desde la app.
-var CURSE_SCHEMA=2;
+// Esquema esperado del registro de curse. v3 guarda otpHash (SHA-256) + otpSal + otpExp + otpUsado.
+// Un v2 (hash de 32 bits) o un v1 (OTP en claro) ya no se aceptan: el enlace se considera vencido y hay
+// que reenviarlo desde la app. No se acepta un hash viejo "por compatibilidad": esa compatibilidad es
+// justamente el agujero que se está cerrando.
+var CURSE_SCHEMA=3;
+// Devuelve un ESTADO discriminado, no null: 'ausente' y 'obsoleto' no son lo mismo, y confundirlos era
+// justamente el agujero. Un registro de esquema viejo ademas se BORRA: no tiene sentido dejar en el
+// navegador del cliente un OTP y un payload que ya no se pueden validar.
 function loadStore(neg){
+  var k='fs_curse_'+neg;
   try{
-    var st=JSON.parse(localStorage.getItem('fs_curse_'+neg)||'null');
-    if(!st) return null;
+    var st=JSON.parse(localStorage.getItem(k)||'null');
+    if(!st) return {estado:'ausente'};
     var v=st._v||1;
-    if(v!==CURSE_SCHEMA){ console.warn('[curse] registro de esquema '+v+', se esperaba '+CURSE_SCHEMA+': se ignora'); return null; }
-    return st;
-  }catch(e){ return null; }
+    if(v!==CURSE_SCHEMA){
+      console.warn('[curse] registro de esquema '+v+', se esperaba '+CURSE_SCHEMA+': se descarta y se borra');
+      try{ localStorage.removeItem(k); }catch(e){}
+      return {estado:'obsoleto', v:v};
+    }
+    return {estado:'ok', st:st};
+  }catch(e){ return {estado:'ausente'}; }
 }
-var STORE=loadStore(NEG); if(STORE&&STORE.payload){ P=STORE.payload; }
+var _S0=loadStore(NEG); var STORE=(_S0.estado==='ok')?_S0.st:null;
+if(STORE&&STORE.payload){ P=STORE.payload; }
 function clp(n){n=Math.round(n||0);return "CLP "+n.toLocaleString("es-CL");}
 function set(id,v){var e=document.getElementById(id);if(e)e.textContent=v;}
 
 // Fill portal from payload
+// Escape de HTML para todo valor del payload que se interpole en innerHTML. El payload llega por la
+// URL / localStorage: es entrada externa, y este portal es donde el cliente escribe RUT, clave y OTP.
+function esc(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 function fillPortal(){
   set('pt-emp',(P.empresa||'EMPRESA').toUpperCase()); set('pt-rut',P.rut||'—');
   set('pt-ejec',P.ejecutivo||'Ejecutivo'); set('pt-fecha',P.fecha||'—');
@@ -246,18 +260,18 @@ function fillPortal(){
   document.getElementById('pt-nd2').textContent=ndoc;
   var msim=P.montoDocumentos||0, mant=P.montoAntipo||P.montoAnticipo||msim, girar=P.montoAGirar||0;
   var desc=P.subtotalDescuentos||0, ret=P.retencion||0;
-  document.getElementById('pt-msim').innerHTML=clp(msim)+'<span class="s">'+ndoc+' documentos</span>';
-  document.getElementById('pt-mant').innerHTML=clp(mant)+'<span class="s">Anticipo del '+(P.anticipoPct||100)+'%</span>';
+  document.getElementById('pt-msim').innerHTML=clp(msim)+'<span class="s">'+esc(ndoc)+' documentos</span>';
+  document.getElementById('pt-mant').innerHTML=clp(mant)+'<span class="s">Anticipo del '+esc(P.anticipoPct||100)+'%</span>';
   document.getElementById('pt-desc').innerHTML=clp(desc)+' &#9650;';
   set('pt-girar',clp(girar)); set('pt-ret',clp(ret));
   document.getElementById('pt-giro2').innerHTML=clp(girar)+'<span class="s">Recibirás</span>';
   set('op-num', NEG);
   // desglose descuentos
   var det=document.getElementById('pt-det'); var rows=[['Diferencia de precio',P.diferenciaPrecio],['Comisión',P.comision],['Cuentas por cobrar',P.cuentasPorCobrar]];
-  det.innerHTML=rows.filter(function(r){return r[1]!=null;}).map(function(r){return '<div class="li"><span>'+r[0]+'</span><span>'+clp(r[1])+'</span></div>';}).join('');
+  det.innerHTML=rows.filter(function(r){return r[1]!=null;}).map(function(r){return '<div class="li"><span>'+esc(r[0])+'</span><span>'+clp(r[1])+'</span></div>';}).join('');
   // facturas
   var tb=document.getElementById('pt-facs'); var fs=P.facturas||[];
-  tb.innerHTML=fs.length?fs.map(function(f){return '<tr><td>'+(f.tipo||'Factura electrónica')+' #'+(f.folio||'')+'<div class="badge">Curse express</div></td><td>'+(f.deudor||'')+'</td><td>'+(f.venc?f.venc+' días':'—')+'</td><td style="text-align:right;font-weight:700">'+clp(f.monto)+'</td></tr>';}).join(''):'<tr><td colspan="4" style="color:#9ca3af;text-align:center;padding:18px">Sin documentos en el payload.</td></tr>';
+  tb.innerHTML=fs.length?fs.map(function(f){return '<tr><td>'+esc(f.tipo||'Factura electrónica')+' #'+esc(f.folio||'')+'<div class="badge">Curse express</div></td><td>'+esc(f.deudor||'')+'</td><td>'+(f.venc?esc(f.venc)+' días':'—')+'</td><td style="text-align:right;font-weight:700">'+clp(f.monto)+'</td></tr>';}).join(''):'<tr><td colspan="4" style="color:#9ca3af;text-align:center;padding:18px">Sin documentos en el payload.</td></tr>';
   // cert name
   set('cert-nombre', (P.contacto&&P.contacto.nombre)||P.ejecutivo||'Titular'); set('cert-nm',(P.contacto&&P.contacto.nombre)||P.ejecutivo||'Titular');
 }
@@ -268,35 +282,55 @@ fillPortal();
 // Validación del OTP replicando lo que hace el backend: se compara el HASH del código escrito contra
 // el hash guardado, se exige vigencia (TTL) y se invalida al primer uso. hashStr NO es criptográfico:
 // en producción es argon2/bcrypt y la comparación ocurre en el servidor.
-function hashStr(s){var h=0;for(var i=0;i<(s||"").length;i++)h=(h*31+s.charCodeAt(i))>>>0;return h;}
-function otpHash(neg,code){return String(hashStr("otp$"+neg+"$"+code));}
-function validarOtpPortal(st,neg,code){
+// SHA-256 por Web Crypto: el mismo cálculo que hace la app al emitir el OTP (ver A02 en el .jsx).
+async function sha256Hex(txt){
+  var sub=(window.crypto&&window.crypto.subtle)||null;
+  if(!sub) return null; // sin contexto seguro no se valida: mejor rechazar que validar con un hash débil
+  var buf=await sub.digest('SHA-256',new TextEncoder().encode(String(txt)));
+  return Array.prototype.map.call(new Uint8Array(buf),function(b){return b.toString(16).padStart(2,'0');}).join('');
+}
+function igualConstante(a,b){
+  var x=String(a==null?'':a), y=String(b==null?'':b), dif=x.length^y.length;
+  for(var i=0;i<Math.max(x.length,y.length);i++) dif|=(x.charCodeAt(i)||0)^(y.charCodeAt(i)||0);
+  return dif===0;
+}
+function otpHash(neg,sal,code){return sha256Hex("otp$"+neg+"$"+sal+"$"+code);}
+async function validarOtpPortal(st,neg,code){
   if(!st.otpHash) return {ok:false,error:'No hay una clave vigente para este negocio'};
   if(st.otpUsado) return {ok:false,error:'La clave de un solo uso ya fue utilizada'};
   if(st.otpExp&&Date.now()>st.otpExp) return {ok:false,error:'La clave de un solo uso expiró'};
-  if(otpHash(neg,code)!==String(st.otpHash)) return {ok:false,error:'La clave de un solo uso no corresponde al negocio'};
+  var calc=await otpHash(neg,st.otpSal,code);
+  if(calc===null) return {ok:false,error:'Tu navegador no permite validar la clave de forma segura en esta página'};
+  if(!igualConstante(calc,st.otpHash)) return {ok:false,error:'La clave de un solo uso no corresponde al negocio'};
   st.otpUsado=true; try{localStorage.setItem('fs_curse_'+neg,JSON.stringify(st));}catch(e){}
   return {ok:true};
 }
 // Login: requiere código de negocio + RUT + clave + OTP. El OTP es la llave que identifica el negocio.
 function lgCheck(){var g=document.getElementById('lg-neg').value.trim(),r=document.getElementById('lg-rut').value.trim(),p=document.getElementById('lg-pass').value.trim(),o=document.getElementById('lg-otp').value.trim();document.getElementById('lg-btn').disabled=!(g&&r&&p&&o);}
 function showPortal(){document.getElementById('scr-login').classList.add('hidden');document.getElementById('scr-portal').classList.remove('hidden');window.scrollTo(0,0);}
-function goPortal(){
+// FALLA CERRADO. Antes existia una rama de compatibilidad: si no habia registro local valido, bastaba
+// que el N° de negocio tecleado coincidiera con el de la URL para entrar SIN validar el OTP. Como el
+// numero de negocio viaja en claro por WhatsApp y en la propia URL, y el RUT y la clave del formulario
+// no se comprueban en ninguna rama, el OTP era el unico control real y esa rama lo anulaba. Al subir el
+// esquema de 2 a 3 la rama se volvio ademas el camino NORMAL para todo navegador con un registro viejo.
+// Sin OTP validado no se entra: si el enlace esta vencido, se reenvia desde la app.
+async function goPortal(){
   var neg=document.getElementById('lg-neg').value.trim();
   var otp=document.getElementById('lg-otp').value.trim();
-  var st=loadStore(neg);
-  if(st){
-    // Validación del OTP contra el HASH (el código en claro nunca queda guardado), con vencimiento y
-    // un solo uso. En producción esta verificación ocurre en el backend, no en esta página.
-    var v=validarOtpPortal(st,neg,otp);
-    if(!v.ok){ alert(v.error+' (negocio N° '+neg+'). Revisa el código en el correo o WhatsApp que te enviamos.'); return; }
-    P=st.payload||P; NEG=neg; fillPortal();
-  } else if(P&&(String(P.neg)===neg||String(NEG)===neg)){
-    // Sin registro local (otro navegador): se acepta con el payload del enlace, sin poder validar el OTP.
-    NEG=neg; fillPortal();
-  } else {
-    alert('No encontramos el negocio N° '+neg+'. Verifica el código de negocio enviado por Factoring Security.'); return;
+  var r=loadStore(neg);
+  if(r.estado==='obsoleto'){
+    alert('El enlace del negocio N° '+neg+' vencio (se emitio con un formato anterior). Pidele a tu ejecutivo que te reenvie la oferta.');
+    return;
   }
+  if(r.estado!=='ok'){
+    alert('No encontramos el negocio N° '+neg+' en este navegador. Abre el enlace que te enviamos por WhatsApp o correo, o pidele a tu ejecutivo que lo reenvie.');
+    return;
+  }
+  // Validación del OTP contra el HASH (el código en claro nunca queda guardado), con vencimiento y
+  // un solo uso. En producción esta verificación ocurre en el backend, no en esta página.
+  var v=await validarOtpPortal(r.st,neg,otp);
+  if(!v.ok){ alert(v.error+' (negocio N° '+neg+'). Revisa el código en el correo o WhatsApp que te enviamos.'); return; }
+  P=r.st.payload||P; NEG=neg; fillPortal();
   showPortal();
 }
 function showLogin(){document.getElementById('scr-portal').classList.add('hidden');document.getElementById('scr-login').classList.remove('hidden');}
@@ -323,7 +357,15 @@ function cursar(){
   var steps=['Firmando Comprobante de Aceptación de Términos y Condiciones','Iniciando la cesión de facturas','Creando la operación '+NEG];
   proc.classList.remove('hidden'); var i=0; t.textContent=steps[0];
   var iv=setInterval(function(){ i++; if(i<steps.length){ t.textContent=steps[i]; } else { clearInterval(iv); proc.classList.add('hidden'); document.getElementById('done').classList.remove('hidden');
-    try{ var w=window.opener; while(w){ w.postMessage({type:'aceptada',neg:NEG},'*'); w=(w!==w.opener)?w.opener:null; } }catch(e){}
+    // Aviso de firma al opener INMEDIATO y con el origen explicito. Antes esto recorria toda la cadena
+    // de openers posteando con '*': si el portal se abria desde una pagina de terceros (phishing que
+    // enlaza al curse), esa pagina recibia el evento de aceptacion con el N° de negocio. El relay de
+    // whatsapp.html/email.html ya se encarga de llevarlo hasta la app, asi que recorrer la cadena no
+    // aportaba nada y solo ampliaba a quien se le contaba.
+    // Bajo file:// un targetOrigin "file://" no se entrega: el aviso de firma se perderia y la app
+    // nunca sabria que el cliente aprobo. Sólo en ese caso se cae a "*" (ver ES_FILE en el .jsx).
+    try{ var _tgt = (location.protocol === "file:" || location.origin === "null" || !location.origin) ? "*" : location.origin;
+         if(window.opener) window.opener.postMessage({type:'aceptada',neg:NEG}, _tgt); }catch(e){}
   } }, 1400);
 }
 function finalizar(){ try{window.close();}catch(e){} document.getElementById('done').innerHTML='<div class="ck">&#10003;</div><h2>Puedes cerrar esta ventana</h2>'; }
