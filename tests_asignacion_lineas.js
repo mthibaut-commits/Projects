@@ -3,14 +3,16 @@
    Cubre los 10 casos del §9 de spec-asignacion-lineas.md, más cinco que el spec no enumera pero
    que el modelo corregido introduce (línea de otros deudores suspendida y como no-colchón, tope
    del cliente, y cliente en estado A con sólo LF1), más cinco del DIFF entre versiones (§4.3): qué
-   se movió respecto de la evaluación anterior, sin que esa versión altere jamás la asignación.
+   se movió respecto de la evaluación anterior, sin que esa versión altere jamás la asignación, más
+   tres del RECORTE de una operación ya aceptada (§9 del spec de verificación): tras la firma la
+   operación sólo encoge, y recortar no vuelve a asignar contra el estado nuevo de las líneas.
 
    CÓMO SE CORREN: abrir pipeline_comercial.html, iniciar sesión, abrir la consola del navegador y
    pegar el contenido de este archivo. No requiere datos del pipeline: cada caso inyecta su propio
    estado de líneas por el tercer parámetro de `asignarLineas`, así que el resultado no depende de
    qué oportunidades haya generado el motor de entrada.
 
-   Última corrida: 20/20 PASA.
+   Última corrida: 23/23 PASA.
    ============================================================================================ */
 (() => {
   const out = [];
@@ -151,6 +153,47 @@
      JSON.stringify(snap(sinPrevia20)) === JSON.stringify(snap(r)) && sinPrevia20.cursable === r.cursable
      && r.diff.perdieron === 1,
      "cursable " + sinPrevia20.cursable + " = " + r.cursable + " · el diff sí reporta la que perdió línea");
+
+  // ══ RECORTE DE UNA OPERACIÓN ACEPTADA (spec de verificación §9) ═══════════════════════════════
+  // Tras la firma la operación sólo encoge: la verificación retira lo que el deudor no confirmó.
+  // Recortar NO re-asigna — el cupo ya está reservado y cubre un monto mayor.
+  const snapLinea = (r) => ({
+    cursable: r.cursable, requiereComite: r.requiereComite, oferta: r.oferta,
+    estadoCliente: r.estadoCliente, dispCliente: r.dispCliente, deudores: r.deudores,
+    lineasUsadas: r.lineasUsadas, vacia: false,
+    facturas: r.facturas.map((f) => ({ id: f.id, folio: f.folio, rutDeudor: f.rutDeudor, deudor: f.deudor, monto: f.monto, estado: f.estado, motivo: f.motivo || null, origen: f.origen })),
+    solicitudes: r.solicitudes,
+  });
+
+  // 21 · el deudor no confirma una factura → baja el cursable y las demás quedan igual
+  const acep21 = snapLinea(asignarLineas([fac("f1", LB[10], 50), fac("f2", LB[10], 30)], "X",
+    { estado: estB([L("LF2-r1", "LF2", LB[10], 300)], 5000), deudores: { [LB[10]]: dl(LB[10], 900) } }));
+  const rec21 = recortarAsignacion(acep21, ["f1"]);
+  const q1 = rec21.facturas.find((f) => f.id === "f1");
+  ok("21 retirar la no confirmada baja el cursable",
+     acep21.cursable === 80 && rec21.cursable === 50 && rec21.facturas.length === 1
+     && JSON.stringify(q1.origen) === JSON.stringify(acep21.facturas.find((f) => f.id === "f1").origen)
+     && rec21.recorte.retiradas === 1 && rec21.recorte.montoRetirado === 30,
+     "80 → " + rec21.cursable + " · retirado " + rec21.recorte.montoRetirado);
+
+  // 22 · el cupo liberado NO vuelve solo: la reserva sigue puesta hasta que la liberen afuera
+  const dispAntes = (acep21.deudores[0].detallePar[0] || {}).disponible;
+  const dispDespues = (rec21.deudores[0].detallePar[0] || {}).disponible;
+  ok("22 recortar no devuelve el cupo por sí solo",
+     dispAntes === dispDespues && rec21.deudores[0].asignado === 50 && rec21.deudores[0].nFacturas === 1,
+     "disponible " + dispAntes + " = " + dispDespues + " · asignado " + rec21.deudores[0].asignado);
+
+  // 23 · GUARDARRAÍL: recortar NO re-asigna. Aunque la línea se haya consumido afuera entre medio,
+  //      la factura que queda conserva su origen — una operación firmada no pierde línea por una
+  //      llamada telefónica. Si se re-evaluara, esta misma factura caería a comité.
+  const inj23 = (vig) => ({ estado: estB([L("LF2-r2", "LF2", LB[11], 100, vig)], 5000), deudores: { [LB[11]]: dl(LB[11], 900) } });
+  const acep23 = snapLinea(asignarLineas([fac("f1", LB[11], 60), fac("f2", LB[11], 30)], "X", inj23(0)));
+  const rec23 = recortarAsignacion(acep23, ["f1"]);
+  const reeval23 = asignarLineas([fac("f1", LB[11], 60)], "X", inj23(95)); // la línea se consumió afuera
+  ok("23 recortar no re-asigna contra el estado nuevo de la línea",
+     rec23.facturas[0].estado === "CON_LINEA" && rec23.facturas[0].origen[0].tipo === "LF2"
+     && reeval23.facturas[0].estado === "REQUIERE_COMITE",
+     "recortada " + rec23.facturas[0].estado + " · re-evaluada sería " + reeval23.facturas[0].estado);
 
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");

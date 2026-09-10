@@ -311,6 +311,25 @@ El otorgamiento ya versiona cada simulación: un registro **inmutable y append-o
 
 Cada simulación emite una versión nueva; ninguna versión emitida se edita. El diff que ve el ejecutivo es siempre **versión actual contra versión anterior**, y es descriptivo: nunca una entrada del cálculo.
 
+#### Después de aceptar, la operación sólo ENCOGE
+
+La verificación telefónica es la única mutación que admite una operación firmada: si el deudor no confirma, Security **retira** esas facturas (§1 del spec de verificación). Nada agrega nunca. Esa mutación se resuelve **recortando** la asignación aceptada, no volviendo a asignar:
+
+```
+recortar(asignación_aceptada, facturas_que_quedan):
+    salen las facturas retiradas, con sus líneas y sus montos
+    las demás conservan su línea y su monto, intactas
+    NO se consulta de nuevo /lineas/consulta ni se re-asigna nada
+```
+
+Las tres razones, en orden de peso:
+
+1. **No puede mejorar y sí puede empeorar.** La reserva vigente cubre un monto MAYOR que el que queda, así que re-asignar no libera nada nuevo; lo único que haría es exponer la operación al cupo que otro negocio consumió mientras tanto. Una operación firmada no pierde línea por una llamada telefónica.
+2. **El monto a girar bajaría dos veces.** Menos facturas ya baja el monto; que además cambiara la asignación de las facturas confirmadas haría irreconstruible la diferencia contra lo que el cliente firmó.
+3. **El cupo liberado no vuelve solo.** La reserva sigue puesta por el monto original hasta que el core commitee la operación recortada o alguien pida liberar el sobrante en el sistema de gestión de líneas (§3.7). Por eso los disponibles del snapshot **no suben** al recortar: subirlos sería contar cupo que todavía está comprometido.
+
+El recorte emite una **versión nueva**, con el motivo («el deudor no confirmó el folio N»). Esa versión es la evidencia de por qué el monto a girar quedó por debajo de lo aceptado.
+
 #### Consecuencia de diseño
 
 La versión anterior es **evidencia, no reserva**. Permite reconstruir por qué se decidió lo que se decidió —con qué cupos, con qué variables y con qué veredicto de verificación— sin condicionar la evaluación de hoy. La reserva, cuando existe, la administra el sistema de gestión de líneas y la commitea el core (§3.7): este módulo ni la lleva ni la simula.

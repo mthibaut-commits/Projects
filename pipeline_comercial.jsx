@@ -5152,7 +5152,7 @@ function DealMensajeria({ deal, usuario }) {
 }
 // Sub-tab VERIFICACIÓN (por documento): reglas V0–V5 por factura, versionado (patrón otorgamiento),
 // filtros y checklist telefónico. V1 es regla dura; su fallo exige verificación + excepción de Riesgo.
-function VerificacionTab({ deal, facturasOp = [], bloqueado }) {
+function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada }) {
   const [refrescado, setRefrescado] = useState(nowStamp());
   const [filtro, setFiltro] = useState("all");
   const [open, setOpen] = useState({});
@@ -5232,6 +5232,13 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado }) {
                       ))}
                       {tel.who && <div className="mt-1.5 t9" style={{ color: C.faint }}>Registrado por {tel.who}</div>}
                       {!bloqueado && tel.estado !== "Completada" && <button onClick={() => setTelReg((m) => ({ ...m, [f.id]: nowStamp() }))} className="mt-2 rounded-md px-3 py-1.5 t10 font-semibold" style={{ border: "1px solid #F1ECFF", color: "#5B21D6", backgroundColor: "#fff" }}>Registrar verificación</button>}
+                      {/* Si el deudor NO confirma, Security retira esa factura de la operación (spec de
+                          verificación §1). Es la única mutación que admite una operación ya firmada, y
+                          sólo puede QUITAR: la asignación de las demás no se toca y no se vuelve a
+                          asignar contra el estado nuevo de las líneas (ver `recortarAsignacion`). */}
+                      {!bloqueado && onNoConfirmada && tel.estado !== "Completada" && (
+                        <button onClick={() => onNoConfirmada(f)} className="mt-2 ml-1.5 rounded-md px-3 py-1.5 t10 font-semibold" style={{ border: `1px solid ${C.red}`, color: C.red, backgroundColor: "#fff" }}>El deudor no confirmó · retirar</button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -5390,6 +5397,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [tab, setTab] = useState(tabInicial || (deal && deal.stage === "otorgamiento" ? "otorgamiento" : "negocio"));
   useEffect(() => { if (tabInicial) setTab(tabInicial); }, [tabInicial, deal && deal.id]);
   const [confirmRetiro, setConfirmRetiro] = useState(null); // factura a retirar de la oferta (ConfirmDialog spec §26)
+  const [confirmNoConf, setConfirmNoConf] = useState(null); // factura que el deudor NO confirmó en la verificación telefónica
   const [otorgNota, setOtorgNota] = useState(""); // nota del especialista en Otorgamiento
   const [otorgArch, setOtorgArch] = useState([]); // archivos de soporte adjuntos
   const [reevTick, setReevTick] = useState(0); // fuerza re-render tras re-evaluar la simulación
@@ -5765,7 +5773,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             </div>
           )}
           {tab === "mensajeria" && <DealMensajeria deal={deal} usuario={usuario} />}
-          {tab === "verificacion" && <div className="mt-2"><VerificacionTab deal={deal} facturasOp={deal.facturasOp || []} bloqueado={["giro", "perdida"].includes(deal.stage)} /></div>}
+          {tab === "verificacion" && <div className="mt-2"><VerificacionTab deal={deal} facturasOp={deal.facturasOp || []} bloqueado={["giro", "perdida"].includes(deal.stage)} onNoConfirmada={(f) => setConfirmNoConf(f)} /></div>}
           {tab === "otorgamiento" && deal.otorgAuto && (
             <div className="mt-4 rounded-lg p-3" style={{ backgroundColor: C.greenBg, border: "1px solid #bbf7d0" }}>
               <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: C.green }}><Check size={12} /> Otorgamiento automático</div>
@@ -6182,7 +6190,16 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         // otro canal y ahora califican menos facturas. Eso el ejecutivo no puede deducirlo
                         // mirando sólo el resultado nuevo.
                         const vsLin = SIM_VERSIONS[deal.id] || [];
-                        const evalLin = reevalPend ? null : asignarLineas(validas, deal.rutEmisor, { previa: vsLin.length ? vsLin[vsLin.length - 1].linea : null });
+                        const ultVer = vsLin.length ? vsLin[vsLin.length - 1] : null;
+                        // ACEPTADA EN ADELANTE: la pantalla se lee de la VERSIÓN, no se re-evalúa. El cupo de
+                        // esta operación ya está reservado en el sistema de líneas (regla 12), así que el
+                        // `disponible` que devuelve la API viene NETO de esa reserva: re-evaluar mostraría
+                        // menos cursable del que el cliente firmó, y esa cifra es la que se giró. La versión
+                        // es la evidencia de lo aceptado; recalcularla encima sería reescribir el acuerdo.
+                        const leeDeVersion = bloqueado && !!(ultVer && ultVer.linea);
+                        const evalLin = leeDeVersion ? ultVer.linea
+                          : reevalPend ? null
+                          : asignarLineas(validas, deal.rutEmisor, { previa: ultVer ? ultVer.linea : null });
                         // El motor agrupa por RUT del deudor (§3.4) y estos acordeones por razón social. Si un
                         // mismo nombre llega con más de un RUT, quedarse con el último grupo mostraría «1 de 1
                         // con línea» en una fila que tiene cuatro facturas. Se agregan.
@@ -6592,7 +6609,15 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               // Qué se movió respecto de la versión anterior. Es lo único que el ejecutivo no
                               // puede deducir del resultado nuevo: si ganó cupo (le ampliaron la línea) o si lo
                               // perdió porque otro negocio lo consumió por otro canal.
-                              const dl = evalLin && evalLin.diff;
+                              // En una operación aceptada la tarjeta deja de ser un veredicto y pasa a ser
+                              // constancia de lo firmado. La reserva del cupo la administra el sistema de
+                              // gestión de líneas: si la operación se cae, el ejecutivo tiene que PEDIR ALLÁ
+                              // que la eliminen. NEX no la borra ni ofrece borrarla — sólo lee (regla 12).
+                              if (leeDeVersion) {
+                                vd.tit = `Aceptada · ${fmtMM(evalLin.cursable)} con línea asignada`;
+                                vd.sub = `Versión v${ultVer.v} del ${ultVer.ts} — es lo que el cliente firmó, no un recálculo. El cupo por ${fmtMM(evalLin.cursable)} está reservado en el sistema de gestión de líneas; si la operación se cae, hay que pedir allá que la eliminen para liberarlo.`;
+                              }
+                              const dl = !leeDeVersion && evalLin && evalLin.diff;
                               if (dl && dl.hayCambios) {
                                 const ps = [];
                                 if (dl.ganaron) ps.push(`${dl.ganaron} por ${fmtMM(dl.montoGanado)} que antes iban a comité ahora tienen línea`);
@@ -7523,6 +7548,14 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
         etiquetaConfirmar="Retirar factura"
         onConfirmar={() => { onRetirarFactura(deal.id, confirmRetiro); setReevalPend(true); setConfirmRetiro(null); }}
         onCancelar={() => setConfirmRetiro(null)} />
+      {/* El deudor no confirmó: Security retira la factura. La operación sólo ENCOGE — el resto de la
+          asignación queda intacta y el cupo liberado sigue reservado en el sistema de gestión de
+          líneas hasta que lo liberen allá (NEX no toca reservas). */}
+      <ConfirmDialog abierto={!!confirmNoConf} titulo="¿El deudor no confirmó esta factura?"
+        descripcion={confirmNoConf ? `Folio ${confirmNoConf.folio || confirmNoConf.id || ""} · ${fmtMM(confirmNoConf.montoMM || 0)}. Sale de la operación y baja el monto a girar. Las demás facturas conservan su línea. El cupo que deja libre sigue reservado en el sistema de gestión de líneas: para recuperarlo hay que pedir allá que lo liberen.` : ""}
+        etiquetaConfirmar="Retirar factura no confirmada"
+        onConfirmar={() => { onRetirarFactura(deal.id, confirmNoConf); setConfirmNoConf(null); }}
+        onCancelar={() => setConfirmNoConf(null)} />
       {/* Motivo de cierre. Cada opción deja un resultado distinto (Perdida / Expirada) y queda en
           la bitácora, así que se elige acá y no al vuelo dentro del menú de acciones. */}
       {rechazoModal && (
@@ -9885,12 +9918,23 @@ function snapVersionCli(deal, rev) {
   // siempre contra lo que trae el origen: la versión anterior es evidencia, no reserva.
   const fsOp = (deal && deal.facturasOp) || [];
   let linea = null, verificacion = null;
+  // Aceptada en adelante, una versión nueva no re-asigna: RECORTA la anterior (ver recortarAsignacion).
+  const aceptada = !!(deal && ["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage));
+  const vPrev = (deal && SIM_VERSIONS[deal.id]) || [];
+  const lineaPrev = vPrev.length ? vPrev[vPrev.length - 1].linea : null;
   try {
-    if (fsOp.length && deal && deal.rutEmisor) {
+    if (aceptada && lineaPrev) {
+      linea = recortarAsignacion(lineaPrev, fsOp.map((f) => f.id));
+    } else if (fsOp.length && deal && deal.rutEmisor) {
       const ev = asignarLineas(fsOp, deal.rutEmisor);
       linea = {
         cursable: ev.cursable, requiereComite: ev.requiereComite, oferta: ev.oferta,
-        facturas: ev.facturas.map((f) => ({ id: f.id, estado: f.estado, motivo: f.motivo || null, origen: (f.origen || []).map((o) => ({ lineaId: o.lineaId, tipo: o.tipo, monto: o.monto })) })),
+        // Se congelan también los deudores porque la pantalla de una operación ACEPTADA se lee de la
+        // versión, no de un recálculo: sin esto habría que re-evaluar para pintar los acordeones y
+        // volveríamos a mostrar cifras que no son las que el cliente firmó.
+        estadoCliente: ev.estadoCliente, dispCliente: ev.dispCliente, dispClienteInicial: ev.dispClienteInicial,
+        deudores: ev.deudores, lineasUsadas: ev.lineasUsadas, vacia: false,
+        facturas: ev.facturas.map((f) => ({ id: f.id, folio: f.folio, rutDeudor: f.rutDeudor, deudor: f.deudor, monto: f.monto, estado: f.estado, motivo: f.motivo || null, origen: (f.origen || []).map((o) => ({ lineaId: o.lineaId, tipo: o.tipo, monto: o.monto })) })),
         solicitudes: (ev.solicitudes || []).map((x) => ({ rutDeudor: x.rutDeudor, deudor: x.deudor, motivo: x.motivo, pide: x.pide, monto: x.monto })),
       };
     }
@@ -16517,6 +16561,64 @@ function analisisDeudoresDeDeal(deal) {
   }));
 }
 
+// ── RECORTE DE UNA ASIGNACIÓN ACEPTADA (spec de verificación §9) ─────────────────────────────────
+// Después de que el cliente firma, la operación sólo puede ENCOGER: la verificación telefónica retira
+// las facturas que el deudor no confirmó, y nada agrega nunca. Recortar es quitar ESAS facturas y
+// dejar intactas las asignaciones de las demás.
+//
+// NO se vuelve a asignar contra el estado actual de las líneas, y esa es la decisión de fondo: el
+// cupo de esta operación ya está reservado en el sistema de gestión de líneas y cubre un monto MAYOR
+// que el que queda, así que re-evaluar no puede mejorar nada y sí puede empeorarlo —expondría a la
+// operación al cupo que otro negocio se llevó mientras tanto—. Una operación firmada no pierde línea
+// por una llamada telefónica.
+//
+// El cupo liberado TAMPOCO se devuelve solo: la reserva sigue viva en el sistema de líneas por el
+// monto original hasta que el core commitee la operación recortada o alguien pida liberar el
+// sobrante. Por eso los disponibles del snapshot no suben al recortar.
+function recortarAsignacion(linea, idsVigentes) {
+  if (!linea || !Array.isArray(linea.facturas)) return linea;
+  const vivas = new Set(idsVigentes || []);
+  const fuera = linea.facturas.filter((f) => !vivas.has(f.id));
+  if (!fuera.length) return linea;
+  const facturas = linea.facturas.filter((f) => vivas.has(f.id));
+  const suma = (arr) => mmRound(arr.reduce((s, f) => s + (f.monto || 0), 0));
+  const cursable = suma(facturas.filter((f) => f.estado === "CON_LINEA"));
+  const requiereComite = suma(facturas.filter((f) => f.estado === "REQUIERE_COMITE"));
+
+  // Cuánto deja de tomar cada línea y cada deudor.
+  const bajaLinea = new Map(), bajaDeudor = new Map();
+  for (const f of fuera) {
+    for (const o of f.origen || []) bajaLinea.set(o.lineaId, mmRound((bajaLinea.get(o.lineaId) || 0) + (o.monto || 0)));
+    const k = f.rutDeudor || f.deudor || "";
+    const b = bajaDeudor.get(k) || { asignado: 0, n: 0, conLinea: 0 };
+    b.n++;
+    if (f.estado === "CON_LINEA") { b.asignado = mmRound(b.asignado + (f.monto || 0)); b.conLinea++; }
+    bajaDeudor.set(k, b);
+  }
+  const deudores = (linea.deudores || []).map((d) => {
+    const b = bajaDeudor.get(d.rut) || bajaDeudor.get(d.key) || bajaDeudor.get(d.nombre);
+    if (!b) return d;
+    const nFacturas = Math.max(0, (d.nFacturas || 0) - b.n);
+    const nConLinea = Math.max(0, (d.nConLinea || 0) - b.conLinea);
+    return { ...d,
+      asignado: mmRound((d.asignado || 0) - b.asignado),
+      seleccionado: mmRound((d.seleccionado || 0) - suma(fuera.filter((f) => (f.rutDeudor || f.deudor) === (d.rut || d.key)))),
+      nFacturas, nConLinea,
+      estado: nConLinea === 0 ? "sin_linea" : nConLinea === nFacturas ? "con_linea" : "parcial",
+      // El desglose por línea baja lo que la factura retirada tomaba; el DISPONIBLE no sube, porque
+      // la reserva sigue puesta por el monto original hasta que la liberen afuera.
+      detallePar: (d.detallePar || []).map((x) => x.id && bajaLinea.has(x.id) ? { ...x, usado: mmRound((x.usado || 0) - bajaLinea.get(x.id)), usadoDeudor: mmRound(Math.max(0, (x.usadoDeudor || 0) - bajaLinea.get(x.id))) } : x),
+      lineasUsadas: (d.lineasUsadas || []).map((x) => bajaLinea.has(x.lineaId) ? { ...x, monto: mmRound((x.monto || 0) - bajaLinea.get(x.lineaId)) } : x).filter((x) => x.monto > 0),
+    };
+  }).filter((d) => d.nFacturas > 0);
+
+  return { ...linea, facturas, deudores, cursable, requiereComite, oferta: mmRound(cursable + requiereComite),
+    lineasUsadas: (linea.lineasUsadas || []).map((x) => bajaLinea.has(x.lineaId) ? { ...x, usado: mmRound((x.usado || 0) - bajaLinea.get(x.lineaId)) } : x).filter((x) => x.usado > 0),
+    // Las solicitudes al comité de las facturas retiradas dejan de tener objeto.
+    solicitudes: (linea.solicitudes || []).filter((so) => facturas.some((f) => f.estado === "REQUIERE_COMITE" && (f.rutDeudor === so.rutDeudor))),
+    recorte: { retiradas: fuera.length, montoRetirado: suma(fuera), folios: fuera.map((f) => f.folio || f.id) } };
+}
+
 function asignarLineas(facturas, rutCliente, inyecta) {
   const sel = (facturas || []).filter((f) => f && (f.montoMM || 0) > 0);
   const st = (inyecta && inyecta.estado) || lineasDeCliente(rutCliente);
@@ -18982,6 +19084,11 @@ export default function PipelineComercial() {
     if (!draggingId) return;
     // "Aceptada" la fija sólo el cliente al firmar el cierre formal: no se puede arrastrar a esa columna.
     if (stageId === "aceptadas") { setDraggingId(null); return; }
+    // Tampoco se SALE de Aceptada/Cesión/Giro arrastrando. El selector del detalle ya sólo ofrece
+    // «Avanzar a», pero el Kanban no miraba la etapa de origen: se podía devolver a Oferta una
+    // operación que el cliente ya firmó y que tiene cupo reservado en el sistema de líneas.
+    const orig = (deals.find((d) => d.id === draggingId) || {}).stage;
+    if (["aceptadas", "cesion", "giro"].includes(orig) && STAGE_ORDER.indexOf(stageId) < STAGE_ORDER.indexOf(orig)) { setDraggingId(null); return; }
     setDeals((prev) => {
       const splits = [];
       const mapped = prev.map((d) => {
@@ -19875,6 +19982,23 @@ export default function PipelineComercial() {
   // Retira una factura de la oferta y la deja disponible como candidata en "Otras facturas".
   const retirarFacturaOferta = (id, fac) => {
     if (!fac) return;
+    // Si la operación ya fue aceptada, esto es la verificación retirando lo que el deudor no confirmó:
+    // queda como VERSIÓN nueva —evidencia de por qué el monto a girar bajó respecto de lo firmado— y
+    // se resuelve RECORTANDO la asignación anterior, nunca re-asignando (ver `recortarAsignacion`).
+    const d0 = deals.find((x) => x.id === id);
+    if (d0 && ["aceptadas", "cesion", "otorgamiento", "giro"].includes(d0.stage)) {
+      const vs = repoSimVersions.get(id) || [];
+      const prev = vs.length ? vs[vs.length - 1] : null;
+      if (prev && prev.linea) {
+        const ids = (itemizarFacturas(d0) || []).filter((f) => f.id !== fac.id).map((f) => f.id);
+        const nl = recortarAsignacion(prev.linea, ids);
+        repoSimVersions.push(id, { ...prev, v: vs.length + 1, rev: vs.length, ts: nowStamp(),
+          origen: `Verificación · el deudor no confirmó el folio ${fac.folio || fac.id}`, linea: nl });
+        registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Verificación de facturas",
+          accion: "Factura retirada por no confirmación del deudor",
+          glosa: `${d0.cliente || d0.company || id} · folio ${fac.folio || fac.id} · ${fmtMM(fac.montoMM || 0)} · monto con línea ${fmtMM(prev.linea.cursable)} → ${fmtMM(nl.cursable)} · el cupo liberado sigue reservado hasta que lo liberen en el sistema de líneas`, exito: true });
+      }
+    }
     const upd = (d) => {
       if (d.id !== id) return d;
       const base = itemizarFacturas(d);
