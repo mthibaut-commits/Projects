@@ -1,0 +1,77 @@
+<html><head><style>
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;background:#FFFFFF;color:#050015;width:1088px;padding:24px}
+.t9{font-size:11.5px;line-height:1.3}.t10{font-size:12.5px;line-height:1.3}.t11{font-size:14px;line-height:1.4}
+.t12{font-size:15px;line-height:1.4}.t13{font-size:16px;line-height:1.5}.t15{font-size:18px;line-height:1.4}
+.sub{color:#6B7280}.faint{color:#9CA3AF}.b{font-weight:600}.bb{font-weight:700}
+.row{display:flex;align-items:center;justify-content:space-between;font-size:15px;color:#6B7280;padding:3px 0}
+.row b{color:#050015;font-weight:500}
+.rowb{display:flex;align-items:center;justify-content:space-between;font-size:15px;color:#050015;padding:3px 0;font-weight:600}
+.rowb b{font-weight:700}
+.edit{display:flex;align-items:center;gap:4px;border:1px solid #E5E7EB;border-radius:6px;padding:4px 8px;font-size:15px;color:#050015}
+.card{border:1px solid #E5E7EB;border-radius:14px;padding:16px}
+.capt{font-size:15px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#6B7280}
+</style></head><body>
+
+<div style="width:1040px;background:#fff;border:1px solid #E5E7EB;border-radius:20px;box-shadow:0 20px 60px rgba(0,0,0,.18);padding:24px">
+
+  <div style="display:flex;align-items:flex-start;justify-content:space-between">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="sub" style="font-size:18px;padding:4px">‹</span>
+      <div>
+        <div style="font-size:18px;font-weight:700">Resultado nueva simulación</div>
+        <div class="t11 faint">Simulación #44182 · Transportes del Maipo Ltda.</div>
+      </div>
+    </div>
+    <span class="sub" style="font-size:20px;padding:4px">✕</span>
+  </div>
+
+  <div style="display:flex;align-items:flex-start;gap:8px;background:#FFF7ED;border:1px solid #C2410C;border-radius:10px;padding:12px;margin-top:12px">
+    <span style="color:#C2410C">⚠</span>
+    <div><div class="t12 b">El cliente posee descuentos pendientes de aplicar</div>
+      <div class="t10 sub">Hay cuentas por cobrar o facturas pendientes de descontar.</div></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 320px;gap:16px;margin-top:16px">
+
+    <div class="card">
+      <div class="capt">Resultados</div>
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:8px">
+        <div class="rowb"><span>Monto Documentos</span><b>$ 312.800.000</b></div>
+        <div class="rowb"><span>Subtotal a Simular</span><b>$ 312.800.000</b></div>
+        <div style="height:1px;background:#E5E7EB;margin:4px 0"></div>
+        <div class="capt">Descuentos</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:15px">
+          <span class="sub">Tasa Negocio</span>
+          <span class="edit"><span style="width:96px;text-align:right">1,08</span><span class="t10 faint">%</span><span style="color:#703EFF">✎</span></span></div>
+        <div class="row"><span>Diferencia de Precio</span><b>$ 9.412.480</b></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:15px">
+          <span class="sub">Comisión</span>
+          <span class="edit"><span class="t10 faint">$</span><span style="width:96px;text-align:right">200.000</span><span style="color:#703EFF">✎</span></span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:15px">
+          <span class="sub">Gastos</span>
+          <span class="edit"><span class="t10 faint">$</span><span style="width:96px;text-align:right">26.000</span><span style="color:#703EFF">✎</span></span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:15px">
+          <span class="sub">Otros descuentos</span>
+          <span class="edit"><span class="t10 faint">$</span><span style="width:96px;text-align:right">0</span><span style="color:#703EFF">✎</span></span></div>
+        <div class="rowb"><span>Subtotal Descuentos</span><b>$ 9.676.480</b></div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;background:#FFFFFF;border:1px solid #E5E7EB;border-radius:10px;padding:12px;margin-top:12px">
+        <span class="t13 bb">Monto a Girar</span>
+        <span style="font-size:18px;font-weight:700;color:#16a34a">$ 256.203.520</span>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="capt">Documentos simulados</div>
+        <div class="t11 sub" style="margin-top:6px">12 facturas · $ 312.800.000</div>
+        <div class="t11 sub" style="margin-top:4px">Tasa 1,08% · Anticipo 100%</div>
+        <div class="t11 sub" style="margin-top:4px">Deudor principal: Falabella</div>
+      </div>
+      <div style="margin-top:12px;display:flex;align-items:center;justify-content:center;gap:6px;background:#16a34a;color:#fff;border-radius:10px;padding:12px;font-size:16px;font-weight:600">✓ Crear negocio en Oferta</div>
+    </div>
+  </div>
+</div>
+</body></html>

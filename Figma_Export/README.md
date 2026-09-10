@@ -13,6 +13,14 @@ HTML estático de las pantallas y del UI Kit, escrito con los tokens reales de
 | `05-lineas.html` | `LineasView` sub-tab «Vigentes»: KPIs, filtros de salud y tabla con recomendación y proyección post-curse | 1600 px |
 | `06-gestion.html` | `PanelClientes`: filtros, tabs de secciones/reportes, cartera por ejecutivo con grupo «Perdido», evolución semanal y alertas comerciales | 1600 px |
 
+| `07-tubo-tabla.html` | Tubo diario en **vista Tabla** (`TablaOportunidades`): Oportunidad · Ejecutivo · Monto · Línea · Condiciones de la oferta · Etapa · Estrategia. Incluye fila **«Sin simular»**, fila con condiciones simuladas, «Actualizando la oportunidad…», facturas nuevas sin incorporar, «Requiere otorgamiento», «Perdida · reglas de otorgamiento», «Girada» y «Sin cupo disponible» | 1600 px |
+| `08-card-simulacion.html` | **Card de simulación** — paso 4 del wizard de Nuevo negocio: «Resultado nueva simulación», campos editables (tasa, comisión, gastos, otros), Monto a Girar y panel de documentos simulados | 1040 px |
+| `09-detalle-sin-simular.html` | Detalle · **sin simular**: condiciones atenuadas con el CTA «Re-evaluar operación» tras incorporar facturas nuevas; desglose y Monto a Girar en «—» | 960 px |
+| `10-detalle-con-simulacion.html` | Detalle · **con simulación**: `SimResumen` completo — cabecera «Resultado de la simulación #N», condiciones, atribución por banda, desglose de descuentos, Monto a Girar y nota de retenciones | 960 px |
+| `11-detalle-cambio-condiciones.html` | Detalle · **cambio de condiciones** (`editCond`): tabla Criterio / Condiciones originales / Nuevas condiciones, chip «▲ −14,8% · requiere jefatura» y banner de autorización | 960 px |
+| `12-detalle-deudores-abiertos.html` | Detalle · sub-tab **Detalle** con los **acordeones por deudor abiertos**: identidad (RUT, Nota, Prime), línea del deudor con proyección, tags Otorg. n/m y Verificado / Req. verif., documentos por deudor y «Otras facturas disponibles» | 960 px |
+| `13-detalle-modal-cerrar.html` | Detalle · **modal «Cerrar oferta»** abierto: «Facturas fuera del paquete», listado de descartadas y las dos opciones (nueva oportunidad / descartar) | 1600 px |
+
 ## Notas
 
 - **Tipografía:** Geist por Google Fonts (`@import` en cada archivo) — disponible en Figma.

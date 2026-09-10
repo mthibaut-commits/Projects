@@ -1,0 +1,168 @@
+<html><head><style>
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Geist',ui-sans-serif,system-ui,sans-serif;background:#FFFFFF;color:#050015;width:1600px}
+.t7{font-size:10.5px;line-height:1.3}.t9{font-size:11.5px;line-height:1.3}.t10{font-size:12.5px;line-height:1.3}
+.t11{font-size:14px;line-height:1.4}.t12{font-size:15px;line-height:1.4}.t13{font-size:16px;line-height:1.5}
+.sub{color:#6B7280}.faint{color:#9CA3AF}.b{font-weight:600}.bb{font-weight:700}
+.nav{color:#6B7280;font-size:16px}.nav-on{color:#703EFF;font-size:16px;font-weight:600}
+.qf{border:1px solid #E5E7EB;background:#fff;color:#050015;border-radius:10px;padding:6px 12px;font-size:14px;font-weight:500}
+.qf-on{border:1px solid #703EFF;background:#703EFF;color:#fff;border-radius:10px;padding:6px 12px;font-size:14px;font-weight:500}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:1330px}
+th{padding:8px;text-align:left;font-weight:600;color:#6B7280;border-bottom:1px solid #E5E7EB;background:#fff}
+td{padding:10px 8px;border-bottom:1px solid #E5E7EB;vertical-align:top}
+.av{width:20px;height:20px;border-radius:9999px;background:#703EFF;color:#fff;font-size:11.5px;font-weight:600;display:inline-flex;align-items:center;justify-content:center}
+.dot{width:8px;height:8px;border-radius:9999px;display:inline-block}
+.tag{display:inline-flex;align-items:center;gap:4px;border-radius:9999px;padding:2px 6px;font-size:11.5px;font-weight:500}
+.tagb{display:inline-flex;align-items:center;gap:4px;border-radius:9999px;padding:2px 6px;font-size:11.5px;font-weight:600}
+.lbar{position:relative;height:6px;width:148px;border-radius:9999px;background:#EDEBF2;margin-top:4px}
+</style></head><body>
+
+<div style="border-bottom:1px solid #E5E7EB;background:#fff">
+  <div style="max-width:1600px;height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 24px">
+    <div style="display:flex;align-items:center;gap:24px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="background:#703EFF;color:#fff;border-radius:7px;width:28px;height:28px;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center">N</span>
+        <span style="font-size:13px;font-weight:600;color:#230C65">NEX Factoring</span></div>
+      <span style="width:1px;height:28px;background:#ADA8BD"></span>
+      <div style="display:flex;align-items:center;gap:20px">
+        <span class="nav">Dashboard</span><span class="nav-on">Tubo diario</span><span class="nav">Tareas</span><span class="nav">Clientes</span>
+        <span class="nav">Gestión</span><span class="nav">Operaciones</span><span class="nav">Líneas</span>
+        <span class="nav" style="display:inline-flex;align-items:center;gap:6px">Otorgamientos <span style="background:#7c3aed;color:#fff;border-radius:9999px;padding:0 5px;font-size:11.5px;font-weight:700">4</span></span>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <span class="sub">⚙</span><span style="color:#703EFF">🔔</span><span class="sub">★</span><span style="color:#7C3AED">🛡</span>
+      <span style="display:flex;align-items:center;gap:6px"><span class="faint">👤</span><span style="border:1px dashed #C2410C;border-radius:10px;padding:6px 8px;font-size:15px;font-weight:500;background:#fff">Rodrigo Peña · Jefe comercial</span></span>
+      <span style="width:32px;height:32px;border-radius:8px;background:#230C65;color:#fff;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center">RP</span>
+    </div>
+  </div>
+</div>
+
+<div style="max-width:1600px;padding:16px 24px">
+  <div class="t11 faint">Comercial › Tubo diario</div>
+  <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:8px;margin:4px 0 16px">
+    <h1 style="font-size:24px;font-weight:600;letter-spacing:-.02em">Tubo diario</h1>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="display:inline-flex;align-items:center;gap:6px;border:1px solid #703EFF;background:#F1ECFF;color:#703EFF;border-radius:10px;padding:6px 10px;font-size:14px;font-weight:600">▤ Tabla ⌄</span>
+      <span style="background:linear-gradient(to right,#EE2EFF,#FF814B);color:#fff;border-radius:9999px;padding:6px 16px;font-size:14px;font-weight:600">+ Nuevo negocio</span>
+    </div>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">
+    <span class="qf-on">Todas · 68</span><span class="qf">Prioritarias · 6</span><span class="qf">Requieren otorgamiento · 11</span>
+    <span class="qf">Requieren verificación · 9</span><span class="qf">Fuera de atribución · 3</span><span class="qf">Otras facturas · 24</span>
+  </div>
+
+  <div style="border:1px solid #E5E7EB;border-radius:14px;background:#fff;padding:4px">
+    <table>
+      <thead><tr><th>Oportunidad</th><th>Ejecutivo</th><th>Monto</th><th>Línea</th><th>Condiciones de la oferta</th><th>Etapa</th><th>Estrategia</th></tr></thead>
+      <tbody>
+
+        <tr>
+          <td><div class="t11 b" style="color:#703EFF">Comercial Andes SpA</div>
+            <div class="t9 faint"><span class="bb" style="color:#5B21D6">Factoring</span> OP-2418</div>
+            <div class="t9 sub">Deudores: Codelco +2</div></td>
+          <td class="t11 sub" style="white-space:nowrap"><span class="av">CR</span> Carla Rivas</td>
+          <td style="white-space:nowrap"><div class="t11 b">MM$ 184,2</div><div class="t9 faint">7 facturas</div></td>
+          <td><div class="t10 b">MM$ 900,0 <span class="faint" style="font-weight:400">aprobada</span></div>
+            <div class="lbar"><div style="position:absolute;left:0;top:0;height:6px;width:68%;border-radius:9999px;background:#9CA3AF"></div></div>
+            <div class="t9 bb" style="color:#16A34A;margin-top:2px">Disponible MM$ 288,0</div></td>
+          <td class="t10 sub" style="line-height:1.45">Tasa <b style="color:#050015">0,92%</b> · Anticipo 90% · 42d<br>Giro <b style="color:#16a34a">MM$ 161,7</b> · Desc. MM$ 4,1 · Com. $ 200.000</td>
+          <td style="white-space:nowrap"><div style="display:flex;align-items:center;gap:4px"><span class="dot" style="background:linear-gradient(135deg,#703EFF,#230C65)"></span>Oferta y Negociación</div></td>
+          <td style="max-width:240px"><span class="tagb" style="background:#F0FDF4;color:#16A34A">↗ SOW creciendo</span><div class="t9 sub" style="margin-top:4px;line-height:1.35">Mantener el servicio; descuento mínimo.</div></td>
+        </tr>
+
+        <tr>
+          <td><div class="t11 b" style="color:#703EFF">Pesquera Bío Bío Ltda.</div>
+            <div class="t9 faint"><span class="bb" style="color:#16A34A">Nuevo negocio</span> OP-2455</div>
+            <div class="t9 sub">Deudores: Walmart Chile S.A.</div></td>
+          <td class="t11 sub" style="white-space:nowrap"><span class="av">CR</span> Carla Rivas</td>
+          <td style="white-space:nowrap"><div class="t11 b">MM$ 41,7</div><div class="t9 faint">2 facturas</div></td>
+          <td><span class="t9 faint">Sin línea</span></td>
+          <td><span class="t10 faint">Sin simular</span></td>
+          <td style="white-space:nowrap"><div style="display:flex;align-items:center;gap:4px"><span class="dot" style="background:#9CA3AF"></span>Prospección</div></td>
+          <td style="max-width:240px"><span class="tagb" style="background:#eff6ff;color:#2563EB">✦ SOW nuevo</span><div class="t9 sub" style="margin-top:4px;line-height:1.35">Captar la primera operación para abrir la relación.</div></td>
+        </tr>
+
+        <tr>
+          <td><div class="t11 b" style="color:#703EFF">Transportes del Maipo Ltda.</div>
+            <div class="t9 faint"><span class="bb" style="color:#2563EB">Confirming</span> OP-2431</div>
+            <div class="t9 sub">Deudores: Falabella +4</div></td>
+          <td class="t11 sub" style="white-space:nowrap"><span class="av">SH</span> Sofía Herrera</td>
+          <td style="white-space:nowrap"><div class="t11 b">MM$ 312,8</div><div class="t9 faint">12 facturas</div></td>
+          <td><div class="t10 b">MM$ 450,0 <span class="faint" style="font-weight:400">aprobada</span></div>
+            <div class="lbar"><div style="position:absolute;left:0;top:0;height:6px;width:96%;border-radius:9999px;background:#9CA3AF"></div></div>
+            <div class="t9 bb" style="color:#16A34A;margin-top:2px">Disponible MM$ 19,0</div></td>
+          <td class="t10 sub" style="line-height:1.45">Tasa <b style="color:#050015">1,08%</b> · Anticipo 85% · 52d<br>Giro <b style="color:#16a34a">MM$ 255,1</b> · Desc. MM$ 9,4 · Com. $ 200.000
+            <div style="display:inline-flex;align-items:center;gap:4px;background:#FFF7ED;color:#C2410C;border-radius:4px;padding:3px 6px;font-size:12.5px;font-weight:500;margin-top:6px">⚠ 3 factura(s) nueva(s) · MM$ 48,2 sin incorporar</div></td>
+          <td style="white-space:nowrap"><div style="display:flex;align-items:center;gap:4px"><span class="dot" style="background:linear-gradient(135deg,#C4B5FD,#703EFF)"></span>Oferta y Negociación</div>
+            <div class="tagb" style="background:#f5f3ff;color:#7C3AED;margin-top:4px">⚠ Requiere otorgamiento <span style="background:#7c3aed;color:#fff;border-radius:9999px;padding:0 5px;font-size:11.5px;font-weight:700">2</span></div></td>
+          <td style="max-width:240px"><span class="tagb" style="background:#FFF7ED;color:#C2410C">→ SOW estable</span><div class="t9 sub" style="margin-top:4px;line-height:1.35">Descuento moderado para capturar más participación.</div></td>
+        </tr>
+
+        <tr>
+          <td><div class="t11 b" style="color:#703EFF">Ingeniería Ríos del Sur S.A.</div>
+            <div class="t9 faint"><span class="bb" style="color:#5B21D6">Factoring</span> OP-2389</div>
+            <div class="t9 sub">Deudores: Ministerio de Obras Públicas +3</div></td>
+          <td class="t11 sub" style="white-space:nowrap"><span class="av">CR</span> Carla Rivas</td>
+          <td style="white-space:nowrap"><div class="t11 b">MM$ 402,9</div><div class="t9 faint">18 facturas</div></td>
+          <td><div class="t10 b">MM$ 1.200,0 <span class="faint" style="font-weight:400">aprobada</span></div>
+            <div class="lbar"><div style="position:absolute;left:0;top:0;height:6px;width:32%;border-radius:9999px;background:#9CA3AF"></div></div>
+            <div class="t9 bb" style="color:#16A34A;margin-top:2px">Disponible MM$ 816,0</div></td>
+          <td class="t10 sub" style="line-height:1.45">Tasa <b style="color:#050015">1,14%</b> · Anticipo 80% · 46d<br>Giro <b style="color:#16a34a">MM$ 307,4</b> · Desc. MM$ 14,7 · Com. $ 200.000
+            <div style="display:inline-flex;align-items:center;gap:6px;background:#F5F3FF;color:#7C3AED;border-radius:4px;padding:3px 6px;font-size:12.5px;font-weight:500;margin-top:6px">↻ Actualizando la oportunidad…</div></td>
+          <td style="white-space:nowrap"><div style="display:flex;align-items:center;gap:4px"><span class="dot" style="background:#7c3aed"></span>Otorgamiento</div>
+            <div class="tagb" style="background:#f5f3ff;color:#7C3AED;margin-top:4px">⚠ Requiere otorgamiento <span style="background:#7c3aed;color:#fff;border-radius:9999px;padding:0 5px;font-size:11.5px;font-weight:700">3</span></div></td>
+          <td style="max-width:240px"><span class="tagb" style="background:#F0FDF4;color:#16A34A">✓ SOW en target</span><div class="t9 sub" style="margin-top:4px;line-height:1.35">Defender la cuenta; tasa estándar (no se requiere descuento).</div></td>
+        </tr>
+
+        <tr>
+          <td><div class="t11 b" style="color:#703EFF">Distribuidora Kayser Ltda.</div>
+            <div class="t9 faint"><span class="bb" style="color:#5B21D6">Factoring</span> OP-2298</div>
+            <div class="t9 sub">Deudores: Cencosud +2</div></td>
+          <td class="t11 sub" style="white-space:nowrap"><span class="av">CR</span> Carla Rivas</td>
+          <td style="white-space:nowrap"><div class="t11 b">MM$ 262,5</div><div class="t9 faint">11 facturas</div></td>
+          <td><div class="t10 b">MM$ 750,0 <span class="faint" style="font-weight:400">aprobada</span></div>
+            <div class="lbar"><div style="position:absolute;left:0;top:0;height:6px;width:67%;border-radius:9999px;background:#9CA3AF"></div></div>
+            <div class="t9 bb" style="color:#16A34A;margin-top:2px">Disponible MM$ 247,5</div></td>
+          <td class="t10 sub" style="line-height:1.45">Tasa <b style="color:#050015">0,88%</b> · Anticipo 90% · 38d<br>Giro <b style="color:#16a34a">MM$ 228,8</b> · Desc. MM$ 7,4 · Com. $ 200.000</td>
+          <td style="white-space:nowrap"><div style="display:flex;align-items:center;gap:4px"><span class="dot" style="background:#16a34a"></span>Aceptada</div>
+            <div class="tag" style="background:#eff6ff;color:#2563EB;margin-top:4px">Giro pendiente</div></td>
+          <td style="max-width:240px"><span class="tagb" style="background:#F0FDF4;color:#16A34A">↗ SOW creciendo</span><div class="t9 sub" style="margin-top:4px;line-height:1.35">Mantener el servicio; descuento mínimo.</div></td>
+        </tr>
+
+        <tr>
+          <td><div class="t11 b" style="color:#703EFF">Metalúrgica San Joaquín</div>
+            <div class="t9 faint"><span class="bb" style="color:#2563EB">Confirming</span> OP-2461</div>
+            <div class="t9 sub">Deudores: CMPC +1</div></td>
+          <td class="t11 sub" style="white-space:nowrap"><span class="av">MF</span> Matías Fuentes</td>
+          <td style="white-space:nowrap"><div class="t11 b">MM$ 96,5</div><div class="t9 faint">5 facturas</div></td>
+          <td><div class="t10 b">MM$ 200,0 <span class="faint" style="font-weight:400">aprobada</span></div>
+            <div class="lbar"><div style="position:absolute;left:0;top:0;height:6px;width:100%;border-radius:9999px;background:#9CA3AF"></div></div>
+            <div class="t9 bb" style="color:#DC2626;margin-top:2px">Sin cupo disponible</div></td>
+          <td class="t10 sub" style="line-height:1.45">Tasa <b style="color:#050015">0,95%</b> · Anticipo 90% · 35d<br>Giro <b style="color:#16a34a">MM$ 84,6</b> · Desc. MM$ 2,2 · Com. $ 200.000</td>
+          <td style="white-space:nowrap"><div style="display:flex;align-items:center;gap:4px"><span class="dot" style="background:#dc2626"></span>Perdida</div>
+            <div class="tagb" style="background:#fef2f2;color:#DC2626;margin-top:4px">✕ Perdida · reglas de otorgamiento</div></td>
+          <td style="max-width:240px"><span class="tagb" style="background:#fef2f2;color:#DC2626">↘ SOW 0% · en competencia</span><div class="t9 sub" style="margin-top:4px;line-height:1.35">Capturar SOW: oferta competitiva para arrebatar el negocio a la competencia.</div></td>
+        </tr>
+
+        <tr style="border-bottom:none">
+          <td><div class="t11 b" style="color:#703EFF">Servicios Austral SpA</div>
+            <div class="t9 faint"><span class="bb" style="color:#0f766e">Enrolamiento</span> OP-2344</div>
+            <div class="t9 sub">Deudores: Arauco +1</div></td>
+          <td class="t11 sub" style="white-space:nowrap"><span class="av">VS</span> Valentina Soto</td>
+          <td style="white-space:nowrap"><div class="t11 b">MM$ 168,4</div><div class="t9 faint">6 facturas</div></td>
+          <td><div class="t10 b">MM$ 380,0 <span class="faint" style="font-weight:400">aprobada</span></div>
+            <div class="lbar"><div style="position:absolute;left:0;top:0;height:6px;width:44%;border-radius:9999px;background:#9CA3AF"></div></div>
+            <div class="t9 bb" style="color:#16A34A;margin-top:2px">Disponible MM$ 212,8</div></td>
+          <td class="t10 sub" style="line-height:1.45">Tasa <b style="color:#050015">0,98%</b> · Anticipo 90% · 40d<br>Giro <b style="color:#16a34a">MM$ 146,6</b> · Desc. MM$ 4,9 · Com. $ 200.000</td>
+          <td style="white-space:nowrap"><div style="display:flex;align-items:center;gap:4px"><span class="dot" style="background:#16a34a"></span>Giro</div>
+            <div class="tag" style="background:#F0FDF4;color:#16A34A;margin-top:4px">Girada</div></td>
+          <td style="max-width:240px"><span class="tagb" style="background:#fef2f2;color:#DC2626">↘ SOW bajando</span><div class="t9 sub" style="margin-top:4px;line-height:1.35">Oferta con descuento promocional para recuperar el SOW.</div></td>
+        </tr>
+
+      </tbody>
+    </table>
+  </div>
+</div>
+</body></html>
