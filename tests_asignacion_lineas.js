@@ -5,14 +5,16 @@
    del cliente, y cliente en estado A con sólo LF1), más cinco del DIFF entre versiones (§4.3): qué
    se movió respecto de la evaluación anterior, sin que esa versión altere jamás la asignación, más
    tres del RECORTE de una operación ya aceptada (§9 del spec de verificación): tras la firma la
-   operación sólo encoge, y recortar no vuelve a asignar contra el estado nuevo de las líneas.
+   operación sólo encoge, y recortar no vuelve a asignar contra el estado nuevo de las líneas, más
+   tres de la REAPERTURA: reabrir revoca la firma del cliente y las facturas que el deudor no
+   confirmó quedan vetadas para esa operación.
 
    CÓMO SE CORREN: abrir pipeline_comercial.html, iniciar sesión, abrir la consola del navegador y
    pegar el contenido de este archivo. No requiere datos del pipeline: cada caso inyecta su propio
    estado de líneas por el tercer parámetro de `asignarLineas`, así que el resultado no depende de
    qué oportunidades haya generado el motor de entrada.
 
-   Última corrida: 23/23 PASA.
+   Última corrida: 26/26 PASA.
    ============================================================================================ */
 (() => {
   const out = [];
@@ -194,6 +196,33 @@
      rec23.facturas[0].estado === "CON_LINEA" && rec23.facturas[0].origen[0].tipo === "LF2"
      && reeval23.facturas[0].estado === "REQUIERE_COMITE",
      "recortada " + rec23.facturas[0].estado + " · re-evaluada sería " + reeval23.facturas[0].estado);
+
+  // ══ REAPERTURA: firma revocada y facturas vetadas ═════════════════════════════════════════════
+  // Reabrir una operación aceptada la devuelve a Oferta para modificarla. Dos reglas que no pueden
+  // depender de que alguien se acuerde de limpiar una bandera.
+
+  // 24 · reabrir REVOCA la firma. El cliente firmó un paquete y un monto concretos; si se modifica,
+  //      lo firmado ya no describe lo que se va a cursar y tiene que firmar de nuevo en el portal.
+  const firmado24 = { id: "T-24", stage: "cesion", clienteAcepto: true, cierreFirmado: true, otorgada: true };
+  const reabierto24 = { ...firmado24, stage: "oferta", reabierta: { ts: "hoy", reservaMM: 120 } };
+  ok("24 reabrir revoca la firma del cliente",
+     aprobacionFormalCliente(firmado24) === true && aprobacionFormalCliente(reabierto24) === false,
+     "firmado " + aprobacionFormalCliente(firmado24) + " · reabierto " + aprobacionFormalCliente(reabierto24));
+
+  // 25 · la factura que el deudor NO confirmó queda vetada para esa operación: ni la lista de
+  //      candidatas la ofrece como agregable, ni se puede reponer por otro camino.
+  const dealV25 = { id: "T-25" };
+  const facV25 = { id: "fx25", folio: "9001", montoMM: 40, deudor: "DEU-X" };
+  repoNoConfirmadas.set(dealV25.id, { fx25: { folio: "9001", montoMM: 40, deudor: "DEU-X", por: "test", fecha: "hoy" } });
+  const est25 = estadoCandidata(facV25, dealV25);
+  ok("25 la factura no confirmada queda vetada",
+     noConfirmada(dealV25, facV25) === true && est25.agregable === false && est25.bloqueada === true && est25.clave === "noConfirmada",
+     est25.label);
+
+  // 26 · al volver a firmar se cierra la reapertura y la aprobación formal vuelve a estar vigente
+  ok("26 volver a firmar restituye la aprobación",
+     aprobacionFormalCliente({ ...reabierto24, reabierta: undefined, stage: "cesion" }) === true,
+     "");
 
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");

@@ -32,6 +32,12 @@ Ninguna de las reglas discrimina entre facturas del mismo deudor:
 
 El detalle por factura aparece **después** del contacto, cuando el deudor confirma unas y no otras y Security retira las no confirmadas. Esa es una fase distinta y no es responsabilidad de esta función.
 
+Dos consecuencias de esa fase que sí hay que fijar:
+
+- **La factura no confirmada queda VETADA para esa operación.** No se puede volver a seleccionar, ni siquiera si la operación se reabre para modificarla: es el resultado de una llamada, no una preferencia del ejecutivo. Agregar otras facturas sí se puede, y esas sí pasan por verificación.
+- **La verificación ya realizada se conserva.** El veredicto por deudor y, sobre todo, las llamadas ya registradas persisten por operación. Si se reabre para modificarla, rehacer un contacto que ya se hizo son 3–4 horas por deudor tiradas, y el deudor ya respondió.
+
+
 ### 2.2 Entrada
 
 ```json

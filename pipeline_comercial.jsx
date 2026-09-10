@@ -2510,8 +2510,17 @@ function candidatasDe(deal) {
 //  · cedida     → cedida a un tercero antes de esta operación: bloqueada.
 //  · otraOp     → ya es parte de otra operación de Security: bloqueada.
 //  · ok         → disponible para agregar con su monto total.
+// ¿El deudor rechazó esta factura en la verificación de ESTA operación? Si la rechazó, no vuelve a
+// entrar: es el resultado de una llamada telefónica, no una preferencia que el ejecutivo pueda
+// revertir agregándola de nuevo.
+function noConfirmada(deal, f) {
+  const m = (typeof NO_CONFIRMADAS !== "undefined" && NO_CONFIRMADAS[(deal && deal.id) || ""]) || null;
+  return !!(m && f && m[f.id]);
+}
 function estadoCandidata(f, deal) {
   const monto = f.montoMM || 0;
+  // El veto de la verificación manda sobre cualquier otro estado de la candidata.
+  if (noConfirmada(deal, f)) return { clave: "noConfirmada", bloqueada: true, agregable: false, label: "El deudor no la confirmó", tono: "red", montoNeto: monto, ncMonto: 0 };
   const h = Math.abs(hashStr("estCand" + ((deal && deal.id) || "") + "|" + (f.folio || f.id || "")));
   const b = h % 100;
   if (f.notaCredito === true || b < 7)
@@ -5156,13 +5165,22 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada }) {
   const [refrescado, setRefrescado] = useState(nowStamp());
   const [filtro, setFiltro] = useState("all");
   const [open, setOpen] = useState({});
-  const [telReg, setTelReg] = useState({});
+  // Las verificaciones telefónicas se persisten: vivían en este useState y se perdían al cerrar el
+  // detalle, aunque la pantalla prometiera lo contrario. Al reabrir una operación para modificarla,
+  // rehacer una llamada ya hecha son 3–4 horas por deudor tiradas.
+  const [telV, forceTel] = useState(0);
+  const telGuardadas = (typeof VERIF_TEL !== "undefined" && VERIF_TEL[deal.id]) || {};
+  const registrarTel = async (f) => {
+    const m = { ...(repoVerifTel.get(deal.id) || {}), [f.id]: { por: (typeof EXECS !== "undefined" && EXECS[deal.exec]) || "Ejecutivo", fecha: nowStamp() } };
+    await confirmarEscrituras([repoVerifTel.set(deal.id, m)]);
+    forceTel((v) => v + 1);
+  };
   const items = facturasOp.map((f) => ({ f, v: verifFactura(f, deal) }));
   const totalMM = items.reduce((s, x) => s + (x.f.montoMM || 0), 0);
   const nTel = items.filter((x) => x.v.est === "tel").length;
   const nOk = items.filter((x) => x.v.est === "ok").length;
   const nHard = items.filter((x) => x.v.hard).length;
-  const telEstadoDe = (x) => telReg[x.f.id] ? { estado: "Completada", checks: [1, 1, 1], who: `${((typeof EXECS !== "undefined" && EXECS[deal.exec]) || "Ejecutivo")} · ${telReg[x.f.id]}` } : x.v.tel;
+  const telEstadoDe = (x) => telGuardadas[x.f.id] ? { estado: "Completada", checks: [1, 1, 1], who: `${telGuardadas[x.f.id].por} · ${telGuardadas[x.f.id].fecha}` } : x.v.tel;
   const vistos = items.filter((x) => filtro === "tel" ? x.v.est === "tel" : filtro === "ok" ? x.v.est === "ok" : filtro === "fail" ? x.v.fallidas.length : true);
   const notaCol = (n) => n >= 4 ? "#0a7d3f" : n >= 3 ? "#C2410C" : "#EF4444";
   const CHECKS = ["Existencia de la factura", "Recepción conforme", "Fecha de pago comprometida"];
@@ -5231,7 +5249,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada }) {
                         <div key={i} className="flex items-center gap-2 py-1 t10" style={{ borderBottom: i < 2 ? `1px solid ${C.line}` : "none", color: C.sub }}><span className="flex h-4 w-4 items-center justify-center rounded" style={{ border: `1.5px solid ${tel.checks[i] ? "#16a34a" : "#D1D5DB"}`, backgroundColor: tel.checks[i] ? "#16a34a" : "#fff", color: "#fff", fontSize: 9, fontWeight: 700 }}>{tel.checks[i] ? "✓" : ""}</span>{c}</div>
                       ))}
                       {tel.who && <div className="mt-1.5 t9" style={{ color: C.faint }}>Registrado por {tel.who}</div>}
-                      {!bloqueado && tel.estado !== "Completada" && <button onClick={() => setTelReg((m) => ({ ...m, [f.id]: nowStamp() }))} className="mt-2 rounded-md px-3 py-1.5 t10 font-semibold" style={{ border: "1px solid #F1ECFF", color: "#5B21D6", backgroundColor: "#fff" }}>Registrar verificación</button>}
+                      {!bloqueado && tel.estado !== "Completada" && <button onClick={() => registrarTel(f)} className="mt-2 rounded-md px-3 py-1.5 t10 font-semibold" style={{ border: "1px solid #F1ECFF", color: "#5B21D6", backgroundColor: "#fff" }}>Registrar verificación</button>}
                       {/* Si el deudor NO confirma, Security retira esa factura de la operación (spec de
                           verificación §1). Es la única mutación que admite una operación ya firmada, y
                           sólo puede QUITAR: la asignación de las demás no se toca y no se vuelve a
@@ -5393,11 +5411,12 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
     </>
   );
 }
-function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorporarFacturas, onRetirarFactura, onSugerirOferta, onSimular, onPublicar, onCerrarOferta, onEnviarCierre, onContactar, onEditarContacto, onEnviarWA, onMover, cierre, onConfirmCierre, usuario, onCambiarUsuario, onAutorizarCausa, onOtorgarOperacion, tabInicial, onIrOtorgamientos, fullPage }) {
+function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorporarFacturas, onRetirarFactura, onReabrir, onSugerirOferta, onSimular, onPublicar, onCerrarOferta, onEnviarCierre, onContactar, onEditarContacto, onEnviarWA, onMover, cierre, onConfirmCierre, usuario, onCambiarUsuario, onAutorizarCausa, onOtorgarOperacion, tabInicial, onIrOtorgamientos, fullPage }) {
   const [tab, setTab] = useState(tabInicial || (deal && deal.stage === "otorgamiento" ? "otorgamiento" : "negocio"));
   useEffect(() => { if (tabInicial) setTab(tabInicial); }, [tabInicial, deal && deal.id]);
   const [confirmRetiro, setConfirmRetiro] = useState(null); // factura a retirar de la oferta (ConfirmDialog spec §26)
   const [confirmNoConf, setConfirmNoConf] = useState(null); // factura que el deudor NO confirmó en la verificación telefónica
+  const [confirmReabrir, setConfirmReabrir] = useState(false); // reabrir una operación aceptada para modificarla
   const [otorgNota, setOtorgNota] = useState(""); // nota del especialista en Otorgamiento
   const [otorgArch, setOtorgArch] = useState([]); // archivos de soporte adjuntos
   const [reevTick, setReevTick] = useState(0); // fuerza re-render tras re-evaluar la simulación
@@ -5628,6 +5647,17 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               <Star size={12} style={{ color: on ? "#C2410C" : C.faint, fill: on ? "#F97316" : "none" }} /> {on ? "Quitar prioridad de curse" : "Marcar prioridad de curse"}
             </button>
           ); })()}
+          {/* REABRIR PARA MODIFICAR. Es la única vuelta atrás que existe, y es explícita: el ejecutivo
+              retoma una operación aceptada para agregar o quitar facturas. Lo ya hecho NO se pierde
+              —excepciones de otorgamiento, excepciones de verificación y llamadas ya registradas viven
+              en repositorios por operación—, y las facturas que el deudor no confirmó quedan vetadas.
+              Girada no se reabre: ya se desembolsó. */}
+          {["aceptadas", "cesion"].includes(deal.stage) && (
+            <button onClick={() => { setAccMenu(false); setConfirmReabrir(true); }}
+              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 t11 text-left hover:bg-stone-50" style={{ color: C.ink }}>
+              <RotateCcw size={12} style={{ color: C.faint }} /> Reabrir para modificar
+            </button>
+          )}
           {(() => {
             // No se retrocede, y tres etapas no son avance manual: «Aceptada» la fija el cliente al
             // firmar el cierre, «Cesión» la fija que las facturas queden cedidas, y a «Perdida» se
@@ -6617,6 +6647,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 vd.tit = `Aceptada · ${fmtMM(evalLin.cursable)} con línea asignada`;
                                 vd.sub = `Versión v${ultVer.v} del ${ultVer.ts} — es lo que el cliente firmó, no un recálculo. El cupo por ${fmtMM(evalLin.cursable)} está reservado en el sistema de gestión de líneas; si la operación se cae, hay que pedir allá que la eliminen para liberarlo.`;
                               }
+                              // Reabierta: el cupo de la versión aceptada sigue reservado afuera, así que
+                              // el disponible que se está usando para re-evaluar viene NETO de esa reserva.
+                              // Decirlo evita que el ejecutivo lea «sin cupo» como un problema de línea.
+                              if (deal.reabierta && !leeDeVersion) {
+                                vd.sub += ` Operación reabierta el ${deal.reabierta.ts}: el cliente deberá volver a firmar, y los ${fmtMM(deal.reabierta.reservaMM || 0)} de la versión aceptada siguen reservados en el sistema de gestión de líneas, así que ese cupo aparece tomado hasta que pidas allá que lo liberen.`;
+                              }
                               const dl = !leeDeVersion && evalLin && evalLin.diff;
                               if (dl && dl.hayCambios) {
                                 const ps = [];
@@ -7554,8 +7590,23 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
       <ConfirmDialog abierto={!!confirmNoConf} titulo="¿El deudor no confirmó esta factura?"
         descripcion={confirmNoConf ? `Folio ${confirmNoConf.folio || confirmNoConf.id || ""} · ${fmtMM(confirmNoConf.montoMM || 0)}. Sale de la operación y baja el monto a girar. Las demás facturas conservan su línea. El cupo que deja libre sigue reservado en el sistema de gestión de líneas: para recuperarlo hay que pedir allá que lo liberen.` : ""}
         etiquetaConfirmar="Retirar factura no confirmada"
-        onConfirmar={() => { onRetirarFactura(deal.id, confirmNoConf); setConfirmNoConf(null); }}
+        onConfirmar={() => { onRetirarFactura(deal.id, confirmNoConf, "noConfirmada"); setConfirmNoConf(null); }}
         onCancelar={() => setConfirmNoConf(null)} />
+      {/* Reabrir. Lo importante que tiene que decir el diálogo es qué se CONSERVA (para que el
+          ejecutivo no crea que parte de cero) y qué pasa con la reserva, que NEX no puede tocar. */}
+      {(() => {
+        const vsR = SIM_VERSIONS[deal.id] || [];
+        const reservaMM = vsR.length && vsR[vsR.length - 1].linea ? vsR[vsR.length - 1].linea.cursable : 0;
+        const nTel = Object.keys((typeof VERIF_TEL !== "undefined" && VERIF_TEL[deal.id]) || {}).length;
+        const nVet = Object.keys((typeof NO_CONFIRMADAS !== "undefined" && NO_CONFIRMADAS[deal.id]) || {}).length;
+        return (
+          <ConfirmDialog abierto={confirmReabrir} titulo="¿Reabrir esta operación para modificarla?"
+            descripcion={`Vuelve a Oferta y Negociación: podrás agregar o quitar facturas, y al re-evaluar se asigna línea y corre la verificación de lo nuevo. Se conserva lo ya hecho: las excepciones de otorgamiento y de verificación resueltas${nTel ? `, y ${nTel} verificación(es) telefónica(s) ya registrada(s)` : ""} — no se parte de cero.${nVet ? ` Las ${nVet} factura(s) que el deudor no confirmó quedan vetadas y no se pueden volver a seleccionar.` : ""} El cliente tendrá que VOLVER A FIRMAR en el portal: la firma anterior deja de valer porque el paquete de facturas cambia, y sin firma nueva la operación no puede girarse. Ojo con el cupo: los ${fmtMM(reservaMM)} de la versión aceptada siguen RESERVADOS en el sistema de gestión de líneas. Mientras no pidas allá que los liberen, ese cupo aparecerá tomado al re-evaluar.`}
+            etiquetaConfirmar="Reabrir operación"
+            onConfirmar={() => { setConfirmReabrir(false); onReabrir && onReabrir(deal.id); }}
+            onCancelar={() => setConfirmReabrir(false)} />
+        );
+      })()}
       {/* Motivo de cierre. Cada opción deja un resultado distinto (Perdida / Expirada) y queda en
           la bitácora, así que se elige acá y no al vuelo dentro del menú de acciones. */}
       {rechazoModal && (
@@ -10036,6 +10087,12 @@ function causaPerdidaDeal(deal) {
 // ¿Contamos con la aprobación FORMAL del cliente para girar? La operación llega a Otorgamiento tras la
 // aceptación y firma del cierre por el cliente (cesión), por lo que en esa etapa la aprobación ya existe.
 function aprobacionFormalCliente(deal) {
+  // REABRIR REVOCA LA FIRMA. El cliente firmó un paquete de facturas y un monto a girar concretos; si
+  // la operación se reabre para modificarla, lo firmado deja de describir lo que se va a cursar, así
+  // que tiene que volver a firmar en el portal. Se corta acá, en el gate, y no limpiando banderas una
+  // por una: cualquiera que se olvide dejaría girar una operación sin aceptación vigente. La regla 1
+  // ya impide que el ejecutivo la marque aceptada a mano, así que la única salida es la firma.
+  if (deal && deal.reabierta) return false;
   return !!(deal && (deal.clienteAcepto || deal.otorgada || deal.cierreFirmado || deal.cesionExterna || ["cesion", "otorgamiento", "giro"].includes(deal.stage)));
 }
 // ¿La operación en Otorgamiento está lista para GIRAR? Todos sus criterios aceptados (excepcionados o
@@ -10230,6 +10287,13 @@ const repoOtorgEventos = crearRepo("otorgamiento_evento");
 // SIM_VERSIONS se declara más arriba (lo usan varias funciones antes de este punto); acá se reapunta a
 // su repositorio. Es el histórico versionado de la decisión de riesgo: hoy se pierde al recargar, y en
 // producción tiene que ser una tabla inmutable con snapshot jsonb.
+// Verificaciones telefónicas YA REGISTRADAS. Vivían en un useState del tab, así que se perdían al
+// cerrar el detalle —y la propia pantalla prometía que no se perdían—. Al reabrir una operación para
+// modificarla, rehacer llamadas que ya se hicieron es 3–4 horas por deudor tiradas a la basura.
+const repoVerifTel = crearRepo("verificacion_telefonica");
+// Facturas que el deudor NO confirmó. Quedan VETADAS para esta operación: no se pueden volver a
+// seleccionar al reabrirla. Es el resultado de una llamada, no una preferencia del ejecutivo.
+const repoNoConfirmadas = crearRepo("factura_no_confirmada");
 const repoSimVersions = crearRepo("simulacion_version");
 SIM_VERSIONS = repoSimVersions.all();
 let VISADO_STATE = repoVisado.all(); // { [dealId]: { [ruleN]: "aprobado"|"rechazado" } } — resolución de excepciones
@@ -10240,11 +10304,14 @@ let SOLICITUD_EXC = repoSolicitudExc.all(); // { [dealId]: { [stKey]: { comentar
 // Excepción de VERIFICACIÓN por factura: el Gerente Comercial (u otro apoderado habilitado) exime a una
 // factura de la verificación telefónica antes del giro. { [dealId]: { [facturaId]: { por, fecha, msg } } }
 let VERIF_EXC = repoVerifExc.all();
+let VERIF_TEL = repoVerifTel.all();          // { [dealId]: { [facturaId]: { por, fecha } } }
+let NO_CONFIRMADAS = repoNoConfirmadas.all(); // { [dealId]: { [facturaId]: { folio, montoMM, deudor, por, fecha } } }
 // Reapunta los alias a la tabla del tenant activo. Se llama al cambiar de tenant; con un solo tenant
 // (Security) hoy no se ejecuta, pero deja explícito qué hay que hacer cuando entre el segundo factoring.
 function reapuntarRepos() {
   VISADO_STATE = repoVisado.all(); VISADO_DETALLE = repoVisadoDetalle.all();
   SOLICITUD_EXC = repoSolicitudExc.all(); VERIF_EXC = repoVerifExc.all();
+  VERIF_TEL = repoVerifTel.all(); NO_CONFIRMADAS = repoNoConfirmadas.all();
   OTORG_EVENTOS = repoOtorgEventos.all(); SIM_VERSIONS = repoSimVersions.all(); invalidarVisado();
 }
 // ── PERMISOS DE LA SESIÓN (UX ONLY — la autorización real es del servidor) ──────────────────────
@@ -18786,7 +18853,8 @@ export default function PipelineComercial() {
         hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Sistema", esEvento: true, resultado: `Derivada a Otorgamiento (aprobación manual) — ${otorg.motivo === "ambos" ? "excede la línea aprobada e incluye deudores Otro" : otorg.superaLinea ? "excede la línea de crédito aprobada" : "incluye facturas de deudores fuera de las listas autorizadas"}`, exito: false });
         stageFinal = "otorgamiento"; statusDest = "En otorgamiento · requiere aprobación de un especialista";
       }
-      return { ...d, waSesion: wa, emailThread, historialContacto: hist, fueraAtribucion: false, sugerirPerder: false, contactoExitoso: true, stage: stageFinal, otorgAuto: auto, otorgMotivo: otorg ? otorg.motivo : "automatico", otorgInfo: otorg || undefined, causas, ...giroFlags, status: statusDest, simulado: true, amountMM: montoFinal, facturas: opts && opts.cantidad != null ? opts.cantidad : d.facturas, tasa: o.tasa.toFixed(2) + "%", tasaDescuento: o.tasa, anticipo: o.anticipo + "%", comision: o.comision, diasFin: o.diasFin, financiadoMM: o.financiadoMM, interesMM: o.interesMM, montoDescuentoMM: o.interesMM, comisionMM: o.comisionMM, descMM: +(o.interesMM + o.comisionMM).toFixed(2), giroMM: o.giroMM };
+      // El cliente volvió a firmar: la reapertura se cierra y la aceptación vuelve a estar vigente.
+      return { ...d, reabierta: undefined, waSesion: wa, emailThread, historialContacto: hist, fueraAtribucion: false, sugerirPerder: false, contactoExitoso: true, stage: stageFinal, otorgAuto: auto, otorgMotivo: otorg ? otorg.motivo : "automatico", otorgInfo: otorg || undefined, causas, ...giroFlags, status: statusDest, simulado: true, amountMM: montoFinal, facturas: opts && opts.cantidad != null ? opts.cantidad : d.facturas, tasa: o.tasa.toFixed(2) + "%", tasaDescuento: o.tasa, anticipo: o.anticipo + "%", comision: o.comision, diasFin: o.diasFin, financiadoMM: o.financiadoMM, interesMM: o.interesMM, montoDescuentoMM: o.interesMM, comisionMM: o.comisionMM, descMM: +(o.interesMM + o.comisionMM).toFixed(2), giroMM: o.giroMM };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
@@ -19079,6 +19147,22 @@ export default function PipelineComercial() {
       return splits.length ? [...splits, ...mapped] : mapped;
     });
     setSelected((s) => (s && s.id === id ? { ...s, stage: stageId, status: STATUS_ETAPA[stageId] || s.status } : s));
+  };
+  // Reabrir una operación aceptada para modificarla. Es la ÚNICA vuelta atrás y es explícita: el
+  // arrastre del Kanban y el selector «Avanzar a» siguen sin permitirla. Lo ya hecho se conserva solo,
+  // porque vive en repositorios por operación (visado, excepciones de verificación, llamadas
+  // registradas, facturas vetadas): reabrir no los toca. La reserva del cupo NO se toca tampoco — la
+  // administra el sistema de gestión de líneas y el ejecutivo tiene que pedir allá que la liberen.
+  const reabrirOperacion = (id) => {
+    const d0 = deals.find((x) => x.id === id);
+    if (!d0 || !["aceptadas", "cesion"].includes(d0.stage)) return;
+    const vs = repoSimVersions.get(id) || [];
+    const reservaMM = vs.length && vs[vs.length - 1].linea ? vs[vs.length - 1].linea.cursable : 0;
+    const marca = { desde: d0.stage, ts: nowStamp(), por: USERS[usuario] || usuario, versionAceptada: vs.length, reservaMM };
+    setDeals((prev) => prev.map((d) => (d.id === id ? { ...d, stage: "oferta", time: nowStamp(), stale: false, status: STATUS_ETAPA.oferta || d.status, reabierta: marca } : d)));
+    setSelected((sel) => (sel && sel.id === id ? { ...sel, stage: "oferta", status: STATUS_ETAPA.oferta || sel.status, reabierta: marca } : sel));
+    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Oportunidad", accion: "Operación reabierta para modificar",
+      glosa: `${d0.cliente || d0.company || id} · desde ${d0.stage} · la firma del cliente queda REVOCADA (deberá firmar de nuevo para girar) · quedan ${fmtMM(reservaMM)} reservados en el sistema de gestión de líneas hasta que se pida su liberación`, exito: true });
   };
   const moveTo = (stageId) => {
     if (!draggingId) return;
@@ -19885,6 +19969,12 @@ export default function PipelineComercial() {
   // Incorpora facturas candidatas a la oferta (una o todas), recalculando con la MISMA tasa.
   const incorporarFacturasOferta = (id, facs) => {
     if (!facs || !facs.length) return;
+    // El veto de la verificación se aplica también acá, no sólo en la lista de candidatas: la UI puede
+    // ofrecer una factura por un camino que no pasó por `estadoCandidata`, y reponer una que el deudor
+    // rechazó dejaría la operación con una factura que ya se sabe que no se va a pagar.
+    const vetadas = repoNoConfirmadas.get(id) || {};
+    facs = facs.filter((f) => f && !vetadas[f.id]);
+    if (!facs.length) return;
     const upd = (d) => {
       if (d.id !== id) return d;
       const base = itemizarFacturas(d);
@@ -19980,8 +20070,14 @@ export default function PipelineComercial() {
     try { if (patch && window.opener) window.opener.postMessage({ type: "nex-simulado", dealId: id, patch }, ORIGEN_APP); } catch (e) {}
   };
   // Retira una factura de la oferta y la deja disponible como candidata en "Otras facturas".
-  const retirarFacturaOferta = (id, fac) => {
+  const retirarFacturaOferta = (id, fac, motivo) => {
     if (!fac) return;
+    // El deudor no la confirmó: queda VETADA para esta operación. No se puede volver a seleccionar,
+    // ni siquiera al reabrirla — es el resultado de una llamada, no una preferencia reversible.
+    if (motivo === "noConfirmada") {
+      const nc = { ...(repoNoConfirmadas.get(id) || {}), [fac.id]: { folio: fac.folio || fac.id, montoMM: fac.montoMM || 0, deudor: fac.deudor || "", por: USERS[usuario] || usuario, fecha: nowStamp() } };
+      repoNoConfirmadas.set(id, nc);
+    }
     // Si la operación ya fue aceptada, esto es la verificación retirando lo que el deudor no confirmó:
     // queda como VERSIÓN nueva —evidencia de por qué el monto a girar bajó respecto de lo firmado— y
     // se resuelve RECORTANDO la asignación anterior, nunca re-asignando (ver `recortarAsignacion`).
@@ -20198,7 +20294,7 @@ export default function PipelineComercial() {
               detalle (cliente · id · etapa, selector de usuario y avatar), de modo que la pantalla abría
               con la identidad y el selector DUPLICADOS. La cabecera del propio detalle es la única. */}
           <div className="mx-auto w-full" style={{ maxWidth: 1600 }}>
-            <DealDrawer key={selected.id} deal={selected} fullPage onClose={() => window.close()} onAdvance={advance} onReject={reject} onIncorporar={abrirIncorporar} onIncorporarFacturas={incorporarFacturasOferta} onRetirarFactura={retirarFacturaOferta} onSugerirOferta={aplicarSugerencia} onSimular={simularOferta} onPublicar={publicarOferta} onCerrarOferta={cerrarOferta} onEnviarCierre={enviarCierre} onContactar={iniciarContacto} onEditarContacto={editarContacto} onEnviarWA={enviarWA} onMover={moverEtapa} cierre={cierreModal} onConfirmCierre={confirmarCierre} usuario={usuario} onCambiarUsuario={setUsuario} onAutorizarCausa={autorizarCausa} onOtorgarOperacion={otorgarOperacion} tabInicial={(detallePayload && detallePayload.tab) || dealTabInicial} onIrOtorgamientos={() => {}} />
+            <DealDrawer key={selected.id} deal={selected} fullPage onClose={() => window.close()} onAdvance={advance} onReject={reject} onIncorporar={abrirIncorporar} onIncorporarFacturas={incorporarFacturasOferta} onRetirarFactura={retirarFacturaOferta} onReabrir={reabrirOperacion} onSugerirOferta={aplicarSugerencia} onSimular={simularOferta} onPublicar={publicarOferta} onCerrarOferta={cerrarOferta} onEnviarCierre={enviarCierre} onContactar={iniciarContacto} onEditarContacto={editarContacto} onEnviarWA={enviarWA} onMover={moverEtapa} cierre={cierreModal} onConfirmCierre={confirmarCierre} usuario={usuario} onCambiarUsuario={setUsuario} onAutorizarCausa={autorizarCausa} onOtorgarOperacion={otorgarOperacion} tabInicial={(detallePayload && detallePayload.tab) || dealTabInicial} onIrOtorgamientos={() => {}} />
           </div>
         </div>
       )) : (<>
