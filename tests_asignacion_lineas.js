@@ -433,6 +433,40 @@
        `padrón inyectado: ${padron.usuarios.length} usuarios · real: ${real.usuarios.length}`);
   }
 
+  // 45 · EL ESTADO TAMBIÉN ENTRA. El visado —quién resolvió cada excepción— y el commit de la
+  // verificación —qué llamada se registró, qué factura quedó vetada— son estado del SERVIDOR: son
+  // evidencia con actor y hora, no preferencias del navegador. Las dos funciones los reciben, así que
+  // se levantan tal cual a un resolver. Acá se les pasa un estado INVENTADO y se comprueba que manda.
+  {
+    const deudorTel45 = LB.map((r) => ({ r, v: verifFactura(fac("x", r, 10), { id: "T-45", rutEmisor: "76.111.111-1" }) })).find((x) => x.v.est === "tel");
+    if (!deudorTel45) { ok("45 el visado y el commit de verificación entran por parámetro", false, "ningún deudor de prueba requiere verificación"); }
+    else {
+      const f1 = fac("f1", deudorTel45.r, 30), f2 = fac("f2", deudorTel45.r, 20);
+      const deal45 = { id: "T-45", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", facturasOp: [f1, f2] };
+      const sinCommit = filasVerificacion([deal45]);
+      // Con la llamada YA registrada para las dos facturas, la fila deja de estar pendiente.
+      const conCommit = filasVerificacion([deal45], { tel: { "T-45": { [f1.id]: 1, [f2.id]: 1 } }, vetadas: {} });
+      const fa = sinCommit.find((x) => x.rutDeudor === deudorTel45.r);
+      const fb = conCommit.find((x) => x.rutDeudor === deudorTel45.r);
+
+      // Y el visado inyectado decide el estado del otorgamiento sin tocar VISADO_STATE.
+      const v0 = visadoDealCalc(deal45, {});
+      const todoRechazado = {}; (v0.exc || []).forEach((e) => { todoRechazado[e.stKey] = "rechazado"; });
+      const v1 = visadoDealCalc(deal45, todoRechazado);
+
+      // Lo que el VISADO decide es el reparto de las excepciones entre pendientes y rechazadas. El
+      // `estado` general no sirve de señal: una operación puede estar rechazada por un bloqueo FIRME,
+      // que no depende del visado de nadie.
+      const nExc = (v0.exc || []).length;
+      ok("45 el visado y el commit de verificación entran por parámetro",
+         !!fa && fa.estado === "pendiente" && !!fb && fb.estado !== "pendiente"
+         && nExc > 0
+         && v0.excPend.length === nExc && v0.excRech.length === 0
+         && v1.excRech.length === nExc && v1.excPend.length === 0,
+         `sin commit «${fa ? fa.estado : "—"}» → con commit «${fb ? fb.estado : "—"}» · ${nExc} excepciones: ${v0.excPend.length} pendientes sin visado → ${v1.excRech.length} rechazadas con visado`);
+    }
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

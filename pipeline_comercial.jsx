@@ -1641,7 +1641,11 @@ function causasVerif(v) {
 }
 // Filas de la mesa: un deudor por operación, sólo los que el predictor mandó a verificación
 // telefónica. Los que el modelo dio por verificados no aparecen — no hay nada que llamar.
-function filasVerificacion(deals) {
+// El COMMIT de la verificación —qué llamada se registró y qué factura quedó vetada— es estado del
+// SERVIDOR: es evidencia de una conversación con el deudor, con actor y hora. Entra por parámetro
+// (`{ tel, vetadas }` por id de operación) para que esta función sea pura; el default es el estado
+// que hoy vive en el navegador. Ver el contrato VER-01 en `INVARIANTES`.
+function filasVerificacion(deals, estado) {
   const out = [];
   for (const d of deals || []) {
     const fs = (d && d.facturasOp) || [];
@@ -1652,8 +1656,8 @@ function filasVerificacion(deals) {
       let g = grupos.get(k); if (!g) { g = []; grupos.set(k, g); }
       g.push(f);
     }
-    const tel = (typeof VERIF_TEL !== "undefined" && VERIF_TEL[d.id]) || {};
-    const vet = (typeof NO_CONFIRMADAS !== "undefined" && NO_CONFIRMADAS[d.id]) || {};
+    const tel = (estado && estado.tel && estado.tel[d.id]) || (typeof VERIF_TEL !== "undefined" && VERIF_TEL[d.id]) || {};
+    const vet = (estado && estado.vetadas && estado.vetadas[d.id]) || (typeof NO_CONFIRMADAS !== "undefined" && NO_CONFIRMADAS[d.id]) || {};
     for (const [k, suyas] of grupos) {
       const v = verifFactura(suyas[0], d);
       if (v.est !== "tel") continue;
@@ -10211,23 +10215,28 @@ const invalidarVisado = () => { VISADO_VER++; VISADO_CACHE.clear(); };
 const visadoKey = (deal) =>
   `${deal.id}|${deal.stage}|${deal.amountMM}|${deal.facturas}|${(deal.deudores || []).length}|${(deal.facturasOp || []).length}|${deal.subSeed}|${VISADO_VER}`;
 // Resumen del visado por operación (excepciones que requieren aprobación, rechazos y estado global).
+// El VISADO —quién resolvió cada excepción— es estado del SERVIDOR: es el registro de una decisión
+// con nombre y hora, no una preferencia del navegador. `visadoDealCalc` lo recibe para que el
+// evaluador sea puro y se pueda levantar tal cual a un resolver; `visadoDeal` es el envoltorio de la
+// app, que le pasa el que hoy vive acá. Ver el contrato OTG-01/OTG-02 en `INVARIANTES`.
 function visadoDeal(deal) {
   if (!deal || deal.id == null) return visadoDealCalc(deal);
   const k = visadoKey(deal);
   const hit = VISADO_CACHE.get(k);
   if (hit) return hit;
-  const out = visadoDealCalc(deal);
+  const out = visadoDealCalc(deal, (typeof VISADO_STATE !== "undefined" && VISADO_STATE[deal.id]) || {});
   if (VISADO_CACHE.size > 5000) VISADO_CACHE.clear(); // cota de memoria: se recalcula lo que haga falta
   VISADO_CACHE.set(k, out);
   return out;
 }
-function visadoDealCalc(deal) {
+function visadoDealCalc(deal, visado) {
   const res = evaluarOtorgItems(deal);
   const exc = res.filter((x) => x.disp === "excepcion").map((x) => ({ n: x.regla.n, stKey: x.stKey, deudor: x.deudor, nombre: x.regla.nombre, hallazgo: x.regla.hallazgo, area: x.regla.area, nivel: x.nivel || 4, reev: reglaReev(x.regla.n) }));
   const rech = res.filter((x) => x.disp === "rechazado").map((x) => ({ n: x.regla.n, stKey: x.stKey, deudor: x.deudor, nombre: x.regla.nombre, hallazgo: x.regla.hallazgo, area: x.regla.area, reev: reglaReev(x.regla.n) }));
   const aprob = res.filter((x) => x.disp === "aprobado").length;
   const clasif = res.filter((x) => x.disp === "clasificacion").length;
-  const st = (typeof VISADO_STATE !== "undefined" && VISADO_STATE[deal.id]) || {};
+  // Sin visado inyectado se cae al de la app: es la comodidad de los call sites, no una dependencia.
+  const st = visado || ((typeof VISADO_STATE !== "undefined" && deal && VISADO_STATE[deal.id]) || {});
   const excRech = exc.filter((e) => st[e.stKey] === "rechazado");
   const excPend = exc.filter((e) => !st[e.stKey]);
   const rechFirme = rech.filter((r) => !r.reev); // rechazos definitivos → pérdida
