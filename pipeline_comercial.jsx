@@ -417,6 +417,7 @@ const SCHEMA_VERSION = {
   reglasInbound: 3,  // reglas de clasificación del inbound
   cfgOper: 1,        // configuración operativa y de pricing por tenant
   permisos: 1,       // permisos de visibilidad por usuario
+  roles: 1,          // rol de cada usuario (por tenant)
   auditoria: 2,      // bitacora de auditoria encadenada (v2: cadena SHA-256, antes hash de 32 bits)
   auth: 1,           // intentos fallidos y bloqueo por cuenta
   curse: 3,          // payload de curse por negocio (v3: OTP con SHA-256 + sal; v2 usaba un hash de 32 bits)
@@ -737,7 +738,7 @@ const USUARIO = "CR"; // ejecutivo logueado por defecto (Carla Rivas)
 // Audio de demostración (WAV corto, reproducible offline) para las grabaciones de Call Center.
 const CALL_AUDIO = "data:audio/wav;base64,UklGRuQrAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YcArAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBgYGBgYGAgICAf39/f39/f3+AgICBgYGBgYGBgYCAf39/f39/f39/gICAgYGBgYGBgYGAgICAgICAgIB/f39/f39/f4CAgIGBgYKCgoKBgYCAf39+fn5+fn5/gICBgoKDg4KCgoGAgH9+fn5+fn5/f4CAgYGBgYGBgYGBgYCAgICAgH9/f39/f35+f39/gIGBgoKDg4OCgoGAf35+fXx8fH1+f4CBgoODhISEg4KBgH9+fX19fX1+fn+AgYGCgoKCgoKBgYGBgICAgH9/f39+fn5+fn5/f4CBgoODhISEg4KBgH9+fHx7e3t8fX+AgoOEhYWFhISCgYB+fXx8fHx8fX5/gIGCgoKDgoKCgoGBgYCAgIB/f39+fn19fX1+f3+AgoOEhIWFhYSDgYB+fHt6enp6fH1/gYKEhYaGhoWEg4F/fnx7e3t7fH1+f4CBgoODg4ODgoKBgYGAgIB/f39+fn19fX19fn+AgYKDhYWGhoWEg4F/fXt6eXl5ent9f4GEhYeIiIeGhIOAfn17enp6ent9fn+BgoODhISDg4OCgoGBgICAf39+fn19fHx8fX1/gIGDhIaHh4eGhYOBfnx6eHh3eHl7fYCChYeIiYmIh4WCgH58enl5eXp7fH6AgYOEhISEhIODgoKBgYCAf39+fn18fHx8fHx9f4CChIaHiIiHhoWCgH17eXd2dnd5e36Bg4aIioqKiYeFgn99enl4eHh5e3x+gIKDhIWFhYSEg4KCgYGAgH9/fn18fHt7e3t8fX+Bg4WHiImJiIeFgn98eXd1dXV2eHt+goWIiouLi4mHhIF+e3l4d3d3eXt9f4GDhIWFhYWFhIOCgoGAgH9/fn19fHt7enp7fH6AgoSGiImKiomHhIF+e3h1dHN0dnh7f4OGiYuNjYyKh4SAfXp4dnZ2d3h7fX+Bg4WGhoaGhYSDgoKBgIB/f359fHt6enp6e3x+gIOFh4mLi4uJh4SAfXl2dHNyc3V4fICEiIuNjo6MioeDf3x5d3V1dXZ4e32AgoSGhoeHhoWEg4KCgYCAf359fHt6enl5ent8foGEhomLjIyLiYeDf3t4dXJxcXN1eX2BhomNj4+PjYqGgn57d3V0dHR2eHt+gYOFhoeHh4aFhIOCgoGAf39+fXx7enl5eXl7fH+ChYiKjI2NjIqGgn56dnNxcHBydXl+g4eLjpCQj42KhoF9eXZ0c3N0dnh7f4GEhoeIiIeHhoSDgoGBgH9+fXx7enl4eHh5e32Ag4aJi42OjoyJhoF9eHRxb25vcnV6f4SJjZCSkpCNiYWAfHh0cnJyc3Z5fH+ChYeIiIiIh4aEg4KBgIB/fn18enl4eHd4eXt9gISHio2Pj46MiYWAe3Zyb21tb3J2e4GGi4+Sk5ORjYmEf3p2c3FxcXN2eX2Ag4aIiYmJiIeGhIOCgYB/fn18e3p4d3d3eHl7foGFiYyOkJCPjImEf3l0cG1sbG5yd3yCiI2Rk5STkY2Ig314dHFwcHFzdnp+gYSHiYmKiYiHhoSDgoGAf359fHt6eHd2dnd5fH+DhoqNkJGRj4yIg314cm5sa2tucnh+hIqPk5WVlJGMh4F8d3Nwb29wc3Z6foKFiImKiomIh4aEg4KBgH9+fHt6eHd2dnZ3eXyAhIiMj5GSkY+Mh4F7dXBsamlrbnN5f4aMkZWXlpSRjIaAenVxbm1ucHN3e3+DhomKi4uKiYeGhIOCgH9+fXx6eXd2dXV2d3p9gYWKjZGTk5KPi4aAeXNuamhoam50eoGIjpOXmJeVkIuEfnhzb21sbnB0eHyBhIiKi4uLiomHhYSDgYB/fn17enh2dXV1dXd6foKHi4+SlJSSj4qEfndxbGhnZ2pvdXyDi5GWmZmYlZCKg3x2cW1sbG1wdHl9goaJi4yMi4qJh4WEgoGAf318enl3dnR0dHV4e3+EiI2RlJWVk4+Jg3x1b2pnZmdqb3Z+ho2TmJqamJSPiIF6dG9samttcHV6f4OHioyNjIyKiYeFg4KBgH59e3p4dnV0c3R1eHyAhYqPk5WWlZKOiIF6c2xoZWRmanB4gIiQlpqcm5mUjoZ/eHJtamlqbXF2e4CEiIuNjY2MioiHhYOCgH9+fHt5d3V0c3N0dnl9goeMkZSXl5aSjYZ/d3BqZmNjZmtyeoKLkpicnZyZk4yFfXZwa2loam1xd3yBhomMjY6NjIqIhoWDgYB/fXx6eHZ0c3JydHZ5foOJjpOWmJiWkoyFfXVtaGRiY2Zsc3yFjZWanp6cmJKLg3tzbmpoaGptcnh9g4eLjY6OjYyKiIaEg4GAfn17eXd1c3JycnR2en+Fi5CVmJmZlpGKg3pya2ViYWJmbXV+iJCXnZ+fnZiRiYB4cWtoZmdqbnN5f4SJjI6Pj46MioiGhIKBf358enh2dHJxcXJ0d3uBh42SlpmamZWQiYB4b2hjYGBiZ253gYqTmp+hoJ2Xj4d+dm9pZmVnam90eoCGio2PkI+OjIqIhYSCgH99fHp3dXNxcHBydHh9gomPlJibm5mVj4d+dW1lYV5fYmhweoSNlp2hoqGclo6FfHNsZ2VkZmpvdXyCh4uOkJCPjoyJh4WDgoB+fXt5d3RycXBwcXR4foSKkJaanJyZlI6FfHNrZGBdXmJpcXuGj5ieoqOgnJWMg3pya2dlZGdrcHd9g4iMj5CQj42LiYeFg4GAfnx7eHZ0cnFwcHJ1eX+Fi5GWmpybmZSMhHtyaWNgXV9jaXN9h5GZn6KioJuTi4J5cWtnZWRna3F3foOIjI+QkI+Ni4mHhYOBgH58e3h2dHJxcHBydnqAhoySl5ucm5iSi4N6cWliXl1gZWx1f4mTmqCiop+ZkomAd29pZWRlaG1zeX+Fio2PkJCPjYuIhoSCgX9+fHp4dXNxcHBxc3d8gYiOlJibnJqWkIiAdm5mYV5eYWZueIKMlZyho6KemJCHfXVtaGVkZmludHuBhouOkJCQjoyKiIWEgoB/fXt5d3VzcXBwcXR4fYOJkJWZnJyalY6GfXRrZGBdXmJocXqFj5eeoqOhnZWNhHtybGdkZGZqcHZ8goiMj5CQj46MiYeFg4GAfn17eXZ0cnFwcHJ1eX+Fi5GWmpybmJOMhHtxaWNfXV9janN9h5GZn6KioJuTi4F4cGpmZGVnbHF4foSJjY+QkI+Ni4mGhIOBf358enh2c3JwcHFzdnuAh42TmJucm5eSioF4b2dhXl1gZW12gIqTm6Cjop+ZkYh/dm5pZWRlaG1zeYCFio2PkJCOjYqIhoSCgX99fHp3dXNxcHBxc3d8goiPlJmbnJqWkIh/dW1lYF5eYWdveYONlp2ho6Gdl4+FfHRtaGVkZmpvdXuBh4uOkJCPjoyKh4WDgoB/fXt5d3RycXBwcXR4foSKkJaanJyZlI6FfHNrZF9dXmJpcXuGj5ieoqOgnJWMg3pya2ZkZGdrcHd9g4iMj5CQj42LiYeFg4GAfnx7eHZ0cnBwcHJ1en+FjJKXmpybmJOLg3pxaWJeXV9ka3R+iJKan6Kin5qSioB4cGpmZGVobHJ4f4SJjY+QkI+Ni4iGhIKBf358enh1c3FwcHFzdnuBh42TmJucm5eRiYB3bmdhXl5gZm13gYuUnKCjop6YkId+dW5oZWRlaW50eoCGio6QkJCOjIqIhoSCgH99e3l3dXNxcHBxdHd9gomPlZmcnJqVj4d+dWxlYF1eYWhweYSOlp2ho6Gdlo6Fe3NsZ2RkZmpvdXyCh4uOkJCPjoyJh4WDgoB+fXt5d3RycXBwcnV5foSLkZaanJyZlI2Fe3JqY19dX2NqcnyHkJifoqOgm5SLgnlxa2ZkZGdrcXd+g4mMj5CQj42LiYeFg4GAfnx6eHZ0cnBwcHJ2eoCGjJKXm5ybmJKLgnlwaGJeXWBkbHV/iZOaoKKin5mSiYB3b2llZGVobXN5f4WKjY+QkI+Ni4iGhIKBf358enh1c3FwcHFzd3yBiI6UmJucmpaQiIB2bmZhXl5hZm54goyVnKGjop6Xj4Z9dW1oZWRmaW50e4GGi46QkJCOjIqIhYSCgH99e3l3dXNxcHBxdHh9g4mQlZmcnJqVjoZ9dGtkYF1eYmhxeoWPl56io6GclY2Ee3JsZ2RkZmpwdnyCiIyPkJCPjoyJh4WDgYB+fXt5dnRycXBwcnV5f4WLkZaanJuYk4yEe3FpY19dX2Nqc32HkZmfoqKgm5OLgXhwamZkZWdscXh+hImNj5CQj42LiYaEg4F/fnx6eHZzcnBwcXN2e4CHjZOYm5ybl5KKgXhvZ2FeXWBlbXaAipOboKOin5mRiH92bmllZGVobXN5gIWKjY+QkI6NioiGhIKBf318end1c3FwcHFzd3yCiI+UmZucmpaQiH91bWVgXl5hZ295g42WnaGjoZ2Xj4V8dG1oZWRmam91e4GHi46QkI+OjIqHhYOCgH99e3l3dHJxcHBxdHh+hIqQlpqcnJmUjoV8c2tkX11eYmlxe4aPmJ6io6CclYyDenJrZmRkZ2twd32DiIyPkJCPjYuJh4WDgYB+fHt4dnRycHBwcnV6f4WMkpeanJuYk4uDenFpYl5dX2RrdH6IkpqfoqKfmpKKgHhwamZkZWhscnh/hImNj5CQj42LiIaEgoF/fnx6eHVzcXBwcXN2e4GHjZOYm5ybl5GJgHduZ2FeXmBmbXeBi5ScoKOinpiQh351bmhlZGVpbnR6gIaKjpCQkI6MioiGhIKAf317eXd1c3FwcHF0d32CiY+VmZycmpWPh351bGVgXV5haHB5hI6WnaGjoZ2WjoV7c2xnZGRmam91fIKHi46QkI+OjImHhYOCgH59e3l3dHJxcHBydXl+hIuRlpqcnJmUjYV7cmpjX11fY2pyfIeQmJ+io6CblIuCeXFrZmRkZ2txd36DiYyPkJCPjYuJh4WDgYB+fHp4dnRycHBwcnZ6gIaMkpebnJuYkouCeXBoYl5dYGRsdX+Jk5qgoqKfmZKJgHdvaWVkZWhtc3l/hYqNj5CQj42LiIaEgoF/fnx6eHVzcXBwcXN3fIGIjpSYm5yalpCIgHZuZmFeXmFmbniCjJWcoaOinpePhn11bWhlZGZpbnR7gYaLjpCQkI6MioiFhIKAf317eXd1c3FwcHF0eH2DiZCVmZycmpWOhn10a2RgXV5iaHF6hY+XnqKjoZyVjYR7cmxnZGRmanB2fIKIjI+QkI+OjImHhYOBgH59e3l2dHJxcHBydXl/hYuRlpqcm5iTjIR7cWljX11fY2pzfYeRmZ+ioqCbk4uBeHBqZmRlZ2xxeH6EiY2PkJCPjYuJhoSDgX9+fHp4dnNycHBxc3Z7gIeNk5ibnJuXkoqBeG9nYV5dYGVtdoCKk5ugo6KfmZGIf3ZuaWVkZWhtc3mAhYqNj5CQjo2KiIaEgoF/fXx6d3VzcXBwcXN3fIKIj5SZm5yalpCIf3VtZWBeXmFnb3mDjZadoaOhnZePhXx0bWhlZGZqb3V7gYeLjpCQj46MioeFg4KAf317eXd0cnFwcHF0eH6EipCWmpycmZSOhXxza2RfXV5iaXF7ho+YnqKjoJyVjIN6cmtmZGRna3B3fYOIjI+QkI+Ni4mHhYOBgH58e3h2dHJwcHBydXp/hYySl5qcm5iTi4N6cWliXl1fZGt0foiSmp+iop+akoqAeHBqZmRlaGxyeH+EiY2PkJCPjYuIhoSCgX9+fHp4dXNxcHBxc3Z7gYeNk5ibnJuXkYmAd25nYV5eYGZtd4GLlJygo6KemJCHfnVuaGVkZWludHqAhoqOkJCQjoyKiIaEgoB/fXt5d3VzcXBwcXR3fYKJj5WZnJyalY+HfnVsZWBdXmFocHmEjpadoaOhnZaOhXtzbGdkZGZqb3V8goeLjpCQj46MiYeFg4KAfn17eXd0cnFwcHJ1eX6Ei5GWmpycmZSNhXtyamNfXV9janJ8h5CYn6KjoJuUi4J5cWtmZGRna3F3foOJjI+QkI+Ni4mHhYOBgH58enh2dHJwcHBydnqAhoySl5ucm5iSi4J5cGhiXl1gZGx1f4mTmqCiop+ZkomAd29pZWRlaG1zeX+Fio2PkJCPjYuIhoSCgX9+fHp4dXNxcHBxc3d8gYiOlJibnJqWkIiAdm5mYV5eYWZueIKMlZyho6KelY+Gd3VtaGVkZmludHuBhouOkJCQjoyKiIWEgoB/fXt5d3VzcXBwcXR4fYOJkJWZnJyalY6GfXRrZGBdXmJocXqFj5eeoqOhnJWNhHtybGdkZGZqcHZ8goiMj5CQj46MiYeFg4GAfn17eXZ0cnFwcHJ1eX+Fi5GWmpybmJOMhHtxaWNfXV9janN9h5GZn6KioJuTi4F4cGpmZGVnbHF4foSJjY+QkI+Ni4mGhIOBf358enh2c3JwcHFzdnuAh42TmJucm5eSioF4b2dhXl1gZW12gIqTm6Cjop+ZkYh/dm5pZWRlaG1zeYCFio2PkJCOjYqIhoSCgX99fHp3dXNxcHBxc3d8goiPlJmbnJqWkIh/dW1lYF5eYWdveYONlp2ho6Gdl4+FfHRtaGVkZmpvdXuBh4uOkJCPjoyKh4WDgoB/fXt5d3RycXBwcXR4foSKkJaanJyZlI6FfHNrZF9dXmJpcXuGj5ieoqOgnJWMg3pya2ZkZGdrcHd9g4iMj5CQj42LiYeFg4GAfnx7eHZ0cnBwcHJ1en+FjJKXmpybmJOLg3pxaWJeXV9ka3R+iJKan6Kin5qSioB4cGpmZGVobHJ4f4SJjY+QkI+Ni4iGhIKBf358enh1c3FwcHFzdnuBh42TmJucm5eRiYB3bmdhXl5gZm13gYuUnKCjop6YkId+dW5oZWRlaW50eoCGio6QkJCOjIqIhoSCgH99e3l3dXNxcHBxdHd9gomPlZmcnJqVj4d+dWxlYF1eYWhweYSOlp2ho6Gdlo6Fe3NsZ2RkZmpvdXyCh4uOkJCPjoyJh4WDgoB+fXt5d3RycXBwcnV5foSLkZaanJyZlI2Fe3JqY19dX2NqcnyHkJifoqOgm5SLgnlxa2ZkZGdrcXd+g4mMj5CQj42LiYeFg4GAfnx6eHZ0cnBwcHJ2eoCGjJKXm5ybmJKLgnlwaGJeXWBkbHV/iZOaoKKin5mSiYB3b2llZGVobXN5f4WKjY+QkI+Ni4iGhIKBf358enh1c3FwcHFzd3yBiI6UmJucmpaQiIB2bmZhXl5hZm54goyVnKGjop6Xj4Z9dW1oZWRmaW50e4GGi46QkJCOjIqIhYSCgH99e3l3dXNxcHBxdHh9g4mQlZmcnJqVjoZ9dGtkYF1eYmhxeoWPl56io6GclY2Ee3JsZ2RkZmpwdnyCiIyPkJCPjoyJh4WDgYB+fXt5dnRycXBwcnV5f4WLkZaanJuYk4yEe3FpY19dX2Nqc32HkZmfoqKgm5OLgXhwamZkZWdscXh+hImNj5CQj42LiYaEg4F/fnx6eHZzcnBwcXN2e4CHjZOYm5ybl5KKgXhvZ2FeXWBlbXaAipOboKOin5mRiH92bmllZGVobXN5gIWKjY+QkI6NioiGhIKBf318end1c3FwcHFzd3yCiI+UmZucmpaQiH91bWVgXl5hZ295g42WnaGjoZ2Xj4V8dG1oZWRmam91e4GHi46QkI+OjIqHhYOCgH99e3l3dHJxcHBxdHh+hIqQlpqcnJmUjoV8c2tkX11eYmlxe4aPmJ6io6CclYyDenJrZmRkZ2twd32DiIyPkJCPjYuJh4WDgYB+fHt4dnRycHBwcnV6f4WMkpeanJuYk4uDenFpYl5dX2RrdH6IkpqfoqKfmpKKgHhwamZkZWhscnh/hImNj5CQj42LiIaEgoF/fnx6eHVzcXBwcXN2e4GHjZOYm5ybl5GJgHduZ2FeXmBmbXeBi5ScoKOinpiQh351bmhlZGVpbnR6gIaKjpCQkI6MioiGhIKAf317eXd1c3FwcHF0d32CiY+VmZycmpWPh351bGVgXV5haHB5hI6WnaGjoZ2WjoV7c2xnZGRmam91fIKHi46QkI+OjImHhYOCgH59e3l3dHJxcHBydXl+hIuRlpqcnJmUjYV7cmpjX11fY2pyfIeQmJ+io6CblIuCeXFrZmRkZ2txd36DiYyPkJCPjYuJh4WDgYB+fHp4dnRycHBwcnZ6gIaMkpebnJuYkouCeXBoYl5dYGRsdX+Jk5qgoqKfmZKJgHdvaWVkZWhtc3l/hYqNj5CQj42LiIaEgoF/fnx6eHVzcXBwcXN3fIGIjpSYm5yalpCIgHZuZmFeXmFmbniCjJWcoaOinpePhn11bWhlZGZpbnR7gYaLjpCQkI6MioiFhIKAf317eXd1c3FwcHF0eH2DiZCVmZycmpWOhn10a2RgXV5iaHF6hY+XnqKjoZyVjYR7cmxnZGRmanB2fIKIjI+QkI+OjImHhYOBgH59e3l2dHJxcHBydXl/hYuRlpqcm5iTjIR7cWljX11fY2pzfYeRmZ+ioqCbk4uBeHBqZmRlZ2xxeH6EiY2PkJCPjYuJhoSDgX9+fHp4dnNycHBxc3Z7gIeNk5ibnJuXkoqBeG9nYV5dYGVtdoCKk5ugo6KfmZGIf3ZuaWVkZWhtc3mAhYqNj5CQjo2KiIaEgoF/fXx6d3VzcXBwcXN3fIKIj5SZm5yalpCIf3VtZWBeXmFnb3mDjZadoaOhnZePhXx0bWhlZGZqb3V7gYeLjpCQj46MioeFg4KAf317eXd0cnFwcHF0eH6EipCWmpycmZSOhXxza2RfXV5iaXF7ho+YnqKjoJyVjIN6cmtmZGRna3B3fYOIjI+QkI+Ni4mHhYOBgH58e3h2dHJwcHBydXp/hYySl5qcm5iTi4N6cWliXl1fZGt0foiSmp+iop+akoqAeHBqZmRlaGxyeH+EiY2PkJCPjYuIhoSCgX9+fHp4dXNxcHBxc3Z7gYeNk5ibnJuXkYmAd25nYV5eYGZtd4GLlJygo6KemJCHfnVuaGVkZWludHqAhoqOkJCQjoyKiIaEgoB/fXt5d3VzcXBwcXR3fYKJj5WZnJyalY+HfnVsZWBdXmFocHmEjpadoaOhnZaOhXtzbGdkZGZqb3V8goeLjpCQj46MiYeFg4KAfn17eXd0cnFwcHJ1eX6Ei5GWmpycmZSNhXtyamNfXV9janJ8h5CYn6KjoJuUi4J5cWtmZGRna3F3foOJjI+QkI+Ni4mHhYOBgH58enh2dHJwcHBydnqAhoySl5ucm5iSi4J5cGhiXl1gZGx1f4mTmqCiop+ZkomAd29pZWRlaG1zeX+Fio2PkJCPjYuIhoSCgX9+fHp4dXNxcHBxc3d8gYiOlJibnJqWkIiAdm5mYV5eYWZueIKMlZyho6KelY+Gd3VtaGVkZmludHuBhouOkJCQjoyKiIWEgoB/fXt5d3VzcXBwcXR4fYOJkJWZnJyalY6GfXRrZGBdXmJocXqFj5eeoqOhnJWNhHtybGdkZGZqcHZ8goiMj5CQj46MiYeFg4GAfn17eXZ0cnFwcHJ1eX+Fi5GWmpybmJOMhHtxaWNfXV9janN9h5GZn6KioJuTi4F4cGpmZGVnbHF4foSJjY+QkI+Ni4mGhIOBf358enh2c3JwcHFzdnuAh42TmJucm5eSioF4b2dhXl1gZW12gIqTm6Cjop+ZkYh/dm5pZWRlaG1zeYCFio2PkJCOjYqIhoSCgX99fHp3dXNxcHBxc3d8goiPlJmbnJqWkIh/dW1lYF5eYWdveYONlp2ho6Gdl4+FfHRtaGVkZmpvdXuBh4uOkJCPjoyKh4WDgoB/fXt5d3RycXBwcXR4foSKkJaanJyZlI6FfHNrZF9dXmJpcXuGj5ieoqOgnJWMg3pya2ZkZGdrcHd9g4iMj5CQj42LiYeFg4GAfnx7eHZ0cnBwcHJ1en+FjJKXmpybmJOLg3pxaWJeXV9ka3R+iJKan6Kin5qSioB4cGpmZGVobHJ4f4SJjY+QkI+Ni4iGhIKBf358enh1c3FwcHFzdnuBh42TmJucm5eRiYB3bmdhXl5gZm13gYuUnKCjop6YkId+dW5oZWRlaW50eoCGio6QkJCOjIqIhoSCgH99e3l3dXNxcHBxdHd9gomPlZmcnJqVj4d+dWxlYF1eYWhweYSOlp2ho6Gdlo6Fe3NsZ2RkZmpvdXyCh4uOkJCPjoyJh4WDgoB+fXt5d3RycXBwcnV5foSLkZaanJyZlI2Fe3JqY19dX2NqcnyHkJifoqOgm5SLgnlxa2ZkZGdrcXd+g4mMj5CQj42LiYeFg4GAfnx6eHZ0cnBwcHJ2eoCGjJKXm5ybmJKLgnlwaGJeXWBkbHV/iZOaoKKin5mSiYB3b2llZGVobXN5f4WKjY+QkI+Ni4iGhIKBf358enh1c3FwcHFzd3yBiI6UmJucmpaQiIB2bmZhXl5hZm54goyVnKGjop6Xj4Z9dW1oZWRmaW50e4GGi46QkJCOjIqIhYSCgH99e3l3dXNxcHBxdHh9g4mQlZmcnJqVjoZ9dGtkYF1eYmhxeoWPl56io6GclY2Ee3JsZ2RkZmpwdnyCiIyPkJCPjoyJh4WDgYB+fXt5dnRycXBwcnV5f4WLkZaanJuYk4yEe3FpY19dX2Nqc32HkZmfoqKgm5OLgXhwamZkZWdscXh+hImNj5CQj42LiYaEg4F/fnx6eHZzcnBwcXN2e4CHjZOYm5ybl5KKgXhvZ2FeXWBlbXaAipOboKOin5mRiH92bmllZGVobXN5gIWKjY+QkI6NioiGhIKBf318end1c3FwcHFzd3yCiI+UmZucmpaQiH91bWVgXl5hZ295g42WnaGjoZ2Xj4V8dG1oZWRmam91e4GHi46QkI+OjIqHhYOCgH99e3l3dHJxcHBxdHh+hIqQlpqcnJmUjoV8c2tkX11eYmlxe4aPmJ6io6CclYyDenJrZmRkZ2twd32DiIyPkJCPjYuJh4WDgYB+fHt4dnRycHBwcnV6f4WMkpeanJuYk4uDenFpYl5dX2RrdH6IkpqfoqKfmpKKgHhwamZkZWhscnh/hImNj5CQj42LiIaEgoF/fnx6eHVzcXBwcXN2e4GHjZOYm5ybl5GJgHduZ2FeXmBmbXeBi5ScoKOinpiQh351bmhlZGVpbnR6gIaKjpCQkI6MioiGhIKAf317eXd1c3FwcHF0d32CiY+VmZycmpWPh351bGVgXV5haHB5hI6WnaGjoZ2WjoV7c2xnZGRmam91fIKHi46QkI+OjImHhYOCgH59e3l3dHJxcHBydXl+hIuRlpqcnJmUjYV7cmpjX11fY2pyfIeQmJ+io6CblIuCeXFrZmRkZ2txd36DiYyPkJCPjYuJh4WDgYB+fHp4dnRycHBwcnZ6gIaMkpebnJuYkouCeXBoYl5dYGRsdX+Jk5qgoqKfmZKJgHdvaWVkZWhtc3l/hYqNj5CQj42LiIaEgoF/fnx6eHVzcXBwcXN3fIGIjpSYm5yalpCIgHZuZmFeXmFmbniCjJWcoaOinpePhn11bWhlZGZpbnR7gYaLjpCQkI6MioiFhIKAf317eXd1c3FwcHF0eH2DiZCVmZycmpWOhn10a2RgXV5iaHF6hY+XnqKjoZyVjYR7cmxnZGRmanB2fIKIjI+QkI+OjImHhYOBgH59e3l2dHJxcHBydXl/hYuRlpqcm5iTjIR7cWljX11fY2pzfYeRmZ+ioqCbk4uBeHBqZmRlZ2xxeH6EiY2PkJCPjYuJhoSDgX9+fHp4dnNycHBxc3Z7gIeNk5ibnJuXkoqBeG9nYV5dYGVtdoCKk5ugo6KfmZGIf3ZuaWVkZWhtc3mAhYqNj5CQjo2KiIaEgoF/fXx6d3VzcXBwcXN3fIKIj5SZm5yalpCIf3VtZWBeXmFnb3mDjZadoaOhnZePhXx0bWhlZGZqb3V7gYeLjpCQj46MioeFg4KAf317eXd0cnFwcHF0eH6EipCWmpycmZSOhXxza2RfXV5iaXF7ho+YnqKjoJyVjIN6cmtmZGRna3B3fYOIjI+QkI+Ni4mHhYOBgH58e3h2dHJwcHBydXp/hYySl5qcm5iTi4N6cWliXl1fZGt0foiSmp+iop+akoqAeHBqZmRlaGxyeH+EiY2PkJCPjYuIhoSCgX9+fHp4dXNxcHBxc3Z7gYeNk5ibnJuXkYmAd25nYV5eYGZtdw==";
 // Usuarios que pueden "iniciar sesión": los 6 ejecutivos, los aprobadores (Riesgo/Operaciones) y el super admin.
-const USERS = { ...EXECS, JG: "Sofía Herrera · Jefe de Grupo Comercial", GC: "Dante Montes · Gerente Comercial", GG: "Federico Diaz · Gerente General", RG: "Carolina Vergara · Jefe de Riesgo", SR: "Paula Reyes · Subgerente de Riesgo", OP: "Andrés Mella · Operaciones", ADMIN: "Super Administrador (ve todo)" };
+const USERS = { ...EXECS, JG: "Sofía Herrera · Jefe de Grupo Comercial", GC: "Dante Montes · Gerente Comercial", GG: "Federico Diaz · Gerente General", RG: "Carolina Vergara · Jefe de Riesgo", SR: "Paula Reyes · Subgerente de Riesgo", OP: "Andrés Mella · Operaciones", EV: "Camila Soto · Ejecutivo de verificación", ADMIN: "Super Administrador (ve todo)" };
 const execName = (d) => EXECS[d.exec] || "Agente IA";
 
 // ============================================================
@@ -913,7 +914,7 @@ let ATRIB_USUARIO = {
   // Ejecutivos (pipeline): originan y gestionan operaciones, NO aprueban excepciones — sin atribución.
   CR: { tipo: "pipeline", atrib: {} }, RF: { tipo: "pipeline", atrib: {} },
   JT: { tipo: "pipeline", atrib: {} }, MS: { tipo: "pipeline", atrib: {} },
-  NB: { tipo: "pipeline", atrib: {} }, DC: { tipo: "pipeline", atrib: {} },
+  NB: { tipo: "pipeline", atrib: {} }, DC: { tipo: "pipeline", atrib: {} }, EV: { tipo: "pipeline", atrib: {} },
   // Aprobadores (mesa de otorgamiento). Cada rol aprueba EXCLUSIVAMENTE los criterios de SU nivel (el nivel que
   // define el risk tier de la regla). El super-admin cubre cualquier nivel. N1 Jefe de Grupo, N2 Gerente Comercial,
   // N3 Gerente General; N4 Jefe de Riesgo, N5 Subgerente de Riesgo.
@@ -5222,7 +5223,10 @@ function DealMensajeria({ deal, usuario }) {
 }
 // Sub-tab VERIFICACIÓN (por documento): reglas V0–V5 por factura, versionado (patrón otorgamiento),
 // filtros y checklist telefónico. V1 es regla dura; su fallo exige verificación + excepción de Riesgo.
-function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada }) {
+function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usuario }) {
+  // Misma compuerta que la mesa: registrar la llamada o retirar una factura es firmar lo que el
+  // deudor dijo, y eso lo hace el equipo de verificación. Los demás leen el veredicto del modelo.
+  const puedeMarcar = puedeVerificarFacturas((SESION && SESION.usuario) || usuario);
   const [refrescado, setRefrescado] = useState(nowStamp());
   const [filtro, setFiltro] = useState("all");
   const [open, setOpen] = useState({});
@@ -5310,12 +5314,12 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada }) {
                         <div key={i} className="flex items-center gap-2 py-1 t10" style={{ borderBottom: i < 2 ? `1px solid ${C.line}` : "none", color: C.sub }}><span className="flex h-4 w-4 items-center justify-center rounded" style={{ border: `1.5px solid ${tel.checks[i] ? "#16a34a" : "#D1D5DB"}`, backgroundColor: tel.checks[i] ? "#16a34a" : "#fff", color: "#fff", fontSize: 9, fontWeight: 700 }}>{tel.checks[i] ? "✓" : ""}</span>{c}</div>
                       ))}
                       {tel.who && <div className="mt-1.5 t9" style={{ color: C.faint }}>Registrado por {tel.who}</div>}
-                      {!bloqueado && tel.estado !== "Completada" && <button onClick={() => registrarTel(f)} className="mt-2 rounded-md px-3 py-1.5 t10 font-semibold" style={{ border: "1px solid #F1ECFF", color: "#5B21D6", backgroundColor: "#fff" }}>Registrar verificación</button>}
+                      {!bloqueado && puedeMarcar && tel.estado !== "Completada" && <button onClick={() => registrarTel(f)} className="mt-2 rounded-md px-3 py-1.5 t10 font-semibold" style={{ border: "1px solid #F1ECFF", color: "#5B21D6", backgroundColor: "#fff" }}>Registrar verificación</button>}
                       {/* Si el deudor NO confirma, Security retira esa factura de la operación (spec de
                           verificación §1). Es la única mutación que admite una operación ya firmada, y
                           sólo puede QUITAR: la asignación de las demás no se toca y no se vuelve a
                           asignar contra el estado nuevo de las líneas (ver `recortarAsignacion`). */}
-                      {!bloqueado && onNoConfirmada && tel.estado !== "Completada" && (
+                      {!bloqueado && puedeMarcar && onNoConfirmada && tel.estado !== "Completada" && (
                         <button onClick={() => onNoConfirmada(f)} className="mt-2 ml-1.5 rounded-md px-3 py-1.5 t10 font-semibold" style={{ border: `1px solid ${C.red}`, color: C.red, backgroundColor: "#fff" }}>El deudor no confirmó · retirar</button>
                       )}
                     </div>
@@ -5895,7 +5899,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             </div>
           )}
           {tab === "mensajeria" && <DealMensajeria deal={deal} usuario={usuario} />}
-          {tab === "verificacion" && <div className="mt-2"><VerificacionTab deal={deal} facturasOp={deal.facturasOp || []} bloqueado={["giro", "perdida"].includes(deal.stage)} onNoConfirmada={(f) => setConfirmNoConf(f)} /></div>}
+          {tab === "verificacion" && <div className="mt-2"><VerificacionTab deal={deal} facturasOp={deal.facturasOp || []} bloqueado={["giro", "perdida"].includes(deal.stage)} onNoConfirmada={(f) => setConfirmNoConf(f)} usuario={usuario} /></div>}
           {tab === "otorgamiento" && deal.otorgAuto && (
             <div className="mt-4 rounded-lg p-3" style={{ backgroundColor: C.greenBg, border: "1px solid #bbf7d0" }}>
               <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: C.green }}><Check size={12} /> Otorgamiento automático</div>
@@ -10504,6 +10508,68 @@ let CFG_APROB_MASIVA = PERMISOS.aprobMasiva;
 const guardarCfgExcVerif = guardarPermisos, guardarCfgVerBitacora = guardarPermisos, guardarCfgVerMensajeria = guardarPermisos;
 const guardarCfgVerCobranza = guardarPermisos, guardarCfgVerPlanEjec = guardarPermisos, guardarCfgVerFunnel = guardarPermisos;
 const guardarCfgAprobMasiva = guardarPermisos;
+
+// ============================================================================================
+// ROLES DEL TENANT — quién es quién en la estructura comercial y de riesgo del factoring.
+// Vive POR TENANT, igual que los permisos: cada factoring nombra su estructura y la demo no la
+// puede traer cableada. Antes el rol venía fusionado en el nombre (`USERS.JG` = "Sofía Herrera ·
+// Jefe de Grupo Comercial"), así que no había forma de cambiarlo sin editar el código.
+//
+// OJO — el `area` de acá es DESCRIPTIVO. El ruteo de las excepciones de otorgamiento lo siguen
+// resolviendo `ATRIB_USUARIO` (qué nivel aprueba cada uno) y `NIVEL_ROL` (qué área manda en cada
+// nivel), que están auditados y con seis decisiones de negocio pendientes —ver
+// `Inconsistencias_Motor_Otorgamiento.md`, INC-01 a INC-03—. Cambiarle el rol a alguien NO le
+// cambia la atribución de aprobación: unir las dos cosas acá cerraría a mano un contrato que
+// todavía no está decidido, y con la homologación de niveles invertida el resultado sería peor
+// que el de hoy. Cuando esas decisiones se cierren, éste es el lugar donde se unen.
+// ============================================================================================
+const ROLES_CAT = [
+  { id: "ejec_comercial", label: "Ejecutivo comercial",       area: "comercial" },
+  { id: "jefe_comercial", label: "Jefe de Grupo Comercial",   area: "comercial" },
+  { id: "gte_comercial",  label: "Gerente Comercial",         area: "comercial" },
+  { id: "gte_general",    label: "Gerente General",           area: "comercial" },
+  { id: "jefe_riesgo",    label: "Jefe de Riesgo",            area: "riesgo" },
+  { id: "sub_riesgo",     label: "Subgerente de Riesgo",      area: "riesgo" },
+  { id: "operaciones",    label: "Operaciones",               area: "operaciones" },
+  { id: "ejec_verif",     label: "Ejecutivo de verificación", area: "verificacion" },
+  { id: "admin",          label: "Super administrador",       area: "*" },
+];
+const ROL_POR_ID = {}; ROLES_CAT.forEach((r) => { ROL_POR_ID[r.id] = r; });
+// Punto de partida: la estructura que hasta ahora estaba cableada en `USERS`.
+const ROLES_DEFAULT = {
+  CR: "ejec_comercial", RF: "ejec_comercial", JT: "ejec_comercial",
+  MS: "ejec_comercial", NB: "ejec_comercial", DC: "ejec_comercial",
+  JG: "jefe_comercial", GC: "gte_comercial", GG: "gte_general",
+  RG: "jefe_riesgo", SR: "sub_riesgo", OP: "operaciones",
+  EV: "ejec_verif", ADMIN: "admin",
+};
+const ROLES_KEY = "pc_roles_" + TENANT_ACTUAL;
+// Misma higiene que `cargarPermisos`: el storage lo edita el usuario a mano, así que sólo entran
+// códigos de usuario que existen y roles que el catálogo declara. Lo demás es basura o es un intento.
+function cargarRoles() {
+  const base = { ...ROLES_DEFAULT };
+  const guardado = leerVersionado(ROLES_KEY, "roles", null);
+  if (!guardado || typeof guardado !== "object") return base;
+  let ignoradas = 0;
+  for (const k of Object.keys(guardado)) {
+    if (!Object.prototype.hasOwnProperty.call(USERS, k)) { ignoradas++; continue; }
+    const v = guardado[k];
+    if (typeof v === "string" && ROL_POR_ID[v]) base[k] = v; else ignoradas++;
+  }
+  if (ignoradas) logSys("warn", "app", `Roles: ${ignoradas} entrada(s) del storage ignoradas (usuario o rol desconocido)`, { tenant: TENANT_ACTUAL });
+  return base;
+}
+let ROL_USUARIO = cargarRoles();
+function guardarRoles() { escribirVersionado(ROLES_KEY, "roles", ROL_USUARIO); }
+const rolDe = (code) => ROL_POR_ID[ROL_USUARIO[code]] || null;
+const rolLabel = (code) => { const r = rolDe(code); return r ? r.label : "Sin rol"; };
+// El nombre de la persona sale de `USERS` sin el rol pegado atrás: con el rol configurable, ese
+// sufijo miente en cuanto alguien lo cambia en el mantenedor.
+const nombreDe = (code) => String(USERS[code] || code).split(" · ")[0];
+// ¿Puede MARCAR una factura como verificada o no verificada? Es el trabajo del equipo de
+// verificación: quien llama al deudor es quien registra lo que el deudor dijo. El resto de la
+// organización ve el estado pero no lo firma — una verificación es evidencia de una llamada.
+const puedeVerificarFacturas = (code) => code === "ADMIN" || ROL_USUARIO[code] === "ejec_verif";
 const puedeExcepcionarVerif = (code) => code === "ADMIN" || CFG_EXC_VERIF[code] === true;
 const puedeVerBitacora = (code) => code === "ADMIN" || CFG_VER_BITACORA[code] === true;
 const puedeVerMensajeria = (code) => code === "ADMIN" || CFG_VER_MENSAJERIA[code] === true;
@@ -11254,6 +11320,9 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
     verificada: { lbl: "Verificada", bg: "#F0FDF4", fg: "#16A34A", bd: "#bbf7d0" },
     no_verificada: { lbl: "No verificada", bg: "#fef2f2", fg: "#EF4444", bd: "#fecaca" },
   };
+  // Marcar una factura es FIRMAR el resultado de una llamada: lo hace quien llamó. El resto de la
+  // organización ve la mesa —saber qué está frenando un giro es información de todos— pero no la marca.
+  const puedeMarcar = puedeVerificarFacturas((SESION && SESION.usuario) || usuario);
   const marcarOk = async (f) => { if (onVerificar) await onVerificar(f); force((v) => v + 1); };
   const marcarNo = (f) => { if (onNoConfirmar) onNoConfirmar(f); setConfirmNo(null); force((v) => v + 1); };
   const kpi = (lbl, val, sub, col) => (
@@ -11319,10 +11388,14 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: e.bg, color: e.fg, border: `1px solid ${e.bd}` }}>{e.lbl}</span>
-                    {f.estado === "pendiente" && (<>
+                    {f.estado === "pendiente" && (puedeMarcar ? (<>
                       <button onClick={() => marcarOk(f)} className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: "#16A34A" }}><Check size={12} /> Verificada</button>
                       <button onClick={() => setConfirmNo(f)} className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 t11 font-semibold" style={{ border: `1px solid ${C.red}`, color: C.red, backgroundColor: "#fff" }}>No verificada</button>
-                    </>)}
+                    </>) : (
+                      <span className="t10" style={{ color: C.faint }} title={`Registrar una verificación es firmar el resultado de una llamada. Lo hace el Ejecutivo de verificación; tu rol es ${rolLabel((SESION && SESION.usuario) || usuario)}.`}>
+                        Sólo el <b>Ejecutivo de verificación</b> puede marcarla
+                      </span>
+                    ))}
                   </div>
                 </div>
                 {/* Las causas SIEMPRE visibles en resumen; el detalle (qué mide y por qué) se abre a
@@ -11651,11 +11724,13 @@ function MantenedoresOtorg({ onCfgChange }) {
       {mtab === "usuarios" && (<div>
         <div className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Apoderados y atribuciones (nivel por área; 0 = sin atribución)</div>
         <div className="t10" style={{ color: C.faint }}>Define quién puede excepcionar y en qué nivel (N1–N5). <b>Aceptación masiva</b> habilita/oculta el botón «Aprobar/Rechazar todo» de excepciones. <b>Excepción de verificación</b> habilita eximir facturas de la verificación telefónica (por defecto sólo el Gerente Comercial).</div>
+        <div className="mt-1 t10" style={{ color: C.faint }}>El <b>Rol</b> se asigna en <b>Configuración › Roles</b> y se guarda por tenant; acá va sólo para leer la tabla. El rol habilita lo propio del cargo —el <b>Ejecutivo de verificación</b> es el único que puede marcar facturas como verificadas o no verificadas— pero <b>no</b> define atribución de aprobación: eso son las columnas de nivel por área de esta misma tabla.</div>
         <table className="mt-1.5 w-full border-collapse t11">
-          <thead><tr>{["Usuario", "Tipo", "Riesgo", "Comercial", "Operaciones", "Aceptación masiva", "Excepción verificación", "Ver Bitácora", "Ver Mensajería", "Ver Cobranza", "Ver Plan Mensual", "Ver Funnel"].map((h) => <th key={h} className="px-2 py-1 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
+          <thead><tr>{["Usuario", "Rol", "Tipo", "Riesgo", "Comercial", "Operaciones", "Aceptación masiva", "Excepción verificación", "Ver Bitácora", "Ver Mensajería", "Ver Cobranza", "Ver Plan Mensual", "Ver Funnel"].map((h) => <th key={h} className="px-2 py-1 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
           <tbody>{Object.keys(ATRIB_USUARIO).filter((k) => USERS[k]).map((k) => { const esAprob = atribDe(k).tipo === "aprobador"; const on = aprobMasivaHabilitada(k); const ev = puedeExcepcionarVerif(k); const vb = puedeVerBitacora(k); const vm = puedeVerMensajeria(k); const vc = puedeVerCobranza(k); const vpe = puedeVerPlanEjec(k); const vf = puedeVerFunnel(k); return (
             <tr key={k} style={{ borderBottom: `1px solid ${C.line}` }}>
-              <td className="px-2 py-1 font-medium" style={{ color: C.ink }}>{USERS[k]}</td>
+              <td className="px-2 py-1 font-medium" style={{ color: C.ink }}>{nombreDe(k)}</td>
+              <td className="px-2 py-1" style={{ color: C.sub }} title="El rol se asigna en Configuración › Roles. Acá se muestra para leer la tabla, porque el rol NO define la atribución de aprobación: eso son las columnas de nivel por área.">{rolLabel(k)}</td>
               <td className="px-2 py-1" style={{ color: C.sub }}>{esAprob ? "Aprobador" : "Pipeline"}</td>
               {["riesgo", "comercial", "operaciones"].map((a) => (
                 <td key={a} className="px-2 py-1"><input type="number" min={0} max={5} value={atribDe(k).atrib[a] || 0} onChange={(e) => setAtrib(k, a, e.target.value)} className="rounded-md px-1.5 py-1 t11 text-center outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, width: 48 }} /></td>
@@ -14806,6 +14881,70 @@ function CfgSistema() {
     </div>
   );
 }
+// Configuración › Roles. Quién es quién en este TENANT. Hasta acá el rol venía fusionado en el
+// nombre (`USERS.JG` = "Sofía Herrera · Jefe de Grupo Comercial") y no había forma de cambiarlo sin
+// editar el código, así que un factoring con otra estructura no se podía representar.
+// Lo que el rol NO hace está dicho en pantalla a propósito: la atribución de aprobación de
+// excepciones sigue saliendo de Otorgamiento › Usuarios y atribuciones. Ver `ROLES_CAT`.
+function CfgRoles() {
+  const [, force] = useState(0);
+  const [guardado, setGuardado] = useState(null);
+  const codigos = Object.keys(USERS);
+  const setRol = (code, rolId) => {
+    if (!ROL_POR_ID[rolId] || code === "ADMIN") return;
+    const antes = rolLabel(code);
+    ROL_USUARIO[code] = rolId; guardarRoles();
+    // Quién lo hizo sale de la SESIÓN, no de una prop: es un cambio de privilegios.
+    const actor = (SESION && SESION.usuario) || "—";
+    registrarAuditoria({ usuario: USERS[actor] || actor, modulo: "Usuarios y roles", accion: "Cambio de rol",
+      glosa: `${nombreDe(code)}: ${antes} → ${ROL_POR_ID[rolId].label}`, severidad: "alta" });
+    setGuardado(code); setTimeout(() => setGuardado(null), 1800);
+    force((v) => v + 1);
+  };
+  // Qué habilita cada rol HOY. Se lista sólo lo que el código de verdad gatea: prometer una
+  // atribución que nadie consulta es peor que no nombrarla.
+  const HABILITA = {
+    ejec_verif: "Marca facturas como verificadas o no verificadas, en la mesa de Verificación y en el tab del detalle.",
+    admin: "Todo, incluida la verificación.",
+  };
+  const AREA_LBL = { comercial: "Comercial", riesgo: "Riesgo", operaciones: "Operaciones", verificacion: "Verificación", "*": "Transversal" };
+  return (
+    <div className="grid gap-4">
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div className="text-lg font-semibold" style={{ color: C.ink }}>Roles del tenant</div>
+        <div className="mt-0.5 t12" style={{ color: C.faint }}>
+          Quién es quién en <b>{CFG_ACTIVA.marcaNombre || TENANT_ACTUAL}</b>. La asignación se guarda <b>por tenant</b> (<code style={{ fontFamily: "ui-monospace,monospace" }}>{ROLES_KEY}</code>), así que cada factoring nombra su estructura.
+        </div>
+        <div className="mt-2 rounded-lg p-2.5 t11" style={{ backgroundColor: C.amberBg, border: "1px solid #FED7AA", color: "#C2410C" }}>
+          El rol <b>no</b> define la atribución para aprobar excepciones de otorgamiento. Eso son los niveles por área de <b>Otorgamiento › Usuarios y atribuciones</b>, y se configura aparte.
+        </div>
+        <table className="mt-3 w-full border-collapse t11">
+          <thead><tr>{["Usuario", "Rol", "Área", "Qué habilita"].map((h) => (
+            <th key={h} className="px-2 py-1 text-left t10 font-semibold uppercase tracking-wide" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>
+          ))}</tr></thead>
+          <tbody>{codigos.map((k) => { const r = rolDe(k); return (
+            <tr key={k} style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: guardado === k ? "#F0FDF4" : "transparent" }}>
+              <td className="px-2 py-1.5 font-medium" style={{ color: C.ink }}>{nombreDe(k)}</td>
+              <td className="px-2 py-1.5">{k === "ADMIN" ? (
+                <span style={{ color: C.sub }}>{rolLabel(k)}</span>
+              ) : (
+                <select value={ROL_USUARIO[k] || ""} onChange={(e) => setRol(k, e.target.value)}
+                  className="rounded-md px-2 py-1 t11" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
+                  {!ROL_USUARIO[k] && <option value="">Sin rol</option>}
+                  {ROLES_CAT.filter((x) => x.id !== "admin").map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+                </select>
+              )}</td>
+              <td className="px-2 py-1.5" style={{ color: C.sub }}>{r ? (AREA_LBL[r.area] || r.area) : "—"}</td>
+              <td className="px-2 py-1.5 t10" style={{ color: r && HABILITA[r.id] ? C.ink : C.faint }}>
+                {(r && HABILITA[r.id]) || "Acceso al pipeline según su cartera. Nada exclusivo de este rol todavía."}
+              </td>
+            </tr>
+          ); })}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 function ConfiguracionView({ usuario, cfgOper, setCfgOper }) {
   const [sec, setSec] = useState("operacion");
   const [, force] = useState(0);
@@ -14820,7 +14959,7 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper }) {
         ))}
       </aside>
       <div>
-        {sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "otorgamiento" ? (
+        {sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "roles" ? <CfgRoles /> : sec === "otorgamiento" ? (
           <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
             <div className="text-lg font-semibold" style={{ color: C.ink }}>Otorgamiento · apoderados y atribuciones</div>
             <div className="mt-0.5 t12" style={{ color: C.faint }}>Criterios de verificación, atribuciones de aprobación por criterio y los apoderados que pueden excepcionar (nivel por área). Aquí también se habilita/oculta la aceptación masiva por usuario.</div>

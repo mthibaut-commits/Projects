@@ -276,6 +276,31 @@
      && ofertaPublicada({ ofertaCerrada: true, waSesion: [{ from: "agente", text: "Hola, ¿cómo estás?" }] }) === false,
      "el mensaje del agente publica; cualquier otro no");
 
+  // 33-34 · ROLES POR TENANT. Marcar una factura como verificada es firmar el resultado de una
+  // llamada, así que lo hace el equipo de verificación y no cualquiera. El rol se configura por
+  // tenant (Configuración › Roles) y la capacidad se deriva de él, no de una lista aparte.
+  ok("33 sólo el Ejecutivo de verificación firma una verificación",
+     puedeVerificarFacturas("EV") === true
+     && puedeVerificarFacturas("ADMIN") === true
+     && puedeVerificarFacturas("CR") === false
+     && puedeVerificarFacturas("GC") === false
+     && puedeVerificarFacturas("SR") === false,
+     "EV y ADMIN sí; comercial y riesgo no");
+
+  {
+    // Cambiar el rol cambia la capacidad, y se restituye: el test no puede dejar el tenant tocado.
+    const antes = ROL_USUARIO.CR;
+    ROL_USUARIO.CR = "ejec_verif";
+    const conRol = puedeVerificarFacturas("CR");
+    ROL_USUARIO.CR = antes;
+    const catalogo = ROLES_CAT.map((r) => r.id);
+    ok("34 el catálogo cubre la estructura y el rol manda sobre la capacidad",
+       conRol === true && puedeVerificarFacturas("CR") === false
+       && ["ejec_comercial", "jefe_comercial", "gte_comercial", "gte_general", "jefe_riesgo", "sub_riesgo", "operaciones", "ejec_verif"].every((r) => catalogo.includes(r))
+       && /^pc_roles_/.test(ROLES_KEY),
+       `${catalogo.length} roles · clave ${ROLES_KEY}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
