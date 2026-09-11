@@ -18,7 +18,7 @@
    ...más tres de la CARTERA DEL PAR cliente-deudor (INC-04): que el catálogo implemente las 79
    reglas de la política y que C47-C50 se evalúen y se visen por deudor, no por cliente.
 
-   Última corrida: 51/51 PASA.
+   Última corrida: 55/55 PASA.
    ============================================================================================ */
 (() => {
   const out = [];
@@ -27,6 +27,10 @@
   // Deudores PRIME reales de la lista blanca, con nota distinta entre sí: es lo único que hace
   // válida la prueba de la línea compartida (ambos tienen que caer en la MISMA categoría).
   const LB = [...LB_RUT].slice(0, 12);
+  // Para buscar un deudor que REQUIERA verificación hace falta toda la lista: los atributos del par
+  // son sintéticos y están sembrados por la clave de `verifPar`, así que acotar la búsqueda a doce
+  // ata la prueba a un sorteo concreto y basta cambiar la semilla para que no encuentre ninguno.
+  const TODOS_LB = [...LB_RUT];
   const nomDe = (r) => "DEU-" + r;
   const conNota = LB.map((r) => ({ rut: r, nota: notaFromScore(scoreDeudor(nomDe(r), "Lista Blanca").score) })).sort((a, b) => b.nota - a.nota);
   const alto = conNota[0], bajo = conNota[conNota.length - 1];
@@ -244,14 +248,14 @@
 
   // 28 · el protocolo propio del deudor es COMPUERTA: es la única causa, porque no se evaluó nada más
   const cs28 = causasVerif({ razon: "protocolo", fallidas: [] });
-  ok("28 el protocolo propio es la única causa", cs28.length === 1 && cs28[0].id === "V01" && cs28[0].dura === true, cs28[0].nombre);
+  ok("28 el protocolo propio es la única causa", cs28.length === 1 && cs28[0].id === "V01" && cs28[0].sinDato === false, cs28[0].nombre);
 
   // 29 · un criterio SIN DATO se muestra como incumplimiento, no como «no aplica» (§4.3)
   const cs29 = causasVerif({ razon: "criterio_incumplido", fallidas: [{ r: VERIF_RULES.find((r) => r.id === "V10"), v: null, dato: false }] });
   ok("29 el criterio sin dato se marca como tal", cs29.length === 1 && cs29[0].sinDato === true && cs29[0].valor === "sin dato", cs29[0].valor);
 
   // 30 · filasVerificacion agrupa POR DEUDOR y sólo trae los que requieren llamada
-  const deudorTel = LB.map((r) => ({ r, v: verifFactura(fac("x", r, 10), { id: "T-30", rutEmisor: "76.111.111-1" }) })).find((x) => x.v.est === "tel");
+  const deudorTel = TODOS_LB.map((r) => ({ r, v: verifFactura(fac("x", r, 10), { id: "T-30", rutEmisor: "76.111.111-1" }) })).find((x) => x.v.est === "tel");
   if (!deudorTel) { ok("30 filasVerificacion agrupa por deudor", false, "ningún deudor de prueba requiere verificación"); }
   else {
     const deal30 = { id: "T-30", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba",
@@ -451,7 +455,7 @@
   // evidencia con actor y hora, no preferencias del navegador. Las dos funciones los reciben, así que
   // se levantan tal cual a un resolver. Acá se les pasa un estado INVENTADO y se comprueba que manda.
   {
-    const deudorTel45 = LB.map((r) => ({ r, v: verifFactura(fac("x", r, 10), { id: "T-45", rutEmisor: "76.111.111-1" }) })).find((x) => x.v.est === "tel");
+    const deudorTel45 = TODOS_LB.map((r) => ({ r, v: verifFactura(fac("x", r, 10), { id: "T-45", rutEmisor: "76.111.111-1" }) })).find((x) => x.v.est === "tel");
     if (!deudorTel45) { ok("45 el visado y el commit de verificación entran por parámetro", false, "ningún deudor de prueba requiere verificación"); }
     else {
       const f1 = fac("f1", deudorTel45.r, 30), f2 = fac("f2", deudorTel45.r, 20);
@@ -614,6 +618,88 @@
        vivos.length === 0 && faltan.length === 0
        && gravedadPorMonto(15) === "leve" && gravedadPorMonto(200) === "critico",
        `eliminados ${muertos.length}${vivos.length ? " · sobreviven: " + vivos.join(", ") : ""} · conservados ${conservados.length}${faltan.length ? " · faltan: " + faltan.join(", ") : ""}`);
+  }
+
+
+  // ============================================================================================
+  // 52-55 · LOS CUATRO DEFECTOS DEL PREDICTOR DE VERIFICACIÓN, corregidos el 11-09-2026. Los cuatro
+  // eran casos en que el código NO hacía lo que su propia spec dice, no desfases de documentación.
+  // ============================================================================================
+
+  // 52 · VER-01 se evalúa contra el COMMIT, no contra un sorteo. `verifResumenDeal` contaba
+  // pendientes desde un estado que `verifFactura` inventaba con `par.h % 3`, sin mirar nunca el
+  // repositorio de llamadas: el control que impide girar sin verificación podía pasar con CERO
+  // llamadas registradas, y una operación con todo firmado podía quedar bloqueada.
+  {
+    const dt = TODOS_LB.map((r) => ({ r, v: verifFactura(fac("x", r, 10), { id: "T-52", rutEmisor: "76.111.111-1" }) })).find((x) => x.v.est === "tel");
+    if (!dt) { ok("52 la verificación pendiente se cuenta contra las llamadas registradas", false, "ningún deudor de prueba requiere verificación"); }
+    else {
+      const f1 = fac("f1", dt.r, 30), f2 = fac("f2", dt.r, 20);
+      const deal52 = { id: "T-52", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", facturasOp: [f1, f2] };
+      const sin = verifResumenDeal(deal52);
+      const media = verifResumenDeal(deal52, { tel: { "T-52": { [f1.id]: { por: "EV", fecha: "x" } } } });
+      const todas = verifResumenDeal(deal52, { tel: { "T-52": { [f1.id]: { por: "EV", fecha: "x" }, [f2.id]: { por: "EV", fecha: "x" } } } });
+      ok("52 la verificación pendiente se cuenta contra las llamadas registradas",
+         sin.tel === 2 && sin.pend === 2 && media.pend === 1 && todas.pend === 0,
+         `sin llamadas ${sin.pend} pendientes → con una ${media.pend} → con las dos ${todas.pend}`);
+    }
+  }
+
+  // 53 · El segmento del par NO depende de quién pregunte. `verifPar` memoizaba con la clave
+  // `cliente|deudor` pero recibía el `tipo` por parámetro, y los dos llamadores pasaban cosas
+  // distintas: el primero en llegar fijaba nota, segmento y criterios para toda la sesión.
+  {
+    const r53 = TODOS_LB[3];
+    const plano = fac("p1", r53, 25);
+    const conHist = { ...fac("p2", r53, 25), histFactoring: "bice" };   // antes esto cambiaba el segmento
+    const a = verifFactura(plano, { id: "T-53", rutEmisor: "76.111.111-1" });
+    const b = verifFactura(conHist, { id: "T-53", rutEmisor: "76.111.111-1" });
+    const c = verifDeudorDeal({ id: "T-53", rutEmisor: "76.111.111-1", facturasOp: [plano] }, nomDe(r53));
+    ok("53 el segmento del par no depende de qué pantalla preguntó primero",
+       a.segmento === b.segmento && a.nota === b.nota && a.tipo === b.tipo
+       && c.par.segmento === a.segmento && c.par.nota === a.nota,
+       `${a.segmento} · nota ${a.nota} por los tres caminos`);
+  }
+
+  // 54 · Un criterio SIN DATO incumple (§4.3). La regla 6 rellenaba la fecha ausente con el promedio
+  // del par: la desviación daba 0 y el criterio CUMPLÍA, que es justo el estado intermedio que la
+  // spec dice que no existe.
+  {
+    const parBase = {
+      aplican: ["V06"], protocolo: { existe: false }, recortado: false, prime: false,
+      fchVctoProm: 40, pctPagoDeudor3M: 95, mntCompraOp3M: 100, avgVentaProm3M: 100,
+      mesesConVenta6M: 6, pctMora25d: 0, pctReclamadas: 0, mntPagoDeudor3M: 2000,
+    };
+    const sinPlazo = verifDecision(parBase, [{ id: "a", montoMM: 10 }]);                  // sin `venc`
+    const conPlazo = verifDecision(parBase, [{ id: "a", montoMM: 10, venc: 41 }]);        // 2,5% de 40
+    const fuera    = verifDecision(parBase, [{ id: "a", montoMM: 10, venc: 60 }]);        // 50% de 40
+    const st = (r) => (r.evals.find((e) => e.r.id === "V06") || {}).st;
+    ok("54 la regla 6 sin plazo incumple, no se rellena con el promedio",
+       st(sinPlazo) === "no" && sinPlazo.requiere === true
+       && st(conPlazo) === "ok" && conPlazo.requiere === false
+       && st(fuera) === "no",
+       `sin dato «${st(sinPlazo)}» · dentro del 5% «${st(conPlazo)}» · fuera «${st(fuera)}»`);
+  }
+
+  // 55 · El veredicto se CONGELA con el contacto (§9). Antes se recalculaba en cada render contra la
+  // oferta vigente, y como retirar las facturas no confirmadas baja el monto, los criterios 3, 4 y 9
+  // podían pasar a cumplir: el deudor volvía a «verificado por modelo» y su fila desaparecía de la
+  // mesa, borrando la evidencia que alguien acababa de firmar.
+  {
+    const r55 = TODOS_LB[1];
+    const f1 = fac("g1", r55, 12);
+    const deal55 = { id: "T-55", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", facturasOp: [f1] };
+    const sinCongelar = filasVerificacion([deal55]);
+    const congelado = { "T-55": { [r55]: { est: "tel", resultado: "no_verificada", motivo: "V04", razon: "contacto",
+      causas: [{ id: "V04", nombre: "Monto vs relación comercial", valor: "1,20×", umbral: "< 1,0", sinDato: false }],
+      por: "Camila Soto", fecha: "11-09-2026 10:00" } } };
+    const conCongelado = filasVerificacion([deal55], { veredicto: congelado });
+    const fila = conCongelado.find((x) => x.rutDeudor === r55);
+    ok("55 el veredicto congelado mantiene la fila en la mesa y sus causas",
+       !!fila && fila.causas.length === 1 && fila.causas[0].id === "V04"
+       // y sin congelar, la fila sólo está si el predictor de hoy manda a teléfono
+       && (sinCongelar.some((x) => x.rutDeudor === r55) === (verifFactura(f1, deal55).est === "tel")),
+       `con veredicto congelado la fila existe con su causa ${fila ? fila.causas[0].id : "—"}`);
   }
 
   console.log(out.join("\n"));

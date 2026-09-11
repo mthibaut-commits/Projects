@@ -250,12 +250,13 @@ Estos ya están arreglados; se listan para que no se vuelvan a auditar.
 
 ---
 
-## 6. Defectos de implementación detectados de paso
+## 6. Defectos de implementación — **los siete corregidos el 11-09-2026**
 
-No son desfases de documentación: son puntos donde el código **no hace lo que su propia spec dice**.
-Verificados uno por uno sobre el fuente. Ninguno está corregido todavía.
+No eran desfases de documentación: eran puntos donde el código **no hacía lo que su propia spec dice**.
+Se verificaron uno por uno sobre el fuente y **se corrigieron todos**, con sus casos en la suite
+(52–55). El diagnóstico se conserva porque es lo que justifica cada cambio.
 
-### 6.1 · `verifResumenDeal` cuenta pendientes de un estado sintético — VER-01 no controla nada
+### ~~6.1~~ · `verifResumenDeal` contaba pendientes de un estado sintético — **CORREGIDO**
 
 `verifResumenDeal` calcula `pend` mirando `vf.tel.estado`, y ese estado lo **inventa** `verifFactura`:
 
@@ -274,7 +275,7 @@ Lo segundo es lo grave: el control que existe para impedir el giro sin verificac
 cero verificaciones. **Arreglo:** que `verifResumenDeal` cuente contra `VERIF_TEL[deal.id]`, como ya hacen
 `filasVerificacion` y `VerificacionTab`.
 
-### 6.2 · `verifPar` memoiza sin el `tipo`, así que el segmento depende de quién llame primero
+### ~~6.2~~ · `verifPar` memoizaba sin el `tipo` — **CORREGIDO**
 
 `verifPar(rutCliente, nombre, tipo)` memoiza en `_VERIF_PAR` con la clave `rutCliente|nombre` — **sin el
 `tipo`**. Pero el `tipo` es lo que determina `sc`, `nota`, `prime`, `recortado`, `segmento` y `aplican`, y
@@ -286,7 +287,7 @@ Contradice el principio que el propio proyecto se dio —la semilla es la entida
 veredicto dependa de qué pantalla se abrió primero. **Arreglo:** incluir el `tipo` en la clave, o —mejor—
 resolverlo **dentro** de `verifPar` a partir del par, para que no haya dos respuestas posibles.
 
-### 6.3 · El veredicto de verificación no se congela tras el contacto
+### ~~6.3~~ · El veredicto no se congelaba tras el contacto — **CORREGIDO**
 
 El §9 del spec dice que el resultado del contacto es **un hecho, no una nueva predicción**, y que volver a
 predecir sobre el monto ya recortado sería circular. En el código no hay dónde se guarde ese veredicto:
@@ -295,28 +296,28 @@ todo se recalcula en cada render contra `deal.facturasOp`. Al retirar las factur
 `filasVerificacion` lo descarta, **borrando de la mesa la fila «no verificada» que se acaba de firmar**.
 Lo único congelado es la copia dentro de la versión de simulación, que la interfaz no lee.
 
-### 6.4 · La regla 6 no trata el dato faltante como incumplimiento
+### ~~6.4~~ · La regla 6 no trataba el dato faltante como incumplimiento — **CORREGIDO**
 
 El §4.3 es explícito: un criterio sin dato **incumple**, no hay estado intermedio. Las diez reglas lo
 respetan (`v != null && …`) salvo la 6, que sustituye la fecha ausente por el promedio del par
 (`f.venc != null ? f.venc : par.fchVctoProm`), con lo que la desviación da 0 y el criterio **cumple**.
 Hay que decidir si es concesión de la demo o se alinea con el §4.3.
 
-### 6.5 · La mesa no admite confirmación parcial
+### ~~6.5~~ · La mesa no admitía confirmación parcial — **CORREGIDO**
 
 El spec describe el caso de «el deudor confirma unas facturas y no otras, y Security retira las no
 confirmadas». La mesa (`VerificacionView`) sólo ofrece verificada / no verificada por deudor, y
 `noConfirmoDeudor` retira **todas** sus facturas. La granularidad por folio existe sólo en el tab del
 detalle. Hay que decidir si la mesa debe admitir el resultado parcial.
 
-### 6.6 · Dos cosas calculadas que nadie consume
+### ~~6.6~~ · Dos cosas calculadas que nadie consumía — **CORREGIDO**
 
 - **`saldoPuntual`** (`min(saldo puntual, holgura del deudor)`) se calcula exactamente como pide el §8.5 y
   **ningún componente lo lee**: la franja violeta de la puntual no está dibujada.
 - **`montoCaducado`** viaja hasta la versión de simulación, pero el reporte que según el §3.6 debía
   alimentar —el que le dice al comité si las puntuales están bien dimensionadas— no existe.
 
-### 6.7 · Restos del modelo viejo de verificación
+### ~~6.7~~ · Restos del modelo viejo de verificación — **CORREGIDO**
 
 `verifDeudor` (el modelo anterior de 6 criterios, con ≤1,1× promedio y ≤25 días de mora) **no tiene ningún
 llamador**. Y varios comentarios contradicen el código que tienen al lado: «La verificación es POR
@@ -338,3 +339,21 @@ Ninguna bloquea la demo; todas cambian el contrato del servicio.
 | 5 | Falta un motivo de rechazo «línea suspendida»: hoy se confunde con «no existe» | spec de líneas §3.2 |
 | 6 | ¿La mesa de verificación admite confirmación parcial? | §6.5 |
 | 7 | ¿La regla 6 sin dato cumple o incumple? | §6.4 |
+
+---
+
+## 8. Qué se hizo con cada uno (11-09-2026)
+
+| # | Corrección |
+|---|---|
+| 6.1 | `verifFactura` lee el estado de la llamada de `repoVerifTel` —o del que se le inyecte— en vez de sortearlo con `par.h % 3`. `verifResumenDeal(deal, estado)` lo propaga, así que **VER-01 se evalúa contra el commit real**. Caso 52 |
+| 6.2 | `verifPar(rutCliente, nombre, rutDeudor)`: el `tipo` se resuelve adentro, desde la identidad del par, y el RUT entra en la clave de memoización. Los dos llamadores dejaron de pasar cosas distintas. Caso 53 |
+| 6.3 | Nuevo `repoVerifVeredicto`: registrado el contacto, el veredicto queda **congelado** con sus causas, actor y hora. `filasVerificacion` mantiene la fila del deudor aunque el predictor de hoy ya no lo mandaría a teléfono, y `causasVerif` devuelve las causas que se le dijeron a quien llamó. Caso 55 |
+| 6.4 | Si a alguna factura le falta el plazo, la regla 6 vale `null` → incumple. Antes se rellenaba con el plazo promedio del par y el criterio **cumplía**. Caso 54 |
+| 6.5 | La mesa trae un selector por folio, todas marcadas por defecto. Al registrar, las desmarcadas se retiran y quedan vetadas; la auditoría distingue «verificado» de «confirmó parcialmente» |
+| 6.6 | `saldoPuntual` se muestra en la fila del deudor (chip lila + tooltip): avisa que parte del cupo disponible es una puntual de un solo uso que se quema entera con la primera factura. `montoCaducado` se totaliza en el modal de curse: es el dato con que el comité sabe si está dimensionando bien las puntuales |
+| 6.7 | Se eliminaron `verifDeudor` (el modelo viejo de 6 criterios, sin llamadores), el campo `dura` del catálogo y el `hard` del veredicto —siempre `false`—, `telEstadoDe` y los comentarios que describían el modelo por documento. `CriteriosVerifMantenedor` se eliminó: no estaba enganchado a ninguna vista y además era de los criterios de visado del otorgamiento, no de este spec |
+
+Y de paso, una **poda de código muerto**: 59 símbolos de nivel módulo sin ninguna referencia, 952
+líneas. La verificación que importa acá no es `tsc` ni el build —los dos pasan con el login roto— sino
+regenerar las capturas, que renderizan las 11 vistas.
