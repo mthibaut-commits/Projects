@@ -996,6 +996,9 @@ function puedeAprobarExc(code, regla, nivelReq) {
   // configurada detrás de una aprobación que igual ocurre; así queda a la vista en la lista vacía.
   const area = regla && regla.area;
   if (!area) return false;
+  // El área tiene que existir en el tenant: si se borró o el criterio apunta a una que nunca se creó,
+  // no hay atribución que valga. Así «falta el área» es una causa explícita y no un permiso silencioso.
+  if (typeof AREAS_CAT !== "undefined" && !AREAS_CAT.some((a) => a.id === area)) return false;
   const lv = atribDe(code).atrib[area];
   return lv != null && lv >= nivelReq;
 }
@@ -10637,13 +10640,28 @@ const ROL_ATRIB = {
 // misma regla de escalada que aplica `puedeAprobarExc`, así que lo que se muestra es quien de verdad
 // puede firmar. Si nadie del área llega, se nombra el requisito en crudo y queda a la vista que falta
 // configurar un usuario de esa área con ese nivel.
+// Lo que el motor muestra cuando un criterio no tiene a quién pedirle la excepción. Es una sola
+// constante para que la frase sea idéntica en las cinco pantallas donde puede aparecer.
+const SIN_APROBADOR = "Sin aprobador definido";
 function rolDeAreaNivel(area, nivel) {
   const exacto = Object.keys(ROL_ATRIB).find((k) => ROL_ATRIB[k].area === area && ROL_ATRIB[k].nivel === nivel);
   if (exacto) return { rol: (ROL_POR_ID[exacto] || {}).label || exacto, area, id: exacto };
   const sup = Object.keys(ROL_ATRIB).filter((k) => ROL_ATRIB[k].area === area && ROL_ATRIB[k].nivel >= nivel)
     .sort((x, y) => ROL_ATRIB[x].nivel - ROL_ATRIB[y].nivel)[0];
   if (sup) return { rol: (ROL_POR_ID[sup] || {}).label || sup, area, id: sup, porEscalada: true };
-  return { rol: `N${nivel} de ${ROL_AREA_LBL[area] || area}`, area, id: null, sinCargo: true };
+  // No hay cargo que cubra este (área, nivel). Es CONFIGURACIÓN que falta, y el motor tiene que
+  // decirlo con todas sus letras: una lista de aprobadores vacía se lee como «todavía no lo miran»,
+  // cuando en realidad no hay nadie a quien pedírselo y la operación se queda pegada sin que nadie
+  // sepa por qué. Se distinguen las dos causas porque se arreglan en mantenedores distintos.
+  const areaExiste = (typeof AREAS_CAT !== "undefined" ? AREAS_CAT : []).some((a) => a.id === area);
+  const areaLbl = ROL_AREA_LBL[area] || area || "—";
+  return {
+    rol: SIN_APROBADOR, area, id: null, sinAprobador: true,
+    requiere: `${areaLbl} · N${nivel}`,
+    motivo: !area ? "el criterio no declara área"
+      : !areaExiste ? `el área «${area}» no existe en este tenant — créala en Configuración › Áreas`
+      : `nadie tiene ${areaLbl} en nivel N${nivel} o superior — asígnalo en Configuración › Usuarios`,
+  };
 }
 function atribDeRol(code) {
   if (code === "ADMIN") return { riesgo: 5, comercial: 5, operaciones: 5 };
@@ -11051,7 +11069,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                           <div className="t11 font-semibold" style={{ color: C.ink }}>#{x.regla.n} · {x.regla.nombre}{accionable && <span className="ml-1.5 rounded-full px-1.5 py-0.5 t9 font-bold text-white" style={{ backgroundColor: C.indigo }}>Puedes aprobar</span>}</div>
                           <div className="mt-0.5 t10" style={{ color: C.sub }}>{x.regla.hallazgo}</div>
                           <div className="mt-0.5 t9" style={{ color: C.faint }}>Dominio: <b>{AREA_LBL[x.regla.area]}</b> · Aprueba: <b style={{ color: otraArea ? "#7C3AED" : C.sub }}>N{niv} · {nr.rol} ({AREA_LBL[nr.area]})</b>{otraArea && <span className="ml-1 rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>↗ otra área</span>}</div>
-                          <div className="mt-0.5 t9" style={{ color: C.faint }}>{aps.length ? "Aprueban: " + aps.join(", ") : "Sin usuarios con esta atribución"}</div>
+                          <div className="mt-0.5 t9" style={{ color: aps.length ? C.faint : "#C2410C" }}>{aps.length ? "Aprueban: " + aps.join(", ") : `${SIN_APROBADOR} · ${rolDeAreaNivel(x.regla.area, niv).motivo || ""}`}</div>
                         </div>
                         <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: ee === "aprobado" ? C.greenBg : ee === "rechazado" ? "#fef2f2" : "#FFF7ED", color: ee === "aprobado" ? C.green : ee === "rechazado" ? "#EF4444" : "#C2410C" }}>{ee === "aprobado" ? "Aprobada" : ee === "rechazado" ? "Rechazada" : "Pendiente"}</span>
                       </div>
@@ -11102,7 +11120,9 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                   <div key={x.regla.n} className="rounded-lg p-2" style={{ border: `1px solid ${C.line}`, borderLeft: "3px solid #D1D5DB", backgroundColor: "#F9FAFB" }}>
                     <div className="t11 font-semibold" style={{ color: C.ink }}>#{x.regla.n} · {x.regla.nombre} <span className="ml-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: AREA_COLOR[x.regla.area].bg2, color: AREA_COLOR[x.regla.area].fg }}>{AREA_LBL[x.regla.area]}</span></div>
                     <div className="mt-0.5 t10" style={{ color: C.sub }}>{x.regla.hallazgo}</div>
-                    <div className="mt-0.5 t9" style={{ color: C.faint }}>Aprueba: <b style={{ color: C.sub }}>N{niv} · {nr.rol} ({AREA_LBL[nr.area]})</b> · {aprobadoresExc(x.regla, niv).join(", ") || "—"}</div>
+                    <div className="mt-0.5 t9" style={{ color: nr.sinAprobador ? "#C2410C" : C.faint }}>{nr.sinAprobador
+                      ? <><b>{SIN_APROBADOR}</b> · requiere {nr.requiere} · {nr.motivo}</>
+                      : <>Aprueba: <b style={{ color: C.sub }}>N{niv} · {nr.rol} ({AREA_LBL[nr.area]})</b> · {aprobadoresExc(x.regla, niv).join(", ") || "—"}</>}</div>
                   </div>
                 ); })}</div>
               </div>}
@@ -11397,7 +11417,7 @@ function ReglasClienteCatalogo() {
                     <td className="px-1.5 py-1.5" style={{ color: C.sub }}>{i + 1}</td>
                     <td className="px-1.5 py-1.5" style={{ color: C.ink, fontFamily: "ui-monospace, monospace" }}>{tramoCond(t[0])}</td>
                     <td className="px-1.5 py-1.5"><span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: c.bg, color: c.fg }}>{c.l}</span></td>
-                    <td className="px-1.5 py-1.5">{disp === "excepcion" ? <div className="flex flex-col gap-0.5"><span className="t10" style={{ color: C.sub }}>N{niv} · {nr.rol} ({AREA_LBL[nr.area]})</span><span className="t9" style={{ color: C.faint }}>{aps.length ? "Aprueban: " + aps.join(", ") : "—"}</span></div> : <span className="t9" style={{ color: C.faint }}>—</span>}</td>
+                    <td className="px-1.5 py-1.5">{disp === "excepcion" ? <div className="flex flex-col gap-0.5"><span className="t10" style={{ color: nr.sinAprobador ? "#C2410C" : C.sub }}>{nr.sinAprobador ? `${SIN_APROBADOR} · requiere ${nr.requiere}` : `N${niv} · ${nr.rol} (${AREA_LBL[nr.area]})`}</span><span className="t9" style={{ color: nr.sinAprobador ? "#C2410C" : C.faint }}>{nr.sinAprobador ? nr.motivo : (aps.length ? "Aprueban: " + aps.join(", ") : "—")}</span></div> : <span className="t9" style={{ color: C.faint }}>—</span>}</td>
                   </tr>
                 ); })}
               </tbody>
@@ -11786,7 +11806,7 @@ function AtribucionesMantenedor() {
                       <td className="px-2 py-1" style={{ color: C.ink }}>{tramoCond(t[0])}</td>
                       <td className="px-2 py-1"><span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dm.bg, color: dm.fg }}>{dm.l}</span></td>
                       <td className="px-2 py-1" style={{ color: C.sub }}>{nr ? `N${niv} · ${nr.rol}` : "—"}</td>
-                      <td className="px-2 py-1" style={{ color: C.sub }}>{aps.length ? aps.join(", ") : "—"}</td>
+                      <td className="px-2 py-1" style={{ color: aps.length ? C.sub : "#C2410C" }} title={aps.length ? undefined : (nr ? nr.motivo : "")}>{aps.length ? aps.join(", ") : (disp === "excepcion" ? SIN_APROBADOR : "—")}</td>
                     </tr>
                   );
                 })}</tbody>

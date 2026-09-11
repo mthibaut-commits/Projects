@@ -387,6 +387,23 @@
        `${ids.length} áreas · las reglas usan ${usadasPorReglas.join(", ")} · clave ${AREAS_KEY}`);
   }
 
+  // 43 · SIN APROBADOR DEFINIDO. Un criterio sin nadie a quien pedirle la excepción tiene que decirlo
+  // con todas sus letras: una lista de aprobadores vacía se lee como «todavía no lo miran», cuando en
+  // realidad la operación está pegada esperando a alguien que no existe. Dos causas, dos mantenedores.
+  {
+    const sinArea = rolDeAreaNivel("contraloria_inexistente", 3);
+    const sinNadie = rolDeAreaNivel("verificacion", 3); // área real, pero ningún cargo tiene nivel ahí
+    const conCargo = rolDeAreaNivel("riesgo", 5);
+    ok("43 un criterio sin aprobador lo dice, y dice por qué",
+       sinArea.sinAprobador === true && sinArea.rol === SIN_APROBADOR && /no existe en este tenant/.test(sinArea.motivo)
+       && sinNadie.sinAprobador === true && /nivel N3 o superior/.test(sinNadie.motivo)
+       && conCargo.sinAprobador !== true && conCargo.rol === "Subgerente de Riesgo"
+       // y nadie puede aprobar contra un área que no existe, por mucho nivel que cargue
+       && Object.keys(USERS).filter((c) => c !== "ADMIN")
+            .every((c) => puedeAprobarExc(c, { area: "contraloria_inexistente", tiers: [] }, 1) === false),
+       `«${sinArea.rol}» · ${sinNadie.motivo.slice(0, 46)}…`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
