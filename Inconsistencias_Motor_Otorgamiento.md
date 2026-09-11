@@ -1,11 +1,16 @@
 # Inconsistencias del Motor de Otorgamiento — política v1.1 ↔ implementación
 
-**Estado:** auditoría cerrada · **INC-01, INC-02 e INC-03 resueltos e implementados** (11-09-2026). Quedan abiertos INC-04 a INC-07.
+**Estado:** auditoría cerrada · **los siete hallazgos resueltos e implementados** (INC-01 a INC-07, 11-09-2026). No queda ninguna decisión de negocio pendiente de este documento; sí quedan los **parámetros abiertos heredados de la spec** (§5), que la propia política declara sin definir.
 **Fecha:** 10-09-2026 · **Alcance:** módulo de otorgamiento de NEX Factoring (Pipeline Comercial)
 
-**Re-verificado contra `main` el 10-09-2026 (commit `212046f`):** los siete hallazgos siguen abiertos, uno por uno, y las
-referencias a línea de este documento están re-ancladas a ese commit. Los comandos de §7 buscan por símbolo para que el
-documento no se vuelva a desanclar cuando el archivo crezca.
+**Re-verificado contra `main` el 10-09-2026 (commit `212046f`):** los siete hallazgos se confirmaron uno por uno, y las
+referencias a línea de este documento están ancladas a ese commit. Los comandos de §7 buscan por símbolo para que el
+documento no se vuelva a desanclar cuando el archivo crezca; sus **valores esperados** están actualizados al estado de hoy,
+con los previos al lado para poder comparar.
+
+**Corregidos e implementados el 11-09-2026.** El diagnóstico de cada hallazgo se conserva íntegro —es lo que justifica la
+decisión— y arriba de cada uno va el recuadro con lo que el negocio decidió y lo que se implementó. Cada cierre tiene su
+caso en `tests_asignacion_lineas.js` (casos 38–51), que corre con `node run_tests.mjs`.
 
 ---
 
@@ -19,8 +24,9 @@ Antes de extraer el motor conviene cerrar estos puntos: cada uno cambia el **con
 devuelve, quién puede aprobar, qué reglas existen). Extraer primero y corregir después obliga a versionar el contrato dos veces.
 
 Cada hallazgo trae: **qué dice la política** · **qué hace el código** · **evidencia** (`archivo:línea`) · **impacto** ·
-**corrección propuesta** · **decisión pendiente**. Las decisiones pendientes son de negocio (Datamart / Riesgo de Factoring
-Security), no técnicas.
+**corrección propuesta** · **decisión pendiente**. Las decisiones pendientes eran de negocio (Datamart / Riesgo de Factoring
+Security), no técnicas, y **las seis se tomaron el 11-09-2026**; el recuadro al inicio de cada hallazgo dice cuál fue y qué
+se hizo con ella.
 
 Convención de referencias: todas las líneas apuntan a `pipeline_comercial.jsx` salvo que se indique otro archivo.
 
@@ -34,7 +40,7 @@ Convención de referencias: todas las líneas apuntan a `pipeline_comercial.jsx`
 | ~~**INC-02**~~ | ~~Sólo aprueba el nivel exacto; los superiores no~~ | **RESUELTO** | Decidido por el negocio el 11-09-2026 e implementado: aprueba cualquier nivel **igual o superior de la misma área**, sin tope. Ver el cierre de INC-02 |
 | ~~**INC-03**~~ | ~~El área de Operaciones no puede aprobar nada~~ | **RESUELTO** | El ÁREA la declara la regla y el NIVEL su tramo; con ese par se buscan en la lista de usuarios los de esa área con ese nivel o superior |
 | ~~**INC-04**~~ | ~~Faltan 4 reglas del catálogo (C47–C50)~~ | **RESUELTO** | Decidido por el negocio el 11-09-2026 e implementado: C47–C50 son del **par C-D**, se evalúan una vez por deudor y se visan por deudor. El catálogo corre las **79** reglas de la política |
-| **INC-05** | Conviven dos modelos de atribución paralelos | **Media** | «Causas de desvío» (FL/OD) y «motor de reglas» (C/D/O) con convenciones opuestas; el primero está huérfano |
+| ~~**INC-05**~~ | ~~Conviven dos modelos de atribución paralelos~~ | **RESUELTO** | Decidido por el negocio el 11-09-2026: el monto de la operación **sí** cambia el nivel de aprobación. Ese factor entró al motor de reglas como `PISO_ATRIB_MONTO` (el requisito es el mayor entre el tramo y el piso) y el modelo de causas de desvío se retiró entero |
 | ~~**INC-06**~~ | ~~Nivel Comité sin representación~~ | **RESUELTO** | Decidido por el negocio el 11-09-2026: el Comité **no es un nivel aparte ni una cuenta del sistema**. C05 se configura como todas, con su par (área, nivel) → **Riesgo N5** |
 | ~~**INC-07**~~ | ~~Artefactos del repo desactualizados~~ | **RESUELTO** | `atribuciones_otorgamiento.json` regenerado desde la app corregida (79 criterios · 134 tramos, ninguno sin aprobador) y los dos `.xlsx` movidos a `Legado/` con su README |
 
@@ -305,7 +311,34 @@ lo que es ambiguo. De la respuesta depende el layout del archivo A16 y la forma 
 
 ---
 
-### INC-05 · Conviven dos modelos de atribución paralelos
+### ~~INC-05~~ · Conviven dos modelos de atribución paralelos — **RESUELTO 11-09-2026**
+
+> **Decisión de negocio (11-09-2026): «El monto sí cambia el nivel de aprobación.»** O sea, el factor que
+> el modelo A aportaba es real y tenía que conservarse; lo que sobraba era el modelo paralelo.
+> **Implementado:** `PISO_ATRIB_MONTO` dentro del motor de reglas. Son **dos factores** y el requisito es
+> el **mayor**: el tramo del risk tier mide cuánto se desvía la variable de riesgo, el piso mide cuánto se
+> arriesga si ese desvío resulta cierto. `max` y no suma —sumando, dos factores medianos exigirían más que
+> un factor extremo—, y **piso** y no reemplazo: el nivel del tramo nunca baja por el monto. Se aplica en
+> `evaluarOtorgItems`, el único sitio que arma los ítems, así que todo lo que decide después lo hereda.
+>
+> **La tabla vieja no se pudo reutilizar.** Sus celdas eran niveles de una escalera ÚNICA en la que N4 y N5
+> ya eran de Riesgo: «comercial: 2» significaba *Gerente Comercial*, no *Comercial nivel 2*. Desinvertirla
+> con `6 − N` daba `comercial: 4`, un nivel que Comercial **no alcanza** —su tope en la política es N3,
+> Gerente General—, y toda excepción comercial sobre MM$120 habría quedado «Sin aprobador definido». Cada
+> columna satura en el tope de su área. El caso 40 de la suite pasó a probar cada tramo contra **cada tramo
+> de monto**, que es lo que detecta ese error.
+>
+> **Retirado:** `MATRIZ_OTORG`, `TIPOS_DESVIO`, `tipoActivo`, `causasDeDeal`, `nivelReqCausa`,
+> `puedeAccionarCausa`, `autorizarCausa`, `otorgarOperacion` y el cómputo muerto de `OtorgamientosView`.
+> **Conservados:** `CFG_TRAMOS` y `gravedadPorMonto` (alimentan el piso) y `requiereOtorgamiento` (rutea la
+> etapa y gatea el tab del detalle).
+>
+> **Un efecto lateral que la auditoría no había visto:** la cadena de acción del modelo A no sólo estaba
+> huérfana en la vista, estaba **muerta** — `onAutorizarCausa` y `onOtorgarOperacion` se pasaban como props
+> a `DealDrawer` y a `OtorgamientosView` y **ninguno de los dos las invocaba**. Como el motor de fondo
+> liberaba el giro exigiendo «todas las causas autorizadas», una operación derivada a otorgamiento
+> **manual** no tenía salida salvo que alguien la moviera a mano desde el selector del detalle. Ahora la
+> libera `otorgamientoCompleto`, que decide con el VISADO. El texto que sigue es el diagnóstico original.
 
 En el código hay **dos mecanismos completos y distintos** para decidir quién autoriza una operación:
 
@@ -464,7 +497,7 @@ No son inconsistencias: son definiciones que la propia política declara pendien
 2. ~~INC-02: confirmar que cualquier nivel superior autoriza; definir si hay tope.~~ **HECHO** (11-09-2026: superior de la MISMA área, sin tope).
 3. ~~INC-03: definir la escala de niveles del área Operaciones.~~ **HECHO** (11-09-2026: la misma escala para todas las áreas; la regla declara área y nivel).
 4. ~~INC-04: definir si C47–C50 son reglas de cliente o de par C-D, y las variables que necesitan en A16.~~ **HECHO** (11-09-2026: son tipo D — por par, visado por deudor; A16 suma las cuatro columnas `*_CD`).
-5. INC-05: confirmar si el monto de la operación debe escalar la atribución. **ÚNICA DECISIÓN ABIERTA.**
+5. ~~INC-05: confirmar si el monto de la operación debe escalar la atribución.~~ **HECHO** (11-09-2026: sí — entra como piso por área en el motor de reglas y el modelo paralelo se retira).
 6. ~~INC-06: definir si Comité es usuario del sistema o salida a otro proceso.~~ **HECHO** (11-09-2026: ninguna de las dos — el Comité no es un nivel aparte; C05 se configura como todas, Riesgo N5).
 
 **Fase 2 — Corrección en el módulo actual** (cada punto es una edición acotada)
@@ -473,7 +506,7 @@ No son inconsistencias: son definiciones que la propia política declara pendien
 8. ~~Reemplazar `NIVEL_ROL` por `ROL_POR_AREA_NIVEL`.~~ **HECHO**: `ROL_ATRIB` (rol → área + nivel) es la escalera, `rolDeAreaNivel` su inverso para nombrar el cargo, y `puedeAprobarExc` compara contra `regla.area`.
 9. ~~Quitar la restricción `nivelesAprobArea(...).has(lv)`.~~ **HECHO**: la función se eliminó y `puedeAprobarExc` quedó en `lv >= nivelReq`.
 10. ~~Implementar C47–C50.~~ **HECHO**: reglas del par (`porDeudor`), variables `cd*` en `deudorBlock` y columnas `*_CD` en A16.
-11. Retirar el modelo de causas de desvío y su código muerto en `OtorgamientosView`. **Bloqueado por la decisión 5.**
+11. ~~Retirar el modelo de causas de desvío y su código muerto en `OtorgamientosView`.~~ **HECHO**.
 12. ~~Regenerar `atribuciones_otorgamiento.json` y marcar los `.xlsx` como legado.~~ **HECHO**: regeneración automatizada (`regenerar_atribuciones.mjs`) y `.xlsx` en `Legado/`.
 
 **Fase 3 — Encapsulamiento**
@@ -508,7 +541,8 @@ grep -n '^function nivelesAprobArea' pipeline_comercial.jsx  # INC-02 · debe sa
 grep -n -A8 '^function rolDeAreaNivel' pipeline_comercial.jsx   # INC-03 · el inverso (area, nivel) -> cargo
 grep -n 'R(105, "C05"'              pipeline_comercial.jsx   # INC-06 · ya rutea por NV(5), no por un 1 literal
 grep -n 'porDeudor'                 pipeline_comercial.jsx   # INC-04 · las cuatro reglas del par
-grep -n 'MATRIZ_OTORG\|CFG_TRAMOS\|puedeAccionarCausa' pipeline_comercial.jsx  # INC-05 · el modelo A, aun vivo
+grep -n 'MATRIZ_OTORG\|TIPOS_DESVIO\|puedeAccionarCausa' pipeline_comercial.jsx  # INC-05 · debe salir VACIO (se retiro)
+grep -n -A6 '^let PISO_ATRIB_MONTO'  pipeline_comercial.jsx   # INC-05 · el piso por monto que lo reemplaza
 
 # 4) Conteos que este documento afirma, medidos en RUNTIME (el catalogo se arma en un IIFE:
 #    contarlo con grep da otro numero). Requiere el HTML construido — ver CLAUDE.md.

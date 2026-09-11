@@ -18,7 +18,7 @@
    ...más tres de la CARTERA DEL PAR cliente-deudor (INC-04): que el catálogo implemente las 79
    reglas de la política y que C47-C50 se evalúen y se visen por deudor, no por cliente.
 
-   Última corrida: 49/49 PASA.
+   Última corrida: 51/51 PASA.
    ============================================================================================ */
 (() => {
   const out = [];
@@ -368,15 +368,22 @@
     // Ningún par (área, nivel) del catálogo puede quedar sin aprobador posible: si queda, es
     // configuración que falta (crear el área y asignarle un usuario con ese nivel), no un bug.
     const huerfanos = []; let nTramos = 0;
+    // Se prueba cada tramo CONTRA CADA TRAMO DE MONTO, no sólo con su nivel base: desde INC-05 el monto
+    // de la operación sube el nivel exigido, así que un tramo con aprobador a MM$15 puede quedarse sin
+    // ninguno a MM$200 si el piso de su área pide más de lo que esa área alcanza.
+    const montos = [15, 50, 100, 200];
     (typeof REGLAS_CLIENTE !== "undefined" ? REGLAS_CLIENTE : []).forEach((r) => (r.tiers || []).forEach((t) => {
       if (t[1] !== "excepcion") return;
       nTramos++;
-      if (!apruebanDe(r, t[2]).length) huerfanos.push(`${r.cond} ${r.area} N${t[2]}`);
+      montos.forEach((mm) => {
+        const niv = nivelExigido(r.area, t[2], mm);
+        if (!apruebanDe(r, niv).length) huerfanos.push(`${r.cond} ${r.area} N${niv} (MM$${mm})`);
+      });
     }));
     // El conteo se calcula, no se escribe: quedó fijo en «130» y al sumar C47-C50 el mensaje pasó a
     // informar un número que ya no era el del catálogo.
     ok("40 ningún criterio queda sin aprobador posible", huerfanos.length === 0,
-       huerfanos.length ? huerfanos.slice(0, 4).join(" · ") : `los ${nTramos} tramos tienen a quién ir`);
+       huerfanos.length ? huerfanos.slice(0, 4).join(" · ") : `los ${nTramos} tramos tienen a quién ir en los ${montos.length} tramos de monto`);
   }
 
   // 42 · ÁREAS POR TENANT. El área es lo que la regla declara para rutear su excepción, así que el
@@ -553,6 +560,60 @@
        && rolDeAreaNivel("riesgo", excC05[2]).sinAprobador !== true
        && fuera.length === 0,
        `C05 · riesgo N${excC05[2]} → ${rolDeAreaNivel("riesgo", excC05[2]).rol} · niveles fuera de N1..N5: ${fuera.length ? fuera.join(", ") : "ninguno"}`);
+  }
+
+
+  // ============================================================================================
+  // 50-51 · INC-05 · EL MONTO DE LA OPERACIÓN ESCALA LA ATRIBUCIÓN. Decisión de negocio (11-09-2026):
+  // son DOS factores y el requisito es el mayor. El tramo del risk tier mide cuánto se desvía la
+  // variable de riesgo; el piso por monto mide cuánto se arriesga si ese desvío resulta cierto. Con eso
+  // el modelo paralelo de «causas de desvío» —que decidía por monto con la convención invertida y cuya
+  // cadena de acción estaba muerta— se retiró entero.
+  // ============================================================================================
+
+  // 50 · El piso sube con el monto y NUNCA baja el nivel del tramo.
+  {
+    const d1 = { id: "T-50", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", amountMM: 15, facturasOp: [fac("f1", LB[0], 15)] };
+    const d2 = { ...d1, amountMM: 200 };
+    // C07 se excluye: es la única regla cuyo TRAMO depende del monto (mide el cupo de línea), así que
+    // mezclarla no distinguiría el efecto del piso del efecto de su propio tramo.
+    const exc = (d) => evaluarOtorgItems(d).filter((i) => i.disp === "excepcion" && i.regla.cond !== "C07");
+    const a = exc(d1), b = exc(d2);
+    const porKey = {}; a.forEach((i) => { porKey[i.stKey] = i; });
+    const comunes = b.filter((i) => porKey[i.stKey]);
+    const subio = comunes.filter((i) => i.nivel > porKey[i.stKey].nivel);
+    ok("50 el monto de la operación escala el nivel exigido, y nunca lo baja",
+       // el piso por tramo de monto, medido de frente
+       pisoPorMonto("riesgo", 15) === 1 && pisoPorMonto("riesgo", 50) === 3
+       && pisoPorMonto("riesgo", 100) === 4 && pisoPorMonto("riesgo", 200) === 5
+       // Comercial SATURA en N3, que es su tope en la política (Gerente General). Pedirle N4 no
+       // exigiría más: dejaría la excepción sin aprobador, que es un bug de configuración disfrazado
+       // de control. Un área sin piso configurado simplemente no escala.
+       && pisoPorMonto("comercial", 100) === 3 && pisoPorMonto("comercial", 200) === 3
+       && rolDeAreaNivel("comercial", pisoPorMonto("comercial", 200)).sinAprobador !== true
+       && pisoPorMonto("verificacion", 200) === 1
+       // es piso, no reemplazo: un tramo N5 sigue siendo N5 en una operación chica
+       && nivelExigido("riesgo", 5, 15) === 5 && nivelExigido("riesgo", 2, 200) === 5
+       // y en la evaluación real: mismo cliente, mismas reglas, sólo cambia el monto
+       && comunes.length > 0 && subio.length > 0
+       && comunes.every((i) => i.nivel >= porKey[i.stKey].nivel)
+       && [...a, ...b].every((i) => i.nivel >= i.nivelTramo),
+       `MM$15 → MM$200: ${subio.length} de ${comunes.length} excepciones suben de nivel`);
+  }
+
+  // 51 · El modelo paralelo se retiró de verdad, no quedó desconectado. Y la etapa Otorgamiento se
+  // libera por el VISADO: antes dependía de causas que nadie podía autorizar, así que una operación
+  // derivada a otorgamiento manual se quedaba ahí para siempre salvo que alguien la moviera a mano.
+  {
+    const muertos = ["MATRIZ_OTORG", "TIPOS_DESVIO", "tipoActivo", "causasDeDeal", "nivelReqCausa", "puedeAccionarCausa"];
+    const vivos = muertos.filter((n) => { try { return eval("typeof " + n) !== "undefined"; } catch (e) { return false; } });
+    // lo que SÍ sigue vivo, porque ahora alimenta el piso por monto y el ruteo de etapa
+    const conservados = ["CFG_TRAMOS", "gravedadPorMonto", "requiereOtorgamiento", "PISO_ATRIB_MONTO"];
+    const faltan = conservados.filter((n) => { try { return eval("typeof " + n) === "undefined"; } catch (e) { return true; } });
+    ok("51 el modelo de causas de desvío se retiró entero",
+       vivos.length === 0 && faltan.length === 0
+       && gravedadPorMonto(15) === "leve" && gravedadPorMonto(200) === "critico",
+       `eliminados ${muertos.length}${vivos.length ? " · sobreviven: " + vivos.join(", ") : ""} · conservados ${conservados.length}${faltan.length ? " · faltan: " + faltan.join(", ") : ""}`);
   }
 
   console.log(out.join("\n"));

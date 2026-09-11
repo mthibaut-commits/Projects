@@ -896,11 +896,29 @@ function usarSysLog() {
 // ============================================================
 // Catálogos PARAMÉTRICOS (editables desde Mantenedores). Se dejan mutables a propósito; los cambios
 // se reflejan en las próximas evaluaciones de otorgamiento (gravedad, nivel requerido, atribución).
-let MATRIZ_OTORG = {
-  leve:     { riesgo: 5, comercial: 5, operaciones: 5 },
-  moderado: { riesgo: 3, comercial: 4, operaciones: 4 },
-  grave:    { riesgo: 2, comercial: 3, operaciones: 3 },
-  critico:  { riesgo: 1, comercial: 2, operaciones: 2 },
+// EL MONTO DE LA OPERACIÓN ESCALA LA ATRIBUCIÓN (decisión de negocio, 11-09-2026, cierre de INC-05).
+// Son DOS factores independientes y el requisito es el MAYOR de los dos: el tramo del risk tier mide
+// cuánto se desvía la variable de riesgo, y este piso mide cuánto se arriesga si ese desvío resulta
+// cierto. Una mora de MM$1 en una operación de MM$200 no es el mismo riesgo que la misma mora en una
+// de MM$15, y al revés una mora enorme no baja de jerarquía por venir en una operación chica.
+//   `max` y no una suma: sumando, dos factores medianos exigirían más que un factor extremo, que no es
+// lo que nadie pidió. Y piso, no reemplazo: el nivel del tramo nunca BAJA por el monto.
+//   Los tramos de monto son los del modelo de causas de desvío que esto reemplaza (`CFG_TRAMOS`), pero
+// los NIVELES se redefinieron: la tabla vieja estaba escrita con la convención invertida (1 = máxima) y
+// desinvertirla no sirve, porque sus celdas eran niveles de una escalera ÚNICA donde N4 y N5 ya eran de
+// Riesgo — «comercial: 2» significaba Gerente Comercial, no «Comercial nivel 2».
+//   CADA COLUMNA SATURA EN EL TOPE DE SU ÁREA según la política: Comercial llega hasta N3 (Gerente
+// General), Riesgo hasta N5 (Subgerente). Por eso Comercial no pasa de 3 aunque la gravedad siga
+// subiendo: pedir N4 a un área que no lo tiene no exige más, deja la excepción SIN APROBADOR —el motor
+// lo diría con todas sus letras, pero la culpa sería de esta tabla, no de la configuración del tenant.
+//   Un área que no esté acá no tiene piso: el monto no la escala. Eso nunca deja pasar una excepción
+// por debajo del nivel de su tramo —el piso sólo puede subir el requisito—, así que es seguro por
+// construcción; lo que hace falta es configurarla si el negocio quiere que escale.
+let PISO_ATRIB_MONTO = {
+  leve:     { comercial: 1, riesgo: 1, operaciones: 1 },
+  moderado: { comercial: 2, riesgo: 3, operaciones: 2 },
+  grave:    { comercial: 3, riesgo: 4, operaciones: 3 },
+  critico:  { comercial: 3, riesgo: 5, operaciones: 4 },
 };
 // Tramos de gravedad por monto (MM CLP). hasta=null → sin tope.
 let CFG_TRAMOS = [
@@ -951,17 +969,15 @@ const JEFE_A_EXECS = { JG: ["CR", "RF", "JT"] };
 const execsVisiblesDe = (code) => (EXECS[code] ? [code] : (JEFE_A_EXECS[code] || null));
 // Gravedad por tramo de monto (MM CLP), según CFG_TRAMOS (editable en Mantenedores).
 const gravedadPorMonto = (mm) => { for (const t of CFG_TRAMOS) { if (t.hasta == null || mm <= t.hasta) return t.grav; } return "critico"; };
-const nivelReqCausa = (c) => (MATRIZ_OTORG[c.grav] && MATRIZ_OTORG[c.grav][c.area]) || 5;
-// ¿El usuario puede accionar la causa? Tiene atribución en el área y su nivel cubre el requerido.
-const puedeAccionarCausa = (code, c) => { const lv = atribDe(code).atrib[c.area]; return code === "ADMIN" || lv === nivelReqCausa(c); };
-// Catálogo de tipos de desvío (referencia para Mantenedores).
-let TIPOS_DESVIO = [
-  { codigo: "FL", nombre: "Fuera de línea de crédito", area: "riesgo", base: "Exceso de línea", porMonto: true, activo: true },
-  { codigo: "OD", nombre: "Otros deudores", area: "riesgo", base: "Monto operación", porMonto: true, activo: true },
-  { codigo: "ON", nombre: "Deudor no registrado", area: "riesgo", base: "Monto operación", porMonto: true, activo: true },
-  { codigo: "DI", nombre: "Documentación incompleta", area: "operaciones", base: "Gravedad fija (moderado)", porMonto: false, activo: true },
-];
-const tipoActivo = (cod) => { const t = TIPOS_DESVIO.find((x) => x.codigo === cod); return !t || t.activo; };
+// Piso de atribución que impone el MONTO de la operación a una excepción de esa área.
+const pisoPorMonto = (area, montoMM) => (PISO_ATRIB_MONTO[gravedadPorMonto(montoMM || 0)] || {})[area] || 1;
+// Nivel REALMENTE exigido para excepcionar: el del tramo o el que impone el monto, el que sea mayor.
+const nivelExigido = (area, nivelTramo, montoMM) => Math.max(nivelTramo || 1, pisoPorMonto(area, montoMM));
+// El catálogo de TIPOS DE DESVÍO (FL / OD / ON / DI) se retiró al cerrar INC-05 (11-09-2026). Era la
+// mitad de un segundo modelo de atribución que convivía con el motor de reglas y decidía con la
+// convención opuesta. Lo que aportaba —que el monto escale la atribución— está en `PISO_ATRIB_MONTO`,
+// dentro del motor; lo que evaluaba está cubierto por el catálogo: C07 mide el cupo de línea (y escala
+// con el excedente, no con un tramo fijo) y la clasificación del deudor la resuelve el inbound.
 // ── Criterios de verificación (visado) por área. Cada criterio es un "risk tier" con 1–3 rangos.
 // Cada rango define un tope (hasta) y una disposición: aprobada / sujeto (a aprobación) / rechazada.
 // Los rangos "sujeto" requieren un nivel de atribución; los aprobadores se cruzan por área+nivel.
@@ -1025,18 +1041,6 @@ let SEGUIMIENTOS_EXC = [
   { id: "SEG-3", operacion: "OP-D42682", cliente: "Importadora Patagonia S.A.", criterio: "Cesión de documentos completa", area: "operaciones", nivel: 4, aprobadoPor: "Andrés Mella · Operaciones", fecha: "01-07-2026", condicion: "Completar la cesión de 2 documentos faltantes.", estado: "cumplido", cumplidoPor: "Andrés Mella · Operaciones", cumplidoFecha: "03-07-2026" },
 ];
 // Construye las causas (desvíos) de una operación a partir de su evaluación de otorgamiento.
-function causasDeDeal(deal) {
-  const info = deal.otorgInfo; if (!info) return [];
-  const out = [];
-  if (info.superaLinea && tipoActivo("FL")) {
-    const exceso = info.exceso != null ? info.exceso : +Math.max(0, (deal.amountMM || 0) - (info.linea || 0)).toFixed(1);
-    out.push({ id: deal.id + "-FL", tipo: "Fuera de línea de crédito", desc: `La proyección tras el curse supera la línea aprobada (${fmtMM(info.linea)}); exceso ${fmtMM(exceso)}.`, area: "riesgo", grav: gravedadPorMonto(exceso), montoRef: exceso, estado: "pendiente", firma: null, tarea: "T-" + (hashStr(deal.id + "FL") % 9000 + 1000) });
-  }
-  if (info.tieneOtros && tipoActivo("OD")) {
-    out.push({ id: deal.id + "-OD", tipo: "Otros deudores", desc: "Incluye facturas de deudores fuera de Lista Blanca / Autorizados.", area: "riesgo", grav: gravedadPorMonto(deal.amountMM || 0), montoRef: deal.amountMM || 0, estado: "pendiente", firma: null, tarea: "T-" + (hashStr(deal.id + "OD") % 9000 + 1000) });
-  }
-  return out;
-}
 const jefaturaOf = (d) => EXEC_JEFATURA[d.exec] || "Inbound / IA";
 const esBuenDeudor = (d) => d.sector.startsWith("Buenos Deudores");
 
@@ -5518,7 +5522,7 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
     </>
   );
 }
-function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorporarFacturas, onRetirarFactura, onReabrir, onSugerirOferta, onSimular, onPublicar, onCerrarOferta, onEnviarCierre, onContactar, onEditarContacto, onEnviarWA, onMover, cierre, onConfirmCierre, usuario, onCambiarUsuario, onAutorizarCausa, onOtorgarOperacion, tabInicial, onIrOtorgamientos, fullPage }) {
+function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorporarFacturas, onRetirarFactura, onReabrir, onSugerirOferta, onSimular, onPublicar, onCerrarOferta, onEnviarCierre, onContactar, onEditarContacto, onEnviarWA, onMover, cierre, onConfirmCierre, usuario, onCambiarUsuario, tabInicial, onIrOtorgamientos, fullPage }) {
   const [tab, setTab] = useState(tabInicial || (deal && deal.stage === "otorgamiento" ? "otorgamiento" : "negocio"));
   useEffect(() => { if (tabInicial) setTab(tabInicial); }, [tabInicial, deal && deal.id]);
   const [confirmRetiro, setConfirmRetiro] = useState(null); // factura a retirar de la oferta (ConfirmDialog spec §26)
@@ -9919,10 +9923,16 @@ function evaluarOtorgItems(deal) {
   const rev = revOtorgActual(deal);
   const vCli = { ...varsClienteActual(deal), ...varsModeloExt(deal) };
   const deudores = deudoresDeDeal(deal);
+  const montoMM = (deal && deal.amountMM) || 0;
   const items = [];
+  // El MONTO escala la atribución (INC-05) y se aplica acá, en el único sitio que arma los ítems: todo
+  // lo que decide después —`visadoDealCalc`, el tab del detalle, la bandeja de otorgamientos— lee
+  // `it.nivel` y hereda la escalada sin saber de esto. Aplicarlo en cada consumidor garantizaba que
+  // alguno quedara sin aplicarlo y mostrara un aprobador que no es el que corresponde.
+  const conPiso = (r, ev) => (ev.disp === "excepcion" ? { ...ev, nivel: nivelExigido(r.area, ev.nivel, montoMM), nivelTramo: ev.nivel } : ev);
   REGLAS_CLIENTE.forEach((r) => {
-    if (!esReglaDeudor(r)) { items.push({ regla: r, ...evalReglaCli(r, vCli), deudor: null, stKey: String(r.n) }); }
-    else deudores.forEach((d) => { items.push({ regla: r, ...evalReglaCli(r, { ...vCli, ...deudorBlock(d.nombre, rev) }), deudor: d, stKey: r.n + "@" + (d.rut || d.nombre) }); });
+    if (!esReglaDeudor(r)) { items.push({ regla: r, ...conPiso(r, evalReglaCli(r, vCli)), deudor: null, stKey: String(r.n) }); }
+    else deudores.forEach((d) => { items.push({ regla: r, ...conPiso(r, evalReglaCli(r, { ...vCli, ...deudorBlock(d.nombre, rev) })), deudor: d, stKey: r.n + "@" + (d.rut || d.nombre) }); });
   });
   return items;
 }
@@ -10327,14 +10337,14 @@ function aprobacionFormalCliente(deal) {
   if (deal && deal.reabierta) return false;
   return !!(deal && (deal.clienteAcepto || deal.otorgada || deal.cierreFirmado || deal.cesionExterna || ["cesion", "otorgamiento", "giro"].includes(deal.stage)));
 }
-// ¿La operación en Otorgamiento está lista para GIRAR? Todos sus criterios aceptados (excepcionados o
-// aprobados), sin bloqueos firmes y con la aprobación formal del cliente. Cubre las tres vías: otorgamiento
-// automático, causas de desvío autorizadas y el motor de reglas (VISADO) con todas las excepciones resueltas.
+// ¿La operación en Otorgamiento está lista para GIRAR? Sin bloqueos firmes, con la aprobación formal
+// del cliente, y con sus criterios aceptados: o el otorgamiento fue automático, o el VISADO del motor
+// de reglas tiene todas las excepciones resueltas. La tercera vía —«todas las causas de desvío
+// autorizadas»— se eliminó con el modelo de causas al cerrar INC-05: nunca pudo cumplirse, porque
+// ninguna causa era autorizable desde la UI.
 function otorgamientoCompleto(deal) {
   if (!deal || deal.stage !== "otorgamiento" || otorgBloqueado(deal) || !aprobacionFormalCliente(deal)) return false;
   if (deal.otorgAuto) return true;
-  const cs = deal.causas || [];
-  if (cs.length && cs.every((c) => c.estado === "autorizado")) return true;
   const v = visadoDeal(deal);
   return v.exc.length > 0 && v.estado === "aprobada";
 }
@@ -11660,21 +11670,11 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
     </>
   );
 }
-function OtorgamientosView({ deals, usuario, onOpen, onAutorizarCausa, onCfgChange }) {
-  const [form, setForm] = useState({}); // formulario por causa: { [cid]: {open, dec, msg, arch} }
-  // La configuración (mantenedores de otorgamiento y apoderados) se movió a Configuración → Otorgamiento.
-  const [filtro, setFiltro] = useState("todos"); // "todos" | "accionables" | "anticipadas"
-  const setF = (cid, patch) => setForm((m) => ({ ...m, [cid]: { ...(m[cid] || { dec: "si" }), ...patch } }));
-  const esPipeline = atribDe(usuario).tipo === "pipeline";
-  const enOtorg = deals.filter((d) => d.stage === "otorgamiento");
-  // Candidatos: en etapa Otorgamiento (accionable) o que la requerirán (prospección/oferta → anticipado, deshabilitado).
-  const candidatos = deals.filter((d) => d.stage === "otorgamiento" || (["prospeccion", "oferta"].includes(d.stage) && requiereOtorgamiento(d)));
-  const items = [];
-  candidatos.forEach((d) => {
-    const anticipada = d.stage !== "otorgamiento";
-    const causas = anticipada ? causasDeDeal({ id: d.id, amountMM: d.amountMM, otorgInfo: requiereOtorgamiento(d) }) : (d.causas || []);
-    causas.forEach((c) => { if (c.estado === "pendiente" && puedeAccionarCausa(usuario, c)) items.push({ d, c, anticipada }); });
-  });
+// Mesa de OTORGAMIENTOS. La bandeja es `VisadoClienteView`: el motor de reglas. Hasta el cierre de
+// INC-05 esta función calculaba además `items`, `enOtorg`, `candidatos` y `esPipeline` a partir del
+// modelo de causas de desvío —recorriendo TODOS los deals en cada render— y después no los usaba: el
+// JSX nunca los mencionó. Ese cómputo se eliminó junto con el modelo.
+function OtorgamientosView({ deals, usuario, onOpen, onCfgChange }) {
   const atrLbl = Object.entries(atribDe(usuario).atrib).map(([a, l]) => AREA_LBL[a] + " N" + l).join(" · ");
   return (
     <div className="mt-1">
@@ -11852,7 +11852,14 @@ function buildAtribucionesJSON() {
     base.tramos = (r.tiers || []).map((t, i) => { const disp = t[1], niv = t[2]; const tr = { orden: i + 1, condicion: tramoCond(t[0]), disposicion: disp }; if (disp === "excepcion") { const nr = rolDeAreaNivel(r.area, niv); tr.nivel_requerido = niv; tr.rol_aprobador = nr.rol; tr.area_aprobacion = AREA_LBL[r.area] || r.area; tr.aprobadores = aprobadoresExc(r, niv); } return tr; });
     return base;
   });
-  return { descripcion: "Atribuciones de aprobación de otorgamiento por criterio — NEX Factoring. Convención: cada regla declara el ÁREA y cada tramo el NIVEL requerido; aprueba cualquier usuario de esa área con ese nivel o superior, de modo que un cargo vacante lo cubre la jefatura de su área. La escalada no cruza áreas.", generado: new Date().toISOString().slice(0, 10), niveles: ROL_ATRIB, total_criterios: criterios.length, criterios };
+  return {
+    descripcion: "Atribuciones de aprobación de otorgamiento por criterio — NEX Factoring. Convención: cada regla declara el ÁREA y cada tramo el NIVEL requerido; aprueba cualquier usuario de esa área con ese nivel o superior, de modo que un cargo vacante lo cubre la jefatura de su área. La escalada no cruza áreas. El MONTO de la operación impone además un piso por área (ver `piso_por_monto`): el nivel realmente exigido es el mayor entre el del tramo y ese piso, así que el `nivel_requerido` de cada tramo es el mínimo, el que rige en operaciones de monto leve.",
+    generado: new Date().toISOString().slice(0, 10),
+    niveles: ROL_ATRIB,
+    piso_por_monto: { tramos_mm: CFG_TRAMOS, niveles: PISO_ATRIB_MONTO },
+    total_criterios: criterios.length,
+    criterios,
+  };
 }
 // Mantenedor: atribuciones de aprobación por criterio (solo lectura + descarga del JSON de configuración).
 function AtribucionesMantenedor() {
@@ -11867,9 +11874,33 @@ function AtribucionesMantenedor() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Atribuciones de aprobación por criterio ({list.length})</div>
-          <div className="t10" style={{ color: C.faint }}>Para cada criterio con excepción, la regla declara el área y el tramo del risk tier el nivel requerido. Aprueba cualquier usuario de esa área con ese nivel o superior —así un cargo vacante lo cubre la jefatura de su área— y la escalada no cruza áreas. El super-admin cubre todos.</div>
+          <div className="t10" style={{ color: C.faint }}>Para cada criterio con excepción, la regla declara el área y el tramo del risk tier el nivel requerido. Aprueba cualquier usuario de esa área con ese nivel o superior —así un cargo vacante lo cubre la jefatura de su área— y la escalada no cruza áreas. El super-admin cubre todos. <b>El monto de la operación impone un piso adicional</b>: los niveles de abajo son los mínimos, los que rigen en operaciones de monto leve.</div>
         </div>
         <button onClick={descargar} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Download size={13} /> Descargar JSON</button>
+      </div>
+      {/* Piso de atribución por MONTO de la operación. Es el segundo factor: el nivel que se exige de
+          verdad es el mayor entre el del tramo y esta celda. Va acá, junto a los niveles por criterio,
+          porque leer una tabla sin la otra da un aprobador que no es el que la operación va a pedir. */}
+      <div className="mt-3 rounded-lg p-3" style={{ border: `1px solid ${C.line}`, backgroundColor: C.lilac }}>
+        <div className="t11 font-semibold" style={{ color: C.navy }}>Piso de atribución por monto de la operación</div>
+        <div className="t10 mt-0.5" style={{ color: C.sub }}>A mayor monto, mayor jerarquía para excepcionar. Se aplica sobre el nivel del tramo y nunca lo baja. Comercial llega hasta N3 (Gerente General), que es su tope en la política.</div>
+        <table className="mt-2 w-full t10" style={{ borderCollapse: "collapse" }}>
+          <thead><tr style={{ color: C.faint }}>
+            <th className="text-left font-medium py-1">Monto de la operación</th>
+            {["comercial", "riesgo", "operaciones"].map((a) => <th key={a} className="text-left font-medium py-1">{AREA_LBL[a]}</th>)}
+          </tr></thead>
+          <tbody>
+            {CFG_TRAMOS.map((t) => (
+              <tr key={t.grav} style={{ borderTop: `1px solid ${C.line}` }}>
+                <td className="py-1" style={{ color: C.ink }}>{t.hasta == null ? "más de " + fmtMM(CFG_TRAMOS[CFG_TRAMOS.length - 2].hasta) : "hasta " + fmtMM(t.hasta)} <span style={{ color: C.faint }}>· {t.grav}</span></td>
+                {["comercial", "riesgo", "operaciones"].map((a) => {
+                  const n = (PISO_ATRIB_MONTO[t.grav] || {})[a] || 1;
+                  return <td key={a} className="py-1" style={{ color: C.sub }}>N{n} · {rolDeAreaNivel(a, n).rol}</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {areas.map(([k, l]) => <button key={k} onClick={() => setFArea(k)} className="rounded-lg px-3 py-1.5 t11 font-medium" style={{ border: `1px solid ${fArea === k ? C.indigo : C.line}`, backgroundColor: fArea === k ? C.indigo : "#fff", color: fArea === k ? "#fff" : C.ink }}>{l}</button>)}
@@ -19621,10 +19652,10 @@ export default function PipelineComercial() {
       const montoFinal = opts && opts.montoValido != null ? opts.montoValido : d.amountMM;
       const otorg = requiereOtorgamiento({ ...d, amountMM: montoFinal, facturasOp: d.facturasOp });
       const auto = !otorg;
-      const causas = auto ? [] : causasDeDeal({ id: d.id, amountMM: montoFinal, otorgInfo: otorg });
+
       // Avance EVENT-DRIVEN gatillado por la firma del cliente (no depende del timer de fondo):
       // Aceptada → Cesión → Otorgamiento → (si es automático) Giro. Si es manual, queda en Otorgamiento
-      // esperando la aprobación del especialista (que al autorizar todas las causas la gira).
+      // esperando que se resuelvan sus excepciones en el VISADO (motor de reglas).
       hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Sistema", esEvento: true, resultado: `Cesión inscrita: ${cant} factura(s) por ${fmtMM(montoFinal)} cedida(s) a Factoring Security (cesión electrónica AEC registrada)`, exito: true });
       let stageFinal, statusDest, giroFlags = {};
       if (auto) {
@@ -19636,59 +19667,18 @@ export default function PipelineComercial() {
         stageFinal = "otorgamiento"; statusDest = "En otorgamiento · requiere aprobación de un especialista";
       }
       // El cliente volvió a firmar: la reapertura se cierra y la aceptación vuelve a estar vigente.
-      return { ...d, reabierta: undefined, waSesion: wa, emailThread, historialContacto: hist, fueraAtribucion: false, sugerirPerder: false, contactoExitoso: true, stage: stageFinal, otorgAuto: auto, otorgMotivo: otorg ? otorg.motivo : "automatico", otorgInfo: otorg || undefined, causas, ...giroFlags, status: statusDest, simulado: true, amountMM: montoFinal, facturas: opts && opts.cantidad != null ? opts.cantidad : d.facturas, tasa: o.tasa.toFixed(2) + "%", tasaDescuento: o.tasa, anticipo: o.anticipo + "%", comision: o.comision, diasFin: o.diasFin, financiadoMM: o.financiadoMM, interesMM: o.interesMM, montoDescuentoMM: o.interesMM, comisionMM: o.comisionMM, descMM: +(o.interesMM + o.comisionMM).toFixed(2), giroMM: o.giroMM };
+      return { ...d, reabierta: undefined, waSesion: wa, emailThread, historialContacto: hist, fueraAtribucion: false, sugerirPerder: false, contactoExitoso: true, stage: stageFinal, otorgAuto: auto, otorgMotivo: otorg ? otorg.motivo : "automatico", otorgInfo: otorg || undefined, ...giroFlags, status: statusDest, simulado: true, amountMM: montoFinal, facturas: opts && opts.cantidad != null ? opts.cantidad : d.facturas, tasa: o.tasa.toFixed(2) + "%", tasaDescuento: o.tasa, anticipo: o.anticipo + "%", comision: o.comision, diasFin: o.diasFin, financiadoMM: o.financiadoMM, interesMM: o.interesMM, montoDescuentoMM: o.interesMM, comisionMM: o.comisionMM, descMM: +(o.interesMM + o.comisionMM).toFixed(2), giroMM: o.giroMM };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
     setCierreModal(null);
     curseForget(negDe({ id })); // operación cursada: su payload+OTP del cierre ya no se necesitan
   };
-  // Autoriza / rechaza UNA causa (desvío) de la operación. Valida atribución del usuario en el área.
-  const autorizarCausa = (id, causaId, decision, mensaje, archivos) => {
-    const arch = (archivos || []).map((a) => (a && a.name) ? a.name : a).filter(Boolean);
-    const upd = (d) => {
-      if (d.id !== id || !Array.isArray(d.causas)) return d;
-      const causas = d.causas.map((c) => {
-        if (c.id !== causaId) return c;
-        if (!puedeAccionarCausa(usuario, c)) return c; // sin atribución: no cambia (la UI ya lo bloquea)
-        return { ...c, estado: decision === "si" ? "autorizado" : "rechazado", firma: { por: USERS[usuario] || usuario, nivel: atribDe(usuario).atrib[c.area], area: AREA_LBL[c.area], ts: nowStamp(), msg: mensaje || "", adj: arch[0] || null } };
-      });
-      const c0 = d.causas.find((x) => x.id === causaId);
-      let hist = [...(d.historialContacto || []), { fecha: nowStamp(), canal: "Otorgamiento", actor: USERS[usuario] || "Especialista", esEvento: true, resultado: `${decision === "si" ? "Causa autorizada" : "Causa rechazada"} · ${c0 ? c0.tipo : ""} (${c0 ? AREA_LBL[c0.area] : ""})`, detalle: `${mensaje ? "Justificación: " + mensaje + "\n" : ""}${arch.length ? "Adjunto: " + arch.join(", ") : "Sin adjunto"}`, exito: decision === "si" }];
-      // Si con esta decisión TODAS las causas quedan autorizadas, la operación se otorga. Otorgamiento
-      // ocurre tras la cesión: si la operación ya está en esa etapa, se gira de inmediato; si aún no
-      // llegó, se marca otorgada y el motor la girará al alcanzar la etapa de Otorgamiento.
-      if (causas.length && causas.every((c) => c.estado === "autorizado")) {
-        const exc = causas.some((c) => c.grav === "grave" || c.grav === "critico");
-        hist = [...hist, { fecha: nowStamp(), canal: "Otorgamiento", actor: "Sistema", esEvento: true, resultado: exc ? "Operación OTORGADA POR EXCEPCIÓN — todas las causas autorizadas" : "Operación OTORGADA — todas las causas autorizadas", exito: true }];
-        if (d.stage === "otorgamiento") {
-          hist = [...hist, { fecha: nowStamp(), canal: "Giro", actor: "Sistema", esEvento: true, resultado: `Giro ejecutado: ${fmtMM(d.giroMM || 0)} transferidos a la cuenta registrada del cliente`, exito: true }];
-          return { ...d, causas, historialContacto: hist, stage: "giro", otorgada: true, otorgPorExcepcion: exc, giroPendiente: false, status: exc ? "Girada · otorgada por excepción" : "Girada · otorgada" };
-        }
-        return { ...d, causas, historialContacto: hist, otorgada: true, otorgPorExcepcion: exc, status: exc ? "Otorgada por excepción · se girará en Otorgamiento" : "Otorgada · se girará en Otorgamiento" };
-      }
-      return { ...d, causas, historialContacto: hist };
-    };
-    setDeals((prev) => prev.map(upd));
-    setSelected((s) => (s ? upd(s) : s));
-  };
-  // Otorga la operación completa (solo si TODAS las causas están autorizadas). La ejecuta la comercial.
-  const otorgarOperacion = (id) => {
-    const upd = (d) => {
-      if (d.id !== id) return d;
-      const causas = d.causas || [];
-      if (!causas.length || causas.some((c) => c.estado !== "autorizado")) return d;
-      const porExcepcion = causas.some((c) => c.grav === "grave" || c.grav === "critico");
-      let hist = [...(d.historialContacto || []), { fecha: nowStamp(), canal: "Otorgamiento", actor: USERS[usuario] || "Comercial", esEvento: true, resultado: porExcepcion ? "Operación OTORGADA POR EXCEPCIÓN (todas las causas autorizadas)" : "Operación OTORGADA (todas las causas autorizadas)", exito: true }];
-      if (d.stage === "otorgamiento") {
-        hist = [...hist, { fecha: nowStamp(), canal: "Giro", actor: "Sistema", esEvento: true, resultado: `Giro ejecutado: ${fmtMM(d.giroMM || 0)} transferidos a la cuenta registrada del cliente`, exito: true }];
-        return { ...d, stage: "giro", status: porExcepcion ? "Girada · otorgada por excepción" : "Girada · otorgada", otorgada: true, otorgPorExcepcion: porExcepcion, giroPendiente: false, historialContacto: hist };
-      }
-      return { ...d, status: porExcepcion ? "Otorgada por excepción · se girará en Otorgamiento" : "Otorgada · se girará en Otorgamiento", otorgada: true, otorgPorExcepcion: porExcepcion, historialContacto: hist };
-    };
-    setDeals((prev) => prev.map(upd));
-    setSelected((s) => (s ? upd(s) : s));
-  };
+  // `autorizarCausa` y `otorgarOperacion` se eliminaron al cerrar INC-05 (11-09-2026). Eran el brazo
+  // ejecutor del modelo de causas de desvío y estaban MUERTOS: se pasaban como props a `DealDrawer` y
+  // a `OtorgamientosView` y ninguno de los dos las invocaba, así que ninguna causa podía quedar
+  // autorizada y `otorgarOperacion` —que las exigía todas autorizadas— nunca hacía nada. Quien decide
+  // hoy es el VISADO del motor de reglas, y quien libera el giro es `otorgamientoCompleto`.
   // Comunicación entre pestañas vía postMessage (funciona con file://, donde cada página es un
   // origen único y BroadcastChannel/localStorage no sirven). El WhatsApp del cliente (whatsapp.html)
   // se abre con opener = este panel; responde el detalle/hilo y recibe mensajes y la aceptación.
@@ -20253,14 +20243,15 @@ export default function PipelineComercial() {
           // Otorgamiento ocurre TRAS la cesión y habilita el GIRO.
           // AUTOMÁTICO: se aprueba solo y se gira.
           if (d.otorgAuto) { sumar("giro", d); if (e.giro != null) e.giro++; return { ...d, stage: "giro", otorgada: true, giroPendiente: false, status: "Girada · otorgamiento automático", time: nowStamp(), historialContacto: traza(d, `Otorgamiento automático aprobado (buenos deudores y dentro de línea) → giro de ${fmtMM(d.giroMM || 0)} a la cuenta registrada del cliente`, true, DET_ETAPA.giro) }; }
-          // Manual: cuando TODAS las causas quedan autorizadas (desde la mesa Otorgamientos), se otorga y se gira.
-          const cs = d.causas || [];
-          if (cs.length && cs.every((c) => c.estado === "autorizado")) {
-            const exc = cs.some((c) => c.grav === "grave" || c.grav === "critico");
+          // Manual: se libera cuando el VISADO queda resuelto —todas las excepciones aprobadas por quien
+          // tiene la atribución— y el cliente mantiene su aprobación formal. Antes esta rama miraba
+          // `d.causas` del modelo de desvíos, que nadie podía autorizar: una operación derivada a
+          // otorgamiento manual se quedaba acá para siempre salvo que alguien la moviera a mano.
+          if (otorgamientoCompleto(d)) {
             sumar("giro", d); if (e.giro != null) e.giro++;
-            return { ...d, stage: "giro", otorgada: true, otorgPorExcepcion: exc, giroPendiente: false, status: exc ? "Girada · otorgada por excepción" : "Girada · otorgada", time: nowStamp(), historialContacto: traza(d, (exc ? "Otorgada por excepción — todas las causas autorizadas" : "Otorgada — todas las causas autorizadas") + ` → giro de ${fmtMM(d.giroMM || 0)} a la cuenta registrada del cliente`, true, DET_ETAPA.giro) };
+            return { ...d, stage: "giro", otorgada: true, otorgPorExcepcion: true, giroPendiente: false, status: "Girada · otorgada por excepción", time: nowStamp(), historialContacto: traza(d, `Otorgada por excepción — visado resuelto → giro de ${fmtMM(d.giroMM || 0)} a la cuenta registrada del cliente`, true, DET_ETAPA.giro) };
           }
-          return d; // sigue esperando aprobación de las áreas
+          return d; // sigue esperando que se resuelvan sus excepciones
         }
         // Detección de cesión a otro factoring: algunas facturas se ceden a la competencia.
         // Si quedan todas cedidas a otro factoring, la oportunidad se da por perdida.
@@ -21095,7 +21086,7 @@ export default function PipelineComercial() {
               detalle (cliente · id · etapa, selector de usuario y avatar), de modo que la pantalla abría
               con la identidad y el selector DUPLICADOS. La cabecera del propio detalle es la única. */}
           <div className="mx-auto w-full" style={{ maxWidth: 1600 }}>
-            <DealDrawer key={selected.id} deal={selected} fullPage onClose={() => window.close()} onAdvance={advance} onReject={reject} onIncorporar={abrirIncorporar} onIncorporarFacturas={incorporarFacturasOferta} onRetirarFactura={retirarFacturaOferta} onReabrir={reabrirOperacion} onSugerirOferta={aplicarSugerencia} onSimular={simularOferta} onPublicar={publicarOferta} onCerrarOferta={cerrarOferta} onEnviarCierre={enviarCierre} onContactar={iniciarContacto} onEditarContacto={editarContacto} onEnviarWA={enviarWA} onMover={moverEtapa} cierre={cierreModal} onConfirmCierre={confirmarCierre} usuario={usuario} onCambiarUsuario={setUsuario} onAutorizarCausa={autorizarCausa} onOtorgarOperacion={otorgarOperacion} tabInicial={(detallePayload && detallePayload.tab) || dealTabInicial} onIrOtorgamientos={() => {}} />
+            <DealDrawer key={selected.id} deal={selected} fullPage onClose={() => window.close()} onAdvance={advance} onReject={reject} onIncorporar={abrirIncorporar} onIncorporarFacturas={incorporarFacturasOferta} onRetirarFactura={retirarFacturaOferta} onReabrir={reabrirOperacion} onSugerirOferta={aplicarSugerencia} onSimular={simularOferta} onPublicar={publicarOferta} onCerrarOferta={cerrarOferta} onEnviarCierre={enviarCierre} onContactar={iniciarContacto} onEditarContacto={editarContacto} onEnviarWA={enviarWA} onMover={moverEtapa} cierre={cierreModal} onConfirmCierre={confirmarCierre} usuario={usuario} onCambiarUsuario={setUsuario} tabInicial={(detallePayload && detallePayload.tab) || dealTabInicial} onIrOtorgamientos={() => {}} />
           </div>
         </div>
       )) : (<>
@@ -21251,7 +21242,7 @@ export default function PipelineComercial() {
             <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Configuración</h1>
             <ConfiguracionView usuario={usuario} cfgOper={cfgOper} setCfgOper={setCfgOper} />
           </>
-        ) : vistaApp === "otorgamientos" ? <OtorgamientosView deals={deals} usuario={usuario} onOpen={abrirDetalle} onAutorizarCausa={autorizarCausa} onCfgChange={() => { invalidarVisado(); setCfgVer((v) => v + 1); }} />
+        ) : vistaApp === "otorgamientos" ? <OtorgamientosView deals={deals} usuario={usuario} onOpen={abrirDetalle} onCfgChange={() => { invalidarVisado(); setCfgVer((v) => v + 1); }} />
         : vistaApp === "verificacion" ? <VerificacionView deals={deals} usuario={usuario} onOpen={abrirDetalle} onVerificar={verificarDeudor} onNoConfirmar={noConfirmoDeudor} /> : (<>
         <div className="flex items-start justify-between gap-3">
           <div>

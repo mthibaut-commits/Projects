@@ -1,5 +1,5 @@
 {
-  "descripcion": "Atribuciones de aprobación de otorgamiento por criterio — NEX Factoring. Convención: cada regla declara el ÁREA y cada tramo el NIVEL requerido; aprueba cualquier usuario de esa área con ese nivel o superior, de modo que un cargo vacante lo cubre la jefatura de su área. La escalada no cruza áreas.",
+  "descripcion": "Atribuciones de aprobación de otorgamiento por criterio — NEX Factoring. Convención: cada regla declara el ÁREA y cada tramo el NIVEL requerido; aprueba cualquier usuario de esa área con ese nivel o superior, de modo que un cargo vacante lo cubre la jefatura de su área. La escalada no cruza áreas. El MONTO de la operación impone además un piso por área (ver `piso_por_monto`): el nivel realmente exigido es el mayor entre el del tramo y ese piso, así que el `nivel_requerido` de cada tramo es el mínimo, el que rige en operaciones de monto leve.",
   "generado": "2026-09-11",
   "niveles": {
     "jefe_comercial": {
@@ -25,6 +25,48 @@
     "operaciones": {
       "area": "operaciones",
       "nivel": 5
+    }
+  },
+  "piso_por_monto": {
+    "tramos_mm": [
+      {
+        "hasta": 20,
+        "grav": "leve"
+      },
+      {
+        "hasta": 60,
+        "grav": "moderado"
+      },
+      {
+        "hasta": 120,
+        "grav": "grave"
+      },
+      {
+        "hasta": null,
+        "grav": "critico"
+      }
+    ],
+    "niveles": {
+      "leve": {
+        "comercial": 1,
+        "riesgo": 1,
+        "operaciones": 1
+      },
+      "moderado": {
+        "comercial": 2,
+        "riesgo": 3,
+        "operaciones": 2
+      },
+      "grave": {
+        "comercial": 3,
+        "riesgo": 4,
+        "operaciones": 3
+      },
+      "critico": {
+        "comercial": 3,
+        "riesgo": 5,
+        "operaciones": 4
+      }
     }
   },
   "total_criterios": 79,
