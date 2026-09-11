@@ -5619,6 +5619,36 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
       return Math.max(otorgPend, n);
     } catch (e) { return otorgPend; }
   })();
+  // Deudores que el modelo mandó a teléfono y todavía no tienen la llamada registrada: es el trabajo
+  // que le queda al equipo de verificación en ESTA operación. Por DEUDOR, no por factura — una llamada
+  // cubre todas sus facturas (regla 6).
+  const verifPendOp = (() => {
+    try {
+      const tel = (typeof VERIF_TEL !== "undefined" && VERIF_TEL[deal.id]) || {};
+      const porDeudor = new Map();
+      for (const f of (deal.facturasOp || [])) {
+        const k = f.rutRecep || f.deudor || "";
+        let g = porDeudor.get(k); if (!g) { g = []; porDeudor.set(k, g); }
+        g.push(f);
+      }
+      let n = 0;
+      for (const suyas of porDeudor.values()) {
+        if (verifFactura(suyas[0], deal).est !== "tel") continue;
+        if (suyas.every((f) => tel[f.id])) continue; // ya la llamaron
+        n++;
+      }
+      return n;
+    } catch (e) { return 0; }
+  })();
+  // El tab de Verificación aparece cuando la verificación deja de ser una predicción y pasa a ser
+  // trabajo del equipo: al PRE-EVALUAR (el ejecutivo adelanta el proceso, igual que con el
+  // otorgamiento) o con la oferta ya cerrada y PUBLICADA (hay un compromiso con el cliente y la
+  // llamada queda en el camino al giro). Antes de eso la oferta todavía se está armando y llamar a un
+  // deudor por facturas que quizá se retiren es quemar 3–4 horas por deudor (regla 6).
+  // Sin facturas no hay nada que verificar, y en Giro/Perdida el tab se muestra sólo de lectura
+  // (`bloqueado`), porque la llamada ya es historia y su registro es evidencia.
+  const mostrarVerif = !!(deal && (deal.facturasOp || []).length
+    && (tienePreEval(deal.id) || ofertaPublicada(deal) || ["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage)));
   const cont = deal.contacto || null;
   // Contacto validado: el cliente respondió por ese canal (WhatsApp/Call → teléfono; Email → correo).
   const telValidado = !!deal.telValidado || (deal.waSesion || []).some((m) => m.from === "cliente");
@@ -5802,10 +5832,11 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               inline a la derecha, sobre la misma divisoria. */}
           <div className="mt-3 flex flex-wrap items-end justify-between gap-x-6 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
-              {[["negocio", "Negocio"], ...(puedeVerBitacora(usuario) ? [["bitacora", "Bitácora"]] : []), ...(puedeVerCobranza(usuario) ? [["cobranza", "Cobranza"]] : []), ...(puedeVerMensajeria(usuario) ? [["mensajeria", "Mensajería"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : [])].map(([k, l]) => { const on = tab === k; return (
+              {[["negocio", "Negocio"], ...(puedeVerBitacora(usuario) ? [["bitacora", "Bitácora"]] : []), ...(puedeVerCobranza(usuario) ? [["cobranza", "Cobranza"]] : []), ...(puedeVerMensajeria(usuario) ? [["mensajeria", "Mensajería"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : []), ...(mostrarVerif ? [["verificacion", "Verificación"]] : [])].map(([k, l]) => { const on = tab === k; return (
                 <button key={k} onClick={() => setTab(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
                   {l}
                   {k === "otorgamiento" && otorgPendOp > 0 && <span title={otorgPend > 0 ? `${otorgPendOp} criterio(s) de otorgamiento pendientes · ${otorgPend} que debes visar tú` : `${otorgPendOp} criterio(s) de otorgamiento pendientes en esta operación`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: otorgPend > 0 ? "#EF4444" : "#7C3AED" }}>{otorgPendOp}</span>}
+                  {k === "verificacion" && verifPendOp > 0 && <span title={`${verifPendOp} deudor(es) esperando la verificación telefónica en esta operación`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: "#C2410C" }}>{verifPendOp}</span>}
                 </button>
               ); })}
             </div>
@@ -7211,7 +7242,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                       ) : (() => {
                         const cerrada = !!(deal.ofertaCerrada || deal.negocioNum);
                         // "Comunicada" = el ejecutivo ya envió la oferta por un canal (o el Agente IA la publicó).
-                        const comunicada = !!deal.ofertaComunicada || (deal.waSesion || []).some((m) => /Oferta de factoring/i.test(m.text || ""));
+                        const comunicada = ofertaPublicada({ ...deal, ofertaCerrada: true }); // misma definición que el tab de Verificación
                         // Cerrar la oferta se hace desde el menú de «Cerrar oferta y publicar», arriba en la
                         // tarjeta de veredicto. Acá abajo el botón repetía la misma acción al final de una
                         // página larga; queda sólo el aviso, que es información y no una acción.
@@ -10183,6 +10214,16 @@ function causaPerdidaDeal(deal) {
   if (/no acept|no tom/i.test(deal.status || "")) return "El cliente no aceptó la oferta";
   if (deal.contactable === false) return "Sin contacto: intentos de contacto agotados";
   return deal.status || "Oportunidad perdida";
+}
+// ¿La oferta ya salió hacia el cliente? Cerrada (gate del ejecutivo) Y comunicada por algún canal.
+// Son dos hechos distintos y hacen falta los dos: cerrar es la aprobación interna y publicar es el
+// compromiso con el cliente. El Agente IA publica por WhatsApp sin pasar por la bandera, así que el
+// mensaje de la oferta en su sesión cuenta como publicación (ver regla 8: el agente es OPCIONAL).
+function ofertaPublicada(deal) {
+  if (!deal) return false;
+  const cerrada = !!(deal.ofertaCerrada || deal.negocioNum);
+  const comunicada = !!deal.ofertaComunicada || (deal.waSesion || []).some((m) => /Oferta de factoring/i.test(m.text || ""));
+  return cerrada && comunicada;
 }
 // ¿Contamos con la aprobación FORMAL del cliente para girar? La operación llega a Otorgamiento tras la
 // aceptación y firma del cierre por el cliente (cesión), por lo que en esa etapa la aprobación ya existe.

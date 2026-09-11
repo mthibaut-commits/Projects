@@ -260,6 +260,22 @@
        fila ? `1 fila · ${fila.facturas.length} facturas · ${fila.causas.length} causa(s) · ${fila.estado}` : "sin fila");
   }
 
+  // 31-32 · COMPUERTA DEL TAB DE VERIFICACIÓN. El tab aparece cuando la verificación pasa a ser trabajo
+  // real del equipo: al pre-evaluar, o con la oferta cerrada Y publicada. Cerrar sin publicar no basta
+  // —es la aprobación interna del ejecutivo, todavía no hay compromiso con el cliente— y publicar sin
+  // cerrar no existe. El Agente IA publica por WhatsApp sin tocar la bandera, así que su mensaje cuenta.
+  ok("31 cerrar sin publicar NO habilita la verificación",
+     ofertaPublicada({ ofertaCerrada: true }) === false
+     && ofertaPublicada({ ofertaComunicada: true }) === false
+     && ofertaPublicada({ ofertaCerrada: true, ofertaComunicada: true }) === true
+     && ofertaPublicada({ negocioNum: 9001, ofertaComunicada: true }) === true,
+     "hacen falta las dos mitades");
+
+  ok("32 la oferta publicada por el Agente IA cuenta como comunicada",
+     ofertaPublicada({ ofertaCerrada: true, waSesion: [{ from: "agente", text: "Oferta de factoring por $50M" }] }) === true
+     && ofertaPublicada({ ofertaCerrada: true, waSesion: [{ from: "agente", text: "Hola, ¿cómo estás?" }] }) === false,
+     "el mensaje del agente publica; cualquier otro no");
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
