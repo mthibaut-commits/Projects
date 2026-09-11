@@ -20840,7 +20840,16 @@ export default function PipelineComercial() {
     // negocio—, así que su estado no es el del tubo: sin avisar, la operación quedaba simulada acá y
     // «Sin simular» allá para siempre. Se le notifica a la ventana que lo abrió, por el mismo canal
     // con que el sitio del cliente informa el cierre remoto.
-    try { if (patch && window.opener) window.opener.postMessage({ type: "nex-simulado", dealId: id, patch }, ORIGEN_APP); } catch (e) {}
+    // El aviso sale DESPUÉS del commit, no en la misma vuelta: `patch` se asigna DENTRO del updater y
+    // React sólo lo evalúa al renderizar. La evaluación anticipada que lo salvaba exige un fiber sin
+    // trabajo pendiente, y acá nunca lo hay: quien llama es `elegirInicio`, que en el mismo gesto ya
+    // corrió `aplicarSugerencia` —definir la oferta y simularla son un solo clic—. Así que `patch`
+    // seguía en null al evaluar la guarda, el mensaje NO se enviaba nunca y el tubo se quedaba con
+    // «Sin simular» para siempre: justo lo que este aviso existe para evitar. Verificado: el receptor
+    // aplica el patch sin problemas; el que no disparaba era este lado.
+    setTimeout(() => {
+      try { if (patch && window.opener) window.opener.postMessage({ type: "nex-simulado", dealId: id, patch }, ORIGEN_APP); } catch (e) {}
+    }, 0);
   };
   // Retira una factura de la oferta y la deja disponible como candidata en "Otras facturas".
   // MESA DE VERIFICACIÓN. Se marca por DEUDOR porque una llamada cubre todas sus facturas (regla 6).
