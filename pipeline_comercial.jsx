@@ -5505,7 +5505,7 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
             </div>
           )}
           <div className="mt-2.5 rounded-lg p-2.5 t10" style={{ backgroundColor: "#F5F4F8", color: C.sub }}>
-            Al confirmar, las asignaciones de línea pasan de <b>reservadas</b> a <b>aprobadas</b>{evalLin.requiereComite > 0 ? <> y la solicitud queda en la bandeja del <b>comité de riesgo</b> como una sola solicitud con {evalLin.solicitudes.length} línea(s) de detalle, aprobable o recortable por separado</> : null}.
+            Al confirmar se <b>publica la oferta</b>. Las asignaciones de línea son una <b>evaluación</b>, no una reserva: el cupo lo reserva el sistema de gestión de líneas cuando el <b>cliente firma</b>, y el core lo convierte en línea utilizada cuando <b>Operaciones aprueba</b>.{evalLin.requiereComite > 0 ? <> y la solicitud queda en la bandeja del <b>comité de riesgo</b> como una sola solicitud con {evalLin.solicitudes.length} línea(s) de detalle, aprobable o recortable por separado</> : null}.
           </div>
         </div>
 

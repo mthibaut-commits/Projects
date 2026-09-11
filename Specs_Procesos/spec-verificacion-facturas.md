@@ -120,7 +120,7 @@ Esto tiene un efecto deseado: un deudor nuevo no tiene historial para las reglas
 | 6 | Desviación de la fecha de pago | `abs(FchVctoDoc − FchVctoProm) / FchVctoProm` | ≤ 5% | | ✔ |
 | 7 | Porcentaje pagado con más de 25 días de mora | `MntPagoC-D >25d mora / MntPago` | < 3% | ✔ | ✔ |
 | 8 | Porcentaje de facturas reclamadas | `MntFactReclamadas / MntTotalFacturas` | < 4% | ✔ | ✔ |
-| 9 | Documento de alto monto | `MntFactura` y `MntOpC-D` | ≤ $300M | | ✔ |
+| 9 | Documento de alto monto | `MntOpC-D` | ≤ $300M | | ✔ |
 | 10 | Historial de pago relevante con el factoring, últimos 3M | `MntPagoDeudorUlt3M` | > $1.000M | ✔ | ✔ |
 
 ### Propósito y detalle de cada regla
@@ -143,7 +143,7 @@ Esto tiene un efecto deseado: un deudor nuevo no tiene historial para las reglas
 
 **8 · Facturas reclamadas.** Mide si el deudor está reclamando facturas a su cliente por sobre el umbral, señal de que la relación comercial está cuestionada y de que el deudor ya no está recibiendo conforme.
 
-**9 · Alto monto.** Medida preventiva: sobre el umbral se verifica sin más análisis. Gatilla si lo supera **una factura individual o el monto total de la operación con ese deudor**.
+**9 · Alto monto.** Medida preventiva: sobre el umbral se verifica sin más análisis. Se mide sobre el **total de la operación con ese deudor**. Comparar además la factura individual sería redundante —ninguna factura puede superar la suma de las facturas del mismo deudor, así que el total gatilla siempre primero— y hace pensar que son dos umbrales cuando es uno.
 
 **10 · Representatividad del historial.** Evita el falso positivo del deudor que cumple todas las reglas simplemente porque operó una sola vez con Security. Exige volumen de pago suficiente en los últimos 3 meses para que sus estadísticas sean representativas.
 
@@ -160,7 +160,7 @@ funcion requiere_verificacion(rut_cliente, rut_deudor, facturas):
 
     # 2 · segmento
     si es_prime(rut_deudor) o nota_deudor(rut_deudor) > 4.2:
-        criterios = [4, 5, 7, 8, 10]
+        criterios = [1, 4, 5, 7, 8, 10]      # seis, la 1 incluida (ver §2.3 y §3)
     si no:
         criterios = [2, 3, 4, 5, 6, 7, 8, 9, 10]
 

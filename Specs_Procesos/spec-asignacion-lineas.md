@@ -120,6 +120,8 @@ Los tres niveles se descuentan simultáneamente cuando la factura se asigna.
 
 ### 3.2 Cálculo de disponible
 
+> **Nota de implementación:** el prototipo no consume A23, así que su `disponible` es `aprobado − vigente_no_pagado − consumido_en_esta_corrida`: **no hay término `reservado`**. Es correcto para una demo —no hay un sistema de gestión de líneas al otro lado— pero al implementar contra A23 el `reservado` es un tercer término que se **lee**, y sin él una operación ya aceptada aparecería con cupo que en realidad está comprometido.
+
 ```
 disponible = monto_aprobado − vigente_no_pagado − reservado
 ```
@@ -140,6 +142,17 @@ Los deudores de la operación se procesan **de mayor a menor nota deudor**. El o
 Empate de nota: desempata el monto seleccionado, de mayor a menor.
 
 ### 3.5 Cascada de líneas por deudor
+
+La cascada depende del **estado del cliente**, que son dos y son mutuamente excluyentes:
+
+| Estado | Qué líneas tiene | Cascada |
+|---|---|---|
+| **A** — recién enrolado | Sólo la **LF1** (Línea Inicial Cliente, MM$30). Sin LF2, LF3 ni LF4 | `[LF1]`, y **sólo para deudores prime** |
+| **B** — con líneas asignadas | LF2 / LF3 por par y el comodín LF4. **Sin LF1** | la de abajo |
+
+En estado **A** la LF1 es el único camino, y cubre únicamente a los deudores prime: si el deudor no lo es, el motivo del rechazo es `lf1` y lo que se le pide al comité no es una línea más sino que **asigne líneas** al cliente (§4.1). El estado A termina cuando eso ocurre, y entonces la LF1 desaparece: no coexiste con las demás.
+
+En estado **B**:
 
 ```
 si existe LF2 o LF3 para el par:
@@ -177,7 +190,7 @@ Esto cierra la excepción que esta sección dejaba abierta: no hay que proteger 
 
 Todas las líneas son en **pesos chilenos**. No hay indexación. Consecuencia: una línea aprobada hace más de un año financia menos volumen real del que el comité aprobó, lo que refuerza la necesidad de revisión periódica con `vigencia_hasta`.
 
-### 3.9 Dimensionamiento del cupo (contexto, no implementado en este módulo)
+### 3.9 Dimensionamiento del cupo (contexto — implementado sólo en parte)
 
 ```
 cupo_deudor = venta_mensual × (plazo_pago / 30) × SoW_objetivo
@@ -192,6 +205,8 @@ Ejemplo: $100M mensuales a 45 días con SoW objetivo de 70% → $105M.
 - El flujo mensual se estima con media sobre los meses con venta > 0, no media aritmética simple.
 - Ratio elevado de reclamos: killer o penalización del cupo (umbrales por definir en tramos deterministas).
 - Cupo genérico LF4 = 10% de la suma de cupos de deudores prime y/o nota > 4,2.
+
+> **Qué está implementado y qué no.** El prototipo **sí** dimensiona: reparte el presupuesto del cliente entre sus pares de forma proporcional al volumen facturado y reserva el comodín LF4 con el 10%. Lo que **no** implementa es la fórmula `venta_mensual × plazo/30 × SoW` de este apartado, y su 10% se toma sobre el **presupuesto total de pares**, sin filtrar por prime ni por nota > 4,2 como dice la línea de arriba. Es dimensionamiento sintético para que la demo tenga líneas con forma realista, no el cálculo de negocio.
 
 ---
 
@@ -268,12 +283,20 @@ El motivo es el nivel con menor disponible al momento del rechazo. Determina qu�
 
 | Motivo | Qué se pide | A quién afecta |
 |---|---|---|
-| `par` | Línea puntual LF3 para este deudor | Solo este cliente y este deudor |
-| `lf4` | Línea propia para este deudor | Solo este cliente y este deudor |
-| `cliente` | Aumento de línea del cliente | Todo el cliente |
-| `paraguas` | Aumento de exposición del deudor | **Todos los clientes que ceden ese deudor** |
+| `par` | Línea Puntual Cliente-Deudor | Solo este cliente y este deudor |
+| `lf4` | Línea Puntual Cliente-Deudor | Solo este cliente y este deudor |
+| `cliente` | Aumento de la Línea Global Cliente | Todo el cliente |
+| `deudor` | **Ampliar** la Línea Global Deudor si ya tiene una, **Solicitar**la si no | **Todos los clientes que ceden ese deudor** |
+| `lf1` | Asignación de líneas por comité | Todo el cliente |
 
-Un aumento de paraguas no se resuelve con una puntual del cliente. Son resoluciones distintas y el modal de confirmación debe decirlo.
+Cuatro precisiones sobre esta tabla:
+
+- **El motivo del deudor se llama `deudor`, no `paraguas`.** La palabra «paraguas» no existe en la implementación; el rótulo de negocio es **Línea Global Deudor**.
+- **`deudor` tiene dos resoluciones, no una**, y la diferencia importa para redactar la solicitud: si el deudor ya tiene línea global se pide **ampliarla**; si no tiene, se pide **constituirla**.
+- **`par` y `lf4` piden lo mismo al comité** —una Línea Puntual Cliente-Deudor—, y eso es correcto: lo que los separa es el diagnóstico (en `par` la línea del par existe y está sin cupo; en `lf4` no existe y el comodín del cliente tampoco alcanza), no la petición.
+- **`lf1` es el quinto motivo** y sólo aparece con el cliente en **estado A**: recién enrolado, con la Línea Inicial de MM$30 y sin líneas de par. Si el deudor no está cubierto por esa línea inicial, lo que se pide no es una línea más sino que el comité **asigne líneas** al cliente.
+
+Un aumento de la Línea Global Deudor no se resuelve con una puntual del cliente. Son resoluciones distintas y el modal de confirmación debe decirlo.
 
 ### 4.2 Alcance del recálculo
 
@@ -455,7 +478,9 @@ join  factura f on f.rut_deudor   = h.rut_deudor
 
 ---
 
-## 6. Concurrencia y transaccionalidad
+## 6. Concurrencia y transaccionalidad (no implementado en este módulo)
+
+> Nada de este apartado existe en el prototipo: no hay transacción, ni lock, ni `Idempotency-Key`, ni el estado `requiere_resimulacion`. Es diseño para el servicio, no descripción de lo que corre hoy — igual que el §3.9. El caso de prueba nº 10 del §9 no es ejecutable contra esta implementación por la misma razón.
 
 Las aprobaciones son secuenciales en la práctica, pero eso no las serializa: dos ejecutivos aprobando con un segundo de diferencia compiten igual.
 
@@ -599,7 +624,7 @@ Se abre al presionar **Cursar** cuando hay solicitudes al comité. Tonos morados
 - Cabecera lila: "Confirmar curse". El botón que lo abre dice **Cursar** en todos los casos; cuando no hay solicitudes pendientes cursa directo sin modal.
 - Dos cifras enfrentadas: lo que se cursa con línea vigente (verde) y lo que se solicita al comité (morado).
 - Tabla: deudor · qué se pide · monto · a quién afecta.
-- Nota: al confirmar, las asignaciones pasan de reservadas a aprobadas y la solicitud entra a la bandeja del comité.
+- Nota: al confirmar se **publica la oferta** y la solicitud entra a la bandeja del comité. **No** se reserva nada acá: la reserva la crea el sistema de gestión de líneas cuando el **cliente firma**, y el core la convierte en línea utilizada cuando **Operaciones aprueba** (§3.7). La redacción anterior —«las asignaciones pasan de reservadas a aprobadas»— venía del modelo viejo, en que este módulo administraba la reserva, y contradecía al propio §3.7. El copy del modal en la aplicación la reproducía literal y se corrigió junto con esto.
 - Acciones: Cancelar · **Confirmar y enviar**.
 - Cierre por Escape, clic fuera o Cancelar.
 

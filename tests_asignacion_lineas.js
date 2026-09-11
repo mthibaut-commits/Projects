@@ -1,6 +1,6 @@
 /* ============================================================================================
    PRUEBAS DEL MOTOR DE ASIGNACIÓN DE LÍNEAS
-   Cubre los 10 casos del §9 de spec-asignacion-lineas.md, más cinco que el spec no enumera pero
+   Cubre los 15 casos del §9 de spec-asignacion-lineas.md, más cinco que el spec no enumera pero
    que el modelo corregido introduce (línea de otros deudores suspendida y como no-colchón, tope
    del cliente, y cliente en estado A con sólo LF1), más cinco del DIFF entre versiones (§4.3): qué
    se movió respecto de la evaluación anterior, sin que esa versión altere jamás la asignación, más
