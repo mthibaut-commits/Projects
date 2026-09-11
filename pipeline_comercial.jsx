@@ -9871,16 +9871,24 @@ const REGLAS_CLIENTE = [
 // (no re-evaluable, no excepcionable ⇒ pérdida). INFORMATIVE ⇒ clasificación (sólo informa).
 // Variables de comportamiento de UN deudor (CMF/DICOM/ACHEF/mora interna) + par cliente-deudor (venta
 // cruzada, NC, reclamos). Deterministas por nombre del deudor → cada deudor tiene su propio perfil de riesgo.
-function deudorBlock(dn) {
+// Variables de riesgo del DEUDOR (prefijo `d`) y del PAR cliente-deudor (prefijo `cd`). Las cuatro de
+// cartera del par —las que evalúan C47..C50— se regularizan al re-evaluar igual que sus gemelas de
+// cliente C40..C43: tras la firma el origen las repara. Van AL FINAL del literal a propósito: `rd()` es
+// secuencial, así que intercalarlas correría el sorteo de todo lo que viene después y cambiaría datos
+// ya estables de deudores que nadie tocó.
+function deudorBlock(dn, rev) {
   const rngD = pcRng(Math.abs(hashStr("mrD" + (dn || "")))); const rd = () => rngD();
   const amtD = (p, max) => (rd() < p ? Math.round(rd() * max) : 0);
-  return {
+  const out = {
     dNota: notaFromScore(scoreDeudor(dn).score), dCmf3090: amtD(0.12, 12e6), dCmf90180: amtD(0.05, 8e6), dCmf1803a: amtD(0.03, 6e6), dCmfCast: amtD(0.02, 6e6), dCmfIndVenc: amtD(0.06, 8e6), dCmfIndCast: amtD(0.02, 5e6), dCmfLeasing: amtD(0.06, 9e6), dCmfTotal: 50e6 + Math.round(rd() * 900e6),
     dEfxMora: amtD(0.08, 8e6), dAchef6090: amtD(0.07, 40e6), dAchef90180: amtD(0.04, 60e6), dAchefMas180: amtD(0.02, 30e6), dInfr: amtD(0.05, 40e6),
     dMoraInt25: amtD(0.12, 4e6), dMoraInt3090: amtD(0.08, 12e6), dMoraInt90180: amtD(0.04, 8e6), dMoraInt1803a: amtD(0.02, 6e6), dDeudaIntTotal: 20e6 + Math.round(rd() * 300e6),
     sociosComunes: rd() < 0.05, dNC: +(rd() * 14).toFixed(1), dReclamo: +(rd() * 8).toFixed(1),
     cdCruzada: Math.round(rd() * 45), cdNC: +(rd() * 14).toFixed(1), cdReclamo: +(rd() * 8).toFixed(1),
+    cdCarteraReclamada: amtD(0.12, 8e6), cdCarteraNC: amtD(0.1, 6e6), cdCarteraMorosa: amtD(0.12, 8e6), cdCxcPend: amtD(0.15, 6e6),
   };
+  if ((rev || 0) >= 1) { out.cdCarteraReclamada = 0; out.cdCarteraNC = 0; out.cdCarteraMorosa = 0; out.cdCxcPend = 0; }
+  return out;
 }
 // Lista de deudores DISTINTOS de una operación (razón social + RUT).
 function deudoresDeDeal(deal) {
@@ -9899,18 +9907,22 @@ function deudoresDeDeal(deal) {
   else if (deal && deal.deudor) add(deal.deudor, null);
   return out.length ? out : [{ nombre: (deal && deal.deudor) || "Deudor", rut: "" }];
 }
-// ¿La regla es del DEUDOR / par cliente-deudor? (códigos D01..D23). El resto son del cliente/operación.
-const esReglaDeudor = (regla) => /^D/.test((regla && regla.cond) || "");
+// ¿La regla es del DEUDOR / par cliente-deudor? Casi siempre se ve en el código (D01..D23), pero C47..C50
+// son del PAR y la spec las numera en el bloque de cliente: para ésas el tipo lo declara la regla con
+// `porDeudor`. Deducirlo sólo del prefijo obligaría a renumerarlas como D24..D27 y perder la trazabilidad
+// con la spec, que es por donde se audita el catálogo.
+const esReglaDeudor = (regla) => !!(regla && regla.porDeudor) || /^D/.test((regla && regla.cond) || "");
 // Evalúa el catálogo de otorgamiento devolviendo ITEMS: las reglas del cliente una vez (deudor=null), y
 // las reglas de deudor UNA VEZ POR CADA DEUDOR de la operación, con sus propias variables de riesgo.
 // `stKey` identifica cada ítem para el estado de aprobación (regla-n para cliente; regla-n@rut para deudor).
 function evaluarOtorgItems(deal) {
+  const rev = revOtorgActual(deal);
   const vCli = { ...varsClienteActual(deal), ...varsModeloExt(deal) };
   const deudores = deudoresDeDeal(deal);
   const items = [];
   REGLAS_CLIENTE.forEach((r) => {
     if (!esReglaDeudor(r)) { items.push({ regla: r, ...evalReglaCli(r, vCli), deudor: null, stKey: String(r.n) }); }
-    else deudores.forEach((d) => { items.push({ regla: r, ...evalReglaCli(r, { ...vCli, ...deudorBlock(d.nombre) }), deudor: d, stKey: r.n + "@" + (d.rut || d.nombre) }); });
+    else deudores.forEach((d) => { items.push({ regla: r, ...evalReglaCli(r, { ...vCli, ...deudorBlock(d.nombre, rev) }), deudor: d, stKey: r.n + "@" + (d.rut || d.nombre) }); });
   });
   return items;
 }
@@ -9947,7 +9959,13 @@ function varsModeloExt(deal) {
     R(102, "C02", "operaciones", "MinimumViability", "Pagaré con Monto Suficiente para Cartera", "Cliente no posee pagarés suficientes para garantizar la cartera vigente antes del curse", [[(v) => !v.pagaresSuf, "excepcion", NV(1)]]),
     R(103, "C03", "operaciones", "MinimumViability", "Pagaré Vigente hasta 60 Días Post Último Vencimiento", "Las garantías no cubren hasta 60 días posteriores al vencimiento del último documento", [[(v) => !v.pagareCubre60, "excepcion", NV(1)]]),
     R(104, "C04", "operaciones", "MinimumViability", "Información Financiera al Día", "Cliente no posee su información de IVA actualizada (antigüedad mayor a 2 meses)", [[(v) => !v.ivaAlDia, "excepcion", NV(2)]]),
-    R(105, "C05", "riesgo", "ClientSegmentation", "Línea Cliente Nuevo", "Cliente nuevo sin línea de crédito aprobada — requiere constitución de línea (Comité de Crédito)", [[(v) => v.clienteNuevo, "excepcion", 1]]),
+    // INC-06 RESUELTO (11-09-2026). C05 era la ÚNICA regla con el nivel escrito a mano: un `1` literal
+    // que venía de homologar «Comité → 1» y que, con `NIVEL_ROL[1]`, dejaba la constitución de una línea
+    // nueva —la decisión más estructural del proceso— en manos del aprobador de menor jerarquía. El
+    // Comité de Crédito NO es un nivel aparte ni un usuario del sistema: es el órgano que en la práctica
+    // ejerce la máxima atribución de Riesgo, así que C05 se configura como todas las demás, con su par
+    // (área, nivel) y pasando por `NV`. Riesgo N5 es la máxima: a mayor gravedad, mayor jerarquía.
+    R(105, "C05", "riesgo", "ClientSegmentation", "Línea Cliente Nuevo", "Cliente nuevo sin línea de crédito aprobada — requiere constitución de línea (Comité de Crédito)", [[(v) => v.clienteNuevo, "excepcion", NV(5)]]),
     R(106, "C06", "riesgo", "Conditions", "Línea Extendida por Riesgo", "Operación utiliza tramo de línea extendida por Riesgo", [[(v) => v.lineaExt, "excepcion", NV(4)]]),
     R(107, "C07", "riesgo", "Conditions", "Cupo Suficiente en Línea Aprobada por Comité", "Cliente con cupo insuficiente en línea (operación fuera de línea)", [[(v) => v.carteraVig + v.mntSimulacion <= v.mntLinea, "aprobado"], [(v) => v.carteraVig + v.mntSimulacion <= 1.1 * v.mntLinea, "excepcion", NV(2)], [() => true, "excepcion", NV(4)]]),
     R(108, "C08", "riesgo", "Behaviour", "Variación Negativa de Venta Mensual", "Cliente presenta una caída relevante de su venta mensual", [[(v) => v.varVenta >= -20, "aprobado"], [(v) => v.varVenta >= -40, "excepcion", NV(2)], [() => true, "excepcion", NV(4)]]),
@@ -9989,6 +10007,15 @@ function varsModeloExt(deal) {
     R(144, "C44", "comercial", "Information", "SOW Competencia / Venta Total (L6M)", "", null, { clasif: true, clfn: (v) => `Competencia financia ~${Math.min(95, Math.round(v.factoringPeqPct * 2))}% de la venta (L6M)` }),
     R(145, "C45", "comercial", "Information", "Financiado por Factorings Bancarios/Privados Grandes", "", null, { clasif: true, clfn: (v) => `Bancarios/privados grandes: ~${Math.max(5, 100 - Math.round(v.factoringPeqPct * 2))}% del financiamiento externo` }),
     R(146, "C46", "comercial", "Information", "Mix Financiamiento de los Deudores", "", null, { clasif: true, clfn: () => "Mix de financiamiento de deudores informado (industria)" }),
+    // C47-C50 · Cartera del PAR cliente-deudor: las gemelas de C40-C43 pero medidas sobre el par, que es
+    // donde se ve el deterioro localizado. Un cliente con la cartera global limpia puede arrastrar
+    // reclamos, notas de crédito o mora con ESTE deudor y con ningún otro, y agregado al cliente eso se
+    // diluye hasta desaparecer. Por eso se evalúan UNA VEZ POR DEUDOR y su visado es por deudor
+    // (`stKey = n@rut`), aunque la spec las numere en el bloque de cliente. EXC-COM N1, re-evaluables.
+    R(147, "C47", "comercial", "Conditions", "Par C-D · Documentos en Cartera Reclamados", "Cartera vigente con este deudor con documentos reclamados", tBin("cdCarteraReclamada", 1), { porDeudor: true }),
+    R(148, "C48", "comercial", "Conditions", "Par C-D · Documentos en Cartera con Nota de Crédito", "Cartera vigente con este deudor con documentos con notas de crédito", tBin("cdCarteraNC", 1), { porDeudor: true }),
+    R(149, "C49", "comercial", "Conditions", "Par C-D · Documentos en Cartera con Mora", "Cartera vigente con este deudor con documentos en mora", tBin("cdCarteraMorosa", 1), { porDeudor: true }),
+    R(150, "C50", "comercial", "Conditions", "Par C-D · Cuentas por Cobrar Pendientes", "Cuentas por cobrar pendientes de liquidar con este deudor", tBin("cdCxcPend", 1), { porDeudor: true }),
     R(151, "C51", "comercial", "Information", "Nota Cliente", "", null, { clasif: true, clfn: (v) => `Nota cliente ${v.notaCliente} · tendencia L3M estable` }),
     R(152, "C52", "comercial", "Information", "Juicios Gesintel", "", null, { clasif: true, clfn: (v) => v.juicios > 0 ? `${v.juicios} juicio(s) en curso/históricos (Gesintel)` : "Sin juicios registrados (Gesintel)" }),
     R(201, "D01", "riesgo", "Behaviour", "Segmento y Nota de Comportamiento Deudor", "Nota de comportamiento del deudor bajo el umbral mínimo (3,7)", [[(v) => v.dNota >= 3.7, "aprobado"], [() => true, "excepcion", NV(4)]]),
@@ -10047,6 +10074,10 @@ const VAR_LBL = {
   factoringPeqPct: "% cesión a factorings pequeños", carteraReclamada: "documentos reclamados en cartera",
   carteraNC: "documentos con nota de crédito en cartera", carteraMorosa: "documentos en mora en cartera",
   cxcPend: "cuentas por cobrar pendientes", concentracionMtz: "concentración en matriz (%)",
+  cdCarteraReclamada: "documentos reclamados en cartera con este deudor",
+  cdCarteraNC: "documentos con nota de crédito en cartera con este deudor",
+  cdCarteraMorosa: "documentos en mora en cartera con este deudor",
+  cdCxcPend: "cuentas por cobrar pendientes con este deudor",
   maxConcentracionMtz: "máx. concentración de matriz (%)", carteraVig: "cartera vigente",
   mntSimulacion: "monto de la simulación", mntLinea: "línea de crédito aprobada",
   macVigente: "MAC vigente", macStatus: "estado del MAC", ivaAlDia: "IVA al día", art85Vig: "artículo 85 vigente",
@@ -10120,6 +10151,7 @@ function snapVersionCli(deal, rev) {
       moraInt25: 0, moraInt3090: 0, moraInt90180: 0, moraInt1803a: 0, juicios: 0,
       spreadBajoBanda: false, comisionBajoMin: false, cxcSinAplicar: false, clienteBloqueado: false,
       concentracionVenta: 20, ventaCruzada: 10, notaCredito: 2, reclamo: 1, ratioCesionVenta: 1, nroFactorings: 1, factoringPeqPct: 10, concentracionMtz: 30,
+      cdCarteraReclamada: 0, cdCarteraNC: 0, cdCarteraMorosa: 0, cdCxcPend: 0,
     });
     vars.mntLinea = vars.carteraVig + vars.mntSimulacion + 50e6; // línea aprobada por el comité → cupo suficiente
   }
@@ -10184,6 +10216,9 @@ function varsClienteActual(deal) {
   if (vs && vs.length) return vs[vs.length - 1].vars;
   return apiVarsCliente(deal, 0);
 }
+// Revisión vigente de la simulación. v1 se emite con `rev = 0`, así que la revisión actual es
+// «nº de versiones − 1»: sin versiones y con una sola versión se está en la evaluación inicial.
+const revOtorgActual = (deal) => Math.max(0, (((deal && SIM_VERSIONS[deal.id]) || []).length) - 1);
 function reevaluarCliente(deal, usuario) {
   // Escritura vía repositorio: cada versión es un registro INMUTABLE (append-only), nunca se edita una
   // versión ya emitida. SERVER-SIDE: insert en `simulacion_version`, que es evidencia de la decisión.
@@ -10911,8 +10946,10 @@ function hilosNoLeidos(usuario) { return hilosDeUsuario(usuario).filter((h) => h
 function hilosDeDeal(dealId) { return HILOS.filter((h) => h.dealId === dealId).sort((a, b) => hiloUltimoTs(b) - hiloUltimoTs(a)); }
 function notifSolic(usuario) { const noLeidos = hilosNoLeidos(usuario); return { total: noLeidos.length, porResponder: noLeidos }; }
 const destCodeDe = (destId, deal) => destId === "ejecutivo" ? deal.exec : destId === "gerente_comercial" ? "GC" : destId === "jefatura" ? "JG" : "OP";
-// Nivel de atribución → rol y área que excepciona. A mayor nivel la excepción escala y puede pasar de
-// Comercial (N1-N3) a Riesgo (N4-N5): el aprobador ya no es del área de la regla sino de otra área.
+// Nivel de atribución → rol y área, en la configuración base del tenant. OJO: esta tabla ya NO decide
+// quién aprueba. Desde INC-03 el ruteo es el par (área declarada por la regla, nivel declarado por el
+// tramo) y la escalada NO cruza áreas: un N4 de Riesgo no cubre una excepción de Comercial por mucho
+// que el número sea mayor. Quién aprueba lo resuelve `rolDeAreaNivel` sobre el padrón del tenant.
 const NIVEL_ROL = {
   1: { rol: "Jefe de Grupo Comercial", area: "comercial" },
   2: { rol: "Gerente Comercial", area: "comercial" },
@@ -11830,7 +11867,7 @@ function AtribucionesMantenedor() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Atribuciones de aprobación por criterio ({list.length})</div>
-          <div className="t10" style={{ color: C.faint }}>Para cada criterio con excepción, el tramo del risk tier define el nivel requerido y los aprobadores habilitados. Cada rol aprueba exclusivamente su nivel; el super-admin cubre todos.</div>
+          <div className="t10" style={{ color: C.faint }}>Para cada criterio con excepción, la regla declara el área y el tramo del risk tier el nivel requerido. Aprueba cualquier usuario de esa área con ese nivel o superior —así un cargo vacante lo cubre la jefatura de su área— y la escalada no cruza áreas. El super-admin cubre todos.</div>
         </div>
         <button onClick={descargar} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Download size={13} /> Descargar JSON</button>
       </div>

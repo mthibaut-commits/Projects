@@ -1,233 +1,333 @@
 {
-  "descripcion": "Atribuciones de aprobación de otorgamiento por criterio — NEX Factoring. Convención: el nivel del tramo aplicable (risk tier) es el aprobador responsable; un SUPERIOR sólo puede aprobar (sustitución de emergencia) si su nivel está definido en el risk tier de la misma regla. El super-admin cubre cualquier nivel.",
-  "generado": "2026-07-10",
+  "descripcion": "Atribuciones de aprobación de otorgamiento por criterio — NEX Factoring. Convención: cada regla declara el ÁREA y cada tramo el NIVEL requerido; aprueba cualquier usuario de esa área con ese nivel o superior, de modo que un cargo vacante lo cubre la jefatura de su área. La escalada no cruza áreas.",
+  "generado": "2026-09-11",
   "niveles": {
-    "1": {
-      "rol": "Jefe de Grupo Comercial",
-      "area": "comercial"
+    "jefe_comercial": {
+      "area": "comercial",
+      "nivel": 1
     },
-    "2": {
-      "rol": "Gerente Comercial",
-      "area": "comercial"
+    "gte_comercial": {
+      "area": "comercial",
+      "nivel": 2
     },
-    "3": {
-      "rol": "Gerente General",
-      "area": "comercial"
+    "gte_general": {
+      "area": "comercial",
+      "nivel": 3
     },
-    "4": {
-      "rol": "Jefe de Riesgo",
-      "area": "riesgo"
+    "jefe_riesgo": {
+      "area": "riesgo",
+      "nivel": 4
     },
-    "5": {
-      "rol": "Subgerente de Riesgo",
-      "area": "riesgo"
+    "sub_riesgo": {
+      "area": "riesgo",
+      "nivel": 5
+    },
+    "operaciones": {
+      "area": "operaciones",
+      "nivel": 5
     }
   },
-  "total_criterios": 59,
+  "total_criterios": 79,
   "criterios": [
     {
-      "n": 1,
-      "nombre": "Clasificación Matriz Cliente — Categoría 1",
-      "dominio": "Riesgo",
-      "tipo": "ClientSegmentation",
-      "condicion_maestra": "If $ClientClass = A1 or A2 or A3",
-      "reevaluable": true,
-      "naturaleza": "clasificacion",
-      "tramos": []
-    },
-    {
-      "n": 2,
-      "nombre": "Clasificación Matriz Cliente — Categoría 2",
-      "dominio": "Riesgo",
-      "tipo": "ClientSegmentation",
-      "condicion_maestra": "If $ClientClass = A4 or A5",
-      "reevaluable": true,
-      "naturaleza": "clasificacion",
-      "tramos": []
-    },
-    {
-      "n": 3,
-      "nombre": "Clasificación Matriz Cliente — Categoría 3",
-      "dominio": "Riesgo",
-      "tipo": "ClientSegmentation",
-      "condicion_maestra": "If $ClientClass = A6 or B1",
-      "reevaluable": true,
-      "naturaleza": "clasificacion",
-      "tramos": []
-    },
-    {
-      "n": 4,
-      "nombre": "Clasificación Matriz Cliente — Categoría 4",
-      "dominio": "Riesgo",
-      "tipo": "ClientSegmentation",
-      "condicion_maestra": "If $ClientClass = B2 or B3 or B4",
-      "reevaluable": true,
-      "naturaleza": "clasificacion",
-      "tramos": []
-    },
-    {
-      "n": 5,
-      "nombre": "Cliente sin categoría → se asigna 3",
-      "dominio": "Riesgo",
-      "tipo": "ClientSegmentation",
-      "condicion_maestra": "Si no hay clasificación, ClientClass = B3",
-      "reevaluable": true,
-      "naturaleza": "clasificacion",
-      "tramos": []
-    },
-    {
-      "n": 6,
-      "nombre": "Fecha Expiración MAC",
-      "dominio": "Riesgo",
+      "n": 101,
+      "nombre": "C01 · Existencia de Pagaré Firmado",
+      "dominio": "Operaciones",
       "tipo": "MinimumViability",
-      "condicion_maestra": "$MACExpDate vigente",
+      "condicion_maestra": "C01",
       "reevaluable": true,
-      "hallazgo": "Cliente posee MAC vencido",
+      "hallazgo": "Cliente no posee pagaré firmado vigente",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "no MAC vigente",
-          "disposicion": "rechazado"
+          "condicion": "no pagareFirmado",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Operaciones",
+          "area_aprobacion": "Operaciones",
+          "aprobadores": [
+            "Andrés Mella · Operaciones",
+            "Super Administrador (ve todo)"
+          ]
         }
       ]
     },
     {
-      "n": 7,
-      "nombre": "Existencia de MAC Aprobado",
+      "n": 102,
+      "nombre": "C02 · Pagaré con Monto Suficiente para Cartera",
       "dominio": "Operaciones",
       "tipo": "MinimumViability",
-      "condicion_maestra": "If $MACStatus = A",
+      "condicion_maestra": "C02",
       "reevaluable": true,
-      "hallazgo": "El estado del MAC es distinto de Aprobado",
+      "hallazgo": "Cliente no posee pagarés suficientes para garantizar la cartera vigente antes del curse",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "estado del MAC ≠ A",
-          "disposicion": "rechazado"
+          "condicion": "no pagarés suficientes",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Operaciones",
+          "area_aprobacion": "Operaciones",
+          "aprobadores": [
+            "Andrés Mella · Operaciones",
+            "Super Administrador (ve todo)"
+          ]
         }
       ]
     },
     {
-      "n": 8,
-      "nombre": "Información financiera al día",
+      "n": 103,
+      "nombre": "C03 · Pagaré Vigente hasta 60 Días Post Último Vencimiento",
       "dominio": "Operaciones",
       "tipo": "MinimumViability",
-      "condicion_maestra": "$IVALastPeriod − $CurrentPeriod ≤ 2 meses",
+      "condicion_maestra": "C03",
       "reevaluable": true,
-      "hallazgo": "Cliente no posee sus IVAs actualizados",
+      "hallazgo": "Las garantías no cubren hasta 60 días posteriores al vencimiento del último documento",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "no pagaré que cubre 60d post-vencimiento",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Operaciones",
+          "area_aprobacion": "Operaciones",
+          "aprobadores": [
+            "Andrés Mella · Operaciones",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 104,
+      "nombre": "C04 · Información Financiera al Día",
+      "dominio": "Operaciones",
+      "tipo": "MinimumViability",
+      "condicion_maestra": "C04",
+      "reevaluable": true,
+      "hallazgo": "Cliente no posee su información de IVA actualizada (antigüedad mayor a 2 meses)",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
           "condicion": "no IVA al día",
-          "disposicion": "rechazado"
-        }
-      ]
-    },
-    {
-      "n": 9,
-      "nombre": "Artículo 85 vigente",
-      "dominio": "Operaciones",
-      "tipo": "MinimumViability",
-      "condicion_maestra": "$Art85DueDate ≥ hoy y existe",
-      "reevaluable": true,
-      "hallazgo": "Cliente no cuenta con información de artículo 85",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "no artículo 85 vigente",
-          "disposicion": "rechazado"
-        }
-      ]
-    },
-    {
-      "n": 10,
-      "nombre": "Ficha UAF vigente",
-      "dominio": "Comercial",
-      "tipo": "MinimumViability",
-      "condicion_maestra": "$UAFFormDueDate ≥ hoy y existe",
-      "reevaluable": true,
-      "hallazgo": "Cliente no cuenta con certificado UAF vigente",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "no ficha UAF vigente",
           "disposicion": "excepcion",
-          "nivel_requerido": 1,
-          "rol_aprobador": "Jefe de Grupo Comercial",
-          "area_aprobacion": "Comercial",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Operaciones",
+          "area_aprobacion": "Operaciones",
           "aprobadores": [
-            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Andrés Mella · Operaciones",
             "Super Administrador (ve todo)"
           ]
         }
       ]
     },
     {
-      "n": 11,
-      "nombre": "Contrato Marco vigente",
+      "n": 105,
+      "nombre": "C05 · Línea Cliente Nuevo",
       "dominio": "Riesgo",
-      "tipo": "MinimumViability",
-      "condicion_maestra": "$MainContractSignatureDate <> null",
+      "tipo": "ClientSegmentation",
+      "condicion_maestra": "C05",
       "reevaluable": true,
-      "hallazgo": "Cliente no cuenta con contrato marco firmado",
+      "hallazgo": "Cliente nuevo sin línea de crédito aprobada — requiere constitución de línea (Comité de Crédito)",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "no contrato marco firmado",
+          "condicion": "clienteNuevo",
           "disposicion": "excepcion",
-          "nivel_requerido": 3,
-          "rol_aprobador": "Gerente General",
-          "area_aprobacion": "Comercial",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
           "aprobadores": [
-            "Federico Diaz · Gerente General",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         }
       ]
     },
     {
-      "n": 12,
-      "nombre": "Deuda Morosa CMF Directa 30-90",
+      "n": 106,
+      "nombre": "C06 · Línea Extendida por Riesgo",
       "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $CMFMntDirectaMorosa30-90",
-      "reevaluable": false,
-      "hallazgo": "Cliente posee morosidades en CMF entre 30 y 90 días",
+      "tipo": "Conditions",
+      "condicion_maestra": "C06",
+      "reevaluable": true,
+      "hallazgo": "Operación utiliza tramo de línea extendida por Riesgo",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "morosidad CMF directa 30-90d = 0",
+          "condicion": "lineaExt",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 107,
+      "nombre": "C07 · Cupo Suficiente en Línea Aprobada por Comité",
+      "dominio": "Riesgo",
+      "tipo": "Conditions",
+      "condicion_maestra": "C07",
+      "reevaluable": true,
+      "hallazgo": "Cliente con cupo insuficiente en línea (operación fuera de línea)",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "cartera vigente+monto de la simulación≤línea de crédito aprobada",
           "disposicion": "aprobado"
         },
         {
           "orden": 2,
-          "condicion": "morosidad CMF directa 30-90d < $5M o morosidad CMF directa 30-90d < 5% de deuda CMF directa total",
+          "condicion": "cartera vigente+monto de la simulación≤110% de línea de crédito aprobada",
           "disposicion": "excepcion",
           "nivel_requerido": 2,
-          "rol_aprobador": "Gerente Comercial",
-          "area_aprobacion": "Comercial",
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
           "aprobadores": [
-            "Dante Montes · Gerente Comercial",
-            "Federico Diaz · Gerente General",
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         },
         {
           "orden": 3,
-          "condicion": "morosidad CMF directa 30-90d < $10M",
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 108,
+      "nombre": "C08 · Variación Negativa de Venta Mensual",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "C08",
+      "reevaluable": true,
+      "hallazgo": "Cliente presenta una caída relevante de su venta mensual",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "varVenta≥-20",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "varVenta≥-40",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 109,
+      "nombre": "C09 · Segmento y Nota de Comportamiento Cliente",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "C09",
+      "reevaluable": true,
+      "hallazgo": "Nota de comportamiento del cliente bajo el umbral mínimo (3,7)",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "notaCliente≥3.7",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 110,
+      "nombre": "C10 · Deuda Morosa CMF Directa 30–90",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "C10",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee morosidades directas en CMF entre 30 y 90 días",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "v[k]<10*MM o v[k]<0.10*v[tot]",
           "disposicion": "excepcion",
           "nivel_requerido": 3,
-          "rol_aprobador": "Gerente General",
-          "area_aprobacion": "Comercial",
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
           "aprobadores": [
-            "Federico Diaz · Gerente General",
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         },
@@ -240,133 +340,300 @@
           "area_aprobacion": "Riesgo",
           "aprobadores": [
             "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         }
       ]
     },
     {
-      "n": 13,
-      "nombre": "Deuda Morosa CMF Directa 90-180",
+      "n": 111,
+      "nombre": "C11 · Deuda Morosa CMF Directa 90–180",
       "dominio": "Riesgo",
       "tipo": "Behaviour",
-      "condicion_maestra": "If $MntCMFDirectaMorosas90-180 > 0",
+      "condicion_maestra": "C11",
       "reevaluable": false,
-      "hallazgo": "Cliente posee morosidades en CMF entre 90 y 180 días",
+      "hallazgo": "Cliente posee morosidades directas en CMF entre 90 y 180 días",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "morosidad CMF directa 90-180d > 0",
-          "disposicion": "rechazado"
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "v[k]<10*MM o v[k]<0.10*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
         }
       ]
     },
     {
-      "n": 14,
-      "nombre": "Deuda Morosa CMF Directa 180-3A",
+      "n": 112,
+      "nombre": "C12 · Deuda Morosa CMF Directa 180d–3A",
       "dominio": "Riesgo",
       "tipo": "Behaviour",
-      "condicion_maestra": "If $MntCMFDirectaMorosas180-3Y > 0",
+      "condicion_maestra": "C12",
       "reevaluable": false,
-      "hallazgo": "Cliente posee morosidades en CMF entre 180 días y 3 años",
+      "hallazgo": "Cliente posee morosidades directas en CMF entre 180 días y 3 años",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "morosidad CMF directa 180d-3a > 0",
-          "disposicion": "rechazado"
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
         }
       ]
     },
     {
-      "n": 15,
-      "nombre": "Deuda Castigada CMF Directa",
+      "n": 113,
+      "nombre": "C13 · Deuda Castigada CMF Directa",
       "dominio": "Riesgo",
       "tipo": "Behaviour",
-      "condicion_maestra": "If $MntCMFDirectaCastigada > 0",
+      "condicion_maestra": "C13",
       "reevaluable": false,
-      "hallazgo": "Cliente posee castigos en su deuda CMF directa",
+      "hallazgo": "Cliente posee castigos en su deuda directa CMF",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "deuda CMF directa castigada > 0",
-          "disposicion": "rechazado"
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
         }
       ]
     },
     {
-      "n": 16,
-      "nombre": "Deuda Vencida CMF Indirecta",
+      "n": 114,
+      "nombre": "C14 · Deuda Vencida CMF Indirecta",
       "dominio": "Riesgo",
       "tipo": "Behaviour",
-      "condicion_maestra": "If $MntCMFIndirectaVencida > 0",
+      "condicion_maestra": "C14",
       "reevaluable": false,
       "hallazgo": "Cliente posee deuda CMF indirecta vencida",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "deuda CMF indirecta vencida > 0",
-          "disposicion": "rechazado"
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "v[k]<10*MM o v[k]<0.10*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
         }
       ]
     },
     {
-      "n": 17,
-      "nombre": "Deuda Castigada CMF Indirecta",
+      "n": 115,
+      "nombre": "C15 · Deuda Castigada CMF Indirecta",
       "dominio": "Riesgo",
       "tipo": "Behaviour",
-      "condicion_maestra": "If $MntCMFIndirectaCastigada > 0",
+      "condicion_maestra": "C15",
       "reevaluable": false,
       "hallazgo": "Cliente posee deuda CMF indirecta castigada",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "deuda CMF indirecta castigada > 0",
-          "disposicion": "rechazado"
-        }
-      ]
-    },
-    {
-      "n": 18,
-      "nombre": "Deuda Morosa CMF Leasing",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $CMFMntLeasingMorosa",
-      "reevaluable": false,
-      "hallazgo": "Cliente posee deuda de Leasing CMF en mora",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "mora de leasing CMF = 0",
+          "condicion": "v[k]=0",
           "disposicion": "aprobado"
         },
         {
           "orden": 2,
-          "condicion": "mora de leasing CMF < $5M o mora de leasing CMF < 5% de deuda CMF directa total",
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
           "disposicion": "excepcion",
-          "nivel_requerido": 2,
-          "rol_aprobador": "Gerente Comercial",
-          "area_aprobacion": "Comercial",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
           "aprobadores": [
-            "Dante Montes · Gerente Comercial",
-            "Federico Diaz · Gerente General",
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         },
         {
           "orden": 3,
-          "condicion": "mora de leasing CMF < $10M",
+          "condicion": "v[k]<10*MM o v[k]<0.10*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 116,
+      "nombre": "C16 · Deuda Morosa CMF Leasing",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "C16",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee deuda de leasing CMF en mora",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "v[k]<10*MM o v[k]<0.10*v[tot]",
           "disposicion": "excepcion",
           "nivel_requerido": 3,
-          "rol_aprobador": "Gerente General",
-          "area_aprobacion": "Comercial",
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
           "aprobadores": [
-            "Federico Diaz · Gerente General",
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         },
@@ -379,112 +646,185 @@
           "area_aprobacion": "Riesgo",
           "aprobadores": [
             "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         }
       ]
     },
     {
-      "n": 19,
-      "nombre": "Deuda Morosa Equifax",
+      "n": 117,
+      "nombre": "C17 · Deuda Morosa Equifax (DICOM)",
       "dominio": "Riesgo",
       "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $EFXMntDeudaMorosa",
+      "condicion_maestra": "C17",
       "reevaluable": false,
-      "hallazgo": "Cliente posee morosidades en Equifax (30-60 días)",
+      "hallazgo": "Cliente posee morosidades en Equifax",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "mora en Equifax = 0",
+          "condicion": "mora en Equifax=0",
           "disposicion": "aprobado"
         },
         {
           "orden": 2,
-          "condicion": "cualquier otro caso",
+          "condicion": "mora en Equifax≤5*MM",
           "disposicion": "excepcion",
           "nivel_requerido": 2,
-          "rol_aprobador": "Gerente Comercial",
-          "area_aprobacion": "Comercial",
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
           "aprobadores": [
-            "Dante Montes · Gerente Comercial",
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         }
       ]
     },
     {
-      "n": 20,
-      "nombre": "Deuda Morosa ACHEF 60-90",
+      "n": 118,
+      "nombre": "C18 · Protestos Equifax (DICOM)",
       "dominio": "Riesgo",
       "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $MntACHEFMorosa60-90",
+      "condicion_maestra": "C18",
+      "reevaluable": false,
+      "hallazgo": "Cliente posee protestos en Equifax",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "protestos en Equifax=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "protestos en Equifax≤5*MM",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 119,
+      "nombre": "C19 · Deuda Morosa ACHEF 60–90",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "C19",
       "reevaluable": false,
       "hallazgo": "Cliente posee morosidades en ACHEF entre 60 y 90 días",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "mora ACHEF 60-90d = 0",
+          "condicion": "v[k]=0",
           "disposicion": "aprobado"
         },
         {
           "orden": 2,
-          "condicion": "mora ACHEF 60-90d ≤ $25M",
+          "condicion": "v[k]≤25*MM",
           "disposicion": "excepcion",
           "nivel_requerido": 2,
-          "rol_aprobador": "Gerente Comercial",
-          "area_aprobacion": "Comercial",
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
           "aprobadores": [
-            "Dante Montes · Gerente Comercial",
-            "Federico Diaz · Gerente General",
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         },
         {
           "orden": 3,
-          "condicion": "cualquier otro caso",
+          "condicion": "v[k]≤50*MM",
           "disposicion": "excepcion",
           "nivel_requerido": 3,
-          "rol_aprobador": "Gerente General",
-          "area_aprobacion": "Comercial",
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
           "aprobadores": [
-            "Federico Diaz · Gerente General",
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         }
       ]
     },
     {
-      "n": 21,
-      "nombre": "Deuda Morosa ACHEF 90-180",
+      "n": 120,
+      "nombre": "C20 · Deuda Morosa ACHEF 90–180",
       "dominio": "Riesgo",
       "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $MntACHEFMorosa90-180",
+      "condicion_maestra": "C20",
       "reevaluable": false,
       "hallazgo": "Cliente posee morosidades en ACHEF entre 90 y 180 días",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "mora ACHEF 90-180d = 0",
+          "condicion": "v[k]=0",
           "disposicion": "aprobado"
         },
         {
           "orden": 2,
-          "condicion": "mora ACHEF 90-180d ≤ $25M",
+          "condicion": "v[k]≤25*MM",
           "disposicion": "excepcion",
           "nivel_requerido": 3,
-          "rol_aprobador": "Gerente General",
-          "area_aprobacion": "Comercial",
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
           "aprobadores": [
-            "Federico Diaz · Gerente General",
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         },
         {
           "orden": 3,
-          "condicion": "mora ACHEF 90-180d ≤ $50M",
+          "condicion": "v[k]≤50*MM",
           "disposicion": "excepcion",
           "nivel_requerido": 4,
           "rol_aprobador": "Jefe de Riesgo",
@@ -510,18 +850,18 @@
       ]
     },
     {
-      "n": 22,
-      "nombre": "Deuda Morosa ACHEF +180",
+      "n": 121,
+      "nombre": "C21 · Deuda Morosa ACHEF +180",
       "dominio": "Riesgo",
       "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $MntACHEFMorosa>180",
+      "condicion_maestra": "C21",
       "reevaluable": false,
       "hallazgo": "Cliente posee morosidades en ACHEF mayores a 180 días",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "mora ACHEF +180d = 0",
+          "condicion": "mora ACHEF +180d=0",
           "disposicion": "aprobado"
         },
         {
@@ -539,156 +879,49 @@
       ]
     },
     {
-      "n": 23,
-      "nombre": "Protestos Vigentes Banco BICE",
+      "n": 122,
+      "nombre": "C22 · Infracciones Laborales",
       "dominio": "Riesgo",
       "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $MntBICEProtestosVgte",
-      "reevaluable": true,
-      "hallazgo": "Cliente posee protestos vigentes (Banco BICE)",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "protestos vigentes BICE = 0",
-          "disposicion": "aprobado"
-        },
-        {
-          "orden": 2,
-          "condicion": "protestos vigentes BICE ≤ $20M",
-          "disposicion": "excepcion",
-          "nivel_requerido": 3,
-          "rol_aprobador": "Gerente General",
-          "area_aprobacion": "Comercial",
-          "aprobadores": [
-            "Federico Diaz · Gerente General",
-            "Super Administrador (ve todo)"
-          ]
-        },
-        {
-          "orden": 3,
-          "condicion": "protestos vigentes BICE ≤ $30M",
-          "disposicion": "excepcion",
-          "nivel_requerido": 4,
-          "rol_aprobador": "Jefe de Riesgo",
-          "area_aprobacion": "Riesgo",
-          "aprobadores": [
-            "Carolina Vergara · Jefe de Riesgo",
-            "Paula Reyes · Subgerente de Riesgo",
-            "Super Administrador (ve todo)"
-          ]
-        },
-        {
-          "orden": 4,
-          "condicion": "cualquier otro caso",
-          "disposicion": "excepcion",
-          "nivel_requerido": 5,
-          "rol_aprobador": "Subgerente de Riesgo",
-          "area_aprobacion": "Riesgo",
-          "aprobadores": [
-            "Paula Reyes · Subgerente de Riesgo",
-            "Super Administrador (ve todo)"
-          ]
-        }
-      ]
-    },
-    {
-      "n": 24,
-      "nombre": "Protestos Internos Banco BICE",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $MntBICEProtestosInterno",
-      "reevaluable": true,
-      "hallazgo": "Cliente posee protestos internos (Banco BICE)",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "protestos internos BICE = 0",
-          "disposicion": "aprobado"
-        },
-        {
-          "orden": 2,
-          "condicion": "protestos internos BICE ≤ $20M",
-          "disposicion": "excepcion",
-          "nivel_requerido": 3,
-          "rol_aprobador": "Gerente General",
-          "area_aprobacion": "Comercial",
-          "aprobadores": [
-            "Federico Diaz · Gerente General",
-            "Super Administrador (ve todo)"
-          ]
-        },
-        {
-          "orden": 3,
-          "condicion": "protestos internos BICE ≤ $30M",
-          "disposicion": "excepcion",
-          "nivel_requerido": 4,
-          "rol_aprobador": "Jefe de Riesgo",
-          "area_aprobacion": "Riesgo",
-          "aprobadores": [
-            "Carolina Vergara · Jefe de Riesgo",
-            "Paula Reyes · Subgerente de Riesgo",
-            "Super Administrador (ve todo)"
-          ]
-        },
-        {
-          "orden": 4,
-          "condicion": "cualquier otro caso",
-          "disposicion": "excepcion",
-          "nivel_requerido": 5,
-          "rol_aprobador": "Subgerente de Riesgo",
-          "area_aprobacion": "Riesgo",
-          "aprobadores": [
-            "Paula Reyes · Subgerente de Riesgo",
-            "Super Administrador (ve todo)"
-          ]
-        }
-      ]
-    },
-    {
-      "n": 25,
-      "nombre": "Infracciones Laborales",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $MntInfraccionesLaborales",
+      "condicion_maestra": "C22",
       "reevaluable": false,
-      "hallazgo": "Cliente posee infracciones laborales",
+      "hallazgo": "Cliente posee infracciones laborales en los últimos 12 meses",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "infracciones laborales = 0",
+          "condicion": "infracciones laborales=0",
           "disposicion": "aprobado"
         },
         {
           "orden": 2,
-          "condicion": "infracciones laborales ≤ $10M",
+          "condicion": "infracciones laborales≤10*MM",
           "disposicion": "excepcion",
           "nivel_requerido": 2,
-          "rol_aprobador": "Gerente Comercial",
-          "area_aprobacion": "Comercial",
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
           "aprobadores": [
-            "Dante Montes · Gerente Comercial",
-            "Federico Diaz · Gerente General",
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         },
         {
           "orden": 3,
-          "condicion": "infracciones laborales ≤ $25M",
+          "condicion": "infracciones laborales≤25*MM",
           "disposicion": "excepcion",
           "nivel_requerido": 3,
-          "rol_aprobador": "Gerente General",
-          "area_aprobacion": "Comercial",
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
           "aprobadores": [
-            "Federico Diaz · Gerente General",
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         },
         {
           "orden": 4,
-          "condicion": "infracciones laborales ≤ $50M",
+          "condicion": "infracciones laborales≤50*MM",
           "disposicion": "excepcion",
           "nivel_requerido": 4,
           "rol_aprobador": "Jefe de Riesgo",
@@ -714,42 +947,68 @@
       ]
     },
     {
-      "n": 26,
-      "nombre": "Morosidad Banco BICE",
+      "n": 123,
+      "nombre": "C23 · Mora Interna Directa >25 Días",
       "dominio": "Riesgo",
       "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $MntMoraBICE",
-      "reevaluable": false,
-      "hallazgo": "Cliente posee morosidades con Banco BICE",
+      "condicion_maestra": "C23",
+      "reevaluable": true,
+      "hallazgo": "Cliente posee mora interna directa mayor a 25 días",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "mora con BICE = 0",
+          "condicion": "v[k]>0",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 124,
+      "nombre": "C24 · Mora Interna Directa 30–90",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "C24",
+      "reevaluable": true,
+      "hallazgo": "Cliente posee mora interna directa entre 30 y 90 días",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]=0",
           "disposicion": "aprobado"
         },
         {
           "orden": 2,
-          "condicion": "mora con BICE ≤ $5M o mora con BICE < 5% de deuda total con BICE",
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
           "disposicion": "excepcion",
           "nivel_requerido": 2,
-          "rol_aprobador": "Gerente Comercial",
-          "area_aprobacion": "Comercial",
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
           "aprobadores": [
-            "Dante Montes · Gerente Comercial",
-            "Federico Diaz · Gerente General",
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         },
         {
           "orden": 3,
-          "condicion": "mora con BICE ≤ $10M o mora con BICE ≤ 10% de deuda total con BICE",
+          "condicion": "v[k]<10*MM o v[k]<0.10*v[tot]",
           "disposicion": "excepcion",
           "nivel_requerido": 3,
-          "rol_aprobador": "Gerente General",
-          "area_aprobacion": "Comercial",
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
           "aprobadores": [
-            "Federico Diaz · Gerente General",
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         },
@@ -762,48 +1021,50 @@
           "area_aprobacion": "Riesgo",
           "aprobadores": [
             "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         }
       ]
     },
     {
-      "n": 27,
-      "nombre": "Morosidad BICE Factoring",
+      "n": 125,
+      "nombre": "C25 · Mora Interna Directa 90–180",
       "dominio": "Riesgo",
       "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $MntMoraBICEFactoring",
-      "reevaluable": false,
-      "hallazgo": "Cliente posee morosidades con BICE Factoring",
+      "condicion_maestra": "C25",
+      "reevaluable": true,
+      "hallazgo": "Cliente posee mora interna directa entre 90 y 180 días",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "mora con BICE Factoring = 0",
+          "condicion": "v[k]=0",
           "disposicion": "aprobado"
         },
         {
           "orden": 2,
-          "condicion": "mora con BICE Factoring ≤ $5M o mora con BICE Factoring < 5% de deuda total con BICE",
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
           "disposicion": "excepcion",
-          "nivel_requerido": 2,
-          "rol_aprobador": "Gerente Comercial",
-          "area_aprobacion": "Comercial",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
           "aprobadores": [
-            "Dante Montes · Gerente Comercial",
-            "Federico Diaz · Gerente General",
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         },
         {
           "orden": 3,
-          "condicion": "mora con BICE Factoring ≤ $10M o mora con BICE Factoring ≤ 10% de deuda total con BICE",
+          "condicion": "v[k]<10*MM o v[k]<0.10*v[tot]",
           "disposicion": "excepcion",
-          "nivel_requerido": 3,
-          "rol_aprobador": "Gerente General",
-          "area_aprobacion": "Comercial",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
           "aprobadores": [
-            "Federico Diaz · Gerente General",
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         },
@@ -811,364 +1072,41 @@
           "orden": 4,
           "condicion": "cualquier otro caso",
           "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 126,
+      "nombre": "C26 · Mora Interna Directa 180d–3A",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "C26",
+      "reevaluable": true,
+      "hallazgo": "Cliente posee mora interna directa entre 180 días y 3 años",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
+          "disposicion": "excepcion",
           "nivel_requerido": 4,
           "rol_aprobador": "Jefe de Riesgo",
           "area_aprobacion": "Riesgo",
           "aprobadores": [
             "Carolina Vergara · Jefe de Riesgo",
-            "Super Administrador (ve todo)"
-          ]
-        }
-      ]
-    },
-    {
-      "n": 28,
-      "nombre": "Deuda Vigente TGR",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "$MntDeudaVigenteTGR = 0 → Aprobado",
-      "reevaluable": false,
-      "hallazgo": "Existe deuda vigente en TGR (último mes)",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "deuda vigente TGR > 0",
-          "disposicion": "rechazado"
-        }
-      ]
-    },
-    {
-      "n": 29,
-      "nombre": "Deuda Morosa TGR",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "$MntDeudaMorosoTGR = 0 → Aprobado",
-      "reevaluable": false,
-      "hallazgo": "Existe deuda morosa en TGR (último mes)",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "deuda morosa TGR > 0",
-          "disposicion": "rechazado"
-        }
-      ]
-    },
-    {
-      "n": 30,
-      "nombre": "Cobranza Administrativa TGR",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "$MntCobranzaAdmTGR = 0 → Aprobado",
-      "reevaluable": false,
-      "hallazgo": "Existe cobranza administrativa en TGR (último mes)",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "cobranza administrativa TGR > 0",
-          "disposicion": "rechazado"
-        }
-      ]
-    },
-    {
-      "n": 31,
-      "nombre": "Cobranza Judicial TGR",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "$MntCobranzaJudTGR = 0 → Aprobado",
-      "reevaluable": false,
-      "hallazgo": "Existe cobranza judicial en TGR (último mes)",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "cobranza judicial TGR > 0",
-          "disposicion": "rechazado"
-        }
-      ]
-    },
-    {
-      "n": 32,
-      "nombre": "Convenios de Deuda TGR",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "$MntConveniosTGR = 0 → Aprobado",
-      "reevaluable": false,
-      "hallazgo": "Existen convenios de deuda en TGR (último mes)",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "convenios de deuda TGR > 0",
-          "disposicion": "rechazado"
-        }
-      ]
-    },
-    {
-      "n": 33,
-      "nombre": "Cuotas de Convenios Impagas TGR",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "$MntConveniosCuotasImpagasTGR = 0 → Aprobado",
-      "reevaluable": false,
-      "hallazgo": "Existen convenios con cuotas impagas en TGR (último mes)",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "cuotas de convenio impagas TGR > 0",
-          "disposicion": "rechazado"
-        }
-      ]
-    },
-    {
-      "n": 34,
-      "nombre": "Alta Concentración de Ventas",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $%ConcentracionVentaL6",
-      "reevaluable": false,
-      "hallazgo": "Alta concentración de ventas en un deudor",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "concentración de ventas (%) ≤ 50",
-          "disposicion": "aprobado"
-        },
-        {
-          "orden": 2,
-          "condicion": "cualquier otro caso",
-          "disposicion": "excepcion",
-          "nivel_requerido": 2,
-          "rol_aprobador": "Gerente Comercial",
-          "area_aprobacion": "Comercial",
-          "aprobadores": [
-            "Dante Montes · Gerente Comercial",
-            "Super Administrador (ve todo)"
-          ]
-        }
-      ]
-    },
-    {
-      "n": 35,
-      "nombre": "Venta Cruzada Cliente-Proveedor",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $%VentaCruzadaL6",
-      "reevaluable": false,
-      "hallazgo": "Alta venta cruzada cliente-proveedor",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "venta cruzada (%) ≤ 30",
-          "disposicion": "aprobado"
-        },
-        {
-          "orden": 2,
-          "condicion": "venta cruzada (%) ≤ 60",
-          "disposicion": "excepcion",
-          "nivel_requerido": 2,
-          "rol_aprobador": "Gerente Comercial",
-          "area_aprobacion": "Comercial",
-          "aprobadores": [
-            "Dante Montes · Gerente Comercial",
-            "Super Administrador (ve todo)"
-          ]
-        },
-        {
-          "orden": 3,
-          "condicion": "cualquier otro caso",
-          "disposicion": "rechazado"
-        }
-      ]
-    },
-    {
-      "n": 36,
-      "nombre": "Tasa de NC Alta",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $%NotaCreditoL6",
-      "reevaluable": false,
-      "hallazgo": "Tasa de notas de crédito elevada",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "tasa de notas de crédito (%) ≤ 8",
-          "disposicion": "aprobado"
-        },
-        {
-          "orden": 2,
-          "condicion": "tasa de notas de crédito (%) ≤ 30",
-          "disposicion": "excepcion",
-          "nivel_requerido": 2,
-          "rol_aprobador": "Gerente Comercial",
-          "area_aprobacion": "Comercial",
-          "aprobadores": [
-            "Dante Montes · Gerente Comercial",
-            "Super Administrador (ve todo)"
-          ]
-        },
-        {
-          "orden": 3,
-          "condicion": "cualquier otro caso",
-          "disposicion": "rechazado"
-        }
-      ]
-    },
-    {
-      "n": 37,
-      "nombre": "Tasa de Reclamos Alta",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $%ReclamoL6",
-      "reevaluable": false,
-      "hallazgo": "Tasa de reclamos elevada",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "tasa de reclamos (%) ≤ 3",
-          "disposicion": "aprobado"
-        },
-        {
-          "orden": 2,
-          "condicion": "tasa de reclamos (%) ≤ 20",
-          "disposicion": "excepcion",
-          "nivel_requerido": 2,
-          "rol_aprobador": "Gerente Comercial",
-          "area_aprobacion": "Comercial",
-          "aprobadores": [
-            "Dante Montes · Gerente Comercial",
-            "Super Administrador (ve todo)"
-          ]
-        },
-        {
-          "orden": 3,
-          "condicion": "cualquier otro caso",
-          "disposicion": "rechazado"
-        }
-      ]
-    },
-    {
-      "n": 38,
-      "nombre": "Ratio Venta vs. Monto Cedido Alto",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $%RatioCesion-Venta",
-      "reevaluable": false,
-      "hallazgo": "Ratio monto cedido vs. ventas elevado",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "ratio cesión/venta (%) ≤ 3",
-          "disposicion": "aprobado"
-        },
-        {
-          "orden": 2,
-          "condicion": "ratio cesión/venta (%) ≤ 20",
-          "disposicion": "excepcion",
-          "nivel_requerido": 2,
-          "rol_aprobador": "Gerente Comercial",
-          "area_aprobacion": "Comercial",
-          "aprobadores": [
-            "Dante Montes · Gerente Comercial",
-            "Super Administrador (ve todo)"
-          ]
-        },
-        {
-          "orden": 3,
-          "condicion": "cualquier otro caso",
-          "disposicion": "rechazado"
-        }
-      ]
-    },
-    {
-      "n": 39,
-      "nombre": "Alto Número de Factorings Operando",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $NroFactoringsLM",
-      "reevaluable": false,
-      "hallazgo": "Alto número de factorings operando",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "n° de factorings operando ≤ 3",
-          "disposicion": "aprobado"
-        },
-        {
-          "orden": 2,
-          "condicion": "n° de factorings operando ≤ 8",
-          "disposicion": "excepcion",
-          "nivel_requerido": 2,
-          "rol_aprobador": "Gerente Comercial",
-          "area_aprobacion": "Comercial",
-          "aprobadores": [
-            "Dante Montes · Gerente Comercial",
-            "Super Administrador (ve todo)"
-          ]
-        },
-        {
-          "orden": 3,
-          "condicion": "cualquier otro caso",
-          "disposicion": "rechazado"
-        }
-      ]
-    },
-    {
-      "n": 40,
-      "nombre": "Alta Cesión a Factorings Pequeños",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $%FactoringPrivadoPequeñoLM",
-      "reevaluable": false,
-      "hallazgo": "Alta cesión a factorings privados pequeños",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "% cesión a factorings pequeños ≤ 35",
-          "disposicion": "aprobado"
-        },
-        {
-          "orden": 2,
-          "condicion": "cualquier otro caso",
-          "disposicion": "rechazado"
-        }
-      ]
-    },
-    {
-      "n": 41,
-      "nombre": "Deuda Morosa Equifax (tier)",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $EFXMntDeudaMorosa",
-      "reevaluable": false,
-      "hallazgo": "Cliente posee morosidades en Equifax",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "mora en Equifax = 0",
-          "disposicion": "aprobado"
-        },
-        {
-          "orden": 2,
-          "condicion": "mora en Equifax ≤ $5M",
-          "disposicion": "excepcion",
-          "nivel_requerido": 2,
-          "rol_aprobador": "Gerente Comercial",
-          "area_aprobacion": "Comercial",
-          "aprobadores": [
-            "Dante Montes · Gerente Comercial",
-            "Federico Diaz · Gerente General",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         },
@@ -1176,39 +1114,196 @@
           "orden": 3,
           "condicion": "cualquier otro caso",
           "disposicion": "excepcion",
-          "nivel_requerido": 3,
-          "rol_aprobador": "Gerente General",
-          "area_aprobacion": "Comercial",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
           "aprobadores": [
-            "Federico Diaz · Gerente General",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         }
       ]
     },
     {
-      "n": 42,
-      "nombre": "Protestos Equifax",
+      "n": 127,
+      "nombre": "C27 · Deuda Vigente TGR",
       "dominio": "Riesgo",
       "tipo": "Behaviour",
-      "condicion_maestra": "Risk Tier $EFXMntProtesto",
+      "condicion_maestra": "C27",
       "reevaluable": true,
-      "hallazgo": "Cliente posee protestos en Equifax",
+      "hallazgo": "Cliente posee deuda vigente en TGR",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "protestos en Equifax = 0",
+          "condicion": "v[k]>0",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 128,
+      "nombre": "C28 · Deuda Morosa TGR",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "C28",
+      "reevaluable": true,
+      "hallazgo": "Cliente posee deuda morosa en TGR",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]>0",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 129,
+      "nombre": "C29 · Cobranza Administrativa TGR",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "C29",
+      "reevaluable": true,
+      "hallazgo": "Cliente registra cobranza administrativa en TGR",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]>0",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 130,
+      "nombre": "C30 · Cobranza Judicial TGR",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "C30",
+      "reevaluable": false,
+      "hallazgo": "Cliente registra cobranza judicial en TGR (bloqueo firme)",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]>0",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 131,
+      "nombre": "C31 · Convenios de Deuda TGR",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "C31",
+      "reevaluable": false,
+      "hallazgo": "Cliente mantiene convenios de deuda con TGR (bloqueo firme)",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]>0",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 132,
+      "nombre": "C32 · Cuotas de Convenios Impagas TGR",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "C32",
+      "reevaluable": false,
+      "hallazgo": "Cliente mantiene convenios TGR con cuotas impagas (bloqueo firme)",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]>0",
+          "disposicion": "rechazado"
+        }
+      ]
+    },
+    {
+      "n": 133,
+      "nombre": "C33 · Alta Concentración de Ventas",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "C33",
+      "reevaluable": true,
+      "hallazgo": "Cliente concentra más del 50% de su venta en un solo deudor",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "concentración de ventas (%)≤50",
           "disposicion": "aprobado"
         },
         {
           "orden": 2,
-          "condicion": "protestos en Equifax ≤ $5M",
+          "condicion": "cualquier otro caso",
           "disposicion": "excepcion",
           "nivel_requerido": 2,
-          "rol_aprobador": "Gerente Comercial",
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 134,
+      "nombre": "C34 · Venta Cruzada Cliente–Proveedor",
+      "dominio": "Comercial",
+      "tipo": "Behaviour",
+      "condicion_maestra": "C34",
+      "reevaluable": true,
+      "hallazgo": "Cliente presenta venta cruzada relevante con alguno de sus deudores",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]≤u1",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]≤u2",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
           "area_aprobacion": "Comercial",
           "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
             "Dante Montes · Gerente Comercial",
             "Federico Diaz · Gerente General",
             "Super Administrador (ve todo)"
@@ -1218,10 +1313,11 @@
           "orden": 3,
           "condicion": "cualquier otro caso",
           "disposicion": "excepcion",
-          "nivel_requerido": 3,
-          "rol_aprobador": "Gerente General",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
           "area_aprobacion": "Comercial",
           "aprobadores": [
+            "Dante Montes · Gerente Comercial",
             "Federico Diaz · Gerente General",
             "Super Administrador (ve todo)"
           ]
@@ -1229,23 +1325,43 @@
       ]
     },
     {
-      "n": 43,
-      "nombre": "Mala clasificación no suscrito",
-      "dominio": "Riesgo",
+      "n": 135,
+      "nombre": "C35 · Tasa de Notas de Crédito Alta",
+      "dominio": "Comercial",
       "tipo": "Behaviour",
-      "condicion_maestra": "$ClientClass in (A4..B4) and $SyncSII is False",
+      "condicion_maestra": "C35",
       "reevaluable": true,
-      "hallazgo": "Clasificación menor a A4 y no sincronizado con SII",
+      "hallazgo": "Cliente presenta una tasa de notas de crédito elevada",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "clase del cliente está en {A4,A5,A6,B1,B2,B3,B4} y no sincronizado con SII",
+          "condicion": "v[k]≤u1",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]≤u2",
           "disposicion": "excepcion",
-          "nivel_requerido": 3,
-          "rol_aprobador": "Gerente General",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
           "area_aprobacion": "Comercial",
           "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
             "Federico Diaz · Gerente General",
             "Super Administrador (ve todo)"
           ]
@@ -1253,293 +1369,1589 @@
       ]
     },
     {
-      "n": 44,
-      "nombre": "Documentos en Cartera Reclamados",
-      "dominio": "Riesgo",
+      "n": 136,
+      "nombre": "C36 · Tasa de Reclamos Alta",
+      "dominio": "Comercial",
       "tipo": "Behaviour",
-      "condicion_maestra": "If $MntCarteraBICEFactoringReclamada > 0 → Excepciona N1",
+      "condicion_maestra": "C36",
+      "reevaluable": true,
+      "hallazgo": "Cliente presenta una tasa de facturas reclamadas elevada",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]≤u1",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]≤u2",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 137,
+      "nombre": "C37 · Ratio Monto Cedido vs. Venta Total",
+      "dominio": "Comercial",
+      "tipo": "Behaviour",
+      "condicion_maestra": "C37",
+      "reevaluable": true,
+      "hallazgo": "Cliente presenta un alto porcentaje de su venta cedida a factoring",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]≤u1",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]≤u2",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 138,
+      "nombre": "C38 · Alto Número de Factorings Operando",
+      "dominio": "Comercial",
+      "tipo": "Behaviour",
+      "condicion_maestra": "C38",
+      "reevaluable": true,
+      "hallazgo": "Cliente opera con un número elevado de factorings",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]≤u1",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]≤u2",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 139,
+      "nombre": "C39 · Alta Cesión a Factorings Pequeños",
+      "dominio": "Comercial",
+      "tipo": "Behaviour",
+      "condicion_maestra": "C39",
+      "reevaluable": true,
+      "hallazgo": "Cliente cede una alta proporción a factorings privados pequeños",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "% cesión a factorings pequeños≤35",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 140,
+      "nombre": "C40 · Documentos en Cartera Reclamados",
+      "dominio": "Comercial",
+      "tipo": "Conditions",
+      "condicion_maestra": "C40",
       "reevaluable": true,
       "hallazgo": "Cartera vigente con documentos reclamados por el deudor",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "documentos reclamados en cartera > 0",
+          "condicion": "v[k]>0",
           "disposicion": "excepcion",
           "nivel_requerido": 1,
           "rol_aprobador": "Jefe de Grupo Comercial",
           "area_aprobacion": "Comercial",
           "aprobadores": [
             "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
             "Super Administrador (ve todo)"
           ]
         }
       ]
     },
     {
-      "n": 45,
-      "nombre": "Documentos en Cartera con NC",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "If $MntconBICEFactoringNC > 0 → Excepciona N1",
+      "n": 141,
+      "nombre": "C41 · Documentos en Cartera con Nota de Crédito",
+      "dominio": "Comercial",
+      "tipo": "Conditions",
+      "condicion_maestra": "C41",
       "reevaluable": true,
       "hallazgo": "Cartera vigente con documentos con notas de crédito",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "documentos con nota de crédito en cartera > 0",
+          "condicion": "v[k]>0",
           "disposicion": "excepcion",
           "nivel_requerido": 1,
           "rol_aprobador": "Jefe de Grupo Comercial",
           "area_aprobacion": "Comercial",
           "aprobadores": [
             "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
             "Super Administrador (ve todo)"
           ]
         }
       ]
     },
     {
-      "n": 46,
-      "nombre": "Documentos en Cartera con Mora",
-      "dominio": "Riesgo",
-      "tipo": "Behaviour",
-      "condicion_maestra": "If $MntCarteraBICEFactoringMoroso > 0 → Excepciona N1",
+      "n": 142,
+      "nombre": "C42 · Documentos en Cartera con Mora",
+      "dominio": "Comercial",
+      "tipo": "Conditions",
+      "condicion_maestra": "C42",
       "reevaluable": true,
-      "hallazgo": "Cartera vigente con documentos en mora",
+      "hallazgo": "Cartera vigente con documentos con mora",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "documentos en mora en cartera > 0",
+          "condicion": "v[k]>0",
           "disposicion": "excepcion",
           "nivel_requerido": 1,
           "rol_aprobador": "Jefe de Grupo Comercial",
           "area_aprobacion": "Comercial",
           "aprobadores": [
             "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
             "Super Administrador (ve todo)"
           ]
         }
       ]
     },
     {
-      "n": 47,
-      "nombre": "Existencia de CxC pendientes",
+      "n": 143,
+      "nombre": "C43 · Cuentas por Cobrar Pendientes",
       "dominio": "Comercial",
       "tipo": "Conditions",
-      "condicion_maestra": "If $MntCarteraBICEFactoringCxC > 0 → Excepciona N1",
+      "condicion_maestra": "C43",
       "reevaluable": true,
       "hallazgo": "Cliente posee cuentas por cobrar pendientes de liquidar",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "cuentas por cobrar pendientes > 0",
+          "condicion": "v[k]>0",
           "disposicion": "excepcion",
           "nivel_requerido": 1,
           "rol_aprobador": "Jefe de Grupo Comercial",
           "area_aprobacion": "Comercial",
           "aprobadores": [
             "Sofía Herrera · Jefe de Grupo Comercial",
-            "Super Administrador (ve todo)"
-          ]
-        }
-      ]
-    },
-    {
-      "n": 48,
-      "nombre": "Pagaré Monto Suficiente Cartera",
-      "dominio": "Operaciones",
-      "tipo": "Conditions",
-      "condicion_maestra": "Sum($MntPagares) ≥ $MntCartera + $MntSimulacion",
-      "reevaluable": true,
-      "hallazgo": "Cliente no posee pagarés suficientes para garantizar la cartera",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "no pagarés suficientes",
-          "disposicion": "excepcion",
-          "nivel_requerido": 1,
-          "rol_aprobador": "Jefe de Grupo Comercial",
-          "area_aprobacion": "Comercial",
-          "aprobadores": [
-            "Sofía Herrera · Jefe de Grupo Comercial",
-            "Super Administrador (ve todo)"
-          ]
-        }
-      ]
-    },
-    {
-      "n": 49,
-      "nombre": "Pagaré Vigente 60D Último Vencimiento",
-      "dominio": "Operaciones",
-      "tipo": "Conditions",
-      "condicion_maestra": "$FchVctoPagare ≥ Max(FchVctoFactura) + 60",
-      "reevaluable": true,
-      "hallazgo": "Garantías insuficientes hasta 60 días post vencimiento del último documento",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "no pagaré que cubre 60d post-vencimiento",
-          "disposicion": "excepcion",
-          "nivel_requerido": 1,
-          "rol_aprobador": "Jefe de Grupo Comercial",
-          "area_aprobacion": "Comercial",
-          "aprobadores": [
-            "Sofía Herrera · Jefe de Grupo Comercial",
-            "Super Administrador (ve todo)"
-          ]
-        }
-      ]
-    },
-    {
-      "n": 50,
-      "nombre": "Opera con simulación asistida",
-      "dominio": "Comercial",
-      "tipo": "ClientSegmentation",
-      "condicion_maestra": "If $OperaManual = 1",
-      "reevaluable": true,
-      "naturaleza": "clasificacion",
-      "tramos": []
-    },
-    {
-      "n": 51,
-      "nombre": "Parte de Grupo Empresarial (MAC grupal)",
-      "dominio": "Comercial",
-      "tipo": "ClientSegmentation",
-      "condicion_maestra": "If $GrpEmpresarial = 1",
-      "reevaluable": true,
-      "naturaleza": "clasificacion",
-      "tramos": []
-    },
-    {
-      "n": 52,
-      "nombre": "Posee Anexo SPF Firmado",
-      "dominio": "Operaciones",
-      "tipo": "Conditions",
-      "condicion_maestra": "If $AnexoFactoring = 1",
-      "reevaluable": true,
-      "hallazgo": "Cliente no posee el anexo SPF firmado",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "anexo SPF firmado ≠ 1",
-          "disposicion": "excepcion",
-          "nivel_requerido": 2,
-          "rol_aprobador": "Gerente Comercial",
-          "area_aprobacion": "Comercial",
-          "aprobadores": [
             "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
             "Super Administrador (ve todo)"
           ]
         }
       ]
     },
     {
-      "n": 53,
-      "nombre": "Simula por monto documento",
+      "n": 144,
+      "nombre": "C44 · SOW Competencia / Venta Total (L6M)",
       "dominio": "Comercial",
-      "tipo": "ClientSegmentation",
-      "condicion_maestra": "If $SimulaPorMntDoc = 1",
+      "tipo": "Information",
+      "condicion_maestra": "C44",
       "reevaluable": true,
       "naturaleza": "clasificacion",
       "tramos": []
     },
     {
-      "n": 54,
-      "nombre": "Simula por monto anticipado",
+      "n": 145,
+      "nombre": "C45 · Financiado por Factorings Bancarios/Privados Grandes",
       "dominio": "Comercial",
-      "tipo": "ClientSegmentation",
-      "condicion_maestra": "If $SimulaPorMntAnt = 1",
+      "tipo": "Information",
+      "condicion_maestra": "C45",
       "reevaluable": true,
       "naturaleza": "clasificacion",
       "tramos": []
     },
     {
-      "n": 55,
-      "nombre": "Posee MAC en dólares",
+      "n": 146,
+      "nombre": "C46 · Mix Financiamiento de los Deudores",
       "dominio": "Comercial",
-      "tipo": "ClientSegmentation",
-      "condicion_maestra": "If $PoseeMACDolares = 1",
+      "tipo": "Information",
+      "condicion_maestra": "C46",
       "reevaluable": true,
       "naturaleza": "clasificacion",
       "tramos": []
     },
     {
-      "n": 56,
-      "nombre": "Cupo excedido deudores en matriz",
+      "n": 147,
+      "nombre": "C47 · Par C-D · Documentos en Cartera Reclamados",
+      "dominio": "Comercial",
+      "tipo": "Conditions",
+      "condicion_maestra": "C47",
+      "reevaluable": true,
+      "hallazgo": "Cartera vigente con este deudor con documentos reclamados",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]>0",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 148,
+      "nombre": "C48 · Par C-D · Documentos en Cartera con Nota de Crédito",
+      "dominio": "Comercial",
+      "tipo": "Conditions",
+      "condicion_maestra": "C48",
+      "reevaluable": true,
+      "hallazgo": "Cartera vigente con este deudor con documentos con notas de crédito",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]>0",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 149,
+      "nombre": "C49 · Par C-D · Documentos en Cartera con Mora",
+      "dominio": "Comercial",
+      "tipo": "Conditions",
+      "condicion_maestra": "C49",
+      "reevaluable": true,
+      "hallazgo": "Cartera vigente con este deudor con documentos en mora",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]>0",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 150,
+      "nombre": "C50 · Par C-D · Cuentas por Cobrar Pendientes",
+      "dominio": "Comercial",
+      "tipo": "Conditions",
+      "condicion_maestra": "C50",
+      "reevaluable": true,
+      "hallazgo": "Cuentas por cobrar pendientes de liquidar con este deudor",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]>0",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 151,
+      "nombre": "C51 · Nota Cliente",
+      "dominio": "Comercial",
+      "tipo": "Information",
+      "condicion_maestra": "C51",
+      "reevaluable": true,
+      "naturaleza": "clasificacion",
+      "tramos": []
+    },
+    {
+      "n": 152,
+      "nombre": "C52 · Juicios Gesintel",
+      "dominio": "Comercial",
+      "tipo": "Information",
+      "condicion_maestra": "C52",
+      "reevaluable": true,
+      "naturaleza": "clasificacion",
+      "tramos": []
+    },
+    {
+      "n": 201,
+      "nombre": "D01 · Segmento y Nota de Comportamiento Deudor",
       "dominio": "Riesgo",
       "tipo": "Behaviour",
-      "condicion_maestra": "If $%ConcentracionMtz > MaxConcentracionMtz → Aprueba N2",
+      "condicion_maestra": "D01",
       "reevaluable": true,
-      "hallazgo": "Monto solicitado excede el cupo en la matriz de riesgo para algún deudor",
+      "hallazgo": "Nota de comportamiento del deudor bajo el umbral mínimo (3,7)",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "concentración en matriz (%) > máx. concentración de matriz (%)",
+          "condicion": "dNota≥3.7",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "cualquier otro caso",
           "disposicion": "excepcion",
-          "nivel_requerido": 2,
-          "rol_aprobador": "Gerente Comercial",
-          "area_aprobacion": "Comercial",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
           "aprobadores": [
-            "Dante Montes · Gerente Comercial",
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
             "Super Administrador (ve todo)"
           ]
         }
       ]
     },
     {
-      "n": 57,
-      "nombre": "Apoderados para operar monto solicitado",
-      "dominio": "Comercial",
-      "tipo": "Conditions",
-      "condicion_maestra": "If $Apoderados = 1",
-      "reevaluable": true,
-      "hallazgo": "Cliente no posee poderes suficientes para autorizar esta operación",
+      "n": 202,
+      "nombre": "D02 · Deudor · Mora CMF Directa 30–90",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D02",
+      "reevaluable": false,
+      "hallazgo": "Deudor posee morosidades directas en CMF entre 30 y 90 días",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "apoderados suficientes ≠ 1",
-          "disposicion": "rechazado"
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "v[k]<10*MM o v[k]<0.10*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
         }
       ]
     },
     {
-      "n": 58,
-      "nombre": "Cliente no evaluable por matriz",
-      "dominio": "extras",
-      "tipo": "ClientSegmentation",
-      "condicion_maestra": "If $MACCode = 3",
-      "reevaluable": true,
-      "naturaleza": "clasificacion",
-      "tramos": []
-    },
-    {
-      "n": 59,
-      "nombre": "Cupo suficiente en la línea",
+      "n": 203,
+      "nombre": "D03 · Deudor · Mora CMF Directa 90–180",
       "dominio": "Riesgo",
-      "tipo": "Conditions",
-      "condicion_maestra": "If $MntCarteraVig + $MntSimulacion > $MntLinea → Aprueba N2",
-      "reevaluable": true,
-      "hallazgo": "Cliente con cupo insuficiente en la línea",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D03",
+      "reevaluable": false,
+      "hallazgo": "Deudor posee morosidades directas en CMF entre 90 y 180 días",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "cartera vigente + monto de la simulación > línea de crédito aprobada",
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "v[k]<10*MM o v[k]<0.10*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 204,
+      "nombre": "D04 · Deudor · Mora CMF Directa 180d–3A",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D04",
+      "reevaluable": false,
+      "hallazgo": "Deudor posee morosidades directas en CMF entre 180 días y 3 años",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 205,
+      "nombre": "D05 · Deudor · Deuda Castigada CMF Directa",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D05",
+      "reevaluable": false,
+      "hallazgo": "Deudor posee castigos en su deuda directa CMF",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 206,
+      "nombre": "D06 · Deudor · Deuda Vencida CMF Indirecta",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D06",
+      "reevaluable": false,
+      "hallazgo": "Deudor posee deuda CMF indirecta vencida",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "v[k]<10*MM o v[k]<0.10*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 207,
+      "nombre": "D07 · Deudor · Deuda Castigada CMF Indirecta",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D07",
+      "reevaluable": false,
+      "hallazgo": "Deudor posee deuda CMF indirecta castigada",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "v[k]<10*MM o v[k]<0.10*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 208,
+      "nombre": "D08 · Deudor · Mora CMF Leasing",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D08",
+      "reevaluable": false,
+      "hallazgo": "Deudor posee deuda de leasing CMF en mora",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "v[k]<10*MM o v[k]<0.10*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 209,
+      "nombre": "D09 · Deudor · Mora Equifax (DICOM)",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D09",
+      "reevaluable": false,
+      "hallazgo": "Deudor posee morosidades en Equifax",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "dEfxMora=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "dEfxMora≤5*MM",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 210,
+      "nombre": "D10 · Deudor · Mora ACHEF 60–90",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D10",
+      "reevaluable": false,
+      "hallazgo": "Deudor posee morosidades en ACHEF entre 60 y 90 días",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]≤25*MM",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "v[k]≤50*MM",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 211,
+      "nombre": "D11 · Deudor · Mora ACHEF 90–180",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D11",
+      "reevaluable": false,
+      "hallazgo": "Deudor posee morosidades en ACHEF entre 90 y 180 días",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]≤25*MM",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "v[k]≤50*MM",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 212,
+      "nombre": "D12 · Deudor · Mora ACHEF +180",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D12",
+      "reevaluable": false,
+      "hallazgo": "Deudor posee morosidades en ACHEF mayores a 180 días",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "dAchefMas180=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 213,
+      "nombre": "D13 · Deudor · Infracciones Laborales",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D13",
+      "reevaluable": false,
+      "hallazgo": "Deudor posee infracciones laborales en los últimos 12 meses",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "dInfr=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "dInfr≤10*MM",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "dInfr≤25*MM",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "dInfr≤50*MM",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 5,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 214,
+      "nombre": "D14 · Deudor · Mora Interna >25 Días",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D14",
+      "reevaluable": true,
+      "hallazgo": "Deudor mantiene mora interna mayor a 25 días",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]>0",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 215,
+      "nombre": "D15 · Deudor · Mora Interna 30–90",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D15",
+      "reevaluable": true,
+      "hallazgo": "Deudor mantiene mora interna entre 30 y 90 días",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "v[k]<10*MM o v[k]<0.10*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 216,
+      "nombre": "D16 · Deudor · Mora Interna 90–180",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D16",
+      "reevaluable": true,
+      "hallazgo": "Deudor mantiene mora interna entre 90 y 180 días",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "v[k]<10*MM o v[k]<0.10*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 4,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 217,
+      "nombre": "D17 · Deudor · Mora Interna 180d–3A",
+      "dominio": "Riesgo",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D17",
+      "reevaluable": true,
+      "hallazgo": "Deudor mantiene mora interna entre 180 días y 3 años",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]=0",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]<5*MM o v[k]<0.05*v[tot]",
+          "disposicion": "excepcion",
+          "nivel_requerido": 4,
+          "rol_aprobador": "Jefe de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Carolina Vergara · Jefe de Riesgo",
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 218,
+      "nombre": "D18 · Mismos Socios entre Cliente y Deudor",
+      "dominio": "Riesgo",
+      "tipo": "Conditions",
+      "condicion_maestra": "D18",
+      "reevaluable": true,
+      "hallazgo": "Cliente y deudor comparten socios (empresas relacionadas)",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "!no sociosComunes",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Subgerente de Riesgo",
+          "area_aprobacion": "Riesgo",
+          "aprobadores": [
+            "Paula Reyes · Subgerente de Riesgo",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 219,
+      "nombre": "D19 · Deudor · Tasa de NC Alta",
+      "dominio": "Comercial",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D19",
+      "reevaluable": true,
+      "hallazgo": "Deudor presenta una tasa de notas de crédito elevada",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]≤u1",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]≤u2",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
           "disposicion": "excepcion",
           "nivel_requerido": 2,
           "rol_aprobador": "Gerente Comercial",
           "area_aprobacion": "Comercial",
           "aprobadores": [
             "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 220,
+      "nombre": "D20 · Deudor · Tasa de Reclamos Alta",
+      "dominio": "Comercial",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D20",
+      "reevaluable": true,
+      "hallazgo": "Deudor presenta una tasa de reclamos elevada",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]≤u1",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]≤u2",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 221,
+      "nombre": "D21 · Par C-D · Venta Cruzada",
+      "dominio": "Comercial",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D21",
+      "reevaluable": true,
+      "hallazgo": "El par cliente-deudor presenta venta cruzada relevante",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]≤u1",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]≤u2",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 222,
+      "nombre": "D22 · Par C-D · Tasa de NC Alta",
+      "dominio": "Comercial",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D22",
+      "reevaluable": true,
+      "hallazgo": "El par cliente-deudor presenta una tasa de notas de crédito elevada",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]≤u1",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]≤u2",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 223,
+      "nombre": "D23 · Par C-D · Tasa de Reclamos Alta",
+      "dominio": "Comercial",
+      "tipo": "Behaviour",
+      "condicion_maestra": "D23",
+      "reevaluable": true,
+      "hallazgo": "El par cliente-deudor presenta una tasa de reclamos elevada",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "v[k]≤u1",
+          "disposicion": "aprobado"
+        },
+        {
+          "orden": 2,
+          "condicion": "v[k]≤u2",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 3,
+          "condicion": "cualquier otro caso",
+          "disposicion": "excepcion",
+          "nivel_requerido": 2,
+          "rol_aprobador": "Gerente Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 301,
+      "nombre": "O01 · Spread dentro de Banda y Descuento no Excesivo",
+      "dominio": "Comercial",
+      "tipo": "Conditions",
+      "condicion_maestra": "O01",
+      "reevaluable": true,
+      "hallazgo": "Operación con spread fuera de la banda de atribución o descuento excesivo",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "!no spreadBajoBanda",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 302,
+      "nombre": "O02 · Comisiones y Gastos Acordes a la Política",
+      "dominio": "Comercial",
+      "tipo": "Conditions",
+      "condicion_maestra": "O02",
+      "reevaluable": true,
+      "hallazgo": "Operación con comisiones o gastos bajo los mínimos de la política de precios",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "!no comisionBajoMin",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 303,
+      "nombre": "O03 · Aplicación de CxC Pendientes en la Operación",
+      "dominio": "Comercial",
+      "tipo": "Conditions",
+      "condicion_maestra": "O03",
+      "reevaluable": true,
+      "hallazgo": "Cliente mantiene CxC pendientes sin aplicar el descuento mínimo (30% del monto)",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "!no cxcSinAplicar",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 304,
+      "nombre": "O04 · Cliente no Bloqueado",
+      "dominio": "Comercial",
+      "tipo": "Conditions",
+      "condicion_maestra": "O04",
+      "reevaluable": true,
+      "hallazgo": "Cliente se encuentra bloqueado para operar",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "!no clienteBloqueado",
+          "disposicion": "excepcion",
+          "nivel_requerido": 1,
+          "rol_aprobador": "Jefe de Grupo Comercial",
+          "area_aprobacion": "Comercial",
+          "aprobadores": [
+            "Sofía Herrera · Jefe de Grupo Comercial",
+            "Dante Montes · Gerente Comercial",
+            "Federico Diaz · Gerente General",
             "Super Administrador (ve todo)"
           ]
         }

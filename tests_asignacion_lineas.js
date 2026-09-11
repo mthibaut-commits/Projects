@@ -15,7 +15,10 @@
    estado de líneas por el tercer parámetro de `asignarLineas`, así que el resultado no depende de
    qué oportunidades haya generado el motor de entrada.
 
-   Última corrida: 30/30 PASA.
+   ...más tres de la CARTERA DEL PAR cliente-deudor (INC-04): que el catálogo implemente las 79
+   reglas de la política y que C47-C50 se evalúen y se visen por deudor, no por cliente.
+
+   Última corrida: 49/49 PASA.
    ============================================================================================ */
 (() => {
   const out = [];
@@ -364,13 +367,16 @@
 
     // Ningún par (área, nivel) del catálogo puede quedar sin aprobador posible: si queda, es
     // configuración que falta (crear el área y asignarle un usuario con ese nivel), no un bug.
-    const huerfanos = [];
+    const huerfanos = []; let nTramos = 0;
     (typeof REGLAS_CLIENTE !== "undefined" ? REGLAS_CLIENTE : []).forEach((r) => (r.tiers || []).forEach((t) => {
       if (t[1] !== "excepcion") return;
+      nTramos++;
       if (!apruebanDe(r, t[2]).length) huerfanos.push(`${r.cond} ${r.area} N${t[2]}`);
     }));
+    // El conteo se calcula, no se escribe: quedó fijo en «130» y al sumar C47-C50 el mensaje pasó a
+    // informar un número que ya no era el del catálogo.
     ok("40 ningún criterio queda sin aprobador posible", huerfanos.length === 0,
-       huerfanos.length ? huerfanos.slice(0, 4).join(" · ") : "los 130 tramos tienen a quién ir");
+       huerfanos.length ? huerfanos.slice(0, 4).join(" · ") : `los ${nTramos} tramos tienen a quién ir`);
   }
 
   // 42 · ÁREAS POR TENANT. El área es lo que la regla declara para rutear su excepción, así que el
@@ -465,6 +471,88 @@
          && v1.excRech.length === nExc && v1.excPend.length === 0,
          `sin commit «${fa ? fa.estado : "—"}» → con commit «${fb ? fb.estado : "—"}» · ${nExc} excepciones: ${v0.excPend.length} pendientes sin visado → ${v1.excRech.length} rechazadas con visado`);
     }
+  }
+
+
+  // ============================================================================================
+  // 46-48 · INC-04 · CARTERA DEL PAR CLIENTE-DEUDOR (C47-C50). La política declara 79 reglas y el
+  // motor corría 75: faltaban justo las cuatro que miden la cartera del PAR. Son las gemelas de
+  // C40-C43 —reclamados / notas de crédito / mora / CxC— pero medidas contra ESTE deudor, que es
+  // donde el deterioro se ve antes de diluirse en el agregado del cliente. Decisión de negocio
+  // (11-09-2026): son de tipo D, o sea se evalúan una vez por deudor y su visado es por deudor.
+  // ============================================================================================
+
+  // 46 · El catálogo está completo: 79 reglas y ningún código de la política sin implementar.
+  {
+    const ids = REGLAS_CLIENTE.map((r) => r.cond);
+    const falta = [];
+    for (let i = 1; i <= 52; i++) { const c = "C" + String(i).padStart(2, "0"); if (!ids.includes(c)) falta.push(c); }
+    for (let i = 1; i <= 23; i++) { const d = "D" + String(i).padStart(2, "0"); if (!ids.includes(d)) falta.push(d); }
+    for (let i = 1; i <= 4; i++) { const o = "O" + String(i).padStart(2, "0"); if (!ids.includes(o)) falta.push(o); }
+    ok("46 el catálogo implementa las 79 reglas de la política",
+       REGLAS_CLIENTE.length === 79 && falta.length === 0
+       && ["C47", "C48", "C49", "C50"].every((c) => ids.includes(c)),
+       `${REGLAS_CLIENTE.length} reglas · sin implementar: ${falta.length ? falta.join(", ") : "ninguna"}`);
+  }
+
+  // 47 · C47-C50 SON DEL PAR: una vez POR DEUDOR, con visado por deudor. La prueba contrasta contra
+  // sus gemelas de cliente C40-C43, que producen UN ítem con `deudor: null`. Si el motor dedujera el
+  // tipo del prefijo del código —como hacía— estas cuatro caerían del lado del cliente y el
+  // deterioro con un deudor concreto se visaría como si fuera del cliente completo.
+  {
+    const dA = LB[0], dB = LB[1];
+    const deal47 = { id: "T-47", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba",
+                     facturasOp: [fac("a1", dA, 30), fac("b1", dB, 20)] };
+    const items = evaluarOtorgItems(deal47);
+    const par = items.filter((i) => ["C47", "C48", "C49", "C50"].includes(i.regla.cond));
+    const cli = items.filter((i) => ["C40", "C41", "C42", "C43"].includes(i.regla.cond));
+    const ruts = [...new Set(par.map((i) => i.deudor && i.deudor.rut))].sort();
+    ok("47 C47-C50 se evalúan por deudor y su visado es por deudor",
+       par.length === 8 && ruts.length === 2 && ruts.join("|") === [dA, dB].sort().join("|")
+       && par.every((i) => i.deudor && i.stKey === i.regla.n + "@" + i.deudor.rut)
+       && cli.length === 4 && cli.every((i) => i.deudor === null && i.stKey === String(i.regla.n))
+       && ["C47", "C48", "C49", "C50"].every((c) => esReglaDeudor(REGLAS_CLIENTE.find((r) => r.cond === c))),
+       `par: ${par.length} ítems sobre ${ruts.length} deudores · cliente: ${cli.length} ítems sin deudor`);
+  }
+
+  // 48 · Carácter EXC-COM N1 y re-evaluables, igual que C40-C43. Y la variable del par se regulariza
+  // al re-evaluar: si siguiera con el valor del día 1, «re-evaluable» sería una etiqueta que el
+  // código no cumple y la excepción quedaría pegada para siempre.
+  {
+    const rs = ["C47", "C48", "C49", "C50"].map((c) => REGLAS_CLIENTE.find((r) => r.cond === c));
+    const nivelExc = (r) => { const t = (r.tiers || []).find((x) => x[1] === "excepcion"); return t && t[2]; };
+    const dn = nomDe(LB[0]);
+    const v0 = deudorBlock(dn), v1 = deudorBlock(dn, 1);
+    const claves = ["cdCarteraReclamada", "cdCarteraNC", "cdCarteraMorosa", "cdCxcPend"];
+    ok("48 C47-C50 excepcionan comercial N1, son re-evaluables y su variable se regulariza",
+       rs.every((r) => r.area === "comercial" && nivelExc(r) === 1 && reglaReev(r.n))
+       && rolDeAreaNivel("comercial", 1).rol === "Jefe de Grupo Comercial"
+       && claves.every((k) => v0[k] !== undefined && v1[k] === 0)
+       // y no se tocó el sorteo de las variables que ya existían: `rd()` es secuencial
+       && v0.cdCruzada === v1.cdCruzada && v0.cdNC === v1.cdNC && v0.dNota === v1.dNota,
+       `niveles ${rs.map(nivelExc).join("/")} · aprueba ${rolDeAreaNivel("comercial", 1).rol}`);
+  }
+
+
+  // 49 · INC-06 · NO HAY NIVELES ESPECIALES. C05 «Línea Cliente Nuevo» era la única regla con el nivel
+  // escrito a mano —un `1` heredado de homologar «Comité → 1»— y por eso la corrección de INC-01 no la
+  // alcanzaba: dejaba la constitución de una línea nueva en el aprobador de MENOR jerarquía. Decisión de
+  // negocio (11-09-2026): el Comité de Crédito no es un nivel aparte ni una cuenta del sistema; C05 se
+  // configura como todas, con su par (área, nivel). Se comprueba además que NINGUNA regla declare un
+  // nivel fuera de N1..N5, que es lo que volvería a abrir la puerta a un nivel que nadie puede cubrir.
+  {
+    const c05 = REGLAS_CLIENTE.find((r) => r.cond === "C05");
+    const excC05 = (c05.tiers || []).find((t) => t[1] === "excepcion");
+    const fuera = [];
+    REGLAS_CLIENTE.forEach((r) => (r.tiers || []).forEach((t) => {
+      if (t[1] === "excepcion" && !(t[2] >= 1 && t[2] <= 5)) fuera.push(`${r.cond} N${t[2]}`);
+    }));
+    ok("49 el Comité no es un nivel aparte: C05 se rutea como todas",
+       !!c05 && c05.area === "riesgo" && excC05[2] === 5
+       && rolDeAreaNivel("riesgo", excC05[2]).rol === "Subgerente de Riesgo"
+       && rolDeAreaNivel("riesgo", excC05[2]).sinAprobador !== true
+       && fuera.length === 0,
+       `C05 · riesgo N${excC05[2]} → ${rolDeAreaNivel("riesgo", excC05[2]).rol} · niveles fuera de N1..N5: ${fuera.length ? fuera.join(", ") : "ninguno"}`);
   }
 
   console.log(out.join("\n"));

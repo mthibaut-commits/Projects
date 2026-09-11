@@ -18,14 +18,14 @@ La clave primaria es **`RUT` + `ROL` (+ `RUT_CONTRAPARTE`)**. Cada entidad de la
 - Una operación puede tener **varios deudores** ⇒ se entrega **una fila `DEUDOR` por cada par (cliente, deudor)**. El mismo deudor con dos clientes distintos son dos filas (distinto `RUT_CONTRAPARTE`).
 - Las columnas de moras/bureau (CMF, Equifax, ACHEF, infracciones, mora interna) y `NOTA_COMPORTAMIENTO` son **compartidas**: en una fila `CLIENTE` describen al cliente (C10–C26); en una fila `DEUDOR` describen al deudor (D01–D17). El `ROL` define de quién son.
 - Las columnas de **comportamiento comercial** (`NOTA_CREDITO_PCT`, `RECLAMO_PCT`, `VENTA_CRUZADA_PCT`) son del **cliente** en fila CLIENTE (C34–C36) y del **deudor** en fila DEUDOR (D19–D20). Las variables del **par C-D** (D21–D23) van en columnas propias `*_CD_PCT` (ver §3) y en `SOCIOS_COMUNES_CD` (D18), siempre en la fila `DEUDOR`.
-- **TGR** (C27–C32) y **cartera / endeudamiento factoring** (C37–C50) son sólo del **cliente** (fila CLIENTE).
+- **TGR** (C27–C32) y **endeudamiento factoring / cartera del cliente** (C37–C46) son sólo del **cliente** (fila CLIENTE). La **cartera del par** (C47–C50) va en columnas propias `*_CD` de la fila `DEUDOR`: son las gemelas de C40–C43 medidas contra ese deudor, y se evalúan **una vez por deudor** como las D (ver §2).
 
 ## 2. Evaluación por deudor y visado
 
-- El motor arma el set de variables del cliente `vCli` (fila CLIENTE) y, para **cada** fila `DEUDOR` ligada a ese cliente, sobrepone el bloque del deudor (columnas de la fila DEUDOR) y evalúa las reglas **D01–D23 una vez por deudor**. Las reglas C y O se evalúan una sola vez.
+- El motor arma el set de variables del cliente `vCli` (fila CLIENTE) y, para **cada** fila `DEUDOR` ligada a ese cliente, sobrepone el bloque del deudor (columnas de la fila DEUDOR) y evalúa **una vez por deudor** las reglas **D01–D23** y **C47–C50** (cartera del par). El resto de las C y las O se evalúan una sola vez.
 - El resultado es una lista de ítems **(regla × deudor)**. La clave de estado/visado (`stKey`) es:
   - **Cliente / Operación:** `stKey = "<n>"`  (ej. `"117"` = C17, `"301"` = O01).
-  - **Deudor:** `stKey = "<n>@<rut_deudor>"`  (ej. `"202@88390200-9"` = D02 del deudor 88390200-9).
+  - **Deudor / par C-D:** `stKey = "<n>@<rut_deudor>"`  (ej. `"202@88390200-9"` = D02 del deudor 88390200-9; `"147@77250120-4"` = C47 del par con ese deudor).
 - El **visado** (aprobación/rechazo de cada excepción por el apoderado con atribución) se registra **independiente por (operación, stKey)**: estado `aprobado | rechazado | pendiente` + respaldo (comentario, adjunto, quién, fecha). La bandeja agrupa las reglas D en un bloque **por deudor** (razón social + RUT).
 - Estado agregado de la operación: **aprobada** / **sujeta a excepción** / **rechazada**. Un bloqueo firme de deudor (D02–D13) hace perder la operación igual que un knockout de cliente (C30–C32 TGR).
 
@@ -63,13 +63,16 @@ La clave primaria es **`RUT` + `ROL` (+ `RUT_CONTRAPARTE`)**. Cada entidad de la
 | **NOTA_CREDITO_CD_PCT** | **D22** | DEUDOR | **Par cliente-deudor:** tasa de notas de crédito (≤8 / 8–30 / >30) |
 | **RECLAMO_CD_PCT** | **D23** | DEUDOR | **Par cliente-deudor:** tasa de reclamos (≤3 / 3–20 / >20) |
 | RATIO_CESION_VENTA_PCT / NRO_FACTORINGS_LM / FACTORING_PEQUENO_PCT | C37–C39 | CLIENTE | Endeudamiento factoring (50–80 / 3–8 / 35) |
-| CARTERA_RECLAMADA / CARTERA_NC / CARTERA_MOROSA / CXC_PENDIENTES | C40–C43, C47–C50 | CLIENTE | Gestión de cartera (excepciones N1 Comercial) |
+| CARTERA_RECLAMADA / CARTERA_NC / CARTERA_MOROSA / CXC_PENDIENTES | C40–C43 | CLIENTE | Gestión de cartera del **cliente**: documentos reclamados / con NC / en mora y CxC pendientes (excepción N1 Comercial) |
+| **CARTERA_RECLAMADA_CD / CARTERA_NC_CD / CARTERA_MOROSA_CD / CXC_PENDIENTES_CD** | **C47–C50** | DEUDOR | **Par cliente-deudor:** las mismas cuatro medidas contra **este** deudor (excepción N1 Comercial). Una fila por par ⇒ el visado es por deudor |
 | SOCIOS_COMUNES_CD | **D18** | DEUDOR | Par: cliente y deudor comparten socios (empresas relacionadas) ⇒ N5 |
 | CLIENTE_BLOQUEADO | **O04** | CLIENTE | Bloqueo vigente (comercial/operativo/cobranza) al curse |
 | JUICIOS_GESINTEL | C52 | CLIENTE | Informativo |
 | FECHA_CORTE | — | ambos | Fecha de generación del snapshot |
 
 > **Nuevo en esta versión (par C-D):** `VENTA_CRUZADA_CD_PCT`, `NOTA_CREDITO_CD_PCT`, `RECLAMO_CD_PCT`. Antes las variables del par se confundían con las del deudor/cliente en las columnas `*_PCT`. Ahora D19–D20 (deudor) y D21–D23 (par) tienen columnas distintas, ambas en la fila `DEUDOR`.
+>
+> **Nuevo (11-09-2026, cierre de INC-04):** `CARTERA_RECLAMADA_CD`, `CARTERA_NC_CD`, `CARTERA_MOROSA_CD`, `CXC_PENDIENTES_CD`. Las cuatro reglas C47–C50 estaban en la política y **no estaban implementadas**: el motor corría 75 de las 79. Se miden por par porque es donde el deterioro se ve: un cliente con la cartera global limpia puede arrastrar reclamos, notas de crédito o mora con un solo deudor, y agregado al cliente eso se diluye hasta desaparecer. Viajan en la fila `DEUDOR` —una por par (cliente, deudor)— y **no** en la fila `CLIENTE`, que ya porta el agregado en las `CARTERA_*` a secas.
 
 Variables de **operación** (O01–O03: spread bajo banda, comisión/gastos bajo mínimo, CxC sin aplicar) **no** viajan en este archivo: se derivan de la **simulación** de la oferta en NEX (condiciones comerciales del ejecutivo) y se evalúan contra las bandas de atribución. `O04` sí usa `CLIENTE_BLOQUEADO`.
 
@@ -77,7 +80,8 @@ Variables de **operación** (O01–O03: spread bajo banda, comisión/gastos bajo
 
 ## 4. Niveles y re-evaluación
 
-- **Homologación de niveles:** política N1..N5 (N5 = máxima) + Comité; nivel de módulo interno 1 = máxima ⇒ `nivelMod = 6 − N` (Comité → 1). El nivel de cada regla es el **mínimo** requerido; cualquier nivel superior puede autorizar. El área del aprobador (Comercial / Riesgo) la define el tramo de la regla.
+- **Niveles:** política N1..N5, **N5 = máxima**, sin transformación. La homologación `nivelMod = 6 − N` **se retiró** (INC-01, 11-09-2026): invertía la escala y mandaba una excepción N1 —un pagaré sin firmar— al cargo más alto, y una N5 —180 días de mora— al más bajo. El nivel que cada regla necesita es **configuración de la regla**, no algo que el motor transforme.
+- **Ruteo de la excepción = (área, nivel)** (INC-03, 11-09-2026): la **regla** declara el ÁREA y su **tramo** declara el NIVEL. Con ese par se buscan los usuarios de esa área con ese nivel **o superior**; cualquiera de ellos autoriza, sin tope. Un cargo vacante lo cubre la jefatura de su misma área y **la escalada no cruza áreas**. Una regla **sin área no la aprueba nadie**: un default silencioso escondería una regla mal configurada.
 - **Re-evaluación (v1 → v2 al firmar el contrato):** las variables de **burós** (CMF / Equifax / ACHEF / infracciones) del cliente y del deudor **NO** se re-evalúan (bloqueo firme: **C10–C22, C30–C32, D02–D13**). El resto **sí** se re-evalúa (C01–C09, C23–C29, C33–C52, D01, D14–D23, O01–O04). La re-evaluación **no re-abre** las excepciones ya visadas.
 
 ---
@@ -88,6 +92,6 @@ El archivo de ejemplo trae 5 filas:
 
 1. **CLIENTE `76920742-2`** — sano (línea 350 MM, nota 4,1, sin moras).
 2. **DEUDOR `88390200-9`** (par de `76920742-2`) — sin moras; par C-D sano.
-3. **DEUDOR `77250120-4`** (par de `76920742-2`, mismo cliente ⇒ operación multi-deudor) — mora CMF 30–90 de $8.000.000 sobre $120.000.000 de deuda total (2,6% y &lt; $10 MM ⇒ **D02 excepción N3**), nota 3,5 (&lt; 3,7 ⇒ **D01 N4**) y **`SOCIOS_COMUNES_CD=1`** (**D18 N5**). Su `stKey` de D02 = `"202@77250120-4"`.
+3. **DEUDOR `77250120-4`** (par de `76920742-2`, mismo cliente ⇒ operación multi-deudor) — mora CMF 30–90 de $8.000.000 sobre $120.000.000 de deuda total (2,6% y &lt; $10 MM ⇒ **D02 excepción N3**), nota 3,5 (&lt; 3,7 ⇒ **D01 N4**) y **`SOCIOS_COMUNES_CD=1`** (**D18 N5**). Además arrastra cartera deteriorada **con este cliente y no con otros**: `CARTERA_RECLAMADA_CD=$3.500.000` (**C47 N1c**) y `CXC_PENDIENTES_CD=$1.800.000` (**C50 N1c**), aunque las `CARTERA_*` del cliente vengan en 0. Sus `stKey` son `"202@77250120-4"` (D02) y `"147@77250120-4"` (C47).
 4. **CLIENTE `79443326-K`** — riesgoso: variación de venta −45%, `TGR_COBRANZA_JUD=$4.500.000` ⇒ **C30 HARD_BLOCK** (rechazo firme, la operación se pierde).
-5. **DEUDOR `91022333-1`** (par de `79443326-K`) — mora Equifax $7.000.000 (**D09**), par con NC 12% (**D22 N2c**) y venta cruzada 64% (**D21 N2c**).
+5. **DEUDOR `91022333-1`** (par de `79443326-K`) — mora Equifax $7.000.000 (**D09**), par con NC 12% (**D22 N2c**), venta cruzada 64% (**D21 N2c**) y `CARTERA_MOROSA_CD=$5.200.000` (**C49 N1c**).

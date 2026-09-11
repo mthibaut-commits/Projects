@@ -33,10 +33,10 @@ Convención de referencias: todas las líneas apuntan a `pipeline_comercial.jsx`
 | ~~**INC-01**~~ | ~~Homologación de niveles invertida~~ | **RESUELTO** | `NV` pasa a identidad: el nivel que la regla configura es el que se exige. El nivel es configuración de la regla, no algo que el motor deba transformar |
 | ~~**INC-02**~~ | ~~Sólo aprueba el nivel exacto; los superiores no~~ | **RESUELTO** | Decidido por el negocio el 11-09-2026 e implementado: aprueba cualquier nivel **igual o superior de la misma área**, sin tope. Ver el cierre de INC-02 |
 | ~~**INC-03**~~ | ~~El área de Operaciones no puede aprobar nada~~ | **RESUELTO** | El ÁREA la declara la regla y el NIVEL su tramo; con ese par se buscan en la lista de usuarios los de esa área con ese nivel o superior |
-| **INC-04** | Faltan 4 reglas del catálogo (C47–C50) | **Media** | La política declara 79 reglas; el runtime implementa 75 |
+| ~~**INC-04**~~ | ~~Faltan 4 reglas del catálogo (C47–C50)~~ | **RESUELTO** | Decidido por el negocio el 11-09-2026 e implementado: C47–C50 son del **par C-D**, se evalúan una vez por deudor y se visan por deudor. El catálogo corre las **79** reglas de la política |
 | **INC-05** | Conviven dos modelos de atribución paralelos | **Media** | «Causas de desvío» (FL/OD) y «motor de reglas» (C/D/O) con convenciones opuestas; el primero está huérfano |
-| **INC-06** | Nivel Comité sin representación | **Media** | C05 (constitución de línea) cae en el aprobador de menor jerarquía |
-| **INC-07** | Artefactos del repo desactualizados | **Baja** | `atribuciones_otorgamiento.json` y los dos `.xlsx` describen el catálogo anterior |
+| ~~**INC-06**~~ | ~~Nivel Comité sin representación~~ | **RESUELTO** | Decidido por el negocio el 11-09-2026: el Comité **no es un nivel aparte ni una cuenta del sistema**. C05 se configura como todas, con su par (área, nivel) → **Riesgo N5** |
+| ~~**INC-07**~~ | ~~Artefactos del repo desactualizados~~ | **RESUELTO** | `atribuciones_otorgamiento.json` regenerado desde la app corregida (79 criterios · 134 tramos, ninguno sin aprobador) y los dos `.xlsx` movidos a `Legado/` con su README |
 
 ---
 
@@ -265,7 +265,17 @@ de Riesgo en N1–N3 desde el mantenedor — exactamente el camino que el negoci
 
 ---
 
-### INC-04 · Faltan 4 reglas del catálogo (C47–C50)
+### ~~INC-04~~ · Faltan 4 reglas del catálogo (C47–C50) — **RESUELTO 11-09-2026**
+
+> **Decisión de negocio (11-09-2026): son de tipo D.** C47–C50 se evalúan **una vez por cada deudor** de la
+> operación y su visado es por deudor (`stKey = n@rut`), aunque la spec las numere en el bloque de cliente.
+> **Implementado:** cuatro variables nuevas del par en `deudorBlock` (`cdCarteraReclamada`, `cdCarteraNC`,
+> `cdCarteraMorosa`, `cdCxcPend`), cuatro reglas `R(147..150, …, { porDeudor: true })` con área **comercial**
+> y nivel **N1**, re-evaluables, y `esReglaDeudor` pasa a respetar la bandera en vez de deducir el tipo del
+> prefijo del código —deducirlo obligaba a renumerarlas D24–D27 y perder la trazabilidad con la spec—.
+> **A16 actualizado:** el layout suma `CARTERA_RECLAMADA_CD`, `CARTERA_NC_CD`, `CARTERA_MOROSA_CD` y
+> `CXC_PENDIENTES_CD` en la fila `DEUDOR` (una por par), con su diccionario y su ejemplo.
+> **Verificado:** el catálogo corre **79 reglas**, ningún código de la política sin implementar. Casos 46–48.
 
 **Qué dice la política.** Spec §1: *«la política de riesgo evalúa 79 reglas»* = C01–C52 (52) + D01–D23 (23) + O01–O04 (4).
 Spec §7 detalla **C47–C50 — «Cartera del par C-D: reclamados / NC / mora / CxC»**, carácter EXC-COM, nivel N1c, re-evaluables.
@@ -332,7 +342,15 @@ la spec, en vez de mantenerlo en un modelo paralelo.
 
 ---
 
-### INC-06 · El nivel Comité no tiene representación
+### ~~INC-06~~ · El nivel Comité no tiene representación — **RESUELTO 11-09-2026**
+
+> **Decisión de negocio (11-09-2026): el Comité no es un nivel aparte.** «El comité de riesgo no es un
+> usuario; ahí hay que definir un usuario y un nivel como en todas las reglas. Todas son iguales.» O sea:
+> no se agrega un nivel 6 ni un token `"COMITE"`, y el motor **no** emite un resultado de otra naturaleza.
+> **Implementado:** C05 deja de ser la única regla con el nivel escrito a mano (`[[…, "excepcion", 1]]` →
+> `NV(5)`), quedando en **Riesgo N5**, la máxima atribución individual — que es lo que corresponde a la
+> decisión más estructural del proceso y lo que exige el principio de INC-01 (a mayor gravedad, mayor
+> jerarquía). **Verificado:** ninguna regla del catálogo declara un nivel fuera de N1..N5. Caso 49.
 
 **Qué dice la política.** Spec §3 define **COMITÉ** como un nivel por encima de N5, área Riesgo, para *«constitución de líneas
 nuevas y cambios estructurales»*. Spec §7 asigna a **C05 (Línea Cliente Nuevo)**: *«Sin línea → constitución vía COMITÉ»*.
@@ -365,7 +383,15 @@ el motor no devolvería «excepción nivel Comité» sino «requiere constituci�
 
 ---
 
-### INC-07 · Artefactos del repositorio desactualizados
+### ~~INC-07~~ · Artefactos del repositorio desactualizados — **RESUELTO 11-09-2026**
+
+> **Hecho.** `atribuciones_otorgamiento.json` regenerado desde la app ya corregida: **79 criterios · 134
+> tramos de excepción · ninguno sin aprobador**, con la `descripcion` que describe la convención vigente
+> (la regla declara el área, el tramo el nivel, aprueba ese nivel o superior de la misma área, la escalada
+> no cruza áreas). Para que no vuelva a desfasarse dos meses, la regeneración dejó de ser un gesto manual:
+> **`node build_app.mjs && PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node regenerar_atribuciones.mjs`**.
+> Los dos `.xlsx` se **conservaron por trazabilidad** en `Legado/` con el sufijo `_v0` y un README que dice
+> por qué no son fuente. El texto que sigue es el diagnóstico original.
 
 **`atribuciones_otorgamiento.json`** (raíz del repo)
 
@@ -437,18 +463,18 @@ No son inconsistencias: son definiciones que la propia política declara pendien
 1. ~~INC-01: confirmar convención única de niveles.~~ **HECHO** (11-09-2026: el nivel es configuración de la regla; `NV` queda identidad).
 2. ~~INC-02: confirmar que cualquier nivel superior autoriza; definir si hay tope.~~ **HECHO** (11-09-2026: superior de la MISMA área, sin tope).
 3. ~~INC-03: definir la escala de niveles del área Operaciones.~~ **HECHO** (11-09-2026: la misma escala para todas las áreas; la regla declara área y nivel).
-4. INC-04: definir si C47–C50 son reglas de cliente o de par C-D, y las variables que necesitan en A16.
-5. INC-05: confirmar si el monto de la operación debe escalar la atribución.
-6. INC-06: definir si Comité es usuario del sistema o salida a otro proceso.
+4. ~~INC-04: definir si C47–C50 son reglas de cliente o de par C-D, y las variables que necesitan en A16.~~ **HECHO** (11-09-2026: son tipo D — por par, visado por deudor; A16 suma las cuatro columnas `*_CD`).
+5. INC-05: confirmar si el monto de la operación debe escalar la atribución. **ÚNICA DECISIÓN ABIERTA.**
+6. ~~INC-06: definir si Comité es usuario del sistema o salida a otro proceso.~~ **HECHO** (11-09-2026: ninguna de las dos — el Comité no es un nivel aparte; C05 se configura como todas, Riesgo N5).
 
 **Fase 2 — Corrección en el módulo actual** (cada punto es una edición acotada)
 
-7. ~~`NV` → identidad~~ **HECHO**. Queda pendiente sólo C05 al nivel Comité (INC-06).
+7. ~~`NV` → identidad~~ **HECHO**, C05 incluida: dejó de ser la única regla con el nivel escrito a mano.
 8. ~~Reemplazar `NIVEL_ROL` por `ROL_POR_AREA_NIVEL`.~~ **HECHO**: `ROL_ATRIB` (rol → área + nivel) es la escalera, `rolDeAreaNivel` su inverso para nombrar el cargo, y `puedeAprobarExc` compara contra `regla.area`.
 9. ~~Quitar la restricción `nivelesAprobArea(...).has(lv)`.~~ **HECHO**: la función se eliminó y `puedeAprobarExc` quedó en `lv >= nivelReq`.
-10. Implementar C47–C50.
-11. Retirar el modelo de causas de desvío y su código muerto en `OtorgamientosView`.
-12. Regenerar `atribuciones_otorgamiento.json` y marcar los `.xlsx` como legado.
+10. ~~Implementar C47–C50.~~ **HECHO**: reglas del par (`porDeudor`), variables `cd*` en `deudorBlock` y columnas `*_CD` en A16.
+11. Retirar el modelo de causas de desvío y su código muerto en `OtorgamientosView`. **Bloqueado por la decisión 5.**
+12. ~~Regenerar `atribuciones_otorgamiento.json` y marcar los `.xlsx` como legado.~~ **HECHO**: regeneración automatizada (`regenerar_atribuciones.mjs`) y `.xlsx` en `Legado/`.
 
 **Fase 3 — Encapsulamiento**
 
@@ -468,32 +494,39 @@ y el chequeo de duplicados
 > Si vas a actualizar este documento, saca los números de acá y no del texto anterior.
 
 ```bash
-# 1) Reglas implementadas en runtime (esperado: 75 = 48 C + 23 D + 4 O)
+# 1) Reglas implementadas en runtime (esperado HOY: 79 = 52 C + 23 D + 4 O. Antes de INC-04: 75)
 awk '/^    R\(/{print}' pipeline_comercial.jsx | grep -oE '"[CDO][0-9]{2}"' | tr -d '"' | sort > /tmp/impl.txt
 wc -l /tmp/impl.txt
 
-# 2) Reglas de cliente ausentes respecto de C01–C52 (esperado: C47 C48 C49 C50)
+# 2) Reglas de cliente ausentes respecto de C01–C52 (esperado HOY: ninguna. Antes: C47 C48 C49 C50)
 for i in $(seq -w 1 52); do grep -qx "C$i" /tmp/impl.txt || printf "C%s " $i; done; echo
 
 # 3) Puntos clave del ruteo de niveles — por simbolo, no por linea
-grep -n 'const NV = (N) => 6 - N'   pipeline_comercial.jsx   # INC-01 · la homologacion invertida
-grep -n -A7 '^const NIVEL_ROL = {'  pipeline_comercial.jsx   # INC-03 · solo comercial y riesgo, sin operaciones
-grep -n -A6 '^function puedeAprobarExc' pipeline_comercial.jsx  # INC-02 · el gate de aprobacion
-grep -n '^function nivelesAprobArea' pipeline_comercial.jsx  # INC-02 · el set de niveles habiles
-grep -n 'ROL_POR_AREA_NIVEL'        pipeline_comercial.jsx   # INC-03 · debe salir VACIO (aun no existe)
-grep -n 'R(105, "C05"'              pipeline_comercial.jsx   # INC-06 · la regla que pide Comite y rutea a nivel 1
-grep -n 'MATRIZ_OTORG\|CFG_TRAMOS\|puedeAccionarCausa' pipeline_comercial.jsx  # INC-05 · el modelo A huerfano
+grep -n 'const NV = (N) => N'       pipeline_comercial.jsx   # INC-01 · identidad (antes: 6 - N)
+grep -n -A6 '^function puedeAprobarExc' pipeline_comercial.jsx  # INC-02 · el gate: lv >= nivelReq, misma area
+grep -n '^function nivelesAprobArea' pipeline_comercial.jsx  # INC-02 · debe salir VACIO (se elimino)
+grep -n -A8 '^function rolDeAreaNivel' pipeline_comercial.jsx   # INC-03 · el inverso (area, nivel) -> cargo
+grep -n 'R(105, "C05"'              pipeline_comercial.jsx   # INC-06 · ya rutea por NV(5), no por un 1 literal
+grep -n 'porDeudor'                 pipeline_comercial.jsx   # INC-04 · las cuatro reglas del par
+grep -n 'MATRIZ_OTORG\|CFG_TRAMOS\|puedeAccionarCausa' pipeline_comercial.jsx  # INC-05 · el modelo A, aun vivo
 
 # 4) Conteos que este documento afirma, medidos en RUNTIME (el catalogo se arma en un IIFE:
 #    contarlo con grep da otro numero). Requiere el HTML construido — ver CLAUDE.md.
-#    Esperado hoy: 75 reglas · 180 tramos · 130 tramos de excepcion · 67 reglas con excepcion ·
-#    responsables de esos 130 tramos: comercial 76, riesgo 54, operaciones 0  ← esto ULTIMO es INC-03 medido.
+#    Esperado HOY (cerrados INC-01/02/03/04/06): 79 reglas · 184 tramos · 134 tramos de excepcion ·
+#    71 reglas con excepcion, y NINGUN tramo sin aprobador. El reparto por area ya no se lee de
+#    NIVEL_ROL —que dejo de decidir— sino del area que declara cada regla.
+#    Valores previos, para comparar: 75 reglas · 180 tramos · 130 de excepcion · 67 reglas con
+#    excepcion, ruteados a comercial 76 / riesgo 54 / operaciones 0  ← ese 0 era INC-03 medido.
 #    Pegar en la consola del navegador con pipeline_comercial.html abierto:
 #      const T = REGLAS_CLIENTE.flatMap(r => r.tiers || []);
-#      const E = T.filter(t => t[1] === "excepcion");
+#      const E = REGLAS_CLIENTE.flatMap(r => (r.tiers||[]).filter(t => t[1]==="excepcion").map(t => ({ r, t })));
 #      console.log({ reglas: REGLAS_CLIENTE.length, tramos: T.length, tramosExc: E.length,
 #        reglasConExc: REGLAS_CLIENTE.filter(r => (r.tiers||[]).some(t => t[1]==="excepcion")).length,
-#        area: E.reduce((a,t) => (a[(NIVEL_ROL[t[2]]||NIVEL_ROL[4]).area] = (a[(NIVEL_ROL[t[2]]||NIVEL_ROL[4]).area]||0)+1, a), {}) });
+#        // el area sale de la REGLA, no del nivel: NIVEL_ROL dejo de decidir con INC-03
+#        area: E.reduce((a,{r}) => (a[r.area] = (a[r.area]||0)+1, a), {}),
+#        huerfanos: E.filter(({r,t}) => !aprobadoresExc(r, t[2]).length).map(({r,t}) => r.cond+" N"+t[2]) });
+#    Medido el 11-09-2026: { reglas: 79, tramos: 184, tramosExc: 134, reglasConExc: 71,
+#      area: { riesgo: 97, comercial: 33, operaciones: 4 }, huerfanos: [] }
 
 # 5) Texto de la política vigente (requiere pypdf)
 python3 -c "from pypdf import PdfReader; print('\n'.join((p.extract_text() or '') for p in PdfReader('Specs_Procesos/Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf').pages))" | less
