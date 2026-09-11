@@ -1,6 +1,6 @@
 # Inconsistencias del Motor de Otorgamiento — política v1.1 ↔ implementación
 
-**Estado:** auditoría cerrada · **INC-02 resuelto e implementado** (11-09-2026); los otros seis siguen abiertos y su Fase 1 (§6) es bloqueante.
+**Estado:** auditoría cerrada · **INC-01, INC-02 e INC-03 resueltos e implementados** (11-09-2026). Quedan abiertos INC-04 a INC-07.
 **Fecha:** 10-09-2026 · **Alcance:** módulo de otorgamiento de NEX Factoring (Pipeline Comercial)
 
 **Re-verificado contra `main` el 10-09-2026 (commit `212046f`):** los siete hallazgos siguen abiertos, uno por uno, y las
@@ -30,9 +30,9 @@ Convención de referencias: todas las líneas apuntan a `pipeline_comercial.jsx`
 
 | # | Hallazgo | Severidad | Efecto |
 |---|---|---|---|
-| **INC-01** | Homologación de niveles invertida (`NV(N) = 6 − N`) | **Alta** | Las 67 reglas con excepción rutean al aprobador equivocado; la escala de severidad queda al revés |
+| ~~**INC-01**~~ | ~~Homologación de niveles invertida~~ | **RESUELTO** | `NV` pasa a identidad: el nivel que la regla configura es el que se exige. El nivel es configuración de la regla, no algo que el motor deba transformar |
 | ~~**INC-02**~~ | ~~Sólo aprueba el nivel exacto; los superiores no~~ | **RESUELTO** | Decidido por el negocio el 11-09-2026 e implementado: aprueba cualquier nivel **igual o superior de la misma área**, sin tope. Ver el cierre de INC-02 |
-| **INC-03** | El área de Operaciones no puede aprobar nada | **Alta** | `NIVEL_ROL` sólo define áreas comercial/riesgo ⇒ el usuario `OP` nunca es aprobador hábil, pese a existir reglas de área Operaciones |
+| ~~**INC-03**~~ | ~~El área de Operaciones no puede aprobar nada~~ | **RESUELTO** | El ÁREA la declara la regla y el NIVEL su tramo; con ese par se buscan en la lista de usuarios los de esa área con ese nivel o superior |
 | **INC-04** | Faltan 4 reglas del catálogo (C47–C50) | **Media** | La política declara 79 reglas; el runtime implementa 75 |
 | **INC-05** | Conviven dos modelos de atribución paralelos | **Media** | «Causas de desvío» (FL/OD) y «motor de reglas» (C/D/O) con convenciones opuestas; el primero está huérfano |
 | **INC-06** | Nivel Comité sin representación | **Media** | C05 (constitución de línea) cae en el aprobador de menor jerarquía |
@@ -132,10 +132,14 @@ La única excepción es C05 (ver **INC-06**).
 > los que ya están en el nivel 3. Si el paso 7 del plan (§6) se aplica sin el paso 8, las excepciones que hoy van al
 > aprobador equivocado siguen yendo al equivocado, sólo que al otro. **Los dos pasos son un mismo cambio.**
 
-**Decisión pendiente.** Confirmar que la convención única del futuro servicio es la de la política (**N5 = máxima**) y
-retirar de la spec la mención a la homologación `6 − N`, que hoy sólo induce este error. Si el módulo interno debe conservar
-1 = máxima por alguna razón, entonces la conversión tiene que aplicarse **también** a `NIVEL_ROL`, `ATRIB_USUARIO` y a la
-comparación de `puedeAprobarExc` — no sólo al catálogo.
+**DECISIÓN TOMADA (11-09-2026) — INC-01 CERRADO.** «A mayor gravedad se requiere mayor jerarquía, pero esto no es cuestión
+del código sino de la **configuración definida en cada regla**.» El nivel que cada criterio necesita es un dato de la regla;
+el motor no debe transformarlo. `NV` queda como **identidad** y lo que el catálogo declara es lo que se exige. Se conserva
+el nombre `NV` para no tocar las 130 llamadas del catálogo.
+
+**IMPLEMENTADO.** Verificado en runtime: C01 «Existencia de Pagaré Firmado» pasa de exigir el **Subgerente de Riesgo** a
+exigir **Operaciones N1**; C21 «Deuda Morosa ACHEF +180» pasa del **Jefe de Grupo Comercial** al **Subgerente de Riesgo**;
+C22 «Infracciones Laborales» escala N2/N3/N4/N5 por monto, de menor a mayor. Casos 38–40 de `tests_asignacion_lineas.js`.
 
 ---
 
@@ -233,8 +237,31 @@ en el flujo de aprobación. Las excepciones de C01–C04 terminan en Comercial o
 Es decir, reemplazar `NIVEL_ROL: nivel → {rol, área}` por una matriz `ROL_POR_AREA_NIVEL: (área, nivel) → rol`, y hacer que
 `puedeAprobarExc` compare contra `regla.area`.
 
-**Decisión pendiente.** Definir la escala de niveles del área Operaciones (la spec §3 no la define: sólo describe la escalera
-Comercial → General → Riesgo). Sin esa definición no se puede completar la matriz.
+**DECISIÓN TOMADA (11-09-2026) — INC-03 CERRADO.** «La regla define el área y el nivel; eso marca las definiciones y los
+requerimientos. El sistema debe ir a la lista de usuarios, buscar al usuario del área que se requiere y del nivel que se
+requiere, y ahí se obtienen los candidatos.» El nivel es una forma de segmentar la atribución en una escala, y todas las
+áreas usan la misma.
+
+**IMPLEMENTADO.** `puedeAprobarExc` lee `regla.area` en vez de `NIVEL_ROL[nivelReq].area`. Una regla **sin área declarada
+no la aprueba nadie**: el default silencioso a «riesgo» que tenía la primera versión de este arreglo escondía una regla mal
+configurada detrás de una aprobación que igual ocurría. `rolDeAreaNivel(area, nivel)` le pone nombre al cargo requerido, y
+si no hay uno exacto nombra al primero del área que lo alcance — la misma escalada que aplica el gate.
+
+Medido tras el cambio, ningún par (área, nivel) del catálogo queda sin aprobador posible:
+
+| Área · nivel | Tramos | Quién puede |
+|---|---|---|
+| comercial · N1 | 18 | Sofía Herrera, Dante Montes, Federico Diaz |
+| comercial · N2 | 11 | Dante Montes, Federico Diaz |
+| operaciones · N1 | 3 | Andrés Mella |
+| operaciones · N2 | 1 | Andrés Mella |
+| riesgo · N1–N4 | 78 | Carolina Vergara, Paula Reyes |
+| riesgo · N5 | 19 | Paula Reyes |
+
+**Observación de configuración, no de código:** el área Riesgo sólo tiene cargos en los niveles 4 y 5, así que sus 78
+tramos de N1 a N4 caen todos en el Jefe de Riesgo por escalada. Si se quiere distinguirlos, es cosa de dar de alta usuarios
+de Riesgo en N1–N3 desde el mantenedor — exactamente el camino que el negocio definió para cubrir un par vacío.
+
 
 ---
 
@@ -407,17 +434,17 @@ No son inconsistencias: son definiciones que la propia política declara pendien
 
 **Fase 1 — Decisiones de negocio** (bloqueante; no hay código que escribir antes)
 
-1. INC-01: confirmar convención única de niveles (**N5 = máxima**) y retirar la homologación `6 − N` de la spec.
+1. ~~INC-01: confirmar convención única de niveles.~~ **HECHO** (11-09-2026: el nivel es configuración de la regla; `NV` queda identidad).
 2. ~~INC-02: confirmar que cualquier nivel superior autoriza; definir si hay tope.~~ **HECHO** (11-09-2026: superior de la MISMA área, sin tope).
-3. INC-03: definir la escala de niveles del área Operaciones.
+3. ~~INC-03: definir la escala de niveles del área Operaciones.~~ **HECHO** (11-09-2026: la misma escala para todas las áreas; la regla declara área y nivel).
 4. INC-04: definir si C47–C50 son reglas de cliente o de par C-D, y las variables que necesitan en A16.
 5. INC-05: confirmar si el monto de la operación debe escalar la atribución.
 6. INC-06: definir si Comité es usuario del sistema o salida a otro proceso.
 
 **Fase 2 — Corrección en el módulo actual** (cada punto es una edición acotada)
 
-7. `NV` → identidad (línea 9816) y C05 al nivel Comité.
-8. **A MEDIAS**: ya existe `ROL_ATRIB` (rol → área + nivel), que es el `ROL_POR_AREA_NIVEL` que pedía este paso, y la atribución se deriva de ahí. Lo que falta es que `NIVEL_ROL` declare el área **operaciones** —hoy ningún nivel la tiene, así que a Operaciones nunca se le pide aprobación (INC-03)— y eso necesita la decisión 3.
+7. ~~`NV` → identidad~~ **HECHO**. Queda pendiente sólo C05 al nivel Comité (INC-06).
+8. ~~Reemplazar `NIVEL_ROL` por `ROL_POR_AREA_NIVEL`.~~ **HECHO**: `ROL_ATRIB` (rol → área + nivel) es la escalera, `rolDeAreaNivel` su inverso para nombrar el cargo, y `puedeAprobarExc` compara contra `regla.area`.
 9. ~~Quitar la restricción `nivelesAprobArea(...).has(lv)`.~~ **HECHO**: la función se eliminó y `puedeAprobarExc` quedó en `lv >= nivelReq`.
 10. Implementar C47–C50.
 11. Retirar el modelo de causas de desvío y su código muerto en `OtorgamientosView`.

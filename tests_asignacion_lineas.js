@@ -306,8 +306,9 @@
   // por rol. Decisiones de negocio fijadas acá: dos personas con el mismo rol aprueban las dos; un
   // cargo vacante lo cubre la jefatura de SU área; y la escalada nunca cruza áreas.
   {
-    const reglaN1 = { tiers: [[() => true, "excepcion", 1]] };  // tramo que pide N1 · Jefe de Grupo Comercial
-    const reglaN4 = { tiers: [[() => true, "excepcion", 4]] };  // tramo que pide N4 · Jefe de Riesgo
+    // La regla declara el ÁREA y el tramo el NIVEL: sin área no hay a quién pedirle la excepción.
+    const reglaN1 = { area: "comercial", tiers: [[() => true, "excepcion", 1]] };  // N1 · Jefe de Grupo Comercial
+    const reglaN4 = { area: "riesgo", tiers: [[() => true, "excepcion", 4]] };     // N4 · Jefe de Riesgo
     const pueden = (rg, niv) => ["JG", "GC", "GG", "RG", "SR", "CR"].filter((c) => puedeAprobarExc(c, rg, niv));
 
     ok("35 el nivel de aprobación sale del rol, no del código de usuario",
@@ -328,11 +329,48 @@
 
     // Dos personas con el mismo cargo: las dos aprueban ese nivel.
     const antes2 = ROL_USUARIO.CR; ROL_USUARIO.CR = "gte_comercial";
-    const dos = ["GC", "CR"].filter((c) => puedeAprobarExc(c, { tiers: [[() => true, "excepcion", 2]] }, 2));
+    const dos = ["GC", "CR"].filter((c) => puedeAprobarExc(c, { area: "comercial", tiers: [[() => true, "excepcion", 2]] }, 2));
     ROL_USUARIO.CR = antes2;
     ok("37 dos personas con el mismo rol aprueban ese nivel",
-       dos.length === 2 && puedeAprobarExc("CR", { tiers: [[() => true, "excepcion", 2]] }, 2) === false,
+       dos.length === 2 && puedeAprobarExc("CR", { area: "comercial", tiers: [[() => true, "excepcion", 2]] }, 2) === false,
        "y al devolverle su rol, deja de aprobar");
+
+    // Una regla SIN área no la puede aprobar nadie: es configuración que falta, no un permiso amplio.
+    ok("41 una regla sin área declarada no la aprueba nadie",
+       ["JG", "GC", "GG", "RG", "SR"].every((c) => puedeAprobarExc(c, { tiers: [[() => true, "excepcion", 1]] }, 1) === false),
+       "el área es obligatoria para rutear la excepción");
+  }
+
+  // 38-39 · RUTEO DE EXCEPCIONES: la regla declara el ÁREA y el tramo el NIVEL; el sistema busca en la
+  // lista de usuarios los de esa área con ese nivel o superior. Antes el área salía del NIVEL y el
+  // nivel venía invertido (`6 − N`), así que un pagaré sin firmar —N1 de Operaciones— subía al
+  // Subgerente de Riesgo y 180 días de mora —N5 de Riesgo— los firmaba un Jefe de Grupo Comercial.
+  {
+    const reglaDe = (cod) => (typeof REGLAS_CLIENTE !== "undefined" ? REGLAS_CLIENTE : []).find((r) => (r.cond || "") === cod);
+    const primerExc = (r) => ((r && r.tiers) || []).find((t) => t[1] === "excepcion");
+    const apruebanDe = (r, niv) => Object.keys(USERS).filter((c) => c !== "ADMIN" && puedeAprobarExc(c, r, niv)).map((c) => nombreDe(c));
+
+    const c01 = reglaDe("C01"), t01 = primerExc(c01);
+    ok("38 una excepción de Operaciones la aprueba Operaciones, no Riesgo",
+       !!c01 && c01.area === "operaciones" && t01[2] === 1
+       && JSON.stringify(apruebanDe(c01, t01[2])) === JSON.stringify(["Andrés Mella"]),
+       c01 ? `${c01.nombre.slice(0, 34)} · ${c01.area} N${t01[2]} → ${apruebanDe(c01, t01[2]).join(", ")}` : "sin C01");
+
+    const c21 = reglaDe("C21"), t21 = primerExc(c21);
+    ok("39 a mayor gravedad, mayor jerarquía",
+       !!c21 && c21.area === "riesgo" && t21[2] === 5
+       && JSON.stringify(apruebanDe(c21, t21[2])) === JSON.stringify(["Paula Reyes"]),
+       c21 ? `${c21.nombre.slice(0, 34)} · ${c21.area} N${t21[2]} → ${apruebanDe(c21, t21[2]).join(", ")}` : "sin C21");
+
+    // Ningún par (área, nivel) del catálogo puede quedar sin aprobador posible: si queda, es
+    // configuración que falta (crear el área y asignarle un usuario con ese nivel), no un bug.
+    const huerfanos = [];
+    (typeof REGLAS_CLIENTE !== "undefined" ? REGLAS_CLIENTE : []).forEach((r) => (r.tiers || []).forEach((t) => {
+      if (t[1] !== "excepcion") return;
+      if (!apruebanDe(r, t[2]).length) huerfanos.push(`${r.cond} ${r.area} N${t[2]}`);
+    }));
+    ok("40 ningún criterio queda sin aprobador posible", huerfanos.length === 0,
+       huerfanos.length ? huerfanos.slice(0, 4).join(" · ") : "los 130 tramos tienen a quién ir");
   }
 
   console.log(out.join("\n"));

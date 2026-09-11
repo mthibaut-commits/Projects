@@ -975,10 +975,18 @@ const aprobadoresDe = (area, nivel) => Object.keys(ATRIB_USUARIO).filter((k) => 
 // en la jerarquía comercial. Son atribuciones distintas, no una sola escalera.
 // Antes se exigía además que el nivel del aprobador estuviera DEFINIDO como tramo de esa misma regla,
 // lo que dejaba al superior afuera salvo que la regla lo nombrara: era el INC-02 de la auditoría.
+// INC-03 RESUELTO (11-09-2026). El ÁREA la declara la regla y el NIVEL su tramo: con ese par se va a
+// la lista de usuarios y se buscan los que tienen esa área en ese nivel o superior. Antes el área
+// salía de `NIVEL_ROL[nivelReq]` —o sea, del nivel— y `regla.area` no se leía nunca: las cuatro reglas
+// de Operaciones (los pagarés, C01–C04) terminaban en el Subgerente de Riesgo, y 109 de los 130 tramos
+// se resolvían por un área distinta de la que declaraban.
 function puedeAprobarExc(code, regla, nivelReq) {
   if (code === "ADMIN") return true;
-  const nr = NIVEL_ROL[nivelReq] || NIVEL_ROL[4];
-  const lv = atribDe(code).atrib[nr.area];
+  // Sin área declarada no aprueba NADIE. Un default silencioso —antes «riesgo»— esconde una regla mal
+  // configurada detrás de una aprobación que igual ocurre; así queda a la vista en la lista vacía.
+  const area = regla && regla.area;
+  if (!area) return false;
+  const lv = atribDe(code).atrib[area];
   return lv != null && lv >= nivelReq;
 }
 const aprobadoresExc = (regla, nivelReq) => Object.keys(ATRIB_USUARIO).filter((k) => USERS[k] && puedeAprobarExc(k, regla, nivelReq)).map((k) => USERS[k]);
@@ -4839,8 +4847,8 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const truncD = (s, n) => (s && s.length > n ? s.slice(0, n).trim() + "…" : s);
   // Tarjeta de regla reutilizable (cliente y deudor).
   const reglaCard = (x, kpref) => {
-    const nr = NIVEL_ROL[x.nivel] || NIVEL_ROL[4];
-    const otraArea = x.disp === "excepcion" && nr.area !== x.area;
+    const nr = rolDeAreaNivel(x.area, x.nivel || 1);
+    const otraArea = false; // el área ya la pone la regla: nunca diverge (INC-03 resuelto)
     const tip = `${x.cond} · Tramo ${typeof x.tierIdx === "number" ? x.tierIdx + 1 : "—"}`;
     return (
       <div key={(kpref || "") + x.n} className="rounded-md p-2" style={{ border: `1px solid ${C.line}`, borderLeft: `3px solid ${dCol[x.disp]}`, backgroundColor: "#fff" }}>
@@ -9898,7 +9906,12 @@ function varsModeloExt(deal) {
   };
 }
 (() => {
-  const NV = (N) => 6 - N, MM = 1e6;
+  // INC-01 RESUELTO (11-09-2026). `NV` invertía el nivel: `6 − N` mandaba una excepción N1 —un pagaré
+  // sin firmar— al Subgerente de Riesgo, y una N5 —180 días de mora— al Jefe de Grupo Comercial. A
+  // mayor gravedad, menor jerarquía. El nivel que cada regla necesita es CONFIGURACIÓN de la regla, no
+  // algo que el motor deba transformar: `NV` queda como identidad y lo que el catálogo declara es lo
+  // que se exige. Se conserva el nombre para no tocar las 130 llamadas del catálogo.
+  const NV = (N) => N, MM = 1e6;
   const tHard = (k) => [[(v) => v[k] > 0, "rechazado"]];
   const tBin = (k, N) => [[(v) => v[k] > 0, "excepcion", NV(N)]];
   const t510 = (k, tot, a, b, c) => [[(v) => v[k] === 0, "aprobado"], [(v) => v[k] < 5 * MM || v[k] < 0.05 * v[tot], "excepcion", NV(a)], [(v) => v[k] < 10 * MM || v[k] < 0.10 * v[tot], "excepcion", NV(b)], [() => true, "excepcion", NV(c)]];
@@ -10565,6 +10578,21 @@ const ROL_ATRIB = {
 };
 // El super-admin cubre las tres áreas en el nivel máximo. El resto sale de su rol; sin rol con
 // atribución, el objeto va vacío y `puedeAprobarExc` lo deja fuera por construcción.
+// El CARGO que corresponde a un (área, nivel). Es el inverso de `ROL_ATRIB`: la regla dice qué área
+// y qué nivel requiere, y esto le pone nombre. Antes el nombre salía de `NIVEL_ROL[nivel]`, que
+// resolvía el área DESDE el nivel e ignoraba la que la regla declara — ése era el INC-03.
+// Si no hay un cargo exactamente en ese nivel, se nombra el primero del área que lo alcance: es la
+// misma regla de escalada que aplica `puedeAprobarExc`, así que lo que se muestra es quien de verdad
+// puede firmar. Si nadie del área llega, se nombra el requisito en crudo y queda a la vista que falta
+// configurar un usuario de esa área con ese nivel.
+function rolDeAreaNivel(area, nivel) {
+  const exacto = Object.keys(ROL_ATRIB).find((k) => ROL_ATRIB[k].area === area && ROL_ATRIB[k].nivel === nivel);
+  if (exacto) return { rol: (ROL_POR_ID[exacto] || {}).label || exacto, area, id: exacto };
+  const sup = Object.keys(ROL_ATRIB).filter((k) => ROL_ATRIB[k].area === area && ROL_ATRIB[k].nivel >= nivel)
+    .sort((x, y) => ROL_ATRIB[x].nivel - ROL_ATRIB[y].nivel)[0];
+  if (sup) return { rol: (ROL_POR_ID[sup] || {}).label || sup, area, id: sup, porEscalada: true };
+  return { rol: `N${nivel} de ${ROL_AREA_LBL[area] || area}`, area, id: null, sinCargo: true };
+}
 function atribDeRol(code) {
   if (code === "ADMIN") return { riesgo: 5, comercial: 5, operaciones: 5 };
   const a = ROL_ATRIB[ROL_USUARIO[code]];
@@ -10695,7 +10723,7 @@ function excepcionesSinComentario(deal) {
 // registra auditoría/bitácora, avisa por Mensajería interna y genera una tarea a los apoderados hábiles.
 function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinComentarios) {
   if (!x || !x.stKey || !x.regla) return;
-  const nr = NIVEL_ROL[x.nivel] || NIVEL_ROL[4];
+  const nr = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", x.nivel || 1);
   // Escritura optimista + confirmación (la promesa no se espera aquí: la función es síncrona por sus
   // muchos call sites; el punto de await queda listo para cuando la mutation sea real).
   const sol = { ...(repoSolicitudExc.get(deal.id) || {}), [x.stKey]: { comentario: comentario || "", archivos: (archivos || []).slice(), sinComentarios: !!sinComentarios, por: USERS[execCode] || execCode, porCode: execCode, fecha: new Date().toLocaleString("es-CL"), nivel: x.nivel || 4, rol: nr.rol } };
@@ -10800,7 +10828,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
     const misPend = excPend.filter((x) => puede(x.regla, x.nivel || 4));
     if (misPend.length > 0) return; // aún le quedan excepciones a ESTE aprobador → no completó su parte
     const porNivel = {};
-    excPend.forEach((x) => { const niv = x.nivel || 4; const nr = NIVEL_ROL[niv] || NIVEL_ROL[4]; (porNivel[niv] = porNivel[niv] || { rol: nr.rol, niv, n: 0 }).n++; });
+    excPend.forEach((x) => { const niv = x.nivel || 1; const nr = rolDeAreaNivel((x.regla && x.regla.area) || x.area || "riesgo", niv); (porNivel[niv + "|" + nr.area] = porNivel[niv + "|" + nr.area] || { rol: nr.rol, niv, n: 0 }).n++; });
     const faltan = Object.values(porNivel).sort((a, b) => a.niv - b.niv);
     let texto = `${USERS[usuario] || usuario} completó su parte del otorgamiento de ${deal.cliente} (${deal.id}).`;
     texto += faltan.length === 0
@@ -10957,7 +10985,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                   const f = form[key] || {};
                   const ee = (VISADO_STATE[o.deal.id] || {})[x.stKey] || "pendiente";
                   const det = (VISADO_DETALLE[o.deal.id] || {})[x.stKey];
-                  const niv = x.nivel || 4; const nr = NIVEL_ROL[niv] || NIVEL_ROL[4]; const otraArea = nr.area !== x.regla.area;
+                  const niv = x.nivel || 1; const nr = rolDeAreaNivel(x.regla.area, niv); const otraArea = false;
                   const aps = aprobadoresExc(x.regla, niv); const puedeYo = puede(x.regla, niv);
                   const accionable = puedeYo && ee === "pendiente";
                   const dests = destinatariosDe(o.deal);
@@ -11018,7 +11046,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
               </div>}
               {excOtros.length > 0 && <div>
                 <div className="t11 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Excepciones de otros aprobadores ({excOtros.length}) · solo lectura</div>
-                <div className="mt-1 space-y-1">{excOtros.map((x) => { const niv = x.nivel || 4; const nr = NIVEL_ROL[niv] || NIVEL_ROL[4]; return (
+                <div className="mt-1 space-y-1">{excOtros.map((x) => { const niv = x.nivel || 1; const nr = rolDeAreaNivel((x.regla && x.regla.area) || x.area || "riesgo", niv); return (
                   <div key={x.regla.n} className="rounded-lg p-2" style={{ border: `1px solid ${C.line}`, borderLeft: "3px solid #D1D5DB", backgroundColor: "#F9FAFB" }}>
                     <div className="t11 font-semibold" style={{ color: C.ink }}>#{x.regla.n} · {x.regla.nombre} <span className="ml-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: AREA_COLOR[x.regla.area].bg2, color: AREA_COLOR[x.regla.area].fg }}>{AREA_LBL[x.regla.area]}</span></div>
                     <div className="mt-0.5 t10" style={{ color: C.sub }}>{x.regla.hallazgo}</div>
@@ -11312,7 +11340,7 @@ function ReglasClienteCatalogo() {
             <table className="mt-1.5 w-full border-collapse t10">
               <thead><tr>{["Tramo", "Condición (límite)", "Disposición", "Nivel / aprobadores"].map((h, i) => <th key={i} className="px-1.5 py-1 text-left font-semibold" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
               <tbody>
-                {(r.tiers || []).map((t, i) => { const disp = t[1], niv = t[2]; const c = tierChip(t); const nr = NIVEL_ROL[niv] || NIVEL_ROL[4]; const aps = disp === "excepcion" ? aprobadoresExc(r, niv) : []; return (
+                {(r.tiers || []).map((t, i) => { const disp = t[1], niv = t[2]; const c = tierChip(t); const nr = rolDeAreaNivel(r.area, niv); const aps = disp === "excepcion" ? aprobadoresExc(r, niv) : []; return (
                   <tr key={i} style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: c.bg }}>
                     <td className="px-1.5 py-1.5" style={{ color: C.sub }}>{i + 1}</td>
                     <td className="px-1.5 py-1.5" style={{ color: C.ink, fontFamily: "ui-monospace, monospace" }}>{tramoCond(t[0])}</td>
@@ -11659,10 +11687,10 @@ function buildAtribucionesJSON() {
     const base = { n: r.n, nombre: r.nombre, dominio: AREA_LBL[r.area] || r.area, tipo: r.tipo, condicion_maestra: r.cond, reevaluable: reglaReev(r.n) };
     if (r.clasif) return { ...base, naturaleza: "clasificacion", tramos: [] };
     base.hallazgo = r.hallazgo; base.naturaleza = "decision";
-    base.tramos = (r.tiers || []).map((t, i) => { const disp = t[1], niv = t[2]; const tr = { orden: i + 1, condicion: tramoCond(t[0]), disposicion: disp }; if (disp === "excepcion") { const nr = NIVEL_ROL[niv] || NIVEL_ROL[4]; tr.nivel_requerido = niv; tr.rol_aprobador = nr.rol; tr.area_aprobacion = AREA_LBL[nr.area] || nr.area; tr.aprobadores = aprobadoresExc(r, niv); } return tr; });
+    base.tramos = (r.tiers || []).map((t, i) => { const disp = t[1], niv = t[2]; const tr = { orden: i + 1, condicion: tramoCond(t[0]), disposicion: disp }; if (disp === "excepcion") { const nr = rolDeAreaNivel(r.area, niv); tr.nivel_requerido = niv; tr.rol_aprobador = nr.rol; tr.area_aprobacion = AREA_LBL[r.area] || r.area; tr.aprobadores = aprobadoresExc(r, niv); } return tr; });
     return base;
   });
-  return { descripcion: "Atribuciones de aprobación de otorgamiento por criterio — NEX Factoring. Convención: cada rol aprueba EXCLUSIVAMENTE los criterios de su nivel (el que define el risk tier de la regla); el máximo nivel definido en la regla es su máximo aprobador; el super-admin cubre cualquier nivel.", generado: new Date().toISOString().slice(0, 10), niveles: NIVEL_ROL, total_criterios: criterios.length, criterios };
+  return { descripcion: "Atribuciones de aprobación de otorgamiento por criterio — NEX Factoring. Convención: cada regla declara el ÁREA y cada tramo el NIVEL requerido; aprueba cualquier usuario de esa área con ese nivel o superior, de modo que un cargo vacante lo cubre la jefatura de su área. La escalada no cruza áreas.", generado: new Date().toISOString().slice(0, 10), niveles: ROL_ATRIB, total_criterios: criterios.length, criterios };
 }
 // Mantenedor: atribuciones de aprobación por criterio (solo lectura + descarga del JSON de configuración).
 function AtribucionesMantenedor() {
@@ -11699,7 +11727,7 @@ function AtribucionesMantenedor() {
                 <thead><tr>{["Tramo (condición)", "Disposición", "Nivel · rol", "Aprobadores"].map((h) => <th key={h} className="px-2 py-1 text-left font-semibold" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
                 <tbody>{(r.tiers || []).map((t, i) => {
                   const disp = t[1], niv = t[2], dm = dispMeta[disp] || dispMeta.aprobado;
-                  const nr = disp === "excepcion" ? (NIVEL_ROL[niv] || NIVEL_ROL[4]) : null;
+                  const nr = disp === "excepcion" ? rolDeAreaNivel(r.area, niv) : null;
                   const aps = disp === "excepcion" ? aprobadoresExc(r, niv) : [];
                   return (
                     <tr key={i} style={{ borderBottom: `1px solid ${C.line}` }}>
