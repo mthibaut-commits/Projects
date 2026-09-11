@@ -4,3 +4,6 @@ pipeline_comercial.html
 # PNG de referencia de capturar_pantallas.mjs: se regeneran en cada corrida y no comprimen, asi que
 # versionarlos hace crecer el repo unos 5 MB por vez. El HTML de al lado si va: es el entregable.
 Capturas_UI/*.png
+
+# PNG de referencia de capturar_variantes.mjs (mismo criterio que Capturas_UI)
+Variantes_UI/*.png
