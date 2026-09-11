@@ -418,6 +418,7 @@ const SCHEMA_VERSION = {
   cfgOper: 1,        // configuración operativa y de pricing por tenant
   permisos: 1,       // permisos de visibilidad por usuario
   roles: 1,          // rol de cada usuario (por tenant)
+  areas: 1,          // areas que aprueban excepciones (por tenant)
   auditoria: 2,      // bitacora de auditoria encadenada (v2: cadena SHA-256, antes hash de 32 bits)
   auth: 1,           // intentos fallidos y bloqueo por cuenta
   curse: 3,          // payload de curse por negocio (v3: OTP con SHA-256 + sal; v2 usaba un hash de 32 bits)
@@ -905,7 +906,16 @@ let MATRIZ_OTORG = {
 let CFG_TRAMOS = [
   { hasta: 20, grav: "leve" }, { hasta: 60, grav: "moderado" }, { hasta: 120, grav: "grave" }, { hasta: null, grav: "critico" },
 ];
-const AREA_LBL = { riesgo: "Riesgo", comercial: "Comercial", operaciones: "Operaciones" };
+// Etiqueta de cada área. Se deriva del catálogo por tenant (`AREAS_CAT`, definido junto a los roles):
+// las 27 lecturas de `AREA_LBL[x]` de la app siguen funcionando y toman el nombre que el tenant puso.
+// Se mantiene como objeto —no función— porque eso es lo que esperan esas 27 lecturas.
+const AREA_LBL = new Proxy({}, {
+  get: (_, k) => {
+    const a = (typeof AREAS_CAT !== "undefined" ? AREAS_CAT : []).find((x) => x.id === k);
+    return a ? a.label : (typeof k === "string" ? k : undefined);
+  },
+  has: (_, k) => (typeof AREAS_CAT !== "undefined" ? AREAS_CAT : []).some((x) => x.id === k),
+});
 const GRAV_LBL = { leve: "Leve", moderado: "Moderado", grave: "Grave", critico: "Crítico" };
 const GRAV_COLOR = { leve: { bg: "#F0FDF4", fg: "#16A34A" }, moderado: { bg: "#FFF7ED", fg: "#C2410C" }, grave: { bg: "#fff7ed", fg: "#c2410c" }, critico: { bg: "#fef2f2", fg: "#EF4444" } };
 const AREA_COLOR = { riesgo: { bg: "#fef2f2", bg2: "#FECACA", fg: "#EF4444" }, comercial: { bg: "#F1ECFF", bg2: "#E4DBFF", fg: "#5B21D6" }, operaciones: { bg: "#f0fdfa", bg2: "#ccfbf1", fg: "#0f766e" } };
@@ -10558,6 +10568,48 @@ const ROLES_CAT = [
   { id: "ejec_verif",     label: "Ejecutivo de verificación", area: "verificacion" },
   { id: "admin",          label: "Super administrador",       area: "*" },
 ];
+// ── ÁREAS DEL TENANT ─────────────────────────────────────────────────────────────────────
+// Las áreas que aprueban excepciones de otorgamiento. Una regla declara su área y su tramo el nivel;
+// con ese par se buscan los usuarios habilitados (ver `puedeAprobarExc`). Vive POR TENANT porque cada
+// factoring organiza sus áreas distinto: si a un criterio hay que rutearlo a un área que no existe, se
+// crea acá y después se le asigna a un usuario con el nivel que corresponda.
+// El `id` es lo que el código compara contra `regla.area`, así que **no se edita**: renombrar el id
+// dejaría reglas apuntando a un área inexistente y nadie podría aprobarlas. Lo editable es la etiqueta.
+const AREAS_DEFAULT = [
+  { id: "comercial",    label: "Comercial",    desc: "Atribución comercial: precio, condiciones y excepciones de la relación con el cliente." },
+  { id: "riesgo",       label: "Riesgo",       desc: "Atribución de riesgo de crédito: comportamiento del cliente y del deudor." },
+  { id: "operaciones",  label: "Operaciones",  desc: "Viabilidad operativa del curse: pagarés, poderes y documentación." },
+  { id: "verificacion", label: "Verificación", desc: "Confirmación de facturas con el deudor. No rutea excepciones de otorgamiento." },
+];
+const AREAS_KEY = "pc_areas_" + TENANT_ACTUAL;
+// Misma higiene que roles y permisos: del storage sólo entran áreas con id y etiqueta válidos, y las
+// del default no se pueden borrar —hay reglas del catálogo apuntando a ellas—.
+function cargarAreas() {
+  const base = AREAS_DEFAULT.map((a) => ({ ...a }));
+  const guardado = leerVersionado(AREAS_KEY, "areas", null);
+  if (!Array.isArray(guardado)) return base;
+  let ignoradas = 0;
+  for (const g of guardado) {
+    if (!g || typeof g.id !== "string" || !/^[a-z][a-z0-9_]{1,23}$/.test(g.id)) { ignoradas++; continue; }
+    const lbl = typeof g.label === "string" && g.label.trim() ? g.label.trim().slice(0, 40) : null;
+    if (!lbl) { ignoradas++; continue; }
+    const ya = base.find((b) => b.id === g.id);
+    if (ya) { ya.label = lbl; if (typeof g.desc === "string") ya.desc = g.desc.slice(0, 240); }
+    else base.push({ id: g.id, label: lbl, desc: typeof g.desc === "string" ? g.desc.slice(0, 240) : "" });
+  }
+  if (ignoradas) logSys("warn", "app", `Áreas: ${ignoradas} entrada(s) del storage ignoradas (id o etiqueta inválidos)`, { tenant: TENANT_ACTUAL });
+  return base;
+}
+let AREAS_CAT = cargarAreas();
+function guardarAreas() { escribirVersionado(AREAS_KEY, "areas", AREAS_CAT); }
+const esAreaBase = (id) => AREAS_DEFAULT.some((a) => a.id === id);
+// ¿Cuántos tramos del catálogo de otorgamiento rutean a esta área? Es lo que impide borrarla.
+function tramosDeArea(id) {
+  try {
+    return (typeof REGLAS_CLIENTE === "undefined" ? [] : REGLAS_CLIENTE)
+      .filter((r) => r.area === id).reduce((n, r) => n + (r.tiers || []).filter((t) => t[1] === "excepcion").length, 0);
+  } catch (e) { return 0; }
+}
 const ROL_POR_ID = {}; ROLES_CAT.forEach((r) => { ROL_POR_ID[r.id] = r; });
 // ATRIBUCIÓN POR ROL. Qué nivel de aprobación y en qué área implica cada cargo — la escalera que
 // antes estaba cableada por código de usuario en `ATRIB_USUARIO`. Los niveles son los mismos de
@@ -14287,6 +14339,7 @@ const CFG_SECCIONES = [
   { k: "auditoria", label: "Auditoría", Icon: Eye },
   { k: "usuarios", label: "Usuarios", Icon: User },
   { k: "roles", label: "Roles", Icon: Star },
+  { k: "areas", label: "Áreas", Icon: Target },
   { k: "otorgamiento", label: "Otorgamiento", Icon: ShieldCheck },
   { k: "productos", label: "Productos", Icon: Zap },
   { k: "monedas", label: "Monedas", Icon: Calculator },
@@ -14961,7 +15014,7 @@ function habilitaPorAtribucion(rolId) {
   if (a.area === "operaciones") return `Nivel N${a.nivel} de ${areaLbl}. Hoy ninguna regla rutea a esta área, así que no se le pide aprobación (INC-03 de la auditoría, pendiente de decisión).`;
   return `Aprueba excepciones de otorgamiento del área ${areaLbl} de nivel N${a.nivel} o inferior.`;
 }
-const ROL_AREA_LBL = { comercial: "Comercial", riesgo: "Riesgo", operaciones: "Operaciones", verificacion: "Verificación", "*": "Transversal" };
+const ROL_AREA_LBL = new Proxy({}, { get: (_, k) => (k === "*" ? "Transversal" : AREA_LBL[k]) });
 // El rol SÍ define la atribución: `ROL_ATRIB` dice qué nivel y qué área implica cada cargo, y
 // `atribDe` la deriva de ahí. Lo que el aviso explica es la parte que no se deduce sola — la
 // escalada por vacancia y que no cruza áreas—, porque de eso depende quién queda habilitado
@@ -14972,7 +15025,95 @@ function AvisoAtribucionPorRol() {
       El rol <b>define la atribución</b> para aprobar excepciones de otorgamiento. Si un cargo queda <b>vacante</b>, la jefatura de su área lo cubre —un N3 aprueba lo que le tocaba al N1—, pero la escalada <b>no cruza áreas</b>: un Gerente General no visa una excepción de Riesgo. Dos personas con el mismo rol aprueban las dos.
     </div>
   );
-}// Configuración › ROLES. El catálogo: qué roles existen, qué habilita cada uno y quién lo tiene.
+}// Configuración › ÁREAS. Las áreas que aprueban excepciones de otorgamiento, por tenant. Existe
+// porque el ruteo es (área, nivel): si un criterio tiene que ir a un área que este factoring no tiene,
+// se crea acá y después se le asigna a alguien con el nivel que corresponda, en Usuarios.
+function CfgAreas() {
+  const [, force] = useState(0);
+  const [nueva, setNueva] = useState({ id: "", label: "" });
+  const [error, setError] = useState(null);
+  const [borrar, setBorrar] = useState(null);
+  const auditar = (accion, glosa) => {
+    const actor = (SESION && SESION.usuario) || "—";
+    registrarAuditoria({ usuario: USERS[actor] || actor, modulo: "Áreas del tenant", accion, glosa, severidad: "alta" });
+  };
+  const usuariosDe = (id) => Object.keys(USERS).filter((k) => k !== "ADMIN" && atribDe(k).atrib[id] != null)
+    .map((k) => `${nombreDe(k)} (N${atribDe(k).atrib[id]})`);
+  const renombrar = (id, label) => {
+    const a = AREAS_CAT.find((x) => x.id === id); if (!a || !label.trim()) return;
+    const antes = a.label; a.label = label.trim().slice(0, 40); guardarAreas();
+    auditar("Área renombrada", `${id}: ${antes} → ${a.label}`); force((v) => v + 1);
+  };
+  const crear = () => {
+    const id = nueva.id.trim().toLowerCase(), label = nueva.label.trim();
+    if (!/^[a-z][a-z0-9_]{1,23}$/.test(id)) return setError("El identificador va en minúsculas, sin espacios ni acentos, y parte con letra.");
+    if (AREAS_CAT.some((x) => x.id === id)) return setError(`Ya existe un área con el identificador «${id}».`);
+    if (!label) return setError("Ponle un nombre al área.");
+    AREAS_CAT.push({ id, label: label.slice(0, 40), desc: "" }); guardarAreas();
+    auditar("Área creada", `${id} · ${label}`);
+    setNueva({ id: "", label: "" }); setError(null); force((v) => v + 1);
+  };
+  const eliminar = (id) => {
+    const i = AREAS_CAT.findIndex((x) => x.id === id); if (i < 0) return;
+    AREAS_CAT.splice(i, 1); guardarAreas(); auditar("Área eliminada", id); setBorrar(null); force((v) => v + 1);
+  };
+  return (
+    <div className="grid gap-4">
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div className="text-lg font-semibold" style={{ color: C.ink }}>Áreas</div>
+        <div className="mt-0.5 t12" style={{ color: C.faint }}>
+          Las áreas que aprueban excepciones de otorgamiento en <b>{CFG_ACTIVA.marcaNombre || TENANT_ACTUAL}</b>, guardadas <b>por tenant</b> (<code style={{ fontFamily: "ui-monospace,monospace" }}>{AREAS_KEY}</code>).
+          Cada criterio declara <b>un área y un nivel</b>; con ese par se buscan en <b>Usuarios</b> los que tienen esa área en ese nivel o superior.
+        </div>
+        <table className="mt-3 w-full border-collapse t11">
+          <thead><tr>{["Área", "Identificador", "Criterios que rutean acá", "Quién la tiene", ""].map((h, i) => (
+            <th key={i} className="px-2 py-1 text-left t10 font-semibold uppercase tracking-wide" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>
+          ))}</tr></thead>
+          <tbody>{AREAS_CAT.map((a) => { const n = tramosDeArea(a.id); const quienes = usuariosDe(a.id); const base = esAreaBase(a.id); return (
+            <tr key={a.id} style={{ borderBottom: `1px solid ${C.line}` }}>
+              <td className="px-2 py-1.5">
+                <input value={a.label} onChange={(e) => renombrar(a.id, e.target.value)}
+                  className="rounded-md px-2 py-1 t11" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 170 }} />
+              </td>
+              <td className="px-2 py-1.5 t10" style={{ color: C.faint, fontFamily: "ui-monospace,monospace" }}
+                title="Es lo que el catálogo de criterios compara contra el área de cada regla. No se edita: renombrarlo dejaría reglas apuntando a un área inexistente.">{a.id}</td>
+              <td className="px-2 py-1.5" style={{ color: n ? C.ink : C.faint }}>{n ? `${n} tramo${n === 1 ? "" : "s"}` : "ninguno"}</td>
+              <td className="px-2 py-1.5 t10" style={{ color: quienes.length ? C.sub : "#C2410C" }}>
+                {quienes.length ? quienes.join(" · ") : (n ? "⚠ nadie — hay criterios sin aprobador posible" : "nadie")}
+              </td>
+              <td className="px-2 py-1.5 text-right">{base || n ? (
+                <span className="t9" style={{ color: C.faint }} title={base ? "Área base del modelo de riesgo: no se elimina." : `${n} criterio(s) rutean a esta área; quedarían sin aprobador.`}>
+                  {base ? "base" : "en uso"}
+                </span>
+              ) : (
+                <button onClick={() => setBorrar(a)} className="t10 font-medium" style={{ color: C.red }}>Eliminar</button>
+              )}</td>
+            </tr>
+          ); })}</tbody>
+        </table>
+
+        <div className="mt-4 rounded-xl p-3" style={{ backgroundColor: C.lilac, border: `1px solid ${C.line}` }}>
+          <div className="t11 font-semibold" style={{ color: C.ink }}>Crear un área</div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input value={nueva.label} onChange={(e) => { setNueva((v) => ({ ...v, label: e.target.value })); setError(null); }} placeholder="Nombre, p. ej. Contraloría"
+              className="rounded-md px-2 py-1.5 t11" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 210 }} />
+            <input value={nueva.id} onChange={(e) => { setNueva((v) => ({ ...v, id: e.target.value })); setError(null); }} placeholder="identificador, p. ej. contraloria"
+              className="rounded-md px-2 py-1.5 t11" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 230, fontFamily: "ui-monospace,monospace" }} />
+            <button onClick={crear} className="rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Crear</button>
+          </div>
+          {error && <div className="mt-1.5 t10 font-medium" style={{ color: C.red }}>{error}</div>}
+          <div className="mt-1.5 t10" style={{ color: C.faint }}>
+            El <b>identificador</b> es lo que el catálogo de criterios usa para rutear, así que un área nueva no recibe nada hasta que algún criterio la declare. Después hay que asignarle un usuario con el nivel que corresponda, en <b>Configuración › Usuarios</b>.
+          </div>
+        </div>
+      </div>
+      <ConfirmDialog abierto={!!borrar} titulo="¿Eliminar esta área?"
+        descripcion={borrar ? `«${borrar.label}» (${borrar.id}). Ningún criterio rutea a ella, así que no deja aprobaciones huérfanas. Si algún usuario la tenía asignada por su rol, ese rol deja de tener área.` : ""}
+        confirmar="Eliminar" onConfirmar={() => eliminar(borrar.id)} onCancelar={() => setBorrar(null)} />
+    </div>
+  );
+}
+// Configuración › ROLES. El catálogo: qué roles existen, qué habilita cada uno y quién lo tiene.
 // Es de lectura a propósito: los roles son el vocabulario del módulo —el código pregunta por
 // `ejec_verif`, no por una etiqueta— así que dejar crear roles acá daría filas que no gatean nada.
 function CfgRoles() {
@@ -15076,7 +15217,7 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper }) {
         ))}
       </aside>
       <div>
-        {sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "roles" ? <CfgRoles /> : sec === "usuarios" ? <CfgUsuarios /> : sec === "otorgamiento" ? (
+        {sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "roles" ? <CfgRoles /> : sec === "usuarios" ? <CfgUsuarios /> : sec === "areas" ? <CfgAreas /> : sec === "otorgamiento" ? (
           <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
             <div className="text-lg font-semibold" style={{ color: C.ink }}>Otorgamiento · apoderados y atribuciones</div>
             <div className="mt-0.5 t12" style={{ color: C.faint }}>Criterios de verificación, atribuciones de aprobación por criterio y los apoderados que pueden excepcionar (nivel por área). Aquí también se habilita/oculta la aceptación masiva por usuario.</div>

@@ -373,6 +373,20 @@
        huerfanos.length ? huerfanos.slice(0, 4).join(" · ") : "los 130 tramos tienen a quién ir");
   }
 
+  // 42 · ÁREAS POR TENANT. El área es lo que la regla declara para rutear su excepción, así que el
+  // catálogo tiene que cubrir las que el motor usa. Crear un área no rutea nada por sí sola: hasta que
+  // un criterio la declare, no recibe tramos — por eso se puede borrar sin dejar aprobaciones huérfanas.
+  {
+    const ids = AREAS_CAT.map((a) => a.id);
+    const usadasPorReglas = [...new Set((typeof REGLAS_CLIENTE !== "undefined" ? REGLAS_CLIENTE : []).map((r) => r.area).filter(Boolean))];
+    ok("42 el catálogo de áreas cubre las que el motor rutea",
+       usadasPorReglas.every((a) => ids.includes(a))
+       && ["comercial", "riesgo", "operaciones"].every((a) => ids.includes(a))
+       && AREA_LBL.riesgo === "Riesgo" && /^pc_areas_/.test(AREAS_KEY)
+       && tramosDeArea("operaciones") > 0 && tramosDeArea("__inexistente__") === 0,
+       `${ids.length} áreas · las reglas usan ${usadasPorReglas.join(", ")} · clave ${AREAS_KEY}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
