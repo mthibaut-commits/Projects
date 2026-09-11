@@ -404,6 +404,35 @@
        `«${sinArea.rol}» · ${sinNadie.motivo.slice(0, 46)}…`);
   }
 
+  // 44 · EL MOTOR RECIBE EL PADRÓN. Todo lo que necesita saber del tenant —qué áreas hay, quién tiene
+  // qué nivel en cuál— entra como parámetro. Se le pasa un padrón INVENTADO, con un área y un usuario
+  // que no existen en la app, y decide con ése: si consultara `USERS`, `ROL_USUARIO` o `AREAS_CAT` por
+  // su cuenta, este caso fallaría. Es lo que permite extraerlo a un servicio sin arrastrar media app.
+  {
+    const padron = {
+      areas: [{ id: "contraloria", label: "Contraloría" }],
+      usuarios: [
+        { code: "ZZ1", nombre: "Contralor de prueba", rol: "Contralor", atrib: { contraloria: 3 }, superAdmin: false },
+        { code: "ZZ2", nombre: "Analista de prueba", rol: "Analista", atrib: { contraloria: 1 }, superAdmin: false },
+      ],
+      cargos: [{ id: "contralor", rol: "Contralor", area: "contraloria", nivel: 3 }],
+    };
+    const regla = { area: "contraloria", tiers: [[() => true, "excepcion", 2]] };
+    const real = padronAprobadores();
+    ok("44 el motor decide con el padrón que recibe, no con los catálogos de la app",
+       // el contralor (N3) cubre un requisito N2; el analista (N1) no llega
+       puedeAprobarExc("ZZ1", regla, 2, padron) === true
+       && puedeAprobarExc("ZZ2", regla, 2, padron) === false
+       // y nadie de la app aparece, porque en ese padrón no existen
+       && puedeAprobarExc("SR", regla, 2, padron) === false
+       // el nombre del cargo también sale del padrón inyectado
+       && rolDeAreaNivel("contraloria", 2, padron).rol === "Contralor"
+       && rolDeAreaNivel("contraloria", 9, padron).rol === SIN_APROBADOR
+       // el padrón real de la app sigue teniendo sus áreas y sus usuarios
+       && real.areas.length >= 3 && real.usuarios.some((u) => u.code === "SR"),
+       `padrón inyectado: ${padron.usuarios.length} usuarios · real: ${real.usuarios.length}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

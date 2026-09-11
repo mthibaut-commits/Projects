@@ -985,24 +985,30 @@ const aprobadoresDe = (area, nivel) => Object.keys(ATRIB_USUARIO).filter((k) => 
 // en la jerarquía comercial. Son atribuciones distintas, no una sola escalera.
 // Antes se exigía además que el nivel del aprobador estuviera DEFINIDO como tramo de esa misma regla,
 // lo que dejaba al superior afuera salvo que la regla lo nombrara: era el INC-02 de la auditoría.
-// INC-03 RESUELTO (11-09-2026). El ÁREA la declara la regla y el NIVEL su tramo: con ese par se va a
-// la lista de usuarios y se buscan los que tienen esa área en ese nivel o superior. Antes el área
-// salía de `NIVEL_ROL[nivelReq]` —o sea, del nivel— y `regla.area` no se leía nunca: las cuatro reglas
-// de Operaciones (los pagarés, C01–C04) terminaban en el Subgerente de Riesgo, y 109 de los 130 tramos
+// INC-03 RESUELTO (11-09-2026). El ÁREA la declara la regla y el NIVEL su tramo: con ese par se va al
+// PADRÓN y se buscan los que tienen esa área en ese nivel o superior. Antes el área salía de
+// `NIVEL_ROL[nivelReq]` —o sea, del nivel— y `regla.area` no se leía nunca: las cuatro reglas de
+// Operaciones (los pagarés, C01–C04) terminaban en el Subgerente de Riesgo, y 109 de los 130 tramos
 // se resolvían por un área distinta de la que declaraban.
-function puedeAprobarExc(code, regla, nivelReq) {
-  if (code === "ADMIN") return true;
-  // Sin área declarada no aprueba NADIE. Un default silencioso —antes «riesgo»— esconde una regla mal
-  // configurada detrás de una aprobación que igual ocurre; así queda a la vista en la lista vacía.
+// DESACOPLADO: todo lo que necesita saber del tenant entra por `padron`. No consulta `USERS`,
+// `ROL_USUARIO`, `ROL_ATRIB` ni `AREAS_CAT` — el default es una comodidad para los call sites de la
+// app, no una dependencia del motor: pasándole un padrón, esta función se extrae tal cual a un
+// servicio. Ver `padronAprobadores`.
+function puedeAprobarExc(code, regla, nivelReq, padron) {
+  const pad = padron || padronAprobadores();
+  const u = pad.usuarios.find((x) => x.code === code);
+  if (!u) return false;
+  if (u.superAdmin) return true;
   const area = regla && regla.area;
   if (!area) return false;
   // El área tiene que existir en el tenant: si se borró o el criterio apunta a una que nunca se creó,
   // no hay atribución que valga. Así «falta el área» es una causa explícita y no un permiso silencioso.
-  if (typeof AREAS_CAT !== "undefined" && !AREAS_CAT.some((a) => a.id === area)) return false;
-  const lv = atribDe(code).atrib[area];
+  if (!pad.areas.some((a) => a.id === area)) return false;
+  const lv = u.atrib[area];
   return lv != null && lv >= nivelReq;
 }
-const aprobadoresExc = (regla, nivelReq) => Object.keys(ATRIB_USUARIO).filter((k) => USERS[k] && puedeAprobarExc(k, regla, nivelReq)).map((k) => USERS[k]);
+const aprobadoresExc = (regla, nivelReq, padron) => { const pad = padron || padronAprobadores();
+  return pad.usuarios.filter((u) => puedeAprobarExc(u.code, regla, nivelReq, pad)).map((u) => USERS[u.code]); };
 let CRITERIOS_VERIF = [
   { id: "OP1", area: "operaciones", modo: "auto", criticidad: "minima", entidad: "cliente", nombre: "Documentos cedidos vs. total de la operación", descripcion: "Verifica que el 100% de los documentos de la operación estén cedidos a Security.", accion: "Solicitar la cesión de los documentos faltantes antes del curse.", variable: "$MontoCesionOperacion / $MontoOperacion", unidad: "%", rangos: [{ op: "=", valor: 100, disp: "aprobada" }, { op: "<", valor: 100, disp: "rechazada" }] },
   { id: "OP2", area: "operaciones", modo: "auto", criticidad: "opcional", entidad: "cliente", nombre: "% anticipo declarado (MAC) por sobre la simulación", descripcion: "Compara el % de anticipo declarado en la API MAC contra el de la simulación.", accion: "Ajustar la simulación o solicitar revisión del % de anticipo.", variable: "$PctAnticipoMAC - $PctAnticipoSimulacion", unidad: "pp", rangos: [{ op: "<=", valor: 0, disp: "aprobada" }, { op: ">", valor: 0, disp: "sujeto", nivel: 3 }] },
@@ -10643,23 +10649,24 @@ const ROL_ATRIB = {
 // Lo que el motor muestra cuando un criterio no tiene a quién pedirle la excepción. Es una sola
 // constante para que la frase sea idéntica en las cinco pantallas donde puede aparecer.
 const SIN_APROBADOR = "Sin aprobador definido";
-function rolDeAreaNivel(area, nivel) {
-  const exacto = Object.keys(ROL_ATRIB).find((k) => ROL_ATRIB[k].area === area && ROL_ATRIB[k].nivel === nivel);
-  if (exacto) return { rol: (ROL_POR_ID[exacto] || {}).label || exacto, area, id: exacto };
-  const sup = Object.keys(ROL_ATRIB).filter((k) => ROL_ATRIB[k].area === area && ROL_ATRIB[k].nivel >= nivel)
-    .sort((x, y) => ROL_ATRIB[x].nivel - ROL_ATRIB[y].nivel)[0];
-  if (sup) return { rol: (ROL_POR_ID[sup] || {}).label || sup, area, id: sup, porEscalada: true };
+function rolDeAreaNivel(area, nivel, padron) {
+  const pad = padron || padronAprobadores();
+  const delArea = pad.cargos.filter((c) => c.area === area);
+  const exacto = delArea.find((c) => c.nivel === nivel);
+  if (exacto) return { rol: exacto.rol, area, id: exacto.id };
+  const sup = delArea.filter((c) => c.nivel >= nivel).sort((x, y) => x.nivel - y.nivel)[0];
+  if (sup) return { rol: sup.rol, area, id: sup.id, porEscalada: true };
   // No hay cargo que cubra este (área, nivel). Es CONFIGURACIÓN que falta, y el motor tiene que
   // decirlo con todas sus letras: una lista de aprobadores vacía se lee como «todavía no lo miran»,
   // cuando en realidad no hay nadie a quien pedírselo y la operación se queda pegada sin que nadie
   // sepa por qué. Se distinguen las dos causas porque se arreglan en mantenedores distintos.
-  const areaExiste = (typeof AREAS_CAT !== "undefined" ? AREAS_CAT : []).some((a) => a.id === area);
-  const areaLbl = ROL_AREA_LBL[area] || area || "—";
+  const areaDef = pad.areas.find((a) => a.id === area);
+  const areaLbl = (areaDef && areaDef.label) || area || "—";
   return {
     rol: SIN_APROBADOR, area, id: null, sinAprobador: true,
     requiere: `${areaLbl} · N${nivel}`,
     motivo: !area ? "el criterio no declara área"
-      : !areaExiste ? `el área «${area}» no existe en este tenant — créala en Configuración › Áreas`
+      : !areaDef ? `el área «${area}» no existe en este tenant — créala en Configuración › Áreas`
       : `nadie tiene ${areaLbl} en nivel N${nivel} o superior — asígnalo en Configuración › Usuarios`,
   };
 }
@@ -10694,6 +10701,43 @@ function cargarRoles() {
 }
 let ROL_USUARIO = cargarRoles();
 function guardarRoles() { escribirVersionado(ROLES_KEY, "roles", ROL_USUARIO); }
+
+// ============================================================================================
+// PADRÓN DE APROBADORES — lo que el motor de otorgamiento recibe ANTES de cada ejecución.
+// El motor decide con (área, nivel): la regla dice cuál necesita y el padrón dice quién lo tiene.
+// Con esto el motor deja de preguntarle a `USERS`, `ROL_USUARIO`, `ROL_ATRIB` o `AREAS_CAT`: son
+// datos del TENANT, no del modelo de riesgo, y mientras los leyera por su cuenta no se podía
+// extraer a un servicio sin arrastrarse media app. Acá se arman una vez y se le pasan.
+// Se memoiza porque se consulta por regla y por tramo —130 tramos por evaluación—: cualquier
+// escritura de roles o áreas lo invalida, que son los dos únicos lugares de donde sale.
+// ============================================================================================
+// La memoización se valida por FIRMA, no por un invalidador que haya que acordarse de llamar: la
+// primera versión limpiaba el cache sólo dentro de `guardarRoles`/`guardarAreas`, y cualquier cambio
+// de rol hecho por otro camino seguía viendo el padrón viejo —aprobadores que ya no correspondían—.
+// La firma es una vuelta sobre ~18 entradas: al lado de rearmar el padrón 130 veces por evaluación,
+// no se nota, y no depende de que nadie se olvide de invalidar.
+let _PADRON = null, _PADRON_FIRMA = "";
+function _firmaPadron() {
+  const r = Object.keys(ROL_USUARIO).sort().map((k) => k + ":" + ROL_USUARIO[k]).join("|");
+  const a = (typeof AREAS_CAT !== "undefined" ? AREAS_CAT : []).map((x) => x.id + ":" + x.label).join("|");
+  return r + "#" + a;
+}
+function padronAprobadores() {
+  const firma = _firmaPadron();
+  if (_PADRON && _PADRON_FIRMA === firma) return _PADRON;
+  const areas = (typeof AREAS_CAT !== "undefined" ? AREAS_CAT : []).map((a) => ({ id: a.id, label: a.label }));
+  // Un usuario entra al padrón con el área y el nivel que su ROL implica; el super-admin cubre todo.
+  const usuarios = Object.keys(USERS).map((code) => ({
+    code, nombre: nombreDe(code), rol: rolLabel(code), atrib: atribDe(code).atrib, superAdmin: code === "ADMIN",
+  })).filter((u) => u.superAdmin || Object.keys(u.atrib).length);
+  // Los cargos: qué nivel de qué área representa cada uno. Es lo que le pone NOMBRE al requisito.
+  const cargos = Object.keys(ROL_ATRIB).map((id) => ({
+    id, rol: (ROL_POR_ID[id] || {}).label || id, area: ROL_ATRIB[id].area, nivel: ROL_ATRIB[id].nivel,
+  }));
+  _PADRON = { areas, usuarios, cargos, ts: nowStamp() };
+  _PADRON_FIRMA = firma;
+  return _PADRON;
+}
 const rolDe = (code) => ROL_POR_ID[ROL_USUARIO[code]] || null;
 const rolLabel = (code) => { const r = rolDe(code); return r ? r.label : "Sin rol"; };
 // El nombre de la persona sale de `USERS` sin el rol pegado atrás: con el rol configurable, ese
