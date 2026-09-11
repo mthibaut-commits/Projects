@@ -6249,6 +6249,24 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         const cands = candidatasLibro(deal, enOfertaC);
                         const grpOt = {}; cands.forEach((f) => { (grpOt[f.deudor] || (grpOt[f.deudor] = [])).push(f); });
                         const deudOt = Object.keys(grpOt);
+                        // Lo DISPONIBLE de un deudor es lo que de verdad se puede incorporar, no el grupo entero.
+                        // Una factura ya financiada en otra operación, anulada por NC, cedida a terceros o vetada
+                        // por la verificación NO es un candidato: `estadoCandidata` la marca `agregable: false` y
+                        // el botón «+ Agregar» de su fila está deshabilitado. Sumarla al encabezado ofrecía un
+                        // monto que no existe —el deudor aparecía con cifra y adentro su única fila decía «En otra
+                        // operación»— y el ejecutivo lo lee como cupo que puede comprometer.
+                        // El monto es el que ENTRARÍA a la oferta: para una NC parcial es el neto, igual que hace
+                        // `filaOtraD` al agregarla. Así el encabezado y el botón dicen lo mismo.
+                        const dispDeudor = (grupo) => {
+                          let monto = 0, facturas = 0, bloqueadas = 0;
+                          for (const f of grupo || []) {
+                            const e = estadoCandidata(f, deal);
+                            if (!e.agregable) { bloqueadas++; continue; }
+                            facturas++;
+                            monto += e.clave === "notaParcial" ? e.montoNeto : (f.montoMM || 0);
+                          }
+                          return { monto: +monto.toFixed(1), facturas, bloqueadas };
+                        };
                         // Buscador por empresa deudora (o folio): filtra ambas secciones.
                         const dq = detQuery.trim().toLowerCase();
                         const matchDeu = (dn, grupo) => !dq || dn.toLowerCase().includes(dq) || grupo.some((f) => String(f.folio).includes(dq));
@@ -6260,8 +6278,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         // se listan (los que ya están en la oferta suben arriba), sin el filtro del
                         // buscador: el chip describe el pool, no la búsqueda.
                         const deudOtVis = deudOt.filter((dn) => !enOfertaSet.has(dn));
-                        const facsOt = deudOtVis.reduce((s, dn) => s + (grpOt[dn] || []).length, 0);
-                        const montoOt = +deudOtVis.reduce((s, dn) => s + (grpOt[dn] || []).reduce((s2, f) => s2 + (f.montoMM || 0), 0), 0).toFixed(1);
+                        const dispOt = deudOtVis.map((dn) => dispDeudor(grpOt[dn]));
+                        const facsOt = dispOt.reduce((s, d) => s + d.facturas, 0);
+                        const montoOt = +dispOt.reduce((s, d) => s + d.monto, 0).toFixed(1);
+                        const bloqOt = dispOt.reduce((s, d) => s + d.bloqueadas, 0);
                         // Paginación de «Otras facturas disponibles»: 20 deudores por página.
                         const OT_PP = 20; const otTotalPg = Math.max(1, Math.ceil(deudOtF.length / OT_PP)); const otPg = Math.min(detOtrasPage, otTotalPg - 1);
                         const deudOtPage = deudOtF.slice(otPg * OT_PP, otPg * OT_PP + OT_PP);
@@ -6347,7 +6367,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             if (!suyas.length) return;
                             const dd = (asignarLineas(suyas, deal.rutEmisor).deudores || []).find((x) => x.nombre === dn);
                             if (!dd) return;
-                            const fuera = (grpOt[dn] || []).filter((f) => estadoCandidata(f, deal).agregable);
+                            // Mismo criterio y mismo monto que el encabezado del acordeón: una sola definición de
+                            // «disponible». Sumar el bruto acá y el neto allá deja dos cifras distintas para la
+                            // misma pregunta cuando el deudor tiene una NC parcial.
+                            const dispFuera = dispDeudor(grpOt[dn]);
                             // Holgura NETA: lo que le queda con la oferta actual ya puesta. Es contra esto que
                             // se decide si una factura suelta entra o se va a comité. Sin evaluación de línea
                             // vigente (re-evaluación pendiente) no se calcula: el dato estaría desactualizado.
@@ -6359,7 +6382,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             }
                             lineaDeudor[dn] = { disponible: +(dd.holgura + dd.asignado).toFixed(1), neta,
                               conLineaPropia: !!dd.conLineaPropia, manda: dd.manda ? dd.manda.label : null,
-                              nFuera: fuera.length, montoFuera: +fuera.reduce((s2, f) => s2 + (f.montoMM || 0), 0).toFixed(1) };
+                              nFuera: dispFuera.facturas, montoFuera: dispFuera.monto };
                           });
                         }
                         // Las otras DOS compuertas de la operación. No cambian el monto cursable —eso lo decide
@@ -6484,6 +6507,18 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           const verifOk = grupo.every((f) => verifFactura(f, deal).est === "ok");
                           const og = deudorOtorgMap[deudor] || { ok: 0, total: 0 }; const allOk = og.total > 0 && og.ok === og.total;
                           const monto = +grupo.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
+                          // En «Deudores disponibles» la cifra del encabezado es lo INCORPORABLE, no el total del
+                          // grupo: ver `dispDeudor`. En la oferta no aplica —esas facturas ya están dentro—.
+                          const disp = enOferta ? null : dispDeudor(grupo);
+                          const sinDisp = !!(disp && disp.facturas === 0);
+                          const plural = (n) => (n === 1 ? "" : "s");
+                          // Sin nada incorporable se muestra «—», no un cero ni la cifra bloqueada: una cifra,
+                          // aunque venga atenuada, se lee como cifra y alguien la va a comprometer.
+                          const etiqDisp = disp && (sinDisp
+                            ? `${grupo.length} fact. no disponible${plural(grupo.length)}`
+                            : disp.bloqueadas
+                              ? `${disp.facturas} fact. · ${disp.bloqueadas} no disponible${plural(disp.bloqueadas)}`
+                              : `${disp.facturas} fact.`);
                           const tasa = tasaDe(deudor);
                           const ev = enOferta ? evalDeu[deudor] : null;
                           const t = TONO_LIN[ev ? ev.estado : "pend"];
@@ -6599,11 +6634,15 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     nombra el primero. Cuando coinciden se muestra uno solo: repetir la cifra con
                                     el chip «Con línea» al lado es ruido. */}
                                 <div className="t11 font-semibold" style={{ color: C.ink }}
-                                  title={enOferta && ev ? `${fmtMM(monto)} seleccionados de este deudor; ${fmtMM(ev.asignado)} tienen línea disponible y el resto necesita comité.` : undefined}>
-                                  {enOferta && ev && ev.asignado !== monto
-                                    ? <>{fmtMM(ev.asignado)}<span className="t9 font-normal" style={{ color: C.faint }}> con línea, de {fmtMM(monto)}</span></>
-                                    : fmtMM(monto)}
-                                  <span className="t9 font-normal" style={{ color: C.faint, marginLeft: 10 }}>{grupo.length} fact. · tasa {tasa}%</span>
+                                  title={enOferta && ev ? `${fmtMM(monto)} seleccionados de este deudor; ${fmtMM(ev.asignado)} tienen línea disponible y el resto necesita comité.`
+                                    : disp && disp.bloqueadas ? `${fmtMM(disp.monto)} incorporable${plural(disp.facturas)}; ${disp.bloqueadas} factura${plural(disp.bloqueadas)} de este deudor no se puede${plural(disp.bloqueadas) ? "n" : ""} agregar (ya financiada${plural(disp.bloqueadas)} en otra operación, anulada${plural(disp.bloqueadas)} por NC, cedida${plural(disp.bloqueadas)} a terceros o retirada${plural(disp.bloqueadas)} por la verificación).`
+                                    : undefined}>
+                                  {disp
+                                    ? (sinDisp ? <span style={{ color: C.faint }}>—</span> : fmtMM(disp.monto))
+                                    : enOferta && ev && ev.asignado !== monto
+                                      ? <>{fmtMM(ev.asignado)}<span className="t9 font-normal" style={{ color: C.faint }}> con línea, de {fmtMM(monto)}</span></>
+                                      : fmtMM(monto)}
+                                  <span className="t9 font-normal" style={{ color: C.faint, marginLeft: 10 }}>{disp ? etiqDisp : `${grupo.length} fact.`} · tasa {tasa}%</span>
                                 </div>
                                 <div className="mt-1 flex items-center justify-end gap-1.5">
                                   {/* Mismos colores que las compuertas del pie del veredicto: otorgamiento en
@@ -7100,11 +7139,11 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       const otras = (grpOt[dn] || []).filter((f) => !f.otro);
                                       if (!otras.length) return null;
                                       const ab = otrasDeudor[dn] !== false;
-                                      const tot = +otras.reduce((s2, f) => s2 + (f.montoMM || 0), 0).toFixed(1);
+                                      const dOtras = dispDeudor(otras);
                                       return (
                                         <div className="mt-2 rounded-lg" style={{ border: `1px dashed ${C.line}`, padding: "6px 8px" }}>
                                           <button onClick={() => setOtrasDeudor((m) => ({ ...m, [dn]: !ab }))} className="flex w-full items-center justify-between t9 font-semibold" style={{ color: C.sub }}>
-                                            <span>Otras facturas de este deudor ({otras.length}) · {fmtMM(tot)}</span>
+                                            <span>Otras facturas de este deudor ({otras.length}) · {dOtras.facturas ? fmtMM(dOtras.monto) : "sin disponibles"}</span>
                                             {ab ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                                           </button>
                                           {ab && <div className="mt-1">{headOtra}{otras.slice(0, 12).map(filaOtraD)}{otras.length > 12 && <div className="pt-1 t9" style={{ color: C.faint }}>y {otras.length - 12} más en «Deudores disponibles».</div>}</div>}
@@ -7130,9 +7169,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub, border: `1px solid ${C.line}` }}
                                     title="Deudores con facturas que aún no están en la oferta">{dq ? `${deudOtF.length} de ${deudOtVis.length}` : deudOtVis.length} deudor{!dq && deudOtVis.length === 1 ? "" : "es"}</span>
                                   <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub, border: `1px solid ${C.line}` }}
-                                    title="Facturas disponibles para incorporar a la oferta">{facsOt} factura{facsOt === 1 ? "" : "s"}</span>
-                                  <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}
-                                    title="Monto disponible para incorporar a la oferta">{fmtMM(montoOt)}</span>
+                                    title={bloqOt ? `${facsOt} factura${facsOt === 1 ? "" : "s"} incorporable${facsOt === 1 ? "" : "s"}; ${bloqOt} más no se puede${bloqOt === 1 ? "" : "n"} agregar y no cuenta${bloqOt === 1 ? "" : "n"} en el monto.` : "Facturas disponibles para incorporar a la oferta"}>{facsOt} factura{facsOt === 1 ? "" : "s"}{bloqOt ? ` · ${bloqOt} no disponible${bloqOt === 1 ? "" : "s"}` : ""}</span>
+                                  <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: facsOt ? C.lilac : "#F5F4F8", color: facsOt ? C.indigo : C.faint }}
+                                    title="Monto disponible para incorporar a la oferta">{facsOt ? fmtMM(montoOt) : "—"}</span>
                                 </span>
                                 <span style={{ color: C.indigo }}>{otrasAbierto ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</span>
                               </button>
