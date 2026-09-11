@@ -14881,15 +14881,65 @@ function CfgSistema() {
     </div>
   );
 }
-// Configuración › Roles. Quién es quién en este TENANT. Hasta acá el rol venía fusionado en el
-// nombre (`USERS.JG` = "Sofía Herrera · Jefe de Grupo Comercial") y no había forma de cambiarlo sin
-// editar el código, así que un factoring con otra estructura no se podía representar.
-// Lo que el rol NO hace está dicho en pantalla a propósito: la atribución de aprobación de
-// excepciones sigue saliendo de Otorgamiento › Usuarios y atribuciones. Ver `ROLES_CAT`.
+// Qué habilita cada rol HOY. Se lista SÓLO lo que el código de verdad gatea: prometer una
+// atribución que nadie consulta en el código es peor que no nombrarla — alguien la va a creer.
+const ROL_HABILITA = {
+  ejec_verif: "Marca facturas como verificadas o no verificadas, en la mesa de Verificación y en el tab del detalle de la operación.",
+  admin: "Todo, incluida la verificación.",
+};
+const ROL_AREA_LBL = { comercial: "Comercial", riesgo: "Riesgo", operaciones: "Operaciones", verificacion: "Verificación", "*": "Transversal" };
+// El aviso va en las DOS pantallas: es la confusión más cara de este módulo. Alguien que cambia un
+// rol esperando cambiar quién aprueba una excepción se queda esperando una aprobación que no llega.
+function AvisoRolNoEsAtribucion() {
+  return (
+    <div className="mt-2 rounded-lg p-2.5 t11" style={{ backgroundColor: C.amberBg, border: "1px solid #FED7AA", color: "#C2410C" }}>
+      El rol <b>no</b> define la atribución para aprobar excepciones de otorgamiento. Eso son los niveles por área de <b>Otorgamiento › Usuarios y atribuciones</b>, y se configura aparte.
+    </div>
+  );
+}
+// Configuración › ROLES. El catálogo: qué roles existen, qué habilita cada uno y quién lo tiene.
+// Es de lectura a propósito: los roles son el vocabulario del módulo —el código pregunta por
+// `ejec_verif`, no por una etiqueta— así que dejar crear roles acá daría filas que no gatean nada.
 function CfgRoles() {
+  const porRol = {};
+  Object.keys(USERS).forEach((k) => { const r = ROL_USUARIO[k]; if (!r) return; (porRol[r] || (porRol[r] = [])).push(nombreDe(k)); });
+  return (
+    <div className="grid gap-4">
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div className="text-lg font-semibold" style={{ color: C.ink }}>Roles</div>
+        <div className="mt-0.5 t12" style={{ color: C.faint }}>
+          Los roles que existen en <b>{CFG_ACTIVA.marcaNombre || TENANT_ACTUAL}</b> y qué habilita cada uno. Para asignarle un rol a alguien, anda a <b>Configuración › Usuarios</b>.
+        </div>
+        <AvisoRolNoEsAtribucion />
+        <table className="mt-3 w-full border-collapse t11">
+          <thead><tr>{["Rol", "Área", "Qué habilita", "Usuarios"].map((h) => (
+            <th key={h} className="px-2 py-1 text-left t10 font-semibold uppercase tracking-wide" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>
+          ))}</tr></thead>
+          <tbody>{ROLES_CAT.map((r) => { const quienes = porRol[r.id] || []; return (
+            <tr key={r.id} style={{ borderBottom: `1px solid ${C.line}` }}>
+              <td className="px-2 py-1.5 font-medium" style={{ color: C.ink }}>{r.label}</td>
+              <td className="px-2 py-1.5" style={{ color: C.sub }}>{ROL_AREA_LBL[r.area] || r.area}</td>
+              <td className="px-2 py-1.5 t10" style={{ color: ROL_HABILITA[r.id] ? C.ink : C.faint }}>
+                {ROL_HABILITA[r.id] || "Acceso al pipeline según su cartera. Nada exclusivo de este rol todavía."}
+              </td>
+              <td className="px-2 py-1.5 t10" style={{ color: quienes.length ? C.sub : C.faint }}>
+                {quienes.length ? (
+                  <span title={quienes.join(", ")}>{quienes.length} · {quienes.slice(0, 2).join(", ")}{quienes.length > 2 ? ` y ${quienes.length - 2} más` : ""}</span>
+                ) : "Sin usuarios"}
+              </td>
+            </tr>
+          ); })}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+// Configuración › USUARIOS. Acá se asigna el rol. Hasta ahora el rol venía fusionado en el nombre
+// (`USERS.JG` = "Sofía Herrera · Jefe de Grupo Comercial"), así que no había forma de cambiarlo sin
+// editar el código y un factoring con otra estructura no se podía representar.
+function CfgUsuarios() {
   const [, force] = useState(0);
   const [guardado, setGuardado] = useState(null);
-  const codigos = Object.keys(USERS);
   const setRol = (code, rolId) => {
     if (!ROL_POR_ID[rolId] || code === "ADMIN") return;
     const antes = rolLabel(code);
@@ -14901,30 +14951,22 @@ function CfgRoles() {
     setGuardado(code); setTimeout(() => setGuardado(null), 1800);
     force((v) => v + 1);
   };
-  // Qué habilita cada rol HOY. Se lista sólo lo que el código de verdad gatea: prometer una
-  // atribución que nadie consulta es peor que no nombrarla.
-  const HABILITA = {
-    ejec_verif: "Marca facturas como verificadas o no verificadas, en la mesa de Verificación y en el tab del detalle.",
-    admin: "Todo, incluida la verificación.",
-  };
-  const AREA_LBL = { comercial: "Comercial", riesgo: "Riesgo", operaciones: "Operaciones", verificacion: "Verificación", "*": "Transversal" };
   return (
     <div className="grid gap-4">
       <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-        <div className="text-lg font-semibold" style={{ color: C.ink }}>Roles del tenant</div>
+        <div className="text-lg font-semibold" style={{ color: C.ink }}>Usuarios</div>
         <div className="mt-0.5 t12" style={{ color: C.faint }}>
-          Quién es quién en <b>{CFG_ACTIVA.marcaNombre || TENANT_ACTUAL}</b>. La asignación se guarda <b>por tenant</b> (<code style={{ fontFamily: "ui-monospace,monospace" }}>{ROLES_KEY}</code>), así que cada factoring nombra su estructura.
+          Quién es quién en <b>{CFG_ACTIVA.marcaNombre || TENANT_ACTUAL}</b>. La asignación se guarda <b>por tenant</b> (<code style={{ fontFamily: "ui-monospace,monospace" }}>{ROLES_KEY}</code>), así que cada factoring nombra su estructura. El catálogo de roles está en <b>Configuración › Roles</b>.
         </div>
-        <div className="mt-2 rounded-lg p-2.5 t11" style={{ backgroundColor: C.amberBg, border: "1px solid #FED7AA", color: "#C2410C" }}>
-          El rol <b>no</b> define la atribución para aprobar excepciones de otorgamiento. Eso son los niveles por área de <b>Otorgamiento › Usuarios y atribuciones</b>, y se configura aparte.
-        </div>
+        <AvisoRolNoEsAtribucion />
         <table className="mt-3 w-full border-collapse t11">
-          <thead><tr>{["Usuario", "Rol", "Área", "Qué habilita"].map((h) => (
+          <thead><tr>{["Usuario", "Código", "Rol", "Área", "Qué habilita"].map((h) => (
             <th key={h} className="px-2 py-1 text-left t10 font-semibold uppercase tracking-wide" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>
           ))}</tr></thead>
-          <tbody>{codigos.map((k) => { const r = rolDe(k); return (
+          <tbody>{Object.keys(USERS).map((k) => { const r = rolDe(k); return (
             <tr key={k} style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: guardado === k ? "#F0FDF4" : "transparent" }}>
               <td className="px-2 py-1.5 font-medium" style={{ color: C.ink }}>{nombreDe(k)}</td>
+              <td className="px-2 py-1.5 t10" style={{ color: C.faint, fontFamily: "ui-monospace,monospace" }}>{k}</td>
               <td className="px-2 py-1.5">{k === "ADMIN" ? (
                 <span style={{ color: C.sub }}>{rolLabel(k)}</span>
               ) : (
@@ -14934,9 +14976,9 @@ function CfgRoles() {
                   {ROLES_CAT.filter((x) => x.id !== "admin").map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
                 </select>
               )}</td>
-              <td className="px-2 py-1.5" style={{ color: C.sub }}>{r ? (AREA_LBL[r.area] || r.area) : "—"}</td>
-              <td className="px-2 py-1.5 t10" style={{ color: r && HABILITA[r.id] ? C.ink : C.faint }}>
-                {(r && HABILITA[r.id]) || "Acceso al pipeline según su cartera. Nada exclusivo de este rol todavía."}
+              <td className="px-2 py-1.5" style={{ color: C.sub }}>{r ? (ROL_AREA_LBL[r.area] || r.area) : "—"}</td>
+              <td className="px-2 py-1.5 t10" style={{ color: r && ROL_HABILITA[r.id] ? C.ink : C.faint }}>
+                {(r && ROL_HABILITA[r.id]) || "Acceso al pipeline según su cartera."}
               </td>
             </tr>
           ); })}</tbody>
@@ -14959,7 +15001,7 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper }) {
         ))}
       </aside>
       <div>
-        {sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "roles" ? <CfgRoles /> : sec === "otorgamiento" ? (
+        {sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "roles" ? <CfgRoles /> : sec === "usuarios" ? <CfgUsuarios /> : sec === "otorgamiento" ? (
           <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
             <div className="text-lg font-semibold" style={{ color: C.ink }}>Otorgamiento · apoderados y atribuciones</div>
             <div className="mt-0.5 t12" style={{ color: C.faint }}>Criterios de verificación, atribuciones de aprobación por criterio y los apoderados que pueden excepcionar (nivel por área). Aquí también se habilita/oculta la aceptación masiva por usuario.</div>
