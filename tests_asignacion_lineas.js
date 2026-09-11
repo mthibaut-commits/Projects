@@ -301,6 +301,40 @@
        `${catalogo.length} roles · clave ${ROLES_KEY}`);
   }
 
+  // 35-37 · LA ATRIBUCIÓN SIGUE AL ROL. Quien aprueba una excepción es el CARGO, no la persona:
+  // antes el nivel estaba cableado por código de usuario y funcionaba sólo porque había un usuario
+  // por rol. Decisiones de negocio fijadas acá: dos personas con el mismo rol aprueban las dos; un
+  // cargo vacante lo cubre la jefatura de SU área; y la escalada nunca cruza áreas.
+  {
+    const reglaN1 = { tiers: [[() => true, "excepcion", 1]] };  // tramo que pide N1 · Jefe de Grupo Comercial
+    const reglaN4 = { tiers: [[() => true, "excepcion", 4]] };  // tramo que pide N4 · Jefe de Riesgo
+    const pueden = (rg, niv) => ["JG", "GC", "GG", "RG", "SR", "CR"].filter((c) => puedeAprobarExc(c, rg, niv));
+
+    ok("35 el nivel de aprobación sale del rol, no del código de usuario",
+       atribDe("GG").atrib.comercial === 3 && atribDe("RG").atrib.riesgo === 4
+       && Object.keys(atribDe("CR").atrib).length === 0 && atribDe("CR").tipo === "pipeline"
+       && atribDe("JG").tipo === "aprobador",
+       "el ejecutivo comercial no aprueba; el cargo sí");
+
+    // Vacancia: nadie es Jefe de Grupo Comercial. La jefatura del área lo cubre, Riesgo no.
+    const antes = ROL_USUARIO.JG; ROL_USUARIO.JG = "ejec_comercial";
+    const conVacante = pueden(reglaN1, 1);
+    ROL_USUARIO.JG = antes;
+    ok("36 un cargo vacante lo cubre su jefatura, y la escalada no cruza áreas",
+       JSON.stringify(pueden(reglaN1, 1)) === JSON.stringify(["JG", "GC", "GG"])
+       && JSON.stringify(conVacante) === JSON.stringify(["GC", "GG"])
+       && JSON.stringify(pueden(reglaN4, 4)) === JSON.stringify(["RG", "SR"]),
+       `sin JG lo toman ${conVacante.join(" y ")}; N4 de Riesgo sigue siendo sólo de Riesgo`);
+
+    // Dos personas con el mismo cargo: las dos aprueban ese nivel.
+    const antes2 = ROL_USUARIO.CR; ROL_USUARIO.CR = "gte_comercial";
+    const dos = ["GC", "CR"].filter((c) => puedeAprobarExc(c, { tiers: [[() => true, "excepcion", 2]] }, 2));
+    ROL_USUARIO.CR = antes2;
+    ok("37 dos personas con el mismo rol aprueban ese nivel",
+       dos.length === 2 && puedeAprobarExc("CR", { tiers: [[() => true, "excepcion", 2]] }, 2) === false,
+       "y al devolverle su rol, deja de aprobar");
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

@@ -1,6 +1,6 @@
 # Inconsistencias del Motor de Otorgamiento — política v1.1 ↔ implementación
 
-**Estado:** auditoría cerrada · **ninguna corrección aplicada** — la Fase 1 del plan (§6) es bloqueante y son decisiones de negocio.
+**Estado:** auditoría cerrada · **INC-02 resuelto e implementado** (11-09-2026); los otros seis siguen abiertos y su Fase 1 (§6) es bloqueante.
 **Fecha:** 10-09-2026 · **Alcance:** módulo de otorgamiento de NEX Factoring (Pipeline Comercial)
 
 **Re-verificado contra `main` el 10-09-2026 (commit `212046f`):** los siete hallazgos siguen abiertos, uno por uno, y las
@@ -31,7 +31,7 @@ Convención de referencias: todas las líneas apuntan a `pipeline_comercial.jsx`
 | # | Hallazgo | Severidad | Efecto |
 |---|---|---|---|
 | **INC-01** | Homologación de niveles invertida (`NV(N) = 6 − N`) | **Alta** | Las 67 reglas con excepción rutean al aprobador equivocado; la escala de severidad queda al revés |
-| **INC-02** | Sólo aprueba el nivel exacto; los superiores no | **Alta** | Contradice «cualquier nivel superior puede autorizar» (spec §3). Un Subgerente de Riesgo no puede visar una excepción N4 |
+| ~~**INC-02**~~ | ~~Sólo aprueba el nivel exacto; los superiores no~~ | **RESUELTO** | Decidido por el negocio el 11-09-2026 e implementado: aprueba cualquier nivel **igual o superior de la misma área**, sin tope. Ver el cierre de INC-02 |
 | **INC-03** | El área de Operaciones no puede aprobar nada | **Alta** | `NIVEL_ROL` sólo define áreas comercial/riesgo ⇒ el usuario `OP` nunca es aprobador hábil, pese a existir reglas de área Operaciones |
 | **INC-04** | Faltan 4 reglas del catálogo (C47–C50) | **Media** | La política declara 79 reglas; el runtime implementa 75 |
 | **INC-05** | Conviven dos modelos de atribución paralelos | **Media** | «Causas de desvío» (FL/OD) y «motor de reglas» (C/D/O) con convenciones opuestas; el primero está huérfano |
@@ -176,9 +176,20 @@ jerarquía superior y cada excepción depende de una única persona.
 **Corrección propuesta.** Eliminar la condición `nivelesAprobArea(...).has(lv)` y dejar `lv >= nivelReq` como única regla
 (más el super-admin). Eso implementa literalmente el «mínimo requerido» de la spec.
 
-**Decisión pendiente.** Confirmar si se quiere conservar alguna forma de tope superior (por ejemplo, que Comité no vise
-excepciones menores por higiene de proceso). Si la respuesta es sí, hay que expresarlo como un rango `[min, max]` explícito
-por regla, no inferirlo de los tramos.
+**DECISIÓN TOMADA (11-09-2026) — INC-02 CERRADO.** El negocio confirmó: aprueba cualquier nivel **igual o superior dentro
+de la misma área**, **sin tope**. Dos personas con el mismo rol aprueban las dos; si un cargo queda vacante —o la persona
+está de vacaciones— la jefatura de su área lo cubre: un Gerente Comercial (N2) visa lo que le tocaba al Jefe de Grupo (N1).
+La escalada **no cruza áreas**: un Gerente General no visa una excepción de Riesgo por ser superior en la jerarquía
+comercial, porque son dos atribuciones distintas y no una sola escalera.
+
+**IMPLEMENTADO.** `nivelesAprobArea` se eliminó y `puedeAprobarExc` quedó en `lv != null && lv >= nivelReq` (más el
+super-admin). Junto con esto, la atribución dejó de colgar del CÓDIGO de usuario y pasó a derivarse del **ROL**
+(`ROL_ATRIB` → `atribDeRol` → `atribDe`): antes `GG: { atrib: { comercial: 3 } }` funcionaba sólo porque había un usuario
+por rol y el código era su abreviatura, así que cambiarle el cargo a alguien no le cambiaba la atribución. Los casos 35–37
+de `tests_asignacion_lineas.js` fijan las tres decisiones.
+
+Queda **fuera de este cierre** el ruteo: con INC-01 sin resolver, el nivel que un tramo pide sigue saliendo invertido, así
+que la escalada funciona correctamente sobre un nivel que todavía puede ser el equivocado.
 
 > **Nota:** el propio `atribuciones_otorgamiento.json` documenta la convención del código, no la de la spec: *«el nivel del
 > tramo aplicable es el aprobador responsable; un SUPERIOR sólo puede aprobar (sustitución de emergencia) si su nivel está
@@ -397,7 +408,7 @@ No son inconsistencias: son definiciones que la propia política declara pendien
 **Fase 1 — Decisiones de negocio** (bloqueante; no hay código que escribir antes)
 
 1. INC-01: confirmar convención única de niveles (**N5 = máxima**) y retirar la homologación `6 − N` de la spec.
-2. INC-02: confirmar que cualquier nivel superior autoriza; definir si hay tope.
+2. ~~INC-02: confirmar que cualquier nivel superior autoriza; definir si hay tope.~~ **HECHO** (11-09-2026: superior de la MISMA área, sin tope).
 3. INC-03: definir la escala de niveles del área Operaciones.
 4. INC-04: definir si C47–C50 son reglas de cliente o de par C-D, y las variables que necesitan en A16.
 5. INC-05: confirmar si el monto de la operación debe escalar la atribución.
@@ -406,8 +417,8 @@ No son inconsistencias: son definiciones que la propia política declara pendien
 **Fase 2 — Corrección en el módulo actual** (cada punto es una edición acotada)
 
 7. `NV` → identidad (línea 9816) y C05 al nivel Comité.
-8. Reemplazar `NIVEL_ROL` por `ROL_POR_AREA_NIVEL`; `puedeAprobarExc` compara contra `regla.area`.
-9. Quitar la restricción `nivelesAprobArea(...).has(lv)`.
+8. **A MEDIAS**: ya existe `ROL_ATRIB` (rol → área + nivel), que es el `ROL_POR_AREA_NIVEL` que pedía este paso, y la atribución se deriva de ahí. Lo que falta es que `NIVEL_ROL` declare el área **operaciones** —hoy ningún nivel la tiene, así que a Operaciones nunca se le pide aprobación (INC-03)— y eso necesita la decisión 3.
+9. ~~Quitar la restricción `nivelesAprobArea(...).has(lv)`.~~ **HECHO**: la función se eliminó y `puedeAprobarExc` quedó en `lv >= nivelReq`.
 10. Implementar C47–C50.
 11. Retirar el modelo de causas de desvío y su código muerto en `OtorgamientosView`.
 12. Regenerar `atribuciones_otorgamiento.json` y marcar los `.xlsx` como legado.

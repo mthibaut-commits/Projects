@@ -922,7 +922,18 @@ let ATRIB_USUARIO = {
   RG: { tipo: "aprobador", atrib: { riesgo: 4 } }, SR: { tipo: "aprobador", atrib: { riesgo: 5 } }, OP: { tipo: "aprobador", atrib: { operaciones: 5 } },
   ADMIN: { tipo: "aprobador", atrib: { riesgo: 5, comercial: 5, operaciones: 5 } },
 };
-const atribDe = (code) => ATRIB_USUARIO[code] || { tipo: "pipeline", atrib: {} };
+// LA ATRIBUCIÓN SIGUE AL ROL, no al código de usuario. Antes el nivel estaba cableado por código
+// —`GG: { atrib: { comercial: 3 } }`— y funcionaba sólo porque había UN usuario por rol y el código
+// era su abreviatura (`GG` = Gerente General). En cuanto alguien cambia de cargo, o hay dos gerentes
+// comerciales, esa tabla miente: quien aprueba es el ROL, no la persona. `ROL_ATRIB` (definido junto
+// al catálogo de roles) es el único lugar donde vive qué nivel y qué área implica cada cargo.
+// `ATRIB_USUARIO` queda sólo como el padrón: quién existe. El `tipo` también se deriva — dar el rol
+// de Gerente Comercial a alguien lo convierte en aprobador, que es lo que uno espera al asignarlo.
+const atribDe = (code) => {
+  if (!ATRIB_USUARIO[code]) return { tipo: "pipeline", atrib: {} };
+  const atrib = atribDeRol(code);
+  return { tipo: Object.keys(atrib).length ? "aprobador" : "pipeline", atrib };
+};
 // Ejecutivos asignados a cada jefatura de grupo comercial (JG ve solo su grupo). La gerencia
 // (GC = Gerente Comercial, GG = Gerente General) supervisa a todos, así que no se lista aquí (ve todo).
 const JEFE_A_EXECS = { JG: ["CR", "RF", "JT"] };
@@ -954,21 +965,21 @@ const UNIDADES_CRIT = ["$", "MM", "%", "pp", "días", "meses"];
 const OPERADORES = [{ v: ">", l: ">" }, { v: ">=", l: "≥" }, { v: "=", l: "=" }, { v: "<=", l: "≤" }, { v: "<", l: "<" }, { v: "!=", l: "≠" }];
 // Aprobadores hábiles para un desvío: usuarios con atribución en el área cuyo nivel cubre el requerido
 // (nivel_usuario === nivel_requerido; cada rol aprueba exclusivamente su nivel; el super-admin cubre todos).
-const aprobadoresDe = (area, nivel) => Object.keys(ATRIB_USUARIO).filter((k) => USERS[k] && (k === "ADMIN" || ATRIB_USUARIO[k].atrib[area] === nivel)).map((k) => USERS[k]);
-// Niveles definidos en el risk tier de una regla que aprueban dentro de un área. El nivel requerido
-// (el del tramo aplicable) es el responsable; los SUPERIORES sólo participan si la regla los define en su tier.
-function nivelesAprobArea(regla, area) {
-  const s = new Set();
-  ((regla && regla.tiers) || []).forEach((t) => { if (t[1] === "excepcion") { const niv = t[2]; const nr = NIVEL_ROL[niv] || NIVEL_ROL[4]; if (nr.area === area) s.add(niv); } });
-  return s;
-}
-// ¿El usuario puede aprobar la excepción de esta regla (nivel requerido)? Su nivel debe ser ≥ al requerido
-// y estar DEFINIDO en el risk tier de la regla (sustitución de emergencia por un superior). Super-admin cubre todo.
+const aprobadoresDe = (area, nivel) => Object.keys(ATRIB_USUARIO).filter((k) => USERS[k] && (k === "ADMIN" || atribDe(k).atrib[area] === nivel)).map((k) => USERS[k]);
+// ¿El usuario puede aprobar la excepción de esta regla? Basta que tenga, EN EL ÁREA que manda en ese
+// nivel, un nivel igual o superior al requerido. El responsable es quien tiene el nivel exacto, pero si
+// ese cargo está vacante —o la persona está de vacaciones— la jefatura del área lo toma: un Gerente
+// Comercial (N2) aprueba lo que le tocaba al Jefe de Grupo (N1). Sin esto, un cargo vacío deja las
+// operaciones pegadas esperando a alguien que no existe.
+// La escalada NO cruza áreas: un Gerente General no aprueba una excepción de Riesgo por ser superior
+// en la jerarquía comercial. Son atribuciones distintas, no una sola escalera.
+// Antes se exigía además que el nivel del aprobador estuviera DEFINIDO como tramo de esa misma regla,
+// lo que dejaba al superior afuera salvo que la regla lo nombrara: era el INC-02 de la auditoría.
 function puedeAprobarExc(code, regla, nivelReq) {
   if (code === "ADMIN") return true;
   const nr = NIVEL_ROL[nivelReq] || NIVEL_ROL[4];
   const lv = atribDe(code).atrib[nr.area];
-  return lv != null && lv >= nivelReq && nivelesAprobArea(regla, nr.area).has(lv);
+  return lv != null && lv >= nivelReq;
 }
 const aprobadoresExc = (regla, nivelReq) => Object.keys(ATRIB_USUARIO).filter((k) => USERS[k] && puedeAprobarExc(k, regla, nivelReq)).map((k) => USERS[k]);
 let CRITERIOS_VERIF = [
@@ -10535,6 +10546,30 @@ const ROLES_CAT = [
   { id: "admin",          label: "Super administrador",       area: "*" },
 ];
 const ROL_POR_ID = {}; ROLES_CAT.forEach((r) => { ROL_POR_ID[r.id] = r; });
+// ATRIBUCIÓN POR ROL. Qué nivel de aprobación y en qué área implica cada cargo — la escalera que
+// antes estaba cableada por código de usuario en `ATRIB_USUARIO`. Los niveles son los mismos de
+// siempre (`NIVEL_ROL`), sólo que ahora cuelgan del rol: cambiarle el cargo a alguien le cambia la
+// atribución, que es lo que uno espera al cambiárselo.
+// Los roles que no aparecen acá no aprueban excepciones: el ejecutivo comercial arma la oferta y el
+// ejecutivo de verificación llama al deudor; ninguno de los dos visa criterios de otorgamiento.
+// OJO: `operaciones` tiene nivel pero NIVEL_ROL no declara ningún nivel con área «operaciones», así
+// que nunca se le pide su aprobación. Es el INC-03 de la auditoría y sigue abierto: hace falta la
+// decisión de negocio sobre la escala de niveles de esa área.
+const ROL_ATRIB = {
+  jefe_comercial: { area: "comercial",   nivel: 1 },
+  gte_comercial:  { area: "comercial",   nivel: 2 },
+  gte_general:    { area: "comercial",   nivel: 3 },
+  jefe_riesgo:    { area: "riesgo",      nivel: 4 },
+  sub_riesgo:     { area: "riesgo",      nivel: 5 },
+  operaciones:    { area: "operaciones", nivel: 5 },
+};
+// El super-admin cubre las tres áreas en el nivel máximo. El resto sale de su rol; sin rol con
+// atribución, el objeto va vacío y `puedeAprobarExc` lo deja fuera por construcción.
+function atribDeRol(code) {
+  if (code === "ADMIN") return { riesgo: 5, comercial: 5, operaciones: 5 };
+  const a = ROL_ATRIB[ROL_USUARIO[code]];
+  return a ? { [a.area]: a.nivel } : {};
+}
 // Punto de partida: la estructura que hasta ahora estaba cableada en `USERS`.
 const ROLES_DEFAULT = {
   CR: "ejec_comercial", RF: "ejec_comercial", JT: "ejec_comercial",
@@ -11685,7 +11720,6 @@ function AtribucionesMantenedor() {
 }
 function MantenedoresOtorg({ onCfgChange }) {
   const bump = () => onCfgChange && onCfgChange();
-  const setAtrib = (code, area, v) => { const n = +v; if (!ATRIB_USUARIO[code]) return; if (!n) delete ATRIB_USUARIO[code].atrib[area]; else ATRIB_USUARIO[code].atrib[area] = Math.max(1, Math.min(5, n)); bump(); };
   // Cambiar un privilegio es de las acciones MÁS sensibles del sistema y no dejaba ningún rastro:
   // se podía habilitar la aprobación masiva a alguien y no había forma de saber quién ni cuándo.
   // Cada cambio queda ahora en la auditoría (evidencia) y en el log técnico (soporte).
@@ -11722,9 +11756,9 @@ function MantenedoresOtorg({ onCfgChange }) {
       {mtab === "atribuciones" && <AtribucionesMantenedor />}
 
       {mtab === "usuarios" && (<div>
-        <div className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Apoderados y atribuciones (nivel por área; 0 = sin atribución)</div>
-        <div className="t10" style={{ color: C.faint }}>Define quién puede excepcionar y en qué nivel (N1–N5). <b>Aceptación masiva</b> habilita/oculta el botón «Aprobar/Rechazar todo» de excepciones. <b>Excepción de verificación</b> habilita eximir facturas de la verificación telefónica (por defecto sólo el Gerente Comercial).</div>
-        <div className="mt-1 t10" style={{ color: C.faint }}>El <b>Rol</b> se asigna en <b>Configuración › Roles</b> y se guarda por tenant; acá va sólo para leer la tabla. El rol habilita lo propio del cargo —el <b>Ejecutivo de verificación</b> es el único que puede marcar facturas como verificadas o no verificadas— pero <b>no</b> define atribución de aprobación: eso son las columnas de nivel por área de esta misma tabla.</div>
+        <div className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Apoderados y atribuciones (nivel por área, derivado del rol; «—» = sin atribución)</div>
+        <div className="t10" style={{ color: C.faint }}>Quién puede excepcionar y en qué nivel. El nivel <b>lo da el rol</b>, por eso acá va de lectura: se cambia en <b>Configuración › Usuarios</b>. <b>Aceptación masiva</b> habilita/oculta el botón «Aprobar/Rechazar todo» de excepciones. <b>Excepción de verificación</b> habilita eximir facturas de la verificación telefónica (por defecto sólo el Gerente Comercial).</div>
+        <div className="mt-1 t10" style={{ color: C.faint }}>De ese <b>Rol</b> salen las columnas de nivel por área: un Gerente Comercial es N2 de Comercial. Si un cargo queda <b>vacante</b>, la jefatura de su área lo cubre —un N3 aprueba lo que le tocaba al N1— pero la escalada <b>no cruza áreas</b>: un Gerente General no visa una excepción de Riesgo. El rol se asigna en <b>Configuración › Usuarios</b>.</div>
         <table className="mt-1.5 w-full border-collapse t11">
           <thead><tr>{["Usuario", "Rol", "Tipo", "Riesgo", "Comercial", "Operaciones", "Aceptación masiva", "Excepción verificación", "Ver Bitácora", "Ver Mensajería", "Ver Cobranza", "Ver Plan Mensual", "Ver Funnel"].map((h) => <th key={h} className="px-2 py-1 text-left font-semibold" style={{ color: C.sub, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
           <tbody>{Object.keys(ATRIB_USUARIO).filter((k) => USERS[k]).map((k) => { const esAprob = atribDe(k).tipo === "aprobador"; const on = aprobMasivaHabilitada(k); const ev = puedeExcepcionarVerif(k); const vb = puedeVerBitacora(k); const vm = puedeVerMensajeria(k); const vc = puedeVerCobranza(k); const vpe = puedeVerPlanEjec(k); const vf = puedeVerFunnel(k); return (
@@ -11733,7 +11767,9 @@ function MantenedoresOtorg({ onCfgChange }) {
               <td className="px-2 py-1" style={{ color: C.sub }} title="El rol se asigna en Configuración › Roles. Acá se muestra para leer la tabla, porque el rol NO define la atribución de aprobación: eso son las columnas de nivel por área.">{rolLabel(k)}</td>
               <td className="px-2 py-1" style={{ color: C.sub }}>{esAprob ? "Aprobador" : "Pipeline"}</td>
               {["riesgo", "comercial", "operaciones"].map((a) => (
-                <td key={a} className="px-2 py-1"><input type="number" min={0} max={5} value={atribDe(k).atrib[a] || 0} onChange={(e) => setAtrib(k, a, e.target.value)} className="rounded-md px-1.5 py-1 t11 text-center outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, width: 48 }} /></td>
+                <td key={a} className="px-2 py-1" style={{ color: atribDe(k).atrib[a] ? C.ink : C.faint }}
+                  title={atribDe(k).atrib[a] ? `Nivel N${atribDe(k).atrib[a]} en ${a}: es lo que implica su rol (${rolLabel(k)}). Se cambia cambiándole el rol en Configuración › Usuarios.` : `${rolLabel(k)} no aprueba excepciones en ${a}.`}>
+                  {atribDe(k).atrib[a] ? `N${atribDe(k).atrib[a]}` : "—"}</td>
               ))}
               <td className="px-2 py-1">{!esAprob ? <span style={{ color: C.faint }}>—</span> : k === "ADMIN" ? (
                 <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A", border: "1px solid #bbf7d0" }}>Habilitada</span>
@@ -14884,20 +14920,31 @@ function CfgSistema() {
 // Qué habilita cada rol HOY. Se lista SÓLO lo que el código de verdad gatea: prometer una
 // atribución que nadie consulta en el código es peor que no nombrarla — alguien la va a creer.
 const ROL_HABILITA = {
-  ejec_verif: "Marca facturas como verificadas o no verificadas, en la mesa de Verificación y en el tab del detalle de la operación.",
-  admin: "Todo, incluida la verificación.",
+  ejec_comercial: "Arma ofertas y gestiona su cartera. No aprueba excepciones de otorgamiento.",
+  ejec_verif: "Marca facturas como verificadas o no verificadas, en la mesa de Verificación y en el tab del detalle. No aprueba excepciones de otorgamiento.",
+  admin: "Todo: cualquier nivel de cualquier área, y la verificación.",
 };
+// Lo que implica el nivel, dicho en la pantalla: el responsable es el nivel exacto y los superiores
+// DE SU ÁREA también pueden, que es como se cubre una vacancia.
+function habilitaPorAtribucion(rolId) {
+  const a = ROL_ATRIB[rolId];
+  if (!a) return null;
+  const areaLbl = ROL_AREA_LBL[a.area] || a.area;
+  if (a.area === "operaciones") return `Nivel N${a.nivel} de ${areaLbl}. Hoy ninguna regla rutea a esta área, así que no se le pide aprobación (INC-03 de la auditoría, pendiente de decisión).`;
+  return `Aprueba excepciones de otorgamiento del área ${areaLbl} de nivel N${a.nivel} o inferior.`;
+}
 const ROL_AREA_LBL = { comercial: "Comercial", riesgo: "Riesgo", operaciones: "Operaciones", verificacion: "Verificación", "*": "Transversal" };
-// El aviso va en las DOS pantallas: es la confusión más cara de este módulo. Alguien que cambia un
-// rol esperando cambiar quién aprueba una excepción se queda esperando una aprobación que no llega.
-function AvisoRolNoEsAtribucion() {
+// El rol SÍ define la atribución: `ROL_ATRIB` dice qué nivel y qué área implica cada cargo, y
+// `atribDe` la deriva de ahí. Lo que el aviso explica es la parte que no se deduce sola — la
+// escalada por vacancia y que no cruza áreas—, porque de eso depende quién queda habilitado
+// cuando alguien cambia de cargo o se va de vacaciones.
+function AvisoAtribucionPorRol() {
   return (
-    <div className="mt-2 rounded-lg p-2.5 t11" style={{ backgroundColor: C.amberBg, border: "1px solid #FED7AA", color: "#C2410C" }}>
-      El rol <b>no</b> define la atribución para aprobar excepciones de otorgamiento. Eso son los niveles por área de <b>Otorgamiento › Usuarios y atribuciones</b>, y se configura aparte.
+    <div className="mt-2 rounded-lg p-2.5 t11" style={{ backgroundColor: C.lilac, border: `1px solid ${C.line}`, color: C.ink }}>
+      El rol <b>define la atribución</b> para aprobar excepciones de otorgamiento. Si un cargo queda <b>vacante</b>, la jefatura de su área lo cubre —un N3 aprueba lo que le tocaba al N1—, pero la escalada <b>no cruza áreas</b>: un Gerente General no visa una excepción de Riesgo. Dos personas con el mismo rol aprueban las dos.
     </div>
   );
-}
-// Configuración › ROLES. El catálogo: qué roles existen, qué habilita cada uno y quién lo tiene.
+}// Configuración › ROLES. El catálogo: qué roles existen, qué habilita cada uno y quién lo tiene.
 // Es de lectura a propósito: los roles son el vocabulario del módulo —el código pregunta por
 // `ejec_verif`, no por una etiqueta— así que dejar crear roles acá daría filas que no gatean nada.
 function CfgRoles() {
@@ -14910,7 +14957,7 @@ function CfgRoles() {
         <div className="mt-0.5 t12" style={{ color: C.faint }}>
           Los roles que existen en <b>{CFG_ACTIVA.marcaNombre || TENANT_ACTUAL}</b> y qué habilita cada uno. Para asignarle un rol a alguien, anda a <b>Configuración › Usuarios</b>.
         </div>
-        <AvisoRolNoEsAtribucion />
+        <AvisoAtribucionPorRol />
         <table className="mt-3 w-full border-collapse t11">
           <thead><tr>{["Rol", "Área", "Qué habilita", "Usuarios"].map((h) => (
             <th key={h} className="px-2 py-1 text-left t10 font-semibold uppercase tracking-wide" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>
@@ -14920,7 +14967,7 @@ function CfgRoles() {
               <td className="px-2 py-1.5 font-medium" style={{ color: C.ink }}>{r.label}</td>
               <td className="px-2 py-1.5" style={{ color: C.sub }}>{ROL_AREA_LBL[r.area] || r.area}</td>
               <td className="px-2 py-1.5 t10" style={{ color: ROL_HABILITA[r.id] ? C.ink : C.faint }}>
-                {ROL_HABILITA[r.id] || "Acceso al pipeline según su cartera. Nada exclusivo de este rol todavía."}
+                {[habilitaPorAtribucion(r.id), ROL_HABILITA[r.id]].filter(Boolean).join(" ") || "Acceso al pipeline según su cartera."}
               </td>
               <td className="px-2 py-1.5 t10" style={{ color: quienes.length ? C.sub : C.faint }}>
                 {quienes.length ? (
@@ -14958,7 +15005,7 @@ function CfgUsuarios() {
         <div className="mt-0.5 t12" style={{ color: C.faint }}>
           Quién es quién en <b>{CFG_ACTIVA.marcaNombre || TENANT_ACTUAL}</b>. La asignación se guarda <b>por tenant</b> (<code style={{ fontFamily: "ui-monospace,monospace" }}>{ROLES_KEY}</code>), así que cada factoring nombra su estructura. El catálogo de roles está en <b>Configuración › Roles</b>.
         </div>
-        <AvisoRolNoEsAtribucion />
+        <AvisoAtribucionPorRol />
         <table className="mt-3 w-full border-collapse t11">
           <thead><tr>{["Usuario", "Código", "Rol", "Área", "Qué habilita"].map((h) => (
             <th key={h} className="px-2 py-1 text-left t10 font-semibold uppercase tracking-wide" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>
@@ -14978,7 +15025,7 @@ function CfgUsuarios() {
               )}</td>
               <td className="px-2 py-1.5" style={{ color: C.sub }}>{r ? (ROL_AREA_LBL[r.area] || r.area) : "—"}</td>
               <td className="px-2 py-1.5 t10" style={{ color: r && ROL_HABILITA[r.id] ? C.ink : C.faint }}>
-                {(r && ROL_HABILITA[r.id]) || "Acceso al pipeline según su cartera."}
+                {(r && [habilitaPorAtribucion(r.id), ROL_HABILITA[r.id]].filter(Boolean).join(" ")) || "Acceso al pipeline según su cartera."}
               </td>
             </tr>
           ); })}</tbody>
