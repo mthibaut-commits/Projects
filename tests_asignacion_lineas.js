@@ -781,6 +781,114 @@
        `inyectado → «${nombres[0]}» · real → «${real.join(", ")}»`);
   }
 
+
+  // ============================================================================================
+  // 60-62 · VACACIONES Y REEMPLAZOS. Mientras alguien está fuera, quien lo cubre asume sus
+  // atribuciones. Lo que se prueba acá es que eso está ACOTADO al período y que queda ESCRITO:
+  // una atribución que se filtra un día antes o que no deja rastro en la bitácora es peor que no
+  // tenerla, porque nadie puede explicar después por qué esa persona pudo aprobar eso.
+  // ============================================================================================
+
+  // 60 · La atribución se presta sólo DURANTE el período, y por el PADRÓN. Se prueba con fechas
+  // inyectadas y no con el reloj: quién puede aprobar el 3 de enero es una pregunta de respuesta fija.
+  {
+    // EJ1 es un ejecutivo comercial: no aprueba excepciones. SR es Subgerente de Riesgo (riesgo N4).
+    const ejec = Object.keys(EXECS)[0];
+    const rmp60 = [{ id: "r60", ausente: "SR", reemplazante: ejec, desde: "2026-03-10", hasta: "2026-03-20", motivo: "Vacaciones" }];
+    const c21 = REGLAS_CLIENTE.find((r) => r.cond === "C21");   // riesgo, excepción de nivel alto
+    const anR = (hoy) => padronAprobadores(hoy, rmp60);
+    const puede = (hoy) => puedeAprobarExc(ejec, c21, 4, anR(hoy));
+    const antes = puede("2026-03-09"), durante = puede("2026-03-15"), despues = puede("2026-03-21");
+    const uDur = anR("2026-03-15").usuarios.find((u) => u.code === ejec);
+    const uSR = anR("2026-03-15").usuarios.find((u) => u.code === "SR");
+    // el nivel se lee del padrón SIN reemplazos: lo que se prueba es que se preste el que SR tiene,
+    // no un número escrito acá que se desactualiza si cambia su cargo en Configuración › Usuarios
+    const nSR = (padronAprobadores("2026-03-15", []).usuarios.find((u) => u.code === "SR") || { atrib: {} }).atrib.riesgo;
+    // ADITIVO: el ausente NO pierde lo suyo, y el reemplazante conserva su propia área.
+    const srSigue = puedeAprobarExc("SR", c21, 4, anR("2026-03-15"));
+    ok("60 el reemplazante asume las atribuciones sólo durante el período",
+       antes === false && durante === true && despues === false
+       && uDur && nSR && uDur.atrib.riesgo === nSR && uDur.cubre && uDur.cubre[0].code === "SR"
+       && uSR && uSR.ausente && uSR.ausente.porCode === ejec
+       && srSigue === true
+       // y el padrón memoizado no envenena: la firma incluye la fecha y los reemplazos
+       && puede("2026-03-15") === true && puede("2026-03-09") === false,
+       `${ejec} sin reemplazo no aprueba · 10→20 marzo sí (riesgo N${uDur ? uDur.atrib.riesgo : "?"} = el de ${nombreDe("SR")}) · el 21 no · ${nombreDe("SR")} conserva la suya`);
+  }
+
+  // 61 · La bitácora identifica al REEMPLAZANTE. `actorEtiqueta` es lo que firma el visado y la
+  // verificación, y `registrarAuditoria` estampa además el campo consultable.
+  {
+    const ejec = Object.keys(EXECS)[0];
+    const rmp61 = [{ id: "r61", ausente: "SR", reemplazante: ejec, desde: hoyISO(), hasta: hoyISO(), motivo: "Vacaciones" }];
+    // la etiqueta se prueba INYECTANDO la lista; la bitácora, con el estado real, que es su camino
+    const etq = actorEtiqueta(ejec, null, rmp61);
+    const etqSR = actorEtiqueta("SR", null, rmp61);   // el ausente firma como él mismo si actúa
+    const guardados = REEMPLAZOS, guardadaSesion = SESION;
+    try {
+      REEMPLAZOS = rmp61;
+      SESION = { ...(SESION || {}), usuario: ejec };
+      const antes = AUDIT_LOG.length;
+      registrarAuditoria({ usuario: USERS[ejec], modulo: "Test", accion: "Excepción visada", glosa: "prueba 61", exito: true });
+      const reg = AUDIT_LOG[0];
+      ok("61 la bitácora identifica que la acción la hizo un reemplazante",
+         etq.includes("en reemplazo de " + nombreDe("SR"))
+         && etqSR === USERS["SR"]
+         && AUDIT_LOG.length === antes + 1
+         && Array.isArray(reg.reemplazoDe) && reg.reemplazoDe[0].code === "SR"
+         && /REEMPLAZANTE/.test(reg.glosa) && reg.usuario.includes("en reemplazo de"),
+         `«${etq}» · campo reemplazoDe=[${reg.reemplazoDe.map((x) => x.code).join(",")}] · glosa con REEMPLAZANTE`);
+    } finally { REEMPLAZOS = guardados; SESION = guardadaSesion; }
+  }
+
+  // 62 · Higiene del storage y del período. Una fila corrupta daría atribuciones a alguien que no
+  // existe: es el mismo riesgo que roles y áreas, y se corta al cargar. Y el reemplazo no invierte la
+  // jerarquía: el reemplazante toma el MAYOR de los dos niveles, nunca baja al del ausente.
+  {
+    const ejec = Object.keys(EXECS)[0];
+    localStorage.setItem(REEMPLAZOS_KEY, JSON.stringify({ _v: SCHEMA_VERSION.reemplazos, datos: [
+      { id: "b1", ausente: "SR", reemplazante: ejec, desde: "2026-03-01", hasta: "2026-03-10" },  // válida
+      { id: "b2", ausente: "NO_EXISTE", reemplazante: ejec, desde: "2026-03-01", hasta: "2026-03-10" },
+      { id: "b3", ausente: "SR", reemplazante: "SR", desde: "2026-03-01", hasta: "2026-03-10" },  // a sí mismo
+      { id: "b4", ausente: "GG", reemplazante: ejec, desde: "2026-03-10", hasta: "2026-03-01" },  // invertido
+      { id: "b5", ausente: "GC", reemplazante: ejec, desde: "10/03/2026", hasta: "2026-03-20" },  // no ISO
+    ] }));
+    const limpio = cargarReemplazos();
+    // GG es Gerente General (comercial N3); GC es Gerente Comercial (comercial N2). Si GC cubre a GG,
+    // GC sube a N3; si GG cubre a GC, GG se queda en N3 y no baja a N2.
+    const sube = padronAprobadores("2026-04-01", [{ id: "s", ausente: "GG", reemplazante: "GC", desde: "2026-04-01", hasta: "2026-04-05" }]).usuarios.find((u) => u.code === "GC");
+    const noBaja = padronAprobadores("2026-04-01", [{ id: "n", ausente: "GC", reemplazante: "GG", desde: "2026-04-01", hasta: "2026-04-05" }]).usuarios.find((u) => u.code === "GG");
+    localStorage.removeItem(REEMPLAZOS_KEY);
+    ok("62 el storage se sanea al cargar y el reemplazo nunca baja de nivel",
+       limpio.length === 1 && limpio[0].id === "b1"
+       && sube && sube.atrib.comercial === 3
+       && noBaja && noBaja.atrib.comercial === 3,
+       `5 filas → ${limpio.length} válida · ${nombreDe("GC")} sube a N${sube ? sube.atrib.comercial : "?"} · ${nombreDe("GG")} se queda en N${noBaja ? noBaja.atrib.comercial : "?"}`);
+  }
+
+  // 63 · Lo que el motor deja hacer, la PANTALLA lo tiene que dejar ver. El primer intento tenía el
+  // motor correcto y la UI no: el badge de Otorgamientos descartaba al reemplazante por «tipo pipeline»
+  // antes de preguntarle al padrón, y la firma de verificación seguía atada al rol. Una atribución que
+  // sólo existe en el motor no existe: nadie llega a ejercerla.
+  {
+    const ejec = Object.keys(EXECS)[0];
+    const hoy = hoyISO();
+    const rmpJG = [{ id: "r63a", ausente: "JG", reemplazante: ejec, desde: hoy, hasta: hoy, motivo: "Vacaciones" }];
+    const rmpEV = [{ id: "r63b", ausente: "EV", reemplazante: ejec, desde: hoy, hasta: hoy, motivo: "Vacaciones" }];
+    const maniana = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    ok("63 el reemplazante ve y firma lo que el motor le deja aprobar",
+       // atribución efectiva: la de su cargo (ninguna) más la que cubre
+       Object.keys(atribEfectiva(ejec, hoy, [])).length === 0
+       && atribEfectiva(ejec, hoy, rmpJG).comercial === atribDe("JG").atrib.comercial
+       && coberturaDe(ejec, hoy, rmpJG)[0].code === "JG"
+       // la firma de la verificación también se delega, y sólo durante el período
+       && puedeVerificarFacturas(ejec, hoy, []) === false
+       && puedeVerificarFacturas(ejec, hoy, rmpEV) === true
+       && puedeVerificarFacturas(ejec, maniana, rmpEV) === false
+       && puedeVerificarFacturas("EV", hoy, rmpEV) === true,   // la titular no la pierde
+       `${ejec}: sin reemplazo sin atribución y sin firma · cubriendo a ${nombreDe("JG")} comercial N${atribEfectiva(ejec, hoy, rmpJG).comercial} · cubriendo a ${nombreDe("EV")} firma verificaciones`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

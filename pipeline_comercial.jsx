@@ -418,6 +418,7 @@ const SCHEMA_VERSION = {
   permisos: 1,       // permisos de visibilidad por usuario
   roles: 1,          // rol de cada usuario (por tenant)
   areas: 1,          // areas que aprueban excepciones (por tenant)
+  reemplazos: 1,     // vacaciones: quien cubre a quien y en que periodo (por tenant)
   auditoria: 2,      // bitacora de auditoria encadenada (v2: cadena SHA-256, antes hash de 32 bits)
   auth: 1,           // intentos fallidos y bloqueo por cuenta
   curse: 3,          // payload de curse por negocio (v3: OTP con SHA-256 + sal; v2 usaba un hash de 32 bits)
@@ -807,9 +808,31 @@ async function verificarAuditoria(lista) {
   }
   return incompletos.length ? { ok: true, n: arr.length, incompletos } : { ok: true, n: arr.length };
 }
+// Enriquecimiento automático del REEMPLAZO. Se hace acá y no en cada llamada porque son ~100 sitios y
+// el que se olvide es justamente el que después nadie puede auditar. Se estampa sólo cuando el actor
+// del evento ES el usuario de la sesión: las acciones del sistema, del cliente o de un tercero no se
+// atribuyen a nadie que esté cubriendo a otro.
+function _reemplazoDelActor(e) {
+  const code = (typeof SESION !== "undefined" && SESION && SESION.usuario) || null;
+  if (!code || typeof aQuienCubre !== "function") return null;
+  const etiqueta = (typeof USERS !== "undefined" && USERS[code]) || code;
+  // el evento tiene que ser de esta persona: se acepta su etiqueta completa o su nombre a secas
+  const quien = String(e.usuario || "");
+  if (quien !== etiqueta && quien !== nombreDe(code)) return null;
+  const cubre = aQuienCubre(code);
+  if (!cubre.length) return null;
+  return cubre.map((r) => ({ code: r.ausente, nombre: nombreDe(r.ausente), desde: r.desde, hasta: r.hasta, motivo: r.motivo || "" }));
+}
 function registrarAuditoria(e) {
   const ts = e.ts || Date.now();
-  const r = { id: "au" + ts + "_" + (++AUDIT_SEQ).toString(36), usuario: e.usuario || "-- Sistema --", modulo: e.modulo || "Sistema", glosa: e.glosa || "", accion: e.accion || "Navegación", exito: e.exito !== false, empresaId: e.empresaId || "", ts, ...auditFechaHora(ts) };
+  const rmp = _reemplazoDelActor(e);
+  if (rmp) {
+    // Dos formas del mismo hecho, a propósito: el campo es lo que se consulta, la glosa es lo que se lee.
+    e = { ...e, reemplazoDe: rmp,
+      usuario: e.usuario + " (en reemplazo de " + rmp.map((x) => x.nombre).join(", ") + ")",
+      glosa: (e.glosa || "") + " · Acción ejecutada bajo configuración de REEMPLAZANTE de " + rmp.map((x) => `${x.nombre} (${x.desde} a ${x.hasta})`).join(", ") };
+  }
+  const r = { id: "au" + ts + "_" + (++AUDIT_SEQ).toString(36), usuario: e.usuario || "-- Sistema --", modulo: e.modulo || "Sistema", glosa: e.glosa || "", accion: e.accion || "Navegación", exito: e.exito !== false, empresaId: e.empresaId || "", reemplazoDe: e.reemplazoDe || null, ts, ...auditFechaHora(ts) };
   const previo = AUDIT_LOG.length ? AUDIT_LOG[0] : null;
   r.hAlg = HASH_ALG;
   AUDIT_LOG.unshift(r);
@@ -4399,7 +4422,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
     if (!x.stKey || !x.regla) return;
     const arr = Array.isArray(archs) ? archs.filter(Boolean) : (archs ? [archs] : []);
     const st = { ...(repoVisado.get(deal.id) || {}), [x.stKey]: val };
-    const det = { ...(repoVisadoDetalle.get(deal.id) || {}), [x.stKey]: { msg: msg || "", archs: arr, por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL") } };
+    const det = { ...(repoVisadoDetalle.get(deal.id) || {}), [x.stKey]: { msg: msg || "", archs: arr, por: actorEtiqueta(usuario), fecha: new Date().toLocaleString("es-CL") } };
     const conf = await confirmarEscrituras([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
     const dtxt = x.deudor ? ` · deudor ${x.deudor.nombre}` : "";
     if (!conf.ok) {
@@ -4422,7 +4445,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   };
   // Excepción de VERIFICACIÓN de una factura (exime la verificación telefónica) — atribución del Gerente Comercial.
   const excepcionarVerif = async (f, msg) => {
-    const m = { ...(repoVerifExc.get(deal.id) || {}), [f.id]: { por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL"), msg: msg || "" } };
+    const m = { ...(repoVerifExc.get(deal.id) || {}), [f.id]: { por: actorEtiqueta(usuario), fecha: new Date().toLocaleString("es-CL"), msg: msg || "" } };
     const conf = await confirmarEscrituras([repoVerifExc.set(deal.id, m)]);
     if (!conf.ok) {
       registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Verificación (excepción)", accion: "Excepción rechazada por el contrato", glosa: `No se pudo excepcionar la verificación de la factura #${f.folio} · ${deal.cliente} — el repositorio rechazó la escritura (${conf.codigo})`, empresaId: deal.id, exito: false });
@@ -10196,6 +10219,67 @@ function cargarRoles() {
 let ROL_USUARIO = cargarRoles();
 function guardarRoles() { escribirVersionado(ROLES_KEY, "roles", ROL_USUARIO); }
 
+// ── VACACIONES Y REEMPLAZOS (por tenant) ────────────────────────────────────────────────────────
+// Mientras alguien está fuera, otro ASUME SUS ATRIBUCIONES. No es un permiso nuevo ni un rol nuevo:
+// es el mismo nivel de la misma área, ejercido por otra persona durante un período acotado.
+//
+// Entra por el PADRÓN y no por el motor, que es lo que lo hace barato: `padronAprobadores` empaqueta
+// quién puede aprobar qué, y un reemplazo es exactamente eso. Así `puedeAprobarExc`, `aprobadoresExc`
+// y `rolDeAreaNivel` lo respetan sin enterarse de que existe — el motor sigue decidiendo con lo que le
+// pasan. Meterlo dentro del motor habría sido meter una política de RRHH en el modelo de riesgo.
+//
+// El reemplazo es ADITIVO: el ausente NO pierde su atribución. Quitársela es una segunda decisión de
+// negocio (¿puede aprobar desde la playa si vuelve antes?) y se anota como pendiente en vez de
+// asumirla; lo que se pidió es que el reemplazante la asuma, y eso es lo que hace.
+// Etiqueta del ACTOR para todo lo que queda registrado. Cuando alguien actúa cubriendo a otro, el
+// registro tiene que decirlo: quien lea la bitácora en seis meses necesita saber por qué el Gerente
+// Comercial aprobó algo que requería al Jefe de Riesgo. Un solo helper para que la bitácora, la firma
+// del visado y la de la verificación digan exactamente lo mismo.
+function actorEtiqueta(code, hoy, lista) {
+  const base = (typeof USERS !== "undefined" && USERS[code]) || code || "--";
+  const cubre = typeof aQuienCubre === "function" ? aQuienCubre(code, hoy, lista) : [];
+  if (!cubre.length) return base;
+  return base + " (en reemplazo de " + cubre.map((r) => nombreDe(r.ausente)).join(", ") + ")";
+}
+const REEMPLAZOS_KEY = "pc_reemplazos_" + TENANT_ACTUAL;
+const FECHA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+// Misma higiene que roles y áreas: del storage sólo entran filas con dos usuarios que el catálogo
+// declara, distintos entre sí, y un período con fechas ISO bien ordenadas. Una fila corrupta que
+// pasara daría atribuciones a alguien que no existe, que es justo lo que no puede ocurrir acá.
+function cargarReemplazos() {
+  const guardado = leerVersionado(REEMPLAZOS_KEY, "reemplazos", null);
+  if (!Array.isArray(guardado)) return [];
+  const out = []; let ignoradas = 0;
+  for (const g of guardado) {
+    const ok = g && typeof g.ausente === "string" && typeof g.reemplazante === "string"
+      && USERS[g.ausente] && USERS[g.reemplazante] && g.ausente !== g.reemplazante
+      && FECHA_ISO.test(g.desde || "") && FECHA_ISO.test(g.hasta || "") && g.desde <= g.hasta;
+    if (!ok) { ignoradas++; continue; }
+    out.push({ id: String(g.id || ("rmp" + out.length)), ausente: g.ausente, reemplazante: g.reemplazante,
+      desde: g.desde, hasta: g.hasta, motivo: String(g.motivo || "").slice(0, 120),
+      creadoPor: String(g.creadoPor || "").slice(0, 80), creadoEn: String(g.creadoEn || "").slice(0, 40) });
+  }
+  if (ignoradas) logSys("warn", "app", `Reemplazos: ${ignoradas} entrada(s) del storage ignoradas (usuario o período inválidos)`, { tenant: TENANT_ACTUAL });
+  return out;
+}
+let REEMPLAZOS = cargarReemplazos();
+function guardarReemplazos() { escribirVersionado(REEMPLAZOS_KEY, "reemplazos", REEMPLAZOS); }
+// La fecha entra por parámetro en todo lo que decide: «hoy» es del servidor, no del reloj del cliente.
+// Las fechas son ISO `AAAA-MM-DD`, que ordenan igual como texto que como fecha, así que el período se
+// compara sin construir un Date — y de paso el cálculo queda reproducible.
+const hoyISO = () => new Date().toISOString().slice(0, 10);
+const reemplazoVigente = (r, hoy) => !!r && r.desde <= hoy && hoy <= r.hasta;
+// Quién cubre a este usuario hoy (null si nadie).
+function quienCubreA(code, hoy, lista) {
+  const hy = hoy || hoyISO();
+  return ((lista || REEMPLAZOS).find((r) => r.ausente === code && reemplazoVigente(r, hy))) || null;
+}
+// A quiénes cubre este usuario hoy. Puede cubrir a más de uno.
+function aQuienCubre(code, hoy, lista) {
+  const hy = hoy || hoyISO();
+  return (lista || REEMPLAZOS).filter((r) => r.reemplazante === code && reemplazoVigente(r, hy));
+}
+
 // ============================================================================================
 // PADRÓN DE APROBADORES — lo que el motor de otorgamiento recibe ANTES de cada ejecución.
 // El motor decide con (área, nivel): la regla dice cuál necesita y el padrón dice quién lo tiene.
@@ -10211,13 +10295,21 @@ function guardarRoles() { escribirVersionado(ROLES_KEY, "roles", ROL_USUARIO); }
 // La firma es una vuelta sobre ~18 entradas: al lado de rearmar el padrón 130 veces por evaluación,
 // no se nota, y no depende de que nadie se olvide de invalidar.
 let _PADRON = null, _PADRON_FIRMA = "";
-function _firmaPadron() {
+// La firma incluye los REEMPLAZOS y la FECHA: un reemplazo que empieza hoy cambia quién puede aprobar
+// sin que cambien ni los roles ni las áreas, así que sin esto el padrón memoizado seguiría entregando
+// los aprobadores de ayer. Es el mismo motivo por el que la firma existe en vez de un invalidador.
+function _firmaPadron(hoy, reemplazos) {
   const r = Object.keys(ROL_USUARIO).sort().map((k) => k + ":" + ROL_USUARIO[k]).join("|");
   const a = (typeof AREAS_CAT !== "undefined" ? AREAS_CAT : []).map((x) => x.id + ":" + x.label).join("|");
-  return r + "#" + a;
+  const m = (reemplazos || REEMPLAZOS).map((x) => x.ausente + ">" + x.reemplazante + ":" + x.desde + ".." + x.hasta).sort().join("|");
+  return r + "#" + a + "#" + (hoy || hoyISO()) + "#" + m;
 }
-function padronAprobadores() {
-  const firma = _firmaPadron();
+// `hoy` y la lista de reemplazos entran por parámetro para que el padrón sea reproducible: quién puede
+// aprobar el 3 de enero es una pregunta con respuesta fija, no algo que dependa del reloj de quien mire.
+function padronAprobadores(hoy, reemplazos) {
+  const hy = hoy || hoyISO();
+  const rmp = reemplazos || REEMPLAZOS;
+  const firma = _firmaPadron(hy, rmp);
   if (_PADRON && _PADRON_FIRMA === firma) return _PADRON;
   const areas = (typeof AREAS_CAT !== "undefined" ? AREAS_CAT : []).map((a) => ({ id: a.id, label: a.label }));
   // Un usuario entra al padrón con el área y el nivel que su ROL implica; el super-admin cubre todo.
@@ -10227,15 +10319,47 @@ function padronAprobadores() {
     // y eso metía un dato del tenant dentro del motor.
     code, nombre: nombreDe(code), rol: rolLabel(code), etiqueta: USERS[code] || nombreDe(code),
     atrib: atribDe(code).atrib, superAdmin: code === "ADMIN",
-  })).filter((u) => u.superAdmin || Object.keys(u.atrib).length);
+  }));
+  // REEMPLAZOS VIGENTES. Quien cubre a alguien suma sus atribuciones, tomando el MAYOR nivel por área:
+  // si el reemplazante ya tenía Comercial N2 y el ausente tiene N1, quedarse con N2 es lo correcto; si
+  // el ausente tiene N3, durante el período el reemplazante llega a N3. Se marca en las dos puntas
+  // —`cubre` en quien reemplaza, `ausente` en quien está fuera— porque la bitácora y las pantallas
+  // tienen que poder decir POR QUÉ esta persona pudo aprobar esto.
+  const porCode = {}; usuarios.forEach((u) => { porCode[u.code] = u; });
+  for (const r of rmp) {
+    if (!reemplazoVigente(r, hy)) continue;
+    const quien = porCode[r.reemplazante], fuera = porCode[r.ausente];
+    if (!quien || !fuera) continue;
+    quien.atrib = { ...quien.atrib };
+    for (const [area, nivel] of Object.entries(fuera.atrib || {})) {
+      if (quien.atrib[area] == null || nivel > quien.atrib[area]) quien.atrib[area] = nivel;
+    }
+    (quien.cubre = quien.cubre || []).push({ code: fuera.code, nombre: fuera.nombre, etiqueta: fuera.etiqueta, desde: r.desde, hasta: r.hasta, motivo: r.motivo });
+    fuera.ausente = { desde: r.desde, hasta: r.hasta, motivo: r.motivo, porCode: quien.code, porNombre: quien.nombre };
+  }
+  // El filtro va DESPUÉS de aplicar los reemplazos: un ejecutivo sin atribución propia que cubre a su
+  // jefe tiene que entrar al padrón, y antes el filtro lo habría dejado fuera antes de mirar el período.
+  const conAtrib = usuarios.filter((u) => u.superAdmin || Object.keys(u.atrib).length);
   // Los cargos: qué nivel de qué área representa cada uno. Es lo que le pone NOMBRE al requisito.
   const cargos = Object.keys(ROL_ATRIB).map((id) => ({
     id, rol: (ROL_POR_ID[id] || {}).label || id, area: ROL_ATRIB[id].area, nivel: ROL_ATRIB[id].nivel,
   }));
-  _PADRON = { areas, usuarios, cargos, ts: nowStamp() };
+  _PADRON = { areas, usuarios: conAtrib, cargos, hoy: hy, ts: nowStamp() };
   _PADRON_FIRMA = firma;
   return _PADRON;
 }
+// La atribución EFECTIVA de una persona hoy: la de su rol, más la que esté cubriendo. Sale del padrón
+// y no de `atribDe` porque el padrón es el único sitio donde se aplica el reemplazo, y tener dos
+// lugares que fusionan lo mismo es tener dos lugares que se van a desincronizar.
+//   `atribDe`       = lo que implica su CARGO. Es lo que se configura y lo que se delega.
+//   `atribEfectiva` = lo que puede aprobar HOY. Es lo que la UI tiene que mirar para mostrarle algo.
+// Confundirlas es lo que dejaba al reemplazante sin badge: el motor lo dejaba aprobar y la pantalla
+// que se lo iba a decir lo descartaba antes, por ser «tipo pipeline».
+const atribEfectiva = (code, hoy, lista) =>
+  ((padronAprobadores(hoy, lista).usuarios.find((u) => u.code === code) || {}).atrib) || {};
+// A quién está cubriendo, tal como lo ve el padrón (con el período y el motivo). Para las etiquetas.
+const coberturaDe = (code, hoy, lista) =>
+  ((padronAprobadores(hoy, lista).usuarios.find((u) => u.code === code) || {}).cubre) || [];
 const rolDe = (code) => ROL_POR_ID[ROL_USUARIO[code]] || null;
 const rolLabel = (code) => { const r = rolDe(code); return r ? r.label : "Sin rol"; };
 // El nombre de la persona sale de `USERS` sin el rol pegado atrás: con el rol configurable, ese
@@ -10244,7 +10368,12 @@ const nombreDe = (code) => String(USERS[code] || code).split(" · ")[0];
 // ¿Puede MARCAR una factura como verificada o no verificada? Es el trabajo del equipo de
 // verificación: quien llama al deudor es quien registra lo que el deudor dijo. El resto de la
 // organización ve el estado pero no lo firma — una verificación es evidencia de una llamada.
-const puedeVerificarFacturas = (code) => code === "ADMIN" || ROL_USUARIO[code] === "ejec_verif";
+// Firmar una verificación es una ATRIBUCIÓN, aunque venga del rol y no de un nivel: si la única
+// Ejecutiva de verificación se va de vacaciones, sin esto el equipo queda sin nadie que pueda registrar
+// una llamada y las operaciones se pegan en el giro. Quien la cubre la ejerce mientras dure el período,
+// y la bitácora lo deja escrito como reemplazante (`actorEtiqueta`).
+const puedeVerificarFacturas = (code, hoy, lista) => code === "ADMIN" || ROL_USUARIO[code] === "ejec_verif"
+  || aQuienCubre(code, hoy, lista).some((r) => ROL_USUARIO[r.ausente] === "ejec_verif");
 const puedeExcepcionarVerif = (code) => code === "ADMIN" || CFG_EXC_VERIF[code] === true;
 const puedeVerBitacora = (code) => code === "ADMIN" || CFG_VER_BITACORA[code] === true;
 const puedeVerMensajeria = (code) => code === "ADMIN" || CFG_VER_MENSAJERIA[code] === true;
@@ -10264,9 +10393,9 @@ function logOtorgEvento(dealId, actor, resultado, detalle) {
 // ejecutivo las priorice. { [dealId]: { por, porNombre, ts } }. Se conserva aunque la op se gane/pierda.
 let PRIORIDAD_CURSE = {};
 // ¿El usuario es jefatura o gerencia comercial (puede pedir/quitar prioridad)? Los ejecutivos no.
-const esJefeComercial = (code) => code === "ADMIN" || atribDe(code).atrib.comercial != null;
+const esJefeComercial = (code) => code === "ADMIN" || atribEfectiva(code).comercial != null;
 // Gerente Comercial (o superior): atribución comercial N2+ (autoriza descuentos sobre el máximo de jefatura).
-const esGerenteComercial = (code) => code === "ADMIN" || (atribDe(code).atrib.comercial != null && atribDe(code).atrib.comercial >= 2);
+const esGerenteComercial = (code) => code === "ADMIN" || (atribEfectiva(code).comercial != null && atribEfectiva(code).comercial >= 2);
 function setPrioridadCurse(dealId, code, on) {
   // PRI-01 del contrato: el chequeo va en la FUNCIÓN, no sólo en el botón. Ocultar el control en la UI
   // no impide llamar a esto desde la consola, y así al menos queda registrado el intento con su código.
@@ -10458,7 +10587,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
   const setExc = async (deal, x, val, msg, arch) => {
     const k = x.stKey, area = x.regla.area, nivel = x.nivel || 4;
     const st = { ...(repoVisado.get(deal.id) || {}), [k]: val };
-    const det = { ...(repoVisadoDetalle.get(deal.id) || {}), [k]: { msg: msg || "", arch: arch || null, por: USERS[usuario] || usuario, fecha: new Date().toLocaleString("es-CL") } };
+    const det = { ...(repoVisadoDetalle.get(deal.id) || {}), [k]: { msg: msg || "", arch: arch || null, por: actorEtiqueta(usuario), fecha: new Date().toLocaleString("es-CL") } };
     const conf = await confirmarEscrituras([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
     const dtxt = x.deudor ? ` · deudor ${x.deudor.nombre}` : "";
     if (!conf.ok) {
@@ -11153,13 +11282,17 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
 // modelo de causas de desvío —recorriendo TODOS los deals en cada render— y después no los usaba: el
 // JSX nunca los mencionó. Ese cómputo se eliminó junto con el modelo.
 function OtorgamientosView({ deals, usuario, onOpen, onCfgChange }) {
-  const atrLbl = Object.entries(atribDe(usuario).atrib).map(([a, l]) => AREA_LBL[a] + " N" + l).join(" · ");
+  // La atribución que se muestra es la EFECTIVA: si está cubriendo a alguien, lo que ve en pantalla
+  // tiene que coincidir con lo que el motor lo deja aprobar, y de paso decirle por qué.
+  const atrLbl = Object.entries(atribEfectiva(usuario)).map(([a, l]) => AREA_LBL[a] + " N" + l).join(" · ");
+  const cubre = coberturaDe(usuario);
   return (
     <div className="mt-1">
       <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Mesa de decisión <ChevronRight size={12} /> Otorgamientos</div>
       <div className="mt-1 flex items-end justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Otorgamientos</h1>
-        <div className="t12" style={{ color: C.sub }}>{USERS[usuario] || usuario}{atrLbl ? " · " + atrLbl : ""}</div>
+        <div className="t12 text-right" style={{ color: C.sub }}>{USERS[usuario] || usuario}{atrLbl ? " · " + atrLbl : ""}
+          {!!cubre.length && <div className="t10" style={{ color: "#C2410C" }}>En reemplazo de {cubre.map((c) => `${c.nombre} (hasta el ${c.hasta})`).join(", ")}</div>}</div>
       </div>
       <div className="mt-3 flex items-center gap-1.5 t12 font-semibold" style={{ color: C.indigo, borderBottom: `1px solid ${C.line}`, paddingBottom: 8 }}><ShieldCheck size={13} /> Bandeja de aprobaciones</div>
       <div className="mt-3">
@@ -13794,6 +13927,7 @@ const CFG_SECCIONES = [
   { k: "usuarios", label: "Usuarios", Icon: User },
   { k: "roles", label: "Roles", Icon: Star },
   { k: "areas", label: "Áreas", Icon: Target },
+  { k: "reemplazos", label: "Vacaciones y reemplazos", Icon: Calendar },
   { k: "otorgamiento", label: "Otorgamiento", Icon: ShieldCheck },
   { k: "productos", label: "Productos", Icon: Zap },
   { k: "monedas", label: "Monedas", Icon: Calculator },
@@ -14563,7 +14697,7 @@ function CfgAreas() {
       </div>
       <ConfirmDialog abierto={!!borrar} titulo="¿Eliminar esta área?"
         descripcion={borrar ? `«${borrar.label}» (${borrar.id}). Ningún criterio rutea a ella, así que no deja aprobaciones huérfanas. Si algún usuario la tenía asignada por su rol, ese rol deja de tener área.` : ""}
-        confirmar="Eliminar" onConfirmar={() => eliminar(borrar.id)} onCancelar={() => setBorrar(null)} />
+        etiquetaConfirmar="Eliminar" onConfirmar={() => eliminar(borrar.id)} onCancelar={() => setBorrar(null)} />
     </div>
   );
 }
@@ -14657,6 +14791,147 @@ function CfgUsuarios() {
     </div>
   );
 }
+// ── MANTENEDOR DE VACACIONES Y REEMPLAZOS ───────────────────────────────────────────────────────
+// Mientras alguien está fuera, quien lo cubre ASUME SUS ATRIBUCIONES: el mismo nivel de la misma área,
+// por un período acotado. No crea permisos nuevos — sólo traslada los que ya existen— y todo lo que el
+// reemplazante haga queda en la bitácora identificado como tal.
+function CfgReemplazos({ usuario }) {
+  const [, force] = useState(0);
+  const [form, setForm] = useState({ ausente: "", reemplazante: "", desde: hoyISO(), hasta: hoyISO(), motivo: "Vacaciones" });
+  const [error, setError] = useState("");
+  const [porBorrar, setPorBorrar] = useState(null);
+  const hoy = hoyISO();
+  // Sólo se puede reemplazar a quien TIENE algo que delegar: si no tiene nada que asumir, la fila sería
+  // decorativa. «Algo» son las dos cosas que el sistema gatea por persona: el nivel con que aprueba
+  // excepciones y la firma de las verificaciones. La segunda no es un nivel pero sí es una atribución —
+  // si la única Ejecutiva de verificación se va, sin reemplazo nadie registra una llamada y el giro se
+  // pega—, así que tiene que aparecer en esta lista.
+  const delegable = (c) => Object.keys(atribDe(c).atrib || {}).length > 0 || ROL_USUARIO[c] === "ejec_verif";
+  const conAtrib = Object.keys(USERS).filter((c) => c !== "ADMIN" && delegable(c));
+  const candidatos = Object.keys(USERS).filter((c) => c !== "ADMIN");
+  const atribTxt = (c) => [
+    ...Object.entries(atribDe(c).atrib || {}).map(([a, n]) => `${AREA_LBL[a]} N${n}`),
+    ...(ROL_USUARIO[c] === "ejec_verif" ? ["Firma verificaciones"] : []),
+  ].join(" · ") || "sin atribución";
+
+  const agregar = () => {
+    const f = form;
+    if (!f.ausente || !f.reemplazante) return setError("Elige a quién se reemplaza y quién lo cubre.");
+    if (f.ausente === f.reemplazante) return setError("Nadie se reemplaza a sí mismo.");
+    if (!FECHA_ISO.test(f.desde) || !FECHA_ISO.test(f.hasta)) return setError("Las fechas van en formato AAAA-MM-DD.");
+    if (f.desde > f.hasta) return setError("La fecha de término no puede ser anterior a la de inicio.");
+    // Dos personas cubriendo a la misma en el mismo día dejarían la atribución duplicada y la bitácora
+    // sin poder decir quién la ejerció. Se corta acá, que es donde se puede explicar.
+    const choca = REEMPLAZOS.find((r) => r.ausente === f.ausente && !(f.hasta < r.desde || f.desde > r.hasta));
+    if (choca) return setError(`${nombreDe(f.ausente)} ya tiene un reemplazo entre ${choca.desde} y ${choca.hasta} (${nombreDe(choca.reemplazante)}).`);
+    const nuevo = { id: "rmp" + Date.now().toString(36), ausente: f.ausente, reemplazante: f.reemplazante,
+      desde: f.desde, hasta: f.hasta, motivo: (f.motivo || "").slice(0, 120),
+      creadoPor: actorEtiqueta((SESION && SESION.usuario) || usuario), creadoEn: nowStamp() };
+    REEMPLAZOS = [...REEMPLAZOS, nuevo];
+    guardarReemplazos(); invalidarVisado();
+    registrarAuditoria({ usuario: actorEtiqueta((SESION && SESION.usuario) || usuario), modulo: "Configuración · Reemplazos",
+      accion: "Reemplazo creado",
+      glosa: `${nombreDe(nuevo.reemplazante)} cubre a ${nombreDe(nuevo.ausente)} del ${nuevo.desde} al ${nuevo.hasta} (${nuevo.motivo || "sin motivo"}) · asume ${atribTxt(nuevo.ausente)}`,
+      exito: true });
+    setForm({ ausente: "", reemplazante: "", desde: hoy, hasta: hoy, motivo: "Vacaciones" }); setError("");
+    force((x) => x + 1);
+  };
+  const borrar = (r) => {
+    REEMPLAZOS = REEMPLAZOS.filter((x) => x.id !== r.id);
+    guardarReemplazos(); invalidarVisado();
+    registrarAuditoria({ usuario: actorEtiqueta((SESION && SESION.usuario) || usuario), modulo: "Configuración · Reemplazos",
+      accion: "Reemplazo eliminado",
+      glosa: `${nombreDe(r.reemplazante)} dejó de cubrir a ${nombreDe(r.ausente)} (período ${r.desde} a ${r.hasta})`, exito: true });
+    setPorBorrar(null); force((x) => x + 1);
+  };
+
+  const vigentes = REEMPLAZOS.filter((r) => reemplazoVigente(r, hoy));
+  const orden = [...REEMPLAZOS].sort((a, b) => (reemplazoVigente(b, hoy) - reemplazoVigente(a, hoy)) || a.desde.localeCompare(b.desde));
+  const inp = { border: `1px solid ${C.line}`, borderRadius: 10, padding: "6px 10px", backgroundColor: "#fff", color: C.ink };
+
+  return (
+    <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+      <div className="text-lg font-semibold" style={{ color: C.ink }}>Vacaciones y reemplazos</div>
+      <div className="mt-0.5 t12" style={{ color: C.faint }}>
+        Mientras una persona está fuera, quien la reemplaza <b>asume sus atribuciones</b>: el mismo nivel de la misma área, sólo durante el período.
+        No se crean permisos nuevos y el ausente <b>no pierde los suyos</b>. Todo lo que el reemplazante apruebe queda en la bitácora <b>identificado como reemplazante</b>.
+      </div>
+
+      <div className="mt-3 rounded-xl p-3" style={{ border: `1px solid ${C.line}`, backgroundColor: "#FAF9FB" }}>
+        <div className="t11 font-semibold" style={{ color: C.navy }}>Asignar un reemplazo</div>
+        <div className="mt-2 flex flex-wrap items-end gap-2">
+          <label className="t10" style={{ color: C.sub }}>Quién se ausenta
+            <select value={form.ausente} onChange={(e) => setForm((f) => ({ ...f, ausente: e.target.value }))} className="mt-0.5 block t11" style={{ ...inp, minWidth: 230 }}>
+              <option value="">Selecciona…</option>
+              {conAtrib.map((c) => <option key={c} value={c}>{USERS[c]}</option>)}
+            </select>
+          </label>
+          <label className="t10" style={{ color: C.sub }}>Quién lo reemplaza
+            <select value={form.reemplazante} onChange={(e) => setForm((f) => ({ ...f, reemplazante: e.target.value }))} className="mt-0.5 block t11" style={{ ...inp, minWidth: 230 }}>
+              <option value="">Selecciona…</option>
+              {candidatos.filter((c) => c !== form.ausente).map((c) => <option key={c} value={c}>{USERS[c]}</option>)}
+            </select>
+          </label>
+          <label className="t10" style={{ color: C.sub }}>Desde
+            <input type="date" value={form.desde} onChange={(e) => setForm((f) => ({ ...f, desde: e.target.value }))} className="mt-0.5 block t11" style={inp} />
+          </label>
+          <label className="t10" style={{ color: C.sub }}>Hasta
+            <input type="date" value={form.hasta} onChange={(e) => setForm((f) => ({ ...f, hasta: e.target.value }))} className="mt-0.5 block t11" style={inp} />
+          </label>
+          <label className="t10" style={{ color: C.sub }}>Motivo
+            <input value={form.motivo} onChange={(e) => setForm((f) => ({ ...f, motivo: e.target.value }))} placeholder="Vacaciones" className="mt-0.5 block t11" style={{ ...inp, minWidth: 170 }} />
+          </label>
+          <button onClick={agregar} className="rounded-lg px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Asignar</button>
+        </div>
+        {form.ausente && (
+          <div className="mt-2 t10" style={{ color: C.sub }}>
+            Durante el período, <b>{form.reemplazante ? nombreDe(form.reemplazante) : "quien lo reemplace"}</b> podrá aprobar lo que hoy aprueba <b>{nombreDe(form.ausente)}</b>: <b style={{ color: C.indigo }}>{atribTxt(form.ausente)}</b>.
+          </div>
+        )}
+        {error && <div className="mt-2 t10 font-medium" style={{ color: C.red }}>{error}</div>}
+      </div>
+
+      <div className="mt-3 t11" style={{ color: C.sub }}>
+        {vigentes.length ? <><b style={{ color: "#C2410C" }}>{vigentes.length}</b> reemplazo(s) vigente(s) hoy ({hoy}).</> : <>Ningún reemplazo vigente hoy ({hoy}).</>}
+      </div>
+      <table className="mt-2 w-full t11" style={{ borderCollapse: "collapse" }}>
+        <thead><tr className="t10" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>
+          <th className="py-1.5 text-left font-medium">Se ausenta</th>
+          <th className="py-1.5 text-left font-medium">Lo reemplaza</th>
+          <th className="py-1.5 text-left font-medium">Atribuciones que asume</th>
+          <th className="py-1.5 text-left font-medium">Período</th>
+          <th className="py-1.5 text-left font-medium">Motivo</th>
+          <th className="py-1.5 text-left font-medium">Estado</th>
+          <th />
+        </tr></thead>
+        <tbody>
+          {!orden.length && <tr><td colSpan={7} className="py-6 text-center t11" style={{ color: C.faint }}>Sin reemplazos configurados.</td></tr>}
+          {orden.map((r) => {
+            const viv = reemplazoVigente(r, hoy);
+            const futuro = hoy < r.desde;
+            const est = viv ? { l: "Vigente", bg: "#FFF7ED", fg: "#C2410C" } : futuro ? { l: "Programado", bg: "#eff6ff", fg: "#2563EB" } : { l: "Terminado", bg: "#F3F4F6", fg: C.sub };
+            return (
+              <tr key={r.id} style={{ borderBottom: `1px solid ${C.line}` }}>
+                <td className="py-1.5" style={{ color: C.ink }}>{USERS[r.ausente] || r.ausente}</td>
+                <td className="py-1.5" style={{ color: C.ink }}>{USERS[r.reemplazante] || r.reemplazante}</td>
+                <td className="py-1.5" style={{ color: viv ? C.indigo : C.faint }}>{atribTxt(r.ausente)}</td>
+                <td className="py-1.5" style={{ color: C.sub }}>{r.desde} → {r.hasta}</td>
+                <td className="py-1.5" style={{ color: C.sub }}>{r.motivo || "—"}</td>
+                <td className="py-1.5"><span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: est.bg, color: est.fg }}>{est.l}</span></td>
+                <td className="py-1.5 text-right">
+                  <button onClick={() => setPorBorrar(r)} className="t10 font-medium" style={{ color: C.red }}>Eliminar</button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <ConfirmDialog abierto={!!porBorrar} titulo="¿Eliminar este reemplazo?"
+        descripcion={porBorrar ? `${nombreDe(porBorrar.reemplazante)} dejará de cubrir a ${nombreDe(porBorrar.ausente)} de inmediato. Las aprobaciones que ya firmó se conservan con su registro de reemplazante: son evidencia y no se tocan.` : ""}
+        etiquetaConfirmar="Eliminar" onConfirmar={() => borrar(porBorrar)} onCancelar={() => setPorBorrar(null)} />
+    </div>
+  );
+}
 function ConfiguracionView({ usuario, cfgOper, setCfgOper }) {
   const [sec, setSec] = useState("operacion");
   const [, force] = useState(0);
@@ -14671,7 +14946,7 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper }) {
         ))}
       </aside>
       <div>
-        {sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "roles" ? <CfgRoles /> : sec === "usuarios" ? <CfgUsuarios /> : sec === "areas" ? <CfgAreas /> : sec === "otorgamiento" ? (
+        {sec === "reemplazos" ? <CfgReemplazos usuario={usuario} /> : sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "roles" ? <CfgRoles /> : sec === "usuarios" ? <CfgUsuarios /> : sec === "areas" ? <CfgAreas /> : sec === "otorgamiento" ? (
           <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
             <div className="text-lg font-semibold" style={{ color: C.ink }}>Otorgamiento · apoderados y atribuciones</div>
             <div className="mt-0.5 t12" style={{ color: C.faint }}>Criterios de verificación, atribuciones de aprobación por criterio y los apoderados que pueden excepcionar (nivel por área). Aquí también se habilita/oculta la aceptación masiva por usuario.</div>
@@ -18246,7 +18521,10 @@ export default function PipelineComercial() {
   // que ÉL puede aprobar según su atribución. Alineado con "con acciones para ti" de la bandeja.
   const verifPendientes = useMemo(() => filasVerificacion(deals).filter((x) => x.estado === "pendiente").length, [deals, verifVer]);
   const otorgPendientes = useMemo(() => {
-    if (atribDe(usuario).tipo === "pipeline") return 0; // ejecutivos no aprueban
+    // El atajo mira la atribución EFECTIVA: un ejecutivo que cubre a su jefe SÍ aprueba mientras dure
+    // el reemplazo, y con `atribDe` el badge le daba 0 —el motor lo dejaba visar y la pantalla que se
+    // lo iba a decir lo descartaba antes de mirar—. Sin atribución de ningún tipo, no hay nada que contar.
+    if (!Object.keys(atribEfectiva(usuario)).length && usuario !== "ADMIN") return 0;
     const puedeU = (regla, nivel) => puedeAprobarExc(usuario, regla, nivel);
     let n = 0;
     deals.filter(dealVisible).forEach((d) => {
@@ -19092,7 +19370,7 @@ export default function PipelineComercial() {
     if (!d0 || !["aceptadas", "cesion"].includes(d0.stage)) return;
     const vs = repoSimVersions.get(id) || [];
     const reservaMM = vs.length && vs[vs.length - 1].linea ? vs[vs.length - 1].linea.cursable : 0;
-    const marca = { desde: d0.stage, ts: nowStamp(), por: USERS[usuario] || usuario, versionAceptada: vs.length, reservaMM };
+    const marca = { desde: d0.stage, ts: nowStamp(), por: actorEtiqueta(usuario), versionAceptada: vs.length, reservaMM };
     setDeals((prev) => prev.map((d) => (d.id === id ? { ...d, stage: "oferta", time: nowStamp(), stale: false, status: STATUS_ETAPA.oferta || d.status, reabierta: marca } : d)));
     setSelected((sel) => (sel && sel.id === id ? { ...sel, stage: "oferta", status: STATUS_ETAPA.oferta || sel.status, reabierta: marca } : sel));
     registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Oportunidad", accion: "Operación reabierta para modificar",
@@ -20017,7 +20295,7 @@ export default function PipelineComercial() {
     const ok = fila.facturas.filter((f) => !confirmadas || confirmadas[f.id]);
     const no = fila.facturas.filter((f) => confirmadas && !confirmadas[f.id]);
     const m = { ...(repoVerifTel.get(fila.deal.id) || {}) };
-    for (const f of ok) m[f.id] = { por: USERS[usuario] || usuario, fecha: nowStamp() };
+    for (const f of ok) m[f.id] = { por: actorEtiqueta(usuario), fecha: nowStamp() };
     const conf = await confirmarEscrituras([repoVerifTel.set(fila.deal.id, m),
       congelarVeredicto(fila, no.length ? (ok.length ? "parcial" : "no_verificada") : "verificada")]);
     no.forEach((f) => retirarFacturaOferta(fila.deal.id, f, "noConfirmada"));
@@ -20039,7 +20317,7 @@ export default function PipelineComercial() {
     ...(repoVerifVeredicto.get(fila.deal.id) || {}),
     [fila.rutDeudor || fila.deudor]: { est: est === "verificada" ? "ok" : "tel", resultado: est,
       motivo: fila.causas.map((c) => c.id).join(", ") || "contacto registrado",
-      razon: "contacto", causas: fila.causas, por: USERS[usuario] || usuario, fecha: nowStamp() },
+      razon: "contacto", causas: fila.causas, por: actorEtiqueta(usuario), fecha: nowStamp() },
   });
   const congelarVeredicto = (fila, est) => repoVerifVeredicto.set(fila.deal.id, veredictoNuevo(fila, est));
   const retirarFacturaOferta = (id, fac, motivo) => {
@@ -20047,7 +20325,7 @@ export default function PipelineComercial() {
     // El deudor no la confirmó: queda VETADA para esta operación. No se puede volver a seleccionar,
     // ni siquiera al reabrirla — es el resultado de una llamada, no una preferencia reversible.
     if (motivo === "noConfirmada") {
-      const nc = { ...(repoNoConfirmadas.get(id) || {}), [fac.id]: { folio: fac.folio || fac.id, montoMM: fac.montoMM || 0, deudor: fac.deudor || "", por: USERS[usuario] || usuario, fecha: nowStamp() } };
+      const nc = { ...(repoNoConfirmadas.get(id) || {}), [fac.id]: { folio: fac.folio || fac.id, montoMM: fac.montoMM || 0, deudor: fac.deudor || "", por: actorEtiqueta(usuario), fecha: nowStamp() } };
       repoNoConfirmadas.set(id, nc);
     }
     // Si la operación ya fue aceptada, esto es la verificación retirando lo que el deudor no confirmó:
