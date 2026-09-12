@@ -4559,8 +4559,9 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
         ))}
         <div className="flex items-center gap-3 py-2.5">
           <span className="flex-1 t13 font-bold" style={{ color: C.ink }}>Monto a Girar</span>
-          {/* `t15` (18 px). Antes decía `t14`, que NO EXISTE en el `<style>`: la cifra más importante
-              de la pantalla se venía renderizando con el tamaño heredado. */}
+          {/* `t15` (18 px): es el total de la pantalla, un punto sobre los KPI de arriba (`t14`, 17 px).
+              Hasta el 12-09 decía `t14` y `t14` no estaba DEFINIDA, así que la cifra más importante del
+              desglose se renderizaba con el tamaño heredado. */}
           <span className="t15 font-bold" style={{ color: C.indigo, minWidth: 112, textAlign: "right" }}>{fmtCLP(giroCLP)}</span>
           {modoEdit && <><span style={{ minWidth: 84 }} /><span style={{ minWidth: 104 }} /></>}
         </div>
@@ -21093,10 +21094,18 @@ export default function PipelineComercial() {
     <div className="min-h-screen w-full" style={{ backgroundColor: C.page, color: C.ink, fontFamily: "'Geist', ui-sans-serif, system-ui, sans-serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&display=swap');
-        /* Escala tipográfica Datamart: t7=Nano 9px, t8-t10=Micro 11px, t11=Caption 12px, t12=Small 13px, t13=Body 14px, t15=16px */
+        /* Escala tipográfica REAL (los valores de esta regla, no los nombres de la escala Datamart —
+           el comentario anterior decía 9/11/12/13/14/16 y ninguno calzaba):
+           t7=10,5 · t8=12,5 · t9=11,5 · t10=12,5 · t11=14 · t12=15 · t13=16 · t14=17 · t15=18 px.
+           t14 FALTABA y se usaba en 15 lugares —títulos de panel y cifras de KPI, entre ellas el
+           «Monto a Girar»—: sin la regla, esos elementos heredaban el tamaño del padre y terminaban
+           de un tamaño distinto en cada pantalla, por accidente. Definirla es lo que hace que la
+           escala signifique algo; borrar los 15 usos habría sido asumir que ninguno quería un tamaño.
+           OJO: este bloque es un TEMPLATE LITERAL, así que un backtick acá adentro lo cierra y el
+           resto del componente se parsea como código. Escribir los nombres de clase sin comillas. */
         .t7{font-size:10.5px;line-height:1.3}.t8{font-size:12.5px;line-height:1.3}.t9{font-size:11.5px;line-height:1.3}.t10{font-size:12.5px;line-height:1.3}
         .t11{font-size:14px;line-height:1.4}.t12{font-size:15px;line-height:1.4}.t13{font-size:16px;line-height:1.5}
-        .t15{font-size:18px;line-height:1.4}.minw5{min-width:1.25rem}.ovl{background-color:rgba(0,0,0,0.2)}
+        .t14{font-size:17px;line-height:1.4}.t15{font-size:18px;line-height:1.4}.minw5{min-width:1.25rem}.ovl{background-color:rgba(0,0,0,0.2)}
         .btn-cta{background:linear-gradient(to right,#EE2EFF,#FF814B);color:#fff;border-radius:9999px;font-weight:600;border:none}
         .btn-cta:hover{filter:brightness(1.06)}
         /* Geometría Datamart (design-tokens): inputs/cards chicas 10px, cards 14px, modales/cards grandes 20px */
