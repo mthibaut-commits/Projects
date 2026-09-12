@@ -18,7 +18,7 @@
    ...más tres de la CARTERA DEL PAR cliente-deudor (INC-04): que el catálogo implemente las 79
    reglas de la política y que C47-C50 se evalúen y se visen por deudor, no por cliente.
 
-   Última corrida: 55/55 PASA.
+   Última corrida: 59/59 PASA.
    ============================================================================================ */
 (() => {
   const out = [];
@@ -700,6 +700,85 @@
        // y sin congelar, la fila sólo está si el predictor de hoy manda a teléfono
        && (sinCongelar.some((x) => x.rutDeudor === r55) === (verifFactura(f1, deal55).est === "tel")),
        `con veredicto congelado la fila existe con su causa ${fila ? fila.causas[0].id : "—"}`);
+  }
+
+
+  // ============================================================================================
+  // 56-59 · LO QUE DECIDE, DECIDE CON LO QUE SE LE INYECTA. La auditoría transitiva del 12-09-2026
+  // encontró cuatro cadenas donde una función parecía pura —su cuerpo no menciona ningún global— y
+  // sin embargo sus ENTRADAS salían de uno, una llamada más abajo. Un analizador estático no puede
+  // distinguir «lee el global» de «cae al global sólo si no le pasan el estado»; esto sí: se le
+  // inyecta un estado que contradice al del navegador y se comprueba cuál manda.
+  // ============================================================================================
+
+  // 56 · Las VARIABLES del motor de otorgamiento. Antes salían de `SIM_VERSIONS` vía
+  // `varsClienteActual`, así que `evaluarOtorgItems` no se podía levantar a un servicio.
+  {
+    const deal56 = { id: "T-56", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", amountMM: 40,
+                     facturasOp: [fac("s1", LB[0], 40)] };
+    const base = apiVarsCliente(deal56, 0);
+    const ver = (v) => ({ versiones: { "T-56": [{ vars: { ...base, tgrCobrJud: v } }] } });
+    // C30 «TGR cobranza judicial» es KNOCKOUT: > 0 ⇒ rechazo firme no excepcionable.
+    const sinTGR = visadoDealCalc(deal56, {}, ver(0));
+    const conTGR = visadoDealCalc(deal56, {}, ver(5e6));
+    const ko = (v) => v.rechFirme.some((r) => r.n === 130);
+    ok("56 el motor de otorgamiento decide con las variables que se le inyectan",
+       !ko(sinTGR) && ko(conTGR) && conTGR.estado === "rechazada"
+       // y la versión inyectada gana sobre la del navegador, que para esta operación no existe
+       && evaluarOtorgItems(deal56, ver(5e6)).some((i) => i.regla.n === 130 && i.disp === "rechazado"),
+       `TGR 0 → ${sinTGR.estado} sin knockout · TGR $5M → ${conTGR.estado} con C30`);
+  }
+
+  // 57 · El VETO de la verificación. `estadoCandidata` decide si una factura se puede incorporar a la
+  // oferta; su veto salía de `NO_CONFIRMADAS` una llamada más abajo, en `noConfirmada`.
+  {
+    const f57 = fac("v1", LB[2], 18);
+    const deal57 = { id: "T-57", rutEmisor: "76.111.111-1", facturasOp: [], facturasDisponibles: [f57] };
+    const libre = estadoCandidata(f57, deal57);
+    const vetada = estadoCandidata(f57, deal57, { vetadas: { "T-57": { [f57.id]: { por: "EV", fecha: "x" } } } });
+    ok("57 el veto de la verificación entra por parámetro",
+       libre.agregable === true && libre.clave !== "noConfirmada"
+       && vetada.agregable === false && vetada.bloqueada === true && vetada.clave === "noConfirmada",
+       `sin veto «${libre.clave}» agregable · con veto «${vetada.clave}» bloqueada`);
+  }
+
+  // 58 · El VISADO, que es lo que LIBERA EL GIRO. `otorgamientoCompleto` lo leía de `VISADO_STATE` a
+  // través de `visadoDeal`, y encima con cache: dos motivos para que no pudiera decidir en el servidor.
+  {
+    const deal58 = { id: "T-58", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", amountMM: 30,
+                     stage: "otorgamiento", facturasOp: [fac("w1", LB[3], 30)], aceptada: true, firmada: true };
+    const v0 = visadoDeal(deal58, { visado: {} });
+    const todoAprobado = {}; v0.exc.forEach((e) => { todoAprobado[e.stKey] = "aprobado"; });
+    const todoRechazado = {}; v0.exc.forEach((e) => { todoRechazado[e.stKey] = "rechazado"; });
+    const vA = visadoDeal(deal58, { visado: todoAprobado });
+    const vR = visadoDeal(deal58, { visado: todoRechazado });
+    ok("58 el visado que libera el giro entra por parámetro, sin pasar por el cache",
+       v0.exc.length > 0
+       && v0.excPend.length === v0.exc.length && v0.excRech.length === 0
+       && vA.excPend.length === 0 && vA.excRech.length === 0 && vA.estado !== "rechazada"
+       && vR.excRech.length === v0.exc.length && vR.estado === "rechazada"
+       // el cache no envenena: pedir dos estados distintos para la MISMA operación da dos respuestas
+       && visadoDeal(deal58, { visado: {} }).excPend.length === v0.exc.length,
+       `${v0.exc.length} excepciones · sin visar ${v0.excPend.length} pendientes · aprobadas ${vA.excPend.length} · rechazadas ${vR.excRech.length}`);
+  }
+
+  // 59 · Los NOMBRES de los aprobadores salen del padrón, no de `USERS`. Era la última lectura de
+  // datos del tenant que quedaba dentro del motor.
+  {
+    const padron59 = {
+      areas: [{ id: "contraloria", label: "Contraloría" }],
+      usuarios: [{ code: "ZZ9", nombre: "Persona Inventada", rol: "Contralor",
+                   etiqueta: "Persona Inventada · Contralor", atrib: { contraloria: 3 }, superAdmin: false }],
+      cargos: [{ id: "contralor", rol: "Contralor", area: "contraloria", nivel: 3 }],
+    };
+    const regla59 = { area: "contraloria", tiers: [[() => true, "excepcion", 2]] };
+    const nombres = aprobadoresExc(regla59, 2, padron59);
+    const real = aprobadoresExc(REGLAS_CLIENTE.find((r) => r.cond === "C21"), 5);
+    ok("59 los nombres de los aprobadores salen del padrón, no del catálogo de usuarios",
+       nombres.length === 1 && nombres[0] === "Persona Inventada · Contralor"
+       && typeof USERS["ZZ9"] === "undefined"          // no existe en la app: sólo pudo salir del padrón
+       && real.length > 0 && real.every((n) => typeof n === "string" && n.length),
+       `inyectado → «${nombres[0]}» · real → «${real.join(", ")}»`);
   }
 
   console.log(out.join("\n"));

@@ -998,7 +998,7 @@ function puedeAprobarExc(code, regla, nivelReq, padron) {
   return lv != null && lv >= nivelReq;
 }
 const aprobadoresExc = (regla, nivelReq, padron) => { const pad = padron || padronAprobadores();
-  return pad.usuarios.filter((u) => puedeAprobarExc(u.code, regla, nivelReq, pad)).map((u) => USERS[u.code]); };
+  return pad.usuarios.filter((u) => puedeAprobarExc(u.code, regla, nivelReq, pad)).map((u) => u.etiqueta || u.nombre); };
 // Construye las causas (desvíos) de una operación a partir de su evaluación de otorgamiento.
 const jefaturaOf = (d) => EXEC_JEFATURA[d.exec] || "Inbound / IA";
 const esBuenDeudor = (d) => d.sector.startsWith("Buenos Deudores");
@@ -2524,14 +2524,18 @@ function candidatasDe(deal) {
 // ¿El deudor rechazó esta factura en la verificación de ESTA operación? Si la rechazó, no vuelve a
 // entrar: es el resultado de una llamada telefónica, no una preferencia que el ejecutivo pueda
 // revertir agregándola de nuevo.
-function noConfirmada(deal, f) {
-  const m = (typeof NO_CONFIRMADAS !== "undefined" && NO_CONFIRMADAS[(deal && deal.id) || ""]) || null;
+// Las facturas que el deudor no confirmó quedan vetadas para la operación. El veto es el resultado de
+// una llamada —evidencia con actor y hora—, así que entra por parámetro: es lo que hacía que
+// `estadoCandidata`, que decide si una factura se puede incorporar, pareciera pura sin serlo.
+function noConfirmada(deal, f, vetadas) {
+  const todas = vetadas || (typeof NO_CONFIRMADAS !== "undefined" ? NO_CONFIRMADAS : {}) || {};
+  const m = todas[(deal && deal.id) || ""] || null;
   return !!(m && f && m[f.id]);
 }
-function estadoCandidata(f, deal) {
+function estadoCandidata(f, deal, estado) {
   const monto = f.montoMM || 0;
   // El veto de la verificación manda sobre cualquier otro estado de la candidata.
-  if (noConfirmada(deal, f)) return { clave: "noConfirmada", bloqueada: true, agregable: false, label: "El deudor no la confirmó", tono: "red", montoNeto: monto, ncMonto: 0 };
+  if (noConfirmada(deal, f, estado && estado.vetadas)) return { clave: "noConfirmada", bloqueada: true, agregable: false, label: "El deudor no la confirmó", tono: "red", montoNeto: monto, ncMonto: 0 };
   const h = Math.abs(hashStr("estCand" + ((deal && deal.id) || "") + "|" + (f.folio || f.id || "")));
   const b = h % 100;
   if (f.notaCredito === true || b < 7)
@@ -9343,9 +9347,10 @@ const esReglaDeudor = (regla) => !!(regla && regla.porDeudor) || /^D/.test((regl
 // Evalúa el catálogo de otorgamiento devolviendo ITEMS: las reglas del cliente una vez (deudor=null), y
 // las reglas de deudor UNA VEZ POR CADA DEUDOR de la operación, con sus propias variables de riesgo.
 // `stKey` identifica cada ítem para el estado de aprobación (regla-n para cliente; regla-n@rut para deudor).
-function evaluarOtorgItems(deal) {
-  const rev = revOtorgActual(deal);
-  const vCli = { ...varsClienteActual(deal), ...varsModeloExt(deal) };
+function evaluarOtorgItems(deal, estado) {
+  const versiones = estado && estado.versiones;
+  const rev = revOtorgActual(deal, versiones);
+  const vCli = { ...varsClienteActual(deal, versiones), ...varsModeloExt(deal) };
   const deudores = deudoresDeDeal(deal);
   const montoMM = (deal && deal.amountMM) || 0;
   const items = [];
@@ -9629,14 +9634,23 @@ function snapVersionCli(deal, rev) {
     linea, verificacion,
     politica: { ...pol }, politicas: estampaPoliticas(tsEval, TENANT_ACTUAL), app: APP_VERSION, build: APP_BUILD.commit };
 }
-function varsClienteActual(deal) {
-  const vs = deal && SIM_VERSIONS[deal.id];
+// Las variables con las que decide el motor salen de la ÚLTIMA versión emitida, o de la API si aún
+// no hay ninguna. Las versiones entran por parámetro: son evidencia persistida —la tabla
+// `simulacion_version`— y no estado del navegador. Sin esto `evaluarOtorgItems` parecía puro
+// —no menciona ningún global— y sin embargo sus ENTRADAS salían de `SIM_VERSIONS`, así que la cadena
+// completa no se podía levantar a un servicio.
+function varsClienteActual(deal, versiones) {
+  const todas = versiones || (typeof SIM_VERSIONS !== "undefined" ? SIM_VERSIONS : {}) || {};
+  const vs = deal && todas[deal.id];
   if (vs && vs.length) return vs[vs.length - 1].vars;
   return apiVarsCliente(deal, 0);
 }
 // Revisión vigente de la simulación. v1 se emite con `rev = 0`, así que la revisión actual es
 // «nº de versiones − 1»: sin versiones y con una sola versión se está en la evaluación inicial.
-const revOtorgActual = (deal) => Math.max(0, (((deal && SIM_VERSIONS[deal.id]) || []).length) - 1);
+const revOtorgActual = (deal, versiones) => {
+  const todas = versiones || (typeof SIM_VERSIONS !== "undefined" ? SIM_VERSIONS : {}) || {};
+  return Math.max(0, (((deal && todas[deal.id]) || []).length) - 1);
+};
 function reevaluarCliente(deal, usuario) {
   // Escritura vía repositorio: cada versión es un registro INMUTABLE (append-only), nunca se edita una
   // versión ya emitida. SERVER-SIDE: insert en `simulacion_version`, que es evidencia de la decisión.
@@ -9671,7 +9685,11 @@ const visadoKey = (deal) =>
 // con nombre y hora, no una preferencia del navegador. `visadoDealCalc` lo recibe para que el
 // evaluador sea puro y se pueda levantar tal cual a un resolver; `visadoDeal` es el envoltorio de la
 // app, que le pasa el que hoy vive acá. Ver el contrato OTG-01/OTG-02 en `INVARIANTES`.
-function visadoDeal(deal) {
+// `visadoDeal` es el envoltorio con cache que usa la app; `visadoDealCalc` es el motor puro. Con un
+// estado INYECTADO se salta el cache a propósito: la clave está indexada por la operación, no por el
+// estado, así que cachear una evaluación hecha con otro visado devolvería la respuesta equivocada.
+function visadoDeal(deal, estado) {
+  if (estado) return visadoDealCalc(deal, estado.visado, estado);
   if (!deal || deal.id == null) return visadoDealCalc(deal);
   const k = visadoKey(deal);
   const hit = VISADO_CACHE.get(k);
@@ -9681,8 +9699,8 @@ function visadoDeal(deal) {
   VISADO_CACHE.set(k, out);
   return out;
 }
-function visadoDealCalc(deal, visado) {
-  const res = evaluarOtorgItems(deal);
+function visadoDealCalc(deal, visado, estado) {
+  const res = evaluarOtorgItems(deal, estado);
   const exc = res.filter((x) => x.disp === "excepcion").map((x) => ({ n: x.regla.n, stKey: x.stKey, deudor: x.deudor, nombre: x.regla.nombre, hallazgo: x.regla.hallazgo, area: x.regla.area, nivel: x.nivel || 4, reev: reglaReev(x.regla.n) }));
   const rech = res.filter((x) => x.disp === "rechazado").map((x) => ({ n: x.regla.n, stKey: x.stKey, deudor: x.deudor, nombre: x.regla.nombre, hallazgo: x.regla.hallazgo, area: x.regla.area, reev: reglaReev(x.regla.n) }));
   const aprob = res.filter((x) => x.disp === "aprobado").length;
@@ -9693,14 +9711,17 @@ function visadoDealCalc(deal, visado) {
   const excPend = exc.filter((e) => !st[e.stKey]);
   const rechFirme = rech.filter((r) => !r.reev); // rechazos definitivos → pérdida
   const rechReev = rech.filter((r) => r.reev);   // rechazos re-evaluables → NO pérdida (el dato puede cambiar)
-  const estado = (rechFirme.length || excRech.length) ? "rechazada" : (excPend.length || rechReev.length) ? "sujeta" : "aprobada";
-  return { estado, exc, rech, rechFirme, rechReev, aprob, clasif, excPend, excRech };
+  // `estadoAgregado`, no `estado`: el parámetro `estado` es el bag de entrada inyectado. Llamar igual
+  // a los dos rompía el bundle con «Identifier 'estado' has already been declared» — y ni tsc ni el
+  // build lo dijeron, porque es un error semántico que sólo aparece al transpilar en el navegador.
+  const estadoAgregado = (rechFirme.length || excRech.length) ? "rechazada" : (excPend.length || rechReev.length) ? "sujeta" : "aprobada";
+  return { estado: estadoAgregado, exc, rech, rechFirme, rechReev, aprob, clasif, excPend, excRech };
 }
 // ¿La operación tiene un bloqueo FIRME de otorgamiento (rechazo no re-evaluable o excepción rechazada)?
 // Un bloqueo firme es definitivo ⇒ la operación no puede cursarse: va a Perdida.
-function otorgBloqueado(deal) {
+function otorgBloqueado(deal, estado) {
   if (!deal || !["prospeccion", "oferta", "aceptadas", "otorgamiento", "cesion"].includes(deal.stage)) return false;
-  const v = visadoDeal(deal);
+  const v = visadoDeal(deal, estado);
   return v.rechFirme.length > 0 || v.excRech.length > 0;
 }
 // ── Pérdida como estado terminal (spec Perdida v1.0) ────────────────────────────────────────────
@@ -9708,16 +9729,16 @@ function otorgBloqueado(deal) {
 function subtipoBloqueo(nombre) { const s = (nombre || "").toLowerCase(); if (/protest/.test(s)) return "protesto"; if (/castig/.test(s)) return "castigo"; return "mora"; }
 // Bloqueos FIRMES (no re-evaluables) de una operación. Las reglas re-evaluables NUNCA entran acá: su
 // fallo produce `requiere_otorgamiento` (activa, sujeta a excepción), no pérdida. Devuelve null si no hay.
-function bloqueoFirmeInfo(deal) {
-  const v = visadoDeal(deal); const firmes = [...v.rechFirme, ...v.excRech];
+function bloqueoFirmeInfo(deal, estado) {
+  const v = visadoDeal(deal, estado); const firmes = [...v.rechFirme, ...v.excRech];
   if (!firmes.length) return null;
   return { firmes, ids: firmes.map((r) => r.n), subtipo: subtipoBloqueo(firmes[0].nombre), causa: "Bloqueo firme: " + firmes.map((r) => `${r.nombre} (#${r.n})`).join("; ") };
 }
 // Causa de pérdida ESPECÍFICA de una operación — nunca el genérico "no superó reglas de otorgamiento".
-function causaPerdidaDeal(deal) {
+function causaPerdidaDeal(deal, estado) {
   if (!deal) return "Oportunidad perdida";
   if (deal.causaPerdida) return deal.causaPerdida;
-  const bi = bloqueoFirmeInfo(deal); if (bi) return bi.causa;
+  const bi = bloqueoFirmeInfo(deal, estado); if (bi) return bi.causa;
   if (deal.perdidaCesion || deal.cedidaCompetidor) return `Cesión externa: facturas financiadas por ${deal.cedidaCompetidor || "la competencia"}`;
   if (/no acept|no tom/i.test(deal.status || "")) return "El cliente no aceptó la oferta";
   if (deal.contactable === false) return "Sin contacto: intentos de contacto agotados";
@@ -9749,10 +9770,12 @@ function aprobacionFormalCliente(deal) {
 // de reglas tiene todas las excepciones resueltas. La tercera vía —«todas las causas de desvío
 // autorizadas»— se eliminó con el modelo de causas al cerrar INC-05: nunca pudo cumplirse, porque
 // ninguna causa era autorizable desde la UI.
-function otorgamientoCompleto(deal) {
-  if (!deal || deal.stage !== "otorgamiento" || otorgBloqueado(deal) || !aprobacionFormalCliente(deal)) return false;
+// Lo que LIBERA EL GIRO. Por eso el estado entra por parámetro: en producción esta decisión la toma
+// el resolver con el visado que tiene la base, no con el que el navegador haya cacheado.
+function otorgamientoCompleto(deal, estado) {
+  if (!deal || deal.stage !== "otorgamiento" || otorgBloqueado(deal, estado) || !aprobacionFormalCliente(deal)) return false;
   if (deal.otorgAuto) return true;
-  const v = visadoDeal(deal);
+  const v = visadoDeal(deal, estado);
   return v.exc.length > 0 && v.estado === "aprobada";
 }
 // ── CAPA DE REPOSITORIOS (SERVER-SIDE) ──────────────────────────────────────────────────────────
@@ -10199,7 +10222,11 @@ function padronAprobadores() {
   const areas = (typeof AREAS_CAT !== "undefined" ? AREAS_CAT : []).map((a) => ({ id: a.id, label: a.label }));
   // Un usuario entra al padrón con el área y el nivel que su ROL implica; el super-admin cubre todo.
   const usuarios = Object.keys(USERS).map((code) => ({
-    code, nombre: nombreDe(code), rol: rolLabel(code), atrib: atribDe(code).atrib, superAdmin: code === "ADMIN",
+    // `etiqueta` es el nombre tal como se muestra. Se arma ACÁ, que es el adaptador y el único sitio
+    // donde leer el padrón del tenant es legítimo; antes la componía `aprobadoresExc` leyendo `USERS`,
+    // y eso metía un dato del tenant dentro del motor.
+    code, nombre: nombreDe(code), rol: rolLabel(code), etiqueta: USERS[code] || nombreDe(code),
+    atrib: atribDe(code).atrib, superAdmin: code === "ADMIN",
   })).filter((u) => u.superAdmin || Object.keys(u.atrib).length);
   // Los cargos: qué nivel de qué área representa cada uno. Es lo que le pone NOMBRE al requisito.
   const cargos = Object.keys(ROL_ATRIB).map((id) => ({

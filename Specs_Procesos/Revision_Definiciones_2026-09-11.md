@@ -357,3 +357,36 @@ Ninguna bloquea la demo; todas cambian el contrato del servicio.
 Y de paso, una **poda de código muerto**: 59 símbolos de nivel módulo sin ninguna referencia, 952
 líneas. La verificación que importa acá no es `tsc` ni el build —los dos pasan con el login roto— sino
 regenerar las capturas, que renderizan las 11 vistas.
+
+
+---
+
+## 9. Auditoría de aislamiento (12-09-2026) — y sus cuatro correcciones
+
+Se midió la pureza **transitivamente** con `auditar_aislamiento.mjs`: el cuerpo de una función no basta
+—`evaluarOtorgItems` no menciona ningún global y sin embargo sus variables de entrada salían de
+`SIM_VERSIONS` una llamada más abajo—. De 582 funciones de nivel módulo, 41 leen estado de commit,
+tenant o sesión. Cuatro cadenas decidían con estado que no se podía inyectar, y **se cerraron**:
+
+| Cadena | Qué decidía | Corrección |
+|---|---|---|
+| `evaluarOtorgItems → varsClienteActual → SIM_VERSIONS` | las variables con que corre todo el catálogo | `varsClienteActual(deal, versiones)`, `revOtorgActual(deal, versiones)`, `evaluarOtorgItems(deal, {versiones})` |
+| `estadoCandidata → noConfirmada → NO_CONFIRMADAS` | si una factura se puede incorporar a la oferta | `noConfirmada(deal, f, vetadas)`, `estadoCandidata(f, deal, {vetadas})` |
+| `otorgamientoCompleto` / `causaPerdidaDeal → visadoDeal → VISADO_STATE` | **la liberación del giro** | `visadoDeal(deal, {visado})` y toda la cadena; con estado inyectado se salta `VISADO_CACHE`, que está indexado por operación |
+| `aprobadoresExc → USERS` | el nombre de quien puede aprobar | el padrón trae `etiqueta`; el motor ya no lee el catálogo de usuarios |
+
+**La prueba no es estática.** Un analizador no distingue «lee el global» de «cae al global sólo si no
+le pasan el estado». Los casos **56–59** de la suite inyectan un estado que **contradice** al del
+navegador y comprueban cuál manda: TGR judicial en $5M fuerza el knockout C30 aunque la operación no
+lo tenga; el veto inyectado bloquea una factura que sin él es agregable; el visado inyectado mueve las
+once excepciones de pendientes a rechazadas y el cache no envenena; y un padrón con un usuario que no
+existe en la app devuelve su nombre.
+
+**Verificado sin regresión.** `regresion_diferencial.mjs` vuelve a dar idénticas las siete familias que
+no debían cambiar, y sobre las 24 operaciones sintéticas el estado agregado, los knockouts y el
+conjunto de reglas que excepcionan siguen siendo **24 de 24** iguales al build anterior a la sesión.
+
+**Lo que sigue atado y no se arregla inyectando:** `verifPar` memoiza en `_VERIF_PAR` (en producción,
+un SELECT del batch diario), `asignarLineas` depende de las tablas precalculadas de líneas y de
+`tipoDeudor` (las listas), y `nowStamp()` dentro de `verifFactura` (la hora la pone el servidor). Son
+la categoría «dato», no «estado mutable del navegador».
