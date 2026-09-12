@@ -418,6 +418,7 @@ const SCHEMA_VERSION = {
   permisos: 1,       // permisos de visibilidad por usuario
   roles: 1,          // rol de cada usuario (por tenant)
   areas: 1,          // areas que aprueban excepciones (por tenant)
+  simulacion: 1,     // conceptos, formulas y retencion de la simulacion (por tenant)
   reemplazos: 1,     // vacaciones: quien cubre a quien y en que periodo (por tenant)
   auditoria: 2,      // bitacora de auditoria encadenada (v2: cadena SHA-256, antes hash de 32 bits)
   auth: 1,           // intentos fallidos y bloqueo por cuenta
@@ -1152,16 +1153,15 @@ const tasaMinIA = (deudor) => +(spreadMinDeudor(deudor) + CFG_ACTIVA.costoFondo)
 // El SOW define cuán agresivo se es en precio: se parte del spread ESTÁNDAR (de lista) y se descuentan
 // puntos según el estado del SOW del cliente. El piso de riesgo del deudor SIEMPRE manda: si el
 // descuento comercial perfora el spread mínimo del deudor, se trunca ahí.
-const SPREAD_ESTANDAR = 0.60; // % mensual — spread de lista, sin descuento comercial
-const SOW_AJUSTE = {
-  target:      { pts: 0.00, l: "En target — tasa estándar" },
-  creciendo:   { pts: 0.05, l: "Creciendo — descuento mínimo" },
-  estable:     { pts: 0.10, l: "Estable bajo target — descuento moderado" },
-  nuevo:       { pts: 0.10, l: "Cliente nuevo — captar la primera operación" },
-  decreciente: { pts: 0.15, l: "A la baja — descuento para recuperar SOW" },
-  competencia: { pts: 0.20, l: "0% con nosotros — oferta competitiva" },
-};
-// Estado de SOW de una oportunidad, normalizado a las claves de SOW_AJUSTE.
+// El spread de lista y el descuento por SOW son POLÍTICA COMERCIAL DEL TENANT —cuánto está dispuesto
+// cada factoring a resignar para recuperar cartera—, así que viven en `CFG_ACTIVA` y no acá. Este
+// adaptador es el único punto que sabe cómo se llaman esos campos: el resto del pricing recibe el
+// objeto ya armado, que es lo que lo hace extraíble a un servicio.
+function paramsPricing(cfg) {
+  const c = cfg || CFG_ACTIVA;
+  return { spreadEstandar: c.spreadEstandar, sowAjuste: c.sowAjuste, costoFondo: c.costoFondo };
+}
+// Estado de SOW de una oportunidad, normalizado a las claves de `sowAjuste`.
 function sowEstado(deal) {
   if (!deal) return "estable";
   if (deal.superaTarget) return "target";
@@ -1174,10 +1174,11 @@ function sowEstado(deal) {
 }
 // Spread sugerido para un deudor dentro de una oportunidad: estándar − ajuste por SOW, truncado por el
 // spread mínimo del deudor. `topado` indica que el riesgo del deudor impidió aplicar todo el descuento.
-function spreadSugerido(deudor, deal) {
-  const a = SOW_AJUSTE[sowEstado(deal)] || SOW_AJUSTE.estable;
+function spreadSugerido(deudor, deal, params) {
+  const pp = params || paramsPricing();
+  const a = pp.sowAjuste[sowEstado(deal)] || pp.sowAjuste.estable;
   const piso = spreadMinDeudor(deudor);
-  const bruto = +(SPREAD_ESTANDAR - a.pts).toFixed(2);
+  const bruto = +(pp.spreadEstandar - a.pts).toFixed(2);
   return { spread: +Math.max(piso, bruto).toFixed(2), piso, bruto, ajuste: a.pts, label: a.l, topado: bruto < piso };
 }
 
@@ -2157,6 +2158,346 @@ const CFG_OPER_BASE = {
   tabDescuentos: true,
 };
 const CFG_OPER_DEFAULT = { security: { ...CFG_OPER_BASE } };
+
+// ============================================================================================
+// MOTOR DE SIMULACIÓN — los conceptos, sus variables y sus fórmulas, configurables por TENANT.
+//
+// La aritmética de una simulación vivía CABLEADA dentro del componente del detalle: el IVA como
+// `comision * 0.19`, la retención como `monto * 0.028`, el valor de la UF como un `const` local. Dos
+// factorings no calculan igual —otro IVA, otra retención, un gasto por documento, un concepto que uno
+// cobra y el otro no— así que eso es CONFIGURACIÓN, no código, y mientras viviera dentro de un
+// componente de React tampoco se podía llevar al backend, que es donde debe calcularse: el monto a
+// girar es plata, y una cifra que decide el navegador no la decide nadie.
+//
+// El catálogo declara CONCEPTOS en orden. Cada uno tiene una fórmula sobre variables de la operación,
+// constantes del tenant y los conceptos YA calculados. La simulación termina siempre igual:
+//
+//     Monto a Girar = Monto Anticipo − Subtotal Descuentos
+//     Retención     = su propia fórmula (se informa, no se descuenta del giro)
+//
+// Eso es fijo a propósito: son el resultado del proceso, no un concepto más que alguien pueda borrar
+// desde un mantenedor. Lo configurable es QUÉ se descuenta y CÓMO se calcula cada cosa.
+//
+// Las fórmulas se evalúan con un intérprete propio (`parseFormula`/`evalFormula`), NO con `eval` ni
+// `new Function`. No es purismo: la fórmula la escribe un administrador y queda guardada en la
+// configuración del TENANT, así que se ejecutaría en el navegador de todos sus usuarios. Con `eval`,
+// el mantenedor de pricing sería una consola remota. Además un AST se serializa y se vuelve a evaluar
+// igual en el servidor, que es a donde esto tiene que llegar.
+// ============================================================================================
+
+// ── Intérprete de expresiones ─────────────────────────────────────────────────────────────────
+// Gramática: números, identificadores, + − * / %, paréntesis, unario −, y un puñado de funciones.
+// `%` es MÓDULO no «porcentaje»: un porcentaje se escribe `tasa/100`, que es lo que hace la fórmula
+// legible para quien la audita.
+const SIM_FUNCS = {
+  min: Math.min, max: Math.max, abs: Math.abs,
+  redondear: Math.round, techo: Math.ceil, piso: Math.floor,
+  // `acotar(x, a, b)` es el patrón de la comisión (mínimo y máximo en UF) escrito una sola vez.
+  acotar: (x, a, b) => Math.min(Math.max(x, a), b),
+  si: (cond, a, b) => (cond ? a : b),
+};
+const SIM_FUNC_ARIDAD = { min: [1, 9], max: [1, 9], abs: [1, 1], redondear: [1, 1], techo: [1, 1], piso: [1, 1], acotar: [3, 3], si: [3, 3] };
+function tokenizarFormula(src) {
+  const t = [], s = String(src || "");
+  let i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (/\s/.test(c)) { i++; continue; }
+    if (/[0-9.]/.test(c)) {
+      let j = i; while (j < s.length && /[0-9.]/.test(s[j])) j++;
+      const txt = s.slice(i, j);
+      if ((txt.match(/\./g) || []).length > 1) return { error: `Número mal escrito: «${txt}»` };
+      t.push({ t: "num", v: parseFloat(txt) }); i = j; continue;
+    }
+    if (/[A-Za-zÁÉÍÓÚÑáéíóúñ_]/.test(c)) {
+      let j = i; while (j < s.length && /[A-Za-zÁÉÍÓÚÑáéíóúñ_0-9]/.test(s[j])) j++;
+      t.push({ t: "id", v: s.slice(i, j) }); i = j; continue;
+    }
+    if ("+-*/%(),".includes(c)) { t.push({ t: c }); i++; continue; }
+    return { error: `Carácter no permitido: «${c}»` };
+  }
+  return { tokens: t };
+}
+// Descenso recursivo. Devuelve `{ast}` o `{error}` — nunca lanza: una fórmula mal escrita es un dato
+// del usuario, no una excepción del programa.
+function parseFormula(src) {
+  const tk = tokenizarFormula(src);
+  if (tk.error) return { error: tk.error };
+  const ts = tk.tokens;
+  if (!ts.length) return { error: "La fórmula está vacía." };
+  let p = 0;
+  const ver = () => ts[p];
+  const comer = (tipo) => { if (ts[p] && ts[p].t === tipo) { p++; return true; } return false; };
+  let fallo = null;
+  const err = (m) => { if (!fallo) fallo = m; return { t: "num", v: 0 }; };
+  function expr() {
+    let n = term();
+    while (ver() && (ver().t === "+" || ver().t === "-")) { const op = ts[p++].t; n = { t: "bin", op, a: n, b: term() }; }
+    return n;
+  }
+  function term() {
+    let n = unario();
+    while (ver() && (ver().t === "*" || ver().t === "/" || ver().t === "%")) { const op = ts[p++].t; n = { t: "bin", op, a: n, b: unario() }; }
+    return n;
+  }
+  function unario() {
+    if (comer("-")) return { t: "neg", a: unario() };
+    if (comer("+")) return unario();
+    return primario();
+  }
+  function primario() {
+    const c = ver();
+    if (!c) return err("Falta un valor al final de la fórmula.");
+    if (c.t === "num") { p++; return { t: "num", v: c.v }; }
+    if (c.t === "id") {
+      p++;
+      if (comer("(")) {
+        const args = [];
+        if (!comer(")")) {
+          do { args.push(expr()); } while (comer(","));
+          if (!comer(")")) return err("Falta cerrar un paréntesis.");
+        }
+        if (!SIM_FUNCS[c.v]) return err(`No existe la función «${c.v}». Disponibles: ${Object.keys(SIM_FUNCS).join(", ")}.`);
+        const [mn, mx] = SIM_FUNC_ARIDAD[c.v];
+        if (args.length < mn || args.length > mx) return err(`«${c.v}» recibe ${mn === mx ? mn : mn + " a " + mx} argumento(s), no ${args.length}.`);
+        return { t: "call", f: c.v, args };
+      }
+      return { t: "var", v: c.v };
+    }
+    if (comer("(")) { const n = expr(); if (!comer(")")) return err("Falta cerrar un paréntesis."); return n; }
+    return err(`No se esperaba «${c.t}» acá.`);
+  }
+  const ast = expr();
+  if (fallo) return { error: fallo };
+  if (p < ts.length) return { error: "Sobra texto al final de la fórmula." };
+  return { ast };
+}
+// Identificadores que usa una fórmula. Es con lo que el mantenedor detecta una variable que no existe
+// ANTES de guardar, en vez de dejar la pantalla mostrando un guion sin explicación.
+function varsDeFormula(ast, acc) {
+  const out = acc || new Set();
+  if (!ast) return out;
+  if (ast.t === "var") out.add(ast.v);
+  if (ast.t === "bin") { varsDeFormula(ast.a, out); varsDeFormula(ast.b, out); }
+  if (ast.t === "neg") varsDeFormula(ast.a, out);
+  if (ast.t === "call") ast.args.forEach((a) => varsDeFormula(a, out));
+  return out;
+}
+// Evalúa contra un ámbito plano. Una división por cero da 0 y no `Infinity`: en una simulación,
+// «infinito» se propaga a todas las filas de abajo y deja la pantalla entera sin sentido.
+function evalFormula(ast, scope) {
+  if (!ast) return 0;
+  switch (ast.t) {
+    case "num": return ast.v;
+    case "var": { const v = scope[ast.v]; return typeof v === "number" && isFinite(v) ? v : 0; }
+    case "neg": return -evalFormula(ast.a, scope);
+    case "bin": {
+      const a = evalFormula(ast.a, scope), b = evalFormula(ast.b, scope);
+      if (ast.op === "+") return a + b;
+      if (ast.op === "-") return a - b;
+      if (ast.op === "*") return a * b;
+      if (ast.op === "/") return b === 0 ? 0 : a / b;
+      if (ast.op === "%") return b === 0 ? 0 : a % b;
+      return 0;
+    }
+    case "call": {
+      const args = ast.args.map((a) => evalFormula(a, scope));
+      const r = SIM_FUNCS[ast.f].apply(null, args);
+      return typeof r === "number" && isFinite(r) ? r : 0;
+    }
+    default: return 0;
+  }
+}
+
+// ── Variables disponibles para las fórmulas ───────────────────────────────────────────────────
+// Se declaran con su ORIGEN porque es lo que decide quién las puede cambiar y cuándo: las de la
+// OPERACIÓN salen del negocio que se está simulando, las del TENANT son constantes de configuración
+// (Configuración › Operación) y las CONDICIONES las edita el ejecutivo en la propia simulación, bajo
+// atribución. Un concepto también puede usar el resultado de otro concepto ANTERIOR.
+const SIM_VARIABLES = [
+  { id: "montoDocs",    origen: "operacion",  label: "Monto de documentos",      desc: "Suma de las facturas seleccionadas, en pesos." },
+  { id: "cantFacturas", origen: "operacion",  label: "Cantidad de documentos",   desc: "Número de facturas de la oferta." },
+  { id: "dias",         origen: "operacion",  label: "Días de financiamiento",   desc: "Plazo promedio hasta el pago del deudor." },
+  { id: "mora",         origen: "operacion",  label: "Recargos por mora",        desc: "Monto de documentos con mora, calculado aparte." },
+  { id: "otrosDesc",    origen: "operacion",  label: "Otros descuentos",         desc: "Descuentos pactados, calculados aparte." },
+  { id: "cxc",          origen: "operacion",  label: "Cuentas por cobrar",       desc: "Saldo por cobrar del cliente que se rebaja del giro." },
+  { id: "tasa",         origen: "condicion",  label: "Tasa mensual (%)",         desc: "Tasa de la operación. La edita el ejecutivo bajo atribución." },
+  { id: "antic",        origen: "condicion",  label: "Anticipo (%)",             desc: "Porcentaje del monto de documentos que se financia." },
+  { id: "pctCom",       origen: "condicion",  label: "Comisión (%)",             desc: "Porcentaje de comisión sobre el monto de documentos." },
+  { id: "comMin",       origen: "condicion",  label: "Comisión mínima (UF)",     desc: "Piso de la comisión, en UF." },
+  { id: "comMax",       origen: "condicion",  label: "Comisión máxima (UF)",     desc: "Techo de la comisión, en UF." },
+  { id: "gastoOp",      origen: "condicion",  label: "Gasto de operación",       desc: "Gasto fijo por operación, en pesos." },
+  { id: "gastoDoc",     origen: "condicion",  label: "Gasto por documento",      desc: "Gasto que se multiplica por la cantidad de documentos." },
+  { id: "UF",           origen: "tenant",     label: "Valor de la UF",           desc: "Configuración › Operación." },
+  { id: "ivaPct",       origen: "tenant",     label: "IVA (%)",                  desc: "Configuración › Operación." },
+  { id: "retencionPct", origen: "tenant",     label: "Retención (%)",            desc: "Configuración › Operación." },
+];
+const SIM_VAR_IDS = SIM_VARIABLES.map((v) => v.id);
+const SIM_VAR_LBL = {}; SIM_VARIABLES.forEach((v) => { SIM_VAR_LBL[v.id] = v.label; });
+// Los dos resultados FIJOS. No son conceptos del catálogo: son el final del proceso, y dejarlos
+// borrables desde un mantenedor sería dejar borrable la respuesta.
+const SIM_RESULTADOS = [
+  { id: "montoGirar", label: "Monto a Girar", desc: "Monto Anticipo − Subtotal Descuentos. Es lo que recibe el cliente." },
+  { id: "retencion",  label: "Retención",     desc: "Se informa y se libera si las facturas se pagan en la fecha comprometida. NO se descuenta del giro." },
+];
+
+// ── Catálogo BASE de conceptos ────────────────────────────────────────────────────────────────
+// Reproduce exactamente la aritmética que estaba cableada: hay un test que lo fija, porque un
+// mantenedor que cambia los números el día que se instala no es un mantenedor, es un incidente.
+//   rol "base"      → monto de referencia, no se descuenta (Monto Documentos, Monto Anticipo)
+//   rol "descuento" → entra al Subtotal Descuentos, que es lo que se resta del anticipo
+// El ORDEN manda: un concepto puede usar los anteriores por su `id` y nunca uno posterior.
+const SIM_CONCEPTOS_BASE = [
+  { id: "montoDocumentos", label: "Monto Documentos", rol: "base", formula: "montoDocs",
+    ayuda: "Suma de las facturas seleccionadas." },
+  { id: "montoAnticipo", label: "Monto Anticipo", rol: "base", formula: "redondear(montoDocs * antic / 100)",
+    campo: "antic", suf: "%", paso: "1", enLabel: true,
+    ayuda: "Lo que se financia del monto de documentos." },
+  { id: "difPrecio", label: "Diferencia de precio", rol: "descuento", formula: "redondear(montoDocs * tasa / 100 * antic / 100)",
+    campo: "tasa", suf: "%", paso: "0.01",
+    ayuda: "El precio del dinero: tasa × anticipo × monto de documentos." },
+  { id: "comision", label: "Comisión", rol: "descuento", formula: "redondear(acotar(montoDocs * pctCom / 100, comMin * UF, comMax * UF))",
+    campo: "pctCom", suf: "%", paso: "0.01",
+    // Estos dos no tienen monto propio: son los topes en UF de la comisión de arriba, así que sólo
+    // aparecen en modo edición, como campos de la misma fila.
+    camposExtra: [{ campo: "comMin", label: "Comisión mínima (UF)", paso: "1" }, { campo: "comMax", label: "Comisión máxima (UF)", paso: "1" }],
+    ayuda: "Porcentaje sobre el monto, acotado por la comisión mínima y máxima en UF." },
+  { id: "gastos", label: "Gastos", rol: "descuento", formula: "redondear(gastoOp + gastoDoc * cantFacturas)",
+    campo: "gastoOp", paso: "1",
+    camposExtra: [{ campo: "gastoDoc", label: "Gasto por documento", paso: "1" }],
+    ayuda: "Gastos de operación y documentos." },
+  { id: "iva", label: "IVA", rol: "descuento", formula: "redondear(comision * ivaPct / 100)",
+    ayuda: "IVA sobre la comisión. Usa el concepto «comision» ya calculado." },
+  { id: "recargos", label: "Recargos", rol: "descuento", formula: "mora",
+    ayuda: "Recargos por mora u otras condiciones." },
+  { id: "descuentos", label: "Descuentos", rol: "descuento", formula: "otrosDesc",
+    ayuda: "Otros descuentos aplicados." },
+  { id: "cuentasPorCobrar", label: "Cuentas por cobrar", rol: "descuento", formula: "cxc",
+    ayuda: "Saldos por cobrar que se rebajan del giro." },
+];
+const SIM_RETENCION_BASE = "redondear(montoDocs * retencionPct / 100)";
+// ── Persistencia por tenant ───────────────────────────────────────────────────────────────────
+const SIM_CFG_KEY = "pc_simulacion_" + TENANT_ACTUAL;
+// Higiene: del storage sólo entran conceptos con id y etiqueta, rol conocido y fórmula que PARSEA.
+// Una fórmula rota guardada volvería a romperse en cada render y dejaría la pantalla del giro en
+// blanco para todos los usuarios del tenant; acá se descarta la fila y se registra por qué.
+function cargarSimCfg() {
+  const g = leerVersionado(SIM_CFG_KEY, "simulacion", null);
+  if (!g || !Array.isArray(g.conceptos)) return { conceptos: SIM_CONCEPTOS_BASE.map((c) => ({ ...c })), retencion: SIM_RETENCION_BASE };
+  const out = []; let malas = 0;
+  for (const c of g.conceptos) {
+    const ok = c && typeof c.id === "string" && /^[A-Za-z_][A-Za-z0-9_]*$/.test(c.id)
+      && typeof c.label === "string" && c.label.trim()
+      && (c.rol === "base" || c.rol === "descuento")
+      && !parseFormula(c.formula).error;
+    if (!ok) { malas++; continue; }
+    out.push({ id: c.id, label: String(c.label).slice(0, 60), rol: c.rol, formula: String(c.formula).slice(0, 400), ayuda: String(c.ayuda || "").slice(0, 200),
+      // sólo se conservan campos que el catálogo de variables DECLARA: una fila del storage que
+      // apunte a un campo inventado dejaría un input que no edita nada.
+      campo: SIM_VAR_IDS.includes(c.campo) ? c.campo : null, suf: String(c.suf || "").slice(0, 4), paso: String(c.paso || "1").slice(0, 8),
+      enLabel: !!c.enLabel,
+      camposExtra: Array.isArray(c.camposExtra) ? c.camposExtra.filter((e) => e && SIM_VAR_IDS.includes(e.campo))
+        .map((e) => ({ campo: e.campo, label: String(e.label || e.campo).slice(0, 60), paso: String(e.paso || "1").slice(0, 8) })) : [] });
+  }
+  if (malas) logSys("warn", "app", `Simulación: ${malas} concepto(s) del storage ignorados (id, rol o fórmula inválidos)`, { tenant: TENANT_ACTUAL });
+  const ret = typeof g.retencion === "string" && !parseFormula(g.retencion).error ? g.retencion : SIM_RETENCION_BASE;
+  return { conceptos: out.length ? out : SIM_CONCEPTOS_BASE.map((c) => ({ ...c })), retencion: ret };
+}
+let SIM_CFG = cargarSimCfg();
+function guardarSimCfg() { escribirVersionado(SIM_CFG_KEY, "simulacion", SIM_CFG); }
+const simCfgEsBase = () => JSON.stringify(SIM_CFG) === JSON.stringify({ conceptos: SIM_CONCEPTOS_BASE, retencion: SIM_RETENCION_BASE });
+
+// ── Validación del catálogo ───────────────────────────────────────────────────────────────────
+// Se valida ANTES de guardar y no al renderizar: el mantenedor tiene que poder decir qué está mal
+// mientras el administrador todavía lo está escribiendo. Tres cosas distintas se revisan, y cada una
+// tiene un arreglo distinto, así que cada una es su propio mensaje.
+function validarSimCfg(cfg) {
+  const errores = [];
+  const vistos = new Set();
+  const conceptos = (cfg && cfg.conceptos) || [];
+  conceptos.forEach((c, i) => {
+    const donde = `«${c.label || c.id || "(sin nombre)"}»`;
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(c.id || "")) errores.push({ id: c.id, msg: `${donde}: el identificador debe empezar con letra y llevar sólo letras, números o guion bajo.` });
+    if (vistos.has(c.id)) errores.push({ id: c.id, msg: `${donde}: el identificador «${c.id}» está repetido.` });
+    vistos.add(c.id);
+    if (SIM_VAR_IDS.includes(c.id)) errores.push({ id: c.id, msg: `${donde}: «${c.id}» ya es una variable de la operación; elige otro identificador.` });
+    const p = parseFormula(c.formula);
+    if (p.error) { errores.push({ id: c.id, msg: `${donde}: ${p.error}` }); return; }
+    // Referencias: sólo variables declaradas y conceptos ANTERIORES. Una referencia hacia adelante
+    // daría 0 sin avisar, que es la clase de error que nadie encuentra mirando la pantalla.
+    const previos = conceptos.slice(0, i).map((x) => x.id);
+    for (const v of varsDeFormula(p.ast)) {
+      if (SIM_VAR_IDS.includes(v) || previos.includes(v)) continue;
+      const posterior = conceptos.slice(i).some((x) => x.id === v);
+      errores.push({ id: c.id, msg: posterior
+        ? `${donde}: usa «${v}», que se calcula DESPUÉS. Súbelo en el orden o cambia la fórmula.`
+        : `${donde}: «${v}» no es una variable ni un concepto anterior.` });
+    }
+  });
+  if (!conceptos.some((c) => c.rol === "base")) errores.push({ id: null, msg: "Falta al menos un concepto de tipo «base»: sin monto anticipo no hay de dónde descontar." });
+  const pr = parseFormula((cfg && cfg.retencion) || "");
+  if (pr.error) errores.push({ id: "__retencion", msg: `Retención: ${pr.error}` });
+  else for (const v of varsDeFormula(pr.ast)) {
+    if (!SIM_VAR_IDS.includes(v) && !conceptos.some((c) => c.id === v)) errores.push({ id: "__retencion", msg: `Retención: «${v}» no es una variable ni un concepto.` });
+  }
+  return errores;
+}
+
+// ── EL MOTOR ──────────────────────────────────────────────────────────────────────────────────
+// Función PURA de (entrada, catálogo, constantes) → desglose. No lee `CFG_ACTIVA` ni `SIM_CFG` por su
+// cuenta: los recibe, porque en producción esto corre en el resolver y el catálogo es una tabla del
+// tenant. El default es comodidad para los call sites de la app, no dependencia.
+//
+// Devuelve cada fila con su FÓRMULA al lado del número: es lo que permite que el documento de
+// definición y la pantalla no se desfasen, porque los dos leen de acá.
+function simularOperacion(entrada, opts) {
+  const o = opts || {};
+  const cfg = o.cfg || SIM_CFG;
+  const cte = o.constantes || paramsSimTenant();
+  const scope = { ...cte, ...(entrada || {}) };
+  // Toda variable declarada existe en el ámbito aunque la entrada no la traiga: así una fórmula que
+  // menciona `mora` en una operación sin mora da 0 y no arrastra un `undefined` a toda la columna.
+  SIM_VAR_IDS.forEach((v) => { if (typeof scope[v] !== "number" || !isFinite(scope[v])) scope[v] = 0; });
+  const filas = [];
+  for (const c of cfg.conceptos) {
+    const p = parseFormula(c.formula);
+    // Una fórmula rota no revienta la pantalla: la fila queda marcada y vale 0. Que el desglose siga
+    // cuadrando importa más que fallar ruidosamente — el usuario está mirando una oferta, no un test.
+    const valor = p.error ? 0 : Math.round(evalFormula(p.ast, scope));
+    // `campo`/`suf`/`paso`/`camposExtra`/`enLabel` son PRESENTACIÓN, pero presentación DEL CONCEPTO:
+    // viajan con él para que la pantalla se dibuje sola desde el catálogo y un concepto nuevo traiga
+    // su propio campo editable, o ninguno, sin tocar el componente.
+    filas.push({ id: c.id, label: c.label, rol: c.rol, formula: c.formula, ayuda: c.ayuda || "", valor, error: p.error || null,
+                 campo: c.campo || null, suf: c.suf || "", paso: c.paso || "1", camposExtra: c.camposExtra || [], enLabel: !!c.enLabel });
+    scope[c.id] = valor;
+  }
+  const base = filas.filter((f) => f.rol === "base");
+  const descuentos = filas.filter((f) => f.rol === "descuento");
+  const subtotalDescuentos = descuentos.reduce((s, f) => s + f.valor, 0);
+  // El anticipo es el ÚLTIMO concepto base: es de lo que se descuenta. Con un solo base, es ése.
+  const montoAnticipo = base.length ? base[base.length - 1].valor : 0;
+  const montoGirar = montoAnticipo - subtotalDescuentos;
+  scope.subtotalDescuentos = subtotalDescuentos; scope.montoAnticipo = montoAnticipo; scope.montoGirar = montoGirar;
+  const pr = parseFormula(cfg.retencion || "");
+  const retencion = pr.error ? 0 : Math.round(evalFormula(pr.ast, scope));
+  return { filas, base, descuentos, subtotalDescuentos, montoAnticipo, montoGirar, retencion,
+           errores: filas.filter((f) => f.error).map((f) => ({ id: f.id, msg: f.error })) };
+}
+// Constantes del TENANT que las fórmulas pueden usar. Adaptador: traduce la configuración operativa a
+// un ámbito plano, para que el motor no sepa cómo se llama cada campo de `CFG_ACTIVA`.
+function paramsSimTenant(cfg) {
+  const c = cfg || CFG_ACTIVA;
+  return { UF: c.valorUF, ivaPct: c.ivaPct, retencionPct: c.retencionPct, costoFondo: c.costoFondo };
+}
+// Condiciones por defecto de una operación, tal como las trae el tenant. Es lo que la pantalla carga
+// como «condiciones originales» antes de que el ejecutivo las toque.
+function condicionesBase(cfg) {
+  const c = cfg || CFG_ACTIVA;
+  return { antic: c.anticipoDefault, pctCom: c.comisionPct, comMin: c.comisionUF, comMax: c.comisionMaxUF,
+           gastoOp: c.gastosCLP, gastoDoc: c.gastoDocCLP };
+}
+
+
 // Config del TENANT VIGENTE accesible desde las funciones puras de dominio (pricing, simulación,
 // política). En el backend estas funciones recibirían la configuración como argumento del resolver;
 // aquí se expone un objeto de módulo que el root mantiene sincronizado con el tenant activo.
@@ -4045,7 +4386,7 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
   const lanzarReeval = () => { setReevaluando(true); setTimeout(() => { setReevaluando(false); if (onReevaluar) onReevaluar(); }, 900); };
   const histOps = historialComercial(deal.cliente, deal.deudor).slice(0, 5); // referencia de condiciones
   const toCLP = (mm) => Math.round((mm || 0) * 1e6);
-  const UF = 38000; // valor UF referencial (CLP)
+  const UF = CFG_ACTIVA.valorUF; // valor UF del tenant (Configuración › Operación)
   const lc = lineaCreditoDe(deal);
   const simNum = deal.negocioNum || (1000000 + (hashStr(deal.id) % 8999999));
   const montoDocsCLP = toCLP(montoDocs);
@@ -4056,7 +4397,10 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
   const sinSeleccion = !cantFacturas || montoDocsCLP <= 0;
   // Condiciones ORIGINALES (referencia) y NUEVAS (editables por el ejecutivo). La tasa se edita a este
   // nivel: Diferencia de precio = Tasa × %Anticipo × Monto de facturas.
-  const [orig] = useState(() => ({ tasa: +(tasaPond || 0).toFixed(2), antic, pctCom: 0, comMin: 2, comMax: 2, gastoOp: 26000, gastoDoc: 0 }));
+  // Las condiciones ORIGINALES salen del tenant, no de literales: comisión mínima y máxima, gasto de
+  // operación y gasto por documento eran `2`, `2`, `26000` y `0` escritos acá adentro, de modo que un
+  // factoring con otra estructura de costos no se podía representar sin editar el `.jsx`.
+  const [orig] = useState(() => ({ tasa: +(tasaPond || 0).toFixed(2), antic, ...condicionesBase() }));
   const [nc, setNc] = useState(orig);
   const setNcK = (k, v) => setNc((s) => ({ ...s, [k]: Math.max(0, +v || 0) }));
   // ── Atribuciones de descuento del ejecutivo (bandas por tasa de referencia) ──
@@ -4085,19 +4429,28 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
     registrarAuditoria({ usuario: usuario, modulo: "Condiciones comerciales", accion: "Autorizar condiciones", glosa: `${requiereGerente ? "Gerente Comercial" : "Jefatura"} autoriza descuento ${atrib.pctDesc}% en «${deal.cliente}» (tasa ${nc.tasa}%, comisión mín ${nc.comMin} UF)`, empresaId: deal.id, exito: true });
     if (deal) { deal.condReqAutJefe = false; deal.condAutJefe = true; }
   };
-  const anticipoCLP = Math.round(nc.antic / 100 * montoDocsCLP);
-  const difPrecioCLP = Math.round((nc.tasa / 100) * (nc.antic / 100) * montoDocsCLP);
-  const comisionRaw = Math.round(nc.pctCom / 100 * montoDocsCLP);
-  const comisionCLP = Math.min(Math.max(comisionRaw, Math.round(nc.comMin * UF)), Math.round(nc.comMax * UF));
-  const ivaCLP = Math.round(comisionCLP * 0.19);
-  const gastosCLP = Math.round(nc.gastoOp + nc.gastoDoc * cantFacturas);
   const _desc = descuentosDeal(deal, o); // fuente única compartida con el sub-tab Descuentos
-  const recargosCLP = _desc.totMora;     // Documentos con mora
-  const descuentosCLP = _desc.totOtros;  // Otros Descuentos
-  const cxcCLP = _desc.totCxc;           // Cuentas por cobrar (recupero + gastos/notaría)
-  const subtotalCLP = difPrecioCLP + comisionCLP + gastosCLP + ivaCLP + recargosCLP + descuentosCLP + cxcCLP;
-  const giroCLP = anticipoCLP - subtotalCLP;
-  const retencionCLP = Math.round(montoDocsCLP * 0.028);
+  // LA ARITMÉTICA YA NO VIVE ACÁ. `simularOperacion` es una función pura sobre el catálogo de
+  // conceptos del tenant (Configuración › Simulación): el IVA, la retención y el acotado de la
+  // comisión eran literales en este componente y son configuración de cada factoring. Acá sólo se
+  // arma la ENTRADA y se leen los resultados por su id.
+  const simEntrada = { montoDocs: montoDocsCLP, cantFacturas, dias: o.diasFin || 0,
+    mora: _desc.totMora, otrosDesc: _desc.totOtros, cxc: _desc.totCxc,
+    tasa: nc.tasa, antic: nc.antic, pctCom: nc.pctCom, comMin: nc.comMin, comMax: nc.comMax,
+    gastoOp: nc.gastoOp, gastoDoc: nc.gastoDoc };
+  const sim = simularOperacion(simEntrada);
+  const valSim = (id) => { const f = sim.filas.find((x) => x.id === id); return f ? f.valor : 0; };
+  const anticipoCLP = sim.montoAnticipo;
+  const difPrecioCLP = valSim("difPrecio");
+  const comisionCLP = valSim("comision");
+  const ivaCLP = valSim("iva");
+  const gastosCLP = valSim("gastos");
+  const recargosCLP = valSim("recargos");
+  const descuentosCLP = valSim("descuentos");
+  const cxcCLP = valSim("cuentasPorCobrar");
+  const subtotalCLP = sim.subtotalDescuentos;
+  const giroCLP = sim.montoGirar;
+  const retencionCLP = sim.retencion;
   const aprobadaCLP = toCLP(lc.aprobada);
   const selPct = aprobadaCLP ? Math.min(100, Math.round(montoDocsCLP / aprobadaCLP * 100)) : 0;
   const fecha = new Date().toLocaleDateString("es-CL");
@@ -4190,24 +4543,25 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
             <span className="t9 uppercase tracking-wide" style={{ color: "#C2410C", minWidth: 104, textAlign: "right" }}>Nuevas</span>
           </div>
         )}
-        <FilaSim label="Monto Documentos" val={montoDocsCLP} bold />
-        <FilaSim label={`Monto Anticipo (${nc.antic}%)`} val={anticipoCLP} bold k="antic" suf="%" paso="1" />
+        {/* Las filas SALEN DEL CATÁLOGO del tenant, no están escritas acá: un concepto que el
+            administrador agregue en Configuración › Simulación aparece en esta pantalla y entra al
+            Subtotal. Mientras estuvieron escritas a mano, el mantenedor habría sido decorativo. */}
+        {sim.base.map((f) => (
+          <FilaSim key={f.id} label={f.enLabel && f.campo ? `${f.label} (${nc[f.campo]}%)` : f.label} val={f.valor} bold
+                   k={f.campo} suf={f.suf} paso={f.paso} info={f.ayuda} />
+        ))}
         <FilaSim label="Subtotal Descuentos" val={subtotalCLP} bold />
-        <FilaSim label="Diferencia de precio" val={difPrecioCLP} k="tasa" suf="%" paso="0.01" sangria />
-        <FilaSim label="Comisión" val={comisionCLP} k="pctCom" suf="%" paso="0.01" sangria />
-        {/* Estos dos no tienen monto propio: son topes en UF sobre la comisión de arriba, así que
-            sólo aparecen cuando hay algo que editar. */}
-        {modoEdit && <FilaSim label="Comisión mínima (UF)" k="comMin" paso="1" sangria />}
-        {modoEdit && <FilaSim label="Comisión máxima (UF)" k="comMax" paso="1" sangria />}
-        <FilaSim label="Gastos" val={gastosCLP} info="Gastos de operación y documentos" k="gastoOp" paso="1" sangria />
-        {modoEdit && <FilaSim label="Gasto por documento" k="gastoDoc" paso="1" sangria />}
-        <FilaSim label="IVA" val={ivaCLP} sangria />
-        <FilaSim label="Recargos" val={recargosCLP} info="Recargos por mora u otras condiciones" sangria />
-        <FilaSim label="Descuentos" val={descuentosCLP} info="Otros descuentos aplicados" sangria />
-        <FilaSim label="Cuentas por cobrar" val={cxcCLP} info="Saldos por cobrar rebajados del giro" sangria />
+        {sim.descuentos.map((f) => (
+          <React.Fragment key={f.id}>
+            <FilaSim label={f.label} val={f.valor} info={f.ayuda} k={f.campo} suf={f.suf} paso={f.paso} sangria />
+            {modoEdit && (f.camposExtra || []).map((e) => <FilaSim key={e.campo} label={e.label} k={e.campo} paso={e.paso} sangria />)}
+          </React.Fragment>
+        ))}
         <div className="flex items-center gap-3 py-2.5">
           <span className="flex-1 t13 font-bold" style={{ color: C.ink }}>Monto a Girar</span>
-          <span className="t14 font-bold" style={{ color: C.indigo, minWidth: 112, textAlign: "right" }}>{fmtCLP(giroCLP)}</span>
+          {/* `t15` (18 px). Antes decía `t14`, que NO EXISTE en el `<style>`: la cifra más importante
+              de la pantalla se venía renderizando con el tamaño heredado. */}
+          <span className="t15 font-bold" style={{ color: C.indigo, minWidth: 112, textAlign: "right" }}>{fmtCLP(giroCLP)}</span>
           {modoEdit && <><span style={{ minWidth: 84 }} /><span style={{ minWidth: 104 }} /></>}
         </div>
         <div className="t10" style={{ color: "#7C3AED" }}>Retenciones: esta simulación considera una retención de {fmtCLP(retencionCLP)}, la cual se liberará si las facturas se pagan en la fecha informada.</div>
@@ -7565,9 +7919,9 @@ function OppTags({ ev }) {
       <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: catCol.bg, color: catCol.fg, cursor: "help" }} title={`${cd.label} · ${cd.q}. ${catMeta(cd.cat).desc}`}>{cd.label}</span>
       {ev.stage !== "perdida" && (<>
       <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: sm.bg, color: sm.fg, cursor: "help" }} title={sowTip}><SIcon size={11} /> SOW {sm.lab}</span>
-      {(() => { const a = SOW_AJUSTE[sowEstado(ev)] || SOW_AJUSTE.estable; return a.pts > 0
-        ? <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#FFF7ED", color: "#C2410C", cursor: "help" }} title={`Descuento comercial por SOW: −${a.pts.toFixed(2)} pts sobre el spread estándar de ${SPREAD_ESTANDAR.toFixed(2)}% (${a.l}). El spread mínimo de cada deudor trunca el descuento.`}>{`Tasa c/desc ${a.pts.toFixed(2)} pts`}</span>
-        : <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#FAF9FB", color: "#6B7280", cursor: "help" }} title={`Tasa estándar: spread ${SPREAD_ESTANDAR.toFixed(2)}% sin descuento comercial (${a.l}).`}>Tasa estándar</span>; })()}
+      {(() => { const pp = paramsPricing(); const a = pp.sowAjuste[sowEstado(ev)] || pp.sowAjuste.estable; return a.pts > 0
+        ? <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#FFF7ED", color: "#C2410C", cursor: "help" }} title={`Descuento comercial por SOW: −${a.pts.toFixed(2)} pts sobre el spread estándar de ${pp.spreadEstandar.toFixed(2)}% (${a.l}). El spread mínimo de cada deudor trunca el descuento.`}>{`Tasa c/desc ${a.pts.toFixed(2)} pts`}</span>
+        : <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#FAF9FB", color: "#6B7280", cursor: "help" }} title={`Tasa estándar: spread ${pp.spreadEstandar.toFixed(2)}% sin descuento comercial (${a.l}).`}>Tasa estándar</span>; })()}
       </>)}
     </div>
   );
@@ -13971,6 +14325,7 @@ const CFG_SECCIONES = [
   { k: "roles", label: "Roles", Icon: Star },
   { k: "areas", label: "Áreas", Icon: Target },
   { k: "reemplazos", label: "Vacaciones y reemplazos", Icon: Calendar },
+  { k: "simulacion", label: "Simulación", Icon: Calculator },
   { k: "otorgamiento", label: "Otorgamiento", Icon: ShieldCheck },
   { k: "productos", label: "Productos", Icon: Zap },
   { k: "monedas", label: "Monedas", Icon: Calculator },
@@ -14834,6 +15189,207 @@ function CfgUsuarios() {
     </div>
   );
 }
+// ── MANTENEDOR DE LA SIMULACIÓN ─────────────────────────────────────────────────────────────────
+// Los conceptos, sus fórmulas y la retención. Dos factorings no calculan igual —otro IVA, otra
+// retención, un gasto por documento, un concepto que uno cobra y el otro no— y hasta acá eso vivía
+// cableado dentro del componente del detalle.
+//
+// Tres decisiones que hacen la diferencia entre un mantenedor y una forma elegante de romper el giro:
+//  1. La fórmula se INTERPRETA, no se evalúa como JavaScript. Lo que escribe un administrador queda en
+//     la configuración del tenant y correría en el navegador de todos sus usuarios.
+//  2. Se valida ANTES de guardar —identificador repetido, variable inexistente, referencia a un
+//     concepto que se calcula después— y no se deja guardar con errores.
+//  3. Hay una PREVISUALIZACIÓN con una operación de ejemplo: el administrador ve el número que va a
+//     producir su fórmula antes de que lo vea un cliente.
+function CfgSimulacion({ usuario }) {
+  const [, force] = useState(0);
+  const [cfg, setCfg] = useState(() => JSON.parse(JSON.stringify(SIM_CFG)));
+  const [sel, setSel] = useState(null);      // id del concepto abierto para editar
+  const [nuevo, setNuevo] = useState(false);
+  const [porBorrar, setPorBorrar] = useState(null);
+  const [ej, setEj] = useState({ montoDocs: 50000000, cantFacturas: 8, dias: 45, mora: 0, otrosDesc: 0, cxc: 0,
+    tasa: 1.45, antic: CFG_ACTIVA.anticipoDefault, pctCom: CFG_ACTIVA.comisionPct, comMin: CFG_ACTIVA.comisionUF,
+    comMax: CFG_ACTIVA.comisionMaxUF, gastoOp: CFG_ACTIVA.gastosCLP, gastoDoc: CFG_ACTIVA.gastoDocCLP });
+  const errores = validarSimCfg(cfg);
+  const errDe = (id) => errores.filter((e) => e.id === id).map((e) => e.msg);
+  const previa = simularOperacion(ej, { cfg });
+  const sucio = JSON.stringify(cfg) !== JSON.stringify(SIM_CFG);
+
+  const mut = (fn) => setCfg((c) => { const n = JSON.parse(JSON.stringify(c)); fn(n); return n; });
+  const mover = (i, d) => mut((n) => { const j = i + d; if (j < 0 || j >= n.conceptos.length) return; const [x] = n.conceptos.splice(i, 1); n.conceptos.splice(j, 0, x); });
+  const agregar = () => { mut((n) => n.conceptos.push({ id: "concepto" + (n.conceptos.length + 1), label: "Concepto nuevo", rol: "descuento", formula: "0", ayuda: "" })); setNuevo(false); };
+  const guardar = () => {
+    if (errores.length) return;
+    const antes = SIM_CFG;
+    SIM_CFG = JSON.parse(JSON.stringify(cfg));
+    guardarSimCfg();
+    // La glosa dice QUÉ cambió, no «se guardó la configuración»: quien audite un giro raro de hace tres
+    // meses necesita la fórmula anterior y la nueva, no la hora en que alguien apretó un botón.
+    const diff = [];
+    cfg.conceptos.forEach((c) => { const v = antes.conceptos.find((x) => x.id === c.id);
+      if (!v) diff.push(`+ ${c.label} = ${c.formula}`);
+      else if (v.formula !== c.formula) diff.push(`${c.label}: «${v.formula}» → «${c.formula}»`);
+      else if (v.label !== c.label) diff.push(`${v.label} → ${c.label}`); });
+    antes.conceptos.forEach((v) => { if (!cfg.conceptos.find((x) => x.id === v.id)) diff.push(`− ${v.label} (${v.formula})`); });
+    if (antes.retencion !== cfg.retencion) diff.push(`Retención: «${antes.retencion}» → «${cfg.retencion}»`);
+    registrarAuditoria({ usuario: actorEtiqueta((SESION && SESION.usuario) || usuario), modulo: "Configuración · Simulación",
+      accion: "Fórmulas de simulación actualizadas",
+      glosa: diff.length ? diff.join(" · ") : "Sin cambios efectivos", exito: true });
+    force((x) => x + 1);
+  };
+  const restaurar = () => { setCfg({ conceptos: SIM_CONCEPTOS_BASE.map((c) => JSON.parse(JSON.stringify(c))), retencion: SIM_RETENCION_BASE }); setSel(null); };
+  const borrar = (c) => { mut((n) => { n.conceptos = n.conceptos.filter((x) => x.id !== c.id); }); setPorBorrar(null); setSel(null); };
+
+  const inp = { border: `1px solid ${C.line}`, borderRadius: 10, padding: "6px 10px", backgroundColor: "#fff", color: C.ink };
+  const mono = { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" };
+
+  return (
+    <div className="grid gap-4" style={{ gridTemplateColumns: "minmax(0,1fr) 320px" }}>
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="text-lg font-semibold" style={{ color: C.ink }}>Simulación · conceptos y fórmulas</div>
+            <div className="mt-0.5 t12" style={{ color: C.faint }}>
+              Qué se descuenta del anticipo y cómo se calcula cada cosa. El <b>orden manda</b>: una fórmula puede usar los conceptos de más arriba, nunca los de más abajo.
+              La simulación termina siempre en <b>Monto a Girar</b> y <b>Retención</b> — son el resultado del proceso, no conceptos que se puedan borrar.
+            </div>
+          </div>
+          <button onClick={agregar} className="whitespace-nowrap rounded-lg px-3 py-1.5 t11 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.indigo }}>+ Concepto</button>
+        </div>
+
+        <table className="mt-3 w-full t11" style={{ borderCollapse: "collapse" }}>
+          <thead><tr className="t10" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>
+            <th className="py-1.5 text-left font-medium" style={{ width: 28 }}>#</th>
+            <th className="py-1.5 text-left font-medium">Concepto</th>
+            <th className="py-1.5 text-left font-medium" style={{ width: 96 }}>Rol</th>
+            <th className="py-1.5 text-left font-medium">Fórmula</th>
+            <th className="py-1.5 text-right font-medium" style={{ width: 110 }}>Ejemplo</th>
+            <th style={{ width: 96 }} />
+          </tr></thead>
+          <tbody>
+            {cfg.conceptos.map((c, i) => {
+              const errs = errDe(c.id);
+              const fila = previa.filas.find((f) => f.id === c.id);
+              const abierto = sel === c.id;
+              return (
+                <React.Fragment key={c.id + i}>
+                  <tr style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: errs.length ? "#fef2f2" : abierto ? "#FAF9FB" : "transparent" }}>
+                    <td className="py-1.5" style={{ color: C.faint }}>{i + 1}</td>
+                    <td className="py-1.5">
+                      <button onClick={() => setSel(abierto ? null : c.id)} className="text-left font-medium" style={{ color: C.ink }}>{c.label}</button>
+                      <div className="t9" style={{ color: C.faint, ...mono }}>{c.id}</div>
+                    </td>
+                    <td className="py-1.5">
+                      <span className="rounded-full px-2 py-0.5 t9 font-semibold" style={c.rol === "base" ? { backgroundColor: C.lilac, color: C.navy } : { backgroundColor: "#FFF7ED", color: "#C2410C" }}>{c.rol === "base" ? "Base" : "Descuento"}</span>
+                    </td>
+                    <td className="py-1.5 t10" style={{ color: C.sub, ...mono }}>{c.formula}</td>
+                    <td className="py-1.5 text-right font-medium" style={{ color: errs.length ? C.red : C.ink }}>{fila ? fmtCLP(fila.valor) : "—"}</td>
+                    <td className="py-1.5 text-right">
+                      <button onClick={() => mover(i, -1)} disabled={i === 0} className="t10 px-1" style={{ color: i === 0 ? C.faint : C.sub }} title="Subir">↑</button>
+                      <button onClick={() => mover(i, 1)} disabled={i === cfg.conceptos.length - 1} className="t10 px-1" style={{ color: i === cfg.conceptos.length - 1 ? C.faint : C.sub }} title="Bajar">↓</button>
+                      <button onClick={() => setPorBorrar(c)} className="t10 px-1 font-medium" style={{ color: C.red }}>Eliminar</button>
+                    </td>
+                  </tr>
+                  {!!errs.length && <tr><td colSpan={6} className="pb-1.5 t10 font-medium" style={{ color: C.red }}>{errs.join(" · ")}</td></tr>}
+                  {abierto && (
+                    <tr><td colSpan={6} className="pb-3">
+                      <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}`, backgroundColor: "#FAF9FB" }}>
+                        <div className="flex flex-wrap items-end gap-2">
+                          <label className="t10" style={{ color: C.sub }}>Nombre en pantalla
+                            <input value={c.label} onChange={(e) => mut((n) => { n.conceptos[i].label = e.target.value; })} className="mt-0.5 block t11" style={{ ...inp, minWidth: 220 }} />
+                          </label>
+                          <label className="t10" style={{ color: C.sub }}>Identificador
+                            <input value={c.id} onChange={(e) => { const v = e.target.value; mut((n) => { n.conceptos[i].id = v; }); setSel(v); }} className="mt-0.5 block t11" style={{ ...inp, ...mono, minWidth: 160 }} />
+                          </label>
+                          <label className="t10" style={{ color: C.sub }}>Rol
+                            <select value={c.rol} onChange={(e) => mut((n) => { n.conceptos[i].rol = e.target.value; })} className="mt-0.5 block t11" style={inp}>
+                              <option value="descuento">Descuento (entra al subtotal)</option>
+                              <option value="base">Base (monto de referencia)</option>
+                            </select>
+                          </label>
+                        </div>
+                        <label className="mt-2 block t10" style={{ color: C.sub }}>Fórmula
+                          <input value={c.formula} onChange={(e) => mut((n) => { n.conceptos[i].formula = e.target.value; })} className="mt-0.5 block w-full t11" style={{ ...inp, ...mono }} />
+                        </label>
+                        <label className="mt-2 block t10" style={{ color: C.sub }}>Ayuda (se muestra en la «i» de la fila)
+                          <input value={c.ayuda || ""} onChange={(e) => mut((n) => { n.conceptos[i].ayuda = e.target.value; })} className="mt-0.5 block w-full t11" style={inp} />
+                        </label>
+                        <div className="mt-2 t10" style={{ color: C.faint }}>
+                          Disponibles acá: <b style={{ color: C.sub, ...mono }}>{[...SIM_VAR_IDS, ...cfg.conceptos.slice(0, i).map((x) => x.id)].join(", ")}</b>.
+                          Operadores <b>+ − * / ( )</b> y funciones <b style={mono}>{Object.keys(SIM_FUNCS).join(", ")}</b>. Un porcentaje se escribe <b style={mono}>tasa / 100</b>.
+                        </div>
+                      </div>
+                    </td></tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+
+        {/* Los dos resultados fijos: se muestran, no se editan — salvo la fórmula de la retención. */}
+        <div className="mt-3 rounded-xl p-3" style={{ border: `1px solid ${C.line}`, backgroundColor: "#FAF9FB" }}>
+          <div className="t11 font-semibold" style={{ color: C.navy }}>Cierre de la simulación</div>
+          <div className="mt-1.5 flex items-center justify-between t11">
+            <span style={{ color: C.sub }}>Subtotal Descuentos <span className="t9" style={{ color: C.faint }}>= suma de los conceptos con rol Descuento</span></span>
+            <b style={{ color: C.ink }}>{fmtCLP(previa.subtotalDescuentos)}</b>
+          </div>
+          <div className="mt-1 flex items-center justify-between t11">
+            <span style={{ color: C.sub }}>Monto a Girar <span className="t9" style={{ color: C.faint }}>= Monto Anticipo − Subtotal Descuentos</span></span>
+            <b style={{ color: C.indigo }}>{fmtCLP(previa.montoGirar)}</b>
+          </div>
+          <label className="mt-2 block t10" style={{ color: C.sub }}>Fórmula de la retención <span style={{ color: C.faint }}>(se informa al cliente; NO se descuenta del giro)</span>
+            <input value={cfg.retencion} onChange={(e) => setCfg((c) => ({ ...c, retencion: e.target.value }))} className="mt-0.5 block w-full t11" style={{ ...inp, ...mono }} />
+          </label>
+          {!!errDe("__retencion").length && <div className="mt-1 t10 font-medium" style={{ color: C.red }}>{errDe("__retencion").join(" · ")}</div>}
+          <div className="mt-1 flex items-center justify-between t11"><span style={{ color: C.sub }}>Retención</span><b style={{ color: "#7C3AED" }}>{fmtCLP(previa.retencion)}</b></div>
+        </div>
+
+        <div className="mt-3 flex items-center gap-2">
+          <button onClick={guardar} disabled={!!errores.length || !sucio}
+            className="rounded-lg px-3 py-1.5 t11 font-semibold text-white"
+            style={{ backgroundColor: errores.length || !sucio ? C.faint : C.indigo, cursor: errores.length || !sucio ? "not-allowed" : "pointer" }}>
+            {errores.length ? `${errores.length} error(es) que corregir` : sucio ? "Guardar" : "Sin cambios"}
+          </button>
+          <button onClick={restaurar} className="rounded-lg px-3 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Restaurar el catálogo base</button>
+          {sucio && !errores.length && <span className="t10" style={{ color: "#C2410C" }}>Hay cambios sin guardar: la simulación sigue usando las fórmulas anteriores.</span>}
+        </div>
+      </div>
+
+      {/* Panel de previsualización: el administrador ve el número antes que el cliente. */}
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}`, alignSelf: "start" }}>
+        <div className="t11 font-semibold" style={{ color: C.navy }}>Operación de ejemplo</div>
+        <div className="mt-0.5 t10" style={{ color: C.faint }}>No afecta a ninguna operación real: es para ver qué produce cada fórmula.</div>
+        <div className="mt-2 grid gap-1.5">
+          {[["montoDocs", "Monto documentos"], ["cantFacturas", "N° documentos"], ["dias", "Días"], ["tasa", "Tasa %"], ["antic", "Anticipo %"], ["pctCom", "Comisión %"], ["mora", "Mora"], ["otrosDesc", "Otros desc."], ["cxc", "CxC"]].map(([k, l]) => (
+            <label key={k} className="flex items-center justify-between gap-2 t10" style={{ color: C.sub }}>{l}
+              <input type="number" value={ej[k]} onChange={(e) => setEj((x) => ({ ...x, [k]: +e.target.value || 0 }))} className="t11 text-right" style={{ ...inp, width: 130, padding: "3px 8px" }} />
+            </label>
+          ))}
+        </div>
+        <div className="mt-3 border-t pt-2" style={{ borderColor: C.line }}>
+          {previa.filas.map((f) => (
+            <div key={f.id} className="flex items-center justify-between py-0.5 t10">
+              <span style={{ color: f.rol === "base" ? C.ink : C.sub, paddingLeft: f.rol === "base" ? 0 : 10 }}>{f.label}</span>
+              <span style={{ color: f.error ? C.red : C.ink }}>{fmtCLP(f.valor)}</span>
+            </div>
+          ))}
+          <div className="mt-1 flex items-center justify-between border-t pt-1 t11 font-bold" style={{ borderColor: C.line }}>
+            <span style={{ color: C.ink }}>Monto a Girar</span><span style={{ color: C.indigo }}>{fmtCLP(previa.montoGirar)}</span>
+          </div>
+          <div className="flex items-center justify-between t10"><span style={{ color: C.sub }}>Retención</span><span style={{ color: "#7C3AED" }}>{fmtCLP(previa.retencion)}</span></div>
+        </div>
+        <div className="mt-3 t9" style={{ color: C.faint }}>
+          Las constantes del tenant (valor UF, IVA, retención) se editan en <b>Configuración › Operación</b> y las fórmulas las usan por su nombre.
+        </div>
+      </div>
+
+      <ConfirmDialog abierto={!!porBorrar} titulo="¿Eliminar este concepto?"
+        descripcion={porBorrar ? `«${porBorrar.label}» deja de descontarse y el Monto a Girar sube en ese monto para todas las simulaciones nuevas. Las operaciones ya simuladas conservan su versión: la simulación es evidencia y no se recalcula sola.` : ""}
+        etiquetaConfirmar="Eliminar" onConfirmar={() => borrar(porBorrar)} onCancelar={() => setPorBorrar(null)} />
+    </div>
+  );
+}
 // ── MANTENEDOR DE VACACIONES Y REEMPLAZOS ───────────────────────────────────────────────────────
 // Mientras alguien está fuera, quien lo cubre ASUME SUS ATRIBUCIONES: el mismo nivel de la misma área,
 // por un período acotado. No crea permisos nuevos — sólo traslada los que ya existen— y todo lo que el
@@ -15009,7 +15565,7 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper }) {
         ))}
       </aside>
       <div>
-        {sec === "reemplazos" ? <CfgReemplazos usuario={usuario} /> : sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "roles" ? <CfgRoles /> : sec === "usuarios" ? <CfgUsuarios /> : sec === "areas" ? <CfgAreas /> : sec === "otorgamiento" ? (
+        {sec === "simulacion" ? <CfgSimulacion usuario={usuario} /> : sec === "reemplazos" ? <CfgReemplazos usuario={usuario} /> : sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "roles" ? <CfgRoles /> : sec === "usuarios" ? <CfgUsuarios /> : sec === "areas" ? <CfgAreas /> : sec === "otorgamiento" ? (
           <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
             <div className="text-lg font-semibold" style={{ color: C.ink }}>Otorgamiento · apoderados y atribuciones</div>
             <div className="mt-0.5 t12" style={{ color: C.faint }}>Criterios de verificación, atribuciones de aprobación por criterio y los apoderados que pueden excepcionar (nivel por área). Aquí también se habilita/oculta la aceptación masiva por usuario.</div>

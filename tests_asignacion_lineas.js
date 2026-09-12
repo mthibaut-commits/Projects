@@ -922,6 +922,152 @@
        `N${nSR}: por defecto aprueban ${nombreDe("SR")} y ${nombreDe(ejec)} · revocado sólo ${nombreDe(ejec)} · fila sin el campo = sigue aprobando`);
   }
 
+
+  // ============================================================================================
+  // 65-68 · PRICING Y SIMULACIÓN CONFIGURABLES. La aritmética del giro vivía cableada dentro del
+  // componente del detalle —el IVA como `* 0.19`, la retención como `* 0.028`, la UF como un `const`
+  // local—. Ahora es un catálogo de conceptos con fórmulas, por tenant. Lo primero que hay que probar
+  // es que NO cambió ningún número: un mantenedor que mueve las cifras el día que se instala no es un
+  // mantenedor, es un incidente.
+  // ============================================================================================
+
+  // 65 · El catálogo base reproduce exactamente la aritmética anterior, en un barrido de entradas.
+  {
+    const UF = CFG_ACTIVA.valorUF;
+    const casos = [];
+    for (const montoDocs of [0, 1e6, 50e6, 987654321])
+      for (const tasa of [0.9, 1.45, 2.2])
+        for (const antic of [80, 100])
+          for (const pctCom of [0, 0.25])
+            for (const n of [1, 8])
+              casos.push({ montoDocs, cantFacturas: n, dias: 45, mora: 130000, otrosDesc: 45000, cxc: 60000,
+                           tasa, antic, pctCom, comMin: 2, comMax: 2, gastoOp: 26000, gastoDoc: 0 });
+    let malos = 0, ejemplo = "";
+    for (const e of casos) {
+      // La aritmética ORIGINAL, tal como estaba escrita en el componente antes del cambio.
+      const anticipo = Math.round(e.antic / 100 * e.montoDocs);
+      const difPrecio = Math.round((e.tasa / 100) * (e.antic / 100) * e.montoDocs);
+      const comRaw = Math.round(e.pctCom / 100 * e.montoDocs);
+      const comision = Math.min(Math.max(comRaw, Math.round(e.comMin * UF)), Math.round(e.comMax * UF));
+      const iva = Math.round(comision * 0.19);
+      const gastos = Math.round(e.gastoOp + e.gastoDoc * e.cantFacturas);
+      const subtotal = difPrecio + comision + gastos + iva + e.mora + e.otrosDesc + e.cxc;
+      const giro = anticipo - subtotal;
+      const retencion = Math.round(e.montoDocs * 0.028);
+      const s = simularOperacion(e, { cfg: { conceptos: SIM_CONCEPTOS_BASE, retencion: SIM_RETENCION_BASE } });
+      const v = (id) => (s.filas.find((f) => f.id === id) || {}).valor;
+      const igual = s.montoAnticipo === anticipo && v("difPrecio") === difPrecio && v("comision") === comision
+        && v("iva") === iva && v("gastos") === gastos && s.subtotalDescuentos === subtotal
+        && s.montoGirar === giro && s.retencion === retencion;
+      if (!igual) { malos++; if (!ejemplo) ejemplo = `monto ${e.montoDocs} tasa ${e.tasa}: giro ${s.montoGirar} vs ${giro}`; }
+    }
+    ok("65 el catálogo base reproduce la aritmética cableada, sin mover un peso",
+       malos === 0 && casos.length === 96,
+       `${casos.length} combinaciones · ${malos} diferencias${ejemplo ? " · " + ejemplo : ""}`);
+  }
+
+  // 66 · El intérprete no es `eval`. La fórmula la escribe un administrador y queda guardada en la
+  // configuración del TENANT: con `eval`, el mantenedor de pricing sería una consola remota en el
+  // navegador de todos sus usuarios.
+  {
+    let ejecutado = false;
+    window.__sim_canario = () => { ejecutado = true; return 1; };
+    const intentos = [
+      "window.__sim_canario()",
+      "constructor.constructor('window.__sim_canario()')()",
+      "montoDocs.constructor",
+      "[].map(window.__sim_canario)",
+    ];
+    const rechazadas = intentos.filter((f) => {
+      const p = parseFormula(f);
+      if (p.error) return true;
+      // si parsea, sus identificadores no son variables declaradas → la validación lo rechaza igual
+      return validarSimCfg({ conceptos: [{ id: "x", label: "x", rol: "descuento", formula: f }], retencion: "0" }).length > 0;
+    });
+    // y aunque alguien la forzara al ámbito, evaluar un identificador desconocido da 0, no ejecuta
+    const p = parseFormula("montoDocs * 2");
+    const valor = evalFormula(p.ast, { montoDocs: 21 });
+    delete window.__sim_canario;
+    ok("66 las fórmulas se interpretan, no se ejecutan como JavaScript",
+       rechazadas.length === intentos.length && ejecutado === false && valor === 42
+       && parseFormula("1 +").error && parseFormula("acotar(1,2)").error && !parseFormula("acotar(1,2,3)").error,
+       `${rechazadas.length}/${intentos.length} intentos rechazados · ningún canario ejecutado · aritmética ok`);
+  }
+
+  // 67 · La validación ataja lo que dejaría la pantalla mostrando 0 sin explicación.
+  {
+    const caso = (conceptos, retencion) => validarSimCfg({ conceptos, retencion: retencion || "0" });
+    const adelante = caso([
+      { id: "a", label: "A", rol: "descuento", formula: "b * 2" },   // usa uno POSTERIOR
+      { id: "b", label: "B", rol: "base", formula: "montoDocs" },
+    ]);
+    const repetido = caso([
+      { id: "a", label: "A", rol: "base", formula: "montoDocs" },
+      { id: "a", label: "A otra vez", rol: "descuento", formula: "1" },
+    ]);
+    const inexistente = caso([{ id: "a", label: "A", rol: "base", formula: "noExiste + 1" }]);
+    const choca = caso([{ id: "montoDocs", label: "Choca", rol: "base", formula: "1" }]);
+    const sinBase = caso([{ id: "a", label: "A", rol: "descuento", formula: "1" }]);
+    const rota = caso([{ id: "a", label: "A", rol: "base", formula: "montoDocs * )" }]);
+    const buena = caso(SIM_CONCEPTOS_BASE, SIM_RETENCION_BASE);
+    ok("67 el mantenedor no deja guardar una fórmula que rompería el giro",
+       adelante.some((e) => /DESPU/.test(e.msg))
+       && repetido.some((e) => /repetido/.test(e.msg))
+       && inexistente.some((e) => /no es una variable/.test(e.msg))
+       && choca.some((e) => /ya es una variable/.test(e.msg))
+       && sinBase.some((e) => /base/.test(e.msg))
+       && rota.length > 0
+       && buena.length === 0,
+       `referencia adelantada, id repetido, variable inexistente, choque con variable, sin base y fórmula rota: los 6 detectados · el catálogo base valida limpio`);
+  }
+
+  // 68 · Lo que el tenant cambia, cambia. Es la prueba de que la configuración MANDA y no es adorno:
+  // otro IVA y otra retención mueven el giro, y un concepto nuevo entra al subtotal.
+  {
+    const e = { montoDocs: 100000000, cantFacturas: 5, dias: 30, mora: 0, otrosDesc: 0, cxc: 0,
+                tasa: 1.5, antic: 100, pctCom: 0, comMin: 2, comMax: 2, gastoOp: 26000, gastoDoc: 0 };
+    const base = { conceptos: SIM_CONCEPTOS_BASE, retencion: SIM_RETENCION_BASE };
+    const a = simularOperacion(e, { cfg: base });
+    // IVA 0 y retención 5%: dos tenants, dos giros distintos con la misma operación
+    const b = simularOperacion(e, { cfg: base, constantes: { ...paramsSimTenant(), ivaPct: 0, retencionPct: 5 } });
+    const ivaA = (a.filas.find((f) => f.id === "iva") || {}).valor;
+    // un concepto NUEVO, que es lo que el mantenedor permite agregar
+    const conSeguro = { conceptos: [...SIM_CONCEPTOS_BASE, { id: "seguro", label: "Seguro de crédito", rol: "descuento", formula: "redondear(montoDocs * 0.3 / 100)" }], retencion: SIM_RETENCION_BASE };
+    const c = simularOperacion(e, { cfg: conSeguro });
+    ok("68 lo que el tenant configura cambia el giro, y un concepto nuevo entra al subtotal",
+       ivaA > 0 && (b.filas.find((f) => f.id === "iva") || {}).valor === 0
+       && b.montoGirar === a.montoGirar + ivaA
+       && b.retencion === Math.round(e.montoDocs * 5 / 100) && a.retencion === Math.round(e.montoDocs * 2.8 / 100)
+       && c.subtotalDescuentos === a.subtotalDescuentos + 300000
+       && c.montoGirar === a.montoGirar - 300000
+       && c.filas.length === a.filas.length + 1,
+       `IVA ${fmtCLP ? "" : ""}${ivaA} → 0 sube el giro en lo mismo · retención 2,8% → 5% · «Seguro de crédito» descuenta 300.000 más`);
+  }
+
+  // 69 · LA TASA también sale del tenant. El spread de lista y el descuento por SOW eran constantes de
+  // módulo: dos factorings con otra política comercial no se podían representar sin editar el código.
+  // El piso de riesgo del deudor sigue mandando sobre el descuento, que es la regla que no se negocia.
+  {
+    const dealTarget = { superaTarget: true };
+    const dealComp = { sowActualPct: 0 };
+    const pp = paramsPricing();
+    // un tenant más agresivo: spread de lista más alto y el doble de descuento por competencia
+    const otro = { ...pp, spreadEstandar: 1.20, sowAjuste: { ...pp.sowAjuste, competencia: { pts: 0.40, l: "x" } } };
+    const deudorPiso = Object.keys(SPREAD_MIN_DEUDOR)[0];
+    const piso = spreadMinDeudor(deudorPiso);
+    const a = spreadSugerido(deudorPiso, dealTarget);
+    const b = spreadSugerido(deudorPiso, dealTarget, otro);
+    const c = spreadSugerido(deudorPiso, dealComp, otro);
+    ok("69 el spread de lista y el descuento por SOW son del tenant, y el piso del deudor manda",
+       a.spread === Math.max(piso, pp.spreadEstandar) && a.ajuste === 0
+       && b.bruto === 1.20 && b.spread === Math.max(piso, 1.20)
+       && c.ajuste === 0.40 && c.bruto === 0.80 && c.spread === Math.max(piso, 0.80)
+       // el piso trunca: con el spread de lista bajo el piso, manda el piso y queda marcado
+       && spreadSugerido(deudorPiso, dealComp, { ...otro, spreadEstandar: 0.10 }).topado === true
+       && spreadSugerido(deudorPiso, dealComp, { ...otro, spreadEstandar: 0.10 }).spread === piso,
+       `${deudorPiso} piso ${piso}% · lista ${pp.spreadEstandar}% → ${a.spread}% · tenant agresivo ${otro.spreadEstandar}% con −0,40 pts → ${c.spread}%`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

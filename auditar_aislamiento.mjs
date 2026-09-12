@@ -34,7 +34,8 @@ const L = SRC.split("\n");
 const MUTABLES = [...SRC.matchAll(/^let ([A-Za-z0-9_]+)/gm)].map((m) => m[1]);
 const CLASE = {
   TENANT: ["USERS", "EXECS", "ROL_USUARIO", "ROLES_CAT", "AREAS_CAT", "ATRIB_USUARIO", "ROL_ATRIB",
-           "PERMISOS", "TENANT_ACTUAL", "CFG_ACTIVA", "JEFE_A_EXECS", "EXEC_JEFATURA", "REEMPLAZOS"],
+           "PERMISOS", "TENANT_ACTUAL", "CFG_ACTIVA", "JEFE_A_EXECS", "EXEC_JEFATURA", "REEMPLAZOS",
+           "SIM_CFG"],
   COMMIT: ["VISADO_STATE", "VISADO_DETALLE", "SOLICITUD_EXC", "VERIF_EXC", "VERIF_TEL",
            "NO_CONFIRMADAS", "VERIF_VEREDICTO", "SIM_VERSIONS", "OTORG_EVENTOS"],
   SESION: ["SESION", "OTP_STORE"],
@@ -44,7 +45,8 @@ const CLASE = {
           "ESTRATEGIA_PRECIO", "LINEA_DISPONIBLE", "LB_RUT", "DA_RUT", "LB_NOMBRE", "DA_NOMBRE",
           "PROVEEDORES_CLIENTES"],
   CONFIG: ["REGLAS_CLIENTE", "VERIF_RULES", "PISO_ATRIB_MONTO", "CFG_TRAMOS", "NO_REEV_CLIENTE",
-           "SPREAD_MIN_DEUDOR", "INVARIANTES", "CONTRATO_LIMITES"],
+           "SPREAD_MIN_DEUDOR", "INVARIANTES", "CONTRATO_LIMITES", "SIM_CONCEPTOS_BASE",
+           "SIM_RETENCION_BASE", "SIM_VARIABLES", "SIM_VAR_IDS", "SIM_FUNCS", "SIM_FUNC_ARIDAD"],
   MEMO: ["_VERIF_PAR", "_deudorIdx", "_lineaIdx", "_lf4Idx", "_dtePares", "_cacheCli", "_PADRON",
          "LINEAS_DATA", "PIPELINE_TICK"],
 };
@@ -67,6 +69,11 @@ const DECIDEN = {
   // padrón. Se audita igual porque decide QUIÉN puede aprobar, que es media decisión.
   "Reemplazos": ["atribEfectiva", "coberturaDe", "quienCubreA", "aQuienCubre", "reemplazoVigente",
     "actorEtiqueta", "cargarReemplazos"],
+  // Pricing y simulación: lo que decide CUÁNTO se gira. Es lo más cerca del dinero que hay acá, así
+  // que el objetivo es que el motor no lea nada por su cuenta: catálogo y constantes por parámetro.
+  "Pricing y simulación": ["simularOperacion", "paramsSimTenant", "condicionesBase", "validarSimCfg",
+    "parseFormula", "evalFormula", "varsDeFormula", "tokenizarFormula", "cargarSimCfg",
+    "spreadSugerido", "sowEstado", "calcularOferta", "tasaMinIA"],
   "Líneas": ["asignarLineas", "recortarAsignacion", "lineasDeCliente", "lineaDeDeudor", "lineasDeudor",
     "lf4MetaPorCliente", "tipoLineaDeDeudor", "dispDeudor"],
   "Precio y estado": ["spreadMinDeudor", "notaFromScore", "scoreDeudor", "tipoDeudor", "tramoNota",
