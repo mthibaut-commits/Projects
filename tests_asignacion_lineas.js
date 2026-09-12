@@ -1068,6 +1068,147 @@
        `${deudorPiso} piso ${piso}% · lista ${pp.spreadEstandar}% → ${a.spread}% · tenant agresivo ${otro.spreadEstandar}% con −0,40 pts → ${c.spread}%`);
   }
 
+
+  // ============================================================================================
+  // 70-74 · PRORRATEO A NIVEL DE FACTURA. La simulación da cifras de la OPERACIÓN, pero el giro se
+  // materializa en transferencias y para repartir hay que saber qué le toca a cada documento. La
+  // REGLA DE ORO es que la suma por documento sea siempre el total: si no cuadra, Tesorería gira un
+  // peso de más o de menos, y eso no se descubre hasta que el cliente reclama.
+  // ============================================================================================
+
+  // 70 · La planilla del negocio, reproducida. Dos documentos de MM$100 a 31 y 62 días con tasas
+  // 1,0% y 1,2%: el descuento es RACIONAL —valor presente `monto/(1+i·t)`—, y el plazo equivalente
+  // pondera por el peso de la DIFERENCIA DE PRECIO, no por el monto. Con esos mismos datos ponderar
+  // por monto daría 46,5 días en vez de 52,79, así que la distinción no es cosmética.
+  {
+    const docs = [{ id: "A", monto: 100000000, dias: 31, tasa: 1.0 },
+                  { id: "B", monto: 100000000, dias: 62, tasa: 1.2 }];
+    const r = prorratearOperacion(docs, [], {});
+    const cerca = (a, b, tol) => Math.abs(a - b) <= tol;
+    // y la tasa equivalente reproduce la misma diferencia de precio sobre el total
+    const difConEq = 200000000 - 200000000 / (1 + (r.tasaEquivalente / 100) * (r.plazoEquivalente / 30));
+    ok("70 el prorrateo reproduce la planilla del negocio (descuento racional y plazo equivalente)",
+       cerca(difPrecioDoc(100000000, 1.0, 31), 1022764.764104, 1e-4)
+       && cerca(difPrecioDoc(100000000, 1.2, 62), 2419984.387197, 1e-4)
+       && cerca(r.difPrecioExacto, 3442749.151302, 1e-4)
+       && cerca(r.plazoEquivalente, 52.790584415584, 1e-9)
+       && cerca(r.tasaEquivalente, 0.99536208909501, 1e-9)
+       && cerca(difConEq, r.difPrecioExacto, 1e-4)
+       // ponderar por monto daría otra cosa: se deja fijado para que nadie lo "simplifique"
+       && cerca((100000000 * 31 + 100000000 * 62) / 200000000, 46.5, 1e-9),
+       `dif ${Math.round(r.difPrecioExacto)} · plazo eq ${r.plazoEquivalente.toFixed(6)}d (por monto sería 46,5) · tasa eq ${r.tasaEquivalente.toFixed(6)}%`);
+  }
+
+  // 71 · LA REGLA DE ORO, con muchas facturas chicas, que es donde el redondeo desalinea. Se prueba
+  // contra carteras generadas, no contra un caso elegido: el error de redondeo depende de los montos.
+  {
+    let malos = 0, peorAjuste = 0, negativos = 0, ejemplo = "";
+    const rnd = pcRng(hashStr("prorrateo-71"));
+    for (let caso = 0; caso < 60; caso++) {
+      const n = 1 + Math.floor(rnd() * 60);
+      const docs = [];
+      // Montos de FACTURA reales y deliberadamente dispares —una grande y muchas chicas es el caso
+      // que desalinea—, en operaciones de MM$50 a MM$20.000. La primera versión de este caso sorteaba
+      // montos de hasta 10^13 y medía un ajuste de 13 millones: el descuadre era del generador.
+      const grande = Math.round((5e6 + rnd() * 2e9));
+      docs.push({ id: "d0", monto: grande, dias: 15 + Math.floor(rnd() * 75), tasa: +(0.8 + rnd() * 1.2).toFixed(2) });
+      for (let i = 1; i < n; i++) {
+        const monto = 80000 + Math.round(rnd() * 3000000);
+        docs.push({ id: "d" + i, monto, dias: 15 + Math.floor(rnd() * 75), tasa: +(0.8 + rnd() * 1.2).toFixed(2) });
+      }
+      const total = docs.reduce((a, d) => a + d.monto, 0);
+      const conceptos = [
+        { id: "montoAnticipo", rol: "base", total: Math.round(total * 0.9) },
+        { id: "comision", rol: "descuento", total: 59479 },
+        { id: "iva", rol: "descuento", total: 11301 },
+        { id: "gastos", rol: "descuento", total: 26000 },
+        { id: "descuentos", rol: "descuento", total: 4948862 },
+      ];
+      const r = prorratearOperacion(docs, conceptos, {});
+      const suma = (f) => r.filas.reduce((a, x) => a + f(x), 0);
+      const cuadraConceptos = conceptos.every((c) => suma((x) => x.conceptos[c.id]) === c.total);
+      const cuadraDif = suma((x) => x.difPrecio) === r.difPrecio;
+      const girarEsperado = conceptos[0].total - conceptos.slice(1).reduce((a, c) => a + c.total, 0) - r.difPrecio;
+      const cuadraGiro = r.montoGirar === girarEsperado && suma((x) => x.giro) === girarEsperado;
+      // El ajuste tiene que ser CHICO —si fueran miles de pesos, el peso o el redondeo están mal— y
+      // NINGÚN documento puede quedar con un monto negativo: una comisión negativa no se transfiere.
+      // El ajuste se mide contra su COTA TEÓRICA, que es lo único que significa algo acá. Son dos
+      // fuentes de error y escalan distinto: redondear cada asignación a entero deja ≤½ peso por
+      // documento (domina en un concepto chico: una comisión de $59.479 entre 60 facturas acumula
+      // ~30 pesos, que es el 0,05% del concepto), y redondear el peso a 6 decimales deja ≤ T·5·10⁻⁷
+      // por documento (domina en el anticipo de una operación grande: miles de pesos, que es el
+      // 0,0002%). Una cota absoluta mide el tamaño de la operación y una relativa el del concepto:
+      // ninguna de las dos dice si el reparto está bien. Ésta sí — y si algún día se supera, es que
+      // el redondeo dejó de ser el declarado.
+      conceptos.forEach((c) => { const a = r.ajustes[c.id]; if (!a) return;
+        const cota = n / 2 + n * 5e-7 * Math.abs(c.total) + 1;
+        peorAjuste = Math.max(peorAjuste, Math.abs(a.pesos) / cota); });
+      conceptos.forEach((c) => { if (r.filas.some((x) => x.conceptos[c.id] < 0)) negativos++; });
+      if (r.filas.some((x) => x.difPrecio < 0)) negativos++;
+      if (!(cuadraConceptos && cuadraDif && cuadraGiro)) {
+        malos++;
+        if (!ejemplo) ejemplo = `${n} docs: giro ${r.montoGirar} vs ${girarEsperado}`;
+      }
+    }
+    ok("71 la suma por documento SIEMPRE es el total, y ningún documento queda negativo",
+       malos === 0 && negativos === 0 && peorAjuste <= 1,
+       `60 carteras de 1 a 60 documentos · ${malos} descuadres · ${negativos} montos negativos · mayor ajuste: ${(peorAjuste * 100).toFixed(1)}% de su cota teórica (n/2 + n·T·5·10⁻⁷)${ejemplo ? " · " + ejemplo : ""}`);
+  }
+
+  // 72 · El reparto va de MAYOR A MENOR y el ajuste cae en la MÁS CHICA. Repartiendo al revés, el
+  // residuo acumulado termina en la factura grande, donde se nota menos pero descuadra igual; y
+  // repartiendo en el orden de llegada, el ajuste cae donde toque.
+  {
+    const docs = [{ id: "chica", monto: 1000, dias: 30, tasa: 1 },
+                  { id: "grande", monto: 99000000, dias: 30, tasa: 1 },
+                  { id: "media", monto: 500000, dias: 30, tasa: 1 }];
+    const r = prorratearOperacion(docs, [{ id: "comision", rol: "descuento", total: 59479 }], {});
+    const f = (id) => r.filas.find((x) => x.id === id);
+    ok("72 el prorrateo va de mayor a menor y el ajuste cae en el documento más chico",
+       r.ajustes.comision.documento === "chica"
+       && f("grande").conceptos.comision > f("media").conceptos.comision
+       && f("media").conceptos.comision > f("chica").conceptos.comision
+       && r.filas.reduce((a, x) => a + x.conceptos.comision, 0) === 59479,
+       `ajuste de ${r.ajustes.comision.pesos} peso(s) en «${r.ajustes.comision.documento}» · ${f("grande").conceptos.comision} / ${f("media").conceptos.comision} / ${f("chica").conceptos.comision} suman 59.479`);
+  }
+
+  // 73 · TOP-DOWN: la tasa que fija el ejecutivo se aplica a todos los documentos con SU plazo. No se
+  // intenta reconstruir la tasa de cada deudor —es un problema de optimización con infinitas
+  // soluciones— y esa restricción se resigna a propósito.
+  {
+    const docs = [{ id: "A", monto: 100000000, dias: 31, tasa: 1.0 },
+                  { id: "B", monto: 100000000, dias: 62, tasa: 1.2 }];
+    const abajo = prorratearOperacion(docs, [], {});
+    const arriba = prorratearOperacion(docs, [], { modo: "unica", tasa: 1.1 });
+    const dA = difPrecioDoc(100000000, 1.1, 31), dB = difPrecioDoc(100000000, 1.1, 62);
+    ok("73 con tasa única cada documento usa esa tasa y su propio plazo",
+       arriba.modo === "unica" && abajo.modo === "riesgo"
+       && Math.abs(arriba.difPrecioExacto - (dA + dB)) < 1e-6
+       && arriba.filas[0].difPrecio !== arriba.filas[1].difPrecio      // mismo monto, distinto plazo
+       && arriba.filas.reduce((a, x) => a + x.difPrecio, 0) === arriba.difPrecio
+       && arriba.difPrecio !== abajo.difPrecio,                        // y da distinto que bottom-up
+       `bottom-up ${abajo.difPrecio} (tasas 1,0/1,2) · top-down 1,1% ${arriba.difPrecio} · por documento ${arriba.filas[0].difPrecio}/${arriba.filas[1].difPrecio}`);
+  }
+
+  // 74 · Los bordes que revientan una división: un solo documento, plazo 0, tasa 0 y monto 0. Ninguno
+  // puede devolver NaN ni descuadrar — una simulación con una factura es el caso más común de todos.
+  {
+    const uno = prorratearOperacion([{ id: "U", monto: 7000000, dias: 45, tasa: 1.3 }],
+      [{ id: "montoAnticipo", rol: "base", total: 7000000 }, { id: "comision", rol: "descuento", total: 59479 }], {});
+    const plazoCero = prorratearOperacion([{ id: "A", monto: 1000, dias: 0, tasa: 1 }, { id: "B", monto: 3000, dias: 0, tasa: 1 }], [], {});
+    const tasaCero = prorratearOperacion([{ id: "A", monto: 1000, dias: 30, tasa: 0 }], [], {});
+    const vacio = prorratearOperacion([], [], {});
+    const fin = (x) => typeof x === "number" && isFinite(x);
+    ok("74 un documento, plazo cero, tasa cero y cartera vacía no rompen el cuadre",
+       uno.filas.length === 1 && uno.filas[0].conceptos.comision === 59479
+       && uno.montoGirar === 7000000 - 59479 - uno.difPrecio
+       && fin(plazoCero.plazoEquivalente) && plazoCero.difPrecio === 0
+       // sin diferencia de precio el plazo se pondera por monto: 0·(1000/4000) + 0·(3000/4000)
+       && fin(tasaCero.tasaEquivalente) && tasaCero.difPrecio === 0
+       && vacio.filas.length === 0 && fin(vacio.montoGirar) && vacio.montoGirar === 0,
+       `1 doc cuadra · plazo 0 → dif ${plazoCero.difPrecio} · tasa 0 → tasa eq ${tasaCero.tasaEquivalente} · vacío ${vacio.montoGirar}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

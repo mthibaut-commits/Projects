@@ -2489,6 +2489,167 @@ function paramsSimTenant(cfg) {
   const c = cfg || CFG_ACTIVA;
   return { UF: c.valorUF, ivaPct: c.ivaPct, retencionPct: c.retencionPct, costoFondo: c.costoFondo };
 }
+
+// ============================================================================================
+// PRORRATEO A NIVEL DE FACTURA — de la simulación de la operación al detalle por documento.
+//
+// La simulación entrega cifras de la OPERACIÓN, pero el giro se materializa en transferencias que
+// ejecuta Tesorería y que pueden repartirse de varias formas. Para poder repartir hay que saber qué
+// le corresponde a cada factura: su diferencia de precio, su parte de la comisión, del IVA, de los
+// gastos y de los descuentos, y con eso su monto a girar.
+//
+// REGLA DE ORO: la suma de los montos por documento SIEMPRE es el total de la operación. Es lo que
+// hace que el reparto sea auditable y que Tesorería no gire un peso de más ni de menos. Todo lo demás
+// de este bloque existe para sostener esa regla.
+//
+// Dos direcciones, porque son dos preguntas distintas:
+//
+//   BOTTOM-UP (la tasa la pone el riesgo de cada deudor). Se calcula la diferencia de precio de CADA
+//   documento con la tasa de su deudor y su propio plazo, y la de la operación es la SUMA. De ahí se
+//   deriva una tasa equivalente —la tasa única que, aplicada al total con el plazo equivalente, da
+//   exactamente la misma diferencia de precio— que es lo que se le muestra al cliente.
+//
+//   TOP-DOWN (la tasa la fija el ejecutivo, o viene del último negocio). Se toma esa tasa única y se
+//   calcula la diferencia de precio de cada documento con su propio plazo. Aquí NO se intenta
+//   reconstruir qué tasa tendría cada deudor: eso es un problema de optimización con infinitas
+//   soluciones, y resolverlo por aproximación daría cifras que nadie puede explicar. Se resigna esa
+//   restricción a propósito y queda una heurística que cuadra.
+//
+// El resto de los conceptos —comisión, IVA, gastos, descuentos, CxC— son SIEMPRE top-down: se
+// determinan sobre la operación y se reparten por el peso en MONTO de cada documento, sin plazo.
+// ============================================================================================
+
+// El descuento es RACIONAL, no lineal: el valor presente de la factura es `monto / (1 + i·t)` y la
+// diferencia de precio es lo que falta para el nominal. Con descuento lineal (`monto · i · t`) la
+// cifra sale más alta y no es lo que reconcilia contra la planilla del negocio.
+const SIM_DEC = 1e6;                                   // 6 decimales, como manda el spec
+const redond6 = (x) => Math.round(x * SIM_DEC) / SIM_DEC;
+function valorPresenteDoc(monto, tasaPct, dias) {
+  const f = 1 + (tasaPct / 100) * (dias / 30);
+  return f === 0 ? 0 : monto / f;
+}
+function difPrecioDoc(monto, tasaPct, dias) { return monto - valorPresenteDoc(monto, tasaPct, dias); }
+
+// PLAZO EQUIVALENTE de la operación: el plazo de cada documento ponderado por su peso en la
+// DIFERENCIA DE PRECIO —no en el monto—. Es la ponderación que hace que la tasa equivalente
+// reproduzca la misma diferencia de precio, y da distinto: con dos documentos de igual monto a 31 y
+// 62 días, ponderar por monto da 46,5 días y por diferencia de precio 52,79.
+function plazoEquivalente(docs) {
+  const dif = docs.map((d) => difPrecioDoc(d.monto, d.tasa, d.dias));
+  const tot = dif.reduce((a, b) => a + b, 0);
+  if (!tot) {  // sin diferencia de precio (tasa 0 o plazo 0) el peso se reparte por monto
+    const m = docs.reduce((a, d) => a + d.monto, 0);
+    return m ? docs.reduce((a, d) => a + (d.monto / m) * d.dias, 0) : 0;
+  }
+  return docs.reduce((a, d, i) => a + (dif[i] / tot) * d.dias, 0);
+}
+// TASA EQUIVALENTE (% mensual): la única tasa que, sobre el monto anticipado y el plazo equivalente,
+// produce la misma diferencia de precio. Sale de despejar `dif = VP · i · plazo/30`.
+function tasaEquivalente(difTotal, plazoEq, vpTotal) {
+  if (!plazoEq || !vpTotal) return 0;
+  return (difTotal / plazoEq) * 30 / vpTotal * 100;
+}
+
+// ── El reparto de UN concepto ─────────────────────────────────────────────────────────────────
+// De MAYOR A MENOR y con el último documento cuadrando la diferencia. El orden importa: redondear a
+// entero deja un resto por documento, y en una operación con muchas facturas chicas esos restos se
+// acumulan. Repartiendo desde la más grande, el residuo que absorbe la última es el más pequeño
+// posible en términos relativos.
+//
+// `ajuste` es el peso que hubo que sumar o restar en el último documento para cuadrar. Se DEVUELVE en
+// vez de esconderlo: si algún día son miles de pesos en vez de unidades, es la señal de que el peso o
+// el redondeo están mal, y sin el dato nadie lo notaría.
+function prorratearConcepto(docs, total, base) {
+  // Sin documentos no hay a quién repartirle: devolver la estructura vacía en vez de reventar, porque
+  // una oferta sin facturas seleccionadas es un estado NORMAL de la pantalla, no un error.
+  if (!docs || !docs.length) return { asignado: [], ajuste: 0, ajusteEn: -1 };
+  const bs = docs.map((d, i) => base(d, i) || 0);          // el índice entra en la base: buscar el
+  const tot = bs.reduce((a, b) => a + b, 0);               // documento por identidad era O(n²) y
+  const orden = bs.map((b, i) => ({ i, b })).sort((a, b) => b.b - a.b || a.i - b.i);  // frágil
+  const T = Math.round(total);
+  const asignado = new Array(docs.length).fill(0);
+  // Reparto teórico: peso a 6 decimales y a entero. La suma no da el total, y no puede darlo: son
+  // n redondeos independientes.
+  orden.forEach((o) => { asignado[o.i] = Math.round(T * (tot ? redond6(o.b / tot) : 0)); });
+  // El residuo lo absorbe el ÚLTIMO —el más chico—, que es donde menos distorsiona en términos
+  // absolutos. Si lo dejaría NEGATIVO se traslada hacia arriba: pasa cuando la operación es grande y
+  // esa factura es muy chica (MM$20.000 en 300 documentos deja al más chico en −4 pesos), y una
+  // comisión negativa en un documento no se puede explicar ni transferir. Cada documento absorbe lo
+  // que puede sin cruzar el cero y el resto sigue subiendo, así que el total cuadra igual.
+  let residuo = T - asignado.reduce((a, b) => a + b, 0);
+  let ajuste = 0, ajusteEn = orden[orden.length - 1].i, repartido = 0;
+  for (let k = orden.length - 1; k >= 0 && residuo !== 0; k--) {
+    const i = orden[k].i;
+    const cabe = residuo > 0 ? residuo : Math.max(residuo, -asignado[i]);
+    if (!cabe) continue;
+    asignado[i] += cabe;
+    if (!repartido) ajusteEn = i;
+    ajuste += cabe; residuo -= cabe; repartido++;
+  }
+  return { asignado, ajuste, ajusteEn, documentosAjustados: repartido };
+}
+
+// ── EL MOTOR ──────────────────────────────────────────────────────────────────────────────────
+// `docs`: [{ id, monto, dias, tasa, deudor }] · `conceptos`: [{ id, label, total }] del resumen.
+// `opts.modo`: "riesgo" (bottom-up, la tasa de cada deudor) | "unica" (top-down, `opts.tasa`).
+// Puro: no lee configuración ni estado. En producción esto corre en el resolver, junto al resto del
+// pricing — es la cifra que Tesorería va a transferir.
+function prorratearOperacion(docs, conceptos, opts) {
+  const o = opts || {};
+  const lista = (docs || []).map((d, i) => ({
+    id: d.id != null ? d.id : "doc" + i, monto: +d.monto || 0, dias: +d.dias || 0,
+    deudor: d.deudor || "", tasa: o.modo === "unica" ? (+o.tasa || 0) : (+d.tasa || 0),
+  }));
+  const montoTotal = lista.reduce((a, d) => a + d.monto, 0);
+
+  // 1) DIFERENCIA DE PRECIO por documento. En los dos modos se calcula documento a documento con su
+  //    propio plazo; lo que cambia es de dónde sale la tasa.
+  const difExacta = lista.map((d) => difPrecioDoc(d.monto, d.tasa, d.dias));
+  const difTotalExacto = difExacta.reduce((a, b) => a + b, 0);
+  const vpTotalExacto = montoTotal - difTotalExacto;
+  const plazoEq = plazoEquivalente(lista);
+  const tasaEq = tasaEquivalente(difTotalExacto, plazoEq, vpTotalExacto);
+  // A entero, cuadrando contra el total: mismo criterio que el resto de los conceptos.
+  const difTotal = Math.round(difTotalExacto);
+  const rDif = prorratearConcepto(lista, difTotal, (_, i) => difExacta[i]);
+
+  // 2) EL RESTO DE LOS CONCEPTOS, por peso en MONTO y sin plazo. La diferencia de precio se descarta
+  //    si viene en la lista: ya se repartió arriba con el plazo de cada documento, y volver a
+  //    repartirla por monto la contaría dos veces con un criterio que además es el equivocado.
+  const otros = (conceptos || []).filter((c) => c.id !== "difPrecio");
+  const porConcepto = {}, ajustes = {};
+  for (const c of otros) {
+    const r = prorratearConcepto(lista, c.total || 0, (d) => d.monto);
+    porConcepto[c.id] = r.asignado;
+    ajustes[c.id] = { pesos: r.ajuste, documento: lista[r.ajusteEn] ? lista[r.ajusteEn].id : null };
+  }
+  ajustes.difPrecio = { pesos: rDif.ajuste, documento: lista[rDif.ajusteEn] ? lista[rDif.ajusteEn].id : null };
+
+  // 3) La fila de cada documento. El ANTICIPO es el ÚLTIMO concepto base —es de lo que se descuenta—,
+  //    igual que en `simularOperacion`: sumar todos los base contaría además el monto de documentos.
+  const base = otros.filter((c) => c.rol === "base");
+  const idAnticipo = base.length ? base[base.length - 1].id : null;
+  const filas = lista.map((d, i) => {
+    const cs = { difPrecio: rDif.asignado[i] };
+    let desc = rDif.asignado[i];                          // la diferencia de precio SÍ es un descuento
+    for (const c of otros) {
+      cs[c.id] = porConcepto[c.id][i];
+      if (c.rol !== "base") desc += porConcepto[c.id][i];
+    }
+    const anticipo = idAnticipo ? porConcepto[idAnticipo][i] : d.monto;
+    return { ...d, valorPresente: Math.round(d.monto - difExacta[i]), difPrecio: rDif.asignado[i],
+             pesoMonto: montoTotal ? redond6(d.monto / montoTotal) : 0,
+             conceptos: cs, anticipo, descuentos: desc, giro: anticipo - desc };
+  });
+
+  const suma = (f) => filas.reduce((a, x) => a + f(x), 0);
+  return {
+    filas, montoTotal, difPrecio: difTotal, difPrecioExacto: difTotalExacto,
+    plazoEquivalente: plazoEq, tasaEquivalente: tasaEq,
+    montoGirar: suma((f) => f.giro), ajustes, modo: o.modo === "unica" ? "unica" : "riesgo",
+  };
+}
+
 // Condiciones por defecto de una operación, tal como las trae el tenant. Es lo que la pantalla carga
 // como «condiciones originales» antes de que el ejecutivo las toque.
 function condicionesBase(cfg) {

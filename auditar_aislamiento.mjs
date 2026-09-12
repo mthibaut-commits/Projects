@@ -73,7 +73,11 @@ const DECIDEN = {
   // que el objetivo es que el motor no lea nada por su cuenta: catálogo y constantes por parámetro.
   "Pricing y simulación": ["simularOperacion", "paramsSimTenant", "condicionesBase", "validarSimCfg",
     "parseFormula", "evalFormula", "varsDeFormula", "tokenizarFormula", "cargarSimCfg",
-    "spreadSugerido", "sowEstado", "calcularOferta", "tasaMinIA"],
+    "spreadSugerido", "sowEstado", "calcularOferta", "tasaMinIA",
+    // El prorrateo por factura es lo que Tesorería va a transferir: si algo tiene que ser puro y
+    // vivir en el servidor, es esto.
+    "prorratearOperacion", "prorratearConcepto", "difPrecioDoc", "valorPresenteDoc",
+    "plazoEquivalente", "tasaEquivalente"],
   "Líneas": ["asignarLineas", "recortarAsignacion", "lineasDeCliente", "lineaDeDeudor", "lineasDeudor",
     "lf4MetaPorCliente", "tipoLineaDeDeudor", "dispDeudor"],
   "Precio y estado": ["spreadMinDeudor", "notaFromScore", "scoreDeudor", "tipoDeudor", "tramoNota",

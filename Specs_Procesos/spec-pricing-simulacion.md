@@ -1,6 +1,6 @@
 # Pricing y simulación de la operación
 
-**Versión 1.0 · 12-09-2026 · NEX Factoring**
+**Versión 1.1 · 12-09-2026 · NEX Factoring**
 
 Qué determina la **tasa** de un negocio y cómo se construye el **desglose** que termina en el monto
 que el cliente recibe. Es el tercer proceso aislable del módulo, junto con la asignación de líneas y
@@ -117,9 +117,8 @@ mantenedor, es un incidente.
 | 9 | Cuentas por cobrar | descuento | `cxc` |
 | — | **Retención** | resultado | `redondear(montoDocs * retencionPct / 100)` |
 
-La **diferencia de precio** es el precio del dinero: tasa mensual × plazo × monto financiado. En la
-implementación de referencia el plazo va implícito en la tasa mensual pactada; un tenant que quiera
-prorratear por días escribe `... * dias / 30` en la fórmula, sin tocar código.
+La **diferencia de precio** es el precio del dinero y **se calcula documento a documento** (§4). El
+concepto del catálogo es la cifra agregada; su desglose por factura manda.
 
 La **comisión** es un porcentaje sobre el monto acotado por un mínimo y un máximo en UF. `acotar` es
 ese patrón escrito una sola vez.
@@ -194,13 +193,152 @@ sola al cambiar el catálogo (ver la regla de versionado del módulo de líneas)
 
 ---
 
-## 4. Qué NO está resuelto
+## 4. El cálculo por factura
+
+La simulación entrega cifras de la **operación**, pero el giro se materializa en transferencias
+bancarias que ejecuta **Tesorería** —un módulo independiente que este sistema alimenta— y que pueden
+repartirse de varias formas. Para poder repartir hay que saber qué le corresponde a **cada factura**:
+su diferencia de precio, su parte de la comisión, del IVA, de los gastos y de los descuentos, y con
+eso su monto a girar.
+
+> **Regla de oro.** La suma de los montos por documento es **siempre** el total de la operación, en
+> todos los conceptos. Es lo que hace el reparto auditable y lo que impide que Tesorería transfiera un
+> peso de más o de menos. Todo lo que sigue existe para sostener esa regla.
+
+### 4.1 La diferencia de precio: descuento racional
+
+El valor presente de una factura y su diferencia de precio son:
+
+```
+VP_i  = monto_i / (1 + tasa_i/100 × dias_i/30)
+dif_i = monto_i − VP_i
+```
+
+Es **descuento racional**, no lineal. Con descuento lineal (`monto × i × t`) la cifra sale más alta y
+no reconcilia contra la planilla del negocio.
+
+### 4.2 Dos direcciones, porque son dos preguntas distintas
+
+**BOTTOM-UP — la tasa la pone el riesgo de cada deudor** (spread del deudor + costo de fondo). Se
+calcula la diferencia de precio de **cada** documento con la tasa de su deudor y su propio plazo, y la
+de la operación es la **suma**:
+
+```
+difPrecio_operación = Σ dif_i
+```
+
+**TOP-DOWN — la tasa la fija el ejecutivo, o viene del último negocio.** Se toma esa tasa única y se
+calcula la diferencia de precio de cada documento con **su propio plazo**:
+
+```
+dif_i = monto_i − monto_i / (1 + tasaÚnica/100 × dias_i/30)
+```
+
+Aquí **no se intenta reconstruir qué tasa tendría cada deudor**. Eso es un problema de optimización
+con infinitas soluciones, y resolverlo por aproximación daría cifras que nadie puede explicar ni
+defender frente al cliente. La restricción de que los deudores conserven su tasa se **resigna a
+propósito**: queda una heurística que cuadra, en vez de un óptimo que no se entiende.
+
+### 4.3 Plazo equivalente y tasa equivalente
+
+Para mostrarle al cliente **una** tasa cuando el cálculo fue bottom-up, se deriva la tasa única que
+produce exactamente la misma diferencia de precio sobre el total:
+
+```
+peso_i           = dif_i / Σdif                    ← peso en la DIFERENCIA DE PRECIO
+plazoEquivalente = Σ (peso_i × dias_i)
+tasaEquivalente  = difPrecio / plazoEquivalente × 30 / VP_total       (× 100 para %)
+```
+
+**El plazo se pondera por el peso en la diferencia de precio, no en el monto.** No es un detalle: con
+dos documentos de MM$100 a 31 y 62 días, ponderar por monto da **46,5 días** y por diferencia de
+precio da **52,79**. Sólo la segunda hace que la tasa equivalente reproduzca la diferencia de precio
+original, que es lo único que la justifica.
+
+> **Punto a confirmar.** El enunciado de negocio describe el plazo ponderado «por el monto de cada
+> factura»; la planilla de referencia lo pondera por el peso de la diferencia de precio. Se implementó
+> como la planilla, porque es lo que cierra contra su propia verificación.
+
+Verificación con los datos de la planilla:
+
+| Documento | Monto | Tasa | Días | Valor presente | Dif. precio | Peso | Aporte al plazo |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| A | 100.000.000 | 1,00% | 31 | 98.977.235,24 | 1.022.764,76 | 0,297078 | 9,209416 |
+| B | 100.000.000 | 1,20% | 62 | 97.580.015,61 | 2.419.984,39 | 0,702922 | 43,581169 |
+| **Total** | **200.000.000** | | | **196.557.250,85** | **3.442.749,15** | **1,000000** | **52,790584** |
+
+Tasa equivalente = 3.442.749,15 / 52,790584 × 30 / 196.557.250,85 = **0,995362% mensual**. Aplicada al
+total con el plazo equivalente devuelve la misma diferencia de precio.
+
+> La planilla despeja la tasa con los totales **ya redondeados a entero** y obtiene 0,99536204%; la
+> implementación usa los valores exactos y obtiene 0,99536209%. Difieren en el décimo decimal y la
+> tasa equivalente es informativa, así que se usa la exacta.
+
+### 4.4 El resto de los conceptos: siempre top-down
+
+Comisión, IVA, gastos, descuentos y cuentas por cobrar se determinan **sobre la operación** y se
+reparten por el peso en **monto** de cada documento, **sin considerar el plazo**:
+
+```
+peso_i     = redondear6(monto_i / Σmonto)
+asignado_i = redondear(total_concepto × peso_i)
+```
+
+### 4.5 Decimales, orden y variable de ajuste
+
+Los pesos se calculan con **6 decimales** y cada monto asignado se redondea a **entero**. Eso deja un
+residuo por documento, y en una operación con muchas facturas chicas los residuos se acumulan: la suma
+de las partes **no da** el total. Tres reglas lo resuelven:
+
+1. **El reparto va de la factura más grande a la más chica.** El residuo que queda al final es el más
+   pequeño posible en términos relativos.
+2. **El último documento absorbe el residuo**, de modo que la suma cuadre exactamente.
+3. **Cada concepto expone su variable de ajuste** (`ajustes[concepto] = { pesos, documento }`): cuántos
+   pesos hubo que sumar o restar y en qué documento. Se devuelve en vez de esconderse — si algún día
+   son miles de pesos donde deberían ser unidades, es la señal de que el peso o el redondeo están mal,
+   y sin el dato nadie lo notaría.
+
+**Cuando el ajuste dejaría el documento en negativo, se traslada hacia arriba.** Pasa cuando la
+operación es grande y la última factura es muy chica: en una operación de MM$20.000 repartida en 300
+documentos, el más chico queda en **−4 pesos**. Una comisión negativa en un documento no se puede
+explicar ni transferir, así que cada documento absorbe lo que puede sin cruzar el cero y el resto sigue
+subiendo. El total cuadra igual.
+
+**Magnitud esperada del ajuste.** Son dos fuentes de error y escalan distinto:
+
+| Fuente | Error por documento | Dónde domina |
+|---|---|---|
+| Redondeo del monto a entero | ≤ ½ peso | Conceptos chicos: una comisión de $59.479 entre 60 facturas acumula ~30 pesos |
+| Redondeo del peso a 6 decimales | ≤ total × 5·10⁻⁷ | Conceptos grandes: el anticipo de una operación de MM$2.000, miles de pesos |
+
+La cota es `n/2 + n × total × 5·10⁻⁷`. Superarla significa que el redondeo dejó de ser el declarado.
+Si se quisiera el ajuste acotado a ±1 peso en todos los casos, habría que subir la precisión del peso
+o repartir por sumas acumuladas; es un cambio de una línea y una decisión de negocio, no una
+limitación del diseño.
+
+### 4.6 El monto a girar por documento
+
+```
+descuentos_i = dif_i + Σ (conceptos con rol «descuento»)_i
+giro_i       = anticipo_i − descuentos_i
+```
+
+Y por la regla de oro, `Σ giro_i = montoGirar` de la operación. Ése es el número que se entrega al
+modelo de giro, que decide **cómo** se le hace llegar al cliente y en cuántas transferencias.
+
+---
+
+## 5. Qué NO está resuelto
 
 - **El giro es uno solo.** Hoy el resultado es un único monto. El modelo de entrega —cómo y en cuántas
-  partes se le hace llegar al cliente— es una funcionalidad aparte, también por tenant, y toma este
-  `montoGirar` como entrada.
-- **El plazo no prorratea la diferencia de precio** en el catálogo base: la tasa mensual pactada ya lo
-  incorpora. Queda como fórmula posible, no como comportamiento por defecto.
+  partes se le hace llegar al cliente, combinando las formas de giro que el factoring tenga— es una
+  funcionalidad aparte, también por tenant, y toma este `montoGirar` y el desglose por factura del §4
+  como entrada. La regla de oro se hereda: la suma de las transferencias es el monto a girar.
+- **El catálogo base todavía calcula la diferencia de precio agregada** (`montoDocs × tasa/100 ×
+  antic/100`, lineal y sin plazo) mientras el §4 la define documento a documento con descuento
+  racional. Las dos conviven: el motor por factura ya produce la cifra correcta y la expone, pero
+  cambiar el concepto del catálogo mueve las cifras de todas las operaciones simuladas, así que es una
+  decisión de negocio pendiente y no un cambio a hacer en silencio.
 - **La retención no tiene fecha de liberación modelada.** Se informa como monto y como condición
   («si las facturas se pagan en la fecha informada»), sin un evento que la libere.
 - **Las condiciones originales de una operación** se fijan al abrir la simulación y no se re-leen si
