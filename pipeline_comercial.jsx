@@ -2814,9 +2814,19 @@ function asignarGiros(entrada, opts) {
   //    y taparlo acá con un ajuste escondería el error real en el sitio equivocado.
   const asignado = Object.values(porTipo).reduce((a, g) => a + g.monto, 0);
   const total = e.montoGirar != null ? Math.round(e.montoGirar) : asignado;
+  // Vista POR DEUDOR: es la unidad real de la decisión, así que la pantalla que muestra deudores no
+  // tiene que reagrupar las facturas para saber el tipo de cada uno —y no puede equivocarse al
+  // hacerlo—. Trae además los hechos, que son la explicación del chip.
+  const porDeudor = {};
+  deudores.forEach((d) => {
+    const t = tipos.find((x) => x.codigo === tipoDe[d]);
+    porDeudor[d] = { tipo: tipoDe[d], label: (t && t.label) || tipoDe[d], hechos: hechos[d],
+      monto: filas.filter((f) => f.deudor === d).reduce((a, f) => a + f.giro, 0),
+      facturas: filas.filter((f) => f.deudor === d).length };
+  });
   return {
     tipos: tipos.map((t) => porTipo[t.codigo]).filter(Boolean),
-    porTipo, filas, asignado, montoGirar: total,
+    porTipo, porDeudor, filas, asignado, montoGirar: total,
     cuadra: asignado === total, descuadre: asignado - total,
     // `motivo` explica en una línea POR QUÉ esta operación quedó donde quedó. Es lo que el ejecutivo
     // necesita cuando pregunta por qué su cliente no tiene Giro Express.
@@ -3865,6 +3875,19 @@ function DealCard({ deal, onOpen, onDragStart }) {
       <div className="mt-2 border-t pt-1.5 t10" style={{ borderColor: C.line, color: C.sub }}>
         Tasa {deal.tasa} | Anticipo {deal.anticipo} | Desc. {deal.simulado ? fmtMM(deal.descMM) : "—"}
       </div>
+      {/* GIROS: cómo se reparte el monto a girar entre los dos tipos. Va debajo del giro porque es su
+          desglose, y sólo con la operación simulada — antes de eso no hay monto que repartir. */}
+      {deal.simulado && (() => {
+        const g = giroResumenDeal(deal);
+        if (!g || !g.tipos.some((x) => x.monto > 0)) return null;
+        return (
+          <div className="mt-1 flex flex-wrap items-center gap-1">
+            <span className="t7 uppercase tracking-wide" style={{ color: C.faint, marginRight: 2 }}>Giros</span>
+            {g.tipos.map((x) => <ChipGiro key={x.codigo} codigo={x.codigo} monto={x.monto} compacto
+              titulo={`${x.label}: ${fmtCLP(x.monto)} en ${x.facturas.length} factura(s) de ${x.deudores.length} deudor(es).${g.motivo && x.codigo !== "GE" ? " " + g.motivo : ""}`} />)}
+          </div>
+        );
+      })()}
       {deal.simulado && (
         <div className="mt-1 t10" style={{ color: C.sub }}>
           Giro {fmtMM(deal.giroMM)} · {deal.diasFin}d fin. · vence {deal.fechaVenc}
@@ -6413,6 +6436,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   // plazo de cada documento. Antes se escalaba el interés por el cociente de tasas,
                   // que es una regla de tres sobre un descuento racional y no es lo mismo.
                   const pro = usaUltNeg ? prorratearOperacion(docsPro, [], { modo: "unica", tasa: tasaPond, antic: +antic }) : proRiesgo;
+                  // ASIGNACIÓN DE GIROS de esta operación. Se calcula UNA vez acá y se consulta por
+                  // deudor más abajo: el motor ya agrupa por deudor —que es la unidad de la decisión—
+                  // así que la fila no tiene que reagrupar facturas ni puede equivocarse al hacerlo.
+                  const giros = asignarGiros(girosDeDeal(deal, { prorrateo: pro, facturas: validas }), {});
                   // La tasa EXACTA (6 decimales) que alimenta la fórmula del resumen. Redondearla a 2
                   // para calcular movería la diferencia de precio respecto de la suma por documento.
                   const tasaEqExacta = usaUltNeg ? tasaPond : proRiesgo.tasaEquivalente;
@@ -7078,6 +7105,23 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       otorgamiento iba en el púrpura de marca y verificación en rojo, y el mismo
                                       dato se leía de dos colores distintos a dos centímetros de distancia. */}
                                   {og.total > 0 && <span className="inline-flex items-center gap-1 rounded-full py-0.5 t9 font-semibold" style={{ paddingLeft: 8, paddingRight: 3, backgroundColor: allOk ? "#F0FDF4" : "#f5f3ff", color: allOk ? "#16A34A" : "#7C3AED" }} title={allOk ? `Las ${og.total} reglas de otorgamiento del deudor cumplen` : `${og.total - og.ok} de ${og.total} reglas de otorgamiento del deudor están pendientes`}>{allOk ? <Check size={10} /> : <AlertTriangle size={10} />}Otorg.<span className="rounded-full px-1.5 t7 font-semibold" style={{ backgroundColor: allOk ? "#16A34A" : "#7C3AED", color: "#fff", fontVariantNumeric: "tabular-nums", paddingTop: 1, paddingBottom: 1 }}>{og.total - og.ok}/{og.total}</span></span>}
+                                  {/* TIPO DE GIRO del deudor. Va PRIMERO porque es la conclusión de las dos
+                                      compuertas que siguen: Express sale del cruce «verificado Y sin marcas de
+                                      excepción», así que leerlo antes y después ver por qué es el orden en que
+                                      se pregunta. El monto es el giro prorrateado de sus facturas. */}
+                                  {(() => {
+                                    const gd = giros && giros.porDeudor && giros.porDeudor[deudor];
+                                    if (!gd || !enOferta) return null;
+                                    const exp = gd.tipo === "GE";
+                                    const h = gd.hechos || {};
+                                    const porQue = exp ? "Sin verificación pendiente y sin marcas de excepción: puede girarse por la vía rápida."
+                                      : [!h.sinPrimeraOperacion ? "es la primera operación del cliente" : null,
+                                         !h.sinExcepcionCliente ? "el cliente tiene marcas de excepción" : null,
+                                         !h.verificado ? "el deudor requiere verificación" : null,
+                                         !h.sinExcepcionDeudor ? "el deudor tiene marcas de excepción" : null].filter(Boolean).join(" · ");
+                                    return <ChipGiro codigo={gd.tipo} monto={gd.monto}
+                                      titulo={`${gd.label} · ${fmtCLP(gd.monto)} de giro en ${gd.facturas} factura(s) de este deudor. ${exp ? porQue : "Giro Normal porque " + porQue + "."}`} />;
+                                  })()}
                                   <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: verifOk ? "#F0FDF4" : "#FEF2F2", color: verifOk ? "#16A34A" : "#EF4444" }} title={verifOk ? "Deudor verificado" : "El deudor requiere verificación"}>{verifOk ? <Check size={10} /> : <AlertTriangle size={10} />}{verifOk ? "Verificado" : "Req. verif."}</span>
                                   {enOferta && (ev ? <TipDesglose titulo="Línea disponible para este deudor" color={t.fg} nota={`Manda ${ev.manda.label}: quedan ${fmtMM(ev.holgura)} para sumar más facturas.`} items={itemsTip}>{chipEstado}</TipDesglose> : chipEstado)}
                                 </div>
@@ -7250,6 +7294,19 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     <span style={{ width: 1, height: 22, backgroundColor: vd.tono === "con_linea" ? "#86EFAC" : t.bd }} />
                                     {compuerta("Línea", nSinLinea === 0, "Deudores con línea", "Deudores requieren línea", nSinLinea, deudOf.length, "#7C3AED", C.lilac,
                                       nSinLinea === 0 ? "Todos los deudores de la oferta tienen línea disponible para su monto." : `${nSinLinea} de ${deudOf.length} deudor(es) no alcanzan con la línea vigente: su parte requiere comité.`)}
+                                    {/* GIROS: no es una compuerta —no bloquea nada— sino el RESULTADO de las tres
+                                        anteriores, así que va al final y con otra forma. La suma de los dos montos
+                                        es siempre el monto a girar; si alguna vez no cuadra, el motor lo dice y
+                                        acá se ve, en vez de que la diferencia desaparezca en un redondeo. */}
+                                    {giros && giros.tipos.some((g) => g.monto > 0) && (<>
+                                      <span style={{ width: 1, height: 22, backgroundColor: vd.tono === "con_linea" ? "#86EFAC" : t.bd }} />
+                                      <div className="flex items-center gap-2">
+                                        <span className="t9 uppercase tracking-wide" style={{ color: C.faint }}>Giros</span>
+                                        {giros.tipos.map((g) => <ChipGiro key={g.codigo} codigo={g.codigo} monto={g.monto}
+                                          titulo={`${g.label}: ${fmtCLP(g.monto)} en ${g.facturas.length} factura(s) de ${g.deudores.length} deudor(es).${giros.motivo && g.codigo !== "GE" ? " " + giros.motivo : ""}`} />)}
+                                        {!giros.cuadra && <span className="t9 font-semibold" style={{ color: C.red }} title={`La suma por tipo (${fmtCLP(giros.asignado)}) no calza con el monto a girar (${fmtCLP(giros.montoGirar)}).`}>descuadre {fmtCLP(giros.descuadre)}</span>}
+                                      </div>
+                                    </>)}
                                   </div>
                                 </div>
                                 </>
@@ -10743,7 +10800,11 @@ let GIRO_STATE = repoGiro.all();   // { [dealId]: { tipos:[...], montoGirar, ts,
 // así que no llega a discutir de qué tipo es su giro.
 function girosDeDeal(deal, estado) {
   const est = estado || {};
-  const facturas = (deal && deal.facturasOp) || [];
+  // Las facturas entran POR PARÁMETRO cuando el llamador ya tiene la lista con la que prorrateó. El
+  // id de respaldo es posicional (`f0`, `f1`…), así que si el prorrateo indexó sobre las facturas
+  // VÁLIDAS y esto indexara sobre todas, los ids no casarían en cuanto hubiera una excluida y cada
+  // factura quedaría con giro 0 — sin error, sólo con los chips en blanco.
+  const facturas = est.facturas || (deal && deal.facturasOp) || [];
   // 1) Verificación, POR DEUDOR. `verifDeudorDeal` ya resuelve la regla 0 (primera operación) y el
   //    protocolo propio; acá sólo se lee su veredicto.
   const nombres = [...new Set(facturas.map((f) => f.deudor).filter(Boolean))];
@@ -10768,6 +10829,44 @@ function girosDeDeal(deal, estado) {
     primeraOperacion: esPrimeraOperacionCliente(deal, est.estadosCliente),
     montoGirar: pro ? pro.montoGirar : null,
   };
+}
+// RESUMEN DE GIROS PARA LAS LISTAS (tarjeta del tubo, fila de la tabla). Reparte el `giroMM` YA
+// SIMULADO del deal entre sus facturas por peso en monto y clasifica con el mismo motor. No recalcula
+// la simulación: en una lista no están las condiciones que el ejecutivo edita en el detalle, y la
+// cifra que la tarjeta muestra es justamente la del deal — la misma distinción que ya existe entre el
+// «Giro» de la tarjeta y el «Monto a Girar» del detalle.
+//
+// Se memoiza por operación: `girosDeDeal` evalúa el otorgamiento y la verificación de todos sus
+// deudores, y el tubo dibuja ~100 tarjetas. La firma incluye `VISADO_VER` —que ya cuenta las
+// invalidaciones del visado— más lo que puede cambiar sin pasar por ahí.
+let _GIRO_LISTA = {};
+function giroResumenDeal(deal, estado) {
+  if (!deal || !deal.simulado) return null;
+  const fs = ((deal.facturasOp) || []).filter(Boolean);
+  const giroTotal = Math.round((deal.giroMM || 0) * 1e6);
+  if (!fs.length || !giroTotal) return null;
+  const firma = `${VISADO_VER}|${fs.length}|${giroTotal}|${deal.stage}`;
+  const hit = _GIRO_LISTA[deal.id];
+  if (hit && hit.firma === firma) return hit.val;
+  const r = prorratearConcepto(fs, giroTotal, (f) => f.montoMM || 0);
+  const docs = fs.map((f, i) => ({ id: f.folio || f.id || "f" + i, deudor: f.deudor, giro: r.asignado[i] }));
+  const val = asignarGiros(girosDeDeal(deal, { ...(estado || {}), facturas: fs, prorrateo: { filas: docs, montoGirar: giroTotal } }), {});
+  _GIRO_LISTA[deal.id] = { firma, val };
+  return val;
+}
+// Los dos chips, con el mismo tratamiento en las tres pantallas donde aparecen (tarjeta del tubo,
+// cabecera del detalle y fila de cada deudor). Vive en un solo sitio para que no se separen: son la
+// misma información y tienen que leerse igual en las tres.
+function ChipGiro({ codigo, label, monto, titulo, compacto }) {
+  const exp = codigo === "GE";
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full py-0.5 font-semibold ${compacto ? "t7" : "t9"}`}
+      style={{ paddingLeft: 8, paddingRight: 3, backgroundColor: exp ? "#F0FDF4" : "#f5f3ff", color: exp ? "#16A34A" : "#7C3AED", cursor: titulo ? "help" : undefined }}
+      title={titulo}>
+      {label || (exp ? "Express" : "Normal")}
+      <span className="rounded-full px-1.5 t7 font-semibold" style={{ backgroundColor: exp ? "#16A34A" : "#7C3AED", color: "#fff", fontVariantNumeric: "tabular-nums", paddingTop: 1, paddingBottom: 1 }}>{fmtMM((monto || 0) / 1e6)}</span>
+    </span>
+  );
 }
 // La asignación VIGENTE de una operación: la congelada si el cliente ya aceptó, y el cálculo del día
 // si todavía no. El congelado gana siempre — recalcular una operación aceptada movería una cifra que

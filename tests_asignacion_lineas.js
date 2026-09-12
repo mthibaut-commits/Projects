@@ -1395,6 +1395,42 @@
        `vivo: recalculado (${vivo.tipos.map((t) => t.codigo + " " + t.monto).join(" · ")}) · congelado: ${congelado.montoGirar} intacto`);
   }
 
+  // 83 · El camino de las LISTAS. La tarjeta del tubo no tiene las condiciones que el ejecutivo edita
+  // en el detalle, así que reparte el `giroMM` YA SIMULADO del deal por peso en monto y clasifica con
+  // el mismo motor. Dos cosas que tienen que cumplirse: que la suma siga siendo el giro del deal —si
+  // la tarjeta mostrara otra cifra que el detalle, el ejecutivo vería dos verdades— y que sin
+  // simulación no muestre nada, porque antes de simular no hay monto que repartir.
+  {
+    const fs = [fac("l1", LB[0], 30), fac("l2", LB[1], 12), fac("l3", LB[0], 5)];
+    const base = { id: "T-83", rutEmisor: "76.111.111-1", cliente: "Cliente 83", facturasOp: fs };
+    const sinSim = giroResumenDeal({ ...base, simulado: false, giroMM: 45 });
+    const sinFact = giroResumenDeal({ ...base, simulado: true, giroMM: 45, facturasOp: [] });
+    const g = giroResumenDeal({ ...base, simulado: true, giroMM: 45.6 });
+    const total = Math.round(45.6 * 1e6);
+    const suma = g ? g.tipos.reduce((a, x) => a + x.monto, 0) : -1;
+    // memoizado: la segunda llamada devuelve el MISMO objeto mientras no cambie la firma
+    const g2 = giroResumenDeal({ ...base, simulado: true, giroMM: 45.6 });
+    // y cambiar el giro invalida: la firma incluye el monto
+    const g3 = giroResumenDeal({ ...base, simulado: true, giroMM: 90 });
+    // Y el desajuste que dejaba los chips en blanco sin error: el id de respaldo es POSICIONAL, así
+    // que si el prorrateo indexa sobre las facturas válidas y el adaptador sobre todas, ninguna casa
+    // y todas quedan en giro 0. Se prueba con una excluida al medio y facturas SIN folio.
+    const sinFolio = [{ id: null, deudor: LB[0], montoMM: 10 }, { id: null, deudor: LB[1], montoMM: 20 }];
+    const ent = girosDeDeal({ id: "T-83b", rutEmisor: "76.111.111-1", facturasOp: [{ id: null, deudor: "X", montoMM: 5 }, ...sinFolio] },
+      { facturas: sinFolio, prorrateo: { filas: [{ id: "f0", giro: 1000 }, { id: "f1", giro: 2000 }], montoGirar: 3000 } });
+    const conGiro = ent.facturas.filter((f) => f.giro > 0).length;
+    ok("83 la tarjeta del tubo reparte el giro simulado y cuadra con él",
+       conGiro === 2 &&
+       sinSim === null && sinFact === null
+       && g && suma === total && g.cuadra === true
+       && g.filas.length === 3
+       // las dos facturas del mismo deudor comparten tipo, como en el detalle
+       && g.filas[0].tipo === g.filas[2].tipo
+       && g2 === g                                   // mismo objeto: no recalculó
+       && g3 !== g && g3.tipos.reduce((a, x) => a + x.monto, 0) === 90 * 1e6,
+       `sin simular → null · simulada: ${g.tipos.map((x) => x.codigo + " " + x.monto).join(" · ")} suman ${suma} = giro ${total} · memo ok · ids posicionales: ${conGiro}/2 con giro`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
