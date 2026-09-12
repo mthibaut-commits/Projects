@@ -3781,6 +3781,23 @@ function Pill({ children, style, className = "" }) {
     </span>
   );
 }
+// Chip «Nuevo»: el CEDENTE no tiene operaciones previas con Security. Es exactamente la condición que
+// dispara la compuerta V00 del predictor —primera operación ⇒ se verifican TODAS las facturas, sea cual
+// sea el segmento del deudor—, así que verlo en el tubo explica por qué esa operación arrastra tanta
+// verificación antes de abrir el detalle. Califica al CLIENTE, no a la oportunidad: por eso acompaña al
+// chip de SOW (columna Cliente) y al del ejecutivo (cabecera del detalle), y no a los de la oferta.
+// No se deriva de `sowTendencia`: un cliente puede tener SOW —opera con la competencia— y aun así ser
+// su primera operación con nosotros. Escala por parámetro porque sus vecinos no comparten tamaño: t9
+// junto a ChipCond en la tabla, t10 junto a los Pill de la cabecera.
+function TagNuevo({ clase = "t9" }) {
+  return (
+    <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 ${clase} font-medium`}
+      title="Cliente nuevo: es su primera operación con Security. Se verifican todas las facturas (compuerta V00) y se cursa contra la línea inicial (LF1)."
+      style={{ backgroundColor: "#F3F4F6", color: C.ink, cursor: "help" }}>
+      <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: C.indigo }} />Nuevo
+    </span>
+  );
+}
 
 
 
@@ -6254,6 +6271,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             {deal.cat && (() => { const cd = catDisp(deal); return <Pill style={{ backgroundColor: catMeta(cd.cat).bg, color: catMeta(cd.cat).fg }}>{cd.label} · {cd.q}</Pill>; })()}
             {/* `deal.exec` guarda las INICIALES; el nombre vive en PC_EXECS. */}
             {deal.exec && <Pill style={{ backgroundColor: "#F9FAFB", color: C.sub, border: `1px solid ${C.line}` }}>{(PC_EXECS.find((e) => e.ini === deal.exec) || {}).nombre || deal.exec}</Pill>}
+            {esPrimeraOperacionCliente(deal) && <TagNuevo clase="t10" />}
           </div>
           {/* Tabs y acciones comparten la línea: los tabs ocupan sólo su ancho y las acciones quedan
               inline a la derecha, sobre la misma divisoria. */}
@@ -9763,7 +9781,19 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                         CLIENTE y no de la operación —no cambia con la oferta ni con la simulación—, así
                         que su lugar es esta columna. En «Condición» convivía con las tres compuertas que
                         sí deciden si la oferta avanza, y se leía como una más. */}
-                    {(() => { const sm = sowEstrategia(d); return sm ? <div className="mt-1"><ChipCond fg={sm.fg} bg={sm.bg} Icono={sm.Icon} texto={`SOW ${sm.lab}`} tip={sm.tip} /></div> : null; })()}
+                    {(() => {
+                      const sm = sowEstrategia(d); const nuevo = esPrimeraOperacionCliente(d);
+                      if (!sm && !nuevo) return null;
+                      // Envuelve en una fila propia: «Nuevo» se muestra tenga o no SOW el cliente —son
+                      // dos atributos independientes— y con `flex-wrap` el segundo chip baja de línea
+                      // en vez de desbordar el ancho fijo de la columna.
+                      return (
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          {sm && <ChipCond fg={sm.fg} bg={sm.bg} Icono={sm.Icon} texto={`SOW ${sm.lab}`} tip={sm.tip} />}
+                          {nuevo && <TagNuevo />}
+                        </div>
+                      );
+                    })()}
                   </button>
                 </td>
                 {/* Ejecutivo — sólo visible para jefaturas/gerencias (más de un ejecutivo) */}
