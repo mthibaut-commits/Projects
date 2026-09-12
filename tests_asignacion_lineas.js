@@ -1280,6 +1280,121 @@
        `inyectado nuevo→${nuevo} activo→${activo} · real «${estadoCliente("76.777.777-7")}» · los 4 estados: ${CLIENTE_ESTADOS.join(", ")}`);
   }
 
+
+  // ============================================================================================
+  // 78-82 · ASIGNACIÓN DE GIROS. Qué parte del monto a girar va por cada tipo de giro. La REGLA DE
+  // ORO se hereda del prorrateo: la suma por tipo es siempre el monto a girar de la operación.
+  // ============================================================================================
+
+  // 78 · Los dos criterios, y la ELEVACIÓN A DEUDOR. Express exige las dos cosas —verificada y sin
+  // marcas de excepción— y basta que falle una para caer en Normal. Y como los dos motores deciden
+  // por deudor, una factura no puede calificar distinto que sus hermanas.
+  {
+    const fs = [{ id: "f1", deudor: "D1", giro: 10000000 }, { id: "f2", deudor: "D1", giro: 5000000 },
+                { id: "f3", deudor: "D2", giro: 7000000 }, { id: "f4", deudor: "D3", giro: 3000000 }];
+    const base = { facturas: fs, excepcionCliente: false, primeraOperacion: false, montoGirar: 25000000 };
+    const r = asignarGiros({ ...base,
+      verificado: { D1: true, D2: false, D3: true },      // D2 queda por verificar
+      excepcionDeudor: { D3: true } });                   // D3 tiene marca de excepción
+    const tipoDe = (id) => (r.filas.find((f) => f.id === id) || {}).tipo;
+    ok("78 Express exige verificada Y sin excepciones, y el tipo se hereda del deudor",
+       tipoDe("f1") === "GE" && tipoDe("f2") === "GE"      // las dos de D1, iguales
+       && tipoDe("f3") === "GN"                           // por verificar
+       && tipoDe("f4") === "GN"                           // por excepción del deudor
+       && r.porTipo.GE.monto === 15000000 && r.porTipo.GN.monto === 10000000
+       && r.cuadra === true && r.descuadre === 0,
+       `GE ${fmtCLP ? "" : ""}${r.porTipo.GE.monto} (D1: 2 facturas) · GN ${r.porTipo.GN.monto} (D2 por verificar, D3 con excepción) · cuadra`);
+  }
+
+  // 79 · PRIMERA OPERACIÓN: todo a Giro Normal. No es una regla aparte del giro — sale de que la
+  // regla 0 de verificación manda a llamar TODAS las facturas—, pero el modelo la declara igual como
+  // condición de Express para que el motivo se pueda explicar sin reconstruirlo.
+  {
+    const fs = [{ id: "f1", deudor: "D1", giro: 9000000 }, { id: "f2", deudor: "D2", giro: 1000000 }];
+    const todoOk = { facturas: fs, verificado: { D1: true, D2: true }, excepcionDeudor: {},
+                     excepcionCliente: false, montoGirar: 10000000 };
+    const normal = asignarGiros({ ...todoOk, primeraOperacion: false });
+    const primera = asignarGiros({ ...todoOk, primeraOperacion: true });
+    // y una marca del CLIENTE descalifica a todos los deudores, no sólo a uno
+    const conExcCli = asignarGiros({ ...todoOk, primeraOperacion: false, excepcionCliente: true });
+    ok("79 la primera operación va completa a Giro Normal, y una excepción del cliente también",
+       normal.porTipo.GE.monto === 10000000 && normal.porTipo.GN.monto === 0
+       && primera.porTipo.GN.monto === 10000000 && primera.porTipo.GE.monto === 0
+       && /Primera operación/.test(primera.motivo || "")
+       && conExcCli.porTipo.GN.monto === 10000000 && /cliente/.test(conExcCli.motivo || "")
+       && primera.cuadra && conExcCli.cuadra,
+       `normal → GE ${normal.porTipo.GE.monto} · primera → GN ${primera.porTipo.GN.monto} · excepción de cliente → GN ${conExcCli.porTipo.GN.monto}`);
+  }
+
+  // 80 · LA REGLA DE ORO contra carteras generadas: ninguna factura queda sin tipo y la suma es
+  // siempre el monto a girar. Es la propiedad que impide que Tesorería transfiera de más o de menos.
+  {
+    const rnd = pcRng(hashStr("giros-80"));
+    let malos = 0, sinTipo = 0, det = "";
+    for (let caso = 0; caso < 50; caso++) {
+      const nD = 1 + Math.floor(rnd() * 6), fs = [], verificado = {}, excepcionDeudor = {};
+      for (let d = 0; d < nD; d++) {
+        const nom = "D" + d;
+        verificado[nom] = rnd() < 0.6; excepcionDeudor[nom] = rnd() < 0.35;
+        const nF = 1 + Math.floor(rnd() * 5);
+        for (let k = 0; k < nF; k++) fs.push({ id: `d${d}f${k}`, deudor: nom, giro: Math.round(rnd() * 9e6) + 1000 });
+      }
+      const total = fs.reduce((a, f) => a + f.giro, 0);
+      const r = asignarGiros({ facturas: fs, verificado, excepcionDeudor,
+        excepcionCliente: rnd() < 0.2, primeraOperacion: rnd() < 0.15, montoGirar: total });
+      const suma = r.tipos.reduce((a, g) => a + g.monto, 0);
+      if (r.filas.some((f) => !f.tipo)) sinTipo++;
+      if (suma !== total || !r.cuadra) { malos++; if (!det) det = `${suma} vs ${total}`; }
+    }
+    ok("80 ninguna factura queda sin tipo y la suma por tipo es siempre el monto a girar",
+       malos === 0 && sinTipo === 0,
+       `50 carteras de 1 a 6 deudores · ${malos} descuadres · ${sinTipo} facturas sin tipo${det ? " · " + det : ""}`);
+  }
+
+  // 81 · DESACOPLADO: el motor decide con los veredictos que recibe, no con los que el navegador
+  // calcularía. Se le inyecta lo contrario de lo real y se comprueba cuál manda — es la única forma
+  // de probar que no está llamando a los otros motores por dentro.
+  {
+    const fs = [{ id: "f1", deudor: "D1", giro: 1000000 }];
+    const comoSiVerificado = asignarGiros({ facturas: fs, verificado: { D1: true }, excepcionDeudor: {},
+      excepcionCliente: false, primeraOperacion: false, montoGirar: 1000000 });
+    const comoSiNo = asignarGiros({ facturas: fs, verificado: { D1: false }, excepcionDeudor: {},
+      excepcionCliente: false, primeraOperacion: false, montoGirar: 1000000 });
+    // y el CATÁLOGO es extensible: un tercer tipo entra sin tocar el motor
+    const tres = [
+      { codigo: "GX", label: "Giro anticipado", orden: 1, requiere: { verificado: true, sinExcepcionCliente: true, sinExcepcionDeudor: true, sinPrimeraOperacion: true } },
+      { codigo: "GE", label: "Giro Express", orden: 2, requiere: { verificado: true } },
+      { codigo: "GN", label: "Giro Normal", orden: 3, resto: true },
+    ];
+    const conTres = asignarGiros({ facturas: [{ id: "a", deudor: "D1", giro: 100 }, { id: "b", deudor: "D2", giro: 200 }],
+      verificado: { D1: true, D2: true }, excepcionDeudor: { D2: true }, excepcionCliente: false,
+      primeraOperacion: false, montoGirar: 300 }, { tipos: tres });
+    // una condición que el catálogo de hechos NO declara no la cumple nadie: cae al resto
+    const inventada = asignarGiros({ facturas: fs, verificado: { D1: true }, excepcionDeudor: {},
+      excepcionCliente: false, primeraOperacion: false, montoGirar: 1000000 },
+      { tipos: [{ codigo: "XX", orden: 1, requiere: { loQueSea: true } }, { codigo: "GN", orden: 2, resto: true }] });
+    ok("81 decide con los veredictos inyectados y el catálogo de tipos es extensible",
+       comoSiVerificado.filas[0].tipo === "GE" && comoSiNo.filas[0].tipo === "GN"
+       && conTres.porTipo.GX.monto === 100 && conTres.porTipo.GE.monto === 200 && conTres.porTipo.GN.monto === 0
+       && conTres.tipos.length === 3 && conTres.cuadra
+       && inventada.filas[0].tipo === "GN",
+       `inyectado verificado→GE · no verificado→GN · con 3 tipos: GX ${conTres.porTipo.GX.monto} / GE ${conTres.porTipo.GE.monto} · condición inexistente → resto`);
+  }
+
+  // 82 · SE CONGELA AL ACEPTAR. Mientras la oferta se arma el giro se recalcula en cada reevaluación;
+  // aceptada, los montos son un compromiso y recalcularlos movería una cifra que Tesorería ya tomó.
+  {
+    const deal = { id: "T-82", rutEmisor: "76.111.111-1", cliente: "Cliente 82",
+                   facturasOp: [fac("g1", LB[0], 20)] };
+    const vivo = giroDeal(deal, { giro: {}, prorrateo: { filas: [{ id: "g1", giro: 19000000 }], montoGirar: 19000000 } });
+    const congelado = giroDeal(deal, { giro: { "T-82": { tipos: [{ codigo: "GE", label: "Giro Express", monto: 12345, facturas: ["g1"], deudores: [LB[0]] }], montoGirar: 12345, ts: "x" } } });
+    ok("82 la asignación congelada manda sobre el recálculo del día",
+       vivo.congelado === false && typeof vivo.montoGirar === "number"
+       && congelado.congelado === true && congelado.montoGirar === 12345
+       && congelado.tipos[0].codigo === "GE" && congelado.tipos[0].monto === 12345,
+       `vivo: recalculado (${vivo.tipos.map((t) => t.codigo + " " + t.monto).join(" · ")}) · congelado: ${congelado.montoGirar} intacto`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

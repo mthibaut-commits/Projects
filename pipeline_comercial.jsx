@@ -2710,6 +2710,122 @@ function prorratearOperacion(docs, conceptos, opts) {
   };
 }
 
+
+// ============================================================================================
+// ASIGNACIÓN DE GIROS — en cuántas partes y de qué tipo se le entrega el dinero al cliente.
+//
+// El giro se materializa en transferencias bancarias que ejecuta TESORERÍA, un módulo independiente
+// al que este sistema sólo le entrega el resultado. Lo que se decide acá es qué parte del monto a
+// girar va por cada tipo de giro.
+//
+// REGLA DE ORO, heredada del prorrateo: la suma de los montos por tipo es SIEMPRE el monto a girar
+// de la operación. Un peso que no cae en ningún tipo es un peso que nadie transfiere.
+//
+// DESACOPLADO A PROPÓSITO. El motor no llama al de verificación ni al de otorgamiento: recibe sus
+// VEREDICTOS ya calculados. Tres razones, y las tres son la misma:
+//   · en producción esto corre en el servidor, junto al resto de las decisiones que mueven plata;
+//   · los dos motores de los que depende ya son puros y reciben su estado por parámetro, así que
+//     encadenarlos acá habría reintroducido las lecturas globales que costó sacar;
+//   · y un test puede contradecir al navegador —inyectar «este deudor está verificado» aunque el
+//     predictor diga lo contrario— que es la única forma de probar que decide con lo que le pasan.
+//
+// LA CALIFICACIÓN ES POR DEUDOR, no por factura. Los dos motores de los que depende deciden por
+// deudor —una llamada de verificación cubre todas sus facturas; una excepción de otorgamiento es del
+// par cliente-deudor—, así que una factura no puede calificar distinto que sus hermanas. El motor lo
+// hace explícito: califica el deudor y después todas sus facturas heredan.
+// ============================================================================================
+
+// Catálogo de TIPOS DE GIRO. Es una LISTA y el criterio es declarativo justamente para que agregar
+// un tipo sea agregar una fila: Security opera hoy con dos, y el modelo admite más sin tocar el motor.
+// El último con `resto: true` recoge lo que no calificó en ninguno: sin él, una factura podría quedar
+// sin tipo y la suma dejaría de cuadrar.
+const GIRO_TIPOS_BASE = [
+  { codigo: "GE", label: "Giro Express", orden: 1,
+    desc: "Sin necesidad de verificación y sin marcas de excepción, ni del cliente ni del deudor.",
+    requiere: { verificado: true, sinExcepcionCliente: true, sinExcepcionDeudor: true, sinPrimeraOperacion: true } },
+  { codigo: "GN", label: "Giro Normal", orden: 2, resto: true,
+    desc: "Todo lo demás: facturas por verificar, o con excepciones del cliente o del deudor. La primera operación del cliente entra completa acá." },
+];
+// Los HECHOS que el motor evalúa por deudor. Se declaran para que el catálogo no pueda pedir una
+// condición que nadie calcula: un `requiere` con una clave que no está acá no lo cumple nadie y la
+// factura caería siempre al resto, sin que nada lo dijera.
+const GIRO_HECHOS = ["verificado", "sinExcepcionCliente", "sinExcepcionDeudor", "sinPrimeraOperacion"];
+
+// ¿Este deudor califica para este tipo? Conjunción: tienen que cumplirse TODAS las condiciones que
+// el tipo declara. Un tipo sin condiciones califica a todos —es lo que hace útil al `resto`—.
+function giroCalifica(tipo, hechos) {
+  if (tipo.resto) return true;
+  const req = tipo.requiere || {};
+  return Object.keys(req).every((k) => GIRO_HECHOS.includes(k) && hechos[k] === req[k]);
+}
+
+// ── EL MOTOR ──────────────────────────────────────────────────────────────────────────────────
+// entrada: {
+//   facturas: [{ id, deudor, giro }]      ← el monto a girar YA prorrateado (spec de pricing §4)
+//   verificado:        { [deudor]: bool } ← veredicto del motor de VERIFICACIÓN, por deudor
+//   excepcionDeudor:   { [deudor]: bool } ← marcas de excepción del OTORGAMIENTO, por deudor
+//   excepcionCliente:  bool               ← marcas de excepción del OTORGAMIENTO, del cliente
+//   primeraOperacion:  bool               ← estado del cliente (API de Security)
+//   montoGirar:        number             ← el total de la operación, para comprobar el cuadre
+// }
+function asignarGiros(entrada, opts) {
+  const e = entrada || {}, o = opts || {};
+  const tipos = (o.tipos || GIRO_TIPOS_BASE).slice().sort((a, b) => (a.orden || 0) - (b.orden || 0));
+  const facturas = (e.facturas || []).map((f, i) => ({
+    id: f.id != null ? f.id : "doc" + i, deudor: f.deudor || "", giro: Math.round(+f.giro || 0),
+  }));
+  const primera = !!e.primeraOperacion;
+  const excCli = !!e.excepcionCliente;
+
+  // 1) Los hechos de cada DEUDOR. `primeraOperacion` y las excepciones del CLIENTE son de la
+  //    operación entera, pero entran igual en el bloque del deudor: el criterio de un tipo se evalúa
+  //    contra un solo objeto y así un tipo nuevo puede mezclar condiciones de los dos niveles.
+  const deudores = [...new Set(facturas.map((f) => f.deudor))];
+  const hechos = {};
+  deudores.forEach((d) => {
+    hechos[d] = {
+      verificado: !!(e.verificado || {})[d],
+      sinExcepcionCliente: !excCli,
+      sinExcepcionDeudor: !((e.excepcionDeudor || {})[d]),
+      sinPrimeraOperacion: !primera,
+    };
+  });
+
+  // 2) El tipo de cada deudor: el PRIMERO del catálogo que califica. El orden es la prioridad, y el
+  //    `resto` va último por construcción.
+  const tipoDe = {};
+  deudores.forEach((d) => {
+    const t = tipos.find((x) => giroCalifica(x, hechos[d])) || tipos[tipos.length - 1];
+    tipoDe[d] = t ? t.codigo : null;
+  });
+
+  // 3) Todas las facturas del deudor heredan su tipo, y se agrupa.
+  const filas = facturas.map((f) => ({ ...f, tipo: tipoDe[f.deudor], hechos: hechos[f.deudor] }));
+  const porTipo = {};
+  tipos.forEach((t) => { porTipo[t.codigo] = { codigo: t.codigo, label: t.label, monto: 0, facturas: [], deudores: [] }; });
+  filas.forEach((f) => {
+    const g = porTipo[f.tipo] || (porTipo[f.tipo] = { codigo: f.tipo, label: f.tipo, monto: 0, facturas: [], deudores: [] });
+    g.monto += f.giro; g.facturas.push(f.id);
+    if (!g.deudores.includes(f.deudor)) g.deudores.push(f.deudor);
+  });
+
+  // 4) EL CUADRE. Se comprueba y se INFORMA; no se fuerza. Si no cuadra, el que está mal es quien
+  //    armó la entrada —los montos por factura salen del prorrateo, que ya cuadra por construcción—,
+  //    y taparlo acá con un ajuste escondería el error real en el sitio equivocado.
+  const asignado = Object.values(porTipo).reduce((a, g) => a + g.monto, 0);
+  const total = e.montoGirar != null ? Math.round(e.montoGirar) : asignado;
+  return {
+    tipos: tipos.map((t) => porTipo[t.codigo]).filter(Boolean),
+    porTipo, filas, asignado, montoGirar: total,
+    cuadra: asignado === total, descuadre: asignado - total,
+    // `motivo` explica en una línea POR QUÉ esta operación quedó donde quedó. Es lo que el ejecutivo
+    // necesita cuando pregunta por qué su cliente no tiene Giro Express.
+    motivo: primera ? "Primera operación del cliente: todas las facturas se verifican, así que la operación completa va a Giro Normal."
+      : excCli ? "El cliente tiene marcas de excepción en el otorgamiento: ninguna factura califica para Giro Express."
+      : null,
+  };
+}
+
 // Condiciones por defecto de una operación, tal como las trae el tenant. Es lo que la pantalla carga
 // como «condiciones originales» antes de que el ejecutivo las toque.
 function condicionesBase(cfg) {
@@ -10609,6 +10725,60 @@ const repoNoConfirmadas = crearRepo("factura_no_confirmada");
 const repoVerifVeredicto = crearRepo("verificacion_veredicto");
 const repoSimVersions = crearRepo("simulacion_version");
 SIM_VERSIONS = repoSimVersions.all();
+// ASIGNACIÓN DE GIROS CONGELADA. El giro se recalcula en cada reevaluación mientras la oferta se
+// arma, y queda FIJO cuando el cliente acepta: desde ahí los montos de cada tipo son un compromiso,
+// y lo que pase después es resorte de los módulos siguientes al pipeline comercial. Congelarlo es
+// además lo único que evita que una reevaluación posterior mueva una cifra que Tesorería ya tomó.
+const repoGiro = crearRepo("giro_asignacion");
+let GIRO_STATE = repoGiro.all();   // { [dealId]: { tipos:[...], montoGirar, ts, por } }
+// ── ADAPTADOR: de los motores a la entrada del modelo de giros ────────────────────────────────
+// Es el ÚNICO sitio que conoce a los tres motores a la vez. `asignarGiros` no los llama: recibe sus
+// veredictos, y esto es lo que se los pregunta. Separarlos no es ceremonia — es lo que permite
+// probar el modelo de giros contradiciendo al navegador, y lo que deja extraerlo al servidor sin
+// arrastrar el resto.
+//
+// Las EXCEPCIONES que descalifican para Giro Express son las marcas del motor de otorgamiento:
+// `excepcion` (excepcionable, alguien la puede visar) y `rechazado` re-evaluable (se levanta
+// regularizando la variable). Un rechazo FIRME no es una marca: esa operación no se cursa en absoluto,
+// así que no llega a discutir de qué tipo es su giro.
+function girosDeDeal(deal, estado) {
+  const est = estado || {};
+  const facturas = (deal && deal.facturasOp) || [];
+  // 1) Verificación, POR DEUDOR. `verifDeudorDeal` ya resuelve la regla 0 (primera operación) y el
+  //    protocolo propio; acá sólo se lee su veredicto.
+  const nombres = [...new Set(facturas.map((f) => f.deudor).filter(Boolean))];
+  const verificado = {};
+  nombres.forEach((d) => { verificado[d] = !verifDeudorDeal(deal, d, null, est).requiere; });
+  // 2) Otorgamiento: marcas del CLIENTE y de cada DEUDOR, de la misma evaluación.
+  const items = evaluarOtorgItems(deal, est);
+  const esMarca = (x) => x.disp === "excepcion" || (x.disp === "rechazado" && reglaReev(x.regla && x.regla.n));
+  const excepcionCliente = items.some((x) => !x.deudor && esMarca(x));
+  const excepcionDeudor = {};
+  items.forEach((x) => { if (!x.deudor || !esMarca(x)) return;
+    const n = x.deudor.nombre || x.deudor.name || x.deudor; excepcionDeudor[n] = true; });
+  // 3) El monto a girar de cada factura sale del PRORRATEO, no de una regla de tres acá: es la única
+  //    cifra que cuadra contra el total por construcción.
+  const pro = est.prorrateo || null;
+  const porId = {};
+  if (pro) pro.filas.forEach((f) => { porId[f.id] = f.giro; });
+  return {
+    facturas: facturas.map((f, i) => ({ id: f.folio || f.id || "f" + i, deudor: f.deudor,
+      giro: porId[f.folio || f.id || "f" + i] != null ? porId[f.folio || f.id || "f" + i] : 0 })),
+    verificado, excepcionCliente, excepcionDeudor,
+    primeraOperacion: esPrimeraOperacionCliente(deal, est.estadosCliente),
+    montoGirar: pro ? pro.montoGirar : null,
+  };
+}
+// La asignación VIGENTE de una operación: la congelada si el cliente ya aceptó, y el cálculo del día
+// si todavía no. El congelado gana siempre — recalcular una operación aceptada movería una cifra que
+// Tesorería ya tomó.
+function giroDeal(deal, estado) {
+  const est = estado || {};
+  const cong = ((est.giro || (typeof GIRO_STATE !== "undefined" ? GIRO_STATE : {}) || {}))[(deal && deal.id)];
+  if (cong) return { ...cong, congelado: true };
+  return { ...asignarGiros(girosDeDeal(deal, est), { tipos: est.tiposGiro }), congelado: false };
+}
+
 let VISADO_STATE = repoVisado.all(); // { [dealId]: { [ruleN]: "aprobado"|"rechazado" } } — resolución de excepciones
 let VISADO_DETALLE = repoVisadoDetalle.all(); // { [dealId]: { [ruleN]: { msg, archs:[], por, fecha } } } — comentario/respaldo de la DECISIÓN del apoderado
 // Solicitud de aprobación de una excepción que el EJECUTIVO envía al apoderado responsable (N1–N5):

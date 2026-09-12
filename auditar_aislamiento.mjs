@@ -35,7 +35,7 @@ const MUTABLES = [...SRC.matchAll(/^let ([A-Za-z0-9_]+)/gm)].map((m) => m[1]);
 const CLASE = {
   TENANT: ["USERS", "EXECS", "ROL_USUARIO", "ROLES_CAT", "AREAS_CAT", "ATRIB_USUARIO", "ROL_ATRIB",
            "PERMISOS", "TENANT_ACTUAL", "CFG_ACTIVA", "JEFE_A_EXECS", "EXEC_JEFATURA", "REEMPLAZOS",
-           "SIM_CFG"],
+           "SIM_CFG", "GIRO_STATE"],
   COMMIT: ["VISADO_STATE", "VISADO_DETALLE", "SOLICITUD_EXC", "VERIF_EXC", "VERIF_TEL",
            "NO_CONFIRMADAS", "VERIF_VEREDICTO", "SIM_VERSIONS", "OTORG_EVENTOS"],
   SESION: ["SESION", "OTP_STORE"],
@@ -45,6 +45,7 @@ const CLASE = {
           "ESTRATEGIA_PRECIO", "LINEA_DISPONIBLE", "LB_RUT", "DA_RUT", "LB_NOMBRE", "DA_NOMBRE",
           "PROVEEDORES_CLIENTES"],
   CONFIG: ["REGLAS_CLIENTE", "VERIF_RULES", "PISO_ATRIB_MONTO", "CFG_TRAMOS", "NO_REEV_CLIENTE",
+           "GIRO_TIPOS_BASE", "GIRO_HECHOS",
            "SPREAD_MIN_DEUDOR", "INVARIANTES", "CONTRATO_LIMITES", "SIM_CONCEPTOS_BASE",
            "SIM_RETENCION_BASE", "SIM_VARIABLES", "SIM_VAR_IDS", "SIM_FUNCS", "SIM_FUNC_ARIDAD"],
   MEMO: ["_VERIF_PAR", "_deudorIdx", "_lineaIdx", "_lf4Idx", "_dtePares", "_cacheCli", "_PADRON",
@@ -78,6 +79,9 @@ const DECIDEN = {
     // vivir en el servidor, es esto.
     "prorratearOperacion", "prorratearConcepto", "difPrecioDoc", "valorPresenteDoc",
     "plazoEquivalente", "tasaEquivalente"],
+  // Asignación de giros: el ÚLTIMO eslabón antes de Tesorería. El motor tiene que salir limpio; el
+  // adaptador `girosDeDeal` es el único que conoce a los otros motores, y por eso está aparte.
+  "Giros": ["asignarGiros", "giroCalifica", "girosDeDeal", "giroDeal"],
   "Líneas": ["asignarLineas", "recortarAsignacion", "lineasDeCliente", "lineaDeDeudor", "lineasDeudor",
     "lf4MetaPorCliente", "tipoLineaDeDeudor", "dispDeudor"],
   "Precio y estado": ["spreadMinDeudor", "notaFromScore", "scoreDeudor", "tipoDeudor", "tramoNota",
