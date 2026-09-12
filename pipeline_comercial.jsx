@@ -2092,9 +2092,30 @@ const CFG_OPER_BASE = {
   descEjec: 10,               // % de descuento que autoriza el ejecutivo por sí mismo
   descMax: 16,                // % máximo alcanzable con jefatura (sobre esto, Gerente Comercial)
   anticipoDefault: 100,       // % de anticipo por defecto
-  comisionUF: 2,              // comisión mínima, en UF
+  comisionUF: 2,              // comisión MÍNIMA, en UF
+  comisionMaxUF: 2,           // comisión MÁXIMA, en UF (techo del % sobre el monto)
+  comisionPct: 0,             // % sobre el monto de documentos; el mínimo y el máximo lo acotan
   gastosCLP: 26000,           // gastos operacionales por operación
+  gastoDocCLP: 0,             // gasto adicional por documento
   valorUF: 38000,
+  // IVA y retención estaban CABLEADOS dentro del componente de la simulación (0,19 y 0,028). Son
+  // parámetros del país y del contrato de cada factoring, no del código: un tenant con otra tasa de
+  // retención obligaba a editar el `.jsx`. La retención no se descuenta del giro —se informa— pero
+  // condiciona lo que el cliente recibe, así que se configura igual que el resto.
+  ivaPct: 19,                 // % de IVA sobre la comisión
+  retencionPct: 2.8,          // % del monto de documentos que se retiene y se libera al pago
+  // Spread de lista y descuento comercial por Share of Wallet. Eran constantes de módulo
+  // (`SPREAD_ESTANDAR` / `SOW_AJUSTE`): es política comercial de CADA factoring —cuánto está
+  // dispuesto a resignar para recuperar cartera— y por eso vive en el tenant.
+  spreadEstandar: 0.60,       // % mensual de lista, sin descuento comercial
+  sowAjuste: {
+    target:      { pts: 0.00, l: "En target — tasa estándar" },
+    creciendo:   { pts: 0.05, l: "Creciendo — descuento mínimo" },
+    estable:     { pts: 0.10, l: "Estable bajo target — descuento moderado" },
+    nuevo:       { pts: 0.10, l: "Cliente nuevo — captar la primera operación" },
+    decreciente: { pts: 0.15, l: "A la baja — descuento para recuperar SOW" },
+    competencia: { pts: 0.20, l: "0% con nosotros — oferta competitiva" },
+  },
   // — Política de compra y riesgo —
   notaMinCompra: 3.7,         // nota mínima del deudor para comprar
   concentracionDeudorPct: 30, // % máximo de la línea por deudor
@@ -10257,6 +10278,9 @@ function cargarReemplazos() {
     if (!ok) { ignoradas++; continue; }
     out.push({ id: String(g.id || ("rmp" + out.length)), ausente: g.ausente, reemplazante: g.reemplazante,
       desde: g.desde, hasta: g.hasta, motivo: String(g.motivo || "").slice(0, 120),
+      // Una fila vieja —o una escrita a mano— sin el campo se lee como «sigue aprobando», que es el
+      // comportamiento que tenía antes de que el flag existiera: migrar no le cambia el permiso a nadie.
+      ausenteAprueba: g.ausenteAprueba !== false,
       creadoPor: String(g.creadoPor || "").slice(0, 80), creadoEn: String(g.creadoEn || "").slice(0, 40) });
   }
   if (ignoradas) logSys("warn", "app", `Reemplazos: ${ignoradas} entrada(s) del storage ignoradas (usuario o período inválidos)`, { tenant: TENANT_ACTUAL });
@@ -10301,7 +10325,8 @@ let _PADRON = null, _PADRON_FIRMA = "";
 function _firmaPadron(hoy, reemplazos) {
   const r = Object.keys(ROL_USUARIO).sort().map((k) => k + ":" + ROL_USUARIO[k]).join("|");
   const a = (typeof AREAS_CAT !== "undefined" ? AREAS_CAT : []).map((x) => x.id + ":" + x.label).join("|");
-  const m = (reemplazos || REEMPLAZOS).map((x) => x.ausente + ">" + x.reemplazante + ":" + x.desde + ".." + x.hasta).sort().join("|");
+  const m = (reemplazos || REEMPLAZOS).map((x) => x.ausente + ">" + x.reemplazante + ":" + x.desde + ".." + x.hasta
+    + (x.ausenteAprueba === false ? "!" : "")).sort().join("|");
   return r + "#" + a + "#" + (hoy || hoyISO()) + "#" + m;
 }
 // `hoy` y la lista de reemplazos entran por parámetro para que el padrón sea reproducible: quién puede
@@ -10334,12 +10359,23 @@ function padronAprobadores(hoy, reemplazos) {
     for (const [area, nivel] of Object.entries(fuera.atrib || {})) {
       if (quien.atrib[area] == null || nivel > quien.atrib[area]) quien.atrib[area] = nivel;
     }
-    (quien.cubre = quien.cubre || []).push({ code: fuera.code, nombre: fuera.nombre, etiqueta: fuera.etiqueta, desde: r.desde, hasta: r.hasta, motivo: r.motivo });
-    fuera.ausente = { desde: r.desde, hasta: r.hasta, motivo: r.motivo, porCode: quien.code, porNombre: quien.nombre };
+    // «Aprobar desde la playa»: por defecto el ausente CONSERVA su atribución —estar de vacaciones no
+    // es estar desconectado, y un gerente que entra a visar una operación urgente no debería toparse
+    // con un permiso revocado—. Con el flag en `false` la ausencia es total y el reemplazante es el
+    // único que puede: eso es lo que pide una licencia médica o una salida definitiva, donde dejar la
+    // atribución viva es exactamente lo que no se quiere. Se quita DESPUÉS de habérsela pasado a quien
+    // cubre: el orden importa, porque el reemplazante toma el nivel del ausente, no el que le quede.
+    const revocar = r.ausenteAprueba === false;
+    (quien.cubre = quien.cubre || []).push({ code: fuera.code, nombre: fuera.nombre, etiqueta: fuera.etiqueta, desde: r.desde, hasta: r.hasta, motivo: r.motivo, exclusivo: revocar });
+    fuera.ausente = { desde: r.desde, hasta: r.hasta, motivo: r.motivo, porCode: quien.code, porNombre: quien.nombre, aprueba: !revocar };
+    if (revocar) fuera.atrib = {};
   }
   // El filtro va DESPUÉS de aplicar los reemplazos: un ejecutivo sin atribución propia que cubre a su
   // jefe tiene que entrar al padrón, y antes el filtro lo habría dejado fuera antes de mirar el período.
-  const conAtrib = usuarios.filter((u) => u.superAdmin || Object.keys(u.atrib).length);
+  // `u.ausente` entra al filtro para que quien tiene la atribución REVOCADA no desaparezca del padrón:
+  // sin eso la pantalla no puede decir «está fuera y lo cubre fulano», que es lo único que explica por
+  // qué dejó de poder aprobar. Queda en el padrón con `atrib` vacío, así que no aprueba nada igual.
+  const conAtrib = usuarios.filter((u) => u.superAdmin || Object.keys(u.atrib).length || u.ausente);
   // Los cargos: qué nivel de qué área representa cada uno. Es lo que le pone NOMBRE al requisito.
   const cargos = Object.keys(ROL_ATRIB).map((id) => ({
     id, rol: (ROL_POR_ID[id] || {}).label || id, area: ROL_ATRIB[id].area, nivel: ROL_ATRIB[id].nivel,
@@ -10372,8 +10408,15 @@ const nombreDe = (code) => String(USERS[code] || code).split(" · ")[0];
 // Ejecutiva de verificación se va de vacaciones, sin esto el equipo queda sin nadie que pueda registrar
 // una llamada y las operaciones se pegan en el giro. Quien la cubre la ejerce mientras dure el período,
 // y la bitácora lo deja escrito como reemplazante (`actorEtiqueta`).
-const puedeVerificarFacturas = (code, hoy, lista) => code === "ADMIN" || ROL_USUARIO[code] === "ejec_verif"
-  || aQuienCubre(code, hoy, lista).some((r) => ROL_USUARIO[r.ausente] === "ejec_verif");
+const puedeVerificarFacturas = (code, hoy, lista) => {
+  if (code === "ADMIN") return true;
+  // La delega quien está fuera…
+  if (aQuienCubre(code, hoy, lista).some((r) => ROL_USUARIO[r.ausente] === "ejec_verif")) return true;
+  if (ROL_USUARIO[code] !== "ejec_verif") return false;
+  // …y la conserva salvo que su reemplazo la revoque, igual que la atribución de nivel.
+  const cubierto = quienCubreA(code, hoy, lista);
+  return !(cubierto && cubierto.ausenteAprueba === false);
+};
 const puedeExcepcionarVerif = (code) => code === "ADMIN" || CFG_EXC_VERIF[code] === true;
 const puedeVerBitacora = (code) => code === "ADMIN" || CFG_VER_BITACORA[code] === true;
 const puedeVerMensajeria = (code) => code === "ADMIN" || CFG_VER_MENSAJERIA[code] === true;
@@ -14797,7 +14840,7 @@ function CfgUsuarios() {
 // reemplazante haga queda en la bitácora identificado como tal.
 function CfgReemplazos({ usuario }) {
   const [, force] = useState(0);
-  const [form, setForm] = useState({ ausente: "", reemplazante: "", desde: hoyISO(), hasta: hoyISO(), motivo: "Vacaciones" });
+  const [form, setForm] = useState({ ausente: "", reemplazante: "", desde: hoyISO(), hasta: hoyISO(), motivo: "Vacaciones", ausenteAprueba: true });
   const [error, setError] = useState("");
   const [porBorrar, setPorBorrar] = useState(null);
   const hoy = hoyISO();
@@ -14826,14 +14869,15 @@ function CfgReemplazos({ usuario }) {
     if (choca) return setError(`${nombreDe(f.ausente)} ya tiene un reemplazo entre ${choca.desde} y ${choca.hasta} (${nombreDe(choca.reemplazante)}).`);
     const nuevo = { id: "rmp" + Date.now().toString(36), ausente: f.ausente, reemplazante: f.reemplazante,
       desde: f.desde, hasta: f.hasta, motivo: (f.motivo || "").slice(0, 120),
+      ausenteAprueba: f.ausenteAprueba !== false,
       creadoPor: actorEtiqueta((SESION && SESION.usuario) || usuario), creadoEn: nowStamp() };
     REEMPLAZOS = [...REEMPLAZOS, nuevo];
     guardarReemplazos(); invalidarVisado();
     registrarAuditoria({ usuario: actorEtiqueta((SESION && SESION.usuario) || usuario), modulo: "Configuración · Reemplazos",
       accion: "Reemplazo creado",
-      glosa: `${nombreDe(nuevo.reemplazante)} cubre a ${nombreDe(nuevo.ausente)} del ${nuevo.desde} al ${nuevo.hasta} (${nuevo.motivo || "sin motivo"}) · asume ${atribTxt(nuevo.ausente)}`,
+      glosa: `${nombreDe(nuevo.reemplazante)} cubre a ${nombreDe(nuevo.ausente)} del ${nuevo.desde} al ${nuevo.hasta} (${nuevo.motivo || "sin motivo"}) · asume ${atribTxt(nuevo.ausente)} · ${nuevo.ausenteAprueba ? `${nombreDe(nuevo.ausente)} CONSERVA su atribución durante la ausencia` : `${nombreDe(nuevo.ausente)} QUEDA SIN atribución durante la ausencia`}`,
       exito: true });
-    setForm({ ausente: "", reemplazante: "", desde: hoy, hasta: hoy, motivo: "Vacaciones" }); setError("");
+    setForm({ ausente: "", reemplazante: "", desde: hoy, hasta: hoy, motivo: "Vacaciones", ausenteAprueba: true }); setError("");
     force((x) => x + 1);
   };
   const borrar = (r) => {
@@ -14854,7 +14898,8 @@ function CfgReemplazos({ usuario }) {
       <div className="text-lg font-semibold" style={{ color: C.ink }}>Vacaciones y reemplazos</div>
       <div className="mt-0.5 t12" style={{ color: C.faint }}>
         Mientras una persona está fuera, quien la reemplaza <b>asume sus atribuciones</b>: el mismo nivel de la misma área, sólo durante el período.
-        No se crean permisos nuevos y el ausente <b>no pierde los suyos</b>. Todo lo que el reemplazante apruebe queda en la bitácora <b>identificado como reemplazante</b>.
+        No se crean permisos nuevos. Por defecto el ausente <b>conserva las suyas</b> —puede seguir aprobando desde la playa— y se le pueden retirar por reemplazo, caso a caso.
+        Todo lo que el reemplazante apruebe queda en la bitácora <b>identificado como reemplazante</b>.
       </div>
 
       <div className="mt-3 rounded-xl p-3" style={{ border: `1px solid ${C.line}`, backgroundColor: "#FAF9FB" }}>
@@ -14883,6 +14928,20 @@ function CfgReemplazos({ usuario }) {
           </label>
           <button onClick={agregar} className="rounded-lg px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Asignar</button>
         </div>
+        {/* Estar de vacaciones no es estar desconectado: por defecto el ausente sigue aprobando —el
+            reemplazo AGREGA un aprobador, no cambia uno por otro—. Se desmarca cuando la ausencia
+            tiene que ser total (licencia, salida), que es cuando dejar la atribución viva es el riesgo. */}
+        <label className="mt-2 flex items-start gap-2 t10" style={{ color: C.sub, cursor: "pointer" }}>
+          <input type="checkbox" checked={form.ausenteAprueba !== false}
+            onChange={(e) => setForm((f) => ({ ...f, ausenteAprueba: e.target.checked }))}
+            style={{ marginTop: 2, accentColor: C.indigo }} />
+          <span>
+            <b style={{ color: C.ink }}>{form.ausente ? nombreDe(form.ausente) : "El ausente"} sigue aprobando durante su ausencia</b> («desde la playa»).
+            {form.ausenteAprueba !== false
+              ? <> Aprueban los dos: el reemplazo <b>agrega</b> un aprobador, no lo cambia.</>
+              : <> <b style={{ color: "#C2410C" }}>Desmarcado:</b> durante el período sólo aprueba {form.reemplazante ? nombreDe(form.reemplazante) : "quien lo cubre"}. Úsalo para una licencia o una salida, donde dejar la atribución viva es el riesgo.</>}
+          </span>
+        </label>
         {form.ausente && (
           <div className="mt-2 t10" style={{ color: C.sub }}>
             Durante el período, <b>{form.reemplazante ? nombreDe(form.reemplazante) : "quien lo reemplace"}</b> podrá aprobar lo que hoy aprueba <b>{nombreDe(form.ausente)}</b>: <b style={{ color: C.indigo }}>{atribTxt(form.ausente)}</b>.
@@ -14901,11 +14960,12 @@ function CfgReemplazos({ usuario }) {
           <th className="py-1.5 text-left font-medium">Atribuciones que asume</th>
           <th className="py-1.5 text-left font-medium">Período</th>
           <th className="py-1.5 text-left font-medium">Motivo</th>
+          <th className="py-1.5 text-left font-medium">El ausente</th>
           <th className="py-1.5 text-left font-medium">Estado</th>
           <th />
         </tr></thead>
         <tbody>
-          {!orden.length && <tr><td colSpan={7} className="py-6 text-center t11" style={{ color: C.faint }}>Sin reemplazos configurados.</td></tr>}
+          {!orden.length && <tr><td colSpan={8} className="py-6 text-center t11" style={{ color: C.faint }}>Sin reemplazos configurados.</td></tr>}
           {orden.map((r) => {
             const viv = reemplazoVigente(r, hoy);
             const futuro = hoy < r.desde;
@@ -14917,6 +14977,9 @@ function CfgReemplazos({ usuario }) {
                 <td className="py-1.5" style={{ color: viv ? C.indigo : C.faint }}>{atribTxt(r.ausente)}</td>
                 <td className="py-1.5" style={{ color: C.sub }}>{r.desde} → {r.hasta}</td>
                 <td className="py-1.5" style={{ color: C.sub }}>{r.motivo || "—"}</td>
+                <td className="py-1.5">{r.ausenteAprueba === false
+                  ? <span className="t10 font-semibold" style={{ color: "#C2410C" }} title="Durante el período no aprueba: sólo puede quien lo cubre.">Sin atribución</span>
+                  : <span className="t10" style={{ color: C.sub }} title="Sigue aprobando durante su ausencia: aprueban los dos.">Sigue aprobando</span>}</td>
                 <td className="py-1.5"><span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: est.bg, color: est.fg }}>{est.l}</span></td>
                 <td className="py-1.5 text-right">
                   <button onClick={() => setPorBorrar(r)} className="t10 font-medium" style={{ color: C.red }}>Eliminar</button>

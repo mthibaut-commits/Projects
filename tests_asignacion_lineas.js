@@ -889,6 +889,39 @@
        `${ejec}: sin reemplazo sin atribución y sin firma · cubriendo a ${nombreDe("JG")} comercial N${atribEfectiva(ejec, hoy, rmpJG).comercial} · cubriendo a ${nombreDe("EV")} firma verificaciones`);
   }
 
+  // 64 · «Aprobar desde la playa». El reemplazo AGREGA un aprobador; no cambia uno por otro. Por
+  // defecto el ausente conserva su atribución —estar de vacaciones no es estar desconectado— y el flag
+  // la revoca para la ausencia que sí tiene que ser total (licencia, salida). El orden importa: se le
+  // quita DESPUÉS de pasársela a quien cubre, o el reemplazante heredaría un cargo ya vaciado.
+  {
+    const ejec = Object.keys(EXECS)[0];
+    const hoy = "2026-05-10";
+    const c21 = REGLAS_CLIENTE.find((r) => r.cond === "C21");
+    const base = { id: "r64", ausente: "SR", reemplazante: ejec, desde: "2026-05-01", hasta: "2026-05-20", motivo: "Vacaciones" };
+    const playa = [{ ...base, ausenteAprueba: true }];
+    const total = [{ ...base, ausenteAprueba: false }];
+    const viejo = [{ ...base }];                       // fila sin el campo: migra como «sigue aprobando»
+    const nSR = (atribDe("SR").atrib || {}).riesgo;
+    const pad = (l) => padronAprobadores(hoy, l);
+    const uAus = (l) => pad(l).usuarios.find((u) => u.code === "SR");
+    ok("64 el ausente sigue aprobando salvo que el reemplazo se lo revoque",
+       // por defecto aprueban los DOS, y el reemplazante toma el nivel del ausente
+       puedeAprobarExc("SR", c21, nSR, pad(playa)) === true
+       && puedeAprobarExc(ejec, c21, nSR, pad(playa)) === true
+       // revocado: sólo quien cubre, y el reemplazante conserva el nivel que heredó
+       && puedeAprobarExc("SR", c21, nSR, pad(total)) === false
+       && puedeAprobarExc(ejec, c21, nSR, pad(total)) === true
+       // el ausente NO desaparece del padrón: la pantalla tiene que poder decir por qué no aprueba
+       && uAus(total) && uAus(total).ausente && uAus(total).ausente.aprueba === false
+       && Object.keys(uAus(total).atrib).length === 0
+       // una fila sin el campo se comporta como antes de que el flag existiera
+       && puedeAprobarExc("SR", c21, nSR, pad(viejo)) === true
+       // y la firma de verificación sigue la misma regla
+       && puedeVerificarFacturas("EV", hoy, [{ ...base, ausente: "EV", ausenteAprueba: true }]) === true
+       && puedeVerificarFacturas("EV", hoy, [{ ...base, ausente: "EV", ausenteAprueba: false }]) === false,
+       `N${nSR}: por defecto aprueban ${nombreDe("SR")} y ${nombreDe(ejec)} · revocado sólo ${nombreDe(ejec)} · fila sin el campo = sigue aprobando`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
