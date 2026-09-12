@@ -931,39 +931,35 @@
   // mantenedor, es un incidente.
   // ============================================================================================
 
-  // 65 · El catálogo base reproduce exactamente la aritmética anterior, en un barrido de entradas.
+  // 65 · El RESUMEN cuadra con el DETALLE por factura. Es la propiedad que justifica la tasa
+  // equivalente: el concepto «Diferencia de precio» del catálogo la calcula sobre el total con la
+  // tasa y el plazo equivalentes, y tiene que dar exactamente la suma documento a documento. Hasta el
+  // 12-09 el catálogo la calculaba lineal y sin plazo (`montoDocs · tasa/100 · antic/100`), que cobra
+  // lo mismo por 15 días que por 90: ésa era la cifra que veía el cliente.
   {
-    const UF = CFG_ACTIVA.valorUF;
-    const casos = [];
-    for (const montoDocs of [0, 1e6, 50e6, 987654321])
-      for (const tasa of [0.9, 1.45, 2.2])
-        for (const antic of [80, 100])
-          for (const pctCom of [0, 0.25])
-            for (const n of [1, 8])
-              casos.push({ montoDocs, cantFacturas: n, dias: 45, mora: 130000, otrosDesc: 45000, cxc: 60000,
-                           tasa, antic, pctCom, comMin: 2, comMax: 2, gastoOp: 26000, gastoDoc: 0 });
-    let malos = 0, ejemplo = "";
-    for (const e of casos) {
-      // La aritmética ORIGINAL, tal como estaba escrita en el componente antes del cambio.
-      const anticipo = Math.round(e.antic / 100 * e.montoDocs);
-      const difPrecio = Math.round((e.tasa / 100) * (e.antic / 100) * e.montoDocs);
-      const comRaw = Math.round(e.pctCom / 100 * e.montoDocs);
-      const comision = Math.min(Math.max(comRaw, Math.round(e.comMin * UF)), Math.round(e.comMax * UF));
-      const iva = Math.round(comision * 0.19);
-      const gastos = Math.round(e.gastoOp + e.gastoDoc * e.cantFacturas);
-      const subtotal = difPrecio + comision + gastos + iva + e.mora + e.otrosDesc + e.cxc;
-      const giro = anticipo - subtotal;
-      const retencion = Math.round(e.montoDocs * 0.028);
-      const s = simularOperacion(e, { cfg: { conceptos: SIM_CONCEPTOS_BASE, retencion: SIM_RETENCION_BASE } });
-      const v = (id) => (s.filas.find((f) => f.id === id) || {}).valor;
-      const igual = s.montoAnticipo === anticipo && v("difPrecio") === difPrecio && v("comision") === comision
-        && v("iva") === iva && v("gastos") === gastos && s.subtotalDescuentos === subtotal
-        && s.montoGirar === giro && s.retencion === retencion;
-      if (!igual) { malos++; if (!ejemplo) ejemplo = `monto ${e.montoDocs} tasa ${e.tasa}: giro ${s.montoGirar} vs ${giro}`; }
+    const carteras = [
+      [{ id: "A", monto: 100000000, dias: 31, tasa: 1.0 }, { id: "B", monto: 100000000, dias: 62, tasa: 1.2 }],
+      [{ id: "A", monto: 12500000, dias: 15, tasa: 0.92 }, { id: "B", monto: 3400000, dias: 45, tasa: 1.35 },
+       { id: "C", monto: 87000000, dias: 90, tasa: 1.6 }, { id: "D", monto: 950000, dias: 30, tasa: 1.1 }],
+      [{ id: "U", monto: 47000000, dias: 45, tasa: 1.28 }],
+    ];
+    let malos = 0, det = "";
+    for (const docs of carteras) for (const antic of [100, 80]) {
+      const pro = prorratearOperacion(docs, [], { antic });
+      const montoDocs = docs.reduce((a, d) => a + d.monto, 0);
+      const s = simularOperacion({ montoDocs, cantFacturas: docs.length, antic, tasa: pro.tasaEquivalente,
+        tasaEq: pro.tasaEquivalente, plazoEq: pro.plazoEquivalente, pctCom: 0, comMin: 2, comMax: 2,
+        gastoOp: 26000, gastoDoc: 0 }, { cfg: { conceptos: SIM_CONCEPTOS_BASE, retencion: SIM_RETENCION_BASE } });
+      const resumen = (s.filas.find((f) => f.id === "difPrecio") || {}).valor;
+      // ±1 peso: los dos redondean a entero por caminos distintos y la moneda no tiene decimales
+      if (Math.abs(resumen - pro.difPrecio) > 1) { malos++; if (!det) det = `${resumen} vs ${pro.difPrecio}`; }
     }
-    ok("65 el catálogo base reproduce la aritmética cableada, sin mover un peso",
-       malos === 0 && casos.length === 96,
-       `${casos.length} combinaciones · ${malos} diferencias${ejemplo ? " · " + ejemplo : ""}`);
+    // y el plazo SÍ mueve la cifra, que es lo que la versión lineal no hacía
+    const corto = prorratearOperacion([{ id: "A", monto: 100000000, dias: 15, tasa: 1.2 }], [], {});
+    const largo = prorratearOperacion([{ id: "A", monto: 100000000, dias: 90, tasa: 1.2 }], [], {});
+    ok("65 el resumen calcula la diferencia de precio con la tasa y el plazo equivalentes, y cuadra con el detalle",
+       malos === 0 && largo.difPrecio > corto.difPrecio * 5,
+       `${carteras.length * 2} combinaciones · ${malos} descuadres${det ? " · " + det : ""} · 15d ${corto.difPrecio} vs 90d ${largo.difPrecio}`);
   }
 
   // 66 · El intérprete no es `eval`. La fórmula la escribe un administrador y queda guardada en la
@@ -1155,19 +1151,21 @@
        `60 carteras de 1 a 60 documentos · ${malos} descuadres · ${negativos} montos negativos · mayor ajuste: ${(peorAjuste * 100).toFixed(1)}% de su cota teórica (n/2 + n·T·5·10⁻⁷)${ejemplo ? " · " + ejemplo : ""}`);
   }
 
-  // 72 · El reparto va de MAYOR A MENOR y el ajuste cae en la MÁS CHICA. Repartiendo al revés, el
-  // residuo acumulado termina en la factura grande, donde se nota menos pero descuadra igual; y
-  // repartiendo en el orden de llegada, el ajuste cae donde toque.
+  // 72 · El ajuste cae en la factura MÁS GRANDE (decisión de negocio del 12-09). La moneda chilena
+  // no tiene decimales, así que redondear cada asignación a entero descuadra por construcción y hay
+  // que cuadrar en alguna: la más grande siempre puede absorberlo sin cruzar el cero, mientras que en
+  // la más chica el ajuste podía superar lo asignado y dejarla negativa.
   {
     const docs = [{ id: "chica", monto: 1000, dias: 30, tasa: 1 },
                   { id: "grande", monto: 99000000, dias: 30, tasa: 1 },
                   { id: "media", monto: 500000, dias: 30, tasa: 1 }];
     const r = prorratearOperacion(docs, [{ id: "comision", rol: "descuento", total: 59479 }], {});
     const f = (id) => r.filas.find((x) => x.id === id);
-    ok("72 el prorrateo va de mayor a menor y el ajuste cae en el documento más chico",
-       r.ajustes.comision.documento === "chica"
+    ok("72 el ajuste cae en la factura más grande y el reparto sigue el peso de cada una",
+       r.ajustes.comision.documento === "grande"
        && f("grande").conceptos.comision > f("media").conceptos.comision
-       && f("media").conceptos.comision > f("chica").conceptos.comision
+       && f("media").conceptos.comision >= f("chica").conceptos.comision
+       && f("chica").conceptos.comision >= 0
        && r.filas.reduce((a, x) => a + x.conceptos.comision, 0) === 59479,
        `ajuste de ${r.ajustes.comision.pesos} peso(s) en «${r.ajustes.comision.documento}» · ${f("grande").conceptos.comision} / ${f("media").conceptos.comision} / ${f("chica").conceptos.comision} suman 59.479`);
   }
@@ -1207,6 +1205,79 @@
        && fin(tasaCero.tasaEquivalente) && tasaCero.difPrecio === 0
        && vacio.filas.length === 0 && fin(vacio.montoGirar) && vacio.montoGirar === 0,
        `1 doc cuadra · plazo 0 → dif ${plazoCero.difPrecio} · tasa 0 → tasa eq ${tasaCero.tasaEquivalente} · vacío ${vacio.montoGirar}`);
+  }
+
+  // 75 · Se CALCULA con 6 decimales y se MUESTRA con 2 (tasa) y 1 (plazo). No es cosmética: redondear
+  // la tasa equivalente a los 2 decimales que se muestran y calcular con ésa mueve la diferencia de
+  // precio, y entonces el resumen dejaría de cuadrar con la suma por documento — que es justo lo que
+  // la tasa equivalente existe para garantizar.
+  {
+    const docs = [{ id: "A", monto: 100000000, dias: 31, tasa: 1.0 }, { id: "B", monto: 100000000, dias: 62, tasa: 1.2 }];
+    const pro = prorratearOperacion(docs, [], {});
+    const montoDocs = 200000000;
+    const conTasa = (t) => {
+      const s = simularOperacion({ montoDocs, cantFacturas: 2, antic: 100, tasa: t, tasaEq: t,
+        plazoEq: pro.plazoEquivalente, pctCom: 0, comMin: 2, comMax: 2, gastoOp: 26000, gastoDoc: 0 },
+        { cfg: { conceptos: SIM_CONCEPTOS_BASE, retencion: SIM_RETENCION_BASE } });
+      return (s.filas.find((f) => f.id === "difPrecio") || {}).valor;
+    };
+    const exacta = conTasa(pro.tasaEquivalente);
+    const redondeada = conTasa(+pro.tasaEquivalente.toFixed(2));
+    ok("75 se calcula con 6 decimales y se muestra con 2 (tasa) y 1 (plazo)",
+       Math.abs(exacta - pro.difPrecio) <= 1            // la exacta cuadra con el detalle
+       && Math.abs(redondeada - pro.difPrecio) > 1000   // la redondeada no, y por miles de pesos
+       && pro.tasaEquivalente.toFixed(2) === "1.00" && pro.plazoEquivalente.toFixed(1) === "52.8",
+       `exacta ${pro.tasaEquivalente.toFixed(6)}% → ${exacta} (detalle ${pro.difPrecio}) · redondeada a ${pro.tasaEquivalente.toFixed(2)}% → ${redondeada}, ${Math.abs(redondeada - pro.difPrecio)} de diferencia · plazo ${pro.plazoEquivalente.toFixed(1)} d`);
+  }
+
+  // 76 · REGLA 0 · PRIMERA OPERACIÓN DEL CLIENTE. Compuerta como la del protocolo propio y ANTES que
+  // ella: en la primera operación se verifican TODAS las facturas, cualquiera sea el segmento del
+  // deudor. Vive en el modelo de verificación y no en el de líneas ni en la pantalla del giro porque
+  // «si hay que llamar a este deudor» es una sola pregunta y tiene un solo dueño.
+  {
+    const base = verifPar("76.111.111-1", LB[0], null);
+    const conProto = { ...base, protocolo: { existe: true, id: "PR-99" } };
+    // un par que NO requiere verificación por criterios, para que la única causa sea la regla 0
+    const limpio = { ...base, protocolo: { existe: false }, prime: true, recortado: true,
+      aplican: VERIF_APLICAN_RECORTADO, avgVentaProm3M: 1e9, mesesConVenta6M: 6,
+      pctMora25d: 0, pctReclamadas: 0, mntPagoDeudor3M: 5000 };
+    const fs = [{ montoMM: 40, venc: 45 }];
+    const normal = verifDecision({ ...limpio, primeraOperacion: false }, fs);
+    const primera = verifDecision({ ...limpio, primeraOperacion: true }, fs);
+    // y manda sobre el protocolo: si son las dos, la causa informada es la 0
+    const ambas = verifDecision({ ...conProto, primeraOperacion: true, aplican: VERIF_APLICAN_RECORTADO }, fs);
+    const ev = (r, id) => (r.evals.find((e) => e.r.id === id) || {}).st;
+    ok("76 la primera operación del cliente verifica TODAS las facturas (regla 0)",
+       normal.requiere === false                       // sin la regla 0, este par no se verifica
+       && primera.requiere === true && primera.motivo === "primera_operacion"
+       && ev(primera, "V00") === "no"
+       // cortocircuito: ninguna otra regla se evaluó, igual que con el protocolo propio
+       && primera.evals.filter((e) => e.r.id !== "V00").every((e) => e.st === "na")
+       && primera.fallidas.length === 0
+       && ambas.motivo === "primera_operacion"          // la 0 va antes que la 1
+       && ev(ambas, "V01") === "na"
+       // la regla 0 aplica en los DOS segmentos: no es un criterio de riesgo del deudor, es del cliente
+       && VERIF_APLICAN_RECORTADO.includes("V00") && VERIF_APLICAN_COMPLETO.includes("V00"),
+       `sin primera operación «${normal.requiere}» · primera «${primera.motivo}» con las otras ${primera.evals.filter((e) => e.r.id !== "V00" && e.st === "na").length} en «na» · con protocolo también gana la 0`);
+  }
+
+  // 77 · El ESTADO DEL CLIENTE es del tenant y entra por parámetro, no se lee adentro del modelo.
+  // Lo devuelve una API de Security al iniciar sesión y cambia en cuanto el cliente cursa: memoizarlo
+  // con el par —que sí se cachea— dejaría verificándolo todo para siempre.
+  {
+    const deal = { id: "T-77", rutEmisor: "76.777.777-7", cliente: "Cliente 77" };
+    const real = esPrimeraOperacionCliente(deal);
+    const nuevo = esPrimeraOperacionCliente(deal, { "76.777.777-7": "nuevo" });
+    const activo = esPrimeraOperacionCliente(deal, { "76.777.777-7": "activo" });
+    const estados = CLIENTE_ESTADOS.map((e) => esPrimeraOperacionCliente(deal, { "76.777.777-7": e }));
+    // determinista: el mismo RUT da siempre lo mismo
+    const estable = estadoCliente("76.777.777-7") === estadoCliente("76.777.777-7");
+    ok("77 el estado del cliente entra por parámetro y sólo «nuevo» es primera operación",
+       nuevo === true && activo === false
+       && JSON.stringify(estados) === JSON.stringify([true, false, false, false])
+       && typeof real === "boolean" && estable
+       && CLIENTE_ESTADOS.length === 4 && CLIENTE_ESTADOS[0] === "nuevo",
+       `inyectado nuevo→${nuevo} activo→${activo} · real «${estadoCliente("76.777.777-7")}» · los 4 estados: ${CLIENTE_ESTADOS.join(", ")}`);
   }
 
   console.log(out.join("\n"));

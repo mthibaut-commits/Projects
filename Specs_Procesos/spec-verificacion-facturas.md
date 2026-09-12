@@ -83,6 +83,25 @@ Existen dos protocolos según el deudor:
 
 ## 4. Lógica de decisión
 
+### 4.0 Cortocircuito por primera operación (regla 0)
+
+**Si es la primera operación del cliente, se verifican TODAS las facturas**, cualquiera sea el
+segmento del deudor y aunque cumpla todos los criterios. Es una compuerta y va **antes** que la del
+protocolo propio: cuando aplica, es la **única causa informada**, porque ninguna otra regla se evaluó.
+
+Aplica a los **dos segmentos** porque no es un criterio de riesgo del deudor: es del **cliente**. Un
+cliente sin operaciones no tiene historial propio del par sobre el que decidir, y su primera operación
+se cursa contra la línea inicial LF1.
+
+El estado del cliente —`nuevo`, `activo`, `suspendido`, `eliminado`— lo devuelve una **API de
+Security** al iniciar sesión; sólo `nuevo` es primera operación. Entra **por parámetro** al modelo, no
+se lee adentro: es dato del tenant, y además cambia en cuanto el cliente cursa, así que memoizarlo
+junto al par —que sí se cachea— lo dejaría verificándolo todo para siempre.
+
+> Esta regla vive en el modelo de verificación y no en el de líneas ni en la pantalla del giro:
+> «si hay que llamar a este deudor» es una sola pregunta y tiene un solo dueño. Con la regla afuera,
+> cada sitio que necesitara saberlo habría reimplementado su propia versión.
+
 ### 4.1 Cortocircuito por protocolo (regla 1)
 
 La regla 1 **no es un criterio más del conjunto**, es una compuerta al inicio de la función:
@@ -108,7 +127,7 @@ Esto tiene un efecto deseado: un deudor nuevo no tiene historial para las reglas
 
 ---
 
-## 5. Las diez reglas
+## 5. Las once reglas (0 a 10)
 
 | # | Nombre | Variable | Criterio | Recortado | Completo |
 |---|---|---|---|:---:|:---:|

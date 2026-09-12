@@ -1398,6 +1398,13 @@ const NOTA_COLOR = (n) => (n >= 4 ? "#0a7d3f" : n >= 3 ? "#C2410C" : "#EF4444");
 // No hay «reglas duras»: el veredicto es dicotómico —verificada por modelo o verificación telefónica—
 // y ningún criterio tiene un efecto distinto de mandar el deudor al teléfono.
 const VERIF_RULES = [
+  // REGLA 0 · PRIMERA OPERACIÓN DEL CLIENTE. Compuerta igual que V01, y ANTES que ella: en la primera
+  // operación se verifican TODAS las facturas, sin importar el segmento del deudor ni que cumplan
+  // todos los criterios. La lógica vive acá y no en el motor de líneas ni en la pantalla del giro:
+  // «si esta factura hay que llamarla o no» es una sola pregunta y tiene un solo dueño. Con la regla
+  // afuera, cada sitio que necesitara saberlo habría reimplementado su propia versión.
+  // Aplica a los DOS segmentos porque no es un criterio de riesgo del deudor: es del CLIENTE.
+  { id: "V00", n: 0, name: "Primera operación del cliente", variable: "EstadoCliente", recortado: true, desc: "La primera operación de un cliente se verifica completa: no hay historial propio del par sobre el que decidir, y el cupo es la línea inicial LF1", dom: "Riesgo", thr: "cliente nuevo → verifica", fmt: (v) => (v ? "Primera operación" : "Cliente con operaciones") },
   { id: "V01", n: 1, name: "Protocolo de verificación del deudor", variable: "ExisteProtocoloDeudor", recortado: true, desc: "Si el deudor tiene protocolo propio de confirmación, hay que seguirlo: se verifica SIEMPRE usando ese protocolo", dom: "Riesgo", thr: "existe → verifica", fmt: (v) => (v ? "Existe" : "No existe") },
   { id: "V02", n: 2, name: "Monto pagado por el deudor sobre la cartera (Ult3M)", variable: "MntPagoDeudorUlt3M / MntPagoUlt3M", recortado: false, desc: "Qué parte de la obligación pagó el deudor y qué parte terminó pagando el cliente. Variable precalculada de refresco diario", dom: "Riesgo", thr: "≥ 90%", fmt: (v) => v == null ? "sin info" : v.toFixed(1) + "%" },
   { id: "V03", n: 3, name: "Monto de la operación contra el promedio de compra", variable: "MntOpC-D / AvgMntFacturaOpCarteraC-D", recortado: false, desc: "Crecimiento controlado: la operación no puede escaparse más de 30% de lo comprado a ese par en los 3 meses móviles anteriores", dom: "Riesgo", thr: "≤ 1,3×", fmt: (v) => v == null ? "sin info" : v.toFixed(2) + "×" },
@@ -1412,6 +1419,32 @@ const VERIF_RULES = [
 // Criterios de cada protocolo (spec §3). El recortado son SEIS: 1, 4, 5, 7, 8 y 10.
 const VERIF_APLICAN_RECORTADO = VERIF_RULES.filter((r) => r.recortado).map((r) => r.id);
 const VERIF_APLICAN_COMPLETO = VERIF_RULES.map((r) => r.id);
+// ── ESTADO DEL CLIENTE (API de Security al iniciar sesión) ────────────────────────────────────
+// Un cliente es `nuevo` (todavía sin operaciones), `activo` (ya cursó su primera), `suspendido` o
+// `eliminado`. Lo devuelve una API de Security; acá se sintetiza de forma determinista.
+//
+// Importa porque la PRIMERA OPERACIÓN cambia dos cosas a la vez: se cursa contra la línea inicial
+// LF1 —que sólo admite deudores Prime— y se verifican TODAS las facturas. La segunda mitad vive en
+// el modelo de verificación (regla 0) y no acá: «si hay que llamar a este deudor» es una sola
+// pregunta con un solo dueño.
+const CLIENTE_ESTADOS = ["nuevo", "activo", "suspendido", "eliminado"];
+const CLIENTE_ESTADO_LBL = { nuevo: "Cliente nuevo (sin operaciones)", activo: "Activo", suspendido: "Suspendido", eliminado: "Eliminado" };
+// El estado NO se memoiza con el par: cambia en cuanto el cliente cursa su primera operación, y un
+// veredicto de verificación congelado con «nuevo» seguiría verificándolo todo para siempre.
+function estadoCliente(rutCliente) {
+  const h = hashStr("estcli|" + String(rutCliente || ""));
+  // ~12% nuevos, el resto activos; suspendido/eliminado son marginales y no abren oportunidad.
+  const r = h % 100;
+  return r < 12 ? "nuevo" : r < 97 ? "activo" : r < 99 ? "suspendido" : "eliminado";
+}
+// ¿Es la primera operación de este cliente? Entra por parámetro a la verificación, no se lee adentro:
+// es dato del TENANT (lo devuelve la API de Security), no del modelo de riesgo.
+const esPrimeraOperacionCliente = (deal, estados) => {
+  const rut = (deal && (deal.rutEmisor || deal.cliente)) || "";
+  const e = (estados && estados[rut]) || estadoCliente(rut);
+  return e === "nuevo";
+};
+
 // PREDICTOR DE VERIFICACIÓN (modelo Security): decide previo al anticipo si la factura queda VERIFICADA
 // POR MODELO o requiere VERIFICACIÓN TELEFÓNICA. Dos segmentos:
 //   PRIME  → protocolo light, 6 reglas (V01,V04,V05,V07,V08,V10). Es EXACTAMENTE el universo Prime que
@@ -1489,6 +1522,7 @@ function verifDecision(par, facturas) {
   // no hay estado intermedio, y por eso un deudor nuevo —sin historial para 2, 5 y 10— se verifica
   // por construcción.
   const vals = {
+    V00: !!par.primeraOperacion,
     V01: par.protocolo.existe,
     V02: par.pctPagoDeudor3M,
     V03: par.mntCompraOp3M ? +(montoOp / par.mntCompraOp3M).toFixed(2) : null,
@@ -1501,6 +1535,7 @@ function verifDecision(par, facturas) {
     V10: par.mntPagoDeudor3M,
   };
   const cumple = {
+    V00: true, // la 0 no se evalúa como criterio: es la compuerta de más abajo, antes que la 1
     V01: true, // la 1 no se evalúa como criterio: es la compuerta de más abajo
     V02: (v) => v != null && v >= 90,
     V03: (v) => v != null && v <= 1.3,
@@ -1517,13 +1552,23 @@ function verifDecision(par, facturas) {
   const evals = VERIF_RULES.map((r) => {
     const v = vals[r.id];
     let st;
+    const primera = !!par.primeraOperacion;
     if (!par.aplican.includes(r.id)) st = "na";
+    else if (r.id === "V00") st = primera ? "no" : "ok";
+    else if (primera) st = "na";               // cortocircuito de la 0: no se evaluó ninguna otra
     else if (r.id === "V01") st = par.protocolo.existe ? "no" : "ok";
-    else if (par.protocolo.existe) st = "na";  // cortocircuito: no se evaluaron
+    else if (par.protocolo.existe) st = "na";  // cortocircuito de la 1: no se evaluaron
     else st = cumple[r.id](v) ? "ok" : "no";
     return { r, v, st, dato: v != null };
   });
   const segLbl = par.recortado ? (par.prime ? "Deudores Prime (protocolo recortado)" : "Nota > " + String(NOTA_PRIORITARIA).replace(".", ",") + " (protocolo recortado)") : "Otros deudores (protocolo completo)";
+  // 0 · COMPUERTA DE PRIMERA OPERACIÓN, y va ANTES que la del protocolo: si el cliente no tiene
+  //     operaciones, se verifica todo. Es la única causa que se informa, porque no se evaluó ninguna
+  //     otra regla — igual que con el protocolo propio.
+  if (par.primeraOperacion) {
+    return { requiere: true, motivo: "primera_operacion", vals, evals, fallidas: [],
+      texto: `Primera operación del cliente: se verifican todas las facturas, cualquiera sea el segmento del deudor. La operación se cursa contra la línea inicial (LF1) y no hay historial del par sobre el que decidir.` };
+  }
   if (par.protocolo.existe) {
     return { requiere: true, motivo: "protocolo", vals, evals, fallidas: [],
       texto: `Segmento ${segLbl} · el deudor tiene protocolo de confirmación propio (${par.protocolo.id}): se verifica siguiendo ese protocolo.` };
@@ -1553,10 +1598,11 @@ function facturasDeudorEnDeal(deal, nombre) {
 }
 // ¿Requiere llamada este DEUDOR de la oportunidad? No necesita simulación: es la consulta al estado
 // del par más las facturas suyas que hoy están en la oferta.
-function verifDeudorDeal(deal, nombre, montoMM) {
+function verifDeudorDeal(deal, nombre, montoMM, estado) {
   const rut = (deal && (deal.rutEmisor || deal.cliente)) || "";
   const fs = facturasDeudorEnDeal(deal, nombre) || (montoMM ? [{ montoMM }] : []);
-  const par = verifPar(rut, nombre, (fs[0] && fs[0].rutRecep) || null);
+  const par = { ...verifPar(rut, nombre, (fs[0] && fs[0].rutRecep) || null),
+                primeraOperacion: esPrimeraOperacionCliente(deal, estado && estado.estadosCliente) };
   const r = verifEvaluar(par, fs);
   return { requiere: r.est !== "ok", motivo: r.motivo, par };
 }
@@ -1574,7 +1620,10 @@ function veredictoCongelado(deal, f, estado) {
 function verifFactura(f, deal, estado) {
   const nombre = f.deudor;
   const rut = (deal && (deal.rutEmisor || deal.cliente)) || "";
-  const par = verifPar(rut, nombre, f && f.rutRecep);
+  // `primeraOperacion` se AGREGA al par, no se memoiza con él: el par es estado del modelo de riesgo
+  // y se cachea; el estado del cliente cambia en cuanto cursa su primera operación.
+  const par = { ...verifPar(rut, nombre, f && f.rutRecep),
+                primeraOperacion: esPrimeraOperacionCliente(deal, estado && estado.estadosCliente) };
   const r = verifEvaluar(par, facturasDeudorEnDeal(deal, nombre) || [f]);
   // El estado de la llamada sale del COMMIT —`repoVerifTel`, lo que el equipo de verificación
   // registró—, no de un sorteo. Antes lo elegía `par.h % 3` entre Completada/En curso/Pendiente sin
@@ -2321,6 +2370,10 @@ const SIM_VARIABLES = [
   { id: "mora",         origen: "operacion",  label: "Recargos por mora",        desc: "Monto de documentos con mora, calculado aparte." },
   { id: "otrosDesc",    origen: "operacion",  label: "Otros descuentos",         desc: "Descuentos pactados, calculados aparte." },
   { id: "cxc",          origen: "operacion",  label: "Cuentas por cobrar",       desc: "Saldo por cobrar del cliente que se rebaja del giro." },
+  // Las dos que hacen que el resumen calce con el detalle por factura: salen del cálculo bottom-up
+  // (§4 del spec) y son las que reproducen la misma diferencia de precio sobre el total.
+  { id: "tasaEq",       origen: "operacion",  label: "Tasa equivalente (%)",     desc: "La tasa única que produce la misma diferencia de precio que la suma documento a documento." },
+  { id: "plazoEq",      origen: "operacion",  label: "Plazo equivalente (días)", desc: "Plazo de cada factura ponderado por su peso en la diferencia de precio." },
   { id: "tasa",         origen: "condicion",  label: "Tasa mensual (%)",         desc: "Tasa de la operación. La edita el ejecutivo bajo atribución." },
   { id: "antic",        origen: "condicion",  label: "Anticipo (%)",             desc: "Porcentaje del monto de documentos que se financia." },
   { id: "pctCom",       origen: "condicion",  label: "Comisión (%)",             desc: "Porcentaje de comisión sobre el monto de documentos." },
@@ -2353,9 +2406,15 @@ const SIM_CONCEPTOS_BASE = [
   { id: "montoAnticipo", label: "Monto Anticipo", rol: "base", formula: "redondear(montoDocs * antic / 100)",
     campo: "antic", suf: "%", paso: "1", enLabel: true,
     ayuda: "Lo que se financia del monto de documentos." },
-  { id: "difPrecio", label: "Diferencia de precio", rol: "descuento", formula: "redondear(montoDocs * tasa / 100 * antic / 100)",
+  // DESCUENTO RACIONAL con la tasa y el plazo EQUIVALENTES, que es como lo calcula la planilla del
+  // negocio: `VP = financiado / (1 + i·t)` y la diferencia es lo que falta para el nominal. Da
+  // exactamente la suma de las diferencias documento a documento (§4 del spec), y por eso el resumen
+  // y el detalle por factura cuadran. La versión anterior era lineal y sin plazo
+  // (`montoDocs · tasa/100 · antic/100`): cobraba lo mismo por 15 días que por 90.
+  { id: "difPrecio", label: "Diferencia de precio", rol: "descuento",
+    formula: "redondear(montoDocs * antic / 100 - (montoDocs * antic / 100) / (1 + tasaEq / 100 * plazoEq / 30))",
     campo: "tasa", suf: "%", paso: "0.01",
-    ayuda: "El precio del dinero: tasa × anticipo × monto de documentos." },
+    ayuda: "El precio del dinero, con descuento racional sobre el plazo equivalente de la operación." },
   { id: "comision", label: "Comisión", rol: "descuento", formula: "redondear(acotar(montoDocs * pctCom / 100, comMin * UF, comMax * UF))",
     campo: "pctCom", suf: "%", paso: "0.01",
     // Estos dos no tienen monto propio: son los topes en UF de la comisión de arriba, así que sólo
@@ -2534,6 +2593,8 @@ function difPrecioDoc(monto, tasaPct, dias) { return monto - valorPresenteDoc(mo
 // DIFERENCIA DE PRECIO —no en el monto—. Es la ponderación que hace que la tasa equivalente
 // reproduzca la misma diferencia de precio, y da distinto: con dos documentos de igual monto a 31 y
 // 62 días, ponderar por monto da 46,5 días y por diferencia de precio 52,79.
+// (El % de anticipo no entra acá: es un factor constante sobre todos los documentos, así que se
+// cancela en el peso `dif_i / Σdif` y el plazo equivalente es el mismo con anticipo 100% o 80%.)
 function plazoEquivalente(docs) {
   const dif = docs.map((d) => difPrecioDoc(d.monto, d.tasa, d.dias));
   const tot = dif.reduce((a, b) => a + b, 0);
@@ -2551,14 +2612,18 @@ function tasaEquivalente(difTotal, plazoEq, vpTotal) {
 }
 
 // ── El reparto de UN concepto ─────────────────────────────────────────────────────────────────
-// De MAYOR A MENOR y con el último documento cuadrando la diferencia. El orden importa: redondear a
-// entero deja un resto por documento, y en una operación con muchas facturas chicas esos restos se
-// acumulan. Repartiendo desde la más grande, el residuo que absorbe la última es el más pequeño
-// posible en términos relativos.
+// Se recorre de MAYOR A MENOR y el residuo lo absorbe la factura MÁS GRANDE. Redondear a entero deja
+// un resto por documento y en una operación con muchas facturas chicas esos restos se acumulan: la
+// suma de las partes no da el total y hay que cuadrarla en alguna.
 //
-// `ajuste` es el peso que hubo que sumar o restar en el último documento para cuadrar. Se DEVUELVE en
-// vez de esconderlo: si algún día son miles de pesos en vez de unidades, es la señal de que el peso o
-// el redondeo están mal, y sin el dato nadie lo notaría.
+// Va a la más grande y no a la última por decisión de negocio (12-09-2026). Es además lo robusto: la
+// más grande siempre puede absorber el residuo sin cruzar el cero, mientras que en la más chica el
+// ajuste podía superar lo asignado —en una operación de MM$20.000 en 300 documentos quedaba en −4
+// pesos— y una comisión negativa no se explica ni se transfiere.
+//
+// `ajuste` es lo que hubo que sumar o restar para cuadrar. Se DEVUELVE en vez de esconderlo: si algún
+// día son miles de pesos donde deberían ser unidades, es la señal de que el peso o el redondeo están
+// mal, y sin el dato nadie lo notaría.
 function prorratearConcepto(docs, total, base) {
   // Sin documentos no hay a quién repartirle: devolver la estructura vacía en vez de reventar, porque
   // una oferta sin facturas seleccionadas es un estado NORMAL de la pantalla, no un error.
@@ -2571,22 +2636,13 @@ function prorratearConcepto(docs, total, base) {
   // Reparto teórico: peso a 6 decimales y a entero. La suma no da el total, y no puede darlo: son
   // n redondeos independientes.
   orden.forEach((o) => { asignado[o.i] = Math.round(T * (tot ? redond6(o.b / tot) : 0)); });
-  // El residuo lo absorbe el ÚLTIMO —el más chico—, que es donde menos distorsiona en términos
-  // absolutos. Si lo dejaría NEGATIVO se traslada hacia arriba: pasa cuando la operación es grande y
-  // esa factura es muy chica (MM$20.000 en 300 documentos deja al más chico en −4 pesos), y una
-  // comisión negativa en un documento no se puede explicar ni transferir. Cada documento absorbe lo
-  // que puede sin cruzar el cero y el resto sigue subiendo, así que el total cuadra igual.
-  let residuo = T - asignado.reduce((a, b) => a + b, 0);
-  let ajuste = 0, ajusteEn = orden[orden.length - 1].i, repartido = 0;
-  for (let k = orden.length - 1; k >= 0 && residuo !== 0; k--) {
-    const i = orden[k].i;
-    const cabe = residuo > 0 ? residuo : Math.max(residuo, -asignado[i]);
-    if (!cabe) continue;
-    asignado[i] += cabe;
-    if (!repartido) ajusteEn = i;
-    ajuste += cabe; residuo -= cabe; repartido++;
-  }
-  return { asignado, ajuste, ajusteEn, documentosAjustados: repartido };
+  // El residuo entero va a la PRIMERA del orden, que es la más grande. Una sola factura ajustada y
+  // siempre la que puede absorberlo: el ajuste es de unidades o decenas de pesos contra un monto que
+  // es el mayor de la operación, así que no distorsiona nada que alguien vaya a mirar.
+  const ajuste = T - asignado.reduce((a, b) => a + b, 0);
+  const ajusteEn = orden[0].i;
+  asignado[ajusteEn] += ajuste;
+  return { asignado, ajuste, ajusteEn };
 }
 
 // ── EL MOTOR ──────────────────────────────────────────────────────────────────────────────────
@@ -2596,6 +2652,10 @@ function prorratearConcepto(docs, total, base) {
 // pricing — es la cifra que Tesorería va a transferir.
 function prorratearOperacion(docs, conceptos, opts) {
   const o = opts || {};
+  // El anticipo entra en la BASE de la diferencia de precio: se paga el precio del dinero por lo que
+  // efectivamente se financia, no por el nominal de la factura. Con anticipo 100% —el default y el
+  // caso de la planilla de referencia— la base es el nominal y el resultado es idéntico.
+  const antic = o.antic != null ? (+o.antic || 0) : 100;
   const lista = (docs || []).map((d, i) => ({
     id: d.id != null ? d.id : "doc" + i, monto: +d.monto || 0, dias: +d.dias || 0,
     deudor: d.deudor || "", tasa: o.modo === "unica" ? (+o.tasa || 0) : (+d.tasa || 0),
@@ -2604,9 +2664,9 @@ function prorratearOperacion(docs, conceptos, opts) {
 
   // 1) DIFERENCIA DE PRECIO por documento. En los dos modos se calcula documento a documento con su
   //    propio plazo; lo que cambia es de dónde sale la tasa.
-  const difExacta = lista.map((d) => difPrecioDoc(d.monto, d.tasa, d.dias));
+  const difExacta = lista.map((d) => difPrecioDoc(d.monto * antic / 100, d.tasa, d.dias));
   const difTotalExacto = difExacta.reduce((a, b) => a + b, 0);
-  const vpTotalExacto = montoTotal - difTotalExacto;
+  const vpTotalExacto = montoTotal * antic / 100 - difTotalExacto;
   const plazoEq = plazoEquivalente(lista);
   const tasaEq = tasaEquivalente(difTotalExacto, plazoEq, vpTotalExacto);
   // A entero, cuadrando contra el total: mismo criterio que el resto de los conceptos.
@@ -2637,7 +2697,7 @@ function prorratearOperacion(docs, conceptos, opts) {
       if (c.rol !== "base") desc += porConcepto[c.id][i];
     }
     const anticipo = idAnticipo ? porConcepto[idAnticipo][i] : d.monto;
-    return { ...d, valorPresente: Math.round(d.monto - difExacta[i]), difPrecio: rDif.asignado[i],
+    return { ...d, valorPresente: Math.round(d.monto * antic / 100 - difExacta[i]), difPrecio: rDif.asignado[i],
              pesoMonto: montoTotal ? redond6(d.monto / montoTotal) : 0,
              conceptos: cs, anticipo, descuentos: desc, giro: anticipo - desc };
   });
@@ -2645,7 +2705,7 @@ function prorratearOperacion(docs, conceptos, opts) {
   const suma = (f) => filas.reduce((a, x) => a + f(x), 0);
   return {
     filas, montoTotal, difPrecio: difTotal, difPrecioExacto: difTotalExacto,
-    plazoEquivalente: plazoEq, tasaEquivalente: tasaEq,
+    plazoEquivalente: plazoEq, tasaEquivalente: tasaEq, antic,
     montoGirar: suma((f) => f.giro), ajustes, modo: o.modo === "unica" ? "unica" : "riesgo",
   };
 }
@@ -4537,7 +4597,7 @@ function descuentosDeal(deal, o) {
   const sum = (a) => a.reduce((s, x) => s + (x.desc || 0), 0);
   return { otros, mora, cxc, totOtros: sum(otros), totMora: sum(mora), totCxc: sum(cxc) };
 }
-function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, antic, setAntic, comisO, setComisO, tasaPond, diasPond, reevalPend, onReevaluar, esJefe, usuarioCod, deudoresOp, tasaFuente, colapsable }) {
+function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, antic, setAntic, comisO, setComisO, tasaPond, diasPond, tasaEqExacta, reevalPend, onReevaluar, esJefe, usuarioCod, deudoresOp, tasaFuente, colapsable }) {
   const [autorizSig, setAutorizSig] = useState(null); // firma de condiciones autorizadas por la jefatura
   const [solicSig, setSolicSig] = useState(null); // firma de condiciones con autorización solicitada
   const [editCond, setEditCond] = useState(false);
@@ -4595,9 +4655,15 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
   // conceptos del tenant (Configuración › Simulación): el IVA, la retención y el acotado de la
   // comisión eran literales en este componente y son configuración de cada factoring. Acá sólo se
   // arma la ENTRADA y se leen los resultados por su id.
+  // `tasaEq` es la tasa EFECTIVA con 6 decimales: la equivalente del bottom-up mientras el ejecutivo
+  // no toque el campo, y la que él escriba en cuanto lo haga —ahí el cálculo pasa a top-down—. Se
+  // compara contra `orig.tasa`, que es la equivalente ya redondeada a los 2 decimales que se muestran:
+  // usar la redondeada para calcular movería la diferencia de precio respecto de la suma por documento.
+  const tasaEfectiva = (tasaEqExacta != null && nc.tasa === orig.tasa) ? tasaEqExacta : nc.tasa;
   const simEntrada = { montoDocs: montoDocsCLP, cantFacturas, dias: o.diasFin || 0,
     mora: _desc.totMora, otrosDesc: _desc.totOtros, cxc: _desc.totCxc,
-    tasa: nc.tasa, antic: nc.antic, pctCom: nc.pctCom, comMin: nc.comMin, comMax: nc.comMax,
+    tasa: nc.tasa, tasaEq: tasaEfectiva, plazoEq: diasPond || o.diasFin || 0,
+    antic: nc.antic, pctCom: nc.pctCom, comMin: nc.comMin, comMax: nc.comMax,
     gastoOp: nc.gastoOp, gastoDoc: nc.gastoDoc };
   const sim = simularOperacion(simEntrada);
   const valSim = (id) => { const f = sim.filas.find((x) => x.id === id); return f ? f.valor : 0; };
@@ -6208,18 +6274,15 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   const excluidas = facturasMarcadas.filter((f) => f.excl);
                   const montoValido = +validas.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
                   const montoOrig = +facturasOp.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
-                  const wDen = validas.reduce((s, f) => s + (f.montoMM || 0), 0) || 1;
-                  const diasPond = Math.round(validas.reduce((s, f) => s + (f.montoMM || 0) * diasDe(f.deudor), 0) / wDen);
-                  // Diferencia de precio por factura VÁLIDA: financiado × (spread deudor + costo fondo) × días/30.
-                  let interesMM = 0, tNum = 0;
-                  validas.forEach((f) => {
-                    const tF = tasaDe(f.deudor), dias = diasDe(f.deudor);
-                    const fin = (f.montoMM || 0) * (+antic / 100);
-                    interesMM += fin * (tF / 100) * (dias / 30); tNum += (f.montoMM || 0) * tF;
-                  });
-                  interesMM = +interesMM.toFixed(2);
-                  // Tasa ponderada por riesgo del deudor + plazo (Σ monto×tasa_deudor / Σ monto).
-                  const tasaPondRiesgo = +(tNum / wDen).toFixed(2);
+                  // BOTTOM-UP (§4 del spec): la diferencia de precio se calcula documento a documento
+                  // con la tasa de SU deudor y SU plazo, y la de la operación es la suma. De ahí salen
+                  // el plazo equivalente y la tasa equivalente, que es la única tasa que produce esa
+                  // misma diferencia sobre el total — y es la que se le muestra al cliente.
+                  const docsPro = validas.map((f, i) => ({ id: f.folio || f.id || "f" + i, deudor: f.deudor,
+                    monto: Math.round((f.montoMM || 0) * 1e6), dias: diasDe(f.deudor), tasa: tasaDe(f.deudor) }));
+                  const proRiesgo = prorratearOperacion(docsPro, [], { antic: +antic });
+                  const diasPond = proRiesgo.plazoEquivalente;      // 6 decimales; se muestra con 1
+                  const tasaPondRiesgo = +proRiesgo.tasaEquivalente.toFixed(2);   // se muestra con 2
                   // Regla comercial: no ofertar por debajo de la tasa del ÚLTIMO negocio cursado del cliente.
                   // Si la ponderada por riesgo es menor, la simulación usa la tasa del último negocio.
                   const tul = tasaUltimoNegocio(deal);
@@ -6230,8 +6293,18 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   const modoTasa = CFG_ACTIVA.tasaModo || "mayor";
                   const usaUltNeg = !!tul && (modoTasa === "ultima" || (modoTasa === "mayor" && tasaPondRiesgo < tul.tasa));
                   const tasaPond = usaUltNeg ? tul.tasa : tasaPondRiesgo; // tasa EFECTIVA de la simulación
-                  if (usaUltNeg && tasaPondRiesgo > 0) interesMM = +(interesMM * (tasaPond / tasaPondRiesgo)).toFixed(2); // escala el interés a la tasa efectiva
-                  const opts = { anticipo: +antic, dias: diasPond, comision: +comisO, interesMM, montoValido, cantidad: validas.length };
+                  // Con la tasa del último negocio el cálculo es TOP-DOWN: esa tasa única sobre el
+                  // plazo de cada documento. Antes se escalaba el interés por el cociente de tasas,
+                  // que es una regla de tres sobre un descuento racional y no es lo mismo.
+                  const pro = usaUltNeg ? prorratearOperacion(docsPro, [], { modo: "unica", tasa: tasaPond, antic: +antic }) : proRiesgo;
+                  // La tasa EXACTA (6 decimales) que alimenta la fórmula del resumen. Redondearla a 2
+                  // para calcular movería la diferencia de precio respecto de la suma por documento.
+                  const tasaEqExacta = usaUltNeg ? tasaPond : proRiesgo.tasaEquivalente;
+                  const interesMM = +(pro.difPrecio / 1e6).toFixed(2);
+                  // El plazo equivalente se calcula con 6 decimales y se PRESENTA con 1: es lo que
+                  // viaja en `diasFin` y se muestra en la oferta, el Kanban y el mensaje al cliente.
+                  // La fórmula del resumen recibe el exacto por `plazoEq`, no éste.
+                  const opts = { anticipo: +antic, dias: +diasPond.toFixed(1), comision: +comisO, interesMM, montoValido, cantidad: validas.length };
                   const o = calcularOferta(deal, tasaPond, opts);
                   const oferta = tasaPond; // tasa de la operación (efectiva)
                   const inputCls = "w-20 rounded-md px-2 py-1 t11 text-right outline-none disabled:opacity-60 disabled:cursor-not-allowed";
@@ -6247,7 +6320,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           <div className="mt-2 rounded-lg p-2.5" style={{ backgroundColor: "#F9FAFB", border: "1px solid #FED7AA" }}>
                             <div className="t9 font-semibold uppercase tracking-wide" style={{ color: "#C2410C" }}>Condiciones comerciales</div>
                             <div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                              {[["Tasa de negocio", `${tasaPond}%`], ["% Anticipo", `${antic}%`], ["Comisión", fmtCLP(comMiniCLP)], ["Gastos", fmtCLP(gastMiniCLP)]].map(([l, v]) => (
+                              {[["Tasa de negocio", `${tasaPond.toFixed(2)}%`], ["Plazo equivalente", `${diasPond.toFixed(1)} d`], ["% Anticipo", `${antic}%`], ["Comisión", fmtCLP(comMiniCLP)], ["Gastos", fmtCLP(gastMiniCLP)]].map(([l, v]) => (
                                 <div key={l} className="rounded-lg p-2" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
                                   <div className="t9 uppercase tracking-wide" style={{ color: C.faint }}>{l}</div>
                                   <div className="mt-0.5 t13 font-semibold" style={{ color: C.ink }}>{v}</div>
@@ -7068,7 +7141,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             })()}
                             <div className="mt-4 t10 uppercase tracking-wide" style={{ color: C.faint }}>Condiciones comerciales</div>
                             <div className="mt-1.5 overflow-hidden rounded-xl" style={{ border: `1px solid ${C.line}` }}>
-                              <SimResumen deal={deal} o={o} montoDocs={montoValido} cantFacturas={validas.length} usuario={USERS[usuario] || usuario} bloqueado={bloqueado} antic={antic} setAntic={setAntic} comisO={comisO} setComisO={setComisO} tasaPond={tasaPond} diasPond={diasPond} reevalPend={reevalPend} onReevaluar={() => setReevalPend(false)} esJefe={esJefeComercial(usuario)} usuarioCod={usuario} deudoresOp={validas} tasaFuente={{ usaUltNeg, riesgo: tasaPondRiesgo, ultNeg: tul }} colapsable />
+                              <SimResumen deal={deal} o={o} montoDocs={montoValido} cantFacturas={validas.length} usuario={USERS[usuario] || usuario} bloqueado={bloqueado} antic={antic} setAntic={setAntic} comisO={comisO} setComisO={setComisO} tasaPond={tasaPond} diasPond={diasPond} tasaEqExacta={tasaEqExacta} reevalPend={reevalPend} onReevaluar={() => setReevalPend(false)} esJefe={esJefeComercial(usuario)} usuarioCod={usuario} deudoresOp={validas} tasaFuente={{ usaUltNeg, riesgo: tasaPondRiesgo, ultNeg: tul }} colapsable />
                             </div>
                             </div>
                             {/* Velo tintado sobre la sección atenuada: con sólo `opacity` el contenido se

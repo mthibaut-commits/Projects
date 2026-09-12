@@ -1,6 +1,6 @@
 # Pricing y simulación de la operación
 
-**Versión 1.1 · 12-09-2026 · NEX Factoring**
+**Versión 1.2 · 12-09-2026 · NEX Factoring**
 
 Qué determina la **tasa** de un negocio y cómo se construye el **desglose** que termina en el monto
 que el cliente recibe. Es el tercer proceso aislable del módulo, junto con la asignación de líneas y
@@ -108,7 +108,7 @@ mantenedor, es un incidente.
 |---|---|---|---|
 | 1 | Monto Documentos | base | `montoDocs` |
 | 2 | Monto Anticipo | base | `redondear(montoDocs * antic / 100)` |
-| 3 | Diferencia de precio | descuento | `redondear(montoDocs * tasa / 100 * antic / 100)` |
+| 3 | Diferencia de precio | descuento | `redondear(montoDocs * antic / 100 - (montoDocs * antic / 100) / (1 + tasaEq / 100 * plazoEq / 30))` |
 | 4 | Comisión | descuento | `redondear(acotar(montoDocs * pctCom / 100, comMin * UF, comMax * UF))` |
 | 5 | Gastos | descuento | `redondear(gastoOp + gastoDoc * cantFacturas)` |
 | 6 | IVA | descuento | `redondear(comision * ivaPct / 100)` |
@@ -117,8 +117,11 @@ mantenedor, es un incidente.
 | 9 | Cuentas por cobrar | descuento | `cxc` |
 | — | **Retención** | resultado | `redondear(montoDocs * retencionPct / 100)` |
 
-La **diferencia de precio** es el precio del dinero y **se calcula documento a documento** (§4). El
-concepto del catálogo es la cifra agregada; su desglose por factura manda.
+La **diferencia de precio** es el precio del dinero. El concepto del catálogo la calcula sobre el
+total con **descuento racional** usando la **tasa y el plazo equivalentes** (§4.3), y da exactamente la
+suma documento a documento: es la propiedad que justifica que exista una tasa equivalente. Hasta la
+v1.1 se calculaba lineal y sin plazo (`montoDocs · tasa/100 · antic/100`), que cobra lo mismo por 15
+días que por 90.
 
 La **comisión** es un porcentaje sobre el monto acotado por un mínimo y un máximo en UF. `acotar` es
 ese patrón escrito una sola vez.
@@ -144,6 +147,8 @@ justifica que el orden importe.
 | `UF` | tenant | Valor de la UF |
 | `ivaPct` | tenant | % de IVA |
 | `retencionPct` | tenant | % de retención |
+| `tasaEq` | operación | Tasa equivalente (§4.3), con 6 decimales |
+| `plazoEq` | operación | Plazo equivalente (§4.3), con 6 decimales |
 
 Las de **operación** salen del negocio que se simula. Las de **condición** las edita el ejecutivo en
 la propia pantalla, sujetas a atribución (§2.2). Las de **tenant** se editan en
@@ -255,9 +260,9 @@ dos documentos de MM$100 a 31 y 62 días, ponderar por monto da **46,5 días** y
 precio da **52,79**. Sólo la segunda hace que la tasa equivalente reproduzca la diferencia de precio
 original, que es lo único que la justifica.
 
-> **Punto a confirmar.** El enunciado de negocio describe el plazo ponderado «por el monto de cada
-> factura»; la planilla de referencia lo pondera por el peso de la diferencia de precio. Se implementó
-> como la planilla, porque es lo que cierra contra su propia verificación.
+> **Confirmado (12-09-2026).** El enunciado inicial describía el plazo ponderado «por el monto de cada
+> factura»; la planilla de referencia lo pondera por el peso de la diferencia de precio. El negocio
+> confirmó que manda la planilla.
 
 Verificación con los datos de la planilla:
 
@@ -273,6 +278,20 @@ total con el plazo equivalente devuelve la misma diferencia de precio.
 > La planilla despeja la tasa con los totales **ya redondeados a entero** y obtiene 0,99536204%; la
 > implementación usa los valores exactos y obtiene 0,99536209%. Difieren en el décimo decimal y la
 > tasa equivalente es informativa, así que se usa la exacta.
+
+### 4.3.1 Precisión: se calcula con 6 decimales y se muestra con 2 y 1
+
+La tasa equivalente y el plazo equivalente se **calculan y se guardan con 6 decimales**, y se
+**presentan** con **2 decimales la tasa** y **1 el plazo**.
+
+No es cosmética. Redondear la tasa equivalente a los 2 decimales que se muestran y calcular con ésa
+mueve la diferencia de precio: en el ejemplo de la planilla, de 0,995362% a 1,00% son **15.764 pesos**
+sobre una operación de MM$200. El resumen dejaría de cuadrar con la suma por documento, que es
+exactamente lo que la tasa equivalente existe para garantizar.
+
+**La tasa que el ejecutivo edita es el override.** Mientras no toque el campo, el resumen usa la tasa
+equivalente exacta del bottom-up. En cuanto la cambia, el cálculo pasa a **top-down** con la tasa que
+él escribió (§4.2).
 
 ### 4.4 El resto de los conceptos: siempre top-down
 
@@ -290,19 +309,20 @@ Los pesos se calculan con **6 decimales** y cada monto asignado se redondea a **
 residuo por documento, y en una operación con muchas facturas chicas los residuos se acumulan: la suma
 de las partes **no da** el total. Tres reglas lo resuelven:
 
-1. **El reparto va de la factura más grande a la más chica.** El residuo que queda al final es el más
-   pequeño posible en términos relativos.
-2. **El último documento absorbe el residuo**, de modo que la suma cuadre exactamente.
+1. **El reparto se recorre de la factura más grande a la más chica.**
+2. **La factura MÁS GRANDE absorbe el residuo**, de modo que la suma cuadre exactamente. Va a la más
+   grande y no a la última por decisión de negocio (12-09-2026), y es además lo robusto: siempre puede
+   absorberlo sin cruzar el cero. En la más chica el ajuste podía **superar lo asignado** —en una
+   operación de MM$20.000 repartida en 300 documentos quedaba en **−4 pesos**— y una comisión negativa
+   no se explica ni se transfiere.
 3. **Cada concepto expone su variable de ajuste** (`ajustes[concepto] = { pesos, documento }`): cuántos
    pesos hubo que sumar o restar y en qué documento. Se devuelve en vez de esconderse — si algún día
    son miles de pesos donde deberían ser unidades, es la señal de que el peso o el redondeo están mal,
    y sin el dato nadie lo notaría.
 
-**Cuando el ajuste dejaría el documento en negativo, se traslada hacia arriba.** Pasa cuando la
-operación es grande y la última factura es muy chica: en una operación de MM$20.000 repartida en 300
-documentos, el más chico queda en **−4 pesos**. Una comisión negativa en un documento no se puede
-explicar ni transferir, así que cada documento absorbe lo que puede sin cruzar el cero y el resto sigue
-subiendo. El total cuadra igual.
+> **El descuadre es estructural, no un defecto.** El peso chileno no tiene decimales, así que el monto
+> asignado a cada factura **tiene** que ser un entero. Redondear n veces y sumar no da el total: por eso
+> la variable de ajuste es parte del diseño y no un parche.
 
 **Magnitud esperada del ajuste.** Son dos fuentes de error y escalan distinto:
 
@@ -334,11 +354,11 @@ modelo de giro, que decide **cómo** se le hace llegar al cliente y en cuántas 
   partes se le hace llegar al cliente, combinando las formas de giro que el factoring tenga— es una
   funcionalidad aparte, también por tenant, y toma este `montoGirar` y el desglose por factura del §4
   como entrada. La regla de oro se hereda: la suma de las transferencias es el monto a girar.
-- **El catálogo base todavía calcula la diferencia de precio agregada** (`montoDocs × tasa/100 ×
-  antic/100`, lineal y sin plazo) mientras el §4 la define documento a documento con descuento
-  racional. Las dos conviven: el motor por factura ya produce la cifra correcta y la expone, pero
-  cambiar el concepto del catálogo mueve las cifras de todas las operaciones simuladas, así que es una
-  decisión de negocio pendiente y no un cambio a hacer en silencio.
+- **El anticipo parcial descuenta sobre lo financiado**, no sobre el nominal: la base de la diferencia
+  de precio es `monto × antic/100`. Con anticipo 100% —el default y el caso de la planilla— la base es
+  el nominal y el resultado es idéntico. La planilla de referencia aplica el anticipo después de
+  descontar y en su propio resumen lo trata como 100%, así que el caso parcial no está verificado
+  contra ella.
 - **La retención no tiene fecha de liberación modelada.** Se informa como monto y como condición
   («si las facturas se pagan en la fecha informada»), sin un evento que la libere.
 - **Las condiciones originales de una operación** se fijan al abrir la simulación y no se re-leen si
