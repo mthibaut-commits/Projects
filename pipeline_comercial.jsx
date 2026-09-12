@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, Fragment } from "react";
+import { useState, useMemo, useEffect, useLayoutEffect, useRef, Fragment } from "react";
 import {
   Search, Filter, Download, Table2, Bell, ChevronRight, ChevronDown,
   ChevronUp, ChevronLeft, X, Check, Calendar, Star, ArrowUpRight, ArrowDownRight,
@@ -2669,8 +2669,13 @@ function prorratearOperacion(docs, conceptos, opts) {
   const vpTotalExacto = montoTotal * antic / 100 - difTotalExacto;
   const plazoEq = plazoEquivalente(lista);
   const tasaEq = tasaEquivalente(difTotalExacto, plazoEq, vpTotalExacto);
-  // A entero, cuadrando contra el total: mismo criterio que el resto de los conceptos.
-  const difTotal = Math.round(difTotalExacto);
+  // A entero, cuadrando contra el total: mismo criterio que el resto de los conceptos. El llamador
+  // puede FIJAR el total (`difPrecioTotal`) cuando ya lo calculó la simulación del tenant: la fórmula
+  // del catálogo lo obtiene de la tasa y el plazo equivalentes y esto de la suma documento a
+  // documento, y aunque son la misma cifra pueden diferir en un peso por el redondeo. Los pesos del
+  // reparto siguen siendo el descuento racional de cada documento; lo único que cambia es el total
+  // que se distribuye, para que el giro por factura sume EXACTAMENTE el monto a girar que se muestra.
+  const difTotal = o.difPrecioTotal != null ? Math.round(+o.difPrecioTotal || 0) : Math.round(difTotalExacto);
   const rDif = prorratearConcepto(lista, difTotal, (_, i) => difExacta[i]);
 
   // 2) EL RESTO DE LOS CONCEPTOS, por peso en MONTO y sin plazo. La diferencia de precio se descarta
@@ -3876,14 +3881,17 @@ function DealCard({ deal, onOpen, onDragStart }) {
         Tasa {deal.tasa} | Anticipo {deal.anticipo} | Desc. {deal.simulado ? fmtMM(deal.descMM) : "—"}
       </div>
       {/* GIROS: cómo se reparte el monto a girar entre los dos tipos. Va debajo del giro porque es su
-          desglose, y sólo con la operación simulada — antes de eso no hay monto que repartir. */}
+          desglose, y sólo con la operación simulada — antes de eso no hay monto que repartir. Un tipo
+          en CERO no se dibuja: no forma parte del reparto y el catálogo es extensible, así que con un
+          tercer tipo la tarjeta mostraría dos chips en $0M. Que nada calificara para Express lo dice
+          el `motivo` en el tooltip del Normal, que además explica por qué. */}
       {deal.simulado && (() => {
         const g = giroResumenDeal(deal);
         if (!g || !g.tipos.some((x) => x.monto > 0)) return null;
         return (
           <div className="mt-1 flex flex-wrap items-center gap-1">
             <span className="t7 uppercase tracking-wide" style={{ color: C.faint, marginRight: 2 }}>Giros</span>
-            {g.tipos.map((x) => <ChipGiro key={x.codigo} codigo={x.codigo} monto={x.monto} compacto
+            {g.tipos.filter((x) => x.monto > 0).map((x) => <ChipGiro key={x.codigo} codigo={x.codigo} monto={x.monto} compacto
               titulo={`${x.label}: ${fmtCLP(x.monto)} en ${x.facturas.length} factura(s) de ${x.deudores.length} deudor(es).${g.motivo && x.codigo !== "GE" ? " " + g.motivo : ""}`} />)}
           </div>
         );
@@ -4736,7 +4744,7 @@ function descuentosDeal(deal, o) {
   const sum = (a) => a.reduce((s, x) => s + (x.desc || 0), 0);
   return { otros, mora, cxc, totOtros: sum(otros), totMora: sum(mora), totCxc: sum(cxc) };
 }
-function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, antic, setAntic, comisO, setComisO, tasaPond, diasPond, tasaEqExacta, reevalPend, onReevaluar, esJefe, usuarioCod, deudoresOp, tasaFuente, colapsable }) {
+function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, antic, setAntic, comisO, setComisO, tasaPond, diasPond, tasaEqExacta, reevalPend, onReevaluar, onSim, esJefe, usuarioCod, deudoresOp, tasaFuente, colapsable }) {
   const [autorizSig, setAutorizSig] = useState(null); // firma de condiciones autorizadas por la jefatura
   const [solicSig, setSolicSig] = useState(null); // firma de condiciones con autorización solicitada
   const [editCond, setEditCond] = useState(false);
@@ -4805,6 +4813,13 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
     antic: nc.antic, pctCom: nc.pctCom, comMin: nc.comMin, comMax: nc.comMax,
     gastoOp: nc.gastoOp, gastoDoc: nc.gastoDoc };
   const sim = simularOperacion(simEntrada);
+  // La simulación sube al detalle, que es quien reparte el giro por factura y por deudor. Va por
+  // `useLayoutEffect` y no por `useEffect` para que la corrección ocurra ANTES de pintar: con el
+  // efecto asíncrono los chips alcanzaban a dibujarse un cuadro con el monto sin descuentos. La
+  // dependencia es la FIRMA de los valores, no el objeto —que es nuevo en cada render—, así que
+  // avisar no vuelve a disparar el aviso.
+  const simSig = sim.filas.map((f) => f.id + ":" + f.valor).join("|");
+  useLayoutEffect(() => { if (onSim) onSim(sim); }, [simSig, onSim]);
   const valSim = (id) => { const f = sim.filas.find((x) => x.id === id); return f ? f.valor : 0; };
   const anticipoCLP = sim.montoAnticipo;
   const difPrecioCLP = valSim("difPrecio");
@@ -5952,6 +5967,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
     return () => clearTimeout(t);
   }, [negTab, deal ? deal.id : null]);
   const [reevalPend, setReevalPend] = useState(false); // se agregaron/quitaron facturas → condiciones a re-evaluar
+  // La SIMULACIÓN vigente del resumen de condiciones. Sube desde `SimResumen` porque las condiciones
+  // que el ejecutivo edita —tasa, comisión, gastos— son estado de ese componente, y los chips de giro
+  // tienen que repartir el MISMO «Monto a Girar» que él está mirando: sin esto el prorrateo sólo
+  // conocía la diferencia de precio y el chip sumaba el anticipo neto de intereses, ~$2 MM por sobre
+  // el giro real, rompiendo la regla de oro del modelo de giro justo en la pantalla que la muestra.
+  const [simOp, setSimOp] = useState(null);
   // Re-evaluación EXPLÍCITA de la línea (spec §8.4). Agregar o quitar facturas NO dispara el cálculo:
   // cada clic sería una llamada a la API de líneas mientras el ejecutivo todavía está armando. Los
   // montos aritméticos se actualizan al instante; las cifras que dependen de la línea muestran «Por
@@ -6439,7 +6460,20 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   // ASIGNACIÓN DE GIROS de esta operación. Se calcula UNA vez acá y se consulta por
                   // deudor más abajo: el motor ya agrupa por deudor —que es la unidad de la decisión—
                   // así que la fila no tiene que reagrupar facturas ni puede equivocarse al hacerlo.
-                  const giros = asignarGiros(girosDeDeal(deal, { prorrateo: pro, facturas: validas }), {});
+                  //
+                  // El prorrateo que alimenta los giros lleva TODOS los conceptos de la simulación, no
+                  // sólo la diferencia de precio: lo que se gira es el anticipo menos el subtotal de
+                  // descuentos, así que con `pro` a secas el chip sumaba el anticipo neto de intereses
+                  // y quedaba por sobre el «Monto a Girar» de la fila de abajo —la regla de oro del
+                  // modelo de giro rota en la misma pantalla que la enuncia—. La simulación sube desde
+                  // `SimResumen`, que es donde el ejecutivo edita las condiciones; mientras no haya
+                  // llegado se usa `pro`, que es lo que se puede afirmar con lo que se sabe.
+                  const conceptosSim = (simOp && simOp.filas) ? simOp.filas.map((f) => ({ id: f.id, rol: f.rol, total: f.valor })) : null;
+                  const proGiro = conceptosSim
+                    ? prorratearOperacion(docsPro, conceptosSim, { ...(usaUltNeg ? { modo: "unica", tasa: tasaPond } : {}), antic: +antic,
+                        difPrecioTotal: (simOp.filas.find((f) => f.id === "difPrecio") || {}).valor })
+                    : pro;
+                  const giros = asignarGiros(girosDeDeal(deal, { prorrateo: proGiro, facturas: validas }), {});
                   // La tasa EXACTA (6 decimales) que alimenta la fórmula del resumen. Redondearla a 2
                   // para calcular movería la diferencia de precio respecto de la suma por documento.
                   const tasaEqExacta = usaUltNeg ? tasaPond : proRiesgo.tasaEquivalente;
@@ -7295,14 +7329,16 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     {compuerta("Línea", nSinLinea === 0, "Deudores con línea", "Deudores requieren línea", nSinLinea, deudOf.length, "#7C3AED", C.lilac,
                                       nSinLinea === 0 ? "Todos los deudores de la oferta tienen línea disponible para su monto." : `${nSinLinea} de ${deudOf.length} deudor(es) no alcanzan con la línea vigente: su parte requiere comité.`)}
                                     {/* GIROS: no es una compuerta —no bloquea nada— sino el RESULTADO de las tres
-                                        anteriores, así que va al final y con otra forma. La suma de los dos montos
-                                        es siempre el monto a girar; si alguna vez no cuadra, el motor lo dice y
-                                        acá se ve, en vez de que la diferencia desaparezca en un redondeo. */}
+                                        anteriores, así que va al final y con otra forma. La suma de los montos es
+                                        siempre el monto a girar; si alguna vez no cuadra, el motor lo dice y acá se
+                                        ve, en vez de que la diferencia desaparezca en un redondeo. Los tipos en CERO
+                                        no se dibujan —no son parte del reparto— y el tooltip del que sí tiene monto
+                                        trae el `motivo`, que es lo que explica por qué el otro quedó vacío. */}
                                     {giros && giros.tipos.some((g) => g.monto > 0) && (<>
                                       <span style={{ width: 1, height: 22, backgroundColor: vd.tono === "con_linea" ? "#86EFAC" : t.bd }} />
                                       <div className="flex items-center gap-2">
                                         <span className="t9 uppercase tracking-wide" style={{ color: C.faint }}>Giros</span>
-                                        {giros.tipos.map((g) => <ChipGiro key={g.codigo} codigo={g.codigo} monto={g.monto}
+                                        {giros.tipos.filter((g) => g.monto > 0).map((g) => <ChipGiro key={g.codigo} codigo={g.codigo} monto={g.monto}
                                           titulo={`${g.label}: ${fmtCLP(g.monto)} en ${g.facturas.length} factura(s) de ${g.deudores.length} deudor(es).${giros.motivo && g.codigo !== "GE" ? " " + giros.motivo : ""}`} />)}
                                         {!giros.cuadra && <span className="t9 font-semibold" style={{ color: C.red }} title={`La suma por tipo (${fmtCLP(giros.asignado)}) no calza con el monto a girar (${fmtCLP(giros.montoGirar)}).`}>descuadre {fmtCLP(giros.descuadre)}</span>}
                                       </div>
@@ -7314,7 +7350,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             })()}
                             <div className="mt-4 t10 uppercase tracking-wide" style={{ color: C.faint }}>Condiciones comerciales</div>
                             <div className="mt-1.5 overflow-hidden rounded-xl" style={{ border: `1px solid ${C.line}` }}>
-                              <SimResumen deal={deal} o={o} montoDocs={montoValido} cantFacturas={validas.length} usuario={USERS[usuario] || usuario} bloqueado={bloqueado} antic={antic} setAntic={setAntic} comisO={comisO} setComisO={setComisO} tasaPond={tasaPond} diasPond={diasPond} tasaEqExacta={tasaEqExacta} reevalPend={reevalPend} onReevaluar={() => setReevalPend(false)} esJefe={esJefeComercial(usuario)} usuarioCod={usuario} deudoresOp={validas} tasaFuente={{ usaUltNeg, riesgo: tasaPondRiesgo, ultNeg: tul }} colapsable />
+                              <SimResumen deal={deal} o={o} montoDocs={montoValido} cantFacturas={validas.length} usuario={USERS[usuario] || usuario} bloqueado={bloqueado} antic={antic} setAntic={setAntic} comisO={comisO} setComisO={setComisO} tasaPond={tasaPond} diasPond={diasPond} tasaEqExacta={tasaEqExacta} reevalPend={reevalPend} onReevaluar={() => setReevalPend(false)} onSim={setSimOp} esJefe={esJefeComercial(usuario)} usuarioCod={usuario} deudoresOp={validas} tasaFuente={{ usaUltNeg, riesgo: tasaPondRiesgo, ultNeg: tul }} colapsable />
                             </div>
                             </div>
                             {/* Velo tintado sobre la sección atenuada: con sólo `opacity` el contenido se
@@ -7336,7 +7372,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       </div>
                                     </div>
                                   ) : (<>
-                                  <div className="t12 font-semibold" style={{ color: C.ink }}>¿Qué facturas quieres incluir en la oferta?</div>
+                                  <div className="t15 font-semibold" style={{ color: C.ink }}>¿Qué facturas quieres incluir en la oferta?</div>
                                   <div className="mt-0.5 t10" style={{ color: C.sub }}>Al elegir se arma la oferta y se simula: asignación de línea, tasa, descuentos y monto a girar. Después puedes ajustarla factura a factura.</div>
                                   {opcionesInicio.length ? (
                                     /* Una opcion por linea: son alternativas excluyentes que se comparan
@@ -21115,6 +21151,18 @@ export default function PipelineComercial() {
   // Muestreo continuo del conteo por etapa (ventana móvil que avanza con el tiempo).
   const dealsRef = useRef(deals);
   dealsRef.current = deals;
+  // Aviso a la pestaña que abrió el detalle de que la oferta ya se simuló. Sale DESPUÉS del commit y
+  // no al lado del `setDeals`: `setDeals(fn)` no ejecuta `fn` en el acto —React lo llama al
+  // renderizar—, así que el patch que se arma dentro del updater todavía no existe cuando se postea.
+  // Mientras se posteaba ahí el mensaje no salía nunca y la operación quedaba simulada en el detalle
+  // y «Sin simular» en el tubo, que es justo lo que este aviso viene a evitar.
+  const simAvisoRef = useRef(null);
+  useEffect(() => {
+    const av = simAvisoRef.current;
+    if (!av) return;
+    simAvisoRef.current = null;
+    try { if (window.opener) window.opener.postMessage({ type: "nex-simulado", dealId: av.id, patch: av.patch }, ORIGEN_APP); } catch (_) {}
+  });
   useEffect(() => {
     const iv = setInterval(() => {
       if (pausaRef.current || !streamingRef.current) return;
@@ -21387,23 +21435,24 @@ export default function PipelineComercial() {
   // SIMULAR: es lo ÚNICO que calcula condiciones comerciales, y sólo cuando el ejecutivo lo pide sobre
   // la selección que dejó. Hasta acá la oportunidad tiene deudores y montos, pero no precio.
   const simularOferta = (id) => {
-    let patch = null;
     const upd = (d) => {
       if (d.id !== id) return d;
       const fs = itemizarFacturas(d);
       const monto = +fs.reduce((s2, f) => s2 + (f.montoMM || 0), 0).toFixed(1);
-      patch = { simulado: true, amountMM: monto, facturas: fs.length, status: "Simulada",
+      const patch = { simulado: true, amountMM: monto, facturas: fs.length, status: "Simulada",
         facturasOp: d.facturasOp, facturasDisponibles: d.facturasDisponibles, ofertaSugerida: d.ofertaSugerida,
         ...finanzasDe(d.cliente, d.deudor, monto) };
+      // El detalle vive en una PESTAÑA APARTE —se abre con `window.open` y un ticket con la foto del
+      // negocio—, así que su estado no es el del tubo: sin avisar, la operación quedaba simulada acá y
+      // «Sin simular» allá para siempre. Se le deja el patch al efecto que le avisa a la ventana que
+      // lo abrió, por el mismo canal con que el sitio del cliente informa el cierre remoto. Se arma
+      // ACÁ porque es el único punto que ve el negocio ya con las facturas que se acaban de
+      // incorporar: el llamador las tiene, pero no el complemento que queda disponible.
+      simAvisoRef.current = { id, patch };
       return { ...d, ...patch, historialContacto: traza(d, `Simulación de la oferta: ${fs.length} factura(s) por ${fmtMM(monto)}`) };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
-    // El detalle vive en una PESTAÑA APARTE —se abre con `window.open` y un ticket con la foto del
-    // negocio—, así que su estado no es el del tubo: sin avisar, la operación quedaba simulada acá y
-    // «Sin simular» allá para siempre. Se le notifica a la ventana que lo abrió, por el mismo canal
-    // con que el sitio del cliente informa el cierre remoto.
-    try { if (patch && window.opener) window.opener.postMessage({ type: "nex-simulado", dealId: id, patch }, ORIGEN_APP); } catch (e) {}
   };
   // Retira una factura de la oferta y la deja disponible como candidata en "Otras facturas".
   // MESA DE VERIFICACIÓN. Se marca por DEUDOR porque una llamada cubre todas sus facturas (regla 6).

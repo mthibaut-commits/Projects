@@ -1431,6 +1431,54 @@
        `sin simular → null · simulada: ${g.tipos.map((x) => x.codigo + " " + x.monto).join(" · ")} suman ${suma} = giro ${total} · memo ok · ids posicionales: ${conGiro}/2 con giro`);
   }
 
+  // 84 · EL CHIP DE GIRO REPARTE EL «MONTO A GIRAR», no el anticipo neto de intereses. El detalle
+  // calculaba el prorrateo con la lista de conceptos VACÍA —le servía para la tasa y el plazo
+  // equivalentes— y con eso el giro por documento era anticipo − diferencia de precio: le faltaban la
+  // comisión, el IVA y los gastos. El chip de la cabecera quedaba ~2 MM por encima del «Monto a
+  // Girar» de la fila de abajo, o sea la regla de oro del modelo de giro rota en la misma pantalla
+  // que la enuncia. Con los conceptos de la simulación el reparto cuadra al PESO, y ahí es donde
+  // aparece la segunda mitad: los dos calculan la diferencia de precio por caminos distintos (la
+  // fórmula del catálogo sobre el total, el prorrateo documento a documento) y pueden diferir en un
+  // peso, así que el total a repartir lo FIJA la simulación (`difPrecioTotal`).
+  {
+    const carteras = [
+      [{ id: "A", deudor: "D1", monto: 30000000, dias: 31, tasa: 1.08 }, { id: "B", deudor: "D1", monto: 12000000, dias: 45, tasa: 1.08 },
+       { id: "C", deudor: "D2", monto: 47700000, dias: 62, tasa: 1.18 }],
+      [{ id: "U", deudor: "D1", monto: 4500000, dias: 15, tasa: 0.92 }],
+      [{ id: "A", deudor: "D1", monto: 900000, dias: 30, tasa: 1.6 }, { id: "B", deudor: "D2", monto: 88000000, dias: 90, tasa: 1.35 },
+       { id: "C", deudor: "D3", monto: 2300000, dias: 60, tasa: 1.2 }, { id: "D", deudor: "D3", monto: 15000000, dias: 20, tasa: 1.1 }],
+    ];
+    let malos = 0, det = "", sinConceptos = 0;
+    for (const docs of carteras) for (const antic of [100, 90]) {
+      const pro = prorratearOperacion(docs, [], { antic });
+      const montoDocs = docs.reduce((a, d) => a + d.monto, 0);
+      const sim = simularOperacion({ montoDocs, cantFacturas: docs.length, antic, tasa: pro.tasaEquivalente,
+        tasaEq: pro.tasaEquivalente, plazoEq: pro.plazoEquivalente, pctCom: 0.3, comMin: 2, comMax: 2,
+        gastoOp: 26000, gastoDoc: 0 }, { cfg: { conceptos: SIM_CONCEPTOS_BASE, retencion: SIM_RETENCION_BASE } });
+      const conceptos = sim.filas.map((f) => ({ id: f.id, rol: f.rol, total: f.valor }));
+      const proGiro = prorratearOperacion(docs, conceptos, { antic,
+        difPrecioTotal: (sim.filas.find((f) => f.id === "difPrecio") || {}).valor });
+      const suma = proGiro.filas.reduce((a, f) => a + f.giro, 0);
+      if (suma !== sim.montoGirar || proGiro.montoGirar !== sim.montoGirar) {
+        malos++; if (!det) det = `${suma} vs ${sim.montoGirar}`;
+      }
+      // y la cifra vieja —la del prorrateo sin conceptos— es DISTINTA: si fueran iguales este caso no
+      // estaría probando nada.
+      if (pro.montoGirar === sim.montoGirar) sinConceptos++;
+    }
+    // Ningún documento puede quedar con giro negativo: es una transferencia que Tesorería ejecuta.
+    const negativos = prorratearOperacion(carteras[2], (() => {
+      const montoDocs = carteras[2].reduce((a, d) => a + d.monto, 0);
+      const s = simularOperacion({ montoDocs, cantFacturas: 4, antic: 100, tasa: 1.3, tasaEq: 1.3, plazoEq: 60,
+        pctCom: 0.3, comMin: 2, comMax: 2, gastoOp: 26000, gastoDoc: 0 },
+        { cfg: { conceptos: SIM_CONCEPTOS_BASE, retencion: SIM_RETENCION_BASE } });
+      return s.filas.map((f) => ({ id: f.id, rol: f.rol, total: f.valor }));
+    })(), { antic: 100 }).filas.filter((f) => f.giro < 0).length;
+    ok("84 el giro por factura suma el «Monto a Girar» de la simulación, no el anticipo neto de intereses",
+       malos === 0 && sinConceptos === 0 && negativos === 0,
+       `${carteras.length * 2} combinaciones · ${malos} descuadres${det ? " · " + det : ""} · ${sinConceptos} casos donde el prorrateo sin conceptos ya cuadraba · ${negativos} documentos negativos`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
