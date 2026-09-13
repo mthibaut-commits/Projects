@@ -4107,7 +4107,6 @@ function DealCard({ deal, onOpen, onDragStart }) {
         if (!g || !g.tipos.some((x) => x.monto > 0)) return null;
         return (
           <div className="mt-1 flex flex-wrap items-center gap-1">
-            <span className="t7 uppercase tracking-wide" style={{ color: C.faint, marginRight: 2 }}>Giros</span>
             {g.tipos.filter((x) => x.monto > 0).map((x) => <ChipGiro key={x.codigo} codigo={x.codigo} monto={x.monto} compacto
               titulo={`${x.label}: ${fmtCLP(x.monto)} en ${x.facturas.length} factura(s) de ${x.deudores.length} deudor(es).${g.motivo && x.codigo !== "GE" ? " " + g.motivo : ""}`} />)}
           </div>
@@ -7430,11 +7429,17 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           const plural = (n) => (n === 1 ? "" : "s");
                           // Sin nada incorporable se muestra «—», no un cero ni la cifra bloqueada: una cifra,
                           // aunque venga atenuada, se lee como cifra y alguien la va a comprometer.
+                          // «9 fact. · 4 no disponibles» se leía como «9 en total, 4 de ellas no
+                          // disponibles» —o sea 5— cuando la cifra ya era la INCORPORABLE y las otras 4
+                          // iban aparte. La ambigüedad estaba en que el número no decía de qué era. Ahora
+                          // lo dice: «9 fact. disponibles». Las bloqueadas no se pierden — están en la
+                          // lista de abajo, cada una con su motivo, y el conteo va en el tooltip.
                           const etiqDisp = disp && (sinDisp
                             ? `${grupo.length} fact. no disponible${plural(grupo.length)}`
-                            : disp.bloqueadas
-                              ? `${disp.facturas} fact. · ${disp.bloqueadas} no disponible${plural(disp.bloqueadas)}`
-                              : `${disp.facturas} fact.`);
+                            : `${disp.facturas} fact. disponible${plural(disp.facturas)}`);
+                          const tipDisp = disp && !sinDisp && disp.bloqueadas
+                            ? `${disp.facturas} factura(s) incorporable(s) a la oferta. Otras ${disp.bloqueadas} no se pueden agregar —anuladas, cedidas o ya en otra operación— y no cuentan en el monto.`
+                            : undefined;
                           const tasa = tasaDe(deudor);
                           const ev = enOferta ? evalDeu[deudor] : null;
                           const t = TONO_LIN[ev ? ev.estado : "pend"];
@@ -7553,7 +7558,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     : enOferta && ev && ev.asignado !== monto
                                       ? <>{fmtMM(ev.asignado)}<span className="t9 font-normal" style={{ color: C.faint }}> con línea, de {fmtMM(monto)}</span></>
                                       : fmtMM(monto)}
-                                  <span className="t9 font-normal" style={{ color: C.faint, marginLeft: 10 }}>{disp ? etiqDisp : `${grupo.length} fact.`} · tasa {tasa}%</span>
+                                  <span className="t9 font-normal" style={{ color: C.faint, marginLeft: 10, cursor: tipDisp ? "help" : undefined }} title={tipDisp}>{disp ? etiqDisp : `${grupo.length} fact.`} · tasa {tasa}%</span>
                                 </div>
                                 <div className="mt-1 flex items-center justify-end gap-1.5">
                                   {/* Mismos colores que las compuertas del pie del veredicto: otorgamiento en
@@ -7761,7 +7766,6 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     {giros && giros.tipos.some((g) => g.monto > 0) && (<>
                                       <span style={{ width: 1, height: 22, backgroundColor: vd.tono === "con_linea" ? "#86EFAC" : t.bd }} />
                                       <div className="flex items-center gap-2">
-                                        <span className="t9 uppercase tracking-wide" style={{ color: C.faint }}>Giros</span>
                                         {giros.tipos.filter((g) => g.monto > 0).map((g) => <ChipGiro key={g.codigo} codigo={g.codigo} monto={g.monto}
                                           titulo={`${g.label}: ${fmtCLP(g.monto)} en ${g.facturas.length} factura(s) de ${g.deudores.length} deudor(es).${giros.motivo && g.codigo !== "GE" ? " " + giros.motivo : ""}`} />)}
                                         {!giros.cuadra && <span className="t9 font-semibold" style={{ color: C.red }} title={`La suma por tipo (${fmtCLP(giros.asignado)}) no calza con el monto a girar (${fmtCLP(giros.montoGirar)}).`}>descuadre {fmtCLP(giros.descuadre)}</span>}
@@ -8114,7 +8118,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub, border: `1px solid ${C.line}` }}
                                     title="Deudores con facturas que aún no están en la oferta">{dq ? `${deudOtF.length} de ${deudOtVis.length}` : deudOtVis.length} deudor{!dq && deudOtVis.length === 1 ? "" : "es"}</span>
                                   <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub, border: `1px solid ${C.line}` }}
-                                    title={bloqOt ? `${facsOt} factura${facsOt === 1 ? "" : "s"} incorporable${facsOt === 1 ? "" : "s"}; ${bloqOt} más no se puede${bloqOt === 1 ? "" : "n"} agregar y no cuenta${bloqOt === 1 ? "" : "n"} en el monto.` : "Facturas disponibles para incorporar a la oferta"}>{facsOt} factura{facsOt === 1 ? "" : "s"}{bloqOt ? ` · ${bloqOt} no disponible${bloqOt === 1 ? "" : "s"}` : ""}</span>
+                                    title={bloqOt ? `${facsOt} factura${facsOt === 1 ? "" : "s"} incorporable${facsOt === 1 ? "" : "s"}; ${bloqOt} más no se puede${bloqOt === 1 ? "" : "n"} agregar y no cuenta${bloqOt === 1 ? "" : "n"} en el monto.` : "Facturas disponibles para incorporar a la oferta"}>{facsOt} factura{facsOt === 1 ? "" : "s"} disponible{facsOt === 1 ? "" : "s"}</span>
                                   <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: facsOt ? C.lilac : "#F5F4F8", color: facsOt ? C.indigo : C.faint }}
                                     title="Monto disponible para incorporar a la oferta">{facsOt ? fmtMM(montoOt) : "—"}</span>
                                 </span>
@@ -11454,10 +11458,14 @@ function giroResumenDeal(deal, estado) {
 // sitios donde aparece (tarjeta del tubo, cabecera del detalle y fila del deudor), así que su geometría
 // tiene que ser la misma o el desalineado se nota justo donde se comparan. Conserva su propia función
 // porque lo que es SUYO es el mapa código→tono y la etiqueta por defecto, no la caja.
+// El chip se NOMBRA SOLO —«Giro Normal», «Giro Express»— y no se apoya en un rótulo que lo anteceda.
+// En la fila de cada deudor no hay tal rótulo y el chip decía sólo «Normal», que entre «Otorg.» y
+// «Req. verif.» no se sabía de qué hablaba. Con la palabra adentro, el rótulo «GIRO» que llevaban la
+// cabecera y la tarjeta del tubo pasó a sobrar y se retiró: decía dos veces lo mismo.
 function ChipGiro({ codigo, label, monto, titulo, compacto }) {
   const exp = codigo === "GE";
   return <ChipFila clase={compacto ? "t7" : "t9"} fg={exp ? "#16A34A" : "#7C3AED"} bg={exp ? "#F0FDF4" : "#f5f3ff"}
-    texto={label || (exp ? "Express" : "Normal")} badge={fmtMM((monto || 0) / 1e6)} tip={titulo} />;
+    texto={label || (exp ? "Giro Express" : "Giro Normal")} badge={fmtMM((monto || 0) / 1e6)} tip={titulo} />;
 }
 // La asignación VIGENTE de una operación: la congelada si el cliente ya aceptó, y el cálculo del día
 // si todavía no. El congelado gana siempre — recalcular una operación aceptada movería una cifra que
