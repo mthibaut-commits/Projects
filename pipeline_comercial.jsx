@@ -664,6 +664,30 @@ const displayStageId = (d) => (d && d.stage === "giro" ? "aceptadas" : (d && d.s
 const RESULT_LBL = { won: "Ganada", lost: "Perdida", expired: "Expirada" };
 const RESULT_COL = { won: { bg: "#F0FDF4", fg: "#16A34A" }, lost: { bg: "#fef2f2", fg: "#EF4444" }, expired: { bg: "#FFF7ED", fg: "#C2410C" } };
 const DISBURSEMENT_LBL = { pending: "Giro pendiente", disbursed: "Girada" };
+// ── DESPUÉS DE LA FIRMA: OTORGAMIENTO/VERIFICACIÓN → INTEGRACIÓN → GIRO ──────────────────────────
+// La firma del cliente no cursa nada: abre el trabajo de la casa. La operación queda en
+// «Otorgamiento / Verificación» hasta que los criterios de excepción estén resueltos y las llamadas
+// hechas; recién ahí SALE del tubo comercial —ya no es una oportunidad, es una operación— y aparece
+// en Operaciones como «Pendiente Integración», esperando que Operaciones (N3) apruebe su integración
+// al core. Aprobada la integración queda «Pendiente de Giro», que es lo que toma Tesorería.
+//
+// `integracion` es el campo que marca ese tramo: `null` mientras la operación sigue siendo del
+// ejecutivo, "pendiente" cuando pasó a Operaciones y "aprobada" cuando el core la aceptó. Es un campo
+// y no una etapa nueva porque las etapas del tubo describen el proceso COMERCIAL, y esto ya no lo es.
+const INTEGRACION_LBL = { pendiente: "Pendiente Integración", aprobada: "Pendiente de Giro" };
+// El estado que se le muestra al usuario para una operación ya firmada. Un solo sitio para que el
+// tubo, la vista de Operaciones y el detalle digan lo mismo.
+function estadoOperacion(d) {
+  if (!d) return null;
+  if (d.stage === "giro") return d.giroPendiente ? "Pendiente de Giro" : "Girada";
+  if (d.integracion) return INTEGRACION_LBL[d.integracion] || null;
+  if (d.stage === "otorgamiento") return "Otorgamiento / Verificación";
+  if (d.stage === "aceptadas" || d.stage === "cesion") return "Aceptada";
+  return null;
+}
+// ¿Salió del tubo comercial? Lo que está esperando integración o ya se integró es de Operaciones: el
+// ejecutivo no tiene nada que hacer ahí y mantenerlo en la lista de oportunidades sólo la ensucia.
+const fueraDelTubo = (d) => !!(d && (d.integracion || d.stage === "giro"));
 const PAGE_SIZE = 8; // tarjetas por página en cada etapa (optimizado para 1800px)
 
 // ---- Diálogo de confirmación destructiva (Datamart spec §26): nunca borrar a un clic ----
@@ -6219,7 +6243,7 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
     </>
   );
 }
-function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorporarFacturas, onRetirarFactura, onReabrir, onSugerirOferta, onSimular, onPublicar, onCerrarOferta, onContactar, onEditarContacto, onEnviarWA, onMover, cierre, onConfirmCierre, usuario, onCambiarUsuario, tabInicial, onIrOtorgamientos, fullPage }) {
+function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorporarFacturas, onRetirarFactura, onReabrir, onSugerirOferta, onSimular, onPublicar, onCerrarOferta, onIntegrar, onContactar, onEditarContacto, onEnviarWA, onMover, cierre, onConfirmCierre, usuario, onCambiarUsuario, tabInicial, onIrOtorgamientos, fullPage }) {
   const [tab, setTab] = useState(tabInicial || (deal && deal.stage === "otorgamiento" ? "otorgamiento" : "negocio"));
   useEffect(() => { if (tabInicial) setTab(tabInicial); }, [tabInicial, deal && deal.id]);
   const [confirmRetiro, setConfirmRetiro] = useState(null); // factura a retirar de la oferta (ConfirmDialog spec §26)
@@ -6894,6 +6918,36 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         <div><span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>🔒 Aceptada · bloqueada</span></div>
                         <div className="mt-1 t9" style={{ color: C.sub }}>La operación ya fue aceptada formalmente: no se pueden modificar las condiciones ni agregar/retirar facturas.</div>
                       </>)}
+                      {/* INTEGRACIÓN AL CORE. El último paso antes del giro y lo autoriza OPERACIONES,
+                          no el comercial: es quien responde por lo que entra al core. Acá se aplica
+                          GIR-02 —la huella de lo que se va a inyectar contra la de lo que el cliente
+                          autorizó—, que es el único punto donde la comparación todavía sirve: después
+                          el dinero ya salió. La pantalla que muestra el botón no es el control; la
+                          acción lo vuelve a comprobar antes de escribir. */}
+                      {deal.integracion === "pendiente" && (() => {
+                        const ev = evidenciaContratoOk(deal);
+                        const puede = puedeAprobarExc(usuario, { area: "operaciones" }, 3);
+                        return (
+                          <div className="mt-2 rounded-lg p-2.5" style={{ backgroundColor: C.lilac, border: "1px solid #DDD6FE" }}>
+                            <div className="t11 font-bold" style={{ color: C.navy }}>Pendiente Integración</div>
+                            <div className="mt-0.5 t10" style={{ color: C.sub }}>
+                              Los criterios de otorgamiento y la verificación quedaron resueltos. Falta que <b>Operaciones (N3)</b> apruebe la integración al core; recién ahí la operación queda <b>Pendiente de Giro</b> para Tesorería.
+                            </div>
+                            {!ev.ok && (
+                              <div className="mt-1.5 rounded-md px-2 py-1.5 t9" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#7c3a10" }}
+                                title={ev.firmado ? `Lo autorizado: ${ev.firmado}\nLo que se integraría: ${ev.actual}` : undefined}>
+                                <b>No se puede integrar:</b> {ev.motivo === "sin_evidencia" ? "falta la evidencia del contrato de cesión (criterio O05)." : "la operación cambió después de que el cliente la autorizó — hay que volver a firmarla."}
+                              </div>
+                            )}
+                            {puede ? (
+                              <button onClick={() => onIntegrar && onIntegrar(deal.id)} disabled={!ev.ok}
+                                className="mt-2 rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.indigo }}>Aprobar integración al core</button>
+                            ) : (
+                              <div className="mt-2 t9" style={{ color: C.faint }}>La aprueba un usuario de <b>Operaciones con atribución N3</b> o superior. Tu sesión no la tiene.</div>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {negTab !== "detalle" && condComerciales}
                       {negTab === "descuentos" && <SimDescuentos deal={deal} o={o} />}
                       {negTab === "documentos" && (<>
@@ -11030,13 +11084,15 @@ function aprobacionFormalCliente(deal) {
 // facturas por verificar a la vista, en la misma pantalla.
 function etapaTrasFirma(e) {
   const ent = e || {};
-  const limpio = !ent.pendVisado && !ent.pendVerif && ent.evidenciaOk;
-  if (ent.autoOtorg && limpio) return { stage: "giro", motivo: "automatico" };
-  // Algo que APROBAR manda a la mesa de otorgamiento, que es donde se resuelve.
-  if (ent.requiereOtorg || ent.pendVisado) return { stage: "otorgamiento", motivo: ent.requiereOtorg ? "linea_o_deudor" : "excepciones" };
-  // Nada que aprobar y el giro igual no sale: las facturas ya son de Security —la cesión está
-  // inscrita— pero falta llamar al deudor o falta la evidencia del contrato. Eso es «Cesión».
-  return { stage: "cesion", motivo: ent.pendVerif ? "verificacion" : "evidencia" };
+  // TODO lo que falte —criterios por excepcionar, llamadas por hacer, evidencia del contrato— deja la
+  // operación en «Otorgamiento / Verificación». Es UNA etapa y no dos porque el ejecutivo tiene un
+  // solo pendiente: que la casa termine de revisar. Dividirlo en dos estados obligaría a explicar la
+  // diferencia sin que cambie nada de lo que él puede hacer.
+  if (ent.requiereOtorg || ent.pendVisado || ent.pendVerif || !ent.evidenciaOk) {
+    return { stage: "otorgamiento", motivo: ent.requiereOtorg ? "linea_o_deudor" : ent.pendVisado ? "excepciones" : ent.pendVerif ? "verificacion" : "evidencia" };
+  }
+  // Todo resuelto en el acto: sale del tubo y queda esperando que Operaciones la integre al core.
+  return { stage: "cesion", integracion: "pendiente", motivo: "sin_pendientes" };
 }
 function otorgamientoCompleto(deal, estado) {
   if (!deal || deal.stage !== "otorgamiento" || otorgBloqueado(deal, estado) || !aprobacionFormalCliente(deal)) return false;
@@ -18309,10 +18365,12 @@ function OperacionesView({ deals, onOpen, soloExec }) {
   const enRango = (ts) => { if (!ts) return true; const t = +ts; if (fDesde && t < new Date(fDesde + "T00:00:00").getTime()) return false; if (fHasta && t > new Date(fHasta + "T23:59:59").getTime()) return false; return true; };
   // Nuevo eje: estado "Aceptada" (aceptadas/cesión/giro) o "En otorgamiento"; el desembolso es un SUB-ESTADO
   // (Giro pendiente / Girada). Girada ya no es un estado propio, es un sub-estado de Aceptada.
-  const estadoDe = (s) => s === "otorgamiento" ? "En otorgamiento" : "Aceptada";
+  // El estado que se muestra sale de `estadoOperacion`, que es el mismo que usan el tubo y el detalle:
+  // «Otorgamiento / Verificación» → «Pendiente Integración» → «Pendiente de Giro» → «Girada».
+  const estadoDe = (d) => estadoOperacion(d) || "Aceptada";
   const vivas = useMemo(() => (deals || []).filter((d) => ["aceptadas", "cesion", "otorgamiento", "giro"].includes(d.stage) && (!soloExec || (nombreEjec(d.exec)) === soloExec)).map((d) => ({
     id: d.id, deal: d, neg: d.negocioNum || d.id, cliente: d.cliente, deudor: (d.deudores && d.deudores[0] ? d.deudores[0].name : d.deudor), facturas: d.facturas,
-    montoMM: d.amountMM || 0, tasa: d.tasa || "—", giroMM: d.giroMM || 0, fecha: ((d.time || "").match(/\d{2}-\d{2}-\d{4}/) || ["Hoy"])[0], estado: estadoDe(d.stage), sub: DISBURSEMENT_LBL[dealDisbursement(d)] || null, exec: nombreEjec(d.exec), nueva: true, ts: Date.now(),
+    montoMM: d.amountMM || 0, tasa: d.tasa || "—", giroMM: d.giroMM || 0, fecha: ((d.time || "").match(/\d{2}-\d{2}-\d{4}/) || ["Hoy"])[0], estado: estadoDe(d), sub: d.integracion === "pendiente" ? null : DISBURSEMENT_LBL[dealDisbursement(d)] || null, exec: nombreEjec(d.exec), nueva: true, ts: Date.now(),
     estadoPago: "Pendiente", pctPagado: 0, montoPagado: 0, aTiempo: null, diasAtraso: 0, // recién cursada: aún no vence / no cobrada
   })), [deals, soloExec]);
   const todas = [...vivas, ...OP_SINTETICAS.filter((o) => !soloExec || o.exec === soloExec)];
@@ -18326,7 +18384,12 @@ function OperacionesView({ deals, onOpen, soloExec }) {
   const enPeriodo = todas.filter((o) => enRango(o.ts));
   const montoGirado = enPeriodo.reduce((s, o) => s + (o.giroMM || 0), 0);
   const nGiradas = enPeriodo.filter(esGirada).length;
-  const estColor = { "Aceptada": { bg: "#eff6ff", fg: "#2563EB" }, "En otorgamiento": { bg: "#f5f3ff", fg: "#7C3AED" } };
+  const estColor = { "Aceptada": { bg: "#eff6ff", fg: "#2563EB" }, "En otorgamiento": { bg: "#f5f3ff", fg: "#7C3AED" },
+    "Otorgamiento / Verificación": { bg: "#f5f3ff", fg: "#7C3AED" },
+    // Pendiente Integración es DE OPERACIONES: se distingue del resto porque es lo único de esta
+    // pantalla sobre lo que esta área tiene que actuar.
+    "Pendiente Integración": { bg: "#FFF7ED", fg: "#C2410C" },
+    "Pendiente de Giro": { bg: "#eff6ff", fg: "#2563EB" }, "Girada": { bg: "#F0FDF4", fg: "#16A34A" } };
   const subColor = { "Girada": { bg: "#F0FDF4", fg: "#16A34A" }, "Giro pendiente": { bg: "#FFF7ED", fg: "#C2410C" } };
   const cols = ["N° operación", "Cliente / Deudor", "Facturas", "Monto docs", "Tasa", "Monto girado", "Fecha", "Estado", "Cobranza", "Ejecutivo", ""];
   const facCols = ["Folio", "N° operación", "Cliente / Deudor", "Monto", "Vencimiento", "Cobranza", "Ejecutivo"];
@@ -20518,6 +20581,11 @@ export default function PipelineComercial() {
   // ---- Filtrado de negocios ----
   // Vista según usuario logueado: el admin ve todo; un ejecutivo solo sus oportunidades.
   const dealsVista = useMemo(() => (misExecs === null ? deals : deals.filter((d) => misExecs.includes(d.exec))), [deals, usuario, misExecs]);
+  // La LISTA del tubo muestra OPORTUNIDADES. Lo que ya pasó a Operaciones —esperando integración o
+  // integrado— no lo es: el ejecutivo no tiene nada que hacer ahí y dejarlo sólo ensucia sus listas.
+  // Los KPI siguen leyendo `dealsVista`: la venta girada del mes es suya aunque la operación ya no
+  // esté en su tablero, y filtrarla acá la habría puesto en cero.
+  const dealsTubo = useMemo(() => dealsVista.filter((d) => !fueraDelTubo(d)), [dealsVista]);
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     // "Sin clasificar" vive en el streamFeed del inbound (facturas que aún no califican una regla),
@@ -20556,7 +20624,7 @@ export default function PipelineComercial() {
       }; });
     };
     if (quickFilter === "otrasfacturas") return streamAgrupadoCliente();
-    const dealRows = dealsVista.filter((d) => {
+    const dealRows = dealsTubo.filter((d) => {
       const matchQ = !q || d.cliente.toLowerCase().includes(q) || d.deudor.toLowerCase().includes(q) || d.id.toLowerCase().includes(q);
       let matchF = true;
       // Con línea / Sin línea: oportunidades en Oferta y Negociación + Prospección; "sin línea" = la operación
@@ -20574,7 +20642,7 @@ export default function PipelineComercial() {
     });
     // "Todos" con Inbound activo incluye también las facturas sin clasificar del inbound.
     return (quickFilter === "todos" && showInbound) ? [...dealRows, ...streamComoFilas()] : dealRows;
-  }, [dealsVista, query, quickFilter, fDeudor, fJefatura, fLinea, fEjecutivo, streamFeed, showInbound, usuario, esEjecutivoSesion]);
+  }, [dealsTubo, query, quickFilter, fDeudor, fJefatura, fLinea, fEjecutivo, streamFeed, showInbound, usuario, esEjecutivoSesion]);
 
   const dealsByStage = (id) => filtered.filter((d) => d.stage === id);
 
@@ -21082,23 +21150,18 @@ export default function PipelineComercial() {
       const destino = etapaTrasFirma({ autoOtorg: auto, requiereOtorg: !!otorg, pendVisado, pendVerif, evidenciaOk: evF.ok });
       let stageFinal, statusDest, giroFlags = {};
       hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Sistema", esEvento: true, resultado: `Cesión inscrita · controles previos al giro: otorgamiento ${pendVisado ? `${pendVisado} excepción(es) por resolver` : "sin pendientes"} · verificación ${pendVerif ? `${pendVerif} factura(s) por confirmar` : "sin pendientes"} · contrato ${evF.ok ? "con evidencia vigente" : "sin evidencia vigente"}`, exito: destino.stage === "giro" });
-      if (destino.stage === "giro") {
-        hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Sistema", esEvento: true, resultado: "Otorgamiento automático aprobado (buenos deudores, dentro de la línea, sin excepciones ni verificación pendiente)", exito: true });
-        hist.push({ fecha: nowStamp(), canal: "Giro", actor: "Sistema", esEvento: true, resultado: `Giro ejecutado: ${fmtMM(o.giroMM)} transferidos a la cuenta registrada del cliente`, exito: true });
-        stageFinal = "giro"; statusDest = "Girada · otorgamiento automático"; giroFlags = { otorgada: true, giroPendiente: false };
+      if (destino.integracion) {
+        hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Sistema", esEvento: true, resultado: "Sin criterios por excepcionar ni verificación pendiente → pasa a Operaciones, esperando la integración al core", exito: true });
+        stageFinal = "cesion"; statusDest = "Pendiente Integración · esperando a Operaciones"; giroFlags = { otorgada: true, integracion: "pendiente", giroPendiente: true };
       } else if (destino.stage === "otorgamiento") {
         // Hay algo que APROBAR: va a la mesa de otorgamiento, que es donde se resuelve.
-        const porQue = otorg
+        const porQue = destino.motivo === "linea_o_deudor"
           ? (otorg.motivo === "ambos" ? "excede la línea aprobada e incluye deudores Otro" : otorg.superaLinea ? "excede la línea de crédito aprobada" : "incluye facturas de deudores fuera de las listas autorizadas")
-          : `${pendVisado} excepción(es) del motor de reglas sin resolver`;
-        hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Sistema", esEvento: true, resultado: `Derivada a Otorgamiento (aprobación manual) — ${porQue}`, exito: false });
-        stageFinal = "otorgamiento"; statusDest = "En otorgamiento · requiere aprobación de un especialista";
-      } else {
-        // Nada que aprobar, pero el giro todavía no puede salir: falta llamar al deudor o falta la
-        // evidencia del contrato. Queda CEDIDA —las facturas ya son de Security— y el giro pendiente,
-        // que es exactamente lo que la etapa «Cesión» significa.
-        hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Sistema", esEvento: true, resultado: pendVerif ? `Giro retenido: ${pendVerif} factura(s) esperan la verificación telefónica con el deudor` : "Giro retenido: falta la evidencia vigente del contrato de cesión (O05)", exito: false });
-        stageFinal = "cesion"; statusDest = pendVerif ? "Cedida · esperando verificación telefónica para girar" : "Cedida · esperando la evidencia del contrato";
+          : destino.motivo === "excepciones" ? `${pendVisado} criterio(s) de otorgamiento por excepcionar`
+          : destino.motivo === "verificacion" ? `${pendVerif} factura(s) esperan la verificación telefónica con el deudor`
+          : "falta la evidencia vigente del contrato de cesión (O05)";
+        hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Sistema", esEvento: true, resultado: `En Otorgamiento / Verificación — ${porQue}`, exito: false });
+        stageFinal = "otorgamiento"; statusDest = `Otorgamiento / Verificación · ${porQue}`;
         giroFlags = { giroPendiente: true };
       }
       // El cliente volvió a firmar: la reapertura se cierra y la aceptación vuelve a estar vigente.
@@ -21699,18 +21762,29 @@ export default function PipelineComercial() {
       const mapped = prev.map((d) => {
         if (d.stage === "perdida" || d.stage === "giro") return d; // etapas terminales
         if (d.stage === "otorgamiento") {
-          // Otorgamiento ocurre TRAS la cesión y habilita el GIRO.
-          // AUTOMÁTICO: se aprueba solo y se gira.
-          if (d.otorgAuto) { sumar("giro", d); if (e.giro != null) e.giro++; return { ...d, stage: "giro", otorgada: true, giroPendiente: false, status: "Girada · otorgamiento automático", time: nowStamp(), historialContacto: traza(d, `Otorgamiento automático aprobado (buenos deudores y dentro de línea) → giro de ${fmtMM(d.giroMM || 0)} a la cuenta registrada del cliente`, true, DET_ETAPA.giro) }; }
+          // Otorgamiento ocurre TRAS la cesión y deja la operación lista para INTEGRARSE al core.
+          // AUTOMÁTICO: se aprueba solo, pero tampoco gira solo —y sigue esperando las llamadas del
+          // equipo de verificación, que el otorgamiento automático no cubre—. Antes esta rama
+          // desembolsaba en el acto: el control de Operaciones no existía y VER-01 quedaba fuera.
+          if (d.otorgAuto) {
+            if (verifResumenDeal(d).pend > 0) return d; // faltan llamadas: se queda en Otorgamiento / Verificación
+            return { ...d, stage: "cesion", otorgada: true, integracion: "pendiente", giroPendiente: true,
+              status: "Pendiente Integración · esperando a Operaciones", time: nowStamp(),
+              historialContacto: traza(d, "Otorgamiento automático aprobado (buenos deudores y dentro de línea) y verificación completa → pasa a Operaciones para su integración al core", true, DET_ETAPA.cesion) };
+          }
           // Manual: se libera cuando el VISADO queda resuelto —todas las excepciones aprobadas por quien
           // tiene la atribución— y el cliente mantiene su aprobación formal. Antes esta rama miraba
           // `d.causas` del modelo de desvíos, que nadie podía autorizar: una operación derivada a
           // otorgamiento manual se quedaba acá para siempre salvo que alguien la moviera a mano.
-          if (otorgamientoCompleto(d)) {
-            sumar("giro", d); if (e.giro != null) e.giro++;
-            return { ...d, stage: "giro", otorgada: true, otorgPorExcepcion: true, giroPendiente: false, status: "Girada · otorgada por excepción", time: nowStamp(), historialContacto: traza(d, `Otorgada por excepción — visado resuelto → giro de ${fmtMM(d.giroMM || 0)} a la cuenta registrada del cliente`, true, DET_ETAPA.giro) };
+          // Resuelto el visado, la operación NO gira: sale del tubo comercial y queda esperando que
+          // Operaciones la integre al core. Girar es el último paso y lo autoriza otra área — antes
+          // esta rama desembolsaba sola, así que el control de Operaciones no existía.
+          if (otorgamientoCompleto(d) && verifResumenDeal(d).pend === 0) {
+            return { ...d, stage: "cesion", otorgada: true, otorgPorExcepcion: true, integracion: "pendiente", giroPendiente: true,
+              status: "Pendiente Integración · esperando a Operaciones", time: nowStamp(),
+              historialContacto: traza(d, "Otorgada por excepción — visado resuelto y verificación completa → pasa a Operaciones para su integración al core", true, DET_ETAPA.cesion) };
           }
-          return d; // sigue esperando que se resuelvan sus excepciones
+          return d; // sigue esperando que se resuelvan sus excepciones o las llamadas
         }
         // Detección de cesión a otro factoring: algunas facturas se ceden a la competencia.
         // Si quedan todas cedidas a otro factoring, la oportunidad se da por perdida.
@@ -22079,6 +22153,37 @@ export default function PipelineComercial() {
   };
   // Jefatura/gerencia reparte una empresa NO priorizada ("Otras facturas") a un ejecutivo: agrega sus
   // facturas del feed en una oportunidad de Prospección con el dueño elegido y la retira del pool.
+  // APROBAR LA INTEGRACIÓN AL CORE. Es de OPERACIONES (N3), no del comercial: quien responde por lo
+  // que entra al core es esa área. Acá se aplica GIR-02 —la huella de lo que se va a inyectar contra
+  // la de lo que el cliente autorizó— y se vuelve a comprobar la atribución: la pantalla que muestra
+  // el botón puede venir de una sesión vieja o de un rol que cambió, y esto es una decisión con
+  // actor y hora. En producción lo rechaza el resolver; acá se anticipa.
+  const aprobarIntegracion = (id) => {
+    const d0 = (dealsRef.current || []).find((x) => x.id === id);
+    const nom = USERS[usuario] || usuario;
+    if (!d0 || d0.integracion !== "pendiente") return;
+    if (!puedeAprobarExc(usuario, { area: "operaciones" }, 3)) {
+      registrarAuditoria({ usuario: nom, modulo: "Operaciones · Integración", accion: "Integración rechazada por atribución (OTG-01)",
+        glosa: `${d0.cliente}: intento de aprobar la integración al core sin atribución de Operaciones N3`, empresaId: id, severidad: "alta", exito: false });
+      return;
+    }
+    const ev = evidenciaContratoOk(d0);
+    if (!ev.ok) {
+      logSys("warn", "giro", `Integración al core bloqueada · ${id} · ${ev.motivo}`, { operacion: id, motivo: ev.motivo, firmado: ev.firmado || null, actual: ev.actual || null });
+      registrarAuditoria({ usuario: nom, modulo: "Operaciones · Integración", accion: "Integración bloqueada (GIR-02)",
+        glosa: `${d0.cliente}: ${ev.detalle}${ev.firmado ? ` · firmado «${ev.firmado}» · actual «${ev.actual}»` : ""}`, empresaId: id, severidad: "alta", exito: false });
+      return;
+    }
+    const upd = (d) => (d.id !== id ? d : { ...d, stage: "giro", integracion: "aprobada", giroPendiente: true, otorgada: true,
+      status: "Pendiente de Giro · integrada al core", time: nowStamp(),
+      historialContacto: [...(d.historialContacto || []), { fecha: nowStamp(), canal: "Sistema", actor: actorEtiqueta(usuario), esEvento: true,
+        resultado: "Integración al core aprobada por Operaciones → la operación queda Pendiente de Giro",
+        detalle: `Huella verificada contra la evidencia del contrato (GIR-02): ${ev.firmado}`, exito: true }] });
+    setDeals((prev) => prev.map(upd));
+    setSelected((sel) => (sel ? upd(sel) : sel));
+    registrarAuditoria({ usuario: nom, modulo: "Operaciones · Integración", accion: "Aprobar integración al core",
+      glosa: `${d0.cliente} · ${fmtMM(d0.giroMM || 0)} → Pendiente de Giro · huella ${ev.hash ? ev.hash.slice(0, 16) + "…" : "(sin hash)"}`, empresaId: id, severidad: "alta", exito: true });
+  };
   // TRASPASO DE CARTERA (Configuración › Oportunidades › Migración). Mueve las operaciones vivas de un
   // ejecutivo a otro: el archivo de cartera de la mañana reasigna las EMPRESAS, pero `deal.exec` está
   // congelado en el JSON de cada oportunidad y es lo que decide quién la ve.
@@ -22512,7 +22617,7 @@ export default function PipelineComercial() {
     const a = accDiaRef.current;
     listos.forEach((d) => {
       const exc = visadoDeal(d).exc.length > 0;
-      logOtorgEvento(d.id, "Sistema", exc ? "otorgada-excepcion" : "otorgada", "Todos los criterios de otorgamiento quedaron aceptados y el cliente dio su aprobación formal → se libera el giro.");
+      logOtorgEvento(d.id, "Sistema", exc ? "otorgada-excepcion" : "otorgada", "Todos los criterios de otorgamiento quedaron aceptados y el cliente dio su aprobación formal → pasa a Operaciones para su integración al core.");
       if (a && a.giro) { a.giro.op++; a.giro.fac += d.facturas || 0; a.giro.mm += d.amountMM || 0; }
       if (a && a.embudo && a.embudo.giro != null) a.embudo.giro++;
     });
@@ -22531,12 +22636,12 @@ export default function PipelineComercial() {
   const nPrioTubo = dealsVista.filter((d) => tienePrioridadCurse(d.id)).length;
   const quickFilters = [
     ...(nPrioTubo > 0 || quickFilter === "prioritarios" ? [{ id: "prioritarios", label: "Prioritarios", count: nPrioTubo }] : []),
-    { id: "conlinea", label: "Con línea", count: dealsVista.filter((d) => ["oferta", "prospeccion"].includes(d.stage) && !lineaCreditoDe(d).fueraDeLinea).length },
-    { id: "sinlinea", label: "Sin línea", count: dealsVista.filter((d) => ["oferta", "prospeccion"].includes(d.stage) && lineaCreditoDe(d).fueraDeLinea).length },
-    { id: "pendgiro", label: "Pendientes de giro", count: dealsVista.filter((d) => ["aceptadas", "cesion", "otorgamiento"].includes(d.stage) || (d.stage === "giro" && d.giroPendiente)).length },
-    { id: "perdidas", label: "Perdidas", count: dealsVista.filter((d) => d.stage === "perdida").length },
+    { id: "conlinea", label: "Con línea", count: dealsTubo.filter((d) => ["oferta", "prospeccion"].includes(d.stage) && !lineaCreditoDe(d).fueraDeLinea).length },
+    { id: "sinlinea", label: "Sin línea", count: dealsTubo.filter((d) => ["oferta", "prospeccion"].includes(d.stage) && lineaCreditoDe(d).fueraDeLinea).length },
+    { id: "pendgiro", label: "Pendientes de giro", count: dealsTubo.filter((d) => ["aceptadas", "cesion", "otorgamiento"].includes(d.stage) || (d.stage === "giro" && d.giroPendiente)).length },
+    { id: "perdidas", label: "Perdidas", count: dealsTubo.filter((d) => d.stage === "perdida").length },
     { id: "otrasfacturas", label: esEjecutivoSesion ? "Otras Empresas" : "Otras facturas", count: streamFeed.filter(ofOtrasVisible).length },
-    { id: "todos", label: "Todos", count: dealsVista.length + inboundCount },
+    { id: "todos", label: "Todos", count: dealsTubo.length + inboundCount },
   ];
 
   if (!logueado) return <LoginScreen usuarioInicial={usuario} onIngresar={(u) => { setUsuario(u); setLogueado(true); }} />;
@@ -22623,7 +22728,7 @@ export default function PipelineComercial() {
               detalle (cliente · id · etapa, selector de usuario y avatar), de modo que la pantalla abría
               con la identidad y el selector DUPLICADOS. La cabecera del propio detalle es la única. */}
           <div className="mx-auto w-full" style={{ maxWidth: 1600 }}>
-            <DealDrawer key={selected.id} deal={selected} fullPage onClose={() => window.close()} onAdvance={advance} onReject={reject} onIncorporar={abrirIncorporar} onIncorporarFacturas={incorporarFacturasOferta} onRetirarFactura={retirarFacturaOferta} onReabrir={reabrirOperacion} onSugerirOferta={aplicarSugerencia} onSimular={simularOferta} onPublicar={publicarOferta} onCerrarOferta={cerrarOferta} onContactar={iniciarContacto} onEditarContacto={editarContacto} onEnviarWA={enviarWA} onMover={moverEtapa} cierre={cierreModal} onConfirmCierre={confirmarCierre} usuario={usuario} onCambiarUsuario={setUsuario} tabInicial={(detallePayload && detallePayload.tab) || dealTabInicial} onIrOtorgamientos={() => {}} />
+            <DealDrawer key={selected.id} deal={selected} fullPage onClose={() => window.close()} onAdvance={advance} onReject={reject} onIncorporar={abrirIncorporar} onIncorporarFacturas={incorporarFacturasOferta} onRetirarFactura={retirarFacturaOferta} onReabrir={reabrirOperacion} onSugerirOferta={aplicarSugerencia} onSimular={simularOferta} onPublicar={publicarOferta} onCerrarOferta={cerrarOferta} onIntegrar={aprobarIntegracion} onContactar={iniciarContacto} onEditarContacto={editarContacto} onEnviarWA={enviarWA} onMover={moverEtapa} cierre={cierreModal} onConfirmCierre={confirmarCierre} usuario={usuario} onCambiarUsuario={setUsuario} tabInicial={(detallePayload && detallePayload.tab) || dealTabInicial} onIrOtorgamientos={() => {}} />
           </div>
         </div>
       )) : (<>

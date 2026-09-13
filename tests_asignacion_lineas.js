@@ -1617,12 +1617,18 @@
        `jefe → [${delJefe.join(", ")}] · gerencia → todo · desconocido → nada · «XX» → «${idoSe}» · tarea (operaciones,N3) → ${tareaPar.join(", ")}`);
   }
 
-  // 88 · FIRMAR NO ES GIRAR. Al firmar el cliente, la operación saltaba directo a GIRO —con el dinero
-  // dado por transferido— si `requiereOtorgamiento` decía que no hacía falta aprobación manual. Esa
-  // heurística mira dos cosas (¿supera la línea?, ¿hay deudores «Otro»?) y nació antes del motor de
-  // reglas, así que el salto se llevaba por delante las tres compuertas que el resto del sistema sí
-  // respeta: OTG-02, VER-01 y GIR-02. Se vio en una operación «Girada» con 42 criterios por aprobar y
-  // 8 facturas por verificar a la vista, en la misma pantalla que decía que ya se había girado.
+  // 88 · FIRMAR NO ES GIRAR, y girar no es integrar. La máquina de estados posterior a la firma:
+  //
+  //   firma (electrónica del cliente o manual del ejecutivo)
+  //     → OTORGAMIENTO / VERIFICACIÓN   mientras falte excepcionar, llamar o falte la evidencia
+  //     → PENDIENTE INTEGRACIÓN         resuelto todo: sale del tubo y pasa a Operaciones
+  //     → PENDIENTE DE GIRO             Operaciones (N3) aprueba la integración al core
+  //
+  // Antes la firma saltaba directo a GIRO —con el dinero dado por transferido— cuando
+  // `requiereOtorgamiento` decía que no hacía falta aprobación manual. Esa heurística mira dos cosas
+  // (¿supera la línea?, ¿hay deudores «Otro»?) y nació antes del motor de reglas, así que el salto se
+  // llevaba por delante OTG-02, VER-01 y GIR-02. Se vio en una operación «Girada» con 42 criterios por
+  // aprobar y 8 facturas por verificar a la vista, en la misma pantalla.
   {
     const base = { autoOtorg: true, requiereOtorg: false, pendVisado: 0, pendVerif: 0, evidenciaOk: true };
     const limpia = etapaTrasFirma(base);
@@ -1632,21 +1638,32 @@
     const manual = etapaTrasFirma({ ...base, autoOtorg: false, requiereOtorg: true });
     // El caso exacto de la operación que lo destapó: automática, pero con las dos compuertas abiertas.
     const elCaso = etapaTrasFirma({ ...base, pendVisado: 42, pendVerif: 8 });
-    // Y que ninguna combinación con algo pendiente termine en giro: 2^4 combinaciones.
-    let girosIndebidos = 0;
+    // Ninguna combinación con algo pendiente puede saltarse Otorgamiento / Verificación: 2^4.
+    let saltos = 0;
     for (const a1 of [true, false]) for (const b1 of [0, 3]) for (const c1 of [0, 5]) for (const d1 of [true, false]) {
       const r = etapaTrasFirma({ autoOtorg: a1, requiereOtorg: !a1, pendVisado: b1, pendVerif: c1, evidenciaOk: d1 });
-      if (r.stage === "giro" && (b1 || c1 || !d1)) girosIndebidos++;
+      if (r.stage !== "otorgamiento" && (b1 || c1 || !d1)) saltos++;
     }
-    ok("88 firmar no es girar: las tres compuertas mandan sobre el atajo del otorgamiento automático",
-       limpia.stage === "giro"
+    // Y las etiquetas del tramo posterior, que son lo que el usuario lee.
+    const enOtorg = estadoOperacion({ stage: "otorgamiento" });
+    const pendInt = estadoOperacion({ stage: "cesion", integracion: "pendiente" });
+    const pendGiro = estadoOperacion({ stage: "giro", integracion: "aprobada", giroPendiente: true });
+    const girada = estadoOperacion({ stage: "giro", integracion: "aprobada" });
+    // Lo que ya es de Operaciones sale del tubo; lo que sigue en manos del ejecutivo, no.
+    const fuera = [{ stage: "cesion", integracion: "pendiente" }, { stage: "giro" }].every(fueraDelTubo);
+    const dentro = [{ stage: "oferta" }, { stage: "otorgamiento" }, { stage: "aceptadas" }].every((d) => !fueraDelTubo(d));
+    ok("88 firmar no es girar: Otorgamiento/Verificación → Pendiente Integración → Pendiente de Giro",
+       limpia.stage === "cesion" && limpia.integracion === "pendiente"
        && conExc.stage === "otorgamiento" && conExc.motivo === "excepciones"
-       && conVerif.stage === "cesion" && conVerif.motivo === "verificacion"
-       && sinEvid.stage === "cesion" && sinEvid.motivo === "evidencia"
+       && conVerif.stage === "otorgamiento" && conVerif.motivo === "verificacion"
+       && sinEvid.stage === "otorgamiento" && sinEvid.motivo === "evidencia"
        && manual.stage === "otorgamiento" && manual.motivo === "linea_o_deudor"
        && elCaso.stage === "otorgamiento"
-       && girosIndebidos === 0,
-       `limpia → ${limpia.stage} · 42 excepciones → ${conExc.stage} · 8 por verificar → ${conVerif.stage} · sin evidencia → ${sinEvid.stage} · manual → ${manual.stage} · ${girosIndebidos} giros indebidos en 16 combinaciones`);
+       && saltos === 0
+       && enOtorg === "Otorgamiento / Verificación" && pendInt === "Pendiente Integración"
+       && pendGiro === "Pendiente de Giro" && girada === "Girada"
+       && fuera && dentro,
+       `limpia → ${limpia.stage}/${limpia.integracion} · 42 excepciones → ${conExc.stage} · 8 por verificar → ${conVerif.stage} · sin evidencia → ${sinEvid.stage} · manual → ${manual.stage} · ${saltos} saltos en 16 combinaciones · etiquetas ${[enOtorg, pendInt, pendGiro, girada].join(" → ")}`);
   }
 
   console.log(out.join("\n"));
