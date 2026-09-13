@@ -6086,15 +6086,28 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
   const suma = (arr) => +arr.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
   const nDeu = (arr) => new Set(arr.map((f) => f.deudor)).size;
 
-  const Bloque = ({ color, bg, bd, icono, titulo, resumen, children }) => (
-    <div className="rounded-xl p-2.5" style={{ backgroundColor: bg, border: `1px solid ${bd}` }}>
+  // UN SOLO TRATAMIENTO para los bloques. Cada uno traía su color —verde, lila, naranja, azul— con
+  // su icono, y la pantalla se leía como un semáforo: el color afirmaba «bueno/malo» cuando lo único
+  // que hay que comunicar es QUÉ FALTA y por cuánto. Neutro, con el monto a la derecha, que es lo
+  // que se compara entre bloques. Los iconos (✓ ▲ ☎) no son del sistema de diseño y se retiraron.
+  const Bloque = ({ titulo, resumen, children }) => (
+    <div className="rounded-xl p-2.5" style={{ backgroundColor: "#FAFAFB", border: `1px solid ${C.line}` }}>
       <div className="flex items-baseline justify-between gap-3">
-        <div className="t11 font-bold" style={{ color }}>{icono} {titulo}</div>
+        <div className="t11 font-bold" style={{ color: C.ink }}>{titulo}</div>
         <div className="shrink-0 t10 font-semibold" style={{ color: C.sub }}>{resumen}</div>
       </div>
       {children}
     </div>
   );
+
+  // SÓLO SE DIBUJA EL BLOQUE QUE TIENE MONTO. Un bloque en $0M no le pide nada al ejecutivo y empuja
+  // hacia abajo a los que sí; con la oferta entera limpia no queda ninguno y el encabezado tampoco.
+  const mLimpias = suma(limpias), mComite = suma(conComite), mOtorg = suma(conOtorg), mVerif = suma(conVerif);
+  // Excepción a la regla del monto: las reglas del CLIENTE no cuelgan de ningún deudor, así que una
+  // operación puede tener excepciones sin justificar y `conOtorg` vacío. Ocultar ahí el bloque
+  // dejaría el botón de confirmar apagado y la pantalla sin decir por qué.
+  const verOtorg = mOtorg > 0 || sinComentario > 0;
+  const nBloques = [mLimpias > 0, mComite > 0, verOtorg, mVerif > 0].filter(Boolean).length;
 
   return (
     <>
@@ -6111,14 +6124,14 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
           {/* Dos cifras enfrentadas. Dependen SÓLO de la línea: otorgamiento y verificación no bajan
               el monto cursable, deciden cuándo se gira. */}
           <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
-            <div className="rounded-xl p-3" style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0" }}>
-              <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#16A34A" }}>Se cursa con línea vigente</div>
-              <div className="mt-1 text-2xl font-bold" style={{ color: "#16A34A" }}>{fmtMM(evalLin.cursable)}</div>
+            <div className="rounded-xl p-3" style={{ backgroundColor: "#FAFAFB", border: `1px solid ${C.line}` }}>
+              <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.sub }}>Se cursa con línea vigente</div>
+              <div className="mt-1 text-2xl font-bold" style={{ color: C.ink }}>{fmtMM(evalLin.cursable)}</div>
               <div className="t10" style={{ color: C.sub }}>{evalLin.facturas.filter((f) => f.estado === "CON_LINEA").length} facturas</div>
             </div>
-            <div className="rounded-xl p-3" style={{ backgroundColor: C.lilac, border: "1px solid #DDD3FF" }}>
-              <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>Se solicita al comité</div>
-              <div className="mt-1 text-2xl font-bold" style={{ color: "#7C3AED" }}>{fmtMM(evalLin.requiereComite)}</div>
+            <div className="rounded-xl p-3" style={{ backgroundColor: "#FAFAFB", border: `1px solid ${C.line}` }}>
+              <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.sub }}>Se solicita al comité</div>
+              <div className="mt-1 text-2xl font-bold" style={{ color: C.ink }}>{fmtMM(evalLin.requiereComite)}</div>
               <div className="t10" style={{ color: C.sub }}>{conComite.length} facturas · {evalLin.solicitudes.length} solicitud(es)</div>
             </div>
           </div>
@@ -6131,69 +6144,72 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
             const caducado = mmRound((evalLin.lineasUsadas || []).reduce((a, l) => a + (l.montoCaducado || 0), 0));
             if (!caducado) return null;
             return (
-              <div className="mt-2.5 rounded-lg p-2.5 t10" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412" }}>
+              <div className="mt-2.5 rounded-lg p-2.5 t10" style={{ backgroundColor: "#FAFAFB", border: `1px solid ${C.line}`, color: C.sub }}>
                 <b>{fmtMM(caducado)}</b> de Línea Puntual <b>caduca</b> con este curse: son de un solo uso y lo que no se alcanza a usar se pierde. Queda registrado en la versión de la simulación, para que el comité vea si las está dimensionando bien.
               </div>
             );
           })()}
-          <div className="mt-3 t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Qué tiene que pasar para que esta operación avance</div>
+          {nBloques > 0 && <div className="mt-3 t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Qué tiene que pasar para que esta operación avance</div>}
+          {nBloques > 0 && (
           <div className="mt-1.5 grid gap-2">
-            <Bloque color="#16A34A" bg="#F0FDF4" bd="#bbf7d0" icono="✓" titulo="No requieren ninguna acción"
-              resumen={`${limpias.length} factura(s) · ${fmtMM(suma(limpias))}`}>
+            {mLimpias > 0 && (
+            <Bloque titulo="No requieren ninguna acción"
+              resumen={`${limpias.length} factura(s) · ${nDeu(limpias)} deudor(es) · ${fmtMM(mLimpias)}`}>
               <div className="mt-0.5 t9" style={{ color: C.sub }}>Tienen línea asignada, otorgamiento aprobado y verificación resuelta. Se cursan hoy.</div>
             </Bloque>
+            )}
 
-            <Bloque color="#7C3AED" bg={C.lilac} bd="#DDD3FF" icono="◆" titulo="Necesitan comité de crédito"
-              resumen={`${conComite.length} factura(s) · ${nDeu(conComite)} deudor(es) · ${fmtMM(suma(conComite))}`}>
+            {mComite > 0 && (
+            <Bloque titulo="Necesitan comité de crédito"
+              resumen={`${conComite.length} factura(s) · ${nDeu(conComite)} deudor(es) · ${fmtMM(mComite)}`}>
               {evalLin.solicitudes.length > 0 && (
                 <div className="mt-1.5 overflow-x-auto">
                   <div style={{ minWidth: 420 }}>
                     {/* Sin columna «A quién afecta»: el nombre de la solicitud ya dice el nivel
                         —puntual Cliente-Deudor vs. línea Deudor— y era una columna ancha repitiendo
                         la misma información en prosa. El alcance queda en el tooltip. */}
-                    <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: "1.4fr 1.6fr 90px", color: "#8B7FB0", borderBottom: "1px solid #DDD3FF" }}>
+                    <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: "1.4fr 1.6fr 90px", color: C.faint, borderBottom: `1px solid ${C.line}` }}>
                       <span>Deudor</span><span>Qué se pide</span><span className="text-right">Monto</span>
                     </div>
                     {evalLin.solicitudes.map((s, i) => (
-                      <div key={i} className="grid items-center gap-2 py-1.5 t10" style={{ gridTemplateColumns: "1.4fr 1.6fr 90px", borderBottom: i < evalLin.solicitudes.length - 1 ? "1px solid #E9E2FF" : "none" }}>
+                      <div key={i} className="grid items-center gap-2 py-1.5 t10" style={{ gridTemplateColumns: "1.4fr 1.6fr 90px", borderBottom: i < evalLin.solicitudes.length - 1 ? `1px solid ${C.line}` : "none" }}>
                         <span className="min-w-0"><span className="block truncate font-semibold" style={{ color: C.ink }} title={s.deudor}>{s.deudor}</span><span className="block t9" style={{ color: C.faint, fontVariantNumeric: "tabular-nums" }}>{s.rutDeudor}</span></span>
                         <span style={{ color: C.sub, cursor: "help" }} title={`A quién afecta: ${s.alcance.toLowerCase()}.`}>{s.pide}</span>
-                        <span className="text-right font-semibold" style={{ color: "#7C3AED" }}>{fmtMM(s.monto)}</span>
+                        <span className="text-right font-semibold" style={{ color: C.ink }}>{fmtMM(s.monto)}</span>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
             </Bloque>
+            )}
 
-            <Bloque color="#C2410C" bg="#FFF7ED" bd="#FED7AA" icono="▲" titulo="Necesitan acciones de otorgamiento"
-              resumen={`${otorgRes.ok}/${otorgRes.total} reglas · ${conOtorg.length} factura(s)`}>
-              <div className="mt-0.5 t9" style={{ color: C.sub }}>
-                {otorgRes.cliente || otorgRes.deudores.length
-                  ? <>Con observaciones: {otorgRes.cliente ? <b>el cliente</b> : null}{otorgRes.cliente && otorgRes.deudores.length ? " y " : ""}{otorgRes.deudores.length ? <b>{otorgRes.deudores.join(" · ")}</b> : null}.{sinComentario > 0 ? "" : <> Se resuelven en el tab <b>Otorgamiento</b>.</>}</>
-                  : "Todas las reglas del motor de otorgamiento están aprobadas."}
-              </div>
-              {/* Los antecedentes viven acá y no en una banda aparte: es la misma materia y el mismo
-                  destino, y separados repetían el tema a dos alturas del modal. */}
+            {verOtorg && (
+            <Bloque titulo="Necesitan acciones de otorgamiento"
+              resumen={mOtorg > 0 ? `${conOtorg.length} factura(s) · ${nDeu(conOtorg)} deudor(es) · ${fmtMM(mOtorg)}` : `${sinComentario} excepción(es) pendiente(s)`}>
+              {/* Lo pendiente va DIRECTO en el bloque, no en una tarjeta dentro de la tarjeta: es la
+                  misma materia y anidarla la leía como un aviso aparte. La lista de deudores «con
+                  observaciones» se retiró — son los mismos que el tab de Otorgamiento detalla uno
+                  por uno, y acá sólo alargaba el bloque sin cambiar qué hay que hacer. */}
               {sinComentario > 0 && (
-                <div className="mt-2 rounded-lg p-2.5" style={{ backgroundColor: "#fff", border: "1px solid #FED7AA" }}>
-                  <div className="t10 font-bold" style={{ color: "#C2410C" }}>Faltan {sinComentario} excepción(es) por justificar</div>
-                  <div className="mt-0.5 t9" style={{ color: C.sub, lineHeight: 1.45 }}>No se puede cursar hasta resolverlas. En el tab <b>Otorgamiento</b>, cada una necesita tu justificación —comentario o respaldo— o que marques <b>«No tengo comentarios adicionales»</b>.</div>
-                </div>
+                <div className="mt-1 t10 font-semibold" style={{ color: C.ink }}>Pendiente: {sinComentario} excepción(es) por aclarar por parte del ejecutivo</div>
               )}
+              <div className="mt-0.5 t9" style={{ color: C.sub }}>Se resuelven en el tab <b>Otorgamiento</b>. Reglas aprobadas: {otorgRes.ok} de {otorgRes.total}.</div>
             </Bloque>
+            )}
 
-            <Bloque color="#2563EB" bg="#EFF6FF" bd="#bfdbfe" icono="☎" titulo="Necesitan verificación de factura"
-              resumen={`${conVerif.length} factura(s) · ${verifRes.nDeudores} deudor(es) · ${fmtMM(suma(conVerif))}`}>
-              <div className="mt-0.5 t9" style={{ color: C.sub }}>
-                {conVerif.length ? "Requieren verificación telefónica con el deudor antes de girar. Se resuelven en el tab Verificación." : "Ninguna factura de la oferta requiere verificación telefónica."}
-              </div>
+            {mVerif > 0 && (
+            <Bloque titulo="Necesitan verificación de factura"
+              resumen={`${conVerif.length} factura(s) · ${verifRes.nDeudores} deudor(es) · ${fmtMM(mVerif)}`}>
+              <div className="mt-0.5 t9" style={{ color: C.sub }}>Requieren verificación telefónica con el deudor antes de girar. Se resuelven en el tab <b>Verificación</b>.</div>
             </Bloque>
+            )}
           </div>
+          )}
 
-          {multi.length > 0 && (
+          {multi.length > 0 && nBloques > 1 && (
             <div className="mt-2 t9" style={{ color: C.faint }}>
-              Los tres bloques de acciones no son excluyentes: <b>{multi.length} factura(s)</b> aparecen en más de uno, así que sus montos no suman el total de la oferta.
+              Los bloques de acciones no son excluyentes: <b>{multi.length} factura(s)</b> aparecen en más de uno, así que sus montos no suman el total de la oferta.
             </div>
           )}
           {/* PUBLICAR LA OFERTA. Las dos vías no son un detalle de canal: la electrónica cierra el
@@ -6225,7 +6241,7 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
             </div>
           </div>
           <div className="mt-2.5 rounded-lg p-2.5 t10" style={{ backgroundColor: "#F5F4F8", color: C.sub }}>
-            Al confirmar se <b>publica la oferta</b> {pub === "electronica" ? <>y <b>sale el correo</b> con el código de negocio y la clave de un solo uso; la firma del cliente cierra <b>O05</b></> : <>y <b>O05 · Evidencia del Contrato de Cesión</b> queda esperando el comprobante en el tab Otorgamiento</>}. Las asignaciones de línea son una <b>evaluación</b>, no una reserva: el cupo lo reserva el sistema de gestión de líneas cuando el <b>cliente firma</b>, y el core lo convierte en línea utilizada cuando <b>Operaciones aprueba</b>.{evalLin.requiereComite > 0 ? <> y la solicitud queda en la bandeja del <b>comité de riesgo</b> como una sola solicitud con {evalLin.solicitudes.length} línea(s) de detalle, aprobable o recortable por separado</> : null}.
+            Al confirmar se <b>publica la oferta</b> {pub === "electronica" ? <>y <b>sale el correo</b> con el código de negocio y la clave de un solo uso; la firma del cliente cierra <b>O05</b></> : <>y <b>O05 · Evidencia del Contrato de Cesión</b> queda esperando el comprobante en el tab Otorgamiento</>}. Las asignaciones de línea son una <b>evaluación</b>, no una reserva: el cupo lo reserva el sistema de gestión de líneas cuando el <b>cliente firma</b>, y el core lo convierte en línea utilizada cuando <b>Operaciones aprueba</b>{evalLin.requiereComite > 0 ? <> y la solicitud queda en la bandeja del <b>comité de riesgo</b> como una sola solicitud con {evalLin.solicitudes.length} línea(s) de detalle, aprobable o recortable por separado</> : null}.
           </div>
         </div>
 
@@ -6234,7 +6250,7 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
           {/* Sin las excepciones resueltas no se cursa: el apoderado no puede decidir sobre algo que
               no le llegó justificado, así que la operación se quedaría detenida igual. */}
           <button onClick={() => onConfirmar(pub)} disabled={sinComentario > 0}
-            title={sinComentario > 0 ? `Faltan ${sinComentario} excepción(es) por justificar en el tab Otorgamiento` : undefined}
+            title={sinComentario > 0 ? `Pendiente: ${sinComentario} excepción(es) por aclarar en el tab Otorgamiento` : undefined}
             className="rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.indigo }}>{evalLin.requiereComite > 0 ? "Confirmar y enviar" : "Confirmar curse"}</button>
         </div>
       </div>
