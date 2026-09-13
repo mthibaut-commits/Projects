@@ -6327,6 +6327,15 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                 // existe ANTES de la aceptación, para adelantar el otorgamiento con los apoderados.
                 if (["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage) || aprobacionFormalCliente(deal)) return null;
                 const on = tienePreEval(deal.id);
+                // El detalle es una PESTAÑA PROPIA y `PRE_EVAL` es estado en memoria de cada documento
+                // —los repositorios también lo son, así que acá no hay storage que comparta nada—. Sin
+                // este aviso la operación quedaba en pre-evaluación sólo en el detalle: la mesa de
+                // Otorgamientos, que vive en la pestaña del tubo, seguía mostrando cero al aprobador y
+                // el «Ir a aprobar» lo dejaba en una bandeja vacía. Es el mismo agujero que tenía el
+                // aviso de simulación al tubo, y se cierra igual: postMessage al opener.
+                const avisarOpenerPreEval = (encendida) => {
+                  try { if (window.opener) window.opener.postMessage({ type: "nex-preeval", dealId: deal.id, on: encendida, por: usuario }, ORIGEN_APP); } catch (_) {}
+                };
                 // Envío explícito al proceso de excepción. Si hay excepciones pendientes sin comentario/respaldo
                 // del ejecutivo, primero se advierte con un diálogo (puede enviar igual tras el warning).
                 const enviarPreEval = () => {
@@ -6337,10 +6346,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   evaluarOtorgItems(deal)
                     .filter((it) => it.disp === "excepcion" && !st[it.stKey] && !sol[it.stKey])
                     .forEach((it) => solicitarAprobacionExc(deal, it, usuario, "", []));
-                  setPreEval(deal.id, usuario, true); avisarPreEval(deal, usuario); setPreEvalWarn(null); setReevTick((x) => x + 1);
+                  setPreEval(deal.id, usuario, true); avisarPreEval(deal, usuario); avisarOpenerPreEval(true); setPreEvalWarn(null); setReevTick((x) => x + 1);
                 };
                 const onClickPreEval = () => {
-                  if (on) { setPreEval(deal.id, usuario, false); setReevTick((x) => x + 1); return; } // cancelar
+                  if (on) { setPreEval(deal.id, usuario, false); avisarOpenerPreEval(false); setReevTick((x) => x + 1); return; } // cancelar
                   const faltan = excepcionesSinComentario(deal);
                   if (faltan.length > 0) { setPreEvalWarn({ count: faltan.length, enviar: enviarPreEval }); return; }
                   enviarPreEval();
@@ -20386,6 +20395,15 @@ export default function PipelineComercial() {
         const aplicarSim = (d) => (d.id === m.dealId ? { ...d, ...m.patch } : d);
         setDeals((prev) => prev.map(aplicarSim));
         setSelected((s) => (s ? aplicarSim(s) : s));
+        return;
+      }
+      // Pre-evaluación solicitada (o cancelada) desde la pestaña del detalle. La mesa de Otorgamientos
+      // filtra por `tienePreEval`, y ese estado es de CADA documento: sin este aviso el aprobador veía
+      // «OPERACIONES EN OTORGAMIENTO (0)» aunque el ejecutivo acabara de enviársela, que es la forma en
+      // que esta compuerta se rompía en la práctica. Se re-emite la lista para que la vista recalcule.
+      if (m && m.type === "nex-preeval" && m.dealId) {
+        setPreEval(m.dealId, m.por || "EJ", !!m.on);
+        setDeals((prev) => prev.slice());
         return;
       }
       // De acá para abajo todo el protocolo es de WhatsApp/curse y se resuelve por número de negocio.
