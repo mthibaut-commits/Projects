@@ -18420,12 +18420,19 @@ function OperacionesView({ deals, onOpen, soloExec }) {
           </div>
         ))}
       </div>
+      {/* Tabs con el estilo de la app —underline purple— y no un segmentado con fondo: son las dos
+          APERTURAS de la misma pantalla, igual que las pestañas del detalle, y un control con otra
+          forma se lee como si hiciera otra cosa. Van en su propia línea, sobre la divisoria: metidos
+          entre los filtros competían con ellos y la fila ya lleva buscador, cliente, fechas y tres
+          chips. «Apertura por factura» pasó a «Facturas»: la etiqueta describía el mecanismo y no lo
+          que se ve, y al lado de «Operaciones» el paralelo se entiende solo. */}
+      <div className="flex flex-wrap items-end gap-x-5" style={{ borderBottom: `1px solid ${C.line}` }}>
+        {[["operaciones", "Operaciones"], ["facturas", "Facturas"]].map(([k, l]) => { const on = vista === k; return (
+          <button key={k} onClick={() => setVista(k)} className="flex items-center gap-1.5 px-1 pb-2 t12"
+            style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>{l}</button>
+        ); })}
+      </div>
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-lg p-0.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F3F4F6" }}>
-          {[["operaciones", "Operaciones"], ["facturas", "Apertura por factura"]].map(([k, l]) => (
-            <button key={k} onClick={() => setVista(k)} className="rounded-md px-3 py-1 t12 font-semibold" style={{ backgroundColor: vista === k ? C.indigo : "transparent", color: vista === k ? "#fff" : C.sub, boxShadow: vista === k ? "0 1px 2px rgba(0,0,0,.08)" : "none" }}>{l}</button>
-          ))}
-        </div>
         <div className="flex items-center gap-1.5 rounded-full px-3 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
           <Search size={13} style={{ color: C.faint }} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por cliente, deudor, folio o N°…" className="w-52 bg-transparent t12 outline-none" style={{ color: C.ink }} />
