@@ -1494,23 +1494,32 @@
   }
 
   // 85 · O05 · EVIDENCIA DEL CONTRATO DE CESIÓN. El criterio existe SIEMPRE —ninguna operación se
-  // cursa sin constancia de que el cliente autorizó la cesión— y lo que cambia con la vía de
-  // publicación es cómo se satisface: en la electrónica la firma del cliente en el portal ES la
-  // evidencia y el criterio queda aprobado solo; en la física no hay nada que el sistema pueda dar
-  // por cierto, así que queda como excepción de Operaciones N3. Lo que se prueba es justamente que
-  // no sea «un criterio que aparece cuando es físico»: aparecer sólo entonces dejaría a la operación
-  // electrónica cursando sin ninguna constancia mientras el cliente no firma.
+  // cursa sin constancia de que el cliente autorizó la cesión— y la evidencia es una HUELLA del
+  // paquete, no una bandera: no dice «el cliente firmó» sino «el cliente firmó ESTO». Por eso el
+  // criterio se abre y se cierra solo, sin que nadie tenga que acordarse de revocar nada.
+  //
+  // La evidencia entra INYECTADA, que es la única forma de probar que el motor decide con ella y no
+  // con lo que haya en el navegador.
   {
-    const fs = [fac("e1", LB[0], 20)];
-    const base = { id: "T-85", rutEmisor: "76.111.111-1", cliente: "Cliente 85", facturasOp: fs, amountMM: 20 };
-    const o05 = (d) => evaluarOtorgItems(d).find((i) => i.regla.cond === "O05");
-    const sinPublicar = o05(base);
-    const electronicaSinFirmar = o05({ ...base, publicacion: "electronica" });
-    const electronicaFirmada = o05({ ...base, publicacion: "electronica", clienteAcepto: true, stage: "aceptadas" });
-    const reabierta = o05({ ...base, publicacion: "electronica", clienteAcepto: true, stage: "oferta", reabierta: true });
-    const fisica = o05({ ...base, publicacion: "fisica" });
-    const fisicaFirmada = o05({ ...base, publicacion: "fisica", clienteAcepto: true, stage: "aceptadas" });
-    // El par (área, nivel) tiene que tener a alguien: si no, la excepción nace «Sin aprobador definido».
+    const fs = [fac("e1", LB[0], 20), fac("e2", LB[1], 12)];
+    const base = { id: "T-85", rutEmisor: "76.111.111-1", cliente: "Cliente 85", facturasOp: fs, amountMM: 32, negocioNum: "OP-85" };
+    const o05 = (d, ev) => evaluarOtorgItems(d, ev ? { evidencia: { [d.id]: ev } } : undefined).find((i) => i.regla.cond === "O05");
+    const firma = (d, via) => ({ via: via || "electronica", canonico: huellaOperacion(d), hash: "h", por: "Cliente", fecha: "—" });
+
+    const sinEvidencia = o05(base, null);
+    const conFirma = o05(base, firma(base));
+    // El paquete cambia DESPUÉS de firmar: se agrega una factura. La huella deja de calzar sin que
+    // nadie toque ninguna bandera — es el caso que el booleano no podía ver.
+    const conFactuaraExtra = { ...base, facturasOp: [...fs, fac("e3", LB[0], 5)], amountMM: 37 };
+    const traspapelada = o05(conFactuaraExtra, firma(base));
+    // Y el caso fino: misma cantidad de facturas y mismo total, pero movidas de deudor. Con sólo los
+    // conteos y el monto total la huella sería idéntica; con el monto POR DEUDOR, no.
+    const movida = { ...base, facturasOp: [fac("e1", LB[1], 20), fac("e2", LB[0], 12)] };
+    const sustituida = o05(movida, firma(base));
+    // La vía física no cambia el criterio: lo que la cierra es la evidencia que deja el visado.
+    const fisicaSinVisar = o05({ ...base, publicacion: "fisica" }, null);
+    const fisicaVisada = o05({ ...base, publicacion: "fisica" }, firma(base, "fisica"));
+
     const pad = padronAprobadores();
     const cargo = rolDeAreaNivel("operaciones", 3, pad);
     const exacto = pad.cargos.find((c) => c.area === "operaciones" && c.nivel === 3);
@@ -1519,20 +1528,93 @@
     // alta sin su titular deja el par (área, nivel) con nombre y sin nadie que lo firme. Se vio: la
     // primera versión creó «Jefe de Operaciones» y la excepción seguía cayendo en el N5 por escalada.
     const titulares = pad.usuarios.filter((u) => !u.superAdmin && u.atrib && u.atrib.operaciones === 3);
-    ok("85 O05 existe siempre y su evidencia es la firma del cliente o el visado de Operaciones",
-       // existe en los cinco escenarios, incluso antes de publicar
-       !!sinPublicar && !!electronicaSinFirmar && !!electronicaFirmada && !!fisica
-       // electrónica: sin firma es excepción; con la firma queda aprobado sin que nadie lo vise
-       && electronicaSinFirmar.disp === "excepcion" && electronicaFirmada.disp === "aprobado"
-       // reabrir revoca la firma, y con ella la evidencia
-       && reabierta.disp === "excepcion"
-       // física: la firma del cliente NO la satisface — el papel se firmó fuera del sistema
-       && fisica.disp === "excepcion" && fisicaFirmada.disp === "excepcion"
-       // y se rutea a Operaciones N3, que tiene un cargo exacto (no sólo escalada desde N5)
-       && fisica.regla.area === "operaciones" && fisica.nivel === 3
+    ok("85 O05 existe siempre y su evidencia es la HUELLA del paquete autorizado",
+       // existe en todos los escenarios
+       !!sinEvidencia && !!conFirma && !!traspapelada && !!fisicaSinVisar
+       // sin evidencia es excepción; con la huella del paquete vigente queda aprobado sin visar
+       && sinEvidencia.disp === "excepcion" && conFirma.disp === "aprobado"
+       // cambió el paquete después de firmar → la huella no calza → vuelve a ser excepción
+       && traspapelada.disp === "excepcion"
+       // y la sustitución que conserva conteos y total tampoco pasa
+       && sustituida.disp === "excepcion"
+       // física: la cierra el visado, que es el que deja la evidencia
+       && fisicaSinVisar.disp === "excepcion" && fisicaVisada.disp === "aprobado"
+       // se rutea a Operaciones N3, con cargo exacto y con titular
+       && fisicaSinVisar.regla.area === "operaciones" && fisicaSinVisar.nivel === 3
        && !cargo.sinAprobador && !!exacto && exacto.rol === "Jefe de Operaciones"
-       && titulares.length === 1 && puedeAprobarExc(titulares[0].code, fisica.regla, 3, pad),
-       `sin publicar ${sinPublicar.disp} · electrónica ${electronicaSinFirmar.disp}→${electronicaFirmada.disp} (reabierta ${reabierta.disp}) · física ${fisica.disp} aun firmada (${fisicaFirmada.disp}) · N${fisica.nivel} ${cargo.rol} (${titulares.map((u) => u.nombre).join(", ") || "SIN TITULAR"})`);
+       && titulares.length === 1 && puedeAprobarExc(titulares[0].code, fisicaSinVisar.regla, 3, pad),
+       `sin evidencia ${sinEvidencia.disp} · firmada ${conFirma.disp} · +1 factura ${traspapelada.disp} · sustituida ${sustituida.disp} · física ${fisicaSinVisar.disp}→${fisicaVisada.disp} · N${fisicaSinVisar.nivel} ${cargo.rol} (${titulares.map((u) => u.nombre).join(", ") || "SIN TITULAR"})`);
+  }
+
+  // 86 · EL GATE DE INYECCIÓN AL CORE (GIR-02). Es el mismo cálculo que O05 pero en el punto donde el
+  // dinero sale: comparar la huella de lo que se va a inyectar contra la de lo autorizado. Lo que se
+  // prueba acá es que el motivo se distinga —«no hay evidencia» y «la evidencia no describe esta
+  // operación» se arreglan de formas distintas— y que la huella incluya lo que el negocio definió.
+  {
+    const fs = [fac("g1", LB[0], 40), fac("g2", LB[1], 10)];
+    const d = { id: "T-86", rutEmisor: "76.222.222-2", cliente: "Cliente 86", facturasOp: fs, amountMM: 50, negocioNum: "OP-86" };
+    const h = huellaOperacion(d);
+    const sin = evidenciaContratoOk(d, { evidencia: {} });
+    const ok1 = evidenciaContratoOk(d, { evidencia: { "T-86": { canonico: h, hash: "x" } } });
+    const otra = evidenciaContratoOk({ ...d, facturasOp: [fs[0]] }, { evidencia: { "T-86": { canonico: h, hash: "x" } } });
+    // La huella lleva lo que el negocio pidió: operación, RUT del cliente, nº de deudores, nº de
+    // facturas, monto total — y el monto por deudor, que es lo que cierra la sustitución.
+    const campos = ["op=OP-86", "rut=76.222.222-2", "nd=2", "nf=2", "monto=" + Math.round(50 * 1e6)];
+    // Y es ESTABLE: dos operaciones con el mismo paquete dan la misma huella, y el orden de las
+    // facturas no la mueve (si la moviera, reordenar la lista invalidaría una firma válida).
+    const revuelta = huellaOperacion({ ...d, facturasOp: [fs[1], fs[0]] });
+    ok("86 el gate de inyección al core compara huellas y distingue el motivo",
+       sin.ok === false && sin.motivo === "sin_evidencia"
+       && ok1.ok === true && otra.ok === false && otra.motivo === "no_calza"
+       && campos.every((c) => h.includes(c)) && revuelta === h
+       // y el detalle trae las dos huellas, que es lo que se audita
+       && !!otra.firmado && !!otra.actual && otra.firmado !== otra.actual,
+       `${h} · sin evidencia «${sin.motivo}» · cambiada «${otra.motivo}» · orden estable ${revuelta === h}`);
+  }
+
+  // 87 · ROTACIÓN DE PERSONAS: qué ve cada uno y a quién se le atribuye lo hecho. Tres defectos que
+  // sólo aparecen cuando alguien se va y llega su reemplazo.
+  {
+    // (a) El alcance de un JEFE se deriva del equipo que declara la cartera, no de una constante. El
+    //     mapa cableado `JEFE_A_EXECS` no sólo se desfasaba: un jefe NUEVO no estaba en él, la
+    //     búsqueda daba `undefined` y eso se leía como «ve todo». El ejecutivo nuevo fallaba cerrado
+    //     y el jefe nuevo fallaba ABIERTO, indistinguible de la gerencia.
+    const delJefe = execsVisiblesDe("JG");
+    const delEjec = execsVisiblesDe("CR");
+    const gerencia = execsVisiblesDe("GG");
+    const desconocido = execsVisiblesDe("ZZ_NO_EXISTE");
+    const equipoJG = delJefe && delJefe.every((c) => EXEC_JEFATURA[c] === EXEC_JEFATURA[delJefe[0]]);
+
+    // (b) Un código de ejecutivo que el padrón ya no conoce NO es el Agente IA. Relabelarlo falsea la
+    //     atribución de una operación que sí tuvo dueño, y lo hace en silencio: el dashboard y el
+    //     churn empiezan a contarle al agente operaciones que negoció una persona.
+    const sinDuenio = nombreEjec("");
+    const vigente = nombreEjec("CR");
+    const idoSe = nombreEjec("XX");
+    const jefSinDuenio = jefaturaOf({ exec: "" });
+    const jefIdoSe = jefaturaOf({ exec: "XX" });
+
+    // (c) Una tarea de aprobación es para quien tenga la ATRIBUCIÓN, no para la foto de nombres del
+    //     día en que se creó: con el par (área, nivel) guardado, el apoderado que llegue después la ve.
+    const tareaPar = destinatariosTarea({ area: "operaciones", nivel: 3, para: ["Alguien Que Se Fue"] });
+    const tareaVieja = destinatariosTarea({ para: ["Nombre Congelado"] });
+    const tareaHuerfana = destinatariosTarea({ area: "area_inexistente", nivel: 5, para: [] });
+
+    ok("87 el alcance sigue al equipo y la atribución no se inventa cuando alguien se va",
+       // (a)
+       Array.isArray(delJefe) && delJefe.length > 0 && equipoJG
+       && JSON.stringify(delEjec) === JSON.stringify(["CR"])
+       && gerencia === null
+       && Array.isArray(desconocido) && desconocido.length === 0        // falla CERRADO, no abierto
+       // (b)
+       && sinDuenio === "Agente IA" && vigente === "Carla Rivas"
+       && idoSe !== "Agente IA" && /XX/.test(idoSe)
+       && jefSinDuenio === "Inbound / IA" && jefIdoSe !== "Inbound / IA"
+       // (c)
+       && tareaPar.includes("Ignacio Peña") && !tareaPar.includes("Alguien Que Se Fue")
+       && JSON.stringify(tareaVieja) === JSON.stringify(["Nombre Congelado"])
+       && tareaHuerfana.length === 1 && tareaHuerfana[0] === SIN_APROBADOR,
+       `jefe → [${delJefe.join(", ")}] · gerencia → todo · desconocido → nada · «XX» → «${idoSe}» · tarea (operaciones,N3) → ${tareaPar.join(", ")}`);
   }
 
   console.log(out.join("\n"));

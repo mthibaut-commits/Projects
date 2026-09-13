@@ -738,7 +738,16 @@ const EXEC_ZONA = { CR: "Zona Norte (Andina)", RF: "Zona Norte (Andina)", JT: "Z
 const USUARIO = "CR"; // ejecutivo logueado por defecto (Carla Rivas)
 // Usuarios que pueden "iniciar sesión": los 6 ejecutivos, los aprobadores (Riesgo/Operaciones) y el super admin.
 const USERS = { ...EXECS, JG: "Sofía Herrera · Jefe de Grupo Comercial", GC: "Dante Montes · Gerente Comercial", GG: "Federico Diaz · Gerente General", RG: "Carolina Vergara · Jefe de Riesgo", SR: "Paula Reyes · Subgerente de Riesgo", OP: "Andrés Mella · Operaciones", JO: "Ignacio Peña · Jefe de Operaciones", EV: "Camila Soto · Ejecutivo de verificación", ADMIN: "Super Administrador (ve todo)" };
-const execName = (d) => EXECS[d.exec] || "Agente IA";
+// EL NOMBRE DEL EJECUTIVO DE UNA OPERACIÓN. «Agente IA» es una respuesta legítima sólo cuando la
+// operación NO tiene dueño —la originó el inbound sin asignar—, y se reconoce por eso: `exec` vacío.
+// Un CÓDIGO que el padrón ya no conoce es otra cosa: alguien que se fue. Devolver «Agente IA» ahí
+// falsea la atribución de una operación que sí tuvo dueño, y lo hace en silencio: el dashboard, el
+// Plan por Ejecutivo y el churn empiezan a contarle al agente operaciones que negoció una persona.
+// Se devuelve el código, marcado, que es trazable y no miente. (En producción esto lo resuelve el
+// padrón histórico de usuarios: dar de baja a alguien no borra lo que hizo.)
+const nombreEjec = (code) => (!code || code === "—" ? "Agente IA"
+  : (EXECS[code] || (typeof USERS !== "undefined" && USERS[code]) || `${code} · ejecutivo dado de baja`));
+const execName = (d) => nombreEjec(d && d.exec);
 
 // ============================================================
 // AUDITORÍA — bus global que registra toda acción del sistema y del usuario. Cada evento guarda
@@ -986,9 +995,30 @@ const atribDe = (code) => {
 };
 // Ejecutivos asignados a cada jefatura de grupo comercial (JG ve solo su grupo). La gerencia
 // (GC = Gerente Comercial, GG = Gerente General) supervisa a todos, así que no se lista aquí (ve todo).
-const JEFE_A_EXECS = { JG: ["CR", "RF", "JT"] };
-// Códigos de ejecutivos que un usuario puede ver: el propio (ejecutivo), su grupo (jefatura) o null = todos.
-const execsVisiblesDe = (code) => (EXECS[code] ? [code] : (JEFE_A_EXECS[code] || null));
+// QUÉ OPORTUNIDADES VE CADA USUARIO. Antes el grupo de una jefatura era una constante escrita a mano
+// —`JEFE_A_EXECS = { JG: ["CR","RF","JT"] }`— con dos problemas. Uno: no coincidía con los equipos que
+// declara la cartera (CR y RF son Andes, JT es Pacífico), o sea había dos verdades sobre quién manda a
+// quién. Dos, y peor: un jefe NUEVO no está en el mapa, la búsqueda devolvía `undefined` y eso se leía
+// como «ve todo» — el ejecutivo nuevo fallaba CERRADO (no veía nada) y el jefe nuevo fallaba ABIERTO,
+// indistinguible de la gerencia.
+//
+// Ahora el grupo se DERIVA del equipo que la cartera le asigna a cada ejecutivo (`EXEC_JEFATURA`, que
+// en producción viene del archivo diario) y el «ve todo» se decide por ROL, no por omisión. Lo
+// desconocido no ve nada: en una pantalla de oportunidades ajenas, fallar cerrado es la única opción
+// defendible.
+const EQUIPO_JEFATURA = { JG: "Equipo Andes" }; // a qué equipo pertenece cada jefatura de grupo
+const execsDeEquipo = (eq) => Object.keys(EXECS).filter((k) => EXEC_JEFATURA[k] === eq);
+// Roles que ven TODA la cartera del factoring por su función, no por no estar en una lista.
+const ROLES_VEN_TODO = new Set(["gte_comercial", "gte_general", "jefe_riesgo", "sub_riesgo", "operaciones", "jefe_operaciones", "ejec_verif", "admin"]);
+// Códigos de ejecutivos que un usuario puede ver: el propio (ejecutivo), su grupo (jefatura),
+// null = todos, o [] = ninguno (usuario sin rol conocido).
+const execsVisiblesDe = (code) => {
+  if (EXECS[code]) return [code];
+  const rol = (typeof ROL_USUARIO !== "undefined" && ROL_USUARIO[code]) || null;
+  if (rol === "jefe_comercial") return execsDeEquipo(EQUIPO_JEFATURA[code] || null);
+  if (rol && ROLES_VEN_TODO.has(rol)) return null;
+  return [];
+};
 // Gravedad por tramo de monto (MM CLP), según CFG_TRAMOS (editable en Mantenedores).
 const gravedadPorMonto = (mm) => { for (const t of CFG_TRAMOS) { if (t.hasta == null || mm <= t.hasta) return t.grav; } return "critico"; };
 // Piso de atribución que impone el MONTO de la operación a una excepción de esa área.
@@ -1029,7 +1059,9 @@ function puedeAprobarExc(code, regla, nivelReq, padron) {
 const aprobadoresExc = (regla, nivelReq, padron) => { const pad = padron || padronAprobadores();
   return pad.usuarios.filter((u) => puedeAprobarExc(u.code, regla, nivelReq, pad)).map((u) => u.etiqueta || u.nombre); };
 // Construye las causas (desvíos) de una operación a partir de su evaluación de otorgamiento.
-const jefaturaOf = (d) => EXEC_JEFATURA[d.exec] || "Inbound / IA";
+// Misma distinción que `nombreEjec`: sin dueño es el inbound; con un dueño que el padrón ya no
+// conoce, la jefatura es desconocida — no es «Inbound / IA».
+const jefaturaOf = (d) => EXEC_JEFATURA[d && d.exec] || (!d || !d.exec || d.exec === "—" ? "Inbound / IA" : "Sin jefatura asignada");
 const esBuenDeudor = (d) => d.sector.startsWith("Buenos Deudores");
 
 // Auto-asignación de oportunidades a ejecutivos según la cartera.
@@ -5341,6 +5373,21 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
     const arr = Array.isArray(archs) ? archs.filter(Boolean) : (archs ? [archs] : []);
     const st = { ...(repoVisado.get(deal.id) || {}), [x.stKey]: val };
     const det = { ...(repoVisadoDetalle.get(deal.id) || {}), [x.stKey]: { msg: msg || "", archs: arr, por: actorEtiqueta(usuario), fecha: new Date().toLocaleString("es-CL") } };
+    // OTG-01 · SE COMPRUEBA LA ATRIBUCIÓN ANTES DE ESCRIBIR, no sólo al dibujar el botón. Quien visa
+    // tiene que tener HOY el (área, nivel) que la regla exige: la pantalla puede venir de una sesión
+    // vieja, de un rol que cambió o de una atribución que se revocó, y la decisión de un apoderado es
+    // evidencia regulatoria. En producción esto lo rechaza el resolver desde el rol del token —acá se
+    // anticipa, que es lo que este cliente puede hacer—.
+    if (!puedeAprobarExc(usuario, x.regla, x.nivel || 4)) {
+      const req = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", x.nivel || 4);
+      registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Otorgamiento · Visado", accion: "Decisión rechazada por atribución (OTG-01)",
+        glosa: `Intento de resolver la regla ${x.regla.n} de «${deal.cliente}» sin la atribución requerida (${req.rol} · N${x.nivel || 4})`, empresaId: deal.id, severidad: "alta", exito: false });
+      return;
+    }
+    // VÍA FÍSICA: visar O05 es lo que CREA la evidencia del contrato. El comprobante adjunto es el
+    // respaldo y la huella del paquete es lo que después compara el gate del core: aprobar sin dejar
+    // la huella dejaría una excepción resuelta y nada que cotejar contra lo que se va a inyectar.
+    if (val === "aprobado" && x.regla && x.regla.cond === "O05") registrarEvidenciaContrato(deal, "fisica", actorEtiqueta(usuario));
     const conf = await confirmarEscrituras([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
     const dtxt = x.deudor ? ` · deudor ${x.deudor.nombre}` : "";
     if (!conf.ok) {
@@ -5357,6 +5404,21 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const revertirVisado = async (x) => {
     const st = { ...(repoVisado.get(deal.id) || {}) }; delete st[x.stKey];
     const det = { ...(repoVisadoDetalle.get(deal.id) || {}) }; delete det[x.stKey];
+    // OTG-01 · SE COMPRUEBA LA ATRIBUCIÓN ANTES DE ESCRIBIR, no sólo al dibujar el botón. Quien visa
+    // tiene que tener HOY el (área, nivel) que la regla exige: la pantalla puede venir de una sesión
+    // vieja, de un rol que cambió o de una atribución que se revocó, y la decisión de un apoderado es
+    // evidencia regulatoria. En producción esto lo rechaza el resolver desde el rol del token —acá se
+    // anticipa, que es lo que este cliente puede hacer—.
+    if (!puedeAprobarExc(usuario, x.regla, x.nivel || 4)) {
+      const req = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", x.nivel || 4);
+      registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Otorgamiento · Visado", accion: "Decisión rechazada por atribución (OTG-01)",
+        glosa: `Intento de resolver la regla ${x.regla.n} de «${deal.cliente}» sin la atribución requerida (${req.rol} · N${x.nivel || 4})`, empresaId: deal.id, severidad: "alta", exito: false });
+      return;
+    }
+    // VÍA FÍSICA: visar O05 es lo que CREA la evidencia del contrato. El comprobante adjunto es el
+    // respaldo y la huella del paquete es lo que después compara el gate del core: aprobar sin dejar
+    // la huella dejaría una excepción resuelta y nada que cotejar contra lo que se va a inyectar.
+    if (val === "aprobado" && x.regla && x.regla.cond === "O05") registrarEvidenciaContrato(deal, "fisica", actorEtiqueta(usuario));
     const conf = await confirmarEscrituras([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
     if (!conf.ok) { forceV((v) => v + 1); return; }
     invalidarVisado(); forceV((v) => v + 1); onReev && onReev();
@@ -6418,13 +6480,30 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             const destinos = STAGES.filter((st) => {
               if (["aceptadas", "cesion", "perdida"].includes(st.id)) return false;
               if (STAGE_ORDER.indexOf(st.id) <= iAct) return false;
-              if (st.id === "giro") return aprobacionFormalCliente(deal);
+              // Además de la aceptación vigente (regla 1), la huella del paquete tiene que calzar con
+              // la evidencia del contrato (GIR-02). Ocultar el destino no es el control —lo impone el
+              // resolver— pero ofrecer un botón que va a fallar es peor que no ofrecerlo.
+              if (st.id === "giro") return aprobacionFormalCliente(deal) && evidenciaContratoOk(deal).ok;
               return true;
             });
-            if (!destinos.length) return null;
+            // Cuando lo ÚNICO que falta es la huella —el cliente firmó, pero la operación cambió
+            // después— el destino no desaparece: se muestra apagado con el motivo. Desaparecer sin
+            // explicación es el peor de los dos: el ejecutivo ve una operación aceptada que no puede
+            // girar y no tiene dónde enterarse de por qué.
+            const evGiro = aprobacionFormalCliente(deal) && STAGE_ORDER.indexOf("giro") > iAct ? evidenciaContratoOk(deal) : null;
+            const giroTrabado = evGiro && !evGiro.ok ? evGiro : null;
+            if (!destinos.length && !giroTrabado) return null;
             return (<>
               <div className="mx-2 my-1" style={{ borderTop: `1px solid ${C.line}` }} />
               <div className="px-2 py-1 t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Avanzar a</div>
+              {giroTrabado && (
+                <div className="flex items-start gap-1.5 rounded-md px-2 py-1.5 t10" style={{ color: C.sub, backgroundColor: "#FFF7ED", cursor: "help" }}
+                  title={giroTrabado.motivo === "sin_evidencia" ? "Falta la evidencia del contrato de cesión (criterio O05 del tab Otorgamiento)."
+                    : `Lo autorizado: ${giroTrabado.firmado}\nLo que se giraría: ${giroTrabado.actual}`}>
+                  <AlertTriangle size={11} className="mt-0.5 shrink-0" style={{ color: "#C2410C" }} />
+                  <span><b>Girar</b> no está disponible: {giroTrabado.motivo === "sin_evidencia" ? "falta la evidencia del contrato de cesión (O05)." : "la operación cambió después de que el cliente la autorizó — hay que volver a firmarla."}</span>
+                </div>
+              )}
               {destinos.map((st) => (
                 <button key={st.id} onClick={() => { setAccMenu(false); onMover(deal.id, st.id); }}
                   className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 t11 text-left hover:bg-stone-50" style={{ color: C.ink }}>
@@ -8900,7 +8979,7 @@ function CasosModal({ titulo, casos, onClose, onExport }) {
                     <td className="px-2 py-1 text-right" style={{ color: C.sub }}>{d.diasFin || "—"}</td>
                     <td className="whitespace-nowrap px-2 py-1 text-right" style={{ color: C.sub }}>{d.simulado ? fmtMM(d.giroMM) : "—"}</td>
                     <td className="whitespace-nowrap px-2 py-1 text-right" style={{ color: C.sub }}>{d.simulado ? fmtMM(d.descMM) : "—"}</td>
-                    <td className="whitespace-nowrap px-2 py-1" style={{ color: C.sub }}>{EXECS[d.exec] || d.exec}</td>
+                    <td className="whitespace-nowrap px-2 py-1" style={{ color: C.sub }}>{nombreEjec(d.exec)}</td>
                     <td className="whitespace-nowrap px-2 py-1" style={{ color: C.sub }}>{d.status}</td>
                   </tr>
                 ))}
@@ -9806,9 +9885,9 @@ function BenchmarkDeudoresModal({ deals, onClose, inline, usuario, esJefe }) {
 function ComparativoModal({ deals, onClose, inline }) {
   const [dim, setDim] = useState("ejecutivo");
   const dims = {
-    ejecutivo: { label: "Ejecutivo", fn: (d) => EXECS[d.exec] || d.exec || "Inbound / IA" },
-    zona: { label: "Zona geográfica", fn: (d) => EXEC_ZONA[d.exec] || "Inbound / IA" },
-    gerencia: { label: "Gerencia / Jefatura", fn: (d) => EXEC_JEFATURA[d.exec] || "Inbound / IA" },
+    ejecutivo: { label: "Ejecutivo", fn: (d) => nombreEjec(d.exec) },
+    zona: { label: "Zona geográfica", fn: (d) => EXEC_ZONA[d.exec] || (!d.exec || d.exec === "—" ? "Inbound / IA" : "Sin zona asignada") },
+    gerencia: { label: "Gerencia / Jefatura", fn: (d) => jefaturaOf(d) },
   };
   const rows = useMemo(() => {
     const fn = dims[dim].fn; const map = {};
@@ -10438,7 +10517,7 @@ const esReglaDeudor = (regla) => !!(regla && regla.porDeudor) || /^D/.test((regl
 function evaluarOtorgItems(deal, estado) {
   const versiones = estado && estado.versiones;
   const rev = revOtorgActual(deal, versiones);
-  const vCli = { ...varsClienteActual(deal, versiones), ...varsModeloExt(deal) };
+  const vCli = { ...varsClienteActual(deal, versiones, estado), ...varsModeloExt(deal) };
   const deudores = deudoresDeDeal(deal);
   const montoMM = (deal && deal.amountMM) || 0;
   const items = [];
@@ -10740,11 +10819,11 @@ function snapVersionCli(deal, rev) {
 // `simulacion_version`— y no estado del navegador. Sin esto `evaluarOtorgItems` parecía puro
 // —no menciona ningún global— y sin embargo sus ENTRADAS salían de `SIM_VERSIONS`, así que la cadena
 // completa no se podía levantar a un servicio.
-function varsClienteActual(deal, versiones) {
+function varsClienteActual(deal, versiones, estado) {
   const todas = versiones || (typeof SIM_VERSIONS !== "undefined" ? SIM_VERSIONS : {}) || {};
   const vs = deal && todas[deal.id];
   const base = (vs && vs.length) ? vs[vs.length - 1].vars : apiVarsCliente(deal, 0);
-  return { ...base, ...varsOperacionCli(deal) };
+  return { ...base, ...varsOperacionCli(deal, estado) };
 }
 // Variables que NO vienen de la API de riesgo sino de la propia operación, y que por eso NO se
 // congelan con la versión: la versión es la foto de lo que dijo el origen externo, y esto es un hecho
@@ -10752,18 +10831,13 @@ function varsClienteActual(deal, versiones) {
 // O05 en el acto; si se leyera del snapshot, el criterio no aparecería hasta la próxima reevaluación
 // —o sea, después de girar—. Es UNA variable a propósito: la puerta se abre sólo para lo que la
 // operación posee, no para reescribir el padrón de riesgo desde acá.
-function varsOperacionCli(deal) {
-  // La evidencia del contrato de cesión (O05). En la vía ELECTRÓNICA la pone el cliente: entra desde
-  // el correo al portal y autoriza el negocio, y esa autorización —con actor y hora— es el respaldo.
-  // Se lee por `aprobacionFormalCliente` y no por una bandera suelta porque es el mismo gate que ya
-  // sabe que reabrir REVOCA la firma: si el paquete cambió, lo firmado ya no describe lo que se va a
-  // cursar y la evidencia deja de valer. En la vía FÍSICA el sistema no tiene nada que dar por cierto
-  // —el papel se firmó afuera—, así que no hay evidencia hasta que el visado de Operaciones la cree.
-  if (deal && deal.publicacion === "fisica") return { contratoEvidencia: false };
-  const firmada = typeof aprobacionFormalCliente === "function"
-    ? !!aprobacionFormalCliente(deal)
-    : !!(deal && deal.clienteAcepto && !deal.reabierta);
-  return { contratoEvidencia: firmada };
+function varsOperacionCli(deal, estado) {
+  // La evidencia del contrato de cesión (O05) es una HUELLA del paquete, no una bandera: no dice «el
+  // cliente firmó» sino «el cliente firmó ESTO». Por eso el criterio se repara y se vuelve a abrir
+  // solo, sin que nadie tenga que acordarse de revocar nada: cambió el paquete → la huella no calza.
+  //  · ELECTRÓNICA: la registra el portal cuando el cliente autoriza (`confirmarCierre`).
+  //  · FÍSICA: la registra el visado de Operaciones sobre el comprobante adjunto.
+  return { contratoEvidencia: !!(typeof evidenciaContratoOk === "function" && evidenciaContratoOk(deal, estado).ok) };
 }
 // Revisión vigente de la simulación. v1 se emite con `rev = 0`, así que la revisión actual es
 // «nº de versiones − 1»: sin versiones y con una sola versión se está en la evaluación inicial.
@@ -10798,12 +10872,12 @@ const VISADO_CACHE = new Map();
 // catálogos de Mantenedores (que cambian el resultado de las reglas).
 const invalidarVisado = () => { VISADO_VER++; VISADO_CACHE.clear(); };
 // Huella barata del negocio: sólo los campos de los que dependen las reglas de otorgamiento.
-// `publicacion` y la firma del cliente entran en la clave porque O05 se evalúa con ellas: publicar
-// una oferta que YA estaba en «oferta» no cambia la etapa, así que sin esto el cache devolvía la
-// evaluación anterior y el criterio se quedaba como estaba. `reabierta` va por lo mismo — revoca la
-// firma y con ella la evidencia.
+// La HUELLA de la operación entra en la clave porque O05 se evalúa contra ella: publicar una oferta
+// que YA estaba en «oferta» no cambia la etapa, así que sin esto el cache devolvía la evaluación
+// anterior. Va la huella y no las banderas sueltas porque es exactamente lo que el criterio compara —
+// si cambia el paquete, cambia la clave— y `EVID_VER` se mueve al registrarse una evidencia nueva.
 const visadoKey = (deal) =>
-  `${deal.id}|${deal.stage}|${deal.amountMM}|${deal.facturas}|${(deal.deudores || []).length}|${(deal.facturasOp || []).length}|${deal.subSeed}|${deal.publicacion || "-"}|${deal.clienteAcepto ? 1 : 0}|${deal.reabierta ? 1 : 0}|${VISADO_VER}`;
+  `${deal.id}|${deal.stage}|${deal.amountMM}|${deal.facturas}|${(deal.deudores || []).length}|${(deal.facturasOp || []).length}|${deal.subSeed}|${deal.publicacion || "-"}|${huellaOperacion(deal)}|${EVID_VER}|${VISADO_VER}`;
 // Resumen del visado por operación (excepciones que requieren aprobación, rechazos y estado global).
 // El VISADO —quién resolvió cada excepción— es estado del SERVIDOR: es el registro de una decisión
 // con nombre y hora, no una preferencia del navegador. `visadoDealCalc` lo recibe para que el
@@ -10968,6 +11042,14 @@ const INVARIANTES = [
     regla: "El desembolso exige que la operación haya pasado por Cesión (documentos cedidos a Security).",
     servidor: "El giro se emite contra el AEC confirmado, no contra el stage que reporta el cliente.",
     evaluar: (p) => ["cesion", "giro"].includes(p.deal.stage) },
+  // GIR-02 · El paquete que se inyecta al core tiene que ser EL MISMO que el cliente autorizó. La
+  // comparación es entre huellas —N° de operación, RUT del cliente, nº de deudores, nº de facturas,
+  // monto total y monto por deudor— y no entre banderas: una bandera dice «firmó» y confía en que
+  // toda modificación pasó por «Reabrir»; la huella dice «firmó ESTO» y no confía en nada.
+  { codigo: "GIR-02", nombre: "El paquete girado es el que se autorizó", autoridad: "servidor", aplicado: "funcion", mutaciones: ["oportunidad.girar", "core.inyectar"],
+    regla: "El desembolso exige una evidencia de contrato de cesión (O05) cuya huella calce con la operación que se inyecta.",
+    servidor: "El resolver recalcula la huella desde la operación persistida y la compara con la evidencia; la huella no viaja en el payload.",
+    evaluar: (p) => !p.deal || evidenciaContratoOk(p.deal, p.estado).ok },
   { codigo: "ATR-01", nombre: "Descuento dentro de la atribución", autoridad: "servidor", aplicado: "ui", mutaciones: ["condiciones.guardar"],
     regla: "El descuento aplicado no puede exceder la atribución del rol sin autorización de la jefatura correspondiente.",
     servidor: "El resolver recalcula la banda de tasa y la atribución del rol del token; el % máximo no viaja en el payload.",
@@ -11098,6 +11180,75 @@ const repoNoConfirmadas = crearRepo("factura_no_confirmada");
 // evidencia que alguien acababa de firmar. Volver a predecir sobre el monto ya recortado es además
 // circular: bajar el monto sólo puede mejorar esos tres criterios.
 const repoVerifVeredicto = crearRepo("verificacion_veredicto");
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// EVIDENCIA DEL CONTRATO DE CESIÓN (O05) — un HASH del paquete, no una bandera.
+//
+// La evidencia no es «el cliente firmó» sino «el cliente firmó ESTO». Una bandera booleana
+// (`aprobacionFormalCliente`) responde lo primero: se revoca cuando alguien aprieta «Reabrir», o sea
+// confía en que toda modificación pase por esa puerta. Una huella responde lo segundo y no confía en
+// nada: si el paquete que se va a inyectar al core no es el que se firmó, no calza, venga el cambio
+// por donde venga.
+//
+// LA HUELLA CANÓNICA es una cadena legible y determinista con la cabecera de la operación. Se guarda
+// junto al hash a propósito: el hash sirve para comparar y la cadena para AUDITAR —quien revise un
+// giro en seis meses necesita ver qué se firmó, no un hexadecimal que sólo dice que no calza—.
+//
+// Qué entra (definido con el negocio): N° de operación · RUT del cliente · nº de deudores · nº de
+// facturas · monto total de la oferta · y el monto POR DEUDOR, ordenado. Lo último cierra la
+// sustitución: con sólo los conteos y el total, cambiar una factura por otra del mismo monto en otro
+// deudor dejaría la huella idéntica. Lo que NO entra son las condiciones comerciales (tasa, comisión,
+// anticipo): el cliente firma un paquete y un monto de documentos; el precio se mueve dentro de la
+// atribución y tiene su propio control (ATR-01).
+function huellaOperacion(deal) {
+  if (!deal) return "";
+  const ds = deudoresDeDeal(deal);
+  const fs = (deal.facturasOp || []).filter(Boolean);
+  const porDeudor = {};
+  fs.forEach((f) => { const k = f.rutRecep || f.deudor || "—"; porDeudor[k] = (porDeudor[k] || 0) + Math.round((f.montoMM || 0) * 1e6); });
+  const montos = Object.keys(porDeudor).sort().map((k) => `${k}:${porDeudor[k]}`).join(",");
+  const total = Object.values(porDeudor).reduce((a2, b2) => a2 + b2, 0);
+  return [`op=${deal.negocioNum || deal.id || "—"}`, `rut=${deal.rutEmisor || deal.cliente || "—"}`,
+          `nd=${ds.length}`, `nf=${fs.length}`, `monto=${total}`, `deudores=[${montos}]`].join("|");
+}
+const repoContratoEvidencia = crearRepo("contrato_evidencia");
+// Se mueve al registrar una evidencia. Entra en la clave del visado: sin él, firmar no cambia ni la
+// etapa ni la huella —la huella es del PAQUETE, no de la firma— y el criterio se quedaba abierto.
+let EVID_VER = 0;
+let CONTRATO_EVIDENCIA = repoContratoEvidencia.all(); // { [dealId]: { via, canonico, hash, por, fecha } }
+// Registra la evidencia. El HASH se calcula aparte (SHA-256 es asíncrono) y se completa un tick
+// después, igual que la huella de la bitácora: lo que manda para comparar es la cadena canónica, y el
+// hash es la forma compacta que viaja al core. Si `crypto.subtle` no está, `sha256Hex` degrada y lo
+// MARCA — nunca en silencio.
+function registrarEvidenciaContrato(deal, via, actor) {
+  if (!deal || !deal.id) return null;
+  const canonico = huellaOperacion(deal);
+  const reg = { via, canonico, hash: null, por: actor || "—", fecha: nowStamp() };
+  CONTRATO_EVIDENCIA = { ...CONTRATO_EVIDENCIA, [deal.id]: reg };
+  repoContratoEvidencia.set(deal.id, reg);
+  EVID_VER++;
+  sha256Hex(canonico).then((h) => {
+    const actual = (CONTRATO_EVIDENCIA[deal.id] || {});
+    if (actual.canonico !== canonico) return; // se re-registró mientras tanto: manda la nueva
+    const con = { ...actual, hash: h };
+    CONTRATO_EVIDENCIA = { ...CONTRATO_EVIDENCIA, [deal.id]: con };
+    repoContratoEvidencia.set(deal.id, con);
+  }).catch(() => {});
+  return reg;
+}
+// EL GATE. Se evalúa contra el paquete de HOY: es el mismo cálculo en los dos sitios donde importa
+// —el criterio O05, que lo muestra mientras la operación se arma, y la inyección al core, que es
+// donde el dinero sale—. Devuelve el porqué, no sólo un booleano: «no hay evidencia» y «la evidencia
+// no describe esta operación» se arreglan de formas distintas.
+function evidenciaContratoOk(deal, estado) {
+  const reg = ((estado && estado.evidencia) || CONTRATO_EVIDENCIA || {})[deal && deal.id];
+  if (!reg) return { ok: false, motivo: "sin_evidencia", detalle: "No hay constancia de la autorización del contrato de cesión." };
+  const hoy = huellaOperacion(deal);
+  if (!igualConstante(reg.canonico, hoy)) {
+    return { ok: false, motivo: "no_calza", detalle: "La operación cambió después de la autorización: lo firmado ya no describe lo que se va a cursar.",
+             firmado: reg.canonico, actual: hoy, hash: reg.hash, via: reg.via, por: reg.por, fecha: reg.fecha };
+  }
+  return { ok: true, motivo: "ok", firmado: reg.canonico, actual: hoy, hash: reg.hash, via: reg.via, por: reg.por, fecha: reg.fecha };
+}
 const repoSimVersions = crearRepo("simulacion_version");
 SIM_VERSIONS = repoSimVersions.all();
 // ASIGNACIÓN DE GIROS CONGELADA. El giro se recalcula en cada reevaluación mientras la oferta se
@@ -11712,7 +11863,11 @@ function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinCome
   const h = prev || hiloNuevo({ tipo: "requerimiento", dealId: deal.id, cliente: deal.cliente, asunto, participantes: [execCode, ...dests], creadoPor: execCode });
   dests.forEach((c) => { if (!h.participantes.includes(c)) h.participantes.push(c); });
   hiloEnviar(h, execCode, `${USERS[execCode] || execCode} solicita tu aprobación de la excepción #${x.regla.n} ${x.regla.nombre}${dtxt} de ${deal.cliente} (${deal.id}). ${comentario ? "“" + comentario + "” " : ""}${(archivos && archivos.length) ? "Adjunta " + archivos.length + " respaldo(s). " : ""}${(!comentario && !(archivos && archivos.length) && sinComentarios) ? "Declaró no tener comentarios adicionales. " : ""}Revísala en el Otorgamiento de la operación.`.trim(), (archivos && archivos[0]) || null);
-  if (dests.length) addPanelTarea({ texto: `Aprobar excepción #${x.regla.n} ${x.regla.nombre}${dtxt} · ${deal.cliente} · ${nr.rol} (N${x.nivel || 4}) · solicitada por ${(USERS[execCode] || execCode).split(" · ")[0]}`, cat: "cerrar", autor: USERS[execCode] || execCode, para: dests.map((c) => (USERS[c] || c).split(" · ")[0]), ops: [deal.id], nodo: "Otorgamiento" });
+  // La tarea viaja con el PAR (área, nivel), no con la foto de quién podía aprobarla hoy: así el
+  // apoderado que llegue después la ve, y el que se fue deja de verla, sin que nadie migre nada.
+  addPanelTarea({ texto: `Aprobar excepción #${x.regla.n} ${x.regla.nombre}${dtxt} · ${deal.cliente} · ${nr.rol} (N${x.nivel || 4}) · solicitada por ${(USERS[execCode] || execCode).split(" · ")[0]}`,
+    cat: "cerrar", autor: USERS[execCode] || execCode, area: (x.regla && x.regla.area) || null, nivel: x.nivel || 4,
+    para: dests.map((c) => (USERS[c] || c).split(" · ")[0]), ops: [deal.id], nodo: "Otorgamiento" });
 }
 // Fase de otorgamiento de una oportunidad: "preevaluacion" | "evaluacion" | "finalizada" | null.
 // Misma lógica que la bandeja de otorgamiento (VisadoClienteView), disponible para indicadores.
@@ -11820,6 +11975,21 @@ function VisadoClienteView({ deals, usuario, onChange }) {
     const k = x.stKey, area = x.regla.area, nivel = x.nivel || 4;
     const st = { ...(repoVisado.get(deal.id) || {}), [k]: val };
     const det = { ...(repoVisadoDetalle.get(deal.id) || {}), [k]: { msg: msg || "", arch: arch || null, por: actorEtiqueta(usuario), fecha: new Date().toLocaleString("es-CL") } };
+    // OTG-01 · SE COMPRUEBA LA ATRIBUCIÓN ANTES DE ESCRIBIR, no sólo al dibujar el botón. Quien visa
+    // tiene que tener HOY el (área, nivel) que la regla exige: la pantalla puede venir de una sesión
+    // vieja, de un rol que cambió o de una atribución que se revocó, y la decisión de un apoderado es
+    // evidencia regulatoria. En producción esto lo rechaza el resolver desde el rol del token —acá se
+    // anticipa, que es lo que este cliente puede hacer—.
+    if (!puedeAprobarExc(usuario, x.regla, x.nivel || 4)) {
+      const req = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", x.nivel || 4);
+      registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Otorgamiento · Visado", accion: "Decisión rechazada por atribución (OTG-01)",
+        glosa: `Intento de resolver la regla ${x.regla.n} de «${deal.cliente}» sin la atribución requerida (${req.rol} · N${x.nivel || 4})`, empresaId: deal.id, severidad: "alta", exito: false });
+      return;
+    }
+    // VÍA FÍSICA: visar O05 es lo que CREA la evidencia del contrato. El comprobante adjunto es el
+    // respaldo y la huella del paquete es lo que después compara el gate del core: aprobar sin dejar
+    // la huella dejaría una excepción resuelta y nada que cotejar contra lo que se va a inyectar.
+    if (val === "aprobado" && x.regla && x.regla.cond === "O05") registrarEvidenciaContrato(deal, "fisica", actorEtiqueta(usuario));
     const conf = await confirmarEscrituras([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
     const dtxt = x.deudor ? ` · deudor ${x.deudor.nombre}` : "";
     if (!conf.ok) {
@@ -11834,6 +12004,21 @@ function VisadoClienteView({ deals, usuario, onChange }) {
   const revertirExc = async (deal, k) => {
     const st = { ...(repoVisado.get(deal.id) || {}) }; delete st[k];
     const det = { ...(repoVisadoDetalle.get(deal.id) || {}) }; delete det[k];
+    // OTG-01 · SE COMPRUEBA LA ATRIBUCIÓN ANTES DE ESCRIBIR, no sólo al dibujar el botón. Quien visa
+    // tiene que tener HOY el (área, nivel) que la regla exige: la pantalla puede venir de una sesión
+    // vieja, de un rol que cambió o de una atribución que se revocó, y la decisión de un apoderado es
+    // evidencia regulatoria. En producción esto lo rechaza el resolver desde el rol del token —acá se
+    // anticipa, que es lo que este cliente puede hacer—.
+    if (!puedeAprobarExc(usuario, x.regla, x.nivel || 4)) {
+      const req = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", x.nivel || 4);
+      registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Otorgamiento · Visado", accion: "Decisión rechazada por atribución (OTG-01)",
+        glosa: `Intento de resolver la regla ${x.regla.n} de «${deal.cliente}» sin la atribución requerida (${req.rol} · N${x.nivel || 4})`, empresaId: deal.id, severidad: "alta", exito: false });
+      return;
+    }
+    // VÍA FÍSICA: visar O05 es lo que CREA la evidencia del contrato. El comprobante adjunto es el
+    // respaldo y la huella del paquete es lo que después compara el gate del core: aprobar sin dejar
+    // la huella dejaría una excepción resuelta y nada que cotejar contra lo que se va a inyectar.
+    if (val === "aprobado" && x.regla && x.regla.cond === "O05") registrarEvidenciaContrato(deal, "fisica", actorEtiqueta(usuario));
     const conf = await confirmarEscrituras([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
     if (!conf.ok) { bump(); return; }
     invalidarVisado(); bump();
@@ -12800,6 +12985,25 @@ const TAREAS_PREDEF = [
 ];
 let PANEL_TAREAS = []; // [{ id, ts, venceTs, texto, cat, autor, para:[], ops:[], nodo, hecha }]
 let PANEL_TAREAS_SEQ = 1;
+// DESTINATARIOS DE UNA TAREA. Una tarea de aprobación no es para una PERSONA sino para quien tenga
+// una atribución: (área, nivel). Congelar los nombres al crearla es lo que deja al jefe nuevo sin la
+// tarea del que se fue —el permiso migra con el rol, pero la tarea se quedó apuntando a alguien que
+// ya no está—. Con el par guardado, la lista se resuelve cada vez que se mira y sigue al padrón.
+function destinatariosTarea(t) {
+  if (t && t.area && t.nivel != null && typeof padronAprobadores === "function") {
+    // El super-admin queda fuera: cubre todas las áreas en el nivel máximo, así que aparecería en
+    // TODAS las tareas y las volvería ilegibles. Es una cuenta de sistema, no alguien a quien se le
+    // encarga trabajo — y, sobre todo, su presencia taparía el caso «no hay a quién pedírselo».
+    const pad = padronAprobadores();
+    const nombres = pad.usuarios.filter((u) => !u.superAdmin && puedeAprobarExc(u.code, { area: t.area }, t.nivel, pad))
+      .map((u) => String(u.etiqueta || u.nombre).split(" · ")[0]);
+    if (nombres.length) return nombres;
+    // Sin nadie con esa atribución hoy, se dice con esas palabras en vez de mostrar la lista vacía,
+    // que se lee como «todavía no la miran» cuando en realidad no hay a quién pedírsela.
+    return [SIN_APROBADOR];
+  }
+  return t && t.para ? t.para : [];
+}
 function addPanelTarea(t) {
   const dias = t.dias || 1;
   PANEL_TAREAS.unshift({ id: `PT-${PANEL_TAREAS_SEQ++}`, ts: Date.now(), venceTs: Date.now() + dias * 86400000, hecha: false, para: [], ops: [], ...t });
@@ -12996,7 +13200,7 @@ function PanelTareas({ usuario, esJefe, onCambio, onClose }) {
               <span className="t9 font-semibold" style={{ color: t.hecha ? C.faint : venc ? C.red : C.sub }}>{t.hecha ? "hecha" : fmtVence(t.venceTs)}</span>
             </div>
             <div className="mt-1 t10" style={{ color: C.ink, textDecoration: t.hecha ? "line-through" : "none" }}>{t.texto}</div>
-            {t.para && t.para.length > 0 && <div className="mt-1 flex flex-wrap gap-1">{t.para.map((p, i) => <span key={i} className="rounded-full px-1 py-0.5 t8 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>@{p}</span>)}</div>}
+            {destinatariosTarea(t).length > 0 && <div className="mt-1 flex flex-wrap gap-1">{destinatariosTarea(t).map((p, i) => <span key={i} className="rounded-full px-1 py-0.5 t8 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>@{p}</span>)}</div>}
             <div className="mt-1 flex items-center justify-between gap-1 t8" style={{ color: C.faint }}>
               <span>{t.autor}{t.nodo ? ` · ${t.nodo}` : ""}{t.ops && t.ops.length ? ` · ${t.ops.length} op.` : ""}</span>
               <button onClick={() => { t.hecha = !t.hecha; onCambio && onCambio(); }} className="rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub }}>{t.hecha ? "Reabrir" : "Marcar hecha"}</button>
@@ -13028,7 +13232,7 @@ function NodoTareasModal({ nodo, onClose, usuario, esJefe, onCambio }) {
     if (elegidas.length) {
       elegidas.forEach((d) => {
         const para = [];
-        if (aEjec) para.push(EXECS[d.exec] || "Agente IA");
+        if (aEjec) para.push(nombreEjec(d.exec));
         if (aJefe) { const pe = PC_EXECS.find((e) => e.ini === d.exec); para.push(pe ? pe.jefatura : "Jefatura"); }
         addPanelTarea({ texto: `${pre0}${pre} · ${d.cliente}`, cat, dias, autor: USERS[usuario] || usuario, para, ops: [d.id], nodo: nodo.name });
       });
@@ -13066,7 +13270,7 @@ function NodoTareasModal({ nodo, onClose, usuario, esJefe, onCambio }) {
           {visibles.map((d) => { const on = sel.has(d.id); return (
             <button key={d.id} onClick={() => toggle(d.id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left" style={{ border: `1px solid ${on ? C.indigo : C.line}`, backgroundColor: on ? "#F1ECFF" : "#fff" }}>
               <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded" style={{ border: `1px solid ${on ? C.indigo : C.line}`, backgroundColor: on ? C.indigo : "#fff" }}>{on && <Check size={11} style={{ color: "#fff" }} />}</span>
-              <span className="min-w-0 flex-1"><span className="block truncate t11 font-semibold" style={{ color: C.ink }}>{d.cliente}</span><span className="t9" style={{ color: C.faint }}>{d.id} · {EXECS[d.exec] || "Agente IA"} · {d.facturas || 0} fac.</span></span>
+              <span className="min-w-0 flex-1"><span className="block truncate t11 font-semibold" style={{ color: C.ink }}>{d.cliente}</span><span className="t9" style={{ color: C.faint }}>{d.id} · {nombreEjec(d.exec)} · {d.facturas || 0} fac.</span></span>
               <span className="shrink-0 t11 font-semibold" style={{ color: C.ink }}>{fmtMM(d.amountMM || 0)}</span>
             </button>
           ); })}
@@ -13235,7 +13439,7 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
   const limpiarFiltros = () => { setFEstado("todos"); setFSow("todos"); setFDeudor("todos"); setFLinea("todos"); };
   // ALCANCE POR ROL (una sola fuente de verdad): ejecutivo → su cartera; jefe de grupo → sus
   // ejecutivos; gerencia / admin → todos. El ejecutivo NO puede cambiar el alcance (zona/jefatura/ejec).
-  const jefeInis = JEFE_A_EXECS[usuario];
+  const jefeInis = EXECS[usuario] ? null : execsVisiblesDe(usuario); // null = ve todo; [] = no ve nada
   const base = soloExec
     ? PC_EXECS.filter((e) => e.nombre === soloExec)
     : jefeInis ? PC_EXECS.filter((e) => jefeInis.includes(e.ini)) : PC_EXECS;
@@ -13667,7 +13871,7 @@ async function exportarCandidatasXlsx(soloExec, usuarioNombre) {
 }
 function dashboardKPIs(usuario, deals) {
   const soloExec = EXECS[usuario] || null;                                  // nombre del ejecutivo, o null (jefe/gerencia/admin → todo)
-  const execScope = EXECS[usuario] ? [usuario] : (JEFE_A_EXECS[usuario] || null); // códigos visibles, o null = todos
+  const execScope = execsVisiblesDe(usuario); // códigos visibles, null = todos, [] = ninguno
   const inis = execScope || Object.keys(EXECS);
   // ── Empresas: cartera del ejecutivo (PC_CLIENTES, enlazado por nombre) ──
   const mis = PC_CLIENTES.filter((c) => !soloExec || c.ej === soloExec);
@@ -13771,7 +13975,7 @@ function dashboardKPIs(usuario, deals) {
   const lineasGest = nLineasSOW + nFueraLinea;
   const prioritarios = (deals || []).filter((dd) => inScopeDeal(dd) && tienePrioridadCurse(dd.id) && !estadoAtencionPrioridad(dd).atendida).length;
   const nTubo = (deals || []).filter((dd) => inScopeDeal(dd) && dd.stage !== "perdida" && !(dd.stage === "giro" && !dd.giroPendiente)).length; // negocios abiertos en el tubo
-  const relevTarea = (t) => !soloExec || (t.para || []).includes(soloExec) || (t.ops || []).some((id) => { const dd = (deals || []).find((x) => x.id === id); return dd && EXECS[dd.exec] === soloExec; });
+  const relevTarea = (t) => !soloExec || destinatariosTarea(t).includes(soloExec) || (t.ops || []).some((id) => { const dd = (deals || []).find((x) => x.id === id); return dd && EXECS[dd.exec] === soloExec; });
   const tareasPend = PANEL_TAREAS.filter((t) => !t.hecha && relevTarea(t)).length;
   const msgResponder = notifSolic(usuario).porResponder.length;
   return {
@@ -14080,14 +14284,14 @@ function ReportePerformance({ usuario, inline, onClose }) {
   // grupo con una sola jefatura, en sus ejecutivos; gerencia/admin, en el nivel Gerencia (todas las jefaturas).
   const [path, setPath] = useState(() => {
     if (EXECS[usuario]) return [EXEC_JEFATURA[usuario], usuario]; // ejecutivo → sus empresas
-    const g = JEFE_A_EXECS[usuario];
+    const g = execsVisiblesDe(usuario);
     if (g && g.length) { const jefs = [...new Set(g.map((e) => EXEC_JEFATURA[e]))]; if (jefs.length === 1) return [jefs[0]]; }
     return [];
   }); // [] gerencia · [jefatura] · [jefatura, execCod]
   const desde = (fDesde <= fHasta ? fDesde : fHasta) || semMin;
   const hasta = (fDesde <= fHasta ? fHasta : fDesde) || semMax;
   // Alcance por rol: ejecutivo → su cartera; jefe de grupo → sus ejecutivos; gerencia/admin → todo.
-  const execScope = EXECS[usuario] ? [usuario] : (JEFE_A_EXECS[usuario] || null);
+  const execScope = execsVisiblesDe(usuario);
   // Índice AECSync por cliente: (a) % de buenos deudores sobre lo cedido; (b) pérdida (cesiones a la
   // competencia) sobre deudores PRIME (Lista Blanca / Autorizado) desglosada por deudor; (c) cesiones a los
   // factorings TARGET (BCI / Banco de Chile / Itaú) desglosadas por factoring. Deudores prime = buenos deudores.
@@ -15284,6 +15488,7 @@ const CFG_SECCIONES = [
   { k: "reemplazos", label: "Vacaciones y reemplazos", Icon: Calendar },
   { k: "simulacion", label: "Simulación", Icon: Calculator },
   { k: "correo", label: "Correo saliente", Icon: Send },
+  { k: "oportunidades", label: "Oportunidades", Icon: LayoutGrid },
   { k: "otorgamiento", label: "Otorgamiento", Icon: ShieldCheck },
   { k: "productos", label: "Productos", Icon: Zap },
   { k: "monedas", label: "Monedas", Icon: Calculator },
@@ -16509,7 +16714,93 @@ function CfgReemplazos({ usuario }) {
     </div>
   );
 }
-function ConfiguracionView({ usuario, cfgOper, setCfgOper }) {
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// OPORTUNIDADES › MIGRACIÓN › CAMBIO DE EJECUTIVO.
+//
+// El archivo de cartera de cada mañana le asigna al ejecutivo nuevo las EMPRESAS del anterior, pero
+// las operaciones EN CURSO no se enteran: `deal.exec` guarda las iniciales congeladas en el JSON de
+// la oportunidad y la visibilidad se decide contra ese campo (`dealVisible`). El resultado es que el
+// ejecutivo nuevo recibe la cartera y no ve ni una de las operaciones vivas de esa cartera.
+//
+// Esto es el traspaso explícito: elegir quién sale, quién entra, y mover sus operaciones. Es un acto
+// administrativo con fecha y responsable, no un efecto colateral de un archivo — por eso vive en un
+// mantenedor y queda en la bitácora con el detalle de qué se movió.
+//
+// LO QUE NO SE PIERDE: `execOriginal` conserva quién originó y negoció la operación. La atribución
+// comercial de una venta no se traspasa porque cambie el dueño de la cartera, y la bitácora tiene que
+// poder decir quién la trabajó.
+function CfgOportunidades({ deals, onMigrarExec }) {
+  const [desde, setDesde] = useState("");
+  const [hasta, setHasta] = useState("");
+  const [confirmar, setConfirmar] = useState(false);
+  const [hecho, setHecho] = useState(null);
+  // Se traspasa lo que está EN GESTIÓN, hasta antes del giro. Una operación girada ya se desembolsó:
+  // moverla no cambia ningún trabajo pendiente, sólo reescribiría de quién cuelga una venta que hizo
+  // otro. Las perdidas, igual — son terminales. No es una opción configurable a propósito.
+  const EN_GESTION = ["prospeccion", "oferta", "otorgamiento", "aceptadas", "cesion"];
+  const todas = (deals || []).filter((d) => d.exec === desde);
+  const alcance = todas.filter((d) => EN_GESTION.includes(d.stage));
+  const fuera = todas.length - alcance.length;
+  const porEtapa = {};
+  alcance.forEach((d) => { const k = stageName(d.stage) || d.stage; porEtapa[k] = (porEtapa[k] || 0) + 1; });
+  const montoMM = alcance.reduce((a, d) => a + (d.amountMM || 0), 0);
+  const opciones = Object.keys(EXECS);
+  const ejecutar = () => {
+    if (!desde || !hasta || desde === hasta || !alcance.length) return;
+    const n = onMigrarExec ? onMigrarExec(desde, hasta, alcance.map((d) => d.id)) : 0;
+    setHecho({ n, desde, hasta });
+    setConfirmar(false);
+    setTimeout(() => setHecho(null), 6000);
+  };
+  return (
+    <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+      <div className="text-lg font-semibold" style={{ color: C.ink }}>Oportunidades · Migración</div>
+      <div className="mt-0.5 t12" style={{ color: C.faint }}>Traspasos administrativos sobre las oportunidades ya creadas. El archivo de cartera reasigna las <b>empresas</b>; esto mueve las <b>operaciones en curso</b>, que guardan el ejecutivo con el que nacieron.</div>
+
+      <div className="mt-4 t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Cambio de ejecutivo</div>
+      <div className="mt-2 grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        <label className="block">
+          <div className="t11 font-semibold" style={{ color: C.ink }}>Ejecutivo que sale</div>
+          <select value={desde} onChange={(e) => { setDesde(e.target.value); setConfirmar(false); }}
+            className="mt-1 w-full rounded-md px-2 py-1.5 t11" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
+            <option value="">Elegir…</option>
+            {opciones.map((k) => <option key={k} value={k}>{EXECS[k]}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <div className="t11 font-semibold" style={{ color: C.ink }}>Ejecutivo que recibe</div>
+          <select value={hasta} onChange={(e) => { setHasta(e.target.value); setConfirmar(false); }}
+            className="mt-1 w-full rounded-md px-2 py-1.5 t11" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
+            <option value="">Elegir…</option>
+            {opciones.filter((k) => k !== desde).map((k) => <option key={k} value={k}>{EXECS[k]}</option>)}
+          </select>
+        </label>
+      </div>
+      <div className="mt-2 t9" style={{ color: C.faint }}>Se traspasa lo que está <b>en gestión</b>, hasta antes del giro. Lo ya girado no se toca: la operación se desembolsó y moverla sólo reescribiría de quién cuelga una venta que hizo otro.</div>
+
+      {desde && (
+        <div className="mt-3 rounded-lg p-2.5" style={{ backgroundColor: C.lilac, border: "1px solid #DDD6FE" }}>
+          <div className="t11 font-semibold" style={{ color: C.navy }}>{alcance.length} operación(es) · {fmtMM(montoMM)}</div>
+          <div className="mt-0.5 t10" style={{ color: C.sub }}>
+            {alcance.length ? Object.keys(porEtapa).map((k) => `${porEtapa[k]} en ${k}`).join(" · ") : `${EXECS[desde]} no tiene operaciones en gestión.`}
+          </div>
+          {fuera > 0 && <div className="mt-1 t9" style={{ color: C.faint }}>{fuera} operación(es) giradas o perdidas quedan donde están.</div>}
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center gap-2">
+        <button onClick={() => setConfirmar(true)} disabled={!desde || !hasta || desde === hasta || !alcance.length}
+          className="rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.indigo }}>Traspasar</button>
+        {hecho && <span className="t10 font-semibold" style={{ color: "#16A34A" }}>{hecho.n} operación(es) traspasada(s) de {EXECS[hecho.desde]} a {EXECS[hecho.hasta]}.</span>}
+      </div>
+
+      <ConfirmDialog abierto={confirmar} titulo="Traspasar las operaciones"
+        descripcion={`Se van a mover ${alcance.length} operación(es) por ${fmtMM(montoMM)} de ${EXECS[desde] || "—"} a ${EXECS[hasta] || "—"}. El ejecutivo que recibe pasa a verlas y gestionarlas; el que sale deja de verlas. Queda registrado quién originó cada una y el traspaso va a la bitácora.`}
+        etiquetaConfirmar="Traspasar" onConfirmar={ejecutar} onCancelar={() => setConfirmar(false)} />
+    </div>
+  );
+}
+function ConfiguracionView({ usuario, cfgOper, setCfgOper, deals, onMigrarExec }) {
   const [sec, setSec] = useState("operacion");
   const [, force] = useState(0);
   const activa = CFG_SECCIONES.find((s) => s.k === sec) || CFG_SECCIONES[0];
@@ -16523,7 +16814,7 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper }) {
         ))}
       </aside>
       <div>
-        {sec === "simulacion" ? <CfgSimulacion usuario={usuario} /> : sec === "correo" ? <CfgCorreo /> : sec === "reemplazos" ? <CfgReemplazos usuario={usuario} /> : sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "roles" ? <CfgRoles /> : sec === "usuarios" ? <CfgUsuarios /> : sec === "areas" ? <CfgAreas /> : sec === "otorgamiento" ? (
+        {sec === "simulacion" ? <CfgSimulacion usuario={usuario} /> : sec === "correo" ? <CfgCorreo /> : sec === "oportunidades" ? <CfgOportunidades deals={deals} onMigrarExec={onMigrarExec} /> : sec === "reemplazos" ? <CfgReemplazos usuario={usuario} /> : sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "roles" ? <CfgRoles /> : sec === "usuarios" ? <CfgUsuarios /> : sec === "areas" ? <CfgAreas /> : sec === "otorgamiento" ? (
           <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
             <div className="text-lg font-semibold" style={{ color: C.ink }}>Otorgamiento · apoderados y atribuciones</div>
             <div className="mt-0.5 t12" style={{ color: C.faint }}>Criterios de verificación, atribuciones de aprobación por criterio y los apoderados que pueden excepcionar (nivel por área). Aquí también se habilita/oculta la aceptación masiva por usuario.</div>
@@ -16561,7 +16852,7 @@ function generarTareasConsolidadas(deals) {
   (deals || []).forEach((d) => {
     if (["giro", "perdida"].includes(d.stage)) return;
     if (otorgBloqueado(d)) return; // rechazo firme de otorgamiento ⇒ no cursable, fuera de la bandeja
-    const exec = EXECS[d.exec] || "Agente IA";
+    const exec = nombreEjec(d.exec);
     // Impacto potencial = monto de la operación en juego (lo que se captura/gira al atender la tarea).
     // Se documenta la oferta (CAT, deudor, facturas, tasa, giro, etapa) para que el ejecutivo la entienda.
     const base = { fuente: "pipeline", dealId: d.id, cliente: d.cliente, exec, monto: d.amountMM || 0, impacto: d.amountMM || 0,
@@ -16804,7 +17095,7 @@ function PrioridadesPanel({ items, onClose, onOpen }) {
               <Star size={14} style={{ color: "#C2410C", fill: "#F97316" }} />
               <div className="min-w-0 flex-1">
                 <div className="t11 font-semibold truncate" style={{ color: C.ink }}>{d.cliente}</div>
-                <div className="t9" style={{ color: C.faint }}>{EXECS[d.exec] || d.exec} · {fmtMM(d.amountMM)} · {stageMeta(d.stage).name}{pr ? ` · pedida por ${pr.porNombre}` : ""}</div>
+                <div className="t9" style={{ color: C.faint }}>{nombreEjec(d.exec)} · {fmtMM(d.amountMM)} · {stageMeta(d.stage).name}{pr ? ` · pedida por ${pr.porNombre}` : ""}</div>
               </div>
               <ChevronRight size={14} style={{ color: C.faint }} />
             </button>
@@ -16880,7 +17171,7 @@ function ReporteDiaPanel({ deals, execFilter, onClose, onOpen }) {
                     {prio && <Star size={13} style={{ color: "#C2410C", fill: "#F97316" }} />}
                     <div className="min-w-0 flex-1">
                       <div className="t11 font-semibold truncate" style={{ color: C.ink }}>{d.cliente}</div>
-                      <div className="t9" style={{ color: C.faint }}>{EXECS[d.exec] || d.exec} · {fmtMM(d.amountMM)}</div>
+                      <div className="t9" style={{ color: C.faint }}>{nombreEjec(d.exec)} · {fmtMM(d.amountMM)}</div>
                     </div>
                     <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: eBg, color: eCol }}>{won ? "Ganada" : lost ? "Perdida" : stageMeta(d.stage).name}</span>
                   </button>
@@ -17086,7 +17377,7 @@ function seedTareasDemo(deals, ejecName) {
   // Tareas de gestión asignadas de ejemplo (como si un jefe las creara desde el Sankey).
   const acts = pick((d) => ["oferta", "prospeccion"].includes(d.stage), 2);
   const tpl = [{ pre: "Revisar tasa", cat: "comercial", d: 1 }, { pre: "Llevar a comité de riesgo", cat: "riesgo", d: 5 }];
-  acts.forEach((d, i) => { const t = tpl[i] || tpl[0]; addPanelTarea({ texto: `${t.pre} · ${d.cliente}`, cat: t.cat, dias: t.d, autor: jefe, para: [EXECS[d.exec] || "Ejecutivo"], ops: [d.id], nodo: stageName(d.stage) }); });
+  acts.forEach((d, i) => { const t = tpl[i] || tpl[0]; addPanelTarea({ texto: `${t.pre} · ${d.cliente}`, cat: t.cat, dias: t.d, autor: jefe, para: [nombreEjec(d.exec)], ops: [d.id], nodo: stageName(d.stage) }); });
 }
 
 // Tab «Tareas»: bandeja de trabajo del ejecutivo, como una LISTA tipo pipeline (tipo de tarea + detalle
@@ -17110,14 +17401,14 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
   const prios = deals.filter((d) => tienePrioridadCurse(d.id) && enScope(d)).map((d) => ({ d, at: estadoAtencionPrioridad(d), prio: PRIORIDAD_CURSE[d.id] }));
   const relev = (t) => {
     if (execFilter === "todos") return true;
-    if ((t.para || []).includes(execFilter)) return true;
+    if (destinatariosTarea(t).includes(execFilter)) return true;
     return (t.ops || []).some((id) => { const d = dealDe(id); return d && EXECS[d.exec] === execFilter; });
   };
   const tareas = PANEL_TAREAS.filter(relev);
   // Modelo de fila unificado (prioridad ó tarea asignada).
   const rowsPrio = prios.map(({ d, at, prio }) => ({
     kind: "prio", id: d.id, deal: d, tipo: "Prioridad", tipoCol: "#C2410C", tipoBg: "#FFF7ED", star: true,
-    cliente: d.cliente, ref: `${d.id} · ${EXECS[d.exec] || "Agente IA"}`, detalle: `${stageName(d.stage)}${d.deudor ? ` · ${d.deudor}` : ""}`,
+    cliente: d.cliente, ref: `${d.id} · ${nombreEjec(d.exec)}`, detalle: `${stageName(d.stage)}${d.deudor ? ` · ${d.deudor}` : ""}`,
     monto: d.amountMM || 0, quien: prio.porNombre, at, hecha: at.atendida, venceTs: null,
   }));
   const rowsTask = tareas.map((t) => { const op = (t.ops || []).map(dealDe).filter(Boolean)[0]; const a = areaMeta(t.cat); return ({
@@ -17130,7 +17421,7 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
   const rowsLinea = deals.filter((d) => enScope(d) && ["oferta", "aceptadas", "cesion", "otorgamiento"].includes(d.stage) && lineaCreditoDe(d).fueraDeLinea)
     .map((d) => { const lc = lineaCreditoDe(d); return ({
       kind: "linea", id: "L-" + d.id, deal: d, tipo: "Línea", tipoCol: "#2563EB", tipoBg: "#EFF6FF", star: false,
-      cliente: d.cliente, ref: `${d.id} · ${EXECS[d.exec] || "Agente IA"}`,
+      cliente: d.cliente, ref: `${d.id} · ${nombreEjec(d.exec)}`,
       detalle: `Ampliar/aprobar línea para poder cursar · exceso ${fmtMM(lc.excesoProyectado)} sobre ${fmtMM(lc.aprobada)} aprobada`,
       monto: lc.excesoProyectado, quien: "Riesgo", at: null, hecha: false, venceTs: Date.now() + 86400000, exceso: lc.excesoProyectado,
     }); });
@@ -17298,7 +17589,7 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
                   <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>{r.kind === "prio" ? "Motivo de la prioridad" : r.kind === "linea" ? (r.sow ? "Línea por gestionar para asegurar el SOW" : "Solicitud de línea para el curse") : "Detalle de la tarea"}</div>
                   <div className="mt-1 t12" style={{ color: C.ink, lineHeight: 1.5 }}>{r.detalle}</div>
                   <div className="mt-2 t11" style={{ color: C.sub }}>{r.kind === "prio" ? <>Priorizada para el curse por <b style={{ color: C.ink }}>{r.quien}</b>.</> : r.kind === "linea" ? (r.sow ? <>La línea del cliente está en <b style={{ color: C.ink }}>Atención</b>: gestiona con <b style={{ color: C.ink }}>Riesgo</b> la ampliación/liberación de cupo para no frenar la colocación de buenos deudores y asegurar el SOW.</> : <>La operación queda <b style={{ color: C.ink }}>fuera de línea</b>: requiere ampliar/aprobar la línea en <b style={{ color: C.ink }}>Riesgo</b> antes de poder cursar. Abre la oportunidad para gestionar la solicitud.</>) : <>Asignada por <b style={{ color: C.ink }}>{r.quien}</b>{r.task && r.task.nodo ? <> · nodo <b style={{ color: C.ink }}>{r.task.nodo}</b></> : ""}.</>}</div>
-                  {r.kind === "task" && r.task.para && r.task.para.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{r.task.para.map((p, i) => <span key={i} className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>@{p}</span>)}</div>}
+                  {r.kind === "task" && destinatariosTarea(r.task).length > 0 && <div className="mt-2 flex flex-wrap gap-1">{destinatariosTarea(r.task).map((p, i) => <span key={i} className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#703EFF" }}>@{p}</span>)}</div>}
                   {r.kind === "prio" && r.at.atendida && r.at.detalle && <div className="mt-2 t11" style={{ color: C.sub, lineHeight: 1.4 }}>{r.at.detalle}</div>}
                 </div>
                 {/* Bitácora de gestión */}
@@ -17951,9 +18242,9 @@ function OperacionesView({ deals, onOpen, soloExec }) {
   // Nuevo eje: estado "Aceptada" (aceptadas/cesión/giro) o "En otorgamiento"; el desembolso es un SUB-ESTADO
   // (Giro pendiente / Girada). Girada ya no es un estado propio, es un sub-estado de Aceptada.
   const estadoDe = (s) => s === "otorgamiento" ? "En otorgamiento" : "Aceptada";
-  const vivas = useMemo(() => (deals || []).filter((d) => ["aceptadas", "cesion", "otorgamiento", "giro"].includes(d.stage) && (!soloExec || (EXECS[d.exec] || "Agente IA") === soloExec)).map((d) => ({
+  const vivas = useMemo(() => (deals || []).filter((d) => ["aceptadas", "cesion", "otorgamiento", "giro"].includes(d.stage) && (!soloExec || (nombreEjec(d.exec)) === soloExec)).map((d) => ({
     id: d.id, deal: d, neg: d.negocioNum || d.id, cliente: d.cliente, deudor: (d.deudores && d.deudores[0] ? d.deudores[0].name : d.deudor), facturas: d.facturas,
-    montoMM: d.amountMM || 0, tasa: d.tasa || "—", giroMM: d.giroMM || 0, fecha: ((d.time || "").match(/\d{2}-\d{2}-\d{4}/) || ["Hoy"])[0], estado: estadoDe(d.stage), sub: DISBURSEMENT_LBL[dealDisbursement(d)] || null, exec: EXECS[d.exec] || "Agente IA", nueva: true, ts: Date.now(),
+    montoMM: d.amountMM || 0, tasa: d.tasa || "—", giroMM: d.giroMM || 0, fecha: ((d.time || "").match(/\d{2}-\d{2}-\d{4}/) || ["Hoy"])[0], estado: estadoDe(d.stage), sub: DISBURSEMENT_LBL[dealDisbursement(d)] || null, exec: nombreEjec(d.exec), nueva: true, ts: Date.now(),
     estadoPago: "Pendiente", pctPagado: 0, montoPagado: 0, aTiempo: null, diasAtraso: 0, // recién cursada: aún no vence / no cobrada
   })), [deals, soloExec]);
   const todas = [...vivas, ...OP_SINTETICAS.filter((o) => !soloExec || o.exec === soloExec)];
@@ -20668,6 +20959,12 @@ export default function PipelineComercial() {
   };
   // El cliente se autentica y firma en el sitio Security: recién aquí la operación pasa a Aceptadas.
   const confirmarCierre = (id, tasa, opts, usuario) => {
+    // VÍA ELECTRÓNICA: la autorización del cliente en el portal ES la evidencia del contrato de cesión
+    // (O05). Se registra ACÁ, sobre el paquete tal como estaba al firmarse, y con el apoderado que
+    // firmó como actor. Lo que queda guardado es la HUELLA de ese paquete: si después cambia, el gate
+    // de la inyección al core lo detecta sin depender de que alguien haya apretado «Reabrir».
+    const dFirma = (dealsRef.current || []).find((x) => x.id === id) || (selected && selected.id === id ? selected : null);
+    if (dFirma) registrarEvidenciaContrato(dFirma, "electronica", `Cliente · ${usuario || (dFirma.contacto && dFirma.contacto.nombre) || "apoderado"}`);
     const upd = (d) => {
       if (d.id !== id) return d;
       const o = calcularOferta(d, tasa, opts);
@@ -20962,6 +21259,21 @@ export default function PipelineComercial() {
     // "Aceptada" representa la firma FORMAL del cliente (login + firma en el sitio Factoring Security). La
     // fija sólo el cliente al aceptar; el ejecutivo no puede asignarla manualmente.
     if (stageId === "aceptadas") return;
+    // GIR-02 · GATE DE INYECCIÓN AL CORE. Girar es entregarle la operación a Tesorería, así que acá se
+    // compara la huella de lo que se va a inyectar contra la de la evidencia del contrato (O05). Es el
+    // último punto en que la comparación sirve de algo: después el dinero ya salió. En producción esto
+    // lo decide el resolver —acá se ANTICIPA el rechazo, no se impone: el atacante es el cliente—.
+    if (stageId === "giro") {
+      const d0 = (dealsRef.current || []).find((x) => x.id === id);
+      const ev = evidenciaContratoOk(d0);
+      if (!ev.ok) {
+        const nom = USERS[usuario] || usuario;
+        logSys("warn", "giro", `Inyección al core bloqueada · ${id} · ${ev.motivo}`, { operacion: id, motivo: ev.motivo, firmado: ev.firmado || null, actual: ev.actual || null });
+        registrarAuditoria({ usuario: nom, modulo: "Giro", accion: "Inyección al core bloqueada (GIR-02)",
+          glosa: `${(d0 && d0.cliente) || id}: ${ev.detalle}${ev.firmado ? ` · firmado «${ev.firmado}» · actual «${ev.actual}»` : ""}`, empresaId: id, severidad: "alta", exito: false });
+        return;
+      }
+    }
     setDeals((prev) => {
       const splits = [];
       const mapped = prev.map((d) => {
@@ -21673,6 +21985,36 @@ export default function PipelineComercial() {
   };
   // Jefatura/gerencia reparte una empresa NO priorizada ("Otras facturas") a un ejecutivo: agrega sus
   // facturas del feed en una oportunidad de Prospección con el dueño elegido y la retira del pool.
+  // TRASPASO DE CARTERA (Configuración › Oportunidades › Migración). Mueve las operaciones vivas de un
+  // ejecutivo a otro: el archivo de cartera de la mañana reasigna las EMPRESAS, pero `deal.exec` está
+  // congelado en el JSON de cada oportunidad y es lo que decide quién la ve.
+  //
+  // `execOriginal` conserva quién la originó y negoció — y se escribe UNA sola vez: en un segundo
+  // traspaso, el original sigue siendo el primero, no el intermedio. La atribución comercial de una
+  // venta no cambia de dueño porque cambie el dueño de la cartera.
+  const migrarCartera = (desde, hasta, ids) => {
+    if (!desde || !hasta || desde === hasta) return 0;
+    const set = new Set(ids || []);
+    let n = 0;
+    // La etapa se vuelve a mirar ACÁ y no sólo en la pantalla que armó la lista: entre que se abrió el
+    // mantenedor y se confirmó, una operación pudo girarse. Lo girado no se traspasa.
+    const EN_GESTION = ["prospeccion", "oferta", "otorgamiento", "aceptadas", "cesion"];
+    const upd = (d) => {
+      if (!set.has(d.id) || d.exec !== desde || !EN_GESTION.includes(d.stage)) return d;
+      n++;
+      return { ...d, exec: hasta, execOriginal: d.execOriginal || desde,
+        historialContacto: [...(d.historialContacto || []), { fecha: nowStamp(), canal: "Sistema", actor: "Administración", esEvento: true,
+          resultado: `Traspaso de cartera: la operación pasa de ${nombreEjec(desde)} a ${nombreEjec(hasta)}`,
+          detalle: `Originada por ${nombreEjec(d.execOriginal || desde)}. El traspaso cambia quién la gestiona, no quién la originó.`, exito: true }] };
+    };
+    setDeals((prev) => prev.map(upd));
+    setSelected((sel) => (sel ? upd(sel) : sel));
+    const nom = USERS[usuario] || usuario;
+    registrarAuditoria({ usuario: nom, modulo: "Oportunidades · Migración", accion: "Cambio de ejecutivo",
+      glosa: `${n} operación(es) traspasada(s) de ${nombreEjec(desde)} a ${nombreEjec(hasta)}`, severidad: "alta", exito: true });
+    logSys("info", "app", `Traspaso de cartera · ${desde} → ${hasta} · ${n} operación(es)`, { desde, hasta, operaciones: n });
+    return n;
+  };
   const asignarClienteAExec = (cliente, execIni) => {
     const evs = streamFeed.filter((ev) => (ev.cedente || "—") === cliente);
     if (!evs.length || !execIni) return;
@@ -22340,7 +22682,7 @@ export default function PipelineComercial() {
           <>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Administración <ChevronRight size={12} /> Configuración</div>
             <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Configuración</h1>
-            <ConfiguracionView usuario={usuario} cfgOper={cfgOper} setCfgOper={setCfgOper} />
+            <ConfiguracionView usuario={usuario} cfgOper={cfgOper} setCfgOper={setCfgOper} deals={deals} onMigrarExec={migrarCartera} />
           </>
         ) : vistaApp === "otorgamientos" ? <OtorgamientosView deals={deals} usuario={usuario} onOpen={abrirDetalle} onCfgChange={() => { invalidarVisado(); setCfgVer((v) => v + 1); }} />
         : vistaApp === "verificacion" ? <VerificacionView deals={deals} usuario={usuario} onOpen={abrirDetalle} onVerificar={verificarDeudor} onNoConfirmar={noConfirmoDeudor} /> : (<>
