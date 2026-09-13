@@ -1636,8 +1636,15 @@ function verifFactura(f, deal, estado) {
   if (r.est === "tel") {
     const reg = ((estado && estado.tel) || (typeof VERIF_TEL !== "undefined" ? VERIF_TEL : {}) || {})[(deal && deal.id)] || {};
     const g = reg[f.id];
-    tel = g ? { estado: "Completada", checks: [1, 1, 1], who: `${g.por} · ${g.fecha}` }
-            : { estado: "Pendiente", checks: [0, 0, 0], who: null };
+    // Los checks salen del REGISTRO de la llamada, no de que exista un registro: estaban escritos
+    // `[1,1,1]` a mano, así que la pantalla afirmaba las tres confirmaciones —existencia, recepción y
+    // fecha de pago— en el instante en que alguien pulsaba el botón, hubieran o no sido preguntadas.
+    // Un registro viejo (sin `checklist`) conserva las tres marcas: es lo que ese dato significaba
+    // cuando se guardó, y reescribirlo como «no confirmado» inventaría un incumplimiento al revés.
+    const ck = g && g.checklist;
+    tel = g ? { estado: "Completada", who: `${g.por} · ${g.fecha}`, reg: g,
+                checks: ck ? [ck.existencia ? 1 : 0, ck.recepcion ? 1 : 0, ck.fechaPago ? 1 : 0] : [1, 1, 1] }
+            : { estado: "Pendiente", checks: [0, 0, 0], who: null, reg: null };
   }
   // VEREDICTO CONGELADO: si ya hubo contacto con este deudor, manda lo que se registró. El predictor
   // no vuelve a opinar — el resultado de una llamada es un hecho, no una nueva predicción (§9).
@@ -3812,6 +3819,111 @@ function TagNuevo({ clase = "t9" }) {
 // significado, y un punto de color (estado de la línea) no dice lo mismo que un ✓ o un ⚠.
 // `badgeTono` existe por el saldo puntual, que es una nota y no un contador: comparte la caja pero no
 // el color, porque «línea de un solo uso» es otro concepto y el lila es lo que lo señala.
+// Teléfono OFUSCADO para los registros (invariante 12): en la bitácora y la auditoría tiene que quedar
+// el rastro del contacto, no el dato de contacto. Los últimos 4 dígitos bastan para reconocer de qué
+// llamada se habla sin dejar el número escrito en un log que va a durar años.
+function fonoOfuscado(fono) {
+  const s = String(fono || "").replace(/[^\d]/g, "");
+  if (!s) return "—";
+  return s.length <= 4 ? "•••" + s : "•••" + s.slice(-4);
+}
+// REGISTRO DE LA LLAMADA de verificación. Hasta ahora una verificación telefónica —3 a 4 horas por
+// deudor, y bloquea el giro— se firmaba con un clic: `repoVerifTel` guardaba `{por, fecha}`, o sea
+// quién y cuándo, sin nada de lo que se preguntó ni de lo que el deudor respondió. El §1 del spec dice
+// que el objetivo del contacto es obtener «un documento —correo o grabación telefónica— donde quede
+// explícito que pagará», y ese documento no tenía dónde guardarse: la evidencia que justifica el giro
+// se perdía en el acto de registrarla.
+// Las tres preguntas van JUNTAS a propósito: confirmar que la factura existe pero no que fue recibida
+// conforme no es una confirmación, y el deudor puede reconocer el documento y discutir la fecha. Por
+// eso habilitan juntas, como la unanimidad del §4.2 del predictor.
+// El veredicto es del DEUDOR (§ mesa), así que la llamada se firma UNA vez para todas sus facturas; el
+// selector de folios existe para la confirmación PARCIAL, donde las que el deudor no reconoce se
+// retiran y quedan vetadas igual que en el «no verificada» completo.
+// El respaldo se exige o se declara ausente, nunca se calla: es el mismo criterio que la solicitud de
+// excepción —un silencio no distingue «no hubo documento» de «se me olvidó adjuntarlo»—, y acá pesa
+// más, porque esto es lo que se muestra si alguien pregunta por qué se giró contra esta factura.
+function ModalLlamadaVerif({ fila, onCerrar, onConfirmar }) {
+  const facturas = (fila && fila.facturas) || [];
+  const [chk, setChk] = useState({ existencia: false, recepcion: false, fechaPago: false });
+  const [contacto, setContacto] = useState({ nombre: "", cargo: "", fono: "" });
+  const [compromiso, setCompromiso] = useState("");
+  const [archs, setArchs] = useState([]);
+  const [sinRespaldo, setSinRespaldo] = useState(false);
+  const [notas, setNotas] = useState("");
+  const [sel, setSel] = useState(() => facturas.reduce((m, f) => ({ ...m, [f.id]: true }), {}));
+  const nSel = facturas.filter((f) => sel[f.id]).length;
+  const completo = chk.existencia && chk.recepcion && chk.fechaPago;
+  const listo = completo && contacto.nombre.trim() && (archs.length > 0 || sinRespaldo) && nSel > 0;
+  const campo = { border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink, borderRadius: 10 };
+  const check = (k, lbl, desc) => (
+    <label key={k} className="flex cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2" style={{ border: `1px solid ${chk[k] ? "#bbf7d0" : C.line}`, backgroundColor: chk[k] ? "#F0FDF4" : "#fff" }}>
+      <input type="checkbox" checked={chk[k]} onChange={(e) => setChk((m) => ({ ...m, [k]: e.target.checked }))} className="mt-0.5" />
+      <span className="min-w-0"><span className="block t11 font-semibold" style={{ color: C.ink }}>{lbl}</span><span className="block t9" style={{ color: C.sub }}>{desc}</span></span>
+    </label>
+  );
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center ovl p-6" onClick={onCerrar}>
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-2xl" style={{ border: `1px solid ${C.line}`, maxHeight: "88vh", overflowY: "auto" }}>
+        <div className="t13 font-bold" style={{ color: C.ink }}>Registrar verificación telefónica</div>
+        <div className="mt-0.5 t11" style={{ color: C.sub }}>{fila && fila.deudor} · {facturas.length} factura(s){fila && fila.cliente ? ` · ${fila.cliente}` : ""}</div>
+
+        <div className="mt-3 t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Lo que hay que confirmar en la llamada</div>
+        <div className="mt-1.5 grid gap-1.5" style={{ gridTemplateColumns: "1fr" }}>
+          {check("existencia", "Existencia de la factura", "El deudor reconoce el documento y su monto.")}
+          {check("recepcion", "Recepción conforme", "Recibió la mercadería o el servicio, sin reclamo pendiente.")}
+          {check("fechaPago", "Fecha de pago", "Confirma cuándo pagará; sin fecha no hay compromiso que verificar.")}
+        </div>
+
+        <div className="mt-3 grid gap-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
+          <label className="t9" style={{ color: C.sub }}>Con quién se habló
+            <input value={contacto.nombre} onChange={(e) => setContacto((c) => ({ ...c, nombre: e.target.value }))} placeholder="Nombre y apellido" className="mt-1 w-full px-2 py-1.5 t11 outline-none" style={campo} /></label>
+          <label className="t9" style={{ color: C.sub }}>Cargo
+            <input value={contacto.cargo} onChange={(e) => setContacto((c) => ({ ...c, cargo: e.target.value }))} placeholder="Ej.: Jefe de Cuentas por Pagar" className="mt-1 w-full px-2 py-1.5 t11 outline-none" style={campo} /></label>
+          <label className="t9" style={{ color: C.sub }}>Teléfono
+            <input value={contacto.fono} onChange={(e) => setContacto((c) => ({ ...c, fono: e.target.value }))} placeholder="+56 2 ..." className="mt-1 w-full px-2 py-1.5 t11 outline-none" style={campo} />
+            <span className="mt-0.5 block t8" style={{ color: C.faint }}>En la bitácora queda ofuscado: {fonoOfuscado(contacto.fono)}</span></label>
+          <label className="t9" style={{ color: C.sub }}>Fecha de pago comprometida
+            <input value={compromiso} onChange={(e) => setCompromiso(e.target.value)} placeholder="dd-mm-aaaa" className="mt-1 w-full px-2 py-1.5 t11 outline-none" style={campo} /></label>
+        </div>
+
+        <div className="mt-3 t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Respaldo del compromiso</div>
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <label className="inline-flex cursor-pointer items-center gap-1 t10 font-medium" style={{ color: C.indigo }}>📎 Adjuntar correo o grabación
+            <input type="file" multiple className="hidden" onChange={(e) => { setArchs((a) => [...a, ...Array.from(e.target.files || []).map((x) => x.name)]); e.target.value = ""; }} /></label>
+          {archs.map((a, i) => <span key={i} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9" style={{ backgroundColor: C.lilac, color: C.indigo }}>📎 {a}
+            <button onClick={() => setArchs((l) => l.filter((_, j) => j !== i))} style={{ fontWeight: 700 }}>×</button></span>)}
+        </div>
+        <label className="mt-1.5 flex items-center gap-1.5 t9" style={{ color: C.sub, cursor: "pointer" }}>
+          <input type="checkbox" checked={sinRespaldo} onChange={(e) => setSinRespaldo(e.target.checked)} />
+          No hay respaldo documental de esta llamada (queda declarado)
+        </label>
+        <textarea value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Notas de la llamada (opcional)…" className="mt-2 w-full p-2 t10 outline-none" style={{ ...campo, minHeight: 48 }} />
+
+        {facturas.length > 1 && (<>
+          <div className="mt-3 t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Folios que el deudor confirmó ({nSel} de {facturas.length})</div>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {facturas.map((f) => (
+              <label key={f.id} className="inline-flex cursor-pointer items-center gap-1.5 rounded-full px-2 py-1 t9 font-medium" style={{ border: `1px solid ${sel[f.id] ? "#bbf7d0" : "#fecaca"}`, backgroundColor: sel[f.id] ? "#F0FDF4" : "#FEF2F2", color: sel[f.id] ? "#16A34A" : "#EF4444" }}>
+                <input type="checkbox" checked={!!sel[f.id]} onChange={(e) => setSel((m) => ({ ...m, [f.id]: e.target.checked }))} />
+                {f.folio || f.id}{f.montoMM != null ? ` · ${fmtMM(f.montoMM)}` : ""}
+              </label>
+            ))}
+          </div>
+          {nSel < facturas.length && <div className="mt-1.5 t9" style={{ color: "#C2410C" }}>Las {facturas.length - nSel} no marcadas se retiran de la oferta y quedan vetadas para esta operación.</div>}
+        </>)}
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+          <span className="t9" style={{ color: C.faint }}>{listo ? "Queda firmada con tu nombre, la hora y este respaldo." : "Confirma las tres preguntas, indica con quién hablaste y adjunta el respaldo (o declara que no hay)."}</span>
+          <div className="flex items-center gap-2">
+            <button onClick={onCerrar} className="rounded-lg px-3 py-2 t12 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button>
+            <button disabled={!listo} onClick={() => onConfirmar({ checklist: chk, contacto, compromiso, archs, sinRespaldo, notas, sel })}
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 t12 font-semibold text-white disabled:opacity-50" style={{ backgroundColor: "#16A34A" }}><Check size={13} /> Registrar verificación</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 function ChipFila({ fg, bg, Icono, punto, texto, badge, badgeTono, tip, info, clase = "t9" }) {
   const bt = badgeTono || { fg: "#fff", bg: fg };
   return (
@@ -5693,9 +5805,21 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
   // rehacer una llamada ya hecha son 3–4 horas por deudor tiradas.
   const [telV, forceTel] = useState(0);
   const telGuardadas = (typeof VERIF_TEL !== "undefined" && VERIF_TEL[deal.id]) || {};
-  const registrarTel = async (f) => {
-    const m = { ...(repoVerifTel.get(deal.id) || {}), [f.id]: { por: (typeof EXECS !== "undefined" && EXECS[deal.exec]) || "Ejecutivo", fecha: nowStamp() } };
-    await confirmarEscrituras([repoVerifTel.set(deal.id, m)]);
+  const [llamando, setLlamando] = useState(null); // factura cuya llamada se está registrando
+  // Abre el registro en vez de firmar con el clic: mismo componente que usa la mesa, para que la
+  // evidencia sea la misma se entre por donde se entre. Antes esto guardaba `{por, fecha}` y además
+  // atribuía la llamada al EJECUTIVO de la operación aunque la firmara otro; ahora firma quien la hizo.
+  const registrarTel = (f) => setLlamando(f);
+  const confirmarLlamadaTel = async (f, llamada) => {
+    const reg = { checklist: llamada.checklist, contacto: llamada.contacto, compromiso: llamada.compromiso || "",
+      respaldo: (llamada.archs || []).slice(), sinRespaldo: !!llamada.sinRespaldo, notas: llamada.notas || "" };
+    const m = { ...(repoVerifTel.get(deal.id) || {}), [f.id]: { por: actorEtiqueta(usuario), fecha: nowStamp(), ...reg } };
+    const conf = await confirmarEscrituras([repoVerifTel.set(deal.id, m)]);
+    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Verificación de facturas (detalle)",
+      accion: conf.ok ? "Deudor verificado telefónicamente" : "Verificación rechazada por el contrato",
+      glosa: `${deal.cliente} · ${f.deudor} · folio ${f.folio || f.id} · contacto: ${reg.contacto.nombre}${reg.contacto.cargo ? ` (${reg.contacto.cargo})` : ""} ${fonoOfuscado(reg.contacto.fono)}${reg.compromiso ? ` · paga ${reg.compromiso}` : ""} · respaldo: ${reg.respaldo.length ? reg.respaldo.join(", ") : "SIN respaldo documental (declarado)"}${reg.notas ? ` · ${reg.notas}` : ""}`,
+      empresaId: deal.id, exito: !!conf.ok });
+    setLlamando(null);
     forceTel((v) => v + 1);
   };
   const items = facturasOp.map((f) => ({ f, v: verifFactura(f, deal) }));
@@ -5770,6 +5894,18 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
                         <div key={i} className="flex items-center gap-2 py-1 t10" style={{ borderBottom: i < 2 ? `1px solid ${C.line}` : "none", color: C.sub }}><span className="flex h-4 w-4 items-center justify-center rounded" style={{ border: `1.5px solid ${tel.checks[i] ? "#16a34a" : "#D1D5DB"}`, backgroundColor: tel.checks[i] ? "#16a34a" : "#fff", color: "#fff", fontSize: 9, fontWeight: 700 }}>{tel.checks[i] ? "✓" : ""}</span>{c}</div>
                       ))}
                       {tel.who && <div className="mt-1.5 t9" style={{ color: C.faint }}>Registrado por {tel.who}</div>}
+                      {/* La EVIDENCIA de la llamada, que es lo que justifica girar contra esta factura.
+                          Un registro viejo no la trae: se omite en vez de dibujar campos vacíos. */}
+                      {tel.reg && tel.reg.contacto && (
+                        <div className="mt-1.5 rounded-md px-2 py-1.5 t9" style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0", color: "#166534" }}>
+                          <div>Habló con <b>{tel.reg.contacto.nombre}</b>{tel.reg.contacto.cargo ? ` · ${tel.reg.contacto.cargo}` : ""} · {fonoOfuscado(tel.reg.contacto.fono)}</div>
+                          {tel.reg.compromiso && <div className="mt-0.5">Pago comprometido: <b>{tel.reg.compromiso}</b></div>}
+                          <div className="mt-0.5">{tel.reg.respaldo && tel.reg.respaldo.length
+                            ? <>Respaldo: {tel.reg.respaldo.map((a, i) => <span key={i}>📎 {a}{i < tel.reg.respaldo.length - 1 ? " · " : ""}</span>)}</>
+                            : <span style={{ color: "#C2410C" }}>Sin respaldo documental (declarado por quien registró)</span>}</div>
+                          {tel.reg.notas && <div className="mt-0.5" style={{ color: C.sub }}>“{tel.reg.notas}”</div>}
+                        </div>
+                      )}
                       {!bloqueado && puedeMarcar && tel.estado !== "Completada" && <button onClick={() => registrarTel(f)} className="mt-2 rounded-md px-3 py-1.5 t10 font-semibold" style={{ border: "1px solid #F1ECFF", color: "#5B21D6", backgroundColor: "#fff" }}>Registrar verificación</button>}
                       {/* Si el deudor NO confirma, Security retira esa factura de la operación (spec de
                           verificación §1). Es la única mutación que admite una operación ya firmada, y
@@ -5788,6 +5924,8 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
         })}
         <div className="flex items-center justify-between py-2 t10 font-bold" style={{ borderTop: `2px solid ${C.ink}`, color: C.ink }}><span>Total ({items.length} facturas)</span><span>{fmtMM(totalMM)}</span></div>
       </div>
+      {llamando && <ModalLlamadaVerif fila={{ deudor: llamando.deudor, cliente: deal.cliente, facturas: [llamando] }}
+        onCerrar={() => setLlamando(null)} onConfirmar={(ll) => confirmarLlamadaTel(llamando, ll)} />}
     </>
   );
 }
@@ -12138,6 +12276,7 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
   const [q, setQ] = useState("");
   const [abierto, setAbierto] = useState({});
   const [confirmNo, setConfirmNo] = useState(null);
+  const [llamando, setLlamando] = useState(null); // fila cuya llamada se está registrando
   // Una llamada puede terminar en confirmación PARCIAL: el deudor reconoce unas facturas y no otras, y
   // Security retira las no confirmadas. Se guarda lo DESMARCADO, no lo marcado: por defecto el deudor
   // confirma todo —es el caso normal— y una fila sin nada desmarcado se comporta como antes.
@@ -12165,11 +12304,20 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
     if (d[fid]) delete d[fid]; else d[fid] = true;
     return { ...m, [f.id]: d };
   });
-  const marcarOk = async (f) => {
+  // Registrar una verificación es FIRMAR el resultado de una llamada, así que ya no se aplica con el
+  // clic: abre el registro, que es donde queda el checklist, con quién se habló y el respaldo. Sin eso
+  // la evidencia que justifica el giro se perdía justo en el acto de registrarla.
+  const marcarOk = (f) => setLlamando(f);
+  const confirmarLlamada = async (f, llamada) => {
     const d = desmarcadas(f);
-    const sel = Object.keys(d).length ? f.facturas.reduce((m, x) => ({ ...m, [x.id]: !d[x.id] }), {}) : null;
-    if (onVerificar) await onVerificar(f, sel);
+    // Manda el selector del modal; los folios ya desmarcados en la fila siguen contando como no
+    // confirmados, porque son el mismo hecho declarado antes de llamar.
+    const sel = llamada && llamada.sel
+      ? f.facturas.reduce((m, x) => ({ ...m, [x.id]: !!llamada.sel[x.id] && !d[x.id] }), {})
+      : (Object.keys(d).length ? f.facturas.reduce((m, x) => ({ ...m, [x.id]: !d[x.id] }), {}) : null);
+    if (onVerificar) await onVerificar(f, sel, llamada);
     setNoConf((m) => ({ ...m, [f.id]: {} }));
+    setLlamando(null);
     force((v) => v + 1);
   };
   const marcarNo = (f) => { if (onNoConfirmar) onNoConfirmar(f); setConfirmNo(null); force((v) => v + 1); };
@@ -12297,6 +12445,7 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
         descripcion={confirmNo ? `${confirmNo.deudor} · ${confirmNo.facturas.length} factura(s) por ${fmtMM(confirmNo.monto)} de ${confirmNo.cliente}. Salen de la operación, bajan el monto a girar y quedan vetadas: no se podrán volver a seleccionar en esta operación. Las facturas de los demás deudores conservan su línea.${(confirmNo.deal.facturasOp || []).length <= confirmNo.facturas.length ? " OJO: son todas las facturas de la operación, y una oferta no puede quedar vacía — retira primero las que correspondan o cierra la operación como pérdida." : ""}` : ""}
         etiquetaConfirmar="Retirar facturas no confirmadas"
         onConfirmar={() => marcarNo(confirmNo)} onCancelar={() => setConfirmNo(null)} />
+      {llamando && <ModalLlamadaVerif fila={llamando} onCerrar={() => setLlamando(null)} onConfirmar={(ll) => confirmarLlamada(llamando, ll)} />}
     </>
   );
 }
@@ -21557,18 +21706,26 @@ export default function PipelineComercial() {
   // si no se pasa, se entiende que confirmó todos. Una llamada puede terminar en confirmación PARCIAL
   // —confirma unas facturas y no otras—, y entonces las no confirmadas se retiran y quedan vetadas
   // igual que en el «no verificada» completo: es el mismo hecho, aplicado a menos documentos.
-  const verificarDeudor = async (fila, confirmadas) => {
+  const verificarDeudor = async (fila, confirmadas, llamada) => {
     if (!fila) return;
     const ok = fila.facturas.filter((f) => !confirmadas || confirmadas[f.id]);
     const no = fila.facturas.filter((f) => confirmadas && !confirmadas[f.id]);
     const m = { ...(repoVerifTel.get(fila.deal.id) || {}) };
-    for (const f of ok) m[f.id] = { por: actorEtiqueta(usuario), fecha: nowStamp() };
+    // El registro de la llamada viaja con CADA factura que cubre: el veredicto es del deudor, pero la
+    // evidencia tiene que poder recuperarse desde el documento, que es por donde se pregunta cuando
+    // alguien audita un giro. El teléfono se guarda completo —el equipo lo necesita para rellamar— y
+    // se ofusca al escribirlo en la auditoría y la bitácora (invariante 12).
+    const reg = llamada ? {
+      checklist: llamada.checklist, contacto: llamada.contacto, compromiso: llamada.compromiso || "",
+      respaldo: (llamada.archs || []).slice(), sinRespaldo: !!llamada.sinRespaldo, notas: llamada.notas || "",
+    } : null;
+    for (const f of ok) m[f.id] = { por: actorEtiqueta(usuario), fecha: nowStamp(), ...(reg || {}) };
     const conf = await confirmarEscrituras([repoVerifTel.set(fila.deal.id, m),
       congelarVeredicto(fila, no.length ? (ok.length ? "parcial" : "no_verificada") : "verificada")]);
     no.forEach((f) => retirarFacturaOferta(fila.deal.id, f, "noConfirmada"));
     registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Verificación de facturas",
       accion: conf.ok ? (no.length ? "Deudor confirmó parcialmente" : "Deudor verificado telefónicamente") : "Verificación rechazada por el contrato",
-      glosa: `${fila.cliente} · ${fila.deudor} · ${ok.length} confirmada(s)${no.length ? ` · ${no.length} NO confirmada(s), retiradas y vetadas` : ""} de ${fila.facturas.length} por ${fmtMM(fila.monto)} · causas: ${fila.causas.map((c) => c.id).join(", ") || "—"}`,
+      glosa: `${fila.cliente} · ${fila.deudor} · ${ok.length} confirmada(s)${no.length ? ` · ${no.length} NO confirmada(s), retiradas y vetadas` : ""} de ${fila.facturas.length} por ${fmtMM(fila.monto)} · causas: ${fila.causas.map((c) => c.id).join(", ") || "—"}${reg ? ` · contacto: ${reg.contacto.nombre}${reg.contacto.cargo ? ` (${reg.contacto.cargo})` : ""} ${fonoOfuscado(reg.contacto.fono)}${reg.compromiso ? ` · paga ${reg.compromiso}` : ""} · respaldo: ${reg.respaldo.length ? reg.respaldo.join(", ") : "SIN respaldo documental (declarado)"}${reg.notas ? ` · ${reg.notas}` : ""}` : ""}`,
       exito: !!conf.ok });
     setVerifVer((v) => v + 1);
   };
