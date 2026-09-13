@@ -358,9 +358,12 @@
     const apruebanDe = (r, niv) => Object.keys(USERS).filter((c) => c !== "ADMIN" && puedeAprobarExc(c, r, niv)).map((c) => nombreDe(c));
 
     const c01 = reglaDe("C01"), t01 = primerExc(c01);
+    // Los dos cargos de Operaciones —N3 y N5— cubren un requisito N1 por escalada, y ninguno de otra
+    // área entra: eso es lo que este caso mide. La lista crece cuando se da de alta un cargo del área,
+    // que es configuración; lo que no puede pasar es que aparezca alguien de Riesgo o de Comercial.
     ok("38 una excepción de Operaciones la aprueba Operaciones, no Riesgo",
        !!c01 && c01.area === "operaciones" && t01[2] === 1
-       && JSON.stringify(apruebanDe(c01, t01[2])) === JSON.stringify(["Andrés Mella"]),
+       && JSON.stringify(apruebanDe(c01, t01[2])) === JSON.stringify(["Andrés Mella", "Ignacio Peña"]),
        c01 ? `${c01.nombre.slice(0, 34)} · ${c01.area} N${t01[2]} → ${apruebanDe(c01, t01[2]).join(", ")}` : "sin C01");
 
     const c21 = reglaDe("C21"), t21 = primerExc(c21);
@@ -493,17 +496,28 @@
   // (11-09-2026): son de tipo D, o sea se evalúan una vez por deudor y su visado es por deudor.
   // ============================================================================================
 
-  // 46 · El catálogo está completo: 79 reglas y ningún código de la política sin implementar.
+  // 46 · El catálogo está completo: las 79 reglas de la política v1.0 —C01-C52, D01-D23, O01-O04— y
+  // ningún código sin implementar. Se cuentan por separado las reglas que NO son de ese documento:
+  // O05 (evidencia del contrato de cesión) sale del proceso de publicación de la oferta, no del modelo
+  // de riesgo, y contarla junto a las otras haría que este caso dejara de medir lo que dice medir —la
+  // cobertura de la política— y pasara a medir el largo de un array.
   {
     const ids = REGLAS_CLIENTE.map((r) => r.cond);
-    const falta = [];
-    for (let i = 1; i <= 52; i++) { const c = "C" + String(i).padStart(2, "0"); if (!ids.includes(c)) falta.push(c); }
-    for (let i = 1; i <= 23; i++) { const d = "D" + String(i).padStart(2, "0"); if (!ids.includes(d)) falta.push(d); }
-    for (let i = 1; i <= 4; i++) { const o = "O" + String(i).padStart(2, "0"); if (!ids.includes(o)) falta.push(o); }
+    const POLITICA = [];
+    for (let i = 1; i <= 52; i++) POLITICA.push("C" + String(i).padStart(2, "0"));
+    for (let i = 1; i <= 23; i++) POLITICA.push("D" + String(i).padStart(2, "0"));
+    for (let i = 1; i <= 4; i++) POLITICA.push("O" + String(i).padStart(2, "0"));
+    const falta = POLITICA.filter((c) => !ids.includes(c));
+    const dePolitica = REGLAS_CLIENTE.filter((r) => POLITICA.includes(r.cond));
+    const fuera = REGLAS_CLIENTE.filter((r) => !POLITICA.includes(r.cond)).map((r) => r.cond);
     ok("46 el catálogo implementa las 79 reglas de la política",
-       REGLAS_CLIENTE.length === 79 && falta.length === 0
-       && ["C47", "C48", "C49", "C50"].every((c) => ids.includes(c)),
-       `${REGLAS_CLIENTE.length} reglas · sin implementar: ${falta.length ? falta.join(", ") : "ninguna"}`);
+       dePolitica.length === 79 && falta.length === 0
+       && ["C47", "C48", "C49", "C50"].every((c) => ids.includes(c))
+       // Fuera de la política, sólo O05 — y con su área y su nivel, que es lo que la rutea.
+       && fuera.length === 1 && fuera[0] === "O05"
+       && REGLAS_CLIENTE.find((r) => r.cond === "O05").area === "operaciones"
+       && REGLAS_CLIENTE.find((r) => r.cond === "O05").tiers[0][2] === 3,
+       `${dePolitica.length} de la política + ${fuera.length} propia(s) (${fuera.join(", ") || "—"}) · sin implementar: ${falta.length ? falta.join(", ") : "ninguna"}`);
   }
 
   // 47 · C47-C50 SON DEL PAR: una vez POR DEUDOR, con visado por deudor. La prueba contrasta contra
@@ -1477,6 +1491,48 @@
     ok("84 el giro por factura suma el «Monto a Girar» de la simulación, no el anticipo neto de intereses",
        malos === 0 && sinConceptos === 0 && negativos === 0,
        `${carteras.length * 2} combinaciones · ${malos} descuadres${det ? " · " + det : ""} · ${sinConceptos} casos donde el prorrateo sin conceptos ya cuadraba · ${negativos} documentos negativos`);
+  }
+
+  // 85 · O05 · EVIDENCIA DEL CONTRATO DE CESIÓN. El criterio existe SIEMPRE —ninguna operación se
+  // cursa sin constancia de que el cliente autorizó la cesión— y lo que cambia con la vía de
+  // publicación es cómo se satisface: en la electrónica la firma del cliente en el portal ES la
+  // evidencia y el criterio queda aprobado solo; en la física no hay nada que el sistema pueda dar
+  // por cierto, así que queda como excepción de Operaciones N3. Lo que se prueba es justamente que
+  // no sea «un criterio que aparece cuando es físico»: aparecer sólo entonces dejaría a la operación
+  // electrónica cursando sin ninguna constancia mientras el cliente no firma.
+  {
+    const fs = [fac("e1", LB[0], 20)];
+    const base = { id: "T-85", rutEmisor: "76.111.111-1", cliente: "Cliente 85", facturasOp: fs, amountMM: 20 };
+    const o05 = (d) => evaluarOtorgItems(d).find((i) => i.regla.cond === "O05");
+    const sinPublicar = o05(base);
+    const electronicaSinFirmar = o05({ ...base, publicacion: "electronica" });
+    const electronicaFirmada = o05({ ...base, publicacion: "electronica", clienteAcepto: true, stage: "aceptadas" });
+    const reabierta = o05({ ...base, publicacion: "electronica", clienteAcepto: true, stage: "oferta", reabierta: true });
+    const fisica = o05({ ...base, publicacion: "fisica" });
+    const fisicaFirmada = o05({ ...base, publicacion: "fisica", clienteAcepto: true, stage: "aceptadas" });
+    // El par (área, nivel) tiene que tener a alguien: si no, la excepción nace «Sin aprobador definido».
+    const pad = padronAprobadores();
+    const cargo = rolDeAreaNivel("operaciones", 3, pad);
+    const exacto = pad.cargos.find((c) => c.area === "operaciones" && c.nivel === 3);
+    // Y que el cargo lo OCUPE alguien: el catálogo de cargos y el padrón de personas son dos listas
+    // distintas —`atribDe` deja fuera a quien no esté en `ATRIB_USUARIO`—, así que un cargo dado de
+    // alta sin su titular deja el par (área, nivel) con nombre y sin nadie que lo firme. Se vio: la
+    // primera versión creó «Jefe de Operaciones» y la excepción seguía cayendo en el N5 por escalada.
+    const titulares = pad.usuarios.filter((u) => !u.superAdmin && u.atrib && u.atrib.operaciones === 3);
+    ok("85 O05 existe siempre y su evidencia es la firma del cliente o el visado de Operaciones",
+       // existe en los cinco escenarios, incluso antes de publicar
+       !!sinPublicar && !!electronicaSinFirmar && !!electronicaFirmada && !!fisica
+       // electrónica: sin firma es excepción; con la firma queda aprobado sin que nadie lo vise
+       && electronicaSinFirmar.disp === "excepcion" && electronicaFirmada.disp === "aprobado"
+       // reabrir revoca la firma, y con ella la evidencia
+       && reabierta.disp === "excepcion"
+       // física: la firma del cliente NO la satisface — el papel se firmó fuera del sistema
+       && fisica.disp === "excepcion" && fisicaFirmada.disp === "excepcion"
+       // y se rutea a Operaciones N3, que tiene un cargo exacto (no sólo escalada desde N5)
+       && fisica.regla.area === "operaciones" && fisica.nivel === 3
+       && !cargo.sinAprobador && !!exacto && exacto.rol === "Jefe de Operaciones"
+       && titulares.length === 1 && puedeAprobarExc(titulares[0].code, fisica.regla, 3, pad),
+       `sin publicar ${sinPublicar.disp} · electrónica ${electronicaSinFirmar.disp}→${electronicaFirmada.disp} (reabierta ${reabierta.disp}) · física ${fisica.disp} aun firmada (${fisicaFirmada.disp}) · N${fisica.nivel} ${cargo.rol} (${titulares.map((u) => u.nombre).join(", ") || "SIN TITULAR"})`);
   }
 
   console.log(out.join("\n"));

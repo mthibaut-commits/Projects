@@ -420,6 +420,7 @@ const SCHEMA_VERSION = {
   areas: 1,          // areas que aprueban excepciones (por tenant)
   simulacion: 1,     // conceptos, formulas y retencion de la simulacion (por tenant)
   reemplazos: 1,     // vacaciones: quien cubre a quien y en que periodo (por tenant)
+  correo: 1,         // servicio de correo saliente del tenant (endpoint + OAuth 2.0, sin el secreto)
   auditoria: 2,      // bitacora de auditoria encadenada (v2: cadena SHA-256, antes hash de 32 bits)
   auth: 1,           // intentos fallidos y bloqueo por cuenta
   curse: 3,          // payload de curse por negocio (v3: OTP con SHA-256 + sal; v2 usaba un hash de 32 bits)
@@ -736,7 +737,7 @@ const EXEC_JEFATURA = { CR: "Equipo Andes", RF: "Equipo Andes", JT: "Equipo Pac�
 const EXEC_ZONA = { CR: "Zona Norte (Andina)", RF: "Zona Norte (Andina)", JT: "Zona Centro", MS: "Zona Centro", NB: "Zona Sur", DC: "Zona Sur" };
 const USUARIO = "CR"; // ejecutivo logueado por defecto (Carla Rivas)
 // Usuarios que pueden "iniciar sesión": los 6 ejecutivos, los aprobadores (Riesgo/Operaciones) y el super admin.
-const USERS = { ...EXECS, JG: "Sofía Herrera · Jefe de Grupo Comercial", GC: "Dante Montes · Gerente Comercial", GG: "Federico Diaz · Gerente General", RG: "Carolina Vergara · Jefe de Riesgo", SR: "Paula Reyes · Subgerente de Riesgo", OP: "Andrés Mella · Operaciones", EV: "Camila Soto · Ejecutivo de verificación", ADMIN: "Super Administrador (ve todo)" };
+const USERS = { ...EXECS, JG: "Sofía Herrera · Jefe de Grupo Comercial", GC: "Dante Montes · Gerente Comercial", GG: "Federico Diaz · Gerente General", RG: "Carolina Vergara · Jefe de Riesgo", SR: "Paula Reyes · Subgerente de Riesgo", OP: "Andrés Mella · Operaciones", JO: "Ignacio Peña · Jefe de Operaciones", EV: "Camila Soto · Ejecutivo de verificación", ADMIN: "Super Administrador (ve todo)" };
 const execName = (d) => EXECS[d.exec] || "Agente IA";
 
 // ============================================================
@@ -965,6 +966,10 @@ let ATRIB_USUARIO = {
   // N3 Gerente General; N4 Jefe de Riesgo, N5 Subgerente de Riesgo.
   JG: { tipo: "aprobador", atrib: { comercial: 1 } }, GC: { tipo: "aprobador", atrib: { comercial: 2 } }, GG: { tipo: "aprobador", atrib: { comercial: 3 } },
   RG: { tipo: "aprobador", atrib: { riesgo: 4 } }, SR: { tipo: "aprobador", atrib: { riesgo: 5 } }, OP: { tipo: "aprobador", atrib: { operaciones: 5 } },
+  // El nivel real lo pone el ROL (`ROL_ATRIB`); acá lo que importa es que la persona ESTÉ: `atribDe`
+  // devuelve atribución vacía a quien no figure en este padrón, así que dar de alta el cargo sin dar
+  // de alta a quien lo ocupa deja el (área, nivel) con cargo y sin nadie que lo firme.
+  JO: { tipo: "aprobador", atrib: { operaciones: 3 } },
   ADMIN: { tipo: "aprobador", atrib: { riesgo: 5, comercial: 5, operaciones: 5 } },
 };
 // LA ATRIBUCIÓN SIGUE AL ROL, no al código de usuario. Antes el nivel estaba cableado por código
@@ -5936,6 +5941,10 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
 // Por eso los montos no suman la oferta y el pie lo dice explícitamente; si se presentaran como si
 // sumaran, alguien los va a restar mal.
 function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
+  // CÓMO SE PUBLICA la oferta. Se decide acá y no en un botón posterior porque es parte de la misma
+  // decisión: al confirmar el curse el negocio queda creado y el cliente tiene que poder firmarlo.
+  // Eran dos pasos y el segundo vivía al final de una página larga, así que se perdía de vista.
+  const [pub, setPub] = useState("electronica");
   useEffect(() => {
     const h = (e) => { if (e.key === "Escape") onCancelar(); };
     window.addEventListener("keydown", h);
@@ -6065,8 +6074,36 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
               Los tres bloques de acciones no son excluyentes: <b>{multi.length} factura(s)</b> aparecen en más de uno, así que sus montos no suman el total de la oferta.
             </div>
           )}
+          {/* PUBLICAR LA OFERTA. Las dos vías no son un detalle de canal: la electrónica cierra el
+              circuito sola (el correo sale del servidor de Security y el cliente firma en el portal),
+              y la física deja una obligación abierta —el contrato firmado en papel— que entra al
+              sistema como criterio de otorgamiento. Por eso se elige ANTES de confirmar y no después:
+              lo que se elige acá cambia lo que queda pendiente. */}
+          <div className="mt-3">
+            <div className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Publicar la oferta</div>
+            <div className="mt-1.5 grid gap-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
+              {[["electronica", "Electrónicamente · vía email", "Se envía el contrato de cesión al correo del cliente desde el servidor de Factoring Security. Su firma en el portal es la evidencia de O05: nadie tiene que visarlo."],
+                ["fisica", "Físicamente · con contrato adjunto", "El contrato se firma en papel. La evidencia de O05 la crea el visado: adjuntas el comprobante y lo autoriza Operaciones (N3)."]].map(([k, l, d2]) => {
+                const on = pub === k;
+                return (
+                  <button key={k} onClick={() => setPub(k)} className="rounded-lg p-2.5 text-left"
+                    style={{ border: `1.5px solid ${on ? C.indigo : C.line}`, backgroundColor: on ? "#F5F3FF" : "#fff" }}>
+                    <div className="flex items-start gap-1.5">
+                      <span className="mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full" style={{ border: `1.5px solid ${on ? C.indigo : C.faint}` }}>
+                        {on && <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: C.indigo }} />}
+                      </span>
+                      <div>
+                        <div className="t10 font-bold" style={{ color: on ? C.indigo : C.ink }}>{l}</div>
+                        <div className="mt-0.5 t9" style={{ color: C.sub, lineHeight: 1.45 }}>{d2}</div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="mt-2.5 rounded-lg p-2.5 t10" style={{ backgroundColor: "#F5F4F8", color: C.sub }}>
-            Al confirmar se <b>publica la oferta</b>. Las asignaciones de línea son una <b>evaluación</b>, no una reserva: el cupo lo reserva el sistema de gestión de líneas cuando el <b>cliente firma</b>, y el core lo convierte en línea utilizada cuando <b>Operaciones aprueba</b>.{evalLin.requiereComite > 0 ? <> y la solicitud queda en la bandeja del <b>comité de riesgo</b> como una sola solicitud con {evalLin.solicitudes.length} línea(s) de detalle, aprobable o recortable por separado</> : null}.
+            Al confirmar se <b>publica la oferta</b> {pub === "electronica" ? <>y <b>sale el correo</b> con el código de negocio y la clave de un solo uso; la firma del cliente cierra <b>O05</b></> : <>y <b>O05 · Evidencia del Contrato de Cesión</b> queda esperando el comprobante en el tab Otorgamiento</>}. Las asignaciones de línea son una <b>evaluación</b>, no una reserva: el cupo lo reserva el sistema de gestión de líneas cuando el <b>cliente firma</b>, y el core lo convierte en línea utilizada cuando <b>Operaciones aprueba</b>.{evalLin.requiereComite > 0 ? <> y la solicitud queda en la bandeja del <b>comité de riesgo</b> como una sola solicitud con {evalLin.solicitudes.length} línea(s) de detalle, aprobable o recortable por separado</> : null}.
           </div>
         </div>
 
@@ -6074,7 +6111,7 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
           <button onClick={onCancelar} className="rounded-full px-4 py-1.5 t11 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
           {/* Sin las excepciones resueltas no se cursa: el apoderado no puede decidir sobre algo que
               no le llegó justificado, así que la operación se quedaría detenida igual. */}
-          <button onClick={onConfirmar} disabled={sinComentario > 0}
+          <button onClick={() => onConfirmar(pub)} disabled={sinComentario > 0}
             title={sinComentario > 0 ? `Faltan ${sinComentario} excepción(es) por justificar en el tab Otorgamiento` : undefined}
             className="rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.indigo }}>{evalLin.requiereComite > 0 ? "Confirmar y enviar" : "Confirmar curse"}</button>
         </div>
@@ -6083,7 +6120,7 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
     </>
   );
 }
-function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorporarFacturas, onRetirarFactura, onReabrir, onSugerirOferta, onSimular, onPublicar, onCerrarOferta, onEnviarCierre, onContactar, onEditarContacto, onEnviarWA, onMover, cierre, onConfirmCierre, usuario, onCambiarUsuario, tabInicial, onIrOtorgamientos, fullPage }) {
+function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorporarFacturas, onRetirarFactura, onReabrir, onSugerirOferta, onSimular, onPublicar, onCerrarOferta, onContactar, onEditarContacto, onEnviarWA, onMover, cierre, onConfirmCierre, usuario, onCambiarUsuario, tabInicial, onIrOtorgamientos, fullPage }) {
   const [tab, setTab] = useState(tabInicial || (deal && deal.stage === "otorgamiento" ? "otorgamiento" : "negocio"));
   useEffect(() => { if (tabInicial) setTab(tabInicial); }, [tabInicial, deal && deal.id]);
   const [confirmRetiro, setConfirmRetiro] = useState(null); // factura a retirar de la oferta (ConfirmDialog spec §26)
@@ -6171,7 +6208,6 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [detReeval, setDetReeval] = useState(false);
   const reevaluarLinea = () => { setDetReeval(true); setTimeout(() => { setDetReeval(false); setReevalPend(false); }, 700); };
   const [cursarModal, setCursarModal] = useState(null); // { evalLin, otorgRes, verifRes } — confirmación del curse
-  const [pubMenu, setPubMenu] = useState(false); // dropdown de canal para publicar la oferta
   const [cierreMenu, setCierreMenu] = useState(false); // dropdown de canal para enviar el enlace de cierre
   const [pubModal, setPubModal] = useState(null); // { oferta, opts, canal, descartadas } — decisión sobre facturas descartadas recientes al publicar
   const [pubAccion, setPubAccion] = useState("nueva"); // "nueva" (abrir otra oportunidad) | "descartar"
@@ -6184,8 +6220,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const intentarPublicar = (canal, ofertaN, opts) => { onPublicar(deal.id, ofertaN, opts, canal); };
   // CERRAR OFERTA: confirma la selección de facturas acordada. Si quedan facturas fuera del paquete (<8 días
   // de emisión) abre el modal para decidir qué hacer con ellas; si no, cierra directamente.
-  const intentarCerrar = () => { const desc = candidatasDe(deal).filter((f) => diasEmiCand(f) < 8); if (desc.length) { setPubModal({ descartadas: desc }); setPubAccion("nueva"); setPubEspera(7); } else { onCerrarOferta(deal.id, {}); } };
-  const confirmarPub = () => { if (!pubModal) return; const n = pubModal.descartadas.length; onCerrarOferta(deal.id, { accion: pubAccion, espera: pubEspera, descartadas: n }); setPubModal(null); };
+  // `pub` es cómo se publica la oferta (electrónica / física), elegido en el modal de curse. Viaja
+  // hasta `cerrarOferta` porque decide dos cosas que ocurren allá: si sale el correo y si queda el
+  // criterio O05 abierto. Cuando hay facturas por descartar se guarda en el modal intermedio, que es
+  // el que termina llamando.
+  const intentarCerrar = (pub) => { const desc = candidatasDe(deal).filter((f) => diasEmiCand(f) < 8); if (desc.length) { setPubModal({ descartadas: desc, publicacion: pub }); setPubAccion("nueva"); setPubEspera(7); } else { onCerrarOferta(deal.id, { publicacion: pub }); } };
+  const confirmarPub = () => { if (!pubModal) return; const n = pubModal.descartadas.length; onCerrarOferta(deal.id, { accion: pubAccion, espera: pubEspera, descartadas: n, publicacion: pubModal.publicacion }); setPubModal(null); };
   const [retryMenu, setRetryMenu] = useState(false); // dropdown de canal para reintentar contacto
   const [rejectMenu, setRejectMenu] = useState(false); // dropdown de motivo de cierre (close_reason) al rechazar
   const [accMenu, setAccMenu] = useState(false);       // menú único de acciones terminales de la operación
@@ -6323,7 +6363,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
     if (k === "borrador") { onClose(); return; }
     if (k === "rechazar") { setRechazoModal(true); return; }
     if (deal.ofertaCerrada || deal.negocioNum) return;
-    if (datosCurse) setCursarModal(datosCurse); else intentarCerrar();
+    // Sin `datosCurse` no hay modal —el menú «Acciones» de las otras pestañas no tiene la evaluación
+    // de línea— y entonces tampoco hay dónde elegir cómo publicar: se asume la vía electrónica, que
+    // es el default del modal y la que no deja obligaciones abiertas.
+    if (datosCurse) setCursarModal(datosCurse); else intentarCerrar("electronica");
   };
   const panelAcciones = (seleccionable) => (
     <div className="absolute right-0 z-40 mt-1 w-72 rounded-lg bg-white p-1 shadow-xl" style={{ border: `1px solid ${C.line}` }} onMouseLeave={() => setAccMenu(false)}>
@@ -7936,36 +7979,22 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         </div>
                       ) : (() => {
                         const cerrada = !!(deal.ofertaCerrada || deal.negocioNum);
-                        // "Comunicada" = el ejecutivo ya envió la oferta por un canal (o el Agente IA la publicó).
-                        const comunicada = ofertaPublicada({ ...deal, ofertaCerrada: true }); // misma definición que el tab de Verificación
-                        // Cerrar la oferta se hace desde el menú de «Cerrar oferta y publicar», arriba en la
-                        // tarjeta de veredicto. Acá abajo el botón repetía la misma acción al final de una
-                        // página larga; queda sólo el aviso, que es información y no una acción.
+                        // Cerrar la oferta y PUBLICARLA son la misma decisión y se toman en el modal de
+                        // curse: ahí se elige la vía (electrónica o física) y el correo sale solo. Acá
+                        // abajo vivía un botón «Comunicar oferta por» que repetía esa decisión al final
+                        // de una página larga —se perdía de vista— y además dejaba publicar dos veces
+                        // por canales distintos. Queda sólo el aviso, que es información y no una acción.
                         if (!cerrada) return deal.ofertaSolicitada ? (
                           <div className="mt-2 flex items-center gap-1.5 t9 font-semibold" style={{ color: "#EF4444" }}><MessageSquare size={11} /> El cliente ya pidió la oferta por WhatsApp · revisa la selección y ciérrala desde «Cerrar oferta y publicar» para poder enviársela.</div>
                         ) : null;
+                        const fisica = deal.publicacion === "fisica";
                         return (
                           <div className="mt-2">
-                            <div className="mb-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: "#16A34A", border: "1px solid #bbf7d0" }}><Check size={11} /> Oferta publicada{deal.negocioNum ? ` · N° ${deal.negocioNum}` : ""}</div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {deal.negocioNum && deal.stage === "oferta" && (
-                              <div className="relative">
-                                <button onClick={() => setPubMenu((v) => !v)} className="flex items-center gap-1 rounded-md px-3 py-1.5 t10 font-medium text-white" style={{ backgroundColor: C.green }}><ArrowUpRight size={12} /> {comunicada ? "Reenviar oferta por" : "Comunicar oferta por"} <ChevronDown size={12} /></button>
-                                {pubMenu && (
-                                  <div onClick={(e) => e.stopPropagation()} className="absolute z-50 mt-1 w-56 rounded-lg bg-white py-1 shadow-xl" style={{ border: `1px solid ${C.line}` }}>
-                                    <div className="px-3 py-1 t9 uppercase tracking-wide" style={{ color: C.faint }}>Comunicar la oferta por</div>
-                                    {[["WhatsApp", "WhatsApp"], ["Email", "Email"]].map(([c, l]) => (
-                                      <button key={c} onClick={() => { setPubMenu(false); onEnviarCierre(deal.id, c); }} className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left t11 hover:bg-stone-50" style={{ color: C.ink }}><ArrowUpRight size={11} style={{ color: C.green }} /> {l}</button>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                              )}
-                            </div>
-                            <div className="mt-1 t9" style={{ color: C.faint }}>
-                              {!comunicada ? "Negocio creado. Elige el canal para comunicarle la oferta al cliente: se abrirá su WhatsApp o Email con el enlace para ingresar a la plataforma y firmar."
-                                : deal.clienteAcepto ? "El cliente aceptó. Puedes reenviarle el enlace por otro canal; debe ingresar a la plataforma de Factoring Security y firmar."
-                                : "Oferta comunicada por su canal. El cliente debe ingresar a la plataforma y firmar; puedes reenviarla si es necesario."}
+                            <div className="mb-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: "#16A34A", border: "1px solid #bbf7d0" }}><Check size={11} /> Oferta publicada{deal.negocioNum ? ` · N° ${deal.negocioNum}` : ""}{fisica ? " · en formato físico" : ""}</div>
+                            <div className="t9" style={{ color: C.faint }}>
+                              {fisica ? "Publicada en papel. El contrato firmado se adjunta en el tab Otorgamiento (O05 · Evidencia del Contrato de Cesión), donde lo autoriza Operaciones."
+                                : deal.clienteAcepto ? "El cliente firmó en la plataforma de Factoring Security."
+                                : "Correo enviado con el código de negocio y su clave de un solo uso. El cliente debe ingresar a la plataforma de Factoring Security y firmar."}
                             </div>
                           </div>
                         );
@@ -8498,12 +8527,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
       {/* Confirmación del curse: las dos cifras de línea y los cuatro bloques de acciones. */}
       <ModalCurse deal={deal} datos={cursarModal} sinComentario={cursarModal ? excepcionesSinComentario(deal).length : 0}
         onCancelar={() => setCursarModal(null)}
-        onConfirmar={() => {
+        onConfirmar={(pub) => {
           const e = cursarModal.evalLin;
           if (e.requiereComite > 0) logSys("info", "linea", `Solicitud de línea al comité · negocio ${deal.id} · ${fmtMM(e.requiereComite)} en ${e.solicitudes.length} línea(s) de detalle`, { empresa: deal.cliente, monto: e.requiereComite });
           logSys("info", "linea", `Asignaciones de línea aprobadas · ${fmtMM(e.cursable)} sobre ${e.facturas.filter((f) => f.estado === "CON_LINEA").length} factura(s)`, { empresa: deal.cliente, monto: e.cursable });
           setCursarModal(null);
-          intentarCerrar();
+          intentarCerrar(pub);
         }} />
       {/* Advertencia al pre-evaluar: excepciones pendientes sin comentario/respaldo del ejecutivo. */}
       {preEvalWarn && (
@@ -10543,6 +10572,19 @@ function varsModeloExt(deal) {
     R(302, "O02", "comercial", "Conditions", "Comisiones y Gastos Acordes a la Política", "Operación con comisiones o gastos bajo los mínimos de la política de precios", [[(v) => !!v.comisionBajoMin, "excepcion", NV(1)]]),
     R(303, "O03", "comercial", "Conditions", "Aplicación de CxC Pendientes en la Operación", "Cliente mantiene CxC pendientes sin aplicar el descuento mínimo (30% del monto)", [[(v) => !!v.cxcSinAplicar, "excepcion", NV(1)]]),
     R(304, "O04", "comercial", "Conditions", "Cliente no Bloqueado", "Cliente se encuentra bloqueado para operar", [[(v) => !!v.clienteBloqueado, "excepcion", NV(1)]]),
+    // O05 · EVIDENCIA DEL CONTRATO DE CESIÓN. El criterio existe SIEMPRE —ninguna operación se cursa
+    // sin constancia de que el cliente autorizó la cesión— y lo que cambia según cómo se publique la
+    // oferta es cómo se satisface:
+    //   · ELECTRÓNICA: la evidencia es la autorización misma. El apoderado entra desde el correo al
+    //     portal y firma el negocio; ese acto, con su actor y su hora, ES el respaldo, así que el
+    //     criterio queda aprobado sin que nadie tenga que visarlo.
+    //   · FÍSICA: el contrato se firmó en papel, o sea fuera del sistema. No hay nada que el sistema
+    //     pueda dar por cierto, así que queda como excepción: el ejecutivo adjunta el comprobante
+    //     como respaldo y Operaciones lo visa.
+    // Va al área de OPERACIONES porque es viabilidad operativa del curse —la familia de los pagarés
+    // C01–C03— y en N3 porque no es un trámite de mesa: sin esa constancia la cesión no es oponible
+    // al deudor. Es re-evaluable a propósito: en cuanto la firma llega, el criterio se repara solo.
+    R(305, "O05", "operaciones", "MinimumViability", "Evidencia del Contrato de Cesión", "No consta la autorización del contrato de cesión: el cliente todavía no firma en el portal, o la oferta se publicó en papel y falta adjuntar el comprobante", [[(v) => !v.contratoEvidencia, "excepcion", NV(3)]]),
   ];
   REGLAS_CLIENTE.length = 0; V2.forEach((x) => REGLAS_CLIENTE.push(x));
   NO_REEV_CLIENTE.clear();
@@ -10701,8 +10743,27 @@ function snapVersionCli(deal, rev) {
 function varsClienteActual(deal, versiones) {
   const todas = versiones || (typeof SIM_VERSIONS !== "undefined" ? SIM_VERSIONS : {}) || {};
   const vs = deal && todas[deal.id];
-  if (vs && vs.length) return vs[vs.length - 1].vars;
-  return apiVarsCliente(deal, 0);
+  const base = (vs && vs.length) ? vs[vs.length - 1].vars : apiVarsCliente(deal, 0);
+  return { ...base, ...varsOperacionCli(deal) };
+}
+// Variables que NO vienen de la API de riesgo sino de la propia operación, y que por eso NO se
+// congelan con la versión: la versión es la foto de lo que dijo el origen externo, y esto es un hecho
+// que este sistema conoce y que cambia dentro de la misma revisión. Publicar la oferta en papel abre
+// O05 en el acto; si se leyera del snapshot, el criterio no aparecería hasta la próxima reevaluación
+// —o sea, después de girar—. Es UNA variable a propósito: la puerta se abre sólo para lo que la
+// operación posee, no para reescribir el padrón de riesgo desde acá.
+function varsOperacionCli(deal) {
+  // La evidencia del contrato de cesión (O05). En la vía ELECTRÓNICA la pone el cliente: entra desde
+  // el correo al portal y autoriza el negocio, y esa autorización —con actor y hora— es el respaldo.
+  // Se lee por `aprobacionFormalCliente` y no por una bandera suelta porque es el mismo gate que ya
+  // sabe que reabrir REVOCA la firma: si el paquete cambió, lo firmado ya no describe lo que se va a
+  // cursar y la evidencia deja de valer. En la vía FÍSICA el sistema no tiene nada que dar por cierto
+  // —el papel se firmó afuera—, así que no hay evidencia hasta que el visado de Operaciones la cree.
+  if (deal && deal.publicacion === "fisica") return { contratoEvidencia: false };
+  const firmada = typeof aprobacionFormalCliente === "function"
+    ? !!aprobacionFormalCliente(deal)
+    : !!(deal && deal.clienteAcepto && !deal.reabierta);
+  return { contratoEvidencia: firmada };
 }
 // Revisión vigente de la simulación. v1 se emite con `rev = 0`, así que la revisión actual es
 // «nº de versiones − 1»: sin versiones y con una sola versión se está en la evaluación inicial.
@@ -10737,8 +10798,12 @@ const VISADO_CACHE = new Map();
 // catálogos de Mantenedores (que cambian el resultado de las reglas).
 const invalidarVisado = () => { VISADO_VER++; VISADO_CACHE.clear(); };
 // Huella barata del negocio: sólo los campos de los que dependen las reglas de otorgamiento.
+// `publicacion` y la firma del cliente entran en la clave porque O05 se evalúa con ellas: publicar
+// una oferta que YA estaba en «oferta» no cambia la etapa, así que sin esto el cache devolvía la
+// evaluación anterior y el criterio se quedaba como estaba. `reabierta` va por lo mismo — revoca la
+// firma y con ella la evidencia.
 const visadoKey = (deal) =>
-  `${deal.id}|${deal.stage}|${deal.amountMM}|${deal.facturas}|${(deal.deudores || []).length}|${(deal.facturasOp || []).length}|${deal.subSeed}|${VISADO_VER}`;
+  `${deal.id}|${deal.stage}|${deal.amountMM}|${deal.facturas}|${(deal.deudores || []).length}|${(deal.facturasOp || []).length}|${deal.subSeed}|${deal.publicacion || "-"}|${deal.clienteAcepto ? 1 : 0}|${deal.reabierta ? 1 : 0}|${VISADO_VER}`;
 // Resumen del visado por operación (excepciones que requieren aprobación, rechazos y estado global).
 // El VISADO —quién resolvió cada excepción— es estado del SERVIDOR: es el registro de una decisión
 // con nombre y hora, no una preferencia del navegador. `visadoDealCalc` lo recibe para que el
@@ -11221,6 +11286,11 @@ const ROLES_CAT = [
   { id: "jefe_riesgo",    label: "Jefe de Riesgo",            area: "riesgo" },
   { id: "sub_riesgo",     label: "Subgerente de Riesgo",      area: "riesgo" },
   { id: "operaciones",    label: "Operaciones",               area: "operaciones" },
+  // Operaciones tenía UN solo cargo, en N5. Un criterio que exige N3 se cubría por escalada —el N5
+  // alcanza a firmarlo— pero no se distinguía del que sí necesita la máxima atribución del área, que
+  // es la observación que la auditoría dejó anotada para Riesgo: distinguir tramos es dar de alta el
+  // cargo que falta, no tocar código. O05 (comprobante del contrato físico) es el primero que lo pide.
+  { id: "jefe_operaciones", label: "Jefe de Operaciones",      area: "operaciones" },
   { id: "ejec_verif",     label: "Ejecutivo de verificación", area: "verificacion" },
   { id: "admin",          label: "Super administrador",       area: "*" },
 ];
@@ -11283,6 +11353,7 @@ const ROL_ATRIB = {
   jefe_riesgo:    { area: "riesgo",      nivel: 4 },
   sub_riesgo:     { area: "riesgo",      nivel: 5 },
   operaciones:    { area: "operaciones", nivel: 5 },
+  jefe_operaciones: { area: "operaciones", nivel: 3 },
 };
 // El super-admin cubre las tres áreas en el nivel máximo. El resto sale de su rol; sin rol con
 // atribución, el objeto va vacío y `puedeAprobarExc` lo deja fuera por construcción.
@@ -11327,7 +11398,7 @@ const ROLES_DEFAULT = {
   CR: "ejec_comercial", RF: "ejec_comercial", JT: "ejec_comercial",
   MS: "ejec_comercial", NB: "ejec_comercial", DC: "ejec_comercial",
   JG: "jefe_comercial", GC: "gte_comercial", GG: "gte_general",
-  RG: "jefe_riesgo", SR: "sub_riesgo", OP: "operaciones",
+  RG: "jefe_riesgo", SR: "sub_riesgo", OP: "operaciones", JO: "jefe_operaciones",
   EV: "ejec_verif", ADMIN: "admin",
 };
 const ROLES_KEY = "pc_roles_" + TENANT_ACTUAL;
@@ -15092,6 +15163,117 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
 // ============================================================
 // CONFIGURACIÓN — menú de administración. Incluye la Auditoría del sistema (log de todas lasacciones).
 // ============================================================
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// CORREO SALIENTE DEL TENANT — cómo sale el correo que publica la oferta.
+//
+// El correo NO se manda desde el navegador: lo manda el servicio de correo del factoring por API, y
+// este sistema sólo le pide que lo mande. Lo que se configura acá es cómo hablarle: el endpoint, el
+// remitente y las credenciales OAuth 2.0 del flujo `client_credentials`.
+//
+// EL SECRETO NO VIVE ACÁ. Un `client_secret` guardado en la configuración del tenant terminaría en el
+// `localStorage` del navegador de todos sus usuarios, que es exactamente el tipo de cosa que el resto
+// de este archivo se cuida de no hacer (ver `INVARIANTES`: el atacante ES el cliente). Lo que se
+// guarda es la REFERENCIA al secreto en el vault del backend —un nombre, no un valor— y el resolver
+// lo resuelve del lado del servidor al pedir el token. Por eso el formulario pide «referencia» y no
+// «secreto»: si pidiera el secreto, alguien lo pegaría.
+const CORREO_KEY = "pc_correo_" + TENANT_ACTUAL;
+const CORREO_DEFAULT = {
+  remitente: "operaciones@factoringsecurity.cl",
+  nombre: "Factoring Security",
+  responderA: "contacto@factoringsecurity.cl",
+  apiUrl: "https://api.factoringsecurity.cl/correo/v1/enviar",
+  tokenUrl: "https://login.microsoftonline.com/factoringsecurity/oauth2/v2.0/token",
+  clientId: "nex-factoring-correo",
+  secretoRef: "vault://security/correo/nex-client-secret",
+  scope: "https://api.factoringsecurity.cl/.default",
+  plantilla: "oferta-publicada-v1",
+};
+const CORREO_CAMPOS = [
+  ["remitente", "Remitente (From)", "correo", "La casilla desde la que sale. Tiene que estar habilitada en el servicio de correo del factoring."],
+  ["nombre", "Nombre visible", "texto", "Lo que el cliente ve como remitente en su bandeja."],
+  ["responderA", "Responder a (Reply-To)", "correo", "Dónde llegan las respuestas del cliente. Suele ser distinta del remitente."],
+  ["apiUrl", "Endpoint del servicio", "url", "La API de correo del factoring. Sólo https: un endpoint en claro expondría el token en la red."],
+  ["tokenUrl", "URL del token (OAuth 2.0)", "url", "Emisor del token, flujo client_credentials. Sólo https."],
+  ["clientId", "Client ID", "texto", "La identidad de esta aplicación ante el emisor."],
+  ["secretoRef", "Referencia del secreto", "texto", "Dónde está el client_secret en el vault del backend. El secreto NO se escribe acá: nunca debe llegar al navegador."],
+  ["scope", "Scope", "texto", "Permiso que se pide en el token."],
+  ["plantilla", "Plantilla del correo", "texto", "Identificador de la plantilla en el servicio de correo."],
+];
+// Higiene del storage, como en roles, áreas y simulación: sólo entran campos que el catálogo declara,
+// con el tipo que declara. Una URL en claro o un campo desconocido se descartan y quedan en el log —
+// el storage lo edita el usuario a mano, y lo que se lee de ahí termina en una llamada autenticada.
+function cargarCorreoCfg() {
+  const base = { ...CORREO_DEFAULT };
+  const g = leerVersionado(CORREO_KEY, "correo", null);
+  if (!g || typeof g !== "object") return base;
+  let ignorados = 0;
+  for (const [k, , tipo] of CORREO_CAMPOS) {
+    const v = g[k];
+    if (typeof v !== "string" || !v.trim()) { if (v !== undefined) ignorados++; continue; }
+    const t = v.trim().slice(0, 200);
+    if (tipo === "url" && !/^https:\/\/[^\s]+$/.test(t)) { ignorados++; continue; }
+    if (tipo === "correo" && !/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(t)) { ignorados++; continue; }
+    base[k] = t;
+  }
+  if (ignorados) logSys("warn", "app", `Correo saliente: ${ignorados} campo(s) del storage ignorados (tipo o formato inválido)`, { tenant: TENANT_ACTUAL });
+  return base;
+}
+let CORREO_CFG = cargarCorreoCfg();
+function CfgCorreo() {
+  const [draft, setDraft] = useState(() => ({ ...CORREO_CFG }));
+  const [guardado, setGuardado] = useState(false);
+  const err = (k, tipo) => {
+    const v = (draft[k] || "").trim();
+    if (!v) return "Obligatorio.";
+    if (tipo === "url" && !/^https:\/\/[^\s]+$/.test(v)) return "Tiene que ser una URL https.";
+    if (tipo === "correo" && !/^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(v)) return "No parece una dirección de correo.";
+    return null;
+  };
+  const errores = CORREO_CAMPOS.filter(([k, , tipo]) => err(k, tipo));
+  const cambios = CORREO_CAMPOS.filter(([k]) => (draft[k] || "") !== (CORREO_CFG[k] || ""));
+  const guardar = () => {
+    if (errores.length || !cambios.length) return;
+    // La auditoría registra el DIFF y no «se guardó»: quien revise un correo que no llegó necesita
+    // saber qué endpoint o qué identidad estaba vigente ese día.
+    const diff = cambios.map(([k, l]) => `${l}: «${CORREO_CFG[k] || "—"}» → «${draft[k]}»`).join(" · ");
+    CORREO_CFG = { ...draft };
+    escribirVersionado(CORREO_KEY, "correo", CORREO_CFG);
+    const actor = (SESION && SESION.usuario) || "—";
+    registrarAuditoria({ usuario: USERS[actor] || actor, modulo: "Correo saliente", accion: "Actualizar configuración", glosa: diff, severidad: "alta" });
+    setGuardado(true); setTimeout(() => setGuardado(false), 2500);
+  };
+  return (
+    <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+      <div className="text-lg font-semibold" style={{ color: C.ink }}>Correo saliente</div>
+      <div className="mt-0.5 t12" style={{ color: C.faint }}>
+        El correo que publica la oferta lo envía el servicio de correo del factoring por API; este sistema sólo se lo pide. Acá se configura a quién le pide y con qué credenciales.
+      </div>
+      <div className="mt-3 rounded-lg p-2.5 t10" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#7c3a10" }}>
+        <b>El client_secret no se guarda acá.</b> Esta configuración viaja al navegador de todos los usuarios del tenant, así que lo que se guarda es la <b>referencia</b> al secreto en el vault del backend. El token OAuth 2.0 lo pide el servidor, no esta pantalla.
+      </div>
+      <div className="mt-3 grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        {CORREO_CAMPOS.map(([k, label, tipo, ayuda]) => {
+          const e = err(k, tipo);
+          return (
+            <label key={k} className="block">
+              <div className="t11 font-semibold" style={{ color: C.ink }}>{label}</div>
+              <input value={draft[k] || ""} onChange={(ev) => setDraft((d) => ({ ...d, [k]: ev.target.value }))}
+                className="mt-1 w-full rounded-md px-2 py-1.5 t11 outline-none focus:ring-2"
+                style={{ border: `1px solid ${e ? "#FCA5A5" : C.line}`, color: C.ink }} />
+              <div className="mt-0.5 t9" style={{ color: e ? C.red : C.faint, lineHeight: 1.4 }}>{e || ayuda}</div>
+            </label>
+          );
+        })}
+      </div>
+      <div className="mt-4 flex items-center gap-2">
+        <button onClick={guardar} disabled={!!errores.length || !cambios.length}
+          className="rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.indigo }}>Guardar</button>
+        {!!cambios.length && !errores.length && <span className="t10" style={{ color: C.sub }}>{cambios.length} cambio(s) sin guardar</span>}
+        {guardado && <span className="t10 font-semibold" style={{ color: "#16A34A" }}>Configuración guardada</span>}
+      </div>
+    </div>
+  );
+}
 const CFG_SECCIONES = [
   { k: "operacion", label: "Operación", Icon: Clock },
   { k: "sistema", label: "Logs y versión", Icon: ShieldCheck },
@@ -15101,6 +15283,7 @@ const CFG_SECCIONES = [
   { k: "areas", label: "Áreas", Icon: Target },
   { k: "reemplazos", label: "Vacaciones y reemplazos", Icon: Calendar },
   { k: "simulacion", label: "Simulación", Icon: Calculator },
+  { k: "correo", label: "Correo saliente", Icon: Send },
   { k: "otorgamiento", label: "Otorgamiento", Icon: ShieldCheck },
   { k: "productos", label: "Productos", Icon: Zap },
   { k: "monedas", label: "Monedas", Icon: Calculator },
@@ -16340,7 +16523,7 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper }) {
         ))}
       </aside>
       <div>
-        {sec === "simulacion" ? <CfgSimulacion usuario={usuario} /> : sec === "reemplazos" ? <CfgReemplazos usuario={usuario} /> : sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "roles" ? <CfgRoles /> : sec === "usuarios" ? <CfgUsuarios /> : sec === "areas" ? <CfgAreas /> : sec === "otorgamiento" ? (
+        {sec === "simulacion" ? <CfgSimulacion usuario={usuario} /> : sec === "correo" ? <CfgCorreo /> : sec === "reemplazos" ? <CfgReemplazos usuario={usuario} /> : sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "roles" ? <CfgRoles /> : sec === "usuarios" ? <CfgUsuarios /> : sec === "areas" ? <CfgAreas /> : sec === "otorgamiento" ? (
           <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
             <div className="text-lg font-semibold" style={{ color: C.ink }}>Otorgamiento · apoderados y atribuciones</div>
             <div className="mt-0.5 t12" style={{ color: C.faint }}>Criterios de verificación, atribuciones de aprobación por criterio y los apoderados que pueden excepcionar (nivel por área). Aquí también se habilita/oculta la aceptación masiva por usuario.</div>
@@ -20369,7 +20552,8 @@ export default function PipelineComercial() {
   // enviarla. Aquí también se resuelven las facturas que quedan fuera del paquete (descartar / nueva
   // oportunidad) y, si se descartan, se pausa la búsqueda de oportunidades de ese cliente.
   const cerrarOferta = (id, opts = {}) => {
-    const { accion = null, espera = 7, descartadas = 0 } = opts;
+    const { accion = null, espera = 7, descartadas = 0, publicacion = "electronica" } = opts;
+    const fisica = publicacion === "fisica";
     const nom = USERS[usuario] || usuario;
     const upd = (d) => {
       if (d.id !== id) return d;
@@ -20379,15 +20563,29 @@ export default function PipelineComercial() {
       // comunica al cliente: el ejecutivo elige después el canal (WhatsApp / Email) para enviarla.
       const neg = d.negocioNum || negDe(d);
       const stage = d.stage === "prospeccion" ? "oferta" : d.stage;
-      if (!d.negocioNum) hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Ejecutivo", esEvento: true, resultado: `Negocio creado · N° ${neg} (oferta publicada, pendiente de comunicar al cliente)`, exito: true });
-      return { ...d, ofertaCerrada: true, ofertaCerradaTs: nowStamp(), ofertaSolicitada: false, negocioNum: neg, stage, tOferta: d.tOferta || Date.now(), historialContacto: hist, status: d.negocioNum ? d.status : `Oferta publicada · N° ${neg} · elige el canal para comunicarla` };
+      if (!d.negocioNum) hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Ejecutivo", esEvento: true, resultado: `Negocio creado · N° ${neg} (oferta publicada)`, exito: true });
+      hist.push({ fecha: nowStamp(), canal: fisica ? "Sistema" : "Email", actor: "Ejecutivo", esEvento: true,
+        resultado: fisica ? "Oferta publicada en formato FÍSICO · el contrato se firma en papel"
+          : "Oferta publicada ELECTRÓNICAMENTE · correo enviado al cliente con el código de negocio y su clave de un solo uso",
+        detalle: fisica ? "Queda abierto el criterio O05 · Evidencia del Contrato de Cesión: el ejecutivo adjunta el comprobante y lo autoriza Operaciones (N3)."
+          : "La autorización del cliente en el portal es la evidencia del contrato de cesión (O05).", exito: true });
+      return { ...d, ofertaCerrada: true, ofertaCerradaTs: nowStamp(), ofertaSolicitada: false, negocioNum: neg, stage, publicacion,
+        tOferta: d.tOferta || Date.now(), historialContacto: hist,
+        status: fisica ? `Oferta publicada en papel · N° ${neg} · falta el comprobante del contrato` : `Oferta publicada · N° ${neg} · pendiente firma del cliente` };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
     const d0 = (dealsRef.current || []).find((x) => x.id === id);
     const cli = d0 ? d0.cliente : "";
     if (accion === "descartar" && cli) setBusqueda(cli, "pausada", `El ejecutivo descartó ${descartadas} factura(s) fuera del paquete al cerrar la oferta · reabrir la búsqueda en ${espera} día(s). Se reactiva antes si el cliente cede una factura (lista blanca, priorizada o histórica) a un competidor durante la espera.`, nom);
-    registrarAuditoria({ usuario: nom, modulo: "Oferta", accion: "Cerrar oferta · crear negocio", glosa: `${cli}: oferta cerrada y negocio creado (selección de facturas confirmada)${accion === "descartar" ? ` · ${descartadas} descartada(s), búsqueda pausada ${espera}d` : accion === "nueva" ? ` · ${descartadas} a nueva oportunidad` : ""}`, exito: true });
+    registrarAuditoria({ usuario: nom, modulo: "Oferta", accion: "Cerrar oferta · crear negocio", glosa: `${cli}: oferta cerrada y negocio creado (selección de facturas confirmada) · publicación ${fisica ? "FÍSICA" : "ELECTRÓNICA"}${accion === "descartar" ? ` · ${descartadas} descartada(s), búsqueda pausada ${espera}d` : accion === "nueva" ? ` · ${descartadas} a nueva oportunidad` : ""}`, empresaId: id, exito: true });
+    // El criterio O05 se evalúa con `deal.publicacion`, que acaba de cambiar: sin esto el visado
+    // cacheado seguiría siendo el de antes de publicar.
+    invalidarVisado();
+    // PUBLICACIÓN ELECTRÓNICA: el correo sale acá y no en un botón aparte. Va DENTRO del gesto del
+    // clic —`enviarCierre` abre su pestaña antes del primer `await`— porque diferirlo a un efecto le
+    // haría perder la activación del usuario y el navegador lo bloquearía como pop-up.
+    if (!fisica) enviarCierre(id, "Email");
   };
   // El ejecutivo envía el mensaje de cierre + el botón "Aprobar operación" que deriva al sitio de curse.
   const enviarCierre = async (id, canal = "WhatsApp") => {
@@ -20403,6 +20601,13 @@ export default function PipelineComercial() {
     const otpClaro = await emitirOtp(negDe({ id }));
     // Nunca se registra el código en claro: sólo que se emitió, para quién y con qué vigencia.
     logSys("info", "curse", `OTP emitido para el negocio N° ${negDe({ id })} · vigencia ${Math.round(OTP_TTL_MS / 60000)} min · canal ${canal}`, { negocio: negDe({ id }), canal, ttlMin: Math.round(OTP_TTL_MS / 60000) });
+    // El correo sale por la API del servicio del tenant con un token OAuth 2.0 (client_credentials)
+    // que pide el SERVIDOR: acá sólo queda la traza de a quién se le pidió y con qué identidad. El
+    // secreto no aparece —no vive en esta configuración— y el OTP tampoco, que viaja sólo en el canal.
+    if (canal === "Email" && typeof CORREO_CFG !== "undefined") {
+      logSys("info", "curse", `Envío de correo solicitado al servicio del tenant · ${CORREO_CFG.apiUrl} · plantilla ${CORREO_CFG.plantilla}`,
+        { negocio: negDe({ id }), remitente: CORREO_CFG.remitente, clientId: CORREO_CFG.clientId, tokenUrl: CORREO_CFG.tokenUrl, auth: "oauth2/client_credentials" });
+    }
     // Genera el deal actualizado de forma pura (mismo stamp) para reutilizarlo en el estado y al abrir el canal.
     const makeUpdated = (d) => {
       const neg = negDe(d);
@@ -20427,12 +20632,17 @@ export default function PipelineComercial() {
         // rotación mostraría un código caduco como si fuera válido.
         if (!yaBoton) wa.push({ from: "ejecutivo", tipo: "boton", boton: "Ir al portal a firmar", url: waClienteURL(neg), neg, text: `Negocio N° ${neg} · Factoring Security`, time: stamp, canal: "WhatsApp" });
       } else { // Email
+        // El remitente y la casilla de respuesta salen de la configuración del TENANT (Configuración ›
+        // Correo saliente), no de literales: el correo lo emite el servicio de cada factoring y cambiar
+        // de casilla no puede obligar a tocar el código.
+        const cc = (typeof CORREO_CFG !== "undefined" && CORREO_CFG) || {};
         const asunto = `Firma tu operación de factoring N° ${neg}`;
         const cuerpo = `Hola ${(d.contacto && d.contacto.nombre) || "estimado/a"},\n\n${d.cierreEnviado ? "Te reenviamos el acceso con una NUEVA clave de un solo uso; la anterior quedó sin efecto.\n\n" : ""}Tu oferta está lista para firmar. Por tu seguridad, este correo NO contiene enlaces: ingresa por tu cuenta a la plataforma de Factoring Security (${portal}).\n\n• Código de negocio: N° ${neg}\n• Clave de un solo uso (OTP): ${otp}\n\nInicia sesión con tu RUT y clave, escribe el código de negocio y el OTP, revisa las condiciones y firma; el giro se realiza el mismo día.\n\nSaludos,\n${execName(d)}\nNEX Factoring · Factoring Security`;
-        emailThread = [...(d.emailThread || []), { from: "ejecutivo", asunto, cuerpo, template: "Código de negocio + OTP", time: stamp, otp }];
+        emailThread = [...(d.emailThread || []), { from: "ejecutivo", asunto, cuerpo, template: cc.plantilla || "Código de negocio + OTP", time: stamp, otp,
+          de: cc.remitente || "", deNombre: cc.nombre || "", responderA: cc.responderA || "" }];
         detalle = `Asunto: ${asunto}\n\n${cuerpo}`;
       }
-      const hist = [...(d.historialContacto || []), { fecha: stamp, canal, resultado: `Oferta comunicada por ${canal} · enlace para firmar enviado (N° ${neg})`, detalle, exito: true }];
+        const hist = [...(d.historialContacto || []), { fecha: stamp, canal, resultado: `Oferta comunicada por ${canal} · enlace para firmar enviado (N° ${neg})`, detalle, exito: true }];
       return { ...d, waSesion: wa, emailThread, historialContacto: hist, waPendiente: false, cierreEnviado: true, ofertaComunicada: true, status: `Oferta comunicada por ${canal} · pendiente firma del cliente` };
     };
     setDeals((prev) => prev.map((d) => d.id === id ? makeUpdated(d) : d));
@@ -21976,7 +22186,7 @@ export default function PipelineComercial() {
               detalle (cliente · id · etapa, selector de usuario y avatar), de modo que la pantalla abría
               con la identidad y el selector DUPLICADOS. La cabecera del propio detalle es la única. */}
           <div className="mx-auto w-full" style={{ maxWidth: 1600 }}>
-            <DealDrawer key={selected.id} deal={selected} fullPage onClose={() => window.close()} onAdvance={advance} onReject={reject} onIncorporar={abrirIncorporar} onIncorporarFacturas={incorporarFacturasOferta} onRetirarFactura={retirarFacturaOferta} onReabrir={reabrirOperacion} onSugerirOferta={aplicarSugerencia} onSimular={simularOferta} onPublicar={publicarOferta} onCerrarOferta={cerrarOferta} onEnviarCierre={enviarCierre} onContactar={iniciarContacto} onEditarContacto={editarContacto} onEnviarWA={enviarWA} onMover={moverEtapa} cierre={cierreModal} onConfirmCierre={confirmarCierre} usuario={usuario} onCambiarUsuario={setUsuario} tabInicial={(detallePayload && detallePayload.tab) || dealTabInicial} onIrOtorgamientos={() => {}} />
+            <DealDrawer key={selected.id} deal={selected} fullPage onClose={() => window.close()} onAdvance={advance} onReject={reject} onIncorporar={abrirIncorporar} onIncorporarFacturas={incorporarFacturasOferta} onRetirarFactura={retirarFacturaOferta} onReabrir={reabrirOperacion} onSugerirOferta={aplicarSugerencia} onSimular={simularOferta} onPublicar={publicarOferta} onCerrarOferta={cerrarOferta} onContactar={iniciarContacto} onEditarContacto={editarContacto} onEnviarWA={enviarWA} onMover={moverEtapa} cierre={cierreModal} onConfirmCierre={confirmarCierre} usuario={usuario} onCambiarUsuario={setUsuario} tabInicial={(detallePayload && detallePayload.tab) || dealTabInicial} onIrOtorgamientos={() => {}} />
           </div>
         </div>
       )) : (<>
