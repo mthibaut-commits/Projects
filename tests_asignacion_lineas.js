@@ -1617,6 +1617,38 @@
        `jefe → [${delJefe.join(", ")}] · gerencia → todo · desconocido → nada · «XX» → «${idoSe}» · tarea (operaciones,N3) → ${tareaPar.join(", ")}`);
   }
 
+  // 88 · FIRMAR NO ES GIRAR. Al firmar el cliente, la operación saltaba directo a GIRO —con el dinero
+  // dado por transferido— si `requiereOtorgamiento` decía que no hacía falta aprobación manual. Esa
+  // heurística mira dos cosas (¿supera la línea?, ¿hay deudores «Otro»?) y nació antes del motor de
+  // reglas, así que el salto se llevaba por delante las tres compuertas que el resto del sistema sí
+  // respeta: OTG-02, VER-01 y GIR-02. Se vio en una operación «Girada» con 42 criterios por aprobar y
+  // 8 facturas por verificar a la vista, en la misma pantalla que decía que ya se había girado.
+  {
+    const base = { autoOtorg: true, requiereOtorg: false, pendVisado: 0, pendVerif: 0, evidenciaOk: true };
+    const limpia = etapaTrasFirma(base);
+    const conExc = etapaTrasFirma({ ...base, pendVisado: 42 });
+    const conVerif = etapaTrasFirma({ ...base, pendVerif: 8 });
+    const sinEvid = etapaTrasFirma({ ...base, evidenciaOk: false });
+    const manual = etapaTrasFirma({ ...base, autoOtorg: false, requiereOtorg: true });
+    // El caso exacto de la operación que lo destapó: automática, pero con las dos compuertas abiertas.
+    const elCaso = etapaTrasFirma({ ...base, pendVisado: 42, pendVerif: 8 });
+    // Y que ninguna combinación con algo pendiente termine en giro: 2^4 combinaciones.
+    let girosIndebidos = 0;
+    for (const a1 of [true, false]) for (const b1 of [0, 3]) for (const c1 of [0, 5]) for (const d1 of [true, false]) {
+      const r = etapaTrasFirma({ autoOtorg: a1, requiereOtorg: !a1, pendVisado: b1, pendVerif: c1, evidenciaOk: d1 });
+      if (r.stage === "giro" && (b1 || c1 || !d1)) girosIndebidos++;
+    }
+    ok("88 firmar no es girar: las tres compuertas mandan sobre el atajo del otorgamiento automático",
+       limpia.stage === "giro"
+       && conExc.stage === "otorgamiento" && conExc.motivo === "excepciones"
+       && conVerif.stage === "cesion" && conVerif.motivo === "verificacion"
+       && sinEvid.stage === "cesion" && sinEvid.motivo === "evidencia"
+       && manual.stage === "otorgamiento" && manual.motivo === "linea_o_deudor"
+       && elCaso.stage === "otorgamiento"
+       && girosIndebidos === 0,
+       `limpia → ${limpia.stage} · 42 excepciones → ${conExc.stage} · 8 por verificar → ${conVerif.stage} · sin evidencia → ${sinEvid.stage} · manual → ${manual.stage} · ${girosIndebidos} giros indebidos en 16 combinaciones`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

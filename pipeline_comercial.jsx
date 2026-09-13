@@ -5894,6 +5894,22 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
   const nTel = items.filter((x) => x.v.est === "tel").length;
   const nOk = items.filter((x) => x.v.est === "ok").length;
   const vistos = items.filter((x) => filtro === "tel" ? x.v.est === "tel" : filtro === "ok" ? x.v.est === "ok" : filtro === "fail" ? x.v.fallidas.length : true);
+  // AGRUPADO POR DEUDOR. El veredicto es del deudor —una llamada cubre todas sus facturas (regla 6)—
+  // y la lista plana lo contradecía visualmente: repetía el chip, la nota y el nombre en cada fila y
+  // no se veía que siete filas eran UNA decisión. Agrupar lo dice sin explicarlo.
+  //
+  // El BADGE sigue siendo POR FACTURA, no por deudor: la confirmación puede ser PARCIAL —el deudor
+  // reconoce unas facturas y no otras— y ahí las hermanas dejan de coincidir. La cabecera resume el
+  // estado del grupo y dice «n de m» cuando están divididas, que es justo lo que hay que ver.
+  const grupos = (() => {
+    const orden = [], por = {};
+    vistos.forEach((x) => {
+      const k = x.f.deudor || "—";
+      if (!por[k]) { por[k] = { deudor: k, items: [], tipo: x.v.tipo, nota: x.v.nota, montoMM: 0 }; orden.push(k); }
+      por[k].items.push(x); por[k].montoMM += x.f.montoMM || 0;
+    });
+    return orden.map((k) => por[k]);
+  })();
   const notaCol = (n) => n >= 4 ? "#0a7d3f" : n >= 3 ? "#C2410C" : "#EF4444";
   const CHECKS = ["Existencia de la factura", "Recepción conforme", "Fecha de pago comprometida"];
   return (
@@ -5917,16 +5933,34 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
         </div>
       </div>
       <div className="mt-1">
-        {vistos.map((x) => {
-          const f = x.f, v = x.v, isOpen = !!open[f.id]; const chip = DEUDOR_CHIP[v.tipo] || DEUDOR_CHIP["Otro"]; const tel = v.tel;
+        {grupos.map((g) => {
+          const chip = DEUDOR_CHIP[g.tipo] || DEUDOR_CHIP["Otro"];
+          const nTelG = g.items.filter((y) => y.v.est === "tel").length;
+          // Tres estados de grupo, y el tercero es el que importa: con la confirmación parcial el
+          // deudor queda partido, y decir sólo «Req. verif.» escondería que la mitad ya está.
+          const estG = nTelG === 0 ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" }
+            : nTelG === g.items.length ? { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." }
+            : { bg: "#FFF7ED", fg: "#C2410C", t: `⚠ ${nTelG} de ${g.items.length} por verificar` };
+          return (
+          <div key={g.deudor} className="mb-1.5 overflow-hidden rounded-lg" style={{ border: `1px solid ${C.line}` }}>
+            {/* El chip, la nota y el nombre viven ACÁ y no en cada fila: son del deudor, y repetidos
+                siete veces tapaban lo único que cambia entre facturas, que es el folio y el monto. */}
+            <div className="flex items-center gap-2 px-2 py-1.5 t11" style={{ backgroundColor: C.page, borderBottom: `1px solid ${C.line}` }}>
+              <span className="shrink-0 rounded-full px-1 py-0.5 t9 font-medium" style={{ backgroundColor: chip.bg, color: chip.fg }}>{DEUDOR_LABEL[g.tipo] || "Otro"}</span>
+              <span className="w-8 shrink-0 text-right font-semibold" style={{ color: notaCol(g.nota) }}>{g.nota}</span>
+              <span className="min-w-0 flex-1 truncate font-semibold" style={{ color: C.ink }}>{g.deudor}</span>
+              <span className="shrink-0 t9" style={{ color: C.faint }}>{g.items.length} factura{g.items.length === 1 ? "" : "s"}</span>
+              <span className="w-16 shrink-0 text-right font-medium" style={{ color: C.ink }}>{fmtMM(g.montoMM)}</span>
+              <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: estG.bg, color: estG.fg }} title="El veredicto es del deudor: una llamada cubre todas sus facturas. Se divide sólo si la confirmación fue parcial.">{estG.t}</span>
+            </div>
+          {g.items.map((x) => {
+          const f = x.f, v = x.v, isOpen = !!open[f.id]; const tel = v.tel;
           const estPill = v.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
           return (
-          <div key={f.id} style={{ borderBottom: `1px solid ${C.line}` }}>
+          <div key={f.id} className="px-2" style={{ borderBottom: `1px solid ${C.line}` }}>
             <div onClick={() => setOpen((o) => ({ ...o, [f.id]: !o[f.id] }))} className="flex items-center gap-2 py-1.5 t11" style={{ cursor: "pointer" }}>
               <ChevronRight size={11} style={{ color: C.faint, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
-              <span className="shrink-0 rounded-full px-1 py-0.5 t9 font-medium" style={{ backgroundColor: chip.bg, color: chip.fg }}>{DEUDOR_LABEL[v.tipo] || "Otro"}</span>
-              <span className="w-8 shrink-0 text-right font-semibold" style={{ color: notaCol(v.nota) }}>{v.nota}</span>
-              <span className="min-w-0 flex-1 truncate" style={{ color: C.sub }}>{f.deudor} <span className="t9" style={{ color: C.faint }}>· #{f.folio}</span></span>
+              <span className="min-w-0 flex-1 truncate" style={{ color: C.sub }}>#{f.folio}</span>
               <span className="w-16 shrink-0 text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.montoMM)}</span>
               <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: estPill.bg, color: estPill.fg }}>{estPill.t}</span>
             </div>
@@ -5986,6 +6020,9 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
                 </div>
               </div>
             )}
+          </div>
+          );
+          })}
           </div>
           );
         })}
@@ -6572,7 +6609,13 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               inline a la derecha, sobre la misma divisoria. */}
           <div className="mt-3 flex flex-wrap items-end justify-between gap-x-6 gap-y-2" style={{ borderBottom: `1px solid ${C.line}` }}>
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
-              {[["negocio", "Negocio"], ...(puedeVerBitacora(usuario) ? [["bitacora", "Bitácora"]] : []), ...(puedeVerCobranza(usuario) ? [["cobranza", "Cobranza"]] : []), ...(puedeVerMensajeria(usuario) ? [["mensajeria", "Mensajería"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : []), ...(mostrarVerif ? [["verificacion", "Verificación"]] : [])].map(([k, l]) => { const on = tab === k; return (
+              {/* CESIÓN y GIRO están en la lista del tab de Otorgamiento por la misma razón que en la
+                  del de Verificación: firmar el cliente no borra lo que falta aprobar ni lo ya aprobado.
+                  Sin ellas el tab desaparecía en cuanto la operación avanzaba, mientras la cabecera de
+                  la misma pantalla seguía diciendo «Criterios por aprobar 42» — el dato a la vista y
+                  ninguna forma de llegar a él. Después del giro el visado es además el REGISTRO de
+                  quién aprobó qué, y esconderlo lo deja inalcanzable justo cuando hay que auditarlo. */}
+              {[["negocio", "Negocio"], ...(puedeVerBitacora(usuario) ? [["bitacora", "Bitácora"]] : []), ...(puedeVerCobranza(usuario) ? [["cobranza", "Cobranza"]] : []), ...(puedeVerMensajeria(usuario) ? [["mensajeria", "Mensajería"]] : []), ...((deal.stage === "otorgamiento" || (deal.stage === "perdida" && (deal.perdidaOtorg || (deal.bloqueosFirmes && deal.bloqueosFirmes.length))) || (["prospeccion", "oferta", "aceptadas", "cesion", "giro"].includes(deal.stage) && (() => { const v = visadoDeal(deal); return requiereOtorgamiento(deal) || v.exc.length || v.rech.length; })())) ? [["otorgamiento", "Otorgamiento"]] : []), ...(mostrarVerif ? [["verificacion", "Verificación"]] : [])].map(([k, l]) => { const on = tab === k; return (
                 <button key={k} onClick={() => setTab(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, color: on ? C.indigo : C.sub, fontWeight: on ? 600 : 400, marginBottom: -1 }}>
                   {l}
                   {k === "otorgamiento" && otorgPendOp > 0 && <span title={otorgPend > 0 ? `${otorgPendOp} criterio(s) de otorgamiento pendientes · ${otorgPend} que debes visar tú` : `${otorgPendOp} criterio(s) de otorgamiento pendientes en esta operación`} className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white" style={{ backgroundColor: otorgPend > 0 ? "#EF4444" : "#7C3AED" }}>{otorgPendOp}</span>}
@@ -10197,7 +10240,12 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                   {/* El padding vertical baja de 10 a 6: la card es la celda más alta de la fila —92px
                       contra 82 de Cliente y 65 de Oportunidad— así que es la única que puede acortarla
                       sin apretar el resto. Su interior (72) no se toca: los tres chips lo necesitan. */}
-                  <div className="rounded-xl px-3 py-1.5" style={{ backgroundColor: "#F3F2F7" }}>
+                  {/* El fondo va por CLASE y no inline: al pasar el mouse la fila se tiñe de lila
+                      (#F5F3FF) y la card quedaba en #F3F2F7, prácticamente el mismo tono — se perdía
+                      justo cuando el usuario está mirando esa fila. En hover la card baja un paso más,
+                      dentro de la misma familia: sigue leyéndose como un hueco donde va la simulación
+                      (que es lo que es) en vez de levantarse como si fuera un elemento nuevo. */}
+                  <div className="pl-sim rounded-xl px-3 py-1.5">
                     {d.actualizando ? (
                       /* El esqueleto copia el ESTADO al que va a aterrizar la fila —`d.simulado` no
                          cambia durante la recarga— con la misma altura interior de 72 que tienen los
@@ -10970,6 +11018,26 @@ function aprobacionFormalCliente(deal) {
 // ninguna causa era autorizable desde la UI.
 // Lo que LIBERA EL GIRO. Por eso el estado entra por parámetro: en producción esta decisión la toma
 // el resolver con el visado que tiene la base, no con el que el navegador haya cacheado.
+// ¿A QUÉ ETAPA VA UNA OPERACIÓN CUANDO EL CLIENTE FIRMA? Firmar es del CLIENTE; girar es de la casa,
+// y sólo después de que sus controles pasen. La decisión vive acá y no dentro del handler porque es
+// exactamente el tipo de cosa que en producción resuelve el servidor: entra el estado de las tres
+// compuertas y sale la etapa, sin leer nada por su cuenta.
+//
+// El atajo `autoOtorg` —la heurística vieja: ¿supera la línea?, ¿hay deudores «Otro»?— ya no alcanza
+// para girar. Nació antes del motor de reglas y saltaba directo a GIRO con el dinero dado por
+// transferido, saltándose OTG-02 (excepciones sin resolver), VER-01 (verificación pendiente) y GIR-02
+// (la huella de lo firmado). Se vio en una operación «Girada» con 42 criterios por aprobar y 8
+// facturas por verificar a la vista, en la misma pantalla.
+function etapaTrasFirma(e) {
+  const ent = e || {};
+  const limpio = !ent.pendVisado && !ent.pendVerif && ent.evidenciaOk;
+  if (ent.autoOtorg && limpio) return { stage: "giro", motivo: "automatico" };
+  // Algo que APROBAR manda a la mesa de otorgamiento, que es donde se resuelve.
+  if (ent.requiereOtorg || ent.pendVisado) return { stage: "otorgamiento", motivo: ent.requiereOtorg ? "linea_o_deudor" : "excepciones" };
+  // Nada que aprobar y el giro igual no sale: las facturas ya son de Security —la cesión está
+  // inscrita— pero falta llamar al deudor o falta la evidencia del contrato. Eso es «Cesión».
+  return { stage: "cesion", motivo: ent.pendVerif ? "verificacion" : "evidencia" };
+}
 function otorgamientoCompleto(deal, estado) {
   if (!deal || deal.stage !== "otorgamiento" || otorgBloqueado(deal, estado) || !aprobacionFormalCliente(deal)) return false;
   if (deal.otorgAuto) return true;
@@ -20998,14 +21066,40 @@ export default function PipelineComercial() {
       // Aceptada → Cesión → Otorgamiento → (si es automático) Giro. Si es manual, queda en Otorgamiento
       // esperando que se resuelvan sus excepciones en el VISADO (motor de reglas).
       hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Sistema", esEvento: true, resultado: `Cesión inscrita: ${cant} factura(s) por ${fmtMM(montoFinal)} cedida(s) a Factoring Security (cesión electrónica AEC registrada)`, exito: true });
+      // LAS COMPUERTAS MANDAN SOBRE EL ATAJO. `requiereOtorgamiento` es una heurística vieja —¿supera
+      // la línea?, ¿hay deudores «Otro»?— que nació antes del motor de reglas, y con `auto` en true la
+      // operación saltaba directo a GIRO con el dinero dado por transferido. Eso se saltaba las tres
+      // compuertas que el resto del sistema sí respeta: OTG-02 (excepciones del visado sin resolver),
+      // VER-01 (verificación telefónica pendiente) y GIR-02 (la huella de lo firmado). Se vio en una
+      // operación que quedó «Girada» con 42 criterios por aprobar y 8 facturas por verificar a la
+      // vista, en la misma pantalla. Firmar es del CLIENTE; girar es de la casa, y sólo después de
+      // que sus controles pasen.
+      const dFirmado = { ...d, amountMM: montoFinal, stage: "cesion", clienteAcepto: true, reabierta: undefined };
+      const visF = visadoDeal(dFirmado);
+      const pendVisado = visF.excPend.length + visF.rechReev.length;   // OTG-02
+      const pendVerif = verifResumenDeal(dFirmado).pend;               // VER-01
+      const evF = evidenciaContratoOk(dFirmado);                       // GIR-02
+      const destino = etapaTrasFirma({ autoOtorg: auto, requiereOtorg: !!otorg, pendVisado, pendVerif, evidenciaOk: evF.ok });
       let stageFinal, statusDest, giroFlags = {};
-      if (auto) {
-        hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Sistema", esEvento: true, resultado: "Otorgamiento automático aprobado (buenos deudores y dentro de la línea de crédito)", exito: true });
+      hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Sistema", esEvento: true, resultado: `Cesión inscrita · controles previos al giro: otorgamiento ${pendVisado ? `${pendVisado} excepción(es) por resolver` : "sin pendientes"} · verificación ${pendVerif ? `${pendVerif} factura(s) por confirmar` : "sin pendientes"} · contrato ${evF.ok ? "con evidencia vigente" : "sin evidencia vigente"}`, exito: destino.stage === "giro" });
+      if (destino.stage === "giro") {
+        hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Sistema", esEvento: true, resultado: "Otorgamiento automático aprobado (buenos deudores, dentro de la línea, sin excepciones ni verificación pendiente)", exito: true });
         hist.push({ fecha: nowStamp(), canal: "Giro", actor: "Sistema", esEvento: true, resultado: `Giro ejecutado: ${fmtMM(o.giroMM)} transferidos a la cuenta registrada del cliente`, exito: true });
         stageFinal = "giro"; statusDest = "Girada · otorgamiento automático"; giroFlags = { otorgada: true, giroPendiente: false };
-      } else {
-        hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Sistema", esEvento: true, resultado: `Derivada a Otorgamiento (aprobación manual) — ${otorg.motivo === "ambos" ? "excede la línea aprobada e incluye deudores Otro" : otorg.superaLinea ? "excede la línea de crédito aprobada" : "incluye facturas de deudores fuera de las listas autorizadas"}`, exito: false });
+      } else if (destino.stage === "otorgamiento") {
+        // Hay algo que APROBAR: va a la mesa de otorgamiento, que es donde se resuelve.
+        const porQue = otorg
+          ? (otorg.motivo === "ambos" ? "excede la línea aprobada e incluye deudores Otro" : otorg.superaLinea ? "excede la línea de crédito aprobada" : "incluye facturas de deudores fuera de las listas autorizadas")
+          : `${pendVisado} excepción(es) del motor de reglas sin resolver`;
+        hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Sistema", esEvento: true, resultado: `Derivada a Otorgamiento (aprobación manual) — ${porQue}`, exito: false });
         stageFinal = "otorgamiento"; statusDest = "En otorgamiento · requiere aprobación de un especialista";
+      } else {
+        // Nada que aprobar, pero el giro todavía no puede salir: falta llamar al deudor o falta la
+        // evidencia del contrato. Queda CEDIDA —las facturas ya son de Security— y el giro pendiente,
+        // que es exactamente lo que la etapa «Cesión» significa.
+        hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Sistema", esEvento: true, resultado: pendVerif ? `Giro retenido: ${pendVerif} factura(s) esperan la verificación telefónica con el deudor` : "Giro retenido: falta la evidencia vigente del contrato de cesión (O05)", exito: false });
+        stageFinal = "cesion"; statusDest = pendVerif ? "Cedida · esperando verificación telefónica para girar" : "Cedida · esperando la evidencia del contrato";
+        giroFlags = { giroPendiente: true };
       }
       // El cliente volvió a firmar: la reapertura se cierra y la aceptación vuelve a estar vigente.
       return { ...d, reabierta: undefined, waSesion: wa, emailThread, historialContacto: hist, fueraAtribucion: false, sugerirPerder: false, contactoExitoso: true, stage: stageFinal, otorgAuto: auto, otorgMotivo: otorg ? otorg.motivo : "automatico", otorgInfo: otorg || undefined, ...giroFlags, status: statusDest, simulado: true, amountMM: montoFinal, facturas: opts && opts.cantidad != null ? opts.cantidad : d.facturas, tasa: o.tasa.toFixed(2) + "%", tasaDescuento: o.tasa, anticipo: o.anticipo + "%", comision: o.comision, diasFin: o.diasFin, financiadoMM: o.financiadoMM, interesMM: o.interesMM, montoDescuentoMM: o.interesMM, comisionMM: o.comisionMM, descMM: +(o.interesMM + o.comisionMM).toFixed(2), giroMM: o.giroMM };
@@ -22478,6 +22572,7 @@ export default function PipelineComercial() {
         .hover\\:shadow-sm:hover{box-shadow:0 1px 3px rgba(0,0,0,0.08)}
         /* Skeleton shimmer (estado de carga spec) */
         .pl-row{transition:background-color .12s} .pl-row:hover{background-color:#F5F3FF}
+        .pl-sim{background-color:#F3F2F7;transition:background-color .12s} .pl-row:hover .pl-sim{background-color:#E7E0FB}
         /* Detalle en pestaña propia (_blank): homogeniza la tipografía al tamaño del sitio padre (los tiers chicos del drawer se veían más pequeños) */
         .dp-detalle .t9{font-size:13.5px;line-height:1.4}.dp-detalle .t10{font-size:14px;line-height:1.4}.dp-detalle .t11{font-size:15px;line-height:1.45}.dp-detalle .t12{font-size:15px}
         /* Última fila sin divisor inferior: evita la doble línea contra el borde del contenedor de la tabla */
