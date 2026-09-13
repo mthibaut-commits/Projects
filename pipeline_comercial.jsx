@@ -3798,6 +3798,33 @@ function TagNuevo({ clase = "t9" }) {
     </span>
   );
 }
+// Geometría ÚNICA de los chips que califican una fila de deudor —en la oferta, en «Deudores
+// disponibles» y en el tipo de giro—. Cada uno se escribía a mano y divergían justo en lo que se nota
+// cuando van pegados en la misma línea: TRES paddings distintos (px-1.5 en Nota/Prime/Línea, px-2 en
+// Verificado y en el de estado, 8/3 en los que llevan contador) y el BORDE en uno solo, el de estado
+// —aunque los seis usan fondos igual de pálidos, y la razón que lo justificaba ahí vale para todos:
+// sin borde, un #F0FDF4 es imperceptible sobre blanco—.
+// El tono del borde se DERIVA del color de texto en vez de elegirse a mano: mantener en sincronía una
+// constante hex por chip era exactamente lo que se había desincronizado.
+// El padding derecho se encoge SÓLO cuando hay contador, porque el badge ya trae el suyo — esa
+// asimetría es funcional y por eso vive acá, y no repetida en cada call site.
+// `punto` e `Icono` son dos formas del mismo slot: homologar la geometría no es uniformar el
+// significado, y un punto de color (estado de la línea) no dice lo mismo que un ✓ o un ⚠.
+// `badgeTono` existe por el saldo puntual, que es una nota y no un contador: comparte la caja pero no
+// el color, porque «línea de un solo uso» es otro concepto y el lila es lo que lo señala.
+function ChipFila({ fg, bg, Icono, punto, texto, badge, badgeTono, tip, info, clase = "t9" }) {
+  const bt = badgeTono || { fg: "#fff", bg: fg };
+  return (
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full py-0.5 font-semibold ${clase}`}
+      title={tip} style={{ paddingLeft: 8, paddingRight: badge != null ? 3 : 8, backgroundColor: bg, color: fg, border: `1px solid ${fg}33`, cursor: tip ? "help" : undefined }}>
+      {punto && <span className="shrink-0" style={{ width: 6, height: 6, borderRadius: 9999, backgroundColor: punto }} />}
+      {Icono && <Icono size={10} />}
+      {texto}
+      {info && <span style={{ opacity: .75, fontWeight: 700 }}>ⓘ</span>}
+      {badge != null && <span className="rounded-full px-1.5 t7 font-semibold" style={{ backgroundColor: bt.bg, color: bt.fg, fontVariantNumeric: "tabular-nums", paddingTop: 1, paddingBottom: 1 }}>{badge}</span>}
+    </span>
+  );
+}
 
 
 
@@ -5162,7 +5189,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   );
   // La aprobación desde el detalle sólo se habilita cuando la operación está en la BANDEJA de otorgamiento:
   // aceptada por el cliente, o con Pre-evaluación solicitada por el ejecutivo (igual que la mesa de Otorgamientos).
-  const enBandeja = ["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage) || tienePreEval(deal.id);
+  const enBandeja = excEnBandeja(deal);
   const vs = SIM_VERSIONS[deal.id] || [];
   const shown = vs.length ? vs : [snapVersionCli(deal, 0)];
   const effIdx = verSel < 0 || verSel >= shown.length ? shown.length - 1 : verSel;
@@ -5251,7 +5278,9 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const truncD = (s, n) => (s && s.length > n ? s.slice(0, n).trim() + "…" : s);
   // Tarjeta de regla reutilizable (cliente y deudor).
   const reglaCard = (x, kpref) => {
-    const nr = rolDeAreaNivel(x.area, x.nivel || 1);
+    // El default del nivel es 4, el MISMO que usa `puedeAprobarExc` en esta tarjeta: con `|| 1` el badge
+    // anunciaba el cargo de N1 mientras el permiso exigía N4, o sea dos niveles para el mismo tramo.
+    const nr = rolDeAreaNivel(x.area, x.nivel || 4);
     const otraArea = false; // el área ya la pone la regla: nunca diverge (INC-03 resuelto)
     const tip = `${x.cond} · Tramo ${typeof x.tierIdx === "number" ? x.tierIdx + 1 : "—"}`;
     return (
@@ -5271,7 +5300,13 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
           const sol = (SOLICITUD_EXC[deal.id] || {})[x.stKey]; // solicitud del ejecutivo (comentario + adjuntos)
           const solBlock = sol ? (
             <div className="mt-1.5 rounded-md px-2 py-1.5" style={{ backgroundColor: "#F1ECFF" }}>
-              <div className="t9 font-semibold" style={{ color: "#5B21D6" }}>📨 Aprobación solicitada por {sol.por} · {sol.fecha} → {sol.rol} (N{sol.nivel})</div>
+              {/* El destinatario NO se repite acá. `sol.rol`/`sol.nivel` se congelan al solicitar, y el
+                  requisito se mueve —el tramo cambia al re-evaluar y el piso por monto sube o baja con el
+                  monto de la operación—, así que la solicitud terminaba diciendo «→ Subgerente de Riesgo
+                  (N5)» junto a un badge que exigía «N4 · Jefe de Riesgo»: dos destinatarios para la misma
+                  excepción, y el vigente es el del badge. Esta línea responde quién pidió y cuándo, que es
+                  historia y no cambia; a quién le toca lo dice el badge, que se calcula en vivo. */}
+              <div className="t9 font-semibold" style={{ color: "#5B21D6" }}>📨 Aprobación solicitada por {sol.por} · {sol.fecha}</div>
               {sol.comentario && <div className="mt-0.5 t9" style={{ color: C.sub }}>“{sol.comentario}”</div>}
               {sol.archivos && sol.archivos.length > 0 && <div className="mt-0.5 flex flex-wrap gap-2">{sol.archivos.map((a, i) => <span key={i} className="t9" style={{ color: C.faint }}>📎 {a}</span>)}</div>}
             </div>
@@ -6366,14 +6401,24 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   const st0 = VISADO_STATE[deal.id] || {};
                   const misExc = vis0.exc.filter((e) => !st0[e.stKey]).filter((e) => puedeAprobarExc(usuario, REGLAS_CLIENTE.find((r) => r.n === e.n), e.nivel || 4));
                   if (!misExc.length) return null;
+                  // La atribución NO basta: hay que pasar la MISMA compuerta que aplica cada fila del tab.
+                  // Sin ella este aviso ofrecía «Ir a aprobar» en una oferta sin Pre-evaluación —donde la
+                  // mesa de Otorgamientos no lista la operación y todas las filas dicen que la aprobación
+                  // todavía no se habilita—, así que el botón no hacía nada visible.
+                  // Con atribución pero sin bandeja el aviso SE QUEDA: saber que hay criterios tuyos
+                  // esperando es justamente lo que el aprobador necesita. Lo que cambia es que dice qué
+                  // falta en vez de prometer una acción que no existe todavía.
+                  const hab = excEnBandeja(deal);
                   return (
                     <div className="rounded-lg p-3" style={{ backgroundColor: "#F1ECFF", border: "1px solid #D9CCFF" }}>
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 t11 font-semibold" style={{ color: "#5B21D6" }}><ShieldCheck size={13} /> Tienes {misExc.length} criterio(s) por excepcionar en esta operación</div>
-                          <div className="mt-0.5 t10" style={{ color: C.sub }}>Según tu atribución ({USERS[usuario] || usuario}), puedes aprobar o rechazar estas excepciones desde la Bandeja de aprobaciones.</div>
+                          <div className="mt-0.5 t10" style={{ color: C.sub }}>{hab
+                            ? `Según tu atribución (${USERS[usuario] || usuario}), puedes aprobar o rechazar estas excepciones desde la Bandeja de aprobaciones.`
+                            : <>Según tu atribución ({USERS[usuario] || usuario}) te corresponde resolverlas, pero la aprobación aún no se habilita: la operación entra a la Bandeja al solicitar <b>Pre-evaluación</b> o tras la aceptación del cliente.</>}</div>
                         </div>
-                        {onIrOtorgamientos && <button onClick={onIrOtorgamientos} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Ir a aprobar <ChevronRight size={13} /></button>}
+                        {hab && onIrOtorgamientos && <button onClick={onIrOtorgamientos} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Ir a aprobar <ChevronRight size={13} /></button>}
                       </div>
                     </div>
                   );
@@ -7077,11 +7122,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             ...ev.topes.filter((tp) => tp.nivel !== "par").map((tp) => ({ name: tp.label, val: fmtMM(tp.disponible),
                               sub: [tp.sub || "", tp.nivel === ev.manda.nivel ? "← manda" : ""].filter(Boolean).join(" · ") })),
                           ] : [];
-                          const chipEstado = (
-                            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: t.bg, color: t.fg, border: `1px solid ${t.bd}` }}>
-                              {t.lbl}{ev && <span style={{ opacity: .75, fontWeight: 700 }}>ⓘ</span>}
-                            </span>
-                          );
+                          // `t.bd` sigue vivo: lo usa el panel del veredicto de más abajo, que es una caja
+                          // grande y no un chip. Acá el borde lo deriva ChipFila del color de texto.
+                          const chipEstado = <ChipFila fg={t.fg} bg={t.bg} texto={t.lbl} info={!!ev} />;
                           return (
                             <div className="flex items-center gap-3 px-3.5 py-2.5">
                               <span style={{ color: C.faint, flex: "none", display: "inline-flex" }}>{abierto ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</span>
@@ -7090,15 +7133,13 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 <div className="truncate t11 font-semibold" style={{ color: C.ink }} title={deudor}>{deudor}</div>
                                 <div className="mt-0.5 flex flex-wrap items-center gap-2">
                                   <span className="t9 whitespace-nowrap" style={{ color: C.faint, fontVariantNumeric: "tabular-nums" }}>{rutDe(deudor)}</span>
-                                  <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#ECEBEF", color: "#374151" }} title={`Nota del deudor: ${nota} / 5`}><span style={{ width: 6, height: 6, borderRadius: 9999, backgroundColor: "#8A63FF" }} />Nota {nota}</span>
+                                  <ChipFila fg="#374151" bg="#ECEBEF" punto="#8A63FF" texto={`Nota ${nota}`} tip={`Nota del deudor: ${nota} / 5`} />
                                   {prime && (() => {
                                     const ld = lineaDeudor[deudor];
                                     const m = ld && ld.montoFuera > 0 ? ld.montoFuera : 0;
                                     return (
-                                      <span className="whitespace-nowrap rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo, cursor: m > 0 ? "help" : undefined }}
-                                        title={m > 0 ? `Deudor Prime (Lista Blanca o Autorizado) con ${ld.nFuera} factura(s) disponibles por ${fmtMM(m)} fuera de la oferta.` : "Deudor Prime (Lista Blanca o Autorizado). No tiene facturas disponibles fuera de la oferta."}>
-                                        ★ Prime{m > 0 ? ` ${fmtMM(m)}` : ""}
-                                      </span>
+                                      <ChipFila fg={C.indigo} bg={C.lilac} texto={`★ Prime${m > 0 ? ` ${fmtMM(m)}` : ""}`}
+                                        tip={m > 0 ? `Deudor Prime (Lista Blanca o Autorizado) con ${ld.nFuera} factura(s) disponibles por ${fmtMM(m)} fuera de la oferta.` : "Deudor Prime (Lista Blanca o Autorizado). No tiene facturas disponibles fuera de la oferta."} />
                                     );
                                   })()}
                                   {/* Cuánta línea le queda y cuánto de lo disponible cabría en ella. Estaba
@@ -7121,11 +7162,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       + (ld.saldoPuntual > 0 ? ` De ese disponible, ${fmtMM(ld.saldoPuntual)} está en una Línea Puntual de UN SOLO USO: la consume entera la primera factura que la toque, del tamaño que sea.` : "")
                                       + (ld.nFuera > 0 ? ` Tiene ${ld.nFuera} factura(s) fuera de la oferta por ${fmtMM(ld.montoFuera)}.` : "");
                                     return (
-                                      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: hay ? "#F0FDF4" : "#F3F4F6", color: hay ? "#16A34A" : "#6B7280", cursor: "help" }} title={tip}>
-                                        <span style={{ width: 6, height: 6, borderRadius: 9999, backgroundColor: hay ? "#16A34A" : "#9CA3AF" }} />
-                                        {lbl}
-                                        {ld.saldoPuntual > 0 && <span className="rounded-full px-1 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}>{fmtMM(ld.saldoPuntual)} puntual</span>}
-                                      </span>
+                                      <ChipFila fg={hay ? "#16A34A" : "#6B7280"} bg={hay ? "#F0FDF4" : "#F3F4F6"} punto={hay ? "#16A34A" : "#9CA3AF"} texto={lbl} tip={tip}
+                                        badge={ld.saldoPuntual > 0 ? `${fmtMM(ld.saldoPuntual)} puntual` : undefined} badgeTono={{ fg: C.indigo, bg: C.lilac }} />
                                     );
                                   })()}
                                 </div>
@@ -7156,7 +7194,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       violeta y verificación en azul (pendiente) o verde (resuelta). Antes acá
                                       otorgamiento iba en el púrpura de marca y verificación en rojo, y el mismo
                                       dato se leía de dos colores distintos a dos centímetros de distancia. */}
-                                  {og.total > 0 && <span className="inline-flex items-center gap-1 rounded-full py-0.5 t9 font-semibold" style={{ paddingLeft: 8, paddingRight: 3, backgroundColor: allOk ? "#F0FDF4" : "#f5f3ff", color: allOk ? "#16A34A" : "#7C3AED" }} title={allOk ? `Las ${og.total} reglas de otorgamiento del deudor cumplen` : `${og.total - og.ok} de ${og.total} reglas de otorgamiento del deudor están pendientes`}>{allOk ? <Check size={10} /> : <AlertTriangle size={10} />}Otorg.<span className="rounded-full px-1.5 t7 font-semibold" style={{ backgroundColor: allOk ? "#16A34A" : "#7C3AED", color: "#fff", fontVariantNumeric: "tabular-nums", paddingTop: 1, paddingBottom: 1 }}>{og.total - og.ok}/{og.total}</span></span>}
+                                  {og.total > 0 && <ChipFila fg={allOk ? "#16A34A" : "#7C3AED"} bg={allOk ? "#F0FDF4" : "#f5f3ff"} Icono={allOk ? Check : AlertTriangle} texto="Otorg." badge={`${og.total - og.ok}/${og.total}`}
+                                    tip={allOk ? `Las ${og.total} reglas de otorgamiento del deudor cumplen` : `${og.total - og.ok} de ${og.total} reglas de otorgamiento del deudor están pendientes`} />}
                                   {/* TIPO DE GIRO del deudor. Va PRIMERO porque es la conclusión de las dos
                                       compuertas que siguen: Express sale del cruce «verificado Y sin marcas de
                                       excepción», así que leerlo antes y después ver por qué es el orden en que
@@ -7174,7 +7213,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     return <ChipGiro codigo={gd.tipo} monto={gd.monto}
                                       titulo={`${gd.label} · ${fmtCLP(gd.monto)} de giro en ${gd.facturas} factura(s) de este deudor. ${exp ? porQue : "Giro Normal porque " + porQue + "."}`} />;
                                   })()}
-                                  <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: verifOk ? "#F0FDF4" : "#FEF2F2", color: verifOk ? "#16A34A" : "#EF4444" }} title={verifOk ? "Deudor verificado" : "El deudor requiere verificación"}>{verifOk ? <Check size={10} /> : <AlertTriangle size={10} />}{verifOk ? "Verificado" : "Req. verif."}</span>
+                                  <ChipFila fg={verifOk ? "#16A34A" : "#EF4444"} bg={verifOk ? "#F0FDF4" : "#FEF2F2"} Icono={verifOk ? Check : AlertTriangle} texto={verifOk ? "Verificado" : "Req. verif."}
+                                    tip={verifOk ? "Deudor verificado" : "El deudor requiere verificación"} />
                                   {enOferta && (ev ? <TipDesglose titulo="Línea disponible para este deudor" color={t.fg} nota={`Manda ${ev.manda.label}: quedan ${fmtMM(ev.holgura)} para sumar más facturas.`} items={itemsTip}>{chipEstado}</TipDesglose> : chipEstado)}
                                 </div>
                               </div>
@@ -10923,16 +10963,14 @@ function giroResumenDeal(deal, estado) {
 // Los dos chips, con el mismo tratamiento en las tres pantallas donde aparecen (tarjeta del tubo,
 // cabecera del detalle y fila de cada deudor). Vive en un solo sitio para que no se separen: son la
 // misma información y tienen que leerse igual en las tres.
+// Delega en ChipFila: el chip de giro comparte fila con los de otorgamiento y verificación en los tres
+// sitios donde aparece (tarjeta del tubo, cabecera del detalle y fila del deudor), así que su geometría
+// tiene que ser la misma o el desalineado se nota justo donde se comparan. Conserva su propia función
+// porque lo que es SUYO es el mapa código→tono y la etiqueta por defecto, no la caja.
 function ChipGiro({ codigo, label, monto, titulo, compacto }) {
   const exp = codigo === "GE";
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full py-0.5 font-semibold ${compacto ? "t7" : "t9"}`}
-      style={{ paddingLeft: 8, paddingRight: 3, backgroundColor: exp ? "#F0FDF4" : "#f5f3ff", color: exp ? "#16A34A" : "#7C3AED", cursor: titulo ? "help" : undefined }}
-      title={titulo}>
-      {label || (exp ? "Express" : "Normal")}
-      <span className="rounded-full px-1.5 t7 font-semibold" style={{ backgroundColor: exp ? "#16A34A" : "#7C3AED", color: "#fff", fontVariantNumeric: "tabular-nums", paddingTop: 1, paddingBottom: 1 }}>{fmtMM((monto || 0) / 1e6)}</span>
-    </span>
-  );
+  return <ChipFila clase={compacto ? "t7" : "t9"} fg={exp ? "#16A34A" : "#7C3AED"} bg={exp ? "#F0FDF4" : "#f5f3ff"}
+    texto={label || (exp ? "Express" : "Normal")} badge={fmtMM((monto || 0) / 1e6)} tip={titulo} />;
 }
 // La asignación VIGENTE de una operación: la congelada si el cliente ya aceptó, y el cálculo del día
 // si todavía no. El congelado gana siempre — recalcular una operación aceptada movería una cifra que
@@ -11397,6 +11435,15 @@ function setPreEval(dealId, code, on) {
   else delete PRE_EVAL[dealId];
 }
 const tienePreEval = (dealId) => !!PRE_EVAL[dealId];
+// COMPUERTA ÚNICA de la aprobación de excepciones: sólo se puede visar cuando la operación está en la
+// BANDEJA —aceptada en adelante, o con Pre-evaluación solicitada—. Antes de eso la oferta todavía se
+// está armando y la mesa de Otorgamientos no la lista, así que no hay dónde aprobarla.
+// Vive a nivel de módulo porque la consultan DOS sitios —el gate de cada fila del tab y el aviso al
+// aprobador en la cabecera— y mientras fue una expresión repetida divergieron: el aviso filtraba sólo
+// por atribución, así que en una oferta sin Pre-evaluación le prometía «Ir a aprobar» a quien tenía el
+// nivel, y el botón lo llevaba a una mesa donde esa operación no aparece mientras cada fila de abajo
+// decía lo contrario. Es el mismo patrón que VER-01: dos cómputos del mismo hecho que se separan.
+const excEnBandeja = (deal) => !!deal && (["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage) || tienePreEval(deal.id));
 // El ejecutivo solicita la pre-evaluación: registra el evento en la bitácora (hora completa) y avisa por
 // la mensajería de la operación a los aprobadores involucrados (los responsables de las excepciones pendientes).
 function avisarPreEval(deal, execCode) {
