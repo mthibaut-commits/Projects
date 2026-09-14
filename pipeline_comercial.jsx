@@ -2156,11 +2156,14 @@ function cesionesPorDocumento() {
   const aec = (typeof window !== "undefined" && Array.isArray(window.AECSYNC)) ? window.AECSYNC : [];
   for (const c of aec) {
     if (!c || !c.RUTCedente || !c.Folio) continue;
+    // El monto CEDIDO es igual o menor que el del documento: la cesión parcial existe —se cede una
+    // parte del crédito y el resto sigue siendo del cliente—. Se guardan los dos para poder decirlo.
+    const doc = Math.round(+c.MontoDocumento || 0), ced = Math.round(+c.MontoCesion || 0);
     _cesionIdx.set(c.RUTCedente + "|" + c.Folio, {
       factoring: c.RazonSocialFactoring || "Otro factoring",
       rutFactoring: c.RUTFactoring || "",
       fecha: String(c.FechaCesion || "").slice(0, 10),
-      monto: Math.round(+c.MontoCesion || 0),
+      monto: ced, montoDocumento: doc, parcial: doc > 0 && ced < doc,
       nuestra: c.RUTFactoring === BICE_RUT,
     });
   }
@@ -2171,13 +2174,15 @@ const cesionDeFactura = (rutEmisor, folio) => ((rutEmisor && folio) ? (cesionesP
 // Las facturas de una operación que ya fueron cedidas a OTRO factoring: cuántas, por cuánto y a quién.
 // Es lo que convierte una oportunidad en una pérdida por cesión — antes era una moneda al aire.
 function cesionesAjenasDeDeal(deal) {
-  const out = { n: 0, monto: 0, factoring: null, folios: [] };
+  const out = { n: 0, monto: 0, parciales: 0, factoring: null, folios: [] };
   if (!deal || !deal.rutEmisor) return out;
   const porFact = {};
   for (const f of (deal.facturasOp || [])) {
     const c = cesionDeFactura(deal.rutEmisor, f && f.folio);
     if (!c || c.nuestra) continue;
-    out.n++; out.monto += f.monto || c.monto || 0; out.folios.push(f.folio);
+    // Lo que se llevó el otro factoring es el monto CEDIDO, que en una cesión parcial es menor que
+    // la factura: sumar el total del documento inflaría la pérdida.
+    out.n++; out.monto += c.monto || f.monto || 0; out.folios.push(f.folio); if (c.parcial) out.parciales++;
     porFact[c.factoring] = (porFact[c.factoring] || 0) + 1;
   }
   const orden = Object.keys(porFact).sort((a, b) => porFact[b] - porFact[a]);
@@ -3657,8 +3662,13 @@ function estadoCandidata(f, deal, estado) {
   if (f.cedida === true || ces) {
     // Ceder es traspasar el crédito: un documento con dueño no se compra dos veces. El A2 dice ADEMÁS
     // quién se lo llevó, y si fuimos nosotros el mensaje es otro — no es competencia, es cartera propia.
-    if (ces && ces.nuestra) return R("cedidaNuestra", "Ya financiada", `Cedida a Security el ${ces.fecha}: el documento ya está financiado por nosotros.`);
-    return R("cedida", "Cedida a terceros", ces ? `AECSync registra la cesión de este folio a ${ces.factoring} el ${ces.fecha}.` : "AECSync registra la cesión de este folio a otro factoring.");
+    // Una cesión PARCIAL deja el documento con dos dueños: el resto del crédito sigue siendo del
+    // cliente, pero cobrarlo sería compartir la cobranza con otro factoring. Se bloquea igual y el
+    // mensaje dice por cuánto, que es lo que el ejecutivo necesita para decidir si vale la pena
+    // pedirle al cliente que resuelva la cesión antes.
+    const cuanto = (c) => (c.parcial ? ` por ${fmtMM(c.monto)} de ${fmtMM(c.montoDocumento)} (cesión parcial)` : "");
+    if (ces && ces.nuestra) return R(ces.parcial ? "cedidaNuestraParcial" : "cedidaNuestra", ces.parcial ? "Financiada en parte" : "Ya financiada", `Cedida a Security el ${ces.fecha}${cuanto(ces)}.`);
+    return R("cedida", ces && ces.parcial ? "Cedida en parte" : "Cedida a terceros", ces ? `AECSync registra la cesión de este folio a ${ces.factoring} el ${ces.fecha}${cuanto(ces)}.` : "AECSync registra la cesión de este folio a otro factoring.");
   }
   // ¿Otra operación NUESTRA ya tomó este folio? Único motivo que no sale de un activo: es estado del
   // pipeline, así que entra por parámetro y cae al registro del módulo sólo por comodidad.
@@ -7197,8 +7207,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   // posición, así que reordenar la oferta cambiaba cuáles figuraban cedidas.
                   const motivoExcl = (f) => {
                     const c = cesionDeFactura(deal.rutEmisor, f && f.folio);
-                    if (c && !c.nuestra) return `Cedida a ${c.factoring}`;
-                    if (c) return "Ya financiada por Security";
+                    if (c && !c.nuestra) return `Cedida a ${c.factoring}${c.parcial ? ` (parcial, ${fmtMM(c.monto)})` : ""}`;
+                    if (c) return `Ya financiada por Security${c.parcial ? ` (parcial, ${fmtMM(c.monto)})` : ""}`;
                     return f.reclamada ? "Reclamada" : f.notaCredito ? "Nota de crédito" : null;
                   };
                   const facturasMarcadas = facturasOp.map((f) => ({ ...f, excl: motivoExcl(f) }));
@@ -7392,7 +7402,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               <span></span><span>Tipo doc.</span><span>Folio</span><span>Razón social</span><span className="text-right">Nota</span><span>F. emisión</span><span>F. vencim.</span><span className="text-right">Tasa</span><span className="text-right">Monto</span><span>Estado</span><span>Acción</span>
                             </div>
                           );
-                          const SHORT_EST = { notaCredito: "Nota de créd.", reclamada: "Reclamada", cedida: "Cedida", cedidaNuestra: "Ya financiada", otraOp: "Otra op.", noConfirmada: "No confirmada" };
+                          const SHORT_EST = { notaCredito: "Nota de créd.", reclamada: "Reclamada", cedida: "Cedida", cedidaNuestra: "Ya financiada", cedidaNuestraParcial: "Financ. parcial", otraOp: "Otra op.", noConfirmada: "No confirmada" };
                           const filaOtra = (f) => {
                             const nota = notaDeudor(f.deudor, f.rutRecep) || 0; const sc = { tipo: tipoDeudorDisp(f), score: Math.round(20 + (nota - 1) / 4 * 79) };
                             const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";

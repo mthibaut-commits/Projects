@@ -25,8 +25,15 @@
 //   · sin nota de crédito ni reclamo: un documento anulado o reclamado no se cede;
 //   · un documento se cede UNA sola vez — dos cesiones del mismo folio serían dos dueños del mismo
 //     crédito, que es justamente lo que el registro electrónico existe para impedir;
-//   · la fecha de cesión cae DESPUÉS de la emisión y no pasa del corte del activo.
-const { semilla, ent } = require("../lib/rng");
+//   · **la fecha de cesión cae DESPUÉS de la emisión** y no pasa del corte del activo: no se puede
+//     ceder una factura que todavía no se emitió;
+//   · **el monto cedido es IGUAL O MENOR que el del documento.** La cesión parcial existe —se cede
+//     una parte del crédito y el resto sigue siendo del cliente—, pero ceder MÁS que la factura sería
+//     transferir un crédito que no existe. Los dos son invariantes del activo y se comprueban acá, no
+//     aguas abajo: un consumidor que reciba `MontoCesion > MontoDocumento` no tiene forma de arreglarlo.
+//     La entrega anterior tenía las 1.300 cesiones por el total exacto, así que la cota «o menor»
+//     nunca se ejercitaba; ahora una minoría es parcial para que el caso exista en el dato.
+const { semilla, ent, entre } = require("../lib/rng");
 
 const DIA = 86400000;
 const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
@@ -94,7 +101,14 @@ function generar({ DTESYNC, AECSYNC }) {
     const emisMs = ms(doc.FchEmis);
     const tope = Math.max(emisMs + DIA, Math.min(corteMs, emisMs + 20 * DIA));
     const fecha = Math.min(tope, emisMs + ent(r, 1, 20) * DIA);
-    const monto = Math.round(+doc.MntTotal || 0);
+
+    // MONTO DEL DOCUMENTO y MONTO CEDIDO. El primero es del A1 y no se discute; el segundo es igual o
+    // menor. ~12% son cesiones PARCIALES (entre el 30% y el 95% del documento): el cliente cede una
+    // parte del crédito y conserva el resto.
+    const total = Math.round(+doc.MntTotal || 0);
+    const rm = semilla("mcesion|" + rut + "|" + doc.Folio);
+    const parcial = rm() < 0.12;
+    const cedido = parcial ? Math.min(total, Math.max(1, Math.round(total * entre(rm, 0.30, 0.95)))) : total;
 
     out.push({
       ...c,
@@ -103,14 +117,24 @@ function generar({ DTESYNC, AECSYNC }) {
       TipoDTEDesc: doc.TipoDTEDesc || c.TipoDTEDesc,
       Folio: doc.Folio,
       FechaEmisionDTE: doc.FchEmis,
-      MontoDocumento: monto,
+      MontoDocumento: total,
       RUTEmisor: doc.RUTEmisor,
       RUTReceptor: doc.RUTRecep,
       RazonSocialReceptor: doc.RznSocRecep,
       FechaCesion: iso(fecha) + String(c.FechaCesion || "").slice(10),  // conserva la hora original
-      MontoCesion: monto,
+      MontoCesion: cedido,
       FechaVencimientoCesion: doc.FchVenc || c.FechaVencimientoCesion,
     });
+  }
+  // GUARDA: los dos invariantes se comprueban antes de devolver. Es el único punto del sistema donde
+  // todavía se pueden arreglar — aguas abajo sólo queda mostrarlos mal.
+  for (const c of out) {
+    if (String(c.FechaCesion).slice(0, 10) < c.FechaEmisionDTE) {
+      throw new Error(`Cesión anterior a la emisión: folio ${c.Folio} de ${c.RUTCedente} (cesión ${c.FechaCesion}, emisión ${c.FechaEmisionDTE})`);
+    }
+    if (c.MontoCesion > c.MontoDocumento) {
+      throw new Error(`Monto cedido mayor que el documento: folio ${c.Folio} de ${c.RUTCedente} (${c.MontoCesion} > ${c.MontoDocumento})`);
+    }
   }
   return out;
 }

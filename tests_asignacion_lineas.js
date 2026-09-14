@@ -2032,16 +2032,43 @@
     const huerfanas = aec.filter((c) => !porFolio[c.RUTCedente + "|" + c.Folio]);
     const calzan = aec.every((c) => {
       const r = porFolio[c.RUTCedente + "|" + c.Folio];
-      return r && c.MontoCesion === Math.round(+r.MntTotal || 0) && c.MontoDocumento === c.MontoCesion
+      // El monto DEL DOCUMENTO es el del A1 y no se discute; el CEDIDO es igual o menor (ver (b)).
+      return r && c.MontoDocumento === Math.round(+r.MntTotal || 0) && c.MontoCesion <= c.MontoDocumento
         && c.FechaEmisionDTE === r.FchEmis && c.RUTReceptor === r.RUTRecep && c.RazonSocialReceptor === r.RznSocRecep;
     });
-    // (b) No se cede antes de emitir, ni el mismo documento dos veces, ni uno no cedible.
+    // (b) LOS DOS INVARIANTES DEL ACTIVO, que el generador comprueba antes de escribir:
+    //     · no se cede antes de emitir — no se puede ceder una factura que no se emitió;
+    //     · el monto cedido es IGUAL O MENOR que el del documento — ceder más sería transferir un
+    //       crédito que no existe.
+    //     Y la cota «o menor» tiene que estar EJERCITADA: la entrega anterior tenía las 1.300 cesiones
+    //     por el total exacto, así que el invariante se cumplía sin que nada lo probara.
     const antesDeEmitir = aec.filter((c) => String(c.FechaCesion).slice(0, 10) < c.FechaEmisionDTE).length;
+    const cedeDeMas = aec.filter((c) => {
+      const r = porFolio[c.RUTCedente + "|" + c.Folio];
+      return +c.MontoCesion > +c.MontoDocumento || (r && +c.MontoCesion > Math.round(+r.MntTotal || 0));
+    }).length;
+    const parciales = aec.filter((c) => +c.MontoCesion < +c.MontoDocumento).length;
+    const docOk = aec.every((c) => { const r = porFolio[c.RUTCedente + "|" + c.Folio]; return r && +c.MontoDocumento === Math.round(+r.MntTotal || 0); });
     const dobles = aec.length - new Set(aec.map((c) => c.RUTCedente + "|" + c.Folio)).size;
     const noCedibles = aec.filter((c) => {
       const r = porFolio[c.RUTCedente + "|" + c.Folio], e = (r && r.EstadoDTE) || {};
       return r && (r.FormaPago !== "2" || e.NotaCredito === "1" || e.Reclamado === "1");
     }).length;
+
+    // …y el pipeline LEE la cesión parcial: el bloqueo dice por cuánto se cedió y de cuánto era la
+    // factura, y lo que se llevó el otro factoring es el monto CEDIDO, no el del documento.
+    const cesParcial = aec.find((c) => +c.MontoCesion < +c.MontoDocumento && c.RUTFactoring !== BICE_RUT && porFolio[c.RUTCedente + "|" + c.Folio]);
+    let parcialOk = false, montoOk = false;
+    if (cesParcial) {
+      const d = { id: "OP-CES-95p", cliente: "C95p", rutEmisor: cesParcial.RUTCedente, deudores: [],
+                  facturasOp: [], facturasDisponibles: [], facturasRetiradas: [], nuevasFacturas: 0 };
+      const f = facturaDeDTE(porFolio[cesParcial.RUTCedente + "|" + cesParcial.Folio]);
+      const est = estadoCandidata(f, d);
+      parcialOk = est.bloqueada && est.clave === "cedida" && /parcial/i.test(est.detalle || "");
+      // El monto perdido es el cedido, que es MENOR que la factura.
+      const ag = cesionesAjenasDeDeal({ ...d, facturasOp: [f] });
+      montoOk = ag.n === 1 && ag.parciales === 1 && ag.monto === +cesParcial.MontoCesion && ag.monto < f.monto;
+    }
 
     // (c) El pipeline lo LEE: una factura cedida a otro factoring se bloquea con su nombre y su fecha,
     //     y una cedida a nosotros se distingue —no es competencia, es cartera propia—.
@@ -2098,9 +2125,10 @@
 
     ok("95 una factura cedida es una factura que existe, y la pérdida por cesión sale del registro",
        aec.length > 1000 && huerfanas.length === 0 && calzan
-       && antesDeEmitir === 0 && dobles === 0 && noCedibles === 0
+       && antesDeEmitir === 0 && cedeDeMas === 0 && docOk && parciales > 0 && dobles === 0 && noCedibles === 0
+       && parcialOk && montoOk
        && bloqueoOk && libreOk && perdidaOk && compOk && p360Ok,
-       `${aec.length} cesiones · 0 huérfanas ${huerfanas.length === 0} · antes de emitir ${antesDeEmitir} · dobles ${dobles} · no cedibles ${noCedibles} · bloqueo «${estA && estA.label}» / «${estP && estP.label}» · libre del mismo cedente ok ${libreOk} · pérdida ante ${ced.factoring} · A11: ${primeraOk}/${conColoc} con primera operación correcta, ${ingresoMal} ingresos posteriores`);
+       `${aec.length} cesiones · 0 huérfanas ${huerfanas.length === 0} · antes de emitir ${antesDeEmitir} · ceden de más ${cedeDeMas} · parciales ${parciales} (cota ejercitada) · dobles ${dobles} · no cedibles ${noCedibles} · bloqueo «${estA && estA.label}» / «${estP && estP.label}» · libre del mismo cedente ok ${libreOk} · pérdida ante ${ced.factoring} · A11: ${primeraOk}/${conColoc} con primera operación correcta, ${ingresoMal} ingresos posteriores `);
   }
 
   console.log(out.join("\n"));

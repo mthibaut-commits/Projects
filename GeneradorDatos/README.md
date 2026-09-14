@@ -57,7 +57,17 @@ cuelga de ella se terminaba inventando en el pipeline: «cedida a terceros» sal
 no sólo produce cifras falsas: tapa el hueco del dato que las haría notar.**
 
 Reglas que el módulo impone, todas medibles contra el A1: sólo documentos a crédito, sin nota de
-crédito ni reclamo, cada documento cedido una sola vez, y la fecha de cesión después de la emisión.
+crédito ni reclamo, y cada documento cedido una sola vez. Más los **dos invariantes**, que se
+comprueban antes de escribir y hacen fallar la corrida si no se cumplen:
+
+1. **La fecha de cesión no es anterior a la emisión.** No se cede una factura que no se emitió.
+2. **El monto cedido es igual o menor que el del documento.** La cesión parcial existe —se cede parte
+   del crédito y el resto queda con el cliente—; ceder más sería transferir un crédito que no existe.
+
+Se validan **acá** y no aguas abajo porque es el único punto donde todavía se pueden arreglar: un
+consumidor que reciba `MontoCesion > MontoDocumento` no tiene con qué. Y una cota hay que
+**ejercitarla**: la entrega anterior tenía las 1.300 cesiones por el total exacto, así que el segundo
+invariante se cumplía sin que nada lo probara — hoy 160 son parciales.
 
 ## Cómo se calibra el riesgo
 
