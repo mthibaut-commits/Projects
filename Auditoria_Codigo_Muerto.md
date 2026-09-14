@@ -95,21 +95,14 @@ queda de un tamaño distinto en cada pantalla, por accidente y sin error. La esc
 
 ### 2.1 `ReportesView` — una vista entera inalcanzable, con su pestaña de entrada rota
 
-`vistaApp` sólo se escribe desde `irA(v)`, y `irA` sólo se llama con los **diez** valores de `VISTAS`
-(los nueve de la navbar + Configuración). **`"reportes"` no está en ninguno de los dos.** La rama
-`vistaApp === "reportes"` del render no se ejecuta nunca.
-
-Y su pestaña por defecto está rota: `sel` arranca en `"cartera"` y esa rama monta
-`<PCcliente agg={aggScope} …>` cuando `PCcliente` espera `resumen`. La primera línea del componente es
-`resumen.total.toLocaleString(…)`: **si la vista fuera alcanzable, entrar a ella sería una pantalla en
-blanco.** Que el defecto lleve ahí sin que nadie lo note es la mejor prueba de que la vista está muerta.
-
-Además **duplica** contenido de la vista «Gestión» (`PanelClientes`), que sí es alcanzable y monta el
-mismo `PCcliente` bien, con `resumen`.
-
-> **Es una decisión de producto, no de código, y por eso no se borró:** o la vista sobra y se elimina
-> con lo que sólo cuelga de ella, o falta enchufarla a la navbar —y entonces primero hay que arreglar
-> el prop—. Lo que no puede quedarse es como está.
+> **ELIMINADO el 14-09-2026**, a pedido del usuario. Se fueron `ReportesView` (48 líneas), la rama
+> `vistaApp === "reportes"` que nadie podía alcanzar, y **`PCdesempeno`**, que quedó muerto por
+> transitividad: su único llamador era esta vista. La medición de código muerto con transitividad es
+> justamente lo que lo detecta — un símbolo vivo sólo porque lo usa un muerto también está muerto.
+>
+> De paso confirmó el diagnóstico: `ReportesView` invocaba `<PCcliente agg={…} />` y `PCcliente`
+> declara `{ resumen, hayFiltro }`. La pestaña por defecto de una vista inalcanzable llevaba años
+> pasando un prop que el componente no recibe.
 
 ### 2.2 La fecha de emisión de una factura se deriva del RELOJ, y con cinco fórmulas distintas
 
@@ -193,6 +186,50 @@ Las cuatro son la misma pregunta: **¿de qué depende esto, y tiene sentido que 
 
 ---
 
+### 2.5 El pipeline GENERA datos que tienen que venir del archivo
+
+> **CORREGIDO el 14-09-2026.** El usuario lo pidió así: «La data de facturas debe venir de un archivo,
+> no la puede generar el pipeline… igual que las fechas de vcto, empresas, etc.»
+
+El `README.md` de `GeneradorDatos/` ya escribía la regla:
+
+> **El pipeline no genera datos: los lee y los procesa.** Si el runtime inventa un valor, la UI y el
+> motor terminan evaluando cosas distintas.
+
+Tres sitios la rompían, y son la misma familia que el libro que se re-sorteaba (§2.2 del informe
+anterior) y que las fechas derivadas del reloj:
+
+| Sitio | Qué inventaba | De dónde sale ahora |
+|---|---|---|
+| `candidatasLibro` | 40–80 facturas por operación: folio por `hashStr(deal.id)` y, colgando del folio, **deudor** y **monto** | `libroPorEmisor()` — índice del A1 por `RUTEmisor` |
+| `estadoCandidata` | Si el documento estaba anulado por NC, cedido o en otra operación: `hashStr(folio) % 100` | `EstadoDTE` del A1 (nota de crédito, reclamo) + AECSync (cesión) |
+| `genFacturasCliente` / `genFacturasIncorporar` | 6–13 facturas del libro del cliente, y las que hicieran falta para cuadrar un monto objetivo | el mismo libro, vía `facturasDelLibro()` |
+
+Lo que esto costaba, más allá de la verosimilitud:
+
+- **El pool era enorme y falso.** El archivo trae 37 a 85 facturas por cliente con 23 deudores
+  distintos; el generador producía 40–80 repartidas entre los 1–2 deudores que ya tenía la operación.
+  La pantalla mostraba menos negocio del que el cliente de verdad tiene, y con razones sociales que no
+  existen al lado de las reales del inbound.
+- **El hash bloqueaba ~29% de lo que mirara.** Siete por ciento «anulada por NC», siete «cedida»,
+  siete «en otra operación», ocho «NC parcial». Ninguno correspondía a nada. Y al revés: el A1 declara
+  **2.088 facturas reclamadas** y la UI **no mostraba el reclamo**, que es exactamente lo que impide
+  comprar el documento.
+- **La NC parcial entraba al monto a girar.** Se inventaba una rebaja de 20% a 49% y la factura se
+  agregaba a la oferta por esa diferencia. El layout del A1 no trae `MntNotaCredito`, así que la cifra
+  no tenía origen. Se retiró; el hueco quedó anotado en el inventario de activos.
+
+**Lo que NO se movió al archivo, a propósito:** «en otra operación» no es un hecho del SII sino de este
+sistema, así que entra por parámetro —como el veto de la verificación— y se resuelve contra las
+operaciones reales.
+
+**Un hueco que el arreglo destapó:** de las 1.300 cesiones de AECSync sólo **3** referencian un folio
+que el A1 declare para ese cedente. Las dos entregas se generaron con folios independientes, así que
+«cedida a terceros» casi nunca se gatilla — no porque no haya cesiones, sino porque no se pueden
+atribuir a un documento. Se arregla en el generador. Mientras el estado se sorteaba, el defecto del
+dato era invisible: **inventar un valor no sólo produce cifras falsas, también tapa el hueco que las
+haría notar.**
+
 ## 3. Qué se hizo y qué queda
 
 | # | Hallazgo | Acción |
@@ -202,10 +239,11 @@ Las cuatro son la misma pregunta: **¿de qué depende esto, y tiene sentido que 
 | 1.3 | 6 estados de React muertos | **Borrados** (salvo `diaModal`, ver abajo) |
 | 1.7 | `t16` sin declarar | **Corregido** a `t15` |
 | 2.3 | `_GIRO_LISTA` sin la verificación en la firma | **Corregido** |
+| 2.1 | `ReportesView` inalcanzable y rota | **Eliminada** — con `PCdesempeno`, muerto por transitividad |
+| 2.5 | El pipeline genera las facturas y su estado | **Corregido** — libro y estados desde A1/A2; caso 94 |
 | 2.2 | La fecha de emisión sale del reloj, con cinco fórmulas, y el inbound descartaba `FchEmis`/`FchVenc` del activo | **Corregido** — un solo resolver (`fechasDocumento`) anclado en la fecha de corte del activo; caso 93 |
 | 1.3 | `diaModal` nunca se abre | **Abierto** — falta decidir si sobra el modal o falta quien lo abra |
 | 1.5 | `giroDeal` probado y sin llamador | **Abierto** — la congelación del giro no ocurre en el producto |
-| 2.1 | `ReportesView` inalcanzable y rota | **Abierto** — borrar la vista o enchufarla arreglando el prop |
 | 1.4 | 5 estados que se leen y nunca se escriben | **Abierto** — cada uno es una edición que la UI promete y no existe |
 
 **La verificación de una poda no es `tsc` ni el build.** Los dos pasan con el login roto: así

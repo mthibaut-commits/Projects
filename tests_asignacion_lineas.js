@@ -24,6 +24,14 @@
   const out = [];
   const ok = (n, cond, det) => out.push((cond ? "PASA  " : "FALLA ") + n + (det ? "  · " + det : ""));
 
+  // EMISOR REAL DEL ACTIVO. El libro de ventas dejó de sintetizarse y se lee del A1, así que un RUT
+  // inventado no tiene libro: los casos que lo miran tienen que sembrar un cedente que el archivo
+  // declare. Se elige el que más facturas trae, para que los recortes por ventana dejen muestra.
+  const EMISOR_LIBRO = (() => {
+    const c = {}; for (const r of (window.DTESYNC || [])) { if (r && r.RUTEmisor) c[r.RUTEmisor] = (c[r.RUTEmisor] || 0) + 1; }
+    return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || "";
+  })();
+
   // Deudores PRIME reales de la lista blanca, con nota distinta entre sí: es lo único que hace
   // válida la prueba de la línea compartida (ambos tienen que caer en la MISMA categoría).
   const LB = [...LB_RUT].slice(0, 12);
@@ -1752,13 +1760,14 @@
 
       // (c) La ventana del libro de ventas. Con 7 días ninguna candidata puede tener más de 7 de
       //     emitida; con 180, alguna pasa de 60.
-      const deal = { id: "OP-CFG-89", cliente: "Cliente 89", deudores: [{ name: "Deudor 89" }] };
+      // La ventana ya no dimensiona un generador: FILTRA el libro del archivo por antigüedad.
+      const deal = { id: "OP-CFG-89", cliente: "Cliente 89", rutEmisor: EMISOR_LIBRO, deudores: [{ name: "Deudor 89" }] };
       aplicarCfgActiva({ ...guardado, ventanaLibroDias: 7 });
       const corto = candidatasLibro(deal, []);
       aplicarCfgActiva({ ...guardado, ventanaLibroDias: 180 });
       const largo = candidatasLibro(deal, []);
       const maxDias = (arr) => Math.max(0, ...arr.map((f) => +f.diasEmision || 0));
-      ventanaOk = corto.length > 0 && maxDias(corto) <= 7 && maxDias(largo) > 60;
+      ventanaOk = corto.length > 0 && largo.length > corto.length && maxDias(corto) <= 7 && maxDias(largo) > 7;
 
       // (d) La nota mínima de compra viaja al texto de la propuesta al comité junto con la vigencia.
       //     Las dos estaban escritas a mano en la glosa («nota ≥ 3,7», «vigencia de 12 meses»).
@@ -1837,7 +1846,7 @@
   // siete después, con folios y montos que no existían un segundo antes.
   {
     const deudores = [{ name: "Deudor Uno", rut: "77.461.061-0" }, { name: "Deudor Dos", rut: "42.124.113-9" }];
-    const mk = (facturasOp) => ({ id: "OP-LIB-92", cliente: "Cliente 92", rutEmisor: "76.111.111-1",
+    const mk = (facturasOp) => ({ id: "OP-LIB-92", cliente: "Cliente 92", rutEmisor: EMISOR_LIBRO,
       deudores, facturasOp, facturasDisponibles: [], facturasRetiradas: [], nuevasFacturas: 0 });
     const foto = (deal) => {
       const c = candidatasLibro(deal, deal.facturasOp);
@@ -1905,7 +1914,7 @@
 
     // (c) EL DEFECTO QUE REPORTÓ EL USUARIO: la misma factura, mirada como candidata y como incluida
     //     en la oferta, tenía dos fechas — `f.candidata ? diasEmision : hashStr("em" + folio)`.
-    const dealLib = { id: "OP-FEC-93", cliente: "Cliente 93", rutEmisor: "76.222.222-2",
+    const dealLib = { id: "OP-FEC-93", cliente: "Cliente 93", rutEmisor: EMISOR_LIBRO,
       deudores: [{ name: "Deudor Uno", rut: "77.461.061-0" }], facturasOp: [], facturasDisponibles: [],
       facturasRetiradas: [], nuevasFacturas: 0 };
     const pool = candidatasLibro(dealLib, []);
@@ -1947,6 +1956,64 @@
        && respEstable && noFuturo && corteEsDelDato
        && plazoReal && plazoEsLaResta,
        `corte ${corte} · ${pool.length} docs sellados ${todasSelladas} · candidata=oferta ${mismaEnDosPantallas} · reloj indiferente ${sinReloj} · ${plazos.size} plazos distintos en el activo`);
+  }
+
+  // ── 94 · LAS FACTURAS SALEN DEL ARCHIVO, NO DEL PIPELINE ────────────────────────────────────
+  // «La data de facturas debe venir de un archivo, no la puede generar el pipeline… igual que las
+  // fechas de vcto, empresas, etc.» — y el README del generador ya lo escribía: «El pipeline no
+  // genera datos: los lee y los procesa». `candidatasLibro` SINTETIZABA 40–80 facturas por operación
+  // con folio, deudor y monto salidos de `hashStr`, y `estadoCandidata` sorteaba por hash si el
+  // documento estaba anulado por nota de crédito o cedido a terceros. Eran documentos que no existen
+  // en ningún activo, con razones sociales y montos inventados, al lado de los reales del inbound.
+  {
+    const dte = window.DTESYNC || [];
+    const porFolio = {};
+    for (const r of dte) { if (r && r.RUTEmisor) porFolio[r.RUTEmisor + "|" + r.Folio] = r; }
+
+    // (a) TODO documento del libro existe en el activo, con su mismo deudor, RUT y monto.
+    const deal = { id: "OP-ARCH-94", cliente: "C94", rutEmisor: EMISOR_LIBRO, deudores: [],
+                   facturasOp: [], facturasDisponibles: [], facturasRetiradas: [], nuevasFacturas: 0 };
+    const libro = candidatasLibro(deal, []);
+    const inventadas = libro.filter((f) => !porFolio[EMISOR_LIBRO + "|" + f.folio]);
+    const calzan = libro.every((f) => {
+      const r = porFolio[EMISOR_LIBRO + "|" + f.folio];
+      return r && f.deudor === r.RznSocRecep && f.rutRecep === r.RUTRecep
+        && f.monto === Math.round(+r.MntTotal || 0) && f.fchEmis === r.FchEmis && f.fchVenc === r.FchVenc;
+    });
+
+    // (b) Un cliente que el archivo NO declara no tiene libro. Antes se le sintetizaba uno completo,
+    //     que es la forma más silenciosa de inventar: una pantalla llena de documentos plausibles.
+    const fantasma = candidatasLibro({ ...deal, id: "OP-ARCH-94b", rutEmisor: "99.999.999-9" }, []);
+
+    // (c) El ESTADO del documento también sale del activo. Se comparan las tres poblaciones del
+    //     archivo contra lo que dice `estadoCandidata`, documento a documento.
+    const delArchivo = dte.filter((r) => r.RUTEmisor === EMISOR_LIBRO).map((r) => facturaDeDTE(r));
+    const conNC = delArchivo.filter((f) => f.notaCredito), conRec = delArchivo.filter((f) => f.reclamada && !f.notaCredito);
+    const limpias = delArchivo.filter((f) => !f.notaCredito && !f.reclamada);
+    const estadoOk = conNC.every((f) => estadoCandidata(f, deal).clave === "notaCredito")
+      && conRec.every((f) => estadoCandidata(f, deal).clave === "reclamada")
+      && limpias.every((f) => estadoCandidata(f, deal).clave === "ok");
+    // …y NINGÚN documento limpio del archivo se bloquea: el hash bloqueaba ~29% de todo lo que mirara.
+    const bloqueadasSinMotivo = limpias.filter((f) => estadoCandidata(f, deal).bloqueada).length;
+
+    // (d) Lo único que NO sale del archivo es «en otra operación», porque no es un hecho del SII sino
+    //     de este sistema. Entra por parámetro, como el veto de la verificación.
+    const unaLimpia = limpias[0];
+    const tomada = unaLimpia ? estadoCandidata(unaLimpia, deal, { enOtraOp: { [String(unaLimpia.folio)]: "OP-OTRA" } }) : null;
+    const propia = unaLimpia ? estadoCandidata(unaLimpia, deal, { enOtraOp: { [String(unaLimpia.folio)]: deal.id } }) : null;
+    const otraOpOk = !!tomada && tomada.clave === "otraOp" && !!propia && propia.clave === "ok";
+
+    // (e) El asistente de alta manual lee el MISMO libro (antes generaba 6–13 facturas por `rndDet`).
+    const wiz = genFacturasCliente(EMISOR_LIBRO);
+    const wizOk = wiz.length > 0 && wiz.every((f) => !!porFolio[EMISOR_LIBRO + "|" + f.folio])
+      && wiz.every((f) => f.montoCLP === Math.round(+porFolio[EMISOR_LIBRO + "|" + f.folio].MntTotal || 0));
+
+    ok("94 las facturas y su estado salen del activo, no las genera el pipeline",
+       libro.length > 10 && inventadas.length === 0 && calzan
+       && fantasma.length === 0
+       && conNC.length > 0 && conRec.length > 0 && estadoOk && bloqueadasSinMotivo === 0
+       && otraOpOk && wizOk,
+       `${libro.length} docs del libro · 0 inventados ${inventadas.length === 0} · cliente fuera del archivo → ${fantasma.length} · NC ${conNC.length} · reclamadas ${conRec.length} · limpias bloqueadas ${bloqueadasSinMotivo} · alta manual ${wiz.length} docs`);
   }
 
   console.log(out.join("\n"));

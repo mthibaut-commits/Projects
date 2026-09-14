@@ -39,13 +39,15 @@
 ### A1 · DTESync — feed de facturas electrónicas (DTE)
 - **Tipo:** stream/API de documentos tributarios electrónicos emitidos (tipo 33/34/46), identificados por folio.
 - **Contenido:** RUT emisor (cedente), razón social, RUT/razón social receptor (deudor), folio, tipo DTE, monto total, enlaces XML/PDF, reclamos, notas de crédito.
-- **Consumen:** Bandeja Inbound (motor de reglas de prospección), creación automática de oportunidades, itemización de facturas de la oferta.
+- **Consumen:** Bandeja Inbound (motor de reglas de prospección), creación automática de oportunidades, itemización de facturas de la oferta, y **el LIBRO DE VENTAS del cliente** — lo que el ejecutivo ve en «Deudores disponibles» y en «otras facturas de este deudor», y el asistente de alta manual. En producción es `query libroVentas(rutCedente)` sobre los DTE del SII.
 - **Regla operacional:** las facturas que califican una regla se acumulan y pasan a Prospección en la corrida horaria (cron).
+- **Hueco del layout — `MntNotaCredito` (14-09-2026).** `EstadoDTE` declara `NotaCredito` y `FolioNotaCredito` pero **no el monto** de la nota, así que no se puede distinguir la que ANULA el documento de la que sólo lo rebaja. La aplicación inventaba esa diferencia —«20% a 49% del monto», por hash del folio— y agregaba la factura a la oferta por el neto resultante: una cifra sin origen entrando al monto a girar. Mientras el activo no informe el monto, un documento con nota de crédito **no se compra**, que es la lectura conservadora. Para habilitar la compra por el neto hay que agregar `MntNotaCredito` a la entrega.
 
 ### A2 · AECSync — cesiones electrónicas
 - **Tipo:** stream/API de archivos AEC (cesión del crédito).
 - **Contenido:** cesiones registradas por cedente, factor cesionario (detección de competidor), fecha, montos.
-- **Consumen:** detección de pérdida por competencia (`cesion_externa`), SOW estimado "mi competencia en este cliente", benchmark de deudores.
+- **Consumen:** detección de pérdida por competencia (`cesion_externa`), SOW estimado "mi competencia en este cliente", benchmark de deudores, y el bloqueo **«cedida a terceros»** de una factura candidata (join por `RUTCedente` + `Folio`).
+- **Hueco de reconciliación — los folios no calzan con A1 (14-09-2026).** Medido sobre el dataset actual: de **1.300 cesiones, sólo 3** referencian un folio que A1 declara para ese mismo cedente, aunque los 258 cedentes de A2 sí son emisores de A1 y los dos rangos de folio se solapan (100.049–119.847 contra 100.002–219.450). Las dos entregas se produjeron con folios independientes. Consecuencia práctica: el bloqueo «cedida a terceros» casi nunca se gatilla, no porque no haya cesiones sino porque **no se pueden atribuir a un documento**. Antes esto no se notaba porque el estado se sorteaba por hash. Se arregla en el generador —las cesiones deben referenciar documentos existentes de su cedente—, no en la aplicación: si el pipeline «resuelve» la discrepancia, vuelve a inventar el dato.
 
 ### A3 · Lista Blanca de deudores ⭐ BATCH SFTP → tabla interna
 - **Tipo:** **archivo diario vía SFTP** (mismo patrón que A10/A11/A16); monta la sección de listas de la tabla interna. Se entrega junto con A4 en un archivo único con columna `LISTA` (BLANCA | AUTORIZADA) — ver `Integraciones/sftp_deudores_listas.csv`.

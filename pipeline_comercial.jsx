@@ -1535,6 +1535,9 @@ function fechasDocumento(f) {
   const em = diaISO(corteDTE(), -atras);
   return { emision: em, vencimiento: f.fchVenc || diaISO(em, plazo) };
 }
+// Antigüedad del documento en días: se MIDE contra su emisión y la fecha de corte del activo. Es lo
+// que decide si una factura entra en la ventana del libro y si es demasiado nueva para publicar.
+const diasDesdeEmision = (f) => Math.max(0, Math.round((corteMs() - Date.parse(fechasDocumento(f).emision + "T00:00:00")) / 86400000));
 const fmtFechaDoc = (iso) => (iso ? new Date(Date.parse(iso + "T00:00:00")).toLocaleDateString("es-CL") : "—");
 // Plazo en días de una fila del activo: la diferencia entre sus dos fechas. El inbound lo fijaba en
 // 45 a mano teniendo `FchVenc` en la misma fila, así que TODAS las facturas vencían a 45 días y el
@@ -2088,27 +2091,80 @@ const PRECIO_POR_CLAVE = (() => {
 // el volumen real fluya, p. ej. 10.000). Cada factura trae sus atributos para clasificarla por reglas;
 // las "buenas" (a crédito, no reclamadas, sin nota de crédito, deudor en lista blanca/autorizados) se
 // acumulan y, al correr el proceso, se AGRUPAN por cedente en oportunidades (donde se calcula CAT/SOW).
+// UNA factura, tal como la declara el activo A1. Es el ÚNICO constructor: el mismo objeto literal
+// estaba escrito en tres sitios y cualquier campo agregado en uno faltaba en los otros — así el
+// inbound descartaba `FchEmis`/`FchVenc` mientras la carga manual de XML sí las leía.
+// TODO sale de la fila: folio, razón social y RUT del deudor, monto, fechas, plazo y el ESTADO del
+// documento (nota de crédito, reclamo). El pipeline no inventa ninguno de esos campos.
+const sectorDeDeudor = (tipo, hist) => (tipo === "Lista Blanca" ? "Buenos Deudores - Lista Blanca"
+  : tipo === "Deudor Autorizado" ? "Buenos Deudores - Autorizados"
+  : hist === "bice" ? "Histórico BICE (último año)"
+  : hist === "otro" ? "Histórico otro factor (último año)" : "Otros deudores");
+function facturaDeDTE(r) {
+  const est = r.EstadoDTE || {};
+  const clasif = clasifInbound(r.RUTEmisor, r.RUTRecep, r.RznSocRecep);
+  return {
+    id: `F-${r.RUTEmisor}-${r.Folio}`, folio: r.Folio, tipo: r.TipoDTEDesc || "Factura electrónica (33)",
+    deudor: r.RznSocRecep, rutRecep: r.RUTRecep, tipoDeudor: tipoDeudor(r.RUTRecep, r.RznSocRecep),
+    inboundBucket: clasif.bucket, histFactoring: clasif.hist,
+    monto: Math.round(+r.MntTotal || 0),
+    fchEmis: r.FchEmis || null, fchVenc: r.FchVenc || null, venc: plazoDTE(r),
+    credito: r.FormaPago === "2" || r.FormaPago === 2,
+    reclamada: est.Reclamado === "1",
+    notaCredito: est.NotaCredito === "1" || est.NotaCredito === 1,
+    folioNotaCredito: est.FolioNotaCredito || null,
+    sinXml: false, enlaceXml: r.EnlaceXml, enlacePdf: r.EnlacePdf,
+  };
+}
+// LIBRO DE VENTAS DEL CLIENTE (activo A1), indexado por RUT del emisor. Es lo que el cliente EMITIÓ:
+// un hecho del SII, no algo que este sistema pueda producir. Antes `candidatasLibro` SINTETIZABA
+// 40–80 facturas por operación —folio, deudor y monto salían de `hashStr`—, así que el pool de
+// «Deudores disponibles» y de «otras facturas de este deudor» mostraba documentos que no existen en
+// ningún archivo, con razones sociales y montos inventados al lado de los reales del inbound.
+// El archivo trae 30.000 facturas de 500 emisores —37 a 85 por cliente, mediana 60, con 23 deudores
+// distintos cada uno—, o sea exactamente un libro de ventas. En producción es
+// `query libroVentas(rutCedente)` sobre los DTE del SII.
+let _libroEmisor = null;
+function libroPorEmisor() {
+  if (_libroEmisor) return _libroEmisor;
+  _libroEmisor = new Map();
+  const dte = (typeof window !== "undefined" && Array.isArray(window.DTESYNC)) ? window.DTESYNC : [];
+  for (const r of dte) {
+    if (!r || !r.RUTEmisor) continue;
+    let a = _libroEmisor.get(r.RUTEmisor); if (!a) { a = []; _libroEmisor.set(r.RUTEmisor, a); }
+    a.push(facturaDeDTE(r));
+  }
+  for (const a of _libroEmisor.values()) a.sort((x, y) => (+y.folio || 0) - (+x.folio || 0));
+  return _libroEmisor;
+}
+// CESIONES ELECTRÓNICAS (activo A2 · AECSync) por (RUT del cedente, folio): un documento ya cedido a
+// otro factoring no se puede comprar. Es un HECHO del archivo y no una propiedad que este sistema
+// pueda decidir — `estadoCandidata` lo sorteaba con un hash.
+let _cedidas = null;
+function foliosCedidos() {
+  if (_cedidas) return _cedidas;
+  _cedidas = new Set();
+  const aec = (typeof window !== "undefined" && Array.isArray(window.AECSYNC)) ? window.AECSYNC : [];
+  for (const c of aec) { if (c && c.RUTCedente && c.Folio) _cedidas.add(c.RUTCedente + "|" + c.Folio); }
+  return _cedidas;
+}
 function streamDesdeDTE(dte) {
   const out = [];
   for (let i = 0; i < dte.length; i++) {
     const r = dte[i]; if (!r || !r.RUTEmisor) continue;
-    const est = r.EstadoDTE || {};
-    const credito = r.FormaPago === "2" || r.FormaPago === 2;       // 2 = crédito
-    const reclamada = est.Reclamado === "1";
-    const notaCredito = est.NotaCredito === "1" || est.NotaCredito === 1;
-    const tDeu = tipoDeudor(r.RUTRecep, r.RznSocRecep);
-    const clasif = clasifInbound(r.RUTEmisor, r.RUTRecep, r.RznSocRecep);
-    const bucket = clasif.bucket;             // CAT1 / CAT4 / OTRO
-    const histFac = clasif.hist;              // "bice" / "otro" / null
+    const fac = facturaDeDTE(r);
+    const credito = fac.credito, reclamada = fac.reclamada, notaCredito = fac.notaCredito;
+    const tDeu = fac.tipoDeudor;
+    const bucket = fac.inboundBucket;         // CAT1 / CAT4 / OTRO
+    const histFac = fac.histFactoring;        // "bice" / "otro" / null
     const sow = SOW_POR_RUT[r.RUTEmisor];
     const esCliente = !!sow || (hashStr(r.RUTEmisor) % 100 < 50);
     const precio = PRECIO_POR_CLAVE[`${r.RUTEmisor}|${tipoLineaDeDeudor(tDeu)}`];
-    const monto = Math.round(+r.MntTotal || 0);
+    const monto = fac.monto;
     const tasaNum = precio ? precio.SpreadPromocionalPct : (1.6 + (hashStr(r.RUTEmisor) % 40) / 100);
-    const fac = { id: `F-${r.RUTEmisor}-${r.Folio}`, folio: r.Folio, tipo: r.TipoDTEDesc || "Factura electrónica (33)", deudor: r.RznSocRecep, tipoDeudor: tDeu, inboundBucket: bucket, histFactoring: histFac, monto, fchEmis: r.FchEmis || null, fchVenc: r.FchVenc || null, venc: plazoDTE(r), reclamada, notaCredito, sinXml: false, enlaceXml: r.EnlaceXml, enlacePdf: r.EnlacePdf, rutRecep: r.RUTRecep };
     out.push({
       id: `DTE-${i}`, tipo: "factura", cedente: r.RznSoc, rutEmisor: r.RUTEmisor, pagador: r.RznSocRecep, deudor: r.RznSocRecep, tipoDeudor: tDeu, inboundBucket: bucket, histFactoring: histFac,
-      sector: tDeu === "Lista Blanca" ? "Buenos Deudores - Lista Blanca" : tDeu === "Deudor Autorizado" ? "Buenos Deudores - Autorizados" : histFac === "bice" ? "Histórico BICE (último año)" : histFac === "otro" ? "Histórico otro factor (último año)" : "Otros deudores",
+      sector: sectorDeDeudor(tDeu, histFac),
       tag: "Factoring", nFacturas: 1, monto: monto, credito, reclamada, notaCredito, buenPagador: tDeu === "Lista Blanca", siiSync: true,
       contactoVerificado: esCliente, diasEmision: 1, esCliente, esProveedor: !esCliente, cliente: esCliente,
       sowTendencia: sow ? sow.SOWTendencia : "Nuevo", sowFlecha: sow ? sow.SOWFlecha : "SOW nuevo",
@@ -2132,7 +2188,7 @@ const OTRO_FOP_POR_CEDENTE = (() => {
     const est = r.EstadoDTE || {};
     if (!(r.FormaPago === "2" || r.FormaPago === 2)) continue;          // sólo crédito
     if (est.Reclamado === "1" || est.NotaCredito === "1" || est.NotaCredito === 1) continue;
-    const fac = { id: `F-${r.RUTEmisor}-${r.Folio}`, folio: r.Folio, tipo: r.TipoDTEDesc || "Factura electrónica (33)", deudor: r.RznSocRecep, tipoDeudor: "Otro", inboundBucket: "OTRO", monto: Math.round(+r.MntTotal || 0), fchEmis: r.FchEmis || null, fchVenc: r.FchVenc || null, venc: plazoDTE(r), reclamada: false, notaCredito: false, sinXml: false, enlaceXml: r.EnlaceXml, enlacePdf: r.EnlacePdf, rutRecep: r.RUTRecep };
+    const fac = facturaDeDTE(r);
     (m[r.RznSoc] = m[r.RznSoc] || []).push(fac);
   }
   // Cap por cedente para no inflar la oportunidad en exceso.
@@ -3506,12 +3562,22 @@ function candidatasDe(deal) {
   }
   return out;
 }
-// Estado de una factura CANDIDATA respecto de si puede incorporarse a la operación (determinista por folio):
-//  · notaAnula  → nota de crédito que ANULA el documento: bloqueada (no se puede agregar).
-//  · notaParcial→ nota de crédito parcial: se puede agregar, pero el monto neto = factura − nota de crédito.
-//  · cedida     → cedida a un tercero antes de esta operación: bloqueada.
-//  · otraOp     → ya es parte de otra operación de Security: bloqueada.
-//  · ok         → disponible para agregar con su monto total.
+// Estado de una factura CANDIDATA: si puede incorporarse a la operación, y por qué no. CADA MOTIVO
+// SALE DE UN ACTIVO — antes los cuatro se sorteaban con `hashStr("estCand" + folio) % 100`, o sea que
+// una factura real del A1 se declaraba «anulada por nota de crédito» o «cedida a terceros» porque su
+// folio caía en un tramo del hash. El archivo lo dice:
+//  · notaCredito → `EstadoDTE.NotaCredito` del A1 (1.487 de 30.000): bloqueada.
+//  · reclamada   → `EstadoDTE.Reclamado` del A1 (2.088 de 30.000): bloqueada. NO se mostraba: el
+//                  reclamo del deudor es justamente lo que impide comprar el documento.
+//  · cedida      → el folio aparece en AECSync (A2) cedido a otro factoring: bloqueada.
+//  · otraOp      → ya es parte de otra operación NUESTRA. Esto sí es estado del pipeline, no del
+//                  archivo, así que entra por parámetro como el veto de la verificación.
+//  · ok          → disponible para agregar con su monto total.
+// NOTA DE CRÉDITO PARCIAL: el layout del A1 trae `NotaCredito` y `FolioNotaCredito` pero NO el monto,
+// así que no se puede saber cuánto rebaja. Antes se inventaba («20% a 49% del monto») y la factura se
+// agregaba por esa diferencia: una cifra sin origen entrando al monto a girar. Mientras el activo no
+// declare `MntNotaCredito`, un documento con nota de crédito no se compra — que es la lectura
+// conservadora y la única defendible.
 // ¿El deudor rechazó esta factura en la verificación de ESTA operación? Si la rechazó, no vuelve a
 // entrar: es el resultado de una llamada telefónica, no una preferencia que el ejecutivo pueda
 // revertir agregándola de nuevo.
@@ -3525,20 +3591,17 @@ function noConfirmada(deal, f, vetadas) {
 }
 function estadoCandidata(f, deal, estado) {
   const monto = f.monto || 0;
+  const R = (clave, label, detalle) => ({ clave, bloqueada: true, agregable: false, label, detalle, tono: "red", montoNeto: monto, ncMonto: 0 });
   // El veto de la verificación manda sobre cualquier otro estado de la candidata.
-  if (noConfirmada(deal, f, estado && estado.vetadas)) return { clave: "noConfirmada", bloqueada: true, agregable: false, label: "El deudor no la confirmó", tono: "red", montoNeto: monto, ncMonto: 0 };
-  const h = Math.abs(hashStr("estCand" + ((deal && deal.id) || "") + "|" + (f.folio || f.id || "")));
-  const b = h % 100;
-  if (f.notaCredito === true || b < 7)
-    return { clave: "notaAnula", bloqueada: true, agregable: false, label: "Anulada por NC", tono: "red", montoNeto: 0, ncMonto: monto };
-  if (b < 15) {
-    const nc = +(monto * (0.2 + (h % 30) / 100)).toFixed(1); // NC parcial: 20%–49% del monto
-    return { clave: "notaParcial", bloqueada: false, agregable: true, label: "NC parcial", tono: "amber", ncMonto: nc, montoNeto: +Math.max(0, monto - nc).toFixed(1) };
-  }
-  if (f.cedida === true || (b >= 15 && b < 22))
-    return { clave: "cedida", bloqueada: true, agregable: false, label: "Cedida a terceros", tono: "red", montoNeto: monto, ncMonto: 0 };
-  if (b >= 22 && b < 29)
-    return { clave: "otraOp", bloqueada: true, agregable: false, label: "En otra operación", tono: "red", montoNeto: monto, ncMonto: 0 };
+  if (noConfirmada(deal, f, estado && estado.vetadas)) return R("noConfirmada", "El deudor no la confirmó");
+  if (f.notaCredito === true) return R("notaCredito", "Nota de crédito", f.folioNotaCredito ? `Nota de crédito folio ${f.folioNotaCredito}. El feed no informa su monto, así que el documento no se puede comprar por una diferencia.` : "El documento tiene una nota de crédito asociada.");
+  if (f.reclamada === true) return R("reclamada", "Reclamada por el deudor", "El deudor reclamó el documento ante el SII: no es cedible.");
+  if (f.cedida === true || (deal && deal.rutEmisor && f.folio && foliosCedidos().has(deal.rutEmisor + "|" + f.folio))) return R("cedida", "Cedida a terceros", "AECSync registra la cesión de este folio a otro factoring.");
+  // ¿Otra operación NUESTRA ya tomó este folio? Único motivo que no sale de un activo: es estado del
+  // pipeline, así que entra por parámetro y cae al registro del módulo sólo por comodidad.
+  const tomados = (estado && estado.enOtraOp) || (typeof FOLIOS_EN_OPERACION !== "undefined" ? FOLIOS_EN_OPERACION[(deal && deal.rutEmisor) || ""] : null) || null;
+  const dueno = tomados && f.folio ? tomados[String(f.folio)] : null;
+  if (dueno && dueno !== ((deal && deal.id) || "")) return R("otraOp", "En otra operación", `El documento ya está comprometido en la operación ${dueno}.`);
   return { clave: "ok", bloqueada: false, agregable: true, label: null, montoNeto: monto, ncMonto: 0 };
 }
 // Libro de ventas del cliente en la ventana de `CFG.ventanaLibroDias`: las facturas candidatas (aún no incluidas en la
@@ -3546,57 +3609,29 @@ function estadoCandidata(f, deal, estado) {
 // más alto se ancla sobre las facturas ya en oferta; las emisiones se reparten a lo largo de la ventana.
 // Determinista por operación. El listado se pagina (lote óptimo) para no renderizar todo el libro de una vez.
 function candidatasLibro(deal, enOferta) {
-  const reales = candidatasDe(deal); // candidatas reales (Otro / nuevas / retiradas) — conservan su folio
-  // Se conserva el RUT junto al nombre: sin el, el motor de asignacion no puede calzar la factura
-  // con la linea del par cliente-deudor (que se identifica por RUT) y toda factura del libro caeria
-  // a la linea de otros deudores por construccion.
-  const rutPorNombre = {}; deudoresDeDeal(deal).forEach((d) => { if (d.nombre && d.rut) rutPorNombre[d.nombre] = d.rut; });
-  const deudores = (deal.deudores && deal.deudores.length ? deal.deudores.map((d) => d.name) : [deal.deudor]).filter(Boolean);
-  const pool = deudores.length ? deudores : ["Deudor"];
-  const ventana = pol("ventanaLibroDias", 60);
-  const N = 40 + (Math.abs(hashStr("libro" + (deal.id || ""))) % 41); // 40–80 facturas en la ventana
-  // EL LIBRO NO PUEDE DEPENDER DE LA OFERTA. El folio más alto se anclaba sobre las facturas ya
-  // incluidas (`Math.max(...enOferta, ...reales)`), y de ese folio cuelga TODO: el folio de cada
-  // documento, y del folio salen por hash su DEUDOR y su MONTO. O sea que incorporar una factura
-  // corría el ancla y **re-sorteaba el libro entero**: el mismo deudor mostraba dos facturas antes de
-  // agregar y siete después, con folios y montos que no existían un segundo antes. Un libro de ventas
-  // es lo que el cliente emitió; no cambia porque nosotros elijamos qué comprarle.
-  // Ahora el ancla sale SÓLO de la identidad de la operación, que es lo único inmutable acá: cualquier
-  // dato del negocio que se pueda editar reintroduce el defecto. Se pierde que el folio más nuevo
-  // quede sobre lo ya en oferta —realismo que costaba la estabilidad del pool— y los choques con los
-  // folios reales los sigue saltando `usados`.
-  const topFolio = 100000 + (Math.abs(hashStr("libroBase" + (deal.id || ""))) % 900000) + N + 6;
-  // Clasificación del deudor tal como YA la trae este negocio: el libro sintetiza facturas de los
-  // mismos deudores, así que tienen que clasificar igual. Sin esto el objeto no llevaba `tipoDeudor`,
-  // `tipoDeudorDisp` caía a "Otro" y el motor le negaba la LF1 a deudores Lista Blanca.
-  const clasePorDeudor = {};
-  [...(enOferta || []), ...(deal.facturasOp || []), ...(reales || [])].forEach((f) => {
-    if (f && f.deudor && f.tipoDeudor && !clasePorDeudor[f.deudor]) clasePorDeudor[f.deudor] = { tipoDeudor: f.tipoDeudor, histFactoring: f.histFactoring || null };
-  });
-  const claseDe = (dn) => clasePorDeudor[dn] || { tipoDeudor: tipoDeudor(rutPorNombre[dn] || null, dn), histFactoring: null };
-  // Folios que NO puede volver a emitir el libro: los de las candidatas reales (que lo integran con su
-  // folio propio) y los de las facturas YA INCLUIDAS en la oferta. Para eso sirve `enOferta` — no para
-  // anclar el pool, que era el defecto: con el ancla estable, el libro volvería a generar la misma
-  // factura que el ejecutivo acaba de incorporar y el documento aparecería dos veces en la pantalla,
-  // una en la oferta y otra en «otras facturas de este deudor».
+  // EL LIBRO SALE DEL ARCHIVO. Antes esta función SINTETIZABA el libro entero: 40–80 facturas cuyo
+  // folio salía de `hashStr(deal.id)` y de cuyo folio colgaban, otra vez por hash, el DEUDOR y el
+  // MONTO. O sea que «Deudores disponibles» y «otras facturas de este deudor» mostraban documentos
+  // que no existen en ningún activo, con razones sociales y montos inventados, al lado de las
+  // facturas reales que el inbound sí leyó del A1 — y bastaba que cambiara el ancla para que el
+  // libro completo se re-sorteara.
+  // Un libro de ventas es lo que el cliente EMITIÓ: un hecho del SII. No es algo que este sistema
+  // pueda producir, y mientras lo produjera, ninguna cifra de esa pantalla era auditable.
+  const reales = candidatasDe(deal); // candidatas de la operación (Otro / retiradas) — conservan su folio
+  // Folios que el libro NO debe volver a ofrecer: los que ya están en la oferta o entran por otro
+  // camino. Sin esto el mismo documento aparecería dos veces, una en la oferta y otra acá abajo.
   const usados = new Set([...(reales || []), ...(enOferta || []), ...(deal.facturasOp || [])].map((f) => +f.folio).filter((x) => x));
+  // La ventana del libro es política del tenant (Configuración): cuántos días hacia atrás se ofrecen.
+  // Ahora FILTRA el archivo en vez de dimensionar un generador.
+  const ventana = pol("ventanaLibroDias", 60);
   const out = [];
-  for (let i = 0; i < N; i++) {
-    const folio = topFolio - i; // contiguo descendente, sin saltos
-    if (usados.has(folio)) continue;
-    const h = Math.abs(hashStr((deal.id || "") + "lib" + folio));
-    const deudor = pool[h % pool.length];
-    const monto = Math.round((0.8 + (h % 900) / 100) * 1e6); // $800.000 a $9.790.000
-    const diasEmision = Math.round((i / Math.max(1, N - 1)) * ventana); // 0 (más nueva) .. ventana (más antigua)
-    // Las fechas se ESTAMPAN acá, una vez, ancladas en la fecha de corte del activo. Antes el
-    // documento salía sin fechas y cada pantalla las inventaba con `Date.now()`: un documento del
-    // libro cambiaba de fecha cada día que alguien abría la operación.
-    const plazoD = diasPagoDeudor(deudor);
-    const fchEmis = diaISO(corteDTE(), -diasEmision);
-    out.push({ id: `LIB-${deal.id}-${folio}`, folio, tipo: "Factura electrónica (33)", deudor, rutRecep: rutPorNombre[deudor] || "", ...claseDe(deudor), monto, fchEmis, fchVenc: diaISO(fchEmis, plazoD), venc: diasPagoDeudor(deudor), candidata: true, otro: (h % 5 === 0), diasEmision });
+  for (const f of (libroPorEmisor().get(deal.rutEmisor) || [])) {
+    if (usados.has(+f.folio)) continue;
+    const dias = diasDesdeEmision(f);
+    if (dias > ventana) continue;
+    out.push({ ...f, candidata: true, otro: f.tipoDeudor === "Otro", diasEmision: dias });
   }
-  // Las candidatas reales (Otro/retiradas) se integran al libro conservando su folio.
-  for (const f of reales) out.push({ ...f, diasEmision: f.diasEmision != null ? f.diasEmision : ventana });
+  for (const f of reales) out.push({ ...f, diasEmision: f.diasEmision != null ? f.diasEmision : diasDesdeEmision(f) });
   return out.sort((a, b) => (b.folio || 0) - (a.folio || 0));
 }
 // Email de cierre SIMULADO como página STANDALONE (se abre en pestaña nueva vía blob URL, igual que el
@@ -6592,10 +6627,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [pubAccion, setPubAccion] = useState("nueva"); // "nueva" (abrir otra oportunidad) | "descartar"
   const [pubEspera, setPubEspera] = useState(7); // días de espera antes de reabrir (si se descartan)
   // Días de emisión de una factura candidata (si no viene, se deriva determinísticamente).
-  // Antigüedad del documento en días: se MIDE contra su fecha de emisión y la del corte del activo.
-  // Tenía su propio sorteo por id (`hashStr(id + "emi") % 20`), o sea una TERCERA fórmula de fecha: la
-  // misma factura podía figurar emitida hace 4 días acá y hace 12 en la tabla de al lado.
-  const diasEmiCand = (f) => Math.max(0, Math.round((Date.parse(corteDTE() + "T00:00:00") - Date.parse(fechasDocumento(f).emision + "T00:00:00")) / 86400000));
+  // Antigüedad del documento: la MIDE `diasDesdeEmision` contra la emisión y el corte del activo.
+  // Tenía su propio sorteo por id (`hashStr(id + "emi") % 20`), o sea una TERCERA fórmula de fecha.
+  const diasEmiCand = (f) => (f.diasEmision != null ? +f.diasEmision : diasDesdeEmision(f));
   // Al publicar: si quedan facturas descartadas (candidatas no incorporadas) con < 8 días, se pregunta al ejecutivo.
   // Publicar la oferta: sólo disponible cuando la oferta está CERRADA. El descarte de facturas fuera del
   // paquete ya se resolvió al cerrar, por lo que aquí se publica directamente.
@@ -7287,7 +7321,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               <span></span><span>Tipo doc.</span><span>Folio</span><span>Razón social</span><span className="text-right">Nota</span><span>F. emisión</span><span>F. vencim.</span><span className="text-right">Tasa</span><span className="text-right">Monto</span><span>Estado</span><span>Acción</span>
                             </div>
                           );
-                          const SHORT_EST = { notaAnula: "Anulada", cedida: "Cedida", otraOp: "Otra op.", notaParcial: "NC parcial" };
+                          const SHORT_EST = { notaCredito: "Nota de créd.", reclamada: "Reclamada", cedida: "Cedida", otraOp: "Otra op.", noConfirmada: "No confirmada" };
                           const filaOtra = (f) => {
                             const nota = notaDeudor(f.deudor, f.rutRecep) || 0; const sc = { tipo: tipoDeudorDisp(f), score: Math.round(20 + (nota - 1) / 4 * 79) };
                             const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
@@ -7302,18 +7336,16 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             const ok = xmlOk[f.id] !== false;
                             const est = f.candidata ? estadoCandidata(f, deal) : { clave: "ok", bloqueada: false, agregable: true, montoNeto: f.monto, ncMonto: 0 };
                             const bloq = f.candidata && est.bloqueada;
-                            const agregarF = () => { onIncorporarFacturas(deal.id, [est.clave === "notaParcial" ? { ...f, monto: est.montoNeto, _ncAplicada: est.ncMonto } : f]); setReevalPend(true); };
-                            const parcial = f.candidata && est.clave === "notaParcial";
-                            const anulMonto = f.candidata && est.clave === "notaAnula";
+                            const agregarF = () => { onIncorporarFacturas(deal.id, [f]); setReevalPend(true); };
+                            const anulMonto = f.candidata && est.clave === "notaCredito";
                             // Columna ESTADO (eventos del documento): XML de las ya incluidas · bloqueo/NC de las candidatas.
                             let estadoNode;
                             if (!f.candidata) estadoNode = <button onClick={() => setXmlOk((m) => ({ ...m, [f.id]: !ok }))} title={ok ? "Con XML" : "Sin XML"} disabled={!!f.excl || bloqueado} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold disabled:opacity-60" style={{ backgroundColor: ok ? C.greenBg : "#fef2f2", color: ok ? C.green : C.red, border: `1px solid ${ok ? "#bbf7d0" : "#fecaca"}` }}>{ok ? <Check size={10} /> : <X size={10} />} XML</button>;
                             else if (bloq) estadoNode = <span title={`${est.label} · no se puede agregar`} className="justify-self-start inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red, border: "1px solid #fecaca", cursor: "help" }}>🔒 {SHORT_EST[est.clave]}</span>;
-                            else if (parcial) estadoNode = <span title={`Nota de crédito parcial · monto neto ${fmtMM(est.montoNeto)}`} className="justify-self-start inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#FFF7ED", color: "#C2410C", border: "1px solid #FED7AA", cursor: "help" }}>NC parcial</span>;
                             else estadoNode = <span className="t9" style={{ color: C.faint }}>—</span>;
                             // Columna ACCIÓN: el botón "Agregar" está SIEMPRE presente en candidatas (habilitado o no).
                             const accionNode = f.candidata
-                              ? <button onClick={agregarF} disabled={bloq || bloqueado} title={bloq ? `${est.label} · no se puede agregar` : parcial ? `Se agregará por el monto neto (${fmtMM(est.montoNeto)} = factura − nota de crédito)` : "Agregar a la operación"} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold disabled:opacity-40 disabled:cursor-not-allowed" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button>
+                              ? <button onClick={agregarF} disabled={bloq || bloqueado} title={bloq ? `${est.label}${est.detalle ? " · " + est.detalle : " · no se puede agregar"}` : "Agregar a la operación"} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold disabled:opacity-40 disabled:cursor-not-allowed" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button>
                               : <span className="justify-self-start inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#F3F4F6", color: C.faint }}>En oferta</span>;
                             return (
                               <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: GC_OTRAS, borderBottom: `1px solid ${C.line}`, opacity: (f.excl || bloq) ? 0.55 : 1 }}>
@@ -7325,7 +7357,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 <span className="t9" style={{ color: C.faint }}>{em}</span>
                                 <span className="t9" style={{ color: C.faint }}>{venc}</span>
                                 <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
-                                <span className="text-right font-medium" title={parcial ? `Factura ${fmtMM(f.monto)} − NC ${fmtMM(est.ncMonto)} = ${fmtMM(est.montoNeto)}` : (f.excl ? `Excluida: ${f.excl}` : anulMonto ? "Documento anulado por nota de crédito" : undefined)} style={{ color: parcial ? "#C2410C" : C.ink, textDecoration: (f.excl || anulMonto) ? "line-through" : "none" }}>{fmtMM(parcial ? est.montoNeto : f.monto)}</span>
+                                <span className="text-right font-medium" title={f.excl ? `Excluida: ${f.excl}` : anulMonto ? est.detalle : undefined} style={{ color: C.ink, textDecoration: (f.excl || anulMonto) ? "line-through" : "none" }}>{fmtMM(f.monto)}</span>
                                 {estadoNode}
                                 {accionNode}
                               </div>
@@ -7340,7 +7372,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 {factTab === "candidatas" && cands.some((f) => !f.otro && estadoCandidata(f, deal).agregable) && !bloqueado && (
                                   // "Agregar todas" sólo incluye las candidatas elegibles: excluye "Otros deudores"
                                   // (f.otro, se agregan una a una) y las bloqueadas (anuladas/cedidas/en otra operación).
-                                  <button onClick={() => { const eleg = cands.filter((f) => !f.otro && estadoCandidata(f, deal).agregable).map((f) => { const e = estadoCandidata(f, deal); return e.clave === "notaParcial" ? { ...f, monto: e.montoNeto, _ncAplicada: e.ncMonto } : f; }); onIncorporarFacturas(deal.id, eleg); setReevalPend(true); }} className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md px-2 py-1 t9 font-medium" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar todas las elegibles</button>
+                                  <button onClick={() => { const eleg = cands.filter((f) => !f.otro && estadoCandidata(f, deal).agregable); onIncorporarFacturas(deal.id, eleg); setReevalPend(true); }} className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md px-2 py-1 t9 font-medium" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar todas las elegibles</button>
                                 )}
                               </div>
                               <div className="mt-1.5 flex items-center gap-1.5 rounded-full px-2 py-1" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
@@ -7441,7 +7473,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             const e = estadoCandidata(f, deal);
                             if (!e.agregable) { bloqueadas++; continue; }
                             facturas++;
-                            monto += e.clave === "notaParcial" ? e.montoNeto : (f.monto || 0);
+                            monto += f.monto || 0;
                           }
                           return { monto: Math.round(monto), facturas, bloqueadas };
                         };
@@ -7645,8 +7677,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           const fd = fechasDocumento(f);
                           const em = fmtFechaDoc(fd.emision); const venc = fmtFechaDoc(fd.vencimiento);
                           const tasaF = ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + CFG_ACTIVA.costoFondo).toFixed(2);
-                          const est = estadoCandidata(f, deal); const bloq = est.bloqueada; const parcial = est.clave === "notaParcial";
-                          const agregar = () => { onIncorporarFacturas(deal.id, [parcial ? { ...f, monto: est.montoNeto, _ncAplicada: est.ncMonto } : f]); setReevalPend(true); };
+                          const est = estadoCandidata(f, deal); const bloq = est.bloqueada;
+                          const agregar = () => { onIncorporarFacturas(deal.id, [f]); setReevalPend(true); };
                           return (
                             <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: GC_O, borderBottom: `1px solid ${C.line}`, opacity: bloq ? 0.55 : 1 }}>
                               <span className="font-medium" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>#{f.folio}</span>
@@ -7654,13 +7686,13 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               <span className="t9" style={{ color: C.faint }}>{em}</span>
                               <span className="t9" style={{ color: C.faint }}>{venc}</span>
                               <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
-                              <span className="text-right font-medium" title={parcial ? `Factura ${fmtMM(f.monto)} − NC ${fmtMM(est.ncMonto)} = ${fmtMM(est.montoNeto)}` : undefined} style={{ color: parcial ? "#C2410C" : C.ink }}>{fmtMM(parcial ? est.montoNeto : f.monto)}</span>
+                              <span className="text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.monto)}</span>
                               {/* ¿Entra en la línea si la agrego? Se compara su monto contra la holgura que le
                                   queda HOY al deudor: es la pregunta que uno se hace mirando la fila, y no
                                   depende de qué otras facturas se agreguen junto con ella. */}
                               {(() => {
                                 const ldF = lineaDeudor[f.deudor];
-                                const m = parcial ? est.montoNeto : (f.monto || 0);
+                                const m = f.monto || 0;
                                 if (bloq) return <span className="truncate t9 font-semibold" style={{ color: "#EF4444" }} title={`${est.label} · no se puede agregar`}>{est.label}</span>;
                                 if (!ldF || ldF.neta == null) return <span className="t9" style={{ color: C.faint }}>Por evaluar</span>;
                                 const cabe = m <= ldF.neta;
@@ -7668,7 +7700,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   title={cabe ? `Cabe en la línea que le queda al deudor (${fmtMM(ldF.neta)}).` : `Excede en ${fmtMM(+(m - ldF.neta).toFixed(1))} la línea que le queda al deudor (${fmtMM(ldF.neta)}): agregarla manda esa parte a comité.`}>
                                   {cabe ? "Se puede cursar" : "Requiere comité"}</span>;
                               })()}
-                              <button onClick={agregar} disabled={bloqueado || bloq} title={bloq ? `${est.label} · no se puede agregar` : parcial ? `Se agregará por el monto neto (${fmtMM(est.montoNeto)})` : "Agregar a la simulación"} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold disabled:opacity-40 disabled:cursor-not-allowed" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button>
+                              <button onClick={agregar} disabled={bloqueado || bloq} title={bloq ? `${est.label}${est.detalle ? " · " + est.detalle : " · no se puede agregar"}` : "Agregar a la simulación"} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold disabled:opacity-40 disabled:cursor-not-allowed" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button>
                             </div>
                           );
                         };
@@ -7867,7 +7899,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         // disponible—, porque la elección DEFINE la oferta completa, no suma a lo que haya.
                         const opcionesInicio = (() => {
                           if (deal.simulado) return [];
-                          const norm = (f) => { const e = estadoCandidata(f, deal); return e.clave === "notaParcial" ? { ...f, monto: e.montoNeto, _ncAplicada: e.ncMonto } : f; };
+                          const norm = (f) => f;
                           const vistos = new Set(); const pool = [];
                           validas.forEach((f) => { if (f && f.id != null && !vistos.has(f.id)) { vistos.add(f.id); pool.push(f); } });
                           Object.keys(grpOt).forEach((dn) => (grpOt[dn] || []).forEach((f) => {
@@ -8125,7 +8157,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   const esPrime = (f) => { const td = tipoDeudorDisp(f); return td === "Lista Blanca" || td === "Deudor Autorizado"; };
                                   // El monto se cuenta NETO de nota de crédito, que es como entra a la oferta:
                                   // con el bruto el menú prometía una cifra y sumaba otra.
-                                  const netoDe = (f) => { const e = estadoCandidata(f, deal); return e.clave === "notaParcial" ? e.montoNeto : (f.monto || 0); };
+                                  const netoDe = (f) => (f.monto || 0);
                                   // El deudor se clasifica con la MISMA factura que usa el chip ★ Prime del
                                   // acordeón (la primera del grupo): si el chip dice Prime, el botón tiene que
                                   // verlo. No se filtra por `f.otro` —ese flag se asigna al azar por factura y
@@ -8157,7 +8189,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   const nFacTodas = paquetes.reduce((s2, pq) => s2 + pq.facturas.length, 0);
                                   // La normalización por nota de crédito se aplica UNA vez: si se aplicara de nuevo
                                   // sobre una factura ya neteada, le volvería a restar la NC.
-                                  const normalizar = (f) => { const e = estadoCandidata(f, deal); return e.clave === "notaParcial" ? { ...f, monto: e.montoNeto, _ncAplicada: e.ncMonto } : f; };
+                                  const normalizar = (f) => f;
                                   const sumarNorm = (fsNorm) => { onIncorporarFacturas(deal.id, fsNorm); setReevalPend(true); setPrimeMenu(false); };
                                   const sumar = (fs) => sumarNorm(fs.map(normalizar));
                                   // Cuáles de las Prime entran en línea: se simula la oferta MÁS todas las Prime y
@@ -9566,29 +9598,30 @@ const rutDe = (s) => {
 };
 // Libro de ventas del cliente para el alta manual. Determinista por cliente: el mismo cliente muestra
 // siempre las mismas facturas. SERVER-SIDE: es `query libroVentas(rutCedente)` sobre los DTE del SII.
-function genFacturasCliente(cliente) {
-  const kc = "libro|" + String(cliente || "");
-  const n = rndDetInt(kc, 6, 13);
-  const pesoTotal = BUENOS_PAGADORES.reduce((s, p) => s + p.share, 0);
+// El libro de ventas del cliente para el alta manual, EN LA FORMA DEL ASISTENTE (`montoCLP`, `emis`,
+// `venc` como Date). Sale del activo A1 igual que todo lo demás: antes lo SINTETIZABA —6 a 13
+// facturas con folio, deudor y monto por `rndDet`, y la emisión anclada en `Date.now()`, así que el
+// libro del mismo cliente se corría un día cada día—. En producción es la misma consulta:
+// `query libroVentas(rutCedente)` sobre los DTE del SII.
+// El parámetro es el RUT porque es la identidad del cliente en el activo; la razón social también
+// viene del archivo y por eso no se pasa.
+function facturasDelLibro(rutEmisor, excluir) {
+  const fuera = excluir instanceof Set ? excluir : new Set();
   const out = [];
-  for (let i = 0; i < n; i++) {
-    const k = `${kc}|${i}`;
-    let r = rndDet("pag" + k) * pesoTotal, pag = BUENOS_PAGADORES[0];
-    for (const p of BUENOS_PAGADORES) { if ((r -= p.share) <= 0) { pag = p; break; } }
-    const dias = diasPagoDeudor(pag.name);
-    const emis = new Date(corteMs() - rndDetInt("em" + k, 5, 44) * 86400000);
-    const venc = new Date(emis.getTime() + dias * 86400000);
+  for (const f of (libroPorEmisor().get(rutEmisor) || [])) {
+    if (fuera.has(+f.folio)) continue;
+    const fd = fechasDocumento(f);
+    const venc = new Date(Date.parse(fd.vencimiento + "T00:00:00"));
     out.push({
-      id: `F${hashStr(kc) % 100000}-${i}`, folio: 10000000 + rndDetInt("fo" + k, 0, 8999998),
-      tipo: rndDetBool("ti" + k, 0.7) ? "Factura Electrónica Afecta" : "Factura Electrónica Exenta",
-      deudor: pag.name, sector: pag.sector, rutDeudor: rutDe(pag.name),
-      emis: fmtFecha(emis), venc, vencStr: fmtFecha(venc),
-      diasVenc: Math.round((venc - corteMs()) / 86400000),
-      montoCLP: rndDetInt("m1" + k, 1, 40) * 500000 + rndDetInt("m2" + k, 0, 499999),
+      id: f.id, folio: f.folio, tipo: f.tipo, deudor: f.deudor, rutDeudor: f.rutRecep,
+      sector: sectorDeDeudor(f.tipoDeudor, f.histFactoring), emis: fmtFecha(new Date(Date.parse(fd.emision + "T00:00:00"))),
+      venc, vencStr: fmtFecha(venc), diasVenc: Math.round((venc - corteMs()) / 86400000),
+      montoCLP: f.monto, tipoDeudor: f.tipoDeudor, notaCredito: f.notaCredito, reclamada: f.reclamada, credito: f.credito,
     });
   }
   return out;
 }
+function genFacturasCliente(rutEmisor) { return facturasDelLibro(rutEmisor); }
 function WizPaso({ n, title }) {
   return (
     <div>
@@ -9598,27 +9631,15 @@ function WizPaso({ n, title }) {
   );
 }
 // Genera las facturas NUEVAS de un deal (a incorporar, ya marcadas) + algunas extra sin marcar.
+// Las facturas que se pueden INCORPORAR a una oportunidad son las del libro del cliente que la
+// operación todavía no tiene. Antes se generaban: `deal.nuevasFacturas` documentos repartiendo un
+// monto objetivo, más cuatro «extra» inventados. Ninguno existía en ningún activo.
 function genFacturasIncorporar(deal) {
-  const n = Math.max(1, deal.nuevasFacturas || 1);
-  const totalCLP = Math.round(deal.nuevasFacturasMonto || 0);
-  const dias = diasPagoDeudor(deal.deudor);
-  const facturas = [], sel = {};
-  const kd = "inc|" + String(deal.id);
-  for (let i = 0; i < n; i++) {
-    const k = `${kd}|N${i}`;
-    const emis = new Date(corteMs() - rndDetInt("em" + k, 3, 22) * 86400000);
-    const venc = new Date(emis.getTime() + dias * 86400000);
-    const monto = i === n - 1 ? totalCLP - facturas.reduce((s, f) => s + f.montoCLP, 0) : Math.round(totalCLP / n * rndDetEntre("mo" + k, 0.7, 1.3));
-    facturas.push({ id: `FN-${deal.id}-${i}`, folio: 10000000 + rndDetInt("fo" + k, 0, 8999998), tipo: "Factura Electrónica Afecta", deudor: deal.deudor, sector: (deal.sector || "").replace("Buenos Deudores - ", ""), rutDeudor: rutDe(deal.deudor), emis: fmtFecha(emis), venc, vencStr: fmtFecha(venc), diasVenc: Math.round((venc - corteMs()) / 86400000), montoCLP: Math.max(100000, monto), nueva: true });
-    sel[facturas[i].id] = true;
-  }
-  // Extra disponibles (sin marcar) para que el ejecutivo pueda agregar más.
-  for (let i = 0; i < 4; i++) {
-    const k = `${kd}|X${i}`;
-    const emis = new Date(corteMs() - rndDetInt("em" + k, 5, 34) * 86400000);
-    const venc = new Date(emis.getTime() + dias * 86400000);
-    facturas.push({ id: `FX-${deal.id}-${i}`, folio: 10000000 + rndDetInt("fo" + k, 0, 8999998), tipo: rndDetBool("ti" + k, 0.7) ? "Factura Electrónica Afecta" : "Factura Electrónica Exenta", deudor: deal.deudor, sector: (deal.sector || "").replace("Buenos Deudores - ", ""), rutDeudor: rutDe(deal.deudor), emis: fmtFecha(emis), venc, vencStr: fmtFecha(venc), diasVenc: Math.round((venc - corteMs()) / 86400000), montoCLP: rndDetInt("m" + k, 1, 30) * 500000 });
-  }
+  const yaEn = new Set([...(deal.facturasOp || []), ...(deal.facturasDisponibles || [])].map((f) => +f.folio).filter((x) => x));
+  const facturas = facturasDelLibro(deal.rutEmisor, yaEn);
+  // Vienen marcadas las del deudor de la oportunidad: es lo que el ejecutivo venía a agregar.
+  const sel = {};
+  facturas.forEach((f) => { if (f.deudor === deal.deudor) sel[f.id] = true; });
   return { facturas, sel };
 }
 // ── Carga manual de facturas al carrito: XML (DTE) y selección masiva (folios pegados desde Excel, o
@@ -9805,7 +9826,7 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
     const vMax = seleccionadas.map((f) => f.venc).sort((a, b) => a - b).slice(-1)[0];
     const dias = Math.max(...seleccionadas.map((f) => diasPagoDeudor(f.deudor)));
     onConfirm({
-      id: `OP-N${Date.now() % 100000}`, stage: "oferta", tag: "Factoring",
+      id: `OP-N${Date.now() % 100000}`, stage: "oferta", tag: "Factoring", rutEmisor: rutCli,
       facturas: seleccionadas.length, monto: +fin.financiado.toFixed(1),
       cliente, deudor, deudores, sector: "Buenos Deudores - " + sector, esCliente: true,
       tasa: tasa.toFixed(2) + "%", anticipo: "100%",
@@ -9886,7 +9907,7 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
               ); })()}
               <div className="mt-4 flex items-center justify-between">
                 <button onClick={() => setStep(1)} className="flex items-center gap-1 t12 font-medium" style={{ color: C.sub }}><ChevronLeft size={14} /> Volver</button>
-                <button disabled={!cliente || !!abierta} title={abierta ? "El cliente ya tiene una oportunidad abierta: tómala y modifícala en vez de crear un negocio nuevo." : undefined} onClick={() => { setFacturas(genFacturasCliente(cliente)); setSel({}); setStep(3); }}
+                <button disabled={!cliente || !!abierta} title={abierta ? "El cliente ya tiene una oportunidad abierta: tómala y modifícala en vez de crear un negocio nuevo." : undefined} onClick={() => { setFacturas(genFacturasCliente(rutCli)); setSel({}); setStep(3); }}
                   className="rounded-lg px-5 py-2 t13 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.indigo }}>Continuar</button>
               </div>
             </div>
@@ -11867,6 +11888,12 @@ let SOLICITUD_EXC = repoSolicitudExc.all(); // { [dealId]: { [stKey]: { comentar
 let VERIF_EXC = repoVerifExc.all();
 let VERIF_TEL = repoVerifTel.all();          // { [dealId]: { [facturaId]: { por, fecha } } }
 let NO_CONFIRMADAS = repoNoConfirmadas.all(); // { [dealId]: { [facturaId]: { folio, monto, deudor, por, fecha } } }
+// Folios YA COMPROMETIDOS en una operación, por cliente: { [rutEmisor]: { [folio]: dealId } }. Es lo
+// único de `estadoCandidata` que NO sale de un activo, porque no es un hecho del SII sino de este
+// sistema: qué documento tomó ya otra operación nuestra. Antes también se sorteaba por hash, así que
+// una factura figuraba «en otra operación» sin que ninguna operación la tuviera. Lo mantiene al día
+// un efecto de `PipelineComercial`; en producción es un índice del servidor.
+let FOLIOS_EN_OPERACION = {};
 let VERIF_VEREDICTO = repoVerifVeredicto.all(); // { [dealId]: { [rutOdeudor]: { est, motivo, razon, causas, por, fecha } } }
 // Reapunta los alias a la tabla del tenant activo. Se llama al cambiar de tenant; con un solo tenant
 // (Security) hoy no se ejecuta, pero deja explícito qué hay que hacer cuando entre el segundo factoring.
@@ -15184,32 +15211,6 @@ function PCsow({ clientes = [] }) {
         </div>
         <div className="mt-2 flex gap-4 t11" style={{ color: C.sub }}>{Object.keys(PC_ZONA).map((z) => <span key={z} className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: zonaCols[z] }} />{z}</span>)}</div>
         <PClineas series={PC_ZONA} cols={zonaCols} modo={modo} />
-      </div>
-    </div>
-  );
-}
-// --- Sección DESEMPEÑO: carteras por ejecutivo ---
-function PCdesempeno({ execs }) {
-  return (
-    <div className="rounded-2xl p-5" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-      <div className="t15 font-bold" style={{ color: C.ink }}>Resumen por ejecutivo</div>
-      <div className="t11" style={{ color: C.faint }}>Cartera por ejecutivo, jefatura y zona geográfica</div>
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        {execs.map((e) => (
-          <div key={e.ini} className="rounded-xl p-3.5" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-            <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg t11 font-bold text-white" style={{ backgroundColor: "#703EFF" }}>{e.ini}</span>
-              <div><div className="t12 font-bold" style={{ color: C.ink }}>{e.nombre}</div><div className="t9" style={{ color: C.faint }}>{e.zona} · {e.jefatura}</div></div>
-            </div>
-            <div className="mt-3 space-y-1.5 t11">
-              <div className="flex items-center justify-between"><span style={{ color: C.sub }}>Clientes</span><b style={{ color: C.ink }}>{e.clientes}</b></div>
-              <div className="flex items-center justify-between"><span style={{ color: C.sub }}>Activos Security</span><b style={{ color: C.ink }}>{e.activos}</b></div>
-              <div className="flex items-center justify-between"><span style={{ color: C.sub }}>En fuga</span><b style={{ color: "#EF4444" }}>{e.fuga}</b></div>
-              <div className="flex items-center justify-between"><span style={{ color: C.sub }}>Brecha wallet</span><b style={{ color: C.ink }}>{fmtMMc(e.brecha)}</b></div>
-            </div>
-          </div>
-        ))}
-        {execs.length === 0 && <div className="t11" style={{ color: C.faint }}>Sin ejecutivos para el filtro seleccionado.</div>}
       </div>
     </div>
   );
@@ -20460,58 +20461,6 @@ function LineasView({ soloExec, usuario }) {
     </div>
   );
 }
-// ============================================================
-// REPORTES — recopila los reportes implementados, agrupados por categoría. Lista a la izquierda (1/3) y
-// el reporte seleccionado se despliega a la derecha (2/3).
-// ============================================================
-function ReportesView({ deals, onOpen, soloExec }) {
-  const [sel, setSel] = useState("cartera");
-  const scopeExecs = soloExec ? PC_EXECS.filter((e) => e.nombre === soloExec) : PC_EXECS;
-  const aggScope = { clientes: scopeExecs.reduce((s, e) => s + e.clientes, 0), activos: scopeExecs.reduce((s, e) => s + e.activos, 0), fuga: scopeExecs.reduce((s, e) => s + e.fuga, 0), brecha: scopeExecs.reduce((s, e) => s + e.brecha, 0) };
-  const grupos = [
-    { cat: "Cartera & Share of Wallet", items: [
-      { id: "cartera", label: "Resumen de cartera", desc: "Clientes, segmentación por calidad de deudores y volumen cedido (mercado vs Security)." },
-      { id: "sow", label: "Share of Wallet & competencia", desc: "Desviación de SoW vs target, competidores capturando cartera y tendencia mensual por zona." },
-    ] },
-    { cat: "Desempeño comercial", items: [
-      { id: "desempeno", label: "Carteras por ejecutivo", desc: "Clientes, activos Security, en fuga y brecha de wallet por ejecutivo, jefatura y zona." },
-    ] },
-    { cat: "Operaciones", items: [
-      { id: "operaciones", label: "Operaciones cursadas", desc: "Giradas y en proceso, monto desembolsado, tasa y estado de cada operación." },
-    ] },
-  ];
-  const todosItems = grupos.flatMap((g) => g.items);
-  const actual = todosItems.find((i) => i.id === sel) || todosItems[0];
-  return (
-    <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-      {/* Izquierda (1/3): listado de reportes por categoría */}
-      <div className="space-y-4 lg:sticky lg:top-4 lg:w-1/3">
-        {grupos.map((g) => (
-          <div key={g.cat}>
-            <div className="t9 font-bold uppercase tracking-widest" style={{ color: C.faint }}>{g.cat}</div>
-            <div className="mt-1.5 space-y-1.5">
-              {g.items.map((it) => { const on = sel === it.id; return (
-                <button key={it.id} onClick={() => setSel(it.id)} className="w-full rounded-xl p-3 text-left transition-colors" style={{ backgroundColor: on ? C.ink : "#fff", border: `1px solid ${on ? C.indigo : C.line}` }}>
-                  <div className="flex items-center gap-1.5 t12 font-bold" style={{ color: on ? "#fff" : C.ink }}><BarChart2 size={13} style={{ color: on ? "#fff" : C.indigo }} /> {it.label}</div>
-                  <div className="mt-0.5 t9" style={{ color: on ? "#ffffffcc" : C.faint, lineHeight: 1.35 }}>{it.desc}</div>
-                </button>
-              ); })}
-            </div>
-          </div>
-        ))}
-      </div>
-      {/* Derecha (2/3): reporte seleccionado */}
-      <div className="lg:w-2/3">
-        <div className="text-xl font-bold tracking-tight" style={{ color: C.ink }}>{actual.label}</div>
-        <div className="mb-2 t11" style={{ color: C.faint }}>{actual.desc}</div>
-        {sel === "cartera" && <PCcliente agg={aggScope} hayFiltro={!!soloExec} />}
-        {sel === "sow" && <PCsow />}
-        {sel === "desempeno" && <PCdesempeno execs={scopeExecs} />}
-        {sel === "operaciones" && <OperacionesView deals={deals} onOpen={onOpen} soloExec={soloExec} />}
-      </div>
-    </div>
-  );
-}
 // ---- Command palette Ctrl+K (Datamart spec §38): oportunidades, clientes y vistas desde el teclado ----
 function CommandK({ abierto, onCerrar, deals, dealVisible, irA, onAbrirDeal }) {
   const [q, setQ] = useState("");
@@ -21661,6 +21610,17 @@ export default function PipelineComercial() {
   // Comunicación entre pestañas vía postMessage (funciona con file://, donde cada página es un
   // origen único y BroadcastChannel/localStorage no sirven). El WhatsApp del cliente (whatsapp.html)
   // se abre con opener = este panel; responde el detalle/hilo y recibe mensajes y la aceptación.
+  // Índice de folios comprometidos: qué documento tomó ya otra operación. Se rearma desde `deals`,
+  // que es su única fuente — mientras se sorteaba por hash, la pantalla decía «en otra operación» de
+  // documentos que ninguna operación tenía.
+  useEffect(() => {
+    const idx = {};
+    for (const d of deals) {
+      const rut = d && d.rutEmisor; if (!rut) continue;
+      for (const f of (d.facturasOp || [])) { if (f && f.folio) { (idx[rut] = idx[rut] || {})[String(f.folio)] = d.id; } }
+    }
+    FOLIOS_EN_OPERACION = idx;
+  }, [deals]);
   useEffect(() => {
     const onMsg = (ev) => {
       // SEGURIDAD: sólo se atienden mensajes del origen de la app. Sin esta guarda cualquier página
@@ -22841,7 +22801,7 @@ export default function PipelineComercial() {
       const nuevasOp = [...base, ...facs.map((f) => {
         // Se hereda la factura COMPLETA y sólo se sacan las marcas del pool de candidatas. Reconstruirla
         // campo por campo perdía `histFactoring`, que es de donde tipoDeudorDisp() saca «Histórico BICE».
-        const { candidata, otro, porCupo, _ncAplicada, ...limpio } = f;
+        const { candidata, otro, porCupo, ...limpio } = f;
         return { ...limpio,
           tipoDeudor: f.tipoDeudor || tipoDeudor(f.rutRecep, f.deudor),
           histFactoring: f.histFactoring != null ? f.histFactoring : null,
@@ -22885,7 +22845,7 @@ export default function PipelineComercial() {
         vistos.add(f.id); pool.push(f);
       });
       const limpiar = (f) => {
-        const { candidata, otro, porCupo, _ncAplicada, ...limpio } = f;
+        const { candidata, otro, porCupo, ...limpio } = f;
         return { ...limpio,
           tipoDeudor: f.tipoDeudor || tipoDeudor(f.rutRecep, f.deudor),
           histFactoring: f.histFactoring != null ? f.histFactoring : null,
@@ -23020,7 +22980,7 @@ export default function PipelineComercial() {
       // «Otro»), pero también `sinXml` (volvía marcada como sin XML aunque conservara su enlace, y caía
       // en el gate «Solicitar XML» que bloquea ceder), y `reclamada`/`notaCredito` — o sea que retirar
       // y volver a agregar BLANQUEABA una factura reclamada y la dejaba pasar a cesión.
-      const { candidata: _c, porCupo: _pc, _ncAplicada: _nc, ...retirada } = fac;
+      const { candidata: _c, porCupo: _pc, ...retirada } = fac;
       const restRet = [...(d.facturasRetiradas || []).filter((f) => f.id !== fac.id), retirada];
       const tasaDescuento = d.tasaDescuento || 1.5;
       const fin = calcularFinanzas(d.cliente, d.deudor, monto, tasaDescuento, d.comision || 200000);
@@ -23368,12 +23328,6 @@ export default function PipelineComercial() {
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Operaciones</div>
             <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Operaciones</h1>
             <OperacionesView deals={deals} onOpen={abrirDetalle} soloExec={soloExec} />
-          </>
-        ) : vistaApp === "reportes" ? (
-          <>
-            <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Reportes</div>
-            <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Reportes</h1>
-            <ReportesView deals={deals} onOpen={abrirDetalle} soloExec={soloExec} />
           </>
         ) : vistaApp === "lineas" ? (
           <LineasView soloExec={soloExec} usuario={usuario} />
