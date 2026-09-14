@@ -18824,10 +18824,17 @@ function lf4MetaPorCliente(rutCli) {
     const arr = (typeof window !== "undefined" && Array.isArray(window.LINEA_DISPONIBLE)) ? window.LINEA_DISPONIBLE : [];
     for (const r of arr) {
       let g = _lf4Idx.get(r.RUTCliente); if (!g) { g = []; _lf4Idx.set(r.RUTCliente, g); }
-      g.push({ categoria: r.TipoLinea, peso: r.MontoAprobadoMM || 0, suspendida: r.Estado === "Suspendida" });
+      g.push({ categoria: r.TipoLinea, peso: r.MontoAprobadoMM || 0, suspendida: r.Estado === "Suspendida", uso: +r.MontoUtilizadoMM || 0 });
     }
   }
   return _lf4Idx.get(rutCli) || [{ categoria: "Lista Blanca", peso: 1, suspendida: false }, { categoria: "Deudores Autorizados", peso: 1, suspendida: false }];
+}
+// ¿El maestro A7/A8 conoce a este cliente? Distinto de «tiene cupo»: LINEAS_DATA deja fuera al que
+// suma 0 aprobado —no es una línea vigente y no va en la cartera— y sin esta pregunta ese cliente
+// sería indistinguible de uno sin comité, que es justo lo que le daría una LF1 nueva.
+function clienteEnMaestroLineas(rutCli) {
+  lf4MetaPorCliente(rutCli);            // fuerza el índice
+  return !!(_lf4Idx && _lf4Idx.has(rutCli));
 }
 
 // Estado de líneas de un cliente, memoizado por RUT. El cálculo es COMPLETO —todas sus líneas, no
@@ -18840,6 +18847,16 @@ function lineasDeCliente(rutCli) {
   const fila = idx ? idx.get(rutCli) || null : null;
   const deudores = paresPorEmisor().get(rutCli) || [];
   let res;
+
+  if (!fila && clienteEnMaestroLineas(rutCli)) {
+    // ESTADO S · el comité SÍ le constituyó líneas y hoy están todas suspendidas. No es un cliente
+    // nuevo: darle la LF1 rodearía una decisión de riesgo deliberada. Sin cupo de ninguna clase, y
+    // lo que corresponde pedir es reactivar, no crear —por eso su propio motivo—.
+    // Lo utilizado sigue vigente: suspender una línea no libera lo ya cedido.
+    const usado = mmRound(lf4MetaPorCliente(rutCli).reduce((x, m) => x + (m.uso || 0), 0));
+    res = { estado: "S", asignadaCliente: 0, usoCliente: usado, cola: deudores, lineas: [] };
+    _cacheCli.set(rutCli, res); return res;
+  }
 
   if (!fila) {
     // ESTADO A · enrolado, sin comité. Sólo LF1, excluyente con LF2/LF3/LF4.
@@ -19047,6 +19064,7 @@ const RESOLUCION_COMITE = {
   lf1:     { pide: "Asignación de líneas por comité",      alcance: "Todo el cliente" },
   cliente: { pide: "Ampliar Línea Global Cliente",          alcance: "Todo el cliente" },
   deudor:  { pide: "Ampliar Línea Global Deudor",           alcance: "Todos los clientes que ceden este deudor" },
+  suspendida: { pide: "Reactivar las líneas del cliente",   alcance: "Todo el cliente" },
 };
 // El motivo se explica en lenguaje de negocio, nunca con el nombre técnico del nivel.
 const MOTIVO_TEXTO = {
@@ -19055,6 +19073,7 @@ const MOTIVO_TEXTO = {
   lf1:     "la línea inicial no cubre este deudor",
   cliente: "sin cupo en la Línea Global Cliente",
   deudor:  "la Línea Global Deudor no tiene cupo · la comparten todos sus clientes",
+  suspendida: "todas las líneas del cliente están suspendidas",
 };
 
 // Línea del deudor con respaldo determinístico: una factura puede venir sin RUT del receptor, y en
@@ -19227,7 +19246,10 @@ function asignarLineas(facturas, rutCliente, inyecta) {
   for (const g of orden) {
     // Cascada por deudor.
     let cascada = [], sinCascada = null, tienePropia = false;
-    if (st.estado === "A") {
+    if (st.estado === "S") {
+      // Todas las líneas del cliente suspendidas: no hay cascada de ninguna clase.
+      sinCascada = "suspendida";
+    } else if (st.estado === "A") {
       // Estado A: sólo LF1, y sólo para deudores prime. La LF1 existe para desbloquear la venta a
       // clientes nuevos; todo lo demás necesita que el comité asigne líneas.
       const lf1 = lineas.find((l) => l.tipo === "LF1");
