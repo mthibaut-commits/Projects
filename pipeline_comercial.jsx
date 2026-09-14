@@ -10520,6 +10520,14 @@ const OTORG_A16 = (() => {
   }
   return { ix, cli, deu, porRut };
 })();
+// Índice del activo A9 (RIESGO_BICE) por RUT: lo que la API de Riesgo Crédito BICE reporta y el A16
+// NO trae. Lo que solapa con el A16 no se duplica acá: `api6RiesgoBICE` lo lee del A16 al componer.
+const RIESGO_A9 = (() => {
+  const src = (typeof window !== "undefined" && window.RIESGO_BICE) || null;
+  const ix = {}, porRut = {};
+  if (src && src.campos && src.filas) { src.campos.forEach((c, i) => (ix[c] = i)); for (const f of src.filas) porRut[f[ix.RUT]] = f; }
+  return { ix, porRut };
+})();
 // Clave estable del cliente de una operación (RUT del cedente).
 const claveCliente = (deal) => (deal && (deal.rutEmisor || deal.cliente || deal.id)) || "";
 // Lectores de una fila A16: 0 / "" si la entidad no está en la tabla.
@@ -19340,16 +19348,26 @@ function api3EstadoProceso(idProceso) {
   s.estado = SEQ[Math.min(SEQ.length - 1, s.refrescos)]; s.tsEstado = nowStamp();
   return s.estado;
 }
+// API 4 · Plataforma 360 — LEE el activo A11 (`window.PLATAFORMA360`), no lo fabrica. Un RUT ausente
+// de la tabla devuelve la forma vacía: sin información no se inventa una empresa.
 function api4Empresa360(rut, nombre) {
-  const h = Math.abs(hashStr("360" + (rut || nombre)));
-  const acts = ["VENTA AL POR MAYOR DE OTROS PRODUCTOS N.C.P.", "CONSTRUCCIÓN DE OBRAS MENORES", "TRANSPORTE DE CARGA POR CARRETERA", "FABRICACIÓN DE ALIMENTOS", "SERVICIOS DE INGENIERÍA"];
-  const secs = ["INDUSTRIA DE ALIMENTOS", "CONSTRUCCIÓN", "TRANSPORTE", "COMERCIO", "SERVICIOS"];
-  const socios = [["MARCELA LILIANA MARÍN GONZÁLEZ", 100], ["JORGE ANDRÉS SOTO PÉREZ", 60], ["CAROLINA PAZ FUENTES RÍOS", 40]].slice(0, 1 + (h % 2)).map(([n, p], i) => ({ rut: `${9000000 + (h + i * 7919) % 8999999}-${"0123456789K"[(h + i) % 11]}`, nombre: n, participacion: i === 0 ? (h % 2 ? 100 : 60) : 40, pep: "No", fatca: "No", aprobLegal: "Ingresada" }));
+  const F = P360.porRut[rut] || P360.porNombre[nombre] || null;
+  const A = (c) => (F ? F[P360.ix[c]] : null), N = (c) => (F ? (+A(c) || 0) : 0);
+  const fec = (iso) => { const q = String(iso || "").slice(0, 10).split("-"); return q.length === 3 && q[0] ? `${q[2]}/${q[1]}/${q[0]}` : "---"; };
+  let socios = [];
+  try { socios = F ? JSON.parse(A("SOCIOS_JSON") || "[]").map((x) => ({ ...x, aprobLegal: "Ingresada" })) : []; } catch (_) { socios = []; }
   return {
-    firmografica: { actividad: acts[h % acts.length], sector: secs[h % secs.length], trabajadores: 10 + (h % 190), fechaIngreso: `0${1 + (h % 9)}/0${1 + (h % 9)}/2024`, primeraOperacion: `1${h % 9}/0${1 + (h % 9)}/2024`, web: "---", clienteBanco: h % 3 === 0 ? "Sí" : "No", alertas: h % 4 === 0 ? "Sí" : "No" },
-    comercial: { quintil: h % 5, margenUltMes: +(0.8 + (h % 30) / 10).toFixed(1), margen12m: +(4 + (h % 60) / 10).toFixed(1), colocProm12m: 20000 + (h % 60000), spreadReal12m: +(1 + (h % 90) / 100).toFixed(2), tasaUltOp: +(1.2 + (h % 90) / 100).toFixed(2), comisionUltOp: 200 + (h % 500), segmento: h % 3 === 0 ? "Grandes" : "Medianas", subSegmento: h % 3 === 0 ? "Grandes" : "Medianas Grandes", jefeGrupo: "JAVIER MARTINEZ (JG)", asistente: "NICOLE CABAÑA VILASAU", cobranza: "KATHERINE ALBITES DOMÍNGUEZ" },
+    firmografica: { actividad: A("ACTIVIDAD_ECONOMICA") || "---", sector: A("SECTOR") || "---", trabajadores: N("NUM_TRABAJADORES"),
+      fechaIngreso: fec(A("FECHA_INGRESO")), primeraOperacion: fec(A("FECHA_PRIMERA_OPERACION")), web: "---",
+      clienteBanco: A("CLIENTE_BANCO") === "SI" ? "Sí" : "No", alertas: A("ALERTAS") === "SI" ? "Sí" : "No" },
+    comercial: { quintil: N("QUINTIL"), margenUltMes: N("MARGEN_ULT_MES_M"), margen12m: N("MARGEN_12M_M"),
+      colocProm12m: N("COLOC_PROM_12M_M"), spreadReal12m: N("SPREAD_REAL_12M_PCT"), tasaUltOp: N("TASA_ULT_OP_PCT"),
+      comisionUltOp: N("COMISION_ULT_OP_M"), segmento: A("SEGMENTO") || "—", subSegmento: A("SUB_SEGMENTO") || "—",
+      jefeGrupo: "JAVIER MARTINEZ (JG)", asistente: "NICOLE CABAÑA VILASAU", cobranza: "KATHERINE ALBITES DOMÍNGUEZ" },
     socios,
-    indices: { pasExGen: +(3 + (h % 60) / 10).toFixed(2), patrimonio: 200000000 + (h % 800) * 1000000, generacion: 50000000 + (h % 300) * 500000, leverage: +(0.8 + (h % 30) / 10).toFixed(1), ventas: [380000 + (h % 90000), 400000 + (h % 90000), (h % 3 === 0) ? 0 : 420000 + (h % 90000)], ventasSII: [380000 + (h % 90000), 402000 + (h % 90000), 440000 + (h % 90000)] },
+    indices: { pasExGen: N("PAS_EXIGIBLE_GEN_BRUTA"), patrimonio: N("PATRIMONIO_M") * 1000, generacion: N("GENERACION_M") * 1000,
+      leverage: N("LEVERAGE"), ventas: [N("VENTAS_A1_M"), N("VENTAS_A2_M"), N("VENTAS_A3_M")],
+      ventasSII: [N("VENTAS_SII_A1_M"), N("VENTAS_SII_A2_M"), N("VENTAS_SII_A3_M")] },
   };
 }
 // Resumen de la EMPRESA (perfil), en base a su facturación/segmento/comportamiento (Plataforma360). Determinista.
@@ -19377,14 +19395,30 @@ function api5Documentos(rut) {
   const base = [["Riesgo", "Vaciado Individual", 3], ["Legal", "Contrato Marco", 1], ["Legal", "Mandato / Pagaré", 1], ["Legal", "Informe de Poderes", 2], ["Comercial", "Compliance Tracker", 1], ["Comercial", "Carpeta Tributaria", 1], ["Comercial", "Certificado Deuda Tesorería y Convenios", 2]];
   return base.slice(0, 4 + (h % 4)).map(([tipo, nombre, ver], i) => ({ tipo, nombre, anio: 2024 + (i % 3), version: ver, usuario: ["PAULINA BENIZ", "CARLOS LABRANA", "PAMELA CANDIA (AC)", "RICARDO JARA"][i % 4], creacion: `0${1 + ((h + i) % 9)}/0${1 + ((h + i) % 9)}/202${4 + (i % 3)}`, vencimiento: `0${1 + ((h + i) % 9)}/0${1 + ((h + i) % 9)}/202${5 + (i % 3)}` }));
 }
+// API 6 · Riesgo Crédito BICE — COMPONE su respuesta en vez de fabricarla. Lo que solapa con el A16
+// (mora CMF, mora ACHEF, protestos, mora interna) se LEE del A16, y sólo lo que ese activo no trae
+// viene del A9. Antes cada uno tenía su propio hash, así que una misma empresa mostraba una mora en la
+// bandeja de otorgamiento y otra distinta en la presentación al comité: dos cifras del mismo hecho.
 function api6RiesgoBICE(rut) {
-  const h = Math.abs(hashStr("bice" + rut));
-  const malo = h % 6 === 0;
+  const R = RIESGO_A9.porRut[rut] || null;
+  const B = (c) => (R ? (+R[RIESGO_A9.ix[c]] || 0) : 0);
+  const A = a16(OTORG_A16.porRut[rut] || null);
+  const deudaInterna = A("DEUDA_INTERNA_TOTAL"), deudaCMF = A("CMF_DEUDA_TOTAL");
+  const moraInterna = A("MORA_INTERNA_MAS_25D") + A("MORA_INTERNA_30_90") + A("MORA_INTERNA_90_180") + A("MORA_INTERNA_180_3A");
   return {
-    deudaDirecta: (h % 900) * 100000, deudaIndirecta: (h % 5 === 0) ? (h % 300) * 100000 : 0, leasingUF: 0,
-    moraCMF: malo ? (h % 40) * 100000 : 0, moraACHEF: { nroEmpresas: 1 + (h % 4), vigente: (h % 500) * 100000, morosas: malo ? (h % 90) * 100000 : 0, facturas: (h % 400) * 100000, cheques: 0, letras: 0, otros: 0 },
-    boletinComercial: malo ? (1 + h % 3) : 0, deudaPrevisional: (h % 9 === 0) ? (h % 20) * 100000 : 0, protestos: malo ? (1 + h % 2) : 0,
-    clasificacion: malo ? "C" : (h % 3 === 0 ? "B" : "A"), morosidadInterna: malo ? +((h % 30) / 10).toFixed(2) : 0, protestoPctInterno: malo ? +((h % 20) / 10).toFixed(2) : 0,
+    // Del A9: el desglose de la deuda total que ya declara el A16, más lo que sólo esta API reporta.
+    deudaDirecta: B("CMF_DEUDA_DIRECTA_M") * 1000, deudaIndirecta: B("CMF_DEUDA_INDIRECTA_M") * 1000,
+    leasingUF: B("LEASING_UF"), boletinComercial: B("BOLETIN_COMERCIAL_N"),
+    deudaPrevisional: B("DEUDA_PREVISIONAL_M") * 1000, protestos: B("PROTESTOS_N"),
+    clasificacion: (R && R[RIESGO_A9.ix.CLASIFICACION_DEUDORA]) || "—",
+    // Del A16: las mismas cifras que evalúa el otorgamiento.
+    moraCMF: A("CMF_DIR_MOROSA_30_90") + A("CMF_DIR_MOROSA_90_180") + A("CMF_DIR_MOROSA_180_3A"),
+    moraACHEF: { nroEmpresas: A("NRO_FACTORINGS_LM"), vigente: B("ACHEF_VIGENTE_M") * 1000,
+      morosas: A("ACHEF_MOROSA_60_90") + A("ACHEF_MOROSA_90_180") + A("ACHEF_MOROSA_MAS_180"),
+      facturas: B("ACHEF_FACTURAS"), cheques: 0, letras: 0, otros: 0 },
+    // Derivadas del A16: qué parte de la exposición está en mora o protestada.
+    morosidadInterna: deudaInterna > 0 ? +(moraInterna / deudaInterna * 100).toFixed(2) : 0,
+    protestoPctInterno: deudaCMF > 0 ? +(A("EFX_PROTESTOS") / deudaCMF * 100).toFixed(2) : 0,
   };
 }
 // Notas comerciales generadas con IA a partir de la API 4 + lo cargado en la presentación.
