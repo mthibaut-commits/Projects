@@ -1867,6 +1867,36 @@ function lineaIdxPorRut() {
   _lineaIdx = new Map(arr.map((l) => [l.rut, l]));
   return _lineaIdx;
 }
+// Incorpora a la cartera la línea que el comité acabó de aprobar (API 3 → "Aprobada"). Sin esto C05
+// —«cliente nuevo sin línea»— no se puede apagar nunca: su vía natural NO es la excepción sino la
+// RE-EVALUACIÓN una vez constituida la línea, y re-evaluar contra una cartera que no se enteró de la
+// aprobación devuelve siempre el mismo hallazgo. El visado N5 queda como salida forzada, para cursar
+// antes de que la línea exista, no como el camino normal.
+function constituirLinea(sol) {
+  const rut = sol && sol.rut;
+  const aprobada = +(+((sol && (sol.propFactoring || sol.totalPropuesto)) || 0)).toFixed(1);
+  if (!rut || !(aprobada > 0)) return null;
+  const idx = lineaIdxPorRut();
+  const previa = idx && idx.get(rut);
+  if (previa) {   // renovación o modificación: cambia el monto, se conserva el uso
+    previa.aprobada = aprobada;
+    previa.disponible = +(aprobada - (previa.uso || 0)).toFixed(1);
+    previa.proyeccion = +((previa.uso || 0) + (previa.montoOp || 0)).toFixed(1);
+    if (typeof invalidarVisado === "function") invalidarVisado();
+    return previa;
+  }
+  const c = (typeof PC_CLIENTES !== "undefined" && PC_CLIENTES.find((x) => x.rut === rut)) || null;
+  const fila = { id: "L-" + (c ? c.id : rut), cliente: (sol && sol.cliente) || (c && c.nombre) || "", rut,
+    aprobada, uso: 0, disponible: aprobada, montoOp: 0, proyeccion: 0,
+    demandaBuenos: 0, morosidadDias: 0,
+    sowActual: (c && c.sow) || 0, sowTarget: (c && c.target) || 60,
+    exec: (c && c.ej) || (sol && sol.ejecutivo) || "", zona: (c && c.zona) || "",
+    origenComite: (sol && sol.idProceso) || "" };
+  LINEAS_DATA.push(fila);
+  _lineaIdx = null;   // el índice está memoizado: sin esto la línea nueva no se ve
+  if (typeof invalidarVisado === "function") invalidarVisado();
+  return fila;
+}
 // Fila completa de la línea en LINEAS_DATA (aprobada + uso), o null si el cliente no tiene línea o si
 // LINEAS_DATA aún no está inicializada.
 function lineaDeCliente(deal) {
@@ -10819,7 +10849,7 @@ function varsModeloExt(deal) {
     // Comité de Crédito NO es un nivel aparte ni un usuario del sistema: es el órgano que en la práctica
     // ejerce la máxima atribución de Riesgo, así que C05 se configura como todas las demás, con su par
     // (área, nivel) y pasando por `NV`. Riesgo N5 es la máxima: a mayor gravedad, mayor jerarquía.
-    R(105, "C05", "riesgo", "ClientSegmentation", "Línea Cliente Nuevo", "Cliente nuevo sin línea de crédito aprobada — requiere constitución de línea (Comité de Crédito)", [[(v) => v.clienteNuevo, "excepcion", NV(5)]]),
+    R(105, "C05", "riesgo", "ClientSegmentation", "Línea Cliente Nuevo", "Cliente nuevo sin línea de crédito aprobada — la constitución se tramita en Solicitud de Línea", [[(v) => v.clienteNuevo, "excepcion", NV(5)]], { regulariza: "Vía normal: el ejecutivo NO la excepciona. Se tramita la línea en Solicitud de Línea y, cuando el comité la aprueba, la regla deja de salir al re-evaluar. La excepción N5 es la salida forzada para cursar antes de que la línea esté constituida." }),
     R(106, "C06", "riesgo", "Conditions", "Línea Extendida por Riesgo", "Operación utiliza tramo de línea extendida por Riesgo", [[(v) => v.lineaExt, "excepcion", NV(4)]]),
     R(107, "C07", "riesgo", "Conditions", "Cupo Suficiente en Línea Aprobada por Comité", "Cliente con cupo insuficiente en línea (operación fuera de línea)", [[(v) => v.carteraVig + v.mntSimulacion <= v.mntLinea, "aprobado"], [(v) => v.carteraVig + v.mntSimulacion <= 1.1 * v.mntLinea, "excepcion", NV(2)], [() => true, "excepcion", NV(4)]]),
     R(108, "C08", "riesgo", "Behaviour", "Variación Negativa de Venta Mensual", "Cliente presenta una caída relevante de su venta mensual", [[(v) => v.varVenta >= -20, "aprobado"], [(v) => v.varVenta >= -40, "excepcion", NV(2)], [() => true, "excepcion", NV(4)]]),
@@ -12421,6 +12451,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                         <div className="min-w-0">
                           <div className="t11 font-semibold" style={{ color: C.ink }}>#{x.regla.n} · {x.regla.nombre}{accionable && <span className="ml-1.5 rounded-full px-1.5 py-0.5 t9 font-bold text-white" style={{ backgroundColor: C.indigo }}>Puedes aprobar</span>}</div>
                           <div className="mt-0.5 t10" style={{ color: C.sub }}>{x.regla.hallazgo}</div>
+                          {x.regla.regulariza && <div className="mt-1 rounded-md px-2 py-1.5 t9" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#C2410C" }}>♻ {x.regla.regulariza}</div>}
                           <div className="mt-0.5 t9" style={{ color: C.faint }}>Dominio: <b>{AREA_LBL[x.regla.area]}</b> · Aprueba: <b style={{ color: otraArea ? "#7C3AED" : C.sub }}>N{niv} · {nr.rol} ({AREA_LBL[nr.area]})</b>{otraArea && <span className="ml-1 rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>↗ otra área</span>}</div>
                           <div className="mt-0.5 t9" style={{ color: aps.length ? C.faint : "#C2410C" }}>{aps.length ? "Aprueban: " + aps.join(", ") : `${SIN_APROBADOR} · ${rolDeAreaNivel(x.regla.area, niv).motivo || ""}`}</div>
                         </div>
@@ -19379,6 +19410,13 @@ function api3EstadoProceso(idProceso) {
   const fin = (Math.abs(hashStr(idProceso)) % 5 === 0) ? "Observada" : "Aprobada";
   const SEQ = ["En gestión", "En análisis de Riesgo", "En comité", fin];
   s.estado = SEQ[Math.min(SEQ.length - 1, s.refrescos)]; s.tsEstado = nowStamp();
+  // Resuelta y aprobada: la línea queda CONSTITUIDA y entra a la cartera del cliente. Desde acá C05
+  // deja de salir al re-evaluar la operación, que es su vía natural de regularización.
+  if (s.estado === "Aprobada" && !s.constituida) {
+    const fila = constituirLinea(s);
+    s.constituida = !!fila;
+    if (fila && typeof registrarAuditoria === "function") registrarAuditoria({ usuario: s.ejecutivo || "—", modulo: "Líneas · Comité", accion: "Línea constituida", glosa: `${s.idProceso} · ${s.cliente} · ${fmtMM(fila.aprobada)}`, exito: true });
+  }
   return s.estado;
 }
 // API 4 · Plataforma 360 — LEE el activo A11 (`window.PLATAFORMA360`), no lo fabrica. Un RUT ausente
