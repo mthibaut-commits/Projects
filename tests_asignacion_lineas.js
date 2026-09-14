@@ -2016,6 +2016,93 @@
        `${libro.length} docs del libro · 0 inventados ${inventadas.length === 0} · cliente fuera del archivo → ${fantasma.length} · NC ${conNC.length} · reclamadas ${conRec.length} · limpias bloqueadas ${bloqueadasSinMotivo} · alta manual ${wiz.length} docs`);
   }
 
+  // ── 95 · UNA FACTURA CEDIDA ES UNA FACTURA QUE EXISTE ───────────────────────────────────────
+  // «Las facturas cedidas no se pueden inventar, deben ser facturas del pool de facturas generadas.»
+  // AECSync (A2) era un dataset BASE con folios propios: de sus 1.300 cesiones sólo 3 referenciaban un
+  // folio que DTESync declara para ese mismo cedente, y 1.267 tenían fecha ANTERIOR a la emisión del
+  // documento que decían ceder. Una cesión sin documento no se puede atribuir a nada, así que todo lo
+  // que cuelga de ella se inventaba aguas abajo: «cedida a terceros» salía de un hash del folio,
+  // `perdidaCesion` de un `rndDetBool(id, 0.12)` y `cedidasOtro` quedaba siempre en 0.
+  {
+    const dte = window.DTESYNC || [], aec = window.AECSYNC || [];
+    const porFolio = {};
+    for (const r of dte) { if (r && r.RUTEmisor) porFolio[r.RUTEmisor + "|" + r.Folio] = r; }
+
+    // (a) TODA cesión apunta a un documento real de SU cedente, con los campos copiados del A1.
+    const huerfanas = aec.filter((c) => !porFolio[c.RUTCedente + "|" + c.Folio]);
+    const calzan = aec.every((c) => {
+      const r = porFolio[c.RUTCedente + "|" + c.Folio];
+      return r && c.MontoCesion === Math.round(+r.MntTotal || 0) && c.MontoDocumento === c.MontoCesion
+        && c.FechaEmisionDTE === r.FchEmis && c.RUTReceptor === r.RUTRecep && c.RazonSocialReceptor === r.RznSocRecep;
+    });
+    // (b) No se cede antes de emitir, ni el mismo documento dos veces, ni uno no cedible.
+    const antesDeEmitir = aec.filter((c) => String(c.FechaCesion).slice(0, 10) < c.FechaEmisionDTE).length;
+    const dobles = aec.length - new Set(aec.map((c) => c.RUTCedente + "|" + c.Folio)).size;
+    const noCedibles = aec.filter((c) => {
+      const r = porFolio[c.RUTCedente + "|" + c.Folio], e = (r && r.EstadoDTE) || {};
+      return r && (r.FormaPago !== "2" || e.NotaCredito === "1" || e.Reclamado === "1");
+    }).length;
+
+    // (c) El pipeline lo LEE: una factura cedida a otro factoring se bloquea con su nombre y su fecha,
+    //     y una cedida a nosotros se distingue —no es competencia, es cartera propia—.
+    const ajena = aec.find((c) => c.RUTFactoring !== BICE_RUT && porFolio[c.RUTCedente + "|" + c.Folio]);
+    const propia = aec.find((c) => c.RUTFactoring === BICE_RUT && porFolio[c.RUTCedente + "|" + c.Folio]);
+    const dealDe = (c) => ({ id: "OP-CES-95", cliente: "C95", rutEmisor: c.RUTCedente, deudores: [],
+                             facturasOp: [], facturasDisponibles: [], facturasRetiradas: [], nuevasFacturas: 0 });
+    const facDe = (c) => facturaDeDTE(porFolio[c.RUTCedente + "|" + c.Folio]);
+    const estA = ajena ? estadoCandidata(facDe(ajena), dealDe(ajena)) : null;
+    const estP = propia ? estadoCandidata(facDe(propia), dealDe(propia)) : null;
+    const bloqueoOk = !!estA && estA.clave === "cedida" && estA.bloqueada
+      && (estA.detalle || "").includes(ajena.RazonSocialFactoring)
+      && !!estP && estP.clave === "cedidaNuestra" && estP.bloqueada;
+
+    // (d) Y un documento del MISMO cedente que nadie cedió sigue disponible: el bloqueo no se contagia
+    //     al cliente entero, que es lo que haría un hash por cedente.
+    const cedidos = new Set(aec.map((c) => c.RUTCedente + "|" + c.Folio));
+    const libre = dte.find((r) => r.RUTEmisor === ajena.RUTCedente && !cedidos.has(r.RUTEmisor + "|" + r.Folio)
+      && r.FormaPago === "2" && !(r.EstadoDTE || {}).NotaCredito && !(r.EstadoDTE || {}).Reclamado);
+    const libreOk = !!libre && estadoCandidata(facturaDeDTE(libre), dealDe(ajena)).clave === "ok";
+
+    // (e) La PÉRDIDA por cesión sale de las facturas de la oferta, no de un sorteo. Se arma una oferta
+    //     con el documento cedido y se comprueba que el adaptador lo cuente y nombre a quien se lo llevó.
+    const dealCedido = { ...dealDe(ajena), facturasOp: [facDe(ajena)] };
+    const ced = cesionesAjenasDeDeal(dealCedido);
+    const dealLimpio = { ...dealDe(ajena), facturasOp: [facturaDeDTE(libre)] };
+    const limpio = cesionesAjenasDeDeal(dealLimpio);
+    const perdidaOk = ced.n === 1 && ced.factoring === ajena.RazonSocialFactoring && limpio.n === 0 && limpio.factoring === null;
+    // …y el competidor de la operación es el que tocó SUS facturas, no uno elegido por hash del id.
+    const compOk = aecCompetidorDe(dealCedido) === ajena.RazonSocialFactoring;
+
+    // (f) Y lo que el A11 DERIVA de las cesiones queda bien derivado. `FECHA_PRIMERA_OPERACION` se
+    //     llenaba con el MÁXIMO de las fechas de cesión, o sea con la ÚLTIMA: una empresa que nos cede
+    //     hace dos años figuraba como cliente estrenado el mes pasado. Y `FECHA_INGRESO` se generaba
+    //     por hash sin mirarla, así que podía quedar después de la primera operación — un cliente que
+    //     operó antes de existir. Con las cesiones reconciliadas contra el A1 esto ya se puede medir.
+    const primeraReal = {};
+    for (const c of aec) {
+      if (c.RUTFactoring !== BICE_RUT) continue;
+      const f = String(c.FechaCesion).slice(0, 10);
+      if (!primeraReal[c.RUTEmisor] || f < primeraReal[c.RUTEmisor]) primeraReal[c.RUTEmisor] = f;
+    }
+    const p360 = (window.PLATAFORMA360 && window.PLATAFORMA360.filas) || [];
+    const ixp = {}; ((window.PLATAFORMA360 && window.PLATAFORMA360.campos) || []).forEach((c, i) => { ixp[c] = i; });
+    let conColoc = 0, primeraOk = 0, ingresoMal = 0;
+    for (const fila of p360) {
+      const rut = fila[ixp.RUT], prim = fila[ixp.FECHA_PRIMERA_OPERACION], ing = fila[ixp.FECHA_INGRESO];
+      if (!prim) continue;
+      conColoc++;
+      if (prim === primeraReal[rut]) primeraOk++;
+      if (ing > prim) ingresoMal++;
+    }
+    const p360Ok = conColoc > 100 && primeraOk === conColoc && ingresoMal === 0;
+
+    ok("95 una factura cedida es una factura que existe, y la pérdida por cesión sale del registro",
+       aec.length > 1000 && huerfanas.length === 0 && calzan
+       && antesDeEmitir === 0 && dobles === 0 && noCedibles === 0
+       && bloqueoOk && libreOk && perdidaOk && compOk && p360Ok,
+       `${aec.length} cesiones · 0 huérfanas ${huerfanas.length === 0} · antes de emitir ${antesDeEmitir} · dobles ${dobles} · no cedibles ${noCedibles} · bloqueo «${estA && estA.label}» / «${estP && estP.label}» · libre del mismo cedente ok ${libreOk} · pérdida ante ${ced.factoring} · A11: ${primeraOk}/${conColoc} con primera operación correcta, ${ingresoMal} ingresos posteriores`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

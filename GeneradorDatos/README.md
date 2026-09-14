@@ -29,7 +29,6 @@ byte. Se apoya en `hashStr` + mulberry32, el mismo azar estable que usa el pipel
 | `DTESYNC` | 30.000 facturas electrónicas emitidas |
 | `LISTA_BLANCA` | 22 deudores de lista blanca |
 | `DEUDORES_AUTORIZADOS` | 600 deudores autorizados |
-| `AECSYNC` | 1.300 cesiones electrónicas |
 | `SHARE_OF_WALLET` | 233 clientes de cartera con su SOW |
 | `ESTRATEGIA_PRECIO` | 466 estrategias de precio promocional |
 
@@ -41,8 +40,24 @@ byte. Se apoya en `hashStr` + mulberry32, el mismo azar estable que usa el pipel
 | `OTORGAMIENTO` | A16 | `datasets/otorgamiento.js` | Variables de riesgo de cliente, deudor y par cliente-deudor, con la forma del contrato (una fila por `RUT` + `ROL` + `RUT_CONTRAPARTE`, 54 campos, columnar como el CSV de origen) |
 | `PLATAFORMA360` | A11 | `datasets/plataforma360.js` | Maestro de empresa por RUT (clientes y deudores): firmográfica, comercial, socios, índices y la **nota de comportamiento**, que vive sólo acá. Razón social y ventas salen de DTESync; colocación y última operación, de AECSync; segmento, del SOW |
 | `RIESGO_BICE` | A9 | `datasets/riesgo_bice.js` | Sólo lo que la API de Riesgo BICE reporta y el A16 **no** trae. Lo que solapa (mora CMF, mora ACHEF, protestos, mora interna) no se duplica: el pipeline lo lee del A16 al componer la respuesta |
+| `AECSYNC` | A2 | `datasets/cesiones.js` | Cesiones electrónicas. Cada una apunta a un **documento real del A1** de su cedente y copia sus campos (folio, emisión, monto, receptor, vencimiento). Lo propio de la cesión —a qué factoring, con qué correo— se conserva de la entrega anterior |
 | `CARTERA` | A24 | `datasets/cartera.js` | Estructura comercial (código, nombre, equipo, **jefatura**, zona, sucursal) y asignación de cada cliente a su ejecutivo. La asignación se **mide** del `Ejecutivo` que ya declara el A5, para que el activo nuevo no contradiga al que la app venía leyendo; el archivo la vuelve a llavear por **código** y no por nombre |
 | `VERIFICACION` | A10 | `datasets/verificacion.js` | Variables del predictor de verificación por par cliente-deudor. El promedio de factura del par y su venta mensual salen del volumen real de DTESync; la nota del deudor se **lee del A16 ya generado** para que los dos activos no puedan divergir |
+
+## Una cesión tiene que apuntar a una factura que existe
+
+`AECSYNC` era un dataset **base** y no reconciliaba con `DTESYNC`. Medido sobre la entrega anterior: de
+sus **1.300 cesiones sólo 3** referenciaban un folio que el A1 declara para ese mismo cedente, aunque
+los 258 cedentes sí son emisores del A1 y los rangos de folio se solapan. Y **1.267 tenían fecha
+anterior a la emisión** del documento que decían ceder.
+
+No es un detalle de realismo. Una cesión sin documento no se puede atribuir a nada, así que todo lo que
+cuelga de ella se terminaba inventando en el pipeline: «cedida a terceros» salía de un hash del folio,
+`perdidaCesion` de un `rndDetBool(id, 0.12)` y `cedidasOtro` quedaba siempre en 0. **Inventar un valor
+no sólo produce cifras falsas: tapa el hueco del dato que las haría notar.**
+
+Reglas que el módulo impone, todas medibles contra el A1: sólo documentos a crédito, sin nota de
+crédito ni reclamo, cada documento cedido una sola vez, y la fecha de cesión después de la emisión.
 
 ## Cómo se calibra el riesgo
 

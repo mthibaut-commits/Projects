@@ -10,7 +10,7 @@
 //   (por defecto lee y escribe `datos_inyectados.js` en la raíz del repo)
 //
 // Datasets BASE — rescatados del build original, se copian sin tocar:
-//   DTESYNC · LISTA_BLANCA · DEUDORES_AUTORIZADOS · AECSYNC · SHARE_OF_WALLET · ESTRATEGIA_PRECIO
+//   DTESYNC · LISTA_BLANCA · DEUDORES_AUTORIZADOS · SHARE_OF_WALLET · ESTRATEGIA_PRECIO
 //
 // Datasets DERIVADOS — se regeneran en cada corrida a partir de los base:
 //   SHARE_OF_WALLET   activo A5        · serie semanal de participación, con los montos en pesos
@@ -20,6 +20,7 @@
 //   RIESGO_BICE       activo A9        · lo que la API de Riesgo BICE devuelve y el A16 NO trae
 //   PLATAFORMA360     activo A11       · información de empresa por RUT (firmográfica, comercial, socios)
 //   CARTERA           activo A24       · estructura comercial y asignación de cada cliente a su ejecutivo
+//   AECSYNC           activo A2        · cesiones electrónicas, cada una sobre un documento REAL del A1
 //
 // Se generan EN ORDEN y cada uno queda visible para los siguientes: VERIFICACION lee la nota del deudor
 // del OTORGAMIENTO recién generado, para que los dos activos no puedan divergir.
@@ -35,6 +36,7 @@ const verificacion = require("./datasets/verificacion");
 const riesgoBice = require("./datasets/riesgo_bice");
 const plataforma360 = require("./datasets/plataforma360");
 const cartera = require("./datasets/cartera");
+const cesiones = require("./datasets/cesiones");
 
 const raiz = path.resolve(__dirname, "..");
 const entrada = process.argv[2] || path.join(raiz, "datos_inyectados.js");
@@ -45,6 +47,9 @@ const { bloques, datos, orden } = leer(entrada);
 for (const n of orden) console.log("  base  %s: %s registros", n.padEnd(22), Array.isArray(datos[n]) ? datos[n].length : (datos[n] && datos[n].filas ? datos[n].filas.length + " filas" : "—"));
 
 const DERIVADOS = [
+  // AECSYNC va PRIMERO: PLATAFORMA360 mide sobre él la colocación real de cada cliente, así que las
+  // cesiones tienen que estar reconciliadas con el A1 antes de que nadie las lea.
+  ["AECSYNC", () => cesiones.generar(datos)],
   ["SHARE_OF_WALLET", () => shareOfWallet.generar(datos)],
   ["LINEA_DISPONIBLE", () => lineas.generar(datos)],
   ["PLATAFORMA360", () => plataforma360.generar(datos)],

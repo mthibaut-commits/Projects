@@ -2140,13 +2140,49 @@ function libroPorEmisor() {
 // CESIONES ELECTRÓNICAS (activo A2 · AECSync) por (RUT del cedente, folio): un documento ya cedido a
 // otro factoring no se puede comprar. Es un HECHO del archivo y no una propiedad que este sistema
 // pueda decidir — `estadoCandidata` lo sorteaba con un hash.
-let _cedidas = null;
-function foliosCedidos() {
-  if (_cedidas) return _cedidas;
-  _cedidas = new Set();
+// Nuestro RUT como factoring: separa lo que nos cedieron a NOSOTROS de lo que se llevó la competencia.
+const BICE_RUT = "97.080.000-0";
+// Índice de CESIONES por documento: `RUT del cedente|folio` → quién se lo llevó y cuándo. Es un hecho
+// del registro electrónico (A2) y la única forma de saber si una factura ya tiene dueño.
+// Hasta el 14-09-2026 esto no se podía consultar: las cesiones del A2 referenciaban folios que el A1 no
+// declaraba —3 de 1.300 calzaban—, así que TODO lo que cuelga de una cesión se inventaba aguas abajo:
+// «cedida a terceros» salía de un hash del folio, `perdidaCesion` de un `rndDetBool(id, 0.12)` y
+// `cedidasOtro` quedaba siempre en 0. Se arregló en el generador (`GeneradorDatos/datasets/cesiones.js`):
+// cada cesión apunta a un documento real del cedente y copia sus campos del A1.
+let _cesionIdx = null;
+function cesionesPorDocumento() {
+  if (_cesionIdx) return _cesionIdx;
+  _cesionIdx = new Map();
   const aec = (typeof window !== "undefined" && Array.isArray(window.AECSYNC)) ? window.AECSYNC : [];
-  for (const c of aec) { if (c && c.RUTCedente && c.Folio) _cedidas.add(c.RUTCedente + "|" + c.Folio); }
-  return _cedidas;
+  for (const c of aec) {
+    if (!c || !c.RUTCedente || !c.Folio) continue;
+    _cesionIdx.set(c.RUTCedente + "|" + c.Folio, {
+      factoring: c.RazonSocialFactoring || "Otro factoring",
+      rutFactoring: c.RUTFactoring || "",
+      fecha: String(c.FechaCesion || "").slice(0, 10),
+      monto: Math.round(+c.MontoCesion || 0),
+      nuestra: c.RUTFactoring === BICE_RUT,
+    });
+  }
+  return _cesionIdx;
+}
+// La cesión de UN documento, o null si nadie lo ha cedido.
+const cesionDeFactura = (rutEmisor, folio) => ((rutEmisor && folio) ? (cesionesPorDocumento().get(rutEmisor + "|" + folio) || null) : null);
+// Las facturas de una operación que ya fueron cedidas a OTRO factoring: cuántas, por cuánto y a quién.
+// Es lo que convierte una oportunidad en una pérdida por cesión — antes era una moneda al aire.
+function cesionesAjenasDeDeal(deal) {
+  const out = { n: 0, monto: 0, factoring: null, folios: [] };
+  if (!deal || !deal.rutEmisor) return out;
+  const porFact = {};
+  for (const f of (deal.facturasOp || [])) {
+    const c = cesionDeFactura(deal.rutEmisor, f && f.folio);
+    if (!c || c.nuestra) continue;
+    out.n++; out.monto += f.monto || c.monto || 0; out.folios.push(f.folio);
+    porFact[c.factoring] = (porFact[c.factoring] || 0) + 1;
+  }
+  const orden = Object.keys(porFact).sort((a, b) => porFact[b] - porFact[a]);
+  out.factoring = orden[0] || null;
+  return out;
 }
 function streamDesdeDTE(dte) {
   const out = [];
@@ -2227,7 +2263,6 @@ const INBOUND_STREAM = (() => {
 })();
 // ---- AECSync: cesiones (facturas transferidas a un factoring). Si la financió otra institución
 // distinta de BICE, la oportunidad que empujábamos se pierde ante la competencia. ----
-const BICE_RUT = "97.080.000-0";
 const AEC_DATA = (typeof window !== "undefined" && Array.isArray(window.AECSYNC)) ? window.AECSYNC : [];
 const aecCompPorCedente = (() => {
   const m = {};
@@ -2265,8 +2300,18 @@ function moraDiasCliente(rut) {
   if (A("MORA_INTERNA_MAS_25D") > 0) return 25;
   return 0;
 }
-// Competidor que financió (cedió) facturas de este cedente según AECSync; null si no hay registro.
-const aecCompetidorDe = (deal) => { const l = aecCompPorCedente[deal.rutEmisor]; return (l && l.length) ? l[hashStr(deal.id || "x") % l.length] : null; };
+// Competidor que financió facturas de esta OPERACIÓN según AECSync. Primero se miran las facturas que
+// la oferta tiene —ahora que una cesión apunta a un documento real, eso se puede saber—; si ninguna
+// está cedida, se cae al historial del cedente, que es una señal comercial y no un hecho de la oferta.
+// Antes elegía con `hashStr(deal.id) % lista.length`: la misma oportunidad decía haber perdido ante un
+// factoring que nunca tocó ninguna de sus facturas.
+const aecCompetidorDe = (deal) => {
+  if (!deal) return null;
+  const propio = cesionesAjenasDeDeal(deal);
+  if (propio.factoring) return propio.factoring;
+  const l = aecCompPorCedente[deal.rutEmisor];
+  return (l && l.length) ? l[hashStr(deal.id || "x") % l.length] : null;
+};
 // Detalle de competencia por cedente (RUT): a quién le cede el cliente (últimos 6 meses), con monto
 // y participación. Permite mostrar "quién es mi competencia" y el SOW de BICE vs. la competencia.
 const COMPETENCIA_POR_RUT = (() => {
@@ -3422,12 +3467,24 @@ function itemizarFacturas(deal) {
   // paquetes re-armados desde la BD).
   if (Array.isArray(deal.facturasOp)) return deal.facturasOp;
   const dl = (deal.deudores && deal.deudores.length) ? deal.deudores : [{ name: deal.deudor, facturas: deal.facturas || 1, monto: deal.monto || 0 }];
+  // Los documentos salen del LIBRO DEL CLIENTE (A1), no de un generador. Antes esta rama inventaba el
+  // folio (`10000000 + hash % 8999999`) y hasta el ESTADO del documento —`reclamada: h % 17 === 0`,
+  // `notaCredito: h % 23 === 0`—, o sea facturas que no existen en ningún activo y un reclamo que el
+  // SII nunca registró. El monto sí se reparte, porque lo que la operación trae es el TOTAL por deudor.
+  const libro = deal.rutEmisor ? (libroPorEmisor().get(deal.rutEmisor) || []) : [];
+  const porDeudor = {};
+  for (const f of libro) (porDeudor[f.deudor] = porDeudor[f.deudor] || []).push(f);
   const out = [];
   dl.forEach((dd) => {
     const n = Math.max(1, dd.facturas || 1);
+    const reales = porDeudor[dd.name] || [];
     for (let i = 0; i < n; i++) {
-      const h = hashStr((deal.id || "") + dd.name + i);
-      out.push({ id: `${dd.name}#${i}`, folio: 10000000 + (h % 8999999), tipo: "Factura electrónica (33)", deudor: dd.name, monto: +((dd.monto || 0) / n).toFixed(1), venc: diasPagoDeudor(dd.name), sinXml: (h % 10) < 3, reclamada: (h % 17) === 0, notaCredito: (h % 23) === 0 });
+      const r = reales[i];
+      // Sin documento del archivo para esa posición, la factura entra IDENTIFICADA como tal en vez de
+      // llevar un folio que parece real: un folio inventado es peor que uno ausente.
+      out.push(r
+        ? { ...r, id: r.id, monto: +((dd.monto || 0) / n).toFixed(1) }
+        : { id: `${dd.name}#${i}`, folio: null, tipo: "Factura electrónica (33)", deudor: dd.name, monto: +((dd.monto || 0) / n).toFixed(1), venc: diasPagoDeudor(dd.name), sinDocumento: true });
     }
   });
   return out;
@@ -3596,7 +3653,13 @@ function estadoCandidata(f, deal, estado) {
   if (noConfirmada(deal, f, estado && estado.vetadas)) return R("noConfirmada", "El deudor no la confirmó");
   if (f.notaCredito === true) return R("notaCredito", "Nota de crédito", f.folioNotaCredito ? `Nota de crédito folio ${f.folioNotaCredito}. El feed no informa su monto, así que el documento no se puede comprar por una diferencia.` : "El documento tiene una nota de crédito asociada.");
   if (f.reclamada === true) return R("reclamada", "Reclamada por el deudor", "El deudor reclamó el documento ante el SII: no es cedible.");
-  if (f.cedida === true || (deal && deal.rutEmisor && f.folio && foliosCedidos().has(deal.rutEmisor + "|" + f.folio))) return R("cedida", "Cedida a terceros", "AECSync registra la cesión de este folio a otro factoring.");
+  const ces = (deal && f) ? cesionDeFactura(deal.rutEmisor, f.folio) : null;
+  if (f.cedida === true || ces) {
+    // Ceder es traspasar el crédito: un documento con dueño no se compra dos veces. El A2 dice ADEMÁS
+    // quién se lo llevó, y si fuimos nosotros el mensaje es otro — no es competencia, es cartera propia.
+    if (ces && ces.nuestra) return R("cedidaNuestra", "Ya financiada", `Cedida a Security el ${ces.fecha}: el documento ya está financiado por nosotros.`);
+    return R("cedida", "Cedida a terceros", ces ? `AECSync registra la cesión de este folio a ${ces.factoring} el ${ces.fecha}.` : "AECSync registra la cesión de este folio a otro factoring.");
+  }
   // ¿Otra operación NUESTRA ya tomó este folio? Único motivo que no sale de un activo: es estado del
   // pipeline, así que entra por parámetro y cae al registro del módulo sólo por comodidad.
   const tomados = (estado && estado.enOtraOp) || (typeof FOLIOS_EN_OPERACION !== "undefined" ? FOLIOS_EN_OPERACION[(deal && deal.rutEmisor) || ""] : null) || null;
@@ -7129,8 +7192,16 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   const tasaDe = (deudor) => +((spreadDeudor[deudor] != null ? spreadDeudor[deudor] : spreadSugerido(deudor, deal).spread) + CFG_ACTIVA.costoFondo).toFixed(2);
                   const diasDe = (deudor) => (vencDias[deudor] != null ? vencDias[deudor] : diasPagoDeudor(deudor));
                   // Motivo de exclusión: una factura cedida / reclamada / con nota de crédito no entra al negocio.
-                  const motivoExcl = (f, fi) => (fi < (deal.cedidasOtro || 0) ? "Cedida a otro factoring" : f.reclamada ? "Reclamada" : f.notaCredito ? "Nota de crédito" : null);
-                  const facturasMarcadas = facturasOp.map((f, fi) => ({ ...f, excl: motivoExcl(f, fi) }));
+                  // Qué deja fuera a cada factura. La cesión es de UN FOLIO —el A2 dice cuál—, no de
+                  // «las primeras N de la lista»: `fi < deal.cedidasOtro` marcaba facturas por su
+                  // posición, así que reordenar la oferta cambiaba cuáles figuraban cedidas.
+                  const motivoExcl = (f) => {
+                    const c = cesionDeFactura(deal.rutEmisor, f && f.folio);
+                    if (c && !c.nuestra) return `Cedida a ${c.factoring}`;
+                    if (c) return "Ya financiada por Security";
+                    return f.reclamada ? "Reclamada" : f.notaCredito ? "Nota de crédito" : null;
+                  };
+                  const facturasMarcadas = facturasOp.map((f) => ({ ...f, excl: motivoExcl(f) }));
                   const validas = facturasMarcadas.filter((f) => !f.excl);
                   const excluidas = facturasMarcadas.filter((f) => f.excl);
                   const montoValido = +validas.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1);
@@ -7321,7 +7392,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               <span></span><span>Tipo doc.</span><span>Folio</span><span>Razón social</span><span className="text-right">Nota</span><span>F. emisión</span><span>F. vencim.</span><span className="text-right">Tasa</span><span className="text-right">Monto</span><span>Estado</span><span>Acción</span>
                             </div>
                           );
-                          const SHORT_EST = { notaCredito: "Nota de créd.", reclamada: "Reclamada", cedida: "Cedida", otraOp: "Otra op.", noConfirmada: "No confirmada" };
+                          const SHORT_EST = { notaCredito: "Nota de créd.", reclamada: "Reclamada", cedida: "Cedida", cedidaNuestra: "Ya financiada", otraOp: "Otra op.", noConfirmada: "No confirmada" };
                           const filaOtra = (f) => {
                             const nota = notaDeudor(f.deudor, f.rutRecep) || 0; const sc = { tipo: tipoDeudorDisp(f), score: Math.round(20 + (nota - 1) / 4 * 79) };
                             const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
@@ -7341,7 +7412,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             // Columna ESTADO (eventos del documento): XML de las ya incluidas · bloqueo/NC de las candidatas.
                             let estadoNode;
                             if (!f.candidata) estadoNode = <button onClick={() => setXmlOk((m) => ({ ...m, [f.id]: !ok }))} title={ok ? "Con XML" : "Sin XML"} disabled={!!f.excl || bloqueado} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold disabled:opacity-60" style={{ backgroundColor: ok ? C.greenBg : "#fef2f2", color: ok ? C.green : C.red, border: `1px solid ${ok ? "#bbf7d0" : "#fecaca"}` }}>{ok ? <Check size={10} /> : <X size={10} />} XML</button>;
-                            else if (bloq) estadoNode = <span title={`${est.label} · no se puede agregar`} className="justify-self-start inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red, border: "1px solid #fecaca", cursor: "help" }}>🔒 {SHORT_EST[est.clave]}</span>;
+                            else if (bloq) estadoNode = <span title={`${est.label}${est.detalle ? " · " + est.detalle : " · no se puede agregar"}`} className="justify-self-start inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red, border: "1px solid #fecaca", cursor: "help" }}>🔒 {SHORT_EST[est.clave]}</span>;
                             else estadoNode = <span className="t9" style={{ color: C.faint }}>—</span>;
                             // Columna ACCIÓN: el botón "Agregar" está SIEMPRE presente en candidatas (habilitado o no).
                             const accionNode = f.candidata
@@ -7693,7 +7764,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               {(() => {
                                 const ldF = lineaDeudor[f.deudor];
                                 const m = f.monto || 0;
-                                if (bloq) return <span className="truncate t9 font-semibold" style={{ color: "#EF4444" }} title={`${est.label} · no se puede agregar`}>{est.label}</span>;
+                                if (bloq) return <span className="truncate t9 font-semibold" style={{ color: "#EF4444" }} title={`${est.label}${est.detalle ? " · " + est.detalle : " · no se puede agregar"}`}>{est.label}</span>;
                                 if (!ldF || ldF.neta == null) return <span className="t9" style={{ color: C.faint }}>Por evaluar</span>;
                                 const cabe = m <= ldF.neta;
                                 return <span className="truncate t9 font-semibold" style={{ color: cabe ? "#16A34A" : "#7C3AED" }}
@@ -22226,15 +22297,21 @@ export default function PipelineComercial() {
           }
           return d; // sigue esperando que se resuelvan sus excepciones o las llamadas
         }
-        // Detección de cesión a otro factoring: algunas facturas se ceden a la competencia.
-        // Si quedan todas cedidas a otro factoring, la oportunidad se da por perdida.
-        // Cesión a la competencia (AECSync): se evalúa UNA SOLA VEZ por oportunidad (no en cada tick),
-        // así no se acumulan pérdidas al correr el motor en background. Si el cedente tiene una cesión a
-        // otro factoring registrada, hay una probabilidad de perder la operación ante la competencia.
+        // CESIÓN A LA COMPETENCIA (AECSync) — es un HECHO del registro electrónico, no una moneda al
+        // aire. Antes: `if (comp && rndDetBool("aec|" + d.id, 0.12))`, o sea que el 12% de las
+        // oportunidades de un cedente que alguna vez cedió a otro se perdían por sorteo, sin que
+        // NINGUNA de sus facturas estuviera cedida. Ahora se miran las facturas de esta oferta contra
+        // el A2: si otro factoring ya se llevó el documento, el crédito tiene dueño y no hay nada que
+        // comprar. Se pierde entera sólo si se la llevaron TODA; si es una parte, queda anotada en
+        // `cedidasOtro` y la oferta sigue con el resto.
         if (["prospeccion", "oferta", "aceptadas"].includes(d.stage) && !d.cesionEval) {
-          const comp = d.cedidaCompetidor || (d.rutEmisor ? aecCompetidorDe(d) : competidorDe(d));
-          if (comp && rndDetBool(`aec|${d.id}`, 0.12)) { sumar("perdida", d); e.perdida++; return { ...d, stage: "perdida", etapaPerdida: d.stage, cesionEval: true, status: `Perdido · facturas financiadas por ${comp}`, cedidaCompetidor: comp, perdidaCesion: true, time: nowStamp(), historialContacto: traza(d, `AECSync: las facturas fueron financiadas por ${comp}. Oportunidad perdida ante la competencia.`, false) }; }
-          d = { ...d, cesionEval: true };
+          const ced = cesionesAjenasDeDeal(d);
+          const nFac = (d.facturasOp || []).length;
+          if (ced.n > 0 && ced.n >= nFac) {
+            sumar("perdida", d); e.perdida++;
+            return { ...d, stage: "perdida", etapaPerdida: d.stage, cesionEval: true, status: `Perdido · facturas financiadas por ${ced.factoring}`, cedidaCompetidor: ced.factoring, cedidasOtro: ced.n, perdidaCesion: true, time: nowStamp(), historialContacto: traza(d, `AECSync: las ${ced.n} factura(s) de la oferta fueron financiadas por ${ced.factoring} (folios ${ced.folios.slice(0, 6).join(", ")}${ced.folios.length > 6 ? "…" : ""}). Oportunidad perdida ante la competencia.`, false) };
+          }
+          d = { ...d, cesionEval: true, cedidasOtro: ced.n, cedidaCompetidor: ced.n > 0 ? ced.factoring : d.cedidaCompetidor };
         }
         if (d.stage === "prospeccion" && d.contactable === false) return d; // 14% no contactable: estancado en prospección
         // Si el cliente YA inició negociación (interés mostrado), no debe quedar en Prospección:

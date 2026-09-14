@@ -13,6 +13,14 @@ const { hashStr, pcRng, entre, ent } = require("../lib/rng");
 const { perfilEntidad } = require("../lib/perfil");
 
 const DIAS_VENTANA = 47, DIAS_ANIO = 365, CORTE = "2026-06-22";
+// Fecha de enrolamiento: determinista por RUT, y nunca posterior a la primera operación del cliente.
+function ingreso(rut, primeraOp) {
+  const y = 2024 + (Math.abs(hashStr("fi|" + rut)) % 2);
+  const m = 1 + (Math.abs(hashStr("fi2|" + rut)) % 9);
+  const d = 10 + (Math.abs(hashStr("fi3|" + rut)) % 9);
+  const f = `${y}-0${m}-${d}`;
+  return (primeraOp && f > primeraOp) ? primeraOp : f;
+}
 const BICE_RUT = "97.080.000-0";
 const ACTIVIDADES = [
   ["VENTA AL POR MAYOR DE OTROS PRODUCTOS N.C.P.", "COMERCIO"],
@@ -35,12 +43,18 @@ function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
     if (d.RUTRecep) { const g = recep[d.RUTRecep] || (recep[d.RUTRecep] = { mm: 0, n: 0 }); g.mm += (+d.MntTotal || 0) / 1e6; g.n++; razon[d.RUTRecep] = razon[d.RUTRecep] || d.RznSocRecep; }
   }
   // ── Medido: lo que cada cedente nos cedió a NOSOTROS (colocación real) ────────────────────────
+  // Se guardan las DOS puntas de la historia: la PRIMERA cesión (cuándo empezó a operar con nosotros)
+  // y la última. El fold llevaba sólo el máximo y lo escribía en `FECHA_PRIMERA_OPERACION`, así que el
+  // campo decía «primera» y traía la última — una empresa que nos cede hace dos años figuraba como
+  // cliente estrenado el mes pasado, que es justo al revés de lo que el campo sirve para decidir.
   const coloc = {};
   for (const a of (AECSYNC || [])) {
     if (!a || !a.RUTEmisor || a.RUTFactoring !== BICE_RUT) continue;
-    const g = coloc[a.RUTEmisor] || (coloc[a.RUTEmisor] = { mm: 0, n: 0, ultima: "" });
+    const g = coloc[a.RUTEmisor] || (coloc[a.RUTEmisor] = { mm: 0, n: 0, primera: "", ultima: "" });
     g.mm += (+a.MontoCesion || 0) / 1e6; g.n++;
-    const f = (a.FechaCesion || "").slice(0, 10); if (f > g.ultima) g.ultima = f;
+    const f = (a.FechaCesion || "").slice(0, 10); if (!f) continue;
+    if (f > g.ultima) g.ultima = f;
+    if (!g.primera || f < g.primera) g.primera = f;
   }
   const sow = {};
   for (const s of (SHARE_OF_WALLET || [])) if (s && s.RUTCliente) sow[s.RUTCliente] = s;
@@ -89,8 +103,11 @@ function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
       NOTA_COMPORTAMIENTO: +(pf === "sana" ? entre(r, 4.0, 5.0) : pf === "aislada" ? entre(r, 3.4, 4.6) : entre(r, 1.8, 4.0)).toFixed(1),
       ACTIVIDAD_ECONOMICA: actividad, SECTOR: sector,
       NUM_TRABAJADORES: rango(r, "trabajadores", pf),
-      FECHA_INGRESO: `202${4 + (Math.abs(hashStr("fi|" + rut)) % 2)}-0${1 + (Math.abs(hashStr("fi2|" + rut)) % 9)}-1${Math.abs(hashStr("fi3|" + rut)) % 9}`,
-      FECHA_PRIMERA_OPERACION: c && c.ultima ? c.ultima : "",
+      // Enrolarse es ANTES de operar: el ingreso se genera (no está en ningún activo) pero acotado a
+      // que no sea posterior a la primera cesión, o el archivo describiría un cliente que operó antes
+      // de existir. Con cesiones reconciliadas contra el A1 esto ya se puede comprobar.
+      FECHA_INGRESO: ingreso(rut, c && c.primera),
+      FECHA_PRIMERA_OPERACION: (c && c.primera) || "",
       CLIENTE_BANCO: r() < 0.32 ? "SI" : "NO", ALERTAS: pf === "ajustada" && r() < 0.35 ? "SI" : "NO",
       SEGMENTO: s ? s.Segmento : (esCliente ? "Base" : ""),
       SUB_SEGMENTO: s ? (s.Segmento === "Top" ? "Grandes" : s.Segmento === "Medio" ? "Medianas Grandes" : "Medianas") : "",
@@ -98,6 +115,9 @@ function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
       MARGEN_ULT_MES_M: Math.round(vAnualM / 12 * margenPct / 100),
       MARGEN_12M_M: Math.round(vAnualM * margenPct / 100),
       COLOC_PROM_12M_M: c ? Math.round(c.mm * 1000 / 12) : 0,
+      // Pricing histórico: NO está en ningún activo —una cesión traspasa el crédito, no el precio al
+      // que se compró—, así que se genera por perfil. La cesión sólo decide si el campo APLICA: un
+      // cliente que nunca nos cedió no tiene tasa de última operación.
       SPREAD_REAL_12M_PCT: c ? rango(r, "spreadReal", pf, 2) : "",
       TASA_ULT_OP_PCT: c ? +(rango(r, "spreadReal", pf, 2) + 0.58).toFixed(2) : "",
       COMISION_ULT_OP_M: c ? ent(r, 120, 480) : "",
