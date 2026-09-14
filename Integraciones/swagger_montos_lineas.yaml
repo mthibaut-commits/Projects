@@ -30,10 +30,10 @@ definitions:
     properties:
       idLinea: { type: string, example: "L-0007" }
       rutCliente: { type: string }
-      lineaAprobadaMM: { type: number }
-      usoActualMM: { type: number }
-      disponibleMM: { type: number }
-      proyeccionPostCurseMM: { type: number }
+      lineaAprobada: { type: integer }
+      usoActual: { type: integer }
+      disponible: { type: integer }
+      proyeccionPostCurse: { type: integer }
       morosidadDias: { type: integer }
       timestamp: { type: string, format: date-time }
   Error:

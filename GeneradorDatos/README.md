@@ -74,3 +74,16 @@ del A16 describen a la misma empresa desde ángulos distintos— el perfil se de
 2. Registrarlo en el arreglo `DERIVADOS` de `generar.js`.
 3. Si su forma es la de un CSV ancho, devolver `{ campos, filas }` en columnar: repetir los nombres de
    campo en cada fila cuesta un orden de magnitud en tamaño de archivo.
+
+## Unidad de los montos
+
+Los datasets se emiten con **todos los montos en pesos, enteros**. Nada en millones.
+
+- `SHARE_OF_WALLET` (A5) — la serie semanal pasó de `MontoBICEMM`/`MontoTotalMM` a `MontoBICE`/`MontoTotal`.
+- `LINEA_DISPONIBLE` (A7/A8) — `MontoAprobado`, `MontoUtilizado`, `MontoDisponible`, `LiberadoUlt24h`,
+  `CursadoUlt24h`.
+
+El **cupo** de una línea sí se otorga en cifras típicamente redondas —un comité aprueba $500.000.000,
+no $497.331.204— y por eso el 82% cae en tramos de $5.000.000. Pero puede ser cualquier monto, así
+que el 18% restante queda en la cifra exacta a propósito: ningún consumidor debe suponer que un cupo
+es redondo. Lo **utilizado**, que sale de facturas reales, es siempre exacto al peso.

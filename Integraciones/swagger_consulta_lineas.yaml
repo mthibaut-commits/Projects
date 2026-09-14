@@ -78,10 +78,10 @@ definitions:
       RUT deudor porque aplican a cualquiera. Viene UNA sola vez: es un pozo compartido entre todos los
       deudores de la operación y sumarlo por deudor duplica cupo.
     properties:
-      aprobadaMM: { type: number, example: 1200.0 }
-      utilizadaMM: { type: number, example: 780.0 }
-      reservadaMM: { type: number, example: 45.0 }
-      disponibleMM: { type: number, example: 375.0 }
+      aprobada: { type: integer, example: 1200000000 }
+      utilizada: { type: integer, example: 780000000 }
+      reservada: { type: integer, example: 45000000 }
+      disponible: { type: integer, example: 375000000 }
       topePropio:
         type: boolean
         description: >
@@ -99,10 +99,10 @@ definitions:
       sinLineaPropia:
         type: boolean
         description: true si el par no tiene LF2 ni LF3. En ese caso el único camino es la LF4 del nivel cliente.
-      aprobadaMM: { type: number }
-      utilizadaMM: { type: number }
-      reservadaMM: { type: number }
-      disponibleMM: { type: number }
+      aprobada: { type: integer }
+      utilizada: { type: integer }
+      reservada: { type: integer }
+      disponible: { type: integer }
       lineas:
         type: array
         items: { $ref: "#/definitions/Linea" }
@@ -115,10 +115,10 @@ definitions:
     properties:
       rutDeudor: { type: string }
       nombre: { type: string }
-      aprobadaMM: { type: number, example: 6000.0 }
-      utilizadaMM: { type: number, example: 5700.0 }
-      reservadaMM: { type: number, example: 120.0 }
-      disponibleMM: { type: number, example: 180.0 }
+      aprobada: { type: integer, example: 6000000000 }
+      utilizada: { type: integer, example: 5700000000 }
+      reservada: { type: integer, example: 120000000 }
+      disponible: { type: integer, example: 180000000 }
       nClientesCediendo:
         type: integer
         description: Cuántos clientes tienen exposición viva con este deudor. Explica por qué el disponible no depende sólo de esta cartera.
@@ -138,16 +138,16 @@ definitions:
       rutDeudor:
         type: string
         description: Nulo en LF1 y LF4, que por definición aplican a cualquier deudor.
-      aprobadaMM: { type: number }
-      utilizadaMM: { type: number }
-      reservadaMM: { type: number }
-      disponibleMM: { type: number }
+      aprobada: { type: integer }
+      utilizada: { type: integer }
+      reservada: { type: integer }
+      disponible: { type: integer }
       estado:
         type: string
         enum: [vigente, suspendida, caducada, anulada]
         description: >
           Una línea SUSPENDIDA conserva su utilizado —la suspensión no libera lo ya cedido— pero no
-          admite operaciones nuevas, así que devuelve disponibleMM = 0.
+          admite operaciones nuevas, así que devuelve disponible = 0.
       unSoloUso:
         type: boolean
         description: true en LF1 y LF3. Al cerrar la asignación se consumen completas y el saldo caduca.

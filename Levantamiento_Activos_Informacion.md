@@ -173,3 +173,15 @@
 2. **A13 es la única escritura hacia sistemas externos** (inyección); todo lo demás hacia afuera son canales de contacto (A17/A18) y el evento de curse (A19).
 3. La app hoy **mockea** A9–A15 con servicios deterministas; el contrato de datos de este documento es la referencia para reemplazarlos por las integraciones reales.
 4. Puntos de resiliencia sugeridos: reintento/backoff en A8 (refresh horario), cache del último CSV válido en A7, y manejo de error visible en los paneles de recuperación del wizard (ya contemplado en la UX recuperar→aceptar).
+
+## Unidad de los montos
+
+**Todos los montos de todos los activos van en pesos, enteros.** Ningún campo viaja en millones.
+
+Venían en millones varios de ellos —`LINEA_APROBADA_MM` y sus pares en A7/A8, `MontoBICEMM` /
+`MontoTotalMM` en la serie semanal de A5, `montoMM` y `compraAnualMM` en el feed de proveedores,
+`aprobadaMM` y compañía en el contrato A23— con uno o dos decimales de millón, es decir cuantizados
+de a $100.000 o $10.000. Eso no cuadra contra los activos que sí traen el monto exacto (DTESync,
+AECSync), y obliga a cada consumidor a reinflar a pesos, que es donde se pierde la plata.
+
+El millón es una abreviatura de **pantalla**. En el dato, la unidad es el peso.

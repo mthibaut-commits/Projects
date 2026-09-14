@@ -41,28 +41,33 @@
   const alto = conNota[0], bajo = conNota[conNota.length - 1];
   const noPrime = "99.999.999-9";
 
-  const fac = (id, rut, monto) => ({ id, folio: id, deudor: nomDe(rut), rutRecep: rut, montoMM: monto, tipoDeudor: "Lista Blanca" });
-  const facOtro = (id, rut, monto) => ({ id, folio: id, deudor: "NoPrime-" + rut, rutRecep: rut, montoMM: monto, tipoDeudor: "Otro" });
-  const L = (id, tipo, rut, ap, vig) => ({ id, tipo, granularidad: "par", rutDeudor: rut, aprobado: ap, vigente: vig || 0 });
-  const comodin = (ap, vig, susp) => ({ id: "LF4-T", tipo: "LF4", granularidad: "comodin", categoria: "Lista Blanca", rutDeudor: null, aprobado: ap, vigente: vig || 0, suspendida: !!susp });
-  const estB = (lineas, asignada, uso) => ({ estado: "B", asignadaCliente: asignada, usoCliente: uso || 0, lineas, cola: [] });
-  const estA = () => ({ estado: "A", asignadaCliente: 30, usoCliente: 0, cola: [], lineas: [{ id: "LF1-t", tipo: "LF1", granularidad: "comodin", rutDeudor: null, aprobado: 30, vigente: 0, soloPrime: true, unSoloUso: true }] });
-  const dl = (rut, ap, vig) => ({ rutDeudor: rut, nombre: nomDe(rut), tipo: "Lista Blanca", aprobado: ap, vigente: vig || 0, nClientes: 3 });
+  // Los escenarios se ESCRIBEN en millones, que es como los enuncia el negocio («una LF3 de 120»),
+  // pero los helpers emiten PESOS, que es la unidad real del motor: nada aguas adentro trabaja en
+  // millones. `mm()` devuelve la salida a millones para poder afirmar sobre la cifra del enunciado.
+  const MMF = 1e6;
+  const mm = (x) => Math.round((x || 0) * 10 / MMF) / 10;
+  const fac = (id, rut, monto) => ({ id, folio: id, deudor: nomDe(rut), rutRecep: rut, monto: Math.round(monto * MMF), tipoDeudor: "Lista Blanca" });
+  const facOtro = (id, rut, monto) => ({ id, folio: id, deudor: "NoPrime-" + rut, rutRecep: rut, monto: Math.round(monto * MMF), tipoDeudor: "Otro" });
+  const L = (id, tipo, rut, ap, vig) => ({ id, tipo, granularidad: "par", rutDeudor: rut, aprobado: Math.round(ap * MMF), vigente: Math.round((vig || 0) * MMF) });
+  const comodin = (ap, vig, susp) => ({ id: "LF4-T", tipo: "LF4", granularidad: "comodin", categoria: "Lista Blanca", rutDeudor: null, aprobado: Math.round(ap * MMF), vigente: Math.round((vig || 0) * MMF), suspendida: !!susp });
+  const estB = (lineas, asignada, uso) => ({ estado: "B", asignadaCliente: Math.round(asignada * MMF), usoCliente: Math.round((uso || 0) * MMF), lineas, cola: [] });
+  const estA = () => ({ estado: "A", asignadaCliente: 30 * MMF, usoCliente: 0, cola: [], lineas: [{ id: "LF1-t", tipo: "LF1", granularidad: "comodin", rutDeudor: null, aprobado: 30 * MMF, vigente: 0, soloPrime: true, unSoloUso: true }] });
+  const dl = (rut, ap, vig) => ({ rutDeudor: rut, nombre: nomDe(rut), tipo: "Lista Blanca", aprobado: Math.round(ap * MMF), vigente: Math.round((vig || 0) * MMF), nClientes: 3 });
   let r;
 
   // 1 · LF2 holgada, una factura chica → con línea, origen LF2 completa
   r = asignarLineas([fac("f1", LB[0], 20)], "X", { estado: estB([L("LF2-a", "LF2", LB[0], 200)], 5000), deudores: { [LB[0]]: dl(LB[0], 900) } });
-  ok("1 LF2 holgada", r.cursable === 20 && r.facturas[0].origen.length === 1 && r.facturas[0].origen[0].tipo === "LF2", "cursable " + r.cursable);
+  ok("1 LF2 holgada", mm(r.cursable) === 20 && r.facturas[0].origen.length === 1 && r.facturas[0].origen[0].tipo === "LF2", "cursable " + r.cursable);
 
   // 2 · LF3 de 120 con facturas por 84,1 → todo desde LF3; se consume completa, caducan 35,9
   r = asignarLineas([fac("f1", LB[1], 50), fac("f2", LB[1], 34.1)], "X", { estado: estB([L("LF3-b", "LF3", LB[1], 120), L("LF2-b", "LF2", LB[1], 200)], 5000), deudores: { [LB[1]]: dl(LB[1], 900) } });
   const l3 = r.lineasUsadas.find((x) => x.tipo === "LF3");
-  ok("2 la puntual se consume completa", r.cursable === 84.1 && l3 && l3.montoCaducado === 35.9, "usado " + (l3 && l3.usado) + " caduca " + (l3 && l3.montoCaducado));
+  ok("2 la puntual se consume completa", mm(r.cursable) === 84.1 && l3 && mm(l3.montoCaducado) === 35.9, "usado " + (l3 && l3.usado) + " caduca " + (l3 && l3.montoCaducado));
 
   // 3 · factura de 130 con LF3 de 60 y LF2 de 172 → repartida 60 + 70, en ese orden
   r = asignarLineas([fac("f1", LB[2], 130)], "X", { estado: estB([L("LF3-c", "LF3", LB[2], 60), L("LF2-c", "LF2", LB[2], 172)], 5000), deudores: { [LB[2]]: dl(LB[2], 900) } });
   const o = r.facturas[0].origen;
-  ok("3 una factura repartida entre dos líneas", o.length === 2 && o[0].tipo === "LF3" && o[0].monto === 60 && o[1].monto === 70, JSON.stringify(o.map((x) => x.tipo + ":" + x.monto)));
+  ok("3 una factura repartida entre dos líneas", o.length === 2 && o[0].tipo === "LF3" && mm(o[0].monto) === 60 && mm(o[1].monto) === 70, JSON.stringify(o.map((x) => x.tipo + ":" + mm(x.monto))));
 
   // 4 · par holgado pero la línea del deudor sólo tiene 150 → parcial, motivo `deudor`
   r = asignarLineas([fac("f1", LB[3], 130), fac("f2", LB[3], 85), fac("f3", LB[3], 42.3)], "X", { estado: estB([L("LF2-d", "LF2", LB[3], 900)], 5000), deudores: { [LB[3]]: dl(LB[3], 150) } });
@@ -71,7 +76,7 @@
 
   // 5 · sin LF2 ni LF3, línea de otros deudores con saldo → la financia esa
   r = asignarLineas([fac("f1", LB[4], 18)], "X", { estado: estB([comodin(40, 0)], 5000), deudores: { [LB[4]]: dl(LB[4], 900) } });
-  ok("5 la financia la línea de otros deudores", r.cursable === 18 && r.facturas[0].origen[0].tipo === "LF4", "");
+  ok("5 la financia la línea de otros deudores", mm(r.cursable) === 18 && r.facturas[0].origen[0].tipo === "LF4", "");
 
   // 6 · línea de otros deudores agotada por un deudor de MEJOR nota → el de peor nota sin línea
   const inj = () => ({ estado: estB([comodin(40, 0)], 5000), deudores: { [alto.rut]: dl(alto.rut, 900), [bajo.rut]: dl(bajo.rut, 900) } });
@@ -81,40 +86,40 @@
   // 7 · agregar un deudor de mejor nota reordena y cambia el resultado de los que vienen detrás
   const soloB = asignarLineas([fac("fB", bajo.rut, 35)], "X", inj());
   const conA = asignarLineas([fac("fB", bajo.rut, 35), fac("fA", alto.rut, 35)], "X", inj());
-  ok("7 el recálculo es completo", soloB.cursable === 35 && conA.facturas.find((f) => f.id === "fB").estado === "REQUIERE_COMITE" && conA.facturas.find((f) => f.id === "fA").estado === "CON_LINEA", "solo fB " + soloB.cursable + " · con fA " + conA.cursable);
+  ok("7 el recálculo es completo", mm(soloB.cursable) === 35 && conA.facturas.find((f) => f.id === "fB").estado === "REQUIERE_COMITE" && conA.facturas.find((f) => f.id === "fA").estado === "CON_LINEA", "solo fB " + soloB.cursable + " · con fA " + conA.cursable);
 
   // 8 · quitar las facturas de un deudor libera cupo para el resto
-  ok("8 quitar un deudor libera cupo", conA.requiereComite === 35 && soloB.requiereComite === 0, "con fA " + conA.requiereComite + " · sin fA " + soloB.requiereComite);
+  ok("8 quitar un deudor libera cupo", mm(conA.requiereComite) === 35 && mm(soloB.requiereComite) === 0, "con fA " + conA.requiereComite + " · sin fA " + soloB.requiereComite);
 
   // 9 · selección vacía
   r = asignarLineas([], "X", { estado: estB([L("LF2-z", "LF2", LB[0], 200)], 5000), deudores: {} });
-  ok("9 selección vacía", r.vacia === true && r.cursable === 0 && r.requiereComite === 0, "");
+  ok("9 selección vacía", r.vacia === true && mm(r.cursable) === 0 && mm(r.requiereComite) === 0, "");
 
   // 10 · función pura: dos corridas idénticas dan lo mismo y no mutan el estado inyectado
   const inj10 = { estado: estB([L("LF2-p", "LF2", LB[0], 100)], 5000), deudores: { [LB[0]]: dl(LB[0], 900) } };
   const a1 = asignarLineas([fac("f1", LB[0], 60)], "X", inj10);
   const a2 = asignarLineas([fac("f1", LB[0], 60)], "X", inj10);
-  ok("10 el motor es puro e idempotente", a1.cursable === a2.cursable && a1.cursable === 60 && inj10.estado.lineas[0].vigente === 0, "");
+  ok("10 el motor es puro e idempotente", a1.cursable === a2.cursable && mm(a1.cursable) === 60 && inj10.estado.lineas[0].vigente === 0, "");
 
   // 11 · una línea de otros deudores suspendida conserva su exposición pero no admite nada nuevo
   r = asignarLineas([fac("f1", bajo.rut, 5)], "X", { estado: estB([comodin(40, 0, true)], 5000), deudores: { [bajo.rut]: dl(bajo.rut, 900) } });
-  ok("11 la línea suspendida no financia", r.cursable === 0 && r.facturas[0].motivo === "lf4", "");
+  ok("11 la línea suspendida no financia", mm(r.cursable) === 0 && r.facturas[0].motivo === "lf4", "");
 
   // 12 · la línea de otros deudores NUNCA es colchón de un deudor que ya tiene línea propia
   r = asignarLineas([fac("f1", alto.rut, 50)], "X", { estado: estB([L("LF2-x", "LF2", alto.rut, 30), comodin(400, 0)], 5000), deudores: { [alto.rut]: dl(alto.rut, 900) } });
-  ok("12 no es colchón del que tiene línea propia", r.cursable === 0 && r.facturas[0].motivo === "par", "motivo " + r.facturas[0].motivo);
+  ok("12 no es colchón del que tiene línea propia", mm(r.cursable) === 0 && r.facturas[0].motivo === "par", "motivo " + r.facturas[0].motivo);
 
   // 13 · el tope del cliente bloquea cuando su línea asignada está casi consumida
   r = asignarLineas([fac("f1", alto.rut, 50)], "X", { estado: estB([L("LF2-y", "LF2", alto.rut, 900)], 1000, 980), deudores: { [alto.rut]: dl(alto.rut, 900) } });
-  ok("13 el tope del cliente bloquea", r.cursable === 0 && r.facturas[0].motivo === "cliente", "disponible " + r.dispCliente);
+  ok("13 el tope del cliente bloquea", mm(r.cursable) === 0 && r.facturas[0].motivo === "cliente", "disponible " + r.dispCliente);
 
   // 14 · asignación por factura COMPLETA, la grande primero
   r = asignarLineas([fac("f1", alto.rut, 60), fac("f2", alto.rut, 30)], "X", { estado: estB([L("LF2-w", "LF2", alto.rut, 70)], 5000), deudores: { [alto.rut]: dl(alto.rut, 900) } });
-  ok("14 factura completa, la grande primero", r.cursable === 60 && r.facturas.find((f) => f.id === "f1").estado === "CON_LINEA", "cursable " + r.cursable);
+  ok("14 factura completa, la grande primero", mm(r.cursable) === 60 && r.facturas.find((f) => f.id === "f1").estado === "CON_LINEA", "cursable " + r.cursable);
 
   // 15 · cliente en estado A: la LF1 sólo admite deudores prime y sólo hasta $30M
   r = asignarLineas([fac("f1", alto.rut, 18), facOtro("f2", noPrime, 5)], "X", { estado: estA(), deudores: { [alto.rut]: dl(alto.rut, 900), [noPrime]: dl(noPrime, 900) } });
-  ok("15 la LF1 sólo cubre deudores prime", r.cursable === 18 && r.facturas.find((f) => f.id === "f2").motivo === "lf1", "cursable " + r.cursable);
+  ok("15 la LF1 sólo cubre deudores prime", mm(r.cursable) === 18 && r.facturas.find((f) => f.id === "f2").motivo === "lf1", "cursable " + r.cursable);
 
   // ══ DIFF CONTRA LA VERSIÓN ANTERIOR (informativo, NUNCA vinculante) ═══════════════════════════
   // Lo que trae la API es la verdad y sobre eso se asigna. La versión anterior sólo sirve para poder
@@ -135,17 +140,17 @@
   const antes17 = asignarLineas([fac("f1", LB[6], 80)], "X", { estado: estB([L("LF2-a1", "LF2", LB[6], 50)], 5000), deudores: { [LB[6]]: dl(LB[6], 900) } });
   r = asignarLineas([fac("f1", LB[6], 80)], "X", { estado: estB([L("LF2-a1", "LF2", LB[6], 300)], 5000), deudores: { [LB[6]]: dl(LB[6], 900) }, previa: previa(snap(antes17)) });
   ok("17 la línea se amplió: ya no necesita comité",
-     antes17.cursable === 0 && r.cursable === 80 && r.diff.ganaron === 1 && r.diff.montoGanado === 80
+     mm(antes17.cursable) === 0 && mm(r.cursable) === 80 && r.diff.ganaron === 1 && mm(r.diff.montoGanado) === 80
      && r.diff.perdieron === 0 && r.facturas[0].cambio === "gano_linea",
-     "ganaron " + r.diff.ganaron + " por " + r.diff.montoGanado);
+     "ganaron " + r.diff.ganaron + " por " + mm(r.diff.montoGanado));
 
   // 18 · el cupo se consumió en OTRO negocio (cursado por otro canal) → ahora califican menos
   const antes18 = asignarLineas([fac("f1", LB[7], 80)], "X", { estado: estB([L("LF2-c1", "LF2", LB[7], 300)], 5000), deudores: { [LB[7]]: dl(LB[7], 900) } });
   r = asignarLineas([fac("f1", LB[7], 80)], "X", { estado: estB([L("LF2-c1", "LF2", LB[7], 300, 260)], 5000), deudores: { [LB[7]]: dl(LB[7], 900) }, previa: previa(snap(antes18)) });
   ok("18 otro negocio consumió el cupo: ahora va a comité",
-     antes18.cursable === 80 && r.cursable === 0 && r.diff.perdieron === 1 && r.diff.montoPerdido === 80
+     mm(antes18.cursable) === 80 && mm(r.cursable) === 0 && r.diff.perdieron === 1 && mm(r.diff.montoPerdido) === 80
      && r.facturas[0].cambio === "perdio_linea",
-     "perdieron " + r.diff.perdieron + " por " + r.diff.montoPerdido);
+     "perdieron " + r.diff.perdieron + " por " + mm(r.diff.montoPerdido));
 
   // 19 · la puntual se agotó entre versiones → la misma factura se financia ahora con la normal
   const antes19 = asignarLineas([fac("f1", LB[8], 40)], "X", { estado: estB([L("LF3-x1", "LF3", LB[8], 60), L("LF2-x1", "LF2", LB[8], 200)], 5000), deudores: { [LB[8]]: dl(LB[8], 900) } });
@@ -186,17 +191,17 @@
   const rec21 = recortarAsignacion(acep21, ["f1"]);
   const q1 = rec21.facturas.find((f) => f.id === "f1");
   ok("21 retirar la no confirmada baja el cursable",
-     acep21.cursable === 80 && rec21.cursable === 50 && rec21.facturas.length === 1
+     mm(acep21.cursable) === 80 && mm(rec21.cursable) === 50 && rec21.facturas.length === 1
      && JSON.stringify(q1.origen) === JSON.stringify(acep21.facturas.find((f) => f.id === "f1").origen)
-     && rec21.recorte.retiradas === 1 && rec21.recorte.montoRetirado === 30,
-     "80 → " + rec21.cursable + " · retirado " + rec21.recorte.montoRetirado);
+     && rec21.recorte.retiradas === 1 && mm(rec21.recorte.montoRetirado) === 30,
+     "80 → " + mm(rec21.cursable) + " · retirado " + mm(rec21.recorte.montoRetirado));
 
   // 22 · el cupo liberado NO vuelve solo: la reserva sigue puesta hasta que la liberen afuera
   const dispAntes = (acep21.deudores[0].detallePar[0] || {}).disponible;
   const dispDespues = (rec21.deudores[0].detallePar[0] || {}).disponible;
   ok("22 recortar no devuelve el cupo por sí solo",
-     dispAntes === dispDespues && rec21.deudores[0].asignado === 50 && rec21.deudores[0].nFacturas === 1,
-     "disponible " + dispAntes + " = " + dispDespues + " · asignado " + rec21.deudores[0].asignado);
+     dispAntes === dispDespues && mm(rec21.deudores[0].asignado) === 50 && rec21.deudores[0].nFacturas === 1,
+     "disponible " + mm(dispAntes) + " = " + mm(dispDespues) + " · asignado " + mm(rec21.deudores[0].asignado));
 
   // 23 · GUARDARRAÍL: recortar NO re-asigna. Aunque la línea se haya consumido afuera entre medio,
   //      la factura que queda conserva su origen — una operación firmada no pierde línea por una
@@ -225,8 +230,8 @@
   // 25 · la factura que el deudor NO confirmó queda vetada para esa operación: ni la lista de
   //      candidatas la ofrece como agregable, ni se puede reponer por otro camino.
   const dealV25 = { id: "T-25" };
-  const facV25 = { id: "fx25", folio: "9001", montoMM: 40, deudor: "DEU-X" };
-  repoNoConfirmadas.set(dealV25.id, { fx25: { folio: "9001", montoMM: 40, deudor: "DEU-X", por: "test", fecha: "hoy" } });
+  const facV25 = { id: "fx25", folio: "9001", monto: 40 * MMF, deudor: "DEU-X" };
+  repoNoConfirmadas.set(dealV25.id, { fx25: { folio: "9001", monto: 40 * MMF, deudor: "DEU-X", por: "test", fecha: "hoy" } });
   const est25 = estadoCandidata(facV25, dealV25);
   ok("25 la factura no confirmada queda vetada",
      noConfirmada(dealV25, facV25) === true && est25.agregable === false && est25.bloqueada === true && est25.clave === "noConfirmada",
@@ -268,7 +273,7 @@
     const fs30 = filasVerificacion([deal30]);
     const fila = fs30.find((x) => x.rutDeudor === deudorTel.r);
     ok("30 filasVerificacion agrupa por deudor",
-       !!fila && fila.facturas.length === 2 && fila.monto === 50 && fila.estado === "pendiente" && fila.causas.length >= 1,
+       !!fila && fila.facturas.length === 2 && mm(fila.monto) === 50 && fila.estado === "pendiente" && fila.causas.length >= 1,
        fila ? `1 fila · ${fila.facturas.length} facturas · ${fila.causas.length} causa(s) · ${fila.estado}` : "sin fila");
   }
 
@@ -603,8 +608,8 @@
 
   // 50 · El piso sube con el monto y NUNCA baja el nivel del tramo.
   {
-    const d1 = { id: "T-50", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", amountMM: 15, facturasOp: [fac("f1", LB[0], 15)] };
-    const d2 = { ...d1, amountMM: 200 };
+    const d1 = { id: "T-50", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", monto: 15 * MMF, facturasOp: [fac("f1", LB[0], 15)] };
+    const d2 = { ...d1, monto: 200 * MMF };
     // C07 se excluye: es la única regla cuyo TRAMO depende del monto (mide el cupo de línea), así que
     // mezclarla no distinguiría el efecto del piso del efecto de su propio tramo.
     const exc = (d) => evaluarOtorgItems(d).filter((i) => i.disp === "excepcion" && i.regla.cond !== "C07");
@@ -614,16 +619,16 @@
     const subio = comunes.filter((i) => i.nivel > porKey[i.stKey].nivel);
     ok("50 el monto de la operación escala el nivel exigido, y nunca lo baja",
        // el piso por tramo de monto, medido de frente
-       pisoPorMonto("riesgo", 15) === 1 && pisoPorMonto("riesgo", 50) === 3
-       && pisoPorMonto("riesgo", 100) === 4 && pisoPorMonto("riesgo", 200) === 5
+       pisoPorMonto("riesgo", 15 * MMF) === 1 && pisoPorMonto("riesgo", 50 * MMF) === 3
+       && pisoPorMonto("riesgo", 100 * MMF) === 4 && pisoPorMonto("riesgo", 200 * MMF) === 5
        // Comercial SATURA en N3, que es su tope en la política (Gerente General). Pedirle N4 no
        // exigiría más: dejaría la excepción sin aprobador, que es un bug de configuración disfrazado
        // de control. Un área sin piso configurado simplemente no escala.
-       && pisoPorMonto("comercial", 100) === 3 && pisoPorMonto("comercial", 200) === 3
-       && rolDeAreaNivel("comercial", pisoPorMonto("comercial", 200)).sinAprobador !== true
-       && pisoPorMonto("verificacion", 200) === 1
+       && pisoPorMonto("comercial", 100 * MMF) === 3 && pisoPorMonto("comercial", 200 * MMF) === 3
+       && rolDeAreaNivel("comercial", pisoPorMonto("comercial", 200 * MMF)).sinAprobador !== true
+       && pisoPorMonto("verificacion", 200 * MMF) === 1
        // es piso, no reemplazo: un tramo N5 sigue siendo N5 en una operación chica
-       && nivelExigido("riesgo", 5, 15) === 5 && nivelExigido("riesgo", 2, 200) === 5
+       && nivelExigido("riesgo", 5, 15 * MMF) === 5 && nivelExigido("riesgo", 2, 200 * MMF) === 5
        // y en la evaluación real: mismo cliente, mismas reglas, sólo cambia el monto
        && comunes.length > 0 && subio.length > 0
        && comunes.every((i) => i.nivel >= porKey[i.stKey].nivel)
@@ -642,7 +647,7 @@
     const faltan = conservados.filter((n) => { try { return eval("typeof " + n) === "undefined"; } catch (e) { return true; } });
     ok("51 el modelo de causas de desvío se retiró entero",
        vivos.length === 0 && faltan.length === 0
-       && gravedadPorMonto(15) === "leve" && gravedadPorMonto(200) === "critico",
+       && gravedadPorMonto(15 * MMF) === "leve" && gravedadPorMonto(200 * MMF) === "critico",
        `eliminados ${muertos.length}${vivos.length ? " · sobreviven: " + vivos.join(", ") : ""} · conservados ${conservados.length}${faltan.length ? " · faltan: " + faltan.join(", ") : ""}`);
   }
 
@@ -696,9 +701,9 @@
       fchVctoProm: 40, pctPagoDeudor3M: 95, mntCompraOp3M: 100, avgVentaProm3M: 100,
       mesesConVenta6M: 6, pctMora25d: 0, pctReclamadas: 0, mntPagoDeudor3M: 2000,
     };
-    const sinPlazo = verifDecision(parBase, [{ id: "a", montoMM: 10 }]);                  // sin `venc`
-    const conPlazo = verifDecision(parBase, [{ id: "a", montoMM: 10, venc: 41 }]);        // 2,5% de 40
-    const fuera    = verifDecision(parBase, [{ id: "a", montoMM: 10, venc: 60 }]);        // 50% de 40
+    const sinPlazo = verifDecision(parBase, [{ id: "a", monto: 10 * MMF }]);                  // sin `venc`
+    const conPlazo = verifDecision(parBase, [{ id: "a", monto: 10 * MMF, venc: 41 }]);        // 2,5% de 40
+    const fuera    = verifDecision(parBase, [{ id: "a", monto: 10 * MMF, venc: 60 }]);        // 50% de 40
     const st = (r) => (r.evals.find((e) => e.r.id === "V06") || {}).st;
     ok("54 la regla 6 sin plazo incumple, no se rellena con el promedio",
        st(sinPlazo) === "no" && sinPlazo.requiere === true
@@ -740,7 +745,7 @@
   // 56 · Las VARIABLES del motor de otorgamiento. Antes salían de `SIM_VERSIONS` vía
   // `varsClienteActual`, así que `evaluarOtorgItems` no se podía levantar a un servicio.
   {
-    const deal56 = { id: "T-56", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", amountMM: 40,
+    const deal56 = { id: "T-56", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", monto: 40 * MMF,
                      facturasOp: [fac("s1", LB[0], 40)] };
     const base = apiVarsCliente(deal56, 0);
     const ver = (v) => ({ versiones: { "T-56": [{ vars: { ...base, tgrCobrJud: v } }] } });
@@ -771,7 +776,7 @@
   // 58 · El VISADO, que es lo que LIBERA EL GIRO. `otorgamientoCompleto` lo leía de `VISADO_STATE` a
   // través de `visadoDeal`, y encima con cache: dos motivos para que no pudiera decidir en el servidor.
   {
-    const deal58 = { id: "T-58", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", amountMM: 30,
+    const deal58 = { id: "T-58", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", monto: 30 * MMF,
                      stage: "otorgamiento", facturasOp: [fac("w1", LB[3], 30)], aceptada: true, firmada: true };
     const v0 = visadoDeal(deal58, { visado: {} });
     const todoAprobado = {}; v0.exc.forEach((e) => { todoAprobado[e.stKey] = "aprobado"; });
@@ -1267,7 +1272,7 @@
     const limpio = { ...base, protocolo: { existe: false }, prime: true, recortado: true,
       aplican: VERIF_APLICAN_RECORTADO, avgVentaProm3M: 1e9, mesesConVenta6M: 6,
       pctMora25d: 0, pctReclamadas: 0, mntPagoDeudor3M: 5000 };
-    const fs = [{ montoMM: 40, venc: 45 }];
+    const fs = [{ monto: 40 * MMF, venc: 45 }];
     const normal = verifDecision({ ...limpio, primeraOperacion: false }, fs);
     const primera = verifDecision({ ...limpio, primeraOperacion: true }, fs);
     // y manda sobre el protocolo: si son las dos, la causa informada es la 0
@@ -1422,27 +1427,27 @@
   }
 
   // 83 · El camino de las LISTAS. La tarjeta del tubo no tiene las condiciones que el ejecutivo edita
-  // en el detalle, así que reparte el `giroMM` YA SIMULADO del deal por peso en monto y clasifica con
+  // en el detalle, así que reparte el `giro` YA SIMULADO del deal por peso en monto y clasifica con
   // el mismo motor. Dos cosas que tienen que cumplirse: que la suma siga siendo el giro del deal —si
   // la tarjeta mostrara otra cifra que el detalle, el ejecutivo vería dos verdades— y que sin
   // simulación no muestre nada, porque antes de simular no hay monto que repartir.
   {
     const fs = [fac("l1", LB[0], 30), fac("l2", LB[1], 12), fac("l3", LB[0], 5)];
     const base = { id: "T-83", rutEmisor: "76.111.111-1", cliente: "Cliente 83", facturasOp: fs };
-    const sinSim = giroResumenDeal({ ...base, simulado: false, giroMM: 45 });
-    const sinFact = giroResumenDeal({ ...base, simulado: true, giroMM: 45, facturasOp: [] });
-    const g = giroResumenDeal({ ...base, simulado: true, giroMM: 45.6 });
+    const sinSim = giroResumenDeal({ ...base, simulado: false, giro: 45 * MMF });
+    const sinFact = giroResumenDeal({ ...base, simulado: true, giro: 45 * MMF, facturasOp: [] });
+    const g = giroResumenDeal({ ...base, simulado: true, giro: 45.6 * MMF });
     const total = Math.round(45.6 * 1e6);
     const suma = g ? g.tipos.reduce((a, x) => a + x.monto, 0) : -1;
     // memoizado: la segunda llamada devuelve el MISMO objeto mientras no cambie la firma
-    const g2 = giroResumenDeal({ ...base, simulado: true, giroMM: 45.6 });
+    const g2 = giroResumenDeal({ ...base, simulado: true, giro: 45.6 * MMF });
     // y cambiar el giro invalida: la firma incluye el monto
-    const g3 = giroResumenDeal({ ...base, simulado: true, giroMM: 90 });
+    const g3 = giroResumenDeal({ ...base, simulado: true, giro: 90 * MMF });
     // Y el desajuste que dejaba los chips en blanco sin error: el id de respaldo es POSICIONAL, así
     // que si el prorrateo indexa sobre las facturas válidas y el adaptador sobre todas, ninguna casa
     // y todas quedan en giro 0. Se prueba con una excluida al medio y facturas SIN folio.
-    const sinFolio = [{ id: null, deudor: LB[0], montoMM: 10 }, { id: null, deudor: LB[1], montoMM: 20 }];
-    const ent = girosDeDeal({ id: "T-83b", rutEmisor: "76.111.111-1", facturasOp: [{ id: null, deudor: "X", montoMM: 5 }, ...sinFolio] },
+    const sinFolio = [{ id: null, deudor: LB[0], monto: 10 * MMF }, { id: null, deudor: LB[1], monto: 20 * MMF }];
+    const ent = girosDeDeal({ id: "T-83b", rutEmisor: "76.111.111-1", facturasOp: [{ id: null, deudor: "X", monto: 5 * MMF }, ...sinFolio] },
       { facturas: sinFolio, prorrateo: { filas: [{ id: "f0", giro: 1000 }, { id: "f1", giro: 2000 }], montoGirar: 3000 } });
     const conGiro = ent.facturas.filter((f) => f.giro > 0).length;
     ok("83 la tarjeta del tubo reparte el giro simulado y cuadra con él",
@@ -1514,7 +1519,7 @@
   // con lo que haya en el navegador.
   {
     const fs = [fac("e1", LB[0], 20), fac("e2", LB[1], 12)];
-    const base = { id: "T-85", rutEmisor: "76.111.111-1", cliente: "Cliente 85", facturasOp: fs, amountMM: 32, negocioNum: "OP-85" };
+    const base = { id: "T-85", rutEmisor: "76.111.111-1", cliente: "Cliente 85", facturasOp: fs, monto: 32 * MMF, negocioNum: "OP-85" };
     const o05 = (d, ev) => evaluarOtorgItems(d, ev ? { evidencia: { [d.id]: ev } } : undefined).find((i) => i.regla.cond === "O05");
     const firma = (d, via) => ({ via: via || "electronica", canonico: huellaOperacion(d), hash: "h", por: "Cliente", fecha: "—" });
 
@@ -1522,7 +1527,7 @@
     const conFirma = o05(base, firma(base));
     // El paquete cambia DESPUÉS de firmar: se agrega una factura. La huella deja de calzar sin que
     // nadie toque ninguna bandera — es el caso que el booleano no podía ver.
-    const conFactuaraExtra = { ...base, facturasOp: [...fs, fac("e3", LB[0], 5)], amountMM: 37 };
+    const conFactuaraExtra = { ...base, facturasOp: [...fs, fac("e3", LB[0], 5)], monto: 37 * MMF };
     const traspapelada = o05(conFactuaraExtra, firma(base));
     // Y el caso fino: misma cantidad de facturas y mismo total, pero movidas de deudor. Con sólo los
     // conteos y el monto total la huella sería idéntica; con el monto POR DEUDOR, no.
@@ -1564,7 +1569,7 @@
   // operación» se arreglan de formas distintas— y que la huella incluya lo que el negocio definió.
   {
     const fs = [fac("g1", LB[0], 40), fac("g2", LB[1], 10)];
-    const d = { id: "T-86", rutEmisor: "76.222.222-2", cliente: "Cliente 86", facturasOp: fs, amountMM: 50, negocioNum: "OP-86" };
+    const d = { id: "T-86", rutEmisor: "76.222.222-2", cliente: "Cliente 86", facturasOp: fs, monto: 50 * MMF, negocioNum: "OP-86" };
     const h = huellaOperacion(d);
     const sin = evidenciaContratoOk(d, { evidencia: {} });
     const ok1 = evidenciaContratoOk(d, { evidencia: { "T-86": { canonico: h, hash: "x" } } });
@@ -1676,6 +1681,37 @@
        && pendGiro === "Pendiente de Giro" && girada === "Girada"
        && fuera && dentro,
        `limpia → ${limpia.stage}/${limpia.integracion} · 42 excepciones → ${conExc.stage} · 8 por verificar → ${conVerif.stage} · sin evidencia → ${sinEvid.stage} · manual → ${manual.stage} · ${saltos} saltos en 16 combinaciones · etiquetas ${[enOtorg, pendInt, pendGiro, girada].join(" → ")}`);
+  }
+
+  // 89 · NINGUNA APROXIMACION: entre DTESync y el motor no se pierde un peso. El monto vivia en
+  // MILLONES con dos decimales (`+(MntTotal/1e6).toFixed(2)`), o sea cuantizado de a $10.000: 29.999
+  // de 30.000 facturas quedaban mal, $2.503 de error medio y $75.096.940 acumulados. Y el pricing
+  // re-inflaba esa cifra a pesos, asi que la «regla de oro» del prorrateo cuadraba contra un total
+  // que ya venia equivocado. Este caso fija que el peso es la unidad y que nada la redondea.
+  {
+    const dte = (window.DTESYNC || []).slice(0, 4000);
+    const facturas = dte.map((r) => ({ monto: Math.round(+r.MntTotal || 0) }));
+    const perdidos = dte.reduce((a, r, i) => a + Math.abs((+r.MntTotal || 0) - facturas[i].monto), 0);
+    const noEnteros = facturas.filter((f) => !Number.isInteger(f.monto)).length;
+    // el motor no redondea lo que recibe: lo cursable de una factura que cabe es su monto EXACTO
+    const rutP = LB[0];
+    const exacta = 12345678, otra = 7654321;
+    const rEx = asignarLineas(
+      [{ id: "e1", folio: "e1", deudor: nomDe(rutP), rutRecep: rutP, monto: exacta, tipoDeudor: "Lista Blanca" },
+       { id: "e2", folio: "e2", deudor: nomDe(rutP), rutRecep: rutP, monto: otra, tipoDeudor: "Lista Blanca" }],
+      "X", { estado: estB([L("LF2-ex", "LF2", rutP, 900)], 5000), deudores: { [rutP]: dl(rutP, 900) } });
+    const f1 = rEx.facturas.find((f) => f.id === "e1"), f2 = rEx.facturas.find((f) => f.id === "e2");
+    // y el reparto entre lineas tampoco pierde: el origen suma exactamente la factura
+    const sumaOrigen = (f) => (f.origen || []).reduce((a, o) => a + o.monto, 0);
+    // el redondeo del motor es AL PESO, no a la decima de millon
+    const alPeso = mmRound(1234567.4) === 1234567 && mmRound(1234567.6) === 1234568;
+    ok("89 ninguna aproximación: de DTESync al motor no se pierde un peso",
+       perdidos === 0 && noEnteros === 0
+       && rEx.cursable === exacta + otra
+       && f1.monto === exacta && f2.monto === otra
+       && sumaOrigen(f1) === exacta && sumaOrigen(f2) === otra
+       && alPeso,
+       `${dte.length} facturas · ${perdidos} pesos perdidos · cursable ${rEx.cursable} = ${exacta} + ${otra} · mmRound al peso ${alPeso}`);
   }
 
   console.log(out.join("\n"));

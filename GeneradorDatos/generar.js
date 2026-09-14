@@ -13,6 +13,7 @@
 //   DTESYNC · LISTA_BLANCA · DEUDORES_AUTORIZADOS · AECSYNC · SHARE_OF_WALLET · ESTRATEGIA_PRECIO
 //
 // Datasets DERIVADOS — se regeneran en cada corrida a partir de los base:
+//   SHARE_OF_WALLET   activo A5        · serie semanal de participación, con los montos en pesos
 //   LINEA_DISPONIBLE  activo A7 + A8   · líneas de crédito por cliente y tipo
 //   OTORGAMIENTO      activo A16       · variables de riesgo de cliente, deudor y par cliente-deudor
 //   VERIFICACION      activo A10       · variables del predictor de verificación por par cliente-deudor
@@ -27,6 +28,7 @@
 const path = require("path");
 const { leer, escribir, serializar } = require("./lib/archivo");
 const lineas = require("./datasets/lineas");
+const shareOfWallet = require("./datasets/share_of_wallet");
 const otorgamiento = require("./datasets/otorgamiento");
 const verificacion = require("./datasets/verificacion");
 const riesgoBice = require("./datasets/riesgo_bice");
@@ -41,6 +43,7 @@ const { bloques, datos, orden } = leer(entrada);
 for (const n of orden) console.log("  base  %s: %s registros", n.padEnd(22), Array.isArray(datos[n]) ? datos[n].length : (datos[n] && datos[n].filas ? datos[n].filas.length + " filas" : "—"));
 
 const DERIVADOS = [
+  ["SHARE_OF_WALLET", () => shareOfWallet.generar(datos)],
   ["LINEA_DISPONIBLE", () => lineas.generar(datos)],
   ["PLATAFORMA360", () => plataforma360.generar(datos)],
   ["OTORGAMIENTO", () => otorgamiento.generar(datos)],
