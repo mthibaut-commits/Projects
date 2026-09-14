@@ -546,11 +546,11 @@ grep -n -A6 '^let PISO_ATRIB_MONTO'  pipeline_comercial.jsx   # INC-05 · el pis
 
 # 4) Conteos que este documento afirma, medidos en RUNTIME (el catalogo se arma en un IIFE:
 #    contarlo con grep da otro numero). Requiere el HTML construido — ver CLAUDE.md.
-#    Esperado HOY (cerrados INC-01/02/03/04/06, + O05 del 13-09): 80 reglas · 185 tramos ·
-#    135 tramos de excepcion · 72 reglas con excepcion, y NINGUN tramo sin aprobador. De esas 80,
-#    79 son de la politica v1.0 y una —O05— es del proceso de publicacion de la oferta (ver mas
-#    abajo). El reparto por area ya no se lee de NIVEL_ROL —que dejo de decidir— sino del area que
-#    declara cada regla: riesgo 97 · comercial 33 · operaciones 5.
+#    Esperado HOY (cerrados INC-01/02/03/04/06; retiradas C47-C50 el 14-09; + O05 y O06 propias):
+#    77 reglas · 183 tramos · 133 tramos de excepcion · 69 reglas con excepcion, y NINGUN tramo sin
+#    aprobador. De esas 77, 75 son de la politica v1.0 y DOS son del proceso —O05 y O06, las dos de
+#    Operaciones (ver mas abajo)—. El reparto por area ya no se lee de NIVEL_ROL —que dejo de
+#    decidir— sino del area que declara cada regla: riesgo 97 · comercial 29 · operaciones 7.
 #    Valores previos, para comparar: 75 reglas · 180 tramos · 130 de excepcion · 67 reglas con
 #    excepcion, ruteados a comercial 76 / riesgo 54 / operaciones 0  ← ese 0 era INC-03 medido.
 #    Pegar en la consola del navegador con pipeline_comercial.html abierto:
@@ -572,9 +572,11 @@ python3 -c "from pypdf import PdfReader; print('\n'.join((p.extract_text() or ''
 
 ## 8. Criterios propios del proceso (no vienen de la política v1.0)
 
-La política v1.0 define 79 reglas y el catálogo las implementa todas. **O05 es la primera regla que no sale de ese
-documento**: la agrega este proceso, y por eso se cuenta aparte —el caso 46 mide la cobertura de la política y dejaría
-de medirla si sumara reglas propias al mismo total—.
+La política v1.0 define 79 reglas —75 vigentes, tras retirarse C47–C50 por quedar dominadas por C40–C43— y el catálogo
+las implementa todas. **Dos criterios no salen de ese documento**: los agrega este proceso, y por eso se cuentan aparte
+—el caso 46 mide la cobertura de la política y dejaría de medirla si sumara reglas propias al mismo total—. Los dos son
+del área de **Operaciones**, y no por casualidad: la política v1.0 la escribió Riesgo, y lo que le falta es justamente
+el control documental del acto de cursar.
 
 ### O05 · Evidencia del Contrato de Cesión — Operaciones N3 (13-09-2026)
 
@@ -612,3 +614,37 @@ abre para lo que la operación posee, no para reescribir el padrón de riesgo de
 
 **Cache.** `publicacion`, `clienteAcepto` y `reabierta` entraron a la clave de `visadoKey`: publicar una oferta que ya
 estaba en «oferta» no cambia la etapa, así que sin eso el visado cacheado seguía siendo el de antes de publicar.
+
+### O06 · Monto Cedido Igual al Monto del Documento — Operaciones N5 / N3 (14-09-2026)
+
+**Por qué existe.** El usuario lo planteó como un recuerdo: «me parece que hay una regla en el motor de otorgamiento que
+revisa que el monto de cesión sea = monto de la factura, en el área de operaciones». **No existía.** Buscado en el
+catálogo vigente y en el legado (`Legado/Rules Cliente2_v0.xlsx`, la fuente de las 75 reglas): la política trae **dos**
+criterios sobre cesiones y los dos son de **concentración**, no de monto por documento —
+
+| Código | Qué mide | Área |
+|---|---|---|
+| C37 · Existencia Ratio Venta vs. Monto Cedido Alto LM | qué proporción de su venta cede el cliente a factoring | comercial |
+| C39 · Alta Cesión a Factorings Pequeños | qué proporción le cede a factorings privados chicos | comercial |
+
+— y el área de Operaciones sólo tenía O05. El control faltaba **justo donde el dato podía romperse**.
+
+**Por qué no se veía.** Hasta el 14-09-2026 las 1.300 cesiones del A2 eran por el **total exacto** del documento, así que
+la comparación se cumplía siempre. Un control que nunca puede fallar no se echa de menos: el hueco de la regla y el del
+dato se tapaban mutuamente. Al reconciliar el A2 contra el A1 y admitir cesiones parciales, los dos quedaron a la vista.
+
+**Cómo funciona.** `varsOperacionCli` **mide**, documento a documento, las facturas de la oferta contra el registro de
+cesiones, y devuelve dos variables. Los tramos van a niveles distintos porque no son el mismo hecho:
+
+| Tramo | Qué pasó | Nivel |
+|---|---|---|
+| `cesionExcedida > 0` | una cesión por **más** que la factura: no es una diferencia, es un crédito que no existe | Operaciones **N5** |
+| `cesionParcial > 0` | una cesión **parcial**: el crédito quedó con dos dueños y cobrarlo sería compartir la cobranza | Operaciones **N3** |
+
+El primer tramo el activo lo valida en origen y no debería llegar nunca. Se controla igual: **un control que sólo cubre
+lo que ya sabemos que pasa no controla nada.**
+
+**Relación con O05.** Son el par documental del acto de ceder: O05 comprueba que **exista** la autorización del contrato,
+O06 que lo cedido **coincida** con lo que se va a comprar. Caso 96.
+
+---

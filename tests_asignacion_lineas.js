@@ -518,9 +518,9 @@
   // D01-D23, O01-O04— y ningún código sin implementar. C47-C50 se retiraron por estar dominadas por
   // C40-C43 (ver el caso 48), así que no cuentan como cobertura faltante: cuentan como retiradas.
   // Se cuentan por separado las reglas que NO son de ese documento:
-  // O05 (evidencia del contrato de cesión) sale del proceso de publicación de la oferta, no del modelo
-  // de riesgo, y contarla junto a las otras haría que este caso dejara de medir lo que dice medir —la
-  // cobertura de la política— y pasara a medir el largo de un array.
+  // O05 (evidencia del contrato de cesión) y O06 (monto cedido igual al monto del documento) salen del
+  // proceso, no del modelo de riesgo, y contarlas junto a las otras haría que este caso dejara de medir
+  // lo que dice medir —la cobertura de la política— y pasara a medir el largo de un array.
   {
     const ids = REGLAS_CLIENTE.map((r) => r.cond);
     const POLITICA = [];
@@ -533,10 +533,15 @@
     ok("46 el catálogo implementa las 75 reglas vigentes de la política",
        dePolitica.length === 75 && falta.length === 0
        && ["C47", "C48", "C49", "C50"].every((c) => !ids.includes(c))
-       // Fuera de la política, sólo O05 — y con su área y su nivel, que es lo que la rutea.
-       && fuera.length === 1 && fuera[0] === "O05"
+       // Fuera de la política, sólo las PROPIAS del proceso, con su área y su nivel —que es lo que las
+       // rutea—: O05 (evidencia del contrato) y O06 (monto cedido vs. monto del documento). Las dos
+       // son de Operaciones. Se cuentan aparte para que este caso siga midiendo la cobertura de la
+       // política y no el largo de un array.
+       && fuera.length === 2 && fuera.join(",") === "O05,O06"
        && REGLAS_CLIENTE.find((r) => r.cond === "O05").area === "operaciones"
-       && REGLAS_CLIENTE.find((r) => r.cond === "O05").tiers[0][2] === 3,
+       && REGLAS_CLIENTE.find((r) => r.cond === "O05").tiers[0][2] === 3
+       && REGLAS_CLIENTE.find((r) => r.cond === "O06").area === "operaciones"
+       && REGLAS_CLIENTE.find((r) => r.cond === "O06").tiers.map((t) => t[2]).join(",") === "5,3",
        `${dePolitica.length} de la política + ${fuera.length} propia(s) (${fuera.join(", ") || "—"}) · sin implementar: ${falta.length ? falta.join(", ") : "ninguna"}`);
   }
 
@@ -579,7 +584,8 @@
        rs.every((r) => r === undefined)
        && claves.every((k) => v[k] === undefined)
        && dominantes.every((r) => r && (r.tiers || []).some((t) => t[1] === "excepcion"))
-       && REGLAS_CLIENTE.filter((r) => /^[COD]\d\d$/.test(r.cond || "")).length === 76,
+       // 77 = las 75 vigentes de la política v1.0 + las dos propias del proceso (O05, O06).
+       && REGLAS_CLIENTE.filter((r) => /^[COD]\d\d$/.test(r.cond || "")).length === 77,
        `catálogo ${REGLAS_CLIENTE.filter((r) => /^[COD]\d\d$/.test(r.cond || "")).length} reglas · C40-C43 presentes`);
   }
 
@@ -2129,6 +2135,63 @@
        && parcialOk && montoOk
        && bloqueoOk && libreOk && perdidaOk && compOk && p360Ok,
        `${aec.length} cesiones · 0 huérfanas ${huerfanas.length === 0} · antes de emitir ${antesDeEmitir} · ceden de más ${cedeDeMas} · parciales ${parciales} (cota ejercitada) · dobles ${dobles} · no cedibles ${noCedibles} · bloqueo «${estA && estA.label}» / «${estP && estP.label}» · libre del mismo cedente ok ${libreOk} · pérdida ante ${ced.factoring} · A11: ${primeraOk}/${conColoc} con primera operación correcta, ${ingresoMal} ingresos posteriores `);
+  }
+
+  // ── 96 · O06 · EL MONTO CEDIDO TIENE QUE SER EL MONTO DEL DOCUMENTO ─────────────────────────
+  // «Me parece que hay una regla en el motor de otorgamiento que revisa que el monto de cesión sea =
+  // monto de la factura, en el área de operaciones. Esa regla busca detectar estos casos.»
+  // NO EXISTÍA. La política v1.0 trae dos reglas sobre cesiones y las dos son de CONCENTRACIÓN —C37,
+  // cuánto de su venta cede el cliente, y C39, cuánto le cede a factorings pequeños—, las dos del área
+  // comercial. Ninguna mira el monto de UN documento, y el área de Operaciones sólo tenía O05. El
+  // control faltaba justo donde el dato podía romperse, que es lo que destapó tener cesiones parciales.
+  {
+    const dte = window.DTESYNC || [], aec = window.AECSYNC || [];
+    const porFolio = {};
+    for (const r of dte) { if (r && r.RUTEmisor) porFolio[r.RUTEmisor + "|" + r.Folio] = r; }
+    const regla = REGLAS_CLIENTE.find((r) => r.cond === "O06");
+
+    // (a) La regla existe, es de OPERACIONES y sus dos tramos van a niveles distintos: ceder de más no
+    //     es una diferencia, es un crédito que no existe.
+    const declOk = !!regla && regla.area === "operaciones" && regla.tiers.length === 2
+      && regla.tiers[0][2] === 5 && regla.tiers[1][2] === 3;
+
+    // (b) Se EVALÚA sobre las facturas de la operación. Una oferta con un documento cedido en parte
+    //     levanta la excepción; la misma oferta sin él, no.
+    const parcial = aec.find((c) => +c.MontoCesion < +c.MontoDocumento && porFolio[c.RUTCedente + "|" + c.Folio]);
+    const cedidos = new Set(aec.map((c) => c.RUTCedente + "|" + c.Folio));
+    const limpio = parcial && dte.find((r) => r.RUTEmisor === parcial.RUTCedente && !cedidos.has(r.RUTEmisor + "|" + r.Folio)
+      && r.FormaPago === "2" && !(r.EstadoDTE || {}).NotaCredito && !(r.EstadoDTE || {}).Reclamado);
+    const base = { id: "OP-O06", cliente: "C96", rutEmisor: parcial && parcial.RUTCedente, deudores: [],
+                   facturasDisponibles: [], facturasRetiradas: [], nuevasFacturas: 0 };
+    const vParcial = varsOperacionCli({ ...base, facturasOp: [facturaDeDTE(porFolio[parcial.RUTCedente + "|" + parcial.Folio])] });
+    const vLimpia = varsOperacionCli({ ...base, facturasOp: [facturaDeDTE(limpio)] });
+    const medirOk = vParcial.cesionParcial === 1 && vParcial.cesionExcedida === 0
+      && vLimpia.cesionParcial === 0 && vLimpia.cesionExcedida === 0;
+
+    // (c) El veredicto de la regla con cada juego de variables. Se evalúa el catálogo directamente,
+    //     que es lo que hace el motor: el tramo que gana define el nivel exigido.
+    const evaluar = (vars) => {
+      for (const [test, disp, nivel] of regla.tiers) if (test(vars)) return { disp, nivel };
+      return { disp: "aprobado", nivel: null };
+    };
+    const rParcial = evaluar(vParcial), rLimpia = evaluar(vLimpia);
+    const rExcedida = evaluar({ cesionParcial: 0, cesionExcedida: 1 });
+    const veredictoOk = rParcial.disp === "excepcion" && rParcial.nivel === 3
+      && rLimpia.disp === "aprobado"
+      && rExcedida.disp === "excepcion" && rExcedida.nivel === 5;
+
+    // (d) Y tiene quién la apruebe: Operaciones alcanza los dos niveles, o la excepción quedaría en
+    //     «Sin aprobador definido», que sería un bug de configuración disfrazado de control.
+    const conAprob = (n) => aprobadoresExc({ area: "operaciones" }, n).length > 0;
+    const aprobOk = conAprob(3) && conAprob(5);
+
+    // (e) La política NO la trae: sus dos reglas de cesión son de concentración y del área comercial.
+    const c37 = REGLAS_CLIENTE.find((r) => r.cond === "C37"), c39 = REGLAS_CLIENTE.find((r) => r.cond === "C39");
+    const politicaOk = !!c37 && c37.area === "comercial" && !!c39 && c39.area === "comercial";
+
+    ok("96 O06 · el monto cedido tiene que ser el monto del documento, y lo controla Operaciones",
+       declOk && medirOk && veredictoOk && aprobOk && politicaOk,
+       `O06 operaciones N5/N3 · parcial → ${rParcial.disp} N${rParcial.nivel} · limpia → ${rLimpia.disp} · excedida → ${rExcedida.disp} N${rExcedida.nivel} · aprobadores N3 y N5 ${aprobOk} · la política sólo trae C37/C39 (concentración, comercial)`);
   }
 
   console.log(out.join("\n"));

@@ -11247,6 +11247,14 @@ function varsModeloExt(deal) {
     // C01–C03— y en N3 porque no es un trámite de mesa: sin esa constancia la cesión no es oponible
     // al deudor. Es re-evaluable a propósito: en cuanto la firma llega, el criterio se repara solo.
     R(305, "O05", "operaciones", "MinimumViability", "Evidencia del Contrato de Cesión", "No consta la autorización del contrato de cesión: el cliente todavía no firma en el portal, o la oferta se publicó en papel y falta adjuntar el comprobante", [[(v) => !v.contratoEvidencia, "excepcion", NV(3)]]),
+    // O06 · El monto que figura CEDIDO de cada documento tiene que ser el monto del documento. Es el
+    // control de OPERACIONES sobre el registro de cesiones (A2), y el par documental de O05: aquél
+    // comprueba que EXISTA la autorización, éste que lo cedido COINCIDA con lo que se va a comprar.
+    // Una cesión parcial deja el crédito con dos dueños; una por más que la factura es un crédito que
+    // no existe y va al nivel máximo del área. No viene de la política v1.0 —que sólo trae C37 y C39,
+    // las dos sobre CONCENTRACIÓN de cesiones (cuánto de su venta cede el cliente y a quién), ninguna
+    // sobre el monto de UN documento—, sino del proceso, como O05.
+    R(306, "O06", "operaciones", "MinimumViability", "Monto Cedido Igual al Monto del Documento", "El monto que el registro de cesiones declara para una o más facturas no coincide con el monto del documento", [[(v) => v.cesionExcedida > 0, "excepcion", NV(5)], [(v) => v.cesionParcial > 0, "excepcion", NV(3)]]),
   ];
   REGLAS_CLIENTE.length = 0; V2.forEach((x) => REGLAS_CLIENTE.push(x));
   NO_REEV_CLIENTE.clear();
@@ -11413,7 +11421,25 @@ function varsOperacionCli(deal, estado) {
   // solo, sin que nadie tenga que acordarse de revocar nada: cambió el paquete → la huella no calza.
   //  · ELECTRÓNICA: la registra el portal cuando el cliente autoriza (`confirmarCierre`).
   //  · FÍSICA: la registra el visado de Operaciones sobre el comprobante adjunto.
-  return { contratoEvidencia: !!(typeof evidenciaContratoOk === "function" && evidenciaContratoOk(deal, estado).ok) };
+  // O06 · El monto cedido de cada documento contra el monto del documento. Se MIDE sobre las facturas
+  // de la oferta contra el registro de cesiones (A2), documento a documento: es el control de
+  // OPERACIONES que detecta que lo que figura cedido no es lo que dice la factura.
+  //  · `cesionParcial`  → hay una cesión registrada por MENOS que el documento: el crédito quedó con
+  //    dos dueños y cobrarlo sería compartir la cobranza con quien se llevó la otra parte.
+  //  · `cesionExcedida` → hay una cesión por MÁS que el documento: eso no es una diferencia, es un
+  //    crédito que no existe. Nunca debería llegar —el activo lo valida en origen— y justamente por
+  //    eso el criterio lo mira: un control que sólo cubre lo que ya sabemos que pasa no controla nada.
+  let cesionParcial = 0, cesionExcedida = 0;
+  for (const f of (deal && deal.facturasOp) || []) {
+    const c = (typeof cesionDeFactura === "function") ? cesionDeFactura(deal.rutEmisor, f && f.folio) : null;
+    if (!c || !c.montoDocumento) continue;
+    if (c.monto > c.montoDocumento) cesionExcedida++;
+    else if (c.monto < c.montoDocumento) cesionParcial++;
+  }
+  return {
+    contratoEvidencia: !!(typeof evidenciaContratoOk === "function" && evidenciaContratoOk(deal, estado).ok),
+    cesionParcial, cesionExcedida,
+  };
 }
 // Revisión vigente de la simulación. v1 se emite con `rev = 0`, así que la revisión actual es
 // «nº de versiones − 1»: sin versiones y con una sola versión se está en la evaluación inicial.

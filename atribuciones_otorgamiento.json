@@ -73,7 +73,7 @@
       }
     }
   },
-  "total_criterios": 76,
+  "total_criterios": 77,
   "criterios": [
     {
       "n": 101,
@@ -2916,6 +2916,43 @@
         {
           "orden": 1,
           "condicion": "no contratoEvidencia",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Operaciones",
+          "area_aprobacion": "Operaciones",
+          "aprobadores": [
+            "Andrés Mella · Operaciones",
+            "Ignacio Peña · Jefe de Operaciones",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 306,
+      "nombre": "O06 · Monto Cedido Igual al Monto del Documento",
+      "dominio": "Operaciones",
+      "tipo": "MinimumViability",
+      "condicion_maestra": "O06",
+      "reevaluable": true,
+      "hallazgo": "El monto que el registro de cesiones declara para una o más facturas no coincide con el monto del documento",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "cesionExcedida>0",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Operaciones",
+          "area_aprobacion": "Operaciones",
+          "aprobadores": [
+            "Andrés Mella · Operaciones",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 2,
+          "condicion": "cesionParcial>0",
           "disposicion": "excepcion",
           "nivel_requerido": 3,
           "rol_aprobador": "Jefe de Operaciones",
