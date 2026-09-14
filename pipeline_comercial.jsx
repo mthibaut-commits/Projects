@@ -1536,27 +1536,29 @@ function verifPar(rutCliente, nombre, rutDeudor) {
   const tipo = tipoDeudor(rutDeudor, nombre);
   const sc = scoreDeudor(nombre, tipo).score, nota = notaFromScore(sc);
   const h = Math.abs(hashStr("vp" + k));
-  const bueno = nota >= 4.0, malo = nota < 3.2;
   const prime = tipo === "Lista Blanca" || tipo === "Deudor Autorizado";
   // Protocolo recortado: prime O nota sobre el corte. Son DOS poblaciones distintas y basta
   // pertenecer a una (spec §3); antes sólo se miraba prime y la nota no abría el protocolo light.
   const recortado = prime || nota > NOTA_PRIORITARIA;
+  // ── Variables del par: fila del activo A10, NO sintetizadas. Sin fila quedan en `null`, que la
+  //    spec §4.3 trata como incumplimiento: un par sin historial se verifica, por construcción.
+  const F = VERIF_A10.porPar[(rutCliente || "") + "|" + (rutDeudor || "")] || null;
+  const N = (c) => (F ? +F[VERIF_A10.ix[c]] : null);
   const out = {
     nombre, tipo, nota, sc, prime, recortado,
     grupo: prime ? "prime" : (nota > NOTA_PRIORITARIA ? "nota_alta" : "otros"),
     segmento: recortado ? "PRIME" : "OTROS",
     aplican: recortado ? VERIF_APLICAN_RECORTADO : VERIF_APLICAN_COMPLETO,
-    // ── Variables del deudor o del par (spec §7.1). En producción es una fila precalculada con
-    //    refresco diario y esta función es el SELECT; acá se sintetizan de forma determinista.
-    protocolo: (h % 11 === 0) ? { existe: true, id: "PROT-" + String(1000 + (h % 9000)) } : { existe: false, id: null },
-    pctPagoDeudor3M: malo ? +(82 + (h % 8)).toFixed(1) : +Math.min(100, (bueno ? 95 : 90) + (h % 6)).toFixed(1),
-    mntCompraOp3M: bueno ? 120 + (h % 400) : 40 + (h % 160),      // MM comprados al par en 3M móviles
-    avgVentaProm3M: bueno ? 200 + (h % 600) : 60 + (h % 200),     // MM de venta promedio del par (libro compraventa)
-    mesesConVenta6M: bueno ? 4 + (h % 3) : 2 + (h % 4),
-    fchVctoProm: 40 + (h % 8),                                    // días: plazo histórico de pago del par
-    pctMora25d: +Math.max(0, (bueno ? 0.5 : 2.5) + (h % 4) - 1).toFixed(1),
-    pctReclamadas: +Math.max(0, (bueno ? 0.5 : 3) + ((h >> 3) % 5) - 1).toFixed(1),
-    mntPagoDeudor3M: bueno ? 900 + (h % 2600) : 60 + (h % 900),   // MM pagados por el deudor en 3M
+    protocolo: F && N("V01_PROTOCOLO_PROPIO") === 1
+      ? { existe: true, id: "PROT-" + String(1000 + (h % 9000)) } : { existe: false, id: null },
+    pctPagoDeudor3M: N("V02_PCT_PAGADO_3M"),
+    mntCompraOp3M: F ? +(N("V03_MNT_COMPRA_3M_M") / 1000).toFixed(1) : null,  // M$ → MM$, total comprado al par en 3M
+    avgVentaProm3M: F ? +(N("V04_VENTA_PROM_3M_M") / 1000).toFixed(1) : null, // M$ → MM$, venta mensual del par
+    mesesConVenta6M: N("V05_RECURRENCIA_MESES_6M"),
+    fchVctoProm: N("V06_PLAZO_PROM_PAGO_DIAS"),                               // días, plazo histórico del par
+    pctMora25d: N("V07_PCT_MORA_25D"),
+    pctReclamadas: N("V08_PCT_RECLAMADAS"),
+    mntPagoDeudor3M: F ? +(N("V10_MNT_PAGADO_3M_M") / 1000).toFixed(1) : null, // M$ → MM$
     h,
   };
   _VERIF_PAR.set(k, out);
@@ -10480,6 +10482,21 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
 // Aprobado / Rechazado / Sujeto a excepción Nx. Las de segmentación son sólo clasificación interna.
 // ============================================================
 const catCliente = (cc) => (["A1", "A2", "A3"].includes(cc) ? 1 : ["A4", "A5"].includes(cc) ? 2 : ["A6", "B1"].includes(cc) ? 3 : ["B2", "B3", "B4"].includes(cc) ? 4 : 3);
+// ── ACTIVO A10 · VERIFICACION — variables del predictor por par cliente-deudor ──────────────────
+// Llega por SFTP a diario, con upsert intradía para V07/V08 (degradables dentro del mes). El pipeline
+// NO las sintetiza: las LEE. Lo que el archivo no puede traer son las RAZONES contra el documento que
+// se está evaluando —V03, V04, V06 y V09 dependen del monto o del vencimiento de esa factura—, así que
+// trae el DENOMINADOR (lo comprado al par en 3M, su venta mensual, su plazo histórico) y NEX calcula.
+// Un par ausente se lee sin dato, y sin dato la regla NO CUMPLE (spec §4.3).
+const VERIF_A10 = (() => {
+  const src = (typeof window !== "undefined" && window.VERIFICACION) || null;
+  const ix = {}, porPar = {};
+  if (src && src.campos && src.filas) {
+    src.campos.forEach((c, i) => (ix[c] = i));
+    for (const f of src.filas) porPar[f[ix.RUT_CLIENTE] + "|" + f[ix.RUT_DEUDOR]] = f;
+  }
+  return { ix, porPar };
+})();
 // ── ACTIVO A16 · OTORGAMIENTO — la tabla de variables de riesgo que llega por SFTP ──────────────
 // Una fila por (RUT, ROL, RUT_CONTRAPARTE), en formato columnar igual que el CSV de origen (ver
 // `Integraciones/spec_sftp_otorgamiento.md`). El motor NO sintetiza estas variables: las LEE. Los
