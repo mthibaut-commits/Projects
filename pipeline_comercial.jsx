@@ -2250,6 +2250,7 @@ const CFG_OPER_BASE = {
   // — Política de compra y riesgo —
   notaMinCompra: 3.7,         // nota mínima del deudor para comprar
   concentracionDeudorPct: 30, // % máximo de la línea por deudor
+  cxcAplicaMinPct: 30,        // % mínimo de las CxC pendientes que la operación debe aplicar (O03)
   otrosDeudoresPct: 10,       // % máximo para «otros deudores»
   vigenciaLineaMeses: 12,
   ventanaLibroDias: 60,       // ventana del libro de ventas para buscar facturas candidatas
@@ -10742,9 +10743,34 @@ function evaluarOtorgItems(deal, estado) {
   });
   return items;
 }
+// O01–O03 del catálogo son condiciones de la OPERACIÓN que se está evaluando —su precio, su comisión y
+// cómo aplica las CxC del cliente—, no comportamiento que venga en un archivo. Por eso no viajan en el
+// A16 y se derivan acá. Antes eran tres monedas al aire (`r() < 0.08`) bajo un comentario que afirmaba
+// que se derivaban de la simulación de la oferta sin hacerlo.
+function varsOperacion(deal, A) {
+  // O01 · Tasa de referencia: el spread de riesgo de cada deudor —topado por su piso— más el costo de
+  // fondo, ponderado por monto. Contra ella se mide el descuento con la MISMA escalera de atribución
+  // que usa el panel de condiciones (`evalAtribucion`): fuera de la banda del ejecutivo, hay excepción.
+  const pp = paramsPricing();
+  const fop = (deal && deal.facturasOp && deal.facturasOp.length) ? deal.facturasOp : [];
+  let num = 0, den = 0;
+  for (const f of fop) { const mm = +f.montoMM || 0; if (mm <= 0) continue; num += mm * (spreadSugerido(f.deudor, deal, pp).spread + pp.costoFondo); den += mm; }
+  const tasaRef = den > 0 ? +(num / den).toFixed(2)
+    : (deal && deal.deudor) ? +(spreadSugerido(deal.deudor, deal, pp).spread + pp.costoFondo).toFixed(2) : 0;
+  const tasaAplicada = +(deal && deal.tasaDescuento) || 0;
+  // Sin simulación todavía no hay precio que juzgar: la regla no levanta excepción.
+  const spreadBajoBanda = tasaRef > 0 && tasaAplicada > 0 && evalAtribucion(tasaRef, tasaAplicada, tasaRef, true).estado !== "ok";
+  // O02 · La comisión de la operación contra el mínimo de la política (en UF).
+  const comisionMinCLP = pol("comisionUF", 2) * pol("valorUF", 38000);
+  const comisionOp = +(deal && deal.comision) || 0;
+  const comisionBajoMin = comisionOp > 0 && comisionOp < comisionMinCLP;
+  // O03 · CxC pendientes del cliente (A16) sin aplicar el mínimo de la política sobre el giro.
+  const cxcPend = A ? A("CXC_PENDIENTES") : 0;
+  const cxcAplicadoCLP = Math.round(((deal && deal.descCxCMM) || 0) * 1e6);
+  const cxcSinAplicar = cxcPend > 0 && cxcAplicadoCLP < (pol("cxcAplicaMinPct", 30) / 100) * cxcPend;
+  return { spreadBajoBanda, comisionBajoMin, cxcSinAplicar, tasaRefOp: tasaRef };
+}
 function varsModeloExt(deal) {
-  const h = Math.abs(hashStr("mr2" + ((deal && deal.id) || "")));
-  const rng = pcRng(h); const r = () => rng();
   // Misma fila CLIENTE del activo A16 que lee apiVarsCliente.
   const F = OTORG_A16.cli[claveCliente(deal)] || null;
   const A = a16(F);
@@ -10760,9 +10786,8 @@ function varsModeloExt(deal) {
     moraInt1803a: A("MORA_INTERNA_180_3A"), deudaIntTotal: A("DEUDA_INTERNA_TOTAL"),
     juicios: A("JUICIOS_GESINTEL"),
     ...deudorBlock(deal, { nombre: dn, rut: dr }),
-    // O01–O03 todavía no viajan en el A16 ni se derivan: quedan como estaban hasta su propio bloque.
-    spreadBajoBanda: r() < 0.08, comisionBajoMin: r() < 0.07, cxcSinAplicar: r() < 0.06,
-    clienteBloqueado: !!A("CLIENTE_BLOQUEADO"),
+    // O01–O03 se derivan de la operación (ver `varsOperacion`). O04 sí viene del archivo.
+    ...varsOperacion(deal, A), clienteBloqueado: !!A("CLIENTE_BLOQUEADO"),
   };
 }
 (() => {
