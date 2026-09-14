@@ -10480,10 +10480,46 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
 // Aprobado / Rechazado / Sujeto a excepción Nx. Las de segmentación son sólo clasificación interna.
 // ============================================================
 const catCliente = (cc) => (["A1", "A2", "A3"].includes(cc) ? 1 : ["A4", "A5"].includes(cc) ? 2 : ["A6", "B1"].includes(cc) ? 3 : ["B2", "B3", "B4"].includes(cc) ? 4 : 3);
+// ── ACTIVO A16 · OTORGAMIENTO — la tabla de variables de riesgo que llega por SFTP ──────────────
+// Una fila por (RUT, ROL, RUT_CONTRAPARTE), en formato columnar igual que el CSV de origen (ver
+// `Integraciones/spec_sftp_otorgamiento.md`). El motor NO sintetiza estas variables: las LEE. Los
+// umbrales viven sólo en las reglas, de modo que qué porcentaje de la cartera cae en excepción es una
+// propiedad EMERGENTE del dato y no un número puesto a mano en un generador.
+// Sin datos inyectados el índice queda vacío y toda entidad se lee como SIN hallazgos.
+const OTORG_A16 = (() => {
+  const src = (typeof window !== "undefined" && window.OTORGAMIENTO) || null;
+  const ix = {}, cli = {}, deu = {}, porRut = {};
+  if (src && src.campos && src.filas) {
+    src.campos.forEach((c, i) => (ix[c] = i));
+    for (const f of src.filas) {
+      if (f[ix.ROL] === "CLIENTE") cli[f[ix.RUT]] = f;
+      else deu[f[ix.RUT_CONTRAPARTE] + "|" + f[ix.RUT]] = f;
+      if (!porRut[f[ix.RUT]]) porRut[f[ix.RUT]] = f;   // por empresa, sin distinguir rol
+    }
+  }
+  return { ix, cli, deu, porRut };
+})();
+// Clave estable del cliente de una operación (RUT del cedente).
+const claveCliente = (deal) => (deal && (deal.rutEmisor || deal.cliente || deal.id)) || "";
+// Lectores de una fila A16: 0 / "" si la entidad no está en la tabla.
+const a16 = (fila) => (c) => (fila ? (+fila[OTORG_A16.ix[c]] || 0) : 0);
+const a16txt = (fila) => (c) => (fila ? String(fila[OTORG_A16.ix[c]] || "") : "");
+// Período contable AAAAMM de la fecha de corte del snapshot, para medir vigencias.
+const PERIODO_CORTE = 202606;
+// RUT del deudor a partir de su razón social (el A16 se indexa por RUT; la UI suele tener el nombre).
+const RUT_DEUDOR_POR_NOMBRE = (() => {
+  const m = {}; const dte = (typeof window !== "undefined" && Array.isArray(window.DTESYNC)) ? window.DTESYNC : [];
+  for (const r of dte) { if (r && r.RUTRecep && r.RznSocRecep && m[r.RznSocRecep] === undefined) m[r.RznSocRecep] = r.RUTRecep; }
+  return m;
+})();
 function apiVarsCliente(deal, rev) {
   const rng = pcRng(hashStr("apiCli" + ((deal && deal.id) || "")));
   const r = () => rng();
-  const amt = (p, max) => (r() < p ? Math.round(r() * max) : 0);
+  // Fila CLIENTE del activo A16. Todo lo de riesgo sale de acá; lo que sigue generándose son las
+  // variables de CLASIFICACIÓN interna (MAC, clase, apoderados…), que no viajan en este archivo.
+  const F = OTORG_A16.cli[claveCliente(deal)] || null;
+  const A = a16(F), At = a16txt(F);
+  const L = lineaCreditoDe(deal);
   const pct = (base, spread) => Math.round(base + r() * spread);
   const yn = (p) => (r() < p ? 1 : 0);
   const bo = (p) => r() < p;
@@ -10491,22 +10527,28 @@ function apiVarsCliente(deal, rev) {
   const out = {
     clientClass: clases[Math.floor(r() * clases.length)], syncSII: bo(0.9),
     macStatus: r() < 0.9 ? "A" : (r() < 0.5 ? "R" : "P"), macVigente: bo(0.92), macCode: r() < 0.1 ? 3 : 1, macDolares: yn(0.1),
-    ivaAlDia: bo(0.9), art85Vig: bo(0.9), uafVig: bo(0.88), contratoMarco: bo(0.85),
-    cmfDir3090: amt(0.15, 12e6), cmfDirTotal: 20e6 + Math.round(r() * 80e6),
-    cmfDir90180: amt(0.06, 8e6), cmfDir1803a: amt(0.04, 6e6), cmfDirCastigada: amt(0.03, 5e6),
-    cmfIndVencida: amt(0.05, 6e6), cmfIndCastigada: amt(0.03, 4e6), cmfLeasingMora: amt(0.1, 12e6),
-    efxMora: amt(0.15, 8e6), efxProtesto: amt(0.1, 7e6),
-    achef6090: amt(0.1, 60e6), achef90180: amt(0.06, 60e6), achefMas180: amt(0.03, 60e6),
-    biceProtVig: amt(0.08, 45e6), biceProtInt: amt(0.06, 45e6), infrLaborales: amt(0.08, 55e6),
-    moraBICE: amt(0.12, 12e6), deudaTotalBICE: 20e6 + Math.round(r() * 60e6), moraBICEFactoring: amt(0.08, 12e6),
-    tgrVigente: amt(0.08, 5e6), tgrMoroso: amt(0.05, 5e6), tgrCobrAdm: amt(0.04, 4e6), tgrCobrJud: amt(0.03, 4e6), tgrConvenios: amt(0.05, 4e6), tgrConvCuotas: amt(0.03, 3e6),
-    concentracionVenta: pct(20, 45), ventaCruzada: pct(10, 60), notaCredito: pct(2, 32), reclamo: pct(1, 22), ratioCesionVenta: pct(1, 22),
-    nroFactorings: 1 + Math.floor(r() * 9), factoringPeqPct: pct(10, 40),
-    carteraReclamada: amt(0.12, 8e6), carteraNC: amt(0.1, 6e6), carteraMorosa: amt(0.12, 8e6), cxcPend: amt(0.15, 6e6),
-    pagaresSuf: bo(0.85), pagareCubre60: bo(0.85),
+    // IVA al día: el período informado no puede tener más de 2 meses respecto de la fecha de corte (C04).
+    ivaAlDia: (() => { const q = +At("IVA_ULT_PERIODO") || 0; if (!q) return true; const m = (Math.floor(PERIODO_CORTE / 100) - Math.floor(q / 100)) * 12 + ((PERIODO_CORTE % 100) - (q % 100)); return m <= 2; })(),
+    art85Vig: bo(0.9), uafVig: bo(0.88), contratoMarco: bo(0.85),
+    // ── Variables de riesgo: TODAS del activo A16, ninguna sintetizada acá ──
+    cmfDir3090: A("CMF_DIR_MOROSA_30_90"), cmfDirTotal: A("CMF_DEUDA_TOTAL"),
+    cmfDir90180: A("CMF_DIR_MOROSA_90_180"), cmfDir1803a: A("CMF_DIR_MOROSA_180_3A"), cmfDirCastigada: A("CMF_DIR_CASTIGADA"),
+    cmfIndVencida: A("CMF_IND_VENCIDA"), cmfIndCastigada: A("CMF_IND_CASTIGADA"), cmfLeasingMora: A("CMF_LEASING_MOROSA"),
+    efxMora: A("EFX_DEUDA_MOROSA"), efxProtesto: A("EFX_PROTESTOS"),
+    achef6090: A("ACHEF_MOROSA_60_90"), achef90180: A("ACHEF_MOROSA_90_180"), achefMas180: A("ACHEF_MOROSA_MAS_180"),
+    infrLaborales: A("INFRACCIONES_LABORALES_12M"),
+    tgrVigente: A("TGR_VIGENTE"), tgrMoroso: A("TGR_MOROSA"), tgrCobrAdm: A("TGR_COBRANZA_ADM"), tgrCobrJud: A("TGR_COBRANZA_JUD"), tgrConvenios: A("TGR_CONVENIOS"), tgrConvCuotas: A("TGR_CONVENIOS_CUOTAS_IMPAGAS"),
+    concentracionVenta: A("CONCENTRACION_VENTA_PCT"), ventaCruzada: A("VENTA_CRUZADA_PCT"), notaCredito: A("NOTA_CREDITO_PCT"), reclamo: A("RECLAMO_PCT"), ratioCesionVenta: A("RATIO_CESION_VENTA_PCT"),
+    nroFactorings: A("NRO_FACTORINGS_LM"), factoringPeqPct: A("FACTORING_PEQUENO_PCT"),
+    carteraReclamada: A("CARTERA_RECLAMADA"), carteraNC: A("CARTERA_NC"), carteraMorosa: A("CARTERA_MOROSA"), cxcPend: A("CXC_PENDIENTES"),
+    // C02: los pagarés deben cubrir la cartera vigente más esta simulación. C03: y seguir vigentes 60 días
+    // después del último vencimiento. Ambas se DERIVAN de la tabla, como haría el motor en producción.
+    pagaresSuf: A("MNT_PAGARES_M") * 1000 >= (L.usoActual * 1e6) + ((deal && deal.amountMM) || 0) * 1e6,
+    pagareCubre60: (() => { const v = At("FCH_VCTO_PAGARE"); return !v || v >= "2026-08-21"; })(),
     operaManual: yn(0.5), grupoEmpresarial: yn(0.3), anexoSPF: yn(0.85), simulaMntDoc: yn(0.5), simulaMntAnt: yn(0.5), apoderados: yn(0.92),
     concentracionMtz: pct(30, 50), maxConcentracionMtz: 60,
-    carteraVig: 20e6 + Math.round(r() * 100e6), mntSimulacion: Math.round(((deal && deal.amountMM) || 30) * 1e6), mntLinea: 60e6 + Math.round(r() * 120e6),
+    // Línea y cartera vigente: de la MISMA fuente que usa el ruteo, para que C07 evalúe el mismo cupo.
+    carteraVig: Math.round(L.usoActual * 1e6), mntSimulacion: Math.round(((deal && deal.amountMM) || 30) * 1e6), mntLinea: Math.round(L.aprobada * 1e6),
   };
   // Re-evaluación (rev ≥ 1): al firmarse el contrato el sistema origen se regulariza. La API devuelve
   // documentación/vigencias/garantías al día → las reglas RE-EVALUABLES se reparan desde el origen.
@@ -10514,7 +10556,7 @@ function apiVarsCliente(deal, rev) {
   if ((rev || 0) >= 1) {
     Object.assign(out, { macVigente: true, macStatus: "A", ivaAlDia: true, art85Vig: true, uafVig: true, contratoMarco: true, anexoSPF: 1, apoderados: 1, pagaresSuf: true, pagareCubre60: true, syncSII: true });
     out.carteraReclamada = 0; out.carteraNC = 0; out.carteraMorosa = 0; out.cxcPend = 0;
-    out.biceProtVig = 0; out.biceProtInt = 0; out.efxProtesto = 0;
+    out.efxProtesto = 0;
   }
   return out;
 }
@@ -10597,18 +10639,27 @@ const REGLAS_CLIENTE = [
 // cliente C40..C43: tras la firma el origen las repara. Van AL FINAL del literal a propósito: `rd()` es
 // secuencial, así que intercalarlas correría el sorteo de todo lo que viene después y cambiaría datos
 // ya estables de deudores que nadie tocó.
-function deudorBlock(dn, rev) {
-  const rngD = pcRng(Math.abs(hashStr("mrD" + (dn || "")))); const rd = () => rngD();
-  const amtD = (p, max) => (rd() < p ? Math.round(rd() * max) : 0);
+// Bloque de variables del DEUDOR y del par cliente-deudor: fila `ROL=DEUDOR` del activo A16, con
+// `RUT_CONTRAPARTE` = RUT del cliente. Un deudor ausente de la tabla se lee como sin hallazgos.
+// Recibe el DEAL además del deudor porque las variables del par (venta cruzada, notas de crédito,
+// reclamos, socios comunes) se indexan por (cliente, deudor): con el nombre solo no hay par.
+function deudorBlock(deal, deudor, rev) {
+  const nombre = (deudor && (deudor.nombre || deudor.name)) || "";
+  const rut = (deudor && deudor.rut) || RUT_DEUDOR_POR_NOMBRE[nombre] || "";
+  const F = OTORG_A16.deu[claveCliente(deal) + "|" + rut] || null;
+  const A = a16(F);
   const out = {
-    dNota: notaFromScore(scoreDeudor(dn).score), dCmf3090: amtD(0.12, 12e6), dCmf90180: amtD(0.05, 8e6), dCmf1803a: amtD(0.03, 6e6), dCmfCast: amtD(0.02, 6e6), dCmfIndVenc: amtD(0.06, 8e6), dCmfIndCast: amtD(0.02, 5e6), dCmfLeasing: amtD(0.06, 9e6), dCmfTotal: 50e6 + Math.round(rd() * 900e6),
-    dEfxMora: amtD(0.08, 8e6), dAchef6090: amtD(0.07, 40e6), dAchef90180: amtD(0.04, 60e6), dAchefMas180: amtD(0.02, 30e6), dInfr: amtD(0.05, 40e6),
-    dMoraInt25: amtD(0.12, 4e6), dMoraInt3090: amtD(0.08, 12e6), dMoraInt90180: amtD(0.04, 8e6), dMoraInt1803a: amtD(0.02, 6e6), dDeudaIntTotal: 20e6 + Math.round(rd() * 300e6),
-    sociosComunes: rd() < 0.05, dNC: +(rd() * 14).toFixed(1), dReclamo: +(rd() * 8).toFixed(1),
-    cdCruzada: Math.round(rd() * 45), cdNC: +(rd() * 14).toFixed(1), cdReclamo: +(rd() * 8).toFixed(1),
-    cdCarteraReclamada: amtD(0.12, 8e6), cdCarteraNC: amtD(0.1, 6e6), cdCarteraMorosa: amtD(0.12, 8e6), cdCxcPend: amtD(0.15, 6e6),
+    dNota: notaFromScore(scoreDeudor(nombre).score),
+    dCmf3090: A("CMF_DIR_MOROSA_30_90"), dCmf90180: A("CMF_DIR_MOROSA_90_180"), dCmf1803a: A("CMF_DIR_MOROSA_180_3A"),
+    dCmfCast: A("CMF_DIR_CASTIGADA"), dCmfIndVenc: A("CMF_IND_VENCIDA"), dCmfIndCast: A("CMF_IND_CASTIGADA"),
+    dCmfLeasing: A("CMF_LEASING_MOROSA"), dCmfTotal: A("CMF_DEUDA_TOTAL"),
+    dEfxMora: A("EFX_DEUDA_MOROSA"), dAchef6090: A("ACHEF_MOROSA_60_90"), dAchef90180: A("ACHEF_MOROSA_90_180"),
+    dAchefMas180: A("ACHEF_MOROSA_MAS_180"), dInfr: A("INFRACCIONES_LABORALES_12M"),
+    dMoraInt25: A("MORA_INTERNA_MAS_25D"), dMoraInt3090: A("MORA_INTERNA_30_90"), dMoraInt90180: A("MORA_INTERNA_90_180"),
+    dMoraInt1803a: A("MORA_INTERNA_180_3A"), dDeudaIntTotal: A("DEUDA_INTERNA_TOTAL"),
+    sociosComunes: !!A("SOCIOS_COMUNES_CD"), dNC: A("NOTA_CREDITO_PCT"), dReclamo: A("RECLAMO_PCT"),
+    cdCruzada: A("VENTA_CRUZADA_CD_PCT"), cdNC: A("NOTA_CREDITO_CD_PCT"), cdReclamo: A("RECLAMO_CD_PCT"),
   };
-  if ((rev || 0) >= 1) { out.cdCarteraReclamada = 0; out.cdCarteraNC = 0; out.cdCarteraMorosa = 0; out.cdCxcPend = 0; }
   return out;
 }
 // Lista de deudores DISTINTOS de una operación (razón social + RUT).
@@ -10650,22 +10701,31 @@ function evaluarOtorgItems(deal, estado) {
   const conPiso = (r, ev) => (ev.disp === "excepcion" ? { ...ev, nivel: nivelExigido(r.area, ev.nivel, montoMM), nivelTramo: ev.nivel } : ev);
   REGLAS_CLIENTE.forEach((r) => {
     if (!esReglaDeudor(r)) { items.push({ regla: r, ...conPiso(r, evalReglaCli(r, vCli)), deudor: null, stKey: String(r.n) }); }
-    else deudores.forEach((d) => { items.push({ regla: r, ...conPiso(r, evalReglaCli(r, { ...vCli, ...deudorBlock(d.nombre, rev) })), deudor: d, stKey: r.n + "@" + (d.rut || d.nombre) }); });
+    else deudores.forEach((d) => { items.push({ regla: r, ...conPiso(r, evalReglaCli(r, { ...vCli, ...deudorBlock(deal, d, rev) })), deudor: d, stKey: r.n + "@" + (d.rut || d.nombre) }); });
   });
   return items;
 }
 function varsModeloExt(deal) {
   const h = Math.abs(hashStr("mr2" + ((deal && deal.id) || "")));
   const rng = pcRng(h); const r = () => rng();
-  const amt = (p, max) => (r() < p ? Math.round(r() * max) : 0);
+  // Misma fila CLIENTE del activo A16 que lee apiVarsCliente.
+  const F = OTORG_A16.cli[claveCliente(deal)] || null;
+  const A = a16(F);
   const dn = (deal && (deal.deudor || (deal.deudores && deal.deudores[0] && deal.deudores[0].name))) || "";
+  const dr = (deal && deal.facturasOp && deal.facturasOp[0] && deal.facturasOp[0].rutRecep)
+    || (deal && deal.deudores && deal.deudores[0] && deal.deudores[0].rut) || "";
   return {
-    pagareFirmado: r() < 0.94, lineaExt: r() < 0.08, clienteNuevo: r() < 0.1,
-    varVenta: Math.round((r() - 0.55) * 80), notaCliente: +(3 + r() * 3).toFixed(1),
-    moraInt25: amt(0.15, 4e6), moraInt3090: amt(0.1, 12e6), moraInt90180: amt(0.05, 8e6), moraInt1803a: amt(0.03, 6e6), deudaIntTotal: 30e6 + Math.round(r() * 400e6),
-    juicios: r() < 0.15 ? 1 + (h % 3) : 0,
-    ...deudorBlock(dn),
-    spreadBajoBanda: r() < 0.08, comisionBajoMin: r() < 0.07, cxcSinAplicar: r() < 0.06, clienteBloqueado: r() < 0.03,
+    // Del activo A16 (fila CLIENTE).
+    pagareFirmado: !!A("PAGARE_FIRMADO"), lineaExt: !!A("LINEA_EXTENDIDA"),
+    clienteNuevo: !lineaDeCliente(deal),
+    varVenta: A("VAR_VENTA_MENSUAL_PCT"), notaCliente: A("NOTA_COMPORTAMIENTO") || 5,
+    moraInt25: A("MORA_INTERNA_MAS_25D"), moraInt3090: A("MORA_INTERNA_30_90"), moraInt90180: A("MORA_INTERNA_90_180"),
+    moraInt1803a: A("MORA_INTERNA_180_3A"), deudaIntTotal: A("DEUDA_INTERNA_TOTAL"),
+    juicios: A("JUICIOS_GESINTEL"),
+    ...deudorBlock(deal, { nombre: dn, rut: dr }),
+    // O01–O03 todavía no viajan en el A16 ni se derivan: quedan como estaban hasta su propio bloque.
+    spreadBajoBanda: r() < 0.08, comisionBajoMin: r() < 0.07, cxcSinAplicar: r() < 0.06,
+    clienteBloqueado: !!A("CLIENTE_BLOQUEADO"),
   };
 }
 (() => {
@@ -10682,6 +10742,10 @@ function varsModeloExt(deal) {
   const tAch = (k, a, b, c) => [[(v) => v[k] === 0, "aprobado"], [(v) => v[k] <= 25 * MM, "excepcion", NV(a)], [(v) => v[k] <= 50 * MM, "excepcion", NV(b)], [() => true, "excepcion", NV(c)]];
   const tPct = (k, u1, u2, a, b) => [[(v) => v[k] <= u1, "aprobado"], [(v) => v[k] <= u2, "excepcion", NV(a)], [() => true, "excepcion", NV(b)]];
   const R = (n, id, area, tipo, nombre, hallazgo, tiers, extra) => ({ n, area, tipo, nombre: id + " · " + nombre, cond: id, hallazgo, tiers, ...(extra || {}) });
+// C47–C50 SE RETIRAN: eran la cartera del par cliente-deudor (reclamados, notas de crédito, mora y
+// CxC con ESE deudor) y quedaban dominadas por C40–C43, que miden lo mismo a nivel de cliente con
+// umbral `> 0`: si el par tiene un documento reclamado, el cliente también lo tiene, así que C40 ya
+// había levantado la excepción. El catálogo queda en 76 reglas.
   const V2 = [
     R(101, "C01", "operaciones", "MinimumViability", "Existencia de Pagaré Firmado", "Cliente no posee pagaré firmado vigente", [[(v) => !v.pagareFirmado, "excepcion", NV(1)]]),
     R(102, "C02", "operaciones", "MinimumViability", "Pagaré con Monto Suficiente para Cartera", "Cliente no posee pagarés suficientes para garantizar la cartera vigente antes del curse", [[(v) => !v.pagaresSuf, "excepcion", NV(1)]]),
@@ -10740,10 +10804,6 @@ function varsModeloExt(deal) {
     // reclamos, notas de crédito o mora con ESTE deudor y con ningún otro, y agregado al cliente eso se
     // diluye hasta desaparecer. Por eso se evalúan UNA VEZ POR DEUDOR y su visado es por deudor
     // (`stKey = n@rut`), aunque la spec las numere en el bloque de cliente. EXC-COM N1, re-evaluables.
-    R(147, "C47", "comercial", "Conditions", "Par C-D · Documentos en Cartera Reclamados", "Cartera vigente con este deudor con documentos reclamados", tBin("cdCarteraReclamada", 1), { porDeudor: true }),
-    R(148, "C48", "comercial", "Conditions", "Par C-D · Documentos en Cartera con Nota de Crédito", "Cartera vigente con este deudor con documentos con notas de crédito", tBin("cdCarteraNC", 1), { porDeudor: true }),
-    R(149, "C49", "comercial", "Conditions", "Par C-D · Documentos en Cartera con Mora", "Cartera vigente con este deudor con documentos en mora", tBin("cdCarteraMorosa", 1), { porDeudor: true }),
-    R(150, "C50", "comercial", "Conditions", "Par C-D · Cuentas por Cobrar Pendientes", "Cuentas por cobrar pendientes de liquidar con este deudor", tBin("cdCxcPend", 1), { porDeudor: true }),
     R(151, "C51", "comercial", "Information", "Nota Cliente", "", null, { clasif: true, clfn: (v) => `Nota cliente ${v.notaCliente} · tendencia L3M estable` }),
     R(152, "C52", "comercial", "Information", "Juicios Gesintel", "", null, { clasif: true, clfn: (v) => v.juicios > 0 ? `${v.juicios} juicio(s) en curso/históricos (Gesintel)` : "Sin juicios registrados (Gesintel)" }),
     R(201, "D01", "riesgo", "Behaviour", "Segmento y Nota de Comportamiento Deudor", "Nota de comportamiento del deudor bajo el umbral mínimo (3,7)", [[(v) => v.dNota >= 3.7, "aprobado"], [() => true, "excepcion", NV(4)]]),
@@ -10804,9 +10864,7 @@ const VAR_LBL = {
   cmfIndCastigada: "deuda CMF indirecta castigada", cmfLeasingMora: "mora de leasing CMF",
   efxMora: "mora en Equifax", efxProtesto: "protestos en Equifax",
   achef6090: "mora ACHEF 60-90d", achef90180: "mora ACHEF 90-180d", achefMas180: "mora ACHEF +180d",
-  biceProtVig: "protestos vigentes BICE", biceProtInt: "protestos internos BICE",
-  infrLaborales: "infracciones laborales", moraBICE: "mora con BICE", deudaTotalBICE: "deuda total con BICE",
-  moraBICEFactoring: "mora con BICE Factoring", tgrVigente: "deuda vigente TGR", tgrMoroso: "deuda morosa TGR",
+  infrLaborales: "infracciones laborales", tgrVigente: "deuda vigente TGR", tgrMoroso: "deuda morosa TGR",
   tgrCobrAdm: "cobranza administrativa TGR", tgrCobrJud: "cobranza judicial TGR",
   tgrConvenios: "convenios de deuda TGR", tgrConvCuotas: "cuotas de convenio impagas TGR",
   concentracionVenta: "concentración de ventas (%)", ventaCruzada: "venta cruzada (%)",
@@ -10815,10 +10873,6 @@ const VAR_LBL = {
   factoringPeqPct: "% cesión a factorings pequeños", carteraReclamada: "documentos reclamados en cartera",
   carteraNC: "documentos con nota de crédito en cartera", carteraMorosa: "documentos en mora en cartera",
   cxcPend: "cuentas por cobrar pendientes", concentracionMtz: "concentración en matriz (%)",
-  cdCarteraReclamada: "documentos reclamados en cartera con este deudor",
-  cdCarteraNC: "documentos con nota de crédito en cartera con este deudor",
-  cdCarteraMorosa: "documentos en mora en cartera con este deudor",
-  cdCxcPend: "cuentas por cobrar pendientes con este deudor",
   maxConcentracionMtz: "máx. concentración de matriz (%)", carteraVig: "cartera vigente",
   mntSimulacion: "monto de la simulación", mntLinea: "línea de crédito aprobada",
   macVigente: "MAC vigente", macStatus: "estado del MAC", ivaAlDia: "IVA al día", art85Vig: "artículo 85 vigente",
@@ -10876,7 +10930,6 @@ function snapVersionCli(deal, rev) {
       moraInt25: 0, moraInt3090: 0, moraInt90180: 0, moraInt1803a: 0, juicios: 0,
       spreadBajoBanda: false, comisionBajoMin: false, cxcSinAplicar: false, clienteBloqueado: false,
       concentracionVenta: 20, ventaCruzada: 10, notaCredito: 2, reclamo: 1, ratioCesionVenta: 1, nroFactorings: 1, factoringPeqPct: 10, concentracionMtz: 30,
-      cdCarteraReclamada: 0, cdCarteraNC: 0, cdCarteraMorosa: 0, cdCxcPend: 0,
     });
     vars.mntLinea = vars.carteraVig + vars.mntSimulacion + 50e6; // línea aprobada por el comité → cupo suficiente
   }

@@ -496,23 +496,25 @@
   // (11-09-2026): son de tipo D, o sea se evalúan una vez por deudor y su visado es por deudor.
   // ============================================================================================
 
-  // 46 · El catálogo está completo: las 79 reglas de la política v1.0 —C01-C52, D01-D23, O01-O04— y
-  // ningún código sin implementar. Se cuentan por separado las reglas que NO son de ese documento:
+  // 46 · El catálogo está completo: las 75 reglas VIGENTES de la política v1.0 —C01-C46 + C51-C52,
+  // D01-D23, O01-O04— y ningún código sin implementar. C47-C50 se retiraron por estar dominadas por
+  // C40-C43 (ver el caso 48), así que no cuentan como cobertura faltante: cuentan como retiradas.
+  // Se cuentan por separado las reglas que NO son de ese documento:
   // O05 (evidencia del contrato de cesión) sale del proceso de publicación de la oferta, no del modelo
   // de riesgo, y contarla junto a las otras haría que este caso dejara de medir lo que dice medir —la
   // cobertura de la política— y pasara a medir el largo de un array.
   {
     const ids = REGLAS_CLIENTE.map((r) => r.cond);
     const POLITICA = [];
-    for (let i = 1; i <= 52; i++) POLITICA.push("C" + String(i).padStart(2, "0"));
+    for (let i = 1; i <= 52; i++) { if (i >= 47 && i <= 50) continue; POLITICA.push("C" + String(i).padStart(2, "0")); }
     for (let i = 1; i <= 23; i++) POLITICA.push("D" + String(i).padStart(2, "0"));
     for (let i = 1; i <= 4; i++) POLITICA.push("O" + String(i).padStart(2, "0"));
     const falta = POLITICA.filter((c) => !ids.includes(c));
     const dePolitica = REGLAS_CLIENTE.filter((r) => POLITICA.includes(r.cond));
     const fuera = REGLAS_CLIENTE.filter((r) => !POLITICA.includes(r.cond)).map((r) => r.cond);
-    ok("46 el catálogo implementa las 79 reglas de la política",
-       dePolitica.length === 79 && falta.length === 0
-       && ["C47", "C48", "C49", "C50"].every((c) => ids.includes(c))
+    ok("46 el catálogo implementa las 75 reglas vigentes de la política",
+       dePolitica.length === 75 && falta.length === 0
+       && ["C47", "C48", "C49", "C50"].every((c) => !ids.includes(c))
        // Fuera de la política, sólo O05 — y con su área y su nivel, que es lo que la rutea.
        && fuera.length === 1 && fuera[0] === "O05"
        && REGLAS_CLIENTE.find((r) => r.cond === "O05").area === "operaciones"
@@ -520,42 +522,47 @@
        `${dePolitica.length} de la política + ${fuera.length} propia(s) (${fuera.join(", ") || "—"}) · sin implementar: ${falta.length ? falta.join(", ") : "ninguna"}`);
   }
 
-  // 47 · C47-C50 SON DEL PAR: una vez POR DEUDOR, con visado por deudor. La prueba contrasta contra
-  // sus gemelas de cliente C40-C43, que producen UN ítem con `deudor: null`. Si el motor dedujera el
-  // tipo del prefijo del código —como hacía— estas cuatro caerían del lado del cliente y el
-  // deterioro con un deudor concreto se visaría como si fuera del cliente completo.
+  // 47 · Una regla de DEUDOR se evalúa una vez POR DEUDOR, con visado por deudor; una de cliente
+  // produce UN ítem con `deudor: null`. El testigo eran C47-C50 hasta que se retiraron; la propiedad
+  // sigue siendo la misma y ahora la sostienen D01-D04 contra C40-C43. Lo que cuida es que el motor no
+  // deduzca el tipo del PREFIJO del código —como hacía—: si lo dedujera, el deterioro con un deudor
+  // concreto se visaría como si fuera del cliente completo.
   {
     const dA = LB[0], dB = LB[1];
     const deal47 = { id: "T-47", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba",
                      facturasOp: [fac("a1", dA, 30), fac("b1", dB, 20)] };
     const items = evaluarOtorgItems(deal47);
-    const par = items.filter((i) => ["C47", "C48", "C49", "C50"].includes(i.regla.cond));
+    const CODS = ["D01", "D02", "D03", "D04"];
+    const par = items.filter((i) => CODS.includes(i.regla.cond));
     const cli = items.filter((i) => ["C40", "C41", "C42", "C43"].includes(i.regla.cond));
     const ruts = [...new Set(par.map((i) => i.deudor && i.deudor.rut))].sort();
-    ok("47 C47-C50 se evalúan por deudor y su visado es por deudor",
+    ok("47 una regla de deudor se evalúa por deudor y su visado es por deudor",
        par.length === 8 && ruts.length === 2 && ruts.join("|") === [dA, dB].sort().join("|")
        && par.every((i) => i.deudor && i.stKey === i.regla.n + "@" + i.deudor.rut)
        && cli.length === 4 && cli.every((i) => i.deudor === null && i.stKey === String(i.regla.n))
-       && ["C47", "C48", "C49", "C50"].every((c) => esReglaDeudor(REGLAS_CLIENTE.find((r) => r.cond === c))),
+       && CODS.every((c) => esReglaDeudor(REGLAS_CLIENTE.find((r) => r.cond === c))),
        `par: ${par.length} ítems sobre ${ruts.length} deudores · cliente: ${cli.length} ítems sin deudor`);
   }
 
   // 48 · Carácter EXC-COM N1 y re-evaluables, igual que C40-C43. Y la variable del par se regulariza
   // al re-evaluar: si siguiera con el valor del día 1, «re-evaluable» sería una etiqueta que el
   // código no cumple y la excepción quedaría pegada para siempre.
+  // C47–C50 SE RETIRARON del catálogo: eran la cartera del par cliente-deudor y quedaban dominadas por
+  // C40–C43, que miden lo mismo a nivel de cliente con umbral `> 0` — si el par tiene un documento
+  // reclamado, el cliente también, así que C40 ya había levantado la excepción. El test pasa a fijar la
+  // decisión: ni las reglas ni sus variables pueden volver sin que esto se caiga.
   {
     const rs = ["C47", "C48", "C49", "C50"].map((c) => REGLAS_CLIENTE.find((r) => r.cond === c));
-    const nivelExc = (r) => { const t = (r.tiers || []).find((x) => x[1] === "excepcion"); return t && t[2]; };
     const dn = nomDe(LB[0]);
-    const v0 = deudorBlock(dn), v1 = deudorBlock(dn, 1);
+    const v = deudorBlock({ rutEmisor: "" }, { nombre: dn });
     const claves = ["cdCarteraReclamada", "cdCarteraNC", "cdCarteraMorosa", "cdCxcPend"];
-    ok("48 C47-C50 excepcionan comercial N1, son re-evaluables y su variable se regulariza",
-       rs.every((r) => r.area === "comercial" && nivelExc(r) === 1 && reglaReev(r.n))
-       && rolDeAreaNivel("comercial", 1).rol === "Jefe de Grupo Comercial"
-       && claves.every((k) => v0[k] !== undefined && v1[k] === 0)
-       // y no se tocó el sorteo de las variables que ya existían: `rd()` es secuencial
-       && v0.cdCruzada === v1.cdCruzada && v0.cdNC === v1.cdNC && v0.dNota === v1.dNota,
-       `niveles ${rs.map(nivelExc).join("/")} · aprueba ${rolDeAreaNivel("comercial", 1).rol}`);
+    const dominantes = ["C40", "C41", "C42", "C43"].map((c) => REGLAS_CLIENTE.find((r) => r.cond === c));
+    ok("48 C47-C50 están retiradas y las dominantes C40-C43 siguen en pie",
+       rs.every((r) => r === undefined)
+       && claves.every((k) => v[k] === undefined)
+       && dominantes.every((r) => r && (r.tiers || []).some((t) => t[1] === "excepcion"))
+       && REGLAS_CLIENTE.filter((r) => /^[COD]\d\d$/.test(r.cond || "")).length === 76,
+       `catálogo ${REGLAS_CLIENTE.filter((r) => /^[COD]\d\d$/.test(r.cond || "")).length} reglas · C40-C43 presentes`);
   }
 
 
