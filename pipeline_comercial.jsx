@@ -6042,13 +6042,19 @@ function DealMensajeria({ deal, usuario }) {
 }
 // Sub-tab VERIFICACIÓN: criterios V01–V10 del predictor, versionado (patrón otorgamiento),
 // filtros y checklist telefónico. El veredicto es del DEUDOR: todas sus facturas lo comparten.
-function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usuario }) {
+// `tasaDe(factura)` entra por PARÁMETRO y no se calcula acá: la tasa de una factura sale del spread de
+// su deudor, y ese spread lo puede haber pisado el ejecutivo en la pestaña Negocio. Recalcularla con el
+// sugerido mostraría en esta tabla una tasa distinta de la que está mirando dos pestañas más allá —el
+// mismo documento con dos precios en la misma pantalla—, que es peor que no mostrarla.
+function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usuario, tasaDe }) {
   // Misma compuerta que la mesa: registrar la llamada o retirar una factura es firmar lo que el
   // deudor dijo, y eso lo hace el equipo de verificación. Los demás leen el veredicto del modelo.
   const puedeMarcar = puedeVerificarFacturas((SESION && SESION.usuario) || usuario);
   const [refrescado, setRefrescado] = useState(nowStamp());
   const [filtro, setFiltro] = useState("all");
   const [open, setOpen] = useState({});
+  // Columnas de la fila de factura: chevron · folio · tipo · emisión · vencimiento · tasa · monto · verif.
+  const GC_VF = "14px minmax(72px,1fr) 104px 88px 88px 56px 82px 112px";
   // Las verificaciones telefónicas se persisten: vivían en este useState y se perdían al cerrar el
   // detalle, aunque la pantalla prometiera lo contrario. Al reabrir una operación para modificarla,
   // rehacer una llamada ya hecha son 3–4 horas por deudor tiradas.
@@ -6135,16 +6141,35 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
               <span className="w-16 shrink-0 text-right font-medium" style={{ color: C.ink }}>{fmtMM(g.monto)}</span>
               <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: estG.bg, color: estG.fg }} title="El veredicto es del deudor: una llamada cubre todas sus facturas. Se divide sólo si la confirmación fue parcial.">{estG.t}</span>
             </div>
+          {/* Los DATOS DEL DOCUMENTO, en el mismo orden y con los mismos títulos que la tabla de
+              candidatas: folio · tipo · emisión · vencimiento · tasa · monto. La fila traía sólo el
+              folio y el monto, y quien está por gastar 3–4 horas llamando al deudor necesita saber qué
+              factura le está confirmando —de qué tipo, de cuándo y a qué plazo—. La cabecera va dentro
+              de cada grupo porque sin ella dos fechas seguidas no dicen cuál es cuál. */}
+          <div className="overflow-x-auto px-2"><div style={{ minWidth: 660 }}>
+          <div className="grid items-center gap-2 pt-1 pb-0.5 t9 uppercase tracking-wide" style={{ gridTemplateColumns: GC_VF, color: C.faint, borderBottom: `1px solid ${C.line}` }}>
+            <span></span><span>Folio</span><span>Tipo doc.</span><span>F. emisión</span><span>F. vencim.</span><span className="text-right">Tasa</span><span className="text-right">Monto</span><span>Verif.</span>
+          </div>
           {g.items.map((x) => {
           const f = x.f, v = x.v, isOpen = !!open[f.id]; const tel = v.tel;
           const estPill = v.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
+          const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
+          const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
+          const emD = new Date(Date.now() - (f.diasEmision != null ? f.diasEmision : 60) * 86400000);
+          const em = emD.toLocaleDateString("es-CL");
+          const venc = new Date(emD.getTime() + (f.venc != null ? f.venc : 30) * 86400000).toLocaleDateString("es-CL");
+          const tasaF = tasaDe ? tasaDe(f) : null;
           return (
-          <div key={f.id} className="px-2" style={{ borderBottom: `1px solid ${C.line}` }}>
-            <div onClick={() => setOpen((o) => ({ ...o, [f.id]: !o[f.id] }))} className="flex items-center gap-2 py-1.5 t11" style={{ cursor: "pointer" }}>
+          <div key={f.id} style={{ borderBottom: `1px solid ${C.line}` }}>
+            <div onClick={() => setOpen((o) => ({ ...o, [f.id]: !o[f.id] }))} className="grid items-center gap-2 py-1.5 t11" style={{ gridTemplateColumns: GC_VF, cursor: "pointer" }}>
               <ChevronRight size={11} style={{ color: C.faint, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
-              <span className="min-w-0 flex-1 truncate" style={{ color: C.sub }}>#{f.folio}</span>
-              <span className="w-16 shrink-0 text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.monto)}</span>
-              <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: estPill.bg, color: estPill.fg }}>{estPill.t}</span>
+              <span className="truncate font-medium" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>#{f.folio}</span>
+              <span className="truncate t9" style={{ color: C.sub }} title={tdoc}>{tdoc}</span>
+              <span className="t9" style={{ color: C.faint }}>{em}</span>
+              <span className="t9" style={{ color: C.faint }}>{venc}</span>
+              <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF != null ? `${tasaF}%` : "—"}</span>
+              <span className="text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.monto)}</span>
+              <span className="justify-self-start shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: estPill.bg, color: estPill.fg }}>{estPill.t}</span>
             </div>
             {isOpen && (
               <div className="grid gap-3 rounded-lg p-3 mb-1.5" style={{ backgroundColor: C.page, gridTemplateColumns: "1.3fr .85fr" }}>
@@ -6205,6 +6230,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
           </div>
           );
           })}
+          </div></div>
           </div>
           );
         })}
@@ -6823,6 +6849,11 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2 pb-2">
               {(() => {
+                // NI ACÁ NI EN VERIFICACIÓN. En esos dos tabs el ejecutivo no está armando la oferta:
+                // está leyendo lo que la casa decidió y qué falta llamar. Pre-evaluación pertenece a la
+                // oferta —es «adelanta el otorgamiento de lo que estoy armando»— y ofrecerla dentro del
+                // propio tab de Otorgamiento invita a apretarla mirando el resultado que ya produjo.
+                if (["otorgamiento", "verificacion"].includes(tab)) return null;
                 // Aceptada la oferta, la operación entra al proceso de excepción por sí sola (la
                 // bandeja de otorgamiento la toma sin que nadie la envíe): la pre-evaluación sólo
                 // existe ANTES de la aceptación, para adelantar el otorgamiento con los apoderados.
@@ -6863,7 +6894,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   menú de acciones; ya no necesita un botón propio compitiendo en el encabezado.
                   El menú sólo aparece acá cuando la tarjeta de veredicto —que lo lleva incorporado—
                   no está en pantalla, para que ninguna pestaña se quede sin las acciones. */}
-              {fullPage && !(tab === "negocio" && negTab === "detalle") && (
+              {/* Tampoco el menú de acciones en Otorgamiento ni en Verificación: los dos tabs traen sus
+                  propias acciones por criterio y por factura, y un menú genérico arriba compite con
+                  ellas ofreciendo terminar la operación desde la pantalla en que se está revisando. */}
+              {fullPage && !(tab === "negocio" && negTab === "detalle") && !["otorgamiento", "verificacion"].includes(tab) && (
                 <div className="relative">
                   <button onClick={() => setAccMenu((v) => !v)} className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 t12 font-medium text-white" style={{ backgroundColor: C.ink }}>Acciones <ChevronDown size={14} /></button>
                   {accMenu && panelAcciones(false)}
@@ -6885,7 +6919,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             </div>
           )}
           {tab === "mensajeria" && <DealMensajeria deal={deal} usuario={usuario} />}
-          {tab === "verificacion" && <div className="mt-2"><VerificacionTab deal={deal} facturasOp={deal.facturasOp || []} bloqueado={["giro", "perdida"].includes(deal.stage)} onNoConfirmada={(f) => setConfirmNoConf(f)} usuario={usuario} /></div>}
+          {tab === "verificacion" && <div className="mt-2"><VerificacionTab deal={deal} facturasOp={deal.facturasOp || []} bloqueado={["giro", "perdida"].includes(deal.stage)} onNoConfirmada={(f) => setConfirmNoConf(f)} usuario={usuario}
+            tasaDe={(f) => ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + CFG_ACTIVA.costoFondo).toFixed(2)} /></div>}
           {tab === "otorgamiento" && deal.otorgAuto && (
             <div className="mt-4 rounded-lg p-3" style={{ backgroundColor: C.greenBg, border: "1px solid #bbf7d0" }}>
               <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: C.green }}><Check size={12} /> Otorgamiento automático</div>
