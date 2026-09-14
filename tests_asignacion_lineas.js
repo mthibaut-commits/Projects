@@ -386,15 +386,15 @@
     // configuración que falta (crear el área y asignarle un usuario con ese nivel), no un bug.
     const huerfanos = []; let nTramos = 0;
     // Se prueba cada tramo CONTRA CADA TRAMO DE MONTO, no sólo con su nivel base: desde INC-05 el monto
-    // de la operación sube el nivel exigido, así que un tramo con aprobador a MM$15 puede quedarse sin
-    // ninguno a MM$200 si el piso de su área pide más de lo que esa área alcanza.
+    // de la operación sube el nivel exigido, así que un tramo con aprobador a M$15 puede quedarse sin
+    // ninguno a M$200 si el piso de su área pide más de lo que esa área alcanza.
     const montos = [15, 50, 100, 200];
     (typeof REGLAS_CLIENTE !== "undefined" ? REGLAS_CLIENTE : []).forEach((r) => (r.tiers || []).forEach((t) => {
       if (t[1] !== "excepcion") return;
       nTramos++;
       montos.forEach((mm) => {
         const niv = nivelExigido(r.area, t[2], mm);
-        if (!apruebanDe(r, niv).length) huerfanos.push(`${r.cond} ${r.area} N${niv} (MM$${mm})`);
+        if (!apruebanDe(r, niv).length) huerfanos.push(`${r.cond} ${r.area} N${niv} (M$${mm})`);
       });
     }));
     // El conteo se calcula, no se escribe: quedó fijo en «130» y al sumar C47-C50 el mensaje pasó a
@@ -633,7 +633,7 @@
        && comunes.length > 0 && subio.length > 0
        && comunes.every((i) => i.nivel >= porKey[i.stKey].nivel)
        && [...a, ...b].every((i) => i.nivel >= i.nivelTramo),
-       `MM$15 → MM$200: ${subio.length} de ${comunes.length} excepciones suben de nivel`);
+       `M$15 → M$200: ${subio.length} de ${comunes.length} excepciones suben de nivel`);
   }
 
   // 51 · El modelo paralelo se retiró de verdad, no quedó desconectado. Y la etapa Otorgamiento se
@@ -1103,7 +1103,7 @@
   // peso de más o de menos, y eso no se descubre hasta que el cliente reclama.
   // ============================================================================================
 
-  // 70 · La planilla del negocio, reproducida. Dos documentos de MM$100 a 31 y 62 días con tasas
+  // 70 · La planilla del negocio, reproducida. Dos documentos de M$100 a 31 y 62 días con tasas
   // 1,0% y 1,2%: el descuento es RACIONAL —valor presente `monto/(1+i·t)`—, y el plazo equivalente
   // pondera por el peso de la DIFERENCIA DE PRECIO, no por el monto. Con esos mismos datos ponderar
   // por monto daría 46,5 días en vez de 52,79, así que la distinción no es cosmética.
@@ -1135,7 +1135,7 @@
       const n = 1 + Math.floor(rnd() * 60);
       const docs = [];
       // Montos de FACTURA reales y deliberadamente dispares —una grande y muchas chicas es el caso
-      // que desalinea—, en operaciones de MM$50 a MM$20.000. La primera versión de este caso sorteaba
+      // que desalinea—, en operaciones de M$50 a M$20.000. La primera versión de este caso sorteaba
       // montos de hasta 10^13 y medía un ajuste de 13 millones: el descuadre era del generador.
       const grande = Math.round((5e6 + rnd() * 2e9));
       docs.push({ id: "d0", monto: grande, dias: 15 + Math.floor(rnd() * 75), tasa: +(0.8 + rnd() * 1.2).toFixed(2) });

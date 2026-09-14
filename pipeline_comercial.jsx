@@ -1006,8 +1006,8 @@ function usarSysLog() {
 // EL MONTO DE LA OPERACIÓN ESCALA LA ATRIBUCIÓN (decisión de negocio, 11-09-2026, cierre de INC-05).
 // Son DOS factores independientes y el requisito es el MAYOR de los dos: el tramo del risk tier mide
 // cuánto se desvía la variable de riesgo, y este piso mide cuánto se arriesga si ese desvío resulta
-// cierto. Una mora de MM$1 en una operación de MM$200 no es el mismo riesgo que la misma mora en una
-// de MM$15, y al revés una mora enorme no baja de jerarquía por venir en una operación chica.
+// cierto. Una mora de M$1 en una operación de M$200 no es el mismo riesgo que la misma mora en una
+// de M$15, y al revés una mora enorme no baja de jerarquía por venir en una operación chica.
 //   `max` y no una suma: sumando, dos factores medianos exigirían más que un factor extremo, que no es
 // lo que nadie pidió. Y piso, no reemplazo: el nivel del tramo nunca BAJA por el monto.
 //   Los tramos de monto son los del modelo de causas de desvío que esto reemplaza (`CFG_TRAMOS`), pero
@@ -1585,7 +1585,7 @@ const esPrimeraOperacionCliente = (deal, estados) => {
 //            esa clasificación, no su definición, así que no vuelve a filtrar acá.
 //   OTROS  → protocolo completo, las 10 reglas (agrega V02, V03, V06 y V09).
 // V01: si el deudor tiene protocolo propio de verificación, prevalece y la factura queda por modelo.
-// V09 (alto monto > MM$300) SÓLO aplica en OTROS: un Prime no tiene techo por monto.
+// V09 (alto monto > M$300) SÓLO aplica en OTROS: un Prime no tiene techo por monto.
 // Estado del PAR cliente-deudor: todo lo que la verificación necesita y que NO depende del
 // documento ni de la simulación —protocolo propio del deudor, % pagado, recurrencia, mora, reclamos,
 // historial de pago—. En producción esto es una fila precalculada por el batch y esta función es el
@@ -1624,13 +1624,13 @@ function verifPar(rutCliente, nombre, rutDeudor) {
     protocolo: F && N("V01_PROTOCOLO_PROPIO") === 1
       ? { existe: true, id: "PROT-" + String(1000 + (h % 9000)) } : { existe: false, id: null },
     pctPagoDeudor3M: N("V02_PCT_PAGADO_3M"),
-    mntCompraOp3M: F ? +(N("V03_MNT_COMPRA_3M_M") / 1000).toFixed(1) : null,  // M$ → MM$, total comprado al par en 3M
-    avgVentaProm3M: F ? +(N("V04_VENTA_PROM_3M_M") / 1000).toFixed(1) : null, // M$ → MM$, venta mensual del par
+    mntCompraOp3M: F ? +(N("V03_MNT_COMPRA_3M_M") / 1000).toFixed(1) : null,  // el activo trae MILES; acá millones. Total comprado al par en 3M
+    avgVentaProm3M: F ? +(N("V04_VENTA_PROM_3M_M") / 1000).toFixed(1) : null, // el activo trae MILES; acá millones. Venta mensual del par
     mesesConVenta6M: N("V05_RECURRENCIA_MESES_6M"),
     fchVctoProm: N("V06_PLAZO_PROM_PAGO_DIAS"),                               // días, plazo histórico del par
     pctMora25d: N("V07_PCT_MORA_25D"),
     pctReclamadas: N("V08_PCT_RECLAMADAS"),
-    mntPagoDeudor3M: F ? +(N("V10_MNT_PAGADO_3M_M") / 1000).toFixed(1) : null, // M$ → MM$
+    mntPagoDeudor3M: F ? +(N("V10_MNT_PAGADO_3M_M") / 1000).toFixed(1) : null, // el activo trae MILES; acá millones
     h,
   };
   _VERIF_PAR.set(k, out);
@@ -2831,7 +2831,7 @@ function tasaEquivalente(difTotal, plazoEq, vpTotal) {
 //
 // Va a la más grande y no a la última por decisión de negocio (12-09-2026). Es además lo robusto: la
 // más grande siempre puede absorber el residuo sin cruzar el cero, mientras que en la más chica el
-// ajuste podía superar lo asignado —en una operación de MM$20.000 en 300 documentos quedaba en −4
+// ajuste podía superar lo asignado —en una operación de M$20.000 en 300 documentos quedaba en −4
 // pesos— y una comisión negativa no se explica ni se transfiere.
 //
 // `ajuste` es lo que hubo que sumar o restar para cuadrar. Se DEVUELVE en vez de esconderlo: si algún
@@ -3975,14 +3975,18 @@ function deudoresRecurrentesLinea(cliente) {
 // Helpers de UI
 // ============================================================
 // M = millón, B = billón (1 B = 1 millón de millones = 1.000.000 M). Los montos llegan en M.
-// Los montos del sistema son PESOS. `MM$` es una abreviatura de PANTALLA y este es el unico lugar
+// Los montos del sistema son PESOS. `M$` es una abreviatura de PANTALLA y este es el unico lugar
 // que la aplica: nada aguas arriba almacena ni calcula en millones, porque redondear a millones
 // pierde pesos —una factura de $1.234.567 no es $1,23 MM— y el cuadre documento a documento deja de
 // dar. Bajo el millon se muestra la cifra exacta, que es lo que el usuario puede reconciliar.
 const fmtMM = (n) => {
   const v = n || 0, a = Math.abs(v);
-  if (a >= 1e9) return `MMM$${(v / 1e9).toLocaleString("es-CL", { maximumFractionDigits: 2 })}`;
-  if (a >= 1e6) return `MM$${(v / 1e6).toLocaleString("es-CL", { maximumFractionDigits: 1 })}`;
+  // UNA SOLA ESCALA: M$ = millones, siempre, cualquiera sea la magnitud. Había un tramo aparte para
+  // los miles de millones (`M$`) y el resultado era ilegible justo donde más importa: la tarjeta
+  // mostraba «M$1,31 aprobada» al lado de «Disponible M$313,7» y las dos cifras no se podían
+  // comparar de un vistazo, que es para lo único que sirve abreviar. Con una escala son M$1.310 y
+  // M$313,7. Bajo el millón se muestra el peso entero: escribir M$0,5 pierde precisión y no abrevia.
+  if (a >= 1e6) return `M$${(v / 1e6).toLocaleString("es-CL", { maximumFractionDigits: 1 })}`;
   return `$${Math.round(v).toLocaleString("es-CL")}`;
 };
 const fmtCLP = (n) => "$" + Math.round(n).toLocaleString("es-CL");
@@ -13348,7 +13352,7 @@ const PC_ZONA = {
   Centro: [30.0, 21.2, 23.4, 26.4, 28.2, 21.4, 23.6, 18.6, 19.0, 19.4, 18.7, 21.6],
   Sur: [15.4, 13.4, 14.0, 16.0, 11.8, 14.6, 12.8, 13.4, 17.2, 14.9, 17.4, 13.0],
 };
-const fmtMMc = (n) => "MM$" + Math.round((n || 0) / 1e6).toLocaleString("es-CL");
+const fmtMMc = (n) => "M$" + Math.round((n || 0) / 1e6).toLocaleString("es-CL");
 // ============================================================
 // SANKEY "Origen → Cierre": de dónde nace la oportunidad (regla del inbound o alta manual del ejecutivo),
 // si se originó el día de referencia o viene de días anteriores, en qué etapa está (o en cuál se perdió) y
@@ -13773,7 +13777,7 @@ function PCsankey({ deals = [], execsFiltrados = [], filtrosDeal = {}, hayFiltro
         <div className="flex flex-col gap-1">
           <label className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Medir por</label>
           <div className="inline-flex rounded-lg p-0.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
-            {[["cantidad", "N° oportunidades"], ["monto", "Monto (MM$)"]].map(([k, l]) => (
+            {[["cantidad", "N° oportunidades"], ["monto", "Monto (M$)"]].map(([k, l]) => (
               <button key={k} onClick={() => setMetrica(k)} className="rounded-md px-3 py-1.5 t11 font-semibold" style={{ backgroundColor: metrica === k ? C.indigo : "transparent", color: metrica === k ? "#fff" : C.sub }}>{l}</button>
             ))}
           </div>
@@ -15586,8 +15590,8 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
               <div className="rounded-2xl p-6" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
                 <h3 className="mb-4 text-base font-bold" style={{ color: C.ink }}>Montos de la línea</h3>
                 <div className="grid grid-cols-1 gap-x-8 gap-y-5 md:grid-cols-3">
-                  <EmpInput label="Línea global aprobada (MM$)" value={linea.global} onChange={setL("global")} placeholder="500" />
-                  <EmpInput label="Sublímite por deudor (MM$)" value={linea.subDeudor} onChange={setL("subDeudor")} placeholder="150" />
+                  <EmpInput label="Línea global aprobada (M$)" value={linea.global} onChange={setL("global")} placeholder="500" />
+                  <EmpInput label="Sublímite por deudor (M$)" value={linea.subDeudor} onChange={setL("subDeudor")} placeholder="150" />
                   <EmpInput label="Plazo máximo (días)" value={linea.plazo} onChange={setL("plazo")} placeholder="120" />
                   <EmpSelect label="Moneda" value={linea.moneda} onChange={setL("moneda")} options={["CLP", "UF", "USD"]} placeholder="Seleccionar moneda" />
                   <EmpInput label="Vigencia (fecha)" value={linea.vigencia} onChange={setL("vigencia")} placeholder="31/12/2026" />
@@ -15613,7 +15617,7 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
                 </div>
                 <div className="overflow-x-auto rounded-xl" style={{ border: `1px solid ${C.line}` }}>
                   <table className="w-full border-collapse t12" style={{ minWidth: "620px" }}>
-                    <thead><tr>{["Deudor", "Sublímite (MM$)", "Utilizado (MM$)", "Disponible (MM$)"].map((h) => <th key={h} className="px-4 py-3 text-left t9 font-bold uppercase tracking-wide" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
+                    <thead><tr>{["Deudor", "Sublímite (M$)", "Utilizado (M$)", "Disponible (M$)"].map((h) => <th key={h} className="px-4 py-3 text-left t9 font-bold uppercase tracking-wide" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
                     <tbody>
                       {[["Codelco", 150, 90], ["Falabella", 120, 40], ["Cencosud", 100, 75]].map((r, i) => (
                         <tr key={i} style={{ borderBottom: `1px solid ${C.line}` }}>
@@ -18399,10 +18403,10 @@ function PlanPorEjecutivo({ ejec, soloExec, esJefe, usuarioNombre, plan, setPlan
               <div className="rounded-xl p-3" style={{ backgroundColor: "#EFF6FF", border: "1px solid #BFDBFE" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#2563EB" }}>Línea de crédito disponible</div><div className="t14 font-bold" style={{ color: "#2563EB" }}>{fmtMMc(sig.lineaDisp)}</div><div className="t9" style={{ color: C.faint }}>{sig.lineaPct}% de {fmtMMc(sig.lineaAprob)} aprobada</div></div>
               <div className="rounded-xl p-3" style={{ backgroundColor: sig.riesgo.bg, border: `1px solid ${sig.riesgo.c}33` }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: sig.riesgo.c }}>Comportamiento de riesgo</div><div className="t14 font-bold" style={{ color: sig.riesgo.c }}>{sig.riesgo.l}</div><div className="t9" style={{ color: C.faint }}>{sig.moraDias > 0 ? `Morosidad ${sig.moraDias} días` : "Sin morosidad vigente"}</div></div>
             </div>
-            <div className="mt-4 flex flex-wrap items-center gap-4"><span className="t12 font-semibold" style={{ color: C.sub }}>Definir la meta por:</span>{[["sow", "SOW (%)"], ["colocacion", "Colocación (MM$)"]].map(([k, l]) => (<label key={k} className="flex cursor-pointer items-center gap-1.5 t12" style={{ color: criterio === k ? C.ink : C.sub }}><input type="radio" name="critMetaPPE" disabled={!esJefe} checked={criterio === k} onChange={() => setCriterio(k)} style={{ accentColor: C.indigo }} /><span className={criterio === k ? "font-semibold" : ""}>{l}</span></label>))}</div>
+            <div className="mt-4 flex flex-wrap items-center gap-4"><span className="t12 font-semibold" style={{ color: C.sub }}>Definir la meta por:</span>{[["sow", "SOW (%)"], ["colocacion", "Colocación (M$)"]].map(([k, l]) => (<label key={k} className="flex cursor-pointer items-center gap-1.5 t12" style={{ color: criterio === k ? C.ink : C.sub }}><input type="radio" name="critMetaPPE" disabled={!esJefe} checked={criterio === k} onChange={() => setCriterio(k)} style={{ accentColor: C.indigo }} /><span className={criterio === k ? "font-semibold" : ""}>{l}</span></label>))}</div>
             <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div><div className="mb-1.5 t12" style={{ color: C.sub }}>Meta SOW (%){criterio === "colocacion" ? " · calculado" : ""}</div><input type="number" disabled={!esJefe || criterio !== "sow"} value={ef.metaSow} onChange={(e) => { const v = Math.max(0, Math.min(100, parseInt(e.target.value || "0", 10) || 0)); setEf({ metaSow: v, metaColoc: Math.round(v / 100 * flujo) }); }} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: (esJefe && criterio === "sow") ? "#fff" : "#F9FAFB" }} /><div className="mt-1 t9" style={{ color: sowExcede ? "#EF4444" : C.faint }}>{criterio === "sow" ? `Brecha objetivo: +${gap} pp sobre el SoW actual.` : sowExcede ? "La colocación supera el flujo: SOW limitado a 100%." : "Participación sobre el flujo de buenas facturas."}</div></div>
-              <div><div className="mb-1.5 t12" style={{ color: C.sub }}>Meta colocación (MM$){criterio === "sow" ? " · estimado" : ""}</div><input type="number" disabled={!esJefe || criterio !== "colocacion"} value={ef.metaColoc} onChange={(e) => { const v = Math.max(0, parseInt(e.target.value || "0", 10) || 0); setEf({ metaColoc: v, metaSow: Math.min(100, Math.round(v / (flujo || 1) * 100)) }); }} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: (esJefe && criterio === "colocacion") ? "#fff" : "#F9FAFB" }} /><div className="mt-1 t9" style={{ color: C.faint }}>{criterio === "sow" ? `Estimado = SOW × facturas buenas (prom. 3m: ${fmtMMc(flujo)}).` : `Facturas buenas (prom. 3m): ${fmtMMc(flujo)}.`}</div></div>
+              <div><div className="mb-1.5 t12" style={{ color: C.sub }}>Meta colocación (M$){criterio === "sow" ? " · estimado" : ""}</div><input type="number" disabled={!esJefe || criterio !== "colocacion"} value={ef.metaColoc} onChange={(e) => { const v = Math.max(0, parseInt(e.target.value || "0", 10) || 0); setEf({ metaColoc: v, metaSow: Math.min(100, Math.round(v / (flujo || 1) * 100)) }); }} className="w-full rounded-xl px-3 py-2.5 t13 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: (esJefe && criterio === "colocacion") ? "#fff" : "#F9FAFB" }} /><div className="mt-1 t9" style={{ color: C.faint }}>{criterio === "sow" ? `Estimado = SOW × facturas buenas (prom. 3m: ${fmtMMc(flujo)}).` : `Facturas buenas (prom. 3m): ${fmtMMc(flujo)}.`}</div></div>
             </div>
             <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0" }}><div className="t8 font-bold uppercase tracking-wide" style={{ color: "#16A34A" }}>Rentabilidad objetivo · spread 33 pbs</div><div className="t14 font-bold" style={{ color: "#16A34A" }}>{fmtMMc(rentObj)}</div><div className="t9" style={{ color: C.faint }}>0,33% sobre la meta de colocación definida. Para sostener la meta al cierre debe colocar {fmtMMc(cmEdit.faltante)} en el mes.</div></div>
             <div className="mt-4"><div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Bitácora de cambios</div><div className="mt-1.5 space-y-1.5" style={{ maxHeight: 120, overflowY: "auto" }}>{log.length === 0 && <div className="t10" style={{ color: C.faint }}>Sin cambios registrados.</div>}{log.map((ch, i) => { const d = new Date(ch.ts); const p2 = (n) => String(n).padStart(2, "0"); return (<div key={i} className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 t10" style={{ backgroundColor: C.page }}><span style={{ color: C.ink }}><b>{ch.campo}</b>: {ch.de} → <b style={{ color: C.indigo }}>{ch.a}</b></span><span style={{ color: C.faint }}>{ch.usuario} · {p2(d.getDate())}/{p2(d.getMonth() + 1)} {p2(d.getHours())}:{p2(d.getMinutes())}</span></div>); })}</div></div>
@@ -19850,13 +19854,13 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                   <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
                     <div className="t9 font-bold uppercase tracking-wide mb-1.5" style={{ color: "#7C3AED" }}>Información financiera <span className="ml-1 font-normal normal-case" style={{ color: C.faint }}>· editable — corrige lo que difiera de la información del cliente</span></div>
                     <div className="grid gap-2 md:grid-cols-4">
-                      <Lb t="Deuda directa (MM$)"><input {...fld("directa")} /></Lb>
-                      <Lb t="Deuda indirecta (MM$)"><input {...fld("indirecta")} /></Lb>
+                      <Lb t="Deuda directa (M$)"><input {...fld("directa")} /></Lb>
+                      <Lb t="Deuda indirecta (M$)"><input {...fld("indirecta")} /></Lb>
                       <Lb t="Leasing UF"><input {...fld("leasingUF")} /></Lb>
                       <Lb t="Fecha info. por cliente"><input type="date" value={fin.fInfo} onChange={(e) => setFin((f) => ({ ...f, fInfo: e.target.value }))} className="w-full rounded-md px-2 py-1 t11 outline-none" style={inpSty} /></Lb>
                       <Lb t="Pas. Exigible / Gen. Bruta"><input {...fld("pasExGen", "0.01")} /></Lb>
-                      <Lb t="Patrimonio (MM$)"><input {...fld("patrimonio", "1")} /></Lb>
-                      <Lb t="Generación (MM$)"><input {...fld("generacion", "1")} /></Lb>
+                      <Lb t="Patrimonio (M$)"><input {...fld("patrimonio", "1")} /></Lb>
+                      <Lb t="Generación (M$)"><input {...fld("generacion", "1")} /></Lb>
                       <Lb t="Leverage (veces)"><input {...fld("leverage", "0.1")} /></Lb>
                     </div>
                     <div className="mt-2 grid gap-3 md:grid-cols-2">
@@ -19897,12 +19901,12 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                     <div className="grid items-end gap-2" style={{ gridTemplateColumns: "140px 90px repeat(6, 1fr) 90px" }}>
                       <Lb t="Fecha inf."><input type="date" value={fin.achefFecha} onChange={(e) => setFin((f) => ({ ...f, achefFecha: e.target.value }))} className="w-full rounded-md px-2 py-1 t10 outline-none" style={inpSty} /></Lb>
                       <Lb t="Nro empresas"><input {...fld("achefN", "1")} /></Lb>
-                      <Lb t="Vigente MM$"><input {...fld("achefVig")} /></Lb>
-                      <Lb t="Morosas MM$"><input {...fld("achefMor")} /></Lb>
-                      <Lb t="Facturas MM$"><input {...fld("achefFac")} /></Lb>
-                      <Lb t="Cheques MM$"><input {...fld("achefChq")} /></Lb>
-                      <Lb t="Letras MM$"><input {...fld("achefLet")} /></Lb>
-                      <Lb t="Otros MM$"><input {...fld("achefOtr")} /></Lb>
+                      <Lb t="Vigente M$"><input {...fld("achefVig")} /></Lb>
+                      <Lb t="Morosas M$"><input {...fld("achefMor")} /></Lb>
+                      <Lb t="Facturas M$"><input {...fld("achefFac")} /></Lb>
+                      <Lb t="Cheques M$"><input {...fld("achefChq")} /></Lb>
+                      <Lb t="Letras M$"><input {...fld("achefLet")} /></Lb>
+                      <Lb t="Otros M$"><input {...fld("achefOtr")} /></Lb>
                       <div className="t10 text-right font-bold" style={{ color: fin.achefMor > 0 ? "#EF4444" : C.ink }}>Total: {achefTot} MM</div>
                     </div>
                   </div>
@@ -20036,10 +20040,10 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                     <div className="mt-2 grid grid-cols-2 gap-2">
                       <div className="rounded-lg px-2.5 py-1.5 t10" style={{ backgroundColor: C.page, color: C.sub }}>Monto anterior: <b style={{ color: C.ink }}>{d.anterior ? fmtMM(d.anterior) : "—"}</b></div>
                       <div className="rounded-lg px-2.5 py-1.5 t10" style={{ backgroundColor: C.page, color: C.sub }}>Monto utilizado: <b style={{ color: C.ink }}>{d.utilizado ? fmtMM(d.utilizado) : "0"}</b></div>
-                      <label className="t9" style={{ color: C.sub }}>Monto propuesto (MM$)<input type="number" value={d.propuesta} onChange={(e) => updDeu(editDeu, { propuesta: +e.target.value || 0 })} className="w-full rounded-md px-2 py-1 t11 text-right outline-none" style={inpSty} /></label>
+                      <label className="t9" style={{ color: C.sub }}>Monto propuesto (M$)<input type="number" value={d.propuesta} onChange={(e) => updDeu(editDeu, { propuesta: +e.target.value || 0 })} className="w-full rounded-md px-2 py-1 t11 text-right outline-none" style={inpSty} /></label>
                       <label className="t9" style={{ color: C.sub }}>Fecha inf. cliente<input type="date" value={d.fechaInf} onChange={(e) => updDeu(editDeu, { fechaInf: e.target.value })} className="w-full rounded-md px-2 py-1 t11 outline-none" style={inpSty} /></label>
-                      <label className="t9" style={{ color: C.sub }}>Info. deuda directa (MM$)<input type="number" value={+(d.deudaDirecta / 1e6).toFixed(1)} onChange={(e) => updDeu(editDeu, { deudaDirecta: (+e.target.value || 0) * 1e6 })} className="w-full rounded-md px-2 py-1 t11 text-right outline-none" style={inpSty} /></label>
-                      <label className="t9" style={{ color: C.sub }}>Info. deuda indirecta (MM$)<input type="number" value={+(d.deudaIndirecta / 1e6).toFixed(1)} onChange={(e) => updDeu(editDeu, { deudaIndirecta: (+e.target.value || 0) * 1e6 })} className="w-full rounded-md px-2 py-1 t11 text-right outline-none" style={inpSty} /></label>
+                      <label className="t9" style={{ color: C.sub }}>Info. deuda directa (M$)<input type="number" value={+(d.deudaDirecta / 1e6).toFixed(1)} onChange={(e) => updDeu(editDeu, { deudaDirecta: (+e.target.value || 0) * 1e6 })} className="w-full rounded-md px-2 py-1 t11 text-right outline-none" style={inpSty} /></label>
+                      <label className="t9" style={{ color: C.sub }}>Info. deuda indirecta (M$)<input type="number" value={+(d.deudaIndirecta / 1e6).toFixed(1)} onChange={(e) => updDeu(editDeu, { deudaIndirecta: (+e.target.value || 0) * 1e6 })} className="w-full rounded-md px-2 py-1 t11 text-right outline-none" style={inpSty} /></label>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-3">{[["V", "Verificación"], ["N", "Notificación"], ["C", "Cobranza"], ["FR", "FA Respaldo"], ["CP", "Cheque Pago"]].map(([f, l]) => (
                       <label key={f} className="flex items-center gap-1 t10" style={{ color: C.sub }}><input type="checkbox" checked={!!d.flags[f]} onChange={(e) => updDeu(editDeu, { flags: { ...d.flags, [f]: e.target.checked } })} />{l}</label>
@@ -20094,7 +20098,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                   <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>Garantías</div>
                   <button onClick={() => setGarantias((p) => [...p, { tipo: "Hipoteca", institucion: "Factoring Security", producto: "Factoring", idGar: "G-" + (1000 + p.length + 1), fIni: hoyISO, fTer: vencProp, monto: 100, cobertura: 100 }])} className="t10 font-semibold" style={{ color: C.indigo }}>+ Agregar garantía</button>
                 </div>
-                {garantias.length > 0 && <div className="mt-1 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "150px 1fr 110px 80px 125px 125px 90px 80px 20px", color: C.faint }}><span>Tipo garantía</span><span>Institución</span><span>Producto</span><span>ID</span><span>F. inicio</span><span>F. término</span><span>Monto MM$</span><span>% Cobert.</span><span></span></div>}
+                {garantias.length > 0 && <div className="mt-1 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "150px 1fr 110px 80px 125px 125px 90px 80px 20px", color: C.faint }}><span>Tipo garantía</span><span>Institución</span><span>Producto</span><span>ID</span><span>F. inicio</span><span>F. término</span><span>Monto M$</span><span>% Cobert.</span><span></span></div>}
                 {garantias.map((g, i) => (
                   <div key={i} className="mt-1 grid items-center gap-2" style={{ gridTemplateColumns: "150px 1fr 110px 80px 125px 125px 90px 80px 20px" }}>
                     <select value={g.tipo} onChange={(e) => setGarantias((p) => p.map((x, j) => j === i ? { ...x, tipo: e.target.value } : x))} className="rounded-md px-2 py-1 t11" style={inpSty}><option>Hipoteca</option><option>Prenda</option><option>Depósito a plazo</option><option>Aval CORFO / FOGAPE</option><option>Otra</option></select>
