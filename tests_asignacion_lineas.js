@@ -1829,6 +1829,50 @@
        `${ejecFilas.length} ejecutivos · ${cartFilas.length} asignaciones · catálogos calzan ${calzan} · JG → [${deJG.join(", ")}] · jefe desconocido → nada · ${muestra.length} asignaciones verificadas · prospecto sin dueño · ${huerfanas} huérfanas`);
   }
 
+  // 92 · EL LIBRO DE VENTAS NO DEPENDE DE LA OFERTA. Es lo que el cliente EMITIÓ: no cambia porque
+  // nosotros elijamos qué comprarle. El folio más alto se anclaba sobre las facturas ya incluidas
+  // —`Math.max(...enOferta, ...reales)`— y de ese folio cuelga todo: de él sale el folio de cada
+  // documento y del folio salen, por hash, su DEUDOR y su MONTO. Incorporar una factura corría el
+  // ancla y re-sorteaba el libro entero: el mismo deudor mostraba dos facturas antes de agregar y
+  // siete después, con folios y montos que no existían un segundo antes.
+  {
+    const deudores = [{ name: "Deudor Uno", rut: "77.461.061-0" }, { name: "Deudor Dos", rut: "42.124.113-9" }];
+    const mk = (facturasOp) => ({ id: "OP-LIB-92", cliente: "Cliente 92", rutEmisor: "76.111.111-1",
+      deudores, facturasOp, facturasDisponibles: [], facturasRetiradas: [], nuevasFacturas: 0 });
+    const foto = (deal) => {
+      const c = candidatasLibro(deal, deal.facturasOp);
+      const porDoc = {};
+      c.forEach((f) => { porDoc[f.folio] = `${f.deudor}|${f.monto}`; });
+      return { folios: new Set(c.map((f) => f.folio)), porDoc, n: c.length };
+    };
+    const vacia = foto(mk([]));
+    const base = candidatasLibro(mk([]), []);
+    const una = foto(mk([{ ...base[0], candidata: false }]));
+    const dos = foto(mk([{ ...base[0], candidata: false }, { ...base[1], candidata: false }]));
+
+    // (a) Incorporar no INVENTA documentos: ningún folio nuevo aparece en el pool.
+    const nuevosTras1 = [...una.folios].filter((f) => !vacia.folios.has(f));
+    const nuevosTras2 = [...dos.folios].filter((f) => !vacia.folios.has(f));
+    // (b) Lo único que cambia es que el incorporado sale del pool — y NO se vuelve a ofrecer, que es
+    //     el cabo que deja un ancla estable: el libro volvería a generar la misma factura y el
+    //     documento aparecería dos veces, una en la oferta y otra en «otras facturas de este deudor».
+    const salieron1 = [...vacia.folios].filter((f) => !una.folios.has(f));
+    const salieron2 = [...vacia.folios].filter((f) => !dos.folios.has(f));
+    // (c) Y el DEUDOR y el MONTO de cada documento que sigue en el pool no se mueven: eran función
+    //     del folio, y el folio era función de la oferta.
+    const estables = [...dos.folios].every((f) => dos.porDoc[f] === vacia.porDoc[f]);
+    // (d) Dos lecturas seguidas sobre la MISMA oferta dan lo mismo (determinismo, que ya se esperaba).
+    const repetible = JSON.stringify(foto(mk([])).porDoc) === JSON.stringify(vacia.porDoc);
+
+    ok("92 el libro de ventas no se re-sortea al incorporar una factura a la oferta",
+       vacia.n > 10
+       && nuevosTras1.length === 0 && nuevosTras2.length === 0
+       && salieron1.length === 1 && salieron1[0] === base[0].folio
+       && salieron2.length === 2
+       && estables && repetible,
+       `${vacia.n} docs → ${una.n} → ${dos.n} · 0 folios nuevos · salieron [${salieron2.join(", ")}] · deudor y monto estables ${estables}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

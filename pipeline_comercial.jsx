@@ -3515,10 +3515,19 @@ function candidatasLibro(deal, enOferta) {
   const rutPorNombre = {}; deudoresDeDeal(deal).forEach((d) => { if (d.nombre && d.rut) rutPorNombre[d.nombre] = d.rut; });
   const deudores = (deal.deudores && deal.deudores.length ? deal.deudores.map((d) => d.name) : [deal.deudor]).filter(Boolean);
   const pool = deudores.length ? deudores : ["Deudor"];
-  const folioTope = Math.max(0, ...(enOferta || []).map((f) => +f.folio || 0), ...reales.map((f) => +f.folio || 0));
   const ventana = pol("ventanaLibroDias", 60);
   const N = 40 + (Math.abs(hashStr("libro" + (deal.id || ""))) % 41); // 40–80 facturas en la ventana
-  const topFolio = (folioTope || 100000) + N + 6; // el folio más nuevo queda sobre lo ya en oferta
+  // EL LIBRO NO PUEDE DEPENDER DE LA OFERTA. El folio más alto se anclaba sobre las facturas ya
+  // incluidas (`Math.max(...enOferta, ...reales)`), y de ese folio cuelga TODO: el folio de cada
+  // documento, y del folio salen por hash su DEUDOR y su MONTO. O sea que incorporar una factura
+  // corría el ancla y **re-sorteaba el libro entero**: el mismo deudor mostraba dos facturas antes de
+  // agregar y siete después, con folios y montos que no existían un segundo antes. Un libro de ventas
+  // es lo que el cliente emitió; no cambia porque nosotros elijamos qué comprarle.
+  // Ahora el ancla sale SÓLO de la identidad de la operación, que es lo único inmutable acá: cualquier
+  // dato del negocio que se pueda editar reintroduce el defecto. Se pierde que el folio más nuevo
+  // quede sobre lo ya en oferta —realismo que costaba la estabilidad del pool— y los choques con los
+  // folios reales los sigue saltando `usados`.
+  const topFolio = 100000 + (Math.abs(hashStr("libroBase" + (deal.id || ""))) % 900000) + N + 6;
   // Clasificación del deudor tal como YA la trae este negocio: el libro sintetiza facturas de los
   // mismos deudores, así que tienen que clasificar igual. Sin esto el objeto no llevaba `tipoDeudor`,
   // `tipoDeudorDisp` caía a "Otro" y el motor le negaba la LF1 a deudores Lista Blanca.
@@ -3527,7 +3536,12 @@ function candidatasLibro(deal, enOferta) {
     if (f && f.deudor && f.tipoDeudor && !clasePorDeudor[f.deudor]) clasePorDeudor[f.deudor] = { tipoDeudor: f.tipoDeudor, histFactoring: f.histFactoring || null };
   });
   const claseDe = (dn) => clasePorDeudor[dn] || { tipoDeudor: tipoDeudor(rutPorNombre[dn] || null, dn), histFactoring: null };
-  const usados = new Set((reales || []).map((f) => +f.folio));
+  // Folios que NO puede volver a emitir el libro: los de las candidatas reales (que lo integran con su
+  // folio propio) y los de las facturas YA INCLUIDAS en la oferta. Para eso sirve `enOferta` — no para
+  // anclar el pool, que era el defecto: con el ancla estable, el libro volvería a generar la misma
+  // factura que el ejecutivo acaba de incorporar y el documento aparecería dos veces en la pantalla,
+  // una en la oferta y otra en «otras facturas de este deudor».
+  const usados = new Set([...(reales || []), ...(enOferta || []), ...(deal.facturasOp || [])].map((f) => +f.folio).filter((x) => x));
   const out = [];
   for (let i = 0; i < N; i++) {
     const folio = topFolio - i; // contiguo descendente, sin saltos
