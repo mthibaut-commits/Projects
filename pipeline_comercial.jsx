@@ -759,6 +759,12 @@ const TAG_COLORS = {
 const EXECS = { CR: "Carla Rivas", RF: "Rodrigo Fuentes", JT: "Javier Torres", MS: "María José Soto", NB: "Natalia Bravo", DC: "Diego Cáceres" };
 const EXEC_JEFATURA = { CR: "Equipo Andes", RF: "Equipo Andes", JT: "Equipo Pacífico", MS: "Equipo Pacífico", NB: "Equipo Austral", DC: "Equipo Austral" };
 const EXEC_ZONA = { CR: "Zona Norte (Andina)", RF: "Zona Norte (Andina)", JT: "Zona Centro", MS: "Zona Centro", NB: "Zona Sur", DC: "Zona Sur" };
+// Sucursal desde la que opera cada ejecutivo. Va junto al equipo y la zona porque son la misma
+// dimensión —dónde está la persona en la estructura comercial— y separarlas es lo que permitió que
+// `PC_EXECS` declarara su propia versión de la zona durante meses sin que nadie lo notara.
+const EXEC_SUCURSAL = { CR: "Antofagasta", RF: "La Serena", JT: "Valparaíso", MS: "Santiago Centro", NB: "Concepción", DC: "Puerto Montt" };
+// Zonas que existen, DERIVADAS de la asignación: ninguna pantalla vuelve a escribir la lista a mano.
+const ZONAS_COMERCIALES = [...new Set(Object.values(EXEC_ZONA))];
 const USUARIO = "CR"; // ejecutivo logueado por defecto (Carla Rivas)
 // Usuarios que pueden "iniciar sesión": los 6 ejecutivos, los aprobadores (Riesgo/Operaciones) y el super admin.
 const USERS = { ...EXECS, JG: "Sofía Herrera · Jefe de Grupo Comercial", GC: "Dante Montes · Gerente Comercial", GG: "Federico Diaz · Gerente General", RG: "Carolina Vergara · Jefe de Riesgo", SR: "Paula Reyes · Subgerente de Riesgo", OP: "Andrés Mella · Operaciones", JO: "Ignacio Peña · Jefe de Operaciones", EV: "Camila Soto · Ejecutivo de verificación", ADMIN: "Super Administrador (ve todo)" };
@@ -13248,14 +13254,15 @@ function MantenedoresOtorg({ onCfgChange }) {
 // Tres secciones: Cliente (resumen + segmentación), SOW (desviación, competidores, tendencia) y Desempeño.
 // ============================================================
 // Roster alineado con el del pipeline (EXECS): así el filtro por usuario logueado ("Carla Rivas", etc.) funciona.
-const PC_EXECS = [
-  { ini: "CR", nombre: "Carla Rivas", zona: "Norte", jefatura: "Jefatura Norte", clientes: 630, activos: 68, fuga: 48, brecha: 118136 },
-  { ini: "RF", nombre: "Rodrigo Fuentes", zona: "Norte", jefatura: "Jefatura Norte", clientes: 579, activos: 49, fuga: 59, brecha: 80262 },
-  { ini: "JT", nombre: "Javier Torres", zona: "Centro", jefatura: "Jefatura Centro Poniente", clientes: 611, activos: 55, fuga: 50, brecha: 87095 },
-  { ini: "MS", nombre: "María José Soto", zona: "Centro", jefatura: "Jefatura Centro Poniente", clientes: 619, activos: 57, fuga: 58, brecha: 68112 },
-  { ini: "NB", nombre: "Natalia Bravo", zona: "Centro", jefatura: "Jefatura Centro Oriente", clientes: 635, activos: 75, fuga: 57, brecha: 122288 },
-  { ini: "DC", nombre: "Diego Cáceres", zona: "Sur", jefatura: "Jefatura Sur", clientes: 643, activos: 54, fuga: 46, brecha: 74471 },
-];
+// Ejecutivos del módulo comercial: la MISMA gente y la MISMA estructura que declara `EXECS`, con los
+// nombres de campo que usa este módulo. Antes era una tabla aparte, y contradecía a las otras dos:
+// decía que Natalia Bravo era de «Jefatura Centro Oriente» en zona Centro mientras `EXEC_JEFATURA` la
+// ponía en «Equipo Austral» y `EXEC_ZONA` en «Zona Sur». Tres respuestas a dónde está una persona.
+// Se eliminan además los cuatro contadores que traía —clientes, activos, fuga, brecha—: no los leía
+// nadie y eran métricas congeladas dentro de lo que debería ser un maestro.
+const PC_EXECS = Object.keys(EXECS).map((ini) => ({
+  ini, nombre: EXECS[ini], zona: EXEC_ZONA[ini], jefatura: EXEC_JEFATURA[ini], sucursal: EXEC_SUCURSAL[ini],
+}));
 const PC_COMPETIDORES = [
   { name: "Bci Factoring", mm: 232263 }, { name: "Banco De Chile", mm: 205922 }, { name: "BICE Factoring", mm: 203553 },
   { name: "Banco Santander Chile", mm: 135300 }, { name: "Scotiabank Chile", mm: 133987 }, { name: "Tanner", mm: 102485 },
@@ -13753,7 +13760,7 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
   const [fDeudor, setFDeudor] = useState("todos");    // pagador (filtra oportunidades)
   const [fLinea, setFLinea] = useState("todos");      // Factoring | Confirming | ... (filtra oportunidades)
   const [filtrosOpen, setFiltrosOpen] = useState(false); // panel de filtros colapsable (ahorra espacio)
-  const zonas = ["Norte", "Centro", "Sur"];
+  const zonas = ZONAS_COMERCIALES;
   const estadoLbl = { Security: "Operan con Security", Competencia: "Solo competencia", Inactivo: "Inactivos / prospectos" };
   const filtrosActivos = [
     fEstado !== "todos" && { key: "estado", label: "Estado", val: estadoLbl[fEstado] || fEstado, clear: () => setFEstado("todos") },
