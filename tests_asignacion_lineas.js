@@ -32,7 +32,12 @@
   // ata la prueba a un sorteo concreto y basta cambiar la semilla para que no encuentre ninguno.
   const TODOS_LB = [...LB_RUT];
   const nomDe = (r) => "DEU-" + r;
-  const conNota = LB.map((r) => ({ rut: r, nota: notaFromScore(scoreDeudor(nomDe(r), "Lista Blanca").score) })).sort((a, b) => b.nota - a.nota);
+  // La nota es un DATO del activo A11 y se resuelve por RUT: los nombres de prueba son sintéticos,
+  // pero los RUT son de la lista blanca real y sí están en el maestro de empresa.
+  // Se recorre TODA la lista blanca, no los doce primeros: la nota ya no se sortea por nombre sino
+  // que viene del maestro de empresa, así que acotar el pool puede dar doce deudores con la misma
+  // nota y dejar sin sentido las pruebas que necesitan un «mejor» y un «peor».
+  const conNota = [...LB_RUT].map((r) => ({ rut: r, nota: notaDeudor(nomDe(r), r) || 0 })).sort((a, b) => b.nota - a.nota);
   const alto = conNota[0], bajo = conNota[conNota.length - 1];
   const noPrime = "99.999.999-9";
 

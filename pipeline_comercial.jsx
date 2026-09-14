@@ -1412,26 +1412,30 @@ function tipoDeudorDisp(f) {
   if (f && f.histFactoring === "otro") return "Histórico";
   return (f && f.tipoDeudor) || "Otro";
 }
-// Score de comportamiento de pago del deudor (inventado pero ESTABLE por nombre). Mejor en lista
-// blanca, peor en "Otro"; se penaliza según el atraso promedio (en días) en el pago de las facturas.
-function scoreDeudor(name, tipoArg) {
-  // Si se pasa el tipo ya clasificado por la factura (por RUT), se respeta; si no, se infiere por nombre.
-  const tipo = tipoArg || tipoDeudor(null, name);
-  const h = hashStr((name || "").toLowerCase());
-  // Una MINORÍA de los deudores no listados paga excelente: es la población que la lista ND>4,2
-  // existe para capturar. Sin ella el tramo quedaba vacío —medido: 0 de 4.000 facturas del stream— y
-  // las reglas de ND>4,2 no podían disparar nunca. Es determinista por nombre: el mismo deudor cae
-  // siempre del mismo lado. No cambia su LISTA (sigue siendo "Otro" para CAT y para el otorgamiento),
-  // sólo su comportamiento de pago, que es lo que la Nota mide.
-  const otroBuenPagador = tipo !== "Lista Blanca" && tipo !== "Deudor Autorizado" && tipo !== "Histórico BICE" && tipo !== "Histórico" && (h % 100) < 12;
-  const atraso = tipo === "Lista Blanca" ? (h % 6) : tipo === "Deudor Autorizado" ? 2 + (h % 13) : tipo === "Histórico BICE" ? 2 + (h % 10) : tipo === "Histórico" ? 4 + (h % 16) : otroBuenPagador ? (h % 5) : 5 + (h % 28); // días de atraso promedio
-  const base = tipo === "Lista Blanca" ? 97 : tipo === "Deudor Autorizado" ? 88 : tipo === "Histórico BICE" ? 86 : tipo === "Histórico" ? 80 : otroBuenPagador ? 90 : 74;
-  const score = Math.max(20, Math.min(99, Math.round(base - atraso * 1.7 + ((h >> 4) % 5) - 2)));
-  return { tipo, atraso, score };
+// ── ACTIVO A11 · PLATAFORMA360 — maestro de empresa por RUT (clientes y deudores) ───────────────
+// Firmográfica, comercial, socios, índices y la NOTA DE COMPORTAMIENTO. Se indexa también por razón
+// social porque el wizard de comité resuelve deudores por nombre antes de tener su RUT.
+const P360 = (() => {
+  const src = (typeof window !== "undefined" && window.PLATAFORMA360) || null;
+  const ix = {}, porRut = {}, porNombre = {};
+  if (src && src.campos && src.filas) {
+    src.campos.forEach((c, i) => (ix[c] = i));
+    for (const f of src.filas) { porRut[f[ix.RUT]] = f; if (!porNombre[f[ix.RAZON_SOCIAL]]) porNombre[f[ix.RAZON_SOCIAL]] = f; }
+  }
+  return { ix, porRut, porNombre };
+})();
+// NOTA DE COMPORTAMIENTO 1–5 (5 = mejor pagador) — ÚNICA fuente: el campo NOTA_COMPORTAMIENTO del
+// activo A11. Es atributo de la EMPRESA, no de su cartera ni de un par, así que vive en el activo de
+// información de empresa y no se copia a ningún otro. La consultan C09 (cliente), D01 (deudor), el CAT,
+// el predictor y la UI. Devuelve `null` si la empresa no está en la tabla: un RUT sin dato es un hueco
+// del feed, y tratarlo como 0 lo convertiría en el peor pagador posible.
+const notaEmpresa = (rut) => { const f = rut && P360.porRut[rut]; const n = f ? +f[P360.ix.NOTA_COMPORTAMIENTO] : NaN; return n > 0 ? n : null; };
+// La nota de un deudor, por RUT o resolviendo su razón social contra el maestro.
+function notaDeudor(nombre, rut) {
+  const f = (rut && P360.porRut[rut]) || (nombre && P360.porNombre[nombre]) || null;
+  const n = f ? +f[P360.ix.NOTA_COMPORTAMIENTO] : NaN;
+  return n > 0 ? n : null;
 }
-// ── NOTA DEUDOR (modelo de riesgo Security): calificación 1–5, siendo 5 el mejor pagador. Se deriva del
-// score de pago del deudor. La Nota y la verificación son POR DEUDOR (no por factura).
-const notaFromScore = (s) => Math.max(1, Math.min(5, +(1 + (s - 20) / 79 * 4).toFixed(1)));
 // Corte de Nota Deudor que define el tramo prioritario. Lo comparten la prospección —qué deudores
 // abren oportunidad— y el motor de asignación de líneas —a quién se le asigna primero—: tiene que ser
 // el MISMO número, o el tubo y el detalle contarían historias distintas del mismo deudor.
@@ -1444,7 +1448,7 @@ const deudorAbreOportunidad = (f) => !!(f && f.inboundBucket && f.inboundBucket 
 // Nota del deudor de un evento del stream. Dos cuidados: el inbound trae `pagador`, no `deudor`; y
 // el tipo tiene que ser el MOSTRADO, no el crudo —para un histórico el campo `tipoDeudor` dice "Otro",
 // que puntúa 74 y deja su nota bajo el corte, así que la lista ND>4,2 no capturaba a nadie—.
-const notaDeudorEvento = (f) => notaFromScore(scoreDeudor((f && (f.pagador || f.deudor)) || "", tipoDeudorDisp(f)).score);
+const notaDeudorEvento = (f) => notaDeudor((f && (f.pagador || f.deudor)) || "", f && (f.rutRecep || f.rutPagador)) || 0;
 const NOTA_COLOR = (n) => (n >= 4 ? "#0a7d3f" : n >= 3 ? "#C2410C" : "#EF4444");
 // VERIFICACIÓN por deudor: Security contacta al deudor para verificar telefónicamente que la factura existe,
 // que los bienes/servicios fueron recibidos y la fecha de pago. Para no hacerlo con todas las facturas, un
@@ -1534,7 +1538,7 @@ function verifPar(rutCliente, nombre, rutDeudor) {
   const hit = _VERIF_PAR.get(k);
   if (hit) return hit;
   const tipo = tipoDeudor(rutDeudor, nombre);
-  const sc = scoreDeudor(nombre, tipo).score, nota = notaFromScore(sc);
+  const nota = notaDeudor(nombre, rutDeudor) || 0, sc = Math.round(20 + (nota - 1) / 4 * 79);
   const h = Math.abs(hashStr("vp" + k));
   const prime = tipo === "Lista Blanca" || tipo === "Deudor Autorizado";
   // Protocolo recortado: prime O nota sobre el corte. Son DOS poblaciones distintas y basta
@@ -1823,11 +1827,11 @@ function catDeal(deal) {
   if (!deal) return { cat: "CAT-1", sub: null, sA: 0, sB: 0, sC: 0, sD: 0 };
   let items = [];
   if (deal.facturasOp && deal.facturasOp.length) {
-    items = deal.facturasOp.map((f) => ({ m: f.montoMM || 0, n: notaFromScore(scoreDeudor(f.deudor, tipoDeudorDisp(f)).score) }));
+    items = deal.facturasOp.map((f) => ({ m: f.montoMM || 0, n: notaDeudor(f.deudor, f.rutRecep) }));
   } else if (deal.deudores && deal.deudores.length) {
-    items = deal.deudores.map((d) => ({ m: d.montoMM || 0, n: notaFromScore(scoreDeudor(d.name).score) }));
+    items = deal.deudores.map((d) => ({ m: d.montoMM || 0, n: notaDeudor(d.name, d.rut) }));
   } else if (deal.deudor) {
-    items = [{ m: deal.amountMM || 1, n: notaFromScore(scoreDeudor(deal.deudor).score) }];
+    items = [{ m: deal.amountMM || 1, n: notaDeudor(deal.deudor, deal.rutDeudor || (deal.facturasOp && deal.facturasOp[0] && deal.facturasOp[0].rutRecep)) }];
   }
   return catShares(items);
 }
@@ -3209,7 +3213,7 @@ function ordenarPorCalidadDeudor(facturas) {
       // resolviéndose por el hash del nombre del deudor — con una nota distinta de la que la UI exhibe
       // para esa misma factura.
       const tipo = f.histFactoring ? tipoDeudorDisp(f) : (f.tipoDeudor || tipoDeudor(f.rutRecep, f.deudor));
-      return { f, prio: ORDEN_DEUDOR[tipo] != null ? ORDEN_DEUDOR[tipo] : 9, score: scoreDeudor(f.deudor, tipo).score, monto: f.montoMM || 0 };
+      return { f, prio: ORDEN_DEUDOR[tipo] != null ? ORDEN_DEUDOR[tipo] : 9, score: notaDeudor(f.deudor, f.rutRecep) || 0, monto: f.montoMM || 0 };
     })
     .sort((a, b) => a.prio - b.prio || b.score - a.score || b.monto - a.monto)
     .map((x) => x.f);
@@ -6977,7 +6981,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           <span>Tipo doc.</span><span>Folio</span><span>Razón social</span><span className="text-right">Nota</span><span>F. emisión</span><span>F. vencim.</span><span>Otorg.</span><span>Verif.</span><span className="text-right">Tasa</span><span className="text-right">Monto</span><span></span>
                         </div>
                         {validas.map((f) => {
-                          const sc = scoreDeudor(f.deudor, tipoDeudorDisp(f)); const nota = notaFromScore(sc.score);
+                          const nota = notaDeudor(f.deudor, f.rutRecep) || 0; const sc = { tipo: tipoDeudorDisp(f), score: Math.round(20 + (nota - 1) / 4 * 79) };
                           const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                           const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
                           const he = Math.abs(hashStr("em" + f.folio)) % 20 + 3; const em = new Date(Date.now() - he * 86400000).toLocaleDateString("es-CL");
@@ -7038,7 +7042,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           );
                           const SHORT_EST = { notaAnula: "Anulada", cedida: "Cedida", otraOp: "Otra op.", notaParcial: "NC parcial" };
                           const filaOtra = (f) => {
-                            const sc = scoreDeudor(f.deudor, tipoDeudorDisp(f)); const nota = notaFromScore(sc.score);
+                            const nota = notaDeudor(f.deudor, f.rutRecep) || 0; const sc = { tipo: tipoDeudorDisp(f), score: Math.round(20 + (nota - 1) / 4 * 79) };
                             const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                             const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
                             // Candidatas: emisión repartida en la ventana de 60 días (diasEmision); las ya incluidas
@@ -7436,7 +7440,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         };
                         const cabDeudor = (deudor, grupo, abierto, enOferta) => {
                           const rep = grupo[0]; const td = tipoDeudorDisp(rep); const prime = td === "Lista Blanca" || td === "Deudor Autorizado";
-                          const nota = notaFromScore(scoreDeudor(deudor, td).score);
+                          const nota = notaDeudor(deudor) || 0;
                           const verifOk = grupo.every((f) => verifFactura(f, deal).est === "ok");
                           const og = deudorOtorgMap[deudor] || { ok: 0, total: 0 }; const allOk = og.total > 0 && og.ok === og.total;
                           const monto = +grupo.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
@@ -7627,7 +7631,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           const tramoDe = (f) => {
                             const td = tipoDeudorDisp(f);
                             if (td === "Lista Blanca" || td === "Deudor Autorizado") return "prime";
-                            return notaFromScore(scoreDeudor(f.deudor || "", td).score) > NOTA_PRIORITARIA ? "notaAlta" : "resto";
+                            return (notaDeudor(f.deudor || "", f.rutRecep) || 0) > NOTA_PRIORITARIA ? "notaAlta" : "resto";
                           };
                           const deTramo = (t) => pool.filter((f) => tramoDe(f) === t);
                           const prime = deTramo("prime"), notaAlta = deTramo("notaAlta"), resto = deTramo("resto");
@@ -7887,7 +7891,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     const f0 = (grpOt[dn] || [])[0];
                                     if (!f0) return "resto";
                                     if (esPrime(f0)) return "prime";
-                                    return notaFromScore(scoreDeudor(f0.deudor || "", tipoDeudorDisp(f0)).score) > NOTA_PRIORITARIA ? "notaAlta" : "resto";
+                                    return (notaDeudor(f0.deudor || "", f0.rutRecep) || 0) > NOTA_PRIORITARIA ? "notaAlta" : "resto";
                                   };
                                   const paquetes = Object.keys(grpOt).map((dn) => {
                                     const g = (grpOt[dn] || []).filter((f) => estadoCandidata(f, deal).agregable);
@@ -10666,7 +10670,7 @@ function deudorBlock(deal, deudor, rev) {
   const F = OTORG_A16.deu[claveCliente(deal) + "|" + rut] || null;
   const A = a16(F);
   const out = {
-    dNota: notaFromScore(scoreDeudor(nombre).score),
+    dNota: (notaDeudor(nombre, rut) || 0),
     dCmf3090: A("CMF_DIR_MOROSA_30_90"), dCmf90180: A("CMF_DIR_MOROSA_90_180"), dCmf1803a: A("CMF_DIR_MOROSA_180_3A"),
     dCmfCast: A("CMF_DIR_CASTIGADA"), dCmfIndVenc: A("CMF_IND_VENCIDA"), dCmfIndCast: A("CMF_IND_CASTIGADA"),
     dCmfLeasing: A("CMF_LEASING_MOROSA"), dCmfTotal: A("CMF_DEUDA_TOTAL"),
@@ -18962,7 +18966,7 @@ function analisisDeudores(facturas) {
     const tipo = tipoDeudorDisp(f), nombre = f.deudor || "";
     const k = f.rutRecep || nombre;
     let x = g.get(k);
-    if (!x) { x = { nombre, prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado", nota: notaFromScore(scoreDeudor(nombre, tipo).score), n: 0, monto: 0 }; g.set(k, x); }
+    if (!x) { x = { nombre, prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado", nota: (notaDeudor(nombre) || 0), n: 0, monto: 0 }; g.set(k, x); }
     x.n += 1; x.monto += (f.montoMM || 0);
   });
   return tramosDeudores([...g.values()]);
@@ -18987,7 +18991,7 @@ function analisisDeudoresDeDeal(deal) {
   return tramosDeudores((deal.deudores || []).filter((x) => x && x.name).map((x) => {
     const tipo = tipoDeudor(null, x.name);
     return { nombre: x.name, prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado",
-      nota: notaFromScore(scoreDeudor(x.name, tipo).score), n: x.facturas || 0, monto: x.montoMM || 0 };
+      nota: (notaDeudor(x.name) || 0), n: x.facturas || 0, monto: x.montoMM || 0 };
   }));
 }
 
@@ -19074,7 +19078,7 @@ function asignarLineas(facturas, rutCliente, inyecta) {
     const k = f.rutRecep || nombre;
     let g = grupos.get(k);
     if (!g) {
-      g = { key: k, rut: f.rutRecep || "", nombre, tipo, prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado", nota: notaFromScore(scoreDeudor(nombre, tipo).score), facturas: [], monto: 0 };
+      g = { key: k, rut: f.rutRecep || "", nombre, tipo, prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado", nota: (notaDeudor(nombre, f.rutRecep) || 0), facturas: [], monto: 0 };
       grupos.set(k, g);
     }
     g.facturas.push(f); g.monto += (f.montoMM || 0);
@@ -19460,7 +19464,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
     const h = Math.abs(hashStr("deu" + nombre)); const prop = 50 + (h % 20) * 10; const ant = (h % 2) ? 50 + (h % 10) * 10 : 0;
     const esCliente = typeof PC_CLIENTES !== "undefined" && PC_CLIENTES.some((c) => c.nombre === nombre) ? true : (h % 3 === 0);
     const hist = deudoresHistorial(cliente, [{ name: nombre }])[0];
-    return { nombre, rut: `${76000000 + (h % 20000000)}-${"0123456789K"[h % 11]}`, nota: notaFromScore(scoreDeudor(nombre).score), esCliente, politicaPct: 25 + (h % 2) * 5, anterior: ant, utilizado: ant ? Math.round(ant * ((h % 60) / 100)) : 0, deudaDirecta: (h % 500) * 100000, deudaIndirecta: (h % 7 === 0) ? (h % 200) * 100000 : 0, propuesta: prop, fechaInf: hoyISO, productos: [{ producto: "FACTURA", anterior: ant, utilizado: 0, propuesto: prop }], hist, l6m: ventaL6M(hist) };
+    return { nombre, rut: `${76000000 + (h % 20000000)}-${"0123456789K"[h % 11]}`, nota: (notaDeudor(nombre) || 0), esCliente, politicaPct: 25 + (h % 2) * 5, anterior: ant, utilizado: ant ? Math.round(ant * ((h % 60) / 100)) : 0, deudaDirecta: (h % 500) * 100000, deudaIndirecta: (h % 7 === 0) ? (h % 200) * 100000 : 0, propuesta: prop, fechaInf: hoyISO, productos: [{ producto: "FACTURA", anterior: ant, utilizado: 0, propuesto: prop }], hist, l6m: ventaL6M(hist) };
   };
   // Pre-carga: los deudores con flujo recurrente ya vienen incorporados; el ejecutivo sólo ingresa la
   // información de línea (propuesta, política, productos). Puede agregar otros con el combo o eliminarlos.
@@ -19680,7 +19684,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
               <div className="flex items-center gap-2">
                 <select value={addSel} onChange={(e) => { const v = e.target.value; setAddSel(v); if (!v) return; if (esAdmin) { pedirDeudor(v); } else { setDeudores((p) => [...p, { ...construirDeudorLinea(v), flags: { V: true, N: true, C: true, FR: false, CP: false } }]); setAddSel(""); } }} className="rounded-md px-2 py-1.5 t11" style={inpSty}>
                   <option value="">+ Agregar deudor factoring…</option>
-                  {candidatosDeu.map((n) => <option key={n} value={n}>{n} · nota {notaFromScore(scoreDeudor(n).score)}</option>)}
+                  {candidatosDeu.map((n) => <option key={n} value={n}>{n} · nota {(notaDeudor(n) || 0)}</option>)}
                 </select>
               </div>
               {addPrev && (
