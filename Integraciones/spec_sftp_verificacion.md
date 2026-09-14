@@ -8,8 +8,8 @@
 |---|---|---|---|
 | V01_PROTOCOLO_PROPIO | V01 | Existe → prevalece | 1 = el deudor tiene protocolo propio de verificación |
 | V02_PCT_PAGADO_3M | V02 | ≥ 90% | Monto pagado por el deudor / cartera del par Ult3M |
-| V03_RATIO_PROM_COMPRA | V03 | ≤ 1,3× | Monto operación / promedio facturas operadas C-D |
-| V04_RATIO_RELACION_COMERCIAL | V04 | < 1,0× | Monto operación / venta promedio C-D L6M |
+| **V03_MNT_COMPRA_3M_M** | V03 | razón ≤ 1,3× | **Total comprado al par en 3M móviles (M$).** NEX divide el monto de la operación con ese deudor por este total. Antes se llamaba `V03_RATIO_PROM_COMPRA` y declaraba una razón ya calculada, que el archivo no puede traer: depende de la operación que se evalúa |
+| **V04_VENTA_PROM_3M_M** | V04 | razón < 1,0× | **Venta mensual promedio del par (M$).** Mismo motivo que V03: viaja el denominador, la razón la calcula NEX |
 | V05_RECURRENCIA_MESES_6M | V05 | **≥ 4** | Meses con venta C-D > 0 en Ult6M (sin reclamos/anulaciones). El umbral es **≥ 4**, no > 4: con 4 meses el criterio se cumple |
 | **V06_PLAZO_PROM_PAGO_DIAS** | V06 | desviación **≤ 5% del plazo** | **Plazo promedio de pago del par, en días.** NEX calcula la desviación de cada factura contra él —`abs(plazo_doc − plazo_prom) / plazo_prom`— y aplica el 5%. El umbral **no son 5 días**: en un par que paga a 30 días tolera ±1,5 y en uno de 90 tolera ±4,5. Antes esta columna traía la diferencia ya calculada en días (`V06_DIF_FECHA_PAGO_DIAS`), que no se puede recomputar por factura |
 | V07_PCT_MORA_25D | V07 | < 3% | % pagado con mora >25d — **degradable intramés** |
@@ -19,6 +19,8 @@
 | CLASIFICACION | — | `PRIME` \| `NORMAL` | Lista Blanca / Deudor Autorizado. Es **una de las dos** puertas de entrada al protocolo recortado |
 | NOTA_DEUDOR | — | **> 4,2** abre por sí sola | Nota 1–5. La **otra** puerta de entrada: una nota > 4,2 basta aunque el deudor no sea PRIME |
 | FECHA_CORTE | — | — | Generación |
+
+**Razones contra la operación.** V03, V04, V06 y V09 dependen del documento que se evalúa, así que el archivo trae el **denominador** y NEX calcula: el total comprado al par, su venta mensual, su plazo histórico. Los tres se **miden** sobre DTESync en el generador de datos, no se sintetizan.
 
 **Notas:**
 

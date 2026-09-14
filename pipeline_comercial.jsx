@@ -759,6 +759,12 @@ const TAG_COLORS = {
 const EXECS = { CR: "Carla Rivas", RF: "Rodrigo Fuentes", JT: "Javier Torres", MS: "María José Soto", NB: "Natalia Bravo", DC: "Diego Cáceres" };
 const EXEC_JEFATURA = { CR: "Equipo Andes", RF: "Equipo Andes", JT: "Equipo Pacífico", MS: "Equipo Pacífico", NB: "Equipo Austral", DC: "Equipo Austral" };
 const EXEC_ZONA = { CR: "Zona Norte (Andina)", RF: "Zona Norte (Andina)", JT: "Zona Centro", MS: "Zona Centro", NB: "Zona Sur", DC: "Zona Sur" };
+// Sucursal desde la que opera cada ejecutivo. Va junto al equipo y la zona porque son la misma
+// dimensión —dónde está la persona en la estructura comercial— y separarlas es lo que permitió que
+// `PC_EXECS` declarara su propia versión de la zona durante meses sin que nadie lo notara.
+const EXEC_SUCURSAL = { CR: "Antofagasta", RF: "La Serena", JT: "Valparaíso", MS: "Santiago Centro", NB: "Concepción", DC: "Puerto Montt" };
+// Zonas que existen, DERIVADAS de la asignación: ninguna pantalla vuelve a escribir la lista a mano.
+const ZONAS_COMERCIALES = [...new Set(Object.values(EXEC_ZONA))];
 const USUARIO = "CR"; // ejecutivo logueado por defecto (Carla Rivas)
 // Usuarios que pueden "iniciar sesión": los 6 ejecutivos, los aprobadores (Riesgo/Operaciones) y el super admin.
 const USERS = { ...EXECS, JG: "Sofía Herrera · Jefe de Grupo Comercial", GC: "Dante Montes · Gerente Comercial", GG: "Federico Diaz · Gerente General", RG: "Carolina Vergara · Jefe de Riesgo", SR: "Paula Reyes · Subgerente de Riesgo", OP: "Andrés Mella · Operaciones", JO: "Ignacio Peña · Jefe de Operaciones", EV: "Camila Soto · Ejecutivo de verificación", ADMIN: "Super Administrador (ve todo)" };
@@ -974,8 +980,11 @@ let PISO_ATRIB_MONTO = {
   critico:  { comercial: 3, riesgo: 5, operaciones: 4 },
 };
 // Tramos de gravedad por monto (MM CLP). hasta=null → sin tope.
+// Los cortes de la politica son 20 / 60 / 120 MM y se conservan tal cual; lo que cambia es que se
+// GUARDAN en pesos, como todo monto del sistema. La pantalla los sigue mostrando en MM porque
+// `fmtMM` abrevia, que es donde el millon tiene sentido.
 let CFG_TRAMOS = [
-  { hasta: 20, grav: "leve" }, { hasta: 60, grav: "moderado" }, { hasta: 120, grav: "grave" }, { hasta: null, grav: "critico" },
+  { hasta: 20e6, grav: "leve" }, { hasta: 60e6, grav: "moderado" }, { hasta: 120e6, grav: "grave" }, { hasta: null, grav: "critico" },
 ];
 // Etiqueta de cada área. Se deriva del catálogo por tenant (`AREAS_CAT`, definido junto a los roles):
 // las 27 lecturas de `AREA_LBL[x]` de la app siguen funcionando y toman el nombre que el tenant puso.
@@ -1043,12 +1052,19 @@ const execsVisiblesDe = (code) => {
   if (rol && ROLES_VEN_TODO.has(rol)) return null;
   return [];
 };
-// Gravedad por tramo de monto (MM CLP), según CFG_TRAMOS (editable en Mantenedores).
-const gravedadPorMonto = (mm) => { for (const t of CFG_TRAMOS) { if (t.hasta == null || mm <= t.hasta) return t.grav; } return "critico"; };
+// UMBRAL DE POLÍTICA — única fuente. Ninguna regla ni compuerta incrusta su umbral: lo lee de la
+// configuración activa del tenant, que es lo que el usuario edita en Configuración y lo que un motor de
+// otorgamiento como servicio recibiría como parámetro. Sin esto el umbral vive duplicado —una copia
+// declarativa editable y una copia literal dentro de la regla— y editar la primera no cambia nada.
+// El segundo argumento es el valor de la política, que aplica si la clave no está en la configuración.
+// `CFG_ACTIVA` se declara más abajo; `pol` sólo la lee al ser INVOCADA, siempre después de esa línea.
+const pol = (k, def) => { const c = (typeof CFG_ACTIVA !== "undefined" && CFG_ACTIVA) || {}; return c[k] != null ? c[k] : def; };
+// Gravedad por tramo de monto (PESOS), según CFG_TRAMOS (editable en Mantenedores).
+const gravedadPorMonto = (monto) => { for (const t of CFG_TRAMOS) { if (t.hasta == null || (monto || 0) <= t.hasta) return t.grav; } return "critico"; };
 // Piso de atribución que impone el MONTO de la operación a una excepción de esa área.
-const pisoPorMonto = (area, montoMM) => (PISO_ATRIB_MONTO[gravedadPorMonto(montoMM || 0)] || {})[area] || 1;
+const pisoPorMonto = (area, monto) => (PISO_ATRIB_MONTO[gravedadPorMonto(monto || 0)] || {})[area] || 1;
 // Nivel REALMENTE exigido para excepcionar: el del tramo o el que impone el monto, el que sea mayor.
-const nivelExigido = (area, nivelTramo, montoMM) => Math.max(nivelTramo || 1, pisoPorMonto(area, montoMM));
+const nivelExigido = (area, nivelTramo, monto) => Math.max(nivelTramo || 1, pisoPorMonto(area, monto));
 // ¿El usuario puede aprobar la excepción de esta regla? Basta que tenga, EN EL ÁREA que manda en ese
 // nivel, un nivel igual o superior al requerido. El responsable es quien tiene el nivel exacto, pero si
 // ese cargo está vacante —o la persona está de vacaciones— la jefatura del área lo toma: un Gerente
@@ -1256,8 +1272,8 @@ const EMAIL_TEMPLATES = [
 const CEDENTES = ["Mediplex S.A.", "Marsella SpA", "Ferreminer SpA", "Laboratorio Internacional de Cosm.", "Ingeniería y Serv. Eisesa Ltda", "Molduras y Paneles Chile SpA", "Cía. Agropecuaria Copeval", "Lafitte Chile y Cía. Ltda", "Puelche Servicios Ltda", "Comercializadora y Distribuidora", "Refrigeración Industrial Coldm.", "Novoplast SpA", "Puente Financiero SpA", "X Capital SpA", "Ensus Chile SpA", "Agrícola Tranapuente SpA", "Soc. Comercial Agrofresco", "Soc. Comercial Corte Criollo", "Intcomex S.A.", "Comercial Castro y Cox SpA", "Expro Chile SpA", "Ultrapac Sudamérica S.A.", "Portillo S.A.", "Ferreminer Antofagasta SpA", "Imalab S.A.", "Olimpia SpA", "Rodotrans Austral S.A.", "Foodgroup SpA", "Alfa M.R. Guantes SpA", "Comercial Porvenir SpA", "Vértice SpA", "Impresiones Vinoprint SpA", "Hortitec SpA", "Incofin S.A.", "Inks y Coatings Chile S.A.", "Envases Carrillo S.A.", "Swell Media SpA", "Probio SpA", "Minetec S.A.", "Beka S.A.", "Urzúa y Ahumada SpA", "Soc. Aguas Claras Ltda", "RCA Equipamiento Minero SpA", "Multi Safe SpA", "Comercial Chileno Británica"];
 
 // Venta del mismo mes de 2025 (enero), calculada desde el CSV. Budget = +15%.
-const VENTA_2025_MES_MM = 249356;
-const BUDGET_MES_MM = +(VENTA_2025_MES_MM * 1.15).toFixed(0); // meta +15%
+const VENTA_2025_MES = 249356e6;
+const BUDGET_MES = +(VENTA_2025_MES * 1.15).toFixed(0); // meta +15%
 
 // ---- Cuentas por cobrar por cliente (saldo adeudado al factoring por atrasos) ----
 // El sufijo "_v1" del nombre es legado: la versión real del esquema vive en el envoltorio
@@ -1412,26 +1428,30 @@ function tipoDeudorDisp(f) {
   if (f && f.histFactoring === "otro") return "Histórico";
   return (f && f.tipoDeudor) || "Otro";
 }
-// Score de comportamiento de pago del deudor (inventado pero ESTABLE por nombre). Mejor en lista
-// blanca, peor en "Otro"; se penaliza según el atraso promedio (en días) en el pago de las facturas.
-function scoreDeudor(name, tipoArg) {
-  // Si se pasa el tipo ya clasificado por la factura (por RUT), se respeta; si no, se infiere por nombre.
-  const tipo = tipoArg || tipoDeudor(null, name);
-  const h = hashStr((name || "").toLowerCase());
-  // Una MINORÍA de los deudores no listados paga excelente: es la población que la lista ND>4,2
-  // existe para capturar. Sin ella el tramo quedaba vacío —medido: 0 de 4.000 facturas del stream— y
-  // las reglas de ND>4,2 no podían disparar nunca. Es determinista por nombre: el mismo deudor cae
-  // siempre del mismo lado. No cambia su LISTA (sigue siendo "Otro" para CAT y para el otorgamiento),
-  // sólo su comportamiento de pago, que es lo que la Nota mide.
-  const otroBuenPagador = tipo !== "Lista Blanca" && tipo !== "Deudor Autorizado" && tipo !== "Histórico BICE" && tipo !== "Histórico" && (h % 100) < 12;
-  const atraso = tipo === "Lista Blanca" ? (h % 6) : tipo === "Deudor Autorizado" ? 2 + (h % 13) : tipo === "Histórico BICE" ? 2 + (h % 10) : tipo === "Histórico" ? 4 + (h % 16) : otroBuenPagador ? (h % 5) : 5 + (h % 28); // días de atraso promedio
-  const base = tipo === "Lista Blanca" ? 97 : tipo === "Deudor Autorizado" ? 88 : tipo === "Histórico BICE" ? 86 : tipo === "Histórico" ? 80 : otroBuenPagador ? 90 : 74;
-  const score = Math.max(20, Math.min(99, Math.round(base - atraso * 1.7 + ((h >> 4) % 5) - 2)));
-  return { tipo, atraso, score };
+// ── ACTIVO A11 · PLATAFORMA360 — maestro de empresa por RUT (clientes y deudores) ───────────────
+// Firmográfica, comercial, socios, índices y la NOTA DE COMPORTAMIENTO. Se indexa también por razón
+// social porque el wizard de comité resuelve deudores por nombre antes de tener su RUT.
+const P360 = (() => {
+  const src = (typeof window !== "undefined" && window.PLATAFORMA360) || null;
+  const ix = {}, porRut = {}, porNombre = {};
+  if (src && src.campos && src.filas) {
+    src.campos.forEach((c, i) => (ix[c] = i));
+    for (const f of src.filas) { porRut[f[ix.RUT]] = f; if (!porNombre[f[ix.RAZON_SOCIAL]]) porNombre[f[ix.RAZON_SOCIAL]] = f; }
+  }
+  return { ix, porRut, porNombre };
+})();
+// NOTA DE COMPORTAMIENTO 1–5 (5 = mejor pagador) — ÚNICA fuente: el campo NOTA_COMPORTAMIENTO del
+// activo A11. Es atributo de la EMPRESA, no de su cartera ni de un par, así que vive en el activo de
+// información de empresa y no se copia a ningún otro. La consultan C09 (cliente), D01 (deudor), el CAT,
+// el predictor y la UI. Devuelve `null` si la empresa no está en la tabla: un RUT sin dato es un hueco
+// del feed, y tratarlo como 0 lo convertiría en el peor pagador posible.
+const notaEmpresa = (rut) => { const f = rut && P360.porRut[rut]; const n = f ? +f[P360.ix.NOTA_COMPORTAMIENTO] : NaN; return n > 0 ? n : null; };
+// La nota de un deudor, por RUT o resolviendo su razón social contra el maestro.
+function notaDeudor(nombre, rut) {
+  const f = (rut && P360.porRut[rut]) || (nombre && P360.porNombre[nombre]) || null;
+  const n = f ? +f[P360.ix.NOTA_COMPORTAMIENTO] : NaN;
+  return n > 0 ? n : null;
 }
-// ── NOTA DEUDOR (modelo de riesgo Security): calificación 1–5, siendo 5 el mejor pagador. Se deriva del
-// score de pago del deudor. La Nota y la verificación son POR DEUDOR (no por factura).
-const notaFromScore = (s) => Math.max(1, Math.min(5, +(1 + (s - 20) / 79 * 4).toFixed(1)));
 // Corte de Nota Deudor que define el tramo prioritario. Lo comparten la prospección —qué deudores
 // abren oportunidad— y el motor de asignación de líneas —a quién se le asigna primero—: tiene que ser
 // el MISMO número, o el tubo y el detalle contarían historias distintas del mismo deudor.
@@ -1444,7 +1464,7 @@ const deudorAbreOportunidad = (f) => !!(f && f.inboundBucket && f.inboundBucket 
 // Nota del deudor de un evento del stream. Dos cuidados: el inbound trae `pagador`, no `deudor`; y
 // el tipo tiene que ser el MOSTRADO, no el crudo —para un histórico el campo `tipoDeudor` dice "Otro",
 // que puntúa 74 y deja su nota bajo el corte, así que la lista ND>4,2 no capturaba a nadie—.
-const notaDeudorEvento = (f) => notaFromScore(scoreDeudor((f && (f.pagador || f.deudor)) || "", tipoDeudorDisp(f)).score);
+const notaDeudorEvento = (f) => notaDeudor((f && (f.pagador || f.deudor)) || "", f && (f.rutRecep || f.rutPagador)) || 0;
 const NOTA_COLOR = (n) => (n >= 4 ? "#0a7d3f" : n >= 3 ? "#C2410C" : "#EF4444");
 // VERIFICACIÓN por deudor: Security contacta al deudor para verificar telefónicamente que la factura existe,
 // que los bienes/servicios fueron recibidos y la fecha de pago. Para no hacerlo con todas las facturas, un
@@ -1534,29 +1554,31 @@ function verifPar(rutCliente, nombre, rutDeudor) {
   const hit = _VERIF_PAR.get(k);
   if (hit) return hit;
   const tipo = tipoDeudor(rutDeudor, nombre);
-  const sc = scoreDeudor(nombre, tipo).score, nota = notaFromScore(sc);
+  const nota = notaDeudor(nombre, rutDeudor) || 0, sc = Math.round(20 + (nota - 1) / 4 * 79);
   const h = Math.abs(hashStr("vp" + k));
-  const bueno = nota >= 4.0, malo = nota < 3.2;
   const prime = tipo === "Lista Blanca" || tipo === "Deudor Autorizado";
   // Protocolo recortado: prime O nota sobre el corte. Son DOS poblaciones distintas y basta
   // pertenecer a una (spec §3); antes sólo se miraba prime y la nota no abría el protocolo light.
   const recortado = prime || nota > NOTA_PRIORITARIA;
+  // ── Variables del par: fila del activo A10, NO sintetizadas. Sin fila quedan en `null`, que la
+  //    spec §4.3 trata como incumplimiento: un par sin historial se verifica, por construcción.
+  const F = VERIF_A10.porPar[(rutCliente || "") + "|" + (rutDeudor || "")] || null;
+  const N = (c) => (F ? +F[VERIF_A10.ix[c]] : null);
   const out = {
     nombre, tipo, nota, sc, prime, recortado,
     grupo: prime ? "prime" : (nota > NOTA_PRIORITARIA ? "nota_alta" : "otros"),
     segmento: recortado ? "PRIME" : "OTROS",
     aplican: recortado ? VERIF_APLICAN_RECORTADO : VERIF_APLICAN_COMPLETO,
-    // ── Variables del deudor o del par (spec §7.1). En producción es una fila precalculada con
-    //    refresco diario y esta función es el SELECT; acá se sintetizan de forma determinista.
-    protocolo: (h % 11 === 0) ? { existe: true, id: "PROT-" + String(1000 + (h % 9000)) } : { existe: false, id: null },
-    pctPagoDeudor3M: malo ? +(82 + (h % 8)).toFixed(1) : +Math.min(100, (bueno ? 95 : 90) + (h % 6)).toFixed(1),
-    mntCompraOp3M: bueno ? 120 + (h % 400) : 40 + (h % 160),      // MM comprados al par en 3M móviles
-    avgVentaProm3M: bueno ? 200 + (h % 600) : 60 + (h % 200),     // MM de venta promedio del par (libro compraventa)
-    mesesConVenta6M: bueno ? 4 + (h % 3) : 2 + (h % 4),
-    fchVctoProm: 40 + (h % 8),                                    // días: plazo histórico de pago del par
-    pctMora25d: +Math.max(0, (bueno ? 0.5 : 2.5) + (h % 4) - 1).toFixed(1),
-    pctReclamadas: +Math.max(0, (bueno ? 0.5 : 3) + ((h >> 3) % 5) - 1).toFixed(1),
-    mntPagoDeudor3M: bueno ? 900 + (h % 2600) : 60 + (h % 900),   // MM pagados por el deudor en 3M
+    protocolo: F && N("V01_PROTOCOLO_PROPIO") === 1
+      ? { existe: true, id: "PROT-" + String(1000 + (h % 9000)) } : { existe: false, id: null },
+    pctPagoDeudor3M: N("V02_PCT_PAGADO_3M"),
+    mntCompraOp3M: F ? +(N("V03_MNT_COMPRA_3M_M") / 1000).toFixed(1) : null,  // M$ → MM$, total comprado al par en 3M
+    avgVentaProm3M: F ? +(N("V04_VENTA_PROM_3M_M") / 1000).toFixed(1) : null, // M$ → MM$, venta mensual del par
+    mesesConVenta6M: N("V05_RECURRENCIA_MESES_6M"),
+    fchVctoProm: N("V06_PLAZO_PROM_PAGO_DIAS"),                               // días, plazo histórico del par
+    pctMora25d: N("V07_PCT_MORA_25D"),
+    pctReclamadas: N("V08_PCT_RECLAMADAS"),
+    mntPagoDeudor3M: F ? +(N("V10_MNT_PAGADO_3M_M") / 1000).toFixed(1) : null, // M$ → MM$
     h,
   };
   _VERIF_PAR.set(k, out);
@@ -1570,7 +1592,7 @@ function verifPar(rutCliente, nombre, rutDeudor) {
 // necesita saber cuál falló para decidir si le conviene editar la operación.
 function verifDecision(par, facturas) {
   const fs = (facturas || []).filter(Boolean);
-  const montoOp = +fs.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
+  const montoOp = +fs.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1);
   // Regla 6 sobre el conjunto: la desviación que manda es la mayor de las facturas del deudor.
   // Si a alguna factura le falta el plazo, el criterio NO TIENE DATO y eso es incumplimiento (§4.3).
   // Antes se rellenaba el hueco con el plazo promedio del par: la desviación daba 0 y el criterio
@@ -1659,9 +1681,9 @@ function facturasDeudorEnDeal(deal, nombre) {
 }
 // ¿Requiere llamada este DEUDOR de la oportunidad? No necesita simulación: es la consulta al estado
 // del par más las facturas suyas que hoy están en la oferta.
-function verifDeudorDeal(deal, nombre, montoMM, estado) {
+function verifDeudorDeal(deal, nombre, monto, estado) {
   const rut = (deal && (deal.rutEmisor || deal.cliente)) || "";
-  const fs = facturasDeudorEnDeal(deal, nombre) || (montoMM ? [{ montoMM }] : []);
+  const fs = facturasDeudorEnDeal(deal, nombre) || (monto ? [{ monto }] : []);
   const par = { ...verifPar(rut, nombre, (fs[0] && fs[0].rutRecep) || null),
                 primeraOperacion: esPrimeraOperacionCliente(deal, estado && estado.estadosCliente) };
   const r = verifEvaluar(par, fs);
@@ -1784,7 +1806,7 @@ function filasVerificacion(deals, estado) {
         id: d.id + "|" + k, deal: d, cliente: d.cliente || d.company || d.id, op: d.id,
         rutDeudor: suyas[0].rutRecep || "", deudor: v.nombre, tipo: v.tipo, nota: v.nota,
         segmento: v.segmento, facturas: suyas, exec: d.exec,
-        monto: mmRound(suyas.reduce((s, f) => s + (f.montoMM || 0), 0)),
+        monto: mmRound(suyas.reduce((s, f) => s + (f.monto || 0), 0)),
         causas: causasVerif(v), nTel, nVet,
         estado: nVet ? "no_verificada" : (nTel === suyas.length ? "verificada" : "pendiente"),
       });
@@ -1821,11 +1843,11 @@ function catDeal(deal) {
   if (!deal) return { cat: "CAT-1", sub: null, sA: 0, sB: 0, sC: 0, sD: 0 };
   let items = [];
   if (deal.facturasOp && deal.facturasOp.length) {
-    items = deal.facturasOp.map((f) => ({ m: f.montoMM || 0, n: notaFromScore(scoreDeudor(f.deudor, tipoDeudorDisp(f)).score) }));
+    items = deal.facturasOp.map((f) => ({ m: f.monto || 0, n: notaDeudor(f.deudor, f.rutRecep) }));
   } else if (deal.deudores && deal.deudores.length) {
-    items = deal.deudores.map((d) => ({ m: d.montoMM || 0, n: notaFromScore(scoreDeudor(d.name).score) }));
+    items = deal.deudores.map((d) => ({ m: d.monto || 0, n: notaDeudor(d.name, d.rut) }));
   } else if (deal.deudor) {
-    items = [{ m: deal.amountMM || 1, n: notaFromScore(scoreDeudor(deal.deudor).score) }];
+    items = [{ m: deal.monto || 1, n: notaDeudor(deal.deudor, deal.rutDeudor || (deal.facturasOp && deal.facturasOp[0] && deal.facturasOp[0].rutRecep)) }];
   }
   return catShares(items);
 }
@@ -1854,6 +1876,36 @@ function lineaIdxPorRut() {
   _lineaIdx = new Map(arr.map((l) => [l.rut, l]));
   return _lineaIdx;
 }
+// Incorpora a la cartera la línea que el comité acabó de aprobar (API 3 → "Aprobada"). Sin esto C05
+// —«cliente nuevo sin línea»— no se puede apagar nunca: su vía natural NO es la excepción sino la
+// RE-EVALUACIÓN una vez constituida la línea, y re-evaluar contra una cartera que no se enteró de la
+// aprobación devuelve siempre el mismo hallazgo. El visado N5 queda como salida forzada, para cursar
+// antes de que la línea exista, no como el camino normal.
+function constituirLinea(sol) {
+  const rut = sol && sol.rut;
+  const aprobada = +(+((sol && (sol.propFactoring || sol.totalPropuesto)) || 0)).toFixed(1);
+  if (!rut || !(aprobada > 0)) return null;
+  const idx = lineaIdxPorRut();
+  const previa = idx && idx.get(rut);
+  if (previa) {   // renovación o modificación: cambia el monto, se conserva el uso
+    previa.aprobada = aprobada;
+    previa.disponible = +(aprobada - (previa.uso || 0)).toFixed(1);
+    previa.proyeccion = +((previa.uso || 0) + (previa.montoOp || 0)).toFixed(1);
+    if (typeof invalidarVisado === "function") invalidarVisado();
+    return previa;
+  }
+  const c = (typeof PC_CLIENTES !== "undefined" && PC_CLIENTES.find((x) => x.rut === rut)) || null;
+  const fila = { id: "L-" + (c ? c.id : rut), cliente: (sol && sol.cliente) || (c && c.nombre) || "", rut,
+    aprobada, uso: 0, disponible: aprobada, montoOp: 0, proyeccion: 0,
+    demandaBuenos: 0, morosidadDias: 0,
+    sowActual: (c && c.sow) || 0, sowTarget: (c && c.target) || 60,
+    exec: (c && c.ej) || (sol && sol.ejecutivo) || "", zona: (c && c.zona) || "",
+    origenComite: (sol && sol.idProceso) || "" };
+  LINEAS_DATA.push(fila);
+  _lineaIdx = null;   // el índice está memoizado: sin esto la línea nueva no se ve
+  if (typeof invalidarVisado === "function") invalidarVisado();
+  return fila;
+}
 // Fila completa de la línea en LINEAS_DATA (aprobada + uso), o null si el cliente no tiene línea o si
 // LINEAS_DATA aún no está inicializada.
 function lineaDeCliente(deal) {
@@ -1881,9 +1933,9 @@ function lineaCreditoDe(deal) {
   if (l) usoActual = +(l.uso || 0).toFixed(1);
   else if (esClienteNuevoNEX(deal)) usoActual = 0; // nunca ha operado: línea sin uso previo
   else { const h = hashStr((deal.rutEmisor || deal.cliente || "") + "uso"); usoActual = +(aprobada * (0.20 + (h % 50) / 100)).toFixed(1); } // sólo sin datos inyectados
-  const montoOp = +(deal.amountMM || 0).toFixed(1);
+  const montoOp = +(deal.monto || 0).toFixed(1);
   const proyectado = +(usoActual + montoOp).toFixed(1);
-  const disponible = +(aprobada - usoActual).toFixed(1);
+  const disponible = Math.round(aprobada - usoActual);
   const fueraDeLinea = proyectado > aprobada;
   const excesoProyectado = +Math.max(0, proyectado - aprobada).toFixed(1);
   return { aprobada, usoActual, montoOp, proyectado, disponible, fueraDeLinea, excesoProyectado };
@@ -1944,13 +1996,13 @@ function streamDesdeDTE(dte) {
     const sow = SOW_POR_RUT[r.RUTEmisor];
     const esCliente = !!sow || (hashStr(r.RUTEmisor) % 100 < 50);
     const precio = PRECIO_POR_CLAVE[`${r.RUTEmisor}|${tipoLineaDeDeudor(tDeu)}`];
-    const montoMM = +(((r.MntTotal || 0)) / 1e6).toFixed(2);
+    const monto = Math.round(+r.MntTotal || 0);
     const tasaNum = precio ? precio.SpreadPromocionalPct : (1.6 + (hashStr(r.RUTEmisor) % 40) / 100);
-    const fac = { id: `F-${r.RUTEmisor}-${r.Folio}`, folio: r.Folio, tipo: r.TipoDTEDesc || "Factura electrónica (33)", deudor: r.RznSocRecep, tipoDeudor: tDeu, inboundBucket: bucket, histFactoring: histFac, montoMM, venc: 45, reclamada, notaCredito, sinXml: false, enlaceXml: r.EnlaceXml, enlacePdf: r.EnlacePdf, rutRecep: r.RUTRecep };
+    const fac = { id: `F-${r.RUTEmisor}-${r.Folio}`, folio: r.Folio, tipo: r.TipoDTEDesc || "Factura electrónica (33)", deudor: r.RznSocRecep, tipoDeudor: tDeu, inboundBucket: bucket, histFactoring: histFac, monto, venc: 45, reclamada, notaCredito, sinXml: false, enlaceXml: r.EnlaceXml, enlacePdf: r.EnlacePdf, rutRecep: r.RUTRecep };
     out.push({
       id: `DTE-${i}`, tipo: "factura", cedente: r.RznSoc, rutEmisor: r.RUTEmisor, pagador: r.RznSocRecep, deudor: r.RznSocRecep, tipoDeudor: tDeu, inboundBucket: bucket, histFactoring: histFac,
       sector: tDeu === "Lista Blanca" ? "Buenos Deudores - Lista Blanca" : tDeu === "Deudor Autorizado" ? "Buenos Deudores - Autorizados" : histFac === "bice" ? "Histórico BICE (último año)" : histFac === "otro" ? "Histórico otro factor (último año)" : "Otros deudores",
-      tag: "Factoring", nFacturas: 1, monto: montoMM, credito, reclamada, notaCredito, buenPagador: tDeu === "Lista Blanca", siiSync: true,
+      tag: "Factoring", nFacturas: 1, monto: monto, credito, reclamada, notaCredito, buenPagador: tDeu === "Lista Blanca", siiSync: true,
       contactoVerificado: esCliente, diasEmision: 1, esCliente, esProveedor: !esCliente, cliente: esCliente,
       sowTendencia: sow ? sow.SOWTendencia : "Nuevo", sowFlecha: sow ? sow.SOWFlecha : "SOW nuevo",
       sowActualPct: sow ? sow.SOWActualPct : null, sowTargetPct: sow ? sow.SOWTargetPct : null, sowGapPct: sow ? sow.GapPct : null,
@@ -1973,7 +2025,7 @@ const OTRO_FOP_POR_CEDENTE = (() => {
     const est = r.EstadoDTE || {};
     if (!(r.FormaPago === "2" || r.FormaPago === 2)) continue;          // sólo crédito
     if (est.Reclamado === "1" || est.NotaCredito === "1" || est.NotaCredito === 1) continue;
-    const fac = { id: `F-${r.RUTEmisor}-${r.Folio}`, folio: r.Folio, tipo: r.TipoDTEDesc || "Factura electrónica (33)", deudor: r.RznSocRecep, tipoDeudor: "Otro", inboundBucket: "OTRO", montoMM: +(((r.MntTotal || 0)) / 1e6).toFixed(2), venc: 45, reclamada: false, notaCredito: false, sinXml: false, enlaceXml: r.EnlaceXml, enlacePdf: r.EnlacePdf, rutRecep: r.RUTRecep };
+    const fac = { id: `F-${r.RUTEmisor}-${r.Folio}`, folio: r.Folio, tipo: r.TipoDTEDesc || "Factura electrónica (33)", deudor: r.RznSocRecep, tipoDeudor: "Otro", inboundBucket: "OTRO", monto: Math.round(+r.MntTotal || 0), venc: 45, reclamada: false, notaCredito: false, sinXml: false, enlaceXml: r.EnlaceXml, enlacePdf: r.EnlacePdf, rutRecep: r.RUTRecep };
     (m[r.RznSoc] = m[r.RznSoc] || []).push(fac);
   }
   // Cap por cedente para no inflar la oportunidad en exceso.
@@ -2007,7 +2059,7 @@ const INBOUND_STREAM = (() => {
   if (typeof window !== "undefined" && Array.isArray(window.DTESYNC) && window.DTESYNC.length) return sesgarACedentesConLinea(streamDesdeDTE(window.DTESYNC));
   const base = generarStream(30000, STREAM_SEED.map(normalizarSeed)); // fallback sintético (~30.000 facturas / mes)
   const sum = base.reduce((s, e) => s + (e.monto || 0), 0) || 1;
-  const factor = (BUDGET_MES_MM * AMPLIF_BUDGET) / sum;
+  const factor = (BUDGET_MES * AMPLIF_BUDGET) / sum;
   return base.map((e) => ({ ...e, monto: +((e.monto || 0) * factor).toFixed(1) }));
 })();
 // ---- AECSync: cesiones (facturas transferidas a un factoring). Si la financió otra institución
@@ -2019,6 +2071,37 @@ const aecCompPorCedente = (() => {
   for (const a of AEC_DATA) { if (a && a.RUTFactoring && a.RUTFactoring !== BICE_RUT) { (m[a.RUTEmisor] = m[a.RUTEmisor] || []).push(a.RazonSocialFactoring); } }
   return m;
 })();
+// ── SEÑALES COMERCIALES POR CLIENTE — medidas, no inventadas ────────────────────────────────────
+// El volumen que el cedente emitió a deudores de lista o autorizados (la demanda de BUENOS deudores
+// que hay por financiar) y si cedió facturas a un factoring que no es el nuestro. Las dos salen de los
+// activos: DTESync para lo emitido, AECSync para lo cedido. Antes cada módulo las fabricaba con su
+// propio hash, y el Plan Mensual y la vista de Líneas mostraban números distintos del mismo cliente.
+const DIAS_VENTANA_DTE = 47, DIAS_MES_SENAL = 30;
+const SENALES_CLIENTE = (() => {
+  const m = {};
+  const dte = (typeof window !== "undefined" && Array.isArray(window.DTESYNC)) ? window.DTESYNC : [];
+  for (const d of dte) {
+    if (!d || !d.RUTEmisor) continue;
+    const g = m[d.RUTEmisor] || (m[d.RUTEmisor] = { buenos: 0, nBuenos: 0 });
+    if (tipoDeudor(d.RUTRecep, d.RznSocRecep) !== "Otro") { g.buenos += +d.MntTotal || 0; g.nBuenos++; }
+  }
+  for (const k of Object.keys(m)) { const g = m[k]; g.demandaBuenos = Math.round(g.buenos * (DIAS_MES_SENAL / DIAS_VENTANA_DTE)); g.emitioBuenos = g.nBuenos > 0; }
+  return m;
+})();
+const senalesDe = (rut) => SENALES_CLIENTE[rut] || { buenos: 0, nBuenos: 0, demandaBuenos: 0, emitioBuenos: false };
+const cedioACompetencia = (rut) => !!(aecCompPorCedente[rut] && aecCompPorCedente[rut].length);
+// Días de mora del cliente, DERIVADOS del activo A16: la tabla trae montos por tramo de mora interna,
+// no un número de días, así que el peor tramo con saldo es el que manda.
+function moraDiasCliente(rut) {
+  const F = (typeof OTORG_A16 !== "undefined" && OTORG_A16.cli[rut]) || null;
+  if (!F) return 0;
+  const A = a16(F);
+  if (A("MORA_INTERNA_180_3A") > 0) return 180;
+  if (A("MORA_INTERNA_90_180") > 0) return 90;
+  if (A("MORA_INTERNA_30_90") > 0) return 30;
+  if (A("MORA_INTERNA_MAS_25D") > 0) return 25;
+  return 0;
+}
 // Competidor que financió (cedió) facturas de este cedente según AECSync; null si no hay registro.
 const aecCompetidorDe = (deal) => { const l = aecCompPorCedente[deal.rutEmisor]; return (l && l.length) ? l[hashStr(deal.id || "x") % l.length] : null; };
 // Detalle de competencia por cedente (RUT): a quién le cede el cliente (últimos 6 meses), con monto
@@ -2029,18 +2112,18 @@ const COMPETENCIA_POR_RUT = (() => {
   for (const a of AEC_DATA) {
     if (!a || !a.RUTEmisor) continue;
     const f = new Date((a.FechaCesion || "").slice(0, 10)); if (isNaN(f) || f < ini || f > hoy) continue;
-    const g = m[a.RUTEmisor] || (m[a.RUTEmisor] = { totalMM: 0, biceMM: 0, comp: {} });
-    const mm = (a.MontoCesion || 0) / 1e6; g.totalMM += mm;
-    if (a.RUTFactoring === BICE_RUT) g.biceMM += mm;
+    const g = m[a.RUTEmisor] || (m[a.RUTEmisor] = { total: 0, bice: 0, comp: {} });
+    const mm = +a.MontoCesion || 0; g.total += mm;
+    if (a.RUTFactoring === BICE_RUT) g.bice += mm;
     else { const n = a.RazonSocialFactoring || "Otro factoring"; g.comp[n] = (g.comp[n] || 0) + mm; }
   }
   return m;
 })();
-// Devuelve { totalMM, biceMM, bicePct, comp:[{name, montoMM, pct}] } ordenado desc.
+// Devuelve { total, bice, bicePct, comp:[{name, monto, pct}] } ordenado desc.
 function competenciaDe(rut) {
-  const g = COMPETENCIA_POR_RUT[rut]; if (!g || g.totalMM <= 0) return null;
-  const comp = Object.entries(g.comp).map(([name, mm]) => ({ name, montoMM: +mm.toFixed(1), pct: +(mm / g.totalMM * 100).toFixed(1) })).sort((a, b) => b.montoMM - a.montoMM);
-  return { totalMM: +g.totalMM.toFixed(1), biceMM: +g.biceMM.toFixed(1), bicePct: +(g.biceMM / g.totalMM * 100).toFixed(1), comp };
+  const g = COMPETENCIA_POR_RUT[rut]; if (!g || g.total <= 0) return null;
+  const comp = Object.entries(g.comp).map(([name, mm]) => ({ name, monto: +mm.toFixed(1), pct: +(mm / g.total * 100).toFixed(1) })).sort((a, b) => b.monto - a.monto);
+  return { total: +g.total.toFixed(1), bice: +g.bice.toFixed(1), bicePct: +(g.bice / g.total * 100).toFixed(1), comp };
 }
 // Competidores reales del mercado chileno de factoring (sin BICE/Security, que somos nosotros).
 const COMPETIDORES_FACTORING = ["Tanner Servicios Financieros", "BCI Factoring", "Banchile Factoring", "Factotal", "Incofin", "Eurocapital", "Servicios Financieros Progreso", "Coopeuch Factoring"];
@@ -2054,20 +2137,20 @@ function competenciaDeDeal(deal) {
   const tieneSow = deal.sowActualPct != null && deal.sowActualPct > 0;
   const h = hashStr((deal.id || deal.cliente || "x") + "comp");
   if (h % 100 < 35 && !tieneSow) return null; // ~35% de los SIN SOW son prospectos totalmente nuevos
-  const baseComp = Math.max(40, (deal.amountMM || 200) * (1.5 + (h % 30) / 10)); // volumen ~6m cedido a la competencia
+  const baseComp = Math.max(40, (deal.monto || 200) * (1.5 + (h % 30) / 10)); // volumen ~6m cedido a la competencia
   const nComp = 2 + (h % 3); // 2–4 competidores
   const idx = h % COMPETIDORES_FACTORING.length;
   const pesos = []; let acc = 0;
   for (let i = 0; i < nComp; i++) { const w = 1 + ((hashStr((deal.id || deal.cliente || "x") + "w" + i) % 60) / 10); pesos.push(w); acc += w; }
-  const comp = pesos.map((w, i) => ({ name: COMPETIDORES_FACTORING[(idx + i) % COMPETIDORES_FACTORING.length], montoMM: +(baseComp * w / acc).toFixed(1) })).sort((a, b) => b.montoMM - a.montoMM);
-  const compTotal = comp.reduce((s, c) => s + c.montoMM, 0);
+  const comp = pesos.map((w, i) => ({ name: COMPETIDORES_FACTORING[(idx + i) % COMPETIDORES_FACTORING.length], monto: +(baseComp * w / acc).toFixed(1) })).sort((a, b) => b.monto - a.monto);
+  const compTotal = comp.reduce((s, c) => s + c.monto, 0);
   // Si el cliente ya tiene SOW con BICE, la participación de BICE refleja ese % (consistente con la tira SOW);
   // la competencia se reparte el resto. Si no hay SOW (cliente nuevo), BICE = 0%.
   const biceShare = tieneSow ? Math.max(0, Math.min(95, deal.sowActualPct)) : 0;
-  const biceMM = biceShare > 0 ? +(compTotal * biceShare / (100 - biceShare)).toFixed(1) : 0;
-  const totalMM = +(compTotal + biceMM).toFixed(1);
-  comp.forEach((c) => { c.pct = +(c.montoMM / totalMM * 100).toFixed(1); });
-  return { totalMM, biceMM, bicePct: totalMM ? +(biceMM / totalMM * 100).toFixed(1) : 0, comp, sintetico: true };
+  const bice = biceShare > 0 ? +(compTotal * biceShare / (100 - biceShare)).toFixed(1) : 0;
+  const total = +(compTotal + bice).toFixed(1);
+  comp.forEach((c) => { c.pct = +(c.monto / total * 100).toFixed(1); });
+  return { total, bice, bicePct: total ? +(bice / total * 100).toFixed(1) : 0, comp, sintetico: true };
 }
 
 // ---- Motor de clasificación: ¿la factura califica alguna regla activa? ----
@@ -2237,6 +2320,7 @@ const CFG_OPER_BASE = {
   // — Política de compra y riesgo —
   notaMinCompra: 3.7,         // nota mínima del deudor para comprar
   concentracionDeudorPct: 30, // % máximo de la línea por deudor
+  cxcAplicaMinPct: 30,        // % mínimo de las CxC pendientes que la operación debe aplicar (O03)
   otrosDeudoresPct: 10,       // % máximo para «otros deudores»
   vigenciaLineaMeses: 12,
   ventanaLibroDias: 60,       // ventana del libro de ventas para buscar facturas candidatas
@@ -3122,13 +3206,12 @@ function calcularOferta(d, tasa, opts = {}) {
   const anticipo = opts.anticipo != null ? opts.anticipo : (parseFloat(d.anticipo) || 100);
   const diasFin = opts.dias != null ? opts.dias : (d.diasFin || diasPagoDeudor(d.deudor));
   const comision = opts.comision != null ? opts.comision : (d.comision || 200000);
-  const montoBase = opts.montoValido != null ? opts.montoValido : (d.amountMM || 0);
-  const financiadoMM = +(montoBase * (anticipo / 100)).toFixed(2);
-  const interesMM = opts.interesMM != null ? +opts.interesMM.toFixed(2) : +(financiadoMM * (tasa / 100) * (diasFin / 30)).toFixed(2); // diferencia de precio
-  const comisionMM = +(comision / 1e6).toFixed(3);
-  const descCxCMM = d.descCxCMM || 0;
-  const giroMM = +(financiadoMM - interesMM - comisionMM - descCxCMM).toFixed(2);
-  return { anticipo, diasFin, tasa: +tasa, comision, financiadoMM, interesMM, comisionMM, descCxCMM, giroMM };
+  const montoBase = opts.montoValido != null ? opts.montoValido : (d.monto || 0);
+  const financiado = +(montoBase * (anticipo / 100)).toFixed(2);
+  const interes = opts.interes != null ? +opts.interes.toFixed(2) : +(financiado * (tasa / 100) * (diasFin / 30)).toFixed(2); // diferencia de precio
+  const descCxC = d.descCxC || 0;
+  const giro = +(financiado - interes - comision - descCxC).toFixed(2);
+  return { anticipo, diasFin, tasa: +tasa, comision, financiado, interes, descCxC, giro };
 }
 // Texto de la oferta de cierre por WhatsApp: desglose completo.
 function ofertaWhatsApp(d, tasa, opts = {}) {
@@ -3136,19 +3219,19 @@ function ofertaWhatsApp(d, tasa, opts = {}) {
   const todas = itemizarFacturas(d);
   const consideradas = todas.filter((f) => !f.reclamada && !f.notaCredito && !f.cedida);
   const cant = opts.cantidad != null ? opts.cantidad : consideradas.length;
-  const montoDocsMM = opts.montoValido != null ? opts.montoValido : +consideradas.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
+  const montoDocs = opts.montoValido != null ? opts.montoValido : +consideradas.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1);
   const excl = Math.max(0, todas.length - consideradas.length);
-  const lista = consideradas.length ? consideradas.map((f) => `   • #${f.folio} · ${f.deudor} · ${fmtMM(f.montoMM)}`).join("\n") : `   • ${cant} documento(s)`;
+  const lista = consideradas.length ? consideradas.map((f) => `   • #${f.folio} · ${f.deudor} · ${fmtMM(f.monto)}`).join("\n") : `   • ${cant} documento(s)`;
   return `Oferta de factoring para ${d.cliente}:\n` +
     `• Cantidad de documentos: ${cant}${excl > 0 ? ` (de ${todas.length} captadas · ${excl} excluida(s) por cesión/reclamo/nota de crédito)` : ""}\n` +
-    `• Monto documentos: ${fmtMM(montoDocsMM)}\n` +
+    `• Monto documentos: ${fmtMM(montoDocs)}\n` +
     `• % Anticipo: ${o.anticipo}%\n` +
     `• Días de financiamiento: ${o.diasFin}\n` +
     `• Tasa: ${o.tasa.toFixed(2)}% mensual\n` +
-    `• Diferencia de precio: ${fmtMM(o.interesMM)}\n` +
-    `• Descuentos: ${fmtMM(o.descCxCMM)}\n` +
+    `• Diferencia de precio: ${fmtMM(o.interes)}\n` +
+    `• Descuentos: ${fmtMM(o.descCxC)}\n` +
     `• Comisiones: ${fmtCLP(o.comision)}\n` +
-    `• Monto a girar: ${fmtMM(o.giroMM)}\n` +
+    `• Monto a girar: ${fmtMM(o.giro)}\n` +
     `Facturas consideradas:\n${lista}\n` +
     `¿Confirmas el cierre en estas condiciones?`;
 }
@@ -3179,13 +3262,13 @@ function itemizarFacturas(deal) {
   // nadie selecciono. `undefined` sigue queriendo decir «itemiza desde los deudores» (splits,
   // paquetes re-armados desde la BD).
   if (Array.isArray(deal.facturasOp)) return deal.facturasOp;
-  const dl = (deal.deudores && deal.deudores.length) ? deal.deudores : [{ name: deal.deudor, facturas: deal.facturas || 1, montoMM: deal.amountMM || 0 }];
+  const dl = (deal.deudores && deal.deudores.length) ? deal.deudores : [{ name: deal.deudor, facturas: deal.facturas || 1, monto: deal.monto || 0 }];
   const out = [];
   dl.forEach((dd) => {
     const n = Math.max(1, dd.facturas || 1);
     for (let i = 0; i < n; i++) {
       const h = hashStr((deal.id || "") + dd.name + i);
-      out.push({ id: `${dd.name}#${i}`, folio: 10000000 + (h % 8999999), tipo: "Factura electrónica (33)", deudor: dd.name, montoMM: +((dd.montoMM || 0) / n).toFixed(1), venc: diasPagoDeudor(dd.name), sinXml: (h % 10) < 3, reclamada: (h % 17) === 0, notaCredito: (h % 23) === 0 });
+      out.push({ id: `${dd.name}#${i}`, folio: 10000000 + (h % 8999999), tipo: "Factura electrónica (33)", deudor: dd.name, monto: +((dd.monto || 0) / n).toFixed(1), venc: diasPagoDeudor(dd.name), sinXml: (h % 10) < 3, reclamada: (h % 17) === 0, notaCredito: (h % 23) === 0 });
     }
   });
   return out;
@@ -3207,7 +3290,7 @@ function ordenarPorCalidadDeudor(facturas) {
       // resolviéndose por el hash del nombre del deudor — con una nota distinta de la que la UI exhibe
       // para esa misma factura.
       const tipo = f.histFactoring ? tipoDeudorDisp(f) : (f.tipoDeudor || tipoDeudor(f.rutRecep, f.deudor));
-      return { f, prio: ORDEN_DEUDOR[tipo] != null ? ORDEN_DEUDOR[tipo] : 9, score: scoreDeudor(f.deudor, tipo).score, monto: f.montoMM || 0 };
+      return { f, prio: ORDEN_DEUDOR[tipo] != null ? ORDEN_DEUDOR[tipo] : 9, score: notaDeudor(f.deudor, f.rutRecep) || 0, monto: f.monto || 0 };
     })
     .sort((a, b) => a.prio - b.prio || b.score - a.score || b.monto - a.monto)
     .map((x) => x.f);
@@ -3218,7 +3301,7 @@ function ajustarACupo(facturas, disponible) {
   const dentro = [], fuera = [];
   let acum = 0;
   for (const f of ordenarPorCalidadDeudor(facturas)) {
-    const m = f.montoMM || 0;
+    const m = f.monto || 0;
     if (acum + m <= disponible + 0.001) { dentro.push(f); acum += m; }
     else fuera.push({ ...f, porCupo: true }); // marcada: excluida por cupo, NO por ser deudor «Otro»
   }
@@ -3231,7 +3314,7 @@ function ajustarACupo(facturas, disponible) {
     const prioDe = (f) => { const t = f.histFactoring ? tipoDeudorDisp(f) : (f.tipoDeudor || tipoDeudor(f.rutRecep, f.deudor)); return ORDEN_DEUDOR[t] != null ? ORDEN_DEUDOR[t] : 9; };
     const mejorPrio = Math.min.apply(null, fuera.map(prioDe));
     const cand = fuera.filter((f) => prioDe(f) === mejorPrio);
-    const elegida = cand.reduce((a, b) => ((b.montoMM || 0) < (a.montoMM || 0) ? b : a));
+    const elegida = cand.reduce((a, b) => ((b.monto || 0) < (a.monto || 0) ? b : a));
     const resto = fuera.filter((f) => f !== elegida);
     delete elegida.porCupo;
     dentro.push(elegida);
@@ -3269,7 +3352,7 @@ function cortarConMotorLinea(facturas, rutCliente) {
   if (objetivo) {
     const rech = r.facturas.filter((f) => f.estado === "REQUIERE_COMITE");
     const delMotivo = rech.filter((f) => f.motivo === objetivo);
-    const tope = facturas.reduce((s2, f) => s2 + (f.montoMM || 0), 0) * 0.4;
+    const tope = facturas.reduce((s2, f) => s2 + (f.monto || 0), 0) * 0.4;
     const pool = (delMotivo.length ? delMotivo : rech).slice().sort((a, b) => a.monto - b.monto);
     const nMax = 1 + (hashStr("nExc" + rutCliente) % 3); // 1–3 facturas por sobre la línea
     let acum = 0, n = 0;
@@ -3284,12 +3367,12 @@ function cortarConMotorLinea(facturas, rutCliente) {
     const prioDe = (f) => { const t = f.histFactoring ? tipoDeudorDisp(f) : (f.tipoDeudor || tipoDeudor(f.rutRecep, f.deudor)); return ORDEN_DEUDOR[t] != null ? ORDEN_DEUDOR[t] : 9; };
     const mejorPrio = Math.min.apply(null, fuera.map(prioDe));
     const cand = fuera.filter((f) => prioDe(f) === mejorPrio);
-    const elegida = cand.reduce((a, b) => ((b.montoMM || 0) < (a.montoMM || 0) ? b : a));
+    const elegida = cand.reduce((a, b) => ((b.monto || 0) < (a.monto || 0) ? b : a));
     const resto = fuera.filter((f) => f !== elegida);
     delete elegida.porCupo;
-    return { dentro: [elegida], fuera: resto, usado: +(elegida.montoMM || 0).toFixed(1) };
+    return { dentro: [elegida], fuera: resto, usado: +(elegida.monto || 0).toFixed(1) };
   }
-  return { dentro, fuera, usado: +dentro.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1) };
+  return { dentro, fuera, usado: +dentro.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1) };
 }
 // Facturas CANDIDATAS: documentos nuevos del cliente que llegaron y aún NO son parte de la oferta.
 // Se itemizan a partir del conteo/monto pendiente para poder agregarlas una a una o todas.
@@ -3297,10 +3380,10 @@ function candidatasDe(deal) {
   const out = [];
   const n = Math.max(0, deal.nuevasFacturas || 0);
   if (n) {
-    const total = deal.nuevasFacturasMontoMM || 0;
+    const total = deal.nuevasFacturasMonto || 0;
     for (let i = 0; i < n; i++) {
       const h = hashStr((deal.id || "") + "cand" + i);
-      out.push({ id: `CAND-${deal.id}-${i}`, folio: 20000000 + (h % 8999999), tipo: "Factura electrónica (33)", deudor: deal.deudor, montoMM: +(total / n).toFixed(1), venc: diasPagoDeudor(deal.deudor), candidata: true });
+      out.push({ id: `CAND-${deal.id}-${i}`, folio: 20000000 + (h % 8999999), tipo: "Factura electrónica (33)", deudor: deal.deudor, monto: +(total / n).toFixed(1), venc: diasPagoDeudor(deal.deudor), candidata: true });
     }
   }
   // Facturas DISPONIBLES de "Otros deudores" (excluidos del inbound automático): el ejecutivo puede
@@ -3338,7 +3421,7 @@ function noConfirmada(deal, f, vetadas) {
   return !!(m && f && m[f.id]);
 }
 function estadoCandidata(f, deal, estado) {
-  const monto = f.montoMM || 0;
+  const monto = f.monto || 0;
   // El veto de la verificación manda sobre cualquier otro estado de la candidata.
   if (noConfirmada(deal, f, estado && estado.vetadas)) return { clave: "noConfirmada", bloqueada: true, agregable: false, label: "El deudor no la confirmó", tono: "red", montoNeto: monto, ncMonto: 0 };
   const h = Math.abs(hashStr("estCand" + ((deal && deal.id) || "") + "|" + (f.folio || f.id || "")));
@@ -3355,9 +3438,9 @@ function estadoCandidata(f, deal, estado) {
     return { clave: "otraOp", bloqueada: true, agregable: false, label: "En otra operación", tono: "red", montoNeto: monto, ncMonto: 0 };
   return { clave: "ok", bloqueada: false, agregable: true, label: null, montoNeto: monto, ncMonto: 0 };
 }
-// Libro de ventas del cliente en la ventana de 60 días: las facturas candidatas (aún no incluidas en la
+// Libro de ventas del cliente en la ventana de `CFG.ventanaLibroDias`: las facturas candidatas (aún no incluidas en la
 // oferta) forman un tramo de folios CONSECUTIVOS (sin saltos), de la más nueva a la más antigua. El folio
-// más alto se ancla sobre las facturas ya en oferta; las emisiones se reparten a lo largo de los 60 días.
+// más alto se ancla sobre las facturas ya en oferta; las emisiones se reparten a lo largo de la ventana.
 // Determinista por operación. El listado se pagina (lote óptimo) para no renderizar todo el libro de una vez.
 function candidatasLibro(deal, enOferta) {
   const reales = candidatasDe(deal); // candidatas reales (Otro / nuevas / retiradas) — conservan su folio
@@ -3368,7 +3451,8 @@ function candidatasLibro(deal, enOferta) {
   const deudores = (deal.deudores && deal.deudores.length ? deal.deudores.map((d) => d.name) : [deal.deudor]).filter(Boolean);
   const pool = deudores.length ? deudores : ["Deudor"];
   const folioTope = Math.max(0, ...(enOferta || []).map((f) => +f.folio || 0), ...reales.map((f) => +f.folio || 0));
-  const N = 40 + (Math.abs(hashStr("libro" + (deal.id || ""))) % 41); // 40–80 facturas en 60 días
+  const ventana = pol("ventanaLibroDias", 60);
+  const N = 40 + (Math.abs(hashStr("libro" + (deal.id || ""))) % 41); // 40–80 facturas en la ventana
   const topFolio = (folioTope || 100000) + N + 6; // el folio más nuevo queda sobre lo ya en oferta
   // Clasificación del deudor tal como YA la trae este negocio: el libro sintetiza facturas de los
   // mismos deudores, así que tienen que clasificar igual. Sin esto el objeto no llevaba `tipoDeudor`,
@@ -3385,9 +3469,9 @@ function candidatasLibro(deal, enOferta) {
     if (usados.has(folio)) continue;
     const h = Math.abs(hashStr((deal.id || "") + "lib" + folio));
     const deudor = pool[h % pool.length];
-    const montoMM = +(0.8 + (h % 900) / 100).toFixed(1);
-    const diasEmision = Math.round((i / Math.max(1, N - 1)) * 60); // 0 (más nueva) .. 60 (más antigua)
-    out.push({ id: `LIB-${deal.id}-${folio}`, folio, tipo: "Factura electrónica (33)", deudor, rutRecep: rutPorNombre[deudor] || "", ...claseDe(deudor), montoMM, venc: diasPagoDeudor(deudor), candidata: true, otro: (h % 5 === 0), diasEmision });
+    const monto = +(0.8 + (h % 900) / 100).toFixed(1);
+    const diasEmision = Math.round((i / Math.max(1, N - 1)) * ventana); // 0 (más nueva) .. ventana (más antigua)
+    out.push({ id: `LIB-${deal.id}-${folio}`, folio, tipo: "Factura electrónica (33)", deudor, rutRecep: rutPorNombre[deudor] || "", ...claseDe(deudor), monto, venc: diasPagoDeudor(deudor), candidata: true, otro: (h % 5 === 0), diasEmision });
   }
   // Las candidatas reales (Otro/retiradas) se integran al libro conservando su folio.
   for (const f of reales) out.push({ ...f, diasEmision: f.diasEmision != null ? f.diasEmision : 60 });
@@ -3606,17 +3690,17 @@ function cursePayload(d, o, opts, neg, wa) {
   const MM = 1e6;
   const mensajes = hiloDe(wa || d.waSesion); // la "mensajería" que verá el cliente en su WhatsApp
   const cant = opts && opts.cantidad != null ? opts.cantidad : d.facturas;
-  const montoDocumentos = Math.round((opts && opts.montoValido != null ? opts.montoValido : d.amountMM) * MM);
-  const montoAnticipo = Math.round(o.financiadoMM * MM);
-  const diferenciaPrecio = Math.round(o.interesMM * MM);
+  const montoDocumentos = Math.round(opts && opts.montoValido != null ? opts.montoValido : d.monto);
+  const montoAnticipo = Math.round(o.financiado);
+  const diferenciaPrecio = Math.round(o.interes);
   const comision = Math.round(o.comision);
-  const cuentasPorCobrar = Math.round(o.descCxCMM * MM);
-  const montoAGirar = Math.round(o.giroMM * MM);
+  const cuentasPorCobrar = Math.round(o.descCxC);
+  const montoAGirar = Math.round(o.giro);
   const subtotalDescuentos = montoAnticipo - montoAGirar;
-  const linea = Math.round(Math.max((d.amountMM || 0) * 1.3, 80) * MM);
+  const linea = Math.round(Math.max((d.monto || 0) * 1.3, 80 * MM));
   const facturas = itemizarFacturas(d)
     .filter((f) => !f.reclamada && !f.notaCredito && !f.cedida)
-    .map((f) => ({ tipo: f.tipo, folio: f.folio, deudor: f.deudor, venc: f.venc, monto: Math.round((f.montoMM || 0) * MM) }));
+    .map((f) => ({ tipo: f.tipo, folio: f.folio, deudor: f.deudor, venc: f.venc, monto: Math.round(f.monto || 0) }));
   return {
     neg, fecha: hoyStr(), ejecutivo: d.exec === "CR" ? "Carla Rivas" : (d.ejecutivoNombre || "Carla Rivas"),
     empresa: d.cliente, rut: d.rut || "76.761.199-1", sector: d.sector || null,
@@ -3693,7 +3777,7 @@ function construirWaSesion(deal, contactable, fuera, tasaSolicitada) {
 function curseDesdeDeal(deal) {
   const neg = negDe(deal);
   const fac = itemizarFacturas(deal).filter((f) => !f.reclamada && !f.notaCredito && !f.cedida);
-  const montoValido = +fac.reduce((a, f) => a + (f.montoMM || 0), 0).toFixed(1);
+  const montoValido = +fac.reduce((a, f) => a + (f.monto || 0), 0).toFixed(1);
   const tasa = parseFloat(deal.tasa) || tasaMinIA(deal.deudor);
   const opts = { anticipo: parseFloat(deal.anticipo) || 100, dias: deal.diasFin || diasPagoDeudor(deal.deudor), comision: deal.comision || 200000, montoValido, cantidad: fac.length };
   const o = calcularOferta(deal, tasa, opts);
@@ -3737,12 +3821,12 @@ function historialComercial(cliente, deudor) {
   const base = hashStr((cliente || "") + "hc"); const n = 2 + (base % 4); const out = [];
   for (let i = 0; i < n; i++) {
     const h = hashStr((cliente || "") + "_op_" + i);
-    const montoMM = +(40 + (h % 900)).toFixed(1);
+    const monto = +(40 + (h % 900)).toFixed(1);
     const tasa = (1.4 + (h % 65) / 100).toFixed(2);
     const plazo = 30 + (h % 45);
     const comision = 100000 + ((h >> 4) % 250000);
     const meses = i + 1;
-    out.push({ id: `OP-H${(h % 9000) + 1000}`, fecha: `Hace ${meses} mes${meses > 1 ? "es" : ""}`, deudor, montoMM, tasa, plazo, comision, estado: (h % 5) === 0 ? "Vigente" : (h % 7) === 0 ? "Pagado con atraso" : "Pagado" });
+    out.push({ id: `OP-H${(h % 9000) + 1000}`, fecha: `Hace ${meses} mes${meses > 1 ? "es" : ""}`, deudor, monto, tasa, plazo, comision, estado: (h % 5) === 0 ? "Vigente" : (h % 7) === 0 ? "Pagado con atraso" : "Pagado" });
   }
   return out;
 }
@@ -3771,13 +3855,13 @@ function posicionCobranza(cliente, deudor, tasaPct, deudores) {
   const facturas = []; let cxcTotal = 0;
   const buckets = { aldia: { monto: 0, fac: 0, label: "Al día" }, m1: { monto: 0, fac: 0, label: "Mora 1-30 días" }, m2: { monto: 0, fac: 0, label: "Mora 31-60 días" }, m3: { monto: 0, fac: 0, label: "Mora +60 días" } };
   for (let i = 0; i < n; i++) {
-    const h = hashStr(cliente + "_cob_" + i); const montoMM = +(20 + (h % 500)).toFixed(1); const r = h % 100;
+    const h = hashStr(cliente + "_cob_" + i); const monto = +(20 + (h % 500)).toFixed(1); const r = h % 100;
     let bucket = "aldia", atraso = 0;
     if (r >= 90) { bucket = "m3"; atraso = 61 + (h % 40); } else if (r >= 78) { bucket = "m2"; atraso = 31 + (h % 30); } else if (r >= 60) { bucket = "m1"; atraso = 1 + (h % 30); }
-    buckets[bucket].monto = +(buckets[bucket].monto + montoMM).toFixed(1); buckets[bucket].fac++;
-    const cxcMM = atraso ? +(montoMM * ((tasaPct * 1.5) / 100) * (atraso / 30)).toFixed(2) : 0; cxcTotal += cxcMM;
+    buckets[bucket].monto = +(buckets[bucket].monto + monto).toFixed(1); buckets[bucket].fac++;
+    const cxc = atraso ? +(monto * ((tasaPct * 1.5) / 100) * (atraso / 30)).toFixed(2) : 0; cxcTotal += cxc;
     const dName = pool[i % pool.length];
-    facturas.push({ id: `F-${(h % 9000) + 1000}`, montoMM, atraso, bucketLabel: buckets[bucket].label, cxcMM, deudor: dName, deudorRut: rutSintetico(dName), operacion: `OP-${(h % 90000) + 10000}` });
+    facturas.push({ id: `F-${(h % 9000) + 1000}`, monto, atraso, bucketLabel: buckets[bucket].label, cxc, deudor: dName, deudorRut: rutSintetico(dName), operacion: `OP-${(h % 90000) + 10000}` });
   }
   return { buckets, facturas, cxcTotal: +cxcTotal.toFixed(2), n, tasaCxC: +(tasaPct * 1.5).toFixed(2) };
 }
@@ -3792,7 +3876,7 @@ function deudoresHistorial(cliente, deudores) {
       const monto = +(fac * (20 + (h % 80))).toFixed(1);
       meses.push({ fac, monto }); totFac += fac; totMonto += monto;
     }
-    return { name, meses, totFac, totMonto: +totMonto.toFixed(1) };
+    return { name, meses, totFac, totMonto: Math.round(totMonto) };
   }).sort((a, b) => b.totMonto - a.totMonto);
 }
 // Percentil (interpolación lineal) de un arreglo de números. p en [0,1].
@@ -3826,20 +3910,26 @@ function deudoresRecurrentesLinea(cliente) {
 // Helpers de UI
 // ============================================================
 // M = millón, B = billón (1 B = 1 millón de millones = 1.000.000 M). Los montos llegan en M.
-const fmtMM = (n) =>
-  Math.abs(n || 0) >= 1e6
-    ? `$${(n / 1e6).toLocaleString("es-CL", { maximumFractionDigits: 2 })}B`
-    : `$${(n || 0).toLocaleString("es-CL", { maximumFractionDigits: 1 })}M`;
+// Los montos del sistema son PESOS. `MM$` es una abreviatura de PANTALLA y este es el unico lugar
+// que la aplica: nada aguas arriba almacena ni calcula en millones, porque redondear a millones
+// pierde pesos —una factura de $1.234.567 no es $1,23 MM— y el cuadre documento a documento deja de
+// dar. Bajo el millon se muestra la cifra exacta, que es lo que el usuario puede reconciliar.
+const fmtMM = (n) => {
+  const v = n || 0, a = Math.abs(v);
+  if (a >= 1e9) return `MMM$${(v / 1e9).toLocaleString("es-CL", { maximumFractionDigits: 2 })}`;
+  if (a >= 1e6) return `MM$${(v / 1e6).toLocaleString("es-CL", { maximumFractionDigits: 1 })}`;
+  return `$${Math.round(v).toLocaleString("es-CL")}`;
+};
 const fmtCLP = (n) => "$" + Math.round(n).toLocaleString("es-CL");
 // Simulación del negocio: tasa de descuento mensual 0,9%–1,9% + comisión fija $100k–$350k.
 // `clave` identifica el negocio (cliente|deudor): la misma oportunidad devuelve SIEMPRE la misma tasa
 // y comisión. SERVER-SIDE: esto es la mutation `simularOferta`, que aplica el pricing del tenant.
-function simular(amountMM, clave) {
-  const k = String(clave == null ? amountMM : clave);
+function simular(monto, clave) {
+  const k = String(clave == null ? monto : clave);
   const tasaDescuento = +rndDetEntre("tasa|" + k, 0.9, 1.9).toFixed(2);
   const comision = 100000 + rndDetInt("comision|" + k, 0, 250000);
-  const montoDescuentoMM = +(amountMM * tasaDescuento / 100).toFixed(2);
-  return { tasaDescuento, comision, montoDescuentoMM, simulado: true };
+  const montoDescuento = +(monto * tasaDescuento / 100).toFixed(2);
+  return { tasaDescuento, comision, montoDescuento, simulado: true };
 }
 
 function Pill({ children, style, className = "" }) {
@@ -3966,7 +4056,7 @@ function ModalLlamadaVerif({ fila, onCerrar, onConfirmar }) {
             {facturas.map((f) => (
               <label key={f.id} className="inline-flex cursor-pointer items-center gap-1.5 rounded-full px-2 py-1 t9 font-medium" style={{ border: `1px solid ${sel[f.id] ? "#bbf7d0" : "#fecaca"}`, backgroundColor: sel[f.id] ? "#F0FDF4" : "#FEF2F2", color: sel[f.id] ? "#16A34A" : "#EF4444" }}>
                 <input type="checkbox" checked={!!sel[f.id]} onChange={(e) => setSel((m) => ({ ...m, [f.id]: e.target.checked }))} />
-                {f.folio || f.id}{f.montoMM != null ? ` · ${fmtMM(f.montoMM)}` : ""}
+                {f.folio || f.id}{f.monto != null ? ` · ${fmtMM(f.monto)}` : ""}
               </label>
             ))}
           </div>
@@ -4040,12 +4130,12 @@ function DealCard({ deal, onOpen, onDragStart }) {
                         {deal.deudores.map((dd) => (
                           <span key={dd.name} className="flex items-center justify-between gap-2 t9 leading-5" style={{ color: C.sub }}>
                             <span className="min-w-0 truncate" style={{ color: C.ink }}>{dd.name}</span>
-                            <span className="shrink-0">{dd.facturas} fac · {fmtMM(dd.montoMM)}</span>
+                            <span className="shrink-0">{dd.facturas} fac · {fmtMM(dd.monto)}</span>
                           </span>
                         ))}
                         <span className="mt-1 flex items-center justify-between gap-2 t9 font-semibold" style={{ color: C.ink, borderTop: `1px solid ${C.line}`, paddingTop: "3px" }}>
                           <span>Total</span>
-                          <span>{deal.deudores.reduce((s, d) => s + (d.facturas || 0), 0)} fac · {fmtMM(deal.deudores.reduce((s, d) => s + (d.montoMM || 0), 0))}</span>
+                          <span>{deal.deudores.reduce((s, d) => s + (d.facturas || 0), 0)} fac · {fmtMM(deal.deudores.reduce((s, d) => s + (d.monto || 0), 0))}</span>
                         </span>
                       </span>
                     )}
@@ -4055,7 +4145,7 @@ function DealCard({ deal, onOpen, onDragStart }) {
             )}
           </div>
         </div>
-        <div className="whitespace-nowrap t13 font-semibold" style={{ color: C.ink }}>{fmtMM(deal.amountMM)}</div>
+        <div className="whitespace-nowrap t13 font-semibold" style={{ color: C.ink }}>{fmtMM(deal.monto)}</div>
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         {deal.waPendiente && (
@@ -4095,7 +4185,7 @@ function DealCard({ deal, onOpen, onDragStart }) {
         </div>
       ) : null; })()}
       <div className="mt-2 border-t pt-1.5 t10" style={{ borderColor: C.line, color: C.sub }}>
-        Tasa {deal.tasa} | Anticipo {deal.anticipo} | Desc. {deal.simulado ? fmtMM(deal.descMM) : "—"}
+        Tasa {deal.tasa} | Anticipo {deal.anticipo} | Desc. {deal.simulado ? fmtMM(deal.desc) : "—"}
       </div>
       {/* GIROS: cómo se reparte el monto a girar entre los dos tipos. Va debajo del giro porque es su
           desglose, y sólo con la operación simulada — antes de eso no hay monto que repartir. Un tipo
@@ -4114,7 +4204,7 @@ function DealCard({ deal, onOpen, onDragStart }) {
       })()}
       {deal.simulado && (
         <div className="mt-1 t10" style={{ color: C.sub }}>
-          Giro {fmtMM(deal.giroMM)} · {deal.diasFin}d fin. · vence {deal.fechaVenc}
+          Giro {fmtMM(deal.giro)} · {deal.diasFin}d fin. · vence {deal.fechaVenc}
         </div>
       )}
       {deal.contactable === false && !isPerdida && !deal.telValidado && !deal.emailValidado && !deal.verifManual && (
@@ -4149,7 +4239,7 @@ function DealCard({ deal, onOpen, onDragStart }) {
             <ArrowDownRight size={10} /> {deal.facturas} factura(s) perdida(s) ante {deal.cedidaCompetidor || competidorDe(deal)}
           </div>
           {tipComp && (() => {
-            const filas = deal.deudores && deal.deudores.length ? deal.deudores : [{ name: deal.deudor, facturas: deal.facturas, montoMM: deal.amountMM }];
+            const filas = deal.deudores && deal.deudores.length ? deal.deudores : [{ name: deal.deudor, facturas: deal.facturas, monto: deal.monto }];
             return (
               <div className="absolute left-0 top-full z-50 mt-1 w-64 rounded-lg bg-white p-2 shadow-xl" style={{ border: `1px solid ${C.line}` }}>
                 <div className="t9 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Perdido ante (cesionario)</div>
@@ -4165,14 +4255,14 @@ function DealCard({ deal, onOpen, onDragStart }) {
                       <tr key={f.name}>
                         <td className="px-1 py-0.5" style={{ color: C.ink }}>{f.name}</td>
                         <td className="px-1 py-0.5 text-right" style={{ color: C.sub }}>{f.facturas}</td>
-                        <td className="px-1 py-0.5 text-right" style={{ color: C.sub }}>{fmtMM(f.montoMM)}</td>
+                        <td className="px-1 py-0.5 text-right" style={{ color: C.sub }}>{fmtMM(f.monto)}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot><tr>
                     <td className="px-1 py-0.5 font-semibold" style={{ color: C.ink }}>Total</td>
                     <td className="px-1 py-0.5 text-right font-semibold" style={{ color: C.ink }}>{filas.reduce((s, f) => s + (f.facturas || 0), 0)}</td>
-                    <td className="px-1 py-0.5 text-right font-bold" style={{ color: C.ink }}>{fmtMM(filas.reduce((s, f) => s + (f.montoMM || 0), 0))}</td>
+                    <td className="px-1 py-0.5 text-right font-bold" style={{ color: C.ink }}>{fmtMM(filas.reduce((s, f) => s + (f.monto || 0), 0))}</td>
                   </tr></tfoot>
                 </table>
               </div>
@@ -4247,17 +4337,17 @@ function StageColumn({ stage, deals, onOpen, onDragStart, onDrop, serie, serieSe
   const [alertF, setAlertF] = useState(null); // filtro por alerta de contactabilidad
   const [colapsado, setColapsado] = useState(true); // columnas colapsables (Perdida) inician colapsadas
   const subs = SUBSTAGES[stage.id] || [];
-  const total = deals.reduce((s, d) => s + d.amountMM, 0);
+  const total = deals.reduce((s, d) => s + d.monto, 0);
   // Vista colapsable (Perdida): resumen + gráfico de barras horizontales de a quién perdimos.
   if (colapsable && colapsado) {
     const grupos = {};
     deals.forEach((d) => {
       const k = d._perdidaVisado ? "No superó Otorgamiento" : (d.cedidaCompetidor || (d.perdidaCesion ? "Otro factoring" : d.perdidaOtorg ? "Rechazada en otorgamiento" : "No tomó la oferta"));
       const g = grupos[k] || (grupos[k] = { count: 0, mm: 0 });
-      g.count++; g.mm += d.amountMM || 0;
+      g.count++; g.mm += d.monto || 0;
     });
     const filas = Object.entries(grupos).map(([name, g]) => ({ name, ...g })).sort((a, b) => b.mm - a.mm);
-    const maxMM = Math.max(1, ...filas.map((f) => f.mm));
+    const max = Math.max(1, ...filas.map((f) => f.mm));
     return (
       <div onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
         onDrop={(e) => { e.preventDefault(); setOver(false); onDrop(stage.id); }}
@@ -4287,7 +4377,7 @@ function StageColumn({ stage, deals, onOpen, onDragStart, onDrop, serie, serieSe
                     <span style={{ color: C.faint }}>{f.count} · {fmtMM(f.mm)}</span>
                   </div>
                   <div className="mt-0.5 h-2 w-full rounded-full" style={{ backgroundColor: "#E5E7EB" }}>
-                    <div className="h-2 rounded-full" style={{ width: `${Math.max(6, (f.mm / maxMM) * 100)}%`, backgroundColor: stage.dot }} />
+                    <div className="h-2 rounded-full" style={{ width: `${Math.max(6, (f.mm / max) * 100)}%`, backgroundColor: stage.dot }} />
                   </div>
                 </div>
               ))}
@@ -4347,7 +4437,7 @@ function StageColumn({ stage, deals, onOpen, onDragStart, onDrop, serie, serieSe
                 </span>
                 <span className="flex items-center gap-1.5">
                   <span>{ds.length}</span>
-                  <span className="font-medium" style={{ color: off ? C.faint : C.ink }}>{fmtMM(ds.reduce((s, d) => s + d.amountMM, 0))}</span>
+                  <span className="font-medium" style={{ color: off ? C.faint : C.ink }}>{fmtMM(ds.reduce((s, d) => s + d.monto, 0))}</span>
                 </span>
               </button>
             );
@@ -4442,7 +4532,7 @@ function RuleCard({ rule, onToggle, onEdit }) {
 // ============================================================
 // Panel Inbound (colapsable) — resumen de reglas + lista
 // ============================================================
-function InboundPanel({ rules, open, onToggleOpen, onToggleRule, onEditRule, onNewRule, onResetRules, oppCount = 0, oppMM = 0 }) {
+function InboundPanel({ rules, open, onToggleOpen, onToggleRule, onEditRule, onNewRule, onResetRules, oppCount = 0, opp = 0 }) {
   const activas = rules.filter((r) => r.activa).length;
   return (
     <div className="w-full">
@@ -4459,7 +4549,7 @@ function InboundPanel({ rules, open, onToggleOpen, onToggleRule, onEditRule, onN
         <div className="mt-2 space-y-1">
           <div className="flex items-center justify-between t11">
             <span style={{ color: C.sub }}>Oportunidades</span>
-            <span style={{ color: C.ink }}>{oppCount.toLocaleString("es-CL")} <span style={{ color: C.faint }}>|</span> <span className="font-semibold">{fmtMM(oppMM)}</span></span>
+            <span style={{ color: C.ink }}>{oppCount.toLocaleString("es-CL")} <span style={{ color: C.faint }}>|</span> <span className="font-semibold">{fmtMM(opp)}</span></span>
           </div>
           <div className="flex items-center justify-between t10" style={{ color: C.faint }}>
             <span>Reglas activas</span><span>{activas} / {rules.length}</span>
@@ -4498,18 +4588,18 @@ function InboundPanel({ rules, open, onToggleOpen, onToggleRule, onEditRule, onN
 function emailTemplateContent(deal, template) {
   const nombre = (deal.contacto && deal.contacto.nombre) || "estimado/a";
   const facturas = itemizarFacturas(deal).filter((f) => !f.reclamada && !f.notaCredito && !f.cedida);
-  const lista = facturas.length ? facturas.map((f) => `   • #${f.folio} · ${f.deudor} · ${fmtMM(f.montoMM)}`).join("\n") : "   • (documentos por confirmar)";
-  const montoMM = +facturas.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
+  const lista = facturas.length ? facturas.map((f) => `   • #${f.folio} · ${f.deudor} · ${fmtMM(f.monto)}`).join("\n") : "   • (documentos por confirmar)";
+  const monto = +facturas.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1);
   const tasa = deal.tasa || "1,65%";
   const neg = negDe(deal);
   const firma = `\n\nSaludos,\n${execName(deal)}\nNEX Factoring · Factoring Security`;
   switch (template) {
     case "Oferta disponible":
-      return { asunto: `Oferta de factoring disponible para ${deal.cliente}`, cuerpo: `Hola ${nombre},\n\nTenemos una oferta lista para anticipar tus facturas:\n• Cantidad de documentos: ${facturas.length}\n• Monto documentos: ${fmtMM(montoMM)}\n• % Anticipo: 100%\n• Tasa: ${tasa} mensual\n• Giro: el mismo día\nFacturas consideradas:\n${lista}\n\n¿Avanzamos en estas condiciones?${firma}` };
+      return { asunto: `Oferta de factoring disponible para ${deal.cliente}`, cuerpo: `Hola ${nombre},\n\nTenemos una oferta lista para anticipar tus facturas:\n• Cantidad de documentos: ${facturas.length}\n• Monto documentos: ${fmtMM(monto)}\n• % Anticipo: 100%\n• Tasa: ${tasa} mensual\n• Giro: el mismo día\nFacturas consideradas:\n${lista}\n\n¿Avanzamos en estas condiciones?${firma}` };
     case "Remarketing de oferta disponible":
-      return { asunto: `Seguimos con tu oferta de factoring, ${deal.cliente}`, cuerpo: `Hola ${nombre},\n\nRetomo la oferta que preparamos para anticipar tus facturas (${facturas.length} documento(s) · ${fmtMM(montoMM)}, tasa ${tasa} mensual, anticipo 100%). Sigue vigente y podemos girar el mismo día.\n\n¿Te gustaría avanzar?${firma}` };
+      return { asunto: `Seguimos con tu oferta de factoring, ${deal.cliente}`, cuerpo: `Hola ${nombre},\n\nRetomo la oferta que preparamos para anticipar tus facturas (${facturas.length} documento(s) · ${fmtMM(monto)}, tasa ${tasa} mensual, anticipo 100%). Sigue vigente y podemos girar el mismo día.\n\n¿Te gustaría avanzar?${firma}` };
     case "Oferta mejorada":
-      return { asunto: `Mejoramos tu oferta de factoring, ${deal.cliente}`, cuerpo: `Hola ${nombre},\n\nRevisamos tu caso y mejoramos las condiciones:\n• Monto documentos: ${fmtMM(montoMM)}\n• Tasa: ${tasa} mensual (ajustada)\n• % Anticipo: 100% · Giro el mismo día\nFacturas consideradas:\n${lista}\n\nQuedo atento a tu confirmación para cursar.${firma}` };
+      return { asunto: `Mejoramos tu oferta de factoring, ${deal.cliente}`, cuerpo: `Hola ${nombre},\n\nRevisamos tu caso y mejoramos las condiciones:\n• Monto documentos: ${fmtMM(monto)}\n• Tasa: ${tasa} mensual (ajustada)\n• % Anticipo: 100% · Giro el mismo día\nFacturas consideradas:\n${lista}\n\nQuedo atento a tu confirmación para cursar.${firma}` };
     case "Solicitud de XML de facturas":
       return { asunto: `Necesitamos el XML de tus facturas · ${deal.cliente}`, cuerpo: `Hola ${nombre},\n\nPara ceder y cursar la operación necesitamos el archivo XML (factura electrónica 33) de:\n${lista}\n\nPor favor respóndenos con los XML adjuntos y avanzamos con el giro.${firma}` };
     case "Recordatorio de cierre":
@@ -4669,19 +4759,19 @@ function CompetenciaCard({ cm, sow, compact }) {
   const comps = cm.comp || [];
   const visibles = exp ? comps : comps.slice(0, 3);
   const ocultos = comps.length - visibles.length;
-  const filas = [{ name: "Security (nosotros)", montoMM: cm.biceMM || 0, pct: cm.bicePct || 0, bice: true }, ...visibles];
+  const filas = [{ name: "Security (nosotros)", monto: cm.bice || 0, pct: cm.bicePct || 0, bice: true }, ...visibles];
   return (
     <div className="rounded-lg p-3" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
       <div className="flex flex-wrap items-center justify-between gap-1">
         <div className="t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Mi competencia en este cliente <span className="t9 font-normal" style={{ color: C.faint }}>({cm.sintetico ? "estimado · sin registro AECSync" : "cesiones últimos 6m · AECSync"})</span></div>
-        <div className="t10" style={{ color: C.faint }}>Total cedido {fmtMM(cm.totalMM)}</div>
+        <div className="t10" style={{ color: C.faint }}>Total cedido {fmtMM(cm.total)}</div>
       </div>
       <div className={`mt-2 ${compact ? "space-y-1" : "space-y-1.5"}`}>
         {filas.map((f, i) => (
           <div key={i}>
             <div className="flex items-center justify-between t10">
               <span style={{ color: f.bice ? "#16A34A" : C.ink, fontWeight: f.bice ? 600 : 400 }}>{f.name}</span>
-              <span style={{ color: C.sub }}>{fmtMM(f.montoMM)} · {f.pct}%</span>
+              <span style={{ color: C.sub }}>{fmtMM(f.monto)} · {f.pct}%</span>
             </div>
             <div className={`mt-0.5 ${compact ? "h-1.5" : "h-2"} w-full overflow-hidden rounded-full`} style={{ backgroundColor: C.page }}>
               <div className="h-full rounded-full" style={{ width: `${Math.min(100, f.pct)}%`, backgroundColor: f.bice ? "#16A34A" : "#9CA3AF" }} />
@@ -4720,7 +4810,7 @@ function SowStatusPanel({ deal, sinCompetencia }) {
         <div className="flex items-baseline gap-2">
           <span className="t13 font-semibold" style={{ color: C.ink }}>SOW</span>
           <span className="t11 font-medium" style={{ color: cm ? "#EF4444" : "#2563EB" }}>{cm ? "Nuevo · 0% Security" : "Nuevo"}</span>
-          <span className="t10" style={{ color: C.faint }}>{cm ? `opera con la competencia · ${fmtMM(cm.totalMM)} cedido (6m)` : "sin historia de Share of Wallet"}</span>
+          <span className="t10" style={{ color: C.faint }}>{cm ? `opera con la competencia · ${fmtMM(cm.total)} cedido (6m)` : "sin historia de Share of Wallet"}</span>
         </div>
         {cm ? (
           <div className="mt-1.5">
@@ -4773,9 +4863,9 @@ const PIE_COMP_COLORS = ["#9CA3AF", "#6B7280", "#C2410C", "#2563EB", "#7C3AED", 
 // Pie/donut con la distribución porcentual de los factorings que participan del SOW del cliente
 // (Security + competencia), a partir de las cesiones de los últimos 6 meses (competenciaDeDeal).
 function SowPieCompetencia({ cm }) {
-  if (!cm || !cm.totalMM) return null;
-  const parts = [{ name: "Security (nosotros)", pct: cm.bicePct || 0, montoMM: cm.biceMM || 0, color: "#16A34A" }]
-    .concat((cm.comp || []).map((c, i) => ({ name: c.name, pct: c.pct || 0, montoMM: c.montoMM || 0, color: PIE_COMP_COLORS[i % PIE_COMP_COLORS.length] })))
+  if (!cm || !cm.total) return null;
+  const parts = [{ name: "Security (nosotros)", pct: cm.bicePct || 0, monto: cm.bice || 0, color: "#16A34A" }]
+    .concat((cm.comp || []).map((c, i) => ({ name: c.name, pct: c.pct || 0, monto: c.monto || 0, color: PIE_COMP_COLORS[i % PIE_COMP_COLORS.length] })))
     .filter((p) => p.pct > 0)
     .sort((a, b) => b.pct - a.pct);
   if (!parts.length) return null;
@@ -4845,7 +4935,7 @@ function SowTab({ deal }) {
     }
     // Sin historia de SOW con BICE: si el cliente cede a la competencia, el SOW es 0% (no "sin datos").
     const cm = competenciaDeDeal(deal);
-    if (!cm || cm.totalMM <= 0) return <div className="mt-4 rounded-lg p-4 t12" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.faint }}>Sin historial de factoring: prospecto nuevo, no ha cedido facturas ni a Security ni a la competencia.</div>;
+    if (!cm || cm.total <= 0) return <div className="mt-4 rounded-lg p-4 t12" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.faint }}>Sin historial de factoring: prospecto nuevo, no ha cedido facturas ni a Security ni a la competencia.</div>;
     return (
       <div className="mt-4 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -4853,7 +4943,7 @@ function SowTab({ deal }) {
           <span className="rounded-full px-2.5 py-0.5 t11 font-medium" style={{ backgroundColor: "#fef2f2", color: "#EF4444" }}>Riesgo alto · 0%</span>
         </div>
         <div className="rounded-lg p-3 t12" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", color: "#EF4444" }}>
-          Security tiene <b>0% de participación</b> en este cliente: cede {fmtMM(cm.totalMM)} a la competencia (últimos 6 meses) y nada a Security. Oportunidad de captura.
+          Security tiene <b>0% de participación</b> en este cliente: cede {fmtMM(cm.total)} a la competencia (últimos 6 meses) y nada a Security. Oportunidad de captura.
         </div>
         <CompetenciaCard cm={cm} />
       </div>
@@ -4877,8 +4967,8 @@ function SowTab({ deal }) {
     { l: "Target", v: target ? Math.round(target) + "%" : "—", c: C.ink },
     { l: "Brecha al target", v: sow.GapPct != null ? sow.GapPct + " pts" : "—", c: sow.GapPct > 0 ? "#C2410C" : "#16A34A" },
     { l: "Tendencia", v: <span className="inline-flex items-center gap-1"><FlechaSow size={15} /> SOW {fI.lab}</span>, c: fI.c },
-    { l: "Cedido Security 6m", v: ult.MontoBICEMM != null ? fmtMM(ult.MontoBICEMM) : "—", c: C.ink },
-    { l: "Total cedido 6m", v: ult.MontoTotalMM != null ? fmtMM(ult.MontoTotalMM) : "—", c: C.ink },
+    { l: "Cedido Security 6m", v: ult.MontoBICE != null ? fmtMM(ult.MontoBICE) : "—", c: C.ink },
+    { l: "Total cedido 6m", v: ult.MontoTotal != null ? fmtMM(ult.MontoTotal) : "—", c: C.ink },
   ];
   return (
     <div className="mt-4 space-y-3">
@@ -4920,7 +5010,7 @@ function SowTab({ deal }) {
         </svg>
       </div>
       {/* Pie: distribución % de los factorings que participan del SOW (Security vs competencia) */}
-      {(() => { const cm = competenciaDeDeal(deal); return cm && cm.totalMM ? (
+      {(() => { const cm = competenciaDeDeal(deal); return cm && cm.total ? (
         <div className="rounded-lg p-3 lg:w-56 lg:shrink-0" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
           <div className="t11 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Distribución del SOW <span className="t9 font-normal" style={{ color: C.faint }}>(cesiones 6m)</span></div>
           <div className="mt-2"><SowPieCompetencia cm={cm} /></div>
@@ -4936,7 +5026,7 @@ function SowTab({ deal }) {
 // monto a girar y retención. Recibe los valores ya calculados de la simulación (o).
 // Fuente única de los "Descuentos a aplicar" (Otros Descuentos, Documentos con mora, Cuentas por cobrar).
 // La usan TANTO el desglose del Resumen como el sub-tab Descuentos, para que los montos a descontar
-// concuerden exactamente. La "Cuentas por cobrar" incluye el recupero por atrasos previos (o.descCxCMM),
+// concuerden exactamente. La "Cuentas por cobrar" incluye el recupero por atrasos previos (o.descCxC),
 // que es la fuente de verdad del recupero usada en el resto de la app.
 function descuentosDeal(deal, o) {
   const r = pcRng(hashStr("desc" + ((deal && deal.id) || "")));
@@ -4951,7 +5041,7 @@ function descuentosDeal(deal, o) {
     { fecha, nombre: deudorN, doc: "Factura Electrónica Afecta #12321312", saldo: Math.round(15e6 + r() * 8e6), mora: Math.round(15e6 + r() * 10e6), diasMora: 32, tasaMora: "8,43", capital: capital1, desc: Math.round(500000 + r() * 500000) },
     { fecha, nombre: deudorN, doc: "Factura Electrónica Afecta #12321314", saldo: Math.round(15e6 + r() * 8e6), mora: Math.round(15e6 + r() * 6e6), diasMora: 32, tasaMora: "8,43", capital: capital1, desc: Math.round(500000 + r() * 500000) },
   ];
-  const recupero = Math.round((o.descCxCMM || 0) * 1e6); // recupero por atrasos previos (fuente de verdad)
+  const recupero = Math.round(o.descCxC || 0); // recupero por atrasos previos (fuente de verdad)
   const cxc = [
     ...(recupero > 0 ? [{ fecha: "", nombre: "Recupero cuentas por cobrar", doc: "Atrasos de operaciones previas", saldo: recupero, desc: recupero }] : []),
     { fecha: "", nombre: "Gastos", doc: "", saldo: Math.round(50000 + r() * 100000), desc: 0 },
@@ -4969,7 +5059,7 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
   // Al agregar/quitar facturas, las condiciones quedan a re-evaluar: se deshabilitan hasta correr el re-check.
   const lanzarReeval = () => { setReevaluando(true); setTimeout(() => { setReevaluando(false); if (onReevaluar) onReevaluar(); }, 900); };
   const histOps = historialComercial(deal.cliente, deal.deudor).slice(0, 5); // referencia de condiciones
-  const toCLP = (mm) => Math.round((mm || 0) * 1e6);
+  const toCLP = (v) => Math.round(v || 0);
   const UF = CFG_ACTIVA.valorUF; // valor UF del tenant (Configuración › Operación)
   const lc = lineaCreditoDe(deal);
   const simNum = deal.negocioNum || (1000000 + (hashStr(deal.id) % 8999999));
@@ -5091,7 +5181,7 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
               <AlertTriangle size={12} /> {atrib.estado === "bajoMinimo" ? "Tasa bajo el mínimo permitido — no ofertable" : requiereGerente ? "Descuento sobre el máximo de jefatura — requiere autorización del Gerente Comercial" : "Descuento sobre tu atribución — requiere autorización de jefatura"}
             </div>
             <div className="mt-1 t10" style={{ color: C.sub }}>Descuento aplicado <b>{atrib.pctDesc}%</b>{bandaRef && <> · tu atribución <b>{bandaRef.descEjec}%</b> · máximo con jefatura <b>{bandaRef.descMax}%</b></>}{requiereGerente && <> · sobre el máximo requiere <b>Gerente Comercial</b></>}. Controlado sobre tasa y comisión.</div>
-            {puedeAutorizar && !bloqueoDuro && <div className="mt-1 t9" style={{ color: C.faint }}>Operación: {[...new Set((deudoresOp || []).map((f) => f.deudor))].slice(0, 4).join(", ") || deal.deudor} · {(deudoresOp || []).length || deal.facturas} factura(s) · {fmtMM((deudoresOp || []).reduce((s, f) => s + (f.montoMM || 0), 0) || deal.amountMM)}.</div>}
+            {puedeAutorizar && !bloqueoDuro && <div className="mt-1 t9" style={{ color: C.faint }}>Operación: {[...new Set((deudoresOp || []).map((f) => f.deudor))].slice(0, 4).join(", ") || deal.deudor} · {(deudoresOp || []).length || deal.facturas} factura(s) · {fmtMM((deudoresOp || []).reduce((s, f) => s + (f.monto || 0), 0) || deal.monto)}.</div>}
             {bloqueoDuro ? (
               <div className="mt-1.5 t9" style={{ color: "#EF4444" }}>Ajusta la tasa dentro de la tasa mínima permitida para poder ofertar.</div>
             ) : autorizado ? (
@@ -5120,7 +5210,7 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
                   <tr key={op.id} style={{ borderBottom: `1px solid ${C.line}` }}>
                     <td className="px-1.5 py-1" style={{ color: C.ink }}>{op.id}</td>
                     <td className="px-1.5 py-1" style={{ color: C.sub }}>{op.fecha}</td>
-                    <td className="px-1.5 py-1 text-right font-medium" style={{ color: C.ink }}>{fmtMM(op.montoMM)}</td>
+                    <td className="px-1.5 py-1 text-right font-medium" style={{ color: C.ink }}>{fmtMM(op.monto)}</td>
                     <td className="px-1.5 py-1 text-right font-semibold" style={{ color: C.indigo }}>{op.tasa}%</td>
                     <td className="px-1.5 py-1 text-right" style={{ color: C.sub }}>{op.plazo}d</td>
                     <td className="px-1.5 py-1 text-right" style={{ color: C.sub }}>{fmtCLP(op.comision)}</td>
@@ -5280,7 +5370,7 @@ function SimResumen({ deal, o, montoDocs, cantFacturas, usuario, bloqueado, anti
 // documentos con mora y cuentas por cobrar). Datos sintéticos deterministas por operación.
 function SimDescuentos({ deal, o }) {
   const r = pcRng(hashStr("desc" + deal.id));
-  const toCLP = (mm) => Math.round((mm || 0) * 1e6);
+  const toCLP = (v) => Math.round(v || 0);
   const deudorN = (deal.deudores && deal.deudores[0] && deal.deudores[0].name) || deal.deudor || "Deudor";
   const fecha = "21/09/2024";
   const ejec = new Date().toLocaleString("es-CL");
@@ -5769,7 +5859,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
                     {requieren.map(({ f, vf, exc }) => (
                       <div key={f.id} className="rounded-md p-2" style={{ border: `1px solid ${C.line}`, borderLeft: `3px solid ${exc ? C.green : "#C2410C"}`, backgroundColor: "#fff" }}>
                         <div className="flex items-center justify-between gap-2">
-                          <span className="t11 font-semibold" style={{ color: C.ink }}>Factura #{f.folio} · {fmtMM(f.montoMM)}</span>
+                          <span className="t11 font-semibold" style={{ color: C.ink }}>Factura #{f.folio} · {fmtMM(f.monto)}</span>
                           <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: exc ? C.greenBg : "#FFF7ED", color: exc ? C.green : "#C2410C" }}>{exc ? "Verificación excepcionada" : "Requiere verificación"}</span>
                         </div>
                         <div className="mt-0.5 t9" style={{ color: C.sub }}>{vf.motivo}</div>
@@ -5794,7 +5884,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
                         </button>
                         {showVerifOk && <div className="space-y-1 px-2 pb-2">{okFacs.map(({ f }) => (
                           <div key={f.id} className="flex items-center justify-between gap-2 py-0.5 t9" style={{ borderTop: `1px solid ${C.line}` }}>
-                            <span style={{ color: C.sub }}>Factura #{f.folio} · {fmtMM(f.montoMM)}</span>
+                            <span style={{ color: C.sub }}>Factura #{f.folio} · {fmtMM(f.monto)}</span>
                             <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>Verificada por modelo</span>
                           </div>
                         ))}</div>}
@@ -5913,7 +6003,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
     forceTel((v) => v + 1);
   };
   const items = facturasOp.map((f) => ({ f, v: verifFactura(f, deal) }));
-  const totalMM = items.reduce((s, x) => s + (x.f.montoMM || 0), 0);
+  const total = items.reduce((s, x) => s + (x.f.monto || 0), 0);
   const nTel = items.filter((x) => x.v.est === "tel").length;
   const nOk = items.filter((x) => x.v.est === "ok").length;
   const vistos = items.filter((x) => filtro === "tel" ? x.v.est === "tel" : filtro === "ok" ? x.v.est === "ok" : filtro === "fail" ? x.v.fallidas.length : true);
@@ -5928,8 +6018,8 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
     const orden = [], por = {};
     vistos.forEach((x) => {
       const k = x.f.deudor || "—";
-      if (!por[k]) { por[k] = { deudor: k, items: [], tipo: x.v.tipo, nota: x.v.nota, montoMM: 0 }; orden.push(k); }
-      por[k].items.push(x); por[k].montoMM += x.f.montoMM || 0;
+      if (!por[k]) { por[k] = { deudor: k, items: [], tipo: x.v.tipo, nota: x.v.nota, monto: 0 }; orden.push(k); }
+      por[k].items.push(x); por[k].monto += x.f.monto || 0;
     });
     return orden.map((k) => por[k]);
   })();
@@ -5973,7 +6063,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
               <span className="w-8 shrink-0 text-right font-semibold" style={{ color: notaCol(g.nota) }}>{g.nota}</span>
               <span className="min-w-0 flex-1 truncate font-semibold" style={{ color: C.ink }}>{g.deudor}</span>
               <span className="shrink-0 t9" style={{ color: C.faint }}>{g.items.length} factura{g.items.length === 1 ? "" : "s"}</span>
-              <span className="w-16 shrink-0 text-right font-medium" style={{ color: C.ink }}>{fmtMM(g.montoMM)}</span>
+              <span className="w-16 shrink-0 text-right font-medium" style={{ color: C.ink }}>{fmtMM(g.monto)}</span>
               <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: estG.bg, color: estG.fg }} title="El veredicto es del deudor: una llamada cubre todas sus facturas. Se divide sólo si la confirmación fue parcial.">{estG.t}</span>
             </div>
           {g.items.map((x) => {
@@ -5984,7 +6074,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
             <div onClick={() => setOpen((o) => ({ ...o, [f.id]: !o[f.id] }))} className="flex items-center gap-2 py-1.5 t11" style={{ cursor: "pointer" }}>
               <ChevronRight size={11} style={{ color: C.faint, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
               <span className="min-w-0 flex-1 truncate" style={{ color: C.sub }}>#{f.folio}</span>
-              <span className="w-16 shrink-0 text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.montoMM)}</span>
+              <span className="w-16 shrink-0 text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.monto)}</span>
               <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: estPill.bg, color: estPill.fg }}>{estPill.t}</span>
             </div>
             {isOpen && (
@@ -6049,7 +6139,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
           </div>
           );
         })}
-        <div className="flex items-center justify-between py-2 t10 font-bold" style={{ borderTop: `2px solid ${C.ink}`, color: C.ink }}><span>Total ({items.length} facturas)</span><span>{fmtMM(totalMM)}</span></div>
+        <div className="flex items-center justify-between py-2 t10 font-bold" style={{ borderTop: `2px solid ${C.ink}`, color: C.ink }}><span>Total ({items.length} facturas)</span><span>{fmtMM(total)}</span></div>
       </div>
       {llamando && <ModalLlamadaVerif fila={{ deudor: llamando.deudor, cliente: deal.cliente, facturas: [llamando] }}
         onCerrar={() => setLlamando(null)} onConfirmar={(ll) => confirmarLlamadaTel(llamando, ll)} />}
@@ -6083,7 +6173,7 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
   const conOtorg = validas.filter((f) => malosOtorg.has(f.deudor));
   const conVerif = validas.filter((f) => idsVerif.has(f.id));
   const multi = validas.filter((f) => bloqueos(f) > 1);
-  const suma = (arr) => +arr.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
+  const suma = (arr) => +arr.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1);
   const nDeu = (arr) => new Set(arr.map((f) => f.deudor)).size;
 
   // UN SOLO TRATAMIENTO para los bloques. Cada uno traía su color —verde, lila, naranja, azul— con
@@ -6846,14 +6936,14 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   const facturasMarcadas = facturasOp.map((f, fi) => ({ ...f, excl: motivoExcl(f, fi) }));
                   const validas = facturasMarcadas.filter((f) => !f.excl);
                   const excluidas = facturasMarcadas.filter((f) => f.excl);
-                  const montoValido = +validas.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
-                  const montoOrig = +facturasOp.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
+                  const montoValido = +validas.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1);
+                  const montoOrig = +facturasOp.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1);
                   // BOTTOM-UP (§4 del spec): la diferencia de precio se calcula documento a documento
                   // con la tasa de SU deudor y SU plazo, y la de la operación es la suma. De ahí salen
                   // el plazo equivalente y la tasa equivalente, que es la única tasa que produce esa
                   // misma diferencia sobre el total — y es la que se le muestra al cliente.
                   const docsPro = validas.map((f, i) => ({ id: f.folio || f.id || "f" + i, deudor: f.deudor,
-                    monto: Math.round((f.montoMM || 0) * 1e6), dias: diasDe(f.deudor), tasa: tasaDe(f.deudor) }));
+                    monto: Math.round(f.monto || 0), dias: diasDe(f.deudor), tasa: tasaDe(f.deudor) }));
                   const proRiesgo = prorratearOperacion(docsPro, [], { antic: +antic });
                   const diasPond = proRiesgo.plazoEquivalente;      // 6 decimales; se muestra con 1
                   const tasaPondRiesgo = +proRiesgo.tasaEquivalente.toFixed(2);   // se muestra con 2
@@ -6891,11 +6981,11 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   // La tasa EXACTA (6 decimales) que alimenta la fórmula del resumen. Redondearla a 2
                   // para calcular movería la diferencia de precio respecto de la suma por documento.
                   const tasaEqExacta = usaUltNeg ? tasaPond : proRiesgo.tasaEquivalente;
-                  const interesMM = +(pro.difPrecio / 1e6).toFixed(2);
+                  const interes = Math.round(pro.difPrecio);
                   // El plazo equivalente se calcula con 6 decimales y se PRESENTA con 1: es lo que
                   // viaja en `diasFin` y se muestra en la oferta, el Kanban y el mensaje al cliente.
                   // La fórmula del resumen recibe el exacto por `plazoEq`, no éste.
-                  const opts = { anticipo: +antic, dias: +diasPond.toFixed(1), comision: +comisO, interesMM, montoValido, cantidad: validas.length };
+                  const opts = { anticipo: +antic, dias: +diasPond.toFixed(1), comision: +comisO, interes, montoValido, cantidad: validas.length };
                   const o = calcularOferta(deal, tasaPond, opts);
                   const oferta = tasaPond; // tasa de la operación (efectiva)
                   const inputCls = "w-20 rounded-md px-2 py-1 t11 text-right outline-none disabled:opacity-60 disabled:cursor-not-allowed";
@@ -6975,7 +7065,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           <span>Tipo doc.</span><span>Folio</span><span>Razón social</span><span className="text-right">Nota</span><span>F. emisión</span><span>F. vencim.</span><span>Otorg.</span><span>Verif.</span><span className="text-right">Tasa</span><span className="text-right">Monto</span><span></span>
                         </div>
                         {validas.map((f) => {
-                          const sc = scoreDeudor(f.deudor, tipoDeudorDisp(f)); const nota = notaFromScore(sc.score);
+                          const nota = notaDeudor(f.deudor, f.rutRecep) || 0; const sc = { tipo: tipoDeudorDisp(f), score: Math.round(20 + (nota - 1) / 4 * 79) };
                           const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                           const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
                           const he = Math.abs(hashStr("em" + f.folio)) % 20 + 3; const em = new Date(Date.now() - he * 86400000).toLocaleDateString("es-CL");
@@ -6993,7 +7083,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             {og.total === 0 ? <span className="justify-self-start t10" style={{ color: C.faint }}>—</span> : <span className="inline-flex items-center gap-1 justify-self-start t10 font-bold" title={og.allOk ? `Todas las reglas de otorgamiento del deudor cumplieron (${og.ok}/${og.total})` : `${og.ok} de ${og.total} reglas de otorgamiento cumplieron · ${og.total - og.ok} pendiente(s)`} style={{ cursor: "help" }}><span style={{ color: og.allOk ? "#16A34A" : "#EF4444" }}>{og.allOk ? "✓" : "⚠"}</span><span style={{ fontVariantNumeric: "tabular-nums" }}><span style={{ color: og.allOk ? "#16A34A" : "#EF4444" }}>{og.ok}</span><span style={{ color: C.sub }}>/{og.total}</span></span></span>}
                             <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: vv.bg, color: vv.fg }}>{vv.t}</span>
                             <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
-                            <span className="text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.montoMM)}</span>
+                            <span className="text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.monto)}</span>
                             {!bloqueado ? <button onClick={() => setConfirmRetiro(f)} disabled={validas.length <= 1} title={validas.length <= 1 ? "La oferta debe tener al menos una factura" : "Retirar de la oferta"} className="justify-self-center rounded p-0.5 disabled:opacity-30" style={{ color: C.red }}><Trash2 size={12} /></button> : <span></span>}
                           </div>
                           );
@@ -7036,7 +7126,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           );
                           const SHORT_EST = { notaAnula: "Anulada", cedida: "Cedida", otraOp: "Otra op.", notaParcial: "NC parcial" };
                           const filaOtra = (f) => {
-                            const sc = scoreDeudor(f.deudor, tipoDeudorDisp(f)); const nota = notaFromScore(sc.score);
+                            const nota = notaDeudor(f.deudor, f.rutRecep) || 0; const sc = { tipo: tipoDeudorDisp(f), score: Math.round(20 + (nota - 1) / 4 * 79) };
                             const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                             const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
                             // Candidatas: emisión repartida en la ventana de 60 días (diasEmision); las ya incluidas
@@ -7048,9 +7138,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             // (esos estados sólo se evalúan al simular). Ahorra cómputo por fila.
                             const tasaF = ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + CFG_ACTIVA.costoFondo).toFixed(2);
                             const ok = xmlOk[f.id] !== false;
-                            const est = f.candidata ? estadoCandidata(f, deal) : { clave: "ok", bloqueada: false, agregable: true, montoNeto: f.montoMM, ncMonto: 0 };
+                            const est = f.candidata ? estadoCandidata(f, deal) : { clave: "ok", bloqueada: false, agregable: true, montoNeto: f.monto, ncMonto: 0 };
                             const bloq = f.candidata && est.bloqueada;
-                            const agregarF = () => { onIncorporarFacturas(deal.id, [est.clave === "notaParcial" ? { ...f, montoMM: est.montoNeto, _ncAplicada: est.ncMonto } : f]); setReevalPend(true); };
+                            const agregarF = () => { onIncorporarFacturas(deal.id, [est.clave === "notaParcial" ? { ...f, monto: est.montoNeto, _ncAplicada: est.ncMonto } : f]); setReevalPend(true); };
                             const parcial = f.candidata && est.clave === "notaParcial";
                             const anulMonto = f.candidata && est.clave === "notaAnula";
                             // Columna ESTADO (eventos del documento): XML de las ya incluidas · bloqueo/NC de las candidatas.
@@ -7073,7 +7163,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 <span className="t9" style={{ color: C.faint }}>{em}</span>
                                 <span className="t9" style={{ color: C.faint }}>{venc}</span>
                                 <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
-                                <span className="text-right font-medium" title={parcial ? `Factura ${fmtMM(f.montoMM)} − NC ${fmtMM(est.ncMonto)} = ${fmtMM(est.montoNeto)}` : (f.excl ? `Excluida: ${f.excl}` : anulMonto ? "Documento anulado por nota de crédito" : undefined)} style={{ color: parcial ? "#C2410C" : C.ink, textDecoration: (f.excl || anulMonto) ? "line-through" : "none" }}>{fmtMM(parcial ? est.montoNeto : f.montoMM)}</span>
+                                <span className="text-right font-medium" title={parcial ? `Factura ${fmtMM(f.monto)} − NC ${fmtMM(est.ncMonto)} = ${fmtMM(est.montoNeto)}` : (f.excl ? `Excluida: ${f.excl}` : anulMonto ? "Documento anulado por nota de crédito" : undefined)} style={{ color: parcial ? "#C2410C" : C.ink, textDecoration: (f.excl || anulMonto) ? "line-through" : "none" }}>{fmtMM(parcial ? est.montoNeto : f.monto)}</span>
                                 {estadoNode}
                                 {accionNode}
                               </div>
@@ -7088,7 +7178,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 {factTab === "candidatas" && cands.some((f) => !f.otro && estadoCandidata(f, deal).agregable) && !bloqueado && (
                                   // "Agregar todas" sólo incluye las candidatas elegibles: excluye "Otros deudores"
                                   // (f.otro, se agregan una a una) y las bloqueadas (anuladas/cedidas/en otra operación).
-                                  <button onClick={() => { const eleg = cands.filter((f) => !f.otro && estadoCandidata(f, deal).agregable).map((f) => { const e = estadoCandidata(f, deal); return e.clave === "notaParcial" ? { ...f, montoMM: e.montoNeto, _ncAplicada: e.ncMonto } : f; }); onIncorporarFacturas(deal.id, eleg); setReevalPend(true); }} className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md px-2 py-1 t9 font-medium" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar todas las elegibles</button>
+                                  <button onClick={() => { const eleg = cands.filter((f) => !f.otro && estadoCandidata(f, deal).agregable).map((f) => { const e = estadoCandidata(f, deal); return e.clave === "notaParcial" ? { ...f, monto: e.montoNeto, _ncAplicada: e.ncMonto } : f; }); onIncorporarFacturas(deal.id, eleg); setReevalPend(true); }} className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md px-2 py-1 t9 font-medium" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar todas las elegibles</button>
                                 )}
                               </div>
                               <div className="mt-1.5 flex items-center gap-1.5 rounded-full px-2 py-1" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
@@ -7133,7 +7223,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   {(() => {
                                     const faltantes = facturasOp.filter((f) => xmlOk[f.id] === false);
                                     if (!faltantes.length) return null;
-                                    const msg = "Para poder ceder las facturas y cursar se requiere que envíe las siguientes facturas:\n" + faltantes.map((f, i) => `${i + 1}) ${f.tipo} Folio #${f.folio} Deudor: ${f.deudor}, Monto Total: ${fmtCLP((f.montoMM || 0) * 1e6)}`).join("\n");
+                                    const msg = "Para poder ceder las facturas y cursar se requiere que envíe las siguientes facturas:\n" + faltantes.map((f, i) => `${i + 1}) ${f.tipo} Folio #${f.folio} Deudor: ${f.deudor}, Monto Total: ${fmtCLP((f.monto || 0) * 1e6)}`).join("\n");
                                     return (
                                       <button onClick={() => setWaMsg(msg)} className="mt-1.5 flex items-center gap-1 rounded-md px-2 py-1 t10" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>
                                         <AlertTriangle size={10} /> Solicitar XML de {faltantes.length} factura(s) faltante(s)
@@ -7148,7 +7238,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         </div>
                       </div>
                       {excluidas.length > 0 && (
-                        <div className="mt-2 t9" style={{ color: C.red }}>{excluidas.length} factura(s) excluida(s) (cedidas/reclamadas/nota de crédito). Se recalculó la operación · CxC {fmtMM(o.descCxCMM)}.</div>
+                        <div className="mt-2 t9" style={{ color: C.red }}>{excluidas.length} factura(s) excluida(s) (cedidas/reclamadas/nota de crédito). Se recalculó la operación · CxC {fmtMM(o.descCxC)}.</div>
                       )}
                       </>)}
                       {negTab === "detalle" && (() => {
@@ -7189,9 +7279,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             const e = estadoCandidata(f, deal);
                             if (!e.agregable) { bloqueadas++; continue; }
                             facturas++;
-                            monto += e.clave === "notaParcial" ? e.montoNeto : (f.montoMM || 0);
+                            monto += e.clave === "notaParcial" ? e.montoNeto : (f.monto || 0);
                           }
-                          return { monto: +monto.toFixed(1), facturas, bloqueadas };
+                          return { monto: Math.round(monto), facturas, bloqueadas };
                         };
                         // Buscador por empresa deudora (o folio): filtra ambas secciones.
                         const dq = detQuery.trim().toLowerCase();
@@ -7367,7 +7457,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   <input type="date" value={vencVal} onChange={(e) => setVencFecha((m) => ({ ...m, [f.id]: e.target.value }))} style={{ position: "absolute", left: 22, bottom: 0, width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
                                 </>)}
                               </span>
-                              <span className="text-right">{fmtMM(f.montoMM)}</span>
+                              <span className="text-right">{fmtMM(f.monto)}</span>
                               <span className="flex flex-wrap items-center gap-1">
                                 {ef && ef.origen.length ? ef.origen.map((o) => (
                                   <span key={o.lineaId} className="inline-flex items-center whitespace-nowrap rounded px-1 t7 font-semibold" style={{ backgroundColor: "#F5F4F8", color: "#6B7280", border: `1px solid ${C.line}` }} title={`${o.tipo} · ${o.lineaId}`}>{o.lineaId} · {fmtMM(o.monto)}</span>
@@ -7394,7 +7484,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           const em = emD.toLocaleDateString("es-CL"); const venc = new Date(emD.getTime() + plazo * 86400000).toLocaleDateString("es-CL");
                           const tasaF = ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + CFG_ACTIVA.costoFondo).toFixed(2);
                           const est = estadoCandidata(f, deal); const bloq = est.bloqueada; const parcial = est.clave === "notaParcial";
-                          const agregar = () => { onIncorporarFacturas(deal.id, [parcial ? { ...f, montoMM: est.montoNeto, _ncAplicada: est.ncMonto } : f]); setReevalPend(true); };
+                          const agregar = () => { onIncorporarFacturas(deal.id, [parcial ? { ...f, monto: est.montoNeto, _ncAplicada: est.ncMonto } : f]); setReevalPend(true); };
                           return (
                             <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: GC_O, borderBottom: `1px solid ${C.line}`, opacity: bloq ? 0.55 : 1 }}>
                               <span className="font-medium" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>#{f.folio}</span>
@@ -7402,13 +7492,13 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               <span className="t9" style={{ color: C.faint }}>{em}</span>
                               <span className="t9" style={{ color: C.faint }}>{venc}</span>
                               <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
-                              <span className="text-right font-medium" title={parcial ? `Factura ${fmtMM(f.montoMM)} − NC ${fmtMM(est.ncMonto)} = ${fmtMM(est.montoNeto)}` : undefined} style={{ color: parcial ? "#C2410C" : C.ink }}>{fmtMM(parcial ? est.montoNeto : f.montoMM)}</span>
+                              <span className="text-right font-medium" title={parcial ? `Factura ${fmtMM(f.monto)} − NC ${fmtMM(est.ncMonto)} = ${fmtMM(est.montoNeto)}` : undefined} style={{ color: parcial ? "#C2410C" : C.ink }}>{fmtMM(parcial ? est.montoNeto : f.monto)}</span>
                               {/* ¿Entra en la línea si la agrego? Se compara su monto contra la holgura que le
                                   queda HOY al deudor: es la pregunta que uno se hace mirando la fila, y no
                                   depende de qué otras facturas se agreguen junto con ella. */}
                               {(() => {
                                 const ldF = lineaDeudor[f.deudor];
-                                const m = parcial ? est.montoNeto : (f.montoMM || 0);
+                                const m = parcial ? est.montoNeto : (f.monto || 0);
                                 if (bloq) return <span className="truncate t9 font-semibold" style={{ color: "#EF4444" }} title={`${est.label} · no se puede agregar`}>{est.label}</span>;
                                 if (!ldF || ldF.neta == null) return <span className="t9" style={{ color: C.faint }}>Por evaluar</span>;
                                 const cabe = m <= ldF.neta;
@@ -7434,10 +7524,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         };
                         const cabDeudor = (deudor, grupo, abierto, enOferta) => {
                           const rep = grupo[0]; const td = tipoDeudorDisp(rep); const prime = td === "Lista Blanca" || td === "Deudor Autorizado";
-                          const nota = notaFromScore(scoreDeudor(deudor, td).score);
+                          const nota = notaDeudor(deudor) || 0;
                           const verifOk = grupo.every((f) => verifFactura(f, deal).est === "ok");
                           const og = deudorOtorgMap[deudor] || { ok: 0, total: 0 }; const allOk = og.total > 0 && og.ok === og.total;
-                          const monto = +grupo.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
+                          const monto = +grupo.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1);
                           // En «Deudores disponibles» la cifra del encabezado es lo INCORPORABLE, no el total del
                           // grupo: ver `dispDeudor`. En la oferta no aplica —esas facturas ya están dentro—.
                           const disp = enOferta ? null : dispDeudor(grupo);
@@ -7608,14 +7698,14 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             </div>
                           );
                         };
-                        const totalOf = +validas.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
+                        const totalOf = +validas.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1);
                         // OPCIONES DE ARRANQUE: mientras no hay simulación, el ejecutivo elige qué incluir
                         // en vez de que el sistema decida por él. Son los mismos tramos que ofrece «Ajustar
                         // facturas», pero calculados sobre TODO el pool —lo que ya está en la oferta más lo
                         // disponible—, porque la elección DEFINE la oferta completa, no suma a lo que haya.
                         const opcionesInicio = (() => {
                           if (deal.simulado) return [];
-                          const norm = (f) => { const e = estadoCandidata(f, deal); return e.clave === "notaParcial" ? { ...f, montoMM: e.montoNeto, _ncAplicada: e.ncMonto } : f; };
+                          const norm = (f) => { const e = estadoCandidata(f, deal); return e.clave === "notaParcial" ? { ...f, monto: e.montoNeto, _ncAplicada: e.ncMonto } : f; };
                           const vistos = new Set(); const pool = [];
                           validas.forEach((f) => { if (f && f.id != null && !vistos.has(f.id)) { vistos.add(f.id); pool.push(f); } });
                           Object.keys(grpOt).forEach((dn) => (grpOt[dn] || []).forEach((f) => {
@@ -7625,7 +7715,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           const tramoDe = (f) => {
                             const td = tipoDeudorDisp(f);
                             if (td === "Lista Blanca" || td === "Deudor Autorizado") return "prime";
-                            return notaFromScore(scoreDeudor(f.deudor || "", td).score) > NOTA_PRIORITARIA ? "notaAlta" : "resto";
+                            return (notaDeudor(f.deudor || "", f.rutRecep) || 0) > NOTA_PRIORITARIA ? "notaAlta" : "resto";
                           };
                           const deTramo = (t) => pool.filter((f) => tramoDe(f) === t);
                           const prime = deTramo("prime"), notaAlta = deTramo("notaAlta"), resto = deTramo("resto");
@@ -7637,7 +7727,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             const st2 = new Map((ev.facturas || []).map((x) => [x.id, x.estado]));
                             return prime.filter((f) => st2.get(f.id) === "CON_LINEA");
                           })();
-                          const tot = (a) => +a.reduce((s2, f) => s2 + (f.montoMM || 0), 0).toFixed(1);
+                          const tot = (a) => +a.reduce((s2, f) => s2 + (f.monto || 0), 0).toFixed(1);
                           return [
                             // #F0FDF4 es correcto para una etiqueta chica sobre gris, pero sobre la tarjeta
                             // BLANCA del selector desaparece y el chip parece no tener fondo. Mismo verde que
@@ -7702,7 +7792,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               // el disponible que se está usando para re-evaluar viene NETO de esa reserva.
                               // Decirlo evita que el ejecutivo lea «sin cupo» como un problema de línea.
                               if (deal.reabierta && !leeDeVersion) {
-                                vd.sub += ` Operación reabierta el ${deal.reabierta.ts}: el cliente deberá volver a firmar, y los ${fmtMM(deal.reabierta.reservaMM || 0)} de la versión aceptada siguen reservados en el sistema de gestión de líneas, así que ese cupo aparece tomado hasta que pidas allá que lo liberen.`;
+                                vd.sub += ` Operación reabierta el ${deal.reabierta.ts}: el cliente deberá volver a firmar, y los ${fmtMM(deal.reabierta.reserva || 0)} de la versión aceptada siguen reservados en el sistema de gestión de líneas, así que ese cupo aparece tomado hasta que pidas allá que lo liberen.`;
                               }
                               const dl = !leeDeVersion && evalLin && evalLin.diff;
                               if (dl && dl.hayCambios) {
@@ -7873,7 +7963,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   const esPrime = (f) => { const td = tipoDeudorDisp(f); return td === "Lista Blanca" || td === "Deudor Autorizado"; };
                                   // El monto se cuenta NETO de nota de crédito, que es como entra a la oferta:
                                   // con el bruto el menú prometía una cifra y sumaba otra.
-                                  const netoDe = (f) => { const e = estadoCandidata(f, deal); return e.clave === "notaParcial" ? e.montoNeto : (f.montoMM || 0); };
+                                  const netoDe = (f) => { const e = estadoCandidata(f, deal); return e.clave === "notaParcial" ? e.montoNeto : (f.monto || 0); };
                                   // El deudor se clasifica con la MISMA factura que usa el chip ★ Prime del
                                   // acordeón (la primera del grupo): si el chip dice Prime, el botón tiene que
                                   // verlo. No se filtra por `f.otro` —ese flag se asigna al azar por factura y
@@ -7885,7 +7975,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     const f0 = (grpOt[dn] || [])[0];
                                     if (!f0) return "resto";
                                     if (esPrime(f0)) return "prime";
-                                    return notaFromScore(scoreDeudor(f0.deudor || "", tipoDeudorDisp(f0)).score) > NOTA_PRIORITARIA ? "notaAlta" : "resto";
+                                    return (notaDeudor(f0.deudor || "", f0.rutRecep) || 0) > NOTA_PRIORITARIA ? "notaAlta" : "resto";
                                   };
                                   const paquetes = Object.keys(grpOt).map((dn) => {
                                     const g = (grpOt[dn] || []).filter((f) => estadoCandidata(f, deal).agregable);
@@ -7905,7 +7995,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   const nFacTodas = paquetes.reduce((s2, pq) => s2 + pq.facturas.length, 0);
                                   // La normalización por nota de crédito se aplica UNA vez: si se aplicara de nuevo
                                   // sobre una factura ya neteada, le volvería a restar la NC.
-                                  const normalizar = (f) => { const e = estadoCandidata(f, deal); return e.clave === "notaParcial" ? { ...f, montoMM: e.montoNeto, _ncAplicada: e.ncMonto } : f; };
+                                  const normalizar = (f) => { const e = estadoCandidata(f, deal); return e.clave === "notaParcial" ? { ...f, monto: e.montoNeto, _ncAplicada: e.ncMonto } : f; };
                                   const sumarNorm = (fsNorm) => { onIncorporarFacturas(deal.id, fsNorm); setReevalPend(true); setPrimeMenu(false); };
                                   const sumar = (fs) => sumarNorm(fs.map(normalizar));
                                   // Cuáles de las Prime entran en línea: se simula la oferta MÁS todas las Prime y
@@ -7918,12 +8008,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     const st2 = new Map((ev.facturas || []).map((x) => [x.id, x.estado]));
                                     return primeNorm.filter((f) => st2.get(f.id) === "CON_LINEA");
                                   })();
-                                  const totConLinea = +primeConLinea.reduce((s2, f) => s2 + (f.montoMM || 0), 0).toFixed(1);
+                                  const totConLinea = +primeConLinea.reduce((s2, f) => s2 + (f.monto || 0), 0).toFixed(1);
                                   // Contrapartida del alta: sacar de la oferta lo que se iría a comité. Es lo que
                                   // la tarjeta de veredicto ya propone («quitarlas y cursar el resto hoy») y que
                                   // hasta ahora había que hacer factura por factura desde cada acordeón.
                                   const sinLinea = evalLin ? validas.filter((f) => evalFac[f.id] && evalFac[f.id].estado === "REQUIERE_COMITE") : [];
-                                  const montoSinLinea = +sinLinea.reduce((s2, f) => s2 + (f.montoMM || 0), 0).toFixed(1);
+                                  const montoSinLinea = +sinLinea.reduce((s2, f) => s2 + (f.monto || 0), 0).toFixed(1);
                                   // La oferta no puede quedar vacía: si todo lo seleccionado va a comité, sacarlo
                                   // dejaría la operación sin facturas y el motor no tendría qué evaluar.
                                   const vaciaria = sinLinea.length > 0 && sinLinea.length >= validas.length;
@@ -7969,14 +8059,14 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                           deudor: razon, rutRecep: rutRe, rutEmisor: rutEm,
                                           // Sin `tipoDeudor` el motor le niega la LF1 a un deudor de Lista Blanca.
                                           tipoDeudor: tipoDeudor(rutRe, razon), histFactoring: null,
-                                          montoMM: +(mnt / 1e6).toFixed(1),
+                                          monto: Math.round(mnt),
                                           venc: isFinite(dv) ? Math.max(1, dv) : diasPagoDeudor(razon),
                                           sinXml: false, xmlArchivo: file.name, // el XML ES el respaldo para ceder
                                         });
                                       }
                                     }
                                     if (nuevas.length) { onIncorporarFacturas(deal.id, nuevas); setReevalPend(true); }
-                                    setXmlRes({ ok: nuevas.length, rech, monto: +nuevas.reduce((s2, f) => s2 + f.montoMM, 0).toFixed(1) });
+                                    setXmlRes({ ok: nuevas.length, rech, monto: +nuevas.reduce((s2, f) => s2 + f.monto, 0).toFixed(1) });
                                     setPrimeMenu(false);
                                   };
                                   return (
@@ -8097,7 +8187,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 {deudOfF.map((dn) => { const grupo = grpOf[dn]; const key = "of:" + dn; const abierto = detOpen[key] === true; return (
                                   <div key={dn} className="mb-2" style={{ border: "1px solid #E4E2EC", borderRadius: 12, overflow: "hidden", backgroundColor: "#F5F4F8" }}>
                                     <button onClick={() => setDetOpen((m) => ({ ...m, [key]: !abierto }))} className="block w-full text-left">{cabDeudor(dn, grupo, abierto, true)}</button>
-                                    {abierto && <div className="overflow-x-auto" style={{ backgroundColor: "#FCFCFD", borderTop: `1px solid ${C.line}`, padding: "4px 14px 8px" }}><div style={{ minWidth: 700 }}>{headDoc}{grupo.map(filaDoc)}<div className="grid items-center gap-2 py-1.5 t10 font-semibold" style={{ gridTemplateColumns: GC_D, color: "#7C7A85", borderTop: "1px solid #E4E3E9" }}><span style={{ gridColumn: "1 / 4" }}>Subtotal ({grupo.length} fact.)</span><span className="text-right">{fmtMM(+grupo.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1))}</span><span style={{ gridColumn: "5 / 8" }}></span></div>{(() => {
+                                    {abierto && <div className="overflow-x-auto" style={{ backgroundColor: "#FCFCFD", borderTop: `1px solid ${C.line}`, padding: "4px 14px 8px" }}><div style={{ minWidth: 700 }}>{headDoc}{grupo.map(filaDoc)}<div className="grid items-center gap-2 py-1.5 t10 font-semibold" style={{ gridTemplateColumns: GC_D, color: "#7C7A85", borderTop: "1px solid #E4E3E9" }}><span style={{ gridColumn: "1 / 4" }}>Subtotal ({grupo.length} fact.)</span><span className="text-right">{fmtMM(+grupo.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1))}</span><span style={{ gridColumn: "5 / 8" }}></span></div>{(() => {
                                       // Facturas de ESTE deudor que aún no están en la oferta. Vivían sólo en la
                                       // sección de abajo, así que sumarle una factura a un deudor ya presente
                                       // obligaba a bajar y buscarlo de nuevo.
@@ -8566,10 +8656,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         <td className="px-1.5 py-1" style={{ color: C.ink }}>{f.id}</td>
                         <td className="px-1.5 py-1"><div style={{ color: C.ink }}>{f.deudor}</div><div className="t9" style={{ color: C.faint }}>{f.deudorRut}</div></td>
                         <td className="px-1.5 py-1" style={{ color: C.sub }}>{f.operacion}</td>
-                        <td className="px-1.5 py-1 text-right" style={{ color: C.sub }}>{fmtMM(f.montoMM)}</td>
+                        <td className="px-1.5 py-1 text-right" style={{ color: C.sub }}>{fmtMM(f.monto)}</td>
                         <td className="px-1.5 py-1" style={{ color: f.atraso === 0 ? C.green : f.atraso <= 30 ? C.amber : f.atraso <= 60 ? "#ea580c" : C.red }}>{f.bucketLabel}</td>
                         <td className="px-1.5 py-1" style={{ color: C.sub }}>{f.atraso ? `${f.atraso} d` : "—"}</td>
-                        <td className="px-1.5 py-1 text-right font-medium" style={{ color: f.cxcMM ? C.red : C.faint }}>{f.cxcMM ? fmtMM(f.cxcMM) : "—"}</td>
+                        <td className="px-1.5 py-1 text-right font-medium" style={{ color: f.cxc ? C.red : C.faint }}>{f.cxc ? fmtMM(f.cxc) : "—"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -8606,7 +8696,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               <button onClick={() => setPubModal(null)} className="rounded-md p-1" style={{ color: C.faint }}><X size={18} /></button>
             </div>
             <div className="mt-3 space-y-1 rounded-lg p-2" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, maxHeight: 150, overflowY: "auto" }}>
-              {pubModal.descartadas.map((f) => <div key={f.id} className="flex items-center justify-between t10"><span className="truncate" style={{ color: C.sub }}>{f.deudor} · #{f.folio}</span><span className="shrink-0" style={{ color: C.faint }}>{fmtMM(f.montoMM)} · {diasEmiCand(f)}d</span></div>)}
+              {pubModal.descartadas.map((f) => <div key={f.id} className="flex items-center justify-between t10"><span className="truncate" style={{ color: C.sub }}>{f.deudor} · #{f.folio}</span><span className="shrink-0" style={{ color: C.faint }}>{fmtMM(f.monto)} · {diasEmiCand(f)}d</span></div>)}
             </div>
             <div className="mt-3 space-y-2">
               <label className="flex items-start gap-2" style={{ cursor: "pointer" }}><input type="radio" checked={pubAccion === "nueva"} onChange={() => setPubAccion("nueva")} className="mt-0.5" /><span className="t11" style={{ color: C.ink }}><b>Abrir una nueva oportunidad</b> con estas facturas descartadas.</span></label>
@@ -8631,7 +8721,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           onClose={() => setEmailPreview(null)} />
       )}
       <ConfirmDialog abierto={!!confirmRetiro} titulo="¿Retirar esta factura de la oferta?"
-        descripcion={confirmRetiro ? `Folio ${confirmRetiro.folio || confirmRetiro.id || ""} · ${fmtMM(confirmRetiro.montoMM || 0)}. La factura sale de la oferta y el CAT se recalcula.` : ""}
+        descripcion={confirmRetiro ? `Folio ${confirmRetiro.folio || confirmRetiro.id || ""} · ${fmtMM(confirmRetiro.monto || 0)}. La factura sale de la oferta y el CAT se recalcula.` : ""}
         etiquetaConfirmar="Retirar factura"
         onConfirmar={() => { onRetirarFactura(deal.id, confirmRetiro); setReevalPend(true); setConfirmRetiro(null); }}
         onCancelar={() => setConfirmRetiro(null)} />
@@ -8639,7 +8729,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           asignación queda intacta y el cupo liberado sigue reservado en el sistema de gestión de
           líneas hasta que lo liberen allá (NEX no toca reservas). */}
       <ConfirmDialog abierto={!!confirmNoConf} titulo="¿El deudor no confirmó esta factura?"
-        descripcion={confirmNoConf ? `Folio ${confirmNoConf.folio || confirmNoConf.id || ""} · ${fmtMM(confirmNoConf.montoMM || 0)}. Sale de la operación y baja el monto a girar. Las demás facturas conservan su línea. El cupo que deja libre sigue reservado en el sistema de gestión de líneas: para recuperarlo hay que pedir allá que lo liberen.` : ""}
+        descripcion={confirmNoConf ? `Folio ${confirmNoConf.folio || confirmNoConf.id || ""} · ${fmtMM(confirmNoConf.monto || 0)}. Sale de la operación y baja el monto a girar. Las demás facturas conservan su línea. El cupo que deja libre sigue reservado en el sistema de gestión de líneas: para recuperarlo hay que pedir allá que lo liberen.` : ""}
         etiquetaConfirmar="Retirar factura no confirmada"
         onConfirmar={() => { onRetirarFactura(deal.id, confirmNoConf, "noConfirmada"); setConfirmNoConf(null); }}
         onCancelar={() => setConfirmNoConf(null)} />
@@ -8647,12 +8737,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           ejecutivo no crea que parte de cero) y qué pasa con la reserva, que NEX no puede tocar. */}
       {(() => {
         const vsR = SIM_VERSIONS[deal.id] || [];
-        const reservaMM = vsR.length && vsR[vsR.length - 1].linea ? vsR[vsR.length - 1].linea.cursable : 0;
+        const reserva = vsR.length && vsR[vsR.length - 1].linea ? vsR[vsR.length - 1].linea.cursable : 0;
         const nTel = Object.keys((typeof VERIF_TEL !== "undefined" && VERIF_TEL[deal.id]) || {}).length;
         const nVet = Object.keys((typeof NO_CONFIRMADAS !== "undefined" && NO_CONFIRMADAS[deal.id]) || {}).length;
         return (
           <ConfirmDialog abierto={confirmReabrir} titulo="¿Reabrir esta operación para modificarla?"
-            descripcion={`Vuelve a Oferta y Negociación: podrás agregar o quitar facturas, y al re-evaluar se asigna línea y corre la verificación de lo nuevo. Se conserva lo ya hecho: las excepciones de otorgamiento y de verificación resueltas${nTel ? `, y ${nTel} verificación(es) telefónica(s) ya registrada(s)` : ""} — no se parte de cero.${nVet ? ` Las ${nVet} factura(s) que el deudor no confirmó quedan vetadas y no se pueden volver a seleccionar.` : ""} El cliente tendrá que VOLVER A FIRMAR en el portal: la firma anterior deja de valer porque el paquete de facturas cambia, y sin firma nueva la operación no puede girarse. Ojo con el cupo: los ${fmtMM(reservaMM)} de la versión aceptada siguen RESERVADOS en el sistema de gestión de líneas. Mientras no pidas allá que los liberen, ese cupo aparecerá tomado al re-evaluar.`}
+            descripcion={`Vuelve a Oferta y Negociación: podrás agregar o quitar facturas, y al re-evaluar se asigna línea y corre la verificación de lo nuevo. Se conserva lo ya hecho: las excepciones de otorgamiento y de verificación resueltas${nTel ? `, y ${nTel} verificación(es) telefónica(s) ya registrada(s)` : ""} — no se parte de cero.${nVet ? ` Las ${nVet} factura(s) que el deudor no confirmó quedan vetadas y no se pueden volver a seleccionar.` : ""} El cliente tendrá que VOLVER A FIRMAR en el portal: la firma anterior deja de valer porque el paquete de facturas cambia, y sin firma nueva la operación no puede girarse. Ojo con el cupo: los ${fmtMM(reserva)} de la versión aceptada siguen RESERVADOS en el sistema de gestión de líneas. Mientras no pidas allá que los liberen, ese cupo aparecerá tomado al re-evaluar.`}
             etiquetaConfirmar="Reabrir operación"
             onConfirmar={() => { setConfirmReabrir(false); onReabrir && onReabrir(deal.id); }}
             onCancelar={() => setConfirmReabrir(false)} />
@@ -8766,7 +8856,7 @@ function sowEstrategia(ev) {
   if (!ev) return null;
   const t = ev.sowTendencia;
   const cmp0 = (ev.sowActualPct == null && ev.rutEmisor) ? competenciaDe(ev.rutEmisor) : null;
-  const act = ev.sowActualPct != null ? ev.sowActualPct : (cmp0 && cmp0.totalMM > 0 ? 0 : null);
+  const act = ev.sowActualPct != null ? ev.sowActualPct : (cmp0 && cmp0.total > 0 ? 0 : null);
   if (!t && act == null && !ev.superaTarget) return null; // sin información de SOW
   let sm;
   if (ev.superaTarget) sm = { Icon: Check, bg: "#F0FDF4", fg: "#16A34A", lab: "en target", desc: "La participación de Security está en o sobre el objetivo.", estr: "Defender la cuenta; tasa estándar (no se requiere descuento)." };
@@ -8836,8 +8926,8 @@ function BandejaCard({ ev, onAsignar, onCrearRegla, onDescartar }) {
 
 // Indicadores de PERFORMANCE del motor inbound (estilo del chart de "perdidos"): facturas procesadas,
 // cuántas califican, oportunidades creadas y monto detectado, más el desglose de capturas por regla.
-function MotorPerformance({ recibidas, califican, sinClasificar, originadas, originadasMM, reglaStats, rules }) {
-  const filas = (rules || []).map((r) => ({ id: r.id, name: r.title, count: (reglaStats[r.id] || {}).count || 0, montoMM: (reglaStats[r.id] || {}).montoMM || 0 }))
+function MotorPerformance({ recibidas, califican, sinClasificar, originadas, originadasMonto, reglaStats, rules }) {
+  const filas = (rules || []).map((r) => ({ id: r.id, name: r.title, count: (reglaStats[r.id] || {}).count || 0, monto: (reglaStats[r.id] || {}).monto || 0 }))
     .filter((f) => f.count > 0).sort((a, b) => b.count - a.count);
   const maxC = Math.max(1, ...filas.map((f) => f.count));
   const capturaPct = recibidas ? Math.round((califican / recibidas) * 100) : 0;
@@ -8857,7 +8947,7 @@ function MotorPerformance({ recibidas, califican, sinClasificar, originadas, ori
         {kpi("Facturas procesadas", (recibidas || 0).toLocaleString("es-CL"))}
         {kpi("Califican", (califican || 0).toLocaleString("es-CL"), "#5B21D6")}
         {kpi("Oportunidades", (originadas || 0).toLocaleString("es-CL"), "#16A34A")}
-        {kpi("Monto detectado", fmtMM(originadasMM || 0), "#16A34A")}
+        {kpi("Monto detectado", fmtMM(originadasMonto || 0), "#16A34A")}
       </div>
       <div className="mt-1.5 t10" style={{ color: C.faint }}>Tasa de captura <b style={{ color: C.ink }}>{capturaPct}%</b>{sinClasificar ? <> · <b style={{ color: C.ink }}>{(sinClasificar).toLocaleString("es-CL")}</b> sin clasificar</> : null}</div>
       <div className="mt-2 t10 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Capturas por regla</div>
@@ -8869,7 +8959,7 @@ function MotorPerformance({ recibidas, califican, sinClasificar, originadas, ori
             <div key={f.id}>
               <div className="flex items-center justify-between t10" style={{ color: C.sub }}>
                 <span className="truncate" style={{ maxWidth: "62%" }} title={`${f.id} · ${f.name}`}>{f.id} · {f.name}</span>
-                <span style={{ color: C.faint }}>{f.count.toLocaleString("es-CL")} · {fmtMM(f.montoMM)}</span>
+                <span style={{ color: C.faint }}>{f.count.toLocaleString("es-CL")} · {fmtMM(f.monto)}</span>
               </div>
               <div className="mt-0.5 h-2 w-full rounded-full" style={{ backgroundColor: "#E5E7EB" }}>
                 <div className="h-2 rounded-full" style={{ width: `${Math.max(6, (f.count / maxC) * 100)}%`, backgroundColor: "#8A63FF" }} />
@@ -9091,11 +9181,11 @@ function CasosModal({ titulo, casos, onClose, onExport }) {
                     <td className="whitespace-nowrap px-2 py-1" style={{ color: C.sub }}>{d.sector}</td>
                     <td className="whitespace-nowrap px-2 py-1" style={{ color: C.sub }}>{nombreEtapa(d.stage)}</td>
                     <td className="px-2 py-1 text-right" style={{ color: C.sub }}>{d.facturas}</td>
-                    <td className="whitespace-nowrap px-2 py-1 text-right font-medium" style={{ color: C.ink }}>{fmtMM(d.amountMM)}</td>
+                    <td className="whitespace-nowrap px-2 py-1 text-right font-medium" style={{ color: C.ink }}>{fmtMM(d.monto)}</td>
                     <td className="px-2 py-1 text-right" style={{ color: C.sub }}>{d.tasa}</td>
                     <td className="px-2 py-1 text-right" style={{ color: C.sub }}>{d.diasFin || "—"}</td>
-                    <td className="whitespace-nowrap px-2 py-1 text-right" style={{ color: C.sub }}>{d.simulado ? fmtMM(d.giroMM) : "—"}</td>
-                    <td className="whitespace-nowrap px-2 py-1 text-right" style={{ color: C.sub }}>{d.simulado ? fmtMM(d.descMM) : "—"}</td>
+                    <td className="whitespace-nowrap px-2 py-1 text-right" style={{ color: C.sub }}>{d.simulado ? fmtMM(d.giro) : "—"}</td>
+                    <td className="whitespace-nowrap px-2 py-1 text-right" style={{ color: C.sub }}>{d.simulado ? fmtMM(d.desc) : "—"}</td>
                     <td className="whitespace-nowrap px-2 py-1" style={{ color: C.sub }}>{nombreEjec(d.exec)}</td>
                     <td className="whitespace-nowrap px-2 py-1" style={{ color: C.sub }}>{d.status}</td>
                   </tr>
@@ -9348,7 +9438,7 @@ function WizPaso({ n, title }) {
 // Genera las facturas NUEVAS de un deal (a incorporar, ya marcadas) + algunas extra sin marcar.
 function genFacturasIncorporar(deal) {
   const n = Math.max(1, deal.nuevasFacturas || 1);
-  const totalCLP = Math.round((deal.nuevasFacturasMontoMM || 0) * 1e6);
+  const totalCLP = Math.round(deal.nuevasFacturasMonto || 0);
   const dias = diasPagoDeudor(deal.deudor);
   const facturas = [], sel = {};
   const kd = "inc|" + String(deal.id);
@@ -9401,7 +9491,7 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
   const [facturas, setFacturas] = useState(ini.facturas);
   const [sel, setSel] = useState(ini.sel);
   const [tasa, setTasa] = useState(incorporar ? (deal.tasaDescuento != null ? deal.tasaDescuento : parseFloat(deal.tasa) || 1.5) : 1.5);
-  const [comision, setComision] = useState(incorporar ? Math.round((deal.comisionMM || 0.03) * 1e6) : 30000);
+  const [comision, setComision] = useState(incorporar ? Math.round(deal.comision || 30000) : 30000);
   const [gastos, setGastos] = useState(0);
   const [otros, setOtros] = useState(0);
   const [pendientes] = useState(() => rndDetBool("pend|" + (incorporar && deal ? deal.id : "alta-manual"), 0.4));
@@ -9443,18 +9533,18 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
   const abierta = useMemo(() => ((!incorporar && cliente)
     ? (deals || []).find((d) => d.cliente === cliente && !["giro", "perdida"].includes(d.stage))
     : null), [cliente, deals, incorporar]);
-  const baseCLP = incorporar ? Math.round((deal.amountMM || 0) * 1e6) : 0; // monto ya en la oportunidad
+  const baseCLP = incorporar ? Math.round(deal.monto || 0) : 0; // monto ya en la oportunidad
   const seleccionadas = facturas.filter((f) => sel[f.id]);
   const nuevasCLP = seleccionadas.reduce((s, f) => s + f.montoCLP, 0);
   const totalCLP = baseCLP + nuevasCLP;
   const fin = useMemo(() => {
-    const financiadoMM = totalCLP / 1e6;
-    const difMM = incorporar
-      ? financiadoMM * (tasa / 100) * ((deal.diasFin || 42) / 30)
-      : seleccionadas.reduce((s, f) => s + (f.montoCLP / 1e6) * (tasa / 100) * (diasPagoDeudor(f.deudor) / 30), 0);
-    const otrosMM = (comision + gastos + otros) / 1e6;
-    const subtotalMM = difMM + otrosMM;
-    return { financiadoMM, difMM, otrosMM, subtotalMM, girarMM: financiadoMM - subtotalMM };
+    const financiado = totalCLP;
+    const dif = incorporar
+      ? financiado * (tasa / 100) * ((deal.diasFin || 42) / 30)
+      : seleccionadas.reduce((s, f) => s + f.montoCLP * (tasa / 100) * (diasPagoDeudor(f.deudor) / 30), 0);
+    const otros = comision + gastos + otros;
+    const subtotal = dif + otros;
+    return { financiado, dif, otros, subtotal, girar: financiado - subtotal };
   }, [seleccionadas, tasa, comision, gastos, otros, totalCLP]);
 
   // Marca en el carrito las facturas que calzan con las filas del archivo (Rut Emisor = cliente · Tipo Doc · Folio).
@@ -9537,33 +9627,33 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
     if (incorporar) {
       // Actualiza la oportunidad existente con las nuevas facturas (mismo id y etapa).
       onConfirm({
-        ...deal, facturas: deal.facturas + seleccionadas.length, amountMM: +fin.financiadoMM.toFixed(1),
-        tasa: tasa.toFixed(2) + "%", tasaDescuento: tasa, comision, comisionMM: +(comision / 1e6).toFixed(3),
-        financiadoMM: +fin.financiadoMM.toFixed(2), interesMM: +fin.difMM.toFixed(2), montoDescuentoMM: +fin.difMM.toFixed(2),
-        descMM: +fin.subtotalMM.toFixed(2), giroMM: +fin.girarMM.toFixed(2),
-        nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, status: "Actualizada con nuevas facturas",
+        ...deal, facturas: deal.facturas + seleccionadas.length, monto: +fin.financiado.toFixed(1),
+        tasa: tasa.toFixed(2) + "%", tasaDescuento: tasa, comision,
+        financiado: +fin.financiado.toFixed(2), interes: +fin.dif.toFixed(2), montoDescuento: +fin.dif.toFixed(2),
+        desc: +fin.subtotal.toFixed(2), giro: +fin.girar.toFixed(2),
+        nuevasFacturas: 0, nuevasFacturasMonto: 0, warning: false, status: "Actualizada con nuevas facturas",
       });
       return;
     }
     const porDeudor = {};
-    seleccionadas.forEach((f) => { porDeudor[f.deudor] = porDeudor[f.deudor] || { name: f.deudor, facturas: 0, montoMM: 0 }; porDeudor[f.deudor].facturas += 1; porDeudor[f.deudor].montoMM += f.montoCLP / 1e6; });
-    const deudores = Object.values(porDeudor).map((x) => ({ ...x, montoMM: +x.montoMM.toFixed(1) })).sort((a, b) => b.montoMM - a.montoMM);
+    seleccionadas.forEach((f) => { porDeudor[f.deudor] = porDeudor[f.deudor] || { name: f.deudor, facturas: 0, monto: 0 }; porDeudor[f.deudor].facturas += 1; porDeudor[f.deudor].monto += f.montoCLP; });
+    const deudores = Object.values(porDeudor).map((x) => ({ ...x, monto: Math.round(x.monto) })).sort((a, b) => b.monto - a.monto);
     const deudor = deudores[0].name;
     const sector = (BUENOS_PAGADORES.find((p) => p.name === deudor) || {}).sector || "Industriales";
     const vMax = seleccionadas.map((f) => f.venc).sort((a, b) => a - b).slice(-1)[0];
     const dias = Math.max(...seleccionadas.map((f) => diasPagoDeudor(f.deudor)));
     onConfirm({
       id: `OP-N${Date.now() % 100000}`, stage: "oferta", tag: "Factoring",
-      facturas: seleccionadas.length, amountMM: +fin.financiadoMM.toFixed(1),
+      facturas: seleccionadas.length, monto: +fin.financiado.toFixed(1),
       cliente, deudor, deudores, sector: "Buenos Deudores - " + sector, esCliente: true,
       tasa: tasa.toFixed(2) + "%", anticipo: "100%",
       status: "Nuevo negocio (manual)", time: nowStamp(), channel: "Manual", exec: usuario,
-      stale: false, important: fin.financiadoMM > 800, _inbound: true,
-      perdedor: rndDetBool(`perd|${cliente}|${deudor}`, 0.2), subSeed: rndDet(`seed|${cliente}|${deudor}`), nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false,
+      stale: false, important: fin.financiado > 800e6, _inbound: true,
+      perdedor: rndDetBool(`perd|${cliente}|${deudor}`, 0.2), subSeed: rndDet(`seed|${cliente}|${deudor}`), nuevasFacturas: 0, nuevasFacturasMonto: 0, warning: false,
       simulado: true, tasaDescuento: tasa, comision,
-      diasFin: dias, financiadoMM: +fin.financiadoMM.toFixed(2), interesMM: +fin.difMM.toFixed(2),
-      montoDescuentoMM: +fin.difMM.toFixed(2), comisionMM: +(comision / 1e6).toFixed(3),
-      descMM: +fin.subtotalMM.toFixed(2), descCxCMM: 0, giroMM: +fin.girarMM.toFixed(2),
+      diasFin: dias, financiado: +fin.financiado.toFixed(2), interes: +fin.dif.toFixed(2),
+      montoDescuento: fin.dif, comision,
+      desc: +fin.subtotal.toFixed(2), descCxC: 0, giro: +fin.girar.toFixed(2),
       fechaVenc: vMax ? fmtFecha(vMax).replace(/\//g, "-") : "", atrasoDias: 0,
     });
   };
@@ -9628,7 +9718,7 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
               {abierta && (() => { const et = (STAGES.find((s) => s.id === abierta.stage) || {}).name || abierta.stage; return (
                 <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: C.amberBg, border: "1px solid #FED7AA" }}>
                   <div className="flex items-center gap-1.5 t12 font-semibold" style={{ color: "#C2410C" }}><AlertTriangle size={14} /> Este cliente ya tiene una oportunidad abierta</div>
-                  <div className="mt-0.5 t11" style={{ color: C.sub }}><b style={{ color: C.ink }}>{abierta.id}</b> · {et} · {abierta.facturas} factura(s) · {fmtMM(abierta.amountMM || 0)}. No crees un negocio nuevo: toma esa oportunidad y modifícala incorporándole las facturas.</div>
+                  <div className="mt-0.5 t11" style={{ color: C.sub }}><b style={{ color: C.ink }}>{abierta.id}</b> · {et} · {abierta.facturas} factura(s) · {fmtMM(abierta.monto || 0)}. No crees un negocio nuevo: toma esa oportunidad y modifícala incorporándole las facturas.</div>
                   <button onClick={() => onOpenDeal && onOpenDeal(abierta)} className="mt-2 inline-flex items-center gap-1 rounded-lg px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}><ArrowUpRight size={13} /> Abrir la oportunidad</button>
                 </div>
               ); })()}
@@ -9805,15 +9895,15 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
                     <div className="my-1 h-px w-full" style={{ backgroundColor: C.line }} />
                     <div className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Descuentos</div>
                     <WizEdit label="Tasa Negocio" unidad="%" value={tasa} step={0.01} onChange={setTasa} />
-                    <Linea label="Diferencia de Precio" valor={fmtCLP(fin.difMM * 1e6)} />
+                    <Linea label="Diferencia de Precio" valor={fmtCLP(fin.dif)} />
                     <WizEdit label="Comisión" unidad="$" value={comision} step={5000} onChange={setComision} />
                     <WizEdit label="Gastos" unidad="$" value={gastos} step={5000} onChange={setGastos} />
                     <WizEdit label="Otros descuentos" unidad="$" value={otros} step={5000} onChange={setOtros} />
-                    <Linea label="Subtotal Descuentos" valor={fmtCLP(fin.subtotalMM * 1e6)} bold />
+                    <Linea label="Subtotal Descuentos" valor={fmtCLP(fin.subtotal)} bold />
                   </div>
                   <div className="mt-3 flex items-center justify-between rounded-lg p-3" style={{ backgroundColor: C.page }}>
                     <span className="t13 font-bold" style={{ color: C.ink }}>Monto a Girar</span>
-                    <span className="text-lg font-bold" style={{ color: C.green }}>{fmtCLP(fin.girarMM * 1e6)}</span>
+                    <span className="text-lg font-bold" style={{ color: C.green }}>{fmtCLP(fin.girar)}</span>
                   </div>
                 </div>
                 <div>
@@ -9874,11 +9964,11 @@ function benchmarkPor(deals, by = "deudor") {
     const deudor = d.deudor; if (!deudor) return;
     const tasa = parseFloat(d.tasa) || d.tasaDescuento || (tasaMinIA(deudor) + 0.8);
     if (["aceptadas", "cesion", "giro"].includes(d.stage)) {
-      rows.push({ fecha: hoy, cliente: d.cliente, deudor, montoMM: d.amountMM || 0, tasa: +(+tasa).toFixed(2), ganada: true });
+      rows.push({ fecha: hoy, cliente: d.cliente, deudor, monto: d.monto || 0, tasa: +(+tasa).toFixed(2), ganada: true });
     } else if (d.stage === "perdida" && (d.perdidaCesion || d.cedidaCompetidor)) {
       const comp = d.cedidaCompetidor || competidorDe(d);
       const tasaComp = +Math.max(tasaMinIA(deudor), tasa - 0.2 - (hashStr(d.id || "x") % 20) / 100).toFixed(2);
-      rows.push({ fecha: hoy, cliente: d.cliente, deudor, montoMM: d.amountMM || 0, tasa: +(+tasa).toFixed(2), ganada: false, competidor: comp, tasaComp });
+      rows.push({ fecha: hoy, cliente: d.cliente, deudor, monto: d.monto || 0, tasa: +(+tasa).toFixed(2), ganada: false, competidor: comp, tasaComp });
     }
   });
   // 2) Completar con histórico de mercado (determinista) para los deudores presentes.
@@ -9892,7 +9982,7 @@ function benchmarkPor(deals, by = "deudor") {
       const tasa = +(base + 0.4 + (h % 70) / 100).toFixed(2);
       const comp = COMPETIDORES[h % COMPETIDORES.length];
       const tasaComp = +Math.max(base, tasa - 0.15 - (h % 25) / 100).toFixed(2);
-      rows.push({ fecha: hoy - (i + 1) * 2 * dayMs - (h % 5) * dayMs, cliente: cl[h % cl.length], deudor, montoMM: 50 + (h % 600), tasa, ganada, competidor: ganada ? null : comp, tasaComp: ganada ? null : tasaComp });
+      rows.push({ fecha: hoy - (i + 1) * 2 * dayMs - (h % 5) * dayMs, cliente: cl[h % cl.length], deudor, monto: 50 + (h % 600), tasa, ganada, competidor: ganada ? null : comp, tasaComp: ganada ? null : tasaComp });
     }
   });
   // 3) Agrupar por la dimensión elegida: deudor (pagador) o cliente (cedente).
@@ -9977,7 +10067,7 @@ function BenchmarkDeudoresModal({ deals, onClose, inline, usuario, esJefe }) {
                     <tr key={i} style={{ borderBottom: `1px solid ${C.line}` }}>
                       <td className="px-3 py-3.5" style={{ color: C.sub }}>{ffecha(e.fecha)}</td>
                       <td className="px-3 py-3.5 font-medium" style={{ color: C.ink }}><span className="inline-flex items-center gap-1.5">{by === "cliente" ? e.deudor : e.cliente}<button onClick={() => setTareaEmp(by === "cliente" ? e.deudor : e.cliente)} title={by === "cliente" ? "Asignar tarea a este deudor (ej.: bloquear deudor)" : "Asignar tarea a este cliente"} className="rounded-md p-0.5 hover:bg-stone-100" style={{ color: C.indigo }}><ClipboardList size={12} /></button></span></td>
-                      <td className="px-3 py-3.5 text-right" style={{ color: C.sub }}>{fmtMM(e.montoMM)}</td>
+                      <td className="px-3 py-3.5 text-right" style={{ color: C.sub }}>{fmtMM(e.monto)}</td>
                       <td className="px-3 py-3.5 text-right font-medium" style={{ color: C.ink }}>{e.tasa.toFixed(2)}%</td>
                       <td className="px-3 py-3.5 text-right font-semibold" style={{ color: e.ganada ? C.green : C.red }}>{e.ganada ? "BICE ✓" : `Perdida · ${e.competidor}`}</td>
                       <td className="px-3 py-3.5 text-right" style={{ color: C.sub }}>{e.ganada ? "—" : (e.tasaComp != null ? e.tasaComp.toFixed(2) + "%" : "—")}</td>
@@ -10009,18 +10099,18 @@ function ComparativoModal({ deals, onClose, inline }) {
   const rows = useMemo(() => {
     const fn = dims[dim].fn; const map = {};
     deals.forEach((d) => {
-      const k = fn(d); const g = map[k] || (map[k] = { nombre: k, opp: 0, pipeMM: 0, cursado: 0, ventaMM: 0, ganados: 0, perdidos: 0 });
+      const k = fn(d); const g = map[k] || (map[k] = { nombre: k, opp: 0, pipe: 0, cursado: 0, venta: 0, ganados: 0, perdidos: 0 });
       if (d.stage !== "perdida") g.opp++;
-      if (d.stage === "prospeccion" || d.stage === "oferta") g.pipeMM += d.amountMM || 0;
+      if (d.stage === "prospeccion" || d.stage === "oferta") g.pipe += d.monto || 0;
       if (d.stage === "cesion" || d.stage === "giro") g.cursado++;
-      if (d.stage === "giro") g.ventaMM += d.amountMM || 0;
+      if (d.stage === "giro") g.venta += d.monto || 0;
       if (["aceptadas", "cesion", "giro"].includes(d.stage)) g.ganados++;
       if (dealResult(d) === "lost") g.perdidos++; // expiradas (caducadas por inacción) fuera de la tasa de pérdida
     });
-    return Object.values(map).map((g) => ({ ...g, pipeMM: +g.pipeMM.toFixed(1), ventaMM: +g.ventaMM.toFixed(1), wr: (g.ganados + g.perdidos) ? Math.round(g.ganados / (g.ganados + g.perdidos) * 100) : 0 })).sort((a, b) => b.ventaMM - a.ventaMM);
+    return Object.values(map).map((g) => ({ ...g, pipe: +g.pipe.toFixed(1), venta: +g.venta.toFixed(1), wr: (g.ganados + g.perdidos) ? Math.round(g.ganados / (g.ganados + g.perdidos) * 100) : 0 })).sort((a, b) => b.venta - a.venta);
   }, [deals, dim]);
-  const maxVenta = Math.max(1, ...rows.map((r) => r.ventaMM));
-  const tot = rows.reduce((a, r) => ({ opp: a.opp + r.opp, pipeMM: a.pipeMM + r.pipeMM, cursado: a.cursado + r.cursado, ventaMM: a.ventaMM + r.ventaMM, ganados: a.ganados + r.ganados, perdidos: a.perdidos + r.perdidos }), { opp: 0, pipeMM: 0, cursado: 0, ventaMM: 0, ganados: 0, perdidos: 0 });
+  const maxVenta = Math.max(1, ...rows.map((r) => r.venta));
+  const tot = rows.reduce((a, r) => ({ opp: a.opp + r.opp, pipe: a.pipe + r.pipe, cursado: a.cursado + r.cursado, venta: a.venta + r.venta, ganados: a.ganados + r.ganados, perdidos: a.perdidos + r.perdidos }), { opp: 0, pipe: 0, cursado: 0, venta: 0, ganados: 0, perdidos: 0 });
   const totWr = (tot.ganados + tot.perdidos) ? Math.round(tot.ganados / (tot.ganados + tot.perdidos) * 100) : 0;
   return (
     <>
@@ -10050,12 +10140,12 @@ function ComparativoModal({ deals, onClose, inline }) {
                 <tr key={r.nombre} style={{ borderBottom: `1px solid ${C.line}` }}>
                   <td className="px-3 py-3.5 font-medium" style={{ color: C.ink }}>{r.nombre}</td>
                   <td className="px-3 py-3.5 text-right" style={{ color: C.sub }}>{r.opp}</td>
-                  <td className="px-3 py-3.5 text-right" style={{ color: C.sub }}>{fmtMM(r.pipeMM)}</td>
+                  <td className="px-3 py-3.5 text-right" style={{ color: C.sub }}>{fmtMM(r.pipe)}</td>
                   <td className="px-3 py-3.5 text-right" style={{ color: C.sub }}>{r.cursado}</td>
                   <td className="px-3 py-3.5 text-right">
                     <span className="flex items-center justify-end gap-2">
-                      <span className="hidden h-2 rounded-full sm:block" style={{ width: `${Math.max(6, (r.ventaMM / maxVenta) * 70)}px`, backgroundColor: C.green }} />
-                      <span className="font-semibold" style={{ color: C.ink }}>{fmtMM(r.ventaMM)}</span>
+                      <span className="hidden h-2 rounded-full sm:block" style={{ width: `${Math.max(6, (r.venta / maxVenta) * 70)}px`, backgroundColor: C.green }} />
+                      <span className="font-semibold" style={{ color: C.ink }}>{fmtMM(r.venta)}</span>
                     </span>
                   </td>
                   <td className="px-3 py-3.5 text-right font-semibold" style={{ color: r.wr >= 50 ? C.green : C.amber }}>{r.wr}%</td>
@@ -10068,9 +10158,9 @@ function ComparativoModal({ deals, onClose, inline }) {
               <tfoot><tr style={{ borderTop: `2px solid ${C.line}` }}>
                 <td className="px-3 py-3 font-semibold" style={{ color: C.ink }}>Total</td>
                 <td className="px-3 py-3 text-right font-semibold" style={{ color: C.ink }}>{tot.opp}</td>
-                <td className="px-3 py-3 text-right font-semibold" style={{ color: C.ink }}>{fmtMM(+tot.pipeMM.toFixed(1))}</td>
+                <td className="px-3 py-3 text-right font-semibold" style={{ color: C.ink }}>{fmtMM(+tot.pipe.toFixed(1))}</td>
                 <td className="px-3 py-3 text-right font-semibold" style={{ color: C.ink }}>{tot.cursado}</td>
-                <td className="px-3 py-3 text-right font-bold" style={{ color: C.ink }}>{fmtMM(+tot.ventaMM.toFixed(1))}</td>
+                <td className="px-3 py-3 text-right font-bold" style={{ color: C.ink }}>{fmtMM(+tot.venta.toFixed(1))}</td>
                 <td className="px-3 py-3 text-right font-semibold" style={{ color: C.ink }}>{totWr}%</td>
                 <td className="px-3 py-3 text-right font-semibold" style={{ color: C.red }}>{tot.perdidos}</td>
               </tr></tfoot>
@@ -10274,18 +10364,18 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                       const hay = an[k].n > 0;
                       return (
                         <span key={k} className="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: hay ? bg : "#EDEEF1", color: hay ? fg : C.sub, cursor: "help" }} title={tip}>
-                          {hay ? `${txt(an[k].n)} · ${fmtMM(an[k].montoMM)}` : txt(0)}
+                          {hay ? `${txt(an[k].n)} · ${fmtMM(an[k].monto)}` : txt(0)}
                         </span>
                       );
                     };
                     const plural = (n2, sing, plu) => `${n2} ${n2 === 1 ? sing : plu}`;
                     return (<>
-                      <div className="t10" title={`La OPORTUNIDAD reúne ${an.nDeudores} deudor(es) y ${an.nFacturas} factura(s) por ${fmtMM(an.montoMM)}: todo lo que el motor encontró disponible del cliente, esté o no en la oferta. «Monto» muestra sólo lo seleccionado, por eso las dos cifras no coinciden. El motor asigna línea en este orden: Prime, luego Nota Deudor sobre 4,2, y el resto con lo que sobre.`} style={{ color: C.sub, cursor: "help" }}>
+                      <div className="t10" title={`La OPORTUNIDAD reúne ${an.nDeudores} deudor(es) y ${an.nFacturas} factura(s) por ${fmtMM(an.monto)}: todo lo que el motor encontró disponible del cliente, esté o no en la oferta. «Monto» muestra sólo lo seleccionado, por eso las dos cifras no coinciden. El motor asigna línea en este orden: Prime, luego Nota Deudor sobre 4,2, y el resto con lo que sobre.`} style={{ color: C.sub, cursor: "help" }}>
                         {/* Las tres cifras se destacan por igual —deudores, facturas y monto son la misma
                             lectura— con el MISMO tratamiento que «$700M aprobada» en la columna Línea:
                             t10 heredado del contenedor y `font-semibold`. Con <b> pesaban más que el
                             propio título de la fila. */}
-                        <span className="font-semibold" style={{ color: C.ink }}>{an.nDeudores}</span> deudor{an.nDeudores === 1 ? "" : "es"} · <span className="font-semibold" style={{ color: C.ink }}>{an.nFacturas}</span> factura{an.nFacturas === 1 ? "" : "s"} · <span className="font-semibold" style={{ color: C.ink }}>{fmtMM(an.montoMM)}</span>
+                        <span className="font-semibold" style={{ color: C.ink }}>{an.nDeudores}</span> deudor{an.nDeudores === 1 ? "" : "es"} · <span className="font-semibold" style={{ color: C.ink }}>{an.nFacturas}</span> factura{an.nFacturas === 1 ? "" : "s"} · <span className="font-semibold" style={{ color: C.ink }}>{fmtMM(an.monto)}</span>
                       </div>
                       {/* Una fila por tramo, SIEMPRE: en columna los tres chips quedan alineados a la
                           izquierda y se comparan de un vistazo entre filas del tubo. Con flex-wrap el
@@ -10361,24 +10451,24 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                       // Sin facturas itemizadas la única lectura posible es el monto contra la línea
                       // disponible del cliente; se dice en el tooltip para no confundirla con la
                       // evaluación por deudor.
-                      const evCli = (!ev && d.amountMM > 0 && !d.agrupado) ? lineaCreditoDe(d) : null;
+                      const evCli = (!ev && d.monto > 0 && !d.agrupado) ? lineaCreditoDe(d) : null;
                       // VERIFICACIÓN: sale del estado cacheado del par cliente-deudor, no de la
                       // simulación. Con la oferta armada se cuenta por FACTURA, que es la unidad que el
                       // ejecutivo ve en la lista; el tooltip aclara que una llamada cubre al deudor.
                       const deudV = (!d.agrupado && d.deudores && d.deudores.length) ? d.deudores : null;
                       const nVerif = facsC ? facsC.filter((f) => verifFactura(f, d).est !== "ok").length
-                        : (deudV ? deudV.filter((x) => x && x.name && verifDeudorDeal(d, x.name, x.montoMM || 0).requiere).length : 0);
+                        : (deudV ? deudV.filter((x) => x && x.name && verifDeudorDeal(d, x.name, x.monto || 0).requiere).length : 0);
                       const chip = (key, fg, bg, Icono, txt, tip, badge) => <ChipCond key={key} fg={fg} bg={bg} Icono={Icono} texto={txt} tip={tip} badge={badge} />;
                       const chips = [];
                       if (evCli) {
-                        const cabe = evCli.aprobada > 0 && d.amountMM <= evCli.disponible;
+                        const cabe = evCli.aprobada > 0 && d.monto <= evCli.disponible;
                         const tip = evCli.aprobada <= 0
                           ? "El cliente aún no tiene línea asignada por comité."
                           : `Contrastado contra la línea disponible del cliente (${fmtMM(evCli.disponible)}). La evaluación por deudor se hace al detallar las facturas de la oferta.`;
                         chips.push(evCli.aprobada <= 0
                           ? chip("lin", "#6B7280", "#F3F4F6", AlertTriangle, "Sin línea asignada", tip)
-                          : cabe ? chip("lin", "#16A34A", "#F0FDF4", Check, "Dentro de línea", tip, fmtMM(d.amountMM))
-                          : chip("lin", "#7C3AED", C.lilac, AlertTriangle, "Excede la línea", tip, fmtMM(d.amountMM - evCli.disponible)));
+                          : cabe ? chip("lin", "#16A34A", "#F0FDF4", Check, "Dentro de línea", tip, fmtMM(d.monto))
+                          : chip("lin", "#7C3AED", C.lilac, AlertTriangle, "Excede la línea", tip, fmtMM(d.monto - evCli.disponible)));
                       }
                       if (ev && !ev.vacia) {
                         const totOf = +(ev.cursable + ev.requiereComite).toFixed(1);
@@ -10428,13 +10518,13 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                           {/* Todo el panel va centrado verticalmente: el bloque de chips es el más alto
                               y fija la altura; el monto y las condiciones, pegados al borde superior,
                               quedaban flotando sobre el aire de abajo. */}
-                          <div className="t14 font-bold shrink-0 text-center" style={{ color: C.ink, minWidth: 104 }}>{fmtMM(d.amountMM)}</div>
+                          <div className="t14 font-bold shrink-0 text-center" style={{ color: C.ink, minWidth: 104 }}>{fmtMM(d.monto)}</div>
                           <div className="t10 leading-5 min-w-0" style={{ color: C.sub, ...sep }}>
                             <div className="truncate" title={nombres.length ? `Deudores de la oferta: ${nombres.join(" · ")}` : undefined} style={{ cursor: nombres.length ? "help" : "default" }}>
                               <span className="font-semibold" style={{ color: C.ink }}>{nombres.length || d.facturas}</span> deudor{(nombres.length || 1) === 1 ? "" : "es"} · <span className="font-semibold" style={{ color: C.ink }}>{d.facturas}</span> factura{d.facturas === 1 ? "" : "s"}
                             </div>
                             <div className="truncate">Tasa <b style={{ color: C.ink }}>{d.tasa}</b> · Anticipo {d.anticipo} · {d.diasFin}d</div>
-                            <div className="truncate">Giro <b style={{ color: C.green }}>{fmtMM(d.giroMM)}</b> · Desc. {fmtMM(d.descMM)} · Com. {fmtCLP(d.comision)}</div>
+                            <div className="truncate">Giro <b style={{ color: C.green }}>{fmtMM(d.giro)}</b> · Desc. {fmtMM(d.desc)} · Com. {fmtCLP(d.comision)}</div>
                           </div>
                           {/* Chips alineados a la IZQUIERDA: centrados, sus anchos distintos dejaban los
                               tres íconos ⚠ en tres verticales distintas y la columna perdía su borde. */}
@@ -10480,10 +10570,69 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
 // Aprobado / Rechazado / Sujeto a excepción Nx. Las de segmentación son sólo clasificación interna.
 // ============================================================
 const catCliente = (cc) => (["A1", "A2", "A3"].includes(cc) ? 1 : ["A4", "A5"].includes(cc) ? 2 : ["A6", "B1"].includes(cc) ? 3 : ["B2", "B3", "B4"].includes(cc) ? 4 : 3);
+// ── ACTIVO A10 · VERIFICACION — variables del predictor por par cliente-deudor ──────────────────
+// Llega por SFTP a diario, con upsert intradía para V07/V08 (degradables dentro del mes). El pipeline
+// NO las sintetiza: las LEE. Lo que el archivo no puede traer son las RAZONES contra el documento que
+// se está evaluando —V03, V04, V06 y V09 dependen del monto o del vencimiento de esa factura—, así que
+// trae el DENOMINADOR (lo comprado al par en 3M, su venta mensual, su plazo histórico) y NEX calcula.
+// Un par ausente se lee sin dato, y sin dato la regla NO CUMPLE (spec §4.3).
+const VERIF_A10 = (() => {
+  const src = (typeof window !== "undefined" && window.VERIFICACION) || null;
+  const ix = {}, porPar = {};
+  if (src && src.campos && src.filas) {
+    src.campos.forEach((c, i) => (ix[c] = i));
+    for (const f of src.filas) porPar[f[ix.RUT_CLIENTE] + "|" + f[ix.RUT_DEUDOR]] = f;
+  }
+  return { ix, porPar };
+})();
+// ── ACTIVO A16 · OTORGAMIENTO — la tabla de variables de riesgo que llega por SFTP ──────────────
+// Una fila por (RUT, ROL, RUT_CONTRAPARTE), en formato columnar igual que el CSV de origen (ver
+// `Integraciones/spec_sftp_otorgamiento.md`). El motor NO sintetiza estas variables: las LEE. Los
+// umbrales viven sólo en las reglas, de modo que qué porcentaje de la cartera cae en excepción es una
+// propiedad EMERGENTE del dato y no un número puesto a mano en un generador.
+// Sin datos inyectados el índice queda vacío y toda entidad se lee como SIN hallazgos.
+const OTORG_A16 = (() => {
+  const src = (typeof window !== "undefined" && window.OTORGAMIENTO) || null;
+  const ix = {}, cli = {}, deu = {}, porRut = {};
+  if (src && src.campos && src.filas) {
+    src.campos.forEach((c, i) => (ix[c] = i));
+    for (const f of src.filas) {
+      if (f[ix.ROL] === "CLIENTE") cli[f[ix.RUT]] = f;
+      else deu[f[ix.RUT_CONTRAPARTE] + "|" + f[ix.RUT]] = f;
+      if (!porRut[f[ix.RUT]]) porRut[f[ix.RUT]] = f;   // por empresa, sin distinguir rol
+    }
+  }
+  return { ix, cli, deu, porRut };
+})();
+// Índice del activo A9 (RIESGO_BICE) por RUT: lo que la API de Riesgo Crédito BICE reporta y el A16
+// NO trae. Lo que solapa con el A16 no se duplica acá: `api6RiesgoBICE` lo lee del A16 al componer.
+const RIESGO_A9 = (() => {
+  const src = (typeof window !== "undefined" && window.RIESGO_BICE) || null;
+  const ix = {}, porRut = {};
+  if (src && src.campos && src.filas) { src.campos.forEach((c, i) => (ix[c] = i)); for (const f of src.filas) porRut[f[ix.RUT]] = f; }
+  return { ix, porRut };
+})();
+// Clave estable del cliente de una operación (RUT del cedente).
+const claveCliente = (deal) => (deal && (deal.rutEmisor || deal.cliente || deal.id)) || "";
+// Lectores de una fila A16: 0 / "" si la entidad no está en la tabla.
+const a16 = (fila) => (c) => (fila ? (+fila[OTORG_A16.ix[c]] || 0) : 0);
+const a16txt = (fila) => (c) => (fila ? String(fila[OTORG_A16.ix[c]] || "") : "");
+// Período contable AAAAMM de la fecha de corte del snapshot, para medir vigencias.
+const PERIODO_CORTE = 202606;
+// RUT del deudor a partir de su razón social (el A16 se indexa por RUT; la UI suele tener el nombre).
+const RUT_DEUDOR_POR_NOMBRE = (() => {
+  const m = {}; const dte = (typeof window !== "undefined" && Array.isArray(window.DTESYNC)) ? window.DTESYNC : [];
+  for (const r of dte) { if (r && r.RUTRecep && r.RznSocRecep && m[r.RznSocRecep] === undefined) m[r.RznSocRecep] = r.RUTRecep; }
+  return m;
+})();
 function apiVarsCliente(deal, rev) {
   const rng = pcRng(hashStr("apiCli" + ((deal && deal.id) || "")));
   const r = () => rng();
-  const amt = (p, max) => (r() < p ? Math.round(r() * max) : 0);
+  // Fila CLIENTE del activo A16. Todo lo de riesgo sale de acá; lo que sigue generándose son las
+  // variables de CLASIFICACIÓN interna (MAC, clase, apoderados…), que no viajan en este archivo.
+  const F = OTORG_A16.cli[claveCliente(deal)] || null;
+  const A = a16(F), At = a16txt(F);
+  const L = lineaCreditoDe(deal);
   const pct = (base, spread) => Math.round(base + r() * spread);
   const yn = (p) => (r() < p ? 1 : 0);
   const bo = (p) => r() < p;
@@ -10491,22 +10640,28 @@ function apiVarsCliente(deal, rev) {
   const out = {
     clientClass: clases[Math.floor(r() * clases.length)], syncSII: bo(0.9),
     macStatus: r() < 0.9 ? "A" : (r() < 0.5 ? "R" : "P"), macVigente: bo(0.92), macCode: r() < 0.1 ? 3 : 1, macDolares: yn(0.1),
-    ivaAlDia: bo(0.9), art85Vig: bo(0.9), uafVig: bo(0.88), contratoMarco: bo(0.85),
-    cmfDir3090: amt(0.15, 12e6), cmfDirTotal: 20e6 + Math.round(r() * 80e6),
-    cmfDir90180: amt(0.06, 8e6), cmfDir1803a: amt(0.04, 6e6), cmfDirCastigada: amt(0.03, 5e6),
-    cmfIndVencida: amt(0.05, 6e6), cmfIndCastigada: amt(0.03, 4e6), cmfLeasingMora: amt(0.1, 12e6),
-    efxMora: amt(0.15, 8e6), efxProtesto: amt(0.1, 7e6),
-    achef6090: amt(0.1, 60e6), achef90180: amt(0.06, 60e6), achefMas180: amt(0.03, 60e6),
-    biceProtVig: amt(0.08, 45e6), biceProtInt: amt(0.06, 45e6), infrLaborales: amt(0.08, 55e6),
-    moraBICE: amt(0.12, 12e6), deudaTotalBICE: 20e6 + Math.round(r() * 60e6), moraBICEFactoring: amt(0.08, 12e6),
-    tgrVigente: amt(0.08, 5e6), tgrMoroso: amt(0.05, 5e6), tgrCobrAdm: amt(0.04, 4e6), tgrCobrJud: amt(0.03, 4e6), tgrConvenios: amt(0.05, 4e6), tgrConvCuotas: amt(0.03, 3e6),
-    concentracionVenta: pct(20, 45), ventaCruzada: pct(10, 60), notaCredito: pct(2, 32), reclamo: pct(1, 22), ratioCesionVenta: pct(1, 22),
-    nroFactorings: 1 + Math.floor(r() * 9), factoringPeqPct: pct(10, 40),
-    carteraReclamada: amt(0.12, 8e6), carteraNC: amt(0.1, 6e6), carteraMorosa: amt(0.12, 8e6), cxcPend: amt(0.15, 6e6),
-    pagaresSuf: bo(0.85), pagareCubre60: bo(0.85),
+    // IVA al día: el período informado no puede tener más de 2 meses respecto de la fecha de corte (C04).
+    ivaAlDia: (() => { const q = +At("IVA_ULT_PERIODO") || 0; if (!q) return true; const m = (Math.floor(PERIODO_CORTE / 100) - Math.floor(q / 100)) * 12 + ((PERIODO_CORTE % 100) - (q % 100)); return m <= 2; })(),
+    art85Vig: bo(0.9), uafVig: bo(0.88), contratoMarco: bo(0.85),
+    // ── Variables de riesgo: TODAS del activo A16, ninguna sintetizada acá ──
+    cmfDir3090: A("CMF_DIR_MOROSA_30_90"), cmfDirTotal: A("CMF_DEUDA_TOTAL"),
+    cmfDir90180: A("CMF_DIR_MOROSA_90_180"), cmfDir1803a: A("CMF_DIR_MOROSA_180_3A"), cmfDirCastigada: A("CMF_DIR_CASTIGADA"),
+    cmfIndVencida: A("CMF_IND_VENCIDA"), cmfIndCastigada: A("CMF_IND_CASTIGADA"), cmfLeasingMora: A("CMF_LEASING_MOROSA"),
+    efxMora: A("EFX_DEUDA_MOROSA"), efxProtesto: A("EFX_PROTESTOS"),
+    achef6090: A("ACHEF_MOROSA_60_90"), achef90180: A("ACHEF_MOROSA_90_180"), achefMas180: A("ACHEF_MOROSA_MAS_180"),
+    infrLaborales: A("INFRACCIONES_LABORALES_12M"),
+    tgrVigente: A("TGR_VIGENTE"), tgrMoroso: A("TGR_MOROSA"), tgrCobrAdm: A("TGR_COBRANZA_ADM"), tgrCobrJud: A("TGR_COBRANZA_JUD"), tgrConvenios: A("TGR_CONVENIOS"), tgrConvCuotas: A("TGR_CONVENIOS_CUOTAS_IMPAGAS"),
+    concentracionVenta: A("CONCENTRACION_VENTA_PCT"), ventaCruzada: A("VENTA_CRUZADA_PCT"), notaCredito: A("NOTA_CREDITO_PCT"), reclamo: A("RECLAMO_PCT"), ratioCesionVenta: A("RATIO_CESION_VENTA_PCT"),
+    nroFactorings: A("NRO_FACTORINGS_LM"), factoringPeqPct: A("FACTORING_PEQUENO_PCT"),
+    carteraReclamada: A("CARTERA_RECLAMADA"), carteraNC: A("CARTERA_NC"), carteraMorosa: A("CARTERA_MOROSA"), cxcPend: A("CXC_PENDIENTES"),
+    // C02: los pagarés deben cubrir la cartera vigente más esta simulación. C03: y seguir vigentes 60 días
+    // después del último vencimiento. Ambas se DERIVAN de la tabla, como haría el motor en producción.
+    pagaresSuf: A("MNT_PAGARES_M") * 1000 >= L.usoActual + ((deal && deal.monto) || 0),
+    pagareCubre60: (() => { const v = At("FCH_VCTO_PAGARE"); return !v || v >= "2026-08-21"; })(),
     operaManual: yn(0.5), grupoEmpresarial: yn(0.3), anexoSPF: yn(0.85), simulaMntDoc: yn(0.5), simulaMntAnt: yn(0.5), apoderados: yn(0.92),
     concentracionMtz: pct(30, 50), maxConcentracionMtz: 60,
-    carteraVig: 20e6 + Math.round(r() * 100e6), mntSimulacion: Math.round(((deal && deal.amountMM) || 30) * 1e6), mntLinea: 60e6 + Math.round(r() * 120e6),
+    // Línea y cartera vigente: de la MISMA fuente que usa el ruteo, para que C07 evalúe el mismo cupo.
+    carteraVig: Math.round(L.usoActual), mntSimulacion: Math.round((deal && deal.monto) || 30e6), mntLinea: Math.round(L.aprobada),
   };
   // Re-evaluación (rev ≥ 1): al firmarse el contrato el sistema origen se regulariza. La API devuelve
   // documentación/vigencias/garantías al día → las reglas RE-EVALUABLES se reparan desde el origen.
@@ -10514,7 +10669,7 @@ function apiVarsCliente(deal, rev) {
   if ((rev || 0) >= 1) {
     Object.assign(out, { macVigente: true, macStatus: "A", ivaAlDia: true, art85Vig: true, uafVig: true, contratoMarco: true, anexoSPF: 1, apoderados: 1, pagaresSuf: true, pagareCubre60: true, syncSII: true });
     out.carteraReclamada = 0; out.carteraNC = 0; out.carteraMorosa = 0; out.cxcPend = 0;
-    out.biceProtVig = 0; out.biceProtInt = 0; out.efxProtesto = 0;
+    out.efxProtesto = 0;
   }
   return out;
 }
@@ -10597,18 +10752,27 @@ const REGLAS_CLIENTE = [
 // cliente C40..C43: tras la firma el origen las repara. Van AL FINAL del literal a propósito: `rd()` es
 // secuencial, así que intercalarlas correría el sorteo de todo lo que viene después y cambiaría datos
 // ya estables de deudores que nadie tocó.
-function deudorBlock(dn, rev) {
-  const rngD = pcRng(Math.abs(hashStr("mrD" + (dn || "")))); const rd = () => rngD();
-  const amtD = (p, max) => (rd() < p ? Math.round(rd() * max) : 0);
+// Bloque de variables del DEUDOR y del par cliente-deudor: fila `ROL=DEUDOR` del activo A16, con
+// `RUT_CONTRAPARTE` = RUT del cliente. Un deudor ausente de la tabla se lee como sin hallazgos.
+// Recibe el DEAL además del deudor porque las variables del par (venta cruzada, notas de crédito,
+// reclamos, socios comunes) se indexan por (cliente, deudor): con el nombre solo no hay par.
+function deudorBlock(deal, deudor, rev) {
+  const nombre = (deudor && (deudor.nombre || deudor.name)) || "";
+  const rut = (deudor && deudor.rut) || RUT_DEUDOR_POR_NOMBRE[nombre] || "";
+  const F = OTORG_A16.deu[claveCliente(deal) + "|" + rut] || null;
+  const A = a16(F);
   const out = {
-    dNota: notaFromScore(scoreDeudor(dn).score), dCmf3090: amtD(0.12, 12e6), dCmf90180: amtD(0.05, 8e6), dCmf1803a: amtD(0.03, 6e6), dCmfCast: amtD(0.02, 6e6), dCmfIndVenc: amtD(0.06, 8e6), dCmfIndCast: amtD(0.02, 5e6), dCmfLeasing: amtD(0.06, 9e6), dCmfTotal: 50e6 + Math.round(rd() * 900e6),
-    dEfxMora: amtD(0.08, 8e6), dAchef6090: amtD(0.07, 40e6), dAchef90180: amtD(0.04, 60e6), dAchefMas180: amtD(0.02, 30e6), dInfr: amtD(0.05, 40e6),
-    dMoraInt25: amtD(0.12, 4e6), dMoraInt3090: amtD(0.08, 12e6), dMoraInt90180: amtD(0.04, 8e6), dMoraInt1803a: amtD(0.02, 6e6), dDeudaIntTotal: 20e6 + Math.round(rd() * 300e6),
-    sociosComunes: rd() < 0.05, dNC: +(rd() * 14).toFixed(1), dReclamo: +(rd() * 8).toFixed(1),
-    cdCruzada: Math.round(rd() * 45), cdNC: +(rd() * 14).toFixed(1), cdReclamo: +(rd() * 8).toFixed(1),
-    cdCarteraReclamada: amtD(0.12, 8e6), cdCarteraNC: amtD(0.1, 6e6), cdCarteraMorosa: amtD(0.12, 8e6), cdCxcPend: amtD(0.15, 6e6),
+    dNota: (notaDeudor(nombre, rut) || 0),
+    dCmf3090: A("CMF_DIR_MOROSA_30_90"), dCmf90180: A("CMF_DIR_MOROSA_90_180"), dCmf1803a: A("CMF_DIR_MOROSA_180_3A"),
+    dCmfCast: A("CMF_DIR_CASTIGADA"), dCmfIndVenc: A("CMF_IND_VENCIDA"), dCmfIndCast: A("CMF_IND_CASTIGADA"),
+    dCmfLeasing: A("CMF_LEASING_MOROSA"), dCmfTotal: A("CMF_DEUDA_TOTAL"),
+    dEfxMora: A("EFX_DEUDA_MOROSA"), dAchef6090: A("ACHEF_MOROSA_60_90"), dAchef90180: A("ACHEF_MOROSA_90_180"),
+    dAchefMas180: A("ACHEF_MOROSA_MAS_180"), dInfr: A("INFRACCIONES_LABORALES_12M"),
+    dMoraInt25: A("MORA_INTERNA_MAS_25D"), dMoraInt3090: A("MORA_INTERNA_30_90"), dMoraInt90180: A("MORA_INTERNA_90_180"),
+    dMoraInt1803a: A("MORA_INTERNA_180_3A"), dDeudaIntTotal: A("DEUDA_INTERNA_TOTAL"),
+    sociosComunes: !!A("SOCIOS_COMUNES_CD"), dNC: A("NOTA_CREDITO_PCT"), dReclamo: A("RECLAMO_PCT"),
+    cdCruzada: A("VENTA_CRUZADA_CD_PCT"), cdNC: A("NOTA_CREDITO_CD_PCT"), cdReclamo: A("RECLAMO_CD_PCT"),
   };
-  if ((rev || 0) >= 1) { out.cdCarteraReclamada = 0; out.cdCarteraNC = 0; out.cdCarteraMorosa = 0; out.cdCxcPend = 0; }
   return out;
 }
 // Lista de deudores DISTINTOS de una operación (razón social + RUT).
@@ -10641,31 +10805,64 @@ function evaluarOtorgItems(deal, estado) {
   const rev = revOtorgActual(deal, versiones);
   const vCli = { ...varsClienteActual(deal, versiones, estado), ...varsModeloExt(deal) };
   const deudores = deudoresDeDeal(deal);
-  const montoMM = (deal && deal.amountMM) || 0;
+  const monto = (deal && deal.monto) || 0;
   const items = [];
   // El MONTO escala la atribución (INC-05) y se aplica acá, en el único sitio que arma los ítems: todo
   // lo que decide después —`visadoDealCalc`, el tab del detalle, la bandeja de otorgamientos— lee
   // `it.nivel` y hereda la escalada sin saber de esto. Aplicarlo en cada consumidor garantizaba que
   // alguno quedara sin aplicarlo y mostrara un aprobador que no es el que corresponde.
-  const conPiso = (r, ev) => (ev.disp === "excepcion" ? { ...ev, nivel: nivelExigido(r.area, ev.nivel, montoMM), nivelTramo: ev.nivel } : ev);
+  const conPiso = (r, ev) => (ev.disp === "excepcion" ? { ...ev, nivel: nivelExigido(r.area, ev.nivel, monto), nivelTramo: ev.nivel } : ev);
   REGLAS_CLIENTE.forEach((r) => {
     if (!esReglaDeudor(r)) { items.push({ regla: r, ...conPiso(r, evalReglaCli(r, vCli)), deudor: null, stKey: String(r.n) }); }
-    else deudores.forEach((d) => { items.push({ regla: r, ...conPiso(r, evalReglaCli(r, { ...vCli, ...deudorBlock(d.nombre, rev) })), deudor: d, stKey: r.n + "@" + (d.rut || d.nombre) }); });
+    else deudores.forEach((d) => { items.push({ regla: r, ...conPiso(r, evalReglaCli(r, { ...vCli, ...deudorBlock(deal, d, rev) })), deudor: d, stKey: r.n + "@" + (d.rut || d.nombre) }); });
   });
   return items;
 }
+// O01–O03 del catálogo son condiciones de la OPERACIÓN que se está evaluando —su precio, su comisión y
+// cómo aplica las CxC del cliente—, no comportamiento que venga en un archivo. Por eso no viajan en el
+// A16 y se derivan acá. Antes eran tres monedas al aire (`r() < 0.08`) bajo un comentario que afirmaba
+// que se derivaban de la simulación de la oferta sin hacerlo.
+function varsOperacion(deal, A) {
+  // O01 · Tasa de referencia: el spread de riesgo de cada deudor —topado por su piso— más el costo de
+  // fondo, ponderado por monto. Contra ella se mide el descuento con la MISMA escalera de atribución
+  // que usa el panel de condiciones (`evalAtribucion`): fuera de la banda del ejecutivo, hay excepción.
+  const pp = paramsPricing();
+  const fop = (deal && deal.facturasOp && deal.facturasOp.length) ? deal.facturasOp : [];
+  let num = 0, den = 0;
+  for (const f of fop) { const mm = +f.monto || 0; if (mm <= 0) continue; num += mm * (spreadSugerido(f.deudor, deal, pp).spread + pp.costoFondo); den += mm; }
+  const tasaRef = den > 0 ? +(num / den).toFixed(2)
+    : (deal && deal.deudor) ? +(spreadSugerido(deal.deudor, deal, pp).spread + pp.costoFondo).toFixed(2) : 0;
+  const tasaAplicada = +(deal && deal.tasaDescuento) || 0;
+  // Sin simulación todavía no hay precio que juzgar: la regla no levanta excepción.
+  const spreadBajoBanda = tasaRef > 0 && tasaAplicada > 0 && evalAtribucion(tasaRef, tasaAplicada, tasaRef, true).estado !== "ok";
+  // O02 · La comisión de la operación contra el mínimo de la política (en UF).
+  const comisionMinCLP = pol("comisionUF", 2) * pol("valorUF", 38000);
+  const comisionOp = +(deal && deal.comision) || 0;
+  const comisionBajoMin = comisionOp > 0 && comisionOp < comisionMinCLP;
+  // O03 · CxC pendientes del cliente (A16) sin aplicar el mínimo de la política sobre el giro.
+  const cxcPend = A ? A("CXC_PENDIENTES") : 0;
+  const cxcAplicadoCLP = Math.round((deal && deal.descCxC) || 0);
+  const cxcSinAplicar = cxcPend > 0 && cxcAplicadoCLP < (pol("cxcAplicaMinPct", 30) / 100) * cxcPend;
+  return { spreadBajoBanda, comisionBajoMin, cxcSinAplicar, tasaRefOp: tasaRef };
+}
 function varsModeloExt(deal) {
-  const h = Math.abs(hashStr("mr2" + ((deal && deal.id) || "")));
-  const rng = pcRng(h); const r = () => rng();
-  const amt = (p, max) => (r() < p ? Math.round(r() * max) : 0);
+  // Misma fila CLIENTE del activo A16 que lee apiVarsCliente.
+  const F = OTORG_A16.cli[claveCliente(deal)] || null;
+  const A = a16(F);
   const dn = (deal && (deal.deudor || (deal.deudores && deal.deudores[0] && deal.deudores[0].name))) || "";
+  const dr = (deal && deal.facturasOp && deal.facturasOp[0] && deal.facturasOp[0].rutRecep)
+    || (deal && deal.deudores && deal.deudores[0] && deal.deudores[0].rut) || "";
   return {
-    pagareFirmado: r() < 0.94, lineaExt: r() < 0.08, clienteNuevo: r() < 0.1,
-    varVenta: Math.round((r() - 0.55) * 80), notaCliente: +(3 + r() * 3).toFixed(1),
-    moraInt25: amt(0.15, 4e6), moraInt3090: amt(0.1, 12e6), moraInt90180: amt(0.05, 8e6), moraInt1803a: amt(0.03, 6e6), deudaIntTotal: 30e6 + Math.round(r() * 400e6),
-    juicios: r() < 0.15 ? 1 + (h % 3) : 0,
-    ...deudorBlock(dn),
-    spreadBajoBanda: r() < 0.08, comisionBajoMin: r() < 0.07, cxcSinAplicar: r() < 0.06, clienteBloqueado: r() < 0.03,
+    // Del activo A16 (fila CLIENTE).
+    pagareFirmado: !!A("PAGARE_FIRMADO"), lineaExt: !!A("LINEA_EXTENDIDA"),
+    clienteNuevo: !lineaDeCliente(deal),
+    varVenta: A("VAR_VENTA_MENSUAL_PCT"), notaCliente: A("NOTA_COMPORTAMIENTO") || 5,
+    moraInt25: A("MORA_INTERNA_MAS_25D"), moraInt3090: A("MORA_INTERNA_30_90"), moraInt90180: A("MORA_INTERNA_90_180"),
+    moraInt1803a: A("MORA_INTERNA_180_3A"), deudaIntTotal: A("DEUDA_INTERNA_TOTAL"),
+    juicios: A("JUICIOS_GESINTEL"),
+    ...deudorBlock(deal, { nombre: dn, rut: dr }),
+    // O01–O03 se derivan de la operación (ver `varsOperacion`). O04 sí viene del archivo.
+    ...varsOperacion(deal, A), clienteBloqueado: !!A("CLIENTE_BLOQUEADO"),
   };
 }
 (() => {
@@ -10682,6 +10879,10 @@ function varsModeloExt(deal) {
   const tAch = (k, a, b, c) => [[(v) => v[k] === 0, "aprobado"], [(v) => v[k] <= 25 * MM, "excepcion", NV(a)], [(v) => v[k] <= 50 * MM, "excepcion", NV(b)], [() => true, "excepcion", NV(c)]];
   const tPct = (k, u1, u2, a, b) => [[(v) => v[k] <= u1, "aprobado"], [(v) => v[k] <= u2, "excepcion", NV(a)], [() => true, "excepcion", NV(b)]];
   const R = (n, id, area, tipo, nombre, hallazgo, tiers, extra) => ({ n, area, tipo, nombre: id + " · " + nombre, cond: id, hallazgo, tiers, ...(extra || {}) });
+// C47–C50 SE RETIRAN: eran la cartera del par cliente-deudor (reclamados, notas de crédito, mora y
+// CxC con ESE deudor) y quedaban dominadas por C40–C43, que miden lo mismo a nivel de cliente con
+// umbral `> 0`: si el par tiene un documento reclamado, el cliente también lo tiene, así que C40 ya
+// había levantado la excepción. El catálogo queda en 76 reglas.
   const V2 = [
     R(101, "C01", "operaciones", "MinimumViability", "Existencia de Pagaré Firmado", "Cliente no posee pagaré firmado vigente", [[(v) => !v.pagareFirmado, "excepcion", NV(1)]]),
     R(102, "C02", "operaciones", "MinimumViability", "Pagaré con Monto Suficiente para Cartera", "Cliente no posee pagarés suficientes para garantizar la cartera vigente antes del curse", [[(v) => !v.pagaresSuf, "excepcion", NV(1)]]),
@@ -10693,11 +10894,11 @@ function varsModeloExt(deal) {
     // Comité de Crédito NO es un nivel aparte ni un usuario del sistema: es el órgano que en la práctica
     // ejerce la máxima atribución de Riesgo, así que C05 se configura como todas las demás, con su par
     // (área, nivel) y pasando por `NV`. Riesgo N5 es la máxima: a mayor gravedad, mayor jerarquía.
-    R(105, "C05", "riesgo", "ClientSegmentation", "Línea Cliente Nuevo", "Cliente nuevo sin línea de crédito aprobada — requiere constitución de línea (Comité de Crédito)", [[(v) => v.clienteNuevo, "excepcion", NV(5)]]),
+    R(105, "C05", "riesgo", "ClientSegmentation", "Línea Cliente Nuevo", "Cliente nuevo sin línea de crédito aprobada — la constitución se tramita en Solicitud de Línea", [[(v) => v.clienteNuevo, "excepcion", NV(5)]], { regulariza: "Vía normal: el ejecutivo NO la excepciona. Se tramita la línea en Solicitud de Línea y, cuando el comité la aprueba, la regla deja de salir al re-evaluar. La excepción N5 es la salida forzada para cursar antes de que la línea esté constituida." }),
     R(106, "C06", "riesgo", "Conditions", "Línea Extendida por Riesgo", "Operación utiliza tramo de línea extendida por Riesgo", [[(v) => v.lineaExt, "excepcion", NV(4)]]),
     R(107, "C07", "riesgo", "Conditions", "Cupo Suficiente en Línea Aprobada por Comité", "Cliente con cupo insuficiente en línea (operación fuera de línea)", [[(v) => v.carteraVig + v.mntSimulacion <= v.mntLinea, "aprobado"], [(v) => v.carteraVig + v.mntSimulacion <= 1.1 * v.mntLinea, "excepcion", NV(2)], [() => true, "excepcion", NV(4)]]),
     R(108, "C08", "riesgo", "Behaviour", "Variación Negativa de Venta Mensual", "Cliente presenta una caída relevante de su venta mensual", [[(v) => v.varVenta >= -20, "aprobado"], [(v) => v.varVenta >= -40, "excepcion", NV(2)], [() => true, "excepcion", NV(4)]]),
-    R(109, "C09", "riesgo", "Behaviour", "Segmento y Nota de Comportamiento Cliente", "Nota de comportamiento del cliente bajo el umbral mínimo (3,7)", [[(v) => v.notaCliente >= 3.7, "aprobado"], [() => true, "excepcion", NV(4)]]),
+    R(109, "C09", "riesgo", "Behaviour", "Segmento y Nota de Comportamiento Cliente", "Nota de comportamiento del cliente bajo el umbral mínimo de compra", [[(v) => v.notaCliente >= pol("notaMinCompra", 3.7), "aprobado"], [() => true, "excepcion", NV(4)]]),
     R(110, "C10", "riesgo", "Behaviour", "Deuda Morosa CMF Directa 30–90", "Cliente posee morosidades directas en CMF entre 30 y 90 días", t510("cmfDir3090", "cmfDirTotal", 2, 3, 4)),
     R(111, "C11", "riesgo", "Behaviour", "Deuda Morosa CMF Directa 90–180", "Cliente posee morosidades directas en CMF entre 90 y 180 días", t510("cmfDir90180", "cmfDirTotal", 3, 4, 5)),
     R(112, "C12", "riesgo", "Behaviour", "Deuda Morosa CMF Directa 180d–3A", "Cliente posee morosidades directas en CMF entre 180 días y 3 años", t5("cmfDir1803a", "cmfDirTotal", 4, 5)),
@@ -10740,13 +10941,9 @@ function varsModeloExt(deal) {
     // reclamos, notas de crédito o mora con ESTE deudor y con ningún otro, y agregado al cliente eso se
     // diluye hasta desaparecer. Por eso se evalúan UNA VEZ POR DEUDOR y su visado es por deudor
     // (`stKey = n@rut`), aunque la spec las numere en el bloque de cliente. EXC-COM N1, re-evaluables.
-    R(147, "C47", "comercial", "Conditions", "Par C-D · Documentos en Cartera Reclamados", "Cartera vigente con este deudor con documentos reclamados", tBin("cdCarteraReclamada", 1), { porDeudor: true }),
-    R(148, "C48", "comercial", "Conditions", "Par C-D · Documentos en Cartera con Nota de Crédito", "Cartera vigente con este deudor con documentos con notas de crédito", tBin("cdCarteraNC", 1), { porDeudor: true }),
-    R(149, "C49", "comercial", "Conditions", "Par C-D · Documentos en Cartera con Mora", "Cartera vigente con este deudor con documentos en mora", tBin("cdCarteraMorosa", 1), { porDeudor: true }),
-    R(150, "C50", "comercial", "Conditions", "Par C-D · Cuentas por Cobrar Pendientes", "Cuentas por cobrar pendientes de liquidar con este deudor", tBin("cdCxcPend", 1), { porDeudor: true }),
     R(151, "C51", "comercial", "Information", "Nota Cliente", "", null, { clasif: true, clfn: (v) => `Nota cliente ${v.notaCliente} · tendencia L3M estable` }),
     R(152, "C52", "comercial", "Information", "Juicios Gesintel", "", null, { clasif: true, clfn: (v) => v.juicios > 0 ? `${v.juicios} juicio(s) en curso/históricos (Gesintel)` : "Sin juicios registrados (Gesintel)" }),
-    R(201, "D01", "riesgo", "Behaviour", "Segmento y Nota de Comportamiento Deudor", "Nota de comportamiento del deudor bajo el umbral mínimo (3,7)", [[(v) => v.dNota >= 3.7, "aprobado"], [() => true, "excepcion", NV(4)]]),
+    R(201, "D01", "riesgo", "Behaviour", "Segmento y Nota de Comportamiento Deudor", "Nota de comportamiento del deudor bajo el umbral mínimo de compra", [[(v) => v.dNota >= pol("notaMinCompra", 3.7), "aprobado"], [() => true, "excepcion", NV(4)]]),
     R(202, "D02", "riesgo", "Behaviour", "Deudor · Mora CMF Directa 30–90", "Deudor posee morosidades directas en CMF entre 30 y 90 días", t510("dCmf3090", "dCmfTotal", 2, 3, 4)),
     R(203, "D03", "riesgo", "Behaviour", "Deudor · Mora CMF Directa 90–180", "Deudor posee morosidades directas en CMF entre 90 y 180 días", t510("dCmf90180", "dCmfTotal", 3, 4, 5)),
     R(204, "D04", "riesgo", "Behaviour", "Deudor · Mora CMF Directa 180d–3A", "Deudor posee morosidades directas en CMF entre 180 días y 3 años", t5("dCmf1803a", "dCmfTotal", 4, 5)),
@@ -10804,9 +11001,7 @@ const VAR_LBL = {
   cmfIndCastigada: "deuda CMF indirecta castigada", cmfLeasingMora: "mora de leasing CMF",
   efxMora: "mora en Equifax", efxProtesto: "protestos en Equifax",
   achef6090: "mora ACHEF 60-90d", achef90180: "mora ACHEF 90-180d", achefMas180: "mora ACHEF +180d",
-  biceProtVig: "protestos vigentes BICE", biceProtInt: "protestos internos BICE",
-  infrLaborales: "infracciones laborales", moraBICE: "mora con BICE", deudaTotalBICE: "deuda total con BICE",
-  moraBICEFactoring: "mora con BICE Factoring", tgrVigente: "deuda vigente TGR", tgrMoroso: "deuda morosa TGR",
+  infrLaborales: "infracciones laborales", tgrVigente: "deuda vigente TGR", tgrMoroso: "deuda morosa TGR",
   tgrCobrAdm: "cobranza administrativa TGR", tgrCobrJud: "cobranza judicial TGR",
   tgrConvenios: "convenios de deuda TGR", tgrConvCuotas: "cuotas de convenio impagas TGR",
   concentracionVenta: "concentración de ventas (%)", ventaCruzada: "venta cruzada (%)",
@@ -10815,10 +11010,6 @@ const VAR_LBL = {
   factoringPeqPct: "% cesión a factorings pequeños", carteraReclamada: "documentos reclamados en cartera",
   carteraNC: "documentos con nota de crédito en cartera", carteraMorosa: "documentos en mora en cartera",
   cxcPend: "cuentas por cobrar pendientes", concentracionMtz: "concentración en matriz (%)",
-  cdCarteraReclamada: "documentos reclamados en cartera con este deudor",
-  cdCarteraNC: "documentos con nota de crédito en cartera con este deudor",
-  cdCarteraMorosa: "documentos en mora en cartera con este deudor",
-  cdCxcPend: "cuentas por cobrar pendientes con este deudor",
   maxConcentracionMtz: "máx. concentración de matriz (%)", carteraVig: "cartera vigente",
   mntSimulacion: "monto de la simulación", mntLinea: "línea de crédito aprobada",
   macVigente: "MAC vigente", macStatus: "estado del MAC", ivaAlDia: "IVA al día", art85Vig: "artículo 85 vigente",
@@ -10876,7 +11067,6 @@ function snapVersionCli(deal, rev) {
       moraInt25: 0, moraInt3090: 0, moraInt90180: 0, moraInt1803a: 0, juicios: 0,
       spreadBajoBanda: false, comisionBajoMin: false, cxcSinAplicar: false, clienteBloqueado: false,
       concentracionVenta: 20, ventaCruzada: 10, notaCredito: 2, reclamo: 1, ratioCesionVenta: 1, nroFactorings: 1, factoringPeqPct: 10, concentracionMtz: 30,
-      cdCarteraReclamada: 0, cdCarteraNC: 0, cdCarteraMorosa: 0, cdCxcPend: 0,
     });
     vars.mntLinea = vars.carteraVig + vars.mntSimulacion + 50e6; // línea aprobada por el comité → cupo suficiente
   }
@@ -10999,7 +11189,7 @@ const invalidarVisado = () => { VISADO_VER++; VISADO_CACHE.clear(); };
 // anterior. Va la huella y no las banderas sueltas porque es exactamente lo que el criterio compara —
 // si cambia el paquete, cambia la clave— y `EVID_VER` se mueve al registrarse una evidencia nueva.
 const visadoKey = (deal) =>
-  `${deal.id}|${deal.stage}|${deal.amountMM}|${deal.facturas}|${(deal.deudores || []).length}|${(deal.facturasOp || []).length}|${deal.subSeed}|${deal.publicacion || "-"}|${huellaOperacion(deal)}|${EVID_VER}|${VISADO_VER}`;
+  `${deal.id}|${deal.stage}|${deal.monto}|${deal.facturas}|${(deal.deudores || []).length}|${(deal.facturasOp || []).length}|${deal.subSeed}|${deal.publicacion || "-"}|${huellaOperacion(deal)}|${EVID_VER}|${VISADO_VER}`;
 // Resumen del visado por operación (excepciones que requieren aprobación, rechazos y estado global).
 // El VISADO —quién resolvió cada excepción— es estado del SERVIDOR: es el registro de una decisión
 // con nombre y hora, no una preferencia del navegador. `visadoDealCalc` lo recibe para que el
@@ -11169,7 +11359,7 @@ const INVARIANTES = [
   { codigo: "LIN-01", nombre: "La operación no supera la línea disponible", autoridad: "servidor", aplicado: "motor", mutaciones: ["oportunidad.crear", "oportunidad.incorporarFacturas"],
     regla: "El monto de la operación tiene que caber en la línea disponible del cliente al momento de armarla.",
     servidor: "SELECT ... FOR UPDATE sobre la línea + recálculo del uso en la misma transacción: sin lock, dos operaciones simultáneas pasan el chequeo y juntas exceden el cupo.",
-    evaluar: (p) => { const lc = lineaCreditoDe(p.deal); return (p.montoMM != null ? p.montoMM : lc.montoOp) <= lc.disponible + 0.001; } },
+    evaluar: (p) => { const lc = lineaCreditoDe(p.deal); return (p.monto != null ? p.monto : lc.montoOp) <= lc.disponible + 0.001; } },
   { codigo: "OTG-01", nombre: "Sólo aprueba quien tiene atribución", autoridad: "servidor", aplicado: "ui", mutaciones: ["excepcion.aprobar", "excepcion.rechazar"],
     regla: "La excepción la resuelve un apoderado con atribución en el área y nivel que la regla exige.",
     servidor: "El resolver recalcula la atribución desde el rol del token, no desde el payload. La UI que oculta el botón no es el control.",
@@ -11348,7 +11538,7 @@ function huellaOperacion(deal) {
   const ds = deudoresDeDeal(deal);
   const fs = (deal.facturasOp || []).filter(Boolean);
   const porDeudor = {};
-  fs.forEach((f) => { const k = f.rutRecep || f.deudor || "—"; porDeudor[k] = (porDeudor[k] || 0) + Math.round((f.montoMM || 0) * 1e6); });
+  fs.forEach((f) => { const k = f.rutRecep || f.deudor || "—"; porDeudor[k] = (porDeudor[k] || 0) + Math.round(f.monto || 0); });
   const montos = Object.keys(porDeudor).sort().map((k) => `${k}:${porDeudor[k]}`).join(",");
   const total = Object.values(porDeudor).reduce((a2, b2) => a2 + b2, 0);
   return [`op=${deal.negocioNum || deal.id || "—"}`, `rut=${deal.rutEmisor || deal.cliente || "—"}`,
@@ -11443,7 +11633,7 @@ function girosDeDeal(deal, estado) {
     montoGirar: pro ? pro.montoGirar : null,
   };
 }
-// RESUMEN DE GIROS PARA LAS LISTAS (tarjeta del tubo, fila de la tabla). Reparte el `giroMM` YA
+// RESUMEN DE GIROS PARA LAS LISTAS (tarjeta del tubo, fila de la tabla). Reparte el `giro` YA
 // SIMULADO del deal entre sus facturas por peso en monto y clasifica con el mismo motor. No recalcula
 // la simulación: en una lista no están las condiciones que el ejecutivo edita en el detalle, y la
 // cifra que la tarjeta muestra es justamente la del deal — la misma distinción que ya existe entre el
@@ -11456,12 +11646,12 @@ let _GIRO_LISTA = {};
 function giroResumenDeal(deal, estado) {
   if (!deal || !deal.simulado) return null;
   const fs = ((deal.facturasOp) || []).filter(Boolean);
-  const giroTotal = Math.round((deal.giroMM || 0) * 1e6);
+  const giroTotal = Math.round(deal.giro || 0);
   if (!fs.length || !giroTotal) return null;
   const firma = `${VISADO_VER}|${fs.length}|${giroTotal}|${deal.stage}`;
   const hit = _GIRO_LISTA[deal.id];
   if (hit && hit.firma === firma) return hit.val;
-  const r = prorratearConcepto(fs, giroTotal, (f) => f.montoMM || 0);
+  const r = prorratearConcepto(fs, giroTotal, (f) => f.monto || 0);
   const docs = fs.map((f, i) => ({ id: f.folio || f.id || "f" + i, deudor: f.deudor, giro: r.asignado[i] }));
   const val = asignarGiros(girosDeDeal(deal, { ...(estado || {}), facturas: fs, prorrateo: { filas: docs, montoGirar: giroTotal } }), {});
   _GIRO_LISTA[deal.id] = { firma, val };
@@ -11481,7 +11671,7 @@ function giroResumenDeal(deal, estado) {
 function ChipGiro({ codigo, label, monto, titulo, compacto }) {
   const exp = codigo === "GE";
   return <ChipFila clase={compacto ? "t7" : "t9"} fg={exp ? "#16A34A" : "#7C3AED"} bg={exp ? "#F0FDF4" : "#f5f3ff"}
-    texto={label || (exp ? "Giro Express" : "Giro Normal")} badge={fmtMM((monto || 0) / 1e6)} tip={titulo} />;
+    texto={label || (exp ? "Giro Express" : "Giro Normal")} badge={fmtMM(monto || 0)} tip={titulo} />;
 }
 // La asignación VIGENTE de una operación: la congelada si el cliente ya aceptó, y el cálculo del día
 // si todavía no. El congelado gana siempre — recalcular una operación aceptada movería una cifra que
@@ -11502,7 +11692,7 @@ let SOLICITUD_EXC = repoSolicitudExc.all(); // { [dealId]: { [stKey]: { comentar
 // factura de la verificación telefónica antes del giro. { [dealId]: { [facturaId]: { por, fecha, msg } } }
 let VERIF_EXC = repoVerifExc.all();
 let VERIF_TEL = repoVerifTel.all();          // { [dealId]: { [facturaId]: { por, fecha } } }
-let NO_CONFIRMADAS = repoNoConfirmadas.all(); // { [dealId]: { [facturaId]: { folio, montoMM, deudor, por, fecha } } }
+let NO_CONFIRMADAS = repoNoConfirmadas.all(); // { [dealId]: { [facturaId]: { folio, monto, deudor, por, fecha } } }
 let VERIF_VEREDICTO = repoVerifVeredicto.all(); // { [dealId]: { [rutOdeudor]: { est, motivo, razon, causas, por, fecha } } }
 // Reapunta los alias a la tabla del tenant activo. Se llama al cambiar de tenant; con un solo tenant
 // (Security) hoy no se ejecuta, pero deja explícito qué hay que hacer cuando entre el segundo factoring.
@@ -12306,6 +12496,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                         <div className="min-w-0">
                           <div className="t11 font-semibold" style={{ color: C.ink }}>#{x.regla.n} · {x.regla.nombre}{accionable && <span className="ml-1.5 rounded-full px-1.5 py-0.5 t9 font-bold text-white" style={{ backgroundColor: C.indigo }}>Puedes aprobar</span>}</div>
                           <div className="mt-0.5 t10" style={{ color: C.sub }}>{x.regla.hallazgo}</div>
+                          {x.regla.regulariza && <div className="mt-1 rounded-md px-2 py-1.5 t9" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#C2410C" }}>♻ {x.regla.regulariza}</div>}
                           <div className="mt-0.5 t9" style={{ color: C.faint }}>Dominio: <b>{AREA_LBL[x.regla.area]}</b> · Aprueba: <b style={{ color: otraArea ? "#7C3AED" : C.sub }}>N{niv} · {nr.rol} ({AREA_LBL[nr.area]})</b>{otraArea && <span className="ml-1 rounded-full px-1 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>↗ otra área</span>}</div>
                           <div className="mt-0.5 t9" style={{ color: aps.length ? C.faint : "#C2410C" }}>{aps.length ? "Aprueban: " + aps.join(", ") : `${SIN_APROBADOR} · ${rolDeAreaNivel(x.regla.area, niv).motivo || ""}`}</div>
                         </div>
@@ -12828,7 +13019,7 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
                             <button key={x.id} onClick={() => toggleFac(f, x.id)}
                               className="inline-flex items-center gap-1 rounded-md px-2 py-1 t10 font-medium"
                               style={{ border: `1px solid ${off ? "#fecaca" : C.line}`, backgroundColor: off ? "#fef2f2" : "#fff", color: off ? C.red : C.ink, textDecoration: off ? "line-through" : "none" }}>
-                              {off ? <X size={10} /> : <Check size={10} style={{ color: "#16A34A" }} />} {x.folio || x.id} · {fmtMM(x.montoMM || 0)}
+                              {off ? <X size={10} /> : <Check size={10} style={{ color: "#16A34A" }} />} {x.folio || x.id} · {fmtMM(x.monto || 0)}
                             </button>
                           );
                         })}
@@ -12893,7 +13084,7 @@ function buildAtribucionesJSON() {
     descripcion: "Atribuciones de aprobación de otorgamiento por criterio — NEX Factoring. Convención: cada regla declara el ÁREA y cada tramo el NIVEL requerido; aprueba cualquier usuario de esa área con ese nivel o superior, de modo que un cargo vacante lo cubre la jefatura de su área. La escalada no cruza áreas. El MONTO de la operación impone además un piso por área (ver `piso_por_monto`): el nivel realmente exigido es el mayor entre el del tramo y ese piso, así que el `nivel_requerido` de cada tramo es el mínimo, el que rige en operaciones de monto leve.",
     generado: new Date().toISOString().slice(0, 10),
     niveles: ROL_ATRIB,
-    piso_por_monto: { tramos_mm: CFG_TRAMOS, niveles: PISO_ATRIB_MONTO },
+    piso_por_monto: { tramos: CFG_TRAMOS, niveles: PISO_ATRIB_MONTO },
     total_criterios: criterios.length,
     criterios,
   };
@@ -13071,14 +13262,15 @@ function MantenedoresOtorg({ onCfgChange }) {
 // Tres secciones: Cliente (resumen + segmentación), SOW (desviación, competidores, tendencia) y Desempeño.
 // ============================================================
 // Roster alineado con el del pipeline (EXECS): así el filtro por usuario logueado ("Carla Rivas", etc.) funciona.
-const PC_EXECS = [
-  { ini: "CR", nombre: "Carla Rivas", zona: "Norte", jefatura: "Jefatura Norte", clientes: 630, activos: 68, fuga: 48, brecha: 118136 },
-  { ini: "RF", nombre: "Rodrigo Fuentes", zona: "Norte", jefatura: "Jefatura Norte", clientes: 579, activos: 49, fuga: 59, brecha: 80262 },
-  { ini: "JT", nombre: "Javier Torres", zona: "Centro", jefatura: "Jefatura Centro Poniente", clientes: 611, activos: 55, fuga: 50, brecha: 87095 },
-  { ini: "MS", nombre: "María José Soto", zona: "Centro", jefatura: "Jefatura Centro Poniente", clientes: 619, activos: 57, fuga: 58, brecha: 68112 },
-  { ini: "NB", nombre: "Natalia Bravo", zona: "Centro", jefatura: "Jefatura Centro Oriente", clientes: 635, activos: 75, fuga: 57, brecha: 122288 },
-  { ini: "DC", nombre: "Diego Cáceres", zona: "Sur", jefatura: "Jefatura Sur", clientes: 643, activos: 54, fuga: 46, brecha: 74471 },
-];
+// Ejecutivos del módulo comercial: la MISMA gente y la MISMA estructura que declara `EXECS`, con los
+// nombres de campo que usa este módulo. Antes era una tabla aparte, y contradecía a las otras dos:
+// decía que Natalia Bravo era de «Jefatura Centro Oriente» en zona Centro mientras `EXEC_JEFATURA` la
+// ponía en «Equipo Austral» y `EXEC_ZONA` en «Zona Sur». Tres respuestas a dónde está una persona.
+// Se eliminan además los cuatro contadores que traía —clientes, activos, fuga, brecha—: no los leía
+// nadie y eran métricas congeladas dentro de lo que debería ser un maestro.
+const PC_EXECS = Object.keys(EXECS).map((ini) => ({
+  ini, nombre: EXECS[ini], zona: EXEC_ZONA[ini], jefatura: EXEC_JEFATURA[ini], sucursal: EXEC_SUCURSAL[ini],
+}));
 const PC_COMPETIDORES = [
   { name: "Bci Factoring", mm: 232263 }, { name: "Banco De Chile", mm: 205922 }, { name: "BICE Factoring", mm: 203553 },
   { name: "Banco Santander Chile", mm: 135300 }, { name: "Scotiabank Chile", mm: 133987 }, { name: "Tanner", mm: 102485 },
@@ -13091,7 +13283,7 @@ const PC_ZONA = {
   Centro: [30.0, 21.2, 23.4, 26.4, 28.2, 21.4, 23.6, 18.6, 19.0, 19.4, 18.7, 21.6],
   Sur: [15.4, 13.4, 14.0, 16.0, 11.8, 14.6, 12.8, 13.4, 17.2, 14.9, 17.4, 13.0],
 };
-const fmtMMc = (n) => "$" + Math.round(n).toLocaleString("es-CL") + " MM";
+const fmtMMc = (n) => "MM$" + Math.round((n || 0) / 1e6).toLocaleString("es-CL");
 // ============================================================
 // SANKEY "Origen → Cierre": de dónde nace la oportunidad (regla del inbound o alta manual del ejecutivo),
 // si se originó el día de referencia o viene de días anteriores, en qué etapa está (o en cuál se perdió) y
@@ -13419,7 +13611,7 @@ function NodoTareasModal({ nodo, onClose, usuario, esJefe, onCambio }) {
             <button key={d.id} onClick={() => toggle(d.id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left" style={{ border: `1px solid ${on ? C.indigo : C.line}`, backgroundColor: on ? "#F1ECFF" : "#fff" }}>
               <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded" style={{ border: `1px solid ${on ? C.indigo : C.line}`, backgroundColor: on ? C.indigo : "#fff" }}>{on && <Check size={11} style={{ color: "#fff" }} />}</span>
               <span className="min-w-0 flex-1"><span className="block truncate t11 font-semibold" style={{ color: C.ink }}>{d.cliente}</span><span className="t9" style={{ color: C.faint }}>{d.id} · {nombreEjec(d.exec)} · {d.facturas || 0} fac.</span></span>
-              <span className="shrink-0 t11 font-semibold" style={{ color: C.ink }}>{fmtMM(d.amountMM || 0)}</span>
+              <span className="shrink-0 t11 font-semibold" style={{ color: C.ink }}>{fmtMM(d.monto || 0)}</span>
             </button>
           ); })}
         </div>
@@ -13469,7 +13661,7 @@ function PCsankey({ deals = [], execsFiltrados = [], filtrosDeal = {}, hayFiltro
     && (!fd.linea || fd.linea === "todos" || d.tag === fd.linea)), [deals, inis, hayFiltro, fd.deudor, fd.linea]);
   const fmtVal = (v) => (metrica === "monto" ? fmtMMc(v) : `${Math.round(v)} op.`);
   const { nodes, links, kpis, nodeDeals } = useMemo(() => {
-    const val = (d) => (metrica === "monto" ? (d.amountMM || 0) : 1);
+    const val = (d) => (metrica === "monto" ? (d.monto || 0) : 1);
     // d3-sankey: nodes[] con id + links[] que referencian esos ids (se resuelven con .nodeId()).
     const seen = {}; const nodes = [];
     const reg = (n) => { if (!n) return null; if (!seen[n.id]) { seen[n.id] = 1; nodes.push({ id: n.id, name: n.label, color: n.color }); } return n.id; };
@@ -13480,7 +13672,7 @@ function PCsankey({ deals = [], execsFiltrados = [], filtrosDeal = {}, hayFiltro
     const push = (id, d) => { if (id) (nodeDeals[id] || (nodeDeals[id] = [])).push(d); };
     let nHoy = 0, nAnt = 0, nAbi = 0, nCur = 0, nPer = 0, nDes = 0, mTot = 0;
     scope.forEach((d) => {
-      const v = val(d); mTot += d.amountMM || 0;
+      const v = val(d); mTot += d.monto || 0;
       const rid = d.reglaId, rr = rid ? INBOUND_RULES.find((r) => r.id === rid) : null;
       const o = reg({ id: rid ? `O:${rid}` : "O:MAN", label: rid ? `${rid} · ${rr ? rr.title : "Regla"}` : "Manual (ejecutivo)", color: rid ? "#703EFF" : "#0d9488" });
       const esHoy = !!(d.tProsp && SK_DIA(d.tProsp) === diaSel);
@@ -13576,7 +13768,7 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
   const [fDeudor, setFDeudor] = useState("todos");    // pagador (filtra oportunidades)
   const [fLinea, setFLinea] = useState("todos");      // Factoring | Confirming | ... (filtra oportunidades)
   const [filtrosOpen, setFiltrosOpen] = useState(false); // panel de filtros colapsable (ahorra espacio)
-  const zonas = ["Norte", "Centro", "Sur"];
+  const zonas = ZONAS_COMERCIALES;
   const estadoLbl = { Security: "Operan con Security", Competencia: "Solo competencia", Inactivo: "Inactivos / prospectos" };
   const filtrosActivos = [
     fEstado !== "todos" && { key: "estado", label: "Estado", val: estadoLbl[fEstado] || fEstado, clear: () => setFEstado("todos") },
@@ -13622,7 +13814,7 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
   const resumen = useMemo(() => {
     const g = (est) => clientesScope.filter((c) => c.estado === est);
     const mm = (arr) => arr.reduce((s, c) => s + (c.vol || 0), 0);
-    const seg = (arr, tipo, sub, col, Icon) => ({ tipo, sub, col, Icon, clientes: arr.length.toLocaleString("es-CL"), cedido: fmtMMc(mm(arr)), buenos: arr.filter((c) => !c.malos).length, malos: arr.filter((c) => c.malos).length, buenosMM: fmtMMc(mm(arr.filter((c) => !c.malos))), malosMM: fmtMMc(mm(arr.filter((c) => c.malos))) });
+    const seg = (arr, tipo, sub, col, Icon) => ({ tipo, sub, col, Icon, clientes: arr.length.toLocaleString("es-CL"), cedido: fmtMMc(mm(arr)), buenos: arr.filter((c) => !c.malos).length, malos: arr.filter((c) => c.malos).length, buenosMonto: fmtMMc(mm(arr.filter((c) => !c.malos))), malosMonto: fmtMMc(mm(arr.filter((c) => c.malos))) });
     const sec = g("Security"), comp = g("Competencia"), inac = g("Inactivo");
     const sowProm = clientesScope.length ? Math.round(clientesScope.reduce((s, c) => s + (c.sow || 0), 0) / clientesScope.length) : 0;
     const brecha = clientesScope.reduce((s, c) => s + Math.max(0, c.target - c.sow) / 100 * (c.vol || 0), 0);
@@ -13840,7 +14032,7 @@ const dashCumplCol = (p) => p >= 100 ? "#16A34A" : p >= 70 ? "#2563EB" : p >= 40
 //   · sólo otros  → la empresa no me cede nada: churn consumado, hay que reconquistarla.
 //   · compartida  → me cede y también cede afuera: hay wallet a capturar y la relación está viva.
 //   · perdiendo   → compartida cuyo SOW viene cayendo: es la que se está yendo AHORA, y la más urgente.
-// Montos: la serie semanal de SHARE_OF_WALLET (MontoBICEMM vs MontoTotalMM) da mío / de otros; el
+// Montos: la serie semanal de SHARE_OF_WALLET (MontoBICE vs MontoTotal) da mío / de otros; el
 // reparto entre el factoring TARGET y el resto sale de AECSync (competenciaDe), escalado a la ventana
 // de la serie para que los tres montos sean comparables entre sí.
 function churnCartera(soloExec) {
@@ -13851,30 +14043,30 @@ function churnCartera(soloExec) {
     const hist = sw.HistoricoSemanal || [];
     if (!hist.length) continue;
     const win = hist.slice(-8);                                   // 8 semanas: una mala semana no define la relación
-    const biceMM = win.reduce((a, w) => a + (w.MontoBICEMM || 0), 0);
-    const totalMM = win.reduce((a, w) => a + (w.MontoTotalMM || 0), 0);
-    const otrosMM = Math.max(0, totalMM - biceMM);
-    if (otrosMM < 0.05) continue;                                 // no le cede a nadie más: no hay churn que gestionar
-    const conmigo = biceMM > 0.05;
+    const bice = win.reduce((a, w) => a + (w.MontoBICE || 0), 0);
+    const total = win.reduce((a, w) => a + (w.MontoTotal || 0), 0);
+    const otros = Math.max(0, total - bice);
+    if (otros < 0.05) continue;                                 // no le cede a nadie más: no hay churn que gestionar
+    const conmigo = bice > 0.05;
     const sowAct = +(sw.SOWActualPct || 0);
     const sowAntes = sw.SOWHace10SemPct != null ? +sw.SOWHace10SemPct : sowAct;
     const delta = +(sowAct - sowAntes).toFixed(1);
     const bajando = String(sw.SOWTendencia || "").toLowerCase().includes("baj") || delta <= -1;
     const cmp = competenciaDe(sw.RUTCliente);
     let tgt = 0, resto = 0;
-    if (cmp) for (const c of cmp.comp) { if (esFactoringBanco(c.name)) tgt += c.montoMM; else resto += c.montoMM; }
-    const esc = (tgt + resto) > 0 ? otrosMM / (tgt + resto) : 0;  // AECSync mira 6 meses; la serie, 8 semanas
+    if (cmp) for (const c of cmp.comp) { if (esFactoringBanco(c.name)) tgt += c.monto; else resto += c.monto; }
+    const esc = (tgt + resto) > 0 ? otros / (tgt + resto) : 0;  // AECSync mira 6 meses; la serie, 8 semanas
     out.push({
       rut: sw.RUTCliente, cliente: sw.RazonSocialCliente, exec: sw.Ejecutivo,
       segmento: !conmigo ? "soloOtros" : bajando ? "perdiendo" : "compartida",
-      biceMM: +biceMM.toFixed(1), otrosMM: +otrosMM.toFixed(1), totalMM: +totalMM.toFixed(1),
-      targetMM: +(tgt * esc).toFixed(1), restoMM: +(resto * esc).toFixed(1),
+      bice: +bice.toFixed(1), otros: +otros.toFixed(1), total: +total.toFixed(1),
+      target: +(tgt * esc).toFixed(1), resto: +(resto * esc).toFixed(1),
       sowAct, sowAntes, delta, sowTarget: +(sw.SOWTargetPct || 0), tendencia: sw.SOWTendencia || "—",
       comp: cmp ? cmp.comp : [],
-      serie: hist.map((w) => ({ sem: w.Semana, bice: +(w.MontoBICEMM || 0), total: +(w.MontoTotalMM || 0) })),
+      serie: hist.map((w) => ({ sem: w.Semana, bice: +(w.MontoBICE || 0), total: +(w.MontoTotal || 0) })),
     });
   }
-  return out.sort((a, b) => b.otrosMM - a.otrosMM);
+  return out.sort((a, b) => b.otros - a.otros);
 }
 const CHURN_SEG = {
   soloOtros: { l: "Sólo con otros", c: "#EF4444", bg: "#FEF2F2", d: "No me ceden nada: todo su factoring se va afuera." },
@@ -13920,14 +14112,14 @@ function candidatasDeCartera(soloExec) {
       if (a) {
         // Un mismo proveedor puede venderle a varios clientes de la cartera: es UN prospecto, con la
         // suma de lo que le factura a todos ellos (y ese cruce es justamente el argumento de venta).
-        a.montoMM += pr.montoMM || 0; a.facturas += pr.facturas || 0; a.clientes.push(cli.razonSocial);
+        a.monto += pr.monto || 0; a.facturas += pr.facturas || 0; a.clientes.push(cli.razonSocial);
         if ((pr.ultimaFactura || "") > a.ultimaFactura) a.ultimaFactura = pr.ultimaFactura || "";
       } else {
-        porRut.set(pr.rut, { rut: pr.rut, razonSocial: pr.razonSocial, montoMM: pr.montoMM || 0, facturas: pr.facturas || 0, ultimaFactura: pr.ultimaFactura || "", clientes: [cli.razonSocial] });
+        porRut.set(pr.rut, { rut: pr.rut, razonSocial: pr.razonSocial, monto: pr.monto || 0, facturas: pr.facturas || 0, ultimaFactura: pr.ultimaFactura || "", clientes: [cli.razonSocial] });
       }
     }
   }
-  return [...porRut.values()].sort((a, b) => b.montoMM - a.montoMM);
+  return [...porRut.values()].sort((a, b) => b.monto - a.monto);
 }
 // Cesionarios reales del mercado (AECSync), sin nosotros: un candidato, por definición, no nos cede.
 const CESIONARIOS_MERCADO = (() => {
@@ -13947,7 +14139,7 @@ function facturasDeCandidata(cand, anclaISO) {
   const [ay, am] = anclaISO.split("-").map(Number);
   const r = pcRng(hashStr("cand" + cand.rut));
   const n = Math.max(3, Math.min(60, Math.round((cand.facturas || 6) * 0.5)));   // 6 meses ≈ media ventana
-  const totalCLP = Math.max(1, Math.round((cand.montoMM || 0) * 1e6 * 0.5));
+  const totalCLP = Math.max(1, Math.round((cand.monto || 0) * 0.5));
   const pesos = []; let sumaPesos = 0;
   for (let i = 0; i < n; i++) { const w = 0.4 + r() * 1.2; pesos.push(w); sumaPesos += w; }
   const pCede = 0.15 + r() * 0.75;   // propensión de ESTA empresa a ceder (varía entre candidatos)
@@ -14050,7 +14242,7 @@ function dashboardKPIs(usuario, deals) {
   const candLista = candidatasDeCartera(soloExec); // sin feed la lista viene vacía: 0, y queda en el log
   const candidatas = candLista.length;
   // Tramo de facturación a NUESTROS clientes: es el criterio para decidir a quién llamar primero.
-  const candTramo = { m50: candLista.filter((c) => c.montoMM > 50).length, m100: candLista.filter((c) => c.montoMM > 100).length };
+  const candTramo = { m50: candLista.filter((c) => c.monto > 50e6).length, m100: candLista.filter((c) => c.monto > 100e6).length };
   const nuevasMes = inis.reduce((s, ini) => s + nuevasEmpRealMes(ini, MES_ACT), 0);
   // ── Rango "mes en curso" + últimas 8 semanas (SHARE_OF_WALLET) ──
   const semanas = [...new Set((window.SHARE_OF_WALLET || []).flatMap((s) => (s.HistoricoSemanal || []).map((w) => w.Semana)))].sort();
@@ -14063,7 +14255,7 @@ function dashboardKPIs(usuario, deals) {
   (window.AECSYNC || []).forEach((a) => {
     if (!a || !a.RUTEmisor) return;
     const g = aecIdx[a.RUTEmisor] || (aecIdx[a.RUTEmisor] = { t: 0, b: 0, bBice: 0, bBanco: 0 });
-    const mm = (a.MontoCesion || 0) / 1e6; g.t += mm;
+    const mm = +a.MontoCesion || 0; g.t += mm;
     const td = tipoDeudor(a.RUTReceptor, a.RazonSocialReceptor);
     if (td === "Lista Blanca" || td === "Deudor Autorizado") { // deudor prime
       g.b += mm;
@@ -14073,22 +14265,22 @@ function dashboardKPIs(usuario, deals) {
   });
   // ── Agregación de operaciones del ejecutivo sobre un rango de semanas ──
   const opAgg = (desde, hasta) => {
-    const r = { emitido: 0, cedido: 0, ganado: 0, perdBanco: 0, perdOtros: 0, buenasMM: 0, facturado: 0, facturadoBuenas: 0, ops: 0 };
+    const r = { emitido: 0, cedido: 0, ganado: 0, perdBanco: 0, perdOtros: 0, buenas: 0, facturado: 0, facturadoBuenas: 0, ops: 0 };
     (window.SHARE_OF_WALLET || []).forEach((s) => {
       const cod = EXEC_INI_POR_NOMBRE[s.Ejecutivo] || null;
       if (!cod || (execScope && !execScope.includes(cod))) return;
       const inR = (s.HistoricoSemanal || []).filter((w) => w.Semana >= desde && w.Semana <= hasta);
-      let total2 = 0, ganado = 0, ops = 0; inR.forEach((w) => { total2 += w.MontoTotalMM || 0; ganado += w.MontoBICEMM || 0; ops += w.NumCesiones || 0; });
+      let total2 = 0, ganado = 0, ops = 0; inR.forEach((w) => { total2 += w.MontoTotal || 0; ganado += w.MontoBICE || 0; ops += w.NumCesiones || 0; });
       const perdido = Math.max(0, total2 - ganado);
       const idx = aecIdx[s.RUTCliente] || { t: 0, b: 0 };
       const bpct = idx.t > 0 ? idx.b / idx.t : (s.Segmento === "Top" ? 0.85 : s.Segmento === "Medio" ? 0.6 : 0.4);
       const cm = competenciaDe(s.RUTCliente); let ratioBanco = 0;
-      if (cm) { const perd = Math.max(0, cm.totalMM - cm.biceMM); const banco = (cm.comp || []).filter((c) => esFactoringBanco(c.name)).reduce((a, c) => a + c.montoMM, 0); ratioBanco = perd > 0 ? Math.min(1, banco / perd) : 0; }
+      if (cm) { const perd = Math.max(0, cm.total - cm.bice); const banco = (cm.comp || []).filter((c) => esFactoringBanco(c.name)).reduce((a, c) => a + c.monto, 0); ratioBanco = perd > 0 ? Math.min(1, banco / perd) : 0; }
       const tasaCesion = 0.5 + (Math.abs(hashStr(s.RUTCliente + "fac")) % 30) / 100; // cedido/emitido 0.50–0.79
       const facturado = total2 > 0 ? total2 / tasaCesion : 0;
       r.emitido += total2; r.cedido += total2; r.ganado += ganado; r.ops += ops;
       r.perdBanco += perdido * ratioBanco; r.perdOtros += perdido * (1 - ratioBanco);
-      r.buenasMM += total2 * bpct; r.facturado += facturado; r.facturadoBuenas += facturado * bpct;
+      r.buenas += total2 * bpct; r.facturado += facturado; r.facturadoBuenas += facturado * bpct;
     });
     r.perdido = r.perdBanco + r.perdOtros;
     r.sowPct = r.cedido > 0 ? r.ganado / r.cedido * 100 : 0;
@@ -14194,7 +14386,7 @@ function ReporteChurn({ soloExec }) {
   const lista = useMemo(() => churnCartera(soloExec), [soloExec]);
   const serie = useMemo(() => churnSerieSemanal(lista), [lista]);
   const res = churnResumen(lista);
-  const tot = lista.reduce((a, c) => ({ bice: a.bice + c.biceMM, otros: a.otros + c.otrosMM, target: a.target + c.targetMM, resto: a.resto + c.restoMM }), { bice: 0, otros: 0, target: 0, resto: 0 });
+  const tot = lista.reduce((a, c) => ({ bice: a.bice + c.bice, otros: a.otros + c.otros, target: a.target + c.target, resto: a.resto + c.resto }), { bice: 0, otros: 0, target: 0, resto: 0 });
   const sowFin = serie.length ? serie[serie.length - 1].sow : 0;
   const sowIni = serie.length ? serie[0].sow : 0;
   const dSow = +(sowFin - sowIni).toFixed(1);
@@ -14297,9 +14489,9 @@ function ReporteChurn({ soloExec }) {
               <tr key={c.rut} style={{ borderBottom: `1px solid ${C.line}` }}>
                 <td className="px-3 py-2.5"><div className="t12 font-medium" style={{ color: C.ink }}>{c.cliente}</div><div className="t9" style={{ color: C.faint }}>{c.rut} · {c.exec}</div></td>
                 <td className="whitespace-nowrap px-3 py-2.5"><span className="rounded-full px-2 py-0.5 t10 font-bold" style={{ backgroundColor: m.bg, color: m.c }}>{m.l}</span></td>
-                <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: c.biceMM > 0 ? "#16A34A" : C.faint }}>{c.biceMM > 0 ? fmtMM(c.biceMM) : "—"}</td>
-                <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: "#EF4444" }}>{fmtMM(c.otrosMM)}</td>
-                <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: c.targetMM > 0 ? "#C2410C" : C.faint }}>{c.targetMM > 0 ? fmtMM(c.targetMM) : "—"}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: c.bice > 0 ? "#16A34A" : C.faint }}>{c.bice > 0 ? fmtMM(c.bice) : "—"}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: "#EF4444" }}>{fmtMM(c.otros)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: c.target > 0 ? "#C2410C" : C.faint }}>{c.target > 0 ? fmtMM(c.target) : "—"}</td>
                 <td className="whitespace-nowrap px-3 py-2.5">
                   <div className="t11 font-semibold" style={{ color: C.ink }}>{c.sowAct}% <span className="t9 font-normal" style={{ color: C.faint }}>/ {c.sowTarget}% target</span></div>
                   <div className="t9 font-semibold" style={{ color: c.delta < 0 ? "#EF4444" : c.delta > 0 ? "#16A34A" : C.faint }}>{c.delta > 0 ? "+" : ""}{c.delta} pts · {c.tendencia}</div>
@@ -14385,7 +14577,7 @@ function DashboardView({ usuario, deals, onVerTareas, onVerClientes, onVerChurn 
       </Section>
       <Section title="Operaciones · mes en curso">
         <DashCard Icon={BarChart2} col="#2563EB" valor={fmtMMc(o.facturado)} label="Facturas emitidas" sub={`${fmtMMc(o.facturadoBuenas)} · ${o.buenasPct}% de buenos deudores`} serie={d.serieSem.map((x) => x.facturado)} />
-        <DashCard Icon={BarChart2} col="#7C3AED" valor={<>{fmtMMc(o.cedido)} <span className="t10 font-normal" style={{ color: C.faint }}>({o.cedidoPct}%)</span></>} label="Total cedido" sub={`${fmtMMc(o.buenasMM)} de buenos deudores`} serie={d.serieSem.map((x) => x.cedido)} />
+        <DashCard Icon={BarChart2} col="#7C3AED" valor={<>{fmtMMc(o.cedido)} <span className="t10 font-normal" style={{ color: C.faint }}>({o.cedidoPct}%)</span></>} label="Total cedido" sub={`${fmtMMc(o.buenas)} de buenos deudores`} serie={d.serieSem.map((x) => x.cedido)} />
         <DashCard Icon={Check} col="#16A34A" valor={fmtMMc(o.ganado)} label="Cedido a Security" sub={`SOW ${sow}%`} serie={d.serieSem.map((x) => x.ganado)} />
         <DashCard Icon={ArrowDownRight} col="#EF4444" valor={fmtMMc(o.perdido)} label="Cedido a otros factoring" sub={`${fmtMMc(o.perdBanco)} a factoring target · ${fmtMMc(o.perdOtros)} otros`} serie={d.serieSem.map((x) => x.perdido)} />
         <DashCard Icon={Target} col="#2563EB" valor={`${sow}%`} label="SOW" sub={`${sowPrime}% en deudores prime`} serie={d.serieSem.map((x) => x.sowPct)} />
@@ -14448,7 +14640,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
     (window.AECSYNC || []).forEach((a) => {
       if (!a || !a.RUTEmisor) return;
       const g = m[a.RUTEmisor] || (m[a.RUTEmisor] = { t: 0, b: 0, deudorPrime: {}, deudorFact: {}, factTarget: {} });
-      const mm = (a.MontoCesion || 0) / 1e6; g.t += mm;
+      const mm = +a.MontoCesion || 0; g.t += mm;
       const td = tipoDeudor(a.RUTReceptor, a.RazonSocialReceptor); const esPrime = td === "Lista Blanca" || td === "Deudor Autorizado";
       if (esPrime) g.b += mm;
       const esNuestro = a.RUTFactoring === BICE_RUT;
@@ -14470,10 +14662,10 @@ function ReportePerformance({ usuario, inline, onClose }) {
       if (!execCod || (execScope && !execScope.includes(execCod))) return null;
       const cm = competenciaDe(s.RUTCliente);
       let ratioBanco = 0;
-      if (cm) { const perd = Math.max(0, cm.totalMM - cm.biceMM); const banco = (cm.comp || []).filter((c) => esFactoringBanco(c.name)).reduce((a, c) => a + c.montoMM, 0); ratioBanco = perd > 0 ? Math.min(1, banco / perd) : 0; }
+      if (cm) { const perd = Math.max(0, cm.total - cm.bice); const banco = (cm.comp || []).filter((c) => esFactoringBanco(c.name)).reduce((a, c) => a + c.monto, 0); ratioBanco = perd > 0 ? Math.min(1, banco / perd) : 0; }
       const hsFull = s.HistoricoSemanal || [];
       const inR = hsFull.filter((w) => w.Semana >= desde && w.Semana <= hasta);
-      let total = 0, ganado = 0, ops = 0; inR.forEach((w) => { total += w.MontoTotalMM || 0; ganado += w.MontoBICEMM || 0; ops += w.NumCesiones || 0; });
+      let total = 0, ganado = 0, ops = 0; inR.forEach((w) => { total += w.MontoTotal || 0; ganado += w.MontoBICE || 0; ops += w.NumCesiones || 0; });
       const perdido = Math.max(0, total - ganado); const perdBanco = perdido * ratioBanco;
       const bpct = buenShare[s.RUTCliente] != null ? buenShare[s.RUTCliente] : (s.Segmento === "Top" ? 0.85 : s.Segmento === "Medio" ? 0.6 : 0.4);
       // Facturación EMITIDA del cliente (mayor que lo cedido a factoring): tasa de cesión determinista por RUT.
@@ -14482,15 +14674,15 @@ function ReportePerformance({ usuario, inline, onClose }) {
       const idx = aecIdx[s.RUTCliente] || { deudorPrime: {}, deudorFact: {}, factTarget: {} };
       const perdidoPrime = +(perdido * bpct).toFixed(1); // pérdida sobre deudores prime (buenos)
       return { rut: s.RUTCliente, cliente: s.RazonSocialCliente, execCod, jefatura: EXEC_JEFATURA[execCod], segmento: s.Segmento, prime: s.Segmento === "Top", tendencia: s.SOWTendencia,
-        emitido: total, ganado, perdido, perdBanco, perdOtros: perdido - perdBanco, perdidoPrime, ops, sowPct: total > 0 ? ganado / total * 100 : 0, buenasMM: total * bpct, facturado, facturadoBuenas: +(facturado * bpct).toFixed(1), activo: ops > 0 || total > 0, hs: hsFull, deudorPrime: idx.deudorPrime, deudorFact: idx.deudorFact, factTarget: idx.factTarget };
+        emitido: total, ganado, perdido, perdBanco, perdOtros: perdido - perdBanco, perdidoPrime, ops, sowPct: total > 0 ? ganado / total * 100 : 0, buenas: total * bpct, facturado, facturadoBuenas: +(facturado * bpct).toFixed(1), activo: ops > 0 || total > 0, hs: hsFull, deudorPrime: idx.deudorPrime, deudorFact: idx.deudorFact, factTarget: idx.factTarget };
     }).filter(Boolean);
   }, [desde, hasta, buenShare, aecIdx]);
   const jefaturasScope = useMemo(() => [...new Set(clientes.map((c) => c.jefatura))].sort(), [clientes]);
   const execsDe = (jef) => Object.keys(EXECS).filter((e) => EXEC_JEFATURA[e] === jef && (!execScope || execScope.includes(e)));
   // Agrega métricas de un conjunto de clientes.
-  const agg = (cs) => { const r = { n: cs.length, emitieron: 0, ops: 0, emitido: 0, ganado: 0, perdBanco: 0, perdOtros: 0, perdidoPrime: 0, buenasMM: 0, facturado: 0, facturadoBuenas: 0, prime: 0 };
-    cs.forEach((c) => { if (c.activo) r.emitieron++; r.ops += c.ops; r.emitido += c.emitido; r.ganado += c.ganado; r.perdBanco += c.perdBanco; r.perdOtros += c.perdOtros; r.perdidoPrime += c.perdidoPrime || 0; r.buenasMM += c.buenasMM; r.facturado += c.facturado; r.facturadoBuenas += c.facturadoBuenas; if (c.prime) r.prime++; });
-    r.perdido = r.perdBanco + r.perdOtros; r.sowPct = r.emitido > 0 ? r.ganado / r.emitido * 100 : 0; r.primePct = r.n > 0 ? Math.round(r.prime / r.n * 100) : 0; r.buenasPct = r.emitido > 0 ? Math.round(r.buenasMM / r.emitido * 100) : 0; r.facturadoBuenasPct = r.facturado > 0 ? Math.round(r.facturadoBuenas / r.facturado * 100) : 0; return r; };
+  const agg = (cs) => { const r = { n: cs.length, emitieron: 0, ops: 0, emitido: 0, ganado: 0, perdBanco: 0, perdOtros: 0, perdidoPrime: 0, buenas: 0, facturado: 0, facturadoBuenas: 0, prime: 0 };
+    cs.forEach((c) => { if (c.activo) r.emitieron++; r.ops += c.ops; r.emitido += c.emitido; r.ganado += c.ganado; r.perdBanco += c.perdBanco; r.perdOtros += c.perdOtros; r.perdidoPrime += c.perdidoPrime || 0; r.buenas += c.buenas; r.facturado += c.facturado; r.facturadoBuenas += c.facturadoBuenas; if (c.prime) r.prime++; });
+    r.perdido = r.perdBanco + r.perdOtros; r.sowPct = r.emitido > 0 ? r.ganado / r.emitido * 100 : 0; r.primePct = r.n > 0 ? Math.round(r.prime / r.n * 100) : 0; r.buenasPct = r.emitido > 0 ? Math.round(r.buenas / r.emitido * 100) : 0; r.facturadoBuenasPct = r.facturado > 0 ? Math.round(r.facturadoBuenas / r.facturado * 100) : 0; return r; };
   // Alcance actual según el drill.
   const scope = clientes.filter((c) => (path.length < 1 || c.jefatura === path[0]) && (path.length < 2 || c.execCod === path[1]));
   const kpi = agg(scope);
@@ -14500,7 +14692,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
     ? jefaturasScope.map((j) => { const cs = clientes.filter((c) => c.jefatura === j); return { key: j, label: j, drill: true, cs, ...agg(cs) }; })
     : path.length === 1
       ? execsDe(path[0]).map((e) => { const cs = clientes.filter((c) => c.execCod === e); return { key: e, label: EXECS[e], drill: true, cs, ...agg(cs) }; })
-      : scope.slice().sort((a, b) => b.emitido - a.emitido).map((c) => ({ key: c.rut, label: c.cliente, drill: false, cs: [c], n: 1, emitieron: c.activo ? 1 : 0, ops: c.ops, emitido: c.emitido, ganado: c.ganado, perdBanco: c.perdBanco, perdOtros: c.perdOtros, perdidoPrime: c.perdidoPrime, perdido: c.perdido, sowPct: c.sowPct, prime: c.prime ? 1 : 0, primePct: c.prime ? 100 : 0, buenasMM: c.buenasMM, buenasPct: c.emitido > 0 ? Math.round(c.buenasMM / c.emitido * 100) : 0, empresa: c }));
+      : scope.slice().sort((a, b) => b.emitido - a.emitido).map((c) => ({ key: c.rut, label: c.cliente, drill: false, cs: [c], n: 1, emitieron: c.activo ? 1 : 0, ops: c.ops, emitido: c.emitido, ganado: c.ganado, perdBanco: c.perdBanco, perdOtros: c.perdOtros, perdidoPrime: c.perdidoPrime, perdido: c.perdido, sowPct: c.sowPct, prime: c.prime ? 1 : 0, primePct: c.prime ? 100 : 0, buenas: c.buenas, buenasPct: c.emitido > 0 ? Math.round(c.buenas / c.emitido * 100) : 0, empresa: c }));
   const filasOrden = filas.slice().sort((a, b) => b.emitido - a.emitido);
   const bajar = (f) => { if (!f.drill) return; setPath((p) => [...p, f.key]); };
   // Serie SEMANAL del alcance: SIEMPRE las últimas 4 semanas hasta la fecha de fin del rango (sin importar
@@ -14508,7 +14700,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
   const sem4 = useMemo(() => semanas.filter((sm) => sm <= hasta).slice(-4), [semanas, hasta]);
   // Tendencia del SOW en las últimas 4 semanas de un conjunto de clientes: puntos semanales + delta (fin−ini).
   const tendSow4 = (cs) => {
-    const pts = sem4.map((sm) => { let t = 0, g = 0; (cs || []).forEach((c) => { const w = c.hs.find((x) => x.Semana === sm); if (w) { t += w.MontoTotalMM || 0; g += w.MontoBICEMM || 0; } }); return t > 0 ? g / t * 100 : 0; });
+    const pts = sem4.map((sm) => { let t = 0, g = 0; (cs || []).forEach((c) => { const w = c.hs.find((x) => x.Semana === sm); if (w) { t += w.MontoTotal || 0; g += w.MontoBICE || 0; } }); return t > 0 ? g / t * 100 : 0; });
     const ini = pts[0] || 0, fin = pts[pts.length - 1] || 0;
     return { pts, delta: +(fin - ini).toFixed(1) };
   };
@@ -14543,7 +14735,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
   };
   const serie = useMemo(() => sem4.map((sm) => {
     let total = 0, ganado = 0, banco = 0, buenas = 0;
-    scope.forEach((c) => { const w = c.hs.find((x) => x.Semana === sm); if (!w) return; const t = w.MontoTotalMM || 0, g = w.MontoBICEMM || 0; total += t; ganado += g; const perd = Math.max(0, t - g); const rb = c.perdido > 0 ? c.perdBanco / c.perdido : 0; banco += perd * rb; buenas += t * (c.emitido > 0 ? c.buenasMM / c.emitido : 0); });
+    scope.forEach((c) => { const w = c.hs.find((x) => x.Semana === sm); if (!w) return; const t = w.MontoTotal || 0, g = w.MontoBICE || 0; total += t; ganado += g; const perd = Math.max(0, t - g); const rb = c.perdido > 0 ? c.perdBanco / c.perdido : 0; banco += perd * rb; buenas += t * (c.emitido > 0 ? c.buenas / c.emitido : 0); });
     const perdido = Math.max(0, total - ganado);
     return { sem: sm, emitido: total, buenas, ganado, perdBanco: banco, perdOtros: perdido - banco, sowPct: total > 0 ? ganado / total * 100 : 0 };
   }), [scope, sem4]);
@@ -14577,7 +14769,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
       <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         <KpiStat Icon={User} col="#703EFF" v={kpi.n.toLocaleString("es-CL")} l="Clientes" s={`${kpi.emitieron} activos · ${kpi.ops} operaciones`} />
         <KpiStat Icon={Check} col="#0891b2" v={<>{fmtMMc(kpi.facturado)} <span className="t10 font-normal" style={{ color: C.faint }}>emitido</span></>} l="Facturas de buenos deudores" s={`por ${fmtMMc(kpi.facturadoBuenas)} · ${kpi.facturadoBuenasPct}%`} />
-        <KpiStat Icon={BarChart2} col="#7C3AED" v={fmtMMc(kpi.emitido)} l="Total Cedido" s={`${fmtMMc(kpi.buenasMM)} de buenos deudores`} />
+        <KpiStat Icon={BarChart2} col="#7C3AED" v={fmtMMc(kpi.emitido)} l="Total Cedido" s={`${fmtMMc(kpi.buenas)} de buenos deudores`} />
         <KpiStat Icon={Check} col="#16A34A" v={fmtMMc(kpi.ganado)} l="Ganado (Security)" s={`SOW ${Math.round(kpi.sowPct)}%`} />
         <KpiStat Icon={ArrowDownRight} col="#EF4444" v={fmtMMc(kpi.perdido)} l="Perdido" s={`${fmtMMc(kpi.perdBanco)} a factoring target (BCI/Chile/Itaú) · ${fmtMMc(kpi.perdOtros)} otros`} />
         <KpiStat Icon={BarChart2} col="#2563EB" v={`${Math.round(kpi.sowPct)}%`} l="SOW Target Deudores Prime" s={`${fmtMMc(kpi.ganado)} de ${fmtMMc(kpi.emitido)} cedido`} />
@@ -14721,7 +14913,7 @@ function PCcliente({ resumen, hayFiltro }) {
                   <div className="flex h-2 w-full overflow-hidden rounded-full" style={{ backgroundColor: "#F1ECFF" }}><div className="h-full" style={{ width: pct + "%", backgroundColor: "#703EFF" }} /><div className="h-full" style={{ width: (100 - pct) + "%", backgroundColor: "#FF814B" }} /></div>
                   <div className="flex items-center justify-between t11"><span style={{ color: C.sub }}><span className="mr-1.5 inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: "#FF814B" }} />Con malos deudores</span><b style={{ color: C.ink }}>{s.malos.toLocaleString("es-CL")}</b></div>
                 </div>
-                <div className="mt-2 t9" style={{ color: C.faint }}>Buenos: <b style={{ color: C.sub }}>{s.buenosMM}</b> · Malos: <b style={{ color: C.sub }}>{s.malosMM}</b></div>
+                <div className="mt-2 t9" style={{ color: C.faint }}>Buenos: <b style={{ color: C.sub }}>{s.buenosMonto}</b> · Malos: <b style={{ color: C.sub }}>{s.malosMonto}</b></div>
               </div>
             );
           })}
@@ -16891,7 +17083,7 @@ function CfgOportunidades({ deals, onMigrarExec }) {
   const fuera = todas.length - alcance.length;
   const porEtapa = {};
   alcance.forEach((d) => { const k = stageName(d.stage) || d.stage; porEtapa[k] = (porEtapa[k] || 0) + 1; });
-  const montoMM = alcance.reduce((a, d) => a + (d.amountMM || 0), 0);
+  const monto = alcance.reduce((a, d) => a + (d.monto || 0), 0);
   const opciones = Object.keys(EXECS);
   const ejecutar = () => {
     if (!desde || !hasta || desde === hasta || !alcance.length) return;
@@ -16928,7 +17120,7 @@ function CfgOportunidades({ deals, onMigrarExec }) {
 
       {desde && (
         <div className="mt-3 rounded-lg p-2.5" style={{ backgroundColor: C.lilac, border: "1px solid #DDD6FE" }}>
-          <div className="t11 font-semibold" style={{ color: C.navy }}>{alcance.length} operación(es) · {fmtMM(montoMM)}</div>
+          <div className="t11 font-semibold" style={{ color: C.navy }}>{alcance.length} operación(es) · {fmtMM(monto)}</div>
           <div className="mt-0.5 t10" style={{ color: C.sub }}>
             {alcance.length ? Object.keys(porEtapa).map((k) => `${porEtapa[k]} en ${k}`).join(" · ") : `${EXECS[desde]} no tiene operaciones en gestión.`}
           </div>
@@ -16943,7 +17135,7 @@ function CfgOportunidades({ deals, onMigrarExec }) {
       </div>
 
       <ConfirmDialog abierto={confirmar} titulo="Traspasar las operaciones"
-        descripcion={`Se van a mover ${alcance.length} operación(es) por ${fmtMM(montoMM)} de ${EXECS[desde] || "—"} a ${EXECS[hasta] || "—"}. El ejecutivo que recibe pasa a verlas y gestionarlas; el que sale deja de verlas. Queda registrado quién originó cada una y el traspaso va a la bitácora.`}
+        descripcion={`Se van a mover ${alcance.length} operación(es) por ${fmtMM(monto)} de ${EXECS[desde] || "—"} a ${EXECS[hasta] || "—"}. El ejecutivo que recibe pasa a verlas y gestionarlas; el que sale deja de verlas. Queda registrado quién originó cada una y el traspaso va a la bitácora.`}
         etiquetaConfirmar="Traspasar" onConfirmar={ejecutar} onCancelar={() => setConfirmar(false)} />
     </div>
   );
@@ -17003,8 +17195,8 @@ function generarTareasConsolidadas(deals) {
     const exec = nombreEjec(d.exec);
     // Impacto potencial = monto de la operación en juego (lo que se captura/gira al atender la tarea).
     // Se documenta la oferta (CAT, deudor, facturas, tasa, giro, etapa) para que el ejecutivo la entienda.
-    const base = { fuente: "pipeline", dealId: d.id, cliente: d.cliente, exec, monto: d.amountMM || 0, impacto: d.amountMM || 0,
-      catOp: d.cat ? catDisp(d).label : null, tasa: d.tasa, giro: d.simulado ? d.giroMM : null, deudor: (d.deudores && d.deudores[0] ? d.deudores[0].name : d.deudor), nDeud: (d.deudores && d.deudores.length) || 1, facturas: d.facturas, etapa: (STAGES.find((s) => s.id === d.stage) || {}).name || d.stage };
+    const base = { fuente: "pipeline", dealId: d.id, cliente: d.cliente, exec, monto: d.monto || 0, impacto: d.monto || 0,
+      catOp: d.cat ? catDisp(d).label : null, tasa: d.tasa, giro: d.simulado ? d.giro : null, deudor: (d.deudores && d.deudores[0] ? d.deudores[0].name : d.deudor), nDeud: (d.deudores && d.deudores.length) || 1, facturas: d.facturas, etapa: (STAGES.find((s) => s.id === d.stage) || {}).name || d.stage };
     const verif = !!(d.telValidado || d.emailValidado || d.verifManual);
     const hasOffer = !!d.negocioNum || (d.waSesion || []).some((m) => /Oferta de factoring/i.test(m.text || ""));
     if (d.waPendiente) t.push({ ...base, id: d.id + "-resp", cat: "responder", prio: "critica", detalle: "El cliente respondió por WhatsApp y la conversación quedó pendiente." });
@@ -17225,7 +17417,7 @@ function TareaPanel({ tarea, deals, onClose, onOpenDeal, onAtender }) {
 // Panel lateral (desde la campana): oportunidades marcadas con prioridad de curse por jefaturas/gerencia.
 function PrioridadesPanel({ items, onClose, onOpen }) {
   const stageMeta = (s) => (STAGES.find((x) => x.id === s) || { name: s });
-  const lista = (items || []).slice().sort((a, b) => (b.amountMM || 0) - (a.amountMM || 0));
+  const lista = (items || []).slice().sort((a, b) => (b.monto || 0) - (a.monto || 0));
   return (
     <>
       <div className="fixed inset-0 ovl" style={{ zIndex: 60 }} onClick={onClose} />
@@ -17243,7 +17435,7 @@ function PrioridadesPanel({ items, onClose, onOpen }) {
               <Star size={14} style={{ color: "#C2410C", fill: "#F97316" }} />
               <div className="min-w-0 flex-1">
                 <div className="t11 font-semibold truncate" style={{ color: C.ink }}>{d.cliente}</div>
-                <div className="t9" style={{ color: C.faint }}>{nombreEjec(d.exec)} · {fmtMM(d.amountMM)} · {stageMeta(d.stage).name}{pr ? ` · pedida por ${pr.porNombre}` : ""}</div>
+                <div className="t9" style={{ color: C.faint }}>{nombreEjec(d.exec)} · {fmtMM(d.monto)} · {stageMeta(d.stage).name}{pr ? ` · pedida por ${pr.porNombre}` : ""}</div>
               </div>
               <ChevronRight size={14} style={{ color: C.faint }} />
             </button>
@@ -17267,15 +17459,15 @@ function ReporteDiaPanel({ deals, execFilter, onClose, onOpen }) {
   const perdidas = base.filter((d) => dealResult(d) === "lost");
   const cerradas = ganadas.length + perdidas.length; // expiradas fuera de la tasa de cierre
   const winRate = cerradas ? Math.round((ganadas.length / cerradas) * 100) : 0;
-  const sumMM = (arr) => arr.reduce((s, d) => s + (d.amountMM || 0), 0);
+  const sum = (arr) => arr.reduce((s, d) => s + (d.monto || 0), 0);
   const nConPrio = scope.filter((d) => tienePrioridadCurse(d.id)).length;
   const kpis = [
-    { t: "Abiertas", v: abiertas.length, mm: sumMM(abiertas), col: "#5B21D6", bg: "#F1ECFF", bd: "#D9CCFF" },
-    { t: "Ganadas · giro", v: ganadas.length, mm: sumMM(ganadas), col: "#16A34A", bg: "#F0FDF4", bd: "#bbf7d0" },
-    { t: "Perdidas", v: perdidas.length, mm: sumMM(perdidas), col: "#EF4444", bg: "#fef2f2", bd: "#fecaca" },
+    { t: "Abiertas", v: abiertas.length, mm: sum(abiertas), col: "#5B21D6", bg: "#F1ECFF", bd: "#D9CCFF" },
+    { t: "Ganadas · giro", v: ganadas.length, mm: sum(ganadas), col: "#16A34A", bg: "#F0FDF4", bd: "#bbf7d0" },
+    { t: "Perdidas", v: perdidas.length, mm: sum(perdidas), col: "#EF4444", bg: "#fef2f2", bd: "#fecaca" },
   ];
   const stageMeta = (s) => (STAGES.find((x) => x.id === s) || { name: s });
-  const lista = base.slice().sort((a, b) => (tienePrioridadCurse(b.id) - tienePrioridadCurse(a.id)) || ((b.amountMM || 0) - (a.amountMM || 0)));
+  const lista = base.slice().sort((a, b) => (tienePrioridadCurse(b.id) - tienePrioridadCurse(a.id)) || ((b.monto || 0) - (a.monto || 0)));
   return (
     <>
       <div className="fixed inset-0 ovl" style={{ zIndex: 60 }} onClick={onClose} />
@@ -17319,7 +17511,7 @@ function ReporteDiaPanel({ deals, execFilter, onClose, onOpen }) {
                     {prio && <Star size={13} style={{ color: "#C2410C", fill: "#F97316" }} />}
                     <div className="min-w-0 flex-1">
                       <div className="t11 font-semibold truncate" style={{ color: C.ink }}>{d.cliente}</div>
-                      <div className="t9" style={{ color: C.faint }}>{nombreEjec(d.exec)} · {fmtMM(d.amountMM)}</div>
+                      <div className="t9" style={{ color: C.faint }}>{nombreEjec(d.exec)} · {fmtMM(d.monto)}</div>
                     </div>
                     <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: eBg, color: eCol }}>{won ? "Ganada" : lost ? "Perdida" : stageMeta(d.stage).name}</span>
                   </button>
@@ -17482,8 +17674,8 @@ function PCbandeja({ deals, execFilter, onOpen, ambito = "diaria", usuario, onOp
                       </div>
                     )}
                     <div className="mt-1 t9" style={{ color: C.faint }}><b style={{ color: C.sub }}>Deudor:</b> {t.deudor}{t.nDeud > 1 ? ` +${t.nDeud - 1}` : ""} · {d.facturas} fac. · {t.etapa}</div>
-                    <div className="mt-0.5 t9" style={{ color: C.faint }}>Tasa <b style={{ color: C.sub }}>{d.tasa}</b> | Anticipo {d.anticipo} | Desc. {d.simulado ? fmtMM(d.descMM) : "—"}</div>
-                    {d.simulado && <div className="t9" style={{ color: C.faint }}>Giro <b style={{ color: "#16A34A" }}>{fmtMM(d.giroMM)}</b> · {d.diasFin}d fin. · vence {d.fechaVenc}</div>}
+                    <div className="mt-0.5 t9" style={{ color: C.faint }}>Tasa <b style={{ color: C.sub }}>{d.tasa}</b> | Anticipo {d.anticipo} | Desc. {d.simulado ? fmtMM(d.desc) : "—"}</div>
+                    {d.simulado && <div className="t9" style={{ color: C.faint }}>Giro <b style={{ color: "#16A34A" }}>{fmtMM(d.giro)}</b> · {d.diasFin}d fin. · vence {d.fechaVenc}</div>}
                   </div>
                 );
               })()}
@@ -17518,7 +17710,7 @@ function seedTareasDemo(deals, ejecName) {
   const mios = ejecName && ejecName !== "todos" ? deals.filter((d) => EXECS[d.exec] === ejecName) : deals;
   const base = mios.length ? mios : deals;
   const marcar = (d) => { if (d && !tienePrioridadCurse(d.id)) PRIORIDAD_CURSE[d.id] = { por: "JG", porNombre: jefe, ts: nowStamp() }; };
-  const pick = (pred, n) => base.filter(pred).sort((a, b) => (b.amountMM || 0) - (a.amountMM || 0)).slice(0, n);
+  const pick = (pred, n) => base.filter(pred).sort((a, b) => (b.monto || 0) - (a.monto || 0)).slice(0, n);
   pick((d) => ["oferta", "prospeccion"].includes(d.stage), 3).forEach(marcar); // pendientes
   pick((d) => ["aceptadas", "cesion", "giro"].includes(d.stage), 1).forEach(marcar); // cursada
   pick((d) => d.stage === "perdida", 1).forEach(marcar); // cedida / bloqueo
@@ -17557,12 +17749,12 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
   const rowsPrio = prios.map(({ d, at, prio }) => ({
     kind: "prio", id: d.id, deal: d, tipo: "Prioridad", tipoCol: "#C2410C", tipoBg: "#FFF7ED", star: true,
     cliente: d.cliente, ref: `${d.id} · ${nombreEjec(d.exec)}`, detalle: `${stageName(d.stage)}${d.deudor ? ` · ${d.deudor}` : ""}`,
-    monto: d.amountMM || 0, quien: prio.porNombre, at, hecha: at.atendida, venceTs: null,
+    monto: d.monto || 0, quien: prio.porNombre, at, hecha: at.atendida, venceTs: null,
   }));
   const rowsTask = tareas.map((t) => { const op = (t.ops || []).map(dealDe).filter(Boolean)[0]; const a = areaMeta(t.cat); return ({
     kind: "task", id: t.id, task: t, deal: op, tipo: a.l, tipoCol: a.c, tipoBg: a.bg, star: false,
     cliente: op ? op.cliente : (t.nodo || "General"), ref: op ? op.id : (t.nodo || ""), detalle: t.texto,
-    monto: op ? (op.amountMM || 0) : null, quien: t.autor, at: null, hecha: t.hecha, venceTs: t.venceTs,
+    monto: op ? (op.monto || 0) : null, quien: t.autor, at: null, hecha: t.hecha, venceTs: t.venceTs,
   }); });
   // Solicitudes de LÍNEA urgentes para el curse: operaciones activas cuya proyección supera la línea
   // aprobada (fuera de línea). No se pueden cursar hasta ampliar/aprobar la línea → van al tab Tareas.
@@ -17913,21 +18105,26 @@ function ScoreSpark({ serie, w = 88, h = 26 }) {
 // Señales sintéticas por cliente para el Plan Mensual: línea de crédito disponible, comportamiento de
 // riesgo y factores de gestión (emisión de buenos deudores, cesión a la competencia, tiempos y tasa).
 function ptmSignals(c) {
-  const r = pcRng(hashStr("sig" + c.id));
-  const lineaAprob = Math.round(c.vol * (0.5 + r() * 0.7));
-  const lineaUso = Math.round(lineaAprob * (0.3 + r() * 0.6));
+  // TODO sale de los activos. Este módulo fabricaba la línea con un hash del volumen del cliente, así
+  // que el Plan mostraba una línea aprobada, utilizada y disponible distinta de la que muestran Líneas
+  // y el otorgamiento para el mismo cliente.
+  const L = lineaDeCliente({ rutEmisor: c.rut });
+  const lineaAprob = Math.round((L && L.aprobada) || 0);
+  const lineaUso = Math.round((L && L.uso) || 0);
   const lineaDisp = Math.max(0, lineaAprob - lineaUso);
   const lineaPct = lineaAprob ? Math.round(lineaDisp / lineaAprob * 100) : 0;
-  const moraDias = r() < 0.22 ? 5 + Math.floor(r() * 60) : 0;
+  const moraDias = moraDiasCliente(c.rut);                       // activo A16, mora interna por tramo
+  // "En observación" sin mora pasa a significar algo: el A16 tiene al cliente bloqueado o con juicios.
+  const F = (typeof OTORG_A16 !== "undefined" && OTORG_A16.cli[c.rut]) || null;
+  const A = a16(F);
+  const observado = !!F && (A("CLIENTE_BLOQUEADO") > 0 || A("JUICIOS_GESINTEL") > 0);
   const riesgo = moraDias >= 30 ? { l: `Moroso ${moraDias}d`, c: "#EF4444", bg: "#fef2f2" }
     : moraDias > 0 ? { l: `Atención ${moraDias}d`, c: "#C2410C", bg: "#FFF7ED" }
-    : r() < 0.15 ? { l: "En observación", c: "#C2410C", bg: "#FFF7ED" }
+    : observado ? { l: "En observación", c: "#C2410C", bg: "#FFF7ED" }
     : { l: "Buen comportamiento", c: "#16A34A", bg: "#F0FDF4" };
-  const emitioBuenos = r() > 0.28;   // ¿emitió facturas de deudores buenos (lista blanca/priorizados/históricos) este mes?
-  const cedioComp = (c.tag === "FUGA" || c.estado === "Competencia") ? r() > 0.32 : r() < 0.18;
-  const compRapida = r() < 0.5;      // la competencia reaccionó más rápido (ejecutivo se demoró)
-  const tasaNoComp = r() < 0.55;     // la tasa ofertada no fue competitiva (ejecutivo en su piso)
-  return { lineaAprob, lineaUso, lineaDisp, lineaPct, moraDias, riesgo, emitioBuenos, cedioComp, compRapida, tasaNoComp };
+  return { lineaAprob, lineaUso, lineaDisp, lineaPct, moraDias, riesgo,
+    emitioBuenos: senalesDe(c.rut).emitioBuenos,   // DTESync: emitió a deudores de lista o autorizados
+    cedioComp: cedioACompetencia(c.rut) };         // AECSync: cedió a un factoring que no es el nuestro
 }
 // Comentario IA: interpreta la situación del gráfico (modelo de colocación) de forma coherente con lo
 // que se muestra: colocación de hoy vs. meta, proyección máx/mín al cierre, SOW actual vs. meta, línea y riesgo.
@@ -18190,28 +18387,28 @@ const OP_SINTETICAS = (() => {
   for (let i = 0; i < 48; i++) {
     const cliente = `${pref[Math.floor(rnd() * pref.length)]} ${mid[Math.floor(rnd() * mid.length)]} ${suf[Math.floor(rnd() * suf.length)]}`;
     const facturas = 1 + Math.floor(rnd() * 40);
-    const montoMM = +(20 + rnd() * 1200).toFixed(1);
+    const monto = Math.round((20 + rnd() * 1200) * 1e6);   // $20 MM a $1.220 MM, en pesos
     const tasaN = 1.2 + rnd() * 1.2; const diasFin = 30 + Math.floor(rnd() * 45);
-    const giroMM = +(montoMM - montoMM * (tasaN / 100) * (diasFin / 30) - (0.1 + rnd() * 0.4)).toFixed(1);
+    const giro = Math.round(monto - monto * (tasaN / 100) * (diasFin / 30) - (0.1 + rnd() * 0.4) * 1e6);
     const d = new Date(2026, 5, 30); d.setDate(d.getDate() - Math.floor(rnd() * 130));
     const fecha = `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${d.getFullYear()}`;
     // Cobranza: ¿el deudor pagó la factura? (monto + %), y ¿a tiempo respecto del vencimiento?
     const pr = rnd(); const estadoPago = pr < 0.6 ? "Pagada" : pr < 0.74 ? "Parcial" : "Pendiente";
     const pctPagado = estadoPago === "Pagada" ? 100 : estadoPago === "Parcial" ? 30 + Math.floor(rnd() * 50) : 0;
-    const montoPagado = +(montoMM * pctPagado / 100).toFixed(1);
+    const montoPagado = Math.round(monto * pctPagado / 100);
     const aTiempo = estadoPago === "Pendiente" ? null : rnd() < 0.72;
     const diasAtraso = aTiempo === false ? 1 + Math.floor(rnd() * 45) : 0;
-    out.push({ id: "OPS-" + i, neg: 14500000 + Math.floor(rnd() * 90000), cliente, deudor: deudores[Math.floor(rnd() * deudores.length)], facturas, montoMM, tasa: tasaN.toFixed(2) + "%", giroMM, fecha, estado: "Aceptada", sub: "Girada", exec: execs[Math.floor(rnd() * execs.length)], ts: d.getTime(), estadoPago, pctPagado, montoPagado, aTiempo, diasAtraso });
+    out.push({ id: "OPS-" + i, neg: 14500000 + Math.floor(rnd() * 90000), cliente, deudor: deudores[Math.floor(rnd() * deudores.length)], facturas, monto, tasa: tasaN.toFixed(2) + "%", giro, fecha, estado: "Aceptada", sub: "Girada", exec: execs[Math.floor(rnd() * execs.length)], ts: d.getTime(), estadoPago, pctPagado, montoPagado, aTiempo, diasAtraso });
   }
   return out.sort((a, b) => b.ts - a.ts);
 })();
 // Expande una operación en sus facturas (apertura), con cobranza por factura consistente con la operación.
 function facturasDeOp(op) {
   const out = []; const n = Math.max(1, op.facturas || 1); const r = pcRng(hashStr(op.id + "fac"));
-  let rem = op.montoMM || 0;
+  let rem = op.monto || 0;
   for (let i = 0; i < n; i++) {
     const isLast = i === n - 1;
-    const monto = isLast ? Math.max(0.3, +rem.toFixed(1)) : +Math.max(0.3, (op.montoMM || 0) / n * (0.5 + r())).toFixed(1);
+    const monto = isLast ? Math.max(0.3, +rem.toFixed(1)) : +Math.max(0.3, (op.monto || 0) / n * (0.5 + r())).toFixed(1);
     if (!isLast) rem = +(rem - monto).toFixed(1);
     const estadoPago = op.estadoPago === "Parcial" ? (r() < 0.6 ? "Pagada" : "Pendiente") : op.estadoPago;
     const pctPagado = estadoPago === "Pagada" ? 100 : 0;
@@ -18219,7 +18416,7 @@ function facturasDeOp(op) {
     const diasAtraso = aTiempo === false ? (op.diasAtraso || (1 + Math.floor(r() * 45))) : 0;
     const vd = new Date(2026, 6, 30); vd.setDate(vd.getDate() - Math.floor(r() * 90));
     const venc = `${String(vd.getDate()).padStart(2, "0")}-${String(vd.getMonth() + 1).padStart(2, "0")}-${vd.getFullYear()}`;
-    out.push({ id: op.id + "-f" + i, folio: 100000 + Math.floor(r() * 8999999), neg: op.neg, cliente: op.cliente, deudor: op.deudor, montoMM: monto, montoPagado: +(monto * pctPagado / 100).toFixed(1), pctPagado, estadoPago, aTiempo, diasAtraso, venc, exec: op.exec, ts: op.ts });
+    out.push({ id: op.id + "-f" + i, folio: 100000 + Math.floor(r() * 8999999), neg: op.neg, cliente: op.cliente, deudor: op.deudor, monto: monto, montoPagado: +(monto * pctPagado / 100).toFixed(1), pctPagado, estadoPago, aTiempo, diasAtraso, venc, exec: op.exec, ts: op.ts });
   }
   return out;
 }
@@ -18231,9 +18428,9 @@ const OP_FACTURAS = OP_SINTETICAS.flatMap(facturasDeOp);
 function OperacionDetalle({ op, onClose, onDescargar }) {
   const [descOpen, setDescOpen] = useState(true);
   const fmt = (n) => "$" + Math.round(n || 0).toLocaleString("es-CL");
-  const montoCLP = Math.round((op.montoMM || 0) * 1e6);
+  const montoCLP = Math.round(op.monto || 0);
   const anticipoCLP = montoCLP;                 // anticipo 100%
-  const giroCLP = Math.round((op.giroMM || 0) * 1e6);
+  const giroCLP = Math.round(op.giro || 0);
   const descTotal = Math.max(0, anticipoCLP - giroCLP);
   // Desglose de descuentos con proporciones tipo mockup; la suma cuadra exacta (cxc = residual).
   const P = { dif: 0.456, com: 0.039, gas: 0.139, iva: 0.073, rec: 0.034, des: 0.060 };
@@ -18340,7 +18537,7 @@ function OperacionDetalle({ op, onClose, onDescargar }) {
                   <td className="px-3 py-2.5"><div className="font-medium" style={{ color: C.ink }}>Factura Electrónica #{f.folio}</div></td>
                   <td className="px-3 py-2.5" style={{ color: C.sub }}>{f.deudor}</td>
                   <td className="whitespace-nowrap px-3 py-2.5" style={{ color: C.sub }}>{f.venc}</td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold" style={{ color: C.ink }}>{fmt((f.montoMM || 0) * 1e6)}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold" style={{ color: C.ink }}>{fmt(f.monto || 0)}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -18358,7 +18555,7 @@ function OperacionDetalle({ op, onClose, onDescargar }) {
                 <tr key={f.id} style={{ borderBottom: `1px solid ${C.line}` }}>
                   <td className="whitespace-nowrap px-3 py-2.5" style={{ color: C.sub }}>{f.venc}</td>
                   <td className="px-3 py-2.5"><div style={{ color: C.ink }}>BANCO BICE</div><div className="t9" style={{ color: C.faint }}>Cuenta Corriente #1234145</div></td>
-                  <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold" style={{ color: C.green }}>{fmt((f.montoMM || 0) * 1e6)}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right font-semibold" style={{ color: C.green }}>{fmt(f.monto || 0)}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -18394,7 +18591,7 @@ function OperacionesView({ deals, onOpen, soloExec }) {
   const estadoDe = (d) => estadoOperacion(d) || "Aceptada";
   const vivas = useMemo(() => (deals || []).filter((d) => ["aceptadas", "cesion", "otorgamiento", "giro"].includes(d.stage) && (!soloExec || (nombreEjec(d.exec)) === soloExec)).map((d) => ({
     id: d.id, deal: d, neg: d.negocioNum || d.id, cliente: d.cliente, deudor: (d.deudores && d.deudores[0] ? d.deudores[0].name : d.deudor), facturas: d.facturas,
-    montoMM: d.amountMM || 0, tasa: d.tasa || "—", giroMM: d.giroMM || 0, fecha: ((d.time || "").match(/\d{2}-\d{2}-\d{4}/) || ["Hoy"])[0], estado: estadoDe(d), sub: d.integracion === "pendiente" ? null : DISBURSEMENT_LBL[dealDisbursement(d)] || null, exec: nombreEjec(d.exec), nueva: true, ts: Date.now(),
+    monto: d.monto || 0, tasa: d.tasa || "—", giro: d.giro || 0, fecha: ((d.time || "").match(/\d{2}-\d{2}-\d{4}/) || ["Hoy"])[0], estado: estadoDe(d), sub: d.integracion === "pendiente" ? null : DISBURSEMENT_LBL[dealDisbursement(d)] || null, exec: nombreEjec(d.exec), nueva: true, ts: Date.now(),
     estadoPago: "Pendiente", pctPagado: 0, montoPagado: 0, aTiempo: null, diasAtraso: 0, // recién cursada: aún no vence / no cobrada
   })), [deals, soloExec]);
   const todas = [...vivas, ...OP_SINTETICAS.filter((o) => !soloExec || o.exec === soloExec)];
@@ -18406,7 +18603,7 @@ function OperacionesView({ deals, onOpen, soloExec }) {
   const facRows = facTodas.filter((f) => (fCliente === "todos" || f.cliente === fCliente) && (!q || f.cliente.toLowerCase().includes(q.toLowerCase()) || (f.deudor || "").toLowerCase().includes(q.toLowerCase()) || String(f.folio).includes(q) || String(f.neg).includes(q)) && enRango(f.ts));
   // KPIs del período: reflejan el rango de fechas (no los filtros de búsqueda/estado).
   const enPeriodo = todas.filter((o) => enRango(o.ts));
-  const montoGirado = enPeriodo.reduce((s, o) => s + (o.giroMM || 0), 0);
+  const montoGirado = enPeriodo.reduce((s, o) => s + (o.giro || 0), 0);
   const nGiradas = enPeriodo.filter(esGirada).length;
   const estColor = { "Aceptada": { bg: "#eff6ff", fg: "#2563EB" }, "En otorgamiento": { bg: "#f5f3ff", fg: "#7C3AED" },
     "Otorgamiento / Verificación": { bg: "#f5f3ff", fg: "#7C3AED" },
@@ -18420,7 +18617,7 @@ function OperacionesView({ deals, onOpen, soloExec }) {
   // Abre el DETALLE de la operación en una pestaña propia (_blank) con un TICKET opaco de un solo uso
   // en la URL — no el id de la operación, que sería adivinable (ver `emitirTicketDetalle`).
   const abrirOperacion = (o) => {
-    const slim = { id: o.id, neg: o.neg, cliente: o.cliente, deudor: o.deudor, facturas: o.facturas, montoMM: o.montoMM, tasa: o.tasa, giroMM: o.giroMM, fecha: o.fecha, estado: o.estado, sub: o.sub, exec: o.exec, estadoPago: o.estadoPago, pctPagado: o.pctPagado, montoPagado: o.montoPagado, aTiempo: o.aTiempo, diasAtraso: o.diasAtraso, ts: o.ts, rut: (o.deal && o.deal.rutEmisor) || o.rut };
+    const slim = { id: o.id, neg: o.neg, cliente: o.cliente, deudor: o.deudor, facturas: o.facturas, monto: o.monto, tasa: o.tasa, giro: o.giro, fecha: o.fecha, estado: o.estado, sub: o.sub, exec: o.exec, estadoPago: o.estadoPago, pctPagado: o.pctPagado, montoPagado: o.montoPagado, aTiempo: o.aTiempo, diasAtraso: o.diasAtraso, ts: o.ts, rut: (o.deal && o.deal.rutEmisor) || o.rut };
     // La identidad la da la SESIÓN, no un prop: OperacionesView nunca recibió `usuario` y esta línea
     // lanzaba ReferenceError al abrir el detalle de una operación. Además, para un ticket de auditoría
     // corresponde el usuario autenticado y no lo que traiga la vista.
@@ -18487,9 +18684,9 @@ function OperacionesView({ deals, onOpen, soloExec }) {
                 <td className="whitespace-nowrap px-3 py-2.5"><div className="flex items-center gap-1.5"><span className="font-semibold" style={{ color: C.ink }}>N° {o.neg}</span>{o.nueva && <span className="rounded-full px-1.5 py-0.5 t8 font-bold" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>NUEVA</span>}</div></td>
                 <td className="px-3 py-2.5"><div className="t12 font-medium" style={{ color: C.ink }}>{o.cliente}</div><div className="t9" style={{ color: C.faint }}>Deudor: {o.deudor}</div></td>
                 <td className="px-3 py-2.5 t11" style={{ color: C.sub }}>{o.facturas}</td>
-                <td className="whitespace-nowrap px-3 py-2.5 t11 font-medium" style={{ color: C.ink }}>{fmtMM(o.montoMM)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 t11 font-medium" style={{ color: C.ink }}>{fmtMM(o.monto)}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>{o.tasa}</td>
-                <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: "#16A34A" }}>{fmtMM(o.giroMM)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: "#16A34A" }}>{fmtMM(o.giro)}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>{o.fecha}</td>
                 <td className="whitespace-nowrap px-3 py-2.5"><div className="flex flex-wrap items-center gap-1"><span className="rounded-md px-2 py-1 t10 font-semibold" style={{ backgroundColor: ec.bg, color: ec.fg }}>{o.estado}</span>{o.sub && (() => { const sc = subColor[o.sub] || subColor["Giro pendiente"]; return <span className="rounded-md px-2 py-1 t10 font-semibold" style={{ backgroundColor: sc.bg, color: sc.fg }}>{o.sub}</span>; })()}</div></td>
                 <td className="whitespace-nowrap px-3 py-2.5">{(() => { const pc = pagoCol[o.estadoPago] || pagoCol["Pendiente"]; return (
@@ -18512,7 +18709,7 @@ function OperacionesView({ deals, onOpen, soloExec }) {
       <div className="overflow-x-auto rounded-2xl" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
         <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: `1px solid ${C.line}` }}>
           <div className="t11 font-semibold" style={{ color: C.ink }}>{facRows.length.toLocaleString("es-CL")} facturas</div>
-          <div className="t10" style={{ color: C.faint }}>Total documentos: {fmtMM(facRows.reduce((s, f) => s + (f.montoMM || 0), 0))}</div>
+          <div className="t10" style={{ color: C.faint }}>Total documentos: {fmtMM(facRows.reduce((s, f) => s + (f.monto || 0), 0))}</div>
         </div>
         <table className="w-full border-collapse t11" style={{ minWidth: "980px" }}>
           <thead><tr>{facCols.map((h) => <th key={h} className="px-3 py-2.5 text-left t9 font-bold uppercase tracking-wide" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
@@ -18522,7 +18719,7 @@ function OperacionesView({ deals, onOpen, soloExec }) {
                 <td className="whitespace-nowrap px-3 py-2.5 font-semibold" style={{ color: C.ink }}>#{f.folio}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>N° {f.neg}</td>
                 <td className="px-3 py-2.5"><div className="t12 font-medium" style={{ color: C.ink }}>{f.cliente}</div><div className="t9" style={{ color: C.faint }}>Deudor: {f.deudor}</div></td>
-                <td className="whitespace-nowrap px-3 py-2.5 t11 font-medium" style={{ color: C.ink }}>{fmtMM(f.montoMM)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 t11 font-medium" style={{ color: C.ink }}>{fmtMM(f.monto)}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>{f.venc}</td>
                 <td className="whitespace-nowrap px-3 py-2.5">{(() => { const pc = pagoCol[f.estadoPago] || pagoCol["Pendiente"]; return (
                   <div>
@@ -18547,23 +18744,38 @@ function OperacionesView({ deals, onOpen, soloExec }) {
 // LÍNEAS — líneas de crédito por cliente, proyección post-curse, recomendación (aumento / reducción /
 // bloqueo / aprobación) e indicador de salud según comportamiento.
 // ============================================================
+// Cartera de líneas de crédito: sale del MAESTRO A7/A8 (`window.LINEA_DISPONIBLE`), no de un hash.
+// `aprobada` es la suma de las filas NO suspendidas del cliente —una línea suspendida no financia— y
+// `uso` el monto utilizado que declara el mismo archivo. Antes se sorteaban con
+// `300 + floor(rnd()*20)*50`, así que la mesa de Líneas, el drawer y el otorgamiento podían mostrar
+// cupos distintos del mismo cliente aunque el activo estuviera inyectado y sin usar.
+// La demanda de buenos deudores se MIDE sobre DTESync y la morosidad sale del A16: son las mismas que
+// lee el Plan Mensual, para que dos vistas no contradigan al mismo cliente.
 const LINEAS_DATA = (() => {
-  // Las líneas de crédito pertenecen a los CLIENTES de la cartera: misma empresa, mismo ejecutivo y
-  // mismo SOW que PC_CLIENTES. Tienen línea aprobada los que operan (no los prospectos inactivos),
-  // de modo que la cantidad de líneas por ejecutivo es coherente con su cartera de clientes activos.
+  const arr = (typeof window !== "undefined" && Array.isArray(window.LINEA_DISPONIBLE)) ? window.LINEA_DISPONIBLE : [];
+  const porRut = new Map();
+  for (const l of arr) {
+    if (!l || !l.RUTCliente) continue;
+    const g = porRut.get(l.RUTCliente) || { aprobada: 0, uso: 0, razon: l.RazonSocialCliente || "" };
+    if (l.Estado !== "Suspendida") g.aprobada += +l.MontoAprobado || 0;   // suspendida no aporta cupo
+    g.uso += +l.MontoUtilizado || 0;                                      // lo cedido sigue vigente
+    porRut.set(l.RUTCliente, g);
+  }
   const out = [];
-  PC_CLIENTES.filter((c) => c.estado !== "Inactivo").forEach((c) => {
-    const rnd = pcRng(hashStr("linea" + c.id));
-    const aprobada = 300 + Math.floor(rnd() * 20) * 50;
-    const uso = Math.round(aprobada * (0.25 + rnd() * 0.62));
-    const montoOp = Math.round(rnd() * aprobada * 0.55);
-    const demandaBuenos = Math.round(rnd() * aprobada * 1.4); // volumen de facturas de BUENOS deudores por financiar
-    const morosidadDias = rnd() < 0.22 ? 5 + Math.floor(rnd() * 70) : 0;
-    const sowActual = c.sow != null ? c.sow : 18 + Math.floor(rnd() * 62);
-    const sowTarget = c.target || 60;
-    const ex = PC_EXECS.find((e) => e.nombre === c.ej) || PC_EXECS[0];
-    out.push({ id: "L-" + c.id, cliente: c.nombre, rut: c.rut, aprobada, uso, disponible: aprobada - uso, montoOp, proyeccion: uso + montoOp, demandaBuenos, morosidadDias, sowActual, sowTarget, exec: c.ej, zona: ex.zona });
-  });
+  for (const [rut, g] of porRut) {
+    const aprobada = Math.round(g.aprobada);
+    if (!(aprobada > 0)) continue;                                          // sin cupo no es línea vigente
+    const c = PC_CLIENTES.find((x) => x.rut === rut) || null;
+    const uso = Math.round(Math.min(g.uso, aprobada));
+    const rnd = pcRng(hashStr("linea" + (c ? c.id : rut)));
+    const montoOp = Math.round(rnd() * Math.max(0, aprobada - uso));         // operación en curso: estado de la demo
+    const ex = (c && PC_EXECS.find((e) => e.nombre === c.ej)) || PC_EXECS[0];
+    out.push({ id: "L-" + (c ? c.id : rut), cliente: (c && c.nombre) || g.razon, rut,
+      aprobada, uso, disponible: aprobada - uso, montoOp, proyeccion: uso + montoOp,
+      demandaBuenos: senalesDe(rut).demandaBuenos, morosidadDias: moraDiasCliente(rut),
+      sowActual: (c && c.sow != null) ? c.sow : 0, sowTarget: (c && c.target) || 60,
+      exec: (c && c.ej) || ex.nombre, zona: (c && c.zona) || ex.zona });
+  }
   return out;
 })();
 // ============================================================
@@ -18578,13 +18790,15 @@ const LINEAS_DATA = (() => {
 //      que el ejecutivo no ve.
 // La LF1 es EXCLUYENTE: se elimina cuando el comité asigna LF2/LF3/LF4. Un cliente está siempre en
 // uno de dos estados, nunca en ambos:
-//   estado A · enrolado sin comité → sólo LF1 $30M, deudores prime, un solo uso, se consume completa
+//   estado A · enrolado sin comité → sólo LF1 $30.000.000, deudores prime, un solo uso, se consume completa
 //   estado B · con comité         → LF2 + LF3 + LF4, sin LF1
 // ============================================================
-// Montos en MM con UN decimal, como el resto del proyecto. Sin redondear, el ruido de punto flotante
-// rompe los invariantes por 1e-13 y los montos se muestran con 15 decimales.
-const mmRound = (n) => Math.round(n * 10) / 10;
-const LF1_MM = 30; // línea inicial al enrolar un cliente
+// Montos en PESOS enteros. El peso chileno no tiene decimales, asi que redondear al peso no pierde
+// nada y ademas mata el ruido de punto flotante, que sin esto rompe los invariantes por 1e-13.
+// Antes esto redondeaba a 0,1 MM —o sea a $100.000— y cada asignacion se comia hasta $99.999.
+const mmRound = (n) => Math.round(n);
+const TRAMO_LINEA = 5e6;  // las lineas se tallan en tramos de $5.000.000
+const LF1_PESOS = 30e6; // linea inicial al enrolar un cliente: $30.000.000
 
 // Índice (RUTEmisor → [{ rut, nombre, vol }]) de los deudores a los que cada cliente factura,
 // ordenados por volumen facturado. Es el insumo del dimensionamiento: el cupo del par se aprueba
@@ -18606,9 +18820,10 @@ function paresPorEmisor() {
 }
 
 // LÍNEA DE OTROS DEUDORES del cliente (LF4), POR CATEGORÍA DE DEUDOR. Se DIMENSIONA con la regla del
-// spec —10% de la suma de cupos— y no con el monto de window.LINEA_DISPONIBLE: ese dato trae 15–40MM
-// por fila, que en un cliente de 1.200MM de línea deja a veinte deudores de la cola compitiendo por
-// 15MM y hace que casi toda oferta caiga a comité. De LINEA_DISPONIBLE se conservan las dos cosas
+// spec —10% de la suma de cupos— y no con el monto de window.LINEA_DISPONIBLE. El motivo original era
+// que ese activo traía 15–40MM por fila y dejaba a veinte deudores de la cola compitiendo por 15MM;
+// desde que el maestro se genera del volumen real de facturas ya no es así (p50 560MM por fila), pero
+// la regla del 10% se mantiene porque es del spec, no un parche. De LINEA_DISPONIBLE se conservan
 // que sí aportan y no se pueden derivar: el corte por categoría de deudor (la misma llave que usa
 // `tipoLineaDeDeudor`) y el estado «Suspendida». Una línea suspendida conserva su exposición vigente
 // —la suspensión no libera lo cedido— pero NO admite operaciones nuevas.
@@ -18619,10 +18834,17 @@ function lf4MetaPorCliente(rutCli) {
     const arr = (typeof window !== "undefined" && Array.isArray(window.LINEA_DISPONIBLE)) ? window.LINEA_DISPONIBLE : [];
     for (const r of arr) {
       let g = _lf4Idx.get(r.RUTCliente); if (!g) { g = []; _lf4Idx.set(r.RUTCliente, g); }
-      g.push({ categoria: r.TipoLinea, peso: r.MontoAprobadoMM || 0, suspendida: r.Estado === "Suspendida" });
+      g.push({ categoria: r.TipoLinea, peso: r.MontoAprobado || 0, suspendida: r.Estado === "Suspendida", uso: +r.MontoUtilizado || 0 });
     }
   }
   return _lf4Idx.get(rutCli) || [{ categoria: "Lista Blanca", peso: 1, suspendida: false }, { categoria: "Deudores Autorizados", peso: 1, suspendida: false }];
+}
+// ¿El maestro A7/A8 conoce a este cliente? Distinto de «tiene cupo»: LINEAS_DATA deja fuera al que
+// suma 0 aprobado —no es una línea vigente y no va en la cartera— y sin esta pregunta ese cliente
+// sería indistinguible de uno sin comité, que es justo lo que le daría una LF1 nueva.
+function clienteEnMaestroLineas(rutCli) {
+  lf4MetaPorCliente(rutCli);            // fuerza el índice
+  return !!(_lf4Idx && _lf4Idx.has(rutCli));
 }
 
 // Estado de líneas de un cliente, memoizado por RUT. El cálculo es COMPLETO —todas sus líneas, no
@@ -18636,11 +18858,21 @@ function lineasDeCliente(rutCli) {
   const deudores = paresPorEmisor().get(rutCli) || [];
   let res;
 
+  if (!fila && clienteEnMaestroLineas(rutCli)) {
+    // ESTADO S · el comité SÍ le constituyó líneas y hoy están todas suspendidas. No es un cliente
+    // nuevo: darle la LF1 rodearía una decisión de riesgo deliberada. Sin cupo de ninguna clase, y
+    // lo que corresponde pedir es reactivar, no crear —por eso su propio motivo—.
+    // Lo utilizado sigue vigente: suspender una línea no libera lo ya cedido.
+    const usado = mmRound(lf4MetaPorCliente(rutCli).reduce((x, m) => x + (m.uso || 0), 0));
+    res = { estado: "S", asignadaCliente: 0, usoCliente: usado, cola: deudores, lineas: [] };
+    _cacheCli.set(rutCli, res); return res;
+  }
+
   if (!fila) {
     // ESTADO A · enrolado, sin comité. Sólo LF1, excluyente con LF2/LF3/LF4.
     res = {
-      estado: "A", asignadaCliente: LF1_MM, usoCliente: 0, cola: deudores,
-      lineas: [{ id: "LF1-" + rutCli, tipo: "LF1", granularidad: "comodin", rutDeudor: null, aprobado: LF1_MM, vigente: 0, soloPrime: true, unSoloUso: true }],
+      estado: "A", asignadaCliente: LF1_PESOS, usoCliente: 0, cola: deudores,
+      lineas: [{ id: "LF1-" + rutCli, tipo: "LF1", granularidad: "comodin", rutDeudor: null, aprobado: LF1_PESOS, vigente: 0, soloPrime: true, unSoloUso: true }],
     };
     _cacheCli.set(rutCli, res); return res;
   }
@@ -18652,8 +18884,8 @@ function lineasDeCliente(rutCli) {
   // comodín se lleva el 10% de la suma de cupos y el resto va a las líneas de par.
   let objetivoTotal = Math.max(Math.round(fila.aprobada * (0.78 + rnd() * 0.14)), Math.ceil(fila.uso / 0.88));
   objetivoTotal = Math.min(objetivoTotal, fila.aprobada);
-  const apComodin = Math.max(5, Math.round(objetivoTotal * 0.0909)); // 10% de los cupos de par
-  const objetivoPares = Math.max(5, objetivoTotal - apComodin);
+  const apComodin = Math.max(TRAMO_LINEA, Math.round(objetivoTotal * 0.0909)); // 10% de los cupos de par
+  const objetivoPares = Math.max(TRAMO_LINEA, objetivoTotal - apComodin);
 
   // Heredan del dato el corte por categoría y el estado; el monto sale de la regla.
   const meta = lf4MetaPorCliente(rutCli);
@@ -18693,20 +18925,20 @@ function lineasDeCliente(rutCli) {
   // en un cliente de 1.200MM una línea de 5MM no financia ninguna factura y sólo produce rechazos).
   // Después se normaliza para que la suma sea exactamente el presupuesto de pares: aplicar el piso
   // sin normalizar podía pasarse del presupuesto y romper el tope del cliente.
-  const pisoPar = Math.max(5, Math.round(objetivoPares * 0.03 / 5) * 5);
-  const crudos = cabeza.map((d) => Math.max(pisoPar, Math.round(objetivoPares * (d.vol / volTot) / 5) * 5));
+  const pisoPar = Math.max(TRAMO_LINEA, Math.round(objetivoPares * 0.03 / TRAMO_LINEA) * TRAMO_LINEA);
+  const crudos = cabeza.map((d) => Math.max(pisoPar, Math.round(objetivoPares * (d.vol / volTot) / TRAMO_LINEA) * TRAMO_LINEA));
   const sumaCruda = crudos.reduce((s, x) => s + x, 0) || 1;
-  const cupos = crudos.map((c) => Math.max(5, Math.round(c * (objetivoPares / sumaCruda) / 5) * 5));
+  const cupos = crudos.map((c) => Math.max(TRAMO_LINEA, Math.round(c * (objetivoPares / sumaCruda) / TRAMO_LINEA) * TRAMO_LINEA));
   const lineas = []; let repartido = 0;
   cabeza.forEach((d, i) => {
     const ultimo = i === cabeza.length - 1;
-    let cupo = ultimo ? Math.max(5, objetivoPares - repartido) : cupos[i];
+    let cupo = ultimo ? Math.max(TRAMO_LINEA, objetivoPares - repartido) : cupos[i];
     repartido += cupo;
     // ~18% de los pares con línea llevan además una PUNTUAL (LF3) tallada sobre su cupo. Una LF3
     // sólo puede estar intacta o consumida COMPLETA (§3.6): nunca a medias.
-    const mLF3 = rnd() < 0.18 ? Math.max(5, Math.round(cupo * (0.2 + rnd() * 0.3) / 5) * 5) : 0;
+    const mLF3 = rnd() < 0.18 ? Math.max(TRAMO_LINEA, Math.round(cupo * (0.2 + rnd() * 0.3) / TRAMO_LINEA) * TRAMO_LINEA) : 0;
     if (mLF3 > 0) lineas.push({ id: "LF3-" + rutCli + "-" + i, tipo: "LF3", granularidad: "par", rutDeudor: d.rut, nombreDeudor: d.nombre, aprobado: mLF3, vigente: 0, unSoloUso: true, quemada: rnd() < 0.34 });
-    lineas.push({ id: "LF2-" + rutCli + "-" + i, tipo: "LF2", granularidad: "par", rutDeudor: d.rut, nombreDeudor: d.nombre, aprobado: Math.max(5, cupo - mLF3), vigente: 0 });
+    lineas.push({ id: "LF2-" + rutCli + "-" + i, tipo: "LF2", granularidad: "par", rutDeudor: d.rut, nombreDeudor: d.nombre, aprobado: Math.max(TRAMO_LINEA, cupo - mLF3), vigente: 0 });
   });
 
   // Si la talla de una LF3 deja a las LF2 sin capacidad para sostener el uso vigente, la puntual se
@@ -18842,6 +19074,7 @@ const RESOLUCION_COMITE = {
   lf1:     { pide: "Asignación de líneas por comité",      alcance: "Todo el cliente" },
   cliente: { pide: "Ampliar Línea Global Cliente",          alcance: "Todo el cliente" },
   deudor:  { pide: "Ampliar Línea Global Deudor",           alcance: "Todos los clientes que ceden este deudor" },
+  suspendida: { pide: "Reactivar las líneas del cliente",   alcance: "Todo el cliente" },
 };
 // El motivo se explica en lenguaje de negocio, nunca con el nombre técnico del nivel.
 const MOTIVO_TEXTO = {
@@ -18850,6 +19083,7 @@ const MOTIVO_TEXTO = {
   lf1:     "la línea inicial no cubre este deudor",
   cliente: "sin cupo en la Línea Global Cliente",
   deudor:  "la Línea Global Deudor no tiene cupo · la comparten todos sus clientes",
+  suspendida: "todas las líneas del cliente están suspendidas",
 };
 
 // Línea del deudor con respaldo determinístico: una factura puede venir sin RUT del receptor, y en
@@ -18858,7 +19092,7 @@ function lineaDeudorDe(rut, nombre) {
   const l = rut ? lineaDeDeudor(rut) : null;
   if (l) return l;
   const rnd = pcRng(hashStr("ldeu-fb" + (rut || nombre || "")));
-  const aprobado = 40 + Math.floor(rnd() * 24) * 5;
+  const aprobado = (40 + Math.floor(rnd() * 24) * 5) * 1e6;
   const vigente = Math.round(aprobado * (0.2 + rnd() * 0.55));
   return { rutDeudor: rut || "", nombre: nombre || "", tipo: tipoDeudor(rut, nombre), aprobado, vigente, disponible: mmRound(aprobado - vigente), nClientes: 1, sintetica: true };
 }
@@ -18878,10 +19112,10 @@ function tramosDeudores(ds) {
   const notaAlta = ds.filter((x) => !x.prime && x.nota > NOTA_PRIORITARIA);
   const resto = ds.filter((x) => !x.prime && x.nota <= NOTA_PRIORITARIA);
   return {
-    nDeudores: ds.length, nFacturas: ds.reduce((s2, x) => s2 + (x.n || 0), 0), montoMM: sum(ds),
-    prime: { n: prime.length, montoMM: sum(prime) },
-    notaAlta: { n: notaAlta.length, montoMM: sum(notaAlta) },
-    resto: { n: resto.length, montoMM: sum(resto) },
+    nDeudores: ds.length, nFacturas: ds.reduce((s2, x) => s2 + (x.n || 0), 0), monto: sum(ds),
+    prime: { n: prime.length, monto: sum(prime) },
+    notaAlta: { n: notaAlta.length, monto: sum(notaAlta) },
+    resto: { n: resto.length, monto: sum(resto) },
   };
 }
 // Desde las facturas itemizadas (DTESync): una entrada por deudor real, con su monto exacto.
@@ -18892,8 +19126,8 @@ function analisisDeudores(facturas) {
     const tipo = tipoDeudorDisp(f), nombre = f.deudor || "";
     const k = f.rutRecep || nombre;
     let x = g.get(k);
-    if (!x) { x = { nombre, prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado", nota: notaFromScore(scoreDeudor(nombre, tipo).score), n: 0, monto: 0 }; g.set(k, x); }
-    x.n += 1; x.monto += (f.montoMM || 0);
+    if (!x) { x = { nombre, prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado", nota: (notaDeudor(nombre) || 0), n: 0, monto: 0 }; g.set(k, x); }
+    x.n += 1; x.monto += (f.monto || 0);
   });
   return tramosDeudores([...g.values()]);
 }
@@ -18917,7 +19151,7 @@ function analisisDeudoresDeDeal(deal) {
   return tramosDeudores((deal.deudores || []).filter((x) => x && x.name).map((x) => {
     const tipo = tipoDeudor(null, x.name);
     return { nombre: x.name, prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado",
-      nota: notaFromScore(scoreDeudor(x.name, tipo).score), n: x.facturas || 0, monto: x.montoMM || 0 };
+      nota: (notaDeudor(x.name) || 0), n: x.facturas || 0, monto: x.monto || 0 };
   }));
 }
 
@@ -18980,7 +19214,7 @@ function recortarAsignacion(linea, idsVigentes) {
 }
 
 function asignarLineas(facturas, rutCliente, inyecta) {
-  const sel = (facturas || []).filter((f) => f && (f.montoMM || 0) > 0);
+  const sel = (facturas || []).filter((f) => f && (f.monto || 0) > 0);
   const st = (inyecta && inyecta.estado) || lineasDeCliente(rutCliente);
   // Copias de trabajo: la asignación NUNCA muta el estado memoizado del cliente ni el índice de
   // deudores, porque se re-ejecuta en cada evaluación y tiene que partir siempre del mismo estado.
@@ -19004,10 +19238,10 @@ function asignarLineas(facturas, rutCliente, inyecta) {
     const k = f.rutRecep || nombre;
     let g = grupos.get(k);
     if (!g) {
-      g = { key: k, rut: f.rutRecep || "", nombre, tipo, prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado", nota: notaFromScore(scoreDeudor(nombre, tipo).score), facturas: [], monto: 0 };
+      g = { key: k, rut: f.rutRecep || "", nombre, tipo, prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado", nota: (notaDeudor(nombre, f.rutRecep) || 0), facturas: [], monto: 0 };
       grupos.set(k, g);
     }
-    g.facturas.push(f); g.monto += (f.montoMM || 0);
+    g.facturas.push(f); g.monto += (f.monto || 0);
   }
   // Manda el TRAMO de prioridad y recién después la nota. Antes ordenaba sólo por nota, y eso
   // dejaba a un Autorizado de nota 3,5 detrás de un deudor sin clasificar de nota 4,3: al repartir
@@ -19022,7 +19256,10 @@ function asignarLineas(facturas, rutCliente, inyecta) {
   for (const g of orden) {
     // Cascada por deudor.
     let cascada = [], sinCascada = null, tienePropia = false;
-    if (st.estado === "A") {
+    if (st.estado === "S") {
+      // Todas las líneas del cliente suspendidas: no hay cascada de ninguna clase.
+      sinCascada = "suspendida";
+    } else if (st.estado === "A") {
       // Estado A: sólo LF1, y sólo para deudores prime. La LF1 existe para desbloquear la venta a
       // clientes nuevos; todo lo demás necesita que el comité asigne líneas.
       const lf1 = lineas.find((l) => l.tipo === "LF1");
@@ -19054,7 +19291,7 @@ function asignarLineas(facturas, rutCliente, inyecta) {
 
     // Dentro de cada deudor, de MAYOR a MENOR monto: maximiza el monto colocado y evita que
     // facturas chicas consuman el cupo que necesitaba una grande.
-    const facs = g.facturas.slice().sort((a, b) => (b.montoMM || 0) - (a.montoMM || 0));
+    const facs = g.facturas.slice().sort((a, b) => (b.monto || 0) - (a.monto || 0));
     let asignadoDeudor = 0, nConLinea = 0;
     // Lo que toma ESTE deudor de cada línea. `l.usado` acumula el consumo de TODOS los deudores que
     // comparten la línea —la de Otros Deudores es de varios—, así que no sirve para responder
@@ -19062,7 +19299,7 @@ function asignarLineas(facturas, rutCliente, inyecta) {
     const usoPropio = new Map();
 
     for (const f of facs) {
-      const m = f.montoMM || 0; // crudo: se redondea al publicar, no al acumular
+      const m = f.monto || 0; // crudo: se redondea al publicar, no al acumular
       const restPar = mmRound(cascada.reduce((s, l) => s + dispLinea(l), 0));
       const restDeudor = mmRound(ld.aprobado - ld.vigente - ld.usado);
 
@@ -19264,18 +19501,35 @@ function api3EstadoProceso(idProceso) {
   const fin = (Math.abs(hashStr(idProceso)) % 5 === 0) ? "Observada" : "Aprobada";
   const SEQ = ["En gestión", "En análisis de Riesgo", "En comité", fin];
   s.estado = SEQ[Math.min(SEQ.length - 1, s.refrescos)]; s.tsEstado = nowStamp();
+  // Resuelta y aprobada: la línea queda CONSTITUIDA y entra a la cartera del cliente. Desde acá C05
+  // deja de salir al re-evaluar la operación, que es su vía natural de regularización.
+  if (s.estado === "Aprobada" && !s.constituida) {
+    const fila = constituirLinea(s);
+    s.constituida = !!fila;
+    if (fila && typeof registrarAuditoria === "function") registrarAuditoria({ usuario: s.ejecutivo || "—", modulo: "Líneas · Comité", accion: "Línea constituida", glosa: `${s.idProceso} · ${s.cliente} · ${fmtMM(fila.aprobada)}`, exito: true });
+  }
   return s.estado;
 }
+// API 4 · Plataforma 360 — LEE el activo A11 (`window.PLATAFORMA360`), no lo fabrica. Un RUT ausente
+// de la tabla devuelve la forma vacía: sin información no se inventa una empresa.
 function api4Empresa360(rut, nombre) {
-  const h = Math.abs(hashStr("360" + (rut || nombre)));
-  const acts = ["VENTA AL POR MAYOR DE OTROS PRODUCTOS N.C.P.", "CONSTRUCCIÓN DE OBRAS MENORES", "TRANSPORTE DE CARGA POR CARRETERA", "FABRICACIÓN DE ALIMENTOS", "SERVICIOS DE INGENIERÍA"];
-  const secs = ["INDUSTRIA DE ALIMENTOS", "CONSTRUCCIÓN", "TRANSPORTE", "COMERCIO", "SERVICIOS"];
-  const socios = [["MARCELA LILIANA MARÍN GONZÁLEZ", 100], ["JORGE ANDRÉS SOTO PÉREZ", 60], ["CAROLINA PAZ FUENTES RÍOS", 40]].slice(0, 1 + (h % 2)).map(([n, p], i) => ({ rut: `${9000000 + (h + i * 7919) % 8999999}-${"0123456789K"[(h + i) % 11]}`, nombre: n, participacion: i === 0 ? (h % 2 ? 100 : 60) : 40, pep: "No", fatca: "No", aprobLegal: "Ingresada" }));
+  const F = P360.porRut[rut] || P360.porNombre[nombre] || null;
+  const A = (c) => (F ? F[P360.ix[c]] : null), N = (c) => (F ? (+A(c) || 0) : 0);
+  const fec = (iso) => { const q = String(iso || "").slice(0, 10).split("-"); return q.length === 3 && q[0] ? `${q[2]}/${q[1]}/${q[0]}` : "---"; };
+  let socios = [];
+  try { socios = F ? JSON.parse(A("SOCIOS_JSON") || "[]").map((x) => ({ ...x, aprobLegal: "Ingresada" })) : []; } catch (_) { socios = []; }
   return {
-    firmografica: { actividad: acts[h % acts.length], sector: secs[h % secs.length], trabajadores: 10 + (h % 190), fechaIngreso: `0${1 + (h % 9)}/0${1 + (h % 9)}/2024`, primeraOperacion: `1${h % 9}/0${1 + (h % 9)}/2024`, web: "---", clienteBanco: h % 3 === 0 ? "Sí" : "No", alertas: h % 4 === 0 ? "Sí" : "No" },
-    comercial: { quintil: h % 5, margenUltMes: +(0.8 + (h % 30) / 10).toFixed(1), margen12m: +(4 + (h % 60) / 10).toFixed(1), colocProm12m: 20000 + (h % 60000), spreadReal12m: +(1 + (h % 90) / 100).toFixed(2), tasaUltOp: +(1.2 + (h % 90) / 100).toFixed(2), comisionUltOp: 200 + (h % 500), segmento: h % 3 === 0 ? "Grandes" : "Medianas", subSegmento: h % 3 === 0 ? "Grandes" : "Medianas Grandes", jefeGrupo: "JAVIER MARTINEZ (JG)", asistente: "NICOLE CABAÑA VILASAU", cobranza: "KATHERINE ALBITES DOMÍNGUEZ" },
+    firmografica: { actividad: A("ACTIVIDAD_ECONOMICA") || "---", sector: A("SECTOR") || "---", trabajadores: N("NUM_TRABAJADORES"),
+      fechaIngreso: fec(A("FECHA_INGRESO")), primeraOperacion: fec(A("FECHA_PRIMERA_OPERACION")), web: "---",
+      clienteBanco: A("CLIENTE_BANCO") === "SI" ? "Sí" : "No", alertas: A("ALERTAS") === "SI" ? "Sí" : "No" },
+    comercial: { quintil: N("QUINTIL"), margenUltMes: N("MARGEN_ULT_MES_M"), margen12m: N("MARGEN_12M_M"),
+      colocProm12m: N("COLOC_PROM_12M_M"), spreadReal12m: N("SPREAD_REAL_12M_PCT"), tasaUltOp: N("TASA_ULT_OP_PCT"),
+      comisionUltOp: N("COMISION_ULT_OP_M"), segmento: A("SEGMENTO") || "—", subSegmento: A("SUB_SEGMENTO") || "—",
+      jefeGrupo: "JAVIER MARTINEZ (JG)", asistente: "NICOLE CABAÑA VILASAU", cobranza: "KATHERINE ALBITES DOMÍNGUEZ" },
     socios,
-    indices: { pasExGen: +(3 + (h % 60) / 10).toFixed(2), patrimonio: 200000000 + (h % 800) * 1000000, generacion: 50000000 + (h % 300) * 500000, leverage: +(0.8 + (h % 30) / 10).toFixed(1), ventas: [380000 + (h % 90000), 400000 + (h % 90000), (h % 3 === 0) ? 0 : 420000 + (h % 90000)], ventasSII: [380000 + (h % 90000), 402000 + (h % 90000), 440000 + (h % 90000)] },
+    indices: { pasExGen: N("PAS_EXIGIBLE_GEN_BRUTA"), patrimonio: N("PATRIMONIO_M") * 1000, generacion: N("GENERACION_M") * 1000,
+      leverage: N("LEVERAGE"), ventas: [N("VENTAS_A1_M"), N("VENTAS_A2_M"), N("VENTAS_A3_M")],
+      ventasSII: [N("VENTAS_SII_A1_M"), N("VENTAS_SII_A2_M"), N("VENTAS_SII_A3_M")] },
   };
 }
 // Resumen de la EMPRESA (perfil), en base a su facturación/segmento/comportamiento (Plataforma360). Determinista.
@@ -19283,18 +19537,18 @@ function resumenEmpresa(deal) {
   if (!deal) return [];
   const e = api4Empresa360(deal.rutEmisor || deal.cliente, deal.cliente);
   const f = e.firmografica, c = e.comercial, x = e.indices;
-  const ventaAnualMM = Math.round((x.ventasSII[1] || x.ventasSII[0] || 0) / 1000);
-  const patrimonioMM = Math.round((x.patrimonio || 0) / 1e6);
-  const colocMM = Math.round((c.colocProm12m || 0) / 1000);
+  const ventaAnual = Math.round((x.ventasSII[1] || x.ventasSII[0] || 0) / 1000);
+  const patrimonio = Math.round((x.patrimonio || 0) / 1e6);
+  const coloc = Math.round((c.colocProm12m || 0) / 1000);
   const nDeud = (deal.deudores && deal.deudores.length) || 1;
   const out = [];
   out.push(`${deal.cliente} opera en el sector ${(f.sector || "").toLowerCase()} (${(f.actividad || "").toLowerCase()}), con ~${f.trabajadores} trabajadores${f.clienteBanco === "Sí" ? " y es cliente del banco" : ""}. Ingresó a la cartera el ${f.fechaIngreso}.`);
-  out.push(`Facturación anual (SII) ~${fmtMM(ventaAnualMM)} · segmento ${c.segmento} (quintil ${(c.quintil || 0) + 1}/5). Patrimonio ~${fmtMM(patrimonioMM)}, leverage ${x.leverage}×, margen últimos 12 m ${c.margen12m}%.`);
+  out.push(`Facturación anual (SII) ~${fmtMM(ventaAnual)} · segmento ${c.segmento} (quintil ${(c.quintil || 0) + 1}/5). Patrimonio ~${fmtMM(patrimonio)}, leverage ${x.leverage}×, margen últimos 12 m ${c.margen12m}%.`);
   // Comportamiento con factoring solo si el cliente YA ha operado con NEX/BICE (un cliente nuevo no lo tiene).
   if (esClienteNuevoNEX(deal))
     out.push(`Cliente nuevo para NEX: aún sin operaciones de factoring cursadas, por lo que no registra colocación ni spread histórico. En esta oportunidad opera sobre ${nDeud} deudor(es).`);
   else
-    out.push(`Comportamiento con factoring: colocación promedio 12 m ${fmtMM(colocMM)}, spread real ${c.spreadReal12m}%, tasa última operación ${c.tasaUltOp}%. En esta oportunidad opera sobre ${nDeud} deudor(es).`);
+    out.push(`Comportamiento con factoring: colocación promedio 12 m ${fmtMM(coloc)}, spread real ${c.spreadReal12m}%, tasa última operación ${c.tasaUltOp}%. En esta oportunidad opera sobre ${nDeud} deudor(es).`);
   if (deal.esCliente === false) out.push(`Empresa fuera de cartera (aún no es cliente del factoring): requiere enrolamiento para poder cursar.`);
   return out;
 }
@@ -19303,14 +19557,30 @@ function api5Documentos(rut) {
   const base = [["Riesgo", "Vaciado Individual", 3], ["Legal", "Contrato Marco", 1], ["Legal", "Mandato / Pagaré", 1], ["Legal", "Informe de Poderes", 2], ["Comercial", "Compliance Tracker", 1], ["Comercial", "Carpeta Tributaria", 1], ["Comercial", "Certificado Deuda Tesorería y Convenios", 2]];
   return base.slice(0, 4 + (h % 4)).map(([tipo, nombre, ver], i) => ({ tipo, nombre, anio: 2024 + (i % 3), version: ver, usuario: ["PAULINA BENIZ", "CARLOS LABRANA", "PAMELA CANDIA (AC)", "RICARDO JARA"][i % 4], creacion: `0${1 + ((h + i) % 9)}/0${1 + ((h + i) % 9)}/202${4 + (i % 3)}`, vencimiento: `0${1 + ((h + i) % 9)}/0${1 + ((h + i) % 9)}/202${5 + (i % 3)}` }));
 }
+// API 6 · Riesgo Crédito BICE — COMPONE su respuesta en vez de fabricarla. Lo que solapa con el A16
+// (mora CMF, mora ACHEF, protestos, mora interna) se LEE del A16, y sólo lo que ese activo no trae
+// viene del A9. Antes cada uno tenía su propio hash, así que una misma empresa mostraba una mora en la
+// bandeja de otorgamiento y otra distinta en la presentación al comité: dos cifras del mismo hecho.
 function api6RiesgoBICE(rut) {
-  const h = Math.abs(hashStr("bice" + rut));
-  const malo = h % 6 === 0;
+  const R = RIESGO_A9.porRut[rut] || null;
+  const B = (c) => (R ? (+R[RIESGO_A9.ix[c]] || 0) : 0);
+  const A = a16(OTORG_A16.porRut[rut] || null);
+  const deudaInterna = A("DEUDA_INTERNA_TOTAL"), deudaCMF = A("CMF_DEUDA_TOTAL");
+  const moraInterna = A("MORA_INTERNA_MAS_25D") + A("MORA_INTERNA_30_90") + A("MORA_INTERNA_90_180") + A("MORA_INTERNA_180_3A");
   return {
-    deudaDirecta: (h % 900) * 100000, deudaIndirecta: (h % 5 === 0) ? (h % 300) * 100000 : 0, leasingUF: 0,
-    moraCMF: malo ? (h % 40) * 100000 : 0, moraACHEF: { nroEmpresas: 1 + (h % 4), vigente: (h % 500) * 100000, morosas: malo ? (h % 90) * 100000 : 0, facturas: (h % 400) * 100000, cheques: 0, letras: 0, otros: 0 },
-    boletinComercial: malo ? (1 + h % 3) : 0, deudaPrevisional: (h % 9 === 0) ? (h % 20) * 100000 : 0, protestos: malo ? (1 + h % 2) : 0,
-    clasificacion: malo ? "C" : (h % 3 === 0 ? "B" : "A"), morosidadInterna: malo ? +((h % 30) / 10).toFixed(2) : 0, protestoPctInterno: malo ? +((h % 20) / 10).toFixed(2) : 0,
+    // Del A9: el desglose de la deuda total que ya declara el A16, más lo que sólo esta API reporta.
+    deudaDirecta: B("CMF_DEUDA_DIRECTA_M") * 1000, deudaIndirecta: B("CMF_DEUDA_INDIRECTA_M") * 1000,
+    leasingUF: B("LEASING_UF"), boletinComercial: B("BOLETIN_COMERCIAL_N"),
+    deudaPrevisional: B("DEUDA_PREVISIONAL_M") * 1000, protestos: B("PROTESTOS_N"),
+    clasificacion: (R && R[RIESGO_A9.ix.CLASIFICACION_DEUDORA]) || "—",
+    // Del A16: las mismas cifras que evalúa el otorgamiento.
+    moraCMF: A("CMF_DIR_MOROSA_30_90") + A("CMF_DIR_MOROSA_90_180") + A("CMF_DIR_MOROSA_180_3A"),
+    moraACHEF: { nroEmpresas: A("NRO_FACTORINGS_LM"), vigente: B("ACHEF_VIGENTE_M") * 1000,
+      morosas: A("ACHEF_MOROSA_60_90") + A("ACHEF_MOROSA_90_180") + A("ACHEF_MOROSA_MAS_180"),
+      facturas: B("ACHEF_FACTURAS"), cheques: 0, letras: 0, otros: 0 },
+    // Derivadas del A16: qué parte de la exposición está en mora o protestada.
+    morosidadInterna: deudaInterna > 0 ? +(moraInterna / deudaInterna * 100).toFixed(2) : 0,
+    protestoPctInterno: deudaCMF > 0 ? +(A("EFX_PROTESTOS") / deudaCMF * 100).toFixed(2) : 0,
   };
 }
 // Notas comerciales generadas con IA a partir de la API 4 + lo cargado en la presentación.
@@ -19380,7 +19650,8 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
   const [propGlobal, setPropGlobal] = useState(linea ? linea.aprobada : 300);
   const [propFactoring, setPropFactoring] = useState(linea ? linea.aprobada : 300);
   const [propConfirming, setPropConfirming] = useState(0);
-  const [vencProp, setVencProp] = useState(() => { const d = new Date(); return new Date(d.getFullYear() + 1, d.getMonth(), d.getDate()).toISOString().slice(0, 10); });
+  // Vencimiento propuesto = hoy + la vigencia que fija la política (`CFG.vigenciaLineaMeses`), no un año fijo.
+  const [vencProp, setVencProp] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + pol("vigenciaLineaMeses", 12), d.getDate()).toISOString().slice(0, 10); });
   const [subprod, setSubprod] = useState(() => [{ tipoDoc: "FACTURA", aprobado: linea ? linea.aprobada : 300, utilizado: linea ? linea.uso : 0, propuesta: linea ? linea.aprobada : 300, anticipo: 100, plazoMax: 90 }]);
   const totalPropuesto = propFactoring + propConfirming;
   // Paso 4 — deudores. Construye la fila de un deudor (datos API 4 · Plataforma 360) e incorpora la
@@ -19390,7 +19661,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
     const h = Math.abs(hashStr("deu" + nombre)); const prop = 50 + (h % 20) * 10; const ant = (h % 2) ? 50 + (h % 10) * 10 : 0;
     const esCliente = typeof PC_CLIENTES !== "undefined" && PC_CLIENTES.some((c) => c.nombre === nombre) ? true : (h % 3 === 0);
     const hist = deudoresHistorial(cliente, [{ name: nombre }])[0];
-    return { nombre, rut: `${76000000 + (h % 20000000)}-${"0123456789K"[h % 11]}`, nota: notaFromScore(scoreDeudor(nombre).score), esCliente, politicaPct: 25 + (h % 2) * 5, anterior: ant, utilizado: ant ? Math.round(ant * ((h % 60) / 100)) : 0, deudaDirecta: (h % 500) * 100000, deudaIndirecta: (h % 7 === 0) ? (h % 200) * 100000 : 0, propuesta: prop, fechaInf: hoyISO, productos: [{ producto: "FACTURA", anterior: ant, utilizado: 0, propuesto: prop }], hist, l6m: ventaL6M(hist) };
+    return { nombre, rut: `${76000000 + (h % 20000000)}-${"0123456789K"[h % 11]}`, nota: (notaDeudor(nombre) || 0), esCliente, politicaPct: pol("concentracionDeudorPct", 30), anterior: ant, utilizado: ant ? Math.round(ant * ((h % 60) / 100)) : 0, deudaDirecta: (h % 500) * 100000, deudaIndirecta: (h % 7 === 0) ? (h % 200) * 100000 : 0, propuesta: prop, fechaInf: hoyISO, productos: [{ producto: "FACTURA", anterior: ant, utilizado: 0, propuesto: prop }], hist, l6m: ventaL6M(hist) };
   };
   // Pre-carga: los deudores con flujo recurrente ya vienen incorporados; el ejecutivo sólo ingresa la
   // información de línea (propuesta, política, productos). Puede agregar otros con el combo o eliminarlos.
@@ -19495,7 +19766,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                 preview={[["Clasificación deudora", api6.clasificacion], ["Deuda directa / indirecta", `$ ${(api6.deudaDirecta / 1e6).toFixed(1)} MM / $ ${(api6.deudaIndirecta / 1e6).toFixed(1)} MM`], ["Mora CMF", api6.moraCMF > 0 ? `$ ${(api6.moraCMF / 1e6).toFixed(1)} MM ⚠` : "Sin mora"], ["Mora ACHEF", api6.moraACHEF.morosas > 0 ? `$ ${(api6.moraACHEF.morosas / 1e6).toFixed(1)} MM · ${api6.moraACHEF.nroEmpresas} empresa(s) ⚠` : `Sin mora · ${api6.moraACHEF.nroEmpresas} empresa(s)`], ["Boletín comercial", api6.boletinComercial > 0 ? `${api6.boletinComercial} anotación(es) ⚠` : "Sin anotaciones"], ["Deuda previsional", api6.deudaPrevisional > 0 ? `$ ${(api6.deudaPrevisional / 1e6).toFixed(1)} MM ⚠` : "Sin deuda"], ["Protestos no aclarados", api6.protestos || 0], ["Leverage / Patrimonio", `${api4.indices.leverage}x · $ ${(api4.indices.patrimonio / 1e6).toFixed(0)} MM`], ["Ventas SII (últ. año)", "M$ " + api4.indices.ventasSII[1].toLocaleString("es-CL")], ["Morosidad interna / Protesto %", `${api6.morosidadInterna} / ${api6.protestoPctInterno}`]]} />}
               {carg[1] && fin && (() => {
                 const fld = (k, step) => ({ value: fin[k], onChange: (e) => setFin((f) => ({ ...f, [k]: +e.target.value || 0 })), type: "number", step: step || "0.1", className: "w-full rounded-md px-2 py-1 t11 text-right outline-none", style: inpSty });
-                const ventasUltMM = api4.indices.ventasSII[2] / 1000, deudaMM = (fin.directa || 0) + (fin.indirecta || 0);
+                const ventasUlt = api4.indices.ventasSII[2] / 1000, deuda = (fin.directa || 0) + (fin.indirecta || 0);
                 const ratio = (a, b) => (b > 0 ? (a / b).toFixed(2) : "---");
                 const achefTot = +(fin.achefVig + fin.achefMor + fin.achefFac + fin.achefChq + fin.achefLet + fin.achefOtr).toFixed(1);
                 return (
@@ -19527,9 +19798,9 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                     <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
                       <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Ratios <span className="font-normal normal-case" style={{ color: C.faint }}>(calculados)</span></div>
                       <Fila k="Línea / Patrimonio" v={ratio(propGlobal, fin.patrimonio)} />
-                      <Fila k="Línea / Ventas" v={ratio(propGlobal, ventasUltMM)} />
-                      <Fila k="Deuda / Ventas" v={ratio(deudaMM, ventasUltMM)} />
-                      <Fila k="Línea / Deuda" v={ratio(propGlobal, deudaMM)} />
+                      <Fila k="Línea / Ventas" v={ratio(propGlobal, ventasUlt)} />
+                      <Fila k="Deuda / Ventas" v={ratio(deuda, ventasUlt)} />
+                      <Fila k="Línea / Deuda" v={ratio(propGlobal, deuda)} />
                     </div>
                     <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
                       <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Índices internos factoring</div>
@@ -19610,7 +19881,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
               <div className="flex items-center gap-2">
                 <select value={addSel} onChange={(e) => { const v = e.target.value; setAddSel(v); if (!v) return; if (esAdmin) { pedirDeudor(v); } else { setDeudores((p) => [...p, { ...construirDeudorLinea(v), flags: { V: true, N: true, C: true, FR: false, CP: false } }]); setAddSel(""); } }} className="rounded-md px-2 py-1.5 t11" style={inpSty}>
                   <option value="">+ Agregar deudor factoring…</option>
-                  {candidatosDeu.map((n) => <option key={n} value={n}>{n} · nota {notaFromScore(scoreDeudor(n).score)}</option>)}
+                  {candidatosDeu.map((n) => <option key={n} value={n}>{n} · nota {(notaDeudor(n) || 0)}</option>)}
                 </select>
               </div>
               {addPrev && (
@@ -19631,7 +19902,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                   const conc = propFactoring > 0 ? Math.round((d.propuesta || 0) / propFactoring * 100) : 0;
                   return (
                   <div key={d.nombre} className="mt-1 grid items-center gap-2" style={{ gridTemplateColumns: DG }}>
-                    <span className="rounded-full px-1.5 py-0.5 t10 font-bold text-center" style={{ backgroundColor: d.nota >= 4 ? "#F0FDF4" : d.nota >= 3.7 ? "#eff6ff" : "#FFF7ED", color: NOTA_COLOR(d.nota) }}>{d.nota}</span>
+                    <span className="rounded-full px-1.5 py-0.5 t10 font-bold text-center" style={{ backgroundColor: d.nota >= 4 ? "#F0FDF4" : d.nota >= pol("notaMinCompra", 3.7) ? "#eff6ff" : "#FFF7ED", color: NOTA_COLOR(d.nota) }}>{d.nota}</span>
                     <span className="flex gap-0.5" title={d.esCliente ? "Cliente y Deudor a la vez: la empresa cede facturas como cliente y además paga como deudor." : "Sólo Deudor (pagador de las facturas)."}>
                       <span className="flex h-4 w-4 items-center justify-center rounded-full t8 font-bold" style={{ backgroundColor: d.esCliente ? "#7C3AED" : "#E5E7EB", color: d.esCliente ? "#fff" : "#9CA3AF" }}>C</span>
                       <span className="flex h-4 w-4 items-center justify-center rounded-full t8 font-bold text-white" style={{ backgroundColor: "#7C3AED" }}>D</span>
@@ -19646,7 +19917,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                     <span className="t10 text-right" style={{ color: C.sub }} title="Rango típico de facturas emitidas al deudor por mes (últimos 6 meses)">{d.l6m.facMax > 0 ? (d.l6m.facMin === d.l6m.facMax ? `${d.l6m.facMax}` : `${d.l6m.facMin}–${d.l6m.facMax}`) : "—"}<span style={{ color: C.faint }}> f</span></span>
                     <span className="t10 text-right" style={{ color: C.sub }} title="Rango típico de monto facturado al deudor por mes (últimos 6 meses)">{d.l6m.montoMax > 0 ? `${fmtMM(d.l6m.montoMin)}–${fmtMM(d.l6m.montoMax)}` : "—"}</span>
                     <span className="flex gap-1" title="Política de concentración por deudor: el ejecutivo elige 25% o 30% de la línea.">
-                      {[25, 30].map((v) => <button key={v} onClick={() => updDeu(i, { politicaPct: v })} className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: d.politicaPct === v ? "#4c1d95" : "#FAF9FB", color: d.politicaPct === v ? "#fff" : "#9CA3AF" }}>{v}%</button>)}
+                      {[...new Set([25, 30, pol("concentracionDeudorPct", 30)])].sort((a, b) => a - b).map((v) => <button key={v} onClick={() => updDeu(i, { politicaPct: v })} className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: d.politicaPct === v ? "#4c1d95" : "#FAF9FB", color: d.politicaPct === v ? "#fff" : "#9CA3AF" }}>{v}%</button>)}
                     </span>
                     <span className="t10 text-right" style={{ color: C.sub }}>{d.anterior ? fmtMM(d.anterior) : "—"}</span>
                     <span className="t10 text-right" style={{ color: C.sub }}>{d.utilizado ? fmtMM(d.utilizado) : "0"}</span>
@@ -20627,9 +20898,9 @@ export default function PipelineComercial() {
         && (fDeudor === "todos" || (fDeudor === "buenos" ? esBuenDeudor(ev) : !esBuenDeudor(ev))))
       .map((ev) => ({
         id: ev.id, cliente: ev.cedente, deudor: ev.pagador,
-        deudores: [{ name: ev.pagador, facturas: ev.nFacturas || 1, montoMM: ev.monto || 0 }],
+        deudores: [{ name: ev.pagador, facturas: ev.nFacturas || 1, monto: ev.monto || 0 }],
         sector: ev.sector, stage: "Sin clasificar", status: "Sin clasificar", exec: "—",
-        tag: ev.tag, facturas: ev.nFacturas || 1, amountMM: ev.monto || 0, tasa: ev.tasa,
+        tag: ev.tag, facturas: ev.nFacturas || 1, monto: ev.monto || 0, tasa: ev.tasa,
         anticipo: ev.anticipo || "100%", esCliente: ev.esCliente, sinClasificar: true,
       }));
     // "Otras facturas": facturas de clientes de la cartera aún no priorizadas por una regla (inbound sin
@@ -20645,12 +20916,12 @@ export default function PipelineComercial() {
           const k = ev.cedente || "—";
           let g = map.get(k); if (!g) { g = { cliente: k, facturas: 0, monto: 0, deudores: new Map(), tags: new Set(), sector: ev.sector, esCliente: ev.esCliente, execSugerido: asignarEjecutivo(ev) }; map.set(k, g); }
           g.facturas += ev.nFacturas || 1; g.monto += ev.monto || 0; if (ev.tag) g.tags.add(ev.tag);
-          const dk = ev.pagador || "—"; const d = g.deudores.get(dk) || { name: dk, facturas: 0, montoMM: 0 }; d.facturas += ev.nFacturas || 1; d.montoMM += ev.monto || 0; g.deudores.set(dk, d);
+          const dk = ev.pagador || "—"; const d = g.deudores.get(dk) || { name: dk, facturas: 0, monto: 0 }; d.facturas += ev.nFacturas || 1; d.monto += ev.monto || 0; g.deudores.set(dk, d);
         });
-      return [...map.values()].sort((a, b) => b.monto - a.monto).map((g) => { const deudores = [...g.deudores.values()].sort((a, b) => b.montoMM - a.montoMM); return {
+      return [...map.values()].sort((a, b) => b.monto - a.monto).map((g) => { const deudores = [...g.deudores.values()].sort((a, b) => b.monto - a.monto); return {
         id: "OF-" + (hashStr(g.cliente) % 100000), cliente: g.cliente, deudor: deudores[0] ? deudores[0].name : "—",
         deudores, sector: g.sector, stage: "Sin clasificar", status: `${g.facturas} factura(s) · ${deudores.length} deudor(es)`, exec: "—",
-        tag: g.tags.size === 1 ? [...g.tags][0] : "Varios", facturas: g.facturas, amountMM: +g.monto.toFixed(1),
+        tag: g.tags.size === 1 ? [...g.tags][0] : "Varios", facturas: g.facturas, monto: Math.round(g.monto),
         esCliente: g.esCliente, sinClasificar: true, agrupado: true, execSugerido: g.execSugerido,
       }; });
     };
@@ -20683,7 +20954,7 @@ export default function PipelineComercial() {
   const anyFilter = query || quickFilter !== "todos" || fDeudor !== "todos" || fJefatura !== "todas" || fLinea !== "todas" || fEjecutivo !== "todos";
 
   // Pipeline = oportunidades previas a ser aceptadas (Prospección + Oferta/Negociación), no rechazadas.
-  const totalPipeline = useMemo(() => dealsVista.filter((d) => d.stage === "prospeccion" || d.stage === "oferta").reduce((s, d) => s + d.amountMM, 0), [dealsVista]);
+  const totalPipeline = useMemo(() => dealsVista.filter((d) => d.stage === "prospeccion" || d.stage === "oferta").reduce((s, d) => s + d.monto, 0), [dealsVista]);
   const activeCount = useMemo(() => dealsVista.filter((d) => d.stage !== "perdida").length, [dealsVista]);
   // Pulso del tubo para el mini gráfico del KPI. `kpiHist` sólo agrega un punto al CERRAR el día, así
   // que en una demo normal nunca junta dos y el gráfico no llegaba a dibujarse: ese era el espacio
@@ -20692,10 +20963,10 @@ export default function PipelineComercial() {
     () => (historia || []).map((h) => STAGES.reduce((n, s) => n + (s.id === "perdida" ? 0 : (h[s.id] || 0)), 0)).slice(-10),
     [historia]);
   // Venta mensual = facturas en Giro: Girado.
-  const ventaMensualMM = useMemo(() => dealsVista.filter((d) => d.stage === "giro" && subEstadoDe(d) === "girado").reduce((s, d) => s + d.amountMM, 0), [dealsVista]);
-  const vsBudget = BUDGET_MES_MM ? +(ventaMensualMM / BUDGET_MES_MM * 100).toFixed(1) : 0;
+  const ventaMensual = useMemo(() => dealsVista.filter((d) => d.stage === "giro" && subEstadoDe(d) === "girado").reduce((s, d) => s + d.monto, 0), [dealsVista]);
+  const vsBudget = BUDGET_MES ? +(ventaMensual / BUDGET_MES * 100).toFixed(1) : 0;
   // Forecast = venta girada + 30% del pipeline en curso (estimación de cierre).
-  const forecastMM = useMemo(() => +(ventaMensualMM + totalPipeline * 0.3).toFixed(0), [ventaMensualMM, totalPipeline]);
+  const forecast = useMemo(() => +(ventaMensual + totalPipeline * 0.3).toFixed(0), [ventaMensual, totalPipeline]);
   // Win/Loss rate: ganados (aceptadas/cesión/giro) vs perdidos comerciales. Las EXPIRADAS (caducadas por
   // inacción) se separan y NO entran en la tasa, para no inflar la pérdida comercial con temas operativos.
   const winLoss = useMemo(() => {
@@ -20711,7 +20982,7 @@ export default function PipelineComercial() {
   const casosDe = (id) => {
     if (id === "otrasfacturas") return streamFeed.filter(ofOtrasVisible).map((ev) => ({
       id: ev.id, cliente: ev.cedente, deudor: ev.pagador, sector: ev.sector, stage: "—",
-      facturas: ev.nFacturas, amountMM: ev.monto, tasa: ev.tasa, diasFin: 0,
+      facturas: ev.nFacturas, monto: ev.monto, tasa: ev.tasa, diasFin: 0,
       exec: "—", status: "Sin clasificar", simulado: false,
     }));
     return deals.filter((d) => {
@@ -20724,9 +20995,9 @@ export default function PipelineComercial() {
   };
   const exportarCasos = (id) => {
     const rows = casosDe(id);
-    const headers = ["ID", "Cliente", "Deudor", "Sector", "Etapa", "Facturas", "Monto_MM", "Tasa", "Dias_fin", "Giro_MM", "Desc_MM", "Comision_CLP", "Ejecutivo", "Estado", "Vencimiento"];
+    const headers = ["ID", "Cliente", "Deudor", "Sector", "Etapa", "Facturas", "Monto", "Tasa", "Dias_fin", "Giro", "Desc", "Comision_CLP", "Ejecutivo", "Estado", "Vencimiento"];
     const esc = (v) => `"${String(celdaSegura(v)).replace(/"/g, '""')}"`;
-    const lineas = rows.map((d) => [d.id, d.cliente, d.deudor, d.sector, (STAGES.find((s) => s.id === d.stage)?.name || d.stage), d.facturas, d.amountMM, d.tasa, d.diasFin, d.giroMM, d.descMM, d.comision, (EXECS[d.exec] || d.exec), d.status, d.fechaVenc].map(esc).join(";"));
+    const lineas = rows.map((d) => [d.id, d.cliente, d.deudor, d.sector, (STAGES.find((s) => s.id === d.stage)?.name || d.stage), d.facturas, d.monto, d.tasa, d.diasFin, d.giro, d.desc, d.comision, (EXECS[d.exec] || d.exec), d.status, d.fechaVenc].map(esc).join(";"));
     const csv = String.fromCharCode(0xFEFF) + [headers.join(";"), ...lineas].join("\n");
     try {
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -20740,8 +21011,8 @@ export default function PipelineComercial() {
   // Si SheetJS no puede cargarse (sin red), cae a CSV con BOM (que Excel abre igual).
   const exportarGrilla = async () => {
     const rows = filtered;
-    const headers = ["ID", "Cliente", "Ejecutivo", "Producto", "Monto_MM", "Facturas", "Tasa", "Anticipo", "Dias_fin", "Giro_MM", "Desc_MM", "Comision_CLP", "Etapa", "Deudor_principal", "Estado"];
-    const aoa = [headers, ...rows.map((d) => [d.id, d.cliente, (EXECS[d.exec] || d.exec), d.tag, d.amountMM, d.facturas, d.tasa, d.anticipo, d.diasFin, d.giroMM, d.descMM, d.comision, (STAGES.find((s) => s.id === d.stage)?.name || d.stage), d.deudor, d.status])];
+    const headers = ["ID", "Cliente", "Ejecutivo", "Producto", "Monto", "Facturas", "Tasa", "Anticipo", "Dias_fin", "Giro", "Desc", "Comision_CLP", "Etapa", "Deudor_principal", "Estado"];
+    const aoa = [headers, ...rows.map((d) => [d.id, d.cliente, (EXECS[d.exec] || d.exec), d.tag, d.monto, d.facturas, d.tasa, d.anticipo, d.diasFin, d.giro, d.desc, d.comision, (STAGES.find((s) => s.id === d.stage)?.name || d.stage), d.deudor, d.status])];
     try {
       const XLSX = await cargarXLSX();
       const ws = XLSX.utils.aoa_to_sheet(aoa.map(filaSegura));
@@ -20760,21 +21031,21 @@ export default function PipelineComercial() {
   // Al aceptar, las facturas pendientes (no incorporadas) no se pierden: generan una
   // NUEVA oportunidad en prospección para el mismo cliente con esas facturas.
   const dealPendiente = (d) => {
-    const monto = d.nuevasFacturasMontoMM || 0;
+    const monto = d.nuevasFacturasMonto || 0;
     const nFac = d.nuevasFacturas || 0;
     const nid = `OP-S${Date.now() % 100000}-${(d.id || "").slice(-3)}`;
     return { ...d, id: nid, stage: "prospeccion",
-      facturas: nFac, amountMM: +monto.toFixed(1), important: monto > 800,
+      facturas: nFac, monto: Math.round(monto), important: monto > 800e6,
       // El paquete del PADRE no viaja al split: `itemizarFacturas` devuelve `facturasOp` tal cual
       // cuando existe, así que heredarlo hacía que la nueva oportunidad mostrara los folios y la suma
       // del padre bajo una cabecera con otro monto. Sin `facturasOp` se re-itemiza desde `deudores`.
       facturasOp: [], facturasRetiradas: undefined, cedidasOtro: 0,
-      deudores: [{ name: d.deudor, facturas: Math.max(1, nFac), montoMM: +monto.toFixed(1) }],
+      deudores: [{ name: d.deudor, facturas: Math.max(1, nFac), monto: Math.round(monto) }],
       status: "Facturas pendientes · nueva oportunidad", time: nowStamp(), warning: false,
       // NO se simula al originar: el precio lo calcula el ejecutivo cuando elige qué incluir. La
       // oferta nace vacía y el pool sale del libro del cliente, igual que en la corrida horaria.
       simulado: false,
-      nuevasFacturas: 0, nuevasFacturasMontoMM: 0, subSeed: rndDet("seed|" + nid) };
+      nuevasFacturas: 0, nuevasFacturasMonto: 0, subSeed: rndDet("seed|" + nid) };
   };
   const advance = (id) => {
     setDeals((prev) => {
@@ -20785,7 +21056,7 @@ export default function PipelineComercial() {
         const next = STAGE_ORDER[Math.min(idx + 1, STAGE_ORDER.length - 2)];
         // El pool de candidatas se lo lleva el split (es el que sigue en prospección): dejarlo también
         // en el padre permitía incorporar la MISMA factura en dos oportunidades distintas.
-        if (next === "aceptadas" && d.nuevasFacturas > 0) { splits.push(dealPendiente(d)); return { ...d, stage: next, stale: false, facturasDisponibles: undefined, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false }; }
+        if (next === "aceptadas" && d.nuevasFacturas > 0) { splits.push(dealPendiente(d)); return { ...d, stage: next, stale: false, facturasDisponibles: undefined, nuevasFacturas: 0, nuevasFacturasMonto: 0, warning: false }; }
         return { ...d, stage: next, stale: false };
       });
       return splits.length ? [...splits, ...mapped] : mapped;
@@ -21140,15 +21411,15 @@ export default function PipelineComercial() {
       const canalCli = d.canalContacto || "WhatsApp";
       const cl = canalCli === "Llamada" ? "Call Center" : canalCli;
       const cant = opts && opts.cantidad != null ? opts.cantidad : d.facturas;
-      const montoDocsMM = opts && opts.montoValido != null ? opts.montoValido : d.amountMM;
-      const confTxt = `✅ Operación N° ${neg} cursada. Giramos ${fmtMM(o.giroMM)} hoy a tu cuenta registrada. ¡Gracias por confiar en NEX Factoring!`;
+      const montoDocs = opts && opts.montoValido != null ? opts.montoValido : d.monto;
+      const confTxt = `✅ Operación N° ${neg} cursada. Giramos ${fmtMM(o.giro)} hoy a tu cuenta registrada. ¡Gracias por confiar en NEX Factoring!`;
       // Mensaje de sistema + confirmación al cliente por su canal (WhatsApp si aplica).
       const wa = [...(d.waSesion || []), { from: "sistema", text: `✅ Cliente autenticado en el sitio Factoring Security (usuario ${usuario}). Operación firmada y aceptada.`, time: nowStamp() }];
       if (canalCli === "WhatsApp") wa.push({ from: "ejecutivo", text: confTxt, time: nowStamp(), canal: "WhatsApp" });
       // El cursado/confirmación NUNCA es por email: siempre se realiza en el sitio de Factoring Security
       // (factoringsecurity.cl/curse), donde el cliente inicia sesión y firma. No se agrega correo.
       const emailThread = d.emailThread || [];
-      const detalleCurse = `Operación cursada en factoringsecurity.cl/curse:\n• N° de negocio: ${neg}\n• Cantidad de documentos: ${cant}\n• Monto documentos: ${fmtMM(montoDocsMM)}\n• % Anticipo: ${o.anticipo}%\n• Tasa: ${o.tasa.toFixed(2)}% mensual\n• Días de financiamiento: ${o.diasFin}\n• Diferencia de precio: ${fmtMM(o.interesMM)}\n• Comisiones: ${fmtCLP(o.comision)}\n• Monto a girar: ${fmtMM(o.giroMM)}`;
+      const detalleCurse = `Operación cursada en factoringsecurity.cl/curse:\n• N° de negocio: ${neg}\n• Cantidad de documentos: ${cant}\n• Monto documentos: ${fmtMM(montoDocs)}\n• % Anticipo: ${o.anticipo}%\n• Tasa: ${o.tasa.toFixed(2)}% mensual\n• Días de financiamiento: ${o.diasFin}\n• Diferencia de precio: ${fmtMM(o.interes)}\n• Comisiones: ${fmtCLP(o.comision)}\n• Monto a girar: ${fmtMM(o.giro)}`;
       // Historial (alimenta la bitácora): el cliente firma en el sitio de curse + confirmación por su canal.
       const hist = [...(d.historialContacto || []),
         { fecha: nowStamp(), canal: "Factoring Security", actor: "Cliente", esEvento: true, resultado: `Operación cursada: el cliente (${usuario}) inició sesión y firmó en el sitio de Factoring Security (factoringsecurity.cl/curse)`, detalle: detalleCurse, exito: true },
@@ -21157,8 +21428,8 @@ export default function PipelineComercial() {
       // TODA operación aceptada pasa por Otorgamiento. Si solo tiene buenos deudores y está dentro de
       // la línea aprobada → otorgamiento AUTOMÁTICO (se aprueba solo). Si supera la línea y/o incluye
       // deudores "Otro" → otorgamiento MANUAL (lo decide un especialista).
-      const montoFinal = opts && opts.montoValido != null ? opts.montoValido : d.amountMM;
-      const otorg = requiereOtorgamiento({ ...d, amountMM: montoFinal, facturasOp: d.facturasOp });
+      const montoFinal = opts && opts.montoValido != null ? opts.montoValido : d.monto;
+      const otorg = requiereOtorgamiento({ ...d, monto: montoFinal, facturasOp: d.facturasOp });
       const auto = !otorg;
 
       // Avance EVENT-DRIVEN gatillado por la firma del cliente (no depende del timer de fondo):
@@ -21173,7 +21444,7 @@ export default function PipelineComercial() {
       // operación que quedó «Girada» con 42 criterios por aprobar y 8 facturas por verificar a la
       // vista, en la misma pantalla. Firmar es del CLIENTE; girar es de la casa, y sólo después de
       // que sus controles pasen.
-      const dFirmado = { ...d, amountMM: montoFinal, stage: "cesion", clienteAcepto: true, reabierta: undefined };
+      const dFirmado = { ...d, monto: montoFinal, stage: "cesion", clienteAcepto: true, reabierta: undefined };
       const visF = visadoDeal(dFirmado);
       const pendVisado = visF.excPend.length + visF.rechReev.length;   // OTG-02
       const pendVerif = verifResumenDeal(dFirmado).pend;               // VER-01
@@ -21196,7 +21467,7 @@ export default function PipelineComercial() {
         giroFlags = { giroPendiente: true };
       }
       // El cliente volvió a firmar: la reapertura se cierra y la aceptación vuelve a estar vigente.
-      return { ...d, reabierta: undefined, waSesion: wa, emailThread, historialContacto: hist, fueraAtribucion: false, sugerirPerder: false, contactoExitoso: true, stage: stageFinal, otorgAuto: auto, otorgMotivo: otorg ? otorg.motivo : "automatico", otorgInfo: otorg || undefined, ...giroFlags, status: statusDest, simulado: true, amountMM: montoFinal, facturas: opts && opts.cantidad != null ? opts.cantidad : d.facturas, tasa: o.tasa.toFixed(2) + "%", tasaDescuento: o.tasa, anticipo: o.anticipo + "%", comision: o.comision, diasFin: o.diasFin, financiadoMM: o.financiadoMM, interesMM: o.interesMM, montoDescuentoMM: o.interesMM, comisionMM: o.comisionMM, descMM: +(o.interesMM + o.comisionMM).toFixed(2), giroMM: o.giroMM };
+      return { ...d, reabierta: undefined, waSesion: wa, emailThread, historialContacto: hist, fueraAtribucion: false, sugerirPerder: false, contactoExitoso: true, stage: stageFinal, otorgAuto: auto, otorgMotivo: otorg ? otorg.motivo : "automatico", otorgInfo: otorg || undefined, ...giroFlags, status: statusDest, simulado: true, monto: montoFinal, facturas: opts && opts.cantidad != null ? opts.cantidad : d.facturas, tasa: o.tasa.toFixed(2) + "%", tasaDescuento: o.tasa, anticipo: o.anticipo + "%", comision: o.comision, diasFin: o.diasFin, financiado: o.financiado, interes: o.interes, montoDescuento: o.interes, desc: +(o.interes + o.comision).toFixed(2), giro: o.giro };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
@@ -21326,7 +21597,7 @@ export default function PipelineComercial() {
               if (!hayOferta) {
                 const ofrece = parseFloat(x.tasa) || tasaMinIA(x.deudor);
                 const fac = itemizarFacturas(x).filter((f) => !f.reclamada && !f.notaCredito && !f.cedida);
-                const opts = { anticipo: parseFloat(x.anticipo) || 100, cantidad: fac.length, montoValido: +fac.reduce((a, f) => a + (f.montoMM || 0), 0).toFixed(1) };
+                const opts = { anticipo: parseFloat(x.anticipo) || 100, cantidad: fac.length, montoValido: +fac.reduce((a, f) => a + (f.monto || 0), 0).toFixed(1) };
                 wa2 = [...wa, { from: "ejecutivo", text: ofertaWhatsApp(x, ofrece, opts), time: nowStamp(), canal: "WhatsApp" }];
               }
               hist.push({ fecha: nowStamp(), canal: "WhatsApp", actor: "Agente IA", esEvento: true, resultado: "El cliente confirmó interés → se envió la oferta (cerrada) y avanza a Oferta y Negociación", exito: true });
@@ -21466,7 +21737,7 @@ export default function PipelineComercial() {
       const splits = [];
       const mapped = prev.map((d) => {
         if (d.id !== id) return d;
-        if (["aceptadas", "cesion", "giro"].includes(stageId) && d.nuevasFacturas > 0) { splits.push(dealPendiente(d)); return { ...d, stage: stageId, time: nowStamp(), stale: false, status: STATUS_ETAPA[stageId] || d.status, facturasDisponibles: undefined, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false }; }
+        if (["aceptadas", "cesion", "giro"].includes(stageId) && d.nuevasFacturas > 0) { splits.push(dealPendiente(d)); return { ...d, stage: stageId, time: nowStamp(), stale: false, status: STATUS_ETAPA[stageId] || d.status, facturasDisponibles: undefined, nuevasFacturas: 0, nuevasFacturasMonto: 0, warning: false }; }
         return { ...d, stage: stageId, time: nowStamp(), stale: false, status: STATUS_ETAPA[stageId] || d.status };
       });
       return splits.length ? [...splits, ...mapped] : mapped;
@@ -21482,12 +21753,12 @@ export default function PipelineComercial() {
     const d0 = deals.find((x) => x.id === id);
     if (!d0 || !["aceptadas", "cesion"].includes(d0.stage)) return;
     const vs = repoSimVersions.get(id) || [];
-    const reservaMM = vs.length && vs[vs.length - 1].linea ? vs[vs.length - 1].linea.cursable : 0;
-    const marca = { desde: d0.stage, ts: nowStamp(), por: actorEtiqueta(usuario), versionAceptada: vs.length, reservaMM };
+    const reserva = vs.length && vs[vs.length - 1].linea ? vs[vs.length - 1].linea.cursable : 0;
+    const marca = { desde: d0.stage, ts: nowStamp(), por: actorEtiqueta(usuario), versionAceptada: vs.length, reserva };
     setDeals((prev) => prev.map((d) => (d.id === id ? { ...d, stage: "oferta", time: nowStamp(), stale: false, status: STATUS_ETAPA.oferta || d.status, reabierta: marca } : d)));
     setSelected((sel) => (sel && sel.id === id ? { ...sel, stage: "oferta", status: STATUS_ETAPA.oferta || sel.status, reabierta: marca } : sel));
     registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Oportunidad", accion: "Operación reabierta para modificar",
-      glosa: `${d0.cliente || d0.company || id} · desde ${d0.stage} · la firma del cliente queda REVOCADA (deberá firmar de nuevo para girar) · quedan ${fmtMM(reservaMM)} reservados en el sistema de gestión de líneas hasta que se pida su liberación`, exito: true });
+      glosa: `${d0.cliente || d0.company || id} · desde ${d0.stage} · la firma del cliente queda REVOCADA (deberá firmar de nuevo para girar) · quedan ${fmtMM(reserva)} reservados en el sistema de gestión de líneas hasta que se pida su liberación`, exito: true });
   };
   const moveTo = (stageId) => {
     if (!draggingId) return;
@@ -21502,7 +21773,7 @@ export default function PipelineComercial() {
       const splits = [];
       const mapped = prev.map((d) => {
         if (d.id !== draggingId) return d;
-        if (["aceptadas", "cesion", "giro"].includes(stageId) && d.nuevasFacturas > 0) { splits.push(dealPendiente(d)); return { ...d, stage: stageId, status: STATUS_ETAPA[stageId] || d.status, facturasDisponibles: undefined, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false }; }
+        if (["aceptadas", "cesion", "giro"].includes(stageId) && d.nuevasFacturas > 0) { splits.push(dealPendiente(d)); return { ...d, stage: stageId, status: STATUS_ETAPA[stageId] || d.status, facturasDisponibles: undefined, nuevasFacturas: 0, nuevasFacturasMonto: 0, warning: false }; }
         return { ...d, stage: stageId, status: STATUS_ETAPA[stageId] || d.status };
       });
       return splits.length ? [...splits, ...mapped] : mapped;
@@ -21546,18 +21817,18 @@ export default function PipelineComercial() {
           f.canalRegla = canalDeRegla(r); // canal de contacto según la regla que capturó la factura
           f.reglaId = r.id; // regla que capturó la factura (para clasificar la tarea, p.ej. Rule-05 = onboarding)
           califican.push(f);
-          const rs = reglaStatsRef.current; rs[r.id] = rs[r.id] || { count: 0, montoMM: 0, empresas: {} }; rs[r.id].count++; rs[r.id].montoMM += f.monto;
-          const re = rs[r.id].empresas; re[f.cedente] = re[f.cedente] || { cedente: f.cedente, pagador: f.pagador, esCliente: f.esCliente, fac: 0, montoMM: 0 }; re[f.cedente].fac++; re[f.cedente].montoMM += f.monto;
+          const rs = reglaStatsRef.current; rs[r.id] = rs[r.id] || { count: 0, monto: 0, empresas: {} }; rs[r.id].count++; rs[r.id].monto += f.monto;
+          const re = rs[r.id].empresas; re[f.cedente] = re[f.cedente] || { cedente: f.cedente, pagador: f.pagador, esCliente: f.esCliente, fac: 0, monto: 0 }; re[f.cedente].fac++; re[f.cedente].monto += f.monto;
         } else {
           resto.push(f);
           const acc = noClasRef.current;
           const crit = criteriosDesdeFactura(f);
           const perfil = crit.join(" · ");
-          acc.porPerfil[perfil] = acc.porPerfil[perfil] || { count: 0, montoMM: 0, criterios: crit, empresas: {} };
-          acc.porPerfil[perfil].count++; acc.porPerfil[perfil].montoMM += f.monto;
+          acc.porPerfil[perfil] = acc.porPerfil[perfil] || { count: 0, monto: 0, criterios: crit, empresas: {} };
+          acc.porPerfil[perfil].count++; acc.porPerfil[perfil].monto += f.monto;
           const ep = acc.porPerfil[perfil].empresas;
-          ep[f.cedente] = ep[f.cedente] || { cedente: f.cedente, pagador: f.pagador, esCliente: f.esCliente, fac: 0, montoMM: 0 };
-          ep[f.cedente].fac++; ep[f.cedente].montoMM += f.monto;
+          ep[f.cedente] = ep[f.cedente] || { cedente: f.cedente, pagador: f.pagador, esCliente: f.esCliente, fac: 0, monto: 0 };
+          ep[f.cedente].fac++; ep[f.cedente].monto += f.monto;
           acc.porCedente[f.cedente] = acc.porCedente[f.cedente] || { count: 0, esCliente: f.esCliente, pagador: f.pagador, sector: f.sector };
           acc.porCedente[f.cedente].count++;
           acc.total++; acc.montoTotal += f.monto;
@@ -21573,28 +21844,27 @@ export default function PipelineComercial() {
 
   // Cálculo financiero: diferencia de precio, comisión, descuento (CxC) y giro.
   // Giro = Valor factura − diferencia de precio (tasa × días de colocación) − comisión − descuento (CxC).
-  const calcularFinanzas = (cliente, deudor, amountMM, tasaDescuento, comision) => {
+  const calcularFinanzas = (cliente, deudor, monto, tasaDescuento, comision) => {
     const diasFin = diasPagoDeudor(deudor);                              // período de financiamiento (días que tarda el deudor en pagar)
-    const financiadoMM = +amountMM.toFixed(2);                          // monto factura × % anticipo (anticipo = 100%)
-    const interesMM = +(financiadoMM * (tasaDescuento / 100) * (diasFin / 30)).toFixed(2);
-    const comisionMM = +(comision / 1e6).toFixed(3);
-    const descMM = +(interesMM - comisionMM).toFixed(2);                // Desc = (tasa × período × financiado) − comisiones
-    const descCxCMM = +(cxcRef.current[cliente] || 0);                  // recupero por atrasos previos
-    const giroMM = +(financiadoMM - interesMM - comisionMM - descCxCMM).toFixed(2);
+    const financiado = +monto.toFixed(2);                          // monto factura × % anticipo (anticipo = 100%)
+    const interes = +(financiado * (tasaDescuento / 100) * (diasFin / 30)).toFixed(2);
+    const desc = +(interes - comision).toFixed(2);                // Desc = (tasa × período × financiado) − comisiones
+    const descCxC = +(cxcRef.current[cliente] || 0);                  // recupero por atrasos previos
+    const giro = +(financiado - interes - comision - descCxC).toFixed(2);
     const venc = new Date(Date.now() + diasFin * 86400000);
     const fechaVenc = `${String(venc.getDate()).padStart(2, "0")}-${String(venc.getMonth() + 1).padStart(2, "0")}-${venc.getFullYear()}`;
     // 14% se atrasa 1-16 días. Determinista por operación: antes, cada recálculo movía el saldo CxC
     // del cliente. SERVER-SIDE: el atraso es un hecho de la BD (fecha de pago real del deudor).
-    const kAtr = `atraso|${cliente}|${deudor}|${amountMM}`;
+    const kAtr = `atraso|${cliente}|${deudor}|${monto}`;
     const atrasoDias = rndDetBool(kAtr, 0.14) ? rndDetInt("d" + kAtr, 1, 16) : 0;
-    const nuevaCxCMM = atrasoDias ? +(financiadoMM * (tasaDescuento / 100) * (atrasoDias / 30)).toFixed(2) : 0;
-    cxcRef.current = { ...cxcRef.current, [cliente]: nuevaCxCMM };      // saldo a recuperar en la próxima operación
+    const nuevaCxC = atrasoDias ? +(financiado * (tasaDescuento / 100) * (atrasoDias / 30)).toFixed(2) : 0;
+    cxcRef.current = { ...cxcRef.current, [cliente]: nuevaCxC };      // saldo a recuperar en la próxima operación
     guardarCxC(cxcRef.current);
-    return { diasFin, financiadoMM, interesMM, montoDescuentoMM: interesMM, comisionMM, descMM, descCxCMM, giroMM, fechaVenc, atrasoDias };
+    return { diasFin, financiado, interes, montoDescuento: interes, comision, desc, descCxC, giro, fechaVenc, atrasoDias };
   };
-  const finanzasDe = (cliente, deudor, amountMM) => {
-    const sim = simular(amountMM, `${cliente}|${deudor}`);
-    return { ...sim, ...calcularFinanzas(cliente, deudor, amountMM, sim.tasaDescuento, sim.comision) };
+  const finanzasDe = (cliente, deudor, monto) => {
+    const sim = simular(monto, `${cliente}|${deudor}`);
+    return { ...sim, ...calcularFinanzas(cliente, deudor, monto, sim.tasaDescuento, sim.comision) };
   };
 
   // Proceso Inbound -> Prospección (corre cada 1 hora): agrupa por cliente,
@@ -21625,9 +21895,9 @@ export default function PipelineComercial() {
       // Para los sin línea se dimensiona el paquete con un cupo TENTATIVO del orden de una línea
       // inicial. No afirma que exista línea: `aprobada` sigue siendo 0, la oportunidad sigue quedando
       // fuera de línea y las pantallas siguen diciendo «Sin línea».
-      const lcCli = lineaCreditoDe({ rutEmisor: facts[0].rutEmisor, cliente, esCliente: facts[0].esCliente, sowActualPct: facts[0].sowActualPct, amountMM: 0 });
+      const lcCli = lineaCreditoDe({ rutEmisor: facts[0].rutEmisor, cliente, esCliente: facts[0].esCliente, sowActualPct: facts[0].sowActualPct, monto: 0 });
       const sinLineaCli = lcCli.aprobada <= 0;
-      const cupoTentativo = 300 + (hashStr((facts[0].rutEmisor || cliente) + "cupotent") % 21) * 50; // 300–1300 MM
+      const cupoTentativo = (300 + (hashStr((facts[0].rutEmisor || cliente) + "cupotent") % 21) * 50) * 1e6; // $300–1.300 MM
       const cupo = sinLineaCli ? cupoTentativo : lcCli.disponible;
       // Regla de producto: el sistema NUNCA propone una oferta que no se pueda cursar, pero tampoco
       // le impide al ejecutivo armar una mas grande y pedirla al comite. Por eso el paquete que
@@ -21645,7 +21915,7 @@ export default function PipelineComercial() {
       // el ejecutivo en el detalle. El corte se conserva porque sigue dimensionando la oportunidad
       // (monto, deudores, CAT) y es lo que alimenta «Lineas por gestionar».
       const disponibles = fopBase.length ? [...(OTRO_FOP_POR_CEDENTE[cliente] || []), ...fopReal, ...corte.fuera] : [];
-      const sumMonto = fopReal.length ? +fopReal.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1) : +facts.reduce((s, f) => s + f.monto, 0).toFixed(1);
+      const sumMonto = fopReal.length ? +fopReal.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1) : +facts.reduce((s, f) => s + f.monto, 0).toFixed(1);
       const sumFacts = fopReal.length ? fopReal.length : facts.reduce((s, f) => s + (f.nFacturas || 1), 0);
       // Sólo se acumulan facturas (warning) mientras la oportunidad NO ha sido aceptada
       // (prospección u oferta). Una vez aceptada/cursada/perdida, las nuevas facturas
@@ -21657,14 +21927,14 @@ export default function PipelineComercial() {
         // decide después el motor sobre lo que el ejecutivo seleccione.
         // Se guardan las facturas mismas, no sólo el conteo: entran al pool y el análisis por deudor
         // se recalcula con ellas. Nada queda pendiente de incorporar.
-        warn[ex.id] = { fs: fopBase, add: fopBase.length || facts.length, monto: fopBase.length ? +fopBase.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1) : sumMonto };
+        warn[ex.id] = { fs: fopBase, add: fopBase.length || facts.length, monto: fopBase.length ? +fopBase.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1) : sumMonto };
       } else {
         nuevosCreados++;
         const ev = facts[0];
         const porDeudor = {};
-        if (fopReal.length) fopReal.forEach((f) => { const k = f.deudor; porDeudor[k] = porDeudor[k] || { name: k, facturas: 0, montoMM: 0 }; porDeudor[k].facturas += 1; porDeudor[k].montoMM += (f.montoMM || 0); });
-        else facts.forEach((f) => { const k = f.pagador; porDeudor[k] = porDeudor[k] || { name: k, facturas: 0, montoMM: 0 }; porDeudor[k].facturas += f.nFacturas || 1; porDeudor[k].montoMM += f.monto; });
-        const deudores = Object.values(porDeudor).map((x) => ({ ...x, montoMM: +x.montoMM.toFixed(1) })).sort((a, b) => b.montoMM - a.montoMM);
+        if (fopReal.length) fopReal.forEach((f) => { const k = f.deudor; porDeudor[k] = porDeudor[k] || { name: k, facturas: 0, monto: 0 }; porDeudor[k].facturas += 1; porDeudor[k].monto += (f.monto || 0); });
+        else facts.forEach((f) => { const k = f.pagador; porDeudor[k] = porDeudor[k] || { name: k, facturas: 0, monto: 0 }; porDeudor[k].facturas += f.nFacturas || 1; porDeudor[k].monto += f.monto; });
+        const deudores = Object.values(porDeudor).map((x) => ({ ...x, monto: Math.round(x.monto) })).sort((a, b) => b.monto - a.monto);
         const contact = generarContactabilidad(cliente, ev.canalRegla || "Llamada", deudores[0].name);
         // Categoría de potencial por MIX de facturas elegibles: CAT1 = buenas/propias (Lista Blanca,
         // Autorizados, histórico BICE) · CAT4 = recuperables (histórico de otro factor el último año).
@@ -21672,20 +21942,20 @@ export default function PipelineComercial() {
         const nCat1 = fopReal.filter((f) => f.inboundBucket === "CAT1").length;
         const nCat4 = fopReal.filter((f) => f.inboundBucket === "CAT4").length;
         const pctBlanca = (fopReal.length && sumMonto > 0)
-          ? Math.round(fopReal.filter((f) => f.tipoDeudor === "Lista Blanca").reduce((s, f) => s + (f.montoMM || 0), 0) / sumMonto * 100)
+          ? Math.round(fopReal.filter((f) => f.tipoDeudor === "Lista Blanca").reduce((s, f) => s + (f.monto || 0), 0) / sumMonto * 100)
           : (ev.pctBlanca || 0);
         const pctCat1 = (nCat1 + nCat4) > 0 ? Math.round(nCat1 / (nCat1 + nCat4) * 100) : null;
         const cat = ev.cat || ((nCat1 + nCat4) > 0 ? catDeMix(nCat1, nCat4) : (pctBlanca >= 60 ? "CAT-1" : "CAT-2"));
         const dealObj = {
-          id: ev.opId, stage: "prospeccion", tag: ev.tag, facturas: sumFacts, amountMM: sumMonto,
+          id: ev.opId, stage: "prospeccion", tag: ev.tag, facturas: sumFacts, monto: sumMonto,
           cliente, deudor: deudores[0].name, deudores, sector: ev.sector, tasa: ev.tasa, anticipo: ev.anticipo, esCliente: ev.esCliente, reglaId: ev.reglaId,
           rutEmisor: ev.rutEmisor, cat, catLabel: cat, pctBlanca, nCat1, nCat4, pctCat1, sowTendencia: ev.sowTendencia, sowFlecha: ev.sowFlecha, sowActualPct: ev.sowActualPct, sowTargetPct: ev.sowTargetPct, sowGapPct: ev.sowGapPct, superaTarget: ev.superaTarget, conDescuento: ev.conDescuento, spreadPromo: ev.spreadPromo,
           status: "Analizada · Inbound", time: nowStamp(), channel: "IA", exec: asignarEjecutivo(ev),
           // `sinLinea` viaja en el deal para que la UI pueda decir la verdad: el paquete se dimensionó
           // con un cupo tentativo porque el cliente todavía no tiene línea aprobada.
-          sinLinea: sinLineaCli, cupoTentativoMM: sinLineaCli ? cupoTentativo : null,
-          stale: false, important: sumMonto > 800, _inbound: true, perdedor: !contact.fueraAtribucion && rndDetBool(`perd|${ev.opId}`, 0.12), subSeed: rndDet(`seed|${ev.opId}`),
-          nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, tProsp: Date.now(),
+          sinLinea: sinLineaCli, cupoTentativo: sinLineaCli ? cupoTentativo : null,
+          stale: false, important: sumMonto > 800e6, _inbound: true, perdedor: !contact.fueraAtribucion && rndDetBool(`perd|${ev.opId}`, 0.12), subSeed: rndDet(`seed|${ev.opId}`),
+          nuevasFacturas: 0, nuevasFacturasMonto: 0, warning: false, tProsp: Date.now(),
           facturasOp: [], // la oferta nace VACIA: la arma el ejecutivo con el selector del detalle
           facturasDisponibles: disponibles.length ? disponibles : undefined, // Otros deudores (excluidos): el ejecutivo puede agregarlas manualmente
           ...contact,
@@ -21712,7 +21982,7 @@ export default function PipelineComercial() {
         if (recl) motivos.push(`${recl} reclamada(s)`);
         if (nc) motivos.push(`${nc} con nota de crédito`);
         if (ced) motivos.push(`${ced} cedida(s) a otro factoring`);
-        const detAnalisis = `Análisis de las ${fop.length} factura(s) captadas${ev.reglaId ? ` (regla ${ev.reglaId})` : ""}:\n• Califican (válidas para cursar): ${val} · ${fmtMM(fop.filter((f) => !f.reclamada && !f.notaCredito && !f.cedida).reduce((s, f) => s + (f.montoMM || 0), 0))}\n• No califican: ${exc}${motivos.length ? " — " + motivos.join(", ") : ""}\n• Requieren envío de XML para poder ceder: ${sinx}`;
+        const detAnalisis = `Análisis de las ${fop.length} factura(s) captadas${ev.reglaId ? ` (regla ${ev.reglaId})` : ""}:\n• Califican (válidas para cursar): ${val} · ${fmtMM(fop.filter((f) => !f.reclamada && !f.notaCredito && !f.cedida).reduce((s, f) => s + (f.monto || 0), 0))}\n• No califican: ${exc}${motivos.length ? " — " + motivos.join(", ") : ""}\n• Requieren envío de XML para poder ceder: ${sinx}`;
         dealObj.historialContacto = [
           { fecha: "Día 1 · 08:55", canal: "Sistema", resultado: `Captada en Prospección vía Inbound${ev.reglaId ? " (" + ev.reglaId + ")" : ""} · ${sumFacts} factura(s) · ${fmtMM(sumMonto)}`, exito: true },
           { fecha: "Día 1 · 08:56", canal: "Sistema", actor: "Sistema", esEvento: true, resultado: `Generando simulación · ${val} factura(s) califican · ${exc} no califican${sinx ? ` · ${sinx} requieren XML` : ""}`, detalle: detAnalisis, exito: val > 0 },
@@ -21740,7 +22010,7 @@ export default function PipelineComercial() {
       }
     });
     originadasRef.current += nuevos.length;
-    originadasMontoRef.current += nuevos.reduce((s, d) => s + d.amountMM, 0);
+    originadasMontoRef.current += nuevos.reduce((s, d) => s + d.monto, 0);
     originadasFacRef.current += nuevos.reduce((s, d) => s + (d.facturas || 0), 0);
     const emb = accDiaRef.current.embudo; emb.inbound += nuevos.length; emb.prospeccion += nuevos.length; if (emb.oferta != null) emb.oferta += nuevos.filter((d) => d.stage === "oferta").length; // pasaron por inbound, prospección y (las contactadas) oferta
     // PROCESO EN BACKGROUND (server-side ready): la llegada de facturas nuevas NO se aplica de forma
@@ -21787,7 +22057,7 @@ export default function PipelineComercial() {
     PIPELINE_TICK++; // una corrida = una clave de tiempo para las decisiones deterministas de abajo
     const acc = accDiaRef.current;
     const e = acc.embudo;
-    const sumar = (k, d) => { acc[k].op++; acc[k].fac += d.facturas || 0; acc[k].mm += d.amountMM || 0; };
+    const sumar = (k, d) => { acc[k].op++; acc[k].fac += d.facturas || 0; acc[k].mm += d.monto || 0; };
     setDeals((prev) => {
       const splits = []; // facturas pendientes que se separan al aceptar
       const mapped = prev.map((d) => {
@@ -21842,7 +22112,7 @@ export default function PipelineComercial() {
           const yaOferta = wa.some((m) => /Oferta de factoring/i.test(m.text || ""));
           if (!yaOferta) {
             const fac = itemizarFacturas(d).filter((f) => !f.reclamada && !f.notaCredito && !f.cedida);
-            const opts = { anticipo: parseFloat(d.anticipo) || 100, cantidad: fac.length, montoValido: +fac.reduce((a, f) => a + (f.montoMM || 0), 0).toFixed(1) };
+            const opts = { anticipo: parseFloat(d.anticipo) || 100, cantidad: fac.length, montoValido: +fac.reduce((a, f) => a + (f.monto || 0), 0).toFixed(1) };
             wa.push({ from: "agente", text: ofertaWhatsApp(d, ofrece, opts), time: "Día 1 · 09:06", canal: "WhatsApp" });
           }
           const yaContra = wa.some((m) => m.from === "cliente" && /alta|no avanzo|necesito/i.test(m.text || ""));
@@ -21890,7 +22160,7 @@ export default function PipelineComercial() {
           if (!yaOferta) {
             const ofrece = parseFloat(d.tasa) || tasaMinIA(d.deudor);
             const fac = itemizarFacturas(d).filter((f) => !f.reclamada && !f.notaCredito && !f.cedida);
-            const opts = { anticipo: parseFloat(d.anticipo) || 100, cantidad: fac.length, montoValido: +fac.reduce((a, f) => a + (f.montoMM || 0), 0).toFixed(1) };
+            const opts = { anticipo: parseFloat(d.anticipo) || 100, cantidad: fac.length, montoValido: +fac.reduce((a, f) => a + (f.monto || 0), 0).toFixed(1) };
             wa.push({ from: "agente", text: ofertaWhatsApp(d, ofrece, opts), time: ts, canal: "WhatsApp" });
           }
           const hist = [...(d.historialContacto || []),
@@ -21929,24 +22199,24 @@ export default function PipelineComercial() {
           // Al ACEPTAR, las facturas pendientes (no incorporadas a tiempo) se separan
           // en una NUEVA oportunidad de prospección para el mismo cliente.
           if (ns === "aceptadas" && d.nuevasFacturas > 0) {
-            const monto = d.nuevasFacturasMontoMM || 0;
+            const monto = d.nuevasFacturasMonto || 0;
             e.inbound++; e.prospeccion++; // la nueva oportunidad también entró por inbound
             // y cuenta como originación del día (para que la tabla cuadre con el embudo)
             originadasRef.current += 1; originadasMontoRef.current += monto; originadasFacRef.current += d.nuevasFacturas || 0;
             const nidS = `OP-S${Date.now() % 100000}-${(d.id || "").slice(-3)}`;
             splits.push({
               ...d, id: nidS, stage: "prospeccion",
-              facturas: d.nuevasFacturas, amountMM: +monto.toFixed(1), important: monto > 800,
+              facturas: d.nuevasFacturas, monto: Math.round(monto), important: monto > 800e6,
               // Ver dealPendiente: sin esto el `deudores` de abajo era código muerto, porque
               // `facturasOp` heredado del padre lo tapaba en itemizarFacturas.
               facturasOp: [], facturasRetiradas: undefined, cedidasOtro: 0,
-              deudores: [{ name: d.deudor, facturas: d.nuevasFacturas, montoMM: +monto.toFixed(1) }],
+              deudores: [{ name: d.deudor, facturas: d.nuevasFacturas, monto: Math.round(monto) }],
               status: "Facturas pendientes · nueva oportunidad", time: nowStamp(), warning: false, tProsp: Date.now(),
               // Nace sin simular, como toda oportunidad nueva.
               simulado: false,
-              nuevasFacturas: 0, nuevasFacturasMontoMM: 0, subSeed: rndDet("seed|" + nidS),
+              nuevasFacturas: 0, nuevasFacturasMonto: 0, subSeed: rndDet("seed|" + nidS),
             });
-            return { ...d, stage: ns, time: nowStamp(), stale: false, status: STATUS_ETAPA[ns] || d.status, facturasDisponibles: undefined, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, historialContacto: traza(d, `Avanzó a ${STATUS_ETAPA[ns] || ns}`, true, DET_ETAPA[ns]) };
+            return { ...d, stage: ns, time: nowStamp(), stale: false, status: STATUS_ETAPA[ns] || d.status, facturasDisponibles: undefined, nuevasFacturas: 0, nuevasFacturasMonto: 0, warning: false, historialContacto: traza(d, `Avanzó a ${STATUS_ETAPA[ns] || ns}`, true, DET_ETAPA[ns]) };
           }
           // Cesión externa: una parte de las operaciones en cesión se inscribe por otro factoring
           // (el cliente la cedió afuera). Se marca como sub-estado "Cesión externa" dentro de Aceptada.
@@ -21956,7 +22226,7 @@ export default function PipelineComercial() {
           }
           // Cesión a Factoring Security: evidencia explícita en la traza.
           if (ns === "cesion") {
-            return { ...d, stage: ns, time: nowStamp(), stale: false, status: STATUS_ETAPA[ns] || d.status, historialContacto: traza(d, `Cesión inscrita: ${d.facturas} factura(s) por ${fmtMM(d.amountMM || 0)} cedida(s) a Factoring Security (cesión electrónica AEC registrada)`, true, DET_ETAPA[ns]) };
+            return { ...d, stage: ns, time: nowStamp(), stale: false, status: STATUS_ETAPA[ns] || d.status, historialContacto: traza(d, `Cesión inscrita: ${d.facturas} factura(s) por ${fmtMM(d.monto || 0)} cedida(s) a Factoring Security (cesión electrónica AEC registrada)`, true, DET_ETAPA[ns]) };
           }
           return { ...d, stage: ns, time: nowStamp(), stale: false, status: STATUS_ETAPA[ns] || d.status, historialContacto: traza(d, `Avanzó a ${STATUS_ETAPA[ns] || ns}`, true, DET_ETAPA[ns]) };
         }
@@ -21973,7 +22243,7 @@ export default function PipelineComercial() {
   // / ofertaEval), para que la categoría "Perdida" se siga poblando sin reintroducir un motor por timer.
   const evaluarPerdidas = () => {
     const acc = accDiaRef.current; const e = acc.embudo;
-    const sumar = (k, d) => { acc[k].op++; acc[k].fac += d.facturas || 0; acc[k].mm += d.amountMM || 0; };
+    const sumar = (k, d) => { acc[k].op++; acc[k].fac += d.facturas || 0; acc[k].mm += d.monto || 0; };
     // IMPORTANTE: la decisión aleatoria y el conteo del embudo se hacen UNA vez aquí (función pura sobre el
     // snapshot actual), NO dentro del updater de setDeals — React puede invocar el updater más de una vez
     // (StrictMode), lo que con Math.random() adentro descuadraba el contador del chart vs. la lista real.
@@ -22052,21 +22322,21 @@ export default function PipelineComercial() {
     let reabiertas = 0;
     setDeals((prev) => prev.map((d) => {
       if (!(d._inbound && d.stage === etapaNG)) return d;
-      const amountMM = +((d.amountMM || 0) + (d.nuevasFacturasMontoMM || 0)).toFixed(1);
+      const monto = +((d.monto || 0) + (d.nuevasFacturasMonto || 0)).toFixed(1);
       const facturas = (d.facturas || 0) + (d.nuevasFacturas || 0);
       // Paquete re-armado desde la BD: se re-escalan los deudores y se vuelve a itemizar (facturasOp: undefined).
-      const factor = (d.amountMM || 0) > 0 ? amountMM / d.amountMM : 1;
-      const deudores = (d.deudores || []).map((x) => ({ ...x, montoMM: +((x.montoMM || 0) * factor).toFixed(1), facturas: Math.max(1, Math.round((x.facturas || 1) * factor)) }));
+      const factor = (d.monto || 0) > 0 ? monto / d.monto : 1;
+      const deudores = (d.deudores || []).map((x) => ({ ...x, monto: +((x.monto || 0) * factor).toFixed(1), facturas: Math.max(1, Math.round((x.facturas || 1) * factor)) }));
       const nid = `OP-R${nDia}${(d.id || "").replace(/[^0-9]/g, "").slice(-4)}`;
       reabiertas++;
-      return { ...d, id: nid, reabiertaDe: d.id, stage: etapaNG, amountMM, facturas, deudores,
+      return { ...d, id: nid, reabiertaDe: d.id, stage: etapaNG, monto, facturas, deudores,
         // Reabrir es originar de nuevo: vuelve SIN SIMULAR y con la oferta vacía. Antes se re-simulaba
         // con `finanzasDe`, así que al día siguiente aparecían en el tubo con tasa y giro que nadie
         // había calculado —y ese precio, además, nacía vencido.
-        facturasOp: [], simulado: false, tasaDescuento: undefined, comision: undefined, montoDescuentoMM: undefined,
-        nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, actualizando: false,
+        facturasOp: [], simulado: false, tasaDescuento: undefined, comision: undefined, montoDescuento: undefined,
+        nuevasFacturas: 0, nuevasFacturasMonto: 0, warning: false, actualizando: false,
         status: `Reabierta (día ${nDia}) · paquete actualizado`, time: nowStamp(), tProsp: Date.now(), subSeed: rndDet("seed|" + nid),
-        historialContacto: traza(d, `No gestionada al cierre del día ${nDia - 1}: se cierra y se reabre con el paquete vigente en la BD (${facturas} doc. · ${fmtMM(amountMM)})`) };
+        historialContacto: traza(d, `No gestionada al cierre del día ${nDia - 1}: se cierra y se reabre con el paquete vigente en la BD (${facturas} doc. · ${fmtMM(monto)})`) };
     }));
     logSys("info", "cierre-dia", `Cierre del día ${nDia - 1}: ${reabiertas} oportunidad(es) no gestionada(s) en «${stageName(etapaNG)}» se cerraron y reabrieron con el paquete vigente`,
       { dia: nDia, reabiertas, etapaNoGestionada: etapaNG });
@@ -22076,11 +22346,11 @@ export default function PipelineComercial() {
     const a = accDiaRef.current; // acumulado del día (flujo, no snapshot)
     return {
       dia: diaNum,
-      originacion: originadasRef.current, originacionMM: +originadasMontoRef.current.toFixed(1), originacionFac: originadasFacRef.current,
-      prospeccion: a.prospeccion.op, prospeccionMM: +a.prospeccion.mm.toFixed(1), prospeccionFac: a.prospeccion.fac,
-      curse: a.curse.op, curseMM: +a.curse.mm.toFixed(1), curseFac: a.curse.fac,
-      giro: a.giro.op, giroMM: +a.giro.mm.toFixed(1), giroFac: a.giro.fac,
-      perdida: a.perdida.op, perdidaMM: +a.perdida.mm.toFixed(1), perdidaFac: a.perdida.fac,
+      originacion: originadasRef.current, originacionMonto: Math.round(originadasMontoRef.current), originacionFac: originadasFacRef.current,
+      prospeccion: a.prospeccion.op, prospeccionMonto: Math.round(a.prospeccion.mm), prospeccionFac: a.prospeccion.fac,
+      curse: a.curse.op, curseMonto: Math.round(a.curse.mm), curseFac: a.curse.fac,
+      giro: a.giro.op, giroMonto: Math.round(a.giro.mm), giroFac: a.giro.fac,
+      perdida: a.perdida.op, perdidaMonto: Math.round(a.perdida.mm), perdidaFac: a.perdida.fac,
       embudo: { ...a.embudo },
     };
   };
@@ -22097,7 +22367,7 @@ export default function PipelineComercial() {
     const diaCerrado = corridas / HORAS_DIA;
     const stats = statsDelDia(diaCerrado);
     setReporte((r) => [...r, stats]);
-    setKpiHist((h) => [...h, { dia: diaCerrado, oport: activeCount, pipeline: totalPipeline, venta: ventaMensualMM, forecast: forecastMM, cumpl: vsBudget }].slice(-14));
+    setKpiHist((h) => [...h, { dia: diaCerrado, oport: activeCount, pipeline: totalPipeline, venta: ventaMensual, forecast: forecast, cumpl: vsBudget }].slice(-14));
     originadasRef.current = 0;
     originadasMontoRef.current = 0;
     originadasFacRef.current = 0;
@@ -22166,11 +22436,11 @@ export default function PipelineComercial() {
   // Negocio asignado manualmente desde la bandeja. Como cualquier oportunidad nueva, NO se simula:
   // sus facturas entran al pool disponible y el ejecutivo arma la oferta en el detalle.
   const dealManual = (ev, execIni) => ({
-    id: ev.opId, stage: "prospeccion", tag: ev.tag, facturas: ev.nFacturas || 1, amountMM: ev.monto || 0,
-    cliente: ev.cedente, deudor: ev.pagador, deudores: [{ name: ev.pagador, facturas: ev.nFacturas || 1, montoMM: ev.monto || 0 }], sector: ev.sector, tasa: ev.tasa, anticipo: ev.anticipo, esCliente: ev.esCliente,
+    id: ev.opId, stage: "prospeccion", tag: ev.tag, facturas: ev.nFacturas || 1, monto: ev.monto || 0,
+    cliente: ev.cedente, deudor: ev.pagador, deudores: [{ name: ev.pagador, facturas: ev.nFacturas || 1, monto: ev.monto || 0 }], sector: ev.sector, tasa: ev.tasa, anticipo: ev.anticipo, esCliente: ev.esCliente,
     rutEmisor: ev.rutEmisor, cat: ev.cat, catLabel: ev.cat, pctBlanca: ev.pctBlanca, sowTendencia: ev.sowTendencia, sowFlecha: ev.sowFlecha, sowActualPct: ev.sowActualPct, sowTargetPct: ev.sowTargetPct, sowGapPct: ev.sowGapPct, superaTarget: ev.superaTarget, conDescuento: ev.conDescuento, spreadPromo: ev.spreadPromo, facturasOp: [], facturasDisponibles: ev.facturasOp,
     status: "Asignada por admin", time: nowStamp(), channel: "Manual", exec: execIni || asignarEjecutivo(ev),
-    stale: false, important: (ev.monto || 0) > 800, _inbound: true, perdedor: rndDetBool(`perd|${ev.cedente}|${ev.pagador}`, 0.195), subSeed: rndDet(`seed|${ev.cedente}|${ev.pagador}`), nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, tProsp: Date.now(),
+    stale: false, important: (ev.monto || 0) > 800e6, _inbound: true, perdedor: rndDetBool(`perd|${ev.cedente}|${ev.pagador}`, 0.195), subSeed: rndDet(`seed|${ev.cedente}|${ev.pagador}`), nuevasFacturas: 0, nuevasFacturasMonto: 0, warning: false, tProsp: Date.now(),
     simulado: false,
   });
   const asignarManual = (ev, execIni) => {
@@ -22213,7 +22483,7 @@ export default function PipelineComercial() {
     setDeals((prev) => prev.map(upd));
     setSelected((sel) => (sel ? upd(sel) : sel));
     registrarAuditoria({ usuario: nom, modulo: "Operaciones · Integración", accion: "Aprobar integración al core",
-      glosa: `${d0.cliente} · ${fmtMM(d0.giroMM || 0)} → Pendiente de Giro · huella ${ev.hash ? ev.hash.slice(0, 16) + "…" : "(sin hash)"}`, empresaId: id, severidad: "alta", exito: true });
+      glosa: `${d0.cliente} · ${fmtMM(d0.giro || 0)} → Pendiente de Giro · huella ${ev.hash ? ev.hash.slice(0, 16) + "…" : "(sin hash)"}`, empresaId: id, severidad: "alta", exito: true });
   };
   // TRASPASO DE CARTERA (Configuración › Oportunidades › Migración). Mueve las operaciones vivas de un
   // ejecutivo a otro: el archivo de cartera de la mañana reasigna las EMPRESAS, pero `deal.exec` está
@@ -22263,7 +22533,7 @@ export default function PipelineComercial() {
     const ids = new Set(deals.map((d) => d.id));
     const nuevos = streamFeed.filter((ev) => !ids.has(ev.opId)).map((ev) => dealManual(ev, asignarEjecutivo(ev)));
     originadasRef.current += nuevos.length;
-    originadasMontoRef.current += nuevos.reduce((s, d) => s + d.amountMM, 0);
+    originadasMontoRef.current += nuevos.reduce((s, d) => s + d.monto, 0);
     originadasFacRef.current += nuevos.reduce((s, d) => s + (d.facturas || 0), 0);
     accDiaRef.current.embudo.inbound += nuevos.length; accDiaRef.current.embudo.prospeccion += nuevos.length;
     setDeals((prev) => [...nuevos, ...prev]);
@@ -22282,7 +22552,7 @@ export default function PipelineComercial() {
   const descargarOperacionPDF = (o) => {
     const fmt = (n) => "$" + Math.round(n || 0).toLocaleString("es-CL");
     const esc = (s) => String(s == null ? "" : s).replace(/[&<>]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m]));
-    const montoCLP = Math.round((o.montoMM || 0) * 1e6), giroCLP = Math.round((o.giroMM || 0) * 1e6);
+    const montoCLP = Math.round(o.monto || 0), giroCLP = Math.round(o.giro || 0);
     const descTotal = Math.max(0, montoCLP - giroCLP);
     const P = { dif: 0.456, com: 0.039, gas: 0.139, iva: 0.073, rec: 0.034, des: 0.060 };
     const c = {}; let acc = 0; Object.keys(P).forEach((k) => { c[k] = Math.round(descTotal * P[k]); acc += c[k]; }); c.cxc = Math.max(0, descTotal - acc);
@@ -22292,8 +22562,8 @@ export default function PipelineComercial() {
     const nDocs = facturas.length;
     const descRows = [["Diferencia de precio", c.dif], ["Comisión", c.com], ["Gastos", c.gas], ["IVA", c.iva], ["Recargos", c.rec], ["Descuentos", c.des], ["Cuentas por cobrar", c.cxc]];
     const row2 = (l, v, s) => `<tr><td class="k">${esc(l)}</td><td class="v">${fmt(v)}${s ? `<div class="sub">${esc(s)}</div>` : ""}</td></tr>`;
-    const docsRows = facturas.map((f) => `<tr><td><b>Factura Electrónica #${esc(f.folio)}</b></td><td>${esc(f.deudor)}</td><td>${esc(f.venc)}</td><td class="num"><b>${fmt((f.montoMM || 0) * 1e6)}</b></td></tr>`).join("");
-    const girosRows = facturas.map((f) => `<tr><td>${esc(f.venc)}</td><td>BANCO BICE<div class="sub">Cuenta Corriente #1234145</div></td><td class="num"><b>${fmt((f.montoMM || 0) * 1e6)}</b></td></tr>`).join("");
+    const docsRows = facturas.map((f) => `<tr><td><b>Factura Electrónica #${esc(f.folio)}</b></td><td>${esc(f.deudor)}</td><td>${esc(f.venc)}</td><td class="num"><b>${fmt(f.monto || 0)}</b></td></tr>`).join("");
+    const girosRows = facturas.map((f) => `<tr><td>${esc(f.venc)}</td><td>BANCO BICE<div class="sub">Cuenta Corriente #1234145</div></td><td class="num"><b>${fmt(f.monto || 0)}</b></td></tr>`).join("");
     const descBody = descRows.map(([l, v]) => `<tr><td class="dk">${esc(l)}</td><td class="dv">${fmt(v)}</td></tr>`).join("");
     const firmantes = ["AA", "AA", "AA", "AA"].map(() => `<span class="ava"></span>`).join("");
     const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Otorgamiento N° ${esc(o.neg)} · Security Factoring</title>
@@ -22398,26 +22668,26 @@ export default function PipelineComercial() {
           histFactoring: f.histFactoring != null ? f.histFactoring : null,
           sinXml: f.sinXml != null ? f.sinXml : true };
       })];
-      const addMonto = +facs.reduce((s, f) => s + (f.montoMM || 0), 0).toFixed(1);
+      const addMonto = +facs.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1);
       const agregoOtro = facs.some((f) => f.otro || (f.tipoDeudor || tipoDeudor(f.rutRecep, f.deudor)) === "Otro");
       // Las facturas agregadas que venían de "disponibles" (Otro) salen del pool de disponibles.
       const idsAdd = new Set(facs.map((f) => f.id));
       const restDisp = (d.facturasDisponibles || []).filter((f) => !idsAdd.has(f.id));
       const restRet = (d.facturasRetiradas || []).filter((f) => !idsAdd.has(f.id));
       const restN = Math.max(0, (d.nuevasFacturas || 0) - facs.filter((f) => !f.otro).length);
-      const restMonto = +Math.max(0, (d.nuevasFacturasMontoMM || 0) - facs.filter((f) => !f.otro).reduce((s, f) => s + (f.montoMM || 0), 0)).toFixed(1);
-      const amountMM = +(d.amountMM + addMonto).toFixed(1);
+      const restMonto = +Math.max(0, (d.nuevasFacturasMonto || 0) - facs.filter((f) => !f.otro).reduce((s, f) => s + (f.monto || 0), 0)).toFixed(1);
+      const monto = +(d.monto + addMonto).toFixed(1);
       // Agrupar por el deudor REAL de cada factura (una "Otro" tiene su propio deudor, no el principal).
-      const deudores = (d.deudores && d.deudores.length ? d.deudores.map((x) => ({ ...x })) : [{ name: d.deudor, facturas: 0, montoMM: 0 }]);
+      const deudores = (d.deudores && d.deudores.length ? d.deudores.map((x) => ({ ...x })) : [{ name: d.deudor, facturas: 0, monto: 0 }]);
       facs.forEach((f) => {
         let dd = deudores.find((x) => x.name === f.deudor);
-        if (!dd) { dd = { name: f.deudor, facturas: 0, montoMM: 0 }; deudores.push(dd); }
-        dd.facturas = (dd.facturas || 0) + 1; dd.montoMM = +((dd.montoMM || 0) + (f.montoMM || 0)).toFixed(1);
+        if (!dd) { dd = { name: f.deudor, facturas: 0, monto: 0 }; deudores.push(dd); }
+        dd.facturas = (dd.facturas || 0) + 1; dd.monto = +((dd.monto || 0) + (f.monto || 0)).toFixed(1);
       });
       const tasaDescuento = d.tasaDescuento || 1.5;
-      const fin = calcularFinanzas(d.cliente, d.deudor, amountMM, tasaDescuento, d.comision || 200000);
+      const fin = calcularFinanzas(d.cliente, d.deudor, monto, tasaDescuento, d.comision || 200000);
       const hist = traza(d, `Se incorporaron ${facs.length} factura(s) a la oferta (${fmtMM(addMonto)})${agregoOtro ? " · incluye deudor(es) Otro → requiere Otorgamiento" : ""}`);
-      return { ...d, stage: stageTrasEdicion(d), facturasOp: nuevasOp, deudores, facturas: nuevasOp.length, amountMM, facturasDisponibles: restDisp.length ? restDisp : undefined, facturasRetiradas: restRet.length ? restRet : undefined, nuevasFacturas: restN, nuevasFacturasMontoMM: restMonto, warning: restN > 0, status: "Facturas incorporadas a la oferta", tasaDescuento, historialContacto: hist, ...fin };
+      return { ...d, stage: stageTrasEdicion(d), facturasOp: nuevasOp, deudores, facturas: nuevasOp.length, monto, facturasDisponibles: restDisp.length ? restDisp : undefined, facturasRetiradas: restRet.length ? restRet : undefined, nuevasFacturas: restN, nuevasFacturasMonto: restMonto, warning: restN > 0, status: "Facturas incorporadas a la oferta", tasaDescuento, historialContacto: hist, ...fin };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
@@ -22453,7 +22723,7 @@ export default function PipelineComercial() {
         facturasOp: dentro.length ? dentro : d.facturasOp,
         facturasDisponibles: fuera.length ? fuera : undefined,
         facturas: dentro.length || d.facturas,
-        amountMM: dentro.length ? +dentro.reduce((s2, f) => s2 + (f.montoMM || 0), 0).toFixed(1) : d.amountMM };
+        monto: dentro.length ? +dentro.reduce((s2, f) => s2 + (f.monto || 0), 0).toFixed(1) : d.monto };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
@@ -22464,8 +22734,8 @@ export default function PipelineComercial() {
     const upd = (d) => {
       if (d.id !== id) return d;
       const fs = itemizarFacturas(d);
-      const monto = +fs.reduce((s2, f) => s2 + (f.montoMM || 0), 0).toFixed(1);
-      const patch = { simulado: true, amountMM: monto, facturas: fs.length, status: "Simulada",
+      const monto = +fs.reduce((s2, f) => s2 + (f.monto || 0), 0).toFixed(1);
+      const patch = { simulado: true, monto: monto, facturas: fs.length, status: "Simulada",
         facturasOp: d.facturasOp, facturasDisponibles: d.facturasDisponibles, ofertaSugerida: d.ofertaSugerida,
         ...finanzasDe(d.cliente, d.deudor, monto) };
       // El detalle vive en una PESTAÑA APARTE —se abre con `window.open` y un ticket con la foto del
@@ -22531,7 +22801,7 @@ export default function PipelineComercial() {
     // El deudor no la confirmó: queda VETADA para esta operación. No se puede volver a seleccionar,
     // ni siquiera al reabrirla — es el resultado de una llamada, no una preferencia reversible.
     if (motivo === "noConfirmada") {
-      const nc = { ...(repoNoConfirmadas.get(id) || {}), [fac.id]: { folio: fac.folio || fac.id, montoMM: fac.montoMM || 0, deudor: fac.deudor || "", por: actorEtiqueta(usuario), fecha: nowStamp() } };
+      const nc = { ...(repoNoConfirmadas.get(id) || {}), [fac.id]: { folio: fac.folio || fac.id, monto: fac.monto || 0, deudor: fac.deudor || "", por: actorEtiqueta(usuario), fecha: nowStamp() } };
       repoNoConfirmadas.set(id, nc);
     }
     // Si la operación ya fue aceptada, esto es la verificación retirando lo que el deudor no confirmó:
@@ -22548,7 +22818,7 @@ export default function PipelineComercial() {
           origen: `Verificación · el deudor no confirmó el folio ${fac.folio || fac.id}`, linea: nl });
         registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Verificación de facturas",
           accion: "Factura retirada por no confirmación del deudor",
-          glosa: `${d0.cliente || d0.company || id} · folio ${fac.folio || fac.id} · ${fmtMM(fac.montoMM || 0)} · monto con línea ${fmtMM(prev.linea.cursable)} → ${fmtMM(nl.cursable)} · el cupo liberado sigue reservado hasta que lo liberen en el sistema de líneas`, exito: true });
+          glosa: `${d0.cliente || d0.company || id} · folio ${fac.folio || fac.id} · ${fmtMM(fac.monto || 0)} · monto con línea ${fmtMM(prev.linea.cursable)} → ${fmtMM(nl.cursable)} · el cupo liberado sigue reservado hasta que lo liberen en el sistema de líneas`, exito: true });
       }
     }
     const upd = (d) => {
@@ -22556,12 +22826,12 @@ export default function PipelineComercial() {
       const base = itemizarFacturas(d);
       const nuevasOp = base.filter((f) => f.id !== fac.id);
       if (nuevasOp.length === base.length || nuevasOp.length === 0) return d; // no existe o quedaría vacía
-      const quitMonto = +(fac.montoMM || 0).toFixed(1);
-      const amountMM = +Math.max(0, d.amountMM - quitMonto).toFixed(1);
+      const quitMonto = +(fac.monto || 0).toFixed(1);
+      const monto = +Math.max(0, d.monto - quitMonto).toFixed(1);
       // Recalcular deudores restando la contribución de la factura retirada.
-      const deudores = (d.deudores && d.deudores.length ? d.deudores.map((x) => ({ ...x })) : [{ name: d.deudor, facturas: 0, montoMM: 0 }]);
+      const deudores = (d.deudores && d.deudores.length ? d.deudores.map((x) => ({ ...x })) : [{ name: d.deudor, facturas: 0, monto: 0 }]);
       const dd = deudores.find((x) => x.name === fac.deudor);
-      if (dd) { dd.facturas = Math.max(0, (dd.facturas || 0) - 1); dd.montoMM = +Math.max(0, (dd.montoMM || 0) - quitMonto).toFixed(1); }
+      if (dd) { dd.facturas = Math.max(0, (dd.facturas || 0) - 1); dd.monto = +Math.max(0, (dd.monto || 0) - quitMonto).toFixed(1); }
       const deudoresF = deudores.filter((x) => (x.facturas || 0) > 0);
       // Simétrico con incorporarFacturasOferta: se hereda la factura COMPLETA y sólo se quitan las
       // marcas del pool de candidatas. Enumerar campos a mano perdía `histFactoring` (la degradaba a
@@ -22571,9 +22841,9 @@ export default function PipelineComercial() {
       const { candidata: _c, porCupo: _pc, _ncAplicada: _nc, ...retirada } = fac;
       const restRet = [...(d.facturasRetiradas || []).filter((f) => f.id !== fac.id), retirada];
       const tasaDescuento = d.tasaDescuento || 1.5;
-      const fin = calcularFinanzas(d.cliente, d.deudor, amountMM, tasaDescuento, d.comision || 200000);
+      const fin = calcularFinanzas(d.cliente, d.deudor, monto, tasaDescuento, d.comision || 200000);
       const hist = traza(d, `Se retiró 1 factura de la oferta (${fmtMM(quitMonto)}) · queda disponible en "Otras facturas"`);
-      return { ...d, stage: stageTrasEdicion(d), facturasOp: nuevasOp, deudores: deudoresF.length ? deudoresF : deudores, facturas: nuevasOp.length, amountMM, facturasRetiradas: restRet, status: "Factura retirada de la oferta", tasaDescuento, historialContacto: hist, ...fin };
+      return { ...d, stage: stageTrasEdicion(d), facturasOp: nuevasOp, deudores: deudoresF.length ? deudoresF : deudores, facturas: nuevasOp.length, monto, facturasRetiradas: restRet, status: "Factura retirada de la oferta", tasaDescuento, historialContacto: hist, ...fin };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
@@ -22583,7 +22853,7 @@ export default function PipelineComercial() {
     if (existe) {
       setDeals((prev) => prev.map((d) => (d.id === nd.id ? { ...d, ...nd } : d)));
     } else {
-      originadasRef.current += 1; originadasMontoRef.current += nd.amountMM; originadasFacRef.current += nd.facturas;
+      originadasRef.current += 1; originadasMontoRef.current += nd.monto; originadasFacRef.current += nd.facturas;
       accDiaRef.current.embudo.inbound++; accDiaRef.current.embudo.prospeccion++; if (accDiaRef.current.embudo.oferta != null) accDiaRef.current.embudo.oferta++;
       setDeals((prev) => [nd, ...prev]);
     }
@@ -22597,12 +22867,12 @@ export default function PipelineComercial() {
   // El ejecutivo incorpora las nuevas facturas y actualiza la tarjeta (sin re-simular tasa/comisión).
   const incorporarUpd = (d, id) => {
     if (d.id !== id || !d.warning) return d;
-    const amountMM = +(d.amountMM + (d.nuevasFacturasMontoMM || 0)).toFixed(1);
-    const financiadoMM = +amountMM.toFixed(2);
-    const interesMM = +(financiadoMM * (d.tasaDescuento / 100) * ((d.diasFin || 42) / 30)).toFixed(2);
-    const descMM = +(interesMM - (d.comisionMM || 0)).toFixed(2);
-    const giroMM = +(financiadoMM - interesMM - (d.comisionMM || 0) - (d.descCxCMM || 0)).toFixed(2);
-    return { ...d, stage: stageTrasEdicion(d), amountMM, financiadoMM, facturas: d.facturas + (d.nuevasFacturas || 0), interesMM, montoDescuentoMM: interesMM, descMM, giroMM, nuevasFacturas: 0, nuevasFacturasMontoMM: 0, warning: false, status: "Actualizada con nuevas facturas" };
+    const monto = +(d.monto + (d.nuevasFacturasMonto || 0)).toFixed(1);
+    const financiado = +monto.toFixed(2);
+    const interes = +(financiado * (d.tasaDescuento / 100) * ((d.diasFin || 42) / 30)).toFixed(2);
+    const desc = +(interes - (d.comision || 0)).toFixed(2);
+    const giro = +(financiado - interes - (d.comision || 0) - (d.descCxC || 0)).toFixed(2);
+    return { ...d, stage: stageTrasEdicion(d), monto, financiado, facturas: d.facturas + (d.nuevasFacturas || 0), interes, montoDescuento: interes, desc, giro, nuevasFacturas: 0, nuevasFacturasMonto: 0, warning: false, status: "Actualizada con nuevas facturas" };
   };
   const incorporarFacturas = (id) => {
     setDeals((prev) => prev.map((d) => incorporarUpd(d, id)));
@@ -22649,14 +22919,14 @@ export default function PipelineComercial() {
     listos.forEach((d) => {
       const exc = visadoDeal(d).exc.length > 0;
       logOtorgEvento(d.id, "Sistema", exc ? "otorgada-excepcion" : "otorgada", "Todos los criterios de otorgamiento quedaron aceptados y el cliente dio su aprobación formal → pasa a Operaciones para su integración al core.");
-      if (a && a.giro) { a.giro.op++; a.giro.fac += d.facturas || 0; a.giro.mm += d.amountMM || 0; }
+      if (a && a.giro) { a.giro.op++; a.giro.fac += d.facturas || 0; a.giro.mm += d.monto || 0; }
       if (a && a.embudo && a.embudo.giro != null) a.embudo.giro++;
     });
     const ids = new Set(listos.map((d) => d.id));
     setDeals((prev) => prev.map((d) => {
       if (!ids.has(d.id)) return d;
       const exc = visadoDeal(d).exc.length > 0;
-      return { ...d, stage: "giro", otorgada: true, otorgPorExcepcion: exc, giroPendiente: false, status: exc ? "Girada · otorgada por excepción" : "Girada · otorgada", time: nowStamp(), historialContacto: traza(d, (exc ? "Otorgada por excepción — todos los criterios aceptados" : "Otorgada — todos los criterios aprobados") + ` y con aprobación formal del cliente → giro de ${fmtMM(d.giroMM || 0)} a la cuenta registrada del cliente`, true, DET_ETAPA.giro) };
+      return { ...d, stage: "giro", otorgada: true, otorgPorExcepcion: exc, giroPendiente: false, status: exc ? "Girada · otorgada por excepción" : "Girada · otorgada", time: nowStamp(), historialContacto: traza(d, (exc ? "Otorgada por excepción — todos los criterios aceptados" : "Otorgada — todos los criterios aprobados") + ` y con aprobación formal del cliente → giro de ${fmtMM(d.giro || 0)} a la cuenta registrada del cliente`, true, DET_ETAPA.giro) };
     }));
   }, [deals, cfgVer]);
   // CONVERSACIONES ACTIVAS (en curso): el cliente respondió y/o se publicó una oferta hace menos de 1 hora.
@@ -22991,7 +23261,7 @@ export default function PipelineComercial() {
                 mini: serieOport, miniHint: "Evolución del número de oportunidades abiertas" },
               { id: "piptotal", label: "PIPELINE TOTAL", value: fmtMM(totalPipeline), sub: "", mini: kpiHist.map((h) => h.pipeline), miniHint: "Pipeline total al cierre de cada día",
                 side: [{ label: "WR", v: `${winLoss.win}%`, n: winLoss.ganados, up: true, hint: `${winLoss.ganados} ganados` }, { label: "LR", v: `${winLoss.loss}%`, n: winLoss.perdidos, up: false, hint: `${winLoss.perdidos} perdidos` }] },
-              { id: "venta", label: "VENTA MENSUAL", value: fmtMM(ventaMensualMM), budget: fmtMM(BUDGET_MES_MM), pct: vsBudget, sub: "", mini: kpiHist.map((h) => h.venta), miniHint: "Venta mensual al cierre de cada día" },
+              { id: "venta", label: "VENTA MENSUAL", value: fmtMM(ventaMensual), budget: fmtMM(BUDGET_MES), pct: vsBudget, sub: "", mini: kpiHist.map((h) => h.venta), miniHint: "Venta mensual al cierre de cada día" },
             ] },
           ];
           const tile = (k) => {
@@ -23104,8 +23374,8 @@ export default function PipelineComercial() {
                 {showInbound && (
                 <MacroColumn title="Bandeja Inbound" hint="captación">
                   <InboundPanel rules={rules} open={inboundOpen} onToggleOpen={(v) => setInboundOpen(typeof v === "boolean" ? v : !inboundOpen)} onToggleRule={toggleRule} onEditRule={setEditingRule} onNewRule={openNewRule} onResetRules={resetRules}
-                    oppCount={dealsVista.filter((d) => d._inbound).length} oppMM={dealsVista.filter((d) => d._inbound).reduce((s, d) => s + d.amountMM, 0)} />
-                  <MotorPerformance recibidas={recibidas} califican={acumulado.length} sinClasificar={noClasRef.current.total} originadas={originadasRef.current} originadasMM={originadasMontoRef.current} reglaStats={reglaStatsRef.current} rules={rules} />
+                    oppCount={dealsVista.filter((d) => d._inbound).length} opp={dealsVista.filter((d) => d._inbound).reduce((s, d) => s + d.monto, 0)} />
+                  <MotorPerformance recibidas={recibidas} califican={acumulado.length} sinClasificar={noClasRef.current.total} originadas={originadasRef.current} originadasMonto={originadasMontoRef.current} reglaStats={reglaStatsRef.current} rules={rules} />
                   <InboundStream feed={streamFeed} streaming={streaming} queueLen={streamQueue.length} total={INBOUND_STREAM.length} recibidas={recibidas} acumuladas={acumulado.length} corridas={corridas} dia={dia} horaDia={horaDia}
                     onToggle={toggleStream} onReset={resetStream} onCorrer={tickCron} onAsignar={asignarManual} onCrearRegla={crearReglaDesdeFactura} onDescartar={descartarEv} onAsignarTodas={asignarTodas} />
                 </MacroColumn>

@@ -11,6 +11,7 @@
 | NUM_TRABAJADORES | integer | Dotación |
 | FECHA_INGRESO / FECHA_PRIMERA_OPERACION | date | Historia como cliente |
 | CLIENTE_BANCO / ALERTAS | SI\|NO | Relación banco y alertas vigentes |
+| NOTA_COMPORTAMIENTO | number 1–5 | **Nota de comportamiento (5 = mejor pagador). ÚNICA fuente**: la consultan C09 (cliente), D01 (deudor), el CAT, el predictor de verificación y la UI. No viaja en ningún otro activo |
 | SEGMENTO / SUB_SEGMENTO / QUINTIL | string / int | Segmentación comercial |
 | MARGEN_ULT_MES_M / MARGEN_12M_M | number (M$) | Márgenes de contribución |
 | COLOC_PROM_12M_M | number (M$) | Colocación promedio 12m |
@@ -20,4 +21,4 @@
 | SOCIOS_JSON | JSON string | Array `{rut, nombre, participacion, pep, fatca}` |
 | FECHA_CORTE | date | Generación del archivo |
 
-**Notas:** campos vacíos = sin información (no 0). Para deudores, los campos comerciales de cliente pueden venir vacíos. Solapa variables con A16: mantener consistencia de nombres o consolidar entrega (ver Levantamiento §4).
+**Notas:** campos vacíos = sin información (no 0). La nota de comportamiento se **consolidó acá** (antes viajaba además en A16 y A10, y el layout de A3/A4 también la declaraba): es un atributo de la empresa, y tres copias podían discrepar sobre el mismo RUT. Para deudores, los campos comerciales de cliente pueden venir vacíos. Solapa variables con A16: mantener consistencia de nombres o consolidar entrega (ver Levantamiento §4).
