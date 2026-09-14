@@ -1329,7 +1329,7 @@ function generarStream(total, seed) {
     const siiSync = rnd() < 0.72;
     const contactoVerificado = esCliente && rnd() < 0.6;
     const diasEmision = Math.floor(rnd() * 5);
-    const monto = +(30 + rnd() * 1600).toFixed(1);
+    const monto = Math.round((30 + rnd() * 1600) * 1e6); // $30 MM a $1.630 MM
     const tag = rnd() < 0.18 ? "Confirming" : "Factoring";
     const nFacturas = 1 + Math.floor(rnd() * 30);
     out.push({
@@ -3469,7 +3469,7 @@ function candidatasLibro(deal, enOferta) {
     if (usados.has(folio)) continue;
     const h = Math.abs(hashStr((deal.id || "") + "lib" + folio));
     const deudor = pool[h % pool.length];
-    const monto = +(0.8 + (h % 900) / 100).toFixed(1);
+    const monto = Math.round((0.8 + (h % 900) / 100) * 1e6); // $800.000 a $9.790.000
     const diasEmision = Math.round((i / Math.max(1, N - 1)) * ventana); // 0 (más nueva) .. ventana (más antigua)
     out.push({ id: `LIB-${deal.id}-${folio}`, folio, tipo: "Factura electrónica (33)", deudor, rutRecep: rutPorNombre[deudor] || "", ...claseDe(deudor), monto, venc: diasPagoDeudor(deudor), candidata: true, otro: (h % 5 === 0), diasEmision });
   }
@@ -3821,7 +3821,7 @@ function historialComercial(cliente, deudor) {
   const base = hashStr((cliente || "") + "hc"); const n = 2 + (base % 4); const out = [];
   for (let i = 0; i < n; i++) {
     const h = hashStr((cliente || "") + "_op_" + i);
-    const monto = +(40 + (h % 900)).toFixed(1);
+    const monto = Math.round((40 + (h % 900)) * 1e6); // $40 MM a $939 MM
     const tasa = (1.4 + (h % 65) / 100).toFixed(2);
     const plazo = 30 + (h % 45);
     const comision = 100000 + ((h >> 4) % 250000);
@@ -3855,7 +3855,7 @@ function posicionCobranza(cliente, deudor, tasaPct, deudores) {
   const facturas = []; let cxcTotal = 0;
   const buckets = { aldia: { monto: 0, fac: 0, label: "Al día" }, m1: { monto: 0, fac: 0, label: "Mora 1-30 días" }, m2: { monto: 0, fac: 0, label: "Mora 31-60 días" }, m3: { monto: 0, fac: 0, label: "Mora +60 días" } };
   for (let i = 0; i < n; i++) {
-    const h = hashStr(cliente + "_cob_" + i); const monto = +(20 + (h % 500)).toFixed(1); const r = h % 100;
+    const h = hashStr(cliente + "_cob_" + i); const monto = Math.round((20 + (h % 500)) * 1e6); const r = h % 100;
     let bucket = "aldia", atraso = 0;
     if (r >= 90) { bucket = "m3"; atraso = 61 + (h % 40); } else if (r >= 78) { bucket = "m2"; atraso = 31 + (h % 30); } else if (r >= 60) { bucket = "m1"; atraso = 1 + (h % 30); }
     buckets[bucket].monto = +(buckets[bucket].monto + monto).toFixed(1); buckets[bucket].fac++;
