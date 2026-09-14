@@ -1873,6 +1873,82 @@
        `${vacia.n} docs → ${una.n} → ${dos.n} · 0 folios nuevos · salieron [${salieron2.join(", ")}] · deudor y monto estables ${estables}`);
   }
 
+  // ── 93 · LAS FECHAS DE LA FACTURA SON UN DATO, NO UNA DERIVACIÓN ─────────────────────────────
+  // El usuario lo dijo así: «esas no pueden cambiar entre una pantalla y otra, y los montos, folios,
+  // rut, razón social… la factura se carga y debe persistir en el build». La fecha de emisión salía de
+  // `new Date(Date.now() - (hashStr("em" + folio) % 20 + 3) * 86400000)` en tres sitios del detalle,
+  // más una cuarta fórmula por `diasEmision` en la tabla de candidatas y una quinta por id para la
+  // antigüedad — así que el MISMO folio mostraba una fecha en la oferta, otra en la tabla de al lado,
+  // y todas corridas un día cada día. Mientras tanto el activo A1 trae `FchEmis` y `FchVenc` en cada
+  // fila y el inbound las descartaba fijando `venc: 45` a mano.
+  {
+    // (a) El resolver no mira el reloj. Se adelanta `Date.now` cuarenta días: mismas fechas.
+    const muestra = [
+      { folio: 400001, venc: 30 },
+      { folio: 400002, venc: 61, diasEmision: 12 },
+      { folio: 400003, fchEmis: "2026-05-04", fchVenc: "2026-07-03", venc: 60 },
+      { folio: 400004, fchEmis: "2026-06-01", venc: 45 },
+    ];
+    const antes = muestra.map((f) => JSON.stringify(fechasDocumento(f)));
+    const real = Date.now;
+    let despues;
+    try { Date.now = () => real() + 40 * 86400000; despues = muestra.map((f) => JSON.stringify(fechasDocumento(f))); }
+    finally { Date.now = real; }
+    const sinReloj = antes.every((x, i) => x === despues[i]);
+
+    // (b) LEE lo que el documento trae, no lo recalcula: la fila del activo manda.
+    const leida = fechasDocumento(muestra[2]);
+    const leeElDato = leida.emision === "2026-05-04" && leida.vencimiento === "2026-07-03";
+    // …y con `FchVenc` ausente el vencimiento sale del plazo del propio documento, no de un default.
+    const soloEmis = fechasDocumento(muestra[3]);
+    const plazoPropio = soloEmis.emision === "2026-06-01" && soloEmis.vencimiento === "2026-07-16";
+
+    // (c) EL DEFECTO QUE REPORTÓ EL USUARIO: la misma factura, mirada como candidata y como incluida
+    //     en la oferta, tenía dos fechas — `f.candidata ? diasEmision : hashStr("em" + folio)`.
+    const dealLib = { id: "OP-FEC-93", cliente: "Cliente 93", rutEmisor: "76.222.222-2",
+      deudores: [{ name: "Deudor Uno", rut: "77.461.061-0" }], facturasOp: [], facturasDisponibles: [],
+      facturasRetiradas: [], nuevasFacturas: 0 };
+    const pool = candidatasLibro(dealLib, []);
+    const todasSelladas = pool.length > 0 && pool.every((f) => !!f.fchEmis && !!f.fchVenc);
+    const mismaEnDosPantallas = pool.every((f) => {
+      const comoCandidata = JSON.stringify(fechasDocumento(f));
+      const enLaOferta = JSON.stringify(fechasDocumento({ ...f, candidata: false }));
+      return comoCandidata === enLaOferta;
+    });
+    // …y el vencimiento del libro es la emisión más el plazo del deudor, no un sorteo aparte.
+    const vencCoherente = pool.every((f) => {
+      const d = Math.round((Date.parse(f.fchVenc + "T00:00:00") - Date.parse(f.fchEmis + "T00:00:00")) / 86400000);
+      return d === +f.venc;
+    });
+
+    // (d) El respaldo por folio —para un documento sin ninguna de las dos fechas— es estable y queda
+    //     ANCLADO EN EL CORTE DEL ACTIVO: nunca después de la emisión más nueva que trae el batch.
+    const corte = corteDTE();
+    const resp = fechasDocumento({ folio: 400001, venc: 30 });
+    const respEstable = JSON.stringify(resp) === JSON.stringify(fechasDocumento({ folio: 400001, venc: 30 }));
+    const noFuturo = resp.emision <= corte;
+    const corteEsDelDato = (() => {
+      let max = "";
+      for (const r of (window.DTESYNC || [])) { if (r && r.FchEmis && r.FchEmis > max) max = r.FchEmis; }
+      return !max || max === corte;
+    })();
+
+    // (e) El plazo sale de las DOS fechas del activo. Con `venc: 45` a mano había un solo plazo en
+    //     todo el sistema y el prorrateo —que descuenta por plazo— cobraba igual a 30 que a 90 días.
+    const plazos = new Set();
+    for (const r of (window.DTESYNC || []).slice(0, 4000)) plazos.add(plazoDTE(r));
+    const plazoReal = plazos.size > 1;
+    const plazoEsLaResta = plazoDTE({ FchEmis: "2026-05-04", FchVenc: "2026-07-03" }) === 60
+      && plazoDTE({ FchEmis: "2026-05-04" }) === 45;
+
+    ok("93 las fechas de la factura son un dato del documento y no cambian entre pantallas",
+       sinReloj && leeElDato && plazoPropio
+       && todasSelladas && mismaEnDosPantallas && vencCoherente
+       && respEstable && noFuturo && corteEsDelDato
+       && plazoReal && plazoEsLaResta,
+       `corte ${corte} · ${pool.length} docs sellados ${todasSelladas} · candidata=oferta ${mismaEnDosPantallas} · reloj indiferente ${sinReloj} · ${plazos.size} plazos distintos en el activo`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

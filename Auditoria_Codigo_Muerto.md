@@ -111,26 +111,56 @@ mismo `PCcliente` bien, con `resumen`.
 > con lo que sólo cuelga de ella, o falta enchufarla a la navbar —y entonces primero hay que arreglar
 > el prop—. Lo que no puede quedarse es como está.
 
-### 2.2 La fecha de emisión de una factura se deriva del RELOJ, y con dos fórmulas distintas
+### 2.2 La fecha de emisión de una factura se deriva del RELOJ, y con cinco fórmulas distintas
 
-En tres sitios del detalle la fecha de emisión se calcula así:
+> **CORREGIDO el 14-09-2026.** El usuario lo escaló al leer este hallazgo: «esas no pueden cambiar
+> entre una pantalla y otra, y los montos, folios, rut, razón social… la factura se carga y debe
+> persistir en el build». Al ir a arreglarlo apareció algo peor de lo que este párrafo describía.
+
+En tres sitios del detalle la fecha de emisión se calculaba así:
 
 ```js
 const he = Math.abs(hashStr("em" + f.folio)) % 20 + 3;   // antigüedad en días, estable
 const em = new Date(Date.now() - he * 86400000);         // …y acá entra el reloj
 ```
 
-La antigüedad es estable, pero la **fecha** sale de `Date.now()`: el mismo documento dice `09-09-2026`
-hoy y `10-09-2026` mañana. Una fecha de emisión es un hecho del documento, no una función del día en
-que se mire. Es la misma familia que el libro de ventas que se re-sorteaba: **un dato del negocio
-derivado de algo que se mueve solo.**
+La antigüedad es estable, pero la **fecha** salía de `Date.now()`: el mismo documento decía
+`09-09-2026` hoy y `10-09-2026` mañana, y una captura de ayer ya no reproducía. Una fecha de emisión es
+un hecho del documento, no una función del día en que se mire. Es la misma familia que el libro de
+ventas que se re-sorteaba: **un dato del negocio derivado de algo que se mueve solo.**
 
-Peor: conviven **dos fórmulas** para el mismo dato. La tabla de la oferta usa
-`hashStr("em"+folio) % 20 + 3`; la de candidatas y el tab de Verificación usan `f.diasEmision`, que el
-libro sí guarda. El mismo folio puede mostrar una fecha en una pestaña y otra en la de al lado.
+Peor: convivían **cinco** fórmulas para el mismo dato — `hashStr("em"+folio) % 20 + 3` en la tabla de
+la oferta, `f.diasEmision` en la de candidatas (`f.candidata ? diasEmision : hash`, o sea la MISMA
+factura cambiaba de fecha al incorporarla a la oferta, que es exactamente lo que el usuario reportó),
+`diasEmision ?? 60` en «otras facturas de este deudor», `hoy + plazo` en el input editable de
+vencimiento, y `hashStr(id + "emi") % 20` en `diasEmiCand`.
 
-**Arreglo:** que `diasEmision` sea del documento —lo emite el libro y lo conserva la factura— y que las
-tres vistas lo lean. La fecha, derivada de la fecha de corte del activo, no de `Date.now()`.
+**Y lo que lo explica todo:** el activo **A1 (DTESync) trae `FchEmis` y `FchVenc` en cada fila**, y el
+inbound las descartaba fijando **`venc: 45` a mano**. O sea que el dato estaba, llegaba todos los días,
+y la aplicación lo tiraba para inventarlo peor. Dos consecuencias más allá de la pantalla: todas las
+facturas del sistema vencían a 45 días —el activo trae **105 plazos distintos**— y el prorrateo, que
+descuenta por plazo, cobraba lo mismo por un documento a 30 días que por uno a 90. La carga manual de
+XML sí leía las dos fechas, así que una factura cargada a mano tenía fechas reales y una del inbound no.
+
+**Lo implementado:**
+
+| Pieza | Qué hace |
+|---|---|
+| `corteDTE()` | La fecha de corte del activo: la emisión más reciente del batch. Ancla del sistema, propiedad del DATO y no del reloj. |
+| `fechasDocumento(f)` | **El único** resolver: `{emision, vencimiento}` en ISO. Lee lo que el documento trae · lo que el libro le estampó · y sólo entonces un respaldo estable por folio anclado en el corte. |
+| `fmtFechaDoc(iso)` | El único formateador. |
+| `plazoDTE(r)` | El plazo es la resta de las dos fechas de la fila del activo, en vez del `45` cableado. |
+| `corteMs()` | Los tres generadores del alta manual (libro del cliente, facturas a incorporar, respaldo del XML sin `FchVenc`) anclan en el corte y no en `Date.now()`. |
+
+Las cinco derivaciones se retiraron; `diasEmiCand` ahora **mide** contra la emisión y el corte en vez
+de sortear. Verificado en el DOM además de en la suite: 51 folios vistos en más de una pantalla, **cero
+conflictos**, y las facturas que pasan de «Deudores disponibles» a la oferta conservan emisión y
+vencimiento. Caso **93**.
+
+**Lo que este hallazgo enseña para el resto del inventario:** la pregunta no es sólo «¿este código se
+usa?» sino «¿este dato se deriva de algo que se mueve?». Un símbolo muerto cuesta lectura; un dato
+derivado del reloj o de estado editable cuesta credibilidad, y no lo detecta ningún analizador —lo
+detecta alguien mirando la misma factura en dos pantallas.
 
 ### 2.3 `_GIRO_LISTA` — un cache que no se entera de la verificación
 
@@ -172,10 +202,10 @@ Las cuatro son la misma pregunta: **¿de qué depende esto, y tiene sentido que 
 | 1.3 | 6 estados de React muertos | **Borrados** (salvo `diaModal`, ver abajo) |
 | 1.7 | `t16` sin declarar | **Corregido** a `t15` |
 | 2.3 | `_GIRO_LISTA` sin la verificación en la firma | **Corregido** |
+| 2.2 | La fecha de emisión sale del reloj, con cinco fórmulas, y el inbound descartaba `FchEmis`/`FchVenc` del activo | **Corregido** — un solo resolver (`fechasDocumento`) anclado en la fecha de corte del activo; caso 93 |
 | 1.3 | `diaModal` nunca se abre | **Abierto** — falta decidir si sobra el modal o falta quien lo abra |
 | 1.5 | `giroDeal` probado y sin llamador | **Abierto** — la congelación del giro no ocurre en el producto |
 | 2.1 | `ReportesView` inalcanzable y rota | **Abierto** — borrar la vista o enchufarla arreglando el prop |
-| 2.2 | La fecha de emisión sale del reloj, con dos fórmulas | **Abierto** — mover `diasEmision` al documento |
 | 1.4 | 5 estados que se leen y nunca se escriben | **Abierto** — cada uno es una edición que la UI promete y no existe |
 
 **La verificación de una poda no es `tsc` ni el build.** Los dos pasan con el login roto: así

@@ -1496,6 +1496,55 @@ const P360 = (() => {
 // información de empresa y no se copia a ningún otro. La consultan C09 (cliente), D01 (deudor), el CAT,
 // el predictor y la UI. Devuelve `null` si la empresa no está en la tabla: un RUT sin dato es un hueco
 // del feed, y tratarlo como 0 lo convertiría en el peor pagador posible.
+// ── FECHAS DEL DOCUMENTO — se leen, NO se derivan ──────────────────────────────────────────────
+// Una factura se carga y sus atributos persisten: folio, RUT, razón social, monto, emisión y
+// vencimiento son hechos del documento. No pueden cambiar de una pantalla a otra ni de un día a otro.
+//
+// Estaban derivadas, y de la peor forma: la fecha de emisión salía de
+//     `new Date(Date.now() - (hashStr("em" + folio) % 20 + 3) * 86400000)`
+// en tres sitios del detalle. El reloj: la misma factura decía 09-09 hoy y 10-09 mañana. Y convivían
+// DOS fórmulas —una por hash del folio, otra por `diasEmision` del libro—, así que el mismo folio
+// podía mostrar una fecha en la oferta y otra en la pestaña de al lado. Mientras tanto el activo A1
+// trae `FchEmis` y `FchVenc` en cada fila y el inbound las descartaba, fijando `venc: 45` a mano —la
+// carga manual de XML sí las leía, así que una factura cargada a mano tenía fechas reales y una del
+// inbound no—.
+//
+// `CORTE_DTE` es la fecha de corte del activo: la emisión más reciente que trae el batch. Es una
+// propiedad del DATO, no del reloj, y es el ancla de los documentos sintéticos del libro de ventas.
+let _CORTE_DTE = null;
+function corteDTE() {
+  if (_CORTE_DTE) return _CORTE_DTE;
+  let max = "";
+  for (const r of ((typeof window !== "undefined" && window.DTESYNC) || [])) {
+    const f = r && r.FchEmis; if (f && f > max) max = f;
+  }
+  _CORTE_DTE = max || "2026-06-22";
+  return _CORTE_DTE;
+}
+const corteMs = () => Date.parse(corteDTE() + "T00:00:00");
+const diaISO = (iso, delta) => new Date(Date.parse(iso + "T00:00:00") + (delta || 0) * 86400000).toISOString().slice(0, 10);
+// Emisión y vencimiento de un documento, en ISO. Es el ÚNICO sitio que las resuelve: tener dos
+// fórmulas fue exactamente lo que hizo que el mismo folio mostrara fechas distintas en dos pantallas.
+// Orden: lo que el documento trae · lo que el libro le estampó · y sólo entonces un respaldo estable
+// por folio, anclado en la fecha de corte del activo y nunca en `Date.now()`.
+function fechasDocumento(f) {
+  if (!f) return { emision: corteDTE(), vencimiento: corteDTE() };
+  const plazo = f.venc != null ? +f.venc : 30;
+  if (f.fchEmis) return { emision: f.fchEmis, vencimiento: f.fchVenc || diaISO(f.fchEmis, plazo) };
+  const atras = f.diasEmision != null ? +f.diasEmision : (Math.abs(hashStr("em" + (f.folio || f.id || ""))) % 20 + 3);
+  const em = diaISO(corteDTE(), -atras);
+  return { emision: em, vencimiento: f.fchVenc || diaISO(em, plazo) };
+}
+const fmtFechaDoc = (iso) => (iso ? new Date(Date.parse(iso + "T00:00:00")).toLocaleDateString("es-CL") : "—");
+// Plazo en días de una fila del activo: la diferencia entre sus dos fechas. El inbound lo fijaba en
+// 45 a mano teniendo `FchVenc` en la misma fila, así que TODAS las facturas vencían a 45 días y el
+// prorrateo —que descuenta por plazo— cobraba lo mismo por un documento a 30 que por uno a 90.
+function plazoDTE(r) {
+  const a = r && r.FchEmis, b = r && r.FchVenc;
+  if (!a || !b) return 45;
+  const d = Math.round((Date.parse(b + "T00:00:00") - Date.parse(a + "T00:00:00")) / 86400000);
+  return d > 0 && d < 365 ? d : 45;
+}
 // La nota de un deudor, por RUT o resolviendo su razón social contra el maestro.
 function notaDeudor(nombre, rut) {
   const f = (rut && P360.porRut[rut]) || (nombre && P360.porNombre[nombre]) || null;
@@ -2056,7 +2105,7 @@ function streamDesdeDTE(dte) {
     const precio = PRECIO_POR_CLAVE[`${r.RUTEmisor}|${tipoLineaDeDeudor(tDeu)}`];
     const monto = Math.round(+r.MntTotal || 0);
     const tasaNum = precio ? precio.SpreadPromocionalPct : (1.6 + (hashStr(r.RUTEmisor) % 40) / 100);
-    const fac = { id: `F-${r.RUTEmisor}-${r.Folio}`, folio: r.Folio, tipo: r.TipoDTEDesc || "Factura electrónica (33)", deudor: r.RznSocRecep, tipoDeudor: tDeu, inboundBucket: bucket, histFactoring: histFac, monto, venc: 45, reclamada, notaCredito, sinXml: false, enlaceXml: r.EnlaceXml, enlacePdf: r.EnlacePdf, rutRecep: r.RUTRecep };
+    const fac = { id: `F-${r.RUTEmisor}-${r.Folio}`, folio: r.Folio, tipo: r.TipoDTEDesc || "Factura electrónica (33)", deudor: r.RznSocRecep, tipoDeudor: tDeu, inboundBucket: bucket, histFactoring: histFac, monto, fchEmis: r.FchEmis || null, fchVenc: r.FchVenc || null, venc: plazoDTE(r), reclamada, notaCredito, sinXml: false, enlaceXml: r.EnlaceXml, enlacePdf: r.EnlacePdf, rutRecep: r.RUTRecep };
     out.push({
       id: `DTE-${i}`, tipo: "factura", cedente: r.RznSoc, rutEmisor: r.RUTEmisor, pagador: r.RznSocRecep, deudor: r.RznSocRecep, tipoDeudor: tDeu, inboundBucket: bucket, histFactoring: histFac,
       sector: tDeu === "Lista Blanca" ? "Buenos Deudores - Lista Blanca" : tDeu === "Deudor Autorizado" ? "Buenos Deudores - Autorizados" : histFac === "bice" ? "Histórico BICE (último año)" : histFac === "otro" ? "Histórico otro factor (último año)" : "Otros deudores",
@@ -2083,7 +2132,7 @@ const OTRO_FOP_POR_CEDENTE = (() => {
     const est = r.EstadoDTE || {};
     if (!(r.FormaPago === "2" || r.FormaPago === 2)) continue;          // sólo crédito
     if (est.Reclamado === "1" || est.NotaCredito === "1" || est.NotaCredito === 1) continue;
-    const fac = { id: `F-${r.RUTEmisor}-${r.Folio}`, folio: r.Folio, tipo: r.TipoDTEDesc || "Factura electrónica (33)", deudor: r.RznSocRecep, tipoDeudor: "Otro", inboundBucket: "OTRO", monto: Math.round(+r.MntTotal || 0), venc: 45, reclamada: false, notaCredito: false, sinXml: false, enlaceXml: r.EnlaceXml, enlacePdf: r.EnlacePdf, rutRecep: r.RUTRecep };
+    const fac = { id: `F-${r.RUTEmisor}-${r.Folio}`, folio: r.Folio, tipo: r.TipoDTEDesc || "Factura electrónica (33)", deudor: r.RznSocRecep, tipoDeudor: "Otro", inboundBucket: "OTRO", monto: Math.round(+r.MntTotal || 0), fchEmis: r.FchEmis || null, fchVenc: r.FchVenc || null, venc: plazoDTE(r), reclamada: false, notaCredito: false, sinXml: false, enlaceXml: r.EnlaceXml, enlacePdf: r.EnlacePdf, rutRecep: r.RUTRecep };
     (m[r.RznSoc] = m[r.RznSoc] || []).push(fac);
   }
   // Cap por cedente para no inflar la oportunidad en exceso.
@@ -3539,7 +3588,12 @@ function candidatasLibro(deal, enOferta) {
     const deudor = pool[h % pool.length];
     const monto = Math.round((0.8 + (h % 900) / 100) * 1e6); // $800.000 a $9.790.000
     const diasEmision = Math.round((i / Math.max(1, N - 1)) * ventana); // 0 (más nueva) .. ventana (más antigua)
-    out.push({ id: `LIB-${deal.id}-${folio}`, folio, tipo: "Factura electrónica (33)", deudor, rutRecep: rutPorNombre[deudor] || "", ...claseDe(deudor), monto, venc: diasPagoDeudor(deudor), candidata: true, otro: (h % 5 === 0), diasEmision });
+    // Las fechas se ESTAMPAN acá, una vez, ancladas en la fecha de corte del activo. Antes el
+    // documento salía sin fechas y cada pantalla las inventaba con `Date.now()`: un documento del
+    // libro cambiaba de fecha cada día que alguien abría la operación.
+    const plazoD = diasPagoDeudor(deudor);
+    const fchEmis = diaISO(corteDTE(), -diasEmision);
+    out.push({ id: `LIB-${deal.id}-${folio}`, folio, tipo: "Factura electrónica (33)", deudor, rutRecep: rutPorNombre[deudor] || "", ...claseDe(deudor), monto, fchEmis, fchVenc: diaISO(fchEmis, plazoD), venc: diasPagoDeudor(deudor), candidata: true, otro: (h % 5 === 0), diasEmision });
   }
   // Las candidatas reales (Otro/retiradas) se integran al libro conservando su folio.
   for (const f of reales) out.push({ ...f, diasEmision: f.diasEmision != null ? f.diasEmision : ventana });
@@ -6163,9 +6217,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
           const estPill = v.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
           const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
           const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
-          const emD = new Date(Date.now() - (f.diasEmision != null ? f.diasEmision : 60) * 86400000);
-          const em = emD.toLocaleDateString("es-CL");
-          const venc = new Date(emD.getTime() + (f.venc != null ? f.venc : 30) * 86400000).toLocaleDateString("es-CL");
+          const fd = fechasDocumento(f); const em = fmtFechaDoc(fd.emision), venc = fmtFechaDoc(fd.vencimiento);
           const tasaF = tasaDe ? tasaDe(f) : null;
           return (
           <div key={f.id} style={{ borderBottom: `1px solid ${C.line}` }}>
@@ -6478,7 +6530,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   // Los días de financiamiento de la oferta = promedio ponderado por monto de estos días.
   const [vencDias, setVencDias] = useState(() => { const m = {}; facturasOp.forEach((f) => { if (m[f.deudor] == null) m[f.deudor] = f.venc != null ? f.venc : diasPagoDeudor(f.deudor); }); return m; });
   // Fecha de vencimiento editable POR FACTURA (folio). Default = hoy + días de pago del deudor.
-  const [vencFecha, setVencFecha] = useState(() => { const m = {}; const hoy = new Date(); facturasOp.forEach((f) => { const dd = f.venc != null ? f.venc : diasPagoDeudor(f.deudor); m[f.id] = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + dd).toISOString().slice(0, 10); }); return m; });
+  const [vencFecha, setVencFecha] = useState(() => { const m = {}; facturasOp.forEach((f) => { m[f.id] = fechasDocumento(f).vencimiento; }); return m; });
   // XML por factura: cada factura indica si llegó con XML; las que no, deben solicitarse.
   const [xmlOk, setXmlOk] = useState(() => { const m = {}; facturasOp.forEach((f) => { m[f.id] = !f.sinXml; }); return m; });
   // Spread por deudor (editable). La tasa de cada deudor = spread + costo de fondo (diario).
@@ -6540,7 +6592,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [pubAccion, setPubAccion] = useState("nueva"); // "nueva" (abrir otra oportunidad) | "descartar"
   const [pubEspera, setPubEspera] = useState(7); // días de espera antes de reabrir (si se descartan)
   // Días de emisión de una factura candidata (si no viene, se deriva determinísticamente).
-  const diasEmiCand = (f) => (f.diasEmision != null ? f.diasEmision : (Math.abs(hashStr((f.id || "") + "emi")) % 20));
+  // Antigüedad del documento en días: se MIDE contra su fecha de emisión y la del corte del activo.
+  // Tenía su propio sorteo por id (`hashStr(id + "emi") % 20`), o sea una TERCERA fórmula de fecha: la
+  // misma factura podía figurar emitida hace 4 días acá y hace 12 en la tabla de al lado.
+  const diasEmiCand = (f) => Math.max(0, Math.round((Date.parse(corteDTE() + "T00:00:00") - Date.parse(fechasDocumento(f).emision + "T00:00:00")) / 86400000));
   // Al publicar: si quedan facturas descartadas (candidatas no incorporadas) con < 8 días, se pregunta al ejecutivo.
   // Publicar la oferta: sólo disponible cuando la oferta está CERRADA. El descarte de facturas fuera del
   // paquete ya se resolvió al cerrar, por lo que aquí se publica directamente.
@@ -7176,7 +7231,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           const nota = notaDeudor(f.deudor, f.rutRecep) || 0; const sc = { tipo: tipoDeudorDisp(f), score: Math.round(20 + (nota - 1) / 4 * 79) };
                           const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                           const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
-                          const he = Math.abs(hashStr("em" + f.folio)) % 20 + 3; const em = new Date(Date.now() - he * 86400000).toLocaleDateString("es-CL");
+                          const em = fmtFechaDoc(fechasDocumento(f).emision);
                           const og = otorgDeFactura(f); // reglas de otorgamiento del deudor: cumplidas / total
                           const vf = verifFactura(f, deal); const vv = vf.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
                           const tasaF = ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + CFG_ACTIVA.costoFondo).toFixed(2);
@@ -7237,11 +7292,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             const nota = notaDeudor(f.deudor, f.rutRecep) || 0; const sc = { tipo: tipoDeudorDisp(f), score: Math.round(20 + (nota - 1) / 4 * 79) };
                             const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                             const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
-                            // Candidatas: emisión repartida en la ventana de 60 días (diasEmision); las ya incluidas
-                            // conservan su emisión reciente.
-                            const he = f.candidata ? (f.diasEmision != null ? f.diasEmision : 60) : (Math.abs(hashStr("em" + f.folio)) % 20 + 3); const emD = new Date(Date.now() - he * 86400000);
-                            const plazo = f.venc != null ? f.venc : 30;
-                            const em = emD.toLocaleDateString("es-CL"); const venc = new Date(emD.getTime() + plazo * 86400000).toLocaleDateString("es-CL");
+                            // Emisión y vencimiento del DOCUMENTO, no de esta pantalla: los resuelve `fechasDocumento`
+                            // y son los mismos que muestra la tabla de la oferta y el tab de Verificación.
+                            const fd = fechasDocumento(f);
+                            const em = fmtFechaDoc(fd.emision); const venc = fmtFechaDoc(fd.vencimiento);
                             // Estas facturas NO son parte de la simulación → no se calcula otorgamiento ni verificación
                             // (esos estados sólo se evalúan al simular). Ahorra cómputo por fila.
                             const tasaF = ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + CFG_ACTIVA.costoFondo).toFixed(2);
@@ -7536,7 +7590,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         })();
                         const fmtM0 = (n) => "$" + Math.round(n).toLocaleString("es-CL") + "M";
                         const fmtDMY = (iso) => { const p = (iso || "").split("-"); return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : iso; };
-                        const vencDefault = (f) => { const he = Math.abs(hashStr("em" + f.folio)) % 20 + 3; return new Date(Date.now() + ((f.venc != null ? f.venc : 30) - he) * 86400000).toLocaleDateString("es-CL"); };
+                        const vencDefault = (f) => fmtFechaDoc(fechasDocumento(f).vencimiento);
                         // Lista de facturas en escala de grises · Folio · Tipo · Nota · Emisión · Vencim (con calendario) · Tasa · Monto · (retirar)
                         const GC_D = "88px 62px 132px 74px 186px 158px 22px";
                         const GC_O = "72px 100px 92px 92px 60px 84px 128px 96px";
@@ -7588,8 +7642,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         const filaOtraD = (f) => {
                           const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                           const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
-                          const he = f.diasEmision != null ? f.diasEmision : 60; const emD = new Date(Date.now() - he * 86400000); const plazo = f.venc != null ? f.venc : 30;
-                          const em = emD.toLocaleDateString("es-CL"); const venc = new Date(emD.getTime() + plazo * 86400000).toLocaleDateString("es-CL");
+                          const fd = fechasDocumento(f);
+                          const em = fmtFechaDoc(fd.emision); const venc = fmtFechaDoc(fd.vencimiento);
                           const tasaF = ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + CFG_ACTIVA.costoFondo).toFixed(2);
                           const est = estadoCandidata(f, deal); const bloq = est.bloqueada; const parcial = est.clave === "notaParcial";
                           const agregar = () => { onIncorporarFacturas(deal.id, [parcial ? { ...f, monto: est.montoNeto, _ncAplicada: est.ncMonto } : f]); setReevalPend(true); };
@@ -9522,14 +9576,14 @@ function genFacturasCliente(cliente) {
     let r = rndDet("pag" + k) * pesoTotal, pag = BUENOS_PAGADORES[0];
     for (const p of BUENOS_PAGADORES) { if ((r -= p.share) <= 0) { pag = p; break; } }
     const dias = diasPagoDeudor(pag.name);
-    const emis = new Date(Date.now() - rndDetInt("em" + k, 5, 44) * 86400000);
+    const emis = new Date(corteMs() - rndDetInt("em" + k, 5, 44) * 86400000);
     const venc = new Date(emis.getTime() + dias * 86400000);
     out.push({
       id: `F${hashStr(kc) % 100000}-${i}`, folio: 10000000 + rndDetInt("fo" + k, 0, 8999998),
       tipo: rndDetBool("ti" + k, 0.7) ? "Factura Electrónica Afecta" : "Factura Electrónica Exenta",
       deudor: pag.name, sector: pag.sector, rutDeudor: rutDe(pag.name),
       emis: fmtFecha(emis), venc, vencStr: fmtFecha(venc),
-      diasVenc: Math.round((venc - Date.now()) / 86400000),
+      diasVenc: Math.round((venc - corteMs()) / 86400000),
       montoCLP: rndDetInt("m1" + k, 1, 40) * 500000 + rndDetInt("m2" + k, 0, 499999),
     });
   }
@@ -9552,18 +9606,18 @@ function genFacturasIncorporar(deal) {
   const kd = "inc|" + String(deal.id);
   for (let i = 0; i < n; i++) {
     const k = `${kd}|N${i}`;
-    const emis = new Date(Date.now() - rndDetInt("em" + k, 3, 22) * 86400000);
+    const emis = new Date(corteMs() - rndDetInt("em" + k, 3, 22) * 86400000);
     const venc = new Date(emis.getTime() + dias * 86400000);
     const monto = i === n - 1 ? totalCLP - facturas.reduce((s, f) => s + f.montoCLP, 0) : Math.round(totalCLP / n * rndDetEntre("mo" + k, 0.7, 1.3));
-    facturas.push({ id: `FN-${deal.id}-${i}`, folio: 10000000 + rndDetInt("fo" + k, 0, 8999998), tipo: "Factura Electrónica Afecta", deudor: deal.deudor, sector: (deal.sector || "").replace("Buenos Deudores - ", ""), rutDeudor: rutDe(deal.deudor), emis: fmtFecha(emis), venc, vencStr: fmtFecha(venc), diasVenc: Math.round((venc - Date.now()) / 86400000), montoCLP: Math.max(100000, monto), nueva: true });
+    facturas.push({ id: `FN-${deal.id}-${i}`, folio: 10000000 + rndDetInt("fo" + k, 0, 8999998), tipo: "Factura Electrónica Afecta", deudor: deal.deudor, sector: (deal.sector || "").replace("Buenos Deudores - ", ""), rutDeudor: rutDe(deal.deudor), emis: fmtFecha(emis), venc, vencStr: fmtFecha(venc), diasVenc: Math.round((venc - corteMs()) / 86400000), montoCLP: Math.max(100000, monto), nueva: true });
     sel[facturas[i].id] = true;
   }
   // Extra disponibles (sin marcar) para que el ejecutivo pueda agregar más.
   for (let i = 0; i < 4; i++) {
     const k = `${kd}|X${i}`;
-    const emis = new Date(Date.now() - rndDetInt("em" + k, 5, 34) * 86400000);
+    const emis = new Date(corteMs() - rndDetInt("em" + k, 5, 34) * 86400000);
     const venc = new Date(emis.getTime() + dias * 86400000);
-    facturas.push({ id: `FX-${deal.id}-${i}`, folio: 10000000 + rndDetInt("fo" + k, 0, 8999998), tipo: rndDetBool("ti" + k, 0.7) ? "Factura Electrónica Afecta" : "Factura Electrónica Exenta", deudor: deal.deudor, sector: (deal.sector || "").replace("Buenos Deudores - ", ""), rutDeudor: rutDe(deal.deudor), emis: fmtFecha(emis), venc, vencStr: fmtFecha(venc), diasVenc: Math.round((venc - Date.now()) / 86400000), montoCLP: rndDetInt("m" + k, 1, 30) * 500000 });
+    facturas.push({ id: `FX-${deal.id}-${i}`, folio: 10000000 + rndDetInt("fo" + k, 0, 8999998), tipo: rndDetBool("ti" + k, 0.7) ? "Factura Electrónica Afecta" : "Factura Electrónica Exenta", deudor: deal.deudor, sector: (deal.sector || "").replace("Buenos Deudores - ", ""), rutDeudor: rutDe(deal.deudor), emis: fmtFecha(emis), venc, vencStr: fmtFecha(venc), diasVenc: Math.round((venc - corteMs()) / 86400000), montoCLP: rndDetInt("m" + k, 1, 30) * 500000 });
   }
   return { facturas, sel };
 }
@@ -9709,7 +9763,7 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
         const folio = soloDigitos(g("Folio"));
         if (!folio) { errs.push(file.name); continue; }
         const emisD = g("FchEmis"), vencD = g("FchVenc");
-        const venc = vencD ? new Date(vencD) : new Date(Date.now() + 30 * 86400000);
+        const venc = vencD ? new Date(vencD) : new Date(corteMs() + 30 * 86400000);
         add.push({
           // Id derivado del archivo + folio (no aleatorio): reimportar el mismo XML da el mismo id y no
           // duplica la factura. SERVER-SIDE: la PK la asigna el backend al recibir el DTE.
@@ -9717,7 +9771,7 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
           folio: +folio, tipo: tipoDeCodigo(g("TipoDTE")) || "Factura Electrónica Afecta",
           deudor: g("RznSocRecep") || "Deudor sin nombre", sector: "—", rutDeudor: g("RUTRecep") || "—",
           emis: fmtFecha(emisD ? new Date(emisD) : new Date()), venc, vencStr: fmtFecha(venc),
-          diasVenc: Math.round((venc - Date.now()) / 86400000),
+          diasVenc: Math.round((venc - corteMs()) / 86400000),
           montoCLP: Math.round(+soloDigitos(g("MntTotal")) || 0), xml: true,
         });
       } catch (e) { errs.push(file.name); }
