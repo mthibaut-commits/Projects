@@ -24,7 +24,7 @@ import { sankey as d3sankey, sankeyLinkHorizontal, sankeyLeft } from "d3-sankey"
 //   1. APP_VERSION      — semver de la aplicación. Cambia en cada release.
 //   2. APP_BUILD        — fecha + commit, lo inyecta build_app.ps1. Identifica el binario exacto.
 //   3. SCHEMA_VERSION   — esquema de cada colección persistida. Cambia cuando cambia la FORMA del dato.
-//   4. POLITICA_VERSION — política de riesgo/pricing vigente. Cambia cuando el negocio cambia una regla.
+//   4. la política de riesgo/pricing vigente (`politicaVigenteEn`). Cambia cuando el negocio cambia una regla.
 //   5. CONTRATOS_DATOS  — contrato de las integraciones externas. Cambia cuando cambia el proveedor.
 // ============================================================
 const APP_VERSION = "1.1.0";
@@ -393,7 +393,6 @@ const validarPoliticas = () => CATALOGOS_POLITICA.reduce((acc, c) => acc.concat(
 // Se resuelve con el tenant literal porque TENANT_ACTUAL se declara más abajo; la API real para el
 // resto del código es `politicaVigenteEn(instante, tenant)`, no esta constante.
 const politicaVigenteEn = (ts, tenant) => POLITICA_RIESGO.vigenteEn(ts, tenant);
-const POLITICA_VERSION = politicaVigenteEn(Date.now(), "security");
 // Estampa completa: las tres políticas vigentes en un instante. Es lo que se guarda en cada versión de
 // simulación — con la de riesgo sola no se puede reconstruir por qué entró la oportunidad ni quién
 // debía aprobarla.
@@ -1497,7 +1496,6 @@ const P360 = (() => {
 // información de empresa y no se copia a ningún otro. La consultan C09 (cliente), D01 (deudor), el CAT,
 // el predictor y la UI. Devuelve `null` si la empresa no está en la tabla: un RUT sin dato es un hueco
 // del feed, y tratarlo como 0 lo convertiría en el peor pagador posible.
-const notaEmpresa = (rut) => { const f = rut && P360.porRut[rut]; const n = f ? +f[P360.ix.NOTA_COMPORTAMIENTO] : NaN; return n > 0 ? n : null; };
 // La nota de un deudor, por RUT o resolviendo su razón social contra el maestro.
 function notaDeudor(nombre, rut) {
   const f = (rut && P360.porRut[rut]) || (nombre && P360.porNombre[nombre]) || null;
@@ -1561,7 +1559,6 @@ const VERIF_APLICAN_COMPLETO = VERIF_RULES.map((r) => r.id);
 // el modelo de verificación (regla 0) y no acá: «si hay que llamar a este deudor» es una sola
 // pregunta con un solo dueño.
 const CLIENTE_ESTADOS = ["nuevo", "activo", "suspendido", "eliminado"];
-const CLIENTE_ESTADO_LBL = { nuevo: "Cliente nuevo (sin operaciones)", activo: "Activo", suspendido: "Suspendido", eliminado: "Eliminado" };
 // El estado NO se memoiza con el par: cambia en cuanto el cliente cursa su primera operación, y un
 // veredicto de verificación congelado con «nuevo» seguiría verificándolo todo para siempre.
 function estadoCliente(rutCliente) {
@@ -2599,13 +2596,6 @@ const SIM_VARIABLES = [
   { id: "retencionPct", origen: "tenant",     label: "Retención (%)",            desc: "Configuración › Operación." },
 ];
 const SIM_VAR_IDS = SIM_VARIABLES.map((v) => v.id);
-const SIM_VAR_LBL = {}; SIM_VARIABLES.forEach((v) => { SIM_VAR_LBL[v.id] = v.label; });
-// Los dos resultados FIJOS. No son conceptos del catálogo: son el final del proceso, y dejarlos
-// borrables desde un mantenedor sería dejar borrable la respuesta.
-const SIM_RESULTADOS = [
-  { id: "montoGirar", label: "Monto a Girar", desc: "Monto Anticipo − Subtotal Descuentos. Es lo que recibe el cliente." },
-  { id: "retencion",  label: "Retención",     desc: "Se informa y se libera si las facturas se pagan en la fecha comprometida. NO se descuenta del giro." },
-];
 
 // ── Catálogo BASE de conceptos ────────────────────────────────────────────────────────────────
 // Reproduce exactamente la aritmética que estaba cableada: hay un test que lo fija, porque un
@@ -2677,7 +2667,6 @@ function cargarSimCfg() {
 }
 let SIM_CFG = cargarSimCfg();
 function guardarSimCfg() { escribirVersionado(SIM_CFG_KEY, "simulacion", SIM_CFG); }
-const simCfgEsBase = () => JSON.stringify(SIM_CFG) === JSON.stringify({ conceptos: SIM_CONCEPTOS_BASE, retencion: SIM_RETENCION_BASE });
 
 // ── Validación del catálogo ───────────────────────────────────────────────────────────────────
 // Se valida ANTES de guardar y no al renderizar: el mantenedor tiene que poder decir qué está mal
@@ -6056,10 +6045,12 @@ function DealMensajeria({ deal, usuario }) {
 }
 // Sub-tab VERIFICACIÓN: criterios V01–V10 del predictor, versionado (patrón otorgamiento),
 // filtros y checklist telefónico. El veredicto es del DEUDOR: todas sus facturas lo comparten.
-// `tasaDe(factura)` entra por PARÁMETRO y no se calcula acá: la tasa de una factura sale del spread de
-// su deudor, y ese spread lo puede haber pisado el ejecutivo en la pestaña Negocio. Recalcularla con el
-// sugerido mostraría en esta tabla una tasa distinta de la que está mirando dos pestañas más allá —el
-// mismo documento con dos precios en la misma pantalla—, que es peor que no mostrarla.
+// `tasaDe(factura)` entra por PARÁMETRO y no se calcula acá: la tasa sale del spread del deudor que el
+// detalle fijó AL MONTARSE —el pactado si la operación ya se simuló, el sugerido si no—, y calcularla
+// de nuevo con el sugerido mostraría en esta tabla una tasa distinta de la que se está mirando dos
+// pestañas más allá: el mismo documento con dos precios en la misma pantalla.
+// (El mapa `spreadDeudor` se lee en cinco sitios y su setter no se llama nunca: la EDICIÓN del spread
+// por deudor que su forma de estado promete no existe. Ver `Auditoria_Codigo_Muerto.md` §1.4.)
 function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usuario, tasaDe }) {
   // Misma compuerta que la mesa: registrar la llamada o retirar una factura es firmar lo que el
   // deudor dijo, y eso lo hace el equipo de verificación. Los demás leen el veredicto del modelo.
@@ -6072,7 +6063,10 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
   // Las verificaciones telefónicas se persisten: vivían en este useState y se perdían al cerrar el
   // detalle, aunque la pantalla prometiera lo contrario. Al reabrir una operación para modificarla,
   // rehacer una llamada ya hecha son 3–4 horas por deudor tiradas.
-  const [telV, forceTel] = useState(0);
+  // Empujón de re-render tras registrar una llamada: el repositorio de verificaciones no es estado de
+  // React, así que sin esto la pantalla no se entera. Era `const [telV, forceTel]` y `telV` no se leía
+  // en ninguna parte: una celda de estado que existía sólo para que su setter forzara el render.
+  const [, forceTel] = useState(0);
   const telGuardadas = (typeof VERIF_TEL !== "undefined" && VERIF_TEL[deal.id]) || {};
   const [llamando, setLlamando] = useState(null); // factura cuya llamada se está registrando
   // Abre el registro en vez de firmar con el clic: mismo componente que usa la mesa, para que la
@@ -6463,12 +6457,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [confirmRetiro, setConfirmRetiro] = useState(null); // factura a retirar de la oferta (ConfirmDialog spec §26)
   const [confirmNoConf, setConfirmNoConf] = useState(null); // factura que el deudor NO confirmó en la verificación telefónica
   const [confirmReabrir, setConfirmReabrir] = useState(false); // reabrir una operación aceptada para modificarla
-  const [otorgNota, setOtorgNota] = useState(""); // nota del especialista en Otorgamiento
-  const [otorgArch, setOtorgArch] = useState([]); // archivos de soporte adjuntos
   const [reevTick, setReevTick] = useState(0); // fuerza re-render tras re-evaluar la simulación
   // Contacto original (al abrir el detalle): para exigir que se cambie teléfono/email antes de reintentar.
   const origContacto = useRef({ telefono: (deal && deal.contacto && deal.contacto.telefono) || "", email: (deal && deal.contacto && deal.contacto.email) || "" });
-  const [causaForm, setCausaForm] = useState({}); // formulario por causa: { [cid]: {open, dec, msg, arch} }
   const [avanzarA, setAvanzarA] = useState(() => { const i = STAGE_ORDER.indexOf(deal ? deal.stage : ""); const next = STAGE_ORDER.slice(i + 1).find((s) => s !== "aceptadas"); return next || STAGE_ORDER.filter((s) => s !== "aceptadas" && s !== (deal && deal.stage)).slice(-1)[0] || "oferta"; });
   const [antic, setAntic] = useState(() => (deal && parseFloat(deal.anticipo)) || 100); // % anticipo
   const [comisO, setComisO] = useState(() => (deal && deal.comision) || 200000); // comisión CLP
@@ -6545,7 +6536,6 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [detReeval, setDetReeval] = useState(false);
   const reevaluarLinea = () => { setDetReeval(true); setTimeout(() => { setDetReeval(false); setReevalPend(false); }, 700); };
   const [cursarModal, setCursarModal] = useState(null); // { evalLin, otorgRes, verifRes } — confirmación del curse
-  const [cierreMenu, setCierreMenu] = useState(false); // dropdown de canal para enviar el enlace de cierre
   const [pubModal, setPubModal] = useState(null); // { oferta, opts, canal, descartadas } — decisión sobre facturas descartadas recientes al publicar
   const [pubAccion, setPubAccion] = useState("nueva"); // "nueva" (abrir otra oportunidad) | "descartar"
   const [pubEspera, setPubEspera] = useState(7); // días de espera antes de reabrir (si se descartan)
@@ -11758,15 +11748,27 @@ function girosDeDeal(deal, estado) {
 // «Giro» de la tarjeta y el «Monto a Girar» del detalle.
 //
 // Se memoiza por operación: `girosDeDeal` evalúa el otorgamiento y la verificación de todos sus
-// deudores, y el tubo dibuja ~100 tarjetas. La firma incluye `VISADO_VER` —que ya cuenta las
-// invalidaciones del visado— más lo que puede cambiar sin pasar por ahí.
+// deudores, y el tubo dibuja ~100 tarjetas.
+//
+// LA FIRMA TIENE QUE CUBRIR LAS DOS ENTRADAS. Llevaba `VISADO_VER` —que cuenta las invalidaciones del
+// visado— y nada de la VERIFICACIÓN, que es la otra mitad del criterio: Express exige verificación no
+// necesaria Y sin marcas de excepción. Registrar una llamada cambia el tipo de giro del deudor y no
+// tocaba la firma, ni `registrarTel` del detalle ni el de la mesa llaman a `invalidarVisado()`: la
+// tarjeta del tubo seguía mostrando el giro anterior hasta que cambiara cualquier otra cosa. Es la
+// misma trampa de `VISADO_CACHE` —indexado por operación, devolvía la evaluación hecha con otro
+// visado— y de `_cacheCli` —memoizado por RUT, servía el dimensionamiento hecho con otra política—.
+// Se cuentan las llamadas registradas, los veredictos congelados y los vetos de esta operación: son
+// los tres commits que pueden mover el veredicto sin pasar por el visado.
 let _GIRO_LISTA = {};
 function giroResumenDeal(deal, estado) {
   if (!deal || !deal.simulado) return null;
   const fs = ((deal.facturasOp) || []).filter(Boolean);
   const giroTotal = Math.round(deal.giro || 0);
   if (!fs.length || !giroTotal) return null;
-  const firma = `${VISADO_VER}|${fs.length}|${giroTotal}|${deal.stage}`;
+  const nTel = Object.keys((typeof VERIF_TEL !== "undefined" && VERIF_TEL[deal.id]) || {}).length;
+  const nVer = Object.keys((typeof VERIF_VEREDICTO !== "undefined" && VERIF_VEREDICTO[deal.id]) || {}).length;
+  const nVet = Object.keys((typeof NO_CONFIRMADAS !== "undefined" && NO_CONFIRMADAS[deal.id]) || {}).length;
+  const firma = `${VISADO_VER}|${fs.length}|${giroTotal}|${deal.stage}|${nTel}|${nVer}|${nVet}`;
   const hit = _GIRO_LISTA[deal.id];
   if (hit && hit.firma === firma) return hit.val;
   const r = prorratearConcepto(fs, giroTotal, (f) => f.monto || 0);
@@ -12372,17 +12374,11 @@ function hilosNoLeidos(usuario) { return hilosDeUsuario(usuario).filter((h) => h
 function hilosDeDeal(dealId) { return HILOS.filter((h) => h.dealId === dealId).sort((a, b) => hiloUltimoTs(b) - hiloUltimoTs(a)); }
 function notifSolic(usuario) { const noLeidos = hilosNoLeidos(usuario); return { total: noLeidos.length, porResponder: noLeidos }; }
 const destCodeDe = (destId, deal) => destId === "ejecutivo" ? deal.exec : destId === "gerente_comercial" ? "GC" : destId === "jefatura" ? "JG" : "OP";
-// Nivel de atribución → rol y área, en la configuración base del tenant. OJO: esta tabla ya NO decide
-// quién aprueba. Desde INC-03 el ruteo es el par (área declarada por la regla, nivel declarado por el
-// tramo) y la escalada NO cruza áreas: un N4 de Riesgo no cubre una excepción de Comercial por mucho
-// que el número sea mayor. Quién aprueba lo resuelve `rolDeAreaNivel` sobre el padrón del tenant.
-const NIVEL_ROL = {
-  1: { rol: "Jefe de Grupo Comercial", area: "comercial" },
-  2: { rol: "Gerente Comercial", area: "comercial" },
-  3: { rol: "Gerente General", area: "comercial" },
-  4: { rol: "Jefe de Riesgo", area: "riesgo" },
-  5: { rol: "Subgerente de Riesgo", area: "riesgo" },
-};
+// Acá vivía `NIVEL_ROL`, una tabla nivel → (rol, área) que decidía quién aprobaba una excepción. La
+// retiró INC-03: el ruteo es el par (área declarada por la REGLA, nivel declarado por el TRAMO) y la
+// escalada NO cruza áreas —un N4 de Riesgo no cubre una excepción de Comercial por mucho que el número
+// sea mayor—. Quién aprueba lo resuelve `rolDeAreaNivel` sobre el padrón del tenant. La tabla quedó sin
+// un solo lector y se borró; los comentarios que la nombran describen el modelo anterior, a propósito.
 // Vista de VISADO CLIENTE: corre las 59 reglas por operación, muestra su resultado y rutea las
 // excepciones a los aprobadores por área+nivel. Rechazo sin excepción ⇒ simulación rechazada.
 // Cómo se regulariza cada rechazo re-evaluable al re-evaluar, según el criterio (dato que puede cambiar).
@@ -15142,7 +15138,7 @@ function PCsow({ clientes = [] }) {
 function PCdesempeno({ execs }) {
   return (
     <div className="rounded-2xl p-5" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-      <div className="t16 font-bold" style={{ color: C.ink }}>Resumen por ejecutivo</div>
+      <div className="t15 font-bold" style={{ color: C.ink }}>Resumen por ejecutivo</div>
       <div className="t11" style={{ color: C.faint }}>Cartera por ejecutivo, jefatura y zona geográfica</div>
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {execs.map((e) => (
