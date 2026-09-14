@@ -1043,6 +1043,13 @@ const execsVisiblesDe = (code) => {
   if (rol && ROLES_VEN_TODO.has(rol)) return null;
   return [];
 };
+// UMBRAL DE POLÍTICA — única fuente. Ninguna regla ni compuerta incrusta su umbral: lo lee de la
+// configuración activa del tenant, que es lo que el usuario edita en Configuración y lo que un motor de
+// otorgamiento como servicio recibiría como parámetro. Sin esto el umbral vive duplicado —una copia
+// declarativa editable y una copia literal dentro de la regla— y editar la primera no cambia nada.
+// El segundo argumento es el valor de la política, que aplica si la clave no está en la configuración.
+// `CFG_ACTIVA` se declara más abajo; `pol` sólo la lee al ser INVOCADA, siempre después de esa línea.
+const pol = (k, def) => { const c = (typeof CFG_ACTIVA !== "undefined" && CFG_ACTIVA) || {}; return c[k] != null ? c[k] : def; };
 // Gravedad por tramo de monto (MM CLP), según CFG_TRAMOS (editable en Mantenedores).
 const gravedadPorMonto = (mm) => { for (const t of CFG_TRAMOS) { if (t.hasta == null || mm <= t.hasta) return t.grav; } return "critico"; };
 // Piso de atribución que impone el MONTO de la operación a una excepción de esa área.
@@ -3361,9 +3368,9 @@ function estadoCandidata(f, deal, estado) {
     return { clave: "otraOp", bloqueada: true, agregable: false, label: "En otra operación", tono: "red", montoNeto: monto, ncMonto: 0 };
   return { clave: "ok", bloqueada: false, agregable: true, label: null, montoNeto: monto, ncMonto: 0 };
 }
-// Libro de ventas del cliente en la ventana de 60 días: las facturas candidatas (aún no incluidas en la
+// Libro de ventas del cliente en la ventana de `CFG.ventanaLibroDias`: las facturas candidatas (aún no incluidas en la
 // oferta) forman un tramo de folios CONSECUTIVOS (sin saltos), de la más nueva a la más antigua. El folio
-// más alto se ancla sobre las facturas ya en oferta; las emisiones se reparten a lo largo de los 60 días.
+// más alto se ancla sobre las facturas ya en oferta; las emisiones se reparten a lo largo de la ventana.
 // Determinista por operación. El listado se pagina (lote óptimo) para no renderizar todo el libro de una vez.
 function candidatasLibro(deal, enOferta) {
   const reales = candidatasDe(deal); // candidatas reales (Otro / nuevas / retiradas) — conservan su folio
@@ -3374,7 +3381,8 @@ function candidatasLibro(deal, enOferta) {
   const deudores = (deal.deudores && deal.deudores.length ? deal.deudores.map((d) => d.name) : [deal.deudor]).filter(Boolean);
   const pool = deudores.length ? deudores : ["Deudor"];
   const folioTope = Math.max(0, ...(enOferta || []).map((f) => +f.folio || 0), ...reales.map((f) => +f.folio || 0));
-  const N = 40 + (Math.abs(hashStr("libro" + (deal.id || ""))) % 41); // 40–80 facturas en 60 días
+  const ventana = pol("ventanaLibroDias", 60);
+  const N = 40 + (Math.abs(hashStr("libro" + (deal.id || ""))) % 41); // 40–80 facturas en la ventana
   const topFolio = (folioTope || 100000) + N + 6; // el folio más nuevo queda sobre lo ya en oferta
   // Clasificación del deudor tal como YA la trae este negocio: el libro sintetiza facturas de los
   // mismos deudores, así que tienen que clasificar igual. Sin esto el objeto no llevaba `tipoDeudor`,
@@ -3392,7 +3400,7 @@ function candidatasLibro(deal, enOferta) {
     const h = Math.abs(hashStr((deal.id || "") + "lib" + folio));
     const deudor = pool[h % pool.length];
     const montoMM = +(0.8 + (h % 900) / 100).toFixed(1);
-    const diasEmision = Math.round((i / Math.max(1, N - 1)) * 60); // 0 (más nueva) .. 60 (más antigua)
+    const diasEmision = Math.round((i / Math.max(1, N - 1)) * ventana); // 0 (más nueva) .. ventana (más antigua)
     out.push({ id: `LIB-${deal.id}-${folio}`, folio, tipo: "Factura electrónica (33)", deudor, rutRecep: rutPorNombre[deudor] || "", ...claseDe(deudor), montoMM, venc: diasPagoDeudor(deudor), candidata: true, otro: (h % 5 === 0), diasEmision });
   }
   // Las candidatas reales (Otro/retiradas) se integran al libro conservando su folio.
@@ -10790,7 +10798,7 @@ function varsModeloExt(deal) {
     R(106, "C06", "riesgo", "Conditions", "Línea Extendida por Riesgo", "Operación utiliza tramo de línea extendida por Riesgo", [[(v) => v.lineaExt, "excepcion", NV(4)]]),
     R(107, "C07", "riesgo", "Conditions", "Cupo Suficiente en Línea Aprobada por Comité", "Cliente con cupo insuficiente en línea (operación fuera de línea)", [[(v) => v.carteraVig + v.mntSimulacion <= v.mntLinea, "aprobado"], [(v) => v.carteraVig + v.mntSimulacion <= 1.1 * v.mntLinea, "excepcion", NV(2)], [() => true, "excepcion", NV(4)]]),
     R(108, "C08", "riesgo", "Behaviour", "Variación Negativa de Venta Mensual", "Cliente presenta una caída relevante de su venta mensual", [[(v) => v.varVenta >= -20, "aprobado"], [(v) => v.varVenta >= -40, "excepcion", NV(2)], [() => true, "excepcion", NV(4)]]),
-    R(109, "C09", "riesgo", "Behaviour", "Segmento y Nota de Comportamiento Cliente", "Nota de comportamiento del cliente bajo el umbral mínimo (3,7)", [[(v) => v.notaCliente >= 3.7, "aprobado"], [() => true, "excepcion", NV(4)]]),
+    R(109, "C09", "riesgo", "Behaviour", "Segmento y Nota de Comportamiento Cliente", "Nota de comportamiento del cliente bajo el umbral mínimo de compra", [[(v) => v.notaCliente >= pol("notaMinCompra", 3.7), "aprobado"], [() => true, "excepcion", NV(4)]]),
     R(110, "C10", "riesgo", "Behaviour", "Deuda Morosa CMF Directa 30–90", "Cliente posee morosidades directas en CMF entre 30 y 90 días", t510("cmfDir3090", "cmfDirTotal", 2, 3, 4)),
     R(111, "C11", "riesgo", "Behaviour", "Deuda Morosa CMF Directa 90–180", "Cliente posee morosidades directas en CMF entre 90 y 180 días", t510("cmfDir90180", "cmfDirTotal", 3, 4, 5)),
     R(112, "C12", "riesgo", "Behaviour", "Deuda Morosa CMF Directa 180d–3A", "Cliente posee morosidades directas en CMF entre 180 días y 3 años", t5("cmfDir1803a", "cmfDirTotal", 4, 5)),
@@ -10835,7 +10843,7 @@ function varsModeloExt(deal) {
     // (`stKey = n@rut`), aunque la spec las numere en el bloque de cliente. EXC-COM N1, re-evaluables.
     R(151, "C51", "comercial", "Information", "Nota Cliente", "", null, { clasif: true, clfn: (v) => `Nota cliente ${v.notaCliente} · tendencia L3M estable` }),
     R(152, "C52", "comercial", "Information", "Juicios Gesintel", "", null, { clasif: true, clfn: (v) => v.juicios > 0 ? `${v.juicios} juicio(s) en curso/históricos (Gesintel)` : "Sin juicios registrados (Gesintel)" }),
-    R(201, "D01", "riesgo", "Behaviour", "Segmento y Nota de Comportamiento Deudor", "Nota de comportamiento del deudor bajo el umbral mínimo (3,7)", [[(v) => v.dNota >= 3.7, "aprobado"], [() => true, "excepcion", NV(4)]]),
+    R(201, "D01", "riesgo", "Behaviour", "Segmento y Nota de Comportamiento Deudor", "Nota de comportamiento del deudor bajo el umbral mínimo de compra", [[(v) => v.dNota >= pol("notaMinCompra", 3.7), "aprobado"], [() => true, "excepcion", NV(4)]]),
     R(202, "D02", "riesgo", "Behaviour", "Deudor · Mora CMF Directa 30–90", "Deudor posee morosidades directas en CMF entre 30 y 90 días", t510("dCmf3090", "dCmfTotal", 2, 3, 4)),
     R(203, "D03", "riesgo", "Behaviour", "Deudor · Mora CMF Directa 90–180", "Deudor posee morosidades directas en CMF entre 90 y 180 días", t510("dCmf90180", "dCmfTotal", 3, 4, 5)),
     R(204, "D04", "riesgo", "Behaviour", "Deudor · Mora CMF Directa 180d–3A", "Deudor posee morosidades directas en CMF entre 180 días y 3 años", t5("dCmf1803a", "dCmfTotal", 4, 5)),
@@ -19488,7 +19496,8 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
   const [propGlobal, setPropGlobal] = useState(linea ? linea.aprobada : 300);
   const [propFactoring, setPropFactoring] = useState(linea ? linea.aprobada : 300);
   const [propConfirming, setPropConfirming] = useState(0);
-  const [vencProp, setVencProp] = useState(() => { const d = new Date(); return new Date(d.getFullYear() + 1, d.getMonth(), d.getDate()).toISOString().slice(0, 10); });
+  // Vencimiento propuesto = hoy + la vigencia que fija la política (`CFG.vigenciaLineaMeses`), no un año fijo.
+  const [vencProp, setVencProp] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + pol("vigenciaLineaMeses", 12), d.getDate()).toISOString().slice(0, 10); });
   const [subprod, setSubprod] = useState(() => [{ tipoDoc: "FACTURA", aprobado: linea ? linea.aprobada : 300, utilizado: linea ? linea.uso : 0, propuesta: linea ? linea.aprobada : 300, anticipo: 100, plazoMax: 90 }]);
   const totalPropuesto = propFactoring + propConfirming;
   // Paso 4 — deudores. Construye la fila de un deudor (datos API 4 · Plataforma 360) e incorpora la
@@ -19498,7 +19507,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
     const h = Math.abs(hashStr("deu" + nombre)); const prop = 50 + (h % 20) * 10; const ant = (h % 2) ? 50 + (h % 10) * 10 : 0;
     const esCliente = typeof PC_CLIENTES !== "undefined" && PC_CLIENTES.some((c) => c.nombre === nombre) ? true : (h % 3 === 0);
     const hist = deudoresHistorial(cliente, [{ name: nombre }])[0];
-    return { nombre, rut: `${76000000 + (h % 20000000)}-${"0123456789K"[h % 11]}`, nota: (notaDeudor(nombre) || 0), esCliente, politicaPct: 25 + (h % 2) * 5, anterior: ant, utilizado: ant ? Math.round(ant * ((h % 60) / 100)) : 0, deudaDirecta: (h % 500) * 100000, deudaIndirecta: (h % 7 === 0) ? (h % 200) * 100000 : 0, propuesta: prop, fechaInf: hoyISO, productos: [{ producto: "FACTURA", anterior: ant, utilizado: 0, propuesto: prop }], hist, l6m: ventaL6M(hist) };
+    return { nombre, rut: `${76000000 + (h % 20000000)}-${"0123456789K"[h % 11]}`, nota: (notaDeudor(nombre) || 0), esCliente, politicaPct: pol("concentracionDeudorPct", 30), anterior: ant, utilizado: ant ? Math.round(ant * ((h % 60) / 100)) : 0, deudaDirecta: (h % 500) * 100000, deudaIndirecta: (h % 7 === 0) ? (h % 200) * 100000 : 0, propuesta: prop, fechaInf: hoyISO, productos: [{ producto: "FACTURA", anterior: ant, utilizado: 0, propuesto: prop }], hist, l6m: ventaL6M(hist) };
   };
   // Pre-carga: los deudores con flujo recurrente ya vienen incorporados; el ejecutivo sólo ingresa la
   // información de línea (propuesta, política, productos). Puede agregar otros con el combo o eliminarlos.
@@ -19739,7 +19748,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                   const conc = propFactoring > 0 ? Math.round((d.propuesta || 0) / propFactoring * 100) : 0;
                   return (
                   <div key={d.nombre} className="mt-1 grid items-center gap-2" style={{ gridTemplateColumns: DG }}>
-                    <span className="rounded-full px-1.5 py-0.5 t10 font-bold text-center" style={{ backgroundColor: d.nota >= 4 ? "#F0FDF4" : d.nota >= 3.7 ? "#eff6ff" : "#FFF7ED", color: NOTA_COLOR(d.nota) }}>{d.nota}</span>
+                    <span className="rounded-full px-1.5 py-0.5 t10 font-bold text-center" style={{ backgroundColor: d.nota >= 4 ? "#F0FDF4" : d.nota >= pol("notaMinCompra", 3.7) ? "#eff6ff" : "#FFF7ED", color: NOTA_COLOR(d.nota) }}>{d.nota}</span>
                     <span className="flex gap-0.5" title={d.esCliente ? "Cliente y Deudor a la vez: la empresa cede facturas como cliente y además paga como deudor." : "Sólo Deudor (pagador de las facturas)."}>
                       <span className="flex h-4 w-4 items-center justify-center rounded-full t8 font-bold" style={{ backgroundColor: d.esCliente ? "#7C3AED" : "#E5E7EB", color: d.esCliente ? "#fff" : "#9CA3AF" }}>C</span>
                       <span className="flex h-4 w-4 items-center justify-center rounded-full t8 font-bold text-white" style={{ backgroundColor: "#7C3AED" }}>D</span>
@@ -19754,7 +19763,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                     <span className="t10 text-right" style={{ color: C.sub }} title="Rango típico de facturas emitidas al deudor por mes (últimos 6 meses)">{d.l6m.facMax > 0 ? (d.l6m.facMin === d.l6m.facMax ? `${d.l6m.facMax}` : `${d.l6m.facMin}–${d.l6m.facMax}`) : "—"}<span style={{ color: C.faint }}> f</span></span>
                     <span className="t10 text-right" style={{ color: C.sub }} title="Rango típico de monto facturado al deudor por mes (últimos 6 meses)">{d.l6m.montoMax > 0 ? `${fmtMM(d.l6m.montoMin)}–${fmtMM(d.l6m.montoMax)}` : "—"}</span>
                     <span className="flex gap-1" title="Política de concentración por deudor: el ejecutivo elige 25% o 30% de la línea.">
-                      {[25, 30].map((v) => <button key={v} onClick={() => updDeu(i, { politicaPct: v })} className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: d.politicaPct === v ? "#4c1d95" : "#FAF9FB", color: d.politicaPct === v ? "#fff" : "#9CA3AF" }}>{v}%</button>)}
+                      {[...new Set([25, 30, pol("concentracionDeudorPct", 30)])].sort((a, b) => a - b).map((v) => <button key={v} onClick={() => updDeu(i, { politicaPct: v })} className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: d.politicaPct === v ? "#4c1d95" : "#FAF9FB", color: d.politicaPct === v ? "#fff" : "#9CA3AF" }}>{v}%</button>)}
                     </span>
                     <span className="t10 text-right" style={{ color: C.sub }}>{d.anterior ? fmtMM(d.anterior) : "—"}</span>
                     <span className="t10 text-right" style={{ color: C.sub }}>{d.utilizado ? fmtMM(d.utilizado) : "0"}</span>
