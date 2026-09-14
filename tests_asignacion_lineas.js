@@ -1714,6 +1714,66 @@
        `${dte.length} facturas · ${perdidos} pesos perdidos · cursable ${rEx.cursable} = ${exacta} + ${otra} · mmRound al peso ${alPeso}`);
   }
 
+  // 90 · LAS PERILLAS DEL MANTENEDOR MANDAN. Configuración › Otorgamiento ofrecía siete campos que
+  // NINGÚN motor leía: el administrador movía el número, guardaba, y no pasaba nada. Un mantenedor así
+  // es peor que no tenerlo — quien lo usa una vez y no ve efecto deja de creerle al resto de la
+  // pantalla. Y uno era peor que muerto: `tasaMinAbsoluta` estaba declarado DOS veces, en el tenant y
+  // en `CFG_ATRIB_DESCUENTO`, y la compuerta leía la constante; bajar el mínimo absoluto en el
+  // mantenedor no cambiaba nada y el control seguía rechazando con 0,78.
+  //
+  // Se prueba inyectando un tenant que CONTRADICE al del navegador, que es la única forma de
+  // distinguir «lee la configuración» de «coincide con el default».
+  {
+    const guardado = { ...CFG_ACTIVA };
+    const restaurar = () => aplicarCfgActiva(guardado);
+    let tasaOk = false, otrosOk = false, ventanaOk = false, notaOk = false, cacheOk = false;
+    let detalle = "";
+    try {
+      // (a) La tasa mínima absoluta la fija el TENANT. Con el piso en 1,50 una tasa de 1,00 cae bajo
+      //     el mínimo; con el piso en 0,50 la MISMA tasa pasa. Si leyera la constante (0,78), las dos
+      //     darían lo mismo.
+      aplicarCfgActiva({ ...guardado, tasaMinAbsoluta: 1.50 });
+      const alto = evalAtribucion(2.00, 1.00, 2.00, true);
+      aplicarCfgActiva({ ...guardado, tasaMinAbsoluta: 0.50 });
+      const bajo = evalAtribucion(2.00, 1.00, 2.00, true);
+      tasaOk = alto.estado === "bajoMinimo" && bajo.estado !== "bajoMinimo";
+
+      // (b) El % de «otros deudores» dimensiona el comodín LF4, y el cache se invalida solo: si no,
+      //     la segunda lectura devolvería el dimensionamiento hecho con el valor anterior.
+      const rutCli = (PC_CLIENTES[0] && PC_CLIENTES[0].rut) || null;
+      const comodinCon = (pct) => {
+        aplicarCfgActiva({ ...guardado, otrosDeudoresPct: pct });
+        const est = lineasDeCliente(rutCli) || {};
+        return (est.lineas || []).filter((l) => l.tipo === "LF4").reduce((a, l) => a + (l.aprobado || 0), 0);
+      };
+      const c10 = comodinCon(10), c40 = comodinCon(40), c10bis = comodinCon(10);
+      otrosOk = rutCli != null && c40 > c10 * 1.5;
+      cacheOk = c10bis === c10; // vuelve al valor anterior: el cache no se quedó con el de 40
+
+      // (c) La ventana del libro de ventas. Con 7 días ninguna candidata puede tener más de 7 de
+      //     emitida; con 180, alguna pasa de 60.
+      const deal = { id: "OP-CFG-89", cliente: "Cliente 89", deudores: [{ name: "Deudor 89" }] };
+      aplicarCfgActiva({ ...guardado, ventanaLibroDias: 7 });
+      const corto = candidatasLibro(deal, []);
+      aplicarCfgActiva({ ...guardado, ventanaLibroDias: 180 });
+      const largo = candidatasLibro(deal, []);
+      const maxDias = (arr) => Math.max(0, ...arr.map((f) => +f.diasEmision || 0));
+      ventanaOk = corto.length > 0 && maxDias(corto) <= 7 && maxDias(largo) > 60;
+
+      // (d) La nota mínima de compra viaja al texto de la propuesta al comité junto con la vigencia.
+      //     Las dos estaban escritas a mano en la glosa («nota ≥ 3,7», «vigencia de 12 meses»).
+      aplicarCfgActiva({ ...guardado, notaMinCompra: 4.4, vigenciaLineaMeses: 24 });
+      const rutDemo = "76.111.111-1";
+      const ctx = { cliente: "Cliente 89", tipo: Object.keys(SOLIC_TIPOS)[0], subtipo: "", totalPropuesto: 100, nDeudores: 3, promNota: 4.5,
+                    api4: api4Empresa360(rutDemo, "Cliente 89"), api6: api6RiesgoBICE(rutDemo) };
+      const glosa = generarNotasIA(ctx).negocio;
+      notaOk = /nota ≥ 4,4/.test(glosa) && /vigencia de 24 meses/.test(glosa) && !/3,7/.test(glosa) && !/12 meses/.test(glosa);
+      detalle = `piso 1,50→${alto.estado} · piso 0,50→${bajo.estado} · LF4 10%→${c10} 40%→${c40} vuelta→${c10bis} · libro 7d→${maxDias(corto)} 180d→${maxDias(largo)} · glosa «nota ≥ 4,4 / 24 meses» ${notaOk ? "sí" : "no"}`;
+    } finally { restaurar(); _cacheCli.clear(); }
+    ok("90 lo que el tenant configura en Otorgamiento lo aplica el motor, y el cache no se queda atrás",
+       tasaOk && otrosOk && ventanaOk && notaOk && cacheOk, detalle);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

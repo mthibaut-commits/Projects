@@ -3145,8 +3145,12 @@ function interpretarCriterios(texto) {
 // por sí mismo; `descMax` = % máximo alcanzable CON autorización de la JEFATURA. Un descuento SOBRE el
 // máximo de jefatura requiere la atribución del GERENTE COMERCIAL. Bajo `tasaMinAbsoluta` la operación
 // no se autoriza nunca. Las atribuciones son HOMOGÉNEAS para todas las tasas (mismo % en todos los tramos).
+// OJO: `tasaMinAbsoluta` NO vive acá. Es un umbral de política del tenant y `evalAtribucion` lo lee con
+// `pol()`, como todos los demás. Estuvo declarada en este objeto y el
+// control la leía de la constante: el administrador bajaba el mínimo absoluto en el mantenedor y la
+// compuerta seguía rechazando con 0,78. Los % de descuento ya se resolvían desde el tenant; éste quedó
+// atrás. Lo que sí es de este objeto son los TRAMOS de tasa, que no son configurables.
 const CFG_ATRIB_DESCUENTO = {
-  tasaMinAbsoluta: 0.78,
   bandas: [
     { tMin: 0.78, tMax: 0.96, descEjec: 10, descMax: 16 },
     { tMin: 0.97, tMax: 1.23, descEjec: 10, descMax: 16 },
@@ -3173,7 +3177,7 @@ function evalAtribucion(orig, nueva, tasaBanda, esTasa) {
   const o = +orig || 0, n = +nueva || 0;
   const banda = bandaDescuentoDeTasa(tasaBanda);
   const pctDesc = o > 0 ? +(((o - n) / o) * 100).toFixed(1) : 0;
-  if (esTasa && n > 0 && n < CFG_ATRIB_DESCUENTO.tasaMinAbsoluta) return { estado: "bajoMinimo", pctDesc, banda };
+  if (esTasa && n > 0 && n < pol("tasaMinAbsoluta", 0.78)) return { estado: "bajoMinimo", pctDesc, banda };
   if (pctDesc <= 0 || !banda) return { estado: "ok", pctDesc: Math.max(0, pctDesc), banda };
   if (pctDesc <= banda.descEjec) return { estado: "ok", pctDesc, banda };
   if (pctDesc <= banda.descMax) return { estado: "requiereJefe", pctDesc, banda };
@@ -3474,7 +3478,7 @@ function candidatasLibro(deal, enOferta) {
     out.push({ id: `LIB-${deal.id}-${folio}`, folio, tipo: "Factura electrónica (33)", deudor, rutRecep: rutPorNombre[deudor] || "", ...claseDe(deudor), monto, venc: diasPagoDeudor(deudor), candidata: true, otro: (h % 5 === 0), diasEmision });
   }
   // Las candidatas reales (Otro/retiradas) se integran al libro conservando su folio.
-  for (const f of reales) out.push({ ...f, diasEmision: f.diasEmision != null ? f.diasEmision : 60 });
+  for (const f of reales) out.push({ ...f, diasEmision: f.diasEmision != null ? f.diasEmision : ventana });
   return out.sort((a, b) => (b.folio || 0) - (a.folio || 0));
 }
 // Email de cierre SIMULADO como página STANDALONE (se abre en pestaña nueva vía blob URL, igual que el
@@ -15999,7 +16003,7 @@ function CfgOperacion({ cfgOper, setCfgOper }) {
             <input type="time" value={cfg.horaFin} onChange={(e) => set("horaFin", e.target.value)} {...inp} />
           </div>
         </CfgCampo>
-        <CfgCampo l="Frecuencia de actualización" hint="Cada cuántos minutos se consulta el libro de ventas / API por facturas nuevas del cliente.">
+        <CfgCampo l="Frecuencia de actualización" hint="Cada cuántos minutos se consulta el libro de ventas / API por facturas nuevas del cliente. DECLARATIVA: es el valor de producción; en el demo la corrida la marca «1 hora simulada».">
           <div className="flex items-center gap-2"><input {...num("frecuenciaMin", 5, 720, 5)} /><span className="t10 whitespace-nowrap" style={{ color: C.faint }}>min</span></div>
         </CfgCampo>
         <CfgCampo l="Jornada" hint="Horas hábiles por día y días hábiles por semana.">
@@ -16051,7 +16055,7 @@ function CfgOperacion({ cfgOper, setCfgOper }) {
           <div className="flex items-center gap-2"><input {...num("anticipoDefault", 0, 100)} /><span className="t10" style={{ color: C.faint }}>% ant.</span><input {...num("comisionUF", 0, 50, 0.5)} /><span className="t10" style={{ color: C.faint }}>UF</span></div>
           <div className="mt-2 flex items-center gap-2"><input {...num("gastosCLP", 0, 1000000, 1000)} /><span className="t10 whitespace-nowrap" style={{ color: C.faint }}>gastos CLP</span><input {...num("valorUF", 1000, 100000, 100)} /><span className="t10 whitespace-nowrap" style={{ color: C.faint }}>valor UF</span></div>
         </CfgCampo>
-        <CfgCampo l="Política de compra" hint="Nota mínima del deudor y concentración máxima por deudor sobre la línea.">
+        <CfgCampo l="Política de compra" hint="Nota mínima del deudor —la aplica la propuesta al comité— y concentración máxima por deudor sobre la línea, que hoy es DECLARATIVA: viaja en el contrato del servicio y ningún motor de este prototipo la aplica.">
           <div className="flex items-center gap-2"><input {...num("notaMinCompra", 1, 5, 0.1)} /><span className="t10" style={{ color: C.faint }}>nota mín.</span><input {...num("concentracionDeudorPct", 1, 100)} /><span className="t10" style={{ color: C.faint }}>% conc.</span></div>
         </CfgCampo>
         <CfgCampo l="Otros deudores · límite" hint="% máximo de la línea asignable al grupo «otros deudores».">
@@ -18851,7 +18855,14 @@ function clienteEnMaestroLineas(rutCli) {
 // sólo las de la oferta abierta— porque los invariantes se sostienen sobre el total: si el uso se
 // repartiera sólo entre los pares consultados, la suma dejaría de cuadrar con el menú Líneas.
 const _cacheCli = new Map();
+// El cache se valida por FIRMA de lo que el tenant configura y este cálculo usa, no por un invalidador
+// que haya que acordarse de llamar desde el mantenedor. Cambiar `otrosDeudoresPct` y seguir leyendo un
+// dimensionamiento hecho con el valor anterior es la misma trampa que tuvo el padrón de aprobadores:
+// la perilla se mueve, la pantalla no, y nadie sabe si el motor la aplicó.
+let _cacheCliFirma = null;
 function lineasDeCliente(rutCli) {
+  const firma = String(pol("otrosDeudoresPct", 10));
+  if (firma !== _cacheCliFirma) { _cacheCli.clear(); _cacheCliFirma = firma; }
   if (_cacheCli.has(rutCli)) return _cacheCli.get(rutCli);
   const idx = lineaIdxPorRut();
   const fila = idx ? idx.get(rutCli) || null : null;
@@ -18881,10 +18892,14 @@ function lineasDeCliente(rutCli) {
   const rnd = pcRng(hashStr("lpar" + rutCli));
 
   // Presupuesto del cliente: la línea asignada MENOS su holgura (entre 8% y 22%). De ahí, la línea
-  // comodín se lleva el 10% de la suma de cupos y el resto va a las líneas de par.
+  // comodín se lleva un % de la suma de cupos de par y el resto va a las líneas de par. Ese % es
+  // política del TENANT (`otrosDeudoresPct`, 10 por defecto): cuánta exposición está dispuesto cada
+  // factoring a dejar en el pozo genérico, que financia a deudores sin línea propia.
   let objetivoTotal = Math.max(Math.round(fila.aprobada * (0.78 + rnd() * 0.14)), Math.ceil(fila.uso / 0.88));
   objetivoTotal = Math.min(objetivoTotal, fila.aprobada);
-  const apComodin = Math.max(TRAMO_LINEA, Math.round(objetivoTotal * 0.0909)); // 10% de los cupos de par
+  // Se pide «% sobre los cupos de PAR», así que sobre el total es pct/(100+pct): con 10 da 0,0909.
+  const pctOtros = Math.max(0, Math.min(100, pol("otrosDeudoresPct", 10)));
+  const apComodin = Math.max(TRAMO_LINEA, Math.round(objetivoTotal * (pctOtros / (100 + pctOtros))));
   const objetivoPares = Math.max(TRAMO_LINEA, objetivoTotal - apComodin);
 
   // Heredan del dato el corte por categoría y el estado; el monto sale de la regla.
@@ -19588,7 +19603,7 @@ function generarNotasIA(ctx) {
   const { cliente, api4, api6, tipo, subtipo, totalPropuesto, nDeudores, promNota } = ctx;
   const f = api4.firmografica, c = api4.comercial, ix = api4.indices;
   return {
-    negocio: `Se propone ${SOLIC_TIPOS[tipo].toLowerCase()}${subtipo ? " (" + SOLIC_SUBTIPOS[subtipo].toLowerCase() + ")" : ""} para ${cliente} por un total de ${fmtMM(totalPropuesto)}, con vigencia de 12 meses. La operación se sustenta en ${nDeudores} deudor(es) calificados con nota promedio ponderada ${promNota}, alineada a la política de compra (nota ≥ 3,7).`,
+    negocio: `Se propone ${SOLIC_TIPOS[tipo].toLowerCase()}${subtipo ? " (" + SOLIC_SUBTIPOS[subtipo].toLowerCase() + ")" : ""} para ${cliente} por un total de ${fmtMM(totalPropuesto)}, con vigencia de ${pol("vigenciaLineaMeses", 12)} meses. La operación se sustenta en ${nDeudores} deudor(es) calificados con nota promedio ponderada ${promNota}, alineada a la política de compra (nota ≥ ${String(pol("notaMinCompra", 3.7)).replace(".", ",")}).`,
     referencias: `Cliente del segmento ${c.segmento} (${c.subSegmento}), quintil ${c.quintil}. Margen de contribución últimos 12 meses de M$ ${c.margen12m.toLocaleString("es-CL")} con colocación promedio de M$ ${c.colocProm12m.toLocaleString("es-CL")} y spread real de ${c.spreadReal12m}%. Última operación a tasa ${c.tasaUltOp}%.`,
     antecedentes: `${cliente} opera en ${f.actividad.toLowerCase()} (sector ${f.sector.toLowerCase()}), con ${f.trabajadores} trabajadores. Cliente desde ${f.fechaIngreso}; primera operación el ${f.primeraOperacion}. ${f.clienteBanco === "Sí" ? "Mantiene relación vigente con el Banco." : "Sin relación bancaria vigente con BICE."} ${f.alertas === "Sí" ? "Registra alertas que se detallan en la ficha." : "Sin alertas registradas."}`,
     mercado: `El sector ${f.sector.toLowerCase()} presenta una demanda estable de financiamiento de capital de trabajo. La cartera de deudores propuesta concentra pagadores de buena calidad crediticia (nota promedio ${promNota}), lo que acota el riesgo de la línea frente al ciclo del sector.`,
@@ -19877,7 +19892,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
           )}
           {paso === 3 && (
             <>
-              <div className="mb-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#C2410C" }}>Los <b>deudores con flujo recurrente</b> (facturación en ≥ 4 de los últimos 6 meses) ya vienen incorporados: sólo ingresa la <b>información de línea</b> (propuesta, política y productos). La columna <b>Venta L6M</b> muestra el rango típico mensual (facturas y monto) — pasa el mouse sobre el nombre para ver el detalle por mes. Agrega otros <b>buenos deudores</b> (nota ≥ 3,7) con el selector; cada uno consulta la <b>API 4 · Plataforma 360</b>.</div>
+              <div className="mb-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#C2410C" }}>Los <b>deudores con flujo recurrente</b> (facturación en ≥ 4 de los últimos 6 meses) ya vienen incorporados: sólo ingresa la <b>información de línea</b> (propuesta, política y productos). La columna <b>Venta L6M</b> muestra el rango típico mensual (facturas y monto) — pasa el mouse sobre el nombre para ver el detalle por mes. Agrega otros <b>buenos deudores</b> (nota ≥ {String(pol("notaMinCompra", 3.7)).replace(".", ",")}) con el selector; cada uno consulta la <b>API 4 · Plataforma 360</b>.</div>
               <div className="flex items-center gap-2">
                 <select value={addSel} onChange={(e) => { const v = e.target.value; setAddSel(v); if (!v) return; if (esAdmin) { pedirDeudor(v); } else { setDeudores((p) => [...p, { ...construirDeudorLinea(v), flags: { V: true, N: true, C: true, FR: false, CP: false } }]); setAddSel(""); } }} className="rounded-md px-2 py-1.5 t11" style={inpSty}>
                   <option value="">+ Agregar deudor factoring…</option>
@@ -19944,7 +19959,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                   <span className="text-right font-bold" style={{ color: C.ink }}>{fmtMM(deudores.reduce((s, d) => s + (d.propuesta || 0), 0))}</span>
                   <span></span><span></span><span></span><span></span><span></span>
                 </div>
-                {deudores.length > 0 && <div className="mt-1.5 t10 font-semibold" style={{ color: C.ink }}>Prom. Ponderado: <span style={{ color: NOTA_COLOR(promNota) }}>{promNota}</span>{promNota < 3.7 && <span className="ml-2" style={{ color: "#C2410C" }}>⚠ bajo el límite de compra (3,7)</span>}</div>}
+                {deudores.length > 0 && <div className="mt-1.5 t10 font-semibold" style={{ color: C.ink }}>Prom. Ponderado: <span style={{ color: NOTA_COLOR(promNota) }}>{promNota}</span>{promNota < pol("notaMinCompra", 3.7) && <span className="ml-2" style={{ color: "#C2410C" }}>⚠ bajo el límite de compra ({String(pol("notaMinCompra", 3.7)).replace(".", ",")})</span>}</div>}
                 </>); })()}
                 </div>
               </div>

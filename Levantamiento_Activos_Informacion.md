@@ -185,3 +185,121 @@ de a $100.000 o $10.000. Eso no cuadra contra los activos que sí traen el monto
 AECSync), y obliga a cada consumidor a reinflar a pesos, que es donde se pierde la plata.
 
 El millón es una abreviatura de **pantalla**. En el dato, la unidad es el peso.
+
+---
+
+## 5. Campos que llegan por más de un activo — quién es el maestro
+
+**Fecha:** 14-09-2026. Escrito junto con el porte de la app a leer los activos (`A9/A10/A11/A16`), que
+es lo que dejó a la vista el problema: cuando cada dato tenía que salir de un activo concreto hubo que
+elegir de cuál, y varios estaban en más de uno.
+
+Las cinco entregas SFTP se levantaron una por una, cada una con el origen que la produce, y por eso
+varias traen el **mismo dato** sin que ninguna declare cuál manda. Mientras los valores coincidan no se
+nota; el día que difieran —y difieren, porque tienen cortes distintos— el sistema elige por accidente:
+gana el activo que se cargó último, o el que consulta la función que preguntó primero. Esta sección
+fija el maestro de cada campo compartido y dice qué hacer con las copias.
+
+La regla general: **un campo tiene UN activo maestro, y en los demás es copia de conveniencia** —
+existe para que el archivo se pueda leer solo, no para alimentar la tabla interna. La carga escribe el
+campo **sólo** desde su maestro y usa la copia nada más que para conciliar.
+
+### 5.1 Mapa de solapamiento
+
+| Campo | A3/A4 listas | A7 líneas | A10 verificación | A11 P360 | A16 otorgamiento | **Maestro** |
+|---|:--:|:--:|:--:|:--:|:--:|---|
+| Razón social | `RAZON_SOCIAL` (deudor) | `RAZON_SOCIAL` (cliente) | — | `RAZON_SOCIAL` (cualquiera) | — | **A11** |
+| Nota de comportamiento | `NOTA_DEUDOR` | — | `NOTA_DEUDOR` | `NOTA_COMPORTAMIENTO` | `NOTA_COMPORTAMIENTO` (fila DEUDOR) | **A11** |
+| Clasificación del deudor | `CLASIFICACION` | — | `CLASIFICACION` | — | — | **A3/A4** |
+| Segmento | — | — | `SEGMENTO` | `SEGMENTO` · `SUB_SEGMENTO` | — | *colisión, ver 5.3* |
+| Línea aprobada | — | `LINEA_APROBADA_MM` | — | — | `LINEA_APROBADA_MM` | **A23** *(ver 5.4)* |
+| Ejecutivo / zona | — | `EJECUTIVO` · `ZONA` | — | — | — | *hueco, ver 5.5* |
+| Fecha de corte | `FECHA_CORTE` | `FECHA_CORTE` | `FECHA_CORTE` | `FECHA_CORTE` | `FECHA_CORTE` | *propia de cada uno* |
+
+`FECHA_CORTE` es la excepción deliberada: **no** es un campo duplicado sino el sello de cada entrega, y
+tiene que ser distinta por activo. Es además el dato con que se detecta el desfase que esta sección
+previene, así que conviene exponerla en la UI de cada pantalla que mezcle activos.
+
+### 5.2 Razón social — maestro **A11 · Plataforma 360**
+
+A11 es la única entrega cuyo **sujeto es la empresa**: llega por `RUT` con `ROL` (cliente / deudor /
+ambos) y trae actividad, sector, trabajadores y fechas. A3/A4 y A7 llevan la razón social porque sus
+filas se leen por RUT y sin el nombre son ilegibles en una revisión manual.
+
+Al cargar: escribir el nombre **sólo** desde A11. Si la copia de A3/A4 o A7 difiere, **no** corregir el
+maestro — registrar la discrepancia, porque casi siempre significa que un RUT cambió de razón social y
+un origen todavía no lo recogió. Un deudor que aparece con dos nombres en dos pantallas es el síntoma
+que el cliente reporta como «el sistema está mal».
+
+### 5.3 Segmento — no es un duplicado, es una **colisión de nombre**
+
+Las dos columnas se llaman igual y son cosas distintas:
+
+- **A11 `SEGMENTO` / `SUB_SEGMENTO` / `QUINTIL`** — la segmentación **comercial del CLIENTE**, la que
+  usa la presentación al comité y el margen. Sujeto: el RUT cliente.
+- **A10 `SEGMENTO`** — el segmento del **PAR cliente-deudor** para el predictor de verificación
+  (PRIME / OTROS). Sujeto: el par.
+
+Además, el propio contrato de A10 dice que **el segmento lo decide NEX, no el archivo**: se calcula como
+`prime || nota > 4,2` sobre datos que ya viajan en la misma fila. O sea que la columna de A10 es
+**informativa y no debe consumirse** — si se consumiera, un archivo con el criterio viejo («Elite /
+Others») volvería a meter una regla retirada por la puerta de atrás.
+
+**Acción:** renombrar la columna de A10 a `SEGMENTO_ORIGEN` en la próxima versión del layout y dejar
+escrito que NEX la ignora; A11 conserva `SEGMENTO` a secas. Mientras no se renombre, la carga **no**
+debe escribirla en la tabla interna.
+
+### 5.4 Nota, clasificación y línea — tres campos, tres razones distintas
+
+- **Nota de comportamiento: maestro A11.** Viaja en cuatro entregas (A3/A4, A10, A11, A16) porque las
+  cuatro la necesitan para su propio cálculo. Manda **A11** porque la nota es un atributo de la
+  **EMPRESA** —no de su cartera, no de un par cliente-deudor, no de la lista en que esté—, y A11 es el
+  maestro de empresa por RUT. Ese es el criterio que decide todos los casos de esta sección: **el
+  maestro es el activo cuyo SUJETO es el del campo**. Por eso no es A16, aunque A16 sea la entrega del
+  modelo de riesgo y la consuma: A16 describe la evaluación de un RUT, no al RUT. Implementado así en
+  `notaEmpresa(rut)`, que la lee de `NOTA_COMPORTAMIENTO` de A11 y devuelve **`null`** —nunca 0— cuando
+  el RUT no está en el maestro: un hueco del feed tratado como 0 convertiría a esa empresa en el peor
+  pagador posible. Importa más de lo que parece: la misma cifra cruza `NOTA_PRIORITARIA = 4,2`, que
+  decide el segmento de verificación, y `notaMinCompra`, que es política de compra — dos decisiones
+  distintas sobre un número que, si sale de dos activos con cortes distintos, no es el mismo número.
+- **Clasificación: maestro A3/A4.** Al revés que la nota: la clasificación **es** la lista (BLANCA /
+  AUTORIZADA), así que su maestro es la entrega que la define. A10 la lleva como contexto.
+- **Línea aprobada: ninguna de las dos entregas SFTP.** A7 es la **fotografía de cartera** de la vista
+  Líneas (batch diario + refresco horario A8) y A16 la lleva como **variable del modelo de riesgo**
+  (C-de-línea). La cifra con que se **decide** si una factura cabe es la de **A23**, que es la única que
+  devuelve los tres niveles con `aprobada / utilizada / reservada / disponible` y la única que está neta
+  de reservas. Regla: **A7 y A16 nunca alimentan el motor de líneas; A23 nunca alimenta la vista Líneas.**
+  Mezclarlas da el error más caro de todos —cursar contra cupo que ya está tomado— y no avisa.
+
+### 5.5 Ejecutivo y jefatura — el hueco
+
+`EJECUTIVO` y `ZONA` llegan **sólo** en A7, y ahí están mal ubicados por dos razones:
+
+1. **Cuelgan de la LÍNEA, no del cliente.** Un cliente con dos líneas puede traer dos ejecutivos y el
+   archivo no dice cuál vale. La regla de negocio es que el ejecutivo se asigna **por cedente**
+   (regla 11), así que su sujeto es el RUT cliente.
+2. **La JEFATURA no llega por ningún activo.** El sistema necesita saber a qué equipo pertenece cada
+   ejecutivo para decidir qué ve un jefe (`execsVisiblesDe`, que falla **cerrado** ante un código que no
+   conoce). Hoy ese mapa es una constante del prototipo (`EXEC_JEFATURA`) y ninguna de las cinco
+   entregas lo declara. Sin él, un jefe nuevo no ve el equipo que acaba de recibir.
+
+**Acción:** el archivo de **cartera** diario —el que ya reasigna empresas al ejecutivo nuevo cuando
+alguien se va (ver regla 25 del proyecto)— es el activo natural para esto y **falta levantarlo**. Debería
+traer, por RUT cliente: ejecutivo asignado, su equipo/jefatura y la zona; y `EJECUTIVO`/`ZONA` salen de
+A7, que vuelve a ser sólo estado de línea. Mientras no exista, la migración de cartera se hace a mano
+en `Configuración › Oportunidades › Migración`, que es un acto administrativo con bitácora y no un
+efecto colateral de un archivo — y eso conviene conservarlo aunque llegue el activo, porque **el archivo
+mueve empresas y la migración mueve operaciones**, que son dos cosas distintas.
+
+### 5.6 Qué hacer con esto
+
+1. Declarar el maestro en el layout de cada entrega (una línea por campo compartido).
+2. Renombrar `SEGMENTO` de A10 a `SEGMENTO_ORIGEN` y marcarlo como no consumido.
+3. Levantar el activo de **cartera** (ejecutivo · jefatura · zona por RUT cliente).
+4. En la carga, escribir cada campo sólo desde su maestro y **conciliar** las copias en vez de pisarlas:
+   una discrepancia es información sobre el origen, no ruido que haya que resolver en silencio.
+5. Exponer la `FECHA_CORTE` de cada activo en las pantallas que los mezclan.
+
+Esto es **diseño de la integración**, no un defecto del prototipo: hoy los cinco archivos son
+deterministas y coinciden entre sí por construcción, así que nada de esto se manifiesta acá. Se
+manifiesta el primer día de operación real.
