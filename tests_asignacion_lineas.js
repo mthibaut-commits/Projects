@@ -1774,6 +1774,61 @@
        tasaOk && otrosOk && ventanaOk && notaOk && cacheOk, detalle);
   }
 
+  // 91 · LA ESTRUCTURA COMERCIAL Y LA CARTERA SALEN DEL ACTIVO A24, no de constantes del bundle.
+  // Quién es ejecutivo, de qué equipo, bajo qué jefatura, en qué zona y de quién es cada cliente lo
+  // produce RRHH y la administración comercial, y llega en el archivo de cada mañana. Vivía en cuatro
+  // constantes de módulo más un mapa de jefaturas escrito a mano, y la ASIGNACIÓN viajaba dentro del
+  // A5 —un activo de participación de mercado— en un campo que además se llavea por NOMBRE: cambiarle
+  // el apellido a alguien dejaba a toda su cartera sin dueño, sin error y sin aviso.
+  {
+    const src = (typeof window !== "undefined" && window.CARTERA) || null;
+    const ix = {}; if (src) src.campos.forEach((c, i) => { ix[c] = i; });
+    const filas = src ? src.filas : [];
+    const ejecFilas = filas.filter((f) => f[ix.TIPO] === "EJECUTIVO");
+    const cartFilas = filas.filter((f) => f[ix.TIPO] === "CARTERA");
+
+    // (a) Los cuatro catálogos son un ÍNDICE sobre el activo: mismo conjunto de códigos y, para cada
+    //     uno, el equipo, la zona y la sucursal que el archivo declara. Cero contradicciones.
+    const codsA24 = ejecFilas.map((f) => f[ix.COD_EJECUTIVO]).sort();
+    const codsApp = Object.keys(EXECS).sort();
+    const calzan = ejecFilas.every((f) => {
+      const c = f[ix.COD_EJECUTIVO];
+      return EXECS[c] === f[ix.NOMBRE] && EXEC_JEFATURA[c] === f[ix.EQUIPO]
+          && EXEC_ZONA[c] === f[ix.ZONA] && EXEC_SUCURSAL[c] === f[ix.SUCURSAL];
+    });
+
+    // (b) El alcance de una jefatura sale de la ARISTA `COD_JEFE`, no de comparar rótulos de equipo.
+    //     JG tiene declarado Equipo Andes; las otras dos jefaturas están vacantes y cuelgan de GC.
+    const deJG = (execsACargoDe("JG") || []).sort();
+    const esperadoJG = ejecFilas.filter((f) => f[ix.COD_JEFE] === "JG").map((f) => f[ix.COD_EJECUTIVO]).sort();
+    // Un jefe que el archivo no menciona no ve NADA: en oportunidades ajenas, fallar cerrado es la
+    // única respuesta defendible. Y renombrar un equipo no cambia quién ve qué, porque el rótulo no
+    // es la clave.
+    const jefeDesconocido = (execsACargoDe("ZZ") || []).length === 0;
+
+    // (c) La asignación de cartera sale del A24 y NO del campo pasajero del A5.
+    const muestra = cartFilas.slice(0, 40);
+    const asignaOk = muestra.every((f) => ejecutivoDeCartera(f[ix.RUT_CLIENTE], null) === f[ix.COD_EJECUTIVO]);
+    // Un RUT que el archivo no trae es un PROSPECTO: no tiene dueño. Quién lo trabaja lo decide el
+    // pipeline, no el dato — y por eso `ejecutivoDeCartera` devuelve null y no un ejecutivo cualquiera.
+    const prospecto = ejecutivoDeCartera("99999999-9", null) === null;
+
+    // (d) INTEGRIDAD: una asignación a un código que el archivo no declara no se carga. Es la razón de
+    //     que los dos granos viajen en el mismo archivo — aceptarla dejaría operaciones colgando de
+    //     alguien que no existe, que es justo el estado que no se puede auditar después.
+    const declarados = new Set(codsA24);
+    const huerfanas = cartFilas.filter((f) => !declarados.has(f[ix.COD_EJECUTIVO])).length;
+    const sinHuerfanasEnIndice = Object.values(CARTERA_A24.asignacion).every((c) => declarados.has(c));
+
+    ok("91 la estructura comercial y la cartera salen del activo A24, no de constantes del bundle",
+       ejecFilas.length > 0 && cartFilas.length > 0
+       && JSON.stringify(codsA24) === JSON.stringify(codsApp) && calzan
+       && deJG.length > 0 && JSON.stringify(deJG) === JSON.stringify(esperadoJG) && jefeDesconocido
+       && asignaOk && prospecto
+       && huerfanas === 0 && sinHuerfanasEnIndice,
+       `${ejecFilas.length} ejecutivos · ${cartFilas.length} asignaciones · catálogos calzan ${calzan} · JG → [${deJG.join(", ")}] · jefe desconocido → nada · ${muestra.length} asignaciones verificadas · prospecto sin dueño · ${huerfanas} huérfanas`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

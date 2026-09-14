@@ -103,6 +103,16 @@
 - **Consumen:** presentación al comité (pasos 1, 2 y 4 — al agregar cada deudor se lee su registro de la tabla interna), generación IA de las 5 notas comerciales.
 - **Nota de consolidación:** por el solapamiento de variables con A10/A16, evaluar consolidar los tres en **una misma entrega SFTP** (un paquete diario con secciones empresa / otorgamiento / verificación) para simplificar la operación del batch.
 
+### A24 · Cartera comercial — estructura y asignación ⭐ BATCH SFTP → tabla interna
+
+- **Tipo:** **archivo diario vía SFTP** (mismo patrón que A10/A11/A16). `Integraciones/sftp_cartera.csv` + `spec_sftp_cartera.md`.
+- **Contenido:** dos granos con columna `TIPO`. **`EJECUTIVO`**: código, nombre, correo, **equipo**, **jefatura** (`COD_JEFE`), **zona**, sucursal, estado y vigencia. **`CARTERA`**: qué RUT cliente pertenece a qué ejecutivo y desde cuándo.
+- **Actualización intradía:** vía **A22** (dominio `CARTERA`) — un ejecutivo que entra o una cartera que se traspasa no esperan al batch del día siguiente.
+- **Consumen:** quién ve qué en el tubo y en Tareas (`execsVisiblesDe`), la atribución de una oportunidad a su ejecutivo (`asignarEjecutivo`), el Plan por Ejecutivo, el churn, los filtros por zona y equipo, y el mantenedor de migración de cartera.
+- **Por qué es un activo y no código:** ni la estructura ni la asignación las produce el pipeline — son de RRHH y de la administración comercial, y cambian todos los días. Vivían en cuatro constantes del bundle, un mapa de jefaturas escrito a mano, y la asignación **dentro del A5** en un campo `Ejecutivo` llaveado por **nombre**: renombrar a una persona dejaba a toda su cartera sin dueño, en silencio.
+- **Integridad:** los dos granos viajan juntos y se validan como una **unidad**. Una fila `CARTERA` que apunta a un código que el archivo no declara no se carga: aceptarla deja operaciones colgando de alguien que no existe.
+- **El archivo mueve EMPRESAS, no OPERACIONES.** `deal.exec` queda congelado en el JSON de la oportunidad; traspasar los negocios en curso es un acto administrativo con bitácora (`Configuración › Oportunidades › Migración`), y sólo hasta antes del giro.
+
 ### A12 · Repositorio documental factoring (API 5)
 - **Tipo:** API REST de documentos.
 - **Contenido:** documentos por empresa (Riesgo/Legal/Comercial): contrato marco, mandato/pagaré, informe de poderes, compliance tracker, y los recuperados por Datamart (carpeta tributaria, certificado deuda Tesorería y convenios) — con versión, fechas de emisión/vencimiento.
@@ -168,7 +178,7 @@
 
 ## 4. Observaciones para integración
 
-1. **Activos batch vía SFTP (diarios): cinco entregas** — el CSV de líneas (A7), los datos de **verificación** (A10), la **Plataforma 360** (A11), los datos de **otorgamiento** (A16) y las **listas de deudores** (A3 Lista Blanca + A4 Autorizados, en un archivo único con columna `LISTA`). Todos montan **tablas internas** que son la única fuente que consulta la aplicación; el endpoint A22 las refresca intradía cuando los registros varían. Por el solapamiento de variables entre A10, A11 y A16, se recomienda evaluar **una entrega SFTP consolidada**. Los catálogos restantes (A5 SOW / A6 estrategia de precio), hoy JSON precargados, son candidatos a sumarse al mismo esquema.
+1. **Activos batch vía SFTP (diarios): seis entregas** — el CSV de líneas (A7), los datos de **verificación** (A10), la **Plataforma 360** (A11), los datos de **otorgamiento** (A16), las **listas de deudores** (A3 Lista Blanca + A4 Autorizados, en un archivo único con columna `LISTA`) y la **cartera comercial** (A24, con columna `TIPO`). Todos montan **tablas internas** que son la única fuente que consulta la aplicación; el endpoint A22 las refresca intradía cuando los registros varían. Por el solapamiento de variables entre A10, A11 y A16, se recomienda evaluar **una entrega SFTP consolidada**. Los catálogos restantes (A5 SOW / A6 estrategia de precio), hoy JSON precargados, son candidatos a sumarse al mismo esquema.
 1-bis. **Patrón tabla interna:** la app nunca consulta a Security en línea para otorgamiento/verificación; lee siempre su tabla interna (batch + upserts A22), lo que desacopla disponibilidad y latencia del origen.
 2. **A13 es la única escritura hacia sistemas externos** (inyección); todo lo demás hacia afuera son canales de contacto (A17/A18) y el evento de curse (A19).
 3. La app hoy **mockea** A9–A15 con servicios deterministas; el contrato de datos de este documento es la referencia para reemplazarlos por las integraciones reales.
@@ -213,7 +223,7 @@ campo **sólo** desde su maestro y usa la copia nada más que para conciliar.
 | Clasificación del deudor | `CLASIFICACION` | — | `CLASIFICACION` | — | — | **A3/A4** |
 | Segmento | — | — | `SEGMENTO` | `SEGMENTO` · `SUB_SEGMENTO` | — | *colisión, ver 5.3* |
 | Línea aprobada | — | `LINEA_APROBADA_MM` | — | — | `LINEA_APROBADA_MM` | **A23** *(ver 5.4)* |
-| Ejecutivo / zona | — | `EJECUTIVO` · `ZONA` | — | — | — | *hueco, ver 5.5* |
+| Ejecutivo / zona / jefatura | — | `EJECUTIVO` · `ZONA` | — | — | — | **A24** *(levantado el 14-09, ver 5.5)* |
 | Fecha de corte | `FECHA_CORTE` | `FECHA_CORTE` | `FECHA_CORTE` | `FECHA_CORTE` | `FECHA_CORTE` | *propia de cada uno* |
 
 `FECHA_CORTE` es la excepción deliberada: **no** es un campo duplicado sino el sello de cada entrega, y
@@ -271,31 +281,46 @@ debe escribirla en la tabla interna.
   de reservas. Regla: **A7 y A16 nunca alimentan el motor de líneas; A23 nunca alimenta la vista Líneas.**
   Mezclarlas da el error más caro de todos —cursar contra cupo que ya está tomado— y no avisa.
 
-### 5.5 Ejecutivo y jefatura — el hueco
+### 5.5 Ejecutivo, jefatura y zona — el hueco, **levantado como A24** el 14-09-2026
 
-`EJECUTIVO` y `ZONA` llegan **sólo** en A7, y ahí están mal ubicados por dos razones:
+`EJECUTIVO` y `ZONA` llegaban **sólo** en A7, y ahí estaban mal ubicados por dos razones:
 
-1. **Cuelgan de la LÍNEA, no del cliente.** Un cliente con dos líneas puede traer dos ejecutivos y el
+1. **Colgaban de la LÍNEA, no del cliente.** Un cliente con dos líneas puede traer dos ejecutivos y el
    archivo no dice cuál vale. La regla de negocio es que el ejecutivo se asigna **por cedente**
    (regla 11), así que su sujeto es el RUT cliente.
-2. **La JEFATURA no llega por ningún activo.** El sistema necesita saber a qué equipo pertenece cada
-   ejecutivo para decidir qué ve un jefe (`execsVisiblesDe`, que falla **cerrado** ante un código que no
-   conoce). Hoy ese mapa es una constante del prototipo (`EXEC_JEFATURA`) y ninguna de las cinco
-   entregas lo declara. Sin él, un jefe nuevo no ve el equipo que acaba de recibir.
+2. **La JEFATURA no llegaba por ningún activo.** El sistema necesita saber a qué equipo pertenece cada
+   ejecutivo para decidir qué ve un jefe (`execsVisiblesDe`, que falla **cerrado** ante un código que
+   no conoce). Era una constante del prototipo y ninguna entrega lo declaraba: sin ella, un jefe nuevo
+   no veía el equipo que acababa de recibir.
 
-**Acción:** el archivo de **cartera** diario —el que ya reasigna empresas al ejecutivo nuevo cuando
-alguien se va (ver regla 25 del proyecto)— es el activo natural para esto y **falta levantarlo**. Debería
-traer, por RUT cliente: ejecutivo asignado, su equipo/jefatura y la zona; y `EJECUTIVO`/`ZONA` salen de
-A7, que vuelve a ser sólo estado de línea. Mientras no exista, la migración de cartera se hace a mano
-en `Configuración › Oportunidades › Migración`, que es un acto administrativo con bitácora y no un
-efecto colateral de un archivo — y eso conviene conservarlo aunque llegue el activo, porque **el archivo
-mueve empresas y la migración mueve operaciones**, que son dos cosas distintas.
+Y un tercer problema que sólo apareció al levantarlo: **la asignación cliente → ejecutivo ya existía,
+escondida dentro del A5** (`SHARE_OF_WALLET.Ejecutivo`), el activo de participación de mercado — y
+llaveada por **nombre**. De quién es un cliente no es un atributo de su SOW, y cuando un activo lleva
+un campo que no es suyo nadie sabe que hay que actualizarlo. Peor: renombrar a una persona dejaba a
+toda su cartera sin dueño, sin error y sin forma de notarlo salvo que alguien reclamara.
+
+**Resuelto con `A24 · Cartera comercial`** (`Integraciones/spec_sftp_cartera.md`), que declara por RUT
+cliente su ejecutivo, y por ejecutivo su equipo, **jefatura**, zona y sucursal. Tres decisiones de
+diseño que conviene no perder:
+
+- **El CÓDIGO es la identidad, no el nombre.** Es lo que se congela en `deal.exec` y lo que permite que
+  alguien se cambie el apellido sin que se caiga la cartera.
+- **El rótulo del equipo no es una clave foránea.** `EQUIPO` se muestra; `COD_JEFE` —una arista de
+  código a código— decide el alcance. Hacer coincidir rótulos funcionaba sólo mientras nadie renombrara
+  un equipo ni llegara un jefe cuyo equipo aún no estuviera escrito.
+- **Los dos granos viajan en el mismo archivo y se validan juntos.** Una asignación a un código que el
+  archivo no declara no se carga: aceptarla deja operaciones colgando de alguien que no existe.
+
+Y una distinción que el activo **no** borra: **el archivo mueve empresas, no operaciones.** Traspasar
+los negocios en curso sigue siendo un acto administrativo con fecha y responsable
+(`Configuración › Oportunidades › Migración`), y sólo hasta antes del giro — una operación girada ya se
+desembolsó y moverla sólo reescribiría de quién cuelga una venta que hizo otro.
 
 ### 5.6 Qué hacer con esto
 
 1. Declarar el maestro en el layout de cada entrega (una línea por campo compartido).
 2. Renombrar `SEGMENTO` de A10 a `SEGMENTO_ORIGEN` y marcarlo como no consumido.
-3. Levantar el activo de **cartera** (ejecutivo · jefatura · zona por RUT cliente).
+3. ~~Levantar el activo de **cartera** (ejecutivo · jefatura · zona por RUT cliente).~~ **HECHO** el 14-09-2026: `A24 · Cartera comercial`. Con eso `EJECUTIVO`/`ZONA` dejan de ser materia de A7, que vuelve a ser sólo estado de línea, y el `Ejecutivo` del A5 queda como campo pasajero **a retirar** en la próxima versión de ese layout.
 4. En la carga, escribir cada campo sólo desde su maestro y **conciliar** las copias en vez de pisarlas:
    una discrepancia es información sobre el origen, no ruido que haya que resolver en silencio.
 5. Exponer la `FECHA_CORTE` de cada activo en las pantallas que los mezclan.

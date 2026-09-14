@@ -19,6 +19,7 @@
 //   VERIFICACION      activo A10       · variables del predictor de verificación por par cliente-deudor
 //   RIESGO_BICE       activo A9        · lo que la API de Riesgo BICE devuelve y el A16 NO trae
 //   PLATAFORMA360     activo A11       · información de empresa por RUT (firmográfica, comercial, socios)
+//   CARTERA           activo A24       · estructura comercial y asignación de cada cliente a su ejecutivo
 //
 // Se generan EN ORDEN y cada uno queda visible para los siguientes: VERIFICACION lee la nota del deudor
 // del OTORGAMIENTO recién generado, para que los dos activos no puedan divergir.
@@ -33,6 +34,7 @@ const otorgamiento = require("./datasets/otorgamiento");
 const verificacion = require("./datasets/verificacion");
 const riesgoBice = require("./datasets/riesgo_bice");
 const plataforma360 = require("./datasets/plataforma360");
+const cartera = require("./datasets/cartera");
 
 const raiz = path.resolve(__dirname, "..");
 const entrada = process.argv[2] || path.join(raiz, "datos_inyectados.js");
@@ -49,6 +51,7 @@ const DERIVADOS = [
   ["OTORGAMIENTO", () => otorgamiento.generar(datos)],
   ["VERIFICACION", () => verificacion.generar(datos)],
   ["RIESGO_BICE", () => riesgoBice.generar(datos)],
+  ["CARTERA", () => cartera.generar(datos)],
 ];
 
 console.log("\nGenerando derivados");

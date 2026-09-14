@@ -623,7 +623,12 @@ const stageName = (id) => (stageById(id) || {}).name || id;
 // sigue en «Prospección». Por lo tanto, CUALQUIER edición del ejecutivo (incorporar/retirar facturas,
 // editar condiciones o contacto) la promueve a «Oferta y Negociación». En el backend esto sería una
 // transición de estado emitida por la mutación correspondiente.
-const stageTrasEdicion = (d) => (d && d.stage === "prospeccion" ? "oferta" : d && d.stage); // a nivel de módulo: la usan DealCard (tarjetas perdidas) y TablaOportunidades
+// QUÉ SACA A UNA OPORTUNIDAD DE PROSPECCIÓN: la SIMULACIÓN, y nada más. «Oferta y Negociación»
+// significa que hay una oferta que negociar, y una oferta sin precio no es una oferta: la columna
+// «Simulación» de la tarjeta lo dice con todas sus letras —«Sin simular»— mientras la etapa afirma lo
+// contrario. Antes promovía cualquier EDICIÓN del paquete (incorporar, retirar, actualizar), así que
+// una oportunidad que el inbound detectó y que alguien apenas tocó ya figuraba en negociación con el
+// cliente, sin tasa, sin plazo y sin monto a girar.
 // ── Eje de NEGOCIO de una operación (además del `stage` = motor de estados): status + result + disbursement.
 // El motor `stage` se conserva como atributo; el tablero se filtra por status = open.
 //  · status:       open | closed
@@ -754,15 +759,58 @@ const TAG_COLORS = {
   "Nuevo negocio": { bg: "#F0FDF4", fg: "#16A34A" },
 };
 
+// ── ACTIVO A24 · CARTERA — estructura comercial y asignación de clientes ────────────────────────
+// Quién es ejecutivo, de qué equipo, bajo qué jefatura, en qué zona y sucursal; y de quién es cada
+// cliente. NADA de esto es del pipeline: lo produce RRHH y la administración comercial, cambia todos
+// los días y llega en el archivo de cartera de cada mañana. Vivía en cuatro constantes de módulo y en
+// un campo pasajero del A5 (`SHARE_OF_WALLET.Ejecutivo`, que además viaja por NOMBRE: renombrar a una
+// persona rompía la cartera en silencio). Ver `Integraciones/spec_sftp_cartera.md`.
+//
+// El archivo trae DOS granos con una columna `TIPO`: las personas (`EJECUTIVO`) y las asignaciones
+// (`CARTERA`). Se cargan juntos a propósito — una asignación a un código que el archivo no declara es
+// un archivo roto, y aceptarla dejaría operaciones colgando de alguien que no existe. Acá eso se
+// aplica descartando la fila, no inventando el ejecutivo.
+const CARTERA_A24 = (() => {
+  const src = (typeof window !== "undefined" && window.CARTERA) || null;
+  const personas = {}, asignacion = {};
+  if (src && Array.isArray(src.campos) && Array.isArray(src.filas)) {
+    const ix = {}; src.campos.forEach((c, i) => { ix[c] = i; });
+    const V = (f, c) => (ix[c] != null ? f[ix[c]] : "");
+    for (const f of src.filas) {
+      if (V(f, "TIPO") !== "EJECUTIVO" || V(f, "ESTADO") !== "ACTIVO") continue;
+      personas[V(f, "COD_EJECUTIVO")] = { cod: V(f, "COD_EJECUTIVO"), nombre: V(f, "NOMBRE"), email: V(f, "EMAIL"),
+        equipo: V(f, "EQUIPO"), jefe: V(f, "COD_JEFE") || null, zona: V(f, "ZONA"), sucursal: V(f, "SUCURSAL") };
+    }
+    for (const f of src.filas) {
+      if (V(f, "TIPO") !== "CARTERA" || V(f, "ESTADO") !== "ACTIVO") continue;
+      const cod = V(f, "COD_EJECUTIVO");
+      if (!personas[cod] || !V(f, "RUT_CLIENTE")) continue; // integridad: sin persona declarada, no hay asignación
+      asignacion[V(f, "RUT_CLIENTE")] = cod;
+    }
+  }
+  return { personas, asignacion };
+})();
 // ---- Ejecutivos, jefaturas y calidad de deudor (dimensiones de filtros) ----
-// Directorio de ejecutivos (alineado con cartera_ejecutivos.json)
-const EXECS = { CR: "Carla Rivas", RF: "Rodrigo Fuentes", JT: "Javier Torres", MS: "María José Soto", NB: "Natalia Bravo", DC: "Diego Cáceres" };
-const EXEC_JEFATURA = { CR: "Equipo Andes", RF: "Equipo Andes", JT: "Equipo Pacífico", MS: "Equipo Pacífico", NB: "Equipo Austral", DC: "Equipo Austral" };
-const EXEC_ZONA = { CR: "Zona Norte (Andina)", RF: "Zona Norte (Andina)", JT: "Zona Centro", MS: "Zona Centro", NB: "Zona Sur", DC: "Zona Sur" };
+// Los cuatro catálogos se DERIVAN del activo. Se conservan los nombres porque son ~100 los sitios que
+// los consultan, pero ya no son una verdad propia: son un índice sobre A24.
+//
+// SIN EL ACTIVO la estructura queda VACÍA, y eso es deliberado: en una pantalla que muestra
+// oportunidades ajenas, inventar una jerarquía es peor que no tener ninguna. Lo único que se conserva
+// es el ejecutivo de la sesión por defecto, para que el login siga existiendo y la falta del archivo
+// se vea como lo que es —una cartera vacía— y no como una app rota.
+const _EJECS_A24 = Object.values(CARTERA_A24.personas); // el archivo declara SÓLO la fuerza de venta
+const EXECS = Object.fromEntries(_EJECS_A24.map((p) => [p.cod, p.nombre]));
+const EXEC_JEFATURA = Object.fromEntries(_EJECS_A24.map((p) => [p.cod, p.equipo]));
+const EXEC_ZONA = Object.fromEntries(_EJECS_A24.map((p) => [p.cod, p.zona]));
 // Sucursal desde la que opera cada ejecutivo. Va junto al equipo y la zona porque son la misma
 // dimensión —dónde está la persona en la estructura comercial— y separarlas es lo que permitió que
 // `PC_EXECS` declarara su propia versión de la zona durante meses sin que nadie lo notara.
-const EXEC_SUCURSAL = { CR: "Antofagasta", RF: "La Serena", JT: "Valparaíso", MS: "Santiago Centro", NB: "Concepción", DC: "Puerto Montt" };
+const EXEC_SUCURSAL = Object.fromEntries(_EJECS_A24.map((p) => [p.cod, p.sucursal]));
+// A quién le reporta cada ejecutivo. Es el dato con que se decide qué ve un jefe, y por eso es una
+// ARISTA (código a código) y no el nombre del equipo: un equipo es un rótulo que se puede renombrar
+// sin que cambie quién manda a quién, y hacer coincidir rótulos dejaba a un jefe nuevo —cuyo equipo
+// nadie había escrito todavía— con alcance indistinguible del de la gerencia.
+const EXEC_JEFE = Object.fromEntries(_EJECS_A24.map((p) => [p.cod, p.jefe]));
 // Zonas que existen, DERIVADAS de la asignación: ninguna pantalla vuelve a escribir la lista a mano.
 const ZONAS_COMERCIALES = [...new Set(Object.values(EXEC_ZONA))];
 const USUARIO = "CR"; // ejecutivo logueado por defecto (Carla Rivas)
@@ -1039,8 +1087,12 @@ const atribDe = (code) => {
 // en producción viene del archivo diario) y el «ve todo» se decide por ROL, no por omisión. Lo
 // desconocido no ve nada: en una pantalla de oportunidades ajenas, fallar cerrado es la única opción
 // defendible.
-const EQUIPO_JEFATURA = { JG: "Equipo Andes" }; // a qué equipo pertenece cada jefatura de grupo
-const execsDeEquipo = (eq) => Object.keys(EXECS).filter((k) => EXEC_JEFATURA[k] === eq);
+// A quién ve una jefatura: los ejecutivos que le REPORTAN según el archivo de cartera (A24). Era un
+// mapa escrito a mano (`EQUIPO_JEFATURA = { JG: "Equipo Andes" }`) más una comparación de rótulos de
+// equipo — dos verdades y un rótulo haciendo de clave foránea. Con la arista, un jefe que el archivo
+// no menciona devuelve la lista vacía, que en una pantalla de oportunidades ajenas es la única
+// respuesta defendible; y renombrar un equipo deja de cambiar quién ve qué.
+const execsACargoDe = (code) => (code ? Object.keys(EXEC_JEFE).filter((k) => EXEC_JEFE[k] === code) : []);
 // Roles que ven TODA la cartera del factoring por su función, no por no estar en una lista.
 const ROLES_VEN_TODO = new Set(["gte_comercial", "gte_general", "jefe_riesgo", "sub_riesgo", "operaciones", "jefe_operaciones", "ejec_verif", "admin"]);
 // Códigos de ejecutivos que un usuario puede ver: el propio (ejecutivo), su grupo (jefatura),
@@ -1048,7 +1100,7 @@ const ROLES_VEN_TODO = new Set(["gte_comercial", "gte_general", "jefe_riesgo", "
 const execsVisiblesDe = (code) => {
   if (EXECS[code]) return [code];
   const rol = (typeof ROL_USUARIO !== "undefined" && ROL_USUARIO[code]) || null;
-  if (rol === "jefe_comercial") return execsDeEquipo(EQUIPO_JEFATURA[code] || null);
+  if (rol === "jefe_comercial") return execsACargoDe(code);
   if (rol && ROLES_VEN_TODO.has(rol)) return null;
   return [];
 };
@@ -1964,8 +2016,17 @@ const EXEC_INI_POR_NOMBRE = Object.fromEntries(Object.entries(EXECS).map(([ini, 
 // Ejecutivo DUEÑO de la empresa según el maestro de cartera (SOW inyectado). Devuelve las iniciales
 // del ejecutivo, o null si la empresa no es cliente en el maestro (prospecto). Es la única fuente de
 // verdad de la asignación cliente→ejecutivo: la usan por igual el pipeline y la cartera.
+// DE QUIÉN ES ESTE CLIENTE. Sale del archivo de cartera (A24), que es el activo cuyo sujeto es la
+// asignación. Antes salía de `SHARE_OF_WALLET.Ejecutivo` —un campo pasajero de un activo que describe
+// participación de mercado— y viajaba por NOMBRE, así que traducirlo exigía un índice nombre→código y
+// cambiarle el apellido a alguien dejaba a toda su cartera sin dueño, en silencio.
+// Un RUT que el archivo no trae es un PROSPECTO: no tiene ejecutivo, y quién lo trabaja lo decide el
+// pipeline (`asignarEjecutivo`), no el dato.
 function ejecutivoDeCartera(rutEmisor, nombre) {
-  const s = (rutEmisor && SOW_POR_RUT[rutEmisor]) || (nombre && SOW_POR_NOMBRE[nombre]);
+  const cod = rutEmisor && CARTERA_A24.asignacion[rutEmisor];
+  if (cod) return cod;
+  // Respaldo por NOMBRE mientras haya clientes de la semilla sin RUT en el activo.
+  const s = nombre && SOW_POR_NOMBRE[nombre];
   return s ? (EXEC_INI_POR_NOMBRE[s.Ejecutivo] || null) : null;
 }
 // Índice de estrategia de precio promocional por clave RUTCliente|TipoLinea.
@@ -22702,7 +22763,7 @@ export default function PipelineComercial() {
       const tasaDescuento = d.tasaDescuento || 1.5;
       const fin = calcularFinanzas(d.cliente, d.deudor, monto, tasaDescuento, d.comision || 200000);
       const hist = traza(d, `Se incorporaron ${facs.length} factura(s) a la oferta (${fmtMM(addMonto)})${agregoOtro ? " · incluye deudor(es) Otro → requiere Otorgamiento" : ""}`);
-      return { ...d, stage: stageTrasEdicion(d), facturasOp: nuevasOp, deudores, facturas: nuevasOp.length, monto, facturasDisponibles: restDisp.length ? restDisp : undefined, facturasRetiradas: restRet.length ? restRet : undefined, nuevasFacturas: restN, nuevasFacturasMonto: restMonto, warning: restN > 0, status: "Facturas incorporadas a la oferta", tasaDescuento, historialContacto: hist, ...fin };
+      return { ...d, facturasOp: nuevasOp, deudores, facturas: nuevasOp.length, monto, facturasDisponibles: restDisp.length ? restDisp : undefined, facturasRetiradas: restRet.length ? restRet : undefined, nuevasFacturas: restN, nuevasFacturasMonto: restMonto, warning: restN > 0, status: "Facturas incorporadas a la oferta", tasaDescuento, historialContacto: hist, ...fin };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
@@ -22750,7 +22811,10 @@ export default function PipelineComercial() {
       if (d.id !== id) return d;
       const fs = itemizarFacturas(d);
       const monto = +fs.reduce((s2, f) => s2 + (f.monto || 0), 0).toFixed(1);
-      const patch = { simulado: true, monto: monto, facturas: fs.length, status: "Simulada",
+      // La promoción viaja en el PATCH, no fuera: el detalle vive en otra pestaña y el tubo se entera
+      // por este mismo mensaje. Fuera del patch, la etapa quedaba avanzada acá y en Prospección allá.
+      const patch = { simulado: true, stage: d.stage === "prospeccion" ? "oferta" : d.stage,
+        monto: monto, facturas: fs.length, status: "Simulada",
         facturasOp: d.facturasOp, facturasDisponibles: d.facturasDisponibles, ofertaSugerida: d.ofertaSugerida,
         ...finanzasDe(d.cliente, d.deudor, monto) };
       // El detalle vive en una PESTAÑA APARTE —se abre con `window.open` y un ticket con la foto del
@@ -22858,7 +22922,7 @@ export default function PipelineComercial() {
       const tasaDescuento = d.tasaDescuento || 1.5;
       const fin = calcularFinanzas(d.cliente, d.deudor, monto, tasaDescuento, d.comision || 200000);
       const hist = traza(d, `Se retiró 1 factura de la oferta (${fmtMM(quitMonto)}) · queda disponible en "Otras facturas"`);
-      return { ...d, stage: stageTrasEdicion(d), facturasOp: nuevasOp, deudores: deudoresF.length ? deudoresF : deudores, facturas: nuevasOp.length, monto, facturasRetiradas: restRet, status: "Factura retirada de la oferta", tasaDescuento, historialContacto: hist, ...fin };
+      return { ...d, facturasOp: nuevasOp, deudores: deudoresF.length ? deudoresF : deudores, facturas: nuevasOp.length, monto, facturasRetiradas: restRet, status: "Factura retirada de la oferta", tasaDescuento, historialContacto: hist, ...fin };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
@@ -22887,7 +22951,7 @@ export default function PipelineComercial() {
     const interes = +(financiado * (d.tasaDescuento / 100) * ((d.diasFin || 42) / 30)).toFixed(2);
     const desc = +(interes - (d.comision || 0)).toFixed(2);
     const giro = +(financiado - interes - (d.comision || 0) - (d.descCxC || 0)).toFixed(2);
-    return { ...d, stage: stageTrasEdicion(d), monto, financiado, facturas: d.facturas + (d.nuevasFacturas || 0), interes, montoDescuento: interes, desc, giro, nuevasFacturas: 0, nuevasFacturasMonto: 0, warning: false, status: "Actualizada con nuevas facturas" };
+    return { ...d, monto, financiado, facturas: d.facturas + (d.nuevasFacturas || 0), interes, montoDescuento: interes, desc, giro, nuevasFacturas: 0, nuevasFacturasMonto: 0, warning: false, status: "Actualizada con nuevas facturas" };
   };
   const incorporarFacturas = (id) => {
     setDeals((prev) => prev.map((d) => incorporarUpd(d, id)));
@@ -22898,11 +22962,27 @@ export default function PipelineComercial() {
   // INVARIANTE: si una oportunidad ya tiene una OFERTA publicada (N° de negocio o la burbuja "Oferta de
   // factoring…" en el hilo), no puede seguir en Prospección — pertenece a "Oferta y Negociación". Esto
   // corrige cualquier caso en que la oferta se publicó pero la etapa no avanzó (p. ej. interés por texto libre).
+  const tieneOferta = (d) => !!d.negocioNum || (d.waSesion || []).some((m) => /Oferta de factoring/i.test(m.text || ""));
   useEffect(() => {
-    const tieneOferta = (d) => !!d.negocioNum || (d.waSesion || []).some((m) => /Oferta de factoring/i.test(m.text || ""));
     if (deals.some((d) => d.stage === "prospeccion" && tieneOferta(d))) {
       setDeals((prev) => prev.map((d) => (d.stage === "prospeccion" && tieneOferta(d)
         ? { ...d, stage: "oferta", status: (d.status && /prospec/i.test(d.status)) ? STATUS_ETAPA.oferta : d.status }
+        : d)));
+    }
+  }, [deals]);
+  // INVARIANTE DUAL: una oportunidad SIN SIMULAR no puede estar en «Oferta y Negociación». No hay qué
+  // negociar sin precio, y la propia tarjeta lo desmiente en la columna de al lado —«Sin simular»—.
+  // Corrige lo que quedó de antes (la etapa avanzaba al tocar el paquete) y cualquier camino futuro
+  // que la mueva sin pasar por la simulación.
+  //
+  // Se exceptúa lo que YA tiene oferta: un negocio con número o con la oferta enviada por WhatsApp sí
+  // está en negociación, aunque su simulación se haya limpiado —es el caso de una reapertura—. Con esa
+  // guarda los dos invariantes son duales exactos y no pueden empujarse uno al otro.
+  useEffect(() => {
+    const sinPrecio = (d) => d.stage === "oferta" && !d.simulado && !tieneOferta(d);
+    if (deals.some(sinPrecio)) {
+      setDeals((prev) => prev.map((d) => (sinPrecio(d)
+        ? { ...d, stage: "prospeccion", status: (d.status && /oferta|negociaci/i.test(d.status)) ? STATUS_ETAPA.prospeccion : d.status }
         : d)));
     }
   }, [deals]);

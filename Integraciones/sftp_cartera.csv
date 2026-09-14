@@ -1,0 +1,13 @@
+TIPO;COD_EJECUTIVO;RUT_CLIENTE;NOMBRE;EMAIL;EQUIPO;COD_JEFE;ZONA;SUCURSAL;ESTADO;VIGENTE_DESDE;VIGENTE_HASTA;FECHA_CORTE
+EJECUTIVO;CR;;Carla Rivas;crivas@factoring.cl;Equipo Andes;JG;Zona Norte (Andina);Antofagasta;ACTIVO;2025-01-02;;2026-06-22
+EJECUTIVO;RF;;Rodrigo Fuentes;rfuentes@factoring.cl;Equipo Andes;JG;Zona Norte (Andina);La Serena;ACTIVO;2025-01-02;;2026-06-22
+EJECUTIVO;JT;;Javier Torres;jtorres@factoring.cl;Equipo Pacífico;GC;Zona Centro;Valparaíso;ACTIVO;2025-01-02;;2026-06-22
+EJECUTIVO;MS;;María José Soto;mjsoto@factoring.cl;Equipo Pacífico;GC;Zona Centro;Santiago Centro;ACTIVO;2025-01-02;;2026-06-22
+EJECUTIVO;NB;;Natalia Bravo;nbravo@factoring.cl;Equipo Austral;GC;Zona Sur;Concepción;ACTIVO;2025-01-02;;2026-06-22
+EJECUTIVO;DC;;Diego Cáceres;dcaceres@factoring.cl;Equipo Austral;GC;Zona Sur;Puerto Montt;ACTIVO;2025-01-02;;2026-06-22
+CARTERA;NB;10147828-9;Aceros RM Ltda;;;;;;ACTIVO;2025-02-20;;2026-06-22
+CARTERA;NB;10378629-8;Textil del Elqui SpA;;;;;;ACTIVO;2025-03-06;;2026-06-22
+CARTERA;CR;10786111-6;Repuestos Lota SpA;;;;;;ACTIVO;2026-04-08;;2026-06-22
+CARTERA;RF;10858732-5;Alimentos Patagonia S.A.;;;;;;ACTIVO;2024-11-05;;2026-06-22
+CARTERA;NB;11123929-3;Alimentos Biobio SA;;;;;;ACTIVO;2026-02-26;;2026-06-22
+CARTERA;DC;11683873-3;Importadora Calama S.A.;;;;;;ACTIVO;2025-04-10;;2026-06-22

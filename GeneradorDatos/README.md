@@ -41,6 +41,7 @@ byte. Se apoya en `hashStr` + mulberry32, el mismo azar estable que usa el pipel
 | `OTORGAMIENTO` | A16 | `datasets/otorgamiento.js` | Variables de riesgo de cliente, deudor y par cliente-deudor, con la forma del contrato (una fila por `RUT` + `ROL` + `RUT_CONTRAPARTE`, 54 campos, columnar como el CSV de origen) |
 | `PLATAFORMA360` | A11 | `datasets/plataforma360.js` | Maestro de empresa por RUT (clientes y deudores): firmográfica, comercial, socios, índices y la **nota de comportamiento**, que vive sólo acá. Razón social y ventas salen de DTESync; colocación y última operación, de AECSync; segmento, del SOW |
 | `RIESGO_BICE` | A9 | `datasets/riesgo_bice.js` | Sólo lo que la API de Riesgo BICE reporta y el A16 **no** trae. Lo que solapa (mora CMF, mora ACHEF, protestos, mora interna) no se duplica: el pipeline lo lee del A16 al componer la respuesta |
+| `CARTERA` | A24 | `datasets/cartera.js` | Estructura comercial (código, nombre, equipo, **jefatura**, zona, sucursal) y asignación de cada cliente a su ejecutivo. La asignación se **mide** del `Ejecutivo` que ya declara el A5, para que el activo nuevo no contradiga al que la app venía leyendo; el archivo la vuelve a llavear por **código** y no por nombre |
 | `VERIFICACION` | A10 | `datasets/verificacion.js` | Variables del predictor de verificación por par cliente-deudor. El promedio de factura del par y su venta mensual salen del volumen real de DTESync; la nota del deudor se **lee del A16 ya generado** para que los dos activos no puedan divergir |
 
 ## Cómo se calibra el riesgo
