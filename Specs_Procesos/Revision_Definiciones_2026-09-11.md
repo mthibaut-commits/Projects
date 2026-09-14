@@ -20,7 +20,7 @@ Tres orígenes distintos, y conviene no mezclarlos:
 3. **Un apartado que el PDF dejó «por definir»** y que el negocio resolvió después (la reserva de cupo).
 
 > **Ninguno de estos puntos es un bug abierto.** Todos están implementados, probados
-> (`tests_asignacion_lineas.js`, 51 casos) y documentados en los `.md` del repo. Lo que falta es que el
+> (`tests_asignacion_lineas.js`, **90 casos** al 14-09-2026) y documentados en los `.md` del repo. Lo que falta es que el
 > PDF los recoja.
 
 ---
@@ -123,8 +123,20 @@ por deudor (`stKey = "<n>@<rut>"`), como las D. El PDF las lista en el bloque CL
 ahora son **D01–D23 y C47–C50**. Y el layout A16 suma cuatro columnas `*_CD` en la fila `DEUDOR` (ver
 `Integraciones/spec_sftp_otorgamiento.md`).
 
-> Hasta el 11-09-2026 estas cuatro reglas **no estaban implementadas**: el motor corría 75 de las 79 que
-> la política declara. Hoy corre las 79.
+> **Historia de estas cuatro reglas, que conviene leer entera.** Hasta el 11-09-2026 **no estaban
+> implementadas**: el motor corría 75 de las 79 que la política declara. El 11-09 se implementaron como
+> reglas del par, evaluadas y visadas por deudor. El **14-09-2026 se retiraron**: quedaban **dominadas
+> por C40–C43**, que miden lo mismo a nivel de cliente con umbral `> 0` — si el par tiene un documento
+> reclamado, el cliente también, y C40 ya había levantado la excepción. O sea que nunca podían ser la
+> única causa de un visado. El catálogo corre hoy **76 reglas: 75 de la política más O05** (§10.1).
+>
+> La propiedad que estas reglas custodiaban —que el motor **no deduce el tipo de regla del prefijo del
+> código**— sigue viva y cambió de testigo a D01–D04. Y el caso 48 pasó a fijar la decisión al revés: ni
+> las reglas ni sus variables pueden volver sin que la suite se caiga.
+>
+> **Para el PDF:** C47–C50 salen del catálogo ejecutable. Si la política quiere conservarlas, sus
+> umbrales tienen que dejar de ser `> 0`, porque con ese umbral no aportan una decisión que C40–C43 no
+> hayan tomado ya.
 
 ---
 
@@ -390,3 +402,148 @@ conjunto de reglas que excepcionan siguen siendo **24 de 24** iguales al build a
 un SELECT del batch diario), `asignarLineas` depende de las tablas precalculadas de líneas y de
 `tipoDeudor` (las listas), y `nowStamp()` dentro de `verifFactura` (la hora la pone el servidor). Son
 la categoría «dato», no «estado mutable del navegador».
+
+---
+
+## 10. Lo decidido después del 11-09 — lo que la próxima versión del PDF tiene que recoger
+
+**Actualizado:** 14-09-2026.
+
+Este archivo se escribió el 11-09 y desde entonces el negocio decidió seis cosas más que el PDF vigente
+tampoco describe. Van acá, con el mismo criterio que §1–§3: qué dice el PDF, qué hace el código y por
+qué difieren. Ninguna es un bug abierto — todas están implementadas y probadas.
+
+### 10.1 · Existe una regla que NO viene de la política: **O05 · Evidencia del Contrato de Cesión**
+
+**PDF:** el catálogo son 79 reglas (C01–C52 · D01–D23 · O01–O04) y todas salen de la política de riesgo.
+
+**Hoy:** el catálogo corre **76 · 48 C + 23 D + 5 O** (la política aporta 75 tras el retiro de C47–C50,
+ver §1.7). La que sobra es **O05**, que no viene de la política sino del
+**proceso**: constatar que existe la autorización del contrato de cesión antes de girar. Se cuenta
+aparte porque el caso 46 mide cobertura de la política y sumarlas al mismo total la dejaría sin medir.
+
+Existe **siempre**, en las dos vías de publicación, y lo que cambia es **quién crea la evidencia**:
+
+- **Electrónica (email).** La autorización del cliente en el portal es la evidencia y el criterio queda
+  **aprobado** sin que nadie lo vise.
+- **Física (contrato adjunto).** El papel se firmó fuera del sistema, así que no hay nada que dar por
+  cierto: queda como **excepción de Operaciones N3**, el ejecutivo adjunta el comprobante y Operaciones
+  lo visa.
+
+Que existiera sólo en la vía física dejaría a la operación electrónica cursando sin ninguna constancia
+mientras el cliente no firma.
+
+**La evidencia es una HUELLA del paquete, no una bandera.** No dice «el cliente firmó» sino «el cliente
+firmó ESTO»: `huellaOperacion(deal)` es una cadena canónica con N° de operación · RUT del cliente · n°
+de deudores · n° de facturas · monto total · **monto por deudor ordenado**. Lo último cierra la
+sustitución: con sólo conteos y total, cambiar una factura por otra del mismo monto en otro deudor
+dejaría la huella idéntica. Se guarda la cadena **y** su SHA-256 — el hash sirve para comparar y la
+cadena para auditar, porque quien revise un giro en seis meses necesita ver **qué** se firmó y no un
+hexadecimal que sólo dice que no calza. Con eso el criterio se abre y se cierra solo: cambió el
+paquete, la huella no calza, vuelve a ser excepción, sin que nadie tenga que acordarse de revocar nada.
+
+Una bandera no habría servido: se revoca cuando alguien aprieta «Reabrir», o sea confía en que **toda**
+modificación pase por esa puerta. La huella no confía en nada.
+
+**Para el PDF:** agregar O05 a §7 marcada como criterio de proceso, y decir en §1 que el catálogo tiene
+79 reglas **de política** más las que el proceso agregue.
+
+**Configuración que hizo falta:** el área Operaciones tenía un solo cargo, en N5, así que un requisito
+N3 se cubría por escalada y no se distinguía del que sí necesita la máxima atribución. Se dio de alta
+**Jefe de Operaciones (N3)**. Dar de alta el cargo **no basta**: la atribución se resuelve contra el
+padrón, así que un cargo sin titular deja el par (área, nivel) con nombre y sin nadie que lo firme — el
+primer intento creó el cargo y la excepción siguió cayendo en N5. Caso 85.
+
+### 10.2 · Firmar no es girar: hay dos estados entre la firma y Tesorería
+
+**PDF:** después de la aceptación del cliente la operación pasa a cesión y giro.
+
+**Hoy:** firmar es del CLIENTE; girar es de la casa, y sólo después de que sus controles pasen:
+
+| Estado | Cuándo | Quién actúa |
+|---|---|---|
+| **Otorgamiento / Verificación** | falta excepcionar un criterio, hacer una llamada o falta la evidencia del contrato | riesgo · verificación · el ejecutivo |
+| **Pendiente Integración** | resuelto todo lo anterior: **sale del tubo** y aparece en Operaciones | Operaciones |
+| **Pendiente de Giro** | **Operaciones (N3)** aprueba la integración al core | Tesorería |
+
+Es **una** etapa y no dos porque el ejecutivo tiene un solo pendiente —que la casa termine de revisar—;
+dividirla obligaría a explicar una diferencia que no cambia nada de lo que él puede hacer.
+
+**El defecto que lo destapó**, y que el PDF habilitaba: la confirmación del cierre saltaba directo a
+**Giro** —con el dinero dado por transferido— cuando la heurística `requiereOtorgamiento` decía que no
+hacía falta aprobación manual. Esa heurística mira dos cosas (¿supera la línea?, ¿hay deudores «Otro»?)
+y **nació antes del motor de reglas**, así que el salto se llevaba por delante OTG-02, VER-01 y GIR-02.
+Se vio en una operación «Girada» con **42 criterios por aprobar y 8 facturas por verificar a la vista,
+en la misma pantalla**. La decisión se extrajo a `etapaTrasFirma(entrada)`, pura y de nivel módulo — el
+tipo de cosa que en producción resuelve el servidor. Caso 88, con las 16 combinaciones.
+
+**Para el PDF:** el diagrama de estados posterior a la firma, y que la aprobación de la integración al
+core es de **Operaciones N3** y no del ejecutivo.
+
+### 10.3 · Un invariante nuevo: **GIR-02**, el gate de inyección al core
+
+El paquete que se gira tiene que ser el que se autorizó. En el momento de entregarle la operación a
+Tesorería —el último punto en que la comparación sirve de algo, después el dinero ya salió— se compara
+la huella de lo que se va a inyectar contra la de la evidencia de O05.
+
+`evidenciaContratoOk(deal, estado)` devuelve **el porqué** y no un booleano: «sin_evidencia» y
+«no_calza» se arreglan de formas distintas, y el detalle muestra las dos huellas, que es lo que se
+audita. El destino «Girar» **no desaparece** del menú cuando falla: se muestra apagado con el motivo —
+desaparecer sin explicación deja al ejecutivo con una operación aceptada que no puede girar y sin dónde
+enterarse de por qué. Y la mutación lo vuelve a comprobar antes de escribir, porque la pantalla que
+oculta el botón no es el control. Caso 86.
+
+**Para el PDF:** sumar GIR-02 a la lista de controles, junto a OTG-01/02 y VER-01.
+
+### 10.4 · La primera operación del cliente verifica TODO (regla 0 de verificación)
+
+**PDF §10:** el protocolo de verificación se decide por el segmento del deudor.
+
+**Hoy:** antes que eso hay una **regla 0**, compuerta y anterior a V01: en la **primera operación del
+cliente** se verifican **todas** las facturas, cualquiera sea el segmento del deudor. No es un criterio
+de riesgo del deudor sino del **cliente**, y por eso aplica a los dos segmentos.
+
+Vive en el predictor de verificación y no en el motor de líneas ni en la pantalla del giro: «si hay que
+llamar a este deudor» es una sola pregunta y tiene un solo dueño. El estado del cliente
+(`nuevo · activo · suspendido · eliminado`) lo devuelve una API de Security al iniciar sesión, sólo
+`nuevo` es primera operación, y entra **por parámetro** — no se memoiza con el par, que sí se cachea:
+guardado ahí, el cliente seguiría verificándolo todo para siempre después de cursar. Casos 76 y 77.
+
+### 10.5 · El pricing y el prorrateo por factura son configuración del TENANT
+
+**PDF:** la aritmética del giro no está descrita; vivía cableada en el código.
+
+**Hoy:** los **conceptos**, sus variables y sus fórmulas son configuración por tenant (dos factorings no
+calculan igual). El cierre es fijo —`Monto a Girar = Monto Anticipo − Subtotal Descuentos`, y la
+retención se informa y no se descuenta— y las fórmulas se **interpretan** (AST), no se evalúan como
+JavaScript: la escribe un administrador y correría en el navegador de todos sus usuarios, así que con
+`eval` el mantenedor de pricing sería una consola remota.
+
+Y hay un nivel que el PDF no tiene: el **prorrateo por FACTURA**, porque el giro se materializa en
+transferencias que ejecuta Tesorería. **Regla de oro: la suma por documento es siempre el total de la
+operación, en todos los conceptos.** Descuento **racional** (no lineal), plazo equivalente ponderado por
+el peso en la **diferencia de precio** (no en el monto — por monto da 46,5 días donde la planilla del
+negocio da 52,79), cálculo con 6 decimales y presentación con 2 y 1, y la factura **más grande** absorbe
+el residuo del redondeo al peso. El descuadre es **estructural**, no un defecto: el peso no tiene
+decimales. Ver `spec-pricing-simulacion.md` §4. Casos 65–75.
+
+### 10.6 · El último eslabón: la **asignación de giros** (GE / GN)
+
+No existe en el PDF. Toma el monto a girar y su desglose por factura y produce lo que Tesorería va a
+transferir. **GE (Express)**: la verificación lo dio por no necesario **y** el otorgamiento no dejó
+marcas de excepción. **GN (Normal)**: todo lo demás. La calificación es **por deudor** y las facturas
+heredan, porque los dos motores de los que depende deciden por deudor.
+
+**Supuesto explícito que falta confirmar:** el enunciado decía «por verificar **y** con excepciones»; se
+implementó como **disyunción**, porque con conjunción una factura por verificar y sin excepciones no
+calificaría en ningún tipo y la regla de oro se rompería. Y el enunciado menciona **tres** formas de
+giro y define dos: falta la tercera. Ver `spec-modelo-giro.md`. Casos 78–84.
+
+### 10.7 · Decisiones abiertas — al día
+
+A las siete de §7 se suman dos, ambas del modelo de giro:
+
+| # | Decisión | Dónde |
+|---|---|---|
+| 8 | ¿GN es disyunción o conjunción? Implementado como disyunción por la regla de oro | §10.6 |
+| 9 | ¿Cuál es la **tercera** forma de giro? El enunciado menciona tres y define dos | §10.6 |
