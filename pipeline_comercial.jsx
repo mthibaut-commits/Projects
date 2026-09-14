@@ -2062,6 +2062,37 @@ const aecCompPorCedente = (() => {
   for (const a of AEC_DATA) { if (a && a.RUTFactoring && a.RUTFactoring !== BICE_RUT) { (m[a.RUTEmisor] = m[a.RUTEmisor] || []).push(a.RazonSocialFactoring); } }
   return m;
 })();
+// ── SEÑALES COMERCIALES POR CLIENTE — medidas, no inventadas ────────────────────────────────────
+// El volumen que el cedente emitió a deudores de lista o autorizados (la demanda de BUENOS deudores
+// que hay por financiar) y si cedió facturas a un factoring que no es el nuestro. Las dos salen de los
+// activos: DTESync para lo emitido, AECSync para lo cedido. Antes cada módulo las fabricaba con su
+// propio hash, y el Plan Mensual y la vista de Líneas mostraban números distintos del mismo cliente.
+const DIAS_VENTANA_DTE = 47, DIAS_MES_SENAL = 30;
+const SENALES_CLIENTE = (() => {
+  const m = {};
+  const dte = (typeof window !== "undefined" && Array.isArray(window.DTESYNC)) ? window.DTESYNC : [];
+  for (const d of dte) {
+    if (!d || !d.RUTEmisor) continue;
+    const g = m[d.RUTEmisor] || (m[d.RUTEmisor] = { buenosMM: 0, nBuenos: 0 });
+    if (tipoDeudor(d.RUTRecep, d.RznSocRecep) !== "Otro") { g.buenosMM += (+d.MntTotal || 0) / 1e6; g.nBuenos++; }
+  }
+  for (const k of Object.keys(m)) { const g = m[k]; g.demandaBuenosMM = Math.round(g.buenosMM * (DIAS_MES_SENAL / DIAS_VENTANA_DTE)); g.emitioBuenos = g.nBuenos > 0; }
+  return m;
+})();
+const senalesDe = (rut) => SENALES_CLIENTE[rut] || { buenosMM: 0, nBuenos: 0, demandaBuenosMM: 0, emitioBuenos: false };
+const cedioACompetencia = (rut) => !!(aecCompPorCedente[rut] && aecCompPorCedente[rut].length);
+// Días de mora del cliente, DERIVADOS del activo A16: la tabla trae montos por tramo de mora interna,
+// no un número de días, así que el peor tramo con saldo es el que manda.
+function moraDiasCliente(rut) {
+  const F = (typeof OTORG_A16 !== "undefined" && OTORG_A16.cli[rut]) || null;
+  if (!F) return 0;
+  const A = a16(F);
+  if (A("MORA_INTERNA_180_3A") > 0) return 180;
+  if (A("MORA_INTERNA_90_180") > 0) return 90;
+  if (A("MORA_INTERNA_30_90") > 0) return 30;
+  if (A("MORA_INTERNA_MAS_25D") > 0) return 25;
+  return 0;
+}
 // Competidor que financió (cedió) facturas de este cedente según AECSync; null si no hay registro.
 const aecCompetidorDe = (deal) => { const l = aecCompPorCedente[deal.rutEmisor]; return (l && l.length) ? l[hashStr(deal.id || "x") % l.length] : null; };
 // Detalle de competencia por cedente (RUT): a quién le cede el cliente (últimos 6 meses), con monto
@@ -18059,21 +18090,26 @@ function ScoreSpark({ serie, w = 88, h = 26 }) {
 // Señales sintéticas por cliente para el Plan Mensual: línea de crédito disponible, comportamiento de
 // riesgo y factores de gestión (emisión de buenos deudores, cesión a la competencia, tiempos y tasa).
 function ptmSignals(c) {
-  const r = pcRng(hashStr("sig" + c.id));
-  const lineaAprob = Math.round(c.vol * (0.5 + r() * 0.7));
-  const lineaUso = Math.round(lineaAprob * (0.3 + r() * 0.6));
+  // TODO sale de los activos. Este módulo fabricaba la línea con un hash del volumen del cliente, así
+  // que el Plan mostraba una línea aprobada, utilizada y disponible distinta de la que muestran Líneas
+  // y el otorgamiento para el mismo cliente.
+  const L = lineaDeCliente({ rutEmisor: c.rut });
+  const lineaAprob = Math.round((L && L.aprobada) || 0);
+  const lineaUso = Math.round((L && L.uso) || 0);
   const lineaDisp = Math.max(0, lineaAprob - lineaUso);
   const lineaPct = lineaAprob ? Math.round(lineaDisp / lineaAprob * 100) : 0;
-  const moraDias = r() < 0.22 ? 5 + Math.floor(r() * 60) : 0;
+  const moraDias = moraDiasCliente(c.rut);                       // activo A16, mora interna por tramo
+  // "En observación" sin mora pasa a significar algo: el A16 tiene al cliente bloqueado o con juicios.
+  const F = (typeof OTORG_A16 !== "undefined" && OTORG_A16.cli[c.rut]) || null;
+  const A = a16(F);
+  const observado = !!F && (A("CLIENTE_BLOQUEADO") > 0 || A("JUICIOS_GESINTEL") > 0);
   const riesgo = moraDias >= 30 ? { l: `Moroso ${moraDias}d`, c: "#EF4444", bg: "#fef2f2" }
     : moraDias > 0 ? { l: `Atención ${moraDias}d`, c: "#C2410C", bg: "#FFF7ED" }
-    : r() < 0.15 ? { l: "En observación", c: "#C2410C", bg: "#FFF7ED" }
+    : observado ? { l: "En observación", c: "#C2410C", bg: "#FFF7ED" }
     : { l: "Buen comportamiento", c: "#16A34A", bg: "#F0FDF4" };
-  const emitioBuenos = r() > 0.28;   // ¿emitió facturas de deudores buenos (lista blanca/priorizados/históricos) este mes?
-  const cedioComp = (c.tag === "FUGA" || c.estado === "Competencia") ? r() > 0.32 : r() < 0.18;
-  const compRapida = r() < 0.5;      // la competencia reaccionó más rápido (ejecutivo se demoró)
-  const tasaNoComp = r() < 0.55;     // la tasa ofertada no fue competitiva (ejecutivo en su piso)
-  return { lineaAprob, lineaUso, lineaDisp, lineaPct, moraDias, riesgo, emitioBuenos, cedioComp, compRapida, tasaNoComp };
+  return { lineaAprob, lineaUso, lineaDisp, lineaPct, moraDias, riesgo,
+    emitioBuenos: senalesDe(c.rut).emitioBuenos,   // DTESync: emitió a deudores de lista o autorizados
+    cedioComp: cedioACompetencia(c.rut) };         // AECSync: cedió a un factoring que no es el nuestro
 }
 // Comentario IA: interpreta la situación del gráfico (modelo de colocación) de forma coherente con lo
 // que se muestra: colocación de hoy vs. meta, proyección máx/mín al cierre, SOW actual vs. meta, línea y riesgo.
@@ -18693,23 +18729,38 @@ function OperacionesView({ deals, onOpen, soloExec }) {
 // LÍNEAS — líneas de crédito por cliente, proyección post-curse, recomendación (aumento / reducción /
 // bloqueo / aprobación) e indicador de salud según comportamiento.
 // ============================================================
+// Cartera de líneas de crédito: sale del MAESTRO A7/A8 (`window.LINEA_DISPONIBLE`), no de un hash.
+// `aprobada` es la suma de las filas NO suspendidas del cliente —una línea suspendida no financia— y
+// `uso` el monto utilizado que declara el mismo archivo. Antes se sorteaban con
+// `300 + floor(rnd()*20)*50`, así que la mesa de Líneas, el drawer y el otorgamiento podían mostrar
+// cupos distintos del mismo cliente aunque el activo estuviera inyectado y sin usar.
+// La demanda de buenos deudores se MIDE sobre DTESync y la morosidad sale del A16: son las mismas que
+// lee el Plan Mensual, para que dos vistas no contradigan al mismo cliente.
 const LINEAS_DATA = (() => {
-  // Las líneas de crédito pertenecen a los CLIENTES de la cartera: misma empresa, mismo ejecutivo y
-  // mismo SOW que PC_CLIENTES. Tienen línea aprobada los que operan (no los prospectos inactivos),
-  // de modo que la cantidad de líneas por ejecutivo es coherente con su cartera de clientes activos.
+  const arr = (typeof window !== "undefined" && Array.isArray(window.LINEA_DISPONIBLE)) ? window.LINEA_DISPONIBLE : [];
+  const porRut = new Map();
+  for (const l of arr) {
+    if (!l || !l.RUTCliente) continue;
+    const g = porRut.get(l.RUTCliente) || { aprobada: 0, uso: 0, razon: l.RazonSocialCliente || "" };
+    if (l.Estado !== "Suspendida") g.aprobada += +l.MontoAprobadoMM || 0;   // suspendida no aporta cupo
+    g.uso += +l.MontoUtilizadoMM || 0;                                      // lo cedido sigue vigente
+    porRut.set(l.RUTCliente, g);
+  }
   const out = [];
-  PC_CLIENTES.filter((c) => c.estado !== "Inactivo").forEach((c) => {
-    const rnd = pcRng(hashStr("linea" + c.id));
-    const aprobada = 300 + Math.floor(rnd() * 20) * 50;
-    const uso = Math.round(aprobada * (0.25 + rnd() * 0.62));
-    const montoOp = Math.round(rnd() * aprobada * 0.55);
-    const demandaBuenos = Math.round(rnd() * aprobada * 1.4); // volumen de facturas de BUENOS deudores por financiar
-    const morosidadDias = rnd() < 0.22 ? 5 + Math.floor(rnd() * 70) : 0;
-    const sowActual = c.sow != null ? c.sow : 18 + Math.floor(rnd() * 62);
-    const sowTarget = c.target || 60;
-    const ex = PC_EXECS.find((e) => e.nombre === c.ej) || PC_EXECS[0];
-    out.push({ id: "L-" + c.id, cliente: c.nombre, rut: c.rut, aprobada, uso, disponible: aprobada - uso, montoOp, proyeccion: uso + montoOp, demandaBuenos, morosidadDias, sowActual, sowTarget, exec: c.ej, zona: ex.zona });
-  });
+  for (const [rut, g] of porRut) {
+    const aprobada = +g.aprobada.toFixed(1);
+    if (!(aprobada > 0)) continue;                                          // sin cupo no es línea vigente
+    const c = PC_CLIENTES.find((x) => x.rut === rut) || null;
+    const uso = +Math.min(g.uso, aprobada).toFixed(1);
+    const rnd = pcRng(hashStr("linea" + (c ? c.id : rut)));
+    const montoOp = Math.round(rnd() * Math.max(0, aprobada - uso));         // operación en curso: estado de la demo
+    const ex = (c && PC_EXECS.find((e) => e.nombre === c.ej)) || PC_EXECS[0];
+    out.push({ id: "L-" + (c ? c.id : rut), cliente: (c && c.nombre) || g.razon, rut,
+      aprobada, uso, disponible: +(aprobada - uso).toFixed(1), montoOp, proyeccion: +(uso + montoOp).toFixed(1),
+      demandaBuenos: senalesDe(rut).demandaBuenosMM, morosidadDias: moraDiasCliente(rut),
+      sowActual: (c && c.sow != null) ? c.sow : 0, sowTarget: (c && c.target) || 60,
+      exec: (c && c.ej) || ex.nombre, zona: (c && c.zona) || ex.zona });
+  }
   return out;
 })();
 // ============================================================
@@ -18752,9 +18803,10 @@ function paresPorEmisor() {
 }
 
 // LÍNEA DE OTROS DEUDORES del cliente (LF4), POR CATEGORÍA DE DEUDOR. Se DIMENSIONA con la regla del
-// spec —10% de la suma de cupos— y no con el monto de window.LINEA_DISPONIBLE: ese dato trae 15–40MM
-// por fila, que en un cliente de 1.200MM de línea deja a veinte deudores de la cola compitiendo por
-// 15MM y hace que casi toda oferta caiga a comité. De LINEA_DISPONIBLE se conservan las dos cosas
+// spec —10% de la suma de cupos— y no con el monto de window.LINEA_DISPONIBLE. El motivo original era
+// que ese activo traía 15–40MM por fila y dejaba a veinte deudores de la cola compitiendo por 15MM;
+// desde que el maestro se genera del volumen real de facturas ya no es así (p50 560MM por fila), pero
+// la regla del 10% se mantiene porque es del spec, no un parche. De LINEA_DISPONIBLE se conservan
 // que sí aportan y no se pueden derivar: el corte por categoría de deudor (la misma llave que usa
 // `tipoLineaDeDeudor`) y el estado «Suspendida». Una línea suspendida conserva su exposición vigente
 // —la suspensión no libera lo cedido— pero NO admite operaciones nuevas.
