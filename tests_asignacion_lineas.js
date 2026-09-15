@@ -3019,6 +3019,86 @@
        `no redondo 287.431.509 → ${fmtMM(287431509)} intacto ${pesoOk} · propFactoring manda sobre totalPropuesto ${cualOk} · renovar conserva uso y recalcula al peso ${renOk} (disponible ${440e6 - 137331951}) · sin monto no hay línea ${nadaOk}`);
   }
 
+  // ── 108 · UN «MONTO A GIRAR» NO POSITIVO SE SIMULA PERO NO SE CURSA.
+  //    Con una factura chica la comisión mínima más los gastos y su IVA superan al anticipo, y la
+  //    simulación devuelve un monto a girar NEGATIVO. La decisión del negocio: el ejecutivo puede
+  //    agregarla y simularla —es cómo ve por qué no da— pero ahí se detiene. El gate va al final del
+  //    camino y no a la entrada: prohibir agregar la factura escondería la causa.
+  {
+    // (a) EL VEREDICTO. Cero no es «casi uno»: un giro se materializa en una transferencia y no se
+    //     transfiere $0, así que el corte está en $1 y no en «mayor o igual que cero».
+    const positivo = giroCursable(86200000).ok === true && giroCursable(1).ok === true;
+    const cero = giroCursable(0).ok === false && /\$0/.test(giroCursable(0).motivo || "");
+    const neg = giroCursable(-673476).ok === false && giroCursable(-673476).monto === -673476
+      && /superan al anticipo/.test(giroCursable(-673476).motivo || "");
+    // Redondea al peso antes de juzgar, como todo el sistema: 0,4 no es un giro.
+    const redondeo = giroCursable(0.4).ok === false && giroCursable(0.6).ok === true;
+
+    // (b) SIN SIMULAR NO SE PRONUNCIA. Una oferta que nadie evaluó no se bloquea por una cifra que
+    //     nadie calculó (regla 14); el gate existe cuando existe el número.
+    const sinDato = giroCursable(null).ok === true && giroCursable(undefined).ok === true
+      && giroCursable(NaN).ok === true && giroCursable(null).motivo === null;
+
+    // (c) EL MOTIVO ES PARTE DEL RESULTADO, no un booleano. Un CTA apagado sin explicación deja al
+    //     ejecutivo con una oferta armada y ninguna forma de enterarse de por qué no avanza — la
+    //     misma razón por la que «Girar» se muestra deshabilitado con el motivo y no desaparece.
+    const conMotivo = [0, -1, -673476].every((m) => { const g = giroCursable(m); return g.ok === false && typeof g.motivo === "string" && g.motivo.length > 20; })
+      && [1, 5e6].every((m) => giroCursable(m).motivo === null);
+
+    ok("108 una oferta con «Monto a Girar» no positivo se simula pero no se cursa",
+       positivo && cero && neg && redondeo && sinDato && conMotivo,
+       `positivo cursa ${positivo} · $0 bloquea ${cero} · negativo bloquea ${neg} (${fmtCLP(giroCursable(-673476).monto)}) · redondea al peso ${redondeo} · sin simular no se pronuncia ${sinDato} · siempre con motivo ${conMotivo}`);
+  }
+
+  // ── 109 · EL DETALLE DE LA SOLICITUD AL COMITÉ: qué línea se pide, sobre qué estado y por qué.
+  //    Una solicitud automática es UNA solicitud con N líneas de detalle (caso 106) y la bandeja
+  //    mostraba sólo el total. El comité aprueba o recorta línea por línea, así que necesita el estado
+  //    del par —aprobada, utilizada, disponible— y de qué operación salió lo que se pide.
+  {
+    const LIN = [
+      { granularidad: "par", rutDeudor: "99.111.111-1", tipo: "LF2", aprobado: 40e6, vigente: 15e6 },
+      { granularidad: "par", rutDeudor: "99.111.111-1", tipo: "LF3", aprobado: 10e6, vigente: 4e6 },
+      { granularidad: "par", rutDeudor: "99.222.222-2", tipo: "LF2", aprobado: 30e6, vigente: 30e6 },
+      { granularidad: "par", rutDeudor: "99.333.333-3", tipo: "LF2", aprobado: 99e6, vigente: 0, descartada: true },
+      { granularidad: "comodin", rutDeudor: null, tipo: "LF4", aprobado: 25e6, vigente: 5e6 },
+    ];
+    // (a) LAS LÍNEAS DEL PAR SE SUMAN —LF2 y LF3 son dos cupos del mismo par— y el disponible es la
+    //     resta. Una descartada no cuenta: el motor la fusionó en su hermana y sumarla contaría dos veces.
+    const a = lineaParDeSolicitud("99.111.111-1", LIN);
+    const sumaOk = a.propia === true && a.aprobada === 50e6 && a.utilizada === 19e6 && a.disponible === 31e6
+      && a.tipos.length === 2;
+    const descartadaOk = lineaParDeSolicitud("99.333.333-3", LIN).propia === false;
+
+    // (b) «SIN LÍNEA PROPIA» NO ES UNA LÍNEA EN CERO. El par sin cupo propio se financia por el
+    //     comodín del cliente, así que decir «M$0 aprobada» afirmaría que al comité se le pide ampliar
+    //     algo que existe — y es justamente el caso que una PUNTUAL viene a resolver. El comodín del
+    //     cliente no es del par y no puede colarse en su fila.
+    const sin = lineaParDeSolicitud("99.999.999-9", LIN);
+    const sinOk = sin.propia === false && sin.aprobada === 0 && sin.utilizada === 0 && sin.disponible === 0;
+    const comodinOk = !LIN.filter((l) => l.granularidad === "par").some((l) => l.tipo === "LF4");
+
+    // (c) EL DISPONIBLE NO SE VA BAJO CERO. Un par con la línea copada da 0, no un negativo: el
+    //     disponible es lo que queda por usar y «−M$5» no es una cantidad de cupo.
+    const copado = lineaParDeSolicitud("99.222.222-2", LIN);
+    const copadoOk = copado.disponible === 0 && copado.aprobada === 30e6 && copado.utilizada === 30e6;
+
+    // (d) LA PROYECCIÓN ES SOBRE LO PEDIDO, en los dos lados: si el comité aprueba, la línea del par
+    //     sube en lo solicitado y su uso también al cursar la operación. Aprobar sin proyectar el uso
+    //     mostraría una línea que se amplía y nunca se ocupa.
+    const pedido = 20e6;
+    const apProy = a.aprobada + pedido, usoProy = a.utilizada + pedido;
+    const proyOk = apProy === 70e6 && usoProy === 39e6 && apProy - usoProy === a.disponible;
+
+    // (e) NO MUTA lo que lee: las líneas son las del índice memoizado del cliente.
+    const antes = JSON.stringify(LIN);
+    lineaParDeSolicitud("99.111.111-1", LIN); lineaParDeSolicitud("99.999.999-9", LIN);
+    const puroOk = JSON.stringify(LIN) === antes && lineaParDeSolicitud("x", null).propia === false;
+
+    ok("109 el detalle de la solicitud muestra el estado del par y lo que se le pide al comité",
+       sumaOk && descartadaOk && sinOk && comodinOk && copadoOk && proyOk && puroOk,
+       `LF2+LF3 ${fmtMM(a.aprobada)} aprobada · ${fmtMM(a.utilizada)} utilizada · ${fmtMM(a.disponible)} disponible ${sumaOk} · descartada fuera ${descartadaOk} · «sin línea propia» ≠ cero ${sinOk} · comodín no entra ${comodinOk} · copado no da negativo ${copadoOk} · proyectada ${fmtMM(usoProy)} / ${fmtMM(apProy)} ${proyOk} · no muta ${puroOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
