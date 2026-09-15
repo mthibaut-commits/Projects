@@ -2809,6 +2809,216 @@
        `default «${targetEtiqueta()}» · cliente de prueba ${rut || "NO ENCONTRADO"} · target ${antes ? pct(antes, "factoringTarget") : "—"}% → ${conItau ? pct(conItau, "factoringTarget") : "—"}% al cambiar la perilla, bancarios ${antes ? pct(antes, "otrosBancarios") : "—"}% → ${conItau ? pct(conItau, "otrosBancarios") : "—"}%, lo nuestro intacto ${antes ? pct(antes, "security") : "—"}% · cache invalidado ${cacheOk} · higiene ${higieneOk} · sin target ${vacioOk} · rótulo largo ${largoOk} · restituido ${restituidoOk}`);
   }
 
+  // ── 104 · LA CAT ES DEL PAQUETE QUE SE COMPRA, Y CON LA OFERTA VACÍA NO HAY CAT ────────────────
+  // Lo planteó el usuario mirando una oportunidad recién detectada: «si aún no se ha simulado, ¿no se
+  // debería poder determinar si es CAT-1, CAT-2 u otra?». La CAT **no depende de simular** —es
+  // aritmética sobre notas y montos, sin motor— pero sí de que haya facturas elegidas. Con la oferta
+  // vacía lo único clasificable son los deudores que el inbound DETECTÓ, y eso es otra cosa: hay que
+  // poder distinguirlas, porque no son el mismo número (en pantalla, CAT-1 lo disponible contra CAT-3
+  // lo que finalmente entró a la oferta).
+  {
+    const f = (monto, deudor, rut) => ({ monto, deudor, rut_recep: rut, rutRecep: rut });
+    const dA = { id: "OP-CAT", cliente: "X", facturasOp: [], deudores: [{ name: "Deudor A", monto: 100e6 }] };
+    const dB = { ...dA, facturasOp: [f(100e6, "Deudor A")] };
+
+    // (a) NADA QUE CLASIFICAR NO ES «CAT-1». Devolvía la MEJOR categoría desde un conjunto vacío y
+    //     `catDisp` la rotulaba «100% muy buenos»: una afirmación sacada de cero datos.
+    const vacio = catShares([]);
+    const sinNadaOk = vacio.cat === null && catDeal({ facturasOp: [] }).cat === null
+      && catDeal({}).cat === null && catDeal(null).cat === null
+      && catDisp({ id: "z", facturasOp: [] }) === null;
+
+    // (b) UN ARRAY VACÍO ES UNA RESPUESTA, no ausencia de dato — la misma distinción que hace
+    //     `itemizarFacturas`. Con la oferta vacía la CAT de la OFERTA es `null`, y lo que se muestra
+    //     es la POTENCIAL, marcada como tal.
+    const cdA = catDisp(dA), cdB = catDisp(dB);
+    const baseOk = !!cdA && cdA.base === "disponible" && catDeal(dA).cat === null
+      && !!cdB && cdB.base === "oferta" && catDeal(dB).cat !== null;
+
+    // (c) NO DEPENDE DE SIMULAR: la misma oferta, con y sin `simulado`, da la misma CAT. Si dependiera,
+    //     la regla 3 («se recalcula en vivo al cambiar folios») no se podría cumplir.
+    const simOk = JSON.stringify(catDisp({ ...dB, simulado: true })) === JSON.stringify(catDisp({ ...dB, simulado: false }));
+
+    // (d) Y SIGUE CLASIFICANDO como siempre lo que sí tiene facturas: los cortes de catShares no se
+    //     tocaron, sólo el caso vacío.
+    const A = { m: 80, n: 4.8 }, B = { m: 20, n: 4.0 }, D = { m: 20, n: null };
+    const cortesOk = catShares([A, B]).cat === "CAT-1" && catShares([{ m: 50, n: 4.8 }, { m: 50, n: 4.0 }]).cat === "CAT-2"
+      && catShares([{ m: 20, n: 4.8 }, { m: 80, n: 4.0 }]).cat === "CAT-3" && catShares([A, B, D]).cat === "CAT-5";
+
+    // (e) UN CAT DESCONOCIDO NO SE PINTA DEL COLOR DEL MEJOR. `catMeta` caía a CAT_META["CAT-1"], o
+    //     sea verde: lo que no se pudo clasificar se veía como la mejor cartera posible.
+    const metaOk = catMeta(null).fg === CAT_NEUTRA.fg && catMeta("CAT-9").fg === CAT_NEUTRA.fg
+      && catMeta("CAT-1").fg !== CAT_NEUTRA.fg && catMeta("CAT-5B").fg === catMeta("CAT-5").fg;
+
+    ok("104 la CAT es de la oferta: vacía no clasifica, y lo disponible se muestra como tal",
+       sinNadaOk && baseOk && simOk && cortesOk && metaOk,
+       `vacío → ${vacio.cat} (antes «CAT-1») · oferta vacía → base «${cdA && cdA.base}» ${cdA && cdA.label} · con facturas → base «${cdB && cdB.base}» ${cdB && cdB.label} · independiente de simular ${simOk} · cortes 1/2/3/5 ${cortesOk} · color neutro para lo no clasificado ${metaOk}`);
+  }
+
+  // ── 105 · LOS CHIPS DE LA COLUMNA SOW NOMBRAN CESIONARIOS, Y NOSOTROS SALIMOS SIEMPRE ─────────
+  // La columna contesta «con quién se compite», y para eso «Otros bancarios · 22%» no sirve: un
+  // nombre propio sí. Son cuatro chips y siguen siendo una PARTICIÓN —suman 100— y no un ranking
+  // recortado: lo que no se nombra se agrupa en «Otros», con el detalle en su tooltip. La regla
+  // tiene dos ramas y el caso las prueba por separado, porque la segunda es la que garantiza que la
+  // columna siempre diga cuánto nos cede el cliente: con los 4 mayores a secas, un cliente que no
+  // nos cede nada simplemente no nos mostraría, y esa ausencia se lee como un cero que nadie escribió.
+  {
+    const mk = (nombre, pct, porcion, nuestro) => ({ rut: nombre, nombre, pct, porcion, nuestro });
+    const arma = (...ds) => {
+      // La forma que devuelve `mixSowDe`: porciones, cada una con su detalle.
+      const porc = {};
+      ds.forEach((d) => { (porc[d.porcion] = porc[d.porcion] || []).push(d); });
+      return Object.keys(porc).map((q) => ({ label: q, porcion: q, nuestro: q === "security",
+        pct: Math.round(porc[q].reduce((a, b) => a + b.pct, 0) * 10) / 10, detalle: porc[q] }));
+    };
+    const suma = (cs) => Math.round(cs.reduce((a, b) => a + b.pct, 0) * 10) / 10;
+    const nuestros = (cs) => cs.filter((c) => c.nuestro);
+
+    // (a) NUESTRA PORCIÓN ENTRE LAS 3 PRIMERAS → los 3 primeros por nombre y «Otros» en el 4º.
+    const A = mixSowChips(arma(mk("Security", 40, "security", 1), mk("BCI", 30, "factoringTarget"),
+      mk("Santander", 15, "factoringTarget"), mk("Tanner", 10, "otrosFactoring"), mk("Incofin", 5, "otrosFactoring")));
+    const ramaAOk = A.length === 4 && !A[0].otros && !A[1].otros && !A[2].otros && A[3].otros
+      && A[0].nuestro && A[3].pct === 15 && A[3].detalle.length === 2 && suma(A) === 100;
+
+    // (b) FUERA DE LOS PRIMEROS → 2 nombrados, «Otros» y NOSOTROS al final con nuestro %. «Otros»
+    //     agrupa sólo lo ajeno: contarnos ahí nos contaría dos veces y el total pasaría de 100.
+    const B = mixSowChips(arma(mk("BCI", 40, "factoringTarget"), mk("Santander", 30, "factoringTarget"),
+      mk("Tanner", 20, "otrosFactoring"), mk("Security", 7, "security", 1), mk("Incofin", 3, "otrosFactoring")));
+    const ramaBOk = B.length === 4 && !B[0].otros && !B[1].otros && B[2].otros && B[3].nuestro
+      && B[3].pct === 7 && B[2].pct === 23 && !B[2].detalle.some((d) => d.nuestro) && suma(B) === 100;
+
+    // (c) SIN CESIONES NUESTRAS igual salimos, últimos y en 0: es justamente lo que el ejecutivo
+    //     vino a leer en esta columna.
+    const C = mixSowChips(arma(mk("BCI", 50, "factoringTarget"), mk("Santander", 30, "factoringTarget"), mk("Tanner", 20, "otrosFactoring")));
+    const ceroOk = C.length === 4 && C[3].nuestro && C[3].pct === 0 && suma(C) === 100;
+
+    // (d) BORDES: sin mix, sin detalle (cae a las porciones), y un único cesionario.
+    const D1 = mixSowChips(null), D2 = mixSowChips([]);
+    const D3 = mixSowChips([{ label: "★ Security", porcion: "security", nuestro: true, pct: 100, detalle: [] },
+                            { label: "Otros factoring", porcion: "otrosFactoring", pct: 0, detalle: [] }]);
+    const D4 = mixSowChips(arma(mk("Security", 100, "security", 1)));
+    const bordesOk = D1.length === 0 && D2.length === 0 && D3.length === 1 && D3[0].nuestro
+      && D4.length === 1 && D4[0].nuestro && D4[0].pct === 100;
+
+    // (e) Y SOBRE EL ARCHIVO REAL: en las 250+ empresas con mix, los chips son a lo más 4, suman
+    //     100, nos incluyen EXACTAMENTE una vez y «Otros» cuadra con la suma de su tooltip.
+    const ixp = {}; ((window.PLATAFORMA360 && window.PLATAFORMA360.campos) || []).forEach((c, i) => { ixp[c] = i; });
+    let filas = 0, malSuma = 0, malN = 0, malNuestro = 0, malOtros = 0, conBolsa = 0, ramaB = 0;
+    for (const f of ((window.PLATAFORMA360 && window.PLATAFORMA360.filas) || [])) {
+      const m = mixSowDe(f[ixp.RUT]); if (!m) continue;
+      const cs = mixSowChips(m); if (!cs.length) continue;
+      filas++;
+      if (Math.abs(suma(cs) - 100) > 0.11) malSuma++;
+      if (cs.length > 4) malN++;
+      if (nuestros(cs).length !== 1) malNuestro++;
+      const b = cs.find((c) => c.otros);
+      if (b) { conBolsa++; if (Math.abs(b.pct - b.detalle.reduce((a, d) => a + d.pct, 0)) > 0.051) malOtros++; }
+      if (cs[cs.length - 1].nuestro && cs.length === 4) ramaB++;
+    }
+    const realOk = filas > 100 && malSuma === 0 && malN === 0 && malNuestro === 0 && malOtros === 0 && conBolsa > 50 && ramaB > 0;
+
+    ok("105 la columna SOW nombra a los 4 mayores y nosotros salimos siempre, con % o con cero",
+       ramaAOk && ramaBOk && ceroOk && bordesOk && realOk,
+       `rama A (estamos arriba) ${A.map((c) => c.label + " " + c.pct).join(" · ")} · rama B (estamos fuera) ${B.map((c) => c.label + " " + c.pct).join(" · ")} · sin cesiones nuestras → ${C[3].label} ${C[3].pct}% · archivo: ${filas} empresas, suman 100 ${filas - malSuma}/${filas}, ≤4 chips ${filas - malN}/${filas}, nosotros 1 vez ${filas - malNuestro}/${filas}, «Otros» cuadra ${conBolsa - malOtros}/${conBolsa}, rama B en ${ramaB}`);
+  }
+
+  // ── 106 · CERRAR LA OFERTA GENERA LA SOLICITUD AL COMITÉ, SIN QUE EL EJECUTIVO LA REPITA ──────
+  // El modal de curse ya prometía que «la solicitud queda en la bandeja del comité de riesgo como una
+  // sola solicitud con N línea(s) de detalle» y **nadie la creaba**: el ejecutivo tenía que ir a Líneas
+  // y recorrer el wizard a mano, capturando de nuevo la lista que el modal acababa de mostrarle. Lo que
+  // el motor devuelve en `solicitudes` es exactamente lo que el comité necesita, así que la solicitud
+  // se arma con eso.
+  {
+    const deal = { id: "OP-SOL", cliente: "Cliente Prueba", rutEmisor: "76.111.111-1", negocioNum: "N-1" };
+    const ev = { requiereComite: 90e6, solicitudes: [
+      { deudor: "Codelco", rutDeudor: "61.704.000-K", monto: 60e6, motivo: "par", pide: RESOLUCION_COMITE.par.pide, alcance: RESOLUCION_COMITE.par.alcance },
+      { deudor: "Escondida (BHP)", rutDeudor: "84.908.508-8", monto: 30e6, motivo: "deudor", pide: RESOLUCION_COMITE.deudor.pide, alcance: RESOLUCION_COMITE.deudor.alcance }] };
+
+    // (a) SIN NADA QUE PEDIR NO SE INYECTA NADA. Una solicitud vacía en la bandeja del comité es peor
+    //     que ninguna: alguien tiene que abrirla para descubrir que no pide nada.
+    const vacioOk = solicitudComiteDeOferta(deal, { requiereComite: 0, solicitudes: [] }) === null
+      && solicitudComiteDeOferta(deal, { requiereComite: 90e6, solicitudes: [] }) === null
+      && solicitudComiteDeOferta(null, ev) === null;
+
+    // (b) UNA solicitud con N LÍNEAS DE DETALLE, todas en PUNTUAL —se piden por ESTA operación— y con
+    //     el deudor, el monto y el «qué se pide» que produjo el motor, sin recapturar nada.
+    const sol = solicitudComiteDeOferta(deal, ev, "Carla Rivas", 650e6);
+    const detOk = !!sol && sol.detalle.length === 2 && sol.deudores === 2
+      && sol.detalle.every((d) => d.tipoLinea === "puntual" && d.monto > 0 && d.deudor && d.pide)
+      && sol.detalle[0].deudor === "Codelco" && sol.detalle[0].monto === 60e6
+      && sol.detalle.reduce((a, d) => a + d.monto, 0) === 90e6
+      && sol.origen.dealId === "OP-SOL" && sol.automatica === true && sol.ejecutivo === "Carla Rivas";
+
+    // (c) LA LÍNEA PEDIDA SE SUMA A LA VIGENTE. `constituirLinea` escribe `propFactoring` como la
+    //     aprobada del cliente, así que mandar sólo lo pedido dejaría al cliente con MENOS línea de la
+    //     que ya tenía el día que el comité lo aprueba — una solicitud que castiga por pedir.
+    const sumaOk = sol.pedido === 90e6 && sol.propFactoring === 740e6 && sol.totalPropuesto === 740e6
+      && constituirLinea({ rut: "76.000.999-9", cliente: "X", propFactoring: sol.propFactoring }).aprobada === 740e6;
+
+    // (d) INYECTADA, queda en la bandeja del comité y el WIZARD la encuentra: el paso 4 precarga esos
+    //     deudores en vez de hacer que el ejecutivo los vuelva a escribir.
+    const antes = api2ListarProcesos().length;
+    const idProc = api1Inyeccion(sol);
+    const enBandeja = api2ListarProcesos().find((x) => x.idProceso === idProc);
+    const pre = deudoresSolicitadosLinea("76.111.111-1");
+    const bandejaOk = api2ListarProcesos().length === antes + 1 && !!enBandeja && enBandeja.estado === "En gestión"
+      && enBandeja.detalle.length === 2 && pre.length === 2 && pre.every((x) => x.tipoLinea === "puntual" && x.idProceso === idProc)
+      && deudoresSolicitadosLinea("99.999.999-9").length === 0;
+    // …y se limpia lo inyectado: este caso no puede dejarle una solicitud de prueba a la demo.
+    const iX = api2ListarProcesos().findIndex((x) => x.idProceso === idProc); if (iX >= 0) api2ListarProcesos().splice(iX, 1);
+
+    ok("106 cerrar la oferta inyecta la solicitud al comité con sus líneas de detalle, en puntual",
+       vacioOk && detOk && sumaOk && bandejaOk,
+       `sin nada que pedir → null ${vacioOk} · ${sol.detalle.length} línea(s) de detalle por ${fmtMM(sol.pedido)} (${sol.detalle.map((d) => d.deudor + " " + fmtMM(d.monto) + " " + d.tipoLinea).join(" · ")}) · aprobada vigente 650MM + 90MM pedidos = ${fmtMM(sol.propFactoring)} · bandeja ${bandejaOk} · el wizard precarga ${pre.length} deudor(es)`);
+  }
+
+  // ── 107 · EL WIZARD DE LÍNEA CAPTURA PESOS, Y EL BORDE QUE LOS ESCRIBE NO LOS REDONDEA.
+  //    El wizard mezclaba dos unidades en el mismo campo: `linea.aprobada` (pesos) cuando la empresa ya
+  //    tenía línea, y un default de `300` (millones) cuando no. Aguas abajo `constituirLinea` escribe
+  //    ese número TAL CUAL en la línea aprobada, así que pedir 240 dejaba al cliente con una línea de
+  //    240 PESOS —y ninguna de las dos formas del error se ve distinta dentro del campo—. Desde el
+  //    refactor todo el wizard es pesos; lo que este caso fija es el borde: lo que entra es lo que
+  //    queda, al peso, sin décimas y sin conversión.
+  {
+    const RUT = "76.107.107-1";
+    const limpiar = () => { const i = LINEAS_DATA.findIndex((x) => x.rut === RUT); if (i >= 0) LINEAS_DATA.splice(i, 1); _lineaIdx = null; };
+    limpiar();
+    // (a) UN MONTO EN PESOS SE ESCRIBE EN PESOS. Y no cualquiera: el cupo que aprueba el comité puede
+    //     ser CUALQUIER monto, así que se prueba con uno NO redondo — un redondo sobrevive a una
+    //     división por un millón y a un `toFixed`, y no distinguiría nada.
+    const l1 = constituirLinea({ rut: RUT, cliente: "Prueba 107", propFactoring: 287431509 });
+    const pesoOk = !!l1 && l1.aprobada === 287431509 && Number.isInteger(l1.aprobada)
+      && l1.disponible === 287431509 && l1.uso === 0;
+
+    // (b) `propFactoring` MANDA sobre `totalPropuesto`: lo que se constituye es la línea de factoring,
+    //     no el total que además incluye confirming.
+    limpiar();
+    const l2 = constituirLinea({ rut: RUT, cliente: "Prueba 107", propFactoring: 200e6, totalPropuesto: 350e6 });
+    const cualOk = !!l2 && l2.aprobada === 200e6;
+
+    // (c) RENOVAR conserva el uso y recalcula al peso. `toFixed(1)` dejaba décimas de peso en el
+    //     disponible, que es la cifra contra la que el motor decide si una factura cabe.
+    l2.uso = 137331951; l2.montoOp = 12000000;
+    const l3 = constituirLinea({ rut: RUT, cliente: "Prueba 107", propFactoring: 440e6 });
+    const renOk = l3 === l2 && l3.aprobada === 440e6 && l3.uso === 137331951
+      && l3.disponible === 440e6 - 137331951 && Number.isInteger(l3.disponible)
+      && l3.proyeccion === 137331951 + 12000000
+      && LINEAS_DATA.filter((x) => x.rut === RUT).length === 1;
+
+    // (d) SIN MONTO NO HAY LÍNEA. Una solicitud en cero —o sin RUT— no constituye nada: una línea de
+    //     $0 se vería en la cartera como una línea vigente que no financia ninguna factura.
+    limpiar();
+    const nadaOk = constituirLinea({ rut: RUT, propFactoring: 0 }) === null
+      && constituirLinea({ rut: "", propFactoring: 100e6 }) === null
+      && constituirLinea(null) === null
+      && LINEAS_DATA.filter((x) => x.rut === RUT).length === 0;
+    limpiar();
+
+    ok("107 la solicitud de línea viaja en PESOS y el borde que la constituye no la redondea",
+       pesoOk && cualOk && renOk && nadaOk,
+       `no redondo 287.431.509 → ${fmtMM(287431509)} intacto ${pesoOk} · propFactoring manda sobre totalPropuesto ${cualOk} · renovar conserva uso y recalcula al peso ${renOk} (disponible ${440e6 - 137331951}) · sin monto no hay línea ${nadaOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

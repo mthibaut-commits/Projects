@@ -1469,7 +1469,10 @@ const CAT_META = {
   "CAT-4": { bg: "#fff7ed", fg: "#c2410c", q: "límite de compra", desc: "Peso relevante de deudores en el límite inferior de compra (Nota 3,2–3,7)." },
   "CAT-5": { bg: "#fef2f2", fg: "#EF4444", q: "deudor malo / sin nota", desc: "La operación incorpora facturas de deudores con Nota < 3,2 o sin nota por sobre la tolerancia del 5% del monto → gatilla otorgamiento. El subtipo 5A–5D indica la CAT del resto de la operación." },
 };
-const catMeta = (c) => CAT_META[c] || CAT_META[(c || "").slice(0, 5)] || CAT_META["CAT-1"];
+// Sin CAT no hay color de CAT: el default era CAT_META["CAT-1"], o sea que cualquier cosa que no
+// calzara se pintaba del verde de la MEJOR categoría. Un desconocido se ve neutro.
+const CAT_NEUTRA = { bg: "#F3F4F6", fg: "#6B7280", q: "sin clasificar", desc: "Todavía no hay facturas con las que clasificar esta operación." };
+const catMeta = (c) => CAT_META[c] || CAT_META[(c || "").slice(0, 5)] || CAT_NEUTRA;
 // Clasificación corta + chip de color por tipo de deudor.
 const DEUDOR_LABEL = { "Lista Blanca": "Lista Blanca", "Deudor Autorizado": "Autorizada", "Histórico BICE": "Histórico BICE", "Histórico": "Histórico", "Otro": "Otro" };
 const DEUDOR_CHIP = { "Lista Blanca": { bg: "#F0FDF4", fg: "#16A34A" }, "Deudor Autorizado": { bg: "#eff6ff", fg: "#2563EB" }, "Histórico BICE": { bg: "#ecfeff", fg: "#0e7490" }, "Histórico": { bg: "#fff7ed", fg: "#c2410c" }, "Otro": { bg: "#F3F4F6", fg: "#4B5563" } };
@@ -1552,6 +1555,49 @@ function mixSowDe(rutOnombre) {
 // esta columna, y omitirla lo dejaría sin respuesta. Vive acá y no dentro del `map` de la celda
 // porque es una regla, y una regla escrita dentro de un JSX no se puede probar.
 const mixSowVisible = (mix) => (mix || []).filter((x) => x.pct > 0 || x.nuestro);
+// El rótulo de la porción a la que pertenece un cesionario, para el tooltip del chip: la partición
+// del tenant no desaparece de la columna, pasa a ser el contexto de cada nombre.
+function porcionLabel(porcion) {
+  if (porcion === "factoringTarget") return targetEtiqueta();
+  const c = MIX_SOW_CAMPOS.find((x) => x.porcion === porcion);
+  return c ? c.label : "Otros factoring";
+}
+// LOS CHIPS DE LA COLUMNA SOW SON LOS CESIONARIOS QUE MÁS SE LLEVAN, no las cuatro porciones
+// (15-09-2026, pedido del usuario). La pregunta de esa columna es **con quién se compite**, y para
+// eso «Otros bancarios · 22%» no sirve: un nombre propio sí. Cuatro chips, siempre:
+//   · Si NUESTRA porción está entre las 3 primeras → los 3 primeros cesionarios y «Otros» en el 4º.
+//   · Si no → los 2 primeros, «Otros» en el 3º y **nosotros en el 4º**, con nuestro % o con 0.
+// Lo segundo es lo que hace que la columna siempre conteste «cuánto nos cede», que es lo que el
+// ejecutivo vino a leer: una lista de los 4 mayores puede no incluirnos, y ahí la ausencia se leería
+// como un 0 que nadie escribió. Y el reparto sigue sumando 100 en los dos casos: los chips son una
+// partición del mismo detalle, no un ranking recortado.
+//
+// Vive acá y no dentro del `map` de la celda porque es una REGLA —dos ramas y varios bordes— y una
+// regla escrita adentro de un JSX no se puede probar.
+function mixSowChips(mix, n = 4) {
+  const det = (mix || [])
+    .flatMap((p) => (p.detalle || []).map((d) => ({ ...d, nuestro: !!p.nuestro })))
+    .sort((a, b) => b.pct - a.pct || String(a.nombre || "").localeCompare(String(b.nombre || "")));
+  // Sin detalle por cesionario no hay a quién nombrar: se cae a las cuatro porciones, que es lo que
+  // esta columna mostraba antes de que el activo publicara el desglose.
+  if (!det.length) return mixSowVisible(mix).map((x) => ({ key: x.porcion, label: x.label, nombre: x.label, pct: x.pct, nuestro: !!x.nuestro, porcion: x.porcion, detalle: x.detalle || [], otros: false }));
+  const uno = (d) => ({ key: d.rut || d.nombre, label: (cesionarioDe(d.rut || d.nombre) || {}).corto || d.nombre,
+                        nombre: d.nombre, pct: d.pct, nuestro: d.nuestro, porcion: d.porcion, detalle: [d], otros: false });
+  const bolsa = (arr) => ({ key: "otros", label: "Otros", nombre: "Otros", otros: true, nuestro: false,
+                            pct: Math.round(arr.reduce((a, b) => a + (+b.pct || 0), 0) * 10) / 10, detalle: arr });
+  const iSec = det.findIndex((d) => d.nuestro);
+  if (iSec >= 0 && iSec < n - 1) {
+    const cab = det.slice(0, n - 1), resto = det.slice(n - 1);
+    return resto.length ? [...cab.map(uno), bolsa(resto)] : cab.map(uno);
+  }
+  // Fuera de los primeros: nuestra porción se saca del ranking y se reserva el último chip, así que
+  // «Otros» agrupa sólo lo ajeno — si nos contara adentro, el chip de al lado nos contaría dos veces.
+  const ajenos = det.filter((d) => !d.nuestro);
+  const cab = ajenos.slice(0, n - 2), resto = ajenos.slice(n - 2);
+  const nuestro = iSec >= 0 ? uno(det[iSec])
+    : { key: "nuestro", label: "Security", nombre: "Factoring Security", pct: 0, nuestro: true, porcion: "security", detalle: [], otros: false };
+  return [...cab.map(uno), ...(resto.length ? [bolsa(resto)] : []), nuestro];
+}
 // El mix de una OPORTUNIDAD, por el RUT del cedente. Memoizado: el tubo dibuja ~100 filas.
 const _mixDeal = new Map();
 function mixSowDeal(deal) {
@@ -1994,7 +2040,10 @@ function tramoNota(n) { if (n == null) return "D"; if (n > 4.6) return "A"; if (
 //   CAT-5 lleva subtipo 5A/5B/5C/5D según el tramo dominante del monto NO-malo.
 function catShares(items, tol = 0.05) {
   const tot = items.reduce((s, x) => s + (x.m || 0), 0);
-  if (!tot) return { cat: "CAT-1", sub: null, sA: 0, sB: 0, sC: 0, sD: 0 };
+  // NADA QUE CLASIFICAR NO ES «CAT-1». Devolvía la MEJOR categoría con cero datos —y `catDisp` la
+  // rotulaba «100% muy buenos»—, que es una afirmación sacada de un conjunto vacío: el mismo error que
+  // devolver cuatro ceros donde no hay medición (regla 13-nonies). `null` es el resultado correcto.
+  if (!tot) return { cat: null, sub: null, sA: 0, sB: 0, sC: 0, sD: 0 };
   const sh = { A: 0, B: 0, C: 0, D: 0 };
   items.forEach((x) => { sh[tramoNota(x.n)] += (x.m || 0) / tot; });
   const { A, B, C, D } = sh;
@@ -2007,30 +2056,44 @@ function catShares(items, tol = 0.05) {
   const cat = A >= 0.80 ? "CAT-1" : A >= 0.50 ? "CAT-2" : (A + B) >= 0.80 ? "CAT-3" : "CAT-4";
   return { cat, sub: null, sA: A, sB: B, sC: C, sD: D };
 }
-// CAT de una oportunidad: se calcula EN VIVO desde las facturas de la operación (facturasOp) o, en su
-// defecto, desde sus deudores. Al cambiar la composición de folios, la CAT se recalcula sola.
+// CAT de la OFERTA: se calcula EN VIVO sobre las facturas que están en ella (`facturasOp`), así que
+// cambiar folios la recalcula sola. **No depende de simular** —es aritmética sobre notas y montos, no
+// necesita motor— pero sí de que haya algo elegido: con la oferta VACÍA no hay paquete que clasificar
+// y devuelve `null`.
+//
+// Un `facturasOp` que es un ARRAY VACÍO es una respuesta —«la oferta está vacía»— y no ausencia de
+// dato; sólo `undefined` significa «esta operación no viene itemizada». Es la misma distinción que ya
+// hacía `itemizarFacturas`, y no hacerla acá era justamente lo que dejaba a una oportunidad recién
+// detectada mostrando una CAT como si describiera su oferta.
 function catDeal(deal) {
-  if (!deal) return { cat: "CAT-1", sub: null, sA: 0, sB: 0, sC: 0, sD: 0 };
-  let items = [];
-  if (deal.facturasOp && deal.facturasOp.length) {
-    items = deal.facturasOp.map((f) => ({ m: f.monto || 0, n: notaDeudor(f.deudor, f.rutRecep) }));
-  } else if (deal.deudores && deal.deudores.length) {
-    items = deal.deudores.map((d) => ({ m: d.monto || 0, n: notaDeudor(d.name, d.rut) }));
-  } else if (deal.deudor) {
-    items = [{ m: deal.monto || 1, n: notaDeudor(deal.deudor, deal.rutDeudor || (deal.facturasOp && deal.facturasOp[0] && deal.facturasOp[0].rutRecep)) }];
-  }
-  return catShares(items);
+  const fs = deal && Array.isArray(deal.facturasOp) ? deal.facturasOp : null;
+  if (!fs) return catShares([]);
+  return catShares(fs.map((f) => ({ m: f.monto || 0, n: notaDeudor(f.deudor, f.rutRecep) })));
 }
-// Etiqueta de CAT a mostrar (el subtipo para CAT-5) + descriptor corto ponderado por monto.
+// CAT de lo DETECTADO: los deudores que el inbound trajo con la oportunidad. No es la de la oferta
+// —nadie eligió todavía qué comprar— pero es la que explica por qué esta oportunidad existe y con qué
+// calidad de cartera se va a trabajar, así que se muestra mientras la oferta esté vacía, dicho con
+// esa palabra. Antes las dos salían por la misma puerta y no había forma de distinguirlas.
+function catPotencial(deal) {
+  if (!deal) return catShares([]);
+  if (deal.deudores && deal.deudores.length) return catShares(deal.deudores.map((d) => ({ m: d.monto || 0, n: notaDeudor(d.name, d.rut) })));
+  if (deal.deudor) return catShares([{ m: deal.monto || 1, n: notaDeudor(deal.deudor, deal.rutDeudor) }]);
+  return catShares([]);
+}
+// Etiqueta de CAT a mostrar (el subtipo para CAT-5) + descriptor corto ponderado por monto, y de QUÉ
+// es: `oferta` cuando hay facturas elegidas, `disponible` cuando todavía no y se está describiendo lo
+// que el inbound detectó. Devuelve `null` cuando no hay ni lo uno ni lo otro — no hay CAT que mostrar.
 function catDisp(deal) {
-  const ci = catDeal(deal);
+  const deOferta = catDeal(deal);
+  const ci = deOferta.cat ? deOferta : catPotencial(deal);
+  if (!ci.cat) return null;
   const label = ci.sub || ci.cat;
   let q;
   if (ci.cat === "CAT-5") q = `${Math.round(ci.sD * 100)}% mala/sin nota`;
   else if (ci.cat === "CAT-4") q = "límite de compra";
   else if (ci.cat === "CAT-3") q = `${Math.round((ci.sA + ci.sB) * 100)}% buenos`;
   else q = `${Math.round(ci.sA * 100)}% muy buenos`;
-  return { ...ci, label, q };
+  return { ...ci, label, q, base: deOferta.cat ? "oferta" : "disponible" };
 }
 // Línea de crédito aprobada por cliente (en MM). FUENTE ÚNICA: LINEAS_DATA, que es lo que muestra el
 // módulo Líneas y lo que cuenta el Dashboard. Antes esto devolvía un hash sintético por RUT con mínimo
@@ -2053,14 +2116,16 @@ function lineaIdxPorRut() {
 // antes de que la línea exista, no como el camino normal.
 function constituirLinea(sol) {
   const rut = sol && sol.rut;
-  const aprobada = +(+((sol && (sol.propFactoring || sol.totalPropuesto)) || 0)).toFixed(1);
+  // La solicitud viaja en PESOS, como todo el sistema: `toFixed(1)` era un resto de cuando el wizard
+  // capturaba millones y dejaba una línea con décimas de peso.
+  const aprobada = mmRound((sol && (sol.propFactoring || sol.totalPropuesto)) || 0);
   if (!rut || !(aprobada > 0)) return null;
   const idx = lineaIdxPorRut();
   const previa = idx && idx.get(rut);
   if (previa) {   // renovación o modificación: cambia el monto, se conserva el uso
     previa.aprobada = aprobada;
-    previa.disponible = +(aprobada - (previa.uso || 0)).toFixed(1);
-    previa.proyeccion = +((previa.uso || 0) + (previa.montoOp || 0)).toFixed(1);
+    previa.disponible = mmRound(aprobada - (previa.uso || 0));
+    previa.proyeccion = mmRound((previa.uso || 0) + (previa.montoOp || 0));
     if (typeof invalidarVisado === "function") invalidarVisado();
     return previa;
   }
@@ -6943,6 +7008,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [otrasAbierto, setOtrasAbierto] = useState(true); // «Otras facturas disponibles» colapsable: es el pool para agregar, no el contenido principal
   const [otrasTab, setOtrasTab] = useState("conLinea"); // pestaña de «Deudores disponibles»: conLinea | resto
   const [otrasVista, setOtrasVista] = useState("deudor"); // cómo se lista: por deudor (acordeón) | por factura (plana)
+  // La MISMA elección para la oferta: son dos preguntas distintas sobre la misma lista («a quién le
+  // compro» / «qué documentos tengo»), así que la sección de arriba la ofrece igual que la de abajo.
+  const [ofertaVista, setOfertaVista] = useState("deudor");
   // Carga del sub-tab Detalle: su data (scoring, línea, otorgamiento y verificación por deudor) es de
   // APIs/BD. Al abrirlo o cambiar de oportunidad se muestra el esqueleto mientras "resuelve la query".
   const [detCargando, setDetCargando] = useState(false);
@@ -7278,7 +7346,19 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <Pill style={{ backgroundColor: TAG_COLORS[deal.tag]?.bg, color: TAG_COLORS[deal.tag]?.fg }}>{deal.tag}</Pill>
-            {deal.cat && (() => { const cd = catDisp(deal); return <Pill style={{ backgroundColor: catMeta(cd.cat).bg, color: catMeta(cd.cat).fg }}>{cd.label} · {cd.q}</Pill>; })()}
+            {(() => {
+              // La CAT clasifica el paquete que se COMPRA. Con la oferta vacía todavía no hay tal
+              // paquete, así que lo que se muestra es la de los deudores que el inbound DETECTÓ —y lo
+              // dice con esa palabra, en una píldora sin relleno—: antes salía idéntica a la de una
+              // oferta armada y no había forma de saber cuál de las dos estabas leyendo.
+              const cd = catDisp(deal);
+              if (!cd) return null;
+              const m = catMeta(cd.cat);
+              return cd.base === "disponible"
+                ? <Pill style={{ backgroundColor: "#fff", color: m.fg, border: `1px solid ${m.fg}33` }}
+                    title={`${cd.label} · ${cd.q} sobre los deudores disponibles de este cliente. La CAT de la OFERTA se calcula con las facturas que incluyas: hoy está vacía.`}>{cd.label} · disponible</Pill>
+                : <Pill style={{ backgroundColor: m.bg, color: m.fg }} title={`${cd.label} · ${cd.q}. ${m.desc}`}>{cd.label} · {cd.q}</Pill>;
+            })()}
             {/* `deal.exec` guarda las INICIALES; el nombre vive en PC_EXECS. */}
             {deal.exec && <Pill style={{ backgroundColor: "#F9FAFB", color: C.sub, border: `1px solid ${C.line}` }}>{(PC_EXECS.find((e) => e.ini === deal.exec) || {}).nombre || deal.exec}</Pill>}
             {esPrimeraOperacionCliente(deal) && <TagNuevo clase="t10" />}
@@ -8030,16 +8110,29 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         const vencDefault = (f) => fmtFechaDoc(fechasDocumento(f).vencimiento);
                         // Lista de facturas en escala de grises · Folio · Tipo · Nota · Emisión · Vencim (con calendario) · Tasa · Monto · (retirar)
                         const GC_D = "88px 62px 132px 74px 186px 158px 22px";
-                        const GC_O = "72px 100px 92px 92px 60px 84px 128px 96px";
+                        // Columnas de las facturas DISPONIBLES: tipo doc · folio · [RUT y razón social del
+                        // deudor, sólo en la plana] · emisión · vencimiento (editable) · monto · estado ·
+                        // acción. **Sin tasa**: estas facturas todavía no están en la oferta, así que su
+                        // precio no existe —lo fija la simulación— y mostrar el sugerido acá lo afirma
+                        // antes de tiempo. En el tab de Verificación sí va la tasa, y eso no es una
+                        // inconsistencia: ahí el documento YA está en la oferta y el precio es un hecho de
+                        // la operación que el ejecutivo pudo pisar (regla 6).
+                        const GC_O = "100px 72px 92px 120px 84px 128px 96px";
                         // En la vista de FACTURAS la lista es plana: sin el acordeón que las agrupa, cada
-                        // fila tiene que decir de qué deudor es o deja de significar nada.
-                        const GC_OP = "minmax(140px,1fr) " + GC_O;
-                        const headDoc = (
-                          <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: GC_D, color: "#B4B2BC", borderBottom: `1px solid ${C.line}` }}>
-                            <span>Tipo doc.</span><span>Folio</span><span>F. vencim.</span><span className="text-right">Monto</span><span>Financiada con</span><span>Estado</span><span></span>
+                        // fila tiene que decir de qué deudor es o deja de significar nada. Y ahí el deudor
+                        // se identifica con su RUT además de su nombre, que es lo que no se repite.
+                        const GC_OP = "100px 72px 104px minmax(140px,1fr) 92px 120px 84px 128px 96px";
+                        // En la vista por FACTURA de la oferta cada fila tiene que decir de quién es, igual
+                        // que en «Deudores disponibles»: sin el acordeón que las agrupa, el deudor desaparece.
+                        const GC_DP = "88px 62px 104px minmax(140px,1fr) 132px 74px 186px 158px 22px";
+                        const headDoc = (plana) => (
+                          <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: plana ? GC_DP : GC_D, color: "#B4B2BC", borderBottom: `1px solid ${C.line}` }}>
+                            <span>Tipo doc.</span><span>Folio</span>
+                            {plana && <><span>RUT deudor</span><span>Razón social</span></>}
+                            <span>F. vencim.</span><span className="text-right">Monto</span><span>Financiada con</span><span>Estado</span><span></span>
                           </div>
                         );
-                        const filaDoc = (f) => {
+                        const filaDoc = (f, plana) => {
                           const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                           const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
                           const vencVal = vencFecha[f.id] || ""; const vencTxt = vencVal ? fmtDMY(vencVal) : vencDefault(f);
@@ -8049,9 +8142,13 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           // del rechazo se explica en lenguaje de negocio, nunca con el nombre técnico del nivel.
                           const ef = evalFac[f.id];
                           return (
-                            <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: GC_D, borderBottom: "1px solid #F0EFF3", color: GRAY }}>
+                            <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: plana ? GC_DP : GC_D, borderBottom: "1px solid #F0EFF3", color: GRAY }}>
                               <span className="truncate t9" title={tdoc}>{tdoc}</span>
                               <span style={{ fontVariantNumeric: "tabular-nums" }}>#{f.folio}</span>
+                              {plana && (<>
+                                <span className="truncate t9" style={{ fontVariantNumeric: "tabular-nums" }} title={f.rutRecep || "Sin RUT en el documento"}>{f.rutRecep || "—"}</span>
+                                <span className="truncate font-medium" style={{ color: C.ink }} title={f.deudor}>{f.deudor}</span>
+                              </>)}
                               <span className="relative inline-flex items-center gap-1.5 t9">
                                 <span>{vencTxt}</span>
                                 {!bloqueado && (<>
@@ -8070,35 +8167,62 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   : ef.estado === "CON_LINEA" ? <span className="t9 font-semibold" style={{ color: "#16A34A" }}>Se puede cursar</span>
                                   : <><span className="block t9 font-semibold" style={{ color: "#EF4444" }}>Requiere comité</span><span className="block truncate t7" style={{ color: C.faint }} title={ef.motivoTexto}>{ef.motivoTexto}</span></>}
                               </span>
-                              {!bloqueado ? <button onClick={() => setConfirmRetiro(f)} disabled={validas.length <= 1} title={validas.length <= 1 ? "La oferta debe tener al menos una factura" : "Retirar de la oferta"} className="justify-self-center rounded p-0.5 disabled:opacity-30" style={{ color: "#B4B2BC" }}><Trash2 size={12} /></button> : <span></span>}
+                              {/* RETIRAR. Estaba deshabilitado con una sola factura —«la oferta debe tener al
+                                  menos una»— y con la oferta en una factura el ícono quedaba en gris sobre
+                                  gris: el usuario lo leyó como que el botón faltaba. La oferta VACÍA es un
+                                  estado normal desde que la pantalla la dibuja con su panel de arranque, así
+                                  que retirar la última está permitido y vuelve ahí. Y el ícono se ve: #6B7280
+                                  con hover, no #B4B2BC. */}
+                              {!bloqueado ? <button onClick={() => setConfirmRetiro(f)} title="Retirar esta factura de la oferta" className="justify-self-center rounded p-0.5 hover:bg-stone-100" style={{ color: C.sub }}><Trash2 size={13} /></button> : <span></span>}
                             </div>
                           );
                         };
                         const headOtra = (plana) => (
                           <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: plana ? GC_OP : GC_O, color: C.faint, borderBottom: `1px solid ${C.line}` }}>
-                            {plana && <span>Empresa deudora</span>}
-                            <span>Folio</span><span>Tipo doc.</span><span>F. emisión</span><span>F. vencim.</span><span className="text-right">Tasa</span><span className="text-right">Monto</span><span>Estado</span><span>Acción</span>
+                            <span>Tipo doc.</span><span>Folio</span>
+                            {plana && <><span>RUT deudor</span><span>Razón social</span></>}
+                            <span>F. emisión</span><span>F. vencim.</span><span className="text-right">Monto</span><span>Estado</span><span>Acción</span>
                           </div>
                         );
                         const filaOtraD = (f, plana) => {
                           const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                           const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
-                          const fd = fechasDocumento(f);
-                          const em = fmtFechaDoc(fd.emision); const venc = fmtFechaDoc(fd.vencimiento);
-                          const tasaF = ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + CFG_ACTIVA.costoFondo).toFixed(2);
+                          const em = fmtFechaDoc(fechasDocumento(f).emision);
+                          // El vencimiento es EDITABLE, con el mismo calendario y el mismo estado por
+                          // folio (`vencFecha`) que la tabla de la oferta: así lo que el ejecutivo corrige
+                          // acá viaja con la factura cuando la incorpora, en vez de perderse al cambiar de
+                          // tabla. El dato del activo no se toca —la fecha del documento sigue siendo la
+                          // que trae el A1 (regla 13-ter)—: lo que se guarda es la corrección, y por eso
+                          // el default se sigue leyendo del resolver.
+                          const vencVal = vencFecha[f.id] || ""; const venc = vencVal ? fmtDMY(vencVal) : fmtFechaDoc(fechasDocumento(f).vencimiento);
                           const est = estadoCandidata(f, deal); const bloq = est.bloqueada;
                           const agregar = () => { onIncorporarFacturas(deal.id, [f]); setReevalPend(true); };
                           return (
                             <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: plana ? GC_OP : GC_O, borderBottom: `1px solid ${C.line}`, opacity: bloq ? 0.55 : 1 }}>
-                              {plana && (() => {
-                                const nt = notaDeudor(f.deudor) || 0;
-                                return <span className="truncate font-medium" style={{ color: C.ink }} title={`${f.deudor}${nt ? ` · Nota ${nt}` : ""}`}>{f.deudor}</span>;
-                              })()}
-                              <span className="font-medium" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>#{f.folio}</span>
                               <span className="truncate t9" style={{ color: C.sub }} title={tdoc}>{tdoc}</span>
+                              <span className="font-medium" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>#{f.folio}</span>
+                              {plana && (() => {
+                                const nt = notaDeudor(f.deudor, f.rutRecep) || 0;
+                                return (<>
+                                  <span className="truncate t9" style={{ color: C.sub, fontVariantNumeric: "tabular-nums" }} title={f.rutRecep || "Sin RUT en el documento"}>{f.rutRecep || "—"}</span>
+                                  <span className="truncate font-medium" style={{ color: C.ink }} title={`${f.deudor}${nt ? ` · Nota ${nt}` : ""}`}>{f.deudor}</span>
+                                </>);
+                              })()}
                               <span className="t9" style={{ color: C.faint }}>{em}</span>
-                              <span className="t9" style={{ color: C.faint }}>{venc}</span>
-                              <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
+                              {/* Mismo patrón que la tabla de la oferta: la fecha se lee, y el ícono abre el
+                                  calendario nativo. El input va oculto porque un `date` completo no cabe en
+                                  la columna y además se ve distinto en cada navegador. */}
+                              <span className="relative inline-flex items-center gap-1.5 t9" style={{ color: C.faint }}>
+                                <span>{venc}</span>
+                                {!bloqueado && (<>
+                                  <button onClick={(e) => { const inp = e.currentTarget.parentElement.querySelector("input[type=date]"); if (inp) { inp.showPicker ? inp.showPicker() : inp.click(); } }}
+                                    title="Editar el vencimiento de esta factura" className="inline-flex" style={{ color: "#9CA3AF" }}>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg>
+                                  </button>
+                                  <input type="date" value={vencVal || fechasDocumento(f).vencimiento} onChange={(e) => { setVencFecha((m) => ({ ...m, [f.id]: e.target.value })); setReevalPend(true); }}
+                                    style={{ position: "absolute", left: 22, bottom: 0, width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
+                                </>)}
+                              </span>
                               <span className="text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.monto)}</span>
                               {/* ¿Entra en la línea si la agrego? Se compara su monto contra la holgura que le
                                   queda HOY al deudor: es la pregunta que uno se hace mirando la fila, y no
@@ -8508,8 +8632,24 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       </div>
                                     </div>
                                   ) : (<>
+                                  {/* SI YA ELIGIÓ A MANO, LO QUE FALTA ES SIMULAR. Este panel ofrecía sólo
+                                      las tres selecciones rápidas, que REEMPLAZAN la oferta: quien agregaba
+                                      facturas una por una desde «Deudores disponibles» quedaba con su
+                                      selección hecha, el panel encima tapando el resumen y ninguna forma de
+                                      simularla — el único camino era descartar lo suyo y aceptar un atajo. */}
+                                  {validas.length > 0 ? (<>
+                                    <div className="t15 font-semibold" style={{ color: C.ink }}>Tienes {validas.length} factura{validas.length === 1 ? "" : "s"} elegida{validas.length === 1 ? "" : "s"} · {fmtMM(montoValido)}</div>
+                                    <div className="mt-0.5 t10" style={{ color: C.sub }}>Simular calcula la asignación de línea, la tasa, los descuentos y el monto a girar de lo que elegiste. Después puedes seguir ajustándola factura a factura.</div>
+                                    <button onClick={() => elegirInicio(validas, "Selección manual")} disabled={bloqueado}
+                                      className="mt-2 inline-flex items-center gap-1.5 rounded-full px-4 py-2 t11 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                                      style={{ backgroundColor: C.indigo, boxShadow: "0 6px 16px rgba(112,62,255,.28)" }}>
+                                      <Zap size={13} /> Simular la oferta · {validas.length} fact. · {fmtMM(montoValido)}
+                                    </button>
+                                    {opcionesInicio.length > 0 && <div className="mt-3 t10 uppercase tracking-wide" style={{ color: C.faint }}>O reemplaza la selección por</div>}
+                                  </>) : (<>
                                   <div className="t15 font-semibold" style={{ color: C.ink }}>¿Qué facturas quieres incluir en la oferta?</div>
                                   <div className="mt-0.5 t10" style={{ color: C.sub }}>Al elegir se arma la oferta y se simula: asignación de línea, tasa, descuentos y monto a girar. Después puedes ajustarla factura a factura.</div>
+                                  </>)}
                                   {opcionesInicio.length ? (
                                     /* Una opcion por linea: son alternativas excluyentes que se comparan
                                        leyendo la misma cifra en la misma posicion, y en fila se rompian
@@ -8523,7 +8663,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       ))}
                                     </div>
                                   ) : (
-                                    <div className="mt-2 t10" style={{ color: C.faint }}>Este cliente no tiene facturas disponibles para armar una oferta.</div>
+                                    validas.length > 0 ? null : <div className="mt-2 t10" style={{ color: C.faint }}>Este cliente no tiene facturas disponibles para armar una oferta.</div>
                                   )}
                                   </>)}
                                 </div>
@@ -8544,7 +8684,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   caja de tres bloques que repetía el conteo de deudores y le robaba altura
                                   a la lista, que es el contenido real de la pantalla. */}
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Deudores en la oferta</span>
+                                <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Documentos en la oferta</span>
                                 <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub, border: `1px solid ${C.line}` }}
                                   title="Deudores con facturas en esta oferta">{dq ? `${deudOfF.length} de ${deudOf.length}` : deudOf.length} deudor{!dq && deudOf.length === 1 ? "" : "es"}</span>
                                 <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub, border: `1px solid ${C.line}` }}
@@ -8553,6 +8693,22 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   title="Monto seleccionado para esta oferta">{fmtMM(totalOf)}</span>
                               </div>
                               <div className="flex items-center gap-2">
+                                {/* MISMO control que «Deudores disponibles», y por la misma razón: no parte el
+                                    contenido, lo presenta de otra forma. Por eso el título de la sección dejó de
+                                    decir «Deudores» y dice «Documentos»: con la vista plana lo que se lista son
+                                    facturas, y un título que nombra sólo una de las dos vistas contradice a la otra. */}
+                                {validas.length > 0 && (
+                                  <div className="flex shrink-0 items-center rounded-lg p-0.5" style={{ backgroundColor: "#E7E4F0" }}>
+                                    {[{ k: "deudor", lbl: "Por deudor", tip: "Un acordeón por empresa deudora, con sus facturas dentro." },
+                                      { k: "factura", lbl: "Por factura", tip: "Todas las facturas de la oferta en una sola lista, de la más nueva a la más antigua (folio descendente)." }].map((v) => {
+                                      const on = ofertaVista === v.k;
+                                      return (
+                                        <button key={v.k} onClick={() => setOfertaVista(v.k)} title={v.tip} className="rounded-md px-2 py-0.5 t10 font-semibold"
+                                          style={{ backgroundColor: on ? "#fff" : "transparent", color: on ? C.indigo : C.sub }}>{v.lbl}</button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                                 <div className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", width: 250 }}>
                                   <Search size={12} style={{ color: C.faint }} />
                                   <input value={detQuery} onChange={(e) => { setDetQuery(e.target.value); setDetOtrasPage(0); }} placeholder="Buscar empresa deudora o folio…" className="w-full bg-transparent t10 outline-none" style={{ color: C.ink }} />
@@ -8796,14 +8952,31 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     estado de ENTRADA de la pantalla, no un borde raro: se dibuja como caja
                                     para que la seccion conserve su altura y el ojo no salte al pool. */}
                                 {deudOfF.length === 0 && (
-                                  <div className="flex items-center justify-center rounded-xl px-3 t10" style={{ minHeight: 56, backgroundColor: "#F7F7FA", border: `1px solid ${C.line}`, color: C.faint }}>
+                                  /* El estado VACÍO es el de entrada de esta pantalla, no un borde raro, así
+                                     que tiene que verse: con #F7F7FA sobre blanco y texto en C.faint la caja
+                                     desaparecía y el mensaje se leía como un placeholder apagado. Fondo un
+                                     tono más oscuro —el mismo gris de los chips—, borde definido, más alto y
+                                     el texto en el cuerpo de la pantalla (t11) y en C.sub. */
+                                  <div className="flex items-center justify-center rounded-xl px-3 t11 font-medium" style={{ minHeight: 72, backgroundColor: "#EDECF3", border: "1px solid #DEDCE7", color: C.sub }}>
                                     {dq ? `Ningún deudor de la oferta coincide con «${detQuery}».` : "Ninguna factura seleccionada"}
                                   </div>
                                 )}
-                                {deudOfF.map((dn) => { const grupo = grpOf[dn]; const key = "of:" + dn; const abierto = detOpen[key] === true; return (
+                                {/* VISTA PLANA de la oferta: las mismas facturas, ordenadas por folio
+                                    descendente, con el deudor en su propia columna. Es una VISTA y no un
+                                    filtro —trae exactamente lo mismo que los acordeones— y por eso se arma
+                                    con la misma función que la plana de «Deudores disponibles». */}
+                                {ofertaVista === "factura" && deudOfF.length > 0 && (
+                                  <div className="overflow-x-auto rounded-xl" style={{ border: "1px solid #E4E2EC", backgroundColor: "#FCFCFD", padding: "6px 14px 8px" }}>
+                                    <div style={{ minWidth: 1040 }}>
+                                      {headDoc(true)}
+                                      {facturasDeDeudores(deudOfF, grpOf).map((f) => filaDoc(f, true))}
+                                    </div>
+                                  </div>
+                                )}
+                                {ofertaVista !== "factura" && deudOfF.map((dn) => { const grupo = grpOf[dn]; const key = "of:" + dn; const abierto = detOpen[key] === true; return (
                                   <div key={dn} className="mb-2" style={{ border: "1px solid #E4E2EC", borderRadius: 12, overflow: "hidden", backgroundColor: "#F5F4F8" }}>
                                     <button onClick={() => setDetOpen((m) => ({ ...m, [key]: !abierto }))} className="block w-full text-left">{cabDeudor(dn, grupo, abierto, true)}</button>
-                                    {abierto && <div className="overflow-x-auto" style={{ backgroundColor: "#FCFCFD", borderTop: `1px solid ${C.line}`, padding: "4px 14px 8px" }}><div style={{ minWidth: 700 }}>{headDoc}{grupo.map(filaDoc)}<div className="grid items-center gap-2 py-1.5 t10 font-semibold" style={{ gridTemplateColumns: GC_D, color: "#7C7A85", borderTop: "1px solid #E4E3E9" }}><span style={{ gridColumn: "1 / 4" }}>Subtotal ({grupo.length} fact.)</span><span className="text-right">{fmtMM(+grupo.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1))}</span><span style={{ gridColumn: "5 / 8" }}></span></div>{(() => {
+                                    {abierto && <div className="overflow-x-auto" style={{ backgroundColor: "#FCFCFD", borderTop: `1px solid ${C.line}`, padding: "4px 14px 8px" }}><div style={{ minWidth: 700 }}>{headDoc()}{grupo.map((f) => filaDoc(f))}<div className="grid items-center gap-2 py-1.5 t10 font-semibold" style={{ gridTemplateColumns: GC_D, color: "#7C7A85", borderTop: "1px solid #E4E3E9" }}><span style={{ gridColumn: "1 / 4" }}>Subtotal ({grupo.length} fact.)</span><span className="text-right">{fmtMM(+grupo.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1))}</span><span style={{ gridColumn: "5 / 8" }}></span></div>{(() => {
                                       // Facturas de ESTE deudor que aún no están en la oferta. Vivían sólo en la
                                       // sección de abajo, así que sumarle una factura a un deudor ya presente
                                       // obligaba a bajar y buscarlo de nuevo.
@@ -8881,10 +9054,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   </div>
                                 )}
                                 {deudOtF.length === 0 && <div className="t10 py-2" style={{ color: C.faint }}>{dq ? `Sin otras facturas que coincidan con «${detQuery}».` : "No hay otras facturas disponibles."}</div>}
-                                {deudOtF.length > 0 && otTab.lista.length === 0 && <div className="t10 py-2" style={{ color: C.faint }}>{otTab.vacio}</div>}
+                                {deudOtF.length > 0 && otTab.lista.length === 0 && <div className="t11 py-3 font-medium" style={{ color: C.sub }}>{otTab.vacio}</div>}
                                 {plana && facOtPage.length > 0 && (
                                   <div className="overflow-x-auto rounded-xl p-2.5" style={{ backgroundColor: "#FCFCFD", border: "1px solid #E4E2EC" }}>
-                                    <div style={{ minWidth: 900 }}>{headOtra(true)}{facOtPage.map((f) => filaOtraD(f, true))}</div>
+                                    <div style={{ minWidth: 1000 }}>{headOtra(true)}{facOtPage.map((f) => filaOtraD(f, true))}</div>
                                   </div>
                                 )}
                                 {deudOtPage.map((dn) => { const grupo = grpOt[dn]; const abierto = detOpen["ot:" + dn] === true; return (
@@ -9535,13 +9708,16 @@ function sowEstrategia(ev) {
 function OppTags({ ev }) {
   if (!ev || !ev.cat) return null;
   const cd = catDisp(ev);
-  const catCol = catMeta(cd.cat);
+  const catCol = cd ? catMeta(cd.cat) : CAT_NEUTRA;
   const sm = sowEstrategia(ev) || { Icon: ArrowRight, bg: "#FFF7ED", fg: "#C2410C", lab: "estable", tip: "" };
   const SIcon = sm.Icon;
   const sowTip = sm.tip;
   return (
     <div className="mt-1 flex flex-wrap items-center gap-1">
-      <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: catCol.bg, color: catCol.fg, cursor: "help" }} title={`${cd.label} · ${cd.q}. ${catMeta(cd.cat).desc}`}>{cd.label}</span>
+      {/* Sin relleno cuando la CAT es la de lo DISPONIBLE y no la de la oferta: en la tarjeta no hay
+          espacio para decirlo con palabras, pero la diferencia tiene que verse. El tooltip la dice. */}
+      {cd && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: cd.base === "oferta" ? catCol.bg : "#fff", color: catCol.fg, border: cd.base === "oferta" ? undefined : `1px solid ${catCol.fg}33`, cursor: "help" }}
+        title={cd.base === "oferta" ? `${cd.label} · ${cd.q}. ${catMeta(cd.cat).desc}` : `${cd.label} · ${cd.q} sobre los deudores DISPONIBLES: la oferta todavía está vacía, así que aún no hay CAT de la operación.`}>{cd.label}</span>}
       {ev.stage !== "perdida" && (<>
       <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: sm.bg, color: sm.fg, cursor: "help" }} title={sowTip}><SIcon size={11} /> SOW {sm.lab}</span>
       {(() => { const pp = paramsPricing(); const a = pp.sowAjuste[sowEstado(ev)] || pp.sowAjuste.estable; return a.pts > 0
@@ -11047,23 +11223,44 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                     // Sin mix no se dibuja un cero: un prospecto que nunca cedió no se financia «0% con
                     // nosotros», simplemente no tiene esta medición todavía.
                     if (!mix) return <span className="t10" style={{ color: C.faint }}>Sin medición</span>;
-                    const visibles = mixSowVisible(mix);
                     return (
-                      <div className="flex flex-col items-start gap-1">
-                        {visibles.map((x) => (
-                          <TipDesglose key={x.label} titulo={x.label} color={x.nuestro ? C.indigo : C.sub}
-                            nota={x.nuestro
-                              ? `${x.pct}% del financiamiento por cesión del cliente es nuestro: cartera propia, no competencia.`
-                              : `${x.pct}% del financiamiento por cesión del cliente. Con quién, y cuánto cada uno:`}
-                            items={x.nuestro ? null : x.detalle.map((d) => ({ name: d.nombre, val: d.pct + "%" }))}>
-                            <span className="inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 t9 font-semibold"
-                              style={{ backgroundColor: x.nuestro ? C.lilac : "#F0EFF3", color: x.nuestro ? C.indigo : C.sub }}>
-                              {x.nuestro && <span aria-hidden="true">★</span>}
-                              <span className="truncate">{x.label}</span>
-                              <span style={{ fontVariantNumeric: "tabular-nums" }}>· {x.pct}%</span>
+                      <div className="flex flex-col items-start gap-1" style={{ maxWidth: "100%", overflow: "hidden" }}>
+                        {mixSowChips(mix).map((x) => {
+                          // El chip lleva el nombre CORTO del padrón —en esta columna no caben
+                          // «Servicios Financieros Progreso · 10%»— y la razón social completa va en
+                          // el tooltip, junto con la porción a la que pertenece: la partición del
+                          // tenant no desaparece, pasa a ser el contexto de cada nombre.
+                          // La columna es de ancho FIJO (`tableLayout: fixed`, 214 px), así que un
+                          // nombre largo no la ensancha: se SALE. El que se recorta con «…» es el
+                          // NOMBRE —y hace falta `minWidth: 0`, porque un hijo de flex no encoge por
+                          // debajo de su contenido y sin eso el `text-overflow` no llega a actuar— y
+                          // nunca el porcentaje, que es el dato: el ★ y el «· 12%» no encogen. La
+                          // razón social completa va en el tooltip.
+                          // Los tres van en `style` y no en clases de Tailwind a propósito: el
+                          // bundle vendorizado es CORE y una clase que no trae NO FALLA, simplemente
+                          // no aplica — el mismo agujero de `t14`/`t16`, y acá se vería como un chip
+                          // que se sale de la columna en el navegador de Mauricio y en ninguna prueba.
+                          const chip = (
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 t9 font-semibold"
+                              style={{ maxWidth: "100%", backgroundColor: x.nuestro ? C.lilac : "#F0EFF3", color: x.nuestro ? C.indigo : C.sub }}>
+                              {x.nuestro && <span style={{ flexShrink: 0 }} aria-hidden="true">★</span>}
+                              <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.label}</span>
+                              <span style={{ flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>· {x.pct}%</span>
                             </span>
-                          </TipDesglose>
-                        ))}
+                          );
+                          // Sólo «Otros» necesita la tarjeta flotante: es el único que esconde nombres.
+                          if (x.otros) return (
+                            <TipDesglose key={x.key} titulo={`Otros · ${x.pct}%`} color={C.sub}
+                              nota="El resto de las contrapartes con que se financia este cliente:"
+                              items={x.detalle.map((d) => ({ name: d.nombre, val: d.pct + "%" }))}>{chip}</TipDesglose>
+                          );
+                          const tip = x.nuestro
+                            ? (x.pct > 0
+                              ? `${x.nombre} · ${x.pct}% del financiamiento por cesión del cliente es nuestro: cartera propia, no competencia.`
+                              : "Este cliente no nos cede ninguna factura: todo su financiamiento por cesión se lo llevan otros.")
+                            : `${x.nombre} · ${x.pct}% del financiamiento por cesión del cliente · ${porcionLabel(x.porcion)}.`;
+                          return <span key={x.key} className="max-w-full" style={{ cursor: "help" }} title={tip}>{chip}</span>;
+                        })}
                       </div>
                     );
                   })()}
@@ -14398,9 +14595,9 @@ function PCsankey({ deals = [], execsFiltrados = [], filtrosDeal = {}, hayFiltro
       const esHoy = !!(d.tProsp && SK_DIA(d.tProsp) === diaSel);
       if (esHoy) nHoy++; else nAnt++;
       // 2ª columna según el desglose elegido: antigüedad de la originación, o la CAT de la oportunidad.
-      const ct = catDeal(d).cat;
+      const cdSk = catDisp(d); const ct = cdSk ? cdSk.cat : null;
       const a = col2 === "cat"
-        ? reg({ id: `K:${ct}`, label: SK_CAT_LBL[ct] || ct, color: (CAT_META[ct] || {}).fg || C.faint })
+        ? reg({ id: `K:${ct || "NA"}`, label: ct ? (SK_CAT_LBL[ct] || ct) : "Sin CAT · oferta vacía", color: (CAT_META[ct] || {}).fg || C.faint })
         : reg({ id: esHoy ? "A:H" : "A:A", label: esHoy ? "Originada el día" : "De días anteriores", color: esHoy ? "#703EFF" : "#9CA3AF" });
       const e = skEtapa(d);
       const et = reg({ id: `E:${e}`, label: SK_ETAPA_LBL[e] || e, color: SK_ETAPA_COL[e] || C.faint });
@@ -17996,7 +18193,7 @@ function generarTareasConsolidadas(deals) {
     // Impacto potencial = monto de la operación en juego (lo que se captura/gira al atender la tarea).
     // Se documenta la oferta (CAT, deudor, facturas, tasa, giro, etapa) para que el ejecutivo la entienda.
     const base = { fuente: "pipeline", dealId: d.id, cliente: d.cliente, exec, monto: d.monto || 0, impacto: d.monto || 0,
-      catOp: d.cat ? catDisp(d).label : null, tasa: d.tasa, giro: d.simulado ? d.giro : null, deudor: (d.deudores && d.deudores[0] ? d.deudores[0].name : d.deudor), nDeud: (d.deudores && d.deudores.length) || 1, facturas: d.facturas, etapa: (STAGES.find((s) => s.id === d.stage) || {}).name || d.stage };
+      catOp: (catDisp(d) || {}).label || null, tasa: d.tasa, giro: d.simulado ? d.giro : null, deudor: (d.deudores && d.deudores[0] ? d.deudores[0].name : d.deudor), nDeud: (d.deudores && d.deudores.length) || 1, facturas: d.facturas, etapa: (STAGES.find((s) => s.id === d.stage) || {}).name || d.stage };
     const verif = !!(d.telValidado || d.emailValidado || d.verifManual);
     const hasOffer = !!d.negocioNum || (d.waSesion || []).some((m) => /Oferta de factoring/i.test(m.text || ""));
     if (d.waPendiente) t.push({ ...base, id: d.id + "-resp", cat: "responder", prio: "critica", detalle: "El cliente respondió por WhatsApp y la conversación quedó pendiente." });
@@ -19964,6 +20161,37 @@ const RESOLUCION_COMITE = {
   deudor:  { pide: "Ampliar Línea Global Deudor",           alcance: "Todos los clientes que ceden este deudor" },
   suspendida: { pide: "Reactivar las líneas del cliente",   alcance: "Todo el cliente" },
 };
+// LA SOLICITUD AL COMITÉ LA GENERA EL CIERRE DE LA OFERTA, no el ejecutivo (15-09-2026, pedido del
+// usuario). El modal de curse ya prometía que «la solicitud queda en la bandeja del comité de riesgo
+// como una sola solicitud con N línea(s) de detalle» y **nadie la creaba**: el ejecutivo tenía que ir
+// a Líneas y recorrer el wizard a mano, repitiendo una decisión que acababa de tomar. Lo que el motor
+// devuelve en `solicitudes` es exactamente lo que el comité necesita —deudor, qué se pide y cuánto—
+// así que la solicitud se arma con eso y no con una segunda captura.
+//
+// UNA SOLA solicitud con N líneas de detalle, como dice el modal: el comité aprueba o recorta cada
+// línea por separado, pero la operación es una.
+//
+// `propFactoring` es la línea del cliente **ya ampliada** (vigente + lo pedido), porque es lo que
+// `constituirLinea` escribe como aprobada cuando el comité resuelve: pasar sólo lo pedido dejaría al
+// cliente con una línea MÁS CHICA que la que tenía al aprobarse su propia solicitud.
+function solicitudComiteDeOferta(deal, ev, ejecutivo, aprobadaVigente = 0) {
+  const sols = (ev && ev.solicitudes) || [];
+  if (!deal || !sols.length || !(ev.requiereComite > 0)) return null;
+  const pedido = mmRound(ev.requiereComite);
+  return {
+    rut: deal.rutEmisor || "", cliente: deal.cliente || "",
+    tipo: "modificar", subtipo: "agregar_deudores",
+    totalPropuesto: mmRound(aprobadaVigente + pedido), propFactoring: mmRound(aprobadaVigente + pedido),
+    propGlobal: 0, propConfirming: 0, pedido,
+    // El DETALLE viaja entero: es lo que el comité aprueba línea a línea y lo que el paso 4 del wizard
+    // muestra sin volver a preguntárselo a nadie. Por defecto **puntual**: se pide por ESTA operación.
+    detalle: sols.map((x) => ({ deudor: x.deudor, rutDeudor: x.rutDeudor || null, monto: mmRound(x.monto || 0),
+                                pide: x.pide, motivo: x.motivo, alcance: x.alcance || null, tipoLinea: "puntual" })),
+    deudores: sols.length,
+    origen: { dealId: deal.id, negocio: deal.negocioNum || null },
+    ejecutivo: ejecutivo || "—", automatica: true,
+  };
+}
 // El motivo se explica en lenguaje de negocio, nunca con el nombre técnico del nivel.
 const MOTIVO_TEXTO = {
   par:     "sin cupo en la Línea Cliente - Deudor",
@@ -20515,6 +20743,17 @@ function api1Inyeccion(sol) {
   return idProceso;
 }
 function api2ListarProcesos() { return SOLICITUDES_LINEA; }
+// Los deudores que YA están pedidos al comité por el cierre de una oferta de este cliente, con el
+// monto y el tipo de línea que se pidió. El wizard los precarga en el paso 4 en vez de hacer que el
+// ejecutivo los vuelva a escribir: la solicitud entró sola y esto es la misma solicitud, abierta.
+function deudoresSolicitadosLinea(rutCliente) {
+  const out = [];
+  for (const s of SOLICITUDES_LINEA) {
+    if (!s || s.rut !== rutCliente || s.constituida) continue;
+    for (const d of (s.detalle || [])) if (!out.some((x) => x.deudor === d.deudor)) out.push({ ...d, idProceso: s.idProceso });
+  }
+  return out;
+}
 function api3EstadoProceso(idProceso) {
   const s = SOLICITUDES_LINEA.find((x) => x.idProceso === idProceso); if (!s) return null;
   const fin = (Math.abs(hashStr(idProceso)) % 5 === 0) ? "Observada" : "Aprobada";
@@ -20608,10 +20847,10 @@ function generarNotasIA(ctx) {
   const f = api4.firmografica, c = api4.comercial, ix = api4.indices;
   return {
     negocio: `Se propone ${SOLIC_TIPOS[tipo].toLowerCase()}${subtipo ? " (" + SOLIC_SUBTIPOS[subtipo].toLowerCase() + ")" : ""} para ${cliente} por un total de ${fmtMM(totalPropuesto)}, con vigencia de ${pol("vigenciaLineaMeses", 12)} meses. La operación se sustenta en ${nDeudores} deudor(es) calificados con nota promedio ponderada ${promNota}, alineada a la política de compra (nota ≥ ${String(pol("notaMinCompra", 3.7)).replace(".", ",")}).`,
-    referencias: `Cliente del segmento ${c.segmento} (${c.subSegmento}), quintil ${c.quintil}. Margen de contribución últimos 12 meses de M$ ${c.margen12m.toLocaleString("es-CL")} con colocación promedio de M$ ${c.colocProm12m.toLocaleString("es-CL")} y spread real de ${c.spreadReal12m}%. Última operación a tasa ${c.tasaUltOp}%.`,
+    referencias: `Cliente del segmento ${c.segmento} (${c.subSegmento}), quintil ${c.quintil}. Margen de contribución últimos 12 meses de ${fmtMM(c.margen12m * 1000)} con colocación promedio de ${fmtMM(c.colocProm12m * 1000)} y spread real de ${c.spreadReal12m}%. Última operación a tasa ${c.tasaUltOp}%.`,
     antecedentes: `${cliente} opera en ${f.actividad.toLowerCase()} (sector ${f.sector.toLowerCase()}), con ${f.trabajadores} trabajadores. Cliente desde ${f.fechaIngreso}; primera operación el ${f.primeraOperacion}. ${f.clienteBanco === "Sí" ? "Mantiene relación vigente con el Banco." : "Sin relación bancaria vigente con BICE."} ${f.alertas === "Sí" ? "Registra alertas que se detallan en la ficha." : "Sin alertas registradas."}`,
     mercado: `El sector ${f.sector.toLowerCase()} presenta una demanda estable de financiamiento de capital de trabajo. La cartera de deudores propuesta concentra pagadores de buena calidad crediticia (nota promedio ${promNota}), lo que acota el riesgo de la línea frente al ciclo del sector.`,
-    financiero: `Ventas anuales según SII de M$ ${ix.ventasSII[1].toLocaleString("es-CL")} (año anterior M$ ${ix.ventasSII[0].toLocaleString("es-CL")}). Leverage ${ix.leverage}x, patrimonio $ ${(ix.patrimonio / 1e6).toFixed(0)} MM y generación $ ${(ix.generacion / 1e6).toFixed(0)} MM. ${api6.moraCMF > 0 ? "Presenta mora CMF de $ " + (api6.moraCMF / 1e6).toFixed(1) + " MM que debe considerarse en la resolución." : "Sin mora CMF vigente."} ${api6.protestos > 0 ? api6.protestos + " protesto(s) no aclarado(s)." : "Sin protestos no aclarados."} Morosidad ACHEF ${api6.moraACHEF.morosas > 0 ? "$ " + (api6.moraACHEF.morosas / 1e6).toFixed(1) + " MM en " + api6.moraACHEF.nroEmpresas + " empresa(s)" : "sin registros"}.`,
+    financiero: `Ventas anuales según SII de ${fmtMM(ix.ventasSII[1] * 1000)} (año anterior ${fmtMM(ix.ventasSII[0] * 1000)}). Leverage ${ix.leverage}x, patrimonio ${fmtMM(ix.patrimonio)} y generación ${fmtMM(ix.generacion)}. ${api6.moraCMF > 0 ? "Presenta mora CMF de " + fmtMM(api6.moraCMF) + " que debe considerarse en la resolución." : "Sin mora CMF vigente."} ${api6.protestos > 0 ? api6.protestos + " protesto(s) no aclarado(s)." : "Sin protestos no aclarados."} Morosidad ACHEF ${api6.moraACHEF.morosas > 0 ? fmtMM(api6.moraACHEF.morosas) + " en " + api6.moraACHEF.nroEmpresas + " empresa(s)" : "sin registros"}.`,
   };
 }
 // Panel del patrón interactivo: RECUPERAR (API) → ACEPTAR Y CARGAR → editar → confirmar el paso.
@@ -20638,80 +20877,542 @@ function PanelRecupera({ fuente, resumen, cargado, onCargar, preview }) {
     </div>
   );
 }
-// Asistente CREAR PRESENTACIÓN (6 pasos, patrón chevrons). linea=null → Crear Línea.
+// Monto en PESOS con lectura en M$. El wizard captura PESOS —la unidad del sistema, regla «todo monto
+// es un peso entero»— y el M$ de abajo es lo único que abrevia: sin esa lectura, escribir 280000000 a
+// ciegas es la forma más fácil de pedirle al comité una línea de 280 pesos o de 280 mil millones, y los
+// dos errores se ven idénticos dentro del campo. `destacado` es el foco propio de lo que el ejecutivo
+// TIENE que llenar; con `obligatorio` se marca en ámbar mientras siga en cero.
+function InputPesos({ value, onChange, destacado = false, obligatorio = false, step = 1000000, title, style }) {
+  const v = +value || 0;
+  const cls = destacado ? (obligatorio && v <= 0 ? "f-prop f-prop-vacio" : "f-prop") : "";
+  const sty = destacado ? { color: C.ink, ...(style || {}) } : { border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", ...(style || {}) };
+  return (
+    <span className="flex min-w-0 flex-col items-stretch">
+      <input type="number" step={step} value={v} onChange={onChange} title={title || fmtMM(v)}
+        className={"w-full rounded-md px-2 py-1 t11 text-right outline-none " + cls} style={sty} />
+      <span className="t8 text-right" style={{ color: v > 0 ? C.sub : C.faint, lineHeight: 1.35 }}>{fmtMM(v)}</span>
+    </span>
+  );
+}
+// Bloque numerado del DOCUMENTO final. La presentación al comité se lee entera, de corrido: los pasos
+// del wizard son sólo la forma de llenarla.
+function DocSec({ n, t, sub, children }) {
+  return (
+    <section className="rounded-2xl p-4" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+      <div className="flex flex-wrap items-baseline gap-2" style={{ borderBottom: `2px solid ${C.lilac}`, paddingBottom: 6, marginBottom: 10 }}>
+        <span className="flex h-5 w-5 items-center justify-center rounded-full t9 font-bold text-white" style={{ backgroundColor: C.indigo }}>{n}</span>
+        <h2 className="t13 font-semibold" style={{ color: C.navy }}>{t}</h2>
+        {sub ? <span className="t10" style={{ color: C.faint }}>· {sub}</span> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+// Asistente CREAR PRESENTACIÓN al comité. El ejecutivo llena DOS secciones —deudores y bienes— y el
+// resto de la presentación llega recuperada de las APIs; al final se le muestra TODO junto, como un
+// solo documento editable, que es lo que el comité va a leer. Un wizard de seis pasos le pedía
+// confirmar cinco pantallas de datos que él no ingresó y ninguna de ellas lo dejaba ver el conjunto.
+// linea=null → Crear Línea. TODOS los montos de este componente son PESOS.
 function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, subtipoInicial, usuarioNombre, esAdmin = false, onClose, onInyectada }) {
   const cliente = linea ? linea.cliente : (clienteInicial || "");
   const rut = linea ? linea.rut : (rutInicial || ("76." + (100000 + Math.abs(hashStr(cliente)) % 899999)));
   const [paso, setPaso] = useState(0);
   const [ok, setOk] = useState({});      // pasos confirmados
-  // Modo debug (super admin): muestra los pasos intermedios de "recuperar → aceptar" cada API antes de
-  // vaciarla en la sección. Modo uso (resto de usuarios): la información llega ya cargada y editable; el
-  // ejecutivo recorre el wizard sin confirmar cada call — sólo ingresa/edita la información de línea.
+  // Modo debug (super admin): muestra los pasos intermedios de "recuperar → aceptar" de cada API dentro
+  // del documento. Modo uso (resto de usuarios): la información llega ya cargada y editable.
   const [carg, setCarg] = useState(esAdmin ? { 0: true } : { 0: true, 1: true });
   const [tipo, setTipo] = useState(tipoInicial || (linea ? "renovar" : "crear"));
   const [subtipo, setSubtipo] = useState(subtipoInicial || null);
   const api4 = useMemo(() => api4Empresa360(rut, cliente), [rut, cliente]);
   const api5d = useMemo(() => api5Documentos(rut), [rut]);
   const api6 = useMemo(() => api6RiesgoBICE(rut), [rut]);
-  // Paso 2 — formulario financiero EDITABLE: los valores de las APIs se vacían en los campos y el
-  // ejecutivo puede corregirlos. En modo debug (admin) esto ocurre al aceptar la recuperación; en modo
-  // uso llegan pre-cargados.
+  // Formulario financiero EDITABLE: los valores de las APIs se vacían en los campos y el ejecutivo
+  // puede corregirlos desde el documento. Todo en PESOS (las APIs ya entregan pesos).
   const hoyISO = new Date().toISOString().slice(0, 10);
-  const finDesdeAPIs = () => ({ directa: +(api6.deudaDirecta / 1e6).toFixed(1), indirecta: +(api6.deudaIndirecta / 1e6).toFixed(1), leasingUF: 0, fInfo: hoyISO, fBalance: "2025-12-31",
-    pasExGen: api4.indices.pasExGen, patrimonio: Math.round(api4.indices.patrimonio / 1e6), generacion: Math.round(api4.indices.generacion / 1e6), leverage: api4.indices.leverage,
-    historicos: "No", achefFecha: hoyISO, achefN: api6.moraACHEF.nroEmpresas, achefVig: +(api6.moraACHEF.vigente / 1e6).toFixed(1), achefMor: +(api6.moraACHEF.morosas / 1e6).toFixed(1), achefFac: +(api6.moraACHEF.facturas / 1e6).toFixed(1), achefChq: 0, achefLet: 0, achefOtr: 0 });
+  const finDesdeAPIs = () => ({ directa: mmRound(api6.deudaDirecta), indirecta: mmRound(api6.deudaIndirecta), leasingUF: 0, fInfo: hoyISO, fBalance: "2025-12-31",
+    pasExGen: api4.indices.pasExGen, patrimonio: mmRound(api4.indices.patrimonio), generacion: mmRound(api4.indices.generacion), leverage: api4.indices.leverage,
+    historicos: "No", achefFecha: hoyISO, achefN: api6.moraACHEF.nroEmpresas, achefVig: mmRound(api6.moraACHEF.vigente), achefMor: mmRound(api6.moraACHEF.morosas), achefFac: mmRound(api6.moraACHEF.facturas), achefChq: 0, achefLet: 0, achefOtr: 0 });
   const [fin, setFin] = useState(() => esAdmin ? null : finDesdeAPIs());
-  const cargarFin = () => {
-    setFin(finDesdeAPIs());
-    setCarg((c) => ({ ...c, 1: true }));
-  };
-  // Paso 3 — propuesta de línea
-  const [propGlobal, setPropGlobal] = useState(linea ? linea.aprobada : 300);
-  const [propFactoring, setPropFactoring] = useState(linea ? linea.aprobada : 300);
+  const cargarFin = () => { setFin(finDesdeAPIs()); setCarg((c) => ({ ...c, 1: true })); };
+  // Propuesta de línea, en PESOS. `linea.aprobada` ya viene en pesos: mezclar ese valor con un default
+  // en millones era lo que dejaba el mismo campo con dos unidades según hubiera línea vigente o no.
+  const LINEA_DEFECTO = 300e6;
+  const [propGlobal, setPropGlobal] = useState(linea ? linea.aprobada : LINEA_DEFECTO);
+  const [propFactoring, setPropFactoring] = useState(linea ? linea.aprobada : LINEA_DEFECTO);
   const [propConfirming, setPropConfirming] = useState(0);
   // Vencimiento propuesto = hoy + la vigencia que fija la política (`CFG.vigenciaLineaMeses`), no un año fijo.
   const [vencProp, setVencProp] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth() + pol("vigenciaLineaMeses", 12), d.getDate()).toISOString().slice(0, 10); });
-  const [subprod, setSubprod] = useState(() => [{ tipoDoc: "FACTURA", aprobado: linea ? linea.aprobada : 300, utilizado: linea ? linea.uso : 0, propuesta: linea ? linea.aprobada : 300, anticipo: 100, plazoMax: 90 }]);
+  const [subprod, setSubprod] = useState(() => [{ tipoDoc: "FACTURA", aprobado: linea ? linea.aprobada : LINEA_DEFECTO, utilizado: linea ? linea.uso : 0, propuesta: linea ? linea.aprobada : LINEA_DEFECTO, anticipo: 100, plazoMax: 90 }]);
   const totalPropuesto = propFactoring + propConfirming;
-  // Paso 4 — deudores. Construye la fila de un deudor (datos API 4 · Plataforma 360) e incorpora la
-  // Venta L6M (facturación mensual al deudor: historial + rango típico p40–p90). Sirve tanto para los
-  // deudores recurrentes pre-cargados como para los que el ejecutivo agrega manualmente.
+  // Deudores. Construye la fila de un deudor (datos API 4 · Plataforma 360) e incorpora la Venta L6M
+  // (facturación mensual al deudor: historial + rango típico p40–p90), que es lo que cuelga del chip
+  // «Recurrente». Sirve para los recurrentes pre-cargados y para los que el ejecutivo agrega.
   const construirDeudorLinea = (nombre) => {
-    const h = Math.abs(hashStr("deu" + nombre)); const prop = 50 + (h % 20) * 10; const ant = (h % 2) ? 50 + (h % 10) * 10 : 0;
+    const h = Math.abs(hashStr("deu" + nombre)); const prop = (50 + (h % 20) * 10) * 1e6; const ant = (h % 2) ? (50 + (h % 10) * 10) * 1e6 : 0;
     const esCliente = typeof PC_CLIENTES !== "undefined" && PC_CLIENTES.some((c) => c.nombre === nombre) ? true : (h % 3 === 0);
     const hist = deudoresHistorial(cliente, [{ name: nombre }])[0];
-    return { nombre, rut: `${76000000 + (h % 20000000)}-${"0123456789K"[h % 11]}`, nota: (notaDeudor(nombre) || 0), esCliente, politicaPct: pol("concentracionDeudorPct", 30), anterior: ant, utilizado: ant ? Math.round(ant * ((h % 60) / 100)) : 0, deudaDirecta: (h % 500) * 100000, deudaIndirecta: (h % 7 === 0) ? (h % 200) * 100000 : 0, propuesta: prop, fechaInf: hoyISO, productos: [{ producto: "FACTURA", anterior: ant, utilizado: 0, propuesto: prop }], hist, l6m: ventaL6M(hist) };
+    return { nombre, rut: `${76000000 + (h % 20000000)}-${"0123456789K"[h % 11]}`, nota: (notaDeudor(nombre) || 0), esCliente, politicaPct: pol("concentracionDeudorPct", 30), anterior: ant, utilizado: ant ? mmRound(ant * ((h % 60) / 100)) : 0, deudaDirecta: (h % 500) * 100000, deudaIndirecta: (h % 7 === 0) ? (h % 200) * 100000 : 0, propuesta: prop, fechaInf: hoyISO, productos: [{ producto: "FACTURA", anterior: ant, utilizado: 0, propuesto: prop }], hist, l6m: ventaL6M(hist) };
   };
-  // Pre-carga: los deudores con flujo recurrente ya vienen incorporados; el ejecutivo sólo ingresa la
-  // información de línea (propuesta, política, productos). Puede agregar otros con el combo o eliminarlos.
-  const [deudores, setDeudores] = useState(() => deudoresRecurrentesLinea(cliente).map((hh) => ({ ...construirDeudorLinea(hh.name), flags: { V: true, N: true, C: true, FR: false, CP: false }, recurrente: true })));
+  // Pre-carga: los deudores con flujo recurrente ya vienen SUGERIDOS; el ejecutivo sólo revisa el monto
+  // propuesto. Los demás los agrega él en «Otros deudores».
+  const [deudores, setDeudores] = useState(() => {
+    const base = deudoresRecurrentesLinea(cliente).map((hh) => ({ ...construirDeudorLinea(hh.name), flags: { V: true, N: true, C: true, FR: false, CP: false }, recurrente: true, tipoLinea: "normal" }));
+    // Y los que ya vienen PEDIDOS por el cierre de una oferta: entran marcados, con el monto que faltó
+    // y en línea PUNTUAL. Sin esto el ejecutivo tenía que volver a escribir en el wizard la misma lista
+    // que el modal de curse acababa de mostrarle.
+    for (const so of deudoresSolicitadosLinea(rut)) {
+      const mto = mmRound(so.monto || 0);
+      const ya = base.find((b) => b.nombre === so.deudor);
+      if (ya) { ya.solicitado = true; ya.tipoLinea = so.tipoLinea || "puntual"; ya.propuesta = Math.max(ya.propuesta || 0, mto); continue; }
+      base.push({ ...construirDeudorLinea(so.deudor), flags: { V: true, N: true, C: true, FR: false, CP: false },
+                  recurrente: false, solicitado: true, tipoLinea: so.tipoLinea || "puntual", propuesta: mto });
+    }
+    return base;
+  });
   const [addSel, setAddSel] = useState("");
+  const [buscaDeu, setBuscaDeu] = useState("");
   const [addPrev, setAddPrev] = useState(null); // preview API 4 del deudor por aceptar
-  const [editDeu, setEditDeu] = useState(null);       // índice del deudor en edición (modal Editar Deudor Factoring)
+  const [editDeu, setEditDeu] = useState(null); // índice del deudor en edición (modal Editar Deudor Factoring)
   const [otrosLimite, setOtrosLimite] = useState(10); // Otros Deudores Límite Máx. %
   const candidatosDeu = Object.keys(SPREAD_MIN_DEUDOR).filter((n) => !deudores.some((d) => d.nombre === n));
+  const candFiltrados = buscaDeu.trim() ? candidatosDeu.filter((n) => n.toLowerCase().includes(buscaDeu.trim().toLowerCase())) : candidatosDeu;
   const promNota = deudores.length ? +(deudores.reduce((s, d) => s + d.nota * (d.propuesta || 1), 0) / deudores.reduce((s, d) => s + (d.propuesta || 1), 0)).toFixed(2) : 0;
   const pedirDeudor = (nombre) => setAddPrev(construirDeudorLinea(nombre));
-  const aceptarDeudor = () => { if (!addPrev) return; setDeudores((p) => [...p, { ...addPrev, flags: { V: true, N: true, C: true, FR: false, CP: false } }]); setAddPrev(null); setAddSel(""); };
+  const agregarDeudor = (nombre) => setDeudores((p) => [...p, { ...construirDeudorLinea(nombre), flags: { V: true, N: true, C: true, FR: false, CP: false }, recurrente: false, tipoLinea: "normal" }]);
+  const aceptarDeudor = () => { if (!addPrev) return; setDeudores((p) => [...p, { ...addPrev, flags: { V: true, N: true, C: true, FR: false, CP: false }, recurrente: false, tipoLinea: "normal" }]); setAddPrev(null); setAddSel(""); };
   const updDeu = (i, patch) => setDeudores((p) => p.map((x, j) => j === i ? { ...x, ...patch } : x));
   const updDeuProd = (i, pi, patch) => setDeudores((p) => p.map((x, j) => { if (j !== i) return x; const productos = x.productos.map((pr, k) => k === pi ? { ...pr, ...patch } : pr); return { ...x, productos, propuesta: productos.reduce((s, pr) => s + (pr.propuesto || 0), 0) }; }));
-  // Paso 5 — Bienes: Fianza Solidaria y Garantías (editables, opcionales)
+  // Bienes: Fianza Solidaria y Garantías (editables, opcionales)
   const [fianzas, setFianzas] = useState([]);
   const [garantias, setGarantias] = useState([]);
-  // Paso 6 — notas IA. En modo uso llegan pre-generadas (borrador editable); en modo debug (admin) el
-  // ejecutivo acepta el borrador antes de verlas.
+  // Notas IA. En modo uso llegan pre-generadas (borrador editable); en modo debug (admin) el ejecutivo
+  // acepta el borrador en el documento antes de verlas.
   const [notas, setNotas] = useState(() => esAdmin ? null : generarNotasIA({ cliente, api4, api6, tipo, subtipo, totalPropuesto, nDeudores: deudores.length, promNota }));
   const [notasCargadas, setNotasCargadas] = useState(!esAdmin);
-  const PASOS = ["Comité y Cliente", "Financieros y Riesgo", "Información de Línea", "Deudores", "Bienes", "Presentación Comercial"];
-  const confirmable = paso === 0 ? !!carg[0] : paso === 1 ? !!carg[1] : paso === 3 ? deudores.length > 0 : paso === 5 ? !!notasCargadas : true;
-  const confirmar = () => { setOk((o) => ({ ...o, [paso]: true })); if (paso < 5) setPaso(paso + 1); };
+  const PASOS = ["Deudores", "Bienes y garantías", "Documento · revisar y enviar"];
+  const confirmable = paso === 0 ? deudores.length > 0 : true;
+  const confirmar = () => { setOk((o) => ({ ...o, [paso]: true })); if (paso < 2) setPaso(paso + 1); };
   const inyectar = () => {
-    const id = api1Inyeccion({ rut, cliente, tipo, subtipo, totalPropuesto, propGlobal, propFactoring, propConfirming, vencProp, deudores: deudores.length, promNota, notas, garantias: garantias.length, fianzas: fianzas.length, montoGarantias: garantias.reduce((s, g) => s + (g.monto || 0), 0), ejecutivo: usuarioNombre, lineaId: linea ? linea.id : null });
+    // Todos los montos del wizard son PESOS, que es el contrato de la API 1 y lo que `constituirLinea`
+    // escribe en la línea aprobada. No hay conversión que hacer acá: mientras el wizard capturó
+    // millones, inyectar 240 dejaba al cliente con una línea de 240 PESOS.
+    const id = api1Inyeccion({ rut, cliente, tipo, subtipo, totalPropuesto, propGlobal, propFactoring, propConfirming, vencProp,
+      detalle: deudores.map((d) => ({ deudor: d.nombre, rutDeudor: d.rut, monto: mmRound(d.propuesta), tipoLinea: d.tipoLinea || "normal",
+                                      pide: (d.tipoLinea || "normal") === "puntual" ? RESOLUCION_COMITE.par.pide : "Línea Normal Cliente - Deudor", alcance: RESOLUCION_COMITE.par.alcance })),
+      deudores: deudores.length, promNota, notas, garantias: garantias.length, fianzas: fianzas.length, montoGarantias: garantias.reduce((s, g) => s + (g.monto || 0), 0), ejecutivo: usuarioNombre, lineaId: linea ? linea.id : null });
     onInyectada && onInyectada(id);
   };
   const inp = "w-full rounded-md px-2 py-1 t11 outline-none";
   const inpSty = { border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" };
   const Fila = ({ k, v }) => <div className="flex items-center justify-between gap-3 py-1 t11" style={{ borderBottom: `1px solid ${C.line}` }}><span style={{ color: C.sub }}>{k}</span><span className="text-right font-medium" style={{ color: C.ink }}>{v}</span></div>;
+
+  // ── Secciones. Cada una se escribe UNA vez y la dibujan los dos sitios: su paso del wizard (las dos
+  // que el ejecutivo llena) y el documento final. Dos copias de la misma sección se separan a la
+  // primera corrección, y entonces el comité lee algo distinto de lo que el ejecutivo llenó.
+  const secComite = () => (
+    <>
+      <div className="mb-2 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0", color: "#16A34A" }}>
+        <Check size={11} /> Información recuperada automáticamente de <b>API 4 · Plataforma 360 + API 5 · Documental</b> — firmográfica, comercial, {api4.socios.length} socio(s) y {api5d.length} documento(s) · {nowStamp()}
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
+          <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Información RUT y solicitud</div>
+          <Fila k="Rut / Nombre" v={`${rut} · ${cliente}`} />
+          <Fila k="Estado de línea" v={linea ? "Línea Vigente" : "Sin línea (nueva)"} />
+          <div className="flex items-center justify-between gap-3 py-1 t11" style={{ borderBottom: `1px solid ${C.line}` }}><span style={{ color: C.sub }}>Motivo</span>
+            <select value={tipo} onChange={(e) => { setTipo(e.target.value); if (e.target.value !== "modificar") setSubtipo(null); }} className="rounded-md px-2 py-1 t11" style={inpSty} disabled={!linea}>
+              {(linea ? ["renovar", "modificar"] : ["crear"]).map((t) => <option key={t} value={t}>{SOLIC_TIPOS[t]}</option>)}
+            </select></div>
+          {tipo === "modificar" && <div className="flex items-center justify-between gap-3 py-1 t11" style={{ borderBottom: `1px solid ${C.line}` }}><span style={{ color: C.sub }}>Tipo de modificación</span>
+            <select value={subtipo || ""} onChange={(e) => setSubtipo(e.target.value || null)} className="rounded-md px-2 py-1 t11" style={inpSty}>
+              <option value="">— Seleccionar —</option>{Object.entries(SOLIC_SUBTIPOS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select></div>}
+          <Fila k="Vigencia" v={`${pol("vigenciaLineaMeses", 12)} meses`} />
+          <div className="t9 font-bold uppercase tracking-wide mt-2 mb-1" style={{ color: "#7C3AED" }}>Cliente · Plataforma 360</div>
+          <Fila k="Actividad económica" v={api4.firmografica.actividad} />
+          <Fila k="Sector" v={api4.firmografica.sector} />
+          <Fila k="N° trabajadores" v={api4.firmografica.trabajadores} />
+          <Fila k="Cliente banco / Alertas" v={`${api4.firmografica.clienteBanco} / ${api4.firmografica.alertas}`} />
+          <Fila k="Segmento" v={`${api4.comercial.segmento} · ${api4.comercial.subSegmento}`} />
+          <Fila k="Margen 12m / Coloc. prom." v={`${fmtMM(api4.comercial.margen12m * 1000)} · ${fmtMM(api4.comercial.colocProm12m * 1000)}`} />
+        </div>
+        <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
+          <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Documentos adjuntos · repositorio</div>
+          {api5d.map((d, i) => (
+            <div key={i} className="flex items-center justify-between gap-2 py-1 t10" style={{ borderBottom: `1px solid ${C.line}` }}>
+              <span className="truncate" style={{ color: C.ink }}><span className="rounded-full px-1 py-0.5 t9 font-semibold mr-1" style={{ backgroundColor: C.page, color: C.sub }}>{d.tipo}</span>{d.nombre}</span>
+              <span className="shrink-0 t9" style={{ color: C.faint }}>v{d.version} · vence {d.vencimiento}</span>
+            </div>
+          ))}
+          <div className="t9 font-bold uppercase tracking-wide mt-2 mb-1" style={{ color: "#7C3AED" }}>Socios</div>
+          {api4.socios.map((s, i) => <Fila key={i} k={s.nombre} v={`${s.participacion}% · PEP ${s.pep} · ${s.aprobLegal}`} />)}
+        </div>
+      </div>
+    </>
+  );
+
+  const secFinanciero = () => (
+    <>
+      {esAdmin && <PanelRecupera fuente="API 6 · Riesgo BICE + API 4 · Plataforma 360" resumen="Deuda CMF directa/indirecta, mora ACHEF, boletín comercial, previsional, protestos, índices y ventas SII" cargado={!!carg[1]} onCargar={cargarFin}
+        preview={[["Clasificación deudora", api6.clasificacion], ["Deuda directa / indirecta", `${fmtMM(api6.deudaDirecta)} / ${fmtMM(api6.deudaIndirecta)}`], ["Mora CMF", api6.moraCMF > 0 ? `${fmtMM(api6.moraCMF)} ⚠` : "Sin mora"], ["Mora ACHEF", api6.moraACHEF.morosas > 0 ? `${fmtMM(api6.moraACHEF.morosas)} · ${api6.moraACHEF.nroEmpresas} empresa(s) ⚠` : `Sin mora · ${api6.moraACHEF.nroEmpresas} empresa(s)`], ["Boletín comercial", api6.boletinComercial > 0 ? `${api6.boletinComercial} anotación(es) ⚠` : "Sin anotaciones"], ["Deuda previsional", api6.deudaPrevisional > 0 ? `${fmtMM(api6.deudaPrevisional)} ⚠` : "Sin deuda"], ["Protestos no aclarados", api6.protestos || 0], ["Leverage / Patrimonio", `${api4.indices.leverage}x · ${fmtMM(api4.indices.patrimonio)}`], ["Ventas SII (últ. año)", fmtMM(api4.indices.ventasSII[1] * 1000)], ["Morosidad interna / Protesto %", `${api6.morosidadInterna} / ${api6.protestoPctInterno}`]]} />}
+      {carg[1] && fin && (() => {
+        const fld = (k, step) => ({ value: fin[k], onChange: (e) => setFin((f) => ({ ...f, [k]: +e.target.value || 0 })), type: "number", step: step || "0.1", className: "w-full rounded-md px-2 py-1 t11 text-right outline-none", style: inpSty });
+        const pes = (k) => ({ value: fin[k], onChange: (e) => setFin((f) => ({ ...f, [k]: mmRound(+e.target.value || 0) })) });
+        const ventasUlt = api4.indices.ventasSII[2] * 1000, deuda = (fin.directa || 0) + (fin.indirecta || 0);
+        const ratio = (a, b) => (b > 0 ? (a / b).toFixed(2) : "---");
+        const achefTot = mmRound(fin.achefVig + fin.achefMor + fin.achefFac + fin.achefChq + fin.achefLet + fin.achefOtr);
+        return (
+        <div className="space-y-3">
+          <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
+            <div className="t9 font-bold uppercase tracking-wide mb-1.5" style={{ color: "#7C3AED" }}>Información financiera <span className="ml-1 font-normal normal-case" style={{ color: C.faint }}>· editable — montos en pesos, se leen en M$</span></div>
+            <div className="grid gap-2 md:grid-cols-4">
+              <Lb t="Deuda directa"><InputPesos {...pes("directa")} /></Lb>
+              <Lb t="Deuda indirecta"><InputPesos {...pes("indirecta")} /></Lb>
+              <Lb t="Leasing UF"><input {...fld("leasingUF")} /></Lb>
+              <Lb t="Fecha info. por cliente"><input type="date" value={fin.fInfo} onChange={(e) => setFin((f) => ({ ...f, fInfo: e.target.value }))} className="w-full rounded-md px-2 py-1 t11 outline-none" style={inpSty} /></Lb>
+              <Lb t="Pas. Exigible / Gen. Bruta"><input {...fld("pasExGen", "0.01")} /></Lb>
+              <Lb t="Patrimonio"><InputPesos {...pes("patrimonio")} /></Lb>
+              <Lb t="Generación"><InputPesos {...pes("generacion")} /></Lb>
+              <Lb t="Leverage (veces)"><input {...fld("leverage", "0.1")} /></Lb>
+            </div>
+            <div className="mt-2 grid gap-3 md:grid-cols-2">
+              <div>
+                <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Ventas</div>
+                <div className="grid grid-cols-3 gap-2 mt-0.5">{api4.indices.ventas.map((v, i) => <div key={i} className="rounded-md px-2 py-1 t10 text-right" style={{ backgroundColor: C.page, color: C.ink }}><div className="t9 text-left" style={{ color: C.faint }}>{2024 + i} · {v ? "12" : "0"} de 12 m</div>{v ? fmtMM(v * 1000) : "---"}</div>)}</div>
+              </div>
+              <div>
+                <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Ventas SII</div>
+                <div className="grid grid-cols-3 gap-2 mt-0.5">{api4.indices.ventasSII.map((v, i) => <div key={i} className="rounded-md px-2 py-1 t10 text-right" style={{ backgroundColor: C.page, color: C.ink }}><div className="t9 text-left" style={{ color: C.faint }}>{2024 + i} · {i === 2 ? "6" : "12"} de 12 m</div>{fmtMM(v * 1000)}</div>)}</div>
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
+              <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Ratios <span className="font-normal normal-case" style={{ color: C.faint }}>(calculados)</span></div>
+              <Fila k="Línea / Patrimonio" v={ratio(propGlobal, fin.patrimonio)} />
+              <Fila k="Línea / Ventas" v={ratio(propGlobal, ventasUlt)} />
+              <Fila k="Deuda / Ventas" v={ratio(deuda, ventasUlt)} />
+              <Fila k="Línea / Deuda" v={ratio(propGlobal, deuda)} />
+            </div>
+            <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
+              <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Índices internos factoring</div>
+              <Fila k="Morosidad" v={api6.morosidadInterna.toFixed(2)} />
+              <Fila k="Protesto %" v={api6.protestoPctInterno.toFixed(2)} />
+              <Fila k="Boletín / Protestos / Previsional" v={`${api6.boletinComercial} · ${api6.protestos} · ${api6.deudaPrevisional > 0 ? fmtMM(api6.deudaPrevisional) : "0"}`} />
+            </div>
+            <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
+              <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Informes comerciales cliente</div>
+              <div className="flex items-center justify-between gap-3 py-1 t11" style={{ borderBottom: `1px solid ${C.line}` }}><span style={{ color: C.sub }}>Históricos</span>
+                <select value={fin.historicos} onChange={(e) => setFin((f) => ({ ...f, historicos: e.target.value }))} className="rounded-md px-2 py-1 t11" style={inpSty}><option>No</option><option>Sí</option></select></div>
+              <Fila k="Vigentes" v={api6.boletinComercial > 0 ? `${api6.boletinComercial} anotación(es)` : "Sin anotaciones"} />
+              <Fila k="Clasificación deudora" v={api6.clasificacion} />
+            </div>
+          </div>
+          <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
+            <div className="t9 font-bold uppercase tracking-wide mb-1.5" style={{ color: "#7C3AED" }}>Riesgo con otras empresas de factoring (ACHEF) <span className="font-normal normal-case" style={{ color: C.faint }}>· editable</span></div>
+            <div className="grid items-end gap-2" style={{ gridTemplateColumns: "140px 90px repeat(6, 1fr) 110px" }}>
+              <Lb t="Fecha inf."><input type="date" value={fin.achefFecha} onChange={(e) => setFin((f) => ({ ...f, achefFecha: e.target.value }))} className="w-full rounded-md px-2 py-1 t10 outline-none" style={inpSty} /></Lb>
+              <Lb t="Nro empresas"><input {...fld("achefN", "1")} /></Lb>
+              <Lb t="Vigente"><InputPesos {...pes("achefVig")} /></Lb>
+              <Lb t="Morosas"><InputPesos {...pes("achefMor")} /></Lb>
+              <Lb t="Facturas"><InputPesos {...pes("achefFac")} /></Lb>
+              <Lb t="Cheques"><InputPesos {...pes("achefChq")} /></Lb>
+              <Lb t="Letras"><InputPesos {...pes("achefLet")} /></Lb>
+              <Lb t="Otros"><InputPesos {...pes("achefOtr")} /></Lb>
+              <div className="t10 text-right font-bold" style={{ color: fin.achefMor > 0 ? "#EF4444" : C.ink }}>Total: {fmtMM(achefTot)}</div>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+    </>
+  );
+
+  const secLinea = () => (
+    <>
+      <div className="mb-2 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.sub }}><Check size={11} style={{ color: "#16A34A" }} /> Datos internos de línea · CSV SFTP diario + montos vía API cada 1 h. La propuesta es editable y se digita en <b>pesos</b>.</div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
+          <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Situación actual</div>
+          <Fila k="Línea global actual" v={linea ? fmtMM(linea.aprobada) : "—"} />
+          <Fila k="Utilizada" v={linea && linea.aprobada > 0 ? `${fmtMM(linea.uso)} (${Math.round(linea.uso / linea.aprobada * 100)}%)` : "—"} />
+          <Fila k="Proyección post-curse" v={linea ? fmtMM(linea.proyeccion) : "—"} />
+          <Fila k="Morosidad" v={linea && linea.morosidadDias > 0 ? `${linea.morosidadDias} días ⚠` : "Sin morosidad"} />
+        </div>
+        <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
+          <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Propuesta (editable · en pesos)</div>
+          <div className="grid grid-cols-2 gap-2">
+            <Lb t="Línea global propuesta"><InputPesos value={propGlobal} onChange={(e) => setPropGlobal(mmRound(+e.target.value || 0))} destacado /></Lb>
+            <Lb t="Vencimiento propuesto"><input type="date" className={inp} style={inpSty} value={vencProp} onChange={(e) => setVencProp(e.target.value)} /></Lb>
+            <Lb t="Línea Factoring"><InputPesos value={propFactoring} onChange={(e) => setPropFactoring(mmRound(+e.target.value || 0))} destacado /></Lb>
+            <Lb t="Línea Confirming"><InputPesos value={propConfirming} onChange={(e) => setPropConfirming(mmRound(+e.target.value || 0))} /></Lb>
+          </div>
+          <div className="mt-2 rounded-lg px-3 py-1.5 t11 font-bold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>Total propuesto: {fmtMM(totalPropuesto)}</div>
+        </div>
+      </div>
+      <div className="mt-3 rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
+        <div className="flex items-center justify-between"><div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>Subproducto Factoring</div>
+          <button onClick={() => setSubprod((p) => [...p, { tipoDoc: "CHEQUE PROPIO", aprobado: 0, utilizado: 0, propuesta: 50e6, anticipo: 100, plazoMax: 120 }])} className="t10 font-semibold" style={{ color: C.indigo }}>+ Agregar producto</button></div>
+        <div className="mt-1 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "1fr 100px 100px 150px 70px 90px 20px", color: C.faint }}><span>Tipo documento</span><span className="text-right">Aprobado</span><span className="text-right">Utilizado</span><span className="text-right">Propuesta ($)</span><span>Antic.%</span><span>Plazo máx</span><span></span></div>
+        {subprod.map((s, i) => (
+          <div key={i} className="mt-1 grid items-start gap-2" style={{ gridTemplateColumns: "1fr 100px 100px 150px 70px 90px 20px" }}>
+            <select value={s.tipoDoc} onChange={(e) => setSubprod((p) => p.map((x, j) => j === i ? { ...x, tipoDoc: e.target.value } : x))} className="rounded-md px-2 py-1 t11" style={inpSty}><option>FACTURA</option><option>CHEQUE PROPIO</option></select>
+            <span className="t11 text-right" style={{ color: C.sub, paddingTop: 4 }}>{fmtMM(s.aprobado)}</span>
+            <span className="t11 text-right" style={{ color: C.sub, paddingTop: 4 }}>{fmtMM(s.utilizado)}</span>
+            <InputPesos value={s.propuesta} onChange={(e) => setSubprod((p) => p.map((x, j) => j === i ? { ...x, propuesta: mmRound(+e.target.value || 0) } : x))} />
+            <input type="number" className="rounded-md px-2 py-1 t11 text-right" style={inpSty} value={s.anticipo} onChange={(e) => setSubprod((p) => p.map((x, j) => j === i ? { ...x, anticipo: +e.target.value || 0 } : x))} />
+            <input type="number" className="rounded-md px-2 py-1 t11 text-right" style={inpSty} value={s.plazoMax} onChange={(e) => setSubprod((p) => p.map((x, j) => j === i ? { ...x, plazoMax: +e.target.value || 0 } : x))} />
+            <button onClick={() => setSubprod((p) => p.filter((_, j) => j !== i))} disabled={subprod.length <= 1} className="rounded p-0.5 disabled:opacity-30" style={{ color: C.red, marginTop: 4 }}><Trash2 size={12} /></button>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+
+  // ── Deudores. Recurrentes (sugeridos) arriba y «Otros deudores» abajo: son dos orígenes distintos
+  // —lo que el flujo comercial del cliente propone y lo que el ejecutivo decide agregar— y mezclarlos
+  // en una sola lista escondía cuál de los dos había que revisar. La FILA es la misma en las dos, para
+  // que no se separen.
+  const DG_DEU = "40px 44px 92px minmax(150px,1fr) 128px 74px 92px 92px 152px 78px 78px 52px 122px 40px";
+  const LBL7_DEU = ["Mes pasado", "-2 mes", "-3 mes", "-4 mes", "-5 mes", "-6 mes", "+6 m"];
+  const cabDeudores = () => (
+    <div className="grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: DG_DEU, color: C.faint, borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}>
+      <span>Nota</span><span title="C = Cliente · D = Deudor. Ambos encendidos: la empresa es cliente y deudor a la vez.">Cli/Deu</span><span>Rut</span><span>Nombre / Razón social</span>
+      <span title="Puntual: cupo a medida de ESTA operación, de un solo uso. Normal: línea permanente del par cliente-deudor.">Tipo línea</span><span>Pol. %L</span>
+      <span className="text-right">M. anterior</span><span className="text-right">M. utilizado</span>
+      <span className="text-right" title="Monto de línea que se le pide al comité para este deudor. Se digita en PESOS y se lee en M$.">Propuesta ($)</span>
+      <span className="text-right">D. directa</span><span className="text-right">D. indirecta</span><span className="text-right">Conc. %</span><span>V · N · C · FR · CP</span><span></span>
+    </div>
+  );
+  const filaDeudor = (d, i) => {
+    const conc = propFactoring > 0 ? Math.round((d.propuesta || 0) / propFactoring * 100) : 0;
+    return (
+    <div key={d.nombre} className="mt-1 grid items-start gap-2" style={{ gridTemplateColumns: DG_DEU }}>
+      <span className="rounded-full px-1.5 py-0.5 t10 font-bold text-center" style={{ backgroundColor: d.nota >= 4 ? "#F0FDF4" : d.nota >= pol("notaMinCompra", 3.7) ? "#eff6ff" : "#FFF7ED", color: NOTA_COLOR(d.nota), marginTop: 3 }}>{d.nota}</span>
+      <span className="flex gap-0.5" style={{ marginTop: 5 }} title={d.esCliente ? "Cliente y Deudor a la vez: la empresa cede facturas como cliente y además paga como deudor." : "Sólo Deudor (pagador de las facturas)."}>
+        <span className="flex h-4 w-4 items-center justify-center rounded-full t8 font-bold" style={{ backgroundColor: d.esCliente ? "#7C3AED" : "#E5E7EB", color: d.esCliente ? "#fff" : "#9CA3AF" }}>C</span>
+        <span className="flex h-4 w-4 items-center justify-center rounded-full t8 font-bold text-white" style={{ backgroundColor: "#7C3AED" }}>D</span>
+      </span>
+      <span className="t10" style={{ color: C.sub, fontVariantNumeric: "tabular-nums", marginTop: 5 }}>{d.rut}</span>
+      <span className="flex min-w-0 items-center gap-1 overflow-hidden" style={{ marginTop: 4 }}>
+        {/* EL DETALLE DE VENTAS VIVE EN EL CHIP, no en dos columnas de la tabla ni colgado del nombre:
+            sólo aplica a un deudor RECURRENTE —es lo que lo hace recurrente— y gastaba ancho en todas
+            las filas para un dato que se mira una vez. Sin venta recurrente no hay chip, y entonces no
+            hay nada que desplegar. */}
+        <span className="truncate t11 font-medium" style={{ color: C.ink }} title={d.nombre}>{d.nombre}</span>
+        {d.recurrente && (
+          <TipDesglose color="#16A34A" titulo={`Facturación mensual · ${d.nombre}`} nota={d.l6m.facMax > 0 ? `Últimos 6 meses: ${d.l6m.facMin}–${d.l6m.facMax} facturas y ${fmtMM(d.l6m.montoMin)}–${fmtMM(d.l6m.montoMax)} por mes (rango típico p40–p90). Facturó ${d.l6m.activos}/6 meses. Total 7m: ${fmtMM(d.hist.totMonto)} · ${d.hist.totFac}f.` : "Sin facturación registrada en el periodo."}
+            items={d.hist.meses.map((m, k) => ({ name: LBL7_DEU[k], val: m.fac ? `${fmtMM(m.monto)} · ${m.fac}f` : "—" }))}>
+            <span className="shrink-0 rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A", cursor: "help", borderBottom: "1px dotted #16A34A" }}
+              title="Deudor con flujo comercial recurrente (facturó en ≥ 4 de los últimos 6 meses): sugerido automáticamente. Pasa el mouse para ver su facturación mes a mes.">Recurrente</span>
+          </TipDesglose>
+        )}
+        {d.solicitado && <span className="shrink-0 rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }} title="Deudor pedido por el CIERRE DE UNA OFERTA: sus facturas no cabían en la línea vigente, así que la solicitud entró sola con línea PUNTUAL por lo que faltó.">Solicitado</span>}
+      </span>
+      {/* PUNTUAL O NORMAL. Lo que pide el cierre de una oferta es siempre PUNTUAL —un cupo a medida de
+          esa operación, de un solo uso— y por eso entra marcado así; el ejecutivo puede cambiarlo a
+          NORMAL cuando el flujo con ese deudor justifica una línea permanente, que es la decisión que
+          el comité está por tomar. */}
+      <span className="flex gap-1" style={{ marginTop: 4 }}>
+        {[{ k: "puntual", l: "Puntual", t: "Línea PUNTUAL cliente-deudor: cupo a medida de esta operación, de un solo uso. Lo que no se alcanza a usar se pierde." },
+          { k: "normal", l: "Normal", t: "Línea NORMAL cliente-deudor: cupo permanente del par, que se renueva con la vigencia de la línea." }].map((o) => (
+          <button key={o.k} onClick={() => updDeu(i, { tipoLinea: o.k })} title={o.t} className="rounded-full px-1.5 py-0.5 t9 font-bold"
+            style={{ backgroundColor: (d.tipoLinea || "normal") === o.k ? C.indigo : "#FAF9FB", color: (d.tipoLinea || "normal") === o.k ? "#fff" : "#9CA3AF" }}>{o.l}</button>
+        ))}
+      </span>
+      <span className="flex gap-1" style={{ marginTop: 4 }} title="Política de concentración por deudor: el ejecutivo elige 25% o 30% de la línea.">
+        {[...new Set([25, 30, pol("concentracionDeudorPct", 30)])].sort((a, b) => a - b).map((v) => <button key={v} onClick={() => updDeu(i, { politicaPct: v })} className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: d.politicaPct === v ? "#4c1d95" : "#FAF9FB", color: d.politicaPct === v ? "#fff" : "#9CA3AF" }}>{v}%</button>)}
+      </span>
+      <span className="t10 text-right" style={{ color: C.sub, marginTop: 5 }}>{d.anterior ? fmtMM(d.anterior) : "—"}</span>
+      <span className="t10 text-right" style={{ color: C.sub, marginTop: 5 }}>{d.utilizado ? fmtMM(d.utilizado) : "0"}</span>
+      <InputPesos value={d.propuesta} onChange={(e) => updDeu(i, { propuesta: mmRound(+e.target.value || 0) })} destacado obligatorio
+        title="Monto de línea que se le pide al comité para este deudor. Se digita en pesos." />
+      <span className="t10 text-right" style={{ color: d.deudaDirecta > 0 ? C.ink : C.faint, marginTop: 5 }}>{d.deudaDirecta > 0 ? fmtMM(d.deudaDirecta) : "---"}</span>
+      <span className="t10 text-right" style={{ color: d.deudaIndirecta > 0 ? C.ink : C.faint, marginTop: 5 }}>{d.deudaIndirecta > 0 ? fmtMM(d.deudaIndirecta) : "---"}</span>
+      <span className="t10 text-right font-semibold" style={{ color: conc > d.politicaPct ? "#EF4444" : C.ink, marginTop: 5 }} title={conc > d.politicaPct ? `Excede la política (${d.politicaPct}% de la línea)` : "Concentración sobre la línea factoring propuesta"}>{conc}%</span>
+      <span className="flex gap-1.5" style={{ marginTop: 5 }}>{["V", "N", "C", "FR", "CP"].map((f) => <label key={f} className="flex items-center gap-0.5 t9" style={{ color: C.sub }}><input type="checkbox" checked={!!d.flags[f]} onChange={(e) => updDeu(i, { flags: { ...d.flags, [f]: e.target.checked } })} />{f}</label>)}</span>
+      <span className="flex gap-1" style={{ marginTop: 4 }}>
+        <button onClick={() => setEditDeu(i)} title="Editar deudor factoring" className="rounded p-0.5" style={{ color: C.indigo }}>✎</button>
+        <button onClick={() => setDeudores((p) => p.filter((_, j) => j !== i))} className="rounded p-0.5" style={{ color: C.red }}><Trash2 size={12} /></button>
+      </span>
+    </div>
+    );
+  };
+  const subtotalDeu = (lista, etiqueta) => (
+    <div className="mt-2 grid items-center gap-2 t10" style={{ gridTemplateColumns: DG_DEU, borderTop: `1px solid ${C.line}`, paddingTop: 6 }}>
+      <span></span><span></span><span></span>
+      <span className="font-semibold" style={{ color: C.sub }}>{etiqueta} · {lista.length}</span>
+      <span></span><span></span>
+      <span className="text-right" style={{ color: C.sub }}>{fmtMM(lista.reduce((s, d) => s + (d.anterior || 0), 0))}</span>
+      <span className="text-right" style={{ color: C.sub }}>{fmtMM(lista.reduce((s, d) => s + (d.utilizado || 0), 0))}</span>
+      <span className="text-right font-bold" style={{ color: C.ink }}>{fmtMM(lista.reduce((s, d) => s + (d.propuesta || 0), 0))}</span>
+      <span></span><span></span><span></span><span></span><span></span>
+    </div>
+  );
+  const secDeudores = () => {
+    const idx = deudores.map((d, i) => ({ d, i }));
+    const recu = idx.filter((x) => x.d.recurrente), otros = idx.filter((x) => !x.d.recurrente);
+    return (
+    <>
+      <div className="mb-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#C2410C" }}>Los <b>deudores con flujo recurrente</b> (facturación en ≥ 4 de los últimos 6 meses) vienen <b>sugeridos</b>: revisa el monto de <b>Propuesta&nbsp;($)</b>, que es el único campo que tienes que llenar y va resaltado. El detalle de facturación cuelga del chip <b>Recurrente</b>. Abajo, en <b>Otros deudores</b>, agrega los que falten (nota ≥ {String(pol("notaMinCompra", 3.7)).replace(".", ",")}); cada uno consulta la <b>API 4 · Plataforma 360</b>.</div>
+      <div className="overflow-x-auto rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
+        <div style={{ minWidth: 1440 }}>
+          <div className="mb-1.5 flex items-baseline gap-2">
+            <span className="t11 font-semibold" style={{ color: C.navy }}>Deudores recurrentes</span>
+            <span className="t9" style={{ color: C.faint }}>sugeridos por su flujo comercial con el cliente</span>
+          </div>
+          {cabDeudores()}
+          {recu.map((x) => filaDeudor(x.d, x.i))}
+          {recu.length === 0 && <div className="py-3 t10" style={{ color: C.faint }}>Este cliente no registra deudores con flujo recurrente en los últimos 6 meses. Agrégalos en «Otros deudores».</div>}
+          {recu.length > 0 && subtotalDeu(recu.map((x) => x.d), "Subtotal recurrentes")}
+        </div>
+      </div>
+      {/* OTROS DEUDORES. Sección propia, bajo los recurrentes: lo que el ejecutivo decide agregar no es
+          lo mismo que lo que el flujo del cliente sugiere, y en una lista única no se distinguía. */}
+      <div className="mt-3 overflow-x-auto rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
+        <div style={{ minWidth: 1440 }}>
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-baseline gap-2">
+              <span className="t11 font-semibold" style={{ color: C.navy }}>Otros deudores</span>
+              <span className="t9" style={{ color: C.faint }}>búscalos y agrégalos a la solicitud</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <input value={buscaDeu} onChange={(e) => setBuscaDeu(e.target.value)} placeholder="Buscar deudor…" className="rounded-md px-2 py-1.5 t11 outline-none" style={{ ...inpSty, width: 200 }} />
+              <select value={addSel} onChange={(e) => { const v = e.target.value; setAddSel(v); if (!v) return; if (esAdmin) { pedirDeudor(v); } else { agregarDeudor(v); setAddSel(""); } }} className="rounded-md px-2 py-1.5 t11" style={{ ...inpSty, maxWidth: 340 }}>
+                <option value="">+ Agregar deudor factoring… ({candFiltrados.length})</option>
+                {candFiltrados.slice(0, 300).map((n) => <option key={n} value={n}>{n} · nota {(notaDeudor(n) || 0)}</option>)}
+              </select>
+            </div>
+          </div>
+          {addPrev && (
+            <div className="mb-2 rounded-lg p-3" style={{ backgroundColor: "#eff6ff", border: "1px solid #bfdbfe" }}>
+              <div className="t11 font-semibold" style={{ color: "#2563EB" }}>Recuperamos de API 4 · Plataforma 360: {addPrev.nombre}</div>
+              <div className="mt-0.5 t10" style={{ color: C.sub }}>Nota {addPrev.nota} · Deuda directa {fmtMM(addPrev.deudaDirecta)} · indirecta {fmtMM(addPrev.deudaIndirecta)} · propuesta sugerida {fmtMM(addPrev.propuesta)}</div>
+              <div className="mt-2 flex gap-2">
+                <button onClick={aceptarDeudor} className="rounded-md px-3 py-1.5 t10 font-semibold text-white" style={{ backgroundColor: "#2563EB" }}>Aceptar y cargar</button>
+                <button onClick={() => { setAddPrev(null); setAddSel(""); }} className="rounded-md px-3 py-1.5 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Descartar</button>
+              </div>
+            </div>
+          )}
+          {otros.length > 0 && cabDeudores()}
+          {otros.map((x) => filaDeudor(x.d, x.i))}
+          {otros.length === 0 && <div className="py-3 t10" style={{ color: C.faint }}>Sin otros deudores. Búscalo en el selector de arriba para agregarlo.</div>}
+          {otros.length > 0 && subtotalDeu(otros.map((x) => x.d), "Subtotal otros")}
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-xl px-3 py-2" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
+        <span className="t10 font-semibold" style={{ color: C.ink }}>Otros Deudores Límite Máx. <input type="number" value={otrosLimite} onChange={(e) => setOtrosLimite(+e.target.value || 0)} className="mx-1 w-12 rounded-full px-1 py-0.5 t10 text-right outline-none" style={inpSty} />%</span>
+        {deudores.length > 0 && <span className="t10 font-semibold" style={{ color: C.ink }}>Prom. Ponderado: <span style={{ color: NOTA_COLOR(promNota) }}>{promNota}</span>{promNota < pol("notaMinCompra", 3.7) && <span className="ml-2" style={{ color: "#C2410C" }}>⚠ bajo el límite de compra ({String(pol("notaMinCompra", 3.7)).replace(".", ",")})</span>}</span>}
+        <span className="t11 font-bold" style={{ color: C.indigo }}>Total propuesto a deudores: {fmtMM(deudores.reduce((s, d) => s + (d.propuesta || 0), 0))} · {deudores.length} deudor(es)</span>
+      </div>
+      {/* Modal EDITAR DEUDOR FACTORING (patrón de la pantalla actual, con listado de productos) */}
+      {editDeu != null && deudores[editDeu] && (() => { const d = deudores[editDeu]; return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center ovl p-6" onClick={() => setEditDeu(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-2xl rounded-2xl bg-white p-4 shadow-2xl" style={{ border: `1px solid ${C.line}` }}>
+            <div className="flex items-center justify-between">
+              <div className="t12 font-bold" style={{ color: C.ink }}>Editar deudor factoring</div>
+              <button onClick={() => setEditDeu(null)} className="rounded-md p-1 hover:bg-stone-100" style={{ color: C.sub }}><X size={15} /></button>
+            </div>
+            <div className="mt-0.5 t10" style={{ color: C.sub }}>{d.rut} · {d.nombre} · Nota <b style={{ color: NOTA_COLOR(d.nota) }}>{d.nota}</b></div>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <div className="rounded-lg px-2.5 py-1.5 t10" style={{ backgroundColor: C.page, color: C.sub }}>Monto anterior: <b style={{ color: C.ink }}>{d.anterior ? fmtMM(d.anterior) : "—"}</b></div>
+              <div className="rounded-lg px-2.5 py-1.5 t10" style={{ backgroundColor: C.page, color: C.sub }}>Monto utilizado: <b style={{ color: C.ink }}>{d.utilizado ? fmtMM(d.utilizado) : "0"}</b></div>
+              <Lb t="Monto propuesto (en pesos)"><InputPesos value={d.propuesta} onChange={(e) => updDeu(editDeu, { propuesta: mmRound(+e.target.value || 0) })} destacado obligatorio /></Lb>
+              <Lb t="Fecha inf. cliente"><input type="date" value={d.fechaInf} onChange={(e) => updDeu(editDeu, { fechaInf: e.target.value })} className="w-full rounded-md px-2 py-1 t11 outline-none" style={inpSty} /></Lb>
+              <Lb t="Info. deuda directa (en pesos)"><InputPesos value={d.deudaDirecta} onChange={(e) => updDeu(editDeu, { deudaDirecta: mmRound(+e.target.value || 0) })} /></Lb>
+              <Lb t="Info. deuda indirecta (en pesos)"><InputPesos value={d.deudaIndirecta} onChange={(e) => updDeu(editDeu, { deudaIndirecta: mmRound(+e.target.value || 0) })} /></Lb>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-3">{[["V", "Verificación"], ["N", "Notificación"], ["C", "Cobranza"], ["FR", "FA Respaldo"], ["CP", "Cheque Pago"]].map(([f, l]) => (
+              <label key={f} className="flex items-center gap-1 t10" style={{ color: C.sub }}><input type="checkbox" checked={!!d.flags[f]} onChange={(e) => updDeu(editDeu, { flags: { ...d.flags, [f]: e.target.checked } })} />{l}</label>
+            ))}</div>
+            <div className="mt-3 rounded-xl p-2.5" style={{ border: `1px solid ${C.line}` }}>
+              <div className="flex items-center justify-between">
+                <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>Listado de productos</div>
+                <button onClick={() => updDeu(editDeu, { productos: [...d.productos, { producto: "CHEQUE PROPIO", anterior: 0, utilizado: 0, propuesto: 0 }] })} className="t10 font-semibold" style={{ color: C.indigo }}>+ Agregar producto</button>
+              </div>
+              <div className="mt-1 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "1fr 100px 100px 150px 20px", color: C.faint }}><span>Producto</span><span className="text-right">Mto. anterior</span><span className="text-right">Mto. utilizado</span><span className="text-right">Mto. propuesto ($)</span><span></span></div>
+              {d.productos.map((pr, pi) => (
+                <div key={pi} className="mt-1 grid items-start gap-2" style={{ gridTemplateColumns: "1fr 100px 100px 150px 20px" }}>
+                  <select value={pr.producto} onChange={(e) => updDeuProd(editDeu, pi, { producto: e.target.value })} className="rounded-md px-2 py-1 t11" style={inpSty}><option>FACTURA</option><option>CHEQUE PROPIO</option></select>
+                  <span className="t10 text-right" style={{ color: C.sub, paddingTop: 4 }}>{pr.anterior ? fmtMM(pr.anterior) : "—"}</span>
+                  <span className="t10 text-right" style={{ color: C.sub, paddingTop: 4 }}>{pr.utilizado ? fmtMM(pr.utilizado) : "0"}</span>
+                  <InputPesos value={pr.propuesto} onChange={(e) => updDeuProd(editDeu, pi, { propuesto: mmRound(+e.target.value || 0) })} />
+                  <button disabled={d.productos.length <= 1} onClick={() => { const productos = d.productos.filter((_, k) => k !== pi); updDeu(editDeu, { productos, propuesta: productos.reduce((s, x) => s + (x.propuesto || 0), 0) }); }} className="rounded p-0.5 disabled:opacity-30" style={{ color: C.red, marginTop: 4 }}><Trash2 size={12} /></button>
+                </div>
+              ))}
+              <div className="mt-1.5 t9" style={{ color: C.faint }}>El monto propuesto del deudor se recalcula con la suma de sus productos.</div>
+            </div>
+            <div className="mt-3 flex justify-end gap-2">
+              <button onClick={() => setEditDeu(null)} className="rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Guardar</button>
+            </div>
+          </div>
+        </div>
+      ); })()}
+    </>
+    );
+  };
+
+  const secBienes = () => (
+    <div className="space-y-3">
+      <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
+        <div className="flex items-center justify-between">
+          <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>Fianza solidaria</div>
+          <button onClick={() => setFianzas((p) => [...p, { rut: "", nombre: "", regimen: "Sociedad conyugal", pep: "No", fatca: "No" }])} className="t10 font-semibold" style={{ color: C.indigo }}>+ Agregar fianza solidaria</button>
+        </div>
+        {fianzas.length > 0 && <div className="mt-1 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "130px 1fr 170px 70px 70px 20px", color: C.faint }}><span>Rut</span><span>Nombre / Razón social</span><span>Régimen matrimonial</span><span>PEP</span><span>FATCA</span><span></span></div>}
+        {fianzas.map((f, i) => (
+          <div key={i} className="mt-1 grid items-center gap-2" style={{ gridTemplateColumns: "130px 1fr 170px 70px 70px 20px" }}>
+            <input value={f.rut} onChange={(e) => setFianzas((p) => p.map((x, j) => j === i ? { ...x, rut: e.target.value } : x))} placeholder="12.345.678-9" className="rounded-md px-2 py-1 t11 outline-none" style={inpSty} />
+            <input value={f.nombre} onChange={(e) => setFianzas((p) => p.map((x, j) => j === i ? { ...x, nombre: e.target.value } : x))} placeholder="Nombre del fiador" className="rounded-md px-2 py-1 t11 outline-none" style={inpSty} />
+            <select value={f.regimen} onChange={(e) => setFianzas((p) => p.map((x, j) => j === i ? { ...x, regimen: e.target.value } : x))} className="rounded-md px-2 py-1 t11" style={inpSty}><option>Sociedad conyugal</option><option>Separación de bienes</option><option>Participación gananciales</option><option>Soltero(a)</option></select>
+            <select value={f.pep} onChange={(e) => setFianzas((p) => p.map((x, j) => j === i ? { ...x, pep: e.target.value } : x))} className="rounded-md px-2 py-1 t11" style={inpSty}><option>No</option><option>Sí</option></select>
+            <select value={f.fatca} onChange={(e) => setFianzas((p) => p.map((x, j) => j === i ? { ...x, fatca: e.target.value } : x))} className="rounded-md px-2 py-1 t11" style={inpSty}><option>No</option><option>Sí</option></select>
+            <button onClick={() => setFianzas((p) => p.filter((_, j) => j !== i))} className="rounded p-0.5" style={{ color: C.red }}><Trash2 size={12} /></button>
+          </div>
+        ))}
+        {fianzas.length === 0 && <div className="mt-1 py-2 t10" style={{ color: C.faint }}>Sin fianzas solidarias.</div>}
+      </div>
+      <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
+        <div className="flex items-center justify-between">
+          <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>Garantías</div>
+          <button onClick={() => setGarantias((p) => [...p, { tipo: "Hipoteca", institucion: "Factoring Security", producto: "Factoring", idGar: "G-" + (1000 + p.length + 1), fIni: hoyISO, fTer: vencProp, monto: 100e6, cobertura: 100 }])} className="t10 font-semibold" style={{ color: C.indigo }}>+ Agregar garantía</button>
+        </div>
+        {garantias.length > 0 && <div className="mt-1 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "150px 1fr 110px 80px 125px 125px 150px 80px 20px", color: C.faint }}><span>Tipo garantía</span><span>Institución</span><span>Producto</span><span>ID</span><span>F. inicio</span><span>F. término</span><span className="text-right">Monto ($)</span><span>% Cobert.</span><span></span></div>}
+        {garantias.map((g, i) => (
+          <div key={i} className="mt-1 grid items-start gap-2" style={{ gridTemplateColumns: "150px 1fr 110px 80px 125px 125px 150px 80px 20px" }}>
+            <select value={g.tipo} onChange={(e) => setGarantias((p) => p.map((x, j) => j === i ? { ...x, tipo: e.target.value } : x))} className="rounded-md px-2 py-1 t11" style={inpSty}><option>Hipoteca</option><option>Prenda</option><option>Depósito a plazo</option><option>Aval CORFO / FOGAPE</option><option>Otra</option></select>
+            <input value={g.institucion} onChange={(e) => setGarantias((p) => p.map((x, j) => j === i ? { ...x, institucion: e.target.value } : x))} className="rounded-md px-2 py-1 t11 outline-none" style={inpSty} />
+            <select value={g.producto} onChange={(e) => setGarantias((p) => p.map((x, j) => j === i ? { ...x, producto: e.target.value } : x))} className="rounded-md px-2 py-1 t11" style={inpSty}><option>Factoring</option><option>Confirming</option></select>
+            <span className="t10" style={{ color: C.sub, paddingTop: 4 }}>{g.idGar}</span>
+            <input type="date" value={g.fIni} onChange={(e) => setGarantias((p) => p.map((x, j) => j === i ? { ...x, fIni: e.target.value } : x))} className="rounded-md px-1.5 py-1 t10 outline-none" style={inpSty} />
+            <input type="date" value={g.fTer} onChange={(e) => setGarantias((p) => p.map((x, j) => j === i ? { ...x, fTer: e.target.value } : x))} className="rounded-md px-1.5 py-1 t10 outline-none" style={inpSty} />
+            <InputPesos value={g.monto} onChange={(e) => setGarantias((p) => p.map((x, j) => j === i ? { ...x, monto: mmRound(+e.target.value || 0) } : x))} destacado obligatorio />
+            <input type="number" value={g.cobertura} onChange={(e) => setGarantias((p) => p.map((x, j) => j === i ? { ...x, cobertura: +e.target.value || 0 } : x))} className="rounded-md px-2 py-1 t11 text-right outline-none" style={inpSty} />
+            <button onClick={() => setGarantias((p) => p.filter((_, j) => j !== i))} className="rounded p-0.5" style={{ color: C.red, marginTop: 4 }}><Trash2 size={12} /></button>
+          </div>
+        ))}
+        {garantias.length === 0 && <div className="mt-1 py-2 t10" style={{ color: C.faint }}>Sin garantías. Agrega las que respaldan la línea propuesta (opcional).</div>}
+        {garantias.length > 0 && <div className="mt-2 flex justify-end t10 font-semibold" style={{ borderTop: `1px solid ${C.line}`, paddingTop: 6, color: C.ink }}>Total garantías: {fmtMM(garantias.reduce((s, g) => s + (g.monto || 0), 0))}</div>}
+      </div>
+    </div>
+  );
+
+  const secNotas = () => (
+    <>
+      {esAdmin && (() => { const prevN = generarNotasIA({ cliente, api4, api6, tipo, subtipo, totalPropuesto, nDeudores: deudores.length, promNota }); return (
+      <PanelRecupera fuente="IA · sobre API 4 + la presentación" resumen="Borrador de las 5 notas comerciales generado con la información firmográfica, comercial, financiera, la línea propuesta y los deudores" cargado={notasCargadas} onCargar={() => { setNotas(prevN); setNotasCargadas(true); }}
+        preview={[["Negocio propuesto", prevN.negocio], ["Referencias comerciales", prevN.referencias], ["Antecedentes generales", prevN.antecedentes], ["Aspectos de mercado", prevN.mercado], ["Análisis financiero", prevN.financiero]]} />
+      ); })()}
+      {!esAdmin && <div className="mb-2 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#f5f3ff", border: "1px solid #DDD6FE", color: "#7C3AED" }}><Zap size={11} /> Borrador de las 5 notas comerciales generado por IA · revísalo y edítalo antes de solicitar el VB.</div>}
+      {notasCargadas && notas && [["negocio", "Negocio propuesto"], ["referencias", "Referencias comerciales"], ["antecedentes", "Antecedentes generales"], ["mercado", "Aspectos de mercado"], ["financiero", "Análisis financiero"]].map(([k, l]) => (
+        <div key={k} className="mt-2">
+          <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>{l} <span className="ml-1 rounded-full px-1 py-0.5 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>✦ IA</span></div>
+          <textarea value={notas[k]} onChange={(e) => setNotas((n) => ({ ...n, [k]: e.target.value }))} rows={3} className="mt-0.5 w-full rounded-lg px-2.5 py-1.5 t11 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, lineHeight: 1.5 }} />
+        </div>
+      ))}
+    </>
+  );
+
   return (
     <div className="w-full">
       {/* Página standalone (patrón FormDetail): breadcrumb nivel 3 + encabezado de página, sin card envolvente */}
@@ -20734,342 +21435,20 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
           ))}
         </div>
         <div className="mt-3" style={{ minHeight: 340 }}>
-          {paso === 0 && (
-            <>
-              <div className="mb-2 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0", color: "#16A34A" }}>
-                <Check size={11} /> Información recuperada automáticamente de <b>API 4 · Plataforma 360 + API 5 · Documental</b> — firmográfica, comercial, {api4.socios.length} socio(s) y {api5d.length} documento(s) · {nowStamp()}
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                  <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Información RUT y solicitud</div>
-                  <Fila k="Rut / Nombre" v={`${rut} · ${cliente}`} />
-                  <Fila k="Estado de línea" v={linea ? "Línea Vigente" : "Sin línea (nueva)"} />
-                  <div className="flex items-center justify-between gap-3 py-1 t11" style={{ borderBottom: `1px solid ${C.line}` }}><span style={{ color: C.sub }}>Motivo</span>
-                    <select value={tipo} onChange={(e) => { setTipo(e.target.value); if (e.target.value !== "modificar") setSubtipo(null); }} className="rounded-md px-2 py-1 t11" style={inpSty} disabled={!linea}>
-                      {(linea ? ["renovar", "modificar"] : ["crear"]).map((t) => <option key={t} value={t}>{SOLIC_TIPOS[t]}</option>)}
-                    </select></div>
-                  {tipo === "modificar" && <div className="flex items-center justify-between gap-3 py-1 t11" style={{ borderBottom: `1px solid ${C.line}` }}><span style={{ color: C.sub }}>Tipo de modificación</span>
-                    <select value={subtipo || ""} onChange={(e) => setSubtipo(e.target.value || null)} className="rounded-md px-2 py-1 t11" style={inpSty}>
-                      <option value="">— Seleccionar —</option>{Object.entries(SOLIC_SUBTIPOS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                    </select></div>}
-                  <Fila k="Vigencia" v="12 meses" />
-                  {carg[0] && <>
-                    <div className="t9 font-bold uppercase tracking-wide mt-2 mb-1" style={{ color: "#7C3AED" }}>Cliente · Plataforma 360</div>
-                    <Fila k="Actividad económica" v={api4.firmografica.actividad} />
-                    <Fila k="Sector" v={api4.firmografica.sector} />
-                    <Fila k="N° trabajadores" v={api4.firmografica.trabajadores} />
-                    <Fila k="Cliente banco / Alertas" v={`${api4.firmografica.clienteBanco} / ${api4.firmografica.alertas}`} />
-                    <Fila k="Segmento" v={`${api4.comercial.segmento} · ${api4.comercial.subSegmento}`} />
-                    <Fila k="Margen 12m / Coloc. prom." v={`M$ ${api4.comercial.margen12m.toLocaleString("es-CL")} · M$ ${api4.comercial.colocProm12m.toLocaleString("es-CL")}`} />
-                  </>}
-                </div>
-                <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                  <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Documentos adjuntos · repositorio</div>
-                  {carg[0] ? api5d.map((d, i) => (
-                    <div key={i} className="flex items-center justify-between gap-2 py-1 t10" style={{ borderBottom: `1px solid ${C.line}` }}>
-                      <span className="truncate" style={{ color: C.ink }}><span className="rounded-full px-1 py-0.5 t9 font-semibold mr-1" style={{ backgroundColor: C.page, color: C.sub }}>{d.tipo}</span>{d.nombre}</span>
-                      <span className="shrink-0 t9" style={{ color: C.faint }}>v{d.version} · vence {d.vencimiento}</span>
-                    </div>
-                  )) : <div className="t10 py-3" style={{ color: C.faint }}>Acepta la recuperación para ver los documentos.</div>}
-                  {carg[0] && <>
-                    <div className="t9 font-bold uppercase tracking-wide mt-2 mb-1" style={{ color: "#7C3AED" }}>Socios</div>
-                    {api4.socios.map((s, i) => <Fila key={i} k={s.nombre} v={`${s.participacion}% · PEP ${s.pep} · ${s.aprobLegal}`} />)}
-                  </>}
-                </div>
-              </div>
-            </>
-          )}
-          {paso === 1 && (
-            <>
-              {esAdmin && <PanelRecupera fuente="API 6 · Riesgo BICE + API 4 · Plataforma 360" resumen="Deuda CMF directa/indirecta, mora ACHEF, boletín comercial, previsional, protestos, índices y ventas SII" cargado={!!carg[1]} onCargar={cargarFin}
-                preview={[["Clasificación deudora", api6.clasificacion], ["Deuda directa / indirecta", `$ ${(api6.deudaDirecta / 1e6).toFixed(1)} MM / $ ${(api6.deudaIndirecta / 1e6).toFixed(1)} MM`], ["Mora CMF", api6.moraCMF > 0 ? `$ ${(api6.moraCMF / 1e6).toFixed(1)} MM ⚠` : "Sin mora"], ["Mora ACHEF", api6.moraACHEF.morosas > 0 ? `$ ${(api6.moraACHEF.morosas / 1e6).toFixed(1)} MM · ${api6.moraACHEF.nroEmpresas} empresa(s) ⚠` : `Sin mora · ${api6.moraACHEF.nroEmpresas} empresa(s)`], ["Boletín comercial", api6.boletinComercial > 0 ? `${api6.boletinComercial} anotación(es) ⚠` : "Sin anotaciones"], ["Deuda previsional", api6.deudaPrevisional > 0 ? `$ ${(api6.deudaPrevisional / 1e6).toFixed(1)} MM ⚠` : "Sin deuda"], ["Protestos no aclarados", api6.protestos || 0], ["Leverage / Patrimonio", `${api4.indices.leverage}x · $ ${(api4.indices.patrimonio / 1e6).toFixed(0)} MM`], ["Ventas SII (últ. año)", "M$ " + api4.indices.ventasSII[1].toLocaleString("es-CL")], ["Morosidad interna / Protesto %", `${api6.morosidadInterna} / ${api6.protestoPctInterno}`]]} />}
-              {carg[1] && fin && (() => {
-                const fld = (k, step) => ({ value: fin[k], onChange: (e) => setFin((f) => ({ ...f, [k]: +e.target.value || 0 })), type: "number", step: step || "0.1", className: "w-full rounded-md px-2 py-1 t11 text-right outline-none", style: inpSty });
-                const ventasUlt = api4.indices.ventasSII[2] / 1000, deuda = (fin.directa || 0) + (fin.indirecta || 0);
-                const ratio = (a, b) => (b > 0 ? (a / b).toFixed(2) : "---");
-                const achefTot = +(fin.achefVig + fin.achefMor + fin.achefFac + fin.achefChq + fin.achefLet + fin.achefOtr).toFixed(1);
-                return (
-                <div className="space-y-3">
-                  <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                    <div className="t9 font-bold uppercase tracking-wide mb-1.5" style={{ color: "#7C3AED" }}>Información financiera <span className="ml-1 font-normal normal-case" style={{ color: C.faint }}>· editable — corrige lo que difiera de la información del cliente</span></div>
-                    <div className="grid gap-2 md:grid-cols-4">
-                      <Lb t="Deuda directa (M$)"><input {...fld("directa")} /></Lb>
-                      <Lb t="Deuda indirecta (M$)"><input {...fld("indirecta")} /></Lb>
-                      <Lb t="Leasing UF"><input {...fld("leasingUF")} /></Lb>
-                      <Lb t="Fecha info. por cliente"><input type="date" value={fin.fInfo} onChange={(e) => setFin((f) => ({ ...f, fInfo: e.target.value }))} className="w-full rounded-md px-2 py-1 t11 outline-none" style={inpSty} /></Lb>
-                      <Lb t="Pas. Exigible / Gen. Bruta"><input {...fld("pasExGen", "0.01")} /></Lb>
-                      <Lb t="Patrimonio (M$)"><input {...fld("patrimonio", "1")} /></Lb>
-                      <Lb t="Generación (M$)"><input {...fld("generacion", "1")} /></Lb>
-                      <Lb t="Leverage (veces)"><input {...fld("leverage", "0.1")} /></Lb>
-                    </div>
-                    <div className="mt-2 grid gap-3 md:grid-cols-2">
-                      <div>
-                        <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Ventas (M$)</div>
-                        <div className="grid grid-cols-3 gap-2 mt-0.5">{api4.indices.ventas.map((v, i) => <div key={i} className="rounded-md px-2 py-1 t10 text-right" style={{ backgroundColor: C.page, color: C.ink }}><div className="t9 text-left" style={{ color: C.faint }}>{2024 + i} · {v ? "12" : "0"} de 12 m</div>{v ? "M$ " + v.toLocaleString("es-CL") : "---"}</div>)}</div>
-                      </div>
-                      <div>
-                        <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint }}>Ventas SII (M$)</div>
-                        <div className="grid grid-cols-3 gap-2 mt-0.5">{api4.indices.ventasSII.map((v, i) => <div key={i} className="rounded-md px-2 py-1 t10 text-right" style={{ backgroundColor: C.page, color: C.ink }}><div className="t9 text-left" style={{ color: C.faint }}>{2024 + i} · {i === 2 ? "6" : "12"} de 12 m</div>{"M$ " + v.toLocaleString("es-CL")}</div>)}</div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                      <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Ratios <span className="font-normal normal-case" style={{ color: C.faint }}>(calculados)</span></div>
-                      <Fila k="Línea / Patrimonio" v={ratio(propGlobal, fin.patrimonio)} />
-                      <Fila k="Línea / Ventas" v={ratio(propGlobal, ventasUlt)} />
-                      <Fila k="Deuda / Ventas" v={ratio(deuda, ventasUlt)} />
-                      <Fila k="Línea / Deuda" v={ratio(propGlobal, deuda)} />
-                    </div>
-                    <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                      <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Índices internos factoring</div>
-                      <Fila k="Morosidad" v={api6.morosidadInterna.toFixed(2)} />
-                      <Fila k="Protesto %" v={api6.protestoPctInterno.toFixed(2)} />
-                      <Fila k="Boletín / Protestos / Previsional" v={`${api6.boletinComercial} · ${api6.protestos} · ${api6.deudaPrevisional > 0 ? "$" + (api6.deudaPrevisional / 1e6).toFixed(1) + "MM" : "0"}`} />
-                    </div>
-                    <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                      <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Informes comerciales cliente</div>
-                      <div className="flex items-center justify-between gap-3 py-1 t11" style={{ borderBottom: `1px solid ${C.line}` }}><span style={{ color: C.sub }}>Históricos</span>
-                        <select value={fin.historicos} onChange={(e) => setFin((f) => ({ ...f, historicos: e.target.value }))} className="rounded-md px-2 py-1 t11" style={inpSty}><option>No</option><option>Sí</option></select></div>
-                      <Fila k="Vigentes" v={api6.boletinComercial > 0 ? `${api6.boletinComercial} anotación(es)` : "Sin anotaciones"} />
-                      <Fila k="Clasificación deudora" v={api6.clasificacion} />
-                    </div>
-                  </div>
-                  <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                    <div className="t9 font-bold uppercase tracking-wide mb-1.5" style={{ color: "#7C3AED" }}>Riesgo con otras empresas de factoring (ACHEF) <span className="font-normal normal-case" style={{ color: C.faint }}>· editable</span></div>
-                    <div className="grid items-end gap-2" style={{ gridTemplateColumns: "140px 90px repeat(6, 1fr) 90px" }}>
-                      <Lb t="Fecha inf."><input type="date" value={fin.achefFecha} onChange={(e) => setFin((f) => ({ ...f, achefFecha: e.target.value }))} className="w-full rounded-md px-2 py-1 t10 outline-none" style={inpSty} /></Lb>
-                      <Lb t="Nro empresas"><input {...fld("achefN", "1")} /></Lb>
-                      <Lb t="Vigente M$"><input {...fld("achefVig")} /></Lb>
-                      <Lb t="Morosas M$"><input {...fld("achefMor")} /></Lb>
-                      <Lb t="Facturas M$"><input {...fld("achefFac")} /></Lb>
-                      <Lb t="Cheques M$"><input {...fld("achefChq")} /></Lb>
-                      <Lb t="Letras M$"><input {...fld("achefLet")} /></Lb>
-                      <Lb t="Otros M$"><input {...fld("achefOtr")} /></Lb>
-                      <div className="t10 text-right font-bold" style={{ color: fin.achefMor > 0 ? "#EF4444" : C.ink }}>Total: {achefTot} MM</div>
-                    </div>
-                  </div>
-                </div>
-                );
-              })()}
-            </>
-          )}
+          {paso === 0 && secDeudores()}
+          {paso === 1 && secBienes()}
           {paso === 2 && (
-            <>
-              <div className="mb-2 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.sub }}><Check size={11} style={{ color: "#16A34A" }} /> Datos internos de línea · CSV SFTP diario + montos vía API cada 1 h. La propuesta es editable.</div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                  <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Situación actual</div>
-                  <Fila k="Línea global actual" v={linea ? fmtMM(linea.aprobada) : "—"} />
-                  <Fila k="Utilizada" v={linea ? `${fmtMM(linea.uso)} (${Math.round(linea.uso / linea.aprobada * 100)}%)` : "—"} />
-                  <Fila k="Proyección post-curse" v={linea ? fmtMM(linea.proyeccion) : "—"} />
-                  <Fila k="Morosidad" v={linea && linea.morosidadDias > 0 ? `${linea.morosidadDias} días ⚠` : "Sin morosidad"} />
-                </div>
-                <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                  <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Propuesta (editable)</div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="t10" style={{ color: C.sub }}>Línea global propuesta (MM)<input type="number" className={inp} style={inpSty} value={propGlobal} onChange={(e) => setPropGlobal(+e.target.value || 0)} /></label>
-                    <label className="t10" style={{ color: C.sub }}>Vencimiento propuesto<input type="date" className={inp} style={inpSty} value={vencProp} onChange={(e) => setVencProp(e.target.value)} /></label>
-                    <label className="t10" style={{ color: C.sub }}>Línea Factoring (MM)<input type="number" className={inp} style={inpSty} value={propFactoring} onChange={(e) => setPropFactoring(+e.target.value || 0)} /></label>
-                    <label className="t10" style={{ color: C.sub }}>Línea Confirming (MM)<input type="number" className={inp} style={inpSty} value={propConfirming} onChange={(e) => setPropConfirming(+e.target.value || 0)} /></label>
-                  </div>
-                  <div className="mt-2 rounded-lg px-3 py-1.5 t11 font-bold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>Total propuesto: {fmtMM(totalPropuesto)}</div>
-                </div>
-              </div>
-              <div className="mt-3 rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                <div className="flex items-center justify-between"><div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>Subproducto Factoring</div>
-                  <button onClick={() => setSubprod((p) => [...p, { tipoDoc: "CHEQUE PROPIO", aprobado: 0, utilizado: 0, propuesta: 50, anticipo: 100, plazoMax: 120 }])} className="t10 font-semibold" style={{ color: C.indigo }}>+ Agregar producto</button></div>
-                <div className="mt-1 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "1fr 90px 90px 110px 70px 90px 20px", color: C.faint }}><span>Tipo documento</span><span>Aprobado</span><span>Utilizado</span><span>Propuesta</span><span>Antic.%</span><span>Plazo máx</span><span></span></div>
-                {subprod.map((s, i) => (
-                  <div key={i} className="mt-1 grid items-center gap-2" style={{ gridTemplateColumns: "1fr 90px 90px 110px 70px 90px 20px" }}>
-                    <select value={s.tipoDoc} onChange={(e) => setSubprod((p) => p.map((x, j) => j === i ? { ...x, tipoDoc: e.target.value } : x))} className="rounded-md px-2 py-1 t11" style={inpSty}><option>FACTURA</option><option>CHEQUE PROPIO</option></select>
-                    <span className="t11 text-right" style={{ color: C.sub }}>{fmtMM(s.aprobado)}</span>
-                    <span className="t11 text-right" style={{ color: C.sub }}>{fmtMM(s.utilizado)}</span>
-                    <input type="number" className="rounded-md px-2 py-1 t11 text-right" style={inpSty} value={s.propuesta} onChange={(e) => setSubprod((p) => p.map((x, j) => j === i ? { ...x, propuesta: +e.target.value || 0 } : x))} />
-                    <input type="number" className="rounded-md px-2 py-1 t11 text-right" style={inpSty} value={s.anticipo} onChange={(e) => setSubprod((p) => p.map((x, j) => j === i ? { ...x, anticipo: +e.target.value || 0 } : x))} />
-                    <input type="number" className="rounded-md px-2 py-1 t11 text-right" style={inpSty} value={s.plazoMax} onChange={(e) => setSubprod((p) => p.map((x, j) => j === i ? { ...x, plazoMax: +e.target.value || 0 } : x))} />
-                    <button onClick={() => setSubprod((p) => p.filter((_, j) => j !== i))} disabled={subprod.length <= 1} className="rounded p-0.5 disabled:opacity-30" style={{ color: C.red }}><Trash2 size={12} /></button>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-          {paso === 3 && (
-            <>
-              <div className="mb-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#C2410C" }}>Los <b>deudores con flujo recurrente</b> (facturación en ≥ 4 de los últimos 6 meses) ya vienen incorporados: sólo ingresa la <b>información de línea</b> (propuesta, política y productos). La columna <b>Venta L6M</b> muestra el rango típico mensual (facturas y monto) — pasa el mouse sobre el nombre para ver el detalle por mes. Agrega otros <b>buenos deudores</b> (nota ≥ {String(pol("notaMinCompra", 3.7)).replace(".", ",")}) con el selector; cada uno consulta la <b>API 4 · Plataforma 360</b>.</div>
-              <div className="flex items-center gap-2">
-                <select value={addSel} onChange={(e) => { const v = e.target.value; setAddSel(v); if (!v) return; if (esAdmin) { pedirDeudor(v); } else { setDeudores((p) => [...p, { ...construirDeudorLinea(v), flags: { V: true, N: true, C: true, FR: false, CP: false } }]); setAddSel(""); } }} className="rounded-md px-2 py-1.5 t11" style={inpSty}>
-                  <option value="">+ Agregar deudor factoring…</option>
-                  {candidatosDeu.map((n) => <option key={n} value={n}>{n} · nota {(notaDeudor(n) || 0)}</option>)}
-                </select>
-              </div>
-              {addPrev && (
-                <div className="mt-2 rounded-lg p-3" style={{ backgroundColor: "#eff6ff", border: "1px solid #bfdbfe" }}>
-                  <div className="t11 font-semibold" style={{ color: "#2563EB" }}>Recuperamos de API 4 · Plataforma 360: {addPrev.nombre}</div>
-                  <div className="mt-0.5 t10" style={{ color: C.sub }}>Nota {addPrev.nota} · Deuda directa $ {(addPrev.deudaDirecta / 1e6).toFixed(1)} MM · indirecta $ {(addPrev.deudaIndirecta / 1e6).toFixed(1)} MM · propuesta sugerida {fmtMM(addPrev.propuesta)}</div>
-                  <div className="mt-2 flex gap-2">
-                    <button onClick={aceptarDeudor} className="rounded-md px-3 py-1.5 t10 font-semibold text-white" style={{ backgroundColor: "#2563EB" }}>Aceptar y cargar</button>
-                    <button onClick={() => { setAddPrev(null); setAddSel(""); }} className="rounded-md px-3 py-1.5 t10 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Descartar</button>
-                  </div>
-                </div>
-              )}
-              <div className="mt-2 overflow-x-auto rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                <div style={{ minWidth: 1320 }}>
-                {(() => { const DG = "40px 44px 92px minmax(140px,1fr) 84px 120px 82px 74px 74px 92px 74px 74px 52px 122px 40px"; const LBL7 = ["Mes pasado", "-2 mes", "-3 mes", "-4 mes", "-5 mes", "-6 mes", "+6 m"]; return (<>
-                <div className="grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: DG, color: C.faint, borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}><span>Nota</span><span title="C = Cliente · D = Deudor. Ambos encendidos: la empresa es cliente y deudor a la vez.">Cli/Deu</span><span>Rut</span><span>Nombre / Razón social</span><span className="text-right" title="Venta L6M · n° de facturas emitidas al deudor por mes en los últimos 6 meses (rango típico p40–p90).">L6M f/mes</span><span className="text-right" title="Venta L6M · monto facturado al deudor por mes en los últimos 6 meses (rango típico p40–p90).">L6M $/mes</span><span>Pol. %L</span><span className="text-right">M. anterior</span><span className="text-right">M. utilizado</span><span className="text-right">Propuesta MM</span><span className="text-right">D. directa</span><span className="text-right">D. indirecta</span><span className="text-right">Conc. %</span><span>V · N · C · FR · CP</span><span></span></div>
-                {deudores.map((d, i) => {
-                  const conc = propFactoring > 0 ? Math.round((d.propuesta || 0) / propFactoring * 100) : 0;
-                  return (
-                  <div key={d.nombre} className="mt-1 grid items-center gap-2" style={{ gridTemplateColumns: DG }}>
-                    <span className="rounded-full px-1.5 py-0.5 t10 font-bold text-center" style={{ backgroundColor: d.nota >= 4 ? "#F0FDF4" : d.nota >= pol("notaMinCompra", 3.7) ? "#eff6ff" : "#FFF7ED", color: NOTA_COLOR(d.nota) }}>{d.nota}</span>
-                    <span className="flex gap-0.5" title={d.esCliente ? "Cliente y Deudor a la vez: la empresa cede facturas como cliente y además paga como deudor." : "Sólo Deudor (pagador de las facturas)."}>
-                      <span className="flex h-4 w-4 items-center justify-center rounded-full t8 font-bold" style={{ backgroundColor: d.esCliente ? "#7C3AED" : "#E5E7EB", color: d.esCliente ? "#fff" : "#9CA3AF" }}>C</span>
-                      <span className="flex h-4 w-4 items-center justify-center rounded-full t8 font-bold text-white" style={{ backgroundColor: "#7C3AED" }}>D</span>
-                    </span>
-                    <span className="t10" style={{ color: C.sub, fontVariantNumeric: "tabular-nums" }}>{d.rut}</span>
-                    <span className="flex min-w-0 items-center gap-1 overflow-hidden">
-                      <TipDesglose color="#7C3AED" titulo={`Facturación mensual · ${d.nombre}`} nota={d.l6m.facMax > 0 ? `Últimos 6 meses: ${d.l6m.facMin}–${d.l6m.facMax} facturas y ${fmtMM(d.l6m.montoMin)}–${fmtMM(d.l6m.montoMax)} por mes (rango típico p40–p90). Facturó ${d.l6m.activos}/6 meses. Total 7m: ${fmtMM(d.hist.totMonto)} · ${d.hist.totFac}f.` : "Sin facturación registrada en el periodo."} items={d.hist.meses.map((m, k) => ({ name: LBL7[k], val: m.fac ? `${fmtMM(m.monto)} · ${m.fac}f` : "—" }))}>
-                        <span className="truncate t11 font-medium" style={{ color: C.ink, borderBottom: `1px dotted ${C.faint}`, cursor: "help" }} title={d.nombre}>{d.nombre}</span>
-                      </TipDesglose>
-                      {d.recurrente && <span className="shrink-0 rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A" }} title="Deudor con flujo comercial recurrente (facturó en ≥ 4 de los últimos 6 meses): pre-incorporado automáticamente. El ejecutivo sólo ingresa la información de línea.">Recurrente</span>}
-                    </span>
-                    <span className="t10 text-right" style={{ color: C.sub }} title="Rango típico de facturas emitidas al deudor por mes (últimos 6 meses)">{d.l6m.facMax > 0 ? (d.l6m.facMin === d.l6m.facMax ? `${d.l6m.facMax}` : `${d.l6m.facMin}–${d.l6m.facMax}`) : "—"}<span style={{ color: C.faint }}> f</span></span>
-                    <span className="t10 text-right" style={{ color: C.sub }} title="Rango típico de monto facturado al deudor por mes (últimos 6 meses)">{d.l6m.montoMax > 0 ? `${fmtMM(d.l6m.montoMin)}–${fmtMM(d.l6m.montoMax)}` : "—"}</span>
-                    <span className="flex gap-1" title="Política de concentración por deudor: el ejecutivo elige 25% o 30% de la línea.">
-                      {[...new Set([25, 30, pol("concentracionDeudorPct", 30)])].sort((a, b) => a - b).map((v) => <button key={v} onClick={() => updDeu(i, { politicaPct: v })} className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: d.politicaPct === v ? "#4c1d95" : "#FAF9FB", color: d.politicaPct === v ? "#fff" : "#9CA3AF" }}>{v}%</button>)}
-                    </span>
-                    <span className="t10 text-right" style={{ color: C.sub }}>{d.anterior ? fmtMM(d.anterior) : "—"}</span>
-                    <span className="t10 text-right" style={{ color: C.sub }}>{d.utilizado ? fmtMM(d.utilizado) : "0"}</span>
-                    <input type="number" className="rounded-md px-2 py-1 t11 text-right" style={inpSty} value={d.propuesta} onChange={(e) => updDeu(i, { propuesta: +e.target.value || 0 })} />
-                    <span className="t10 text-right" style={{ color: d.deudaDirecta > 0 ? C.ink : C.faint }}>{d.deudaDirecta > 0 ? "$" + (d.deudaDirecta / 1e6).toFixed(1) + "MM" : "---"}</span>
-                    <span className="t10 text-right" style={{ color: d.deudaIndirecta > 0 ? C.ink : C.faint }}>{d.deudaIndirecta > 0 ? "$" + (d.deudaIndirecta / 1e6).toFixed(1) + "MM" : "---"}</span>
-                    <span className="t10 text-right font-semibold" style={{ color: conc > d.politicaPct ? "#EF4444" : C.ink }} title={conc > d.politicaPct ? `Excede la política (${d.politicaPct}% de la línea)` : "Concentración sobre la línea factoring propuesta"}>{conc}%</span>
-                    <span className="flex gap-1.5">{["V", "N", "C", "FR", "CP"].map((f) => <label key={f} className="flex items-center gap-0.5 t9" style={{ color: C.sub }}><input type="checkbox" checked={!!d.flags[f]} onChange={(e) => updDeu(i, { flags: { ...d.flags, [f]: e.target.checked } })} />{f}</label>)}</span>
-                    <span className="flex gap-1">
-                      <button onClick={() => setEditDeu(i)} title="Editar deudor factoring" className="rounded p-0.5" style={{ color: C.indigo }}>✎</button>
-                      <button onClick={() => setDeudores((p) => p.filter((_, j) => j !== i))} className="rounded p-0.5" style={{ color: C.red }}><Trash2 size={12} /></button>
-                    </span>
-                  </div>
-                  );
-                })}
-                {deudores.length === 0 && <div className="py-3 t10" style={{ color: C.faint }}>Sin deudores. Agrega al menos uno para confirmar la sección.</div>}
-                <div className="mt-2 grid items-center gap-2 t10" style={{ gridTemplateColumns: DG, borderTop: `1px solid ${C.line}`, paddingTop: 6 }}>
-                  <span></span><span></span><span></span>
-                  <span className="font-semibold" style={{ color: C.ink }}>Otros Deudores Límite Máx. <input type="number" value={otrosLimite} onChange={(e) => setOtrosLimite(+e.target.value || 0)} className="mx-1 w-12 rounded-full px-1 py-0.5 t10 text-right outline-none" style={inpSty} />%</span>
-                  <span></span><span></span>
-                  <span></span>
-                  <span className="text-right" style={{ color: C.sub }}>{fmtMM(deudores.reduce((s, d) => s + (d.anterior || 0), 0))}</span>
-                  <span className="text-right" style={{ color: C.sub }}>{fmtMM(deudores.reduce((s, d) => s + (d.utilizado || 0), 0))}</span>
-                  <span className="text-right font-bold" style={{ color: C.ink }}>{fmtMM(deudores.reduce((s, d) => s + (d.propuesta || 0), 0))}</span>
-                  <span></span><span></span><span></span><span></span><span></span>
-                </div>
-                {deudores.length > 0 && <div className="mt-1.5 t10 font-semibold" style={{ color: C.ink }}>Prom. Ponderado: <span style={{ color: NOTA_COLOR(promNota) }}>{promNota}</span>{promNota < pol("notaMinCompra", 3.7) && <span className="ml-2" style={{ color: "#C2410C" }}>⚠ bajo el límite de compra ({String(pol("notaMinCompra", 3.7)).replace(".", ",")})</span>}</div>}
-                </>); })()}
-                </div>
-              </div>
-              {/* Modal EDITAR DEUDOR FACTORING (patrón de la pantalla actual, con listado de productos) */}
-              {editDeu != null && deudores[editDeu] && (() => { const d = deudores[editDeu]; return (
-                <div className="fixed inset-0 z-50 flex items-center justify-center ovl p-6" onClick={() => setEditDeu(null)}>
-                  <div onClick={(e) => e.stopPropagation()} className="w-full max-w-2xl rounded-2xl bg-white p-4 shadow-2xl" style={{ border: `1px solid ${C.line}` }}>
-                    <div className="flex items-center justify-between">
-                      <div className="t12 font-bold" style={{ color: C.ink }}>Editar deudor factoring</div>
-                      <button onClick={() => setEditDeu(null)} className="rounded-md p-1 hover:bg-stone-100" style={{ color: C.sub }}><X size={15} /></button>
-                    </div>
-                    <div className="mt-0.5 t10" style={{ color: C.sub }}>{d.rut} · {d.nombre} · Nota <b style={{ color: NOTA_COLOR(d.nota) }}>{d.nota}</b></div>
-                    <div className="mt-2 grid grid-cols-2 gap-2">
-                      <div className="rounded-lg px-2.5 py-1.5 t10" style={{ backgroundColor: C.page, color: C.sub }}>Monto anterior: <b style={{ color: C.ink }}>{d.anterior ? fmtMM(d.anterior) : "—"}</b></div>
-                      <div className="rounded-lg px-2.5 py-1.5 t10" style={{ backgroundColor: C.page, color: C.sub }}>Monto utilizado: <b style={{ color: C.ink }}>{d.utilizado ? fmtMM(d.utilizado) : "0"}</b></div>
-                      <label className="t9" style={{ color: C.sub }}>Monto propuesto (M$)<input type="number" value={d.propuesta} onChange={(e) => updDeu(editDeu, { propuesta: +e.target.value || 0 })} className="w-full rounded-md px-2 py-1 t11 text-right outline-none" style={inpSty} /></label>
-                      <label className="t9" style={{ color: C.sub }}>Fecha inf. cliente<input type="date" value={d.fechaInf} onChange={(e) => updDeu(editDeu, { fechaInf: e.target.value })} className="w-full rounded-md px-2 py-1 t11 outline-none" style={inpSty} /></label>
-                      <label className="t9" style={{ color: C.sub }}>Info. deuda directa (M$)<input type="number" value={+(d.deudaDirecta / 1e6).toFixed(1)} onChange={(e) => updDeu(editDeu, { deudaDirecta: (+e.target.value || 0) * 1e6 })} className="w-full rounded-md px-2 py-1 t11 text-right outline-none" style={inpSty} /></label>
-                      <label className="t9" style={{ color: C.sub }}>Info. deuda indirecta (M$)<input type="number" value={+(d.deudaIndirecta / 1e6).toFixed(1)} onChange={(e) => updDeu(editDeu, { deudaIndirecta: (+e.target.value || 0) * 1e6 })} className="w-full rounded-md px-2 py-1 t11 text-right outline-none" style={inpSty} /></label>
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-3">{[["V", "Verificación"], ["N", "Notificación"], ["C", "Cobranza"], ["FR", "FA Respaldo"], ["CP", "Cheque Pago"]].map(([f, l]) => (
-                      <label key={f} className="flex items-center gap-1 t10" style={{ color: C.sub }}><input type="checkbox" checked={!!d.flags[f]} onChange={(e) => updDeu(editDeu, { flags: { ...d.flags, [f]: e.target.checked } })} />{l}</label>
-                    ))}</div>
-                    <div className="mt-3 rounded-xl p-2.5" style={{ border: `1px solid ${C.line}` }}>
-                      <div className="flex items-center justify-between">
-                        <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>Listado de productos</div>
-                        <button onClick={() => updDeu(editDeu, { productos: [...d.productos, { producto: "CHEQUE PROPIO", anterior: 0, utilizado: 0, propuesto: 0 }] })} className="t10 font-semibold" style={{ color: C.indigo }}>+ Agregar producto</button>
-                      </div>
-                      <div className="mt-1 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "1fr 100px 100px 110px 20px", color: C.faint }}><span>Producto</span><span className="text-right">Mto. anterior</span><span className="text-right">Mto. utilizado</span><span className="text-right">Mto. propuesto</span><span></span></div>
-                      {d.productos.map((pr, pi) => (
-                        <div key={pi} className="mt-1 grid items-center gap-2" style={{ gridTemplateColumns: "1fr 100px 100px 110px 20px" }}>
-                          <select value={pr.producto} onChange={(e) => updDeuProd(editDeu, pi, { producto: e.target.value })} className="rounded-md px-2 py-1 t11" style={inpSty}><option>FACTURA</option><option>CHEQUE PROPIO</option></select>
-                          <span className="t10 text-right" style={{ color: C.sub }}>{pr.anterior ? fmtMM(pr.anterior) : "—"}</span>
-                          <span className="t10 text-right" style={{ color: C.sub }}>{pr.utilizado ? fmtMM(pr.utilizado) : "0"}</span>
-                          <input type="number" value={pr.propuesto} onChange={(e) => updDeuProd(editDeu, pi, { propuesto: +e.target.value || 0 })} className="rounded-md px-2 py-1 t11 text-right outline-none" style={inpSty} />
-                          <button disabled={d.productos.length <= 1} onClick={() => { const productos = d.productos.filter((_, k) => k !== pi); updDeu(editDeu, { productos, propuesta: productos.reduce((s, x) => s + (x.propuesto || 0), 0) }); }} className="rounded p-0.5 disabled:opacity-30" style={{ color: C.red }}><Trash2 size={12} /></button>
-                        </div>
-                      ))}
-                      <div className="mt-1.5 t9" style={{ color: C.faint }}>El monto propuesto del deudor se recalcula con la suma de sus productos.</div>
-                    </div>
-                    <div className="mt-3 flex justify-end gap-2">
-                      <button onClick={() => setEditDeu(null)} className="rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>Guardar</button>
-                    </div>
-                  </div>
-                </div>
-              ); })()}
-            </>
-          )}
-          {paso === 4 && (
             <div className="space-y-3">
-              <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                <div className="flex items-center justify-between">
-                  <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>Fianza solidaria</div>
-                  <button onClick={() => setFianzas((p) => [...p, { rut: "", nombre: "", regimen: "Sociedad conyugal", pep: "No", fatca: "No" }])} className="t10 font-semibold" style={{ color: C.indigo }}>+ Agregar fianza solidaria</button>
-                </div>
-                {fianzas.length > 0 && <div className="mt-1 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "130px 1fr 170px 70px 70px 20px", color: C.faint }}><span>Rut</span><span>Nombre / Razón social</span><span>Régimen matrimonial</span><span>PEP</span><span>FATCA</span><span></span></div>}
-                {fianzas.map((f, i) => (
-                  <div key={i} className="mt-1 grid items-center gap-2" style={{ gridTemplateColumns: "130px 1fr 170px 70px 70px 20px" }}>
-                    <input value={f.rut} onChange={(e) => setFianzas((p) => p.map((x, j) => j === i ? { ...x, rut: e.target.value } : x))} placeholder="12.345.678-9" className="rounded-md px-2 py-1 t11 outline-none" style={inpSty} />
-                    <input value={f.nombre} onChange={(e) => setFianzas((p) => p.map((x, j) => j === i ? { ...x, nombre: e.target.value } : x))} placeholder="Nombre del fiador" className="rounded-md px-2 py-1 t11 outline-none" style={inpSty} />
-                    <select value={f.regimen} onChange={(e) => setFianzas((p) => p.map((x, j) => j === i ? { ...x, regimen: e.target.value } : x))} className="rounded-md px-2 py-1 t11" style={inpSty}><option>Sociedad conyugal</option><option>Separación de bienes</option><option>Participación gananciales</option><option>Soltero(a)</option></select>
-                    <select value={f.pep} onChange={(e) => setFianzas((p) => p.map((x, j) => j === i ? { ...x, pep: e.target.value } : x))} className="rounded-md px-2 py-1 t11" style={inpSty}><option>No</option><option>Sí</option></select>
-                    <select value={f.fatca} onChange={(e) => setFianzas((p) => p.map((x, j) => j === i ? { ...x, fatca: e.target.value } : x))} className="rounded-md px-2 py-1 t11" style={inpSty}><option>No</option><option>Sí</option></select>
-                    <button onClick={() => setFianzas((p) => p.filter((_, j) => j !== i))} className="rounded p-0.5" style={{ color: C.red }}><Trash2 size={12} /></button>
-                  </div>
-                ))}
-                {fianzas.length === 0 && <div className="mt-1 py-2 t10" style={{ color: C.faint }}>Sin fianzas solidarias.</div>}
+              <div className="rounded-lg px-3 py-2 t10" style={{ backgroundColor: "#f5f3ff", border: "1px solid #DDD6FE", color: "#7C3AED" }}>
+                <b>Esta es la presentación completa que va al comité.</b> Todo lo que no ingresaste llegó recuperado de las APIs y <b>sigue siendo editable</b> acá: corrige lo que haga falta y recién entonces envía. Los montos se digitan en <b>pesos</b> y se leen en <b>M$</b>.
               </div>
-              <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-                <div className="flex items-center justify-between">
-                  <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>Garantías</div>
-                  <button onClick={() => setGarantias((p) => [...p, { tipo: "Hipoteca", institucion: "Factoring Security", producto: "Factoring", idGar: "G-" + (1000 + p.length + 1), fIni: hoyISO, fTer: vencProp, monto: 100, cobertura: 100 }])} className="t10 font-semibold" style={{ color: C.indigo }}>+ Agregar garantía</button>
-                </div>
-                {garantias.length > 0 && <div className="mt-1 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "150px 1fr 110px 80px 125px 125px 90px 80px 20px", color: C.faint }}><span>Tipo garantía</span><span>Institución</span><span>Producto</span><span>ID</span><span>F. inicio</span><span>F. término</span><span>Monto M$</span><span>% Cobert.</span><span></span></div>}
-                {garantias.map((g, i) => (
-                  <div key={i} className="mt-1 grid items-center gap-2" style={{ gridTemplateColumns: "150px 1fr 110px 80px 125px 125px 90px 80px 20px" }}>
-                    <select value={g.tipo} onChange={(e) => setGarantias((p) => p.map((x, j) => j === i ? { ...x, tipo: e.target.value } : x))} className="rounded-md px-2 py-1 t11" style={inpSty}><option>Hipoteca</option><option>Prenda</option><option>Depósito a plazo</option><option>Aval CORFO / FOGAPE</option><option>Otra</option></select>
-                    <input value={g.institucion} onChange={(e) => setGarantias((p) => p.map((x, j) => j === i ? { ...x, institucion: e.target.value } : x))} className="rounded-md px-2 py-1 t11 outline-none" style={inpSty} />
-                    <select value={g.producto} onChange={(e) => setGarantias((p) => p.map((x, j) => j === i ? { ...x, producto: e.target.value } : x))} className="rounded-md px-2 py-1 t11" style={inpSty}><option>Factoring</option><option>Confirming</option></select>
-                    <span className="t10" style={{ color: C.sub }}>{g.idGar}</span>
-                    <input type="date" value={g.fIni} onChange={(e) => setGarantias((p) => p.map((x, j) => j === i ? { ...x, fIni: e.target.value } : x))} className="rounded-md px-1.5 py-1 t10 outline-none" style={inpSty} />
-                    <input type="date" value={g.fTer} onChange={(e) => setGarantias((p) => p.map((x, j) => j === i ? { ...x, fTer: e.target.value } : x))} className="rounded-md px-1.5 py-1 t10 outline-none" style={inpSty} />
-                    <input type="number" value={g.monto} onChange={(e) => setGarantias((p) => p.map((x, j) => j === i ? { ...x, monto: +e.target.value || 0 } : x))} className="rounded-md px-2 py-1 t11 text-right outline-none" style={inpSty} />
-                    <input type="number" value={g.cobertura} onChange={(e) => setGarantias((p) => p.map((x, j) => j === i ? { ...x, cobertura: +e.target.value || 0 } : x))} className="rounded-md px-2 py-1 t11 text-right outline-none" style={inpSty} />
-                    <button onClick={() => setGarantias((p) => p.filter((_, j) => j !== i))} className="rounded p-0.5" style={{ color: C.red }}><Trash2 size={12} /></button>
-                  </div>
-                ))}
-                {garantias.length === 0 && <div className="mt-1 py-2 t10" style={{ color: C.faint }}>Sin garantías. Agrega las que respaldan la línea propuesta (opcional).</div>}
-                {garantias.length > 0 && <div className="mt-2 flex justify-end t10 font-semibold" style={{ borderTop: `1px solid ${C.line}`, paddingTop: 6, color: C.ink }}>Total garantías: {fmtMM(garantias.reduce((s, g) => s + (g.monto || 0), 0))}</div>}
-              </div>
+              <DocSec n={1} t="Comité y cliente" sub="API 4 · Plataforma 360 + API 5 · Documental">{secComite()}</DocSec>
+              <DocSec n={2} t="Financieros y riesgo" sub="API 6 · Riesgo BICE + API 4 · Plataforma 360">{secFinanciero()}</DocSec>
+              <DocSec n={3} t="Información de línea" sub="CSV SFTP diario + montos vía API">{secLinea()}</DocSec>
+              <DocSec n={4} t="Deudores" sub={`${deudores.length} deudor(es) · nota ponderada ${promNota}`}>{secDeudores()}</DocSec>
+              <DocSec n={5} t="Bienes y garantías" sub={`${fianzas.length} fianza(s) · ${garantias.length} garantía(s)`}>{secBienes()}</DocSec>
+              <DocSec n={6} t="Presentación comercial" sub="borrador IA editable">{secNotas()}</DocSec>
             </div>
-          )}
-          {paso === 5 && (
-            <>
-              {esAdmin && (() => { const prevN = generarNotasIA({ cliente, api4, api6, tipo, subtipo, totalPropuesto, nDeudores: deudores.length, promNota }); return (
-              <PanelRecupera fuente="IA · sobre API 4 + la presentación" resumen="Borrador de las 5 notas comerciales generado con la información firmográfica, comercial, financiera, la línea propuesta y los deudores" cargado={notasCargadas} onCargar={() => { setNotas(prevN); setNotasCargadas(true); }}
-                preview={[["Negocio propuesto", prevN.negocio], ["Referencias comerciales", prevN.referencias], ["Antecedentes generales", prevN.antecedentes], ["Aspectos de mercado", prevN.mercado], ["Análisis financiero", prevN.financiero]]} />
-              ); })()}
-              {!esAdmin && <div className="mb-2 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#f5f3ff", border: "1px solid #DDD6FE", color: "#7C3AED" }}><Zap size={11} /> Borrador de las 5 notas comerciales generado por IA · revísalo y edítalo antes de solicitar el VB.</div>}
-              {notasCargadas && notas && [["negocio", "Negocio propuesto"], ["referencias", "Referencias comerciales"], ["antecedentes", "Antecedentes generales"], ["mercado", "Aspectos de mercado"], ["financiero", "Análisis financiero"]].map(([k, l]) => (
-                <div key={k} className="mt-2">
-                  <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>{l} <span className="ml-1 rounded-full px-1 py-0.5 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>✦ IA</span></div>
-                  <textarea value={notas[k]} onChange={(e) => setNotas((n) => ({ ...n, [k]: e.target.value }))} rows={3} className="mt-0.5 w-full rounded-lg px-2.5 py-1.5 t11 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, lineHeight: 1.5 }} />
-                </div>
-              ))}
-            </>
           )}
         </div>
         <div className="mt-3 flex items-center justify-between gap-2 border-t pt-3 pb-3" style={{ borderColor: C.line, position: "sticky", bottom: 0, backgroundColor: "#fff", zIndex: 5 }}>
@@ -21077,15 +21456,15 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
           <div className="flex gap-2">
             <button onClick={onClose} className="rounded-full px-4 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button>
             {paso > 0 && <button onClick={() => setPaso(paso - 1)} className="rounded-full px-4 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.ink }}>‹ Anterior</button>}
-            {paso < 5 && <button onClick={confirmar} disabled={!confirmable} className="rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: "#7C3AED" }} title={confirmable ? "Confirmar sección y avanzar" : "Completa la sección para avanzar (recupera/acepta la información requerida)"}>Confirmar sección · Siguiente ›</button>}
-            {paso === 5 && <button onClick={inyectar} disabled={!notasCargadas || deudores.length === 0 || (tipo === "modificar" && !subtipo)} className="rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: "#16a34a" }} title="Solicitar visto bueno e inyectar la solicitud (API 1)">Solicitar VB · Inyectar</button>}
+            {paso < 2 && <button onClick={confirmar} disabled={!confirmable} className="rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: "#7C3AED" }} title={confirmable ? "Confirmar sección y avanzar" : "Agrega al menos un deudor para avanzar"}>{paso === 0 ? "Confirmar deudores · Siguiente ›" : "Confirmar bienes · Revisar documento ›"}</button>}
+            {paso === 2 && <button onClick={inyectar} disabled={!notasCargadas || deudores.length === 0 || (tipo === "modificar" && !subtipo)} className="rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40" style={{ backgroundColor: "#16a34a" }} title="Solicitar visto bueno e inyectar la solicitud (API 1)">Solicitar VB · Inyectar</button>}
           </div>
         </div>
       </div>
     </div>
   );
 }
-// Sub-tab EN PROCESO — Bandeja de solicitudes en gestión (API 2 lista · API 3 estado). Solo consulta.
+// Sub-tab SOLICITUDES — Bandeja de solicitudes en gestión (API 2 lista · API 3 estado). Solo consulta.
 function LineasBandeja({ onNueva, tick, onRefrescar, cargando }) {
   const sols = api2ListarProcesos();
   const EST_COL = { "En gestión": { bg: "#eff6ff", fg: "#2563EB" }, "En análisis de Riesgo": { bg: "#FFF7ED", fg: "#C2410C" }, "En comité": { bg: "#f5f3ff", fg: "#7C3AED" }, "Aprobada": { bg: "#F0FDF4", fg: "#16A34A" }, "Observada": { bg: "#fef2f2", fg: "#EF4444" } };
@@ -21130,7 +21509,7 @@ function LineasView({ soloExec, usuario }) {
   const conSolicitud = new Set(api2ListarProcesos().map((s) => s.lineaId).filter(Boolean));
   // El listado muestra TODA la cartera, no sólo las empresas que ya tienen línea: una empresa sin línea
   // no puede operar, y esa ausencia es justamente el trabajo del ejecutivo. Antes esas empresas no
-  // aparecían en ningún lado y la única puerta para crear una línea estaba escondida en «En proceso».
+  // aparecían en ningún lado y la única puerta para crear una línea estaba escondida en «Solicitudes».
   const porRut = lineaIdxPorRut() || new Map();
   const rows0 = PC_CLIENTES.filter((c) => !soloExec || c.ej === soloExec).map((c) => {
     const l = porRut.get(c.rut);
@@ -21170,10 +21549,10 @@ function LineasView({ soloExec, usuario }) {
         <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Líneas de crédito</div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Líneas de crédito</h1>
       </div>
-      {/* Sub-tabs: Vigentes (CSV SFTP diario + montos API 1h) | En proceso (Bandeja API 2/3) */}
+      {/* Sub-tabs: Vigentes (CSV SFTP diario + montos API 1h) | Solicitudes (Bandeja API 2/3) */}
       <div className="flex items-center justify-between">
         <div className="flex gap-6" style={{ borderBottom: `1px solid ${C.line}` }}>
-          {[["vigentes", "Vigentes", Check], ["enproceso", `En proceso${api2ListarProcesos().length ? " · " + api2ListarProcesos().length : ""}`, Clock]].map(([k, l, Ic]) => (
+          {[["vigentes", "Vigentes", Check], ["enproceso", `Solicitudes${api2ListarProcesos().length ? " · " + api2ListarProcesos().length : ""}`, Clock]].map(([k, l, Ic]) => (
             <button key={k} onClick={() => setSub(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${sub === k ? C.indigo : "transparent"}`, color: sub === k ? C.indigo : C.sub, fontWeight: sub === k ? 600 : 400, marginBottom: -1 }}><Ic size={13} /> {l}</button>
           ))}
         </div>
@@ -21205,7 +21584,7 @@ function LineasView({ soloExec, usuario }) {
               // Guion de la celda vacía: en una empresa sin línea no hay 0, hay AUSENCIA de línea.
               const vacio = <span className="t11" style={{ color: C.faint }}>—</span>;
               return (
-              <tr key={l.id} onClick={() => { if (enCurso) return; if (l.sinLinea) { abrirNueva(l); return; } const rs = recASubtipo(l.rec.tipo); setWiz({ linea: l, tipo: rs.tipo, subtipo: rs.subtipo }); }} className="cursor-pointer hover:bg-stone-50" title={enCurso ? "Esta línea ya tiene una solicitud en gestión (ver «En proceso»)" : l.sinLinea ? "Presentar una línea nueva al comité para esta empresa" : "Iniciar solicitud de modificación / renovación de esta línea"} style={{ borderBottom: `1px solid ${C.line}`, opacity: enCurso ? 0.6 : 1 }}>
+              <tr key={l.id} onClick={() => { if (enCurso) return; if (l.sinLinea) { abrirNueva(l); return; } const rs = recASubtipo(l.rec.tipo); setWiz({ linea: l, tipo: rs.tipo, subtipo: rs.subtipo }); }} className="cursor-pointer hover:bg-stone-50" title={enCurso ? "Esta línea ya tiene una solicitud en gestión (ver «Solicitudes»)" : l.sinLinea ? "Presentar una línea nueva al comité para esta empresa" : "Iniciar solicitud de modificación / renovación de esta línea"} style={{ borderBottom: `1px solid ${C.line}`, opacity: enCurso ? 0.6 : 1 }}>
                 <td className="px-3 py-2.5"><div className="t12 font-medium" style={{ color: C.ink }}>{l.cliente}{enCurso && <span className="ml-1.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>Solicitud en curso</span>}</div><div className="t9" style={{ color: C.faint }}>{l.rut} · {l.exec}</div></td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: l.sinLinea ? C.faint : C.ink }}>{l.sinLinea ? "Sin línea" : fmtMM(l.aprobada)}</td>
                 <td className="whitespace-nowrap px-3 py-2.5 t11" style={{ color: C.sub }}>{l.sinLinea ? vacio : <>{fmtMM(l.uso)} <span className="t9" style={{ color: C.faint }}>({Math.round(l.uso / l.aprobada * 100)}%)</span></>}</td>
@@ -22278,6 +22657,23 @@ export default function PipelineComercial() {
     // El criterio O05 se evalúa con `deal.publicacion`, que acaba de cambiar: sin esto el visado
     // cacheado seguiría siendo el de antes de publicar.
     invalidarVisado();
+    // LA SOLICITUD AL COMITÉ SALE SOLA. Lo que no cabe en la línea vigente ya está calculado —es lo
+    // que el modal acaba de mostrarle al ejecutivo, deudor por deudor— así que pedirle que lo vuelva
+    // a capturar en el wizard es pedirle la misma decisión dos veces. Se inyecta una sola solicitud
+    // con N líneas de detalle (API 1) y queda en la bandeja «Solicitudes» de Líneas.
+    if (d0 && d0.rutEmisor) {
+      try {
+        const evLin = asignarLineas(itemizarFacturas(d0), d0.rutEmisor);
+        const sol = solicitudComiteDeOferta({ ...d0, negocioNum: d0.negocioNum || negDe(d0) }, evLin, nom, lineaAprobadaDe(d0));
+        if (sol) {
+          const idProc = api1Inyeccion(sol);
+          logSys("info", "linea", `Solicitud de línea inyectada automáticamente al cerrar la oferta · ${idProc} · ${sol.detalle.length} línea(s) de detalle por ${fmtMM(sol.pedido)}`,
+            { empresa: cli, operacion: id, proceso: idProc });
+          setDeals((prev) => prev.map((x) => (x.id === id ? { ...x, solicitudComite: idProc } : x)));
+          setSelected((x) => (x && x.id === id ? { ...x, solicitudComite: idProc } : x));
+        }
+      } catch (e) { logSys("error", "linea", `No se pudo inyectar la solicitud de línea al cerrar la oferta: ${e && e.message}`, { operacion: id }); }
+    }
     // PUBLICACIÓN ELECTRÓNICA: el correo sale acá y no en un botón aparte. Va DENTRO del gesto del
     // clic —`enviarCierre` abre su pestaña antes del primer `await`— porque diferirlo a un efecto le
     // haría perder la activación del usuario y el navegador lo bloquearía como pop-up.
@@ -24023,6 +24419,10 @@ export default function PipelineComercial() {
         tbody tr:last-child{border-bottom:0 !important} tbody tr:last-child>td{border-bottom:0 !important}
         /* El gris del esqueleto es el de los bordes (C.line): con #F3F4F6 apenas se despegaba del blanco
            de la tarjeta y el placeholder no se leía como "acá va a llegar un dato". */
+        .f-prop{border:1px solid #C4B5FD;background:#FAF5FF}
+        .f-prop:focus{border-color:#703EFF;box-shadow:0 0 0 3px rgba(112,62,255,0.22);background:#FFFFFF}
+        .f-prop-vacio{border-color:#FDBA74;background:#FFF7ED}
+        .f-prop-vacio:focus{border-color:#C2410C;box-shadow:0 0 0 3px rgba(194,65,12,0.18);background:#FFFFFF}
         .skel{position:relative;overflow:hidden;background:#E5E7EB;border-radius:8px}
         .skel::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.85),transparent);animation:skel 1.1s infinite}
         @keyframes skel{100%{transform:translateX(100%)}}
