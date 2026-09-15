@@ -24,15 +24,10 @@ function ingreso(rut, primeraOp) {
   return (primeraOp && f > primeraOp) ? primeraOp : f;
 }
 const BICE_RUT = "97.080.000-0";
-// FACTORING TARGET: los factorings de BANCO, que son la competencia que Security mira de frente
-// («factoring target (BCI/Chile/Itaú)» en el tablero de churn). El resto es «otros factoring».
-// La lista se DECLARA y se compara por TOKEN completo, igual que en `pipeline_comercial.jsx` —las dos
-// tienen que decir lo mismo—: buscar trozos de la razón social clasificaba **Eurocapital como
-// factoring de banco**, porque «eurocap·ita·l» contiene el «ita» con que se buscaba «Itaú».
-const FACTORING_TARGET = ["bci", "banchile", "banco de chile", "itau"];
-const sinTildes = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-const RX_FACT_TARGET = new RegExp("(^|\\s)(" + FACTORING_TARGET.join("|") + ")(\\s|$)");
-const esFactoringBanco = (n) => RX_FACT_TARGET.test(sinTildes(n));
+// El padrón de cesionarios dice de qué TIPO es cada uno: nuestro, banco target, otro banco, o
+// factoring no bancario. Es lo que convierte una lista de cesiones en un mix de financiamiento.
+const { porcionDe } = require("../lib/cesionarios");
+
 const ACTIVIDADES = [
   ["VENTA AL POR MAYOR DE OTROS PRODUCTOS N.C.P.", "COMERCIO"],
   ["CONSTRUCCIÓN DE OBRAS MENORES", "CONSTRUCCIÓN"],
@@ -46,30 +41,59 @@ const NOMBRES_SOCIO = ["MARCELA LILIANA MARÍN GONZÁLEZ", "JORGE ANDRÉS SOTO P
   "RODRIGO ESTEBAN NAVARRO SILVA", "PATRICIA ELENA ROJAS CONTRERAS", "SEBASTIÁN IGNACIO MUÑOZ TAPIA"];
 
 // El mix de financiamiento de un cliente, en cuatro porciones que suman 100.
-//  · La participación de Security SOBRE EL FACTORING la manda el A5 (`SOWActualPct`): es su maestro.
-//  · El resto del factoring se reparte entre «factoring target» y «otros factoring» con la proporción
-//    MEDIDA en AECSync. Sin cesiones registradas se reparte por perfil, y se dice.
-//  · La porción BANCARIA no-factoring no está en ningún activo —ni AECSync ni el A5 la ven— así que
-//    se genera por perfil: una empresa sana se financia más con banco y menos con factoring.
-// Un DEUDOR no cede facturas, así que no tiene mix: los campos van vacíos en vez de en cero, que se
-// leería como «se financia 0% con nosotros» en vez de «esta pregunta no le aplica».
-function mixFinanciero(rut, s, rep, r, pf) {
-  if (!s) return { SOW_SECURITY_PCT: "", SOW_FACTORING_TARGET_PCT: "", SOW_OTROS_FACTORING_PCT: "", SOW_OTROS_BANCARIOS_PCT: "" };
-  const sowFact = Math.max(0, Math.min(100, +s.SOWActualPct || 0));   // del A5: % del factoring que es nuestro
-  const resto = 100 - sowFact;
-  // Cómo se parte el resto entre factorings de banco y el resto, medido cuando hay con qué.
-  const ajenos = rep ? rep.target + rep.otros : 0;
-  const pTarget = ajenos > 0 ? rep.target / ajenos : entre(r, 0.35, 0.65);
-  // Cuánto de su financiamiento NO es factoring. Por perfil: la empresa sana accede a banco.
-  const banc = pf === "sana" ? entre(r, 0.18, 0.34) : pf === "aislada" ? entre(r, 0.10, 0.24) : entre(r, 0.03, 0.14);
-  const f = 1 - banc;                                                  // lo que sí es factoring
-  const pct = [sowFact * f, resto * pTarget * f, resto * (1 - pTarget) * f, banc * 100].map((x) => Math.round(x * 10) / 10);
-  // Los cuatro tienen que sumar 100 exacto: el redondeo a un decimal deja hasta 0,2 de diferencia y
-  // cuatro chips que suman 99,8 se leen como un dato mal calculado. El ajuste va a la porción MAYOR,
-  // que siempre puede absorberlo (mismo criterio que el prorrateo por factura).
-  const i = pct.indexOf(Math.max(...pct));
-  pct[i] = Math.round((pct[i] + (100 - pct.reduce((a, b) => a + b, 0))) * 10) / 10;
-  return { SOW_SECURITY_PCT: pct[0], SOW_FACTORING_TARGET_PCT: pct[1], SOW_OTROS_FACTORING_PCT: pct[2], SOW_OTROS_BANCARIOS_PCT: pct[3] };
+//
+// **TODA cesión es factoring**: un banco que compra una factura está haciendo factoring. Así que el
+// universo que AECSync registra —bancarias y no bancarias— es el financiamiento por cesión del
+// cliente, y las cuatro porciones lo parten por QUIÉN se lo lleva.
+//
+// De dónde sale cada mitad de la respuesta, que no es la misma:
+//  · **Cuánto es NUESTRO lo dice el A5**, que es el activo que mide la participación y la que el
+//    resto del sistema ya usa —el descuento por SOW del pricing, el dimensionamiento de líneas, el
+//    churn—. Anclar acá evita que la misma cifra aparezca con dos valores en dos pantallas.
+//  · **Cómo se reparte EL RESTO lo mide el A2**, que es el único que lo sabe: identifica al
+//    cesionario de cada cesión, y con el padrón de cesionarios eso se vuelve target / otro banco /
+//    factoring no bancario. Ningún otro activo puede contestarlo.
+// Un cedente que el A5 no cubre usa la participación que el propio A2 mide. Queda anotado como
+// hueco: A2 y A5 miden hoy la MISMA cifra con 13,8 pto de desvío mediano (ver Levantamiento §5.6).
+//
+// Un cedente **sin cesiones** no tiene mix, y eso se devuelve vacío y no en cero: nunca cedió, así
+// que no hay con qué medir con quién se financia. Cuatro ceros afirmarían «no se financia con nadie»,
+// que el activo no dice. Es la misma distinción que la nota de comportamiento: vacío es *no hay dato*.
+const SIN_MIX = { SOW_SECURITY_PCT: "", SOW_FACTORING_TARGET_PCT: "", SOW_OTROS_FACTORING_PCT: "", SOW_OTROS_BANCARIOS_PCT: "", SOW_DETALLE_JSON: "" };
+function mixFinanciero(g, s) {
+  if (!g || !(g.total > 0)) return SIN_MIX;
+  const medido = g.security / g.total * 100;
+  const sec = Math.max(0, Math.min(100, s ? (+s.SOWActualPct || 0) : medido));
+  const ajeno = g.factoringTarget + g.otrosBancarios + g.otrosFactoring;
+  const resto = 100 - sec;
+
+  // Se reparte el 100 UNA sola vez, cesionario por cesionario, y las cuatro porciones se AGREGAN
+  // desde ese detalle. Al revés —porciones primero, detalle después— las dos cifras se redondean por
+  // separado y el tooltip termina diciendo 21,9 donde el chip dice 22: el detalle de un número tiene
+  // que sumar ese número, o no es su detalle.
+  const detalle = [];
+  for (const e of g.porCesionario.values()) {
+    const esNuestro = e.porcion === "security";
+    const pct = esNuestro ? sec : (ajeno > 0 ? e.monto / ajeno * resto : 0);
+    if (pct <= 0) continue;
+    detalle.push({ rut: e.rut, nombre: e.nombre, porcion: e.porcion, pct: Math.round(pct * 10) / 10 });
+  }
+  detalle.sort((a, b) => b.pct - a.pct);
+  // El redondeo a un decimal deja hasta unas décimas de diferencia, y cuatro chips que suman 99,8 se
+  // leen como un dato mal calculado. El ajuste va al cesionario MAYOR, que siempre puede absorberlo
+  // (mismo criterio que el prorrateo por factura).
+  if (detalle.length) {
+    const suma = detalle.reduce((a, b) => a + b.pct, 0);
+    detalle[0].pct = Math.round((detalle[0].pct + (100 - suma)) * 10) / 10;
+  }
+  const por = (q) => Math.round(detalle.filter((d) => d.porcion === q).reduce((a, b) => a + b.pct, 0) * 10) / 10;
+  return {
+    SOW_SECURITY_PCT: por("security"),
+    SOW_FACTORING_TARGET_PCT: por("factoringTarget"),
+    SOW_OTROS_FACTORING_PCT: por("otrosFactoring"),
+    SOW_OTROS_BANCARIOS_PCT: por("otrosBancarios"),
+    SOW_DETALLE_JSON: JSON.stringify(detalle),
+  };
 }
 function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
   // ── Medido: volumen emitido y recibido por RUT ────────────────────────────────────────────────
@@ -96,17 +120,26 @@ function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
   const sow = {};
   for (const s of (SHARE_OF_WALLET || [])) if (s && s.RUTCliente) sow[s.RUTCliente] = s;
 
-  // ── Medido: cómo se reparte entre FACTORINGS lo que el cliente cede ───────────────────────────
-  // De AECSync, que desde el 14-09-2026 reconcilia con el A1 —cada cesión apunta a un documento real—,
-  // así que estas proporciones se pueden medir en vez de suponerse.
-  const repFact = {};
+  // ── Medido: EL MIX DE FINANCIAMIENTO, sobre AECSync ──────────────────────────────────────────
+  // AECSync registra TODAS las cesiones del cliente —bancarias y no bancarias— e identifica en cada
+  // una al cesionario, así que con quién se financia y en qué proporción **se mide**, no se supone.
+  // Se reparte por MONTO CEDIDO, que es la plata, y no por número de cesiones, que contaría igual un
+  // documento de $2 millones y uno de $200.
+  const mix = {};
+  let cesionariosDesconocidos = 0;
   for (const a of (AECSYNC || [])) {
     if (!a || !a.RUTEmisor) continue;
-    const g = repFact[a.RUTEmisor] || (repFact[a.RUTEmisor] = { nuestro: 0, target: 0, otros: 0 });
+    const g = mix[a.RUTEmisor] || (mix[a.RUTEmisor] = { security: 0, factoringTarget: 0, otrosBancarios: 0, otrosFactoring: 0, total: 0, porCesionario: new Map() });
+    const { porcion, conocido } = porcionDe(a.RUTFactoring);
+    if (!conocido) cesionariosDesconocidos++;
     const m = +a.MontoCesion || 0;
-    if (a.RUTFactoring === BICE_RUT) g.nuestro += m;
-    else if (esFactoringBanco(a.RazonSocialFactoring)) g.target += m;
-    else g.otros += m;
+    g[porcion] += m; g.total += m;
+    // El desglose POR CESIONARIO: es lo que el tooltip del chip muestra —razón social y %—, y lo que
+    // convierte «Otros bancarios · 22%» en una respuesta. Se guarda acá y no se recalcula aguas abajo
+    // porque el reparto se ancla al A5 y hay que repartir el mismo 100 una sola vez.
+    const k = a.RUTFactoring || "";
+    const e = g.porCesionario.get(k) || { rut: k, nombre: a.RazonSocialFactoring || "Cesionario sin nombre", porcion, monto: 0 };
+    e.monto += m; g.porCesionario.set(k, e);
   }
 
   // Mismo perfil que usa el A16 para la deuda de buró (ver `lib/perfil.js`): la nota y el comportamiento
@@ -174,7 +207,7 @@ function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
       // NO contradice al A5, que es el maestro de la participación sobre factoring (§5 del
       // levantamiento): las tres porciones de factoring, renormalizadas sobre su subtotal,
       // reproducen `SOWActualPct`. Lo que el A11 agrega es el denominador más ancho.
-      ...mixFinanciero(rut, s, repFact[rut], r, pf),
+      ...mixFinanciero(mix[rut], s),
       // Pricing histórico: NO está en ningún activo —una cesión traspasa el crédito, no el precio al
       // que se compró—, así que se genera por perfil. La cesión sólo decide si el campo APLICA: un
       // cliente que nunca nos cedió no tiene tasa de última operación.
@@ -190,6 +223,11 @@ function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
       SOCIOS_JSON: JSON.stringify(socios),
       FECHA_CORTE: CORTE,
     });
+  }
+  // Un cesionario que el padrón no declara cayó en «otros factoring» sin que nadie lo decidiera, así
+  // que se GRITA: es un padrón desactualizado, y en silencio se ve igual que un dato correcto.
+  if (cesionariosDesconocidos > 0) {
+    console.warn(`  ⚠  PLATAFORMA360: ${cesionariosDesconocidos} cesiones con un cesionario que \`lib/cesionarios.js\` no declara.`);
   }
   const campos = Object.keys(filas[0]);
   return { campos, filas: filas.map((f) => campos.map((c) => f[c])) };

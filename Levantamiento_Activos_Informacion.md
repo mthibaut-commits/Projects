@@ -43,9 +43,10 @@
 - **Regla operacional:** las facturas que califican una regla se acumulan y pasan a Prospección en la corrida horaria (cron).
 - **Hueco del layout — `MntNotaCredito` (14-09-2026).** `EstadoDTE` declara `NotaCredito` y `FolioNotaCredito` pero **no el monto** de la nota, así que no se puede distinguir la que ANULA el documento de la que sólo lo rebaja. La aplicación inventaba esa diferencia —«20% a 49% del monto», por hash del folio— y agregaba la factura a la oferta por el neto resultante: una cifra sin origen entrando al monto a girar. Mientras el activo no informe el monto, un documento con nota de crédito **no se compra**, que es la lectura conservadora. Para habilitar la compra por el neto hay que agregar `MntNotaCredito` a la entrega.
 
-### A2 · AECSync — cesiones electrónicas
-- **Tipo:** stream/API de archivos AEC (cesión del crédito).
-- **Contenido:** cesiones registradas por cedente, factor cesionario (detección de competidor), fecha, montos.
+### A2 · AECSync — cesiones electrónicas ⭐ SERVICIO DATAMART
+- **Tipo:** **servicio de Datamart** (`AECSync`), stream / notificación push. Documentación: <https://docs.datamart.cl/#tag/AEC-Sync>. Contrato campo por campo en **`Integraciones/spec_aecsync.md`**, con un ejemplo del payload en `Integraciones/aecsync_notificacion.json`.
+- **Contenido:** **todas** las cesiones de un cliente —**bancarias y no bancarias**— identificando en cada una al **cesionario**: qué documento cedió, a quién, cuándo y por cuánto.
+- **Lo que SÓLO este activo contesta:** quiénes son las contrapartes de financiamiento del cliente. Ningún otro lo sabe: el A5 mide participación pero no dice contra quién, y el A11 es de empresa. De acá sale el **mix de financiamiento** que alimenta la columna SOW (ver §5.6).
 - **Consumen:** detección de pérdida por competencia (`cesion_externa`), SOW estimado "mi competencia en este cliente", benchmark de deudores, y el bloqueo **«cedida a terceros»** de una factura candidata (join por `RUTCedente` + `Folio`).
 - **Reconciliación con A1 — CERRADA el 14-09-2026.** El A2 traía folios propios: de **1.300 cesiones sólo 3** referenciaban un folio que A1 declara para ese mismo cedente, y **1.267 tenían fecha anterior a la emisión** del documento que decían ceder. Una cesión sin documento no se puede atribuir a nada, así que todo lo que cuelga de ella se inventaba en el pipeline (el bloqueo «cedida a terceros», la pérdida ante la competencia, el conteo de facturas cedidas). Se arregló **en el generador** —`GeneradorDatos/datasets/cesiones.js`, el A2 pasó de base a derivado—: cada cesión apunta a un documento real de su cedente y copia sus campos del A1. Hoy **1.300 de 1.300** reconcilian, ninguna es anterior a su emisión, ningún folio se cede dos veces y ninguna cae sobre un documento no cedible (contado, con nota de crédito o reclamado). Se arregló ahí y no en la aplicación a propósito: si el pipeline «resolviera» la discrepancia, volvería a inventar el dato.
 - **Invariantes del activo** (se validan en el generador; una cesión que los rompa no se emite): la **fecha de cesión no es anterior a la emisión** del documento, y el **monto cedido es igual o menor** que el del documento. La **cesión parcial** es válida —se cede parte del crédito y el resto queda con el cliente— y hoy son 160 de 1.300; ceder más que la factura no lo es. `MontoDocumento` es siempre el `MntTotal` del A1.
@@ -229,7 +230,8 @@ campo **sólo** desde su maestro y usa la copia nada más que para conciliar.
 | Segmento | — | — | `SEGMENTO` | `SEGMENTO` · `SUB_SEGMENTO` | — | *colisión, ver 5.3* |
 | Línea aprobada | — | `LINEA_APROBADA_MM` | — | — | `LINEA_APROBADA_MM` | **A23** *(ver 5.4)* |
 | Ejecutivo / zona / jefatura | — | `EJECUTIVO` · `ZONA` | — | — | — | **A24** *(levantado el 14-09, ver 5.5)* |
-| Participación / mix de financiamiento | — | — | — | `SOW_*` (4 porciones) | — | **A11** *el mix* · **A5** *la participación sobre factoring (ver 5.6)* |
+| Participación / mix de financiamiento | — | — | — | `SOW_*` (4 porciones) | — | **A2** *lo mide* → **A11** *lo publica* · **A5** *cuánto es nuestro (ver 5.6)* |
+| Datos del documento cedido | — | — | — | — | — | **A1** — el A2 copia `TipoDTE`, `Folio`, `FechaEmisionDTE`, `MontoDocumento`, `RUTEmisor`, `RUTReceptor`, `FechaVencimientoCesion` para que una cesión se lea sola; si discrepan manda el A1 |
 | Fecha de corte | `FECHA_CORTE` | `FECHA_CORTE` | `FECHA_CORTE` | `FECHA_CORTE` | `FECHA_CORTE` | *propia de cada uno* |
 
 `FECHA_CORTE` es la excepción deliberada: **no** es un campo duplicado sino el sello de cada entrega, y
@@ -322,34 +324,52 @@ los negocios en curso sigue siendo un acto administrativo con fecha y responsabl
 (`Configuración › Oportunidades › Migración`), y sólo hasta antes del giro — una operación girada ya se
 desembolsó y moverla sólo reescribiría de quién cuelga una venta que hizo otro.
 
-### 5.6 Mix de financiamiento — **A11 extiende al A5, no lo duplica**
+### 5.6 Mix de financiamiento — lo **mide** el A2, lo **publica** el A11
 
-El caso más reciente (15-09-2026) y el que mejor muestra cómo se aplica el criterio. La columna **SOW**
-del tubo comercial responde *con quién se financia este cliente y cuánto de eso es nuestro*: cuatro
-porciones que suman 100 — Security, el factoring target, los otros factoring y la deuda **bancaria que
-no es factoring**.
+El caso más reciente (15-09-2026) y el que mejor muestra cómo se aplica el criterio, incluida una
+premisa que hubo que corregir a mitad de camino.
 
-Ningún activo existente podía producirla entera:
+La columna **SOW** del tubo responde *con quién se financia este cliente y cuánto de eso es nuestro*:
+cuatro porciones que suman 100 — ★ Security, el factoring target, los otros bancarios y los otros
+factoring.
 
-- **A2 · AECSync** registra **cesiones**. Una cesión es factoring por definición, así que el activo no
-  ve un peso de lo que el cliente deba fuera del factoring.
-- **A5 · Share of Wallet** mide participación **dentro** del factoring: su `SOWActualPct` es *cuánto del
-  factoring del cliente es nuestro*, no *cuánto de su financiamiento*. Su universo es el 100% de las
-  tres porciones de factoring, no el 100% del mix.
+**La premisa equivocada fue tratar «bancario» como algo fuera del factoring.** No lo es: **toda cesión
+es factoring** —un banco que compra una factura está haciendo factoring—, y **AECSync registra todas
+las cesiones, bancarias y no bancarias**, identificando en cada una al cesionario. O sea que el activo
+ya contesta la pregunta entera y no hay ninguna porción que haya que generar por perfil. Mientras se
+supuso lo contrario, una de las cuatro porciones se inventaba.
 
-La cuarta porción no está en ninguno de los dos, y el sujeto del campo es la **EMPRESA** —no su cartera
-ni un par cliente-deudor—, así que por el criterio de esta sección el maestro es **A11**.
+**Quién mide qué, que no es lo mismo:**
 
-Lo que hay que no romper es la relación entre los dos, y es una igualdad, no una convención: **las tres
-porciones de factoring de A11, renormalizadas sobre su propio subtotal, tienen que reproducir el
-`SOWActualPct` de A5**. A11 no reescribe lo que A5 ya dice: le agrega el denominador que le falta. Si
-las dos entregas llegaran a discrepar, el maestro de la participación **sobre factoring** sigue siendo
-A5 —es el activo que la mide, con su serie semanal y su target— y lo que hay que revisar es el mix.
-Fijado por el caso de prueba 99, que lo mide sobre el archivo entero.
+- **Cómo se reparte entre contrapartes lo mide A2.** Es el único que identifica al cesionario. Con el
+  padrón de cesionarios —que clasifica por **RUT** en banco / target / nuestro— eso se vuelve la
+  partición de cuatro porciones. Ningún otro activo puede contestarlo.
+- **Cuánto es nuestro lo dice A5.** Es el activo que mide la participación, con su serie semanal y su
+  target, y es el que ya alimenta el descuento por SOW del **pricing**, el dimensionamiento de líneas
+  y el churn. El mix se **ancla** a su `SOWActualPct` en vez de recalcularlo, para que la misma cifra
+  no aparezca con dos valores en dos pantallas.
+- **A11 lo publica.** El mix es un atributo de la EMPRESA, así que por el criterio de esta sección vive
+  en el maestro de empresa: se mide sobre A2 y se **inyecta** en A11, que es de donde la aplicación lo
+  lee — el mismo camino que `COLOC_PROM_12M_M` y `FECHA_PRIMERA_OPERACION`, que también se miden sobre
+  las cesiones. Incluye `SOW_DETALLE_JSON`, el desglose por cesionario que el tooltip muestra; cada
+  porción es exactamente la suma de los suyos, porque el 100 se reparte una sola vez y las porciones
+  se agregan desde el detalle.
 
 Un **deudor** no trae mix: las cuatro columnas vienen **vacías**, no en 0. Un deudor no cede facturas,
-así que la pregunta no le aplica, y cuatro ceros afirmarían algo que el archivo no dice — «no se
-financia con nadie». Es la misma distinción que la nota de comportamiento: vacío es *no hay dato*.
+así que la pregunta no le aplica, y cuatro ceros afirmarían algo que el archivo no dice.
+
+#### Hueco abierto: A2 y A5 miden la misma cifra y no coinciden
+
+Medido el 15-09-2026 sobre los 233 clientes que los dos cubren: la participación de Security calculada
+sobre las cesiones de A2 y el `SOWActualPct` de A5 difieren **13,8 pto en la mediana** y **61,8 en el
+p90**. Es la misma cantidad por dos caminos, así que uno de los dos sobra.
+
+No se resolvió acá, y la razón es de alcance: A5 alimenta el **pricing** (el descuento por SOW) y el
+dimensionamiento de líneas, de modo que cambiarle el nivel mueve el precio de las operaciones. Es una
+decisión de negocio, no de implementación. Por eso el mix se ancló a A5 —que deja el sistema
+consistente consigo mismo— y queda anotado que **el maestro natural es A2**: es el registro de los
+hechos, y A5 es un producto analítico construido sobre ellos. Antes de reconciliar las cesiones contra
+el A1 (§A2) esta discrepancia no se podía ni medir.
 
 ### 5.7 Qué hacer con esto
 
@@ -359,6 +379,7 @@ financia con nadie». Es la misma distinción que la nota de comportamiento: vac
 4. En la carga, escribir cada campo sólo desde su maestro y **conciliar** las copias en vez de pisarlas:
    una discrepancia es información sobre el origen, no ruido que haya que resolver en silencio.
 5. Exponer la `FECHA_CORTE` de cada activo en las pantallas que los mezclan.
+6. **Decidir el maestro de la participación de Security** (§5.6): hoy A2 y A5 miden la misma cifra con 13,8 pto de desvío mediano. Tiene impacto en pricing, así que es decisión de negocio.
 
 Esto es **diseño de la integración**, no un defecto del prototipo: hoy los cinco archivos son
 deterministas y coinciden entre sí por construcción, así que nada de esto se manifiesta acá. Se

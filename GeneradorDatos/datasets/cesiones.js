@@ -34,10 +34,43 @@
 //     La entrega anterior tenía las 1.300 cesiones por el total exacto, así que la cota «o menor»
 //     nunca se ejercitaba; ahora una minoría es parcial para que el caso exista en el dato.
 const { semilla, ent, entre } = require("../lib/rng");
+const { BICE_RUT, CESIONARIOS } = require("../lib/cesionarios");
 
 const DIA = 86400000;
 const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
 const ms = (s) => Date.parse(String(s).slice(0, 10) + "T00:00:00");
+
+// EL CESIONARIO DE CADA CESIÓN SALE DEL PADRÓN, y no de la entrega anterior.
+//
+// AECSync registra **todas** las cesiones del cliente, **bancarias y no bancarias**. La entrega
+// anterior traía siete cesionarios y **ninguno era un banco fuera del factoring target**, así que la
+// porción «otros bancarios» del mix no tenía de dónde salir y terminaba generándose por perfil en el
+// A11 — justo el dato que este activo sí puede responder.
+//
+// Cada cedente tiene un PANEL de contrapartes, no una por documento: una empresa trabaja con dos o
+// tres factoring, no con uno distinto por factura. El panel se sortea con semilla del RUT, así que es
+// estable entre corridas, y se reparte con pesos decrecientes —hay una relación principal y el resto
+// es marginal—, que es lo que hace que un share of wallet signifique algo.
+//
+// **Lo que NO se toca: si la cesión fue a NOSOTROS.** Eso viene de la entrega anterior y es nuestra
+// cartera; de ahí cuelgan la colocación del A11, la primera operación y el SOW. Se redistribuye sólo
+// entre quién se llevó las AJENAS, que es lo que la entrega anterior no podía responder bien.
+const AJENOS = CESIONARIOS.filter((c) => !c.nuestro);
+function panelDe(rut) {
+  const r = semilla("panel|" + rut);
+  // Entre 2 y 4 contrapartes. Con una sola, «share of wallet» no tendría nada que repartir.
+  const n = ent(r, 2, 4);
+  const barajado = AJENOS.map((c) => ({ c, k: r() })).sort((a, b) => a.k - b.k).map((x) => x.c);
+  // Al menos UN banco en el panel de la mayoría: la banca financia a la mayor parte de las empresas
+  // con ventas, y sin eso la porción bancaria quedaría anecdótica. El 20% que no accede a banca es
+  // deliberado — son las empresas que sólo llegan al factoring no bancario.
+  const elegidos = barajado.slice(0, n);
+  if (r() < 0.8 && !elegidos.some((c) => c.banco)) elegidos[elegidos.length - 1] = barajado.find((c) => c.banco);
+  // Pesos decrecientes: la primera relación pesa más que la última.
+  const pesos = elegidos.map((_, i) => Math.pow(0.55, i) * entre(r, 0.8, 1.2));
+  const suma = pesos.reduce((a, b) => a + b, 0);
+  return { elegidos, acum: pesos.map((w) => w / suma).map((_, i, a) => a.slice(0, i + 1).reduce((x, y) => x + y, 0)) };
+}
 
 function generar({ DTESYNC, AECSYNC }) {
   const previas = AECSYNC || [];
@@ -110,8 +143,20 @@ function generar({ DTESYNC, AECSYNC }) {
     const parcial = rm() < 0.12;
     const cedido = parcial ? Math.min(total, Math.max(1, Math.round(total * entre(rm, 0.30, 0.95)))) : total;
 
+    // El CESIONARIO. Si la entrega anterior decía que esta cesión fue a nosotros, se respeta —es
+    // nuestra cartera—. Si fue a otro, se redistribuye sobre el panel del cedente.
+    const nuestra = c.RUTFactoring === BICE_RUT;
+    let ces = null;
+    if (!nuestra) {
+      const pn = panelDe(rut);
+      const rc = semilla("ces|" + rut + "|" + doc.Folio)();
+      ces = pn.elegidos[pn.acum.findIndex((a) => rc <= a)] || pn.elegidos[pn.elegidos.length - 1];
+    }
+
     out.push({
       ...c,
+      ...(ces ? { RUTFactoring: ces.rut, RazonSocialFactoring: ces.nombre,
+                  EmailFactoring: "contacto@" + ces.nombre.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 18) + ".cl" } : {}),
       RazonSocialCedente: doc.RznSoc || c.RazonSocialCedente,
       TipoDTE: doc.TipoDTE || c.TipoDTE,
       TipoDTEDesc: doc.TipoDTEDesc || c.TipoDTEDesc,

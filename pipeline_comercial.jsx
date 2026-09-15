@@ -1501,19 +1501,26 @@ const P360 = (() => {
 // Devuelve `null` cuando la empresa no tiene mix —un DEUDOR no cede facturas, así que la pregunta no
 // le aplica—: null se dibuja como ausencia y un cero se leería como «no opera con nosotros».
 const MIX_SOW_CAMPOS = [
-  { campo: "SOW_OTROS_FACTORING_PCT", label: "Otros factoring" },
-  { campo: "SOW_SECURITY_PCT", label: "Security", nuestro: true },
-  { campo: "SOW_FACTORING_TARGET_PCT", label: "Factoring target" },
-  { campo: "SOW_OTROS_BANCARIOS_PCT", label: "Otros bancarios" },
+  { campo: "SOW_OTROS_FACTORING_PCT", porcion: "otrosFactoring", label: "Otros factoring" },
+  { campo: "SOW_SECURITY_PCT", porcion: "security", label: "Security", nuestro: true },
+  { campo: "SOW_FACTORING_TARGET_PCT", porcion: "factoringTarget", label: "Factoring target" },
+  { campo: "SOW_OTROS_BANCARIOS_PCT", porcion: "otrosBancarios", label: "Otros bancarios" },
 ];
 function mixSowDe(rutOnombre) {
   const f = (rutOnombre && (P360.porRut[rutOnombre] || P360.porNombre[rutOnombre])) || null;
   if (!f) return null;
+  // El DESGLOSE por cesionario, que es lo que el tooltip del chip muestra: con «Otros bancarios · 22%»
+  // no se puede llamar a nadie; con «Banco Santander 14% · Scotiabank 8%» sí. Viene del mismo activo
+  // —se mide sobre AECSync y se inyecta acá—, así que el chip y su detalle no pueden discrepar: cada
+  // porción es exactamente la suma de los suyos. Un JSON roto deja el chip sin detalle, no sin chip.
+  let detalle = [];
+  try { const d = JSON.parse(f[P360.ix.SOW_DETALLE_JSON] || "[]"); if (Array.isArray(d)) detalle = d; } catch (e) { detalle = []; }
   const partes = [];
   for (const c of MIX_SOW_CAMPOS) {
     const v = f[P360.ix[c.campo]];
     if (v === "" || v == null) return null;          // la empresa no tiene mix (deudor, o sin SOW)
-    partes.push({ label: c.label, pct: +v, nuestro: !!c.nuestro });
+    partes.push({ label: c.label, pct: +v, nuestro: !!c.nuestro, porcion: c.porcion,
+                  detalle: detalle.filter((d) => d && d.porcion === c.porcion).sort((a, b) => b.pct - a.pct) });
   }
   // De mayor a menor: la pregunta que la columna responde es «quién se lleva más», y el orden fijo
   // por nombre obligaba a comparar cuatro cifras para contestarla.
@@ -2184,6 +2191,43 @@ function libroPorEmisor() {
 // pueda decidir — `estadoCandidata` lo sorteaba con un hash.
 // Nuestro RUT como factoring: separa lo que nos cedieron a NOSOTROS de lo que se llevó la competencia.
 const BICE_RUT = "97.080.000-0";
+// ── PADRÓN DE CESIONARIOS — quién puede aparecer como cesionario en AECSync, y de qué tipo es ─────
+// AECSync (A2) registra TODAS las cesiones del cliente, bancarias y no bancarias, e identifica en
+// cada una al cesionario; lo que NO dice —porque es del mercado y no del SII— es de qué tipo es cada
+// uno, y eso lo declara este padrón. Es el MISMO archivo que `GeneradorDatos/lib/cesionarios.js`, que
+// mide el mix del A11 con él: si cambia uno, cambia el otro.
+//
+// **La identidad es el RUT, no el nombre** (misma lección que el A24). Buscar trozos de razón social
+// clasificaba «Eurocapital» como factoring de banco —«eurocap·ita·l» contiene el «ita» con que se
+// buscaba «Itaú»—, así que el churn le atribuía al factoring target negocio que se había llevado otro
+// y la alerta comercial nombraba a tres que no habían participado. Se indexa además por NOMBRE porque
+// varios call sites sólo tienen la razón social; un nombre que el padrón no declara NO es banco, que
+// es el balde conservador.
+const CESIONARIOS_CAT = [
+  { rut: BICE_RUT, nombre: "Factoring Security (BICE)", banco: true, nuestro: true },
+  { rut: "96.510.870-6", nombre: "BCI Factoring", banco: true, target: true },
+  { rut: "96.667.560-8", nombre: "Banchile Factoring", banco: true, target: true },
+  { rut: "76.645.030-K", nombre: "Itaú Factoring", banco: true, target: true },
+  { rut: "97.036.000-K", nombre: "Banco Santander", banco: true },
+  { rut: "97.030.000-7", nombre: "BancoEstado", banco: true },
+  { rut: "97.018.000-1", nombre: "Scotiabank Chile", banco: true },
+  { rut: "99.500.410-0", nombre: "Banco Consorcio", banco: true },
+  { rut: "97.011.000-3", nombre: "Banco Internacional", banco: true },
+  { rut: "96.684.990-8", nombre: "Tanner Servicios Financieros" },
+  { rut: "76.118.580-2", nombre: "Eurocapital" },
+  { rut: "96.529.420-8", nombre: "Incofin" },
+  { rut: "76.040.000-1", nombre: "Factotal" },
+  { rut: "76.482.900-3", nombre: "Servicios Financieros Progreso" },
+  { rut: "76.223.180-1", nombre: "Coopeuch Factoring" },
+];
+const _CES_IX = (() => {
+  const m = new Map();
+  for (const c of CESIONARIOS_CAT) { m.set(c.rut, c); m.set(c.nombre.toLowerCase(), c); }
+  return m;
+})();
+// El cesionario, por RUT o por razón social. `null` si el padrón no lo declara — que es un padrón
+// desactualizado y no un hecho del negocio, así que quien pregunte tiene que poder distinguirlo.
+const cesionarioDe = (rutOnombre) => _CES_IX.get(rutOnombre) || _CES_IX.get(String(rutOnombre || "").toLowerCase()) || null;
 // Índice de CESIONES por documento: `RUT del cedente|folio` → quién se lo llevó y cuándo. Es un hecho
 // del registro electrónico (A2) y la única forma de saber si una factura ya tiene dueño.
 // Hasta el 14-09-2026 esto no se podía consultar: las cesiones del A2 referenciaban folios que el A1 no
@@ -2380,8 +2424,10 @@ function competenciaDe(rut) {
   const comp = Object.entries(g.comp).map(([name, mm]) => ({ name, monto: +mm.toFixed(1), pct: +(mm / g.total * 100).toFixed(1) })).sort((a, b) => b.monto - a.monto);
   return { total: +g.total.toFixed(1), bice: +g.bice.toFixed(1), bicePct: +(g.bice / g.total * 100).toFixed(1), comp };
 }
-// Competidores reales del mercado chileno de factoring (sin BICE/Security, que somos nosotros).
-const COMPETIDORES_FACTORING = ["Tanner Servicios Financieros", "BCI Factoring", "Banchile Factoring", "Factotal", "Incofin", "Eurocapital", "Servicios Financieros Progreso", "Coopeuch Factoring"];
+// Competidores del mercado chileno (sin Security, que somos nosotros). Sale del PADRÓN y no de una
+// lista aparte: dos listas de cesionarios se desincronizan y la sintética empieza a producir nombres
+// que el clasificador no sabe ubicar.
+const COMPETIDORES_FACTORING = CESIONARIOS_CAT.filter((c) => !c.nuestro).map((c) => c.nombre);
 // Competencia de una OPORTUNIDAD: usa la data real de AECSync por RUT; si no hay (cliente nuevo, sin serie
 // histórica), sintetiza de forma determinista las cesiones a la competencia — o devuelve null si el cliente
 // realmente no opera factoring con nadie. Así, incluso con SOW "Nuevo", se ve con qué competidores opera.
@@ -10748,6 +10794,11 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                   ) : (() => {
                     const an = analisisDeudoresDeDeal(d);
                     if (!an) return <span className="t10" style={{ color: C.faint }}>Sin deudores analizados</span>;
+                    // La partición por LÍNEA es un LOOKUP sobre el listado (A23), no una corrida del
+                    // motor: el tubo dibuja ~100 filas y asignar por fila costaría 100 asignaciones
+                    // completas. Lo que se gana en costo se paga en precisión, y el precio está
+                    // declarado en `capacidadDeudores`: es una cota superior, no una asignación.
+                    const cap = capacidadDeudores(an.lista, d.rutEmisor);
                     // Los tres tramos se dibujan SIEMPRE, también en cero —el tramo ausente dice que no
                     // hay nada de ese tipo, y ocultarlo dejaba la duda de si la columna lo mostraba— y
                     // en cero se rotulan con el mismo conteo («0 deudores >4.2»), para que los tres se
@@ -10755,10 +10806,10 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                     // El conteo va CON su unidad dentro de la frase («★ 1 deudor Prime»): suelto entre
                     // la etiqueta y el monto no se sabía si eran deudores o facturas.
                     const chipTramo = (k, txt, fg, bg, tip) => {
-                      const hay = an[k].n > 0;
+                      const hay = cap[k].n > 0;
                       return (
                         <span key={k} className="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: hay ? bg : "#EDEEF1", color: hay ? fg : C.sub, cursor: "help" }} title={tip}>
-                          {hay ? `${txt(an[k].n)} · ${fmtMM(an[k].monto)}` : txt(0)}
+                          {hay ? `${txt(cap[k].n)} · ${fmtMM(cap[k].monto)}` : txt(0)}
                         </span>
                       );
                     };
@@ -10775,12 +10826,12 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                           izquierda y se comparan de un vistazo entre filas del tubo. Con flex-wrap el
                           reparto dependía del ancho de cada monto y los tramos bailaban de línea. */}
                       <div className="mt-1 flex flex-col items-start gap-1">
-                        {chipTramo("prime", (n2) => `★ ${plural(n2, "deudor", "deudores")} Prime`, C.indigo, C.lilac,
-                          "Deudores Prime (Lista Blanca o Autorizados) y el monto que aportan a la oferta: son los primeros en tomar línea.")}
-                        {chipTramo("notaAlta", (n2) => `${plural(n2, "deudor", "deudores")} >4.2`, "#2563EB", "#EFF6FF",
-                          "Deudores no Prime con Nota Deudor sobre 4,2, y el monto que aportan: segundo tramo de prioridad al repartir la línea.")}
-                        {chipTramo("resto", (n2) => `${plural(n2, "otro deudor", "otros deudores")}`, "#9CA3AF", "#F3F4F6",
-                          "Deudores sin prioridad y el monto que aportan: toman sólo la línea que quede después de los dos tramos anteriores.")}
+                        {chipTramo("primeConLinea", (n2) => `★ ${plural(n2, "Prime con línea", "Prime con línea")}`, C.indigo, C.lilac,
+                          "Deudores Prime que HOY tienen línea con este cliente —propia (LF2/LF3) o cubierta por el comodín (LF4/LF1)— y a los que además les queda disponible en su línea global. El monto es lo que aportan a la oferta: es una COTA, no lo que se va a girar. La asignación es factura a factura contra los tres niveles a la vez y el cupo del comodín es uno solo para todos, así que el monto cursable lo fija la simulación, no esta suma.")}
+                        {chipTramo("otrosConLinea", (n2) => `${plural(n2, "Otro con línea", "Otros con línea")}`, "#2563EB", "#EFF6FF",
+                          "Deudores NO Prime con línea disponible hoy, con el mismo criterio que la fila de arriba. Toman línea después de los Prime, así que su monto es todavía más una cota: lo que quede tras el primer tramo.")}
+                        {chipTramo("sinLinea", (n2) => `${plural(n2, "deudor sin línea", "deudores sin línea")}`, "#9CA3AF", "#F3F4F6",
+                          "Deudores sin línea disponible con este cliente: no tienen línea de par, el comodín no les alcanza, o su línea global de deudor está copada. NO se distingue si son Prime: sin cupo, la clasificación no cambia lo que se puede comprar hoy. Se resuelve pidiendo línea al comité.")}
                       </div>
                     </>);
                   })()}
@@ -10808,13 +10859,18 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                     return (
                       <div className="flex flex-col items-start gap-1">
                         {visibles.map((x) => (
-                          <span key={x.label} className="inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 t9 font-semibold"
-                            title={`${x.label}: ${x.pct}% del financiamiento del cliente (activo A11 · Plataforma 360).`}
-                            style={{ backgroundColor: x.nuestro ? C.lilac : "#F0EFF3", color: x.nuestro ? C.indigo : C.sub }}>
-                            {x.nuestro && <span aria-hidden="true">★</span>}
-                            <span className="truncate">{x.label}</span>
-                            <span style={{ fontVariantNumeric: "tabular-nums" }}>· {x.pct}%</span>
-                          </span>
+                          <TipDesglose key={x.label} titulo={x.label} color={x.nuestro ? C.indigo : C.sub}
+                            nota={x.nuestro
+                              ? `${x.pct}% del financiamiento por cesión del cliente es nuestro: cartera propia, no competencia.`
+                              : `${x.pct}% del financiamiento por cesión del cliente. Con quién, y cuánto cada uno:`}
+                            items={x.nuestro ? null : x.detalle.map((d) => ({ name: d.nombre, val: d.pct + "%" }))}>
+                            <span className="inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 t9 font-semibold"
+                              style={{ backgroundColor: x.nuestro ? C.lilac : "#F0EFF3", color: x.nuestro ? C.indigo : C.sub }}>
+                              {x.nuestro && <span aria-hidden="true">★</span>}
+                              <span className="truncate">{x.label}</span>
+                              <span style={{ fontVariantNumeric: "tabular-nums" }}>· {x.pct}%</span>
+                            </span>
+                          </TipDesglose>
                         ))}
                       </div>
                     );
@@ -10870,6 +10926,12 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                       const totCrit = visC ? (visC.aprob + visC.clasif + visC.exc.length + visC.rech.length) : 0;
                       // Estado de LÍNEA: se usa el MISMO motor que el detalle, para que el tubo y la
                       // pantalla no puedan discrepar sobre el mismo negocio.
+                      // PENDIENTE — en producción esta llamada NO se puede hacer: los motores corren
+                      // del lado del servidor y esto es una lista de ~100 filas. Y no hace falta: la
+                      // simulación que produjo esta fila ya congeló su asignación en la versión
+                      // (`snapVersionCli`), así que corresponde LEERLA del snapshot en vez de
+                      // recalcularla. La columna «Oportunidad» de al lado ya no depende del motor
+                      // (`capacidadDeudores`), ésta todavía sí.
                       const ev = (facsC && d.rutEmisor) ? asignarLineas(facsC, d.rutEmisor) : null;
                       // Sin facturas itemizadas la única lectura posible es el monto contra la línea
                       // disponible del cliente; se dice en el tooltip para no confundirla con la
@@ -14371,18 +14433,10 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
     </div>
   );
 }
-// FACTORING TARGET — los factorings de BANCO, que es la competencia que Security mira de frente. La
-// lista se DECLARA y el nombre se compara por TOKEN completo. Adivinarla por trozo de razón social
-// clasificaba **Eurocapital como factoring de banco** —«eurocap·ita·l» contiene «ita», que era el
-// prefijo con que se buscaba «Itaú»—, y con eso el churn le atribuía al factoring target negocio que
-// se había llevado otro, el KPI «SOW factoring target» del dashboard quedaba inflado, y la alerta
-// comercial «esta empresa cede facturas al factoring target (BCI · Banco de Chile · Itaú)» se
-// levantaba nombrando a tres que no habían participado. Un trozo de tres letras adentro de un nombre
-// propio no es una clasificación: es una coincidencia.
-const FACTORING_TARGET = ["bci", "banchile", "banco de chile", "itau"];
-const sinTildes = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-const _RX_FACT_TARGET = new RegExp("(^|\\s)(" + FACTORING_TARGET.join("|") + ")(\\s|$)");
-const esFactoringBanco = (name) => _RX_FACT_TARGET.test(sinTildes(name));
+// «FACTORING TARGET» = los cesionarios BANCARIOS que Security mira de frente (BCI · Banco de Chile ·
+// Itaú). Lo declara el padrón por RUT; uno que el padrón no conoce no es banco, a propósito, porque
+// contar de más acá infla el KPI de churn y levanta una alerta comercial sobre nadie.
+const esFactoringBanco = (rutOnombre) => { const c = cesionarioDe(rutOnombre); return !!(c && c.banco && c.target); };
 const wkLbl = (s) => { const p = (s || "").split("-"); return p.length === 3 ? `${p[2]}/${p[1]}` : s; };
 // Tooltip enriquecido (tarjeta flotante) con el desglose de un monto: título + filas nombre/monto alineadas.
 // Posición fija junto al disparador (no se recorta con el overflow de la tabla).
@@ -19479,11 +19533,17 @@ function lineasDeudor() {
     const concentrado = hashStr("conc" + rut) % 100 < 8;
     const holgura = concentrado ? 1.03 + rnd() * 0.09
       : t === "Lista Blanca" ? 1.25 + rnd() * 0.55 : t === "Deudor Autorizado" ? 1.12 + rnd() * 0.38 : 1.02 + rnd() * 0.20;
-    const base = u > 0 ? u * holgura : 40 + Math.floor(rnd() * 24) * 5;
+    // EN PESOS, y tallada en tramos de $5.000.000 como las demás. El respaldo del deudor SIN uso
+    // —el que no tiene nada cedido todavía— se quedó en millones cuando todo migró al peso el
+    // 14-09-2026: daba una línea de «80», que en pesos son 80 pesos, así que a esos 24 deudores de
+    // 741 no les cabía jamás una factura y el nivel 3 los bloqueaba enteros. Un monto que no dice su
+    // unidad se migra en silencio y sólo se nota mirando una cifra absurda.
+    const base = u > 0 ? u * holgura : (40 + Math.floor(rnd() * 24) * 5) * 1e6;
+    const tallado = Math.max(Math.ceil(base / TRAMO_LINEA) * TRAMO_LINEA, Math.ceil(u / TRAMO_LINEA) * TRAMO_LINEA);
     _deudorIdx.set(rut, {
       rutDeudor: rut, nombre: nombres.get(rut) || "", tipo: t,
-      aprobado: Math.max(Math.ceil(base / 5) * 5, Math.ceil(u / 5) * 5), vigente: u,
-      disponible: mmRound(Math.max(Math.ceil(base / 5) * 5, Math.ceil(u / 5) * 5) - u),
+      aprobado: tallado, vigente: u,
+      disponible: mmRound(tallado - u),
       nClientes: clientes.get(rut) ? clientes.get(rut).size : 0,
     });
   }
@@ -19570,6 +19630,10 @@ function tramosDeudores(ds) {
   const resto = ds.filter((x) => !x.prime && x.nota <= NOTA_PRIORITARIA);
   return {
     nDeudores: ds.length, nFacturas: ds.reduce((s2, x) => s2 + (x.n || 0), 0), monto: sum(ds),
+    // La lista viaja con el resumen: la columna «Oportunidad» necesita cruzar deudor por deudor
+    // contra el listado de líneas, y re-agrupar acá lo que ya está agrupado invita a que las dos
+    // agrupaciones se separen.
+    lista: ds,
     prime: { n: prime.length, monto: sum(prime) },
     notaAlta: { n: notaAlta.length, monto: sum(notaAlta) },
     resto: { n: resto.length, monto: sum(resto) },
@@ -19583,8 +19647,8 @@ function analisisDeudores(facturas) {
     const tipo = tipoDeudorDisp(f), nombre = f.deudor || "";
     const k = f.rutRecep || nombre;
     let x = g.get(k);
-    if (!x) { x = { nombre, prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado", nota: (notaDeudor(nombre) || 0), n: 0, monto: 0 }; g.set(k, x); }
-    x.n += 1; x.monto += (f.monto || 0);
+    if (!x) { x = { nombre, rut: f.rutRecep || "", prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado", nota: (notaDeudor(nombre) || 0), n: 0, monto: 0, montos: [] }; g.set(k, x); }
+    x.n += 1; x.monto += (f.monto || 0); x.montos.push(f.monto || 0);
   });
   return tramosDeudores([...g.values()]);
 }
@@ -19605,9 +19669,13 @@ function analisisDeudoresDeDeal(deal) {
     });
     return analisisDeudores(todas);
   }
+  // Sin facturas itemizadas el deudor viene sólo con nombre, así que el RUT se resuelve contra los
+  // pares del propio cliente. Si no está, queda vacío y la capacidad lo tratará como sin línea:
+  // preferir el «no sé» al «supongo que sí» es lo mismo que hace `execsVisiblesDe`.
+  const porNombre = new Map((paresPorEmisor().get(deal.rutEmisor) || []).map((x) => [x.nombre, x.rut]));
   return tramosDeudores((deal.deudores || []).filter((x) => x && x.name).map((x) => {
     const tipo = tipoDeudor(null, x.name);
-    return { nombre: x.name, prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado",
+    return { nombre: x.name, rut: porNombre.get(x.name) || "", prime: tipo === "Lista Blanca" || tipo === "Deudor Autorizado",
       nota: (notaDeudor(x.name) || 0), n: x.facturas || 0, monto: x.monto || 0 };
   }));
 }
@@ -19690,6 +19758,78 @@ function facturasDeDeudores(deudores, porDeudor) {
 // documento cabe o no en el cupo, que es lo único que decide si se puede cursar hoy.
 // El estado de líneas entra por parámetro, como en `asignarLineas`: es lo que permite probar el
 // criterio con un cupo conocido en vez de contra el que traiga el navegador.
+// ── ¿ESTE DEUDOR TIENE LÍNEA CON ESTE CLIENTE? — capacidad DECLARADA, no asignación ─────────────
+// Hermana barata de `facturasConLinea`, y hay que leerlas juntas porque contestan cosas distintas:
+//
+//   · `facturasConLinea` corre el MOTOR: qué documentos concretos se cursan. Es exacto y cuesta una
+//     asignación completa, porque el reparto es secuencial —cada factura que entra consume cupo
+//     compartido— y por eso sólo se usa en el detalle de UNA operación.
+//
+// **Por qué el atajo y no el motor, medido:** 100 filas y 2.538 deudores cuestan 2,8 ms por el atajo y
+// 19,7 ms por el motor. La VELOCIDAD no alcanza para decidirlo —7× de una cifra muy chica sigue siendo
+// muy chica—; lo que lo decide es que **en producción los dos motores corren del lado del SERVIDOR**,
+// así que pintar el tubo con el motor son ~100 llamadas para dibujar una lista, mientras que esto sólo
+// necesita el listado de líneas (A23) que el cliente ya tiene.
+//   · `capacidadDeudores` es un LOOKUP sobre el listado de líneas (A23): si el par (cliente, deudor)
+//     tiene línea propia (LF2/LF3) o lo cubre el comodín del cliente (LF4, o LF1 si es Prime), y si a
+//     los dos niveles —y al del deudor, que es global— les queda disponible. O(1) por deudor sobre
+//     índices ya memoizados, que es lo que permite pintarlo en ~100 filas del tubo.
+//
+// **LO QUE ESTA FUNCIÓN NO AFIRMA, y es deliberado: que el monto se vaya a poder girar.** Es una COTA
+// SUPERIOR, por tres razones que no se arreglan calculando mejor:
+//   1. la asignación es por FACTURA COMPLETA y contra los tres niveles a la vez, así que un deudor
+//      «con línea» igual puede tener documentos que no caben;
+//   2. el comodín del cliente es UN pozo para todos sus deudores sin línea propia, así que sumar
+//      deudor por deudor cuenta el mismo cupo varias veces;
+//   3. la línea del deudor es GLOBAL —la comparten todos los clientes que le ceden—, de modo que el
+//      disponible de hoy puede consumirlo otro negocio de otra cartera antes que éste.
+// Por eso los chips dicen «con línea» y el monto es «lo que aportan a la oferta», nunca «lo que se
+// gira». La cifra que sí es una asignación aparece en Simulación, después de Re-evaluar (regla 14).
+function capacidadDeudores(deudores, rutCliente, inyecta) {
+  const vacio = { primeConLinea: { n: 0, monto: 0 }, otrosConLinea: { n: 0, monto: 0 }, sinLinea: { n: 0, monto: 0 } };
+  if (!deudores || !deudores.length || !rutCliente) return vacio;
+  const est = (inyecta && inyecta.estadoCliente) || lineasDeCliente(rutCliente);
+  if (!est) return vacio;
+  const dispDe = (l) => Math.max(0, (l.aprobado || 0) - (l.vigente || 0));
+  // El comodín del cliente: LF4 para cualquiera, LF1 sólo para Prime. Es UN pozo compartido, así que
+  // se calcula una vez y no por deudor — calcularlo adentro del bucle sugeriría que cada uno tiene el
+  // suyo, que es justamente el error que esta función no quiere inducir.
+  const comodines = (est.lineas || []).filter((l) => l.granularidad === "comodin");
+  const pozo = (prime) => comodines.filter((l) => !l.soloPrime || prime).reduce((a, l) => a + dispDe(l), 0);
+  const propias = new Map();
+  for (const l of (est.lineas || [])) if (l.rutDeudor) propias.set(l.rutDeudor, (propias.get(l.rutDeudor) || 0) + dispDe(l));
+
+  const out = { primeConLinea: { n: 0, monto: 0 }, otrosConLinea: { n: 0, monto: 0 }, sinLinea: { n: 0, monto: 0 } };
+  for (const d of deudores) {
+    const rut = d.rut || "";
+    // Nivel 1-2: su línea de par si la tiene; si no, el pozo comodín del cliente.
+    const nivelPar = propias.has(rut) ? propias.get(rut) : pozo(!!d.prime);
+    // Nivel 3: la línea GLOBAL del deudor. Un deudor que el índice no conoce no tiene capacidad —
+    // falla CERRADO, como `execsVisiblesDe`: en una cifra que el ejecutivo va a citar, de más es peor.
+    const ld = (inyecta && inyecta.lineaDeudor) ? inyecta.lineaDeudor(rut) : (rut ? lineaDeDeudor(rut) : null);
+    const nivelDeudor = ld ? Math.max(0, ld.disponible || 0) : 0;
+    // El umbral NO es «¿le queda algo?» sino **«¿le cabe al menos una de sus facturas?»**. Medido
+    // sobre la cartera, el primero no discrimina nunca —0 de 7.100 deudores quedaban fuera, porque a
+    // un pozo comodín casi siempre le sobra algún peso— y un chip que siempre marca cero no contesta
+    // nada. La asignación es por factura COMPLETA, así que la pregunta del ejecutivo («¿a quién le
+    // compro hoy?») se decide documento a documento, igual que en las pestañas del detalle (caso 97).
+    const tope = Math.min(nivelPar, nivelDeudor);
+    // Sin facturas itemizadas queda el promedio como tamaño representativo: es lo único que hay, y
+    // suponer que cabe la más chica sería inventarse un documento que nadie vio.
+    const montos = (d.montos && d.montos.length) ? d.montos : (d.n > 0 ? [(d.monto || 0) / d.n] : []);
+    const caben = montos.filter((m) => m > 0 && m <= tope);
+    const k = !caben.length ? "sinLinea" : (d.prime ? "primeConLinea" : "otrosConLinea");
+    out[k].n += 1;
+    // Con línea, el monto es el de las facturas que CABEN bajo su tope —no el total del deudor—:
+    // sigue siendo una cota (el pozo es compartido y el reparto secuencial) pero mucho más ajustada,
+    // y no promete comprar un documento que a ese deudor no le entra.
+    // Sin línea, el monto es TODO lo suyo: es la plata que hoy está trabada y que se destraba
+    // pidiendo línea al comité, que es la acción que ese chip tiene que provocar.
+    out[k].monto += caben.length ? caben.reduce((a, m) => a + m, 0) : (d.monto || 0);
+  }
+  for (const k of Object.keys(out)) out[k].monto = mmRound(out[k].monto);
+  return out;
+}
 function facturasConLinea(facturas, rutCliente, incorporables, inyecta) {
   const res = asignarLineas(facturas || [], rutCliente, inyecta);
   let n = 0, monto = 0;

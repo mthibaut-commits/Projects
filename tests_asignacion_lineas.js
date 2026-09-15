@@ -2306,78 +2306,131 @@
        `${todas.length} facturas de ${nombres.length} deudores · folio ${todas[0] && todas[0].folio} → ${todas[todas.length - 1] && todas[todas.length - 1].folio} · descendente ${descendente} · mismo contenido ${mismoSet} · no muta el índice ${noMuta}`);
   }
 
-  // ── 99 · EL MIX DE FINANCIAMIENTO («SOW» del tubo) SALE DEL A11, Y NO CONTRADICE AL A5 ──────
-  // La columna SOW del tubo en versión tabla responde «con quién se financia este cliente y cuánto
-  // de eso es nuestro». Ese dato no lo puede producir el pipeline y tampoco lo tenía ningún activo
-  // entero: AECSync (A2) sólo registra CESIONES —o sea factoring— y el A5 sólo mide participación
-  // DENTRO del factoring, así que ninguno de los dos puede responder por la deuda BANCARIA que no es
-  // factoring, que es una de las cuatro porciones. Por eso vive en **A11 · Plataforma 360**, que es el
-  // maestro de la EMPRESA: el sujeto del campo es el cliente, no su cartera ni un par (§5).
-  // Lo que este caso fija es que las dos entregas no puedan contradecirse.
+  // ── 99 · EL MIX DE FINANCIAMIENTO SE MIDE SOBRE AECSYNC Y SE INYECTA EN EL A11 ──────────────
+  // La columna SOW del tubo responde «con quién se financia este cliente y cuánto de eso es nuestro».
+  // **Toda cesión es factoring** —un banco que compra una factura está haciendo factoring—, así que el
+  // universo que AECSync (A2) registra ES el financiamiento por cesión del cliente, y las cuatro
+  // porciones lo parten por QUIÉN se lo lleva. A2 es el único activo que puede contestarlo: identifica
+  // al cesionario de cada cesión. El dato se MIDE ahí y se INYECTA en Plataforma 360 (A11), que es de
+  // donde la pantalla lo lee — el mismo camino que la colocación promedio y la primera operación.
   {
     const p360 = (window.PLATAFORMA360 && window.PLATAFORMA360.filas) || [];
     const ixp = {}; ((window.PLATAFORMA360 && window.PLATAFORMA360.campos) || []).forEach((c, i) => { ixp[c] = i; });
     const campos = ["SOW_SECURITY_PCT", "SOW_FACTORING_TARGET_PCT", "SOW_OTROS_FACTORING_PCT", "SOW_OTROS_BANCARIOS_PCT"];
+    const aec = window.AECSYNC || [];
 
-    // (a) LAS CUATRO PORCIONES SUMAN 100, en todas las filas que traen mix. Un mix que no suma 100 no
+    // (a) LAS CUATRO PORCIONES SUMAN 100 en todas las filas que traen mix. Un mix que no suma 100 no
     //     es un mix: son cuatro cifras sueltas, y la columna deja de significar «cuánto de su
     //     financiamiento». Se mide sobre el archivo entero, no sobre una muestra.
-    let conMix = 0, sinMix = 0, noSuman = 0, negativos = 0;
+    let conMix = 0, sinMix = 0, noSuman = 0, fueraRango = 0;
     const filasMix = [];
     for (const fila of p360) {
       const v = campos.map((c) => fila[ixp[c]]);
       if (v.some((x) => x === "" || x == null)) { sinMix++; continue; }
-      conMix++;
-      filasMix.push(fila);
-      const s = v.reduce((a, b) => a + (+b || 0), 0);
-      if (Math.abs(s - 100) > 0.11) noSuman++;                  // tolerancia del redondeo a 1 decimal
-      if (v.some((x) => +x < 0 || +x > 100)) negativos++;
+      conMix++; filasMix.push(fila);
+      if (Math.abs(v.reduce((a, b) => a + (+b || 0), 0) - 100) > 0.11) noSuman++;   // redondeo a 1 decimal
+      if (v.some((x) => +x < 0 || +x > 100)) fueraRango++;
     }
-    const sumanOk = conMix > 100 && noSuman === 0 && negativos === 0;
+    const sumanOk = conMix > 100 && noSuman === 0 && fueraRango === 0;
 
-    // (b) NO CONTRADICE AL A5, que sigue siendo el maestro de la participación sobre factoring. Las
-    //     TRES porciones de factoring, renormalizadas sobre su propio subtotal, tienen que reproducir
-    //     el `SOWActualPct` del A5. Es la prueba de que agregar el dato al A11 no creó una segunda
-    //     verdad sobre lo mismo: el A11 agrega la cuarta porción —lo bancario—, no reescribe las tres.
+    // (b) EL PADRÓN DE CESIONARIOS CLASIFICA POR RUT, y es lo que vuelve medible la partición. Antes
+    //     se adivinaba por trozo de razón social: se buscaba «ita» para encontrar «Itaú» y eso ponía a
+    //     **Eurocapital** entre los factoring de banco —«eurocap·ita·l»—, o sea una porción entera mal
+    //     atribuida. Se comprueba contra los cesionarios que el archivo declara, no contra una lista
+    //     escrita acá: uno nuevo en el activo tiene que estar en el padrón o el mix lo reparte mal.
+    const delArchivo = [...new Set(aec.map((a) => a.RUTFactoring).filter(Boolean))];
+    const declarados = delArchivo.filter((r) => cesionarioDe(r));
+    const bancos = delArchivo.filter((r) => { const c = cesionarioDe(r); return c && c.banco && !c.nuestro; });
+    const target = delArchivo.filter((r) => esFactoringBanco(r));
+    const euro = (aec.find((a) => a.RazonSocialFactoring === "Eurocapital") || {}).RUTFactoring;
+    const padronOk = delArchivo.length >= 8 && declarados.length === delArchivo.length
+      && esFactoringBanco("Eurocapital") === false && (!euro || esFactoringBanco(euro) === false)
+      && target.length >= 2 && target.every((r) => cesionarioDe(r).banco)
+      // …y hay cesiones BANCARIAS fuera del target. Sin eso «Otros bancarios» sería una porción que
+      // nunca se llena, y una porción estructuralmente vacía no prueba nada.
+      && bancos.length > target.length;
+
+    // (c) LO QUE ES NUESTRO LO DICE EL A5, sin renormalizar. Las dos entregas miden la MISMA cifra
+    //     —cuánto del financiamiento por cesión del cliente se lleva Security— y ponerlas a discrepar
+    //     dejaría dos valores del mismo número en dos pantallas. El A5 es el que ya alimenta el
+    //     descuento por SOW del pricing y el churn, así que manda él y el mix se ancla.
     const sowA5 = {};
     for (const s of (window.SHARE_OF_WALLET || [])) if (s && s.RUTCliente) sowA5[s.RUTCliente] = +s.SOWActualPct || 0;
-    let cotejados = 0, contradicen = 0, peor = 0;
+    let anclados = 0, desanclados = 0;
     for (const fila of filasMix) {
       const rut = fila[ixp.RUT];
       if (!(rut in sowA5)) continue;
-      const sec = +fila[ixp.SOW_SECURITY_PCT], tgt = +fila[ixp.SOW_FACTORING_TARGET_PCT], otr = +fila[ixp.SOW_OTROS_FACTORING_PCT];
-      const sub = sec + tgt + otr;
-      if (sub <= 0) continue;
-      cotejados++;
-      const d = Math.abs((sec / sub) * 100 - sowA5[rut]);
-      if (d > peor) peor = d;
-      if (d > 0.6) contradicen++;                              // 0,6 pto: los cuatro redondeos a 1 decimal
+      anclados++;
+      if (Math.abs(+fila[ixp.SOW_SECURITY_PCT] - sowA5[rut]) > 0.11) desanclados++;
     }
-    const a5Ok = cotejados > 100 && contradicen === 0;
+    const ancladoOk = anclados > 100 && desanclados === 0;
 
-    // (c) UN DEUDOR NO TIENE MIX, y eso se devuelve como `null`, no como cuatro ceros. La pregunta no
-    //     le aplica: un deudor no cede facturas, no se financia con nosotros. Cuatro ceros se leerían
-    //     como «no opera con nadie», que es una afirmación, y el archivo no la hace.
+    // (d) EL RESTO SE REPARTE CON LA PROPORCIÓN QUE MIDE EL A2 — que es la mitad de la respuesta que
+    //     ningún otro activo tiene. Se recalcula acá desde las cesiones, cesionario por cesionario, y
+    //     tiene que dar lo mismo que el archivo: si no, el mix se está generando en vez de medirse.
+    const porCedente = {};
+    for (const a of aec) {
+      if (!a || !a.RUTEmisor) continue;
+      const c = cesionarioDe(a.RUTFactoring);
+      if (c && c.nuestro) continue;                       // el resto es lo AJENO
+      const g = porCedente[a.RUTEmisor] || (porCedente[a.RUTEmisor] = { tgt: 0, banc: 0, otro: 0, tot: 0 });
+      const m = +a.MontoCesion || 0;
+      if (c && c.banco && c.target) g.tgt += m; else if (c && c.banco) g.banc += m; else g.otro += m;
+      g.tot += m;
+    }
+    let repartidos = 0, repartoMal = 0, conBancaria = 0;
+    for (const fila of filasMix) {
+      const g = porCedente[fila[ixp.RUT]];
+      const resto = 100 - +fila[ixp.SOW_SECURITY_PCT];
+      if (+fila[ixp.SOW_OTROS_BANCARIOS_PCT] > 0) conBancaria++;
+      if (!g || !(g.tot > 0) || resto <= 0.2) continue;
+      repartidos++;
+      const esperado = [g.tgt, g.otro, g.banc].map((x) => x / g.tot * resto);
+      const real = [+fila[ixp.SOW_FACTORING_TARGET_PCT], +fila[ixp.SOW_OTROS_FACTORING_PCT], +fila[ixp.SOW_OTROS_BANCARIOS_PCT]];
+      if (real.some((x, i) => Math.abs(x - esperado[i]) > 0.25)) repartoMal++;
+    }
+    const repartoOk = repartidos > 100 && repartoMal === 0 && conBancaria > 20;
+
+    // (e-bis) EL DETALLE POR CESIONARIO — lo que el tooltip del chip muestra. «Otros bancarios · 22%»
+    //     no sirve para llamar a nadie; «Banco Santander 14% · Scotiabank 8%» sí. Lo que se fija es
+    //     que sea el DETALLE de esa cifra: cada porción tiene que ser exactamente la suma de los
+    //     suyos, o el tooltip diría 21,9 donde el chip dice 22. Por eso el generador reparte el 100
+    //     una sola vez, cesionario por cesionario, y agrega las porciones desde ahí.
+    let conDetalle = 0, detNoSuma = 0, detNoCuadra = 0, detSinNombre = 0;
+    for (const fila of filasMix) {
+      const m = mixSowDe(fila[ixp.RUT]);
+      if (!m) continue;
+      conDetalle++;
+      const todos = m.flatMap((x) => x.detalle || []);
+      if (Math.abs(todos.reduce((a, b) => a + b.pct, 0) - 100) > 0.11) detNoSuma++;
+      // cada porción = suma de su detalle (las que están en 0 no traen detalle, y eso es correcto)
+      if (m.some((x) => Math.abs((x.detalle || []).reduce((a, b) => a + b.pct, 0) - x.pct) > 0.051)) detNoCuadra++;
+      // …y cada fila del tooltip nombra a alguien, que es para lo que existe
+      if (todos.some((d) => !d.nombre || !(d.pct > 0))) detSinNombre++;
+    }
+    const detalleOk = conDetalle > 100 && detNoSuma === 0 && detNoCuadra === 0 && detSinNombre === 0;
+
+    // (e) UN DEUDOR NO TIENE MIX, y eso se devuelve como `null`, no como cuatro ceros. La pregunta no
+    //     le aplica: un deudor no cede facturas. Cuatro ceros se leerían como «no opera con nadie»,
+    //     que es una afirmación, y el archivo no la hace.
     const unDeudor = p360.find((f) => f[ixp.ROL] !== "CLIENTE" && campos.every((c) => f[ixp[c]] === "" || f[ixp[c]] == null));
-    const unCliente = filasMix[0];
-    const mixCliente = mixSowDe(unCliente[ixp.RUT]);
+    const mixCliente = mixSowDe(filasMix[0][ixp.RUT]);
     const nullOk = (!unDeudor || mixSowDe(unDeudor[ixp.RUT]) === null)
       && mixSowDe("99999999-9") === null && mixSowDe("") === null && mixSowDe(null) === null
       && Array.isArray(mixCliente) && mixCliente.length === 4;
 
-    // (d) ORDEN DESCENDENTE y la NUESTRA marcada. La columna contesta «quién se lleva más»; con el
-    //     orden fijo por nombre había que comparar cuatro cifras para contestarla. Y la porción propia
-    //     va marcada para poder encontrarla sin leer las etiquetas.
+    // (f) ORDEN DESCENDENTE y la NUESTRA marcada. La columna contesta «quién se lleva más»; con el
+    //     orden fijo por nombre había que comparar cuatro cifras para contestarla.
     const ordenOk = filasMix.slice(0, 60).every((fila) => {
       const m = mixSowDe(fila[ixp.RUT]);
       if (!m || m.length !== 4) return false;
-      const desc = m.every((x, i) => i === 0 || m[i - 1].pct >= x.pct);
       const nuestras = m.filter((x) => x.nuestro);
-      return desc && nuestras.length === 1 && nuestras[0].label === "Security"
+      return m.every((x, i) => i === 0 || m[i - 1].pct >= x.pct)
+        && nuestras.length === 1 && nuestras[0].label === "Security"
         && Math.abs(m.reduce((a, b) => a + b.pct, 0) - 100) <= 0.11;
     });
 
-    // (e) QUÉ SE DIBUJA. Una porción en CERO no se dibuja —no es parte del mix y empuja hacia abajo a
+    // (g) QUÉ SE DIBUJA. Una porción en CERO no se dibuja —no es parte del mix y empuja hacia abajo a
     //     las que sí—, pero la NUESTRA se muestra siempre: «no nos cede nada» es justamente lo que el
     //     ejecutivo vino a leer acá. La regla vive en `mixSowVisible` y no dentro del JSX de la celda,
     //     porque una regla escrita dentro de un `map` no se puede probar.
@@ -2389,12 +2442,11 @@
     ];
     const vis = mixSowVisible(caso);
     const visibleOk = vis.length === 3 && vis.some((x) => x.nuestro && x.pct === 0)
-      && !vis.some((x) => x.pct === 0 && !x.nuestro)
-      && mixSowVisible(null).length === 0;
+      && !vis.some((x) => x.pct === 0 && !x.nuestro) && mixSowVisible(null).length === 0;
 
-    // (f) LA MEMOIZACIÓN NO ENVENENA: dos operaciones de clientes distintos no comparten mix, y una
-    //     operación cuyo cliente no está en el archivo devuelve `null` las dos veces —la clave se
-    //     consulta con `has`, así que un `null` legítimo queda cacheado y no se recalcula—.
+    // (h) LA MEMOIZACIÓN NO ENVENENA: dos operaciones de clientes distintos no comparten mix, y una
+    //     cuyo cliente no está en el archivo devuelve `null` las dos veces —la clave se consulta con
+    //     `has`, así que un `null` legítimo queda cacheado y no se recalcula—.
     const rutA = filasMix[0][ixp.RUT], rutB = filasMix[1][ixp.RUT];
     const mA = mixSowDeal({ rutEmisor: rutA }), mB = mixSowDeal({ rutEmisor: rutB });
     const memoOk = mA && mB && mixSowDeal({ rutEmisor: rutA }) === mA
@@ -2402,24 +2454,94 @@
       && mixSowDeal({ rutEmisor: "99999999-9" }) === null
       && mixSowDeal({ rutEmisor: "99999999-9" }) === null;
 
-    // (g) QUIÉN ES EL «FACTORING TARGET» SE DECLARA, no se adivina por trozo de la razón social. El
-    //     clasificador buscaba «ita» para encontrar «Itaú» y con eso daba **Eurocapital** por factoring
-    //     de banco —«eurocap·ita·l»—: el churn le atribuía al target negocio que se había llevado otro,
-    //     el KPI «SOW factoring target» quedaba inflado y la alerta comercial se levantaba nombrando a
-    //     tres que no habían participado. Se comprueba contra los siete factoring que el A2 declara.
-    const target = ["BCI Factoring", "Banchile Factoring", "Banco de Chile Factoring", "Itaú Corpbanca Factoring", "Factoring Itaú"];
-    const noTarget = ["Eurocapital", "Tanner Servicios Financieros", "Incofin", "Factotal", "Servicios Financieros Progreso", "Coopeuch Factoring", "Factoring Security (BICE)"];
-    const clasifOk = target.every((n) => esFactoringBanco(n) === true) && noTarget.every((n) => esFactoringBanco(n) === false);
-    //     …y el A2 no trae ninguno que el clasificador no sepa ubicar: los nombres del archivo son los
-    //     que el churn reparte, así que uno nuevo tiene que aparecer en la lista o quedar en «otros».
-    const delArchivo = [...new Set((window.AECSYNC || []).map((a) => a.RazonSocialFactoring).filter(Boolean))];
-    const targetArchivo = delArchivo.filter((n) => esFactoringBanco(n));
-    const archivoOk = delArchivo.length >= 5 && targetArchivo.length === 2
-      && targetArchivo.every((n) => /BCI|Banchile/.test(n)) && !targetArchivo.includes("Eurocapital");
+    ok("99 el mix de financiamiento se mide sobre AECSync, se ancla al A5 y se inyecta en el A11",
+       sumanOk && padronOk && ancladoOk && repartoOk && detalleOk && nullOk && ordenOk && visibleOk && memoOk,
+       `${conMix} empresas con mix / ${sinMix} sin mix · no suman 100: ${noSuman} · padrón: ${declarados.length}/${delArchivo.length} cesionarios declarados, ${bancos.length} bancarios (${target.length} target), Eurocapital NO es banco ${!esFactoringBanco("Eurocapital")} · anclados al A5 ${anclados - desanclados}/${anclados} · reparto medido en A2 ${repartidos - repartoMal}/${repartidos}, ${conBancaria} con porción bancaria · detalle por cesionario ${conDetalle - detNoCuadra}/${conDetalle} cuadra con su chip · deudor sin mix ${nullOk} · orden y marca ${ordenOk} · 0% salvo la nuestra ${visibleOk} · memo ${memoOk}`);
+  }
 
-    ok("99 el mix de financiamiento sale del A11, suma 100 y no contradice la participación del A5",
-       sumanOk && a5Ok && nullOk && ordenOk && visibleOk && memoOk && clasifOk && archivoOk,
-       `${conMix} empresas con mix / ${sinMix} sin mix · no suman 100: ${noSuman} · fuera de rango: ${negativos} · cotejadas contra el A5: ${cotejados}, contradicen ${contradicen} (peor desvío ${peor.toFixed(2)} pto) · deudor sin mix ${nullOk} · orden y marca ${ordenOk} · 0% no se dibuja salvo la nuestra ${visibleOk} · memo ${memoOk} · factoring target declarado ${clasifOk} (Eurocapital NO es de banco) · del archivo: ${targetArchivo.join(", ")} de ${delArchivo.length}`);
+  // ── 100 · «CON LÍNEA» EN EL TUBO ES UNA COTA, NO UNA ASIGNACIÓN ──────────────────────────────
+  // La columna «Oportunidad» parte los deudores en Prime con línea / Otros con línea / sin línea. El
+  // tubo dibuja ~100 filas y correr el motor por fila costaría 100 asignaciones completas, así que se
+  // resuelve con un LOOKUP sobre el listado de líneas (A23). Lo que este caso fija es el precio de esa
+  // decisión, que es lo único que la hace defendible: **el atajo nunca puede decir que NO a un deudor
+  // al que el motor sí le asigna**. Al revés sí —dice que sí de más— y por eso es una cota.
+  {
+    const rutCli = "76.500.100-1";
+    const LD = { "11.111.111-1": { disponible: 999e6 }, "22.222.222-2": { disponible: 999e6 },
+                 "33.333.333-3": { disponible: 999e6 }, "44.444.444-4": { disponible: 1e6 } };
+    const inyecta = { lineaDeudor: (r) => LD[r] || null };
+    const est = (lineas) => ({ estado: "B", asignadaCliente: 0, usoCliente: 0, cola: [], lineas });
+    const D = (rut, prime, montos) => ({ nombre: "D" + rut.slice(0, 2), rut, prime,
+      n: montos.length, monto: montos.reduce((a, b) => a + b, 0), montos });
+
+    // (a) EL CRITERIO ES POR FACTURA, no «¿le queda algo de cupo?». Medido sobre la cartera real, el
+    //     segundo no descarta a NADIE —0 de 7.100 deudores— porque a un pozo comodín siempre le sobra
+    //     algún peso, y un chip que siempre marca cero no contesta nada. Con 30 de cupo y facturas de
+    //     50 y 20, el deudor tiene línea (le cabe una) y su monto es 20, no 70.
+    const unaLinea = [{ id: "L1", tipo: "LF2", granularidad: "par", rutDeudor: "11.111.111-1", aprobado: 30e6, vigente: 0 }];
+    const c1 = capacidadDeudores([D("11.111.111-1", true, [50e6, 20e6])], rutCli, { estadoCliente: est(unaLinea), ...inyecta });
+    const porFacturaOk = c1.primeConLinea.n === 1 && c1.primeConLinea.monto === 20e6 && c1.sinLinea.n === 0;
+    // …y si NINGUNA cabe, el deudor queda sin línea con TODO su monto: es la plata trabada, que es la
+    // acción que ese chip tiene que provocar (pedir línea al comité).
+    const c2 = capacidadDeudores([D("11.111.111-1", true, [50e6, 40e6])], rutCli, { estadoCliente: est(unaLinea), ...inyecta });
+    const trabadoOk = c2.sinLinea.n === 1 && c2.sinLinea.monto === 90e6 && c2.primeConLinea.n === 0;
+
+    // (b) EL POZO COMODÍN ES UNO SOLO y LF1 es sólo para Prime. Un deudor sin línea de par se financia
+    //     con el comodín del cliente; si el único comodín es una LF1, el no-Prime no la alcanza.
+    const soloLF1 = [{ id: "LF1", tipo: "LF1", granularidad: "comodin", rutDeudor: null, aprobado: 60e6, vigente: 0, soloPrime: true }];
+    const c3 = capacidadDeudores([D("11.111.111-1", true, [50e6]), D("22.222.222-2", false, [50e6])], rutCli,
+                                 { estadoCliente: est(soloLF1), ...inyecta });
+    const lf1Ok = c3.primeConLinea.n === 1 && c3.otrosConLinea.n === 0 && c3.sinLinea.n === 1;
+
+    // (c) EL NIVEL DEL DEUDOR TAMBIÉN MANDA, y es global: con cupo de sobra en el cliente pero 1 de
+    //     línea propia del deudor, no cabe nada. Y un deudor que el índice no conoce falla CERRADO.
+    const ancho = [{ id: "LF4", tipo: "LF4", granularidad: "comodin", rutDeudor: null, aprobado: 900e6, vigente: 0 }];
+    const c4 = capacidadDeudores([D("44.444.444-4", true, [50e6]), D("99.999.999-9", true, [50e6])], rutCli,
+                                 { estadoCliente: est(ancho), ...inyecta });
+    const nivel3Ok = c4.sinLinea.n === 2 && c4.primeConLinea.n === 0;
+
+    // (d) «SIN LÍNEA» NO DISTINGUE PRIME, a pedido: sin cupo, la clasificación del deudor no cambia
+    //     nada de lo que se puede comprar hoy. Los dos caen en la misma fila.
+    const nada = [{ id: "LF4", tipo: "LF4", granularidad: "comodin", rutDeudor: null, aprobado: 1e6, vigente: 0 }];
+    const c5 = capacidadDeudores([D("11.111.111-1", true, [50e6]), D("22.222.222-2", false, [50e6])], rutCli,
+                                 { estadoCliente: est(nada), ...inyecta });
+    const sinDistinguirOk = c5.sinLinea.n === 2 && c5.primeConLinea.n === 0 && c5.otrosConLinea.n === 0;
+
+    // (e) LA COTA. Contra carteras reales del libro de ventas: todo deudor al que el MOTOR le asigna
+    //     al menos una factura tiene que estar entre los que el atajo declara «con línea». Esta es la
+    //     propiedad que justifica el atajo; si se rompe, la columna contradice al detalle.
+    //     La holgura se informa porque es el costo de la decisión: el atajo no puede prometer que el
+    //     monto se gire —la asignación es factura a factura contra tres niveles a la vez, el pozo es
+    //     compartido y la línea del deudor la comparten todos los clientes—.
+    const libro = (typeof libroPorEmisor === "function") ? libroPorEmisor() : new Map();
+    let clientes = 0, violaciones = 0, dMotor = 0, dAtajo = 0;
+    for (const rutC of [...libro.keys()].slice(0, 60)) {
+      const facturas = (libro.get(rutC) || []).slice(0, 40);
+      if (facturas.length < 3) continue;
+      const an = analisisDeudores(facturas);
+      if (!an || !an.lista) continue;
+      const conLinea = new Set();
+      for (const d of an.lista) if (capacidadDeudores([d], rutC).sinLinea.n === 0) conLinea.add(d.nombre);
+      const delMotor = new Set();
+      for (const f of (asignarLineas(facturas, rutC).facturas || [])) if (f.estado === "CON_LINEA") delMotor.add(f.deudor);
+      clientes++; dMotor += delMotor.size; dAtajo += conLinea.size;
+      if ([...delMotor].some((n) => !conLinea.has(n))) violaciones++;
+    }
+    const cotaOk = clientes > 20 && violaciones === 0 && dAtajo >= dMotor;
+
+    // (f) NO CORRE EL MOTOR. La prueba es estructural: con el estado inyectado decide sin consultar
+    //     nada del navegador, que es lo que permite pintarlo en 100 filas. Un deudor sin facturas
+    //     itemizadas usa el promedio, porque es lo único que hay.
+    const c6 = capacidadDeudores([{ nombre: "X", rut: "11.111.111-1", prime: true, n: 2, monto: 40e6 }], rutCli,
+                                 { estadoCliente: est(unaLinea), ...inyecta });
+    const promedioOk = c6.primeConLinea.n === 1 && c6.primeConLinea.monto === 20e6;
+    const bordesOk = capacidadDeudores([], rutCli, inyecta).sinLinea.n === 0
+      && capacidadDeudores(null, rutCli, inyecta).sinLinea.n === 0
+      && capacidadDeudores([D("11.111.111-1", true, [1e6])], "", inyecta).sinLinea.n === 0;
+
+    ok("100 «con línea» en el tubo es un lookup sobre el listado y una COTA de lo que el motor asigna",
+       porFacturaOk && trabadoOk && lf1Ok && nivel3Ok && sinDistinguirOk && cotaOk && promedioOk && bordesOk,
+       `por factura ${porFacturaOk} (30 de cupo, facturas 50 y 20 → cabe 1 por 20) · trabado ${trabadoOk} · LF1 sólo Prime ${lf1Ok} · nivel deudor y desconocido cerrado ${nivel3Ok} · «sin línea» no distingue Prime ${sinDistinguirOk} · COTA: ${clientes} clientes, ${violaciones} violaciones, ${dAtajo} deudores declarados vs ${dMotor} que el motor asigna (sobreestima ${dMotor ? (dAtajo / dMotor).toFixed(1) : "-"}×) · promedio ${promedioOk} · bordes ${bordesOk}`);
   }
 
   console.log(out.join("\n"));
