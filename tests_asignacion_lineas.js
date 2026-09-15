@@ -2855,6 +2855,73 @@
        `vacío → ${vacio.cat} (antes «CAT-1») · oferta vacía → base «${cdA && cdA.base}» ${cdA && cdA.label} · con facturas → base «${cdB && cdB.base}» ${cdB && cdB.label} · independiente de simular ${simOk} · cortes 1/2/3/5 ${cortesOk} · color neutro para lo no clasificado ${metaOk}`);
   }
 
+  // ── 105 · LOS CHIPS DE LA COLUMNA SOW NOMBRAN CESIONARIOS, Y NOSOTROS SALIMOS SIEMPRE ─────────
+  // La columna contesta «con quién se compite», y para eso «Otros bancarios · 22%» no sirve: un
+  // nombre propio sí. Son cuatro chips y siguen siendo una PARTICIÓN —suman 100— y no un ranking
+  // recortado: lo que no se nombra se agrupa en «Otros», con el detalle en su tooltip. La regla
+  // tiene dos ramas y el caso las prueba por separado, porque la segunda es la que garantiza que la
+  // columna siempre diga cuánto nos cede el cliente: con los 4 mayores a secas, un cliente que no
+  // nos cede nada simplemente no nos mostraría, y esa ausencia se lee como un cero que nadie escribió.
+  {
+    const mk = (nombre, pct, porcion, nuestro) => ({ rut: nombre, nombre, pct, porcion, nuestro });
+    const arma = (...ds) => {
+      // La forma que devuelve `mixSowDe`: porciones, cada una con su detalle.
+      const porc = {};
+      ds.forEach((d) => { (porc[d.porcion] = porc[d.porcion] || []).push(d); });
+      return Object.keys(porc).map((q) => ({ label: q, porcion: q, nuestro: q === "security",
+        pct: Math.round(porc[q].reduce((a, b) => a + b.pct, 0) * 10) / 10, detalle: porc[q] }));
+    };
+    const suma = (cs) => Math.round(cs.reduce((a, b) => a + b.pct, 0) * 10) / 10;
+    const nuestros = (cs) => cs.filter((c) => c.nuestro);
+
+    // (a) NUESTRA PORCIÓN ENTRE LAS 3 PRIMERAS → los 3 primeros por nombre y «Otros» en el 4º.
+    const A = mixSowChips(arma(mk("Security", 40, "security", 1), mk("BCI", 30, "factoringTarget"),
+      mk("Santander", 15, "factoringTarget"), mk("Tanner", 10, "otrosFactoring"), mk("Incofin", 5, "otrosFactoring")));
+    const ramaAOk = A.length === 4 && !A[0].otros && !A[1].otros && !A[2].otros && A[3].otros
+      && A[0].nuestro && A[3].pct === 15 && A[3].detalle.length === 2 && suma(A) === 100;
+
+    // (b) FUERA DE LOS PRIMEROS → 2 nombrados, «Otros» y NOSOTROS al final con nuestro %. «Otros»
+    //     agrupa sólo lo ajeno: contarnos ahí nos contaría dos veces y el total pasaría de 100.
+    const B = mixSowChips(arma(mk("BCI", 40, "factoringTarget"), mk("Santander", 30, "factoringTarget"),
+      mk("Tanner", 20, "otrosFactoring"), mk("Security", 7, "security", 1), mk("Incofin", 3, "otrosFactoring")));
+    const ramaBOk = B.length === 4 && !B[0].otros && !B[1].otros && B[2].otros && B[3].nuestro
+      && B[3].pct === 7 && B[2].pct === 23 && !B[2].detalle.some((d) => d.nuestro) && suma(B) === 100;
+
+    // (c) SIN CESIONES NUESTRAS igual salimos, últimos y en 0: es justamente lo que el ejecutivo
+    //     vino a leer en esta columna.
+    const C = mixSowChips(arma(mk("BCI", 50, "factoringTarget"), mk("Santander", 30, "factoringTarget"), mk("Tanner", 20, "otrosFactoring")));
+    const ceroOk = C.length === 4 && C[3].nuestro && C[3].pct === 0 && suma(C) === 100;
+
+    // (d) BORDES: sin mix, sin detalle (cae a las porciones), y un único cesionario.
+    const D1 = mixSowChips(null), D2 = mixSowChips([]);
+    const D3 = mixSowChips([{ label: "★ Security", porcion: "security", nuestro: true, pct: 100, detalle: [] },
+                            { label: "Otros factoring", porcion: "otrosFactoring", pct: 0, detalle: [] }]);
+    const D4 = mixSowChips(arma(mk("Security", 100, "security", 1)));
+    const bordesOk = D1.length === 0 && D2.length === 0 && D3.length === 1 && D3[0].nuestro
+      && D4.length === 1 && D4[0].nuestro && D4[0].pct === 100;
+
+    // (e) Y SOBRE EL ARCHIVO REAL: en las 250+ empresas con mix, los chips son a lo más 4, suman
+    //     100, nos incluyen EXACTAMENTE una vez y «Otros» cuadra con la suma de su tooltip.
+    const ixp = {}; ((window.PLATAFORMA360 && window.PLATAFORMA360.campos) || []).forEach((c, i) => { ixp[c] = i; });
+    let filas = 0, malSuma = 0, malN = 0, malNuestro = 0, malOtros = 0, conBolsa = 0, ramaB = 0;
+    for (const f of ((window.PLATAFORMA360 && window.PLATAFORMA360.filas) || [])) {
+      const m = mixSowDe(f[ixp.RUT]); if (!m) continue;
+      const cs = mixSowChips(m); if (!cs.length) continue;
+      filas++;
+      if (Math.abs(suma(cs) - 100) > 0.11) malSuma++;
+      if (cs.length > 4) malN++;
+      if (nuestros(cs).length !== 1) malNuestro++;
+      const b = cs.find((c) => c.otros);
+      if (b) { conBolsa++; if (Math.abs(b.pct - b.detalle.reduce((a, d) => a + d.pct, 0)) > 0.051) malOtros++; }
+      if (cs[cs.length - 1].nuestro && cs.length === 4) ramaB++;
+    }
+    const realOk = filas > 100 && malSuma === 0 && malN === 0 && malNuestro === 0 && malOtros === 0 && conBolsa > 50 && ramaB > 0;
+
+    ok("105 la columna SOW nombra a los 4 mayores y nosotros salimos siempre, con % o con cero",
+       ramaAOk && ramaBOk && ceroOk && bordesOk && realOk,
+       `rama A (estamos arriba) ${A.map((c) => c.label + " " + c.pct).join(" · ")} · rama B (estamos fuera) ${B.map((c) => c.label + " " + c.pct).join(" · ")} · sin cesiones nuestras → ${C[3].label} ${C[3].pct}% · archivo: ${filas} empresas, suman 100 ${filas - malSuma}/${filas}, ≤4 chips ${filas - malN}/${filas}, nosotros 1 vez ${filas - malNuestro}/${filas}, «Otros» cuadra ${conBolsa - malOtros}/${conBolsa}, rama B en ${ramaB}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

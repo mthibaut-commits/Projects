@@ -1555,6 +1555,49 @@ function mixSowDe(rutOnombre) {
 // esta columna, y omitirla lo dejaría sin respuesta. Vive acá y no dentro del `map` de la celda
 // porque es una regla, y una regla escrita dentro de un JSX no se puede probar.
 const mixSowVisible = (mix) => (mix || []).filter((x) => x.pct > 0 || x.nuestro);
+// El rótulo de la porción a la que pertenece un cesionario, para el tooltip del chip: la partición
+// del tenant no desaparece de la columna, pasa a ser el contexto de cada nombre.
+function porcionLabel(porcion) {
+  if (porcion === "factoringTarget") return targetEtiqueta();
+  const c = MIX_SOW_CAMPOS.find((x) => x.porcion === porcion);
+  return c ? c.label : "Otros factoring";
+}
+// LOS CHIPS DE LA COLUMNA SOW SON LOS CESIONARIOS QUE MÁS SE LLEVAN, no las cuatro porciones
+// (15-09-2026, pedido del usuario). La pregunta de esa columna es **con quién se compite**, y para
+// eso «Otros bancarios · 22%» no sirve: un nombre propio sí. Cuatro chips, siempre:
+//   · Si NUESTRA porción está entre las 3 primeras → los 3 primeros cesionarios y «Otros» en el 4º.
+//   · Si no → los 2 primeros, «Otros» en el 3º y **nosotros en el 4º**, con nuestro % o con 0.
+// Lo segundo es lo que hace que la columna siempre conteste «cuánto nos cede», que es lo que el
+// ejecutivo vino a leer: una lista de los 4 mayores puede no incluirnos, y ahí la ausencia se leería
+// como un 0 que nadie escribió. Y el reparto sigue sumando 100 en los dos casos: los chips son una
+// partición del mismo detalle, no un ranking recortado.
+//
+// Vive acá y no dentro del `map` de la celda porque es una REGLA —dos ramas y varios bordes— y una
+// regla escrita adentro de un JSX no se puede probar.
+function mixSowChips(mix, n = 4) {
+  const det = (mix || [])
+    .flatMap((p) => (p.detalle || []).map((d) => ({ ...d, nuestro: !!p.nuestro })))
+    .sort((a, b) => b.pct - a.pct || String(a.nombre || "").localeCompare(String(b.nombre || "")));
+  // Sin detalle por cesionario no hay a quién nombrar: se cae a las cuatro porciones, que es lo que
+  // esta columna mostraba antes de que el activo publicara el desglose.
+  if (!det.length) return mixSowVisible(mix).map((x) => ({ key: x.porcion, label: x.label, nombre: x.label, pct: x.pct, nuestro: !!x.nuestro, porcion: x.porcion, detalle: x.detalle || [], otros: false }));
+  const uno = (d) => ({ key: d.rut || d.nombre, label: (cesionarioDe(d.rut || d.nombre) || {}).corto || d.nombre,
+                        nombre: d.nombre, pct: d.pct, nuestro: d.nuestro, porcion: d.porcion, detalle: [d], otros: false });
+  const bolsa = (arr) => ({ key: "otros", label: "Otros", nombre: "Otros", otros: true, nuestro: false,
+                            pct: Math.round(arr.reduce((a, b) => a + (+b.pct || 0), 0) * 10) / 10, detalle: arr });
+  const iSec = det.findIndex((d) => d.nuestro);
+  if (iSec >= 0 && iSec < n - 1) {
+    const cab = det.slice(0, n - 1), resto = det.slice(n - 1);
+    return resto.length ? [...cab.map(uno), bolsa(resto)] : cab.map(uno);
+  }
+  // Fuera de los primeros: nuestra porción se saca del ranking y se reserva el último chip, así que
+  // «Otros» agrupa sólo lo ajeno — si nos contara adentro, el chip de al lado nos contaría dos veces.
+  const ajenos = det.filter((d) => !d.nuestro);
+  const cab = ajenos.slice(0, n - 2), resto = ajenos.slice(n - 2);
+  const nuestro = iSec >= 0 ? uno(det[iSec])
+    : { key: "nuestro", label: "Security", nombre: "Factoring Security", pct: 0, nuestro: true, porcion: "security", detalle: [], otros: false };
+  return [...cab.map(uno), ...(resto.length ? [bolsa(resto)] : []), nuestro];
+}
 // El mix de una OPORTUNIDAD, por el RUT del cedente. Memoizado: el tubo dibuja ~100 filas.
 const _mixDeal = new Map();
 function mixSowDeal(deal) {
@@ -11082,23 +11125,34 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                     // Sin mix no se dibuja un cero: un prospecto que nunca cedió no se financia «0% con
                     // nosotros», simplemente no tiene esta medición todavía.
                     if (!mix) return <span className="t10" style={{ color: C.faint }}>Sin medición</span>;
-                    const visibles = mixSowVisible(mix);
                     return (
                       <div className="flex flex-col items-start gap-1">
-                        {visibles.map((x) => (
-                          <TipDesglose key={x.label} titulo={x.label} color={x.nuestro ? C.indigo : C.sub}
-                            nota={x.nuestro
-                              ? `${x.pct}% del financiamiento por cesión del cliente es nuestro: cartera propia, no competencia.`
-                              : `${x.pct}% del financiamiento por cesión del cliente. Con quién, y cuánto cada uno:`}
-                            items={x.nuestro ? null : x.detalle.map((d) => ({ name: d.nombre, val: d.pct + "%" }))}>
+                        {mixSowChips(mix).map((x) => {
+                          // El chip lleva el nombre CORTO del padrón —en esta columna no caben
+                          // «Servicios Financieros Progreso · 10%»— y la razón social completa va en
+                          // el tooltip, junto con la porción a la que pertenece: la partición del
+                          // tenant no desaparece, pasa a ser el contexto de cada nombre.
+                          const chip = (
                             <span className="inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 t9 font-semibold"
                               style={{ backgroundColor: x.nuestro ? C.lilac : "#F0EFF3", color: x.nuestro ? C.indigo : C.sub }}>
                               {x.nuestro && <span aria-hidden="true">★</span>}
                               <span className="truncate">{x.label}</span>
                               <span style={{ fontVariantNumeric: "tabular-nums" }}>· {x.pct}%</span>
                             </span>
-                          </TipDesglose>
-                        ))}
+                          );
+                          // Sólo «Otros» necesita la tarjeta flotante: es el único que esconde nombres.
+                          if (x.otros) return (
+                            <TipDesglose key={x.key} titulo={`Otros · ${x.pct}%`} color={C.sub}
+                              nota="El resto de las contrapartes con que se financia este cliente:"
+                              items={x.detalle.map((d) => ({ name: d.nombre, val: d.pct + "%" }))}>{chip}</TipDesglose>
+                          );
+                          const tip = x.nuestro
+                            ? (x.pct > 0
+                              ? `${x.nombre} · ${x.pct}% del financiamiento por cesión del cliente es nuestro: cartera propia, no competencia.`
+                              : "Este cliente no nos cede ninguna factura: todo su financiamiento por cesión se lo llevan otros.")
+                            : `${x.nombre} · ${x.pct}% del financiamiento por cesión del cliente · ${porcionLabel(x.porcion)}.`;
+                          return <span key={x.key} className="max-w-full" style={{ cursor: "help" }} title={tip}>{chip}</span>;
+                        })}
                       </div>
                     );
                   })()}
