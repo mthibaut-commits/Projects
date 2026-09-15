@@ -2632,6 +2632,93 @@
        `${aec.length} cesiones · participación: ${cotejados - discrepan}/${cotejados} calzan (peor desvío ${peor.toFixed(3)} pto, antes 92,6) · serie: ${semanas - semanasMal}/${semanas} semanas cuadran monto a monto · eje común de ${sow[0].HistoricoSemanal.length} semanas ${ejeOk} · sin semanas previas al registro ${sinFuturo} · target sigue siendo meta (${gapVivo} con gap vivo) · invariantes ${invOk}`);
   }
 
+  // ── 102 · LA LÍNEA APROBADA MÍNIMA, Y LA PUNTUAL EXENTA ──────────────────────────────────────
+  // «Deja un monto de línea aprobada mínima de 10 millones excepto para la línea puntual que podría
+  // ser menos.» Una línea bajo el mínimo no financia ninguna factura del cliente: existe en la ficha
+  // y sólo produce rechazos. Medido antes de aplicarlo: 372 de 3.521 líneas quedaban por debajo, y la
+  // peor era una LF4 de **$21.459**. La PUNTUAL queda exenta porque es un cupo a medida de UNA
+  // operación — su tamaño lo fija esa operación, no la política.
+  {
+    const MIN = pol("lineaMinima", 10e6);
+    const ruts = [...new Set((typeof LINEAS_DATA !== "undefined" ? LINEAS_DATA : []).map((l) => l.rut))].slice(0, 220);
+
+    // (a) NINGUNA LF1/LF2/LF4 BAJO EL MÍNIMO, y la LF3 sí puede estarlo. Se mide sobre la cartera
+    //     entera, no sobre una muestra: el defecto era de cola —el 10% más chico—.
+    let bajo = 0, lf3Bajo = 0, nLineas = 0, nLF3 = 0, acotadas = 0;
+    let excede = 0, clientes = 0, sinComodin = 0, usoNoCabe = 0;
+    const aprobadaDe = {};
+    for (const l of (typeof LINEAS_DATA !== "undefined" ? LINEAS_DATA : [])) aprobadaDe[l.rut] = l.aprobada;
+    for (const rut of ruts) {
+      const st = lineasDeCliente(rut);
+      if (!st || st.estado !== "B") continue;
+      clientes++;
+      let suma = 0, usado = 0, hayComodin = false;
+      for (const ln of st.lineas) {
+        nLineas++; suma += ln.aprobado || 0; usado += ln.vigente || 0;
+        if (ln.granularidad === "comodin") hayComodin = true;
+        if (ln.tipo === "LF3") { nLF3++; if ((ln.aprobado || 0) < MIN) lf3Bajo++; continue; }
+        // El piso rige para todo cliente que PUEDA pagarlo. Uno cuyo aprobado total ya está bajo el
+        // mínimo —porque casi todas sus líneas están suspendidas— no puede tener una línea de 10MM
+        // sin que le inventemos cupo, así que su única línea vale lo que le queda y se cuenta aparte.
+        if ((aprobadaDe[rut] || 0) >= MIN) { if ((ln.aprobado || 0) < MIN) bajo++; }
+        else acotadas++;
+      }
+      if (!hayComodin) sinComodin++;
+      if (suma > (aprobadaDe[rut] || 0) + 1) excede++;
+      if (usado > suma + 1) usoNoCabe++;
+    }
+    const pisoOk = clientes > 150 && nLineas > 2000 && bajo === 0;
+    // …y la exención tiene que estar EJERCITADA: si ninguna LF3 estuviera bajo el mínimo, la excepción
+    // se cumpliría sin que nada la probara — el mismo error que la cota «o menor» de las cesiones.
+    const exentaOk = nLF3 > 50 && lf3Bajo > 0;
+
+    // (b) EL TOPE DEL CLIENTE MANDA SOBRE EL PISO. Es la invariante que el piso podía romper: con un
+    //     mínimo por línea, un cliente con poco presupuesto recibiría más cupo del que el comité le
+    //     aprobó — inventar capacidad por una regla de tamaño. Y nadie puede quedarse sin comodín:
+    //     es lo que financia a los deudores que el piso dejó sin línea propia.
+    const topeOk = excede === 0 && sinComodin === 0 && usoNoCabe === 0;
+
+    // (c) EL PISO NO CREA CAPACIDAD: acotado por el presupuesto. Se prueba en la función de reparto,
+    //     que es donde vive la decisión. Con 25 de total y piso 10 caben DOS partes, no cuatro: el
+    //     piso limita CUÁNTAS líneas hay, no cuánto recibe cada una — es la consecuencia que hace que
+    //     algunos deudores pasen al comodín.
+    const r1 = repartirConPiso(100e6, [1, 1, 1, 1], 10e6, 5e6);
+    const r2 = repartirConPiso(25e6, [4, 3, 2, 1], 10e6, 5e6);
+    const r3 = repartirConPiso(8e6, [1, 1, 1], 10e6, 5e6);
+    const r4 = repartirConPiso(37e6, [2, 1], 0, 5e6);            // piso 0 = el caso de la LF3
+    const suma = (a) => a.reduce((x, y) => x + y, 0);
+    const repartoOk =
+      suma(r1) === 100e6 && r1.every((x) => x >= 10e6)
+      && suma(r2) === 25e6 && r2.filter((x) => x > 0).length === 2 && r2.every((x) => x === 0 || x >= 10e6)
+      && suma(r3) === 0                                          // no cabe ninguna: nada se asigna
+      && suma(r4) === 37e6 && r4.every((x) => x > 0)             // sin piso entran todas
+      // …y se queda con las de MAYOR peso: si alguien pierde su línea propia, que sea el que menos aporta
+      && r2[0] > 0 && r2[1] > 0 && r2[2] === 0 && r2[3] === 0;
+
+    // (d) LA LÍNEA DEL DEUDOR también respeta el piso: es una línea aprobada como cualquier otra, y
+    //     una bajo el mínimo bloquea al deudor entero en el nivel 3 de la regla de validación.
+    const deu = [...lineasDeudor().values()];
+    const deudorOk = deu.length > 400 && deu.every((d) => (d.aprobado || 0) >= MIN);
+
+    // (e) EL CACHE NO SE QUEDA CON EL DIMENSIONAMIENTO ANTERIOR. Es la trampa de la regla 9-bis:
+    //     `lineasDeCliente` memoiza por RUT y `lineasDeudor` no tenía invalidación ninguna, así que
+    //     mover el umbral en el mantenedor dejaba servidas las líneas viejas. Se valida por FIRMA.
+    const rutP = ruts.find((r) => lineasDeCliente(r).estado === "B");
+    const antes = lineasDeCliente(rutP).lineas.length;
+    const antesDeu = lineaDeDeudor([...lineasDeudor().keys()][0]).aprobado;
+    const cfgPrev = CFG_ACTIVA.lineaMinima;
+    CFG_ACTIVA.lineaMinima = 60e6;                               // sube el piso: tienen que caber MENOS líneas
+    const despues = lineasDeCliente(rutP).lineas.length;
+    const despuesDeu = lineaDeDeudor([...lineasDeudor().keys()][0]).aprobado;
+    CFG_ACTIVA.lineaMinima = cfgPrev;
+    const vuelta = lineasDeCliente(rutP).lineas.length;
+    const cacheOk = despues < antes && despuesDeu >= 60e6 && despuesDeu !== antesDeu && vuelta === antes;
+
+    ok("102 ninguna línea aprobada bajo el mínimo, salvo la PUNTUAL, y el tope del cliente manda",
+       pisoOk && exentaOk && topeOk && repartoOk && deudorOk && cacheOk,
+       `${clientes} clientes · ${nLineas} líneas · bajo el mínimo: ${bajo} (antes 372 de 3.521) · acotadas por su propio aprobado: ${acotadas} · LF3 exentas bajo el mínimo: ${lf3Bajo} de ${nLF3} (ejercitada ${exentaOk}) · exceden su aprobada: ${excede} · sin comodín: ${sinComodin} · uso que no cabe: ${usoNoCabe} · línea de deudor ≥ mínimo ${deudorOk} · reparto con piso ${repartoOk} · cache por firma ${cacheOk} (${antes}→${despues}→${vuelta} líneas al mover el umbral)`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

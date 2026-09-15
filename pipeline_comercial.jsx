@@ -2623,6 +2623,12 @@ const CFG_OPER_BASE = {
   concentracionDeudorPct: 30, // % máximo de la línea por deudor
   cxcAplicaMinPct: 30,        // % mínimo de las CxC pendientes que la operación debe aplicar (O03)
   otrosDeudoresPct: 10,       // % máximo para «otros deudores»
+  // MONTO MÍNIMO de una línea aprobada. Una línea por debajo no financia ninguna factura del cliente
+  // y sólo produce rechazos: existe en la ficha y no sirve para comprar. **La PUNTUAL (LF3) queda
+  // exenta** —es un cupo a medida de UNA operación, así que su tamaño lo fija esa operación y no la
+  // política—. Medido antes de aplicarlo: 372 de 3.521 líneas de cliente quedaban bajo el piso, entre
+  // ellas una LF4 de $21.459.
+  lineaMinima: 10e6,
   vigenciaLineaMeses: 12,
   ventanaLibroDias: 60,       // ventana del libro de ventas para buscar facturas candidatas
   // — Marca (por tenant) —
@@ -16559,6 +16565,9 @@ function CfgOperacion({ cfgOper, setCfgOper }) {
         <CfgCampo l="Política de compra" hint="Nota mínima del deudor —la aplica la propuesta al comité— y concentración máxima por deudor sobre la línea, que hoy es DECLARATIVA: viaja en el contrato del servicio y ningún motor de este prototipo la aplica.">
           <div className="flex items-center gap-2"><input {...num("notaMinCompra", 1, 5, 0.1)} /><span className="t10" style={{ color: C.faint }}>nota mín.</span><input {...num("concentracionDeudorPct", 1, 100)} /><span className="t10" style={{ color: C.faint }}>% conc.</span></div>
         </CfgCampo>
+        <CfgCampo l="Línea aprobada mínima" hint="Monto mínimo con que se constituye una línea. La PUNTUAL (LF3) queda exenta: es un cupo a medida de una operación. Una línea bajo el mínimo no financia ninguna factura y sólo produce rechazos.">
+          <div className="flex items-center gap-2"><input {...num("lineaMinima", 0, 200000000, 1000000)} /><span className="t10 whitespace-nowrap" style={{ color: C.faint }}>CLP</span></div>
+        </CfgCampo>
         <CfgCampo l="Otros deudores · límite" hint="% máximo de la línea asignable al grupo «otros deudores».">
           <div className="flex items-center gap-2"><input {...num("otrosDeudoresPct", 0, 100)} /><span className="t10" style={{ color: C.faint }}>%</span></div>
         </CfgCampo>
@@ -19303,6 +19312,49 @@ const LINEAS_DATA = (() => {
 // Antes esto redondeaba a 0,1 MM —o sea a $100.000— y cada asignacion se comia hasta $99.999.
 const mmRound = (n) => Math.round(n);
 const TRAMO_LINEA = 5e6;  // las lineas se tallan en tramos de $5.000.000
+// MONTO MÍNIMO de una línea aprobada (política del tenant, `lineaMinima`). La **PUNTUAL (LF3) está
+// exenta**: es un cupo a medida de UNA operación, así que su tamaño lo fija esa operación.
+const lineaMin = () => Math.max(0, pol("lineaMinima", 10e6));
+
+// REPARTE `total` entre `pesos` con un PISO por parte y suma EXACTA.
+//
+// La trampa que resuelve: **un piso por línea significa MENOS líneas, no líneas más grandes.** El
+// presupuesto del cliente es el que es, así que repartirlo entre más de `total/piso` partes es
+// imposible — dar menos del piso lo violaría, y dar el piso a todas se pasaría del tope del cliente,
+// que es justamente lo que el nivel 1 controla. Así que primero se decide CUÁNTAS partes caben y
+// después se reparte entre ésas; las que sobran quedan en 0 y su deudor pasa a financiarse por el
+// comodín, que es exactamente para lo que existe.
+//
+// Se conserva el orden de `pesos` en la salida (un 0 marca «no alcanzó»), se talla en `tramo` y el
+// residuo lo absorbe la parte MAYOR, que siempre puede hacerlo sin cruzar el piso — mismo criterio
+// que el prorrateo por factura.
+function repartirConPiso(total, pesos, piso, tramo) {
+  const n0 = pesos.length;
+  const out = new Array(n0).fill(0);
+  if (!(total > 0) || !n0) return out;
+  const paso = Math.max(1, tramo || 1);
+  const min = Math.max(0, piso);
+  // Cuántas caben. Con piso 0 caben todas.
+  const cabenN = min > 0 ? Math.min(n0, Math.floor(total / min)) : n0;
+  if (cabenN <= 0) return out;                       // ni una línea cabe: todo al comodín
+  // Se quedan las de MAYOR peso: si hay que dejar deudores sin línea propia, que sean los que menos
+  // volumen aportan.
+  const idx = pesos.map((w, i) => ({ i, w: +w || 0 })).sort((a, b) => b.w - a.w).slice(0, cabenN);
+  const sumaW = idx.reduce((a, x) => a + x.w, 0) || idx.length;
+  let repartido = 0;
+  idx.forEach((x, k) => {
+    const ultimo = k === idx.length - 1;
+    // El último toma el remanente exacto; los demás su proporción tallada y acotada por abajo al
+    // piso y por arriba a lo que queda dejando piso para los que faltan.
+    let v = ultimo ? total - repartido
+      : Math.max(min, Math.round(total * (x.w / sumaW) / paso) * paso);
+    const restanN = idx.length - k - 1;
+    v = Math.min(v, total - repartido - restanN * min);
+    v = Math.max(min, v);
+    out[x.i] = v; repartido += v;
+  });
+  return out;
+}
 const LF1_PESOS = 30e6; // linea inicial al enrolar un cliente: $30.000.000
 
 // Índice (RUTEmisor → [{ rut, nombre, vol }]) de los deudores a los que cada cliente factura,
@@ -19362,7 +19414,9 @@ const _cacheCli = new Map();
 // la perilla se mueve, la pantalla no, y nadie sabe si el motor la aplicó.
 let _cacheCliFirma = null;
 function lineasDeCliente(rutCli) {
-  const firma = String(pol("otrosDeudoresPct", 10));
+  // La firma lleva TODOS los umbrales que dimensionan: mover uno en el mantenedor y quedarse con el
+  // dimensionamiento anterior servido es el defecto que la regla 9-bis documenta.
+  const firma = String(pol("otrosDeudoresPct", 10)) + "|" + String(pol("lineaMinima", 10e6));
   if (firma !== _cacheCliFirma) { _cacheCli.clear(); _cacheCliFirma = firma; }
   if (_cacheCli.has(rutCli)) return _cacheCli.get(rutCli);
   const idx = lineaIdxPorRut();
@@ -19400,22 +19454,14 @@ function lineasDeCliente(rutCli) {
   objetivoTotal = Math.min(objetivoTotal, fila.aprobada);
   // Se pide «% sobre los cupos de PAR», así que sobre el total es pct/(100+pct): con 10 da 0,0909.
   const pctOtros = Math.max(0, Math.min(100, pol("otrosDeudoresPct", 10)));
-  const apComodin = Math.max(TRAMO_LINEA, Math.round(objetivoTotal * (pctOtros / (100 + pctOtros))));
-  const objetivoPares = Math.max(TRAMO_LINEA, objetivoTotal - apComodin);
-
-  // Heredan del dato el corte por categoría y el estado; el monto sale de la regla.
-  const meta = lf4MetaPorCliente(rutCli);
-  const pesoTot = meta.reduce((s, m) => s + (m.peso || 0), 0) || meta.length;
-  const comodines = meta.map((m, i) => ({
-    id: "LF4-" + rutCli + "-" + (m.categoria === "Lista Blanca" ? "LB" : "DA"),
-    tipo: "LF4", granularidad: "comodin", categoria: m.categoria, rutDeudor: null, suspendida: m.suspendida,
-    aprobado: i === meta.length - 1 ? mmRound(apComodin - meta.slice(0, i).reduce((s, x) => s + Math.round(apComodin * ((x.peso || 1) / pesoTot)), 0)) : Math.round(apComodin * ((m.peso || 1) / pesoTot)),
-    vigente: 0,
-  }));
-  // Uso repartido en la misma proporción que lo aprobado: la utilización se distribuye sobre toda la
-  // capacidad, no sólo sobre los pares.
-  let usComodin = Math.min(apComodin, mmRound(fila.uso * (apComodin / (objetivoTotal || 1))));
-  { let q = usComodin; for (const p of comodines) { const t = Math.min(p.aprobado, mmRound(q)); p.vigente = t; q = mmRound(q - t); } usComodin = mmRound(usComodin - Math.max(0, q)); }
+  // EL PISO NO CREA CAPACIDAD. Se acota a lo que el comité aprobó: un cliente con casi todas sus
+  // líneas suspendidas puede quedar con un presupuesto efectivo bajo el mínimo, y darle igual una
+  // línea de 10MM sería aprobarle cupo que nadie aprobó — el tope del cliente es una decisión de
+  // riesgo y el mínimo es sólo una regla de cómo se REPARTE. Ahí su única línea vale lo que le queda,
+  // por debajo del mínimo, y eso es un dato que el maestro de líneas ya dice.
+  const pisoLinea = Math.min(lineaMin(), objetivoTotal);
+  const apComodinBase = Math.max(pisoLinea, Math.round(objetivoTotal * (pctOtros / (100 + pctOtros))));
+  const objetivoPares = Math.max(0, objetivoTotal - apComodinBase);
 
   // La cabeza de la distribución tiene línea propia; la cola la financia la de otros deudores. Se toman los
   // deudores que concentran el 85% del volumen del cliente: dejar sólo 4–11 con línea mandaba a
@@ -19434,27 +19480,53 @@ function lineasDeCliente(rutCli) {
   const nPar = Math.max(1, Math.min(deudores.length, Math.max(6, Math.min(12, nPar85))));
   const cabeza = deudores.slice(0, nPar);
 
-  const necesario = Math.max(0, mmRound(fila.uso - usComodin));
-
-  const volTot = cabeza.reduce((s, d) => s + d.vol, 0) || 1;
   // Cupo por par: proporcional al volumen, con un PISO proporcional al presupuesto (no 5MM planos —
   // en un cliente de 1.200MM una línea de 5MM no financia ninguna factura y sólo produce rechazos).
   // Después se normaliza para que la suma sea exactamente el presupuesto de pares: aplicar el piso
   // sin normalizar podía pasarse del presupuesto y romper el tope del cliente.
-  const pisoPar = Math.max(TRAMO_LINEA, Math.round(objetivoPares * 0.03 / TRAMO_LINEA) * TRAMO_LINEA);
-  const crudos = cabeza.map((d) => Math.max(pisoPar, Math.round(objetivoPares * (d.vol / volTot) / TRAMO_LINEA) * TRAMO_LINEA));
-  const sumaCruda = crudos.reduce((s, x) => s + x, 0) || 1;
-  const cupos = crudos.map((c) => Math.max(TRAMO_LINEA, Math.round(c * (objetivoPares / sumaCruda) / TRAMO_LINEA) * TRAMO_LINEA));
-  const lineas = []; let repartido = 0;
+  // Cupo por par: proporcional al volumen y con el PISO de política (`lineaMinima`, hoy 10MM). El
+  // piso es por LÍNEA, así que **limita cuántos pares tienen línea propia, no cuánto recibe cada
+  // uno**: si el presupuesto no alcanza para dar el mínimo a los 12 de la cabeza, los de menor
+  // volumen quedan en 0 y su deudor pasa a financiarse por el comodín — que es para lo que existe.
+  const cupos = repartirConPiso(objetivoPares, cabeza.map((d) => d.vol), pisoLinea, TRAMO_LINEA);
+  // Lo que el piso dejó sin repartir NO se pierde: vuelve al comodín. Descontarlo del cliente sería
+  // quitarle capacidad que el comité sí le aprobó, por una regla de tamaño mínimo de línea.
+  const sobranteAlComodin = Math.max(0, objetivoPares - cupos.reduce((s, x) => s + x, 0));
+
+  // ── EL COMODÍN, ya con el sobrante de los pares ───────────────────────────────────────────────
+  // Va DESPUÉS del reparto de pares porque depende de él: lo que el piso dejó sin poder ser una línea
+  // propia se financia por acá. Su monto sale de la regla y el corte por categoría del dato.
+  // El reparto entre categorías respeta el MISMO piso —una LF4 bajo el mínimo tampoco financia nada—,
+  // así que si sólo cabe una, esa categoría se queda con todo y la otra sin comodín propio.
+  const apComodin = apComodinBase + sobranteAlComodin;
+  const meta = lf4MetaPorCliente(rutCli);
+  const repComodin = repartirConPiso(apComodin, meta.map((m) => m.peso || 1), pisoLinea, TRAMO_LINEA);
+  const comodines = meta.map((m, i) => ({
+    id: "LF4-" + rutCli + "-" + (m.categoria === "Lista Blanca" ? "LB" : "DA"),
+    tipo: "LF4", granularidad: "comodin", categoria: m.categoria, rutDeudor: null, suspendida: m.suspendida,
+    aprobado: repComodin[i], vigente: 0,
+  })).filter((x) => x.aprobado > 0);
+  // Uso repartido en la misma proporción que lo aprobado: la utilización se distribuye sobre toda la
+  // capacidad, no sólo sobre los pares.
+  let usComodin = Math.min(apComodin, mmRound(fila.uso * (apComodin / (objetivoTotal || 1))));
+  { let q = usComodin; for (const p of comodines) { const t2 = Math.min(p.aprobado, mmRound(q)); p.vigente = t2; q = mmRound(q - t2); } usComodin = mmRound(usComodin - Math.max(0, q)); }
+  const necesario = Math.max(0, mmRound(fila.uso - usComodin));
+
+  const lineas = [];
   cabeza.forEach((d, i) => {
-    const ultimo = i === cabeza.length - 1;
-    let cupo = ultimo ? Math.max(TRAMO_LINEA, objetivoPares - repartido) : cupos[i];
-    repartido += cupo;
+    const cupo = cupos[i];
+    if (cupo <= 0) return;   // no alcanzó para una línea propia: lo cubre el comodín
     // ~18% de los pares con línea llevan además una PUNTUAL (LF3) tallada sobre su cupo. Una LF3
     // sólo puede estar intacta o consumida COMPLETA (§3.6): nunca a medias.
-    const mLF3 = rnd() < 0.18 ? Math.max(TRAMO_LINEA, Math.round(cupo * (0.2 + rnd() * 0.3) / TRAMO_LINEA) * TRAMO_LINEA) : 0;
+    // La PUNTUAL (LF3) está EXENTA del mínimo: es un cupo a medida de UNA operación, así que su
+    // tamaño lo fija esa operación y no la política. Pero se talla para que **lo que le quede a la
+    // LF2 siga sobre el piso** — si no, partir el cupo en dos dejaría la normal bajo el mínimo por
+    // la puerta de atrás.
+    const techoLF3 = Math.max(0, cupo - pisoLinea);
+    const mLF3 = (rnd() < 0.18 && techoLF3 >= TRAMO_LINEA)
+      ? Math.min(techoLF3, Math.max(TRAMO_LINEA, Math.round(cupo * (0.2 + rnd() * 0.3) / TRAMO_LINEA) * TRAMO_LINEA)) : 0;
     if (mLF3 > 0) lineas.push({ id: "LF3-" + rutCli + "-" + i, tipo: "LF3", granularidad: "par", rutDeudor: d.rut, nombreDeudor: d.nombre, aprobado: mLF3, vigente: 0, unSoloUso: true, quemada: rnd() < 0.34 });
-    lineas.push({ id: "LF2-" + rutCli + "-" + i, tipo: "LF2", granularidad: "par", rutDeudor: d.rut, nombreDeudor: d.nombre, aprobado: Math.max(TRAMO_LINEA, cupo - mLF3), vigente: 0 });
+    lineas.push({ id: "LF2-" + rutCli + "-" + i, tipo: "LF2", granularidad: "par", rutDeudor: d.rut, nombreDeudor: d.nombre, aprobado: Math.max(pisoLinea, cupo - mLF3), vigente: 0 });
   });
 
   // Si la talla de una LF3 deja a las LF2 sin capacidad para sostener el uso vigente, la puntual se
@@ -19499,8 +19571,14 @@ function lineasDeCliente(rutCli) {
 // clientes le tienen cedido y no pagado: es lo que la convierte en un control de concentración y lo
 // que hace verdadera la columna «a quién afecta» del modal de confirmación.
 let _deudorIdx = null;
+let _deudorIdxFirma = null;
 function lineasDeudor() {
-  if (_deudorIdx) return _deudorIdx;
+  // Este índice se construye sobre `lineasDeCliente`, así que depende del mismo umbral: sin validar
+  // por firma, mover `lineaMinima` en el mantenedor dejaba servido el índice anterior y el nivel 3
+  // seguía decidiendo con las líneas viejas. Es la trampa de la regla 9-bis, acá heredada.
+  const firma = String(pol("lineaMinima", 10e6)) + "|" + String(pol("otrosDeudoresPct", 10));
+  if (_deudorIdx && firma === _deudorIdxFirma) return _deudorIdx;
+  _deudorIdxFirma = firma;
   const uso = new Map(), clientes = new Map(), nombres = new Map();
   const anotarDeudor = (rut, nombre, monto, rutCli) => {
     if (!rut) return;
@@ -19544,7 +19622,9 @@ function lineasDeudor() {
     // 741 no les cabía jamás una factura y el nivel 3 los bloqueaba enteros. Un monto que no dice su
     // unidad se migra en silencio y sólo se nota mirando una cifra absurda.
     const base = u > 0 ? u * holgura : (40 + Math.floor(rnd() * 24) * 5) * 1e6;
-    const tallado = Math.max(Math.ceil(base / TRAMO_LINEA) * TRAMO_LINEA, Math.ceil(u / TRAMO_LINEA) * TRAMO_LINEA);
+    // El PISO de política también aplica acá: la del deudor es una línea aprobada como cualquier otra
+    // y una bajo el mínimo no deja pasar ninguna factura — bloquearía al deudor entero en el nivel 3.
+    const tallado = Math.max(lineaMin(), Math.ceil(base / TRAMO_LINEA) * TRAMO_LINEA, Math.ceil(u / TRAMO_LINEA) * TRAMO_LINEA);
     _deudorIdx.set(rut, {
       rutDeudor: rut, nombre: nombres.get(rut) || "", tipo: t,
       aprobado: tallado, vigente: u,
