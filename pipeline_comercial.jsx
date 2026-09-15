@@ -8105,10 +8105,18 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         const vencDefault = (f) => fmtFechaDoc(fechasDocumento(f).vencimiento);
                         // Lista de facturas en escala de grises · Folio · Tipo · Nota · Emisión · Vencim (con calendario) · Tasa · Monto · (retirar)
                         const GC_D = "88px 62px 132px 74px 186px 158px 22px";
-                        const GC_O = "72px 100px 92px 92px 60px 84px 128px 96px";
+                        // Columnas de las facturas DISPONIBLES: tipo doc · folio · [RUT y razón social del
+                        // deudor, sólo en la plana] · emisión · vencimiento (editable) · monto · estado ·
+                        // acción. **Sin tasa**: estas facturas todavía no están en la oferta, así que su
+                        // precio no existe —lo fija la simulación— y mostrar el sugerido acá lo afirma
+                        // antes de tiempo. En el tab de Verificación sí va la tasa, y eso no es una
+                        // inconsistencia: ahí el documento YA está en la oferta y el precio es un hecho de
+                        // la operación que el ejecutivo pudo pisar (regla 6).
+                        const GC_O = "100px 72px 92px 120px 84px 128px 96px";
                         // En la vista de FACTURAS la lista es plana: sin el acordeón que las agrupa, cada
-                        // fila tiene que decir de qué deudor es o deja de significar nada.
-                        const GC_OP = "minmax(140px,1fr) " + GC_O;
+                        // fila tiene que decir de qué deudor es o deja de significar nada. Y ahí el deudor
+                        // se identifica con su RUT además de su nombre, que es lo que no se repite.
+                        const GC_OP = "100px 72px 104px minmax(140px,1fr) 92px 120px 84px 128px 96px";
                         const headDoc = (
                           <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: GC_D, color: "#B4B2BC", borderBottom: `1px solid ${C.line}` }}>
                             <span>Tipo doc.</span><span>Folio</span><span>F. vencim.</span><span className="text-right">Monto</span><span>Financiada con</span><span>Estado</span><span></span>
@@ -8145,35 +8153,62 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   : ef.estado === "CON_LINEA" ? <span className="t9 font-semibold" style={{ color: "#16A34A" }}>Se puede cursar</span>
                                   : <><span className="block t9 font-semibold" style={{ color: "#EF4444" }}>Requiere comité</span><span className="block truncate t7" style={{ color: C.faint }} title={ef.motivoTexto}>{ef.motivoTexto}</span></>}
                               </span>
-                              {!bloqueado ? <button onClick={() => setConfirmRetiro(f)} disabled={validas.length <= 1} title={validas.length <= 1 ? "La oferta debe tener al menos una factura" : "Retirar de la oferta"} className="justify-self-center rounded p-0.5 disabled:opacity-30" style={{ color: "#B4B2BC" }}><Trash2 size={12} /></button> : <span></span>}
+                              {/* RETIRAR. Estaba deshabilitado con una sola factura —«la oferta debe tener al
+                                  menos una»— y con la oferta en una factura el ícono quedaba en gris sobre
+                                  gris: el usuario lo leyó como que el botón faltaba. La oferta VACÍA es un
+                                  estado normal desde que la pantalla la dibuja con su panel de arranque, así
+                                  que retirar la última está permitido y vuelve ahí. Y el ícono se ve: #6B7280
+                                  con hover, no #B4B2BC. */}
+                              {!bloqueado ? <button onClick={() => setConfirmRetiro(f)} title="Retirar esta factura de la oferta" className="justify-self-center rounded p-0.5 hover:bg-stone-100" style={{ color: C.sub }}><Trash2 size={13} /></button> : <span></span>}
                             </div>
                           );
                         };
                         const headOtra = (plana) => (
                           <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: plana ? GC_OP : GC_O, color: C.faint, borderBottom: `1px solid ${C.line}` }}>
-                            {plana && <span>Empresa deudora</span>}
-                            <span>Folio</span><span>Tipo doc.</span><span>F. emisión</span><span>F. vencim.</span><span className="text-right">Tasa</span><span className="text-right">Monto</span><span>Estado</span><span>Acción</span>
+                            <span>Tipo doc.</span><span>Folio</span>
+                            {plana && <><span>RUT deudor</span><span>Razón social</span></>}
+                            <span>F. emisión</span><span>F. vencim.</span><span className="text-right">Monto</span><span>Estado</span><span>Acción</span>
                           </div>
                         );
                         const filaOtraD = (f, plana) => {
                           const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                           const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
-                          const fd = fechasDocumento(f);
-                          const em = fmtFechaDoc(fd.emision); const venc = fmtFechaDoc(fd.vencimiento);
-                          const tasaF = ((spreadDeudor[f.deudor] != null ? spreadDeudor[f.deudor] : spreadSugerido(f.deudor, deal).spread) + CFG_ACTIVA.costoFondo).toFixed(2);
+                          const em = fmtFechaDoc(fechasDocumento(f).emision);
+                          // El vencimiento es EDITABLE, con el mismo calendario y el mismo estado por
+                          // folio (`vencFecha`) que la tabla de la oferta: así lo que el ejecutivo corrige
+                          // acá viaja con la factura cuando la incorpora, en vez de perderse al cambiar de
+                          // tabla. El dato del activo no se toca —la fecha del documento sigue siendo la
+                          // que trae el A1 (regla 13-ter)—: lo que se guarda es la corrección, y por eso
+                          // el default se sigue leyendo del resolver.
+                          const vencVal = vencFecha[f.id] || ""; const venc = vencVal ? fmtDMY(vencVal) : fmtFechaDoc(fechasDocumento(f).vencimiento);
                           const est = estadoCandidata(f, deal); const bloq = est.bloqueada;
                           const agregar = () => { onIncorporarFacturas(deal.id, [f]); setReevalPend(true); };
                           return (
                             <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: plana ? GC_OP : GC_O, borderBottom: `1px solid ${C.line}`, opacity: bloq ? 0.55 : 1 }}>
-                              {plana && (() => {
-                                const nt = notaDeudor(f.deudor) || 0;
-                                return <span className="truncate font-medium" style={{ color: C.ink }} title={`${f.deudor}${nt ? ` · Nota ${nt}` : ""}`}>{f.deudor}</span>;
-                              })()}
-                              <span className="font-medium" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>#{f.folio}</span>
                               <span className="truncate t9" style={{ color: C.sub }} title={tdoc}>{tdoc}</span>
+                              <span className="font-medium" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>#{f.folio}</span>
+                              {plana && (() => {
+                                const nt = notaDeudor(f.deudor, f.rutRecep) || 0;
+                                return (<>
+                                  <span className="truncate t9" style={{ color: C.sub, fontVariantNumeric: "tabular-nums" }} title={f.rutRecep || "Sin RUT en el documento"}>{f.rutRecep || "—"}</span>
+                                  <span className="truncate font-medium" style={{ color: C.ink }} title={`${f.deudor}${nt ? ` · Nota ${nt}` : ""}`}>{f.deudor}</span>
+                                </>);
+                              })()}
                               <span className="t9" style={{ color: C.faint }}>{em}</span>
-                              <span className="t9" style={{ color: C.faint }}>{venc}</span>
-                              <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
+                              {/* Mismo patrón que la tabla de la oferta: la fecha se lee, y el ícono abre el
+                                  calendario nativo. El input va oculto porque un `date` completo no cabe en
+                                  la columna y además se ve distinto en cada navegador. */}
+                              <span className="relative inline-flex items-center gap-1.5 t9" style={{ color: C.faint }}>
+                                <span>{venc}</span>
+                                {!bloqueado && (<>
+                                  <button onClick={(e) => { const inp = e.currentTarget.parentElement.querySelector("input[type=date]"); if (inp) { inp.showPicker ? inp.showPicker() : inp.click(); } }}
+                                    title="Editar el vencimiento de esta factura" className="inline-flex" style={{ color: "#9CA3AF" }}>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg>
+                                  </button>
+                                  <input type="date" value={vencVal || fechasDocumento(f).vencimiento} onChange={(e) => { setVencFecha((m) => ({ ...m, [f.id]: e.target.value })); setReevalPend(true); }}
+                                    style={{ position: "absolute", left: 22, bottom: 0, width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
+                                </>)}
+                              </span>
                               <span className="text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.monto)}</span>
                               {/* ¿Entra en la línea si la agrego? Se compara su monto contra la holgura que le
                                   queda HOY al deudor: es la pregunta que uno se hace mirando la fila, y no
@@ -8583,8 +8618,24 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       </div>
                                     </div>
                                   ) : (<>
+                                  {/* SI YA ELIGIÓ A MANO, LO QUE FALTA ES SIMULAR. Este panel ofrecía sólo
+                                      las tres selecciones rápidas, que REEMPLAZAN la oferta: quien agregaba
+                                      facturas una por una desde «Deudores disponibles» quedaba con su
+                                      selección hecha, el panel encima tapando el resumen y ninguna forma de
+                                      simularla — el único camino era descartar lo suyo y aceptar un atajo. */}
+                                  {validas.length > 0 ? (<>
+                                    <div className="t15 font-semibold" style={{ color: C.ink }}>Tienes {validas.length} factura{validas.length === 1 ? "" : "s"} elegida{validas.length === 1 ? "" : "s"} · {fmtMM(montoValido)}</div>
+                                    <div className="mt-0.5 t10" style={{ color: C.sub }}>Simular calcula la asignación de línea, la tasa, los descuentos y el monto a girar de lo que elegiste. Después puedes seguir ajustándola factura a factura.</div>
+                                    <button onClick={() => elegirInicio(validas, "Selección manual")} disabled={bloqueado}
+                                      className="mt-2 inline-flex items-center gap-1.5 rounded-full px-4 py-2 t11 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed"
+                                      style={{ backgroundColor: C.indigo, boxShadow: "0 6px 16px rgba(112,62,255,.28)" }}>
+                                      <Zap size={13} /> Simular la oferta · {validas.length} fact. · {fmtMM(montoValido)}
+                                    </button>
+                                    {opcionesInicio.length > 0 && <div className="mt-3 t10 uppercase tracking-wide" style={{ color: C.faint }}>O reemplaza la selección por</div>}
+                                  </>) : (<>
                                   <div className="t15 font-semibold" style={{ color: C.ink }}>¿Qué facturas quieres incluir en la oferta?</div>
                                   <div className="mt-0.5 t10" style={{ color: C.sub }}>Al elegir se arma la oferta y se simula: asignación de línea, tasa, descuentos y monto a girar. Después puedes ajustarla factura a factura.</div>
+                                  </>)}
                                   {opcionesInicio.length ? (
                                     /* Una opcion por linea: son alternativas excluyentes que se comparan
                                        leyendo la misma cifra en la misma posicion, y en fila se rompian
@@ -8598,7 +8649,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       ))}
                                     </div>
                                   ) : (
-                                    <div className="mt-2 t10" style={{ color: C.faint }}>Este cliente no tiene facturas disponibles para armar una oferta.</div>
+                                    validas.length > 0 ? null : <div className="mt-2 t10" style={{ color: C.faint }}>Este cliente no tiene facturas disponibles para armar una oferta.</div>
                                   )}
                                   </>)}
                                 </div>
@@ -8959,7 +9010,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 {deudOtF.length > 0 && otTab.lista.length === 0 && <div className="t10 py-2" style={{ color: C.faint }}>{otTab.vacio}</div>}
                                 {plana && facOtPage.length > 0 && (
                                   <div className="overflow-x-auto rounded-xl p-2.5" style={{ backgroundColor: "#FCFCFD", border: "1px solid #E4E2EC" }}>
-                                    <div style={{ minWidth: 900 }}>{headOtra(true)}{facOtPage.map((f) => filaOtraD(f, true))}</div>
+                                    <div style={{ minWidth: 1000 }}>{headOtra(true)}{facOtPage.map((f) => filaOtraD(f, true))}</div>
                                   </div>
                                 )}
                                 {deudOtPage.map((dn) => { const grupo = grpOt[dn]; const abierto = detOpen["ot:" + dn] === true; return (
@@ -11126,18 +11177,28 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                     // nosotros», simplemente no tiene esta medición todavía.
                     if (!mix) return <span className="t10" style={{ color: C.faint }}>Sin medición</span>;
                     return (
-                      <div className="flex flex-col items-start gap-1">
+                      <div className="flex flex-col items-start gap-1" style={{ maxWidth: "100%", overflow: "hidden" }}>
                         {mixSowChips(mix).map((x) => {
                           // El chip lleva el nombre CORTO del padrón —en esta columna no caben
                           // «Servicios Financieros Progreso · 10%»— y la razón social completa va en
                           // el tooltip, junto con la porción a la que pertenece: la partición del
                           // tenant no desaparece, pasa a ser el contexto de cada nombre.
+                          // La columna es de ancho FIJO (`tableLayout: fixed`, 214 px), así que un
+                          // nombre largo no la ensancha: se SALE. El que se recorta con «…» es el
+                          // NOMBRE —y hace falta `minWidth: 0`, porque un hijo de flex no encoge por
+                          // debajo de su contenido y sin eso el `text-overflow` no llega a actuar— y
+                          // nunca el porcentaje, que es el dato: el ★ y el «· 12%» no encogen. La
+                          // razón social completa va en el tooltip.
+                          // Los tres van en `style` y no en clases de Tailwind a propósito: el
+                          // bundle vendorizado es CORE y una clase que no trae NO FALLA, simplemente
+                          // no aplica — el mismo agujero de `t14`/`t16`, y acá se vería como un chip
+                          // que se sale de la columna en el navegador de Mauricio y en ninguna prueba.
                           const chip = (
-                            <span className="inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 t9 font-semibold"
-                              style={{ backgroundColor: x.nuestro ? C.lilac : "#F0EFF3", color: x.nuestro ? C.indigo : C.sub }}>
-                              {x.nuestro && <span aria-hidden="true">★</span>}
-                              <span className="truncate">{x.label}</span>
-                              <span style={{ fontVariantNumeric: "tabular-nums" }}>· {x.pct}%</span>
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 t9 font-semibold"
+                              style={{ maxWidth: "100%", backgroundColor: x.nuestro ? C.lilac : "#F0EFF3", color: x.nuestro ? C.indigo : C.sub }}>
+                              {x.nuestro && <span style={{ flexShrink: 0 }} aria-hidden="true">★</span>}
+                              <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.label}</span>
+                              <span style={{ flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>· {x.pct}%</span>
                             </span>
                           );
                           // Sólo «Otros» necesita la tarjeta flotante: es el único que esconde nombres.
