@@ -2972,6 +2972,53 @@
        `sin nada que pedir → null ${vacioOk} · ${sol.detalle.length} línea(s) de detalle por ${fmtMM(sol.pedido)} (${sol.detalle.map((d) => d.deudor + " " + fmtMM(d.monto) + " " + d.tipoLinea).join(" · ")}) · aprobada vigente 650MM + 90MM pedidos = ${fmtMM(sol.propFactoring)} · bandeja ${bandejaOk} · el wizard precarga ${pre.length} deudor(es)`);
   }
 
+  // ── 107 · EL WIZARD DE LÍNEA CAPTURA PESOS, Y EL BORDE QUE LOS ESCRIBE NO LOS REDONDEA.
+  //    El wizard mezclaba dos unidades en el mismo campo: `linea.aprobada` (pesos) cuando la empresa ya
+  //    tenía línea, y un default de `300` (millones) cuando no. Aguas abajo `constituirLinea` escribe
+  //    ese número TAL CUAL en la línea aprobada, así que pedir 240 dejaba al cliente con una línea de
+  //    240 PESOS —y ninguna de las dos formas del error se ve distinta dentro del campo—. Desde el
+  //    refactor todo el wizard es pesos; lo que este caso fija es el borde: lo que entra es lo que
+  //    queda, al peso, sin décimas y sin conversión.
+  {
+    const RUT = "76.107.107-1";
+    const limpiar = () => { const i = LINEAS_DATA.findIndex((x) => x.rut === RUT); if (i >= 0) LINEAS_DATA.splice(i, 1); _lineaIdx = null; };
+    limpiar();
+    // (a) UN MONTO EN PESOS SE ESCRIBE EN PESOS. Y no cualquiera: el cupo que aprueba el comité puede
+    //     ser CUALQUIER monto, así que se prueba con uno NO redondo — un redondo sobrevive a una
+    //     división por un millón y a un `toFixed`, y no distinguiría nada.
+    const l1 = constituirLinea({ rut: RUT, cliente: "Prueba 107", propFactoring: 287431509 });
+    const pesoOk = !!l1 && l1.aprobada === 287431509 && Number.isInteger(l1.aprobada)
+      && l1.disponible === 287431509 && l1.uso === 0;
+
+    // (b) `propFactoring` MANDA sobre `totalPropuesto`: lo que se constituye es la línea de factoring,
+    //     no el total que además incluye confirming.
+    limpiar();
+    const l2 = constituirLinea({ rut: RUT, cliente: "Prueba 107", propFactoring: 200e6, totalPropuesto: 350e6 });
+    const cualOk = !!l2 && l2.aprobada === 200e6;
+
+    // (c) RENOVAR conserva el uso y recalcula al peso. `toFixed(1)` dejaba décimas de peso en el
+    //     disponible, que es la cifra contra la que el motor decide si una factura cabe.
+    l2.uso = 137331951; l2.montoOp = 12000000;
+    const l3 = constituirLinea({ rut: RUT, cliente: "Prueba 107", propFactoring: 440e6 });
+    const renOk = l3 === l2 && l3.aprobada === 440e6 && l3.uso === 137331951
+      && l3.disponible === 440e6 - 137331951 && Number.isInteger(l3.disponible)
+      && l3.proyeccion === 137331951 + 12000000
+      && LINEAS_DATA.filter((x) => x.rut === RUT).length === 1;
+
+    // (d) SIN MONTO NO HAY LÍNEA. Una solicitud en cero —o sin RUT— no constituye nada: una línea de
+    //     $0 se vería en la cartera como una línea vigente que no financia ninguna factura.
+    limpiar();
+    const nadaOk = constituirLinea({ rut: RUT, propFactoring: 0 }) === null
+      && constituirLinea({ rut: "", propFactoring: 100e6 }) === null
+      && constituirLinea(null) === null
+      && LINEAS_DATA.filter((x) => x.rut === RUT).length === 0;
+    limpiar();
+
+    ok("107 la solicitud de línea viaja en PESOS y el borde que la constituye no la redondea",
+       pesoOk && cualOk && renOk && nadaOk,
+       `no redondo 287.431.509 → ${fmtMM(287431509)} intacto ${pesoOk} · propFactoring manda sobre totalPropuesto ${cualOk} · renovar conserva uso y recalcula al peso ${renOk} (disponible ${440e6 - 137331951}) · sin monto no hay línea ${nadaOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
