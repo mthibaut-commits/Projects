@@ -15,39 +15,49 @@
 // Tres atributos y una consecuencia:
 //   · `banco`   — el cesionario ES un banco o la filial de factoring de un banco. Parte la cartera
 //                 del cliente en financiamiento bancario y no bancario, que es la pregunta que
-//                 ningún otro activo contesta.
-//   · `target`  — de los bancarios, los que Security mira de frente (BCI · Banco de Chile · Itaú).
-//                 Es política COMERCIAL del tenant, no una propiedad del cesionario: otro factoring
-//                 tendría otro target sobre el mismo padrón.
+//                 ningún otro activo contesta. Es una propiedad del cesionario: no se configura.
+//   · `target`  — los que Security mira de frente. **Es política COMERCIAL del TENANT**, no una
+//                 propiedad del cesionario, así que lo que hay acá es el DEFAULT: quién es target se
+//                 edita en `Configuración › Factoring target` y el pipeline reagrupa las porciones
+//                 con lo que el tenant declare, leyendo `SOW_DETALLE_JSON` (que es la MEDICIÓN,
+//                 cesionario por cesionario). Los cuatro agregados del A11 se publican con este
+//                 default para el consumidor que no tiene esa configuración.
 //   · `nuestro` — Factoring Security. No es competencia: es cartera propia.
 //
-// De ahí salen las CUATRO porciones del mix, que son una partición exhaustiva y disjunta:
-//   ★ Security (nuestro) · Factoring target (banco+target) · Otros bancarios (banco) · Otros factoring (resto)
+// `corto` es el nombre para un CHIP, donde no caben «Servicios Financieros Progreso» ni tres razones
+// sociales seguidas. Vive en el padrón y no en el consumidor porque es un atributo del cesionario:
+// el rótulo de la porción target se ARMA con los cortos de quienes el tenant eligió («BCI -
+// Santander»), de modo que el chip no pueda nombrar a alguien que no está adentro.
+//
+// De ahí salen las CUATRO porciones del mix, que son una partición exhaustiva y disjunta. El orden
+// importa: `target` se evalúa ANTES que `banco`, así que un target no bancario sigue cayendo en su
+// porción y ninguna queda con dos dueños.
+//   ★ Security (nuestro) · Factoring target (los configurados) · Otros bancarios (banco) · Otros factoring (resto)
 const BICE_RUT = "97.080.000-0";
 
 const CESIONARIOS = [
   // ── Nosotros ────────────────────────────────────────────────────────────────────────────────
-  { rut: BICE_RUT, nombre: "Factoring Security (BICE)", banco: true, nuestro: true },
-  // ── Bancarios · TARGET (la competencia que se mira de frente) ────────────────────────────────
-  { rut: "96.510.870-6", nombre: "BCI Factoring", banco: true, target: true },
-  { rut: "96.667.560-8", nombre: "Banchile Factoring", banco: true, target: true },
-  { rut: "76.645.030-K", nombre: "Itaú Factoring", banco: true, target: true },
+  { rut: BICE_RUT, nombre: "Factoring Security (BICE)", corto: "Security", banco: true, nuestro: true },
+  // ── Bancarios · TARGET POR DEFECTO (lo que el tenant edita en Configuración) ──────────────────
+  { rut: "96.510.870-6", nombre: "BCI Factoring", corto: "BCI", banco: true, target: true },
+  { rut: "97.036.000-K", nombre: "Banco Santander", corto: "Santander", banco: true, target: true },
   // ── Bancarios · el resto de la banca ─────────────────────────────────────────────────────────
   // Sin éstos la porción «Otros bancarios» no tendría de dónde salir y habría que inventarla, que es
   // exactamente lo que este padrón viene a evitar: si el activo registra las cesiones bancarias,
   // el padrón tiene que traer bancos que no sean el target.
-  { rut: "97.036.000-K", nombre: "Banco Santander", banco: true },
-  { rut: "97.030.000-7", nombre: "BancoEstado", banco: true },
-  { rut: "97.018.000-1", nombre: "Scotiabank Chile", banco: true },
-  { rut: "99.500.410-0", nombre: "Banco Consorcio", banco: true },
-  { rut: "97.011.000-3", nombre: "Banco Internacional", banco: true },
+  { rut: "96.667.560-8", nombre: "Banchile Factoring", corto: "Banchile", banco: true },
+  { rut: "76.645.030-K", nombre: "Itaú Factoring", corto: "Itaú", banco: true },
+  { rut: "97.030.000-7", nombre: "BancoEstado", corto: "BancoEstado", banco: true },
+  { rut: "97.018.000-1", nombre: "Scotiabank Chile", corto: "Scotiabank", banco: true },
+  { rut: "99.500.410-0", nombre: "Banco Consorcio", corto: "Consorcio", banco: true },
+  { rut: "97.011.000-3", nombre: "Banco Internacional", corto: "Internacional", banco: true },
   // ── No bancarios ─────────────────────────────────────────────────────────────────────────────
-  { rut: "96.684.990-8", nombre: "Tanner Servicios Financieros" },
-  { rut: "76.118.580-2", nombre: "Eurocapital" },
-  { rut: "96.529.420-8", nombre: "Incofin" },
-  { rut: "76.040.000-1", nombre: "Factotal" },
-  { rut: "76.482.900-3", nombre: "Servicios Financieros Progreso" },
-  { rut: "76.223.180-1", nombre: "Coopeuch Factoring" },
+  { rut: "96.684.990-8", nombre: "Tanner Servicios Financieros", corto: "Tanner" },
+  { rut: "76.118.580-2", nombre: "Eurocapital", corto: "Eurocapital" },
+  { rut: "96.529.420-8", nombre: "Incofin", corto: "Incofin" },
+  { rut: "76.040.000-1", nombre: "Factotal", corto: "Factotal" },
+  { rut: "76.482.900-3", nombre: "Servicios Financieros Progreso", corto: "Progreso" },
+  { rut: "76.223.180-1", nombre: "Coopeuch Factoring", corto: "Coopeuch" },
 ];
 
 const POR_RUT = new Map(CESIONARIOS.map((c) => [c.rut, c]));
@@ -60,9 +70,13 @@ function porcionDe(rut) {
   const c = POR_RUT.get(rut);
   if (!c) return { porcion: "otrosFactoring", conocido: false };
   if (c.nuestro) return { porcion: "security", conocido: true };
-  if (c.banco && c.target) return { porcion: "factoringTarget", conocido: true };
+  if (c.target) return { porcion: "factoringTarget", conocido: true };
   if (c.banco) return { porcion: "otrosBancarios", conocido: true };
   return { porcion: "otrosFactoring", conocido: true };
 }
 
-module.exports = { BICE_RUT, CESIONARIOS, POR_RUT, porcionDe };
+// Los RUT que son target POR DEFECTO. Es lo que el tenant encuentra la primera vez que abre el
+// mantenedor, y lo que el A11 usa para publicar sus cuatro agregados.
+const TARGET_DEFAULT = CESIONARIOS.filter((c) => c.target).map((c) => c.rut);
+
+module.exports = { BICE_RUT, CESIONARIOS, POR_RUT, TARGET_DEFAULT, porcionDe };

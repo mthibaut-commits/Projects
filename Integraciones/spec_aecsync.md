@@ -83,7 +83,7 @@ Hoy las 1.300 reconcilian. **Se arregló en el origen y no en la aplicación a p
 AECSync identifica al cesionario pero **no dice de qué tipo es** — no es un dato del SII sino del mercado. Ese padrón es nuestro (`GeneradorDatos/lib/cesionarios.js`, espejado en el fuente) y clasifica cada cesionario **por RUT**:
 
 - **`banco`** — es un banco o la filial de factoring de un banco. **AECSync registra las cesiones bancarias y las no bancarias**, así que esta partición se mide y no se supone.
-- **`target`** — de los bancarios, los que se miran de frente (BCI · Banco de Chile · Itaú). Es política **comercial del tenant**, no una propiedad del cesionario.
+- **`target`** — los que se miran de frente. Es política **comercial del tenant**, no una propiedad del cesionario, así que lo del padrón es sólo el **default** (hoy BCI Factoring · Banco Santander): quién es target se edita en `Configuración › Factoring target` y el consumidor reagrupa con esa configuración. Por eso no tiene que ser bancario: `target` se evalúa **antes** que `banco` y la partición sigue siendo exhaustiva y disjunta.
 - **`nuestro`** — Factoring Security: cartera propia, no competencia.
 
 **La identidad es el RUT, no el nombre.** Clasificar por trozo de razón social puso a **Eurocapital** entre los factoring de banco —«eurocap·**ita**·l» contiene el «ita» con que se buscaba «Itaú»— y con el mix midiéndose sobre esta clasificación eso no es un KPI torcido sino una porción entera mal atribuida. Un cesionario que el padrón no declara cae en «otros factoring» —el balde conservador— y la corrida lo **informa**: es un padrón desactualizado, y en silencio se ve igual que un dato correcto.
@@ -94,7 +94,7 @@ AECSync identifica al cesionario pero **no dice de qué tipo es** — no es un d
 
 | Consumidor | Qué usa |
 |---|---|
-| **Mix de financiamiento** (columna SOW del tubo) | El reparto por cesionario, medido por `MontoCesion`. Se mide acá y se **inyecta en el A11**, que es de donde la pantalla lo lee (Levantamiento §5.6) |
+| **Mix de financiamiento** (columna SOW del tubo) | El reparto por cesionario, medido por `MontoCesion`. Se mide acá y se **inyecta en el A11**, que es de donde la pantalla lo lee (Levantamiento §5.6). Los cuatro agregados del A11 se publican con el padrón por defecto; lo que manda es `SOW_DETALLE_JSON` —la medición, cesionario por cesionario— que el consumidor **reagrupa** con el target que su tenant declara |
 | Bloqueo de una factura candidata | «Cedida a terceros» con el nombre del factoring y la fecha, o «Ya financiada» si la cesión fue a nosotros; y «Cedida en parte · por X de Y» cuando es parcial |
 | Pérdida por cesión de una oportunidad | Las facturas de ESA oferta que se llevó otro, y quién |
 | **O06** del motor de otorgamiento | `MontoCesion` contra `MontoDocumento`, documento a documento |

@@ -106,7 +106,7 @@
 ### A11 · Plataforma 360 — información de empresa ⭐ BATCH SFTP → tabla interna
 - **Tipo:** **archivo diario vía SFTP** desde Plataforma 360; monta una **tabla interna** que consulta la aplicación (mismo patrón que A10/A16 — la información es de la misma familia que la requerida por otorgamiento y verificación, y comparten buena parte de las variables).
 - **Contenido:** firmográfica (actividad, sector, trabajadores, fechas, alertas), información comercial (línea global, márgenes, colocación, spread real, segmento), el **mix de financiamiento del cliente** (`SOW_*`, ver abajo), socios (participación, PEP, FATCA), índices financieros, ventas y ventas SII — por RUT de empresa (clientes y deudores).
-- **Mix de financiamiento (`SOW_SECURITY_PCT` / `SOW_FACTORING_TARGET_PCT` / `SOW_OTROS_FACTORING_PCT` / `SOW_OTROS_BANCARIOS_PCT`):** con quién se financia el cliente y en qué proporción; las cuatro porciones **suman 100** y sólo vienen para `ROL=CLIENTE` (en un deudor van vacías, no en 0). Alimenta la columna **SOW** del tubo comercial en versión tabla. Vive acá porque **ningún otro activo lo ve entero**: A2 (AECSync) sólo registra *cesiones* —o sea factoring— y A5 (Share of Wallet) sólo mide participación *dentro* del factoring, así que ninguno puede responder por la deuda **bancaria que no es factoring**, que es una de las cuatro porciones. No duplica al A5 ni lo contradice: las **tres** porciones de factoring, renormalizadas sobre su subtotal, reproducen su `SOWActualPct` (ver §5.5).
+- **Mix de financiamiento (`SOW_SECURITY_PCT` / `SOW_FACTORING_TARGET_PCT` / `SOW_OTROS_FACTORING_PCT` / `SOW_OTROS_BANCARIOS_PCT`):** con quién se financia el cliente y en qué proporción; las cuatro porciones **suman 100** y sólo vienen para `ROL=CLIENTE` (en un deudor van vacías, no en 0). Alimenta la columna **SOW** del tubo comercial en versión tabla. Vive acá porque el mix es atributo de la **empresa** y éste es su maestro, pero **se mide sobre A2** —el único activo que identifica al cesionario de cada cesión— y se inyecta acá (ver §5.6). No duplica al A5 ni lo contradice: `SOW_SECURITY_PCT` se **ancla** a su `SOWActualPct`, y desde el 15-09-2026 A5 se deriva de A2, así que las dos entregas cuentan lo mismo una sola vez. **Los cuatro agregados se publican con el padrón de cesionarios por defecto**; lo que manda es `SOW_DETALLE_JSON` —el reparto cesionario por cesionario— porque una de las cuatro porciones, el **factoring target**, es política comercial del **tenant** y se configura en la aplicación.
 - **Actualización intradía:** cubierta por el mismo esquema del endpoint **A22** si el origen actualiza registros dentro del día.
 - **Consumen:** presentación al comité (pasos 1, 2 y 4 — al agregar cada deudor se lee su registro de la tabla interna), generación IA de las 5 notas comerciales.
 - **Nota de consolidación:** por el solapamiento de variables con A10/A16, evaluar consolidar los tres en **una misma entrega SFTP** (un paquete diario con secciones empresa / otorgamiento / verificación) para simplificar la operación del batch.
@@ -356,6 +356,13 @@ supuso lo contrario, una de las cuatro porciones se inventaba.
   las cesiones. Incluye `SOW_DETALLE_JSON`, el desglose por cesionario que el tooltip muestra; cada
   porción es exactamente la suma de los suyos, porque el 100 se reparte una sola vez y las porciones
   se agregan desde el detalle.
+- **Quién es «factoring target» NO lo mide nadie: lo declara el tenant** (15-09-2026). Es política
+  comercial —otro factoring miraría de frente a otros— así que no es un atributo del cesionario ni un
+  dato del activo. Consecuencia sobre el contrato: los cuatro agregados que A11 publica salen del
+  padrón **por defecto**, y el **dato** es `SOW_DETALLE_JSON`; el consumidor reagrupa con su propia
+  configuración (`Configuración › Factoring target`). Es la misma distinción de siempre entre el hecho
+  y su lectura: la **medición** —cuánto cedió el cliente y a quién— no cambia con la perilla; lo único
+  que cambia es en qué balde se agrupa cada cesionario.
 
 Un **deudor** no trae mix: las cuatro columnas vienen **vacías**, no en 0. Un deudor no cede facturas,
 así que la pregunta no le aplica, y cuatro ceros afirmarían algo que el archivo no dice.

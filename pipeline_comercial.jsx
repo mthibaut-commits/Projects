@@ -420,6 +420,7 @@ const SCHEMA_VERSION = {
   simulacion: 1,     // conceptos, formulas y retencion de la simulacion (por tenant)
   reemplazos: 1,     // vacaciones: quien cubre a quien y en que periodo (por tenant)
   correo: 1,         // servicio de correo saliente del tenant (endpoint + OAuth 2.0, sin el secreto)
+  factoringTarget: 1,// que cesionarios son «factoring target» (politica comercial, por tenant)
   auditoria: 2,      // bitacora de auditoria encadenada (v2: cadena SHA-256, antes hash de 32 bits)
   auth: 1,           // intentos fallidos y bloqueo por cuenta
   curse: 3,          // payload de curse por negocio (v3: OTP con SHA-256 + sal; v2 usaba un hash de 32 bits)
@@ -1491,13 +1492,19 @@ const P360 = (() => {
   }
   return { ix, porRut, porNombre };
 })();
-// MIX DE FINANCIAMIENTO DEL CLIENTE — el «SOW» del tablero comercial. Sale del activo **A11
-// (Plataforma 360)**, que es el único que ve más allá del factoring: AECSync (A2) sólo registra
-// cesiones y el A5 sólo mide participación DENTRO del factoring, así que ninguno de los dos puede
-// responder por el financiamiento BANCARIO que no es factoring — y ésa es justamente una de las
-// cuatro porciones. Los cuatro porcentajes suman 100 y vienen del archivo: acá no se calcula nada.
-// No contradice al A5, que sigue siendo el maestro de la participación sobre factoring: las tres
-// porciones de factoring, renormalizadas sobre su subtotal, reproducen su `SOWActualPct`.
+// MIX DE FINANCIAMIENTO DEL CLIENTE — el «SOW» del tablero comercial. **Toda cesión es factoring**:
+// un banco que compra una factura está haciendo factoring, y AECSync (A2) registra TODAS las
+// cesiones —bancarias y no bancarias— identificando en cada una al cesionario. O sea que el activo
+// contesta la pregunta entera: con quién se financia el cliente y en qué proporción. Se MIDE sobre el
+// A2, se INYECTA en el A11 (Plataforma 360) y de ahí lo lee esta pantalla, que es el mismo camino de
+// `COLOC_PROM_12M_M` y `FECHA_PRIMERA_OPERACION`.
+//
+// Lo que el archivo trae es el DETALLE por cesionario, que es la medición. La PARTICIÓN en cuatro
+// porciones se aplica acá, al leer, porque una de las cuatro —el factoring target— es política
+// comercial del TENANT y se edita en Configuración: si viniera resuelta del archivo, mover esa
+// perilla no cambiaría nada. Los cuatro agregados que el A11 publica quedan de respaldo para cuando
+// no venga el detalle (y los calcula con el padrón por defecto).
+//
 // Devuelve `null` cuando la empresa no tiene mix —un DEUDOR no cede facturas, así que la pregunta no
 // le aplica—: null se dibuja como ausencia y un cero se leería como «no opera con nosotros».
 const MIX_SOW_CAMPOS = [
@@ -1510,18 +1517,31 @@ function mixSowDe(rutOnombre) {
   const f = (rutOnombre && (P360.porRut[rutOnombre] || P360.porNombre[rutOnombre])) || null;
   if (!f) return null;
   // El DESGLOSE por cesionario, que es lo que el tooltip del chip muestra: con «Otros bancarios · 22%»
-  // no se puede llamar a nadie; con «Banco Santander 14% · Scotiabank 8%» sí. Viene del mismo activo
-  // —se mide sobre AECSync y se inyecta acá—, así que el chip y su detalle no pueden discrepar: cada
-  // porción es exactamente la suma de los suyos. Un JSON roto deja el chip sin detalle, no sin chip.
+  // no se puede llamar a nadie; con «Banco Santander 14% · Scotiabank 8%» sí. Es la MEDICIÓN del A2,
+  // así que el chip y su detalle no pueden discrepar: cada porción es exactamente la suma de los
+  // suyos, porque se agrega desde acá. Un JSON roto deja el chip sin detalle, no sin chip.
   let detalle = [];
   try { const d = JSON.parse(f[P360.ix.SOW_DETALLE_JSON] || "[]"); if (Array.isArray(d)) detalle = d; } catch (e) { detalle = []; }
-  const partes = [];
+  const val = {};
   for (const c of MIX_SOW_CAMPOS) {
     const v = f[P360.ix[c.campo]];
     if (v === "" || v == null) return null;          // la empresa no tiene mix (deudor, o sin SOW)
-    partes.push({ label: c.label, pct: +v, nuestro: !!c.nuestro, porcion: c.porcion,
-                  detalle: detalle.filter((d) => d && d.porcion === c.porcion).sort((a, b) => b.pct - a.pct) });
+    val[c.porcion] = +v;
   }
+  // Se REAGRUPA con la política del tenant. El cesionario se resuelve por RUT —la identidad— y el
+  // nombre queda de respaldo para un detalle viejo que no lo trajera.
+  if (detalle.length) {
+    const agr = { security: 0, factoringTarget: 0, otrosBancarios: 0, otrosFactoring: 0 };
+    for (const d of detalle) { d.porcion = porcionCesionario(d.rut || d.nombre); agr[d.porcion] += +d.pct || 0; }
+    for (const k in agr) val[k] = Math.round(agr[k] * 10) / 10;
+  }
+  const partes = MIX_SOW_CAMPOS.map((c) => ({
+    // El rótulo del target se ARMA con quienes el tenant eligió («BCI - Santander»): un rótulo escrito
+    // a mano nombra a quien quiera, y ya había nombrado a tres que no estaban adentro.
+    label: c.porcion === "factoringTarget" ? targetEtiqueta() : c.label,
+    pct: val[c.porcion], nuestro: !!c.nuestro, porcion: c.porcion,
+    detalle: detalle.filter((d) => d && d.porcion === c.porcion).sort((a, b) => b.pct - a.pct),
+  }));
   // De mayor a menor: la pregunta que la columna responde es «quién se lleva más», y el orden fijo
   // por nombre obligaba a comparar cuatro cifras para contestarla.
   return partes.sort((a, b) => b.pct - a.pct);
@@ -2203,23 +2223,36 @@ const BICE_RUT = "97.080.000-0";
 // y la alerta comercial nombraba a tres que no habían participado. Se indexa además por NOMBRE porque
 // varios call sites sólo tienen la razón social; un nombre que el padrón no declara NO es banco, que
 // es el balde conservador.
+//
+// `banco` y `nuestro` son del CESIONARIO y no se configuran. `target` es POLÍTICA COMERCIAL DEL
+// TENANT —otro factoring miraría de frente a otros— así que el flag de acá es sólo el default con
+// que se publican los agregados del A11: lo que manda es `FACTORING_TARGET`, que el tenant edita.
+// `corto` es el nombre para un chip: el rótulo de la porción target se ARMA con los cortos de
+// quienes el tenant eligió («BCI - Santander»), de modo que el chip no pueda nombrar a nadie que no
+// esté adentro — que es exactamente lo que hacía la glosa cableada «BCI · Banco de Chile · Itaú».
 const CESIONARIOS_CAT = [
-  { rut: BICE_RUT, nombre: "Factoring Security (BICE)", banco: true, nuestro: true },
-  { rut: "96.510.870-6", nombre: "BCI Factoring", banco: true, target: true },
-  { rut: "96.667.560-8", nombre: "Banchile Factoring", banco: true, target: true },
-  { rut: "76.645.030-K", nombre: "Itaú Factoring", banco: true, target: true },
-  { rut: "97.036.000-K", nombre: "Banco Santander", banco: true },
-  { rut: "97.030.000-7", nombre: "BancoEstado", banco: true },
-  { rut: "97.018.000-1", nombre: "Scotiabank Chile", banco: true },
-  { rut: "99.500.410-0", nombre: "Banco Consorcio", banco: true },
-  { rut: "97.011.000-3", nombre: "Banco Internacional", banco: true },
-  { rut: "96.684.990-8", nombre: "Tanner Servicios Financieros" },
-  { rut: "76.118.580-2", nombre: "Eurocapital" },
-  { rut: "96.529.420-8", nombre: "Incofin" },
-  { rut: "76.040.000-1", nombre: "Factotal" },
-  { rut: "76.482.900-3", nombre: "Servicios Financieros Progreso" },
-  { rut: "76.223.180-1", nombre: "Coopeuch Factoring" },
+  { rut: BICE_RUT, nombre: "Factoring Security (BICE)", corto: "Security", banco: true, nuestro: true },
+  { rut: "96.510.870-6", nombre: "BCI Factoring", corto: "BCI", banco: true, target: true },
+  { rut: "97.036.000-K", nombre: "Banco Santander", corto: "Santander", banco: true, target: true },
+  { rut: "96.667.560-8", nombre: "Banchile Factoring", corto: "Banchile", banco: true },
+  { rut: "76.645.030-K", nombre: "Itaú Factoring", corto: "Itaú", banco: true },
+  { rut: "97.030.000-7", nombre: "BancoEstado", corto: "BancoEstado", banco: true },
+  { rut: "97.018.000-1", nombre: "Scotiabank Chile", corto: "Scotiabank", banco: true },
+  { rut: "99.500.410-0", nombre: "Banco Consorcio", corto: "Consorcio", banco: true },
+  { rut: "97.011.000-3", nombre: "Banco Internacional", corto: "Internacional", banco: true },
+  { rut: "96.684.990-8", nombre: "Tanner Servicios Financieros", corto: "Tanner" },
+  { rut: "76.118.580-2", nombre: "Eurocapital", corto: "Eurocapital" },
+  { rut: "96.529.420-8", nombre: "Incofin", corto: "Incofin" },
+  { rut: "76.040.000-1", nombre: "Factotal", corto: "Factotal" },
+  { rut: "76.482.900-3", nombre: "Servicios Financieros Progreso", corto: "Progreso" },
+  { rut: "76.223.180-1", nombre: "Coopeuch Factoring", corto: "Coopeuch" },
 ];
+// Los RUT que son FACTORING TARGET por defecto. El `target` del padrón es el DEFAULT de una política
+// del tenant, no un atributo del cesionario: quién se mira de frente se edita en
+// `Configuración › Factoring target` (ver `FACTORING_TARGET`, más abajo, que es lo que el código
+// consulta). Acá viven separados para que el mantenedor pueda ofrecer «volver al default».
+const TARGET_DEFAULT = CESIONARIOS_CAT.filter((c) => c.target).map((c) => c.rut);
+const _CES_POR_RUT = new Map(CESIONARIOS_CAT.map((c) => [c.rut, c]));
 const _CES_IX = (() => {
   const m = new Map();
   for (const c of CESIONARIOS_CAT) { m.set(c.rut, c); m.set(c.nombre.toLowerCase(), c); }
@@ -2572,6 +2605,98 @@ let TENANT_ACTUAL = resolverTenant();
   if (s && s.tenant) logSys("info", "app", `Tenant resuelto desde la sesión: ${TENANT_ACTUAL}`, { tenant: TENANT_ACTUAL, origen: "sesion" });
   else logSys("warn", "app", `Tenant no informado por la sesión: se usó el default «${TENANT_ACTUAL}». En producción debe venir del token.`, { tenant: TENANT_ACTUAL, origen: "default" });
 })();
+// ── FACTORING TARGET · POLÍTICA COMERCIAL DEL TENANT ───────────────────────────────────────────
+// Quiénes son «los que se miran de frente». **No es un atributo del cesionario** —BCI es BCI para
+// todos— sino una decisión de ESTE factoring: otro tenant sobre el mismo padrón tendría otro target.
+// Por eso se configura (`Configuración › Factoring target`) y no se cablea. Estaba escrito a mano en
+// cuatro glosas distintas y ya había quedado desfasado del padrón: la alerta comercial del churn
+// nombraba «BCI · Banco de Chile · Itaú» sobre una clasificación que decía otra cosa, o sea que la
+// pantalla acusaba a tres que no habían participado.
+//
+// Lo que se configura es la **partición**, nunca la **medición**. El A2 mide cesión por cesión quién
+// se llevó qué y el A11 publica ese detalle; acá sólo se decide en qué balde cae cada cesionario.
+// Consecuencia deliberada: mover esta perilla no puede cambiar cuánto cede un cliente ni a quién, y
+// las cuatro porciones siguen sumando 100.
+const FTARGET_KEY = "pc_factoring_target_" + TENANT_ACTUAL;
+// Higiene del storage, la misma de roles y áreas: sólo entran RUT que el PADRÓN declara —un
+// cesionario que no existe no se puede mirar de frente— y nunca el NUESTRO: no somos nuestra propia
+// competencia, y dejarlo entrar movería la porción ★ Security al balde de la competencia sin decir
+// nada. Una lista vacía es válida y significa «este tenant no declara target»: la porción no se
+// dibuja y su volumen queda repartido entre los otros tres baldes, que es lo correcto.
+function cargarFactoringTarget() {
+  const g = leerVersionado(FTARGET_KEY, "factoringTarget", null);
+  if (!Array.isArray(g)) return TARGET_DEFAULT.slice();
+  const out = []; let ignoradas = 0;
+  for (const r of g) {
+    const c = typeof r === "string" ? _CES_POR_RUT.get(r) : null;
+    if (!c || c.nuestro || out.indexOf(c.rut) >= 0) { ignoradas++; continue; }
+    out.push(c.rut);
+  }
+  if (ignoradas) logSys("warn", "app", `Factoring target: ${ignoradas} entrada(s) del storage ignoradas (RUT fuera del padrón, repetido, o el nuestro)`, { tenant: TENANT_ACTUAL });
+  return out;
+}
+let FACTORING_TARGET = cargarFactoringTarget();
+// El mix por cliente se memoiza —el tubo dibuja ~100 filas— así que mover la perilla obliga a tirar
+// el cache: sin esto la pantalla seguiría mostrando la partición anterior y el mantenedor se vería
+// decorativo. Es la misma trampa que `lineasDeCliente` con `otrosDeudoresPct` (regla 9-bis).
+function invalidarMixSow() { _mixDeal.clear(); }
+// Guardar aplica la MISMA higiene que leer —padrón, sin el nuestro y sin repetidos— y no una
+// parecida: lo que entra por el mantenedor y lo que entra por el storage tienen que quedar en el
+// mismo estado, o un RUT repetido sobreviviría hasta el próximo arranque y ahí desaparecería solo.
+function guardarFactoringTarget(lista) {
+  const out = [];
+  for (const r of (lista || [])) {
+    const c = typeof r === "string" ? _CES_POR_RUT.get(r) : null;
+    if (!c || c.nuestro || out.indexOf(c.rut) >= 0) continue;
+    out.push(c.rut);
+  }
+  FACTORING_TARGET = out;
+  escribirVersionado(FTARGET_KEY, "factoringTarget", FACTORING_TARGET);
+  invalidarMixSow();
+  return FACTORING_TARGET;
+}
+const esFactoringTarget = (rutOnombre) => { const c = cesionarioDe(rutOnombre); return !!(c && !c.nuestro && FACTORING_TARGET.indexOf(c.rut) >= 0); };
+// La porción del mix a la que pertenece un cesionario. `target` se evalúa ANTES que `banco` para que
+// un target NO bancario —el tenant puede elegir a Tanner— caiga en su porción y no en dos: así la
+// partición sigue siendo exhaustiva y disjunta sea cual sea la configuración. Un cesionario que el
+// padrón no declara cae en «otros factoring», el balde conservador.
+function porcionCesionario(rutOnombre) {
+  const c = cesionarioDe(rutOnombre);
+  if (c && c.nuestro) return "security";
+  if (esFactoringTarget(rutOnombre)) return "factoringTarget";
+  if (c && c.banco) return "otrosBancarios";
+  return "otrosFactoring";
+}
+const targetCesionarios = () => FACTORING_TARGET.map((r) => _CES_POR_RUT.get(r)).filter(Boolean);
+// El rótulo de la porción se ARMA con los nombres cortos de quienes están adentro: «BCI - Santander».
+// Con más de dos no cabe en el chip, así que se nombran los dos primeros y el resto se cuenta —el
+// detalle completo vive en el tooltip, que lista cada cesionario con su %—. Sin nadie configurado la
+// porción no existe y el rótulo genérico es lo único que no miente.
+function targetEtiqueta() {
+  const n = targetCesionarios().map((c) => c.corto || c.nombre);
+  if (!n.length) return "Factoring target";
+  if (n.length <= 2) return n.join(" - ");
+  return n.slice(0, 2).join(" - ") + " +" + (n.length - 2);
+}
+// La enumeración COMPLETA, para las glosas del churn: antes la traían escrita a mano y por eso se
+// desfasaron. Derivarla es lo que impide que una pantalla nombre a alguien que no está adentro.
+const targetNombres = () => targetCesionarios().map((c) => c.nombre).join(" · ") || "ninguno configurado";
+// Cuánto registra el A2 por cesionario. No decide nada —la elección del target es comercial— pero es
+// lo que la vuelve informada: elegir de frente a alguien que no aparece en el registro es mirar a un
+// competidor que no está compitiendo. Se memoiza: son ~7.500 cesiones y el mantenedor re-renderiza.
+let _volCes = null;
+function volumenCesionarios() {
+  if (_volCes) return _volCes;
+  const m = new Map();
+  for (const a of ((typeof window !== "undefined" && window.AECSYNC) || [])) {
+    if (!a || !a.RUTFactoring) continue;
+    const g = m.get(a.RUTFactoring) || { rut: a.RUTFactoring, nombre: a.RazonSocialFactoring || "", n: 0, monto: 0 };
+    g.n++; g.monto += +a.MontoCesion || 0;
+    m.set(a.RUTFactoring, g);
+  }
+  _volCes = m;
+  return m;
+}
 const CFG_OPER_KEY = "fs_cfg_oper";
 const CFG_OPER_BASE = {
   horaInicio: "08:00",        // ventana horaria de operación (inbound + actualizaciones)
@@ -8115,9 +8240,11 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         };
                         const totalOf = +validas.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1);
                         // OPCIONES DE ARRANQUE: mientras no hay simulación, el ejecutivo elige qué incluir
-                        // en vez de que el sistema decida por él. Son los mismos tramos que ofrece «Ajustar
-                        // facturas», pero calculados sobre TODO el pool —lo que ya está en la oferta más lo
-                        // disponible—, porque la elección DEFINE la oferta completa, no suma a lo que haya.
+                        // en vez de que el sistema decida por él. Son las MISMAS particiones con que se
+                        // navegan los deudores disponibles —con línea · Prime · todo— calculadas sobre TODO
+                        // el pool (lo que ya está en la oferta más lo disponible), porque la elección DEFINE
+                        // la oferta completa y no suma a lo que haya. Que el chip y la pestaña usen la misma
+                        // función es lo que impide que ofrezcan conjuntos distintos con el mismo nombre.
                         const opcionesInicio = (() => {
                           if (deal.simulado) return [];
                           const norm = (f) => f;
@@ -8127,30 +8254,23 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             if (!f || f.id == null || vistos.has(f.id) || !estadoCandidata(f, deal).agregable) return;
                             vistos.add(f.id); pool.push(norm(f));
                           }));
-                          const tramoDe = (f) => {
-                            const td = tipoDeudorDisp(f);
-                            if (td === "Lista Blanca" || td === "Deudor Autorizado") return "prime";
-                            return (notaDeudor(f.deudor || "", f.rutRecep) || 0) > NOTA_PRIORITARIA ? "notaAlta" : "resto";
-                          };
-                          const deTramo = (t) => pool.filter((f) => tramoDe(f) === t);
-                          const prime = deTramo("prime"), notaAlta = deTramo("notaAlta"), resto = deTramo("resto");
-                          // Cuáles de las Prime caben: se evalúan SOLAS contra la línea, porque esta opción
-                          // arma la oferta desde cero y no se suma a nada.
-                          const conLinea = (() => {
-                            if (!prime.length || !deal.rutEmisor) return [];
-                            const ev = asignarLineas(prime, deal.rutEmisor);
-                            const st2 = new Map((ev.facturas || []).map((x) => [x.id, x.estado]));
-                            return prime.filter((f) => st2.get(f.id) === "CON_LINEA");
-                          })();
+                          // PRIME = Lista Blanca o Deudor Autorizado: es la CALIDAD del deudor, no su cupo.
+                          const prime = pool.filter((f) => { const td = tipoDeudorDisp(f); return td === "Lista Blanca" || td === "Deudor Autorizado"; });
+                          // CON LÍNEA: el MISMO criterio de la pestaña «Deudores disponibles › Con línea»
+                          // (regla 13-septies), por la misma función — por FACTURA y no por el total del
+                          // deudor, sin mirar si es Prime ni si tiene otorgamiento o verificación pendientes,
+                          // que son trámites y no cupo. Se evalúa TODO el pool junto, y no deudor por deudor,
+                          // porque esta opción arma la oferta desde cero: cuáles caben depende de con qué
+                          // compiten por el tope del cliente.
+                          const conLinea = deal.rutEmisor ? seleccionConLinea(pool, deal.rutEmisor) : [];
                           const tot = (a) => +a.reduce((s2, f) => s2 + (f.monto || 0), 0).toFixed(1);
                           return [
+                            { k: "conlinea", lab: "Deudores con línea", fs: conLinea, fg: C.indigo, bg: C.lilac, tip: "Las facturas que caben en la línea, sean Prime o no: no manda nada a comité." },
                             // #F0FDF4 es correcto para una etiqueta chica sobre gris, pero sobre la tarjeta
                             // BLANCA del selector desaparece y el chip parece no tener fondo. Mismo verde que
                             // usa la tarjeta de veredicto cuando la oferta se aprueba entera.
-                            { k: "conlinea", lab: "Prime con línea", fs: conLinea, fg: "#16A34A", bg: "#DCFCE7", tip: "Sólo las facturas de deudores Prime que caben en la línea: no manda nada a comité." },
-                            { k: "prime", lab: "Todas las Prime", fs: prime, fg: C.indigo, bg: C.lilac, tip: "Todas las facturas de deudores Prime (Lista Blanca o Autorizados). Las que no quepan en la línea irán a comité." },
-                            { k: "notaAlta", lab: "Nota Deudor > 4,2", fs: notaAlta, fg: "#2563EB", bg: "#EFF6FF", tip: "Deudores no Prime con Nota sobre 4,2. Las que no quepan en la línea irán a comité." },
-                            { k: "todas", lab: "Todo lo disponible", fs: pool, fg: "#6B7280", bg: "#F3F4F6", tip: "Todas las facturas disponibles del cliente, sin filtrar por tramo." },
+                            { k: "prime", lab: "Prime", fs: prime, fg: "#16A34A", bg: "#DCFCE7", tip: "Todas las facturas de deudores Prime (Lista Blanca o Autorizados). Las que no quepan en la línea irán a comité." },
+                            { k: "todas", lab: "Todo lo disponible", fs: pool, fg: "#6B7280", bg: "#F3F4F6", tip: "Todas las facturas disponibles del cliente, sin filtrar." },
                           ].filter((o2) => o2.fs.length > 0).map((o2) => ({ ...o2, monto: tot(o2.fs) }));
                         })();
                         // Elegir una opción DEFINE la oferta y simula en el mismo gesto: es lo que el
@@ -10848,11 +10968,13 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                     JUNTAS: sin simular las dos quedaban en blanco, y simuladas describían el mismo
                     objeto desde dos ángulos. Reunidas se leen de izquierda a derecha: cuánto, de quién,
                     a qué precio y qué falta para cursarlo. */}
-                {/* SOW — el mix de financiamiento del cliente, del activo A11 (Plataforma 360). Cuatro
-                    porciones que suman 100: cuánto toma de nosotros, de los factorings de banco, del
-                    resto de los factorings y cuánto NO es factoring sino crédito bancario. Esa cuarta
-                    porción es la razón de que el dato viva en el A11 y no en AECSync ni en el A5:
-                    ninguno de los dos ve más allá del factoring.
+                {/* SOW — el mix de financiamiento del cliente. Cuatro porciones que suman 100: cuánto
+                    toma de nosotros, del factoring target, del resto de la banca y de los factoring no
+                    bancarios. TODA cesión es factoring —un banco que compra una factura está haciendo
+                    factoring— así que el universo lo mide AECSync (A2), que identifica al cesionario de
+                    cada una; se inyecta en el A11 y de ahí lo lee esta celda. Quién es «target» es
+                    política del TENANT (Configuración › Factoring target), así que la partición se
+                    aplica al leer y el rótulo del chip se arma con quienes estén adentro.
                     Va entre «Oportunidad» y «Simulación» porque así la fila se lee de corrido: cuánto
                     hay que comprarle, con quién se compite por eso, y qué produce simularlo. */}
                 <td className="px-2 py-2.5 align-top">
@@ -14444,10 +14566,10 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
     </div>
   );
 }
-// «FACTORING TARGET» = los cesionarios BANCARIOS que Security mira de frente (BCI · Banco de Chile ·
-// Itaú). Lo declara el padrón por RUT; uno que el padrón no conoce no es banco, a propósito, porque
-// contar de más acá infla el KPI de churn y levanta una alerta comercial sobre nadie.
-const esFactoringBanco = (rutOnombre) => { const c = cesionarioDe(rutOnombre); return !!(c && c.banco && c.target); };
+// «FACTORING TARGET» = los cesionarios que ESTE tenant mira de frente. No se declara acá: lo decide
+// `Configuración › Factoring target` y lo resuelve `esFactoringTarget`, por RUT. Uno que el padrón no
+// conoce no es target, a propósito, porque contar de más infla el KPI de churn y levanta una alerta
+// comercial sobre nadie.
 const wkLbl = (s) => { const p = (s || "").split("-"); return p.length === 3 ? `${p[2]}/${p[1]}` : s; };
 // Tooltip enriquecido (tarjeta flotante) con el desglose de un monto: título + filas nombre/monto alineadas.
 // Posición fija junto al disparador (no se recorta con el overflow de la tabla).
@@ -14591,7 +14713,7 @@ function churnCartera(soloExec) {
     const bajando = String(sw.SOWTendencia || "").toLowerCase().includes("baj") || delta <= -1;
     const cmp = competenciaDe(sw.RUTCliente);
     let tgt = 0, resto = 0;
-    if (cmp) for (const c of cmp.comp) { if (esFactoringBanco(c.name)) tgt += c.monto; else resto += c.monto; }
+    if (cmp) for (const c of cmp.comp) { if (esFactoringTarget(c.name)) tgt += c.monto; else resto += c.monto; }
     const esc = (tgt + resto) > 0 ? otros / (tgt + resto) : 0;  // AECSync mira 6 meses; la serie, 8 semanas
     out.push({
       rut: sw.RUTCliente, cliente: sw.RazonSocialCliente, exec: sw.Ejecutivo,
@@ -14797,7 +14919,7 @@ function dashboardKPIs(usuario, deals) {
     if (td === "Lista Blanca" || td === "Deudor Autorizado") { // deudor prime
       g.b += mm;
       if (a.RUTFactoring === BICE_RUT) g.bBice += mm;                     // prime cedido a nosotros
-      else if (esFactoringBanco(a.RazonSocialFactoring)) g.bBanco += mm;  // prime cedido al factoring target (competencia)
+      else if (esFactoringTarget(a.RazonSocialFactoring)) g.bBanco += mm;  // prime cedido al factoring target (competencia)
     }
   });
   // ── Agregación de operaciones del ejecutivo sobre un rango de semanas ──
@@ -14812,7 +14934,7 @@ function dashboardKPIs(usuario, deals) {
       const idx = aecIdx[s.RUTCliente] || { t: 0, b: 0 };
       const bpct = idx.t > 0 ? idx.b / idx.t : (s.Segmento === "Top" ? 0.85 : s.Segmento === "Medio" ? 0.6 : 0.4);
       const cm = competenciaDe(s.RUTCliente); let ratioBanco = 0;
-      if (cm) { const perd = Math.max(0, cm.total - cm.bice); const banco = (cm.comp || []).filter((c) => esFactoringBanco(c.name)).reduce((a, c) => a + c.monto, 0); ratioBanco = perd > 0 ? Math.min(1, banco / perd) : 0; }
+      if (cm) { const perd = Math.max(0, cm.total - cm.bice); const banco = (cm.comp || []).filter((c) => esFactoringTarget(c.name)).reduce((a, c) => a + c.monto, 0); ratioBanco = perd > 0 ? Math.min(1, banco / perd) : 0; }
       const tasaCesion = 0.5 + (Math.abs(hashStr(s.RUTCliente + "fac")) % 30) / 100; // cedido/emitido 0.50–0.79
       const facturado = total2 > 0 ? total2 / tasaCesion : 0;
       r.emitido += total2; r.cedido += total2; r.ganado += ganado; r.ops += ops;
@@ -14836,7 +14958,7 @@ function dashboardKPIs(usuario, deals) {
     const idx = aecIdx[s.RUTCliente]; if (idx) { primeB += idx.b; primeBice += idx.bBice; primeBanco += idx.bBanco; }
   });
   const sowPrimePct = primeB > 0 ? primeBice / primeB * 100 : kpi.sowPct;
-  // Participación del FACTORING TARGET (competencia: BCI/Chile/Itaú) en los deudores prime → se busca REDUCIR.
+  // Participación del FACTORING TARGET (la competencia que el tenant configura) en los deudores prime → se busca REDUCIR.
   const compTargetPrimePct = primeB > 0 ? primeBanco / primeB * 100 : 0;
   // ── Metas del mes en curso ──
   const nvMeta = nuevasEmpMetaMes(inis, MES_ACT);
@@ -15171,7 +15293,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
   const execScope = execsVisiblesDe(usuario);
   // Índice AECSync por cliente: (a) % de buenos deudores sobre lo cedido; (b) pérdida (cesiones a la
   // competencia) sobre deudores PRIME (Lista Blanca / Autorizado) desglosada por deudor; (c) cesiones a los
-  // factorings TARGET (BCI / Banco de Chile / Itaú) desglosadas por factoring. Deudores prime = buenos deudores.
+  // factorings TARGET (los que el tenant configura) desglosadas por factoring. Deudores prime = buenos deudores.
   const aecIdx = useMemo(() => {
     const m = {};
     (window.AECSYNC || []).forEach((a) => {
@@ -15186,7 +15308,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
           const d = a.RazonSocialReceptor || "Deudor"; g.deudorPrime[d] = (g.deudorPrime[d] || 0) + mm;
           const fn = a.RazonSocialFactoring || "Factoring"; const df = g.deudorFact[d] || (g.deudorFact[d] = {}); df[fn] = (df[fn] || 0) + mm;
         }
-        if (esFactoringBanco(a.RazonSocialFactoring)) { const f = a.RazonSocialFactoring || "Factoring"; g.factTarget[f] = (g.factTarget[f] || 0) + mm; }
+        if (esFactoringTarget(a.RazonSocialFactoring)) { const f = a.RazonSocialFactoring || "Factoring"; g.factTarget[f] = (g.factTarget[f] || 0) + mm; }
       }
     });
     return m;
@@ -15199,7 +15321,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
       if (!execCod || (execScope && !execScope.includes(execCod))) return null;
       const cm = competenciaDe(s.RUTCliente);
       let ratioBanco = 0;
-      if (cm) { const perd = Math.max(0, cm.total - cm.bice); const banco = (cm.comp || []).filter((c) => esFactoringBanco(c.name)).reduce((a, c) => a + c.monto, 0); ratioBanco = perd > 0 ? Math.min(1, banco / perd) : 0; }
+      if (cm) { const perd = Math.max(0, cm.total - cm.bice); const banco = (cm.comp || []).filter((c) => esFactoringTarget(c.name)).reduce((a, c) => a + c.monto, 0); ratioBanco = perd > 0 ? Math.min(1, banco / perd) : 0; }
       const hsFull = s.HistoricoSemanal || [];
       const inR = hsFull.filter((w) => w.Semana >= desde && w.Semana <= hasta);
       let total = 0, ganado = 0, ops = 0; inR.forEach((w) => { total += w.MontoTotal || 0; ganado += w.MontoBICE || 0; ops += w.NumCesiones || 0; });
@@ -15308,7 +15430,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
         <KpiStat Icon={Check} col="#0891b2" v={<>{fmtMMc(kpi.facturado)} <span className="t10 font-normal" style={{ color: C.faint }}>emitido</span></>} l="Facturas de buenos deudores" s={`por ${fmtMMc(kpi.facturadoBuenas)} · ${kpi.facturadoBuenasPct}%`} />
         <KpiStat Icon={BarChart2} col="#7C3AED" v={fmtMMc(kpi.emitido)} l="Total Cedido" s={`${fmtMMc(kpi.buenas)} de buenos deudores`} />
         <KpiStat Icon={Check} col="#16A34A" v={fmtMMc(kpi.ganado)} l="Ganado (Security)" s={`SOW ${Math.round(kpi.sowPct)}%`} />
-        <KpiStat Icon={ArrowDownRight} col="#EF4444" v={fmtMMc(kpi.perdido)} l="Perdido" s={`${fmtMMc(kpi.perdBanco)} a factoring target (BCI/Chile/Itaú) · ${fmtMMc(kpi.perdOtros)} otros`} />
+        <KpiStat Icon={ArrowDownRight} col="#EF4444" v={fmtMMc(kpi.perdido)} l="Perdido" s={`${fmtMMc(kpi.perdBanco)} a factoring target (${targetNombres()}) · ${fmtMMc(kpi.perdOtros)} otros`} />
         <KpiStat Icon={BarChart2} col="#2563EB" v={`${Math.round(kpi.sowPct)}%`} l="SOW Target Deudores Prime" s={`${fmtMMc(kpi.ganado)} de ${fmtMMc(kpi.emitido)} cedido`} />
       </div>
       {/* Tabla drill-down (Resumen) */}
@@ -15329,7 +15451,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="inline-flex items-center gap-1.5 font-medium" style={{ color: f.drill ? C.indigo : C.ink }}>{f.drill && <ChevronRight size={12} />}{f.label}</span>
                       {path.length === 2 && f.empresa && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: f.empresa.activo ? "#F0FDF4" : "#F3F4F6", color: f.empresa.activo ? "#16A34A" : C.faint }}>{f.empresa.activo ? "Activo" : "Inactivo"}</span>}
-                      {path.length === 2 && f.perdBanco > 0 && <span onClick={(e) => e.stopPropagation()}><TipDesglose titulo="Alerta comercial" color="#EF4444" nota={`Esta empresa cede facturas al factoring target (BCI · Banco de Chile · Itaú). Negocio recuperable ${fmtMMc(f.perdBanco)}. Detalle por factoring:`} items={desgloseItems(f.cs, "factTarget", f.perdBanco)}><span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#EF4444", border: "1px solid #fecaca" }}><AlertTriangle size={9} /> Alerta comercial</span></TipDesglose></span>}
+                      {path.length === 2 && f.perdBanco > 0 && <span onClick={(e) => e.stopPropagation()}><TipDesglose titulo="Alerta comercial" color="#EF4444" nota={`Esta empresa cede facturas al factoring target (${targetNombres()}). Negocio recuperable ${fmtMMc(f.perdBanco)}. Detalle por factoring:`} items={desgloseItems(f.cs, "factTarget", f.perdBanco)}><span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: "#EF4444", border: "1px solid #fecaca" }}><AlertTriangle size={9} /> Alerta comercial</span></TipDesglose></span>}
                     </div>
                     {f.drill && <div className="t9" style={{ color: C.faint }}>{f.emitieron}/{f.n} clientes activos</div>}
                   </td>
@@ -15393,7 +15515,7 @@ function ReportePerformance({ usuario, inline, onClose }) {
               </tbody>
             </table>
           </div>
-          <div className="mt-1.5 t9" style={{ color: C.faint }}>Ganado = Security · Perd. bancos = factoring target (BCI + Banchile/Banco de Chile + Itaú) · Perd. otros = resto de factorings. SOW = Ganado / Cedido.</div>
+          <div className="mt-1.5 t9" style={{ color: C.faint }}>Ganado = Security · Perd. target = factoring target ({targetNombres()}) · Perd. otros = resto de factorings. SOW = Ganado / Cedido.</div>
       </div>
     </div>
   );
@@ -16335,7 +16457,8 @@ const CFG_SECCIONES = [
   { k: "auditoria", label: "Auditoría", Icon: Eye },
   { k: "usuarios", label: "Usuarios", Icon: User },
   { k: "roles", label: "Roles", Icon: Star },
-  { k: "areas", label: "Áreas", Icon: Target },
+  { k: "areas", label: "Áreas", Icon: Grid3x3 },
+  { k: "factoringtarget", label: "Factoring target", Icon: Target },
   { k: "reemplazos", label: "Vacaciones y reemplazos", Icon: Calendar },
   { k: "simulacion", label: "Simulación", Icon: Calculator },
   { k: "correo", label: "Correo saliente", Icon: Send },
@@ -17031,6 +17154,105 @@ function AvisoAtribucionPorRol() {
 }// Configuración › ÁREAS. Las áreas que aprueban excepciones de otorgamiento, por tenant. Existe
 // porque el ruteo es (área, nivel): si un criterio tiene que ir a un área que este factoring no tiene,
 // se crea acá y después se le asigna a alguien con el nivel que corresponda, en Usuarios.
+// Configuración › FACTORING TARGET. Qué cesionarios mira de frente este factoring.
+// Es el único mantenedor cuya perilla cambia una PARTICIÓN y no un umbral: no mueve ninguna cifra
+// medida —cuánto cede cada cliente y a quién lo dice el A2— sino en qué balde se agrupa cada
+// cesionario, y con eso el rótulo del chip, el KPI de churn y la alerta comercial. Por eso la tabla
+// muestra el VOLUMEN REGISTRADO de cada uno: elegir de frente a quien no aparece en el registro es
+// mirar a un competidor que no está compitiendo.
+function CfgFactoringTarget() {
+  const [, force] = useState(0);
+  const vol = volumenCesionarios();
+  const auditar = (accion, glosa) => {
+    const actor = (SESION && SESION.usuario) || "—";
+    registrarAuditoria({ usuario: USERS[actor] || actor, modulo: "Factoring target", accion, glosa, severidad: "alta" });
+  };
+  const aplicar = (lista, accion, glosa) => {
+    const antes = targetNombres();
+    guardarFactoringTarget(lista);
+    auditar(accion, `${glosa} · antes: ${antes} → ahora: ${targetNombres()}`);
+    force((v) => v + 1);
+  };
+  const alternar = (c) => {
+    const dentro = FACTORING_TARGET.indexOf(c.rut) >= 0;
+    aplicar(dentro ? FACTORING_TARGET.filter((r) => r !== c.rut) : FACTORING_TARGET.concat([c.rut]),
+      dentro ? "Cesionario retirado del target" : "Cesionario agregado al target", `${c.nombre} (${c.rut})`);
+  };
+  const candidatos = CESIONARIOS_CAT.filter((c) => !c.nuestro)
+    .map((c) => ({ ...c, v: vol.get(c.rut) || { n: 0, monto: 0 } }))
+    .sort((a, b) => b.v.monto - a.v.monto || a.nombre.localeCompare(b.nombre));
+  // Un cesionario que el A2 trae y el padrón no declara cae en «otros factoring» y no se puede
+  // elegir. En silencio se ve igual que un dato correcto, así que se dice: es un padrón desactualizado.
+  const fuera = [...vol.values()].filter((g) => !_CES_POR_RUT.has(g.rut));
+  const esDefault = FACTORING_TARGET.length === TARGET_DEFAULT.length && TARGET_DEFAULT.every((r) => FACTORING_TARGET.indexOf(r) >= 0);
+  return (
+    <div className="grid gap-4">
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-lg font-semibold" style={{ color: C.ink }}>Factoring target</div>
+            <div className="mt-0.5 t12" style={{ color: C.faint }}>
+              Los cesionarios que <b>{CFG_ACTIVA.marcaNombre || TENANT_ACTUAL}</b> mira de frente, guardados <b>por tenant</b> (<code style={{ fontFamily: "ui-monospace,monospace" }}>{FTARGET_KEY}</code>).
+              Es política <b>comercial</b>, no una propiedad del cesionario: define cómo se AGRUPAN las cesiones que AECSync ya midió, nunca cuántas son.
+            </div>
+          </div>
+          {!esDefault && (
+            <button onClick={() => aplicar(TARGET_DEFAULT.slice(), "Target restablecido", "Volver al default")}
+              className="shrink-0 rounded-full px-3 py-1.5 t10 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Volver al default</button>
+          )}
+        </div>
+
+        <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: C.lilac, border: `1px solid ${C.line}` }}>
+          <div className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Así se ve en la columna SOW del tubo</div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {["Otros factoring", "★ Security", targetEtiqueta(), "Otros bancarios"].map((l, i) => (
+              <span key={i} className="rounded-full px-2 py-0.5 t10 font-semibold"
+                style={{ backgroundColor: i === 2 ? "#FEF3C7" : "#fff", color: i === 2 ? "#92400E" : C.sub, border: `1px solid ${i === 2 ? "#FDE68A" : C.line}` }}>{l}</span>
+            ))}
+          </div>
+          <div className="mt-1.5 t10" style={{ color: C.sub }}>
+            El rótulo se arma con los nombres cortos de quienes elijas —con más de dos, los dos primeros y el resto contado—, así que el chip no puede nombrar a alguien que no esté adentro. El detalle por cesionario va en su tooltip.
+          </div>
+        </div>
+
+        <table className="mt-3 w-full border-collapse t11">
+          <thead><tr>{["Cesionario", "RUT", "Tipo", "Cesiones registradas (A2)", "Monto cedido", "Factoring target"].map((h, i) => (
+            <th key={i} className={"px-2 py-1 t10 font-semibold uppercase tracking-wide " + (i >= 3 ? "text-right" : "text-left")} style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>
+          ))}</tr></thead>
+          <tbody>{candidatos.map((c) => { const on = FACTORING_TARGET.indexOf(c.rut) >= 0; return (
+            <tr key={c.rut} style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: on ? "#FFFBEB" : "transparent" }}>
+              <td className="px-2 py-1.5 font-medium" style={{ color: C.ink }}>{c.nombre} <span className="t9" style={{ color: C.faint }}>· {c.corto}</span></td>
+              <td className="px-2 py-1.5 t10" style={{ color: C.faint, fontFamily: "ui-monospace,monospace" }}>{c.rut}</td>
+              <td className="px-2 py-1.5 t10" style={{ color: C.sub }}>{c.banco ? "Banco" : "No bancario"}</td>
+              <td className="px-2 py-1.5 text-right" style={{ color: c.v.n ? C.ink : C.faint }}>{c.v.n ? c.v.n.toLocaleString("es-CL") : "sin cesiones"}</td>
+              <td className="px-2 py-1.5 text-right" style={{ color: c.v.n ? C.ink : C.faint }}>{c.v.n ? fmtMM(c.v.monto) : "—"}</td>
+              <td className="px-2 py-1.5 text-right">
+                <button onClick={() => alternar(c)} className="rounded-full px-2.5 py-1 t10 font-semibold"
+                  style={{ backgroundColor: on ? "#FEF3C7" : "#fff", color: on ? "#92400E" : C.sub, border: `1px solid ${on ? "#FDE68A" : C.line}` }}>
+                  {on ? "✓ Target" : "Agregar"}
+                </button>
+              </td>
+            </tr>
+          ); })}</tbody>
+        </table>
+
+        {!FACTORING_TARGET.length && (
+          <div className="mt-3 rounded-xl p-3 t11" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412" }}>
+            Sin ningún cesionario en el target, la porción no se dibuja y su volumen queda repartido entre las otras tres. El KPI «SOW factoring target» del dashboard y la alerta comercial del churn quedan en cero: no es un error, es que este tenant no declara competencia a la que mirar de frente.
+          </div>
+        )}
+        {!!fuera.length && (
+          <div className="mt-3 rounded-xl p-3 t11" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412" }}>
+            <b>{fuera.length} cesionario(s) del registro no están en el padrón</b> y caen en «otros factoring», así que no se pueden elegir: {fuera.slice(0, 6).map((g) => `${g.nombre || "—"} (${g.rut})`).join(" · ")}{fuera.length > 6 ? " …" : ""}. Un padrón desactualizado se ve igual que un dato correcto, por eso se avisa acá.
+          </div>
+        )}
+        <div className="mt-3 t10" style={{ color: C.faint }}>
+          Qué cambia al mover esto: el rótulo y el valor de la porción en la <b>columna SOW</b> del tubo, el KPI <b>SOW factoring target</b> del dashboard, la columna <b>Al factoring target</b> y la alerta comercial del <b>churn</b>. Qué NO cambia: el registro de cesiones (A2), la participación medida (A5) ni el descuento por SOW del pricing, que dependen de cuánto cede el cliente y no de cómo lo agrupamos.
+        </div>
+      </div>
+    </div>
+  );
+}
 function CfgAreas() {
   const [, force] = useState(0);
   const [nueva, setNueva] = useState({ id: "", label: "" });
@@ -17668,7 +17890,7 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper, deals, onMigrarExec }
         ))}
       </aside>
       <div>
-        {sec === "simulacion" ? <CfgSimulacion usuario={usuario} /> : sec === "correo" ? <CfgCorreo /> : sec === "oportunidades" ? <CfgOportunidades deals={deals} onMigrarExec={onMigrarExec} /> : sec === "reemplazos" ? <CfgReemplazos usuario={usuario} /> : sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "roles" ? <CfgRoles /> : sec === "usuarios" ? <CfgUsuarios /> : sec === "areas" ? <CfgAreas /> : sec === "otorgamiento" ? (
+        {sec === "simulacion" ? <CfgSimulacion usuario={usuario} /> : sec === "correo" ? <CfgCorreo /> : sec === "oportunidades" ? <CfgOportunidades deals={deals} onMigrarExec={onMigrarExec} /> : sec === "reemplazos" ? <CfgReemplazos usuario={usuario} /> : sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "roles" ? <CfgRoles /> : sec === "usuarios" ? <CfgUsuarios /> : sec === "areas" ? <CfgAreas /> : sec === "factoringtarget" ? <CfgFactoringTarget /> : sec === "otorgamiento" ? (
           <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
             <div className="text-lg font-semibold" style={{ color: C.ink }}>Otorgamiento · apoderados y atribuciones</div>
             <div className="mt-0.5 t12" style={{ color: C.faint }}>Criterios de verificación, atribuciones de aprobación por criterio y los apoderados que pueden excepcionar (nivel por área). Aquí también se habilita/oculta la aceptación masiva por usuario.</div>
@@ -19929,15 +20151,22 @@ function capacidadDeudores(deudores, rutCliente, inyecta) {
   for (const k of Object.keys(out)) out[k].monto = mmRound(out[k].monto);
   return out;
 }
-function facturasConLinea(facturas, rutCliente, incorporables, inyecta) {
+function seleccionConLinea(facturas, rutCliente, incorporables, inyecta) {
   const res = asignarLineas(facturas || [], rutCliente, inyecta);
-  let n = 0, monto = 0;
+  const ok = new Set();
   for (const rf of (res.facturas || [])) {
     if (rf.estado !== "CON_LINEA") continue;
     if (incorporables && !incorporables.has(rf.id)) continue;
-    n++; monto += rf.monto || 0;
+    ok.add(rf.id);
   }
-  return { n, monto: mmRound(monto) };
+  return (facturas || []).filter((f) => f && ok.has(f.id));
+}
+// El CONTEO se deriva de la lista, no se cuenta aparte: la pestaña «Con línea» y el chip de selección
+// rápida que arma la oferta tienen que ofrecer exactamente lo mismo, y dos recorridos del mismo
+// resultado son dos oportunidades de que dejen de coincidir.
+function facturasConLinea(facturas, rutCliente, incorporables, inyecta) {
+  const sel = seleccionConLinea(facturas, rutCliente, incorporables, inyecta);
+  return { n: sel.length, monto: mmRound(sel.reduce((a, f) => a + (f.monto || 0), 0)) };
 }
 function asignarLineas(facturas, rutCliente, inyecta) {
   const sel = (facturas || []).filter((f) => f && (f.monto || 0) > 0);

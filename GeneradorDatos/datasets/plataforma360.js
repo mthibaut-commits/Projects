@@ -46,15 +46,17 @@ const NOMBRES_SOCIO = ["MARCELA LILIANA MARÍN GONZÁLEZ", "JORGE ANDRÉS SOTO P
 // universo que AECSync registra —bancarias y no bancarias— es el financiamiento por cesión del
 // cliente, y las cuatro porciones lo parten por QUIÉN se lo lleva.
 //
-// De dónde sale cada mitad de la respuesta, que no es la misma:
-//  · **Cuánto es NUESTRO lo dice el A5**, que es el activo que mide la participación y la que el
-//    resto del sistema ya usa —el descuento por SOW del pricing, el dimensionamiento de líneas, el
-//    churn—. Anclar acá evita que la misma cifra aparezca con dos valores en dos pantallas.
-//  · **Cómo se reparte EL RESTO lo mide el A2**, que es el único que lo sabe: identifica al
-//    cesionario de cada cesión, y con el padrón de cesionarios eso se vuelve target / otro banco /
-//    factoring no bancario. Ningún otro activo puede contestarlo.
-// Un cedente que el A5 no cubre usa la participación que el propio A2 mide. Queda anotado como
-// hueco: A2 y A5 miden hoy la MISMA cifra con 13,8 pto de desvío mediano (ver Levantamiento §5.6).
+// De dónde sale cada mitad de la respuesta, que ya no es de dos activos distintos: desde el
+// 15-09-2026 **A5 se deriva de A2**, así que la participación propia y el reparto del resto se miden
+// sobre el MISMO registro y no pueden contradecirse. Se ancla igual al `SOWActualPct` del A5 porque
+// es la cifra que el resto del sistema ya consume —el descuento por SOW del pricing, el
+// dimensionamiento de líneas, el churn— y recalcularla acá la dejaría con dos valores en dos
+// pantallas por un redondeo.
+//
+// Los CUATRO AGREGADOS se publican con el padrón por DEFECTO, pero quién es «factoring target» es
+// política comercial del TENANT y se edita en la aplicación: lo que manda es `SOW_DETALLE_JSON` —el
+// reparto cesionario por cesionario, que es la medición— y el consumidor reagrupa con su propia
+// configuración. Por eso el detalle no es un adorno del tooltip: es el dato.
 //
 // Un cedente **sin cesiones** no tiene mix, y eso se devuelve vacío y no en cero: nunca cedió, así
 // que no hay con qué medir con quién se financia. Cuatro ceros afirmarían «no se financia con nadie»,

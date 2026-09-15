@@ -2341,11 +2341,13 @@
     const delArchivo = [...new Set(aec.map((a) => a.RUTFactoring).filter(Boolean))];
     const declarados = delArchivo.filter((r) => cesionarioDe(r));
     const bancos = delArchivo.filter((r) => { const c = cesionarioDe(r); return c && c.banco && !c.nuestro; });
-    const target = delArchivo.filter((r) => esFactoringBanco(r));
+    const target = delArchivo.filter((r) => esFactoringTarget(r));
     const euro = (aec.find((a) => a.RazonSocialFactoring === "Eurocapital") || {}).RUTFactoring;
     const padronOk = delArchivo.length >= 8 && declarados.length === delArchivo.length
-      && esFactoringBanco("Eurocapital") === false && (!euro || esFactoringBanco(euro) === false)
-      && target.length >= 2 && target.every((r) => cesionarioDe(r).banco)
+      && esFactoringTarget("Eurocapital") === false && (!euro || esFactoringTarget(euro) === false)
+      // El target NO tiene por qué ser bancario —es política comercial del tenant— pero nunca puede
+      // ser el NUESTRO: eso movería nuestra propia cartera al balde de la competencia.
+      && target.length >= 1 && !target.some((r) => cesionarioDe(r).nuestro)
       // …y hay cesiones BANCARIAS fuera del target. Sin eso «Otros bancarios» sería una porción que
       // nunca se llena, y una porción estructuralmente vacía no prueba nada.
       && bancos.length > target.length;
@@ -2456,7 +2458,7 @@
 
     ok("99 el mix de financiamiento se mide sobre AECSync, se ancla al A5 y se inyecta en el A11",
        sumanOk && padronOk && ancladoOk && repartoOk && detalleOk && nullOk && ordenOk && visibleOk && memoOk,
-       `${conMix} empresas con mix / ${sinMix} sin mix · no suman 100: ${noSuman} · padrón: ${declarados.length}/${delArchivo.length} cesionarios declarados, ${bancos.length} bancarios (${target.length} target), Eurocapital NO es banco ${!esFactoringBanco("Eurocapital")} · anclados al A5 ${anclados - desanclados}/${anclados} · reparto medido en A2 ${repartidos - repartoMal}/${repartidos}, ${conBancaria} con porción bancaria · detalle por cesionario ${conDetalle - detNoCuadra}/${conDetalle} cuadra con su chip · deudor sin mix ${nullOk} · orden y marca ${ordenOk} · 0% salvo la nuestra ${visibleOk} · memo ${memoOk}`);
+       `${conMix} empresas con mix / ${sinMix} sin mix · no suman 100: ${noSuman} · padrón: ${declarados.length}/${delArchivo.length} cesionarios declarados, ${bancos.length} bancarios (${target.length} target), Eurocapital NO es banco ${!esFactoringTarget("Eurocapital")} · anclados al A5 ${anclados - desanclados}/${anclados} · reparto medido en A2 ${repartidos - repartoMal}/${repartidos}, ${conBancaria} con porción bancaria · detalle por cesionario ${conDetalle - detNoCuadra}/${conDetalle} cuadra con su chip · deudor sin mix ${nullOk} · orden y marca ${ordenOk} · 0% salvo la nuestra ${visibleOk} · memo ${memoOk}`);
   }
 
   // ── 100 · «CON LÍNEA» EN EL TUBO ES UNA COTA, NO UNA ASIGNACIÓN ──────────────────────────────
@@ -2717,6 +2719,94 @@
     ok("102 ninguna línea aprobada bajo el mínimo, salvo la PUNTUAL, y el tope del cliente manda",
        pisoOk && exentaOk && topeOk && repartoOk && deudorOk && cacheOk,
        `${clientes} clientes · ${nLineas} líneas · bajo el mínimo: ${bajo} (antes 372 de 3.521) · acotadas por su propio aprobado: ${acotadas} · LF3 exentas bajo el mínimo: ${lf3Bajo} de ${nLF3} (ejercitada ${exentaOk}) · exceden su aprobada: ${excede} · sin comodín: ${sinComodin} · uso que no cabe: ${usoNoCabe} · línea de deudor ≥ mínimo ${deudorOk} · reparto con piso ${repartoOk} · cache por firma ${cacheOk} (${antes}→${despues}→${vuelta} líneas al mover el umbral)`);
+  }
+
+  // ── 103 · «FACTORING TARGET» ES POLÍTICA DEL TENANT, NO UN ATRIBUTO DEL CESIONARIO ──────────
+  // BCI es BCI para todos; a quién se mira de frente lo decide cada factoring. Así que la partición
+  // en cuatro porciones no puede venir resuelta del archivo: el A2 MIDE cesionario por cesionario, el
+  // A11 publica ese detalle, y quién cae en el balde «target» se resuelve al leer, con lo que el
+  // tenant configuró. Se prueba INYECTANDO una configuración que contradice al default —igual que el
+  // caso 90 con el mantenedor de otorgamiento—, que es la única forma de distinguir «lee la
+  // configuración» de «coincide con el default».
+  {
+    const guardar = FACTORING_TARGET.slice();
+    const ixp = {}; ((window.PLATAFORMA360 && window.PLATAFORMA360.campos) || []).forEach((c, i) => { ixp[c] = i; });
+    const filas = ((window.PLATAFORMA360 && window.PLATAFORMA360.filas) || [])
+      .filter((f) => f[ixp.SOW_SECURITY_PCT] !== "" && f[ixp.SOW_SECURITY_PCT] != null);
+    const RUT_BCI = "96.510.870-6", RUT_SAN = "97.036.000-K", RUT_ITAU = "76.645.030-K", RUT_TANNER = "96.684.990-8";
+    const pct = (m, q) => { const x = (m || []).find((y) => y.porcion === q); return x ? x.pct : null; };
+    const lbl = (m) => { const x = (m || []).find((y) => y.porcion === "factoringTarget"); return x ? x.label : null; };
+    const suma100 = (m) => Math.abs((m || []).reduce((a, b) => a + b.pct, 0) - 100) <= 0.11;
+
+    // (a) EL DEFAULT es BCI + Santander, y el RÓTULO se arma con ellos. Un rótulo escrito a mano
+    //     nombra a quien quiera: la glosa del churn decía «BCI · Banco de Chile · Itaú» mientras la
+    //     clasificación decía otra cosa, o sea acusaba a tres que no habían participado.
+    guardarFactoringTarget(TARGET_DEFAULT.slice());
+    const etiquetaOk = targetEtiqueta() === "BCI - Santander"
+      && esFactoringTarget(RUT_BCI) && esFactoringTarget(RUT_SAN) && !esFactoringTarget(RUT_ITAU)
+      && porcionCesionario(RUT_ITAU) === "otrosBancarios" && porcionCesionario(RUT_TANNER) === "otrosFactoring"
+      && porcionCesionario(BICE_RUT) === "security";
+
+    // Un cliente con cesiones a BCI o Santander Y a Itaú: es el único que puede mostrar que la
+    // porción se MUEVE de un balde al otro. Sin ese cliente el caso pasaría sin probar nada.
+    const cand = filas.find((f) => {
+      let d = []; try { d = JSON.parse(f[ixp.SOW_DETALLE_JSON] || "[]"); } catch (e) {}
+      return d.some((x) => x.rut === RUT_BCI || x.rut === RUT_SAN) && d.some((x) => x.rut === RUT_ITAU);
+    });
+    const rut = cand ? cand[ixp.RUT] : null;
+    const antes = rut ? mixSowDe(rut) : null;
+
+    // (b) MOVER LA PERILLA MUEVE LA PORCIÓN. Con Itaú como único target, lo suyo pasa a «target» y
+    //     BCI/Santander caen en «otros bancarios». Y el rótulo lo dice: «Itaú».
+    guardarFactoringTarget([RUT_ITAU]);
+    const conItau = rut ? mixSowDe(rut) : null;
+    const moverOk = !!antes && !!conItau && lbl(antes) === "BCI - Santander" && lbl(conItau) === "Itaú"
+      && pct(conItau, "factoringTarget") !== pct(antes, "factoringTarget")
+      && pct(conItau, "otrosBancarios") !== pct(antes, "otrosBancarios")
+      && suma100(antes) && suma100(conItau)
+      // …y la MEDICIÓN no se movió: lo nuestro y el total ajeno son los mismos. Configurar la
+      // partición no puede cambiar cuánto cede el cliente ni a quién — sólo cómo se agrupa.
+      && pct(conItau, "security") === pct(antes, "security")
+      && Math.abs((100 - pct(conItau, "security")) - (100 - pct(antes, "security"))) < 1e-9;
+
+    // (c) EL CACHE SE INVALIDA SOLO. `mixSowDeal` memoiza por cliente —el tubo dibuja ~100 filas— así
+    //     que sin tirarlo la pantalla seguiría mostrando la partición anterior y el mantenedor se
+    //     vería decorativo: la misma trampa de `lineasDeCliente` con `otrosDeudoresPct`.
+    const cacheA = rut ? mixSowDeal({ rutEmisor: rut }) : null;
+    guardarFactoringTarget([RUT_TANNER]);
+    const cacheB = rut ? mixSowDeal({ rutEmisor: rut }) : null;
+    // (d) UN TARGET NO BANCARIO sigue partiendo bien: `target` se evalúa ANTES que `banco`, así que
+    //     ninguna porción queda con dos dueños y la partición sigue siendo exhaustiva y disjunta.
+    const cacheOk = !!cacheA && !!cacheB && lbl(cacheA) === "Itaú" && lbl(cacheB) === "Tanner"
+      && porcionCesionario(RUT_TANNER) === "factoringTarget" && porcionCesionario(RUT_ITAU) === "otrosBancarios"
+      && suma100(cacheB);
+
+    // (e) HIGIENE: sólo entran RUT que el padrón declara, nunca el NUESTRO —eso movería nuestra
+    //     propia cartera al balde de la competencia— y sin repetidos. Y un desconocido falla CERRADO.
+    const higiene = guardarFactoringTarget([RUT_BCI, BICE_RUT, "99.999.999-9", RUT_BCI, "bci factoring"]);
+    const higieneOk = higiene.length === 1 && higiene[0] === RUT_BCI
+      && !esFactoringTarget(BICE_RUT) && !esFactoringTarget("99.999.999-9") && !esFactoringTarget("Factoring Inexistente")
+      && targetEtiqueta() === "BCI";
+
+    // (f) SIN NADIE en el target la porción queda en 0 y NO se dibuja (la nuestra sí, siempre), y las
+    //     otras tres siguen sumando 100: el volumen no se pierde, se reparte entre los demás baldes.
+    guardarFactoringTarget([]);
+    const vacio = rut ? mixSowDe(rut) : null;
+    const vacioOk = !!vacio && pct(vacio, "factoringTarget") === 0 && suma100(vacio)
+      && !mixSowVisible(vacio).some((x) => x.porcion === "factoringTarget")
+      && mixSowVisible(vacio).some((x) => x.nuestro) && targetEtiqueta() === "Factoring target";
+
+    // (g) CON MÁS DE DOS el rótulo no puede crecer sin fin: nombra a los dos primeros y cuenta el
+    //     resto. El detalle completo vive en el tooltip, que lista a cada cesionario con su %.
+    guardarFactoringTarget([RUT_BCI, RUT_SAN, RUT_ITAU, RUT_TANNER]);
+    const largoOk = targetEtiqueta() === "BCI - Santander +2" && targetNombres().split(" · ").length === 4;
+
+    guardarFactoringTarget(guardar);                        // se restituye la configuración del tenant
+    const restituidoOk = targetEtiqueta() === "BCI - Santander" && (!rut || lbl(mixSowDeal({ rutEmisor: rut })) === "BCI - Santander");
+
+    ok("103 el factoring target es configuración del tenant: mueve la partición, no la medición",
+       etiquetaOk && moverOk && cacheOk && higieneOk && vacioOk && largoOk && restituidoOk && !!rut,
+       `default «${targetEtiqueta()}» · cliente de prueba ${rut || "NO ENCONTRADO"} · target ${antes ? pct(antes, "factoringTarget") : "—"}% → ${conItau ? pct(conItau, "factoringTarget") : "—"}% al cambiar la perilla, bancarios ${antes ? pct(antes, "otrosBancarios") : "—"}% → ${conItau ? pct(conItau, "otrosBancarios") : "—"}%, lo nuestro intacto ${antes ? pct(antes, "security") : "—"}% · cache invalidado ${cacheOk} · higiene ${higieneOk} · sin target ${vacioOk} · rótulo largo ${largoOk} · restituido ${restituidoOk}`);
   }
 
   console.log(out.join("\n"));
