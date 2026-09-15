@@ -2194,6 +2194,70 @@
        `O06 operaciones N5/N3 · parcial → ${rParcial.disp} N${rParcial.nivel} · limpia → ${rLimpia.disp} · excedida → ${rExcedida.disp} N${rExcedida.nivel} · aprobadores N3 y N5 ${aprobOk} · la política sólo trae C37/C39 (concentración, comercial)`);
   }
 
+  // ── 97 · «DEUDORES DISPONIBLES» SE PARTE POR LÍNEA, NO POR CALIDAD NI POR TRÁMITES ───────────
+  // «Agrega 2 tabs sobre esta lista de deudores; en uno muestra los deudores que tienen facturas con
+  // línea, sin importar si son Prime o no, sin importar si no tienen otorgamiento y/o verificación
+  // pendiente. En el otro deja el resto.» La pregunta que el ejecutivo trae a esa pantalla es «a quién
+  // le puedo comprar hoy», y eso lo decide la LÍNEA: los otros dos chips de la fila describen la
+  // calidad del deudor y trámites que se resuelven, no si el documento cabe en el cupo.
+  {
+    const rutP = LB[0];
+    const tres = [fac("g1", rutP, 100), fac("g2", rutP, 30), fac("g3", rutP, 7)];
+    const inyP = (ap) => ({ estado: estB([L("LF2-97", "LF2", rutP, ap)], 5000), deudores: { [rutP]: dl(rutP, 900) } });
+
+    // (a) EL CRITERIO ES POR FACTURA, NO POR EL TOTAL DEL DEUDOR. Con 40 de línea y facturas por 137
+    //     el total no cabe, pero dos documentos sí — que es exactamente el caso que la pantalla tiene
+    //     que mostrar como cursable (M$137,5 disponibles con M$35,4 de línea, y facturas que entran).
+    const cl = facturasConLinea(tres, "X", null, inyP(40));
+    const porFacturaOk = cl.n === 2 && mm(cl.monto) === 37;
+
+    // (b) Los dos extremos: sin línea no cabe ninguna, con línea de sobra caben todas.
+    const sin = facturasConLinea(tres, "X", null, inyP(0));
+    const toda = facturasConLinea(tres, "X", null, inyP(500));
+    const bordesOk = sin.n === 0 && sin.monto === 0 && toda.n === 3 && mm(toda.monto) === 137;
+
+    // (c) LO QUE NO MIRA · la CALIDAD del deudor. Un deudor «Otro» —que no es Prime y se financia por
+    //     la línea de otros deudores— con cupo suficiente entra igual. Si el criterio filtrara por
+    //     Prime, este deudor no aparecería nunca en la pestaña aunque se le pueda comprar hoy.
+    const noP = noPrime;
+    // El comodín LF4 se elige por CATEGORÍA (`tipoLineaDeDeudor`), así que un deudor fuera de lista se
+    // financia con el de «Deudores Autorizados» y no con el de Lista Blanca que usa el helper del archivo.
+    const lf4Otros = { id: "LF4-97", tipo: "LF4", granularidad: "comodin", categoria: "Deudores Autorizados", rutDeudor: null, aprobado: 40 * MMF, vigente: 0 };
+    const clOtro = facturasConLinea([facOtro("h1", noP, 18)], "X", null,
+      { estado: estB([lf4Otros], 5000), deudores: { [noP]: dl(noP, 900) } });
+    const ignoraPrimeOk = clOtro.n === 1 && tipoDeudor(noP, "NoPrime-" + noP) === "Otro";
+
+    // (d) LO QUE NO MIRA · las COMPUERTAS. No son parámetros de la función: `facturasConLinea` recibe
+    //     facturas, cliente, incorporables y el estado de líneas, y nada más. Un criterio que mirara
+    //     el otorgamiento o la verificación tendría que recibirlos, y no puede porque no están.
+    const ignoraCompuertasOk = facturasConLinea.length === 4;
+
+    // (e) Sólo cuentan las INCORPORABLES: una factura que cabe en la línea pero está bloqueada
+    //     —cedida, con nota de crédito, en otra operación— no habilita a nadie.
+    const soloUna = facturasConLinea(tres, "X", new Set(["g3"]), inyP(500));
+    const incorpOk = soloUna.n === 1 && mm(soloUna.monto) === 7;
+
+    // (f) LA PARTICIÓN ES EXHAUSTIVA Y DISJUNTA sobre el libro real de un cliente: cada deudor cae en
+    //     exactamente una pestaña. Si pudiera faltar en las dos, desaparecería de la pantalla sin que
+    //     nada lo dijera — y las dos juntas tienen que sumar lo que anuncia la cabecera.
+    const dealReal = { id: "OP-TABS-97", cliente: "C97", rutEmisor: EMISOR_LIBRO, deudores: [],
+                       facturasOp: [], facturasDisponibles: [], facturasRetiradas: [], nuevasFacturas: 0 };
+    const porDeudor = {};
+    candidatasLibro(dealReal, []).forEach((f) => { (porDeudor[f.deudor] = porDeudor[f.deudor] || []).push(f); });
+    const nombres = Object.keys(porDeudor);
+    const conL = [], resto = [];
+    for (const dn of nombres) {
+      const incorp = new Set(porDeudor[dn].filter((f) => estadoCandidata(f, dealReal).agregable).map((f) => f.id));
+      (facturasConLinea(porDeudor[dn], EMISOR_LIBRO, incorp).n > 0 ? conL : resto).push(dn);
+    }
+    const particionOk = nombres.length > 5 && conL.length + resto.length === nombres.length
+      && new Set([...conL, ...resto]).size === nombres.length && conL.length > 0 && resto.length > 0;
+
+    ok("97 «Deudores disponibles» se parte por LÍNEA, y el criterio no mira Prime ni las compuertas",
+       porFacturaOk && bordesOk && ignoraPrimeOk && ignoraCompuertasOk && incorpOk && particionOk,
+       `línea 40 con facturas por 137 → caben 2 (37) · sin línea 0 · con línea de sobra 3 (137) · deudor «Otro» con LF4 entra igual · bloqueadas fuera · partición ${conL.length} con línea + ${resto.length} el resto = ${nombres.length} deudores`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

@@ -6668,6 +6668,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [detOtrasPage, setDetOtrasPage] = useState(0); // paginador de «Otras facturas disponibles» (20 deudores por página)
   const [otrasDeudor, setOtrasDeudor] = useState({}); // por deudor de la oferta: ver sus facturas NO seleccionadas
   const [otrasAbierto, setOtrasAbierto] = useState(true); // «Otras facturas disponibles» colapsable: es el pool para agregar, no el contenido principal
+  const [otrasTab, setOtrasTab] = useState("conLinea"); // pestaña de «Deudores disponibles»: conLinea | resto
   // Carga del sub-tab Detalle: su data (scoring, línea, otorgamiento y verificación por deudor) es de
   // APIs/BD. Al abrirlo o cambiar de oportunidad se muestra el esqueleto mientras "resuelve la query".
   const [detCargando, setDetCargando] = useState(false);
@@ -7573,9 +7574,6 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         const facsOt = dispOt.reduce((s, d) => s + d.facturas, 0);
                         const montoOt = +dispOt.reduce((s, d) => s + d.monto, 0).toFixed(1);
                         const bloqOt = dispOt.reduce((s, d) => s + d.bloqueadas, 0);
-                        // Paginación de «Otras facturas disponibles»: 20 deudores por página.
-                        const OT_PP = 20; const otTotalPg = Math.max(1, Math.ceil(deudOtF.length / OT_PP)); const otPg = Math.min(detOtrasPage, otTotalPg - 1);
-                        const deudOtPage = deudOtF.slice(otPg * OT_PP, otPg * OT_PP + OT_PP);
                         // RUT del deudor: el de la operación si existe; si no, uno determinístico por nombre.
                         const rutMap = {}; deudoresDeDeal(deal).forEach((d) => { if (d.rut) rutMap[d.nombre] = d.rut; });
                         const rutDe = (n) => { if (rutMap[n]) return rutMap[n]; const h = Math.abs(hashStr("rut:" + n)); return `${76 + h % 20}.${String(100 + h % 900)}.${String(h % 1000).padStart(3, "0")}-${"0123456789K"[h % 11]}`; };
@@ -7658,6 +7656,11 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             if (!suyas.length) return;
                             const dd = (asignarLineas(suyas, deal.rutEmisor).deudores || []).find((x) => x.nombre === dn);
                             if (!dd) return;
+                            // Cuántas de sus facturas disponibles CABEN en la línea — lo que parte la lista
+                            // en dos pestañas. Para un deudor de esa lista `suyas` son exactamente sus
+                            // facturas fuera de la oferta.
+                            const incorporables = new Set((grpOt[dn] || []).filter((f) => estadoCandidata(f, deal).agregable).map((f) => f.id));
+                            const cl = facturasConLinea(suyas, deal.rutEmisor, incorporables);
                             // Mismo criterio y mismo monto que el encabezado del acordeón: una sola definición de
                             // «disponible». Sumar el bruto acá y el neto allá deja dos cifras distintas para la
                             // misma pregunta cuando el deudor tiene una NC parcial.
@@ -7678,9 +7681,32 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               // ejecutivo no puede ver que el cupo que tiene enfrente se quema entero con la
                               // primera factura que lo toque, por chica que sea.
                               saldoPuntual: dd.saldoPuntual || 0,
-                              nFuera: dispFuera.facturas, montoFuera: dispFuera.monto };
+                              nFuera: dispFuera.facturas, montoFuera: dispFuera.monto,
+                              nConLinea: cl.n, montoConLinea: cl.monto };
                           });
                         }
+                        // DOS PESTAÑAS SOBRE LA MISMA LISTA. La pregunta que el ejecutivo trae a esta
+                        // pantalla es «a quién le puedo comprar hoy», y la respuesta es la LÍNEA: un deudor
+                        // con facturas que caben se cursa, uno sin ellas va a comité. Los otros dos chips de
+                        // la fila —Prime y las compuertas de otorgamiento y verificación— no responden eso:
+                        // Prime es la calidad del deudor y las compuertas son trámites que se resuelven, así
+                        // que no filtran. Con 41 deudores en una sola lista, los que sí se pueden cursar
+                        // quedaban repartidos entre los que no.
+                        const tieneLinea = (dn) => ((lineaDeudor[dn] || {}).nConLinea || 0) > 0;
+                        const deudConLinea = deudOtF.filter(tieneLinea);
+                        const deudResto = deudOtF.filter((dn) => !tieneLinea(dn));
+                        const OT_TABS = [
+                          { k: "conLinea", lbl: "Con línea", lista: deudConLinea,
+                            tip: "Deudores con al menos una factura disponible que cabe en la línea. Se pueden cursar hoy, cualquiera sea su clasificación y aunque tengan criterios por aprobar o facturas por verificar.",
+                            vacio: "Ningún deudor disponible tiene facturas que quepan en la línea." },
+                          { k: "resto", lbl: "El resto", lista: deudResto,
+                            tip: "Deudores cuyas facturas disponibles no caben en la línea —o no tienen ninguna incorporable—. Cursarlas pasa por ampliar la línea en el comité.",
+                            vacio: "Todos los deudores disponibles tienen facturas que caben en la línea." },
+                        ];
+                        const otTab = OT_TABS.find((t) => t.k === otrasTab) || OT_TABS[0];
+                        // Paginación de «Otras facturas disponibles»: 20 deudores por página, POR PESTAÑA.
+                        const OT_PP = 20; const otTotalPg = Math.max(1, Math.ceil(otTab.lista.length / OT_PP)); const otPg = Math.min(detOtrasPage, otTotalPg - 1);
+                        const deudOtPage = otTab.lista.slice(otPg * OT_PP, otPg * OT_PP + OT_PP);
                         // Las otras DOS compuertas de la operación. No cambian el monto cursable —eso lo decide
                         // sólo la línea— pero sí deciden el momento: sin ellas resueltas la operación no gira.
                         const otorgRes = (() => {
@@ -8507,7 +8533,24 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               </button>
                               {otrasAbierto && <div className="mt-1.5 rounded-xl p-2.5" style={{ backgroundColor: C.lilac }}>
                               <div className="mb-1.5 t9" style={{ color: C.sub }}>Deudores con facturas del cliente que aún NO son parte de la oferta. Agrega una factura y su deudor pasará arriba; si retiras todas las de un deudor, su acordeón vuelve aquí.</div>
+                                {/* Pestañas: parten la lista por lo ÚNICO que decide si se puede cursar hoy.
+                                    Underline purple del sistema, con el conteo al lado — una pestaña vacía
+                                    tiene que poder verse antes de entrar, o el ejecutivo la abre para nada. */}
+                                {deudOtF.length > 0 && (
+                                  <div className="mb-2 flex items-center gap-4" style={{ borderBottom: `1px solid ${C.line}` }}>
+                                    {OT_TABS.map((t) => { const on = t.k === otTab.k; return (
+                                      <button key={t.k} onClick={() => { setOtrasTab(t.k); setDetOtrasPage(0); }} title={t.tip}
+                                        className="flex items-center gap-1.5 pb-1.5 t11 font-semibold"
+                                        style={{ color: on ? C.indigo : C.sub, borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, marginBottom: -1 }}>
+                                        {t.lbl}
+                                        <span className="inline-flex items-center rounded-full px-1.5 t9 font-semibold"
+                                          style={{ backgroundColor: on ? C.indigo : "#E7E4F0", color: on ? "#fff" : C.sub }}>{t.lista.length}</span>
+                                      </button>
+                                    ); })}
+                                  </div>
+                                )}
                                 {deudOtF.length === 0 && <div className="t10 py-2" style={{ color: C.faint }}>{dq ? `Sin otras facturas que coincidan con «${detQuery}».` : "No hay otras facturas disponibles."}</div>}
+                                {deudOtF.length > 0 && otTab.lista.length === 0 && <div className="t10 py-2" style={{ color: C.faint }}>{otTab.vacio}</div>}
                                 {deudOtPage.map((dn) => { const grupo = grpOt[dn]; const abierto = detOpen["ot:" + dn] === true; return (
                                   <div key={dn} className="mb-2" style={{ border: "1px solid #E4E2EC", borderRadius: 12, overflow: "hidden", backgroundColor: "#F5F4F8" }}>
                                     <button onClick={() => setDetOpen((m) => ({ ...m, ["ot:" + dn]: !abierto }))} className="block w-full text-left">{cabDeudor(dn, grupo, abierto, false)}</button>
@@ -8516,7 +8559,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 ); })}
                                 {otTotalPg > 1 && (
                                   <div className="mt-1 flex items-center justify-end gap-2 t10" style={{ color: C.faint }}>
-                                    <span className="mr-1 t9">{deudOtF.length} deudores · 20 por página</span>
+                                    <span className="mr-1 t9">{otTab.lista.length} deudores en «{otTab.lbl}» · 20 por página</span>
                                     <button onClick={() => setDetOtrasPage(Math.max(0, otPg - 1))} disabled={otPg === 0} title="Anterior" className="disabled:opacity-30" style={{ color: "#C2410C" }}><ChevronLeft size={14} /></button>
                                     <span>{otPg + 1}/{otTotalPg}</span>
                                     <button onClick={() => setDetOtrasPage(Math.min(otTotalPg - 1, otPg + 1))} disabled={otPg >= otTotalPg - 1} title="Siguiente" className="disabled:opacity-30" style={{ color: "#C2410C" }}><ChevronRight size={14} /></button>
@@ -19500,6 +19543,26 @@ function recortarAsignacion(linea, idsVigentes) {
     recorte: { retiradas: fuera.length, montoRetirado: suma(fuera), folios: fuera.map((f) => f.folio || f.id) } };
 }
 
+// ¿CUÁLES DE ESTAS FACTURAS CABEN EN LA LÍNEA? Cuenta las que el motor deja `CON_LINEA`, acotado a las
+// que además se pueden incorporar. Es lo que parte «Deudores disponibles» en sus dos pestañas.
+// Se pregunta al MOTOR y no se compara el monto contra la holgura: la asignación es por factura
+// completa y recorre por tramo y nota, así que «cabe el total del deudor» y «cabe esta factura» no son
+// la misma pregunta — un deudor con M$137,5 disponibles y M$35,4 de línea igual tiene facturas que caben.
+// NO mira la clasificación del deudor ni sus compuertas: Prime es la calidad del deudor y el
+// otorgamiento y la verificación son trámites que se resuelven; ninguno de los tres cambia si el
+// documento cabe o no en el cupo, que es lo único que decide si se puede cursar hoy.
+// El estado de líneas entra por parámetro, como en `asignarLineas`: es lo que permite probar el
+// criterio con un cupo conocido en vez de contra el que traiga el navegador.
+function facturasConLinea(facturas, rutCliente, incorporables, inyecta) {
+  const res = asignarLineas(facturas || [], rutCliente, inyecta);
+  let n = 0, monto = 0;
+  for (const rf of (res.facturas || [])) {
+    if (rf.estado !== "CON_LINEA") continue;
+    if (incorporables && !incorporables.has(rf.id)) continue;
+    n++; monto += rf.monto || 0;
+  }
+  return { n, monto: mmRound(monto) };
+}
 function asignarLineas(facturas, rutCliente, inyecta) {
   const sel = (facturas || []).filter((f) => f && (f.monto || 0) > 0);
   const st = (inyecta && inyecta.estado) || lineasDeCliente(rutCliente);
