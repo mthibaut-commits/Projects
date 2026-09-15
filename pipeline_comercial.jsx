@@ -6752,7 +6752,26 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
 // Los bloques 2, 3 y 4 NO son disjuntos: una factura puede necesitar comité y además verificación.
 // Por eso los montos no suman la oferta y el pie lo dice explícitamente; si se presentaran como si
 // sumaran, alguien los va a restar mal.
-function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
+// UNA OPERACIÓN CON «MONTO A GIRAR» NO POSITIVO SE ARMA Y SE SIMULA, PERO NO SE CURSA (15-09-2026,
+// decisión del usuario: «no se puede, si quiere la agrega, simula pero no puede cursar»). Simular es
+// justamente cómo el ejecutivo ve POR QUÉ no da, así que el bloqueo va al final del camino y no a la
+// entrada: prohibir agregar la factura escondería la causa. Pasa con documentos chicos, donde la
+// comisión mínima más los gastos y su IVA superan al anticipo — girar cero es una transferencia que
+// no existe y girar negativo sería cobrarle al cliente por venderte su factura.
+// Es PURA y de nivel módulo porque la comprueban DOS sitios: el modal que ofrece el botón y la
+// mutación que cierra la oferta. La pantalla que apaga el botón no es el control (regla 24).
+const GIRO_MINIMO = 1;   // pesos. El giro se materializa en una transferencia y no se transfiere $0.
+function giroCursable(montoGirar) {
+  // Sin simular no hay cifra que juzgar, y una operación sin evaluar no se bloquea por una cifra que
+  // nadie calculó (regla 14): el gate se pronuncia cuando existe el número, no antes.
+  if (montoGirar == null || !Number.isFinite(+montoGirar)) return { ok: true, monto: null, motivo: null };
+  const m = Math.round(+montoGirar);
+  if (m >= GIRO_MINIMO) return { ok: true, monto: m, motivo: null };
+  return { ok: false, monto: m, motivo: m < 0
+    ? `El «Monto a Girar» de esta oferta es ${fmtCLP(m)}: los descuentos —comisión mínima, gastos y su IVA— superan al anticipo. Cursarla le cobraría al cliente por venderte su factura.`
+    : "El «Monto a Girar» de esta oferta queda en $0: no hay transferencia que hacer." };
+}
+function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario, giro }) {
   // CÓMO SE PUBLICA la oferta. Se decide acá y no en un botón posterior porque es parte de la misma
   // decisión: al confirmar el curse el negocio queda creado y el cliente tiene que poder firmarlo.
   // Eran dos pasos y el segundo vivía al final de una página larga, así que se perdía de vista.
@@ -6764,6 +6783,8 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
   }, [onCancelar]);
   if (!datos) return null;
   const { evalLin, otorgRes, verifRes, validas } = datos;
+  const gGiro = giro || { ok: true, motivo: null };
+  const gOk = gGiro.ok !== false;
   const malosOtorg = new Set(otorgRes.deudores);
   const idsVerif = new Set(verifRes.facturas.map((f) => f.id));
   const estadoFac = new Map(evalLin.facturas.map((f) => [f.id, f.estado]));
@@ -6935,12 +6956,20 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
           </div>
         </div>
 
+        {/* EL GIRO NO POSITIVO SE DICE, no sólo se apaga el botón: un CTA en gris sin explicación deja
+            al ejecutivo con una oferta armada y ninguna forma de enterarse de por qué no avanza. */}
+        {!gOk && (
+          <div className="mx-5 mb-1 rounded-lg px-3 py-2 t10" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", color: "#B91C1C" }}>
+            <b>Esta oferta no se puede cursar.</b> {gGiro.motivo} Agrega facturas al paquete o revisa las condiciones en la pestaña <b>Negocio</b> hasta que el monto a girar sea positivo.
+          </div>
+        )}
         <div className="flex items-center justify-end gap-2 border-t px-5 py-3" style={{ borderColor: C.line }}>
           <button onClick={onCancelar} className="rounded-full px-4 py-1.5 t11 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
           {/* Sin las excepciones resueltas no se cursa: el apoderado no puede decidir sobre algo que
-              no le llegó justificado, así que la operación se quedaría detenida igual. */}
-          <button onClick={() => onConfirmar(pub)} disabled={sinComentario > 0}
-            title={sinComentario > 0 ? `Pendiente: ${sinComentario} excepción(es) por aclarar en el tab Otorgamiento` : undefined}
+              no le llegó justificado, así que la operación se quedaría detenida igual. Y sin un monto
+              a girar POSITIVO tampoco: no hay transferencia que Tesorería pueda ejecutar. */}
+          <button onClick={() => onConfirmar(pub)} disabled={sinComentario > 0 || !gOk}
+            title={!gOk ? gGiro.motivo : sinComentario > 0 ? `Pendiente: ${sinComentario} excepción(es) por aclarar en el tab Otorgamiento` : undefined}
             className="rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.indigo }}>{evalLin.requiereComite > 0 ? "Confirmar y enviar" : "Confirmar curse"}</button>
         </div>
       </div>
@@ -8346,7 +8375,11 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     const ld = lineaDeudor[deudor];
                                     const m = ld && ld.montoFuera > 0 ? ld.montoFuera : 0;
                                     return (
-                                      <ChipFila fg={C.indigo} bg={C.lilac} texto={`★ Prime${m > 0 ? ` ${fmtMM(m)}` : ""}`}
+                                      // El chip dice SÓLO «Prime», que es la clasificación del deudor. El monto que
+                                      // traía es el mismo «M$2,9 · 1 fact. disponible» que la propia fila ya muestra a
+                                      // la derecha: repetido en la misma línea se lee como dos cifras distintas. Sigue
+                                      // en el tooltip, que es donde ese detalle no compite con nada.
+                                      <ChipFila fg={C.indigo} bg={C.lilac} texto="★ Prime"
                                         tip={m > 0 ? `Deudor Prime (Lista Blanca o Autorizado) con ${ld.nFuera} factura(s) disponibles por ${fmtMM(m)} fuera de la oferta.` : "Deudor Prime (Lista Blanca o Autorizado). No tiene facturas disponibles fuera de la oferta."} />
                                     );
                                   })()}
@@ -9646,6 +9679,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
       )}
       {/* Confirmación del curse: las dos cifras de línea y los cuatro bloques de acciones. */}
       <ModalCurse deal={deal} datos={cursarModal} sinComentario={cursarModal ? excepcionesSinComentario(deal).length : 0}
+        giro={giroCursable(simOp && simOp.montoGirar != null ? simOp.montoGirar : deal.giro)}
         onCancelar={() => setCursarModal(null)}
         onConfirmar={(pub) => {
           const e = cursarModal.evalLin;
@@ -22630,6 +22664,16 @@ export default function PipelineComercial() {
     const { accion = null, espera = 7, descartadas = 0, publicacion = "electronica" } = opts;
     const fisica = publicacion === "fisica";
     const nom = USERS[usuario] || usuario;
+    // MONTO A GIRAR NO POSITIVO: no se cursa. Se vuelve a comprobar acá y no sólo en el modal porque
+    // la pantalla que apaga el botón no es el control (regla 24) — al cierre se llega además desde el
+    // menú «Acciones» de otras pestañas, que no abre el modal.
+    const dChk = (dealsRef.current || []).find((x) => x.id === id);
+    const gChk = giroCursable(dChk ? dChk.giro : null);
+    if (!gChk.ok) {
+      logSys("warn", "oferta", `Cierre bloqueado · monto a girar ${fmtCLP(gChk.monto)}`, { empresa: dChk ? dChk.cliente : "", monto: gChk.monto });
+      registrarAuditoria({ usuario: nom, modulo: "Oferta", accion: "Cerrar oferta · bloqueada", glosa: `${dChk ? dChk.cliente : id}: ${gChk.motivo}`, empresaId: id, exito: false });
+      return;
+    }
     const upd = (d) => {
       if (d.id !== id) return d;
       const hist = [...(d.historialContacto || [])];

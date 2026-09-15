@@ -3019,6 +3019,37 @@
        `no redondo 287.431.509 → ${fmtMM(287431509)} intacto ${pesoOk} · propFactoring manda sobre totalPropuesto ${cualOk} · renovar conserva uso y recalcula al peso ${renOk} (disponible ${440e6 - 137331951}) · sin monto no hay línea ${nadaOk}`);
   }
 
+  // ── 108 · UN «MONTO A GIRAR» NO POSITIVO SE SIMULA PERO NO SE CURSA.
+  //    Con una factura chica la comisión mínima más los gastos y su IVA superan al anticipo, y la
+  //    simulación devuelve un monto a girar NEGATIVO. La decisión del negocio: el ejecutivo puede
+  //    agregarla y simularla —es cómo ve por qué no da— pero ahí se detiene. El gate va al final del
+  //    camino y no a la entrada: prohibir agregar la factura escondería la causa.
+  {
+    // (a) EL VEREDICTO. Cero no es «casi uno»: un giro se materializa en una transferencia y no se
+    //     transfiere $0, así que el corte está en $1 y no en «mayor o igual que cero».
+    const positivo = giroCursable(86200000).ok === true && giroCursable(1).ok === true;
+    const cero = giroCursable(0).ok === false && /\$0/.test(giroCursable(0).motivo || "");
+    const neg = giroCursable(-673476).ok === false && giroCursable(-673476).monto === -673476
+      && /superan al anticipo/.test(giroCursable(-673476).motivo || "");
+    // Redondea al peso antes de juzgar, como todo el sistema: 0,4 no es un giro.
+    const redondeo = giroCursable(0.4).ok === false && giroCursable(0.6).ok === true;
+
+    // (b) SIN SIMULAR NO SE PRONUNCIA. Una oferta que nadie evaluó no se bloquea por una cifra que
+    //     nadie calculó (regla 14); el gate existe cuando existe el número.
+    const sinDato = giroCursable(null).ok === true && giroCursable(undefined).ok === true
+      && giroCursable(NaN).ok === true && giroCursable(null).motivo === null;
+
+    // (c) EL MOTIVO ES PARTE DEL RESULTADO, no un booleano. Un CTA apagado sin explicación deja al
+    //     ejecutivo con una oferta armada y ninguna forma de enterarse de por qué no avanza — la
+    //     misma razón por la que «Girar» se muestra deshabilitado con el motivo y no desaparece.
+    const conMotivo = [0, -1, -673476].every((m) => { const g = giroCursable(m); return g.ok === false && typeof g.motivo === "string" && g.motivo.length > 20; })
+      && [1, 5e6].every((m) => giroCursable(m).motivo === null);
+
+    ok("108 una oferta con «Monto a Girar» no positivo se simula pero no se cursa",
+       positivo && cero && neg && redondeo && sinDato && conMotivo,
+       `positivo cursa ${positivo} · $0 bloquea ${cero} · negativo bloquea ${neg} (${fmtCLP(giroCursable(-673476).monto)}) · redondea al peso ${redondeo} · sin simular no se pronuncia ${sinDato} · siempre con motivo ${conMotivo}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
