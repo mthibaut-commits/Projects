@@ -2110,6 +2110,59 @@ function lineaCreditoDe(deal) {
   const excesoProyectado = +Math.max(0, proyectado - aprobada).toFixed(1);
   return { aprobada, usoActual, montoOp, proyectado, disponible, fueraDeLinea, excesoProyectado };
 }
+// INDICADOR DE LA LÍNEA GENERAL DEL CLIENTE — aprobada, utilizada y disponible. Lo dibujan DOS
+// pantallas: la columna «Línea» del tubo y la cabecera del detalle, así que vive acá y no en cada
+// una. Dos copias del mismo indicador se separan a la primera corrección, y entonces la misma línea
+// aparece con dos cifras en dos pantallas — que es el defecto que este proyecto persigue en todas
+// sus formas.
+//
+// `conOperacion` es la única diferencia entre las dos, y es deliberada. En el TUBO no se dibuja: esa
+// columna muestra el ESTADO de la línea —cuánto tiene aprobado y cuánto le queda— y no un derivado
+// de la oferta; mostrar ahí la proyección post-curse ya se probó y se revirtió. En el DETALLE sí,
+// porque ahí el ejecutivo está armando ESA operación y necesita ver cuánto le va quedando: el
+// segundo tramo de la barra y la cifra «tras esta operación» se mueven con cada simulación.
+// «Disponible» conserva UNA sola definición en las dos pantallas —aprobada − utilizada, lo que dice
+// A23— y lo que la operación toma va aparte, nombrado: si «Disponible» significara una cosa en el
+// tubo y otra en el detalle, la comparación entre pantallas dejaría de ser posible.
+function IndicadorLinea({ deal, ancho = 122, conOperacion = false }) {
+  const L = lineaCreditoDe(deal);
+  if (!L.aprobada) return <span className="t10" style={{ color: C.faint }}>Sin línea</span>;
+  const pct = (v) => Math.max(0, Math.min(100, (v / L.aprobada) * 100));
+  const usoPct = pct(L.usoActual);
+  // La operación sólo cuenta cuando ya se simuló: antes de eso no hay oferta valorizada y una cifra
+  // sin evaluar se lee como cifra igual (regla 14).
+  const conOp = conOperacion && !!deal.simulado && L.montoOp > 0;
+  const opPct = conOp ? Math.min(Math.max(0, 100 - usoPct), pct(L.montoOp)) : 0;
+  const sinCupo = L.disponible <= 0;
+  const queda = Math.round(L.disponible - (conOp ? L.montoOp : 0));
+  return (
+    <div style={{ width: ancho }}
+      title={`Línea aprobada ${fmtMM(L.aprobada)} · utilizada ${fmtMM(L.usoActual)} · disponible ${fmtMM(L.disponible)}${conOp ? ` · esta operación ${fmtMM(L.montoOp)} → quedarían ${fmtMM(queda)}` : ""}`}>
+      {/* Tamaños homologados con la columna Monto del tubo: el monto en el tamaño base (t10) semibold
+          sobre C.ink y el calificativo en la escala de las sublíneas (t9). El acento es el púrpura de
+          marca: la línea de crédito es un atributo del CLIENTE, no un resultado de la oferta, así que
+          no comparte el verde de Giro ni el naranja de los estados. */}
+      <div className="t10 font-semibold" style={{ color: C.ink }}>{fmtMM(L.aprobada)} <span className="t9 font-normal" style={{ color: C.indigo }}>aprobada</span></div>
+      <div className="relative mt-1 flex h-1.5 w-full overflow-hidden rounded-full" style={{ backgroundColor: C.line }}>
+        <div className="h-1.5" style={{ width: usoPct + "%", backgroundColor: C.indigo }} />
+        {/* Lo que toma ESTA operación, en el lila de la marca: se distingue de lo ya utilizado sin
+            cambiar de color, porque no es otra cosa — es línea del mismo cliente, todavía no girada. */}
+        {opPct > 0 && <div className="h-1.5" style={{ width: opPct + "%", backgroundColor: "#B79CFF" }} />}
+      </div>
+      {/* Sin cupo sí rompe el púrpura: es un bloqueo, y ahí el rojo de la paleta es la señal. */}
+      {/* En una línea y sin envolver: «tras esta operación» partía en dos renglones y el indicador se
+          comía la fila de los pills. La frase completa vive en el tooltip, que es donde cabe. */}
+      <div className="mt-1 t9 font-medium" style={{ color: sinCupo ? C.red : C.indigo, whiteSpace: "nowrap" }}>
+        {sinCupo ? "Sin cupo disponible" : `Disponible ${fmtMM(L.disponible)}`}
+        {conOp && !sinCupo && (
+          <span className="font-normal" style={{ color: queda < 0 ? C.red : C.faint }}>
+            {" · "}{queda < 0 ? `excede por ${fmtMM(-queda)}` : `queda ${fmtMM(queda)}`}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
 // ¿La oportunidad requiere Otorgamiento? Sí si queda fuera de línea (proyección > línea) y/o incluye deudores "Otro".
 function requiereOtorgamiento(deal) {
   const fop = (deal.facturasOp && deal.facturasOp.length) ? deal.facturasOp : itemizarFacturas(deal);
@@ -6830,12 +6883,13 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario }) {
     </>
   );
 }
-function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorporarFacturas, onRetirarFactura, onReabrir, onSugerirOferta, onSimular, onPublicar, onCerrarOferta, onIntegrar, onContactar, onEditarContacto, onEnviarWA, onMover, cierre, onConfirmCierre, usuario, onCambiarUsuario, tabInicial, onIrOtorgamientos, fullPage }) {
+function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorporarFacturas, onRetirarFactura, onReabrir, onSugerirOferta, onSimular, onLimpiarSimulacion, onPublicar, onCerrarOferta, onIntegrar, onContactar, onEditarContacto, onEnviarWA, onMover, cierre, onConfirmCierre, usuario, onCambiarUsuario, tabInicial, onIrOtorgamientos, fullPage }) {
   const [tab, setTab] = useState(tabInicial || (deal && deal.stage === "otorgamiento" ? "otorgamiento" : "negocio"));
   useEffect(() => { if (tabInicial) setTab(tabInicial); }, [tabInicial, deal && deal.id]);
   const [confirmRetiro, setConfirmRetiro] = useState(null); // factura a retirar de la oferta (ConfirmDialog spec §26)
   const [confirmNoConf, setConfirmNoConf] = useState(null); // factura que el deudor NO confirmó en la verificación telefónica
   const [confirmReabrir, setConfirmReabrir] = useState(false); // reabrir una operación aceptada para modificarla
+  const [confirmReset, setConfirmReset] = useState(false);     // descartar la simulación y vaciar la oferta
   const [reevTick, setReevTick] = useState(0); // fuerza re-render tras re-evaluar la simulación
   // Contacto original (al abrir el detalle): para exigir que se cambie teléfono/email antes de reintentar.
   const origContacto = useRef({ telefono: (deal && deal.contacto && deal.contacto.telefono) || "", email: (deal && deal.contacto && deal.contacto.email) || "" });
@@ -6955,6 +7009,17 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   // (Prospección) para no romper los accesos a STAGES[stageIdx] en el encabezado y la barra de progreso.
   const stageIdx = Math.max(0, STAGE_ORDER.indexOf(deal.stage));
   const nextStage = STAGES[stageIdx + 1];
+  // ¿Se puede DESCARTAR la simulación y partir de cero? Sólo mientras la oferta siga siendo del
+  // ejecutivo. Publicada es un compromiso con el cliente y firmada es un paquete aceptado: vaciarla
+  // desde acá dejaría al portal mostrando documentos que ya no existen, y para eso está «Reabrir»,
+  // que revoca la firma explícitamente (regla 1). El motivo se dice en el propio botón: un destino
+  // que desaparece sin explicación deja al ejecutivo sin dónde enterarse de por qué (regla 24).
+  const motivoNoReset = !onLimpiarSimulacion ? "No disponible en esta vista"
+    : aprobacionFormalCliente(deal) || deal.clienteAcepto ? "El cliente ya firmó esta oferta: para modificarla, usa «Reabrir para modificar»."
+    : ofertaPublicada(deal) ? "La oferta ya se publicó al cliente: para modificarla, usa «Reabrir para modificar»."
+    : !["prospeccion", "oferta"].includes(deal.stage) ? "La operación ya avanzó más allá de la oferta."
+    : null;
+  const puedeReiniciar = !motivoNoReset;
   const progresoStages = STAGES.filter((s) => s.id !== "perdida");
   const stageLbl = deal.stage === "giro" ? "Aceptada · Girada" : (STAGES[stageIdx] || {}).name; // "Giro" se muestra como sub-estado de Aceptada
   // Total de reglas excepcionables PENDIENTES que ESTE usuario puede visar (cliente + todos los deudores) →
@@ -7172,27 +7237,14 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
         {/* Sin borde propio: la divisoria es la de la fila de tabs, que es su último hijo. Con ambas se
             veían DOS líneas, separadas por el padding inferior del contenedor. */}
         <div className="p-5 pb-3" style={{ ...(fullPage ? { position: "sticky", top: 0, zIndex: 5, backgroundColor: "#fff" } : {}) }}>
-          {/* Encabezado en tres filas, cada una con su propio par izquierda/derecha: el stepper comparte
-              línea con el eyebrow y el selector de sesión baja a la altura del nombre del cliente, que
-              es con lo que se relaciona. Antes el stepper gastaba una fila entera para sí solo.
-              «Etapa N de M» deja de escribirse —la dice el propio stepper— y queda como tooltip. */}
+          {/* Encabezado en tres filas, cada una con su par izquierda/derecha. El STEPPER DE ETAPAS se
+              retiró (15-09-2026, pedido del usuario: «saqué el indicador de las etapas para ganar
+              espacio»): gastaba el ancho de la primera fila para repetir algo que la segunda ya dice
+              con todas sus letras —«· OP-D55203 · Oferta y Negociación»—, y ese ancho es justo donde
+              va el indicador de línea. El selector de sesión sube a la primera fila y la LÍNEA DEL
+              CLIENTE ocupa la segunda, a la altura del nombre, que es de quien es la línea. */}
           <div className="flex items-center justify-between gap-3">
             <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint, letterSpacing: ".08em" }}>Detalle de oportunidad</div>
-            {fullPage && (
-              <div className="flex shrink-0 items-center gap-1.5" title={`Etapa ${Math.min(stageIdx + 1, progresoStages.length)} de ${progresoStages.length} · ${STAGES[stageIdx].name}`}>
-                {progresoStages.map((s, i) => <div key={s.id} title={s.name} className="h-1.5 rounded-full" style={{ width: 34, backgroundColor: i <= stageIdx ? C.indigo : C.line }} />)}
-              </div>
-            )}
-          </div>
-          {/* El nombre del cliente manda: 22px semibold, con el folio y la etapa a su lado en gris
-              y en el cuerpo de texto. Antes iba a 16px, del mismo tamaño que el resto del panel. */}
-          <div className="mt-1 flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-semibold text-white" style={{ backgroundColor: C.indigo, fontSize: 14 }}>{(deal.cliente || "?")[0]}</span>
-              {tienePrioridadCurse(deal.id) && <span className="shrink-0" title={`Prioridad de curse solicitada por ${PRIORIDAD_CURSE[deal.id].porNombre}`}><Star size={16} style={{ color: "#C2410C", fill: "#F97316" }} /></span>}
-              <h1 className="font-semibold" style={{ color: C.ink, fontSize: 22, lineHeight: 1.2 }}>{deal.cliente}</h1>
-              <span className="truncate" style={{ color: C.sub, fontSize: 15 }}>· {deal.id} · {STAGES[stageIdx].name}</span>
-            </div>
             {fullPage ? (
               <div className="flex shrink-0 items-center gap-2" title={onCambiarUsuario ? "Sólo demo: cambia la identidad de la sesión sin verificación" : undefined}>
                 <User size={16} style={{ color: C.faint }} />
@@ -7208,6 +7260,21 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
             ) : (
               <button onClick={onClose} className="shrink-0 rounded-md p-1 hover:bg-stone-100"><X size={18} style={{ color: C.sub }} /></button>
             )}
+          </div>
+          {/* El nombre del cliente manda: 22px semibold, con el folio y la etapa a su lado en gris
+              y en el cuerpo de texto. Antes iba a 16px, del mismo tamaño que el resto del panel. */}
+          <div className="mt-1 flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-semibold text-white" style={{ backgroundColor: C.indigo, fontSize: 14 }}>{(deal.cliente || "?")[0]}</span>
+              {tienePrioridadCurse(deal.id) && <span className="shrink-0" title={`Prioridad de curse solicitada por ${PRIORIDAD_CURSE[deal.id].porNombre}`}><Star size={16} style={{ color: "#C2410C", fill: "#F97316" }} /></span>}
+              <h1 className="font-semibold" style={{ color: C.ink, fontSize: 22, lineHeight: 1.2 }}>{deal.cliente}</h1>
+              <span className="truncate" style={{ color: C.sub, fontSize: 15 }}>· {deal.id} · {STAGES[stageIdx].name}</span>
+            </div>
+            {/* LA LÍNEA GENERAL DEL CLIENTE, el mismo indicador de la columna «Línea» del tubo y por la
+                misma función, para que las dos pantallas no puedan decir cifras distintas. Acá sí lleva
+                lo que toma ESTA operación: se mueve con cada simulación, que es para lo que sirve
+                tenerlo en el detalle. */}
+            {fullPage && <div className="shrink-0"><IndicadorLinea deal={deal} ancho={260} conOperacion /></div>}
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <Pill style={{ backgroundColor: TAG_COLORS[deal.tag]?.bg, color: TAG_COLORS[deal.tag]?.fg }}>{deal.tag}</Pill>
@@ -8686,6 +8753,20 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                               );
                                             })}
                                           </div>
+                                          {/* EMPEZAR DE NUEVO. Hoy la única forma de descartar una oferta mal
+                                              armada es cerrar la pestaña del detalle y volver a abrirla, y eso
+                                              sólo funciona porque la oferta todavía no se guardó en ninguna
+                                              parte: en cuanto se simula, queda en el negocio. Va acá, al final
+                                              del menú que arma la oferta, y en rojo: es lo único destructivo de
+                                              esta pantalla. */}
+                                          <div className="mx-2 my-1" style={{ borderTop: `1px solid ${C.line}` }} />
+                                          <div className="px-2 py-1 t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Empezar de nuevo</div>
+                                          <button onClick={() => { setPrimeMenu(false); setConfirmReset(true); }} disabled={!puedeReiniciar}
+                                            title={motivoNoReset || "Vacía la oferta y borra la simulación: la oportunidad queda como antes de armarla, con todas sus facturas disponibles otra vez"}
+                                            className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 t10 font-medium text-left disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: "#FEF2F2", color: C.red }}>
+                                            <span className="inline-flex items-center gap-1"><RotateCcw size={12} /> Eliminar la simulación y vaciar la oferta</span>
+                                          </button>
+                                          {!puedeReiniciar && <div className="px-2 pb-1 t9" style={{ color: C.faint }}>{motivoNoReset}</div>}
                                         </div>
                                       )}
                                     </div>
@@ -9306,6 +9387,13 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
         etiquetaConfirmar="Retirar factura no confirmada"
         onConfirmar={() => { onRetirarFactura(deal.id, confirmNoConf, "noConfirmada"); setConfirmNoConf(null); }}
         onCancelar={() => setConfirmNoConf(null)} />
+      {/* Descartar la simulación y partir de cero. Lo que el diálogo tiene que dejar claro es que las
+          facturas VUELVEN al pool —no se pierden— y que la evidencia no se toca. */}
+      <ConfirmDialog abierto={confirmReset} titulo="¿Eliminar la simulación y partir de cero?"
+        descripcion={`Se vacía la oferta de ${deal.cliente}${deal.facturas ? ` —${deal.facturas} factura(s) por ${fmtMM(deal.monto || 0)}—` : ""} y se borran las condiciones comerciales que produjo la simulación: tasa, descuentos y monto a girar. Las facturas NO se pierden: vuelven a estar disponibles para volver a elegirlas, y la oportunidad queda como estaba antes de armarla. No se toca lo que ya es evidencia: las excepciones de otorgamiento visadas, las verificaciones telefónicas registradas y las facturas que el deudor no confirmó siguen donde están.`}
+        etiquetaConfirmar="Eliminar la simulación"
+        onConfirmar={() => { setConfirmReset(false); onLimpiarSimulacion && onLimpiarSimulacion(deal.id); }}
+        onCancelar={() => setConfirmReset(false)} />
       {/* Reabrir. Lo importante que tiene que decir el diálogo es qué se CONSERVA (para que el
           ejecutivo no crea que parte de cero) y qué pasa con la reserva, que NEX no puede tocar. */}
       {(() => {
@@ -10880,31 +10968,7 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                     post-curse (uso + esta operación) contra la línea aprobada; era un dato derivado de la
                     oferta y no el estado de la línea. El ejecutivo necesita saber cuánto tiene aprobado y
                     cuánto le queda: si la operación cabe o no ya se lo dice el tag de otorgamiento. */}
-                <td className="whitespace-nowrap px-2 py-2.5 align-top">
-                  {(() => {
-                    const L = lineaCreditoDe(d);
-                    if (!L.aprobada) return <span className="t10" style={{ color: C.faint }}>Sin línea</span>;
-                    const usoPct = Math.max(0, Math.min(100, L.usoActual / L.aprobada * 100));
-                    const sinCupo = L.disponible <= 0;
-                    return (
-                      <div style={{ width: 122 }} title={`Línea aprobada ${fmtMM(L.aprobada)} · utilizada ${fmtMM(L.usoActual)} · disponible ${fmtMM(L.disponible)}`}>
-                        {/* Tamaños homologados con la columna Monto: el monto en el tamaño base de la tabla
-                            (14px) semibold sobre C.ink y el calificativo en la escala de las sublíneas (t9),
-                            igual que "N facturas". El acento de la columna es el púrpura de marca (C.indigo):
-                            la línea de crédito es un atributo del cliente, no un resultado de la oferta, así que
-                            no comparte el verde de Giro ni el naranja de los estados. */}
-                        <div className="t10 font-semibold" style={{ color: C.ink }}>{fmtMM(L.aprobada)} <span className="t9 font-normal" style={{ color: C.indigo }}>aprobada</span></div>
-                        <div className="relative mt-1 h-1.5 w-full rounded-full" style={{ backgroundColor: C.line }}>
-                          <div className="absolute left-0 top-0 h-1.5 rounded-full" style={{ width: usoPct + "%", backgroundColor: C.indigo }} />
-                        </div>
-                        {/* Sin cupo sí rompe el púrpura: es un bloqueo, y ahí el rojo de la paleta es la señal. */}
-                        <div className="mt-1 t9 font-medium" style={{ color: sinCupo ? C.red : C.indigo }}>
-                          {sinCupo ? "Sin cupo disponible" : `Disponible ${fmtMM(L.disponible)}`}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </td>
+                <td className="whitespace-nowrap px-2 py-2.5 align-top"><IndicadorLinea deal={d} /></td>
                 {/* OPORTUNIDAD: los DEUDORES que el motor encontró disponibles para este cliente —lo
                     que ya está en la oferta más lo que todavía no—, en los tres tramos con que reparte
                     la línea: Prime primero, después Nota Deudor sobre 4,2, al final el resto. Es lo que
@@ -23673,6 +23737,41 @@ export default function PipelineComercial() {
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
   };
+  // EMPEZAR DE CERO: descarta la simulación y vacía la oferta. Es lo que hoy se consigue cerrando la
+  // pestaña del detalle y volviéndola a abrir —«como si el _blank se abriera de nuevo»— salvo que eso
+  // deja de funcionar en cuanto se simula: ahí la oferta ya vive en el negocio y reabrir la muestra
+  // igual. Las facturas VUELVEN al pool disponible; no se pierde ninguna.
+  //
+  // Lo que NO toca, a propósito: el visado, las verificaciones telefónicas registradas y las facturas
+  // vetadas viven en repositorios por operación y son EVIDENCIA —una llamada al deudor son 3 o 4
+  // horas—, así que se conservan igual que al reabrir (regla 1). Las versiones tampoco: son
+  // append-only y su razón de ser es poder auditar qué se evaluó y cuándo.
+  const limpiarSimulacion = (id) => {
+    const upd = (d) => {
+      if (d.id !== id) return d;
+      const vistos = new Set(); const pool = [];
+      [...(d.facturasOp || []), ...(d.facturasDisponibles || [])].forEach((f) => {
+        if (!f || f.id == null || vistos.has(f.id)) return;
+        vistos.add(f.id); pool.push(f);
+      });
+      // Los campos que escribió la simulación se BORRAN, no se dejan viejos: una cifra vieja se lee
+      // como cifra y alguien la va a citar (regla 14). La lista de campos sale de la MISMA función
+      // que los escribe, así que uno nuevo no se puede quedar atrás acá.
+      const vacios = {}; Object.keys(finanzasDe(d.cliente, d.deudor, 0)).forEach((k) => { vacios[k] = undefined; });
+      // Y la etapa vuelve a Prospección, que es el dual del invariante de 12-bis: una oportunidad sin
+      // simular no está «en negociación», porque una oferta sin precio no es una oferta.
+      const patch = { ...vacios, simulado: false, ofertaSugerida: false, status: "Sin simular",
+        facturasOp: [], facturasDisponibles: pool, facturas: 0, monto: 0,
+        stage: ["prospeccion", "oferta"].includes(d.stage) ? "prospeccion" : d.stage };
+      // El detalle vive en otra pestaña: el tubo se entera por el mismo canal que usa la simulación.
+      simAvisoRef.current = { id, patch };
+      return { ...d, ...patch, historialContacto: traza(d, "Simulación eliminada: la oferta vuelve a estar vacía") };
+    };
+    setDeals((prev) => prev.map(upd));
+    setSelected((s) => (s ? upd(s) : s));
+    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Oferta", accion: "Simulación eliminada",
+      glosa: `${id} · la oferta se vació y la oportunidad volvió a Prospección`, severidad: "media" });
+  };
   // Retira una factura de la oferta y la deja disponible como candidata en "Otras facturas".
   // MESA DE VERIFICACIÓN. Se marca por DEUDOR porque una llamada cubre todas sus facturas (regla 6).
   // «Verificada» registra el contacto de todas ellas; «no verificada» las retira y las veta, que es
@@ -23968,7 +24067,7 @@ export default function PipelineComercial() {
               detalle (cliente · id · etapa, selector de usuario y avatar), de modo que la pantalla abría
               con la identidad y el selector DUPLICADOS. La cabecera del propio detalle es la única. */}
           <div className="mx-auto w-full" style={{ maxWidth: 1600 }}>
-            <DealDrawer key={selected.id} deal={selected} fullPage onClose={() => window.close()} onAdvance={advance} onReject={reject} onIncorporar={abrirIncorporar} onIncorporarFacturas={incorporarFacturasOferta} onRetirarFactura={retirarFacturaOferta} onReabrir={reabrirOperacion} onSugerirOferta={aplicarSugerencia} onSimular={simularOferta} onPublicar={publicarOferta} onCerrarOferta={cerrarOferta} onIntegrar={aprobarIntegracion} onContactar={iniciarContacto} onEditarContacto={editarContacto} onEnviarWA={enviarWA} onMover={moverEtapa} cierre={cierreModal} onConfirmCierre={confirmarCierre} usuario={usuario} onCambiarUsuario={setUsuario} tabInicial={(detallePayload && detallePayload.tab) || dealTabInicial} onIrOtorgamientos={() => {}} />
+            <DealDrawer key={selected.id} deal={selected} fullPage onClose={() => window.close()} onAdvance={advance} onReject={reject} onIncorporar={abrirIncorporar} onIncorporarFacturas={incorporarFacturasOferta} onRetirarFactura={retirarFacturaOferta} onReabrir={reabrirOperacion} onSugerirOferta={aplicarSugerencia} onSimular={simularOferta} onLimpiarSimulacion={limpiarSimulacion} onPublicar={publicarOferta} onCerrarOferta={cerrarOferta} onIntegrar={aprobarIntegracion} onContactar={iniciarContacto} onEditarContacto={editarContacto} onEnviarWA={enviarWA} onMover={moverEtapa} cierre={cierreModal} onConfirmCierre={confirmarCierre} usuario={usuario} onCambiarUsuario={setUsuario} tabInicial={(detallePayload && detallePayload.tab) || dealTabInicial} onIrOtorgamientos={() => {}} />
           </div>
         </div>
       )) : (<>
