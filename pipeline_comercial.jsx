@@ -6669,6 +6669,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [otrasDeudor, setOtrasDeudor] = useState({}); // por deudor de la oferta: ver sus facturas NO seleccionadas
   const [otrasAbierto, setOtrasAbierto] = useState(true); // «Otras facturas disponibles» colapsable: es el pool para agregar, no el contenido principal
   const [otrasTab, setOtrasTab] = useState("conLinea"); // pestaña de «Deudores disponibles»: conLinea | resto
+  const [otrasVista, setOtrasVista] = useState("deudor"); // cómo se lista: por deudor (acordeón) | por factura (plana)
   // Carga del sub-tab Detalle: su data (scoring, línea, otorgamiento y verificación por deudor) es de
   // APIs/BD. Al abrirlo o cambiar de oportunidad se muestra el esqueleto mientras "resuelve la query".
   const [detCargando, setDetCargando] = useState(false);
@@ -7704,9 +7705,20 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             vacio: "Todos los deudores disponibles tienen facturas que caben en la línea." },
                         ];
                         const otTab = OT_TABS.find((t) => t.k === otrasTab) || OT_TABS[0];
-                        // Paginación de «Otras facturas disponibles»: 20 deudores por página, POR PESTAÑA.
-                        const OT_PP = 20; const otTotalPg = Math.max(1, Math.ceil(otTab.lista.length / OT_PP)); const otPg = Math.min(detOtrasPage, otTotalPg - 1);
-                        const deudOtPage = otTab.lista.slice(otPg * OT_PP, otPg * OT_PP + OT_PP);
+                        // DOS VISTAS de la misma pestaña. Por DEUDOR es la de siempre —un acordeón por
+                        // empresa— y responde «a quién le compro». Por FACTURA es plana y responde otra
+                        // pregunta: «qué documentos hay», que es la que uno se hace cuando busca un folio o
+                        // quiere ver lo más reciente que emitió el cliente sin abrir once acordeones.
+                        // ORDEN: por FOLIO DESCENDENTE. El folio lo asigna el SII de forma correlativa, así
+                        // que el más alto es el documento más nuevo — y es lo primero que se quiere ver.
+                        const plana = otrasVista === "factura";
+                        const facturasPlanas = plana ? facturasDeDeudores(otTab.lista, grpOt) : [];
+                        // Paginación POR PESTAÑA: 20 deudores en la vista agrupada, 25 facturas en la plana.
+                        const OT_PP = plana ? 25 : 20;
+                        const otItems = plana ? facturasPlanas : otTab.lista;
+                        const otTotalPg = Math.max(1, Math.ceil(otItems.length / OT_PP)); const otPg = Math.min(detOtrasPage, otTotalPg - 1);
+                        const deudOtPage = plana ? [] : otTab.lista.slice(otPg * OT_PP, otPg * OT_PP + OT_PP);
+                        const facOtPage = plana ? facturasPlanas.slice(otPg * OT_PP, otPg * OT_PP + OT_PP) : [];
                         // Las otras DOS compuertas de la operación. No cambian el monto cursable —eso lo decide
                         // sólo la línea— pero sí deciden el momento: sin ellas resueltas la operación no gira.
                         const otorgRes = (() => {
@@ -7733,6 +7745,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         // Lista de facturas en escala de grises · Folio · Tipo · Nota · Emisión · Vencim (con calendario) · Tasa · Monto · (retirar)
                         const GC_D = "88px 62px 132px 74px 186px 158px 22px";
                         const GC_O = "72px 100px 92px 92px 60px 84px 128px 96px";
+                        // En la vista de FACTURAS la lista es plana: sin el acordeón que las agrupa, cada
+                        // fila tiene que decir de qué deudor es o deja de significar nada.
+                        const GC_OP = "minmax(140px,1fr) " + GC_O;
                         const headDoc = (
                           <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: GC_D, color: "#B4B2BC", borderBottom: `1px solid ${C.line}` }}>
                             <span>Tipo doc.</span><span>Folio</span><span>F. vencim.</span><span className="text-right">Monto</span><span>Financiada con</span><span>Estado</span><span></span>
@@ -7773,12 +7788,13 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             </div>
                           );
                         };
-                        const headOtra = (
-                          <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: GC_O, color: C.faint, borderBottom: `1px solid ${C.line}` }}>
+                        const headOtra = (plana) => (
+                          <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: plana ? GC_OP : GC_O, color: C.faint, borderBottom: `1px solid ${C.line}` }}>
+                            {plana && <span>Empresa deudora</span>}
                             <span>Folio</span><span>Tipo doc.</span><span>F. emisión</span><span>F. vencim.</span><span className="text-right">Tasa</span><span className="text-right">Monto</span><span>Estado</span><span>Acción</span>
                           </div>
                         );
-                        const filaOtraD = (f) => {
+                        const filaOtraD = (f, plana) => {
                           const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                           const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
                           const fd = fechasDocumento(f);
@@ -7787,7 +7803,11 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           const est = estadoCandidata(f, deal); const bloq = est.bloqueada;
                           const agregar = () => { onIncorporarFacturas(deal.id, [f]); setReevalPend(true); };
                           return (
-                            <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: GC_O, borderBottom: `1px solid ${C.line}`, opacity: bloq ? 0.55 : 1 }}>
+                            <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: plana ? GC_OP : GC_O, borderBottom: `1px solid ${C.line}`, opacity: bloq ? 0.55 : 1 }}>
+                              {plana && (() => {
+                                const nt = notaDeudor(f.deudor) || 0;
+                                return <span className="truncate font-medium" style={{ color: C.ink }} title={`${f.deudor}${nt ? ` · Nota ${nt}` : ""}`}>{f.deudor}</span>;
+                              })()}
                               <span className="font-medium" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>#{f.folio}</span>
                               <span className="truncate t9" style={{ color: C.sub }} title={tdoc}>{tdoc}</span>
                               <span className="t9" style={{ color: C.faint }}>{em}</span>
@@ -8502,7 +8522,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                             <span>Otras facturas de este deudor ({otras.length}) · {dOtras.facturas ? fmtMM(dOtras.monto) : "sin disponibles"}</span>
                                             {ab ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                                           </button>
-                                          {ab && <div className="mt-1">{headOtra}{otras.slice(0, 12).map(filaOtraD)}{otras.length > 12 && <div className="pt-1 t9" style={{ color: C.faint }}>y {otras.length - 12} más en «Deudores disponibles».</div>}</div>}
+                                          {ab && <div className="mt-1">{headOtra()}{otras.slice(0, 12).map((f) => filaOtraD(f))}{otras.length > 12 && <div className="pt-1 t9" style={{ color: C.faint }}>y {otras.length - 12} más en «Deudores disponibles».</div>}</div>}
                                         </div>
                                       );
                                     })()}</div></div>}
@@ -8537,29 +8557,50 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     Underline purple del sistema, con el conteo al lado — una pestaña vacía
                                     tiene que poder verse antes de entrar, o el ejecutivo la abre para nada. */}
                                 {deudOtF.length > 0 && (
-                                  <div className="mb-2 flex items-center gap-4" style={{ borderBottom: `1px solid ${C.line}` }}>
-                                    {OT_TABS.map((t) => { const on = t.k === otTab.k; return (
-                                      <button key={t.k} onClick={() => { setOtrasTab(t.k); setDetOtrasPage(0); }} title={t.tip}
-                                        className="flex items-center gap-1.5 pb-1.5 t11 font-semibold"
-                                        style={{ color: on ? C.indigo : C.sub, borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, marginBottom: -1 }}>
-                                        {t.lbl}
-                                        <span className="inline-flex items-center rounded-full px-1.5 t9 font-semibold"
-                                          style={{ backgroundColor: on ? C.indigo : "#E7E4F0", color: on ? "#fff" : C.sub }}>{t.lista.length}</span>
-                                      </button>
-                                    ); })}
+                                  <div className="mb-2 flex items-center justify-between gap-3" style={{ borderBottom: `1px solid ${C.line}` }}>
+                                    <div className="flex items-center gap-4">
+                                      {OT_TABS.map((t) => { const on = t.k === otTab.k; return (
+                                        <button key={t.k} onClick={() => { setOtrasTab(t.k); setDetOtrasPage(0); }} title={t.tip}
+                                          className="flex items-center gap-1.5 pb-1.5 t11 font-semibold"
+                                          style={{ color: on ? C.indigo : C.sub, borderBottom: `2px solid ${on ? C.indigo : "transparent"}`, marginBottom: -1 }}>
+                                          {t.lbl}
+                                          <span className="inline-flex items-center rounded-full px-1.5 t9 font-semibold"
+                                            style={{ backgroundColor: on ? C.indigo : "#E7E4F0", color: on ? "#fff" : C.sub }}>{t.lista.length}</span>
+                                        </button>
+                                      ); })}
+                                    </div>
+                                    {/* Cómo se lista. No es una tercera pestaña —no parte el contenido, lo
+                                        presenta de otra forma—, así que va como control aparte y con otra
+                                        forma: subrayado para lo que filtra, segmentado para lo que ordena. */}
+                                    <div className="mb-1 flex shrink-0 items-center rounded-lg p-0.5" style={{ backgroundColor: "#E7E4F0" }}>
+                                      {[{ k: "deudor", lbl: "Por deudor", tip: "Un acordeón por empresa deudora, con sus facturas dentro." },
+                                        { k: "factura", lbl: "Por factura", tip: "Todas las facturas en una sola lista, de la más nueva a la más antigua (folio descendente)." }].map((v) => {
+                                        const on = otrasVista === v.k;
+                                        return (
+                                          <button key={v.k} onClick={() => { setOtrasVista(v.k); setDetOtrasPage(0); }} title={v.tip}
+                                            className="rounded-md px-2 py-0.5 t10 font-semibold"
+                                            style={{ backgroundColor: on ? "#fff" : "transparent", color: on ? C.indigo : C.sub }}>{v.lbl}</button>
+                                        );
+                                      })}
+                                    </div>
                                   </div>
                                 )}
                                 {deudOtF.length === 0 && <div className="t10 py-2" style={{ color: C.faint }}>{dq ? `Sin otras facturas que coincidan con «${detQuery}».` : "No hay otras facturas disponibles."}</div>}
                                 {deudOtF.length > 0 && otTab.lista.length === 0 && <div className="t10 py-2" style={{ color: C.faint }}>{otTab.vacio}</div>}
+                                {plana && facOtPage.length > 0 && (
+                                  <div className="overflow-x-auto rounded-xl p-2.5" style={{ backgroundColor: "#FCFCFD", border: "1px solid #E4E2EC" }}>
+                                    <div style={{ minWidth: 900 }}>{headOtra(true)}{facOtPage.map((f) => filaOtraD(f, true))}</div>
+                                  </div>
+                                )}
                                 {deudOtPage.map((dn) => { const grupo = grpOt[dn]; const abierto = detOpen["ot:" + dn] === true; return (
                                   <div key={dn} className="mb-2" style={{ border: "1px solid #E4E2EC", borderRadius: 12, overflow: "hidden", backgroundColor: "#F5F4F8" }}>
                                     <button onClick={() => setDetOpen((m) => ({ ...m, ["ot:" + dn]: !abierto }))} className="block w-full text-left">{cabDeudor(dn, grupo, abierto, false)}</button>
-                                    {abierto && <div className="overflow-x-auto" style={{ backgroundColor: "#FCFCFD", borderTop: `1px solid ${C.line}`, padding: "4px 14px 8px" }}><div style={{ minWidth: 760 }}>{headOtra}{grupo.map(filaOtraD)}</div></div>}
+                                    {abierto && <div className="overflow-x-auto" style={{ backgroundColor: "#FCFCFD", borderTop: `1px solid ${C.line}`, padding: "4px 14px 8px" }}><div style={{ minWidth: 760 }}>{headOtra()}{grupo.map((f) => filaOtraD(f))}</div></div>}
                                   </div>
                                 ); })}
                                 {otTotalPg > 1 && (
                                   <div className="mt-1 flex items-center justify-end gap-2 t10" style={{ color: C.faint }}>
-                                    <span className="mr-1 t9">{otTab.lista.length} deudores en «{otTab.lbl}» · 20 por página</span>
+                                    <span className="mr-1 t9">{otItems.length} {plana ? "factura" : "deudor"}{otItems.length === 1 ? "" : plana ? "s" : "es"} en «{otTab.lbl}» · {OT_PP} por página</span>
                                     <button onClick={() => setDetOtrasPage(Math.max(0, otPg - 1))} disabled={otPg === 0} title="Anterior" className="disabled:opacity-30" style={{ color: "#C2410C" }}><ChevronLeft size={14} /></button>
                                     <span>{otPg + 1}/{otTotalPg}</span>
                                     <button onClick={() => setDetOtrasPage(Math.min(otTotalPg - 1, otPg + 1))} disabled={otPg >= otTotalPg - 1} title="Siguiente" className="disabled:opacity-30" style={{ color: "#C2410C" }}><ChevronRight size={14} /></button>
@@ -19543,6 +19584,16 @@ function recortarAsignacion(linea, idsVigentes) {
     recorte: { retiradas: fuera.length, montoRetirado: suma(fuera), folios: fuera.map((f) => f.folio || f.id) } };
 }
 
+// Las facturas de estos deudores en UNA sola lista, del documento MÁS NUEVO al más antiguo. El folio
+// lo asigna el SII de forma correlativa dentro del emisor, así que el más alto es el más reciente: por
+// eso ordena por folio y no por fecha de emisión, que en un mismo día no desempata.
+// Es la vista «Por factura» de «Deudores disponibles»: la agrupada responde «a quién le compro» y ésta
+// «qué documentos hay», que es lo que uno busca cuando quiere un folio o lo último que emitió el cliente.
+function facturasDeDeudores(deudores, porDeudor) {
+  const out = [];
+  for (const dn of (deudores || [])) for (const f of ((porDeudor && porDeudor[dn]) || [])) out.push(f);
+  return out.sort((a, b) => (+b.folio || 0) - (+a.folio || 0));
+}
 // ¿CUÁLES DE ESTAS FACTURAS CABEN EN LA LÍNEA? Cuenta las que el motor deja `CON_LINEA`, acotado a las
 // que además se pueden incorporar. Es lo que parte «Deudores disponibles» en sus dos pestañas.
 // Se pregunta al MOTOR y no se compara el monto contra la holgura: la asignación es por factura

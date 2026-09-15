@@ -2258,6 +2258,54 @@
        `línea 40 con facturas por 137 → caben 2 (37) · sin línea 0 · con línea de sobra 3 (137) · deudor «Otro» con LF4 entra igual · bloqueadas fuera · partición ${conL.length} con línea + ${resto.length} el resto = ${nombres.length} deudores`);
   }
 
+  // ── 98 · LA VISTA «POR FACTURA»: MISMO CONTENIDO, DEL FOLIO MÁS NUEVO AL MÁS ANTIGUO ────────
+  // «Deja una opción de verlo como lista de deudores o como lista de facturas. En la de facturas
+  // ordénalas por folio del más nuevo (último) al más antiguo (más chico).» Es una vista, no un filtro:
+  // la agrupada responde «a quién le compro» y la plana «qué documentos hay» — la pregunta que uno trae
+  // cuando busca un folio o quiere ver lo último que emitió el cliente sin abrir once acordeones.
+  {
+    const dealReal = { id: "OP-VISTA-98", cliente: "C98", rutEmisor: EMISOR_LIBRO, deudores: [],
+                       facturasOp: [], facturasDisponibles: [], facturasRetiradas: [], nuevasFacturas: 0 };
+    const libro = candidatasLibro(dealReal, []);
+    const porDeudor = {};
+    libro.forEach((f) => { (porDeudor[f.deudor] = porDeudor[f.deudor] || []).push(f); });
+    const nombres = Object.keys(porDeudor);
+
+    // (a) ORDEN: folio DESCENDENTE, estricto. El folio del SII es correlativo dentro del emisor, así que
+    //     el más alto es el documento más nuevo.
+    const todas = facturasDeDeudores(nombres, porDeudor);
+    const descendente = todas.every((f, i) => i === 0 || (+todas[i - 1].folio || 0) >= (+f.folio || 0));
+
+    // (b) MISMO CONTENIDO que la vista agrupada: ni una factura de más ni una de menos. Cambiar de vista
+    //     no puede hacer desaparecer un documento —es lo único que separa una vista de un filtro—.
+    const idsAgrupada = new Set(nombres.flatMap((dn) => porDeudor[dn].map((f) => f.id)));
+    const idsPlana = new Set(todas.map((f) => f.id));
+    const mismoSet = todas.length === idsAgrupada.size && idsPlana.size === todas.length
+      && [...idsAgrupada].every((id) => idsPlana.has(id));
+
+    // (c) Es una vista de LO QUE SE LE PASE: con los deudores de una pestaña trae sólo los de esa
+    //     pestaña. Así el selector de vista y las pestañas se componen sin conocerse.
+    const mitad = nombres.slice(0, Math.max(1, Math.floor(nombres.length / 2)));
+    const parcial = facturasDeDeudores(mitad, porDeudor);
+    const soloEsos = parcial.length > 0 && parcial.every((f) => mitad.includes(f.deudor))
+      && parcial.length === mitad.reduce((n, dn) => n + porDeudor[dn].length, 0);
+
+    // (d) Bordes: sin deudores no hay facturas, y un deudor que no está en el índice no rompe nada.
+    const bordesOk = facturasDeDeudores([], porDeudor).length === 0
+      && facturasDeDeudores(null, porDeudor).length === 0
+      && facturasDeDeudores(["Empresa Que No Existe"], porDeudor).length === 0;
+
+    // (e) No MUTA el índice del que lee: `sort` ordena en sitio, así que ordenar la lista plana no puede
+    //     reordenar las facturas dentro del acordeón de cada deudor.
+    const antes = nombres.map((dn) => porDeudor[dn].map((f) => f.id).join(","));
+    facturasDeDeudores(nombres, porDeudor);
+    const noMuta = nombres.every((dn, i) => porDeudor[dn].map((f) => f.id).join(",") === antes[i]);
+
+    ok("98 la vista «Por factura» trae lo mismo, ordenado del folio más nuevo al más antiguo",
+       todas.length > 10 && descendente && mismoSet && soloEsos && bordesOk && noMuta,
+       `${todas.length} facturas de ${nombres.length} deudores · folio ${todas[0] && todas[0].folio} → ${todas[todas.length - 1] && todas[todas.length - 1].folio} · descendente ${descendente} · mismo contenido ${mismoSet} · no muta el índice ${noMuta}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
