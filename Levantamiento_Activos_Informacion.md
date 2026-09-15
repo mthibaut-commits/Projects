@@ -102,7 +102,8 @@
 
 ### A11 · Plataforma 360 — información de empresa ⭐ BATCH SFTP → tabla interna
 - **Tipo:** **archivo diario vía SFTP** desde Plataforma 360; monta una **tabla interna** que consulta la aplicación (mismo patrón que A10/A16 — la información es de la misma familia que la requerida por otorgamiento y verificación, y comparten buena parte de las variables).
-- **Contenido:** firmográfica (actividad, sector, trabajadores, fechas, alertas), información comercial (línea global, márgenes, colocación, spread real, segmento), socios (participación, PEP, FATCA), índices financieros, ventas y ventas SII — por RUT de empresa (clientes y deudores).
+- **Contenido:** firmográfica (actividad, sector, trabajadores, fechas, alertas), información comercial (línea global, márgenes, colocación, spread real, segmento), el **mix de financiamiento del cliente** (`SOW_*`, ver abajo), socios (participación, PEP, FATCA), índices financieros, ventas y ventas SII — por RUT de empresa (clientes y deudores).
+- **Mix de financiamiento (`SOW_SECURITY_PCT` / `SOW_FACTORING_TARGET_PCT` / `SOW_OTROS_FACTORING_PCT` / `SOW_OTROS_BANCARIOS_PCT`):** con quién se financia el cliente y en qué proporción; las cuatro porciones **suman 100** y sólo vienen para `ROL=CLIENTE` (en un deudor van vacías, no en 0). Alimenta la columna **SOW** del tubo comercial en versión tabla. Vive acá porque **ningún otro activo lo ve entero**: A2 (AECSync) sólo registra *cesiones* —o sea factoring— y A5 (Share of Wallet) sólo mide participación *dentro* del factoring, así que ninguno puede responder por la deuda **bancaria que no es factoring**, que es una de las cuatro porciones. No duplica al A5 ni lo contradice: las **tres** porciones de factoring, renormalizadas sobre su subtotal, reproducen su `SOWActualPct` (ver §5.5).
 - **Actualización intradía:** cubierta por el mismo esquema del endpoint **A22** si el origen actualiza registros dentro del día.
 - **Consumen:** presentación al comité (pasos 1, 2 y 4 — al agregar cada deudor se lee su registro de la tabla interna), generación IA de las 5 notas comerciales.
 - **Nota de consolidación:** por el solapamiento de variables con A10/A16, evaluar consolidar los tres en **una misma entrega SFTP** (un paquete diario con secciones empresa / otorgamiento / verificación) para simplificar la operación del batch.
@@ -228,6 +229,7 @@ campo **sólo** desde su maestro y usa la copia nada más que para conciliar.
 | Segmento | — | — | `SEGMENTO` | `SEGMENTO` · `SUB_SEGMENTO` | — | *colisión, ver 5.3* |
 | Línea aprobada | — | `LINEA_APROBADA_MM` | — | — | `LINEA_APROBADA_MM` | **A23** *(ver 5.4)* |
 | Ejecutivo / zona / jefatura | — | `EJECUTIVO` · `ZONA` | — | — | — | **A24** *(levantado el 14-09, ver 5.5)* |
+| Participación / mix de financiamiento | — | — | — | `SOW_*` (4 porciones) | — | **A11** *el mix* · **A5** *la participación sobre factoring (ver 5.6)* |
 | Fecha de corte | `FECHA_CORTE` | `FECHA_CORTE` | `FECHA_CORTE` | `FECHA_CORTE` | `FECHA_CORTE` | *propia de cada uno* |
 
 `FECHA_CORTE` es la excepción deliberada: **no** es un campo duplicado sino el sello de cada entrega, y
@@ -320,7 +322,36 @@ los negocios en curso sigue siendo un acto administrativo con fecha y responsabl
 (`Configuración › Oportunidades › Migración`), y sólo hasta antes del giro — una operación girada ya se
 desembolsó y moverla sólo reescribiría de quién cuelga una venta que hizo otro.
 
-### 5.6 Qué hacer con esto
+### 5.6 Mix de financiamiento — **A11 extiende al A5, no lo duplica**
+
+El caso más reciente (15-09-2026) y el que mejor muestra cómo se aplica el criterio. La columna **SOW**
+del tubo comercial responde *con quién se financia este cliente y cuánto de eso es nuestro*: cuatro
+porciones que suman 100 — Security, el factoring target, los otros factoring y la deuda **bancaria que
+no es factoring**.
+
+Ningún activo existente podía producirla entera:
+
+- **A2 · AECSync** registra **cesiones**. Una cesión es factoring por definición, así que el activo no
+  ve un peso de lo que el cliente deba fuera del factoring.
+- **A5 · Share of Wallet** mide participación **dentro** del factoring: su `SOWActualPct` es *cuánto del
+  factoring del cliente es nuestro*, no *cuánto de su financiamiento*. Su universo es el 100% de las
+  tres porciones de factoring, no el 100% del mix.
+
+La cuarta porción no está en ninguno de los dos, y el sujeto del campo es la **EMPRESA** —no su cartera
+ni un par cliente-deudor—, así que por el criterio de esta sección el maestro es **A11**.
+
+Lo que hay que no romper es la relación entre los dos, y es una igualdad, no una convención: **las tres
+porciones de factoring de A11, renormalizadas sobre su propio subtotal, tienen que reproducir el
+`SOWActualPct` de A5**. A11 no reescribe lo que A5 ya dice: le agrega el denominador que le falta. Si
+las dos entregas llegaran a discrepar, el maestro de la participación **sobre factoring** sigue siendo
+A5 —es el activo que la mide, con su serie semanal y su target— y lo que hay que revisar es el mix.
+Fijado por el caso de prueba 99, que lo mide sobre el archivo entero.
+
+Un **deudor** no trae mix: las cuatro columnas vienen **vacías**, no en 0. Un deudor no cede facturas,
+así que la pregunta no le aplica, y cuatro ceros afirmarían algo que el archivo no dice — «no se
+financia con nadie». Es la misma distinción que la nota de comportamiento: vacío es *no hay dato*.
+
+### 5.7 Qué hacer con esto
 
 1. Declarar el maestro en el layout de cada entrega (una línea por campo compartido).
 2. Renombrar `SEGMENTO` de A10 a `SEGMENTO_ORIGEN` y marcarlo como no consumido.

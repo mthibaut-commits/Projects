@@ -1491,6 +1491,48 @@ const P360 = (() => {
   }
   return { ix, porRut, porNombre };
 })();
+// MIX DE FINANCIAMIENTO DEL CLIENTE — el «SOW» del tablero comercial. Sale del activo **A11
+// (Plataforma 360)**, que es el único que ve más allá del factoring: AECSync (A2) sólo registra
+// cesiones y el A5 sólo mide participación DENTRO del factoring, así que ninguno de los dos puede
+// responder por el financiamiento BANCARIO que no es factoring — y ésa es justamente una de las
+// cuatro porciones. Los cuatro porcentajes suman 100 y vienen del archivo: acá no se calcula nada.
+// No contradice al A5, que sigue siendo el maestro de la participación sobre factoring: las tres
+// porciones de factoring, renormalizadas sobre su subtotal, reproducen su `SOWActualPct`.
+// Devuelve `null` cuando la empresa no tiene mix —un DEUDOR no cede facturas, así que la pregunta no
+// le aplica—: null se dibuja como ausencia y un cero se leería como «no opera con nosotros».
+const MIX_SOW_CAMPOS = [
+  { campo: "SOW_OTROS_FACTORING_PCT", label: "Otros factoring" },
+  { campo: "SOW_SECURITY_PCT", label: "Security", nuestro: true },
+  { campo: "SOW_FACTORING_TARGET_PCT", label: "Factoring target" },
+  { campo: "SOW_OTROS_BANCARIOS_PCT", label: "Otros bancarios" },
+];
+function mixSowDe(rutOnombre) {
+  const f = (rutOnombre && (P360.porRut[rutOnombre] || P360.porNombre[rutOnombre])) || null;
+  if (!f) return null;
+  const partes = [];
+  for (const c of MIX_SOW_CAMPOS) {
+    const v = f[P360.ix[c.campo]];
+    if (v === "" || v == null) return null;          // la empresa no tiene mix (deudor, o sin SOW)
+    partes.push({ label: c.label, pct: +v, nuestro: !!c.nuestro });
+  }
+  // De mayor a menor: la pregunta que la columna responde es «quién se lleva más», y el orden fijo
+  // por nombre obligaba a comparar cuatro cifras para contestarla.
+  return partes.sort((a, b) => b.pct - a.pct);
+}
+// QUÉ PORCIONES SE DIBUJAN. Una porción en CERO no se dibuja: no es parte del mix y empuja hacia
+// abajo a las que sí —es la misma regla que el modal de curse y los chips de giro—. La NUESTRA se
+// muestra siempre, aunque sea 0: «no nos cede nada» es justamente lo que el ejecutivo vino a leer en
+// esta columna, y omitirla lo dejaría sin respuesta. Vive acá y no dentro del `map` de la celda
+// porque es una regla, y una regla escrita dentro de un JSX no se puede probar.
+const mixSowVisible = (mix) => (mix || []).filter((x) => x.pct > 0 || x.nuestro);
+// El mix de una OPORTUNIDAD, por el RUT del cedente. Memoizado: el tubo dibuja ~100 filas.
+const _mixDeal = new Map();
+function mixSowDeal(deal) {
+  const k = (deal && (deal.rutEmisor || deal.cliente)) || "";
+  if (!k) return null;
+  if (!_mixDeal.has(k)) _mixDeal.set(k, mixSowDe(deal.rutEmisor) || mixSowDe(deal.cliente));
+  return _mixDeal.get(k);
+}
 // NOTA DE COMPORTAMIENTO 1–5 (5 = mejor pagador) — ÚNICA fuente: el campo NOTA_COMPORTAMIENTO del
 // activo A11. Es atributo de la EMPRESA, no de su cartera ni de un par, así que vive en el activo de
 // información de empresa y no se copia a ningún otro. La consultan C09 (cliente), D01 (deudor), el CAT,
@@ -10579,8 +10621,12 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
   // trabajo): suman exactamente ese total, así que cada columna cae en el ancho literal indicado y a
   // la vez el reparto sigue siendo proporcional en pantallas más anchas o más angostas. Al agregarse
   // la columna Ejecutivo todo se reescala solo, porque el ancho se calcula sobre la suma vigente.
-  const PESO_COL = { "Cliente": 294, "Línea": 230, "Oportunidad": 344, "Simulación": 675, "Ejecutivo": 140, "Asignar": 124 };
-  const cols = ["Cliente", ...(mostrarEjec ? ["Ejecutivo"] : []), "Línea", "Oportunidad", "Simulación", ...(modoAsignar ? ["Asignar"] : [])];
+  //   SOW 214 → los chips del mix de financiamiento, uno por fila. Lo fija «Factoring target · 49,9%»,
+  //     que es el más largo con dos decimales. Con 186 el rótulo se truncaba Y el porcentaje saltaba a
+  //     la línea de abajo, que es la peor de las dos: un chip partido en dos se lee como dos datos.
+  //     Los 214 salen de «Simulación», que es la columna más holgada; las otras cuatro no se tocan.
+  const PESO_COL = { "Cliente": 294, "Línea": 230, "Oportunidad": 344, "SOW": 214, "Simulación": 461, "Ejecutivo": 140, "Asignar": 124 };
+  const cols = ["Cliente", ...(mostrarEjec ? ["Ejecutivo"] : []), "Línea", "Oportunidad", "SOW", "Simulación", ...(modoAsignar ? ["Asignar"] : [])];
   return (
     <div className="flex flex-1 flex-col gap-2">
       <div className="flex-1 overflow-x-auto rounded-xl bg-white p-1" style={{ border: `1px solid ${C.line}` }}>
@@ -10745,6 +10791,35 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                     JUNTAS: sin simular las dos quedaban en blanco, y simuladas describían el mismo
                     objeto desde dos ángulos. Reunidas se leen de izquierda a derecha: cuánto, de quién,
                     a qué precio y qué falta para cursarlo. */}
+                {/* SOW — el mix de financiamiento del cliente, del activo A11 (Plataforma 360). Cuatro
+                    porciones que suman 100: cuánto toma de nosotros, de los factorings de banco, del
+                    resto de los factorings y cuánto NO es factoring sino crédito bancario. Esa cuarta
+                    porción es la razón de que el dato viva en el A11 y no en AECSync ni en el A5:
+                    ninguno de los dos ve más allá del factoring.
+                    Va entre «Oportunidad» y «Simulación» porque así la fila se lee de corrido: cuánto
+                    hay que comprarle, con quién se compite por eso, y qué produce simularlo. */}
+                <td className="px-2 py-2.5 align-top">
+                  {(() => {
+                    const mix = mixSowDeal(d);
+                    // Sin mix no se dibuja un cero: un prospecto que nunca cedió no se financia «0% con
+                    // nosotros», simplemente no tiene esta medición todavía.
+                    if (!mix) return <span className="t10" style={{ color: C.faint }}>Sin medición</span>;
+                    const visibles = mixSowVisible(mix);
+                    return (
+                      <div className="flex flex-col items-start gap-1">
+                        {visibles.map((x) => (
+                          <span key={x.label} className="inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 t9 font-semibold"
+                            title={`${x.label}: ${x.pct}% del financiamiento del cliente (activo A11 · Plataforma 360).`}
+                            style={{ backgroundColor: x.nuestro ? C.lilac : "#F0EFF3", color: x.nuestro ? C.indigo : C.sub }}>
+                            {x.nuestro && <span aria-hidden="true">★</span>}
+                            <span className="truncate">{x.label}</span>
+                            <span style={{ fontVariantNumeric: "tabular-nums" }}>· {x.pct}%</span>
+                          </span>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </td>
                 {/* `align-middle`: la card se centra verticalmente en la fila. La altura la fijan
                     «Cliente» y «Oportunidad», que son más altas, así que alineada arriba la card
                     quedaba flotando con aire debajo —se nota sobre todo en «Sin simular», que es baja. */}
@@ -14296,7 +14371,18 @@ function PanelClientes({ soloExec, deals = [], usuario, reporteActivo = null, on
     </div>
   );
 }
-const esFactoringBanco = (name) => { const n = (name || "").toLowerCase(); return n.includes("bci") || n.includes("banchile") || n.includes("banco de chile") || n.includes("ita"); };
+// FACTORING TARGET — los factorings de BANCO, que es la competencia que Security mira de frente. La
+// lista se DECLARA y el nombre se compara por TOKEN completo. Adivinarla por trozo de razón social
+// clasificaba **Eurocapital como factoring de banco** —«eurocap·ita·l» contiene «ita», que era el
+// prefijo con que se buscaba «Itaú»—, y con eso el churn le atribuía al factoring target negocio que
+// se había llevado otro, el KPI «SOW factoring target» del dashboard quedaba inflado, y la alerta
+// comercial «esta empresa cede facturas al factoring target (BCI · Banco de Chile · Itaú)» se
+// levantaba nombrando a tres que no habían participado. Un trozo de tres letras adentro de un nombre
+// propio no es una clasificación: es una coincidencia.
+const FACTORING_TARGET = ["bci", "banchile", "banco de chile", "itau"];
+const sinTildes = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const _RX_FACT_TARGET = new RegExp("(^|\\s)(" + FACTORING_TARGET.join("|") + ")(\\s|$)");
+const esFactoringBanco = (name) => _RX_FACT_TARGET.test(sinTildes(name));
 const wkLbl = (s) => { const p = (s || "").split("-"); return p.length === 3 ? `${p[2]}/${p[1]}` : s; };
 // Tooltip enriquecido (tarjeta flotante) con el desglose de un monto: título + filas nombre/monto alineadas.
 // Posición fija junto al disparador (no se recorta con el overflow de la tabla).

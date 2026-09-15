@@ -7,6 +7,8 @@
 //   · colocación y tasa de la última
 //     operación                      → AECSync (lo que efectivamente nos cedió)
 //   · segmento y sub-segmento        → SHARE_OF_WALLET
+//   · mix de financiamiento (SOW)    → SHARE_OF_WALLET (participación de Security sobre el factoring)
+//                                      + AECSync (cómo se reparte el resto entre factorings)
 // Lo que no está en ningún activo —firmográfica, índices financieros, socios— se genera por perfil con
 // rangos de plausibilidad de negocio, igual que el A16.
 const { hashStr, pcRng, entre, ent } = require("../lib/rng");
@@ -22,6 +24,15 @@ function ingreso(rut, primeraOp) {
   return (primeraOp && f > primeraOp) ? primeraOp : f;
 }
 const BICE_RUT = "97.080.000-0";
+// FACTORING TARGET: los factorings de BANCO, que son la competencia que Security mira de frente
+// («factoring target (BCI/Chile/Itaú)» en el tablero de churn). El resto es «otros factoring».
+// La lista se DECLARA y se compara por TOKEN completo, igual que en `pipeline_comercial.jsx` —las dos
+// tienen que decir lo mismo—: buscar trozos de la razón social clasificaba **Eurocapital como
+// factoring de banco**, porque «eurocap·ita·l» contiene el «ita» con que se buscaba «Itaú».
+const FACTORING_TARGET = ["bci", "banchile", "banco de chile", "itau"];
+const sinTildes = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const RX_FACT_TARGET = new RegExp("(^|\\s)(" + FACTORING_TARGET.join("|") + ")(\\s|$)");
+const esFactoringBanco = (n) => RX_FACT_TARGET.test(sinTildes(n));
 const ACTIVIDADES = [
   ["VENTA AL POR MAYOR DE OTROS PRODUCTOS N.C.P.", "COMERCIO"],
   ["CONSTRUCCIÓN DE OBRAS MENORES", "CONSTRUCCIÓN"],
@@ -34,6 +45,32 @@ const ACTIVIDADES = [
 const NOMBRES_SOCIO = ["MARCELA LILIANA MARÍN GONZÁLEZ", "JORGE ANDRÉS SOTO PÉREZ", "CAROLINA PAZ FUENTES RÍOS",
   "RODRIGO ESTEBAN NAVARRO SILVA", "PATRICIA ELENA ROJAS CONTRERAS", "SEBASTIÁN IGNACIO MUÑOZ TAPIA"];
 
+// El mix de financiamiento de un cliente, en cuatro porciones que suman 100.
+//  · La participación de Security SOBRE EL FACTORING la manda el A5 (`SOWActualPct`): es su maestro.
+//  · El resto del factoring se reparte entre «factoring target» y «otros factoring» con la proporción
+//    MEDIDA en AECSync. Sin cesiones registradas se reparte por perfil, y se dice.
+//  · La porción BANCARIA no-factoring no está en ningún activo —ni AECSync ni el A5 la ven— así que
+//    se genera por perfil: una empresa sana se financia más con banco y menos con factoring.
+// Un DEUDOR no cede facturas, así que no tiene mix: los campos van vacíos en vez de en cero, que se
+// leería como «se financia 0% con nosotros» en vez de «esta pregunta no le aplica».
+function mixFinanciero(rut, s, rep, r, pf) {
+  if (!s) return { SOW_SECURITY_PCT: "", SOW_FACTORING_TARGET_PCT: "", SOW_OTROS_FACTORING_PCT: "", SOW_OTROS_BANCARIOS_PCT: "" };
+  const sowFact = Math.max(0, Math.min(100, +s.SOWActualPct || 0));   // del A5: % del factoring que es nuestro
+  const resto = 100 - sowFact;
+  // Cómo se parte el resto entre factorings de banco y el resto, medido cuando hay con qué.
+  const ajenos = rep ? rep.target + rep.otros : 0;
+  const pTarget = ajenos > 0 ? rep.target / ajenos : entre(r, 0.35, 0.65);
+  // Cuánto de su financiamiento NO es factoring. Por perfil: la empresa sana accede a banco.
+  const banc = pf === "sana" ? entre(r, 0.18, 0.34) : pf === "aislada" ? entre(r, 0.10, 0.24) : entre(r, 0.03, 0.14);
+  const f = 1 - banc;                                                  // lo que sí es factoring
+  const pct = [sowFact * f, resto * pTarget * f, resto * (1 - pTarget) * f, banc * 100].map((x) => Math.round(x * 10) / 10);
+  // Los cuatro tienen que sumar 100 exacto: el redondeo a un decimal deja hasta 0,2 de diferencia y
+  // cuatro chips que suman 99,8 se leen como un dato mal calculado. El ajuste va a la porción MAYOR,
+  // que siempre puede absorberlo (mismo criterio que el prorrateo por factura).
+  const i = pct.indexOf(Math.max(...pct));
+  pct[i] = Math.round((pct[i] + (100 - pct.reduce((a, b) => a + b, 0))) * 10) / 10;
+  return { SOW_SECURITY_PCT: pct[0], SOW_FACTORING_TARGET_PCT: pct[1], SOW_OTROS_FACTORING_PCT: pct[2], SOW_OTROS_BANCARIOS_PCT: pct[3] };
+}
 function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
   // ── Medido: volumen emitido y recibido por RUT ────────────────────────────────────────────────
   const emis = {}, recep = {}, razon = {};
@@ -58,6 +95,19 @@ function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
   }
   const sow = {};
   for (const s of (SHARE_OF_WALLET || [])) if (s && s.RUTCliente) sow[s.RUTCliente] = s;
+
+  // ── Medido: cómo se reparte entre FACTORINGS lo que el cliente cede ───────────────────────────
+  // De AECSync, que desde el 14-09-2026 reconcilia con el A1 —cada cesión apunta a un documento real—,
+  // así que estas proporciones se pueden medir en vez de suponerse.
+  const repFact = {};
+  for (const a of (AECSYNC || [])) {
+    if (!a || !a.RUTEmisor) continue;
+    const g = repFact[a.RUTEmisor] || (repFact[a.RUTEmisor] = { nuestro: 0, target: 0, otros: 0 });
+    const m = +a.MontoCesion || 0;
+    if (a.RUTFactoring === BICE_RUT) g.nuestro += m;
+    else if (esFactoringBanco(a.RazonSocialFactoring)) g.target += m;
+    else g.otros += m;
+  }
 
   // Mismo perfil que usa el A16 para la deuda de buró (ver `lib/perfil.js`): la nota y el comportamiento
   // de riesgo de una empresa tienen que contar la misma historia.
@@ -115,6 +165,16 @@ function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
       MARGEN_ULT_MES_M: Math.round(vAnualM / 12 * margenPct / 100),
       MARGEN_12M_M: Math.round(vAnualM * margenPct / 100),
       COLOC_PROM_12M_M: c ? Math.round(c.mm * 1000 / 12) : 0,
+      // ── MIX DE FINANCIAMIENTO DEL CLIENTE («SOW» en el tablero comercial) ─────────────────────
+      // Cuatro porcentajes que suman 100: cuánto de su financiamiento toma de nosotros, de los
+      // factorings de banco, del resto de los factorings, y cuánto NO es factoring sino crédito
+      // bancario. Vive en el A11 porque es el ÚNICO activo que ve más allá del factoring: AECSync
+      // sólo registra cesiones y el A5 sólo mide participación DENTRO del factoring. La cuarta
+      // porción es justamente la que ningún otro activo puede responder.
+      // NO contradice al A5, que es el maestro de la participación sobre factoring (§5 del
+      // levantamiento): las tres porciones de factoring, renormalizadas sobre su subtotal,
+      // reproducen `SOWActualPct`. Lo que el A11 agrega es el denominador más ancho.
+      ...mixFinanciero(rut, s, repFact[rut], r, pf),
       // Pricing histórico: NO está en ningún activo —una cesión traspasa el crédito, no el precio al
       // que se compró—, así que se genera por perfil. La cesión sólo decide si el campo APLICA: un
       // cliente que nunca nos cedió no tiene tasa de última operación.

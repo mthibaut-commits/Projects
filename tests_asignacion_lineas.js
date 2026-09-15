@@ -2306,6 +2306,122 @@
        `${todas.length} facturas de ${nombres.length} deudores · folio ${todas[0] && todas[0].folio} → ${todas[todas.length - 1] && todas[todas.length - 1].folio} · descendente ${descendente} · mismo contenido ${mismoSet} · no muta el índice ${noMuta}`);
   }
 
+  // ── 99 · EL MIX DE FINANCIAMIENTO («SOW» del tubo) SALE DEL A11, Y NO CONTRADICE AL A5 ──────
+  // La columna SOW del tubo en versión tabla responde «con quién se financia este cliente y cuánto
+  // de eso es nuestro». Ese dato no lo puede producir el pipeline y tampoco lo tenía ningún activo
+  // entero: AECSync (A2) sólo registra CESIONES —o sea factoring— y el A5 sólo mide participación
+  // DENTRO del factoring, así que ninguno de los dos puede responder por la deuda BANCARIA que no es
+  // factoring, que es una de las cuatro porciones. Por eso vive en **A11 · Plataforma 360**, que es el
+  // maestro de la EMPRESA: el sujeto del campo es el cliente, no su cartera ni un par (§5).
+  // Lo que este caso fija es que las dos entregas no puedan contradecirse.
+  {
+    const p360 = (window.PLATAFORMA360 && window.PLATAFORMA360.filas) || [];
+    const ixp = {}; ((window.PLATAFORMA360 && window.PLATAFORMA360.campos) || []).forEach((c, i) => { ixp[c] = i; });
+    const campos = ["SOW_SECURITY_PCT", "SOW_FACTORING_TARGET_PCT", "SOW_OTROS_FACTORING_PCT", "SOW_OTROS_BANCARIOS_PCT"];
+
+    // (a) LAS CUATRO PORCIONES SUMAN 100, en todas las filas que traen mix. Un mix que no suma 100 no
+    //     es un mix: son cuatro cifras sueltas, y la columna deja de significar «cuánto de su
+    //     financiamiento». Se mide sobre el archivo entero, no sobre una muestra.
+    let conMix = 0, sinMix = 0, noSuman = 0, negativos = 0;
+    const filasMix = [];
+    for (const fila of p360) {
+      const v = campos.map((c) => fila[ixp[c]]);
+      if (v.some((x) => x === "" || x == null)) { sinMix++; continue; }
+      conMix++;
+      filasMix.push(fila);
+      const s = v.reduce((a, b) => a + (+b || 0), 0);
+      if (Math.abs(s - 100) > 0.11) noSuman++;                  // tolerancia del redondeo a 1 decimal
+      if (v.some((x) => +x < 0 || +x > 100)) negativos++;
+    }
+    const sumanOk = conMix > 100 && noSuman === 0 && negativos === 0;
+
+    // (b) NO CONTRADICE AL A5, que sigue siendo el maestro de la participación sobre factoring. Las
+    //     TRES porciones de factoring, renormalizadas sobre su propio subtotal, tienen que reproducir
+    //     el `SOWActualPct` del A5. Es la prueba de que agregar el dato al A11 no creó una segunda
+    //     verdad sobre lo mismo: el A11 agrega la cuarta porción —lo bancario—, no reescribe las tres.
+    const sowA5 = {};
+    for (const s of (window.SHARE_OF_WALLET || [])) if (s && s.RUTCliente) sowA5[s.RUTCliente] = +s.SOWActualPct || 0;
+    let cotejados = 0, contradicen = 0, peor = 0;
+    for (const fila of filasMix) {
+      const rut = fila[ixp.RUT];
+      if (!(rut in sowA5)) continue;
+      const sec = +fila[ixp.SOW_SECURITY_PCT], tgt = +fila[ixp.SOW_FACTORING_TARGET_PCT], otr = +fila[ixp.SOW_OTROS_FACTORING_PCT];
+      const sub = sec + tgt + otr;
+      if (sub <= 0) continue;
+      cotejados++;
+      const d = Math.abs((sec / sub) * 100 - sowA5[rut]);
+      if (d > peor) peor = d;
+      if (d > 0.6) contradicen++;                              // 0,6 pto: los cuatro redondeos a 1 decimal
+    }
+    const a5Ok = cotejados > 100 && contradicen === 0;
+
+    // (c) UN DEUDOR NO TIENE MIX, y eso se devuelve como `null`, no como cuatro ceros. La pregunta no
+    //     le aplica: un deudor no cede facturas, no se financia con nosotros. Cuatro ceros se leerían
+    //     como «no opera con nadie», que es una afirmación, y el archivo no la hace.
+    const unDeudor = p360.find((f) => f[ixp.ROL] !== "CLIENTE" && campos.every((c) => f[ixp[c]] === "" || f[ixp[c]] == null));
+    const unCliente = filasMix[0];
+    const mixCliente = mixSowDe(unCliente[ixp.RUT]);
+    const nullOk = (!unDeudor || mixSowDe(unDeudor[ixp.RUT]) === null)
+      && mixSowDe("99999999-9") === null && mixSowDe("") === null && mixSowDe(null) === null
+      && Array.isArray(mixCliente) && mixCliente.length === 4;
+
+    // (d) ORDEN DESCENDENTE y la NUESTRA marcada. La columna contesta «quién se lleva más»; con el
+    //     orden fijo por nombre había que comparar cuatro cifras para contestarla. Y la porción propia
+    //     va marcada para poder encontrarla sin leer las etiquetas.
+    const ordenOk = filasMix.slice(0, 60).every((fila) => {
+      const m = mixSowDe(fila[ixp.RUT]);
+      if (!m || m.length !== 4) return false;
+      const desc = m.every((x, i) => i === 0 || m[i - 1].pct >= x.pct);
+      const nuestras = m.filter((x) => x.nuestro);
+      return desc && nuestras.length === 1 && nuestras[0].label === "Security"
+        && Math.abs(m.reduce((a, b) => a + b.pct, 0) - 100) <= 0.11;
+    });
+
+    // (e) QUÉ SE DIBUJA. Una porción en CERO no se dibuja —no es parte del mix y empuja hacia abajo a
+    //     las que sí—, pero la NUESTRA se muestra siempre: «no nos cede nada» es justamente lo que el
+    //     ejecutivo vino a leer acá. La regla vive en `mixSowVisible` y no dentro del JSX de la celda,
+    //     porque una regla escrita dentro de un `map` no se puede probar.
+    const caso = [
+      { label: "Otros factoring", pct: 60, nuestro: false },
+      { label: "Security", pct: 0, nuestro: true },
+      { label: "Factoring target", pct: 40, nuestro: false },
+      { label: "Otros bancarios", pct: 0, nuestro: false },
+    ];
+    const vis = mixSowVisible(caso);
+    const visibleOk = vis.length === 3 && vis.some((x) => x.nuestro && x.pct === 0)
+      && !vis.some((x) => x.pct === 0 && !x.nuestro)
+      && mixSowVisible(null).length === 0;
+
+    // (f) LA MEMOIZACIÓN NO ENVENENA: dos operaciones de clientes distintos no comparten mix, y una
+    //     operación cuyo cliente no está en el archivo devuelve `null` las dos veces —la clave se
+    //     consulta con `has`, así que un `null` legítimo queda cacheado y no se recalcula—.
+    const rutA = filasMix[0][ixp.RUT], rutB = filasMix[1][ixp.RUT];
+    const mA = mixSowDeal({ rutEmisor: rutA }), mB = mixSowDeal({ rutEmisor: rutB });
+    const memoOk = mA && mB && mixSowDeal({ rutEmisor: rutA }) === mA
+      && JSON.stringify(mA) !== JSON.stringify(mB)
+      && mixSowDeal({ rutEmisor: "99999999-9" }) === null
+      && mixSowDeal({ rutEmisor: "99999999-9" }) === null;
+
+    // (g) QUIÉN ES EL «FACTORING TARGET» SE DECLARA, no se adivina por trozo de la razón social. El
+    //     clasificador buscaba «ita» para encontrar «Itaú» y con eso daba **Eurocapital** por factoring
+    //     de banco —«eurocap·ita·l»—: el churn le atribuía al target negocio que se había llevado otro,
+    //     el KPI «SOW factoring target» quedaba inflado y la alerta comercial se levantaba nombrando a
+    //     tres que no habían participado. Se comprueba contra los siete factoring que el A2 declara.
+    const target = ["BCI Factoring", "Banchile Factoring", "Banco de Chile Factoring", "Itaú Corpbanca Factoring", "Factoring Itaú"];
+    const noTarget = ["Eurocapital", "Tanner Servicios Financieros", "Incofin", "Factotal", "Servicios Financieros Progreso", "Coopeuch Factoring", "Factoring Security (BICE)"];
+    const clasifOk = target.every((n) => esFactoringBanco(n) === true) && noTarget.every((n) => esFactoringBanco(n) === false);
+    //     …y el A2 no trae ninguno que el clasificador no sepa ubicar: los nombres del archivo son los
+    //     que el churn reparte, así que uno nuevo tiene que aparecer en la lista o quedar en «otros».
+    const delArchivo = [...new Set((window.AECSYNC || []).map((a) => a.RazonSocialFactoring).filter(Boolean))];
+    const targetArchivo = delArchivo.filter((n) => esFactoringBanco(n));
+    const archivoOk = delArchivo.length >= 5 && targetArchivo.length === 2
+      && targetArchivo.every((n) => /BCI|Banchile/.test(n)) && !targetArchivo.includes("Eurocapital");
+
+    ok("99 el mix de financiamiento sale del A11, suma 100 y no contradice la participación del A5",
+       sumanOk && a5Ok && nullOk && ordenOk && visibleOk && memoOk && clasifOk && archivoOk,
+       `${conMix} empresas con mix / ${sinMix} sin mix · no suman 100: ${noSuman} · fuera de rango: ${negativos} · cotejadas contra el A5: ${cotejados}, contradicen ${contradicen} (peor desvío ${peor.toFixed(2)} pto) · deudor sin mix ${nullOk} · orden y marca ${ordenOk} · 0% no se dibuja salvo la nuestra ${visibleOk} · memo ${memoOk} · factoring target declarado ${clasifOk} (Eurocapital NO es de banco) · del archivo: ${targetArchivo.join(", ")} de ${delArchivo.length}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
