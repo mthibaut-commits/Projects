@@ -53,6 +53,27 @@ Todas las líneas de factoring son objetos del **par cliente-deudor**, identific
 
 LF1 y LF4 no pueden llevar un `rut_deudor` concreto porque por definición aplican a cualquier deudor. La llave del par se completa en la **asignación**, que sí registra el RUT deudor efectivo. Sin ese registro no se puede descontar del paraguas ni reportar exposición.
 
+#### 2.1.1 Monto mínimo de una línea aprobada
+
+Una línea aprobada **no puede ser menor a $10.000.000** (`lineaMinima`, parámetro del tenant). Una línea
+bajo ese monto no financia ninguna factura del cliente: existe en la ficha y sólo produce rechazos.
+
+**Excepción: la PUNTUAL (LF3)**, que puede ser menor. Es un cupo a medida de UNA operación, así que su
+tamaño lo fija esa operación y no la política. Se talla igual contra el mínimo de su hermana: partir el
+cupo de un par entre LF2 y LF3 no puede dejar la LF2 bajo el piso.
+
+Dos consecuencias que el mínimo tiene sobre el reparto y conviene no descubrirlas después:
+
+1. **Un piso por línea significa MENOS líneas, no líneas más grandes.** El presupuesto del cliente es
+   fijo, así que no se puede repartir entre más de `presupuesto / mínimo` pares. Los deudores que
+   quedan fuera se financian por la línea comodín (LF4), que es para lo que existe; y lo que el piso
+   deja sin repartir vuelve al comodín en vez de perderse.
+2. **El mínimo no crea capacidad.** El tope del cliente —lo que el comité aprobó— manda sobre el
+   mínimo. Un cliente cuyo cupo vigente sea menor que el mínimo (por ejemplo con líneas suspendidas)
+   recibe una sola línea por lo que le queda, **por debajo del mínimo**: darle una de $10.000.000
+   sería aprobarle cupo que nadie aprobó.
+
+
 ### 2.2 Paraguas del deudor
 
 Línea propia del RUT deudor que limita la exposición total del factoring a ese deudor, **compartida por todos los clientes** que ceden facturas suyas. Es el control que impide que diez clientes cediendo el mismo deudor multipliquen la exposición.

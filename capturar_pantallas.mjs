@@ -239,7 +239,11 @@ const gatillo = (await fila.count()) ? fila : tarjeta;
 if (await gatillo.count()) {
   const [detalle] = await Promise.all([ctx.waitForEvent("page", { timeout: 60000 }), gatillo.click()]);
   await detalle.waitForLoadState("load", { timeout: 300000 });
-  await detalle.waitForFunction(() => /Monto|Facturas|Oferta/.test(document.body.innerText || ""), null, { timeout: 300000 });
+  // La señal de que el detalle YA montó tiene que valer en CUALQUIER etapa. Era /Monto|Facturas|Oferta/,
+  // y las tres palabras dependían de que la operación estuviera en «Oferta y Negociación»: desde que una
+  // oportunidad sin simular se queda en Prospección, ninguna aparecía y la captura moría por timeout a
+  // los 5 minutos, como si la app estuviera rota. El título de la pestaña no depende del estado.
+  await detalle.waitForFunction(() => /DETALLE DE OPORTUNIDAD/i.test(document.body.innerText || ""), null, { timeout: 300000 });
   await detalle.waitForTimeout(2500);
   await guardar(detalle, n, "detalle-operacion", "NEX Factoring · Detalle de la operación");
   await detalle.close();

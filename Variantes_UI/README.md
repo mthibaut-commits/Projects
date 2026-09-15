@@ -11,6 +11,7 @@ en vez de duplicarlo, para que no se desfasen).
 ```bash
 node build_app.mjs
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_variantes.mjs
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_tabla_simulada.mjs
 ```
 
 ## Qué hay
@@ -26,6 +27,13 @@ PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_variantes.mjs
 | `detalle-07-otorgamiento` | Tab Otorgamiento (reglas y excepciones) | Tab, visible si la operación lo requiere |
 | `detalle-08-verificacion` | Tab Verificación | Tab, aparece sólo tras pre-evaluar u ofertar (`mostrarVerif`) |
 | `detalle-09-cerrar-oferta` | Cerrar oferta y publicar | Botón del resumen |
+| `tubo-tabla-simulada` | El TUBO en vista Tabla con una operación simulada | Se arma la oferta en el detalle, se cierra esa pestaña y se captura el tubo |
+
+La última no es un estado del detalle: es del **tubo**, y está acá porque se llega igual, armando la
+oferta en el detalle. Existe porque el tubo arranca todo en «Sin simular» —la simulación ocurre en la
+PESTAÑA DEL DETALLE, que es otro documento, y vuelve por el mensaje `nex-simulado`—, así que es la
+única captura que recorre ese viaje de ida y vuelta entre las dos ventanas. La produce
+`capturar_tabla_simulada.mjs`, que reutiliza el mismo serializador.
 
 ## Reglas
 

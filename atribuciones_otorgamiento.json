@@ -1,6 +1,6 @@
 {
   "descripcion": "Atribuciones de aprobación de otorgamiento por criterio — NEX Factoring. Convención: cada regla declara el ÁREA y cada tramo el NIVEL requerido; aprueba cualquier usuario de esa área con ese nivel o superior, de modo que un cargo vacante lo cubre la jefatura de su área. La escalada no cruza áreas. El MONTO de la operación impone además un piso por área (ver `piso_por_monto`): el nivel realmente exigido es el mayor entre el del tramo y ese piso, así que el `nivel_requerido` de cada tramo es el mínimo, el que rige en operaciones de monto leve.",
-  "generado": "2026-09-11",
+  "generado": "2026-09-14",
   "niveles": {
     "jefe_comercial": {
       "area": "comercial",
@@ -25,20 +25,24 @@
     "operaciones": {
       "area": "operaciones",
       "nivel": 5
+    },
+    "jefe_operaciones": {
+      "area": "operaciones",
+      "nivel": 3
     }
   },
   "piso_por_monto": {
-    "tramos_mm": [
+    "tramos": [
       {
-        "hasta": 20,
+        "hasta": 20000000,
         "grav": "leve"
       },
       {
-        "hasta": 60,
+        "hasta": 60000000,
         "grav": "moderado"
       },
       {
-        "hasta": 120,
+        "hasta": 120000000,
         "grav": "grave"
       },
       {
@@ -69,7 +73,7 @@
       }
     }
   },
-  "total_criterios": 79,
+  "total_criterios": 77,
   "criterios": [
     {
       "n": 101,
@@ -86,10 +90,11 @@
           "condicion": "no pagareFirmado",
           "disposicion": "excepcion",
           "nivel_requerido": 1,
-          "rol_aprobador": "Operaciones",
+          "rol_aprobador": "Jefe de Operaciones",
           "area_aprobacion": "Operaciones",
           "aprobadores": [
             "Andrés Mella · Operaciones",
+            "Ignacio Peña · Jefe de Operaciones",
             "Super Administrador (ve todo)"
           ]
         }
@@ -110,10 +115,11 @@
           "condicion": "no pagarés suficientes",
           "disposicion": "excepcion",
           "nivel_requerido": 1,
-          "rol_aprobador": "Operaciones",
+          "rol_aprobador": "Jefe de Operaciones",
           "area_aprobacion": "Operaciones",
           "aprobadores": [
             "Andrés Mella · Operaciones",
+            "Ignacio Peña · Jefe de Operaciones",
             "Super Administrador (ve todo)"
           ]
         }
@@ -134,10 +140,11 @@
           "condicion": "no pagaré que cubre 60d post-vencimiento",
           "disposicion": "excepcion",
           "nivel_requerido": 1,
-          "rol_aprobador": "Operaciones",
+          "rol_aprobador": "Jefe de Operaciones",
           "area_aprobacion": "Operaciones",
           "aprobadores": [
             "Andrés Mella · Operaciones",
+            "Ignacio Peña · Jefe de Operaciones",
             "Super Administrador (ve todo)"
           ]
         }
@@ -158,10 +165,11 @@
           "condicion": "no IVA al día",
           "disposicion": "excepcion",
           "nivel_requerido": 2,
-          "rol_aprobador": "Operaciones",
+          "rol_aprobador": "Jefe de Operaciones",
           "area_aprobacion": "Operaciones",
           "aprobadores": [
             "Andrés Mella · Operaciones",
+            "Ignacio Peña · Jefe de Operaciones",
             "Super Administrador (ve todo)"
           ]
         }
@@ -174,7 +182,7 @@
       "tipo": "ClientSegmentation",
       "condicion_maestra": "C05",
       "reevaluable": true,
-      "hallazgo": "Cliente nuevo sin línea de crédito aprobada — requiere constitución de línea (Comité de Crédito)",
+      "hallazgo": "Cliente nuevo sin línea de crédito aprobada — la constitución se tramita en Solicitud de Línea",
       "naturaleza": "decision",
       "tramos": [
         {
@@ -309,12 +317,12 @@
       "tipo": "Behaviour",
       "condicion_maestra": "C09",
       "reevaluable": true,
-      "hallazgo": "Nota de comportamiento del cliente bajo el umbral mínimo (3,7)",
+      "hallazgo": "Nota de comportamiento del cliente bajo el umbral mínimo de compra",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "notaCliente≥3.7",
+          "condicion": "notaCliente≥pol(notaMinCompra,3.7)",
           "disposicion": "aprobado"
         },
         {
@@ -1707,110 +1715,6 @@
       "tramos": []
     },
     {
-      "n": 147,
-      "nombre": "C47 · Par C-D · Documentos en Cartera Reclamados",
-      "dominio": "Comercial",
-      "tipo": "Conditions",
-      "condicion_maestra": "C47",
-      "reevaluable": true,
-      "hallazgo": "Cartera vigente con este deudor con documentos reclamados",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "v[k]>0",
-          "disposicion": "excepcion",
-          "nivel_requerido": 1,
-          "rol_aprobador": "Jefe de Grupo Comercial",
-          "area_aprobacion": "Comercial",
-          "aprobadores": [
-            "Sofía Herrera · Jefe de Grupo Comercial",
-            "Dante Montes · Gerente Comercial",
-            "Federico Diaz · Gerente General",
-            "Super Administrador (ve todo)"
-          ]
-        }
-      ]
-    },
-    {
-      "n": 148,
-      "nombre": "C48 · Par C-D · Documentos en Cartera con Nota de Crédito",
-      "dominio": "Comercial",
-      "tipo": "Conditions",
-      "condicion_maestra": "C48",
-      "reevaluable": true,
-      "hallazgo": "Cartera vigente con este deudor con documentos con notas de crédito",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "v[k]>0",
-          "disposicion": "excepcion",
-          "nivel_requerido": 1,
-          "rol_aprobador": "Jefe de Grupo Comercial",
-          "area_aprobacion": "Comercial",
-          "aprobadores": [
-            "Sofía Herrera · Jefe de Grupo Comercial",
-            "Dante Montes · Gerente Comercial",
-            "Federico Diaz · Gerente General",
-            "Super Administrador (ve todo)"
-          ]
-        }
-      ]
-    },
-    {
-      "n": 149,
-      "nombre": "C49 · Par C-D · Documentos en Cartera con Mora",
-      "dominio": "Comercial",
-      "tipo": "Conditions",
-      "condicion_maestra": "C49",
-      "reevaluable": true,
-      "hallazgo": "Cartera vigente con este deudor con documentos en mora",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "v[k]>0",
-          "disposicion": "excepcion",
-          "nivel_requerido": 1,
-          "rol_aprobador": "Jefe de Grupo Comercial",
-          "area_aprobacion": "Comercial",
-          "aprobadores": [
-            "Sofía Herrera · Jefe de Grupo Comercial",
-            "Dante Montes · Gerente Comercial",
-            "Federico Diaz · Gerente General",
-            "Super Administrador (ve todo)"
-          ]
-        }
-      ]
-    },
-    {
-      "n": 150,
-      "nombre": "C50 · Par C-D · Cuentas por Cobrar Pendientes",
-      "dominio": "Comercial",
-      "tipo": "Conditions",
-      "condicion_maestra": "C50",
-      "reevaluable": true,
-      "hallazgo": "Cuentas por cobrar pendientes de liquidar con este deudor",
-      "naturaleza": "decision",
-      "tramos": [
-        {
-          "orden": 1,
-          "condicion": "v[k]>0",
-          "disposicion": "excepcion",
-          "nivel_requerido": 1,
-          "rol_aprobador": "Jefe de Grupo Comercial",
-          "area_aprobacion": "Comercial",
-          "aprobadores": [
-            "Sofía Herrera · Jefe de Grupo Comercial",
-            "Dante Montes · Gerente Comercial",
-            "Federico Diaz · Gerente General",
-            "Super Administrador (ve todo)"
-          ]
-        }
-      ]
-    },
-    {
       "n": 151,
       "nombre": "C51 · Nota Cliente",
       "dominio": "Comercial",
@@ -1837,12 +1741,12 @@
       "tipo": "Behaviour",
       "condicion_maestra": "D01",
       "reevaluable": true,
-      "hallazgo": "Nota de comportamiento del deudor bajo el umbral mínimo (3,7)",
+      "hallazgo": "Nota de comportamiento del deudor bajo el umbral mínimo de compra",
       "naturaleza": "decision",
       "tramos": [
         {
           "orden": 1,
-          "condicion": "dNota≥3.7",
+          "condicion": "dNota≥pol(notaMinCompra,3.7)",
           "disposicion": "aprobado"
         },
         {
@@ -2994,6 +2898,68 @@
             "Sofía Herrera · Jefe de Grupo Comercial",
             "Dante Montes · Gerente Comercial",
             "Federico Diaz · Gerente General",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 305,
+      "nombre": "O05 · Evidencia del Contrato de Cesión",
+      "dominio": "Operaciones",
+      "tipo": "MinimumViability",
+      "condicion_maestra": "O05",
+      "reevaluable": true,
+      "hallazgo": "No consta la autorización del contrato de cesión: el cliente todavía no firma en el portal, o la oferta se publicó en papel y falta adjuntar el comprobante",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "no contratoEvidencia",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Operaciones",
+          "area_aprobacion": "Operaciones",
+          "aprobadores": [
+            "Andrés Mella · Operaciones",
+            "Ignacio Peña · Jefe de Operaciones",
+            "Super Administrador (ve todo)"
+          ]
+        }
+      ]
+    },
+    {
+      "n": 306,
+      "nombre": "O06 · Monto Cedido Igual al Monto del Documento",
+      "dominio": "Operaciones",
+      "tipo": "MinimumViability",
+      "condicion_maestra": "O06",
+      "reevaluable": true,
+      "hallazgo": "El monto que el registro de cesiones declara para una o más facturas no coincide con el monto del documento",
+      "naturaleza": "decision",
+      "tramos": [
+        {
+          "orden": 1,
+          "condicion": "cesionExcedida>0",
+          "disposicion": "excepcion",
+          "nivel_requerido": 5,
+          "rol_aprobador": "Operaciones",
+          "area_aprobacion": "Operaciones",
+          "aprobadores": [
+            "Andrés Mella · Operaciones",
+            "Super Administrador (ve todo)"
+          ]
+        },
+        {
+          "orden": 2,
+          "condicion": "cesionParcial>0",
+          "disposicion": "excepcion",
+          "nivel_requerido": 3,
+          "rol_aprobador": "Jefe de Operaciones",
+          "area_aprobacion": "Operaciones",
+          "aprobadores": [
+            "Andrés Mella · Operaciones",
+            "Ignacio Peña · Jefe de Operaciones",
             "Super Administrador (ve todo)"
           ]
         }

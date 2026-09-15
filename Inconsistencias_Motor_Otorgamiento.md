@@ -281,7 +281,7 @@ de Riesgo en N1–N3 desde el mantenedor — exactamente el camino que el negoci
 > prefijo del código —deducirlo obligaba a renumerarlas D24–D27 y perder la trazabilidad con la spec—.
 > **A16 actualizado:** el layout suma `CARTERA_RECLAMADA_CD`, `CARTERA_NC_CD`, `CARTERA_MOROSA_CD` y
 > `CXC_PENDIENTES_CD` en la fila `DEUDOR` (una por par), con su diccionario y su ejemplo.
-> **Verificado:** el catálogo corre **79 reglas**, ningún código de la política sin implementar. Casos 46–48.
+> **Verificado:** el catálogo corre las **79 reglas** de la política, ningún código sin implementar. Casos 46–48.
 
 **Qué dice la política.** Spec §1: *«la política de riesgo evalúa 79 reglas»* = C01–C52 (52) + D01–D23 (23) + O01–O04 (4).
 Spec §7 detalla **C47–C50 — «Cartera del par C-D: reclamados / NC / mora / CxC»**, carácter EXC-COM, nivel N1c, re-evaluables.
@@ -546,9 +546,11 @@ grep -n -A6 '^let PISO_ATRIB_MONTO'  pipeline_comercial.jsx   # INC-05 · el pis
 
 # 4) Conteos que este documento afirma, medidos en RUNTIME (el catalogo se arma en un IIFE:
 #    contarlo con grep da otro numero). Requiere el HTML construido — ver CLAUDE.md.
-#    Esperado HOY (cerrados INC-01/02/03/04/06): 79 reglas · 184 tramos · 134 tramos de excepcion ·
-#    71 reglas con excepcion, y NINGUN tramo sin aprobador. El reparto por area ya no se lee de
-#    NIVEL_ROL —que dejo de decidir— sino del area que declara cada regla.
+#    Esperado HOY (cerrados INC-01/02/03/04/06; retiradas C47-C50 el 14-09; + O05 y O06 propias):
+#    77 reglas · 183 tramos · 133 tramos de excepcion · 69 reglas con excepcion, y NINGUN tramo sin
+#    aprobador. De esas 77, 75 son de la politica v1.0 y DOS son del proceso —O05 y O06, las dos de
+#    Operaciones (ver mas abajo)—. El reparto por area ya no se lee de NIVEL_ROL —que dejo de
+#    decidir— sino del area que declara cada regla: riesgo 97 · comercial 29 · operaciones 7.
 #    Valores previos, para comparar: 75 reglas · 180 tramos · 130 de excepcion · 67 reglas con
 #    excepcion, ruteados a comercial 76 / riesgo 54 / operaciones 0  ← ese 0 era INC-03 medido.
 #    Pegar en la consola del navegador con pipeline_comercial.html abierto:
@@ -565,3 +567,84 @@ grep -n -A6 '^let PISO_ATRIB_MONTO'  pipeline_comercial.jsx   # INC-05 · el pis
 # 5) Texto de la política vigente (requiere pypdf)
 python3 -c "from pypdf import PdfReader; print('\n'.join((p.extract_text() or '') for p in PdfReader('Specs_Procesos/Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf').pages))" | less
 ```
+
+---
+
+## 8. Criterios propios del proceso (no vienen de la política v1.0)
+
+La política v1.0 define 79 reglas —75 vigentes, tras retirarse C47–C50 por quedar dominadas por C40–C43— y el catálogo
+las implementa todas. **Dos criterios no salen de ese documento**: los agrega este proceso, y por eso se cuentan aparte
+—el caso 46 mide la cobertura de la política y dejaría de medirla si sumara reglas propias al mismo total—. Los dos son
+del área de **Operaciones**, y no por casualidad: la política v1.0 la escribió Riesgo, y lo que le falta es justamente
+el control documental del acto de cursar.
+
+### O05 · Evidencia del Contrato de Cesión — Operaciones N3 (13-09-2026)
+
+**Por qué existe.** Ninguna operación se cursa sin constancia de que el cliente autorizó la cesión. Esa constancia
+existía en el flujo —el cliente firma en el portal— pero no era un criterio: no se veía en la mesa de otorgamiento, no
+tenía aprobador y no dejaba nada que auditar cuando la oferta se cerraba en papel.
+
+**Cómo se satisface.** El criterio existe **siempre**, en las dos vías de publicación, y lo que cambia es la evidencia:
+
+| Vía de publicación | Evidencia | Quién la crea |
+| --- | --- | --- |
+| **Electrónica** (correo) | La autorización del cliente en el portal, con su actor y su hora | El cliente, al firmar. El criterio queda **aprobado** sin que nadie lo vise |
+| **Física** (contrato en papel) | El comprobante del contrato firmado, adjunto como respaldo | El ejecutivo lo adjunta y **Operaciones N3** lo visa |
+
+La evidencia electrónica se lee por `aprobacionFormalCliente` y no por una bandera suelta: es el mismo gate que ya sabe
+que **reabrir revoca la firma**, así que si el paquete cambia, lo firmado deja de describir lo que se va a cursar y la
+evidencia cae con él. En la vía física la firma del cliente **no** satisface el criterio: el papel se firmó fuera del
+sistema y no hay nada que este pueda dar por cierto.
+
+**Por qué Operaciones N3.** Es viabilidad operativa del curse —la familia de los pagarés C01–C03— y no un trámite de
+mesa: sin esa constancia la cesión no es oponible al deudor.
+
+**Cargo nuevo.** Operaciones tenía un solo cargo, en N5, así que un requisito N3 se cubría por escalada y no se
+distinguía del que sí necesita la máxima atribución del área. Se dio de alta **Jefe de Operaciones (N3)** —la misma
+observación que este documento dejó anotada para Riesgo, que sólo tiene cargos en N4 y N5—. **Dar de alta el cargo no
+basta:** `atribDe` devuelve atribución vacía a quien no figure en el padrón de personas, así que el primer intento creó
+el cargo y la excepción seguía cayendo en el N5. El caso 85 fija las dos mitades: que el cargo exista y que alguien lo
+ocupe.
+
+**Variable.** `contratoEvidencia` no viene de la API de riesgo sino de la propia operación, así que **no se congela con
+la versión**: la versión es la foto de lo que dijo el origen externo, y esto es un hecho que este sistema conoce y que
+cambia dentro de la misma revisión. Publicar en papel abre O05 en el acto; leído del snapshot, el criterio no aparecería
+hasta la próxima reevaluación —o sea, después de girar—. Se superpone **una sola** variable, a propósito: la puerta se
+abre para lo que la operación posee, no para reescribir el padrón de riesgo desde la UI.
+
+**Cache.** `publicacion`, `clienteAcepto` y `reabierta` entraron a la clave de `visadoKey`: publicar una oferta que ya
+estaba en «oferta» no cambia la etapa, así que sin eso el visado cacheado seguía siendo el de antes de publicar.
+
+### O06 · Monto Cedido Igual al Monto del Documento — Operaciones N5 / N3 (14-09-2026)
+
+**Por qué existe.** El usuario lo planteó como un recuerdo: «me parece que hay una regla en el motor de otorgamiento que
+revisa que el monto de cesión sea = monto de la factura, en el área de operaciones». **No existía.** Buscado en el
+catálogo vigente y en el legado (`Legado/Rules Cliente2_v0.xlsx`, la fuente de las 75 reglas): la política trae **dos**
+criterios sobre cesiones y los dos son de **concentración**, no de monto por documento —
+
+| Código | Qué mide | Área |
+|---|---|---|
+| C37 · Existencia Ratio Venta vs. Monto Cedido Alto LM | qué proporción de su venta cede el cliente a factoring | comercial |
+| C39 · Alta Cesión a Factorings Pequeños | qué proporción le cede a factorings privados chicos | comercial |
+
+— y el área de Operaciones sólo tenía O05. El control faltaba **justo donde el dato podía romperse**.
+
+**Por qué no se veía.** Hasta el 14-09-2026 las 1.300 cesiones del A2 eran por el **total exacto** del documento, así que
+la comparación se cumplía siempre. Un control que nunca puede fallar no se echa de menos: el hueco de la regla y el del
+dato se tapaban mutuamente. Al reconciliar el A2 contra el A1 y admitir cesiones parciales, los dos quedaron a la vista.
+
+**Cómo funciona.** `varsOperacionCli` **mide**, documento a documento, las facturas de la oferta contra el registro de
+cesiones, y devuelve dos variables. Los tramos van a niveles distintos porque no son el mismo hecho:
+
+| Tramo | Qué pasó | Nivel |
+|---|---|---|
+| `cesionExcedida > 0` | una cesión por **más** que la factura: no es una diferencia, es un crédito que no existe | Operaciones **N5** |
+| `cesionParcial > 0` | una cesión **parcial**: el crédito quedó con dos dueños y cobrarlo sería compartir la cobranza | Operaciones **N3** |
+
+El primer tramo el activo lo valida en origen y no debería llegar nunca. Se controla igual: **un control que sólo cubre
+lo que ya sabemos que pasa no controla nada.**
+
+**Relación con O05.** Son el par documental del acto de ceder: O05 comprueba que **exista** la autorización del contrato,
+O06 que lo cedido **coincida** con lo que se va a comprar. Caso 96.
+
+---

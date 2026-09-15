@@ -1,0 +1,53 @@
+{
+  "_comentario": "Activo A2 · AECSync (Datamart). Dos notificaciones reales de la entrega vigente: una cesión por el total del documento y una cesión PARCIAL. Ver spec_aecsync.md.",
+  "ejemplos": [
+    {
+      "RUTCedente": "57452730-5",
+      "RazonSocialCedente": "Repuestos Curico Ltda",
+      "EmailCedente": "contacto@repuestoscuric.cl",
+      "RUTFactoring": "99.500.410-0",
+      "RazonSocialFactoring": "Banco Consorcio",
+      "EmailFactoring": "contacto@bancoconsorcio.cl",
+      "TipoDTE": "33",
+      "TipoDTEDesc": "Factura electronica",
+      "Folio": 212876,
+      "FechaEmisionDTE": "2026-06-22",
+      "MontoDocumento": 9026543,
+      "RUTEmisor": "57452730-5",
+      "RUTReceptor": "87947535-5",
+      "RazonSocialReceptor": "Inversiones Los Aromos Ltda",
+      "EmailReceptor": "pagos@constructorapy.cl",
+      "FechaCesion": "2026-06-23T03:01",
+      "MontoCesion": 9026543,
+      "FechaVencimientoCesion": "2026-07-19",
+      "ReceptorElectronico": true,
+      "Servicio": "AECSync",
+      "Notificacion": "AEC_SINCRONIZADO",
+      "Extras": {}
+    },
+    {
+      "RUTCedente": "64359778-K",
+      "RazonSocialCedente": "Fruticola del Sur Ltda",
+      "EmailCedente": "contacto@fruticoladelsu.cl",
+      "RUTFactoring": "76.118.580-2",
+      "RazonSocialFactoring": "Eurocapital",
+      "EmailFactoring": "contacto@eurocapital.cl",
+      "TipoDTE": "33",
+      "TipoDTEDesc": "Factura electronica",
+      "Folio": 215420,
+      "FechaEmisionDTE": "2026-06-22",
+      "MontoDocumento": 47207276,
+      "RUTEmisor": "64359778-K",
+      "RUTReceptor": "2.738.599-6",
+      "RazonSocialReceptor": "Sodimac",
+      "EmailReceptor": "pagos@mantoscoppersa.cl",
+      "FechaCesion": "2026-06-23T03:01",
+      "MontoCesion": 14581738,
+      "FechaVencimientoCesion": "2026-08-16",
+      "ReceptorElectronico": true,
+      "Servicio": "AECSync",
+      "Notificacion": "AEC_SINCRONIZADO",
+      "Extras": {}
+    }
+  ]
+}
