@@ -3050,6 +3050,55 @@
        `positivo cursa ${positivo} · $0 bloquea ${cero} · negativo bloquea ${neg} (${fmtCLP(giroCursable(-673476).monto)}) · redondea al peso ${redondeo} · sin simular no se pronuncia ${sinDato} · siempre con motivo ${conMotivo}`);
   }
 
+  // ── 109 · EL DETALLE DE LA SOLICITUD AL COMITÉ: qué línea se pide, sobre qué estado y por qué.
+  //    Una solicitud automática es UNA solicitud con N líneas de detalle (caso 106) y la bandeja
+  //    mostraba sólo el total. El comité aprueba o recorta línea por línea, así que necesita el estado
+  //    del par —aprobada, utilizada, disponible— y de qué operación salió lo que se pide.
+  {
+    const LIN = [
+      { granularidad: "par", rutDeudor: "99.111.111-1", tipo: "LF2", aprobado: 40e6, vigente: 15e6 },
+      { granularidad: "par", rutDeudor: "99.111.111-1", tipo: "LF3", aprobado: 10e6, vigente: 4e6 },
+      { granularidad: "par", rutDeudor: "99.222.222-2", tipo: "LF2", aprobado: 30e6, vigente: 30e6 },
+      { granularidad: "par", rutDeudor: "99.333.333-3", tipo: "LF2", aprobado: 99e6, vigente: 0, descartada: true },
+      { granularidad: "comodin", rutDeudor: null, tipo: "LF4", aprobado: 25e6, vigente: 5e6 },
+    ];
+    // (a) LAS LÍNEAS DEL PAR SE SUMAN —LF2 y LF3 son dos cupos del mismo par— y el disponible es la
+    //     resta. Una descartada no cuenta: el motor la fusionó en su hermana y sumarla contaría dos veces.
+    const a = lineaParDeSolicitud("99.111.111-1", LIN);
+    const sumaOk = a.propia === true && a.aprobada === 50e6 && a.utilizada === 19e6 && a.disponible === 31e6
+      && a.tipos.length === 2;
+    const descartadaOk = lineaParDeSolicitud("99.333.333-3", LIN).propia === false;
+
+    // (b) «SIN LÍNEA PROPIA» NO ES UNA LÍNEA EN CERO. El par sin cupo propio se financia por el
+    //     comodín del cliente, así que decir «M$0 aprobada» afirmaría que al comité se le pide ampliar
+    //     algo que existe — y es justamente el caso que una PUNTUAL viene a resolver. El comodín del
+    //     cliente no es del par y no puede colarse en su fila.
+    const sin = lineaParDeSolicitud("99.999.999-9", LIN);
+    const sinOk = sin.propia === false && sin.aprobada === 0 && sin.utilizada === 0 && sin.disponible === 0;
+    const comodinOk = !LIN.filter((l) => l.granularidad === "par").some((l) => l.tipo === "LF4");
+
+    // (c) EL DISPONIBLE NO SE VA BAJO CERO. Un par con la línea copada da 0, no un negativo: el
+    //     disponible es lo que queda por usar y «−M$5» no es una cantidad de cupo.
+    const copado = lineaParDeSolicitud("99.222.222-2", LIN);
+    const copadoOk = copado.disponible === 0 && copado.aprobada === 30e6 && copado.utilizada === 30e6;
+
+    // (d) LA PROYECCIÓN ES SOBRE LO PEDIDO, en los dos lados: si el comité aprueba, la línea del par
+    //     sube en lo solicitado y su uso también al cursar la operación. Aprobar sin proyectar el uso
+    //     mostraría una línea que se amplía y nunca se ocupa.
+    const pedido = 20e6;
+    const apProy = a.aprobada + pedido, usoProy = a.utilizada + pedido;
+    const proyOk = apProy === 70e6 && usoProy === 39e6 && apProy - usoProy === a.disponible;
+
+    // (e) NO MUTA lo que lee: las líneas son las del índice memoizado del cliente.
+    const antes = JSON.stringify(LIN);
+    lineaParDeSolicitud("99.111.111-1", LIN); lineaParDeSolicitud("99.999.999-9", LIN);
+    const puroOk = JSON.stringify(LIN) === antes && lineaParDeSolicitud("x", null).propia === false;
+
+    ok("109 el detalle de la solicitud muestra el estado del par y lo que se le pide al comité",
+       sumaOk && descartadaOk && sinOk && comodinOk && copadoOk && proyOk && puroOk,
+       `LF2+LF3 ${fmtMM(a.aprobada)} aprobada · ${fmtMM(a.utilizada)} utilizada · ${fmtMM(a.disponible)} disponible ${sumaOk} · descartada fuera ${descartadaOk} · «sin línea propia» ≠ cero ${sinOk} · comodín no entra ${comodinOk} · copado no da negativo ${copadoOk} · proyectada ${fmtMM(usoProy)} / ${fmtMM(apProy)} ${proyOk} · no muta ${puroOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

@@ -21499,8 +21499,99 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
   );
 }
 // Sub-tab SOLICITUDES — Bandeja de solicitudes en gestión (API 2 lista · API 3 estado). Solo consulta.
+// Estado de la línea del PAR cliente-deudor que una solicitud viene a ampliar. Puro y de nivel módulo
+// —recibe las líneas del cliente en vez de ir a buscarlas— porque es lo que la vista de detalle pinta
+// fila a fila y lo que la prueba puede ejercitar sin montar la pantalla.
+// «Sin línea propia» NO es lo mismo que una línea en cero: el par sin cupo propio se financia por el
+// comodín del cliente (LF4), así que decir «M$0 aprobada» afirmaría que al comité se le pidió ampliar
+// algo que no existe. Es justamente el caso que una PUNTUAL viene a resolver.
+function lineaParDeSolicitud(rutDeudor, lineas) {
+  const ls = (lineas || []).filter((l) => l && l.granularidad === "par" && l.rutDeudor === rutDeudor && !l.descartada);
+  const aprobada = mmRound(ls.reduce((a, l) => a + (l.aprobado || 0), 0));
+  const utilizada = mmRound(ls.reduce((a, l) => a + (l.vigente || 0), 0));
+  return { propia: ls.length > 0, aprobada, utilizada, disponible: Math.max(0, mmRound(aprobada - utilizada)),
+           tipos: ls.map((l) => l.tipo) };
+}
+// DETALLE DE LA SOLICITUD AL COMITÉ. Una solicitud automática es UNA solicitud con N líneas de detalle
+// (regla 15-bis) y la bandeja sólo mostraba el total: qué deudores la componen, cuánto se le pide a
+// cada uno y de qué operación salió no estaba en ninguna pantalla — y es lo que el comité necesita
+// para aprobar o recortar línea por línea.
+function DetalleSolicitud({ sol }) {
+  if (!sol) return null;
+  const lineas = ((lineasDeCliente(sol.rut) || {}).lineas) || [];
+  const det = sol.detalle || [];
+  const GD = "minmax(170px,1.2fr) 104px 104px 104px 108px 156px minmax(210px,1.5fr) 128px";
+  const EST = { "En gestión": { bg: "#eff6ff", fg: "#2563EB" }, "En análisis de Riesgo": { bg: "#FFF7ED", fg: "#C2410C" }, "En comité": { bg: "#f5f3ff", fg: "#7C3AED" }, "Aprobada": { bg: "#F0FDF4", fg: "#16A34A" }, "Observada": { bg: "#fef2f2", fg: "#EF4444" } };
+  // La observación NOMBRA la operación que originó la solicitud: sin eso, quien la aprueba no puede
+  // volver a lo que la motivó. `origen` sólo lo traen las automáticas (el cierre de una oferta);
+  // una solicitud armada a mano en el wizard explica su motivo y se dice con esas palabras.
+  const obsDe = (d) => sol.origen
+    ? `Cubre el gap de la operación ${sol.origen.negocio ? "N° " + sol.origen.negocio : sol.origen.dealId}${sol.origen.dealId && sol.origen.negocio ? " · " + sol.origen.dealId : ""}, cerrada el ${sol.ts}. ${d.pide || "Línea Cliente - Deudor"}.`
+    : `${d.pide || "Línea Cliente - Deudor"}${d.motivo ? " · " + d.motivo : ""}.`;
+  return (
+    <div className="mt-2 overflow-x-auto rounded-xl p-3" style={{ backgroundColor: "#FAFAFB", border: `1px solid ${C.line}` }}>
+      <div style={{ minWidth: 1180 }}>
+        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+          <div className="t11 font-semibold" style={{ color: C.navy }}>Líneas solicitadas · {sol.idProceso}
+            <span className="ml-2 t10 font-normal" style={{ color: C.sub }}>{sol.cliente} · {sol.rut}</span>
+          </div>
+          {sol.origen ? <span className="t9 rounded-full px-2 py-0.5 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}
+            title="La solicitud entró SOLA al cerrar la oferta: sus facturas no cabían en la línea vigente (regla 15-bis).">Generada por el cierre de una oferta</span> : null}
+        </div>
+        <div className="grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: GD, color: C.faint, borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}>
+          <span title="Cada línea del detalle es un par CLIENTE-DEUDOR: el cliente es el mismo en todas y lo que cambia es el deudor.">Cliente / Deudor</span>
+          <span className="text-right">Aprobada</span><span className="text-right">Utilizada</span><span className="text-right">Disponible</span>
+          <span className="text-right">Solicitada</span>
+          <span title="Cómo queda la línea del par si el comité aprueba lo solicitado y la operación cursa: lo utilizado más lo pedido, contra la línea ampliada.">Línea proyectada</span>
+          <span>Observación</span><span>Estado</span>
+        </div>
+        {det.map((d, i) => {
+          const lp = lineaParDeSolicitud(d.rutDeudor, lineas);
+          const pedido = mmRound(d.monto || 0);
+          const apProy = mmRound(lp.aprobada + pedido), usoProy = mmRound(lp.utilizada + pedido);
+          const pct = apProy > 0 ? Math.min(100, Math.round(usoProy / apProy * 100)) : 0;
+          const ec = EST[d.estado || sol.estado] || EST["En gestión"];
+          return (
+            <div key={(d.rutDeudor || d.deudor) + i} className="grid items-start gap-2 py-1.5" style={{ gridTemplateColumns: GD, borderBottom: `1px solid ${C.line}` }}>
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate t11 font-medium" style={{ color: C.ink }} title={d.deudor}>{d.deudor}</span>
+                <span className="t9" style={{ color: C.faint, fontVariantNumeric: "tabular-nums" }}>{d.rutDeudor || "—"}
+                  {d.tipoLinea === "puntual" ? <span className="ml-1 rounded-full px-1 py-0.5 t8 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }} title="Línea PUNTUAL cliente-deudor: cupo a medida de esta operación, de un solo uso.">Puntual</span> : null}
+                </span>
+              </span>
+              <span className="t11 text-right" style={{ color: lp.propia ? C.ink : C.faint }} title={lp.propia ? `Líneas del par: ${lp.tipos.join(" · ")}` : "El par no tiene línea propia: hoy se financia por la línea comodín del cliente (LF4). Es lo que esta solicitud viene a resolver."}>{lp.propia ? fmtMM(lp.aprobada) : "Sin línea propia"}</span>
+              <span className="t11 text-right" style={{ color: C.sub }}>{lp.propia ? fmtMM(lp.utilizada) : "—"}</span>
+              <span className="t11 text-right font-medium" style={{ color: lp.propia ? (lp.disponible > 0 ? C.green : C.sub) : C.faint }}>{lp.propia ? fmtMM(lp.disponible) : "—"}</span>
+              <span className="t11 text-right font-bold" style={{ color: C.indigo }}>{fmtMM(pedido)}</span>
+              <span className="flex flex-col gap-1" title={`Si el comité aprueba, la línea del par queda en ${fmtMM(apProy)} y quedaría utilizada en ${fmtMM(usoProy)} al cursar la operación.`}>
+                <span className="t10" style={{ color: C.ink }}><b>{fmtMM(usoProy)}</b> <span style={{ color: C.faint }}>/ {fmtMM(apProy)}</span></span>
+                <span className="rounded-full" style={{ height: 5, backgroundColor: "#E5E7EB", overflow: "hidden" }}>
+                  <span className="block rounded-full" style={{ height: 5, width: pct + "%", backgroundColor: C.indigo }} />
+                </span>
+              </span>
+              <span className="t10" style={{ color: C.sub, lineHeight: 1.45 }}>{obsDe(d)}</span>
+              <span><span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: ec.bg, color: ec.fg }}>{d.estado || sol.estado}</span></span>
+            </div>
+          );
+        })}
+        {det.length === 0 && <div className="py-3 t10" style={{ color: C.faint }}>Esta solicitud no trae líneas de detalle: pide la línea global del cliente, no cupos por deudor.</div>}
+        {det.length > 0 && (
+          <div className="mt-2 grid items-center gap-2 t10" style={{ gridTemplateColumns: GD, paddingTop: 6 }}>
+            <span className="font-semibold" style={{ color: C.sub }}>{det.length} línea(s) de detalle</span>
+            <span></span><span></span><span></span>
+            <span className="text-right font-bold" style={{ color: C.indigo }}>{fmtMM(mmRound(det.reduce((a, d) => a + (d.monto || 0), 0)))}</span>
+            <span></span><span></span><span></span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 function LineasBandeja({ onNueva, tick, onRefrescar, cargando }) {
   const sols = api2ListarProcesos();
+  // Qué solicitud está abierta. El detalle se despliega EN SITIO y no en otra pantalla: lo que se
+  // compara es una solicitud contra las otras de la bandeja, y sacarla de la lista pierde ese marco.
+  const [abierta, setAbierta] = useState(null);
   const EST_COL = { "En gestión": { bg: "#eff6ff", fg: "#2563EB" }, "En análisis de Riesgo": { bg: "#FFF7ED", fg: "#C2410C" }, "En comité": { bg: "#f5f3ff", fg: "#7C3AED" }, "Aprobada": { bg: "#F0FDF4", fg: "#16A34A" }, "Observada": { bg: "#fef2f2", fg: "#EF4444" } };
   return (
     <div className="rounded-2xl p-3" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
@@ -21513,13 +21604,20 @@ function LineasBandeja({ onNueva, tick, onRefrescar, cargando }) {
       </div>
       <div className="mt-2 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "90px 1fr 170px 110px 130px 140px", color: C.faint, borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}><span>Proceso</span><span>Cliente</span><span>Tipo</span><span>Propuesto</span><span>Estado</span><span>Últ. actualización</span></div>
       {cargando ? [0, 1, 2].map((i) => <div key={"sk" + i} className="skel my-2" style={{ height: 34 }} />) : sols.map((s) => { const ec = EST_COL[s.estado] || EST_COL["En gestión"]; return (
-        <div key={s.idProceso} className="grid items-center gap-2 py-1.5 t11" style={{ gridTemplateColumns: "90px 1fr 170px 110px 130px 140px", borderBottom: `1px solid ${C.line}` }}>
-          <span className="font-semibold" style={{ color: C.ink }}>{s.idProceso}</span>
-          <span className="truncate" style={{ color: C.ink }}>{s.cliente}<span className="t9 ml-1" style={{ color: C.faint }}>{s.rut}</span></span>
-          <span className="t10" style={{ color: C.sub }}>{SOLIC_TIPOS[s.tipo]}{s.subtipo ? ` · ${SOLIC_SUBTIPOS[s.subtipo]}` : ""}</span>
-          <span className="font-medium" style={{ color: C.ink }}>{fmtMM(s.totalPropuesto || 0)}</span>
-          <span><span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: ec.bg, color: ec.fg }}>{s.estado}</span></span>
-          <span className="t9" style={{ color: C.faint }}>{s.tsEstado || s.ts}</span>
+        <div key={s.idProceso} style={{ borderBottom: `1px solid ${C.line}` }}>
+          <div onClick={() => setAbierta((a) => (a === s.idProceso ? null : s.idProceso))} className="grid cursor-pointer items-center gap-2 py-1.5 t11 hover:bg-stone-50" style={{ gridTemplateColumns: "90px 1fr 170px 110px 130px 140px" }}
+            title={(s.detalle || []).length ? `Ver las ${s.detalle.length} línea(s) de detalle de esta solicitud` : "Ver el detalle de la solicitud"}>
+            <span className="flex items-center gap-1 font-semibold" style={{ color: C.ink }}>
+              <ChevronRight size={11} style={{ color: C.faint, transform: abierta === s.idProceso ? "rotate(90deg)" : "none", transition: "transform .12s" }} />{s.idProceso}
+            </span>
+            <span className="truncate" style={{ color: C.ink }}>{s.cliente}<span className="t9 ml-1" style={{ color: C.faint }}>{s.rut}</span></span>
+            <span className="t10" style={{ color: C.sub }}>{SOLIC_TIPOS[s.tipo]}{s.subtipo ? ` · ${SOLIC_SUBTIPOS[s.subtipo]}` : ""}
+              {(s.detalle || []).length ? <span className="ml-1 t9" style={{ color: C.faint }}>· {s.detalle.length} línea(s)</span> : null}</span>
+            <span className="font-medium" style={{ color: C.ink }}>{fmtMM(s.totalPropuesto || 0)}</span>
+            <span><span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: ec.bg, color: ec.fg }}>{s.estado}</span></span>
+            <span className="t9" style={{ color: C.faint }}>{s.tsEstado || s.ts}</span>
+          </div>
+          {abierta === s.idProceso && <div className="pb-2"><DetalleSolicitud sol={s} /></div>}
         </div>
       ); })}
       {sols.length === 0 && <div className="py-8 text-center t11" style={{ color: C.faint }}>Sin solicitudes en gestión. Crea una nueva línea o inicia una modificación desde «Vigentes».</div>}
