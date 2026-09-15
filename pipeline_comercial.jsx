@@ -20159,6 +20159,37 @@ const RESOLUCION_COMITE = {
   deudor:  { pide: "Ampliar Línea Global Deudor",           alcance: "Todos los clientes que ceden este deudor" },
   suspendida: { pide: "Reactivar las líneas del cliente",   alcance: "Todo el cliente" },
 };
+// LA SOLICITUD AL COMITÉ LA GENERA EL CIERRE DE LA OFERTA, no el ejecutivo (15-09-2026, pedido del
+// usuario). El modal de curse ya prometía que «la solicitud queda en la bandeja del comité de riesgo
+// como una sola solicitud con N línea(s) de detalle» y **nadie la creaba**: el ejecutivo tenía que ir
+// a Líneas y recorrer el wizard a mano, repitiendo una decisión que acababa de tomar. Lo que el motor
+// devuelve en `solicitudes` es exactamente lo que el comité necesita —deudor, qué se pide y cuánto—
+// así que la solicitud se arma con eso y no con una segunda captura.
+//
+// UNA SOLA solicitud con N líneas de detalle, como dice el modal: el comité aprueba o recorta cada
+// línea por separado, pero la operación es una.
+//
+// `propFactoring` es la línea del cliente **ya ampliada** (vigente + lo pedido), porque es lo que
+// `constituirLinea` escribe como aprobada cuando el comité resuelve: pasar sólo lo pedido dejaría al
+// cliente con una línea MÁS CHICA que la que tenía al aprobarse su propia solicitud.
+function solicitudComiteDeOferta(deal, ev, ejecutivo, aprobadaVigente = 0) {
+  const sols = (ev && ev.solicitudes) || [];
+  if (!deal || !sols.length || !(ev.requiereComite > 0)) return null;
+  const pedido = mmRound(ev.requiereComite);
+  return {
+    rut: deal.rutEmisor || "", cliente: deal.cliente || "",
+    tipo: "modificar", subtipo: "agregar_deudores",
+    totalPropuesto: mmRound(aprobadaVigente + pedido), propFactoring: mmRound(aprobadaVigente + pedido),
+    propGlobal: 0, propConfirming: 0, pedido,
+    // El DETALLE viaja entero: es lo que el comité aprueba línea a línea y lo que el paso 4 del wizard
+    // muestra sin volver a preguntárselo a nadie. Por defecto **puntual**: se pide por ESTA operación.
+    detalle: sols.map((x) => ({ deudor: x.deudor, rutDeudor: x.rutDeudor || null, monto: mmRound(x.monto || 0),
+                                pide: x.pide, motivo: x.motivo, alcance: x.alcance || null, tipoLinea: "puntual" })),
+    deudores: sols.length,
+    origen: { dealId: deal.id, negocio: deal.negocioNum || null },
+    ejecutivo: ejecutivo || "—", automatica: true,
+  };
+}
 // El motivo se explica en lenguaje de negocio, nunca con el nombre técnico del nivel.
 const MOTIVO_TEXTO = {
   par:     "sin cupo en la Línea Cliente - Deudor",
@@ -20710,6 +20741,17 @@ function api1Inyeccion(sol) {
   return idProceso;
 }
 function api2ListarProcesos() { return SOLICITUDES_LINEA; }
+// Los deudores que YA están pedidos al comité por el cierre de una oferta de este cliente, con el
+// monto y el tipo de línea que se pidió. El wizard los precarga en el paso 4 en vez de hacer que el
+// ejecutivo los vuelva a escribir: la solicitud entró sola y esto es la misma solicitud, abierta.
+function deudoresSolicitadosLinea(rutCliente) {
+  const out = [];
+  for (const s of SOLICITUDES_LINEA) {
+    if (!s || s.rut !== rutCliente || s.constituida) continue;
+    for (const d of (s.detalle || [])) if (!out.some((x) => x.deudor === d.deudor)) out.push({ ...d, idProceso: s.idProceso });
+  }
+  return out;
+}
 function api3EstadoProceso(idProceso) {
   const s = SOLICITUDES_LINEA.find((x) => x.idProceso === idProceso); if (!s) return null;
   const fin = (Math.abs(hashStr(idProceso)) % 5 === 0) ? "Observada" : "Aprobada";
@@ -20879,7 +20921,20 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
   };
   // Pre-carga: los deudores con flujo recurrente ya vienen incorporados; el ejecutivo sólo ingresa la
   // información de línea (propuesta, política, productos). Puede agregar otros con el combo o eliminarlos.
-  const [deudores, setDeudores] = useState(() => deudoresRecurrentesLinea(cliente).map((hh) => ({ ...construirDeudorLinea(hh.name), flags: { V: true, N: true, C: true, FR: false, CP: false }, recurrente: true })));
+  const [deudores, setDeudores] = useState(() => {
+    const base = deudoresRecurrentesLinea(cliente).map((hh) => ({ ...construirDeudorLinea(hh.name), flags: { V: true, N: true, C: true, FR: false, CP: false }, recurrente: true, tipoLinea: "normal" }));
+    // Y los que ya vienen PEDIDOS por el cierre de una oferta: entran marcados, con el monto que faltó
+    // y en línea PUNTUAL. Sin esto el ejecutivo tenía que volver a escribir en el wizard la misma lista
+    // que el modal de curse acababa de mostrarle.
+    for (const so of deudoresSolicitadosLinea(rut)) {
+      const mm = Math.max(1, Math.round((so.monto || 0) / 1e6));
+      const ya = base.find((b) => b.nombre === so.deudor);
+      if (ya) { ya.solicitado = true; ya.tipoLinea = so.tipoLinea || "puntual"; ya.propuesta = Math.max(ya.propuesta || 0, mm); continue; }
+      base.push({ ...construirDeudorLinea(so.deudor), flags: { V: true, N: true, C: true, FR: false, CP: false },
+                  recurrente: false, solicitado: true, tipoLinea: so.tipoLinea || "puntual", propuesta: mm });
+    }
+    return base;
+  });
   const [addSel, setAddSel] = useState("");
   const [addPrev, setAddPrev] = useState(null); // preview API 4 del deudor por aceptar
   const [editDeu, setEditDeu] = useState(null);       // índice del deudor en edición (modal Editar Deudor Factoring)
@@ -20901,7 +20956,15 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
   const confirmable = paso === 0 ? !!carg[0] : paso === 1 ? !!carg[1] : paso === 3 ? deudores.length > 0 : paso === 5 ? !!notasCargadas : true;
   const confirmar = () => { setOk((o) => ({ ...o, [paso]: true })); if (paso < 5) setPaso(paso + 1); };
   const inyectar = () => {
-    const id = api1Inyeccion({ rut, cliente, tipo, subtipo, totalPropuesto, propGlobal, propFactoring, propConfirming, vencProp, deudores: deudores.length, promNota, notas, garantias: garantias.length, fianzas: fianzas.length, montoGarantias: garantias.reduce((s, g) => s + (g.monto || 0), 0), ejecutivo: usuarioNombre, lineaId: linea ? linea.id : null });
+    // Los montos del wizard se capturan en MILLONES —la columna dice «Propuesta MM»— y el contrato de
+    // la API 1 es en PESOS, como todo lo demás del sistema: `constituirLinea` escribe `propFactoring`
+    // tal cual en la línea aprobada, así que inyectar 240 dejaba al cliente con una línea de 240 PESOS.
+    // La conversión va acá, en el borde, que es el único punto que conoce las dos unidades.
+    const aPesos = (mm) => mmRound((+mm || 0) * 1e6);
+    const id = api1Inyeccion({ rut, cliente, tipo, subtipo, totalPropuesto: aPesos(totalPropuesto), propGlobal: aPesos(propGlobal), propFactoring: aPesos(propFactoring), propConfirming: aPesos(propConfirming), vencProp,
+      detalle: deudores.map((d) => ({ deudor: d.nombre, rutDeudor: d.rut, monto: aPesos(d.propuesta), tipoLinea: d.tipoLinea || "normal",
+                                      pide: (d.tipoLinea || "normal") === "puntual" ? RESOLUCION_COMITE.par.pide : "Línea Normal Cliente - Deudor", alcance: RESOLUCION_COMITE.par.alcance })),
+      deudores: deudores.length, promNota, notas, garantias: garantias.length, fianzas: fianzas.length, montoGarantias: garantias.reduce((s, g) => s + (g.monto || 0), 0), ejecutivo: usuarioNombre, lineaId: linea ? linea.id : null });
     onInyectada && onInyectada(id);
   };
   const inp = "w-full rounded-md px-2 py-1 t11 outline-none";
@@ -21091,7 +21154,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
           )}
           {paso === 3 && (
             <>
-              <div className="mb-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#C2410C" }}>Los <b>deudores con flujo recurrente</b> (facturación en ≥ 4 de los últimos 6 meses) ya vienen incorporados: sólo ingresa la <b>información de línea</b> (propuesta, política y productos). La columna <b>Venta L6M</b> muestra el rango típico mensual (facturas y monto) — pasa el mouse sobre el nombre para ver el detalle por mes. Agrega otros <b>buenos deudores</b> (nota ≥ {String(pol("notaMinCompra", 3.7)).replace(".", ",")}) con el selector; cada uno consulta la <b>API 4 · Plataforma 360</b>.</div>
+              <div className="mb-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#C2410C" }}>Los <b>deudores con flujo recurrente</b> (facturación en ≥ 4 de los últimos 6 meses) ya vienen incorporados: sólo ingresa la <b>información de línea</b> (propuesta, política y productos). El detalle de facturación cuelga del chip <b>Recurrente</b> — pasa el mouse sobre él para ver el rango típico mensual y el mes a mes. Agrega otros <b>buenos deudores</b> (nota ≥ {String(pol("notaMinCompra", 3.7)).replace(".", ",")}) con el selector; cada uno consulta la <b>API 4 · Plataforma 360</b>.</div>
               <div className="flex items-center gap-2">
                 <select value={addSel} onChange={(e) => { const v = e.target.value; setAddSel(v); if (!v) return; if (esAdmin) { pedirDeudor(v); } else { setDeudores((p) => [...p, { ...construirDeudorLinea(v), flags: { V: true, N: true, C: true, FR: false, CP: false } }]); setAddSel(""); } }} className="rounded-md px-2 py-1.5 t11" style={inpSty}>
                   <option value="">+ Agregar deudor factoring…</option>
@@ -21110,8 +21173,8 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
               )}
               <div className="mt-2 overflow-x-auto rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
                 <div style={{ minWidth: 1320 }}>
-                {(() => { const DG = "40px 44px 92px minmax(140px,1fr) 84px 120px 82px 74px 74px 92px 74px 74px 52px 122px 40px"; const LBL7 = ["Mes pasado", "-2 mes", "-3 mes", "-4 mes", "-5 mes", "-6 mes", "+6 m"]; return (<>
-                <div className="grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: DG, color: C.faint, borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}><span>Nota</span><span title="C = Cliente · D = Deudor. Ambos encendidos: la empresa es cliente y deudor a la vez.">Cli/Deu</span><span>Rut</span><span>Nombre / Razón social</span><span className="text-right" title="Venta L6M · n° de facturas emitidas al deudor por mes en los últimos 6 meses (rango típico p40–p90).">L6M f/mes</span><span className="text-right" title="Venta L6M · monto facturado al deudor por mes en los últimos 6 meses (rango típico p40–p90).">L6M $/mes</span><span>Pol. %L</span><span className="text-right">M. anterior</span><span className="text-right">M. utilizado</span><span className="text-right">Propuesta MM</span><span className="text-right">D. directa</span><span className="text-right">D. indirecta</span><span className="text-right">Conc. %</span><span>V · N · C · FR · CP</span><span></span></div>
+                {(() => { const DG = "40px 44px 92px minmax(140px,1fr) 132px 82px 74px 74px 92px 74px 74px 52px 122px 40px"; const LBL7 = ["Mes pasado", "-2 mes", "-3 mes", "-4 mes", "-5 mes", "-6 mes", "+6 m"]; return (<>
+                <div className="grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: DG, color: C.faint, borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}><span>Nota</span><span title="C = Cliente · D = Deudor. Ambos encendidos: la empresa es cliente y deudor a la vez.">Cli/Deu</span><span>Rut</span><span>Nombre / Razón social</span><span title="Puntual: cupo a medida de ESTA operación, de un solo uso. Normal: línea permanente del par cliente-deudor.">Tipo línea</span><span>Pol. %L</span><span className="text-right">M. anterior</span><span className="text-right">M. utilizado</span><span className="text-right">Propuesta MM</span><span className="text-right">D. directa</span><span className="text-right">D. indirecta</span><span className="text-right">Conc. %</span><span>V · N · C · FR · CP</span><span></span></div>
                 {deudores.map((d, i) => {
                   const conc = propFactoring > 0 ? Math.round((d.propuesta || 0) / propFactoring * 100) : 0;
                   return (
@@ -21123,13 +21186,31 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                     </span>
                     <span className="t10" style={{ color: C.sub, fontVariantNumeric: "tabular-nums" }}>{d.rut}</span>
                     <span className="flex min-w-0 items-center gap-1 overflow-hidden">
-                      <TipDesglose color="#7C3AED" titulo={`Facturación mensual · ${d.nombre}`} nota={d.l6m.facMax > 0 ? `Últimos 6 meses: ${d.l6m.facMin}–${d.l6m.facMax} facturas y ${fmtMM(d.l6m.montoMin)}–${fmtMM(d.l6m.montoMax)} por mes (rango típico p40–p90). Facturó ${d.l6m.activos}/6 meses. Total 7m: ${fmtMM(d.hist.totMonto)} · ${d.hist.totFac}f.` : "Sin facturación registrada en el periodo."} items={d.hist.meses.map((m, k) => ({ name: LBL7[k], val: m.fac ? `${fmtMM(m.monto)} · ${m.fac}f` : "—" }))}>
-                        <span className="truncate t11 font-medium" style={{ color: C.ink, borderBottom: `1px dotted ${C.faint}`, cursor: "help" }} title={d.nombre}>{d.nombre}</span>
-                      </TipDesglose>
-                      {d.recurrente && <span className="shrink-0 rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A" }} title="Deudor con flujo comercial recurrente (facturó en ≥ 4 de los últimos 6 meses): pre-incorporado automáticamente. El ejecutivo sólo ingresa la información de línea.">Recurrente</span>}
+                      {/* EL DETALLE DE VENTAS VIVE EN EL CHIP, no en dos columnas de la tabla ni colgado
+                          del nombre: sólo aplica a un deudor RECURRENTE —es lo que lo hace recurrente— y
+                          gastaba ancho en todas las filas para un dato que se mira una vez. Sin venta
+                          recurrente no hay chip, y entonces no hay nada que desplegar. */}
+                      <span className="truncate t11 font-medium" style={{ color: C.ink }} title={d.nombre}>{d.nombre}</span>
+                      {d.recurrente && (
+                        <TipDesglose color="#16A34A" titulo={`Facturación mensual · ${d.nombre}`} nota={d.l6m.facMax > 0 ? `Últimos 6 meses: ${d.l6m.facMin}–${d.l6m.facMax} facturas y ${fmtMM(d.l6m.montoMin)}–${fmtMM(d.l6m.montoMax)} por mes (rango típico p40–p90). Facturó ${d.l6m.activos}/6 meses. Total 7m: ${fmtMM(d.hist.totMonto)} · ${d.hist.totFac}f.` : "Sin facturación registrada en el periodo."}
+                          items={d.hist.meses.map((m, k) => ({ name: LBL7[k], val: m.fac ? `${fmtMM(m.monto)} · ${m.fac}f` : "—" }))}>
+                          <span className="shrink-0 rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: "#F0FDF4", color: "#16A34A", cursor: "help", borderBottom: "1px dotted #16A34A" }}
+                            title="Deudor con flujo comercial recurrente (facturó en ≥ 4 de los últimos 6 meses): pre-incorporado automáticamente. Pasa el mouse para ver su facturación mes a mes.">Recurrente</span>
+                        </TipDesglose>
+                      )}
+                      {d.solicitado && <span className="shrink-0 rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }} title="Deudor pedido por el CIERRE DE UNA OFERTA: sus facturas no cabían en la línea vigente, así que la solicitud entró sola con línea PUNTUAL por lo que faltó.">Solicitado</span>}
                     </span>
-                    <span className="t10 text-right" style={{ color: C.sub }} title="Rango típico de facturas emitidas al deudor por mes (últimos 6 meses)">{d.l6m.facMax > 0 ? (d.l6m.facMin === d.l6m.facMax ? `${d.l6m.facMax}` : `${d.l6m.facMin}–${d.l6m.facMax}`) : "—"}<span style={{ color: C.faint }}> f</span></span>
-                    <span className="t10 text-right" style={{ color: C.sub }} title="Rango típico de monto facturado al deudor por mes (últimos 6 meses)">{d.l6m.montoMax > 0 ? `${fmtMM(d.l6m.montoMin)}–${fmtMM(d.l6m.montoMax)}` : "—"}</span>
+                    {/* PUNTUAL O NORMAL. Lo que pide el cierre de una oferta es siempre PUNTUAL —un cupo
+                        a medida de esa operación, de un solo uso— y por eso entra marcado así; el ejecutivo
+                        puede cambiarlo a NORMAL cuando el flujo con ese deudor justifica una línea
+                        permanente, que es la decisión que el comité está por tomar. */}
+                    <span className="flex gap-1">
+                      {[{ k: "puntual", l: "Puntual", t: "Línea PUNTUAL cliente-deudor: cupo a medida de esta operación, de un solo uso. Lo que no se alcanza a usar se pierde." },
+                        { k: "normal", l: "Normal", t: "Línea NORMAL cliente-deudor: cupo permanente del par, que se renueva con la vigencia de la línea." }].map((o) => (
+                        <button key={o.k} onClick={() => updDeu(i, { tipoLinea: o.k })} title={o.t} className="rounded-full px-1.5 py-0.5 t9 font-bold"
+                          style={{ backgroundColor: (d.tipoLinea || "normal") === o.k ? C.indigo : "#FAF9FB", color: (d.tipoLinea || "normal") === o.k ? "#fff" : "#9CA3AF" }}>{o.l}</button>
+                      ))}
+                    </span>
                     <span className="flex gap-1" title="Política de concentración por deudor: el ejecutivo elige 25% o 30% de la línea.">
                       {[...new Set([25, 30, pol("concentracionDeudorPct", 30)])].sort((a, b) => a - b).map((v) => <button key={v} onClick={() => updDeu(i, { politicaPct: v })} className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: d.politicaPct === v ? "#4c1d95" : "#FAF9FB", color: d.politicaPct === v ? "#fff" : "#9CA3AF" }}>{v}%</button>)}
                     </span>
@@ -22473,6 +22554,23 @@ export default function PipelineComercial() {
     // El criterio O05 se evalúa con `deal.publicacion`, que acaba de cambiar: sin esto el visado
     // cacheado seguiría siendo el de antes de publicar.
     invalidarVisado();
+    // LA SOLICITUD AL COMITÉ SALE SOLA. Lo que no cabe en la línea vigente ya está calculado —es lo
+    // que el modal acaba de mostrarle al ejecutivo, deudor por deudor— así que pedirle que lo vuelva
+    // a capturar en el wizard es pedirle la misma decisión dos veces. Se inyecta una sola solicitud
+    // con N líneas de detalle (API 1) y queda en la bandeja «En proceso» de Líneas.
+    if (d0 && d0.rutEmisor) {
+      try {
+        const evLin = asignarLineas(itemizarFacturas(d0), d0.rutEmisor);
+        const sol = solicitudComiteDeOferta({ ...d0, negocioNum: d0.negocioNum || negDe(d0) }, evLin, nom, lineaAprobadaDe(d0));
+        if (sol) {
+          const idProc = api1Inyeccion(sol);
+          logSys("info", "linea", `Solicitud de línea inyectada automáticamente al cerrar la oferta · ${idProc} · ${sol.detalle.length} línea(s) de detalle por ${fmtMM(sol.pedido)}`,
+            { empresa: cli, operacion: id, proceso: idProc });
+          setDeals((prev) => prev.map((x) => (x.id === id ? { ...x, solicitudComite: idProc } : x)));
+          setSelected((x) => (x && x.id === id ? { ...x, solicitudComite: idProc } : x));
+        }
+      } catch (e) { logSys("error", "linea", `No se pudo inyectar la solicitud de línea al cerrar la oferta: ${e && e.message}`, { operacion: id }); }
+    }
     // PUBLICACIÓN ELECTRÓNICA: el correo sale acá y no en un botón aparte. Va DENTRO del gesto del
     // clic —`enviarCierre` abre su pestaña antes del primer `await`— porque diferirlo a un efecto le
     // haría perder la activación del usuario y el navegador lo bloquearía como pop-up.

@@ -2922,6 +2922,56 @@
        `rama A (estamos arriba) ${A.map((c) => c.label + " " + c.pct).join(" · ")} · rama B (estamos fuera) ${B.map((c) => c.label + " " + c.pct).join(" · ")} · sin cesiones nuestras → ${C[3].label} ${C[3].pct}% · archivo: ${filas} empresas, suman 100 ${filas - malSuma}/${filas}, ≤4 chips ${filas - malN}/${filas}, nosotros 1 vez ${filas - malNuestro}/${filas}, «Otros» cuadra ${conBolsa - malOtros}/${conBolsa}, rama B en ${ramaB}`);
   }
 
+  // ── 106 · CERRAR LA OFERTA GENERA LA SOLICITUD AL COMITÉ, SIN QUE EL EJECUTIVO LA REPITA ──────
+  // El modal de curse ya prometía que «la solicitud queda en la bandeja del comité de riesgo como una
+  // sola solicitud con N línea(s) de detalle» y **nadie la creaba**: el ejecutivo tenía que ir a Líneas
+  // y recorrer el wizard a mano, capturando de nuevo la lista que el modal acababa de mostrarle. Lo que
+  // el motor devuelve en `solicitudes` es exactamente lo que el comité necesita, así que la solicitud
+  // se arma con eso.
+  {
+    const deal = { id: "OP-SOL", cliente: "Cliente Prueba", rutEmisor: "76.111.111-1", negocioNum: "N-1" };
+    const ev = { requiereComite: 90e6, solicitudes: [
+      { deudor: "Codelco", rutDeudor: "61.704.000-K", monto: 60e6, motivo: "par", pide: RESOLUCION_COMITE.par.pide, alcance: RESOLUCION_COMITE.par.alcance },
+      { deudor: "Escondida (BHP)", rutDeudor: "84.908.508-8", monto: 30e6, motivo: "deudor", pide: RESOLUCION_COMITE.deudor.pide, alcance: RESOLUCION_COMITE.deudor.alcance }] };
+
+    // (a) SIN NADA QUE PEDIR NO SE INYECTA NADA. Una solicitud vacía en la bandeja del comité es peor
+    //     que ninguna: alguien tiene que abrirla para descubrir que no pide nada.
+    const vacioOk = solicitudComiteDeOferta(deal, { requiereComite: 0, solicitudes: [] }) === null
+      && solicitudComiteDeOferta(deal, { requiereComite: 90e6, solicitudes: [] }) === null
+      && solicitudComiteDeOferta(null, ev) === null;
+
+    // (b) UNA solicitud con N LÍNEAS DE DETALLE, todas en PUNTUAL —se piden por ESTA operación— y con
+    //     el deudor, el monto y el «qué se pide» que produjo el motor, sin recapturar nada.
+    const sol = solicitudComiteDeOferta(deal, ev, "Carla Rivas", 650e6);
+    const detOk = !!sol && sol.detalle.length === 2 && sol.deudores === 2
+      && sol.detalle.every((d) => d.tipoLinea === "puntual" && d.monto > 0 && d.deudor && d.pide)
+      && sol.detalle[0].deudor === "Codelco" && sol.detalle[0].monto === 60e6
+      && sol.detalle.reduce((a, d) => a + d.monto, 0) === 90e6
+      && sol.origen.dealId === "OP-SOL" && sol.automatica === true && sol.ejecutivo === "Carla Rivas";
+
+    // (c) LA LÍNEA PEDIDA SE SUMA A LA VIGENTE. `constituirLinea` escribe `propFactoring` como la
+    //     aprobada del cliente, así que mandar sólo lo pedido dejaría al cliente con MENOS línea de la
+    //     que ya tenía el día que el comité lo aprueba — una solicitud que castiga por pedir.
+    const sumaOk = sol.pedido === 90e6 && sol.propFactoring === 740e6 && sol.totalPropuesto === 740e6
+      && constituirLinea({ rut: "76.000.999-9", cliente: "X", propFactoring: sol.propFactoring }).aprobada === 740e6;
+
+    // (d) INYECTADA, queda en la bandeja del comité y el WIZARD la encuentra: el paso 4 precarga esos
+    //     deudores en vez de hacer que el ejecutivo los vuelva a escribir.
+    const antes = api2ListarProcesos().length;
+    const idProc = api1Inyeccion(sol);
+    const enBandeja = api2ListarProcesos().find((x) => x.idProceso === idProc);
+    const pre = deudoresSolicitadosLinea("76.111.111-1");
+    const bandejaOk = api2ListarProcesos().length === antes + 1 && !!enBandeja && enBandeja.estado === "En gestión"
+      && enBandeja.detalle.length === 2 && pre.length === 2 && pre.every((x) => x.tipoLinea === "puntual" && x.idProceso === idProc)
+      && deudoresSolicitadosLinea("99.999.999-9").length === 0;
+    // …y se limpia lo inyectado: este caso no puede dejarle una solicitud de prueba a la demo.
+    const iX = api2ListarProcesos().findIndex((x) => x.idProceso === idProc); if (iX >= 0) api2ListarProcesos().splice(iX, 1);
+
+    ok("106 cerrar la oferta inyecta la solicitud al comité con sus líneas de detalle, en puntual",
+       vacioOk && detOk && sumaOk && bandejaOk,
+       `sin nada que pedir → null ${vacioOk} · ${sol.detalle.length} línea(s) de detalle por ${fmtMM(sol.pedido)} (${sol.detalle.map((d) => d.deudor + " " + fmtMM(d.monto) + " " + d.tipoLinea).join(" · ")}) · aprobada vigente 650MM + 90MM pedidos = ${fmtMM(sol.propFactoring)} · bandeja ${bandejaOk} · el wizard precarga ${pre.length} deudor(es)`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
