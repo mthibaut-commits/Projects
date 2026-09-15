@@ -7006,6 +7006,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const [otrasAbierto, setOtrasAbierto] = useState(true); // «Otras facturas disponibles» colapsable: es el pool para agregar, no el contenido principal
   const [otrasTab, setOtrasTab] = useState("conLinea"); // pestaña de «Deudores disponibles»: conLinea | resto
   const [otrasVista, setOtrasVista] = useState("deudor"); // cómo se lista: por deudor (acordeón) | por factura (plana)
+  // La MISMA elección para la oferta: son dos preguntas distintas sobre la misma lista («a quién le
+  // compro» / «qué documentos tengo»), así que la sección de arriba la ofrece igual que la de abajo.
+  const [ofertaVista, setOfertaVista] = useState("deudor");
   // Carga del sub-tab Detalle: su data (scoring, línea, otorgamiento y verificación por deudor) es de
   // APIs/BD. Al abrirlo o cambiar de oportunidad se muestra el esqueleto mientras "resuelve la query".
   const [detCargando, setDetCargando] = useState(false);
@@ -8117,12 +8120,17 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         // fila tiene que decir de qué deudor es o deja de significar nada. Y ahí el deudor
                         // se identifica con su RUT además de su nombre, que es lo que no se repite.
                         const GC_OP = "100px 72px 104px minmax(140px,1fr) 92px 120px 84px 128px 96px";
-                        const headDoc = (
-                          <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: GC_D, color: "#B4B2BC", borderBottom: `1px solid ${C.line}` }}>
-                            <span>Tipo doc.</span><span>Folio</span><span>F. vencim.</span><span className="text-right">Monto</span><span>Financiada con</span><span>Estado</span><span></span>
+                        // En la vista por FACTURA de la oferta cada fila tiene que decir de quién es, igual
+                        // que en «Deudores disponibles»: sin el acordeón que las agrupa, el deudor desaparece.
+                        const GC_DP = "88px 62px 104px minmax(140px,1fr) 132px 74px 186px 158px 22px";
+                        const headDoc = (plana) => (
+                          <div className="grid items-center gap-2 pb-1 t9 uppercase tracking-wide" style={{ gridTemplateColumns: plana ? GC_DP : GC_D, color: "#B4B2BC", borderBottom: `1px solid ${C.line}` }}>
+                            <span>Tipo doc.</span><span>Folio</span>
+                            {plana && <><span>RUT deudor</span><span>Razón social</span></>}
+                            <span>F. vencim.</span><span className="text-right">Monto</span><span>Financiada con</span><span>Estado</span><span></span>
                           </div>
                         );
-                        const filaDoc = (f) => {
+                        const filaDoc = (f, plana) => {
                           const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                           const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
                           const vencVal = vencFecha[f.id] || ""; const vencTxt = vencVal ? fmtDMY(vencVal) : vencDefault(f);
@@ -8132,9 +8140,13 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           // del rechazo se explica en lenguaje de negocio, nunca con el nombre técnico del nivel.
                           const ef = evalFac[f.id];
                           return (
-                            <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: GC_D, borderBottom: "1px solid #F0EFF3", color: GRAY }}>
+                            <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: plana ? GC_DP : GC_D, borderBottom: "1px solid #F0EFF3", color: GRAY }}>
                               <span className="truncate t9" title={tdoc}>{tdoc}</span>
                               <span style={{ fontVariantNumeric: "tabular-nums" }}>#{f.folio}</span>
+                              {plana && (<>
+                                <span className="truncate t9" style={{ fontVariantNumeric: "tabular-nums" }} title={f.rutRecep || "Sin RUT en el documento"}>{f.rutRecep || "—"}</span>
+                                <span className="truncate font-medium" style={{ color: C.ink }} title={f.deudor}>{f.deudor}</span>
+                              </>)}
                               <span className="relative inline-flex items-center gap-1.5 t9">
                                 <span>{vencTxt}</span>
                                 {!bloqueado && (<>
@@ -8670,7 +8682,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   caja de tres bloques que repetía el conteo de deudores y le robaba altura
                                   a la lista, que es el contenido real de la pantalla. */}
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Deudores en la oferta</span>
+                                <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Documentos en la oferta</span>
                                 <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub, border: `1px solid ${C.line}` }}
                                   title="Deudores con facturas en esta oferta">{dq ? `${deudOfF.length} de ${deudOf.length}` : deudOf.length} deudor{!dq && deudOf.length === 1 ? "" : "es"}</span>
                                 <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub, border: `1px solid ${C.line}` }}
@@ -8679,6 +8691,22 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   title="Monto seleccionado para esta oferta">{fmtMM(totalOf)}</span>
                               </div>
                               <div className="flex items-center gap-2">
+                                {/* MISMO control que «Deudores disponibles», y por la misma razón: no parte el
+                                    contenido, lo presenta de otra forma. Por eso el título de la sección dejó de
+                                    decir «Deudores» y dice «Documentos»: con la vista plana lo que se lista son
+                                    facturas, y un título que nombra sólo una de las dos vistas contradice a la otra. */}
+                                {validas.length > 0 && (
+                                  <div className="flex shrink-0 items-center rounded-lg p-0.5" style={{ backgroundColor: "#E7E4F0" }}>
+                                    {[{ k: "deudor", lbl: "Por deudor", tip: "Un acordeón por empresa deudora, con sus facturas dentro." },
+                                      { k: "factura", lbl: "Por factura", tip: "Todas las facturas de la oferta en una sola lista, de la más nueva a la más antigua (folio descendente)." }].map((v) => {
+                                      const on = ofertaVista === v.k;
+                                      return (
+                                        <button key={v.k} onClick={() => setOfertaVista(v.k)} title={v.tip} className="rounded-md px-2 py-0.5 t10 font-semibold"
+                                          style={{ backgroundColor: on ? "#fff" : "transparent", color: on ? C.indigo : C.sub }}>{v.lbl}</button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                                 <div className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff", width: 250 }}>
                                   <Search size={12} style={{ color: C.faint }} />
                                   <input value={detQuery} onChange={(e) => { setDetQuery(e.target.value); setDetOtrasPage(0); }} placeholder="Buscar empresa deudora o folio…" className="w-full bg-transparent t10 outline-none" style={{ color: C.ink }} />
@@ -8922,14 +8950,31 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     estado de ENTRADA de la pantalla, no un borde raro: se dibuja como caja
                                     para que la seccion conserve su altura y el ojo no salte al pool. */}
                                 {deudOfF.length === 0 && (
-                                  <div className="flex items-center justify-center rounded-xl px-3 t10" style={{ minHeight: 56, backgroundColor: "#F7F7FA", border: `1px solid ${C.line}`, color: C.faint }}>
+                                  /* El estado VACÍO es el de entrada de esta pantalla, no un borde raro, así
+                                     que tiene que verse: con #F7F7FA sobre blanco y texto en C.faint la caja
+                                     desaparecía y el mensaje se leía como un placeholder apagado. Fondo un
+                                     tono más oscuro —el mismo gris de los chips—, borde definido, más alto y
+                                     el texto en el cuerpo de la pantalla (t11) y en C.sub. */
+                                  <div className="flex items-center justify-center rounded-xl px-3 t11 font-medium" style={{ minHeight: 72, backgroundColor: "#EDECF3", border: "1px solid #DEDCE7", color: C.sub }}>
                                     {dq ? `Ningún deudor de la oferta coincide con «${detQuery}».` : "Ninguna factura seleccionada"}
                                   </div>
                                 )}
-                                {deudOfF.map((dn) => { const grupo = grpOf[dn]; const key = "of:" + dn; const abierto = detOpen[key] === true; return (
+                                {/* VISTA PLANA de la oferta: las mismas facturas, ordenadas por folio
+                                    descendente, con el deudor en su propia columna. Es una VISTA y no un
+                                    filtro —trae exactamente lo mismo que los acordeones— y por eso se arma
+                                    con la misma función que la plana de «Deudores disponibles». */}
+                                {ofertaVista === "factura" && deudOfF.length > 0 && (
+                                  <div className="overflow-x-auto rounded-xl" style={{ border: "1px solid #E4E2EC", backgroundColor: "#FCFCFD", padding: "6px 14px 8px" }}>
+                                    <div style={{ minWidth: 1040 }}>
+                                      {headDoc(true)}
+                                      {facturasDeDeudores(deudOfF, grpOf).map((f) => filaDoc(f, true))}
+                                    </div>
+                                  </div>
+                                )}
+                                {ofertaVista !== "factura" && deudOfF.map((dn) => { const grupo = grpOf[dn]; const key = "of:" + dn; const abierto = detOpen[key] === true; return (
                                   <div key={dn} className="mb-2" style={{ border: "1px solid #E4E2EC", borderRadius: 12, overflow: "hidden", backgroundColor: "#F5F4F8" }}>
                                     <button onClick={() => setDetOpen((m) => ({ ...m, [key]: !abierto }))} className="block w-full text-left">{cabDeudor(dn, grupo, abierto, true)}</button>
-                                    {abierto && <div className="overflow-x-auto" style={{ backgroundColor: "#FCFCFD", borderTop: `1px solid ${C.line}`, padding: "4px 14px 8px" }}><div style={{ minWidth: 700 }}>{headDoc}{grupo.map(filaDoc)}<div className="grid items-center gap-2 py-1.5 t10 font-semibold" style={{ gridTemplateColumns: GC_D, color: "#7C7A85", borderTop: "1px solid #E4E3E9" }}><span style={{ gridColumn: "1 / 4" }}>Subtotal ({grupo.length} fact.)</span><span className="text-right">{fmtMM(+grupo.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1))}</span><span style={{ gridColumn: "5 / 8" }}></span></div>{(() => {
+                                    {abierto && <div className="overflow-x-auto" style={{ backgroundColor: "#FCFCFD", borderTop: `1px solid ${C.line}`, padding: "4px 14px 8px" }}><div style={{ minWidth: 700 }}>{headDoc()}{grupo.map((f) => filaDoc(f))}<div className="grid items-center gap-2 py-1.5 t10 font-semibold" style={{ gridTemplateColumns: GC_D, color: "#7C7A85", borderTop: "1px solid #E4E3E9" }}><span style={{ gridColumn: "1 / 4" }}>Subtotal ({grupo.length} fact.)</span><span className="text-right">{fmtMM(+grupo.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1))}</span><span style={{ gridColumn: "5 / 8" }}></span></div>{(() => {
                                       // Facturas de ESTE deudor que aún no están en la oferta. Vivían sólo en la
                                       // sección de abajo, así que sumarle una factura a un deudor ya presente
                                       // obligaba a bajar y buscarlo de nuevo.
@@ -9007,7 +9052,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   </div>
                                 )}
                                 {deudOtF.length === 0 && <div className="t10 py-2" style={{ color: C.faint }}>{dq ? `Sin otras facturas que coincidan con «${detQuery}».` : "No hay otras facturas disponibles."}</div>}
-                                {deudOtF.length > 0 && otTab.lista.length === 0 && <div className="t10 py-2" style={{ color: C.faint }}>{otTab.vacio}</div>}
+                                {deudOtF.length > 0 && otTab.lista.length === 0 && <div className="t11 py-3 font-medium" style={{ color: C.sub }}>{otTab.vacio}</div>}
                                 {plana && facOtPage.length > 0 && (
                                   <div className="overflow-x-auto rounded-xl p-2.5" style={{ backgroundColor: "#FCFCFD", border: "1px solid #E4E2EC" }}>
                                     <div style={{ minWidth: 1000 }}>{headOtra(true)}{facOtPage.map((f) => filaOtraD(f, true))}</div>
