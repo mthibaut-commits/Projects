@@ -1469,7 +1469,10 @@ const CAT_META = {
   "CAT-4": { bg: "#fff7ed", fg: "#c2410c", q: "límite de compra", desc: "Peso relevante de deudores en el límite inferior de compra (Nota 3,2–3,7)." },
   "CAT-5": { bg: "#fef2f2", fg: "#EF4444", q: "deudor malo / sin nota", desc: "La operación incorpora facturas de deudores con Nota < 3,2 o sin nota por sobre la tolerancia del 5% del monto → gatilla otorgamiento. El subtipo 5A–5D indica la CAT del resto de la operación." },
 };
-const catMeta = (c) => CAT_META[c] || CAT_META[(c || "").slice(0, 5)] || CAT_META["CAT-1"];
+// Sin CAT no hay color de CAT: el default era CAT_META["CAT-1"], o sea que cualquier cosa que no
+// calzara se pintaba del verde de la MEJOR categoría. Un desconocido se ve neutro.
+const CAT_NEUTRA = { bg: "#F3F4F6", fg: "#6B7280", q: "sin clasificar", desc: "Todavía no hay facturas con las que clasificar esta operación." };
+const catMeta = (c) => CAT_META[c] || CAT_META[(c || "").slice(0, 5)] || CAT_NEUTRA;
 // Clasificación corta + chip de color por tipo de deudor.
 const DEUDOR_LABEL = { "Lista Blanca": "Lista Blanca", "Deudor Autorizado": "Autorizada", "Histórico BICE": "Histórico BICE", "Histórico": "Histórico", "Otro": "Otro" };
 const DEUDOR_CHIP = { "Lista Blanca": { bg: "#F0FDF4", fg: "#16A34A" }, "Deudor Autorizado": { bg: "#eff6ff", fg: "#2563EB" }, "Histórico BICE": { bg: "#ecfeff", fg: "#0e7490" }, "Histórico": { bg: "#fff7ed", fg: "#c2410c" }, "Otro": { bg: "#F3F4F6", fg: "#4B5563" } };
@@ -1994,7 +1997,10 @@ function tramoNota(n) { if (n == null) return "D"; if (n > 4.6) return "A"; if (
 //   CAT-5 lleva subtipo 5A/5B/5C/5D según el tramo dominante del monto NO-malo.
 function catShares(items, tol = 0.05) {
   const tot = items.reduce((s, x) => s + (x.m || 0), 0);
-  if (!tot) return { cat: "CAT-1", sub: null, sA: 0, sB: 0, sC: 0, sD: 0 };
+  // NADA QUE CLASIFICAR NO ES «CAT-1». Devolvía la MEJOR categoría con cero datos —y `catDisp` la
+  // rotulaba «100% muy buenos»—, que es una afirmación sacada de un conjunto vacío: el mismo error que
+  // devolver cuatro ceros donde no hay medición (regla 13-nonies). `null` es el resultado correcto.
+  if (!tot) return { cat: null, sub: null, sA: 0, sB: 0, sC: 0, sD: 0 };
   const sh = { A: 0, B: 0, C: 0, D: 0 };
   items.forEach((x) => { sh[tramoNota(x.n)] += (x.m || 0) / tot; });
   const { A, B, C, D } = sh;
@@ -2007,30 +2013,44 @@ function catShares(items, tol = 0.05) {
   const cat = A >= 0.80 ? "CAT-1" : A >= 0.50 ? "CAT-2" : (A + B) >= 0.80 ? "CAT-3" : "CAT-4";
   return { cat, sub: null, sA: A, sB: B, sC: C, sD: D };
 }
-// CAT de una oportunidad: se calcula EN VIVO desde las facturas de la operación (facturasOp) o, en su
-// defecto, desde sus deudores. Al cambiar la composición de folios, la CAT se recalcula sola.
+// CAT de la OFERTA: se calcula EN VIVO sobre las facturas que están en ella (`facturasOp`), así que
+// cambiar folios la recalcula sola. **No depende de simular** —es aritmética sobre notas y montos, no
+// necesita motor— pero sí de que haya algo elegido: con la oferta VACÍA no hay paquete que clasificar
+// y devuelve `null`.
+//
+// Un `facturasOp` que es un ARRAY VACÍO es una respuesta —«la oferta está vacía»— y no ausencia de
+// dato; sólo `undefined` significa «esta operación no viene itemizada». Es la misma distinción que ya
+// hacía `itemizarFacturas`, y no hacerla acá era justamente lo que dejaba a una oportunidad recién
+// detectada mostrando una CAT como si describiera su oferta.
 function catDeal(deal) {
-  if (!deal) return { cat: "CAT-1", sub: null, sA: 0, sB: 0, sC: 0, sD: 0 };
-  let items = [];
-  if (deal.facturasOp && deal.facturasOp.length) {
-    items = deal.facturasOp.map((f) => ({ m: f.monto || 0, n: notaDeudor(f.deudor, f.rutRecep) }));
-  } else if (deal.deudores && deal.deudores.length) {
-    items = deal.deudores.map((d) => ({ m: d.monto || 0, n: notaDeudor(d.name, d.rut) }));
-  } else if (deal.deudor) {
-    items = [{ m: deal.monto || 1, n: notaDeudor(deal.deudor, deal.rutDeudor || (deal.facturasOp && deal.facturasOp[0] && deal.facturasOp[0].rutRecep)) }];
-  }
-  return catShares(items);
+  const fs = deal && Array.isArray(deal.facturasOp) ? deal.facturasOp : null;
+  if (!fs) return catShares([]);
+  return catShares(fs.map((f) => ({ m: f.monto || 0, n: notaDeudor(f.deudor, f.rutRecep) })));
 }
-// Etiqueta de CAT a mostrar (el subtipo para CAT-5) + descriptor corto ponderado por monto.
+// CAT de lo DETECTADO: los deudores que el inbound trajo con la oportunidad. No es la de la oferta
+// —nadie eligió todavía qué comprar— pero es la que explica por qué esta oportunidad existe y con qué
+// calidad de cartera se va a trabajar, así que se muestra mientras la oferta esté vacía, dicho con
+// esa palabra. Antes las dos salían por la misma puerta y no había forma de distinguirlas.
+function catPotencial(deal) {
+  if (!deal) return catShares([]);
+  if (deal.deudores && deal.deudores.length) return catShares(deal.deudores.map((d) => ({ m: d.monto || 0, n: notaDeudor(d.name, d.rut) })));
+  if (deal.deudor) return catShares([{ m: deal.monto || 1, n: notaDeudor(deal.deudor, deal.rutDeudor) }]);
+  return catShares([]);
+}
+// Etiqueta de CAT a mostrar (el subtipo para CAT-5) + descriptor corto ponderado por monto, y de QUÉ
+// es: `oferta` cuando hay facturas elegidas, `disponible` cuando todavía no y se está describiendo lo
+// que el inbound detectó. Devuelve `null` cuando no hay ni lo uno ni lo otro — no hay CAT que mostrar.
 function catDisp(deal) {
-  const ci = catDeal(deal);
+  const deOferta = catDeal(deal);
+  const ci = deOferta.cat ? deOferta : catPotencial(deal);
+  if (!ci.cat) return null;
   const label = ci.sub || ci.cat;
   let q;
   if (ci.cat === "CAT-5") q = `${Math.round(ci.sD * 100)}% mala/sin nota`;
   else if (ci.cat === "CAT-4") q = "límite de compra";
   else if (ci.cat === "CAT-3") q = `${Math.round((ci.sA + ci.sB) * 100)}% buenos`;
   else q = `${Math.round(ci.sA * 100)}% muy buenos`;
-  return { ...ci, label, q };
+  return { ...ci, label, q, base: deOferta.cat ? "oferta" : "disponible" };
 }
 // Línea de crédito aprobada por cliente (en MM). FUENTE ÚNICA: LINEAS_DATA, que es lo que muestra el
 // módulo Líneas y lo que cuenta el Dashboard. Antes esto devolvía un hash sintético por RUT con mínimo
@@ -7278,7 +7298,19 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <Pill style={{ backgroundColor: TAG_COLORS[deal.tag]?.bg, color: TAG_COLORS[deal.tag]?.fg }}>{deal.tag}</Pill>
-            {deal.cat && (() => { const cd = catDisp(deal); return <Pill style={{ backgroundColor: catMeta(cd.cat).bg, color: catMeta(cd.cat).fg }}>{cd.label} · {cd.q}</Pill>; })()}
+            {(() => {
+              // La CAT clasifica el paquete que se COMPRA. Con la oferta vacía todavía no hay tal
+              // paquete, así que lo que se muestra es la de los deudores que el inbound DETECTÓ —y lo
+              // dice con esa palabra, en una píldora sin relleno—: antes salía idéntica a la de una
+              // oferta armada y no había forma de saber cuál de las dos estabas leyendo.
+              const cd = catDisp(deal);
+              if (!cd) return null;
+              const m = catMeta(cd.cat);
+              return cd.base === "disponible"
+                ? <Pill style={{ backgroundColor: "#fff", color: m.fg, border: `1px solid ${m.fg}33` }}
+                    title={`${cd.label} · ${cd.q} sobre los deudores disponibles de este cliente. La CAT de la OFERTA se calcula con las facturas que incluyas: hoy está vacía.`}>{cd.label} · disponible</Pill>
+                : <Pill style={{ backgroundColor: m.bg, color: m.fg }} title={`${cd.label} · ${cd.q}. ${m.desc}`}>{cd.label} · {cd.q}</Pill>;
+            })()}
             {/* `deal.exec` guarda las INICIALES; el nombre vive en PC_EXECS. */}
             {deal.exec && <Pill style={{ backgroundColor: "#F9FAFB", color: C.sub, border: `1px solid ${C.line}` }}>{(PC_EXECS.find((e) => e.ini === deal.exec) || {}).nombre || deal.exec}</Pill>}
             {esPrimeraOperacionCliente(deal) && <TagNuevo clase="t10" />}
@@ -9535,13 +9567,16 @@ function sowEstrategia(ev) {
 function OppTags({ ev }) {
   if (!ev || !ev.cat) return null;
   const cd = catDisp(ev);
-  const catCol = catMeta(cd.cat);
+  const catCol = cd ? catMeta(cd.cat) : CAT_NEUTRA;
   const sm = sowEstrategia(ev) || { Icon: ArrowRight, bg: "#FFF7ED", fg: "#C2410C", lab: "estable", tip: "" };
   const SIcon = sm.Icon;
   const sowTip = sm.tip;
   return (
     <div className="mt-1 flex flex-wrap items-center gap-1">
-      <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: catCol.bg, color: catCol.fg, cursor: "help" }} title={`${cd.label} · ${cd.q}. ${catMeta(cd.cat).desc}`}>{cd.label}</span>
+      {/* Sin relleno cuando la CAT es la de lo DISPONIBLE y no la de la oferta: en la tarjeta no hay
+          espacio para decirlo con palabras, pero la diferencia tiene que verse. El tooltip la dice. */}
+      {cd && <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: cd.base === "oferta" ? catCol.bg : "#fff", color: catCol.fg, border: cd.base === "oferta" ? undefined : `1px solid ${catCol.fg}33`, cursor: "help" }}
+        title={cd.base === "oferta" ? `${cd.label} · ${cd.q}. ${catMeta(cd.cat).desc}` : `${cd.label} · ${cd.q} sobre los deudores DISPONIBLES: la oferta todavía está vacía, así que aún no hay CAT de la operación.`}>{cd.label}</span>}
       {ev.stage !== "perdida" && (<>
       <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: sm.bg, color: sm.fg, cursor: "help" }} title={sowTip}><SIcon size={11} /> SOW {sm.lab}</span>
       {(() => { const pp = paramsPricing(); const a = pp.sowAjuste[sowEstado(ev)] || pp.sowAjuste.estable; return a.pts > 0
@@ -14398,9 +14433,9 @@ function PCsankey({ deals = [], execsFiltrados = [], filtrosDeal = {}, hayFiltro
       const esHoy = !!(d.tProsp && SK_DIA(d.tProsp) === diaSel);
       if (esHoy) nHoy++; else nAnt++;
       // 2ª columna según el desglose elegido: antigüedad de la originación, o la CAT de la oportunidad.
-      const ct = catDeal(d).cat;
+      const cdSk = catDisp(d); const ct = cdSk ? cdSk.cat : null;
       const a = col2 === "cat"
-        ? reg({ id: `K:${ct}`, label: SK_CAT_LBL[ct] || ct, color: (CAT_META[ct] || {}).fg || C.faint })
+        ? reg({ id: `K:${ct || "NA"}`, label: ct ? (SK_CAT_LBL[ct] || ct) : "Sin CAT · oferta vacía", color: (CAT_META[ct] || {}).fg || C.faint })
         : reg({ id: esHoy ? "A:H" : "A:A", label: esHoy ? "Originada el día" : "De días anteriores", color: esHoy ? "#703EFF" : "#9CA3AF" });
       const e = skEtapa(d);
       const et = reg({ id: `E:${e}`, label: SK_ETAPA_LBL[e] || e, color: SK_ETAPA_COL[e] || C.faint });
@@ -17996,7 +18031,7 @@ function generarTareasConsolidadas(deals) {
     // Impacto potencial = monto de la operación en juego (lo que se captura/gira al atender la tarea).
     // Se documenta la oferta (CAT, deudor, facturas, tasa, giro, etapa) para que el ejecutivo la entienda.
     const base = { fuente: "pipeline", dealId: d.id, cliente: d.cliente, exec, monto: d.monto || 0, impacto: d.monto || 0,
-      catOp: d.cat ? catDisp(d).label : null, tasa: d.tasa, giro: d.simulado ? d.giro : null, deudor: (d.deudores && d.deudores[0] ? d.deudores[0].name : d.deudor), nDeud: (d.deudores && d.deudores.length) || 1, facturas: d.facturas, etapa: (STAGES.find((s) => s.id === d.stage) || {}).name || d.stage };
+      catOp: (catDisp(d) || {}).label || null, tasa: d.tasa, giro: d.simulado ? d.giro : null, deudor: (d.deudores && d.deudores[0] ? d.deudores[0].name : d.deudor), nDeud: (d.deudores && d.deudores.length) || 1, facturas: d.facturas, etapa: (STAGES.find((s) => s.id === d.stage) || {}).name || d.stage };
     const verif = !!(d.telValidado || d.emailValidado || d.verifManual);
     const hasOffer = !!d.negocioNum || (d.waSesion || []).some((m) => /Oferta de factoring/i.test(m.text || ""));
     if (d.waPendiente) t.push({ ...base, id: d.id + "-resp", cat: "responder", prio: "critica", detalle: "El cliente respondió por WhatsApp y la conversación quedó pendiente." });

@@ -2809,6 +2809,52 @@
        `default «${targetEtiqueta()}» · cliente de prueba ${rut || "NO ENCONTRADO"} · target ${antes ? pct(antes, "factoringTarget") : "—"}% → ${conItau ? pct(conItau, "factoringTarget") : "—"}% al cambiar la perilla, bancarios ${antes ? pct(antes, "otrosBancarios") : "—"}% → ${conItau ? pct(conItau, "otrosBancarios") : "—"}%, lo nuestro intacto ${antes ? pct(antes, "security") : "—"}% · cache invalidado ${cacheOk} · higiene ${higieneOk} · sin target ${vacioOk} · rótulo largo ${largoOk} · restituido ${restituidoOk}`);
   }
 
+  // ── 104 · LA CAT ES DEL PAQUETE QUE SE COMPRA, Y CON LA OFERTA VACÍA NO HAY CAT ────────────────
+  // Lo planteó el usuario mirando una oportunidad recién detectada: «si aún no se ha simulado, ¿no se
+  // debería poder determinar si es CAT-1, CAT-2 u otra?». La CAT **no depende de simular** —es
+  // aritmética sobre notas y montos, sin motor— pero sí de que haya facturas elegidas. Con la oferta
+  // vacía lo único clasificable son los deudores que el inbound DETECTÓ, y eso es otra cosa: hay que
+  // poder distinguirlas, porque no son el mismo número (en pantalla, CAT-1 lo disponible contra CAT-3
+  // lo que finalmente entró a la oferta).
+  {
+    const f = (monto, deudor, rut) => ({ monto, deudor, rut_recep: rut, rutRecep: rut });
+    const dA = { id: "OP-CAT", cliente: "X", facturasOp: [], deudores: [{ name: "Deudor A", monto: 100e6 }] };
+    const dB = { ...dA, facturasOp: [f(100e6, "Deudor A")] };
+
+    // (a) NADA QUE CLASIFICAR NO ES «CAT-1». Devolvía la MEJOR categoría desde un conjunto vacío y
+    //     `catDisp` la rotulaba «100% muy buenos»: una afirmación sacada de cero datos.
+    const vacio = catShares([]);
+    const sinNadaOk = vacio.cat === null && catDeal({ facturasOp: [] }).cat === null
+      && catDeal({}).cat === null && catDeal(null).cat === null
+      && catDisp({ id: "z", facturasOp: [] }) === null;
+
+    // (b) UN ARRAY VACÍO ES UNA RESPUESTA, no ausencia de dato — la misma distinción que hace
+    //     `itemizarFacturas`. Con la oferta vacía la CAT de la OFERTA es `null`, y lo que se muestra
+    //     es la POTENCIAL, marcada como tal.
+    const cdA = catDisp(dA), cdB = catDisp(dB);
+    const baseOk = !!cdA && cdA.base === "disponible" && catDeal(dA).cat === null
+      && !!cdB && cdB.base === "oferta" && catDeal(dB).cat !== null;
+
+    // (c) NO DEPENDE DE SIMULAR: la misma oferta, con y sin `simulado`, da la misma CAT. Si dependiera,
+    //     la regla 3 («se recalcula en vivo al cambiar folios») no se podría cumplir.
+    const simOk = JSON.stringify(catDisp({ ...dB, simulado: true })) === JSON.stringify(catDisp({ ...dB, simulado: false }));
+
+    // (d) Y SIGUE CLASIFICANDO como siempre lo que sí tiene facturas: los cortes de catShares no se
+    //     tocaron, sólo el caso vacío.
+    const A = { m: 80, n: 4.8 }, B = { m: 20, n: 4.0 }, D = { m: 20, n: null };
+    const cortesOk = catShares([A, B]).cat === "CAT-1" && catShares([{ m: 50, n: 4.8 }, { m: 50, n: 4.0 }]).cat === "CAT-2"
+      && catShares([{ m: 20, n: 4.8 }, { m: 80, n: 4.0 }]).cat === "CAT-3" && catShares([A, B, D]).cat === "CAT-5";
+
+    // (e) UN CAT DESCONOCIDO NO SE PINTA DEL COLOR DEL MEJOR. `catMeta` caía a CAT_META["CAT-1"], o
+    //     sea verde: lo que no se pudo clasificar se veía como la mejor cartera posible.
+    const metaOk = catMeta(null).fg === CAT_NEUTRA.fg && catMeta("CAT-9").fg === CAT_NEUTRA.fg
+      && catMeta("CAT-1").fg !== CAT_NEUTRA.fg && catMeta("CAT-5B").fg === catMeta("CAT-5").fg;
+
+    ok("104 la CAT es de la oferta: vacía no clasifica, y lo disponible se muestra como tal",
+       sinNadaOk && baseOk && simOk && cortesOk && metaOk,
+       `vacío → ${vacio.cat} (antes «CAT-1») · oferta vacía → base «${cdA && cdA.base}» ${cdA && cdA.label} · con facturas → base «${cdB && cdB.base}» ${cdB && cdB.label} · independiente de simular ${simOk} · cortes 1/2/3/5 ${cortesOk} · color neutro para lo no clasificado ${metaOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
