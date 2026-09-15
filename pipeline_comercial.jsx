@@ -10924,15 +10924,20 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                       const nPendC = visC && !bloqueoC ? visC.exc.length + visC.rechReev.length : 0;
                       // Total de criterios evaluados, para que el badge diga «16/321» y no un 16 suelto.
                       const totCrit = visC ? (visC.aprob + visC.clasif + visC.exc.length + visC.rech.length) : 0;
-                      // Estado de LÍNEA: se usa el MISMO motor que el detalle, para que el tubo y la
-                      // pantalla no puedan discrepar sobre el mismo negocio.
-                      // PENDIENTE — en producción esta llamada NO se puede hacer: los motores corren
-                      // del lado del servidor y esto es una lista de ~100 filas. Y no hace falta: la
-                      // simulación que produjo esta fila ya congeló su asignación en la versión
-                      // (`snapVersionCli`), así que corresponde LEERLA del snapshot en vez de
-                      // recalcularla. La columna «Oportunidad» de al lado ya no depende del motor
-                      // (`capacidadDeudores`), ésta todavía sí.
-                      const ev = (facsC && d.rutEmisor) ? asignarLineas(facsC, d.rutEmisor) : null;
+                      // Estado de LÍNEA: se LEE de la versión que emitió la simulación, no se
+                      // recalcula. Antes esta celda llamaba a `asignarLineas` por fila, y en
+                      // producción eso no se puede hacer —los motores corren del lado del servidor y
+                      // esto es una lista de ~100 filas—. Tampoco hace falta: la asignación ya viajó
+                      // congelada con la simulación que produjo esta fila, así que leerla es además
+                      // MÁS fiel que recalcular, que puede dar distinto si el origen se movió desde
+                      // entonces. Es el mismo criterio de la regla 13 aplicado al tubo.
+                      // Sin versión se cae a `evCli`, la lectura de CLIENTE: el monto contra la
+                      // suma de sus líneas (LF1–LF4), que no necesita motor. Y hace falta de verdad,
+                      // no es defensivo: la versión la persiste `reevaluarCliente`, o sea el botón
+                      // «Re-evaluar», y NO `simularOferta` — así que una operación simulada y todavía
+                      // no re-evaluada no tiene ninguna. (La regla 13 dice «cada simulación emite una
+                      // versión»; el código emite sólo al re-evaluar. Queda anotado como desfase.)
+                      const ev = (facsC && d.rutEmisor) ? lineaDeVersion(d) : null;
                       // Sin facturas itemizadas la única lectura posible es el monto contra la línea
                       // disponible del cliente; se dice en el tooltip para no confundirla con la
                       // evaluación por deudor.
@@ -10961,8 +10966,8 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                           : ev.cursable === 0 ? { fg: "#EF4444", bg: "#FEF2F2", Ico: AlertTriangle, txt: "Todo a comité", badge: `${fmtMM(ev.requiereComite)} / ${fmtMM(totOf)}` }
                           : { fg: "#7C3AED", bg: C.lilac, Ico: AlertTriangle, txt: "Requiere comité", badge: `${fmtMM(ev.requiereComite)} / ${fmtMM(totOf)}` };
                         const tipLin = (ev.requiereComite > 0 ? `Cursable hoy ${fmtMM(ev.cursable)} · a comité ${fmtMM(ev.requiereComite)} sobre ${fmtMM(totOf)} de oferta.\n` : "")
-                          + (ev.solicitudes.length
-                            ? "Se le pediría al comité:\n" + ev.solicitudes.map((x) => `· ${x.pide} — ${x.deudor} ${fmtMM(x.monto)} (${x.alcance.toLowerCase()})`).join("\n")
+                          + ((ev.solicitudes || []).length
+                            ? "Se le pediría al comité:\n" + ev.solicitudes.map((x) => `· ${x.pide} — ${x.deudor} ${fmtMM(x.monto)}${x.alcance ? ` (${String(x.alcance).toLowerCase()})` : ""}`).join("\n")
                             : "Toda la oferta cabe en la línea de crédito vigente.");
                         chips.push(chip("lin", li.fg, li.bg, li.Ico, li.txt, tipLin, li.badge));
                       }
@@ -11608,7 +11613,7 @@ function snapVersionCli(deal, rev) {
         estadoCliente: ev.estadoCliente, dispCliente: ev.dispCliente, dispClienteInicial: ev.dispClienteInicial,
         deudores: ev.deudores, lineasUsadas: ev.lineasUsadas, vacia: false,
         facturas: ev.facturas.map((f) => ({ id: f.id, folio: f.folio, rutDeudor: f.rutDeudor, deudor: f.deudor, monto: f.monto, estado: f.estado, motivo: f.motivo || null, origen: (f.origen || []).map((o) => ({ lineaId: o.lineaId, tipo: o.tipo, monto: o.monto })) })),
-        solicitudes: (ev.solicitudes || []).map((x) => ({ rutDeudor: x.rutDeudor, deudor: x.deudor, motivo: x.motivo, pide: x.pide, monto: x.monto })),
+        solicitudes: (ev.solicitudes || []).map((x) => ({ rutDeudor: x.rutDeudor, deudor: x.deudor, motivo: x.motivo, pide: x.pide, monto: x.monto, alcance: x.alcance || null })),
       };
     }
   } catch (e) { linea = null; }
@@ -19758,6 +19763,20 @@ function facturasDeDeudores(deudores, porDeudor) {
 // documento cabe o no en el cupo, que es lo único que decide si se puede cursar hoy.
 // El estado de líneas entra por parámetro, como en `asignarLineas`: es lo que permite probar el
 // criterio con un cupo conocido en vez de contra el que traiga el navegador.
+// ── LA ASIGNACIÓN QUE LA SIMULACIÓN YA CONGELÓ ──────────────────────────────────────────────────
+// Cada simulación emite una versión y esa versión fija con qué líneas se financió cada factura
+// (`snapVersionCli`). Leerla es la forma de mostrar el estado de línea de una operación **sin volver
+// a correr el motor**: en producción los motores viven en el servidor, así que una lista de ~100
+// filas no puede ir contra ellos —y no hace falta, porque el resultado ya viajó con la simulación—.
+// Es además el mismo criterio de la regla 13: una operación aceptada se LEE de su versión.
+// `null` si todavía no se ha simulado: ahí no hay asignación que mostrar, y la lectura que queda es
+// la del cliente —el monto contra la suma de sus líneas—, que no necesita motor.
+function lineaDeVersion(deal) {
+  const vs = (deal && typeof SIM_VERSIONS !== "undefined" && SIM_VERSIONS[deal.id]) || [];
+  for (let i = vs.length - 1; i >= 0; i--) if (vs[i] && vs[i].linea && !vs[i].linea.vacia) return vs[i].linea;
+  return null;
+}
+
 // ── ¿ESTE DEUDOR TIENE LÍNEA CON ESTE CLIENTE? — capacidad DECLARADA, no asignación ─────────────
 // Hermana barata de `facturasConLinea`, y hay que leerlas juntas porque contestan cosas distintas:
 //
