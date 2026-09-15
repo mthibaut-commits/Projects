@@ -69,7 +69,11 @@ console.log(`inbound pausado con ${ult} negocios`);
 
 const [d] = await Promise.all([ctx.waitForEvent("page", { timeout: 60000 }), p.locator("tr.pl-row").first().click()]);
 await d.waitForLoadState("load", { timeout: 300000 });
-await d.waitForFunction(() => /Monto|Facturas|Oferta/.test(document.body.innerText || ""), null, { timeout: 300000 });
+// Case-INSENSITIVE a propósito: `innerText` devuelve el texto ya transformado por CSS, y estos tres
+// rótulos viven en cabeceras con `uppercase` («MONTO DOCUMENTOS», «DEUDORES EN LA OFERTA») o en prosa
+// en minúscula («0 facturas»). Con el patrón sensible a mayúsculas ninguno calzaba: el detalle cargaba
+// bien y el script igual se caía por timeout a los 5 minutos, sin capturar ninguna variante.
+await d.waitForFunction(() => /monto|facturas|oferta/i.test(document.body.innerText || ""), null, { timeout: 300000 });
 await d.waitForTimeout(2500);
 
 let n = 0;

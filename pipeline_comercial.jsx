@@ -7567,7 +7567,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                     <div className="flex items-center justify-between"><span style={{ color: C.sub }}>Uso actual</span><span className="font-semibold" style={{ color: C.ink }}>{fmtMM(lc.usoActual)}</span></div>
                     <div className="flex items-center justify-between"><span style={{ color: C.sub }}>Disponible (hoy)</span><span className="font-semibold" style={{ color: lc.disponible >= lc.montoOp ? C.green : C.amber }}>{fmtMM(lc.disponible)}</span></div>
                     <div className="flex items-center justify-between"><span style={{ color: C.sub }}>Esta operación</span><span className="font-semibold" style={{ color: C.indigo }}>{fmtMM(lc.montoOp)}</span></div>
-                    <div className="col-span-2 flex items-center justify-between"><span style={{ color: C.sub }}>Proyección post-curse</span><span className="font-bold" style={{ color: lc.fueraDeLinea ? C.red : C.ink }}>{fmtMM(lc.proyectado)} / {fmtMM(lc.aprobada)}</span></div>
+                    <div className="col-span-2 flex items-center justify-between"><span style={{ color: C.sub }}>Línea proyectada</span><span className="font-bold" style={{ color: lc.fueraDeLinea ? C.red : C.ink }}>{fmtMM(lc.proyectado)} / {fmtMM(lc.aprobada)}</span></div>
                   </div>
                   {/* Barra: uso actual + esta operación vs línea aprobada */}
                   <div className="mt-2 flex h-3 w-full overflow-hidden rounded-full" style={{ backgroundColor: "#E5E7EB" }}>
@@ -20748,7 +20748,7 @@ function lineaRecomendacion(l) {
   if (l.morosidadDias > 0) return { tipo: "Sujeto a aprobación", color: "#C2410C", bg: "#FFF7ED", texto: `Morosidad de ${l.morosidadDias} días: dejar las nuevas operaciones sujetas a aprobación y evaluar una reducción de la línea.` };
   const faltante = Math.max(0, l.demandaBuenos - disponible);
   if (faltante > 0 && l.sowActual < l.sowTarget) return { tipo: "Aumentar línea", color: "#2563EB", bg: "#eff6ff", texto: `Tiene ${fmtMM(faltante)} en facturas de buenos deudores sin financiar por límite insuficiente; frena el SOW (${l.sowActual}% vs ${l.sowTarget}% target). Se recomienda ampliar la línea.` };
-  if (l.proyeccion > l.aprobada) return { tipo: "Revisar / ampliar", color: "#C2410C", bg: "#FFF7ED", texto: `La proyección post-curse (${fmtMM(l.proyeccion)}) supera la línea aprobada (${fmtMM(l.aprobada)}): requiere otorgamiento o ampliar el límite.` };
+  if (l.proyeccion > l.aprobada) return { tipo: "Revisar / ampliar", color: "#C2410C", bg: "#FFF7ED", texto: `La línea proyectada (${fmtMM(l.proyeccion)}) supera la línea aprobada (${fmtMM(l.aprobada)}): requiere otorgamiento o ampliar el límite.` };
   return { tipo: "Mantener", color: "#16A34A", bg: "#F0FDF4", texto: "Línea adecuada al comportamiento y volumen actual. Mantener." };
 }
 function lineaSalud(l) {
@@ -21170,7 +21170,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
           <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Situación actual</div>
           <Fila k="Línea global actual" v={linea ? fmtMM(linea.aprobada) : "—"} />
           <Fila k="Utilizada" v={linea && linea.aprobada > 0 ? `${fmtMM(linea.uso)} (${Math.round(linea.uso / linea.aprobada * 100)}%)` : "—"} />
-          <Fila k="Proyección post-curse" v={linea ? fmtMM(linea.proyeccion) : "—"} />
+          <Fila k="Línea proyectada" v={linea ? fmtMM(linea.proyeccion) : "—"} />
           <Fila k="Morosidad" v={linea && linea.morosidadDias > 0 ? `${linea.morosidadDias} días ⚠` : "Sin morosidad"} />
         </div>
         <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
@@ -21562,7 +21562,7 @@ function LineasView({ soloExec, usuario }) {
   const aumentos = conLinea.filter((l) => l.rec.tipo === "Aumentar línea").length, morosos = conLinea.filter((l) => l.morosidadDias > 0).length;
   const nSinLinea = rows0.length - conLinea.length;
   const abrirNueva = (l) => setWiz({ nueva: true, cliente: l.cliente, rut: l.rut });
-  const cols = ["Cliente", "Línea aprobada", "Uso actual", "Disponible", "Proyección post-curse", "Recomendación", "Salud", "Acciones"];
+  const cols = ["Cliente", "Línea aprobada", "Uso actual", "Disponible", "Línea proyectada", "Recomendación", "Salud", "Acciones"];
   const kpis = [
     { t: "Líneas", v: conLinea.length.toLocaleString("es-CL"), s: "clientes con línea aprobada", col: C.ink, bg: "#fff", bd: C.line },
     { t: "Sin línea", v: nSinLinea.toLocaleString("es-CL"), s: "empresas que no pueden cursar hasta tener línea", col: "#6B7280", bg: "#F9FAFB", bd: C.line },
