@@ -2544,6 +2544,94 @@
        `por factura ${porFacturaOk} (30 de cupo, facturas 50 y 20 → cabe 1 por 20) · trabado ${trabadoOk} · LF1 sólo Prime ${lf1Ok} · nivel deudor y desconocido cerrado ${nivel3Ok} · «sin línea» no distingue Prime ${sinDistinguirOk} · COTA: ${clientes} clientes, ${violaciones} violaciones, ${dAtajo} deudores declarados vs ${dMotor} que el motor asigna (sobreestima ${dMotor ? (dAtajo / dMotor).toFixed(1) : "-"}×) · promedio ${promedioOk} · bordes ${bordesOk}`);
   }
 
+  // ── 101 · A5 SE DERIVA DE A2: LA MISMA CIFRA CONTADA UNA SOLA VEZ ────────────────────────────
+  // «Tienes que hacer que A5 y A2 sean iguales; primero genera A2 y luego genera A5 con los
+  // resultados de A2.» Los dos activos respondían la MISMA pregunta —cuánto de lo que cede el cliente
+  // se lo lleva Security— por caminos independientes, y discrepaban **13,8 pto en la mediana y 61,8
+  // en el p90**: A5 decía 97,7% donde A2 medía 5,1%. Sobre una cifra que decide el descuento por SOW
+  // del pricing, el segmento de churn y los KPI del dashboard. Ahora A2 es el registro y A5 se MIDE
+  // sobre él. Lo que este caso impide es que vuelvan a separarse.
+  {
+    const BICE = "97.080.000-0";
+    const aec = window.AECSYNC || [];
+    const sow = window.SHARE_OF_WALLET || [];
+    const DIA = 86400000;
+    const lunesDe = (f) => { const d = new Date(String(f).slice(0, 10) + "T00:00:00Z");
+      return new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * DIA).toISOString().slice(0, 10); };
+
+    // (a) LA PARTICIPACIÓN DE A5 ES LA QUE MIDE A2, cliente por cliente. Se recalcula acá desde las
+    //     cesiones —sin mirar el A5— y tiene que dar lo mismo. La tolerancia es 0,06: los porcentajes
+    //     se publican con un decimal, así que 0,05 es redondeo y cualquier cosa mayor es desacuerdo.
+    const g = {};
+    for (const c of aec) {
+      const k = c && c.RUTEmisor; if (!k) continue;
+      const x = g[k] || (g[k] = { mio: 0, tot: 0, sem: {} });
+      const m = Math.round(+c.MontoCesion || 0);
+      x.tot += m; if (c.RUTFactoring === BICE) x.mio += m;
+      const w = lunesDe(c.FechaCesion);
+      const ws = x.sem[w] || (x.sem[w] = { mio: 0, tot: 0, n: 0 });
+      ws.tot += m; ws.n++; if (c.RUTFactoring === BICE) ws.mio += m;
+    }
+    let cotejados = 0, discrepan = 0, peor = 0;
+    for (const s of sow) {
+      const x = g[s.RUTCliente]; if (!x || !(x.tot > 0)) continue;
+      cotejados++;
+      const d = Math.abs(x.mio / x.tot * 100 - (+s.SOWActualPct || 0));
+      if (d > peor) peor = d;
+      if (d > 0.06) discrepan++;
+    }
+    const igualOk = cotejados > 200 && discrepan === 0;
+
+    // (b) Y LA SERIE SEMANAL TAMBIÉN, monto a monto: `MontoBICE`, `MontoTotal` y `NumCesiones` de cada
+    //     semana son la suma de las cesiones de esa semana. Si sólo cuadrara el total, A5 podría estar
+    //     repartiendo mal en el tiempo y la tendencia —que es lo que decide el descuento— saldría de
+    //     una trayectoria inventada.
+    let semanas = 0, semanasMal = 0;
+    for (const s of sow) {
+      const x = g[s.RUTCliente]; if (!x) continue;
+      for (const w of (s.HistoricoSemanal || [])) {
+        semanas++;
+        const real = x.sem[w.Semana] || { mio: 0, tot: 0, n: 0 };
+        if (w.MontoBICE !== real.mio || w.MontoTotal !== real.tot || w.NumCesiones !== real.n) semanasMal++;
+      }
+    }
+    const serieOk = semanas > 1000 && semanasMal === 0;
+
+    // (c) EL EJE DE SEMANAS ES COMÚN. Una semana sin cesiones de ESTE cliente igual existe y vale 0:
+    //     «no cedió nada» es un dato. Con series de distinto largo, dos clientes en el mismo gráfico
+    //     no se pueden comparar, y `slice(-8)` tomaría tramos distintos de cada uno.
+    const ejes = new Set(sow.map((s) => (s.HistoricoSemanal || []).map((w) => w.Semana).join(",")));
+    const ejeOk = ejes.size === 1 && sow[0].HistoricoSemanal.length >= 6;
+
+    // (d) LA SERIE NO SE INVENTA HACIA ATRÁS: ninguna semana es anterior a la primera cesión que el
+    //     registro contiene. Era el defecto de fondo —A5 declaraba 9.104 cesiones y A2 tenía 1.300—,
+    //     así que la mitad de la serie describía operaciones que no existían.
+    const primera = aec.map((c) => lunesDe(c.FechaCesion)).sort()[0];
+    const sinFuturo = sow.every((s) => (s.HistoricoSemanal || []).every((w) => w.Semana >= primera));
+
+    // (e) EL TARGET SIGUE SIENDO DE A5 y no se mide: es una META COMERCIAL, no una observación. Si se
+    //     derivara de las cesiones, el objetivo sería siempre igual al resultado y el gap nunca
+    //     existiría — que es lo único que esa cifra sirve para decir.
+    const conTarget = sow.filter((s) => +s.SOWTargetPct > 0).length;
+    const gapVivo = sow.filter((s) => Math.abs((+s.SOWTargetPct || 0) - (+s.SOWActualPct || 0)) > 1).length;
+    const targetOk = conTarget > 200 && gapVivo > 50;
+
+    // (f) LOS INVARIANTES DEL REGISTRO SOBREVIVEN a haberlo hecho seis veces más grande: ninguna
+    //     cesión antes de su emisión, ninguna por más que el documento, ningún folio cedido dos veces.
+    let antes = 0, deMas = 0, dobles = 0; const vistos = new Set();
+    for (const c of aec) {
+      if (String(c.FechaCesion).slice(0, 10) < c.FechaEmisionDTE) antes++;
+      if ((+c.MontoCesion || 0) > (+c.MontoDocumento || 0)) deMas++;
+      const k = c.RUTCedente + "|" + c.Folio;
+      if (vistos.has(k)) dobles++; vistos.add(k);
+    }
+    const invOk = aec.length > 5000 && antes === 0 && deMas === 0 && dobles === 0;
+
+    ok("101 A5 se deriva de A2: la participación, la serie semanal y sus montos son los del registro",
+       igualOk && serieOk && ejeOk && sinFuturo && targetOk && invOk,
+       `${aec.length} cesiones · participación: ${cotejados - discrepan}/${cotejados} calzan (peor desvío ${peor.toFixed(3)} pto, antes 92,6) · serie: ${semanas - semanasMal}/${semanas} semanas cuadran monto a monto · eje común de ${sow[0].HistoricoSemanal.length} semanas ${ejeOk} · sin semanas previas al registro ${sinFuturo} · target sigue siendo meta (${gapVivo} con gap vivo) · invariantes ${invOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

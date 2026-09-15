@@ -1,88 +1,79 @@
 // AECSYNC — activo A2. Cesiones electrónicas: qué documento le cedió cada cliente a qué factoring.
 //
-// ERA UN DATASET BASE Y NO RECONCILIABA CON EL A1. Medido sobre la entrega anterior: de las **1.300
-// cesiones sólo 3** referenciaban un folio que DTESync declara para ese mismo cedente, aunque los 258
-// cedentes sí son emisores del A1 y los rangos de folio se solapan (100.049–119.847 contra
-// 100.002–219.450). Las dos entregas se produjeron con folios independientes, así que una cesión no se
-// podía atribuir a ningún documento: **una factura cedida que no existe**.
+// **ES EL REGISTRO COMPLETO, Y EL MAESTRO DE LA PARTICIPACIÓN** (15-09-2026, decisión del usuario:
+// «tienes que hacer que A5 y A2 sean iguales; primero genera A2 y luego genera A5 con los resultados
+// de A2»). Antes A2 y A5 respondían la MISMA pregunta —cuánto de lo que cede el cliente se lo lleva
+// Security— por caminos independientes, y discrepaban **13,8 pto en la mediana y 61,8 en el p90**:
+// A5 decía 97,7% donde A2 medía 5,1%. Ahora A2 se genera primero y A5 se MIDE sobre él, así que no
+// pueden contradecirse: es el mismo número contado una sola vez.
 //
-// Y una cesión SIN documento no es un detalle de realismo. Todo lo que cuelga de ella queda sin poder
-// calcularse y termina inventándose aguas abajo:
-//   · «cedida a terceros» en la tabla de candidatas se sorteaba con un hash del folio,
-//   · `perdidaCesion` —perder la oportunidad ante la competencia— era `rndDetBool(id, 0.12)`,
-//   · `cedidasOtro` —cuántas facturas de esta oferta se llevó otro factoring— quedaba siempre en 0.
+// Eso obligó a que A2 dejara de ser una MUESTRA. Traía 1.300 cesiones mientras A5 declaraba 9.104 en
+// sus series: el analítico afirmaba siete veces más cesiones de las que el registro contenía, y con
+// tan poco no se puede medir una serie semanal —0,63 cesiones por cliente-semana, o sea casi todas
+// las semanas vacías—. Ahora se cede una fracción realista del pool CEDIBLE de cada cliente.
 //
-// Además **1.267 de las 1.300 cesiones tenían fecha ANTERIOR a la emisión** del documento que decían
-// ceder. No se puede ceder una factura que todavía no se emitió.
+// ── LO QUE NO SE PUDO CONSERVAR, y por qué ────────────────────────────────────────────────────────
+// Los NIVELES de A5 eran imposibles contra el registro de facturas: sólo **114 de 233 clientes**
+// tenían documentos suficientes para sostener lo que declaraban, y el peor pedía 11.579 MM en 61
+// cesiones teniendo 2.019 MM en 36 documentos —5,7× más plata de la que emitió—. Un cliente no puede
+// ceder lo que no facturó, así que el volumen pasa a estar acotado por el A1.
 //
-// Ahora cada cesión APUNTA A UN DOCUMENTO REAL del cedente y copia sus campos del A1: folio, fecha de
-// emisión, monto, RUT y razón social del receptor, vencimiento. Lo que sigue siendo propio de la cesión
-// —a qué factoring, cuándo, con qué correo— se conserva de la entrega anterior, que es lo que la hace
-// reconocible: los mismos siete factoring con los mismos pesos.
+// Lo que SÍ se conserva es la PARTICIPACIÓN, que es lo que el negocio usa: el SOW es un cociente, y
+// el cociente sí se puede respetar aunque el volumen cambie. La probabilidad de que cada cesión vaya
+// a nosotros sale de la trayectoria semanal que A5 ya declaraba, así que quién es buen cliente y
+// quién se está yendo se mantiene —y con eso el descuento por SOW del pricing no se mueve—, pero
+// ahora colgando de cesiones que existen.
 //
-// Reglas de plausibilidad, todas medibles contra el A1:
+// ── Reglas de plausibilidad, todas medibles contra el A1 ──────────────────────────────────────────
 //   · sólo documentos a CRÉDITO (`FormaPago === "2"`): un factoring compra crédito, no contado;
 //   · sin nota de crédito ni reclamo: un documento anulado o reclamado no se cede;
 //   · un documento se cede UNA sola vez — dos cesiones del mismo folio serían dos dueños del mismo
 //     crédito, que es justamente lo que el registro electrónico existe para impedir;
-//   · **la fecha de cesión cae DESPUÉS de la emisión** y no pasa del corte del activo: no se puede
-//     ceder una factura que todavía no se emitió;
+//   · **la fecha de cesión cae DESPUÉS de la emisión** y no pasa del corte del activo;
 //   · **el monto cedido es IGUAL O MENOR que el del documento.** La cesión parcial existe —se cede
-//     una parte del crédito y el resto sigue siendo del cliente—, pero ceder MÁS que la factura sería
-//     transferir un crédito que no existe. Los dos son invariantes del activo y se comprueban acá, no
-//     aguas abajo: un consumidor que reciba `MontoCesion > MontoDocumento` no tiene forma de arreglarlo.
-//     La entrega anterior tenía las 1.300 cesiones por el total exacto, así que la cota «o menor»
-//     nunca se ejercitaba; ahora una minoría es parcial para que el caso exista en el dato.
+//     una parte del crédito y el resto sigue siendo del cliente—, pero ceder MÁS sería transferir un
+//     crédito que no existe. Los dos son invariantes del activo y se comprueban acá, no aguas abajo:
+//     un consumidor que reciba `MontoCesion > MontoDocumento` no tiene forma de arreglarlo.
 const { semilla, ent, entre } = require("../lib/rng");
 const { BICE_RUT, CESIONARIOS } = require("../lib/cesionarios");
 
 const DIA = 86400000;
 const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
 const ms = (s) => Date.parse(String(s).slice(0, 10) + "T00:00:00");
+// Lunes de la semana de una fecha — la misma convención con que A5 rotula sus semanas.
+const lunesDe = (f) => { const d = new Date(ms(f)); const dow = (d.getUTCDay() + 6) % 7; return iso(d.getTime() - dow * DIA); };
 
-// EL CESIONARIO DE CADA CESIÓN SALE DEL PADRÓN, y no de la entrega anterior.
-//
-// AECSync registra **todas** las cesiones del cliente, **bancarias y no bancarias**. La entrega
-// anterior traía siete cesionarios y **ninguno era un banco fuera del factoring target**, así que la
-// porción «otros bancarios» del mix no tenía de dónde salir y terminaba generándose por perfil en el
-// A11 — justo el dato que este activo sí puede responder.
-//
-// Cada cedente tiene un PANEL de contrapartes, no una por documento: una empresa trabaja con dos o
-// tres factoring, no con uno distinto por factura. El panel se sortea con semilla del RUT, así que es
-// estable entre corridas, y se reparte con pesos decrecientes —hay una relación principal y el resto
-// es marginal—, que es lo que hace que un share of wallet signifique algo.
-//
-// **Lo que NO se toca: si la cesión fue a NOSOTROS.** Eso viene de la entrega anterior y es nuestra
-// cartera; de ahí cuelgan la colocación del A11, la primera operación y el SOW. Se redistribuye sólo
-// entre quién se llevó las AJENAS, que es lo que la entrega anterior no podía responder bien.
+// EL PANEL DE CONTRAPARTES de cada cedente. Una empresa trabaja con dos o tres factoring, no con uno
+// distinto por factura, así que el cesionario se sortea de un panel estable por RUT y con pesos
+// decrecientes —hay una relación principal y el resto es marginal—, que es lo que hace que un share
+// of wallet signifique algo. Nosotros quedamos FUERA del panel: nuestra parte la decide el SOW.
 const AJENOS = CESIONARIOS.filter((c) => !c.nuestro);
 function panelDe(rut) {
   const r = semilla("panel|" + rut);
-  // Entre 2 y 4 contrapartes. Con una sola, «share of wallet» no tendría nada que repartir.
   const n = ent(r, 2, 4);
   const barajado = AJENOS.map((c) => ({ c, k: r() })).sort((a, b) => a.k - b.k).map((x) => x.c);
-  // Al menos UN banco en el panel de la mayoría: la banca financia a la mayor parte de las empresas
-  // con ventas, y sin eso la porción bancaria quedaría anecdótica. El 20% que no accede a banca es
-  // deliberado — son las empresas que sólo llegan al factoring no bancario.
   const elegidos = barajado.slice(0, n);
+  // Al menos un banco en el panel de la mayoría: la banca financia a la mayor parte de las empresas
+  // con ventas, y sin eso la porción bancaria del mix quedaría anecdótica. El 20% que no accede a
+  // banca es deliberado — son las que sólo llegan al factoring no bancario.
   if (r() < 0.8 && !elegidos.some((c) => c.banco)) elegidos[elegidos.length - 1] = barajado.find((c) => c.banco);
-  // Pesos decrecientes: la primera relación pesa más que la última.
   const pesos = elegidos.map((_, i) => Math.pow(0.55, i) * entre(r, 0.8, 1.2));
   const suma = pesos.reduce((a, b) => a + b, 0);
-  return { elegidos, acum: pesos.map((w) => w / suma).map((_, i, a) => a.slice(0, i + 1).reduce((x, y) => x + y, 0)) };
+  let acc = 0;
+  return { elegidos, acum: pesos.map((w) => (acc += w / suma)) };
 }
 
-function generar({ DTESYNC, AECSYNC }) {
+function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
   const previas = AECSYNC || [];
-  if (!previas.length || !Array.isArray(DTESYNC) || !DTESYNC.length) return previas;
+  if (!Array.isArray(DTESYNC) || !DTESYNC.length) return previas;
 
-  // Fecha de corte del activo: la emisión más reciente que trae el batch. La cesión no puede ser
-  // posterior —el archivo no la habría visto todavía—.
+  // Corte del activo: la emisión más reciente del batch. La cesión no puede ser posterior — el
+  // archivo no la habría visto todavía.
   let corte = "";
   for (const d of DTESYNC) if (d && d.FchEmis && d.FchEmis > corte) corte = d.FchEmis;
   const corteMs = ms(corte);
 
-  // Documentos CEDIBLES por cedente, en orden estable (folio descendente, como el libro de ventas).
+  // ── Pool CEDIBLE por cedente, en orden estable (folio descendente, como el libro de ventas) ─────
   const pool = new Map();
   for (const d of DTESYNC) {
     if (!d || !d.RUTEmisor || !d.Folio) continue;
@@ -95,84 +86,115 @@ function generar({ DTESYNC, AECSYNC }) {
   }
   for (const a of pool.values()) a.sort((x, y) => (+y.Folio || 0) - (+x.Folio || 0));
 
-  // Cuántas cesiones pide cada cedente en la entrega anterior. Se respeta ese reparto —es lo que hace
-  // que unos clientes cedan mucho y otros nada— acotado a lo que el cedente realmente emitió.
-  const pedidas = new Map();
-  for (const c of previas) { const k = c && c.RUTCedente; if (k) pedidas.set(k, (pedidas.get(k) || 0) + 1); }
+  // ── QUIÉN CEDE ──────────────────────────────────────────────────────────────────────────────────
+  // Los clientes que el A5 sigue (son clientes de factoring por definición) más los que ya cedían en
+  // la entrega anterior. No se inventa un cedente nuevo: que una empresa ceda o no es un hecho del
+  // negocio, no una decisión de este generador.
+  const cedentes = new Set();
+  for (const s of (SHARE_OF_WALLET || [])) if (s && s.RUTCliente) cedentes.add(s.RUTCliente);
+  for (const c of previas) if (c && c.RUTEmisor) cedentes.add(c.RUTEmisor);
 
-  // Reparto: a cada cedente se le asignan documentos distintos, tomados de su propio pool.
-  const asignados = new Map();  // RUTCedente -> [documento]
-  for (const [rut, n] of pedidas) {
-    const disponibles = pool.get(rut) || [];
-    if (!disponibles.length) { asignados.set(rut, []); continue; }
-    const r = semilla("cesion|" + rut);
-    // Se recorre el pool salteando de forma determinista, para que las cesiones no queden todas en los
-    // folios más nuevos —que son los que el inbound está ofreciendo justo ahora—.
-    const paso = Math.max(1, Math.floor(disponibles.length / Math.max(1, n)));
-    const elegidos = [];
-    let i = ent(r, 0, Math.max(0, paso - 1));
-    while (elegidos.length < n && i < disponibles.length) { elegidos.push(disponibles[i]); i += paso; }
-    // Si el pool es más chico que lo pedido, se cede lo que hay: un cliente no puede ceder facturas
-    // que no emitió. El conteo final se informa en la corrida.
-    asignados.set(rut, elegidos);
-  }
-
-  // Emisión de las cesiones, conservando el orden y los campos propios de la entrega anterior.
-  const cursor = new Map();
-  const out = [];
-  for (const c of previas) {
-    const rut = c && c.RUTCedente; if (!rut) continue;
-    const lista = asignados.get(rut) || [];
-    const k = cursor.get(rut) || 0;
-    const doc = lista[k];
-    if (!doc) continue;                       // el cedente no tenía tantos documentos cedibles
-    cursor.set(rut, k + 1);
-
-    // La cesión ocurre DESPUÉS de emitido el documento y antes del corte del activo. Entre 1 y 20
-    // días, que es el plazo en que un cedente lleva una factura al factoring.
-    const r = semilla("fcesion|" + rut + "|" + doc.Folio);
-    const emisMs = ms(doc.FchEmis);
-    const tope = Math.max(emisMs + DIA, Math.min(corteMs, emisMs + 20 * DIA));
-    const fecha = Math.min(tope, emisMs + ent(r, 1, 20) * DIA);
-
-    // MONTO DEL DOCUMENTO y MONTO CEDIDO. El primero es del A1 y no se discute; el segundo es igual o
-    // menor. ~12% son cesiones PARCIALES (entre el 30% y el 95% del documento): el cliente cede una
-    // parte del crédito y conserva el resto.
-    const total = Math.round(+doc.MntTotal || 0);
-    const rm = semilla("mcesion|" + rut + "|" + doc.Folio);
-    const parcial = rm() < 0.12;
-    const cedido = parcial ? Math.min(total, Math.max(1, Math.round(total * entre(rm, 0.30, 0.95)))) : total;
-
-    // El CESIONARIO. Si la entrega anterior decía que esta cesión fue a nosotros, se respeta —es
-    // nuestra cartera—. Si fue a otro, se redistribuye sobre el panel del cedente.
-    const nuestra = c.RUTFactoring === BICE_RUT;
-    let ces = null;
-    if (!nuestra) {
-      const pn = panelDe(rut);
-      const rc = semilla("ces|" + rut + "|" + doc.Folio)();
-      ces = pn.elegidos[pn.acum.findIndex((a) => rc <= a)] || pn.elegidos[pn.elegidos.length - 1];
+  // ── LA TRAYECTORIA DE PARTICIPACIÓN, por cliente y semana ───────────────────────────────────────
+  // Es lo ÚNICO que se toma del A5, y se toma como INTENCIÓN de generación, no como resultado: dice
+  // qué proporción de las cesiones de esa semana va a nosotros. El resultado se vuelve a medir sobre
+  // las cesiones ya escritas (lo hace `share_of_wallet.js`), así que A5 termina reportando lo que el
+  // registro contiene y no lo que aquí se pidió.
+  const sowSemana = new Map();   // "rut|lunes" -> 0..1
+  const sowCliente = new Map();  // rut -> 0..1
+  for (const s of (SHARE_OF_WALLET || [])) {
+    if (!s || !s.RUTCliente) continue;
+    sowCliente.set(s.RUTCliente, Math.max(0, Math.min(100, +s.SOWActualPct || 0)) / 100);
+    for (const w of (s.HistoricoSemanal || [])) {
+      if (!w || !w.Semana) continue;
+      sowSemana.set(s.RUTCliente + "|" + w.Semana, Math.max(0, Math.min(100, +w.SOWPct || 0)) / 100);
     }
-
-    out.push({
-      ...c,
-      ...(ces ? { RUTFactoring: ces.rut, RazonSocialFactoring: ces.nombre,
-                  EmailFactoring: "contacto@" + ces.nombre.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 18) + ".cl" } : {}),
-      RazonSocialCedente: doc.RznSoc || c.RazonSocialCedente,
-      TipoDTE: doc.TipoDTE || c.TipoDTE,
-      TipoDTEDesc: doc.TipoDTEDesc || c.TipoDTEDesc,
-      Folio: doc.Folio,
-      FechaEmisionDTE: doc.FchEmis,
-      MontoDocumento: total,
-      RUTEmisor: doc.RUTEmisor,
-      RUTReceptor: doc.RUTRecep,
-      RazonSocialReceptor: doc.RznSocRecep,
-      FechaCesion: iso(fecha) + String(c.FechaCesion || "").slice(10),  // conserva la hora original
-      MontoCesion: cedido,
-      FechaVencimientoCesion: doc.FchVenc || c.FechaVencimientoCesion,
-    });
   }
-  // GUARDA: los dos invariantes se comprueban antes de devolver. Es el único punto del sistema donde
+  const objetivoSow = (rut, lunes) => {
+    const w = sowSemana.get(rut + "|" + lunes);
+    if (w != null) return w;
+    const c = sowCliente.get(rut);
+    if (c != null) return c;
+    // Cliente que el A5 no sigue: perfil estable por RUT. No hereda de nadie.
+    return entre(semilla("sowperfil|" + rut), 0.05, 0.75);
+  };
+
+  const out = [];
+  let sinPool = 0;
+  for (const rut of [...cedentes].sort()) {
+    const docs = pool.get(rut) || [];
+    if (!docs.length) { sinPool++; continue; }
+    const r = semilla("cesion|" + rut);
+    // TASA DE CESIÓN: qué fracción de lo que emitió a crédito termina cediendo. No se cede todo —el
+    // cliente conserva parte de su cartera— y no se cede poco, o no sería cliente de factoring.
+    const tasa = entre(r, 0.45, 0.85);
+    const n = Math.max(1, Math.min(docs.length, Math.round(docs.length * tasa)));
+    // Se recorre el pool salteando de forma determinista, para que las cesiones no queden todas en
+    // los folios más nuevos —que son los que el inbound está ofreciendo justo ahora—.
+    const paso = Math.max(1, Math.floor(docs.length / n));
+    const elegidos = [];
+    for (let i = ent(r, 0, Math.max(0, paso - 1)); i < docs.length && elegidos.length < n; i += paso) elegidos.push(docs[i]);
+
+    const pn = panelDe(rut);
+    for (const doc of elegidos) {
+      // La cesión ocurre DESPUÉS de emitido el documento y antes del corte: entre 1 y 20 días, que es
+      // el plazo en que un cedente lleva una factura al factoring.
+      const rf = semilla("fcesion|" + rut + "|" + doc.Folio);
+      const emisMs = ms(doc.FchEmis);
+      const tope = Math.max(emisMs + DIA, Math.min(corteMs, emisMs + 20 * DIA));
+      const fecha = Math.min(tope, emisMs + ent(rf, 1, 20) * DIA);
+      const lunes = lunesDe(iso(fecha));
+
+      // ¿A NOSOTROS O A LA COMPETENCIA? Lo decide la participación objetivo de esa semana. Es un
+      // sorteo por documento y no un reparto exacto: el SOW resultante se MIDE después, y que difiera
+      // unas décimas del objetivo es correcto — el cociente real de un registro discreto.
+      const rc = semilla("dest|" + rut + "|" + doc.Folio);
+      let ces = null;
+      if (rc() >= objetivoSow(rut, lunes)) {
+        const k = rc();
+        ces = pn.elegidos[pn.acum.findIndex((a) => k <= a)] || pn.elegidos[pn.elegidos.length - 1];
+      }
+
+      // MONTO DEL DOCUMENTO y MONTO CEDIDO. El primero es del A1 y no se discute; el segundo es igual
+      // o menor. ~12% son cesiones PARCIALES (entre el 30% y el 95% del documento): el cliente cede
+      // una parte del crédito y conserva el resto.
+      const total = Math.round(+doc.MntTotal || 0);
+      const rm = semilla("mcesion|" + rut + "|" + doc.Folio);
+      const parcial = rm() < 0.12;
+      const cedido = parcial ? Math.min(total, Math.max(1, Math.round(total * entre(rm, 0.30, 0.95)))) : total;
+
+      const nombre = ces ? ces.nombre : "Factoring Security (BICE)";
+      const rutFact = ces ? ces.rut : BICE_RUT;
+      const correo = (s) => "contacto@" + String(s).toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 18) + ".cl";
+      out.push({
+        RUTCedente: doc.RUTEmisor,
+        RazonSocialCedente: doc.RznSoc || "",
+        EmailCedente: correo(doc.RznSoc || doc.RUTEmisor),
+        RUTFactoring: rutFact,
+        RazonSocialFactoring: nombre,
+        EmailFactoring: correo(nombre),
+        TipoDTE: doc.TipoDTE || "33",
+        TipoDTEDesc: doc.TipoDTEDesc || "Factura electronica",
+        Folio: doc.Folio,
+        FechaEmisionDTE: doc.FchEmis,
+        MontoDocumento: total,
+        RUTEmisor: doc.RUTEmisor,
+        RUTReceptor: doc.RUTRecep,
+        RazonSocialReceptor: doc.RznSocRecep,
+        EmailReceptor: correo(doc.RznSocRecep || doc.RUTRecep),
+        FechaCesion: iso(fecha) + "T" + String(ent(rf, 0, 23)).padStart(2, "0") + ":" + String(ent(rf, 0, 59)).padStart(2, "0"),
+        MontoCesion: cedido,
+        FechaVencimientoCesion: doc.FchVenc || "",
+        ReceptorElectronico: true,
+        Servicio: "AECSync",
+        Notificacion: "AEC_SINCRONIZADO",
+        Extras: {},
+      });
+    }
+  }
+
+  // GUARDA: los invariantes se comprueban antes de devolver. Es el único punto del sistema donde
   // todavía se pueden arreglar — aguas abajo sólo queda mostrarlos mal.
+  const vistos = new Set();
   for (const c of out) {
     if (String(c.FechaCesion).slice(0, 10) < c.FechaEmisionDTE) {
       throw new Error(`Cesión anterior a la emisión: folio ${c.Folio} de ${c.RUTCedente} (cesión ${c.FechaCesion}, emisión ${c.FechaEmisionDTE})`);
@@ -180,7 +202,11 @@ function generar({ DTESYNC, AECSYNC }) {
     if (c.MontoCesion > c.MontoDocumento) {
       throw new Error(`Monto cedido mayor que el documento: folio ${c.Folio} de ${c.RUTCedente} (${c.MontoCesion} > ${c.MontoDocumento})`);
     }
+    const k = c.RUTCedente + "|" + c.Folio;
+    if (vistos.has(k)) throw new Error(`Folio cedido dos veces: ${c.Folio} de ${c.RUTCedente}`);
+    vistos.add(k);
   }
+  if (sinPool > 0) console.warn(`  ⚠  AECSYNC: ${sinPool} cedentes sin documentos cedibles en el A1 — no ceden.`);
   return out;
 }
 module.exports = { generar };

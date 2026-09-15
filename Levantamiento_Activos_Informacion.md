@@ -46,7 +46,8 @@
 ### A2 · AECSync — cesiones electrónicas ⭐ SERVICIO DATAMART
 - **Tipo:** **servicio de Datamart** (`AECSync`), stream / notificación push. Documentación: <https://docs.datamart.cl/#tag/AEC-Sync>. Contrato campo por campo en **`Integraciones/spec_aecsync.md`**, con un ejemplo del payload en `Integraciones/aecsync_notificacion.json`.
 - **Contenido:** **todas** las cesiones de un cliente —**bancarias y no bancarias**— identificando en cada una al **cesionario**: qué documento cedió, a quién, cuándo y por cuánto.
-- **Lo que SÓLO este activo contesta:** quiénes son las contrapartes de financiamiento del cliente. Ningún otro lo sabe: el A5 mide participación pero no dice contra quién, y el A11 es de empresa. De acá sale el **mix de financiamiento** que alimenta la columna SOW (ver §5.6).
+- **Lo que SÓLO este activo contesta:** quiénes son las contrapartes de financiamiento del cliente. Ningún otro lo sabe: el A11 es de empresa, y **A5 se deriva de acá** desde el 15-09-2026. De este activo salen el **mix de financiamiento** que alimenta la columna SOW y la **participación** entera del A5 (ver §5.6).
+- **Es el REGISTRO COMPLETO, no una muestra** (15-09-2026): **7.480 cesiones**, una fracción real del pool cedible de cada cliente. Traía 1.300 mientras el A5 declaraba 9.104 en sus series — el analítico afirmaba siete veces más operaciones de las que el registro contenía.
 - **Consumen:** detección de pérdida por competencia (`cesion_externa`), SOW estimado "mi competencia en este cliente", benchmark de deudores, y el bloqueo **«cedida a terceros»** de una factura candidata (join por `RUTCedente` + `Folio`).
 - **Reconciliación con A1 — CERRADA el 14-09-2026.** El A2 traía folios propios: de **1.300 cesiones sólo 3** referenciaban un folio que A1 declara para ese mismo cedente, y **1.267 tenían fecha anterior a la emisión** del documento que decían ceder. Una cesión sin documento no se puede atribuir a nada, así que todo lo que cuelga de ella se inventaba en el pipeline (el bloqueo «cedida a terceros», la pérdida ante la competencia, el conteo de facturas cedidas). Se arregló **en el generador** —`GeneradorDatos/datasets/cesiones.js`, el A2 pasó de base a derivado—: cada cesión apunta a un documento real de su cedente y copia sus campos del A1. Hoy **1.300 de 1.300** reconcilian, ninguna es anterior a su emisión, ningún folio se cede dos veces y ninguna cae sobre un documento no cedible (contado, con nota de crédito o reclamado). Se arregló ahí y no en la aplicación a propósito: si el pipeline «resolviera» la discrepancia, volvería a inventar el dato.
 - **Invariantes del activo** (se validan en el generador; una cesión que los rompa no se emite): la **fecha de cesión no es anterior a la emisión** del documento, y el **monto cedido es igual o menor** que el del documento. La **cesión parcial** es válida —se cede parte del crédito y el resto queda con el cliente— y hoy son 160 de 1.300; ceder más que la factura no lo es. `MontoDocumento` es siempre el `MntTotal` del A1.
@@ -62,10 +63,11 @@
 - **Contenido:** deudores autorizados (segunda categoría de "buenos deudores").
 - **Consumen:** ídem A3.
 
-### A5 · Share of Wallet (`SHARE_OF_WALLET`)
-- **Tipo:** dataset JSON por RUT de cliente.
+### A5 · Share of Wallet (`SHARE_OF_WALLET`) — **DERIVADO de A2**
+- **Tipo:** dataset JSON por RUT de cliente. **Se calcula sobre A2 · AECSync**, no se entrega por separado (15-09-2026, ver §5.6): la participación, la serie semanal con sus montos, la tendencia, el gap, el estado y el diagnóstico se **miden** sobre las cesiones. Los dos activos respondían la misma pregunta por caminos independientes y discrepaban 13,8 pto en la mediana; hoy calzan dentro del redondeo en 233 de 233 clientes.
 - **Contenido:** SOW actual/target, tendencia, histórico mensual/semanal, gap.
-- **Consumen:** chips SOW de oportunidades, estrategia de precio por SOW (spread sugerido), panel SOW del cliente, plan mensual.
+- **Lo único que NO se mide es `SOWTargetPct`**, que es una **meta comercial**: derivarla de las cesiones haría que el objetivo fuera siempre igual al resultado y el gap no existiría nunca, que es lo único que esa cifra sirve para decir. Lo mismo el segmento, el horizonte y la frecuencia de actualización. `HistoricoMensual` son 13 meses sobre un registro de 2, así que se **ancla** al SOW medido en vez de medirse — reconstrucción declarada, no medición.
+- **Consumen:** chips SOW de oportunidades, estrategia de precio por SOW (spread sugerido), panel SOW del cliente, plan mensual, churn de cartera.
 
 ### A6 · Estrategia de precio (`ESTRATEGIA_PRECIO`)
 - **Tipo:** dataset JSON indexado por `RUT cliente | Tipo de línea`.
@@ -230,7 +232,7 @@ campo **sólo** desde su maestro y usa la copia nada más que para conciliar.
 | Segmento | — | — | `SEGMENTO` | `SEGMENTO` · `SUB_SEGMENTO` | — | *colisión, ver 5.3* |
 | Línea aprobada | — | `LINEA_APROBADA_MM` | — | — | `LINEA_APROBADA_MM` | **A23** *(ver 5.4)* |
 | Ejecutivo / zona / jefatura | — | `EJECUTIVO` · `ZONA` | — | — | — | **A24** *(levantado el 14-09, ver 5.5)* |
-| Participación / mix de financiamiento | — | — | — | `SOW_*` (4 porciones) | — | **A2** *lo mide* → **A11** *lo publica* · **A5** *cuánto es nuestro (ver 5.6)* |
+| Participación / mix de financiamiento | — | — | — | `SOW_*` (4 porciones) | — | **A2** — lo mide; **A5** y **A11** lo publican, derivados de él (ver 5.6) |
 | Datos del documento cedido | — | — | — | — | — | **A1** — el A2 copia `TipoDTE`, `Folio`, `FechaEmisionDTE`, `MontoDocumento`, `RUTEmisor`, `RUTReceptor`, `FechaVencimientoCesion` para que una cesión se lea sola; si discrepan manda el A1 |
 | Fecha de corte | `FECHA_CORTE` | `FECHA_CORTE` | `FECHA_CORTE` | `FECHA_CORTE` | `FECHA_CORTE` | *propia de cada uno* |
 
@@ -358,18 +360,35 @@ supuso lo contrario, una de las cuatro porciones se inventaba.
 Un **deudor** no trae mix: las cuatro columnas vienen **vacías**, no en 0. Un deudor no cede facturas,
 así que la pregunta no le aplica, y cuatro ceros afirmarían algo que el archivo no dice.
 
-#### Hueco abierto: A2 y A5 miden la misma cifra y no coinciden
+#### Cerrado el 15-09-2026: **A5 se DERIVA de A2**
 
-Medido el 15-09-2026 sobre los 233 clientes que los dos cubren: la participación de Security calculada
-sobre las cesiones de A2 y el `SOWActualPct` de A5 difieren **13,8 pto en la mediana** y **61,8 en el
-p90**. Es la misma cantidad por dos caminos, así que uno de los dos sobra.
+Los dos activos medían la misma cantidad por caminos independientes y discrepaban **13,8 pto en la
+mediana y 61,8 en el p90** sobre los 233 clientes que ambos cubren —A5 decía 97,7% donde A2 medía
+5,1%—. El negocio resolvió aplicando el criterio de esta sección: **A2 es el registro de los hechos,
+así que es el maestro; A5 se calcula sobre él.** El generador produce primero AECSync y después Share
+of Wallet, midiendo. Medido tras el cambio: **233 de 233 clientes calzan dentro de 0,05 pto**, que es
+el redondeo a un decimal con que se publican los porcentajes.
 
-No se resolvió acá, y la razón es de alcance: A5 alimenta el **pricing** (el descuento por SOW) y el
-dimensionamiento de líneas, de modo que cambiarle el nivel mueve el precio de las operaciones. Es una
-decisión de negocio, no de implementación. Por eso el mix se ancló a A5 —que deja el sistema
-consistente consigo mismo— y queda anotado que **el maestro natural es A2**: es el registro de los
-hechos, y A5 es un producto analítico construido sobre ellos. Antes de reconciliar las cesiones contra
-el A1 (§A2) esta discrepancia no se podía ni medir.
+Eso obligó a dos cosas que conviene no perder:
+
+- **A2 dejó de ser una muestra.** Traía 1.300 cesiones mientras A5 declaraba **9.104** en sus series:
+  el analítico afirmaba siete veces más operaciones de las que el registro contenía, y con 0,63
+  cesiones por cliente-semana no hay serie que medir. Ahora son **7.480**, cediendo una fracción real
+  del pool cedible de cada cliente.
+- **Los NIVELES de A5 no se pudieron conservar, y no por una decisión sino por aritmética:** sólo
+  **114 de 233 clientes** tenían documentos suficientes para sostener lo que declaraban, y el peor
+  pedía 11.579 MM en 61 cesiones teniendo 2.019 MM en 36 documentos —5,7× más plata de la que
+  emitió—. Un cliente no puede ceder lo que no facturó. Lo que sí se conservó es la **participación**,
+  que es un cociente: la trayectoria semanal de A5 se usa como intención al generar A2, así que quién
+  es buen cliente y quién se está yendo no cambió. Impacto medido en pricing: el SOW se mueve 2,8 pto
+  en la mediana, 38% de los clientes cambian de estado y el **descuento por SOW cambia 0,00 pto en la
+  mediana** (p90 0,10, máximo 0,20).
+
+Qué sigue siendo de A5 y **no** se mide: **`SOWTargetPct`**, que es una meta comercial —derivarla de
+las cesiones haría que el objetivo fuera siempre igual al resultado y el gap no existiría nunca—, más
+el segmento, el horizonte y la frecuencia. Y dos límites del registro, declarados: la serie cubre las
+**8 semanas** que el A1 sostiene (no se cede un documento que no se emitió) y `HistoricoMensual` son
+13 meses sobre un registro de 2, así que se **ancla** al SOW medido en vez de medirse. Caso 101.
 
 ### 5.7 Qué hacer con esto
 
@@ -379,7 +398,7 @@ el A1 (§A2) esta discrepancia no se podía ni medir.
 4. En la carga, escribir cada campo sólo desde su maestro y **conciliar** las copias en vez de pisarlas:
    una discrepancia es información sobre el origen, no ruido que haya que resolver en silencio.
 5. Exponer la `FECHA_CORTE` de cada activo en las pantallas que los mezclan.
-6. **Decidir el maestro de la participación de Security** (§5.6): hoy A2 y A5 miden la misma cifra con 13,8 pto de desvío mediano. Tiene impacto en pricing, así que es decisión de negocio.
+6. ~~Decidir el maestro de la participación de Security.~~ **HECHO** el 15-09-2026: el maestro es **A2** y A5 se deriva de él (§5.6). 233 de 233 clientes calzan dentro del redondeo.
 
 Esto es **diseño de la integración**, no un defecto del prototipo: hoy los cinco archivos son
 deterministas y coinciden entre sí por construcción, así que nada de esto se manifiesta acá. Se
