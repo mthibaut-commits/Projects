@@ -25430,7 +25430,9 @@ export default function PipelineComercial() {
             <div className="mt-1 flex items-center gap-2">
               <h1 className="text-2xl font-semibold tracking-tight">Tubo diario Comercial</h1>
               <span className="rounded-full px-2 py-0.5 t10 font-medium" style={{ backgroundColor: anyFilter ? "#F1ECFF" : C.page, color: anyFilter ? C.indigo : C.faint }}>
-                {filtered.length} de {deals.length + inboundCount} negocios{anyFilter ? " · filtrado" : ""}
+                {/* DIRECTORIO: el total es el del elenco, no el del tubo completo — «5 de 105» sobre
+                    una lista de 5 es la misma contradicción que ya se corrigió en las pestañas. */}
+                {filtered.length} de {directorio ? dealsTubo.length : deals.length + inboundCount} negocios{anyFilter ? " · filtrado" : ""}
               </span>
             </div>
           </div>
@@ -25439,6 +25441,11 @@ export default function PipelineComercial() {
                 llegan por API desde el backend y no hay nada que iniciar, pausar ni reiniciar desde la
                 UI; la columna Inbound sigue existiendo, pero alimentada por el stream real. */}
             {CFG_ACTIVA.modoDemo !== false && (<>
+              {/* DIRECTORIO: los tres controles del stream se OCULTAN en la demo acotada. El modo ya
+                  silencia el inbound, así que Start, Reiniciar e Inbound no harían nada visible —y un
+                  control que no cambia nada se lee como un control roto—. El toggle de abajo se queda:
+                  es la única forma de salir del modo. */}
+              {!directorio && (<>
               <button onClick={toggleStream} title={streaming ? "Sólo demo · pausar la simulación" : "Sólo demo · iniciar la simulación del inbound"}
                 className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: streaming ? C.amber : C.green }}>
                 {streaming ? <><Pause size={14} /> Pausar</> : <><Play size={14} /> Start</>}
@@ -25451,6 +25458,7 @@ export default function PipelineComercial() {
                 className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${showInbound ? C.indigo : C.line}`, backgroundColor: "#fff", color: showInbound ? C.indigo : C.sub }}>
                 <Radio size={14} /> Inbound
               </button>
+              </>)}
               {/* DIRECTORIO · demo acotada. Encender AGREGA las oportunidades del elenco y apagar las
                   retira por su marca `_directorio`: no se toca ninguna otra, así que el tubo vuelve
                   exactamente como estaba. */}
@@ -25619,7 +25627,7 @@ export default function PipelineComercial() {
             );
             return (
               <>
-                {showInbound && (
+                {showInbound && !directorio && ( /* DIRECTORIO */
                 <MacroColumn title="Bandeja Inbound" hint="captación">
                   <InboundPanel rules={rules} open={inboundOpen} onToggleOpen={(v) => setInboundOpen(typeof v === "boolean" ? v : !inboundOpen)} onToggleRule={toggleRule} onEditRule={setEditingRule} onNewRule={openNewRule} onResetRules={resetRules}
                     oppCount={dealsVista.filter((d) => d._inbound).length} opp={dealsVista.filter((d) => d._inbound).reduce((s, d) => s + d.monto, 0)} />
