@@ -20916,16 +20916,21 @@ function PanelRecupera({ fuente, resumen, cargado, onCargar, preview }) {
 // ciegas es la forma más fácil de pedirle al comité una línea de 280 pesos o de 280 mil millones, y los
 // dos errores se ven idénticos dentro del campo. `destacado` es el foco propio de lo que el ejecutivo
 // TIENE que llenar; con `obligatorio` se marca en ámbar mientras siga en cero.
-function InputPesos({ value, onChange, destacado = false, obligatorio = false, step = 1000000, title, style }) {
+// El ÚNICO campo de monto del wizard (regla 15-ter). Muestra el peso YA SEPARADO en miles —«$160.000.000»—
+// en vez de un <input type="number"> con la cifra pegada: escribir 280000000 a ciegas es la forma más
+// fácil de pedir una línea de 280 pesos o de 280 mil millones, y dentro del campo los dos errores se
+// ven idénticos. Antes eso lo resolvía una lectura «M$» debajo del campo; leer la magnitud DENTRO lo
+// resuelve en el mismo sitio donde se comete el error, y de paso la columna cuadra con las de al lado,
+// que también van en pesos. El evento que se emite lleva el NÚMERO en `target.value`, así que el
+// contrato con los llamadores (`+e.target.value`) no cambia.
+function InputPesos({ value, onChange, destacado = false, obligatorio = false, title, style }) {
   const v = +value || 0;
   const cls = destacado ? (obligatorio && v <= 0 ? "f-prop f-prop-vacio" : "f-prop") : "";
   const sty = destacado ? { color: C.ink, ...(style || {}) } : { border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", ...(style || {}) };
+  const emitir = (txt) => onChange && onChange({ target: { value: String(+String(txt).replace(/\D/g, "") || 0) } });
   return (
-    <span className="flex min-w-0 flex-col items-stretch">
-      <input type="number" step={step} value={v} onChange={onChange} title={title || fmtMM(v)}
-        className={"w-full rounded-md px-2 py-1 t11 text-right outline-none " + cls} style={sty} />
-      <span className="t8 text-right" style={{ color: v > 0 ? C.sub : C.faint, lineHeight: 1.35 }}>{fmtMM(v)}</span>
-    </span>
+    <input type="text" inputMode="numeric" value={fmtCLP(v)} onChange={(e) => emitir(e.target.value)} title={title || fmtMM(v)}
+      className={"w-full rounded-md px-2 py-1 t11 text-right outline-none " + cls} style={sty} />
   );
 }
 // Bloque numerado del DOCUMENTO final. La presentación al comité se lee entera, de corrido: los pasos
@@ -20985,7 +20990,10 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
     const h = Math.abs(hashStr("deu" + nombre)); const prop = (50 + (h % 20) * 10) * 1e6; const ant = (h % 2) ? (50 + (h % 10) * 10) * 1e6 : 0;
     const esCliente = typeof PC_CLIENTES !== "undefined" && PC_CLIENTES.some((c) => c.nombre === nombre) ? true : (h % 3 === 0);
     const hist = deudoresHistorial(cliente, [{ name: nombre }])[0];
-    return { nombre, rut: `${76000000 + (h % 20000000)}-${"0123456789K"[h % 11]}`, nota: (notaDeudor(nombre) || 0), esCliente, politicaPct: pol("concentracionDeudorPct", 30), anterior: ant, utilizado: ant ? mmRound(ant * ((h % 60) / 100)) : 0, deudaDirecta: (h % 500) * 100000, deudaIndirecta: (h % 7 === 0) ? (h % 200) * 100000 : 0, propuesta: prop, fechaInf: hoyISO, productos: [{ producto: "FACTURA", anterior: ant, utilizado: 0, propuesto: prop }], hist, l6m: ventaL6M(hist) };
+    // `sugerido` es lo que propone el sistema y `propuesta` lo que el ejecutivo pide: nacen iguales y
+    // se separan en cuanto él corrige el monto. Son DOS columnas porque el comité necesita ver que se
+    // apartó de la sugerencia; con un solo campo esa diferencia no queda en ninguna parte.
+    return { nombre, rut: `${76000000 + (h % 20000000)}-${"0123456789K"[h % 11]}`, nota: (notaDeudor(nombre) || 0), esCliente, politicaPct: pol("concentracionDeudorPct", 30), anterior: ant, utilizado: ant ? mmRound(ant * ((h % 60) / 100)) : 0, deudaDirecta: (h % 500) * 100000, deudaIndirecta: (h % 7 === 0) ? (h % 200) * 100000 : 0, sugerido: prop, propuesta: prop, fechaInf: hoyISO, productos: [{ producto: "FACTURA", anterior: ant, utilizado: 0, propuesto: prop }], hist, l6m: ventaL6M(hist) };
   };
   // Pre-carga: los deudores con flujo recurrente ya vienen SUGERIDOS; el ejecutivo sólo revisa el monto
   // propuesto. Los demás los agrega él en «Otros deudores».
@@ -20997,9 +21005,9 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
     for (const so of deudoresSolicitadosLinea(rut)) {
       const mto = mmRound(so.monto || 0);
       const ya = base.find((b) => b.nombre === so.deudor);
-      if (ya) { ya.solicitado = true; ya.tipoLinea = so.tipoLinea || "puntual"; ya.propuesta = Math.max(ya.propuesta || 0, mto); continue; }
+      if (ya) { ya.solicitado = true; ya.tipoLinea = so.tipoLinea || "puntual"; ya.sugerido = Math.max(ya.sugerido || 0, mto); ya.propuesta = Math.max(ya.propuesta || 0, mto); continue; }
       base.push({ ...construirDeudorLinea(so.deudor), flags: { V: true, N: true, C: true, FR: false, CP: false },
-                  recurrente: false, solicitado: true, tipoLinea: so.tipoLinea || "puntual", propuesta: mto });
+                  recurrente: false, solicitado: true, tipoLinea: so.tipoLinea || "puntual", sugerido: mto, propuesta: mto });
     }
     return base;
   });
@@ -21207,14 +21215,23 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
   // —lo que el flujo comercial del cliente propone y lo que el ejecutivo decide agregar— y mezclarlos
   // en una sola lista escondía cuál de los dos había que revisar. La FILA es la misma en las dos, para
   // que no se separen.
-  const DG_DEU = "40px 44px 92px minmax(150px,1fr) 128px 74px 92px 92px 152px 78px 78px 52px 122px 40px";
+  // El RUT y los chips viven DENTRO de la celda del nombre, no en columnas propias: identifican a la
+  // empresa, así que separarlos gastaba ancho repitiendo la misma entidad en tres sitios. Ese ancho
+  // es el que ahora ocupan «Aprobado · Utilizado · Sugerido · Propuesta», que es la comparación que
+  // el ejecutivo viene a hacer y antes no estaba completa (faltaba contra qué comparar lo que pide).
+  // Anchos MEDIDOS en el DOM, no estimados: con 46px la cabecera «Cli/Deu» se pegaba a «Nombre», y con
+  // 116px los cinco checkboxes V·N·C·FR·CP se desbordaban encima de los botones de acción —dos chars
+  // («FR», «CP») ocupan casi el doble que uno—. La suma pide 1.482px, así que el minWidth sube a 1500.
+  const DG_DEU = "44px 58px minmax(190px,1fr) 78px 62px 116px 116px 116px 150px 92px 92px 60px 156px 48px";
   const LBL7_DEU = ["Mes pasado", "-2 mes", "-3 mes", "-4 mes", "-5 mes", "-6 mes", "+6 m"];
   const cabDeudores = () => (
     <div className="grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: DG_DEU, color: C.faint, borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}>
-      <span>Nota</span><span title="C = Cliente · D = Deudor. Ambos encendidos: la empresa es cliente y deudor a la vez.">Cli/Deu</span><span>Rut</span><span>Nombre / Razón social</span>
+      <span>Nota</span><span title="C = Cliente · D = Deudor. Ambos encendidos: la empresa es cliente y deudor a la vez.">Cli/Deu</span><span>Nombre / Razón social</span>
       <span title="Puntual: cupo a medida de ESTA operación, de un solo uso. Normal: línea permanente del par cliente-deudor.">Tipo línea</span><span>Pol. %L</span>
-      <span className="text-right">M. anterior</span><span className="text-right">M. utilizado</span>
-      <span className="text-right" title="Monto de línea que se le pide al comité para este deudor. Se digita en PESOS y se lee en M$.">Propuesta ($)</span>
+      <span className="text-right" title="Línea vigente aprobada hoy para este par cliente-deudor.">Aprobado</span>
+      <span className="text-right" title="Cuánto de esa línea está ocupado hoy.">Utilizado</span>
+      <span className="text-right" title="Monto que propone el sistema a partir del flujo comercial del par. Es la referencia: lo que se le pide al comité es la columna Propuesta.">Sugerido</span>
+      <span className="text-right" title="Monto de línea que se le pide al comité para este deudor. Se digita y se lee en PESOS.">Propuesta</span>
       <span className="text-right">D. directa</span><span className="text-right">D. indirecta</span><span className="text-right">Conc. %</span><span>V · N · C · FR · CP</span><span></span>
     </div>
   );
@@ -21227,13 +21244,14 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
         <span className="flex h-4 w-4 items-center justify-center rounded-full t8 font-bold" style={{ backgroundColor: d.esCliente ? "#7C3AED" : "#E5E7EB", color: d.esCliente ? "#fff" : "#9CA3AF" }}>C</span>
         <span className="flex h-4 w-4 items-center justify-center rounded-full t8 font-bold text-white" style={{ backgroundColor: "#7C3AED" }}>D</span>
       </span>
-      <span className="t10" style={{ color: C.sub, fontVariantNumeric: "tabular-nums", marginTop: 5 }}>{d.rut}</span>
-      <span className="flex min-w-0 items-center gap-1 overflow-hidden" style={{ marginTop: 4 }}>
+      <span className="flex min-w-0 flex-col overflow-hidden" style={{ marginTop: 2 }}>
         {/* EL DETALLE DE VENTAS VIVE EN EL CHIP, no en dos columnas de la tabla ni colgado del nombre:
             sólo aplica a un deudor RECURRENTE —es lo que lo hace recurrente— y gastaba ancho en todas
             las filas para un dato que se mira una vez. Sin venta recurrente no hay chip, y entonces no
             hay nada que desplegar. */}
         <span className="truncate t11 font-medium" style={{ color: C.ink }} title={d.nombre}>{d.nombre}</span>
+        <span className="t9" style={{ color: C.faint, fontVariantNumeric: "tabular-nums" }}>{d.rut}</span>
+        <span className="mt-0.5 flex flex-wrap items-center gap-1">
         {d.recurrente && (
           <TipDesglose color="#16A34A" titulo={`Facturación mensual · ${d.nombre}`} nota={d.l6m.facMax > 0 ? `Últimos 6 meses: ${d.l6m.facMin}–${d.l6m.facMax} facturas y ${fmtMM(d.l6m.montoMin)}–${fmtMM(d.l6m.montoMax)} por mes (rango típico p40–p90). Facturó ${d.l6m.activos}/6 meses. Total 7m: ${fmtMM(d.hist.totMonto)} · ${d.hist.totFac}f.` : "Sin facturación registrada en el periodo."}
             items={d.hist.meses.map((m, k) => ({ name: LBL7_DEU[k], val: m.fac ? `${fmtMM(m.monto)} · ${m.fac}f` : "—" }))}>
@@ -21242,45 +21260,69 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
           </TipDesglose>
         )}
         {d.solicitado && <span className="shrink-0 rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }} title="Deudor pedido por el CIERRE DE UNA OFERTA: sus facturas no cabían en la línea vigente, así que la solicitud entró sola con línea PUNTUAL por lo que faltó.">Solicitado</span>}
+        </span>
       </span>
       {/* PUNTUAL O NORMAL. Lo que pide el cierre de una oferta es siempre PUNTUAL —un cupo a medida de
           esa operación, de un solo uso— y por eso entra marcado así; el ejecutivo puede cambiarlo a
           NORMAL cuando el flujo con ese deudor justifica una línea permanente, que es la decisión que
           el comité está por tomar. */}
-      <span className="flex gap-1" style={{ marginTop: 4 }}>
+      {/* Los dos selectores van APILADOS y no lado a lado: son de una sola opción cada uno, y en
+          horizontal se comían el ancho que ahora ocupan las cuatro columnas de monto. */}
+      <span className="flex flex-col gap-1" style={{ marginTop: 2 }}>
         {[{ k: "puntual", l: "Puntual", t: "Línea PUNTUAL cliente-deudor: cupo a medida de esta operación, de un solo uso. Lo que no se alcanza a usar se pierde." },
           { k: "normal", l: "Normal", t: "Línea NORMAL cliente-deudor: cupo permanente del par, que se renueva con la vigencia de la línea." }].map((o) => (
           <button key={o.k} onClick={() => updDeu(i, { tipoLinea: o.k })} title={o.t} className="rounded-full px-1.5 py-0.5 t9 font-bold"
-            style={{ backgroundColor: (d.tipoLinea || "normal") === o.k ? C.indigo : "#FAF9FB", color: (d.tipoLinea || "normal") === o.k ? "#fff" : "#9CA3AF" }}>{o.l}</button>
+            style={{ backgroundColor: (d.tipoLinea || "normal") === o.k ? C.indigo : C.lilac, color: (d.tipoLinea || "normal") === o.k ? "#fff" : C.sub }}>{o.l}</button>
         ))}
       </span>
-      <span className="flex gap-1" style={{ marginTop: 4 }} title="Política de concentración por deudor: el ejecutivo elige 25% o 30% de la línea.">
-        {[...new Set([25, 30, pol("concentracionDeudorPct", 30)])].sort((a, b) => a - b).map((v) => <button key={v} onClick={() => updDeu(i, { politicaPct: v })} className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: d.politicaPct === v ? "#4c1d95" : "#FAF9FB", color: d.politicaPct === v ? "#fff" : "#9CA3AF" }}>{v}%</button>)}
+      <span className="flex flex-col gap-1" style={{ marginTop: 2 }} title="Política de concentración por deudor: el ejecutivo elige 25% o 30% de la línea.">
+        {[...new Set([25, 30, pol("concentracionDeudorPct", 30)])].sort((a, b) => a - b).map((v) => <button key={v} onClick={() => updDeu(i, { politicaPct: v })} className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: d.politicaPct === v ? "#4c1d95" : C.lilac, color: d.politicaPct === v ? "#fff" : C.sub }}>{v}%</button>)}
       </span>
-      <span className="t10 text-right" style={{ color: C.sub, marginTop: 5 }}>{d.anterior ? fmtMM(d.anterior) : "—"}</span>
-      <span className="t10 text-right" style={{ color: C.sub, marginTop: 5 }}>{d.utilizado ? fmtMM(d.utilizado) : "0"}</span>
+      {/* En PESOS y no en M$: es la unidad en la que se digita la Propuesta, que está a dos columnas de
+          distancia, y compararlas exige leerlas en la misma escala. Los totales siguen en M$. */}
+      <span className="t10 text-right" style={{ color: C.sub, marginTop: 5, fontVariantNumeric: "tabular-nums" }}>{d.anterior ? fmtCLP(d.anterior) : "—"}</span>
+      <span className="t10 text-right" style={{ color: C.sub, marginTop: 5, fontVariantNumeric: "tabular-nums" }}>{d.utilizado ? fmtCLP(d.utilizado) : "0"}</span>
+      <span className="t10 text-right" style={{ color: (d.sugerido || 0) > 0 ? C.sub : C.faint, marginTop: 5, fontVariantNumeric: "tabular-nums" }}
+        title={(d.sugerido || 0) > 0 && mmRound(d.sugerido) !== mmRound(d.propuesta || 0) ? `El ejecutivo se apartó de la sugerencia: se pide ${fmtCLP(d.propuesta || 0)} contra ${fmtCLP(d.sugerido)} sugeridos.` : "Monto que propone el sistema para este par."}>{(d.sugerido || 0) > 0 ? fmtCLP(d.sugerido) : "—"}</span>
       <InputPesos value={d.propuesta} onChange={(e) => updDeu(i, { propuesta: mmRound(+e.target.value || 0) })} destacado obligatorio
         title="Monto de línea que se le pide al comité para este deudor. Se digita en pesos." />
-      <span className="t10 text-right" style={{ color: d.deudaDirecta > 0 ? C.ink : C.faint, marginTop: 5 }}>{d.deudaDirecta > 0 ? fmtMM(d.deudaDirecta) : "---"}</span>
-      <span className="t10 text-right" style={{ color: d.deudaIndirecta > 0 ? C.ink : C.faint, marginTop: 5 }}>{d.deudaIndirecta > 0 ? fmtMM(d.deudaIndirecta) : "---"}</span>
+      <span className="t10 text-right" style={{ color: d.deudaDirecta > 0 ? C.ink : C.faint, marginTop: 5, fontVariantNumeric: "tabular-nums" }}>{d.deudaDirecta > 0 ? fmtCLP(d.deudaDirecta) : "---"}</span>
+      <span className="t10 text-right" style={{ color: d.deudaIndirecta > 0 ? C.ink : C.faint, marginTop: 5, fontVariantNumeric: "tabular-nums" }}>{d.deudaIndirecta > 0 ? fmtCLP(d.deudaIndirecta) : "---"}</span>
       <span className="t10 text-right font-semibold" style={{ color: conc > d.politicaPct ? "#EF4444" : C.ink, marginTop: 5 }} title={conc > d.politicaPct ? `Excede la política (${d.politicaPct}% de la línea)` : "Concentración sobre la línea factoring propuesta"}>{conc}%</span>
       <span className="flex gap-1.5" style={{ marginTop: 5 }}>{["V", "N", "C", "FR", "CP"].map((f) => <label key={f} className="flex items-center gap-0.5 t9" style={{ color: C.sub }}><input type="checkbox" checked={!!d.flags[f]} onChange={(e) => updDeu(i, { flags: { ...d.flags, [f]: e.target.checked } })} />{f}</label>)}</span>
       <span className="flex gap-1" style={{ marginTop: 4 }}>
-        <button onClick={() => setEditDeu(i)} title="Editar deudor factoring" className="rounded p-0.5" style={{ color: C.indigo }}>✎</button>
+        <button onClick={() => setEditDeu(i)} title="Editar deudor factoring" className="rounded p-0.5" style={{ color: C.indigo }}><Pencil size={12} /></button>
         <button onClick={() => setDeudores((p) => p.filter((_, j) => j !== i))} className="rounded p-0.5" style={{ color: C.red }}><Trash2 size={12} /></button>
       </span>
     </div>
     );
   };
+  // Promedio de nota ponderado por el monto PEDIDO, igual que el global: una nota baja pesa lo que pesa
+  // la plata que se le quiere prestar a ese deudor, no una fila.
+  const promDe = (lista) => lista.length ? +(lista.reduce((s, d) => s + d.nota * (d.propuesta || 1), 0) / lista.reduce((s, d) => s + (d.propuesta || 1), 0)).toFixed(2) : 0;
+  const notaMin = pol("notaMinCompra", 3.7);
+  // El veredicto contra el límite de compra va PEGADO al promedio que lo produce, y no en una franja
+  // aparte: es el mismo dato con su lectura, y separarlos obliga a buscar cuál de los dos promedios
+  // de la pantalla es el que está siendo juzgado.
+  const chipProm = (prom, n) => n === 0 ? <span className="t10" style={{ color: C.faint }}>Prom. Ponderado: 0.00 · límite de compra ({String(notaMin).replace(".", ",")})</span> : (
+    <span className="inline-flex items-center gap-1.5 t10 font-semibold whitespace-nowrap" style={{ color: C.ink }}>
+      Prom. Ponderado: <span style={{ color: NOTA_COLOR(prom) }}>{prom}</span>
+      <span className="inline-flex items-center gap-1" style={{ color: prom >= notaMin ? "#16A34A" : "#C2410C" }}>
+        {prom >= notaMin ? <Check size={12} /> : <AlertTriangle size={12} />}
+        {prom >= notaMin ? "Sobre" : "Bajo"} el límite de compra ({String(notaMin).replace(".", ",")})
+      </span>
+    </span>
+  );
   const subtotalDeu = (lista, etiqueta) => (
     <div className="mt-2 grid items-center gap-2 t10" style={{ gridTemplateColumns: DG_DEU, borderTop: `1px solid ${C.line}`, paddingTop: 6 }}>
-      <span></span><span></span><span></span>
-      <span className="font-semibold" style={{ color: C.sub }}>{etiqueta} · {lista.length}</span>
       <span></span><span></span>
-      <span className="text-right" style={{ color: C.sub }}>{fmtMM(lista.reduce((s, d) => s + (d.anterior || 0), 0))}</span>
-      <span className="text-right" style={{ color: C.sub }}>{fmtMM(lista.reduce((s, d) => s + (d.utilizado || 0), 0))}</span>
-      <span className="text-right font-bold" style={{ color: C.ink }}>{fmtMM(lista.reduce((s, d) => s + (d.propuesta || 0), 0))}</span>
-      <span></span><span></span><span></span><span></span><span></span>
+      <span className="font-semibold" style={{ color: C.sub }}>{etiqueta}: {lista.length}</span>
+      <span></span><span></span>
+      <span className="text-right" style={{ color: C.sub, fontVariantNumeric: "tabular-nums" }}>{fmtCLP(lista.reduce((s, d) => s + (d.anterior || 0), 0))}</span>
+      <span className="text-right" style={{ color: C.sub, fontVariantNumeric: "tabular-nums" }}>{fmtCLP(lista.reduce((s, d) => s + (d.utilizado || 0), 0))}</span>
+      <span className="text-right" style={{ color: C.sub, fontVariantNumeric: "tabular-nums" }}>{fmtCLP(lista.reduce((s, d) => s + (d.sugerido || 0), 0))}</span>
+      <span className="text-right font-bold" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>{fmtCLP(lista.reduce((s, d) => s + (d.propuesta || 0), 0))}</span>
+      <span className="flex justify-end" style={{ gridColumn: "span 5" }}>{chipProm(promDe(lista), lista.length)}</span>
     </div>
   );
   const secDeudores = () => {
@@ -21288,34 +21330,42 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
     const recu = idx.filter((x) => x.d.recurrente), otros = idx.filter((x) => !x.d.recurrente);
     return (
     <>
-      <div className="mb-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#C2410C" }}>Los <b>deudores con flujo recurrente</b> (facturación en ≥ 4 de los últimos 6 meses) vienen <b>sugeridos</b>: revisa el monto de <b>Propuesta&nbsp;($)</b>, que es el único campo que tienes que llenar y va resaltado. El detalle de facturación cuelga del chip <b>Recurrente</b>. Abajo, en <b>Otros deudores</b>, agrega los que falten (nota ≥ {String(pol("notaMinCompra", 3.7)).replace(".", ",")}); cada uno consulta la <b>API 4 · Plataforma 360</b>.</div>
+      {/* Sin franja de instrucciones arriba: decía en cuatro líneas lo que la tabla ya muestra —qué
+          campo hay que llenar lo dice el propio campo, que va resaltado, y el resto está en los
+          tooltips de cada columna—. Ocupaba el alto justo antes de la primera fila. */}
       <div className="overflow-x-auto rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-        <div style={{ minWidth: 1440 }}>
+        <div style={{ minWidth: 1500 }}>
           <div className="mb-1.5 flex items-baseline gap-2">
-            <span className="t11 font-semibold" style={{ color: C.navy }}>Deudores recurrentes</span>
+            <span className="t11 font-semibold" style={{ color: C.navy }}>Deudores sugeridos</span>
             <span className="t9" style={{ color: C.faint }}>sugeridos por su flujo comercial con el cliente</span>
           </div>
           {cabDeudores()}
           {recu.map((x) => filaDeudor(x.d, x.i))}
-          {recu.length === 0 && <div className="py-3 t10" style={{ color: C.faint }}>Este cliente no registra deudores con flujo recurrente en los últimos 6 meses. Agrégalos en «Otros deudores».</div>}
-          {recu.length > 0 && subtotalDeu(recu.map((x) => x.d), "Subtotal recurrentes")}
+          {recu.length === 0 && <div className="py-3 t10" style={{ color: C.faint }}>Este cliente no registra deudores con flujo recurrente en los últimos 6 meses. Agrégalos en «Otros deudores identificados».</div>}
+          {recu.length > 0 && subtotalDeu(recu.map((x) => x.d), "Subtotal deudores sugeridos")}
         </div>
       </div>
       {/* OTROS DEUDORES. Sección propia, bajo los recurrentes: lo que el ejecutivo decide agregar no es
           lo mismo que lo que el flujo del cliente sugiere, y en una lista única no se distinguía. */}
       <div className="mt-3 overflow-x-auto rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-        <div style={{ minWidth: 1440 }}>
+        <div style={{ minWidth: 1500 }}>
           <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-baseline gap-2">
-              <span className="t11 font-semibold" style={{ color: C.navy }}>Otros deudores</span>
+              <span className="t11 font-semibold" style={{ color: C.navy }}>Otros deudores identificados</span>
               <span className="t9" style={{ color: C.faint }}>búscalos y agrégalos a la solicitud</span>
             </div>
             <div className="flex items-center gap-2">
               <input value={buscaDeu} onChange={(e) => setBuscaDeu(e.target.value)} placeholder="Buscar deudor…" className="rounded-md px-2 py-1.5 t11 outline-none" style={{ ...inpSty, width: 200 }} />
-              <select value={addSel} onChange={(e) => { const v = e.target.value; setAddSel(v); if (!v) return; if (esAdmin) { pedirDeudor(v); } else { agregarDeudor(v); setAddSel(""); } }} className="rounded-md px-2 py-1.5 t11" style={{ ...inpSty, maxWidth: 340 }}>
-                <option value="">+ Agregar deudor factoring… ({candFiltrados.length})</option>
+              {/* El selector se ve como el BOTÓN que es —«+ Agregar deudor»— en vez de como un campo
+                  larguísimo con la lista entera adentro: lo que el ejecutivo hace acá es agregar, y el
+                  catálogo es el detalle de esa acción, no el rótulo del control. */}
+              <select value={addSel} onChange={(e) => { const v = e.target.value; setAddSel(v); if (!v) return; if (esAdmin) { pedirDeudor(v); } else { agregarDeudor(v); setAddSel(""); } }}
+                title={`${candFiltrados.length} deudor(es) disponibles${buscaDeu.trim() ? " para esa búsqueda" : ""}`}
+                className="rounded-md px-3 py-1.5 t11 font-semibold" style={{ border: `1px solid ${C.indigo}`, color: C.indigo, backgroundColor: "#fff", maxWidth: 200 }}>
+                <option value="">+ Agregar deudor</option>
                 {candFiltrados.slice(0, 300).map((n) => <option key={n} value={n}>{n} · nota {(notaDeudor(n) || 0)}</option>)}
               </select>
+              {chipProm(promDe(otros.map((x) => x.d)), otros.length)}
             </div>
           </div>
           {addPrev && (
@@ -21330,14 +21380,19 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
           )}
           {otros.length > 0 && cabDeudores()}
           {otros.map((x) => filaDeudor(x.d, x.i))}
-          {otros.length === 0 && <div className="py-3 t10" style={{ color: C.faint }}>Sin otros deudores. Búscalo en el selector de arriba para agregarlo.</div>}
-          {otros.length > 0 && subtotalDeu(otros.map((x) => x.d), "Subtotal otros")}
+          {otros.length === 0 && <div className="py-3 t10" style={{ color: C.faint }}>Sin otros deudores. Búscalo con «+ Agregar deudor» para incorporarlo a la solicitud.</div>}
+          {otros.length > 0 && subtotalDeu(otros.map((x) => x.d), "Subtotal otros deudores")}
         </div>
       </div>
+      {/* LÍNEA COMÚN. El % no dice nada solo: lo que decide el comité es un MONTO, así que el tope se
+          muestra también en plata —el % sobre la línea factoring propuesta—. Y el veredicto de acá es
+          el GLOBAL (todos los deudores juntos), distinto de los dos promedios por grupo de arriba. */}
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-xl px-3 py-2" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
-        <span className="t10 font-semibold" style={{ color: C.ink }}>Otros Deudores Límite Máx. <input type="number" value={otrosLimite} onChange={(e) => setOtrosLimite(+e.target.value || 0)} className="mx-1 w-12 rounded-full px-1 py-0.5 t10 text-right outline-none" style={inpSty} />%</span>
-        {deudores.length > 0 && <span className="t10 font-semibold" style={{ color: C.ink }}>Prom. Ponderado: <span style={{ color: NOTA_COLOR(promNota) }}>{promNota}</span>{promNota < pol("notaMinCompra", 3.7) && <span className="ml-2" style={{ color: "#C2410C" }}>⚠ bajo el límite de compra ({String(pol("notaMinCompra", 3.7)).replace(".", ",")})</span>}</span>}
-        <span className="t11 font-bold" style={{ color: C.indigo }}>Total propuesto a deudores: {fmtMM(deudores.reduce((s, d) => s + (d.propuesta || 0), 0))} · {deudores.length} deudor(es)</span>
+        <div>
+          <span className="t10 font-semibold" style={{ color: C.ink }}>Otros Deudores Línea Común Límite Máx. <input type="number" value={otrosLimite} onChange={(e) => setOtrosLimite(+e.target.value || 0)} className="mx-1 w-12 rounded-full px-1 py-0.5 t10 text-right outline-none" style={inpSty} />%</span>
+          <div className="mt-0.5 t9" style={{ color: C.faint }}>{SOLIC_TIPOS[tipo]}{subtipo ? ` · ${SOLIC_SUBTIPOS[subtipo]}` : ""} · cupo de la línea común {fmtMM(mmRound(propFactoring * otrosLimite / 100))}</div>
+        </div>
+        {deudores.length > 0 && chipProm(promNota, deudores.length)}
       </div>
       {/* Modal EDITAR DEUDOR FACTORING (patrón de la pantalla actual, con listado de productos) */}
       {editDeu != null && deudores[editDeu] && (() => { const d = deudores[editDeu]; return (
@@ -21389,9 +21444,14 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
   const secBienes = () => (
     <div className="space-y-3">
       <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-        <div className="flex items-center justify-between">
-          <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>Fianza solidaria</div>
-          <button onClick={() => setFianzas((p) => [...p, { rut: "", nombre: "", regimen: "Sociedad conyugal", pep: "No", fatca: "No" }])} className="t10 font-semibold" style={{ color: C.indigo }}>+ Agregar fianza solidaria</button>
+        {/* Mismo encabezado que «Deudores sugeridos»: título en navy + qué es, en gris. El rótulo en
+            mayúsculas moradas competía con el de la sección y no decía de qué se trata. */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-baseline gap-2">
+            <span className="t11 font-semibold" style={{ color: C.navy }}>Fianza solidaria</span>
+            <span className="t9" style={{ color: C.faint }}>quiénes responden solidariamente por la línea</span>
+          </div>
+          <button onClick={() => setFianzas((p) => [...p, { rut: "", nombre: "", regimen: "Sociedad conyugal", pep: "No", fatca: "No" }])} className="rounded-md px-3 py-1.5 t11 font-semibold" style={{ border: `1px solid ${C.indigo}`, color: C.indigo, backgroundColor: "#fff" }}>+ Agregar fianza solidaria</button>
         </div>
         {fianzas.length > 0 && <div className="mt-1 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "130px 1fr 170px 70px 70px 20px", color: C.faint }}><span>Rut</span><span>Nombre / Razón social</span><span>Régimen matrimonial</span><span>PEP</span><span>FATCA</span><span></span></div>}
         {fianzas.map((f, i) => (
@@ -21407,9 +21467,12 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
         {fianzas.length === 0 && <div className="mt-1 py-2 t10" style={{ color: C.faint }}>Sin fianzas solidarias.</div>}
       </div>
       <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
-        <div className="flex items-center justify-between">
-          <div className="t9 font-bold uppercase tracking-wide" style={{ color: "#7C3AED" }}>Garantías</div>
-          <button onClick={() => setGarantias((p) => [...p, { tipo: "Hipoteca", institucion: "Factoring Security", producto: "Factoring", idGar: "G-" + (1000 + p.length + 1), fIni: hoyISO, fTer: vencProp, monto: 100e6, cobertura: 100 }])} className="t10 font-semibold" style={{ color: C.indigo }}>+ Agregar garantía</button>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-baseline gap-2">
+            <span className="t11 font-semibold" style={{ color: C.navy }}>Garantías</span>
+            <span className="t9" style={{ color: C.faint }}>bienes que respaldan la línea propuesta</span>
+          </div>
+          <button onClick={() => setGarantias((p) => [...p, { tipo: "Hipoteca", institucion: "Factoring Security", producto: "Factoring", idGar: "G-" + (1000 + p.length + 1), fIni: hoyISO, fTer: vencProp, monto: 100e6, cobertura: 100 }])} className="rounded-md px-3 py-1.5 t11 font-semibold" style={{ border: `1px solid ${C.indigo}`, color: C.indigo, backgroundColor: "#fff" }}>+ Agregar garantía</button>
         </div>
         {garantias.length > 0 && <div className="mt-1 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "150px 1fr 110px 80px 125px 125px 150px 80px 20px", color: C.faint }}><span>Tipo garantía</span><span>Institución</span><span>Producto</span><span>ID</span><span>F. inicio</span><span>F. término</span><span className="text-right">Monto ($)</span><span>% Cobert.</span><span></span></div>}
         {garantias.map((g, i) => (
@@ -21426,7 +21489,15 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
           </div>
         ))}
         {garantias.length === 0 && <div className="mt-1 py-2 t10" style={{ color: C.faint }}>Sin garantías. Agrega las que respaldan la línea propuesta (opcional).</div>}
-        {garantias.length > 0 && <div className="mt-2 flex justify-end t10 font-semibold" style={{ borderTop: `1px solid ${C.line}`, paddingTop: 6, color: C.ink }}>Total garantías: {fmtMM(garantias.reduce((s, g) => s + (g.monto || 0), 0))}</div>}
+        {/* El total se alinea BAJO su columna, como el subtotal de deudores: a la derecha del bloque
+            entero quedaba flotando sobre «% Cobert.» y no bajo los montos que suma. */}
+        {garantias.length > 0 && (
+          <div className="mt-2 grid items-center gap-2 t10" style={{ gridTemplateColumns: "150px 1fr 110px 80px 125px 125px 150px 80px 20px", borderTop: `1px solid ${C.line}`, paddingTop: 6 }}>
+            <span className="font-semibold" style={{ color: C.sub, gridColumn: "span 6" }}>Total garantías: {garantias.length}</span>
+            <span className="text-right font-bold" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>{fmtCLP(garantias.reduce((s, g) => s + (g.monto || 0), 0))}</span>
+            <span></span><span></span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -21486,7 +21557,9 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
           )}
         </div>
         <div className="mt-3 flex items-center justify-between gap-2 border-t pt-3 pb-3" style={{ borderColor: C.line, position: "sticky", bottom: 0, backgroundColor: "#fff", zIndex: 5 }}>
-          <div className="t9" style={{ color: C.faint }}>{SOLIC_TIPOS[tipo]}{subtipo ? ` · ${SOLIC_SUBTIPOS[subtipo]}` : ""} · Total propuesto {fmtMM(totalPropuesto)}{deudores.length ? ` · ${deudores.length} deudor(es) · nota ${promNota}` : ""}</div>
+          {/* El total va acá y ya NO en la franja gris: es la cifra con la que se aprieta «Confirmar»,
+              así que vive junto al botón. La franja gris quedó con lo suyo —el tope de la línea común—. */}
+          <div className="t11 font-bold" style={{ color: C.indigo }}>Total propuesto: {fmtMM(totalPropuesto)}{deudores.length ? <span className="font-medium" style={{ color: C.sub }}> · {deudores.length} deudor(es)</span> : null}</div>
           <div className="flex gap-2">
             <button onClick={onClose} className="rounded-full px-4 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Cancelar</button>
             {paso > 0 && <button onClick={() => setPaso(paso - 1)} className="rounded-full px-4 py-1.5 t11 font-medium" style={{ border: `1px solid ${C.line}`, color: C.ink }}>‹ Anterior</button>}
