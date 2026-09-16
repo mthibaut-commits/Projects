@@ -4593,10 +4593,19 @@ function Pill({ children, style, className = "" }) {
 // No se deriva de `sowTendencia`: un cliente puede tener SOW —opera con la competencia— y aun así ser
 // su primera operación con nosotros. Escala por parámetro porque sus vecinos no comparten tamaño: t9
 // junto a ChipCond en la tabla, t10 junto a los Pill de la cabecera.
+// La MARCA de cliente nuevo para listas densas: un solo carácter delante del nombre, como la ★ de
+// Prime. El chip con la palabra entera cuesta ~60 px en una columna que se mide en píxeles, y lo que
+// hay que poder hacer de un vistazo es distinguir las filas marcadas, no leer la etiqueta — que está
+// en el tooltip. Comparte texto con `TagNuevo`, que sigue sirviendo donde hay aire (cabecera del
+// detalle): la misma condición con dos redacciones se separa a la primera corrección.
+const TIP_NUEVO = "Cliente nuevo: es su primera operación con Security. Se verifican todas las facturas (compuerta V00) y se cursa contra la línea inicial (LF1).";
+function MarcaNuevo() {
+  return <span className="mr-1 font-bold" title={TIP_NUEVO} style={{ color: C.indigo, cursor: "help" }}>N</span>;
+}
 function TagNuevo({ clase = "t9" }) {
   return (
     <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 ${clase} font-medium`}
-      title="Cliente nuevo: es su primera operación con Security. Se verifican todas las facturas (compuerta V00) y se cursa contra la línea inicial (LF1)."
+      title={TIP_NUEVO}
       style={{ backgroundColor: "#F3F4F6", color: C.ink, cursor: "help" }}>
       <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: C.indigo }} />Nuevo
     </span>
@@ -11237,12 +11246,15 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
   // «Simulación» pasa de 461 a 700. Sus tres bloques suman más que 461: el monto (104) y los chips
   // (~310, los fija «Requiere otorgamiento» con su badge) son `shrink-0`, así que el faltante lo
   // absorbía ENTERO el bloque del medio —el único con `min-w-0`— y se partía carácter a carácter.
-  const PESO_COL = { "Cliente": 294, "Línea": 230, "Oportunidad": 344, "SOW": 214, "Simulación": 560, "Ejecutivo": 140, "Asignar": 124 };
+  // Pesos MEDIDOS, no estimados: el techo real no es el viewport sino el `max-width: 1600` del `main`
+// menos sus 48 px de padding, o sea **1552**. Pasado eso la tabla scrollea y la última columna se ve
+// cortada, que es como se reporta el defecto.
+const PESO_COL = { "Cliente": 250, "Línea": 230, "Oportunidad": 344, "SOW": 214, "Simulación": 508, "Ejecutivo": 140, "Asignar": 124 };
   const cols = ["Cliente", ...(mostrarEjec ? ["Ejecutivo"] : []), "Línea", "Oportunidad", "SOW", "Simulación", ...(modoAsignar ? ["Asignar"] : [])];
   return (
     <div className="flex flex-1 flex-col gap-2">
       <div className="flex-1 overflow-x-auto rounded-xl bg-white p-1" style={{ border: `1px solid ${C.line}` }}>
-      <table className="w-full border-collapse t11" style={{ minWidth: mostrarEjec ? "1780px" : "1640px", tableLayout: "fixed" }}>
+      <table className="w-full border-collapse t11" style={{ minWidth: mostrarEjec ? "1686px" : "1546px", tableLayout: "fixed" }}>
         <thead><tr>{(() => {
           const totalPeso = cols.reduce((s2, c) => s2 + (PESO_COL[c] || 10), 0);
           return cols.map((h) => (
@@ -11271,7 +11283,7 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                         describiera la relación comercial. Va en flujo INLINE y no como hermano flex:
                         el nombre puede ocupar dos líneas en 294 px y el chip tiene que seguir a la
                         última palabra, no quedar al costado del bloque entero. */}
-                    <div className="font-medium" style={{ color: C.indigo }}>{d.cliente}{esPrimeraOperacionCliente(d) && <TagNuevo clase="t9 ml-1.5 align-middle" />}</div>
+                    <div className="font-medium" style={{ color: C.indigo }}>{esPrimeraOperacionCliente(d) && <MarcaNuevo />}{d.cliente}</div>
                     <div className="t9" style={{ color: C.faint }}><span className="font-semibold" style={{ color: TAG_COLORS[d.tag]?.fg || C.sub }}>{d.tag}</span> {d.id}</div>
                     <div className="mt-1">
                     {(() => {
@@ -11290,15 +11302,10 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                       </>);
                     })()}
                     </div>
-                    {/* SOW: cuánto de este cliente tenemos frente a la competencia. Es un atributo del
-                        CLIENTE y no de la operación —no cambia con la oferta ni con la simulación—, así
-                        que su lugar es esta columna. En «Condición» convivía con las tres compuertas que
-                        sí deciden si la oferta avanza, y se leía como una más. */}
-                    {(() => {
-                      const sm = sowEstrategia(d);
-                      if (!sm) return null;
-                      return <div className="mt-1 flex flex-wrap items-center gap-1"><ChipCond fg={sm.fg} bg={sm.bg} Icono={sm.Icon} texto={`SOW ${sm.lab}`} tip={sm.tip} /></div>;
-                    })()}
+                    {/* El chip de SOW se retiró de esta columna (16-09-2026, pedido del usuario): la
+                        columna SOW ya lo dice, y mejor —nombra a los cesionarios con los que se compite
+                        en vez de resumir la relación en una etiqueta—. Acá gastaba una cuarta línea
+                        por fila y el ancho que la tabla necesitaba para no scrollear. */}
                   </button>
                 </td>
                 {/* Ejecutivo — sólo visible para jefaturas/gerencias (más de un ejecutivo) */}
@@ -11594,9 +11601,13 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                       const tipoGiro = gr && gr.tipos ? (gr.tipos.find((t) => t.monto > 0) || null) : null;
                       return (
                         <div className="flex items-center gap-4">
-                          <div className="min-w-0" style={{ flex: "1 1 auto", minWidth: 228 }}>
+                          <div className="min-w-0" style={{ flex: "1 1 auto", minWidth: 190 }}>
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="t13 font-bold" style={{ color: C.ink }}>{fmtMM(d.monto)}</span>
+                              {/* MISMO tratamiento que el monto de la columna Oportunidad —`t10` y
+                                  `font-semibold`— (16-09-2026, pedido del usuario): es la misma cifra
+                                  leída dos veces en la misma fila, y con dos tamaños se lee como si
+                                  fueran dos datos distintos. */}
+                              <span className="t10 font-semibold" style={{ color: C.ink }}>{fmtMM(d.monto)}</span>
                               {/* El tipo de giro NOMBRA el resultado de las tres compuertas, así que va
                                   junto al monto y no entre ellas: no es algo que falte, es lo que sale. */}
                               {tipoGiro && <ChipGiro codigo={tipoGiro.codigo} label={tipoGiro.label} monto={tipoGiro.monto}
@@ -11606,15 +11617,15 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                                 truncadas de ancho fijo: truncar esconde el dato y el ancho fijo era el
                                 que empujaba la columna. El giro, el descuento y la comisión salen de la
                                 cara y quedan en el tooltip — la cifra que se compara acá es el monto. */}
-                            {/* DOS LÍNEAS COMO TOPE (16-09-2026, pedido del usuario): la card no puede
-                                crecer de alto según cuántos deudores traiga la oferta, o cada fila de la
-                                tabla mide distinto. El recorte va en `style` y no con `line-clamp` de
-                                Tailwind: el bundle es CORE y una clase que no trae no falla — simplemente
-                                no aplica, y el defecto se vería en el navegador del usuario y en ninguna
-                                prueba. El texto completo sigue en el tooltip. */}
-                            <div className="mt-1 t10 leading-5" style={{ color: C.sub, cursor: "help", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
-                              title={`${nombres.length ? `Deudores de la oferta: ${nombres.join(" · ")}\n` : ""}Giro ${fmtMM(d.giro)} · Descuento ${fmtMM(d.desc)} · Comisión ${fmtCLP(d.comision)}`}>
-                              <b style={{ color: C.ink }}>{nombres.length || d.facturas}</b> deudor{(nombres.length || 1) === 1 ? "" : "es"} · <b style={{ color: C.ink }}>{d.facturas}</b> factura{d.facturas === 1 ? "" : "s"} · tasa <b style={{ color: C.ink }}>{d.tasa}</b> · anticipo {d.anticipo} · {d.diasFin}d
+                            {/* SÓLO LA COMPOSICIÓN (16-09-2026, pedido del usuario): de quién y de cuántos
+                                documentos es la oferta. La tasa, el anticipo y el plazo son CONDICIONES
+                                —no describen el paquete—, y eran las que obligaban a la meta a envolver en
+                                dos líneas y, con ellas, a la columna a pedir 140 px más. Las tres, más el
+                                giro, el descuento y la comisión, viven en el tooltip. Una línea sola
+                                además deja la card de alto FIJO: no crece con el número de deudores. */}
+                            <div className="mt-1 t10 truncate" style={{ color: C.sub, cursor: "help" }}
+                              title={`${nombres.length ? `Deudores de la oferta: ${nombres.join(" · ")}\n` : ""}Tasa ${d.tasa} · anticipo ${d.anticipo} · ${d.diasFin}d\nGiro ${fmtMM(d.giro)} · Descuento ${fmtMM(d.desc)} · Comisión ${fmtCLP(d.comision)}`}>
+                              <b style={{ color: C.ink }}>{nombres.length || d.facturas}</b> deudor{(nombres.length || 1) === 1 ? "" : "es"} · <b style={{ color: C.ink }}>{d.facturas}</b> factura{d.facturas === 1 ? "" : "s"}
                             </div>
                           </div>
                           {chips.length > 0 && <div className="flex flex-col items-start gap-1 shrink-0" style={sep}>{chips}</div>}
