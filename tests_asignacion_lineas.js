@@ -3251,6 +3251,59 @@
        `avance ${avance.join(" > ")} ${avanceOk} · publicada primero ${pubOk} · pérdida al fondo ${perdidaOk} · plata desc ${plataOk} · sin oferta manda la oportunidad ${dispOk} · con oferta manda la oferta ${ofertaMandaOk} · pura y estable ${puroOk}`);
   }
 
+  // ── 113 · LO QUE EL DETALLE ESCRIBE EN UN REPOSITORIO LO VE LA SIGUIENTE PESTAÑA.
+  //    El detalle es pestaña propia, o sea otro documento con su propio módulo, y `crearRepo` guardaba
+  //    en memoria: el ejecutivo justificaba las excepciones ahí, cerraba, volvía a abrir la misma
+  //    operación desde el tubo y aparecían SIN justificar — como si no hubiera marcado nada. Es la
+  //    familia de `nex-solicitud` (15-bis-bis), pero aquél cruzaba a una pestaña ABIERTA y esto tiene
+  //    que sobrevivir a que se cierre, así que es storage y no un postMessage.
+  {
+    const NOM = "prueba_113_" + Date.now();
+    const KEY = "pc_repo_" + NOM;
+    const limpiar = () => { try { localStorage.removeItem(KEY); } catch (_) {} };
+    limpiar();
+
+    // (a) ESCRIBIR PERSISTE. Lo que queda en el storage es lo que la otra pestaña va a leer: si la
+    //     escritura se quedara en memoria, el repo se vería igual de vacío que antes del arreglo.
+    const r = crearRepo(NOM);
+    r.set("OP-1", { estado: "aprobada", nota: "justificada" });
+    r.patch("OP-1", { por: "CR" });
+    r.push("OP-2", { evento: "visado" });
+    let guardado = {};
+    try { guardado = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (_) {}
+    const tablaG = guardado[TENANT_ACTUAL] || {};
+    const persisteOk = !!tablaG["OP-1"] && tablaG["OP-1"].estado === "aprobada" && tablaG["OP-1"].nota === "justificada"
+      && tablaG["OP-1"].por === "CR" && Array.isArray(tablaG["OP-2"]) && tablaG["OP-2"].length === 1;
+
+    // (b) BORRAR TAMBIÉN PERSISTE: si el `del` no se guardara, la otra pestaña seguiría viendo una
+    //     justificación que el ejecutivo ya retiró, que es peor que no verla.
+    r.del("OP-2");
+    let g2 = {}; try { g2 = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (_) {}
+    const borradoOk = !((g2[TENANT_ACTUAL] || {})["OP-2"]);
+
+    // (c) EL SCOPE POR TENANT VIAJA con el dato: la tabla persistida está indexada por tenant, que es
+    //     la futura columna `tenant_id`. Sin eso, dos tenants compartirían visados en el storage.
+    const tenantOk = Object.prototype.hasOwnProperty.call(guardado, TENANT_ACTUAL);
+
+    // (d) UN STORAGE CORRUPTO NO REVIENTA LA APP ni se lee como un repo con datos: se parte de cero.
+    //     El usuario está mirando una oferta, no un test.
+    try { localStorage.setItem(KEY + "_x", "{esto no es json"); } catch (_) {}
+    let robustoOk = true;
+    try { const r2 = crearRepo(NOM + "_x"); robustoOk = Object.keys(r2.all() || {}).length === 0; } catch (_) { robustoOk = false; }
+
+    // (e) LA PESTAÑA PRINCIPAL ES LA DUEÑA DE LA VIDA ÚTIL. La suite corre sin ticket en la URL —es el
+    //     tubo—, así que acá `REPOS_FRESCOS` tiene que ser true: recargar la demo parte de cero y una
+    //     pestaña de detalle, que siempre trae ticket, hereda en vez de limpiar.
+    const duenoOk = REPOS_FRESCOS === true;
+
+    limpiar(); try { localStorage.removeItem(KEY + "_x"); } catch (_) {}
+    delete REPOS[NOM]; delete REPOS[NOM + "_x"];
+
+    ok("113 lo que el detalle escribe en un repositorio lo ve la siguiente pestaña",
+       persisteOk && borradoOk && tenantOk && robustoOk && duenoOk,
+       `set/patch/push persisten ${persisteOk} · del persiste ${borradoOk} · scope por tenant ${tenantOk} · storage corrupto parte de cero ${robustoOk} · el tubo es el dueño de la vida útil ${duenoOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

@@ -12782,8 +12782,30 @@ function esDuplicada(repo, op, id, valor) {
 }
 const LATENCIA_MUTACION_MS = 120; // latencia simulada: obliga a que la UI trate la escritura como algo que TARDA
 const REPOS = {};
+// LA PESTAÑA PRINCIPAL ES LA DUEÑA DE LA VIDA ÚTIL de los repositorios. Sin ticket en la URL es el
+// tubo (ver `emitirTicketDetalle`): arranca en limpio, así que recargar la demo sigue partiendo de
+// cero. Con ticket es una pestaña de DETALLE, que hereda lo que el tubo dejó abierto en vez de
+// empezar vacía.
+const REPOS_FRESCOS = (() => { try { return !uuidDeLaUrl(); } catch (_) { return true; } })();
 function crearRepo(nombre) {
-  const datos = {}; // { [tenantId]: { [id]: valor } } — el scope por tenant es la futura columna tenant_id
+  // PERSISTENCIA. En producción esto es una TABLA del servidor y la pregunta no existe; acá `datos`
+  // era memoria del módulo y el DETALLE es otra pestaña —otro documento, otro módulo—, así que lo
+  // que el ejecutivo justificaba ahí no existía para la siguiente: volvía a abrir la misma operación
+  // desde el tubo y las excepciones aparecían SIN justificar, como si no hubiera marcado nada. Es la
+  // familia de `nex-solicitud` (regla 15-bis-bis), pero aquél cruzaba a una pestaña ABIERTA y esto
+  // tiene que sobrevivir a que la pestaña se cierre — por eso es storage y no un postMessage.
+  const KEY = "pc_repo_" + nombre;
+  const datos = (() => {   // { [tenantId]: { [id]: valor } } — el scope por tenant es la futura columna tenant_id
+    if (REPOS_FRESCOS) { try { localStorage.removeItem(KEY); } catch (_) {} return {}; }
+    try { const v = JSON.parse(localStorage.getItem(KEY) || "{}"); return (v && typeof v === "object" && !Array.isArray(v)) ? v : {}; } catch (_) { return {}; }
+  })();
+  // Un fallo de cuota NO se traga: un repositorio que dejó de persistir se ve exactamente igual que
+  // uno vacío, y el defecto que esto corrige era justamente ése.
+  let avisado = false;
+  const guardar = () => {
+    try { localStorage.setItem(KEY, JSON.stringify(datos)); }
+    catch (e) { if (!avisado) { avisado = true; logSys("error", "repositorio", `${nombre}: no se pudo persistir (${(e && e.name) || "error"}). Lo escrito en esta pestaña no lo verán las demás.`); } }
+  };
   const tabla = (t) => (datos[t || TENANT_ACTUAL] = datos[t || TENANT_ACTUAL] || {});
   const confirmar = (op, id) => new Promise((res) => setTimeout(() => res({ ok: true, repo: nombre, op, id }), LATENCIA_MUTACION_MS));
   const rechazo = (codigo, op, id) => Promise.resolve({ ok: false, codigo, repo: nombre, op, id, contrato: CONTRATO_VERSION });
@@ -12812,10 +12834,10 @@ function crearRepo(nombre) {
     get: (id) => tabla()[id],
     all: (t) => tabla(t),
     // Escrituras (optimistas; la promesa es la confirmación del servidor)
-    set(id, valor) { const v = gate("set", id, valor); if (v) return rechazo(v, "set", id); tabla()[id] = valor; return confirmar("set", id); },
-    patch(id, parcial) { const v = gate("patch", id, parcial); if (v) return rechazo(v, "patch", id); const t = tabla(); t[id] = { ...(t[id] || {}), ...parcial }; return confirmar("patch", id); },
-    del(id) { const v = gate("del", id, null); if (v) return rechazo(v, "del", id); delete tabla()[id]; return confirmar("del", id); },
-    push(id, item) { const v = gate("push", id, item); if (v) return rechazo(v, "push", id); const t = tabla(); (t[id] = t[id] || []).push(item); return confirmar("push", id); },
+    set(id, valor) { const v = gate("set", id, valor); if (v) return rechazo(v, "set", id); tabla()[id] = valor; guardar(); return confirmar("set", id); },
+    patch(id, parcial) { const v = gate("patch", id, parcial); if (v) return rechazo(v, "patch", id); const t = tabla(); t[id] = { ...(t[id] || {}), ...parcial }; guardar(); return confirmar("patch", id); },
+    del(id) { const v = gate("del", id, null); if (v) return rechazo(v, "del", id); delete tabla()[id]; guardar(); return confirmar("del", id); },
+    push(id, item) { const v = gate("push", id, item); if (v) return rechazo(v, "push", id); const t = tabla(); (t[id] = t[id] || []).push(item); guardar(); return confirmar("push", id); },
   };
   REPOS[nombre] = r;
   return r;
