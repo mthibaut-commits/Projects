@@ -11205,6 +11205,152 @@ function ChipCond({ fg, bg, Icono, texto, tip, badge, plano }) {
     </span>
   );
 }
+/* ══════════════════════════════════════════════════════════════════════════════════════════════
+   MODO DIRECTORIO · demo acotada a unos pocos clientes                    ← BLOQUE DESECHABLE
+   ──────────────────────────────────────────────────────────────────────────────────────────────
+   Recorta el tubo a ~5 clientes representativos, para poder hacer una demo corta sin las ~100
+   oportunidades que produce el inbound. NO toca datos ni estado del pipeline: es un filtro de
+   PRESENTACIÓN sobre la lista del tubo, así que apagarlo devuelve todo sin recalcular nada y sin
+   que ninguna otra vista se entere.
+
+   AISLADO A PROPÓSITO. Para retirarlo por completo basta con borrar CUATRO cosas, las cuatro
+   marcadas con la palabra `DIRECTORIO`:
+     1) este bloque,
+     2) el estado `directorio` de `PipelineComercial`,
+     3) la línea del filtro dentro de `dealsTubo`,
+     4) el `<ToggleDirectorio …/>` de la barra del tubo.
+   Nada más del pipeline lo conoce, y nada persiste: al recargar, el tubo vuelve completo.
+   ══════════════════════════════════════════════════════════════════════════════════════════════ */
+// `deudores` es un MÍNIMO, no un objetivo. Medido sobre el archivo: el libro de un cliente trae 34 a
+// 42 documentos comprables repartidos en 21 a 28 deudores, y sus CINCO mayores suman ~15 facturas. O
+// sea que «5 deudores» y «30 facturas» no pueden cumplirse a la vez con datos reales: manda el
+// volumen —una demo con 15 facturas no se ve como una operación— y los deudores quedan en los que
+// hagan falta para juntarlas, del orden de diez.
+const DIRECTORIO_PERFIL = { clientes: 5, deudores: 5, facturas: 30, minFacturas: 12, cubren: 3, parciales: 2 };
+
+// Arma el elenco de la demo. NO inventa datos: cada oportunidad se compone con facturas REALES del
+// libro de ventas del cliente (activo A1, el mismo que lee el resto del pipeline) y con su línea
+// real. Lo único que este modo decide es QUÉ subconjunto mostrar.
+//
+// Por qué construye en vez de filtrar: medido sobre la cartera, las oportunidades que produce el
+// inbound traen 2 a 18 facturas (mediana 6), así que el perfil pedido —~30 facturas repartidas en
+// ~5 deudores— no existe entre ellas y un filtro no puede fabricarlo. El libro sí lo tiene: son 37 a
+// 85 documentos por cliente sobre ~23 deudores.
+//
+// DETERMINISTA y sin sorteo: se recorre el libro en su orden, se eligen los deudores con más
+// documentos y se desempata por RUT, de modo que la demo sale igual todas las veces.
+function construirDirectorio(execSesion) {
+  const nombres = new Map((typeof PC_CLIENTES !== "undefined" ? PC_CLIENTES : []).map((c) => [c.rut, c.nombre]));
+  const cands = [];
+  for (const [rut, docs] of libroPorEmisor()) {
+    const lin = lineaDeCliente({ rutEmisor: rut });
+    if (!lin || !(lin.aprobada > 0)) continue;                       // la demo es de clientes CON línea
+    // Sólo documentos comprables: a crédito, sin nota de crédito y sin reclamo. Meter uno bloqueado
+    // en el elenco haría que la demo arranque explicando por qué una factura no se puede agregar.
+    const utiles = docs.filter((f) => f.credito && !f.notaCredito && !f.reclamada);
+    const porDeu = new Map();
+    for (const f of utiles) { let a = porDeu.get(f.deudor); if (!a) { a = []; porDeu.set(f.deudor, a); } a.push(f); }
+    // Se suman deudores —de mayor a menor volumen— hasta juntar las facturas del perfil, con el
+    // mínimo de deudores garantizado. Cortar en cinco dejaba la oportunidad en ~15 documentos.
+    const orden = [...porDeu.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+    const top = [];
+    let acum = 0;
+    for (const e of orden) {
+      top.push(e); acum += e[1].length;
+      if (top.length >= DIRECTORIO_PERFIL.deudores && acum >= DIRECTORIO_PERFIL.facturas) break;
+    }
+    if (top.length < DIRECTORIO_PERFIL.deudores || acum < DIRECTORIO_PERFIL.facturas) continue;
+    // Se toman COMPLETOS los deudores de mayor volumen, uno tras otro, hasta llegar al tope. Repartir
+    // uno a uno entre todos los deudores junta las mismas 30 facturas pero con el doble de deudores,
+    // y lo que el perfil pide es concentración: pocos deudores con varias facturas cada uno.
+    const elegidas = [];
+    for (const [, fs] of top) {
+      for (const f of fs) { elegidas.push(f); if (elegidas.length >= DIRECTORIO_PERFIL.facturas) break; }
+      if (elegidas.length >= DIRECTORIO_PERFIL.facturas) break;
+    }
+    if (elegidas.length < DIRECTORIO_PERFIL.facturas) continue;
+    const monto = elegidas.reduce((a, f) => a + (f.monto || 0), 0);
+    const disponible = Math.max(0, Math.round((lin.aprobada || 0) - (lin.uso || 0)));
+    cands.push({ rut, cliente: nombres.get(rut) || rut, facturas: elegidas, monto, disponible, parcial: monto > disponible });
+  }
+  cands.sort((a, b) => a.rut.localeCompare(b.rut));
+
+  const elegidos = [];
+  const cuota = (pred, n) => {
+    for (const c of cands) {
+      if (elegidos.length >= DIRECTORIO_PERFIL.clientes || n <= 0) break;
+      if (elegidos.includes(c) || !pred(c)) continue;
+      elegidos.push(c); n--;
+    }
+  };
+  // Los dos casos que la demo tiene que mostrar: la línea que cubre la oferta entera y la que
+  // alcanza sólo para una parte —que es la que abre el camino al comité—. Con sólo el caso feliz
+  // la demo no muestra la mitad del producto.
+  cuota((c) => !c.parcial, DIRECTORIO_PERFIL.cubren);
+  // Medido: con 30 facturas casi ningún cliente tiene línea para cubrirlas, así que el caso «dentro
+  // de línea» hay que CONSTRUIRLO recortando la oferta —se sueltan las facturas más grandes, que es
+  // lo que menos documentos cuesta— hasta que quepa. Sigue siendo el libro real del cliente contra
+  // su línea real; lo único que cambia es cuántos documentos entran.
+  if (elegidos.filter((c) => !c.parcial).length < DIRECTORIO_PERFIL.cubren) {
+    const porHolgura = cands.filter((c) => c.parcial && !elegidos.includes(c)).sort((a, b) => b.disponible - a.disponible);
+    for (const c of porHolgura) {
+      if (elegidos.filter((x) => !x.parcial).length >= DIRECTORIO_PERFIL.cubren || elegidos.length >= DIRECTORIO_PERFIL.clientes) break;
+      const fs = [...c.facturas].sort((a, b) => (b.monto || 0) - (a.monto || 0));
+      let m = c.monto;
+      while (fs.length > DIRECTORIO_PERFIL.minFacturas && m > c.disponible) m -= (fs.shift().monto || 0);
+      if (m > c.disponible) continue;  // ni recortando cabe: no sirve como caso «dentro de línea»
+      // Se devuelve al orden del libro: recortar no puede reordenar lo que el ejecutivo va a ver.
+      c.facturas = fs.sort((a, b) => (+b.folio || 0) - (+a.folio || 0));
+      c.monto = m; c.parcial = false; c.recortado = true;
+      elegidos.push(c);
+    }
+  }
+  cuota((c) => c.parcial, DIRECTORIO_PERFIL.parciales);
+  cuota(() => true, DIRECTORIO_PERFIL.clientes);  // relleno si una de las dos poblaciones no alcanzó
+
+  const deals = elegidos.map((c, i) => {
+    const porDeu = new Map();
+    for (const f of c.facturas) { let a = porDeu.get(f.deudor); if (!a) { a = { name: f.deudor, facturas: 0, monto: 0 }; porDeu.set(f.deudor, a); } a.facturas++; a.monto += f.monto || 0; }
+    const deudores = [...porDeu.values()].map((x) => ({ ...x, monto: Math.round(x.monto) })).sort((a, b) => b.monto - a.monto);
+    const principal = c.facturas.find((f) => f.deudor === deudores[0].name) || c.facturas[0];
+    // MISMA forma que una oportunidad del inbound sin simular: la oferta arranca VACÍA y las facturas
+    // entran al pool disponible, para que la demo recorra el flujo entero desde el estado de entrada.
+    return {
+      id: `OP-DIR${i + 1}`, stage: "prospeccion", tag: "Factoring",
+      facturas: c.facturas.length, monto: Math.round(c.monto),
+      cliente: c.cliente, deudor: deudores[0].name, deudores,
+      sector: sectorDeDeudor(principal.tipoDeudor, principal.histFactoring),
+      tasa: "", anticipo: "100%", esCliente: true, rutEmisor: c.rut,
+      facturasOp: [], facturasDisponibles: c.facturas,
+      status: "Directorio (demo)", time: nowStamp(), channel: "Demo", exec: execSesion,
+      stale: false, important: false, _inbound: true, _directorio: true,
+      perdedor: false, subSeed: rndDet(`dir|${c.rut}`), nuevasFacturas: 0, nuevasFacturasMonto: 0,
+      warning: false, tProsp: Date.now(), simulado: false,
+    };
+  });
+  return {
+    deals, ids: deals.map((d) => d.id),
+    detalle: elegidos.map((c) => ({ cliente: c.cliente, nDeu: new Set(c.facturas.map((f) => f.deudor)).size, nFac: c.facturas.length, parcial: c.parcial })),
+  };
+}
+
+function ToggleDirectorio({ sel, onToggle }) {
+  const on = !!sel;
+  const tip = on
+    ? `Demo acotada a ${sel.ids.length} cliente(s):\n`
+      + sel.detalle.map((x) => `· ${x.cliente} — ${x.nDeu} deudor(es) · ${x.nFac} factura(s) · ${x.parcial ? "línea parcial" : "dentro de línea"}`).join("\n")
+      + "\n\nApagarlo devuelve el tubo completo y retira estas oportunidades: no se guardó nada."
+    : `Arma una demo corta: ${DIRECTORIO_PERFIL.clientes} clientes con línea, cada uno con ${DIRECTORIO_PERFIL.facturas} facturas reales de su libro de ventas repartidas en al menos ${DIRECTORIO_PERFIL.deudores} deudores — unos dentro de línea y otros con línea parcial, para que se vea el camino al comité. Se apaga y no queda rastro.`;
+  return (
+    <button onClick={onToggle} title={tip}
+      className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium"
+      style={{ border: `1px solid ${on ? C.indigo : C.line}`, backgroundColor: on ? C.lilac : "#fff", color: on ? C.indigo : C.sub }}>
+      <Target size={14} /> Directorio{on ? ` · ${sel.ids.length}` : ""}
+    </button>
+  );
+}
+/* ════════════════════════════ fin del bloque MODO DIRECTORIO ════════════════════════════════ */
+
 function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onAsignarExec, mostrarEjec = true }) {
   const cargandoTabla = useCargaSimulada("tabla-oportunidades", 550); // placeholder del `loading` de la query
   const nextStage = (id) => { const i = STAGE_ORDER.indexOf(id); return STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 2)]; };
@@ -22733,6 +22879,7 @@ export default function PipelineComercial() {
   useEffect(() => { if (soloDetalle && selected) { try { document.title = `Detalle · ${selected.id} · ${selected.cliente} — NEX Factoring`; } catch (e) {} } }, [soloDetalle, selected]);
   const [query, setQuery] = useState("");
   const [quickFilter, setQuickFilter] = useState("conlinea"); // arranca en el tab "Con línea"
+  const [directorio, setDirectorio] = useState(null); // DIRECTORIO · demo acotada (bloque desechable)
   const [channel, setChannel] = useState("Manual");
   const [usuario, setUsuario] = useState(soloDetalle && detallePayload.usuario ? detallePayload.usuario : USUARIO); // usuario logueado
   const [logueado, setLogueado] = useState(soloDetalle || soloOpDetalle ? true : false); // gate de login; en modo detalle (deal u operación) ya viene autenticado
@@ -22862,7 +23009,10 @@ export default function PipelineComercial() {
   // integrado— no lo es: el ejecutivo no tiene nada que hacer ahí y dejarlo sólo ensucia sus listas.
   // Los KPI siguen leyendo `dealsVista`: la venta girada del mes es suya aunque la operación ya no
   // esté en su tablero, y filtrarla acá la habría puesto en cero.
-  const dealsTubo = useMemo(() => dealsVista.filter((d) => !fueraDelTubo(d)), [dealsVista]);
+  const dealsTubo = useMemo(() => {
+    const base = dealsVista.filter((d) => !fueraDelTubo(d));
+    return directorio ? base.filter((d) => d._directorio) : base; // DIRECTORIO
+  }, [dealsVista, directorio]);
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     // "Sin clasificar" vive en el streamFeed del inbound (facturas que aún no califican una regla),
@@ -22900,7 +23050,9 @@ export default function PipelineComercial() {
         esCliente: g.esCliente, sinClasificar: true, agrupado: true, execSugerido: g.execSugerido,
       }; });
     };
-    if (quickFilter === "otrasfacturas") return streamAgrupadoCliente();
+    // DIRECTORIO: en la demo acotada el stream del inbound no se muestra. Filtrar sólo `deals` dejaba
+    // «Todos» con las 5 del elenco más 60 filas de inbound, que es justo lo que el modo viene a evitar.
+    if (quickFilter === "otrasfacturas") return directorio ? [] : streamAgrupadoCliente();
     const dealRows = dealsTubo.filter((d) => {
       const matchQ = !q || d.cliente.toLowerCase().includes(q) || d.deudor.toLowerCase().includes(q) || d.id.toLowerCase().includes(q);
       let matchF = true;
@@ -22918,8 +23070,8 @@ export default function PipelineComercial() {
       return matchQ && matchF && matchDeudor && matchJef && matchLinea && matchEje;
     });
     // "Todos" con Inbound activo incluye también las facturas sin clasificar del inbound.
-    return (quickFilter === "todos" && showInbound) ? [...dealRows, ...streamComoFilas()] : dealRows;
-  }, [dealsTubo, query, quickFilter, fDeudor, fJefatura, fLinea, fEjecutivo, streamFeed, showInbound, usuario, esEjecutivoSesion]);
+    return (quickFilter === "todos" && showInbound && !directorio) ? [...dealRows, ...streamComoFilas()] : dealRows; // DIRECTORIO
+  }, [dealsTubo, query, quickFilter, fDeudor, fJefatura, fLinea, fEjecutivo, streamFeed, showInbound, usuario, esEjecutivoSesion, directorio]);
 
   const dealsByStage = (id) => filtered.filter((d) => d.stage === id);
 
@@ -25025,8 +25177,11 @@ export default function PipelineComercial() {
     { id: "sinlinea", label: "Sin línea", count: dealsTubo.filter((d) => ["oferta", "prospeccion"].includes(d.stage) && lineaCreditoDe(d).fueraDeLinea).length },
     { id: "pendgiro", label: "Pendientes de giro", count: dealsTubo.filter((d) => ["aceptadas", "cesion", "otorgamiento"].includes(d.stage) || (d.stage === "giro" && d.giroPendiente)).length },
     { id: "perdidas", label: "Perdidas", count: dealsTubo.filter((d) => d.stage === "perdida").length },
-    { id: "otrasfacturas", label: esEjecutivoSesion ? "Otras Empresas" : "Otras facturas", count: streamFeed.filter(ofOtrasVisible).length },
-    { id: "todos", label: "Todos", count: dealsTubo.length + inboundCount },
+    // DIRECTORIO: las dos pestañas que cuentan el stream del inbound van a cero en la demo acotada.
+    // El modo ya no las muestra, y un contador que dice 65 sobre una lista de 5 es la contradicción
+    // que este tablero persigue en todas sus formas.
+    { id: "otrasfacturas", label: esEjecutivoSesion ? "Otras Empresas" : "Otras facturas", count: directorio ? 0 : streamFeed.filter(ofOtrasVisible).length },
+    { id: "todos", label: "Todos", count: dealsTubo.length + (directorio ? 0 : inboundCount) },
   ];
 
   if (!logueado) return <LoginScreen usuarioInicial={usuario} onIngresar={(u) => { setUsuario(u); setLogueado(true); }} />;
@@ -25296,6 +25451,15 @@ export default function PipelineComercial() {
                 className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium" style={{ border: `1px solid ${showInbound ? C.indigo : C.line}`, backgroundColor: "#fff", color: showInbound ? C.indigo : C.sub }}>
                 <Radio size={14} /> Inbound
               </button>
+              {/* DIRECTORIO · demo acotada. Encender AGREGA las oportunidades del elenco y apagar las
+                  retira por su marca `_directorio`: no se toca ninguna otra, así que el tubo vuelve
+                  exactamente como estaba. */}
+              <ToggleDirectorio sel={directorio} onToggle={() => {
+                if (directorio) { setDeals((prev) => prev.filter((d) => !d._directorio)); setDirectorio(null); return; }
+                const dir = construirDirectorio(usuario);
+                setDeals((prev) => [...dir.deals, ...prev.filter((d) => !d._directorio)]);
+                setDirectorio(dir);
+              }} />
               <span className="mx-1 h-5 w-px" style={{ backgroundColor: C.line }} />
             </>)}
             {(() => {
