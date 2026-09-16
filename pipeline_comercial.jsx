@@ -20959,6 +20959,19 @@ function api1Inyeccion(sol) {
   return idProceso;
 }
 function api2ListarProcesos() { return SOLICITUDES_LINEA; }
+// El DETALLE vive en otra pestaña del navegador (es pestaña propia desde el 02-09-2026), así que tiene
+// su propio módulo y su propio `SOLICITUDES_LINEA`: una solicitud inyectada al cerrar la oferta EXISTÍA
+// —queda en la bitácora y en la auditoría de esa pestaña— pero la bandeja «Líneas › Solicitudes» del
+// tubo nunca la veía, porque es otro documento. Es exactamente el agujero que cerró `nex-preeval` con
+// la pre-evaluación, y se cierra igual: el detalle avisa por el mismo canal y acá se incorpora. Se
+// pasa el REGISTRO ya armado y no los datos para rearmarlo, porque el `idProceso` lo asigna una
+// secuencia por pestaña y rearmarlo daría dos ids distintos para la misma solicitud.
+function recibirSolicitudLinea(reg) {
+  if (!reg || !reg.idProceso) return false;
+  if (SOLICITUDES_LINEA.some((s) => s && s.idProceso === reg.idProceso)) return false; // idempotente
+  SOLICITUDES_LINEA.unshift(reg);
+  return true;
+}
 // Los deudores que YA están pedidos al comité por el cierre de una oferta de este cliente, con el
 // monto y el tipo de línea que se pidió. El wizard los precarga en el paso 4 en vez de hacer que el
 // ejecutivo los vuelva a escribir: la solicitud entró sola y esto es la misma solicitud, abierta.
@@ -23066,6 +23079,10 @@ export default function PipelineComercial() {
           const idProc = api1Inyeccion(sol);
           logSys("info", "linea", `Solicitud de línea inyectada automáticamente al cerrar la oferta · ${idProc} · ${sol.detalle.length} línea(s) de detalle por ${fmtMM(sol.pedido)}`,
             { empresa: cli, operacion: id, proceso: idProc });
+          // Cerrar la oferta se hace desde la PESTAÑA DEL DETALLE, y la bandeja de Solicitudes vive en
+          // la del tubo: sin este aviso la solicitud quedaba sólo en la memoria de esta pestaña y el
+          // ejecutivo no la veía nunca. Mismo canal que `nex-simulado` y `nex-preeval`.
+          try { if (window.opener) window.opener.postMessage({ type: "nex-solicitud", registro: SOLICITUDES_LINEA[0] }, ORIGEN_APP); } catch (_) {}
           setDeals((prev) => prev.map((x) => (x.id === id ? { ...x, solicitudComite: idProc } : x)));
           setSelected((x) => (x && x.id === id ? { ...x, solicitudComite: idProc } : x));
         }
@@ -23281,6 +23298,13 @@ export default function PipelineComercial() {
         const aplicarSim = (d) => (d.id === m.dealId ? { ...d, ...m.patch } : d);
         setDeals((prev) => prev.map(aplicarSim));
         setSelected((s) => (s ? aplicarSim(s) : s));
+        return;
+      }
+      // Solicitud al comité inyectada al CERRAR LA OFERTA en la pestaña del detalle. Sin esto la
+      // bandeja «Líneas › Solicitudes» de esta pestaña no la tiene —es otro módulo—, que es la forma
+      // en que esta entrega se rompía en la práctica: la solicitud se creaba y nadie la veía.
+      if (m && m.type === "nex-solicitud" && m.registro) {
+        if (recibirSolicitudLinea(m.registro)) setDeals((prev) => prev.slice()); // re-render: la bandeja lee la lista al pintar
         return;
       }
       // Pre-evaluación solicitada (o cancelada) desde la pestaña del detalle. La mesa de Otorgamientos
