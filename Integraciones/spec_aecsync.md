@@ -6,7 +6,7 @@
 **Transporte:** stream / notificación push (ver «Envoltorio»), continuo. Consulta **por cliente (cedente)**: la pregunta que el servicio contesta es *todas las cesiones de este RUT, con todos sus cesionarios*.
 **Clave del registro:** `RUTEmisor` + `Folio` — ver «Cómo se une con el A1».
 
-> **Lo que este documento NO pudo verificar.** Las rutas HTTP, el esquema de autenticación, la paginación y los límites de tasa **no están cotejados contra la documentación**: `docs.datamart.cl` está bloqueado por la política de red del entorno donde se escribió esto. El **payload** sí es literal —es el que entrega el servicio— y es lo que el pipeline consume. Antes de implementar, cotejar transporte y autenticación contra la doc y completar esta sección.
+> **Pendiente de cotejo.** Las rutas HTTP, el esquema de autenticación, la paginación y los límites de tasa de este documento **no están cotejados contra la documentación del servicio** (`docs.datamart.cl`). El **payload** sí es literal: es el que entrega el servicio y el que el pipeline consume. Antes de implementar, cotejar transporte y autenticación y completar esta sección.
 
 ---
 
@@ -54,7 +54,7 @@ La tripleta `Servicio` / `Notificacion` / `Extras` es el envoltorio de un **even
 
 El documento se identifica por **`RUTEmisor` + `Folio`**, no por `RUTCedente` + `Folio`.
 
-En la operación normal los dos RUT coinciden —quien emitió la factura es quien la cede— y en la entrega actual coinciden en **1.300 de 1.300**. Pero son cosas distintas y pueden separarse: en una **re-cesión** el cedente es el factor que compró el documento, no quien lo emitió. Unir por el cedente en ese caso no encuentra el documento, y una factura sin documento es exactamente el estado que este activo dejó de tener el 14-09-2026 (ver §4).
+En la operación normal los dos RUT coinciden —quien emitió la factura es quien la cede— y en la entrega actual coinciden en **1.300 de 1.300**. Pero son cosas distintas y pueden separarse: en una **re-cesión** el cedente es el factor que compró el documento, no quien lo emitió. Unir por el cedente en ese caso no encuentra el documento, y una cesión sin documento no se puede atribuir a nada: todo lo que cuelga de ella —el bloqueo «cedida a terceros», la pérdida ante la competencia, el conteo de facturas cedidas— se queda sin base.
 
 ---
 
@@ -63,22 +63,14 @@ En la operación normal los dos RUT coinciden —quien emitió la factura es qui
 Se validan **en el origen** —`GeneradorDatos/datasets/cesiones.js` para la entrega sintética— y una cesión que los rompa no se emite. Es el único punto donde todavía se pueden arreglar: un consumidor que reciba `MontoCesion > MontoDocumento` no tiene con qué.
 
 1. **`FechaCesion` ≥ `FechaEmisionDTE`.** No se cede una factura que todavía no se emitió.
-2. **`MontoCesion` ≤ `MontoDocumento`.** La **cesión parcial** es válida —se cede parte del crédito y el resto queda con el cliente, hoy 160 de 1.300— pero ceder más sería transferir un crédito que no existe. La cota «o menor» hay que **ejercitarla**: mientras todas las cesiones fueron por el total exacto, el invariante se cumplía sin que nada lo probara, y con él se escondían dos huecos —el del dato y el de la regla O06 del motor de otorgamiento, que no existía—.
+2. **`MontoCesion` ≤ `MontoDocumento`.** La **cesión parcial** es válida —se cede parte del crédito y el resto queda con el cliente, hoy 160 de 1.300— pero ceder más sería transferir un crédito que no existe. La cota «o menor» hay que **ejercitarla**: si todas las cesiones vienen por el total exacto, el invariante se cumple sin que nada lo pruebe.
 3. **Un documento se cede UNA vez.** Dos cesiones del mismo folio serían dos dueños del mismo crédito, que es justamente lo que el registro electrónico existe para impedir.
 4. **Sólo documentos cedibles:** a crédito, sin nota de crédito y sin reclamo.
 5. **`MontoDocumento` es el `MntTotal` del A1**, y el resto de los campos de §1.2 también. El activo no puede contradecir al documento que dice ceder.
 
 ---
 
-## 4. Reconciliación con el A1 — cerrada el 14-09-2026
-
-El activo traía folios propios: de **1.300 cesiones sólo 3** referenciaban un folio que el A1 declara para ese mismo cedente, y **1.267** tenían fecha anterior a la emisión del documento que decían ceder. Una cesión sin documento no se puede atribuir a nada, así que todo lo que cuelga de ella terminaba inventándose aguas abajo: el bloqueo «cedida a terceros» salía de un hash del folio, la pérdida ante la competencia de un sorteo, y el conteo de facturas cedidas quedaba siempre en cero.
-
-Hoy las 1.300 reconcilian. **Se arregló en el origen y no en la aplicación a propósito:** si el consumidor «resolviera» la discrepancia, volvería a inventar el dato.
-
----
-
-## 5. El padrón de cesionarios
+## 4. El padrón de cesionarios
 
 AECSync identifica al cesionario pero **no dice de qué tipo es** — no es un dato del SII sino del mercado. Ese padrón es nuestro (`GeneradorDatos/lib/cesionarios.js`, espejado en el fuente) y clasifica cada cesionario **por RUT**:
 
@@ -86,11 +78,11 @@ AECSync identifica al cesionario pero **no dice de qué tipo es** — no es un d
 - **`target`** — los que se miran de frente. Es política **comercial del tenant**, no una propiedad del cesionario, así que lo del padrón es sólo el **default** (hoy BCI Factoring · Banco Santander): quién es target se edita en `Configuración › Factoring target` y el consumidor reagrupa con esa configuración. Por eso no tiene que ser bancario: `target` se evalúa **antes** que `banco` y la partición sigue siendo exhaustiva y disjunta.
 - **`nuestro`** — Factoring Security: cartera propia, no competencia.
 
-**La identidad es el RUT, no el nombre.** Clasificar por trozo de razón social puso a **Eurocapital** entre los factoring de banco —«eurocap·**ita**·l» contiene el «ita» con que se buscaba «Itaú»— y con el mix midiéndose sobre esta clasificación eso no es un KPI torcido sino una porción entera mal atribuida. Un cesionario que el padrón no declara cae en «otros factoring» —el balde conservador— y la corrida lo **informa**: es un padrón desactualizado, y en silencio se ve igual que un dato correcto.
+**La identidad es el RUT, no el nombre.** Un trozo de razón social no clasifica: «eurocap·**ita**·l» contiene el «ita» de «Itaú», y con el mix midiéndose sobre esta clasificación eso no es un KPI torcido sino una porción entera mal atribuida. Un cesionario que el padrón no declara cae en «otros factoring» —el balde conservador— y la corrida lo **informa**: es un padrón desactualizado, y en silencio se ve igual que un dato correcto.
 
 ---
 
-## 6. Qué consume
+## 5. Qué consume
 
 | Consumidor | Qué usa |
 |---|---|
@@ -103,6 +95,6 @@ AECSync identifica al cesionario pero **no dice de qué tipo es** — no es un d
 
 ---
 
-## 7. Ejemplo
+## 6. Ejemplo
 
 `aecsync_notificacion.json` al lado de este archivo trae el registro tal como llega.

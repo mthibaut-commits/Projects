@@ -83,12 +83,10 @@ Las **D** se evalúan **una vez por cada deudor** de la operación y se visan po
 del prefijo obliga a renumerar cada vez que una regla cambia de sujeto, y se pierde la trazabilidad
 con la política.
 
-> **Un caso que vale como advertencia de diseño.** C47–C50 —la cartera del par cliente-deudor— se
-> implementaron el 11-09 como reglas del par y **se retiraron el 14-09**: quedaban **dominadas** por
-> C40–C43, que miden lo mismo a nivel de cliente con umbral `> 0`. Si el par tiene un documento
-> reclamado, el cliente también, y C40 ya había levantado la excepción: nunca podían ser la única causa
-> de un visado. Una regla que no puede cambiar ningún resultado es peor que ninguna — se aprueba, se
-> audita y no decide nada.
+> **Una regla dominada no entra al catálogo.** La cartera del par cliente-deudor no tiene reglas
+> propias: las mismas variables medidas a nivel de **cliente** (C40–C43) usan umbral `> 0`, así que si
+> el par tiene un documento reclamado el cliente también lo tiene y esa excepción ya está levantada.
+> Una regla que no puede ser la única causa de un visado se aprueba, se audita y no decide nada.
 
 #### 3.3 Rechazo firme y rechazo re-evaluable
 
@@ -137,9 +135,9 @@ tabla disfrazado de control.
 
 #### 4.2 La atribución sigue al ROL, no a la persona
 
-El nivel y el área los implica el **cargo** (`ROL_ATRIB`), no el código de usuario. Antes estaban
-cableados por código y funcionaba sólo porque había un usuario por rol: cambiarle el cargo a alguien no
-le cambiaba la atribución.
+El nivel y el área los implica el **cargo** (`ROL_ATRIB`), no el código de usuario. Cablearlos por
+código de usuario sólo funciona mientras haya exactamente una persona por rol: en cuanto se le cambia
+el cargo a alguien, su atribución no cambia con él.
 
 Y hay dos nociones que **no** son la misma:
 
@@ -376,7 +374,7 @@ listados uno por uno en `Inconsistencias_Motor_Otorgamiento.md` §5.
 
 | Documento | Qué cubre |
 |---|---|
-| `Inconsistencias_Motor_Otorgamiento.md` | la auditoría política ↔ implementación (INC-01 a INC-07, los siete cerrados) y §8, O05 |
+| `Inconsistencias_Motor_Otorgamiento.md` | la auditoría de la política contra la implementación, y §8, O05 |
 | `Revision_Definiciones_2026-09-11.md` | qué debe recoger la próxima versión del PDF de política |
 | `spec-verificacion-facturas.md` | la segunda rutina de la misma reevaluación |
 | `spec-asignacion-lineas.md` | la tercera: cuánto cupo hay |

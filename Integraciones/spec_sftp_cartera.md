@@ -6,7 +6,7 @@
 
 ## Por qué existe
 
-Ni la estructura ni la asignación son del pipeline: las produce **RRHH** y la **administración comercial**. Antes de este activo vivían en cuatro constantes del bundle (`EXECS`, `EXEC_JEFATURA`, `EXEC_ZONA`, `EXEC_SUCURSAL`), un mapa de jefaturas escrito a mano y —la asignación— **dentro del A5**, el activo de Share of Wallet, en un campo `Ejecutivo` que además se llavea por **nombre**.
+Ni la estructura ni la asignación son del pipeline: las produce **RRHH** y la **administración comercial**.
 
 Tres consecuencias, todas verificadas antes de escribir esto:
 
@@ -53,15 +53,3 @@ La columna `TIPO` distingue las dos poblaciones:
 - **El archivo mueve EMPRESAS; no mueve OPERACIONES.** `deal.exec` guarda el código congelado en el JSON de la oportunidad. Que mañana el archivo asigne la empresa a otra persona no reasigna los negocios en curso: eso es un acto administrativo con fecha y responsable, y se hace en `Configuración › Oportunidades › Migración › Cambio de ejecutivo`, que va a la bitácora. Sólo se traspasa lo que está **en gestión, hasta antes del giro**: una operación girada ya se desembolsó y moverla sólo reescribiría de quién cuelga una venta que hizo otro.
 - **La razón social de `CARTERA` es copia de conveniencia.** Se emite para que el archivo se pueda leer solo en una revisión manual; el maestro es A11. Si difieren, no se corrige el maestro: se registra la discrepancia (ver `Levantamiento_Activos_Informacion.md` §5).
 - **Un código que el padrón ya no conoce no es «Agente IA».** Ese rótulo es para lo que de verdad no tiene dueño —`exec` vacío, originado por el inbound—. Un código desconocido es alguien que se fue, y se muestra marcado: relabelarlo falsea la atribución de operaciones que sí tuvieron dueño, y el dashboard, el Plan por Ejecutivo y el churn empiezan a contarle al agente lo que negoció una persona.
-
-## Qué reemplaza
-
-| Antes | Ahora |
-|---|---|
-| `EXECS`, `EXEC_JEFATURA`, `EXEC_ZONA`, `EXEC_SUCURSAL` — cuatro constantes de módulo | índice derivado de las filas `EJECUTIVO` |
-| `EQUIPO_JEFATURA = { JG: "Equipo Andes" }` + comparación de rótulos | la arista `COD_JEFE` |
-| `SHARE_OF_WALLET.Ejecutivo` (por nombre) | las filas `CARTERA` (por código) |
-
-Lo que **no** reemplaza: la cartera curada de la **semilla de eventos** del demo (~24 razones sociales escritas a mano para mostrar escenarios concretos). No existen en DTESync y por lo tanto no tienen RUT, que es la clave de este archivo; esa asignación pertenece a la semilla y se queda con ella.
-
-**Fuente normativa:** `Levantamiento_Activos_Informacion.md` §5.5, que levantó el hueco, y la regla 25 del proyecto (rotación de personas).

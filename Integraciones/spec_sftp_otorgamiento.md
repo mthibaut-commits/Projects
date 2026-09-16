@@ -70,9 +70,9 @@ La clave primaria es **`RUT` + `ROL` (+ `RUT_CONTRAPARTE`)**. Cada entidad de la
 | JUICIOS_GESINTEL | C52 | CLIENTE | Informativo |
 | FECHA_CORTE | — | ambos | Fecha de generación del snapshot |
 
-> **Nuevo en esta versión (par C-D):** `VENTA_CRUZADA_CD_PCT`, `NOTA_CREDITO_CD_PCT`, `RECLAMO_CD_PCT`. Antes las variables del par se confundían con las del deudor/cliente en las columnas `*_PCT`. Ahora D19–D20 (deudor) y D21–D23 (par) tienen columnas distintas, ambas en la fila `DEUDOR`.
+> **Variables del par cliente-deudor:** `VENTA_CRUZADA_CD_PCT`, `NOTA_CREDITO_CD_PCT`, `RECLAMO_CD_PCT`. D19–D20 (deudor) y D21–D23 (par) viajan en columnas distintas, ambas en la fila `DEUDOR`: sin separarlas, una variable del par se lee como si fuera del deudor.
 >
-> **Nuevo (11-09-2026, cierre de INC-04):** `CARTERA_RECLAMADA_CD`, `CARTERA_NC_CD`, `CARTERA_MOROSA_CD`, `CXC_PENDIENTES_CD`. Las cuatro reglas C47–C50 estaban en la política y **no estaban implementadas**: el motor corría 75 de las 79. Se miden por par porque es donde el deterioro se ve: un cliente con la cartera global limpia puede arrastrar reclamos, notas de crédito o mora con un solo deudor, y agregado al cliente eso se diluye hasta desaparecer. Viajan en la fila `DEUDOR` —una por par (cliente, deudor)— y **no** en la fila `CLIENTE`, que ya porta el agregado en las `CARTERA_*` a secas.
+> **Cartera del par cliente-deudor:** `CARTERA_RECLAMADA_CD`, `CARTERA_NC_CD`, `CARTERA_MOROSA_CD`, `CXC_PENDIENTES_CD`. Se miden por par porque es donde el deterioro se ve: un cliente con la cartera global limpia puede arrastrar reclamos, notas de crédito o mora con un solo deudor, y agregado al cliente eso se diluye hasta desaparecer. Viajan en la fila `DEUDOR` —una por par (cliente, deudor)— y **no** en la fila `CLIENTE`, que ya porta el agregado en las `CARTERA_*` a secas.
 
 Variables de **operación** (O01–O03: spread bajo banda, comisión/gastos bajo mínimo, CxC sin aplicar) **no** viajan en este archivo: se derivan de la **simulación** de la oferta en NEX (condiciones comerciales del ejecutivo) y se evalúan contra las bandas de atribución. `O04` sí usa `CLIENTE_BLOQUEADO`.
 
@@ -80,8 +80,8 @@ Variables de **operación** (O01–O03: spread bajo banda, comisión/gastos bajo
 
 ## 4. Niveles y re-evaluación
 
-- **Niveles:** política N1..N5, **N5 = máxima**, sin transformación. La homologación `nivelMod = 6 − N` **se retiró** (INC-01, 11-09-2026): invertía la escala y mandaba una excepción N1 —un pagaré sin firmar— al cargo más alto, y una N5 —180 días de mora— al más bajo. El nivel que cada regla necesita es **configuración de la regla**, no algo que el motor transforme.
-- **Ruteo de la excepción = (área, nivel)** (INC-03, 11-09-2026): la **regla** declara el ÁREA y su **tramo** declara el NIVEL. Con ese par se buscan los usuarios de esa área con ese nivel **o superior**; cualquiera de ellos autoriza, sin tope. Un cargo vacante lo cubre la jefatura de su misma área y **la escalada no cruza áreas**. Una regla **sin área no la aprueba nadie**: un default silencioso escondería una regla mal configurada.
+- **Niveles:** política N1..N5, **N5 = máxima**, **sin transformación**. El nivel que cada regla necesita es **configuración de la regla**, no algo que el motor derive: homologarlo con una fórmula del tipo `6 − N` invierte la escala y manda una excepción N1 —un pagaré sin firmar— al cargo más alto.
+- **Ruteo de la excepción = (área, nivel):** la **regla** declara el ÁREA y su **tramo** declara el NIVEL. Con ese par se buscan los usuarios de esa área con ese nivel **o superior**; cualquiera de ellos autoriza, sin tope. Un cargo vacante lo cubre la jefatura de su misma área y **la escalada no cruza áreas**. Una regla **sin área no la aprueba nadie**: un default silencioso escondería una regla mal configurada.
 - **Re-evaluación (v1 → v2 al firmar el contrato):** las variables de **burós** (CMF / Equifax / ACHEF / infracciones) del cliente y del deudor **NO** se re-evalúan (bloqueo firme: **C10–C22, C30–C32, D02–D13**). El resto **sí** se re-evalúa (C01–C09, C23–C29, C33–C52, D01, D14–D23, O01–O04). La re-evaluación **no re-abre** las excepciones ya visadas.
 
 ---

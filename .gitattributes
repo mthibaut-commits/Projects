@@ -10,3 +10,5 @@
 # cambia los bytes, el hash deja de calzar y el build falla en un clon limpio.
 # (vendor/_alias.js es CRLF a proposito: asi lo registra el SBOM.)
 vendor/** -text
+
+fuentes/** -text

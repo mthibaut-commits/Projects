@@ -260,9 +260,9 @@ dos documentos de MM$100 a 31 y 62 días, ponderar por monto da **46,5 días** y
 precio da **52,79**. Sólo la segunda hace que la tasa equivalente reproduzca la diferencia de precio
 original, que es lo único que la justifica.
 
-> **Confirmado (12-09-2026).** El enunciado inicial describía el plazo ponderado «por el monto de cada
-> factura»; la planilla de referencia lo pondera por el peso de la diferencia de precio. El negocio
-> confirmó que manda la planilla.
+> **Pondera la diferencia de precio, no el monto.** Es la definición que reproduce la planilla de
+> referencia del negocio, y la única con la que la tasa equivalente devuelve la diferencia de precio
+> de la que salió.
 
 Verificación con los datos de la planilla:
 
@@ -311,7 +311,7 @@ de las partes **no da** el total. Tres reglas lo resuelven:
 
 1. **El reparto se recorre de la factura más grande a la más chica.**
 2. **La factura MÁS GRANDE absorbe el residuo**, de modo que la suma cuadre exactamente. Va a la más
-   grande y no a la última por decisión de negocio (12-09-2026), y es además lo robusto: siempre puede
+   grande y no a la última por decisión de negocio, y es además lo robusto: siempre puede
    absorberlo sin cruzar el cero. En la más chica el ajuste podía **superar lo asignado** —en una
    operación de MM$20.000 repartida en 300 documentos quedaba en **−4 pesos**— y una comisión negativa
    no se explica ni se transfiere.
