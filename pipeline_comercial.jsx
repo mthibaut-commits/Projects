@@ -4668,8 +4668,22 @@ function Pill({ children, style, className = "" }) {
 // en el tooltip. Comparte texto con `TagNuevo`, que sigue sirviendo donde hay aire (cabecera del
 // detalle): la misma condición con dos redacciones se separa a la primera corrección.
 const TIP_NUEVO = "Cliente nuevo: es su primera operación con Security. Se verifican todas las facturas (compuerta V00) y se cursa contra la línea inicial (LF1).";
+// Es un GLIFO DIBUJADO, no una «N» con un borde alrededor: la caja tiene 13×15 con radio 3,5 y la
+// letra su propio trazo, así que no depende de la fuente ni del peso que herede de la fila donde se
+// pinta —una N en negrita dentro de un `border` cambia de grosor y de centrado con cada tamaño de
+// texto—. Va en flujo INLINE, no como hermano flex: el nombre del cliente puede ocupar dos líneas en
+// una columna angosta y la marca tiene que quedarse pegada a la primera palabra (regla 29).
+// El color sale de `C.indigo`, que es el mismo #703EFF del trazo: un hex escrito a mano acá se
+// quedaría atrás el día que la paleta cambie.
 function MarcaNuevo() {
-  return <span className="mr-1 font-bold" title={TIP_NUEVO} style={{ color: C.indigo, cursor: "help" }}>N</span>;
+  return (
+    <span className="mr-1 inline-block align-text-bottom" title={TIP_NUEVO} style={{ cursor: "help", lineHeight: 0 }}>
+      <svg width="13" height="15" viewBox="0 0 13 15" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+        <rect x="0.5" y="0.5" width="12" height="14" rx="3.5" stroke={C.indigo} />
+        <path d="M3.666 10.5V4.11H5.178L7.716 8.52V4.11H9.084V10.5H7.554L5.034 6.243V10.5H3.666Z" fill={C.indigo} />
+      </svg>
+    </span>
+  );
 }
 function TagNuevo({ clase = "t9" }) {
   return (
