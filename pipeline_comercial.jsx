@@ -6324,6 +6324,17 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
           <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dCol[x.disp] + "1a", color: dCol[x.disp] }} title={otraArea ? `Aprueba otra área (dominio de la regla: ${AREA_LBL[x.area]})` : undefined}>{dLbl[x.disp]}{x.nivel ? " · N" + x.nivel : ""}{x.disp === "excepcion" ? ` · ${nr.rol} (${AREA_LBL[nr.area]})` : ""}</span>
         </div>
         {x.disp !== "aprobado" && x.hallazgo && <div className="mt-0.5 t10" style={{ color: C.sub }}>{x.hallazgo}</div>}
+        {/* O05 · DÓNDE SE CARGA EL CONTRATO. La vía física dejaba el criterio abierto y el ejecutivo sin
+            saber por dónde entra el papel: el modal de curse lo decía al confirmar y el badge de la oferta
+            publicada también, pero en la tarjeta del criterio —que es dónde se actúa— no lo decía nadie.
+            El destinatario se DERIVA (`nr`), no se escribe: el cargo que autoriza lo configura el tenant. */}
+        {x.cond === "O05" && x.disp === "excepcion" && !visSt[x.stKey] && (
+          <div className="mt-1 rounded-md px-2 py-1.5 t9" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412", lineHeight: 1.5 }}>
+            {deal.publicacion === "fisica"
+              ? <><b>📎 Acá se carga el contrato de cesión firmado.</b> La oferta se publicó en papel, así que la firma no entra sola: adjúntalo más abajo y lo autoriza el {nr.rol} ({AREA_LBL[nr.area]}). Sin esa evidencia la operación no se gira.</>
+              : <>Este criterio lo cierra la <b>firma del cliente en el portal</b>. Si la oferta se publica <b>en papel</b>, el contrato firmado se adjunta acá y lo autoriza el {nr.rol} ({AREA_LBL[nr.area]}).</>}
+          </div>
+        )}
         {x.disp === "excepcion" && (() => {
           const estado = visSt[x.stKey]; // "aprobado" | "rechazado" | undefined
           const puedeVisar = x.regla && puedeAprobarExc(usuario, x.regla, x.nivel || 4);
@@ -6339,6 +6350,16 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
               <div className="t9 font-semibold" style={{ color: "#5B21D6" }}>📨 Aprobación solicitada por {sol.por} · {sol.fecha}</div>
               {sol.comentario && <div className="mt-0.5 t9" style={{ color: C.sub }}>“{sol.comentario}”</div>}
               {sol.archivos && sol.archivos.length > 0 && <div className="mt-0.5 flex flex-wrap gap-2">{sol.archivos.map((a, i) => <span key={i} className="t9" style={{ color: C.faint }}>📎 {a}</span>)}</div>}
+              {/* Lo que se agregó DESPUÉS va apilado y fechado, no fusionado con la solicitud: el apoderado
+                  ya pudo haber leído la original, y saber qué se sabía en cada momento es justamente lo
+                  que se audita. */}
+              {(sol.ampliaciones || []).map((a, i) => (
+                <div key={i} className="mt-1 pt-1" style={{ borderTop: "1px solid #DDD6FE" }}>
+                  <div className="t9 font-semibold" style={{ color: "#5B21D6" }}>＋ Información agregada por {a.por} · {a.fecha}</div>
+                  {a.comentario && <div className="mt-0.5 t9" style={{ color: C.sub }}>“{a.comentario}”</div>}
+                  {a.archivos && a.archivos.length > 0 && <div className="mt-0.5 flex flex-wrap gap-2">{a.archivos.map((f, j) => <span key={j} className="t9" style={{ color: C.faint }}>📎 {f}</span>)}</div>}
+                </div>
+              ))}
             </div>
           ) : null;
           const dtArchsView = (dt) => { const a = dt.archs && dt.archs.length ? dt.archs : (dt.arch ? [dt.arch] : []); return a.length ? <div className="mt-0.5 flex flex-wrap gap-2">{a.map((f, i) => <span key={i} className="t9" style={{ color: C.faint }}>📎 {f}</span>)}</div> : null; };
@@ -6383,7 +6404,40 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
             );
           }
           // (C) EJECUTIVO (sin atribución): completa comentario + adjuntos y SOLICITA la aprobación al apoderado.
-          if (sol) return solBlock; // ya solicitada, esperando decisión del apoderado
+          // YA SOLICITADA. El panel quedaba en sólo lectura y el ejecutivo no podía volver a entrar a
+          // aportar nada —ni el contrato firmado que llega dos días después, ni la aclaración que el
+          // apoderado le pidió por teléfono—: la única salida era esperar. Aportar respaldo no decide
+          // nada, así que no hay por qué cerrarlo; lo que sí está gateado por atribución es VISAR.
+          if (sol) {
+            const ak = "amp:" + x.stKey;
+            const af = excForm[ak] || {};
+            const hayAmp = !!((af.msg || "").trim() || (af.archs && af.archs.length));
+            return (
+              <>{solBlock}
+              {!af.open ? (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  <span className="t9" style={{ color: C.sub }}>En espera del visto bueno de <b style={{ color: "#5B21D6" }}>{nr.rol} (N{x.nivel || 4})</b>.</span>
+                  <button onClick={() => setEF(ak, { open: true })} className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold" style={{ border: `1px solid ${C.indigo}`, color: C.indigo, backgroundColor: "#fff" }}>📎 Agregar información</button>
+                </div>
+              ) : (
+                <div className="mt-1.5 rounded-md p-2" style={{ border: "1px solid #DDD6FE", backgroundColor: "#F5F3FF" }}>
+                  <div className="t9 font-semibold" style={{ color: "#5B21D6" }}>Agregar información para el {nr.rol} (N{x.nivel || 4})</div>
+                  <div className="mt-0.5 t9" style={{ color: C.sub }}>Se <b>suma</b> a lo ya enviado —no reemplaza la solicitud— y le llega al apoderado con tu nombre y la hora.</div>
+                  <textarea value={af.msg || ""} onChange={(e) => setEF(ak, { msg: e.target.value })} placeholder="Antecedente, aclaración o descripción del respaldo que adjuntas…" className="mt-1 w-full rounded-md p-2 t10 outline-none focus:ring-2" style={{ border: `1px solid ${C.line}`, minHeight: 48, backgroundColor: "#fff", color: C.ink }} />
+                  {archChips(ak, af.archs)}
+                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => setEF(ak, { open: false, msg: "", archs: [] })} className="rounded-md px-2 py-1 t9 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}>Cancelar</button>
+                      <button onClick={() => { ampliarSolicitudExc(deal, x, usuario, af.msg, af.archs); setEF(ak, { open: false, msg: "", archs: [] }); forceV((v) => v + 1); onReev && onReev(); }}
+                        disabled={!hayAmp} title={hayAmp ? undefined : "Escribe un comentario o adjunta un respaldo"}
+                        className="inline-flex items-center gap-1 rounded-md px-3 py-1 t9 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: C.indigo }}><Send size={11} /> Enviar</button>
+                    </div>
+                    {adjuntarLabel(ak)}
+                  </div>
+                </div>
+              )}</>
+            );
+          }
           const sk = "sol:" + x.stKey;
           const sf = excForm[sk] || {};
           if (!sf.open) return (
@@ -13587,6 +13641,30 @@ function excepcionesSinComentario(deal) {
 // El EJECUTIVO solicita al apoderado responsable (N1–N5) la aprobación de UNA excepción, adjuntando su
 // comentario y archivos de respaldo. Guarda la solicitud, adelanta la operación a la bandeja (pre-eval),
 // registra auditoría/bitácora, avisa por Mensajería interna y genera una tarea a los apoderados hábiles.
+// AGREGAR INFORMACIÓN A UNA EXCEPCIÓN YA SOLICITADA. El ejecutivo marcaba la excepción como
+// justificada y el panel se cerraba en solo lectura: no podía volver a entrar a aportar nada —ni el
+// contrato firmado que llega dos días después, ni una aclaración que el apoderado pidió por teléfono—.
+// Se APILA, no se reemplaza: la justificación original es evidencia con actor y hora, y el apoderado
+// pudo haberla leído ya; pisarla borraría sobre qué se estaba decidiendo. Cada ampliación lleva su
+// propio quién y cuándo, así que la bitácora sigue pudiendo decir qué se sabía en cada momento.
+function ampliarSolicitudExc(deal, x, execCode, comentario, archivos) {
+  if (!deal || !x || !x.stKey) return;
+  const txt = (comentario || "").trim(), archs = (archivos || []).slice();
+  if (!txt && !archs.length) return;
+  const todas = { ...(repoSolicitudExc.get(deal.id) || {}) };
+  const actual = todas[x.stKey]; if (!actual) return;   // no hay solicitud que ampliar
+  // La fecha va en el MISMO formato que la solicitud y el visado (`toLocaleString`), no en el de la
+  // bitácora: las dos líneas quedan una encima de la otra en el panel y con milisegundos en una sola
+  // se leen como dos clases de dato distintas.
+  const quien = actorEtiqueta(execCode), cuando = new Date().toLocaleString("es-CL");
+  todas[x.stKey] = { ...actual, ampliaciones: [...(actual.ampliaciones || []), { por: quien, fecha: cuando, comentario: txt, archivos: archs }] };
+  repoSolicitudExc.set(deal.id, todas);
+  const dtxt = x.deudor ? ` · deudor ${x.deudor.nombre}` : "";
+  registrarAuditoria({ usuario: USERS[execCode] || execCode, modulo: "Otorgamiento · Solicitud de excepción", accion: "Agregar información",
+    glosa: `Regla #${(x.regla || {}).n} ${(x.regla || {}).nombre}${dtxt}${txt ? ` · “${txt}”` : ""}${archs.length ? ` · ${archs.length} archivo(s): ${archs.join(", ")}` : ""}`,
+    empresaId: deal.id, exito: true });
+  logOtorgEvento(deal.id, quien, `${quien} agregó información a la excepción #${(x.regla || {}).n} ${(x.regla || {}).nombre}${dtxt}${archs.length ? ` (${archs.length} archivo(s))` : ""}`);
+}
 function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinComentarios) {
   if (!x || !x.stKey || !x.regla) return;
   const nr = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", x.nivel || 1);

@@ -3304,6 +3304,66 @@
        `set/patch/push persisten ${persisteOk} · del persiste ${borradoOk} · scope por tenant ${tenantOk} · storage corrupto parte de cero ${robustoOk} · el tubo es el dueño de la vida útil ${duenoOk}`);
   }
 
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 114 · SOLICITAR NO CIERRA LA PUERTA: el ejecutivo puede seguir aportando información.
+  // El panel quedaba en sólo lectura apenas se enviaba la solicitud, y lo que llega después —el
+  // contrato de cesión firmado en papel, la aclaración que el apoderado pidió por teléfono— no tenía
+  // por dónde entrar. Aportar respaldo no decide nada; lo que está gateado por atribución es VISAR.
+  // Se APILA y no se reemplaza: la justificación original es evidencia con actor y hora, el apoderado
+  // pudo haberla leído ya, y pisarla borraría sobre qué se estaba decidiendo.
+  {
+    const ID = "OP-T114-" + Date.now();
+    const deal = { id: ID, cliente: "Cliente de prueba 114" };
+    const x = { stKey: "305", nivel: 3, deudor: null,
+                regla: { n: 305, cond: "O05", nombre: "Evidencia del Contrato de Cesi\u00f3n", area: "operaciones" } };
+    const leer = () => (repoSolicitudExc.get(ID) || {})[x.stKey] || null;
+
+    // (a) SIN SOLICITUD PREVIA no escribe nada. Una ampliación es información PARA alguien: sin
+    //     solicitud no hay destinatario, y fabricar una aquí saltaría el aviso y la tarea que
+    //     `solicitarAprobacionExc` genera —el apoderado tendría el respaldo y ningún motivo para mirarlo—.
+    ampliarSolicitudExc(deal, x, "CR", "no deber\u00eda entrar", ["fantasma.pdf"]);
+    const sinSolOk = leer() === null;
+
+    // La solicitud se siembra directo en el repositorio: lo que este caso mide es el contrato de
+    // `ampliarSolicitudExc`, no la cadena de avisos, hilos y tareas que cuelga del envío.
+    repoSolicitudExc.set(ID, { [x.stKey]: { comentario: "Justificaci\u00f3n original", archivos: ["respaldo_1.pdf"],
+      por: "Carla Rivas", porCode: "CR", fecha: "16-09-2026, 5:00:00 p. m.", nivel: 3, rol: "Jefe de Operaciones" } });
+
+    // (b) SE APILA, NO SE REEMPLAZA.
+    ampliarSolicitudExc(deal, x, "CR", "Contrato de cesi\u00f3n firmado, recibido en sucursal", ["Contrato_Cesion_Firmado.pdf"]);
+    const s1 = leer() || {};
+    const a1 = (s1.ampliaciones || [])[0] || {};
+    const apilaOk = s1.comentario === "Justificaci\u00f3n original"
+      && (s1.archivos || []).join() === "respaldo_1.pdf"
+      && (s1.ampliaciones || []).length === 1
+      && a1.comentario === "Contrato de cesi\u00f3n firmado, recibido en sucursal"
+      && (a1.archivos || []).join() === "Contrato_Cesion_Firmado.pdf";
+
+    // (c) CADA AMPLIACIÓN LLEVA SU ACTOR Y SU HORA: la bitácora tiene que poder decir qué se sabía en
+    //     cada momento, y con una sola fecha para todo el bloque eso no se puede reconstruir.
+    const firmaOk = !!a1.por && !!a1.fecha && a1.fecha !== s1.fecha;
+
+    // (d) APPEND-ONLY Y EN ORDEN: la segunda no pisa a la primera.
+    ampliarSolicitudExc(deal, x, "CR", "Aclaraci\u00f3n que pidi\u00f3 Operaciones por tel\u00e9fono", []);
+    const s2 = leer() || {};
+    const ordenOk = (s2.ampliaciones || []).length === 2
+      && s2.ampliaciones[0].comentario === "Contrato de cesi\u00f3n firmado, recibido en sucursal"
+      && s2.ampliaciones[1].comentario === "Aclaraci\u00f3n que pidi\u00f3 Operaciones por tel\u00e9fono";
+
+    // (e) UNA AMPLIACIÓN VACÍA NO ESCRIBE. Un bloque con actor y hora y nada adentro le dice al
+    //     apoderado que hay algo nuevo que leer cuando no lo hay.
+    ampliarSolicitudExc(deal, x, "CR", "   ", []);
+    const s3 = leer() || {};
+    const vaciaOk = (s3.ampliaciones || []).length === 2;
+
+    repoSolicitudExc.del(ID);
+
+    ok("114 solicitar no cierra la puerta: el ejecutivo sigue pudiendo agregar informaci\u00f3n",
+       sinSolOk && apilaOk && firmaOk && ordenOk && vaciaOk,
+       `sin solicitud no escribe ${sinSolOk} \u00b7 apila sin pisar la original ${apilaOk} \u00b7 con actor y hora propias ${firmaOk} (${a1.por} \u00b7 ${a1.fecha}) \u00b7 append-only en orden ${ordenOk} \u00b7 vac\u00eda no escribe ${vaciaOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
