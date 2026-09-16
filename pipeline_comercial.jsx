@@ -618,7 +618,81 @@ const STAGES = [
 ];
 const STAGE_ORDER = STAGES.map((s) => s.id);
 const stageById = (id) => STAGES.find((s) => s.id === id);
-const stageName = (id) => (stageById(id) || {}).name || id;
+// ---- SINÓNIMOS DE ETAPA POR TENANT (rótulo y color) ----------------------------------------------
+// Cada factoring nombra sus etapas a su manera —«Prospección» para uno es «Sin gestión» para otro— y
+// el COLOR es parte del rótulo: «Sin gestión» en gris no dice lo mismo que en rojo. Es configuración
+// del TENANT, no del modelo: el CÓDIGO de la etapa (`prospeccion`, `oferta`…) es lo que el motor
+// compara y lo que viaja en `deal.stage`, y no se toca nunca; lo editable es cómo se muestra. Misma
+// separación que el `id` de un área contra su etiqueta (regla 18): renombrar no puede mover lógica.
+// «Oferta publicada» NO es un stage: es `oferta` con la oferta ya cerrada y publicada. Entra igual al
+// catálogo porque para el ejecutivo es un estado distinto y el tenant va a querer nombrarlo.
+const ETAPA_PUBLICADA = "oferta_publicada";
+const ETAPAS_BASE = [...STAGES.map((s) => ({ id: s.id, label: s.name, color: s.dot })),
+  { id: ETAPA_PUBLICADA, label: "Oferta cerrada", color: "#16A34A" }];
+// Lo que ESTE tenant llama a cada etapa. Lo que no declara conserva el nombre del modelo.
+const ETAPAS_TENANT_DEFECTO = {
+  prospeccion: { label: "Sin gestión", color: "#EF4444" },
+  oferta: { label: "Negociación", color: "#8B5CF6" },
+  [ETAPA_PUBLICADA]: { label: "Oferta publicada", color: "#16A34A" },
+};
+const _ETAPA_IDS = ETAPAS_BASE.map((e) => e.id);
+const esColorHex = (v) => typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v);
+// Higiene del storage, la misma de roles, áreas y factoring target: sólo entran ids que el catálogo
+// declara y colores que son un hex de verdad. Un color inválido no se corrige a un default silencioso
+// —se ignora la entrada— porque un rótulo a medias es peor que el del modelo.
+function higieneEtapas(g) {
+  const out = {}; let ignoradas = 0;
+  for (const id of Object.keys(g || {})) {
+    const v = g[id];
+    if (_ETAPA_IDS.indexOf(id) < 0 || !v || typeof v !== "object") { ignoradas++; continue; }
+    const label = typeof v.label === "string" ? v.label.trim().slice(0, 40) : "";
+    const color = esColorHex(v.color) ? v.color : null;
+    if (!label && !color) { ignoradas++; continue; }
+    out[id] = Object.assign({}, label ? { label } : null, color ? { color } : null);
+  }
+  return { out, ignoradas };
+}
+// Lazy: `leerVersionado`, `logSys` y `TENANT_ACTUAL` se definen más abajo, y esto se resuelve en el
+// primer render, no al cargar el bundle.
+let _ETAPAS_TENANT = null;
+function etapasTenant() {
+  if (_ETAPAS_TENANT) return _ETAPAS_TENANT;
+  const g = leerVersionado("pc_etapas_" + TENANT_ACTUAL, "etapas", null);
+  if (!g || typeof g !== "object") { _ETAPAS_TENANT = Object.assign({}, ETAPAS_TENANT_DEFECTO); return _ETAPAS_TENANT; }
+  const h = higieneEtapas(g);
+  if (h.ignoradas) logSys("warn", "app", `Etapas: ${h.ignoradas} entrada(s) del storage ignoradas (id fuera del catálogo o color inválido)`, { tenant: TENANT_ACTUAL });
+  _ETAPAS_TENANT = h.out;
+  return _ETAPAS_TENANT;
+}
+function guardarEtapas(cfg) {
+  _ETAPAS_TENANT = higieneEtapas(cfg).out;
+  escribirVersionado("pc_etapas_" + TENANT_ACTUAL, "etapas", _ETAPAS_TENANT);
+  return _ETAPAS_TENANT;
+}
+const etapaBase = (id) => ETAPAS_BASE.find((e) => e.id === id) || null;
+// Rótulo y color con que ESTE tenant muestra la etapa. El respaldo es el nombre del MODELO y nunca el
+// id crudo: una configuración a medias no puede dejar la pantalla diciendo «prospeccion».
+function etapaVista(id) {
+  const b = etapaBase(id), o = etapasTenant()[id] || {};
+  return { id, label: o.label || (b ? b.label : id), color: o.color || (b ? b.color : "#9CA3AF"), propio: !!(o.label || o.color) };
+}
+// La etapa VISUAL de una operación: la del motor, salvo que la oferta ya esté publicada, que para el
+// ejecutivo es otra cosa aunque el `stage` no se haya movido.
+const etapaVisualId = (d) => (d && d.stage === "oferta" && ofertaPublicada(d)) ? ETAPA_PUBLICADA : displayStageId(d);
+const stageName = (id) => etapaVista(id).label;
+// Un SOLO chip de etapa para el tubo y el Kanban: dos copias se separan a la primera corrección y
+// entonces la misma etapa sale de dos colores en dos pantallas. El relleno y el borde se DERIVAN del
+// color configurado (alpha en hex), así que el tenant declara uno y quedan pintados los tres.
+function ChipEtapa({ id, className = "" }) {
+  const e = etapaVista(id), b = etapaBase(id);
+  return (
+    <span className={"inline-flex max-w-full items-center whitespace-nowrap rounded-full px-2 py-0.5 t10 font-semibold " + className}
+      style={{ backgroundColor: e.color + "14", color: e.color, border: `1px solid ${e.color}40` }}
+      title={e.propio && b && b.label !== e.label ? `«${b.label}» en el modelo; este tenant la llama «${e.label}» (Configuración › Etapas).` : undefined}>
+      {e.label}
+    </span>
+  );
+}
 // REGLA DE GESTIÓN (server-side ready): una oportunidad se considera NO gestionada si al cierre del día
 // sigue en «Prospección». Por lo tanto, CUALQUIER edición del ejecutivo (incorporar/retirar facturas,
 // editar condiciones o contacto) la promueve a «Oferta y Negociación». En el backend esto sería una
@@ -7228,7 +7302,11 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
     { k: "borrador", label: "Guardar borrador", color: C.ink },
     { k: "rechazar", label: "Rechazar…", color: C.red },
   ];
-  const labelAccion = (k) => (ACCIONES_PPAL.find((a) => a.k === k) || ACCIONES_PPAL[0]).label;
+  // Con parte de la oferta sin línea, cerrarla NO es sólo cerrarla: la solicitud entra al comité por
+  // API 1 (regla 15-bis). El botón lo dice, porque «Cerrar oferta y publicar» esconde justo la
+  // consecuencia que el ejecutivo necesita anticipar antes de apretarlo.
+  const labelAccion = (k, aComite) => (k === "cerrar" && aComite) ? "Enviar a Comité y Publicar"
+    : (ACCIONES_PPAL.find((a) => a.k === k) || ACCIONES_PPAL[0]).label;
   // `datosCurse` sólo existe en el sub-tab Detalle, que es donde se evalúa la línea. Con él, cerrar
   // arranca por el resumen de comité/otorgamiento/verificación; sin él va directo al cierre.
   const ejecutarAccion = (k, datosCurse) => {
@@ -8092,10 +8170,13 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         const deudConLinea = deudOtF.filter(tieneLinea);
                         const deudResto = deudOtF.filter((dn) => !tieneLinea(dn));
                         const OT_TABS = [
-                          { k: "conLinea", lbl: "Con línea", lista: deudConLinea,
+                          // «Deudores aprobados línea» / «Deudores sin aprobar» y no «Con línea» / «El resto»:
+                          // el par nombra lo MISMO que la partición decide —si el comité ya les aprobó cupo—
+                          // mientras que «el resto» sólo decía que no eran lo anterior.
+                          { k: "conLinea", lbl: "Deudores aprobados línea", lista: deudConLinea,
                             tip: "Deudores con al menos una factura disponible que cabe en la línea. Se pueden cursar hoy, cualquiera sea su clasificación y aunque tengan criterios por aprobar o facturas por verificar.",
                             vacio: "Ningún deudor disponible tiene facturas que quepan en la línea." },
-                          { k: "resto", lbl: "El resto", lista: deudResto,
+                          { k: "resto", lbl: "Deudores sin aprobar", lista: deudResto,
                             tip: "Deudores cuyas facturas disponibles no caben en la línea —o no tienen ninguna incorporable—. Cursarlas pasa por ampliar la línea en el comité.",
                             vacio: "Todos los deudores disponibles tienen facturas que caben en la línea." },
                         ];
@@ -8394,16 +8475,28 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     // con línea propia agotada se AMPLÍA; sin línea propia hay que CREARLA. Decir
                                     // «Línea disponible $0M» en ambos casos las volvía indistinguibles, y encima
                                     // convivía en la misma fila con el chip de estado, que decía «Sin línea».
-                                    const lbl = hay ? `Línea disponible ${fmtMM(ld.disponible)}` : ld.conLineaPropia ? "Línea Cliente - Deudor sin cupo" : "Sin Línea Cliente - Deudor";
+                                    // SIN CUPO Y YA EN LA OFERTA, lo que corresponde no es describir la carencia
+                                    // sino nombrar la PLATA que se va a pedir: es el monto que entra a la
+                                    // solicitud al comité al cerrar (regla 15-bis), y es lo que el ejecutivo
+                                    // tiene que poder leer sin abrir nada. Fuera de la oferta todavía no se pide
+                                    // nada, así que ahí el rótulo sigue describiendo qué falta.
+                                    const pedir = !hay && enOferta;
+                                    const lbl = hay ? `Línea disponible ${fmtCLP(ld.disponible)}`
+                                      : pedir ? `Solicitud línea ${fmtCLP(monto)}`
+                                      : ld.conLineaPropia ? "Línea Cliente - Deudor sin cupo" : "Sin Línea Cliente - Deudor";
                                     const tip = (hay
-                                      ? `Línea disponible de este deudor: ${fmtMM(ld.disponible)} — el menor entre la Línea Cliente - Deudor, la Línea Global Cliente y la Línea Global Deudor. No descuenta las facturas ya seleccionadas en esta oferta: la línea se consume al cursar.`
+                                      ? `Línea disponible de este deudor: ${fmtCLP(ld.disponible)} — el menor entre la Línea Cliente - Deudor, la Línea Global Cliente y la Línea Global Deudor. No descuenta las facturas ya seleccionadas en esta oferta: la línea se consume al cursar.`
+                                      : pedir
+                                        ? `Sin cupo para sus ${fmtCLP(monto)} en esta oferta: al cerrar, esa diferencia entra como línea PUNTUAL en la solicitud al comité${ld.conLineaPropia ? " (ampliar la Línea Cliente - Deudor existente)" : " (crear una Línea Cliente - Deudor)"}.`
                                       : ld.conLineaPropia
                                         ? `Tiene Línea Cliente - Deudor pero sin cupo${ld.manda ? ` (manda: ${ld.manda})` : ""}: sus facturas van a comité, y lo que se pide es AMPLIARLA.`
                                         : "No tiene Línea Cliente - Deudor: sus facturas van a comité, y lo que se pide es SOLICITAR una puntual Cliente - Deudor.")
-                                      + (ld.saldoPuntual > 0 ? ` De ese disponible, ${fmtMM(ld.saldoPuntual)} está en una Línea Puntual de UN SOLO USO: la consume entera la primera factura que la toque, del tamaño que sea.` : "")
-                                      + (ld.nFuera > 0 ? ` Tiene ${ld.nFuera} factura(s) fuera de la oferta por ${fmtMM(ld.montoFuera)}.` : "");
+                                      + (ld.saldoPuntual > 0 ? ` De ese disponible, ${fmtCLP(ld.saldoPuntual)} está en una Línea Puntual de UN SOLO USO: la consume entera la primera factura que la toque, del tamaño que sea.` : "")
+                                      + (ld.nFuera > 0 ? ` Tiene ${ld.nFuera} factura(s) fuera de la oferta por ${fmtCLP(ld.montoFuera)}.` : "");
                                     return (
-                                      <ChipFila fg={hay ? "#16A34A" : "#6B7280"} bg={hay ? "#F0FDF4" : "#F3F4F6"} punto={hay ? "#16A34A" : "#9CA3AF"} texto={lbl} tip={tip}
+                                      // Ámbar para «Solicitud línea»: no es un estado bueno (verde) ni la ausencia
+                                      // neutra de cupo (gris), sino una acción pendiente con monto.
+                                      <ChipFila fg={hay ? "#16A34A" : pedir ? "#C2410C" : "#6B7280"} bg={hay ? "#F0FDF4" : pedir ? "#FFF7ED" : "#F3F4F6"} punto={hay ? "#16A34A" : pedir ? "#EA580C" : "#9CA3AF"} texto={lbl} tip={tip}
                                         badge={ld.saldoPuntual > 0 ? `${fmtMM(ld.saldoPuntual)} puntual` : undefined} badgeTono={{ fg: C.indigo, bg: C.lilac }} />
                                     );
                                   })()}
@@ -8420,14 +8513,14 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     nombra el primero. Cuando coinciden se muestra uno solo: repetir la cifra con
                                     el chip «Con línea» al lado es ruido. */}
                                 <div className="t11 font-semibold" style={{ color: C.ink }}
-                                  title={enOferta && ev ? `${fmtMM(monto)} seleccionados de este deudor; ${fmtMM(ev.asignado)} tienen línea disponible y el resto necesita comité.`
-                                    : disp && disp.bloqueadas ? `${fmtMM(disp.monto)} incorporable${plural(disp.facturas)}; ${disp.bloqueadas} factura${plural(disp.bloqueadas)} de este deudor no se puede${plural(disp.bloqueadas) ? "n" : ""} agregar (ya financiada${plural(disp.bloqueadas)} en otra operación, anulada${plural(disp.bloqueadas)} por NC, cedida${plural(disp.bloqueadas)} a terceros o retirada${plural(disp.bloqueadas)} por la verificación).`
+                                  title={enOferta && ev ? `${fmtCLP(monto)} seleccionados de este deudor; ${fmtCLP(ev.asignado)} tienen línea disponible y el resto necesita comité.`
+                                    : disp && disp.bloqueadas ? `${fmtCLP(disp.monto)} incorporable${plural(disp.facturas)}; ${disp.bloqueadas} factura${plural(disp.bloqueadas)} de este deudor no se puede${plural(disp.bloqueadas) ? "n" : ""} agregar (ya financiada${plural(disp.bloqueadas)} en otra operación, anulada${plural(disp.bloqueadas)} por NC, cedida${plural(disp.bloqueadas)} a terceros o retirada${plural(disp.bloqueadas)} por la verificación).`
                                     : undefined}>
                                   {disp
-                                    ? (sinDisp ? <span style={{ color: C.faint }}>—</span> : fmtMM(disp.monto))
+                                    ? (sinDisp ? <span style={{ color: C.faint }}>—</span> : fmtCLP(disp.monto))
                                     : enOferta && ev && ev.asignado !== monto
-                                      ? <>{fmtMM(ev.asignado)}<span className="t9 font-normal" style={{ color: C.faint }}> con línea, de {fmtMM(monto)}</span></>
-                                      : fmtMM(monto)}
+                                      ? <>{fmtCLP(ev.asignado)}<span className="t9 font-normal" style={{ color: C.faint }}> con línea, de {fmtCLP(monto)}</span></>
+                                      : fmtCLP(monto)}
                                   <span className="t9 font-normal" style={{ color: C.faint, marginLeft: 10, cursor: tipDisp ? "help" : undefined }} title={tipDisp}>{disp ? etiqDisp : `${grupo.length} fact.`} · tasa {tasa}%</span>
                                 </div>
                                 <div className="mt-1 flex items-center justify-end gap-1.5">
@@ -8533,9 +8626,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               const nComite = evalLin ? evalLin.facturas.filter((f) => f.estado === "REQUIERE_COMITE").length : 0;
                               const vd = !validas.length ? { tono: "pend", tit: "La oferta está vacía", sub: "Elige qué facturas incluir para evaluar la línea." }
                                 : reevalPend ? { tono: "parcial", tit: "La selección cambió", sub: "El monto de la oferta ya está actualizado; falta re-evaluar la línea." }
-                                : evalLin.requiereComite === 0 ? { tono: "con_linea", tit: `Se puede cursar la oferta completa · ${fmtMM(evalLin.cursable)}`, sub: "Todas las facturas de la oferta tienen línea disponible." }
-                                : evalLin.cursable === 0 ? { tono: "sin_linea", tit: "No se puede cursar nada de esta oferta", sub: `Las ${nComite} facturas por ${fmtMM(evalLin.requiereComite)} necesitan aprobación del comité de riesgo.` }
-                                : { tono: "parcial", tit: `Se puede cursar ${fmtMM(evalLin.cursable)} de ${fmtMM(totalOf)}`, sub: `${nComite} factura(s) por ${fmtMM(evalLin.requiereComite)} no tienen línea disponible. Puedes enviarlas a comité o quitarlas y cursar el resto hoy.` };
+                                // En PESOS y no en M$: son las mismas cifras que las filas de abajo y que el
+                                // «Monto a Girar», y el titular es el sitio donde se comparan. El M$ se reserva
+                                // para los chips de resumen y el indicador de línea, que se leen de un vistazo.
+                                : evalLin.requiereComite === 0 ? { tono: "con_linea", tit: `Se puede cursar la oferta completa · ${fmtCLP(evalLin.cursable)}`, sub: "Todas las facturas de la oferta tienen línea disponible." }
+                                : evalLin.cursable === 0 ? { tono: "sin_linea", tit: "No se puede cursar nada de esta oferta", sub: `Las ${nComite} facturas por ${fmtCLP(evalLin.requiereComite)} necesitan aprobación del comité de riesgo.` }
+                                : { tono: "parcial", tit: `Se puede cursar ${fmtCLP(evalLin.cursable)} de ${fmtCLP(totalOf)}`, sub: `${nComite} factura(s) por ${fmtCLP(evalLin.requiereComite)} no tienen línea disponible. Puedes enviarlas a comité o quitarlas y cursar el resto hoy.` };
                               // Qué se movió respecto de la versión anterior. Es lo único que el ejecutivo no
                               // puede deducir del resultado nuevo: si ganó cupo (le ampliaron la línea) o si lo
                               // perdió porque otro negocio lo consumió por otro canal.
@@ -8604,7 +8700,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                           {/* Split button: la etiqueta ejecuta la acción puesta, el chevron abre el
                                               menú para cambiarla. Antes el botón entero abría el menú, así que decía
                                               «Cerrar oferta y publicar» y al presionarlo no cerraba nada. */}
-                                          <button onClick={() => ejecutarAccion(accionSel, { evalLin, otorgRes, verifRes, validas })} className="flex items-center py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo, borderRadius: "9999px 0 0 9999px", paddingLeft: 16, paddingRight: 12 }}>{labelAccion(accionSel)}</button>
+                                          <button onClick={() => ejecutarAccion(accionSel, { evalLin, otorgRes, verifRes, validas })} className="flex items-center py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo, borderRadius: "9999px 0 0 9999px", paddingLeft: 16, paddingRight: 12 }}>{labelAccion(accionSel, !!evalLin && evalLin.requiereComite > 0)}</button>
                                           <button onClick={() => setAccMenu((v) => !v)} title="Elegir otra acción" className="flex items-center py-1.5 text-white" style={{ backgroundColor: C.indigo, borderRadius: "0 9999px 9999px 0", paddingLeft: 6, paddingRight: 12, borderLeft: "1px solid rgba(255,255,255,.35)" }}><ChevronDown size={14} /></button>
                                           {accMenu && panelAcciones(true)}
                                         </div>
@@ -8718,10 +8814,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   a la lista, que es el contenido real de la pantalla. */}
                               <div className="flex flex-wrap items-center gap-2">
                                 <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Documentos en la oferta</span>
-                                <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub, border: `1px solid ${C.line}` }}
-                                  title="Deudores con facturas en esta oferta">{dq ? `${deudOfF.length} de ${deudOf.length}` : deudOf.length} deudor{!dq && deudOf.length === 1 ? "" : "es"}</span>
-                                <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub, border: `1px solid ${C.line}` }}
-                                  title="Facturas seleccionadas para esta oferta">{validas.length} factura{validas.length === 1 ? "" : "s"}</span>
+                                {/* Los dos conteos se leen de corrido —«4 deudores · 7 facturas por M$29,6»— en
+                                    vez de ir en tres píldoras sueltas: son una sola frase y encerrarlas por
+                                    separado las presentaba como tres datos sin relación. El monto sí conserva
+                                    su píldora: es la cifra que se busca de un vistazo. */}
+                                <span className="t9 font-semibold uppercase tracking-wide" style={{ color: C.sub }}
+                                  title="Deudores y facturas seleccionados para esta oferta">{dq ? `${deudOfF.length} de ${deudOf.length}` : deudOf.length} deudor{!dq && deudOf.length === 1 ? "" : "es"} · {validas.length} factura{validas.length === 1 ? "" : "s"} por</span>
                                 <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}
                                   title="Monto seleccionado para esta oferta">{fmtMM(totalOf)}</span>
                               </div>
@@ -9031,7 +9129,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 ); })}
                                 {deudOf.length > 0 && (
                                   <div className="flex items-center justify-between rounded-lg px-3 py-2 t11 font-bold" style={{ backgroundColor: "#eff6ff", color: C.ink }}>
-                                    <span>Total oferta · {deudOf.length} deudor(es) · {validas.length} factura(s)</span><span>{fmtMM(totalOf)}</span>
+                                    <span>Total oferta · {deudOf.length} deudor(es) · {validas.length} factura(s)</span><span>{fmtCLP(totalOf)}</span>
                                   </div>
                                 )}
                               </div>
@@ -9043,10 +9141,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     distintos, uno con el conteo entre parentesis y otro con chips. */}
                                 <span className="flex flex-wrap items-center gap-2">
                                   <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Deudores disponibles</span>
-                                  <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub, border: `1px solid ${C.line}` }}
-                                    title="Deudores con facturas que aún no están en la oferta">{dq ? `${deudOtF.length} de ${deudOtVis.length}` : deudOtVis.length} deudor{!dq && deudOtVis.length === 1 ? "" : "es"}</span>
-                                  <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub, border: `1px solid ${C.line}` }}
-                                    title={bloqOt ? `${facsOt} factura${facsOt === 1 ? "" : "s"} incorporable${facsOt === 1 ? "" : "s"}; ${bloqOt} más no se puede${bloqOt === 1 ? "" : "n"} agregar y no cuenta${bloqOt === 1 ? "" : "n"} en el monto.` : "Facturas disponibles para incorporar a la oferta"}>{facsOt} factura{facsOt === 1 ? "" : "s"} disponible{facsOt === 1 ? "" : "s"}</span>
+                                  {/* Misma frase corrida que «Documentos en la oferta», por la misma razón. */}
+                                  <span className="t9 font-semibold uppercase tracking-wide" style={{ color: C.sub }}
+                                    title={bloqOt ? `${facsOt} factura${facsOt === 1 ? "" : "s"} incorporable${facsOt === 1 ? "" : "s"}; ${bloqOt} más no se puede${bloqOt === 1 ? "" : "n"} agregar y no cuenta${bloqOt === 1 ? "" : "n"} en el monto.` : "Deudores con facturas que aún no están en la oferta, disponibles para incorporar"}>{dq ? `${deudOtF.length} de ${deudOtVis.length}` : deudOtVis.length} deudor{!dq && deudOtVis.length === 1 ? "" : "es"} · {facsOt} factura{facsOt === 1 ? "" : "s"} por</span>
                                   <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: facsOt ? C.lilac : "#F5F4F8", color: facsOt ? C.indigo : C.faint }}
                                     title="Monto disponible para incorporar a la oferta">{facsOt ? fmtMM(montoOt) : "—"}</span>
                                 </span>
@@ -11095,12 +11192,15 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
   //     que es el más largo con dos decimales. Con 186 el rótulo se truncaba Y el porcentaje saltaba a
   //     la línea de abajo, que es la peor de las dos: un chip partido en dos se lee como dos datos.
   //     Los 214 salen de «Simulación», que es la columna más holgada; las otras cuatro no se tocan.
-  const PESO_COL = { "Cliente": 294, "Línea": 230, "Oportunidad": 344, "SOW": 214, "Simulación": 461, "Ejecutivo": 140, "Asignar": 124 };
+  // «Simulación» pasa de 461 a 700. Sus tres bloques suman más que 461: el monto (104) y los chips
+  // (~310, los fija «Requiere otorgamiento» con su badge) son `shrink-0`, así que el faltante lo
+  // absorbía ENTERO el bloque del medio —el único con `min-w-0`— y se partía carácter a carácter.
+  const PESO_COL = { "Cliente": 294, "Línea": 230, "Oportunidad": 344, "SOW": 214, "Simulación": 700, "Ejecutivo": 140, "Asignar": 124 };
   const cols = ["Cliente", ...(mostrarEjec ? ["Ejecutivo"] : []), "Línea", "Oportunidad", "SOW", "Simulación", ...(modoAsignar ? ["Asignar"] : [])];
   return (
     <div className="flex flex-1 flex-col gap-2">
       <div className="flex-1 overflow-x-auto rounded-xl bg-white p-1" style={{ border: `1px solid ${C.line}` }}>
-      <table className="w-full border-collapse t11" style={{ minWidth: mostrarEjec ? "1640px" : "1500px", tableLayout: "fixed" }}>
+      <table className="w-full border-collapse t11" style={{ minWidth: mostrarEjec ? "1920px" : "1780px", tableLayout: "fixed" }}>
         <thead><tr>{(() => {
           const totalPeso = cols.reduce((s2, c) => s2 + (PESO_COL[c] || 10), 0);
           return cols.map((h) => (
@@ -11128,14 +11228,13 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                     <div className="mt-1">
                     {(() => {
                       const vis = ["prospeccion", "oferta", "aceptadas", "otorgamiento"].includes(d.stage) ? visadoDeal(d) : null;
-                      const nPend = vis ? vis.exc.length + vis.rechReev.length : 0;
                       const bloqueo = vis && (vis.rechFirme.length || vis.excRech.length);
-                      const dstage = displayStageId(d); const disb = dealDisbursement(d); const res = dealResult(d);
-                      const dotStyle = d.stage === "oferta"
-                        ? { background: nPend ? "linear-gradient(135deg,#C4B5FD,#703EFF)" : "linear-gradient(135deg,#703EFF,#230C65)" }
-                        : { backgroundColor: (STAGES.find((s) => s.id === dstage) || {}).dot };
+                      const dstage = etapaVisualId(d); const disb = dealDisbursement(d); const res = dealResult(d);
                       return (<>
-                        <div className="flex items-center gap-1" style={{ color: C.ink }}><span className="h-2 w-2 rounded-full" style={dotStyle} />{stageName(dstage)}</div>
+                        {/* La etapa va en PÍLDORA y no como punto + texto: el color es configurable por
+                            tenant (Configuración › Etapas) y un punto de 8 px no alcanza para leerlo.
+                            El tinte sale del mismo color, así que declarar uno pinta los tres. */}
+                        <ChipEtapa id={dstage} />
                         {disb && <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: disb === "disbursed" ? "#F0FDF4" : "#eff6ff", color: disb === "disbursed" ? "#16A34A" : "#2563EB" }} title={disb === "disbursed" ? "Operación girada (desembolsada)" : "Aceptada · giro pendiente de desembolso"}>{DISBURSEMENT_LBL[disb]}</div>}
                         {res === "expired" && <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: RESULT_COL.expired.bg, color: RESULT_COL.expired.fg }}>Expirada</div>}
                         {bloqueo ? <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#fef2f2", color: "#EF4444", cursor: "help" }} title={"No superó reglas de otorgamiento (bloqueo firme):\n" + [...vis.rechFirme, ...vis.excRech].map((r, i) => `${i + 1}) #${r.n} ${r.nombre}`).join("\n")}><X size={10} /> Perdida · reglas de otorgamiento</div>
@@ -11274,12 +11373,32 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                           // bundle vendorizado es CORE y una clase que no trae NO FALLA, simplemente
                           // no aplica — el mismo agujero de `t14`/`t16`, y acá se vería como un chip
                           // que se sale de la columna en el navegador de Mauricio y en ninguna prueba.
+                          // NUESTRA porción se lee contra su META, no sola: «38% de 35%» dice en un chip
+                          // lo que «38%» obliga a ir a buscar a otra pantalla. El color es el veredicto
+                          // —verde si alcanza el target, rojo si no— y por eso las demás porciones, que
+                          // no tienen meta contra la cual juzgarlas, se quedan neutras. Un cliente NUEVO
+                          // no está incumpliendo nada todavía: no hay target que exigirle, así que se
+                          // nombra como lo que es en vez de pintarse de rojo con un 0%.
+                          const tgt = x.nuestro && d.sowTargetPct != null ? Math.round(d.sowTargetPct) : null;
+                          const nuevo = x.nuestro && esPrimeraOperacionCliente(d);
+                          const ok = tgt != null && x.pct >= tgt;
+                          const tono = !x.nuestro ? { bg: "#F0EFF3", fg: C.sub, bd: "transparent" }
+                            : nuevo || tgt == null ? { bg: C.lilac, fg: C.indigo, bd: "#DDD6FE" }
+                            : ok ? { bg: "#F0FDF4", fg: "#16A34A", bd: "#BBF7D0" }
+                            : { bg: "#FEF2F2", fg: "#EF4444", bd: "#FECACA" };
                           const chip = (
                             <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 t9 font-semibold"
-                              style={{ maxWidth: "100%", backgroundColor: x.nuestro ? C.lilac : "#F0EFF3", color: x.nuestro ? C.indigo : C.sub }}>
+                              style={{ maxWidth: "100%", backgroundColor: tono.bg, color: tono.fg, border: `1px solid ${tono.bd}` }}
+                              title={!x.nuestro ? undefined
+                                : nuevo ? `Cliente nuevo: todavía no nos cede facturas, así que no hay Share of Wallet que medir contra la meta.`
+                                : tgt == null ? `Nos cede el ${x.pct}% de lo que cede. Este cliente no tiene meta de Share of Wallet definida.`
+                                : ok ? `Nos cede el ${x.pct}% de lo que cede, sobre la meta de ${tgt}%.`
+                                : `Nos cede el ${x.pct}% de lo que cede, bajo la meta de ${tgt}%: faltan ${Math.round(tgt - x.pct)} pto(s) por recuperar de la competencia.`}>
                               {x.nuestro && <span style={{ flexShrink: 0 }} aria-hidden="true">★</span>}
                               <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.label}</span>
-                              <span style={{ flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>· {x.pct}%</span>
+                              <span style={{ flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+                                · {x.pct}%{x.nuestro ? (nuevo ? " – Nuevo" : tgt != null ? ` de ${tgt}%` : "") : ""}
+                              </span>
                             </span>
                           );
                           // Sólo «Otros» necesita la tarjeta flotante: es el único que esconde nombres.
@@ -11431,8 +11550,15 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                           {/* Todo el panel va centrado verticalmente: el bloque de chips es el más alto
                               y fija la altura; el monto y las condiciones, pegados al borde superior,
                               quedaban flotando sobre el aire de abajo. */}
-                          <div className="t14 font-bold shrink-0 text-center" style={{ color: C.ink, minWidth: 104 }}>{fmtMM(d.monto)}</div>
-                          <div className="t10 leading-5 min-w-0" style={{ color: C.sub, ...sep }}>
+                          {/* 12,5 px (`t10`) y no 17 (`t14`): el monto es la referencia de la card, no su
+                              titular — lo que el ejecutivo lee acá son las compuertas de la derecha—, y a
+                              17 px se comía el ancho que le falta al bloque del medio. Es el paso de la
+                              escala más cercano a los 12 px pedidos; la escala no tiene un 12 exacto. */}
+                          <div className="t10 font-bold shrink-0 text-center" style={{ color: C.ink, minWidth: 104 }}>{fmtMM(d.monto)}</div>
+                          {/* PISO de ancho: es el único bloque que puede encoger, así que sin él absorbe
+                              todo el faltante y se parte carácter a carácter. Con el piso, lo que cede es
+                              la tabla —que ya tiene scroll horizontal— en vez de este bloque. */}
+                          <div className="t10 leading-5 min-w-0" style={{ color: C.sub, minWidth: 186, ...sep }}>
                             <div className="truncate" title={nombres.length ? `Deudores de la oferta: ${nombres.join(" · ")}` : undefined} style={{ cursor: nombres.length ? "help" : "default" }}>
                               <span className="font-semibold" style={{ color: C.ink }}>{nombres.length || d.facturas}</span> deudor{(nombres.length || 1) === 1 ? "" : "es"} · <span className="font-semibold" style={{ color: C.ink }}>{d.facturas}</span> factura{d.facturas === 1 ? "" : "s"}
                             </div>
@@ -16754,6 +16880,7 @@ const CFG_SECCIONES = [
   { k: "roles", label: "Roles", Icon: Star },
   { k: "areas", label: "Áreas", Icon: Grid3x3 },
   { k: "factoringtarget", label: "Factoring target", Icon: Target },
+  { k: "etapas", label: "Etapas", Icon: CircleDot },
   { k: "reemplazos", label: "Vacaciones y reemplazos", Icon: Calendar },
   { k: "simulacion", label: "Simulación", Icon: Calculator },
   { k: "correo", label: "Correo saliente", Icon: Send },
@@ -17455,6 +17582,61 @@ function AvisoAtribucionPorRol() {
 // cesionario, y con eso el rótulo del chip, el KPI de churn y la alerta comercial. Por eso la tabla
 // muestra el VOLUMEN REGISTRADO de cada uno: elegir de frente a quien no aparece en el registro es
 // mirar a un competidor que no está compitiendo.
+// `Configuración › Etapas`. Cada tenant nombra y pinta sus etapas; el CÓDIGO no se edita, que es lo
+// que el motor compara y lo que viaja en `deal.stage` (misma separación que el `id` de un área). Se
+// guarda sólo lo que se APARTA del modelo: así, si mañana el modelo renombra una etapa que este
+// tenant no tocó, el cambio llega solo en vez de quedar congelado en el storage.
+function CfgEtapas() {
+  const [, force] = useState(0);
+  const cfg = etapasTenant();
+  const aplicar = (id, patch, accion) => {
+    const b = etapaBase(id), antes = etapaVista(id);
+    const prop = Object.assign({}, cfg[id], patch);
+    // Igualar el modelo NO se guarda: se borra la excepción. Guardar «lo mismo que el modelo» deja una
+    // fila muerta en el storage que después nadie sabe si es intencional.
+    if (b && prop.label === b.label) delete prop.label;
+    if (b && prop.color === b.color) delete prop.color;
+    const next = Object.assign({}, cfg);
+    if (!prop.label && !prop.color) delete next[id]; else next[id] = prop;
+    guardarEtapas(next);
+    const ahora = etapaVista(id);
+    registrarAuditoria({ usuario: USERS[(SESION && SESION.usuario)] || (SESION && SESION.usuario) || "—", modulo: "Etapas", accion,
+      glosa: `${b ? b.label : id}: antes «${antes.label}» ${antes.color} → ahora «${ahora.label}» ${ahora.color}`, severidad: "media" });
+    force((v) => v + 1);
+  };
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="text-lg font-semibold" style={{ color: C.ink }}>Etapas</div>
+        <div className="mt-0.5 t11" style={{ color: C.sub }}>Cómo se llama y de qué color se ve cada etapa <b>en este factoring</b>. El código de la etapa no cambia: es lo que comparan el motor y los filtros, así que renombrarla no mueve ninguna operación.</div>
+      </div>
+      <div className="overflow-hidden rounded-xl" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+        <div className="grid gap-2 px-3 py-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "150px 150px 1fr 120px 160px 90px", color: C.faint, borderBottom: `1px solid ${C.line}` }}>
+          <span>Código</span><span>Nombre del modelo</span><span>Cómo se llama acá</span><span>Color</span><span>Se ve así</span><span></span>
+        </div>
+        {ETAPAS_BASE.map((b) => {
+          const v = etapaVista(b.id);
+          return (
+            <div key={b.id} className="grid items-center gap-2 px-3 py-2" style={{ gridTemplateColumns: "150px 150px 1fr 120px 160px 90px", borderBottom: `1px solid ${C.line}` }}>
+              <span className="t10" style={{ color: C.faint, fontFamily: "ui-monospace, monospace" }}>{b.id}</span>
+              <span className="t11" style={{ color: C.sub }}>{b.label}</span>
+              <input value={v.label} onChange={(e) => aplicar(b.id, { label: e.target.value.slice(0, 40) }, "Renombrar etapa")}
+                className="w-full rounded-md px-2 py-1 t11 outline-none" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }} />
+              <span className="flex items-center gap-2">
+                <input type="color" value={v.color} onChange={(e) => aplicar(b.id, { color: e.target.value }, "Cambiar color de etapa")}
+                  className="rounded" style={{ width: 34, height: 26, border: `1px solid ${C.line}`, background: "#fff", padding: 2 }} />
+                <span className="t9" style={{ color: C.faint, fontFamily: "ui-monospace, monospace" }}>{v.color}</span>
+              </span>
+              <span><ChipEtapa id={b.id} /></span>
+              <span>{v.propio && <button onClick={() => aplicar(b.id, { label: b.label, color: b.color }, "Restaurar etapa")} className="t10 font-semibold" style={{ color: C.indigo }}>Restaurar</button>}</span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="t9" style={{ color: C.faint }}>«{etapaBase(ETAPA_PUBLICADA).label}» no es una etapa del motor: es <b>Oferta y Negociación</b> con la oferta ya cerrada y publicada. Se configura acá porque para el ejecutivo es un estado distinto.</div>
+    </div>
+  );
+}
 function CfgFactoringTarget() {
   const [, force] = useState(0);
   const vol = volumenCesionarios();
@@ -18185,7 +18367,7 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper, deals, onMigrarExec }
         ))}
       </aside>
       <div>
-        {sec === "simulacion" ? <CfgSimulacion usuario={usuario} /> : sec === "correo" ? <CfgCorreo /> : sec === "oportunidades" ? <CfgOportunidades deals={deals} onMigrarExec={onMigrarExec} /> : sec === "reemplazos" ? <CfgReemplazos usuario={usuario} /> : sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "roles" ? <CfgRoles /> : sec === "usuarios" ? <CfgUsuarios /> : sec === "areas" ? <CfgAreas /> : sec === "factoringtarget" ? <CfgFactoringTarget /> : sec === "otorgamiento" ? (
+        {sec === "simulacion" ? <CfgSimulacion usuario={usuario} /> : sec === "correo" ? <CfgCorreo /> : sec === "oportunidades" ? <CfgOportunidades deals={deals} onMigrarExec={onMigrarExec} /> : sec === "reemplazos" ? <CfgReemplazos usuario={usuario} /> : sec === "sistema" ? <CfgSistema /> : sec === "funcionalidades" ? <CfgFuncionalidades cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "operacion" ? <CfgOperacion cfgOper={cfgOper} setCfgOper={setCfgOper} /> : sec === "auditoria" ? <AuditoriaView usuario={usuario} /> : sec === "roles" ? <CfgRoles /> : sec === "usuarios" ? <CfgUsuarios /> : sec === "areas" ? <CfgAreas /> : sec === "factoringtarget" ? <CfgFactoringTarget /> : sec === "etapas" ? <CfgEtapas /> : sec === "otorgamiento" ? (
           <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
             <div className="text-lg font-semibold" style={{ color: C.ink }}>Otorgamiento · apoderados y atribuciones</div>
             <div className="mt-0.5 t12" style={{ color: C.faint }}>Criterios de verificación, atribuciones de aprobación por criterio y los apoderados que pueden excepcionar (nivel por área). Aquí también se habilita/oculta la aceptación masiva por usuario.</div>
@@ -21897,7 +22079,7 @@ function CommandK({ abierto, onCerrar, deals, dealVisible, irA, onAbrirDeal }) {
   const clis = ql ? PC_CLIENTES.filter((c) => c.nombre.toLowerCase().includes(ql) || (c.rut || "").includes(q.trim())).slice(0, 4) : [];
   const VISTAS = [["dashboard", "Dashboard"], ["pipeline", "Tubo diario"], ["tareas", "Tareas"], ["clientes", "Clientes"], ["panel", "Gestión"], ["operaciones", "Operaciones"], ["lineas", "Líneas"], ["otorgamientos", "Otorgamientos"], ["verificacion", "Verificación"], ["config", "Configuración"]];
   const items = [
-    ...ops.map((d) => ({ tipo: "Oportunidades", label: `${d.id} · ${d.cliente}`, extra: stageById(d.stage) ? stageById(d.stage).name : d.stage, run: () => { onAbrirDeal(d); onCerrar(); } })),
+    ...ops.map((d) => ({ tipo: "Oportunidades", label: `${d.id} · ${d.cliente}`, extra: stageName(d.stage), run: () => { onAbrirDeal(d); onCerrar(); } })),
     ...clis.map((c) => ({ tipo: "Clientes", label: c.nombre, extra: c.rut, run: () => { irA("clientes", "Clientes"); onCerrar(); } })),
     ...VISTAS.filter(([, l]) => !ql || l.toLowerCase().includes(ql)).map(([id, l]) => ({ tipo: "Ir a", label: l, extra: "", run: () => { irA(id, l); onCerrar(); } })),
   ];
@@ -25009,8 +25191,10 @@ export default function PipelineComercial() {
         <div className="mt-3 flex items-start gap-3 overflow-x-auto pb-4">
           {vista === "tabla" && <TablaOportunidades deals={filtered} onOpen={abrirDetalle} onMover={moverEtapa} onReject={reject} modoAsignar={!esEjecutivoSesion && quickFilter === "otrasfacturas"} onAsignarExec={asignarClienteAExec} mostrarEjec={!esEjecutivoSesion} />}
           {vista === "kanban" && (() => {
+            // El rótulo y el color de la columna salen del catálogo del TENANT, no del modelo: así el
+            // Kanban y el tubo nombran la etapa igual sin tocar `StageColumn` por dentro.
             const col = (id, opts = {}) => (
-              <StageColumn key={id} stage={stageById(id)} deals={opts.deals || dealsByStage(id)} onOpen={abrirDetalle}
+              <StageColumn key={id} stage={{ ...stageById(id), name: etapaVista(id).label, dot: etapaVista(id).color }} deals={opts.deals || dealsByStage(id)} onOpen={abrirDetalle}
                 onDragStart={(e, did) => setDraggingId(did)} onDrop={moveTo}
                 showChart={true} serie={historia.map((s) => s[id] || 0)}
                 serieSel={esAdmin ? undefined : historia.map((s) => (s.byExec && s.byExec[usuario] && s.byExec[usuario][id]) || 0)}
