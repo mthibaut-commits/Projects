@@ -11171,8 +11171,21 @@ function ComparativoModal({ deals, onClose, inline }) {
 // El estado RESUELTO (verde) se distingue por el fondo transparente y el borde más tenue, no por el
 // peso: con dos pesos, dos estados del mismo indicador —«SOW en target» y «SOW bajando»— se leían
 // como dos tipografías distintas en la misma columna.
-function ChipCond({ fg, bg, Icono, texto, tip, badge }) {
+function ChipCond({ fg, bg, Icono, texto, tip, badge, plano }) {
   const resuelto = fg === "#16A34A";
+  // PLANA: el rótulo va suelto —ícono y texto en el color del estado, sin píldora alrededor— y el
+  // dato viaja en un badge RELLENO. Dos píldoras anidadas gastan dos bordes y dos rellenos para
+  // separar dos cosas que ya se distinguen por el peso, y en una celda de ancho fijo ese gasto es
+  // justo el que desborda. La variante con píldora sigue existiendo para donde el chip vive suelto
+  // entre otros elementos y necesita su propio contorno.
+  if (plano) {
+    return (
+      <span className="inline-flex items-center gap-1.5 t9" title={tip} style={{ color: fg, fontWeight: 500, cursor: tip ? "help" : "default" }}>
+        {Icono && <Icono size={11} className="shrink-0" />}<span className="truncate">{texto}</span>
+        {badge != null && <span className="shrink-0 rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: fg, color: "#fff", lineHeight: 1.15 }}>{badge}</span>}
+      </span>
+    );
+  }
   return (
     <span className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9"
       title={tip} style={{ backgroundColor: resuelto ? "transparent" : bg, color: fg, border: `1px solid ${fg}${resuelto ? "33" : "40"}`, fontWeight: 500, cursor: tip ? "help" : "default" }}>
@@ -11224,12 +11237,12 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
   // «Simulación» pasa de 461 a 700. Sus tres bloques suman más que 461: el monto (104) y los chips
   // (~310, los fija «Requiere otorgamiento» con su badge) son `shrink-0`, así que el faltante lo
   // absorbía ENTERO el bloque del medio —el único con `min-w-0`— y se partía carácter a carácter.
-  const PESO_COL = { "Cliente": 294, "Línea": 230, "Oportunidad": 344, "SOW": 214, "Simulación": 700, "Ejecutivo": 140, "Asignar": 124 };
+  const PESO_COL = { "Cliente": 294, "Línea": 230, "Oportunidad": 344, "SOW": 214, "Simulación": 560, "Ejecutivo": 140, "Asignar": 124 };
   const cols = ["Cliente", ...(mostrarEjec ? ["Ejecutivo"] : []), "Línea", "Oportunidad", "SOW", "Simulación", ...(modoAsignar ? ["Asignar"] : [])];
   return (
     <div className="flex flex-1 flex-col gap-2">
       <div className="flex-1 overflow-x-auto rounded-xl bg-white p-1" style={{ border: `1px solid ${C.line}` }}>
-      <table className="w-full border-collapse t11" style={{ minWidth: mostrarEjec ? "1920px" : "1780px", tableLayout: "fixed" }}>
+      <table className="w-full border-collapse t11" style={{ minWidth: mostrarEjec ? "1780px" : "1640px", tableLayout: "fixed" }}>
         <thead><tr>{(() => {
           const totalPeso = cols.reduce((s2, c) => s2 + (PESO_COL[c] || 10), 0);
           return cols.map((h) => (
@@ -11517,7 +11530,7 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                       const deudV = (!d.agrupado && d.deudores && d.deudores.length) ? d.deudores : null;
                       const nVerif = facsC ? facsC.filter((f) => verifFactura(f, d).est !== "ok").length
                         : (deudV ? deudV.filter((x) => x && x.name && verifDeudorDeal(d, x.name, x.monto || 0).requiere).length : 0);
-                      const chip = (key, fg, bg, Icono, txt, tip, badge) => <ChipCond key={key} fg={fg} bg={bg} Icono={Icono} texto={txt} tip={tip} badge={badge} />;
+                      const chip = (key, fg, bg, Icono, txt, tip, badge) => <ChipCond key={key} plano fg={fg} bg={bg} Icono={Icono} texto={txt} tip={tip} badge={badge} />;
                       const chips = [];
                       if (evCli) {
                         const cabe = evCli.aprobada > 0 && d.monto <= evCli.disponible;
@@ -11532,19 +11545,19 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                       if (ev && !ev.vacia) {
                         const totOf = +(ev.cursable + ev.requiereComite).toFixed(1);
                         const li = ev.requiereComite === 0 ? { fg: "#16A34A", bg: "#F0FDF4", Ico: Check, txt: "Dentro de línea", badge: fmtMM(ev.cursable) }
-                          : ev.cursable === 0 ? { fg: "#EF4444", bg: "#FEF2F2", Ico: AlertTriangle, txt: "Todo a comité", badge: `${fmtMM(ev.requiereComite)} / ${fmtMM(totOf)}` }
-                          : { fg: "#7C3AED", bg: C.lilac, Ico: AlertTriangle, txt: "Requiere comité", badge: `${fmtMM(ev.requiereComite)} / ${fmtMM(totOf)}` };
+                          : ev.cursable === 0 ? { fg: "#EF4444", bg: "#FEF2F2", Ico: AlertTriangle, txt: "Todo a comité", badgeCorto: fmtMM(ev.requiereComite) }
+                          : { fg: "#7C3AED", bg: C.lilac, Ico: AlertTriangle, txt: "Requiere comité", badgeCorto: fmtMM(ev.requiereComite) };
                         const tipLin = (ev.requiereComite > 0 ? `Cursable hoy ${fmtMM(ev.cursable)} · a comité ${fmtMM(ev.requiereComite)} sobre ${fmtMM(totOf)} de oferta.\n` : "")
                           + ((ev.solicitudes || []).length
                             ? "Se le pediría al comité:\n" + ev.solicitudes.map((x) => `· ${x.pide} — ${x.deudor} ${fmtMM(x.monto)}${x.alcance ? ` (${String(x.alcance).toLowerCase()})` : ""}`).join("\n")
                             : "Toda la oferta cabe en la línea de crédito vigente.");
-                        chips.push(chip("lin", li.fg, li.bg, li.Ico, li.txt, tipLin, li.badge));
+                        chips.push(chip("lin", li.fg, li.bg, li.Ico, li.txt, tipLin, li.badgeCorto || li.badge));
                       }
                       if (aplicaGates && visC && !bloqueoC) {
                         chips.push(nPendC > 0
                           ? chip("otg", "#7C3AED", "#f5f3ff", AlertTriangle, "Requiere otorgamiento",
                               `${nPendC} de ${totCrit} criterios con excepción o rechazo re-evaluable:\n` + [...visC.exc, ...visC.rechReev].map((e, i) => `${i + 1}) #${e.n} ${e.nombre}`).join("\n"),
-                              `${nPendC}/${totCrit} criterios`)
+                              `${nPendC}/${totCrit}`)
                           : chip("otg", "#16A34A", "#F0FDF4", Check, "Otorgamiento aprobado", `Los ${totCrit} criterios del motor de otorgamiento cumplen.`));
                       }
                       if (facsC || deudV) {
@@ -11572,28 +11585,38 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                       // RAZONES SOCIALES salen de la celda —eran la línea más ancha del panel y la que lo
                       // empujaba a ocupar media tabla—. No se pierden: van en el tooltip de esa línea.
                       const sep = { borderLeft: `1px solid ${C.line}`, paddingLeft: 16 };
+                      // DOS bloques, no tres (16-09-2026, pedido del usuario con mockup). El monto y
+                      // las condiciones comparten bloque —son la misma pregunta, «qué estoy
+                      // cotizando»— y el filete queda donde sí hay un corte de sentido: lo que la
+                      // oferta ES contra lo que le FALTA. Con tres bloques y tres filetes, el del
+                      // medio era el único que podía encoger y absorbía entero el faltante de ancho.
+                      const gr = giroResumenDeal(d);
+                      const tipoGiro = gr && gr.tipos ? (gr.tipos.find((t) => t.monto > 0) || null) : null;
                       return (
                         <div className="flex items-center gap-4">
-                          {/* Todo el panel va centrado verticalmente: el bloque de chips es el más alto
-                              y fija la altura; el monto y las condiciones, pegados al borde superior,
-                              quedaban flotando sobre el aire de abajo. */}
-                          {/* 12,5 px (`t10`) y no 17 (`t14`): el monto es la referencia de la card, no su
-                              titular — lo que el ejecutivo lee acá son las compuertas de la derecha—, y a
-                              17 px se comía el ancho que le falta al bloque del medio. Es el paso de la
-                              escala más cercano a los 12 px pedidos; la escala no tiene un 12 exacto. */}
-                          <div className="t10 font-bold shrink-0 text-center" style={{ color: C.ink, minWidth: 104 }}>{fmtMM(d.monto)}</div>
-                          {/* PISO de ancho: es el único bloque que puede encoger, así que sin él absorbe
-                              todo el faltante y se parte carácter a carácter. Con el piso, lo que cede es
-                              la tabla —que ya tiene scroll horizontal— en vez de este bloque. */}
-                          <div className="t10 leading-5 min-w-0" style={{ color: C.sub, minWidth: 186, ...sep }}>
-                            <div className="truncate" title={nombres.length ? `Deudores de la oferta: ${nombres.join(" · ")}` : undefined} style={{ cursor: nombres.length ? "help" : "default" }}>
-                              <span className="font-semibold" style={{ color: C.ink }}>{nombres.length || d.facturas}</span> deudor{(nombres.length || 1) === 1 ? "" : "es"} · <span className="font-semibold" style={{ color: C.ink }}>{d.facturas}</span> factura{d.facturas === 1 ? "" : "s"}
+                          <div className="min-w-0" style={{ flex: "1 1 auto", minWidth: 228 }}>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="t13 font-bold" style={{ color: C.ink }}>{fmtMM(d.monto)}</span>
+                              {/* El tipo de giro NOMBRA el resultado de las tres compuertas, así que va
+                                  junto al monto y no entre ellas: no es algo que falte, es lo que sale. */}
+                              {tipoGiro && <ChipGiro codigo={tipoGiro.codigo} label={tipoGiro.label} monto={tipoGiro.monto}
+                                titulo={`${tipoGiro.label} · ${fmtMM(tipoGiro.monto)} de los ${fmtMM(d.giro)} a girar.${gr.motivo && tipoGiro.codigo !== "GE" ? " " + gr.motivo : ""}`} soloTipo />}
                             </div>
-                            <div className="truncate">Tasa <b style={{ color: C.ink }}>{d.tasa}</b> · Anticipo {d.anticipo} · {d.diasFin}d</div>
-                            <div className="truncate">Giro <b style={{ color: C.green }}>{fmtMM(d.giro)}</b> · Desc. {fmtMM(d.desc)} · Com. {fmtCLP(d.comision)}</div>
+                            {/* Las condiciones en una frase corrida, que envuelve. Iban en tres líneas
+                                truncadas de ancho fijo: truncar esconde el dato y el ancho fijo era el
+                                que empujaba la columna. El giro, el descuento y la comisión salen de la
+                                cara y quedan en el tooltip — la cifra que se compara acá es el monto. */}
+                            {/* DOS LÍNEAS COMO TOPE (16-09-2026, pedido del usuario): la card no puede
+                                crecer de alto según cuántos deudores traiga la oferta, o cada fila de la
+                                tabla mide distinto. El recorte va en `style` y no con `line-clamp` de
+                                Tailwind: el bundle es CORE y una clase que no trae no falla — simplemente
+                                no aplica, y el defecto se vería en el navegador del usuario y en ninguna
+                                prueba. El texto completo sigue en el tooltip. */}
+                            <div className="mt-1 t10 leading-5" style={{ color: C.sub, cursor: "help", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+                              title={`${nombres.length ? `Deudores de la oferta: ${nombres.join(" · ")}\n` : ""}Giro ${fmtMM(d.giro)} · Descuento ${fmtMM(d.desc)} · Comisión ${fmtCLP(d.comision)}`}>
+                              <b style={{ color: C.ink }}>{nombres.length || d.facturas}</b> deudor{(nombres.length || 1) === 1 ? "" : "es"} · <b style={{ color: C.ink }}>{d.facturas}</b> factura{d.facturas === 1 ? "" : "s"} · tasa <b style={{ color: C.ink }}>{d.tasa}</b> · anticipo {d.anticipo} · {d.diasFin}d
+                            </div>
                           </div>
-                          {/* Chips alineados a la IZQUIERDA: centrados, sus anchos distintos dejaban los
-                              tres íconos ⚠ en tres verticales distintas y la columna perdía su borde. */}
                           {chips.length > 0 && <div className="flex flex-col items-start gap-1 shrink-0" style={sep}>{chips}</div>}
                         </div>
                       );
@@ -12772,10 +12795,13 @@ function giroResumenDeal(deal, estado) {
 // En la fila de cada deudor no hay tal rótulo y el chip decía sólo «Normal», que entre «Otorg.» y
 // «Req. verif.» no se sabía de qué hablaba. Con la palabra adentro, el rótulo «GIRO» que llevaban la
 // cabecera y la tarjeta del tubo pasó a sobrar y se retiró: decía dos veces lo mismo.
-function ChipGiro({ codigo, label, monto, titulo, compacto }) {
+function ChipGiro({ codigo, label, monto, titulo, compacto, soloTipo }) {
   const exp = codigo === "GE";
+  // `soloTipo` deja el chip en el NOMBRE. Se usa donde el monto ya está a su lado: repetirlo ahí
+  // pone dos cifras en la misma línea que no son la misma —el monto de la oferta y lo que se gira—
+  // y a un golpe de vista se leen como una contradicción. La cifra sigue en el tooltip.
   return <ChipFila clase={compacto ? "t7" : "t9"} fg={exp ? "#16A34A" : "#7C3AED"} bg={exp ? "#F0FDF4" : "#f5f3ff"}
-    texto={label || (exp ? "Giro Express" : "Giro Normal")} badge={fmtMM(monto || 0)} tip={titulo} />;
+    texto={label || (exp ? "Giro Express" : "Giro Normal")} badge={soloTipo ? null : fmtMM(monto || 0)} tip={titulo} />;
 }
 // La asignación VIGENTE de una operación: la congelada si el cliente ya aceptó, y el cálculo del día
 // si todavía no. El congelado gana siempre — recalcular una operación aceptada movería una cifra que
