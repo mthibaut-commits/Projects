@@ -148,8 +148,8 @@ ${cap.html}
 
 /* -------------------------------------------------------------------------------------------- */
 const VISTAS = [
-  ["dashboard", "Dashboard"], ["pipeline", "Tubo diario"], ["tareas", "Tareas"],
-  ["clientes", "Clientes"], ["gestion", "Gestión"], ["operaciones", "Operaciones"],
+  ["dashboard", "Dashboard"], ["pipeline", "Gestión diaria"], ["tareas", "Tareas"],
+  ["clientes", "Clientes"], ["gestion", "Reportes"], ["operaciones", "Operaciones"],
   ["lineas", "Líneas"], ["otorgamientos", "Otorgamientos"], ["verificacion", "Verificación"],
 ];
 
@@ -174,14 +174,14 @@ if (!/^\d+$/.test(codigo)) throw new Error("no pude leer el codigo 2FA de la pan
 const casillas = pagina.locator('input[aria-label^="Dígito"]');
 for (let i = 0; i < codigo.length; i++) await casillas.nth(i).fill(codigo[i]);
 await pagina.getByRole("button", { name: "Verificar y entrar" }).click();
-await pagina.waitForFunction(() => /Tubo diario/.test(document.body.innerText || ""), null, { timeout: 60000 });
+await pagina.waitForFunction(() => /Gestión diaria/.test(document.body.innerText || ""), null, { timeout: 60000 });
 console.log("Sesion iniciada.");
 
 // El tubo arranca vacio: hay que correr el stream del inbound y esperar a que entren negocios.
 // Los controles del motor de simulacion viven en la cabecera del TUBO, no en el dashboard con el
 // que arranca la sesion, y se ubican por `title` (el texto lleva un icono al lado).
 const NEGOCIOS_MIN = 20, ESPERA_MAX = 180000;
-await pagina.locator("header nav button", { hasText: /^Tubo diario$/ }).first().click();
+await pagina.locator("header nav button", { hasText: /^Gestión diaria$/ }).first().click();
 await pagina.waitForTimeout(1200);
 await pagina.locator('button[title*="iniciar la simulación"]').first().click();
 console.log("Inbound corriendo; esperando a que se pueble el tubo…");
@@ -217,14 +217,14 @@ for (const [slug, etiqueta] of VISTAS) {
 
 // El tubo carga por defecto en TABLA (`vista` = "tabla"); el Kanban es la otra mitad de esa
 // pantalla y se llega por el desplegable de vista, asi que se captura tambien.
-await pagina.locator("header nav button", { hasText: /^Tubo diario$/ }).first().click();
+await pagina.locator("header nav button", { hasText: /^Gestión diaria$/ }).first().click();
 await pagina.waitForTimeout(1200);
 n++;
 await pagina.locator('button[title^="Cambiar la vista del tubo"]').first().click();
 await pagina.waitForTimeout(400);
 await pagina.locator("button").filter({ hasText: /^\s*Kanban\s*$/ }).first().click();
 await pagina.waitForTimeout(2500);
-await guardar(pagina, n, "tubo-kanban", "NEX Factoring · Tubo diario (Kanban)");
+await guardar(pagina, n, "tubo-kanban", "NEX Factoring · Gestión diaria (Kanban)");
 await pagina.locator('button[title^="Cambiar la vista del tubo"]').first().click();
 await pagina.waitForTimeout(400);
 await pagina.locator("button").filter({ hasText: /^\s*Tabla\s*$/ }).first().click();

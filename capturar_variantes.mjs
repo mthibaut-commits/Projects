@@ -52,8 +52,8 @@ const cod = await p.evaluate(() => (document.body.innerText.match(/el código en
 const cas = p.locator('input[aria-label^="Dígito"]');
 for (let i = 0; i < cod.length; i++) await cas.nth(i).fill(cod[i]);
 await p.getByRole("button", { name: "Verificar y entrar" }).click();
-await p.waitForFunction(() => /Tubo diario/.test(document.body.innerText || ""), null, { timeout: 60000 });
-await p.locator("header nav button", { hasText: /^Tubo diario$/ }).first().click();
+await p.waitForFunction(() => /Gestión diaria/.test(document.body.innerText || ""), null, { timeout: 60000 });
+await p.locator("header nav button", { hasText: /^Gestión diaria$/ }).first().click();
 await p.waitForTimeout(1200);
 await p.locator('button[title*="iniciar la simulación"]').first().click();
 const t0 = Date.now(); let ult = 0;

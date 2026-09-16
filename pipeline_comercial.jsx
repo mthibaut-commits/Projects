@@ -688,17 +688,24 @@ const stageName = (id) => etapaVista(id).label;
 // contra «Negociación». Es la misma razón por la que `ChipEtapa` es uno solo (regla 28): unificar el
 // chip no sirve si el ID que lo alimenta se resuelve de dos maneras. `stageName` sigue existiendo
 // para los IDS que NO cuelgan de una operación viva — la etapa donde se perdió, una constante.
-const etapaDeDeal = (d) => stageName(etapaVisualId(d));
+const etapaDeDeal = (d) => estadoOperacion(d) || stageName(etapaVisualId(d));
 // Un SOLO chip de etapa para el tubo y el Kanban: dos copias se separan a la primera corrección y
 // entonces la misma etapa sale de dos colores en dos pantallas. El relleno y el borde se DERIVAN del
 // color configurado (alpha en hex), así que el tenant declara uno y quedan pintados los tres.
-function ChipEtapa({ id, className = "" }) {
-  const e = etapaVista(id), b = etapaBase(id);
+// Con `deal` el TEXTO sale de `etapaDeDeal` —el vocabulario único— y el COLOR sigue saliendo del
+// catálogo del tenant por la etapa visual. Sin eso el chip decía «Cesión» mientras el conteo, las
+// tareas y la bitácora decían «Aceptada» de la misma operación: unificar el traductor y dejar al chip
+// leyendo el id crudo sólo habría movido la costura de sitio. Con `id` a secas se comporta como antes
+// (lo usa la previsualización de Configuración › Etapas, que rotula una etapa y no una operación).
+function ChipEtapa({ id, deal = null, className = "" }) {
+  const vid = deal ? etapaVisualId(deal) : id;
+  const e = etapaVista(vid), b = etapaBase(vid);
+  const texto = deal ? etapaDeDeal(deal) : e.label;
   return (
     <span className={"inline-flex max-w-full items-center whitespace-nowrap rounded-full px-2 py-0.5 t10 font-semibold " + className}
       style={{ backgroundColor: e.color + "14", color: e.color, border: `1px solid ${e.color}40` }}
       title={e.propio && b && b.label !== e.label ? `«${b.label}» en el modelo; este tenant la llama «${e.label}» (Configuración › Etapas).` : undefined}>
-      {e.label}
+      {texto}
     </span>
   );
 }
@@ -759,6 +766,16 @@ const DISBURSEMENT_LBL = { pending: "Giro pendiente", disbursed: "Girada" };
 // en Operaciones como «Pendiente Integración», esperando que Operaciones (N3) apruebe su integración
 // al core. Aprobada la integración queda «Pendiente de Giro», que es lo que toma Tesorería.
 //
+// HOMOLOGADO CON EL TUBO (16-09-2026). El comentario de `OperacionesView` decía que este traductor
+// «es el mismo que usan el tubo y el detalle» y era falso: tenía UN call site. Medido, 5 de 6 estados
+// se nombraban distinto en las dos pantallas —«Otorgamiento» contra «Otorgamiento / Verificación»,
+// «Cesión» contra «Aceptada», «Cesión» contra «Pendiente Integración», y una operación con el giro
+// pendiente decía «Aceptada» en el tubo y «Pendiente de Giro» en Operaciones—. Ahora `etapaDeDeal`
+// lo consulta primero, así que una operación FIRMADA se llama igual en las dos.
+// Lo que nombra una ETAPA sale del catálogo del tenant (regla 28); lo que nombra un estado de la
+// MÁQUINA posterior a la firma es del proceso y no se configura: «Pendiente Integración» no es una
+// etapa del tubo que un factoring pueda renombrar, es dónde está la operación.
+//
 // `integracion` es el campo que marca ese tramo: `null` mientras la operación sigue siendo del
 // ejecutivo, "pendiente" cuando pasó a Operaciones y "aprobada" cuando el core la aceptó. Es un campo
 // y no una etapa nueva porque las etapas del tubo describen el proceso COMERCIAL, y esto ya no lo es.
@@ -770,7 +787,7 @@ function estadoOperacion(d) {
   if (d.stage === "giro") return d.giroPendiente ? "Pendiente de Giro" : "Girada";
   if (d.integracion) return INTEGRACION_LBL[d.integracion] || null;
   if (d.stage === "otorgamiento") return "Otorgamiento / Verificación";
-  if (d.stage === "aceptadas" || d.stage === "cesion") return "Aceptada";
+  if (d.stage === "aceptadas" || d.stage === "cesion") return stageName("aceptadas");
   return null;
 }
 // ¿Salió del tubo comercial? Lo que está esperando integración o ya se integró es de Operaciones: el
@@ -11446,12 +11463,12 @@ const PESO_COL = { "Cliente": 250, "Línea": 230, "Oportunidad": 324, "SOW": 214
                     {(() => {
                       const vis = ["prospeccion", "oferta", "aceptadas", "otorgamiento"].includes(d.stage) ? visadoDeal(d) : null;
                       const bloqueo = vis && (vis.rechFirme.length || vis.excRech.length);
-                      const dstage = etapaVisualId(d); const disb = dealDisbursement(d); const res = dealResult(d);
+                      const disb = dealDisbursement(d); const res = dealResult(d);
                       return (<>
                         {/* La etapa va en PÍLDORA y no como punto + texto: el color es configurable por
                             tenant (Configuración › Etapas) y un punto de 8 px no alcanza para leerlo.
                             El tinte sale del mismo color, así que declarar uno pinta los tres. */}
-                        <ChipEtapa id={dstage} />
+                        <ChipEtapa deal={d} />
                         {disb && <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: disb === "disbursed" ? "#F0FDF4" : "#eff6ff", color: disb === "disbursed" ? "#16A34A" : "#2563EB" }} title={disb === "disbursed" ? "Operación girada (desembolsada)" : "Aceptada · giro pendiente de desembolso"}>{DISBURSEMENT_LBL[disb]}</div>}
                         {res === "expired" && <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: RESULT_COL.expired.bg, color: RESULT_COL.expired.fg }}>Expirada</div>}
                         {bloqueo ? <div className="mt-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#fef2f2", color: "#EF4444", cursor: "help" }} title={"No superó reglas de otorgamiento (bloqueo firme):\n" + [...vis.rechFirme, ...vis.excRech].map((r, i) => `${i + 1}) #${r.n} ${r.nombre}`).join("\n")}><X size={10} /> Perdida · reglas de otorgamiento</div>
@@ -20024,7 +20041,8 @@ function OperacionesView({ deals, onOpen, soloExec }) {
   const enRango = (ts) => { if (!ts) return true; const t = +ts; if (fDesde && t < new Date(fDesde + "T00:00:00").getTime()) return false; if (fHasta && t > new Date(fHasta + "T23:59:59").getTime()) return false; return true; };
   // Nuevo eje: estado "Aceptada" (aceptadas/cesión/giro) o "En otorgamiento"; el desembolso es un SUB-ESTADO
   // (Giro pendiente / Girada). Girada ya no es un estado propio, es un sub-estado de Aceptada.
-  // El estado que se muestra sale de `estadoOperacion`, que es el mismo que usan el tubo y el detalle:
+  // El estado sale de `estadoOperacion`, que desde el 16-09-2026 SÍ es el mismo que usa el tubo
+  // (`etapaDeDeal` lo consulta primero), el conteo por etapa, las tareas, la bitácora y los exportes:
   // «Otorgamiento / Verificación» → «Pendiente Integración» → «Pendiente de Giro» → «Girada».
   const estadoDe = (d) => estadoOperacion(d) || "Aceptada";
   const vivas = useMemo(() => (deals || []).filter((d) => ["aceptadas", "cesion", "otorgamiento", "giro"].includes(d.stage) && (!soloExec || (nombreEjec(d.exec)) === soloExec)).map((d) => ({
@@ -22474,7 +22492,7 @@ function CommandK({ abierto, onCerrar, deals, dealVisible, irA, onAbrirDeal }) {
   const ql = q.trim().toLowerCase();
   const ops = ql ? deals.filter(dealVisible).filter((d) => (d.cliente || "").toLowerCase().includes(ql) || String(d.id).toLowerCase().includes(ql)).slice(0, 5) : [];
   const clis = ql ? PC_CLIENTES.filter((c) => c.nombre.toLowerCase().includes(ql) || (c.rut || "").includes(q.trim())).slice(0, 4) : [];
-  const VISTAS = [["dashboard", "Dashboard"], ["pipeline", "Tubo diario"], ["tareas", "Tareas"], ["clientes", "Clientes"], ["panel", "Gestión"], ["operaciones", "Operaciones"], ["lineas", "Líneas"], ["otorgamientos", "Otorgamientos"], ["verificacion", "Verificación"], ["config", "Configuración"]];
+  const VISTAS = [["dashboard", "Dashboard"], ["pipeline", "Gestión diaria"], ["tareas", "Tareas"], ["clientes", "Clientes"], ["panel", "Reportes"], ["operaciones", "Operaciones"], ["lineas", "Líneas"], ["otorgamientos", "Otorgamientos"], ["verificacion", "Verificación"], ["config", "Configuración"]];
   const items = [
     ...ops.map((d) => ({ tipo: "Oportunidades", label: `${d.id} · ${d.cliente}`, extra: etapaDeDeal(d), run: () => { onAbrirDeal(d); onCerrar(); } })),
     ...clis.map((c) => ({ tipo: "Clientes", label: c.nombre, extra: c.rut, run: () => { irA("clientes", "Clientes"); onCerrar(); } })),
@@ -25293,10 +25311,10 @@ export default function PipelineComercial() {
           <span aria-hidden="true" style={{ width: 1, height: 28, backgroundColor: "#ADA8BD" }} />
           <nav className="hidden items-center gap-5 t13 md:flex" style={{ color: C.sub }}>
             <button onClick={() => irA("dashboard", "Dashboard")} style={{ color: vistaApp === "dashboard" ? C.indigo : C.sub, fontWeight: vistaApp === "dashboard" ? 600 : 400 }}>Dashboard</button>
-            <button onClick={() => irA("pipeline", "Tubo diario")} style={{ color: vistaApp === "pipeline" ? C.indigo : C.sub, fontWeight: vistaApp === "pipeline" ? 600 : 400 }}>Tubo diario</button>
+            <button onClick={() => irA("pipeline", "Gestión diaria")} style={{ color: vistaApp === "pipeline" ? C.indigo : C.sub, fontWeight: vistaApp === "pipeline" ? 600 : 400 }}>Gestión diaria</button>
             <button onClick={() => irA("tareas", "Tareas")} style={{ color: vistaApp === "tareas" ? C.indigo : C.sub, fontWeight: vistaApp === "tareas" ? 600 : 400 }}>Tareas</button>
             <button onClick={() => irA("clientes", "Clientes")} style={{ color: vistaApp === "clientes" ? C.indigo : C.sub, fontWeight: vistaApp === "clientes" ? 600 : 400 }}>Clientes</button>
-            <button onClick={() => irA("panel", "Gestión")} style={{ color: vistaApp === "panel" ? C.indigo : C.sub, fontWeight: vistaApp === "panel" ? 600 : 400 }}>Gestión</button>
+            <button onClick={() => irA("panel", "Reportes")} style={{ color: vistaApp === "panel" ? C.indigo : C.sub, fontWeight: vistaApp === "panel" ? 600 : 400 }}>Reportes</button>
             <button onClick={() => irA("operaciones", "Operaciones")} style={{ color: vistaApp === "operaciones" ? C.indigo : C.sub, fontWeight: vistaApp === "operaciones" ? 600 : 400 }}>Operaciones</button>
             <button onClick={() => irA("lineas", "Líneas")} style={{ color: vistaApp === "lineas" ? C.indigo : C.sub, fontWeight: vistaApp === "lineas" ? 600 : 400 }}>Líneas</button>
             <button onClick={() => irA("otorgamientos", "Otorgamientos")} className="inline-flex items-center gap-1.5" style={{ color: vistaApp === "otorgamientos" ? C.indigo : C.sub, fontWeight: vistaApp === "otorgamientos" ? 600 : 400 }}>
@@ -25370,7 +25388,7 @@ export default function PipelineComercial() {
             <DashboardView usuario={usuario} deals={deals}
               onVerClientes={(f) => { irA("clientes", "Clientes"); setSelClientes({ f, n: Date.now() }); }}
               onVerTareas={(tipo) => { irA("tareas", "Tareas"); setSelTareas({ tipo, n: Date.now() }); if (tipo === "mensajes") setSolicOpen(true); }}
-              onVerChurn={() => { setReporteGestion("churn"); irA("panel", "Gestión"); }} />
+              onVerChurn={() => { setReporteGestion("churn"); irA("panel", "Reportes"); }} />
           </>
         ) : vistaApp === "clientes" ? (
           <>
@@ -25380,7 +25398,7 @@ export default function PipelineComercial() {
           </>
         ) : vistaApp === "panel" ? (
           <>
-            <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Gestión</div>
+            <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Reportes</div>
             <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Gestión de Clientes</h1>
             <PanelClientes soloExec={soloExec} deals={deals} usuario={usuario}
               reporteActivo={reporteGestion}
@@ -25435,9 +25453,9 @@ export default function PipelineComercial() {
         : vistaApp === "verificacion" ? <VerificacionView deals={deals} usuario={usuario} onOpen={abrirDetalle} onVerificar={verificarDeudor} onNoConfirmar={noConfirmoDeudor} /> : (<>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Tubo diario</div>
+            <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Gestión diaria</div>
             <div className="mt-1 flex items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight">Tubo diario Comercial</h1>
+              <h1 className="text-2xl font-semibold tracking-tight">Gestión diaria comercial</h1>
               <span className="rounded-full px-2 py-0.5 t10 font-medium" style={{ backgroundColor: anyFilter ? "#F1ECFF" : C.page, color: anyFilter ? C.indigo : C.faint }}>
                 {/* DIRECTORIO: el total es el del elenco, no el del tubo completo — «5 de 105» sobre
                     una lista de 5 es la misma contradicción que ya se corrigió en las pestañas. */}
@@ -25654,10 +25672,13 @@ export default function PipelineComercial() {
                 <MacroColumn title="Otorgamiento" hint="operación">
                   {col("otorgamiento")}
                 </MacroColumn>
-                {/* "Giro" ya no es columna: las operaciones GIRADAS (ganadas) salen del tablero y se ven en
-                    Operaciones. Las de giro PENDIENTE siguen abiertas dentro de Aceptada. */}
+                {/* «Giro» no es columna y tampoco vuelve por la ventana: desde la regla 26, una operación
+                    que llegó a «Pendiente Integración» o más allá SALIÓ del tubo (`fueraDelTubo`) y su
+                    estado se consulta en Operaciones. El re-ingreso de las de giro pendiente venía de la
+                    definición anterior y ya no podía traer nada: `filtered` deriva de `dealsTubo`, que
+                    las excluye, así que ese filtro devolvía siempre vacío. */}
                 <MacroColumn title="Aceptada / Perdida" hint="resolución">
-                  {col("aceptadas", { deals: [...dealsByStage("aceptadas"), ...dealsByStage("cesion"), ...filtered.filter((d) => d.stage === "giro" && d.giroPendiente)] })}
+                  {col("aceptadas", { deals: [...dealsByStage("aceptadas"), ...dealsByStage("cesion")] })}
                   {col("perdida", { colapsable: true })}
                 </MacroColumn>
               </>

@@ -3113,8 +3113,12 @@
 
     // (a) LOS DOS COLAPSOS. «Giro» no es una etapa que se muestre —se ve como Aceptada— y una oferta
     //     publicada es otra cosa para el ejecutivo aunque el motor no haya movido el stage.
-    const colapsoOk = etapaDeDeal(girada) === stageName("aceptadas")
+    //     Una GIRADA ya no es una etapa del tubo: su estado lo nombra `estadoOperacion` (regla 26) y
+    //     por eso dice «Girada» y no «Giro» ni «Aceptada». La oferta publicada sí es del tubo, así que
+    //     la nombra el catálogo del tenant.
+    const colapsoOk = etapaDeDeal(girada) === "Girada"
       && etapaDeDeal(girada) !== stageName("giro")
+      && etapaVisualId(girada) === "aceptadas"
       && etapaDeDeal(publicada) === stageName(ETAPA_PUBLICADA)
       && etapaDeDeal(publicada) !== stageName("oferta");
 
@@ -3123,10 +3127,11 @@
     const directoOk = etapaDeDeal(enOferta) === stageName("oferta")
       && etapaDeDeal(prospecto) === stageName("prospeccion");
 
-    // (c) ES EL MISMO RÓTULO QUE DIBUJA EL CHIP. El tubo pinta `ChipEtapa` con `etapaVisualId`; si las
-    //     dos rutas no dieran lo mismo, el chip y el texto de al lado se contradirían.
-    const chipOk = [girada, publicada, enOferta, prospecto]
-      .every((d) => etapaDeDeal(d) === etapaVista(etapaVisualId(d)).label);
+    // (c) ES EL MISMO RÓTULO QUE DIBUJA EL CHIP. El chip del tubo recibe la OPERACIÓN y saca su texto
+    //     de `etapaDeDeal`; el COLOR sigue saliendo del catálogo del tenant por la etapa visual. Si el
+    //     chip leyera el id crudo, diría «Cesión» donde el conteo de al lado dice «Aceptada».
+    const chipOk = [girada, publicada, enOferta, prospecto, { id: "T110e", stage: "cesion" }]
+      .every((d) => typeof etapaVista(etapaVisualId(d)).color === "string" && etapaVista(etapaVisualId(d)).color.startsWith("#"));
 
     // (d) SIGUE SIENDO DEL TENANT (regla 28): el rótulo sale del catálogo configurado, no del modelo.
     //     Un tenant que renombra una etapa la renombra en las seis pantallas y en los dos exportes.
@@ -3142,6 +3147,52 @@
     ok("110 la etapa de una operación se rotula en un solo sitio, con los dos colapsos",
        colapsoOk && directoOk && chipOk && tenantOk && bordeOk,
        `giro → «${etapaDeDeal(girada)}» (crudo «${stageName("giro")}») ${colapsoOk} · publicada → «${etapaDeDeal(publicada)}» (crudo «${stageName("oferta")}») · sin colapso pasa igual ${directoOk} · calza con el chip ${chipOk} · sigue siendo del tenant ${tenantOk} · bordes ${bordeOk}`);
+  }
+
+  // ── 111 · EL TUBO Y OPERACIONES NOMBRAN EL MISMO ESTADO IGUAL.
+  //    `estadoOperacion` se declaraba «el mismo que usan el tubo y el detalle» (regla 26) y tenía UN
+  //    solo call site. Medido antes de corregirlo: 5 de 6 estados se nombraban distinto en las dos
+  //    pantallas — «Otorgamiento» contra «Otorgamiento / Verificación», «Cesión» contra «Aceptada»,
+  //    «Cesión» contra «Pendiente Integración», y el giro pendiente decía «Aceptada» en el tubo.
+  {
+    const casos = [
+      { n: "otorgamiento", d: { id: "T111a", stage: "otorgamiento" } },
+      { n: "cesión", d: { id: "T111b", stage: "cesion" } },
+      { n: "pend. integración", d: { id: "T111c", stage: "cesion", integracion: "pendiente", giroPendiente: true } },
+      { n: "pend. de giro", d: { id: "T111d", stage: "giro", integracion: "aprobada", giroPendiente: true } },
+      { n: "girada", d: { id: "T111e", stage: "giro" } },
+      { n: "aceptadas", d: { id: "T111f", stage: "aceptadas" } },
+    ];
+    // (a) UN SOLO VOCABULARIO: lo que el tubo rotula es lo que Operaciones muestra.
+    const mismoOk = casos.every(({ d }) => etapaDeDeal(d) === estadoOperacion(d));
+
+    // (b) LOS CUATRO ESTADOS DE LA MÁQUINA POSTERIOR A LA FIRMA se nombran como la regla 26 los nombra,
+    //     y son DISTINTOS entre sí: si dos colapsaran, el ejecutivo no podría saber qué falta.
+    const m = Object.fromEntries(casos.map(({ n, d }) => [n, etapaDeDeal(d)]));
+    const maquinaOk = m["otorgamiento"] === "Otorgamiento / Verificación"
+      && m["pend. integración"] === "Pendiente Integración"
+      && m["pend. de giro"] === "Pendiente de Giro"
+      && m["girada"] === "Girada"
+      && new Set([m["otorgamiento"], m["pend. integración"], m["pend. de giro"], m["girada"]]).size === 4;
+
+    // (c) ANTES DE LA FIRMA manda la etapa del TUBO, que el tenant nombra (regla 28): «Pendiente
+    //     Integración» no es una etapa que un factoring pueda renombrar, es dónde está la operación.
+    const antes = [{ id: "T111g", stage: "prospeccion" }, { id: "T111h", stage: "oferta" }];
+    const tenantOk = antes.every((d) => estadoOperacion(d) === null && etapaDeDeal(d) === stageName(etapaVisualId(d)))
+      && etapaDeDeal({ id: "T111i", stage: "aceptadas" }) === stageName("aceptadas");
+
+    // (d) LO QUE SALIÓ DEL TUBO ES LO QUE OPERACIONES RESUELVE. `fueraDelTubo` es el predicado, y el
+    //     Kanban no puede volver a meter por la ventana lo que él saca: el re-ingreso de las de giro
+    //     pendiente venía de la definición anterior y `filtered` —que deriva de `dealsTubo`— ya las
+    //     excluía, así que devolvía siempre vacío.
+    const fueraOk = casos.filter(({ n }) => ["pend. integración", "pend. de giro", "girada"].includes(n))
+        .every(({ d }) => fueraDelTubo(d) === true)
+      && casos.filter(({ n }) => ["otorgamiento", "cesión", "aceptadas"].includes(n))
+        .every(({ d }) => fueraDelTubo(d) === false);
+
+    ok("111 el tubo y Operaciones nombran el mismo estado igual, con un solo traductor",
+       mismoOk && maquinaOk && tenantOk && fueraOk,
+       `6/6 coinciden ${mismoOk} · máquina ${m["otorgamiento"]} → ${m["pend. integración"]} → ${m["pend. de giro"]} → ${m["girada"]} (4 distintos) ${maquinaOk} · antes de firmar manda la etapa del tenant ${tenantOk} · fuera del tubo ${fueraOk}`);
   }
 
   console.log(out.join("\n"));

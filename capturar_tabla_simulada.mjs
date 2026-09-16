@@ -1,4 +1,4 @@
-/* Tubo diario en vista TABLA con UNA operación ya simulada.
+/* Gestión diaria en vista TABLA con UNA operación ya simulada.
    El tubo arranca todo en «Sin simular»: la simulación se hace en la PESTAÑA DEL DETALLE, que es
    otro documento, y vuelve al tubo por el mensaje `nex-simulado` (ver el emisor en simularOferta y
    el receptor en el onMsg del panel). Así que se arma la oferta en el detalle, se cierra esa
@@ -57,8 +57,8 @@ const cod = await p.evaluate(() => (document.body.innerText.match(/el código en
 const cas = p.locator('input[aria-label^="Dígito"]');
 for (let i = 0; i < cod.length; i++) await cas.nth(i).fill(cod[i]);
 await p.getByRole("button", { name: "Verificar y entrar" }).click();
-await p.waitForFunction(() => /Tubo diario/.test(document.body.innerText || ""), null, { timeout: 60000 });
-await p.locator("header nav button", { hasText: /^Tubo diario$/ }).first().click();
+await p.waitForFunction(() => /Gestión diaria/.test(document.body.innerText || ""), null, { timeout: 60000 });
+await p.locator("header nav button", { hasText: /^Gestión diaria$/ }).first().click();
 await p.waitForTimeout(1200);
 await p.locator('button[title*="iniciar la simulación"]').first().click();
 const t0 = Date.now(); let ult = 0;
@@ -120,7 +120,7 @@ await p.waitForTimeout(2500);
 const cap = await p.evaluate(EXPR);
 if (cap.error) { console.log("! " + cap.error); process.exit(1); }
 const nombre = "tubo-tabla-simulada";
-writeFileSync(join(SALIDA, nombre + ".html"), envolver("NEX Factoring · Tubo diario (Tabla) — con una operación simulada", cap), "utf8");
+writeFileSync(join(SALIDA, nombre + ".html"), envolver("NEX Factoring · Gestión diaria (Tabla) — con una operación simulada", cap), "utf8");
 await p.screenshot({ path: join(SALIDA, nombre + ".png"), fullPage: true });
 console.log(`${nombre}  ${cap.podadas} reglas · ${cap.clases} clases · ${cap.alto}px`);
 await nav.close();
