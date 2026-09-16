@@ -4587,8 +4587,9 @@ function Pill({ children, style, className = "" }) {
 // Chip «Nuevo»: el CEDENTE no tiene operaciones previas con Security. Es exactamente la condición que
 // dispara la compuerta V00 del predictor —primera operación ⇒ se verifican TODAS las facturas, sea cual
 // sea el segmento del deudor—, así que verlo en el tubo explica por qué esa operación arrastra tanta
-// verificación antes de abrir el detalle. Califica al CLIENTE, no a la oportunidad: por eso acompaña al
-// chip de SOW (columna Cliente) y al del ejecutivo (cabecera del detalle), y no a los de la oferta.
+// verificación antes de abrir el detalle. Califica al CLIENTE, no a la oportunidad: por eso va pegado a
+// su RAZÓN SOCIAL (columna Cliente del tubo) y al lado del ejecutivo en la cabecera del detalle, y no
+// entre los chips de la oferta ni junto al de SOW, que mide otra cosa.
 // No se deriva de `sowTendencia`: un cliente puede tener SOW —opera con la competencia— y aun así ser
 // su primera operación con nosotros. Escala por parámetro porque sus vecinos no comparten tamaño: t9
 // junto a ChipCond en la tabla, t10 junto a los Pill de la cabecera.
@@ -7313,10 +7314,14 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
     if (k === "borrador") { onClose(); return; }
     if (k === "rechazar") { setRechazoModal(true); return; }
     if (deal.ofertaCerrada || deal.negocioNum) return;
-    // Sin `datosCurse` no hay modal —el menú «Acciones» de las otras pestañas no tiene la evaluación
-    // de línea— y entonces tampoco hay dónde elegir cómo publicar: se asume la vía electrónica, que
-    // es el default del modal y la que no deja obligaciones abiertas.
-    if (datosCurse) setCursarModal(datosCurse); else intentarCerrar("electronica");
+    // CERRAR LA OFERTA PASA SIEMPRE POR EL MODAL. Las dos compuertas del cierre —que no queden
+    // excepciones sin justificar y que el «Monto a Girar» sea positivo— viven en el botón de
+    // `ModalCurse`, así que llegar acá sin `datosCurse` era cerrar sin pasar por ninguna de las dos.
+    // Antes se asumía la vía electrónica y se cerraba igual. El menú «Acciones» ya no ofrece cerrar,
+    // pero la negativa va acá y no sólo en el render: la pantalla que oculta el botón no es el
+    // control (regla 24).
+    if (!datosCurse) return;
+    setCursarModal(datosCurse);
   };
   const panelAcciones = (seleccionable) => (
     <div className="absolute right-0 z-40 mt-1 w-72 rounded-lg bg-white p-1 shadow-xl" style={{ border: `1px solid ${C.line}` }} onMouseLeave={() => setAccMenu(false)}>
@@ -7328,7 +7333,11 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
       ) : (
         <>
           <div className="px-2 py-1 t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>{seleccionable ? "Acción del botón" : "Acciones"}</div>
-          {ACCIONES_PPAL.map((a) => {
+          {/* «Cerrar oferta y publicar» sólo como elección del botón principal, que es el único camino
+              que abre `ModalCurse` y por lo tanto el único que pasa por sus compuertas. Desde el menú
+              «Acciones» de las otras pestañas no se cierra ni se avanza de etapa: ahí el ejecutivo no
+              está armando la oferta. */}
+          {ACCIONES_PPAL.filter((a) => seleccionable || a.k !== "cerrar").map((a) => {
             const bloq = a.k === "cerrar" && !!(deal.ofertaCerrada || deal.negocioNum);
             const puesta = seleccionable && accionSel === a.k;
             return (
@@ -7359,7 +7368,27 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               <RotateCcw size={12} style={{ color: C.faint }} /> Reabrir para modificar
             </button>
           )}
+          {/* ELIMINAR LA SIMULACIÓN Y VACIAR LA OFERTA (regla 13-quaterdecies). Vivía sólo en el menú
+              «Opciones» de la oferta, que está en Negocio › Detalle —justo la pestaña donde este menú
+              NO se muestra—, así que desde las demás no había forma de llegar. Es lo único destructivo
+              de acá y va en rojo, con su motivo escrito cuando no se puede: un destino que desaparece
+              sin explicación deja al ejecutivo sin dónde enterarse de por qué (regla 24). */}
+          {!seleccionable && (<>
+            <div className="mx-2 my-1" style={{ borderTop: `1px solid ${C.line}` }} />
+            <button onClick={() => { setAccMenu(false); setConfirmReset(true); }} disabled={!puedeReiniciar}
+              title={motivoNoReset || "Vacía la oferta y borra la simulación: la oportunidad queda como antes de armarla, con todas sus facturas disponibles otra vez"}
+              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 t11 font-medium text-left disabled:opacity-40 disabled:cursor-not-allowed" style={{ color: C.red }}>
+              <RotateCcw size={12} /> Eliminar la simulación y vaciar la oferta
+            </button>
+            {!puedeReiniciar && <div className="px-2 pb-1 t9" style={{ color: C.faint }}>{motivoNoReset}</div>}
+          </>)}
           {(() => {
+            // DESDE «ACCIONES» NO SE AVANZA DE ETAPA (16-09-2026, pedido del usuario). La etapa la mueve
+            // el proceso —cerrar y publicar, la firma del cliente, el otorgamiento, la verificación y la
+            // aprobación de la integración al core— y un salto manual desde un menú genérico se lleva
+            // por delante justo los controles que cada tramo impone. Sigue existiendo como elección del
+            // botón principal, en Negocio › Detalle, que es donde se arma la oferta.
+            if (!seleccionable) return null;
             // No se retrocede, y tres etapas no son avance manual: «Aceptada» la fija el cliente al
             // firmar el cierre, «Cesión» la fija que las facturas queden cedidas, y a «Perdida» se
             // llega por Rechazar, que exige motivo. «Girar» además pide que el cliente haya aceptado:
@@ -9121,7 +9150,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                             <span>Otras facturas de este deudor ({otras.length}) · {dOtras.facturas ? fmtMM(dOtras.monto) : "sin disponibles"}</span>
                                             {ab ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                                           </button>
-                                          {ab && <div className="mt-1">{headOtra()}{otras.slice(0, 12).map((f) => filaOtraD(f))}{otras.length > 12 && <div className="pt-1 t9" style={{ color: C.faint }}>y {otras.length - 12} más en «Deudores disponibles».</div>}</div>}
+                                          {ab && <div className="mt-1">{headOtra()}{otras.slice(0, 12).map((f) => filaOtraD(f))}{otras.length > 12 && <div className="pt-1 t9" style={{ color: C.faint }}>y {otras.length - 12} más en «Documentos disponibles».</div>}</div>}
                                         </div>
                                       );
                                     })()}</div></div>}
@@ -9140,7 +9169,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     las dos mitades de la misma decision y antes se leian con dos formatos
                                     distintos, uno con el conteo entre parentesis y otro con chips. */}
                                 <span className="flex flex-wrap items-center gap-2">
-                                  <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Deudores disponibles</span>
+                                  <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Documentos disponibles</span>
                                   {/* Misma frase corrida que «Documentos en la oferta», por la misma razón. */}
                                   <span className="t9 font-semibold uppercase tracking-wide" style={{ color: C.sub }}
                                     title={bloqOt ? `${facsOt} factura${facsOt === 1 ? "" : "s"} incorporable${facsOt === 1 ? "" : "s"}; ${bloqOt} más no se puede${bloqOt === 1 ? "" : "n"} agregar y no cuenta${bloqOt === 1 ? "" : "n"} en el monto.` : "Deudores con facturas que aún no están en la oferta, disponibles para incorporar"}>{dq ? `${deudOtF.length} de ${deudOtVis.length}` : deudOtVis.length} deudor{!dq && deudOtVis.length === 1 ? "" : "es"} · {facsOt} factura{facsOt === 1 ? "" : "s"} por</span>
@@ -9150,7 +9179,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 <span style={{ color: C.indigo }}>{otrasAbierto ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</span>
                               </button>
                               {otrasAbierto && <div className="mt-1.5 rounded-xl p-2.5" style={{ backgroundColor: C.lilac }}>
-                              <div className="mb-1.5 t9" style={{ color: C.sub }}>Deudores con facturas del cliente que aún NO son parte de la oferta. Agrega una factura y su deudor pasará arriba; si retiras todas las de un deudor, su acordeón vuelve aquí.</div>
+                              <div className="mb-1.5 t9" style={{ color: C.sub }}>Facturas del cliente que aún NO son parte de la oferta. Agrega una factura y su deudor pasará arriba; si retiras todas las de un deudor, su acordeón vuelve aquí.</div>
                                 {/* Pestañas: parten la lista por lo ÚNICO que decide si se puede cursar hoy.
                                     Underline purple del sistema, con el conteo al lado — una pestaña vacía
                                     tiene que poder verse antes de entrar, o el ejecutivo la abre para nada. */}
@@ -11223,7 +11252,13 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                     badges que la califican —giro, expirada, bloqueo firme de reglas— viajan con ella. */}
                 <td className="px-2 py-2.5 align-top">
                   <button onClick={() => onOpen(d)} className="text-left">
-                    <div className="font-medium" style={{ color: C.indigo }}>{d.cliente}</div>
+                    {/* «NUEVO» VA PEGADO A LA RAZÓN SOCIAL (16-09-2026, pedido del usuario): califica al
+                        CLIENTE, así que su sitio es junto a su nombre y no una fila más abajo, donde
+                        competía con el chip de SOW —que es un atributo distinto— y se leía como si
+                        describiera la relación comercial. Va en flujo INLINE y no como hermano flex:
+                        el nombre puede ocupar dos líneas en 294 px y el chip tiene que seguir a la
+                        última palabra, no quedar al costado del bloque entero. */}
+                    <div className="font-medium" style={{ color: C.indigo }}>{d.cliente}{esPrimeraOperacionCliente(d) && <TagNuevo clase="t9 ml-1.5 align-middle" />}</div>
                     <div className="t9" style={{ color: C.faint }}><span className="font-semibold" style={{ color: TAG_COLORS[d.tag]?.fg || C.sub }}>{d.tag}</span> {d.id}</div>
                     <div className="mt-1">
                     {(() => {
@@ -11247,17 +11282,9 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
                         que su lugar es esta columna. En «Condición» convivía con las tres compuertas que
                         sí deciden si la oferta avanza, y se leía como una más. */}
                     {(() => {
-                      const sm = sowEstrategia(d); const nuevo = esPrimeraOperacionCliente(d);
-                      if (!sm && !nuevo) return null;
-                      // Envuelve en una fila propia: «Nuevo» se muestra tenga o no SOW el cliente —son
-                      // dos atributos independientes— y con `flex-wrap` el segundo chip baja de línea
-                      // en vez de desbordar el ancho fijo de la columna.
-                      return (
-                        <div className="mt-1 flex flex-wrap items-center gap-1">
-                          {sm && <ChipCond fg={sm.fg} bg={sm.bg} Icono={sm.Icon} texto={`SOW ${sm.lab}`} tip={sm.tip} />}
-                          {nuevo && <TagNuevo />}
-                        </div>
-                      );
+                      const sm = sowEstrategia(d);
+                      if (!sm) return null;
+                      return <div className="mt-1 flex flex-wrap items-center gap-1"><ChipCond fg={sm.fg} bg={sm.bg} Icono={sm.Icon} texto={`SOW ${sm.lab}`} tip={sm.tip} /></div>;
                     })()}
                   </button>
                 </td>
