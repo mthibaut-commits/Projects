@@ -680,6 +680,15 @@ function etapaVista(id) {
 // ejecutivo es otra cosa aunque el `stage` no se haya movido.
 const etapaVisualId = (d) => (d && d.stage === "oferta" && ofertaPublicada(d)) ? ETAPA_PUBLICADA : displayStageId(d);
 const stageName = (id) => etapaVista(id).label;
+// EL RÓTULO DE ETAPA DE UNA OPERACIÓN SALE DE ACÁ, no de `stageName(d.stage)`. `stageName` recibe un
+// ID y no sabe de los dos colapsos que la pantalla aplica —«giro» se muestra como Aceptada, y una
+// oferta publicada es otra cosa aunque el stage no se haya movido—, así que quien le pasaba el stage
+// crudo rotulaba OTRA etapa: medido, la misma operación decía «Aceptada» en el tubo y «Giro» en el
+// conteo por etapa, las tareas, la bitácora, el Command-K y los dos exportes; y «Oferta publicada»
+// contra «Negociación». Es la misma razón por la que `ChipEtapa` es uno solo (regla 28): unificar el
+// chip no sirve si el ID que lo alimenta se resuelve de dos maneras. `stageName` sigue existiendo
+// para los IDS que NO cuelgan de una operación viva — la etapa donde se perdió, una constante.
+const etapaDeDeal = (d) => stageName(etapaVisualId(d));
 // Un SOLO chip de etapa para el tubo y el Kanban: dos copias se separan a la primera corrección y
 // entonces la misma etapa sale de dos colores en dos pantallas. El relleno y el borde se DERIVAN del
 // color configurado (alpha en hex), así que el tenant declara uno y quedan pintados los tres.
@@ -18511,7 +18520,7 @@ function CfgOportunidades({ deals, onMigrarExec }) {
   const alcance = todas.filter((d) => EN_GESTION.includes(d.stage));
   const fuera = todas.length - alcance.length;
   const porEtapa = {};
-  alcance.forEach((d) => { const k = stageName(d.stage) || d.stage; porEtapa[k] = (porEtapa[k] || 0) + 1; });
+  alcance.forEach((d) => { const k = etapaDeDeal(d) || d.stage; porEtapa[k] = (porEtapa[k] || 0) + 1; });
   const monto = alcance.reduce((a, d) => a + (d.monto || 0), 0);
   const opciones = Object.keys(EXECS);
   const ejecutar = () => {
@@ -19146,7 +19155,7 @@ function seedTareasDemo(deals, ejecName) {
   // Tareas de gestión asignadas de ejemplo (como si un jefe las creara desde el Sankey).
   const acts = pick((d) => ["oferta", "prospeccion"].includes(d.stage), 2);
   const tpl = [{ pre: "Revisar tasa", cat: "comercial", d: 1 }, { pre: "Llevar a comité de riesgo", cat: "riesgo", d: 5 }];
-  acts.forEach((d, i) => { const t = tpl[i] || tpl[0]; addPanelTarea({ texto: `${t.pre} · ${d.cliente}`, cat: t.cat, dias: t.d, autor: jefe, para: [nombreEjec(d.exec)], ops: [d.id], nodo: stageName(d.stage) }); });
+  acts.forEach((d, i) => { const t = tpl[i] || tpl[0]; addPanelTarea({ texto: `${t.pre} · ${d.cliente}`, cat: t.cat, dias: t.d, autor: jefe, para: [nombreEjec(d.exec)], ops: [d.id], nodo: etapaDeDeal(d) }); });
 }
 
 // Tab «Tareas»: bandeja de trabajo del ejecutivo, como una LISTA tipo pipeline (tipo de tarea + detalle
@@ -19177,7 +19186,7 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
   // Modelo de fila unificado (prioridad ó tarea asignada).
   const rowsPrio = prios.map(({ d, at, prio }) => ({
     kind: "prio", id: d.id, deal: d, tipo: "Prioridad", tipoCol: "#C2410C", tipoBg: "#FFF7ED", star: true,
-    cliente: d.cliente, ref: `${d.id} · ${nombreEjec(d.exec)}`, detalle: `${stageName(d.stage)}${d.deudor ? ` · ${d.deudor}` : ""}`,
+    cliente: d.cliente, ref: `${d.id} · ${nombreEjec(d.exec)}`, detalle: `${etapaDeDeal(d)}${d.deudor ? ` · ${d.deudor}` : ""}`,
     monto: d.monto || 0, quien: prio.porNombre, at, hecha: at.atendida, venceTs: null,
   }));
   const rowsTask = tareas.map((t) => { const op = (t.ops || []).map(dealDe).filter(Boolean)[0]; const a = areaMeta(t.cat); return ({
@@ -22467,7 +22476,7 @@ function CommandK({ abierto, onCerrar, deals, dealVisible, irA, onAbrirDeal }) {
   const clis = ql ? PC_CLIENTES.filter((c) => c.nombre.toLowerCase().includes(ql) || (c.rut || "").includes(q.trim())).slice(0, 4) : [];
   const VISTAS = [["dashboard", "Dashboard"], ["pipeline", "Tubo diario"], ["tareas", "Tareas"], ["clientes", "Clientes"], ["panel", "Gestión"], ["operaciones", "Operaciones"], ["lineas", "Líneas"], ["otorgamientos", "Otorgamientos"], ["verificacion", "Verificación"], ["config", "Configuración"]];
   const items = [
-    ...ops.map((d) => ({ tipo: "Oportunidades", label: `${d.id} · ${d.cliente}`, extra: stageName(d.stage), run: () => { onAbrirDeal(d); onCerrar(); } })),
+    ...ops.map((d) => ({ tipo: "Oportunidades", label: `${d.id} · ${d.cliente}`, extra: etapaDeDeal(d), run: () => { onAbrirDeal(d); onCerrar(); } })),
     ...clis.map((c) => ({ tipo: "Clientes", label: c.nombre, extra: c.rut, run: () => { irA("clientes", "Clientes"); onCerrar(); } })),
     ...VISTAS.filter(([, l]) => !ql || l.toLowerCase().includes(ql)).map(([id, l]) => ({ tipo: "Ir a", label: l, extra: "", run: () => { irA(id, l); onCerrar(); } })),
   ];
@@ -23124,7 +23133,7 @@ export default function PipelineComercial() {
     const rows = casosDe(id);
     const headers = ["ID", "Cliente", "Deudor", "Sector", "Etapa", "Facturas", "Monto", "Tasa", "Dias_fin", "Giro", "Desc", "Comision_CLP", "Ejecutivo", "Estado", "Vencimiento"];
     const esc = (v) => `"${String(celdaSegura(v)).replace(/"/g, '""')}"`;
-    const lineas = rows.map((d) => [d.id, d.cliente, d.deudor, d.sector, (STAGES.find((s) => s.id === d.stage)?.name || d.stage), d.facturas, d.monto, d.tasa, d.diasFin, d.giro, d.desc, d.comision, (EXECS[d.exec] || d.exec), d.status, d.fechaVenc].map(esc).join(";"));
+    const lineas = rows.map((d) => [d.id, d.cliente, d.deudor, d.sector, etapaDeDeal(d), d.facturas, d.monto, d.tasa, d.diasFin, d.giro, d.desc, d.comision, (EXECS[d.exec] || d.exec), d.status, d.fechaVenc].map(esc).join(";"));
     const csv = String.fromCharCode(0xFEFF) + [headers.join(";"), ...lineas].join("\n");
     try {
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -23139,7 +23148,7 @@ export default function PipelineComercial() {
   const exportarGrilla = async () => {
     const rows = filtered;
     const headers = ["ID", "Cliente", "Ejecutivo", "Producto", "Monto", "Facturas", "Tasa", "Anticipo", "Dias_fin", "Giro", "Desc", "Comision_CLP", "Etapa", "Deudor_principal", "Estado"];
-    const aoa = [headers, ...rows.map((d) => [d.id, d.cliente, (EXECS[d.exec] || d.exec), d.tag, d.monto, d.facturas, d.tasa, d.anticipo, d.diasFin, d.giro, d.desc, d.comision, (STAGES.find((s) => s.id === d.stage)?.name || d.stage), d.deudor, d.status])];
+    const aoa = [headers, ...rows.map((d) => [d.id, d.cliente, (EXECS[d.exec] || d.exec), d.tag, d.monto, d.facturas, d.tasa, d.anticipo, d.diasFin, d.giro, d.desc, d.comision, etapaDeDeal(d), d.deudor, d.status])];
     try {
       const XLSX = await cargarXLSX();
       const ws = XLSX.utils.aoa_to_sheet(aoa.map(filaSegura));

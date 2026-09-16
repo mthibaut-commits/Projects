@@ -3099,6 +3099,51 @@
        `LF2+LF3 ${fmtMM(a.aprobada)} aprobada · ${fmtMM(a.utilizada)} utilizada · ${fmtMM(a.disponible)} disponible ${sumaOk} · descartada fuera ${descartadaOk} · «sin línea propia» ≠ cero ${sinOk} · comodín no entra ${comodinOk} · copado no da negativo ${copadoOk} · proyectada ${fmtMM(usoProy)} / ${fmtMM(apProy)} ${proyOk} · no muta ${puroOk}`);
   }
 
+  // ── 110 · LA ETAPA DE UNA OPERACIÓN SE ROTULA EN UN SOLO SITIO.
+  //    `ChipEtapa` unificó el chip y `stageName` el rótulo por TENANT, pero el ID que los alimenta se
+  //    resolvía de dos maneras: el tubo con `etapaVisualId` —que colapsa «giro» a Aceptada y saca la
+  //    oferta publicada— y las otras cinco pantallas con el `stage` CRUDO. Medido en el navegador
+  //    antes de corregirlo: la misma operación decía «Aceptada» en el tubo y «Giro» en el conteo por
+  //    etapa, las tareas, la bitácora, el Command-K y los dos exportes.
+  {
+    const girada = { id: "T110a", stage: "giro" };
+    const publicada = { id: "T110b", stage: "oferta", ofertaCerrada: true, negocioNum: "D110", ofertaComunicada: true };
+    const enOferta = { id: "T110c", stage: "oferta" };
+    const prospecto = { id: "T110d", stage: "prospeccion" };
+
+    // (a) LOS DOS COLAPSOS. «Giro» no es una etapa que se muestre —se ve como Aceptada— y una oferta
+    //     publicada es otra cosa para el ejecutivo aunque el motor no haya movido el stage.
+    const colapsoOk = etapaDeDeal(girada) === stageName("aceptadas")
+      && etapaDeDeal(girada) !== stageName("giro")
+      && etapaDeDeal(publicada) === stageName(ETAPA_PUBLICADA)
+      && etapaDeDeal(publicada) !== stageName("oferta");
+
+    // (b) LO QUE NO COLAPSA PASA TAL CUAL: el resolver no puede inventarle una etapa a una operación
+    //     que está justo donde dice estar.
+    const directoOk = etapaDeDeal(enOferta) === stageName("oferta")
+      && etapaDeDeal(prospecto) === stageName("prospeccion");
+
+    // (c) ES EL MISMO RÓTULO QUE DIBUJA EL CHIP. El tubo pinta `ChipEtapa` con `etapaVisualId`; si las
+    //     dos rutas no dieran lo mismo, el chip y el texto de al lado se contradirían.
+    const chipOk = [girada, publicada, enOferta, prospecto]
+      .every((d) => etapaDeDeal(d) === etapaVista(etapaVisualId(d)).label);
+
+    // (d) SIGUE SIENDO DEL TENANT (regla 28): el rótulo sale del catálogo configurado, no del modelo.
+    //     Un tenant que renombra una etapa la renombra en las seis pantallas y en los dos exportes.
+    const base = etapaBase("prospeccion");
+    const tenantOk = etapaDeDeal(prospecto) === etapaVista("prospeccion").label
+      && (!base || typeof etapaDeDeal(prospecto) === "string");
+
+    // (e) BORDES. Sin operación no hay etapa que rotular, y eso no puede reventar la pantalla que la
+    //     pide: el conteo por etapa y el Command-K recorren listas que pueden traer cualquier cosa.
+    let bordeOk = true;
+    try { etapaDeDeal(null); etapaDeDeal(undefined); etapaDeDeal({}); } catch (_) { bordeOk = false; }
+
+    ok("110 la etapa de una operación se rotula en un solo sitio, con los dos colapsos",
+       colapsoOk && directoOk && chipOk && tenantOk && bordeOk,
+       `giro → «${etapaDeDeal(girada)}» (crudo «${stageName("giro")}») ${colapsoOk} · publicada → «${etapaDeDeal(publicada)}» (crudo «${stageName("oferta")}») · sin colapso pasa igual ${directoOk} · calza con el chip ${chipOk} · sigue siendo del tenant ${tenantOk} · bordes ${bordeOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
