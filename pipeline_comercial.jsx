@@ -699,7 +699,7 @@ function ChipEtapa({ id, className = "" }) {
 // transición de estado emitida por la mutación correspondiente.
 // QUÉ SACA A UNA OPORTUNIDAD DE PROSPECCIÓN: la SIMULACIÓN, y nada más. «Oferta y Negociación»
 // significa que hay una oferta que negociar, y una oferta sin precio no es una oferta: la columna
-// «Simulación» de la tarjeta lo dice con todas sus letras —«Sin simular»— mientras la etapa afirma lo
+// «Oferta» de la tarjeta lo dice con todas sus letras —«Sin simular»— mientras la etapa afirma lo
 // contrario. Antes promovía cualquier EDICIÓN del paquete (incorporar, retirar, actualizar), así que
 // una oportunidad que el inbound detectó y que alguien apenas tocó ya figuraba en negociación con el
 // cliente, sin tasa, sin plazo y sin monto a girar.
@@ -11191,7 +11191,9 @@ function ChipCond({ fg, bg, Icono, texto, tip, badge, plano }) {
     return (
       <span className="inline-flex items-center gap-1.5 t9" title={tip} style={{ color: fg, fontWeight: 500, cursor: tip ? "help" : "default" }}>
         {Icono && <Icono size={11} className="shrink-0" />}<span className="truncate">{texto}</span>
-        {badge != null && <span className="shrink-0 rounded-full px-1.5 py-0.5 t8 font-semibold" style={{ backgroundColor: fg, color: "#fff", lineHeight: 1.15 }}>{badge}</span>}
+        {/* `t9` y el mismo relleno que las píldoras de la columna Oportunidad: son dos columnas de la
+            misma tabla y con tamaños distintos una se lee como si pesara más que la otra. */}
+        {badge != null && <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: fg, color: "#fff" }}>{badge}</span>}
       </span>
     );
   }
@@ -11209,11 +11211,11 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
   // Ejecutivo: sólo se muestra a jefaturas/gerencias (más de un ejecutivo). Producto va dentro de
   // "Oportunidad" (p. ej. «Factoring OP-D922»). La columna de acciones sólo existe para asignar (Otras Empresas).
   // «Cliente» identifica el negocio (cliente, producto, OP, etapa y SOW); «Línea» es la del cliente;
-  // «Oportunidad» lo que el motor encontró disponible; «Simulación» lo que el ejecutivo seleccionó y
+  // «Oportunidad» lo que el motor encontró disponible; «Oferta» lo que el ejecutivo seleccionó y
   // coteó; «Condición» las compuertas que deciden si avanza.
   // REPARTO: las tres primeras se llevan el 65% del ancho (892 de 1372). Son las que están siempre
   // pobladas —identidad, línea y análisis de deudores salen de la corrida horaria—, mientras que
-  // «Simulación» y «Condición» quedan vacías hasta que alguien simula, así que reservarles la mitad
+  // «Oferta» y «Condición» quedan vacías hasta que alguien simula, así que reservarles la mitad
   // de la tabla dejaba media pantalla en blanco en el estado normal del tubo.
   // Los anchos salen del contenido real: Cliente 372 por el chip de SOW («SOW 0% · en competencia»,
   // ~155px) y los nombres largos; Oportunidad 370 para que su primera línea —«26 deudores · 31
@@ -11242,19 +11244,19 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
   //   SOW 214 → los chips del mix de financiamiento, uno por fila. Lo fija «Factoring target · 49,9%»,
   //     que es el más largo con dos decimales. Con 186 el rótulo se truncaba Y el porcentaje saltaba a
   //     la línea de abajo, que es la peor de las dos: un chip partido en dos se lee como dos datos.
-  //     Los 214 salen de «Simulación», que es la columna más holgada; las otras cuatro no se tocan.
-  // «Simulación» pasa de 461 a 700. Sus tres bloques suman más que 461: el monto (104) y los chips
+  //     Los 214 salen de «Oferta», que es la columna más holgada; las otras cuatro no se tocan.
+  // «Oferta» pasa de 461 a 700. Sus tres bloques suman más que 461: el monto (104) y los chips
   // (~310, los fija «Requiere otorgamiento» con su badge) son `shrink-0`, así que el faltante lo
   // absorbía ENTERO el bloque del medio —el único con `min-w-0`— y se partía carácter a carácter.
   // Pesos MEDIDOS, no estimados: el techo real no es el viewport sino el `max-width: 1600` del `main`
 // menos sus 48 px de padding, o sea **1552**. Pasado eso la tabla scrollea y la última columna se ve
 // cortada, que es como se reporta el defecto.
-const PESO_COL = { "Cliente": 250, "Línea": 230, "Oportunidad": 344, "SOW": 214, "Simulación": 508, "Ejecutivo": 140, "Asignar": 124 };
-  const cols = ["Cliente", ...(mostrarEjec ? ["Ejecutivo"] : []), "Línea", "Oportunidad", "SOW", "Simulación", ...(modoAsignar ? ["Asignar"] : [])];
+const PESO_COL = { "Cliente": 250, "Línea": 230, "Oportunidad": 324, "SOW": 214, "Oferta": 508, "Ejecutivo": 140, "Asignar": 124 };
+  const cols = ["Cliente", ...(mostrarEjec ? ["Ejecutivo"] : []), "Línea", "Oportunidad", "SOW", "Oferta", ...(modoAsignar ? ["Asignar"] : [])];
   return (
     <div className="flex flex-1 flex-col gap-2">
       <div className="flex-1 overflow-x-auto rounded-xl bg-white p-1" style={{ border: `1px solid ${C.line}` }}>
-      <table className="w-full border-collapse t11" style={{ minWidth: mostrarEjec ? "1686px" : "1546px", tableLayout: "fixed" }}>
+      <table className="w-full border-collapse t11" style={{ minWidth: mostrarEjec ? "1666px" : "1526px", tableLayout: "fixed" }}>
         <thead><tr>{(() => {
           const totalPeso = cols.reduce((s2, c) => s2 + (PESO_COL[c] || 10), 0);
           return cols.map((h) => (
@@ -11384,7 +11386,7 @@ const PESO_COL = { "Cliente": 250, "Línea": 230, "Oportunidad": 344, "SOW": 214
                 </td>
                 {/* SIMULACIÓN: todo lo que produce simular la oferta, en un panel único: monto,
                     composición, condiciones comerciales y las compuertas que deciden si puede avanzar.
-                    Antes eran dos columnas —«Simulación» y «Condición»— que se llenaban y se vaciaban
+                    Antes eran dos columnas —«Oferta» y «Condición»— que se llenaban y se vaciaban
                     JUNTAS: sin simular las dos quedaban en blanco, y simuladas describían el mismo
                     objeto desde dos ángulos. Reunidas se leen de izquierda a derecha: cuánto, de quién,
                     a qué precio y qué falta para cursarlo. */}
@@ -11395,7 +11397,7 @@ const PESO_COL = { "Cliente": 250, "Línea": 230, "Oportunidad": 344, "SOW": 214
                     cada una; se inyecta en el A11 y de ahí lo lee esta celda. Quién es «target» es
                     política del TENANT (Configuración › Factoring target), así que la partición se
                     aplica al leer y el rótulo del chip se arma con quienes estén adentro.
-                    Va entre «Oportunidad» y «Simulación» porque así la fila se lee de corrido: cuánto
+                    Va entre «Oportunidad» y «Oferta» porque así la fila se lee de corrido: cuánto
                     hay que comprarle, con quién se compite por eso, y qué produce simularlo. */}
                 <td className="px-2 py-2.5 align-top">
                   {(() => {
@@ -11602,7 +11604,11 @@ const PESO_COL = { "Cliente": 250, "Línea": 230, "Oportunidad": 344, "SOW": 214
                       return (
                         <div className="flex items-center gap-4">
                           <div className="min-w-0" style={{ flex: "1 1 auto", minWidth: 190 }}>
-                            <div className="flex flex-wrap items-center gap-2">
+                            {/* `items-baseline` y no `items-center`: el monto es texto suelto (caja de
+                                ~16 px) y el chip es una píldora con relleno (~21 px). Centrar dos cajas de
+                                distinto alto NO alinea sus líneas de base — dejaba el monto un par de
+                                píxeles más abajo que el texto del chip, que es el desajuste que se ve. */}
+                            <div className="flex flex-wrap items-baseline gap-2">
                               {/* MISMO tratamiento que el monto de la columna Oportunidad —`t10` y
                                   `font-semibold`— (16-09-2026, pedido del usuario): es la misma cifra
                                   leída dos veces en la misma fila, y con dos tamaños se lee como si
@@ -20537,7 +20543,7 @@ function analisisDeudoresDeDeal(deal) {
   if (!deal) return null;
   // La OPORTUNIDAD es todo lo que el cliente tiene disponible —lo que ya está en la oferta más lo que
   // el motor encontró y aún no se selecciona—, no sólo la oferta: la oferta es lo que el ejecutivo
-  // elige y vive en «Simulación». Por eso una factura que llega actualiza esta columna sola, sin
+  // elige y vive en «Oferta». Por eso una factura que llega actualiza esta columna sola, sin
   // quedar «sin incorporar». Se deduplica por id porque un documento puede estar en ambas listas.
   if (!deal.agrupado && ((deal.facturasOp && deal.facturasOp.length) || (deal.facturasDisponibles && deal.facturasDisponibles.length))) {
     const vistas = new Set(); const todas = [];
@@ -22076,7 +22082,10 @@ function LineasBandeja({ onNueva, tick, onRefrescar, cargando }) {
   return (
     <div className="rounded-2xl p-3" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
       <div className="flex items-center justify-between">
-        <div className="t10 font-bold uppercase tracking-wide" style={{ color: C.sub }}>Solicitudes en gestión · sistema externo (API 2 / API 3) — solo consulta</div>
+        {/* El título nombra lo que la bandeja CONTIENE. Por dónde viaja —qué API, qué sistema, que es de
+            sólo lectura— es arquitectura, no algo que el ejecutivo necesite leer cada vez que abre la
+            pantalla; sigue documentado en el spec de A13/A14/A15. */}
+        <div className="t10 font-bold uppercase tracking-wide" style={{ color: C.sub }}>Solicitudes en curso</div>
         <div className="flex gap-2">
           <button onClick={onRefrescar} disabled={cargando} className="flex items-center gap-1 rounded-md px-2.5 py-1.5 t10 font-medium disabled:opacity-50" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}><RotateCcw size={11} className={cargando ? "animate-spin" : ""} /> {cargando ? "Consultando…" : "Consultar estados"}</button>
           <button onClick={onNueva} className="rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>+ Nueva línea</button>
@@ -22089,7 +22098,11 @@ function LineasBandeja({ onNueva, tick, onRefrescar, cargando }) {
       <div className="mt-5 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "104px 1fr 170px 110px 130px 140px", color: C.faint, borderBottom: `1px solid ${C.line}`, paddingBottom: 6 }}><span>Proceso</span><span>Cliente</span><span>Tipo</span><span>Propuesto</span><span>Estado</span><span>Últ. actualización</span></div>
       {cargando ? [0, 1, 2].map((i) => <div key={"sk" + i} className="skel my-2" style={{ height: 34 }} />) : sols.map((s) => { const ec = EST_COL[s.estado] || EST_COL["En gestión"]; return (
         <div key={s.idProceso} style={{ borderBottom: `1px solid ${C.line}` }}>
-          <div onClick={() => setAbierta((a) => (a === s.idProceso ? null : s.idProceso))} className="grid cursor-pointer items-center gap-2 py-1.5 t11 hover:bg-stone-50" style={{ gridTemplateColumns: "104px 1fr 170px 110px 130px 140px" }}
+          {/* `py-3` y no `py-1.5` (16-09-2026, pedido del usuario): la fila es el único control de esta
+              bandeja —se hace clic en ella para desplegar el detalle— y con 6 px de alto útil quedaba
+              apretada contra la de arriba y contra la cabecera. El «Tipo» ocupa dos líneas, así que el
+              aire tiene que salir del padding y no del contenido. */}
+          <div onClick={() => setAbierta((a) => (a === s.idProceso ? null : s.idProceso))} className="grid cursor-pointer items-center gap-2 py-3 t11 hover:bg-stone-50" style={{ gridTemplateColumns: "104px 1fr 170px 110px 130px 140px" }}
             title={(s.detalle || []).length ? `Ver las ${s.detalle.length} línea(s) de detalle de esta solicitud` : "Ver el detalle de la solicitud"}>
             <span className="flex items-center gap-1 whitespace-nowrap font-semibold" style={{ color: C.ink }}>
               <ChevronRight size={11} style={{ color: C.faint, transform: abierta === s.idProceso ? "rotate(90deg)" : "none", transition: "transform .12s" }} />{s.idProceso}
