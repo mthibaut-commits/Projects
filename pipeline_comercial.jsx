@@ -21807,11 +21807,148 @@ function lineaParDeSolicitud(rutDeudor, lineas) {
   return { propia: ls.length > 0, aprobada, utilizada, disponible: Math.max(0, mmRound(aprobada - utilizada)),
            tipos: ls.map((l) => l.tipo) };
 }
+// EL DOCUMENTO DE LA SOLICITUD: qué terminó inyectando el sistema (16-09-2026, pedido del usuario).
+// Una solicitud automática (regla 15-bis) entra por API 1 SIN que nadie abra el wizard, así que el
+// documento que el comité va a leer no existía en ninguna pantalla: no había dónde ver qué se mandó
+// ni con qué valores, que es justo lo que hace falta para depurarlo.
+// Se arma con el REGISTRO INYECTADO y NO re-derivando la solicitud del cliente. La diferencia no es
+// cosmética: re-derivar mostraría lo que el sistema produciría HOY —con las líneas y el libro de hoy—
+// y lo que se quiere auditar es lo que se inyectó ese día. Es la misma razón por la que la solicitud
+// viaja como registro armado entre pestañas (15-bis-bis) en vez de rearmarse al llegar.
+// Y por eso también DICE lo que el payload no trae: una automática no captura garantías, fianzas,
+// notas ni vencimiento propuesto porque nadie las llenó, y rellenarlas con un default aquí sería
+// inventar el dato en la única pantalla que existe para comprobarlo.
+function DocumentoSolicitud({ sol, onClose }) {
+  const [copiado, setCopiado] = useState(false);
+  if (!sol) return null;
+  const det = sol.detalle || [];
+  const auto = !!sol.automatica || !!sol.origen;
+  const json = JSON.stringify(sol, null, 2);
+  const copiar = () => {
+    try { navigator.clipboard.writeText(json).then(() => { setCopiado(true); setTimeout(() => setCopiado(false), 2000); }, () => {}); } catch (_) {}
+  };
+  // Un campo que el payload no trae se dice con esas palabras y en gris: un guión a secas no distingue
+  // «viene en cero» de «no viene», y son dos defectos distintos.
+  const F = ({ k, v, tip }) => (
+    <div className="flex items-baseline justify-between gap-3 py-1 t11" style={{ borderBottom: `1px solid ${C.line}` }} title={tip}>
+      <span style={{ color: C.sub }}>{k}</span>
+      {v == null || v === "" ? <span className="t10 italic" style={{ color: C.faint }}>no viene en el payload</span>
+        : <span className="text-right font-medium" style={{ color: C.ink }}>{v}</span>}
+    </div>
+  );
+  const pesos = (n) => n == null ? null : <span>{fmtCLP(n)} <span className="t10 font-normal" style={{ color: C.faint }}>· {fmtMM(n)}</span></span>;
+  const GD = "minmax(150px,1.3fr) 128px 132px 92px minmax(190px,1.4fr) minmax(150px,1fr)";
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center ovl p-6" onClick={onClose} style={{ overflowY: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} className="w-full max-w-5xl rounded-2xl bg-white shadow-2xl" style={{ border: `1px solid ${C.line}` }}>
+        <div className="flex items-start justify-between gap-3 p-5 pb-3" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <div>
+            <div className="t9 font-bold uppercase tracking-wide" style={{ color: C.faint, letterSpacing: ".08em" }}>Documento de la solicitud al comité</div>
+            <div className="t15 font-semibold" style={{ color: C.navy }}>{sol.idProceso} <span className="t12 font-normal" style={{ color: C.sub }}>· {sol.cliente} · {sol.rut}</span></div>
+            <div className="mt-1 t10" style={{ color: C.sub }}>
+              {auto ? "Entró sola al cerrar la oferta (API 1): el wizard nunca se abrió, así que esto es el payload tal como se inyectó."
+                    : "Armada en el asistente de presentación al comité e inyectada por API 1."}
+            </div>
+          </div>
+          <button onClick={onClose} className="shrink-0 rounded-md p-1 hover:bg-stone-100" title="Cerrar"><X size={18} style={{ color: C.sub }} /></button>
+        </div>
+        <div className="flex flex-col gap-3 p-5" style={{ maxHeight: "74vh", overflowY: "auto", backgroundColor: "#FAFAFB" }}>
+          <DocSec n={1} t="Identificación" sub={auto ? "generada por el cierre de una oferta" : "asistente de presentación"}>
+            <div className="grid gap-x-6 md:grid-cols-2">
+              <div>
+                <F k="Proceso" v={sol.idProceso} />
+                <F k="Cliente" v={sol.cliente} />
+                <F k="RUT cliente" v={sol.rut} />
+                <F k="Tipo" v={SOLIC_TIPOS[sol.tipo] || sol.tipo} />
+                <F k="Subtipo" v={sol.subtipo ? (SOLIC_SUBTIPOS[sol.subtipo] || sol.subtipo) : null} />
+              </div>
+              <div>
+                <F k="Estado" v={sol.estado} />
+                <F k="Inyectada" v={sol.ts} tip="Hora en que la solicitud entró por API 1." />
+                <F k="Última actualización de estado" v={sol.tsEstado} />
+                <F k="Ejecutivo" v={sol.ejecutivo} />
+                <F k="Operación de origen" v={sol.origen ? `${sol.origen.negocio ? "N° " + sol.origen.negocio + " · " : ""}${sol.origen.dealId || ""}` : null}
+                   tip="Sólo las automáticas nombran la operación que las motivó; una armada a mano explica su motivo en cada línea." />
+              </div>
+            </div>
+          </DocSec>
+          <DocSec n={2} t="Línea propuesta" sub="montos en pesos, tal como viajan a la API 1">
+            <div className="grid gap-x-6 md:grid-cols-2">
+              <div>
+                <F k="Total propuesto" v={pesos(sol.totalPropuesto)} tip="Lo que quedaría aprobado si el comité aprueba: la línea vigente MÁS lo pedido (regla 15-bis)." />
+                <F k="Propuesta factoring" v={pesos(sol.propFactoring)} tip="`constituirLinea` escribe ESTE campo como la línea aprobada del cliente, no `totalPropuesto`." />
+                <F k="Propuesta confirming" v={pesos(sol.propConfirming)} />
+              </div>
+              <div>
+                <F k="Propuesta global" v={pesos(sol.propGlobal)} />
+                <F k="Gap pedido" v={sol.pedido != null ? pesos(sol.pedido) : null} tip="Lo que faltó de línea en la oferta que originó la solicitud. Sólo lo traen las automáticas." />
+                <F k="Vencimiento propuesto" v={sol.vencProp} tip="Lo fija el wizard con la vigencia de política; una solicitud automática no lo captura." />
+              </div>
+            </div>
+          </DocSec>
+          <DocSec n={3} t="Deudores" sub={`${det.length} línea(s) de detalle · lo que el comité aprueba o recorta una por una`}>
+            {det.length === 0 ? (
+              <div className="py-2 t11" style={{ color: C.faint }}>Sin líneas de detalle: la solicitud pide la línea global del cliente y no cupos por deudor.</div>
+            ) : (<div className="overflow-x-auto"><div style={{ minWidth: 900 }}>
+              <div className="grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: GD, color: C.faint, borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}>
+                <span>Deudor</span><span>RUT</span><span className="text-right">Monto</span><span>Tipo</span><span>Qué se pide</span><span>Alcance</span>
+              </div>
+              {det.map((d, i) => (
+                <div key={(d.rutDeudor || d.deudor) + i} className="grid items-start gap-2 py-1.5" style={{ gridTemplateColumns: GD, borderBottom: `1px solid ${C.line}` }}>
+                  <span className="truncate t11 font-medium" style={{ color: C.ink }} title={d.deudor}>{d.deudor}</span>
+                  <span className="t10" style={{ color: C.sub, fontVariantNumeric: "tabular-nums" }}>{d.rutDeudor || <span className="italic" style={{ color: C.faint }}>sin RUT</span>}</span>
+                  <span className="t11 text-right font-semibold" style={{ color: C.indigo }} title={fmtMM(d.monto || 0)}>{fmtCLP(d.monto || 0)}</span>
+                  <span className="t10" style={{ color: C.sub }}>{d.tipoLinea === "puntual"
+                    ? <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}>Puntual</span>
+                    : (d.tipoLinea || "normal")}</span>
+                  <span className="t10" style={{ color: C.sub, lineHeight: 1.4 }}>{d.pide || "—"}{d.motivo ? <span style={{ color: C.faint }}> · {d.motivo}</span> : null}</span>
+                  <span className="t10" style={{ color: C.faint, lineHeight: 1.4 }}>{d.alcance || "—"}</span>
+                </div>
+              ))}
+              <div className="mt-2 grid gap-2 t10" style={{ gridTemplateColumns: GD, paddingTop: 4 }}>
+                <span className="font-semibold" style={{ color: C.sub }}>{det.length} línea(s)</span><span></span>
+                <span className="text-right font-bold" style={{ color: C.indigo }}>{fmtCLP(mmRound(det.reduce((a, d) => a + (d.monto || 0), 0)))}</span>
+                <span></span><span></span><span></span>
+              </div>
+            </div></div>)}
+          </DocSec>
+          <DocSec n={4} t="Bienes, garantías y presentación comercial" sub="sólo las llena el asistente">
+            <div className="grid gap-x-6 md:grid-cols-2">
+              <div>
+                <F k="Fianzas solidarias" v={sol.fianzas != null ? String(sol.fianzas) : null} />
+                <F k="Garantías" v={sol.garantias != null ? String(sol.garantias) : null} />
+              </div>
+              <div>
+                <F k="Monto de garantías" v={sol.montoGarantias != null ? pesos(sol.montoGarantias) : null} />
+                <F k="Nota ponderada de los deudores" v={sol.promNota != null ? String(sol.promNota) : null} />
+              </div>
+            </div>
+            <div className="mt-2 t10" style={{ color: C.sub }}>
+              {sol.notas ? <span style={{ whiteSpace: "pre-wrap" }}>{typeof sol.notas === "string" ? sol.notas : JSON.stringify(sol.notas, null, 1)}</span>
+                : <span style={{ color: C.faint }}>Sin presentación comercial: la solicitud entró sola al cerrar la oferta y nadie pasó por el asistente. No se rellena con un borrador de IA, porque este documento existe para comprobar qué se mandó.</span>}
+            </div>
+          </DocSec>
+          <DocSec n={5} t="Payload inyectado (API 1)" sub="el registro completo, para depurar">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="t10" style={{ color: C.sub }}>Es el objeto tal como quedó en la bandeja: lo que se ve arriba sale de estos mismos campos.</span>
+              <button onClick={copiar} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 t10 font-medium"
+                style={{ border: `1px solid ${C.line}`, color: copiado ? C.green : C.sub, backgroundColor: "#fff" }}>
+                {copiado ? <><Check size={12} /> Copiado</> : <><ClipboardList size={12} /> Copiar JSON</>}
+              </button>
+            </div>
+            <pre className="rounded-lg p-3 t10" style={{ backgroundColor: "#F7F7FA", border: `1px solid ${C.line}`, color: C.ink, maxHeight: 280, overflow: "auto", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", whiteSpace: "pre", margin: 0 }}>{json}</pre>
+          </DocSec>
+        </div>
+      </div>
+    </div>
+  );
+}
 // DETALLE DE LA SOLICITUD AL COMITÉ. Una solicitud automática es UNA solicitud con N líneas de detalle
 // (regla 15-bis) y la bandeja sólo mostraba el total: qué deudores la componen, cuánto se le pide a
 // cada uno y de qué operación salió no estaba en ninguna pantalla — y es lo que el comité necesita
 // para aprobar o recortar línea por línea.
 function DetalleSolicitud({ sol }) {
+  const [verDoc, setVerDoc] = useState(false);
   if (!sol) return null;
   const lineas = ((lineasDeCliente(sol.rut) || {}).lineas) || [];
   const det = sol.detalle || [];
@@ -21830,8 +21967,18 @@ function DetalleSolicitud({ sol }) {
           <div className="t11 font-semibold" style={{ color: C.navy }}>Líneas solicitadas · {sol.idProceso}
             <span className="ml-2 t10 font-normal" style={{ color: C.sub }}>{sol.cliente} · {sol.rut}</span>
           </div>
-          {sol.origen ? <span className="t9 rounded-full px-2 py-0.5 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}
-            title="La solicitud entró SOLA al cerrar la oferta: sus facturas no cabían en la línea vigente (regla 15-bis).">Generada por el cierre de una oferta</span> : null}
+          <span className="flex items-center gap-2">
+            {sol.origen ? <span className="t9 rounded-full px-2 py-0.5 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}
+              title="La solicitud entró SOLA al cerrar la oferta: sus facturas no cabían en la línea vigente (regla 15-bis).">Generada por el cierre de una oferta</span> : null}
+            {/* EL DOCUMENTO DE LO INYECTADO. Una solicitud automática no pasa por el wizard, así que su
+                documento no existía en ninguna pantalla: la bandeja mostraba el total y esta tabla
+                mostraba el detalle, pero qué se mandó exactamente por API 1 no se podía comprobar. */}
+            <button onClick={() => setVerDoc(true)} title="Abre el documento de esta solicitud: el registro tal como se inyectó por API 1, con el payload completo para depurarlo."
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 t10 font-medium hover:bg-stone-50"
+              style={{ border: `1px solid ${C.line}`, color: C.indigo, backgroundColor: "#fff" }}>
+              <Eye size={12} /> Ver documento
+            </button>
+          </span>
         </div>
         <div className="grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: GD, color: C.faint, borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}>
           <span title="Cada línea del detalle es un par CLIENTE-DEUDOR: el cliente es el mismo en todas y lo que cambia es el deudor.">Cliente / Deudor</span>
@@ -21879,6 +22026,7 @@ function DetalleSolicitud({ sol }) {
           </div>
         )}
       </div>
+      {verDoc && <DocumentoSolicitud sol={sol} onClose={() => setVerDoc(false)} />}
     </div>
   );
 }
@@ -21897,12 +22045,16 @@ function LineasBandeja({ onNueva, tick, onRefrescar, cargando }) {
           <button onClick={onNueva} className="rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>+ Nueva línea</button>
         </div>
       </div>
-      <div className="mt-2 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "90px 1fr 170px 110px 130px 140px", color: C.faint, borderBottom: `1px solid ${C.line}`, paddingBottom: 4 }}><span>Proceso</span><span>Cliente</span><span>Tipo</span><span>Propuesto</span><span>Estado</span><span>Últ. actualización</span></div>
+      {/* Aire entre la fila del título —que lleva los dos botones— y la cabecera de columnas
+          (16-09-2026, pedido del usuario). Con `mt-2` los botones quedaban pegados al rótulo de la
+          primera columna y la zona se leía apretada; el botón es de 1,5 de alto, así que el margen
+          tiene que despegarlo a ÉL y no al texto del título, que es más bajo. */}
+      <div className="mt-5 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "104px 1fr 170px 110px 130px 140px", color: C.faint, borderBottom: `1px solid ${C.line}`, paddingBottom: 6 }}><span>Proceso</span><span>Cliente</span><span>Tipo</span><span>Propuesto</span><span>Estado</span><span>Últ. actualización</span></div>
       {cargando ? [0, 1, 2].map((i) => <div key={"sk" + i} className="skel my-2" style={{ height: 34 }} />) : sols.map((s) => { const ec = EST_COL[s.estado] || EST_COL["En gestión"]; return (
         <div key={s.idProceso} style={{ borderBottom: `1px solid ${C.line}` }}>
-          <div onClick={() => setAbierta((a) => (a === s.idProceso ? null : s.idProceso))} className="grid cursor-pointer items-center gap-2 py-1.5 t11 hover:bg-stone-50" style={{ gridTemplateColumns: "90px 1fr 170px 110px 130px 140px" }}
+          <div onClick={() => setAbierta((a) => (a === s.idProceso ? null : s.idProceso))} className="grid cursor-pointer items-center gap-2 py-1.5 t11 hover:bg-stone-50" style={{ gridTemplateColumns: "104px 1fr 170px 110px 130px 140px" }}
             title={(s.detalle || []).length ? `Ver las ${s.detalle.length} línea(s) de detalle de esta solicitud` : "Ver el detalle de la solicitud"}>
-            <span className="flex items-center gap-1 font-semibold" style={{ color: C.ink }}>
+            <span className="flex items-center gap-1 whitespace-nowrap font-semibold" style={{ color: C.ink }}>
               <ChevronRight size={11} style={{ color: C.faint, transform: abierta === s.idProceso ? "rotate(90deg)" : "none", transition: "transform .12s" }} />{s.idProceso}
             </span>
             <span className="truncate" style={{ color: C.ink }}>{s.cliente}<span className="t9 ml-1" style={{ color: C.faint }}>{s.rut}</span></span>
