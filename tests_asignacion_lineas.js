@@ -3195,6 +3195,62 @@
        `6/6 coinciden ${mismoOk} · máquina ${m["otorgamiento"]} → ${m["pend. integración"]} → ${m["pend. de giro"]} → ${m["girada"]} (4 distintos) ${maquinaOk} · antes de firmar manda la etapa del tenant ${tenantOk} · fuera del tubo ${fueraOk}`);
   }
 
+  // ── 112 · LA LISTA DE OPORTUNIDADES: DE LA MÁS AVANZADA A LA MENOS, Y DENTRO DE CADA ETAPA POR PLATA.
+  //    Con la oferta cuando la hay y con el tamaño de la oportunidad cuando todavía no: en prospección
+  //    nadie tiene oferta, así que mirar sólo `monto` dejaba toda esa etapa empatada en cero.
+  {
+    // `simulado` es lo que hace que una oferta EXISTA para la pantalla: sin él la columna «Oferta»
+    // dice «Sin simular» y el potencial se lee en «Oportunidad».
+    const D = (id, stage, monto, extra) => ({ id, stage, monto: monto || 0, simulado: true, cliente: id, ...(extra || {}) });
+    const publicada = (id, monto) => D(id, "oferta", monto, { ofertaCerrada: true, negocioNum: "N" + id, ofertaComunicada: true });
+
+    // (a) MANDA EL AVANCE. Una prospección con MUCHA plata va debajo de una oferta con poca: primero
+    //     se ordena por dónde está en el tubo, no por cuánto trae.
+    const avance = ordenarOportunidades([
+      D("p", "prospeccion", 900e6), D("o", "oferta", 1e6), D("c", "cesion", 1e6), D("t", "otorgamiento", 1e6),
+    ]).map((d) => d.id);
+    const avanceOk = avance.join(",") === "c,t,o,p";
+
+    // (b) UNA OFERTA PUBLICADA VA POR DELANTE de una que no lo está, aunque las dos estén en `oferta`:
+    //     se rankea sobre la etapa VISUAL, que es lo que el ejecutivo ve.
+    const pubOk = ordenarOportunidades([D("sin", "oferta", 50e6), publicada("pub", 1e6)]).map((d) => d.id).join(",") === "pub,sin";
+
+    // (c) UNA PÉRDIDA ES TERMINAL, NO ADELANTADA. `STAGE_ORDER` la deja al final del array y usarlo
+    //     como progresión la habría puesto primera, arriba de todo lo vivo.
+    const perdidaOk = ordenarOportunidades([D("x", "perdida", 900e6), D("y", "prospeccion", 1e6)])
+      .map((d) => d.id).join(",") === "y,x" && avanceDeDeal(D("x", "perdida", 0)) === -1;
+
+    // (d) DENTRO DE LA MISMA ETAPA, LA PLATA, de mayor a menor.
+    const plataOk = ordenarOportunidades([D("a", "oferta", 10e6), D("b", "oferta", 80e6), D("c2", "oferta", 40e6)])
+      .map((d) => d.id).join(",") === "b,c2,a";
+
+    // (e) SIN OFERTA DESEMPATA EL TAMAÑO DE LA OPORTUNIDAD. Dos prospecciones sin monto de oferta se
+    //     ordenan por lo que el motor le encontró al cliente; con `monto` a secas quedaban empatadas.
+    const conDisp = (id, mm) => D(id, "prospeccion", 0, { simulado: false, deudores: [{ name: "Codelco", facturas: 1, monto: mm }] });
+    const dispOk = montoOrdenDeal(conDisp("z", 70e6)) === 70e6
+      && montoOrdenDeal(D("w", "prospeccion", 0)) === 0
+      // SIN SIMULAR manda la oportunidad aunque `monto` traiga cifra: es lo que la columna muestra.
+      && montoOrdenDeal({ id: "v", stage: "prospeccion", monto: 5e6, simulado: false,
+                          deudores: [{ name: "Codelco", facturas: 3, monto: 88e6 }] }) === 88e6
+      && ordenarOportunidades([conDisp("chica", 20e6), conDisp("grande", 90e6)]).map((d) => d.id).join(",") === "grande,chica";
+
+    // (f) LA OFERTA MANDA SOBRE LA OPORTUNIDAD cuando existe: es lo que el ejecutivo eligió comprar.
+    const ofertaMandaOk = montoOrdenDeal(D("q", "oferta", 5e6, { deudores: [{ name: "Codelco", facturas: 9, monto: 900e6 }] })) === 5e6;
+
+    // (g) NO MUTA la lista que recibe —entra un array memoizado— y es ESTABLE: dos operaciones
+    //     idénticas no se intercambian entre renders, o la tabla parpadea sola.
+    const orig = [D("m1", "oferta", 10e6), D("m2", "oferta", 10e6), D("m3", "oferta", 10e6)];
+    const copia = orig.map((d) => d.id).join(",");
+    const r1 = ordenarOportunidades(orig).map((d) => d.id).join(",");
+    const r2 = ordenarOportunidades(orig).map((d) => d.id).join(",");
+    const puroOk = orig.map((d) => d.id).join(",") === copia && r1 === r2
+      && ordenarOportunidades([]).length === 0 && ordenarOportunidades(null).length === 0;
+
+    ok("112 la lista va de la más avanzada a la menos, y dentro de cada etapa por plata",
+       avanceOk && pubOk && perdidaOk && plataOk && dispOk && ofertaMandaOk && puroOk,
+       `avance ${avance.join(" > ")} ${avanceOk} · publicada primero ${pubOk} · pérdida al fondo ${perdidaOk} · plata desc ${plataOk} · sin oferta manda la oportunidad ${dispOk} · con oferta manda la oferta ${ofertaMandaOk} · pura y estable ${puroOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

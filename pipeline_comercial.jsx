@@ -689,6 +689,49 @@ const stageName = (id) => etapaVista(id).label;
 // chip no sirve si el ID que lo alimenta se resuelve de dos maneras. `stageName` sigue existiendo
 // para los IDS que NO cuelgan de una operación viva — la etapa donde se perdió, una constante.
 const etapaDeDeal = (d) => estadoOperacion(d) || stageName(etapaVisualId(d));
+// ── ORDEN DE LA LISTA DE OPORTUNIDADES ───────────────────────────────────────────────────────────
+// De la más avanzada en el tubo a la menos, y dentro de cada etapa por plata. Va acá, puro y de nivel
+// módulo, porque lo usan la TABLA y el KANBAN: en el tablero una columna ES una etapa, así que ahí el
+// primer criterio no desempata nada y manda el segundo — pero es el mismo comparador, y dos copias se
+// separan a la primera corrección.
+//
+// El avance NO sale de `STAGE_ORDER`: ese array declara las etapas del catálogo, no su progresión.
+// Pone `otorgamiento` DESPUÉS de `cesion` —cuando el proceso es al revés: otorgamiento es lo que
+// falta resolver y se convierte en cesión (regla 26)— y deja `perdida` al final, que la haría la más
+// avanzada de todas. Una pérdida es TERMINAL, no adelantada: va al fondo.
+// Se rankea sobre la etapa VISUAL, así que una oferta ya publicada va por delante de una que no lo
+// está: para el ejecutivo es otra cosa aunque el motor no haya movido el `stage`.
+const ORDEN_AVANCE = ["prospeccion", "oferta", ETAPA_PUBLICADA, "otorgamiento", "aceptadas", "cesion"];
+const avanceDeDeal = (d) => {
+  if (!d || d.stage === "perdida") return -1;
+  const i = ORDEN_AVANCE.indexOf(etapaVisualId(d));
+  return i >= 0 ? i : -1;   // una etapa que el orden no declara tampoco puede colarse arriba
+};
+// La plata con la que se desempata: el MONTO DE LA OFERTA, y cuando todavía no hay oferta el TAMAÑO
+// DE LA OPORTUNIDAD —lo que el motor le encontró al cliente—. Son dos preguntas distintas y por eso
+// no se suman: la oferta es lo que el ejecutivo eligió comprar y la oportunidad lo que podría.
+// En prospección nadie tiene oferta, así que ahí ordena la oportunidad entera y la lista no queda
+// toda en cero, que es lo que pasaba al mirar sólo `monto`.
+// «TENER OFERTA» ES `simulado`, no `monto > 0`. Es la definición que usa la propia columna: sin simular
+// dice «Sin simular» y manda a «Oportunidad» a ver el potencial. `monto` viene lleno casi siempre —es
+// el paquete que el inbound armó—, así que mirarlo dejaba el respaldo por oportunidad MUERTO y
+// ordenaba toda la prospección por una cifra que en esa fila no se muestra. Lo descubrió comparar el
+// orden de la tabla contra su propia columna: 11 saltos en 21 pares.
+const montoOrdenDeal = (d) => {
+  if (d && d.simulado) return Math.round(+(d.monto || 0));
+  const an = typeof analisisDeudoresDeDeal === "function" ? analisisDeudoresDeDeal(d) : null;
+  return Math.round((an && an.monto) || 0);
+};
+// Ordena SIN mutar la lista que recibe: `sort` ordena en sitio y acá entra un array memoizado.
+// La clave de plata se calcula UNA vez por operación y no dentro del comparador —que corre O(n log n)
+// veces— porque `analisisDeudoresDeDeal` recorre y deduplica las facturas del cliente.
+// Desempata por id para que dos operaciones iguales no se intercambien entre renders.
+function ordenarOportunidades(lista) {
+  return (lista || [])
+    .map((d, i) => ({ d, i, av: avanceDeDeal(d), m: montoOrdenDeal(d) }))
+    .sort((a, b) => (b.av - a.av) || (b.m - a.m) || String(a.d && a.d.id).localeCompare(String(b.d && b.d.id)) || (a.i - b.i))
+    .map((x) => x.d);
+}
 // Un SOLO chip de etapa para el tubo y el Kanban: dos copias se separan a la primera corrección y
 // entonces la misma etapa sale de dos colores en dos pantallas. El relleno y el borde se DERIVAN del
 // color configurado (alpha en hex), así que el tenant declara uno y quedan pintados los tres.
@@ -23096,8 +23139,11 @@ export default function PipelineComercial() {
       const matchEje = fEjecutivo === "todos" || execName(d) === fEjecutivo;
       return matchQ && matchF && matchDeudor && matchJef && matchLinea && matchEje;
     });
-    // "Todos" con Inbound activo incluye también las facturas sin clasificar del inbound.
-    return (quickFilter === "todos" && showInbound && !directorio) ? [...dealRows, ...streamComoFilas()] : dealRows; // DIRECTORIO
+    // "Todos" con Inbound activo incluye también las facturas sin clasificar del inbound. Van DESPUÉS
+    // y sin ordenar: no son oportunidades —no tienen etapa ni oferta— y mezclarlas en el mismo orden
+    // las pondría entre medio de operaciones con las que no se comparan.
+    const ordenadas = ordenarOportunidades(dealRows);
+    return (quickFilter === "todos" && showInbound && !directorio) ? [...ordenadas, ...streamComoFilas()] : ordenadas; // DIRECTORIO
   }, [dealsTubo, query, quickFilter, fDeudor, fJefatura, fLinea, fEjecutivo, streamFeed, showInbound, usuario, esEjecutivoSesion, directorio]);
 
   const dealsByStage = (id) => filtered.filter((d) => d.stage === id);
