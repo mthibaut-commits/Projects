@@ -1,6 +1,6 @@
 # Spec — swagger_actualizacion_intradia.yaml (Activo A22)
 
-**Propósito:** endpoint **expuesto por NEX** para que Security actualice la **tabla interna** (montada desde los SFTP diarios de otorgamiento A16, verificación A10 y Plataforma 360 A11) cuando los registros varían dentro del día. La aplicación nunca consulta a Security en línea: siempre lee la tabla interna (batch + estos upserts).
+**Propósito:** endpoint **expuesto por NEX** para que Security actualice la **tabla interna** (montada desde las entregas diarias de otorgamiento A16, verificación A10 y Plataforma 360 A11) cuando los registros varían dentro del día. La aplicación nunca consulta a Security en línea: siempre lee la tabla interna (batch + estos upserts).
 
 | Endpoint | Uso |
 |---|---|

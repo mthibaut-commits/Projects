@@ -10,22 +10,23 @@
 |---|---|---|---|---|
 | A1 | DTESync — facturas electrónicas | Stream / API | Entrada | Continua (corridas por cron horario) |
 | A2 | AECSync — cesiones electrónicas | Stream / API | Entrada | Continua |
-| A3 | Lista Blanca de deudores | **Archivo vía SFTP → tabla interna** | Entrada | **Diaria (batch)** |
-| A4 | Deudores Autorizados | **Archivo vía SFTP → tabla interna** | Entrada | **Diaria (batch)** |
+| A3 | Lista Blanca de deudores | **Archivo vía S3 → tabla interna** | Entrada | **Diaria (batch)** |
+| A4 | Deudores Autorizados | **Archivo vía S3 → tabla interna** | Entrada | **Diaria (batch)** |
 | A5 | Share of Wallet por cliente | Dataset (JSON) | Entrada | Semanal / mensual |
 | A6 | Estrategia de precio | Dataset (JSON) | Entrada | Diaria |
-| A7 | Líneas de crédito vigentes | **Archivo CSV vía SFTP** | Entrada | **Diaria (batch)** |
+| A7 | Líneas de crédito vigentes | **Archivo CSV vía S3** | Entrada | **Diaria (batch)** |
 | A8 | Montos de líneas (uso/disponible) | API REST | Entrada | **Cada 1 hora** |
 | A23 | Consulta de líneas 3 niveles (cliente / cliente-deudor / deudor) | API REST | Entrada | Bajo demanda (1 por evaluación) |
 | A9 | API Riesgo Crédito BICE (swagger) | API REST (9 endpoints) | Entrada | Bajo demanda |
-| A10 | Datos de verificación (predictor V01–V10) | **Archivo vía SFTP → tabla interna** | Entrada | **Diaria (batch)** |
-| A11 | Plataforma 360 — empresa | **Archivo vía SFTP → tabla interna** | Entrada | **Diaria (batch)** |
+| A10 | Datos de verificación (predictor V01–V10) | **Archivo vía S3 → tabla interna** | Entrada | **Diaria (batch)** |
+| A11 | Plataforma 360 — empresa | **Archivo vía S3 → tabla interna** | Entrada | **Diaria (batch)** |
 | A12 | Repositorio documental factoring (API 5) | API REST | Entrada | Bajo demanda |
 | A13 | Inyección de solicitud de línea (API 1) | API REST | **Salida** | Por evento |
 | A14 | Listar procesos de línea (API 2) | API REST | Entrada | Bajo demanda |
 | A15 | Estado de proceso de línea (API 3) | API REST | Entrada | Bajo demanda |
-| A16 | Datos de otorgamiento (modelo C/D/O + variables) | **Archivo vía SFTP → tabla interna** | Entrada | **Diaria (batch)** |
+| A16 | Datos de otorgamiento (modelo C/D/O + variables) | **Archivo vía S3 → tabla interna** | Entrada | **Diaria (batch)** |
 | A22 | Endpoint de actualización intradía (Security) | API REST (push de Security) | Entrada (por evento) | Intradía, cuando varían registros |
+| A25 | Ingesta por AWS S3 — transporte de las entregas diarias | S3 + notificación (SNS → SQS) | Entrada (por evento) | Al depositarse cada archivo |
 | A17 | WhatsApp Business (Agente IA) | API de mensajería | Bidireccional | Tiempo real |
 | A18 | Email / Call Center | Canales | Bidireccional | Tiempo real |
 | A19 | Portal de curse (factoringsecurity.cl/curse) | Aplicación externa | Salida (evento de firma) | Por evento |
@@ -53,13 +54,13 @@
 - **Invariantes del activo** (se validan en el generador; una cesión que los rompa no se emite): la **fecha de cesión no es anterior a la emisión** del documento, y el **monto cedido es igual o menor** que el del documento. La **cesión parcial** es válida —se cede parte del crédito y el resto queda con el cliente— y hoy son 160 de 1.300; ceder más que la factura no lo es. `MontoDocumento` es siempre el `MntTotal` del A1.
 - **Consume además:** el bloqueo de una factura candidata —**«Cedida a terceros»** con el nombre del factoring y la fecha, o **«Ya financiada»** si la cesión fue a nosotros—, la **pérdida por cesión** de una oportunidad (sus propias facturas cedidas, no un sorteo) y el conteo `cedidasOtro`.
 
-### A3 · Lista Blanca de deudores ⭐ BATCH SFTP → tabla interna
-- **Tipo:** **archivo diario vía SFTP** (mismo patrón que A10/A11/A16); monta la sección de listas de la tabla interna. Se entrega junto con A4 en un archivo único con columna `LISTA` (BLANCA | AUTORIZADA) — ver `Integraciones/sftp_deudores_listas.csv`.
+### A3 · Lista Blanca de deudores ⭐ BATCH S3 → tabla interna
+- **Tipo:** **archivo diario vía S3** (mismo patrón que A10/A11/A16); monta la sección de listas de la tabla interna. Se entrega junto con A4 en un archivo único con columna `LISTA` (BLANCA | AUTORIZADA) — ver `Integraciones/s3_deudores_listas.csv`.
 - **Contenido:** deudores de mejor calidad (whitelist) por RUT/razón social, con vigencia y cupo sugerido.
 - **Consumen:** clasificación de deudor, reglas de prospección CAT, elegibilidad de facturas del inbound, segmento Elite del predictor de verificación (clasificación Prime).
 
-### A4 · Deudores Autorizados ⭐ BATCH SFTP → tabla interna
-- **Tipo:** **archivo diario vía SFTP**, misma entrega que A3 (columna `LISTA` = AUTORIZADA).
+### A4 · Deudores Autorizados ⭐ BATCH S3 → tabla interna
+- **Tipo:** **archivo diario vía S3**, misma entrega que A3 (columna `LISTA` = AUTORIZADA).
 - **Contenido:** deudores autorizados (segunda categoría de "buenos deudores").
 - **Consumen:** ídem A3.
 
@@ -74,8 +75,8 @@
 - **Contenido:** spread promocional, puntos de descuento por cliente-línea.
 - **Consumen:** tasa inicial de oportunidades inbound. *(Nota: el modelo de spread por SOW implementado ahora deriva el descuento internamente; este dataset queda como fuente histórica/de contraste.)*
 
-### A7 · Líneas de crédito vigentes — CSV vía SFTP ⭐ BATCH
-- **Tipo:** **archivo plano CSV** transferido por **SFTP**.
+### A7 · Líneas de crédito vigentes — CSV vía S3 ⭐ BATCH
+- **Tipo:** **archivo plano CSV** depositado en **S3** (A25).
 - **Frecuencia:** **carga diaria** (batch, ~06:15).
 - **Contenido:** cliente, RUT, línea aprobada, uso, disponible, proyección, morosidad, ejecutivo, zona.
 - **Consumen:** tab Líneas (sub-tab Vigentes), recomendador de línea (aumentar/rebajar/bloquear/renovar), indicadores de línea en oportunidades y plan mensual.
@@ -97,23 +98,23 @@
 - **Tipo:** API REST — 9 endpoints: clasificación deudora, consolidado, deuda BICE, boletín comercial, deuda previsional, protestos, tipo de cambio (UF/USD), mora ACHEF, mora CMF.
 - **Consumen:** Paso "Datos Financieros y Riesgo" de la presentación al comité (deuda directa/indirecta, moras, protestos, ACHEF), análisis financiero IA.
 
-### A10 · Datos de verificación — predictor V01–V10 ⭐ BATCH SFTP → tabla interna
-- **Tipo:** **archivo diario vía SFTP** desde Security; con él se monta una **tabla interna** que es la que consulta la aplicación (no se consulta a Security en línea).
+### A10 · Datos de verificación — predictor V01–V10 ⭐ BATCH S3 → tabla interna
+- **Tipo:** **archivo diario vía S3** desde Security; con él se monta una **tabla interna** que es la que consulta la aplicación (no se consulta a Security en línea).
 - **Contenido:** variables del predictor por par cliente-deudor (3M): V01 protocolo propio del deudor (es **compuerta**: si existe, se verifica siempre con él) · V02 % pagado Ult3M · V03 monto vs total comprado al par · V04 monto vs relación comercial · V05 recurrencia Ult6M · V06 **plazo promedio de pago** del par, contra el que NEX mide la desviación de cada factura (≤ 5% del plazo, no 5 días) · V07 % mora >25d (degradable intramés) · V08 % reclamadas (degradable intramés) · V10 historial de pago relevante; más la clasificación y la nota. **V09 (alto monto, >MM$300) no viaja**: se evalúa en NEX sobre el total de la operación con ese deudor. El **segmento lo decide NEX**, no el archivo: protocolo recortado si el deudor es PRIME **o** su nota supera 4,2 (los nombres «Elite/Others» son de la versión anterior del predictor).
 - **Actualización intradía:** vía **A22** (endpoint de Security que actualiza la tabla interna).
 - **Consumen:** tab Verificación de la operación (VERIFICADA POR MODELO / VERIFICACIÓN TELEFÓNICA por factura), chip "Requiere Verificación N/M" de la card. El botón "Refrescar" relee la tabla interna; la verificación telefónica registrada no se pierde.
 
-### A11 · Plataforma 360 — información de empresa ⭐ BATCH SFTP → tabla interna
-- **Tipo:** **archivo diario vía SFTP** desde Plataforma 360; monta una **tabla interna** que consulta la aplicación (mismo patrón que A10/A16 — la información es de la misma familia que la requerida por otorgamiento y verificación, y comparten buena parte de las variables).
+### A11 · Plataforma 360 — información de empresa ⭐ BATCH S3 → tabla interna
+- **Tipo:** **archivo diario vía S3** desde Plataforma 360; monta una **tabla interna** que consulta la aplicación (mismo patrón que A10/A16 — la información es de la misma familia que la requerida por otorgamiento y verificación, y comparten buena parte de las variables).
 - **Contenido:** firmográfica (actividad, sector, trabajadores, fechas, alertas), información comercial (línea global, márgenes, colocación, spread real, segmento), el **mix de financiamiento del cliente** (`SOW_*`, ver abajo), socios (participación, PEP, FATCA), índices financieros, ventas y ventas SII — por RUT de empresa (clientes y deudores).
 - **Mix de financiamiento (`SOW_SECURITY_PCT` / `SOW_FACTORING_TARGET_PCT` / `SOW_OTROS_FACTORING_PCT` / `SOW_OTROS_BANCARIOS_PCT`):** con quién se financia el cliente y en qué proporción; las cuatro porciones **suman 100** y sólo vienen para `ROL=CLIENTE` (en un deudor van vacías, no en 0). Alimenta la columna **SOW** del tubo comercial en versión tabla. Vive acá porque el mix es atributo de la **empresa** y éste es su maestro, pero **se mide sobre A2** —el único activo que identifica al cesionario de cada cesión— y se inyecta acá (ver §5.6). No duplica al A5 ni lo contradice: `SOW_SECURITY_PCT` se **ancla** a su `SOWActualPct`, y desde el 15-09-2026 A5 se deriva de A2, así que las dos entregas cuentan lo mismo una sola vez. **Los cuatro agregados se publican con el padrón de cesionarios por defecto**; lo que manda es `SOW_DETALLE_JSON` —el reparto cesionario por cesionario— porque una de las cuatro porciones, el **factoring target**, es política comercial del **tenant** y se configura en la aplicación.
 - **Actualización intradía:** cubierta por el mismo esquema del endpoint **A22** si el origen actualiza registros dentro del día.
 - **Consumen:** presentación al comité (pasos 1, 2 y 4 — al agregar cada deudor se lee su registro de la tabla interna), generación IA de las 5 notas comerciales.
-- **Nota de consolidación:** por el solapamiento de variables con A10/A16, evaluar consolidar los tres en **una misma entrega SFTP** (un paquete diario con secciones empresa / otorgamiento / verificación) para simplificar la operación del batch.
+- **Nota de consolidación:** por el solapamiento de variables con A10/A16, evaluar consolidar los tres en **una misma entrega** (un paquete diario con secciones empresa / otorgamiento / verificación) para simplificar la operación del batch.
 
-### A24 · Cartera comercial — estructura y asignación ⭐ BATCH SFTP → tabla interna
+### A24 · Cartera comercial — estructura y asignación ⭐ BATCH S3 → tabla interna
 
-- **Tipo:** **archivo diario vía SFTP** (mismo patrón que A10/A11/A16). `Integraciones/sftp_cartera.csv` + `spec_sftp_cartera.md`.
+- **Tipo:** **archivo diario vía S3** (mismo patrón que A10/A11/A16). `Integraciones/s3_cartera.csv` + `spec_s3_cartera.md`.
 - **Contenido:** dos granos con columna `TIPO`. **`EJECUTIVO`**: código, nombre, correo, **equipo**, **jefatura** (`COD_JEFE`), **zona**, sucursal, estado y vigencia. **`CARTERA`**: qué RUT cliente pertenece a qué ejecutivo y desde cuándo.
 - **Actualización intradía:** vía **A22** (dominio `CARTERA`) — un ejecutivo que entra o una cartera que se traspasa no esperan al batch del día siguiente.
 - **Consumen:** quién ve qué en el tubo y en Tareas (`execsVisiblesDe`), la atribución de una oportunidad a su ejecutivo (`asignarEjecutivo`), el Plan por Ejecutivo, el churn, los filtros por zona y equipo, y el mantenedor de migración de cartera.
@@ -135,15 +136,23 @@
 - **Tipo:** API REST de consulta al sistema externo.
 - **Consumen:** sub-tab "En proceso" (Bandeja) del tab Líneas: lista de solicitudes en gestión y su estado (En gestión → En análisis de Riesgo → En comité → Aprobada/Observada).
 
-### A16 · Datos de otorgamiento — Modelo de Riesgo v1.0 ⭐ BATCH SFTP → tabla interna
-- **Tipo:** **archivo diario vía SFTP** desde Security; con él se monta una **tabla interna** que la aplicación consulta para evaluar el catálogo C01–C52 (cliente), D01–D23 (deudor) y O01–O04 (operación).
+### A16 · Datos de otorgamiento — Modelo de Riesgo v1.0 ⭐ BATCH S3 → tabla interna
+- **Tipo:** **archivo diario vía S3** desde Security; con él se monta una **tabla interna** que la aplicación consulta para evaluar el catálogo C01–C52 (cliente), D01–D23 (deudor) y O01–O04 (operación).
 - **Contenido:** variables por RUT cliente/deudor y por par C-D — pagarés (existencia, montos, vigencia), línea (aprobada, extendida, cupo), IVA al día, variación de venta, nota de comportamiento (cliente y deudor, umbral 3,7), moras CMF por tramo (directa 30-90/90-180/180d-3A, castigada, indirecta, leasing), Equifax/DICOM (mora, protestos), ACHEF por tramo, infracciones laborales, TGR (vigente, morosa, cobranza adm./judicial, convenios, cuotas impagas — judicial/convenios = bloqueo firme), mora interna por tramo, concentración, venta cruzada, NC, reclamos, ratio cesión/venta, n° factorings, socios comunes C-D, gestión de cartera del cliente (reclamados, notas de crédito, mora, CxC pendientes) y **la misma gestión de cartera medida sobre el par C-D** (columnas `*_CD`, que evalúan C47–C50 una vez por deudor), y variables de operación (spread/banda, comisiones, CxC, bloqueo).
 - **Evaluación local:** el motor evalúa los tramos y niveles (**N1..N5, N5 = máxima**, sin homologar: el nivel es configuración de la regla — INC-01) **contra la tabla interna**, con el versionado v1/v2 de re-evaluación al obtener el contrato firmado. El ruteo de cada excepción es el par **(área declarada por la regla, nivel declarado por el tramo)** — INC-03.
 - **Actualización intradía:** vía **A22** — si dentro del día varían los registros de otorgamiento, Security actualiza la tabla y el sistema accede a la información fresca.
 - **Consumen:** tab Otorgamiento, gate de avance a Giro, pérdida automática por bloqueo firme, badge "Requiere otorgamiento".
 
+### A25 · Ingesta por AWS S3 — el transporte de las entregas ⭐ EVENTO
+
+- **Tipo:** bucket S3 con notificación `s3:ObjectCreated:*` → **SNS** → **SQS** → worker del backoffice. `Integraciones/spec_s3_ingesta.md` + `Integraciones/s3_evento_notificacion.json`.
+- **Qué resuelve:** que el procesamiento arranque **cuando el archivo llega** y no cuando el reloj lo permite. Un cron a hora fija deja esperando hasta la corrida siguiente a la entrega que sale tarde, y no distingue «no llegó» de «no había novedades».
+- **Alcance:** las **seis entregas diarias** (A24, A3+A4, A11, A16, A10, A7). No aplica a **A2** —que es un stream— ni a los upserts intradía de **A22**, que son correcciones puntuales y no un archivo.
+- **Lo que el consumidor debe garantizar:** idempotencia por `(bucket, key, versionId)` —la entrega es **al-menos-una-vez**—, resolver el orden por el nombre del objeto y no por el de llegada, DLQ tras tres intentos, y carga transaccional por entrega.
+- **No cambia ningún layout:** este activo describe cómo llega el archivo; qué trae lo sigue declarando el spec de cada entrega.
+
 ### A22 · Endpoint de actualización intradía de la tabla interna (Security) — ENTRADA por evento
-- **Tipo:** API REST expuesta/consumida para que **Security actualice la tabla interna** montada desde los archivos SFTP de A10 y A16 cuando los registros varían dentro del día.
+- **Tipo:** API REST expuesta/consumida para que **Security actualice la tabla interna** montada desde las entregas diarias por S3 de A10 y A16 cuando los registros varían dentro del día.
 - **Semántica:** upsert por RUT / par C-D / regla; con timestamp de actualización visible en la UI ("Actualizado hh:mm").
 - **Consumen:** re-evaluaciones de otorgamiento y refresco de verificación durante el día, sin esperar el batch siguiente.
 
@@ -178,7 +187,7 @@
 | Simulación / Documentos | A1, A10, A20 |
 | Verificación (por documento) | A10, A22 |
 | Otorgamiento | A16, A22 |
-| Líneas — Vigentes | **A7 (CSV SFTP)**, A8 |
+| Líneas — Vigentes | **A7 (CSV por S3)**, A8 |
 | Líneas — Presentación al comité | A9, A11, A12, A13, A14, A15 |
 | Panel Clientes / SOW / Sankey | A2, A5 |
 | Plan mensual / Plan por ejecutivo | A5, A7 |
@@ -186,7 +195,7 @@
 
 ## 4. Observaciones para integración
 
-1. **Activos batch vía SFTP (diarios): seis entregas** — el CSV de líneas (A7), los datos de **verificación** (A10), la **Plataforma 360** (A11), los datos de **otorgamiento** (A16), las **listas de deudores** (A3 Lista Blanca + A4 Autorizados, en un archivo único con columna `LISTA`) y la **cartera comercial** (A24, con columna `TIPO`). Todos montan **tablas internas** que son la única fuente que consulta la aplicación; el endpoint A22 las refresca intradía cuando los registros varían. Por el solapamiento de variables entre A10, A11 y A16, se recomienda evaluar **una entrega SFTP consolidada**. Los catálogos restantes (A5 SOW / A6 estrategia de precio), hoy JSON precargados, son candidatos a sumarse al mismo esquema.
+1. **Activos batch por S3 (diarios): seis entregas** — el CSV de líneas (A7), los datos de **verificación** (A10), la **Plataforma 360** (A11), los datos de **otorgamiento** (A16), las **listas de deudores** (A3 Lista Blanca + A4 Autorizados, en un archivo único con columna `LISTA`) y la **cartera comercial** (A24, con columna `TIPO`). Todos montan **tablas internas** que son la única fuente que consulta la aplicación; el endpoint A22 las refresca intradía cuando los registros varían. Por el solapamiento de variables entre A10, A11 y A16, se recomienda evaluar **una entrega SFTP consolidada**. Los catálogos restantes (A5 SOW / A6 estrategia de precio), hoy JSON precargados, son candidatos a sumarse al mismo esquema.
 1-bis. **Patrón tabla interna:** la app nunca consulta a Security en línea para otorgamiento/verificación; lee siempre su tabla interna (batch + upserts A22), lo que desacopla disponibilidad y latencia del origen.
 2. **A13 es la única escritura hacia sistemas externos** (inyección); todo lo demás hacia afuera son canales de contacto (A17/A18) y el evento de curse (A19).
 3. La app hoy **mockea** A9–A15 con servicios deterministas; el contrato de datos de este documento es la referencia para reemplazarlos por las integraciones reales.
@@ -212,7 +221,7 @@ El millón es una abreviatura de **pantalla**. En el dato, la unidad es el peso.
 es lo que dejó a la vista el problema: cuando cada dato tenía que salir de un activo concreto hubo que
 elegir de cuál, y varios estaban en más de uno.
 
-Las cinco entregas SFTP se levantaron una por una, cada una con el origen que la produce, y por eso
+Las entregas diarias se levantaron una por una, cada una con el origen que la produce, y por eso
 varias traen el **mismo dato** sin que ninguna declare cuál manda. Mientras los valores coincidan no se
 nota; el día que difieran —y difieren, porque tienen cortes distintos— el sistema elige por accidente:
 gana el activo que se cargó último, o el que consulta la función que preguntó primero. Esta sección
@@ -284,7 +293,7 @@ debe escribirla en la tabla interna.
   distintas sobre un número que, si sale de dos activos con cortes distintos, no es el mismo número.
 - **Clasificación: maestro A3/A4.** Al revés que la nota: la clasificación **es** la lista (BLANCA /
   AUTORIZADA), así que su maestro es la entrega que la define. A10 la lleva como contexto.
-- **Línea aprobada: ninguna de las dos entregas SFTP.** A7 es la **fotografía de cartera** de la vista
+- **Línea aprobada: ninguna de las dos entregas diarias.** A7 es la **fotografía de cartera** de la vista
   Líneas (batch diario + refresco horario A8) y A16 la lleva como **variable del modelo de riesgo**
   (C-de-línea). La cifra con que se **decide** si una factura cabe es la de **A23**, que es la única que
   devuelve los tres niveles con `aprobada / utilizada / reservada / disponible` y la única que está neta
@@ -309,7 +318,7 @@ llaveada por **nombre**. De quién es un cliente no es un atributo de su SOW, y 
 un campo que no es suyo nadie sabe que hay que actualizarlo. Peor: renombrar a una persona dejaba a
 toda su cartera sin dueño, sin error y sin forma de notarlo salvo que alguien reclamara.
 
-**Resuelto con `A24 · Cartera comercial`** (`Integraciones/spec_sftp_cartera.md`), que declara por RUT
+**Resuelto con `A24 · Cartera comercial`** (`Integraciones/spec_s3_cartera.md`), que declara por RUT
 cliente su ejecutivo, y por ejecutivo su equipo, **jefatura**, zona y sucursal. Tres decisiones de
 diseño que conviene no perder:
 

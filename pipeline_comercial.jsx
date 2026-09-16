@@ -429,7 +429,7 @@ const SCHEMA_VERSION = {
 };
 
 // ── Contratos de datos externos ─────────────────────────────────────────────────────────────────
-// Colecciones que inyecta el webhook/SFTP (datos_inyectados.js). Se declara el contrato ESPERADO y se
+// Colecciones que inyecta el webhook o la ingesta por S3 (datos_inyectados.js). Se declara el contrato ESPERADO y se
 // valida al arrancar: si el proveedor cambia un campo, hoy la app simplemente deja de clasificar
 // facturas sin decir por qué. Con esto queda un diagnóstico legible en Configuración › Versión.
 const CONTRATOS_DATOS = [
@@ -838,7 +838,7 @@ const TAG_COLORS = {
 // cliente. NADA de esto es del pipeline: lo produce RRHH y la administración comercial, cambia todos
 // los días y llega en el archivo de cartera de cada mañana. Vivía en cuatro constantes de módulo y en
 // un campo pasajero del A5 (`SHARE_OF_WALLET.Ejecutivo`, que además viaja por NOMBRE: renombrar a una
-// persona rompía la cartera en silencio). Ver `Integraciones/spec_sftp_cartera.md`.
+// persona rompía la cartera en silencio). Ver `Integraciones/spec_s3_cartera.md`.
 //
 // El archivo trae DOS granos con una columna `TIPO`: las personas (`EJECUTIVO`) y las asignaciones
 // (`CARTERA`). Se cargan juntos a propósito — una asignación a un código que el archivo no declara es
@@ -11637,7 +11637,7 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
 // ============================================================
 const catCliente = (cc) => (["A1", "A2", "A3"].includes(cc) ? 1 : ["A4", "A5"].includes(cc) ? 2 : ["A6", "B1"].includes(cc) ? 3 : ["B2", "B3", "B4"].includes(cc) ? 4 : 3);
 // ── ACTIVO A10 · VERIFICACION — variables del predictor por par cliente-deudor ──────────────────
-// Llega por SFTP a diario, con upsert intradía para V07/V08 (degradables dentro del mes). El pipeline
+// Llega a diario por la ingesta de S3, con upsert intradía para V07/V08 (degradables dentro del mes). El pipeline
 // NO las sintetiza: las LEE. Lo que el archivo no puede traer son las RAZONES contra el documento que
 // se está evaluando —V03, V04, V06 y V09 dependen del monto o del vencimiento de esa factura—, así que
 // trae el DENOMINADOR (lo comprado al par en 3M, su venta mensual, su plazo histórico) y NEX calcula.
@@ -11651,9 +11651,9 @@ const VERIF_A10 = (() => {
   }
   return { ix, porPar };
 })();
-// ── ACTIVO A16 · OTORGAMIENTO — la tabla de variables de riesgo que llega por SFTP ──────────────
+// ── ACTIVO A16 · OTORGAMIENTO — la tabla de variables de riesgo de la entrega diaria ─────────────
 // Una fila por (RUT, ROL, RUT_CONTRAPARTE), en formato columnar igual que el CSV de origen (ver
-// `Integraciones/spec_sftp_otorgamiento.md`). El motor NO sintetiza estas variables: las LEE. Los
+// `Integraciones/spec_s3_otorgamiento.md`). El motor NO sintetiza estas variables: las LEE. Los
 // umbrales viven sólo en las reglas, de modo que qué porcentaje de la cartera cae en excepción es una
 // propiedad EMERGENTE del dato y no un número puesto a mano en un generador.
 // Sin datos inyectados el índice queda vacío y toda entidad se lee como SIN hallazgos.
@@ -17360,7 +17360,7 @@ function CfgVersion() {
           sin UPDATE ni DELETE para la aplicación.
         </div>
       </Caja>
-      <Caja titulo="Contratos con integraciones" sub="Colecciones que inyecta el webhook/SFTP. Si una queda «ausente» o con campos faltantes, el inbound deja de clasificar facturas y el pipeline aparece vacío.">
+      <Caja titulo="Contratos con integraciones" sub="Colecciones que inyecta el webhook o la ingesta por S3. Si una queda «ausente» o con campos faltantes, el inbound deja de clasificar facturas y el pipeline aparece vacío.">
         {contratos.map((c) => (
           <div key={c.coleccion} className="flex items-center justify-between gap-4 py-1.5" style={{ borderBottom: `1px solid ${C.line}` }}>
             <span className="t12" style={{ color: C.sub }}>{c.coleccion} <span style={{ color: C.faint }}>· esquema {c.esquema}</span></span>
@@ -20972,7 +20972,7 @@ function lineaSalud(l) {
 // resolución ocurren en un sistema EXTERNO integrado vía API. Servicios mock deterministas:
 //  API 1 Inyección · API 2 Listar procesos · API 3 Estado · API 4 Plataforma 360 · API 5 Documental ·
 //  API 6 Riesgo BICE (swagger: clasificación, consolidado, CMF, ACHEF, boletín, previsional, protestos).
-// Las líneas vigentes se inyectan a diario desde un CSV vía SFTP; los montos se refrescan cada 1 h vía API.
+// Las líneas vigentes se inyectan a diario desde un CSV depositado en S3; los montos se refrescan cada 1 h vía API.
 // ============================================================
 const SOLICITUDES_LINEA = [];
 let SOLIC_SEQ = 0;
@@ -21394,7 +21394,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
 
   const secLinea = () => (
     <>
-      <div className="mb-2 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.sub }}><Check size={11} style={{ color: "#16A34A" }} /> Datos internos de línea · CSV SFTP diario + montos vía API cada 1 h. La propuesta es editable y se digita en <b>pesos</b>.</div>
+      <div className="mb-2 flex items-center gap-2 rounded-lg px-3 py-1.5 t10" style={{ backgroundColor: C.page, border: `1px solid ${C.line}`, color: C.sub }}><Check size={11} style={{ color: "#16A34A" }} /> Datos internos de línea · CSV diario por S3 + montos vía API cada 1 h. La propuesta es editable y se digita en <b>pesos</b>.</div>
       <div className="grid gap-3 md:grid-cols-2">
         <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
           <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>Situación actual</div>
@@ -21771,7 +21771,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
               </div>
               <DocSec n={1} t="Comité y cliente" sub="API 4 · Plataforma 360 + API 5 · Documental">{secComite()}</DocSec>
               <DocSec n={2} t="Financieros y riesgo" sub="API 6 · Riesgo BICE + API 4 · Plataforma 360">{secFinanciero()}</DocSec>
-              <DocSec n={3} t="Información de línea" sub="CSV SFTP diario + montos vía API">{secLinea()}</DocSec>
+              <DocSec n={3} t="Información de línea" sub="CSV diario por S3 + montos vía API">{secLinea()}</DocSec>
               <DocSec n={4} t="Deudores" sub={`${deudores.length} deudor(es) · nota ponderada ${promNota}`}>{secDeudores()}</DocSec>
               <DocSec n={5} t="Bienes y garantías" sub={`${fianzas.length} fianza(s) · ${garantias.length} garantía(s)`}>{secBienes()}</DocSec>
               <DocSec n={6} t="Presentación comercial" sub="borrador IA editable">{secNotas()}</DocSec>
@@ -22128,14 +22128,14 @@ function LineasView({ soloExec, usuario }) {
         <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Líneas de crédito</div>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Líneas de crédito</h1>
       </div>
-      {/* Sub-tabs: Vigentes (CSV SFTP diario + montos API 1h) | Solicitudes (Bandeja API 2/3) */}
+      {/* Sub-tabs: Vigentes (CSV diario por S3 + montos API 1h) | Solicitudes (Bandeja API 2/3) */}
       <div className="flex items-center justify-between">
         <div className="flex gap-6" style={{ borderBottom: `1px solid ${C.line}` }}>
           {[["vigentes", "Vigentes", Check], ["enproceso", `Solicitudes${api2ListarProcesos().length ? " · " + api2ListarProcesos().length : ""}`, Clock]].map(([k, l, Ic]) => (
             <button key={k} onClick={() => setSub(k)} className="flex items-center gap-1.5 px-1 pb-2 t12" style={{ borderBottom: `2px solid ${sub === k ? C.indigo : "transparent"}`, color: sub === k ? C.indigo : C.sub, fontWeight: sub === k ? 600 : 400, marginBottom: -1 }}><Ic size={13} /> {l}</button>
           ))}
         </div>
-        <div className="t9" style={{ color: C.faint }}>Última carga CSV (SFTP): hoy 06:15 · Montos actualizados vía API: {new Date().getHours()}:00 · Haz clic en una fila para modificar/renovar; en las empresas <b>sin línea</b> el mismo clic abre la solicitud de línea nueva.</div>
+        <div className="t9" style={{ color: C.faint }}>Última carga CSV (S3): hoy 06:15 · Montos actualizados vía API: {new Date().getHours()}:00 · Haz clic en una fila para modificar/renovar; en las empresas <b>sin línea</b> el mismo clic abre la solicitud de línea nueva.</div>
       </div>
       {sub === "vigentes" && (<>
       <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">

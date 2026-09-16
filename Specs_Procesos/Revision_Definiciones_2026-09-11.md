@@ -121,7 +121,7 @@ por deudor (`stKey = "<n>@<rut>"`), como las D. El PDF las lista en el bloque CL
 
 **Consecuencia para §2 y §6:** donde el PDF dice que las reglas evaluadas por deudor son **D01–D23**,
 ahora son **D01–D23 y C47–C50**. Y el layout A16 suma cuatro columnas `*_CD` en la fila `DEUDOR` (ver
-`Integraciones/spec_sftp_otorgamiento.md`).
+`Integraciones/spec_s3_otorgamiento.md`).
 
 > **Historia de estas cuatro reglas, que conviene leer entera.** Hasta el 11-09-2026 **no estaban
 > implementadas**: el motor corría 75 de las 79 que la política declara. El 11-09 se implementaron como
@@ -252,9 +252,9 @@ Estos ya están arreglados; se listan para que no se vuelvan a auditar.
 
 | Documento | Qué decía | Qué dice ahora |
 |---|---|---|
-| `Integraciones/spec_sftp_verificacion.md` (A10) | V05 `> 4`; V06 `< 5 días` en una columna `V06_DIF_FECHA_PAGO_DIAS`; V10 `> 20× op ó > MM$1.500`; `SEGMENTO ELITE\|OTHERS`; `NOTA_DEUDOR ≥ 3,7 para Elite` | V05 **≥ 4**; V06 **≤ 5% del plazo**, con la columna renombrada a `V06_PLAZO_PROM_PAGO_DIAS` (trae el plazo promedio del par y NEX calcula la desviación); V10 **> MM$1.000** fijo; `PRIME\|OTROS` informativo; la entrada es `prime` **o** nota **> 4,2` |
-| `Integraciones/sftp_verificacion.csv` | Igual que arriba, con `ELITE` en los datos | Columna renombrada y filas al modelo vigente |
-| `Integraciones/spec_sftp_otorgamiento.md` (A16) | Cartera del par y del cliente en las mismas cuatro columnas; homologación `6 − N` | Cuatro columnas `*_CD` propias en la fila `DEUDOR`; niveles sin homologar y ruteo (área, nivel) |
+| `Integraciones/spec_s3_verificacion.md` (A10) | V05 `> 4`; V06 `< 5 días` en una columna `V06_DIF_FECHA_PAGO_DIAS`; V10 `> 20× op ó > MM$1.500`; `SEGMENTO ELITE\|OTHERS`; `NOTA_DEUDOR ≥ 3,7 para Elite` | V05 **≥ 4**; V06 **≤ 5% del plazo**, con la columna renombrada a `V06_PLAZO_PROM_PAGO_DIAS` (trae el plazo promedio del par y NEX calcula la desviación); V10 **> MM$1.000** fijo; `PRIME\|OTROS` informativo; la entrada es `prime` **o** nota **> 4,2` |
+| `Integraciones/s3_verificacion.csv` | Igual que arriba, con `ELITE` en los datos | Columna renombrada y filas al modelo vigente |
+| `Integraciones/spec_s3_otorgamiento.md` (A16) | Cartera del par y del cliente en las mismas cuatro columnas; homologación `6 − N` | Cuatro columnas `*_CD` propias en la fila `DEUDOR`; niveles sin homologar y ruteo (área, nivel) |
 | `Specs_Procesos/spec-verificacion-facturas.md` | Pseudocódigo con 5 criterios en el recortado; regla 9 con `MntFactura` **y** `MntOpC-D` | Seis criterios (la 1 incluida); la 9 sólo sobre el total, con el motivo explicado |
 | `Specs_Procesos/spec-asignacion-lineas.md` | Orden por nota; cascada sin LF1 ni estados A/B; motivo `paraguas`; §3.9 «no implementado»; §8.8 «pasan de reservadas a aprobadas» | Orden por **tramo** y después nota; estados A/B con la LF1 y el quinto motivo `lf1`; motivos con sus nombres reales y las dos resoluciones del deudor; §3.9 y §6 marcados como implementados en parte / no implementados; §8.8 alineado con §3.7 |
 | `Levantamiento_Activos_Informacion.md` | A10 con «segmento (Elite / Otros)» y «V06 diferencia fecha de pago»; A16 con la homologación | Segmento decidido por NEX, V06 como plazo promedio, V09 fuera del archivo; A16 con la cartera del par y el ruteo (área, nivel) |

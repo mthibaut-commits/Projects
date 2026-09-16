@@ -1,7 +1,7 @@
-# Spec — sftp_otorgamiento.csv (Activo A16)
+# Spec — s3_otorgamiento.csv (Activo A16)
 
 **Propósito:** variables del **Modelo de Riesgo v1.0** para evaluar el catálogo de otorgamiento **C01–C52 (cliente)**, **D01–D23 (deudor)** y **O01–O04 (operación)**. Monta la sección OTORGAMIENTO de la **tabla interna**; el motor de NEX evalúa localmente los tramos (risk tiers) y niveles (N1..N5 / Comité) contra esta tabla, sin recalcular nada en origen.
-**Transporte:** SFTP · `/in/otorgamiento/` · `OTORGAMIENTO_AAAAMMDD.csv` · diaria · UTF-8 · separador `;` · con header. **Intradía:** upserts vía API **A22** (dominio `OTORGAMIENTO`, mismos nombres de campo). Full-replace diario + upserts.
+**Transporte:** S3 · `s3://nex-ingesta-<ambiente>/otorgamiento/OTORGAMIENTO_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** upserts vía API **A22** (dominio `OTORGAMIENTO`, mismos nombres de campo). Full-replace diario + upserts.
 **Unidades:** montos en **pesos** salvo sufijo `_MM` (millones) o `_M` (miles); porcentajes 0–100; booleanos 1/0; fechas ISO `AAAA-MM-DD` (o `AAAAMM` para IVA).
 
 ---
@@ -86,7 +86,7 @@ Variables de **operación** (O01–O03: spread bajo banda, comisión/gastos bajo
 
 ---
 
-## 5. Ejemplo (ver `sftp_otorgamiento.csv`)
+## 5. Ejemplo (ver `s3_otorgamiento.csv`)
 
 El archivo de ejemplo trae 5 filas:
 

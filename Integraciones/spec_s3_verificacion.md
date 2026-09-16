@@ -1,7 +1,7 @@
-# Spec — sftp_verificacion.csv (Activo A10)
+# Spec — s3_verificacion.csv (Activo A10)
 
 **Propósito:** variables del **Predictor de Verificación** (V01–V10) por **par cliente-deudor** (ventana 3M/6M). Monta la sección VERIFICACION de la **tabla interna**. NEX decide localmente: VERIFICADA POR MODELO o VERIFICACIÓN TELEFÓNICA antes de girar.
-**Transporte:** SFTP · `/in/verificacion/` · `VERIFICACION_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. **Intradía:** upserts vía API A22 (dominio `VERIFICACION`) — clave para V07/V08 que son **degradables intramés**.
+**Transporte:** S3 · `s3://nex-ingesta-<ambiente>/verificacion/VERIFICACION_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** upserts vía API A22 (dominio `VERIFICACION`) — clave para V07/V08 que son **degradables intramés**.
 **Clave:** `RUT_CLIENTE` + `RUT_DEUDOR`. Full-replace diario + upserts.
 
 | Campo | Criterio | Umbral | Descripción |

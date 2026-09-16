@@ -2,7 +2,7 @@
 
 Lo que hay acá **no describe lo que la aplicación ejecuta**. Se conserva para poder rastrear de dónde
 salió el catálogo actual, no como fuente. La fuente normativa es la spec de Calificación v1.1 más
-`Integraciones/spec_sftp_otorgamiento.md`, y lo que corre es el catálogo **C01–C52 / D01–D23 / O01–O04**
+`Integraciones/spec_s3_otorgamiento.md`, y lo que corre es el catálogo **C01–C52 / D01–D23 / O01–O04**
 que vive en `pipeline_comercial.jsx`.
 
 ## `Rules Cliente2_v0.xlsx` y `Rules Deudor_v0.xlsx`

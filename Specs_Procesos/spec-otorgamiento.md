@@ -382,5 +382,5 @@ listados uno por uno en `Inconsistencias_Motor_Otorgamiento.md` §5.
 | `spec-verificacion-facturas.md` | la segunda rutina de la misma reevaluación |
 | `spec-asignacion-lineas.md` | la tercera: cuánto cupo hay |
 | `spec-pricing-simulacion.md` · `spec-modelo-giro.md` | lo que viene después del otorgamiento |
-| `Integraciones/spec_sftp_otorgamiento.md` | el layout A16: las variables que alimentan el motor |
+| `Integraciones/spec_s3_otorgamiento.md` | el layout A16: las variables que alimentan el motor |
 | `Levantamiento_Activos_Informacion.md` | el inventario A1–A23 y, en §5, qué activo es maestro de cada campo |

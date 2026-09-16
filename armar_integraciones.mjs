@@ -2,7 +2,7 @@
    CONSOLIDADO DE INTEGRACIONES — reúne los specs de `Integraciones/` en un solo documento.
 
        node armar_integraciones.mjs
-       PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node md_a_pdf.mjs Integraciones/Integraciones_APIs_y_SFTP.md
+       PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node md_a_pdf.mjs Integraciones/Integraciones_APIs_y_S3.md
 
    Existe por la misma razón que `md_a_pdf.mjs`: un documento que reúne a otros once y se mantiene
    a mano se desfasa de ellos a la primera corrección, y el desfase no se nota hasta que alguien
@@ -15,11 +15,13 @@ import { readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 
 const DIR = "Integraciones";
-const SALIDA = join(DIR, "Integraciones_APIs_y_SFTP.md");
+const SALIDA = join(DIR, "Integraciones_APIs_y_S3.md");
 
 const GRUPOS = [
-  { titulo: "Entregas SFTP diarias", intro: "Cada archivo monta una sección de la **tabla interna**. La aplicación nunca consulta a Security en línea: lee siempre esa tabla, que se refresca con el batch diario y con los upserts intradía de la API A22.",
-    specs: ["spec_sftp_cartera", "spec_sftp_deudores_listas", "spec_sftp_plataforma360", "spec_sftp_otorgamiento", "spec_sftp_verificacion", "spec_sftp_lineas_vigentes"] },
+  { titulo: "El transporte", intro: "Cómo llega una entrega y qué la hace procesarse. Va primero porque las seis entregas diarias comparten este mecanismo y ninguna lo redefine.",
+    specs: ["spec_s3_ingesta"] },
+  { titulo: "Entregas diarias", intro: "Cada archivo monta una sección de la **tabla interna**. La aplicación nunca consulta a Security en línea: lee siempre esa tabla, que se refresca con la entrega diaria y con los upserts intradía de la API A22.",
+    specs: ["spec_s3_cartera", "spec_s3_deudores_listas", "spec_s3_plataforma360", "spec_s3_otorgamiento", "spec_s3_verificacion", "spec_s3_lineas_vigentes"] },
   { titulo: "Streams", intro: "Registro electrónico de cesiones. No es una entrega diaria ni una consulta puntual: es el histórico del que se derivan el mix de financiamiento, la detección de competencia y el bloqueo de un documento ya cedido.",
     specs: ["spec_aecsync"] },
   { titulo: "APIs", intro: "La primera la **expone NEX** para que Security actualice la tabla interna dentro del día; las otras tres las **consume** NEX.",
@@ -47,7 +49,8 @@ const leer = (slug) => {
     slug, titulo,
     nombre: mT ? mT[1] : titulo,
     activos: mT ? mT[3].trim() : "—",
-    transporte: ((cuerpo.match(/^\*\*Transporte:\*\*\s*([A-Za-zÁÉÍÓÚáéíóú]+)/m) || [])[1] || "API").toUpperCase(),
+    // El token puede llevar dígitos ("S3"): sin ellos la columna decía "S".
+    transporte: ((cuerpo.match(/^\*\*Transporte:\*\*\s*([A-Za-z0-9ÁÉÍÓÚáéíóú]+)/m) || [])[1] || "API").toUpperCase(),
     // El propósito es la primera frase: alcanza para un índice y no obliga a abrir el capítulo.
     proposito: ((cuerpo.match(/^\*\*Propósito:\*\*\s*([\s\S]*?)(?:\.\s|\.\n)/m) || [])[1] || "").replace(/\n/g, " ").replace(/\s+/g, " ").trim(),
     cuerpo: degradar(cuerpo).replace(/^\s+/, ""),
@@ -58,7 +61,7 @@ const specs = GRUPOS.flatMap((g) => g.specs.map(leer));
 const hoy = new Date().toISOString().slice(0, 10);
 
 const doc = [];
-doc.push("# Integraciones — APIs y SFTP");
+doc.push("# Integraciones — APIs y S3");
 doc.push("");
 doc.push(`**Propósito:** el contrato de las entregas que alimentan NEX Factoring y de las APIs que expone o consume. Reúne los ${specs.length} specs de \`Integraciones/\`, que siguen siendo la fuente de cada uno.`);
 doc.push(`**Alcance:** ${specs.length} integraciones · generado el ${hoy}.`);
@@ -67,7 +70,9 @@ doc.push("---");
 doc.push("");
 doc.push("## El patrón");
 doc.push("");
-doc.push("Todas las entregas siguen la misma forma: **SFTP diario → tabla interna → upserts intradía por la API A22**. La aplicación lee siempre la tabla interna y nunca consulta a Security en línea, así que una integración que no llega no deja la pantalla en blanco: deja el dato del día anterior, que es un estado que se puede explicar.");
+doc.push("Todas las entregas siguen la misma forma: **el archivo se deposita en S3 → S3 avisa → el backoffice lo procesa y monta la tabla interna → los upserts intradía entran por la API A22**. La aplicación lee siempre la tabla interna y nunca consulta a Security en línea, así que una integración que no llega no deja la pantalla en blanco: deja el dato del día anterior, que es un estado que se puede explicar.");
+doc.push("");
+doc.push("El aviso reemplaza al cron: el procesamiento arranca cuando el archivo llega y no cuando el reloj lo permite, y como el `PutObject` de S3 es atómico desaparece el archivo a medio escribir que el SFTP dejaba ver — y con él el archivo centinela que había que acordar para taparlo.");
 doc.push("");
 doc.push("Dos integraciones se salen del patrón a propósito. **A23 · consulta de líneas** se llama en el momento de evaluar una oferta, porque el cupo disponible cambia con cada operación que cursa cualquier canal y una foto diaria no sirve para decidir. **A13/A14/A15 · gestión de líneas** es el borde con el sistema del comité: NEX inyecta y consulta, y la resolución ocurre afuera.");
 doc.push("");

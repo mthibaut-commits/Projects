@@ -1,7 +1,7 @@
-# Spec — sftp_cartera.csv (Activo A24)
+# Spec — s3_cartera.csv (Activo A24)
 
 **Propósito:** la **estructura comercial** del factoring —quién es ejecutivo, de qué equipo, bajo qué jefatura, en qué zona y sucursal— y la **asignación de cada cliente a su ejecutivo**. Es lo que decide **quién ve qué** en el tubo y a quién se le atribuye una operación.
-**Transporte:** SFTP · `/in/cartera/` · `CARTERA_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. **Intradía:** upserts vía API A22 (dominio `CARTERA`) — un ejecutivo que entra o una cartera que se traspasa no esperan al batch del día siguiente.
+**Transporte:** S3 · `s3://nex-ingesta-<ambiente>/cartera/CARTERA_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** upserts vía API A22 (dominio `CARTERA`) — un ejecutivo que entra o una cartera que se traspasa no esperan al batch del día siguiente.
 **Clave:** `TIPO` + `COD_EJECUTIVO` + `RUT_CLIENTE`. Full-replace diario + upserts.
 
 ## Por qué existe

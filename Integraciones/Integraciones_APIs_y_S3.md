@@ -1,13 +1,15 @@
-# Integraciones — APIs y SFTP
+# Integraciones — APIs y S3
 
-**Propósito:** el contrato de las entregas que alimentan NEX Factoring y de las APIs que expone o consume. Reúne los 11 specs de `Integraciones/`, que siguen siendo la fuente de cada uno.
-**Alcance:** 11 integraciones · generado el 2026-09-16.
+**Propósito:** el contrato de las entregas que alimentan NEX Factoring y de las APIs que expone o consume. Reúne los 12 specs de `Integraciones/`, que siguen siendo la fuente de cada uno.
+**Alcance:** 12 integraciones · generado el 2026-09-16.
 
 ---
 
 ## El patrón
 
-Todas las entregas siguen la misma forma: **SFTP diario → tabla interna → upserts intradía por la API A22**. La aplicación lee siempre la tabla interna y nunca consulta a Security en línea, así que una integración que no llega no deja la pantalla en blanco: deja el dato del día anterior, que es un estado que se puede explicar.
+Todas las entregas siguen la misma forma: **el archivo se deposita en S3 → S3 avisa → el backoffice lo procesa y monta la tabla interna → los upserts intradía entran por la API A22**. La aplicación lee siempre la tabla interna y nunca consulta a Security en línea, así que una integración que no llega no deja la pantalla en blanco: deja el dato del día anterior, que es un estado que se puede explicar.
+
+El aviso reemplaza al cron: el procesamiento arranca cuando el archivo llega y no cuando el reloj lo permite, y como el `PutObject` de S3 es atómico desaparece el archivo a medio escribir que el SFTP dejaba ver — y con él el archivo centinela que había que acordar para taparlo.
 
 Dos integraciones se salen del patrón a propósito. **A23 · consulta de líneas** se llama en el momento de evaluar una oferta, porque el cupo disponible cambia con cada operación que cursa cualquier canal y una foto diaria no sirve para decidir. **A13/A14/A15 · gestión de líneas** es el borde con el sistema del comité: NEX inyecta y consulta, y la resolución ocurre afuera.
 
@@ -15,28 +17,141 @@ Dos integraciones se salen del patrón a propósito. **A23 · consulta de línea
 
 | Documento | Activo | Transporte | Qué entrega |
 |---|---|---|---|
-| `sftp_cartera.csv` | **A24** | SFTP | la **estructura comercial** del factoring —quién es ejecutivo, de qué equipo, bajo qué jefatura, en qué zona y sucursal— y la **asignación de cada cliente a su ejecutivo** |
-| `sftp_deudores_listas.csv` | **A3 + A4** | SFTP | catálogo diario de **buenos deudores** — Lista Blanca (A3) y Deudores Autorizados (A4) — en un archivo único diferenciado por la columna `LISTA` |
-| `sftp_plataforma360.csv` | **A11** | SFTP | información de empresa de la Plataforma 360 (firmográfica, comercial, índices, ventas, socios) por RUT — clientes y deudores |
-| `sftp_otorgamiento.csv` | **A16** | SFTP | variables del **Modelo de Riesgo v1.0** para evaluar el catálogo de otorgamiento **C01–C52 (cliente)**, **D01–D23 (deudor)** y **O01–O04 (operación)** |
-| `sftp_verificacion.csv` | **A10** | SFTP | variables del **Predictor de Verificación** (V01–V10) por **par cliente-deudor** (ventana 3M/6M) |
-| `sftp_lineas_vigentes.csv` | **A7** | SFTP | carga diaria de las líneas de crédito vigentes por cliente |
+| `Ingesta por AWS S3` | **A25** | S3 | el transporte de las **entregas diarias** |
+| `s3_cartera.csv` | **A24** | S3 | la **estructura comercial** del factoring —quién es ejecutivo, de qué equipo, bajo qué jefatura, en qué zona y sucursal— y la **asignación de cada cliente a su ejecutivo** |
+| `s3_deudores_listas.csv` | **A3 + A4** | S3 | catálogo diario de **buenos deudores** — Lista Blanca (A3) y Deudores Autorizados (A4) — en un archivo único diferenciado por la columna `LISTA` |
+| `s3_plataforma360.csv` | **A11** | S3 | información de empresa de la Plataforma 360 (firmográfica, comercial, índices, ventas, socios) por RUT — clientes y deudores |
+| `s3_otorgamiento.csv` | **A16** | S3 | variables del **Modelo de Riesgo v1.0** para evaluar el catálogo de otorgamiento **C01–C52 (cliente)**, **D01–D23 (deudor)** y **O01–O04 (operación)** |
+| `s3_verificacion.csv` | **A10** | S3 | variables del **Predictor de Verificación** (V01–V10) por **par cliente-deudor** (ventana 3M/6M) |
+| `s3_lineas_vigentes.csv` | **A7** | S3 | carga diaria de las líneas de crédito vigentes por cliente |
 | `AECSync` | **A2** | STREAM | todas las **cesiones electrónicas** de un cliente: qué documento cedió, a qué **cesionario**, cuándo y por cuánto |
-| `swagger_actualizacion_intradia.yaml` | **A22** | API | endpoint **expuesto por NEX** para que Security actualice la **tabla interna** (montada desde los SFTP diarios de otorgamiento A16, verificación A10 y Plataforma 360 A11) cuando los registros varían dentro del día |
+| `swagger_actualizacion_intradia.yaml` | **A22** | API | endpoint **expuesto por NEX** para que Security actualice la **tabla interna** (montada desde las entregas diarias de otorgamiento A16, verificación A10 y Plataforma 360 A11) cuando los registros varían dentro del día |
 | `swagger_consulta_lineas.yaml` | **A23** | API | responder, en el momento de evaluar una oferta, **cuánto cupo hay disponible** en los tres niveles que la regla de validación compara |
-| `swagger_montos_lineas.yaml` | **A8** | API | refrescar durante el día los **montos** (uso, disponible, proyección, morosidad) de las líneas cargadas por el batch diario `sftp_lineas_vigentes.csv` (A7) |
+| `swagger_montos_lineas.yaml` | **A8** | API | refrescar durante el día los **montos** (uso, disponible, proyección, morosidad) de las líneas cargadas por el batch diario `s3_lineas_vigentes.csv` (A7) |
 | `swagger_gestion_lineas.yaml` | **A13 / A14 / A15** | API | integrar NEX con el sistema externo de gestión de líneas (comité) |
 
 ---
 
-## Entregas SFTP diarias
+## El transporte
 
-Cada archivo monta una sección de la **tabla interna**. La aplicación nunca consulta a Security en línea: lee siempre esa tabla, que se refresca con el batch diario y con los upserts intradía de la API A22.
+Cómo llega una entrega y qué la hace procesarse. Va primero porque las seis entregas diarias comparten este mecanismo y ninguna lo redefine.
 
-### sftp_cartera.csv · A24
+### Ingesta por AWS S3 · A25
+
+**Propósito:** el transporte de las **entregas diarias**. Security deja el archivo en un bucket S3 y S3 **avisa solo** al backoffice, que lo procesa y monta la tabla interna. Lo comparten las seis entregas de batch (A24, A3+A4, A11, A16, A10, A7), que no lo redefinen: este documento dice **cómo llega** el archivo y cada spec dice **qué trae**.
+**Transporte:** S3 · bucket `nex-ingesta-<ambiente>` · un prefijo por entrega · notificación `s3:ObjectCreated:*` → **SNS** → **SQS** → worker del backoffice.
+
+### Por qué el evento y no un cron
+
+El backoffice **no pregunta si llegó algo: se entera**. Un cron que mira una carpeta a una hora fija tiene dos problemas que no se arreglan moviendo la hora.
+
+1. **El archivo que llega tarde espera hasta la corrida siguiente.** Si la entrega sale a las 06:20 y el cron corre a las 06:00, el pipeline trabaja un día entero con el dato de ayer sin que nada lo diga.
+2. **Procesar «lo que haya» no distingue «no llegó» de «no había novedades».** Las dos cosas se ven igual desde afuera: una carpeta sin cambios.
+
+Además, el `PutObject` de S3 es **atómico** —el objeto existe completo o no existe— y el evento se emite **cuando ya es durable**. Eso elimina el archivo a medio escribir: un transporte donde el archivo se ve mientras se sube obliga a acordar un centinela (`.done`) para saber cuándo terminar de esperar, y ese centinela es una convención más que se puede olvidar de un lado. Acá el objeto ES el centinela.
+
+### El camino del archivo
+
+```
+  Security                       AWS                              Backoffice
+  ────────                       ───                              ──────────
+  PutObject  ────────────────▶  s3://nex-ingesta-prod
+                                      │
+                                      │  s3:ObjectCreated:*  (prefijo + sufijo .csv)
+                                      ▼
+                                  SNS  nex-ingesta-eventos
+                                      │
+                                      │  (fan-out: suscripción por dominio)
+                                      ▼
+                                  SQS  nex-ingesta-<dominio>     ──▶  worker
+                                      │                                  │
+                                      │  tras N intentos                 │ procesa
+                                      ▼                                  ▼
+                                  SQS  nex-ingesta-dlq            tabla interna
+```
+
+**Por qué SNS en el medio y no S3 → SQS directo.** Un bucket admite una sola notificación por combinación de evento y prefijo, así que encadenar un segundo consumidor —un archivador, un validador, una métrica— obligaría a tocar la configuración del bucket cada vez. Con SNS el bucket publica **una** vez y quien necesite enterarse se suscribe. El costo es un salto más y vale la pena: la configuración del bucket es la parte que Security opera y que no queremos estar cambiando.
+
+**Por qué SQS y no una llamada HTTP al backoffice.** Una notificación HTTP se pierde si el backoffice está caído, desplegándose o saturado — y justamente la entrega diaria llega a una hora fija, que es cuando más probable es que coincida con una ventana de mantención. La cola retiene el evento hasta que alguien lo tome, aplica reintentos con backoff y, cuando el archivo es irrecuperable, lo deja en la **DLQ** en vez de perderlo. Un archivo que no se puede procesar tiene que quedar en algún lado donde alguien lo vea.
+
+### Convenciones del bucket
+
+| Qué | Valor |
+|---|---|
+| Bucket | `nex-ingesta-<ambiente>` (`dev` · `qa` · `prod`) |
+| Prefijo | `<dominio>/` — `cartera/` · `listas/` · `plataforma360/` · `otorgamiento/` · `verificacion/` · `lineas/` |
+| Objeto | `<ENTREGA>_AAAAMMDD.csv` — `CARTERA_20260916.csv`, `OTORGAMIENTO_20260916.csv`, … |
+| Filtro del evento | prefijo `<dominio>/` **y** sufijo `.csv` |
+| Versionado | **activado** — es lo que permite reprocesar una entrega puntual sin pedirla de nuevo |
+| Cifrado | SSE-KMS, llave administrada por el dueño del bucket |
+| Acceso público | bloqueado a nivel de cuenta y de bucket |
+
+**El prefijo es el dominio y el nombre lleva la fecha.** No se usa una jerarquía por fecha (`cartera/2026/09/16/`) porque el consumidor no lista el bucket: reacciona a un evento que ya le dice la llave exacta, y una jerarquía sólo agregaría una convención más que mantener sincronizada entre las dos partes.
+
+### El contrato del evento
+
+Lo que llega a la cola es el registro de S3, con una envoltura de SNS. El worker sólo necesita cuatro campos: **bucket**, **key**, **versionId** y **size**. Todo lo demás es contexto.
+
+```json
+{
+  "Records": [
+    {
+      "eventVersion": "2.1",
+      "eventSource": "aws:s3",
+      "awsRegion": "us-east-1",
+      "eventTime": "2026-09-16T09:04:11.238Z",
+      "eventName": "ObjectCreated:Put",
+      "s3": {
+        "bucket": { "name": "nex-ingesta-prod" },
+        "object": {
+          "key": "otorgamiento/OTORGAMIENTO_20260916.csv",
+          "size": 4821993,
+          "eTag": "9b2cf5e0c1a34d77b0f1d2e3a4b5c6d7",
+          "versionId": "nUxJ1p9VqK2sYc0tR7mB4eH6lA3wZ8gD"
+        }
+      }
+    }
+  ]
+}
+```
+
+El dominio **se deriva del prefijo de la key**, no de un campo aparte: un campo que el productor tiene que llenar es un campo que puede contradecir a la ruta, y entonces hay dos verdades sobre qué entrega es ésta.
+
+### Reglas del consumidor
+
+1. **Idempotencia por `(bucket, key, versionId)`.** S3 → SNS → SQS es **al-menos-una-vez**: el mismo evento puede llegar dos veces, y con `at-least-once` no es un caso raro sino el comportamiento normal. El worker registra la terna antes de procesar y descarta lo repetido. Sin esto, una entrega de full-replace que se procesa dos veces no rompe nada, pero una de upsert sí.
+2. **El orden NO está garantizado.** Si el mismo día llegan dos versiones de una entrega, el evento de la segunda puede entrar antes. Se resuelve con el **nombre del objeto** —que lleva la fecha— y, a igual fecha, con `eventTime`: gana el más reciente y el anterior se descarta con una anotación. No se resuelve con el orden de llegada, que no significa nada.
+3. **Un archivo que no parsea NO se reintenta indefinidamente.** Tres intentos con backoff y a la **DLQ**, con alerta. Un CSV mal formado no se arregla reintentando y, mientras se reintenta, bloquea la cola detrás de él.
+4. **La carga es transaccional por entrega.** Full-replace significa que la tabla interna queda con el archivo entero o queda como estaba: un corte a media carga deja al pipeline decidiendo con media cartera, que es peor que decidir con la de ayer.
+5. **Un archivo que no llegó es un estado, no un silencio.** Cada dominio declara su hora esperada; si a esa hora no entró evento, el backoffice lo registra y la pantalla muestra la antigüedad del dato. El evento dice cuándo llegó algo, nunca cuándo faltó algo.
+
+### Permisos
+
+- **Security** recibe un rol con `s3:PutObject` **sólo** sobre `nex-ingesta-<ambiente>/<dominio>/*`, sin `GetObject` ni `ListBucket`: quien deposita no necesita leer, y no poder leer es lo que evita que una credencial filtrada exponga las entregas de los demás.
+- **El worker** recibe `s3:GetObject` y `s3:GetObjectVersion` sobre el bucket, y el consumo de su cola. No tiene `PutObject`: el consumidor no escribe en el buzón del que lee.
+- **El bucket** no se expone a internet. El acceso va por **VPC endpoint**, así que el objeto no sale a la red pública en ningún tramo.
+
+### Reproceso
+
+Con el versionado activo, volver a procesar una entrega no obliga a pedirla de nuevo: se reemite el evento contra el `versionId` que se quiere, desde la consola de operación del backoffice. Es la operación que resuelve el caso «la entrega estaba bien pero el worker tenía un bug»: se corrige el worker y se reproduce el mismo archivo, con la garantía de que es **el mismo bytes a bytes** y no una segunda extracción del origen, que podría traer otra cosa.
+
+### Qué queda fuera de este documento
+
+- **Los layouts.** Ni un campo, ni un separador, ni un encoding: cada entrega los declara en su propio spec.
+- **La tabla interna.** Es lo único que la aplicación lee. El evento decide *cuándo* se monta, no *qué* se lee.
+- **Los upserts intradía (A22).** Entran por API: son correcciones puntuales dentro del día, no un archivo.
+- **AECSync (A2).** Es un stream, no una entrega de batch, y no pasa por acá.
+
+---
+
+## Entregas diarias
+
+Cada archivo monta una sección de la **tabla interna**. La aplicación nunca consulta a Security en línea: lee siempre esa tabla, que se refresca con la entrega diaria y con los upserts intradía de la API A22.
+
+### s3_cartera.csv · A24
 
 **Propósito:** la **estructura comercial** del factoring —quién es ejecutivo, de qué equipo, bajo qué jefatura, en qué zona y sucursal— y la **asignación de cada cliente a su ejecutivo**. Es lo que decide **quién ve qué** en el tubo y a quién se le atribuye una operación.
-**Transporte:** SFTP · `/in/cartera/` · `CARTERA_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. **Intradía:** upserts vía API A22 (dominio `CARTERA`) — un ejecutivo que entra o una cartera que se traspasa no esperan al batch del día siguiente.
+**Transporte:** S3 · `s3://nex-ingesta-<ambiente>/cartera/CARTERA_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** upserts vía API A22 (dominio `CARTERA`) — un ejecutivo que entra o una cartera que se traspasa no esperan al batch del día siguiente.
 **Clave:** `TIPO` + `COD_EJECUTIVO` + `RUT_CLIENTE`. Full-replace diario + upserts.
 
 ### Por qué existe
@@ -89,10 +204,10 @@ La columna `TIPO` distingue las dos poblaciones:
 - **La razón social de `CARTERA` es copia de conveniencia.** Se emite para que el archivo se pueda leer solo en una revisión manual; el maestro es A11. Si difieren, no se corrige el maestro: se registra la discrepancia (ver `Levantamiento_Activos_Informacion.md` §5).
 - **Un código que el padrón ya no conoce no es «Agente IA».** Ese rótulo es para lo que de verdad no tiene dueño —`exec` vacío, originado por el inbound—. Un código desconocido es alguien que se fue, y se muestra marcado: relabelarlo falsea la atribución de operaciones que sí tuvieron dueño, y el dashboard, el Plan por Ejecutivo y el churn empiezan a contarle al agente lo que negoció una persona.
 
-### sftp_deudores_listas.csv · A3 + A4
+### s3_deudores_listas.csv · A3 + A4
 
 **Propósito:** catálogo diario de **buenos deudores** — Lista Blanca (A3) y Deudores Autorizados (A4) — en un archivo único diferenciado por la columna `LISTA`. Monta la sección de listas de la **tabla interna**. Gobierna la clasificación de deudores, las reglas de prospección (CAT), y la elegibilidad del inbound (sólo LB/Autorizados/históricos abren oportunidad).
-**Transporte:** SFTP · `/in/listas/` · `DEUDORES_LISTAS_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. **Intradía:** altas/bajas urgentes vía API A22 si se requiere (dominio a habilitar) o esperan al batch siguiente.
+**Transporte:** S3 · `s3://nex-ingesta-<ambiente>/listas/DEUDORES_LISTAS_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** altas/bajas urgentes vía API A22 si se requiere (dominio a habilitar) o esperan al batch siguiente.
 **Clave:** `RUT_DEUDOR` + `LISTA`. Full-replace diario (snapshot): un deudor ausente en el archivo del día queda **fuera de listas** (pasa a "Otro").
 
 | Campo | Tipo | Descripción |
@@ -109,10 +224,10 @@ La columna `TIPO` distingue las dos poblaciones:
 
 **Reglas:** un RUT no puede estar en ambas listas simultáneamente (prima BLANCA; se loguea el conflicto) · registros con `VIGENTE_HASTA` pasada o `ESTADO=SUSPENDIDO` no habilitan elegibilidad · los cambios de lista impactan la CAT de las oportunidades abiertas en la siguiente evaluación.
 
-### sftp_plataforma360.csv · A11
+### s3_plataforma360.csv · A11
 
 **Propósito:** información de empresa de la Plataforma 360 (firmográfica, comercial, índices, ventas, socios) por RUT — clientes y deudores. Monta la sección PLATAFORMA360 de la **tabla interna**. Alimenta la presentación al comité (pasos 1, 2 y 4) y la generación IA de notas.
-**Transporte:** SFTP · `/in/plataforma360/` · `PLATAFORMA360_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. **Intradía:** upserts vía API A22 (dominio `PLATAFORMA360`).
+**Transporte:** S3 · `s3://nex-ingesta-<ambiente>/plataforma360/PLATAFORMA360_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** upserts vía API A22 (dominio `PLATAFORMA360`).
 **Clave:** `RUT` + `ROL` (CLIENTE | DEUDOR). Full-replace diario + upserts intradía.
 
 | Campo | Tipo | Descripción |
@@ -138,10 +253,10 @@ La columna `TIPO` distingue las dos poblaciones:
 
 **Notas:** campos vacíos = sin información (no 0). La nota de comportamiento se **consolidó acá** (antes viajaba además en A16 y A10, y el layout de A3/A4 también la declaraba): es un atributo de la empresa, y tres copias podían discrepar sobre el mismo RUT. Para deudores, los campos comerciales de cliente pueden venir vacíos. Solapa variables con A16: mantener consistencia de nombres o consolidar entrega (ver Levantamiento §4).
 
-### sftp_otorgamiento.csv · A16
+### s3_otorgamiento.csv · A16
 
 **Propósito:** variables del **Modelo de Riesgo v1.0** para evaluar el catálogo de otorgamiento **C01–C52 (cliente)**, **D01–D23 (deudor)** y **O01–O04 (operación)**. Monta la sección OTORGAMIENTO de la **tabla interna**; el motor de NEX evalúa localmente los tramos (risk tiers) y niveles (N1..N5 / Comité) contra esta tabla, sin recalcular nada en origen.
-**Transporte:** SFTP · `/in/otorgamiento/` · `OTORGAMIENTO_AAAAMMDD.csv` · diaria · UTF-8 · separador `;` · con header. **Intradía:** upserts vía API **A22** (dominio `OTORGAMIENTO`, mismos nombres de campo). Full-replace diario + upserts.
+**Transporte:** S3 · `s3://nex-ingesta-<ambiente>/otorgamiento/OTORGAMIENTO_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** upserts vía API **A22** (dominio `OTORGAMIENTO`, mismos nombres de campo). Full-replace diario + upserts.
 **Unidades:** montos en **pesos** salvo sufijo `_MM` (millones) o `_M` (miles); porcentajes 0–100; booleanos 1/0; fechas ISO `AAAA-MM-DD` (o `AAAAMM` para IVA).
 
 ### 1. Modelo de filas: una fila por (RUT, ROL, RUT_CONTRAPARTE)
@@ -218,7 +333,7 @@ Variables de **operación** (O01–O03: spread bajo banda, comisión/gastos bajo
 - **Ruteo de la excepción = (área, nivel):** la **regla** declara el ÁREA y su **tramo** declara el NIVEL. Con ese par se buscan los usuarios de esa área con ese nivel **o superior**; cualquiera de ellos autoriza, sin tope. Un cargo vacante lo cubre la jefatura de su misma área y **la escalada no cruza áreas**. Una regla **sin área no la aprueba nadie**: un default silencioso escondería una regla mal configurada.
 - **Re-evaluación (v1 → v2 al firmar el contrato):** las variables de **burós** (CMF / Equifax / ACHEF / infracciones) del cliente y del deudor **NO** se re-evalúan (bloqueo firme: **C10–C22, C30–C32, D02–D13**). El resto **sí** se re-evalúa (C01–C09, C23–C29, C33–C52, D01, D14–D23, O01–O04). La re-evaluación **no re-abre** las excepciones ya visadas.
 
-### 5. Ejemplo (ver `sftp_otorgamiento.csv`)
+### 5. Ejemplo (ver `s3_otorgamiento.csv`)
 
 El archivo de ejemplo trae 5 filas:
 
@@ -228,10 +343,10 @@ El archivo de ejemplo trae 5 filas:
 4. **CLIENTE `79443326-K`** — riesgoso: variación de venta −45%, `TGR_COBRANZA_JUD=$4.500.000` ⇒ **C30 HARD_BLOCK** (rechazo firme, la operación se pierde).
 5. **DEUDOR `91022333-1`** (par de `79443326-K`) — mora Equifax $7.000.000 (**D09**), par con NC 12% (**D22 N2c**), venta cruzada 64% (**D21 N2c**) y `CARTERA_MOROSA_CD=$5.200.000` (**C49 N1c**).
 
-### sftp_verificacion.csv · A10
+### s3_verificacion.csv · A10
 
 **Propósito:** variables del **Predictor de Verificación** (V01–V10) por **par cliente-deudor** (ventana 3M/6M). Monta la sección VERIFICACION de la **tabla interna**. NEX decide localmente: VERIFICADA POR MODELO o VERIFICACIÓN TELEFÓNICA antes de girar.
-**Transporte:** SFTP · `/in/verificacion/` · `VERIFICACION_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. **Intradía:** upserts vía API A22 (dominio `VERIFICACION`) — clave para V07/V08 que son **degradables intramés**.
+**Transporte:** S3 · `s3://nex-ingesta-<ambiente>/verificacion/VERIFICACION_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** upserts vía API A22 (dominio `VERIFICACION`) — clave para V07/V08 que son **degradables intramés**.
 **Clave:** `RUT_CLIENTE` + `RUT_DEUDOR`. Full-replace diario + upserts.
 
 | Campo | Criterio | Umbral | Descripción |
@@ -264,10 +379,10 @@ El archivo de ejemplo trae 5 filas:
 
 **Fuente normativa:** `Specs_Procesos/spec-verificacion-facturas.md`, que es la versión vigente del predictor. El PDF `Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf` describe la versión anterior (segmentos «Elite/Others», V10 con el múltiplo, entrada por conjunción) y quedó atrás en esos puntos.
 
-### sftp_lineas_vigentes.csv · A7
+### s3_lineas_vigentes.csv · A7
 
 **Propósito:** carga diaria de las líneas de crédito vigentes por cliente. Alimenta el tab Líneas (sub-tab Vigentes) y el recomendador. Los montos se refrescan durante el día vía API Montos (A8).
-**Transporte:** SFTP · carpeta `/in/lineas/` · nombre `LINEAS_VIGENTES_AAAAMMDD.csv` · frecuencia diaria ~06:00 · encoding UTF-8 · separador `;` · **montos en PESOS, enteros, sin separador de miles ni decimales** · primera fila header.
+**Transporte:** S3 · `s3://nex-ingesta-<ambiente>/lineas/LINEAS_VIGENTES_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Montos en PESOS**, enteros, sin separador de miles ni decimales.
 **Clave:** `ID_LINEA` (única). Carga tipo full-replace (snapshot del día).
 
 | Campo | Tipo | Descripción |
@@ -400,7 +515,7 @@ La primera la **expone NEX** para que Security actualice la tabla interna dentro
 
 ### swagger_actualizacion_intradia.yaml · A22
 
-**Propósito:** endpoint **expuesto por NEX** para que Security actualice la **tabla interna** (montada desde los SFTP diarios de otorgamiento A16, verificación A10 y Plataforma 360 A11) cuando los registros varían dentro del día. La aplicación nunca consulta a Security en línea: siempre lee la tabla interna (batch + estos upserts).
+**Propósito:** endpoint **expuesto por NEX** para que Security actualice la **tabla interna** (montada desde las entregas diarias de otorgamiento A16, verificación A10 y Plataforma 360 A11) cuando los registros varían dentro del día. La aplicación nunca consulta a Security en línea: siempre lee la tabla interna (batch + estos upserts).
 
 | Endpoint | Uso |
 |---|---|
@@ -498,7 +613,7 @@ exacta, sin tolerancia.
 
 ### swagger_montos_lineas.yaml · A8
 
-**Propósito:** refrescar durante el día los **montos** (uso, disponible, proyección, morosidad) de las líneas cargadas por el batch diario `sftp_lineas_vigentes.csv` (A7). La estructura de las líneas viene del CSV; esta API sólo actualiza montos.
+**Propósito:** refrescar durante el día los **montos** (uso, disponible, proyección, morosidad) de las líneas cargadas por el batch diario `s3_lineas_vigentes.csv` (A7). La estructura de las líneas viene del CSV; esta API sólo actualiza montos.
 
 | Endpoint | Uso |
 |---|---|

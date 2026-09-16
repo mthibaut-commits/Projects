@@ -51,7 +51,7 @@ Convención de referencias: todas las líneas apuntan a `pipeline_comercial.jsx`
 | Fuente | Rol | Referencia |
 |---|---|---|
 | `Specs_Procesos/Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf` | **Política vigente** (18-08-2026, reemplaza íntegramente a v1.0) | Normativa |
-| `Integraciones/spec_sftp_otorgamiento.md` | Contrato de datos de entrada (Activo A16) + upsert intradía A22 | Normativa |
+| `Integraciones/spec_s3_otorgamiento.md` | Contrato de datos de entrada (Activo A16) + upsert intradía A22 | Normativa |
 | `pipeline_comercial.jsx` | Implementación actual (demo) | Auditada |
 | `atribuciones_otorgamiento.json` | Export de atribuciones | Desactualizado (ver INC-07) |
 | `Rules Cliente2.xlsx`, `Rules Deudor.xlsx` | Maestros originales | Legado (ver INC-07) |
@@ -303,7 +303,7 @@ localizado en un deudor. C40–C43 (cliente) sí están implementadas (líneas 9
 
 **Corrección propuesta.** Implementarlas siguiendo el patrón de C40–C43 pero como reglas del deudor —es decir, evaluadas
 una vez por cada deudor de la operación, con `stKey = n@rut`— dado que son del par C-D. Requieren cuatro variables nuevas en
-el payload (cartera reclamada / NC / morosa / CxC del par), que **hoy no viajan** en `sftp_otorgamiento.csv`.
+el payload (cartera reclamada / NC / morosa / CxC del par), que **hoy no viajan** en `s3_otorgamiento.csv`.
 
 **Decisión pendiente.** Confirmar si C47–C50 se evalúan por par C-D (y entonces son reglas tipo D, con visado por deudor) o
 si son agregadas del cliente (y entonces son tipo C). La spec §7 las lista en el bloque CLIENTE pero las nombra «del par C-D»,
@@ -446,7 +446,7 @@ el motor no devolvería «excepción nivel Comité» sino «requiere constituci�
 
 **Corrección propuesta.** Marcarlos explícitamente como **legado** —moverlos a un subdirectorio `Legado/` o añadirles el sufijo
 `_v0`— para que nadie los tome como fuente de verdad al implementar el servicio. La fuente normativa es la spec v1.1 más
-`Integraciones/spec_sftp_otorgamiento.md`.
+`Integraciones/spec_s3_otorgamiento.md`.
 
 **Decisión pendiente.** Ninguna de negocio; es higiene del repositorio. Confirmar sólo si se conservan por trazabilidad o se
 eliminan.

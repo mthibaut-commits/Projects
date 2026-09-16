@@ -1,7 +1,7 @@
-# Spec — sftp_lineas_vigentes.csv (Activo A7)
+# Spec — s3_lineas_vigentes.csv (Activo A7)
 
 **Propósito:** carga diaria de las líneas de crédito vigentes por cliente. Alimenta el tab Líneas (sub-tab Vigentes) y el recomendador. Los montos se refrescan durante el día vía API Montos (A8).
-**Transporte:** SFTP · carpeta `/in/lineas/` · nombre `LINEAS_VIGENTES_AAAAMMDD.csv` · frecuencia diaria ~06:00 · encoding UTF-8 · separador `;` · **montos en PESOS, enteros, sin separador de miles ni decimales** · primera fila header.
+**Transporte:** S3 · `s3://nex-ingesta-<ambiente>/lineas/LINEAS_VIGENTES_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Montos en PESOS**, enteros, sin separador de miles ni decimales.
 **Clave:** `ID_LINEA` (única). Carga tipo full-replace (snapshot del día).
 
 | Campo | Tipo | Descripción |

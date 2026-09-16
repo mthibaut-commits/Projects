@@ -1,0 +1,36 @@
+{
+  "_comentario": "Evento que S3 emite al depositarse una entrega, tal como llega a la cola del backoffice (A25). La envoltura externa es de SNS; el worker parsea `Message` y lee Records[0].s3. Los cuatro campos que necesita son bucket, key, versionId y size: el dominio se deriva del PREFIJO de la key y no de un campo aparte, para que no haya dos verdades sobre qué entrega es.",
+  "Type": "Notification",
+  "MessageId": "8f4c1c2e-6b1a-4c5d-9e7f-2a3b4c5d6e7f",
+  "TopicArn": "arn:aws:sns:us-east-1:111122223333:nex-ingesta-eventos",
+  "Subject": "Amazon S3 Notification",
+  "Timestamp": "2026-09-16T09:04:11.512Z",
+  "Message": {
+    "Records": [
+      {
+        "eventVersion": "2.1",
+        "eventSource": "aws:s3",
+        "awsRegion": "us-east-1",
+        "eventTime": "2026-09-16T09:04:11.238Z",
+        "eventName": "ObjectCreated:Put",
+        "userIdentity": { "principalId": "AROAEXAMPLE:security-ingesta" },
+        "s3": {
+          "s3SchemaVersion": "1.0",
+          "configurationId": "nex-ingesta-otorgamiento",
+          "bucket": {
+            "name": "nex-ingesta-prod",
+            "ownerIdentity": { "principalId": "A1EXAMPLEOWNER" },
+            "arn": "arn:aws:s3:::nex-ingesta-prod"
+          },
+          "object": {
+            "key": "otorgamiento/OTORGAMIENTO_20260916.csv",
+            "size": 4821993,
+            "eTag": "9b2cf5e0c1a34d77b0f1d2e3a4b5c6d7",
+            "versionId": "nUxJ1p9VqK2sYc0tR7mB4eH6lA3wZ8gD",
+            "sequencer": "0068C9A17B3F2D1E04"
+          }
+        }
+      }
+    ]
+  }
+}

@@ -77,7 +77,7 @@ peor que el dato: quien lo lea va a creer que el motor ya evalúa la oferta real
 fechas), la comercial (quintil, márgenes, colocación promedio 12 m, spread real, segmento, jefe de grupo),
 los **socios** (RUT, participación, PEP, FATCA) y los índices (patrimonio, leverage, ventas, ventas SII).
 
-Existen `Integraciones/spec_sftp_plataforma360.md` y su CSV de muestra: el contrato está escrito, el
+Existen `Integraciones/spec_s3_plataforma360.md` y su CSV de muestra: el contrato está escrito, el
 dataset no. **Alimenta el paso 2 del wizard de comité y el resumen de empresa** — o sea, la presentación
 sobre la que el comité decide una línea.
 
