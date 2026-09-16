@@ -161,15 +161,18 @@ porque la bitácora tiene que poder decir **por qué** esta persona pudo aprobar
 ### 5. El visado: el ciclo de una excepción
 
 ```
-  evaluación  →  excepción pendiente  →  el apoderado decide  →  aprobada | rechazada
-                                              ↑
-                                    justificación del ejecutivo
-                                 (comentario o respaldo adjunto)
+  evaluación  →  excepción pendiente  →  justificación del ejecutivo  →  cerrar la oferta
+                                        (comentario o respaldo adjunto)          ↓
+                                                                         el apoderado decide
+                                                                                 ↓
+                                                                         aprobada | rechazada
 ```
 
 1. El motor produce las excepciones con su `(área, nivel)`.
-2. El **ejecutivo justifica** cada una: comentario, respaldo, o marcar que no tiene comentarios. Sin
-   eso la operación no cursa — el apoderado no puede decidir sobre algo que no le llegó justificado.
+2. El **ejecutivo justifica** cada una —comentario, respaldo, o marcar que no tiene comentarios—
+   **antes de cerrar la oferta**: mientras quede una sin justificar, el cierre está bloqueado. La
+   justificación no es un paso paralelo al visado sino su requisito de entrada, y va antes porque el
+   apoderado no puede decidir sobre algo que no le llegó justificado.
 3. El **apoderado** con atribución la aprueba o la rechaza.
 4. El agregado de la operación es: **rechazada** si hay un rechazo firme o una excepción rechazada ·
    **sujeta** si queda alguna pendiente · **aprobada** si todas están resueltas.
