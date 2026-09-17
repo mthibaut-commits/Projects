@@ -18,6 +18,7 @@ timestamp: 2026-09-17T15:29:14Z
 |---|---|---|
 | 17-09-2026 | [`2026-09-17_partir_claude_md.md`](./2026-09-17_partir_claude_md.md) | Auditoría de bootstrap agéntico y partición de `CLAUDE.md`; se abre el vault |
 | 17-09-2026 | [`2026-09-17_cablear_gates.md`](./2026-09-17_cablear_gates.md) | Tests de contrato, hooks deterministas y CI; primer hallazgo del gate de la suite |
+| 17-09-2026 | [`2026-09-17_cerrar_invariantes.md`](./2026-09-17_cerrar_invariantes.md) | Se cierra la tabla de invariantes: un gate por cada una de las 30 filas que iban sólo por revisión (30 agentes escriben, 30 refutan, se repara lo refutado). La suite pasa de 115 a 139 casos, `tests/e2e/` de 1 a 16 archivos y `tests/contract/` de 6 a 24. Los gates destaparon siete defectos de producto, corregidos en el mismo commit, y 20 desfases regla↔código que quedan como decisión |
 | 17-09-2026 | [`2026-09-17_merge_a_main.md`](./2026-09-17_merge_a_main.md) | `main` mezclado en la rama (cuatro commits paralelos, conflicto en `CLAUDE.md` portado al vault), `--no-ff` a `main` y `v0.1.0` |
 
 La historia anterior al vault (02-09 → 16-09-2026) no tiene logs propios: vive dentro de las reglas de

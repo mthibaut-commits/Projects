@@ -1,9 +1,9 @@
 ---
 type: conocimiento
 title: "Reglas — Modo Directorio (demo acotada)"
-description: "El toggle que recorta el tablero a 5 clientes con perfil de operación real. Bloque desechable: vive en una sección propia del fuente y en cinco enganches marcados"
+description: "El toggle que recorta el tablero a 5 clientes con perfil de operación real. Bloque desechable: vive en una sección propia del fuente y en los enganches marcados (nueve marcas)"
 tags: [conocimiento, reglas, dominio]
-timestamp: 2026-09-17T15:29:14Z
+timestamp: 2026-09-17T22:12:32Z
 ---
 
 # Modo Directorio (demo acotada)
@@ -12,7 +12,7 @@ timestamp: 2026-09-17T15:29:14Z
 >
 > Reglas en este archivo: **31**.
 
-31. **MODO DIRECTORIO — demo acotada** (16-09-2026, pedido del usuario). Toggle en la barra del tubo que recorta el tablero a **5 clientes** con un perfil de operación de verdad, para poder hacer una demo corta sin las ~100 oportunidades que produce el inbound. **BLOQUE DESECHABLE**: todo vive en una sección propia del fuente y en **cinco enganches marcados con la palabra `DIRECTORIO`** —el estado, el filtro de `dealsTubo`, el silencio del stream en `filtered`, los conteos de las pestañas y el botón—. Nada más del pipeline lo conoce y nada persiste: al recargar, el tubo vuelve completo.
+31. **MODO DIRECTORIO — demo acotada** (16-09-2026, pedido del usuario). Toggle en la barra del tubo que recorta el tablero a **5 clientes** con un perfil de operación de verdad, para poder hacer una demo corta sin las ~100 oportunidades que produce el inbound. **BLOQUE DESECHABLE**: todo vive en una sección propia del fuente y en **los enganches marcados con la palabra `DIRECTORIO`** (*medidos el 17-09-2026 por `regla_31.test.mjs`: nueve marcas, no cinco —se suman los dos silencios del stream, el contador de la cabecera, el ocultamiento de Start/Reiniciar/Inbound y la «Bandeja Inbound» del Kanban—; el gate exige ≥ 5 y todas marcadas*) —el estado, el filtro de `dealsTubo`, el silencio del stream en `filtered`, los conteos de las pestañas y el botón—. Nada más del pipeline lo conoce y nada persiste: al recargar, el tubo vuelve completo.
     - **CONSTRUYE el escenario, no lo filtra, y eso lo decidió la medición.** Las oportunidades del inbound traen **2 a 18 facturas** (mediana 6) sobre 28 clientes con línea: el perfil pedido no existe entre ellas y un filtro no puede fabricarlo. El **libro de ventas sí** lo tiene —34 a 42 documentos comprables por cliente— así que cada oportunidad de la demo se compone con facturas **reales del A1** y la **línea real** del cliente. Lo único que este modo decide es qué subconjunto mostrar.
     - **«5 deudores y 30 facturas» no se puede cumplir a la vez**, y se dice en vez de disimularlo: los CINCO mayores deudores de un cliente suman ~15 facturas. Manda el **volumen** —una demo de 15 documentos no se ve como una operación— y los deudores quedan en los que hagan falta, entre 9 y 17. Se toman deudores COMPLETOS de mayor a menor: repartir uno a uno junta las mismas 30 facturas con el doble de deudores.
     - **El caso «dentro de línea» hay que CONSTRUIRLO.** Con 30 facturas casi ningún cliente tiene cupo para cubrirlas —medido: uno—, así que a los candidatos de mayor holgura se les sueltan las facturas **más grandes** (lo que menos documentos cuesta) hasta que quepa, con piso de 12. Sin eso la demo mostraba 1 caso cubierto y 4 parciales, o sea sólo la mitad del producto. Resultado medido: **3 dentro de línea y 2 con línea parcial**.

@@ -46,14 +46,44 @@ export async function irA(pagina, etiqueta) {
   await pagina.waitForTimeout(800);
 }
 
-/* Enciende el Modo Directorio en el tubo: cinco operaciones con facturas reales, sin arrancar el stream. */
+/* El toggle «Directorio» de la barra del tubo: apagado dice «Directorio», encendido «Directorio · N». */
+const toggleDirectorio = (pagina) => pagina.locator("button", { hasText: /^\s*Directorio(\s*·\s*\d+)?\s*$/ }).first();
+export async function directorioEncendido(pagina) {
+  const t = toggleDirectorio(pagina);
+  if (!(await t.count())) return false;
+  return /·\s*\d+/.test((await t.innerText()) || "");
+}
+
+/* Enciende el Modo Directorio en el tubo: cinco operaciones con facturas reales, sin arrancar el stream.
+   Idempotente: si ya está encendido, no lo toca. */
 export async function encenderDirectorio(pagina) {
   await irA(pagina, "Gestión diaria");
-  const toggle = pagina.locator("button", { hasText: /^\s*Directorio\s*$/ }).first();
+  const toggle = toggleDirectorio(pagina);
   if (!(await toggle.count())) throw new Error("no encuentro el toggle «Directorio» en la barra del tubo");
-  await toggle.click();
+  if (!(await directorioEncendido(pagina))) await toggle.click();
   await pagina.waitForFunction(() => document.querySelectorAll("tr.pl-row").length > 0, null, { timeout: 60000 });
   await pagina.waitForTimeout(500);
+}
+
+/* Apaga el Modo Directorio si está encendido (las cinco operaciones se retiran del tubo). */
+export async function apagarDirectorio(pagina) {
+  await irA(pagina, "Gestión diaria");
+  if (!(await directorioEncendido(pagina))) return;
+  await toggleDirectorio(pagina).click();
+  await pagina.waitForFunction(() => !/Directorio\s*·\s*\d+/.test(document.body.innerText || ""), null, { timeout: 60000 });
+  await pagina.waitForTimeout(300);
+}
+
+/* Estado conocido para empezar un archivo de casos: sin modal abierto, en «Gestión diaria», el filtro rápido
+   con que arranca el tubo («Con línea»: con el Directorio encendido muestra 3 de sus 5 filas, y las filas 0–2
+   que los casos abren son ésas) y Directorio apagado. No recarga la página: lo que un caso persistió
+   (auditoría, repos) queda. */
+export async function reiniciar(pagina) {
+  await pagina.keyboard.press("Escape").catch(() => {});
+  await irA(pagina, "Gestión diaria");
+  const conLinea = pagina.locator('button[title="Filtrar oportunidades"]', { hasText: /^\s*Con línea/ }).first();
+  if (await conLinea.count()) await conLinea.click().catch(() => {});
+  await apagarDirectorio(pagina);
 }
 
 /* Abre el detalle de la fila n (0 = primera) del tubo en Tabla: llega como PESTAÑA nueva del contexto. */

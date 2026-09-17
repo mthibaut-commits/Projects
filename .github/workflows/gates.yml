@@ -11,7 +11,7 @@ on:
 jobs:
   gates:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45   # la capa e2e pasó de 1 a 16 archivos (29 casos, ~8 min) el 17-09-2026
     steps:
       - uses: actions/checkout@v4
 

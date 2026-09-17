@@ -5442,7 +5442,8 @@ function bitacoraDe(deal) {
   if (deal.negocioNum && !ev.some((x) => /Oferta de factoring/i.test(x.texto || "") || /oferta.*publicada/i.test(x.accion || ""))) ev.push({ t: parseT("Día 1 · 09:06") + 0.3, seq: 0, canal: "Sistema", actor: "Ejecutivo", accion: `Oferta publicada · N° de negocio ${deal.negocioNum}`, time: "Día 1 · 09:06" });
   // El cierre formal NO se sintetiza por etapa: solo aparece cuando el cliente realmente firmó en
   // el sitio Factoring Security (lo registra confirmarCierre en historialContacto).
-  if (deal.stage === "perdida") { const tp = nowStamp(); ev.push({ t: parseT(tp), seq: 9999, canal: "Sistema", actor: "Sistema", accion: deal.status || "Oportunidad perdida", time: tp }); }
+  // El evento terminal nombra al actor que grabó la pérdida (perdidaPor) y su fecha; «sistema» es el actor de las automáticas.
+  if (deal.stage === "perdida") { const tp = deal.fechaPerdida || nowStamp(); ev.push({ t: parseT(tp), seq: 9999, canal: "Sistema", actor: deal.perdidaPor && deal.perdidaPor !== "sistema" ? deal.perdidaPor : "Sistema", accion: deal.status || "Oportunidad perdida", time: tp }); }
   // Etiqueta cada evento: Comunicaciones (mensajes reales del chat/correo), Evento (acciones y
   // resultados de gestión del historial), Análisis (inferencias de la IA) o Datos (fuentes/sistema).
   ev.forEach((x) => {
@@ -6271,10 +6272,12 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         glosa: `Intento de resolver la regla ${x.regla.n} de «${deal.cliente}» sin la atribución requerida (${req.rol} · N${x.nivel || 4})`, empresaId: deal.id, severidad: "alta", exito: false });
       return;
     }
-    // VÍA FÍSICA: visar O05 es lo que CREA la evidencia del contrato. El comprobante adjunto es el
-    // respaldo y la huella del paquete es lo que después compara el gate del core: aprobar sin dejar
-    // la huella dejaría una excepción resuelta y nada que cotejar contra lo que se va a inyectar.
-    if (val === "aprobado" && x.regla && x.regla.cond === "O05") registrarEvidenciaContrato(deal, "fisica", actorEtiqueta(usuario));
+    // Revertir el visado de O05 en la vía FÍSICA retira la evidencia que ESE visado creó: sin esto la
+    // excepción vuelve a abrirse pero el gate del core (GIR-02) seguiría viendo un contrato visado. Y el
+    // `val` que había acá era de aprobarExc —en esta función no existe— así que revertir reventaba con
+    // ReferenceError; lo destapó el gate de OTG-01 (17-09-2026).
+    const previo = (repoVisado.get(deal.id) || {})[x.stKey];
+    if (previo === "aprobado" && x.regla && x.regla.cond === "O05") revocarEvidenciaContrato(deal, "fisica");
     const conf = await confirmarEscrituras([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
     if (!conf.ok) { forceV((v) => v + 1); return; }
     invalidarVisado(); forceV((v) => v + 1); onReev && onReev();
@@ -8017,7 +8020,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: vv.bg, color: vv.fg }}>{vv.t}</span>
                             <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
                             <span className="text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.monto)}</span>
-                            {!bloqueado ? <button onClick={() => setConfirmRetiro(f)} disabled={validas.length <= 1} title={validas.length <= 1 ? "La oferta debe tener al menos una factura" : "Retirar de la oferta"} className="justify-self-center rounded p-0.5 disabled:opacity-30" style={{ color: C.red }}><Trash2 size={12} /></button> : <span></span>}
+                            {!bloqueado ? <button onClick={() => setConfirmRetiro(f)} title="Retirar de la oferta" className="justify-self-center rounded p-0.5 disabled:opacity-30" style={{ color: C.red }}><Trash2 size={12} /></button> : <span></span>}
                           </div>
                           );
                         })}
@@ -9398,7 +9401,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                       ) : oferta < CFG_ACTIVA.pisoTasa ? (
                         <div className="mt-2">
                           <div className="t10 font-medium" style={{ color: C.red }}>Tarifa inviable económicamente (piso {CFG_ACTIVA.pisoTasa}%). Se sugiere cerrar la oportunidad.</div>
-                          <button onClick={() => onReject(deal.id)} className="mt-1.5 rounded-md px-3 py-1.5 t10 font-medium text-white" style={{ backgroundColor: C.red }}>Cerrar oportunidad</button>
+                          <button onClick={() => onReject(deal.id, "price_rate")} className="mt-1.5 rounded-md px-3 py-1.5 t10 font-medium text-white" style={{ backgroundColor: C.red }}>Cerrar oportunidad</button>
                         </div>
                       ) : (() => {
                         const cerrada = !!(deal.ofertaCerrada || deal.negocioNum);
@@ -9868,7 +9871,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
       <ConfirmDialog abierto={!!confirmNoConf} titulo="¿El deudor no confirmó esta factura?"
         descripcion={confirmNoConf ? `Folio ${confirmNoConf.folio || confirmNoConf.id || ""} · ${fmtMM(confirmNoConf.monto || 0)}. Sale de la operación y baja el monto a girar. Las demás facturas conservan su línea. El cupo que deja libre sigue reservado en el sistema de gestión de líneas: para recuperarlo hay que pedir allá que lo liberen.` : ""}
         etiquetaConfirmar="Retirar factura no confirmada"
-        onConfirmar={() => { onRetirarFactura(deal.id, confirmNoConf, "noConfirmada"); setConfirmNoConf(null); }}
+        onConfirmar={() => { onRetirarFactura(deal.id, confirmNoConf, "noConfirmada"); setReevalPend(true); setConfirmNoConf(null); }}
         onCancelar={() => setConfirmNoConf(null)} />
       {/* Descartar la simulación y partir de cero. Lo que el diálogo tiene que dejar claro es que las
           facturas VUELVEN al pool —no se pierden— y que la evidencia no se toca. */}
@@ -12672,6 +12675,8 @@ function causaPerdidaDeal(deal, estado) {
   if (deal.perdidaCesion || deal.cedidaCompetidor) return `Cesión externa: facturas financiadas por ${deal.cedidaCompetidor || "la competencia"}`;
   if (/no acept|no tom/i.test(deal.status || "")) return "El cliente no aceptó la oferta";
   if (deal.contactable === false) return "Sin contacto: intentos de contacto agotados";
+  // El genérico no es una causa: si es lo único que hay, se dice que no quedó registrada.
+  if (/no super[oó] (las )?reglas de otorgamiento/i.test(deal.status || "")) return "Oportunidad perdida (causa no registrada)";
   return deal.status || "Oportunidad perdida";
 }
 // ¿La oferta ya salió hacia el cliente? Cerrada (gate del ejecutivo) Y comunicada por algún canal.
@@ -12771,7 +12776,7 @@ const INVARIANTES = [
     regla: "Toda mutación usa el tenant fijado al abrir la sesión; si el tenant activo cambió sin re-autenticar, se rechaza.",
     servidor: "RLS en Postgres: policy USING (tenant_id = current_setting('app.tenant')). El resolver NUNCA acepta el tenant como parámetro: lo toma del token." },
   { codigo: "RAT-01", nombre: "Límite de tasa por usuario", autoridad: "servidor", aplicado: "repositorio", mutaciones: ["*"],
-    regla: "Máximo de mutaciones por minuto y por (usuario, colección).",
+    regla: "Máximo de mutaciones por minuto y por (usuario, familia de colecciones): una colección y su detalle (CONTRATO_FAMILIA) comparten el mismo tope.",
     servidor: "Token bucket en el gateway por sub del JWT + costo por operación GraphQL; 429 con Retry-After." },
   { codigo: "IDM-01", nombre: "Idempotencia de la mutación", autoridad: "servidor", aplicado: "observado", mutaciones: ["*"],
     regla: "La misma mutación no se aplica dos veces. Acá sólo se CUENTAN los duplicados: la idempotencia real necesita una clave generada por el cliente, que este código todavía no emite.",
@@ -13015,6 +13020,19 @@ function registrarEvidenciaContrato(deal, via, actor) {
 // —el criterio O05, que lo muestra mientras la operación se arma, y la inyección al core, que es
 // donde el dinero sale—. Devuelve el porqué, no sólo un booleano: «no hay evidencia» y «la evidencia
 // no describe esta operación» se arreglan de formas distintas.
+// Retira la evidencia que un visado creó. Sólo la de la vía FÍSICA: la electrónica la crea la firma del
+// cliente en el portal, no un visado, y revertir un visado no puede deshacer una firma. Devuelve si había
+// algo que retirar. Es el dual de registrarEvidenciaContrato y toca los mismos tres sitios (mapa, repo, versión).
+function revocarEvidenciaContrato(deal, via) {
+  if (!deal || !deal.id) return false;
+  const actual = CONTRATO_EVIDENCIA[deal.id];
+  if (!actual || (via && actual.via !== via)) return false;
+  const { [deal.id]: _fuera, ...resto } = CONTRATO_EVIDENCIA;
+  CONTRATO_EVIDENCIA = resto;
+  repoContratoEvidencia.del(deal.id);
+  EVID_VER++;
+  return true;
+}
 function evidenciaContratoOk(deal, estado) {
   const reg = ((estado && estado.evidencia) || CONTRATO_EVIDENCIA || {})[deal && deal.id];
   if (!reg) return { ok: false, motivo: "sin_evidencia", detalle: "No hay constancia de la autorización del contrato de cesión." };
@@ -13820,7 +13838,11 @@ function VisadoClienteView({ deals, usuario, onChange }) {
     logOtorgEvento(deal.id, USERS[usuario] || usuario, `${USERS[usuario] || usuario} ${val === "aprobado" ? "aprobó" : "rechazó"} la excepción de otorgamiento · regla #${x.regla.n} ${x.regla.nombre}${dtxt} (${AREA_LBL[area]} N${nivel})${arch ? " · con respaldo adjunto" : ""}`, msg || "");
     invalidarVisado(); avisarAvanceOtorg(deal); bump();
   };
-  const revertirExc = async (deal, k) => {
+  const revertirExc = async (deal, x) => {
+    // `x` es el ítem del visado (stKey, regla, nivel): la comprobación de OTG-01 de abajo lo necesita y antes
+    // llegaba sólo la clave, así que revertir desde la mesa reventaba con ReferenceError (gate de OTG-01, 17-09-2026).
+    const k = x.stKey;
+    const previo = (repoVisado.get(deal.id) || {})[k];
     const st = { ...(repoVisado.get(deal.id) || {}) }; delete st[k];
     const det = { ...(repoVisadoDetalle.get(deal.id) || {}) }; delete det[k];
     // OTG-01 · SE COMPRUEBA LA ATRIBUCIÓN ANTES DE ESCRIBIR, no sólo al dibujar el botón. Quien visa
@@ -13834,10 +13856,9 @@ function VisadoClienteView({ deals, usuario, onChange }) {
         glosa: `Intento de resolver la regla ${x.regla.n} de «${deal.cliente}» sin la atribución requerida (${req.rol} · N${x.nivel || 4})`, empresaId: deal.id, severidad: "alta", exito: false });
       return;
     }
-    // VÍA FÍSICA: visar O05 es lo que CREA la evidencia del contrato. El comprobante adjunto es el
-    // respaldo y la huella del paquete es lo que después compara el gate del core: aprobar sin dejar
-    // la huella dejaría una excepción resuelta y nada que cotejar contra lo que se va a inyectar.
-    if (val === "aprobado" && x.regla && x.regla.cond === "O05") registrarEvidenciaContrato(deal, "fisica", actorEtiqueta(usuario));
+    // Revertir el visado de O05 en la vía FÍSICA retira la evidencia que ESE visado creó (el dual de
+    // registrarEvidenciaContrato); `previo` es el estado que tenía la regla antes de borrarla.
+    if (previo === "aprobado" && x.regla && x.regla.cond === "O05") revocarEvidenciaContrato(deal, "fisica");
     const conf = await confirmarEscrituras([repoVisado.set(deal.id, st), repoVisadoDetalle.set(deal.id, det)]);
     if (!conf.ok) { bump(); return; }
     invalidarVisado(); bump();
@@ -13991,7 +14012,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                         <button onClick={() => setF(key, { open: "info", dest: "ejecutivo", msg: "", arch: null })} className="rounded-md px-2.5 py-1 t10 font-semibold" style={{ border: `1px solid ${C.indigo}`, color: C.indigo, backgroundColor: "#fff" }}>Solicitar más información</button>
                         {!puedeYo && <span className="self-center t9" style={{ color: C.faint }}>Sin atribución para aprobar; puedes solicitar información.</span>}
                       </div>}
-                      {ee !== "pendiente" && <div className="mt-2"><button onClick={() => revertirExc(o.deal, x.stKey)} className="rounded-md px-2 py-1 t9 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Revertir</button></div>}
+                      {ee !== "pendiente" && <div className="mt-2"><button onClick={() => revertirExc(o.deal, x)} className="rounded-md px-2 py-1 t9 font-semibold" style={{ border: `1px solid ${C.line}`, color: C.sub }}>Revertir</button></div>}
                       {f.open === "decision" && <div className="mt-2 rounded-md p-2.5" style={{ border: `1px solid ${C.line}`, backgroundColor: C.page }}>
                         <div className="flex gap-1.5">
                           <button onClick={() => setF(key, { dec: "aprobado" })} className="rounded-md px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: f.dec === "aprobado" ? "#0a7d3f" : "#fff", color: f.dec === "aprobado" ? "#fff" : C.sub, border: `1px solid ${f.dec === "aprobado" ? "#0a7d3f" : C.line}` }}>Aprobar</button>
@@ -15064,7 +15085,7 @@ function NodoTareasModal({ nodo, onClose, usuario, esJefe, onCambio }) {
       if (aJefe && nodo.jefatura) para.push(nodo.jefatura);
       addPanelTarea({ texto: `${pre0}${pre} · ${nodo.name}`, cat, dias, autor: USERS[usuario] || usuario, para, ops: [], nodo: nodo.name });
     } else { return; }
-    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Gestión", accion: "Asignar tarea", glosa: `${elegidas.length || 1} tarea(s) «${pre}» sobre «${nodo.name}» (${areaMeta(cat).l}, vence en ${dias} d)`, exito: true });
+    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Reportes", accion: "Asignar tarea", glosa: `${elegidas.length || 1} tarea(s) «${pre}» sobre «${nodo.name}» (${areaMeta(cat).l}, vence en ${dias} d)`, exito: true });
     onCambio && onCambio(); onClose();
   };
   return (
@@ -17892,7 +17913,7 @@ function CfgContrato() {
           ))}
         </div>
         <div className="mt-3 t9" style={{ color: C.faint }}>
-          Límite de tasa vigente en el cliente: {CONTRATO_LIMITES.porMinuto.default} mutaciones/min por colección
+          Límite de tasa vigente en el cliente: {CONTRATO_LIMITES.porMinuto.default} mutaciones/min por familia de colecciones
           (ventana {CONTRATO_LIMITES.ventanaMs / 1000}s). Es holgado a propósito: corta automatización, no la operación normal. El tope real lo fija el gateway.
         </div>
       </div>
@@ -22284,8 +22305,8 @@ function DocumentoSolicitud({ sol, onClose }) {
                   <span className="t10" style={{ color: C.sub }}>{d.tipoLinea === "puntual"
                     ? <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}>Puntual</span>
                     : (d.tipoLinea || "normal")}</span>
-                  <span className="t10" style={{ color: C.sub, lineHeight: 1.4 }}>{d.pide || "—"}{d.motivo ? <span style={{ color: C.faint }}> · {d.motivo}</span> : null}</span>
-                  <span className="t10" style={{ color: C.faint, lineHeight: 1.4 }}>{d.alcance || "—"}</span>
+                  <span className="t10" style={{ color: C.sub, lineHeight: 1.4 }}>{d.pide || <span className="italic" style={{ color: C.faint }}>no viene en el payload</span>}{d.motivo ? <span style={{ color: C.faint }}> · {d.motivo}</span> : null}</span>
+                  <span className="t10" style={{ color: C.faint, lineHeight: 1.4 }}>{d.alcance || <span className="italic">no viene en el payload</span>}</span>
                 </div>
               ))}
               <div className="mt-2 grid gap-2 t10" style={{ gridTemplateColumns: GD, paddingTop: 4 }}>
@@ -23429,7 +23450,9 @@ export default function PipelineComercial() {
       // se lee en la bitácora y en el listado de perdidas.
       const comp = (extra && extra.competidor) || null;
       const tasaC = (extra && extra.tasaCierre) || null;
-      const base = closeReasonLabel(cr) || (bi ? bi.causa : (causaPerdidaDeal(d) || "El cliente rechazó la oferta"));
+      // Sin motivo ni bloqueo la causa es el rechazo mismo, nunca el status de la operación viva (que es la
+      // etapa en que estaba, no por qué se perdió): la regla 5 pide causa específica SIEMPRE.
+      const base = closeReasonLabel(cr) || (bi ? bi.causa : (d.causaPerdida || "El cliente rechazó la oferta"));
       const causa = comp ? `${base} · ${comp}${tasaC ? ` · tasa de cierre ${tasaC}%` : ""}` : base;
       return { ...d, stage: "perdida", etapaPerdida: d.stage, perdidaOtorg: !!bi, motivoPerdida: motivo, closeReason: cr, subtipoBloqueo: bi ? bi.subtipo : null, bloqueosFirmes: bi ? bi.ids : d.bloqueosFirmes, cedidaCompetidor: comp || d.cedidaCompetidor, tasaCierreCompetidor: tasaC || d.tasaCierreCompetidor, causaPerdida: causa, fechaPerdida: nowStamp(), perdidaPor: (USERS[usuario] || usuario), status: causa, time: nowStamp(), historialContacto: traza(d, causa + " — operación marcada perdida.", false) };
     }));
@@ -24119,6 +24142,8 @@ export default function PipelineComercial() {
   }, [deals]);
   // Avance explícito desde el drawer a una etapa elegida (con la regla de facturas pendientes al aceptar).
   const moverEtapa = (id, stageId) => {
+    // Perdida es estado terminal (regla 5): desde ahí no hay transición hacia ninguna etapa.
+    if (((dealsRef.current || []).find((x) => x.id === id) || {}).stage === "perdida") return;
     // "Aceptada" representa la firma FORMAL del cliente (login + firma en el sitio Factoring Security). La
     // fija sólo el cliente al aceptar; el ejecutivo no puede asignarla manualmente.
     if (stageId === "aceptadas") return;
@@ -24172,6 +24197,8 @@ export default function PipelineComercial() {
     // «Avanzar a», pero el Kanban no miraba la etapa de origen: se podía devolver a Oferta una
     // operación que el cliente ya firmó y que tiene cupo reservado en el sistema de líneas.
     const orig = (deals.find((d) => d.id === draggingId) || {}).stage;
+    // Perdida es estado terminal (regla 5): no se revive arrastrando; la reapertura es una operación nueva.
+    if (orig === "perdida") { setDraggingId(null); return; }
     if (["aceptadas", "cesion", "giro"].includes(orig) && STAGE_ORDER.indexOf(stageId) < STAGE_ORDER.indexOf(orig)) { setDraggingId(null); return; }
     setDeals((prev) => {
       const splits = [];
@@ -24503,7 +24530,7 @@ export default function PipelineComercial() {
           const nFac = (d.facturasOp || []).length;
           if (ced.n > 0 && ced.n >= nFac) {
             sumar("perdida", d); e.perdida++;
-            return { ...d, stage: "perdida", etapaPerdida: d.stage, cesionEval: true, status: `Perdido · facturas financiadas por ${ced.factoring}`, cedidaCompetidor: ced.factoring, cedidasOtro: ced.n, perdidaCesion: true, time: nowStamp(), historialContacto: traza(d, `AECSync: las ${ced.n} factura(s) de la oferta fueron financiadas por ${ced.factoring} (folios ${ced.folios.slice(0, 6).join(", ")}${ced.folios.length > 6 ? "…" : ""}). Oportunidad perdida ante la competencia.`, false) };
+            return { ...d, stage: "perdida", etapaPerdida: d.stage, perdidaPor: "sistema", fechaPerdida: nowStamp(), cesionEval: true, status: `Perdido · facturas financiadas por ${ced.factoring}`, cedidaCompetidor: ced.factoring, cedidasOtro: ced.n, perdidaCesion: true, time: nowStamp(), historialContacto: traza(d, `AECSync: las ${ced.n} factura(s) de la oferta fueron financiadas por ${ced.factoring} (folios ${ced.folios.slice(0, 6).join(", ")}${ced.folios.length > 6 ? "…" : ""}). Oportunidad perdida ante la competencia.`, false) };
           }
           d = { ...d, cesionEval: true, cedidasOtro: ced.n, cedidaCompetidor: ced.n > 0 ? ced.factoring : d.cedidaCompetidor };
         }
@@ -24590,7 +24617,7 @@ export default function PipelineComercial() {
           if (d.perdedor) {
             sumar("perdida", d); e.perdida++;
             const waL = [...(d.waSesion || []), { from: "cliente", text: "Lo conversé internamente y por ahora no avanzaremos. Gracias.", time: nowStamp() }, { from: "agente", text: "Entendido, quedamos a disposición si cambias de opinión. 🙌", time: nowStamp() }];
-            return { ...d, stage: "perdida", etapaPerdida: d.stage, ofertaEval: true, status: "Perdido · el cliente no aceptó la oferta", waSesion: waL, historialContacto: traza(d, "Oportunidad perdida: el cliente no aceptó la oferta", false), time: nowStamp() };
+            return { ...d, stage: "perdida", etapaPerdida: d.stage, perdidaPor: "sistema", fechaPerdida: nowStamp(), ofertaEval: true, status: "Perdido · el cliente no aceptó la oferta", waSesion: waL, historialContacto: traza(d, "Oportunidad perdida: el cliente no aceptó la oferta", false), time: nowStamp() };
           }
           d = { ...d, ofertaEval: true };
         }
@@ -24666,7 +24693,7 @@ export default function PipelineComercial() {
         const comp = d.cedidaCompetidor || (d.rutEmisor ? aecCompetidorDe(d) : competidorDe(d));
         if (comp && rndDetBool(`aec|${d.id}`, 0.12)) {
           sumar("perdida", d); e.perdida++;
-          patches[d.id] = { stage: "perdida", etapaPerdida: d.stage, cesionEval: true, status: `Perdido · facturas financiadas por ${comp}`, cedidaCompetidor: comp, perdidaCesion: true, time: nowStamp(), historialContacto: traza(d, `AECSync: las facturas fueron financiadas por ${comp}. Oportunidad perdida ante la competencia.`, false) };
+          patches[d.id] = { stage: "perdida", etapaPerdida: d.stage, perdidaPor: "sistema", fechaPerdida: nowStamp(), cesionEval: true, status: `Perdido · facturas financiadas por ${comp}`, cedidaCompetidor: comp, perdidaCesion: true, time: nowStamp(), historialContacto: traza(d, `AECSync: las facturas fueron financiadas por ${comp}. Oportunidad perdida ante la competencia.`, false) };
           continue;
         }
         patches[d.id] = { cesionEval: true };
@@ -24677,7 +24704,7 @@ export default function PipelineComercial() {
         if (d.perdedor) {
           sumar("perdida", d); e.perdida++;
           const waL = [...(d.waSesion || []), { from: "cliente", text: "Lo conversé internamente y por ahora no avanzaremos. Gracias.", time: nowStamp() }, { from: "agente", text: "Entendido, quedamos a disposición si cambias de opinión. 🙌", time: nowStamp() }];
-          patches[d.id] = { stage: "perdida", etapaPerdida: d.stage, ofertaEval: true, status: "Perdido · el cliente no aceptó la oferta", waSesion: waL, historialContacto: traza(d, "Oportunidad perdida: el cliente no aceptó la oferta", false), time: nowStamp() };
+          patches[d.id] = { stage: "perdida", etapaPerdida: d.stage, perdidaPor: "sistema", fechaPerdida: nowStamp(), ofertaEval: true, status: "Perdido · el cliente no aceptó la oferta", waSesion: waL, historialContacto: traza(d, "Oportunidad perdida: el cliente no aceptó la oferta", false), time: nowStamp() };
         } else {
           patches[d.id] = { ...(patches[d.id] || {}), ofertaEval: true };
         }
@@ -25269,11 +25296,22 @@ export default function PipelineComercial() {
           glosa: `${d0.cliente || d0.company || id} · folio ${fac.folio || fac.id} · ${fmtMM(fac.monto || 0)} · monto con línea ${fmtMM(prev.linea.cursable)} → ${fmtMM(nl.cursable)} · el cupo liberado sigue reservado hasta que lo liberen en el sistema de líneas`, exito: true });
       }
     }
+    // Retirar la ÚLTIMA factura tiene salida (regla 13-sexdecies): en Prospección u Oferta la oferta queda
+    // vacía y la oportunidad vuelve al panel de arranque por el MISMO camino que «Eliminar la simulación y
+    // vaciar la oferta» (limpiarSimulacion: campos de la simulación borrados, facturas al pool, etapa
+    // Prospección, aviso al tubo). Una operación aceptada no pasa por acá: la verificación la recorta arriba.
+    if (d0 && ["prospeccion", "oferta"].includes(d0.stage)) {
+      const enOferta = itemizarFacturas(d0) || [];
+      if (enOferta.length === 1 && enOferta[0].id === fac.id) { limpiarSimulacion(id); return; }
+    }
     const upd = (d) => {
       if (d.id !== id) return d;
       const base = itemizarFacturas(d);
       const nuevasOp = base.filter((f) => f.id !== fac.id);
-      if (nuevasOp.length === base.length || nuevasOp.length === 0) return d; // no existe o quedaría vacía
+      // Quedar VACÍA sí se permite (regla 13-sexdecies): la oferta vacía es el estado de entrada de la
+      // pantalla e itemizarFacturas trata [] como respuesta. La guarda `|| nuevasOp.length === 0` era un
+      // resto: el ícono estaba habilitado, el diálogo confirmaba y la operación quedaba igual, sin error.
+      if (nuevasOp.length === base.length) return d; // la factura no está en la oferta
       const quitMonto = +(fac.monto || 0).toFixed(1);
       const monto = +Math.max(0, d.monto - quitMonto).toFixed(1);
       // Recalcular deudores restando la contribución de la factura retirada.
