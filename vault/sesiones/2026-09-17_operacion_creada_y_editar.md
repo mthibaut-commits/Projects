@@ -11,7 +11,7 @@ feature: null
 
 ## Hecho
 
-- **Regla 32** (`curse_firma_y_etapas.md`): cerrada la oferta, el CTA «Enviar a Comité y Publicar» se va y
+- **Regla 33** (`curse_firma_y_etapas.md`): cerrada la oferta, el CTA «Enviar a Comité y Publicar» se va y
   queda el chip **«Operación creada»** + botón **Acciones** (`panelAcciones(false)`) con **Editar la oferta**.
   El paquete cerrado queda de **sólo lectura** (`soloLectura = bloqueado || paqueteCerrado`, separado de
   `bloqueado` para no afirmar una firma que no existe) y la guarda está en las mutaciones
@@ -23,11 +23,11 @@ feature: null
   re-cerrar con el mismo detalle (NEX no puede retirar la anterior, regla 15).
 - **Defecto reportado por el usuario** («cuando se simula no se está actualizando el tubo»): `rolloverDia`
   reescribía `d.id` como `OP-R<día><últimos4>`; el detalle (pestaña propia) mandaba `nex-simulado` con el id
-  viejo y el tubo lo descartaba en silencio. **El id ya no cambia** (ADR-0003); el receptor loguea lo que no
+  viejo y el tubo lo descartaba en silencio. **El id ya no cambia** (ADR-0004); el receptor loguea lo que no
   encuentra. Añadido a la regla 22.
 - `cerrarOferta` y `reabrirOperacion` **avisan al tubo** (`avisarTubo`, cola fusionada por operación).
-- Caso **116** en la suite (`CASOS_ESPERADOS` 115 → 116); regla 32 con su fila en `invariantes.md`
-  (62 reglas); capturas regeneradas; vault, `README.md`, `testing.md` y `CLAUDE.md` con el conteo nuevo.
+- Caso **116** en la suite (`CASOS_ESPERADOS` 115 → 116); regla 33 con su fila en `invariantes.md`
+  (63 reglas tras mezclar `main`); capturas regeneradas; vault, `README.md`, `testing.md` y `CLAUDE.md` con el conteo nuevo.
 - Verificación: `tsc` sin TS1 · 0 duplicados · build 40,7 MB · `auditar_unidades` 0 · gates de contrato ·
   **116/116 PASA** · sonda del detalle **19/19** (cerrar → chip → Editar → retirar → Re-evaluar → re-cerrar
   con el mismo N°) · sonda del cierre de día **6/6** (día 1 → 3, 21/21 ids intactos, el tubo se entera) ·
@@ -37,7 +37,7 @@ feature: null
 
 - «Cuando la operación ya esté cerrada puede ocultar el botón … reemplazarlo por chip "Operación creada" más
   un dropdown "Acciones" con la acción Editar … al eliminar o agregar se re-evalúa todo; si ya hay
-  excepciones que se excepcionaron y siguen vigentes se mantiene su estado» (17-09). Regla 32 y ADR-0003.
+  excepciones que se excepcionaron y siguen vigentes se mantiene su estado» (17-09). Regla 33 y ADR-0004.
 
 ## Errores encontrados y su solución (regla 11)
 
@@ -53,7 +53,7 @@ feature: null
    calza), el selector de vista es un **dropdown con backdrop** (dejarlo abierto intercepta todos los clics) y
    el contador «Día N · hora H/8» vive en Kanban › Bandeja Inbound, no en la tabla.
 5. `main` avanzó durante la sesión con la partición de `CLAUDE.md` y el vault: las notas se re-alojaron
-   (regla 32 en vez de «30-quater», siguiente entero libre) y la rama se rehízo desde `origin/main`.
+   (regla 33 en vez de «30-quater», siguiente entero libre; nació como 32 y se renumeró al mezclar `main`) y la rama se rehízo desde `origin/main`.
 6. Un f-string de Python con llaves dentro de la prosa (`{bloqueado}`) reventó el script que escribía el
    vault a medio camino: los bloques largos van como cadenas planas con un marcador para la fecha.
 
@@ -70,3 +70,6 @@ feature: null
   se envió: la primera versión de cada canal entre pestañas tiene que loguear lo que descarta.
 - «Cerrada», «publicada» y «reabierta» parecían una sola bandera y son tres hechos con tres vidas útiles;
   la que se reusa de más devuelve una firma que nadie dio.
+- **Dos sesiones paralelas tomaron el mismo «siguiente entero libre»**: `main` recibió primero una regla 32 y un
+  ADR-0003 (punto fijo del generador) mientras esta rama tenía los suyos. El número se confirma al MEZCLAR, no al
+  escribir: se renumeró lo de esta rama (33 / ADR-0004) porque `main` ya estaba integrado y verde.

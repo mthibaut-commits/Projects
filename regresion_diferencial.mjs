@@ -91,12 +91,12 @@ const BATERIA = `(() => {
         aplican: i % 2 ? ["V01","V02","V03","V04","V05","V06","V07","V08","V09","V10"] : ["V01","V04","V05","V07","V08","V10"],
         protocolo: { existe: i % 11 === 0, id: "PROT-" + i }, recortado: !(i % 2), prime: !(i % 3),
         fchVctoProm: 30 + (i % 5) * 15,
-        pctPagoDeudor3M: 80 + (i % 21), mntCompraOp3M: 50 + i * 7, avgVentaProm3M: 90 + i * 11,
+        pctPagoDeudor3M: 80 + (i % 21), mntCompraOp3M: (50 + i * 7) * 1e6, avgVentaProm3M: (90 + i * 11) * 1e6,
         mesesConVenta6M: i % 7, pctMora25d: (i % 9) * 0.7, pctReclamadas: (i % 8) * 0.9,
-        mntPagoDeudor3M: i % 4 === 0 ? 200 + i : 1200 + i * 40,
+        mntPagoDeudor3M: (i % 4 === 0 ? 200 + i : 1200 + i * 40) * 1e6,
       };
-      const fs = [{ id: "a", montoMM: 20 + (i % 13) * 30, venc: 30 + (i % 5) * 15 + (i % 3) },
-                  { id: "b", montoMM: 5 + (i % 7) * 11, venc: 30 + (i % 5) * 15 }];
+      const fs = [{ id: "a", monto: (20 + (i % 13) * 30) * 1e6, venc: 30 + (i % 5) * 15 + (i % 3) },
+                  { id: "b", monto: (5 + (i % 7) * 11) * 1e6, venc: 30 + (i % 5) * 15 }];
       const r = verifDecision(par, fs);
       casos.push({ i, requiere: r.requiere, motivo: r.motivo,
         evals: (r.evals || []).map((e) => e.r.id + ":" + e.st),
@@ -108,9 +108,9 @@ const BATERIA = `(() => {
   // ── 3 · REGLA 6 SIN PLAZO: acá SÍ se esperaba un cambio ──────────────────────────────────────
   out.verif_sin_plazo = intenta(() => {
     const par = { aplican: ["V06"], protocolo: { existe: false }, recortado: false, prime: false,
-      fchVctoProm: 40, pctPagoDeudor3M: 95, mntCompraOp3M: 100, avgVentaProm3M: 100,
-      mesesConVenta6M: 6, pctMora25d: 0, pctReclamadas: 0, mntPagoDeudor3M: 2000 };
-    const r = verifDecision(par, [{ id: "a", montoMM: 10 }]);
+      fchVctoProm: 40, pctPagoDeudor3M: 95, mntCompraOp3M: 100e6, avgVentaProm3M: 100e6,
+      mesesConVenta6M: 6, pctMora25d: 0, pctReclamadas: 0, mntPagoDeudor3M: 2000e6 };
+    const r = verifDecision(par, [{ id: "a", monto: 10e6 }]);
     return { requiere: r.requiere, v06: (r.evals.find((e) => e.r.id === "V06") || {}).st };
   });
 

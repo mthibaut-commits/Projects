@@ -17,8 +17,11 @@ node GeneradorDatos/generar.js                       # lee y reescribe datos_iny
 node GeneradorDatos/generar.js entrada.js salida.js  # rutas explícitas
 ```
 
-La generación es **determinista**: dos corridas sobre la misma entrada producen el mismo archivo byte a
-byte. Se apoya en `hashStr` + mulberry32, el mismo azar estable que usa el pipeline.
+La generación es **determinista y tiene punto fijo**: dos corridas sobre la misma entrada producen el mismo
+archivo byte a byte, y una corrida sobre `datos_inyectados.js` lo reproduce tal como está commiteado. Se apoya
+en `hashStr` + mulberry32 —el mismo azar estable que usa el pipeline— y en que ningún derivado vuelve a leer lo
+que él mismo midió en la entrega anterior (abajo, «La intención de participación»). El gate
+`tests/contract/generador.test.mjs` corre la cadena entera en proceso y exige que cada bloque salga igual.
 
 ## Datasets
 
@@ -40,10 +43,10 @@ byte. Se apoya en `hashStr` + mulberry32, el mismo azar estable que usa el pipel
 | `OTORGAMIENTO` | A16 | `datasets/otorgamiento.js` | Variables de riesgo de cliente, deudor y par cliente-deudor, con la forma del contrato (una fila por `RUT` + `ROL` + `RUT_CONTRAPARTE`, 54 campos, columnar como el CSV de origen) |
 | `PLATAFORMA360` | A11 | `datasets/plataforma360.js` | Maestro de empresa por RUT (clientes y deudores): firmográfica, comercial, socios, índices y la **nota de comportamiento**, que vive sólo acá. Razón social y ventas salen de DTESync; colocación y última operación, de AECSync; segmento, del SOW. El **mix de financiamiento** (`SOW_*` + `SOW_DETALLE_JSON`) se **mide sobre AECSync** —el único activo que identifica al cesionario de cada cesión, bancaria o no— y se inyecta acá, que es de donde la aplicación lo lee; la porción propia se ancla al `SOWActualPct` del A5 para no dar dos valores de la misma cifra |
 | `RIESGO_BICE` | A9 | `datasets/riesgo_bice.js` | Sólo lo que la API de Riesgo BICE reporta y el A16 **no** trae. Lo que solapa (mora CMF, mora ACHEF, protestos, mora interna) no se duplica: el pipeline lo lee del A16 al componer la respuesta |
-| `AECSYNC` | A2 | `datasets/cesiones.js` | **El registro completo de cesiones y el maestro de la participación** (7.480; traía 1.300 mientras el A5 declaraba 9.104 en sus series). Cada una apunta a un **documento real del A1** de su cedente y copia sus campos. Se cede una fracción del pool CEDIBLE de cada cliente; el cesionario sale del padrón `lib/cesionarios.js` por un panel de 2 a 4 contrapartes, y qué parte va a nosotros lo fija la trayectoria de participación — que después se vuelve a medir en el A5 |
+| `AECSYNC` | A2 | `datasets/cesiones.js` | **El registro completo de cesiones y el maestro de la participación** (7.480; traía 1.300 mientras el A5 declaraba 9.104 en sus series). Cada una apunta a un **documento real del A1** de su cedente y copia sus campos. Se cede una fracción del pool CEDIBLE de cada cliente; el cesionario sale del padrón `lib/cesionarios.js` por un panel de 2 a 4 contrapartes, y qué parte va a nosotros lo fija la **intención de participación** declarada en `lib/intencion_sow.js` — que después se mide en el A5. A2 no lee A5 ni su propia entrega anterior: es lo que le da al generador su punto fijo |
 | `SHARE_OF_WALLET` | A5 | `datasets/share_of_wallet.js` | **Se MIDE sobre AECSync**, que corre antes: la serie semanal con sus montos, la participación actual, la tendencia, el gap, el estado y el diagnóstico salen de las cesiones. Antes A2 y A5 respondían la misma pregunta por caminos independientes y discrepaban **13,8 pto en la mediana**; hoy calzan dentro del redondeo en 233 de 233. Lo único que NO se mide es el `SOWTargetPct` —es una meta, y derivarla del resultado dejaría el gap siempre en cero— |
 | `CARTERA` | A24 | `datasets/cartera.js` | Estructura comercial (código, nombre, equipo, **jefatura**, zona, sucursal) y asignación de cada cliente a su ejecutivo. La asignación se **mide** del `Ejecutivo` que ya declara el A5, para que el activo nuevo no contradiga al que la app venía leyendo; el archivo la vuelve a llavear por **código** y no por nombre |
-| `VERIFICACION` | A10 | `datasets/verificacion.js` | Variables del predictor de verificación por par cliente-deudor. El promedio de factura del par y su venta mensual salen del volumen real de DTESync; la nota del deudor se **lee del A16 ya generado** para que los dos activos no puedan divergir |
+| `VERIFICACION` | A10 | `datasets/verificacion.js` | Variables del predictor de verificación por par cliente-deudor. La **factura típica** del par se mide en DTESync; la **frecuencia mensual** con que el par factura y la **fracción que cede** se modelan por perfil de la relación —la ventana del A1 son 47 días con ~2 facturas por par, una muestra corta y no la relación—, nunca por debajo del ritmo que la ventana muestra. De ahí salen la venta mensual (V04) y lo comprado en 3M (V03). **V10 es del DEUDOR**, no del par: lo que le pagó al factoring en 3M sumando todos sus cedentes, como pide la política («que operó una sola vez con Security»). La nota del deudor se **lee del A16 ya generado** para que los dos activos no puedan divergir |
 
 ## Una cesión tiene que apuntar a una factura que existe
 
@@ -83,7 +86,33 @@ en silencio. Qué porcentaje de la cartera cae en excepción es una **propiedad 
 
 Los diales están en la constante `RANGO` de cada módulo y en la distribución de perfiles (`perfil`). Tras
 cambiarlos conviene medir el resultado: hoy son ~57% de clientes sin ninguna excepción y ~3% de knockout
-por TGR en otorgamiento, y ~70% de facturas en verificación telefónica en el predictor.
+por TGR en otorgamiento; y en el predictor, con una factura en la oferta, **la mitad de los pares queda
+verificada por modelo** (49,8% PRIME · 50,3% OTROS, medido el 17-09-2026 sobre los 13.302 pares del A10 con
+facturas en el libro) y la otra mitad va al teléfono. Los dos criterios que antes lo impedían —V04 y V10—
+pasan 80% y 90% en PRIME, 82% y 93% en OTROS; el resto lo deciden V02, V05, V07 y V08 por perfil.
+
+## La intención de participación, y por qué el generador tiene punto fijo
+
+El A1 dice qué documentos existen y cuáles se pueden ceder, pero no quién los financió. Qué proporción de lo
+que cede cada cliente va a nosotros —semana a semana— es la única entrada del A2 que no se mide: es una
+**intención de generación**, y vive declarada en `lib/intencion_sow.js` (233 clientes con su trayectoria en %,
+más 25 cedentes que el A5 no sigue y ceden con un perfil estable por RUT). `cesiones.js` la lee para sortear
+el cesionario de cada documento; `share_of_wallet.js` **mide** después lo que quedó escrito. Que el SOW medido
+difiera unas décimas de la intención es correcto: es el cociente real de un registro discreto.
+
+Hasta el 17-09-2026 la intención se tomaba de los campos **medidos** del A5 (`SOWActualPct`,
+`HistoricoSemanal[].SOWPct`), que el A5 volvía a medir sobre el A2 recién escrito, y los cedentes se
+completaban con el A2 anterior. Un sorteo por documento no reproduce su propio umbral, así que cada corrida
+completa movía cesiones de cesionario sin que nada hubiera cambiado —153 de 7.480, luego 67, luego 33:
+convergía y no llegaba— y A5 y A11 se movían con ellas. Los números del archivo se congelaron con la
+trayectoria que produjo las cesiones vigentes, así que cerrar el bucle no movió ninguna.
+
+Para cambiar la historia de un cliente —que se esté yendo, que entre uno nuevo, que deje de ceder— se edita
+ese archivo y se regenera completo. La meta comercial (`SOWTargetPct`) no va ahí: es del A5 y no se mide.
+
+`node GeneradorDatos/generar.js --solo=VERIFICACION` regenera únicamente ese bloque y conserva los demás tal
+como vienen en la entrada: sirve para probar un módulo en aislamiento, no para proteger a los otros — con el
+punto fijo, una corrida completa sólo cambia lo que el módulo tocado cambia.
 
 ## Un atributo, un activo
 

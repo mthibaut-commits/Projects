@@ -42,8 +42,8 @@ feature: null
 
 ## Pendiente / siguiente paso
 
-- **Merge `--no-ff` a `main`** de la rama `claude/migrate-project-session-vui9dl` (dos commits: regla 32 +
-  ADR-0003, y este restyle). Ver el tablero.
+- **Merge `--no-ff` a `main`** de la rama `claude/migrate-project-session-vui9dl` (dos commits: regla 33 +
+  ADR-0004, y este restyle). Ver el tablero.
 
 ## Sorpresas y aprendizajes
 
