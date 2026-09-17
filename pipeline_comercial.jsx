@@ -8572,12 +8572,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         const TONO_LIN = {
                           con_linea: { fg: "#16A34A", bg: "#F0FDF4", bd: "#bbf7d0", lbl: "Con línea" },
                           parcial:   { fg: "#7C3AED", bg: C.lilac,   bd: "#DDD3FF", lbl: "Parcial" },
-                          // Decía «Requiere comité» porque «Sin línea» competía con el chip de línea de la
-                          // izquierda, que entonces podía decir «Línea disponible» en la misma fila. Desde el
-                          // 17-09-2026 ese chip no se dibuja cuando no hay cupo —lo reemplaza «Solicitud
-                          // línea», que ya dice que va a comité—, así que la contradicción no existe más y el
-                          // mockup del usuario lo pide con su nombre: «Sin línea».
-                          sin_linea: { fg: "#EF4444", bg: "#FEF2F2", bd: "#fecaca", lbl: "Sin línea" },
+                          // «Requiere comité», no «Sin línea» (confirmado por el usuario el 17-09-2026 contra su
+                          // propio mockup, que decía «Sin línea»): el chip nombra la ACCIÓN que conlleva no tener
+                          // línea suficiente, no la carencia. La carencia ya la dice el chip de la izquierda
+                          // —«Solicitud línea $X», con la plata— y dos chips diciendo «sin línea» en la misma
+                          // fila serían el mismo dato dos veces.
+                          sin_linea: { fg: "#EF4444", bg: "#FEF2F2", bd: "#fecaca", lbl: "Requiere comité" },
                           pend:      { fg: "#6B7280", bg: "#F3F4F6", bd: C.line,    lbl: "Sin evaluar" },
                         };
                         const cabDeudor = (deudor, grupo, abierto, enOferta) => {

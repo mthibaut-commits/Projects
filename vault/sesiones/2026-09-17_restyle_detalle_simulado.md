@@ -14,8 +14,8 @@ feature: null
 - **Regla 29, viñeta nueva** (`ui_detalle_y_tubo.md`) y **regla 22, viñeta nueva** (`oferta_pricing_y_giro.md`):
   el chip de giro de la fila va `soloTipo`; el chip de línea pierde el badge «puntual»; el chip **naranjo
   «Solicitud línea $X»** aparece en todo deudor que va a comité (parcial incluido), con la cifra que entra a
-  la solicitud (`monto − ev.asignado`) y borde sólido (`borde`, prop nueva de `ChipFila`); el estado vuelve a
-  decir «Sin línea» (del mockup); títulos de sección en `C.ink` y conteos en `C.indigo`; la oferta dentro del
+  la solicitud (`monto − ev.asignado`) y borde sólido (`borde`, prop nueva de `ChipFila`); el estado sigue diciendo «Requiere comité» —el usuario
+  lo prefirió sobre el «Sin línea» del mockup—; títulos de sección en `C.ink` y conteos en `C.indigo`; la oferta dentro del
   mismo panel `C.lilac` que los disponibles; los montos de la fila y sus tooltips en pesos; **Giro Express en
   azul** (`#2563EB`/`#EFF6FF`) en `ChipGiro`, o sea en los tres sitios.
 - Las dos capturas del pedido original se **recuperaron del transcript** (base64 en el `.jsonl`) y se midieron
@@ -28,7 +28,9 @@ feature: null
 ## Decisiones tomadas con el usuario
 
 - «Revisa que el detalle de oportunidad cuando simula quede así …» (pedido con mockup, 17-09) y «AVANZA».
-  El rótulo «Sin línea» se tomó del mockup y no del texto: está dicho en la regla para que se pueda revertir.
+  «Prefiero que diga «Requiere comité», ya que es la acción que conlleva el no tener línea suficiente» (17-09):
+  el rótulo «Sin línea» del mockup se había aplicado y se revirtió el mismo día. Un mockup dice cómo se ve;
+  cuando un rótulo se aparta de una decisión escrita, se pregunta antes de tomarlo.
 
 ## Errores encontrados y su solución (regla 11)
 
