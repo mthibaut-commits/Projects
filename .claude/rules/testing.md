@@ -10,7 +10,7 @@ globs: ["tests/**", "tests_asignacion_lineas.js", "run_tests.mjs", "auditar_*.mj
 | Capa | Qué es | Cuánto tarda | Corre |
 |---|---|---|---|
 | `tests/contract/` | Gates de **contrato**: el vault, el índice de reglas, la forma del fuente, la forma de la suite, las líneas base de los auditores y los hooks | milisegundos (los auditores, ~8 s) | `node --test "tests/contract/*.test.mjs"` — sin dependencias: es el runner de Node |
-| `tests_asignacion_lineas.js` | **La suite**: 114 casos que prueban los motores y las reglas de dominio contra el HTML construido, en Chromium real | ~2 min | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs` (necesita `node build_app.mjs` antes) |
+| `tests_asignacion_lineas.js` | **La suite**: 115 casos que prueban los motores y las reglas de dominio contra el HTML construido, en Chromium real | ~2 min | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs` (necesita `node build_app.mjs` antes) |
 
 No hay capa `unit` aparte: el fuente es un solo archivo y la suite ya prueba las funciones puras por su
 nombre (`asignarLineas`, `verifDecision`, `prorratearOperacion`…) inyectándoles el estado. **Tampoco hay

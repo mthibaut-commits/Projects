@@ -24,7 +24,7 @@ npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx 
 grep -oE "^(function|const|let|var) [A-Za-z0-9_]+" pipeline_comercial.jsx | awk '{print $2}' | sort | uniq -d  # 2 · debe salir vacío
 node build_app.mjs                                                                                            # 3 · valida los hashes del vendor
 node --test "tests/contract/*.test.mjs"                                                                       # 4 · gates de contrato (~8 s)
-PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 114/114 PASA (~2 min)
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 115/115 PASA (~2 min)
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs                                         # 6 · sólo si toca la UI (~5 min)
 ```
 
@@ -41,6 +41,7 @@ contrato: `vault/conocimiento/invariantes.md` § Gates.
 | Build en Windows (el del usuario) | `Iniciar_NEX_Factoring.bat` → `build_app.ps1` — **mismo contrato que `build_app.mjs`: si cambia uno, cambia el otro** |
 | Código muerto | `node auditar_muerto.mjs` (`--csv` para el inventario en crudo) |
 | Aislamiento de los motores | `node auditar_aislamiento.mjs` |
+| Unidades (millones donde va un peso) | `node auditar_unidades.mjs` — candidatos, se verifican a mano |
 | Regenerar atribuciones | `node build_app.mjs && PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node regenerar_atribuciones.mjs` |
 | Spec `.md` → PDF | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node md_a_pdf.mjs <archivo.md>` |
 | Consolidado de integraciones | `node armar_integraciones.mjs` |

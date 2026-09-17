@@ -8,7 +8,7 @@ pricing y giro—, cada uno completo en su dominio; lo que ninguno hace, y hace 
 en qué orden corren, qué se pasan entre sí, dónde el camino se bifurca y qué queda decidido en cada
 punto.
 
-Se lee en tres tiempos:
+Se lee en cuatro tiempos:
 
 - **Parte I — el camino general.** La cadena completa en el caso más simple: cliente conocido con
   línea vigente, deudores en lista, todo cabe, nadie objeta. Es donde se explican los **siete motores**
@@ -62,8 +62,13 @@ Comercial— hoy inactivos; entrarían por el mismo tubo con otro pricing y otra
                                                          ▼
                                               Pendiente de Giro
                                                          ▼
-                                    ⑧ MODELO DE GIRO ──▶ Tesorería
+                                  entrega del reparto de ⑧ a Tesorería
 ```
+
+**⑧ no es el último paso en el tiempo.** El modelo de giro se evalúa desde que la oferta está
+simulada —el chip «Giro Normal» / «Giro Express» ya aparece en la tarjeta del tubo de una operación
+en Oferta y Negociación— y lo que ocurre después de «Pendiente de Giro» es la **entrega** de ese
+reparto a Tesorería.
 
 Los siete motores de la cadena, con lo único que decide cada uno:
 
@@ -100,8 +105,11 @@ Tres propiedades que valen para los siete y que conviene fijar antes de entrar e
 
 **Qué recibe.** El libro de ventas electrónico del cliente (**A1 · DTESync**, 30.000 documentos de 500
 emisores), el registro de cesiones del mercado (**A2 · AECSync**), las listas de riesgo (**A3 · Lista
-Blanca**, **A4 · Deudores Autorizados**) y el histórico de operaciones. En la demo llegan embebidos; en
-producción llegan como entregas diarias por **S3 con notificación por evento** (§19).
+Blanca**, **A4 · Deudores Autorizados**) y el histórico de factoring del par cliente-deudor. En la demo
+los activos llegan embebidos. En producción, **A3 y A4** llegan como entrega diaria por **S3 con
+notificación por evento** (§19); **A1** y **A2** son streams y no pasan por ese transporte. El
+**histórico del par** —lo que separa CAT1 de CAT4— no lo entrega ningún activo y hoy se genera
+determinista por par (§23).
 
 **Qué hace.** Dos relojes distintos, y conviene no confundirlos:
 
@@ -114,8 +122,8 @@ porque una llamada comercial cubre todo lo que ese cliente tiene para vender hoy
 factura produciría cien conversaciones donde hay una.
 
 **El filtro de calidad.** Una factura es comprable si es **a crédito**, **sin reclamo**, **sin nota de
-crédito** y su deudor abre oportunidad. Los tres primeros salen del activo (`EstadoDTE` del A1); el
-cuarto es la clasificación.
+crédito** y su deudor abre oportunidad. El reclamo y la nota de crédito salen de `EstadoDTE` del A1;
+que sea a crédito, de `FormaPago` de la misma fila; el cuarto es la clasificación.
 
 > Una **nota de crédito** deja el documento fuera y no se compra por el neto. El layout del A1 trae
 > `NotaCredito` y `FolioNotaCredito` pero **no el monto**, así que no se puede saber cuánto rebaja:
@@ -223,7 +231,7 @@ nada y no muta lo memoizado.
 
 | Código | Nombre de negocio | Alcance |
 |---|---|---|
-| **LF1** | Línea Inicial Cliente | del cliente, al enrolar, $30.000.000, sólo deudores Prime |
+| **LF1** | Línea Inicial Cliente | del cliente, al enrolar, $30.000.000, sólo deudores **de lista** — acá la nota > 4,2 no basta |
 | **LF2** | Normal Cliente-Deudor | del par |
 | **LF3** | Puntual Cliente-Deudor | del par, a medida de una operación |
 | **LF4** | Cliente-Otros Deudores | del **cliente**: financia a los deudores sin línea propia con él |
@@ -236,8 +244,9 @@ nada y no muta lo memoizado.
 deudor» y «cabe esta factura» son preguntas distintas y pueden dar respuestas distintas.
 
 **El recálculo es siempre COMPLETO.** Se recorre por tramo y nota descendente y los recursos son
-compartidos: el comodín LF4 es **un solo pozo** para todos los deudores sin línea propia, y la línea
-del deudor la consumen **todos** sus clientes. Recalcular sólo el deudor tocado diverge y termina
+compartidos: el comodín LF4 es un pozo del **cliente** —uno por categoría de deudor, «Lista Blanca» y
+«Deudores Autorizados», y un deudor no alcanza el de la otra— que comparten todos sus deudores sin
+línea propia; y la línea del deudor la consumen **todos** sus clientes. Recalcular sólo el deudor tocado diverge y termina
 cursando contra cupo inexistente.
 
 **Qué sale.** Cada factura queda `CON_LINEA` —con su origen, que es una **lista** de (línea, monto),
@@ -292,10 +301,12 @@ siendo **una sola lista**.
 **Un tramo es un risk tier.** Se evalúan en orden y gana el primero que calza; si ninguno calza el
 resultado es `aprobado`. A mayor desvío de la variable, mayor jerarquía exigida.
 
-**El tipo de regla lo declara la regla, no el prefijo del código.** Las de deudor se evalúan una vez
-**por cada deudor** de la operación y se visan por deudor. Deducirlo del prefijo obligaría a renumerar
-una regla cada vez que cambia de sujeto, y con eso se pierde la trazabilidad con el documento de
-política, que es por donde se audita el catálogo.
+**El tipo de regla no está atado al prefijo del código.** Por defecto se lee de él —`D01`–`D23`— pero
+una regla numerada en el bloque de cliente que sea del par cliente-deudor lo **declara**, y esa
+declaración manda sobre el prefijo. Hoy ninguna lo necesita, y el mecanismo se conserva igual:
+deducirlo *sólo* del prefijo obligaría a renumerar una regla cada vez que cambia de sujeto, y con eso
+se pierde la trazabilidad con el documento de política, que es por donde se audita el catálogo. Las de
+deudor se evalúan una vez **por cada deudor** de la operación y se visan por deudor.
 
 **El ruteo de una excepción es el par (ÁREA, NIVEL).** La regla declara el área; su tramo, el nivel.
 Con ese par se buscan en el **padrón** los usuarios de esa área con ese nivel **o superior**.
@@ -401,10 +412,16 @@ desconocido, y tratarlo como cumplido convierte la ausencia de información en u
 | V07 | Pagos con mora > 25 días | < 3% | ambos |
 | V08 | Reclamos | < 4% | ambos |
 | V09 | Monto de la operación con ese deudor | ≤ MM$300 | **sólo OTROS** |
-| V10 | Volumen histórico del deudor | > MM$1.000 | ambos |
+| V10 | Pagos del deudor al factoring, 3M | > MM$1.000 | ambos |
 
 **V09 sólo aplica en OTROS:** un Prime no tiene techo por monto. La lista es lo que compra el derecho
 a que no se te mire el tamaño de la operación.
+
+> **Los dos lados de cada comparación van en PESOS.** Los criterios que miden el monto de la
+> operación —**V03**, **V04** y **V09**— lo comparan contra variables del par y contra umbrales que
+> tienen que estar en la misma unidad. El activo los entrega en **miles** (sufijo `_M` del layout),
+> así que se multiplican por mil al leerlos; los umbrales de la tabla se escriben en pesos
+> (`300e6`, `1000e6`). `M$` es una abreviatura de pantalla y sólo la aplica el formateador.
 
 **V06 y V09 nacen en el documento y escalan al conjunto** del deudor: no se puede llamar a confirmar
 tres de siete facturas y dejar cuatro sin preguntar en la misma llamada.
@@ -475,7 +492,8 @@ configuración del **tenant**, así que correría en el navegador de **todos** s
 el mantenedor de pricing sería una consola remota. Y un AST se serializa y se re-evalúa idéntico en el
 resolver, que es a donde esto tiene que mudarse.
 
-- Gramática: `+ − * / ( )`, unario, y ocho funciones con aridad verificada al parsear.
+- Gramática: `+ − * / % ( )` —donde `%` es el **módulo**, no un porcentaje—, unario, y ocho
+  funciones con aridad verificada al parsear.
 - Un porcentaje se escribe dividiendo (`tasa / 100`), que es lo que lo hace auditable por quien no la
   escribió.
 - **División por cero da 0, no `Infinity`**: un `Infinity` se propaga a todas las filas de abajo y
@@ -483,8 +501,10 @@ resolver, que es a donde esto tiene que mudarse.
 - **Toda fila se redondea al peso.** El peso chileno no tiene decimales y cada concepto se transfiere
   o se contabiliza.
 
-**Se valida ANTES de guardar**, y son seis cosas: identificador inválido, repetido, que choca con una
-variable, **referencia a un concepto posterior**, variable inexistente y fórmula que no parsea. La
+**Se valida ANTES de guardar**: identificador inválido, repetido, que choca con una variable,
+**referencia a un concepto posterior**, variable inexistente, fórmula que no parsea, catálogo sin
+ningún concepto de rol `base` —sin él no hay de dónde descontar y todo giro sale negativo— y los dos
+mismos controles sobre la fórmula de la retención. La
 referencia adelantada es la peor: daría 0 sin avisar, y un 0 en una fila de descuentos es plata que el
 factoring deja de cobrar sin que nadie lo note mirando la pantalla. En **ejecución**, en cambio, una
 fórmula rota deja la fila en 0 y marcada, y el resto del desglose sigue cuadrando: el usuario está
@@ -524,11 +544,12 @@ documento con el que el área comercial compara.
 
 **El plazo equivalente se pondera por el peso en la DIFERENCIA DE PRECIO, no en el monto.** Es la
 única ponderación con la que la tasa equivalente reproduce la diferencia de precio de la que salió,
-que es lo único que justifica que exista una tasa equivalente. Medido: dos documentos de MM$100 a 31 y
-62 días dan **52,79** días ponderando por diferencia de precio y **46,50** ponderando por monto.
+que es lo único que justifica que exista una tasa equivalente. Medido sobre la planilla del negocio:
+dos documentos de MM$100, uno a 31 días al 1,00% y otro a 62 días al 1,20%, dan **52,79** días
+ponderando por diferencia de precio y **46,50** ponderando por monto.
 
 ```
-tasaEquivalente = difPrecio / plazoEq · 30 / VP_total
+tasaEquivalente (%) = difPrecio / plazoEq · 30 / VP_total · 100
 ```
 
 **Precisión 6/2/1: se calcula con 6 decimales, se muestra con 2 la tasa y 1 el plazo, y la fórmula del
@@ -543,8 +564,10 @@ tiene versión por factura.
 **El descuadre es ESTRUCTURAL, no un defecto.** El peso chileno no tiene decimales, así que el monto
 de cada factura tiene que ser entero, y redondear *n* veces y sumar no da el total. Por eso hay una
 **variable de ajuste por concepto** que se **devuelve** en vez de esconderse, y el residuo lo absorbe
-la **factura más grande**: siempre puede absorberlo sin cruzar el cero. En la más chica el ajuste
-podía superar lo asignado, y una comisión negativa no se explica ni se transfiere.
+el documento de **mayor peso en ese concepto** —la factura más grande en todo lo que se reparte por
+monto, y la de mayor diferencia de precio en la diferencia de precio—: siempre puede absorberlo sin
+cruzar el cero. En el de menor peso el ajuste podía superar lo asignado, y una comisión negativa no se
+explica ni se transfiere.
 
 ---
 
@@ -572,8 +595,9 @@ bloques. Un bloque en $0 no se dibuja: no le pide nada al ejecutivo y empuja hac
 > diciendo que no sin decir cuánto falta. Y **sin simular no se pronuncia**: una oferta que nadie
 > evaluó no se bloquea por una cifra que nadie calculó.
 
-Las dos se **dicen**, no sólo apagan el botón: banda con el motivo y qué hacer. Un CTA apagado sin
-explicación deja al ejecutivo sin dónde enterarse.
+Las dos se **dicen**, no sólo apagan el botón: el giro no positivo con una banda que trae el motivo y
+qué hacer; las excepciones sin justificar, dentro de su propio bloque y en el tooltip del CTA. Un CTA
+apagado sin explicación deja al ejecutivo sin dónde enterarse.
 
 **El CTA nombra lo que va a pasar.** Con parte de la oferta sin cupo, el botón dice **«Enviar a Comité
 y Publicar»**: cerrarla ahí no es sólo cerrarla, y ésa es justo la consecuencia que hay que anticipar
@@ -617,8 +641,8 @@ ordenado**, y se guarda junto con su SHA-256.
 ### 7. Después de la firma: las tres compuertas
 
 **Firmar es del CLIENTE; girar es de la casa**, y sólo después de que sus controles pasen. En el
-instante en que se registra la firma, `etapaTrasFirma` recibe el estado de las tres compuertas y
-devuelve el destino:
+instante en que se registra la firma, `etapaTrasFirma` recibe el estado de las tres compuertas —más si
+la operación exige otorgamiento manual por línea o por deudor— y devuelve el destino:
 
 | Compuerta | Invariante | Qué falta |
 |---|---|---|
@@ -629,7 +653,10 @@ devuelve el destino:
 - **Falta cualquiera de las tres → «Otorgamiento / Verificación».** Es **una** etapa y no dos, aunque
   sean dos motores: el ejecutivo tiene un solo pendiente —que la casa termine de revisar— y no puede
   hacer nada distinto según cuál falte.
-- **No falta ninguna → «Pendiente Integración».** La operación **sale del tubo**: ya no es una
+- **No falta ninguna, y la operación cabe en la línea con deudores conocidos → «Pendiente
+  Integración».** Hay una cuarta entrada además de las tres compuertas: si la operación supera la línea
+  aprobada del cliente o incluye deudores «Otro», queda igual en «Otorgamiento / Verificación», con su
+  propio motivo. Con todo resuelto, la operación **sale del tubo**: ya no es una
   oportunidad y el ejecutivo no tiene nada que hacer ahí. Los KPI, en cambio, la siguen contando: la
   venta girada del mes es suya aunque la operación ya no esté en su tablero.
 - **Operaciones (N3 o superior) aprueba la integración al core → «Pendiente de Giro».** Quien responde
@@ -674,10 +701,11 @@ parte. No calcula plata: la reparte y la etiqueta.
 | **GE** | Giro Express | la verificación lo dio por **no necesario** **y** el otorgamiento **no** dejó marcas de excepción, ni del cliente ni del deudor |
 | **GN** | Giro Normal | todo lo demás |
 
-*¿Por qué las dos condiciones a la vez?* Express es la vía rápida: se gira **antes** de que terminen
-los controles. Si el deudor no confirmó por teléfono o si el otorgamiento dejó una excepción sin
-visar, hay una razón conocida por la que ese dinero podría no volver — girarlo rápido es asumir un
-riesgo que alguien ya identificó y nadie autorizó.
+*¿Por qué las dos condiciones a la vez?* Express es la vía rápida **de Tesorería**, y su criterio se
+apoya en lo mismo que las tres compuertas ya exigen (§7): si el deudor no confirmó por teléfono o si el
+otorgamiento dejó una excepción sin visar, hay una razón conocida por la que ese dinero podría no
+volver, y ese deudor no entra a la vía rápida. **Girar antes de que los controles terminen no ocurre
+en ningún tipo:** ninguna operación con algo pendiente llega al giro.
 
 > **Supuesto explícito.** El enunciado de negocio describe GN como «por verificar **y** con marcas de
 > excepción». Se implementó como **disyunción**: con conjunción, una factura por verificar y sin
@@ -745,9 +773,10 @@ el de deudores cuya calidad ya está declarada en las listas. Medido, cubre alre
 del cliente mediano.
 
 **El inbound dimensiona con un cupo TENTATIVO, no con la LF1.** La demanda real de un cliente nuevo es
-justo lo que debe disparar la solicitud de línea, y recortarla a $30.000.000 la escondería — el 55% de
-los cedentes quedaría en el tubo con un documento. El cupo tentativo dimensiona **sin afirmar**: la
-línea aprobada sigue en 0 y la pantalla sigue diciendo «Sin línea».
+justo lo que debe disparar la solicitud de línea, y recortarla la escondería: el **55%** de los
+cedentes no tiene línea aprobada, y dimensionar con su disponible —que vale 0— dejaría el **81%** del
+tubo en un solo documento. El cupo tentativo dimensiona **sin afirmar**: la línea aprobada sigue en 0
+y la pantalla sigue diciendo «Sin línea».
 
 ### 10. Cliente sin línea y línea suspendida
 
@@ -829,8 +858,11 @@ Desde que esa factura entra a la oferta, tres cosas cambian a la vez:
 1. **Otorgamiento manual.** La operación deriva a Otorgamiento aunque el visado no levante ninguna
    excepción. Es la contrapartida exacta de lo anterior: si el sistema se negó a abrir la oportunidad
    solo, no puede después dejar que se curse sola.
-2. **Comodín LF4.** El tipo del deudor entra en **un** solo punto del motor de líneas: qué comodín le
-   toca. No hay una tercera categoría porque el comité no aprueba cupo para «desconocidos».
+2. **Comodín LF4.** Qué comodín le toca lo decide el tipo del deudor, y no hay una tercera categoría
+   porque el comité no aprueba cupo para «desconocidos»: todo lo que no es Lista Blanca cae en
+   «Deudores Autorizados». El tipo pesa además en el **orden** de atención —los Prime primero, porque
+   el comodín y el tope del cliente son recursos compartidos—, en la LF1 del estado A y en la holgura
+   con que se talla la línea global del deudor.
 3. **Protocolo completo de verificación**, salvo que la nota lo rescate. V09 es el caso que mejor lo
    explica: un Prime no tiene techo por monto; sin lista, ese techo vuelve a existir.
 
@@ -865,9 +897,11 @@ deudor con excepción y nivel.
 
 **Lo que se repara al re-evaluar es una lista explícita**, no un filtro por categoría: documentación,
 vigencias, garantías y comportamiento comercial ajustable. **Nunca se reparan** los datos de bureau
-—CMF, protestos, ACHEF, infracciones laborales— ni las seis TGR. Una firma no borra un dato de bureau:
+—CMF, ACHEF, infracciones laborales— ni las seis TGR. Una firma no borra un dato de bureau:
 la cobranza judicial la levanta la Tesorería General, no nosotros. Eso es lo que hace que la pérdida
-sea **terminal de verdad** y no una etiqueta.
+sea **terminal de verdad** y no una etiqueta. Queda un desfase anotado: la re-evaluación deja hoy los
+**protestos** en cero, así que ese criterio se repara con la firma cuando por la misma razón no
+debería.
 
 **La segunda puerta al mismo destino** es una excepción que el apoderado con atribución **rechazó**. Si
 quien tiene el par (área, nivel) dijo que no, dentro de esta operación no hay a quién apelar: la
@@ -1007,8 +1041,10 @@ resultados distintos sobre el mismo origen.
   ahora se cursan.
 - `perdio_linea` — el cupo se consumió en **otro negocio**, a veces de otra cartera, y ahora califican
   menos.
-- `cambio_de_linea` — el cursable no se movió pero **la resolución que hay que pedirle al comité sí**:
-  si se agotó la puntual y ahora financia la normal, es otra solicitud.
+- `cambio_de_linea` — la factura se sigue cursando, pero la financia otro cupo: se agotó la puntual y
+  ahora entra por la normal, o el mismo par se reparte distinto entre sus líneas. El cursable no se
+  movió y no hay nada que pedirle al comité; lo que cambió es **de dónde sale la plata**, que es lo que
+  explica por qué la puntual del mes pasado ya no alcanza.
 
 Sin el diff, una oferta idéntica que ayer se cursaba y hoy no **se lee como un error del sistema** — y
 el ejecutivo no lo puede deducir mirando sólo el resultado nuevo, porque la línea del deudor es global
@@ -1093,7 +1129,7 @@ pantalla en blanco, deja el dato del día anterior — que es un estado que se p
 | ③a Líneas | consulta de líneas en tres niveles (**A23**) · ver §23 |
 | ③b Otorgamiento | **A16** (variables del modelo de riesgo) · **A11** · **A24** (padrón y cartera) |
 | ③c Verificación | **A10** (variables del par cliente-deudor) |
-| ④ Pricing | **A3/A4** (piso del deudor) · **A11** (SOW) · configuración del tenant |
+| ④ Pricing | **A11** (SOW) · configuración del tenant · el **piso de riesgo del deudor**, que hoy es una constante del fuente y ningún activo declara (§23) |
 | ⑤ Prorrateo | nada externo: recibe del pricing |
 | ⑥ Cierre | **A13** (inyección de solicitud de línea) · correo saliente del tenant |
 | ⑦ Post-firma | **A2** (inscripción de la cesión, ver §23) |
@@ -1171,8 +1207,8 @@ app es el vector.
 
 ### 21. Dónde corre cada motor
 
-**Hoy los siete corren en el navegador.** En producción, los tres que deciden plata o permisos
-—líneas, otorgamiento y verificación— tienen que correr **en el servidor**.
+**Hoy los siete corren en el navegador.** En producción, los cuatro que deciden plata o permisos
+—líneas, otorgamiento, verificación y **pricing**— tienen que correr **en el servidor**.
 
 Cuatro reglas de aislamiento que valen para todos:
 
@@ -1265,13 +1301,15 @@ describen conducta:
 | Desfase | Medido |
 |---|---|
 | El **plazo del documento** no llega al prorrateo: se usa un plazo por **deudor** en vez del vencimiento del documento | 29.554 de 30.000 facturas tienen un plazo real distinto del que entra al cálculo; desvío medio 21,9 días. 691 de 697 deudores tienen más de un plazo en el archivo, así que un parámetro por deudor no puede representar al documento ni en principio |
-| El **predictor de verificación** manda al teléfono al 100% de los pares por un choque de unidades (pesos contra millones) en los tres criterios sensibles al monto | 0 pares quedan «verificados por modelo»; como consecuencia **Giro Express nunca se gatilla** |
 | **Tres entradas del pricing** (mora, otros descuentos, cuentas por cobrar) se generan por hash y entran al Subtotal | contradice «el pipeline no genera datos»; el prorrateo las reparte documento a documento |
 | El **«Monto a Girar» del catálogo del tenant no sale de la pantalla del detalle**: lo que viaja al resto del sistema es la simulación gruesa del tubo | la operación se cursa por una cifra distinta de la que el ejecutivo aprobó en pantalla |
 | El camino vivo de «Otorgamiento» a giro **salta a Girada** sin pasar por Pendiente Integración, sin VER-01 y sin la aprobación de Operaciones N3 | es el atajo que §7 describe como cerrado, vivo por otra ruta |
-| **`simularOferta` no emite versión**, contra lo que declara el modelo de versionado: la emite sólo «Re-evaluar» | una operación simulada y no re-evaluada no tiene versión de la cual leer |
+| **`simularOferta` no emite versión**, contra lo que declara el modelo de versionado: en la oferta la emite sólo «Re-evaluar» (después de aceptada la emite además el recorte por verificación, §14) | una operación simulada y no re-evaluada no tiene versión de la cual leer |
 | El **inbound no excluye las facturas ya cedidas** a otro factor | entran al monto con que se dimensiona la oportunidad, así que el tubo ofrece una oportunidad más grande de la que existe |
-| **La contactabilidad no tiene productor**: el dato se calcula y se descarta | la regla de dominio de reintentos no se puede ejercitar |
+| El **histórico de factoring del par** —lo que separa CAT1 de CAT4 en el inbound— no lo entrega ningún activo: se genera determinista por par | la clasificación que decide si una factura abre oportunidad se apoya en un dato que no viene de ninguna entrega |
+| El **piso de riesgo del deudor** del pricing es una constante del fuente por razón social, y ningún layout lo declara | 675 de 697 deudores del archivo reciben el default; el activo que debería traerlo es el del modelo de riesgo |
+| La **re-evaluación repara los protestos**, que son un dato de bureau | el criterio de protestos se apaga con la firma del contrato, contra la regla que dice que una firma no borra un dato de bureau |
+| La **rama de fallo** de la contactabilidad está cableada: el productor devuelve siempre «contactable» | el «no entregado» no ocurre nunca, así que la regla de reintentos no se puede ejercitar y los consumidores del estado de error quedan inalcanzables |
 
 ### 24. Las decisiones que no se cierran programando
 

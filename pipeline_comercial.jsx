@@ -1854,8 +1854,8 @@ const VERIF_RULES = [
   { id: "V06", n: 6, name: "Desviación de la fecha de pago", variable: "abs(FchVctoDoc − FchVctoProm) / FchVctoProm", recortado: false, desc: "Si la fecha de pago elegida se aleja del plazo histórico del par, se verifican TODAS las facturas de ese deudor", dom: "Riesgo", thr: "≤ 5%", fmt: (v) => v == null ? "sin info" : (v * 100).toFixed(1) + "%" },
   { id: "V07", n: 7, name: "Porcentaje pagado con más de 25 días de mora", variable: "MntPagoC-D >25d mora / MntPago", recortado: true, desc: "Deterioro del comportamiento de pago del deudor respecto de la fecha de financiamiento", dom: "Riesgo", thr: "< 3%", fmt: (v) => v == null ? "sin info" : v.toFixed(1) + "%" },
   { id: "V08", n: 8, name: "Porcentaje de facturas reclamadas", variable: "MntFactReclamadas / MntTotalFacturas", recortado: true, desc: "El deudor reclama facturas a su cliente: la relación comercial está cuestionada", dom: "Riesgo", thr: "< 4%", fmt: (v) => v == null ? "sin info" : v.toFixed(1) + "%" },
-  { id: "V09", n: 9, name: "Operación de alto monto", variable: "MntOpC-D", recortado: false, desc: "Medida preventiva: gatilla si el TOTAL de la operación con ese deudor supera el umbral. Comparar además la factura individual era redundante —ninguna puede superar la suma— y hacía pensar que eran dos umbrales", dom: "Riesgo", thr: "≤ $300M", fmt: (v) => v == null ? "sin info" : "$" + v + "M" },
-  { id: "V10", n: 10, name: "Historial de pago relevante con el factoring (Ult3M)", variable: "MntPagoDeudorUlt3M", recortado: true, desc: "Evita el falso positivo del deudor que cumple todo porque operó una sola vez: exige volumen de pago representativo", dom: "Riesgo", thr: "> $1.000M", fmt: (v) => v == null ? "sin info" : "$" + Math.round(v) + "M pagados" },
+  { id: "V09", n: 9, name: "Operación de alto monto", variable: "MntOpC-D", recortado: false, desc: "Medida preventiva: gatilla si el TOTAL de la operación con ese deudor supera el umbral. Comparar además la factura individual era redundante —ninguna puede superar la suma— y hacía pensar que eran dos umbrales", dom: "Riesgo", thr: "≤ M$300", fmt: (v) => v == null ? "sin info" : fmtMM(v) },
+  { id: "V10", n: 10, name: "Historial de pago relevante con el factoring (Ult3M)", variable: "MntPagoDeudorUlt3M", recortado: true, desc: "Evita el falso positivo del deudor que cumple todo porque operó una sola vez: exige volumen de pago representativo", dom: "Riesgo", thr: "> M$1.000", fmt: (v) => v == null ? "sin info" : fmtMM(v) + " pagados" },
 ];
 // Criterios de cada protocolo (spec §3). El recortado son SEIS: 1, 4, 5, 7, 8 y 10.
 const VERIF_APLICAN_RECORTADO = VERIF_RULES.filter((r) => r.recortado).map((r) => r.id);
@@ -1931,13 +1931,16 @@ function verifPar(rutCliente, nombre, rutDeudor) {
     protocolo: F && N("V01_PROTOCOLO_PROPIO") === 1
       ? { existe: true, id: "PROT-" + String(1000 + (h % 9000)) } : { existe: false, id: null },
     pctPagoDeudor3M: N("V02_PCT_PAGADO_3M"),
-    mntCompraOp3M: F ? +(N("V03_MNT_COMPRA_3M_M") / 1000).toFixed(1) : null,  // el activo trae MILES; acá millones. Total comprado al par en 3M
-    avgVentaProm3M: F ? +(N("V04_VENTA_PROM_3M_M") / 1000).toFixed(1) : null, // el activo trae MILES; acá millones. Venta mensual del par
+    // EN PESOS. El sufijo `_M` del layout son MILES, así que el activo se multiplica por 1.000; se
+    // dividía por 1.000 y quedaban en MILLONES mientras `montoOp` se suma en pesos, o sea que V03 y
+    // V04 dividían dos magnitudes con un factor 1.000.000 entre medio y no los cumplía NADIE.
+    mntCompraOp3M: F ? Math.round(N("V03_MNT_COMPRA_3M_M") * 1000) : null,   // MILES → PESOS. Total comprado al par en 3M
+    avgVentaProm3M: F ? Math.round(N("V04_VENTA_PROM_3M_M") * 1000) : null,  // MILES → PESOS. Venta mensual del par
     mesesConVenta6M: N("V05_RECURRENCIA_MESES_6M"),
     fchVctoProm: N("V06_PLAZO_PROM_PAGO_DIAS"),                               // días, plazo histórico del par
     pctMora25d: N("V07_PCT_MORA_25D"),
     pctReclamadas: N("V08_PCT_RECLAMADAS"),
-    mntPagoDeudor3M: F ? +(N("V10_MNT_PAGADO_3M_M") / 1000).toFixed(1) : null, // el activo trae MILES; acá millones
+    mntPagoDeudor3M: F ? Math.round(N("V10_MNT_PAGADO_3M_M") * 1000) : null,  // MILES → PESOS
     h,
   };
   _VERIF_PAR.set(k, out);
@@ -1951,7 +1954,7 @@ function verifPar(rutCliente, nombre, rutDeudor) {
 // necesita saber cuál falló para decidir si le conviene editar la operación.
 function verifDecision(par, facturas) {
   const fs = (facturas || []).filter(Boolean);
-  const montoOp = +fs.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1);
+  const montoOp = Math.round(fs.reduce((s, f) => s + (f.monto || 0), 0)); // EN PESOS, como todo monto
   // Regla 6 sobre el conjunto: la desviación que manda es la mayor de las facturas del deudor.
   // Si a alguna factura le falta el plazo, el criterio NO TIENE DATO y eso es incumplimiento (§4.3).
   // Antes se rellenaba el hueco con el plazo promedio del par: la desviación daba 0 y el criterio
@@ -1986,8 +1989,10 @@ function verifDecision(par, facturas) {
     V06: (v) => v != null && v <= 0.05,   // 5% del plazo promedio, no 5 días
     V07: (v) => v != null && v < 3,
     V08: (v) => v != null && v < 4,
-    V09: (v) => v != null && v <= 300,
-    V10: (v) => v != null && v > 1000,    // umbral fijo, no 20× la operación
+    // EN PESOS, como los dos valores contra los que comparan. Estaban escritos en millones (300 y
+    // 1000) contra un `montoOp` en pesos: V09 exigía una operación de $300 y no la pasaba nadie.
+    V09: (v) => v != null && v <= 300e6,
+    V10: (v) => v != null && v > 1000e6,  // umbral fijo, no 20× la operación
   };
   // 1 · COMPUERTA: si el deudor tiene protocolo propio, se verifica siempre con ese protocolo y no
   //     se evalúa nada más (spec §4.1). Antes esto estaba invertido: el protocolo EVITABA la llamada.
@@ -21424,9 +21429,14 @@ function resumenEmpresa(deal) {
   if (!deal) return [];
   const e = api4Empresa360(deal.rutEmisor || deal.cliente, deal.cliente);
   const f = e.firmografica, c = e.comercial, x = e.indices;
-  const ventaAnual = Math.round((x.ventasSII[1] || x.ventasSII[0] || 0) / 1000);
-  const patrimonio = Math.round((x.patrimonio || 0) / 1e6);
-  const coloc = Math.round((c.colocProm12m || 0) / 1000);
+  // EN PESOS, porque es lo que `fmtMM` espera: dividían por mil y por un millón y después `fmtMM`
+  // volvía a dividir, así que la facturación anual de un cliente salía como «$1.234» en vez de
+  // «M$1.234». El resto del archivo ya lo hacía bien (`fmtMM(ventasSII[i] * 1000)`), así que la
+  // misma cifra se leía distinta en dos pantallas. El sufijo `_M` del layout son MILES; el
+  // patrimonio ya viene en pesos desde `api4Empresa360`.
+  const ventaAnual = Math.round((x.ventasSII[1] || x.ventasSII[0] || 0) * 1000); // MILES → PESOS
+  const patrimonio = Math.round(x.patrimonio || 0);                              // ya viene en PESOS
+  const coloc = Math.round((c.colocProm12m || 0) * 1000);                        // MILES → PESOS
   const nDeud = (deal.deudores && deal.deudores.length) || 1;
   const out = [];
   out.push(`${deal.cliente} opera en el sector ${(f.sector || "").toLowerCase()} (${(f.actividad || "").toLowerCase()}), con ~${f.trabajadores} trabajadores${f.clienteBanco === "Sí" ? " y es cliente del banco" : ""}. Ingresó a la cartera el ${f.fechaIngreso}.`);
@@ -22409,45 +22419,76 @@ function LineasBandeja({ onNueva, tick, onRefrescar, cargando }) {
   // compara es una solicitud contra las otras de la bandeja, y sacarla de la lista pierde ese marco.
   const [abierta, setAbierta] = useState(null);
   const EST_COL = { "En gestión": { bg: "#eff6ff", fg: "#2563EB" }, "En análisis de Riesgo": { bg: "#FFF7ED", fg: "#C2410C" }, "En comité": { bg: "#f5f3ff", fg: "#7C3AED" }, "Aprobada": { bg: "#F0FDF4", fg: "#16A34A" }, "Observada": { bg: "#fef2f2", fg: "#EF4444" } };
+  // MISMA TABLA QUE «VIGENTES» (17-09-2026, pedido del usuario). Las dos pestañas de esta pantalla
+  // listan lo mismo —líneas de un cliente— y se comparan cambiando de pestaña, así que tienen que
+  // leerse igual. Esta bandeja estaba armada con un GRID CSS y sus anchos escritos a mano en DOS
+  // cadenas (cabecera y fila) que había que mover juntas; Vigentes es una `<table>` real, donde la
+  // columna la declara la celda y no se pueden desalinear. Se adopta la de Vigentes: mismo
+  // contenedor (`rounded-2xl` + borde, sin padding), misma cabecera (`t9` gris en versalitas) y
+  // mismas celdas (`px-3 py-2.5`), así que el alto de fila sale del padding igual que allá.
+  const cols = ["Proceso", "Cliente", "Tipo", "Propuesto", "Estado", "Últ. actualización"];
   return (
-    <div className="rounded-2xl p-3" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-      <div className="flex items-center justify-between">
-        {/* El título nombra lo que la bandeja CONTIENE. Por dónde viaja —qué API, qué sistema, que es de
-            sólo lectura— es arquitectura, no algo que el ejecutivo necesite leer cada vez que abre la
-            pantalla; sigue documentado en el spec de A13/A14/A15. */}
-        <div className="t10 font-bold uppercase tracking-wide" style={{ color: C.sub }}>Solicitudes en curso</div>
+    <div className="space-y-4">
+      {/* Los controles van FUERA de la tarjeta, donde Vigentes pone su buscador y sus filtros. Dentro
+          competían con la cabecera de columnas y obligaban a separarlos con un margen a mano. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="t11" style={{ color: C.sub }}>
+          {sols.length === 0 ? "Sin solicitudes en gestión" : `${sols.length} solicitud(es) en curso`}
+          <span className="ml-1" style={{ color: C.faint }}>· haz clic en una fila para ver sus líneas de detalle</span>
+        </div>
         <div className="flex gap-2">
-          <button onClick={onRefrescar} disabled={cargando} className="flex items-center gap-1 rounded-md px-2.5 py-1.5 t10 font-medium disabled:opacity-50" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}><RotateCcw size={11} className={cargando ? "animate-spin" : ""} /> {cargando ? "Consultando…" : "Consultar estados"}</button>
-          <button onClick={onNueva} className="rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>+ Nueva línea</button>
+          <button onClick={onRefrescar} disabled={cargando} className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium disabled:opacity-50" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}><RotateCcw size={12} className={cargando ? "animate-spin" : ""} /> {cargando ? "Consultando…" : "Consultar estados"}</button>
+          <button onClick={onNueva} className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Plus size={12} /> Nueva línea</button>
         </div>
       </div>
-      {/* Aire entre la fila del título —que lleva los dos botones— y la cabecera de columnas
-          (16-09-2026, pedido del usuario). Con `mt-2` los botones quedaban pegados al rótulo de la
-          primera columna y la zona se leía apretada; el botón es de 1,5 de alto, así que el margen
-          tiene que despegarlo a ÉL y no al texto del título, que es más bajo. */}
-      <div className="mt-5 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "104px 1fr 170px 110px 130px 140px", color: C.faint, borderBottom: `1px solid ${C.line}`, paddingBottom: 6 }}><span>Proceso</span><span>Cliente</span><span>Tipo</span><span>Propuesto</span><span>Estado</span><span>Últ. actualización</span></div>
-      {cargando ? [0, 1, 2].map((i) => <div key={"sk" + i} className="skel my-2" style={{ height: 34 }} />) : sols.map((s) => { const ec = EST_COL[s.estado] || EST_COL["En gestión"]; return (
-        <div key={s.idProceso} style={{ borderBottom: `1px solid ${C.line}` }}>
-          {/* `py-3` y no `py-1.5` (16-09-2026, pedido del usuario): la fila es el único control de esta
-              bandeja —se hace clic en ella para desplegar el detalle— y con 6 px de alto útil quedaba
-              apretada contra la de arriba y contra la cabecera. El «Tipo» ocupa dos líneas, así que el
-              aire tiene que salir del padding y no del contenido. */}
-          <div onClick={() => setAbierta((a) => (a === s.idProceso ? null : s.idProceso))} className="grid cursor-pointer items-center gap-2 py-3 t11 hover:bg-stone-50" style={{ gridTemplateColumns: "104px 1fr 170px 110px 130px 140px" }}
-            title={(s.detalle || []).length ? `Ver las ${s.detalle.length} línea(s) de detalle de esta solicitud` : "Ver el detalle de la solicitud"}>
-            <span className="flex items-center gap-1 whitespace-nowrap font-semibold" style={{ color: C.ink }}>
-              <ChevronRight size={11} style={{ color: C.faint, transform: abierta === s.idProceso ? "rotate(90deg)" : "none", transition: "transform .12s" }} />{s.idProceso}
-            </span>
-            <span className="truncate" style={{ color: C.ink }}>{s.cliente}<span className="t9 ml-1" style={{ color: C.faint }}>{s.rut}</span></span>
-            <span className="t10" style={{ color: C.sub }}>{SOLIC_TIPOS[s.tipo]}{s.subtipo ? ` · ${SOLIC_SUBTIPOS[s.subtipo]}` : ""}
-              {(s.detalle || []).length ? <span className="ml-1 t9" style={{ color: C.faint }}>· {s.detalle.length} línea(s)</span> : null}</span>
-            <span className="font-medium" style={{ color: C.ink }}>{fmtMM(s.totalPropuesto || 0)}</span>
-            <span><span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: ec.bg, color: ec.fg }}>{s.estado}</span></span>
-            <span className="t9" style={{ color: C.faint }}>{s.tsEstado || s.ts}</span>
-          </div>
-          {abierta === s.idProceso && <div className="pb-2"><DetalleSolicitud sol={s} /></div>}
-        </div>
-      ); })}
-      {sols.length === 0 && <div className="py-8 text-center t11" style={{ color: C.faint }}>Sin solicitudes en gestión. Crea una nueva línea o inicia una modificación desde «Vigentes».</div>}
+      <div className="overflow-x-auto rounded-2xl" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <table className="w-full border-collapse t11" style={{ minWidth: "980px" }}>
+          <thead><tr>{cols.map((h) => <th key={h} className="px-3 py-2.5 text-left t9 font-bold uppercase tracking-wide" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
+          <tbody>
+            {cargando && [0, 1, 2].map((i) => (
+              <tr key={"sk" + i} style={{ borderBottom: `1px solid ${C.line}` }}><td colSpan={cols.length} className="px-3 py-2.5"><div className="skel" style={{ height: 30 }} /></td></tr>
+            ))}
+            {!cargando && sols.length === 0 && (
+              <tr><td colSpan={cols.length} className="px-3 py-8 text-center t11" style={{ color: C.faint }}>Sin solicitudes en gestión. Crea una nueva línea o inicia una modificación desde «Vigentes».</td></tr>
+            )}
+            {!cargando && sols.map((s) => { const ec = EST_COL[s.estado] || EST_COL["En gestión"]; const abre = abierta === s.idProceso; return (
+              <Fragment key={s.idProceso}>
+                <tr onClick={() => setAbierta((a) => (a === s.idProceso ? null : s.idProceso))} className="cursor-pointer hover:bg-stone-50"
+                  style={{ borderBottom: `1px solid ${C.line}` }}
+                  title={(s.detalle || []).length ? `Ver las ${s.detalle.length} línea(s) de detalle de esta solicitud` : "Ver el detalle de la solicitud"}>
+                  {/* `whitespace-nowrap`: `PRC-2601` partido en dos líneas no se lee como identificador. */}
+                  <td className="whitespace-nowrap px-3 py-2.5">
+                    <span className="flex items-center gap-1 t11 font-semibold" style={{ color: C.ink }}>
+                      <ChevronRight size={11} style={{ color: C.faint, transform: abre ? "rotate(90deg)" : "none", transition: "transform .12s" }} />{s.idProceso}
+                    </span>
+                  </td>
+                  {/* Dos líneas como en Vigentes: la razón social arriba y su identificación debajo. En
+                      una sola, el RUT competía con el nombre por el mismo ancho y lo truncaba. */}
+                  <td className="px-3 py-2.5">
+                    <div className="t12 font-medium" style={{ color: C.ink }}>{s.cliente}</div>
+                    <div className="t9" style={{ color: C.faint }}>{s.rut}{s.ejecutivo ? ` · ${s.ejecutivo}` : ""}</div>
+                  </td>
+                  <td className="px-3 py-2.5 t11" style={{ color: C.sub, minWidth: 170 }}>
+                    {SOLIC_TIPOS[s.tipo]}{s.subtipo ? ` · ${SOLIC_SUBTIPOS[s.subtipo]}` : ""}
+                    {(s.detalle || []).length ? <div className="t9" style={{ color: C.faint }}>{s.detalle.length} línea(s) de detalle</div> : null}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: C.ink }}>{fmtMM(s.totalPropuesto || 0)}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5"><span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t10 font-bold" style={{ backgroundColor: ec.bg, color: ec.fg }}>{s.estado}</span></td>
+                  <td className="whitespace-nowrap px-3 py-2.5 t9" style={{ color: C.faint }}>{s.tsEstado || s.ts}</td>
+                </tr>
+                {/* El detalle va en su propia fila a lo ancho de la tabla: así el panel queda alineado
+                    con las columnas de arriba en vez de colgar de una de ellas. Lo que dibuja adentro
+                    no cambia — `DetalleSolicitud` ya estaba bien. */}
+                {abre && (
+                  <tr style={{ borderBottom: `1px solid ${C.line}` }}>
+                    <td colSpan={cols.length} className="px-3 pb-3 pt-1"><DetalleSolicitud sol={s} /></td>
+                  </tr>
+                )}
+              </Fragment>
+            ); })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

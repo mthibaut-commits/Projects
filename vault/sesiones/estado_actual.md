@@ -13,7 +13,7 @@ timestamp: 2026-09-17T15:29:14Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone de 40,6 MB, **114/114 casos PASA**, `tsc` limpio, 0 duplicados.
+(`pipeline_comercial.jsx`), build standalone de 40,6 MB, **115/115 PASA**, `tsc` limpio, 0 duplicados.
 Los procesos tienen spec en `Specs_Procesos/` con su PDF. El 17-09-2026 el repo abrió su vault (`CLAUDE.md` de
 229 KB a 105 líneas; 60 reglas verbatim por tema, índice en `invariantes.md`) y **cableó sus gates**: 29 tests de
 contrato en `tests/contract/` (~8 s, sin dependencias, cada uno con sonda negativa), tres hooks deterministas en
@@ -22,21 +22,20 @@ producto cambió. Detalle y trade-offs: ADR-0001 y ADR-0002.
 
 > ## 🎯 Siguiente paso
 >
-> Todos son decisión del usuario; ninguno está empezado.
-> 1. **Mergear `claude/ecstatic-ptolemy-f7cb4m` a `main`** con `--no-ff` y poner el primer tag (`v0.1.0`): es
->    el momento en que `main` recibe el vault y los gates, y el CI empieza a cuidarla.
-> 2. **Cerrar la tabla de invariantes**: 8 de los 12 del contrato con el servidor sin gate (TEN-01, RAT-01, IDM-01,
+> Todos son decisión del usuario; ninguno está empezado. Desde `v0.1.0`, `main` lleva los hooks: una sesión de
+> Claude Code que intente `git commit` directo sobre `main` va a rebotar y tendrá que abrir rama (`flujo_git.md`).
+> 1. **Cerrar la tabla de invariantes**: 8 de los 12 del contrato con el servidor sin gate (TEN-01, RAT-01, IDM-01,
 >    LIN-01, OTG-01, GIR-01, ATR-01, CRY-01, PRI-01) y 21 reglas de dominio sólo por revisión.
-> 3. **Decidir los datos**: las razones sociales de los deudores son reales (Codelco, Cencosud, MOP…) sobre RUT
+> 2. **Decidir los datos**: las razones sociales de los deudores son reales (Codelco, Cencosud, MOP…) sobre RUT
 >    sintéticos. Un ADR que lo decida y un gate que lo sostenga (hoy ningún test lo afirma ni lo niega).
-> 4. Sacar `pipeline.zip` (build del 12-08-2026, 29,6 MB) del versionado.
+> 3. Sacar `pipeline.zip` (build del 12-08-2026, 29,6 MB) del versionado.
 
 ## En vuelo ahora
 
 | Trabajo | Estado | Rama | Siguiente paso |
 |---|---|---|---|
-| Cablear los gates | ✅ completada 17-09-2026 · 29/29 · health check de hooks 8/8 · **CI verde en su run #1** (58 s, 114/114 en el log) | `claude/ecstatic-ptolemy-f7cb4m` | merge a `main` + tag (usuario) |
-| Partir `CLAUDE.md` y abrir el vault | ✅ completada 17-09-2026 · sonda 398/398 | ídem | ídem |
+| Cablear los gates | ✅ completada 17-09-2026 · 29/29 · CI verde en su run #1 · **mergeada a `main` con `--no-ff` · `v0.1.0`** | `claude/ecstatic-ptolemy-f7cb4m` | — |
+| Partir `CLAUDE.md` y abrir el vault | ✅ completada 17-09-2026 · sonda 398/398 · mergeada a `main` · `v0.1.0` | ídem | — |
 
 ## Bloqueos
 
@@ -73,5 +72,6 @@ producto cambió. Detalle y trade-offs: ADR-0001 y ADR-0002.
 
 ## Última sesión
 
+[17-09-2026 — merge a main y v0.1.0](./2026-09-17_merge_a_main.md) ·
 [17-09-2026 — cablear los gates](./2026-09-17_cablear_gates.md) ·
 [17-09-2026 — auditoría y partición de CLAUDE.md](./2026-09-17_partir_claude_md.md)

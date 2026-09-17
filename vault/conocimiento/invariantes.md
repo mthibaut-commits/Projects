@@ -10,7 +10,7 @@ timestamp: 2026-09-17T15:29:14Z
 
 > **Lista que un code review rechaza sin discusión.** Las reglas viven **verbatim** en `reglas/<tema>.md` —se citan por número y no se renumeran— y este índice dice dónde está cada una y **qué caso de `tests_asignacion_lineas.js` la verifica**. La columna *casos* se extrajo del propio texto de cada regla (las que nombran su caso); una regla **sin gate** no es una regla falsa: es una que hoy sólo la sostiene la revisión, y ésa es la deuda que esta tabla hace visible.
 
-## Reglas de dominio (60 · 39 con caso en la suite —30 lo citan en su texto, 9 se les asignó por el título del caso— · 21 sólo por revisión)
+## Reglas de dominio (61 · 40 con caso en la suite —31 lo citan en su texto, 9 se les asignó por el título del caso— · 21 sólo por revisión)
 
 > **Cómo leer la columna de casos.** Un número a secas está **citado en el texto de la regla**. Un número con `~` se le asignó leyendo el **título** del caso en `tests_asignacion_lineas.js` (`ok("N …")`) el 17-09-2026: es una inferencia razonable, no una cita — antes de apoyarse en él, abrir el caso. *Sin gate* = hoy sólo la sostiene la revisión.
 
@@ -25,6 +25,7 @@ timestamp: 2026-09-17T15:29:14Z
 | 7 | Motor de asignación de líneas | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | ~1–15, ~89 |
 | 8 | Oferta | [`reglas/oferta_pricing_y_giro.md`](./reglas/oferta_pricing_y_giro.md) | **sin gate** (revisión) |
 | 9-bis | Un umbral de política se lee con `pol(clave, default)` y no se incrusta en ninguna parte. | [`reglas/otorgamiento_y_atribucion.md`](./reglas/otorgamiento_y_atribucion.md) | 90 |
+| 9-ter | Una COMPARACIÓN se hace en PESOS. El `M$` no cruza a la lógica | [`reglas/verificacion.md`](./reglas/verificacion.md) | 115 |
 | 9 | Pricing | [`reglas/oferta_pricing_y_giro.md`](./reglas/oferta_pricing_y_giro.md) | ~69 |
 | 10 | Contactabilidad | [`reglas/prospeccion_cartera_y_churn.md`](./reglas/prospeccion_cartera_y_churn.md) | **sin gate** (revisión) |
 | 11 | Asignación de ejecutivo por CEDENTE | [`reglas/prospeccion_cartera_y_churn.md`](./reglas/prospeccion_cartera_y_churn.md) | **sin gate** (revisión) |
