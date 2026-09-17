@@ -22419,45 +22419,76 @@ function LineasBandeja({ onNueva, tick, onRefrescar, cargando }) {
   // compara es una solicitud contra las otras de la bandeja, y sacarla de la lista pierde ese marco.
   const [abierta, setAbierta] = useState(null);
   const EST_COL = { "En gestión": { bg: "#eff6ff", fg: "#2563EB" }, "En análisis de Riesgo": { bg: "#FFF7ED", fg: "#C2410C" }, "En comité": { bg: "#f5f3ff", fg: "#7C3AED" }, "Aprobada": { bg: "#F0FDF4", fg: "#16A34A" }, "Observada": { bg: "#fef2f2", fg: "#EF4444" } };
+  // MISMA TABLA QUE «VIGENTES» (17-09-2026, pedido del usuario). Las dos pestañas de esta pantalla
+  // listan lo mismo —líneas de un cliente— y se comparan cambiando de pestaña, así que tienen que
+  // leerse igual. Esta bandeja estaba armada con un GRID CSS y sus anchos escritos a mano en DOS
+  // cadenas (cabecera y fila) que había que mover juntas; Vigentes es una `<table>` real, donde la
+  // columna la declara la celda y no se pueden desalinear. Se adopta la de Vigentes: mismo
+  // contenedor (`rounded-2xl` + borde, sin padding), misma cabecera (`t9` gris en versalitas) y
+  // mismas celdas (`px-3 py-2.5`), así que el alto de fila sale del padding igual que allá.
+  const cols = ["Proceso", "Cliente", "Tipo", "Propuesto", "Estado", "Últ. actualización"];
   return (
-    <div className="rounded-2xl p-3" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-      <div className="flex items-center justify-between">
-        {/* El título nombra lo que la bandeja CONTIENE. Por dónde viaja —qué API, qué sistema, que es de
-            sólo lectura— es arquitectura, no algo que el ejecutivo necesite leer cada vez que abre la
-            pantalla; sigue documentado en el spec de A13/A14/A15. */}
-        <div className="t10 font-bold uppercase tracking-wide" style={{ color: C.sub }}>Solicitudes en curso</div>
+    <div className="space-y-4">
+      {/* Los controles van FUERA de la tarjeta, donde Vigentes pone su buscador y sus filtros. Dentro
+          competían con la cabecera de columnas y obligaban a separarlos con un margen a mano. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="t11" style={{ color: C.sub }}>
+          {sols.length === 0 ? "Sin solicitudes en gestión" : `${sols.length} solicitud(es) en curso`}
+          <span className="ml-1" style={{ color: C.faint }}>· haz clic en una fila para ver sus líneas de detalle</span>
+        </div>
         <div className="flex gap-2">
-          <button onClick={onRefrescar} disabled={cargando} className="flex items-center gap-1 rounded-md px-2.5 py-1.5 t10 font-medium disabled:opacity-50" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}><RotateCcw size={11} className={cargando ? "animate-spin" : ""} /> {cargando ? "Consultando…" : "Consultar estados"}</button>
-          <button onClick={onNueva} className="rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>+ Nueva línea</button>
+          <button onClick={onRefrescar} disabled={cargando} className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-medium disabled:opacity-50" style={{ border: `1px solid ${C.line}`, color: C.sub, backgroundColor: "#fff" }}><RotateCcw size={12} className={cargando ? "animate-spin" : ""} /> {cargando ? "Consultando…" : "Consultar estados"}</button>
+          <button onClick={onNueva} className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}><Plus size={12} /> Nueva línea</button>
         </div>
       </div>
-      {/* Aire entre la fila del título —que lleva los dos botones— y la cabecera de columnas
-          (16-09-2026, pedido del usuario). Con `mt-2` los botones quedaban pegados al rótulo de la
-          primera columna y la zona se leía apretada; el botón es de 1,5 de alto, así que el margen
-          tiene que despegarlo a ÉL y no al texto del título, que es más bajo. */}
-      <div className="mt-5 grid gap-2 t9 font-bold uppercase tracking-wide" style={{ gridTemplateColumns: "104px 1fr 170px 110px 130px 140px", color: C.faint, borderBottom: `1px solid ${C.line}`, paddingBottom: 6 }}><span>Proceso</span><span>Cliente</span><span>Tipo</span><span>Propuesto</span><span>Estado</span><span>Últ. actualización</span></div>
-      {cargando ? [0, 1, 2].map((i) => <div key={"sk" + i} className="skel my-2" style={{ height: 34 }} />) : sols.map((s) => { const ec = EST_COL[s.estado] || EST_COL["En gestión"]; return (
-        <div key={s.idProceso} style={{ borderBottom: `1px solid ${C.line}` }}>
-          {/* `py-3` y no `py-1.5` (16-09-2026, pedido del usuario): la fila es el único control de esta
-              bandeja —se hace clic en ella para desplegar el detalle— y con 6 px de alto útil quedaba
-              apretada contra la de arriba y contra la cabecera. El «Tipo» ocupa dos líneas, así que el
-              aire tiene que salir del padding y no del contenido. */}
-          <div onClick={() => setAbierta((a) => (a === s.idProceso ? null : s.idProceso))} className="grid cursor-pointer items-center gap-2 py-3 t11 hover:bg-stone-50" style={{ gridTemplateColumns: "104px 1fr 170px 110px 130px 140px" }}
-            title={(s.detalle || []).length ? `Ver las ${s.detalle.length} línea(s) de detalle de esta solicitud` : "Ver el detalle de la solicitud"}>
-            <span className="flex items-center gap-1 whitespace-nowrap font-semibold" style={{ color: C.ink }}>
-              <ChevronRight size={11} style={{ color: C.faint, transform: abierta === s.idProceso ? "rotate(90deg)" : "none", transition: "transform .12s" }} />{s.idProceso}
-            </span>
-            <span className="truncate" style={{ color: C.ink }}>{s.cliente}<span className="t9 ml-1" style={{ color: C.faint }}>{s.rut}</span></span>
-            <span className="t10" style={{ color: C.sub }}>{SOLIC_TIPOS[s.tipo]}{s.subtipo ? ` · ${SOLIC_SUBTIPOS[s.subtipo]}` : ""}
-              {(s.detalle || []).length ? <span className="ml-1 t9" style={{ color: C.faint }}>· {s.detalle.length} línea(s)</span> : null}</span>
-            <span className="font-medium" style={{ color: C.ink }}>{fmtMM(s.totalPropuesto || 0)}</span>
-            <span><span className="rounded-full px-2 py-0.5 t10 font-semibold" style={{ backgroundColor: ec.bg, color: ec.fg }}>{s.estado}</span></span>
-            <span className="t9" style={{ color: C.faint }}>{s.tsEstado || s.ts}</span>
-          </div>
-          {abierta === s.idProceso && <div className="pb-2"><DetalleSolicitud sol={s} /></div>}
-        </div>
-      ); })}
-      {sols.length === 0 && <div className="py-8 text-center t11" style={{ color: C.faint }}>Sin solicitudes en gestión. Crea una nueva línea o inicia una modificación desde «Vigentes».</div>}
+      <div className="overflow-x-auto rounded-2xl" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <table className="w-full border-collapse t11" style={{ minWidth: "980px" }}>
+          <thead><tr>{cols.map((h) => <th key={h} className="px-3 py-2.5 text-left t9 font-bold uppercase tracking-wide" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
+          <tbody>
+            {cargando && [0, 1, 2].map((i) => (
+              <tr key={"sk" + i} style={{ borderBottom: `1px solid ${C.line}` }}><td colSpan={cols.length} className="px-3 py-2.5"><div className="skel" style={{ height: 30 }} /></td></tr>
+            ))}
+            {!cargando && sols.length === 0 && (
+              <tr><td colSpan={cols.length} className="px-3 py-8 text-center t11" style={{ color: C.faint }}>Sin solicitudes en gestión. Crea una nueva línea o inicia una modificación desde «Vigentes».</td></tr>
+            )}
+            {!cargando && sols.map((s) => { const ec = EST_COL[s.estado] || EST_COL["En gestión"]; const abre = abierta === s.idProceso; return (
+              <Fragment key={s.idProceso}>
+                <tr onClick={() => setAbierta((a) => (a === s.idProceso ? null : s.idProceso))} className="cursor-pointer hover:bg-stone-50"
+                  style={{ borderBottom: `1px solid ${C.line}` }}
+                  title={(s.detalle || []).length ? `Ver las ${s.detalle.length} línea(s) de detalle de esta solicitud` : "Ver el detalle de la solicitud"}>
+                  {/* `whitespace-nowrap`: `PRC-2601` partido en dos líneas no se lee como identificador. */}
+                  <td className="whitespace-nowrap px-3 py-2.5">
+                    <span className="flex items-center gap-1 t11 font-semibold" style={{ color: C.ink }}>
+                      <ChevronRight size={11} style={{ color: C.faint, transform: abre ? "rotate(90deg)" : "none", transition: "transform .12s" }} />{s.idProceso}
+                    </span>
+                  </td>
+                  {/* Dos líneas como en Vigentes: la razón social arriba y su identificación debajo. En
+                      una sola, el RUT competía con el nombre por el mismo ancho y lo truncaba. */}
+                  <td className="px-3 py-2.5">
+                    <div className="t12 font-medium" style={{ color: C.ink }}>{s.cliente}</div>
+                    <div className="t9" style={{ color: C.faint }}>{s.rut}{s.ejecutivo ? ` · ${s.ejecutivo}` : ""}</div>
+                  </td>
+                  <td className="px-3 py-2.5 t11" style={{ color: C.sub, minWidth: 170 }}>
+                    {SOLIC_TIPOS[s.tipo]}{s.subtipo ? ` · ${SOLIC_SUBTIPOS[s.subtipo]}` : ""}
+                    {(s.detalle || []).length ? <div className="t9" style={{ color: C.faint }}>{s.detalle.length} línea(s) de detalle</div> : null}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2.5 t11 font-semibold" style={{ color: C.ink }}>{fmtMM(s.totalPropuesto || 0)}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5"><span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t10 font-bold" style={{ backgroundColor: ec.bg, color: ec.fg }}>{s.estado}</span></td>
+                  <td className="whitespace-nowrap px-3 py-2.5 t9" style={{ color: C.faint }}>{s.tsEstado || s.ts}</td>
+                </tr>
+                {/* El detalle va en su propia fila a lo ancho de la tabla: así el panel queda alineado
+                    con las columnas de arriba en vez de colgar de una de ellas. Lo que dibuja adentro
+                    no cambia — `DetalleSolicitud` ya estaba bien. */}
+                {abre && (
+                  <tr style={{ borderBottom: `1px solid ${C.line}` }}>
+                    <td colSpan={cols.length} className="px-3 pb-3 pt-1"><DetalleSolicitud sol={s} /></td>
+                  </tr>
+                )}
+              </Fragment>
+            ); })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
