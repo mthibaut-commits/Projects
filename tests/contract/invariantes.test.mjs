@@ -17,19 +17,27 @@ const FILA_REGLA = new RegExp(`^\\| (${ID}) \\| (.*?) \\| \\[\`([^\`]+)\`\\]\\([
 const FILA_CONTRATO = /^\| ([A-Z]{3}-\d{2}) \|/;
 
 export const filasReglas = (md) => lineasDe(md).map((l) => l.match(FILA_REGLA)).filter(Boolean)
-  .map((m) => ({ id: m[1], enunciado: m[2], archivo: m[3], casos: casosDeCelda(m[4]) }));
+  .map((m) => ({ id: m[1], enunciado: m[2], archivo: m[3], casos: casosDeCelda(m[4]), e2e: e2eDeCelda(m[4]) }));
 
-/* «44, 46, 56–59, ~38–41» → [44, 46, 56, 57, 58, 59, 38, 39, 40, 41]; «**sin gate** …» → [] */
+/* «44, 46, 56–59, ~38–41» → [44, 46, 56, 57, 58, 59, 38, 39, 40, 41]; «**sin gate** …» → [].
+   Un token `e2e-<id>` cita un caso de la capa e2e (tests/e2e/*.e2e.mjs) y sale por `e2eDeCelda`. */
 export function casosDeCelda(celda) {
   if (/sin gate/.test(celda)) return [];
   const out = [];
   for (const tok of celda.split(/,\s*/)) {
-    const t = tok.trim().replace(/^~/, "");
+    const t = tok.trim().replace(/^~/, "").replace(/`/g, "");
     const r = t.match(/^(\d+)[–-](\d+)$/);
     if (r) for (let k = +r[1]; k <= +r[2]; k++) out.push(k);
     else if (/^\d+$/.test(t)) out.push(+t);
   }
   return out;
+}
+export const e2eDeCelda = (celda) => celda.split(/,\s*/).map((t) => t.trim().replace(/`/g, "")).filter((t) => /^e2e-[A-Za-z0-9-]+$/.test(t));
+/* ids `e2e-…` declarados en tests/e2e/*.e2e.mjs (cada archivo exporta casos: [{ id, … }]) */
+export function idsE2e(archivos) {
+  const ids = new Set();
+  for (const a of archivos) for (const m of leer(a).matchAll(/\bid:\s*["'`](e2e-[A-Za-z0-9-]+)["'`]/g)) ids.add(m[1]);
+  return ids;
 }
 
 export const codigosContrato = (md) => lineasDe(md).map((l) => l.match(FILA_CONTRATO)).filter(Boolean).map((m) => m[1]);
@@ -59,7 +67,7 @@ export function reglasEnArchivos(archivos, leerRel = leer) {
 /* «regla 15-bis», «(regla 14)». La «regla 0» es la del predictor de verificación, no una de dominio. */
 export const referenciasRegla = (jsx) => [...new Set([...jsx.matchAll(new RegExp(`\\bregla (${ID})\\b`, "g")).map((m) => m[1])])].filter((id) => id !== "0");
 
-export function verificar({ filas, donde, casosSuite, codigosIdx, codigosSrc, referencias }) {
+export function verificar({ filas, donde, casosSuite, codigosIdx, codigosSrc, referencias, casosE2e = new Set() }) {
   const fallos = [];
   const ids = new Set(filas.map((f) => f.id));
   for (const f of filas) {
@@ -67,6 +75,7 @@ export function verificar({ filas, donde, casosSuite, codigosIdx, codigosSrc, re
     if (!archs.length) fallos.push(`índice: la regla ${f.id} no empieza a columna 0 en ningún archivo de reglas`);
     else if (!archs.some((a) => a.endsWith(f.archivo))) fallos.push(`índice: la regla ${f.id} dice vivir en ${f.archivo} y está en ${archs.join(", ")}`);
     for (const c of f.casos) if (!casosSuite.has(c)) fallos.push(`índice: la regla ${f.id} cita el caso ${c}, que no existe en la suite`);
+    for (const e of f.e2e || []) if (!casosE2e.has(e)) fallos.push(`índice: la regla ${f.id} cita ${e}, que ningún tests/e2e/*.e2e.mjs declara`);
   }
   for (const [id, archs] of donde) {
     if (!ids.has(id)) fallos.push(`archivos: la regla ${id} (${archs.join(", ")}) no tiene fila en el índice`);
@@ -87,6 +96,7 @@ const datosReales = () => {
   return {
     filas: filasReglas(idx), donde: reglasEnArchivos(ARCHIVOS_REGLAS()),
     casosSuite: new Set(numerosDeCasos(leer("tests_asignacion_lineas.js"))),
+    casosE2e: idsE2e(caminar(join(RAIZ, "tests/e2e"), ".e2e.mjs").map(rel)),
     codigosIdx: codigosContrato(idx), codigosSrc: codigosFuente(jsx), referencias: referenciasRegla(jsx),
   };
 };
@@ -100,10 +110,13 @@ test("el índice de invariantes calza con los archivos de reglas, la suite y el 
 
 test("sonda negativa: una fila plantada para una regla inexistente, un caso inexistente y un código de más se detectan", () => {
   const d = datosReales();
-  const plantada = { ...d, filas: [...d.filas, { id: "99", enunciado: "plantada", archivo: "reglas/curse_firma_y_etapas.md", casos: [999] }], codigosSrc: [...d.codigosSrc, "ZZZ-99"] };
+  const plantada = { ...d, filas: [...d.filas, { id: "99", enunciado: "plantada", archivo: "reglas/curse_firma_y_etapas.md", casos: [999], e2e: ["e2e-fantasma"] }], codigosSrc: [...d.codigosSrc, "ZZZ-99"] };
   const f = verificar(plantada);
   assert.ok(f.some((x) => x.includes("la regla 99 no empieza")), "no cazó la regla plantada");
   assert.ok(f.some((x) => x.includes("caso 999")), "no cazó el caso inexistente");
+  assert.ok(f.some((x) => x.includes("e2e-fantasma")), "no cazó el caso e2e inexistente");
+  assert.deepEqual(e2eDeCelda("115, `e2e-29`, ~3"), ["e2e-29"]);
+  assert.ok(d.casosE2e.has("e2e-00"), "el humo e2e-00 tiene que estar declarado en tests/e2e/");
   assert.ok(f.some((x) => x.includes("ZZZ-99")), "no cazó el código de más");
   assert.deepEqual(casosDeCelda("44, 56–59, ~38–41, ~43"), [44, 56, 57, 58, 59, 38, 39, 40, 41, 43]);
   assert.deepEqual(casosDeCelda("**sin gate** (revisión)"), []);

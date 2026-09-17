@@ -111,6 +111,7 @@ timestamp: 2026-09-17T15:29:14Z
 | `suite.test.mjs` | Cada número de caso tiene un solo título y van consecutivos desde 1 · la suite declara `CASOS_ESPERADOS` casos | regla · **snapshot** (`CASOS_ESPERADOS`) |
 | `auditores.test.mjs` | `auditar_muerto`: los hallazgos y los `useState` sin uso son exactamente los conocidos (`BASE_MUERTOS`, `BASE_USESTATE`), y las clases del `<style>` dan «ninguna» en los dos sentidos · `auditar_aislamiento`: las funciones puras (`BASE_PURAS`, 39) siguen puras — lo que se desacopló no se vuelve a acoplar | **snapshot** · regla |
 | `hooks.test.mjs` | La lógica de los tres hooks (`protect_paths`, `gitflow_guard` con integración = `main`, `worktree_guard`) y una corrida de punta a punta por stdin | regla |
+| `tests/e2e/*.e2e.mjs` (paso 6, `node tests/e2e/correr.mjs`) | Las reglas de PANTALLA, con la sesión iniciada y el detalle abierto en su pestaña: un caso por regla, citado en la tabla de arriba como `e2e-<regla>`; `00_sesion` es el humo del harness | regla |
 
 Lo que **no** es gate y por qué: `regresion_diferencial.mjs` compara dos builds y el CI no tiene el anterior (se corre a
 mano); la suite entera es el paso 5, no un gate de contrato; y los datos —RUT sintéticos, razones sociales reales— son

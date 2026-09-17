@@ -44,3 +44,6 @@ jobs:
 
       - name: 5 · Suite (Chromium)
         run: PLAYWRIGHT_MODULE="$(npm root -g)/playwright" node run_tests.mjs
+
+      - name: 6 · e2e (sesión real, Directorio, detalle)
+        run: PLAYWRIGHT_MODULE="$(npm root -g)/playwright" node tests/e2e/correr.mjs
