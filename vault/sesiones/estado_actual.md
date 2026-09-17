@@ -34,7 +34,7 @@ el mockup del usuario (reglas 29 y 22).
 
 | Trabajo | Estado | Rama | Siguiente paso |
 |---|---|---|---|
-| «Operación creada» + Editar (regla 33, ADR-0004) · restyle del detalle simulado · id estable | ✅ verificada 17-09-2026 · 116/116 · sondas 19/19, 6/6 y 15/15 · **mezclada con `main` y lista para `--no-ff`** | `claude/migrate-project-session-vui9dl` | merge `--no-ff` a `main` |
+| «Operación creada» + Editar (regla 33, ADR-0004) · restyle del detalle simulado · id estable | ✅ verificada 17-09-2026 · 116/116 · sondas 19/19, 6/6 y 15/15 · **mergeada a `main` con `--no-ff` (8b75a03)** | `claude/migrate-project-session-vui9dl` | borrar la rama desde la máquina del usuario |
 | Punto fijo del generador (regla 32, ADR-0003) | ✅ mergeada a `main` (3a27737) | `claude/vibrant-hopper-33tg8j` | — |
 | Cablear los gates · partir `CLAUDE.md` | ✅ mergeadas a `main` (bd14091) | `claude/ecstatic-ptolemy-f7cb4m` | pushear el tag `v0.1.0` desde la máquina del usuario |
 
