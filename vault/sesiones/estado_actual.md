@@ -35,7 +35,7 @@ producto cambió. Detalle y trade-offs: ADR-0001 y ADR-0002.
 
 | Trabajo | Estado | Rama | Siguiente paso |
 |---|---|---|---|
-| Cablear los gates | ✅ completada 17-09-2026 · 29/29 · health check de hooks 8/8 · fuente en verde | `claude/ecstatic-ptolemy-f7cb4m` | mirar el **primer run del CI** tras el push; luego merge (usuario) |
+| Cablear los gates | ✅ completada 17-09-2026 · 29/29 · health check de hooks 8/8 · **CI verde en su run #1** (58 s, 114/114 en el log) | `claude/ecstatic-ptolemy-f7cb4m` | merge a `main` + tag (usuario) |
 | Partir `CLAUDE.md` y abrir el vault | ✅ completada 17-09-2026 · sonda 398/398 | ídem | ídem |
 
 ## Bloqueos
@@ -60,6 +60,7 @@ producto cambió. Detalle y trade-offs: ADR-0001 y ADR-0002.
    `MntNotaCredito` (13-quater).
 7. **Hooks en Windows**: correr el health check de `loop_agentico_hooks.md` en la máquina del usuario la primera
    vez (Git Bash tiene que expandir `$CLAUDE_PROJECT_DIR`). `regresion_diferencial.mjs` sigue siendo manual.
+   El CI avisa que `actions/checkout@v4` y `setup-node@v4` apuntan a Node 20 (deprecado): subir a `@v5` (T3).
 8. La suite monta la app entera pero **no** `DealDrawer`, el wizard ni la bandeja: lo que cambia ahí se verifica
    abriendo la pantalla (regla núcleo 4).
 
