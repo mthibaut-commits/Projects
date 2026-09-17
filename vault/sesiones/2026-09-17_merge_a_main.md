@@ -1,7 +1,7 @@
 ---
 type: sesion
 title: "Sesión 2026-09-17 — Merge a main y tag v0.1.0"
-description: "main tenía cuatro commits paralelos de otra sesión que chocaban con la partición de CLAUDE.md; se mezcló main en la rama, se portaron sus adiciones al vault sin perder una línea, se verificó todo y se integró con --no-ff y el primer tag"
+description: "main tenía cuatro commits paralelos de otra sesión que chocaban con la partición de CLAUDE.md; se mezcló main en la rama, se portaron sus adiciones al vault sin perder una línea, se verificó todo y se integró con --no-ff; el tag quedó local porque el entorno deniega pushear tags"
 tags: [sesion, git, merge, release]
 timestamp: 2026-09-17T15:29:14Z
 feature: null
@@ -24,8 +24,8 @@ feature: null
   obligó a decirlo—. `auditar_unidades.mjs` entró a «Otros comandos» de `CLAUDE.md` (106 líneas).
 - Verificación completa sobre el árbol mezclado: `tsc` limpio, 0 duplicados, build 40,6 MB, **115/115 PASA**; gates
   29/29 (las líneas base de los auditores aguantaron el `.jsx` nuevo).
-- Merge `--no-ff` a `main` y tag anotado **`v0.1.0`**: el momento en que `main` recibe el vault, los gates y los
-  hooks.
+- Merge `--no-ff` a `main` (`bd14091`): el momento en que `main` recibe el vault, los gates y los hooks. El tag
+  anotado **`v0.1.0`** se creó sobre ese commit pero **no llegó al remoto** (ver errores): queda para el usuario.
 
 ## Decisiones tomadas con el usuario
 
@@ -35,7 +35,11 @@ feature: null
 
 1. **`git rev-parse --short main origin/main` en una cadena con `&&`** cortó la inspección y escondió el resto.
    Las comprobaciones independientes van con `;`, no encadenadas.
-2. **La viñeta de la bandeja no estaba dentro de `9-ter`** aunque el diff la mostrara pegada a él: el diff lista
+2. **`git push origin v0.1.0` devolvió HTTP 403 del proxy git del entorno** —«Everything up-to-date» con exit 1, que
+   es contradictorio y por eso se verificó con `ls-remote`: ningún tag remoto—. El README del proxy dice que los 403
+   son denegaciones de política de la organización y se reportan, no se rodean: las credenciales de la sesión
+   pushean ramas, no `refs/tags/*`. El tag queda local y el comando para ponerlo desde Windows está en el tablero.
+3. **La viñeta de la bandeja no estaba dentro de `9-ter`** aunque el diff la mostrara pegada a él: el diff lista
    líneas cambiadas, no dónde están. Se ubicó por su regla madre real (`15-quater`) antes de portarla.
 
 ## Pendiente / siguiente paso

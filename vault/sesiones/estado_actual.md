@@ -34,12 +34,14 @@ producto cambió. Detalle y trade-offs: ADR-0001 y ADR-0002.
 
 | Trabajo | Estado | Rama | Siguiente paso |
 |---|---|---|---|
-| Cablear los gates | ✅ completada 17-09-2026 · 29/29 · CI verde en su run #1 · **mergeada a `main` con `--no-ff` · `v0.1.0`** | `claude/ecstatic-ptolemy-f7cb4m` | — |
-| Partir `CLAUDE.md` y abrir el vault | ✅ completada 17-09-2026 · sonda 398/398 · mergeada a `main` · `v0.1.0` | ídem | — |
+| Cablear los gates | ✅ completada 17-09-2026 · 29/29 · CI verde en su run #1 · **mergeada a `main` con `--no-ff` (bd14091)** | `claude/ecstatic-ptolemy-f7cb4m` | **pushear el tag `v0.1.0`** desde la máquina del usuario (abajo) |
+| Partir `CLAUDE.md` y abrir el vault | ✅ completada 17-09-2026 · sonda 398/398 · mergeada a `main` (bd14091) | ídem | ídem |
 
 ## Bloqueos
 
-- Ninguno.
+- **El tag `v0.1.0` no llegó al remoto**: el proxy git del entorno remoto de Claude Code deniega `refs/tags/*` (HTTP 403,
+  política de la organización; se reporta, no se rodea). Existe local en la sesión, sobre el merge `bd14091`. Lo pone el
+  usuario desde Windows: `git fetch origin main && git tag -a v0.1.0 bd14091 -m "v0.1.0 — bootstrap agéntico" && git push origin v0.1.0`.
 
 ## Deudas anotadas (no bloquean, no olvidar)
 
