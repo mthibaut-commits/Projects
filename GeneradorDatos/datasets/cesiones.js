@@ -20,9 +20,18 @@
 //
 // Lo que SÍ se conserva es la PARTICIPACIÓN, que es lo que el negocio usa: el SOW es un cociente, y
 // el cociente sí se puede respetar aunque el volumen cambie. La probabilidad de que cada cesión vaya
-// a nosotros sale de la trayectoria semanal que A5 ya declaraba, así que quién es buen cliente y
-// quién se está yendo se mantiene —y con eso el descuento por SOW del pricing no se mueve—, pero
-// ahora colgando de cesiones que existen.
+// a nosotros sale de la INTENCIÓN declarada en `lib/intencion_sow.js` —la trayectoria semanal que A5
+// declaraba, congelada—, así que quién es buen cliente y quién se está yendo se mantiene —y con eso
+// el descuento por SOW del pricing no se mueve—, pero ahora colgando de cesiones que existen.
+//
+// ── Por qué la intención NO se lee del A5 (17-09-2026) ───────────────────────────────────────────
+// Este módulo la tomaba de los campos MEDIDOS del A5 (`SOWActualPct`, `HistoricoSemanal[].SOWPct`) y
+// el A5 los volvía a medir sobre lo recién escrito: un sorteo por documento no reproduce su propio
+// umbral, y cada corrida completa movía cesiones de cesionario sin que nada cambiara (153 de 7.480,
+// luego 67, luego 33: convergía y no llegaba). Con la intención en un archivo propio, A2 es función
+// del A1 y de ese archivo, y el generador tiene punto fijo (gate `tests/contract/generador.test.mjs`).
+// El conjunto de cedentes también sale de ahí: antes se completaba con el A2 anterior, es decir, con
+// la propia salida.
 //
 // ── Reglas de plausibilidad, todas medibles contra el A1 ──────────────────────────────────────────
 //   · sólo documentos a CRÉDITO (`FormaPago === "2"`): un factoring compra crédito, no contado;
@@ -36,6 +45,7 @@
 //     un consumidor que reciba `MontoCesion > MontoDocumento` no tiene forma de arreglarlo.
 const { semilla, ent, entre } = require("../lib/rng");
 const { BICE_RUT, CESIONARIOS } = require("../lib/cesionarios");
+const INTENCION = require("../lib/intencion_sow");
 
 const DIA = 86400000;
 const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
@@ -63,9 +73,8 @@ function panelDe(rut) {
   return { elegidos, acum: pesos.map((w) => (acc += w / suma)) };
 }
 
-function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
-  const previas = AECSYNC || [];
-  if (!Array.isArray(DTESYNC) || !DTESYNC.length) return previas;
+function generar({ DTESYNC }) {
+  if (!Array.isArray(DTESYNC) || !DTESYNC.length) return [];
 
   // Corte del activo: la emisión más reciente del batch. La cesión no puede ser posterior — el
   // archivo no la habría visto todavía.
@@ -87,34 +96,25 @@ function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
   for (const a of pool.values()) a.sort((x, y) => (+y.Folio || 0) - (+x.Folio || 0));
 
   // ── QUIÉN CEDE ──────────────────────────────────────────────────────────────────────────────────
-  // Los clientes que el A5 sigue (son clientes de factoring por definición) más los que ya cedían en
-  // la entrega anterior. No se inventa un cedente nuevo: que una empresa ceda o no es un hecho del
-  // negocio, no una decisión de este generador.
-  const cedentes = new Set();
-  for (const s of (SHARE_OF_WALLET || [])) if (s && s.RUTCliente) cedentes.add(s.RUTCliente);
-  for (const c of previas) if (c && c.RUTEmisor) cedentes.add(c.RUTEmisor);
+  // Los que la intención declara: los clientes con ficha en el A5 (son clientes de factoring por
+  // definición) y los cedentes sin ficha. No se inventa un cedente nuevo: que una empresa ceda o no es
+  // un hecho del negocio, no una decisión de este generador — y tampoco se lee de la salida anterior.
+  const cedentes = new Set([...Object.keys(INTENCION.clientes || {}), ...(INTENCION.cedentesSinFicha || [])]);
 
   // ── LA TRAYECTORIA DE PARTICIPACIÓN, por cliente y semana ───────────────────────────────────────
-  // Es lo ÚNICO que se toma del A5, y se toma como INTENCIÓN de generación, no como resultado: dice
-  // qué proporción de las cesiones de esa semana va a nosotros. El resultado se vuelve a medir sobre
-  // las cesiones ya escritas (lo hace `share_of_wallet.js`), así que A5 termina reportando lo que el
-  // registro contiene y no lo que aquí se pidió.
-  const sowSemana = new Map();   // "rut|lunes" -> 0..1
-  const sowCliente = new Map();  // rut -> 0..1
-  for (const s of (SHARE_OF_WALLET || [])) {
-    if (!s || !s.RUTCliente) continue;
-    sowCliente.set(s.RUTCliente, Math.max(0, Math.min(100, +s.SOWActualPct || 0)) / 100);
-    for (const w of (s.HistoricoSemanal || [])) {
-      if (!w || !w.Semana) continue;
-      sowSemana.set(s.RUTCliente + "|" + w.Semana, Math.max(0, Math.min(100, +w.SOWPct || 0)) / 100);
+  // Es INTENCIÓN de generación, no resultado: dice qué proporción de las cesiones de esa semana va a
+  // nosotros, y vive en `lib/intencion_sow.js` (en %, como el A5 la publica). El resultado se mide
+  // después sobre las cesiones ya escritas (lo hace `share_of_wallet.js`), así que A5 termina
+  // reportando lo que el registro contiene y no lo que aquí se pidió.
+  const pct = (v) => Math.max(0, Math.min(100, +v || 0)) / 100;
+  const intencionSow = (rut, lunes) => {
+    const c = (INTENCION.clientes || {})[rut];
+    if (c) {
+      const w = c.semanas && c.semanas[lunes];
+      if (w != null) return pct(w);
+      if (c.actual != null) return pct(c.actual);
     }
-  }
-  const objetivoSow = (rut, lunes) => {
-    const w = sowSemana.get(rut + "|" + lunes);
-    if (w != null) return w;
-    const c = sowCliente.get(rut);
-    if (c != null) return c;
-    // Cliente que el A5 no sigue: perfil estable por RUT. No hereda de nadie.
+    // Cedente sin ficha en el A5: perfil estable por RUT. No hereda de nadie.
     return entre(semilla("sowperfil|" + rut), 0.05, 0.75);
   };
 
@@ -149,7 +149,7 @@ function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
       // unas décimas del objetivo es correcto — el cociente real de un registro discreto.
       const rc = semilla("dest|" + rut + "|" + doc.Folio);
       let ces = null;
-      if (rc() >= objetivoSow(rut, lunes)) {
+      if (rc() >= intencionSow(rut, lunes)) {
         const k = rc();
         ces = pn.elegidos[pn.acum.findIndex((a) => k <= a)] || pn.elegidos[pn.elegidos.length - 1];
       }
