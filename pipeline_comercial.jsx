@@ -4818,11 +4818,14 @@ function ModalLlamadaVerif({ fila, onCerrar, onConfirmar }) {
     </div>
   );
 }
-function ChipFila({ fg, bg, Icono, punto, texto, badge, badgeTono, tip, info, clase = "t9" }) {
+// `borde` es opcional: por defecto se deriva del color del texto al 20 %, que es lo que hace que
+// los chips de estado se lean como etiquetas. Un chip que es una ACCIÓN pendiente («Solicitud
+// línea») lo pide sólido, para que se distinga de los de estado que lo rodean.
+function ChipFila({ fg, bg, Icono, punto, texto, badge, badgeTono, tip, info, clase = "t9", borde }) {
   const bt = badgeTono || { fg: "#fff", bg: fg };
   return (
     <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full py-0.5 font-semibold ${clase}`}
-      title={tip} style={{ paddingLeft: 8, paddingRight: badge != null ? 3 : 8, backgroundColor: bg, color: fg, border: `1px solid ${fg}33`, cursor: tip ? "help" : undefined }}>
+      title={tip} style={{ paddingLeft: 8, paddingRight: badge != null ? 3 : 8, backgroundColor: bg, color: fg, border: `1px solid ${borde || fg + "33"}`, cursor: tip ? "help" : undefined }}>
       {punto && <span className="shrink-0" style={{ width: 6, height: 6, borderRadius: 9999, backgroundColor: punto }} />}
       {Icono && <Icono size={10} />}
       {texto}
@@ -8569,10 +8572,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         const TONO_LIN = {
                           con_linea: { fg: "#16A34A", bg: "#F0FDF4", bd: "#bbf7d0", lbl: "Con línea" },
                           parcial:   { fg: "#7C3AED", bg: C.lilac,   bd: "#DDD3FF", lbl: "Parcial" },
-                          // «Sin línea» competía con el chip de línea de la izquierda —que sí habla de si
-                          // el deudor TIENE línea— y en la misma fila se leían como una contradicción. Este
-                          // dice qué le pasa a la selección, que es otra cosa: se va a comité.
-                          sin_linea: { fg: "#EF4444", bg: "#FEF2F2", bd: "#fecaca", lbl: "Requiere comité" },
+                          // Decía «Requiere comité» porque «Sin línea» competía con el chip de línea de la
+                          // izquierda, que entonces podía decir «Línea disponible» en la misma fila. Desde el
+                          // 17-09-2026 ese chip no se dibuja cuando no hay cupo —lo reemplaza «Solicitud
+                          // línea», que ya dice que va a comité—, así que la contradicción no existe más y el
+                          // mockup del usuario lo pide con su nombre: «Sin línea».
+                          sin_linea: { fg: "#EF4444", bg: "#FEF2F2", bd: "#fecaca", lbl: "Sin línea" },
                           pend:      { fg: "#6B7280", bg: "#F3F4F6", bd: C.line,    lbl: "Sin evaluar" },
                         };
                         const cabDeudor = (deudor, grupo, abierto, enOferta) => {
@@ -8640,16 +8645,16 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               if (noAplica) partes.push("no aplica: tiene línea propia");
                               else {
                                 if (mixRut) partes.push(d.rut || "sin RUT");
-                                partes.push(`de ${fmtMM(+(d.usado + d.disponible).toFixed(1))} disponibles`);
+                                partes.push(`de ${fmtCLP(+(d.usado + d.disponible).toFixed(1))} disponibles`);
                                 // La línea compartida se explica: sin decir cuánto se llevaron los otros
                                 // deudores, el saldo no cuadra con lo asignado a éste.
-                                if (otros > 0) partes.push(`${fmtMM(otros)} de otros deudores`);
-                                partes.push(`queda ${fmtMM(d.disponible)}`);
+                                if (otros > 0) partes.push(`${fmtCLP(otros)} de otros deudores`);
+                                partes.push(`queda ${fmtCLP(d.disponible)}`);
                               }
-                              return { name: d.label, dim: noAplica, val: fmtMM(noAplica ? 0 : propio), sub: partes.join(" · ") };
+                              return { name: d.label, dim: noAplica, val: fmtCLP(noAplica ? 0 : propio), sub: partes.join(" · ") };
                             }),
                             { head: "Límites globales · saldo" },
-                            ...ev.topes.filter((tp) => tp.nivel !== "par").map((tp) => ({ name: tp.label, val: fmtMM(tp.disponible),
+                            ...ev.topes.filter((tp) => tp.nivel !== "par").map((tp) => ({ name: tp.label, val: fmtCLP(tp.disponible),
                               sub: [tp.sub || "", tp.nivel === ev.manda.nivel ? "← manda" : ""].filter(Boolean).join(" · ") })),
                           ] : [];
                           // `t.bd` sigue vivo: lo usa el panel del veredicto de más abajo, que es una caja
@@ -8673,7 +8678,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       // la derecha: repetido en la misma línea se lee como dos cifras distintas. Sigue
                                       // en el tooltip, que es donde ese detalle no compite con nada.
                                       <ChipFila fg={C.indigo} bg={C.lilac} texto="★ Prime"
-                                        tip={m > 0 ? `Deudor Prime (Lista Blanca o Autorizado) con ${ld.nFuera} factura(s) disponibles por ${fmtMM(m)} fuera de la oferta.` : "Deudor Prime (Lista Blanca o Autorizado). No tiene facturas disponibles fuera de la oferta."} />
+                                        tip={m > 0 ? `Deudor Prime (Lista Blanca o Autorizado) con ${ld.nFuera} factura(s) disponibles por ${fmtCLP(m)} fuera de la oferta.` : "Deudor Prime (Lista Blanca o Autorizado). No tiene facturas disponibles fuera de la oferta."} />
                                     );
                                   })()}
                                   {/* Cuánta línea le queda y cuánto de lo disponible cabría en ella. Estaba
@@ -8692,25 +8697,40 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     // solicitud al comité al cerrar (regla 15-bis), y es lo que el ejecutivo
                                     // tiene que poder leer sin abrir nada. Fuera de la oferta todavía no se pide
                                     // nada, así que ahí el rótulo sigue describiendo qué falta.
-                                    const pedir = !hay && enOferta;
+                                    // LO QUE VA AL COMITÉ es lo que la evaluación NO asignó (17-09-2026, pedido del
+                                    // usuario: «cuando hay que hacer solicitud de línea a un deudor aparece un chip
+                                    // en naranjo con la solicitud»). Antes el chip naranja salía sólo con el cupo en
+                                    // CERO: un deudor PARCIAL —caben tres facturas y dos no— mostraba «Línea
+                                    // disponible $X» en verde y nada más, y la solicitud que iba a salir por las dos
+                                    // que no caben no estaba escrita en ninguna parte de su fila. Ahora son dos
+                                    // chips con dos preguntas: cuánta línea HAY y cuánto se va a PEDIR. La cifra es
+                                    // la misma que entra al detalle de la solicitud al cerrar (regla 15-bis).
+                                    // Sin evaluación (falta re-evaluar) y sin cupo, se pide el deudor entero.
+                                    const faltante = enOferta && ev ? Math.max(0, mmRound(monto - ev.asignado)) : 0;
+                                    const solicitud = !enOferta ? 0 : ev ? faltante : (hay ? 0 : monto);
                                     const lbl = hay ? `Línea disponible ${fmtCLP(ld.disponible)}`
-                                      : pedir ? `Solicitud línea ${fmtCLP(monto)}`
                                       : ld.conLineaPropia ? "Línea Cliente - Deudor sin cupo" : "Sin Línea Cliente - Deudor";
+                                    // El saldo en Línea Puntual dejó de ir como badge (17-09-2026, pedido del usuario):
+                                    // una cifra dentro de otra cifra, y en la fila competía con el monto del deudor.
+                                    // Sigue en el tooltip, que es donde ese detalle no compite con nada.
                                     const tip = (hay
                                       ? `Línea disponible de este deudor: ${fmtCLP(ld.disponible)} — el menor entre la Línea Cliente - Deudor, la Línea Global Cliente y la Línea Global Deudor. No descuenta las facturas ya seleccionadas en esta oferta: la línea se consume al cursar.`
-                                      : pedir
-                                        ? `Sin cupo para sus ${fmtCLP(monto)} en esta oferta: al cerrar, esa diferencia entra como línea PUNTUAL en la solicitud al comité${ld.conLineaPropia ? " (ampliar la Línea Cliente - Deudor existente)" : " (crear una Línea Cliente - Deudor)"}.`
                                       : ld.conLineaPropia
                                         ? `Tiene Línea Cliente - Deudor pero sin cupo${ld.manda ? ` (manda: ${ld.manda})` : ""}: sus facturas van a comité, y lo que se pide es AMPLIARLA.`
                                         : "No tiene Línea Cliente - Deudor: sus facturas van a comité, y lo que se pide es SOLICITAR una puntual Cliente - Deudor.")
                                       + (ld.saldoPuntual > 0 ? ` De ese disponible, ${fmtCLP(ld.saldoPuntual)} está en una Línea Puntual de UN SOLO USO: la consume entera la primera factura que la toque, del tamaño que sea.` : "")
                                       + (ld.nFuera > 0 ? ` Tiene ${ld.nFuera} factura(s) fuera de la oferta por ${fmtCLP(ld.montoFuera)}.` : "");
-                                    return (
-                                      // Ámbar para «Solicitud línea»: no es un estado bueno (verde) ni la ausencia
-                                      // neutra de cupo (gris), sino una acción pendiente con monto.
-                                      <ChipFila fg={hay ? "#16A34A" : pedir ? "#C2410C" : "#6B7280"} bg={hay ? "#F0FDF4" : pedir ? "#FFF7ED" : "#F3F4F6"} punto={hay ? "#16A34A" : pedir ? "#EA580C" : "#9CA3AF"} texto={lbl} tip={tip}
-                                        badge={ld.saldoPuntual > 0 ? `${fmtMM(ld.saldoPuntual)} puntual` : undefined} badgeTono={{ fg: C.indigo, bg: C.lilac }} />
-                                    );
+                                    const tipSol = `Sin cupo para ${fmtCLP(solicitud)}${solicitud !== monto ? ` de sus ${fmtCLP(monto)}` : ""} en esta oferta: al cerrar, esa diferencia entra como línea PUNTUAL en la solicitud al comité${ld.conLineaPropia ? " (ampliar la Línea Cliente - Deudor existente)" : " (crear una Línea Cliente - Deudor)"}.`;
+                                    return (<>
+                                      {/* El chip de línea describe lo que HAY. Sin cupo y ya en la oferta no se
+                                          dibuja: describir la carencia al lado de la plata que se pide es decir dos
+                                          veces lo mismo, y lo que importa ahí es la plata (regla 29). */}
+                                      {(hay || !enOferta) && <ChipFila fg={hay ? "#16A34A" : "#6B7280"} bg={hay ? "#F0FDF4" : "#F3F4F6"} punto={hay ? "#16A34A" : "#9CA3AF"} texto={lbl} tip={tip} />}
+                                      {/* NARANJO, con borde sólido: no es un estado bueno (verde) ni la ausencia
+                                          neutra de cupo (gris), sino una ACCIÓN pendiente con monto, y tiene que
+                                          distinguirse de los chips de estado que lo rodean. */}
+                                      {solicitud > 0 && <ChipFila fg="#C2410C" bg="#FFF7ED" borde="#F97316" punto="#F97316" texto={`Solicitud línea ${fmtCLP(solicitud)}`} tip={tipSol} />}
+                                    </>);
                                   })()}
                                 </div>
                               </div>
@@ -8756,12 +8776,16 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                          !h.sinExcepcionCliente ? "el cliente tiene marcas de excepción" : null,
                                          !h.verificado ? "el deudor requiere verificación" : null,
                                          !h.sinExcepcionDeudor ? "el deudor tiene marcas de excepción" : null].filter(Boolean).join(" · ");
-                                    return <ChipGiro codigo={gd.tipo} monto={gd.monto}
+                                    // SIN el badge de monto (17-09-2026, pedido del usuario): el giro del deudor
+                                    // ya está en el tooltip, y en la fila competía con el monto grande de arriba
+                                    // —dos cifras en la misma esquina que no son la misma—. La cabecera del
+                                    // detalle y la tarjeta del tubo lo conservan: ahí no hay otra cifra al lado.
+                                    return <ChipGiro codigo={gd.tipo} monto={gd.monto} soloTipo
                                       titulo={`${gd.label} · ${fmtCLP(gd.monto)} de giro en ${gd.facturas} factura(s) de este deudor. ${exp ? porQue : "Giro Normal porque " + porQue + "."}`} />;
                                   })()}
                                   <ChipFila fg={verifOk ? "#16A34A" : "#EF4444"} bg={verifOk ? "#F0FDF4" : "#FEF2F2"} Icono={verifOk ? Check : AlertTriangle} texto={verifOk ? "Verificado" : "Req. verif."}
                                     tip={verifOk ? "Deudor verificado" : "El deudor requiere verificación"} />
-                                  {enOferta && (ev ? <TipDesglose titulo="Línea disponible para este deudor" color={t.fg} nota={`Manda ${ev.manda.label}: quedan ${fmtMM(ev.holgura)} para sumar más facturas.`} items={itemsTip}>{chipEstado}</TipDesglose> : chipEstado)}
+                                  {enOferta && (ev ? <TipDesglose titulo="Línea disponible para este deudor" color={t.fg} nota={`Manda ${ev.manda.label}: quedan ${fmtCLP(ev.holgura)} para sumar más facturas.`} items={itemsTip}>{chipEstado}</TipDesglose> : chipEstado)}
                                 </div>
                               </div>
                             </div>
@@ -9044,12 +9068,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   caja de tres bloques que repetía el conteo de deudores y le robaba altura
                                   a la lista, que es el contenido real de la pantalla. */}
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Documentos en la oferta</span>
+                                <span className="t10 font-bold uppercase tracking-wide" style={{ color: C.ink }}>Documentos en la oferta</span>
                                 {/* Los dos conteos se leen de corrido —«4 deudores · 7 facturas por M$29,6»— en
                                     vez de ir en tres píldoras sueltas: son una sola frase y encerrarlas por
                                     separado las presentaba como tres datos sin relación. El monto sí conserva
                                     su píldora: es la cifra que se busca de un vistazo. */}
-                                <span className="t9 font-semibold uppercase tracking-wide" style={{ color: C.sub }}
+                                <span className="t9 font-semibold uppercase tracking-wide" style={{ color: C.indigo }}
                                   title="Deudores y facturas seleccionados para esta oferta">{dq ? `${deudOfF.length} de ${deudOf.length}` : deudOf.length} deudor{!dq && deudOf.length === 1 ? "" : "es"} · {validas.length} factura{validas.length === 1 ? "" : "s"} por</span>
                                 <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}
                                   title="Monto seleccionado para esta oferta">{fmtMM(totalOf)}</span>
@@ -9309,7 +9333,13 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               </div>
                             )}
                             <div className="mt-2">
-                              <div className="mt-1.5">
+                              {/* TÍTULOS EN TINTA Y PANEL LILA (17-09-2026, mockup del usuario). Las dos mitades
+                                  de la pantalla —lo que está en la oferta y lo que se puede sumar— ya se
+                                  nombraban igual (13-octies-bis); ahora también se ven igual: el mismo panel
+                                  lila con las filas como tarjetas adentro, y el título de sección en tinta con
+                                  el conteo en el púrpura de marca, en vez de dos grises que se confundían con
+                                  las etiquetas de columna. */}
+                              <div className="mt-1.5 rounded-xl p-2.5" style={{ backgroundColor: C.lilac }}>
                                 {/* La oferta nace vacia —la corrida ya no la propone—, asi que este es el
                                     estado de ENTRADA de la pantalla, no un borde raro: se dibuja como caja
                                     para que la seccion conserve su altura y el ojo no salte al pool. */}
@@ -9319,7 +9349,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                      desaparecía y el mensaje se leía como un placeholder apagado. Fondo un
                                      tono más oscuro —el mismo gris de los chips—, borde definido, más alto y
                                      el texto en el cuerpo de la pantalla (t11) y en C.sub. */
-                                  <div className="flex items-center justify-center rounded-xl px-3 t11 font-medium" style={{ minHeight: 72, backgroundColor: "#EDECF3", border: "1px solid #DEDCE7", color: C.sub }}>
+                                  <div className="flex items-center justify-center rounded-xl px-3 t11 font-medium" style={{ minHeight: 72, backgroundColor: "#F5F4F8", border: "1px solid #E4E2EC", color: C.sub }}>
                                     {dq ? `Ningún deudor de la oferta coincide con «${detQuery}».` : "Ninguna factura seleccionada"}
                                   </div>
                                 )}
@@ -9349,7 +9379,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       return (
                                         <div className="mt-2 rounded-lg" style={{ border: `1px dashed ${C.line}`, padding: "6px 8px" }}>
                                           <button onClick={() => setOtrasDeudor((m) => ({ ...m, [dn]: !ab }))} className="flex w-full items-center justify-between t9 font-semibold" style={{ color: C.sub }}>
-                                            <span>Otras facturas de este deudor ({otras.length}) · {dOtras.facturas ? fmtMM(dOtras.monto) : "sin disponibles"}</span>
+                                            <span>Otras facturas de este deudor ({otras.length}) · {dOtras.facturas ? fmtCLP(dOtras.monto) : "sin disponibles"}</span>
                                             {ab ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                                           </button>
                                           {ab && <div className="mt-1">{headOtra()}{otras.slice(0, 12).map((f) => filaOtraD(f))}{otras.length > 12 && <div className="pt-1 t9" style={{ color: C.faint }}>y {otras.length - 12} más en «Documentos disponibles».</div>}</div>}
@@ -9371,9 +9401,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     las dos mitades de la misma decision y antes se leian con dos formatos
                                     distintos, uno con el conteo entre parentesis y otro con chips. */}
                                 <span className="flex flex-wrap items-center gap-2">
-                                  <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Documentos disponibles</span>
+                                  <span className="t10 font-bold uppercase tracking-wide" style={{ color: C.ink }}>Documentos disponibles</span>
                                   {/* Misma frase corrida que «Documentos en la oferta», por la misma razón. */}
-                                  <span className="t9 font-semibold uppercase tracking-wide" style={{ color: C.sub }}
+                                  <span className="t9 font-semibold uppercase tracking-wide" style={{ color: C.indigo }}
                                     title={bloqOt ? `${facsOt} factura${facsOt === 1 ? "" : "s"} incorporable${facsOt === 1 ? "" : "s"}; ${bloqOt} más no se puede${bloqOt === 1 ? "" : "n"} agregar y no cuenta${bloqOt === 1 ? "" : "n"} en el monto.` : "Deudores con facturas que aún no están en la oferta, disponibles para incorporar"}>{dq ? `${deudOtF.length} de ${deudOtVis.length}` : deudOtVis.length} deudor{!dq && deudOtVis.length === 1 ? "" : "es"} · {facsOt} factura{facsOt === 1 ? "" : "s"} por</span>
                                   <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: facsOt ? C.lilac : "#F5F4F8", color: facsOt ? C.indigo : C.faint }}
                                     title="Monto disponible para incorporar a la oferta">{facsOt ? fmtMM(montoOt) : "—"}</span>
@@ -13212,7 +13242,11 @@ function ChipGiro({ codigo, label, monto, titulo, compacto, soloTipo }) {
   // `soloTipo` deja el chip en el NOMBRE. Se usa donde el monto ya está a su lado: repetirlo ahí
   // pone dos cifras en la misma línea que no son la misma —el monto de la oferta y lo que se gira—
   // y a un golpe de vista se leen como una contradicción. La cifra sigue en el tooltip.
-  return <ChipFila clase={compacto ? "t7" : "t9"} fg={exp ? "#16A34A" : "#7C3AED"} bg={exp ? "#F0FDF4" : "#f5f3ff"}
+  // EXPRESS VA EN AZUL (17-09-2026, pedido del usuario), con el par azul que el resto de la app ya
+  // usa para lo informativo (CAT-2, Confirming, «Info»). Iba en verde, y el verde en la fila del
+  // deudor ya significa «Verificado» y «Con línea»: tres chips verdes seguidos se leían como el
+  // mismo estado repetido, cuando Express es la CONCLUSIÓN de los otros dos, no uno más.
+  return <ChipFila clase={compacto ? "t7" : "t9"} fg={exp ? "#2563EB" : "#7C3AED"} bg={exp ? "#EFF6FF" : "#f5f3ff"}
     texto={label || (exp ? "Giro Express" : "Giro Normal")} badge={soloTipo ? null : fmtMM(monto || 0)} tip={titulo} />;
 }
 // La asignación VIGENTE de una operación: la congelada si el cliente ya aceptó, y el cálculo del día

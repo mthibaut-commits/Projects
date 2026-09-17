@@ -20,6 +20,7 @@ timestamp: 2026-09-17T15:29:14Z
 | 17-09-2026 | [`2026-09-17_cablear_gates.md`](./2026-09-17_cablear_gates.md) | Tests de contrato, hooks deterministas y CI; primer hallazgo del gate de la suite |
 | 17-09-2026 | [`2026-09-17_merge_a_main.md`](./2026-09-17_merge_a_main.md) | `main` mezclado en la rama (cuatro commits paralelos, conflicto en `CLAUDE.md` portado al vault), `--no-ff` a `main` y `v0.1.0` |
 | 17-09-2026 | [`2026-09-17_operacion_creada_y_editar.md`](./2026-09-17_operacion_creada_y_editar.md) | Chip «Operación creada» + Acciones › Editar (regla 32, caso 116); el cierre del día ya no renombra la operación (ADR-0003): el tubo vuelve a enterarse de la simulación |
+| 17-09-2026 | [`2026-09-17_restyle_detalle_simulado.md`](./2026-09-17_restyle_detalle_simulado.md) | El detalle simulado según el mockup del usuario: giro sin badge, chip naranjo de solicitud, panel lila, Express en azul (reglas 29 y 22) |
 
 La historia anterior al vault (02-09 → 16-09-2026) no tiene logs propios: vive dentro de las reglas de
 dominio (cada una trae fecha y qué la motivó) y en `Auditoria_*.md` e `Inconsistencias_*.md`.

@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-17T16:32:52Z
+timestamp: 2026-09-17T17:57:26Z
 ---
 
 # Estado actual
@@ -18,25 +18,24 @@ Los procesos tienen spec en `Specs_Procesos/` con su PDF. El 17-09-2026 el repo 
 229 KB a ~105 líneas; 62 reglas verbatim por tema, índice en `invariantes.md`) y **cableó sus gates**: 29 tests
 de contrato en `tests/contract/` (~8 s, sin dependencias, cada uno con sonda negativa), tres hooks deterministas
 en `.claude/hooks/` y un CI de un solo job (`.github/workflows/gates.yml`) con los cinco pasos en toda rama.
-Detalle y trade-offs: ADR-0001, ADR-0002. La última sesión sumó la regla 32 y el ADR-0003 (abajo).
+Detalle y trade-offs: ADR-0001, ADR-0002. Las dos últimas sesiones sumaron la regla 32, el ADR-0003 y el restyle del detalle simulado (reglas 29 y 22).
 
 > ## 🎯 Siguiente paso
 >
 > Todos son decisión del usuario. Desde `v0.1.0`, `main` lleva los hooks: `git commit` directo sobre `main` rebota.
-> 0. **Mergear `--no-ff` a `main`** la rama `claude/migrate-project-session-vui9dl` (regla 32 + ADR-0003, verificada).
-> 1. **Restyle del detalle pedido por el usuario, sin empezar**: chips de Giro sin badge de monto, «Línea disponible»
->    sin el badge de puntual, chip naranja con la solicitud de línea del deudor, montos en `$` no en `M$`, Giro
->    Express en **azul**. Sitios: `ChipGiro`, la fila del deudor de la oferta, `chipEstado`.
-> 2. **Cerrar la tabla de invariantes**: 8 de los 12 del contrato con el servidor sin gate (TEN-01, RAT-01, IDM-01,
+> 0. **Mergear `--no-ff` a `main`** la rama `claude/migrate-project-session-vui9dl` (dos commits verificados:
+>    regla 32 + ADR-0003, y el restyle del detalle simulado).
+> 1. **Cerrar la tabla de invariantes**: 8 de los 12 del contrato con el servidor sin gate (TEN-01, RAT-01, IDM-01,
 >    LIN-01, OTG-01, GIR-01, ATR-01, CRY-01, PRI-01) y 21 reglas de dominio sólo por revisión.
-> 3. **Decidir los datos**: razones sociales reales de deudores sobre RUT sintéticos (un ADR y un gate).
-> 4. Sacar `pipeline.zip` (build del 12-08-2026, 29,6 MB) del versionado.
+> 2. **Decidir los datos**: razones sociales reales de deudores sobre RUT sintéticos (un ADR y un gate).
+> 3. Sacar `pipeline.zip` (build del 12-08-2026, 29,6 MB) del versionado.
 
 ## En vuelo ahora
 
 | Trabajo | Estado | Rama | Siguiente paso |
 |---|---|---|---|
 | «Operación creada» + Acciones › Editar; id estable en el cierre del día | ✅ verificada 17-09-2026 · 116/116 · sondas 19/19 y 6/6 · **pusheada, sin mergear** | `claude/migrate-project-session-vui9dl` | merge `--no-ff` a `main` cuando el usuario diga |
+| Restyle del detalle simulado (mockup del usuario) | ✅ verificada 17-09-2026 · 116/116 · sonda 15/15 · **pusheada, sin mergear** | ídem | ídem |
 | Cablear los gates · partir `CLAUDE.md` | ✅ mergeadas a `main` (bd14091) | `claude/ecstatic-ptolemy-f7cb4m` | pushear el tag `v0.1.0` desde la máquina del usuario |
 
 ## Bloqueos
@@ -72,6 +71,6 @@ Detalle y trade-offs: ADR-0001, ADR-0002. La última sesión sumó la regla 32 y
 
 ## Última sesión
 
+[17-09-2026 — el detalle simulado según el mockup](./2026-09-17_restyle_detalle_simulado.md) ·
 [17-09-2026 — «Operación creada» + Editar, y el id que cambiaba](./2026-09-17_operacion_creada_y_editar.md) ·
 [17-09-2026 — merge a main y v0.1.0](./2026-09-17_merge_a_main.md) ·
-[17-09-2026 — cablear los gates](./2026-09-17_cablear_gates.md)
