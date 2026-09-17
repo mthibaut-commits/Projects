@@ -43,6 +43,8 @@ feature: null
   propio, con los números de `fd70d76`— lo eligió la sesión; las alternativas y su razón están en ADR-0003.
   Lo que conviene que el usuario sepa: los números congelados son una medición intermedia (la primera sobre
   el registro), no la entrega original del A5; la diferencia es ruido de sorteo y está dicha en el archivo.
+- «ratifica V10 a nivel deudor» (17-09, después del merge): **V10 queda del DEUDOR**, como lo modeló la sesión
+  anterior siguiendo el texto de la política. Cerrada en `adr/index.md` y en la regla 9-ter; no se re-litiga.
 
 ## Errores encontrados y su solución (regla 11)
 
@@ -58,7 +60,8 @@ feature: null
 
 ## Pendiente / siguiente paso
 
-- Ver el tablero. Pendientes del usuario que siguen: ratificar V10 a nivel deudor; pushear el tag `v0.1.0`.
+- Ver el tablero. Del usuario sigue sólo pushear el tag `v0.1.0` desde Windows: reintentado desde esta sesión
+  (tag creado local sobre `bd14091`) y el proxy volvió a responder HTTP 403 sobre `refs/tags/*`.
 
 ## Sorpresas y aprendizajes
 

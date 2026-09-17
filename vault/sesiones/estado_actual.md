@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-17T19:50:40Z
+timestamp: 2026-09-17T19:55:24Z
 ---
 
 # Estado actual
@@ -41,8 +41,8 @@ el mockup del usuario (reglas 29 y 22).
 ## Bloqueos
 
 - **El tag `v0.1.0` no llegó al remoto**: el proxy git del entorno deniega `refs/tags/*` (HTTP 403, política; se
-  reporta, no se rodea). Lo pone el usuario desde Windows: `git fetch origin main && git tag -a v0.1.0 bd14091 -m
-  "v0.1.0 — bootstrap agéntico" && git push origin v0.1.0`.
+  reporta, no se rodea; reintentado el 17-09 desde otra sesión, 403 otra vez). Existe local sobre `bd14091`. Lo pone el
+  usuario desde Windows: `git fetch origin main && git tag -a v0.1.0 bd14091 -m "v0.1.0 — bootstrap agéntico" && git push origin v0.1.0`.
 
 ## Deudas anotadas (no bloquean, no olvidar)
 
