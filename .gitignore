@@ -7,3 +7,13 @@ Capturas_UI/*.png
 
 # PNG de referencia de capturar_variantes.mjs (mismo criterio que Capturas_UI)
 Variantes_UI/*.png
+
+# Configuracion PERSONAL del agente (la compartida, .claude/settings.json con los hooks, SI se versiona:
+# un hook que no viaja con el repo es config personal, no una garantia)
+.claude/settings.local.json
+
+# El repo no tiene dependencias npm (node --test, sin librerias); si alguien instala algo local, no entra
+node_modules/
+
+# Worktrees: solo a pedido explicito del usuario (hook worktree_guard)
+.worktrees/
