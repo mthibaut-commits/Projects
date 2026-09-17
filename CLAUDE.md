@@ -24,7 +24,7 @@ npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx 
 grep -oE "^(function|const|let|var) [A-Za-z0-9_]+" pipeline_comercial.jsx | awk '{print $2}' | sort | uniq -d  # 2 · debe salir vacío
 node build_app.mjs                                                                                            # 3 · valida los hashes del vendor
 node --test "tests/contract/*.test.mjs"                                                                       # 4 · gates de contrato (~8 s)
-PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 115/115 PASA (~2 min)
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 116/116 PASA (~2 min)
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs                                         # 6 · sólo si toca la UI (~5 min)
 ```
 

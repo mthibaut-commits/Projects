@@ -10,7 +10,7 @@ timestamp: 2026-09-17T15:29:14Z
 
 > **Lista que un code review rechaza sin discusión.** Las reglas viven **verbatim** en `reglas/<tema>.md` —se citan por número y no se renumeran— y este índice dice dónde está cada una y **qué caso de `tests_asignacion_lineas.js` la verifica**. La columna *casos* se extrajo del propio texto de cada regla (las que nombran su caso); una regla **sin gate** no es una regla falsa: es una que hoy sólo la sostiene la revisión, y ésa es la deuda que esta tabla hace visible.
 
-## Reglas de dominio (61 · 40 con caso en la suite —31 lo citan en su texto, 9 se les asignó por el título del caso— · 21 sólo por revisión)
+## Reglas de dominio (62 · 41 con caso en la suite —32 lo citan en su texto, 9 se les asignó por el título del caso— · 21 sólo por revisión)
 
 > **Cómo leer la columna de casos.** Un número a secas está **citado en el texto de la regla**. Un número con `~` se le asignó leyendo el **título** del caso en `tests_asignacion_lineas.js` (`ok("N …")`) el 17-09-2026: es una inferencia razonable, no una cita — antes de apoyarse en él, abrir el caso. *Sin gate* = hoy sólo la sostiene la revisión.
 
@@ -75,6 +75,7 @@ timestamp: 2026-09-17T15:29:14Z
 | 24 | El GATE de inyección al core: el paquete girado es el que se autorizó | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | ~86 |
 | 25 | Rotación de personas: qué ve cada uno y a quién se le atribuye lo hecho | [`reglas/otorgamiento_y_atribucion.md`](./reglas/otorgamiento_y_atribucion.md) | 91, ~87 |
 | 30-bis | El ORDEN de la lista de oportunidades: avance primero, plata después | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 112 |
+| 32 | Cerrada la oferta, el CTA se va y queda «Operación creada» + Acciones › Editar | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 116 |
 | 31 | MODO DIRECTORIO — demo acotada | [`reglas/modo_directorio.md`](./reglas/modo_directorio.md) | **sin gate** (revisión) |
 | 17 | Teléfonos ofuscados en logs | [`contrato_servidor_y_auditoria.md`](./contrato_servidor_y_auditoria.md) | **sin gate** (revisión) |
 
