@@ -1,4 +1,4 @@
-/* La suite de 115 casos (`tests_asignacion_lineas.js`) corre en Chromium y tarda ~2 min: es el paso 5 de
+/* La suite de 116 casos (`tests_asignacion_lineas.js`) corre en Chromium y tarda ~2 min: es el paso 5 de
    la verificación, no este test. Lo que se fija ACÁ, en milisegundos, es la forma de la suite: cada número
    de caso tiene UN solo título (dos títulos bajo el mismo número son dos casos pisándose en la salida
    `PASA N`; dos ok() con el mismo número y el mismo título son una rama de guarda del mismo caso, y eso
@@ -8,7 +8,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { leer, numerosDeCasos, casosDeSuite } from "./_comun.mjs";
 
-export const CASOS_ESPERADOS = 115;   // snapshot: cambia sólo cuando se agrega o retira un caso a propósito
+export const CASOS_ESPERADOS = 116;   // snapshot: cambia sólo cuando se agrega o retira un caso a propósito
 
 export function verificarNumeracion(casos) {
   const fallos = [];

@@ -18,7 +18,7 @@
    ...más tres de la CARTERA DEL PAR cliente-deudor (INC-04): que el catálogo implemente las 79
    reglas de la política y que C47-C50 se evalúen y se visen por deudor, no por cliente.
 
-   Última corrida: 59/59 PASA.
+   Última corrida: 116/116 PASA.
    ============================================================================================ */
 (() => {
   const out = [];
@@ -3442,6 +3442,74 @@
     ok("115 el predictor de verificaci\u00f3n compara PESOS contra PESOS, no pesos contra millones",
        pasaOk && techoOk && bordeOk && v10Ok && fmtOk && activoOk,
        `operaci\u00f3n normal pasa V03/V04/V09 ${pasaOk} (V03 ${val(normal, "V03")}\u00d7 \u00b7 V04 ${val(normal, "V04")}) \u00b7 techo por monto sigue discriminando ${techoOk} \u00b7 borde en M$300 exacto ${bordeOk} \u00b7 V10 sobre M$1.000 ${v10Ok} \u00b7 se muestra con fmtMM ${fmtOk} (${eV09.r.fmt(eV09.v)}) \u00b7 el par del activo viene en pesos ${activoOk} (${muestra})`);
+  }
+
+  // ── 116 · CERRAR LA OFERTA SE PUEDE DESHACER, Y SON TRES HECHOS DISTINTOS ────────────────────
+  // «Cerrada» (el ejecutivo aprobó el paquete), «publicada» (el correo con el código de negocio ya
+  // salió) y «reabierta» (la firma del cliente quedó revocada) son cosas distintas, y el botón
+  // «Editar» sólo deshace la primera. Confundirlas deja o una oferta que no se puede volver a
+  // cerrar —el CTA quedaba vivo y al apretarlo no pasaba nada— o una firma que reaparece sola.
+  {
+    const cerrada = { id: "OP-E1", stage: "oferta", ofertaCerrada: true, negocioNum: "OP-E1", publicacion: "electronica" };
+    const abierta = { id: "OP-E2", stage: "oferta" };
+    const editando = { ...cerrada, enEdicion: { ts: "x", por: "y" } };
+    const firmada = { id: "OP-E3", stage: "cesion", ofertaCerrada: true, negocioNum: "OP-E3", clienteAcepto: true };
+    const girada = { ...cerrada, id: "OP-E4", stage: "giro" };
+    const enCore = { ...cerrada, id: "OP-E5", integracion: "aprobada" };
+    const perdida = { ...cerrada, id: "OP-E6", stage: "perdida" };
+
+    // (a) El predicado del CIERRE mira las dos banderas y la marca de edición.
+    const vigOk = ofertaCerradaVigente(cerrada) === true && ofertaCerradaVigente(abierta) === false
+      && ofertaCerradaVigente(editando) === false && ofertaCerradaVigente(null) === false;
+
+    // (b) PUBLICAR NO SE DESHACE. El correo salió; lo que se suelta es la aprobación interna. Si
+    //     `ofertaPublicada` se cayera al editar, el tab de Verificación desaparecería y con él las
+    //     llamadas ya registradas — evidencia de 3 a 4 horas por deudor.
+    const pubCerrada = { ...cerrada, ofertaComunicada: true };
+    const pubEditando = { ...pubCerrada, enEdicion: { ts: "x" } };
+    const pubOk = ofertaPublicada(pubCerrada) === true && ofertaPublicada(pubEditando) === true;
+
+    // (c) EDITAR: a quién aplica, quién puede y qué implica.
+    const eAbierta = edicionOperacion(abierta), eCerrada = edicionOperacion(cerrada);
+    const eFirmada = edicionOperacion(firmada), eGirada = edicionOperacion(girada);
+    const eCore = edicionOperacion(enCore), ePerdida = edicionOperacion(perdida);
+    const edicOk = eAbierta.aplica === false                       // nada que reabrir: ya es editable
+      && eCerrada.aplica === true && eCerrada.ok === true && !eCerrada.revocaFirma
+      && eFirmada.aplica === true && eFirmada.ok === true && eFirmada.revocaFirma === true
+      && eGirada.aplica === true && eGirada.ok === false           // girada no se edita
+      && eCore.aplica === true && eCore.ok === false               // ya la tomó Tesorería
+      && ePerdida.aplica === true && ePerdida.ok === false;
+    // Y NUNCA SIN MOTIVO: un destino apagado que no dice por qué deja al ejecutivo sin dónde
+    // enterarse (regla 24). Los tres «no» tienen que explicarse, y con textos distintos.
+    const motivos = [eGirada.motivo, eCore.motivo, ePerdida.motivo];
+    const motivoOk = motivos.every((m) => typeof m === "string" && m.length > 20)
+      && new Set(motivos).size === 3 && eCerrada.motivo !== eFirmada.motivo;
+
+    // (d) LA FIRMA SE REVOCA SÓLO CUANDO HABÍA FIRMA. `enEdicion` y `reabierta` son independientes:
+    //     cerrar de nuevo limpia la primera, y si fueran la misma marca devolvería una aceptación
+    //     que nadie dio. Se comprueba sobre el gate que decide si se puede girar.
+    const firmadaEditando = { ...firmada, enEdicion: { ts: "x" }, reabierta: { ts: "x" } };
+    const reCerrada = { ...firmadaEditando, enEdicion: undefined };        // volvió a cerrarse
+    const firmaOk = aprobacionFormalCliente(firmada) === true
+      && aprobacionFormalCliente(firmadaEditando) === false
+      && aprobacionFormalCliente(reCerrada) === false   // cerrar NO devuelve la firma
+      && ofertaCerradaVigente(reCerrada) === true;      // pero sí devuelve el cierre
+
+    // (e) LA SOLICITUD AL COMITÉ NO SE DUPLICA. Al re-cerrar, lo que falta de línea se vuelve a
+    //     calcular; si pide lo mismo no se inyecta de nuevo, porque NEX no puede retirar la
+    //     anterior (regla 15) y el comité vería dos peticiones sin saber cuál rige. Se compara el
+    //     DETALLE y no el total: dos repartos distintos pueden sumar igual.
+    const s1 = { rut: "1-9", detalle: [{ rutDeudor: "2-7", monto: 60e6, tipoLinea: "puntual" }, { rutDeudor: "3-5", monto: 30e6, tipoLinea: "puntual" }] };
+    const s2 = { rut: "1-9", detalle: [{ rutDeudor: "3-5", monto: 30e6, tipoLinea: "puntual" }, { rutDeudor: "2-7", monto: 60e6, tipoLinea: "puntual" }] }; // mismo, otro orden
+    const s3 = { rut: "1-9", detalle: [{ rutDeudor: "2-7", monto: 50e6, tipoLinea: "puntual" }, { rutDeudor: "3-5", monto: 40e6, tipoLinea: "puntual" }] }; // mismo total, otro reparto
+    const s4 = { rut: "1-9", detalle: [{ rutDeudor: "2-7", monto: 60e6, tipoLinea: "puntual" }] };
+    const solOk = mismaSolicitudComite(s1, s2) === true && mismaSolicitudComite(s1, s3) === false
+      && mismaSolicitudComite(s1, s4) === false && mismaSolicitudComite(s1, { ...s1, rut: "9-9" }) === false
+      && mismaSolicitudComite(s1, null) === false;
+
+    ok("116 cerrar la oferta se deshace con «Editar», y publicar y firmar no se deshacen con ella",
+       vigOk && pubOk && edicOk && motivoOk && firmaOk && solOk,
+       `cierre vigente ${vigOk} \u00b7 publicar no se deshace ${pubOk} \u00b7 a qui\u00e9n aplica editar ${edicOk} \u00b7 siempre con motivo ${motivoOk} \u00b7 la firma s\u00f3lo se revoca si la hab\u00eda, y cerrar no la devuelve ${firmaOk} \u00b7 la solicitud al comit\u00e9 no se duplica ${solOk}`);
   }
 
   console.log(out.join("\n"));
