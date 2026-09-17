@@ -10,6 +10,10 @@
 // del campo—: el sujeto de «cuánto de lo cedido se llevó cada quién» es la CESIÓN, y A2 es su
 // registro. Lo de A5 es el ANÁLISIS sobre esos hechos.
 //
+// Y A2 NO lee A5: la intención con la que `cesiones.js` sortea el cesionario vive en `lib/intencion_sow.js`,
+// no en los campos que acá se miden. Así la cadena A2 → A5 no vuelve sobre sí misma y el generador tiene
+// punto fijo (17-09-2026; antes cada corrida movía ~150 cesiones de cesionario y esta serie con ellas).
+//
 // ── Qué se MIDE y qué sigue siendo de A5 ──────────────────────────────────────────────────────────
 // MEDIDO sobre las cesiones: la serie semanal entera (`MontoBICE`, `MontoTotal`, `NumCesiones`,
 // `SOWPct`), la participación actual y la de la primera mitad, la pendiente, la tendencia, el gap, el
