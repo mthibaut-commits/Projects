@@ -6,8 +6,12 @@
 // activos de información que el pipeline consume. El pipeline NO genera datos: los lee y los procesa.
 // Todo lo que la aplicación necesite saber del negocio tiene que salir de acá.
 //
-//   node GeneradorDatos/generar.js [ruta-entrada] [ruta-salida]
+//   node GeneradorDatos/generar.js [ruta-entrada] [ruta-salida] [--solo=BLOQUE[,BLOQUE]]
 //   (por defecto lee y escribe `datos_inyectados.js` en la raíz del repo)
+//   `--solo` regenera únicamente esos derivados y conserva los demás tal como vienen en la entrada.
+//   Existe porque la cadena AECSYNC → SHARE_OF_WALLET → AECSYNC no tiene punto fijo: una corrida
+//   completa mueve ~150 cesiones de cesionario aunque nada haya cambiado (ver README), y un cambio en
+//   otro activo no tiene por qué arrastrar eso.
 //
 // Datasets BASE — rescatados del build original, se copian sin tocar:
 //   DTESYNC · LISTA_BLANCA · DEUDORES_AUTORIZADOS · SHARE_OF_WALLET · ESTRATEGIA_PRECIO
@@ -25,7 +29,9 @@
 // Se generan EN ORDEN y cada uno queda visible para los siguientes: VERIFICACION lee la nota del deudor
 // del OTORGAMIENTO recién generado, para que los dos activos no puedan divergir.
 //
-// La generación es DETERMINISTA: dos corridas sobre la misma entrada producen el mismo archivo.
+// La generación es DETERMINISTA por bloque: dos corridas sobre la misma entrada producen el mismo
+// bloque — con UNA excepción conocida, la cadena AECSYNC → SHARE_OF_WALLET → AECSYNC, que no tiene
+// punto fijo (ver README, «Regenerar un solo derivado»).
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 const path = require("path");
 const { leer, escribir, serializar } = require("./lib/archivo");
@@ -39,8 +45,12 @@ const cartera = require("./datasets/cartera");
 const cesiones = require("./datasets/cesiones");
 
 const raiz = path.resolve(__dirname, "..");
-const entrada = process.argv[2] || path.join(raiz, "datos_inyectados.js");
-const salida = process.argv[3] || entrada;
+const args = process.argv.slice(2);
+const soloArg = args.find((a) => a.startsWith("--solo="));
+const solo = soloArg ? new Set(soloArg.slice("--solo=".length).split(",").map((s) => s.trim()).filter(Boolean)) : null;
+const posicionales = args.filter((a) => !a.startsWith("--"));
+const entrada = posicionales[0] || path.join(raiz, "datos_inyectados.js");
+const salida = posicionales[1] || entrada;
 
 console.log("Leyendo  %s", entrada);
 const { bloques, datos, orden } = leer(entrada);
@@ -59,8 +69,10 @@ const DERIVADOS = [
   ["CARTERA", () => cartera.generar(datos)],
 ];
 
-console.log("\nGenerando derivados");
+if (solo) for (const n of solo) if (!DERIVADOS.some(([nombre]) => nombre === n)) { console.error("--solo: %s no es un derivado (%s)", n, DERIVADOS.map(([x]) => x).join(", ")); process.exit(2); }
+console.log("\nGenerando derivados" + (solo ? " (--solo " + [...solo].join(",") + ")" : ""));
 for (const [nombre, fn] of DERIVADOS) {
+  if (solo && !solo.has(nombre)) { console.log("  %s: se conserva de la entrada", nombre.padEnd(22)); continue; }
   const valor = fn();
   bloques[nombre] = serializar(nombre, valor);
   datos[nombre] = valor; // queda disponible para los derivados siguientes

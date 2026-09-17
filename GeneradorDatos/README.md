@@ -43,7 +43,7 @@ byte. Se apoya en `hashStr` + mulberry32, el mismo azar estable que usa el pipel
 | `AECSYNC` | A2 | `datasets/cesiones.js` | **El registro completo de cesiones y el maestro de la participación** (7.480; traía 1.300 mientras el A5 declaraba 9.104 en sus series). Cada una apunta a un **documento real del A1** de su cedente y copia sus campos. Se cede una fracción del pool CEDIBLE de cada cliente; el cesionario sale del padrón `lib/cesionarios.js` por un panel de 2 a 4 contrapartes, y qué parte va a nosotros lo fija la trayectoria de participación — que después se vuelve a medir en el A5 |
 | `SHARE_OF_WALLET` | A5 | `datasets/share_of_wallet.js` | **Se MIDE sobre AECSync**, que corre antes: la serie semanal con sus montos, la participación actual, la tendencia, el gap, el estado y el diagnóstico salen de las cesiones. Antes A2 y A5 respondían la misma pregunta por caminos independientes y discrepaban **13,8 pto en la mediana**; hoy calzan dentro del redondeo en 233 de 233. Lo único que NO se mide es el `SOWTargetPct` —es una meta, y derivarla del resultado dejaría el gap siempre en cero— |
 | `CARTERA` | A24 | `datasets/cartera.js` | Estructura comercial (código, nombre, equipo, **jefatura**, zona, sucursal) y asignación de cada cliente a su ejecutivo. La asignación se **mide** del `Ejecutivo` que ya declara el A5, para que el activo nuevo no contradiga al que la app venía leyendo; el archivo la vuelve a llavear por **código** y no por nombre |
-| `VERIFICACION` | A10 | `datasets/verificacion.js` | Variables del predictor de verificación por par cliente-deudor. El promedio de factura del par y su venta mensual salen del volumen real de DTESync; la nota del deudor se **lee del A16 ya generado** para que los dos activos no puedan divergir |
+| `VERIFICACION` | A10 | `datasets/verificacion.js` | Variables del predictor de verificación por par cliente-deudor. La **factura típica** del par se mide en DTESync; la **frecuencia mensual** con que el par factura y la **fracción que cede** se modelan por perfil de la relación —la ventana del A1 son 47 días con ~2 facturas por par, una muestra corta y no la relación—, nunca por debajo del ritmo que la ventana muestra. De ahí salen la venta mensual (V04) y lo comprado en 3M (V03). **V10 es del DEUDOR**, no del par: lo que le pagó al factoring en 3M sumando todos sus cedentes, como pide la política («que operó una sola vez con Security»). La nota del deudor se **lee del A16 ya generado** para que los dos activos no puedan divergir |
 
 ## Una cesión tiene que apuntar a una factura que existe
 
@@ -83,7 +83,20 @@ en silencio. Qué porcentaje de la cartera cae en excepción es una **propiedad 
 
 Los diales están en la constante `RANGO` de cada módulo y en la distribución de perfiles (`perfil`). Tras
 cambiarlos conviene medir el resultado: hoy son ~57% de clientes sin ninguna excepción y ~3% de knockout
-por TGR en otorgamiento, y ~70% de facturas en verificación telefónica en el predictor.
+por TGR en otorgamiento; y en el predictor, con una factura en la oferta, **la mitad de los pares queda
+verificada por modelo** (49,8% PRIME · 50,3% OTROS, medido el 17-09-2026 sobre los 13.302 pares del A10 con
+facturas en el libro) y la otra mitad va al teléfono. Los dos criterios que antes lo impedían —V04 y V10—
+pasan 80% y 90% en PRIME, 82% y 93% en OTROS; el resto lo deciden V02, V05, V07 y V08 por perfil.
+
+## Regenerar un solo derivado
+
+`node GeneradorDatos/generar.js --solo=VERIFICACION` regenera únicamente ese bloque y conserva los demás tal
+como vienen en la entrada. Existe porque **la cadena `AECSYNC → SHARE_OF_WALLET → AECSYNC` no tiene punto
+fijo**: `cesiones.js` lee el A5 del archivo de entrada como intención de participación, y el A5 se vuelve a
+medir sobre el A2 recién escrito, así que una corrida completa **mueve ~150 cesiones de cesionario aunque
+nada haya cambiado** (medido el 17-09-2026: 153 de 7.480 en la primera corrida y otras tantas en la
+segunda; A5 y A11 arrastran el cambio). Mientras eso no se cierre, un cambio en otro activo no debe
+llevarse esa deriva en el mismo commit.
 
 ## Un atributo, un activo
 

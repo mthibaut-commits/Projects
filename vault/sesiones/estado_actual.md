@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-17T18:05:00Z
+timestamp: 2026-09-17T18:40:00Z
 ---
 
 # Estado actual
@@ -63,8 +63,8 @@ contrato en `tests/contract/` (~8 s, sin dependencias, cada uno con sonda negati
    El CI avisa que `actions/checkout@v4` y `setup-node@v4` apuntan a Node 20 (deprecado): subir a `@v5` (T3).
 8. La suite monta la app entera pero **no** `DealDrawer`, el wizard ni la bandeja: lo que cambia ahí se verifica
    abriendo la pantalla (regla núcleo 4).
-9. **V04 y V10 mandan al teléfono a casi todos** aun con las unidades corregidas (9-ter, última viñeta): con una factura,
-   V04 pasa 28% PRIME / 1% OTROS y V10 15% / 5%; «por modelo» 5,3% / 0. Decisión: generador (más meses por par) o umbral.
+9. **El generador no tiene punto fijo en A2 → A5 → A2**: cada corrida completa mueve ~150 cesiones de cesionario y
+   arrastra A5/A11 (README del generador). Hoy se regenera por bloque (`--solo`); cerrar el bucle es tarea aparte.
 
 ## Conocimiento clave
 
@@ -75,6 +75,6 @@ contrato en `tests/contract/` (~8 s, sin dependencias, cada uno con sonda negati
 
 ## Última sesión
 
-[17-09-2026 — unidades del predictor y lo que V04/V10 dejan a la vista](./2026-09-17_unidades_v04.md) ·
+[17-09-2026 — el A10 modela la relación: V04 y V10 pasables](./2026-09-17_generador_v04_v10.md) · [17-09-2026 — unidades del predictor](./2026-09-17_unidades_v04.md) ·
 [17-09-2026 — merge a main y v0.1.0](./2026-09-17_merge_a_main.md) · [17-09-2026 — cablear los gates](./2026-09-17_cablear_gates.md) ·
 [17-09-2026 — auditoría y partición de CLAUDE.md](./2026-09-17_partir_claude_md.md)
