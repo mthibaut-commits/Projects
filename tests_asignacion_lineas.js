@@ -712,8 +712,8 @@
   {
     const parBase = {
       aplican: ["V06"], protocolo: { existe: false }, recortado: false, prime: false,
-      fchVctoProm: 40, pctPagoDeudor3M: 95, mntCompraOp3M: 100, avgVentaProm3M: 100,
-      mesesConVenta6M: 6, pctMora25d: 0, pctReclamadas: 0, mntPagoDeudor3M: 2000,
+      fchVctoProm: 40, pctPagoDeudor3M: 95, mntCompraOp3M: 100 * MMF, avgVentaProm3M: 100 * MMF,
+      mesesConVenta6M: 6, pctMora25d: 0, pctReclamadas: 0, mntPagoDeudor3M: 2000 * MMF,
     };
     const sinPlazo = verifDecision(parBase, [{ id: "a", monto: 10 * MMF }]);                  // sin `venc`
     const conPlazo = verifDecision(parBase, [{ id: "a", monto: 10 * MMF, venc: 41 }]);        // 2,5% de 40
@@ -1284,8 +1284,11 @@
     const conProto = { ...base, protocolo: { existe: true, id: "PR-99" } };
     // un par que NO requiere verificación por criterios, para que la única causa sea la regla 0
     const limpio = { ...base, protocolo: { existe: false }, prime: true, recortado: true,
+      // EN PESOS, como el resto del modelo: `mntPagoDeudor3M` estaba en millones (5000) y V10 exige
+      // > M$1.000, así que al migrar el umbral al peso este par dejaba de superarla y el caso medía
+      // otra cosa. La prueba llevaba escrita la unidad equivocada.
       aplican: VERIF_APLICAN_RECORTADO, avgVentaProm3M: 1e9, mesesConVenta6M: 6,
-      pctMora25d: 0, pctReclamadas: 0, mntPagoDeudor3M: 5000 };
+      pctMora25d: 0, pctReclamadas: 0, mntPagoDeudor3M: 5000 * MMF };
     const fs = [{ monto: 40 * MMF, venc: 45 }];
     const normal = verifDecision({ ...limpio, primeraOperacion: false }, fs);
     const primera = verifDecision({ ...limpio, primeraOperacion: true }, fs);
@@ -3362,6 +3365,83 @@
     ok("114 solicitar no cierra la puerta: el ejecutivo sigue pudiendo agregar informaci\u00f3n",
        sinSolOk && apilaOk && firmaOk && ordenOk && vaciaOk,
        `sin solicitud no escribe ${sinSolOk} \u00b7 apila sin pisar la original ${apilaOk} \u00b7 con actor y hora propias ${firmaOk} (${a1.por} \u00b7 ${a1.fecha}) \u00b7 append-only en orden ${ordenOk} \u00b7 vac\u00eda no escribe ${vaciaOk}`);
+  }
+
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 115 · EL PREDICTOR COMPARA PESOS CONTRA PESOS. V03, V04 y V09 miden el monto de la operación
+  // —que se suma en pesos— contra variables del par y contra umbrales que estaban escritos en
+  // MILLONES: un factor 1.000.000 entre los dos lados de cada comparación. El efecto no era un
+  // sesgo sino la inversión del criterio: V03 y V09 no los cumplía NADIE, y como basta que uno
+  // falle para mandar al teléfono (unanimidad, §4.2), el techo por monto verificaba a todos.
+  // V04 aplica además al segmento PRIME, así que se llevaba también a los deudores de lista.
+  {
+    const par = (extra) => ({
+      nombre: "Deudor 115", protocolo: { existe: false }, primeraOperacion: false,
+      recortado: false, prime: false, aplican: VERIF_APLICAN_COMPLETO,
+      fchVctoProm: 40, pctPagoDeudor3M: 95, mesesConVenta6M: 6, pctMora25d: 0, pctReclamadas: 0,
+      mntCompraOp3M: 500 * MMF,     // M$500 comprados al par en 3M
+      avgVentaProm3M: 800 * MMF,    // M$800 de venta mensual del par
+      mntPagoDeudor3M: 5000 * MMF,  // M$5.000 pagados al factoring
+      ...extra });
+    const st = (r, id) => (r.evals.find((e) => e.r.id === id) || {}).st;
+    const val = (r, id) => (r.evals.find((e) => e.r.id === id) || {}).v;
+
+    // (a) UNA OPERACIÓN NORMAL PASA LOS TRES. M$100 contra M$500 comprados = 0,20× (≤ 1,3),
+    //     contra M$800 de venta = 0,13 (< 1,0), y M$100 ≤ M$300. Con la unidad rota, los tres
+    //     daban 1.000.000× más y NINGUNO se cumplía.
+    const normal = verifDecision(par(), [{ monto: 100 * MMF, venc: 40 }]);
+    const pasaOk = st(normal, "V03") === "ok" && st(normal, "V04") === "ok" && st(normal, "V09") === "ok"
+      && normal.requiere === false;
+
+    // (b) Y SIGUEN DISCRIMINANDO: el criterio existe para poner un techo, así que por encima
+    //     del umbral tiene que fallar. M$400 > M$300 → V09 no; y 400/500 = 0,80× sigue bajo 1,3.
+    const alto = verifDecision(par(), [{ monto: 400 * MMF, venc: 40 }]);
+    const techoOk = st(alto, "V09") === "no" && st(alto, "V03") === "ok" && alto.requiere === true;
+
+    // (c) EL BORDE ESTÁ DONDE LA POLÍTICA LO PONE, no un millón más acá: V09 es ≤ M$300.
+    const justo = verifDecision(par(), [{ monto: 300 * MMF, venc: 40 }]);
+    const pasado = verifDecision(par(), [{ monto: 300 * MMF + 1, venc: 40 }]);
+    const bordeOk = st(justo, "V09") === "ok" && st(pasado, "V09") === "no";
+
+    // (d) V10 TAMBIÉN: > M$1.000 pagados. Un par con M$900 no la supera; con M$1.100 sí.
+    const pocoPago = verifDecision(par({ mntPagoDeudor3M: 900 * MMF }), [{ monto: 100 * MMF, venc: 40 }]);
+    const hartoPago = verifDecision(par({ mntPagoDeudor3M: 1100 * MMF }), [{ monto: 100 * MMF, venc: 40 }]);
+    const v10Ok = st(pocoPago, "V10") === "no" && st(hartoPago, "V10") === "ok";
+
+    // (e) LOS VALORES QUE SE MUESTRAN SON LOS DEL DATO: V09 y V10 son montos y se abrevian con el
+    //     único formateador (`fmtMM`). Con la unidad rota, «M$100» se mostraba como «$100M».
+    const eV09 = normal.evals.find((e) => e.r.id === "V09");
+    const fmtOk = val(normal, "V09") === 100 * MMF && eV09.r.fmt(eV09.v) === fmtMM(100 * MMF)
+      && /M\$300/.test(eV09.r.thr);
+
+    // (f) EL PAR SALE DEL ACTIVO EN PESOS, medido sobre las filas REALES del A10. El layout trae
+    //     MILES (sufijo `_M`), así que el valor leído tiene que ser 1.000x la celda —y no 1/1.000x,
+    //     que es lo que hacía—. Se compara contra el activo y no contra un orden de magnitud: un
+    //     umbral suelto («>= 1e6») lo pasaría también una conversión equivocada por 10.
+    let activoOk = false, muestra = "(sin A10)";
+    {
+      const V = typeof VERIFICACION !== "undefined" ? VERIFICACION
+        : (typeof window !== "undefined" ? window.VERIFICACION : null);
+      if (V && V.filas && V.filas.length) {
+        const ixv = {}; V.campos.forEach((c, i) => (ixv[c] = i));
+        let n = 0, cal = 0;
+        for (const fl of V.filas.slice(0, 200)) {
+          const pr = verifPar(fl[ixv.RUT_CLIENTE], fl[ixv.RUT_DEUDOR], fl[ixv.RUT_DEUDOR]);
+          if (!pr || pr.mntCompraOp3M == null) continue;
+          n++;
+          if (pr.mntCompraOp3M === Math.round(+fl[ixv.V03_MNT_COMPRA_3M_M] * 1000)
+            && pr.avgVentaProm3M === Math.round(+fl[ixv.V04_VENTA_PROM_3M_M] * 1000)
+            && pr.mntPagoDeudor3M === Math.round(+fl[ixv.V10_MNT_PAGADO_3M_M] * 1000)) cal++;
+        }
+        activoOk = n > 0 && cal === n;
+        muestra = cal + "/" + n + " filas del A10 calzan MILES x1000";
+      }
+    }
+
+    ok("115 el predictor de verificaci\u00f3n compara PESOS contra PESOS, no pesos contra millones",
+       pasaOk && techoOk && bordeOk && v10Ok && fmtOk && activoOk,
+       `operaci\u00f3n normal pasa V03/V04/V09 ${pasaOk} (V03 ${val(normal, "V03")}\u00d7 \u00b7 V04 ${val(normal, "V04")}) \u00b7 techo por monto sigue discriminando ${techoOk} \u00b7 borde en M$300 exacto ${bordeOk} \u00b7 V10 sobre M$1.000 ${v10Ok} \u00b7 se muestra con fmtMM ${fmtOk} (${eV09.r.fmt(eV09.v)}) \u00b7 el par del activo viene en pesos ${activoOk} (${muestra})`);
   }
 
   console.log(out.join("\n"));

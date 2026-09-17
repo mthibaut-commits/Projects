@@ -417,13 +417,11 @@ desconocido, y tratarlo como cumplido convierte la ausencia de información en u
 **V09 sólo aplica en OTROS:** un Prime no tiene techo por monto. La lista es lo que compra el derecho
 a que no se te mire el tamaño de la operación.
 
-> **Defecto abierto, medido (17-09-2026).** Los tres criterios que comparan contra el monto de la
-> operación —**V03**, **V04** y **V09**— lo hacen en **unidades distintas**: el monto se suma en pesos
-> y se compara contra umbrales y contra variables del par que vienen en millones. Con eso V03 y V09 no
-> los pasa **nadie** —0 de 266 pares OTROS medidos, contra 266 y 258 respectivamente si las dos
-> magnitudes se expresaran igual— y el resultado es lo contrario de lo que los criterios existen para
-> hacer: en vez de poner un techo, mandan al teléfono al segmento completo. Los umbrales de política
-> son los de la tabla; la comparación tiene que hacerse sobre la misma unidad en los dos lados.
+> **Los dos lados de cada comparación van en PESOS.** Los criterios que miden el monto de la
+> operación —**V03**, **V04** y **V09**— lo comparan contra variables del par y contra umbrales que
+> tienen que estar en la misma unidad. El activo los entrega en **miles** (sufijo `_M` del layout),
+> así que se multiplican por mil al leerlos; los umbrales de la tabla se escriben en pesos
+> (`300e6`, `1000e6`). `M$` es una abreviatura de pantalla y sólo la aplica el formateador.
 
 **V06 y V09 nacen en el documento y escalan al conjunto** del deudor: no se puede llamar a confirmar
 tres de siete facturas y dejar cuatro sin preguntar en la misma llamada.
@@ -1303,7 +1301,6 @@ describen conducta:
 | Desfase | Medido |
 |---|---|
 | El **plazo del documento** no llega al prorrateo: se usa un plazo por **deudor** en vez del vencimiento del documento | 29.554 de 30.000 facturas tienen un plazo real distinto del que entra al cálculo; desvío medio 21,9 días. 691 de 697 deudores tienen más de un plazo en el archivo, así que un parámetro por deudor no puede representar al documento ni en principio |
-| El **predictor de verificación** manda al teléfono al 100% de los pares: **V03**, **V04** y **V09** comparan el monto de la operación en pesos contra umbrales y variables del par en millones (§3.3) | 0 de 266 pares OTROS pasan V03 o V09, contra 266 y 258 con las dos magnitudes en la misma unidad; como consecuencia **Giro Express nunca se gatilla** |
 | **Tres entradas del pricing** (mora, otros descuentos, cuentas por cobrar) se generan por hash y entran al Subtotal | contradice «el pipeline no genera datos»; el prorrateo las reparte documento a documento |
 | El **«Monto a Girar» del catálogo del tenant no sale de la pantalla del detalle**: lo que viaja al resto del sistema es la simulación gruesa del tubo | la operación se cursa por una cifra distinta de la que el ejecutivo aprobó en pantalla |
 | El camino vivo de «Otorgamiento» a giro **salta a Girada** sin pasar por Pendiente Integración, sin VER-01 y sin la aprobación de Operaciones N3 | es el atajo que §7 describe como cerrado, vivo por otra ruta |

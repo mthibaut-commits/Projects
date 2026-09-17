@@ -1854,8 +1854,8 @@ const VERIF_RULES = [
   { id: "V06", n: 6, name: "Desviación de la fecha de pago", variable: "abs(FchVctoDoc − FchVctoProm) / FchVctoProm", recortado: false, desc: "Si la fecha de pago elegida se aleja del plazo histórico del par, se verifican TODAS las facturas de ese deudor", dom: "Riesgo", thr: "≤ 5%", fmt: (v) => v == null ? "sin info" : (v * 100).toFixed(1) + "%" },
   { id: "V07", n: 7, name: "Porcentaje pagado con más de 25 días de mora", variable: "MntPagoC-D >25d mora / MntPago", recortado: true, desc: "Deterioro del comportamiento de pago del deudor respecto de la fecha de financiamiento", dom: "Riesgo", thr: "< 3%", fmt: (v) => v == null ? "sin info" : v.toFixed(1) + "%" },
   { id: "V08", n: 8, name: "Porcentaje de facturas reclamadas", variable: "MntFactReclamadas / MntTotalFacturas", recortado: true, desc: "El deudor reclama facturas a su cliente: la relación comercial está cuestionada", dom: "Riesgo", thr: "< 4%", fmt: (v) => v == null ? "sin info" : v.toFixed(1) + "%" },
-  { id: "V09", n: 9, name: "Operación de alto monto", variable: "MntOpC-D", recortado: false, desc: "Medida preventiva: gatilla si el TOTAL de la operación con ese deudor supera el umbral. Comparar además la factura individual era redundante —ninguna puede superar la suma— y hacía pensar que eran dos umbrales", dom: "Riesgo", thr: "≤ $300M", fmt: (v) => v == null ? "sin info" : "$" + v + "M" },
-  { id: "V10", n: 10, name: "Historial de pago relevante con el factoring (Ult3M)", variable: "MntPagoDeudorUlt3M", recortado: true, desc: "Evita el falso positivo del deudor que cumple todo porque operó una sola vez: exige volumen de pago representativo", dom: "Riesgo", thr: "> $1.000M", fmt: (v) => v == null ? "sin info" : "$" + Math.round(v) + "M pagados" },
+  { id: "V09", n: 9, name: "Operación de alto monto", variable: "MntOpC-D", recortado: false, desc: "Medida preventiva: gatilla si el TOTAL de la operación con ese deudor supera el umbral. Comparar además la factura individual era redundante —ninguna puede superar la suma— y hacía pensar que eran dos umbrales", dom: "Riesgo", thr: "≤ M$300", fmt: (v) => v == null ? "sin info" : fmtMM(v) },
+  { id: "V10", n: 10, name: "Historial de pago relevante con el factoring (Ult3M)", variable: "MntPagoDeudorUlt3M", recortado: true, desc: "Evita el falso positivo del deudor que cumple todo porque operó una sola vez: exige volumen de pago representativo", dom: "Riesgo", thr: "> M$1.000", fmt: (v) => v == null ? "sin info" : fmtMM(v) + " pagados" },
 ];
 // Criterios de cada protocolo (spec §3). El recortado son SEIS: 1, 4, 5, 7, 8 y 10.
 const VERIF_APLICAN_RECORTADO = VERIF_RULES.filter((r) => r.recortado).map((r) => r.id);
@@ -1931,13 +1931,16 @@ function verifPar(rutCliente, nombre, rutDeudor) {
     protocolo: F && N("V01_PROTOCOLO_PROPIO") === 1
       ? { existe: true, id: "PROT-" + String(1000 + (h % 9000)) } : { existe: false, id: null },
     pctPagoDeudor3M: N("V02_PCT_PAGADO_3M"),
-    mntCompraOp3M: F ? +(N("V03_MNT_COMPRA_3M_M") / 1000).toFixed(1) : null,  // el activo trae MILES; acá millones. Total comprado al par en 3M
-    avgVentaProm3M: F ? +(N("V04_VENTA_PROM_3M_M") / 1000).toFixed(1) : null, // el activo trae MILES; acá millones. Venta mensual del par
+    // EN PESOS. El sufijo `_M` del layout son MILES, así que el activo se multiplica por 1.000; se
+    // dividía por 1.000 y quedaban en MILLONES mientras `montoOp` se suma en pesos, o sea que V03 y
+    // V04 dividían dos magnitudes con un factor 1.000.000 entre medio y no los cumplía NADIE.
+    mntCompraOp3M: F ? Math.round(N("V03_MNT_COMPRA_3M_M") * 1000) : null,   // MILES → PESOS. Total comprado al par en 3M
+    avgVentaProm3M: F ? Math.round(N("V04_VENTA_PROM_3M_M") * 1000) : null,  // MILES → PESOS. Venta mensual del par
     mesesConVenta6M: N("V05_RECURRENCIA_MESES_6M"),
     fchVctoProm: N("V06_PLAZO_PROM_PAGO_DIAS"),                               // días, plazo histórico del par
     pctMora25d: N("V07_PCT_MORA_25D"),
     pctReclamadas: N("V08_PCT_RECLAMADAS"),
-    mntPagoDeudor3M: F ? +(N("V10_MNT_PAGADO_3M_M") / 1000).toFixed(1) : null, // el activo trae MILES; acá millones
+    mntPagoDeudor3M: F ? Math.round(N("V10_MNT_PAGADO_3M_M") * 1000) : null,  // MILES → PESOS
     h,
   };
   _VERIF_PAR.set(k, out);
@@ -1951,7 +1954,7 @@ function verifPar(rutCliente, nombre, rutDeudor) {
 // necesita saber cuál falló para decidir si le conviene editar la operación.
 function verifDecision(par, facturas) {
   const fs = (facturas || []).filter(Boolean);
-  const montoOp = +fs.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1);
+  const montoOp = Math.round(fs.reduce((s, f) => s + (f.monto || 0), 0)); // EN PESOS, como todo monto
   // Regla 6 sobre el conjunto: la desviación que manda es la mayor de las facturas del deudor.
   // Si a alguna factura le falta el plazo, el criterio NO TIENE DATO y eso es incumplimiento (§4.3).
   // Antes se rellenaba el hueco con el plazo promedio del par: la desviación daba 0 y el criterio
@@ -1986,8 +1989,10 @@ function verifDecision(par, facturas) {
     V06: (v) => v != null && v <= 0.05,   // 5% del plazo promedio, no 5 días
     V07: (v) => v != null && v < 3,
     V08: (v) => v != null && v < 4,
-    V09: (v) => v != null && v <= 300,
-    V10: (v) => v != null && v > 1000,    // umbral fijo, no 20× la operación
+    // EN PESOS, como los dos valores contra los que comparan. Estaban escritos en millones (300 y
+    // 1000) contra un `montoOp` en pesos: V09 exigía una operación de $300 y no la pasaba nadie.
+    V09: (v) => v != null && v <= 300e6,
+    V10: (v) => v != null && v > 1000e6,  // umbral fijo, no 20× la operación
   };
   // 1 · COMPUERTA: si el deudor tiene protocolo propio, se verifica siempre con ese protocolo y no
   //     se evalúa nada más (spec §4.1). Antes esto estaba invertido: el protocolo EVITABA la llamada.
@@ -21424,9 +21429,14 @@ function resumenEmpresa(deal) {
   if (!deal) return [];
   const e = api4Empresa360(deal.rutEmisor || deal.cliente, deal.cliente);
   const f = e.firmografica, c = e.comercial, x = e.indices;
-  const ventaAnual = Math.round((x.ventasSII[1] || x.ventasSII[0] || 0) / 1000);
-  const patrimonio = Math.round((x.patrimonio || 0) / 1e6);
-  const coloc = Math.round((c.colocProm12m || 0) / 1000);
+  // EN PESOS, porque es lo que `fmtMM` espera: dividían por mil y por un millón y después `fmtMM`
+  // volvía a dividir, así que la facturación anual de un cliente salía como «$1.234» en vez de
+  // «M$1.234». El resto del archivo ya lo hacía bien (`fmtMM(ventasSII[i] * 1000)`), así que la
+  // misma cifra se leía distinta en dos pantallas. El sufijo `_M` del layout son MILES; el
+  // patrimonio ya viene en pesos desde `api4Empresa360`.
+  const ventaAnual = Math.round((x.ventasSII[1] || x.ventasSII[0] || 0) * 1000); // MILES → PESOS
+  const patrimonio = Math.round(x.patrimonio || 0);                              // ya viene en PESOS
+  const coloc = Math.round((c.colocProm12m || 0) * 1000);                        // MILES → PESOS
   const nDeud = (deal.deudores && deal.deudores.length) || 1;
   const out = [];
   out.push(`${deal.cliente} opera en el sector ${(f.sector || "").toLowerCase()} (${(f.actividad || "").toLowerCase()}), con ~${f.trabajadores} trabajadores${f.clienteBanco === "Sí" ? " y es cliente del banco" : ""}. Ingresó a la cartera el ${f.fechaIngreso}.`);
