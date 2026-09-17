@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-17T15:29:14Z
+timestamp: 2026-09-17T18:05:00Z
 ---
 
 # Estado actual
@@ -17,8 +17,7 @@ Demo funcional del pipeline comercial de factoring para BICE / Factoring Securit
 Los procesos tienen spec en `Specs_Procesos/` con su PDF. El 17-09-2026 el repo abrió su vault (`CLAUDE.md` de
 229 KB a 105 líneas; 60 reglas verbatim por tema, índice en `invariantes.md`) y **cableó sus gates**: 29 tests de
 contrato en `tests/contract/` (~8 s, sin dependencias, cada uno con sonda negativa), tres hooks deterministas en
-`.claude/hooks/` y un CI de un solo job (`.github/workflows/gates.yml`) con los cinco pasos en toda rama. Nada del
-producto cambió. Detalle y trade-offs: ADR-0001 y ADR-0002.
+`.claude/hooks/` y un CI de un solo job (`.github/workflows/gates.yml`) con los cinco pasos en toda rama. Nada del producto cambió (ADR-0001, ADR-0002).
 
 > ## 🎯 Siguiente paso
 >
@@ -64,6 +63,8 @@ producto cambió. Detalle y trade-offs: ADR-0001 y ADR-0002.
    El CI avisa que `actions/checkout@v4` y `setup-node@v4` apuntan a Node 20 (deprecado): subir a `@v5` (T3).
 8. La suite monta la app entera pero **no** `DealDrawer`, el wizard ni la bandeja: lo que cambia ahí se verifica
    abriendo la pantalla (regla núcleo 4).
+9. **V04 y V10 mandan al teléfono a casi todos** aun con las unidades corregidas (9-ter, última viñeta): con una factura,
+   V04 pasa 28% PRIME / 1% OTROS y V10 15% / 5%; «por modelo» 5,3% / 0. Decisión: generador (más meses por par) o umbral.
 
 ## Conocimiento clave
 
@@ -74,6 +75,6 @@ producto cambió. Detalle y trade-offs: ADR-0001 y ADR-0002.
 
 ## Última sesión
 
-[17-09-2026 — merge a main y v0.1.0](./2026-09-17_merge_a_main.md) ·
-[17-09-2026 — cablear los gates](./2026-09-17_cablear_gates.md) ·
+[17-09-2026 — unidades del predictor y lo que V04/V10 dejan a la vista](./2026-09-17_unidades_v04.md) ·
+[17-09-2026 — merge a main y v0.1.0](./2026-09-17_merge_a_main.md) · [17-09-2026 — cablear los gates](./2026-09-17_cablear_gates.md) ·
 [17-09-2026 — auditoría y partición de CLAUDE.md](./2026-09-17_partir_claude_md.md)
