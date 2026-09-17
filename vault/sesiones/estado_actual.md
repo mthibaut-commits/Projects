@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-17T19:45:00Z
+timestamp: 2026-09-17T20:05:00Z
 ---
 
 # Estado actual
@@ -40,7 +40,7 @@ El generador de datos tiene **punto fijo** desde el 17-09 (regla 32, ADR-0003): 
 ## Bloqueos
 
 - **El tag `v0.1.0` no llegó al remoto**: el proxy git del entorno remoto de Claude Code deniega `refs/tags/*` (HTTP 403,
-  política de la organización; se reporta, no se rodea). Existe local en la sesión, sobre el merge `bd14091`. Lo pone el
+  política de la organización; se reporta, no se rodea; reintentado el 17-09 desde otra sesión, 403 otra vez). Existe local sobre `bd14091`. Lo pone el
   usuario desde Windows: `git fetch origin main && git tag -a v0.1.0 bd14091 -m "v0.1.0 — bootstrap agéntico" && git push origin v0.1.0`.
 
 ## Deudas anotadas (no bloquean, no olvidar)
