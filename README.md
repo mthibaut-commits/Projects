@@ -27,7 +27,7 @@ PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs           
 
 | Quiero… | Voy a |
 |---|---|
-| Entender el proyecto antes de tocar nada | **`CLAUDE.md`** — arquitectura, convenciones y los 17 invariantes de dominio |
+| Entender el proyecto antes de tocar nada | **`CLAUDE.md`** (comandos y reglas núcleo) → `vault/sesiones/estado_actual.md` (estado y siguiente paso) → `vault/conocimiento/invariantes.md` (las reglas de dominio, por tema, con qué caso las verifica) |
 | Saber cómo funciona el negocio | `Specs_Procesos/` (PDFs vigentes + los dos specs en Markdown) |
 | Integrar con los sistemas de Security | `Levantamiento_Activos_Informacion.md` (A1–A23) y `Integraciones/` |
 | Trabajar en el motor de otorgamiento | `Inconsistencias_Motor_Otorgamiento.md` — **7 hallazgos abiertos; leer antes de corregir** |
@@ -43,4 +43,4 @@ PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs           
 - **`datos_inyectados.js`** (~24 MB) — el dataset que alimenta el inbound: 30.000 facturas de DTESync,
   lista blanca, AECSync, share of wallet. Sin él el pipeline queda en 0 oportunidades. No editar a mano.
 
-`CLAUDE.md` es la fuente de verdad operativa y manda sobre este archivo.
+`CLAUDE.md` y el `vault/` son la fuente de verdad operativa y mandan sobre este archivo.
