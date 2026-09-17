@@ -27,12 +27,16 @@ timestamp: 2026-09-17T15:29:14Z
 | [`verificacion.md`](./verificacion.md) | ¿Qué cubre cada uno de los 114 casos de la suite y cada paso de verificación? |
 | [`contrato_servidor_y_auditoria.md`](./contrato_servidor_y_auditoria.md) | ¿Qué debe implementar el resolver 1:1, qué es y qué no es un control de seguridad acá, cómo se audita? |
 | [`mapa_documentos.md`](./mapa_documentos.md) | ¿Qué es cada documento fuera del vault (specs, integraciones, auditorías, capturas) y para qué sirve? |
+| [`flujo_git.md`](./flujo_git.md) | ¿En qué rama se trabaja, cómo se integra, qué bloquea el guard de git y cómo se escapa a propósito, cómo se versiona? |
+| [`loop_agentico_hooks.md`](./loop_agentico_hooks.md) | ¿Qué hook bloquea qué, cómo se comprueba que están vivos, por qué no hay formateador ni tdd-guard, y qué fricciones ya se conocen? |
 
 ## Dónde va cada cosa
 
 | Si es… | Va en… |
 |---|---|
 | Una regla de dominio (lo que un review rechaza sin discusión) | `reglas/<tema>.md` al final del tema, con su fila en `invariantes.md` |
+| Un invariante que se puede comprobar por introspección | un gate en `tests/contract/` con sonda negativa, y su fila en `invariantes.md` § Gates |
+| Una fricción con un hook | `loop_agentico_hooks.md`, con fecha |
 | Una decisión con alternativas descartadas | `../adr/` — inmutable |
 | El estado presente de la arquitectura | `arquitectura.md` — se actualiza |
 | Algo que aprendí hoy y mañana no importa | el log de sesión (`../sesiones/`) |

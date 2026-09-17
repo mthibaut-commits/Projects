@@ -28,8 +28,10 @@ otra forma: [`adr/ADR-0001-partir-claude-md-y-abrir-el-vault.md`](./adr/ADR-0001
 | `adr/` | Decisiones con alternativas descartadas. Inmutables una vez aceptadas; para cambiar de rumbo, ADR nuevo que reemplaza | [`adr/index.md`](./adr/index.md) |
 | `sesiones/` | El **tablero** (`estado_actual.md`, ≤80 líneas) y un log por sesión | [`sesiones/index.md`](./sesiones/index.md) |
 
-Pendientes de esta estructura, si el proyecto decide completar el bootstrap (auditoría §8): `roadmap/`,
-`features/`, `specs/`, `plantillas/`, y el test de contrato que valide este vault en CI.
+**Este vault está gateado, no confiado**: `tests/contract/vault.test.mjs` valida el frontmatter de todo documento, el
+tablero ≤80 líneas y `CLAUDE.md` ≤150 en cada corrida de `node --test "tests/contract/*.test.mjs"` y en el CI; e
+`invariantes.test.mjs` exige que el índice de reglas calce con los archivos, la suite y el fuente. Pendientes de esta
+estructura, si el proyecto decide completar el bootstrap (auditoría §8): `roadmap/`, `features/`, `specs/`, `plantillas/`.
 
 ## Cómo se edita
 

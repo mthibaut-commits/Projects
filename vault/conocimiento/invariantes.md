@@ -95,3 +95,22 @@ timestamp: 2026-09-17T15:29:14Z
 | ATR-01 | Descuento dentro de la atribución | El descuento aplicado no puede exceder la atribución del rol sin autorización de la jefatura correspondiente. | servidor | **sin gate** |
 | CRY-01 | El hash del OTP no sale del servidor | El OTP se guarda como SHA-256 con sal por emisión; el hash nunca viaja al cliente ni a otra página. La validación ocurre server-side, con límite de intentos y TTL. | servidor | **sin gate** |
 | PRI-01 | La prioridad de curse la pide una jefatura | Marcar una oportunidad como prioritaria es una instrucción de jefatura, no del ejecutivo dueño del negocio. | servidor | **sin gate** |
+## Gates de contrato (`tests/contract/`, desde el 17-09-2026)
+
+> `node --test "tests/contract/*.test.mjs"` — paso 4 de la verificación, ~8 s, sin navegador ni dependencias. Cada archivo
+> exporta su lógica y trae una **sonda negativa** (planta la violación y comprueba que el gate la caza). Dos clases: un
+> **snapshot** es un literal que se actualiza a propósito (y se dice en el commit); una **regla** no se actualiza nunca.
+> Cómo agregar un gate o un caso: `.claude/rules/testing.md`.
+
+| Archivo | Qué fija | Clase |
+|---|---|---|
+| `vault.test.mjs` | Frontmatter OKF en todo documento del vault, `type` del vocabulario, `timestamp` ISO, tablero ≤80 líneas, `CLAUDE.md` ≤150, y que sólo el tablero afirme la fase | regla |
+| `invariantes.test.mjs` | Este índice ↔ los archivos de reglas (cada fila apunta a una regla que existe a columna 0; cada regla tiene su fila; ninguna en dos archivos) · cada caso citado existe en la suite · los 12 códigos del contrato son los de `INVARIANTES` en el fuente · cada `regla N` que cita el `.jsx` sigue existiendo | regla |
+| `fuente.test.mjs` | Sin símbolos duplicados de nivel módulo (paso 2) · el fuente no monta la app (termina en el `}` de `PipelineComercial`, sin `definirWebComponent(` a columna 0) · toda clase propia del `<style>` usada está declarada y viceversa (el caso `t14`) · `stageName` es de nivel módulo · `vendorOrden` idéntico en `build_app.mjs` y `build_app.ps1` y cada archivo existe en `vendor/` | regla |
+| `suite.test.mjs` | Cada número de caso tiene un solo título y van consecutivos desde 1 · la suite declara `CASOS_ESPERADOS` casos | regla · **snapshot** (`CASOS_ESPERADOS`) |
+| `auditores.test.mjs` | `auditar_muerto`: los hallazgos y los `useState` sin uso son exactamente los conocidos (`BASE_MUERTOS`, `BASE_USESTATE`), y las clases del `<style>` dan «ninguna» en los dos sentidos · `auditar_aislamiento`: las funciones puras (`BASE_PURAS`, 39) siguen puras — lo que se desacopló no se vuelve a acoplar | **snapshot** · regla |
+| `hooks.test.mjs` | La lógica de los tres hooks (`protect_paths`, `gitflow_guard` con integración = `main`, `worktree_guard`) y una corrida de punta a punta por stdin | regla |
+
+Lo que **no** es gate y por qué: `regresion_diferencial.mjs` compara dos builds y el CI no tiene el anterior (se corre a
+mano); la suite entera es el paso 5, no un gate de contrato; y los datos —RUT sintéticos, razones sociales reales— son
+una decisión pendiente del usuario (tablero), así que ningún test la afirma ni la niega todavía.

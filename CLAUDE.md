@@ -23,13 +23,16 @@ en 0 oportunidades**) en un HTML standalone que se abre en Chrome. El porqué de
 npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx                              # 1 · sin errores TS1
 grep -oE "^(function|const|let|var) [A-Za-z0-9_]+" pipeline_comercial.jsx | awk '{print $2}' | sort | uniq -d  # 2 · debe salir vacío
 node build_app.mjs                                                                                            # 3 · valida los hashes del vendor
-PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 4 · 114/114 PASA (~2 min)
-PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs                                         # 5 · sólo si toca la UI (~5 min)
+node --test "tests/contract/*.test.mjs"                                                                       # 4 · gates de contrato (~8 s)
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 114/114 PASA (~2 min)
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs                                         # 6 · sólo si toca la UI (~5 min)
 ```
 
-Ninguno subsume a otro, **y los cuatro juntos tampoco bastan**: la colisión parámetro/variable local, un bloque
+Ninguno subsume a otro, **y los cinco juntos tampoco bastan**: la colisión parámetro/variable local, un bloque
 declarado antes de su dependencia y un componente no importado pasan `tsc` y el build, y sólo aparecen en el
-paso 4 o al abrir la pantalla. Qué cubre cada caso de la suite: `vault/conocimiento/verificacion.md`.
+paso 5 o al abrir la pantalla. El CI (`.github/workflows/gates.yml`) corre los cinco en toda rama y todo PR,
+idénticos. Qué cubre cada caso de la suite: `vault/conocimiento/verificacion.md`; qué fija cada gate de
+contrato: `vault/conocimiento/invariantes.md` § Gates.
 
 ## Otros comandos
 
@@ -54,12 +57,13 @@ paso 4 o al abrir la pantalla. Qué cubre cada caso de la suite: `vault/conocimi
    `vault/conocimiento/reglas/<tema>.md` el texto. Están ganadas con incidentes reales: **no se resumen ni se
    renumeran**, se citan por número (`regla 24`, `regla 13-ter`). Una regla nueva toma el **siguiente entero
    libre** y va al final de su tema — nunca un sufijo `-bis`: así se fracturó la numeración anterior.
-4. **Verificación completa antes de cada commit**: los cuatro pasos de arriba, el quinto si toca la UI, y
+4. **Verificación completa antes de cada commit**: los cinco pasos de arriba, el sexto si toca la UI, y
    **abrir la pantalla** cuando el cambio es en el detalle, el wizard o la bandeja — la suite no los monta.
 5. **Idiomas**: UI, documentación, vault, commits y comentarios en **español (Chile)**. Los identificadores
    siguen la convención que el fuente ya tiene (`.claude/rules/code_style.md`).
-6. **Git**: se trabaja en la rama designada de la sesión; sin worktrees salvo que el usuario los pida. Mensajes
-   de commit en español, descriptivos, que digan qué y por qué — el estilo del `git log`.
+6. **Git**: `main` estable; se trabaja en la rama designada de la sesión o en `feature/<slug>`; integración con
+   `merge --no-ff`; sin worktrees salvo que el usuario los pida. Mensajes de commit en español, descriptivos,
+   que digan qué y por qué — el estilo del `git log`. → `vault/conocimiento/flujo_git.md`. *(Bloqueado por hooks.)*
 7. **Decisiones = ADR**: una decisión con alternativas descartadas va a `vault/adr/` (inmutable; para cambiar,
    ADR nuevo que la reemplaza). Las tomadas antes de existir el vault están en `vault/adr/index.md`
    apuntando a la regla que las contiene: **no se re-litigan** (sidebar, drawer, Mis Tareas, nivel Comité…).
@@ -69,9 +73,10 @@ paso 4 o al abrir la pantalla. Qué cubre cada caso de la suite: `vault/conocimi
 9. **Todo monto es un peso entero**; el millón es una abreviatura de PANTALLA (`fmtMM`, escala única `M$`).
    **Datos sintéticos DETERMINISTAS** (`hashStr` + `pcRng`), nunca `Math.random`; el pipeline **lee** los
    activos, no los genera.
-10. **No tocar**: `vendor/` (bytes fijados por el SBOM), `datos_inyectados.js` (lo produce `GeneradorDatos/`),
-    `Legado/`, los PDF ya entregados, los ADR aceptados. **Nunca agregar el montaje raíz al `.jsx`**: lo
-    appendea el build y el fuente termina en el `}` de `PipelineComercial`.
+10. **No tocar**: `vendor/` (bytes fijados por el SBOM), lo **generado** (`datos_inyectados.js`, las capturas,
+    `atribuciones_otorgamiento.json`, los PDF: se corrige el origen y se regenera), `Legado/`, los ADR aceptados.
+    **Nunca agregar el montaje raíz al `.jsx`**: lo appendea el build y el fuente termina en el `}` de
+    `PipelineComercial`. *(Bloqueado por hooks, y por `tests/contract/`.)*
 11. **Errores**: ante un fallo inesperado, registra causa y solución en el log de sesión antes de seguir — la
     próxima sesión no debe redescubrirlo. Lo que en 3 meses siga importando sube a `vault/conocimiento/`.
 12. **Al dudar sobre el proyecto, busca en `vault/` antes de preguntar o asumir**:
@@ -87,7 +92,9 @@ paso 4 o al abrir la pantalla. Qué cubre cada caso de la suite: `vault/conocimi
 ## Mapa
 
 - `pipeline_comercial.jsx` — el fuente entero; convenciones y trampas en `.claude/rules/code_style.md` (se carga al tocarlo)
-- `tests_asignacion_lineas.js` + `run_tests.mjs` — la suite · `build_app.mjs` / `build_app.ps1` — el build
+- `tests_asignacion_lineas.js` + `run_tests.mjs` — la suite · `tests/contract/` — los gates de contrato (`.claude/rules/testing.md`)
+- `build_app.mjs` / `build_app.ps1` — el build · `.github/workflows/gates.yml` — el CI, un solo job para toda rama
+- `.claude/settings.json` + `.claude/hooks/` — los hooks deterministas (qué bloquean: `vault/conocimiento/loop_agentico_hooks.md`)
 - `vault/` — memoria del proyecto; `vault/index.md` es su mapa
   - `conocimiento/invariantes.md` — **índice** de las reglas de dominio y del contrato con el servidor
   - `conocimiento/reglas/` — las reglas verbatim, por tema · `arquitectura.md` · `verificacion.md` · `contrato_servidor_y_auditoria.md` · `mapa_documentos.md`

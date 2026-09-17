@@ -14,6 +14,7 @@ Un ADR aceptado es **inmutable**. Para cambiar de rumbo: ADR nuevo con `reemplaz
 | ADR | Título | Estado |
 |---|---|---|
 | [ADR-0001](./ADR-0001-partir-claude-md-y-abrir-el-vault.md) | Partir `CLAUDE.md` por vida útil y abrir el vault | aceptada · decidida con el usuario 17-09-2026 |
+| [ADR-0002](./ADR-0002-cablear-los-gates.md) | Cablear los gates: tests de contrato, hooks deterministas y CI | aceptada · decidida con el usuario 17-09-2026 |
 
 ## Decisiones cerradas antes del vault — registro con punteros
 
@@ -53,3 +54,4 @@ decididas** y no las vuelva a proponer. Si una se reabre, se escribe un ADR nuev
 | 16-09-2026 | El menú «Acciones» del detalle **no cierra la oferta ni avanza de etapa** | regla 30 | cerrada |
 | 16-09-2026 | El **Modo Directorio** es un bloque desechable con cinco enganches marcados | regla 31 · `modo_directorio.md` | cerrada |
 | 17-09-2026 | Partir `CLAUDE.md` por vida útil, verbatim, por tema | [ADR-0001](./ADR-0001-partir-claude-md-y-abrir-el-vault.md) | cerrada |
+| 17-09-2026 | Gates por línea base, hooks en Node, CI de un solo job, preset A de git; sin tdd-guard ni formateador | [ADR-0002](./ADR-0002-cablear-los-gates.md) | cerrada |
