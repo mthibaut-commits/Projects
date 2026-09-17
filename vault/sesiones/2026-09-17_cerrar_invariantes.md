@@ -10,7 +10,7 @@ timestamp: 2026-09-17T22:31:35Z
 
 **Pedido:** «ya puse el tag, ahora cierra la tabla de invariantes». **Resultado:** las 61 reglas de dominio y los 12
 invariantes del contrato tienen gate; la suite pasa de 115 a 139 casos, `tests/e2e/` de 1 a 16 archivos
-(29 casos) y `tests/contract/` de 6 a 24 archivos. Rama `claude/ecstatic-ptolemy-f7cb4m`, commit (este).
+(29 casos) y `tests/contract/` de 6 a 24 archivos. Rama `claude/ecstatic-ptolemy-f7cb4m`, commit `c721eba`.
 
 ## Método
 
