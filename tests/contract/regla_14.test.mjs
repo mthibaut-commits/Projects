@@ -19,7 +19,7 @@
    Cada gate lleva su sonda: se planta la violación en una copia del fuente y el gate cambia de veredicto. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { leer } from "./_comun.mjs";
+import { leer, canonico} from "./_comun.mjs";
 
 const jsx = leer("pipeline_comercial.jsx");
 /* Quita comentarios CONSERVANDO los saltos de línea, para que los índices sigan siendo líneas del fuente. */
@@ -91,15 +91,17 @@ export function llamadasSinPendencia(src, motivoExcluido) {
 /* (3) Con la pendencia activa, la evaluación de línea es null y el veredicto no formatea ninguna cifra. */
 export function pendienteSinNumero(src) {
   const c = sinComentarios(src); const fallos = [];
-  const ev = c.match(/const evalLin = leeDeVersion \? ultVer\.linea\s*\n?\s*: reevalPend \? (null|[^\n]+?)\s*\n?\s*: asignarLineas\(validas/);
+  const ev = canonico(c).match(/const evalLin = leeDeVersion \? ultVer\.linea\s*: reevalPend \? (null|.+?)\s*: asignarLineas\(validas/);
   if (!ev) fallos.push("no encuentro la cadena `evalLin = leeDeVersion ? … : reevalPend ? … : asignarLineas(validas…)`");
   else if (ev[1] !== "null") fallos.push(`con reevalPend la evaluación de línea vale «${ev[1]}» y tiene que ser null: una cifra vieja o recalculada se lee como cifra`);
   if (!/const \[reevalPend, setReevalPend\] = useState\(false\)/.test(c)) fallos.push("falta el estado `reevalPend` en DealDrawer");
-  const iVd = c.indexOf("const vd = !validas.length ?");
+  const iVd = c.search(/const vd = !validas\.length\s*\?/);
   if (iVd < 0) fallos.push("no encuentro la tarjeta de veredicto (`const vd = !validas.length ?`)");
   else {
-    const tramo = c.slice(iVd, iVd + 2500);
-    const iPend = tramo.search(/: reevalPend \? \{ tono: "parcial", tit: "La selección cambió"/);
+    // Los DOS índices se miden sobre el MISMO texto (el canónico): compararlos en espacios distintos
+    // —uno canónico y otro crudo— da un orden inventado, que es lo que pasó al formatear el fuente.
+    const tramo = canonico(c.slice(iVd, iVd + 6000));
+    const iPend = tramo.search(/: reevalPend \? \{tono: "parcial", tit: "La selección cambió"/);
     const iCifra = tramo.search(/fmtCLP\(evalLin\.cursable\)/);
     if (iPend < 0) fallos.push("el veredicto no tiene la rama «La selección cambió» para reevalPend");
     if (iCifra < 0) fallos.push("el veredicto ya no formatea la cifra cursable (cambió la forma; revisar el gate)");
@@ -115,7 +117,7 @@ export function versionUnica(src) {
   if (i < 0) return ["no encuentro `function snapVersionCli(deal, rev) {`"];
   const resto = c.slice(i); const fin = resto.slice(1).search(/\n(?:function|const|let) [A-Za-z_]/);
   const cuerpo = resto.slice(0, fin < 0 ? undefined : fin + 1);
-  const ret = cuerpo.match(/return \{ v: rev \+ 1,[\s\S]*?\};/);
+  const ret = canonico(cuerpo).match(/return \{v: rev \+ 1,[\s\S]*?\};/);
   if (!ret) return ["no encuentro el `return { v: rev + 1, … }` de snapVersionCli"];
   if (!/\blinea\b/.test(ret[0])) fallos.push("la versión no congela `linea`");
   if (!/\bverificacion\b/.test(ret[0])) fallos.push("la versión no congela `verificacion`: verificación y líneas se recalculan en la MISMA reevaluación");
@@ -155,13 +157,13 @@ test("14 · (1) incorporar/retirar facturas de la oferta no llaman a ningún mot
   assert.ok(mutacionesSinMotor(plantado2).some((f) => /verifResumenDeal/.test(f)), "la sonda no cazó la verificación plantada");
 });
 
-const AGREGAR = "const agregar = () => { onIncorporarFacturas(deal.id, [f]); setReevalPend(true); };";
+const AGREGAR = /const agregar = \(\) => \{\s*onIncorporarFacturas\(deal\.id, \[f\]\);\s*setReevalPend\(true\);\s*\};/;
 test("14 · (2) en DealDrawer, agregar o quitar desde la oferta marca setReevalPend(true) en el mismo handler (una o varias líneas, cualquier `<x>.id`)", () => {
   // La vía «noConfirmada» (tab Verificación) se juzga aparte, en el test siguiente.
   assert.deepEqual(llamadasSinPendencia(jsx, "noConfirmada"), []);
-  assert.ok(jsx.includes(AGREGAR), "no encuentro la sentencia `agregar` sobre la que se plantan las sondas");
+  assert.ok(AGREGAR.test(jsx), "no encuentro la sentencia `agregar` sobre la que se plantan las sondas");
   // SONDA 1: la sentencia `agregar` sin setReevalPend(true) → cazada, con su línea del fuente original.
-  const lineaAgregar = lineaDe(jsx, jsx.indexOf(AGREGAR));
+  const lineaAgregar = lineaDe(jsx, jsx.search(AGREGAR));
   const s1 = llamadasSinPendencia(jsx.replace(AGREGAR, "const agregar = () => { onIncorporarFacturas(deal.id, [f]); };"), "noConfirmada");
   assert.ok(s1.some((f) => f.startsWith(`línea ${lineaAgregar}:`) && /sin setReevalPend/.test(f)), "la sonda no cazó la llamada sin pendencia (o la línea reportada no es la del fuente): " + JSON.stringify(s1));
   // SONDA 2: la misma llamada con otro nombre de deal (`d.id`) y sin pendencia → también cazada.
@@ -179,34 +181,43 @@ test("14 · (2-bis) DEFECTO documentado: la vía «noConfirmada» del tab Verifi
 test("14 · (3) con la selección cambiada la evaluación de línea es null («Sin evaluar»/«La selección cambió»), nunca una cifra vieja ni recalculada", () => {
   assert.deepEqual(pendienteSinNumero(jsx), []);
   // SONDA 1: la pendencia devuelve la versión anterior (cifra vieja) → el gate lo caza.
-  const plantado = jsx.replace(/: reevalPend \? null\n(\s*): asignarLineas\(validas/, ": reevalPend ? (ultVer ? ultVer.linea : null)\n$1: asignarLineas(validas");
+  const plantado = jsx.replace(/:\s*reevalPend\s*\?\s*null(\s*):\s*asignarLineas\(validas/, ": reevalPend ? (ultVer ? ultVer.linea : null)$1: asignarLineas(validas");
   assert.notEqual(plantado, jsx, "la sonda no encontró `reevalPend ? null`");
   assert.ok(pendienteSinNumero(plantado).some((f) => /tiene que ser null/.test(f)), "la sonda no cazó la cifra vieja");
   // SONDA 2: la rama «La selección cambió» se mueve DESPUÉS de la rama que formatea la cifra → cazada.
-  const lineas = jsx.split("\n");
-  const iP = lineas.findIndex((l) => /^\s*: reevalPend \? \{ tono: "parcial", tit: "La selección cambió"/.test(l));
-  const iC = lineas.findIndex((l) => /^\s*: evalLin\.requiereComite === 0 \? \{ tono: "con_linea"/.test(l));
-  assert.ok(iP >= 0 && iC > iP, "no encuentro las dos ramas del veredicto para plantar el orden");
-  const movido = lineas.slice(); const [ramaPend] = movido.splice(iP, 1); movido.splice(iC, 0, ramaPend); // iC ya bajó uno: queda después de la cifra
+  // Las dos ramas ya no caben en una línea cada una (el formateo las abre), así que la sonda las mueve como
+  // BLOQUES de texto: se recorta la rama `reevalPend` entera y se reinserta después de la que formatea la cifra.
+  const RE_PEND = /\s*:\s*reevalPend\s*\?\s*\{[\s\S]{0,400}?tit: "La selección cambió"[\s\S]{0,400}?\n\s*\}/;
+  const mP = jsx.match(RE_PEND);
+  // Lo que la regla fija es que la rama `reevalPend` vaya ANTES de formatear la cifra, así que la sonda la
+  // reinserta justo DESPUÉS de `fmtCLP(evalLin.cursable)`: ésa es la violación, no cambiar de lugar cualquier rama.
+  const iCifra0 = jsx.search(/fmtCLP\(evalLin\.cursable\)/);
+  assert.ok(mP && iCifra0 > mP.index, "no encuentro la rama reevalPend y la cifra para plantar el orden");
+  const sinPend = jsx.slice(0, mP.index) + jsx.slice(mP.index + mP[0].length);
+  const iCifra1 = sinPend.search(/fmtCLP\(evalLin\.cursable\)/);
+  const fin = sinPend.indexOf("\n", iCifra1) + 1;
+  const movido = (sinPend.slice(0, fin) + mP[0] + "\n" + sinPend.slice(fin)).split("\n");
   assert.ok(pendienteSinNumero(movido.join("\n")).some((f) => /va DESPUÉS de formatear la cifra/.test(f)), "la sonda no cazó la rama reevalPend puesta después de la cifra");
 });
 
 test("14 · (4) la versión que emite Re-evaluar congela línea Y verificación juntas (una sola reevaluación)", () => {
   assert.deepEqual(versionUnica(jsx), []);
-  const plantado = jsx.replace(/(return \{ v: rev \+ 1,[\s\S]*?)linea, verificacion,/, "$1linea,");
+  const plantado = jsx.replace(/(return \{\s*v: rev \+ 1,[\s\S]{0,1200}?)\blinea,(\s*)verificacion,/, "$1linea,$2");
   assert.notEqual(plantado, jsx, "la sonda no encontró `linea, verificacion,` en el return de snapVersionCli");
   assert.ok(versionUnica(plantado).some((f) => /verificacion/.test(f)), "la sonda no cazó la versión sin verificación");
 });
 
-const RECORTE = "origen: `Verificación · el deudor no confirmó el folio ${fac.folio || fac.id}`, linea: nl });";
+/* El segundo emisor, tal como está hoy en el fuente (el formateo lo abre en varias líneas): se localiza por
+   regex y se muta con regex, no con un literal pegado. */
+const RE_RECORTE = /origen: `Verificación · el deudor no confirmó el folio \$\{fac\.folio \|\| fac\.id\}`,(\s*)linea: nl,?(\s*)\}\);/;
 test("14 · (4-bis) el gate de emisores distingue las dos direcciones: cazado el recorte que copia la verificación vieja, limpio el que recorta las dos", () => {
-  assert.ok(jsx.includes(RECORTE), "no encuentro el segundo emisor de versión de retirarFacturaOferta");
+  assert.ok(RE_RECORTE.test(jsx), "no encuentro el segundo emisor de versión de retirarFacturaOferta");
   // El literal ocupa dos líneas: el gate reporta la del `repoSimVersions.push(` que lo abre.
-  const lineaPush = lineaDe(jsx, jsx.lastIndexOf("repoSimVersions.push(", jsx.indexOf(RECORTE)));
+  const lineaPush = lineaDe(jsx, jsx.lastIndexOf("repoSimVersions.push(", jsx.search(RE_RECORTE)));
   const hoy = emisoresCompletos(jsx);
   assert.ok(hoy.length === 1 && hoy[0].startsWith(`línea ${lineaPush}:`), "el gate no señala (sólo) el emisor de retirarFacturaOferta en su línea: " + JSON.stringify(hoy));
   // Dirección limpia: el mismo emisor recortando también la verificación → sin fallos.
-  const reparado = jsx.replace(RECORTE, RECORTE.replace("linea: nl });", "linea: nl, verificacion: recortarVerificacion(prev.verificacion, ids) });"));
+  const reparado = jsx.replace(RE_RECORTE, (m0, s1, s2) => m0.replace(/linea: nl,?/, "linea: nl, verificacion: recortarVerificacion(prev.verificacion, ids),"));
   assert.deepEqual(emisoresCompletos(reparado), []);
   // Y snapVersionCli / nv siguen siendo emisores válidos sin mirar su interior.
   assert.equal(emisoresCompletos(reparado).length, 0);

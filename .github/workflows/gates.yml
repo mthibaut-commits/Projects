@@ -24,10 +24,17 @@ jobs:
       # TypeScript y Playwright se instalan A PROPÓSITO, globales y fijados: el repo no tiene package.json
       # (sin bundler, dependencias vendorizadas) y `npx tsc` sin TypeScript instalado baja un paquete
       # llamado «tsc» que NO es TypeScript. Las versiones son las del contenedor donde se verificó.
-      - name: Herramientas (TypeScript y Playwright)
+      - name: Herramientas (TypeScript, Prettier y Playwright)
         run: |
-          npm i -g typescript@6.0.2 playwright@1.56.1
+          npm i -g typescript@6.0.2 prettier@3.6.2 playwright@1.56.1
           npx playwright install --with-deps chromium
+
+      # Va ANTES de los seis pasos y numerado 0 porque no verifica una conducta: protege a los que sí.
+      # Veintiún gates `regla_<slug>` y los dos auditores leen el fuente como TEXTO, y se re-anclaron contra
+      # el .jsx formateado (ADR-0005). Un commit que deshaga el formato los vuelve a tumbar de a uno, en
+      # sesiones distintas, sin que nadie relacione la caída con el formato.
+      - name: 0 · Formato del fuente
+        run: npx prettier --check pipeline_comercial.jsx
 
       - name: 1 · Tipos
         run: npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx

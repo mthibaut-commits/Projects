@@ -30,5 +30,7 @@ timestamp: 2026-09-18T03:25:00Z
 
 | 18-09-2026 | [`2026-09-18_regla_mal_definida.md`](./2026-09-18_regla_mal_definida.md) | Regla 35: un criterio sin área no se ejecuta ni se verifica y la salida lo dice, con la causa y dónde se arregla. La sonda de DOM destapó que una regla no ejecutada caía en el acordeón «N regla(s) aprobada(s)», contada como aprobada y escondida |
 
+| 18-09-2026 | [`2026-09-18_orden_tabla_y_bandeja.md`](./2026-09-18_orden_tabla_y_bandeja.md) | El orden de la tabla pasa a ser prioridad de gestión con las que tienen línea global disponible primero (30-bis), deja de re-ordenarse en cada lote, y la Bandeja Inbound deja de botar facturas de la cartera en silencio (36). Tres preguntas del usuario contestadas midiendo en el navegador, y un contador que decía 262 sobre una tabla de 307 |
+
 La historia anterior al vault (02-09 → 16-09-2026) no tiene logs propios: vive dentro de las reglas de
 dominio (cada una trae fecha y qué la motivó) y en `Auditoria_*.md` e `Inconsistencias_*.md`.

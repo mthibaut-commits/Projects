@@ -36,7 +36,7 @@ PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs           
 
 ## Cómo está organizado
 
-- **Un solo archivo fuente:** `pipeline_comercial.jsx` (~26.000 líneas, ~155 componentes, un componente
+- **Un solo archivo fuente:** `pipeline_comercial.jsx` (~50.000 líneas, ~155 componentes, un componente
   raíz `PipelineComercial`). React 18 + Tailwind CORE, transpilado en el navegador por Babel Standalone.
 - **`vendor/`** — dependencias UMD vendorizadas, con `sha256` fijado en `vendor/SBOM.json`. **El build
   falla si un hash no calza.** `.gitattributes` marca `vendor/** -text`: normalizar fines de línea

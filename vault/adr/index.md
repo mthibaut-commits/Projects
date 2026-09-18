@@ -17,6 +17,7 @@ Un ADR aceptado es **inmutable**. Para cambiar de rumbo: ADR nuevo con `reemplaz
 | [ADR-0002](./ADR-0002-cablear-los-gates.md) | Cablear los gates: tests de contrato, hooks deterministas y CI | aceptada · decidida con el usuario 17-09-2026 |
 | [ADR-0003](./ADR-0003-intencion-de-participacion-declarada.md) | La intención de participación es un insumo declarado del generador, no una lectura de su salida | aceptada · el usuario pidió cerrar el bucle 17-09-2026; el mecanismo lo eligió la sesión |
 | [ADR-0004](./ADR-0004-id-estable-y-dos-marcas-al-editar.md) | El id de la operación es estable, y editar una oferta cerrada usa dos marcas | aceptada · 17-09-2026 |
+| [ADR-0005](./ADR-0005-formatear-el-fuente.md) | El fuente se formatea con Prettier, y los gates de contrato se re-anclan sobre texto canónico | aceptada · decidida con el usuario 18-09-2026, con el costo medido |
 
 ## Decisiones cerradas antes del vault — registro con punteros
 

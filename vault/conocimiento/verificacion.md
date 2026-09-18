@@ -1,7 +1,7 @@
 ---
 type: conocimiento
 title: "Verificación: qué cubre cada paso y cada caso de la suite"
-description: "Los siete pasos que se corren tras editar el fuente y, caso por caso, qué defecto fija cada uno de los 140 de la suite; más las trampas de run_tests y de las capturas"
+description: "El paso 0 (el formato) y los siete pasos que se corren tras editar el fuente y, caso por caso, qué defecto fija cada uno de los 140 de la suite; más las trampas de run_tests y de las capturas"
 tags: [conocimiento, verificacion, tests]
 timestamp: 2026-09-17T22:29:11Z
 ---
@@ -10,6 +10,7 @@ timestamp: 2026-09-17T22:29:11Z
 
 > Verbatim del `CLAUDE.md` anterior al 17-09-2026. Los comandos, en el orden en que se corren, están en `CLAUDE.md` (sección *Verificación*); este documento es el **mapa de la suite**: qué invariante fija cada caso y qué defecto lo motivó. Es la semilla de la columna *dónde se verifica* de [`invariantes.md`](./invariantes.md).
 
+0. `npx prettier --check pipeline_comercial.jsx` — **el formato** (ADR-0005, 18-09-2026). No verifica una conducta: protege a los que sí. Veintiún gates `regla_<slug>.test.mjs` y los dos auditores leen el fuente como TEXTO y están re-anclados contra el `.jsx` formateado; un commit que deshaga el formato los tumba de a uno, en sesiones distintas, sin que nadie relacione la caída con el formato. Se arregla con `npx prettier --write pipeline_comercial.jsx`, nunca aflojando el gate que cayó. Los patrones de esos gates trabajan sobre el texto que devuelve `canonico()` (`tests/contract/_comun.mjs`): colapsa los espacios, saca la coma final antes de un cierre y aprieta los corchetes, así un patrón escrito contra el fuente de una línea sigue calzando y deja de depender de dónde caen los saltos.
 1. `npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx` — sin errores TS1.
 2. Duplicados: `grep -oE '^(export default )?(async )?(function|const|let|var|class) [A-Za-z_$][A-Za-z0-9_$]*' pipeline_comercial.jsx | awk '{print $NF}' | sort | uniq -d` debe salir vacío.
 3. `node build_app.mjs` — construye y valida los hashes del vendor.

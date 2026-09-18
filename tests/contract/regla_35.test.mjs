@@ -29,7 +29,7 @@ export function auditarRegla35(src) {
   // NO TODAS LAS REGLAS NECESITAN APROBADOR: el área es a quién se le pide la EXCEPCIÓN, así que sólo la
   // exige la regla con al menos un tramo `excepcion`. Un KNOCK OUT (sólo `rechazado`) no se aprueba y no
   // necesita área — exigírsela lo habría dejado sin ejecutar por una carencia que no lo es.
-  if (!/if \(!regla\.area && \(regla\.tiers \|\| \[\]\)\.some\(\(t\) => t\[1\] === "excepcion"\)\) return \{[\s\S]{0,260}noEjecutable: true/.test(c))
+  if (!/if \(!regla\.area && \(regla\.tiers \|\| \[\]\)\.some\(\(t\) => t\[1\] === "excepcion"\)\)\s*return \{[\s\S]{0,300}noEjecutable: true/.test(c))
     fallos.push("la compuerta no condiciona el área a que la regla tenga un tramo de EXCEPCIÓN: un knock out no se aprueba y no necesita aprobador");
   // El criterio tiene que ser el MISMO con que la mesa de reglas arma su lista, o la mesa mostraría
   // reglas que el motor no rutea (o al revés).
@@ -50,10 +50,10 @@ export function auditarRegla35(src) {
   // 3 · El veredicto de la operación las junta, las EXPONE, y NO las mete en exc/rech (no bloquean).
   const v = cuerpoDe(src, "visadoDealCalc");
   if (!v) { fallos.push("no existe `function visadoDealCalc`"); return fallos; }
-  if (!/const noEjec = res\.filter\(\(x\) => x\.disp === "no_ejecutada"\)/.test(v)) fallos.push("visadoDealCalc no junta las reglas no ejecutadas");
+  if (!/const noEjec = res\s*\.filter\(\(x\) => x\.disp === "no_ejecutada"\)/.test(v)) fallos.push("visadoDealCalc no junta las reglas no ejecutadas");
   if (!/return \{[^\n]*\bnoEjec\b/.test(v)) fallos.push("visadoDealCalc no devuelve `noEjec`: sin salir del motor, la pantalla no puede nombrarlas");
   for (const campo of ["exc", "rech"]) {
-    const m = v.match(new RegExp(`const ${campo} = res\\.filter\\(\\(x\\) => x\\.disp === "([a-z_]+)"\\)`));
+    const m = v.match(new RegExp(`const ${campo} = res\\s*\\.filter\\(\\(x\\) => x\\.disp === "([a-z_]+)"\\)`));
     if (m && m[1] === "no_ejecutada") fallos.push(`visadoDealCalc mete las no ejecutadas en \`${campo}\`: una regla que nadie evaluó no puede concluir nada`);
   }
   // 4 · La pantalla la nombra: el badge con su rótulo y el recuadro con la frase que la regla exige.
@@ -77,7 +77,7 @@ export function auditarRegla35(src) {
   //     DONDE se arregla— mostraba un chip de área vacío.
   if (!/if \(!isPerdida && vis\.noEjec && vis\.noEjec\.length\) \{/.test(src)) fallos.push("la tarjeta del Kanban no dibuja nada con una regla sin ejecutar: la operación se ve limpia en el tubo");
   if (!/criterio\(s\) sin ejecutar/.test(src)) fallos.push("el badge de la tarjeta no nombra los criterios sin ejecutar");
-  if (!/const totCrit = visC \? \(visC\.aprob \+ visC\.clasif \+ visC\.exc\.length \+ visC\.rech\.length \+ \(visC\.noEjec \|\| \[\]\)\.length\)/.test(src))
+  if (!/const totCrit = visC \? \(?visC\.aprob \+ visC\.clasif \+ visC\.exc\.length \+ visC\.rech\.length \+ \(visC\.noEjec \|\| \[\]\)\.length/.test(src))
     fallos.push("el total de criterios del tubo no cuenta las no ejecutadas: el denominador encoge solo y el criterio desaparece sin que nadie lo note");
   if (!/backgroundColor: ne\.noEjecutable \? "#FFF7ED" : undefined/.test(src)) fallos.push("la mesa de reglas no consulta la compuerta: es la pantalla donde se arregla y no marcaba la regla mal definida");
   if (!/Sin área · NO SE EJECUTA/.test(src)) fallos.push("la mesa de reglas no marca la fila mal definida en vez de su chip de área");
@@ -117,18 +117,18 @@ const MUTANTES = {
 `, ""),
     re: /no consulta `reglaNoEjecutable\(rule\)`/,
   },
-  "la compuerta mira el estado del tenant": { src: jsx.replace('  if (!regla.area && (regla.tiers || []).some((t) => t[1] === "excepcion")) return {', '  if (padronAprobadores().areas.length === 0) return { noEjecutable: false };\n  if (!regla.area && (regla.tiers || []).some((t) => t[1] === "excepcion")) return {'), re: /lee `padronAprobadores`/ },
-  "las no ejecutadas se meten en las excepciones": { src: jsx.replace('const exc = res.filter((x) => x.disp === "excepcion")', 'const exc = res.filter((x) => x.disp === "no_ejecutada")'), re: /mete las no ejecutadas en `exc`/ },
+  "la compuerta mira el estado del tenant": { src: jsx.replace('  if (!regla.area && (regla.tiers || []).some((t) => t[1] === "excepcion"))', '  if (padronAprobadores().areas.length === 0) return { noEjecutable: false };\n  if (!regla.area && (regla.tiers || []).some((t) => t[1] === "excepcion"))'), re: /lee `padronAprobadores`/ },
+  "las no ejecutadas se meten en las excepciones": { src: jsx.replace('const exc = res\n    .filter((x) => x.disp === "excepcion")', 'const exc = res\n    .filter((x) => x.disp === "no_ejecutada")'), re: /mete las no ejecutadas en `exc`/ },
   "el veredicto deja de exponerlas": { src: jsx.replace("aprob, clasif, noEjec, excPend", "aprob, clasif, excPend"), re: /no devuelve `noEjec`/ },
   "la fila muestra el hallazgo de una regla que nadie evaluó": { src: jsx.replace('{x.disp !== "aprobado" && x.disp !== "no_ejecutada" && x.hallazgo', '{x.disp !== "aprobado" && x.hallazgo'), re: /muestra el `hallazgo`/ },
   "el badge va en gris como la clasificación": { src: jsx.replace('no_ejecutada: "#C2410C"', 'no_ejecutada: C.faint'), re: /no va en ámbar/ },
   "el contador la suma a las aprobadas": { src: jsx.replace('const noEjec = items.filter((it) => it.disp === "no_ejecutada").length;', ""), re: /no cuenta aparte las no ejecutadas/ },
   "vuelven al balde de las aprobadas": { src: jsx.replace('const okRows = active.rows.filter((x) => !reqAprob(x) && x.disp !== "no_ejecutada");', "const okRows = active.rows.filter((x) => !reqAprob(x));"), re: /siguen cayendo en `okRows`/ },
-  "«todas aprobadas» con una sin ejecutar": { src: jsx.replace("{reqRows.length === 0 && noEjecRows.length === 0 && <div", "{reqRows.length === 0 && <div"), re: /«Todas las reglas están aprobadas» con una regla sin ejecutar/ },
+  "«todas aprobadas» con una sin ejecutar": { src: jsx.replace("{reqRows.length === 0 && noEjecRows.length === 0 && (", "{reqRows.length === 0 && ("), re: /«Todas las reglas están aprobadas» con una regla sin ejecutar/ },
   "el orden no conoce la quinta disposición": { src: jsx.replace("const orden = { rechazado: 0, excepcion: 1, no_ejecutada: 2, aprobado: 3 };", "const orden = { rechazado: 0, excepcion: 1, aprobado: 2 };"), re: /no conoce `no_ejecutada`/ },
-  "la compuerta le exige área también al knock out": { src: jsx.replace('if (!regla.area && (regla.tiers || []).some((t) => t[1] === "excepcion")) return {', "if (!regla.area) return {"), re: /no condiciona el área a que la regla tenga un tramo de EXCEPCIÓN/ },
+  "la compuerta le exige área también al knock out": { src: jsx.replace('if (!regla.area && (regla.tiers || []).some((t) => t[1] === "excepcion"))', "if (!regla.area)"), re: /no condiciona el área a que la regla tenga un tramo de EXCEPCIÓN/ },
   "la tarjeta del Kanban vuelve a callarse": { src: jsx.replace("        if (!isPerdida && vis.noEjec && vis.noEjec.length) {", "        if (false) {"), re: /la tarjeta del Kanban no dibuja nada/ },
-  "el denominador del tubo vuelve a encoger": { src: jsx.replace("visC.rech.length + (visC.noEjec || []).length)", "visC.rech.length)"), re: /el denominador encoge solo/ },
+  "el denominador del tubo vuelve a encoger": { src: jsx.replace("visC.rech.length + (visC.noEjec || []).length", "visC.rech.length"), re: /el denominador encoge solo/ },
   "la mesa de reglas deja de marcarla": { src: jsx.replace('style={{ border: `1px solid ${ne.noEjecutable ? "#F97316" : C.line}`, backgroundColor: ne.noEjecutable ? "#FFF7ED" : undefined }}', 'style={{ border: `1px solid ${C.line}` }}'), re: /la mesa de reglas no consulta la compuerta/ },
   "el catálogo por área vuelve a esconderla": { src: jsx.replace("        const fuera = REGLAS_CLIENTE.filter((r) => !areas.includes(r.area));", "        const fuera = [];"), re: /no junta las que no caen en ningún grupo/ },
   "la bajada del catálogo vuelve a contar todas": { src: jsx.replace(" no cae en ninguna de las áreas de abajo y va en el primer bloque.", " reglas."), re: /sigue contando todas las reglas sin decir/ },
