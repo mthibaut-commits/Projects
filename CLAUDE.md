@@ -107,6 +107,7 @@ dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `
 - `vault/` — memoria del proyecto; `vault/index.md` es su mapa
   - `conocimiento/invariantes.md` — **índice** de las reglas de dominio y del contrato con el servidor
   - `conocimiento/reglas/` — las reglas verbatim, por tema · `arquitectura.md` · `verificacion.md` · `contrato_servidor_y_auditoria.md` · `mapa_documentos.md`
+  - `conocimiento/despacho_agentes.md` — **el bloque invariante que recibe todo agente despachado**, la consigna del refutador y los cuatro modos de falla medidos
   - `adr/` — decisiones · `sesiones/estado_actual.md` — el tablero · `sesiones/` — logs
 - `Specs_Procesos/` · `Integraciones/` · `Levantamiento_Activos_Informacion.md` — la fuente de verdad de negocio; qué es cada uno: `vault/conocimiento/mapa_documentos.md`
 - `GeneradorDatos/` — produce los activos sintéticos (`datos_inyectados.js`, `proveedores_clientes.json`)

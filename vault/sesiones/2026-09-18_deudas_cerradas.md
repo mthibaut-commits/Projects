@@ -106,7 +106,38 @@ Dos eran defectos y se corrigieron. Dos no lo son, y la propia regla lo decía.
   entra al layout, al generador y al punto fijo; si no lo trae, la regla actual —un documento con nota de
   crédito no se compra— es la respuesta correcta y deja de ser pendiente.
 
-## 5 · La separación por género no es deuda
+## 5 · La doctrina de despacho de agentes, que era el hueco más caro
+
+`vault/conocimiento/despacho_agentes.md`. El informe de cierre lo marcaba como lo que más costaba no tener, y
+tenía razón: esta semana se despacharon **más de noventa agentes** y el brief que obedecían vivía en un
+`BRIEF.md` del scratchpad de la sesión, que no sobrevive a la sesión. El método funcionó y no quedó nada de él.
+
+Lo que la página fija, todo medido en este repo y nada inventado:
+
+- **El bloque invariante**, verbatim y listo para pegar: ocho cláusulas, cada una por un incidente. No editar el
+  repo, no construir, tope de corridas, las dos direcciones cuando la regla bloquea, la sonda cuando es una
+  propiedad, no dejar estado, fallar sin reventar, citar la evidencia medida.
+- **La consigna del refutador**, que es la otra mitad del método: no revisar, refutar — imaginar la regla rota y
+  ver si el caso sigue pasando. Rindió **19 aceptados con observaciones y 11 bloqueantes de 30**: un tercio de
+  los gates escritos por agentes de effort alto no fijaba lo que decía fijar.
+- **Los cuatro modos de falla** con el ejemplo que delató a cada uno: fijar la salida de hoy y no la regla,
+  comprobaciones vacuas, contaminación entre casos e2e y casos que revientan en vez de fallar.
+- **Los límites del contenedor**: concurrencia `nproc` − 2 (acá 2), matar los procesos colgados antes de
+  despachar la fase siguiente, nunca `rev` en una tubería, y el guard de git que lee el texto del comando.
+- **Qué hacer cuando la orquestación se cae a la mitad** —pasó dos veces por el límite de sesión de la cuenta—:
+  el orquestador termina a mano, y **un paso que no corrió se declara, no se da por corrido**. Es el único
+  error de la lista que no caza ningún gate.
+- **Lo que no está medido**: el routing por modelo. Queda dicho para que nadie lo invente.
+
+`vault.test.mjs` exige que las ocho cláusulas sigan en el documento, con sonda negativa: la forma de perder ese
+brief otra vez no es borrar el archivo, es «resumirlo» hasta que deje de decir lo que dice.
+
+De paso, el tablero: volvieron los **dos** items del informe de cierre que se habían caído al reescribirlo
+(`.claude/rules/workflow.md` con la escalera T1/T2/T3, y decidir el cuarteto de gates), y se corrigió el peso de
+`pipeline.zip` — **2,7 MB versionados**, no 29,6; ese número era el contenido descomprimido. La tarea sigue en
+pie, pero por ser un build del 12-08 de algo generado, no por su peso.
+
+## 6 · La separación por género no es deuda
 
 El tablero la arrastraba como pendiente. **ADR-0001 ya la decidió**: las reglas mezclan los tres géneros
 —regla, porqué e historia— oración por oración, separarlas exige reescribirlas, y la decisión fue hacerlo
