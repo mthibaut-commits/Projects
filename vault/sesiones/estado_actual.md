@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-18T00:20:00Z
+timestamp: 2026-09-18T18:45:00Z
 ---
 
 # Estado actual
@@ -13,7 +13,7 @@ timestamp: 2026-09-18T00:20:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone de 40,7 MB, **140/140 PASA**, **148 gates de contrato**, **29 casos e2e**,
+(`pipeline_comercial.jsx`), build standalone de 41,0 MB, **140/140 PASA**, **167 gates de contrato**, **29 casos e2e**,
 `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (63 reglas verbatim por tema, índice en
 `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró la tabla de invariantes**: las 63 reglas y los 12
 invariantes del contrato tienen gate; ninguna fila dice ya «sin gate». Los 30 gates nuevos los escribió un agente por
@@ -22,20 +22,19 @@ fila y otro intentó refutarlos (log), y **lo que destaparon sí cambió el prod
 
 > ## 🎯 Siguiente paso · decisión del usuario, ninguno empezado
 >
+> 0. **Correr el `.bat` una vez**: `build_app.ps1` cambió (embebe `arte_login.js`) y acá no se ejecuta; gateado, no probado.
 > 1. **Los 20 desfases regla↔código que los gates midieron** (log de cerrar invariantes). Los tres grandes: la
 >    cláusula «el cliente pide tasa bajo el mínimo del deudor» (regla 8) **no existe en el código**;
 >    `validarMutacion` tiene **un solo call site** (LIN-01, GIR-01 y ATR-01 declarados y nunca invocados); y el
 >    `idProceso` de la solicitud al comité **colisiona entre pestañas** y descarta la segunda en silencio.
-> 2. **Decidir los datos**: razones sociales reales sobre RUT sintéticos (un ADR y un gate); ningún test lo afirma
->    ni lo niega hoy. 3. Sacar `pipeline.zip` (29,6 MB) del versionado.
+> 2. **Decidir los datos**: razones sociales reales sobre RUT sintéticos (un ADR y un gate). 3. Sacar `pipeline.zip` del versionado.
 
 ## En vuelo ahora
 
 | Trabajo | Estado | Rama | Siguiente paso |
 |---|---|---|---|
-| Cerrar la tabla de invariantes | ✅ mergeada a `main` con `--no-ff` · 30 filas · suite 116→140 · e2e 1→16 · contrato 7→25 | `claude/ecstatic-ptolemy-f7cb4m` | — |
-| «Operación creada» + Editar · punto fijo · restyle | ✅ mergeadas a `main` | `claude/vibrant-hopper-33tg8j` | — |
-| Cablear los gates · partir `CLAUDE.md` | ✅ mergeadas (bd14091) | ídem | **pushear el tag `v0.1.0`** (abajo) |
+| Invariantes cerradas · «Operación creada» · punto fijo · gates cableados | ✅ mergeadas a `main` (bd14091) | — | **pushear el tag `v0.1.0`** (abajo) |
+| **Portada que muestra el producto** | ✅ en la rama · reglas 34/35/36 · ADR-0005 · contrato 151→167 | `claude/elegant-fermat-pyfpnm` | mergear a `main` con `--no-ff` cuando el usuario lo vea |
 
 ## Defectos de producto corregidos al cerrar la tabla (los destaparon los gates)
 
@@ -67,14 +66,15 @@ fila y otro intentó refutarlos (log), y **lo que destaparon sí cambió el prod
 5. **Hooks en Windows**: correr su health check la primera vez. El CI avisa que `checkout@v4` y `setup-node@v4`
    apuntan a Node 20: subir a `@v5` (T3).
 6. **Dos sesiones paralelas toman el mismo «siguiente entero libre»**: se confirma al mezclar `main` (reglas 32/33, casos 116–140).
+7. **Al regenerar las capturas, regenerar también `arte_login.js`** o la portada muestra una UI que ya no existe ·
+   `marcaFondo` no está en el selector de colores de Configuración.
 
 ## Conocimiento clave
 
-[invariantes y gates](../conocimiento/invariantes.md) · [reglas por tema](../conocimiento/index.md) ·
-[hooks](../conocimiento/loop_agentico_hooks.md) · [flujo git](../conocimiento/flujo_git.md) ·
-[arquitectura](../conocimiento/arquitectura.md) · [verificación](../conocimiento/verificacion.md) · [ADR](../adr/index.md)
+[invariantes y gates](../conocimiento/invariantes.md) · [reglas por tema](../conocimiento/index.md) · [hooks](../conocimiento/loop_agentico_hooks.md) ·
+[flujo git](../conocimiento/flujo_git.md) · [arquitectura](../conocimiento/arquitectura.md) · [verificación](../conocimiento/verificacion.md) · [ADR](../adr/index.md)
 
 ## Última sesión
 
-[17-09-2026 — cerrar la tabla de invariantes](./2026-09-17_cerrar_invariantes.md) ·
-[17-09-2026 — «Operación creada» + Editar](./2026-09-17_operacion_creada_y_editar.md)
+[18-09-2026 — la portada muestra el producto](./2026-09-18_portada_que_muestra_el_producto.md) ·
+[17-09-2026 — cerrar la tabla de invariantes](./2026-09-17_cerrar_invariantes.md)
