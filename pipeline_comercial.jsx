@@ -8563,7 +8563,6 @@ function SimResumen({
   reevalPend,
   onReevaluar,
   onSim,
-  esJefe,
   usuarioCod,
   deudoresOp,
   tasaFuente,
@@ -8613,8 +8612,10 @@ function SimResumen({
   const requiereJefe = atrib.estado === "requiereJefe";
   const requiereGerente = atrib.estado === "requiereGerente"; // sobre el máximo de jefatura → Gerente Comercial
   const bloqueoDuro = atrib.estado === "bajoMinimo"; // sólo la tasa mínima absoluta no es ofertable nunca
-  const esGerente = esGerenteComercial(usuarioCod); // atribución de Gerente Comercial (N2+)
-  const puedeAutorizar = requiereGerente ? esGerente : esJefe; // quién puede visar según el nivel del descuento
+  // UN SOLO predicado para dibujar el botón y para dejar escribir. Era `requiereGerente ? esGerente : esJefe`,
+  // y ese `esJefe` es un PROP: decía «esta pantalla cree que eres jefe», que no es lo mismo que tener hoy
+  // la atribución. Con dos fuentes, la que gatea el botón y la que autoriza podían discrepar (ATR-01).
+  const puedeAutorizar = puedeAutorizarCondiciones(usuarioCod, atrib.estado);
   const rolAut = requiereGerente ? "Gerente Comercial" : "jefatura"; // rol requerido para autorizar
   const solicitarAutorizacion = () => {
     setSolicSig(condSig);
@@ -8633,6 +8634,22 @@ function SimResumen({
     setEditCond(false); // cierra la edición: la acción de enviar a autorización confirma las condiciones
   };
   const autorizarJefe = () => {
+    // ATR-01 EN EL HANDLER (regla 24). El botón ya está gateado, pero la pantalla que apaga el botón no es
+    // el control: acá se llega con una sesión vieja, con un rol revocado o con un reemplazo vencido, y lo
+    // que se escribe —`condAutJefe`— es lo que después deja publicar la oferta. El rechazo se AUDITA: una
+    // autorización que no ocurre y no deja rastro es peor que una que se bloquea, porque nadie se entera.
+    if (!puedeAutorizarCondiciones(usuarioCod, atrib.estado)) {
+      registrarAuditoria({
+        usuario: usuario,
+        modulo: "Condiciones comerciales",
+        accion: "Autorizar condiciones · bloqueada (ATR-01)",
+        glosa: `${deal ? deal.cliente : ""}: el descuento de ${atrib.pctDesc}% requiere ${rolAut} y quien autoriza no tiene esa atribución hoy`,
+        empresaId: deal ? deal.id : "",
+        severidad: "alta",
+        exito: false,
+      });
+      return;
+    }
     setAutorizSig(condSig);
     registrarAuditoria({
       usuario: usuario,
@@ -14951,7 +14968,6 @@ function DealDrawer({
                                     reevalPend={reevalPend}
                                     onReevaluar={() => setReevalPend(false)}
                                     onSim={setSimOp}
-                                    esJefe={esJefeComercial(usuario)}
                                     usuarioCod={usuario}
                                     deudoresOp={validas}
                                     tasaFuente={{ usaUltNeg, riesgo: tasaPondRiesgo, ultNeg: tul }}
@@ -22859,7 +22875,7 @@ const INVARIANTES = [
     codigo: "OTG-01",
     nombre: "Sólo aprueba quien tiene atribución",
     autoridad: "servidor",
-    aplicado: "ui",
+    aplicado: "funcion", // handler de visado: `puedeAprobarExc` antes de escribir
     mutaciones: ["excepcion.aprobar", "excepcion.rechazar"],
     regla: "La excepción la resuelve un apoderado con atribución en el área y nivel que la regla exige.",
     servidor: "El resolver recalcula la atribución desde el rol del token, no desde el payload. La UI que oculta el botón no es el control.",
@@ -22869,7 +22885,8 @@ const INVARIANTES = [
     codigo: "OTG-02",
     nombre: "No avanza a Cesión con excepciones pendientes",
     autoridad: "servidor",
-    aplicado: "ui",
+    aplicado: "funcion", // `etapaTrasFirma`: el visado pendiente es una de las tres compuertas (caso 88). El «Avanzar a» MANUAL de `moverEtapa` no lo vuelve a comprobar
+
     mutaciones: ["oportunidad.avanzarEtapa"],
     regla: "Con excepciones o rechazos re-evaluables sin resolver, la operación no puede pasar a Cesión.",
     servidor: "Transición de estado validada en el servidor contra la máquina de estados; el stage no se acepta como dato del cliente.",
@@ -22882,7 +22899,7 @@ const INVARIANTES = [
     codigo: "VER-01",
     nombre: "No cursa con verificación pendiente",
     autoridad: "servidor",
-    aplicado: "ui",
+    aplicado: "funcion", // `etapaTrasFirma`: una de las tres compuertas previas al giro (caso 88)
     mutaciones: ["oportunidad.cursar"],
     regla: "Todas las facturas de la operación tienen que tener su verificación telefónica completa.",
     servidor: "El resolver de curse cuenta las verificaciones en estado final; si falta una, 409 con el detalle.",
@@ -22916,7 +22933,7 @@ const INVARIANTES = [
     codigo: "ATR-01",
     nombre: "Descuento dentro de la atribución",
     autoridad: "servidor",
-    aplicado: "ui",
+    aplicado: "funcion", // `autorizarJefe`: `puedeAutorizarCondiciones` antes de escribir (caso 142)
     mutaciones: ["condiciones.guardar"],
     regla: "El descuento aplicado no puede exceder la atribución del rol sin autorización de la jefatura correspondiente.",
     servidor: "El resolver recalcula la banda de tasa y la atribución del rol del token; el % máximo no viaja en el payload.",
@@ -23931,6 +23948,16 @@ let PRIORIDAD_CURSE = {};
 const esJefeComercial = (code) => code === "ADMIN" || atribEfectiva(code).comercial != null;
 // Gerente Comercial (o superior): atribución comercial N2+ (autoriza descuentos sobre el máximo de jefatura).
 const esGerenteComercial = (code) => code === "ADMIN" || (atribEfectiva(code).comercial != null && atribEfectiva(code).comercial >= 2);
+// ATR-01 · ¿ESTE usuario puede autorizar ESTE descuento? El rol exigido sale del ESTADO de la atribución
+// (`requiereJefe` → jefatura, `requiereGerente` → Gerente Comercial) y la atribución sale del PADRÓN por
+// código, no de un prop: la pantalla puede venir de una sesión vieja, de un rol que cambió o de un
+// reemplazo vencido, y autorizar un descuento es evidencia. `ok` no necesita autorización y `bajoMinimo`
+// no la admite —la tasa mínima absoluta no es ofertable NUNCA—, así que en los dos casos no autoriza
+// nadie: firmar lo que nadie pidió deja evidencia de algo que no ocurrió. Falla CERRADO con un código que
+// el padrón no conoce (caso 87). Lo consultan el render Y `autorizarJefe`, porque la pantalla que apaga el
+// botón no es el control (regla 24). Caso 142.
+const puedeAutorizarCondiciones = (code, estado) =>
+  estado === "requiereGerente" ? esGerenteComercial(code) : estado === "requiereJefe" ? esJefeComercial(code) : false;
 function setPrioridadCurse(dealId, code, on) {
   // PRI-01 del contrato: el chequeo va en la FUNCIÓN, no sólo en el botón. Ocultar el control en la UI
   // no impide llamar a esto desde la consola, y así al menos queda registrado el intento con su código.

@@ -6528,6 +6528,60 @@
        `compuerta ${compuertaOk} (excepción sin área ✓ · con área ✗ · área "" ✓ · clasificación ✗ · sin tramos ✗ · KNOCK OUT sin área ✗ · mixta sin área ✓ · null ✓) · el knock out se ejecuta en las dos direcciones ${koOk} · mismo criterio que la mesa ${mesaOk} (${conExc.length} con excepción · ${soloKo.length} knock out) · no se ejecuta ${noEjecutaOk} («${eSin.disp}» sin nivel ni tramo vs «${eCon.disp} N${eCon.nivel}») · tampoco cuando habría aprobado ${tampocoAprobadoOk} · la clasificación sí se evalúa ${clasifOk} · motivo distingue la causa ${motivoOk} («${eSin.motivo}») · pura ${puraOk} · veredicto ${veredictoOk} (noEjec ${mia ? 1 : 0} · fuera de exc/rech · estado «${vDespues && vDespues.estado}» = «${vAntes.estado}» · catálogo real sin ninguna) · catálogo restaurado ${restauradoOk}${err ? " · ERROR " + err : ""}`);
   }
 
+  // ── 142 · ATR-01 en el HANDLER (regla 24) ─────────────────────────────────────────────────────
+  // El caso 137 ya prueba que el VALIDADOR del contrato distingue bien; lo que nadie probaba es que
+  // alguien lo PREGUNTE antes de escribir. `autorizarJefe` marcaba `deal.condAutJefe = true` sin
+  // volver a comprobar quién autoriza: el único control era `puedeAutorizar`, que sólo decide si se
+  // DIBUJA el botón, y encima se alimenta de un prop (`esJefe`) que la pantalla recibe de su padre.
+  // Una sesión vieja, un rol revocado o un reemplazo vencido dejaban autorizar un descuento igual.
+  // `puedeAutorizarCondiciones(code, estado)` deriva el rol exigido del ESTADO de la atribución y la
+  // atribución del CÓDIGO (del padrón), no de un prop. Se prueba en las DOS direcciones: quien puede
+  // autoriza y quien no, no — un control que sólo se mira por un lado es el defecto de VER-01.
+  {
+    let R = null, err = "";
+    const rol0 = JSON.stringify(ROL_USUARIO);
+    try {
+      const existe = typeof puedeAutorizarCondiciones === "function";
+      // La escalera medida por el caso 137: JG es jefatura (comercial N1), GC y GG gerencia (N2/N3),
+      // CR ejecutivo sin atribución. Se leen del padrón, no de una lista escrita acá.
+      const jefatura = ["requiereJefe"], gerencia = ["requiereGerente"];
+      const puede = (c, e) => (existe ? puedeAutorizarCondiciones(c, e) : null);
+      // (a) LAS DOS DIRECCIONES sobre el tramo de JEFATURA: JG/GC/GG/ADMIN sí, CR no.
+      const jefeSi = jefatura.every((e) => puede("JG", e) && puede("GC", e) && puede("GG", e) && puede("ADMIN", e));
+      const jefeNo = jefatura.every((e) => puede("CR", e) === false);
+      // (b) El tramo de GERENCIA no lo alcanza la jefatura: JG no, GC/GG/ADMIN sí. Es la mitad que
+      //     `puedeAutorizar` perdía al reducirse a un booleano `esJefe` traído por prop.
+      const gerSi = gerencia.every((e) => puede("GC", e) && puede("GG", e) && puede("ADMIN", e));
+      const gerNo = gerencia.every((e) => puede("JG", e) === false && puede("CR", e) === false);
+      // (c) Lo que NADIE autoriza: `bajoMinimo` (la tasa mínima absoluta no es ofertable nunca) y el
+      //     estado `ok`, que no necesita autorización — autorizar lo que no lo pide deja evidencia falsa.
+      const nadie = ["bajoMinimo", "ok"].every((e) => ["CR", "JG", "GC", "GG", "ADMIN"].every((c) => puede(c, e) === false));
+      // (d) FALLA CERRADO: un código que el padrón no conoce, vacío o nulo no autoriza nada (caso 87).
+      const cerrado = ["NOEXISTE", "", null, undefined].every((c) => gerencia.concat(jefatura).every((e) => puede(c, e) === false));
+      // (e) SIGUE AL ROL, no a la foto: bajarle la atribución a JG le quita la autorización, y
+      //     devolvérsela se la devuelve. Sin esto, el predicado podría estar leyendo una lista fija.
+      let sigueAlRol = false;
+      if (existe) {
+        const antes = puede("JG", "requiereJefe");
+        ROL_USUARIO.JG = "ejec_comercial";
+        const durante = puede("JG", "requiereJefe");
+        ROL_USUARIO.JG = JSON.parse(rol0).JG;
+        sigueAlRol = antes === true && durante === false && puede("JG", "requiereJefe") === true;
+      }
+      R = { existe, jefeSi, jefeNo, gerSi, gerNo, nadie, cerrado, sigueAlRol };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    } finally {
+      const r = JSON.parse(rol0);
+      for (const k of Object.keys(ROL_USUARIO)) delete ROL_USUARIO[k];
+      Object.assign(ROL_USUARIO, r);
+    }
+    const Q = R || {};
+    ok("142 ATR-01 · quién autoriza un descuento se comprueba ANTES de escribir y sale del padrón, no de un prop: la jefatura no alcanza el tramo de gerencia, nadie autoriza bajo el mínimo, un código desconocido falla cerrado y el permiso sigue al rol",
+       !!R && Q.existe && Q.jefeSi && Q.jefeNo && Q.gerSi && Q.gerNo && Q.nadie && Q.cerrado && Q.sigueAlRol,
+       `predicado de nivel módulo ${Q.existe} · jefatura: JG/GC/GG/ADMIN autorizan ${Q.jefeSi} y CR no ${Q.jefeNo} · gerencia: GC/GG/ADMIN sí ${Q.gerSi}, JG y CR no ${Q.gerNo} · nadie autoriza «bajoMinimo» ni «ok» ${Q.nadie} · código desconocido falla cerrado ${Q.cerrado} · sigue al rol (quitar y devolver la atribución de JG) ${Q.sigueAlRol}${err ? " · ERROR " + err : ""}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
