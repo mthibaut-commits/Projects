@@ -6,15 +6,32 @@
     },
     "chrome-devtools": {
       "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@latest", "--isolated"]
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest",
+        "--isolated"
+      ]
     },
     "supabase": {
       "type": "http",
       "url": "https://mcp.supabase.com/mcp?read_only=true"
     },
     "vercel": {
-      "type": "http",
-      "url": "https://mcp.vercel.com"
+      "command": "node",
+      "args": [
+        ".mcp-servers/vercel/upstream/dist/index.js"
+      ],
+      "env": {
+        "VERCEL_ACCESS_TOKEN": "${VERCEL_ACCESS_TOKEN:-}"
+      }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--isolated"
+      ]
     }
   }
 }
