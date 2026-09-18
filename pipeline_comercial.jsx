@@ -40598,9 +40598,18 @@ const SOLIC_SUBTIPOS = {
   rebajar_linea: "Rebajar línea",
   ratificar_exceso: "Ratificar exceso",
 };
+// El siguiente id LIBRE de la secuencia. Avanza hasta encontrar uno que nadie tenga, porque la bandeja
+// mezcla los ids que emite ESTE documento con los que proponen otras pestañas: `SOLIC_SEQ` arranca en 0
+// en cada uno, así que el siguiente de la secuencia puede estar tomado y emitirlo pisaría una solicitud.
+function siguienteIdProceso() {
+  let id;
+  do {
+    id = "PRC-" + String(2600 + ++SOLIC_SEQ);
+  } while (SOLICITUDES_LINEA.some((s) => s && s.idProceso === id));
+  return id;
+}
 function api1Inyeccion(sol) {
-  SOLIC_SEQ++;
-  const idProceso = "PRC-" + String(2600 + SOLIC_SEQ);
+  const idProceso = siguienteIdProceso();
   SOLICITUDES_LINEA.unshift({ ...sol, idProceso, estado: "En gestión", refrescos: 0, ts: nowStamp(), tsEstado: nowStamp() });
   if (typeof registrarAuditoria === "function")
     registrarAuditoria({
@@ -40624,8 +40633,31 @@ function api2ListarProcesos() {
 // secuencia por pestaña y rearmarlo daría dos ids distintos para la misma solicitud.
 function recibirSolicitudLinea(reg) {
   if (!reg || !reg.idProceso) return false;
-  if (SOLICITUDES_LINEA.some((s) => s && s.idProceso === reg.idProceso)) return false; // idempotente
-  SOLICITUDES_LINEA.unshift(reg);
+  const choque = SOLICITUDES_LINEA.find((s) => s && s.idProceso === reg.idProceso);
+  // DUPLICADO DE VERDAD: el mismo registro llegó dos veces por el mismo canal. Idempotente (caso 126).
+  if (choque && mismaSolicitudComite(choque, reg)) return false;
+  // COLISIÓN, que no es lo mismo y se trataba igual: `SOLIC_SEQ` arranca en 0 en CADA documento, así que
+  // dos cierres en dos pestañas proponen el mismo `PRC-2601` para solicitudes DISTINTAS. Descartar la
+  // segunda perdía una petición al comité EN SILENCIO —el ejecutivo la creía enviada y nadie iba a
+  // mirarla nunca—. El modelo correcto ya está escrito arriba: el id lo asigna un sistema EXTERNO, y en
+  // este mock ese sistema es el tubo, que es quien hospeda la lista. La pestaña PROPONE, el tubo ASIGNA.
+  // El id propuesto se conserva en `idProcesoOrigen`: la bitácora de la otra pestaña lo cita, y sin él
+  // la solicitud entraría con un número que allá no existe (regla 24: nada cambia en silencio).
+  if (!choque) {
+    SOLICITUDES_LINEA.unshift(reg);
+    return true;
+  }
+  const idNuevo = siguienteIdProceso();
+  SOLICITUDES_LINEA.unshift({ ...reg, idProceso: idNuevo, idProcesoOrigen: reg.idProceso });
+  logSys("warn", "linea", `Solicitud recibida con un id ya tomado · ${reg.idProceso} → ${idNuevo}`, { empresa: reg.cliente || "", origen: reg.idProceso });
+  if (typeof registrarAuditoria === "function")
+    registrarAuditoria({
+      usuario: reg.ejecutivo || "—",
+      modulo: "Líneas · Comité",
+      accion: "Solicitud re-identificada al incorporarse",
+      glosa: `${reg.cliente || reg.rut || ""}: la pestaña propuso ${reg.idProceso}, que ya estaba tomado por otra solicitud; se incorpora como ${idNuevo}`,
+      exito: true,
+    });
   return true;
 }
 // Los deudores que YA están pedidos al comité por el cierre de una oferta de este cliente, con el

@@ -52,7 +52,7 @@ timestamp: 2026-09-18T02:18:36Z
 | 14 | Reevaluación explícita | [`reglas/oferta_pricing_y_giro.md`](./reglas/oferta_pricing_y_giro.md) | 124, `e2e-14-a`, `e2e-14-b`, `e2e-14-c`, `regla_14.test.mjs` |
 | 15 | Solicitud de línea | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 125, `e2e-15`, `regla_15.test.mjs` |
 | 15-bis | La solicitud se genera SOLA al cerrar la oferta | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 106–107 |
-| 15-bis-bis | La solicitud inyectada al cerrar la oferta tiene que CRUZAR de pestaña | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 126, `e2e-15-bis-bis-a`, `e2e-15-bis-bis-b`, `regla_15_bis_bis.test.mjs` |
+| 15-bis-bis | La solicitud inyectada al cerrar la oferta tiene que CRUZAR de pestaña | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 126, 144, `e2e-15-bis-bis-a`, `e2e-15-bis-bis-b`, `regla_15_bis_bis.test.mjs` |
 | 15-bis-ter | Y lo que el detalle escribe en un REPOSITORIO también tiene que cruzar | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 113 |
 | 15-quater | La solicitud al comité se ABRE y muestra sus líneas de detalle | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 109 |
 | 15-quinquies | El DOCUMENTO de la solicitud: qué terminó inyectando el sistema | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | `e2e-15-quinquies` |

@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-18T22:30:00Z
+timestamp: 2026-09-18T23:30:00Z
 ---
 
 # Estado actual
@@ -13,7 +13,7 @@ timestamp: 2026-09-18T22:30:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone de 41,1 MB, **143/143 PASA**, **32 archivos de gate de contrato**
+(`pipeline_comercial.jsx`), build standalone de 41,1 MB, **144/144 PASA**, **32 archivos de gate de contrato**
 (208 tests), **29 casos e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (65 reglas
 verbatim por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró la tabla de
 invariantes**: cada regla y los 12 del contrato tienen gate. Lo que esos gates destaparon cambió el producto
@@ -23,23 +23,27 @@ con «Operación creada» + Editar (33) y el detalle sigue el mockup (29, 22); e
 la Bandeja Inbound deja de botar trabajo en silencio (30-bis, 36), el fuente quedó **formateado con Prettier**
 (ADR-0005) con `prettier --check` como paso 0 del CI, y **ATR-01 se comprueba en el handler** (caso 143,
 `regla_atr_01.test.mjs`), **GIR-01 y OTG-02 se comprueban en `moverEtapa`** (`regla_transiciones.test.mjs`) y
-el campo `aplicado` de `INVARIANTES` quedó **gateado**: ya no hay ningún invariante sostenido sólo por la pantalla.
+el campo `aplicado` de `INVARIANTES` quedó **gateado** —ya no hay ningún invariante sostenido sólo por la pantalla—
+y la **solicitud al comité dejó de perderse por un id repetido**: la pestaña propone el `idProceso` y el tubo asigna (144).
 
 > ## 🎯 Siguiente paso
 >
 > Decisión del usuario; ninguno empezado.
-> 1. **Los desfases regla↔código** (`2026-09-17_cerrar_invariantes.md`): la cláusula «tasa bajo el mínimo del
->    deudor» de la regla 8 **no existe en el código**; el `idProceso` de la solicitud al comité **colisiona entre
->    pestañas** y descarta la segunda en silencio; y `giroDeal` es el único lector de `GIRO_STATE` —la asignación
->    congelada de giros— y **nadie lo llama**, ni `GIRO_STATE` tiene escritor, así que «la congelada manda sobre el
->    recálculo del día» no ocurre en ninguna pantalla. Cablearla pide decidir cuándo congela: ¿al aceptar? ¿al firmar?
+> 1. **Los dos desfases regla↔código que quedan, y los dos son decisión de producto** (`2026-09-17_cerrar_invariantes.md`):
+>    la cláusula «tasa bajo el mínimo del deudor» de la **regla 8** no se computa, y no por un predicado que falte —es
+>    de una línea— sino porque **el evento que lo dispararía no existe**: nadie registra que el cliente pidió tasa bajo
+>    el mínimo (medido: 1.889 de 5.520 contactos la piden, 0 marcados). Y `giroDeal` es el único lector de `GIRO_STATE`
+>    —la asignación congelada de giros— y **nadie lo llama**, ni `GIRO_STATE` tiene escritor, así que «la congelada
+>    manda sobre el recálculo del día» no ocurre en ninguna pantalla. Cablearla pide decidir cuándo congela:
+>    ¿al aceptar? ¿al firmar? · El `idProceso` que colisionaba entre pestañas quedó **cerrado el 18-09** (144).
 > 2. **Decidir los datos**: razones sociales reales sobre RUT sintéticos — un ADR y un gate que lo sostenga (hoy
 >    ningún test lo afirma ni lo niega). · 3. **El LINTER**, lo único que le falta al cuarteto de gates: sobre
 >    49.610 líneas sin `package.json`, pide decidir qué reglas y qué hacer con lo que reporte del legado.
 
 ## En vuelo ahora · nada: todo está en `main`, sólo quedan las tareas del usuario (abajo)
 
-Integrado: GIR-01 y OTG-02 en `moverEtapa` · ATR-01 en el handler y el gate de `aplicado` · formateo del fuente y re-anclaje de los gates (ADR-0005)
+Integrado: el id de la solicitud al comité (15-bis-bis) · GIR-01 y OTG-02 en `moverEtapa` · ATR-01 en el handler
+y el gate de `aplicado` · formateo del fuente y re-anclaje de los gates (ADR-0005)
 · invariantes · e2e · O05 · tab «Todos» (34) · regla mal definida (35) · paso 2 · auditorías · spec de excepciones
 · escalera T1-T3 · despacho de agentes · «Operación creada» + Editar e id estable (33, 29, 22, ADR-0004) · punto
 fijo del generador (32, ADR-0003) · gates y partir `CLAUDE.md` (`bd14091`). ~~`pipeline.zip`~~ fuera del versionado.
@@ -72,4 +76,4 @@ El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403, política; s
 ## Conocimiento clave
 
 [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [hooks](../conocimiento/loop_agentico_hooks.md) · [despacho de agentes](../conocimiento/despacho_agentes.md) · [flujo git](../conocimiento/flujo_git.md) · [arquitectura](../conocimiento/arquitectura.md) · [verificación](../conocimiento/verificacion.md) · [decisiones](../adr/index.md)
-Últimas: [transiciones GIR-01/OTG-02](./2026-09-18_transiciones_gir01_otg02.md) · [ATR-01](./2026-09-18_atr_01_en_el_handler.md) · [orden y bandeja](./2026-09-18_orden_tabla_y_bandeja.md)
+Últimas: [id de la solicitud](./2026-09-18_id_solicitud_comite.md) · [transiciones GIR-01/OTG-02](./2026-09-18_transiciones_gir01_otg02.md) · [ATR-01](./2026-09-18_atr_01_en_el_handler.md)

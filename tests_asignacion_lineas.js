@@ -4742,8 +4742,10 @@
     const recibeOk = r1 === true && lista.length === n0 + 1 && mismo() && SOLIC_SEQ === seq0
       && api3EstadoProceso(idA) === "En gestión" && pre.length === 2 && pre.every((x) => x.idProceso === idA);
 
-    // (c) IDEMPOTENTE POR id: el mismo registro otra vez → false y UNA entrada; un clon con el mismo id
-    //     y otro contenido → tampoco entra ni pisa el que está.
+    // (c) IDEMPOTENTE: el mismo registro otra vez → false y UNA entrada; un clon con el mismo id que
+    //     cambia `pedido` y `cliente` pero NO el rut ni el detalle → tampoco entra ni pisa el que está.
+    //     Desde el 18-09-2026 el motivo es `mismaSolicitudComite` —mismo rut y mismo detalle, que es lo
+    //     que el comité aprueba línea a línea— y ya no «mismo id»: el id dejó de ser identidad.
     const r2 = recibirSolicitudLinea(viaje1);
     const viaje2 = clon(enCero); viaje2.pedido = 1; viaje2.cliente = "OTRO";
     const r3 = recibirSolicitudLinea(viaje2);
@@ -4755,23 +4757,28 @@
     const r4 = recibirSolicitudLinea(null), r5 = recibirSolicitudLinea({}), r6 = recibirSolicitudLinea({ ...clon(sol), idProceso: "" });
     const negOk = r4 === false && r5 === false && r6 === false && lista.length === n0 + 1 && mismo();
 
-    // (e) SONDA: un registro DISTINTO (otra operación) que llegue con un id ya visto se descarta como
-    //     duplicado. Es la regla tal como está escrita —idempotente por id— y también su borde: el id
-    //     sale de una secuencia POR PESTAÑA que arranca en 0 en cada documento, así que dos pestañas
-    //     de detalle producen el mismo «PRC-2601» y la segunda se pierde en silencio (se documenta en
-    //     hallazgos; acá sólo se mide).
+    // (e) COLISIÓN, que NO es un duplicado. Una operación DISTINTA que llega con un id ya visto entra
+    //     igual, con un id LIBRE que asigna el tubo y su procedencia en `idProcesoOrigen`. Hasta el
+    //     18-09-2026 se descartaba: el id sale de una secuencia POR PESTAÑA que arranca en 0 en cada
+    //     documento, así que dos pestañas de detalle proponen el mismo «PRC-2601» y la segunda petición
+    //     al comité se perdía EN SILENCIO —el ejecutivo la creía enviada y nadie iba a mirarla—. Este
+    //     caso medía ese defecto a propósito; ahora fija el arreglo, y (c) sigue cuidando la dirección
+    //     contraria: que arreglar esto no haya roto la idempotencia.
     const viaje3 = clon(enCero); viaje3.origen = { dealId: "OP-OTRA", negocio: null }; viaje3.rut = "76.000.000-0";
     const r7 = recibirSolicitudLinea(viaje3);
-    const sondaOk = r7 === false && cuenta(idA) === 1 && mismo() && lista[0].origen.dealId === "OP-15BB";
+    const reColis = lista.find((x) => x && x.origen && x.origen.dealId === "OP-OTRA");
+    const orig = lista.find((x) => x && x.idProceso === idA);
+    const sondaOk = r7 === true && cuenta(idA) === 1 && !!orig && huella(orig) === foto
+      && !!reColis && reColis.idProceso !== idA && reColis.idProcesoOrigen === idA && cuenta(reColis.idProceso) === 1;
 
-    // Se retira lo del caso —la solicitud y el señuelo— y se restaura la secuencia. La auditoría no.
-    quitar(idA); quitar(ID_SENUELO); SOLIC_SEQ = seq0;
+    // Se retira lo del caso —las dos solicitudes y el señuelo— y se restaura la secuencia. La auditoría no.
+    quitar(idA); if (reColis) quitar(reColis.idProceso); quitar(ID_SENUELO); SOLIC_SEQ = seq0;
     const auditN = AUDIT_LOG.length;
     const restauraOk = lista.length === nBase && cuenta(ID_SENUELO) === 0 && SOLIC_SEQ === seq0;
 
-    ok("126 la solicitud inyectada al cerrar la oferta cruza de pestaña: se incorpora el registro ya armado, una sola vez por idProceso",
+    ok("126 la solicitud inyectada al cerrar la oferta cruza de pestaña: se incorpora el registro ya armado, una sola vez por solicitud —y si el id viene tomado, el tubo le asigna uno libre en vez de perderla",
        emisorOk && aislOk && recibeOk && idemOk && negOk && sondaOk && restauraOk,
-       `con el señuelo ${ID_SENUELO} delante, el emisor postea SOLICITUDES_LINEA[0] = ${idA} ${emisorOk} · aislada de esta lista ${aislOk} · incorporada tal cual (mismo id y JSON, al frente, SOLIC_SEQ ${seq0}→${SOLIC_SEQ}) y visible para bandeja y wizard (${pre.length} deudores) ${recibeOk} · 2× el mismo registro y un clon con otro contenido ⇒ ${nIdem} entrada ${idemOk} · sin idProceso no escribe ${negOk} · otra operación con el mismo id se descarta ${sondaOk} · lista (${nBase}) y secuencia restauradas ${restauraOk} · AUDIT_LOG ${audit0}→${auditN} (+${audit1 - audit0} por api1Inyeccion, +${auditN - audit1} por el receptor; cadena append-only, no se restaura)`);
+       `con el señuelo ${ID_SENUELO} delante, el emisor postea SOLICITUDES_LINEA[0] = ${idA} ${emisorOk} · aislada de esta lista ${aislOk} · incorporada tal cual (mismo id y JSON, al frente, SOLIC_SEQ ${seq0}→${SOLIC_SEQ}) y visible para bandeja y wizard (${pre.length} deudores) ${recibeOk} · 2× el mismo registro y un clon con otro contenido ⇒ ${nIdem} entrada ${idemOk} · sin idProceso no escribe ${negOk} · otra operación con el mismo id entra con un id LIBRE (${reColis && reColis.idProcesoOrigen} → ${reColis && reColis.idProceso}) y el original queda intacto ${sondaOk} · lista (${nBase}) y secuencia restauradas ${restauraOk} · AUDIT_LOG ${audit0}→${auditN} (+${audit1 - audit0} por api1Inyeccion, +${auditN - audit1} por el receptor; cadena append-only, no se restaura)`);
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -6686,6 +6693,63 @@
     ok("143 ATR-01 · quién autoriza un descuento se comprueba ANTES de escribir y sale del padrón, no de un prop: la jefatura no alcanza el tramo de gerencia, nadie autoriza bajo el mínimo, un código desconocido falla cerrado y el permiso sigue al rol",
        !!R && Q.existe && Q.jefeSi && Q.jefeNo && Q.gerSi && Q.gerNo && Q.nadie && Q.cerrado && Q.sigueAlRol,
        `predicado de nivel módulo ${Q.existe} · jefatura: JG/GC/GG/ADMIN autorizan ${Q.jefeSi} y CR no ${Q.jefeNo} · gerencia: GC/GG/ADMIN sí ${Q.gerSi}, JG y CR no ${Q.gerNo} · nadie autoriza «bajoMinimo» ni «ok» ${Q.nadie} · código desconocido falla cerrado ${Q.cerrado} · sigue al rol (quitar y devolver la atribución de JG) ${Q.sigueAlRol}${err ? " · ERROR " + err : ""}`);
+  }
+
+  // ── 144 · 15-bis-bis · EL ID LO ASIGNA EL TUBO, NO LA PESTAÑA ────────────────────────────────
+  // `SOLIC_SEQ` arranca en 0 en CADA documento y el detalle es pestaña propia, así que dos cierres en
+  // dos pestañas emitían el mismo `PRC-2601`. `recibirSolicitudLinea` deduplicaba por `idProceso` y
+  // descartaba la segunda EN SILENCIO: una petición al comité que el ejecutivo creyó haber enviado y
+  // que nadie iba a mirar nunca. El modelo correcto ya estaba escrito en el fuente —«el id lo asigna un
+  // sistema EXTERNO»—: la pestaña PROPONE y el tubo, que hospeda `SOLICITUDES_LINEA`, ASIGNA.
+  // Se prueban las dos direcciones, que es lo que separa este arreglo de romper la idempotencia:
+  // el MISMO registro dos veces sigue entrando UNA sola vez (caso 126), y dos registros DISTINTOS con
+  // el mismo id entran los dos, con ids distintos y sin perder el original.
+  {
+    let R = null, err = "";
+    const lista = api2ListarProcesos();
+    const n0 = lista.length, seq0 = SOLIC_SEQ;
+    const puestos = [];
+    try {
+      const armar = (rut, monto) => ({
+        idProceso: "PRC-COLISION", rut, cliente: "Cliente " + rut, tipo: "crear", ejecutivo: "CR",
+        totalPropuesto: monto, estado: "En gestión", refrescos: 0, ts: nowStamp(), tsEstado: nowStamp(),
+        detalle: [{ deudor: "Deudor " + rut, rutDeudor: rut, monto, tipoLinea: "puntual" }],
+      });
+      const a = armar("11111111-1", 1000000);
+      const b = armar("22222222-2", 2000000);           // MISMO id, contenido DISTINTO: es colisión, no duplicado
+      const aClon = JSON.parse(JSON.stringify(a));       // MISMO id y MISMO contenido: duplicado de verdad
+      const idsDe = () => lista.filter((x) => puestos.includes(x)).map((x) => x.idProceso);
+
+      const okA = recibirSolicitudLinea(a); puestos.push(lista[0]);
+      const okClon = recibirSolicitudLinea(aClon);       // no entra: idempotencia (caso 126)
+      const trasClon = lista.length;
+      const okB = recibirSolicitudLinea(b); if (lista[0] !== puestos[0]) puestos.push(lista[0]);
+
+      const ids = idsDe();
+      const idemOk = okA === true && okClon === false && trasClon === n0 + 1;
+      const colisionOk = okB === true && lista.length === n0 + 2 && ids.length === 2 && ids[0] !== ids[1];
+      // El original se conserva: entró con el id que propuso la pestaña, y el segundo trae su procedencia.
+      const regB = lista.find((x) => x && x.rut === "22222222-2");
+      const trazaOk = !!regB && regB.idProceso !== "PRC-COLISION" && regB.idProcesoOrigen === "PRC-COLISION";
+      // Y el id asignado es LIBRE: nadie más en la bandeja lo tiene.
+      const libreOk = !!regB && lista.filter((x) => x && x.idProceso === regB.idProceso).length === 1;
+      // Dirección negativa, que es la mitad que suele faltar: sin idProceso no se escribe nada.
+      const sinIdOk = recibirSolicitudLinea({ rut: "33333333-3" }) === false && recibirSolicitudLinea(null) === false;
+      // Y la secuencia del TUBO no vuelve a emitir un id que ya recibió.
+      const idEmitido = api1Inyeccion(armar("44444444-4", 3000000));
+      const reg4 = lista.find((x) => x && x.idProceso === idEmitido); if (reg4) puestos.push(reg4);
+      const emiteLibreOk = lista.filter((x) => x && x.idProceso === idEmitido).length === 1;
+      R = { idemOk, colisionOk, trazaOk, libreOk, sinIdOk, emiteLibreOk, ids, idB: regB && regB.idProceso, idEmitido };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    } finally {
+      for (let i = lista.length - 1; i >= 0; i--) if (puestos.includes(lista[i])) lista.splice(i, 1);
+      SOLIC_SEQ = seq0;
+    }
+    const Q = R || {};
+    ok("144 la solicitud al comité no se pierde por un id repetido: la pestaña PROPONE el idProceso y el tubo ASIGNA uno libre, el duplicado de verdad sigue entrando una sola vez y el original conserva su procedencia",
+       !!R && Q.idemOk && Q.colisionOk && Q.trazaOk && Q.libreOk && Q.sinIdOk && Q.emiteLibreOk && api2ListarProcesos().length === n0,
+       `idempotencia (mismo registro 2× ⇒ 1 entrada) ${Q.idemOk} · colisión (mismo id, contenido distinto ⇒ 2 entradas con ids distintos [${(Q.ids || []).join(", ")}]) ${Q.colisionOk} · procedencia (idProcesoOrigen «PRC-COLISION» → «${Q.idB}») ${Q.trazaOk} · el id asignado está libre ${Q.libreOk} · sin idProceso no escribe ${Q.sinIdOk} · el tubo no re-emite un id recibido (${Q.idEmitido}) ${Q.emiteLibreOk} · bandeja restaurada ${api2ListarProcesos().length === n0}${err ? " · ERROR " + err : ""}`);
   }
 
   console.log(out.join("\n"));
