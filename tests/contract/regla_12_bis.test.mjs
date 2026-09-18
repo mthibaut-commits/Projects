@@ -1,8 +1,8 @@
 /* Gate de contrato de la regla 12-bis sobre el TEXTO del fuente: lo que el e2e prueba en el navegador, acá
    se fija en la ESTRUCTURA que lo sostiene, en milisegundos. (1) `stageTrasEdicion` no vuelve; (2) la
    promoción a «oferta» vive en `simularOferta` y DENTRO del objeto `patch` que viaja por `nex-simulado`
-   (fuera del patch el detalle avanzaba y el tubo no), y el patch se encola con `avisarTubo`; (3) el efecto
-   post-commit que vacía `avisoTuboRef.current` y postea `nex-simulado` a `window.opener` existe y no lleva
+   (fuera del patch el detalle avanzaba y el tubo no), y el patch se entrega a `avisarTubo`; (3) el efecto
+   post-commit que drena `avisoTuboRef.current` y postea `nex-simulado` a `window.opener` existe y no lleva
    deps que lo apaguen; (4) el listener del tubo aplica el patch TAL CUAL (`{ ...d, ...m.patch }`: si
    pisara `stage`, la etapa no llegaría); (5) el invariante dual `sinPrecio` es la LÍNEA EXACTA
    `d.stage === "oferta" && !d.simulado && !tieneOferta(d)` —la igualdad de línea es lo que caza un
@@ -43,11 +43,13 @@ export function efectoAviso(src) {
   const cierre = src.slice(i).match(/\n  \}(?:, (\[[^\]]*\]))?\);\n/); if (!cierre) return null;
   return { bloque: src.slice(ini, i + cierre.index + cierre[0].length), deps: cierre[1] || null };
 }
-/* La rama `nex-simulado` del listener del tubo: desde su `if` hasta 1600 caracteres después. Se amplió el tramo
-   el 18-09-2026: main metió adentro la guarda del id que ya no existe y su comentario, y `aplicarSim` quedó fuera. */
+/* La rama `nex-simulado` del listener del tubo, desde su `if`. La ventana era de 400 caracteres y se
+   ensanchó a 1200 el 18-09-2026: la rama creció con la guarda que LOGUEA el aviso cuyo id el tubo ya no
+   tiene (regla 33 — un `return` silencioso se ve igual que un aviso que nunca se envió), y con 400
+   `aplicarSim` quedaba fuera de la ventana y el gate lo daba por ausente. Lo que vigila no cambia. */
 export function ramaListener(src) {
   const i = src.indexOf('if (m && m.type === "nex-simulado" && m.dealId && m.patch) {');
-  return i < 0 ? null : src.slice(i, i + 1600);
+  return i < 0 ? null : src.slice(i, i + 1200);
 }
 
 const PROMO = /stage: d\.stage === "prospeccion" \? "oferta" : d\.stage/;
@@ -70,12 +72,12 @@ export function gatesDe(src) {
       if (!/simulado: true/.test(patch)) fallos.push("el patch de simularOferta no marca `simulado: true`");
       if (!PROMO.test(patch)) fallos.push("la promoción prospeccion → oferta no está DENTRO del patch de simularOferta");
       if (PROMO.test(sim.replace(patch, ""))) fallos.push("la promoción aparece FUERA del patch: el detalle avanza y el tubo no");
-      if (!/avisarTubo\(id, patch\)/.test(sim)) fallos.push("simularOferta no le pasa el patch a `avisarTubo` (el tubo no se entera)");
+      if (!/avisarTubo\(id, patch\)/.test(sim)) fallos.push("simularOferta no le pasa el patch a `avisarTubo` para avisarle al tubo");
     }
   }
-  // El aviso al tubo: sin este efecto, el patch queda en la cola de `avisoTuboRef` y no sale nunca.
+  // El aviso al tubo: sin este efecto, el patch queda en la cola y no sale nunca.
   const ef = efectoAviso(src);
-  if (!ef) fallos.push("no existe el efecto post-commit que vacía `avisoTuboRef.current` (el patch no le llega al tubo)");
+  if (!ef) fallos.push("no existe el efecto post-commit que drena `avisoTuboRef.current` (el patch no le llega al tubo)");
   else {
     if (!ef.bloque.includes(AVISO)) fallos.push("el efecto post-commit no postea `nex-simulado` con el patch a window.opener");
     if (ef.deps && !/\bdeals\b/.test(ef.deps)) fallos.push(`el efecto post-commit lleva deps ${ef.deps} que no incluyen \`deals\`: no correría tras cada simulación`);

@@ -579,7 +579,7 @@ las implementa todas. **Dos criterios no salen de ese documento**: los agrega es
 del área de **Operaciones**, y no por casualidad: la política v1.0 la escribió Riesgo, y lo que le falta es justamente
 el control documental del acto de cursar.
 
-### O05 · Evidencia del Contrato de Cesión — Operaciones N3 (13-09-2026)
+### O05 · Contrato firmado por cliente de la operación — Operaciones N3 (13-09-2026)
 
 **Por qué existe.** Ninguna operación se cursa sin constancia de que el cliente autorizó la cesión. Esa constancia
 existía en el flujo —el cliente firma en el portal— pero no era un criterio: no se veía en la mesa de otorgamiento, no

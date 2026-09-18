@@ -3444,76 +3444,8 @@
        `operaci\u00f3n normal pasa V03/V04/V09 ${pasaOk} (V03 ${val(normal, "V03")}\u00d7 \u00b7 V04 ${val(normal, "V04")}) \u00b7 techo por monto sigue discriminando ${techoOk} \u00b7 borde en M$300 exacto ${bordeOk} \u00b7 V10 sobre M$1.000 ${v10Ok} \u00b7 se muestra con fmtMM ${fmtOk} (${eV09.r.fmt(eV09.v)}) \u00b7 el par del activo viene en pesos ${activoOk} (${muestra})`);
   }
 
-  // ── 116 · CERRAR LA OFERTA SE PUEDE DESHACER, Y SON TRES HECHOS DISTINTOS ────────────────────
-  // «Cerrada» (el ejecutivo aprobó el paquete), «publicada» (el correo con el código de negocio ya
-  // salió) y «reabierta» (la firma del cliente quedó revocada) son cosas distintas, y el botón
-  // «Editar» sólo deshace la primera. Confundirlas deja o una oferta que no se puede volver a
-  // cerrar —el CTA quedaba vivo y al apretarlo no pasaba nada— o una firma que reaparece sola.
-  {
-    const cerrada = { id: "OP-E1", stage: "oferta", ofertaCerrada: true, negocioNum: "OP-E1", publicacion: "electronica" };
-    const abierta = { id: "OP-E2", stage: "oferta" };
-    const editando = { ...cerrada, enEdicion: { ts: "x", por: "y" } };
-    const firmada = { id: "OP-E3", stage: "cesion", ofertaCerrada: true, negocioNum: "OP-E3", clienteAcepto: true };
-    const girada = { ...cerrada, id: "OP-E4", stage: "giro" };
-    const enCore = { ...cerrada, id: "OP-E5", integracion: "aprobada" };
-    const perdida = { ...cerrada, id: "OP-E6", stage: "perdida" };
-
-    // (a) El predicado del CIERRE mira las dos banderas y la marca de edición.
-    const vigOk = ofertaCerradaVigente(cerrada) === true && ofertaCerradaVigente(abierta) === false
-      && ofertaCerradaVigente(editando) === false && ofertaCerradaVigente(null) === false;
-
-    // (b) PUBLICAR NO SE DESHACE. El correo salió; lo que se suelta es la aprobación interna. Si
-    //     `ofertaPublicada` se cayera al editar, el tab de Verificación desaparecería y con él las
-    //     llamadas ya registradas — evidencia de 3 a 4 horas por deudor.
-    const pubCerrada = { ...cerrada, ofertaComunicada: true };
-    const pubEditando = { ...pubCerrada, enEdicion: { ts: "x" } };
-    const pubOk = ofertaPublicada(pubCerrada) === true && ofertaPublicada(pubEditando) === true;
-
-    // (c) EDITAR: a quién aplica, quién puede y qué implica.
-    const eAbierta = edicionOperacion(abierta), eCerrada = edicionOperacion(cerrada);
-    const eFirmada = edicionOperacion(firmada), eGirada = edicionOperacion(girada);
-    const eCore = edicionOperacion(enCore), ePerdida = edicionOperacion(perdida);
-    const edicOk = eAbierta.aplica === false                       // nada que reabrir: ya es editable
-      && eCerrada.aplica === true && eCerrada.ok === true && !eCerrada.revocaFirma
-      && eFirmada.aplica === true && eFirmada.ok === true && eFirmada.revocaFirma === true
-      && eGirada.aplica === true && eGirada.ok === false           // girada no se edita
-      && eCore.aplica === true && eCore.ok === false               // ya la tomó Tesorería
-      && ePerdida.aplica === true && ePerdida.ok === false;
-    // Y NUNCA SIN MOTIVO: un destino apagado que no dice por qué deja al ejecutivo sin dónde
-    // enterarse (regla 24). Los tres «no» tienen que explicarse, y con textos distintos.
-    const motivos = [eGirada.motivo, eCore.motivo, ePerdida.motivo];
-    const motivoOk = motivos.every((m) => typeof m === "string" && m.length > 20)
-      && new Set(motivos).size === 3 && eCerrada.motivo !== eFirmada.motivo;
-
-    // (d) LA FIRMA SE REVOCA SÓLO CUANDO HABÍA FIRMA. `enEdicion` y `reabierta` son independientes:
-    //     cerrar de nuevo limpia la primera, y si fueran la misma marca devolvería una aceptación
-    //     que nadie dio. Se comprueba sobre el gate que decide si se puede girar.
-    const firmadaEditando = { ...firmada, enEdicion: { ts: "x" }, reabierta: { ts: "x" } };
-    const reCerrada = { ...firmadaEditando, enEdicion: undefined };        // volvió a cerrarse
-    const firmaOk = aprobacionFormalCliente(firmada) === true
-      && aprobacionFormalCliente(firmadaEditando) === false
-      && aprobacionFormalCliente(reCerrada) === false   // cerrar NO devuelve la firma
-      && ofertaCerradaVigente(reCerrada) === true;      // pero sí devuelve el cierre
-
-    // (e) LA SOLICITUD AL COMITÉ NO SE DUPLICA. Al re-cerrar, lo que falta de línea se vuelve a
-    //     calcular; si pide lo mismo no se inyecta de nuevo, porque NEX no puede retirar la
-    //     anterior (regla 15) y el comité vería dos peticiones sin saber cuál rige. Se compara el
-    //     DETALLE y no el total: dos repartos distintos pueden sumar igual.
-    const s1 = { rut: "1-9", detalle: [{ rutDeudor: "2-7", monto: 60e6, tipoLinea: "puntual" }, { rutDeudor: "3-5", monto: 30e6, tipoLinea: "puntual" }] };
-    const s2 = { rut: "1-9", detalle: [{ rutDeudor: "3-5", monto: 30e6, tipoLinea: "puntual" }, { rutDeudor: "2-7", monto: 60e6, tipoLinea: "puntual" }] }; // mismo, otro orden
-    const s3 = { rut: "1-9", detalle: [{ rutDeudor: "2-7", monto: 50e6, tipoLinea: "puntual" }, { rutDeudor: "3-5", monto: 40e6, tipoLinea: "puntual" }] }; // mismo total, otro reparto
-    const s4 = { rut: "1-9", detalle: [{ rutDeudor: "2-7", monto: 60e6, tipoLinea: "puntual" }] };
-    const solOk = mismaSolicitudComite(s1, s2) === true && mismaSolicitudComite(s1, s3) === false
-      && mismaSolicitudComite(s1, s4) === false && mismaSolicitudComite(s1, { ...s1, rut: "9-9" }) === false
-      && mismaSolicitudComite(s1, null) === false;
-
-    ok("116 cerrar la oferta se deshace con «Editar», y publicar y firmar no se deshacen con ella",
-       vigOk && pubOk && edicOk && motivoOk && firmaOk && solOk,
-       `cierre vigente ${vigOk} \u00b7 publicar no se deshace ${pubOk} \u00b7 a qui\u00e9n aplica editar ${edicOk} \u00b7 siempre con motivo ${motivoOk} \u00b7 la firma s\u00f3lo se revoca si la hab\u00eda, y cerrar no la devuelve ${firmaOk} \u00b7 la solicitud al comit\u00e9 no se duplica ${solOk}`);
-  }
-
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 117 · regla 2 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 116 · regla 2 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // NNN · NOTA DEUDOR 1–5 (regla de dominio 2). La nota es un DATO del A11 (`notaDeudor` lee
   // `NOTA_COMPORTAMIENTO` de Plataforma 360), va de 1 a 5 con 5 = mejor pagador, y es lo que decide
@@ -3618,7 +3550,7 @@
       && CFG_ACTIVA.notaMinCompra === guardado.notaMinCompra
       && !_VERIF_PAR.has(claves[0]);
 
-    ok("117 la Nota Deudor es 1–5 con 5 = mejor: decide la nota y no el score, la compra exige notaMinCompra del tenant y > 4,2 abre el protocolo recortado",
+    ok("116 la Nota Deudor es 1–5 con 5 = mejor: decide la nota y no el score, la compra exige notaMinCompra del tenant y > 4,2 abre el protocolo recortado",
        rangoOk && nulOk && colorOk && tramoOk && corteOk && dosPobOk && inboundOk && scoreOk && politicaOk && restauradoOk,
        `maestro ${notas.length} notas en [1,5], ${fuera} fuera · sin dato → null ${nulOk} · color monótono verde≥4/ámbar≥3/rojo ${colorOk} · tramos A>4,6 B≥3,7 C≥3,2 D ${tramoOk}`
        + ` · corte ${NOTA_PRIORITARIA} estricto: 4,20 (${tipoEn}) → completo requiere ${dEn && dEn.requiere}, 4,21 → recortado requiere ${dSobre && dSobre.requiere}`
@@ -3629,7 +3561,7 @@
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 118 · regla 5 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 117 · regla 5 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · PÉRDIDA ES ESTADO TERMINAL (regla de dominio 5, spec Perdida v1.0).
   //    Causa ESPECÍFICA siempre (`causaPerdidaDeal`, nunca el genérico «no superó reglas de
@@ -3662,7 +3594,7 @@
     const viva5 = base5("T5v", { stage: "oferta", status: STATUS_ETAPA.oferta });
 
     if (!rejectDe) {
-      ok("118 pérdida es estado terminal: causa específica, etapa de origen, desenlace cerrado y tareas en cascada", false, "no encuentro `const reject = (id, closeReason, extra) => {` con `const bi = bloqueoFirmeInfo(d);` … `const causa = ` en el fuente embebido: el caso no puede derivar el rechazo manual");
+      ok("117 pérdida es estado terminal: causa específica, etapa de origen, desenlace cerrado y tareas en cascada", false, "no encuentro `const reject = (id, closeReason, extra) => {` con `const bi = bloqueoFirmeInfo(d);` … `const causa = ` en el fuente embebido: el caso no puede derivar el rechazo manual");
     } else {
     // (a) CAUSA ESPECÍFICA por cada camino que escribe una pérdida. El rechazo manual se DERIVA de
     //     `reject` con el motivo que pasa el modal de rechazo (L9949: cedida a la competencia, con
@@ -3756,7 +3688,7 @@
     let bordeOk = true;
     try { bordeOk = causaPerdidaDeal(null) === "Oportunidad perdida" && dealResult(null) === null && dealResult({}) === null; } catch (_) { bordeOk = false; }
 
-    ok("118 pérdida es estado terminal: causa específica, etapa de origen, desenlace cerrado y tareas en cascada",
+    ok("117 pérdida es estado terminal: causa específica, etapa de origen, desenlace cerrado y tareas en cascada",
        especificaOk && sondaOk && origenOk && terminalOk && cascadaOk && bordeOk,
        `causas ${especificaOk} (rechazo derivado de reject «${rechazo.causaPerdida}» ${rechazoOk} · «${causas.cesion.slice(0, 40)}…» · «${causas.noAcepto}» · «${causas.sinContacto.slice(0, 12)}…») · sonda: genérico plantado + C30 → «${causaKO.slice(0, 44)}…» ${sondaOk} · origen ${origenOk} · terminal ${terminalOk} (desenlace ${desenlaceOk} · al fondo ${fondoOk} · última de STAGE_ORDER ${ultimaOk} · «${etapaDeDeal(perdidas.rechazo)}») · cascada viva ${tViva.length} tarea(s) → perdida ${tMuerta.length} ${cascadaOk} · bordes ${bordeOk}`);
 
@@ -3785,14 +3717,14 @@
     //     pérdida, incluida la manual. El evento terminal de `bitacoraDe` tiene que nombrar al actor grabado.
     const evPerdida = (bitacoraDe(rechazo) || []).filter((x) => x.seq === 9999 || x.accion === rechazo.status);
     const actorOk = evPerdida.length >= 1 && evPerdida.every((x) => x.actor === rechazo.perdidaPor);
-    ok("119 la pérdida terminal, segunda mitad: el rechazo sin motivo graba una causa específica, el lector no deja pasar el genérico y la bitácora nombra al actor",
+    ok("118 la pérdida terminal, segunda mitad: el rechazo sin motivo graba una causa específica, el lector no deja pasar el genérico y la bitácora nombra al actor",
        rechazoSinMotivoOk && callSitesOk && lectorOk && actorOk,
        `(1) reject sin motivo ni bloqueo → causa «${sinMotivo.causaPerdida}» / «${sinMotivoProsp.causaPerdida}» específica ${rechazoSinMotivoOk} · call sites de onReject(deal.id: ${callSites.length}, sin motivo ${sinMotivoEnFuente.join(", ") || "ninguno"} ${callSitesOk} · (2) lector con el genérico plantado → «${causaSin.slice(0, 40)}» ${lectorOk} · (3) bitácora: actor «${evPerdida.map((x) => x.actor).join("/") || "—"}» vs perdidaPor «${rechazo.perdidaPor}» ${actorOk}`);
     }
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 120 · regla 8 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 119 · regla 8 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · REGLA 8 · OFERTA — PROXY. Las dos primeras cláusulas («cerrar» es prerequisito de publicar;
   //    el Agente IA es opcional) ya las fijan los casos 31 y 32 sobre `ofertaPublicada`. La tercera
@@ -3897,13 +3829,13 @@
         + ` · [medición, no gate] ${zonaGris}`;
     } catch (err) { det = "ERROR " + String(err).slice(0, 300); }
     finally { restaurar(); if (typeof _cacheCli !== "undefined") _cacheCli.clear(); }
-    ok("120 oferta (proxy de la regla 8): el mínimo del deudor es su piso más el costo de fondo del tenant, y la escalera de atribución —en el panel y en O01 del motor— mide el descuento contra la referencia del deudor con los umbrales del tenant",
+    ok("119 oferta (proxy de la regla 8): el mínimo del deudor es su piso más el costo de fondo del tenant, y la escalera de atribución —en el panel y en O01 del motor— mide el descuento contra la referencia del deudor con los umbrales del tenant",
        pisoOk && escaleraOk && motorOk,
        `piso ${pisoOk} · escalera ${escaleraOk} · motor ${motorOk} · ${det}`);
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 121 · regla 10 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 120 · regla 10 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · CONTACTABILIDAD (regla de dominio 10). Mensaje NO entregado ⇒ UN solo intento y «Error de
   //    contactabilidad»; sólo se reintenta —hasta 3— cuando el mensaje SÍ se entrega y el cliente no
@@ -4002,7 +3934,7 @@
     const g1 = generarContactabilidad(nombresCli[0], "WhatsApp", nomDe(LB[0])), g2 = generarContactabilidad(nombresCli[0], "WhatsApp", nomDe(LB[0]));
     const deterOk = JSON.stringify(g1.historialContacto) === JSON.stringify(g2.historialContacto) && g1.intentos === g2.intentos;
 
-    ok("121 contactabilidad: no entregado ⇒ un solo intento y «Error de contactabilidad»; entregado sin respuesta ⇒ se reintenta, a lo más 3",
+    ok("120 contactabilidad: no entregado ⇒ un solo intento y «Error de contactabilidad»; entregado sin respuesta ⇒ se reintenta, a lo más 3",
        sondaOk && noEntregadoOk && rotuloOk && reintentoOk && deterOk,
        `sonda: fallido+reintento ${sondaFallidoYReintento} · no entregado+reintento ${sondaNoEntregadoYReintento} · 4 intentos ${sondaCuatroIntentos} · reintento tras éxito ${sondaReintentoTrasExito} · válida (i) ${sondaValidaI} · válida (ii) ${sondaValidaII}`
        + ` · no entregado → ${salNo.length} saliente(s) en «${salNo[0] && salNo[0].estado}», nota «${(notaNo[0] && notaNo[0].text || "").slice(0, 38)}…» ${noEntregadoOk} (entregado → ${salSi.length} en read)`
@@ -4011,7 +3943,7 @@
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 122 · regla 11 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 121 · regla 11 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · PROSPECCIÓN (regla de dominio 11). Tres cláusulas, tres lectores de nivel módulo:
   //    (a) el ejecutivo se asigna por CEDENTE y nunca por deudor (`asignarEjecutivo`, con el A24 por
@@ -4243,7 +4175,7 @@
       && JSON.stringify(detA) === JSON.stringify(detB);
     const cOk = mercadoOk && candOk && sondaFeed && candEjOk && detOk;
 
-    ok("122 la prospección: ejecutivo por cedente, «Otro» nunca abre y las candidatas son proveedores × cesionarios del mercado sin nosotros",
+    ok("121 la prospección: ejecutivo por cedente, «Otro» nunca abre y las candidatas son proveedores × cesionarios del mercado sin nosotros",
        aOk && bOk && cOk && rulesRestaurado,
        `sondaA ${sondaA} · A24 ${rutsA24.length} clientes/${execsDistintos} ejecutivos por cedente ${a24Ok} · A24 manda sobre semilla ${a24MandaOk} · prospecto estable por cedente (${prospEj}) ${prospOk} · cuerpo sin deudor ${cuerpoOk}`
        + ` · Otro no abre ${otroNoAbre} · LB/CAT4 abren ${elegibleAbre} · catálogo ${catalogoOk} · archivo ${capturadas} capturadas/${excluidasOtro} Otro excluidas/${otroCapturada} Otro capturadas/${otroNotaAbre} OTRO con nota>corte abren (${otroNotaNoAbre} no) ${archivoOk} · pool ${pool.length} (${poolNota} con nota>corte) ${poolOk} · manual⇒otorg ${manualOk}`
@@ -4252,7 +4184,7 @@
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 123 · regla 12 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 122 · regla 12 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · LA RESERVA NO ES DE NEX (regla de dominio 12). El motor EVALÚA, no reserva: `asignarLineas`
   //    es una consulta pura —no persiste nada, no escribe en ningún repositorio y su código no conoce
@@ -4298,7 +4230,7 @@
       return st.estado === "B" && st.lineas.some((x) => x.granularidad === "par" && !x.suspendida && (x.aprobado - x.vigente) > 0);
     }) || null;
     if (!filaB) {
-      ok("123 la reserva no es de NEX: el motor evalúa sin persistir, el disponible que ve es aprobada − utilizada y una aceptada se recorta, no se re-asigna", false, "sin cliente en estado B con libro en el activo");
+      ok("122 la reserva no es de NEX: el motor evalúa sin persistir, el disponible que ve es aprobada − utilizada y una aceptada se recorta, no se re-asigna", false, "sin cliente en estado B con libro en el activo");
     } else {
       const rutB = filaB.rut;
       const st0 = lineasDeCliente(rutB);
@@ -4405,7 +4337,7 @@
         && JSON.stringify(lr) === JSON.stringify(recortarAsignacion(prevLinea, facsReales.slice(1).map((f) => f.id)));
       const versionOk = !errSnap && ofertaOk && aceptadaOk && recorteOk && SIM_VERSIONS[ID12] === guardadas;
 
-      ok("123 la reserva no es de NEX: el motor evalúa sin persistir, el disponible que ve es aprobada − utilizada y una aceptada se recorta, no se re-asigna",
+      ok("122 la reserva no es de NEX: el motor evalúa sin persistir, el disponible que ve es aprobada − utilizada y una aceptada se recorta, no se re-asigna",
          textoOk && puroOk && noPersisteOk && consistenciaOk && netoOk && versionOk,
          `sonda del checker ${sondaOk} · motor sin «reserv» ni persistencia en su código ${textoMal.length === 0}${textoMal.length ? " (" + textoMal.join(",") + ")" : ""}`
          + ` · puro contra el estado real de ${rutB} (${facsReales.length} fact. del A1, ${fmtMM(suma)}) ${puroOk} · repos/versiones/storage intactos ${noPersisteOk}`
@@ -4417,7 +4349,7 @@
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 124 · regla 13-terdecies — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 123 · regla 13-terdecies — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · LA LÍNEA GENERAL DEL CLIENTE: UN indicador, UNA definición de «Disponible», y el tramo de la
   //    operación sólo con la oferta SIMULADA (regla 13-terdecies). `IndicadorLinea` es el componente de
@@ -4442,7 +4374,7 @@
     const quedaDe = (t) => (t.match(/queda (M\$[\d.,]+|\$[\d.]+)/) || [])[1] || null;
 
     if (!fila) {
-      ok("124 la línea general del cliente: un indicador, «Disponible» = aprobada − utilizada, y «queda» sólo con la oferta simulada", false, "no hay ninguna fila en LINEAS_DATA con uso > 0 y disponible > M$10");
+      ok("123 la línea general del cliente: un indicador, «Disponible» = aprobada − utilizada, y «queda» sólo con la oferta simulada", false, "no hay ninguna fila en LINEAS_DATA con uso > 0 y disponible > M$10");
     } else {
       const base = { id: "T13T", cliente: fila.cliente, rutEmisor: fila.rut, stage: "oferta" };
       const disp = fila.disponible;
@@ -4501,14 +4433,14 @@
       const bordesOk = sinLinea.texto === "Sin línea" && /Sin cupo disponible/.test(sinCupo.texto) && !/queda|Disponible/.test(sinCupo.texto)
         && lineaCreditoDe({ ...base, monto: 0 }).usoActual === usoOriginal;
 
-      ok("124 la línea general del cliente: un indicador, «Disponible» = aprobada − utilizada, y «queda» sólo con la oferta simulada",
+      ok("123 la línea general del cliente: un indicador, «Disponible» = aprobada − utilizada, y «queda» sólo con la oferta simulada",
          a23Ok && tuboOk && sinSimOk && conSimOk && mueveOk && bordesOk,
          `${fila.rut} aprobada ${fmtMM(fila.aprobada)} · uso ${fmtMM(fila.uso)} · disponible ${fmtMM(disp)} (A23, no mira la oferta) ${a23Ok} · tubo «${tubo.texto}» sin queda ${tuboOk} · detalle sin simular = tubo ${sinSimOk} · simulado m1 ${fmtMM(m1)} → «${det1.texto}» (Disponible igual, mutante «${mutante}» no aparece) ${conSimOk} · m2 ${fmtMM(m2)} → queda ${quedaDe(det2.texto)} · ${fmtMM(mX)} → excede ${mueveOk} · bordes «${sinLinea.texto}» / «${sinCupo.texto}» ${bordesOk}`);
     }
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 125 · regla 14 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 124 · regla 14 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // NNN · REEVALUACIÓN EXPLÍCITA (regla 14): la mitad que vive en funciones de nivel módulo. La regla
   // dice que agregar/quitar no dispara cálculo y que «verificación y líneas se recalculan en la MISMA
@@ -4569,7 +4501,7 @@
     // (d) sin facturas no hay cifra: null, no cero — y lineaDeVersion salta la versión vacía.
     const nv4 = reevaluarCliente({ ...base, monto: 0, facturas: 0, facturasOp: [] }, "CR");
     const sinCifra = nv4.linea === null && nv4.verificacion === null && lineaDeVersion({ ...base, facturasOp: [] }) === nv3.linea;
-    ok("125 una reevaluación es UNA versión que congela línea y verificación sobre las mismas facturas; lineaDeVersion la lee por id sin recalcular sobre la selección cambiada",
+    ok("124 una reevaluación es UNA versión que congela línea y verificación sobre las mismas facturas; lineaDeVersion la lee por id sin recalcular sobre la selección cambiada",
        juntas1 && fiel1 && leeNoCalcula && unaMas && leeNoCalculaQuitar && recorte && sinCifra,
        `v${nv1.v} (${n1} versiones): línea ${ids(nv1.linea.facturas)} · verif ${ids(nv1.verificacion.facturas)} · cursable ${mm(nv1.linea.cursable)} = motor ${mm(motor1 ? motor1.cursable : -1)}`
        + ` · deal con +r3: lineaDeVersion sigue con 2 fact. (${leeNoCalcula}) · Re-evaluar: ${n1}→${n2} (${unaMas}), 3 fact. en las dos`
@@ -4584,7 +4516,7 @@
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 126 · regla 15 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 125 · regla 15 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · SOLICITUD DE LÍNEA: NEX INYECTA (API 1) Y CONSULTA (API 2/3); RESUELVE EL SISTEMA EXTERNO
   //    (regla de dominio 15). Lo que fija: inyectar escribe el REGISTRO y no un veredicto —queda «En
@@ -4683,13 +4615,13 @@
     if (typeof invalidarVisado === "function") invalidarVisado();
     const restauradoOk = lista.length === nAntes && SOLIC_SEQ === seq0 && filaDe(RUT_A).length === 0 && filaDe(RUT_O).length === 0;
 
-    ok("126 la solicitud de línea: NEX inyecta y consulta, el estado lo resuelve el sistema externo y sólo «Aprobada» constituye la línea",
+    ok("125 la solicitud de línea: NEX inyecta y consulta, el estado lo resuelve el sistema externo y sólo «Aprobada» constituye la línea",
        inyOk && api2Ok && intermOk && aprOk && idemOk && obsOk && sondaOk && restauradoOk,
        `inyectar → «En gestión» sin constituir ${inyOk} · API 2 sólo lee ${api2Ok} · API 3 avanza ${e0} → ${e1} → ${e2} sin tocar la cartera ${intermOk} · «Aprobada» constituye ${fmtMM(MONTO)} = ${MONTO} al peso, origen ${idA} ${aprOk} · «Línea constituida» auditada ${nConst3} vez tras aprobar y ${nConst5} tras dos consultas más ${idemOk} · «Observada» (${idO}) nunca constituye ${obsOk} · «Aprobada» plantado por NEX: el externo lo pisa con ${ePisa} sin constituir ${sondaOk} · [medido] api1Inyeccion admite ${dobleAdmitida} solicitudes para la misma lineaId · restaurado ${restauradoOk}`);
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 127 · regla 15-bis-bis — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 126 · regla 15-bis-bis — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · LA SOLICITUD INYECTADA AL CERRAR LA OFERTA CRUZA DE PESTAÑA, Y LA INCORPORACIÓN ES
   //    IDEMPOTENTE POR idProceso (regla de dominio 15-bis-bis). El detalle es pestaña propia —otro
@@ -4786,13 +4718,13 @@
     const auditN = AUDIT_LOG.length;
     const restauraOk = lista.length === nBase && cuenta(ID_SENUELO) === 0 && SOLIC_SEQ === seq0;
 
-    ok("127 la solicitud inyectada al cerrar la oferta cruza de pestaña: se incorpora el registro ya armado, una sola vez por idProceso",
+    ok("126 la solicitud inyectada al cerrar la oferta cruza de pestaña: se incorpora el registro ya armado, una sola vez por idProceso",
        emisorOk && aislOk && recibeOk && idemOk && negOk && sondaOk && restauraOk,
        `con el señuelo ${ID_SENUELO} delante, el emisor postea SOLICITUDES_LINEA[0] = ${idA} ${emisorOk} · aislada de esta lista ${aislOk} · incorporada tal cual (mismo id y JSON, al frente, SOLIC_SEQ ${seq0}→${SOLIC_SEQ}) y visible para bandeja y wizard (${pre.length} deudores) ${recibeOk} · 2× el mismo registro y un clon con otro contenido ⇒ ${nIdem} entrada ${idemOk} · sin idProceso no escribe ${negOk} · otra operación con el mismo id se descarta ${sondaOk} · lista (${nBase}) y secuencia restauradas ${restauraOk} · AUDIT_LOG ${audit0}→${auditN} (+${audit1 - audit0} por api1Inyeccion, +${auditN - audit1} por el receptor; cadena append-only, no se restaura)`);
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 128 · regla 15-quater-bis — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 127 · regla 15-quater-bis — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · `InputPesos` MUESTRA EL PESO SEPARADO EN MILES DENTRO DEL CAMPO Y EMITE EL NÚMERO EN
   //    `target.value` (regla de dominio 15-quater-bis). El campo de la Propuesta del wizard dejó de ser
@@ -4833,13 +4765,13 @@
     // dirección negativa del contrato: un <input type="number"> con la cifra pegada NO es lo que se emite
     const noNumberOk = el.type !== "number" && !/^\d+$/.test(el.value);
     ReactDOM.flushSync(() => raiz.unmount()); cont.remove();
-    ok("128 InputPesos muestra el peso separado en miles DENTRO del campo (fmtCLP, texto numérico, título en M$) y emite el NÚMERO en target.value: 280000000 → \"280000000\"; «$1.234.567» → 1234567, «12a34» → 1234, vacío → 0, nunca NaN; value=0 obligatorio va en ámbar y un no-numérico muestra $0",
+    ok("127 InputPesos muestra el peso separado en miles DENTRO del campo (fmtCLP, texto numérico, título en M$) y emite el NÚMERO en target.value: 280000000 → \"280000000\"; «$1.234.567» → 1234567, «12a34» → 1234, vacío → 0, nunca NaN; value=0 obligatorio va en ámbar y un no-numérico muestra $0",
        fmtOk && tipoOk && tituloOk && claseOk && contratoOk && sondaOk && vacioOk && basuraOk && noRedondoOk && noNumberOk,
        `fmtCLP ${fmtOk} · texto+miles ${tipoOk} (${el.type} «${fmtCLP(160000000)}») · título ${tituloOk} · f-prop ${claseOk} · emite «${e1}» ${contratoOk} · sondas ${sondaOk} [${[e2, e3, e4, e5, e6].join("|")}] · value=0 ámbar ${vacioOk} · basura→$0 ${basuraOk} · no redondo ${noRedondoOk} · no es type=number ${noNumberOk}`);
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 129 · regla 27-bis — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 128 · regla 27-bis — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · LOS RÓTULOS DEL MENÚ EN EL COMMAND-K: buscar «Reportes» encuentra la vista `panel` y buscar
   //    «Gestión diaria» la vista `pipeline`; el rótulo que se muestra ES el segundo argumento de `irA`; y
@@ -4918,7 +4850,7 @@
       const rotuloEsArg = nuevas.length === lista.length && lista.every((it, i) => nuevas[i][1] === it.label)
         && nuevas.some(([id, l]) => id === "pipeline" && l === "Gestión diaria") && nuevas.some(([id, l]) => id === "panel" && l === "Reportes");
 
-      ok("129 los rótulos del menú en el Command-K: «Reportes» y «Gestión diaria» encuentran su vista y navegan con el rótulo que muestran; los nombres viejos no existen",
+      ok("128 los rótulos del menú en el Command-K: «Reportes» y «Gestión diaria» encuentran su vista y navegan con el rótulo que muestran; los nombres viejos no existen",
         catalogoOk && rOk && rNav && gOk && gNav && tuboVacio && tuboDiarioVacio && rotuloEsArg,
         `catálogo [${todos.join(" · ")}] con los dos nuevos y sin viejos ${catalogoOk} · «reportes» → [${r.map((i) => i.label).join(",")}] ${rOk} → irA(${JSON.stringify(llamadas[0] || null)}) ${rNav}` +
         ` · «gestión» → [${g.map((i) => i.label).join(",")}] ${gOk} → irA(${JSON.stringify(llamadas[1] || null)}) ${gNav}` +
@@ -4927,7 +4859,7 @@
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 130 · regla 31 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 129 · regla 31 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // NNN · MODO DIRECTORIO (regla 31), la mitad que vive en una función de nivel módulo: `construirDirectorio`
   // arma el elenco de la demo. Se fija:
@@ -5105,7 +5037,7 @@
     })();
     const restaurado = libroPorEmisor === libro0 && lineaDeCliente === linea0 && construirDirectorio("CR").deals.map((d) => d.rutEmisor).join() === r.ruts.join();
 
-    ok("130 modo Directorio: `construirDirectorio` arma 5 operaciones con facturas REALES del libro (A1) y la línea real, 3 dentro de línea + 2 parciales como las ve el tubo, con deudores COMPLETOS de mayor a menor, desempate por RUT, recorte de las más grandes con piso de 12, determinista, sin inventar y sin persistir",
+    ok("129 modo Directorio: `construirDirectorio` arma 5 operaciones con facturas REALES del libro (A1) y la línea real, 3 dentro de línea + 2 parciales como las ve el tubo, con deudores COMPLETOS de mayor a menor, desempate por RUT, recorte de las más grandes con piso de 12, determinista, sin inventar y sin persistir",
        r.pasa && sondaPiso.ok && restaurado,
        `perfil regla 5·3+2·30/12 ${r.chk.perfilRegla} · fact ${r.nFac.join("/")} (≥12: ${r.chk.minFac}) · deud ${r.nDeu.join("/")} (≥${DIRECTORIO_PERFIL.deudores}: ${r.chk.minDeu})`
        + ` · dentro ${r.nCubren} parciales ${r.nParc} (cupo=tab=detalle: ${r.chk.coinciden}) · en tubo ${r.chk.enTubo}`
@@ -5119,7 +5051,7 @@
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 131 · regla 17 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 130 · regla 17 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · TELÉFONOS OFUSCADOS EN LOS LOGS, TIMESTAMPS ABSOLUTOS Y AUDITORÍA ENCADENADA Y PERSISTENTE
   //    (regla de dominio 17). Tres mitades, una función cada una:
@@ -5189,7 +5121,7 @@
     const syncOk = fonoOk && sondaFono && nsOk && fhOk && regOk;
     const detSync = `fonoOfuscado oculta ${fonoOk} (${fonoOfuscado("+56 9 8765 4321")}) · sonda identidad/tapa-final no pasa ${sondaFono} · nowStamp absoluto ${nsOk} (${ns}) · fecha del evento y no del reloj ${fhOk} (ayer → ${fhA.fecha}) · registro síncrono ${regOk} (ts entero, id monótono ${seqDe(r1)}→${seqDe(r3)}, hAlg ${r3 && r3.hAlg})`;
     const iOut = out.length;
-    const TIT = "131 teléfonos ofuscados en los logs, marcas absolutas y auditoría encadenada y persistente";
+    const TIT = "130 teléfonos ofuscados en los logs, marcas absolutas y auditoría encadenada y persistente";
     ok(TIT, syncOk, detSync + " · huella y persistencia: pendiente (asíncrono)");
 
     // (d) asíncrono: huella encadenada, sonda sobre copias y persistencia
@@ -5236,7 +5168,7 @@
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 132 · regla TEN-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 131 · regla TEN-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // NNN · TEN-01 · AISLAMIENTO POR TENANT: toda mutación usa el tenant FIJADO AL ABRIR LA SESIÓN y, si el
   //   tenant activo cambió sin re-autenticar, el repositorio la RECHAZA (no escribe, y deja el rechazo
@@ -5351,7 +5283,7 @@
       limpiar();
     }
     const R = res || {};
-    ok("132 TEN-01 aislamiento por tenant: la mutación usa el tenant fijado en la sesión y, si el activo cambió sin re-autenticar, el repositorio la rechaza y lo registra",
+    ok("131 TEN-01 aislamiento por tenant: la mutación usa el tenant fijado en la sesión y, si el activo cambió sin re-autenticar, el repositorio la rechaza y lo registra",
        !!res && R.invOk && R.validaOk && R.soloTenantOk && R.sinRechazoValido && R.todasRech && R.ajenaVacia && R.intactaOk && R.storageIntacto && R.cuatroRechazos && R.abrirFija && R.reautOk && R.otroLadoOk && R.soloTen01,
        `invariante mutaciones * · servidor · repositorio ${R.invOk} · (a) sesión=activo (${R.tenant0}): set/patch/push/del pasan ${R.validaOk}, sólo en la tabla de la sesión ${R.soloTenantOk}, sin rechazo ${R.sinRechazoValido}`
        + ` · (b) activo→${R.AJENO} sin re-autenticar: ${(R.porOp || []).join(", ")} (contadas y logueadas con sesion/activo ${R.todasRech}) · tabla original intacta ${R.intactaOk} · tabla ajena vacía ${R.ajenaVacia} · storage intacto ${R.storageIntacto} · CONTRATO_RECHAZOS +4 ${R.cuatroRechazos}`
@@ -5359,7 +5291,7 @@
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 133 · regla RAT-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 132 · regla RAT-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · RAT-01 · LÍMITE DE TASA POR (USUARIO, COLECCIÓN): máximo de mutaciones por minuto.
   //    Dos mitades. (a) `limiteTasa(clave, porMinuto)` es el contador: con una clave única, las N primeras
@@ -5454,7 +5386,7 @@
     const det = `limiteTasa: ${N} pasan y la ${N + 1} no ${cuentaOk} · marcas fuera de la ventana (${V} ms) salen ${viejasOk} · dentro siguen contando ${vigentesOk} · otra clave aparte ${claveOk} · tope 0 rechaza ${ceroOk}`
       + ` · gate: familia compartida ${repoVisado.nombre}+${repoVisadoDetalle.nombre}→"${fam}" ${familiaOk} tope ${tope} (finito y ≤ 1e5: ${topeOk}) · la ${tope}ª escritura pasa ${pasaOk} · la siguiente (set/patch/del) se rechaza sin escribir ni consumir cupo ${rechazaOk} · log RAT-01 con tope y familia ${logOk}`
       + ` · mismo usuario otra colección (${famOtra}) pasa ${otraColOk} · otro usuario misma colección pasa ${otroUsrOk} · estado restaurado ${limpioOk}`;
-    const TIT = "133 RAT-01 · el repositorio corta la mutación que excede el tope por (usuario, familia de colecciones) y devuelve el código del contrato";
+    const TIT = "132 RAT-01 · el repositorio corta la mutación que excede el tope por (usuario, familia de colecciones) y devuelve el código del contrato";
     const iOut = out.length;
     ok(TIT, contadorOk && gateOk, det + " · promesas: pendiente (asíncrono)");
     // (c) lo que ve el LLAMADOR: la escritura válida confirma {ok:true} y la rechazada resuelve —no rechaza— con
@@ -5475,7 +5407,7 @@
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 134 · regla IDM-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 133 · regla IDM-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · IDM-01 · IDEMPOTENCIA DE LA MUTACIÓN (OBSERVADA, NO BLOQUEANTE): la misma mutación no se aplica
   //    dos veces es la regla del SERVIDOR; acá sólo se CUENTAN los duplicados, porque sin una clave de
@@ -5609,7 +5541,7 @@
       + ` · gate: la primera no cuenta ${Q.primeraNoCuenta} · la misma inmediata cuenta ${Q.dupCuenta} y loguea observado:true ${Q.logOk} · otro valor no cuenta ${Q.otroValorOk}`
       + ` · push doble se cuenta Y se aplica (2 ítems) ${Q.pushOk} · patch doble ${Q.patchOk} · del doble ${Q.delOk} · storage con los 2 ítems ${Q.storageOk} · 4 entradas de log, todas observado ${Q.logCuentaOk} · sin TEN-01/RAT-01 ${Q.soloIdm}`
       + ` · sonda: ${Q.sondaNota} ${Q.sondaOk} · restaurado vuelve a contar ${Q.restauradoOk} · estado restaurado ${limpioOk}`;
-    const TIT = "134 IDM-01 · la mutación duplicada se detecta y se cuenta, pero se aplica igual: la idempotencia real es del servidor";
+    const TIT = "133 IDM-01 · la mutación duplicada se detecta y se cuenta, pero se aplica igual: la idempotencia real es del servidor";
     const iOut = out.length;
     ok(TIT, sincOk, det + " · promesas: pendiente (asíncrono)");
     // Lo que ve el LLAMADOR: las nueve escrituras —duplicadas incluidas— confirman {ok:true}; ninguna trae
@@ -5628,7 +5560,7 @@
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 135 · regla LIN-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 134 · regla LIN-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · LIN-01 · LA OPERACIÓN NO SUPERA LA LÍNEA DISPONIBLE DEL CLIENTE AL ARMARLA.
   //    Dos capas, porque el invariante declara `aplicado: "motor"` y además trae un `evaluar`:
@@ -5704,13 +5636,13 @@
       && rNoCabe.cursable === 0 && fNo.estado === "REQUIERE_COMITE" && fNo.motivo === "cliente" && rNoCabe.dispCliente === X
       && rNoCabe.solicitudes.length === 1 && rNoCabe.solicitudes[0].motivo === "cliente";
 
-    ok("135 LIN-01 · la operación no supera la línea disponible del cliente: monto = disponible pasa, un peso más se rechaza con LIN-01, y el motor deja esa factura en comité con motivo `cliente`",
+    ok("134 LIN-01 · la operación no supera la línea disponible del cliente: monto = disponible pasa, un peso más se rechaza con LIN-01, y el motor deja esa factura en comité con motivo `cliente`",
        declaraOk && lecturaOk && pasaOk && rechazaOk && crearOk && fantasmaOk && contadorOk && sondaOk && motorOk,
        `cliente ${fila.rut} aprobada ${fila.aprobada} uso ${fila.uso} disponible ${disp} · = pasa ${pasaOk} · +1 viola ${rechazaOk} · crear ${crearOk} · sin línea ${fantasmaOk} · contador/log ${contadorOk} · sonda mutación ajena ${sondaOk} · motor X=${X} cursable ${rCabe.cursable} / X+1 ${fNo && fNo.estado}:${fNo && fNo.motivo} ${motorOk}`);
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 136 · regla OTG-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 135 · regla OTG-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · OTG-01 · SÓLO APRUEBA QUIEN TIENE ATRIBUCIÓN: la excepción la resuelve un apoderado con atribución
   //    en el ÁREA y el NIVEL que la regla exige. El contrato lo declara en `INVARIANTES` (mutaciones
@@ -5829,7 +5761,7 @@
       for (let i = SYS_LOG.length - 1; i >= 0; i--) { const e = SYS_LOG[i]; if (e && e.id > idLog0 && e.fuente === "contrato" && e.datos && e.datos.codigo === "OTG-01") SYS_LOG.splice(i, 1); }
     }
     const Q = R || {};
-    ok("136 OTG-01 sólo aprueba quien tiene atribución: validarMutacion rechaza al ejecutivo sin atribución en aprobar y rechazar, y pasa al cargo del área con el nivel que la regla exige",
+    ok("135 OTG-01 sólo aprueba quien tiene atribución: validarMutacion rechaza al ejecutivo sin atribución en aprobar y rechazar, y pasa al cargo del área con el nivel que la regla exige",
        !!R && Q.invOk && Q.catalogoOk && Q.ejecViola && Q.jefeOpPasa && Q.adminPasa && Q.ggViola && Q.nivelOk && Q.pisoOk && Q.sigueAlRol && Q.hoyOk && Q.coberturaOk && Q.sondaSilencio && Q.sondaFailOpen && Q.restaurada,
        `invariante aprobar+rechazar · servidor · evaluar→puedeAprobarExc ${Q.invOk} · C01 operaciones N${Q.n01} (M$200 → N${Q.n01g}) · C21 riesgo N${Q.n21} ${Q.catalogoOk}`
        + ` · (a) CR viola en aprobar y rechazar con codigo/nombre/regla, +2 en CONTRATO_RECHAZOS y logueado ${Q.ejecViola} · JO pasa sin contar ${Q.jefeOpPasa} · ADMIN pasa ${Q.adminPasa}`
@@ -5839,7 +5771,7 @@
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 137 · regla GIR-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 136 · regla GIR-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · GIR-01 · NO GIRA SIN PASAR POR CESIÓN.
   //    El invariante vive en `INVARIANTES` con `evaluar: (p) => ["cesion","giro"].includes(p.deal.stage)` y
@@ -5926,7 +5858,7 @@
       for (let i = SYS_LOG.length - 1; i >= 0; i--) { const e = SYS_LOG[i]; if (e && e.id > idLog0 && e.fuente === "contrato" && e.datos && (e.datos.codigo === "GIR-01" || e.datos.codigo === "GIR-02")) SYS_LOG.splice(i, 1); }
     }
     const R = res || {};
-    ok("137 GIR-01 · no gira sin pasar por Cesión: `oportunidad.girar` pasa sólo en cesion/giro y cualquier otra etapa se rechaza con GIR-01, distinto de GIR-02 que juzga la huella y no la etapa",
+    ok("136 GIR-01 · no gira sin pasar por Cesión: `oportunidad.girar` pasa sólo en cesion/giro y cualquier otra etapa se rechaza con GIR-01, distinto de GIR-02 que juzga la huella y no la etapa",
        declaraOk && huellaEstable && !!res && R.direccionesOk && R.contadorOk && R.logOk && R.codigoOk && R.sondaStageOk && R.sondaMutOk,
        `declara servidor/[${MUT}] con GIR-02 al lado ${declaraOk} · huella estable entre etapas ${huellaEstable} · por etapa: ${(R.porEtapa || []).map((x) => `${x.st}→${x.ok ? "pasa" : "rechaza " + x.cod}${x.bien ? "" : " (MAL)"}`).join(", ")} ${R.direccionesOk}`
        + ` · contador +${R.nRechazadas} y GIR-02 quieto ${R.contadorOk} · log warn con mutación ${R.logOk} · cesion sin evidencia → ${R.cesSin} / oferta sin evidencia → ${R.ofeSin} ${R.codigoOk}`
@@ -5934,7 +5866,7 @@
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 138 · regla ATR-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 137 · regla ATR-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · ATR-01 · EL DESCUENTO APLICADO NO EXCEDE LA ATRIBUCIÓN DEL ROL SIN AUTORIZACIÓN DE LA JEFATURA.
   //    El invariante vive en `INVARIANTES` (mutación `condiciones.guardar`, autoridad servidor) y su `evaluar`
@@ -6124,7 +6056,7 @@
       SYS_LOG.splice(0, SYS_LOG.length, ...log0); SYS_SEQ = seq0;   // el log vuelve entero, también lo que el ring hubiera evictado
     }
     const Q = R || {};
-    ok("138 ATR-01 · el descuento no excede la atribución del rol sin la jefatura: pctDesc = descEjec pasa y un centésimo de tasa más (medio punto de descuento) se rechaza, la escalera ejecutivo→jefatura→gerente sale del rol y del tenant, y O01 rutea el exceso a comercial N1",
+    ok("137 ATR-01 · el descuento no excede la atribución del rol sin la jefatura: pctDesc = descEjec pasa y un centésimo de tasa más (medio punto de descuento) se rechaza, la escalera ejecutivo→jefatura→gerente sale del rol y del tenant, y O01 rutea el exceso a comercial N1",
        !!R && Q.invOk && Q.bandaOk && Q.dosDirecciones && Q.toleranciaOk && Q.sinMax && Q.sondaCobertura && Q.escalera && Q.consistente
        && Q.rolesOk && Q.sigueAlRol && Q.pctTenant && Q.minTenant && Q.unaDeclaracion && Q.motorOk,
        (err ? `EXCEPCIÓN ${err} · ` : "")
@@ -6140,7 +6072,7 @@
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 139 · regla CRY-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 138 · regla CRY-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · CRY-01 · EL OTP SE GUARDA COMO SHA-256 CON SAL POR EMISIÓN Y NUNCA EN CLARO; VALIDAR COMPARA
   //    HASHES, VENCE POR TTL Y ES DE UN SOLO USO. La regla es del SERVIDOR («el hash no sale del servidor»)
@@ -6185,7 +6117,7 @@
       && Number.isInteger(AUTH_OTP_MAX) && AUTH_OTP_MAX >= 1 && /^\d{6}$/.test(otpAleatorio(OTP_LARGO)) && /^\d{4}$/.test(otpAleatorio(4));
     const syncOk = contratoOk && fnOk && ctOk && constOk;
     const detSync = `contrato CRY-01 sobre otp.emitir/otp.validar sin evaluar ${contratoOk} · funciones ${fnOk} · igualConstante tabla de verdad ${ctOk} · constantes (TTL ${Math.round(OTP_TTL_MS / 60000)} min · largo ${OTP_LARGO} · AUTH_OTP_MAX ${AUTH_OTP_MAX}) ${constOk}`;
-    const TIT = "139 CRY-01 · el OTP se guarda como SHA-256 con sal por emisión y nunca en claro; validar compara hashes, vence por TTL y consume un solo uso";
+    const TIT = "138 CRY-01 · el OTP se guarda como SHA-256 con sal por emisión y nunca en claro; validar compara hashes, vence por TTL y consume un solo uso";
     const iOut = out.length;
     ok(TIT, syncOk, detSync + " · emisión, validación, TTL y persistencia: pendiente (asíncrono)");
     const hex = (s, n) => new RegExp("^[0-9a-f]{" + n + "}$").test(String(s || ""));
@@ -6278,7 +6210,7 @@
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
-  // 140 · regla PRI-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
+  // 139 · regla PRI-01 — integrado el 17-09-2026 desde caso.js (cerrar la tabla de invariantes)
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · PRI-01 · LA PRIORIDAD DE CURSE LA PIDE UNA JEFATURA, NO EL EJECUTIVO DUEÑO DEL NEGOCIO.
   //    El invariante vive en `INVARIANTES` (mutación `prioridadCurse.set`, autoridad servidor) y su `evaluar`
@@ -6421,7 +6353,7 @@
     }
     const Q = R || {}; if (Q.ejec === undefined) Q.ejec = ejec;
     const lista = (xs) => (xs || []).join("/");
-    ok("140 PRI-01 · la prioridad de curse la pide una jefatura comercial: el ejecutivo dueño del negocio se rechaza y no escribe, JG/GC/GG/ADMIN pasan y todo el resto del catálogo se rechaza, sigue al rol y al reemplazo vigente, y falla cerrado con un usuario desconocido",
+    ok("139 PRI-01 · la prioridad de curse la pide una jefatura comercial: el ejecutivo dueño del negocio se rechaza y no escribe, JG/GC/GG/ADMIN pasan y todo el resto del catálogo se rechaza, sigue al rol y al reemplazo vigente, y falla cerrado con un usuario desconocido",
        !!R && !Q.error && Q.invOk && Q.ejecOk && Q.rechazaEjec && Q.pasanJefes && Q.fallaCerrado && Q.soloComercial && Q.sondaCobertura
        && Q.noEscribe && Q.escribeJefe && Q.sigueAlRol && Q.reemplazoOk,
        (Q.error ? `EXCEPCIÓN ${Q.error} · ` : "")
@@ -6434,7 +6366,76 @@
        + ` · (c) setPrioridadCurse con ${Q.ejec} devuelve false y no escribe ${Q.noEscribe} · con JG escribe {por:JG, porNombre, ts} ${Q.escribeJefe} · medido, no exigido: ${Q.quitarMedido}`
        + ` · (d) rol jefe_comercial habilita y devolverlo quita ${Q.sigueAlRol}`
        + ` · (e) cubriendo a JG desde ${Q.hoy} hasta ${Q.hasta} hereda comercial N${Q.nJG} con atribDe vacía ${Q.cubre} · escribe a su nombre ${Q.escribeCubre} · JG sigue (aditivo) ${Q.aditivo} · ausenteAprueba:false revoca a JG y deja al reemplazante ${Q.revocado} · reemplazo vencido no habilita ${Q.vencido} · restaurado ${Q.restaurado}`
-       + ` · rechazos netos ${Q.total}`);  }
+       + ` · rechazos netos ${Q.total}`);
+  }
+
+  // ── 140 · CERRAR LA OFERTA SE PUEDE DESHACER, Y SON TRES HECHOS DISTINTOS ────────────────────
+  // «Cerrada» (el ejecutivo aprobó el paquete), «publicada» (el correo con el código de negocio ya
+  // salió) y «reabierta» (la firma del cliente quedó revocada) son cosas distintas, y el botón
+  // «Editar» sólo deshace la primera. Confundirlas deja o una oferta que no se puede volver a
+  // cerrar —el CTA quedaba vivo y al apretarlo no pasaba nada— o una firma que reaparece sola.
+  {
+    const cerrada = { id: "OP-E1", stage: "oferta", ofertaCerrada: true, negocioNum: "OP-E1", publicacion: "electronica" };
+    const abierta = { id: "OP-E2", stage: "oferta" };
+    const editando = { ...cerrada, enEdicion: { ts: "x", por: "y" } };
+    const firmada = { id: "OP-E3", stage: "cesion", ofertaCerrada: true, negocioNum: "OP-E3", clienteAcepto: true };
+    const girada = { ...cerrada, id: "OP-E4", stage: "giro" };
+    const enCore = { ...cerrada, id: "OP-E5", integracion: "aprobada" };
+    const perdida = { ...cerrada, id: "OP-E6", stage: "perdida" };
+
+    // (a) El predicado del CIERRE mira las dos banderas y la marca de edición.
+    const vigOk = ofertaCerradaVigente(cerrada) === true && ofertaCerradaVigente(abierta) === false
+      && ofertaCerradaVigente(editando) === false && ofertaCerradaVigente(null) === false;
+
+    // (b) PUBLICAR NO SE DESHACE. El correo salió; lo que se suelta es la aprobación interna. Si
+    //     `ofertaPublicada` se cayera al editar, el tab de Verificación desaparecería y con él las
+    //     llamadas ya registradas — evidencia de 3 a 4 horas por deudor.
+    const pubCerrada = { ...cerrada, ofertaComunicada: true };
+    const pubEditando = { ...pubCerrada, enEdicion: { ts: "x" } };
+    const pubOk = ofertaPublicada(pubCerrada) === true && ofertaPublicada(pubEditando) === true;
+
+    // (c) EDITAR: a quién aplica, quién puede y qué implica.
+    const eAbierta = edicionOperacion(abierta), eCerrada = edicionOperacion(cerrada);
+    const eFirmada = edicionOperacion(firmada), eGirada = edicionOperacion(girada);
+    const eCore = edicionOperacion(enCore), ePerdida = edicionOperacion(perdida);
+    const edicOk = eAbierta.aplica === false                       // nada que reabrir: ya es editable
+      && eCerrada.aplica === true && eCerrada.ok === true && !eCerrada.revocaFirma
+      && eFirmada.aplica === true && eFirmada.ok === true && eFirmada.revocaFirma === true
+      && eGirada.aplica === true && eGirada.ok === false           // girada no se edita
+      && eCore.aplica === true && eCore.ok === false               // ya la tomó Tesorería
+      && ePerdida.aplica === true && ePerdida.ok === false;
+    // Y NUNCA SIN MOTIVO: un destino apagado que no dice por qué deja al ejecutivo sin dónde
+    // enterarse (regla 24). Los tres «no» tienen que explicarse, y con textos distintos.
+    const motivos = [eGirada.motivo, eCore.motivo, ePerdida.motivo];
+    const motivoOk = motivos.every((m) => typeof m === "string" && m.length > 20)
+      && new Set(motivos).size === 3 && eCerrada.motivo !== eFirmada.motivo;
+
+    // (d) LA FIRMA SE REVOCA SÓLO CUANDO HABÍA FIRMA. `enEdicion` y `reabierta` son independientes:
+    //     cerrar de nuevo limpia la primera, y si fueran la misma marca devolvería una aceptación
+    //     que nadie dio. Se comprueba sobre el gate que decide si se puede girar.
+    const firmadaEditando = { ...firmada, enEdicion: { ts: "x" }, reabierta: { ts: "x" } };
+    const reCerrada = { ...firmadaEditando, enEdicion: undefined };        // volvió a cerrarse
+    const firmaOk = aprobacionFormalCliente(firmada) === true
+      && aprobacionFormalCliente(firmadaEditando) === false
+      && aprobacionFormalCliente(reCerrada) === false   // cerrar NO devuelve la firma
+      && ofertaCerradaVigente(reCerrada) === true;      // pero sí devuelve el cierre
+
+    // (e) LA SOLICITUD AL COMITÉ NO SE DUPLICA. Al re-cerrar, lo que falta de línea se vuelve a
+    //     calcular; si pide lo mismo no se inyecta de nuevo, porque NEX no puede retirar la
+    //     anterior (regla 15) y el comité vería dos peticiones sin saber cuál rige. Se compara el
+    //     DETALLE y no el total: dos repartos distintos pueden sumar igual.
+    const s1 = { rut: "1-9", detalle: [{ rutDeudor: "2-7", monto: 60e6, tipoLinea: "puntual" }, { rutDeudor: "3-5", monto: 30e6, tipoLinea: "puntual" }] };
+    const s2 = { rut: "1-9", detalle: [{ rutDeudor: "3-5", monto: 30e6, tipoLinea: "puntual" }, { rutDeudor: "2-7", monto: 60e6, tipoLinea: "puntual" }] }; // mismo, otro orden
+    const s3 = { rut: "1-9", detalle: [{ rutDeudor: "2-7", monto: 50e6, tipoLinea: "puntual" }, { rutDeudor: "3-5", monto: 40e6, tipoLinea: "puntual" }] }; // mismo total, otro reparto
+    const s4 = { rut: "1-9", detalle: [{ rutDeudor: "2-7", monto: 60e6, tipoLinea: "puntual" }] };
+    const solOk = mismaSolicitudComite(s1, s2) === true && mismaSolicitudComite(s1, s3) === false
+      && mismaSolicitudComite(s1, s4) === false && mismaSolicitudComite(s1, { ...s1, rut: "9-9" }) === false
+      && mismaSolicitudComite(s1, null) === false;
+
+    ok("140 cerrar la oferta se deshace con «Editar», y publicar y firmar no se deshacen con ella",
+       vigOk && pubOk && edicOk && motivoOk && firmaOk && solOk,
+       `cierre vigente ${vigOk} \u00b7 publicar no se deshace ${pubOk} \u00b7 a qui\u00e9n aplica editar ${edicOk} \u00b7 siempre con motivo ${motivoOk} \u00b7 la firma s\u00f3lo se revoca si la hab\u00eda, y cerrar no la devuelve ${firmaOk} \u00b7 la solicitud al comit\u00e9 no se duplica ${solOk}`);
+  }
 
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");

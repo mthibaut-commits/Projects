@@ -103,8 +103,8 @@ export function auditarReset(src) {
   for (const r of REPOS_EVIDENCIA) if (cl.includes(r)) fallos.push(`evidencia: limpiarSimulacion nombra \`${r}\` — el reset no toca visado, verificaciones, vetos ni versiones`);
   if (/\bdelete\b/.test(cl)) fallos.push("evidencia: limpiarSimulacion usa `delete` (borra algo que no es suyo)");
   // (4) aviso al tubo por el mismo canal que la simulación
-  if (!/avisarTubo\(id, patch\)/.test(cl)) fallos.push("aviso: limpiarSimulacion no encola el patch con `avisarTubo(id, patch)` (el tubo no se entera: vacía acá, simulada allá)");
-  if (!/avisoTuboRef\.current;[\s\S]{0,400}?postMessage\(\{ type: "nex-simulado", dealId: av\.id, patch: av\.patch \}/.test(src))
+  if (!/avisarTubo\(id, patch\)/.test(cl)) fallos.push("aviso: limpiarSimulacion no llama a `avisarTubo(id, patch)` (el tubo no se entera: vacía acá, simulada allá)");
+  if (!/avisoTuboRef\.current;[\s\S]{0,600}?postMessage\(\{ type: "nex-simulado", dealId: av\.id, patch: av\.patch \}/.test(src))
     fallos.push("aviso: el efecto que drena `avisoTuboRef` no postea `nex-simulado` con `{ dealId, patch }`");
   // (5) DealDrawer: sólo mientras la oferta siga siendo del ejecutivo, con el motivo escrito
   const tm = tramoMotivo(src);

@@ -1,7 +1,7 @@
 /* Gate de contrato de la regla 13-sexdecies sobre el TEXTO del fuente (lo que la e2e no puede sondear plantando
    una violación en el navegador): (1) el panel de arranque de `DealDrawer` ofrece, con la oferta NO vacía,
    «Tienes {validas.length} factura…», un botón «Simular la oferta» que simula LA SELECCIÓN (`elegirInicio(validas`),
-   deshabilitado sólo por `soloLectura`, y el rótulo «O reemplaza la selección por» ANTES de los atajos
+   deshabilitado sólo por la compuerta de estado, y el rótulo «O reemplaza la selección por» ANTES de los atajos
    (`opcionesInicio.map`); (2) el ícono de retiro de la oferta —título «Retirar esta factura de la oferta»— se dibuja
    siempre que la operación no esté bloqueada, sin `disabled`, con el onClick a secas, en `C.sub` y con hover;
    (3) NINGÚN botón que abra el diálogo de retiro (hoy dos: la fila de la oferta y el sub-tab «documentos») lleva
@@ -48,7 +48,7 @@ function ifs(texto) {
 }
 
 /* (1) Panel de arranque: dentro del bloque `!deal.simulado`, el tramo `validas.length > 0` trae las tres piezas en orden,
-   y el botón de la selección sólo se deshabilita por `soloLectura`. */
+   y el botón de la selección sólo se deshabilita por la compuerta de estado (`bloqueado`/`soloLectura`). */
 export function panelManual(src) {
   const c = sinComentarios(src); const fallos = [];
   const ini = c.indexOf("{!deal.simulado ? (");
@@ -72,7 +72,7 @@ export function panelManual(src) {
     if (guarda < 0) fallos.push("«Tienes…» no está bajo la guarda `validas.length > 0`: con la oferta vacía ofrecería simular nada");
     if (!(iM > iR)) fallos.push("los atajos no están DESPUÉS del rótulo «O reemplaza la selección por»");
     const tagB = bloque.slice(iB, bloque.indexOf("</button>", iB)); const dis = tagB.match(/disabled=\{[^}]*\}/);
-    if (dis && dis[0] !== "disabled={soloLectura}") fallos.push(`«Simular la oferta» no se deshabilita sólo por \`soloLectura\` (${dis[0]}): la salida manual existe en el texto y no se puede apretar`);
+    if (dis && !/^disabled=\{(bloqueado|soloLectura)\}$/.test(dis[0])) fallos.push(`«Simular la oferta» no se deshabilita sólo por la compuerta de estado \`bloqueado\`/\`soloLectura\` (${dis[0]}): la salida manual existe en el texto y no se puede apretar`);
   }
   return fallos;
 }
@@ -86,7 +86,7 @@ function vetosDe(c, { b, idx, previo }) {
   if (!/onClick=\{\(\) => setConfirmRetiro\(f\)\}/.test(b)) fallos.push(`línea ${ln}: el onClick del retiro no es \`() => setConfirmRetiro(f)\` a secas (${(b.match(/onClick=\{[^\n]*?\}\}?(?= )/) || ["?"])[0]}): una guarda ahí es el veto sin la palabra disabled`);
   if (!/ title="[^"]+"/.test(b)) fallos.push(`línea ${ln}: el título del botón de retiro es condicional (${(b.match(/title=\{[^}]*\}/) || ["?"])[0]}): un título que cambia con la cantidad es el veto viejo`);
   if (/al menos (una|1) factura|la última/i.test(b)) fallos.push(`línea ${ln}: un botón de retiro dice que la oferta debe conservar una factura`);
-  if (!/\{!soloLectura \? $/.test(previo)) fallos.push(`línea ${ln}: el botón de retiro no se dibuja con \`{!soloLectura ? \` sino tras «${previo.trim().slice(-32)}»: una condición por cantidad esconde el ícono`);
+  if (!/\{!(bloqueado|soloLectura) \? $/.test(previo)) fallos.push(`línea ${ln}: el botón de retiro no se dibuja con \`{!bloqueado ? \` ni \`{!soloLectura ? \` sino tras «${previo.trim().slice(-32)}»: una condición por cantidad esconde el ícono`);
   return fallos;
 }
 /* (2) El ícono de retiro de la FILA DE LA OFERTA: uno solo, sin veto, en C.sub y con hover. */
@@ -140,7 +140,7 @@ export function mutacionAdmiteVacia(src) {
   return fallos;
 }
 
-test("13-sexdecies · el panel de arranque con la oferta no vacía: «Tienes N…», «Simular la oferta» sobre la selección (deshabilitado sólo por soloLectura), «O reemplaza la selección por» antes de los atajos", () => {
+test("13-sexdecies · el panel de arranque con la oferta no vacía: «Tienes N…», «Simular la oferta» sobre la selección (deshabilitado sólo por bloqueado), «O reemplaza la selección por» antes de los atajos", () => {
   assert.deepEqual(panelManual(jsx), []);
 });
 test("13-sexdecies · el ícono de retiro de la fila de la oferta: se dibuja si no está bloqueada, sin disabled ni guarda, en C.sub, con hover", () => {
@@ -166,8 +166,9 @@ test("13-sexdecies · SONDAS: cada violación plantada cambia el veredicto, y lo
   assert.ok(panelManual(s1b).some((f) => /O reemplaza/.test(f)), "no cazó la falta del rótulo");
   const s1c = distinto(jsx.replace("{validas.length > 0 ? (<>\n                                    <div className=\"t15 font-semibold\" style={{ color: C.ink }}>Tienes", "{true ? (<>\n                                    <div className=\"t15 font-semibold\" style={{ color: C.ink }}>Tienes"), jsx, "guarda validas.length > 0");
   assert.ok(panelManual(s1c).some((f) => /guarda/.test(f)), "no cazó la guarda de oferta vacía retirada");
-  const s1d = distinto(jsx.replace('onClick={() => elegirInicio(validas, "Selección manual")} disabled={soloLectura}', 'onClick={() => elegirInicio(validas, "Selección manual")} disabled={bloqueado || true}'), jsx, "Simular siempre deshabilitado");
-  assert.ok(panelManual(s1d).some((f) => /sólo por `soloLectura`/.test(f)), "no cazó «Simular la oferta» deshabilitado siempre");
+  const COMP = (jsx.match(/\{!(bloqueado|soloLectura) \? <button [^\n]*?setConfirmRetiro/) || [])[1] || "bloqueado";   // la compuerta de estado, como se llame hoy
+  const s1d = distinto(jsx.replace(`onClick={() => elegirInicio(validas, "Selección manual")} disabled={${COMP}}`, 'onClick={() => elegirInicio(validas, "Selección manual")} disabled={true}'), jsx, "Simular siempre deshabilitado");
+  assert.ok(panelManual(s1d).some((f) => /sólo por la compuerta de estado/.test(f)), "no cazó «Simular la oferta» deshabilitado siempre");
   // 2 · el ícono de la fila de la oferta: vuelve a llevar el veto / pierde el color y el hover / onClick con guarda / no se dibuja con una factura.
   const btn = jsx.match(/<button [^\n]*?title="Retirar esta factura de la oferta"[^\n]*?>(?=<Trash2)/)[0];
   const s2 = distinto(jsx.replace(btn, btn.replace("<button ", "<button disabled={validas.length <= 1} ")), jsx, "disabled en la fila de la oferta");
@@ -177,7 +178,7 @@ test("13-sexdecies · SONDAS: cada violación plantada cambia el veredicto, y lo
   const f2b = retiroSinVeto(s2b); assert.ok(f2b.some((f) => /C\.sub/.test(f)) && f2b.some((f) => /hover/.test(f)), "no cazó el gris sobre gris sin hover");
   const s2c = distinto(jsx.replace(btn, btn.replace("onClick={() => setConfirmRetiro(f)}", "onClick={() => validas.length > 1 && setConfirmRetiro(f)}")), jsx, "onClick con guarda");
   assert.ok(retiroSinVeto(s2c).some((f) => /a secas/.test(f)) && vetoViejoNoVuelve(s2c).some((f) => /a secas/.test(f)), "no cazó el onClick con guarda (veto sin la palabra disabled)");
-  const s2d = distinto(jsx.replace("{!soloLectura ? " + btn, "{validas.length > 1 && !bloqueado ? " + btn), jsx, "ícono no dibujado con una factura");
+  const s2d = distinto(jsx.replace(`{!${COMP} ? ` + btn, `{validas.length > 1 && !${COMP} ? ` + btn), jsx, "ícono no dibujado con una factura");
   assert.ok(retiroSinVeto(s2d).some((f) => /no se dibuja/.test(f)) && vetoViejoNoVuelve(s2d).some((f) => /no se dibuja/.test(f)), "no cazó el ícono que no se dibuja con una factura");
   // 3 · el sub-tab «documentos» (~línea 8020), en los DOS estados del fuente: el gate 3 acepta la reparación y caza el veto.
   const VIEJO_8020 = 'onClick={() => setConfirmRetiro(f)} disabled={validas.length <= 1} title={validas.length <= 1 ? "La oferta debe tener al menos una factura" : "Retirar de la oferta"}';
@@ -195,7 +196,7 @@ test("13-sexdecies · SONDAS: cada violación plantada cambia el veredicto, y lo
     const s = distinto(e3.sin.replace(NUEVO_8020, mut), e3.sin, que);
     assert.ok(vetoViejoNoVuelve(s).some((f) => esperado.test(f)), `el gate 3 no cazó «${que}» en el sub-tab «documentos»`);
   }
-  const s3d = distinto(e3.sin.replace("{!soloLectura ? <button " + NUEVO_8020, "{validas.length > 1 && !bloqueado ? <button " + NUEVO_8020), e3.sin, "sub-tab: ícono no dibujado con una factura");
+  const s3d = distinto(e3.sin.replace(`{!${COMP} ? <button ` + NUEVO_8020, `{validas.length > 1 && !${COMP} ? <button ` + NUEVO_8020), e3.sin, "sub-tab: ícono no dibujado con una factura");
   assert.ok(vetoViejoNoVuelve(s3d).some((f) => /no se dibuja/.test(f)), "el gate 3 no cazó el ícono del sub-tab que no se dibuja con una factura");
   const s3e = distinto(e3.sin.replace("onConfirmar={() => { onRetirarFactura(deal.id, confirmRetiro);", "onConfirmar={() => { if (validas.length > 1) onRetirarFactura(deal.id, confirmRetiro);"), e3.sin, "veto en onConfirmar");
   assert.ok(vetoViejoNoVuelve(s3e).some((f) => /onConfirmar/.test(f)), "el gate 3 no cazó el veto puesto en el onConfirmar del diálogo");

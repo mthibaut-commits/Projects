@@ -8,7 +8,7 @@
    ignoró. Cada caso es AUTOCONTENIDO: enciende el Directorio (las cinco operaciones se regeneran de cero en
    cada encendido, `construirDirectorio`), pone el filtro rápido en «Todos» (con «Con línea» sólo se ven 3 de
    las 5), lee sus ids de la pantalla y en su `finally` cierra el detalle, apaga el Directorio y devuelve el
-   filtro a «Con línea», que es con el que arranca el tubo. */
+   filtro a «Con línea», que es la línea base de esta capa (regla 34: la app abre en «Todos»). */
 
 const ETAPAS = /Sin gestión|Negociación|Oferta publicada|Prospección|Oferta y Negociación|Aceptada|Cesión|Otorgamiento|Perdida/;
 const filas = (pagina) => pagina.evaluate((re) => [...document.querySelectorAll("tr.pl-row")].map((tr) => {

@@ -413,7 +413,7 @@ Este archivo se escribió el 11-09 y desde entonces el negocio decidió seis cos
 tampoco describe. Van acá, con el mismo criterio que §1–§3: qué dice el PDF, qué hace el código y por
 qué difieren. Ninguna es un bug abierto — todas están implementadas y probadas.
 
-### 10.1 · Existe una regla que NO viene de la política: **O05 · Evidencia del Contrato de Cesión**
+### 10.1 · Existe una regla que NO viene de la política: **O05 · Contrato firmado por cliente de la operación**
 
 **PDF:** el catálogo son 79 reglas (C01–C52 · D01–D23 · O01–O04) y todas salen de la política de riesgo.
 

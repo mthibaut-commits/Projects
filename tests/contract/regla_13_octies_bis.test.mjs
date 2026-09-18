@@ -16,6 +16,10 @@ import { leer } from "./_comun.mjs";
 const jsx = leer("pipeline_comercial.jsx");
 const TIT_OFERTA = ">Documentos en la oferta</span>";
 const TIT_DISP = ">Documentos disponibles</span>";
+// Los tokens del vacío SE MIDIERON dos veces, y la segunda movió el par: mientras la caja vivía sobre
+// blanco eran #EDECF3 / #DEDCE7; al mudarse la oferta al panel lila (regla 29, 17-09-2026) ese gris
+// dejó de distinguirse del fondo y quedó en el tono de una tarjeta de fila. Lo que el gate defiende es
+// que el vacío SE VEA: `viejoFondo` (#F7F7FA) y C.faint son los que lo hacían desaparecer y no vuelven.
 const TOKENS = { fondo: "#F5F4F8", borde: "#E4E2EC", alto: 72, viejoFondo: "#F7F7FA" };
 
 /* Recorta la sección de la oferta: desde su título hasta el título de «Documentos disponibles». */
