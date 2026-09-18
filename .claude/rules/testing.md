@@ -9,8 +9,8 @@ globs: ["tests/**", "tests_asignacion_lineas.js", "run_tests.mjs", "auditar_*.mj
 
 | Capa | Qué es | Cuánto tarda | Corre |
 |---|---|---|---|
-| `tests/contract/` | Gates de **contrato**: el vault, el índice de reglas, la forma del fuente, la forma de la suite, las líneas base de los auditores, el punto fijo del generador y **un `regla_<slug>.test.mjs` por regla que vive en JSX** (22 archivos desde el 17-09-2026) | milisegundos (los auditores, ~8 s) | `node --test "tests/contract/*.test.mjs"` — sin dependencias: es el runner de Node |
-| `tests_asignacion_lineas.js` | **La suite**: 142 casos que prueban los motores y las reglas de dominio contra el HTML construido, en Chromium real | ~2 min | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs` (necesita `node build_app.mjs` antes) |
+| `tests/contract/` | Gates de **contrato**: el vault, el índice de reglas, la forma del fuente, la forma de la suite, las líneas base de los auditores, el punto fijo del generador y **un `regla_<slug>.test.mjs` por regla que vive en JSX** (23 archivos desde el 17-09-2026) | milisegundos (los auditores, ~8 s) | `node --test "tests/contract/*.test.mjs"` — sin dependencias: es el runner de Node |
+| `tests_asignacion_lineas.js` | **La suite**: 143 casos que prueban los motores y las reglas de dominio contra el HTML construido, en Chromium real | ~2 min | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs` (necesita `node build_app.mjs` antes) |
 | `tests/e2e/` | **Casos e2e**: la app con la sesión iniciada (el OTP se lee de la pantalla), el Modo Directorio para tener operaciones sin stream y el detalle abierto en su pestaña; cada archivo `*.e2e.mjs` exporta `casos: [{ id: "e2e-<regla>", titulo, correr(h) }]`. **29 casos en 16 archivos**; el runner reinicia el estado al empezar cada ARCHIVO (Directorio apagado, filtro «Con línea», sin modal) y `h` trae `encenderDirectorio`, `apagarDirectorio` y `reiniciar` | ~8 min | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node tests/e2e/correr.mjs [archivo…]` (harness en `_harness.mjs`) |
 
 No hay capa `unit` aparte: el fuente es un solo archivo y la suite ya prueba las funciones puras por su
@@ -70,6 +70,12 @@ decida, ningún test la afirma ni la niega.
   `ps -eo pid,etime,pcpu,comm | awk '$3+0>1'` antes de seguir, o le roba núcleos a la suite y a la capa e2e, que
   son justo lo que uno está esperando (17-09-2026).
 - Un test flaky se arregla o se borra en la misma sesión.
+- **Al resolver un conflicto en `tests_asignacion_lineas.js`, `node --check` antes de correr nada.** La suite no
+  se parsea en ningún paso de la verificación —`tsc` mira el `.jsx`, el build no la toca y los gates de contrato
+  la leen como TEXTO—: se evalúa en la página, así que una llave perdida al concatenar dos lados de un conflicto
+  aparece como un `SyntaxError` a decenas de líneas de distancia, en el `})();` del final, y después de dos
+  minutos de suite. `node --check` lo localiza en un segundo (18-09-2026: git cortó el `<<<<<<<` justo después
+  del `}` que cerraba un caso, así que ese `}` no estaba en NINGUNO de los dos lados).
 - Antes de commitear: el **paso 0** (`npx prettier --check pipeline_comercial.jsx`) y los seis pasos de
   `CLAUDE.md` en orden. Ninguno subsume a otro.
 - **Un gate de texto que cae tras formatear el fuente se RE-ANCLA, no se afloja** (ADR-0005). Los gates

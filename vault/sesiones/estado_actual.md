@@ -13,17 +13,16 @@ timestamp: 2026-09-18T21:10:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone de 41,1 MB, **142/142 PASA**, **30 archivos de gate de contrato**
-(192 tests), **29 casos e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (64 reglas
+(`pipeline_comercial.jsx`), build standalone de 41,1 MB, **143/143 PASA**, **31 archivos de gate de contrato**
+(206 tests), **29 casos e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (65 reglas
 verbatim por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró la tabla de
-invariantes**: cada regla y los 12 invariantes del contrato tienen gate; ninguna fila dice ya «sin gate». Lo que
-esos gates destaparon cambió el producto —ocho defectos, abajo—. El generador tiene punto fijo (32, ADR-0003), el
-id de una operación es estable (ADR-0004) con «Operación creada» + Editar (33) y el detalle sigue el mockup
-(29, 22); el 18-09 el tubo abre en «Todos» (34), **una regla con un tramo de excepción sin área ya no se ejecuta
-ni se verifica** (35) y el fuente quedó **formateado con Prettier** (ADR-0005): 49.583 líneas y
-`prettier --check` como paso 0 del CI, con los 59 gates de texto que cayeron re-anclados sobre `canonico()`. El
-18-09 tarde: **ATR-01 se comprueba en el handler** (caso 142, `regla_atr_01.test.mjs`) y el campo `aplicado` de
-`INVARIANTES` —quién hace cumplir cada invariante— **quedó gateado** tras encontrarse desfasado en 4 de 12.
+invariantes**: cada regla y los 12 del contrato tienen gate. Lo que esos gates destaparon cambió el producto
+—los defectos, abajo—. El generador tiene punto fijo (32, ADR-0003), el id de una operación es estable (ADR-0004)
+con «Operación creada» + Editar (33) y el detalle sigue el mockup (29, 22); el 18-09 el tubo abre en «Todos» (34),
+**una regla mal definida ya no se ejecuta ni se verifica** (35), el orden de la tabla es **prioridad de gestión** y
+la Bandeja Inbound deja de botar trabajo en silencio (30-bis, 36), el fuente quedó **formateado con Prettier**
+(ADR-0005) con `prettier --check` como paso 0 del CI, y **ATR-01 se comprueba en el handler** (caso 143,
+`regla_atr_01.test.mjs`) con el campo `aplicado` de `INVARIANTES` **gateado** tras estar desfasado en 4 de 12.
 
 > ## 🎯 Siguiente paso
 >
@@ -65,8 +64,7 @@ El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403, política; s
    invisible al auditor), y la sección C cortaba las firmas a las 12 líneas.
 2. **GN como disyunción** (22), del negocio; la separación por género no es deuda (ADR-0001: regla por regla). De
    los pendientes de las reglas quedan **decisiones, no defectos**: las filas que Operaciones repite del tubo y
-   `STATUS_ETAPA` a tenant-aware (28); si el A1 real trae `MntNotaCredito` (13-quater). Sin gate, la
-   concentración del Directorio (31).
+   `STATUS_ETAPA` a tenant-aware (28); si el A1 trae `MntNotaCredito` (13-quater). Sin gate, la concentración (31).
 4. **Hooks en Windows**: `node verificar_hooks.mjs` una vez; es lo único que el CI no atestigua. · **`Capturas_UI/`
    NO es determinista**: el tubo se retrata a mitad del stream (18-09: `10-tubo-kanban.html`). Capturar en un
    estado conocido (stream pausado, o Modo Directorio, 31) cambia QUÉ muestra la fuente de Figma: decisión suya.
@@ -77,4 +75,4 @@ El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403, política; s
 ## Conocimiento clave
 
 [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [hooks](../conocimiento/loop_agentico_hooks.md) · [despacho de agentes](../conocimiento/despacho_agentes.md) · [flujo git](../conocimiento/flujo_git.md) · [arquitectura](../conocimiento/arquitectura.md) · [verificación](../conocimiento/verificacion.md) · [decisiones](../adr/index.md)
-Últimas: [ATR-01 en el handler](./2026-09-18_atr_01_en_el_handler.md) · [formateo del fuente](./2026-09-18_formatear_el_fuente.md) · [auditorías y paso 2](./2026-09-18_auditorias_y_paso_2.md)
+Últimas: [ATR-01 en el handler](./2026-09-18_atr_01_en_el_handler.md) · [orden y bandeja](./2026-09-18_orden_tabla_y_bandeja.md) · [formateo](./2026-09-18_formatear_el_fuente.md)

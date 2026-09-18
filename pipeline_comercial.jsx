@@ -608,7 +608,7 @@ const estampaPoliticas = (ts, tenant) => ({
 const SCHEMA_VERSION = {
   cxc: 1, // saldo CxC por cliente
   reglasInbound: 3, // reglas de clasificación del inbound
-  cfgOper: 1, // configuración operativa y de pricing por tenant
+  cfgOper: 2, // configuración operativa y de pricing por tenant (v2: `topeDocsCorrida` → `topeBandeja`, que es lo que hacía)
   permisos: 1, // permisos de visibilidad por usuario
   roles: 1, // rol de cada usuario (por tenant)
   areas: 1, // areas que aprueban excepciones (por tenant)
@@ -976,10 +976,23 @@ const etapaDeDeal = (d) => estadoOperacion(d) || stageName(etapaVisualId(d));
 // avanzada de todas. Una pérdida es TERMINAL, no adelantada: va al fondo.
 // Se rankea sobre la etapa VISUAL, así que una oferta ya publicada va por delante de una que no lo
 // está: para el ejecutivo es otra cosa aunque el motor no haya movido el `stage`.
-const ORDEN_AVANCE = ["prospeccion", "oferta", ETAPA_PUBLICADA, "otorgamiento", "aceptadas", "cesion"];
-const avanceDeDeal = (d) => {
+// EL ORDEN NO ES EL AVANCE, ES LA PRIORIDAD DE GESTIÓN (18-09-2026, pedido del usuario: «oferta →
+// publicada → prospección → otorgamiento → aceptada → cesión»). Hasta hoy ordenaba de la más avanzada a
+// la menos, que responde «¿cuál va más adelante?» — y la pregunta que el ejecutivo trae a esta pantalla
+// es «¿qué tengo que hacer HOY?». Las dos no dan el mismo orden:
+//   · `oferta` primero: está armada y espera una acción SUYA —cerrarla, publicarla—.
+//   · `publicada` después: ya salió, espera al CLIENTE. Por eso baja de la primera posición, donde
+//     estaba: no hay nada que hacer con ella hasta que el cliente conteste.
+//   · `prospeccion`: hay que originar; es trabajo suyo, pero todavía no hay nada comprometido.
+//   · `otorgamiento`, `aceptadas`, `cesion`: ya se están cursando y no dependen de él. Al fondo.
+//   · `perdida` (y cualquier etapa que este orden no declare): −1, debajo de todo. Es terminal.
+// Se rankea sobre la etapa VISUAL, así que una oferta publicada se distingue de una que no lo está
+// aunque el motor no haya movido el `stage`.
+// El array va de MENOR a mayor prioridad porque el comparador ordena descendente por este índice.
+const ORDEN_PRIORIDAD = ["cesion", "aceptadas", "otorgamiento", "prospeccion", ETAPA_PUBLICADA, "oferta"];
+const prioridadDeDeal = (d) => {
   if (!d || d.stage === "perdida") return -1;
-  const i = ORDEN_AVANCE.indexOf(etapaVisualId(d));
+  const i = ORDEN_PRIORIDAD.indexOf(etapaVisualId(d));
   return i >= 0 ? i : -1; // una etapa que el orden no declara tampoco puede colarse arriba
 };
 // La plata con la que se desempata: el MONTO DE LA OFERTA, y cuando todavía no hay oferta el TAMAÑO
@@ -997,14 +1010,51 @@ const montoOrdenDeal = (d) => {
   const an = typeof analisisDeudoresDeDeal === "function" ? analisisDeudoresDeDeal(d) : null;
   return Math.round((an && an.monto) || 0);
 };
+// ESTABILIZA EL ORDEN mientras la ventana no se cumple (18-09-2026, pedido del usuario: «salta mucho la
+// tabla al cargar»). La tabla se reordenaba en CADA LOTE del inbound —cada 350 ms en la demo— y el top-8
+// cambiaba entero varias veces por minuto. En producción el libro se consulta una vez por hora
+// (`frecuenciaMin`), así que una reordenación por CORRIDA es lo que de verdad ocurre allá; la demo
+// comprime esa hora en `cronMs` y por eso se veía como parpadeo. Esto no congela nada: cumplida la
+// ventana se aplica el orden nuevo completo.
+// Las FILAS NUEVAS van al final y se ven de inmediato: retenerlas sería esconder trabajo, que es peor
+// que un salto. Las que ya no están se caen. Pura: recibe el orden vigente y devuelve el que se dibuja.
+function ordenEstable(nuevas, previas) {
+  const prev = previas || [];
+  if (!prev.length) return nuevas;
+  const porId = new Map(nuevas.map((d) => [d && d.id, d]));
+  const vivas = [];
+  for (const id of prev) {
+    const d = porId.get(id);
+    if (d) {
+      vivas.push(d);
+      porId.delete(id);
+    }
+  }
+  // `porId` queda con las que no estaban en el orden anterior, en el orden que les dio el comparador.
+  return [...vivas, ...nuevas.filter((d) => porId.has(d && d.id))];
+}
+// ¿EL CLIENTE TIENE LÍNEA GLOBAL DISPONIBLE? (18-09-2026, pedido del usuario: «ordénalas desde las más
+// grandes con línea global disponible, luego las más grandes sin línea global disponible»). Es el tercer
+// criterio, entre la etapa y la plata: dentro de cada bloque primero van las que SE PUEDEN CURSAR HOY
+// —hay cupo— y después las que hay que llevar al comité, cada grupo de mayor a menor monto. Sin este
+// corte, una oportunidad enorme sin cupo se sentaba arriba de una mediana que sí se podía cursar.
+// «Disponible» es `aprobada − utilizado`, la MISMA cifra que muestra la columna Línea: un cliente con
+// línea aprobada pero copada cuenta como SIN disponible, que es lo que el ejecutivo ve.
+const conLineaGlobalDeal = (d) => {
+  try {
+    return lineaCreditoDe(d).disponible > 0 ? 1 : 0;
+  } catch (e) {
+    return 0;
+  }
+};
 // Ordena SIN mutar la lista que recibe: `sort` ordena en sitio y acá entra un array memoizado.
 // La clave de plata se calcula UNA vez por operación y no dentro del comparador —que corre O(n log n)
 // veces— porque `analisisDeudoresDeDeal` recorre y deduplica las facturas del cliente.
 // Desempata por id para que dos operaciones iguales no se intercambien entre renders.
 function ordenarOportunidades(lista) {
   return (lista || [])
-    .map((d, i) => ({ d, i, av: avanceDeDeal(d), m: montoOrdenDeal(d) }))
-    .sort((a, b) => b.av - a.av || b.m - a.m || String(a.d && a.d.id).localeCompare(String(b.d && b.d.id)) || a.i - b.i)
+    .map((d, i) => ({ d, i, av: prioridadDeDeal(d), lin: conLineaGlobalDeal(d), m: montoOrdenDeal(d) }))
+    .sort((a, b) => b.av - a.av || b.lin - a.lin || b.m - a.m || String(a.d && a.d.id).localeCompare(String(b.d && b.d.id)) || a.i - b.i)
     .map((x) => x.d);
 }
 // Un SOLO chip de etapa para el tubo y el Kanban: dos copias se separan a la primera corrección y
@@ -3021,10 +3071,10 @@ const CLIENTE_ESTADOS = ["nuevo", "activo", "suspendido", "eliminado"];
 function estadoCliente(rutCliente) {
   const h = hashStr("estcli|" + String(rutCliente || ""));
   // ~12% nuevos, el resto activos; suspendido/eliminado son marginales y no abren oportunidad.
+  const r = h % 100;
   // Los nombres salen del CATÁLOGO y no van escritos acá: hasta el 18-09-2026 esta línea los repetía
   // literales y `CLIENTE_ESTADOS` no gobernaba nada —sólo lo leía la suite, o sea un catálogo vivo por
   // su test—. Duplicados, el día que uno cambie de nombre el otro sigue diciendo el anterior y nada falla.
-  const r = h % 100;
   const [NUEVO, ACTIVO, SUSPENDIDO, ELIMINADO] = CLIENTE_ESTADOS;
   return r < 12 ? NUEVO : r < 97 ? ACTIVO : r < 99 ? SUSPENDIDO : ELIMINADO;
 }
@@ -4404,7 +4454,12 @@ const CFG_OPER_BASE = {
   diasSemana: 5,
   frecuenciaMin: 60, // cada cuántos minutos se consulta el libro de ventas por facturas nuevas
   cronMs: 3500, // equivalencia en la simulación (1 «hora» = N ms)
-  topeDocsCorrida: 60, // tope de documentos procesados por corrida (control de carga)
+  // TAMAÑO DE LA BANDEJA, no «tope por corrida»: es lo único para lo que se usa. Con el nombre viejo y
+  // en 60, contra lotes de 250, la bandeja botaba casi todo lo que entraba en cada lote — y con ello
+  // facturas de la cartera del ejecutivo que nadie había mirado (18-09-2026, reporte del usuario: «el
+  // contador de otras empresas sube y baja»). 500 aguanta dos lotes completos; lo que igual se recorta
+  // se CUENTA y se dice en la bandeja, nunca en silencio.
+  topeBandeja: 500, // cuántas facturas sin clasificar conserva la Bandeja Inbound
   loteStream: 250, // tamaño de lote de ingesta
   latenciaBaseMs: 700, // latencia simulada del recálculo (API + cómputo)
   latenciaPorDocMs: 45, // incremento por documento — anticipa operaciones con miles de facturas
@@ -17484,11 +17539,87 @@ function MotorPerformance({ recibidas, califican, sinClasificar, originadas, ori
   );
 }
 // ============================================================
+// AGRUPA EL INBOUND POR CLIENTE: una fila por cedente con sus facturas y deudores sumados. Es de nivel
+// módulo y pura para que el CONTADOR del tab y la LISTA de la tabla salgan de la misma función — medido
+// el 18-09-2026: el tab decía «Todos 262» sobre una tabla de 307 filas, porque cada uno contaba a su
+// manera. Es la misma contradicción que persigue el modo Directorio («65 sobre una lista de 5»).
+function agruparInboundPorCliente(eventos, asignar) {
+  const map = new Map();
+  (eventos || []).forEach((ev) => {
+    const k = ev.cedente || "—";
+    let g = map.get(k);
+    if (!g) {
+      g = {
+        cliente: k,
+        facturas: 0,
+        monto: 0,
+        deudores: new Map(),
+        tags: new Set(),
+        sector: ev.sector,
+        esCliente: ev.esCliente,
+        execSugerido: asignar ? asignar(ev) : "—",
+      };
+      map.set(k, g);
+    }
+    g.facturas += ev.nFacturas || 1;
+    g.monto += ev.monto || 0;
+    if (ev.tag) g.tags.add(ev.tag);
+    const dk = ev.pagador || "—";
+    const d = g.deudores.get(dk) || { name: dk, facturas: 0, monto: 0 };
+    d.facturas += ev.nFacturas || 1;
+    d.monto += ev.monto || 0;
+    g.deudores.set(dk, d);
+  });
+  return [...map.values()]
+    .sort((a, b) => b.monto - a.monto)
+    .map((g) => {
+      const deudores = [...g.deudores.values()].sort((a, b) => b.monto - a.monto);
+      return {
+        id: "OF-" + g.cliente,
+        cliente: g.cliente,
+        deudor: deudores[0] ? deudores[0].name : "—",
+        deudores,
+        sector: g.sector,
+        stage: "Sin clasificar",
+        status: `${g.facturas} factura(s) · ${deudores.length} deudor(es)`,
+        exec: "—",
+        tag: g.tags.size === 1 ? [...g.tags][0] : "Varios",
+        facturas: g.facturas,
+        monto: Math.round(g.monto),
+        esCliente: g.esCliente,
+        sinClasificar: true,
+        agrupado: true,
+        execSugerido: g.execSugerido,
+      };
+    });
+}
+// QUÉ SALE DE LA BANDEJA CUANDO SE LLENA (regla 36). El stream trae 30.000 documentos y la bandeja
+// guarda `tope`, así que recortar es inevitable: lo que se decide acá es A QUIÉN se le bota el trabajo.
+// Salen primero, de la más antigua a la menos, las facturas SIN DUEÑO —empresas fuera de cartera, que
+// nadie está esperando—; una factura de un cliente de la cartera sólo sale si ya no queda ninguna otra
+// cosa que botar. Con el criterio anterior (recortar por el final, sin mirar de quién era) una corrida
+// de 250 documentos barría la bandeja entera: medido en el caso 142, de 40 facturas de cartera en un
+// lote sobrevivían CERO. Conserva el orden de llegada: la bandeja se lee de lo más nuevo a lo más viejo.
+function recortarBandeja(lista, tope) {
+  const arr = lista || [];
+  if (arr.length <= tope) return { lista: arr, fuera: 0, fueraConDueno: 0 };
+  const sobra = arr.length - tope;
+  const fuera = new Set();
+  for (let i = arr.length - 1; i >= 0 && fuera.size < sobra; i--) if (!arr[i].esCliente) fuera.add(arr[i].id);
+  let conDueno = 0;
+  for (let i = arr.length - 1; i >= 0 && fuera.size < sobra; i--)
+    if (!fuera.has(arr[i].id)) {
+      fuera.add(arr[i].id);
+      conDueno++;
+    }
+  return { lista: arr.filter((e) => !fuera.has(e.id)), fuera: fuera.size, fueraConDueno: conDueno };
+}
 // Bandeja Inbound: streaming de facturas. Las que califican una regla
 // pasan solas a Prospección; las que no, quedan aquí para el admin.
 // ============================================================
 function InboundStream({
   feed,
+  recortadas = { total: 0, conDueno: 0 },
   streaming,
   queueLen,
   total,
@@ -17544,6 +17675,30 @@ function InboundStream({
           {queueLen}/{total} en cola
         </span>
       </div>
+      {/* REGLA 36 · El recorte de la bandeja SE DICE. Sin esta línea, las facturas más antiguas salían
+          de la bandeja —y del contador de «Otras Empresas»— sin que nada lo dijera: el contador subía y
+          bajaba solo, y con él se iban facturas de la cartera del ejecutivo que nadie había mirado. */}
+      {recortadas.total > 0 && (
+        <div
+          className="mt-1 rounded-md px-2 py-1 t9 font-medium"
+          style={{
+            backgroundColor: recortadas.conDueno > 0 ? "#FEF2F2" : "#FFF7ED",
+            border: `1px solid ${recortadas.conDueno > 0 ? "#fecaca" : "#FED7AA"}`,
+            color: recortadas.conDueno > 0 ? "#B91C1C" : "#9A3412",
+          }}
+          title="La bandeja conserva un número fijo de facturas sin clasificar (Configuración › Operación › Tope de la Bandeja Inbound). Al llenarse salen primero las que no tienen dueño; una de la cartera sale sólo si ya no queda otra cosa que botar."
+        >
+          ⚠ {recortadas.total.toLocaleString("es-CL")} factura(s) salieron de la bandeja por el tope
+          {recortadas.conDueno > 0 ? (
+            <>
+              {" "}
+              — <b>{recortadas.conDueno.toLocaleString("es-CL")} de ellas de clientes de la cartera</b>. Sube el tope o vacía la bandeja.
+            </>
+          ) : (
+            <> · ninguna de la cartera: salieron las de empresas sin ejecutivo asignado.</>
+          )}
+        </div>
+      )}
       <div className="mt-1 t9" style={{ color: C.faint }}>
         Las facturas que califican una regla se acumulan y pasan a Prospección en la corrida horaria (agrupadas por cliente). Las que no, quedan aquí para
         asignar o crear una regla.
@@ -19950,10 +20105,6 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
   // Pesos MEDIDOS, no estimados: el techo real no es el viewport sino el `max-width: 1600` del `main`
   // menos sus 48 px de padding, o sea **1552**. Pasado eso la tabla scrollea y la última columna se ve
   // cortada, que es como se reporta el defecto.
-  // OJO: iba a columna 0 y es un `const` LOCAL de este componente — las llaves mandan, no la
-  // sangría—, así que el paso 2 de la verificación y `auditar_muerto` lo leían como una declaración
-  // de nivel módulo y le atribuían las ~300 líneas siguientes: `porcionLabel`, `MarcaNuevo` y
-  // `ChipCond` salían «vivos sólo entre muertos» por eso. Indentado el 18-09-2026.
   const PESO_COL = { Cliente: 250, Línea: 230, Oportunidad: 324, SOW: 214, Oferta: 508, Ejecutivo: 140, Asignar: 124 };
   const cols = ["Cliente", ...(mostrarEjec ? ["Ejecutivo"] : []), "Línea", "Oportunidad", "SOW", "Oferta", ...(modoAsignar ? ["Asignar"] : [])];
   return (
@@ -23955,7 +24106,7 @@ const esGerenteComercial = (code) => code === "ADMIN" || (atribEfectiva(code).co
 // no la admite —la tasa mínima absoluta no es ofertable NUNCA—, así que en los dos casos no autoriza
 // nadie: firmar lo que nadie pidió deja evidencia de algo que no ocurrió. Falla CERRADO con un código que
 // el padrón no conoce (caso 87). Lo consultan el render Y `autorizarJefe`, porque la pantalla que apaga el
-// botón no es el control (regla 24). Caso 142.
+// botón no es el control (regla 24). Caso 143.
 const puedeAutorizarCondiciones = (code, estado) =>
   estado === "requiereGerente" ? esGerenteComercial(code) : estado === "requiereJefe" ? esJefeComercial(code) : false;
 function setPrioridadCurse(dealId, code, on) {
@@ -32556,8 +32707,11 @@ function CfgOperacion({ cfgOper, setCfgOper }) {
             </span>
           </div>
         </CfgCampo>
-        <CfgCampo l="Tope de documentos por corrida" hint="Control de carga: máximo de documentos procesados en cada ejecución.">
-          <input {...num("topeDocsCorrida", 10, 5000, 10)} />
+        <CfgCampo
+          l="Tope de la Bandeja Inbound"
+          hint="Cuántas facturas sin clasificar conserva la bandeja. Al pasarse se recortan las más antiguas, y la bandeja dice cuántas — no se descartan en silencio. Conviene que alcance para al menos un lote de ingesta."
+        >
+          <input {...num("topeBandeja", 50, 20000, 50)} />
         </CfgCampo>
         <CfgCampo l="Lote de ingesta" hint="Tamaño de lote al leer documentos desde la fuente (paginación del backend).">
           <input {...num("loteStream", 25, 5000, 25)} />
@@ -44390,6 +44544,22 @@ export default function PipelineComercial() {
   const [showInbound, setShowInbound] = useState(CFG_ACTIVA.modoDemo !== false);
   const [streamQueue, setStreamQueue] = useState(INBOUND_STREAM);
   const [streamFeed, setStreamFeed] = useState([]);
+  // Cuántas facturas sin clasificar salieron de la bandeja por el tope. No es una métrica: es lo que
+  // impide que el recorte sea silencioso (regla 36).
+  const [bandejaRecortadas, setBandejaRecortadas] = useState({ total: 0, conDueno: 0 });
+  // Orden aplicado de la tabla y cuándo se aplicó (ver `ordenEstable`). Es un ref y no un estado porque
+  // escribirlo no tiene que re-renderizar: lo que dispara el re-cálculo es el dato o el tick de abajo.
+  const ordenRef = useRef({ ids: [], ts: 0 });
+  const [ordenTick, setOrdenTick] = useState(0);
+  // Vence la ventana aunque el dato deje de moverse: sin esto, un lote que llega justo dentro de la
+  // ventana dejaría el orden congelado hasta el siguiente cambio de `deals`. Sólo corre con el stream
+  // encendido — parado no hay nada que reordenar y un intervalo vivo sería trabajo para nadie.
+  useEffect(() => {
+    if (!streaming) return;
+    const ms = Math.max(800, cfgT.cronMs || 3500);
+    const t = setInterval(() => setOrdenTick((v) => v + 1), ms);
+    return () => clearInterval(t);
+  }, [streaming, cfgT.cronMs]);
   const [recibidas, setRecibidas] = useState(0);
   const [acumulado, setAcumulado] = useState([]); // facturas calificadas esperando la corrida
   const [corridas, setCorridas] = useState(0);
@@ -44413,44 +44583,20 @@ export default function PipelineComercial() {
     const q = query.toLowerCase();
     // "Sin clasificar" vive en el streamFeed del inbound (facturas que aún no califican una regla),
     // NO en `deals`. Se muestran como filas mapeadas y solo si el toggle Inbound está activo.
-    const streamComoFilas = () =>
-      streamFeed
-        .filter(
-          (ev) =>
-            (!q ||
-              (ev.cedente || "").toLowerCase().includes(q) ||
-              (ev.pagador || "").toLowerCase().includes(q) ||
-              String(ev.id || "")
-                .toLowerCase()
-                .includes(q)) &&
-            (fLinea === "todas" || ev.tag === fLinea) &&
-            (fDeudor === "todos" || (fDeudor === "buenos" ? esBuenDeudor(ev) : !esBuenDeudor(ev))),
-        )
-        .map((ev) => ({
-          id: ev.id,
-          cliente: ev.cedente,
-          deudor: ev.pagador,
-          deudores: [{ name: ev.pagador, facturas: ev.nFacturas || 1, monto: ev.monto || 0 }],
-          sector: ev.sector,
-          stage: "Sin clasificar",
-          status: "Sin clasificar",
-          exec: "—",
-          tag: ev.tag,
-          facturas: ev.nFacturas || 1,
-          monto: ev.monto || 0,
-          tasa: ev.tasa,
-          anticipo: ev.anticipo || "100%",
-          esCliente: ev.esCliente,
-          sinClasificar: true,
-        }));
     // "Otras facturas": facturas de clientes de la cartera aún no priorizadas por una regla (inbound sin
     // clasificar), AGRUPADAS por cliente (cedente): una fila por cliente con sus facturas y deudores sumados.
-    const streamAgrupadoCliente = () => {
-      const map = new Map();
-      streamFeed
-        .filter(
+    // `soloMias`: la pestaña «Otras Empresas» agrupa lo que le toca a ESTA sesión; «Todos» agrupa el
+    // inbound entero. Antes «Todos» apilaba una fila POR FACTURA y la pestaña las
+    // agrupaba por cliente: la misma información en dos formas según dónde se mirara, y con la bandeja
+    // en 500 eso dejaba la tabla en ~570 filas. Una fila por cliente es lo que ya hacía la pestaña.
+    // `soloMias`: la pestaña «Otras Empresas» muestra lo que le toca a ESTA sesión; «Todos» muestra el
+    // inbound entero. Los dos agrupan por cliente con la MISMA función de nivel módulo, y el contador de
+    // cada tab cuenta exactamente estas filas (ver `inboundFilas`).
+    const streamAgrupadoCliente = (soloMias = true) =>
+      agruparInboundPorCliente(
+        streamFeed.filter(
           (ev) =>
-            ofOtrasVisible(ev) &&
+            (!soloMias || ofOtrasVisible(ev)) &&
             (!q ||
               (ev.cedente || "").toLowerCase().includes(q) ||
               (ev.pagador || "").toLowerCase().includes(q) ||
@@ -44459,55 +44605,9 @@ export default function PipelineComercial() {
                 .includes(q)) &&
             (fLinea === "todas" || ev.tag === fLinea) &&
             (fDeudor === "todos" || (fDeudor === "buenos" ? esBuenDeudor(ev) : !esBuenDeudor(ev))),
-        )
-        .forEach((ev) => {
-          const k = ev.cedente || "—";
-          let g = map.get(k);
-          if (!g) {
-            g = {
-              cliente: k,
-              facturas: 0,
-              monto: 0,
-              deudores: new Map(),
-              tags: new Set(),
-              sector: ev.sector,
-              esCliente: ev.esCliente,
-              execSugerido: asignarEjecutivo(ev),
-            };
-            map.set(k, g);
-          }
-          g.facturas += ev.nFacturas || 1;
-          g.monto += ev.monto || 0;
-          if (ev.tag) g.tags.add(ev.tag);
-          const dk = ev.pagador || "—";
-          const d = g.deudores.get(dk) || { name: dk, facturas: 0, monto: 0 };
-          d.facturas += ev.nFacturas || 1;
-          d.monto += ev.monto || 0;
-          g.deudores.set(dk, d);
-        });
-      return [...map.values()]
-        .sort((a, b) => b.monto - a.monto)
-        .map((g) => {
-          const deudores = [...g.deudores.values()].sort((a, b) => b.monto - a.monto);
-          return {
-            id: "OF-" + (hashStr(g.cliente) % 100000),
-            cliente: g.cliente,
-            deudor: deudores[0] ? deudores[0].name : "—",
-            deudores,
-            sector: g.sector,
-            stage: "Sin clasificar",
-            status: `${g.facturas} factura(s) · ${deudores.length} deudor(es)`,
-            exec: "—",
-            tag: g.tags.size === 1 ? [...g.tags][0] : "Varios",
-            facturas: g.facturas,
-            monto: Math.round(g.monto),
-            esCliente: g.esCliente,
-            sinClasificar: true,
-            agrupado: true,
-            execSugerido: g.execSugerido,
-          };
-        });
-    };
+        ),
+        asignarEjecutivo,
+      );
     // DIRECTORIO: en la demo acotada el stream del inbound no se muestra. Filtrar sólo `deals` dejaba
     // «Todos» con las 5 del elenco más 60 filas de inbound, que es justo lo que el modo viene a evitar.
     if (quickFilter === "otrasfacturas") return directorio ? [] : streamAgrupadoCliente();
@@ -44530,9 +44630,19 @@ export default function PipelineComercial() {
     // "Todos" con Inbound activo incluye también las facturas sin clasificar del inbound. Van DESPUÉS
     // y sin ordenar: no son oportunidades —no tienen etapa ni oferta— y mezclarlas en el mismo orden
     // las pondría entre medio de operaciones con las que no se comparan.
-    const ordenadas = ordenarOportunidades(dealRows);
-    return quickFilter === "todos" && showInbound && !directorio ? [...ordenadas, ...streamComoFilas()] : ordenadas; // DIRECTORIO
-  }, [dealsTubo, query, quickFilter, fDeudor, fJefatura, fLinea, fEjecutivo, streamFeed, showInbound, usuario, esEjecutivoSesion, directorio]);
+    // El orden se APLICA como máximo una vez por corrida (`cronMs`): ver `ordenEstable`. Dentro de la
+    // ventana se conserva el orden que el ejecutivo está mirando y las filas nuevas entran al final.
+    const frescas = ordenarOportunidades(dealRows);
+    const ahora = Date.now();
+    const venceLa = ahora - (ordenRef.current.ts || 0) >= Math.max(800, cfgT.cronMs || 3500);
+    const ordenadas = venceLa ? frescas : ordenEstable(frescas, ordenRef.current.ids);
+    if (venceLa || !ordenRef.current.ids.length) {
+      ordenRef.current = { ids: ordenadas.map((d) => d.id), ts: ahora };
+    } else {
+      ordenRef.current.ids = ordenadas.map((d) => d.id);
+    } // las nuevas quedan fijadas donde entraron
+    return quickFilter === "todos" && showInbound && !directorio ? [...ordenadas, ...streamAgrupadoCliente(false)] : ordenadas; // DIRECTORIO
+  }, [dealsTubo, query, quickFilter, fDeudor, fJefatura, fLinea, fEjecutivo, streamFeed, showInbound, usuario, esEjecutivoSesion, directorio, ordenTick]);
 
   const dealsByStage = (id) => filtered.filter((d) => d.stage === id);
 
@@ -46354,7 +46464,7 @@ export default function PipelineComercial() {
   // Parámetros operativos: ya NO son constantes del código, se resuelven desde la configuración del tenant
   // (editable en Configuración › Operación y actualización). En producción vendrían de `tenant_config`.
   const STREAM_LOTE = cfgT.loteStream,
-    STREAM_TOPE = cfgT.topeDocsCorrida,
+    STREAM_TOPE = cfgT.topeBandeja,
     CRON_MS = cfgT.cronMs,
     HORAS_DIA = cfgT.horasDia,
     DIAS_SEMANA = cfgT.diasSemana,
@@ -46408,7 +46518,24 @@ export default function PipelineComercial() {
         }
       }
       if (califican.length) setAcumulado((a) => [...a, ...califican]);
-      if (resto.length) setStreamFeed((feed) => [...resto.reverse(), ...feed].slice(0, STREAM_TOPE));
+      if (resto.length)
+        setStreamFeed((feed) => {
+          const junto = [...resto.reverse(), ...feed];
+          // SE RECORTA, PERO SE DICE, Y SE RECORTA LO QUE NO ES DE NADIE PRIMERO (regla 36). La bandeja
+          // tiene que tener tope —el stream trae 30.000 documentos—; lo que no puede es tragarse en
+          // silencio facturas que un ejecutivo tenía que mirar.
+          const r = recortarBandeja(junto, STREAM_TOPE);
+          if (r.fuera > 0) {
+            setBandejaRecortadas((n) => ({ total: n.total + r.fuera, conDueno: n.conDueno + r.fueraConDueno }));
+            logSys(
+              "warn",
+              "inbound",
+              `La Bandeja Inbound llegó a su tope (${STREAM_TOPE}): salieron ${r.fuera} factura(s) sin clasificar${r.fueraConDueno ? `, ${r.fueraConDueno} de ellas de clientes de la cartera` : " (ninguna de la cartera)"}`,
+              { tope: STREAM_TOPE, recortadas: r.fuera, deCartera: r.fueraConDueno },
+            );
+          }
+          return r.lista;
+        });
       setStreamQueue((q) => q.slice(STREAM_LOTE));
       setRecibidas((n) => n + lote.length);
     }, 350);
@@ -46691,7 +46818,7 @@ export default function PipelineComercial() {
       "info",
       "motor",
       `Corrida del inbound: ${nuevos.length} oportunidad(es) nueva(s), ${idsWarn.length} actualizada(s) con facturas nuevas, ${pendientes.length} documento(s) re-encolados`,
-      { nuevas: nuevos.length, conWarning: idsWarn.length, reencolados: pendientes.length, topeCorrida: cfgT.topeDocsCorrida },
+      { nuevas: nuevos.length, conWarning: idsWarn.length, reencolados: pendientes.length, topeBandeja: cfgT.topeBandeja },
     );
     setDeals((prev) => {
       const ids = new Set(prev.map((d) => d.id));
@@ -47445,6 +47572,7 @@ export default function PipelineComercial() {
     setStreaming(false);
     setStreamQueue(INBOUND_STREAM);
     setStreamFeed([]);
+    setBandejaRecortadas({ total: 0, conDueno: 0 });
     setAcumulado([]);
     setRecibidas(0);
     setCorridas(0);
@@ -48398,7 +48526,15 @@ export default function PipelineComercial() {
   // Sirven para que el ejecutivo retome rápido el hilo antes de que se enfríe.
 
   // Las "Sin clasificar" solo cuentan/aparecen cuando el toggle Inbound está activo.
-  const inboundCount = showInbound ? streamFeed.length : 0;
+  // Los contadores de los tabs cuentan las MISMAS filas que la tabla dibuja: las del inbound salen de
+  // `agruparInboundPorCliente`, la misma función que arma la lista. Contar facturas (`streamFeed.length`)
+  // decía «Todos 262» sobre una tabla de 307 filas — medido el 18-09-2026 (regla 36).
+  const inboundFilas = useMemo(() => (showInbound ? agruparInboundPorCliente(streamFeed, asignarEjecutivo).length : 0), [showInbound, streamFeed]);
+  const inboundMiasFilas = useMemo(
+    () => agruparInboundPorCliente(streamFeed.filter(ofOtrasVisible), asignarEjecutivo).length,
+    [streamFeed, usuario, esEjecutivoSesion],
+  );
+  const inboundCount = inboundFilas;
   const nPrioTubo = dealsVista.filter((d) => tienePrioridadCurse(d.id)).length;
   // «Todos» va PRIMERO (18-09-2026, pedido del usuario): es el tab de entrada, y un tab de entrada al final
   // de la fila se lee como el último recorte de una lista de recortes. Va antes incluso de «Prioritarios»,
@@ -48426,7 +48562,14 @@ export default function PipelineComercial() {
     },
     { id: "perdidas", label: "Perdidas", count: dealsTubo.filter((d) => d.stage === "perdida").length },
     // DIRECTORIO: la otra pestaña que cuenta el stream del inbound, a cero por lo mismo que «Todos».
-    { id: "otrasfacturas", label: esEjecutivoSesion ? "Otras Empresas" : "Otras facturas", count: directorio ? 0 : streamFeed.filter(ofOtrasVisible).length },
+    // El tooltip dice de dónde sale el número y por qué se mueve: es una VENTANA sobre el stream, no un
+    // acumulado. Sin esto, verlo subir y bajar no tiene explicación en pantalla (regla 36).
+    {
+      id: "otrasfacturas",
+      label: esEjecutivoSesion ? "Otras Empresas" : "Otras facturas",
+      count: directorio ? 0 : inboundMiasFilas,
+      tip: `Clientes con facturas sin clasificar que hay AHORA en la Bandeja Inbound${esEjecutivoSesion ? " y son de tu cartera" : " y no tienen ejecutivo asignado"} — una fila por cliente, igual que la lista. La bandeja conserva ${(cfgT.topeBandeja || 500).toLocaleString("es-CL")} documentos: al llenarse salen primero las que NO son de nadie, así que este número sube con lo que entra y baja sólo cuando se asignan o se descartan.${bandejaRecortadas.conDueno > 0 ? ` Ojo: ya salieron ${bandejaRecortadas.conDueno.toLocaleString("es-CL")} de la cartera por el tope.` : ""}`,
+    },
   ];
 
   if (!logueado)
@@ -49216,7 +49359,7 @@ export default function PipelineComercial() {
                           <button
                             key={f.id}
                             onClick={() => setQuickFilter(f.id)}
-                            title="Filtrar oportunidades"
+                            title={f.tip || "Filtrar oportunidades"}
                             className="flex items-center gap-1.5 px-1 pb-2 t12"
                             style={{
                               borderBottom: `2px solid ${on ? C.indigo : "transparent"}`,
@@ -49352,6 +49495,7 @@ export default function PipelineComercial() {
                               />
                               <InboundStream
                                 feed={streamFeed}
+                                recortadas={bandejaRecortadas}
                                 streaming={streaming}
                                 queueLen={streamQueue.length}
                                 total={INBOUND_STREAM.length}

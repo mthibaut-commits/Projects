@@ -53,7 +53,7 @@ quedó sin lector en `SimResumen` y se podó, con su cómputo en el call site.
 
 Dos capas, porque ninguna ve lo de la otra:
 
-- **Caso 142** (la suite): el predicado en **las dos direcciones** —la jefatura no alcanza el tramo de gerencia,
+- **Caso 143** (la suite): el predicado en **las dos direcciones** —la jefatura no alcanza el tramo de gerencia,
   nadie autoriza `bajoMinimo` ni `ok`, un código que el padrón no conoce falla **cerrado**, y el permiso
   **sigue al rol** (se le quita la atribución a JG y se le devuelve).
 - **`regla_atr_01.test.mjs`** (contrato): que alguien lo **pregunte antes de escribir**. La suite no puede verlo
@@ -84,9 +84,27 @@ Dos invariantes siguen en `aplicado: "ui"`, y ahora es una afirmación gateada y
 
 Los dos son el mismo arreglo que éste y no se hicieron acá para no ensanchar el cambio (ciclo de tarea, paso 4).
 
+## La mezcla con la sesión paralela, y el fallo que dejó (regla núcleo 11)
+
+Las dos sesiones tomaron el **mismo «siguiente entero libre»**: la otra agregó el caso 142 (la Bandeja Inbound
+con tope, regla 36) y ésta también. Es la deuda 5 del tablero, tal cual. Quien mezcla después renumera: el 142
+ya empujado se queda, y ATR-01 pasó a **143** —con sus citas en `invariantes.md`, en el comentario del predicado
+en el `.jsx`, en `regla_atr_01.test.mjs` y en este log—.
+
+**Causa y solución de lo que se rompió al resolver:** al concatenar los dos lados del conflicto en
+`tests_asignacion_lineas.js` se perdió **la llave que cerraba el bloque del caso de ellos** —git cortó el
+`<<<<<<<` justo después de ese `}`, así que no estaba en ninguno de los dos lados— y el archivo quedó
+desbalanceado. `tsc`, el build y los 206 gates de contrato pasaron igual: la suite no se parsea en ninguno de
+esos pasos, se evalúa en la página, y el síntoma fue un `SyntaxError: Unexpected token ')'` a 60 líneas de
+distancia, en el `})();` del final. **`node --check tests_asignacion_lineas.js` lo localiza en un segundo** y es
+lo que conviene correr al resolver un conflicto en ese archivo, antes de gastar dos minutos en la suite.
+
+Y el **paso 0 se ganó el sueldo en su primera mezcla**: el fuente mezclado venía sin formatear —el otro lado
+escribió antes del formateo— y `prettier --check` lo cazó antes de que nadie tocara un gate de texto.
+
 ## Verificación
 
-0 `prettier --check` limpio · 1 `tsc` sin TS1 · 2 sin duplicados · 3 build 41,1 MB · 4 **192/192** contrato ·
-5 **142/142** la suite · 6 **29/29** e2e · 7 las 11 capturas renderizan. `CASOS_ESPERADOS` sube de 141 a 142 y
+0 `prettier --check` limpio · 1 `tsc` sin TS1 · 2 sin duplicados · 3 build 41,1 MB · 4 **206/206** contrato ·
+5 **143/143** la suite · 6 **29/29** e2e · 7 las 11 capturas renderizan. `CASOS_ESPERADOS` sube de 142 a 143 y
 es la decisión de haber agregado el caso, no un trámite. Las diez cifras que el gate `cifras.test.mjs` cazó
-desfasadas (141→142, 29→30 archivos de contrato, 21→22 gates por regla) se corrigieron en este mismo commit.
+desfasadas (→143, 29→31 archivos de contrato, 21→22 gates por regla) se corrigieron en este mismo commit.

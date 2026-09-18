@@ -1,5 +1,5 @@
 /* Gate de contrato de ATR-01 (el descuento no excede la atribución del rol sin la jefatura) sobre el TEXTO
-   del fuente. El caso 137 prueba el VALIDADOR del contrato y el 142 el PREDICADO de autorización; ninguno de
+   del fuente. El caso 137 prueba el VALIDADOR del contrato y el 143 el PREDICADO de autorización; ninguno de
    los dos puede ver lo que este gate fija, porque vive en un closure de un componente: que alguien PREGUNTE
    antes de escribir.
    Hasta el 18-09-2026 `autorizarJefe` marcaba `deal.condAutJefe = true` sin volver a comprobar nada. El único
