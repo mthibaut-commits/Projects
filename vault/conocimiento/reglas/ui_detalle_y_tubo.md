@@ -3,7 +3,7 @@ type: conocimiento
 title: "Reglas — UI del detalle y del tubo"
 description: "Las pestañas y vistas de «Documentos disponibles», la columna Oportunidad, el indicador de línea en la cabecera, los chips SOW, los rótulos del menú y los montos en pesos del detalle con la tarjeta de Oferta"
 tags: [conocimiento, reglas, dominio]
-timestamp: 2026-09-17T15:29:14Z
+timestamp: 2026-09-18T01:27:03Z
 ---
 
 # UI del detalle y del tubo
@@ -31,7 +31,7 @@ timestamp: 2026-09-17T15:29:14Z
 13-octies-bis. **«Documentos en la oferta»: la misma elección de vista, y el vacío se ve** (15-09-2026, pedidos del usuario).
     - El control **Por deudor / Por factura** de «Deudores disponibles» se aplicó también a la sección de la oferta, con la misma forma y la misma función (`facturasDeDeudores`, así que la plana trae exactamente lo mismo que los acordeones). La vista plana agrega **RUT deudor** y **razón social** a las columnas de la oferta, porque sin el acordeón que las agrupa una fila no dice de quién es.
     - Por eso el título pasó a **«Documentos en la oferta»**: con la vista plana lo que se lista son facturas, y un título que nombra sólo una de las dos vistas contradice a la otra. El segmentado sólo aparece con la oferta no vacía — sin facturas no hay nada que presentar de dos formas.
-    - **El estado VACÍO es el de ENTRADA de esta pantalla, no un borde raro**, así que tiene que verse: con `#F7F7FA` sobre blanco y el texto en `C.faint` la caja desaparecía y el mensaje se leía como un placeholder apagado. Quedó en `#EDECF3` con borde `#DEDCE7`, 72 px de alto y el texto en `t11` medium sobre `C.sub`. El vacío de las pestañas de disponibles habla con la misma voz (sin caja: ya vive dentro de un panel).
+    - **El estado VACÍO es el de ENTRADA de esta pantalla, no un borde raro**, así que tiene que verse: con `#F7F7FA` sobre blanco y el texto en `C.faint` la caja desaparecía y el mensaje se leía como un placeholder apagado. Quedó en `#F5F4F8` con borde `#E4E2EC`, 72 px de alto y el texto en `t11` medium sobre `C.sub` (*los dos tonos se aclararon un punto en el restyle del detalle del 17-09-2026; el texto decía `#EDECF3`/`#DEDCE7` y lo corrige la medición, 18-09-2026*). El vacío de las pestañas de disponibles habla con la misma voz (sin caja: ya vive dentro de un panel).
 
 13-decies. **La columna «Oportunidad» parte los deudores por LÍNEA, con un LOOKUP y no con el motor** (15-09-2026, pedido del usuario). Tres filas: **★ N Prime con línea** · **N Otros con línea** · **N deudores sin línea** —esta última **sin distinguir Prime**, porque sin cupo la clasificación no cambia lo que se puede comprar hoy—.
     - **El usuario planteó la duda correcta**: «como el proceso de asignación es factura a factura no podemos garantizar que los montos se puedan otorgar?». Exacto, y por eso `capacidadDeudores` declara lo que NO afirma. Es una **cota superior**, por tres razones que no se arreglan calculando mejor: la asignación es por **factura completa** contra los tres niveles a la vez; el **comodín es UN pozo** para todos los deudores sin línea propia, así que sumar deudor por deudor cuenta el mismo cupo varias veces; y la **línea del deudor es GLOBAL**, compartida por todos los clientes que le ceden. Medido: el atajo declara con línea **2,4× más deudores** que los que el motor termina asignando.

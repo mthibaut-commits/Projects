@@ -32,8 +32,11 @@ export function frontmatter(texto) {
 /* Los casos de la suite se declaran como ok("N título", …); N es lo único que identifica el caso en la
    salida `PASA N`. Compartido por suite.test y invariantes.test (importar un .test desde otro .test
    registra sus tests dos veces). */
-export const numerosDeCasos = (texto) => [...texto.matchAll(/\bok\(\s*["'`](\d+) /g)].map((m) => +m[1]);
+/* Un caso ASÍNCRONO (promesas del repositorio, SHA-256: RAT-01, IDM-01, CRY-01) declara su título en `const TIT = "N …"`,
+   emite `ok(TIT, …)` en el acto y vuelve a emitirlo cuando resuelve: el título cuenta igual, una sola vez. */
+const CASO = /\b(?:ok\(\s*|const TIT = )["'`](\d+) /g;
+export const numerosDeCasos = (texto) => [...texto.matchAll(CASO)].map((m) => +m[1]);
 /* Número y título de cada ok(): un caso puede tener DOS ok() con el mismo número y el mismo título (una rama
    de guarda que lo reporta fallido cuando no hay con qué probarlo); dos títulos distintos bajo un número sí
    son dos casos pisándose. */
-export const casosDeSuite = (texto) => [...texto.matchAll(/\bok\(\s*["'`](\d+) ([^"'`]*)/g)].map((m) => ({ n: +m[1], titulo: m[2].trim() }));
+export const casosDeSuite = (texto) => [...texto.matchAll(/\b(?:ok\(\s*|const TIT = )["'`](\d+) ([^"'`]*)/g)].map((m) => ({ n: +m[1], titulo: m[2].trim() }));

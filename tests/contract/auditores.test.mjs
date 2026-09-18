@@ -17,7 +17,10 @@ import { RAIZ } from "./_comun.mjs";
 
 /* Hallazgos conocidos de auditar_muerto al 17-09-2026. «Vivos sólo entre ellos» y «sólo en scripts»
    son para REVISAR A MANO, no para borrar a ciegas: el propio auditor lo dice. */
-export const BASE_MUERTOS = ["CLIENTE_ESTADOS", "ChipCond", "MarcaNuevo", "PESO_COL", "giroDeal", "lineaDeVersion", "porcionLabel"];
+/* 17-09-2026: sale `lineaDeVersion`. No se borró ni se cableó: el caso 124 (regla 14) la llama por su nombre para
+   fijar que el detalle LEE la versión vigente y no recalcula, así que deja de estar «viva sólo entre muertos». Encoger
+   esta línea base es la decisión de haber agregado ese caso, y va dicha en el commit. */
+export const BASE_MUERTOS = ["CLIENTE_ESTADOS", "ChipCond", "MarcaNuevo", "PESO_COL", "giroDeal", "porcionLabel"];
 export const BASE_USESTATE = ["alertF", "channel", "dealTabInicial", "diaModal", "reevTick", "spreadDeudor", "vencDias"];
 /* Funciones que auditar_aislamiento declara «nada global» al 17-09-2026 (39). */
 export const BASE_PURAS = [
