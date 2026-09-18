@@ -84,6 +84,9 @@ así, **no existe**: el estado está dentro de los componentes, no suelto.
 
 ## 4. Un defecto accionable: el paso 2 de la verificación no ve 11 declaraciones
 
+> **Corregido el 18-09-2026.** El paso 2 pasó a `^(export default )?(async )?(function|const|let|var|class) [A-Za-z_$][A-Za-z0-9_$]*` con la cola en `$NF` en los tres sitios que lo escriben (`CLAUDE.md`, `vault/conocimiento/verificacion.md` y `.github/workflows/gates.yml`), y `fuente.test.mjs` sumó dos gates: que los tres digan lo mismo y que el patrón reconozca **las mismas declaraciones que `auditar_muerto.mjs`**. Lo que sigue es
+> el hallazgo tal como se escribió, que es lo que justifica los gates.
+
 Este es el único hallazgo de este informe que pide una corrección concreta.
 
 El paso 2 de `CLAUDE.md` —el que busca símbolos duplicados de nivel módulo— es:
@@ -128,8 +131,10 @@ suite no logra montar la app, a dos minutos de distancia y sin decir qué símbo
 
 ## 6. Qué haría, en orden
 
-1. **Cerrar el agujero del paso 2** (§4). Es un regex y su gate. Media hora, y elimina un modo de falla que
-   ya ocurrió dos veces por otras vías.
+1. ~~**Cerrar el agujero del paso 2** (§4). Es un regex y su gate. Media hora, y elimina un modo de falla que
+   ya ocurrió dos veces por otras vías.~~ **HECHO el 18-09-2026**: el patrón, los tres sitios que lo repiten y
+   dos gates de acuerdo en `fuente.test.mjs` con su sonda negativa (que planta la colisión `const sha256Hex` /
+   `async function sha256Hex` y comprueba que el patrón de ayer no la veía).
 2. **Nada más sobre el código.** Ni partir `DealDrawer`, ni bajar los `useState`, ni tocar el anidamiento.
    Un refactor de los dos componentes grandes es el cambio más caro y riesgoso que este repo admite —toca
    el 22 % del fuente, lo revisa un diff ilegible, y lo único que lo sostendría son 29 casos e2e de ocho

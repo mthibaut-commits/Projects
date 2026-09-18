@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-18T00:20:00Z
+timestamp: 2026-09-18T03:45:00Z
 ---
 
 # Estado actual
@@ -13,12 +13,12 @@ timestamp: 2026-09-18T00:20:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone de 40,7 MB, **140/140 PASA**, **148 gates de contrato**, **29 casos e2e**,
+(`pipeline_comercial.jsx`), build standalone de 40,7 MB, **140/140 PASA**, **153 gates de contrato**, **29 casos e2e**,
 `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (63 reglas verbatim por tema, índice en
 `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró la tabla de invariantes**: las 63 reglas y los 12
-invariantes del contrato tienen gate; ninguna fila dice ya «sin gate». Los 30 gates nuevos los escribió un agente por
-fila y otro intentó refutarlos (log), y **lo que destaparon sí cambió el producto** (abajo). En paralelo entraron el
-**punto fijo del generador** (32, ADR-0003) y el **id estable con dos marcas al editar** (33, ADR-0004).
+invariantes del contrato tienen gate; ninguna fila dice ya «sin gate». Lo que esos gates destaparon cambió el
+producto — siete defectos, en el [log del 17](./2026-09-17_cerrar_invariantes.md). El 18-09-2026 dos auditorías
+midieron el repositorio y el código; de la segunda salió **el único defecto accionable, ya corregido** (abajo).
 
 > ## 🎯 Siguiente paso · decisión del usuario, ninguno empezado
 >
@@ -33,20 +33,20 @@ fila y otro intentó refutarlos (log), y **lo que destaparon sí cambió el prod
 
 | Trabajo | Estado | Rama | Siguiente paso |
 |---|---|---|---|
-| Cerrar la tabla de invariantes | ✅ mergeada a `main` con `--no-ff` (4cd5be6) · 30 filas · suite 116→140 · e2e 1→16 · contrato 7→25 | `claude/ecstatic-ptolemy-f7cb4m` | — |
-| «Operación creada» + Editar · punto fijo · restyle | ✅ mergeadas a `main` | `claude/vibrant-hopper-33tg8j` | — |
-| Cablear los gates · partir `CLAUDE.md` | ✅ mergeadas (bd14091) | ídem | **pushear el tag `v0.1.0`** (abajo) |
+| El agujero del paso 2 | ✅ patrón nuevo en los tres sitios + dos gates de acuerdo (contrato 151→153) | `claude/ecstatic-ptolemy-f7cb4m` | mergear a `main` con `--no-ff` |
+| Auditorías del bootstrap y del código | ✅ `Auditoria_Bootstrap_Agentico_Cierre.md` · `Auditoria_Codigo_Fuente.md` (+PDF) | ídem | — |
+| Cerrar la tabla de invariantes | ✅ mergeada a `main` con `--no-ff` (4cd5be6) · 30 filas · suite 116→140 · e2e 1→16 · contrato 7→25 | ídem | — |
+| Cablear los gates · partir `CLAUDE.md` | ✅ mergeadas (bd14091) | `claude/vibrant-hopper-33tg8j` | **pushear el tag `v0.1.0`** (abajo) |
 
-## Defectos de producto corregidos al cerrar la tabla (los destaparon los gates)
+## El paso 2 de la verificación, corregido el 18-09-2026
 
-1. **13-sexdecies**: retirar la ÚLTIMA factura estaba vetado en la mutación y en el sub-tab «documentos» aunque la
-   regla lo permite. Ahora la oferta se vacía por `limpiarSimulacion` y vuelve al panel de arranque.
-2. **14**: la vía «no confirmada» retiraba sin `setReevalPend(true)` y la línea se recalculaba sola.
-3. **OTG-01**: `revertirVisado` y `revertirExc` usaban `val`/`x` que no recibían → revertir reventaba con
-   `ReferenceError`; revertir un O05 físico ahora revoca su evidencia.
-4. **5**: el rechazo sin motivo grababa el status de la etapa viva como causa, el lector devolvía el genérico, cuatro
-   escritores no grababan actor ni fecha, la bitácora decía «Sistema», y arrastrar una Perdida la revivía. Además
-   **15-quinquies** (guiones por campo ausente), **27-bis** (auditoría con el módulo viejo) y el texto de **RAT-01**.
+Buscaba `^(function|const|let|var) [A-Za-z0-9_]+`: veía 944 declaraciones y **no veía 11** —diez `async function`
+y el `export default function PipelineComercial`—, mientras `auditar_muerto.mjs`, del mismo repo, sí las veía. Un
+`const sha256Hex` que colisione con el `async function sha256Hex` es «Identifier has already been declared»,
+**`tsc` no lo dice** y el paso 2 tampoco lo habría dicho: el aviso llegaba dos minutos más tarde, en el paso 5,
+cuando la suite no logra montar la app y sin nombrar el símbolo. Ahora el patrón es el del auditor, la cola es
+`$NF` (con `export default` el nombre es el ÚLTIMO campo, no el segundo) y `fuente.test.mjs` exige que `CLAUDE.md`,
+el vault y el CI escriban el MISMO paso 2 y que los dos analizadores coincidan: el patrón se LEE de `CLAUDE.md`.
 
 ## Bloqueos
 
@@ -57,7 +57,7 @@ fila y otro intentó refutarlos (log), y **lo que destaparon sí cambió el prod
 ## Deudas anotadas (no bloquean, no olvidar)
 
 1. **Cifras desfasadas sin gate**: `arquitectura.md` y `README.md` citan ~21.000 líneas, 118 componentes, ~24 MB
-   (medido: ~26.100 / 154 / 40,7). Commit T3 cuando el usuario diga.
+   (medido: 26.233 / 154 / 40,7). Commit T3 cuando el usuario diga.
 2. **Líneas base de los auditores**: `BASE_MUERTOS` bajó a 6 (sale `lineaDeVersion`: el caso 125 la ejercita);
    quedan 6 hallazgos «revisar a mano» y 7 `useState` sin uso.
 3. **Separación por género** de cada regla, al tocarla. **GN como disyunción** (22) sigue pendiente del negocio.
@@ -76,5 +76,5 @@ fila y otro intentó refutarlos (log), y **lo que destaparon sí cambió el prod
 
 ## Última sesión
 
-[17-09-2026 — cerrar la tabla de invariantes](./2026-09-17_cerrar_invariantes.md) ·
-[17-09-2026 — «Operación creada» + Editar](./2026-09-17_operacion_creada_y_editar.md)
+[18-09-2026 — auditorías y el paso 2](./2026-09-18_auditorias_y_paso_2.md) ·
+[17-09-2026 — cerrar la tabla de invariantes](./2026-09-17_cerrar_invariantes.md)

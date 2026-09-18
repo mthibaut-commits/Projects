@@ -12,13 +12,46 @@ import { RAIZ, leer } from "./_comun.mjs";
 
 const jsx = leer("pipeline_comercial.jsx");
 
-/* 1 · Paso 2 de la verificación, en JS: la misma expresión que el grep de CLAUDE.md. */
-export function duplicadosNivelModulo(src) {
-  const vistos = new Map();
+/* 1 · Paso 2 de la verificación, en JS. El patrón NO se copia acá: se LEE de `CLAUDE.md`, que es donde el
+   paso 2 está escrito, y el gate de más abajo comprueba que los otros dos sitios que lo repiten —el mapa de
+   la verificación del vault y el job del CI— digan exactamente lo mismo, y que ese patrón reconozca las
+   MISMAS declaraciones que `auditar_muerto.mjs`. Hasta el 18-09-2026 el paso 2 buscaba
+   `^(function|const|let|var) [A-Za-z0-9_]+` y por eso no veía once declaraciones del fuente —diez
+   `async function` y el `export default function PipelineComercial`—: un `const sha256Hex` que colisionara
+   con el `async function sha256Hex` es «Identifier has already been declared», `tsc` no lo dice (probado en
+   este repo) y el paso 2 tampoco lo habría dicho; el aviso llegaba dos minutos después, en el paso 5, cuando
+   la suite no logra montar la app y sin nombrar el símbolo. Dos herramientas del mismo repo tenían
+   definiciones distintas de «declaración» y la más débil era la de la ruta obligatoria. */
+const CLAUDE_MD = leer("CLAUDE.md");
+
+/* El patrón del paso 2 tal como lo escribe un documento o el CI: `grep -oE '<patrón>' pipeline_comercial.jsx`,
+   con comillas simples o dobles. Devuelve `null` si el texto no trae el comando. */
+export function patronPaso2(texto) {
+  const m = texto.match(/grep -oE (['"])(.+?)\1 pipeline_comercial\.jsx/);
+  return m ? m[2] : null;
+}
+
+/* La cola de la tubería importa tanto como el patrón: con `export default function X` el nombre es el ÚLTIMO
+   campo, no el segundo, así que un `$2` heredado devolvería «default» y «function» como si fueran símbolos. */
+export function colaPaso2(texto) {
+  const m = texto.match(/pipeline_comercial\.jsx \| (awk '\{print \$\w+\}' \| sort \| uniq -d)/);
+  return m ? m[1] : null;
+}
+
+/* Lo que devolvería `grep -oE <re> | awk '{print $NF}'`: el último campo de cada coincidencia. */
+export function declaradosCon(re, src) {
+  const anclado = new RegExp(re.source ?? re, "");
+  const out = [];
   for (const l of src.split("\n")) {
-    const m = l.match(/^(?:function|const|let|var) ([A-Za-z0-9_]+)/);
-    if (m) vistos.set(m[1], (vistos.get(m[1]) || 0) + 1);
+    const m = l.match(anclado);
+    if (m) out.push(m[0].trim().split(/\s+/).pop());
   }
+  return out;
+}
+
+export function duplicadosNivelModulo(src, patron = patronPaso2(CLAUDE_MD)) {
+  const vistos = new Map();
+  for (const s of declaradosCon(patron, src)) vistos.set(s, (vistos.get(s) || 0) + 1);
   return [...vistos].filter(([, n]) => n > 1).map(([s]) => s);
 }
 
@@ -57,6 +90,19 @@ export function vendorOrdenDe(mjs, ps1) {
   return { mjs: a ? lista(a[1]) : null, ps1: b ? lista(b[1]) : null };
 }
 
+/* 6 · Los dos analizadores del repo tienen que ver la MISMA declaración. `auditar_muerto.mjs` es el que
+   tiene la definición completa —y el comentario que la justifica: «un analizador que no ve una forma de
+   declarar funciones no da un falso negativo: da un falso POSITIVO, que acá significa borrar código vivo»—,
+   así que manda él. Se comparan sobre TODAS las líneas del fuente, sin el filtro de template literals que el
+   auditor aplica por separado: lo que se fija acá es el PATRÓN, no ese filtro. Que el paso 2 no conozca los
+   backticks lo puede hacer gritar de más —un `function` a columna 0 dentro de un template literal, como el
+   que tenía `htmlAprobacion`—, y ése es el lado barato de equivocarse: obliga a mirar. No ver una declaración
+   no lo es. */
+export function reDeclAuditor(texto) {
+  const m = texto.match(/const RE_DECL = \/(.+)\/;/);
+  return m ? m[1] : null;
+}
+
 test("no hay símbolos de nivel módulo duplicados (paso 2 de la verificación)", () => {
   assert.deepEqual(duplicadosNivelModulo(jsx), [], "una clave repetida en un objeto literal es JS válido y silencioso; un símbolo repetido a nivel módulo también hasta que Babel lo transpila");
 });
@@ -83,8 +129,44 @@ test("build_app.mjs y build_app.ps1 declaran el mismo vendorOrden, y cada archiv
   assert.deepEqual(mjs.filter((f) => !existsSync(join(RAIZ, "vendor", f))), [], "archivo del vendorOrden que no existe en vendor/");
 });
 
+test("el paso 2 dice lo mismo en los tres sitios que lo escriben: CLAUDE.md, el vault y el CI", () => {
+  const patron = patronPaso2(CLAUDE_MD);
+  const cola = colaPaso2(CLAUDE_MD);
+  assert.ok(patron, "CLAUDE.md ya no trae el grep del paso 2");
+  assert.ok(cola, "CLAUDE.md ya no trae la cola `awk | sort | uniq -d` del paso 2");
+  assert.match(cola, /\$NF/, "con `export default function X` el nombre es el ÚLTIMO campo: un `$2` heredado devolvería «default» y «function» como si fueran símbolos");
+  for (const rel of ["vault/conocimiento/verificacion.md", ".github/workflows/gates.yml"]) {
+    const texto = leer(rel);
+    assert.equal(patronPaso2(texto), patron, `${rel} repite el paso 2 con OTRO patrón: el que corre en el CI y el que corre el humano tienen que ser el mismo`);
+    assert.equal(colaPaso2(texto), cola, `${rel} repite el paso 2 con OTRA cola`);
+  }
+});
+
+test("el paso 2 y auditar_muerto reconocen exactamente las mismas declaraciones del fuente", () => {
+  const reAud = reDeclAuditor(leer("auditar_muerto.mjs"));
+  assert.ok(reAud, "no se encontró `const RE_DECL = /…/;` en auditar_muerto.mjs");
+  const delPaso2 = declaradosCon(patronPaso2(CLAUDE_MD), jsx);
+  const delAuditor = declaradosCon(reAud, jsx);
+  assert.ok(delPaso2.length > 900, `el paso 2 ve ${delPaso2.length} declaraciones: son ~950, algo se rompió en el patrón`);
+  assert.deepEqual(
+    delAuditor.filter((s, i) => delPaso2[i] !== s).concat(delPaso2.filter((s, i) => delAuditor[i] !== s)),
+    [],
+    "los dos analizadores del repo no ven la misma declaración; el de la ruta obligatoria de verificación no puede ser el débil",
+  );
+});
+
 test("sonda negativa: un duplicado, un montaje raíz, una t16 y un vendor distinto plantados se detectan", () => {
   assert.deepEqual(duplicadosNivelModulo("const a = 1;\nfunction a() {}\nconst b = 2;"), ["a"]);
+  /* El duplicado que el paso 2 NO veía hasta el 18-09-2026, y el patrón de entonces plantado para comprobar
+     que este gate lo habría cazado: la colisión con un `async function`, y el desacuerdo con el auditor. */
+  const PATRON_VIEJO = "^(function|const|let|var) [A-Za-z0-9_]+";
+  const COLISION = "const sha256Hex = 1;\nasync function sha256Hex(txt) {}\nconst b = 2;";
+  assert.deepEqual(duplicadosNivelModulo(COLISION), ["sha256Hex"]);
+  assert.deepEqual(duplicadosNivelModulo(COLISION, PATRON_VIEJO), [], "el patrón viejo no veía `async function`: ésta es la razón de ser del gate de acuerdo");
+  assert.notDeepEqual(declaradosCon(PATRON_VIEJO, jsx), declaradosCon(reDeclAuditor(leer("auditar_muerto.mjs")), jsx), "el gate de acuerdo tiene que romper con el patrón viejo");
+  assert.notEqual(colaPaso2("… pipeline_comercial.jsx | awk '{print $2}' | sort | uniq -d"), colaPaso2(CLAUDE_MD), "una cola con `$2` plantada tiene que salir distinta de la de CLAUDE.md");
+  assert.equal(patronPaso2("node --test \"tests/contract/*.test.mjs\""), null);
+  assert.equal(reDeclAuditor("const OTRA = /x/;"), null);
   assert.ok(montajeRaiz(jsx + "\ndefinirWebComponent(React, ReactDOM, PipelineComercial);\n").some((f) => f.includes("columna 0")));
   const c = clasesPropias(jsx + '\n<div className="t16 mt-2"/>');
   assert.deepEqual(c.sinDeclarar, ["t16"]);

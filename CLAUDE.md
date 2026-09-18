@@ -21,7 +21,7 @@ en 0 oportunidades**) en un HTML standalone que se abre en Chrome. El porqué de
 
 ```bash
 npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx                              # 1 · sin errores TS1
-grep -oE "^(function|const|let|var) [A-Za-z0-9_]+" pipeline_comercial.jsx | awk '{print $2}' | sort | uniq -d  # 2 · debe salir vacío
+grep -oE '^(export default )?(async )?(function|const|let|var|class) [A-Za-z_$][A-Za-z0-9_$]*' pipeline_comercial.jsx | awk '{print $NF}' | sort | uniq -d  # 2 · debe salir vacío
 node build_app.mjs                                                                                            # 3 · valida los hashes del vendor
 node --test "tests/contract/*.test.mjs"                                                                       # 4 · gates de contrato (~10 s)
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 140/140 PASA (~2 min)
