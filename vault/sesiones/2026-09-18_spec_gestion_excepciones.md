@@ -36,6 +36,12 @@ feature: null
   Operaciones 5): ahora 77 / 6 O / 183 / 133 / 69 / Operaciones 7, medidos el 18-09; PDF regenerado.
 - Verificación antes del commit, sin tocar el fuente ni los datos: `tsc` 0 TS1, 0 duplicados, build 40,7 MB,
   **33/33 gates**, **115/115 PASA**. Sin capturas: la UI no cambió.
+- **`main` avanzó mientras tanto** (otra sesión: la suite renumerada 116–140, la capa e2e como paso 6, la tabla de
+  invariantes cerrada). Se mezcló `main` en la rama; el único conflicto fue el tablero (se tomó el de `main` y se
+  conservó el enlace a este log). Los casos que cita el spec conservan sus títulos. Sobre el árbol mezclado:
+  `tsc` 0 TS1, 0 duplicados, build, **151/151 gates**, **140/140 PASA**; la capa e2e (29 casos, ~8 min) seguía
+  corriendo cuando el usuario pidió el merge («hace merge»): se mezcló con los cinco primeros pasos en verde y el
+  resultado del sexto se reporta al llegar.
 
 ## Decisiones tomadas con el usuario
 
