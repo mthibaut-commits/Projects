@@ -30,7 +30,7 @@ PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node tests/e2e/correr.mjs             
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs                                         # 7 · sólo si toca la UI (~5 min)
 ```
 
-El **paso 0** no verifica una conducta: protege a los otros. Veintiún gates `regla_<slug>` y los dos auditores
+El **paso 0** no verifica una conducta: protege a los otros. Los gates `regla_<slug>` y los dos auditores
 leen el fuente como TEXTO y están re-anclados contra el `.jsx` formateado (ADR-0005), así que deshacer el formato
 los tumba de a uno en sesiones distintas. Para arreglarlo: `npx prettier --write pipeline_comercial.jsx`.
 Ninguno de los seis subsume a otro, **y los cinco primeros juntos tampoco bastan**: la colisión parámetro/variable local, un
