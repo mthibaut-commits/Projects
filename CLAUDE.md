@@ -86,6 +86,15 @@ dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `
 12. **Al dudar sobre el proyecto, busca en `vault/` antes de preguntar o asumir**:
     `grep -rn "^13-ter\." vault/conocimiento/reglas/` encuentra una regla por su número.
 
+13. **Diseño: manda `datamart-ui`.** Las 13 skills de `Leonxlnx/taste-skill` en `.claude/skills/`
+    (`design-taste-frontend`, `industrial-brutalist-ui`, `minimalist-ui`, `high-end-visual-design`,
+    `gpt-taste`, `redesign-existing-projects`, `stitch-design-taste`…) disparan con los mismos pedidos
+    que `datamart-ui` («prototipa una pantalla», «rediseña esto»). Aportan **composición** —ritmo,
+    jerarquía, densidad, motion, estados vacíos—; los **tokens** —color, escala tipográfica, fuente,
+    radios— salen de `datamart-ui` y del objeto `C`, nunca de ellas. Es la **regla 34**, con gate
+    `regla_34.test.mjs`. Ojo con `stitch-design-taste`, que genera archivos `DESIGN.md`: **ninguno va a
+    la raíz del repo** —ahí significa «cómo debe verse ESTE proyecto»— y el gate lo rechaza.
+
 ## Flujo de trabajo con el usuario
 
 - El usuario (Mauricio, Datamart) reconstruye el HTML con el `.bat` y prueba en Chrome; itera con screenshots. Responder en español.
