@@ -78,9 +78,9 @@ timestamp: 2026-09-17T22:29:24Z
 | 33 | Cerrada la oferta, el CTA se va y queda «Operación creada» + Acciones › Editar | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 116 |
 | 31 | MODO DIRECTORIO — demo acotada | [`reglas/modo_directorio.md`](./reglas/modo_directorio.md) | 130, `e2e-31`, `regla_31.test.mjs` |
 | 32 | El generador tiene PUNTO FIJO: el archivo commiteado es lo que una corrida completa produce, byte a byte | [`reglas/datos_y_activos.md`](./reglas/datos_y_activos.md) | gate `generador.test.mjs` |
-| 34 | La portada muestra pantallas REALES del producto, y su arte es un activo generado que embeben los dos builds | [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | `regla_34.test.mjs` |
-| 35 | «Bienvenido» es el contrato entre la portada y los ocho scripts que esperan a que cargue | [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | `regla_35.test.mjs` |
-| 36 | La entrada al sistema cuelga del éxito FINAL de autenticación, no del botón «Ingresar» | [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | `regla_36.test.mjs`, `e2e-CRY-01-bajo-limite` |
+| 36 | La portada muestra pantallas REALES del producto, y su arte es un activo generado que embeben los dos builds | [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | `regla_36.test.mjs` |
+| 37 | «Bienvenido» es el contrato entre la portada y los ocho scripts que esperan a que cargue | [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | `regla_37.test.mjs` |
+| 38 | La entrada al sistema cuelga del éxito FINAL de autenticación, no del botón «Ingresar» | [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | `regla_38.test.mjs`, `e2e-CRY-01-bajo-limite` |
 | 17 | Teléfonos ofuscados en logs | [`contrato_servidor_y_auditoria.md`](./contrato_servidor_y_auditoria.md) | 131, `regla_17.test.mjs` |
 
 ## Contrato con el servidor (12 invariantes, `INVARIANTES` en el fuente)

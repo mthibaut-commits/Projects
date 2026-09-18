@@ -8,11 +8,11 @@ timestamp: 2026-09-18T18:10:00Z
 
 # Portada de ingreso y entrada a la sesión
 
-> Reglas de dominio de NEX, agrupadas por tema. Se citan por su número (`regla 35`) y **no se renumeran**:
+> Reglas de dominio de NEX, agrupadas por tema. Se citan por su número (`regla 37`) y **no se renumeran**:
 > el fuente y otros documentos las referencian así. Índice de todas, con qué caso verifica cada una:
 > [`invariantes.md`](../invariantes.md).
 
-34. **LA PORTADA MUESTRA PANTALLAS REALES DEL PRODUCTO, Y SU ARTE ES UN ACTIVO GENERADO** (18-09-2026).
+36. **LA PORTADA MUESTRA PANTALLAS REALES DEL PRODUCTO, Y SU ARTE ES UN ACTIVO GENERADO** (18-09-2026).
     Los dos paneles en perspectiva de la portada no son maquetas: son el Dashboard y el tubo Kanban
     capturados de `Capturas_UI/`, que es el DOM real con el CSS real. La cadena es
     `Capturas_UI/` → `generar_arte_login.mjs` → **`arte_login.js`** → el build. Tres cosas que no se
@@ -28,7 +28,7 @@ timestamp: 2026-09-18T18:10:00Z
     UI cambia y se regeneran las capturas, hay que **volver a correr el generador** o la portada sigue
     mostrando una versión que ya no existe; por eso el archivo estampa la rama y el commit de origen.
 
-35. **«BIENVENIDO» ES EL CONTRATO ENTRE LA PORTADA Y OCHO SCRIPTS** (18-09-2026). El HTML son 41 MB y
+37. **«BIENVENIDO» ES EL CONTRATO ENTRE LA PORTADA Y OCHO SCRIPTS** (18-09-2026). El HTML son 41 MB y
     Babel transpila ~26.000 líneas **en el navegador**: ningún script sabe cuándo terminó. Todos
     resuelven lo mismo —esperan a que la palabra **`Bienvenido`** aparezca en el texto de la página— y
     son ocho: `run_tests.mjs`, `tests/e2e/_harness.mjs`, `tests/e2e/24_cry_01.e2e.mjs`,
@@ -39,7 +39,7 @@ timestamp: 2026-09-18T18:10:00Z
     pasó a ser **el título de la tarjeta**, que además es donde corresponde saludar. Si algún día hay
     que moverla, se mueve **con los ocho scripts en el mismo commit**.
 
-36. **LA ENTRADA AL SISTEMA CUELGA DEL ÉXITO FINAL DE AUTENTICACIÓN, NO DEL BOTÓN** (18-09-2026). La
+38. **LA ENTRADA AL SISTEMA CUELGA DEL ÉXITO FINAL DE AUTENTICACIÓN, NO DEL BOTÓN** (18-09-2026). La
     trampa es de producto: **«Ingresar» no lleva al dashboard, lleva al paso OTP**. Las dos vías que sí
     terminan la autenticación son `verificarOtp` (credenciales + 2FA) y el selector de cuenta del SSO, y
     las dos pasan por `entrarAlSistema`, que es el único lugar donde se llama a `onIngresar`. Colgar la

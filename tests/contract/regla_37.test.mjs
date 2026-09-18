@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------------------------------
-// Gate de la regla 35 — la palabra que los scripts esperan para saber que la portada cargó.
+// Gate de la regla 37 — la palabra que los scripts esperan para saber que la portada cargó.
 //
 // El HTML son 41 MB y Babel transpila ~26.000 líneas EN EL NAVEGADOR: ningún script sabe cuándo
 // terminó. Todos resuelven lo mismo — esperan a que una palabra de la portada aparezca en el texto de
@@ -48,7 +48,7 @@ export function scriptsQueEsperan(listar = () => {
   return fuera;
 }
 
-test("regla 35: toda palabra que un script espera de la portada existe en el fuente", () => {
+test("regla 37: toda palabra que un script espera de la portada existe en el fuente", () => {
   const fuente = leer("pipeline_comercial.jsx");
   const porArchivo = scriptsQueEsperan();
   // Si esto queda vacío el gate no vigila nada: significa que cambió la forma de esperar.
@@ -62,7 +62,7 @@ test("regla 35: toda palabra que un script espera de la portada existe en el fue
     "estos scripts esperan una palabra que el fuente ya no tiene y se van a colgar 300 s:\n  " + faltantes.join("\n  "));
 });
 
-test("regla 35: la palabra viva es «Bienvenido» y está en LoginScreen", () => {
+test("regla 37: la palabra viva es «Bienvenido» y está en LoginScreen", () => {
   const fuente = leer("pipeline_comercial.jsx");
   const i = fuente.indexOf("function LoginScreen");
   assert.ok(i > 0, "no encuentro LoginScreen");

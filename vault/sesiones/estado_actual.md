@@ -34,7 +34,7 @@ fila y otro intentó refutarlos (log), y **lo que destaparon sí cambió el prod
 | Trabajo | Estado | Rama | Siguiente paso |
 |---|---|---|---|
 | Invariantes cerradas · «Operación creada» · punto fijo · gates cableados | ✅ mergeadas a `main` (bd14091) | — | **pushear el tag `v0.1.0`** (abajo) |
-| **Portada que muestra el producto** | ✅ en la rama · reglas 34/35/36 · ADR-0005 · contrato 151→167 | `claude/elegant-fermat-pyfpnm` | mergear a `main` con `--no-ff` cuando el usuario lo vea |
+| **Portada que muestra el producto** | ✅ en la rama · reglas 36/37/38 · ADR-0005 · contrato 151→167 | `claude/elegant-fermat-pyfpnm` | mergear a `main` con `--no-ff` cuando el usuario lo vea |
 
 ## Defectos de producto corregidos al cerrar la tabla (los destaparon los gates)
 

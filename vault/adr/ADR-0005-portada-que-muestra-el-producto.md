@@ -25,8 +25,8 @@ se veían en la misma pantalla.
 1. **La portada muestra el producto, con profundidad real.** Fondo de tres radiales con grano, dos
    pantallas reales en perspectiva con profundidad de campo, tarjeta de vidrio, y una entrada
    orquestada de ~1,6 s. Al autenticarse, el panel del dashboard **crece hasta ser el sistema**
-   (regla 36): el objeto que mirabas es aquel en el que entras.
-2. **El arte es un activo generado, no bytes en el fuente** (regla 34): `Capturas_UI/` →
+   (regla 38): el objeto que mirabas es aquel en el que entras.
+2. **El arte es un activo generado, no bytes en el fuente** (regla 36): `Capturas_UI/` →
    `generar_arte_login.mjs` → `arte_login.js` → los dos builds.
 3. **`#703EFF` es el único morado de marca.** `marcaPrimario` pasa a `#703EFF`, `marcaCta` se rederiva
    de él y `marcaPanel` deja de ser un degradado de dos paradas para ser la composición de radiales.
@@ -57,7 +57,7 @@ se veían en la misma pantalla.
 ## Consecuencias
 
 - El build tiene un tercer activo generado, y **`build_app.ps1` cambia con `build_app.mjs`**. El gate
-  `regla_34.test.mjs` exige los dos: sin él, un cambio sólo en Node deja al usuario sin paneles y sin
+  `regla_36.test.mjs` exige los dos: sin él, un cambio sólo en Node deja al usuario sin paneles y sin
   error. El `.ps1` no se pudo ejecutar acá (es de Windows): la simetría está gateada, no probada.
 - La portada depende de `Capturas_UI/`, que ya se regenera cuando cambia la UI (paso 7 de la
   verificación). Quien regenere las capturas tiene que correr también el generador del arte.

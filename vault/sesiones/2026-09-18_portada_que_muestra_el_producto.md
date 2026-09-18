@@ -13,7 +13,7 @@ timestamp: 2026-09-18T18:40:00Z
 Rediseño completo de `LoginScreen` (104 líneas de render → 270) más la cadena de arte que lo alimenta.
 La decisión y sus alternativas descartadas están en
 [ADR-0005](../adr/ADR-0005-portada-que-muestra-el-producto.md); lo que queda fijado, en las **reglas
-34, 35 y 36** ([`portada_y_sesion.md`](../conocimiento/reglas/portada_y_sesion.md)), con un gate de
+36, 37 y 38** ([`portada_y_sesion.md`](../conocimiento/reglas/portada_y_sesion.md)), con un gate de
 contrato cada una.
 
 ## Cómo llegó acá (cuatro rondas)
@@ -33,7 +33,7 @@ contrato cada una.
 
 - **Ocho scripts esperan la palabra «Bienvenido»** para saber que el HTML de 41 MB terminó de
   transpilar. Borrarla no rompe nada al instante: cuelga los 300 s del timeout y falla sin decir por
-  qué. Se conservó como **título de la tarjeta** (regla 35, con gate).
+  qué. Se conservó como **título de la tarjeta** (regla 37, con gate).
 - **El «zoom» del dashboard no era el encuadre sino la resolución de origen**: las capturas estaban
   tomadas a 1440 px y estiradas a 1600, o sea todo salía un 11 % más grande que su tamaño real.
   El contenedor de la app topa en **1600 px** (medido), así que se captura ahí: 1:1 y sin margen
@@ -62,6 +62,6 @@ y se caminó credenciales → OTP → dashboard, sin errores de página.
 ## Lo que queda anotado
 
 - **`build_app.ps1` no se pudo ejecutar** (es de Windows). La simetría con `build_app.mjs` está
-  **gateada** por `regla_34.test.mjs`, no probada. Conviene que el usuario corra el `.bat` una vez.
+  **gateada** por `regla_36.test.mjs`, no probada. Conviene que el usuario corra el `.bat` una vez.
 - `marcaFondo` no está en el selector de colores de Configuración, que sólo edita `marcaPrimario`.
 - Sigue abierto de la ronda anterior: el copy legal lleva em-dash y `marcaBajada` también.
