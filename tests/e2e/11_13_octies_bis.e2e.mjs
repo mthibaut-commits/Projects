@@ -18,7 +18,7 @@
    `limpiarSimulacion`, y las entradas de auditoría que `registrarAuditoria` persiste en localStorage— se
    mide y va en el detalle del caso, no se supone. */
 
-const HEX = { fondo: "#F5F4F8", borde: "#E4E2EC" }; // el color del texto no va acá: la regla dice C.sub y se lee de la paleta de la página
+const HEX = { fondo: "#F5F4F8", borde: "#E4E2EC" }; // movidos el 17-09 con el panel lila (regla 13-octies-bis, corregida al medir) // el color del texto no va acá: la regla dice C.sub y se lee de la paleta de la página
 const TXT_VACIO = "Ninguna factura seleccionada";
 const TIP_PLANA_OFERTA = "Todas las facturas de la oferta en una sola lista, de la más nueva a la más antigua (folio descendente).";
 const TIP_DEUDOR = "Un acordeón por empresa deudora, con sus facturas dentro.";

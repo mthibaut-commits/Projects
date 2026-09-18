@@ -7184,7 +7184,7 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario, giro 
             </div>
           </div>
           <div className="mt-2.5 rounded-lg p-2.5 t10" style={{ backgroundColor: "#F5F4F8", color: C.sub }}>
-            Al confirmar se <b>publica la oferta</b> {pub === "electronica" ? <>y <b>sale el correo</b> con el código de negocio y la clave de un solo uso; la firma del cliente cierra <b>O05</b></> : <>y <b>O05 · Evidencia del Contrato de Cesión</b> queda esperando el comprobante en el tab Otorgamiento</>}. Las asignaciones de línea son una <b>evaluación</b>, no una reserva: el cupo lo reserva el sistema de gestión de líneas cuando el <b>cliente firma</b>, y el core lo convierte en línea utilizada cuando <b>Operaciones aprueba</b>{evalLin.requiereComite > 0 ? <> y la solicitud queda en la bandeja del <b>comité de riesgo</b> como una sola solicitud con {evalLin.solicitudes.length} línea(s) de detalle, aprobable o recortable por separado</> : null}.
+            Al confirmar se <b>publica la oferta</b> {pub === "electronica" ? <>y <b>sale el correo</b> con el código de negocio y la clave de un solo uso; la firma del cliente cierra <b>O05</b></> : <>y <b>O05 · Contrato firmado por cliente de la operación</b> queda esperando el comprobante en el tab Otorgamiento</>}. Las asignaciones de línea son una <b>evaluación</b>, no una reserva: el cupo lo reserva el sistema de gestión de líneas cuando el <b>cliente firma</b>, y el core lo convierte en línea utilizada cuando <b>Operaciones aprueba</b>{evalLin.requiereComite > 0 ? <> y la solicitud queda en la bandeja del <b>comité de riesgo</b> como una sola solicitud con {evalLin.solicitudes.length} línea(s) de detalle, aprobable o recortable por separado</> : null}.
           </div>
         </div>
 
@@ -7346,6 +7346,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const motivoNoReset = !onLimpiarSimulacion ? "No disponible en esta vista"
     : aprobacionFormalCliente(deal) || deal.clienteAcepto ? "El cliente ya firmó esta oferta: para modificarla, usa «Reabrir para modificar»."
     : ofertaPublicada(deal) ? "La oferta ya se publicó al cliente: para modificarla, usa «Reabrir para modificar»."
+    : ofertaCerradaVigente(deal) ? "La oferta ya se cerró y el negocio quedó creado: para modificarla, usa «Acciones › Editar»."
     : !["prospeccion", "oferta"].includes(deal.stage) ? "La operación ya avanzó más allá de la oferta."
     : null;
   const puedeReiniciar = !motivoNoReset;
@@ -8055,7 +8056,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: vv.bg, color: vv.fg }}>{vv.t}</span>
                             <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
                             <span className="text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.monto)}</span>
-                            {!soloLectura ? <button onClick={() => setConfirmRetiro(f)} title="Retirar de la oferta" className="justify-self-center rounded p-0.5 disabled:opacity-30" style={{ color: C.red }}><Trash2 size={12} /></button> : <span></span>}                          </div>
+                            {!soloLectura ? <button onClick={() => setConfirmRetiro(f)} title="Retirar de la oferta" className="justify-self-center rounded p-0.5 disabled:opacity-30" style={{ color: C.red }}><Trash2 size={12} /></button> : <span></span>}
+                          </div>
                           );
                         })}
                         {validas.length === 0 && <div className="t10 py-2" style={{ color: C.faint }}>No hay facturas válidas en la oferta.</div>}
@@ -9102,7 +9104,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   <input value={detQuery} onChange={(e) => { setDetQuery(e.target.value); setDetOtrasPage(0); }} placeholder="Buscar empresa deudora o folio…" className="w-full bg-transparent t10 outline-none" style={{ color: C.ink }} />
                                   {detQuery && <button onClick={() => { setDetQuery(""); setDetOtrasPage(0); }} style={{ color: C.faint }}><X size={12} /></button>}
                                 </div>
-                                {!soloLectura && (() => {
+                                {!bloqueado && (() => {
                                   // Alta masiva de Prime: las facturas de deudores de Lista Blanca o Autorizados
                                   // son las que no hay que pensar dos veces, así que se suman de una vez en lugar
                                   // de fila por fila. El menú deja ver de quién es cada paquete antes de agregar.
@@ -9228,6 +9230,14 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       </button>
                                       {primeMenu && (
                                         <div className="absolute right-0 z-30 mt-1 w-80 rounded-lg bg-white p-1 shadow-xl" style={{ border: `1px solid ${C.line}` }} onMouseLeave={() => setPrimeMenu(false)}>
+                                          {/* Con el paquete cerrado el menú se queda pero VACÍO de ediciones: se
+                                              dice por qué y dónde se retoma. Lo único que sobrevive es «Empezar de
+                                              nuevo», que más abajo se deshabilita con su propio motivo (13-quaterdecies:
+                                              deshabilitado y explicado, nunca oculto). */}
+                                          {soloLectura && (
+                                            <div className="px-2 py-1.5 t9" style={{ color: C.faint }}>La oferta está cerrada: el paquete es el que se le comunicó al cliente. Para volver a agregar o sacar facturas, <b>Acciones › Editar</b>.</div>
+                                          )}
+                                          {!soloLectura && (<>
                                           <div className="px-2 py-1 t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Cargar documentos</div>
                                           <label className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1.5 t10 font-medium" style={{ backgroundColor: "#EFF6FF", color: "#2563EB" }}
                                             title="Carga los XML (DTE) que envió el cliente: cada documento entra a la oferta con su folio, deudor, plazo y monto, y ya trae el respaldo para ceder">
@@ -9297,6 +9307,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                               );
                                             })}
                                           </div>
+                                          </>)}
                                           {/* EMPEZAR DE NUEVO. Hoy la única forma de descartar una oferta mal
                                               armada es cerrar la pestaña del detalle y volver a abrirla, y eso
                                               sólo funciona porque la oferta todavía no se guardó en ninguna
@@ -9349,8 +9360,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   /* El estado VACÍO es el de entrada de esta pantalla, no un borde raro, así
                                      que tiene que verse: con #F7F7FA sobre blanco y texto en C.faint la caja
                                      desaparecía y el mensaje se leía como un placeholder apagado. Fondo un
-                                     tono más oscuro —el mismo gris de los chips—, borde definido, más alto y
-                                     el texto en el cuerpo de la pantalla (t11) y en C.sub. */
+                                     tono más oscuro, borde definido, más alto y el texto en el cuerpo de la
+                                     pantalla (t11) y en C.sub. El tono se midió DOS veces: sobre blanco era
+                                     #EDECF3, y al mudarse la oferta al panel lila dejó de distinguirse del
+                                     fondo, así que toma el de una tarjeta de fila (#F5F4F8 / #E4E2EC). */
                                   <div className="flex items-center justify-center rounded-xl px-3 t11 font-medium" style={{ minHeight: 72, backgroundColor: "#F5F4F8", border: "1px solid #E4E2EC", color: C.sub }}>
                                     {dq ? `Ningún deudor de la oferta coincide con «${detQuery}».` : "Ninguna factura seleccionada"}
                                   </div>
@@ -9498,7 +9511,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           <div className="mt-2">
                             <div className="mb-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: "#16A34A", border: "1px solid #bbf7d0" }}><Check size={11} /> Oferta publicada{deal.negocioNum ? ` · N° ${deal.negocioNum}` : ""}{fisica ? " · en formato físico" : ""}</div>
                             <div className="t9" style={{ color: C.faint }}>
-                              {fisica ? "Publicada en papel. El contrato firmado se adjunta en el tab Otorgamiento (O05 · Evidencia del Contrato de Cesión), donde lo autoriza Operaciones."
+                              {fisica ? "Publicada en papel. El contrato firmado se adjunta en el tab Otorgamiento (O05 · Contrato firmado por cliente de la operación), donde lo autoriza Operaciones."
                                 : deal.clienteAcepto ? "El cliente firmó en la plataforma de Factoring Security."
                                 : "Correo enviado con el código de negocio y su clave de un solo uso. El cliente debe ingresar a la plataforma de Factoring Security y firmar."}
                             </div>
@@ -12460,7 +12473,7 @@ function varsModeloExt(deal) {
     // Va al área de OPERACIONES porque es viabilidad operativa del curse —la familia de los pagarés
     // C01–C03— y en N3 porque no es un trámite de mesa: sin esa constancia la cesión no es oponible
     // al deudor. Es re-evaluable a propósito: en cuanto la firma llega, el criterio se repara solo.
-    R(305, "O05", "operaciones", "MinimumViability", "Evidencia del Contrato de Cesión", "No consta la autorización del contrato de cesión: el cliente todavía no firma en el portal, o la oferta se publicó en papel y falta adjuntar el comprobante", [[(v) => !v.contratoEvidencia, "excepcion", NV(3)]]),
+    R(305, "O05", "operaciones", "MinimumViability", "Contrato firmado por cliente de la operación", "No consta la autorización del contrato de cesión: el cliente todavía no firma en el portal, o la oferta se publicó en papel y falta adjuntar el comprobante", [[(v) => !v.contratoEvidencia, "excepcion", NV(3)]]),
     // O06 · El monto que figura CEDIDO de cada documento tiene que ser el monto del documento. Es el
     // control de OPERACIONES sobre el registro de cesiones (A2), y el par documental de O05: aquél
     // comprueba que EXISTA la autorización, éste que lo cedido COINCIDA con lo que se va a comprar.
@@ -23254,7 +23267,12 @@ export default function PipelineComercial() {
   // En modo detalle (_blank), el título de la pestaña deja claro qué oportunidad/cliente es.
   useEffect(() => { if (soloDetalle && selected) { try { document.title = `Detalle · ${selected.id} · ${selected.cliente} — NEX Factoring`; } catch (e) {} } }, [soloDetalle, selected]);
   const [query, setQuery] = useState("");
-  const [quickFilter, setQuickFilter] = useState("conlinea"); // arranca en el tab "Con línea"
+  // Arranca en «Todos» (18-09-2026, pedido del usuario): la vista de entrada de Gestión diaria muestra el
+  // tubo COMPLETO y los tabs son un recorte que el ejecutivo elige, no uno que la pantalla le impone. Antes
+  // abría en «Con línea» y las otras 98 oportunidades del ejemplo no estaban a la vista: para verlas había
+  // que darse cuenta de que había un filtro puesto. Con este valor `anyFilter` además arranca en falso, que
+  // es lo que la pantalla dice (no hay nada que limpiar), y coincide con el destino de `clearAll`.
+  const [quickFilter, setQuickFilter] = useState("todos");
   const [directorio, setDirectorio] = useState(null); // DIRECTORIO · demo acotada (bloque desechable)
   const [channel, setChannel] = useState("Manual");
   const [usuario, setUsuario] = useState(soloDetalle && detallePayload.usuario ? detallePayload.usuario : USUARIO); // usuario logueado
@@ -23828,7 +23846,7 @@ export default function PipelineComercial() {
       hist.push({ fecha: nowStamp(), canal: fisica ? "Sistema" : "Email", actor: "Ejecutivo", esEvento: true,
         resultado: fisica ? "Oferta publicada en formato FÍSICO · el contrato se firma en papel"
           : "Oferta publicada ELECTRÓNICAMENTE · correo enviado al cliente con el código de negocio y su clave de un solo uso",
-        detalle: fisica ? "Queda abierto el criterio O05 · Evidencia del Contrato de Cesión: el ejecutivo adjunta el comprobante y lo autoriza Operaciones (N3)."
+        detalle: fisica ? "Queda abierto el criterio O05 · Contrato firmado por cliente de la operación: el ejecutivo adjunta el comprobante y lo autoriza Operaciones (N3)."
           : "La autorización del cliente en el portal es la evidencia del contrato de cesión (O05).", exito: true });
       return { ...d, ...patchCierre, historialContacto: hist };
     };
@@ -25668,17 +25686,21 @@ export default function PipelineComercial() {
   // Las "Sin clasificar" solo cuentan/aparecen cuando el toggle Inbound está activo.
   const inboundCount = showInbound ? streamFeed.length : 0;
   const nPrioTubo = dealsVista.filter((d) => tienePrioridadCurse(d.id)).length;
+  // «Todos» va PRIMERO (18-09-2026, pedido del usuario): es el tab de entrada, y un tab de entrada al final
+  // de la fila se lee como el último recorte de una lista de recortes. Va antes incluso de «Prioritarios»,
+  // que es condicional: si fuera segundo, su posición saltaría cada vez que la jefatura prioriza un negocio.
   const quickFilters = [
+    // DIRECTORIO: su contador va a cero en la demo acotada, como el de «Otras Empresas» más abajo —el modo
+    // silencia el stream del inbound, y un contador que dice 65 sobre una lista de 5 es la contradicción
+    // que este tablero persigue en todas sus formas.
+    { id: "todos", label: "Todos", count: dealsTubo.length + (directorio ? 0 : inboundCount) },
     ...(nPrioTubo > 0 || quickFilter === "prioritarios" ? [{ id: "prioritarios", label: "Prioritarios", count: nPrioTubo }] : []),
     { id: "conlinea", label: "Con línea", count: dealsTubo.filter((d) => ["oferta", "prospeccion"].includes(d.stage) && !lineaCreditoDe(d).fueraDeLinea).length },
     { id: "sinlinea", label: "Sin línea", count: dealsTubo.filter((d) => ["oferta", "prospeccion"].includes(d.stage) && lineaCreditoDe(d).fueraDeLinea).length },
     { id: "pendgiro", label: "Pendientes de giro", count: dealsTubo.filter((d) => ["aceptadas", "cesion", "otorgamiento"].includes(d.stage) || (d.stage === "giro" && d.giroPendiente)).length },
     { id: "perdidas", label: "Perdidas", count: dealsTubo.filter((d) => d.stage === "perdida").length },
-    // DIRECTORIO: las dos pestañas que cuentan el stream del inbound van a cero en la demo acotada.
-    // El modo ya no las muestra, y un contador que dice 65 sobre una lista de 5 es la contradicción
-    // que este tablero persigue en todas sus formas.
+    // DIRECTORIO: la otra pestaña que cuenta el stream del inbound, a cero por lo mismo que «Todos».
     { id: "otrasfacturas", label: esEjecutivoSesion ? "Otras Empresas" : "Otras facturas", count: directorio ? 0 : streamFeed.filter(ofOtrasVisible).length },
-    { id: "todos", label: "Todos", count: dealsTubo.length + (directorio ? 0 : inboundCount) },
   ];
 
   if (!logueado) return <LoginScreen usuarioInicial={usuario} onIngresar={(u) => { setUsuario(u); setLogueado(true); }} />;

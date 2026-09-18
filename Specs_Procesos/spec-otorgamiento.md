@@ -184,7 +184,7 @@ que llega la ve y el que se fue deja de verla, sin migrar nada.
 El proceso operativo completo del visado —quién hace qué, en qué pantalla, qué queda registrado en
 cada paso y qué efecto tiene la decisión— está en [`spec-gestion-excepciones.md`](./spec-gestion-excepciones.md).
 
-### 6. O05 · Evidencia del Contrato de Cesión — la regla que no viene de la política
+### 6. O05 · Contrato firmado por cliente de la operación — la regla que no viene de la política
 
 Existe **siempre**, en las dos vías de publicación; lo que cambia es **quién crea la evidencia**:
 

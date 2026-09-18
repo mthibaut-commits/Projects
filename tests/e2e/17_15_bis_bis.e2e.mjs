@@ -9,7 +9,8 @@
        tubo lo incorpora tal cual; se postea dos veces más ⇒ sigue una sola entrada; un mensaje sin registro o de
        otro tipo no escribe nada.
    La sesión del runner es COMPARTIDA con los archivos que siguen: cada caso enciende el Directorio que necesita y
-   deja el tubo como lo encontró —Directorio apagado, el filtro de arranque «Con línea», las claves `pc_repo_*`
+   deja el tubo como lo encontró —Directorio apagado, el filtro «Con línea» de la línea base e2e (regla 34: la app
+   abre en «Todos»), las claves `pc_repo_*`
    del storage (lo que una pestaña de detalle NUEVA hereda: el cierre justifica excepciones y escribe eventos de
    otorgamiento) y el `SOLIC_SEQ` del detalle en su valor medido, sin la solicitud del caso—. */
 const idsTubo = (p) => p.evaluate(() => api2ListarProcesos().map((s) => s && s.idProceso));

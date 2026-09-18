@@ -32,7 +32,7 @@ jobs:
 
       - name: 2 · Duplicados de nivel módulo
         run: |
-          dup=$(grep -oE "^(function|const|let|var) [A-Za-z0-9_]+" pipeline_comercial.jsx | awk '{print $2}' | sort | uniq -d)
+          dup=$(grep -oE '^(export default )?(async )?(function|const|let|var|class) [A-Za-z_$][A-Za-z0-9_$]*' pipeline_comercial.jsx | awk '{print $NF}' | sort | uniq -d)
           if [ -n "$dup" ]; then echo "símbolos duplicados: $dup"; exit 1; fi
           echo "sin duplicados"
 
