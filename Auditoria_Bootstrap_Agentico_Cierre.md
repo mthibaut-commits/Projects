@@ -40,7 +40,7 @@ Medido contra los doce pasos, uno por uno. Las tres filas de arriba son las que 
 
 | Paso | Qué pide | Estado en NEX | Veredicto |
 |---|---|---|---|
-| **8** | `vault/conocimiento/despacho_agentes.md`: routing de modelos, bloque invariante, cierres proporcionales | **No existe** | **Falta, y es el hueco más caro** (§3) |
+| **8** | `vault/conocimiento/despacho_agentes.md`: routing de modelos, bloque invariante, cierres proporcionales | **Escrito el 18-09-2026** | ✅ salvo el routing por modelo, que este repo no tiene medido y por eso no se prescribe (§3) |
 | **7** | Escalera de ceremonia T1/T2/T3 escrita en `.claude/rules/workflow.md` | **No existe el archivo**; «T3» se usa en el tablero, en `flujo_git.md`, en un hook y en cinco mensajes de commit | **Falta: hay una referencia colgando** (§4) |
 | **6** | Cuarteto de gates: tests · tipos · lint · format-check | Tests ✅ · tipos ✅ · **lint ✗ · format ✗** (el repo no tiene linter ni formateador) | **Decisión, no tarea** (§5) |
 | 2 | `vault/roadmap/`, `features/`, `specs/`, `plantillas/` | Sólo `adr/`, `sesiones/`, `conocimiento/` | No aplica hoy (§6) |
@@ -58,6 +58,12 @@ tablero con gate de 80 líneas, tres niveles de memoria declarados, ADR-0001 con
 ---
 
 ## 3. El hueco caro: no hay doctrina de despacho, y esta sesión probó que hace falta
+
+> **Cerrado el 18-09-2026** en [`vault/conocimiento/despacho_agentes.md`](vault/conocimiento/despacho_agentes.md),
+> con el bloque invariante verbatim, la consigna del refutador, los cuatro modos de falla de abajo y los límites
+> del contenedor. `vault.test.mjs` exige que las ocho cláusulas del brief sigan ahí: la forma de perderlo otra vez
+> no es borrar el archivo, es resumirlo. El **routing por modelo** queda fuera a propósito — no está medido en
+> este repo, y prescribirlo sin evidencia sería inventarlo. Lo que sigue es el hallazgo tal como se escribió.
 
 **El dato.** Para cerrar la tabla de invariantes esta sesión despachó **más de noventa agentes**: uno por
 fila para escribir el gate, otro por fila para intentar refutarlo, reparadores para lo refutado y pulidores
@@ -150,7 +156,7 @@ Decirlo explícitamente evita que la próxima sesión lo interprete como deuda:
    y ~31 MB; lo medido hoy es ~26.100, 154 y 40,7 MB. Es exactamente el hallazgo §2.3 de la auditoría
    anterior —tres cifras que envejecieron en silencio— **repitiéndose en otro documento**. Ningún gate lo
    vigila, y por eso volvió a pasar. Un commit T3, o un gate que compare contra la medición.
-2. **`pipeline.zip`** sigue versionado (build del 12-08-2026, 29,6 MB).
+2. **`pipeline.zip`** sigue versionado (build del 12-08-2026). **Corrección del 18-09**: pesa **2,7 MB**, no 29,6 — esa cifra es el contenido descomprimido (28,3 MB de `pipeline_comercial.html`). Sacarlo sigue siendo correcto por ser un build de algo generado, no por su peso.
 3. **Los 20 desfases regla↔código** que los gates midieron al cerrar la tabla, listados en
    `vault/sesiones/2026-09-17_cerrar_invariantes.md`. Tres pesan de verdad: una cláusula de la regla 8 que no
    existe en el código, `validarMutacion` con un solo call site (tres invariantes declarados y nunca
@@ -162,7 +168,7 @@ Decirlo explícitamente evita que la próxima sesión lo interprete como deuda:
 
 Por retorno sobre esfuerzo, y sin empaquetar nada que no lo necesite:
 
-1. **`vault/conocimiento/despacho_agentes.md`** (§3) — T2. El material está medido y es de este repo.
+1. ~~**`vault/conocimiento/despacho_agentes.md`** (§3) — T2. El material está medido y es de este repo.~~ **HECHO el 18-09-2026**, con gate en `vault.test.mjs`.
 2. **`.claude/rules/workflow.md`** con la escalera (§4) — T2. Es reubicar texto que ya existe.
 3. **Decidir el cuarteto de gates** (§5) — una conversación, después un ADR de tres párrafos.
 4. **Los datos** (recomendación 4 de la auditoría anterior) — un ADR y su gate.
@@ -185,6 +191,6 @@ grep -c "sin gate\*\*" vault/conocimiento/invariantes.md   # sólo en la prosa, 
 grep -rn "T3" CLAUDE.md vault/ .claude/ | grep -v sesiones/20   # usos sin definición
 ls vault/                                             # adr, conocimiento, sesiones (no hay specs/ ni features/)
 ls .claude/rules/                                     # code_style.md, testing.md (no hay workflow.md)
-ls vault/conocimiento/despacho_agentes.md             # no existe
-git ls-files | grep pipeline.zip                      # sigue versionado
+ls vault/conocimiento/despacho_agentes.md             # desde el 18-09-2026 existe
+git ls-files | grep pipeline.zip                      # sigue versionado (2,7 MB; los 29,6 de §… son el contenido descomprimido)
 ```

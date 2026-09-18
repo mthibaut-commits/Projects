@@ -109,7 +109,7 @@ timestamp: 2026-09-18T02:18:36Z
 
 | Archivo | Qué fija | Clase |
 |---|---|---|
-| `vault.test.mjs` | Frontmatter OKF en todo documento del vault, `type` del vocabulario, `timestamp` ISO, tablero ≤80 líneas, `CLAUDE.md` ≤150, y que sólo el tablero afirme la fase | regla |
+| `vault.test.mjs` | Frontmatter OKF en todo documento del vault, `type` del vocabulario, `timestamp` ISO, tablero ≤80 líneas, `CLAUDE.md` ≤150, que sólo el tablero afirme la fase, y que el **bloque invariante del despacho de agentes** conserve sus ocho cláusulas (resumirlas es como se pierden) | regla |
 | `invariantes.test.mjs` | Este índice ↔ los archivos de reglas (cada fila apunta a una regla que existe a columna 0; cada regla tiene su fila; ninguna en dos archivos) · cada caso citado existe en la suite · los 12 códigos del contrato son los de `INVARIANTES` en el fuente · cada `regla N` que cita el `.jsx` sigue existiendo | regla |
 | `fuente.test.mjs` | Sin símbolos duplicados de nivel módulo (paso 2) · el **paso 2 dice lo mismo** en los tres sitios que lo escriben (`CLAUDE.md`, este vault y el CI) y reconoce **las mismas declaraciones que `auditar_muerto.mjs`** —hasta el 18-09-2026 no veía once: diez `async function` y el `export default`— · el fuente no monta la app (termina en el `}` de `PipelineComercial`, sin `definirWebComponent(` a columna 0) · toda clase propia del `<style>` usada está declarada y viceversa (el caso `t14`) · `stageName` es de nivel módulo · `vendorOrden` idéntico en `build_app.mjs` y `build_app.ps1` y cada archivo existe en `vendor/` | regla |
 | `suite.test.mjs` | Cada número de caso tiene un solo título y van consecutivos desde 1 · la suite declara `CASOS_ESPERADOS` casos | regla · **snapshot** (`CASOS_ESPERADOS`) |
