@@ -100,6 +100,7 @@ dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `
 
 ## Mapa
 
+- `.claude/rules/workflow.md` — **la escalera de ceremonia T1/T2/T3**, el ciclo de una tarea y el cierre de sesión
 - `pipeline_comercial.jsx` — el fuente entero; convenciones y trampas en `.claude/rules/code_style.md` (se carga al tocarlo)
 - `tests_asignacion_lineas.js` + `run_tests.mjs` — la suite · `tests/contract/` — gates de contrato · `tests/e2e/` — casos con sesión real (`.claude/rules/testing.md`)
 - `build_app.mjs` / `build_app.ps1` — el build · `.github/workflows/gates.yml` — el CI, un solo job para toda rama

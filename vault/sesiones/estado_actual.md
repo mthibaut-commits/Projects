@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-18T13:35:00Z
+timestamp: 2026-09-18T14:10:00Z
 ---
 
 # Estado actual
@@ -59,10 +59,10 @@ El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403, política; s
 
 ## Deudas anotadas (no bloquean, no olvidar)
 
-1. Del informe de cierre del bootstrap quedan **dos** (el tercero, la doctrina de despacho, quedó el 18-09 en
-   `conocimiento/despacho_agentes.md`): **`.claude/rules/workflow.md`** con la escalera T1/T2/T3 —«T3» se usa en
-   este tablero, en `flujo_git.md`, en un hook y en cinco commits; T1 y T2 no existen— y **el cuarteto de gates**,
-   incompleto sin linter ni formateador y única desviación del skill sin ADR.
+1. Del informe de cierre del bootstrap queda **uno**: **decidir el cuarteto de gates**, incompleto sin linter ni
+   formateador y única desviación del skill sin ADR (el porqué del formateador ya está escrito en
+   `loop_agentico_hooks.md`; falta el ADR que lo cierre). Los otros dos quedaron el 18-09:
+   `conocimiento/despacho_agentes.md` y `.claude/rules/workflow.md` con la escalera T1/T2/T3, gateada.
 2. **Auditores**: `BASE_MUERTOS` en 6; 6 hallazgos «revisar a mano» y 7 `useState` sin uso. · **GN como
    disyunción** (22), del negocio; la separación por género no es deuda (ADR-0001: regla por regla, al tocarla).
 3. De los pendientes de las reglas quedan **decisiones, no defectos** (log de hoy): las filas que Operaciones

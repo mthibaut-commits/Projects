@@ -18,7 +18,7 @@ repo es configuración personal, no una garantía) y `CLAUDE.md` se reserva para
 | Hook | Evento | Bloquea | Escape |
 |---|---|---|---|
 | `protect_paths.mjs` | PreToolUse · Edit/Write/MultiEdit | ADR aceptados (crear uno nuevo sí), `vendor/`, `fuentes/`, los vendorizados sueltos (`babel.min.js.descarga`, `saved_resource`), los **generados** (`datos_inyectados.js`, `atribuciones_otorgamiento.json`, `Capturas_UI/*.html`, `Variantes_UI/*.html`, `Integraciones_APIs_y_S3.md`, `*.pdf`, `pipeline_comercial.html`), el feed externo `proveedores_clientes.json`, `Legado/`, `.env*`, lockfiles | ninguno: se corrige el generador o el `.md` y se regenera |
-| `gitflow_guard.mjs` | PreToolUse · Bash | push con refspec cruzado a `main`; `merge` sin `--no-ff` y `commit` estando en `main` | `GITFLOW_ALLOW=1` delante del comando, sólo para una T3 acordada |
+| `gitflow_guard.mjs` | PreToolUse · Bash | push con refspec cruzado a `main`; `merge` sin `--no-ff` y `commit` estando en `main` | `GITFLOW_ALLOW=1` delante del comando, sólo para una **T3** acordada (la escalera: `.claude/rules/workflow.md`) |
 | `worktree_guard.mjs` | PreToolUse · EnterWorktree | nada: devuelve `permissionDecision: ask` | el usuario lo aprueba en el diálogo, que es la prueba de que se discutió |
 
 Cada motivo de bloqueo dice **qué hacer en su lugar**. La lógica de los tres es una función exportada
