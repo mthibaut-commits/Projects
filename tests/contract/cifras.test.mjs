@@ -107,6 +107,8 @@ export const AFIRMACIONES = [
   { archivo: "vault/conocimiento/verificacion.md", que: "archivos de contrato", re: /\((\d+) archivos en total\)/, medida: "archivosContrato" },
   { archivo: "vault/conocimiento/verificacion.md", que: "casos de la suite", re: /tests_asignacion_lineas\.js` — \*\*(\d+) casos\*\*/, medida: "casosSuite" },
 
+  { archivo: "vault/conocimiento/index.md", que: "casos de la suite", re: /cada uno de los (\d+) casos de la suite/, medida: "casosSuite" },
+
   { archivo: "vault/conocimiento/invariantes.md", que: "invariantes del contrato", re: /Contrato con el servidor \((\d+) invariantes/, medida: "invariantesContrato" },
   { archivo: "vault/conocimiento/invariantes.md", que: "gates por regla", re: /`regla_<slug>\.test\.mjs` \((\d+) archivos/, medida: "gatesRegla" },
   { archivo: "vault/conocimiento/invariantes.md", que: "archivos e2e", re: /son (\d+) archivos y \d+ casos/, medida: "archivosE2e" },

@@ -65,6 +65,33 @@ test("el tablero manda: ningún otro documento afirma la fase del proyecto", () 
   assert.deepEqual(ajenos.map(rel), [], "sólo vault/sesiones/estado_actual.md puede tener la sección «Fase del proyecto»");
 });
 
+/* El bloque invariante del despacho de agentes. Vivía en el scratchpad de la sesión y se perdió con ella —más
+   de noventa agentes lo obedecieron y no quedó nada—, así que ahora vive en el vault. Cada cláusula está
+   porque algo se rompió sin ella, y la forma de perderlas de nuevo no es borrar el archivo: es «resumir» el
+   bloque hasta que deje de decir lo que dice. Esto exige que las ocho sigan ahí. */
+export const CLAUSULAS = [
+  { que: "no editar el repositorio", re: /No edites el repositorio/ },
+  { que: "no construir", re: /No construyas/ },
+  { que: "tope de corridas", re: /Máximo \d+ corridas/ },
+  { que: "las dos direcciones cuando la regla bloquea", re: /prueba las dos direcciones/i },
+  { que: "la sonda cuando es una propiedad", re: /planta la sonda/i },
+  { que: "no dejar estado", re: /No dejes estado/ },
+  { que: "fallar sin reventar", re: /Falla, no revientes/ },
+  { que: "citar la evidencia medida", re: /Cita la evidencia que mediste/ },
+];
+export const faltantes = (texto) => CLAUSULAS.filter((c) => !c.re.test(texto)).map((c) => c.que);
+
+test("el bloque invariante del despacho de agentes conserva sus ocho cláusulas", () => {
+  const doc = leer("vault/conocimiento/despacho_agentes.md");
+  assert.deepEqual(faltantes(doc), [], "una cláusula del brief desapareció: cada una está por un incidente, y resumirlas es cómo se pierden");
+  assert.match(doc, /demostrar que el gate NO fija la regla/, "falta la consigna del refutador, que es la mitad del método");
+});
+
+test("sonda negativa: un brief al que le quitaron cláusulas se caza", () => {
+  assert.deepEqual(faltantes("No edites el repositorio. No construyas."), CLAUSULAS.slice(2).map((c) => c.que));
+  assert.deepEqual(faltantes(""), CLAUSULAS.map((c) => c.que));
+});
+
 test("sonda negativa: un documento plantado sin `description` es cazado por el parser", () => {
   const { campos } = frontmatter("---\ntype: sesion\ntitle: x\ntimestamp: 2026-01-01T00:00:00Z\n---\n");
   assert.deepEqual(REQUERIDAS.filter((k) => !(k in campos)), ["description"]);

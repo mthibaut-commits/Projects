@@ -4915,6 +4915,20 @@ function DealCard({ deal, onOpen, onDragStart }) {
             <X size={10} /> Perdida · Bloqueo firme: {[...vis.rechFirme, ...vis.excRech].map((r) => `${r.nombre} (#${r.n})`).join("; ")}
           </div>
         ); }
+        // NUNCA EN SILENCIO (corrección del usuario, 18-09-2026). Una regla mal definida no llega a `exc`
+        // ni a `rechReev` —no se evaluó—, así que hasta acá la tarjeta devolvía `null` y la operación se
+        // veía LIMPIA en el tubo. Quien mira el Kanban no abre el detalle de una operación sin badges.
+        if (!isPerdida && vis.noEjec && vis.noEjec.length) {
+          const tipNE = "Criterios NO ejecutados por falta de configuración (la operación se evaluó sin ellos):\n"
+            + vis.noEjec.map((x, i) => `${i + 1}) #${x.n} ${x.nombre}${x.deudor ? ` · ${x.deudor.nombre}` : ""} — ${x.motivo || "definición incompleta"}`).join("\n");
+          return (
+            <div className="mt-1.5 flex items-center gap-1.5 rounded px-1.5 py-1 t7 font-medium" style={{ backgroundColor: "#FFF7ED", color: "#C2410C", cursor: "help" }} title={tipNE}>
+              <AlertTriangle size={10} />
+              <span>{vis.noEjec.length} criterio(s) sin ejecutar</span>
+              <span className="ml-auto flex h-4 minw5 items-center justify-center rounded-full px-1.5 t7 font-bold text-white" style={{ backgroundColor: "#C2410C" }}>{vis.noEjec.length}</span>
+            </div>
+          );
+        }
         if (!vis.exc.length && !vis.rechReev.length) return null;
         const tip = "Requiere otorgamiento — reglas con excepción/rechazo re-evaluable:\n" + [...vis.exc, ...vis.rechReev].map((e, i) => `${i + 1}) #${e.n} ${e.nombre}${e.nivel ? ` → N${e.nivel} ${AREA_LBL[e.area]}` : " (re-evaluable)"}`).join("\n");
         return (
@@ -11928,7 +11942,10 @@ const PESO_COL = { "Cliente": 250, "Línea": 230, "Oportunidad": 324, "SOW": 214
                       const bloqueoC = visC && (visC.rechFirme.length || visC.excRech.length);
                       const nPendC = visC && !bloqueoC ? visC.exc.length + visC.rechReev.length : 0;
                       // Total de criterios evaluados, para que el badge diga «16/321» y no un 16 suelto.
-                      const totCrit = visC ? (visC.aprob + visC.clasif + visC.exc.length + visC.rech.length) : 0;
+                      // Las NO EJECUTADAS cuentan en el total: si no, el denominador encoge solo —«16/321»
+                      // pasa a «16/320»— y un criterio desaparece sin que nadie lo note, que es exactamente
+                      // lo que la regla 35 no permite.
+                      const totCrit = visC ? (visC.aprob + visC.clasif + visC.exc.length + visC.rech.length + (visC.noEjec || []).length) : 0;
                       // Estado de LÍNEA: se LEE de la versión que emitió la simulación, no se
                       // recalcula. Antes esta celda llamaba a `asignarLineas` por fila, y en
                       // producción eso no se puede hacer —los motores corren del lado del servidor y
@@ -12529,9 +12546,17 @@ function reglaNoEjecutable(regla) {
   if (!regla) return { noEjecutable: true, motivo: "no hay regla que evaluar" };
   if (regla.clasif) return { noEjecutable: false };
   if (!(regla.tiers && regla.tiers.length)) return { noEjecutable: false }; // sin tramos no decide nada
-  if (!regla.area) return {
+  // NO TODAS LAS REGLAS NECESITAN APROBADOR (corrección del usuario, 18-09-2026). El área es a quién se
+  // le pide la EXCEPCIÓN, así que sólo la necesita la regla que tiene al menos un tramo `excepcion`. Una
+  // regla KNOCK OUT —tramos sólo de `rechazado`— no se aprueba: incumple y se acabó, no hay a quién
+  // pedirle nada, y exigirle área la habría dejado sin ejecutar por una carencia que no lo es. Medido en
+  // runtime sobre el catálogo: 69 reglas con excepción y 3 knock out puros. Es el MISMO criterio con que
+  // la mesa de reglas arma su lista
+  // (`tiers.some((t) => t[1] === "excepcion")`): si divergieran, la mesa mostraría reglas que el motor
+  // no rutea, o al revés.
+  if (!regla.area && (regla.tiers || []).some((t) => t[1] === "excepcion")) return {
     noEjecutable: true,
-    motivo: "el criterio no declara área, así que no hay a quién pedirle la excepción",
+    motivo: "el criterio tiene un tramo de excepción y no declara área, así que no hay a quién pedírsela",
     arregla: "Declara el área de la regla en el catálogo de otorgamiento (Configuración › Áreas define cuáles existen).",
   };
   return { noEjecutable: false };
@@ -14837,13 +14862,25 @@ function AtribucionesMantenedor() {
       <div className="mt-3 space-y-2">
         {list.map((r) => {
           const ac = AREA_COLOR[r.area] || AREA_COLOR.riesgo;
+          // ACÁ ES DONDE SE ARREGLA, así que acá tiene que verse: esta lista son las reglas que necesitan
+          // aprobador (`tiers.some(excepcion)`), o sea exactamente las que quedan mal definidas sin área.
+          // Sin esta marca, la fila mostraba un chip de área VACÍO —`AREA_LBL[undefined]`— y el mantenedor
+          // no tenía cómo saber que esa regla dejó de ejecutarse (regla 35).
+          const ne = reglaNoEjecutable(r);
           return (
-            <div key={r.n} className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
+            <div key={r.n} className="rounded-xl p-3" style={{ border: `1px solid ${ne.noEjecutable ? "#F97316" : C.line}`, backgroundColor: ne.noEjecutable ? "#FFF7ED" : undefined }}>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="t12 font-semibold" style={{ color: C.ink }}>#{r.n} · {r.nombre}</span>
-                <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: ac.bg2, color: ac.fg }}>{AREA_LBL[r.area]}</span>
+                {ne.noEjecutable
+                  ? <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: "#C2410C", color: "#fff" }} title={ne.arregla}>Sin área · NO SE EJECUTA</span>
+                  : <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: ac.bg2, color: ac.fg }}>{AREA_LBL[r.area]}</span>}
                 <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: reglaReev(r.n) ? "#FFF7ED" : "#F3F4F6", color: reglaReev(r.n) ? "#C2410C" : C.faint }}>{reglaReev(r.n) ? "Re-evaluable" : "Bloqueo firme"}</span>
               </div>
+              {ne.noEjecutable && (
+                <div className="mt-1 rounded-md px-2 py-1.5 t9 font-semibold" style={{ backgroundColor: "#fff", border: "1px solid #FED7AA", color: "#9A3412" }}>
+                  ⚠ Esta regla NO se ejecuta ni se verifica: {ne.motivo}. Las operaciones se evalúan sin ella. {ne.arregla}
+                </div>
+              )}
               {r.hallazgo && <div className="mt-0.5 t10" style={{ color: C.sub }}>{r.hallazgo}</div>}
               <table className="mt-1.5 w-full border-collapse t10">
                 <thead><tr>{["Tramo (condición)", "Disposición", "Nivel · rol", "Aprobadores"].map((h) => <th key={h} className="px-2 py-1 text-left font-semibold" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
