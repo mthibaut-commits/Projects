@@ -51,12 +51,12 @@ vieja atenuada igual se lee como cifra y alguien la va a citar.
 
 ### 3. El catálogo de reglas — Modelo de Riesgo v1.0
 
-**76 reglas** medidas al 14-09-2026: **48 C** (cliente) · **23 D** (deudor) · **5 O** (operación).
-75 vienen de la política v1.0; **O05 no** — es del proceso (§6).
+**77 reglas** medidas al 18-09-2026: **48 C** (cliente) · **23 D** (deudor) · **6 O** (operación).
+75 vienen de la política v1.0; **O05 y O06 no** — son del proceso (§6 y `Inconsistencias_Motor_Otorgamiento.md` §8).
 
-- **181 tramos** en total: **131 de excepción**, 47 de aprobación y 3 de rechazo.
-- **68 reglas** tienen al menos un tramo de excepción.
-- Las excepciones rutean a **Riesgo 97 · Comercial 29 · Operaciones 5**. **Ninguna sin aprobador.**
+- **183 tramos** en total: **133 de excepción**, 47 de aprobación y 3 de rechazo.
+- **69 reglas** tienen al menos un tramo de excepción.
+- Las excepciones rutean a **Riesgo 97 · Comercial 29 · Operaciones 7**. **Ninguna sin aprobador.**
 
 El conteo vive en `atribuciones_otorgamiento.json`, que **se regenera con un script** y no se edita:
 así fue como se desfasó dos meses del catálogo la vez anterior.
@@ -180,6 +180,9 @@ porque la bitácora tiene que poder decir **por qué** esta persona pudo aprobar
 **Una tarea de aprobación es para quien tenga la ATRIBUCIÓN**, no para la foto de nombres del día en
 que se creó: guarda el par `(área, nivel)` y la lista se resuelve cada vez que se mira. El apoderado
 que llega la ve y el que se fue deja de verla, sin migrar nada.
+
+El proceso operativo completo del visado —quién hace qué, en qué pantalla, qué queda registrado en
+cada paso y qué efecto tiene la decisión— está en [`spec-gestion-excepciones.md`](./spec-gestion-excepciones.md).
 
 ### 6. O05 · Contrato firmado por cliente de la operación — la regla que no viene de la política
 
@@ -379,6 +382,7 @@ listados uno por uno en `Inconsistencias_Motor_Otorgamiento.md` §5.
 |---|---|
 | `Inconsistencias_Motor_Otorgamiento.md` | la auditoría de la política contra la implementación, y §8, O05 |
 | `Revision_Definiciones_2026-09-11.md` | qué debe recoger la próxima versión del PDF de política |
+| `spec-gestion-excepciones.md` | el proceso operativo de una excepción: justificación, solicitud, bandeja, decisión, efectos y evidencia |
 | `spec-verificacion-facturas.md` | la segunda rutina de la misma reevaluación |
 | `spec-asignacion-lineas.md` | la tercera: cuánto cupo hay |
 | `spec-pricing-simulacion.md` · `spec-modelo-giro.md` | lo que viene después del otorgamiento |

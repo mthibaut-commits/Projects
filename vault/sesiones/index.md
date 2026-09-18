@@ -3,7 +3,7 @@ type: indice
 title: "Sesiones — el tablero y los logs"
 description: "estado_actual.md es el tablero (≤80 líneas, se sobrescribe); cada sesión deja un log con lo hecho, los errores y su solución, lo pendiente y las sorpresas"
 tags: [indice, sesiones]
-timestamp: 2026-09-17T19:45:00Z
+timestamp: 2026-09-18T03:25:00Z
 ---
 
 # Sesiones
@@ -23,6 +23,7 @@ timestamp: 2026-09-17T19:45:00Z
 | 17-09-2026 | [`2026-09-17_operacion_creada_y_editar.md`](./2026-09-17_operacion_creada_y_editar.md) | Chip «Operación creada» + Acciones › Editar (regla 33, caso 116); el cierre del día ya no renombra la operación (ADR-0004): el tubo vuelve a enterarse de la simulación |
 | 17-09-2026 | [`2026-09-17_restyle_detalle_simulado.md`](./2026-09-17_restyle_detalle_simulado.md) | El detalle simulado según el mockup del usuario: giro sin badge, chip naranjo de solicitud, panel lila, Express en azul (reglas 29 y 22) |
 | 17-09-2026 | [`2026-09-17_generador_v04_v10.md`](./2026-09-17_generador_v04_v10.md) | El A10 modela la relación por perfil y V10 pasa a ser del deudor: «verificados por modelo» 5% → 50%; se descubre que la cadena A2 → A5 → A2 del generador no tiene punto fijo y se regenera por bloque (`--solo`) |
+| 18-09-2026 | [`2026-09-18_spec_gestion_excepciones.md`](./2026-09-18_spec_gestion_excepciones.md) | Spec del proceso operativo de una excepción de otorgamiento (`spec-gestion-excepciones.md` + PDF), verificado contra el fuente; Context7 no disponible ni aplicable; se corrigen dos viñetas del layout A16 (D02–D13 son excepciones, no bloqueos firmes) y los conteos del catálogo en `spec-otorgamiento.md` |
 | 17-09-2026 | [`2026-09-17_punto_fijo_generador.md`](./2026-09-17_punto_fijo_generador.md) | Se cierra el bucle A2 → A5 → A2 del generador: la intención de participación pasa a ser un insumo declarado (`lib/intencion_sow.js`, congelado con la trayectoria que produjo el A2 vigente, hallada por arqueología en git), una corrida completa reproduce `datos_inyectados.js` byte a byte sin mover una cesión; gate `generador.test.mjs`, regla 32, ADR-0003 |
 | 17-09-2026 | [`2026-09-17_unidades_v04.md`](./2026-09-17_unidades_v04.md) | El desfase de unidades de V03/V04/V09 se corrigió igual en dos sesiones; se reintegró desde `main` con lo adicional: V04 y V10 siguen mandando al teléfono a casi todos (dato y política), el layout del A10 en miles, el script de regresión en pesos |
 | 18-09-2026 | [`2026-09-18_integracion_y_tab_todos.md`](./2026-09-18_integracion_y_tab_todos.md) | Se cierra el merge de las cuatro ramas del 17-09: cinco gates reconciliados (la compuerta de la regla 5 se mudó, los tokens del vacío se re-midieron, el chip de solicitud se partió en dos, el menú ganó «Editar»), una REGRESIÓN propia que sólo vio el e2e —el paquete cerrado escondía el menú con el reset que 13-quaterdecies exige deshabilitado y visible—, el renombre O05 y la regla 34: el tubo abre en «Todos», que pasa a ser el primer tab |
