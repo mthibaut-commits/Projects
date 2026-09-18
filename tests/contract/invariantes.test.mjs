@@ -239,8 +239,12 @@ test("sonda negativa: un `aplicado` inventado y uno que dice «ui» con guarda e
   assert.match(verificarAplicado([{ codigo: "AAA-01", aplicado: "resolver", fuera: false }])[0], /no está en el vocabulario/);
   const reales = aplicadoDe(leer("pipeline_comercial.jsx"));
   assert.equal(reales.length, 12, "se leyeron los 12 invariantes");
+  /* Desde el 18-09-2026 NINGUNO se apoya sólo en la pantalla: los cuatro que decían `ui` tenían guarda y el
+     campo estaba atrasado, y los dos que sí la necesitaban —OTG-02 y GIR-01 en el «Avanzar a» manual— se
+     cablearon en `moverEtapa`. Que no quede ninguno es la conclusión, no un fallo: la dirección «ui con
+     guarda» la sigue probando la violación PLANTADA de arriba, que no depende de cómo esté el fuente hoy. */
   assert.ok(
-    reales.some((f) => f.aplicado === "ui"),
-    "OTG-02 y GIR-01 siguen apoyados sólo en la pantalla: si eso deja de ser cierto, la sonda avisa que el gate ya no prueba esta dirección",
+    reales.every((f) => f.aplicado !== "ui"),
+    "un invariante volvió a apoyarse sólo en la pantalla: eso es la regla 24, no un cambio de campo",
   );
 });

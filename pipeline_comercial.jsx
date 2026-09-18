@@ -23036,7 +23036,7 @@ const INVARIANTES = [
     codigo: "OTG-02",
     nombre: "No avanza a Cesión con excepciones pendientes",
     autoridad: "servidor",
-    aplicado: "funcion", // `etapaTrasFirma`: el visado pendiente es una de las tres compuertas (caso 88). El «Avanzar a» MANUAL de `moverEtapa` no lo vuelve a comprobar
+    aplicado: "funcion", // `etapaTrasFirma` tras la firma (caso 88) y `moverEtapa` en el «Avanzar a» manual (gate `regla_transiciones.test.mjs`)
 
     mutaciones: ["oportunidad.avanzarEtapa"],
     regla: "Con excepciones o rechazos re-evaluables sin resolver, la operación no puede pasar a Cesión.",
@@ -23060,7 +23060,7 @@ const INVARIANTES = [
     codigo: "GIR-01",
     nombre: "No gira sin pasar por Cesión",
     autoridad: "servidor",
-    aplicado: "ui",
+    aplicado: "funcion", // `moverEtapa`: la etapa de origen se comprueba antes de escribir (gate `regla_transiciones.test.mjs`)
     mutaciones: ["oportunidad.girar"],
     regla: "El desembolso exige que la operación haya pasado por Cesión (documentos cedidos a Security).",
     servidor: "El giro se emite contra el AEC confirmado, no contra el stage que reporta el cliente.",
@@ -23125,6 +23125,25 @@ function registrarRechazo(inv, mutacion, datos) {
 // Valida una mutación contra las invariantes que la cubren. Devuelve los códigos violados para que la
 // UI muestre el motivo real; un evaluador que revienta NO bloquea la operación (el control es del
 // servidor, y un bug acá no puede dejar al ejecutivo sin poder trabajar).
+// Evalúa UN invariante por su código. `validarMutacion` corre TODOS los que cubren la mutación, y eso no
+// sirve donde dos invariantes de la misma mutación se explican distinto: `oportunidad.girar` la cubren
+// GIR-01 (la etapa de origen) y GIR-02 (la huella del paquete), y GIR-02 ya tiene su bloque, que audita las
+// DOS huellas —que es lo que se revisa después—. Un rechazo genérico perdería ese detalle.
+// Se lee de `INVARIANTES` por código a propósito: escribir el predicado a mano en el handler es una segunda
+// copia de la regla, y dos copias se desfasan sin que nadie lo note. Un evaluador que revienta NO bloquea.
+function invarianteCumple(codigo, mutacion, payload) {
+  const inv = INVARIANTES.find((i) => i.codigo === codigo);
+  if (!inv || typeof inv.evaluar !== "function") return { ok: true, inv: null };
+  let ok = true;
+  try {
+    ok = inv.evaluar(payload || {}) !== false;
+  } catch (e) {
+    ok = true;
+    logSys("error", "contrato", `Evaluador de ${codigo} falló: ${e.message}`, { codigo, mutacion });
+  }
+  if (!ok) registrarRechazo(inv, mutacion, {});
+  return { ok, inv };
+}
 function validarMutacion(tipo, payload) {
   const violaciones = [];
   for (const inv of invariantesDe(tipo)) {
@@ -46296,6 +46315,48 @@ export default function PipelineComercial() {
     // "Aceptada" representa la firma FORMAL del cliente (login + firma en el sitio Factoring Security). La
     // fija sólo el cliente al aceptar; el ejecutivo no puede asignarla manualmente.
     if (stageId === "aceptadas") return;
+    // GIR-01 · NO SE GIRA SIN HABER PASADO POR CESIÓN, y OTG-02 · NO SE AVANZA A CESIÓN CON EXCEPCIONES
+    // PENDIENTES. Los dos invariantes tenían su evaluador escrito y probado (casos 136 y 88) y se aplicaban
+    // sólo en el camino AUTOMÁTICO: `etapaTrasFirma` rutea la operación tras la firma del cliente. El
+    // «Avanzar a» del menú y el arrastre del Kanban entran por acá, donde el único control era que el menú
+    // filtrara los destinos — o sea la regla 24 otra vez: la pantalla que esconde la acción no es el control.
+    // El predicado NO se escribe acá: se le pregunta al invariante por su CÓDIGO, porque una segunda copia
+    // de «pasó por cesión» se desfasa de la tabla del contrato sin que nadie lo note. Cada transición lleva
+    // su código literal y no una variable, para que el gate pueda fijar QUÉ invariante cubre QUÉ paso.
+    if (stageId === "giro") {
+      const dT = (dealsRef.current || []).find((x) => x.id === id);
+      if (dT && !invarianteCumple("GIR-01", "oportunidad.girar", { deal: dT }).ok) {
+        const porQue = `la operación está en «${etapaDeDeal(dT)}» y el desembolso exige haber pasado por Cesión`;
+        logSys("warn", "giro", `Transición bloqueada (GIR-01) · ${id} · ${porQue}`, { operacion: id, codigo: "GIR-01" });
+        registrarAuditoria({
+          usuario: USERS[usuario] || usuario,
+          modulo: "Giro",
+          accion: "Avance de etapa bloqueado (GIR-01)",
+          glosa: `${dT.cliente || id}: ${porQue}`,
+          empresaId: id,
+          severidad: "alta",
+          exito: false,
+        });
+        return;
+      }
+    }
+    if (stageId === "cesion") {
+      const dT = (dealsRef.current || []).find((x) => x.id === id);
+      if (dT && !invarianteCumple("OTG-02", "oportunidad.avanzarEtapa", { deal: dT }).ok) {
+        const porQue = "quedan excepciones o rechazos re-evaluables sin resolver en el otorgamiento";
+        logSys("warn", "otorgamiento", `Transición bloqueada (OTG-02) · ${id} · ${porQue}`, { operacion: id, codigo: "OTG-02" });
+        registrarAuditoria({
+          usuario: USERS[usuario] || usuario,
+          modulo: "Otorgamiento",
+          accion: "Avance de etapa bloqueado (OTG-02)",
+          glosa: `${dT.cliente || id}: ${porQue}`,
+          empresaId: id,
+          severidad: "alta",
+          exito: false,
+        });
+        return;
+      }
+    }
     // GIR-02 · GATE DE INYECCIÓN AL CORE. Girar es entregarle la operación a Tesorería, así que acá se
     // compara la huella de lo que se va a inyectar contra la de la evidencia del contrato (O05). Es el
     // último punto en que la comparación sirve de algo: después el dinero ya salió. En producción esto
