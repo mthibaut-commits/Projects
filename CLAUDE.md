@@ -24,7 +24,7 @@ npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx 
 grep -oE "^(function|const|let|var) [A-Za-z0-9_]+" pipeline_comercial.jsx | awk '{print $2}' | sort | uniq -d  # 2 · debe salir vacío
 node build_app.mjs                                                                                            # 3 · valida los hashes del vendor
 node --test "tests/contract/*.test.mjs"                                                                       # 4 · gates de contrato (~10 s)
-PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 139/139 PASA (~2 min)
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 140/140 PASA (~2 min)
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node tests/e2e/correr.mjs                                           # 6 · e2e: 29 casos de pantalla (~8 min)
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs                                         # 7 · sólo si toca la UI (~5 min)
 ```
@@ -45,6 +45,7 @@ dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `
 | Aislamiento de los motores | `node auditar_aislamiento.mjs` |
 | Unidades (millones donde va un peso) | `node auditar_unidades.mjs` — candidatos, se verifican a mano |
 | Regenerar atribuciones | `node build_app.mjs && PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node regenerar_atribuciones.mjs` |
+| Regenerar los activos sintéticos | `node GeneradorDatos/generar.js` — tiene punto fijo: reproduce el archivo commiteado byte a byte (gate `generador.test.mjs`) · un solo bloque: `--solo=VERIFICACION` |
 | Spec `.md` → PDF | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node md_a_pdf.mjs <archivo.md>` |
 | Consolidado de integraciones | `node armar_integraciones.mjs` |
 | Tubo con una operación simulada | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_tabla_simulada.mjs` |

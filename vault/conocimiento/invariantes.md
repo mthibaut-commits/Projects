@@ -3,14 +3,14 @@ type: conocimiento
 title: "Invariantes: índice de las reglas de dominio y del contrato con el servidor"
 description: "Cada regla de dominio con su enunciado, el archivo donde vive verbatim y qué gate la verifica (caso de la suite, caso e2e o test de contrato); y los 12 invariantes del contrato con el servidor con su cobertura. Desde el 17-09-2026 ninguna fila queda sin gate"
 tags: [conocimiento, invariantes, indice]
-timestamp: 2026-09-17T22:29:24Z
+timestamp: 2026-09-18T02:18:36Z
 ---
 
 # Reglas de dominio (invariantes — NO romper)
 
 > **Lista que un code review rechaza sin discusión.** Las reglas viven **verbatim** en `reglas/<tema>.md` —se citan por número y no se renumeran— y este índice dice dónde está cada una y **qué caso de `tests_asignacion_lineas.js` la verifica**. La columna *casos* se extrajo del propio texto de cada regla (las que nombran su caso); una regla **sin gate** no es una regla falsa: es una que hoy sólo la sostiene la revisión, y ésa es la deuda que esta tabla hace visible.
 
-## Reglas de dominio (61 · todas con gate desde el 17-09-2026: 40 tenían caso en la suite —31 lo citan en su texto, 9 se les asignó por el título del caso— y las 21 que iban sólo por revisión recibieron el suyo en la suite, en `tests/e2e/` o en `tests/contract/`)
+## Reglas de dominio (63 · todas con gate desde el 17-09-2026: 41 tienen caso en la suite —32 lo citan en su texto, 9 se les asignó por el título del caso—, 1 tiene gate de contrato (`generador.test.mjs`) y las 21 que iban sólo por revisión tienen ahora su `regla_<slug>.test.mjs`, su caso e2e o ambos)
 
 > **Cómo leer la columna de casos.** Un número a secas está **citado en el texto de la regla**. Un número con `~` se le asignó leyendo el **título** del caso en `tests_asignacion_lineas.js` (`ok("N …")`) el 17-09-2026: es una inferencia razonable, no una cita — antes de apoyarse en él, abrir el caso. Un token `e2e-<regla>` es un caso de `tests/e2e/` (paso 6: la pantalla real, con la sesión iniciada) y un token `regla_<slug>.test.mjs` es un gate de `tests/contract/` sobre el texto del fuente (paso 4); `invariantes.test.mjs` exige que los tres existan. Los 30 gates del 17-09-2026 (21 reglas y los 9 del contrato) los escribió un agente por fila, otro intentó refutarlos, lo refutado se reparó y se volvió a atacar: el log de esa sesión dice qué cedió cada uno. *Sin gate* = una regla que sólo sostiene la revisión; desde el 17-09-2026 no queda ninguna, y una regla nueva entra con su caso o con esa palabra escrita (regla núcleo 8).
 
@@ -75,7 +75,10 @@ timestamp: 2026-09-17T22:29:24Z
 | 24 | El GATE de inyección al core: el paquete girado es el que se autorizó | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | ~86 |
 | 25 | Rotación de personas: qué ve cada uno y a quién se le atribuye lo hecho | [`reglas/otorgamiento_y_atribucion.md`](./reglas/otorgamiento_y_atribucion.md) | 91, ~87 |
 | 30-bis | El ORDEN de la lista de oportunidades: avance primero, plata después | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 112 |
+| 33 | Cerrada la oferta, el CTA se va y queda «Operación creada» + Acciones › Editar | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 140 |
 | 31 | MODO DIRECTORIO — demo acotada | [`reglas/modo_directorio.md`](./reglas/modo_directorio.md) | 129, `e2e-31`, `regla_31.test.mjs` |
+| 32 | El generador tiene PUNTO FIJO: el archivo commiteado es lo que una corrida completa produce, byte a byte | [`reglas/datos_y_activos.md`](./reglas/datos_y_activos.md) | gate `generador.test.mjs` |
+| 34 | El tubo de Gestión diaria abre en «Todos», y «Todos» es el PRIMER tab | [`reglas/ui_detalle_y_tubo.md`](./reglas/ui_detalle_y_tubo.md) | `regla_34.test.mjs` |
 | 17 | Teléfonos ofuscados en logs | [`contrato_servidor_y_auditoria.md`](./contrato_servidor_y_auditoria.md) | 130, `regla_17.test.mjs` |
 
 ## Contrato con el servidor (12 invariantes, `INVARIANTES` en el fuente)
@@ -113,6 +116,7 @@ timestamp: 2026-09-17T22:29:24Z
 | `regla_<slug>.test.mjs` (18 archivos, 17-09-2026) | Un gate por regla de dominio que vive en JSX o en un closure y no tiene función pura que la suite pueda llamar: se fija sobre el TEXTO del fuente (el sitio, la compuerta, el rótulo, la unidad) y cada uno trae sus sondas | regla · alguno **snapshot** (`TOPE_REINTENTOS`) |
 | `hooks.test.mjs` | La lógica de los tres hooks (`protect_paths`, `gitflow_guard` con integración = `main`, `worktree_guard`) y una corrida de punta a punta por stdin | regla |
 | `tests/e2e/*.e2e.mjs` (paso 6, `node tests/e2e/correr.mjs`) | Las reglas de PANTALLA, con la sesión iniciada y el detalle abierto en su pestaña: un caso por regla, citado en la tabla de arriba como `e2e-<regla>`; `00_sesion` es el humo del harness. Desde el 17-09-2026 son 16 archivos y 29 casos, y el runner **reinicia el estado al empezar cada archivo** (Directorio apagado, filtro «Con línea», sin modal): dentro del archivo los casos se encadenan como los ordenó su autor | regla |
+| `generador.test.mjs` | El archivo commiteado es un **punto fijo** del generador: la cadena entera, corrida en proceso, reproduce cada bloque derivado byte a byte · `cesiones.generar` da lo mismo con y sin A2/A5 en la entrada (el bucle A2 → A5 → A2, vigilado por su nombre) | regla |
 
 Lo que **no** es gate y por qué: `regresion_diferencial.mjs` compara dos builds y el CI no tiene el anterior (se corre a
 mano); la suite entera es el paso 5, no un gate de contrato; y los datos —RUT sintéticos, razones sociales reales— son

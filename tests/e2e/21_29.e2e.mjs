@@ -9,11 +9,13 @@
        badge del chip de Giro siguen en M$ (y el chip de sección = total/1e6). El CTA dice «Cerrar oferta y
        publicar» y NO hay «Solicitud línea» ni «Enviar a Comité» (dirección negativa del CTA y del chip).
    (b) Cliente con línea parcial, simulado con «Todo lo disponible»: «Se puede cursar $X de $Y» con X < Y, Y = «Total oferta»; el CTA dice
-       «Enviar a Comité y Publicar»; cada deudor sin cupo YA en la oferta muestra «Solicitud línea $Z» en ÁMBAR
-       (#C2410C / #FFF7ED) con Z = el monto de ESE deudor, y la suma de los Z ≤ Y − X. Después, «Opciones ›
-       Sacar facturas sin línea» deja a ESOS MISMOS deudores fuera de la oferta: ahí el chip vuelve a describir
-       la carencia («Sin Línea Cliente - Deudor» / «Línea Cliente - Deudor sin cupo») y no queda ningún
-       «Solicitud línea» en la pantalla —«fuera de la oferta todavía no se pide nada»—; re-evaluada, la oferta
+       «Enviar a Comité y Publicar»; cada deudor con FALTANTE ya en la oferta —de cupo cero o PARCIAL— muestra
+       «Solicitud línea $Z» en ÁMBAR (#C2410C / #FFF7ED) con Z = `monto − asignado` leído de su propia fila, un
+       chip por faltante y la suma de los Z ≤ Y − X. Después, «Opciones ›
+       Sacar facturas sin línea» retira las REQUIERE_COMITE: el deudor de cupo cero se va entero a «Documentos
+       disponibles» y ahí describe la carencia («Sin Línea Cliente - Deudor» / «Línea Cliente - Deudor sin
+       cupo»), el PARCIAL se queda en la oferta con lo que cabía y vuelve a «Línea disponible $X», y no queda
+       ningún «Solicitud línea» en la pantalla —fuera de la oferta, o sin faltante, no se pide nada—; re-evaluada, la oferta
        que queda es exactamente $X, cursable completa, y el CTA vuelve a «Cerrar oferta y publicar».
    Sonda: los detectores de escala se prueban contra textos PLANTADOS («Se puede cursar M$24,9 de M$29,6»,
    «$24,9», «M$ en Total oferta») y tienen que rechazarlos; si el detector aceptara M$ en un sitio de pesos,
@@ -115,7 +117,7 @@ const leer = (det) => det.evaluate(() => {
   // hasta la caja de identidad, cuyo primer div lleva la razón social como `title` y como texto.
   const nombreDeudorDe = (el) => { let e = el; for (let k = 0; k < 8 && e; k++) { const nom = [...e.children].find((c) => c.tagName === "DIV" && c.getAttribute("title") && norm(c.textContent) === norm(c.getAttribute("title"))); if (nom) return norm(nom.getAttribute("title")); e = e.parentElement; } return null; };
   const chipsDeudor = [...document.querySelectorAll("span[title]")]
-    .filter((s) => /^(Línea disponible de este deudor:|Sin cupo para sus |Tiene Línea Cliente - Deudor pero sin cupo|No tiene Línea Cliente - Deudor:)/.test(s.getAttribute("title") || ""))
+    .filter((s) => /^(Línea disponible de este deudor:|Sin cupo para |Tiene Línea Cliente - Deudor pero sin cupo|No tiene Línea Cliente - Deudor:)/.test(s.getAttribute("title") || ""))
     .map((s) => ({ deudor: nombreDeudorDe(s), rotulo: norm([...s.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join("")), texto: norm(s.innerText) }));
   const sinCupoFuera = chipsDeudor.filter((c) => /^(Sin Línea Cliente - Deudor|Línea Cliente - Deudor sin cupo)$/.test(c.rotulo)).length;
   const seccion = (() => { const e = document.querySelector('[title="Monto seleccionado para esta oferta"]'); return e ? norm(e.innerText) : null; })();
@@ -281,7 +283,7 @@ export const casos = [
       }
       return detalle;
     } },
-  { id: "e2e-29-b", titulo: "con línea parcial el titular dice «Se puede cursar $X de $Y» en pesos con Y = «Total oferta», el CTA dice «Enviar a Comité y Publicar» y cada deudor sin cupo ya en la oferta muestra «Solicitud línea $Z» en ámbar con Z = su monto; sacadas esas facturas de la oferta, los mismos deudores vuelven a describir la carencia sin «Solicitud línea», la oferta que queda es $X cursable completa y el CTA vuelve a «Cerrar oferta y publicar»",
+  { id: "e2e-29-b", titulo: "con línea parcial el titular dice «Se puede cursar $X de $Y» en pesos con Y = «Total oferta», el CTA dice «Enviar a Comité y Publicar» y cada deudor con faltante ya en la oferta —de cupo cero o parcial— muestra «Solicitud línea $Z» en ámbar con Z = lo que no se le asignó; sacadas esas facturas de la oferta, los mismos deudores vuelven a describir la carencia sin «Solicitud línea», la oferta que queda es $X cursable completa y el CTA vuelve a «Cerrar oferta y publicar»",
     correr: async (h) => {
       let det = null, detalle = null;
       const antes = await fotoRepos(h.pagina).catch(() => ({}));
@@ -295,22 +297,28 @@ export const casos = [
         if (!(X > 0 && X < Y)) throw new Error(`«${r.titular.raw}»: se esperaba 0 < X < Y`);
         if (r.ctas[0] !== "Enviar a Comité y Publicar") throw new Error("con deudores sin cupo el CTA dice «" + r.ctas[0] + "» y no «Enviar a Comité y Publicar»");
         if (!r.chipsSolicitud.length) throw new Error("con deudores sin cupo no hay ningún chip «Solicitud línea $Z» (fuera-de-oferta describiendo carencia: " + r.sinCupoFuera + ")");
-        // «Solicitud línea $Z» sólo en deudores de la oferta a los que no se les asignó nada («$0 con línea, de $Z»): Z es SU monto.
+        // «Solicitud línea $Z»: Z es lo que la evaluación NO le asignó a ese deudor —`monto − asignado`, leído de
+        // su propia fila («$X con línea, de $Y»)— y lo pide TODO deudor con faltante, no sólo el de cupo cero
+        // (17-09-2026, regla 29: antes un PARCIAL no escribía en ninguna parte la plata que iba a pedir).
+        // Tolerancia de $1: la cifra pasa por `mmRound` y por el formateador antes de volver como texto.
+        const conFalta = r.deudores.map((d) => ({ ...d, falta: pesos(d.monto) - pesos(d.asignado) })).filter((d) => d.falta > 0);
         const ceros = r.deudores.filter((d) => d.asignado === "$0");
-        const montos = new Set(ceros.map((d) => pesos(d.monto)));
+        const casa = (z) => conFalta.some((d) => Math.abs(d.falta - z) <= 1);
+        if (r.chipsSolicitud.length !== conFalta.length)
+          throw new Error(`hay ${conFalta.length} deudor(es) con faltante en la oferta y ${r.chipsSolicitud.length} chip(s) «Solicitud línea»: todo faltante tiene que estar escrito en su fila (faltantes ${JSON.stringify(conFalta.map((d) => d.falta))})`);
         for (const ch of r.chipsSolicitud) {
           const m = ch.texto.match(/^Solicitud línea (\S+)$/);
           if (!m || !esPesos(m[1])) throw new Error("chip «Solicitud línea» que no va en pesos: " + JSON.stringify(ch));
           if (ch.color !== AMBAR || ch.bg !== AMBAR_BG) throw new Error(`chip «${ch.texto}» no va en ámbar #C2410C/#FFF7ED: ${ch.color} / ${ch.bg}`);
-          if (!montos.has(pesos(m[1]))) throw new Error(`«${ch.texto}» no es el monto de ningún deudor de la oferta con $0 con línea: ${JSON.stringify([...montos])}`);
+          if (!casa(pesos(m[1]))) throw new Error(`«${ch.texto}» no es el faltante de ningún deudor de la oferta: ${JSON.stringify(conFalta.map((d) => d.falta))}`);
           if (!/entra como línea PUNTUAL en la solicitud al comité/.test(ch.title)) throw new Error("el tooltip del chip no dice que entra como PUNTUAL al comité: " + ch.title);
         }
         const sumaZ = r.chipsSolicitud.reduce((s, ch) => s + pesos(ch.texto.replace(/^Solicitud línea /, "")), 0);
         if (sumaZ > Y - X) throw new Error(`Σ «Solicitud línea» ${sumaZ} > Y − X = ${Y - X}`);
-        // OBSERVACIÓN (no se gatea, ver hallazgos): el chip sólo sale cuando el DISPONIBLE del deudor era ≤ 0 antes de
-        // esta oferta (`pedir = !hay && enOferta`); un deudor con línea propia libre al que el tope del CLIENTE le dejó
-        // $0 en esta oferta sigue diciendo «Línea disponible $X» en verde aunque su parte entre igual a la solicitud.
-        const sinChip = ceros.length - r.chipsSolicitud.length;
+        // El hallazgo que esta observación anotaba —«un PARCIAL no escribe la plata que va a pedir»— quedó CERRADO el
+        // 17-09-2026: la comprobación de arriba exige un chip por faltante, así que ya no hay deudor mudo. Lo que se
+        // sigue reportando es cuántos de ellos son parciales, que es el caso que antes no se veía.
+        const parciales = conFalta.length - ceros.length;
         // Los que piden, CON NOMBRE: son los deudores que la maniobra de abajo va a dejar fuera de la oferta.
         const piden = r.chipsDeudor.filter((x) => /^Solicitud línea /.test(x.rotulo));
         if (piden.length !== r.chipsSolicitud.length) throw new Error(`el lector por deudor ve ${piden.length} «Solicitud línea» y el lector de chips ${r.chipsSolicitud.length}`);
@@ -321,14 +329,23 @@ export const casos = [
         const sacado = await sacarSinLinea(det);
         const r2 = await leer(det);
         if (r2.chipsSolicitud.length) throw new Error("con las facturas sin línea FUERA de la oferta sigue habiendo «Solicitud línea»: " + JSON.stringify(r2.chipsSolicitud.map((x) => x.texto)));
-        const fuera = [], noVistos = [];
+        // «Sacar facturas sin línea» retira sólo las REQUIERE_COMITE, así que los que pedían terminan en DOS
+        // sitios y hay que exigirle a cada uno lo suyo (17-09-2026, con el chip del PARCIAL): el de cupo cero
+        // se va entero a «Documentos disponibles» y ahí describe la CARENCIA; el PARCIAL se queda en la oferta
+        // con la parte que sí cabía y vuelve a decir «Línea disponible $X», que es cierto. Lo que ninguno
+        // puede seguir diciendo es «Solicitud línea» —ya comprobado sobre la pantalla entera—: fuera de la
+        // oferta, o sin faltante, no se pide nada.
+        const fuera = [], quedan = [], noVistos = [];
         for (const p of piden) {
           const ch = await chipDe(det, p.deudor);
           if (!ch) { noVistos.push(p.deudor); continue; }
-          if (!CARENCIA.test(ch.rotulo)) throw new Error(`fuera de la oferta ${p.deudor} dice «${ch.rotulo}» y no describe la carencia («Sin Línea Cliente - Deudor» / «Línea Cliente - Deudor sin cupo»)`);
-          fuera.push(`${p.deudor}: «${p.rotulo}» → «${ch.rotulo}»`);
+          if (/^Solicitud línea /.test(ch.rotulo)) throw new Error(`${p.deudor} sigue pidiendo línea después de sacar sus facturas sin línea: «${ch.rotulo}»`);
+          if (CARENCIA.test(ch.rotulo)) fuera.push(`${p.deudor}: «${p.rotulo}» → «${ch.rotulo}»`);
+          else if (/^Línea disponible /.test(ch.rotulo)) quedan.push(`${p.deudor}: «${p.rotulo}» → «${ch.rotulo}» (parcial: se quedó con lo que cabía)`);
+          else throw new Error(`tras sacar las facturas sin línea ${p.deudor} dice «${ch.rotulo}»: se esperaba la carencia («Sin Línea Cliente - Deudor» / «Línea Cliente - Deudor sin cupo») o «Línea disponible $X»`);
         }
-        if (!fuera.length) throw new Error("ninguno de los deudores que pedían línea se encontró fuera de la oferta: " + JSON.stringify(noVistos));
+        if (!fuera.length && !quedan.length) throw new Error("ninguno de los deudores que pedían línea se encontró después de sacar sus facturas: " + JSON.stringify(noVistos));
+        if (!fuera.length) throw new Error(`ningún deudor de cupo cero quedó FUERA de la oferta describiendo la carencia (los ${quedan.length} que pedían eran todos parciales): ${JSON.stringify(quedan)}`);
         if (noVistos.length) throw new Error(`deudores que pedían y no aparecen fuera de la oferta: ${JSON.stringify(noVistos)}`);
         // Re-evaluada, lo que queda es exactamente lo que tenía línea: Total oferta = X, cursable completa, CTA sin comité.
         const reev = det.locator("button", { hasText: /^\s*Re-evaluar operación\s*$/ }).first();
@@ -345,7 +362,7 @@ export const casos = [
         if (r3.titular.tipo !== "completa" || pesos(r3.titular.cursable) !== X) throw new Error(`re-evaluada, el titular dice «${r3.titular.raw}» y no «Se puede cursar la oferta completa · $${X.toLocaleString("es-CL")}»`);
         const errs = det._erroresE2E || [];
         if (errs.length) throw new Error("errores de página en el detalle: " + errs.join(" | "));
-        detalle = `${r.id} · «${r.titular.raw}» · Total oferta ${r.total.monto} = Monto Documentos ${r.montoDocs} = Σ deudores ${c.suma.toLocaleString("es-CL")} · CTA «${r.ctas[0]}» · Solicitud línea ×${r.chipsSolicitud.length} [${r.chipsSolicitud.map((x) => x.texto).join(", ")}] en ${r.chipsSolicitud[0].color}/${r.chipsSolicitud[0].bg}, Σ ${sumaZ.toLocaleString("es-CL")} ≤ Y−X ${(Y - X).toLocaleString("es-CL")} · deudores con $0 con línea ${ceros.length} (${sinChip} de ellos sin chip: su disponible propio era > 0) · sección ${r.seccion} · cabecera «${r.indicador.texto}» · giro ${c.giroChips} · FUERA: «${sacado}» → Solicitud línea ×0, ${fuera.length}/${piden.length} deudores describen la carencia [${fuera.join(" | ")}] · re-evaluada: «${r3.titular.raw}» = Total oferta ${r3.total.monto} (${r3.total.deudores} deudores · ${r3.total.facturas} fact.), CTA «${r3.ctas[0]}», sección ${r3.seccion}, giro ${c3.giroChips}` + (b.intentos.length ? ` · saltadas: ${b.intentos.join(" | ")}` : "");
+        detalle = `${r.id} · «${r.titular.raw}» · Total oferta ${r.total.monto} = Monto Documentos ${r.montoDocs} = Σ deudores ${c.suma.toLocaleString("es-CL")} · CTA «${r.ctas[0]}» · Solicitud línea ×${r.chipsSolicitud.length} [${r.chipsSolicitud.map((x) => x.texto).join(", ")}] en ${r.chipsSolicitud[0].color}/${r.chipsSolicitud[0].bg}, Σ ${sumaZ.toLocaleString("es-CL")} ≤ Y−X ${(Y - X).toLocaleString("es-CL")} · ${conFalta.length} deudor(es) con faltante = ${ceros.length} con $0 + ${parciales} parcial(es), todos con chip · sección ${r.seccion} · cabecera «${r.indicador.texto}» · giro ${c.giroChips} · FUERA: «${sacado}» → Solicitud línea ×0, ${fuera.length}/${piden.length} describen la carencia fuera de la oferta y ${quedan.length} parcial(es) se quedaron con su línea [${[...fuera, ...quedan].join(" | ")}] · re-evaluada: «${r3.titular.raw}» = Total oferta ${r3.total.monto} (${r3.total.deudores} deudores · ${r3.total.facturas} fact.), CTA «${r3.ctas[0]}», sección ${r3.seccion}, giro ${c3.giroChips}` + (b.intentos.length ? ` · saltadas: ${b.intentos.join(" | ")}` : "");
       } finally {
         if (det) await det.close().catch(() => {});
         await apagarDirectorio(h).catch(() => {});

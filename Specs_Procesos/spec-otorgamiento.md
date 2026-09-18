@@ -181,7 +181,7 @@ porque la bitácora tiene que poder decir **por qué** esta persona pudo aprobar
 que se creó: guarda el par `(área, nivel)` y la lista se resuelve cada vez que se mira. El apoderado
 que llega la ve y el que se fue deja de verla, sin migrar nada.
 
-### 6. O05 · Evidencia del Contrato de Cesión — la regla que no viene de la política
+### 6. O05 · Contrato firmado por cliente de la operación — la regla que no viene de la política
 
 Existe **siempre**, en las dos vías de publicación; lo que cambia es **quién crea la evidencia**:
 

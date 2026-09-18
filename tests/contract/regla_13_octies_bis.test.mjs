@@ -3,7 +3,7 @@
    oferta NO vacía; la plana se arma con `facturasDeDeudores` —la MISMA función que la plana de
    «Documentos disponibles» y la que fija el caso 98—, `headDoc(true)` encabeza RUT deudor + razón social
    y `filaDoc(f, true)` pone esas dos celdas en cada fila; y la caja de vacío lleva exactamente los tokens
-   de la regla (#EDECF3 · borde 1px #DEDCE7 · minHeight 72 · t11 font-medium · C.sub), nunca los viejos
+   de la regla (#F5F4F8 · borde 1px #E4E2EC · minHeight 72 · t11 font-medium · C.sub), nunca los viejos
    (#F7F7FA / C.faint) ni nada en su style que la esconda o desmienta un token (visibility, opacity,
    display, maxHeight, fontSize). Complementa al e2e: éste corre en milisegundos y aísla QUÉ token se
    movió; el e2e mide lo que el navegador dibuja.
@@ -16,7 +16,11 @@ import { leer } from "./_comun.mjs";
 const jsx = leer("pipeline_comercial.jsx");
 const TIT_OFERTA = ">Documentos en la oferta</span>";
 const TIT_DISP = ">Documentos disponibles</span>";
-const TOKENS = { fondo: "#EDECF3", borde: "#DEDCE7", alto: 72, viejoFondo: "#F7F7FA" };
+// Los tokens del vacío SE MIDIERON dos veces, y la segunda movió el par: mientras la caja vivía sobre
+// blanco eran #EDECF3 / #DEDCE7; al mudarse la oferta al panel lila (regla 29, 17-09-2026) ese gris
+// dejó de distinguirse del fondo y quedó en el tono de una tarjeta de fila. Lo que el gate defiende es
+// que el vacío SE VEA: `viejoFondo` (#F7F7FA) y C.faint son los que lo hacían desaparecer y no vuelven.
+const TOKENS = { fondo: "#F5F4F8", borde: "#E4E2EC", alto: 72, viejoFondo: "#F7F7FA" };
 
 /* Recorta la sección de la oferta: desde su título hasta el título de «Documentos disponibles». */
 export function seccionOferta(src) {

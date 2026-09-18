@@ -347,7 +347,7 @@ nada** —lo gateado por atribución es *visar*— así que el panel admite ampl
 
 **Las dos reglas propias.**
 
-- **O05 · Evidencia del Contrato de Cesión.** Existe **siempre** y en las dos vías de publicación; lo
+- **O05 · Contrato firmado por cliente de la operación.** Existe **siempre** y en las dos vías de publicación; lo
   que cambia es **quién crea la evidencia** (§16). Operaciones N3.
 - **O06 · Monto Cedido Igual al Monto del Documento.** Su par documental: aquél comprueba que
   *exista* la autorización, éste que lo cedido *coincida* con lo que se va a comprar. Dos tramos a

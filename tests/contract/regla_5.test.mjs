@@ -96,13 +96,29 @@ export function badgesDeTarjeta(src) {
   return { fallos };
 }
 
-/* Reabrir en sitio es sólo para aceptadas/cesión: una perdida se reactiva con una operación NUEVA. */
+/* Una perdida NO se reabre en sitio: se reactiva con una operación NUEVA con referencia. El gate admite
+   las dos formas de cerrar esa puerta, porque el 17-09-2026 la compuerta se mudó:
+     (a) el filtro inline por etapa de origen (`![…].includes(d0.stage)) return`), como estaba, o
+     (b) la delegación en la compuerta PURA `edicionOperacion(d0)` + `if (!ed.aplica || !ed.ok) return`
+         —y entonces se exige a `edicionOperacion` que devuelva `ok: false` para `perdida`—.
+   Lo que el gate vigila es la GARANTÍA, no el sitio: con (b) la compuerta es además la que apaga el
+   botón en la UI y la que el menú consulta, así que la puerta se cierra una vez y en un solo lugar. */
 export function reaperturaEnSitio(src) {
   const c = cuerpoInterno(src, "reabrirOperacion"); const fallos = [];
   if (!c) return { fallos: ["no existe reabrirOperacion"] };
-  const m = c.match(/!\[([^\]]*)\]\.includes\(d0\.stage\)\) return/);
-  if (!m) fallos.push("reabrirOperacion no filtra por etapa de origen");
-  else if (/"perdida"/.test(m[1])) fallos.push("reabrirOperacion admite una perdida: la reapertura tiene que ser una operación nueva con referencia");
+  const inline = c.match(/!\[([^\]]*)\]\.includes\(d0\.stage\)\) return/);
+  // (b): se consulta la compuerta y se ABANDONA cuando dice que no. Un `edicionOperacion(d0)` cuyo
+  // veredicto nadie lee no filtra nada, así que el `return` se exige aparte.
+  const delega = /\bedicionOperacion\(d0\)/.test(c) && /if \(![^\n]*\b(ok|aplica)\b[^\n]*\) return/.test(c);
+  if (!inline && !delega) fallos.push("reabrirOperacion no filtra por etapa de origen");
+  if (inline && /"perdida"/.test(inline[1])) fallos.push("reabrirOperacion admite una perdida: la reapertura tiene que ser una operación nueva con referencia");
+  if (delega) {
+    const cg = cuerpoDe(src, "edicionOperacion");
+    if (!cg) fallos.push("reabrirOperacion delega en edicionOperacion y esa compuerta no existe");
+    // La compuerta tiene que NEGAR la perdida: `stage === "perdida"` devolviendo `ok: false`.
+    else if (!/deal\.stage === "perdida"\) return \{[^\n]*ok: false/.test(cg))
+      fallos.push("edicionOperacion admite una perdida: la reapertura tiene que ser una operación nueva con referencia");
+  }
   return { fallos };
 }
 
@@ -137,7 +153,7 @@ test("la tarjeta del Kanban suprime cada badge accionable de una perdida (verifi
   assert.deepEqual(badgesDeTarjeta(jsx).fallos, []);
 });
 
-test("una perdida no se reabre en sitio (reabrirOperacion sólo admite aceptadas y cesión)", () => {
+test("una perdida no se reabre en sitio (reabrirOperacion filtra por origen o delega en una compuerta que niega la perdida)", () => {
   assert.deepEqual(reaperturaEnSitio(jsx).fallos, []);
 });
 
@@ -187,10 +203,16 @@ test("SONDA · plantar la violación la caza: escritor sin origen, con el genér
     assert.notEqual(s, jsx);
     assert.ok(lectorDeCausa(s).fallos.some((f) => /antes que el bloqueo firme/.test(f)), `no cazó ${acceso}`);
   }
-  // (7) reabrir admite perdida
-  const s7 = jsx.replace('!["aceptadas", "cesion"].includes(d0.stage)) return', '!["aceptadas", "cesion", "perdida"].includes(d0.stage)) return');
-  assert.notEqual(s7, jsx);
-  assert.ok(reaperturaEnSitio(s7).fallos.some((f) => /admite una perdida/.test(f)));
+  // (7) reabrir admite perdida, en las DOS formas de cerrar la puerta: la compuerta deja pasar la
+  // perdida, y —si alguien volviera al filtro inline— el filtro la incluye. Y la tercera: nadie filtra.
+  const s7 = jsx.replace('if (deal.stage === "perdida") return { aplica: true, ok: false,', 'if (false) return { aplica: true, ok: false,');
+  assert.notEqual(s7, jsx, "la sonda no encontró la guarda de perdida de edicionOperacion");
+  assert.ok(reaperturaEnSitio(s7).fallos.some((f) => /admite una perdida/.test(f)), "no cazó la compuerta que deja pasar una perdida");
+  const s7b = jsx.replace("    const ed = edicionOperacion(d0);\n    if (!ed.aplica || !ed.ok) return;\n", "    const ed = edicionOperacion(d0);\n");
+  assert.notEqual(s7b, jsx, "la sonda no encontró el abandono de reabrirOperacion");
+  assert.ok(reaperturaEnSitio(s7b).fallos.some((f) => /no filtra por etapa de origen/.test(f)), "no cazó el veredicto que nadie lee");
+  const s7c = jsx.replace('!["aceptadas", "cesion"].includes(d0.stage)) return', '!["aceptadas", "cesion", "perdida"].includes(d0.stage)) return');
+  if (s7c !== jsx) assert.ok(reaperturaEnSitio(s7c).fallos.some((f) => /admite una perdida/.test(f)));
   // (8) el badge de visado se evalúa también en perdida
   const s8 = jsx.replace('{["prospeccion", "oferta", "aceptadas", "otorgamiento"].includes(deal.stage) && (() => {', '{["prospeccion", "oferta", "aceptadas", "otorgamiento", "perdida"].includes(deal.stage) && (() => {');
   assert.notEqual(s8, jsx);

@@ -4818,11 +4818,14 @@ function ModalLlamadaVerif({ fila, onCerrar, onConfirmar }) {
     </div>
   );
 }
-function ChipFila({ fg, bg, Icono, punto, texto, badge, badgeTono, tip, info, clase = "t9" }) {
+// `borde` es opcional: por defecto se deriva del color del texto al 20 %, que es lo que hace que
+// los chips de estado se lean como etiquetas. Un chip que es una ACCIÓN pendiente («Solicitud
+// línea») lo pide sólido, para que se distinga de los de estado que lo rodean.
+function ChipFila({ fg, bg, Icono, punto, texto, badge, badgeTono, tip, info, clase = "t9", borde }) {
   const bt = badgeTono || { fg: "#fff", bg: fg };
   return (
     <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full py-0.5 font-semibold ${clase}`}
-      title={tip} style={{ paddingLeft: 8, paddingRight: badge != null ? 3 : 8, backgroundColor: bg, color: fg, border: `1px solid ${fg}33`, cursor: tip ? "help" : undefined }}>
+      title={tip} style={{ paddingLeft: 8, paddingRight: badge != null ? 3 : 8, backgroundColor: bg, color: fg, border: `1px solid ${borde || fg + "33"}`, cursor: tip ? "help" : undefined }}>
       {punto && <span className="shrink-0" style={{ width: 6, height: 6, borderRadius: 9999, backgroundColor: punto }} />}
       {Icono && <Icono size={10} />}
       {texto}
@@ -7181,7 +7184,7 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario, giro 
             </div>
           </div>
           <div className="mt-2.5 rounded-lg p-2.5 t10" style={{ backgroundColor: "#F5F4F8", color: C.sub }}>
-            Al confirmar se <b>publica la oferta</b> {pub === "electronica" ? <>y <b>sale el correo</b> con el código de negocio y la clave de un solo uso; la firma del cliente cierra <b>O05</b></> : <>y <b>O05 · Evidencia del Contrato de Cesión</b> queda esperando el comprobante en el tab Otorgamiento</>}. Las asignaciones de línea son una <b>evaluación</b>, no una reserva: el cupo lo reserva el sistema de gestión de líneas cuando el <b>cliente firma</b>, y el core lo convierte en línea utilizada cuando <b>Operaciones aprueba</b>{evalLin.requiereComite > 0 ? <> y la solicitud queda en la bandeja del <b>comité de riesgo</b> como una sola solicitud con {evalLin.solicitudes.length} línea(s) de detalle, aprobable o recortable por separado</> : null}.
+            Al confirmar se <b>publica la oferta</b> {pub === "electronica" ? <>y <b>sale el correo</b> con el código de negocio y la clave de un solo uso; la firma del cliente cierra <b>O05</b></> : <>y <b>O05 · Contrato firmado por cliente de la operación</b> queda esperando el comprobante en el tab Otorgamiento</>}. Las asignaciones de línea son una <b>evaluación</b>, no una reserva: el cupo lo reserva el sistema de gestión de líneas cuando el <b>cliente firma</b>, y el core lo convierte en línea utilizada cuando <b>Operaciones aprueba</b>{evalLin.requiereComite > 0 ? <> y la solicitud queda en la bandeja del <b>comité de riesgo</b> como una sola solicitud con {evalLin.solicitudes.length} línea(s) de detalle, aprobable o recortable por separado</> : null}.
           </div>
         </div>
 
@@ -7343,6 +7346,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const motivoNoReset = !onLimpiarSimulacion ? "No disponible en esta vista"
     : aprobacionFormalCliente(deal) || deal.clienteAcepto ? "El cliente ya firmó esta oferta: para modificarla, usa «Reabrir para modificar»."
     : ofertaPublicada(deal) ? "La oferta ya se publicó al cliente: para modificarla, usa «Reabrir para modificar»."
+    : ofertaCerradaVigente(deal) ? "La oferta ya se cerró y el negocio quedó creado: para modificarla, usa «Acciones › Editar»."
     : !["prospeccion", "oferta"].includes(deal.stage) ? "La operación ya avanzó más allá de la oferta."
     : null;
   const puedeReiniciar = !motivoNoReset;
@@ -7467,7 +7471,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const ejecutarAccion = (k, datosCurse) => {
     if (k === "borrador") { onClose(); return; }
     if (k === "rechazar") { setRechazoModal(true); return; }
-    if (deal.ofertaCerrada || deal.negocioNum) return;
+    if (ofertaCerradaVigente(deal)) return;
     // CERRAR LA OFERTA PASA SIEMPRE POR EL MODAL. Las dos compuertas del cierre —que no queden
     // excepciones sin justificar y que el «Monto a Girar» sea positivo— viven en el botón de
     // `ModalCurse`, así que llegar acá sin `datosCurse` era cerrar sin pasar por ninguna de las dos.
@@ -7492,7 +7496,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               «Acciones» de las otras pestañas no se cierra ni se avanza de etapa: ahí el ejecutivo no
               está armando la oferta. */}
           {ACCIONES_PPAL.filter((a) => seleccionable || a.k !== "cerrar").map((a) => {
-            const bloq = a.k === "cerrar" && !!(deal.ofertaCerrada || deal.negocioNum);
+            const bloq = a.k === "cerrar" && ofertaCerradaVigente(deal);
             const puesta = seleccionable && accionSel === a.k;
             return (
               <button key={a.k} onClick={() => { setAccMenu(false); if (seleccionable) setAccionSel(a.k); else ejecutarAccion(a.k); }} disabled={bloq}
@@ -7516,12 +7520,23 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
               —excepciones de otorgamiento, excepciones de verificación y llamadas ya registradas viven
               en repositorios por operación—, y las facturas que el deudor no confirmó quedan vetadas.
               Girada no se reabre: ya se desembolsó. */}
-          {["aceptadas", "cesion"].includes(deal.stage) && (
-            <button onClick={() => { setAccMenu(false); setConfirmReabrir(true); }}
-              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 t11 text-left hover:bg-stone-50" style={{ color: C.ink }}>
-              <RotateCcw size={12} style={{ color: C.faint }} /> Reabrir para modificar
-            </button>
-          )}
+          {(() => {
+            // EDITAR. Una sola puerta para las dos vueltas atrás que existen: la oferta cerrada que el
+            // cliente todavía no firma y la operación ya aceptada. Es la misma acción —reabrir el
+            // paquete para agregar o quitar facturas— y lo que cambia es la consecuencia, así que se
+            // dice AL LADO en vez de esconderla en dos nombres distintos. Lo ya hecho no se pierde:
+            // visado, excepciones de verificación, llamadas registradas y facturas vetadas viven en
+            // repositorios por operación y reabrir no los toca (regla 1).
+            const ed = edicionOperacion(deal);
+            if (!ed.aplica) return null;
+            return (<>
+              <button onClick={ed.ok ? () => { setAccMenu(false); setConfirmReabrir(true); } : undefined} disabled={!ed.ok} title={ed.motivo}
+                className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 t11 text-left hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed" style={{ color: C.ink }}>
+                <RotateCcw size={12} style={{ color: C.faint }} /> Editar la oferta
+              </button>
+              <div className="px-2 pb-1 t9" style={{ color: ed.ok && ed.revocaFirma ? "#C2410C" : C.faint }}>{ed.motivo}</div>
+            </>);
+          })()}
           {/* ELIMINAR LA SIMULACIÓN Y VACIAR LA OFERTA (regla 13-quaterdecies). Vivía sólo en el menú
               «Opciones» de la oferta, que está en Negocio › Detalle —justo la pestaña donde este menú
               NO se muestra—, así que desde las demás no había forma de llegar. Es lo único destructivo
@@ -7926,6 +7941,18 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                   const oferta = tasaPond; // tasa de la operación (efectiva)
                   const inputCls = "w-20 rounded-md px-2 py-1 t11 text-right outline-none disabled:opacity-60 disabled:cursor-not-allowed";
                   const bloqueado = ["aceptadas", "cesion", "giro", "perdida"].includes(deal.stage);
+                  // EL PAQUETE CERRADO ES DE SÓLO LECTURA. Cerrar la oferta es la aprobación interna
+                  // de una selección concreta —y es la que se le comunicó al cliente, con su código de
+                  // negocio—, así que agregar o quitar facturas por debajo la contradice sin que nada
+                  // lo diga: es el mismo hecho que O05 custodia con la huella. Para volver a tocarla
+                  // está «Editar» en Acciones, que lo deja escrito y obliga a cerrarla de nuevo.
+                  // Va SEPARADO de `bloqueado` a propósito: aquél es la etapa —de ahí sale además
+                  // `leeDeVersion`, o sea el titular «Aceptada · …»— y una oferta cerrada que el
+                  // cliente todavía no firma no es una operación aceptada. Fundirlos haría que la
+                  // tarjeta afirmara una firma que no existe.
+                  const paqueteCerrado = ofertaCerradaVigente(deal);
+                  const soloLectura = bloqueado || paqueteCerrado;
+                  const edicion = edicionOperacion(deal);
                   // El resumen de condiciones comerciales se guarda en una variable en vez de
                   // renderizarse en el sitio: en el sub-tab Detalle va DEBAJO de la tarjeta de
                   // veredicto —la respuesta de la pantalla manda, la tarifa es apoyo— y en los
@@ -7958,6 +7985,15 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                       {bloqueado && (<>
                         <div><span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>🔒 Aceptada · bloqueada</span></div>
                         <div className="mt-1 t9" style={{ color: C.sub }}>La operación ya fue aceptada formalmente: no se pueden modificar las condiciones ni agregar/retirar facturas.</div>
+                      </>)}
+                      {/* Oferta CERRADA y todavía sin firmar. No es lo mismo que «aceptada»: el paquete
+                          está congelado porque es el que se le comunicó al cliente, pero el ejecutivo
+                          todavía puede retomarlo. Se dice DÓNDE —Acciones › Editar— porque un control
+                          deshabilitado sin explicación deja al ejecutivo sin dónde enterarse de por
+                          qué (regla 24), y acá son todos los de agregar y retirar a la vez. */}
+                      {paqueteCerrado && !bloqueado && (<>
+                        <div><span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: C.green }}>🔒 Operación creada{deal.negocioNum ? ` · N° ${deal.negocioNum}` : ""}</span></div>
+                        <div className="mt-1 t9" style={{ color: C.sub }}>La oferta está cerrada: el paquete es el que se le comunicó al cliente, así que no se agregan ni se retiran facturas. Para retomarlo, <b>Acciones › Editar</b> — al cerrarla de nuevo se re-evalúa la operación completa.</div>
                       </>)}
                       {/* INTEGRACIÓN AL CORE. El último paso antes del giro y lo autoriza OPERACIONES,
                           no el comercial: es quien responde por lo que entra al core. Acá se aplica
@@ -8015,12 +8051,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             <span className="truncate" style={{ color: C.sub }} title={f.deudor}>{f.deudor}</span>
                             <span className="text-right font-semibold" title={`Nota del deudor: ${nota} / 5`} style={{ color: NOTA_COLOR(nota) }}>{nota}</span>
                             <span className="t9" style={{ color: C.faint }}>{em}</span>
-                            <input type="date" disabled={bloqueado} value={vencFecha[f.id] || ""} onChange={(e) => setVencFecha((m) => ({ ...m, [f.id]: e.target.value }))} title="Fecha de vencimiento (editable)" className="rounded-full px-1 py-0.5 t9 outline-none disabled:opacity-60" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }} />
+                            <input type="date" disabled={soloLectura} value={vencFecha[f.id] || ""} onChange={(e) => setVencFecha((m) => ({ ...m, [f.id]: e.target.value }))} title="Fecha de vencimiento (editable)" className="rounded-full px-1 py-0.5 t9 outline-none disabled:opacity-60" style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }} />
                             {og.total === 0 ? <span className="justify-self-start t10" style={{ color: C.faint }}>—</span> : <span className="inline-flex items-center gap-1 justify-self-start t10 font-bold" title={og.allOk ? `Todas las reglas de otorgamiento del deudor cumplieron (${og.ok}/${og.total})` : `${og.ok} de ${og.total} reglas de otorgamiento cumplieron · ${og.total - og.ok} pendiente(s)`} style={{ cursor: "help" }}><span style={{ color: og.allOk ? "#16A34A" : "#EF4444" }}>{og.allOk ? "✓" : "⚠"}</span><span style={{ fontVariantNumeric: "tabular-nums" }}><span style={{ color: og.allOk ? "#16A34A" : "#EF4444" }}>{og.ok}</span><span style={{ color: C.sub }}>/{og.total}</span></span></span>}
                             <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: vv.bg, color: vv.fg }}>{vv.t}</span>
                             <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
                             <span className="text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.monto)}</span>
-                            {!bloqueado ? <button onClick={() => setConfirmRetiro(f)} title="Retirar de la oferta" className="justify-self-center rounded p-0.5 disabled:opacity-30" style={{ color: C.red }}><Trash2 size={12} /></button> : <span></span>}
+                            {!soloLectura ? <button onClick={() => setConfirmRetiro(f)} title="Retirar de la oferta" className="justify-self-center rounded p-0.5 disabled:opacity-30" style={{ color: C.red }}><Trash2 size={12} /></button> : <span></span>}
                           </div>
                           );
                         })}
@@ -8079,12 +8115,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             const anulMonto = f.candidata && est.clave === "notaCredito";
                             // Columna ESTADO (eventos del documento): XML de las ya incluidas · bloqueo/NC de las candidatas.
                             let estadoNode;
-                            if (!f.candidata) estadoNode = <button onClick={() => setXmlOk((m) => ({ ...m, [f.id]: !ok }))} title={ok ? "Con XML" : "Sin XML"} disabled={!!f.excl || bloqueado} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold disabled:opacity-60" style={{ backgroundColor: ok ? C.greenBg : "#fef2f2", color: ok ? C.green : C.red, border: `1px solid ${ok ? "#bbf7d0" : "#fecaca"}` }}>{ok ? <Check size={10} /> : <X size={10} />} XML</button>;
+                            if (!f.candidata) estadoNode = <button onClick={() => setXmlOk((m) => ({ ...m, [f.id]: !ok }))} title={ok ? "Con XML" : "Sin XML"} disabled={!!f.excl || soloLectura} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold disabled:opacity-60" style={{ backgroundColor: ok ? C.greenBg : "#fef2f2", color: ok ? C.green : C.red, border: `1px solid ${ok ? "#bbf7d0" : "#fecaca"}` }}>{ok ? <Check size={10} /> : <X size={10} />} XML</button>;
                             else if (bloq) estadoNode = <span title={`${est.label}${est.detalle ? " · " + est.detalle : " · no se puede agregar"}`} className="justify-self-start inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#fef2f2", color: C.red, border: "1px solid #fecaca", cursor: "help" }}>🔒 {SHORT_EST[est.clave]}</span>;
                             else estadoNode = <span className="t9" style={{ color: C.faint }}>—</span>;
                             // Columna ACCIÓN: el botón "Agregar" está SIEMPRE presente en candidatas (habilitado o no).
                             const accionNode = f.candidata
-                              ? <button onClick={agregarF} disabled={bloq || bloqueado} title={bloq ? `${est.label}${est.detalle ? " · " + est.detalle : " · no se puede agregar"}` : "Agregar a la operación"} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold disabled:opacity-40 disabled:cursor-not-allowed" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button>
+                              ? <button onClick={agregarF} disabled={bloq || soloLectura} title={bloq ? `${est.label}${est.detalle ? " · " + est.detalle : " · no se puede agregar"}` : "Agregar a la operación"} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold disabled:opacity-40 disabled:cursor-not-allowed" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button>
                               : <span className="justify-self-start inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#F3F4F6", color: C.faint }}>En oferta</span>;
                             return (
                               <div key={f.id} className="grid items-center gap-2 py-1 t10" style={{ gridTemplateColumns: GC_OTRAS, borderBottom: `1px solid ${C.line}`, opacity: (f.excl || bloq) ? 0.55 : 1 }}>
@@ -8108,7 +8144,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                 {[["candidatas", `Candidatas (${cands.length})`], ["todas", `Todas las facturas (${todas.length})`]].map(([k, l]) => (
                                   <button key={k} onClick={() => { setFactTab(k); setCandPage(0); }} className="rounded-md px-2.5 py-1 t10 font-medium" style={{ backgroundColor: factTab === k ? C.lilac : "#fff", color: factTab === k ? C.indigo : C.sub, border: `1px solid ${factTab === k ? C.indigo : C.line}` }}>{l}</button>
                                 ))}
-                                {factTab === "candidatas" && cands.some((f) => !f.otro && estadoCandidata(f, deal).agregable) && !bloqueado && (
+                                {factTab === "candidatas" && cands.some((f) => !f.otro && estadoCandidata(f, deal).agregable) && !soloLectura && (
                                   // "Agregar todas" sólo incluye las candidatas elegibles: excluye "Otros deudores"
                                   // (f.otro, se agregan una a una) y las bloqueadas (anuladas/cedidas/en otra operación).
                                   <button onClick={() => { const eleg = cands.filter((f) => !f.otro && estadoCandidata(f, deal).agregable); onIncorporarFacturas(deal.id, eleg); setReevalPend(true); }} className="ml-auto flex shrink-0 items-center gap-0.5 rounded-md px-2 py-1 t9 font-medium" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar todas las elegibles</button>
@@ -8444,7 +8480,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               </>)}
                               <span className="relative inline-flex items-center gap-1.5 t9">
                                 <span>{vencTxt}</span>
-                                {!bloqueado && (<>
+                                {!soloLectura && (<>
                                   <button onClick={(e) => { const inp = e.currentTarget.parentElement.querySelector("input[type=date]"); if (inp) { inp.showPicker ? inp.showPicker() : inp.click(); } }} title="Editar vencimiento" className="inline-flex" style={{ color: "#9CA3AF" }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg></button>
                                   <input type="date" value={vencVal} onChange={(e) => setVencFecha((m) => ({ ...m, [f.id]: e.target.value }))} style={{ position: "absolute", left: 22, bottom: 0, width: 1, height: 1, opacity: 0, pointerEvents: "none" }} />
                                 </>)}
@@ -8466,7 +8502,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   estado normal desde que la pantalla la dibuja con su panel de arranque, así
                                   que retirar la última está permitido y vuelve ahí. Y el ícono se ve: #6B7280
                                   con hover, no #B4B2BC. */}
-                              {!bloqueado ? <button onClick={() => setConfirmRetiro(f)} title="Retirar esta factura de la oferta" className="justify-self-center rounded p-0.5 hover:bg-stone-100" style={{ color: C.sub }}><Trash2 size={13} /></button> : <span></span>}
+                              {!soloLectura ? <button onClick={() => setConfirmRetiro(f)} title="Retirar esta factura de la oferta" className="justify-self-center rounded p-0.5 hover:bg-stone-100" style={{ color: C.sub }}><Trash2 size={13} /></button> : <span></span>}
                             </div>
                           );
                         };
@@ -8507,7 +8543,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   la columna y además se ve distinto en cada navegador. */}
                               <span className="relative inline-flex items-center gap-1.5 t9" style={{ color: C.faint }}>
                                 <span>{venc}</span>
-                                {!bloqueado && (<>
+                                {!soloLectura && (<>
                                   <button onClick={(e) => { const inp = e.currentTarget.parentElement.querySelector("input[type=date]"); if (inp) { inp.showPicker ? inp.showPicker() : inp.click(); } }}
                                     title="Editar el vencimiento de esta factura" className="inline-flex" style={{ color: "#9CA3AF" }}>
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg>
@@ -8530,7 +8566,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   title={cabe ? `Cabe en la línea que le queda al deudor (${fmtMM(ldF.neta)}).` : `Excede en ${fmtMM(+(m - ldF.neta).toFixed(1))} la línea que le queda al deudor (${fmtMM(ldF.neta)}): agregarla manda esa parte a comité.`}>
                                   {cabe ? "Se puede cursar" : "Requiere comité"}</span>;
                               })()}
-                              <button onClick={agregar} disabled={bloqueado || bloq} title={bloq ? `${est.label}${est.detalle ? " · " + est.detalle : " · no se puede agregar"}` : "Agregar a la simulación"} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold disabled:opacity-40 disabled:cursor-not-allowed" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button>
+                              <button onClick={agregar} disabled={soloLectura || bloq} title={bloq ? `${est.label}${est.detalle ? " · " + est.detalle : " · no se puede agregar"}` : "Agregar a la simulación"} className="justify-self-start flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 t9 font-semibold disabled:opacity-40 disabled:cursor-not-allowed" style={{ border: "1px solid #F97316", color: "#C2410C", backgroundColor: "#fff" }}><Plus size={10} /> Agregar</button>
                             </div>
                           );
                         };
@@ -8540,9 +8576,11 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                         const TONO_LIN = {
                           con_linea: { fg: "#16A34A", bg: "#F0FDF4", bd: "#bbf7d0", lbl: "Con línea" },
                           parcial:   { fg: "#7C3AED", bg: C.lilac,   bd: "#DDD3FF", lbl: "Parcial" },
-                          // «Sin línea» competía con el chip de línea de la izquierda —que sí habla de si
-                          // el deudor TIENE línea— y en la misma fila se leían como una contradicción. Este
-                          // dice qué le pasa a la selección, que es otra cosa: se va a comité.
+                          // «Requiere comité», no «Sin línea» (confirmado por el usuario el 17-09-2026 contra su
+                          // propio mockup, que decía «Sin línea»): el chip nombra la ACCIÓN que conlleva no tener
+                          // línea suficiente, no la carencia. La carencia ya la dice el chip de la izquierda
+                          // —«Solicitud línea $X», con la plata— y dos chips diciendo «sin línea» en la misma
+                          // fila serían el mismo dato dos veces.
                           sin_linea: { fg: "#EF4444", bg: "#FEF2F2", bd: "#fecaca", lbl: "Requiere comité" },
                           pend:      { fg: "#6B7280", bg: "#F3F4F6", bd: C.line,    lbl: "Sin evaluar" },
                         };
@@ -8611,16 +8649,16 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               if (noAplica) partes.push("no aplica: tiene línea propia");
                               else {
                                 if (mixRut) partes.push(d.rut || "sin RUT");
-                                partes.push(`de ${fmtMM(+(d.usado + d.disponible).toFixed(1))} disponibles`);
+                                partes.push(`de ${fmtCLP(+(d.usado + d.disponible).toFixed(1))} disponibles`);
                                 // La línea compartida se explica: sin decir cuánto se llevaron los otros
                                 // deudores, el saldo no cuadra con lo asignado a éste.
-                                if (otros > 0) partes.push(`${fmtMM(otros)} de otros deudores`);
-                                partes.push(`queda ${fmtMM(d.disponible)}`);
+                                if (otros > 0) partes.push(`${fmtCLP(otros)} de otros deudores`);
+                                partes.push(`queda ${fmtCLP(d.disponible)}`);
                               }
-                              return { name: d.label, dim: noAplica, val: fmtMM(noAplica ? 0 : propio), sub: partes.join(" · ") };
+                              return { name: d.label, dim: noAplica, val: fmtCLP(noAplica ? 0 : propio), sub: partes.join(" · ") };
                             }),
                             { head: "Límites globales · saldo" },
-                            ...ev.topes.filter((tp) => tp.nivel !== "par").map((tp) => ({ name: tp.label, val: fmtMM(tp.disponible),
+                            ...ev.topes.filter((tp) => tp.nivel !== "par").map((tp) => ({ name: tp.label, val: fmtCLP(tp.disponible),
                               sub: [tp.sub || "", tp.nivel === ev.manda.nivel ? "← manda" : ""].filter(Boolean).join(" · ") })),
                           ] : [];
                           // `t.bd` sigue vivo: lo usa el panel del veredicto de más abajo, que es una caja
@@ -8644,7 +8682,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       // la derecha: repetido en la misma línea se lee como dos cifras distintas. Sigue
                                       // en el tooltip, que es donde ese detalle no compite con nada.
                                       <ChipFila fg={C.indigo} bg={C.lilac} texto="★ Prime"
-                                        tip={m > 0 ? `Deudor Prime (Lista Blanca o Autorizado) con ${ld.nFuera} factura(s) disponibles por ${fmtMM(m)} fuera de la oferta.` : "Deudor Prime (Lista Blanca o Autorizado). No tiene facturas disponibles fuera de la oferta."} />
+                                        tip={m > 0 ? `Deudor Prime (Lista Blanca o Autorizado) con ${ld.nFuera} factura(s) disponibles por ${fmtCLP(m)} fuera de la oferta.` : "Deudor Prime (Lista Blanca o Autorizado). No tiene facturas disponibles fuera de la oferta."} />
                                     );
                                   })()}
                                   {/* Cuánta línea le queda y cuánto de lo disponible cabría en ella. Estaba
@@ -8663,25 +8701,40 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     // solicitud al comité al cerrar (regla 15-bis), y es lo que el ejecutivo
                                     // tiene que poder leer sin abrir nada. Fuera de la oferta todavía no se pide
                                     // nada, así que ahí el rótulo sigue describiendo qué falta.
-                                    const pedir = !hay && enOferta;
+                                    // LO QUE VA AL COMITÉ es lo que la evaluación NO asignó (17-09-2026, pedido del
+                                    // usuario: «cuando hay que hacer solicitud de línea a un deudor aparece un chip
+                                    // en naranjo con la solicitud»). Antes el chip naranja salía sólo con el cupo en
+                                    // CERO: un deudor PARCIAL —caben tres facturas y dos no— mostraba «Línea
+                                    // disponible $X» en verde y nada más, y la solicitud que iba a salir por las dos
+                                    // que no caben no estaba escrita en ninguna parte de su fila. Ahora son dos
+                                    // chips con dos preguntas: cuánta línea HAY y cuánto se va a PEDIR. La cifra es
+                                    // la misma que entra al detalle de la solicitud al cerrar (regla 15-bis).
+                                    // Sin evaluación (falta re-evaluar) y sin cupo, se pide el deudor entero.
+                                    const faltante = enOferta && ev ? Math.max(0, mmRound(monto - ev.asignado)) : 0;
+                                    const solicitud = !enOferta ? 0 : ev ? faltante : (hay ? 0 : monto);
                                     const lbl = hay ? `Línea disponible ${fmtCLP(ld.disponible)}`
-                                      : pedir ? `Solicitud línea ${fmtCLP(monto)}`
                                       : ld.conLineaPropia ? "Línea Cliente - Deudor sin cupo" : "Sin Línea Cliente - Deudor";
+                                    // El saldo en Línea Puntual dejó de ir como badge (17-09-2026, pedido del usuario):
+                                    // una cifra dentro de otra cifra, y en la fila competía con el monto del deudor.
+                                    // Sigue en el tooltip, que es donde ese detalle no compite con nada.
                                     const tip = (hay
                                       ? `Línea disponible de este deudor: ${fmtCLP(ld.disponible)} — el menor entre la Línea Cliente - Deudor, la Línea Global Cliente y la Línea Global Deudor. No descuenta las facturas ya seleccionadas en esta oferta: la línea se consume al cursar.`
-                                      : pedir
-                                        ? `Sin cupo para sus ${fmtCLP(monto)} en esta oferta: al cerrar, esa diferencia entra como línea PUNTUAL en la solicitud al comité${ld.conLineaPropia ? " (ampliar la Línea Cliente - Deudor existente)" : " (crear una Línea Cliente - Deudor)"}.`
                                       : ld.conLineaPropia
                                         ? `Tiene Línea Cliente - Deudor pero sin cupo${ld.manda ? ` (manda: ${ld.manda})` : ""}: sus facturas van a comité, y lo que se pide es AMPLIARLA.`
                                         : "No tiene Línea Cliente - Deudor: sus facturas van a comité, y lo que se pide es SOLICITAR una puntual Cliente - Deudor.")
                                       + (ld.saldoPuntual > 0 ? ` De ese disponible, ${fmtCLP(ld.saldoPuntual)} está en una Línea Puntual de UN SOLO USO: la consume entera la primera factura que la toque, del tamaño que sea.` : "")
                                       + (ld.nFuera > 0 ? ` Tiene ${ld.nFuera} factura(s) fuera de la oferta por ${fmtCLP(ld.montoFuera)}.` : "");
-                                    return (
-                                      // Ámbar para «Solicitud línea»: no es un estado bueno (verde) ni la ausencia
-                                      // neutra de cupo (gris), sino una acción pendiente con monto.
-                                      <ChipFila fg={hay ? "#16A34A" : pedir ? "#C2410C" : "#6B7280"} bg={hay ? "#F0FDF4" : pedir ? "#FFF7ED" : "#F3F4F6"} punto={hay ? "#16A34A" : pedir ? "#EA580C" : "#9CA3AF"} texto={lbl} tip={tip}
-                                        badge={ld.saldoPuntual > 0 ? `${fmtMM(ld.saldoPuntual)} puntual` : undefined} badgeTono={{ fg: C.indigo, bg: C.lilac }} />
-                                    );
+                                    const tipSol = `Sin cupo para ${fmtCLP(solicitud)}${solicitud !== monto ? ` de sus ${fmtCLP(monto)}` : ""} en esta oferta: al cerrar, esa diferencia entra como línea PUNTUAL en la solicitud al comité${ld.conLineaPropia ? " (ampliar la Línea Cliente - Deudor existente)" : " (crear una Línea Cliente - Deudor)"}.`;
+                                    return (<>
+                                      {/* El chip de línea describe lo que HAY. Sin cupo y ya en la oferta no se
+                                          dibuja: describir la carencia al lado de la plata que se pide es decir dos
+                                          veces lo mismo, y lo que importa ahí es la plata (regla 29). */}
+                                      {(hay || !enOferta) && <ChipFila fg={hay ? "#16A34A" : "#6B7280"} bg={hay ? "#F0FDF4" : "#F3F4F6"} punto={hay ? "#16A34A" : "#9CA3AF"} texto={lbl} tip={tip} />}
+                                      {/* NARANJO, con borde sólido: no es un estado bueno (verde) ni la ausencia
+                                          neutra de cupo (gris), sino una ACCIÓN pendiente con monto, y tiene que
+                                          distinguirse de los chips de estado que lo rodean. */}
+                                      {solicitud > 0 && <ChipFila fg="#C2410C" bg="#FFF7ED" borde="#F97316" punto="#F97316" texto={`Solicitud línea ${fmtCLP(solicitud)}`} tip={tipSol} />}
+                                    </>);
                                   })()}
                                 </div>
                               </div>
@@ -8727,12 +8780,16 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                          !h.sinExcepcionCliente ? "el cliente tiene marcas de excepción" : null,
                                          !h.verificado ? "el deudor requiere verificación" : null,
                                          !h.sinExcepcionDeudor ? "el deudor tiene marcas de excepción" : null].filter(Boolean).join(" · ");
-                                    return <ChipGiro codigo={gd.tipo} monto={gd.monto}
+                                    // SIN el badge de monto (17-09-2026, pedido del usuario): el giro del deudor
+                                    // ya está en el tooltip, y en la fila competía con el monto grande de arriba
+                                    // —dos cifras en la misma esquina que no son la misma—. La cabecera del
+                                    // detalle y la tarjeta del tubo lo conservan: ahí no hay otra cifra al lado.
+                                    return <ChipGiro codigo={gd.tipo} monto={gd.monto} soloTipo
                                       titulo={`${gd.label} · ${fmtCLP(gd.monto)} de giro en ${gd.facturas} factura(s) de este deudor. ${exp ? porQue : "Giro Normal porque " + porQue + "."}`} />;
                                   })()}
                                   <ChipFila fg={verifOk ? "#16A34A" : "#EF4444"} bg={verifOk ? "#F0FDF4" : "#FEF2F2"} Icono={verifOk ? Check : AlertTriangle} texto={verifOk ? "Verificado" : "Req. verif."}
                                     tip={verifOk ? "Deudor verificado" : "El deudor requiere verificación"} />
-                                  {enOferta && (ev ? <TipDesglose titulo="Línea disponible para este deudor" color={t.fg} nota={`Manda ${ev.manda.label}: quedan ${fmtMM(ev.holgura)} para sumar más facturas.`} items={itemsTip}>{chipEstado}</TipDesglose> : chipEstado)}
+                                  {enOferta && (ev ? <TipDesglose titulo="Línea disponible para este deudor" color={t.fg} nota={`Manda ${ev.manda.label}: quedan ${fmtCLP(ev.holgura)} para sumar más facturas.`} items={itemsTip}>{chipEstado}</TipDesglose> : chipEstado)}
                                 </div>
                               </div>
                             </div>
@@ -8878,7 +8935,26 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       <div className="t13 font-bold" style={{ color: t.fg }}>{vd.tit}</div>
                                       <div className="mt-0.5 t10" style={{ color: C.sub, lineHeight: 1.45 }}>{vd.sub}</div>
                                     </div>
-                                    {!bloqueado && validas.length > 0 && !reevalPend && (
+                                    {/* OPERACIÓN YA CREADA. Cerrada la oferta, el CTA no tiene nada que hacer:
+                                        cerrar es lo único que ofrecía y ya ocurrió. Se quedaba igual, en morado y
+                                        diciendo «Enviar a Comité y Publicar», y al apretarlo no pasaba nada —el
+                                        gate está en `ejecutarAccion`—, que es la peor forma de decir que no. En su
+                                        lugar va el ESTADO (el negocio quedó creado) y las acciones que sí quedan,
+                                        entre ellas «Editar la oferta», que es la puerta para volver a tocar el
+                                        paquete. Se muestra también con la operación aceptada: ahí el CTA no se
+                                        dibujaba y el detalle se quedaba sin ningún menú de acciones. */}
+                                    {validas.length > 0 && !reevalPend && (paqueteCerrado ? (
+                                        <div className="relative flex shrink-0 items-center gap-2">
+                                          <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 t10 font-semibold" style={{ backgroundColor: C.greenBg, color: "#16A34A", border: "1px solid #bbf7d0", cursor: "help" }}
+                                            title={`Negocio N° ${deal.negocioNum || "—"}${deal.ofertaCerradaTs ? ` · oferta cerrada el ${String(deal.ofertaCerradaTs).replace(/\.\d+$/, "")}` : ""}${deal.publicacion === "fisica" ? " · publicada en formato físico, el contrato se firma en papel" : deal.publicacion ? " · publicada electrónicamente" : ""}`}>
+                                            <Check size={12} /> Operación creada
+                                          </span>
+                                          <button onClick={() => setAccMenu((v) => !v)} title="Acciones sobre la operación" className="flex items-center gap-1 rounded-full py-1.5 t11 font-semibold" style={{ paddingLeft: 14, paddingRight: 10, border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}>
+                                            Acciones <ChevronDown size={14} />
+                                          </button>
+                                          {accMenu && panelAcciones(false)}
+                                        </div>
+                                    ) : !bloqueado ? (
                                         <div className="relative flex shrink-0 items-stretch">
                                           {/* Split button: la etiqueta ejecuta la acción puesta, el chevron abre el
                                               menú para cambiarla. Antes el botón entero abría el menú, así que decía
@@ -8887,7 +8963,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                           <button onClick={() => setAccMenu((v) => !v)} title="Elegir otra acción" className="flex items-center py-1.5 text-white" style={{ backgroundColor: C.indigo, borderRadius: "0 9999px 9999px 0", paddingLeft: 6, paddingRight: 12, borderLeft: "1px solid rgba(255,255,255,.35)" }}><ChevronDown size={14} /></button>
                                           {accMenu && panelAcciones(true)}
                                         </div>
-                                    )}
+                                    ) : null)}
                                   </div>
                                   {/* Pie: las TRES compuertas que deciden si esto se puede girar —otorgamiento,
                                       verificación y línea— cada una con lo que falta sobre el total. Antes iban
@@ -8922,7 +8998,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             })()}
                             <div className="mt-4 t10 uppercase tracking-wide" style={{ color: C.faint }}>Condiciones comerciales</div>
                             <div className="mt-1.5 overflow-hidden rounded-xl" style={{ border: `1px solid ${C.line}` }}>
-                              <SimResumen deal={deal} o={o} montoDocs={montoValido} cantFacturas={validas.length} usuario={USERS[usuario] || usuario} bloqueado={bloqueado} antic={antic} setAntic={setAntic} comisO={comisO} setComisO={setComisO} tasaPond={tasaPond} diasPond={diasPond} tasaEqExacta={tasaEqExacta} reevalPend={reevalPend} onReevaluar={() => setReevalPend(false)} onSim={setSimOp} esJefe={esJefeComercial(usuario)} usuarioCod={usuario} deudoresOp={validas} tasaFuente={{ usaUltNeg, riesgo: tasaPondRiesgo, ultNeg: tul }} colapsable />
+                              <SimResumen deal={deal} o={o} montoDocs={montoValido} cantFacturas={validas.length} usuario={USERS[usuario] || usuario} bloqueado={soloLectura} antic={antic} setAntic={setAntic} comisO={comisO} setComisO={setComisO} tasaPond={tasaPond} diasPond={diasPond} tasaEqExacta={tasaEqExacta} reevalPend={reevalPend} onReevaluar={() => setReevalPend(false)} onSim={setSimOp} esJefe={esJefeComercial(usuario)} usuarioCod={usuario} deudoresOp={validas} tasaFuente={{ usaUltNeg, riesgo: tasaPondRiesgo, ultNeg: tul }} colapsable />
                             </div>
                             </div>
                             {/* Velo tintado sobre la sección atenuada: con sólo `opacity` el contenido se
@@ -8952,7 +9028,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   {validas.length > 0 ? (<>
                                     <div className="t15 font-semibold" style={{ color: C.ink }}>Tienes {validas.length} factura{validas.length === 1 ? "" : "s"} elegida{validas.length === 1 ? "" : "s"} · {fmtMM(montoValido)}</div>
                                     <div className="mt-0.5 t10" style={{ color: C.sub }}>Simular calcula la asignación de línea, la tasa, los descuentos y el monto a girar de lo que elegiste. Después puedes seguir ajustándola factura a factura.</div>
-                                    <button onClick={() => elegirInicio(validas, "Selección manual")} disabled={bloqueado}
+                                    <button onClick={() => elegirInicio(validas, "Selección manual")} disabled={soloLectura}
                                       className="mt-2 inline-flex items-center gap-1.5 rounded-full px-4 py-2 t11 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed"
                                       style={{ backgroundColor: C.indigo, boxShadow: "0 6px 16px rgba(112,62,255,.28)" }}>
                                       <Zap size={13} /> Simular la oferta · {validas.length} fact. · {fmtMM(montoValido)}
@@ -8968,7 +9044,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                        en dos renglones desalineados. */
                                     <div className="mt-2 flex flex-col items-start gap-1.5">
                                       {opcionesInicio.map((o2) => (
-                                        <button key={o2.k} onClick={() => elegirInicio(o2.fs, o2.lab)} disabled={bloqueado} title={o2.tip}
+                                        <button key={o2.k} onClick={() => elegirInicio(o2.fs, o2.lab)} disabled={soloLectura} title={o2.tip}
                                           className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 t10 font-semibold disabled:opacity-40 disabled:cursor-not-allowed" style={{ backgroundColor: o2.bg, color: o2.fg }}>
                                           <Plus size={12} /> {o2.lab} · {o2.fs.length} fact. · {fmtMM(o2.monto)}
                                         </button>
@@ -8996,12 +9072,12 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   caja de tres bloques que repetía el conteo de deudores y le robaba altura
                                   a la lista, que es el contenido real de la pantalla. */}
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Documentos en la oferta</span>
+                                <span className="t10 font-bold uppercase tracking-wide" style={{ color: C.ink }}>Documentos en la oferta</span>
                                 {/* Los dos conteos se leen de corrido —«4 deudores · 7 facturas por M$29,6»— en
                                     vez de ir en tres píldoras sueltas: son una sola frase y encerrarlas por
                                     separado las presentaba como tres datos sin relación. El monto sí conserva
                                     su píldora: es la cifra que se busca de un vistazo. */}
-                                <span className="t9 font-semibold uppercase tracking-wide" style={{ color: C.sub }}
+                                <span className="t9 font-semibold uppercase tracking-wide" style={{ color: C.indigo }}
                                   title="Deudores y facturas seleccionados para esta oferta">{dq ? `${deudOfF.length} de ${deudOf.length}` : deudOf.length} deudor{!dq && deudOf.length === 1 ? "" : "es"} · {validas.length} factura{validas.length === 1 ? "" : "s"} por</span>
                                 <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}
                                   title="Monto seleccionado para esta oferta">{fmtMM(totalOf)}</span>
@@ -9154,6 +9230,14 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       </button>
                                       {primeMenu && (
                                         <div className="absolute right-0 z-30 mt-1 w-80 rounded-lg bg-white p-1 shadow-xl" style={{ border: `1px solid ${C.line}` }} onMouseLeave={() => setPrimeMenu(false)}>
+                                          {/* Con el paquete cerrado el menú se queda pero VACÍO de ediciones: se
+                                              dice por qué y dónde se retoma. Lo único que sobrevive es «Empezar de
+                                              nuevo», que más abajo se deshabilita con su propio motivo (13-quaterdecies:
+                                              deshabilitado y explicado, nunca oculto). */}
+                                          {soloLectura && (
+                                            <div className="px-2 py-1.5 t9" style={{ color: C.faint }}>La oferta está cerrada: el paquete es el que se le comunicó al cliente. Para volver a agregar o sacar facturas, <b>Acciones › Editar</b>.</div>
+                                          )}
+                                          {!soloLectura && (<>
                                           <div className="px-2 py-1 t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Cargar documentos</div>
                                           <label className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1.5 t10 font-medium" style={{ backgroundColor: "#EFF6FF", color: "#2563EB" }}
                                             title="Carga los XML (DTE) que envió el cliente: cada documento entra a la oferta con su folio, deudor, plazo y monto, y ya trae el respaldo para ceder">
@@ -9223,6 +9307,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                               );
                                             })}
                                           </div>
+                                          </>)}
                                           {/* EMPEZAR DE NUEVO. Hoy la única forma de descartar una oferta mal
                                               armada es cerrar la pestaña del detalle y volver a abrirla, y eso
                                               sólo funciona porque la oferta todavía no se guardó en ninguna
@@ -9261,7 +9346,13 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                               </div>
                             )}
                             <div className="mt-2">
-                              <div className="mt-1.5">
+                              {/* TÍTULOS EN TINTA Y PANEL LILA (17-09-2026, mockup del usuario). Las dos mitades
+                                  de la pantalla —lo que está en la oferta y lo que se puede sumar— ya se
+                                  nombraban igual (13-octies-bis); ahora también se ven igual: el mismo panel
+                                  lila con las filas como tarjetas adentro, y el título de sección en tinta con
+                                  el conteo en el púrpura de marca, en vez de dos grises que se confundían con
+                                  las etiquetas de columna. */}
+                              <div className="mt-1.5 rounded-xl p-2.5" style={{ backgroundColor: C.lilac }}>
                                 {/* La oferta nace vacia —la corrida ya no la propone—, asi que este es el
                                     estado de ENTRADA de la pantalla, no un borde raro: se dibuja como caja
                                     para que la seccion conserve su altura y el ojo no salte al pool. */}
@@ -9269,9 +9360,11 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   /* El estado VACÍO es el de entrada de esta pantalla, no un borde raro, así
                                      que tiene que verse: con #F7F7FA sobre blanco y texto en C.faint la caja
                                      desaparecía y el mensaje se leía como un placeholder apagado. Fondo un
-                                     tono más oscuro —el mismo gris de los chips—, borde definido, más alto y
-                                     el texto en el cuerpo de la pantalla (t11) y en C.sub. */
-                                  <div className="flex items-center justify-center rounded-xl px-3 t11 font-medium" style={{ minHeight: 72, backgroundColor: "#EDECF3", border: "1px solid #DEDCE7", color: C.sub }}>
+                                     tono más oscuro, borde definido, más alto y el texto en el cuerpo de la
+                                     pantalla (t11) y en C.sub. El tono se midió DOS veces: sobre blanco era
+                                     #EDECF3, y al mudarse la oferta al panel lila dejó de distinguirse del
+                                     fondo, así que toma el de una tarjeta de fila (#F5F4F8 / #E4E2EC). */
+                                  <div className="flex items-center justify-center rounded-xl px-3 t11 font-medium" style={{ minHeight: 72, backgroundColor: "#F5F4F8", border: "1px solid #E4E2EC", color: C.sub }}>
                                     {dq ? `Ningún deudor de la oferta coincide con «${detQuery}».` : "Ninguna factura seleccionada"}
                                   </div>
                                 )}
@@ -9301,7 +9394,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       return (
                                         <div className="mt-2 rounded-lg" style={{ border: `1px dashed ${C.line}`, padding: "6px 8px" }}>
                                           <button onClick={() => setOtrasDeudor((m) => ({ ...m, [dn]: !ab }))} className="flex w-full items-center justify-between t9 font-semibold" style={{ color: C.sub }}>
-                                            <span>Otras facturas de este deudor ({otras.length}) · {dOtras.facturas ? fmtMM(dOtras.monto) : "sin disponibles"}</span>
+                                            <span>Otras facturas de este deudor ({otras.length}) · {dOtras.facturas ? fmtCLP(dOtras.monto) : "sin disponibles"}</span>
                                             {ab ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                                           </button>
                                           {ab && <div className="mt-1">{headOtra()}{otras.slice(0, 12).map((f) => filaOtraD(f))}{otras.length > 12 && <div className="pt-1 t9" style={{ color: C.faint }}>y {otras.length - 12} más en «Documentos disponibles».</div>}</div>}
@@ -9323,9 +9416,9 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                     las dos mitades de la misma decision y antes se leian con dos formatos
                                     distintos, uno con el conteo entre parentesis y otro con chips. */}
                                 <span className="flex flex-wrap items-center gap-2">
-                                  <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Documentos disponibles</span>
+                                  <span className="t10 font-bold uppercase tracking-wide" style={{ color: C.ink }}>Documentos disponibles</span>
                                   {/* Misma frase corrida que «Documentos en la oferta», por la misma razón. */}
-                                  <span className="t9 font-semibold uppercase tracking-wide" style={{ color: C.sub }}
+                                  <span className="t9 font-semibold uppercase tracking-wide" style={{ color: C.indigo }}
                                     title={bloqOt ? `${facsOt} factura${facsOt === 1 ? "" : "s"} incorporable${facsOt === 1 ? "" : "s"}; ${bloqOt} más no se puede${bloqOt === 1 ? "" : "n"} agregar y no cuenta${bloqOt === 1 ? "" : "n"} en el monto.` : "Deudores con facturas que aún no están en la oferta, disponibles para incorporar"}>{dq ? `${deudOtF.length} de ${deudOtVis.length}` : deudOtVis.length} deudor{!dq && deudOtVis.length === 1 ? "" : "es"} · {facsOt} factura{facsOt === 1 ? "" : "s"} por</span>
                                   <span className="inline-flex items-center rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: facsOt ? C.lilac : "#F5F4F8", color: facsOt ? C.indigo : C.faint }}
                                     title="Monto disponible para incorporar a la oferta">{facsOt ? fmtMM(montoOt) : "—"}</span>
@@ -9418,7 +9511,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           <div className="mt-2">
                             <div className="mb-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: "#16A34A", border: "1px solid #bbf7d0" }}><Check size={11} /> Oferta publicada{deal.negocioNum ? ` · N° ${deal.negocioNum}` : ""}{fisica ? " · en formato físico" : ""}</div>
                             <div className="t9" style={{ color: C.faint }}>
-                              {fisica ? "Publicada en papel. El contrato firmado se adjunta en el tab Otorgamiento (O05 · Evidencia del Contrato de Cesión), donde lo autoriza Operaciones."
+                              {fisica ? "Publicada en papel. El contrato firmado se adjunta en el tab Otorgamiento (O05 · Contrato firmado por cliente de la operación), donde lo autoriza Operaciones."
                                 : deal.clienteAcepto ? "El cliente firmó en la plataforma de Factoring Security."
                                 : "Correo enviado con el código de negocio y su clave de un solo uso. El cliente debe ingresar a la plataforma de Factoring Security y firmar."}
                             </div>
@@ -9883,14 +9976,15 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
       {/* Reabrir. Lo importante que tiene que decir el diálogo es qué se CONSERVA (para que el
           ejecutivo no crea que parte de cero) y qué pasa con la reserva, que NEX no puede tocar. */}
       {(() => {
+        const ed = edicionOperacion(deal);
         const vsR = SIM_VERSIONS[deal.id] || [];
         const reserva = vsR.length && vsR[vsR.length - 1].linea ? vsR[vsR.length - 1].linea.cursable : 0;
         const nTel = Object.keys((typeof VERIF_TEL !== "undefined" && VERIF_TEL[deal.id]) || {}).length;
         const nVet = Object.keys((typeof NO_CONFIRMADAS !== "undefined" && NO_CONFIRMADAS[deal.id]) || {}).length;
         return (
-          <ConfirmDialog abierto={confirmReabrir} titulo="¿Reabrir esta operación para modificarla?"
-            descripcion={`Vuelve a Oferta y Negociación: podrás agregar o quitar facturas, y al re-evaluar se asigna línea y corre la verificación de lo nuevo. Se conserva lo ya hecho: las excepciones de otorgamiento y de verificación resueltas${nTel ? `, y ${nTel} verificación(es) telefónica(s) ya registrada(s)` : ""} — no se parte de cero.${nVet ? ` Las ${nVet} factura(s) que el deudor no confirmó quedan vetadas y no se pueden volver a seleccionar.` : ""} El cliente tendrá que VOLVER A FIRMAR en el portal: la firma anterior deja de valer porque el paquete de facturas cambia, y sin firma nueva la operación no puede girarse. Ojo con el cupo: los ${fmtMM(reserva)} de la versión aceptada siguen RESERVADOS en el sistema de gestión de líneas. Mientras no pidas allá que los liberen, ese cupo aparecerá tomado al re-evaluar.`}
-            etiquetaConfirmar="Reabrir operación"
+          <ConfirmDialog abierto={confirmReabrir} titulo={ed.revocaFirma ? "¿Reabrir esta operación para modificarla?" : "¿Editar la oferta de esta operación?"}
+            descripcion={`${ed.revocaFirma ? "Vuelve a Oferta y Negociación" : `El paquete del negocio${deal.negocioNum ? ` N° ${deal.negocioNum}` : ""} vuelve a ser editable`}: podrás agregar o quitar facturas, y al re-evaluar se asigna línea y corre la verificación de lo nuevo. Se conserva lo ya hecho: las excepciones de otorgamiento y de verificación resueltas${nTel ? `, y ${nTel} verificación(es) telefónica(s) ya registrada(s)` : ""} — no se parte de cero.${nVet ? ` Las ${nVet} factura(s) que el deudor no confirmó quedan vetadas y no se pueden volver a seleccionar.` : ""} Al volver a cerrarla se re-evalúa la operación COMPLETA: las excepciones que sigan vigentes conservan su estado, y lo que aparezca nuevo —facturas, verificaciones telefónicas y lo que haya que pedirle al comité— entra como pendiente.${ed.revocaFirma ? ` El cliente tendrá que VOLVER A FIRMAR en el portal: la firma anterior deja de valer porque el paquete de facturas cambia, y sin firma nueva la operación no puede girarse. Ojo con el cupo: los ${fmtMM(reserva)} de la versión aceptada siguen RESERVADOS en el sistema de gestión de líneas. Mientras no pidas allá que los liberen, ese cupo aparecerá tomado al re-evaluar.` : ""}${deal.solicitudComite ? ` La solicitud ${deal.solicitudComite} que ya salió al comité sigue viva en el sistema de gestión de líneas: NEX no la retira, hay que resolverla allá.` : ""}`}
+            etiquetaConfirmar={ed.revocaFirma ? "Reabrir operación" : "Editar la oferta"}
             onConfirmar={() => { setConfirmReabrir(false); onReabrir && onReabrir(deal.id); }}
             onCancelar={() => setConfirmReabrir(false)} />
         );
@@ -12379,7 +12473,7 @@ function varsModeloExt(deal) {
     // Va al área de OPERACIONES porque es viabilidad operativa del curse —la familia de los pagarés
     // C01–C03— y en N3 porque no es un trámite de mesa: sin esa constancia la cesión no es oponible
     // al deudor. Es re-evaluable a propósito: en cuanto la firma llega, el criterio se repara solo.
-    R(305, "O05", "operaciones", "MinimumViability", "Evidencia del Contrato de Cesión", "No consta la autorización del contrato de cesión: el cliente todavía no firma en el portal, o la oferta se publicó en papel y falta adjuntar el comprobante", [[(v) => !v.contratoEvidencia, "excepcion", NV(3)]]),
+    R(305, "O05", "operaciones", "MinimumViability", "Contrato firmado por cliente de la operación", "No consta la autorización del contrato de cesión: el cliente todavía no firma en el portal, o la oferta se publicó en papel y falta adjuntar el comprobante", [[(v) => !v.contratoEvidencia, "excepcion", NV(3)]]),
     // O06 · El monto que figura CEDIDO de cada documento tiene que ser el monto del documento. Es el
     // control de OPERACIONES sobre el registro de cesiones (A2), y el par documental de O05: aquél
     // comprueba que EXISTA la autorización, éste que lo cedido COINCIDA con lo que se va a comprar.
@@ -12688,6 +12782,39 @@ function ofertaPublicada(deal) {
   const cerrada = !!(deal.ofertaCerrada || deal.negocioNum);
   const comunicada = !!deal.ofertaComunicada || (deal.waSesion || []).some((m) => /Oferta de factoring/i.test(m.text || ""));
   return cerrada && comunicada;
+}
+// ¿La oferta está cerrada AHORA? «Cerrada» es la aprobación INTERNA del paquete —el gate del
+// ejecutivo, regla 8— y es lo único que «Editar» deshace. Son TRES hechos distintos y confundirlos
+// deja o una oferta que no se puede volver a cerrar o una firma que reaparece sola:
+//   · `ofertaCerrada`/`negocioNum` — el ejecutivo aprobó el paquete y el negocio quedó creado;
+//   · `ofertaPublicada`            — el correo con el código de negocio ya salió, y eso NO se deshace;
+//   · `reabierta`                  — la FIRMA del cliente quedó revocada (regla 1).
+// `enEdicion` suelta sólo el primero: el negocio sigue creado —conserva su N°— y la publicación sigue
+// habiendo ocurrido, pero el paquete vuelve a ser del ejecutivo hasta que lo cierre de nuevo.
+// No se reusó `reabierta` para esto: cerrar la oferta tiene que limpiar la marca de edición, y si
+// fuera la misma, cerrar limpiaría también la revocación y la firma del cliente reaparecería sin que
+// nadie haya firmado.
+function ofertaCerradaVigente(deal) {
+  return !!(deal && !deal.enEdicion && (deal.ofertaCerrada || deal.negocioNum));
+}
+// ¿Se puede EDITAR una operación ya cerrada, y qué implica? Devuelve el porqué y no un booleano, como
+// `evidenciaContratoOk` y `giroCursable`: «todavía no está cerrada» y «ya se autorizó la integración»
+// se resuelven de formas distintas, y un destino que desaparece sin explicación deja al ejecutivo sin
+// dónde enterarse (regla 24). Pura y de nivel módulo porque la consultan DOS sitios —el menú que
+// ofrece la acción y la mutación que la ejecuta—: la pantalla que oculta el botón no es el control.
+function edicionOperacion(deal) {
+  if (!deal) return { aplica: false, ok: false, motivo: "Sin operación." };
+  // Con la oferta abierta no hay nada que reabrir: las facturas se agregan y se quitan directamente.
+  if (!ofertaCerradaVigente(deal)) return { aplica: false, ok: false, motivo: "La oferta todavía no está cerrada: se edita directamente." };
+  if (deal.stage === "perdida") return { aplica: true, ok: false, motivo: "La operación está perdida: es un estado terminal." };
+  if (deal.stage === "giro") return { aplica: true, ok: false, motivo: "La operación ya se giró: el dinero salió y el paquete no se modifica." };
+  // Autorizada la integración al core, el paquete ya no es nuestro: lo tomó Tesorería (regla 26).
+  if (deal.integracion === "aprobada") return { aplica: true, ok: false, motivo: "Operaciones ya aprobó la integración al core: el paquete quedó en manos de Tesorería." };
+  const firmada = aprobacionFormalCliente(deal);
+  return { aplica: true, ok: true, revocaFirma: firmada,
+    motivo: firmada
+      ? "Reabre el paquete para agregar o quitar facturas. La firma del cliente queda REVOCADA: tendrá que volver a firmar."
+      : "Reabre el paquete para agregar o quitar facturas. Al cerrarla de nuevo se re-evalúa la operación completa." };
 }
 // ¿Contamos con la aprobación FORMAL del cliente para girar? La operación llega a Otorgamiento tras la
 // aceptación y firma del cierre por el cliente (cesión), por lo que en esa etapa la aprobación ya existe.
@@ -13145,7 +13272,11 @@ function ChipGiro({ codigo, label, monto, titulo, compacto, soloTipo }) {
   // `soloTipo` deja el chip en el NOMBRE. Se usa donde el monto ya está a su lado: repetirlo ahí
   // pone dos cifras en la misma línea que no son la misma —el monto de la oferta y lo que se gira—
   // y a un golpe de vista se leen como una contradicción. La cifra sigue en el tooltip.
-  return <ChipFila clase={compacto ? "t7" : "t9"} fg={exp ? "#16A34A" : "#7C3AED"} bg={exp ? "#F0FDF4" : "#f5f3ff"}
+  // EXPRESS VA EN AZUL (17-09-2026, pedido del usuario), con el par azul que el resto de la app ya
+  // usa para lo informativo (CAT-2, Confirming, «Info»). Iba en verde, y el verde en la fila del
+  // deudor ya significa «Verificado» y «Con línea»: tres chips verdes seguidos se leían como el
+  // mismo estado repetido, cuando Express es la CONCLUSIÓN de los otros dos, no uno más.
+  return <ChipFila clase={compacto ? "t7" : "t9"} fg={exp ? "#2563EB" : "#7C3AED"} bg={exp ? "#EFF6FF" : "#f5f3ff"}
     texto={label || (exp ? "Giro Express" : "Giro Normal")} badge={soloTipo ? null : fmtMM(monto || 0)} tip={titulo} />;
 }
 // La asignación VIGENTE de una operación: la congelada si el cliente ya aceptó, y el cálculo del día
@@ -20834,6 +20965,18 @@ function solicitudComiteDeOferta(deal, ev, ejecutivo, aprobadaVigente = 0) {
     ejecutivo: ejecutivo || "—", automatica: true,
   };
 }
+// ¿Esta solicitud pide lo MISMO que otra? Al editar una oferta ya cerrada y volver a cerrarla, lo que
+// no cabe en la línea se vuelve a calcular: si cambió, la nueva es la que el comité tiene que ver; si
+// no cambió, inyectarla otra vez le deja dos peticiones idénticas y ninguna forma de saber cuál es la
+// vigente — y NEX no puede retirar la anterior, porque el ciclo de vida de la solicitud lo administra
+// el sistema externo (regla 15: acá sólo se inyecta y se consulta).
+// Se compara el DETALLE —deudor, monto y tipo de línea, ordenados— porque es lo que el comité aprueba
+// línea a línea: el total es una suma y dos detalles distintos pueden dar el mismo número.
+function mismaSolicitudComite(a, b) {
+  if (!a || !b || a.rut !== b.rut) return false;
+  const clave = (x) => (x.detalle || []).map((l) => `${l.rutDeudor || l.deudor}:${l.monto}:${l.tipoLinea}`).sort().join("|");
+  return clave(a) === clave(b);
+}
 // El motivo se explica en lenguaje de negocio, nunca con el nombre técnico del nivel.
 const MOTIVO_TEXTO = {
   par:     "sin cupo en la Línea Cliente - Deudor",
@@ -23124,7 +23267,12 @@ export default function PipelineComercial() {
   // En modo detalle (_blank), el título de la pestaña deja claro qué oportunidad/cliente es.
   useEffect(() => { if (soloDetalle && selected) { try { document.title = `Detalle · ${selected.id} · ${selected.cliente} — NEX Factoring`; } catch (e) {} } }, [soloDetalle, selected]);
   const [query, setQuery] = useState("");
-  const [quickFilter, setQuickFilter] = useState("conlinea"); // arranca en el tab "Con línea"
+  // Arranca en «Todos» (18-09-2026, pedido del usuario): la vista de entrada de Gestión diaria muestra el
+  // tubo COMPLETO y los tabs son un recorte que el ejecutivo elige, no uno que la pantalla le impone. Antes
+  // abría en «Con línea» y las otras 98 oportunidades del ejemplo no estaban a la vista: para verlas había
+  // que darse cuenta de que había un filtro puesto. Con este valor `anyFilter` además arranca en falso, que
+  // es lo que la pantalla dice (no hay nada que limpiar), y coincide con el destino de `clearAll`.
+  const [quickFilter, setQuickFilter] = useState("todos");
   const [directorio, setDirectorio] = useState(null); // DIRECTORIO · demo acotada (bloque desechable)
   const [channel, setChannel] = useState("Manual");
   const [usuario, setUsuario] = useState(soloDetalle && detallePayload.usuario ? detallePayload.usuario : USUARIO); // usuario logueado
@@ -23672,26 +23820,41 @@ export default function PipelineComercial() {
       registrarAuditoria({ usuario: nom, modulo: "Oferta", accion: "Cerrar oferta · bloqueada", glosa: `${dChk ? dChk.cliente : id}: ${gChk.motivo}`, empresaId: id, exito: false });
       return;
     }
+    // EL PATCH SE ARMA ACÁ, NO DENTRO DEL UPDATER. `setDeals(fn)` no ejecuta `fn` en el acto —React
+    // lo llama al renderizar—, así que leerlo después para mandárselo al tubo lo encontraría todavía
+    // en null y el aviso no saldría nunca: es literalmente el error que dejó a `nex-simulado` mudo
+    // durante días (regla 22). Todo lo que necesita sale del negocio ANTES de la actualización, que
+    // es `dChk`, y el updater se limita a aplicarlo.
+    const negCierre = (dChk && dChk.negocioNum) || (dChk ? negDe(dChk) : "");
+    const stageCierre = dChk && dChk.stage === "prospeccion" ? "oferta" : (dChk ? dChk.stage : "oferta");
+    // `enEdicion: undefined` cierra el paréntesis que abrió «Editar»: mientras esté puesta, el
+    // paquete es del ejecutivo (`ofertaCerradaVigente`), y volver a cerrar es precisamente lo que lo
+    // devuelve. `reabierta` NO se toca acá: esa marca revoca la FIRMA del cliente y sólo la limpia
+    // una firma nueva — limpiarla al cerrar dejaría girable una operación que nadie firmó.
+    const patchCierre = { ofertaCerrada: true, ofertaCerradaTs: nowStamp(), ofertaSolicitada: false, negocioNum: negCierre, stage: stageCierre, publicacion,
+      enEdicion: undefined, tOferta: (dChk && dChk.tOferta) || Date.now(),
+      status: fisica ? `Oferta publicada en papel · N° ${negCierre} · falta el comprobante del contrato` : `Oferta publicada · N° ${negCierre} · pendiente firma del cliente` };
     const upd = (d) => {
       if (d.id !== id) return d;
       const hist = [...(d.historialContacto || [])];
       hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Ejecutivo", esEvento: true, resultado: "Oferta cerrada · el ejecutivo confirmó la selección de facturas acordada con el cliente", detalle: accion === "descartar" ? `${descartadas} factura(s) fuera del paquete descartada(s); búsqueda pausada · reabrir en ${espera} día(s).` : accion === "nueva" ? `${descartadas} factura(s) fuera del paquete derivada(s) a una nueva oportunidad.` : "Todas las facturas candidatas quedaron dentro del paquete.", exito: true });
       // Cerrar la oferta CREA el negocio (asigna N° y avanza a Oferta y Negociación). Todavía NO se
       // comunica al cliente: el ejecutivo elige después el canal (WhatsApp / Email) para enviarla.
-      const neg = d.negocioNum || negDe(d);
-      const stage = d.stage === "prospeccion" ? "oferta" : d.stage;
-      if (!d.negocioNum) hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Ejecutivo", esEvento: true, resultado: `Negocio creado · N° ${neg} (oferta publicada)`, exito: true });
+      // Volver a cerrar una oferta EDITADA conserva el N°: el cliente ya lo tiene, y el negocio es el
+      // mismo — lo que cambió es su paquete.
+      if (!d.negocioNum) hist.push({ fecha: nowStamp(), canal: "Sistema", actor: "Ejecutivo", esEvento: true, resultado: `Negocio creado · N° ${negCierre} (oferta publicada)`, exito: true });
       hist.push({ fecha: nowStamp(), canal: fisica ? "Sistema" : "Email", actor: "Ejecutivo", esEvento: true,
         resultado: fisica ? "Oferta publicada en formato FÍSICO · el contrato se firma en papel"
           : "Oferta publicada ELECTRÓNICAMENTE · correo enviado al cliente con el código de negocio y su clave de un solo uso",
-        detalle: fisica ? "Queda abierto el criterio O05 · Evidencia del Contrato de Cesión: el ejecutivo adjunta el comprobante y lo autoriza Operaciones (N3)."
+        detalle: fisica ? "Queda abierto el criterio O05 · Contrato firmado por cliente de la operación: el ejecutivo adjunta el comprobante y lo autoriza Operaciones (N3)."
           : "La autorización del cliente en el portal es la evidencia del contrato de cesión (O05).", exito: true });
-      return { ...d, ofertaCerrada: true, ofertaCerradaTs: nowStamp(), ofertaSolicitada: false, negocioNum: neg, stage, publicacion,
-        tOferta: d.tOferta || Date.now(), historialContacto: hist,
-        status: fisica ? `Oferta publicada en papel · N° ${neg} · falta el comprobante del contrato` : `Oferta publicada · N° ${neg} · pendiente firma del cliente` };
+      return { ...d, ...patchCierre, historialContacto: hist };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
+    // El detalle es pestaña propia: sin este aviso el negocio quedaba creado acá y el tubo seguía
+    // mostrando la oportunidad como si nadie hubiera cerrado nada (regla 15-bis-bis).
+    avisarTubo(id, patchCierre);
     const d0 = (dealsRef.current || []).find((x) => x.id === id);
     const cli = d0 ? d0.cliente : "";
     if (accion === "descartar" && cli) setBusqueda(cli, "pausada", `El ejecutivo descartó ${descartadas} factura(s) fuera del paquete al cerrar la oferta · reabrir la búsqueda en ${espera} día(s). Se reactiva antes si el cliente cede una factura (lista blanca, priorizada o histórica) a un competidor durante la espera.`, nom);
@@ -23707,9 +23870,20 @@ export default function PipelineComercial() {
       try {
         const evLin = asignarLineas(itemizarFacturas(d0), d0.rutEmisor);
         const sol = solicitudComiteDeOferta({ ...d0, negocioNum: d0.negocioNum || negDe(d0) }, evLin, nom, lineaAprobadaDe(d0));
-        if (sol) {
+        // Volver a cerrar una oferta EDITADA vuelve a pasar por acá. Si lo que falta de línea es lo
+        // mismo, no se re-inyecta: el comité vería dos peticiones idénticas y NEX no puede retirar la
+        // anterior. Si cambió, sí se inyecta y el log dice que la previa sigue viva allá —igual que
+        // con la reserva del cupo, que tampoco se toca desde acá (regla 12)—.
+        // La previa se busca en las solicitudes de ESTA pestaña, que es la que las inyecta; si el
+        // ejecutivo cerró la pestaña del detalle en medio, la comparación no tiene con qué y entra
+        // una segunda solicitud, que es lo que pasaría también con dos sesiones en paralelo.
+        const previa = sol ? SOLICITUDES_LINEA.find((x) => x && x.origen && x.origen.dealId === id) : null;
+        if (sol && previa && mismaSolicitudComite(previa, sol)) {
+          logSys("info", "linea", `Solicitud de línea no re-inyectada al cerrar: pide lo mismo que ${previa.idProceso}, que sigue en gestión`,
+            { empresa: cli, operacion: id, proceso: previa.idProceso });
+        } else if (sol) {
           const idProc = api1Inyeccion(sol);
-          logSys("info", "linea", `Solicitud de línea inyectada automáticamente al cerrar la oferta · ${idProc} · ${sol.detalle.length} línea(s) de detalle por ${fmtMM(sol.pedido)}`,
+          logSys("info", "linea", `Solicitud de línea inyectada automáticamente al cerrar la oferta · ${idProc} · ${sol.detalle.length} línea(s) de detalle por ${fmtMM(sol.pedido)}${previa ? ` · la anterior (${previa.idProceso}) sigue viva en el sistema de gestión de líneas: NEX no la retira` : ""}`,
             { empresa: cli, operacion: id, proceso: idProc });
           // Cerrar la oferta se hace desde la PESTAÑA DEL DETALLE, y la bandeja de Solicitudes vive en
           // la del tubo: sin este aviso la solicitud quedaba sólo en la memoria de esta pestaña y el
@@ -23717,6 +23891,7 @@ export default function PipelineComercial() {
           try { if (window.opener) window.opener.postMessage({ type: "nex-solicitud", registro: SOLICITUDES_LINEA[0] }, ORIGEN_APP); } catch (_) {}
           setDeals((prev) => prev.map((x) => (x.id === id ? { ...x, solicitudComite: idProc } : x)));
           setSelected((x) => (x && x.id === id ? { ...x, solicitudComite: idProc } : x));
+          avisarTubo(id, { solicitudComite: idProc });
         }
       } catch (e) { logSys("error", "linea", `No se pudo inyectar la solicitud de línea al cerrar la oferta: ${e && e.message}`, { operacion: id }); }
     }
@@ -23927,6 +24102,14 @@ export default function PipelineComercial() {
       // otro documento y no se entera por sí solo. Va ANTES de la guarda de `neg`: este mensaje viaja
       // por id de operación, no por número de negocio —que ni siquiera existe hasta que se cursa.
       if (m && m.type === "nex-simulado" && m.dealId && m.patch) {
+        // UN MENSAJE QUE NO ENCUENTRA A NADIE SE DICE, no se descarta. Un `return` silencioso acá se
+        // ve EXACTAMENTE igual que un aviso que nunca se envió —la oferta simulada en el detalle y
+        // «Sin simular» en el tubo— y fue lo que escondió durante días que el cierre del día le
+        // cambiaba el id a la operación. Si vuelve a pasar por otro camino, queda en el log.
+        if (!(dealsRef.current || []).some((d) => d && d.id === m.dealId)) {
+          logSys("warn", "app", `Aviso de simulación descartado: la pestaña del detalle apunta a una operación que este tubo ya no tiene (${m.dealId})`, { operacion: m.dealId });
+          return;
+        }
         const aplicarSim = (d) => (d.id === m.dealId ? { ...d, ...m.patch } : d);
         setDeals((prev) => prev.map(aplicarSim));
         setSelected((s) => (s ? aplicarSim(s) : s));
@@ -24180,14 +24363,31 @@ export default function PipelineComercial() {
   // administra el sistema de gestión de líneas y el ejecutivo tiene que pedir allá que la liberen.
   const reabrirOperacion = (id) => {
     const d0 = deals.find((x) => x.id === id);
-    if (!d0 || !["aceptadas", "cesion"].includes(d0.stage)) return;
+    if (!d0) return;
+    // La compuerta se vuelve a comprobar ACÁ y no sólo en el menú que ofreció la acción: la pantalla
+    // que oculta el botón no es el control (regla 24), y entre abrir el menú y confirmar, la
+    // operación pudo girarse o Operaciones pudo autorizar su integración al core.
+    const ed = edicionOperacion(d0);
+    if (!ed.aplica || !ed.ok) return;
     const vs = repoSimVersions.get(id) || [];
     const reserva = vs.length && vs[vs.length - 1].linea ? vs[vs.length - 1].linea.cursable : 0;
     const marca = { desde: d0.stage, ts: nowStamp(), por: actorEtiqueta(usuario), versionAceptada: vs.length, reserva };
-    setDeals((prev) => prev.map((d) => (d.id === id ? { ...d, stage: "oferta", time: nowStamp(), stale: false, status: STATUS_ETAPA.oferta || d.status, reabierta: marca } : d)));
-    setSelected((sel) => (sel && sel.id === id ? { ...sel, stage: "oferta", status: STATUS_ETAPA.oferta || sel.status, reabierta: marca } : sel));
-    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Oportunidad", accion: "Operación reabierta para modificar",
-      glosa: `${d0.cliente || d0.company || id} · desde ${d0.stage} · la firma del cliente queda REVOCADA (deberá firmar de nuevo para girar) · quedan ${fmtMM(reserva)} reservados en el sistema de gestión de líneas hasta que se pida su liberación`, exito: true });
+    // DOS MARCAS, PORQUE SON DOS HECHOS. `enEdicion` suelta el CIERRE —el paquete vuelve a ser del
+    // ejecutivo y se puede volver a cerrar— y la limpia `cerrarOferta`. `reabierta` revoca la FIRMA
+    // del cliente (regla 1) y sólo la limpia una firma nueva. Poner una sola serviría para una de las
+    // dos y rompería la otra: si fuera `reabierta`, cerrar de nuevo devolvería una firma que nadie
+    // dio; si fuera `enEdicion`, editar una operación ya firmada la dejaría girable con el paquete
+    // cambiado. Por eso `reabierta` se pone SÓLO cuando había firma que revocar.
+    const patch = ed.revocaFirma
+      ? { stage: "oferta", time: nowStamp(), stale: false, enEdicion: marca, reabierta: marca, status: STATUS_ETAPA.oferta || d0.status }
+      : { time: nowStamp(), stale: false, enEdicion: marca, status: `Oferta reabierta para editar${d0.negocioNum ? ` · N° ${d0.negocioNum}` : ""}` };
+    setDeals((prev) => prev.map((d) => (d.id === id ? { ...d, ...patch } : d)));
+    setSelected((sel) => (sel && sel.id === id ? { ...sel, ...patch } : sel));
+    // El detalle es pestaña propia: sin este aviso la operación quedaba en edición acá y cerrada en
+    // el tubo, que es el mismo agujero que cerró `nex-simulado` con la simulación (regla 15-bis-bis).
+    avisarTubo(id, patch);
+    registrarAuditoria({ usuario: USERS[usuario] || usuario, modulo: "Oportunidad", accion: ed.revocaFirma ? "Operación reabierta para modificar" : "Oferta reabierta para editar",
+      glosa: `${d0.cliente || d0.company || id} · desde ${d0.stage} · el paquete vuelve a ser editable y al cerrarla de nuevo se re-evalúa la operación completa${ed.revocaFirma ? ` · la firma del cliente queda REVOCADA (deberá firmar de nuevo para girar) · quedan ${fmtMM(reserva)} reservados en el sistema de gestión de líneas hasta que se pida su liberación` : ""}${d0.solicitudComite ? ` · la solicitud ${d0.solicitudComite} sigue viva en el sistema de gestión de líneas: NEX no la retira` : ""}`, empresaId: id, exito: true });
   };
   const moveTo = (stageId) => {
     if (!draggingId) return;
@@ -24764,15 +24964,24 @@ export default function PipelineComercial() {
       // Paquete re-armado desde la BD: se re-escalan los deudores y se vuelve a itemizar (facturasOp: undefined).
       const factor = (d.monto || 0) > 0 ? monto / d.monto : 1;
       const deudores = (d.deudores || []).map((x) => ({ ...x, monto: +((x.monto || 0) * factor).toFixed(1), facturas: Math.max(1, Math.round((x.facturas || 1) * factor)) }));
-      const nid = `OP-R${nDia}${(d.id || "").replace(/[^0-9]/g, "").slice(-4)}`;
+      // EL ID NO CAMBIA. Reabrir es re-originar el PAQUETE, no darle otra identidad a la operación:
+      // el id es la clave de todo lo que cuelga de ella —el ticket con que se abrió el detalle en su
+      // pestaña, los repositorios por operación (visado, verificaciones, versiones, giro), el índice
+      // de folios comprometidos, la bitácora— y renombrarlo los orfanaba a todos de una vez, en
+      // silencio. Lo que se veía: con el detalle abierto, `nex-simulado` viajaba con el id del día en
+      // que se abrió, el tubo ya tenía otro y el mensaje se descartaba — la oferta quedaba simulada en
+      // el detalle y «Sin simular» en el tubo, que es justo lo que ese aviso viene a evitar.
+      // `OP-R${nDia}${últimos4}` tenía además una colisión propia: dos oportunidades cuyos ids
+      // terminan en los mismos 4 dígitos quedaban con el MISMO id el mismo día. La reapertura se
+      // cuenta en su propio campo, que es lo que el `status` y la bitácora ya decían con palabras.
       reabiertas++;
-      return { ...d, id: nid, reabiertaDe: d.id, stage: etapaNG, monto, facturas, deudores,
+      return { ...d, reabiertaDia: nDia, reaperturas: (d.reaperturas || 0) + 1, stage: etapaNG, monto, facturas, deudores,
         // Reabrir es originar de nuevo: vuelve SIN SIMULAR y con la oferta vacía. Antes se re-simulaba
         // con `finanzasDe`, así que al día siguiente aparecían en el tubo con tasa y giro que nadie
         // había calculado —y ese precio, además, nacía vencido.
         facturasOp: [], simulado: false, tasaDescuento: undefined, comision: undefined, montoDescuento: undefined,
         nuevasFacturas: 0, nuevasFacturasMonto: 0, warning: false, actualizando: false,
-        status: `Reabierta (día ${nDia}) · paquete actualizado`, time: nowStamp(), tProsp: Date.now(), subSeed: rndDet("seed|" + nid),
+        status: `Reabierta (día ${nDia}) · paquete actualizado`, time: nowStamp(), tProsp: Date.now(), subSeed: rndDet(`seed|${d.id}|d${nDia}`),
         historialContacto: traza(d, `No gestionada al cierre del día ${nDia - 1}: se cierra y se reabre con el paquete vigente en la BD (${facturas} doc. · ${fmtMM(monto)})`) };
     }));
     logSys("info", "cierre-dia", `Cierre del día ${nDia - 1}: ${reabiertas} oportunidad(es) no gestionada(s) en «${stageName(etapaNG)}» se cerraron y reabrieron con el paquete vigente`,
@@ -24828,13 +25037,31 @@ export default function PipelineComercial() {
   // renderizar—, así que el patch que se arma dentro del updater todavía no existe cuando se postea.
   // Mientras se posteaba ahí el mensaje no salía nunca y la operación quedaba simulada en el detalle
   // y «Sin simular» en el tubo, que es justo lo que este aviso viene a evitar.
-  const simAvisoRef = useRef(null);
+  // Es una COLA y no un solo aviso: una misma acción puede emitir más de un patch —cerrar la oferta
+  // escribe el negocio y además puede mover la etapa— y con un único slot el segundo pisaba al
+  // primero antes de que el efecto corriera. Se drena entero en cada commit.
+  const avisoTuboRef = useRef([]);
   useEffect(() => {
-    const av = simAvisoRef.current;
-    if (!av) return;
-    simAvisoRef.current = null;
-    try { if (window.opener) window.opener.postMessage({ type: "nex-simulado", dealId: av.id, patch: av.patch }, ORIGEN_APP); } catch (_) {}
+    const cola = avisoTuboRef.current;
+    if (!cola.length) return;
+    avisoTuboRef.current = [];
+    for (const av of cola) {
+      try { if (window.opener) window.opener.postMessage({ type: "nex-simulado", dealId: av.id, patch: av.patch }, ORIGEN_APP); } catch (_) {}
+    }
   });
+  // Le avisa al tubo que esta pestaña cambió la operación. Todo lo que el detalle escriba en el
+  // negocio y no pase por acá es invisible para el tubo: es otro documento (regla 15-bis-bis).
+  // Se FUSIONA por operación en vez de apilar. Dos razones, las dos medidas en la sonda: el patch de
+  // la simulación se arma DENTRO del updater —es el único punto que ve el paquete con las facturas
+  // recién incorporadas— y ese updater corre dos veces, una por `setDeals` y otra por `setSelected`,
+  // así que el mismo aviso salía duplicado; y cerrar la oferta emite dos patches en el mismo gesto
+  // (el negocio y el id de la solicitud al comité) que el tubo tiene que aplicar los dos. Fusionar
+  // resuelve las dos: el duplicado se colapsa y los distintos se suman, en orden.
+  const avisarTubo = (id, patch) => {
+    const prev = avisoTuboRef.current.find((x) => x.id === id);
+    if (prev) prev.patch = { ...prev.patch, ...patch };
+    else avisoTuboRef.current.push({ id, patch });
+  };
   useEffect(() => {
     const iv = setInterval(() => {
       if (pausaRef.current || !streamingRef.current) return;
@@ -25086,6 +25313,17 @@ export default function PipelineComercial() {
   // Incorpora facturas candidatas a la oferta (una o todas), recalculando con la MISMA tasa.
   const incorporarFacturasOferta = (id, facs) => {
     if (!facs || !facs.length) return;
+    // EL PAQUETE CERRADO NO CRECE SIN PASAR POR «EDITAR». La selección cerrada es la que se le
+    // comunicó al cliente —y la que O05 congela en su huella—, así que agregarle facturas por debajo
+    // la contradice sin que nada lo diga. Se corta ACÁ y no sólo en los botones: la pantalla que los
+    // apaga no es el control (regla 24), y a esta mutación se llega también desde el asistente de
+    // alta manual y desde el tubo. Retirar es distinto y tiene su propia guarda: la verificación
+    // telefónica sí puede sacar lo que el deudor no confirmó, incluso después de la firma.
+    const dInc = (dealsRef.current || []).find((x) => x.id === id);
+    if (ofertaCerradaVigente(dInc)) {
+      logSys("warn", "oferta", `Incorporación rechazada: la oferta está cerrada · usa «Editar la oferta» para retomar el paquete`, { empresa: dInc ? dInc.cliente : "", operacion: id });
+      return;
+    }
     // El veto de la verificación se aplica también acá, no sólo en la lista de candidatas: la UI puede
     // ofrecer una factura por un camino que no pasó por `estadoCandidata`, y reponer una que el deudor
     // rechazó dejaría la operación con una factura que ya se sabe que no se va a pagar.
@@ -25184,7 +25422,7 @@ export default function PipelineComercial() {
       // lo abrió, por el mismo canal con que el sitio del cliente informa el cierre remoto. Se arma
       // ACÁ porque es el único punto que ve el negocio ya con las facturas que se acaban de
       // incorporar: el llamador las tiene, pero no el complemento que queda disponible.
-      simAvisoRef.current = { id, patch };
+      avisarTubo(id, patch);
       return { ...d, ...patch, historialContacto: traza(d, `Simulación de la oferta: ${fs.length} factura(s) por ${fmtMM(monto)}`) };
     };
     setDeals((prev) => prev.map(upd));
@@ -25217,7 +25455,7 @@ export default function PipelineComercial() {
         facturasOp: [], facturasDisponibles: pool, facturas: 0, monto: 0,
         stage: ["prospeccion", "oferta"].includes(d.stage) ? "prospeccion" : d.stage };
       // El detalle vive en otra pestaña: el tubo se entera por el mismo canal que usa la simulación.
-      simAvisoRef.current = { id, patch };
+      avisarTubo(id, patch);
       return { ...d, ...patch, historialContacto: traza(d, "Simulación eliminada: la oferta vuelve a estar vacía") };
     };
     setDeals((prev) => prev.map(upd));
@@ -25273,6 +25511,17 @@ export default function PipelineComercial() {
   const congelarVeredicto = (fila, est) => repoVerifVeredicto.set(fila.deal.id, veredictoNuevo(fila, est));
   const retirarFacturaOferta = (id, fac, motivo) => {
     if (!fac) return;
+    // Retirar A MANO de un paquete ya cerrado exige pasar por «Editar», por lo mismo que agregar.
+    // `noConfirmada` es la excepción y no un olvido: es la verificación telefónica sacando lo que el
+    // deudor no reconoció, que es la ÚNICA mutación que una operación admite después de cerrada —y
+    // después de firmada— porque la operación sólo puede ENCOGER (regla 13).
+    if (motivo !== "noConfirmada") {
+      const dRet = (dealsRef.current || []).find((x) => x.id === id);
+      if (ofertaCerradaVigente(dRet)) {
+        logSys("warn", "oferta", `Retiro rechazado: la oferta está cerrada · usa «Editar la oferta» para retomar el paquete`, { empresa: dRet ? dRet.cliente : "", operacion: id });
+        return;
+      }
+    }
     // El deudor no la confirmó: queda VETADA para esta operación. No se puede volver a seleccionar,
     // ni siquiera al reabrirla — es el resultado de una llamada, no una preferencia reversible.
     if (motivo === "noConfirmada") {
@@ -25437,17 +25686,21 @@ export default function PipelineComercial() {
   // Las "Sin clasificar" solo cuentan/aparecen cuando el toggle Inbound está activo.
   const inboundCount = showInbound ? streamFeed.length : 0;
   const nPrioTubo = dealsVista.filter((d) => tienePrioridadCurse(d.id)).length;
+  // «Todos» va PRIMERO (18-09-2026, pedido del usuario): es el tab de entrada, y un tab de entrada al final
+  // de la fila se lee como el último recorte de una lista de recortes. Va antes incluso de «Prioritarios»,
+  // que es condicional: si fuera segundo, su posición saltaría cada vez que la jefatura prioriza un negocio.
   const quickFilters = [
+    // DIRECTORIO: su contador va a cero en la demo acotada, como el de «Otras Empresas» más abajo —el modo
+    // silencia el stream del inbound, y un contador que dice 65 sobre una lista de 5 es la contradicción
+    // que este tablero persigue en todas sus formas.
+    { id: "todos", label: "Todos", count: dealsTubo.length + (directorio ? 0 : inboundCount) },
     ...(nPrioTubo > 0 || quickFilter === "prioritarios" ? [{ id: "prioritarios", label: "Prioritarios", count: nPrioTubo }] : []),
     { id: "conlinea", label: "Con línea", count: dealsTubo.filter((d) => ["oferta", "prospeccion"].includes(d.stage) && !lineaCreditoDe(d).fueraDeLinea).length },
     { id: "sinlinea", label: "Sin línea", count: dealsTubo.filter((d) => ["oferta", "prospeccion"].includes(d.stage) && lineaCreditoDe(d).fueraDeLinea).length },
     { id: "pendgiro", label: "Pendientes de giro", count: dealsTubo.filter((d) => ["aceptadas", "cesion", "otorgamiento"].includes(d.stage) || (d.stage === "giro" && d.giroPendiente)).length },
     { id: "perdidas", label: "Perdidas", count: dealsTubo.filter((d) => d.stage === "perdida").length },
-    // DIRECTORIO: las dos pestañas que cuentan el stream del inbound van a cero en la demo acotada.
-    // El modo ya no las muestra, y un contador que dice 65 sobre una lista de 5 es la contradicción
-    // que este tablero persigue en todas sus formas.
+    // DIRECTORIO: la otra pestaña que cuenta el stream del inbound, a cero por lo mismo que «Todos».
     { id: "otrasfacturas", label: esEjecutivoSesion ? "Otras Empresas" : "Otras facturas", count: directorio ? 0 : streamFeed.filter(ofOtrasVisible).length },
-    { id: "todos", label: "Todos", count: dealsTubo.length + (directorio ? 0 : inboundCount) },
   ];
 
   if (!logueado) return <LoginScreen usuarioInicial={usuario} onIngresar={(u) => { setUsuario(u); setLogueado(true); }} />;
