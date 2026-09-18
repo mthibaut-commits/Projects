@@ -167,7 +167,45 @@ tener formateador ya está escrito en `loop_agentico_hooks.md` —un prettier so
 ediciones quirúrgicas con anclas únicas que ese archivo exige—; lo que falta es el ADR que lo cierre, y eso
 necesita la decisión antes.
 
-## 7 · La separación por género no es deuda
+## 7 · Los auditores, revisados uno por uno — y `pipeline.zip` fuera
+
+`BASE_MUERTOS` baja de **6 a 1 sin borrar una sola línea**, que es el resultado que uno quiere de una revisión
+a mano: cinco de los seis no eran código muerto.
+
+**Cuatro eran el MISMO falso positivo con cuatro caras.** `PESO_COL` es un `const` **local** de
+`TablaOportunidades` escrito a columna 0 —las llaves mandan, no la sangría—, así que todas las herramientas de
+texto del repo lo leían como declaración de nivel módulo y le atribuían las ~300 líneas siguientes. Todo lo que
+esas líneas usaban (`porcionLabel`, `MarcaNuevo`, `ChipCond`) salía «vivo sólo entre muertos». Se indentó el
+`const` y los cuatro hallazgos desaparecieron de una vez. Es la misma familia que la trampa ya documentada en
+`code_style.md` —una función de una línea no termina en el siguiente `}` a columna 0—, del otro lado: acá el
+problema no era el analizador sino el fuente, que mentía sobre el alcance de un símbolo.
+
+**El quinto era un catálogo vivo sólo por su test.** `CLIENTE_ESTADOS` declaraba los cuatro estados y
+`estadoCliente` los repetía como literales en su ternario, así que el catálogo no gobernaba nada: borrarlo no
+habría roto la app, sólo la suite. Ahora `estadoCliente` los **lee** del catálogo. Dos copias de un nombre son
+dos copias que pueden desfasarse, y ésta ya no puede.
+
+**El sexto no es código muerto: es un hallazgo de producto.** `giroDeal` es el único lector de `GIRO_STATE` —la
+asignación de giros congelada al aceptar— y **no tiene call site en la app**; `GIRO_STATE` tampoco tiene
+escritor: `repoGiro` sólo se hidrata al cargar. Las pantallas calculan el giro con `giroResumenDeal`, que llama
+`asignarGiros(girosDeDeal(…))` directo y no consulta lo congelado. O sea que «la asignación congelada manda
+sobre el recálculo del día» está **probada por la suite con un estado inyectado y no ocurre en ninguna
+pantalla** — la misma forma que `validarMutacion` con un solo call site. Borrarla sería borrar la regla;
+cablearla pide decidir cuándo congela (¿al aceptar?, ¿al firmar?), así que sube al tablero como decisión.
+
+**Los 7 `useState`** quedan con su veredicto escrito en `auditores.test.mjs`, para que la próxima revisión no
+empiece de cero: `reevTick` es un **falso positivo** —se escribe y no se lee, y ése es su trabajo: el cambio de
+valor fuerza el re-render tras visar—; `spreadDeudor` y `vencDias` son mapas cuyo editor por deudor no existe (ya
+estaba escrito junto al primero); `alertF` alimenta dos ramas de filtro que nadie puede activar, así que
+retirarlo se lleva una **capacidad**, no sólo estado; y `channel`, `dealTabInicial` y `diaModal` son los tres
+restos que una poda podría llevarse — con las capturas como verificación, no `tsc`.
+
+**`pipeline.zip`, fuera del versionado.** Nada lo producía, y adentro sólo había un build del 12-08-2026: los
+tres HTML chicos que traía (`curse`, `email`, `whatsapp`) están versionados y en una versión **más nueva**, y el
+grande es la salida regenerable del build. Entra al `.gitignore` por si alguien vuelve a empaquetar, y el
+comentario de al lado pierde su cifra a propósito: decía «~29 MB» de un archivo que hoy pesa 41.
+
+## 8 · La separación por género no es deuda
 
 El tablero la arrastraba como pendiente. **ADR-0001 ya la decidió**: las reglas mezclan los tres géneros
 —regla, porqué e historia— oración por oración, separarlas exige reescribirlas, y la decisión fue hacerlo

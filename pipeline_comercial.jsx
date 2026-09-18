@@ -1874,8 +1874,12 @@ const CLIENTE_ESTADOS = ["nuevo", "activo", "suspendido", "eliminado"];
 function estadoCliente(rutCliente) {
   const h = hashStr("estcli|" + String(rutCliente || ""));
   // ~12% nuevos, el resto activos; suspendido/eliminado son marginales y no abren oportunidad.
+  // Los nombres salen del CATÁLOGO y no van escritos acá: hasta el 18-09-2026 esta línea los repetía
+  // literales y `CLIENTE_ESTADOS` no gobernaba nada —sólo lo leía la suite, o sea un catálogo vivo por
+  // su test—. Duplicados, el día que uno cambie de nombre el otro sigue diciendo el anterior y nada falla.
   const r = h % 100;
-  return r < 12 ? "nuevo" : r < 97 ? "activo" : r < 99 ? "suspendido" : "eliminado";
+  const [NUEVO, ACTIVO, SUSPENDIDO, ELIMINADO] = CLIENTE_ESTADOS;
+  return r < 12 ? NUEVO : r < 97 ? ACTIVO : r < 99 ? SUSPENDIDO : ELIMINADO;
 }
 // ¿Es la primera operación de este cliente? Entra por parámetro a la verificación, no se lee adentro:
 // es dato del TENANT (lo devuelve la API de Security), no del modelo de riesgo.
@@ -11677,9 +11681,13 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
   // (~310, los fija «Requiere otorgamiento» con su badge) son `shrink-0`, así que el faltante lo
   // absorbía ENTERO el bloque del medio —el único con `min-w-0`— y se partía carácter a carácter.
   // Pesos MEDIDOS, no estimados: el techo real no es el viewport sino el `max-width: 1600` del `main`
-// menos sus 48 px de padding, o sea **1552**. Pasado eso la tabla scrollea y la última columna se ve
-// cortada, que es como se reporta el defecto.
-const PESO_COL = { "Cliente": 250, "Línea": 230, "Oportunidad": 324, "SOW": 214, "Oferta": 508, "Ejecutivo": 140, "Asignar": 124 };
+  // menos sus 48 px de padding, o sea **1552**. Pasado eso la tabla scrollea y la última columna se ve
+  // cortada, que es como se reporta el defecto.
+  // OJO: iba a columna 0 y es un `const` LOCAL de este componente — las llaves mandan, no la
+  // sangría—, así que el paso 2 de la verificación y `auditar_muerto` lo leían como una declaración
+  // de nivel módulo y le atribuían las ~300 líneas siguientes: `porcionLabel`, `MarcaNuevo` y
+  // `ChipCond` salían «vivos sólo entre muertos» por eso. Indentado el 18-09-2026.
+  const PESO_COL = { "Cliente": 250, "Línea": 230, "Oportunidad": 324, "SOW": 214, "Oferta": 508, "Ejecutivo": 140, "Asignar": 124 };
   const cols = ["Cliente", ...(mostrarEjec ? ["Ejecutivo"] : []), "Línea", "Oportunidad", "SOW", "Oferta", ...(modoAsignar ? ["Asignar"] : [])];
   return (
     <div className="flex flex-1 flex-col gap-2">

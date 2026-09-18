@@ -15,12 +15,35 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { RAIZ } from "./_comun.mjs";
 
-/* Hallazgos conocidos de auditar_muerto al 17-09-2026. «Vivos sólo entre ellos» y «sólo en scripts»
-   son para REVISAR A MANO, no para borrar a ciegas: el propio auditor lo dice. */
+/* Hallazgos conocidos de auditar_muerto. «Vivos sólo entre ellos» y «sólo en scripts» son para REVISAR A
+   MANO, no para borrar a ciegas: el propio auditor lo dice. */
 /* 17-09-2026: sale `lineaDeVersion`. No se borró ni se cableó: el caso 124 (regla 14) la llama por su nombre para
    fijar que el detalle LEE la versión vigente y no recalcula, así que deja de estar «viva sólo entre muertos». Encoger
    esta línea base es la decisión de haber agregado ese caso, y va dicha en el commit. */
-export const BASE_MUERTOS = ["CLIENTE_ESTADOS", "ChipCond", "MarcaNuevo", "PESO_COL", "giroDeal", "porcionLabel"];
+/* 18-09-2026: bajan CINCO de seis, y ninguno se borró — se revisaron uno por uno, que es lo que esta lista pide.
+   · `PESO_COL`, `ChipCond`, `MarcaNuevo` y `porcionLabel`: un SOLO falso positivo con cuatro caras. `PESO_COL` es un
+     `const` LOCAL de `TablaOportunidades` escrito a columna 0 —las llaves mandan, no la sangría—, así que el auditor
+     lo tomaba por declaración de nivel módulo y le atribuía las ~300 líneas siguientes; todo lo que esas líneas
+     usaban salía «vivo sólo entre muertos». Se indentó el `const` y los cuatro desaparecieron.
+   · `CLIENTE_ESTADOS`: era un catálogo vivo sólo por su test —`estadoCliente` repetía los cuatro nombres como
+     literales—. Ahora los LEE del catálogo, así que gobierna algo y la duplicación no puede desfasarse.
+   Queda `giroDeal`, y no es código muerto que se borra: es un HALLAZGO DE PRODUCTO. Es el único lector de
+   `GIRO_STATE` —la asignación de giros congelada al aceptar— y no tiene call site en la app; `GIRO_STATE` tampoco
+   tiene escritor (`repoGiro` sólo se hidrata). O sea que «la asignación congelada manda sobre el recálculo del día»
+   está probada por la suite con un estado INYECTADO y no ocurre en ninguna pantalla. Borrarla sería borrar la regla;
+   cablearla es una decisión de producto (¿congela al aceptar, al firmar?) y está anotada en el tablero. */
+export const BASE_MUERTOS = ["giroDeal"];
+/* Los 7 `useState` sin uso, revisados uno por uno el 18-09-2026. Ninguno se tocó todavía y el veredicto de cada uno
+   queda acá para que la próxima revisión no empiece de cero:
+   · `reevTick` — FALSO POSITIVO. Se escribe y no se lee, y ése es exactamente su trabajo: cambiar el valor fuerza el
+     re-render tras visar o re-evaluar. El «render para nadie» del auditor es el render que se busca.
+   · `spreadDeudor` y `vencDias` — mapas que se leen en varios sitios y cuyo setter no se llama: la EDICIÓN por
+     deudor que su forma de estado promete no existe. Ya está escrito en el fuente junto a `spreadDeudor`.
+   · `alertF` — filtro por alerta de contactabilidad: se lee en dos ramas y nadie lo escribe, así que las dos ramas
+     no se alcanzan. Retirarlo se lleva el filtro, que es una CAPACIDAD, no sólo estado.
+   · `channel`, `dealTabInicial`, `diaModal` — restos: `channel` no se lee ni se escribe, `dealTabInicial` viaja al
+     detalle siempre en `null` y `diaModal` sólo se resetea. Son los tres que una poda podría llevarse, y la
+     verificación de una poda son las CAPTURAS (`.claude/rules/code_style.md`), no `tsc` ni el build. */
 export const BASE_USESTATE = ["alertF", "channel", "dealTabInicial", "diaModal", "reevTick", "spreadDeudor", "vencDias"];
 /* Funciones que auditar_aislamiento declara «nada global» al 17-09-2026 (39). */
 export const BASE_PURAS = [
