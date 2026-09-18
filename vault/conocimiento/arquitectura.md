@@ -10,7 +10,7 @@ timestamp: 2026-09-17T15:29:14Z
 
 > Verbatim del `CLAUDE.md` anterior al 17-09-2026. Los comandos canónicos están en la tabla de `CLAUDE.md`; acá está el porqué de cada pieza. **Tres cifras de este texto están desfasadas y sin gate** (líneas, componentes y MB del build: ver `Auditoria_Bootstrap_Agentico.md` §2.3); se corrigen cuando exista el gate que las produzca, no a mano.
 
-- **Un solo archivo fuente:** `pipeline_comercial.jsx` (~21.000 líneas, 118 componentes). React 18 + Tailwind CORE (sin compilador: solo clases base) en un único componente raíz `PipelineComercial`.
+- **Un solo archivo fuente:** `pipeline_comercial.jsx` (~26.000 líneas, ~155 componentes). React 18 + Tailwind CORE (sin compilador: solo clases base) en un único componente raíz `PipelineComercial`.
 - **Build:** dos implementaciones del MISMO contrato, hay que mantenerlas en sincronía:
   - `build_app.ps1` — el que usa Mauricio en Windows vía `Iniciar_NEX_Factoring.bat`.
   - `build_app.mjs` — puerto a Node (`node build_app.mjs`), para construir y verificar donde no hay PowerShell (contenedores Linux, CI, sesiones remotas). Mismo resultado.

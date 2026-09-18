@@ -13,9 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45   # la capa e2e pasó de 1 a 16 archivos (29 casos, ~8 min) el 17-09-2026
     steps:
-      - uses: actions/checkout@v4
+      # v5 y no v4: las v4 corren sobre Node 20 en el runner y GitHub ya las avisa como
+      # deprecadas. El `node-version: 22` de abajo es el de la app y no cambia con esto.
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 

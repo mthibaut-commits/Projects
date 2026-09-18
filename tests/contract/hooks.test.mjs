@@ -9,6 +9,7 @@ import { RAIZ } from "./_comun.mjs";
 import { decidir as proteger, PROTEGIDAS } from "../../.claude/hooks/protect_paths.mjs";
 import { decidir as gitflow, INTEGRACION } from "../../.claude/hooks/gitflow_guard.mjs";
 import { DECISION } from "../../.claude/hooks/worktree_guard.mjs";
+import { revisarSettings, comandoDe, ESPERADOS } from "../../verificar_hooks.mjs";
 
 const HOOK = (n) => join(RAIZ, ".claude/hooks", n);
 const stdin = (script, input) => spawnSync(process.execPath, [script], { cwd: RAIZ, input, encoding: "utf8" });
@@ -64,6 +65,30 @@ test("de punta a punta por stdin, como los invoca Claude Code", () => {
   assert.equal(stdin(HOOK("gitflow_guard.mjs"), JSON.stringify({ tool_input: { command: "git status" } })).status, 0);
   const wt = stdin(HOOK("worktree_guard.mjs"), "{}");
   assert.equal(wt.status, 0); assert.equal(JSON.parse(wt.stdout).hookSpecificOutput.permissionDecision, "ask");
+});
+
+/* El health check es lo único que puede decir si los hooks están CORRIENDO en una máquina concreta —la
+   lógica correcta y el cableado roto se ven igual—. Acá se corre entero en cada CI para que no se pueda
+   desfasar de settings.json: si alguien mueve un hook, le cambia el matcher o le cambia el comando, esto
+   rompe antes de que nadie lo descubra bloqueando nada. Lo que NO puede atestiguar es la máquina Windows
+   del usuario: ahí el mismo comando se corre a mano la primera vez. */
+test("el health check de los hooks pasa entero (node verificar_hooks.mjs)", () => {
+  const r = spawnSync(process.execPath, [join(RAIZ, "verificar_hooks.mjs")], { cwd: RAIZ, encoding: "utf8" });
+  assert.equal(r.status, 0, `el health check falló:\n${r.stdout}\n${r.stderr}`);
+  assert.match(r.stdout, /TODO OK/);
+});
+
+test("sonda negativa del health check: un settings.json roto se caza en sus cuatro formas", () => {
+  const bueno = { hooks: { PreToolUse: ESPERADOS.map((e) => ({ matcher: e.matcher, hooks: [{ type: "command", command: `node "$CLAUDE_PROJECT_DIR/.claude/hooks/${e.archivo}"` }] })) } };
+  assert.deepEqual(revisarSettings(bueno, () => true), [], "el cableado bueno no tiene que dar fallos");
+  assert.match(revisarSettings({}, () => true)[0], /no declara hooks\.PreToolUse/);
+  const sinBloque = { hooks: { PreToolUse: bueno.hooks.PreToolUse.slice(1) } };
+  assert.match(revisarSettings(sinBloque, () => true).join(" "), /falta el bloque con matcher/, "un hook sin su bloque no se dispara nunca");
+  const matcherMalo = JSON.parse(JSON.stringify(bueno)); matcherMalo.hooks.PreToolUse[0].matcher = "Bash";
+  assert.ok(revisarSettings(matcherMalo, () => true).length, "un hook colgado del evento equivocado tiene que caer");
+  assert.match(revisarSettings(bueno, () => false).join(" "), /y el archivo no existe/, "un comando que apunta a un archivo movido tiene que caer");
+  assert.ok(comandoDe(bueno, "protect_paths.mjs").includes("CLAUDE_PROJECT_DIR"), "el comando se extrae para probar la expansión en el shell");
+  assert.equal(comandoDe(bueno, "no_existe.mjs"), null);
 });
 
 test("sonda negativa: una ruta nueva no protegida pasa y una regla plantada la bloquearía", () => {
