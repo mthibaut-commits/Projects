@@ -79,6 +79,7 @@ timestamp: 2026-09-18T02:18:36Z
 | 31 | MODO DIRECTORIO — demo acotada | [`reglas/modo_directorio.md`](./reglas/modo_directorio.md) | 129, `e2e-31`, `regla_31.test.mjs` |
 | 32 | El generador tiene PUNTO FIJO: el archivo commiteado es lo que una corrida completa produce, byte a byte | [`reglas/datos_y_activos.md`](./reglas/datos_y_activos.md) | gate `generador.test.mjs` |
 | 34 | El tubo de Gestión diaria abre en «Todos», y «Todos» es el PRIMER tab | [`reglas/ui_detalle_y_tubo.md`](./reglas/ui_detalle_y_tubo.md) | `regla_34.test.mjs` |
+| 35 | Una regla mal definida (criterio sin área) no se ejecuta ni se verifica, y la salida lo dice | [`reglas/otorgamiento_y_atribucion.md`](./reglas/otorgamiento_y_atribucion.md) | 141, `regla_35.test.mjs` |
 | 17 | Teléfonos ofuscados en logs | [`contrato_servidor_y_auditoria.md`](./contrato_servidor_y_auditoria.md) | 130, `regla_17.test.mjs` |
 
 ## Contrato con el servidor (12 invariantes, `INVARIANTES` en el fuente)

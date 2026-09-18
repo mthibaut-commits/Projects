@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-18T04:20:00Z
+timestamp: 2026-09-18T05:10:00Z
 ---
 
 # Estado actual
@@ -13,12 +13,13 @@ timestamp: 2026-09-18T04:20:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone de 40,7 MB, **140/140 PASA**, **158 gates de contrato**, **29 casos
-e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (63 reglas verbatim por tema, índice en
-`invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró la tabla de invariantes**: las 63 reglas y los 12
+(`pipeline_comercial.jsx`), build standalone de 40,7 MB, **141/141 PASA**, **170 gates de contrato**, **29 casos
+e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (65 reglas verbatim por tema, índice en
+`invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró la tabla de invariantes**: cada regla y los 12
 invariantes del contrato tienen gate; ninguna fila dice ya «sin gate». Lo que esos gates destaparon cambió el
-producto —ocho defectos, abajo—. El generador tiene **punto fijo** (32, ADR-0003) y el id de una operación es
-**estable** (ADR-0004), con «Operación creada» + Editar (33) y el detalle simulado según el mockup (29, 22).
+producto —ocho defectos, abajo—. El generador tiene punto fijo (32, ADR-0003), el id de una operación es estable
+(ADR-0004) con «Operación creada» + Editar (33) y el detalle sigue el mockup (29, 22); el 18-09 el tubo abre en
+«Todos» (34) y **una regla mal definida ya no se ejecuta ni se verifica** (35).
 
 > ## 🎯 Siguiente paso
 >
@@ -34,21 +35,20 @@ producto —ocho defectos, abajo—. El generador tiene **punto fijo** (32, ADR-
 
 | Trabajo | Integrado en `main` |
 |---|---|
-| Invariantes cerradas · e2e · O05 · tab «Todos» (34) · paso 2 · auditorías · spec de excepciones | este merge |
+| Invariantes · e2e · O05 · tab «Todos» (34) · regla mal definida (35) · paso 2 · auditorías · spec exc. | este merge |
 | «Operación creada» + Editar · id estable · restyle del detalle (33, 29, 22 · ADR-0004) | `8b75a03` |
 | Punto fijo del generador (32 · ADR-0003) `3a27737` · gates + partir `CLAUDE.md` (ADR-0001/2) `bd14091` | ✓ |
 
 ## Lo que los gates destaparon (corregido en el mismo commit)
-
 **Ocho defectos de producto**: retirar la última factura vetado aunque la 13-sexdecies lo permite · la vía «no
 confirmada» sin re-evaluación (14) · `revertirVisado`/`revertirExc` con `ReferenceError` y un O05 revertido sin
 revocar su evidencia (OTG-01) · una Perdida que revivía arrastrándola (5) · el paquete cerrado escondía el reset
 que 13-quaterdecies exige visible · más 15-quinquies, 27-bis y RAT-01.
 **Y el paso 2 de la verificación**, que no veía 11 declaraciones (diez `async function` y el `export default`): una
-colisión con una de ellas sólo se sabía en el paso 5, dos minutos más tarde y sin nombrar el símbolo. Ahora usa el
-patrón del auditor con cola `$NF`, y `fuente.test.mjs` exige que `CLAUDE.md`, el vault y el CI escriban el MISMO
-paso 2. Uno por uno: [invariantes](./2026-09-17_cerrar_invariantes.md) ·
-[integración](./2026-09-18_integracion_y_tab_todos.md) · [auditorías](./2026-09-18_auditorias_y_paso_2.md).
+colisión sólo se sabía en el paso 5, dos minutos más tarde y sin nombrar el símbolo. Ahora usa el patrón del auditor
+con cola `$NF`, y `fuente.test.mjs` exige que `CLAUDE.md`, el vault y el CI escriban el MISMO paso 2. Uno por uno:
+[invariantes](./2026-09-17_cerrar_invariantes.md) · [integración](./2026-09-18_integracion_y_tab_todos.md) ·
+[auditorías](./2026-09-18_auditorias_y_paso_2.md) · [regla 35](./2026-09-18_regla_mal_definida.md).
 
 ## Bloqueos · los dos son del usuario, desde Windows
 

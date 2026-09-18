@@ -111,7 +111,7 @@ Decisiones de negocio que rigen la búsqueda:
 2. Dos personas con el mismo rol aprueban las dos.
 3. Un cargo **vacante** lo cubre la jefatura de su área.
 4. **La escalada no cruza áreas.** Un Gerente General no visa una excepción de Riesgo.
-5. Una regla **sin área no la aprueba nadie**. Un default silencioso escondería una regla mal
+5. Una regla **sin área NO SE EJECUTA**. Desde el 18-09-2026 no se evalúa siquiera: el motor la devuelve como «No ejecutada · falta configuración», con la causa y dónde se arregla, y la operación se evalúa SIN ella. Antes se evaluaba igual y su excepción salía «Sin aprobador definido», o sea que la operación quedaba esperando a alguien que no existe. Un default silencioso escondería una regla mal
    configurada.
 
 Cuando no hay nadie, el motor lo dice con esas palabras: **«Sin aprobador definido»**, con el requisito

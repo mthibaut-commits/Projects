@@ -6437,6 +6437,78 @@
        `cierre vigente ${vigOk} \u00b7 publicar no se deshace ${pubOk} \u00b7 a qui\u00e9n aplica editar ${edicOk} \u00b7 siempre con motivo ${motivoOk} \u00b7 la firma s\u00f3lo se revoca si la hab\u00eda, y cerrar no la devuelve ${firmaOk} \u00b7 la solicitud al comit\u00e9 no se duplica ${solOk}`);
   }
 
+  // ── 141 · UNA REGLA MAL DEFINIDA NO SE EJECUTA NI SE VERIFICA, Y LA SALIDA LO DICE ──────────
+  // El ruteo de una excepción es el par (ÁREA, NIVEL): la regla pone el área y su tramo el nivel. Una regla
+  // que DECIDE y no declara área no se puede rutear, y hasta hoy se evaluaba igual: el resultado salía con
+  // «Sin aprobador definido» y la operación quedaba esperando a alguien que no existe. Ahora no se ejecuta
+  // y se dice. Hoy NINGUNA regla del catálogo cae acá, así que el caso las PLANTA: un test que comparara el
+  // catálogo consigo mismo pasaría siempre y no vigilaría nada.
+  {
+    const vars = { x: 100 };                                  // una variable cualquiera para los tramos
+    const tramos = [[(v) => v.x > 50, "excepcion", 3], [() => true, "aprobado"]];
+    const sinArea   = { n: 9001, nombre: "Plantada sin área", cond: "C9001", hallazgo: "Hallazgo que nadie midió", tiers: tramos };
+    const conArea   = { n: 9002, area: "riesgo", nombre: "Plantada con área", cond: "C9002", hallazgo: "h", tiers: tramos };
+    const areaVacia = { n: 9003, area: "", nombre: "Área en blanco", cond: "C9003", tiers: tramos };
+    const clasifSin = { n: 9004, nombre: "Clasificación sin área", cond: "C9004", clasif: true, clfn: () => "Clase X" };
+    const sinTramos = { n: 9005, nombre: "Sin tramos", cond: "C9005" };
+
+    // (a) La COMPUERTA: decide con la definición de la regla y con nada más.
+    const g1 = reglaNoEjecutable(sinArea), g2 = reglaNoEjecutable(conArea);
+    const compuertaOk = g1.noEjecutable === true && !!g1.motivo && !!g1.arregla
+      && g2.noEjecutable === false
+      && reglaNoEjecutable(areaVacia).noEjecutable === true    // "" es no declarar área
+      && reglaNoEjecutable(clasifSin).noEjecutable === false   // informa, no decide
+      && reglaNoEjecutable(sinTramos).noEjecutable === false   // no decide nada
+      && reglaNoEjecutable(null).noEjecutable === true;        // falla CERRADO
+
+    // (b) EL MOTOR NO LA EJECUTA. Con x=100 el primer tramo calza, así que la regla CON área levanta
+    //     excepción N3; la misma sin área tiene que salir `no_ejecutada`, sin nivel y sin tramo.
+    const eSin = evalReglaCli(sinArea, vars), eCon = evalReglaCli(conArea, vars);
+    const noEjecutaOk = eSin.disp === "no_ejecutada" && eSin.nivel === undefined && eSin.tierIdx === null
+      && !!eSin.motivo && eCon.disp === "excepcion" && eCon.nivel === 3;
+    // Y no se ejecuta NI SIQUIERA cuando el tramo que calzaría es `aprobado`: no se trata de qué habría
+    // dicho, sino de que nadie la evaluó. Con x=10 el primer tramo no calza y el segundo aprueba.
+    const eSinAprob = evalReglaCli(sinArea, { x: 10 }), eConAprob = evalReglaCli(conArea, { x: 10 });
+    const tampocoAprobadoOk = eSinAprob.disp === "no_ejecutada" && eConAprob.disp === "aprobado";
+    // La de clasificación sin área SÍ se evalúa: informa.
+    const clasifOk = evalReglaCli(clasifSin, vars).disp === "clasificacion";
+
+    // (c) EL MOTIVO distingue la causa: acá falta la DEFINICIÓN, no un usuario. «Sin aprobador definido»
+    //     sigue siendo la respuesta del otro caso —el área existe y nadie la tiene—, y no se confunden.
+    const motivoOk = /no declara área/.test(eSin.motivo) && !/Sin aprobador definido/.test(eSin.motivo)
+      && rolDeAreaNivel("riesgo", 5).sinAprobador !== true                       // riesgo N5 sí existe
+      && rolDeAreaNivel("area_que_no_existe", 3).sinAprobador === true;          // ése es el otro caso
+
+    // (d) LA COMPUERTA ES PURA: dos llamadas dan lo mismo y no mutan la regla.
+    const antes = JSON.stringify(Object.keys(sinArea).sort());
+    const g1b = reglaNoEjecutable(sinArea);
+    const puraOk = g1b.noEjecutable === g1.noEjecutable && g1b.motivo === g1.motivo
+      && JSON.stringify(Object.keys(sinArea).sort()) === antes;
+
+    // (e) NO BLOQUEA, pero SALE del motor. Se planta la regla en el catálogo real y se mira el veredicto
+    //     de una operación: la no ejecutada viaja en `noEjec`, no está en `exc` ni en `rech`, y el estado
+    //     agregado es el MISMO que sin ella —lo que protege a la operación no es el bloqueo, es que se vea—.
+    const deal = { id: "OP-R35", stage: "oferta", cliente: "Cliente 35", rutEmisor: "76000001-1", monto: 30e6 };
+    const vAntes = visadoDealCalc(deal, {});
+    REGLAS_CLIENTE.push(sinArea);
+    let vDespues = null, err = null;
+    try { VISADO_CACHE.clear(); vDespues = visadoDealCalc(deal, {}); }
+    catch (e) { err = e.message; }
+    finally { REGLAS_CLIENTE.pop(); VISADO_CACHE.clear(); }
+    const mia = vDespues && (vDespues.noEjec || []).find((x) => x.n === 9001);
+    const veredictoOk = !err && !!mia && !!mia.motivo
+      && !(vDespues.exc || []).some((x) => x.n === 9001)
+      && !(vDespues.rech || []).some((x) => x.n === 9001)
+      && vDespues.estado === vAntes.estado
+      && (vAntes.noEjec || []).length === 0;   // el catálogo real no tiene ninguna: las 77 declaran área
+    // Y el catálogo quedó como estaba: el caso no puede dejar una regla plantada para los que siguen.
+    const restauradoOk = !REGLAS_CLIENTE.some((r) => r.n === 9001) && visadoDealCalc(deal, {}).estado === vAntes.estado;
+
+    ok("141 una regla mal definida (criterio sin área) no se ejecuta ni se verifica, sale nombrada en el veredicto y no bloquea",
+       compuertaOk && noEjecutaOk && tampocoAprobadoOk && clasifOk && motivoOk && puraOk && veredictoOk && restauradoOk,
+       `compuerta ${compuertaOk} (sin área ✓ · con área ✗ · área "" ✓ · clasificación ✗ · sin tramos ✗ · null ✓) · no se ejecuta ${noEjecutaOk} («${eSin.disp}» sin nivel ni tramo vs «${eCon.disp} N${eCon.nivel}») · tampoco cuando habría aprobado ${tampocoAprobadoOk} · la clasificación sí se evalúa ${clasifOk} · motivo distingue la causa ${motivoOk} («${eSin.motivo}») · pura ${puraOk} · veredicto ${veredictoOk} (noEjec ${mia ? 1 : 0} · fuera de exc/rech · estado «${vDespues && vDespues.estado}» = «${vAntes.estado}» · catálogo real sin ninguna) · catálogo restaurado ${restauradoOk}${err ? " · ERROR " + err : ""}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

@@ -28,5 +28,7 @@ timestamp: 2026-09-18T03:25:00Z
 | 17-09-2026 | [`2026-09-17_unidades_v04.md`](./2026-09-17_unidades_v04.md) | El desfase de unidades de V03/V04/V09 se corrigió igual en dos sesiones; se reintegró desde `main` con lo adicional: V04 y V10 siguen mandando al teléfono a casi todos (dato y política), el layout del A10 en miles, el script de regresión en pesos |
 | 18-09-2026 | [`2026-09-18_integracion_y_tab_todos.md`](./2026-09-18_integracion_y_tab_todos.md) | Se cierra el merge de las cuatro ramas del 17-09: cinco gates reconciliados (la compuerta de la regla 5 se mudó, los tokens del vacío se re-midieron, el chip de solicitud se partió en dos, el menú ganó «Editar»), una REGRESIÓN propia que sólo vio el e2e —el paquete cerrado escondía el menú con el reset que 13-quaterdecies exige deshabilitado y visible—, el renombre O05 y la regla 34: el tubo abre en «Todos», que pasa a ser el primer tab |
 
+| 18-09-2026 | [`2026-09-18_regla_mal_definida.md`](./2026-09-18_regla_mal_definida.md) | Regla 35: un criterio sin área no se ejecuta ni se verifica y la salida lo dice, con la causa y dónde se arregla. La sonda de DOM destapó que una regla no ejecutada caía en el acordeón «N regla(s) aprobada(s)», contada como aprobada y escondida |
+
 La historia anterior al vault (02-09 → 16-09-2026) no tiene logs propios: vive dentro de las reglas de
 dominio (cada una trae fecha y qué la motivó) y en `Auditoria_*.md` e `Inconsistencias_*.md`.
