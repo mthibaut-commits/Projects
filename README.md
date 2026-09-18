@@ -36,12 +36,12 @@ PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs           
 
 ## Cómo está organizado
 
-- **Un solo archivo fuente:** `pipeline_comercial.jsx` (~21.000 líneas, 118 componentes, un componente
+- **Un solo archivo fuente:** `pipeline_comercial.jsx` (~26.000 líneas, ~155 componentes, un componente
   raíz `PipelineComercial`). React 18 + Tailwind CORE, transpilado en el navegador por Babel Standalone.
 - **`vendor/`** — dependencias UMD vendorizadas, con `sha256` fijado en `vendor/SBOM.json`. **El build
   falla si un hash no calza.** `.gitattributes` marca `vendor/** -text`: normalizar fines de línea
   cambia los bytes y rompe la integridad.
-- **`datos_inyectados.js`** (~24 MB) — el dataset que alimenta el inbound: 30.000 facturas de DTESync,
+- **`datos_inyectados.js`** (~33 MB) — el dataset que alimenta el inbound: 30.000 facturas de DTESync,
   lista blanca, AECSync, share of wallet. Sin él el pipeline queda en 0 oportunidades. No editar a mano.
 
 `CLAUDE.md` y el `vault/` son la fuente de verdad operativa y mandan sobre este archivo.

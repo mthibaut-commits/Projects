@@ -33,7 +33,7 @@ Ninguno subsume a otro, **y los cinco primeros juntos tampoco bastan**: la colis
 bloque declarado antes de su dependencia y un componente no importado pasan `tsc` y el build, y sólo aparecen en
 el paso 5 o al abrir la pantalla — que es lo que hace el paso 6 (`tests/e2e/`, con la sesión iniciada y el detalle
 abierto). El CI (`.github/workflows/gates.yml`) corre los seis en toda rama y todo PR, idénticos. Qué cubre cada caso de la suite: `vault/conocimiento/verificacion.md`; qué fija cada gate de
-contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ninguna regla queda «sin gate»**: las 61 de
+contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ninguna regla queda «sin gate»**: las 62 de
 dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `regla_<slug>.test.mjs`.
 
 ## Otros comandos
@@ -41,6 +41,7 @@ dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `
 | Acción | Comando |
 |---|---|
 | Build en Windows (el del usuario) | `Iniciar_NEX_Factoring.bat` → `build_app.ps1` — **mismo contrato que `build_app.mjs`: si cambia uno, cambia el otro** |
+| ¿Los hooks están corriendo acá? | `node verificar_hooks.mjs` — **la primera vez en cada máquina**, y cuando un hook «no saltó» |
 | Código muerto | `node auditar_muerto.mjs` (`--csv` para el inventario en crudo) |
 | Aislamiento de los motores | `node auditar_aislamiento.mjs` |
 | Unidades (millones donde va un peso) | `node auditar_unidades.mjs` — candidatos, se verifican a mano |
