@@ -79,7 +79,7 @@ timestamp: 2026-09-18T02:18:36Z
 | 31 | MODO DIRECTORIO — demo acotada | [`reglas/modo_directorio.md`](./reglas/modo_directorio.md) | 129, `e2e-31`, `regla_31.test.mjs` |
 | 32 | El generador tiene PUNTO FIJO: el archivo commiteado es lo que una corrida completa produce, byte a byte | [`reglas/datos_y_activos.md`](./reglas/datos_y_activos.md) | gate `generador.test.mjs` |
 | 34 | El tubo de Gestión diaria abre en «Todos», y «Todos» es el PRIMER tab | [`reglas/ui_detalle_y_tubo.md`](./reglas/ui_detalle_y_tubo.md) | `regla_34.test.mjs` |
-| 35 | Una regla mal definida (criterio sin área) no se ejecuta ni se verifica, y la salida lo dice | [`reglas/otorgamiento_y_atribucion.md`](./reglas/otorgamiento_y_atribucion.md) | 141, `regla_35.test.mjs` |
+| 35 | Una regla excepcionable sin nadie que pueda firmarle la excepción —sin área, área inexistente o área sin gente— no se ejecuta ni se verifica, y la salida lo dice | [`reglas/otorgamiento_y_atribucion.md`](./reglas/otorgamiento_y_atribucion.md) | 141, 143, `regla_35.test.mjs` |
 | 36 | La portada muestra pantallas REALES del producto, y su arte es un activo generado que embeben los dos builds | [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | `regla_36.test.mjs` |
 | 37 | «Bienvenido» es el contrato entre la portada y los ocho scripts que esperan a que cargue | [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | `regla_37.test.mjs` |
 | 38 | La entrada al sistema cuelga del éxito FINAL de autenticación, no del botón «Ingresar» | [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | `regla_38.test.mjs`, `e2e-CRY-01-bajo-limite` |

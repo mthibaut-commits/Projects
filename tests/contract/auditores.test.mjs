@@ -54,8 +54,15 @@ export const BASE_USESTATE = ["alertF", "channel", "dealTabInicial", "diaModal",
    Se revisaron las otras dos de una línea que había en la lista —`difPrecioDoc` y `tramoNota`—: ésas sí son
    puras, el auditor las sigue declarando limpias con el cuerpo a la vista. El punto ciego ya no existe en la
    práctica (el formateador no deja cuerpos de una línea), pero queda escrito por si alguien lo reintroduce. */
+/* 18-09-2026: ENTRAN `reglaNoEjecutable` y `cargoDeAreaNivel`, y la decisión va en el commit. La regla 35
+   se amplió —una regla excepcionable sin nadie que pueda firmarla tampoco se ejecuta—, así que la compuerta
+   necesita el padrón del tenant. Se le pasa por PARÁMETRO y el núcleo que resuelve (área, nivel) se partió
+   de su adaptador: el primer intento llamaba a `rolDeAreaNivel`, que se busca el padrón cuando no se lo
+   dan, y el auditor —que sigue las llamadas— sacó a `evalReglaCli` de esta lista en el acto. Eso es
+   exactamente lo que esta línea base existe para impedir. */
 export const BASE_PURAS = [
-  "evalReglaCli", "deudorBlock", "nivelExigido", "pisoPorMonto", "esReglaDeudor", "verifDecision", "verifEvaluar",
+  "evalReglaCli", "reglaNoEjecutable", "cargoDeAreaNivel",
+  "deudorBlock", "nivelExigido", "pisoPorMonto", "esReglaDeudor", "verifDecision", "verifEvaluar",
   "causasVerif", "claveVeredicto", "facturasDeudorEnDeal", "reemplazoVigente", "validarSimCfg", "parseFormula",
   "evalFormula", "varsDeFormula", "tokenizarFormula", "sowEstado", "calcularOferta", "tasaMinIA", "prorratearOperacion",
   "prorratearConcepto", "difPrecioDoc", "valorPresenteDoc", "plazoEquivalente", "tasaEquivalente", "asignarGiros",

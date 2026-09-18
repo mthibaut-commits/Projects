@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-18T20:30:00Z
+timestamp: 2026-09-18T22:40:00Z
 ---
 
 # Estado actual
@@ -13,13 +13,13 @@ timestamp: 2026-09-18T20:30:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone de 40,7 MB, **142/142 PASA**, **34 archivos de gate de contrato**
-(224 tests), **29 casos e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (69 reglas verbatim
+(`pipeline_comercial.jsx`), build standalone de 41,3 MB, **143/143 PASA**, **34 archivos de gate de contrato**
+(233 tests), **29 casos e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (69 reglas verbatim
 por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró la tabla de invariantes**:
 cada regla y los 12 del contrato tienen gate. Lo que destaparon cambió el producto —ocho defectos, abajo—. El
 generador tiene punto fijo (32, ADR-0003), el id de una operación es estable (ADR-0004) con «Operación creada» +
 Editar (33) y el detalle sigue el mockup (29, 22); el 18-09 el tubo abre en «Todos» (34), **una regla con un tramo
-sin área ya no se ejecuta ni se verifica** (35), la **portada muestra el producto** (36, 37, 38 · ADR-0005), el
+sin aprobador posible ya no se ejecuta ni se verifica** (35), la **portada muestra el producto** (36–38 · ADR-0005), el
 orden de la tabla es **prioridad de gestión** y la Bandeja Inbound deja de botar trabajo en silencio (30-bis, 40),
 con el fuente **formateado con Prettier** (ADR-0006).
 
@@ -34,20 +34,20 @@ con el fuente **formateado con Prettier** (ADR-0006).
 > 2. **Decidir los datos**: razones sociales reales sobre RUT sintéticos — un ADR y un gate (hoy ningún test lo
 >    afirma ni lo niega). · 3. Sacar `pipeline.zip` (**2,7 MB**, un build del 12-08 de un generado).
 
-## En vuelo ahora · nada: todo está en `main`, sólo quedan las tareas del usuario (abajo)
+## En vuelo ahora · `claude/migrate-project-session-vui9dl`, verde y pusheada; falta mezclarla a `main`
 
 | Trabajo | Integrado en `main` |
 |---|---|
-| **Portada que muestra el producto** (36, 37, 38 · ADR-0005): arte generado, un solo morado, zoom al dashboard. Los colores no llegaban a quien tenía config guardada: `cfgOper` subió a v2 con migración (39) | este merge |
+| **Regla 35, ampliada por el usuario**: una regla excepcionable sin nadie que pueda firmarla tampoco se ejecuta (tres causas, tres mantenedores). La compuerta recibe el PADRÓN por parámetro y el núcleo se partió en `cargoDeAreaNivel` para no sacar a `evalReglaCli` de las puras (caso 143) | **no, en la rama** |
+| **Portada que muestra el producto** (36, 37, 38 · ADR-0005): arte generado, un solo morado, zoom al dashboard. Los colores no llegaban a quien tenía config guardada: `cfgOper` subió a v2 con migración (39) | `daf3493` |
 | Invariantes · e2e · O05 · tab «Todos» (34) · regla mal definida (35) · paso 2 · auditorías · spec exc. | `d389379` |
 | «Operación creada» + id estable + restyle (33, 29, 22 · ADR-0004) `8b75a03` · punto fijo (32 · ADR-0003) `3a27737` · gates y partir `CLAUDE.md` (ADR-0001/2) `bd14091` | ✓ |
 
 ## Lo que los gates destaparon (todo corregido; el detalle, en los logs)
 **Ocho defectos de producto** (13-sexdecies, 14, OTG-01, 5, el reset, 15-quinquies, 27-bis, RAT-01), **el paso 2**
 que no veía 11 declaraciones —una colisión sólo se sabía en el paso 5, sin nombrar el símbolo—, el health check de
-hooks como comando, `cifras.test.mjs` contando lo que los documentos afirman, y los dos pendientes de regla que eran
-defectos (27-bis, 33). Uno por uno: [invariantes](./2026-09-17_cerrar_invariantes.md) ·
-[integración](./2026-09-18_integracion_y_tab_todos.md) · [auditorías](./2026-09-18_auditorias_y_paso_2.md) · [regla 35](./2026-09-18_regla_mal_definida.md).
+hooks como comando, `cifras.test.mjs`, y los dos pendientes de regla que eran defectos (27-bis, 33). Uno por uno: [invariantes](./2026-09-17_cerrar_invariantes.md) ·
+[integración](./2026-09-18_integracion_y_tab_todos.md) · [auditorías](./2026-09-18_auditorias_y_paso_2.md) · [regla 35](./2026-09-18_regla_mal_definida.md) y su [ampliación](./2026-09-18_regla_sin_aprobador.md).
 
 ## Bloqueos · los dos son del usuario, desde Windows
 
@@ -77,4 +77,4 @@ El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403, política; s
 ## Conocimiento clave
 
 [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [hooks](../conocimiento/loop_agentico_hooks.md) · [despacho de agentes](../conocimiento/despacho_agentes.md) · [flujo git](../conocimiento/flujo_git.md) · [arquitectura](../conocimiento/arquitectura.md) · [verificación](../conocimiento/verificacion.md) · [decisiones](../adr/index.md)
-Últimas: [portada](./2026-09-18_portada_que_muestra_el_producto.md) · [orden y bandeja](./2026-09-18_orden_tabla_y_bandeja.md) · [formateo](./2026-09-18_formatear_el_fuente.md) · [spec de excepciones](./2026-09-18_spec_gestion_excepciones.md)
+Últimas: [sin aprobador](./2026-09-18_regla_sin_aprobador.md) · [portada](./2026-09-18_portada_que_muestra_el_producto.md) · [orden y bandeja](./2026-09-18_orden_tabla_y_bandeja.md) · [formateo](./2026-09-18_formatear_el_fuente.md)

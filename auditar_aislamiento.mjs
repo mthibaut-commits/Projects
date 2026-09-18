@@ -60,6 +60,9 @@ for (const [k, xs] of Object.entries(CLASE)) for (const x of xs) DONDE[x] = k;
 const DECIDEN = {
   "Otorgamiento": ["evaluarOtorgItems", "evalReglaCli", "visadoDealCalc", "visadoDeal", "apiVarsCliente",
     "varsClienteActual", "varsModeloExt", "deudorBlock", "snapVersionCli", "reevaluarCliente",
+    // La compuerta de la regla 35 y su núcleo: deciden si una regla se EJECUTA, que es la decisión de
+    // más arriba de todas —una regla que no corre no aporta ni un veredicto—, y tienen que ser puras.
+    "reglaNoEjecutable", "cargoDeAreaNivel",
     "puedeAprobarExc", "aprobadoresExc", "rolDeAreaNivel", "padronAprobadores", "atribDe", "atribDeRol",
     "nivelExigido", "pisoPorMonto", "otorgBloqueado", "bloqueoFirmeInfo", "otorgamientoCompleto",
     "requiereOtorgamiento", "esReglaDeudor", "revOtorgActual", "buildAtribucionesJSON"],

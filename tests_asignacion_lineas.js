@@ -3579,10 +3579,11 @@
       //     perilla a 4,5, el 3,7 que aprobaba pasa a excepción — la regla lee `pol`, no un literal.
       const D01 = REGLAS_CLIENTE.find((r) => r.cond === "D01"), C09 = REGLAS_CLIENTE.find((r) => r.cond === "C09");
       aplicarCfgActiva({ ...guardado, notaMinCompra: 3.7 });
-      d37 = evalReglaCli(D01, { dNota: 3.7 }); d369 = evalReglaCli(D01, { dNota: 3.69 });
-      c37 = evalReglaCli(C09, { notaCliente: 3.7 }); c369 = evalReglaCli(C09, { notaCliente: 3.69 });
+      const padNota = padronAprobadores();
+      d37 = evalReglaCli(D01, { dNota: 3.7 }, padNota); d369 = evalReglaCli(D01, { dNota: 3.69 }, padNota);
+      c37 = evalReglaCli(C09, { notaCliente: 3.7 }, padNota); c369 = evalReglaCli(C09, { notaCliente: 3.69 }, padNota);
       aplicarCfgActiva({ ...guardado, notaMinCompra: 4.5 });
-      d37b = evalReglaCli(D01, { dNota: 3.7 }); d45 = evalReglaCli(D01, { dNota: 4.5 });
+      d37b = evalReglaCli(D01, { dNota: 3.7 }, padNota); d45 = evalReglaCli(D01, { dNota: 4.5 }, padNota);
       nivelExc = d369.nivel;
     } finally {
       aplicarCfgActiva(guardado);
@@ -6085,7 +6086,8 @@
       const vEn = varsOperacion({ ...dealBase, tasaDescuento: tasaRef * (1 - dE / 100) }, null);
       const vFuera = varsOperacion({ ...dealBase, tasaDescuento: tasaRef * (1 - (dE + 1) / 100) }, null);
       const vSin = varsOperacion({ ...dealBase, tasaDescuento: 0 }, null);
-      const evEn = evalReglaCli(o01, vEn), evFuera = evalReglaCli(o01, vFuera);
+      const padO01 = padronAprobadores();
+      const evEn = evalReglaCli(o01, vEn, padO01), evFuera = evalReglaCli(o01, vFuera, padO01);
       const nivelReq = evFuera.disp === "excepcion" ? nivelExigido(o01.area, evFuera.nivel, MONTO) : 0;
       const cargo = nivelReq ? rolDeAreaNivel(o01.area, nivelReq) : null;
       const motorOk = !!o01 && o01.area === "comercial" && tasaRef > 0
@@ -6508,38 +6510,43 @@
     const koSinArea  = { n: 9006, nombre: "Knock out sin área", cond: "C9006", hallazgo: "h", tiers: [[(v) => v.x > 50, "rechazado"], [() => true, "aprobado"]] };
     const mixtaSinA  = { n: 9007, nombre: "Mixta sin área", cond: "C9007", hallazgo: "h", tiers: [[(v) => v.x > 90, "rechazado"], [(v) => v.x > 50, "excepcion", 2], [() => true, "aprobado"]] };
 
-    // (a) La COMPUERTA: decide con la definición de la regla y con nada más.
-    const g1 = reglaNoEjecutable(sinArea), g2 = reglaNoEjecutable(conArea);
+    // (a) La COMPUERTA: decide con la definición de la regla y el padrón que le pasan, y con nada más.
+    //     Desde la ampliación del 18-09-2026 el padrón hace falta para juzgar el RUTEO (caso 143); las
+    //     que fallan por su sola definición —sin área, clasificación, sin tramos, knock out— se resuelven
+    //     antes de mirarlo, y por eso acá se siguen probando sin él.
+    const pad141 = padronAprobadores();
+    const g1 = reglaNoEjecutable(sinArea, pad141), g2 = reglaNoEjecutable(conArea, pad141);
     const compuertaOk = g1.noEjecutable === true && !!g1.motivo && !!g1.arregla
       && g2.noEjecutable === false
-      && reglaNoEjecutable(areaVacia).noEjecutable === true    // "" es no declarar área
-      && reglaNoEjecutable(clasifSin).noEjecutable === false   // informa, no decide
-      && reglaNoEjecutable(sinTramos).noEjecutable === false   // no decide nada
-      && reglaNoEjecutable(koSinArea).noEjecutable === false   // KNOCK OUT: no se aprueba, no necesita área
-      && reglaNoEjecutable(mixtaSinA).noEjecutable === true    // pero uno de sus tramos SÍ es excepción
-      && reglaNoEjecutable(null).noEjecutable === true;        // falla CERRADO
+      && reglaNoEjecutable(areaVacia, pad141).noEjecutable === true    // "" es no declarar área
+      && reglaNoEjecutable(clasifSin, pad141).noEjecutable === false   // informa, no decide
+      && reglaNoEjecutable(sinTramos, pad141).noEjecutable === false   // no decide nada
+      && reglaNoEjecutable(koSinArea, pad141).noEjecutable === false   // KNOCK OUT: no se aprueba, no necesita área
+      && reglaNoEjecutable(mixtaSinA, pad141).noEjecutable === true    // pero uno de sus tramos SÍ es excepción
+      && reglaNoEjecutable(null, pad141).noEjecutable === true         // falla CERRADO
+      && reglaNoEjecutable(sinArea).noEjecutable === true              // y sin área no necesita el padrón
     // Y el knock out sin área SE EJECUTA de verdad, en las dos direcciones: rechaza cuando toca y aprueba
     // cuando no. Mirando sólo la compuerta, un `evalReglaCli` que igual lo cortara pasaría inadvertido.
-    const koOk = evalReglaCli(koSinArea, vars).disp === "rechazado"
-      && evalReglaCli(koSinArea, { x: 10 }).disp === "aprobado";
+    const koOk = evalReglaCli(koSinArea, vars, pad141).disp === "rechazado"
+      && evalReglaCli(koSinArea, { x: 10 }, pad141).disp === "aprobado";
     // El criterio es el MISMO con que la mesa de reglas arma su lista (`tiers.some(excepcion)`): si
     // divergieran, la mesa mostraría reglas que el motor no rutea, o al revés.
     const conExc = REGLAS_CLIENTE.filter((rg) => !rg.clasif && (rg.tiers || []).some((t) => t[1] === "excepcion"));
     const soloKo = REGLAS_CLIENTE.filter((rg) => !rg.clasif && (rg.tiers || []).length && !(rg.tiers || []).some((t) => t[1] === "excepcion"));
-    const mesaOk = conExc.every((rg) => reglaNoEjecutable(rg).noEjecutable === !rg.area)
-      && soloKo.every((rg) => reglaNoEjecutable(rg).noEjecutable === false) && soloKo.length > 0;
+    const mesaOk = conExc.every((rg) => reglaNoEjecutable(rg, pad141).noEjecutable === !rg.area)
+      && soloKo.every((rg) => reglaNoEjecutable(rg, pad141).noEjecutable === false) && soloKo.length > 0;
 
     // (b) EL MOTOR NO LA EJECUTA. Con x=100 el primer tramo calza, así que la regla CON área levanta
     //     excepción N3; la misma sin área tiene que salir `no_ejecutada`, sin nivel y sin tramo.
-    const eSin = evalReglaCli(sinArea, vars), eCon = evalReglaCli(conArea, vars);
+    const eSin = evalReglaCli(sinArea, vars, pad141), eCon = evalReglaCli(conArea, vars, pad141);
     const noEjecutaOk = eSin.disp === "no_ejecutada" && eSin.nivel === undefined && eSin.tierIdx === null
       && !!eSin.motivo && eCon.disp === "excepcion" && eCon.nivel === 3;
     // Y no se ejecuta NI SIQUIERA cuando el tramo que calzaría es `aprobado`: no se trata de qué habría
     // dicho, sino de que nadie la evaluó. Con x=10 el primer tramo no calza y el segundo aprueba.
-    const eSinAprob = evalReglaCli(sinArea, { x: 10 }), eConAprob = evalReglaCli(conArea, { x: 10 });
+    const eSinAprob = evalReglaCli(sinArea, { x: 10 }, pad141), eConAprob = evalReglaCli(conArea, { x: 10 }, pad141);
     const tampocoAprobadoOk = eSinAprob.disp === "no_ejecutada" && eConAprob.disp === "aprobado";
     // La de clasificación sin área SÍ se evalúa: informa.
-    const clasifOk = evalReglaCli(clasifSin, vars).disp === "clasificacion";
+    const clasifOk = evalReglaCli(clasifSin, vars, pad141).disp === "clasificacion";
 
     // (c) EL MOTIVO distingue la causa: acá falta la DEFINICIÓN, no un usuario. «Sin aprobador definido»
     //     sigue siendo la respuesta del otro caso —el área existe y nadie la tiene—, y no se confunden.
@@ -6549,7 +6556,7 @@
 
     // (d) LA COMPUERTA ES PURA: dos llamadas dan lo mismo y no mutan la regla.
     const antes = JSON.stringify(Object.keys(sinArea).sort());
-    const g1b = reglaNoEjecutable(sinArea);
+    const g1b = reglaNoEjecutable(sinArea, pad141);
     const puraOk = g1b.noEjecutable === g1.noEjecutable && g1b.motivo === g1.motivo
       && JSON.stringify(Object.keys(sinArea).sort()) === antes;
 
@@ -6632,6 +6639,90 @@
     ok("142 la Bandeja Inbound es una ventana con tope: lo nuevo entra adelante, sale primero lo que no es de nadie, y lo que sale se cuenta",
        ventanaOk && holgadoOk && contarOk && danoOk,
        `ventana ${ventanaOk} (${r1.lista.map((f) => f.id).join(",")}, fuera ${r1.fuera}) \u00b7 la perilla alcanza para un lote ${holgadoOk} (topeBandeja ${tope} \u2265 loteStream ${loteN}; con el tope viejo 60 botaba ${chico.fuera} de ${loteN}) \u00b7 lo que sale se cuenta ${contarOk} \u00b7 sale primero lo que no es de nadie ${danoOk} (de 40 de cartera en un lote de 250: con tope 100 quedan ${mias(holgura.lista)} y salen ${holgura.fueraConDueno} de cartera; con tope 25 quedan ${mias(extremo.lista)} y salen ${extremo.fueraConDueno} contadas; el criterio viejo dejaba ${viejoQueda})`);
+  }
+
+  // ── 143 · TENER ÁREA NO BASTA: SI NADIE PUEDE FIRMAR LA EXCEPCIÓN, LA REGLA TAMPOCO SE EJECUTA ──
+  // Ampliación de la regla 35 pedida por el usuario el 18-09-2026: «si la regla especifica que es
+  // excepcionable debe gatillar el mensaje que está mal definido». El ruteo es el par (ÁREA, NIVEL) y lo
+  // que la operación necesita es una PERSONA al otro lado: da igual si falta el área, si el área no
+  // existe en el tenant o si existe y nadie la tiene en ese nivel —las tres dejan la excepción sin
+  // destinatario y la operación pegada esperando a alguien que no existe—. Antes sólo la primera paraba
+  // la regla; las otras dos se evaluaban igual y salían con «Sin aprobador definido».
+  {
+    const tramos = [[(v) => v.x > 90, "excepcion", 5], [() => true, "aprobado"]];
+    const vars = { x: 100 };
+    // Un padrón INVENTADO, como el del caso 44: así el caso mide la compuerta y no el tenant de la demo.
+    const rico = {
+      areas: [{ id: "contraloria", label: "Contraloría" }],
+      usuarios: [],
+      cargos: [{ id: "contralor", rol: "Contralor", area: "contraloria", nivel: 5 }],
+    };
+    const pobre = { areas: [{ id: "contraloria", label: "Contraloría" }], usuarios: [], cargos: [] };
+    const regla = { n: 9101, area: "contraloria", nombre: "Plantada con área y sin nadie", cond: "C9101", hallazgo: "h", tiers: tramos };
+    const otraArea = { n: 9102, area: "area_que_no_existe", nombre: "Plantada con área inexistente", cond: "C9102", tiers: tramos };
+    const ko = { n: 9103, area: "contraloria", nombre: "Knock out sin aprobador", cond: "C9103", tiers: [[(v) => v.x > 50, "rechazado"], [() => true, "aprobado"]] };
+
+    // (a) LA MISMA REGLA, EL MISMO TENANT: lo único que cambia es el padrón. Con el cargo, se ejecuta;
+    //     sin él, no. Es la prueba de que la compuerta juzga el RUTEO y no el texto de la regla.
+    const gRico = reglaNoEjecutable(regla, rico), gPobre = reglaNoEjecutable(regla, pobre);
+    const padronMandaOk = gRico.noEjecutable === false && gPobre.noEjecutable === true
+      && gPobre.causa === "sin_usuario" && !!gPobre.motivo && !!gPobre.arregla
+      && /Usuarios/.test(gPobre.arregla)                        // manda al mantenedor correcto
+      // Y SIN PADRÓN FALLA CERRADO: quien olvide inyectarlo ve la regla marcada, no aprobada en silencio.
+      && reglaNoEjecutable(regla).noEjecutable === true && reglaNoEjecutable(regla).causa === "sin_padron"
+      && evalReglaCli(regla, vars).disp === "no_ejecutada";
+    // (b) LAS TRES CAUSAS SE DISTINGUEN, porque se arreglan en tres mantenedores distintos.
+    const gSinArea = reglaNoEjecutable({ n: 9104, nombre: "s/área", tiers: tramos }, rico);
+    const gInexist = reglaNoEjecutable(otraArea, rico);
+    const causasOk = gSinArea.causa === "sin_area" && gInexist.causa === "area_inexistente"
+      && /Áreas/.test(gInexist.arregla) && gInexist.noEjecutable === true
+      && gSinArea.arregla !== gInexist.arregla && gInexist.arregla !== gPobre.arregla;
+    // (c) EL KNOCK OUT SIGUE EJECUTÁNDOSE, también con el padrón vacío: no se aprueba, no necesita a
+    //     nadie. Es la corrección del usuario del mismo día, y no se pierde al ampliar la regla.
+    const koOk = reglaNoEjecutable(ko, pobre).noEjecutable === false
+      && evalReglaCli(ko, vars, pobre).disp === "rechazado"
+      && evalReglaCli(ko, { x: 10 }, pobre).disp === "aprobado";
+    // (d) SE PRUEBAN TODOS LOS TRAMOS, no el primero: el que dispara puede ser cualquiera. Acá el N5 no
+    //     tiene a nadie y el N1 sí, y la regla queda igual sin ejecutar.
+    const medio = { n: 9105, area: "contraloria", nombre: "Dos tramos", cond: "C9105",
+                    tiers: [[(v) => v.x > 900, "excepcion", 1], [(v) => v.x > 90, "excepcion", 5], [() => true, "aprobado"]] };
+    const soloN1 = { areas: rico.areas, usuarios: [], cargos: [{ id: "c1", rol: "Analista", area: "contraloria", nivel: 1 }] };
+    const todosLosTramosOk = reglaNoEjecutable(medio, soloN1).noEjecutable === true
+      && reglaNoEjecutable(medio, rico).noEjecutable === false;   // con N5 cubierto, el N1 escala y pasa
+    // (e) EL MOTOR LO RESPETA en las dos direcciones, incluso cuando el tramo que calzaría es `aprobado`:
+    //     no se trata de qué habría dicho, sino de que nadie la evaluó.
+    const motorOk = evalReglaCli(regla, vars, pobre).disp === "no_ejecutada"
+      && evalReglaCli(regla, vars, rico).disp === "excepcion"
+      && evalReglaCli(regla, vars, rico).nivel === 5
+      && evalReglaCli(regla, { x: 10 }, pobre).disp === "no_ejecutada"
+      && evalReglaCli(regla, { x: 10 }, rico).disp === "aprobado";
+    // (f) Y LLEGA HASTA EL VEREDICTO DE LA OPERACIÓN por el camino real —`evaluarOtorgItems` arma el
+    //     padrón del tenant y lo inyecta—: se planta una regla con un área que SÍ existe en la demo
+    //     (`verificacion`) y que NADIE tiene, y tiene que salir en `noEjec` sin entrar en exc ni rech.
+    const areaRealSinNadie = { n: 9106, area: "verificacion", nombre: "Área real sin nadie", cond: "C9106", hallazgo: "h", tiers: tramos };
+    const deal = { id: "OP-R35B", stage: "oferta", cliente: "Cliente 35B", rutEmisor: "76000001-1", monto: 30e6 };
+    const vAntes = visadoDealCalc(deal, {});
+    REGLAS_CLIENTE.push(areaRealSinNadie);
+    let vDespues = null, err = null;
+    try { VISADO_CACHE.clear(); vDespues = visadoDealCalc(deal, {}); }
+    catch (e) { err = e.message; }
+    finally { REGLAS_CLIENTE.pop(); VISADO_CACHE.clear(); }
+    const mia = vDespues && (vDespues.noEjec || []).find((x) => x.n === 9106);
+    const veredictoOk = !err && !!mia && /verificación|Verificación/i.test(mia.motivo || "")
+      && !(vDespues.exc || []).some((x) => x.n === 9106)
+      && !(vDespues.rech || []).some((x) => x.n === 9106)
+      && vDespues.estado === vAntes.estado;                       // no bloquea: lo que protege es que se vea
+    // (g) HOY NINGUNA DEL CATÁLOGO CAE ACÁ, y se mide: las 69 con excepción tienen a quién pedírsela en
+    //     este tenant. Si mañana alguien borra un área o se queda sin gente en un nivel, esto se rompe —y
+    //     romperse es el punto: significa que la demo está mostrando reglas que no se ejecutan.
+    const padReal = padronAprobadores();
+    const malasReales = REGLAS_CLIENTE.filter((rg) => reglaNoEjecutable(rg, padReal).noEjecutable);
+    const catalogoOk = malasReales.length === 0 && (vAntes.noEjec || []).length === 0
+      && !REGLAS_CLIENTE.some((rg) => rg.n === 9106);             // y el catálogo quedó como estaba
+
+    ok("143 una regla excepcionable sin nadie que pueda firmar tampoco se ejecuta, y la causa dice en qué mantenedor se arregla",
+       padronMandaOk && causasOk && koOk && todosLosTramosOk && motorOk && veredictoOk && catalogoOk,
+       `el padrón manda ${padronMandaOk} (mismo criterio: con cargo se ejecuta, sin cargo no) · tres causas ${causasOk} (${gSinArea.causa} · ${gInexist.causa} · ${gPobre.causa}) · el knock out se ejecuta igual ${koOk} · mira todos los tramos ${todosLosTramosOk} · el motor lo respeta ${motorOk} · veredicto ${veredictoOk} («${mia && mia.motivo}» · estado «${vDespues && vDespues.estado}» = «${vAntes.estado}») · el catálogo real no tiene ninguna ${catalogoOk} (${malasReales.length} de ${REGLAS_CLIENTE.length})${err ? " · ERROR " + err : ""}`);
   }
 
   console.log(out.join("\n"));
