@@ -315,7 +315,7 @@ Con ese par se buscan en el **padrón** los usuarios de esa área con ese nivel 
   de vacaciones— dejaría las operaciones esperando a quien no existe.
 - **La escalada no cruza áreas.** Un Gerente General y un Jefe de Riesgo no son dos peldaños de una
   escalera: son atribuciones distintas.
-- Una regla **sin área NO SE EJECUTA**. Desde el 18-09-2026 no se evalúa siquiera: el motor la devuelve como «No ejecutada · falta configuración», con la causa y dónde se arregla, y la operación se evalúa SIN ella. Antes se evaluaba igual y su excepción salía «Sin aprobador definido», o sea que la operación quedaba esperando a alguien que no existe. Un default silencioso —«si no dice área, que la vea
+- Una regla con un **tramo de excepción y sin área NO SE EJECUTA** —el área es a quién se le pide la excepción, así que una **knock out** no la necesita: no se aprueba—. Desde el 18-09-2026 no se evalúa siquiera: el motor la devuelve como «No ejecutada · falta configuración», con la causa y dónde se arregla, y la operación se evalúa SIN ella. Antes se evaluaba igual y su excepción salía «Sin aprobador definido», o sea que la operación quedaba esperando a alguien que no existe. Un default silencioso —«si no dice área, que la vea
   Riesgo»— escondería una regla mal configurada detrás de una aprobación real.
 - Cuando no hay nadie, el motor lo dice con esas palabras: **«Sin aprobador definido»**, con el
   requisito (`área · N`) y **la causa**, que son dos y se arreglan en mantenedores distintos — el área

@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-18T06:30:00Z
+timestamp: 2026-09-18T13:30:00Z
 ---
 
 # Estado actual
@@ -19,7 +19,7 @@ Demo funcional del pipeline comercial de factoring para BICE / Factoring Securit
 invariantes del contrato tienen gate; ninguna fila dice ya «sin gate». Lo que esos gates destaparon cambió el
 producto —ocho defectos, abajo—. El generador tiene punto fijo (32, ADR-0003), el id de una operación es estable
 (ADR-0004) con «Operación creada» + Editar (33) y el detalle sigue el mockup (29, 22); el 18-09 el tubo abre en
-«Todos» (34) y **una regla mal definida ya no se ejecuta ni se verifica** (35).
+«Todos» (34) y **una regla con un tramo de excepción sin área ya no se ejecuta ni se verifica** (35).
 
 > ## 🎯 Siguiente paso
 >

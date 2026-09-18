@@ -440,15 +440,15 @@ causa**, que son dos y se arreglan en mantenedores distintos:
 Una lista de aprobadores vacía se leería como «todavía no lo miran», cuando la operación está pegada
 esperando a alguien que no existe.
 
-**Salvo la primera fila, que desde el 18-09-2026 no llega hasta acá.** Un criterio que **no declara
+**Salvo la primera fila, que desde el 18-09-2026 no llega hasta acá.** Un criterio con un **tramo de excepción** que **no declara
 área** no está mal atendido: está **mal definido**, y una regla mal definida **no se ejecuta ni se
-verifica**. El motor corta antes de mirar los tramos y la devuelve como **«No ejecutada · falta
+verifica**. Una **knock out** no entra acá: no se aprueba, así que no necesita aprobador ni área. El motor corta antes de mirar los tramos y la devuelve como **«No ejecutada · falta
 configuración»**, con la causa y el mantenedor donde se arregla. Se ve en la fila del criterio —en su
 propio bloque del tab, nunca dentro del acordeón de las aprobadas—, en el contador del panel y en el
 tooltip de la compuerta de Otorgamiento, y la tarjeta dice la consecuencia con todas sus letras: **la
 operación se evaluó SIN ella**. No bloquea, porque nada se evaluó y por tanto nada concluyó; lo que
-protege a la operación es que el problema se VEA. Las reglas de **clasificación** quedan fuera:
-informan y no deciden, así que no necesitan aprobador. Las otras dos filas de la tabla siguen igual —
+protege a la operación es que el problema se VEA. Las reglas de **clasificación** y las **sin tramos** quedan
+fuera por lo mismo: informan o no deciden. Las otras dos filas de la tabla siguen igual —
 ahí la regla está bien definida y lo que falta es un usuario—.
 
 ### 6.5 La excepción de verificación

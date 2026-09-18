@@ -6451,6 +6451,11 @@
     const areaVacia = { n: 9003, area: "", nombre: "Área en blanco", cond: "C9003", tiers: tramos };
     const clasifSin = { n: 9004, nombre: "Clasificación sin área", cond: "C9004", clasif: true, clfn: () => "Clase X" };
     const sinTramos = { n: 9005, nombre: "Sin tramos", cond: "C9005" };
+    // KNOCK OUT sin área: NO es mal definida. El área es a quién se le pide la EXCEPCIÓN, y un knock out
+    // no se aprueba —incumple y se acabó—. Corrección del usuario (18-09-2026): «no todas las reglas
+    // requieren de aprobador, las knock out no tienen». El caso lo mide contra el catálogo REAL, abajo.
+    const koSinArea  = { n: 9006, nombre: "Knock out sin área", cond: "C9006", hallazgo: "h", tiers: [[(v) => v.x > 50, "rechazado"], [() => true, "aprobado"]] };
+    const mixtaSinA  = { n: 9007, nombre: "Mixta sin área", cond: "C9007", hallazgo: "h", tiers: [[(v) => v.x > 90, "rechazado"], [(v) => v.x > 50, "excepcion", 2], [() => true, "aprobado"]] };
 
     // (a) La COMPUERTA: decide con la definición de la regla y con nada más.
     const g1 = reglaNoEjecutable(sinArea), g2 = reglaNoEjecutable(conArea);
@@ -6459,7 +6464,19 @@
       && reglaNoEjecutable(areaVacia).noEjecutable === true    // "" es no declarar área
       && reglaNoEjecutable(clasifSin).noEjecutable === false   // informa, no decide
       && reglaNoEjecutable(sinTramos).noEjecutable === false   // no decide nada
+      && reglaNoEjecutable(koSinArea).noEjecutable === false   // KNOCK OUT: no se aprueba, no necesita área
+      && reglaNoEjecutable(mixtaSinA).noEjecutable === true    // pero uno de sus tramos SÍ es excepción
       && reglaNoEjecutable(null).noEjecutable === true;        // falla CERRADO
+    // Y el knock out sin área SE EJECUTA de verdad, en las dos direcciones: rechaza cuando toca y aprueba
+    // cuando no. Mirando sólo la compuerta, un `evalReglaCli` que igual lo cortara pasaría inadvertido.
+    const koOk = evalReglaCli(koSinArea, vars).disp === "rechazado"
+      && evalReglaCli(koSinArea, { x: 10 }).disp === "aprobado";
+    // El criterio es el MISMO con que la mesa de reglas arma su lista (`tiers.some(excepcion)`): si
+    // divergieran, la mesa mostraría reglas que el motor no rutea, o al revés.
+    const conExc = REGLAS_CLIENTE.filter((rg) => !rg.clasif && (rg.tiers || []).some((t) => t[1] === "excepcion"));
+    const soloKo = REGLAS_CLIENTE.filter((rg) => !rg.clasif && (rg.tiers || []).length && !(rg.tiers || []).some((t) => t[1] === "excepcion"));
+    const mesaOk = conExc.every((rg) => reglaNoEjecutable(rg).noEjecutable === !rg.area)
+      && soloKo.every((rg) => reglaNoEjecutable(rg).noEjecutable === false) && soloKo.length > 0;
 
     // (b) EL MOTOR NO LA EJECUTA. Con x=100 el primer tramo calza, así que la regla CON área levanta
     //     excepción N3; la misma sin área tiene que salir `no_ejecutada`, sin nivel y sin tramo.
@@ -6504,9 +6521,9 @@
     // Y el catálogo quedó como estaba: el caso no puede dejar una regla plantada para los que siguen.
     const restauradoOk = !REGLAS_CLIENTE.some((r) => r.n === 9001) && visadoDealCalc(deal, {}).estado === vAntes.estado;
 
-    ok("141 una regla mal definida (criterio sin área) no se ejecuta ni se verifica, sale nombrada en el veredicto y no bloquea",
-       compuertaOk && noEjecutaOk && tampocoAprobadoOk && clasifOk && motivoOk && puraOk && veredictoOk && restauradoOk,
-       `compuerta ${compuertaOk} (sin área ✓ · con área ✗ · área "" ✓ · clasificación ✗ · sin tramos ✗ · null ✓) · no se ejecuta ${noEjecutaOk} («${eSin.disp}» sin nivel ni tramo vs «${eCon.disp} N${eCon.nivel}») · tampoco cuando habría aprobado ${tampocoAprobadoOk} · la clasificación sí se evalúa ${clasifOk} · motivo distingue la causa ${motivoOk} («${eSin.motivo}») · pura ${puraOk} · veredicto ${veredictoOk} (noEjec ${mia ? 1 : 0} · fuera de exc/rech · estado «${vDespues && vDespues.estado}» = «${vAntes.estado}» · catálogo real sin ninguna) · catálogo restaurado ${restauradoOk}${err ? " · ERROR " + err : ""}`);
+    ok("141 una regla mal definida (tramo de excepción sin área) no se ejecuta ni se verifica y sale nombrada en el veredicto; un knock out sin área SÍ se ejecuta",
+       compuertaOk && koOk && mesaOk && noEjecutaOk && tampocoAprobadoOk && clasifOk && motivoOk && puraOk && veredictoOk && restauradoOk,
+       `compuerta ${compuertaOk} (excepción sin área ✓ · con área ✗ · área "" ✓ · clasificación ✗ · sin tramos ✗ · KNOCK OUT sin área ✗ · mixta sin área ✓ · null ✓) · el knock out se ejecuta en las dos direcciones ${koOk} · mismo criterio que la mesa ${mesaOk} (${conExc.length} con excepción · ${soloKo.length} knock out) · no se ejecuta ${noEjecutaOk} («${eSin.disp}» sin nivel ni tramo vs «${eCon.disp} N${eCon.nivel}») · tampoco cuando habría aprobado ${tampocoAprobadoOk} · la clasificación sí se evalúa ${clasifOk} · motivo distingue la causa ${motivoOk} («${eSin.motivo}») · pura ${puraOk} · veredicto ${veredictoOk} (noEjec ${mia ? 1 : 0} · fuera de exc/rech · estado «${vDespues && vDespues.estado}» = «${vAntes.estado}» · catálogo real sin ninguna) · catálogo restaurado ${restauradoOk}${err ? " · ERROR " + err : ""}`);
   }
 
   console.log(out.join("\n"));

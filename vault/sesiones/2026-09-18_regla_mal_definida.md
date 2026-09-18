@@ -44,6 +44,22 @@ módulo, así que plantar la regla en el tubo no la toca (el primer intento ley�
 reglas del **cliente** salen del **snapshot** que congela la versión, así que hay que plantar **antes de
 simular** o la versión ya está armada sin ella.
 
+## Las dos correcciones del usuario, el mismo día
+
+1. **«No todas las reglas requieren de aprobador, las knock out no tienen.»** El primer intento exigía área
+   a **toda** regla con tramos. Está mal: el área es a quién se le pide la **excepción**, y una knock out
+   —tramos sólo de `rechazado`— no se aprueba. Exigirle área la habría dejado **sin ejecutar por una
+   carencia que no lo es**, que es el defecto opuesto al que esta regla cierra. El criterio quedó en
+   `tiers.some((t) => t[1] === "excepcion")`, que es **el mismo** con que `OtorgamientosView` arma su lista
+   de reglas —ya estaba escrito ahí y no lo miré—; el caso 141 recorre el catálogo real en las dos
+   direcciones para que no puedan divergir.
+2. **«Nunca puede pasar en silencio si está mal definida.»** Fuera del tab de Otorgamiento había **tres**
+   vías por las que la operación se veía limpia, y las tres estaban en pantallas que se miran MÁS que el tab:
+   - La **tarjeta del Kanban** devolvía `null` (una regla no ejecutada no llega a `exc` ni a `rechReev`).
+   - El **denominador «N/M criterios»** del tubo encogía solo: «16/321» pasaba a «16/320». Encoger el
+     denominador es la forma más silenciosa de todas, porque la cifra sigue pareciendo correcta.
+   - La **mesa de reglas**, que es **donde se arregla**, mostraba un chip de área VACÍO y nada más.
+
 ## Lo que NO cambió, a propósito
 
 **«Sin aprobador definido»** (spec de excepciones §6.4) sigue siendo la respuesta cuando el área **existe
