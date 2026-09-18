@@ -76,9 +76,13 @@ async function abrirConTicket(h, uuidBase, extra) {
 }
 /* Dirección negativa sobre un detalle: el ítem existe, está deshabilitado, el motivo está escrito y el clic no abre nada. */
 async function comprobarBloqueado(pg, motivoRe, rotulo) {
+  // Con el paquete cerrado el detalle ya no dibuja «Opciones» —queda «Operación creada» y el menú «Acciones»
+  // (regla 33)—, así que el ítem y su motivo se buscan ahí: es el MISMO ítem, en el único menú que hay.
   const op = pg.locator("button", { hasText: /^\s*Opciones\s*$/ }).first();
-  if (!(await op.count())) throw new Error(`${rotulo}: no aparece el botón «Opciones» de la oferta`);
-  await op.click(); await pg.waitForTimeout(400);
+  const acc = pg.locator("button", { hasText: /^\s*Acciones\s*$/ }).first();
+  const boton = (await op.count()) ? op : acc;
+  if (!(await boton.count())) throw new Error(`${rotulo}: el detalle no ofrece ni «Opciones» ni «Acciones»`);
+  await boton.click(); await pg.waitForTimeout(400);
   const item = pg.locator("button", { hasText: ITEM }).first();
   if (!(await item.count())) throw new Error(`${rotulo}: el ítem «Eliminar la simulación…» DESAPARECIÓ del menú en vez de deshabilitarse con motivo`);
   if (!(await item.isDisabled())) throw new Error(`${rotulo}: el ítem está HABILITADO con la oferta ${rotulo}`);

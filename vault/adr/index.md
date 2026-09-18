@@ -3,7 +3,7 @@ type: indice
 title: "ADR — decisiones de arquitectura y decisiones cerradas antes del vault"
 description: "Los ADR numerados (inmutables) y el registro de decisiones que se tomaron antes de existir el vault: cada una con fecha y un puntero a la regla que la contiene, para que no se re-litiguen"
 tags: [indice, adr]
-timestamp: 2026-09-17T15:29:14Z
+timestamp: 2026-09-17T19:45:00Z
 ---
 
 # ADR
@@ -15,6 +15,8 @@ Un ADR aceptado es **inmutable**. Para cambiar de rumbo: ADR nuevo con `reemplaz
 |---|---|---|
 | [ADR-0001](./ADR-0001-partir-claude-md-y-abrir-el-vault.md) | Partir `CLAUDE.md` por vida útil y abrir el vault | aceptada · decidida con el usuario 17-09-2026 |
 | [ADR-0002](./ADR-0002-cablear-los-gates.md) | Cablear los gates: tests de contrato, hooks deterministas y CI | aceptada · decidida con el usuario 17-09-2026 |
+| [ADR-0003](./ADR-0003-intencion-de-participacion-declarada.md) | La intención de participación es un insumo declarado del generador, no una lectura de su salida | aceptada · el usuario pidió cerrar el bucle 17-09-2026; el mecanismo lo eligió la sesión |
+| [ADR-0004](./ADR-0004-id-estable-y-dos-marcas-al-editar.md) | El id de la operación es estable, y editar una oferta cerrada usa dos marcas | aceptada · 17-09-2026 |
 
 ## Decisiones cerradas antes del vault — registro con punteros
 
@@ -55,3 +57,6 @@ decididas** y no las vuelva a proponer. Si una se reabre, se escribe un ADR nuev
 | 16-09-2026 | El **Modo Directorio** es un bloque desechable con cinco enganches marcados | regla 31 · `modo_directorio.md` | cerrada |
 | 17-09-2026 | Partir `CLAUDE.md` por vida útil, verbatim, por tema | [ADR-0001](./ADR-0001-partir-claude-md-y-abrir-el-vault.md) | cerrada |
 | 17-09-2026 | Gates por línea base, hooks en Node, CI de un solo job, preset A de git; sin tdd-guard ni formateador | [ADR-0002](./ADR-0002-cablear-los-gates.md) | cerrada |
+| 17-09-2026 | **El generador tiene punto fijo**: la intención de participación es un insumo declarado (`lib/intencion_sow.js`), no una lectura del A5 medido | [ADR-0003](./ADR-0003-intencion-de-participacion-declarada.md) · regla 32 | cerrada |
+| 17-09-2026 | El **id de la operación no cambia** con el cierre del día; **Editar** una oferta cerrada marca `enEdicion` aparte de `reabierta` | [ADR-0004](./ADR-0004-id-estable-y-dos-marcas-al-editar.md) · regla 33 | cerrada (pedido del usuario) |
+| 17-09-2026 | **V10 es del DEUDOR**, no del par: lo pagado al factoring en 3M sumando todos sus cedentes, como dice la política | regla 9-ter · `reglas/verificacion.md` | cerrada (ratificación del usuario) |

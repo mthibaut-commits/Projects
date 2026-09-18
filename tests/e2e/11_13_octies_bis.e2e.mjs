@@ -1,7 +1,7 @@
 /* Gate e2e de la regla 13-octies-bis: «Documentos en la oferta» ofrece la MISMA elección de vista que
    «Documentos disponibles» (Por deudor / Por factura), la plana trae EXACTAMENTE lo mismo que los
    acordeones y agrega RUT deudor + razón social; el segmentado sólo aparece con la oferta NO vacía; y el
-   estado VACÍO se ve (caja #EDECF3, borde #DEDCE7, 72 px, texto t11 medium en C.sub). Todo vive en el
+   estado VACÍO se ve (caja #F5F4F8, borde #E4E2EC, 72 px, texto t11 medium en C.sub). Todo vive en el
    JSX de `DealDrawer` —estado de React, sin función expuesta salvo `facturasDeDeudores`, que ya fija el
    caso 98—, así que se ejercita el detalle real con el Modo Directorio.
    Dos direcciones: con oferta llena el segmentado ESTÁ y la caja NO; con oferta vacía la caja ESTÁ y el
@@ -18,7 +18,7 @@
    `limpiarSimulacion`, y las entradas de auditoría que `registrarAuditoria` persiste en localStorage— se
    mide y va en el detalle del caso, no se supone. */
 
-const HEX = { fondo: "#EDECF3", borde: "#DEDCE7" }; // el color del texto no va acá: la regla dice C.sub y se lee de la paleta de la página
+const HEX = { fondo: "#F5F4F8", borde: "#E4E2EC" }; // el color del texto no va acá: la regla dice C.sub y se lee de la paleta de la página
 const TXT_VACIO = "Ninguna factura seleccionada";
 const TIP_PLANA_OFERTA = "Todas las facturas de la oferta en una sola lista, de la más nueva a la más antigua (folio descendente).";
 const TIP_DEUDOR = "Un acordeón por empresa deudora, con sus facturas dentro.";
@@ -158,7 +158,7 @@ async function verificarCaja(det) {
 }
 
 export const casos = [
-  { id: "e2e-13-octies-bis-a", titulo: "el estado de ENTRADA es la oferta vacía y SE VE: título «Documentos en la oferta» con 0 · 0, sin segmentado, caja #EDECF3 · borde #DEDCE7 · ≥72 px · t11 medium · C.sub, visible y dentro del documento; el estilo viejo (#F7F7FA / C.faint) y las copias oculta, transparente y fuera de pantalla las rechaza el mismo verificador",
+  { id: "e2e-13-octies-bis-a", titulo: "el estado de ENTRADA es la oferta vacía y SE VE: título «Documentos en la oferta» con 0 · 0, sin segmentado, caja #F5F4F8 · borde #E4E2EC · ≥72 px · t11 medium · C.sub, visible y dentro del documento; el estilo viejo (#F7F7FA / C.faint) y las copias oculta, transparente y fuera de pantalla las rechaza el mismo verificador",
     correr: (h) => conDirectorio(h, async () => {
       const det = await h.abrirDetalle(0);
       const sub = await instalar(det);

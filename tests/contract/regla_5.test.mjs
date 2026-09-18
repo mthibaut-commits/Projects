@@ -34,6 +34,14 @@ export function cuerpoInterno(src, nombre) {
   return fin < 0 ? null : src.slice(i, fin);
 }
 
+/* El cuerpo de una función de NIVEL MÓDULO (`function nombre(`), hasta su `}` a columna 0. */
+export function cuerpoModulo(src, nombre) {
+  const i = src.indexOf(`function ${nombre}(`);
+  if (i < 0) return null;
+  const fin = src.indexOf("\n}", i);
+  return fin < 0 ? null : src.slice(i, fin);
+}
+
 /* Los ESCRITORES de la pérdida: cada objeto literal que asigna `stage: "perdida"` (con cualquier comilla
    y aunque el objeto vaya en varias líneas). De cada uno se extrae el objeto —del `{` que lo abre al `}`
    que lo cierra, sin los `${…}` de los template literals— y se mira: la etapa de origen, la causa
@@ -96,13 +104,17 @@ export function badgesDeTarjeta(src) {
   return { fallos };
 }
 
-/* Reabrir en sitio es sólo para aceptadas/cesión: una perdida se reactiva con una operación NUEVA. */
+/* Reabrir en sitio no admite una perdida: se reactiva con una operación NUEVA. Desde el 17-09-2026 (regla 33) la
+   compuerta vive en `edicionOperacion`, que `reabrirOperacion` consulta antes de tocar nada. */
 export function reaperturaEnSitio(src) {
   const c = cuerpoInterno(src, "reabrirOperacion"); const fallos = [];
   if (!c) return { fallos: ["no existe reabrirOperacion"] };
-  const m = c.match(/!\[([^\]]*)\]\.includes\(d0\.stage\)\) return/);
-  if (!m) fallos.push("reabrirOperacion no filtra por etapa de origen");
-  else if (/"perdida"/.test(m[1])) fallos.push("reabrirOperacion admite una perdida: la reapertura tiene que ser una operación nueva con referencia");
+  if (!/const ed = edicionOperacion\(d0\);/.test(c) || !/if \(![^)]*ed\.ok\) return;/.test(c))
+    fallos.push("reabrirOperacion ya no consulta `edicionOperacion(d0)` antes de reabrir");
+  const e = cuerpoModulo(src, "edicionOperacion") || "";
+  if (!e) fallos.push("no existe edicionOperacion");
+  else if (!/if \(deal\.stage === "perdida"\) return \{ aplica: true, ok: false/.test(e))
+    fallos.push("edicionOperacion admite una perdida: la reapertura tiene que ser una operación nueva con referencia");
   return { fallos };
 }
 
@@ -137,7 +149,7 @@ test("la tarjeta del Kanban suprime cada badge accionable de una perdida (verifi
   assert.deepEqual(badgesDeTarjeta(jsx).fallos, []);
 });
 
-test("una perdida no se reabre en sitio (reabrirOperacion sólo admite aceptadas y cesión)", () => {
+test("una perdida no se reabre en sitio (reabrirOperacion consulta edicionOperacion, que la rechaza por terminal)", () => {
   assert.deepEqual(reaperturaEnSitio(jsx).fallos, []);
 });
 
@@ -188,9 +200,12 @@ test("SONDA · plantar la violación la caza: escritor sin origen, con el genér
     assert.ok(lectorDeCausa(s).fallos.some((f) => /antes que el bloqueo firme/.test(f)), `no cazó ${acceso}`);
   }
   // (7) reabrir admite perdida
-  const s7 = jsx.replace('!["aceptadas", "cesion"].includes(d0.stage)) return', '!["aceptadas", "cesion", "perdida"].includes(d0.stage)) return');
+  const s7 = jsx.replace('  if (deal.stage === "perdida") return { aplica: true, ok: false', '  if (false) return { aplica: true, ok: false');
   assert.notEqual(s7, jsx);
   assert.ok(reaperturaEnSitio(s7).fallos.some((f) => /admite una perdida/.test(f)));
+  const s7b = jsx.replace("    const ed = edicionOperacion(d0);\n", "");
+  assert.notEqual(s7b, jsx);
+  assert.ok(reaperturaEnSitio(s7b).fallos.some((f) => /ya no consulta/.test(f)));
   // (8) el badge de visado se evalúa también en perdida
   const s8 = jsx.replace('{["prospeccion", "oferta", "aceptadas", "otorgamiento"].includes(deal.stage) && (() => {', '{["prospeccion", "oferta", "aceptadas", "otorgamiento", "perdida"].includes(deal.stage) && (() => {');
   assert.notEqual(s8, jsx);

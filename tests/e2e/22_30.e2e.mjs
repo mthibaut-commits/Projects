@@ -30,7 +30,12 @@
 
 const SEL_SESION = 'select[title="Sesión de usuario (sólo demo)"]';
 const ITEM_RESET = "Eliminar la simulación y vaciar la oferta";
+const EDITAR = "Editar la oferta";   // regla 33: sólo con la oferta cerrada, y no cierra ni avanza de etapa
 const ESPERADOS = ["Guardar borrador", "Rechazar…", /^(Marcar|Quitar) prioridad de curse$/, ITEM_RESET];
+/* Lo esperado con la oferta cerrada: el mismo menú más «Editar la oferta» antes del reset. */
+const esperadosPara = (textos) => textos.includes(EDITAR)
+  ? ["Guardar borrador", "Rechazar…", /^(Marcar|Quitar) prioridad de curse$/, EDITAR, ITEM_RESET]
+  : ESPERADOS;
 const PROHIBIDO = /Cerrar oferta|Enviar a Comité|Avanzar a|Girar|Avanzar\b/;
 const TITULO_CONFIRM_RESET = "¿Eliminar la simulación y partir de cero?";
 
@@ -82,11 +87,12 @@ const itemAcciones = (pg, re) => btnAcciones(pg).locator("..").getByRole("button
 async function comprobarMenu(pg, donde, { resetHabilitado = true } = {}) {
   const m = await leerMenuAcciones(pg, donde);
   const textos = m.items.map((i) => i.t);
-  if (textos.length !== ESPERADOS.length || !ESPERADOS.every((e, i) => (e instanceof RegExp ? e.test(textos[i]) : textos[i] === e)))
-    throw new Error(`${donde}: el menú ofrece [${textos.join(" · ")}] y tiene que ser exactamente [Guardar borrador · Rechazar… · Marcar prioridad de curse · ${ITEM_RESET}]`);
+  const esperados = esperadosPara(textos);
+  if (textos.length !== esperados.length || !esperados.every((e, i) => (e instanceof RegExp ? e.test(textos[i]) : textos[i] === e)))
+    throw new Error(`${donde}: el menú ofrece [${textos.join(" · ")}] y tiene que ser exactamente [${esperados.map((e) => (e instanceof RegExp ? "Marcar prioridad de curse" : e)).join(" · ")}]`);
   if (m.secciones.length !== 1 || m.secciones[0] !== "Acciones") throw new Error(`${donde}: secciones del menú [${m.secciones.join(" · ")}]; tiene que haber UNA («Acciones»)`);
   if (PROHIBIDO.test(m.texto)) throw new Error(`${donde}: el menú menciona cerrar/avanzar: «${m.texto}»`);
-  const reset = m.items[3];
+  const reset = m.items[esperados.length - 1];   // el reset va SIEMPRE al final, en rojo
   if (reset.color !== m.rojo) throw new Error(`${donde}: «${ITEM_RESET}» no va en C.red (${m.rojo}): ${reset.color}`);
   if (resetHabilitado && reset.dis) throw new Error(`${donde}: «${ITEM_RESET}» está deshabilitado sobre una oferta que sigue siendo del ejecutivo (${reset.title})`);
   if (!resetHabilitado && !reset.dis) throw new Error(`${donde}: «${ITEM_RESET}» está HABILITADO sobre una oferta publicada`);
@@ -221,7 +227,9 @@ export const casos = [
         const pP = await abrirConTicket(h, { ofertaCerrada: true, ofertaComunicada: true }, "ADMIN"); extras.push(pP);
         await tabBtn(pP, "Bitácora").click(); await pP.waitForTimeout(500);
         const mP = await comprobarMenu(pP, "Bitácora (oferta publicada)", { resetHabilitado: false });
-        if (!/La oferta ya se publicó al cliente/.test(mP.items[3].title)) throw new Error(`publicada: el tooltip del reset no lleva el motivo: «${mP.items[3].title}»`);
+        // El reset es SIEMPRE el último ítem; con la oferta cerrada, «Editar la oferta» (regla 33) se mete antes.
+        const resetP = mP.items[mP.items.length - 1];
+        if (!/La oferta ya se publicó al cliente/.test(resetP.title)) throw new Error(`publicada: el tooltip del reset no lleva el motivo: «${resetP.title}»`);
         if (!/La oferta ya se publicó al cliente/.test(mP.texto) || !/Reabrir para modificar/.test(mP.texto)) throw new Error(`publicada: el motivo no está ESCRITO debajo del ítem apuntando a «Reabrir para modificar» (menú: «${mP.texto.slice(-220)}»)`);
         await itemAcciones(pP, new RegExp(ITEM_RESET)).dispatchEvent("click"); await pP.waitForTimeout(400);
         if (await pP.getByText(TITULO_CONFIRM_RESET).count()) throw new Error("publicada: un clic sobre el ítem deshabilitado abrió el ConfirmDialog");

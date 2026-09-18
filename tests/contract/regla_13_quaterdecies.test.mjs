@@ -9,7 +9,7 @@
    (2) El pool se rearma con la UNIÓN de facturasOp + facturasDisponibles (no se pierde ninguna) y la
        oferta queda vacía: `facturasOp: []`, `simulado: false`, `monto: 0`, `facturas: 0`.
    (3) La evidencia NO se toca: el closure no nombra ningún repositorio ni las versiones ni el visado.
-   (4) El tubo se entera por el MISMO canal que la simulación: `simAvisoRef.current = { id, patch }`, y el
+   (4) El tubo se entera por el MISMO canal que la simulación: `avisarTubo(id, patch)`, y el
        efecto que lo drena postea `nex-simulado`.
    (5) En DealDrawer: `motivoNoReset` cubre firmada (`aprobacionFormalCliente`) y publicada (`ofertaPublicada`),
        CADA uno de esos dos mensajes apunta a «Reabrir para modificar», `puedeReiniciar = !motivoNoReset`, y
@@ -103,9 +103,9 @@ export function auditarReset(src) {
   for (const r of REPOS_EVIDENCIA) if (cl.includes(r)) fallos.push(`evidencia: limpiarSimulacion nombra \`${r}\` — el reset no toca visado, verificaciones, vetos ni versiones`);
   if (/\bdelete\b/.test(cl)) fallos.push("evidencia: limpiarSimulacion usa `delete` (borra algo que no es suyo)");
   // (4) aviso al tubo por el mismo canal que la simulación
-  if (!/simAvisoRef\.current = \{ id, patch \}/.test(cl)) fallos.push("aviso: limpiarSimulacion no deja el patch en `simAvisoRef.current = { id, patch }` (el tubo no se entera: vacía acá, simulada allá)");
-  if (!/simAvisoRef\.current;[\s\S]{0,400}?postMessage\(\{ type: "nex-simulado", dealId: av\.id, patch: av\.patch \}/.test(src))
-    fallos.push("aviso: el efecto que drena `simAvisoRef` no postea `nex-simulado` con `{ dealId, patch }`");
+  if (!/avisarTubo\(id, patch\)/.test(cl)) fallos.push("aviso: limpiarSimulacion no encola el patch con `avisarTubo(id, patch)` (el tubo no se entera: vacía acá, simulada allá)");
+  if (!/avisoTuboRef\.current;[\s\S]{0,400}?postMessage\(\{ type: "nex-simulado", dealId: av\.id, patch: av\.patch \}/.test(src))
+    fallos.push("aviso: el efecto que drena `avisoTuboRef` no postea `nex-simulado` con `{ dealId, patch }`");
   // (5) DealDrawer: sólo mientras la oferta siga siendo del ejecutivo, con el motivo escrito
   const tm = tramoMotivo(src);
   if (!tm) fallos.push("motivo: no existe `const motivoNoReset =` … `const puedeReiniciar` en DealDrawer");
@@ -143,7 +143,7 @@ test("13-quaterdecies · el reset no toca la evidencia: ningún repositorio, ver
   const cl = closureDe(jsx, "limpiarSimulacion");
   assert.ok(cl.length > 400, "el closure se recortó demasiado corto: " + cl.length);
 });
-test("13-quaterdecies · el tubo se entera por el mismo canal que la simulación (simAvisoRef → nex-simulado)", () => {
+test("13-quaterdecies · el tubo se entera por el mismo canal que la simulación (avisarTubo → nex-simulado)", () => {
   assert.deepEqual(auditarReset(jsx).filter((x) => /^aviso:/.test(x)), []);
 });
 test("13-quaterdecies · deshabilitado —no oculto— con el motivo escrito si firmada o publicada, cada mensaje apuntando a «Reabrir para modificar», en rojo, con ConfirmDialog", () => {
@@ -166,7 +166,7 @@ test("13-quaterdecies · SONDAS: cada violación plantada la caza su gate", () =
     ["el patch pisado por el estado viejo ({ ...patch, ...d })", jsx.replace(cl, cl.replace("return { ...d, ...patch, historialContacto", "return { ...patch, ...d, historialContacto")), /^patch: el closure no devuelve/],
     ["el reset borra el visado", jsx.replace(cl, cl.replace("const upd = (d) => {", "const upd = (d) => {\n      repoVisado.del(id);")), /^evidencia: .*repoVisado/],
     ["el reset borra las versiones", jsx.replace(cl, cl.replace("const upd = (d) => {", "const upd = (d) => {\n      delete SIM_VERSIONS[id];")), /^evidencia:/],
-    ["sin aviso al tubo", jsx.replace(cl, cl.replace("      simAvisoRef.current = { id, patch };\n", "")), /^aviso: limpiarSimulacion/],
+    ["sin aviso al tubo", jsx.replace(cl, cl.replace("      avisarTubo(id, patch);\n", "")), /^aviso: limpiarSimulacion/],
     ["la oferta no queda vacía", jsx.replace(cl, cl.replace("facturasOp: [], facturasDisponibles: pool", "facturasOp: d.facturasOp, facturasDisponibles: pool")), /^patch: la oferta no queda vacía/],
     ["se pierden las facturas de la oferta", jsx.replace(cl, cl.replace("[...(d.facturasOp || []), ...(d.facturasDisponibles || [])].forEach", "[...(d.facturasDisponibles || [])].forEach")), /^pool:/],
     ["una publicada se puede vaciar", jsx.replace('    : ofertaPublicada(deal) ? ' + MSG_PUBLICADA + '\n', ""), /^motivo: `motivoNoReset` no consulta `ofertaPublicada/],

@@ -115,7 +115,7 @@ const leer = (det) => det.evaluate(() => {
   // hasta la caja de identidad, cuyo primer div lleva la razón social como `title` y como texto.
   const nombreDeudorDe = (el) => { let e = el; for (let k = 0; k < 8 && e; k++) { const nom = [...e.children].find((c) => c.tagName === "DIV" && c.getAttribute("title") && norm(c.textContent) === norm(c.getAttribute("title"))); if (nom) return norm(nom.getAttribute("title")); e = e.parentElement; } return null; };
   const chipsDeudor = [...document.querySelectorAll("span[title]")]
-    .filter((s) => /^(Línea disponible de este deudor:|Sin cupo para sus |Tiene Línea Cliente - Deudor pero sin cupo|No tiene Línea Cliente - Deudor:)/.test(s.getAttribute("title") || ""))
+    .filter((s) => /^(Línea disponible de este deudor:|Sin cupo para |Tiene Línea Cliente - Deudor pero sin cupo|No tiene Línea Cliente - Deudor:)/.test(s.getAttribute("title") || ""))
     .map((s) => ({ deudor: nombreDeudorDe(s), rotulo: norm([...s.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join("")), texto: norm(s.innerText) }));
   const sinCupoFuera = chipsDeudor.filter((c) => /^(Sin Línea Cliente - Deudor|Línea Cliente - Deudor sin cupo)$/.test(c.rotulo)).length;
   const seccion = (() => { const e = document.querySelector('[title="Monto seleccionado para esta oferta"]'); return e ? norm(e.innerText) : null; })();
@@ -325,7 +325,11 @@ export const casos = [
         for (const p of piden) {
           const ch = await chipDe(det, p.deudor);
           if (!ch) { noVistos.push(p.deudor); continue; }
-          if (!CARENCIA.test(ch.rotulo)) throw new Error(`fuera de la oferta ${p.deudor} dice «${ch.rotulo}» y no describe la carencia («Sin Línea Cliente - Deudor» / «Línea Cliente - Deudor sin cupo»)`);
+          // Fuera de la oferta el chip describe lo que el deudor TIENE: su carencia si no tiene cupo propio, o su
+          // «Línea disponible» si lo tiene y el que lo dejó en cero fue el tope del CLIENTE (desfase anotado en el
+          // tablero). Lo que la regla exige acá es que NADIE pida: eso lo fija `r2.chipsSolicitud` unas líneas arriba.
+          if (!CARENCIA.test(ch.rotulo) && !/^Línea disponible /.test(ch.rotulo))
+            throw new Error(`fuera de la oferta ${p.deudor} dice «${ch.rotulo}»: ni describe la carencia ni muestra su línea disponible`);
           fuera.push(`${p.deudor}: «${p.rotulo}» → «${ch.rotulo}»`);
         }
         if (!fuera.length) throw new Error("ninguno de los deudores que pedían línea se encontró fuera de la oferta: " + JSON.stringify(noVistos));
