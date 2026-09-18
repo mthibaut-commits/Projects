@@ -51,3 +51,19 @@ timestamp: 2026-09-18T18:10:00Z
     usuario entra igual en vez de quedarse mirando el login para siempre. El suelo oscuro es del
     contenedor (`marcaFondo`) y no de la escena que se va: cuando la escena se desvanece, sin ese suelo
     aparece el blanco de la app y la pantalla se blanquea a mitad del zoom.
+
+39. **CAMBIAR UN DEFAULT DE `CFG_OPER_BASE` NO LLEGA A QUIEN YA TIENE CONFIGURACIÓN GUARDADA**
+    (18-09-2026). `cargarCfgOper` hace `{ ...CFG_OPER_BASE, ...guardado }`: **lo guardado gana**. Eso es
+    lo correcto para lo que el usuario eligió en Configuración, y silenciosamente equivocado para un
+    default que el PRODUCTO cambió. El usuario reportó que la portada se veía «mucho más clara» que las
+    muestras: su navegador tenía la configuración del tenant de antes de ADR-0005, así que seguía
+    pintando el degradado lineal anterior y el CTA `#4F46E5 → #6D5BFF` aunque el fuente ya tenía los
+    nuevos. **Ningún test lo veía**: los siete pasos corren sobre un `localStorage` vacío, donde el
+    default siempre gana. Se reprodujo inyectando la configuración v1 antes de cargar la página.
+    La salida es la que el propio comentario de `SCHEMA_VERSION` prescribe: **subir la versión de la
+    colección y escribir su migración** — `cfgOper` pasó a 2 y su ruta **retira sólo las tres claves que
+    ADR-0005 cambió** (`marcaPrimario`, `marcaCta`, `marcaPanel`) para que vuelvan a salir del default,
+    conservando el resto —tasas, tramos, banderas de demo—, que eso sí lo eligió el usuario. Devolver
+    `null` habría descartado la configuración entera y le habría borrado sus perillas. Vale para
+    cualquier otro default: **si cambia un valor que ya pudo quedar guardado, sube el esquema**.
+
