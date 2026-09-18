@@ -59,6 +59,16 @@ contrato cada una.
   inyectando la configuración v1 con `addInitScript` antes de cargar la página — y esa es la forma de
   probar cualquier cosa que dependa de datos guardados. Arreglado subiendo `SCHEMA_VERSION.cfgOper` a 2
   con una migración que retira **sólo** las tres claves de marca y conserva el resto (regla 39).
+- **El zoom terminaba más grande que la app y el traspaso saltaba.** La capa estiraba la captura de
+  1600 px a todo el ancho con `object-fit:cover`; la app centra su contenido con `mx-auto` y
+  `max-width:1600`. En una pantalla de 2000 px el último cuadro quedaba ~25 % más grande y sin
+  márgenes. Se partió la capa en blanco de página + **banda con el mismo tope**, y la geometría pasó a
+  medirse contra la banda en reposo y no contra el viewport: **0 px de desfase** en posición y ancho
+  (regla 38 (c)). **Sólo se ve en pantalla ancha**: a 1600 px las dos geometrías coinciden por
+  casualidad, que es por qué no salió antes.
+- **Un backtick en un comentario del `<style>` cierra el template literal.** Pasó al escribir la CSS de
+  la banda: `tsc` lo cazó con TS1005/TS1381 y **el build no dijo nada**. Es la trampa que ya documenta
+  `code_style.md`, y el paso 1 existe exactamente para eso.
 
 ## Estado de la verificación
 

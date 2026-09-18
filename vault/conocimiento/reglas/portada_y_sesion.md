@@ -50,7 +50,13 @@ timestamp: 2026-09-18T18:10:00Z
     pantalla lo manda el reloj (`setTimeout`), no la promesa de la animación**: si WAAPI falla, el
     usuario entra igual en vez de quedarse mirando el login para siempre. El suelo oscuro es del
     contenedor (`marcaFondo`) y no de la escena que se va: cuando la escena se desvanece, sin ese suelo
-    aparece el blanco de la app y la pantalla se blanquea a mitad del zoom.
+    aparece el blanco de la app y la pantalla se blanquea a mitad del zoom. Y **(c) la capa aterriza
+    EXACTO donde la app va a dibujar**: la app centra su contenido con `mx-auto` y `max-width:1600`, así
+    que la capa se parte en el blanco de página y una **banda con ese mismo tope**, y la geometría del
+    zoom se mide contra la banda en reposo, no contra el viewport. Midiéndola contra el viewport la
+    captura se estiraba a todo el ancho y el último cuadro quedaba ~25 % más grande que la app en una
+    pantalla de 2000 px: al entregar el control se veía un salto (*reportado por el usuario el
+    18-09-2026; medido después: 0 px de desfase en posición y en ancho*).
 
 39. **CAMBIAR UN DEFAULT DE `CFG_OPER_BASE` NO LLEGA A QUIEN YA TIENE CONFIGURACIÓN GUARDADA**
     (18-09-2026). `cargarCfgOper` hace `{ ...CFG_OPER_BASE, ...guardado }`: **lo guardado gana**. Eso es
