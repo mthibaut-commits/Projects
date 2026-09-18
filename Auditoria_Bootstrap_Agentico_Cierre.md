@@ -41,10 +41,10 @@ Medido contra los doce pasos, uno por uno. Las tres filas de arriba son las que 
 | Paso | Qué pide | Estado en NEX | Veredicto |
 |---|---|---|---|
 | **8** | `vault/conocimiento/despacho_agentes.md`: routing de modelos, bloque invariante, cierres proporcionales | **Escrito el 18-09-2026** | ✅ salvo el routing por modelo, que este repo no tiene medido y por eso no se prescribe (§3) |
-| **7** | Escalera de ceremonia T1/T2/T3 escrita en `.claude/rules/workflow.md` | **No existe el archivo**; «T3» se usa en el tablero, en `flujo_git.md`, en un hook y en cinco mensajes de commit | **Falta: hay una referencia colgando** (§4) |
+| **7** | Escalera de ceremonia T1/T2/T3 escrita en `.claude/rules/workflow.md` | **Escrito el 18-09-2026** y gateado: todo nivel citado por un documento vivo tiene que estar definido ahí | ✅ (§4) |
 | **6** | Cuarteto de gates: tests · tipos · lint · format-check | Tests ✅ · tipos ✅ · **lint ✗ · format ✗** (el repo no tiene linter ni formateador) | **Decisión, no tarea** (§5) |
 | 2 | `vault/roadmap/`, `features/`, `specs/`, `plantillas/` | Sólo `adr/`, `sesiones/`, `conocimiento/` | No aplica hoy (§6) |
-| 3 | `.claude/rules/workflow.md` y `architecture.md` | Sólo `code_style.md` y `testing.md` | `workflow.md` sí (§4); `architecture.md` ya vive en `vault/conocimiento/arquitectura.md` |
+| 3 | `.claude/rules/workflow.md` y `architecture.md` | `code_style.md`, `testing.md` y **`workflow.md`** (18-09) | ✅ `architecture.md` ya vive en `vault/conocimiento/arquitectura.md` |
 | 4 | Hook de formato · `tdd-guard` | No cableados | Correcto y documentado: no hay formateador, y `tdd-guard` exige un reporter por unidad que esta suite de integración no produce (ADR-0002) |
 | 5 | Capa `unit` | No existe | Correcto y documentado: un solo archivo fuente; la suite prueba las funciones puras por su nombre (`.claude/rules/testing.md`) |
 | 10 | Paridad local del artefacto | El `.bat` construye **el mismo HTML** que se entrega; las herramientas viven en el repo, no en `/tmp` | Cumplido por construcción |
@@ -93,6 +93,11 @@ cuatro errores y los descubre otra vez a punta de refutación.
 ---
 
 ## 4. La referencia colgando: «T3» se usa y no está definido en ninguna parte
+
+> **Cerrado el 18-09-2026** en [`.claude/rules/workflow.md`](.claude/rules/workflow.md): la escalera calibrada a
+> NEX, el ciclo de una tarea y el cierre de sesión. `vault.test.mjs` exige que **todo nivel citado por un
+> documento vivo esté definido** en esa tabla, con sonda negativa — la referencia no puede volver a quedar
+> colgando. Los logs de sesión quedan fuera del gate a propósito: son historia. Lo que sigue es el hallazgo.
 
 `grep -rn "T3"` devuelve el tablero (dos veces), `vault/conocimiento/flujo_git.md`, el comentario del hook
 `gitflow_guard.mjs` y cinco mensajes de commit. **T1 y T2 no aparecen nunca.** La escalera de ceremonia
@@ -169,7 +174,7 @@ Decirlo explícitamente evita que la próxima sesión lo interprete como deuda:
 Por retorno sobre esfuerzo, y sin empaquetar nada que no lo necesite:
 
 1. ~~**`vault/conocimiento/despacho_agentes.md`** (§3) — T2. El material está medido y es de este repo.~~ **HECHO el 18-09-2026**, con gate en `vault.test.mjs`.
-2. **`.claude/rules/workflow.md`** con la escalera (§4) — T2. Es reubicar texto que ya existe.
+2. ~~**`.claude/rules/workflow.md`** con la escalera (§4) — T2. Es reubicar texto que ya existe.~~ **HECHO el 18-09-2026**, con gate en `vault.test.mjs`.
 3. **Decidir el cuarteto de gates** (§5) — una conversación, después un ADR de tres párrafos.
 4. **Los datos** (recomendación 4 de la auditoría anterior) — un ADR y su gate.
 5. **`pipeline.zip`** fuera del versionado, y las cifras de `arquitectura.md`/`README.md` al día — un T3.
@@ -190,7 +195,7 @@ ls tests/e2e/*.e2e.mjs | wc -l                        # 16 archivos
 grep -c "sin gate\*\*" vault/conocimiento/invariantes.md   # sólo en la prosa, ninguna fila
 grep -rn "T3" CLAUDE.md vault/ .claude/ | grep -v sesiones/20   # usos sin definición
 ls vault/                                             # adr, conocimiento, sesiones (no hay specs/ ni features/)
-ls .claude/rules/                                     # code_style.md, testing.md (no hay workflow.md)
+ls .claude/rules/                                     # code_style.md, testing.md, workflow.md (desde el 18-09)
 ls vault/conocimiento/despacho_agentes.md             # desde el 18-09-2026 existe
 git ls-files | grep pipeline.zip                      # sigue versionado (2,7 MB; los 29,6 de §… son el contenido descomprimido)
 ```
