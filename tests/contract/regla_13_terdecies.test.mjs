@@ -36,7 +36,7 @@ export function indicadorUnico(src) {
   const tubo = usos.filter((u) => /<td\b[^>]*>\s*$/.test(u.ctx));
   // `\{fullPage &&` y no `fullPage &&`: `{!fullPage && …}` también contiene `fullPage &&`, y con la condición
   // invertida la cabecera del detalle —que es la variante fullPage— se queda sin indicador.
-  const cab = usos.filter((u) => /\{fullPage &&\s*<div[^>]*>\s*$/.test(u.ctx));
+  const cab = usos.filter((u) => /\{fullPage && \(\s*<div[^>]*>\s*$/.test(u.ctx));
   if (tubo.length !== 1) fallos.push(`no hay exactamente UN uso dentro de un <td> del tubo (${tubo.length})`);
   else if (/conOperacion/.test(tubo[0].forma)) fallos.push(`el tubo pasa conOperacion (línea ${tubo[0].linea}): la columna muestra el ESTADO de la línea, no un derivado de la oferta`);
   if (cab.length !== 1) fallos.push(`no hay exactamente UN uso en la cabecera bajo fullPage (${cab.length})`);
@@ -86,7 +86,8 @@ test("13-terdecies · SONDAS: cada violación plantada la caza su gate, y lo que
     assert.ok(indicadorUnico(s).some((f) => /se dibuja en 3 sitios/.test(f)), `no cazó un tercer sitio de dibujo (${forma})`);
   }
   // 1e · la cabecera bajo `!fullPage`: la variante fullPage —el detalle— se queda sin indicador.
-  const s1e = plantar(`{fullPage && <div className="shrink-0">${CAB}`, `{!fullPage && <div className="shrink-0">${CAB}`);
+  const s1e = jsx.replace(/\{fullPage && \(\s*<div className="shrink-0">/, '{!fullPage && (\n              <div className="shrink-0">');
+  assert.notEqual(s1e, jsx, "la sonda 1e no encontró la cabecera bajo fullPage");
   assert.ok(indicadorUnico(s1e).some((f) => /cabecera bajo fullPage \(0\)/.test(f)), "no cazó la cabecera bajo !fullPage");
   // 2 · el rótulo viejo plantado COMO rótulo, fuera de comentario: sí lo caza.
   const s2 = plantar('<span style={{ color: C.sub }}>Línea proyectada</span>', '<span style={{ color: C.sub }}>Proyección post-curse</span>');

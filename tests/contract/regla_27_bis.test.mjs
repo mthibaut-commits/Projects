@@ -126,7 +126,7 @@ export function scriptsCaptura(archivos, src = jsx) {
    (ver MODULO_TAREAS_ACEPTADOS): el desfase conocido se imprime, cualquier otro nombre falla. */
 export function moduloNodoTareas(src) {
   const cuerpo = (src.match(/^function NodoTareasModal\([\s\S]*?^\}/m) || [""])[0];
-  const m = cuerpo.match(/registrarAuditoria\(\{[^\n]*?modulo:\s*"([^"]+)"/);
+  const m = cuerpo.match(/registrarAuditoria\(\{[\s\S]{0,400}?modulo:\s*"([^"]+)"/);
   const modulo = m ? m[1] : null;
   const fallos = [];
   if (!modulo) fallos.push("NodoTareasModal ya no audita la asignación de tareas con registrarAuditoria({ …, modulo: \"…\" })");
@@ -177,17 +177,16 @@ test("27-bis · la auditoría de «Asignar tarea» (NodoTareasModal) nombra el m
 });
 test("27-bis · SONDAS: cada violación plantada la caza su gate, y el formato legítimo (espacios, saltos de línea) no lo rompe", () => {
   // (a) botón con rótulo viejo → irA sigue diciendo el nuevo: se detecta el desacuerdo Y el rótulo.
-  const a = jsx.replace('irA("pipeline", "Gestión diaria")} style={{ color: vistaApp === "pipeline" ? C.indigo : C.sub, fontWeight: vistaApp === "pipeline" ? 600 : 400 }}>Gestión diaria</button>',
-                        'irA("pipeline", "Tubo diario")} style={{ color: vistaApp === "pipeline" ? C.indigo : C.sub, fontWeight: vistaApp === "pipeline" ? 600 : 400 }}>Tubo diario</button>');
+  const a = jsx.replace(/irA\("pipeline", "Gestión diaria"\)([\s\S]{0,200}?)Gestión diaria(\s*<\/button>)/, 'irA("pipeline", "Tubo diario")$1Tubo diario$2');
   assert.notEqual(a, jsx); assert.ok(botonesNavbar(a).fallos.some((f) => /«pipeline» se llama «Tubo diario»/.test(f)), "no cazó el rótulo viejo en la navbar");
   // (b) el botón muestra una cosa y audita otra.
-  const b = jsx.replace('600 : 400 }}>Reportes</button>', '600 : 400 }}>Gestión</button>');
+  const b = jsx.replace(/(600 : 400 \}\}\s*>\s*)Reportes(\s*<\/button>)/, '$1Gestión$2');
   assert.notEqual(b, jsx); assert.ok(botonesNavbar(b).fallos.some((f) => /muestra «Gestión» y su irA dice «Reportes»/.test(f)), "no cazó el desacuerdo botón/irA");
   // (c) el rótulo como expresión JSX ({"Tubo diario"}): lo que se ve no se puede cotejar, y el gate lo dice.
-  const c = jsx.replace('600 : 400 }}>Gestión diaria</button>', '600 : 400 }}>{"Tubo diario"}</button>');
+  const c = jsx.replace(/(600 : 400 \}\}\s*>\s*)Gestión diaria(\s*<\/button>)/, '$1{"Tubo diario"}$2');
   assert.notEqual(c, jsx); assert.ok(botonesNavbar(c).fallos.some((f) => /«pipeline» no muestra un rótulo literal/.test(f)), "toleró un rótulo por expresión JSX");
   // (d) la miga con el nombre viejo.
-  const d = jsx.replace("Comercial <ChevronRight size={12} /> Reportes</div>", "Comercial <ChevronRight size={12} /> Gestión</div>");
+  const d = jsx.replace(/Comercial <ChevronRight size=\{12\} \/> Reportes(\s*<\/div>)/, "Comercial <ChevronRight size={12} /> Gestión$1");
   assert.notEqual(d, jsx); assert.ok(migas(d).some((f) => /Comercial › Reportes/.test(f)) && migas(d).some((f) => /«Gestión» a secas/.test(f)), "no cazó la miga vieja");
   // (e) el h1 de Gestión diaria vuelve al título viejo.
   const e = jsx.replace("<h1 className=\"text-2xl font-semibold tracking-tight\">Gestión diaria comercial</h1>", "<h1 className=\"text-2xl font-semibold tracking-tight\">Tubo diario</h1>");
@@ -212,16 +211,16 @@ test("27-bis · SONDAS: cada violación plantada la caza su gate, y el formato l
   assert.notEqual(si[CON_CATALOGO], leer(CON_CATALOGO), "la sonda (i) no se plantó");
   assert.ok(scriptsCaptura(si).some((x) => /navega a «Operación» \(slug «operaciones»\)/.test(x)), "no cazó un rótulo del catálogo ajeno a la navbar");
   // (j) el módulo de la auditoría de tareas con un nombre que no es ni el del menú ni el desfase conocido.
-  const j = jsx.replace('modulo: "Gestión", accion: "Asignar tarea"', 'modulo: "Tubo diario", accion: "Asignar tarea"');
-  const j2 = jsx.replace('modulo: "Reportes", accion: "Asignar tarea"', 'modulo: "Panel", accion: "Asignar tarea"');
+  const j = jsx.replace(/modulo: "Gestión",(\s*)accion: "Asignar tarea"/, 'modulo: "Tubo diario",$1accion: "Asignar tarea"');
+  const j2 = jsx.replace(/modulo: "Reportes",(\s*)accion: "Asignar tarea"/, 'modulo: "Panel",$1accion: "Asignar tarea"');
   const plantada = j !== jsx ? j : j2; // el fuente dice «Gestión» (desfase) o ya «Reportes»: la sonda se planta sobre el que esté.
   assert.notEqual(plantada, jsx, "la sonda (j) no se plantó: NodoTareasModal ya no audita «Asignar tarea» con modulo «Gestión» ni «Reportes»");
   assert.ok(moduloNodoTareas(plantada).fallos.some((x) => /audita «Asignar tarea» en el módulo «(Tubo diario|Panel)»/.test(x)), "no cazó el módulo ajeno en la auditoría de tareas");
-  assert.deepEqual(moduloNodoTareas(jsx.replace(/modulo: "(Gestión|Reportes)", accion: "Asignar tarea"/, 'modulo: "Reportes", accion: "Asignar tarea"')).fallos, [], "el estado corregido («Reportes») tiene que pasar");
+  assert.deepEqual(moduloNodoTareas(jsx.replace(/modulo: "(Gestión|Reportes)",(\s*)accion: "Asignar tarea"/, 'modulo: "Reportes",$2accion: "Asignar tarea"')).fallos, [], "el estado corregido («Reportes») tiene que pasar");
   // (k) TOLERANCIA · la miga en dos líneas (el formato de Presentación al comité) se sigue encontrando, y su h1 también.
-  const k = jsx.replace("Comercial <ChevronRight size={12} /> Reportes</div>", "Comercial <ChevronRight size={12} />\n              Reportes\n            </div>");
+  const k = jsx.replace(/Comercial <ChevronRight size=\{12\} \/> Reportes\s*<\/div>/, "Comercial <ChevronRight size={12} />\n              Reportes\n            </div>");
   assert.notEqual(k, jsx); assert.ok(!migas(k).some((x) => /Reportes/.test(x)), "la miga en dos líneas se dio por desaparecida"); assert.equal(h1De(k, "Reportes"), h1De(jsx, "Reportes"));
   // (l) TOLERANCIA · irA con espacios y salto de línea entre sus argumentos sigue leyéndose.
-  const l = jsx.replace('irA("pipeline", "Gestión diaria")}', 'irA( "pipeline",\n              "Gestión diaria" ) }');
+  const l = jsx.replace(/irA\("pipeline", "Gestión diaria"\)\}?/, 'irA( "pipeline",\n              "Gestión diaria" ) }');
   assert.notEqual(l, jsx); assert.deepEqual(botonesNavbar(l).fallos, []); assert.equal(botonesNavbar(l).botones.find((x) => x.id === "pipeline").arg, "Gestión diaria");
 });

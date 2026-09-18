@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-18T14:10:00Z
+timestamp: 2026-09-18T20:30:00Z
 ---
 
 # Estado actual
@@ -13,14 +13,15 @@ timestamp: 2026-09-18T14:10:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone de 40,7 MB, **141/141 PASA**, **33 archivos de gate de contrato**
-(177 tests), **29 casos e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (68 reglas verbatim por tema, índice en
-`invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró la tabla de invariantes**: cada regla y los 12
-invariantes del contrato tienen gate; ninguna fila dice ya «sin gate». Lo que esos gates destaparon cambió el
-producto —ocho defectos, abajo—. El generador tiene punto fijo (32, ADR-0003), el id de una operación es estable
-(ADR-0004) con «Operación creada» + Editar (33) y el detalle sigue el mockup (29, 22); el 18-09 el tubo abre en
-«Todos» (34), **una regla con un tramo sin área ya no se ejecuta ni se verifica** (35) y la **portada pasó a mostrar
-el producto** con un solo morado de marca (36, 37, 38 · ADR-0005).
+(`pipeline_comercial.jsx`), build standalone de 40,7 MB, **142/142 PASA**, **34 archivos de gate de contrato**
+(224 tests), **29 casos e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (69 reglas verbatim
+por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró la tabla de invariantes**:
+cada regla y los 12 del contrato tienen gate. Lo que destaparon cambió el producto —ocho defectos, abajo—. El
+generador tiene punto fijo (32, ADR-0003), el id de una operación es estable (ADR-0004) con «Operación creada» +
+Editar (33) y el detalle sigue el mockup (29, 22); el 18-09 el tubo abre en «Todos» (34), **una regla con un tramo
+sin área ya no se ejecuta ni se verifica** (35), la **portada muestra el producto** (36, 37, 38 · ADR-0005), el
+orden de la tabla es **prioridad de gestión** y la Bandeja Inbound deja de botar trabajo en silencio (30-bis, 40),
+con el fuente **formateado con Prettier** (ADR-0006).
 
 > ## 🎯 Siguiente paso
 >
@@ -55,24 +56,25 @@ El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403, política; s
 
 ## Deudas anotadas (no bloquean, no olvidar)
 
-1. Del informe de cierre del bootstrap queda **uno**: **decidir el cuarteto de gates**, incompleto sin linter ni
-   formateador y única desviación del skill sin ADR (el porqué del formateador ya está escrito en
-   `loop_agentico_hooks.md`; falta el ADR que lo cierre). Los otros dos quedaron el 18-09:
-   `conocimiento/despacho_agentes.md` y `.claude/rules/workflow.md` con la escalera T1/T2/T3, gateada.
-2. **Auditores**: `BASE_MUERTOS` en 6; 6 hallazgos «revisar a mano» y 7 `useState` sin uso. · **GN como
-   disyunción** (22), del negocio; la separación por género no es deuda (ADR-0001: regla por regla, al tocarla).
-3. De los pendientes de las reglas quedan **decisiones, no defectos** (log de hoy): las filas que Operaciones
-   repite del tubo y `STATUS_ETAPA` a tenant-aware (28); si el A1 real trae `MntNotaCredito` (13-quater, del dueño
-   del dato). Sin gate: la concentración del Directorio (31).
-4. **Hooks en Windows**: correr `node verificar_hooks.mjs` una vez; es lo único que el CI no puede atestiguar.
-5. **Dos sesiones paralelas toman el mismo «siguiente entero libre»** y el mismo archivo: pasó con las reglas
-   32/33, con los casos 116–140 y con este tablero. Se confirma al mezclar `main`; quien mezcla después renumera.
-6. **Al regenerar las capturas, regenerar `arte_login.js`** o la portada muestra una UI que ya no existe ·
-   `marcaFondo` no está en el selector de colores de Configuración.
-7. Los 13 skills de `taste-skill` viven en el `~/.claude/skills/` del CONTENEDOR, efímero: para tenerlos estables,
-   `/plugin marketplace add leonxlnx/taste-skill` en la máquina del usuario.
+1. **Auditores, revisados el 18-09**: `BASE_MUERTOS` baja de 6 a **1** sin borrar nada (cuatro eran un mismo falso
+   positivo —un `const` local a columna 0—, el quinto un catálogo que ahora sí gobierna, y el que queda subió a
+   «siguiente paso»); los 7 `useState` quedan con su veredicto uno por uno en `auditores.test.mjs`. Formatear
+   destapó dos puntos ciegos más, los dos corregidos: `BASE_PURAS` cargaba a `lineaDeDeudor`, que **nunca fue
+   pura** (cuerpo de una línea, invisible al auditor), y la sección C cortaba las firmas a las 12 líneas.
+2. **GN como disyunción** (22), del negocio; la separación por género no es deuda (ADR-0001: regla por regla).
+3. De los pendientes de las reglas quedan **decisiones, no defectos**: las filas que Operaciones repite del tubo y
+   `STATUS_ETAPA` a tenant-aware (28); si el A1 trae `MntNotaCredito` (13-quater). Sin gate, la concentración (31).
+4. **Hooks en Windows**: `node verificar_hooks.mjs` una vez; es lo único que el CI no atestigua. · **`Capturas_UI/`
+   NO es determinista**: dos corridas del mismo build dan tablas distintas porque el tubo se retrata a mitad del
+   stream (el 18-09 volvió a pasar, en `10-tubo-kanban.html`). Capturar en un estado conocido (stream pausado, o
+   Modo Directorio, determinista por construcción, 31) cambia QUÉ muestra la fuente de Figma: decisión suya.
+5. **Dos sesiones paralelas toman el mismo entero libre y el mismo archivo**: pasó con 32/33, los casos 116–140,
+   este tablero, y el 18-09 con la regla 36 y el ADR-0005 a la vez. Quien mezcla después renumera lo suyo.
+6. **Al regenerar las capturas, regenerar `arte_login.js`** o la portada muestra una UI que ya no existe; y
+   `marcaFondo` no está en el selector de colores de Configuración. · 7. Los 13 skills de `taste-skill` viven en
+   el `~/.claude/skills/` del CONTENEDOR, efímero: van con `/plugin marketplace add leonxlnx/taste-skill`.
 
 ## Conocimiento clave
 
 [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [hooks](../conocimiento/loop_agentico_hooks.md) · [despacho de agentes](../conocimiento/despacho_agentes.md) · [flujo git](../conocimiento/flujo_git.md) · [arquitectura](../conocimiento/arquitectura.md) · [verificación](../conocimiento/verificacion.md) · [decisiones](../adr/index.md)
-Últimas: [la portada muestra el producto](./2026-09-18_portada_que_muestra_el_producto.md) · [auditorías y paso 2](./2026-09-18_auditorias_y_paso_2.md) · [deudas cerradas](./2026-09-18_deudas_cerradas.md) · [spec de excepciones](./2026-09-18_spec_gestion_excepciones.md)
+Últimas: [portada](./2026-09-18_portada_que_muestra_el_producto.md) · [orden y bandeja](./2026-09-18_orden_tabla_y_bandeja.md) · [formateo](./2026-09-18_formatear_el_fuente.md) · [spec de excepciones](./2026-09-18_spec_gestion_excepciones.md)

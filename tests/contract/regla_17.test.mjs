@@ -179,7 +179,7 @@ export function marcasAbsolutas(src) {
   if (!/^function auditFechaHora\(ts\)/m.test(src) || !/new Date\(ts\)/.test(afh)) fallos.push("`auditFechaHora(ts)` tiene que construir la fecha desde su parámetro `ts`");
   const ra = cuerpoDe(src, "registrarAuditoria") || "";
   if (!ra.includes("const ts = e.ts || Date.now();")) fallos.push("`registrarAuditoria` perdió `const ts = e.ts || Date.now();` (el ts es del evento; el reloj sólo cuando el evento no lo trae)");
-  if (!/const r = \{[^\n]*\bts,[^\n]*\.\.\.auditFechaHora\(ts\)/.test(ra)) fallos.push("el registro de auditoría tiene que llevar `ts` (epoch) MÁS `...auditFechaHora(ts)` (fecha y hora absolutas)");
+  if (!/const r = \{[\s\S]{0,800}?\bts,\s*\.\.\.auditFechaHora\(ts\)/.test(ra)) fallos.push("el registro de auditoría tiene que llevar `ts` (epoch) MÁS `...auditFechaHora(ts)` (fecha y hora absolutas)");
   const ls = cuerpoDe(src, "logSys") || "";
   if (!ls.includes("const ts = Date.now();") || !/\bts,/.test(ls) || !/fecha:/.test(ls) || !/hora:/.test(ls)) fallos.push("`logSys` tiene que estampar `ts` (epoch) más `fecha:` y `hora:` absolutas en cada entrada");
   // las vistas muestran la marca guardada, no un relativo calculado al leer
@@ -210,12 +210,12 @@ export function cadenaAuditoria(src) {
   if (!ra.includes("AUDIT_COLA = AUDIT_COLA.then(")) fallos.push("la huella tiene que encolarse en `AUDIT_COLA = AUDIT_COLA.then(`: SHA-256 es asíncrono y la cadena se calcula EN ORDEN");
   if (!ra.includes('r.h = await auditHuella(r, previo ? previo.h : "");')) fallos.push("la huella del registro es `auditHuella(r, previo ? previo.h : \"\")`: la del anterior, o vacía para el primero");
   // flush AUTOMÁTICO: «persistente» significa que la app persiste sola, no cuando alguien llama persistirAuditoria()
-  const flushes = [...ra.matchAll(/AUDIT_FLUSH_T = setTimeout\(\(\) => \{ AUDIT_FLUSH_T = null; persistirAuditoria\(\); \}, (\d+)\)/g)].map((m) => +m[1]);
+  const flushes = [...ra.matchAll(/AUDIT_FLUSH_T = setTimeout\(\(\) => \{\s*AUDIT_FLUSH_T = null;\s*persistirAuditoria\(\);\s*\}, (\d+)\)/g)].map((m) => +m[1]);
   if (!flushes.includes(1200)) fallos.push("`registrarAuditoria` ya no agenda el flush (`AUDIT_FLUSH_T = setTimeout(… persistirAuditoria() …, 1200)`): la auditoría dejaría de persistir sola");
   if (!flushes.includes(0)) fallos.push("la huella que llega tarde tiene que volver a pedir flush (`setTimeout(… persistirAuditoria() …, 0)` dentro de la cola), o el último registro queda sin huella en disco");
   const pa = cuerpoDe(src, "persistirAuditoria") || "";
   if (!pa.includes("while (c !== AUDIT_COLA)")) fallos.push("`persistirAuditoria` tiene que DRENAR la cola (`while (c !== AUDIT_COLA)`) antes de escribir, o persiste registros sin huella");
-  if (!/setItem\(AUDIT_KEY,/.test(pa)) fallos.push("`persistirAuditoria` ya no escribe en `AUDIT_KEY`");
+  if (!/setItem\(\s*AUDIT_KEY,/.test(pa)) fallos.push("`persistirAuditoria` ya no escribe en `AUDIT_KEY`");
   if (!pa.includes("AUDIT_LOG.filter((r) => r.hAlg)")) fallos.push("`persistirAuditoria` persiste sólo registros con `hAlg`: la semilla no es evidencia");
   const va = cuerpoDe(src, "verificarAuditoria") || "";
   if (!va.includes("igualConstante(r.h, await auditHuella(r, previo))")) fallos.push("`verificarAuditoria` recalcula cada eslabón con `auditHuella(r, previo)` y compara con `igualConstante`");
@@ -258,13 +258,13 @@ test("regla 17 · la auditoría encadena en orden por AUDIT_COLA, agenda su prop
 });
 
 /* Sonda negativa: cada mutante planta UNA violación y el auditor tiene que nombrarla. */
-const OFS_HOY = 'const ofs = (t) => t ? String(t).replace(/\\d{3,4}(?=\\s*$)/, "XXXX") : "—";';
+const OFS_HOY = 'const ofs = (t) => (t ? String(t).replace(/\\d{3,4}(?=\\s*$)/, "XXXX") : "—");';
 const MUTANTES = [
   ["glosa de verificación con el teléfono a secas", (s) => s.replace("fonoOfuscado(reg.contacto.fono)", "reg.contacto.fono"), fonosSinOfuscar, /reg\.contacto\.fono|\.fono/],
   ["bitácora de contacto con el teléfono a secas", (s) => s.replace("${ofs(prev.telefono)}", "${prev.telefono}"), fonosSinOfuscar, /\.telefono.*sin ofuscar/],
   ["logSys nuevo con el teléfono del contacto", (s) => s + '\n  logSys("info", "wa", `llamada a ${d.contacto.telefono}`);\n', fonosSinOfuscar, /\.telefono/],
-  ["R1 · el `ofs` de la bitácora se vuelve identidad (el nombre sigue, el número entero también)", (s) => s.replace(OFS_HOY, 'const ofs = (t) => t ? String(t) : "—";'), fonosSinOfuscar, /«ofs\(» no ofusca.*número entero/],
-  ["R1-bis · el `ofs` de la bitácora tapa sólo 2 dígitos", (s) => s.replace(OFS_HOY, 'const ofs = (t) => t ? String(t).replace(/\\d{2}(?=\\s*$)/, "XX") : "—";'), fonosSinOfuscar, /«ofs\(» no ofusca.*menos de 3/],
+  ["R1 · el `ofs` de la bitácora se vuelve identidad (el nombre sigue, el número entero también)", (s) => s.replace(OFS_HOY, 'const ofs = (t) => (t ? String(t) : "—");'), fonosSinOfuscar, /«ofs\(» no ofusca.*número entero/],
+  ["R1-bis · el `ofs` de la bitácora tapa sólo 2 dígitos", (s) => s.replace(OFS_HOY, 'const ofs = (t) => (t ? String(t).replace(/\\d{2}(?=\\s*$)/, "XX") : "—");'), fonosSinOfuscar, /«ofs\(» no ofusca.*menos de 3/],
   ["un envoltorio con nombre de ofuscador que no existe", (s) => s.replace("fonoOfuscado(reg.contacto.fono)", "mascara(reg.contacto.fono)"), fonosSinOfuscar, /«mascara\(» no es un ofuscador verificable/],
   ["fonoOfuscado debilitada: deja 8 dígitos a la vista", (s) => s.replace('return s.length <= 4 ? "•••" + s : "•••" + s.slice(-4);', 'return s.length <= 4 ? "•••" + s : "•••" + s.slice(-8);'), fonosSinOfuscar, /«fonoOfuscado\(» no ofusca/],
   ["R2 · el teléfono pasa por una variable local y la glosa la interpola", (s) => s + '\n  const telWa = d.contacto.telefono;\n  logSys("info", "wa", `llamada a ${telWa}`);\n  const glosaTel = "contacto " + reg.contacto.fono;\n  registrarAuditoria({ usuario: "x", modulo: "Verificación", accion: "Llamada", glosa: glosaTel, exito: true });\n', fonosSinOfuscar, /telWa.*cargada desde un campo de teléfono/],
@@ -274,12 +274,11 @@ const MUTANTES = [
   ["R4-bis · logSys multilínea con el teléfono en la tercera línea, sin clave de log", (s) => s + '\n  logSys("info", "wa",\n    "llamada a " +\n    d.contacto.telefono);\n', fonosSinOfuscar, /\.telefono/],
   ["auditFechaHora formatea relativo mirando el reloj", (s) => s.replace("fecha: `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`", "fecha: `hace ${Math.round((Date.now() - ts) / 86400000)} días`"), marcasAbsolutas, /RELATIVA|reloj|getDate/],
   ["registrarAuditoria ignora el ts del evento", (s) => s.replace("const ts = e.ts || Date.now();", "const ts = Date.now();"), marcasAbsolutas, /e\.ts/],
-  ["la vista de auditoría muestra «hace N min» sobre .ts en vez de la fecha guardada", (s) => s.replace('<div className="t12" style={{ color: C.ink }}>{e.fecha}</div>', '<div className="t12" style={{ color: C.ink }}>{`hace ${Math.round((Date.now() - e.ts) / 60000)} min`}</div>'), marcasAbsolutas, /vista de auditoría.*RELATIVA|Date\.now\(\) - \.ts/],
+  ["la vista de auditoría muestra «hace N min» sobre .ts en vez de la fecha guardada", (s) => s.replace('<div className="t12" style={{ color: C.ink }}>\n                    {e.fecha}\n                  </div>', '<div className="t12" style={{ color: C.ink }}>{`hace ${Math.round((Date.now() - e.ts) / 60000)} min`}</div>'), marcasAbsolutas, /vista de auditoría.*RELATIVA|Date\.now\(\) - \.ts/],
   ["auditHuella sin el eslabón anterior", (s) => s.replace('const auditHuella = (r, previo) => sha256Hex([previo || "",', "const auditHuella = (r, previo) => sha256Hex(["), cadenaAuditoria, /previo/],
   ["previo capturado después del unshift", (s) => s.replace("  const previo = AUDIT_LOG.length ? AUDIT_LOG[0] : null;\n  r.hAlg = HASH_ALG;\n  AUDIT_LOG.unshift(r);", "  r.hAlg = HASH_ALG;\n  AUDIT_LOG.unshift(r);\n  const previo = AUDIT_LOG.length ? AUDIT_LOG[0] : null;"), cadenaAuditoria, /DESPUÉS del unshift/],
   ["R6 · registrarAuditoria sin flush automático: sólo persiste si alguien lo pide", (s) => s
-    .replace("    if (AUDIT_FLUSH_T == null) AUDIT_FLUSH_T = setTimeout(() => { AUDIT_FLUSH_T = null; persistirAuditoria(); }, 0);\n", "")
-    .replace("  if (AUDIT_FLUSH_T == null) AUDIT_FLUSH_T = setTimeout(() => { AUDIT_FLUSH_T = null; persistirAuditoria(); }, 1200);\n", ""), cadenaAuditoria, /ya no agenda el flush/],
+    .replace(/ *if \(AUDIT_FLUSH_T == null\)\n *AUDIT_FLUSH_T = setTimeout\(\(\) => \{\n *AUDIT_FLUSH_T = null;\n *persistirAuditoria\(\);\n *\}, \d+\);\n/g, ""), cadenaAuditoria, /ya no agenda el flush/],
   ["alguien borra un registro de la auditoría", (s) => s.replace("function vaciarSysLog() {\n", "function vaciarSysLog() {\n  AUDIT_LOG.splice(0, 1);\n"), cadenaAuditoria, /splice|vaciarSysLog/],
   ["R5 · alguien edita un registro EN SITIO fuera de vaciarSysLog", (s) => s.replace("function descargarArchivoLog(entradas) {\n", 'function descargarArchivoLog(entradas) {\n  if (AUDIT_LOG[0]) { AUDIT_LOG[0].glosa = "editada"; AUDIT_LOG[0].h = null; }\n'), cadenaAuditoria, /EN SITIO.*AUDIT_LOG\[0\]\.glosa/],
   ["R5-bis · alguien reemplaza un registro entero", (s) => s.replace("function descargarArchivoLog(entradas) {\n", 'function descargarArchivoLog(entradas) {\n  AUDIT_LOG[3] = { ...AUDIT_LOG[3], glosa: "x" };\n'), cadenaAuditoria, /EN SITIO.*AUDIT_LOG\[3\] =/],

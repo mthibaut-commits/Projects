@@ -13,7 +13,7 @@
    Sonda negativa: cada gate se planta roto sobre una copia del texto y el detector lo caza. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { leer } from "./_comun.mjs";
+import { leer, canonico} from "./_comun.mjs";
 
 const jsx = leer("pipeline_comercial.jsx");
 const portal = leer("curse.html");
@@ -72,7 +72,7 @@ export function fallosCRY01(jsx, portal) {
   else if (vApp !== vPortal) f.push(`SCHEMA_VERSION.curse=${vApp} y CURSE_SCHEMA=${vPortal} difieren: el portal descarta todo registro`);
   if (!/if\s*\(\s*v\s*!==\s*CURSE_SCHEMA\s*\)/.test(portal)) f.push("el portal no descarta un registro de esquema distinto (v1 con OTP en claro, v2 con hash de 32 bits)");
   // 5 · contrato
-  const inv = cuerpo(jsx, '  { codigo: "CRY-01"') || (jsx.match(/\{ codigo: "CRY-01"[\s\S]*?\},\n/) || [])[0];
+  const inv = (canonico(jsx).match(/\{codigo: "CRY-01".*?\},/) || [])[0];
   if (!inv || !/mutaciones:\s*\["otp\.emitir",\s*"otp\.validar"\]/.test(inv)) f.push("INVARIANTES no declara CRY-01 sobre otp.emitir y otp.validar");
   return f;
 }
@@ -87,7 +87,7 @@ test("CRY-01 · sonda negativa: cada gate cae si se planta la violación", () =>
   assert.ok(s1 !== jsx && fallosCRY01(s1, portal).some((x) => /===\/!==|igualConstante/.test(x)), "comparar con !== tiene que caer");
   const s2 = jsx.replace(/OTP_STORE\[neg\] = \{ alg: HASH_ALG, sal,/, "OTP_STORE[neg] = { alg: HASH_ALG, sal, code,");
   assert.ok(s2 !== jsx && fallosCRY01(s2, portal).some((x) => /código en claro/.test(x)), "guardar `code` en el registro tiene que caer");
-  const s3 = jsx.replace(/cursePersist\(neg, \{ neg, otpHash: otpReg\.hash,/, "cursePersist(neg, { neg, otp: otpClaro, otpHash: otpReg.hash,");
+  const s3 = jsx.replace(/cursePersist\(neg, \{\s*neg,\s*otpHash: otpReg\.hash,/, "cursePersist(neg, { neg, otp: otpClaro, otpHash: otpReg.hash,");
   assert.ok(s3 !== jsx && fallosCRY01(s3, portal).some((x) => /persiste el OTP en claro/.test(x)), "persistir el OTP en claro tiene que caer");
   const p4 = portal.replace('sha256Hex("otp$"+neg+"$"+sal+"$"+code)', 'sha256Hex("otp#"+neg+"$"+sal+"$"+code)');
   assert.ok(p4 !== portal && fallosCRY01(jsx, p4).some((x) => /preimage/.test(x)), "un preimage distinto en el portal tiene que caer");

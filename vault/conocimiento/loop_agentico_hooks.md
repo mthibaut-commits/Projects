@@ -1,7 +1,7 @@
 ---
 type: conocimiento
 title: "Loop agéntico — los hooks, qué bloquean y cómo convivir con ellos"
-description: "Los tres hooks deterministas del repo (protect_paths, gitflow_guard, worktree_guard), el health check para cuando parecen mudos, por qué son Node y no bash, por qué no hay formateador ni tdd-guard, y el registro de fricciones"
+description: "Los tres hooks deterministas del repo (protect_paths, gitflow_guard, worktree_guard), el health check para cuando parecen mudos, por qué son Node y no bash, por qué el formateador es un gate del CI y no un hook, por qué no hay tdd-guard, y el registro de fricciones"
 tags: [conocimiento, hooks, agentes]
 timestamp: 2026-09-18T04:20:00Z
 ---
@@ -60,9 +60,16 @@ máquina los hooks no responden, el health check de arriba lo dice en diez segun
 
 ## Lo que NO hay, a propósito
 
-- **Formateador por hook.** No hay prettier ni eslint en el stack, y un formateador sobre un fuente único
-  de 26.000 líneas es una reescritura masiva que destruye las ediciones quirúrgicas con anclas únicas que
-  este archivo exige. La autoridad de estilo es `.claude/rules/code_style.md` y la revisión.
+- **Formateador por HOOK.** Desde el 18-09-2026 sí hay formateador —Prettier, el fuente entero, ADR-0005—,
+  pero como **gate del CI** (`prettier --check`, paso 0) y no como hook de `PostToolUse`. La diferencia importa:
+  un hook que formatea después de cada edición reescribe tramos que el agente no tocó, y entre dos ediciones de
+  la misma sesión los anclajes de la siguiente ya no existen. El gate pide el archivo formateado **al
+  commitear**, que es donde la reescritura no le mueve el piso a nadie. La autoridad de estilo sigue siendo
+  `.claude/rules/code_style.md` y la revisión; Prettier sólo fija la FORMA.
+  El argumento viejo —«formatear destruye las ediciones quirúrgicas con anclas únicas»— era cierto y se pagó una
+  vez, al formatear: 59 gates de texto, un caso de la suite y dos auditores. Lo que lo volvió conveniente es que
+  la forma del archivo estaba **produciendo defectos de análisis** (un `const` local a columna 0 que hacía al
+  auditor de muertos atribuirle 300 líneas ajenas; cuerpos de una línea que el de aislamiento no veía).
 - **tdd-guard.** Exige un reporter por unidad (vitest/jest) y la suite de NEX es de integración en
   Chromium: sin reporter, el guard no ve evidencia y bloquea toda implementación. El ciclo TDD es
   disciplina escrita en `.claude/rules/testing.md`.

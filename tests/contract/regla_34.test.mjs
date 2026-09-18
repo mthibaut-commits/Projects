@@ -34,7 +34,7 @@ export function auditarTabs(src) {
   const iTodos = t.indexOf('{ id: "todos"'), iPrio = t.indexOf('{ id: "prioritarios"');
   if (iTodos >= 0 && iPrio >= 0 && iPrio < iTodos) fallos.push("«Todos» va después del «Prioritarios» condicional: su posición salta cuando la jefatura prioriza un negocio");
   // 4 · `clearAll` deja el mismo tab con que abre: «limpiar filtros» y «recién abierto» son el mismo estado.
-  const ca = src.match(/const clearAll = \(\) => \{[^\n]*\};/);
+  const ca = src.match(/const clearAll = \(\) => \{[\s\S]{0,600}?\n  \};/);
   if (!ca) fallos.push("no encuentro `clearAll`");
   else if (!/setQuickFilter\("todos"\)/.test(ca[0])) fallos.push("`clearAll` no vuelve a «todos»: el destino de «limpiar filtros» dejó de ser el punto de partida");
   return fallos;
@@ -50,7 +50,8 @@ const MUTANTES = {
     src: (() => {
       const linea = '    { id: "todos", label: "Todos", count: dealsTubo.length + (directorio ? 0 : inboundCount) },\n';
       const s = jsx.replace(linea, "");
-      return s.replace('    { id: "otrasfacturas",', linea + '    { id: "otrasfacturas",');
+      // Prettier abrió los objetos largos en varias líneas (ADR-0005): el ancla es el bloque, no la línea.
+      return s.replace('    {\n      id: "otrasfacturas",', linea + '    {\n      id: "otrasfacturas",');
     })(), re: /el primer tab es «prioritarios» y no «todos»|el primer tab es «conlinea» y no «todos»/,
   },
   "«Todos» después del Prioritarios condicional": {
@@ -60,7 +61,7 @@ const MUTANTES = {
       return jsx.replace(linea + cond, cond + linea);
     })(), re: /después del «Prioritarios» condicional/,
   },
-  "clearAll deja otro tab": { src: jsx.replace('const clearAll = () => { setQuery(""); setQuickFilter("todos");', 'const clearAll = () => { setQuery(""); setQuickFilter("conlinea");'), re: /clearAll` no vuelve a «todos»/ },
+  "clearAll deja otro tab": { src: jsx.replace(/(const clearAll = \(\) => \{[\s\S]{0,200}?setQuickFilter\(")todos("\))/, '$1conlinea$2'), re: /clearAll` no vuelve a «todos»/ },
 };
 
 for (const [nombre, m] of Object.entries(MUTANTES)) {

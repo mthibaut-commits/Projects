@@ -20,7 +20,7 @@ implementaciones cumplen el mismo contrato y hay que mantenerlas en sincronía.*
 npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx   # sin errores TS1
 node build_app.mjs                                                                # valida los sha256 de vendor/
 node --test "tests/contract/*.test.mjs"                                           # gates de contrato (vault, índice, fuente, hooks)
-PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                       # la suite: 141 casos en Chromium
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                       # la suite: 142 casos en Chromium
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs              # si el cambio toca la UI
 ```
 
@@ -36,7 +36,7 @@ PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs           
 
 ## Cómo está organizado
 
-- **Un solo archivo fuente:** `pipeline_comercial.jsx` (~26.000 líneas, ~155 componentes, un componente
+- **Un solo archivo fuente:** `pipeline_comercial.jsx` (~50.000 líneas, ~155 componentes, un componente
   raíz `PipelineComercial`). React 18 + Tailwind CORE, transpilado en el navegador por Babel Standalone.
 - **`vendor/`** — dependencias UMD vendorizadas, con `sha256` fijado en `vendor/SBOM.json`. **El build
   falla si un hash no calza.** `.gitattributes` marca `vendor/** -text`: normalizar fines de línea

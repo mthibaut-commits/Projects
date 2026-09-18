@@ -207,11 +207,26 @@ const guardar = async (pag, n, slug, titulo) => {
   console.log(`  ${nombre}  ${cap.podadas} reglas · ${cap.clases} clases · ${cap.alto}px`);
 };
 
+// ESTA CAPTURA NO ES DETERMINISTA TODAVIA, y conviene saberlo antes de mirar un diff suyo. Medido el
+// 18-09-2026: dos corridas seguidas del mismo build dan tablas ENTERAS distintas en 02-pipeline.html —otros
+// clientes, otros montos, otros chips de SOW— porque el tubo se retrata a mitad del stream del inbound, que
+// sigue produciendo oportunidades mientras la captura espera. El sparkline del KPI es el mismo problema en
+// chico: sale de `historia`, muestreada cada 2 s, y estaba en UNA de las seis ultimas versiones del archivo.
+// Lo de abajo arregla SOLO el sparkline —esperar una condicion en vez de un tiempo, que es lo correcto— y
+// deja el fondo abierto: para que el artefacto sea estable hay que capturar el tubo en un estado conocido
+// (stream pausado, o Modo Directorio, que es determinista por construccion: regla 31). Eso cambia QUE muestra
+// la fuente de Figma, asi que es una decision, no un arreglo. Anotado en el tablero.
+const esperarSparkline = async (pag) => {
+  try { await pag.locator('[title="Evolucion del numero de oportunidades abiertas"], [title="Evolución del número de oportunidades abiertas"]').first().waitFor({ state: "attached", timeout: 15000 }); }
+  catch (_) { console.log("  (aviso) el sparkline de oportunidades no aparecio en 15 s: la captura sale sin el"); }
+};
+
 let n = 0;
 for (const [slug, etiqueta] of VISTAS) {
   n++;
   await pagina.locator("header nav button", { hasText: new RegExp("^" + etiqueta + "$") }).first().click();
   await pagina.waitForTimeout(2500); // que asienten los graficos de recharts y los skeletons
+  if (slug === "pipeline") await esperarSparkline(pagina);
   await guardar(pagina, n, slug, `NEX Factoring · ${etiqueta}`);
 }
 

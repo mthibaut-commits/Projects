@@ -18,6 +18,7 @@ Un ADR aceptado es **inmutable**. Para cambiar de rumbo: ADR nuevo con `reemplaz
 | [ADR-0003](./ADR-0003-intencion-de-participacion-declarada.md) | La intención de participación es un insumo declarado del generador, no una lectura de su salida | aceptada · el usuario pidió cerrar el bucle 17-09-2026; el mecanismo lo eligió la sesión |
 | [ADR-0004](./ADR-0004-id-estable-y-dos-marcas-al-editar.md) | El id de la operación es estable, y editar una oferta cerrada usa dos marcas | aceptada · 17-09-2026 |
 | [ADR-0005](./ADR-0005-portada-que-muestra-el-producto.md) | La portada de ingreso muestra el producto, con #703EFF como único morado de marca | aceptada · 18-09-2026 |
+| [ADR-0006](./ADR-0006-formatear-el-fuente.md) | El fuente se formatea con Prettier y los gates de texto se re-anclan sobre `canonico()` | aceptada · 18-09-2026 |
 
 ## Decisiones cerradas antes del vault — registro con punteros
 
