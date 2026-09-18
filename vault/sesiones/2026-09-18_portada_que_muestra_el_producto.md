@@ -51,6 +51,14 @@ contrato cada una.
   transición quedaba en negro hasta que se cancelan las animaciones de la pasada anterior.
 - Al medir cuadros de una animación con Playwright, **cada `screenshot()` corre el reloj**: el
   filmstrip miente. Hay que pausar las animaciones y fijar `currentTime`.
+- **La portada le salió «mucho más clara» al usuario que las muestras, y no era render.** Su navegador
+  tenía la configuración del tenant de antes de ADR-0005, y `cargarCfgOper` hace
+  `{ ...CFG_OPER_BASE, ...guardado }`: **lo guardado gana**. Así que seguía pintando el degradado lineal
+  anterior y el CTA `#4F46E5 → #6D5BFF` aunque el fuente ya tenía los nuevos. **Los siete pasos no lo
+  veían**: todos corren sobre un `localStorage` vacío, donde el default siempre gana. Se reprodujo
+  inyectando la configuración v1 con `addInitScript` antes de cargar la página — y esa es la forma de
+  probar cualquier cosa que dependa de datos guardados. Arreglado subiendo `SCHEMA_VERSION.cfgOper` a 2
+  con una migración que retira **sólo** las tres claves de marca y conserva el resto (regla 39).
 
 ## Estado de la verificación
 

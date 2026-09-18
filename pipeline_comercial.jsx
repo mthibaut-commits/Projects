@@ -413,7 +413,7 @@ const estampaPoliticas = (ts, tenant) => ({
 const SCHEMA_VERSION = {
   cxc: 1,            // saldo CxC por cliente
   reglasInbound: 3,  // reglas de clasificación del inbound
-  cfgOper: 1,        // configuración operativa y de pricing por tenant
+  cfgOper: 2,        // configuración operativa y de pricing por tenant (v2: colores de marca de ADR-0005)
   permisos: 1,       // permisos de visibilidad por usuario
   roles: 1,          // rol de cada usuario (por tenant)
   areas: 1,          // areas que aprueban excepciones (por tenant)
@@ -483,6 +483,28 @@ const MIGRACIONES = {
   // El payload de curse v2 guarda otpHash/otpExp/otpUsado en vez del OTP en claro. Un registro v1
   // contiene un OTP en claro: se descarta (además de estar obsoleto, es material sensible).
   curse: { 2: (datos, desde) => (desde >= 2 ? datos : null) },
+  // ADR-0005 cambió los colores de marca: `marcaPrimario` pasó de #4F46E5 al #703EFF del producto, y
+  // `marcaCta` y `marcaPanel` se rederivaron. Una configuración guardada ANTES conserva los viejos y los
+  // IMPONE sobre el default nuevo, porque `cargarCfgOper` hace `{ ...CFG_OPER_BASE, ...guardado }` y lo
+  // guardado gana. Medido el 18-09-2026: con la config v1 en el navegador, la portada seguía saliendo con
+  // el degradado lineal anterior y el CTA azul, aunque el fuente ya tenía los nuevos. La v2 RETIRA sólo
+  // esas tres claves; el resto de la configuración del tenant —tasas, tramos, banderas de demo— se
+  // conserva, porque eso sí lo eligió el usuario. Quien haya elegido un color propio en Configuración lo
+  // vuelve a elegir ahí: el default de marca es una decisión de producto, no una preferencia.
+  cfgOper: {
+    2: (datos) => {
+      if (!datos || typeof datos !== "object" || Array.isArray(datos)) return null;
+      const out = {};
+      for (const tenantId of Object.keys(datos)) {
+        const cfg = datos[tenantId];
+        if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) { out[tenantId] = cfg; continue; }
+        const copia = { ...cfg };
+        delete copia.marcaPrimario; delete copia.marcaCta; delete copia.marcaPanel;
+        out[tenantId] = copia;
+      }
+      return out;
+    },
+  },
 };
 // Registra una incidencia SIN duplicar: la misma colección puede leerse muchas veces en un arranque y
 // el diagnóstico tiene que ser un inventario de problemas distintos, no un contador de lecturas.
