@@ -23210,23 +23210,29 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
     // En angosto el arte está oculto (`display:none`), así que el panel mide 0 y no hay zoom posible.
     const simple = reduce || panel.offsetWidth === 0;
     zoom.classList.add("lg-visible");
+    const papel = zoom.querySelector(".lg-zoom-papel");
+    const lienzo = zoom.querySelector(".lg-zoom-lienzo");
     if (simple) {
       panel.style.visibility = "hidden";
-      zoom.style.opacity = 1;
       raiz.querySelector(".lg-escena").animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, easing: "ease-out", fill: "forwards" });
-      zoom.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: "ease-out", fill: "forwards" });
+      papel.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: "ease-out", fill: "forwards" });
     } else {
       panel.style.animation = "none";
       panel.style.transform = "none";
       const caja = panel.getBoundingClientRect();
-      const escala = caja.width / window.innerWidth;
+      // La geometría se mide contra la BANDA en reposo, no contra el viewport: la banda es donde la
+      // app va a dibujar (mismo `max-width:1600` centrado), así que aterrizar en su identidad es
+      // aterrizar en la app. Medirla contra el viewport dejaba el último cuadro ~25 % más grande en
+      // una pantalla ancha y el traspaso se veía como un salto.
+      const cajaL = lienzo.getBoundingClientRect();
+      const escala = caja.width / cajaL.width;
+      const dX = caja.left - cajaL.left;
+      const dY = (caja.top + caja.height / 2) - (cajaL.top + cajaL.height / 2);
       const PLANO = "translate(0px,0px) perspective(2300px) rotateY(0deg) rotateX(0deg) rotateZ(0deg) ";
-      const desde = "translate(" + caja.left + "px," + (caja.top + caja.height / 2 - window.innerHeight / 2) + "px) " +
+      const desde = "translate(" + dX + "px," + dY + "px) " +
         "perspective(2300px) rotateY(-21deg) rotateX(6deg) rotateZ(-.6deg) scale(" + escala + ")";
-      zoom.style.transformOrigin = "0 50%";
-      zoom.style.borderRadius = "16px";
-      zoom.style.transform = desde;
-      zoom.style.opacity = 1;
+      lienzo.style.borderRadius = "16px";
+      lienzo.style.transform = desde;
       panel.style.visibility = "hidden";
       // La columna sale rápido: el usuario acaba de autenticarse y necesita respuesta ya.
       raiz.querySelector(".lg-col").animate([{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(8px)" }],
@@ -23243,8 +23249,13 @@ function LoginScreen({ usuarioInicial, onIngresar }) {
         { duration: 880, easing: PUSH, fill: "forwards" });
       // Pasa un poco de largo y se asienta: ese rebote mínimo es lo que lo hace aterrizaje y no corte.
       // Las tres poses llevan la MISMA lista de funciones, para que no interpole por matriz.
-      zoom.animate([{ transform: desde, borderRadius: "16px", filter: "blur(5px)" },
-        { transform: PLANO + "scale(1.035)", borderRadius: "2px", filter: "blur(0px)", offset: 0.84 },
+      // El blanco de página entra sobre el final: antes taparía el empuje de la escena.
+      papel.animate([{ opacity: 0 }, { opacity: 0, offset: 0.5 }, { opacity: 1 }],
+        { duration: 900, easing: "ease-out", fill: "forwards" });
+      // Termina EXACTO en la identidad de la banda. El sobrepaso queda a mitad de camino y se
+      // asienta antes de que `listo` entregue el control, así que no se ve en el traspaso.
+      lienzo.animate([{ transform: desde, borderRadius: "16px", filter: "blur(5px)" },
+        { transform: PLANO + "scale(1.02)", borderRadius: "2px", filter: "blur(0px)", offset: 0.84 },
         { transform: PLANO + "scale(1)", borderRadius: "0px", filter: "blur(0px)" }],
         { duration: 900, easing: PUSH, fill: "forwards" });
     }
@@ -23431,10 +23442,16 @@ select.lg-in option{background:#14093a;color:#fff}
   -webkit-mask-image:linear-gradient(to bottom,#000 58%,transparent 99%);
   mask-image:linear-gradient(to bottom,#000 58%,transparent 99%)}
 /* Entrada al sistema: la capa se pone sobre el panel medido y crece hasta llenar la pantalla. */
-.lg-zoom{position:absolute;inset:0;z-index:60;background:#fff;opacity:0;visibility:hidden;
-  transform-origin:0 50%}
+.lg-zoom{position:absolute;inset:0;z-index:60;visibility:hidden}
 .lg-zoom.lg-visible{visibility:visible}
-.lg-zoom img{display:block;width:100%;height:100%;object-fit:cover;object-position:top left}
+/* El blanco de página: es el fondo que la app tiene fuera de su banda de contenido. */
+.lg-zoom-papel{position:absolute;inset:0;background:#fff;opacity:0}
+/* La banda: MISMO max-width centrado que el contenedor de la app (mx-auto, 1600). Sin esto
+   la captura se estiraba a todo el ancho y el último cuadro quedaba ~25 % más grande que la
+   app en una pantalla de 2000 px: al entregar el control se veía un salto. */
+.lg-zoom-lienzo{position:absolute;top:0;left:0;right:0;margin:0 auto;width:min(100%,1600px);
+  background:#fff;transform-origin:0 50%;overflow:hidden}
+.lg-zoom-lienzo img{display:block;width:100%;height:auto}
 .lg-barra{position:absolute;top:0;left:0;right:0;height:2px;z-index:70;background:var(--lg-pri);
   transform:scaleX(0);transform-origin:left center;opacity:0;box-shadow:0 0 12px rgba(112,62,255,.75)}
 /* ── La entrada, una sola secuencia de atras hacia adelante (~1,6 s) ──────────────────────── */
@@ -23592,7 +23609,10 @@ select.lg-in option{background:#14093a;color:#fff}
 
       <div className="lg-barra" aria-hidden="true" />
       {ARTE_LOGIN.dashboard && (
-        <div className="lg-zoom" aria-hidden="true"><img src={ARTE_LOGIN.dashboard} alt="" /></div>
+        <div className="lg-zoom" aria-hidden="true">
+          <div className="lg-zoom-papel" />
+          <div className="lg-zoom-lienzo"><img src={ARTE_LOGIN.dashboard} alt="" /></div>
+        </div>
       )}
     </div>
   );

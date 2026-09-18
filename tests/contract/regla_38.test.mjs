@@ -69,6 +69,18 @@ test("regla 38: nunca hay dos dashboards — el panel se oculta al montar la cap
     "el cambio de pantalla lo manda el reloj: si WAAPI falla, el usuario tiene que entrar igual");
 });
 
+test("regla 38 (c): la capa aterriza donde la app dibuja, no estirada al viewport", () => {
+  const login = cuerpoDelLogin(leer("pipeline_comercial.jsx"));
+  assert.ok(/\.lg-zoom-lienzo\{[^}]*max-width|width:min\(100%,1600px\)/.test(login),
+    "la banda de la capa tiene que respetar el mismo tope de 1600 centrado que el contenedor de la app");
+  assert.ok(/lienzo\.getBoundingClientRect\(\)/.test(login),
+    "la geometría del zoom se mide contra la BANDA en reposo: es donde la app va a dibujar");
+  assert.ok(!/caja\.width\s*\/\s*window\.innerWidth/.test(login),
+    "medir la escala contra el viewport deja el último cuadro más grande que la app y el traspaso salta");
+  assert.ok(!/object-fit:cover/.test(login),
+    "estirar la captura a todo el ancho es justo lo que producía el salto");
+});
+
 test("sonda negativa: un `entrar` que termina la sesión es cazado", () => {
   const plantado = 'const entrar = async () => {\n    const r = await verificarCredenciales(email, clave);\n    onIngresar(r.code);\n  };';
   const cuerpo = cuerpoDeEntrar(plantado);
