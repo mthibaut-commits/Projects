@@ -64,5 +64,10 @@ decida, ningún test la afirma ni la niega.
 ## Higiene
 
 - Exit codes **condicionados** (`&&`, `$?`): un pipe con `tail` se come el código de salida.
+- **`rev` no termina en este contenedor**: en una tubería gira al 99% de CPU para siempre. Para recortar el final
+  de una línea (la cola de un `FALLA …`, la última celda de una fila del índice) va `python3 -c` o `awk`. Y un
+  comando que se pasa del tiempo de espera **deja su proceso vivo**: se revisa con
+  `ps -eo pid,etime,pcpu,comm | awk '$3+0>1'` antes de seguir, o le roba núcleos a la suite y a la capa e2e, que
+  son justo lo que uno está esperando (17-09-2026).
 - Un test flaky se arregla o se borra en la misma sesión.
 - Antes de commitear: los seis pasos de `CLAUDE.md` en orden. Ninguno subsume a otro.

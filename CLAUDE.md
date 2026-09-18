@@ -83,6 +83,10 @@ dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `
     `PipelineComercial`. *(Bloqueado por hooks, y por `tests/contract/`.)*
 11. **Errores**: ante un fallo inesperado, registra causa y solución en el log de sesión antes de seguir — la
     próxima sesión no debe redescubrirlo. Lo que en 3 meses siga importando sube a `vault/conocimiento/`.
+    **Nunca `rev` en una tubería**: en este contenedor no termina —gira al 99% de CPU indefinidamente—, así que
+    para recortar el final de una línea va `python3 -c` o `awk`. Y **un comando que se pasa del tiempo de espera
+    deja su proceso vivo**: se revisa con `ps -eo pid,etime,pcpu,comm | awk '$3+0>1'` y se mata, o sigue comiendo
+    núcleos y frena las corridas de pruebas (17-09-2026: cuatro `rev` colgados, uno casi seis horas).
 12. **Al dudar sobre el proyecto, busca en `vault/` antes de preguntar o asumir**:
     `grep -rn "^13-ter\." vault/conocimiento/reglas/` encuentra una regla por su número.
 
