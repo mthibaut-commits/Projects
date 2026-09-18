@@ -1,0 +1,16 @@
+# Bytes fijados por sha256 en vendor/SBOM.json: el build falla si un hash no calza.
+vendor/
+fuentes/
+babel.min.js.descarga
+saved_resource
+
+# Generados: se corrige el origen y se regenera, no el archivo.
+datos_inyectados.js
+proveedores_clientes.json
+atribuciones_otorgamiento.json
+pipeline_comercial.html
+Capturas_UI/
+Variantes_UI/
+
+# Archivo historico, no fuente.
+Legado/

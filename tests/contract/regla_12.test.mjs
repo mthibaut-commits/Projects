@@ -8,7 +8,7 @@
    cada uno con sonda: se planta la violación y el gate la caza; un comentario o la prosa de pantalla no. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { leer } from "./_comun.mjs";
+import { leer, canonico} from "./_comun.mjs";
 
 const jsx = leer("pipeline_comercial.jsx");
 
@@ -46,7 +46,7 @@ export function aceptadaRecorta(src) {
   const etapas = c.match(/const aceptada = !!\(deal && \[([^\]]*)\]\.includes\(deal\.stage\)\)/);
   const lista = etapas ? [...etapas[1].matchAll(/"([a-z]+)"/g)].map((m) => m[1]) : [];
   for (const e of ["aceptadas", "cesion", "otorgamiento", "giro"]) if (!lista.includes(e)) fallos.push(`la etapa «${e}» no cuenta como aceptada en snapVersionCli`);
-  if (!/if \(aceptada && lineaPrev\) \{\s*linea = recortarAsignacion\(lineaPrev,/.test(c)) fallos.push("la rama aceptada no recorta la versión anterior (recortarAsignacion(lineaPrev, …))");
+  if (!/if \(aceptada && lineaPrev\) \{\s*linea = recortarAsignacion\(lineaPrev,/.test(canonico(c))) fallos.push("la rama aceptada no recorta la versión anterior (recortarAsignacion(lineaPrev, …))");
   const ramaAceptada = (c.match(/if \(aceptada && lineaPrev\) \{([\s\S]*?)\} else/) || [])[1] || "";
   if (/asignarLineas\(/.test(ramaAceptada)) fallos.push("la rama aceptada vuelve a asignar contra el estado del día");
   if (!/\} else if \(fsOp\.length && deal && deal\.rutEmisor\) \{\s*const ev = asignarLineas\(fsOp, deal\.rutEmisor\);/.test(c)) fallos.push("la asignación desde cero no queda en la rama NO aceptada");
@@ -56,7 +56,7 @@ export function aceptadaRecorta(src) {
 export function detalleLeeDeVersion(src) {
   const fallos = [];
   if (!/const leeDeVersion = bloqueado && !!\(ultVer && ultVer\.linea\);/.test(src)) fallos.push("falta `leeDeVersion = bloqueado && !!(ultVer && ultVer.linea)` en el detalle");
-  if (!/const evalLin = leeDeVersion \? ultVer\.linea\s*\n\s*: reevalPend \? null\s*\n\s*: asignarLineas\(validas, deal\.rutEmisor,/.test(src)) fallos.push("`evalLin` no toma la versión cuando `leeDeVersion`");
+  if (!/const evalLin = leeDeVersion \? ultVer\.linea\s*: reevalPend \? null\s*: asignarLineas\(validas, deal\.rutEmisor,/.test(canonico(src))) fallos.push("`evalLin` no toma la versión cuando `leeDeVersion`");
   const bloq = src.match(/const bloqueado = \[([^\]]*)\]\.includes\(deal\.stage\);/);
   const lista = bloq ? [...bloq[1].matchAll(/"([a-z]+)"/g)].map((m) => m[1]) : [];
   // Sólo las tres etapas en que el detalle y `snapVersionCli` COINCIDEN. «otorgamiento» cuenta como aceptada en
@@ -131,7 +131,7 @@ test("desde Aceptada en adelante la versión nueva RECORTA la anterior, no vuelv
   const sinOtorg = jsx.replace('const aceptada = !!(deal && ["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage));', 'const aceptada = !!(deal && ["aceptadas", "cesion", "giro"].includes(deal.stage));');
   assert.notEqual(sinOtorg, jsx, "la sonda no encontró la línea `const aceptada = …` que quería mutar");
   assert.ok(aceptadaRecorta(sinOtorg).some((f) => /otorgamiento/.test(f)), "quitar «otorgamiento» de las aceptadas tenía que cazarse");
-  const reasigna = jsx.replace("if (aceptada && lineaPrev) {\n      linea = recortarAsignacion(lineaPrev, fsOp.map((f) => f.id));", "if (aceptada && lineaPrev) {\n      linea = asignarLineas(fsOp, deal.rutEmisor);");
+  const reasigna = jsx.replace(/if \(aceptada && lineaPrev\) \{\s*linea = recortarAsignacion\([\s\S]{0,120}?\);/, "if (aceptada && lineaPrev) {\n      linea = asignarLineas(fsOp, deal.rutEmisor);");
   assert.ok(aceptadaRecorta(reasigna).length >= 1, "re-asignar en la rama aceptada tenía que cazarse");
 });
 

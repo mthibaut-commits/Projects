@@ -3705,10 +3705,12 @@
     // Todo call site de `onReject(` del detalle lleva motivo, salvo que esté detrás de `otorgBloqueado(deal) ?`
     // —en la misma línea (botón Rechazar) o en la rama que abre unas líneas antes (`panelAcciones`)—: ahí
     // el motivo lo deriva `reject` del bloqueo firme. Se nombra cada uno por el rótulo de su botón.
+    // La ventana es de 12 líneas y no de 6 desde el formateo del fuente (ADR-0005): el `onClick` de ese
+    // botón pasó a ocupar cuatro líneas propias, así que la apertura de la rama quedó 9 líneas más arriba.
     const lineasF = fuente5.split("\n");
     const callSites = lineasF.map((l, i) => [i, l]).filter(([, l]) => /\bonReject\(deal\.id/.test(l));
     const rotulo = (l) => { const m = l.match(/>\s*([^<>{}]+?)\s*<\/button>/); return m ? m[1] : l.trim().slice(0, 40); };
-    const sinMotivoEnFuente = callSites.filter(([i, l]) => !/\bonReject\(deal\.id, /.test(l) && !lineasF.slice(Math.max(0, i - 6), i + 1).some((x) => /otorgBloqueado\(deal\) \? /.test(x))).map(([, l]) => `«${rotulo(l)}»`);
+    const sinMotivoEnFuente = callSites.filter(([i, l]) => !/\bonReject\(deal\.id, /.test(l) && !lineasF.slice(Math.max(0, i - 12), i + 1).some((x) => /otorgBloqueado\(deal\) \? /.test(x))).map(([, l]) => `«${rotulo(l)}»`);
     const callSitesOk = callSites.length >= 4 && sinMotivoEnFuente.length === 0;
     // (2) El LECTOR deja pasar el genérico: con un status «No superó reglas de otorgamiento» y sin
     //     bloqueo firme, `causaPerdidaDeal` lo devuelve verbatim (su propio comentario dice «nunca el genérico»).

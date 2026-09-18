@@ -15,7 +15,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { leer } from "./_comun.mjs";
+import { leer, canonico} from "./_comun.mjs";
 
 /* `SEXDECIES_FUENTE=/ruta/a/un.jsx` corre el gate contra un fuente candidato (p. ej. la reparación antes de commitearla). */
 const jsx = process.env.SEXDECIES_FUENTE ? readFileSync(process.env.SEXDECIES_FUENTE, "utf8") : leer("pipeline_comercial.jsx");
@@ -54,9 +54,9 @@ export function panelManual(src) {
   const ini = c.indexOf("{!deal.simulado ? (");
   if (ini < 0) return ["no encuentro el panel de arranque (`{!deal.simulado ? (`)"];
   const finB = c.indexOf("Documentos en la oferta", ini); // la sección que sigue al panel
-  const bloque = c.slice(ini, finB > ini ? finB : ini + 12000);
+  const bloque = canonico(c.slice(ini, finB > ini ? finB : ini + 30000));   // canónico: ver _comun.mjs (ADR-0005)
   const iT = bloque.search(/Tienes \{validas\.length\} factura\{validas\.length === 1 \? "" : "s"\} elegida/);
-  const iB = bloque.search(/<button onClick=\{\(\) => elegirInicio\(validas, /);
+  const iB = bloque.search(/<button\s*onClick=\{\(\) => elegirInicio\(validas,/);
   const iS = bloque.search(/Simular la oferta/);
   const iR = bloque.indexOf("O reemplaza la selección por");
   const iM = bloque.indexOf("opcionesInicio.map(");
@@ -68,7 +68,7 @@ export function panelManual(src) {
   if (iP < 0) fallos.push("falta la pregunta de la oferta vacía «¿Qué facturas quieres incluir en la oferta?»");
   if (!fallos.length) {
     if (!(iT < iB && iB < iS && iS < iR && iR < iM)) fallos.push(`orden roto: Tienes ${iT} < botón ${iB} < Simular ${iS} < O reemplaza ${iR} < atajos ${iM}`);
-    const guarda = bloque.slice(0, iT).lastIndexOf("validas.length > 0 ? (");
+    const guarda = bloque.slice(0, iT).search(/validas\.length > 0 \? \(/);
     if (guarda < 0) fallos.push("«Tienes…» no está bajo la guarda `validas.length > 0`: con la oferta vacía ofrecería simular nada");
     if (!(iM > iR)) fallos.push("los atajos no están DESPUÉS del rótulo «O reemplaza la selección por»");
     const tagB = bloque.slice(iB, bloque.indexOf("</button>", iB)); const dis = tagB.match(/disabled=\{[^}]*\}/);
@@ -77,7 +77,7 @@ export function panelManual(src) {
   return fallos;
 }
 /* Todos los botones que abren el diálogo de retiro (`setConfirmRetiro(f)` sobre un <Trash2>), con lo que los precede. */
-const botonesRetiro = (c) => [...c.matchAll(/<button [^\n]*?setConfirmRetiro\(f\)[^\n]*?>(?=<Trash2)/g)].map((m) => ({ b: m[0], idx: m.index, previo: c.slice(Math.max(0, m.index - 40), m.index) }));
+const botonesRetiro = (c0) => { const c = canonico(c0); return [...c.matchAll(/<button\b[\s\S]{0,600}?setConfirmRetiro\(f\)[\s\S]{0,600}?>\s*(?=<Trash2)/g)].map((m) => ({ b: m[0], idx: m.index, previo: c.slice(Math.max(0, m.index - 40), m.index) })); };
 /* Lo que la regla exige de CUALQUIER botón de retiro: se dibuja siempre que no esté bloqueado, sin `disabled`,
    con el onClick a secas y un título fijo que no hable de conservar una factura. */
 function vetosDe(c, { b, idx, previo }) {
@@ -86,7 +86,8 @@ function vetosDe(c, { b, idx, previo }) {
   if (!/onClick=\{\(\) => setConfirmRetiro\(f\)\}/.test(b)) fallos.push(`línea ${ln}: el onClick del retiro no es \`() => setConfirmRetiro(f)\` a secas (${(b.match(/onClick=\{[^\n]*?\}\}?(?= )/) || ["?"])[0]}): una guarda ahí es el veto sin la palabra disabled`);
   if (!/ title="[^"]+"/.test(b)) fallos.push(`línea ${ln}: el título del botón de retiro es condicional (${(b.match(/title=\{[^}]*\}/) || ["?"])[0]}): un título que cambia con la cantidad es el veto viejo`);
   if (/al menos (una|1) factura|la última/i.test(b)) fallos.push(`línea ${ln}: un botón de retiro dice que la oferta debe conservar una factura`);
-  if (!/\{!(bloqueado|soloLectura) \? $/.test(previo)) fallos.push(`línea ${ln}: el botón de retiro no se dibuja con \`{!bloqueado ? \` ni \`{!soloLectura ? \` sino tras «${previo.trim().slice(-32)}»: una condición por cantidad esconde el ícono`);
+  // `\(?` porque prettier abre el paréntesis del JSX condicional: `{!soloLectura ? (`
+  if (!/\{!(bloqueado|soloLectura) \? \(?\s*$/.test(previo)) fallos.push(`línea ${ln}: el botón de retiro no se dibuja con \`{!bloqueado ? \` ni \`{!soloLectura ? \` sino tras «${previo.trim().slice(-32)}»: una condición por cantidad esconde el ícono`);
   return fallos;
 }
 /* (2) El ícono de retiro de la FILA DE LA OFERTA: uno solo, sin veto, en C.sub y con hover. */
@@ -110,7 +111,7 @@ export function vetoViejoNoVuelve(src) {
   for (const x of btns) fallos.push(...vetosDe(c, x));
   const dlg = c.indexOf('titulo="¿Retirar esta factura de la oferta?"');
   if (dlg < 0) fallos.push("no encuentro el ConfirmDialog «¿Retirar esta factura de la oferta?»");
-  else if (!/onConfirmar=\{\(\) => \{ onRetirarFactura\(deal\.id, confirmRetiro\);/.test(c.slice(dlg, dlg + 800))) fallos.push(`línea ${lineaDe(c, dlg)}: el onConfirmar del diálogo de retiro no llama a onRetirarFactura(deal.id, confirmRetiro) de entrada y sin condición`);
+  else if (!/onConfirmar=\{\(\) => \{\s*onRetirarFactura\(deal\.id, confirmRetiro\);/.test(c.slice(dlg, dlg + 1400))) fallos.push(`línea ${lineaDe(c, dlg)}: el onConfirmar del diálogo de retiro no llama a onRetirarFactura(deal.id, confirmRetiro) de entrada y sin condición`);
   return fallos;
 }
 /* (4) La mutación admite dejar la oferta vacía: ningún `return d` de `upd` depende de cuántas facturas quedan
@@ -154,36 +155,39 @@ test("13-sexdecies · retirarFacturaOferta no devuelve la operación sin cambios
 });
 
 /* Las dos variantes del fuente a partir de la que exista: `con` trae el veto y `sin` la reparación. */
-const dosEstados = (viejo, nuevo) => jsx.includes(viejo) ? { con: jsx, sin: jsx.replace(viejo, nuevo), estado: "con el veto" }
-  : jsx.includes(nuevo) ? { con: jsx.replace(nuevo, viejo), sin: jsx, estado: "reparado" } : null;
+const dosEstados = (viejo, nuevo, nuevoRe) => jsx.includes(viejo) ? { con: jsx, sin: jsx.replace(viejo, nuevo), estado: "con el veto" }
+  : nuevoRe.test(jsx) ? { con: jsx.replace(nuevoRe, viejo), sin: jsx, estado: "reparado", re: nuevoRe } : null;
 const distinto = (copia, base, que) => { assert.notEqual(copia, base, `la sonda «${que}» no tocó nada: actualizar su ancla`); return copia; };
 
 test("13-sexdecies · SONDAS: cada violación plantada cambia el veredicto, y los gates 3 y 4 aceptan el fuente reparado y cazan el veto en los DOS estados del fuente", () => {
   // 1 · sin el botón que simula la selección; sin el rótulo; sin la guarda de oferta vacía; el botón siempre deshabilitado.
-  const s1 = distinto(jsx.replace("<button onClick={() => elegirInicio(validas, \"Selección manual\")}", "<div onClick={() => elegirInicio(validas, \"Selección manual\")}"), jsx, "botón de la selección");
+  const s1 = distinto(jsx.replace(/<button(\s*onClick=\{\(\) => elegirInicio\(validas,\s*"Selección manual"\)\})/, "<div$1"), jsx, "botón de la selección");
   assert.ok(panelManual(s1).some((f) => /simule LA SELECCIÓN/.test(f)), "no cazó la falta del botón de la selección");
   const s1b = distinto(jsx.replace("O reemplaza la selección por", "O reemplaza la seleccion por"), jsx, "rótulo O reemplaza");
   assert.ok(panelManual(s1b).some((f) => /O reemplaza/.test(f)), "no cazó la falta del rótulo");
-  const s1c = distinto(jsx.replace("{validas.length > 0 ? (<>\n                                    <div className=\"t15 font-semibold\" style={{ color: C.ink }}>Tienes", "{true ? (<>\n                                    <div className=\"t15 font-semibold\" style={{ color: C.ink }}>Tienes"), jsx, "guarda validas.length > 0");
+  const s1c = distinto(jsx.replace(/\{validas\.length > 0 \? \(/, "{true ? ("), jsx, "guarda validas.length > 0");
   assert.ok(panelManual(s1c).some((f) => /guarda/.test(f)), "no cazó la guarda de oferta vacía retirada");
-  const COMP = (jsx.match(/\{!(bloqueado|soloLectura) \? <button [^\n]*?setConfirmRetiro/) || [])[1] || "bloqueado";   // la compuerta de estado, como se llame hoy
-  const s1d = distinto(jsx.replace(`onClick={() => elegirInicio(validas, "Selección manual")} disabled={${COMP}}`, 'onClick={() => elegirInicio(validas, "Selección manual")} disabled={true}'), jsx, "Simular siempre deshabilitado");
+  const COMP = (canonico(jsx).match(/\{!(bloqueado|soloLectura) \? \(?<button\b[\s\S]{0,600}?setConfirmRetiro/) || [])[1] || "bloqueado";   // la compuerta de estado, como se llame hoy
+  const s1d = distinto(jsx.replace(new RegExp('(onClick=\\{\\(\\) => elegirInicio\\(validas,\\s*"Selección manual"\\)\\}\\s*disabled=\\{)' + COMP + '(\\})'), "$1true$2"), jsx, "Simular siempre deshabilitado");
   assert.ok(panelManual(s1d).some((f) => /sólo por la compuerta de estado/.test(f)), "no cazó «Simular la oferta» deshabilitado siempre");
   // 2 · el ícono de la fila de la oferta: vuelve a llevar el veto / pierde el color y el hover / onClick con guarda / no se dibuja con una factura.
-  const btn = jsx.match(/<button [^\n]*?title="Retirar esta factura de la oferta"[^\n]*?>(?=<Trash2)/)[0];
-  const s2 = distinto(jsx.replace(btn, btn.replace("<button ", "<button disabled={validas.length <= 1} ")), jsx, "disabled en la fila de la oferta");
+  // El <button> ya no cabe en una línea: se toma del fuente tal como está y las sondas lo mutan con regex.
+  const btn = (jsx.match(/<button\b[\s\S]{0,700}?title="Retirar esta factura de la oferta"[\s\S]{0,700}?>\s*(?=<Trash2)/) || [""])[0];
+  assert.ok(btn, "no encuentro el botón de retiro de la fila de la oferta: actualizar el ancla");
+  const s2 = distinto(jsx.replace(btn, btn.replace(/<button\b/, "<button disabled={validas.length <= 1}")), jsx, "disabled en la fila de la oferta");
   assert.ok(retiroSinVeto(s2).some((f) => /lleva disabled/.test(f)), "el gate 2 no cazó el disabled plantado");
   assert.ok(vetoViejoNoVuelve(s2).some((f) => /lleva disabled/.test(f)), "el gate 3 no cazó el veto plantado en la fila de la oferta");
   const s2b = distinto(jsx.replace(btn, btn.replace("color: C.sub", "color: C.faint").replace(" hover:bg-stone-100", "")), jsx, "gris sin hover");
   const f2b = retiroSinVeto(s2b); assert.ok(f2b.some((f) => /C\.sub/.test(f)) && f2b.some((f) => /hover/.test(f)), "no cazó el gris sobre gris sin hover");
-  const s2c = distinto(jsx.replace(btn, btn.replace("onClick={() => setConfirmRetiro(f)}", "onClick={() => validas.length > 1 && setConfirmRetiro(f)}")), jsx, "onClick con guarda");
+  const s2c = distinto(jsx.replace(btn, btn.replace(/onClick=\{\(\) => setConfirmRetiro\(f\)\}/, "onClick={() => validas.length > 1 && setConfirmRetiro(f)}")), jsx, "onClick con guarda");
   assert.ok(retiroSinVeto(s2c).some((f) => /a secas/.test(f)) && vetoViejoNoVuelve(s2c).some((f) => /a secas/.test(f)), "no cazó el onClick con guarda (veto sin la palabra disabled)");
-  const s2d = distinto(jsx.replace(`{!${COMP} ? ` + btn, `{validas.length > 1 && !${COMP} ? ` + btn), jsx, "ícono no dibujado con una factura");
+  const s2d = distinto(jsx.replace(new RegExp("\\{!" + COMP + " \\? (\\(?\\s*<button\\b[\\s\\S]{0,700}?title=\"Retirar esta factura de la oferta\")"), "{validas.length > 1 && !" + COMP + " ? $1"), jsx, "ícono no dibujado con una factura");
   assert.ok(retiroSinVeto(s2d).some((f) => /no se dibuja/.test(f)) && vetoViejoNoVuelve(s2d).some((f) => /no se dibuja/.test(f)), "no cazó el ícono que no se dibuja con una factura");
   // 3 · el sub-tab «documentos» (~línea 8020), en los DOS estados del fuente: el gate 3 acepta la reparación y caza el veto.
   const VIEJO_8020 = 'onClick={() => setConfirmRetiro(f)} disabled={validas.length <= 1} title={validas.length <= 1 ? "La oferta debe tener al menos una factura" : "Retirar de la oferta"}';
   const NUEVO_8020 = 'onClick={() => setConfirmRetiro(f)} title="Retirar de la oferta"';
-  const e3 = dosEstados(VIEJO_8020, NUEVO_8020);
+  const RE_8020 = /onClick=\{\(\) => setConfirmRetiro\(f\)\}\s*title="Retirar de la oferta"/;
+  const e3 = dosEstados(VIEJO_8020, NUEVO_8020, RE_8020);
   assert.ok(e3, "el sub-tab «documentos» no trae ni el veto viejo ni el botón reparado con `title=\"Retirar de la oferta\"`: actualizar la sonda");
   assert.deepEqual(vetoViejoNoVuelve(e3.sin), [], `el gate 3 no acepta el sub-tab «documentos» reparado (fuente ${e3.estado})`);
   const f3 = vetoViejoNoVuelve(e3.con);
@@ -193,17 +197,17 @@ test("13-sexdecies · SONDAS: cada violación plantada cambia el veredicto, y lo
     ["disabled={ultima}", 'onClick={() => setConfirmRetiro(f)} disabled={ultima} title={ultima ? "No puedes retirar la última" : "Retirar de la oferta"}', /lleva disabled|condicional|la última/],
     ["onClick con guarda", 'onClick={() => validas.length > 1 && setConfirmRetiro(f)} title="Retirar de la oferta"', /a secas/],
   ]) {
-    const s = distinto(e3.sin.replace(NUEVO_8020, mut), e3.sin, que);
+    const s = distinto(e3.sin.replace(e3.estado === "reparado" ? RE_8020 : NUEVO_8020, mut), e3.sin, que);
     assert.ok(vetoViejoNoVuelve(s).some((f) => esperado.test(f)), `el gate 3 no cazó «${que}» en el sub-tab «documentos»`);
   }
-  const s3d = distinto(e3.sin.replace(`{!${COMP} ? <button ` + NUEVO_8020, `{validas.length > 1 && !${COMP} ? <button ` + NUEVO_8020), e3.sin, "sub-tab: ícono no dibujado con una factura");
+  const s3d = distinto(e3.sin.replace(new RegExp("\\{!" + COMP + " \\? (\\(?\\s*<button\\b[\\s\\S]{0,700}?title=\"Retirar de la oferta\")"), "{validas.length > 1 && !" + COMP + " ? $1"), e3.sin, "sub-tab: ícono no dibujado con una factura");
   assert.ok(vetoViejoNoVuelve(s3d).some((f) => /no se dibuja/.test(f)), "el gate 3 no cazó el ícono del sub-tab que no se dibuja con una factura");
-  const s3e = distinto(e3.sin.replace("onConfirmar={() => { onRetirarFactura(deal.id, confirmRetiro);", "onConfirmar={() => { if (validas.length > 1) onRetirarFactura(deal.id, confirmRetiro);"), e3.sin, "veto en onConfirmar");
+  const s3e = distinto(e3.sin.replace(/onConfirmar=\{\(\) => \{(\s*)onRetirarFactura\(deal\.id, confirmRetiro\);/, "onConfirmar={() => {$1if (validas.length > 1) onRetirarFactura(deal.id, confirmRetiro);"), e3.sin, "veto en onConfirmar");
   assert.ok(vetoViejoNoVuelve(s3e).some((f) => /onConfirmar/.test(f)), "el gate 3 no cazó el veto puesto en el onConfirmar del diálogo");
   // 4 · la mutación, en los DOS estados: el gate 4 acepta la reparación y caza el veto con cualquier grafía.
   const VETO_MUT = "if (nuevasOp.length === base.length || nuevasOp.length === 0) return d;";
   const REP_MUT = "if (nuevasOp.length === base.length) return d;";
-  const e4 = dosEstados(VETO_MUT, REP_MUT);
+  const e4 = dosEstados(VETO_MUT, REP_MUT, new RegExp(REP_MUT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.ok(e4, "retirarFacturaOferta no trae ni el rechazo de la oferta vacía ni la guarda reparada `if (nuevasOp.length === base.length) return d;`: actualizar la sonda");
   assert.deepEqual(mutacionAdmiteVacia(e4.sin), [], `el gate 4 no acepta la mutación reparada (fuente ${e4.estado})`);
   assert.ok(mutacionAdmiteVacia(e4.con).some((f) => /cuántas facturas quedan/.test(f)), `el gate 4 no caza el veto de la oferta vacía (fuente ${e4.estado})`);
@@ -219,10 +223,11 @@ test("13-sexdecies · SONDAS: cada violación plantada cambia el veredicto, y lo
     const s = distinto(enRetirar(e4.sin, REP_MUT, mut), e4.sin, que);
     assert.ok(mutacionAdmiteVacia(s).some((f) => esperado.test(f)), `el gate 4 no cazó «${que}»`);
   }
-  const RET = "return { ...d, facturasOp: nuevasOp,";
+  const RET = (e4.sin.slice(e4.sin.indexOf("const retirarFacturaOferta = (id, fac, motivo) => {")).match(/return \{\s*\.\.\.d,\s*facturasOp: nuevasOp,/) || [""])[0];
+  assert.ok(RET, "no encuentro el `return { ...d, facturasOp: nuevasOp,` de retirarFacturaOferta");
   const s4t = distinto(enRetirar(e4.sin, RET, "return nuevasOp.length === 0 ? d : { ...d, facturasOp: nuevasOp,"), e4.sin, "ternario en el return");
   assert.ok(mutacionAdmiteVacia(s4t).some((f) => /no es `d` ni el objeto nuevo/.test(f)), "el gate 4 no cazó el veto en un ternario del return");
-  const D0 = "const d0 = deals.find((x) => x.id === id);";
+  const D0 = (e4.sin.slice(e4.sin.indexOf("const retirarFacturaOferta = (id, fac, motivo) => {")).match(/const d0 = deals\.find\(\(x\) => x\.id === id\);/) || ["const d0 = deals.find((x) => x.id === id);"])[0];
   const s4a = distinto(enRetirar(e4.sin, D0, D0 + "\n    if (d0 && itemizarFacturas(d0).length <= 1) return;"), e4.sin, "veto antes de upd");
   assert.ok(mutacionAdmiteVacia(s4a).some((f) => /antes de `upd`/.test(f)), "el gate 4 no cazó el veto por cantidad puesto antes de `upd`");
   const s4r = distinto(enRetirar(e4.sin, D0, D0 + "\n    if (d0 && [\"prospeccion\", \"oferta\"].includes(d0.stage) && itemizarFacturas(d0).length === 1) { limpiarSimulacion(id); return; }"), e4.sin, "reparación completa plantada");

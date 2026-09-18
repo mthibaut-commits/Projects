@@ -70,4 +70,10 @@ decida, ningún test la afirma ni la niega.
   `ps -eo pid,etime,pcpu,comm | awk '$3+0>1'` antes de seguir, o le roba núcleos a la suite y a la capa e2e, que
   son justo lo que uno está esperando (17-09-2026).
 - Un test flaky se arregla o se borra en la misma sesión.
-- Antes de commitear: los seis pasos de `CLAUDE.md` en orden. Ninguno subsume a otro.
+- Antes de commitear: el **paso 0** (`npx prettier --check pipeline_comercial.jsx`) y los seis pasos de
+  `CLAUDE.md` en orden. Ninguno subsume a otro.
+- **Un gate de texto que cae tras formatear el fuente se RE-ANCLA, no se afloja** (ADR-0005). Los gates
+  `regla_<slug>` leen el `.jsx` como texto: el patrón se aplica sobre `canonico(src)` —espacios
+  colapsados, sin coma final antes de un cierre, corchetes apretados— y la SONDA se planta también sobre
+  el texto canónico, porque `canonico` es idempotente. Bajar una exigencia para que el gate pase deja de
+  vigilar lo que la regla dice, y su propia sonda negativa lo delata al primer intento.

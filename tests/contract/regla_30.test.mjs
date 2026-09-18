@@ -55,13 +55,13 @@ export function closureDe(src, nombre) {
 }
 /* El elemento JSX `<ModalCurse … />` (hasta su cierre `/>`). */
 export function elementoModalCurse(src) {
-  const a = src.indexOf("<ModalCurse "); if (a < 0) return null;
+  const a = src.search(/<ModalCurse[\s>]/); if (a < 0) return null;
   const b = src.indexOf("/>", a); if (b < 0) return null;
   return src.slice(a, b + 2);
 }
 /* El IIFE `{(() => { … })()}` de panelAcciones que contiene «Avanzar a», por su sangría: [inicio, fin) dentro de `pa`. */
 export function iifeAvanzar(pa) {
-  const iAv = pa.indexOf(">Avanzar a<"); if (iAv < 0) return null;
+  const iAv = pa.search(/>\s*Avanzar a\s*</); if (iAv < 0) return null;
   const ini = pa.lastIndexOf("{(() => {", iAv); if (ini < 0) return null;
   const sangria = (pa.slice(pa.lastIndexOf("\n", ini) + 1, ini).match(/^\s*/) || [""])[0];
   const cierre = new RegExp("^" + sangria + "\\}\\)\\(\\)\\}", "m");
@@ -72,11 +72,11 @@ export function iifeAvanzar(pa) {
 /* La línea que dibuja el botón «Acciones» del encabezado y la condición JSX que la gatea (`{… && (` más cercano arriba). */
 export function renderBotonAcciones(src) {
   const L = src.split("\n");
-  const i = L.findIndex((l) => />Acciones <ChevronDown/.test(l) && /setAccMenu/.test(l));
+  const i = L.findIndex((l, k) => /Acciones <ChevronDown/.test(l) && L.slice(Math.max(0, k - 8), k).some((x) => /setAccMenu\(/.test(x)));
   if (i < 0) return null;
   let j = i - 1;
-  while (j >= 0 && i - j <= 12 && !/^\s*\{.*&& \($/.test(L[j])) j--;
-  return { linea: L[i], gate: j >= 0 && i - j <= 12 ? L.slice(j, i).join("\n") : "", siguiente: L[i + 1] || "" };
+  while (j >= 0 && i - j <= 20 && !/^\s*\{.*&& \($/.test(L[j])) j--;
+  return { linea: L[i], gate: j >= 0 && i - j <= 20 ? L.slice(j, i).join("\n") : "", siguiente: L.slice(i + 1, i + 6).join("\n") };
 }
 /* El texto sin comentarios JSX `{/* … *\/}`, de bloque ni de línea. */
 export const sinComentarios = (txt) => txt.replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -133,14 +133,14 @@ export function auditar(src) {
     if (iItem < 0) fallos.push("`panelAcciones` perdió «" + ITEM + "»: desde las otras pestañas no habría forma de llegar");
     else {
       const antes = pa.slice(0, iItem);
-      const iGate = antes.lastIndexOf("{!seleccionable && (<>");
+      const iGate = antes.lastIndexOf("{!seleccionable && (");
       const iBtn = antes.lastIndexOf("<button");
       if (iGate < 0 || iGate > iBtn) fallos.push("el ítem «Eliminar la simulación…» no está bajo `{!seleccionable && (<>`");
       const btn = antes.slice(iBtn);
       if (!/disabled=\{!puedeReiniciar\}/.test(btn)) fallos.push("el botón «Eliminar la simulación…» no va `disabled={!puedeReiniciar}`");
       if (!/color: C\.red/.test(btn)) fallos.push("el botón «Eliminar la simulación…» no va en rojo (`color: C.red`)");
-      const despues = pa.slice(iItem, iItem + 400);
-      if (!/\{!puedeReiniciar && <div[^>]*>\{motivoNoReset\}<\/div>\}/.test(despues)) fallos.push("el motivo (`motivoNoReset`) no está ESCRITO debajo del ítem cuando no se puede");
+      const despues = pa.slice(iItem, iItem + 500);
+      if (!/\{!puedeReiniciar && \(?\s*<div[^>]*>\s*\{motivoNoReset\}\s*<\/div>/.test(despues)) fallos.push("el motivo (`motivoNoReset`) no está ESCRITO debajo del ítem cuando no se puede");
     }
   }
   // (5) dónde se muestra, y que los ids del gate sean los que la lista de tabs declara
@@ -179,7 +179,7 @@ const MUTANTES = [
   ["(hueco 9) «Avanzar a» reinstalado como botón suelto DESPUÉS del IIFE, con índice mayor que la guarda",
     (s) => s.replace(FIN_IIFE, FIN_IIFE.replace("          })()}\n", '          })()}\n          {!seleccionable && <button onClick={() => { setAccMenu(false); onMover(deal.id, "otorgamiento"); }}>Otorgamiento</button>}\n')), /FUERA del IIFE guardado/],
   ["(hueco 10) ítem «Cerrar oferta y publicar» agregado al menú «Acciones» vía setCursarModal, sin pasar por ACCIONES_PPAL",
-    (s) => s.replace("{!seleccionable && (<>\n", '{!seleccionable && (<>\n            <button onClick={() => { setAccMenu(false); setCursarModal({ evalLin: null }); }}>Cerrar oferta y publicar</button>\n'), /escribe un ítem de cierre a mano|abre el cierre directo/],
+    (s) => s.replace("{!seleccionable && (", '{false && <button onClick={() => { setAccMenu(false); setCursarModal({ evalLin: null }); }}>Cerrar oferta y publicar</button>}\n          {!seleccionable && ('), /escribe un ítem de cierre a mano|abre el cierre directo/],
   ["(hueco 11) ejecutarAccion sin datosCurse PUBLICA por onPublicar, con la guarda intacta",
     (s) => s.replace(GUARDA_CURSE, 'if (k === "cerrar" && !datosCurse) { onPublicar(deal.id, deal.tasa, {}, "electronica"); return; }\n    ' + GUARDA_CURSE), /fuera de la lista blanca \[onClose\]: onPublicar/],
   ["(hueco 12) ejecutarAccion sin datosCurse AVANZA por onAdvance, con la guarda intacta",
@@ -187,7 +187,7 @@ const MUTANTES = [
   ["(hueco 13) el id del tab pasa de «otorgamiento» a «otorg»: el gate textual queda igual y ya no oculta nada",
     (s) => s.replace(TAB_OTORG, '["otorg", "Otorgamiento"]').replace(/tab === "otorgamiento"/g, 'tab === "otorg"'), /ya no declara `\["otorgamiento"/],
   ["(variante de 12) ejecutarAccion mueve de etapa con onMover", (s) => s.replace(GUARDA_CURSE, 'if (!datosCurse) { onMover(deal.id, "otorgamiento"); return; }'), /fuera de la lista blanca \[onClose\]: onMover/],
-  ["(variante de 10) panelAcciones publica por onPublicar desde el reset", (s) => s.replace("setConfirmReset(true); }}", 'setConfirmReset(true); onPublicar(deal.id, deal.tasa, {}, "electronica"); }}'), /fuera de la lista blanca \[onReject, onMover\]: onPublicar/],
+  ["(variante de 10) panelAcciones publica por onPublicar desde el reset", (s) => s.replace("setConfirmReset(true);", 'setConfirmReset(true); onPublicar(deal.id, deal.tasa, {}, "electronica");'), /fuera de la lista blanca \[onReject, onMover\]: onPublicar/],
 ];
 for (const [nombre, mutar, esperado] of MUTANTES) {
   test(`sonda · mutante «${nombre}» es atrapado`, () => {

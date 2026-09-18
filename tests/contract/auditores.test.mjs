@@ -45,13 +45,21 @@ export const BASE_MUERTOS = ["giroDeal"];
      detalle siempre en `null` y `diaModal` sólo se resetea. Son los tres que una poda podría llevarse, y la
      verificación de una poda son las CAPTURAS (`.claude/rules/code_style.md`), no `tsc` ni el build. */
 export const BASE_USESTATE = ["alertF", "channel", "dealTabInicial", "diaModal", "reevTick", "spreadDeudor", "vencDias"];
-/* Funciones que auditar_aislamiento declara «nada global» al 17-09-2026 (39). */
+/* Funciones que auditar_aislamiento declara «nada global» (38 desde el 18-09-2026).
+   SALE `lineaDeDeudor`, y no porque se haya acoplado: **nunca fue pura**. Era una función de UNA SOLA LÍNEA
+   —`function lineaDeDeudor(rutDeudor) { return lineasDeudor().get(rutDeudor) || null; }`— y el auditor
+   extrae el cuerpo a partir de la línea SIGUIENTE a la declaración, así que veía un cuerpo vacío y la
+   declaraba limpia. Al formatear el fuente (ADR-0005) el cuerpo bajó de línea, el auditor lo vio, y con él
+   la llamada a `lineasDeudor()`, que está memoizada. La línea base cargaba un falso negativo.
+   Se revisaron las otras dos de una línea que había en la lista —`difPrecioDoc` y `tramoNota`—: ésas sí son
+   puras, el auditor las sigue declarando limpias con el cuerpo a la vista. El punto ciego ya no existe en la
+   práctica (el formateador no deja cuerpos de una línea), pero queda escrito por si alguien lo reintroduce. */
 export const BASE_PURAS = [
   "evalReglaCli", "deudorBlock", "nivelExigido", "pisoPorMonto", "esReglaDeudor", "verifDecision", "verifEvaluar",
   "causasVerif", "claveVeredicto", "facturasDeudorEnDeal", "reemplazoVigente", "validarSimCfg", "parseFormula",
   "evalFormula", "varsDeFormula", "tokenizarFormula", "sowEstado", "calcularOferta", "tasaMinIA", "prorratearOperacion",
   "prorratearConcepto", "difPrecioDoc", "valorPresenteDoc", "plazoEquivalente", "tasaEquivalente", "asignarGiros",
-  "giroCalifica", "recortarAsignacion", "lineaDeDeudor", "tipoLineaDeDeudor", "dispDeudor", "spreadMinDeudor",
+  "giroCalifica", "recortarAsignacion", "tipoLineaDeDeudor", "dispDeudor", "spreadMinDeudor",
   "notaFromScore", "scoreDeudor", "tramoNota", "catShares", "catDeal", "catDisp", "aprobacionFormalCliente",
 ];
 
