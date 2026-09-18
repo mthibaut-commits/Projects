@@ -29,7 +29,7 @@ producto —ocho defectos, abajo—. El generador tiene punto fijo (32, ADR-0003
 >    **un solo call site** (LIN-01, GIR-01 y ATR-01 declarados y nunca invocados); y el `idProceso` de la solicitud
 >    al comité **colisiona entre pestañas** y descarta la segunda en silencio.
 > 2. **Decidir los datos**: razones sociales reales sobre RUT sintéticos — un ADR y un gate que lo sostenga (hoy
->    ningún test lo afirma ni lo niega). · 3. Sacar `pipeline.zip` (29,6 MB) del versionado.
+>    ningún test lo afirma ni lo niega). · 3. Sacar `pipeline.zip` del versionado (2,8 MB medidos hoy, no los 29,6 que decía este tablero).
 
 ## En vuelo ahora · nada: todo está en `main`, sólo quedan las tareas del usuario (abajo)
 
