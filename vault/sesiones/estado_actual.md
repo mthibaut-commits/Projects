@@ -13,44 +13,40 @@ timestamp: 2026-09-18T14:10:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone de 40,7 MB, **141/141 PASA**, **29 archivos de gate de contrato**
-(177 tests), **29 casos e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (64 reglas verbatim por tema, índice en
+(`pipeline_comercial.jsx`), build standalone de 40,7 MB, **141/141 PASA**, **32 archivos de gate de contrato**
+(177 tests), **29 casos e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (67 reglas verbatim por tema, índice en
 `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró la tabla de invariantes**: cada regla y los 12
 invariantes del contrato tienen gate; ninguna fila dice ya «sin gate». Lo que esos gates destaparon cambió el
 producto —ocho defectos, abajo—. El generador tiene punto fijo (32, ADR-0003), el id de una operación es estable
 (ADR-0004) con «Operación creada» + Editar (33) y el detalle sigue el mockup (29, 22); el 18-09 el tubo abre en
-«Todos» (34) y **una regla con un tramo de excepción sin área ya no se ejecuta ni se verifica** (35).
+«Todos» (34), **una regla con un tramo sin área ya no se ejecuta ni se verifica** (35) y la **portada pasó a mostrar
+el producto** con un solo morado de marca (36, 37, 38 · ADR-0005).
 
 > ## 🎯 Siguiente paso
 >
-> Decisión del usuario; ninguno empezado.
+> Decisión del usuario; ninguno empezado. **0. Correr el `.bat` una vez**: `build_app.ps1` cambió (embebe
+> `arte_login.js`) y acá no se ejecuta; la simetría está gateada, no probada.
 > 1. **Los 20 desfases regla↔código que midieron los gates** (`2026-09-17_cerrar_invariantes.md`). Los tres grandes:
 >    la cláusula «tasa bajo el mínimo del deudor» de la regla 8 **no existe en el código**; `validarMutacion` tiene
->    **un solo call site** (LIN-01, GIR-01 y ATR-01 declarados y nunca invocados); y el `idProceso` de la solicitud
->    al comité **colisiona entre pestañas** y descarta la segunda en silencio.
-> 2. **Decidir los datos**: razones sociales reales sobre RUT sintéticos — un ADR y un gate que lo sostenga (hoy
->    ningún test lo afirma ni lo niega). · 3. Sacar `pipeline.zip`: **2,7 MB** (1024², como los informa el build),
->    no los 29,6 que decía este tablero — ésos son los 28,3 descomprimidos. Es un build del 12-08 de un generado.
+>    **un solo call site** (LIN-01, GIR-01 y ATR-01 declarados y nunca invocados); y el `idProceso` del comité
+>    **colisiona entre pestañas** y descarta la segunda en silencio.
+> 2. **Decidir los datos**: razones sociales reales sobre RUT sintéticos — un ADR y un gate (hoy ningún test lo
+>    afirma ni lo niega). · 3. Sacar `pipeline.zip` (**2,7 MB**, un build del 12-08 de un generado).
 
 ## En vuelo ahora · nada: todo está en `main`, sólo quedan las tareas del usuario (abajo)
 
 | Trabajo | Integrado en `main` |
 |---|---|
-| Invariantes · e2e · O05 · tab «Todos» (34) · regla mal definida (35) · paso 2 · auditorías · spec exc. | este merge |
-| «Operación creada» + Editar · id estable · restyle del detalle (33, 29, 22 · ADR-0004) | `8b75a03` |
-| Punto fijo del generador (32 · ADR-0003) `3a27737` · gates + partir `CLAUDE.md` (ADR-0001/2) `bd14091` | ✓ |
+| **Portada que muestra el producto** (36, 37, 38 · ADR-0005): arte generado, un solo morado, zoom al dashboard | este merge |
+| Invariantes · e2e · O05 · tab «Todos» (34) · regla mal definida (35) · paso 2 · auditorías · spec exc. | `d389379` |
+| «Operación creada» + id estable + restyle (33, 29, 22 · ADR-0004) `8b75a03` · punto fijo (32 · ADR-0003) `3a27737` · gates y partir `CLAUDE.md` (ADR-0001/2) `bd14091` | ✓ |
 
-## Lo que los gates destaparon (corregido en el mismo commit)
-**Ocho defectos de producto**: retirar la última factura vetado aunque la 13-sexdecies lo permite · la vía «no
-confirmada» sin re-evaluación (14) · `revertirVisado`/`revertirExc` con `ReferenceError` y un O05 sin revocar su
-evidencia (OTG-01) · una Perdida que revivía (5) · el reset escondido por el paquete cerrado · más 15-quinquies,
-27-bis y RAT-01. **Y el paso 2**, que no veía 11 declaraciones (diez `async function` y el `export default`): una
-colisión sólo se sabía en el paso 5, sin nombrar el símbolo. Usa el patrón del auditor con cola `$NF`, y
-`fuente.test.mjs` exige que `CLAUDE.md`, el vault y el CI escriban el MISMO paso 2. Y el 18-09: el
-**health check de hooks es un comando** (`node verificar_hooks.mjs`, gateado; el CI subió a `@v5`),
-**`cifras.test.mjs`** cuenta lo que los documentos afirman, y caen los dos pendientes de regla que eran defectos: el
-`<h1>` de Reportes (27-bis) y la guarda contra una solicitud duplicada, que cruza de pestaña (33). Uno por uno:
-[invariantes](./2026-09-17_cerrar_invariantes.md) · [integración](./2026-09-18_integracion_y_tab_todos.md) · [auditorías](./2026-09-18_auditorias_y_paso_2.md) · [regla 35](./2026-09-18_regla_mal_definida.md).
+## Lo que los gates destaparon (todo corregido; el detalle, en los logs)
+**Ocho defectos de producto** (13-sexdecies, 14, OTG-01, 5, el reset, 15-quinquies, 27-bis, RAT-01), **el paso 2**
+que no veía 11 declaraciones —una colisión sólo se sabía en el paso 5, sin nombrar el símbolo—, el health check de
+hooks como comando, `cifras.test.mjs` contando lo que los documentos afirman, y los dos pendientes de regla que eran
+defectos (27-bis, 33). Uno por uno: [invariantes](./2026-09-17_cerrar_invariantes.md) ·
+[integración](./2026-09-18_integracion_y_tab_todos.md) · [auditorías](./2026-09-18_auditorias_y_paso_2.md) · [regla 35](./2026-09-18_regla_mal_definida.md).
 
 ## Bloqueos · los dos son del usuario, desde Windows
 
@@ -71,10 +67,12 @@ El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403, política; s
 4. **Hooks en Windows**: correr `node verificar_hooks.mjs` una vez; es lo único que el CI no puede atestiguar.
 5. **Dos sesiones paralelas toman el mismo «siguiente entero libre»** y el mismo archivo: pasó con las reglas
    32/33, con los casos 116–140 y con este tablero. Se confirma al mezclar `main`; quien mezcla después renumera.
-6. Los 13 skills de `taste-skill` viven en el `~/.claude/skills/` del CONTENEDOR, efímero: para tenerlos estables,
+6. **Al regenerar las capturas, regenerar `arte_login.js`** o la portada muestra una UI que ya no existe ·
+   `marcaFondo` no está en el selector de colores de Configuración.
+7. Los 13 skills de `taste-skill` viven en el `~/.claude/skills/` del CONTENEDOR, efímero: para tenerlos estables,
    `/plugin marketplace add leonxlnx/taste-skill` en la máquina del usuario.
 
 ## Conocimiento clave
 
 [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [hooks](../conocimiento/loop_agentico_hooks.md) · [despacho de agentes](../conocimiento/despacho_agentes.md) · [flujo git](../conocimiento/flujo_git.md) · [arquitectura](../conocimiento/arquitectura.md) · [verificación](../conocimiento/verificacion.md) · [decisiones](../adr/index.md)
-Últimas: [auditorías y paso 2](./2026-09-18_auditorias_y_paso_2.md) · [deudas cerradas](./2026-09-18_deudas_cerradas.md) · [spec de excepciones](./2026-09-18_spec_gestion_excepciones.md)
+Últimas: [la portada muestra el producto](./2026-09-18_portada_que_muestra_el_producto.md) · [auditorías y paso 2](./2026-09-18_auditorias_y_paso_2.md) · [deudas cerradas](./2026-09-18_deudas_cerradas.md) · [spec de excepciones](./2026-09-18_spec_gestion_excepciones.md)
