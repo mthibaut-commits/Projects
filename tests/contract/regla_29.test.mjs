@@ -29,17 +29,23 @@ export function veredictoEnPesos(src) {
   return fallos;
 }
 /* 2 · Monto del deudor (tres ramas), «Línea disponible» (rótulo y tooltip), «Solicitud línea» (rótulo, tooltip,
-   ámbar de texto y fondo, sólo en la oferta) y «Total oferta»: fmtCLP. */
+   ámbar de texto y fondo, el FALTANTE como cifra, sólo en la oferta) y «Total oferta»: fmtCLP. */
 export function documentoEnPesos(src) {
   const fallos = [];
   if (!/<span>Total oferta · \{deudOf\.length\} deudor\(es\) · \{validas\.length\} factura\(s\)<\/span><span>\{fmtCLP\(totalOf\)\}<\/span>/.test(src)) fallos.push("«Total oferta» no va en fmtCLP(totalOf)");
   if (!/const lbl = hay \? `Línea disponible \$\{fmtCLP\(ld\.disponible\)\}`/.test(src)) fallos.push("«Línea disponible» no va en fmtCLP(ld.disponible)");
   if (!/`Línea disponible de este deudor: \$\{fmtCLP\(ld\.disponible\)\}/.test(src)) fallos.push("el tooltip de «Línea disponible» no va en fmtCLP(ld.disponible)");
-  if (!/`Solicitud línea \$\{fmtCLP\(solicitud\)\}`/.test(src)) fallos.push("«Solicitud línea» no va en fmtCLP(solicitud)");
-  if (!/`Sin cupo para \$\{fmtCLP\(solicitud\)\}[\s\S]{0,120}?entra como línea PUNTUAL/.test(src)) fallos.push("el tooltip de «Solicitud línea» no va en fmtCLP o ya no dice que entra como PUNTUAL al comité");
-  if (!/const solicitud = !enOferta \? 0 :/.test(src)) fallos.push("«Solicitud línea» ya no se condiciona a estar EN la oferta (solicitud = !enOferta ? 0 : …)");
-  if (!/solicitud > 0 && <ChipFila fg="#C2410C"/.test(src)) fallos.push("el chip «Solicitud línea» no va en ámbar #C2410C");
-  if (!/solicitud > 0 && <ChipFila fg="#C2410C" bg="#FFF7ED"/.test(src)) fallos.push("el fondo del chip «Solicitud línea» no es el ámbar #FFF7ED");
+  // «Solicitud línea» pasó de ser la rama gris del chip de estado a un chip PROPIO (17-09-2026): antes salía
+  // sólo con el cupo en CERO —`pedir = !hay && enOferta`— y un deudor PARCIAL no escribía en ninguna parte la
+  // plata que iba a pedir. Ahora la cifra es lo que la evaluación NO asignó, y por eso el gate exige el
+  // FALTANTE y no el monto del deudor: un `solicitud = monto` volvería a reportar de más en cada parcial.
+  if (!/const faltante = enOferta && ev \? Math\.max\(0, mmRound\(monto - ev\.asignado\)\) : 0;/.test(src)) fallos.push("«Solicitud línea» no pide el FALTANTE (monto - ev.asignado): un parcial reportaría de más");
+  if (!/texto=\{`Solicitud línea \$\{fmtCLP\(solicitud\)\}`\}/.test(src)) fallos.push("«Solicitud línea» no va en fmtCLP(solicitud)");
+  if (!/const tipSol = `Sin cupo para \$\{fmtCLP\(solicitud\)\}\$\{solicitud !== monto \? ` de sus \$\{fmtCLP\(monto\)\}` : ""\} en esta oferta: al cerrar, esa diferencia entra como línea PUNTUAL/.test(src)) fallos.push("el tooltip de «Solicitud línea» no va en fmtCLP(solicitud) y fmtCLP(monto) o ya no dice que entra como PUNTUAL al comité");
+  // Fuera de la oferta no se pide nada: el `!enOferta ? 0` apaga el chip entero, porque se dibuja con `> 0`.
+  if (!/const solicitud = !enOferta \? 0 : ev \? faltante : \(hay \? 0 : monto\);/.test(src)) fallos.push("«Solicitud línea» ya no se condiciona a estar EN la oferta (solicitud = !enOferta ? 0 : …)");
+  if (!/\{solicitud > 0 && <ChipFila /.test(src)) fallos.push("el chip «Solicitud línea» no se dibuja con `solicitud > 0` (sin plata que pedir no hay chip)");
+  if (!/<ChipFila fg="#C2410C" bg="#FFF7ED" borde="#F97316" punto="#F97316" texto=\{`Solicitud línea/.test(src)) fallos.push("el chip «Solicitud línea» no va en ámbar #C2410C sobre #FFF7ED con borde naranja #F97316");
   // La cifra de la derecha de la fila del deudor: fuera de la oferta `fmtCLP(disp.monto)`, con línea parcial
   // «$X con línea, de $Y», y la rama simple `fmtCLP(monto)` —la que muestran TODOS los deudores dentro de
   // línea—. El bloque va desde el «—» de «sin nada incorporable» hasta la cola «· tasa Z%».
@@ -86,10 +92,12 @@ test("29 · SONDAS: cada violación plantada en una copia del fuente hace fallar
     ["Línea disponible en M$", documentoEnPesos, jsx.replace("const lbl = hay ? `Línea disponible ${fmtCLP(ld.disponible)}`", "const lbl = hay ? `Línea disponible ${fmtMM(ld.disponible)}`")],
     ["tooltip de Línea disponible en M$", documentoEnPesos, jsx.replace("`Línea disponible de este deudor: ${fmtCLP(ld.disponible)}", "`Línea disponible de este deudor: ${fmtMM(ld.disponible)}")],
     ["Solicitud línea en M$", documentoEnPesos, jsx.replace("`Solicitud línea ${fmtCLP(solicitud)}`", "`Solicitud línea ${fmtMM(solicitud)}`")],
-    ["tooltip de Solicitud línea en M$", documentoEnPesos, jsx.replace("`Sin cupo para ${fmtCLP(solicitud)}", "`Sin cupo para ${fmtMM(solicitud)}")],
-    ["Solicitud línea fuera de la oferta", documentoEnPesos, jsx.replace("const solicitud = !enOferta ? 0 :", "const solicitud = false ? 0 :")],
-    ["Solicitud línea en gris", documentoEnPesos, jsx.replace('solicitud > 0 && <ChipFila fg="#C2410C"', 'solicitud > 0 && <ChipFila fg="#6B7280"')],
-    ["Solicitud línea con fondo gris", documentoEnPesos, jsx.replace('<ChipFila fg="#C2410C" bg="#FFF7ED"', '<ChipFila fg="#C2410C" bg="#F3F4F6"')],
+    ["tooltip de Solicitud línea en M$", documentoEnPesos, jsx.replace("const tipSol = `Sin cupo para ${fmtCLP(solicitud)}", "const tipSol = `Sin cupo para ${fmtMM(solicitud)}")],
+    ["Solicitud línea fuera de la oferta", documentoEnPesos, jsx.replace("const solicitud = !enOferta ? 0 : ev ? faltante : (hay ? 0 : monto);", "const solicitud = ev ? faltante : (hay ? 0 : monto);")],
+    ["Solicitud línea por el deudor entero y no por el faltante", documentoEnPesos, jsx.replace("const faltante = enOferta && ev ? Math.max(0, mmRound(monto - ev.asignado)) : 0;", "const faltante = enOferta && ev ? monto : 0;")],
+    ["el chip se dibuja sin plata que pedir", documentoEnPesos, jsx.replace("{solicitud > 0 && <ChipFila fg=\"#C2410C\"", "{true && <ChipFila fg=\"#C2410C\"")],
+    ["Solicitud línea en gris", documentoEnPesos, jsx.replace('<ChipFila fg="#C2410C" bg="#FFF7ED" borde="#F97316"', '<ChipFila fg="#6B7280" bg="#FFF7ED" borde="#F97316"')],
+    ["Solicitud línea con fondo gris", documentoEnPesos, jsx.replace('<ChipFila fg="#C2410C" bg="#FFF7ED" borde="#F97316"', '<ChipFila fg="#C2410C" bg="#F3F4F6" borde="#F97316"')],
     ["monto del deudor «con línea, de» en M$", documentoEnPesos, jsx.replace("<>{fmtCLP(ev.asignado)}<span", "<>{fmtMM(ev.asignado)}<span")],
     ["monto del deudor, rama simple, en M$", documentoEnPesos, jsx.replace(/<\/span><\/>(\s*): fmtCLP\(monto\)\}/, "</span></>$1: fmtMM(monto)}")],
     ["monto del deudor fuera de la oferta en M$", documentoEnPesos, jsx.replace("—</span> : fmtCLP(disp.monto))", "—</span> : fmtMM(disp.monto))")],
@@ -101,5 +109,5 @@ test("29 · SONDAS: cada violación plantada en una copia del fuente hace fallar
   ];
   const mudas = sondas.filter(([, det, src]) => src === jsx || det(src).length === 0).map(([n]) => n);
   assert.deepEqual(mudas, [], "sondas que no cambiaron el fuente o que el detector no cazó");
-  assert.equal(sondas.length, 17, "conteo de sondas (se cita en el reporte)");
+  assert.equal(sondas.length, 19, "conteo de sondas (se cita en el reporte)"); // 17 → 19: el chip propio de «Solicitud línea» trajo la sonda del faltante y la del chip sin plata (17-09-2026)
 });

@@ -4927,6 +4927,20 @@ function DealCard({ deal, onOpen, onDragStart }) {
             <X size={10} /> Perdida · Bloqueo firme: {[...vis.rechFirme, ...vis.excRech].map((r) => `${r.nombre} (#${r.n})`).join("; ")}
           </div>
         ); }
+        // NUNCA EN SILENCIO (corrección del usuario, 18-09-2026). Una regla mal definida no llega a `exc`
+        // ni a `rechReev` —no se evaluó—, así que hasta acá la tarjeta devolvía `null` y la operación se
+        // veía LIMPIA en el tubo. Quien mira el Kanban no abre el detalle de una operación sin badges.
+        if (!isPerdida && vis.noEjec && vis.noEjec.length) {
+          const tipNE = "Criterios NO ejecutados por falta de configuración (la operación se evaluó sin ellos):\n"
+            + vis.noEjec.map((x, i) => `${i + 1}) #${x.n} ${x.nombre}${x.deudor ? ` · ${x.deudor.nombre}` : ""} — ${x.motivo || "definición incompleta"}`).join("\n");
+          return (
+            <div className="mt-1.5 flex items-center gap-1.5 rounded px-1.5 py-1 t7 font-medium" style={{ backgroundColor: "#FFF7ED", color: "#C2410C", cursor: "help" }} title={tipNE}>
+              <AlertTriangle size={10} />
+              <span>{vis.noEjec.length} criterio(s) sin ejecutar</span>
+              <span className="ml-auto flex h-4 minw5 items-center justify-center rounded-full px-1.5 t7 font-bold text-white" style={{ backgroundColor: "#C2410C" }}>{vis.noEjec.length}</span>
+            </div>
+          );
+        }
         if (!vis.exc.length && !vis.rechReev.length) return null;
         const tip = "Requiere otorgamiento — reglas con excepción/rechazo re-evaluable:\n" + [...vis.exc, ...vis.rechReev].map((e, i) => `${i + 1}) #${e.n} ${e.nombre}${e.nivel ? ` → N${e.nivel} ${AREA_LBL[e.area]}` : " (re-evaluable)"}`).join("\n");
         return (
@@ -6221,14 +6235,16 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   const firmes = vis.rechFirme;
   const puede = reevPend.length > 0;
   const palV = (e) => (e === "rechazada" ? { bg: "#fef2f2", fg: "#EF4444" } : e === "sujeta" ? { bg: "#FFF7ED", fg: "#C2410C" } : { bg: C.greenBg, fg: C.green });
-  const dLbl = { aprobado: "Aprobado", excepcion: "Sujeto a excepción", rechazado: "Rechazado", clasificacion: "Clasificación" };
-  const dCol = { aprobado: C.green, excepcion: "#7C3AED", rechazado: "#EF4444", clasificacion: C.faint };
+  // «No ejecutada» va en ÁMBAR y no en gris: no es un estado neutro como la clasificación, es una regla
+  // que el catálogo dejó sin área y que por eso nadie evaluó (regla 35). Se arregla configurando.
+  const dLbl = { aprobado: "Aprobado", excepcion: "Sujeto a excepción", rechazado: "Rechazado", clasificacion: "Clasificación", no_ejecutada: "No ejecutada · falta configuración" };
+  const dCol = { aprobado: C.green, excepcion: "#7C3AED", rechazado: "#EF4444", clasificacion: C.faint, no_ejecutada: "#C2410C" };
   const varDiff = prev ? Object.keys(ver.vars).filter((k) => JSON.stringify(ver.vars[k]) !== JSON.stringify(prev.vars[k])) : [];
   const dispPrev = prev ? Object.fromEntries((prev.res || []).map((x) => [x.n, x.disp])) : {};
   const reglaDiff = prev ? (ver.res || []).filter((x) => dispPrev[x.n] !== x.disp) : [];
   const varDiffTip = varDiff.map((k) => `$${k}: ${fmtVarCli(k, prev.vars[k])} → ${fmtVarCli(k, ver.vars[k])}`).join("\n");
   const p = palV(ver.estado);
-  const orden = { rechazado: 0, excepcion: 1, aprobado: 2 };
+  const orden = { rechazado: 0, excepcion: 1, no_ejecutada: 2, aprobado: 3 };
   // Estado de visado (aprobación de excepciones) de esta operación, por stKey.
   const visSt = (typeof VISADO_STATE !== "undefined" && VISADO_STATE[deal.id]) || {};
   // "Requiere aprobación" = es excepción/rechazo Y aún no fue resuelta por un apoderado (visado).
@@ -6321,7 +6337,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
     const k = it.deudor.rut || it.deudor.nombre;
     let g = deudMap.get(k);
     if (!g) { g = { key: k, nombre: it.deudor.nombre, rows: [] }; deudMap.set(k, g); }
-    g.rows.push({ n: it.regla.n, nombre: it.regla.nombre, area: it.regla.area, cond: it.regla.cond, hallazgo: it.regla.hallazgo, disp: it.disp, nivel: it.nivel, reev: reglaReev(it.regla.n), stKey: it.stKey, regla: it.regla, deudor: it.deudor });
+    g.rows.push({ n: it.regla.n, nombre: it.regla.nombre, area: it.regla.area, cond: it.regla.cond, hallazgo: it.regla.hallazgo, disp: it.disp, nivel: it.nivel, reev: reglaReev(it.regla.n), stKey: it.stKey, regla: it.regla, deudor: it.deudor, motivo: it.motivo, arregla: it.arregla });
   });
   // Reglas pendientes que ESTE usuario puede visar según su atribución (para el badge rojo "para ti" por tab).
   const puedeVisarX = (x) => reqAprob(x) && x.regla && puedeAprobarExc(usuario, x.regla, x.nivel || 4);
@@ -6346,7 +6362,16 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
           </div>
           <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: dCol[x.disp] + "1a", color: dCol[x.disp] }} title={otraArea ? `Aprueba otra área (dominio de la regla: ${AREA_LBL[x.area]})` : undefined}>{dLbl[x.disp]}{x.nivel ? " · N" + x.nivel : ""}{x.disp === "excepcion" ? ` · ${nr.rol} (${AREA_LBL[nr.area]})` : ""}</span>
         </div>
-        {x.disp !== "aprobado" && x.hallazgo && <div className="mt-0.5 t10" style={{ color: C.sub }}>{x.hallazgo}</div>}
+        {x.disp !== "aprobado" && x.disp !== "no_ejecutada" && x.hallazgo && <div className="mt-0.5 t10" style={{ color: C.sub }}>{x.hallazgo}</div>}
+        {/* REGLA 35 · La regla NO se evaluó. Se dice con todas sus letras —y no con el hallazgo, que
+            afirmaría algo que nadie midió— más la causa y dónde se arregla: una regla que desaparece
+            de la salida porque está mal definida es peor que una que dice que no pudo correr. */}
+        {x.disp === "no_ejecutada" && (
+          <div className="mt-1 rounded-md px-2 py-1.5 t9" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412", lineHeight: 1.5 }}>
+            <b>Esta regla no se ejecutó ni se verificó.</b> {x.motivo || "no está definida correctamente"}. La operación se evaluó SIN ella.
+            {x.arregla ? <div className="mt-0.5" style={{ color: "#C2410C" }}>{x.arregla}</div> : null}
+          </div>
+        )}
         {/* O05 · DÓNDE SE CARGA EL CONTRATO. La vía física dejaba el criterio abierto y el ejecutivo sin
             saber por dónde entra el papel: el modal de curse lo decía al confirmar y el badge de la oferta
             publicada también, pero en la tarjeta del criterio —que es dónde se actúa— no lo decía nadie.
@@ -6557,7 +6582,8 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         const tabsAll = [{ key: "cli", label: "Cliente", rows: cliRules, req: cliReqN, total: cliRules.length }, ...deudSorted.map((g) => ({ key: "d:" + g.key, label: g.nombre, rows: g.rows, req: g.req, total: g.total }))];
         const active = tabsAll.find((t) => t.key === otorgTab) || tabsAll[0];
         const reqRows = active.rows.filter(reqAprob);
-        const okRows = active.rows.filter((x) => !reqAprob(x));
+        const noEjecRows = active.rows.filter((x) => x.disp === "no_ejecutada");
+        const okRows = active.rows.filter((x) => !reqAprob(x) && x.disp !== "no_ejecutada");
         // Carrusel sobre los tabs de deudor (el de Cliente queda siempre fijo a la izquierda).
         const VIS = 3;
         const maxOff = Math.max(0, deudSorted.length - VIS);
@@ -6642,8 +6668,19 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
             )}
             <div className="mt-2 space-y-1.5">
               {active.rows.length === 0 ? <div className="t10" style={{ color: C.faint }}>Sin reglas para {active.key === "cli" ? "el cliente" : "este deudor"}.</div> : (<>
-                {reqRows.length === 0 && <div className="rounded-md px-2 py-1.5 t10" style={{ backgroundColor: C.greenBg, color: C.green }}>✓ Todas las reglas de {active.key === "cli" ? "el cliente" : "este deudor"} están aprobadas.</div>}
+                {/* «Todas aprobadas» sólo si de verdad lo están: con una regla sin ejecutar, esa frase
+                    afirmaría que se aprobó un criterio que nadie miró (regla 35). */}
+                {reqRows.length === 0 && noEjecRows.length === 0 && <div className="rounded-md px-2 py-1.5 t10" style={{ backgroundColor: C.greenBg, color: C.green }}>✓ Todas las reglas de {active.key === "cli" ? "el cliente" : "este deudor"} están aprobadas.</div>}
                 {reqRows.map((x) => reglaCard(x, active.key + "-"))}
+                {/* REGLA 35 · Las que NO se ejecutaron, en su propio balde y SIEMPRE a la vista. No van con
+                    las aprobadas —nadie las evaluó— ni con las que requieren aprobación —no hay nada que
+                    aprobar—, y no se colapsan: lo único que protege a la operación es que se vean. */}
+                {noEjecRows.length > 0 && (
+                  <div className="rounded-md px-2 py-1.5 t10 font-semibold" style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412" }}>
+                    ⚠ {noEjecRows.length} regla(s) de {active.key === "cli" ? "el cliente" : "este deudor"} NO se ejecutaron: les falta configuración y la operación se evaluó sin ellas.
+                  </div>
+                )}
+                {noEjecRows.map((x) => reglaCard(x, active.key + "-ne-"))}
                 {okRows.length > 0 && (
                   <div className="rounded-md" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
                     <button onClick={() => setShowApr((s) => !s)} className="flex w-full items-center justify-between px-2 py-1.5 t10 font-semibold" style={{ color: C.sub }}>
@@ -7149,7 +7186,8 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario, giro 
               {sinComentario > 0 && (
                 <div className="mt-1 t10 font-semibold" style={{ color: C.ink }}>Pendiente: {sinComentario} excepción(es) por aclarar por parte del ejecutivo</div>
               )}
-              <div className="mt-0.5 t9" style={{ color: C.sub }}>Se resuelven en el tab <b>Otorgamiento</b>. Reglas aprobadas: {otorgRes.ok} de {otorgRes.total}.</div>
+              <div className="mt-0.5 t9" style={{ color: C.sub }}>Se resuelven en el tab <b>Otorgamiento</b>. Reglas aprobadas: {otorgRes.ok} de {otorgRes.total}.
+                {otorgRes.noEjec > 0 && <span style={{ color: "#C2410C" }}> · {otorgRes.noEjec} regla(s) <b>no se ejecutaron</b>: les falta configuración (tab Otorgamiento).</span>}</div>
             </Bloque>
             )}
 
@@ -7196,7 +7234,7 @@ function ModalCurse({ deal, datos, onCancelar, onConfirmar, sinComentario, giro 
             </div>
           </div>
           <div className="mt-2.5 rounded-lg p-2.5 t10" style={{ backgroundColor: "#F5F4F8", color: C.sub }}>
-            Al confirmar se <b>publica la oferta</b> {pub === "electronica" ? <>y <b>sale el correo</b> con el código de negocio y la clave de un solo uso; la firma del cliente cierra <b>O05</b></> : <>y <b>O05 · Evidencia del Contrato de Cesión</b> queda esperando el comprobante en el tab Otorgamiento</>}. Las asignaciones de línea son una <b>evaluación</b>, no una reserva: el cupo lo reserva el sistema de gestión de líneas cuando el <b>cliente firma</b>, y el core lo convierte en línea utilizada cuando <b>Operaciones aprueba</b>{evalLin.requiereComite > 0 ? <> y la solicitud queda en la bandeja del <b>comité de riesgo</b> como una sola solicitud con {evalLin.solicitudes.length} línea(s) de detalle, aprobable o recortable por separado</> : null}.
+            Al confirmar se <b>publica la oferta</b> {pub === "electronica" ? <>y <b>sale el correo</b> con el código de negocio y la clave de un solo uso; la firma del cliente cierra <b>O05</b></> : <>y <b>O05 · Contrato firmado por cliente de la operación</b> queda esperando el comprobante en el tab Otorgamiento</>}. Las asignaciones de línea son una <b>evaluación</b>, no una reserva: el cupo lo reserva el sistema de gestión de líneas cuando el <b>cliente firma</b>, y el core lo convierte en línea utilizada cuando <b>Operaciones aprueba</b>{evalLin.requiereComite > 0 ? <> y la solicitud queda en la bandeja del <b>comité de riesgo</b> como una sola solicitud con {evalLin.solicitudes.length} línea(s) de detalle, aprobable o recortable por separado</> : null}.
           </div>
         </div>
 
@@ -7358,6 +7396,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
   const motivoNoReset = !onLimpiarSimulacion ? "No disponible en esta vista"
     : aprobacionFormalCliente(deal) || deal.clienteAcepto ? "El cliente ya firmó esta oferta: para modificarla, usa «Reabrir para modificar»."
     : ofertaPublicada(deal) ? "La oferta ya se publicó al cliente: para modificarla, usa «Reabrir para modificar»."
+    : ofertaCerradaVigente(deal) ? "La oferta ya se cerró y el negocio quedó creado: para modificarla, usa «Acciones › Editar»."
     : !["prospeccion", "oferta"].includes(deal.stage) ? "La operación ya avanzó más allá de la oferta."
     : null;
   const puedeReiniciar = !motivoNoReset;
@@ -8067,7 +8106,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                             <span className="justify-self-start rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: vv.bg, color: vv.fg }}>{vv.t}</span>
                             <span className="text-right font-medium" style={{ color: C.ink }}>{tasaF}%</span>
                             <span className="text-right font-medium" style={{ color: C.ink }}>{fmtMM(f.monto)}</span>
-                            {!soloLectura ? <button onClick={() => setConfirmRetiro(f)} title="Retirar de la oferta" className="justify-self-center rounded p-0.5 disabled:opacity-30" style={{ color: C.red }}><Trash2 size={12} /></button> : <span></span>}                          </div>
+                            {!soloLectura ? <button onClick={() => setConfirmRetiro(f)} title="Retirar de la oferta" className="justify-self-center rounded p-0.5 disabled:opacity-30" style={{ color: C.red }}><Trash2 size={12} /></button> : <span></span>}
+                          </div>
                           );
                         })}
                         {validas.length === 0 && <div className="t10 py-2" style={{ color: C.faint }}>No hay facturas válidas en la oferta.</div>}
@@ -8430,6 +8470,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           const items = evaluarOtorgItems(deal);
                           const total = items.length;
                           const ok = items.filter((it) => it.disp === "aprobado" || it.disp === "clasificacion").length;
+                          // Una regla NO EJECUTADA (regla 35) no es «ok» —nadie la evaluó— ni «pendiente»
+                          // —no hay nada que aprobar—. Se cuenta aparte para que no se disuelva en ninguno
+                          // de los dos: sumarla a `ok` diría que la operación pasó un criterio que nadie miró.
+                          const noEjec = items.filter((it) => it.disp === "no_ejecutada").length;
                           // Sólo cuenta como «requiere acción» lo que el tab Otorgamiento considera pendiente:
                           // excepciones sin visar, excepciones rechazadas y rechazos. Marcar cualquier regla no
                           // aprobada dejaba el bloque «no requieren ninguna acción» siempre en cero, porque con
@@ -8438,7 +8482,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           const pend = [].concat(v.excPend || [], v.excRech || [], v.rechFirme || [], v.rechReev || []);
                           let cliente = false; const malos = new Set();
                           pend.forEach((x) => { if (x.deudor) malos.add(x.deudor.nombre); else cliente = true; });
-                          return { total, ok, cliente, deudores: [...malos], nPend: pend.length };
+                          return { total, ok, noEjec, cliente, deudores: [...malos], nPend: pend.length };
                         })();
                         const verifRes = (() => {
                           const pend = validas.filter((f) => verifFactura(f, deal).est !== "ok");
@@ -8980,7 +9024,8 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       tres montos (oferta / cursable / comité) que el propio titular ya dice. */}
                                   <div className="mt-2.5 flex flex-wrap items-center gap-x-6 gap-y-2 border-t pt-2" style={{ borderColor: vd.tono === "con_linea" ? "#86EFAC" : t.bd }}>
                                     {compuerta("Otorgamiento", otorgOk, "Criterios aprobados", "Criterios por aprobar", otorgRes.nPend, otorgRes.total, "#7C3AED", "#f5f3ff",
-                                      otorgOk ? `Todas las reglas del motor de otorgamiento cumplen (${otorgRes.ok}/${otorgRes.total}).` : `Con observaciones: ${otorgQuien.toLowerCase()}. Reglas aprobadas ${otorgRes.ok} de ${otorgRes.total}. Se resuelven en el tab Otorgamiento.`)}
+                                      (otorgOk ? `Todas las reglas del motor de otorgamiento cumplen (${otorgRes.ok}/${otorgRes.total}).` : `Con observaciones: ${otorgQuien.toLowerCase()}. Reglas aprobadas ${otorgRes.ok} de ${otorgRes.total}. Se resuelven en el tab Otorgamiento.`)
+                                      + (otorgRes.noEjec > 0 ? ` ${otorgRes.noEjec} regla(s) NO SE EJECUTARON por falta de configuración: la operación se evaluó sin ellas.` : ""))}
                                     <span style={{ width: 1, height: 22, backgroundColor: vd.tono === "con_linea" ? "#86EFAC" : t.bd }} />
                                     {compuerta("Verificación", verifOkTodo, "Facturas verificadas", "Facturas por verificar", verifRes.facturas.length, validas.length, "#EF4444", "#FEF2F2",
                                       verifOkTodo ? "Ninguna factura de la oferta requiere verificación telefónica." : `${verifRes.facturas.length} factura(s) de ${verifRes.nDeudores} deudor(es) necesitan verificación telefónica antes de girar.`)}
@@ -9114,7 +9159,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   <input value={detQuery} onChange={(e) => { setDetQuery(e.target.value); setDetOtrasPage(0); }} placeholder="Buscar empresa deudora o folio…" className="w-full bg-transparent t10 outline-none" style={{ color: C.ink }} />
                                   {detQuery && <button onClick={() => { setDetQuery(""); setDetOtrasPage(0); }} style={{ color: C.faint }}><X size={12} /></button>}
                                 </div>
-                                {!soloLectura && (() => {
+                                {!bloqueado && (() => {
                                   // Alta masiva de Prime: las facturas de deudores de Lista Blanca o Autorizados
                                   // son las que no hay que pensar dos veces, así que se suman de una vez en lugar
                                   // de fila por fila. El menú deja ver de quién es cada paquete antes de agregar.
@@ -9240,6 +9285,14 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                       </button>
                                       {primeMenu && (
                                         <div className="absolute right-0 z-30 mt-1 w-80 rounded-lg bg-white p-1 shadow-xl" style={{ border: `1px solid ${C.line}` }} onMouseLeave={() => setPrimeMenu(false)}>
+                                          {/* Con el paquete cerrado el menú se queda pero VACÍO de ediciones: se
+                                              dice por qué y dónde se retoma. Lo único que sobrevive es «Empezar de
+                                              nuevo», que más abajo se deshabilita con su propio motivo (13-quaterdecies:
+                                              deshabilitado y explicado, nunca oculto). */}
+                                          {soloLectura && (
+                                            <div className="px-2 py-1.5 t9" style={{ color: C.faint }}>La oferta está cerrada: el paquete es el que se le comunicó al cliente. Para volver a agregar o sacar facturas, <b>Acciones › Editar</b>.</div>
+                                          )}
+                                          {!soloLectura && (<>
                                           <div className="px-2 py-1 t9 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>Cargar documentos</div>
                                           <label className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1.5 t10 font-medium" style={{ backgroundColor: "#EFF6FF", color: "#2563EB" }}
                                             title="Carga los XML (DTE) que envió el cliente: cada documento entra a la oferta con su folio, deudor, plazo y monto, y ya trae el respaldo para ceder">
@@ -9309,6 +9362,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                               );
                                             })}
                                           </div>
+                                          </>)}
                                           {/* EMPEZAR DE NUEVO. Hoy la única forma de descartar una oferta mal
                                               armada es cerrar la pestaña del detalle y volver a abrirla, y eso
                                               sólo funciona porque la oferta todavía no se guardó en ninguna
@@ -9361,8 +9415,10 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                                   /* El estado VACÍO es el de entrada de esta pantalla, no un borde raro, así
                                      que tiene que verse: con #F7F7FA sobre blanco y texto en C.faint la caja
                                      desaparecía y el mensaje se leía como un placeholder apagado. Fondo un
-                                     tono más oscuro —el mismo gris de los chips—, borde definido, más alto y
-                                     el texto en el cuerpo de la pantalla (t11) y en C.sub. */
+                                     tono más oscuro, borde definido, más alto y el texto en el cuerpo de la
+                                     pantalla (t11) y en C.sub. El tono se midió DOS veces: sobre blanco era
+                                     #EDECF3, y al mudarse la oferta al panel lila dejó de distinguirse del
+                                     fondo, así que toma el de una tarjeta de fila (#F5F4F8 / #E4E2EC). */
                                   <div className="flex items-center justify-center rounded-xl px-3 t11 font-medium" style={{ minHeight: 72, backgroundColor: "#F5F4F8", border: "1px solid #E4E2EC", color: C.sub }}>
                                     {dq ? `Ningún deudor de la oferta coincide con «${detQuery}».` : "Ninguna factura seleccionada"}
                                   </div>
@@ -9510,7 +9566,7 @@ function DealDrawer({ deal, onClose, onAdvance, onReject, onIncorporar, onIncorp
                           <div className="mt-2">
                             <div className="mb-1.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.greenBg, color: "#16A34A", border: "1px solid #bbf7d0" }}><Check size={11} /> Oferta publicada{deal.negocioNum ? ` · N° ${deal.negocioNum}` : ""}{fisica ? " · en formato físico" : ""}</div>
                             <div className="t9" style={{ color: C.faint }}>
-                              {fisica ? "Publicada en papel. El contrato firmado se adjunta en el tab Otorgamiento (O05 · Evidencia del Contrato de Cesión), donde lo autoriza Operaciones."
+                              {fisica ? "Publicada en papel. El contrato firmado se adjunta en el tab Otorgamiento (O05 · Contrato firmado por cliente de la operación), donde lo autoriza Operaciones."
                                 : deal.clienteAcepto ? "El cliente firmó en la plataforma de Factoring Security."
                                 : "Correo enviado con el código de negocio y su clave de un solo uso. El cliente debe ingresar a la plataforma de Factoring Security y firmar."}
                             </div>
@@ -11898,7 +11954,10 @@ const PESO_COL = { "Cliente": 250, "Línea": 230, "Oportunidad": 324, "SOW": 214
                       const bloqueoC = visC && (visC.rechFirme.length || visC.excRech.length);
                       const nPendC = visC && !bloqueoC ? visC.exc.length + visC.rechReev.length : 0;
                       // Total de criterios evaluados, para que el badge diga «16/321» y no un 16 suelto.
-                      const totCrit = visC ? (visC.aprob + visC.clasif + visC.exc.length + visC.rech.length) : 0;
+                      // Las NO EJECUTADAS cuentan en el total: si no, el denominador encoge solo —«16/321»
+                      // pasa a «16/320»— y un criterio desaparece sin que nadie lo note, que es exactamente
+                      // lo que la regla 35 no permite.
+                      const totCrit = visC ? (visC.aprob + visC.clasif + visC.exc.length + visC.rech.length + (visC.noEjec || []).length) : 0;
                       // Estado de LÍNEA: se LEE de la versión que emitió la simulación, no se
                       // recalcula. Antes esta celda llamaba a `asignarLineas` por fila, y en
                       // producción eso no se puede hacer —los motores corren del lado del servidor y
@@ -12472,7 +12531,7 @@ function varsModeloExt(deal) {
     // Va al área de OPERACIONES porque es viabilidad operativa del curse —la familia de los pagarés
     // C01–C03— y en N3 porque no es un trámite de mesa: sin esa constancia la cesión no es oponible
     // al deudor. Es re-evaluable a propósito: en cuanto la firma llega, el criterio se repara solo.
-    R(305, "O05", "operaciones", "MinimumViability", "Evidencia del Contrato de Cesión", "No consta la autorización del contrato de cesión: el cliente todavía no firma en el portal, o la oferta se publicó en papel y falta adjuntar el comprobante", [[(v) => !v.contratoEvidencia, "excepcion", NV(3)]]),
+    R(305, "O05", "operaciones", "MinimumViability", "Contrato firmado por cliente de la operación", "No consta la autorización del contrato de cesión: el cliente todavía no firma en el portal, o la oferta se publicó en papel y falta adjuntar el comprobante", [[(v) => !v.contratoEvidencia, "excepcion", NV(3)]]),
     // O06 · El monto que figura CEDIDO de cada documento tiene que ser el monto del documento. Es el
     // control de OPERACIONES sobre el registro de cesiones (A2), y el par documental de O05: aquél
     // comprueba que EXISTA la autorización, éste que lo cedido COINCIDA con lo que se va a comprar.
@@ -12486,8 +12545,41 @@ function varsModeloExt(deal) {
   NO_REEV_CLIENTE.clear();
   [110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 130, 131, 132, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213].forEach((n) => NO_REEV_CLIENTE.add(n));
 })();
+// ¿La regla está BIEN DEFINIDA para decidir? El ruteo de una excepción es el par (ÁREA, NIVEL): la regla
+// declara el área y su tramo el nivel. Una regla que DECIDE —que tiene tramos— y no declara área no se
+// puede rutear: no hay a quién pedirle la excepción ni a quién atribuirle el rechazo. Hasta hoy se
+// evaluaba igual y el resultado salía con «Sin aprobador definido», o sea que la operación quedaba
+// pegada esperando a alguien que no existe. Decisión del usuario (18-09-2026): **esa regla no se ejecuta
+// ni se verifica**, y la salida lo DICE. Lo que no cambia es el otro caso: si el área existe en el
+// catálogo pero el tenant no la tiene, o nadie la tiene en ese nivel, la regla sí se evalúa y su
+// excepción sale con «Sin aprobador definido» — ahí falta un usuario, no falta la definición.
+// Las de CLASIFICACIÓN quedan fuera: informan y no deciden, así que no necesitan a quién pedirle nada.
+function reglaNoEjecutable(regla) {
+  if (!regla) return { noEjecutable: true, motivo: "no hay regla que evaluar" };
+  if (regla.clasif) return { noEjecutable: false };
+  if (!(regla.tiers && regla.tiers.length)) return { noEjecutable: false }; // sin tramos no decide nada
+  // NO TODAS LAS REGLAS NECESITAN APROBADOR (corrección del usuario, 18-09-2026). El área es a quién se
+  // le pide la EXCEPCIÓN, así que sólo la necesita la regla que tiene al menos un tramo `excepcion`. Una
+  // regla KNOCK OUT —tramos sólo de `rechazado`— no se aprueba: incumple y se acabó, no hay a quién
+  // pedirle nada, y exigirle área la habría dejado sin ejecutar por una carencia que no lo es. Medido en
+  // runtime sobre el catálogo: 69 reglas con excepción y 3 knock out puros. Es el MISMO criterio con que
+  // la mesa de reglas arma su lista
+  // (`tiers.some((t) => t[1] === "excepcion")`): si divergieran, la mesa mostraría reglas que el motor
+  // no rutea, o al revés.
+  if (!regla.area && (regla.tiers || []).some((t) => t[1] === "excepcion")) return {
+    noEjecutable: true,
+    motivo: "el criterio tiene un tramo de excepción y no declara área, así que no hay a quién pedírsela",
+    arregla: "Declara el área de la regla en el catálogo de otorgamiento (Configuración › Áreas define cuáles existen).",
+  };
+  return { noEjecutable: false };
+}
 function evalReglaCli(rule, v) {
   if (rule.clasif) return { disp: "clasificacion", label: rule.clfn ? rule.clfn(v) : "" };
+  // ANTES de mirar los tramos: una regla mal definida no se ejecuta ni se verifica (regla 35). Va acá
+  // —el único sitio por donde pasan las de cliente y las de deudor— y no en cada consumidor, porque el
+  // que se olvidara la evaluaría igual.
+  const nd = reglaNoEjecutable(rule);
+  if (nd.noEjecutable) return { disp: "no_ejecutada", motivo: nd.motivo, arregla: nd.arregla, tierIdx: null };
   for (let i = 0; i < rule.tiers.length; i++) { if (rule.tiers[i][0](v)) return { disp: rule.tiers[i][1], nivel: rule.tiers[i][2], tierIdx: i }; }
   return { disp: "aprobado", tierIdx: null };
 }
@@ -12572,7 +12664,9 @@ function snapVersionCli(deal, rev) {
   // disp: las reglas re-evaluables mejoran porque su VARIABLE se reparó arriba (consistente con el diff).
   const res = REGLAS_CLIENTE.filter((r) => !esReglaDeudor(r)).map((r) => {
     const e = evalReglaCli(r, vars);
-    return { n: r.n, nombre: r.nombre, area: r.area, cond: r.cond, hallazgo: r.hallazgo, disp: e.disp, nivel: e.nivel, tierIdx: e.tierIdx, label: e.label, reev: reglaReev(r.n) };
+    // `motivo`/`arregla` viajan en el snapshot: si no, la fila del cliente diría «No ejecutada» sin decir
+    // por qué, que es justo la mitad que importa (regla 35).
+    return { n: r.n, nombre: r.nombre, area: r.area, cond: r.cond, hallazgo: r.hallazgo, disp: e.disp, nivel: e.nivel, tierIdx: e.tierIdx, label: e.label, reev: reglaReev(r.n), motivo: e.motivo, arregla: e.arregla };
   });
   const nExc = res.filter((x) => x.disp === "excepcion").length;
   const nRech = res.filter((x) => x.disp === "rechazado").length;
@@ -12731,6 +12825,10 @@ function visadoDealCalc(deal, visado, estado) {
   const rech = res.filter((x) => x.disp === "rechazado").map((x) => ({ n: x.regla.n, stKey: x.stKey, deudor: x.deudor, nombre: x.regla.nombre, hallazgo: x.regla.hallazgo, area: x.regla.area, reev: reglaReev(x.regla.n) }));
   const aprob = res.filter((x) => x.disp === "aprobado").length;
   const clasif = res.filter((x) => x.disp === "clasificacion").length;
+  // Las que NO se ejecutaron (regla 35). No entran en `exc` ni en `rech` —no se evaluaron, así que no
+  // pueden concluir nada— y por eso no bloquean; lo que las hace visibles es que viajan acá y las
+  // pantallas las nombran. Una regla mal definida que no se ve en ninguna parte es la peor de las dos.
+  const noEjec = res.filter((x) => x.disp === "no_ejecutada").map((x) => ({ n: x.regla.n, stKey: x.stKey, deudor: x.deudor, nombre: x.regla.nombre, motivo: x.motivo, arregla: x.arregla }));
   // Sin visado inyectado se cae al de la app: es la comodidad de los call sites, no una dependencia.
   const st = visado || ((typeof VISADO_STATE !== "undefined" && deal && VISADO_STATE[deal.id]) || {});
   const excRech = exc.filter((e) => st[e.stKey] === "rechazado");
@@ -12741,7 +12839,7 @@ function visadoDealCalc(deal, visado, estado) {
   // a los dos rompía el bundle con «Identifier 'estado' has already been declared» — y ni tsc ni el
   // build lo dijeron, porque es un error semántico que sólo aparece al transpilar en el navegador.
   const estadoAgregado = (rechFirme.length || excRech.length) ? "rechazada" : (excPend.length || rechReev.length) ? "sujeta" : "aprobada";
-  return { estado: estadoAgregado, exc, rech, rechFirme, rechReev, aprob, clasif, excPend, excRech };
+  return { estado: estadoAgregado, exc, rech, rechFirme, rechReev, aprob, clasif, noEjec, excPend, excRech };
 }
 // ¿La operación tiene un bloqueo FIRME de otorgamiento (rechazo no re-evaluable o excepción rechazada)?
 // Un bloqueo firme es definitivo ⇒ la operación no puede cursarse: va a Perdida.
@@ -13176,6 +13274,14 @@ SIM_VERSIONS = repoSimVersions.all();
 // y lo que pase después es resorte de los módulos siguientes al pipeline comercial. Congelarlo es
 // además lo único que evita que una reevaluación posterior mueva una cifra que Tesorería ya tomó.
 const repoGiro = crearRepo("giro_asignacion");
+// La última solicitud al comité inyectada por el cierre de CADA operación, para que volver a cerrarla
+// no pida dos veces lo mismo. Va en un repositorio y no en `SOLICITUDES_LINEA` porque esa lista es la
+// memoria de ESTA pestaña: el detalle es pestaña propia desde el 02-09-2026, así que cerrar, cerrar la
+// pestaña y volver a abrir la operación dejaba la guarda sin nada con qué comparar y entraba una
+// segunda petición idéntica — y NEX no puede retirar la anterior (regla 15), o sea que el comité veía
+// las dos. Guarda sólo lo que `mismaSolicitudComite` compara (el rut y el detalle) más el `idProceso`
+// que el log necesita nombrar; el registro completo sigue siendo del sistema externo. Regla 33.
+const repoSolicitudComite = crearRepo("solicitud_comite");
 let GIRO_STATE = repoGiro.all();   // { [dealId]: { tipos:[...], montoGirar, ts, por } }
 // ── ADAPTADOR: de los motores a la entrada del modelo de giros ────────────────────────────────
 // Es el ÚNICO sitio que conoce a los tres motores a la vez. `asignarGiros` no los llama: recibe sus
@@ -14395,7 +14501,51 @@ function ReglasClienteCatalogo() {
   return (
     <div>
       <div className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Criterios de verificación (visado) por área</div>
-      <div className="mt-1 t10" style={{ color: C.faint }}>Catálogo de las {REGLAS_CLIENTE.length} reglas del cliente (Excel "Rules Cliente"). Cada regla es un risk tier que evalúa una variable de la API y define si cae en <b>Aprobado</b>, <b>Rechazado</b> o <b>Sujeto a excepción</b>. Se evalúan en cada simulación (ver el resultado en <b>Visado Cliente</b>). Interfaz de <b>solo consulta</b>; usa <b>Consultar</b> para ver el detalle. Las reglas de segmentación son clasificación interna.</div>
+      <div className="mt-1 t10" style={{ color: C.faint }}>Catálogo de las {REGLAS_CLIENTE.length} reglas del cliente (Excel "Rules Cliente").{(() => {
+        const n = REGLAS_CLIENTE.filter((r) => !areas.includes(r.area)).length;
+        return n ? <b style={{ color: "#C2410C" }}> {n} de ellas no cae en ninguna de las áreas de abajo y va en el primer bloque.</b> : null;
+      })()} Cada regla es un risk tier que evalúa una variable de la API y define si cae en <b>Aprobado</b>, <b>Rechazado</b> o <b>Sujeto a excepción</b>. Se evalúan en cada simulación (ver el resultado en <b>Visado Cliente</b>). Interfaz de <b>solo consulta</b>; usa <b>Consultar</b> para ver el detalle. Las reglas de segmentación son clasificación interna.</div>
+      {/* REGLA 35 · LAS QUE NO CAEN EN NINGÚN GRUPO, PRIMERO. Esta pantalla agrupa por área y filtra
+          `r.area === area` sobre una lista FIJA de cuatro: una regla sin área —o con un área que el
+          tenant creó y no está en la lista— no pertenece a ningún grupo y DESAPARECÍA de acá, mientras
+          la bajada seguía diciendo «las N reglas del cliente». Una regla que se esfuma de la pantalla
+          que la cataloga es la vía más silenciosa de todas: no hay nada que mirar mal, simplemente no
+          está. Va ARRIBA y no al final, porque lo que hay que hacer es ir a arreglarla. */}
+      {(() => {
+        const fuera = REGLAS_CLIENTE.filter((r) => !areas.includes(r.area));
+        if (!fuera.length) return null;
+        const malas = fuera.filter((r) => reglaNoEjecutable(r).noEjecutable);
+        return (
+          <div className="mt-3 overflow-hidden rounded-xl" style={{ border: "2px solid #F97316" }}>
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2" style={{ backgroundColor: "#FFF7ED" }}>
+              <AlertTriangle size={14} style={{ color: "#9A3412" }} />
+              <span className="t13 font-bold" style={{ color: "#9A3412" }}>Sin área · {malas.length ? "NO SE EJECUTAN" : "fuera de las áreas listadas"}</span>
+              <span className="t10 font-semibold" style={{ color: "#9A3412", opacity: 0.75 }}>· {fuera.length} criterio(s)</span>
+            </div>
+            <div className="space-y-2 p-2.5">
+              <div className="t10" style={{ color: "#9A3412", lineHeight: 1.5 }}>
+                {malas.length > 0
+                  ? <>Tienen un tramo de excepción y <b>no declaran a quién pedírsela</b>, así que el motor los salta y <b>las operaciones se evalúan sin ellos</b>. Se arregla declarando su área acá y en <b>Configuración › Áreas</b>.</>
+                  : <>Declaran un área que esta pantalla no agrupa. Se ejecutan igual —tienen a quién pedirle la excepción—, pero conviene revisar el catálogo de áreas.</>}
+              </div>
+              {fuera.map((r) => {
+                const ne = reglaNoEjecutable(r);
+                return (
+                  <div key={r.n} className="rounded-lg p-2.5" style={{ border: `1px solid ${ne.noEjecutable ? "#F97316" : C.line}`, borderLeft: `3px solid ${ne.noEjecutable ? "#C2410C" : C.faint}`, backgroundColor: "#fff" }}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="t9 font-bold" style={{ color: C.faint }}>#{r.n}</span>
+                      <div className="t11 font-medium" style={{ color: C.ink }}>{r.nombre}</div>
+                      {ne.noEjecutable && <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: "#C2410C", color: "#fff" }}>No se ejecuta ni se verifica</span>}
+                      <span className="t9" style={{ color: C.faint }}>área declarada: {r.area ? <b>{r.area}</b> : <i>(ninguna)</i>}</span>
+                    </div>
+                    {r.hallazgo && <div className="mt-0.5 t10" style={{ color: C.sub }}>{r.hallazgo}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
       {areas.map((area) => {
         const rs = REGLAS_CLIENTE.filter((r) => r.area === area);
         if (!rs.length) return null;
@@ -14768,13 +14918,25 @@ function AtribucionesMantenedor() {
       <div className="mt-3 space-y-2">
         {list.map((r) => {
           const ac = AREA_COLOR[r.area] || AREA_COLOR.riesgo;
+          // ACÁ ES DONDE SE ARREGLA, así que acá tiene que verse: esta lista son las reglas que necesitan
+          // aprobador (`tiers.some(excepcion)`), o sea exactamente las que quedan mal definidas sin área.
+          // Sin esta marca, la fila mostraba un chip de área VACÍO —`AREA_LBL[undefined]`— y el mantenedor
+          // no tenía cómo saber que esa regla dejó de ejecutarse (regla 35).
+          const ne = reglaNoEjecutable(r);
           return (
-            <div key={r.n} className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
+            <div key={r.n} className="rounded-xl p-3" style={{ border: `1px solid ${ne.noEjecutable ? "#F97316" : C.line}`, backgroundColor: ne.noEjecutable ? "#FFF7ED" : undefined }}>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="t12 font-semibold" style={{ color: C.ink }}>#{r.n} · {r.nombre}</span>
-                <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: ac.bg2, color: ac.fg }}>{AREA_LBL[r.area]}</span>
+                {ne.noEjecutable
+                  ? <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: "#C2410C", color: "#fff" }} title={ne.arregla}>Sin área · NO SE EJECUTA</span>
+                  : <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: ac.bg2, color: ac.fg }}>{AREA_LBL[r.area]}</span>}
                 <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: reglaReev(r.n) ? "#FFF7ED" : "#F3F4F6", color: reglaReev(r.n) ? "#C2410C" : C.faint }}>{reglaReev(r.n) ? "Re-evaluable" : "Bloqueo firme"}</span>
               </div>
+              {ne.noEjecutable && (
+                <div className="mt-1 rounded-md px-2 py-1.5 t9 font-semibold" style={{ backgroundColor: "#fff", border: "1px solid #FED7AA", color: "#9A3412" }}>
+                  ⚠ Esta regla NO se ejecuta ni se verifica: {ne.motivo}. Las operaciones se evalúan sin ella. {ne.arregla}
+                </div>
+              )}
               {r.hallazgo && <div className="mt-0.5 t10" style={{ color: C.sub }}>{r.hallazgo}</div>}
               <table className="mt-1.5 w-full border-collapse t10">
                 <thead><tr>{["Tramo (condición)", "Disposición", "Nivel · rol", "Aprobadores"].map((h) => <th key={h} className="px-2 py-1 text-left font-semibold" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>)}</tr></thead>
@@ -18322,6 +18484,33 @@ function CfgAreas() {
           Las áreas que aprueban excepciones de otorgamiento en <b>{CFG_ACTIVA.marcaNombre || TENANT_ACTUAL}</b>, guardadas <b>por tenant</b> (<code style={{ fontFamily: "ui-monospace,monospace" }}>{AREAS_KEY}</code>).
           Cada criterio declara <b>un área y un nivel</b>; con ese par se buscan en <b>Usuarios</b> los que tienen esa área en ese nivel o superior.
         </div>
+        {/* REGLA 35 · ACÁ ES DONDE SE DECLARAN LAS ÁREAS, así que acá tiene que verse cuáles criterios se
+            quedaron sin una. Un criterio sin área no rutea a ninguna parte: no aparece en NINGUNA fila de
+            la tabla de abajo, y la suma de «Criterios que rutean acá» deja de cuadrar con el catálogo sin
+            que nada lo diga. Se listan uno por uno —no un contador— porque lo que hay que hacer es ir a
+            buscarlos por su número. */}
+        {(() => {
+          const malas = REGLAS_CLIENTE.filter((r2) => reglaNoEjecutable(r2).noEjecutable);
+          if (!malas.length) return null;
+          return (
+            <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: "#FFF7ED", border: "2px solid #F97316" }}>
+              <div className="flex items-center gap-1.5 t12 font-bold" style={{ color: "#9A3412" }}>
+                <AlertTriangle size={14} /> {malas.length} criterio(s) SIN ÁREA: no se ejecutan ni se verifican
+              </div>
+              <div className="mt-1 t11" style={{ color: "#9A3412", lineHeight: 1.5 }}>
+                Tienen un tramo de excepción y no declaran a quién pedírsela, así que el motor los salta y
+                <b> las operaciones se evalúan sin ellos</b>. No aparecen en ninguna fila de la tabla de abajo:
+                el total de «Criterios que rutean acá» no cuadra con el catálogo. Se arregla declarando su área
+                en el catálogo de otorgamiento.
+              </div>
+              <ul className="mt-1.5 grid gap-0.5">
+                {malas.map((r2) => (
+                  <li key={r2.n} className="t11" style={{ color: "#9A3412" }}>· <b>#{r2.n}</b> {r2.nombre}</li>
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
         <table className="mt-3 w-full border-collapse t11">
           <thead><tr>{["Área", "Identificador", "Criterios que rutean acá", "Quién la tiene", ""].map((h, i) => (
             <th key={i} className="px-2 py-1 text-left t10 font-semibold uppercase tracking-wide" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>
@@ -23498,7 +23687,12 @@ export default function PipelineComercial() {
   // En modo detalle (_blank), el título de la pestaña deja claro qué oportunidad/cliente es.
   useEffect(() => { if (soloDetalle && selected) { try { document.title = `Detalle · ${selected.id} · ${selected.cliente} — NEX Factoring`; } catch (e) {} } }, [soloDetalle, selected]);
   const [query, setQuery] = useState("");
-  const [quickFilter, setQuickFilter] = useState("conlinea"); // arranca en el tab "Con línea"
+  // Arranca en «Todos» (18-09-2026, pedido del usuario): la vista de entrada de Gestión diaria muestra el
+  // tubo COMPLETO y los tabs son un recorte que el ejecutivo elige, no uno que la pantalla le impone. Antes
+  // abría en «Con línea» y las otras 98 oportunidades del ejemplo no estaban a la vista: para verlas había
+  // que darse cuenta de que había un filtro puesto. Con este valor `anyFilter` además arranca en falso, que
+  // es lo que la pantalla dice (no hay nada que limpiar), y coincide con el destino de `clearAll`.
+  const [quickFilter, setQuickFilter] = useState("todos");
   const [directorio, setDirectorio] = useState(null); // DIRECTORIO · demo acotada (bloque desechable)
   const [channel, setChannel] = useState("Manual");
   const [usuario, setUsuario] = useState(soloDetalle && detallePayload.usuario ? detallePayload.usuario : USUARIO); // usuario logueado
@@ -24072,7 +24266,7 @@ export default function PipelineComercial() {
       hist.push({ fecha: nowStamp(), canal: fisica ? "Sistema" : "Email", actor: "Ejecutivo", esEvento: true,
         resultado: fisica ? "Oferta publicada en formato FÍSICO · el contrato se firma en papel"
           : "Oferta publicada ELECTRÓNICAMENTE · correo enviado al cliente con el código de negocio y su clave de un solo uso",
-        detalle: fisica ? "Queda abierto el criterio O05 · Evidencia del Contrato de Cesión: el ejecutivo adjunta el comprobante y lo autoriza Operaciones (N3)."
+        detalle: fisica ? "Queda abierto el criterio O05 · Contrato firmado por cliente de la operación: el ejecutivo adjunta el comprobante y lo autoriza Operaciones (N3)."
           : "La autorización del cliente en el portal es la evidencia del contrato de cesión (O05).", exito: true });
       return { ...d, ...patchCierre, historialContacto: hist };
     };
@@ -24103,7 +24297,10 @@ export default function PipelineComercial() {
         // La previa se busca en las solicitudes de ESTA pestaña, que es la que las inyecta; si el
         // ejecutivo cerró la pestaña del detalle en medio, la comparación no tiene con qué y entra
         // una segunda solicitud, que es lo que pasaría también con dos sesiones en paralelo.
-        const previa = sol ? SOLICITUDES_LINEA.find((x) => x && x.origen && x.origen.dealId === id) : null;
+        // La previa se busca PRIMERO en esta pestaña —donde está el registro entero— y, si no está, en el
+        // repositorio, que sí cruza pestañas. El orden importa poco para el resultado y mucho para el log:
+        // el de la pestaña trae el estado vivo del proceso.
+        const previa = sol ? (SOLICITUDES_LINEA.find((x) => x && x.origen && x.origen.dealId === id) || repoSolicitudComite.get(id) || null) : null;
         if (sol && previa && mismaSolicitudComite(previa, sol)) {
           logSys("info", "linea", `Solicitud de línea no re-inyectada al cerrar: pide lo mismo que ${previa.idProceso}, que sigue en gestión`,
             { empresa: cli, operacion: id, proceso: previa.idProceso });
@@ -24115,6 +24312,9 @@ export default function PipelineComercial() {
           // la del tubo: sin este aviso la solicitud quedaba sólo en la memoria de esta pestaña y el
           // ejecutivo no la veía nunca. Mismo canal que `nex-simulado` y `nex-preeval`.
           try { if (window.opener) window.opener.postMessage({ type: "nex-solicitud", registro: SOLICITUDES_LINEA[0] }, ORIGEN_APP); } catch (_) {}
+          // Y queda en el repositorio, que sobrevive a cerrar esta pestaña: es lo que la guarda de arriba
+          // encontrará la próxima vez que se cierre esta misma operación (regla 33).
+          repoSolicitudComite.set(id, { idProceso: idProc, rut: sol.rut, detalle: sol.detalle, pedido: sol.pedido, ts: nowStamp() });
           setDeals((prev) => prev.map((x) => (x.id === id ? { ...x, solicitudComite: idProc } : x)));
           setSelected((x) => (x && x.id === id ? { ...x, solicitudComite: idProc } : x));
           avisarTubo(id, { solicitudComite: idProc });
@@ -25912,17 +26112,21 @@ export default function PipelineComercial() {
   // Las "Sin clasificar" solo cuentan/aparecen cuando el toggle Inbound está activo.
   const inboundCount = showInbound ? streamFeed.length : 0;
   const nPrioTubo = dealsVista.filter((d) => tienePrioridadCurse(d.id)).length;
+  // «Todos» va PRIMERO (18-09-2026, pedido del usuario): es el tab de entrada, y un tab de entrada al final
+  // de la fila se lee como el último recorte de una lista de recortes. Va antes incluso de «Prioritarios»,
+  // que es condicional: si fuera segundo, su posición saltaría cada vez que la jefatura prioriza un negocio.
   const quickFilters = [
+    // DIRECTORIO: su contador va a cero en la demo acotada, como el de «Otras Empresas» más abajo —el modo
+    // silencia el stream del inbound, y un contador que dice 65 sobre una lista de 5 es la contradicción
+    // que este tablero persigue en todas sus formas.
+    { id: "todos", label: "Todos", count: dealsTubo.length + (directorio ? 0 : inboundCount) },
     ...(nPrioTubo > 0 || quickFilter === "prioritarios" ? [{ id: "prioritarios", label: "Prioritarios", count: nPrioTubo }] : []),
     { id: "conlinea", label: "Con línea", count: dealsTubo.filter((d) => ["oferta", "prospeccion"].includes(d.stage) && !lineaCreditoDe(d).fueraDeLinea).length },
     { id: "sinlinea", label: "Sin línea", count: dealsTubo.filter((d) => ["oferta", "prospeccion"].includes(d.stage) && lineaCreditoDe(d).fueraDeLinea).length },
     { id: "pendgiro", label: "Pendientes de giro", count: dealsTubo.filter((d) => ["aceptadas", "cesion", "otorgamiento"].includes(d.stage) || (d.stage === "giro" && d.giroPendiente)).length },
     { id: "perdidas", label: "Perdidas", count: dealsTubo.filter((d) => d.stage === "perdida").length },
-    // DIRECTORIO: las dos pestañas que cuentan el stream del inbound van a cero en la demo acotada.
-    // El modo ya no las muestra, y un contador que dice 65 sobre una lista de 5 es la contradicción
-    // que este tablero persigue en todas sus formas.
+    // DIRECTORIO: la otra pestaña que cuenta el stream del inbound, a cero por lo mismo que «Todos».
     { id: "otrasfacturas", label: esEjecutivoSesion ? "Otras Empresas" : "Otras facturas", count: directorio ? 0 : streamFeed.filter(ofOtrasVisible).length },
-    { id: "todos", label: "Todos", count: dealsTubo.length + (directorio ? 0 : inboundCount) },
   ];
 
   if (!logueado) return <LoginScreen usuarioInicial={usuario} onIngresar={(u) => { setUsuario(u); setLogueado(true); }} />;
@@ -26113,7 +26317,10 @@ export default function PipelineComercial() {
         ) : vistaApp === "panel" ? (
           <>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Reportes</div>
-            <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Gestión de Clientes</h1>
+            {/* El h1 dice lo MISMO que el botón y la miga: son la ruta del menú (regla 27-bis). Decía
+                «Gestión de Clientes», que era el nombre de antes del 16-09-2026: el rótulo se renombró en
+                la navbar, en `irA`, en la miga y en el Command-K, y éste quedó atrás. Lo fija `e2e-27-bis`. */}
+            <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Reportes</h1>
             <PanelClientes soloExec={soloExec} deals={deals} usuario={usuario}
               reporteActivo={reporteGestion}
               onReporte={(k) => {

@@ -514,8 +514,9 @@ No son inconsistencias: son definiciones que la propia política declara pendien
 13. Recién entonces extraer el motor: catálogo + evaluador + niveles quedan estables y el contrato del servicio se define una sola vez.
 
 **Verificación tras cada cambio** (según `CLAUDE.md`): `tsc --jsx preserve --allowJs --noEmit --skipLibCheck` sin errores TS1,
-y el chequeo de duplicados
-`grep -oE "^(function|const|let|var) [A-Za-z0-9_]+" pipeline_comercial.jsx | awk '{print $2}' | sort | uniq -d` vacío.
+y el chequeo de duplicados de nivel módulo vacío. (Los comandos exactos, y los pasos 3 a 7 que este
+documento aún no conocía, están en la sección *Verificación* de `CLAUDE.md`: es el único sitio donde se
+escriben. El patrón del paso 2 cambió el 18-09-2026 y no se copia acá para que no vuelva a quedar viejo.)
 
 ---
 
@@ -578,7 +579,7 @@ las implementa todas. **Dos criterios no salen de ese documento**: los agrega es
 del área de **Operaciones**, y no por casualidad: la política v1.0 la escribió Riesgo, y lo que le falta es justamente
 el control documental del acto de cursar.
 
-### O05 · Evidencia del Contrato de Cesión — Operaciones N3 (13-09-2026)
+### O05 · Contrato firmado por cliente de la operación — Operaciones N3 (13-09-2026)
 
 **Por qué existe.** Ninguna operación se cursa sin constancia de que el cliente autorizó la cesión. Esa constancia
 existía en el flujo —el cliente firma en el portal— pero no era un criterio: no se veía en la mesa de otorgamiento, no

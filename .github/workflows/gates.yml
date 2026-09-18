@@ -13,9 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45   # la capa e2e pasó de 1 a 16 archivos (29 casos, ~8 min) el 17-09-2026
     steps:
-      - uses: actions/checkout@v4
+      # v5 y no v4: las v4 corren sobre Node 20 en el runner y GitHub ya las avisa como
+      # deprecadas. El `node-version: 22` de abajo es el de la app y no cambia con esto.
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -32,7 +34,7 @@ jobs:
 
       - name: 2 · Duplicados de nivel módulo
         run: |
-          dup=$(grep -oE "^(function|const|let|var) [A-Za-z0-9_]+" pipeline_comercial.jsx | awk '{print $2}' | sort | uniq -d)
+          dup=$(grep -oE '^(export default )?(async )?(function|const|let|var|class) [A-Za-z_$][A-Za-z0-9_$]*' pipeline_comercial.jsx | awk '{print $NF}' | sort | uniq -d)
           if [ -n "$dup" ]; then echo "símbolos duplicados: $dup"; exit 1; fi
           echo "sin duplicados"
 

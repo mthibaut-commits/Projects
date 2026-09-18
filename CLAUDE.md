@@ -21,10 +21,10 @@ en 0 oportunidades**) en un HTML standalone que se abre en Chrome. El porqué de
 
 ```bash
 npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx                              # 1 · sin errores TS1
-grep -oE "^(function|const|let|var) [A-Za-z0-9_]+" pipeline_comercial.jsx | awk '{print $2}' | sort | uniq -d  # 2 · debe salir vacío
+grep -oE '^(export default )?(async )?(function|const|let|var|class) [A-Za-z_$][A-Za-z0-9_$]*' pipeline_comercial.jsx | awk '{print $NF}' | sort | uniq -d  # 2 · debe salir vacío
 node build_app.mjs                                                                                            # 3 · valida los hashes del vendor
 node --test "tests/contract/*.test.mjs"                                                                       # 4 · gates de contrato (~10 s)
-PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 140/140 PASA (~2 min)
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 141/141 PASA (~2 min)
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node tests/e2e/correr.mjs                                           # 6 · e2e: 29 casos de pantalla (~8 min)
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs                                         # 7 · sólo si toca la UI (~5 min)
 ```
@@ -33,7 +33,7 @@ Ninguno subsume a otro, **y los cinco primeros juntos tampoco bastan**: la colis
 bloque declarado antes de su dependencia y un componente no importado pasan `tsc` y el build, y sólo aparecen en
 el paso 5 o al abrir la pantalla — que es lo que hace el paso 6 (`tests/e2e/`, con la sesión iniciada y el detalle
 abierto). El CI (`.github/workflows/gates.yml`) corre los seis en toda rama y todo PR, idénticos. Qué cubre cada caso de la suite: `vault/conocimiento/verificacion.md`; qué fija cada gate de
-contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ninguna regla queda «sin gate»**: las 61 de
+contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ninguna regla queda «sin gate»**: las 67 de
 dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `regla_<slug>.test.mjs`.
 
 ## Otros comandos
@@ -41,6 +41,7 @@ dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `
 | Acción | Comando |
 |---|---|
 | Build en Windows (el del usuario) | `Iniciar_NEX_Factoring.bat` → `build_app.ps1` — **mismo contrato que `build_app.mjs`: si cambia uno, cambia el otro** |
+| ¿Los hooks están corriendo acá? | `node verificar_hooks.mjs` — **la primera vez en cada máquina**, y cuando un hook «no saltó» |
 | Código muerto | `node auditar_muerto.mjs` (`--csv` para el inventario en crudo) |
 | Aislamiento de los motores | `node auditar_aislamiento.mjs` |
 | Unidades (millones donde va un peso) | `node auditar_unidades.mjs` — candidatos, se verifican a mano |
@@ -83,6 +84,10 @@ dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `
     `PipelineComercial`. *(Bloqueado por hooks, y por `tests/contract/`.)*
 11. **Errores**: ante un fallo inesperado, registra causa y solución en el log de sesión antes de seguir — la
     próxima sesión no debe redescubrirlo. Lo que en 3 meses siga importando sube a `vault/conocimiento/`.
+    **Nunca `rev` en una tubería**: en este contenedor no termina —gira al 99% de CPU indefinidamente—, así que
+    para recortar el final de una línea va `python3 -c` o `awk`. Y **un comando que se pasa del tiempo de espera
+    deja su proceso vivo**: se revisa con `ps -eo pid,etime,pcpu,comm | awk '$3+0>1'` y se mata, o sigue comiendo
+    núcleos y frena las corridas de pruebas (17-09-2026: cuatro `rev` colgados, uno casi seis horas).
 12. **Al dudar sobre el proyecto, busca en `vault/` antes de preguntar o asumir**:
     `grep -rn "^13-ter\." vault/conocimiento/reglas/` encuentra una regla por su número.
 
@@ -95,6 +100,7 @@ dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `
 
 ## Mapa
 
+- `.claude/rules/workflow.md` — **la escalera de ceremonia T1/T2/T3**, el ciclo de una tarea y el cierre de sesión
 - `pipeline_comercial.jsx` — el fuente entero; convenciones y trampas en `.claude/rules/code_style.md` (se carga al tocarlo)
 - `tests_asignacion_lineas.js` + `run_tests.mjs` — la suite · `tests/contract/` — gates de contrato · `tests/e2e/` — casos con sesión real (`.claude/rules/testing.md`)
 - `build_app.mjs` / `build_app.ps1` — el build · `.github/workflows/gates.yml` — el CI, un solo job para toda rama
@@ -102,6 +108,7 @@ dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `
 - `vault/` — memoria del proyecto; `vault/index.md` es su mapa
   - `conocimiento/invariantes.md` — **índice** de las reglas de dominio y del contrato con el servidor
   - `conocimiento/reglas/` — las reglas verbatim, por tema · `arquitectura.md` · `verificacion.md` · `contrato_servidor_y_auditoria.md` · `mapa_documentos.md`
+  - `conocimiento/despacho_agentes.md` — **el bloque invariante que recibe todo agente despachado**, la consigna del refutador y los cuatro modos de falla medidos
   - `adr/` — decisiones · `sesiones/estado_actual.md` — el tablero · `sesiones/` — logs
 - `Specs_Procesos/` · `Integraciones/` · `Levantamiento_Activos_Informacion.md` — la fuente de verdad de negocio; qué es cada uno: `vault/conocimiento/mapa_documentos.md`
 - `GeneradorDatos/` — produce los activos sintéticos (`datos_inyectados.js`, `proveedores_clientes.json`)

@@ -22,12 +22,12 @@ La clave primaria es **`RUT` + `ROL` (+ `RUT_CONTRAPARTE`)**. Cada entidad de la
 
 ## 2. Evaluación por deudor y visado
 
-- El motor arma el set de variables del cliente `vCli` (fila CLIENTE) y, para **cada** fila `DEUDOR` ligada a ese cliente, sobrepone el bloque del deudor (columnas de la fila DEUDOR) y evalúa **una vez por deudor** las reglas **D01–D23** y **C47–C50** (cartera del par). El resto de las C y las O se evalúan una sola vez.
+- El motor arma el set de variables del cliente `vCli` (fila CLIENTE) y, para **cada** fila `DEUDOR` ligada a ese cliente, sobrepone el bloque del deudor (columnas de la fila DEUDOR) y evalúa **una vez por deudor** las reglas **D01–D23**. El resto de las C y las O se evalúan una sola vez. El tipo lo **declara la regla** (`porDeudor`), no el prefijo del código.
 - El resultado es una lista de ítems **(regla × deudor)**. La clave de estado/visado (`stKey`) es:
   - **Cliente / Operación:** `stKey = "<n>"`  (ej. `"117"` = C17, `"301"` = O01).
-  - **Deudor / par C-D:** `stKey = "<n>@<rut_deudor>"`  (ej. `"202@88390200-9"` = D02 del deudor 88390200-9; `"147@77250120-4"` = C47 del par con ese deudor).
+  - **Deudor / par C-D:** `stKey = "<n>@<rut_deudor>"`  (ej. `"202@88390200-9"` = D02 del deudor 88390200-9; `"221@77250120-4"` = D21 del par con ese deudor).
 - El **visado** (aprobación/rechazo de cada excepción por el apoderado con atribución) se registra **independiente por (operación, stKey)**: estado `aprobado | rechazado | pendiente` + respaldo (comentario, adjunto, quién, fecha). La bandeja agrupa las reglas D en un bloque **por deudor** (razón social + RUT).
-- Estado agregado de la operación: **aprobada** / **sujeta a excepción** / **rechazada**. Un bloqueo firme de deudor (D02–D13) hace perder la operación igual que un knockout de cliente (C30–C32 TGR).
+- Estado agregado de la operación: **aprobada** / **sujeta a excepción** / **rechazada**. Sólo rechazan los tres knockout de cliente (**C30–C32**, TGR) y una **excepción que un apoderado rechazó**: los dos son bloqueo firme y pierden la operación. Los criterios de burós del deudor (**D02–D13**) son **excepciones no re-evaluables**: se visan como cualquier otra, pero una re-evaluación no las repara.
 
 ---
 

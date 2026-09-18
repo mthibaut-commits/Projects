@@ -24,7 +24,8 @@ reescribe con el preset B. Está registrado como supuesto en ADR-0002.
 - **Integración: siempre `git merge --no-ff`** desde `main`. El merge commit es lo que deja la feature
   visible y revertible como unidad. **Nunca** un push con refspec cruzado (`git push origin <rama>:<integración>`):
   integra por fast-forward y reescribe la historia como si la feature se hubiera hecho en `main`.
-- **Sin commits directos sobre `main`**, salvo una edición T3 acordada con el usuario (un typo, el tablero):
+- **Sin commits directos sobre `main`**, salvo una edición **T3** acordada con el usuario (un typo, el tablero;
+  qué es un T3 y qué lleva cada nivel: [`.claude/rules/workflow.md`](../../.claude/rules/workflow.md)):
   ésas se prefijan con `GITFLOW_ALLOW=1` para pasar el guard **a propósito**, que es distinto de rodearlo.
 - **Mensajes en español, descriptivos**, que digan qué y por qué: el estilo del `git log` de la casa
   («Parte CLAUDE.md por vida útil: …», «Otorgamiento: el contrato físico se carga en la tarjeta de O05…»).
