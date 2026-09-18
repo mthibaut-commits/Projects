@@ -79,8 +79,20 @@ export function auditarRegla35(src) {
   if (!/criterio\(s\) sin ejecutar/.test(src)) fallos.push("el badge de la tarjeta no nombra los criterios sin ejecutar");
   if (!/const totCrit = visC \? \(visC\.aprob \+ visC\.clasif \+ visC\.exc\.length \+ visC\.rech\.length \+ \(visC\.noEjec \|\| \[\]\)\.length\)/.test(src))
     fallos.push("el total de criterios del tubo no cuenta las no ejecutadas: el denominador encoge solo y el criterio desaparece sin que nadie lo note");
-  if (!/const ne = reglaNoEjecutable\(r\);/.test(src)) fallos.push("la mesa de reglas no consulta la compuerta: es la pantalla donde se arregla y no marcaba la regla mal definida");
+  if (!/backgroundColor: ne\.noEjecutable \? "#FFF7ED" : undefined/.test(src)) fallos.push("la mesa de reglas no consulta la compuerta: es la pantalla donde se arregla y no marcaba la regla mal definida");
   if (!/Sin área · NO SE EJECUTA/.test(src)) fallos.push("la mesa de reglas no marca la fila mal definida en vez de su chip de área");
+  // Las DOS pantallas de mantenedor que la escondían por construcción, y no por olvido:
+  //  · el catálogo de criterios AGRUPA POR ÁREA sobre una lista fija de cuatro y filtra `r.area === area`:
+  //    lo que no calza no pertenece a ningún grupo y desaparece, mientras la bajada sigue contando el total.
+  //  · `CfgAreas` cuenta «Criterios que rutean acá» por fila: una regla sin área no rutea a ninguna, así que
+  //    la suma deja de cuadrar con el catálogo sin que nada lo diga.
+  if (!/const fuera = REGLAS_CLIENTE\.filter\(\(r\) => !areas\.includes\(r\.area\)\);/.test(src))
+    fallos.push("el catálogo de criterios por área no junta las que no caen en ningún grupo: una regla que se esfuma de la pantalla que la cataloga es la vía más silenciosa de todas");
+  if (!/Sin área · \{malas\.length \? "NO SE EJECUTAN"/.test(src)) fallos.push("el catálogo por área no rotula el grupo de las que no se ejecutan");
+  if (!/no cae en ninguna de las áreas de abajo y va en el primer bloque/.test(src)) fallos.push("la bajada del catálogo sigue contando todas las reglas sin decir cuántas no se listan");
+  if (!/const malas = REGLAS_CLIENTE\.filter\(\(r2\) => reglaNoEjecutable\(r2\)\.noEjecutable\);/.test(src))
+    fallos.push("`CfgAreas` no avisa de los criterios sin área: es la pantalla donde se declaran y su tabla no los cuenta en ninguna fila");
+  if (!/criterio\(s\) SIN ÁREA: no se ejecutan ni se verifican/.test(src)) fallos.push("`CfgAreas` no nombra el problema con todas sus letras");
   // 7 · El contador no la disuelve en «ok» ni en «pendiente».
   if (!/const noEjec = items\.filter\(\(it\) => it\.disp === "no_ejecutada"\)\.length/.test(src)) fallos.push("el contador del pie no cuenta aparte las no ejecutadas: sumarlas a `ok` diría que la operación pasó un criterio que nadie miró");
   return fallos;
@@ -117,7 +129,10 @@ const MUTANTES = {
   "la compuerta le exige área también al knock out": { src: jsx.replace('if (!regla.area && (regla.tiers || []).some((t) => t[1] === "excepcion")) return {', "if (!regla.area) return {"), re: /no condiciona el área a que la regla tenga un tramo de EXCEPCIÓN/ },
   "la tarjeta del Kanban vuelve a callarse": { src: jsx.replace("        if (!isPerdida && vis.noEjec && vis.noEjec.length) {", "        if (false) {"), re: /la tarjeta del Kanban no dibuja nada/ },
   "el denominador del tubo vuelve a encoger": { src: jsx.replace("visC.rech.length + (visC.noEjec || []).length)", "visC.rech.length)"), re: /el denominador encoge solo/ },
-  "la mesa de reglas deja de marcarla": { src: jsx.replace("          const ne = reglaNoEjecutable(r);\n", ""), re: /la mesa de reglas no consulta la compuerta/ },
+  "la mesa de reglas deja de marcarla": { src: jsx.replace('style={{ border: `1px solid ${ne.noEjecutable ? "#F97316" : C.line}`, backgroundColor: ne.noEjecutable ? "#FFF7ED" : undefined }}', 'style={{ border: `1px solid ${C.line}` }}'), re: /la mesa de reglas no consulta la compuerta/ },
+  "el catálogo por área vuelve a esconderla": { src: jsx.replace("        const fuera = REGLAS_CLIENTE.filter((r) => !areas.includes(r.area));", "        const fuera = [];"), re: /no junta las que no caen en ningún grupo/ },
+  "la bajada del catálogo vuelve a contar todas": { src: jsx.replace(" no cae en ninguna de las áreas de abajo y va en el primer bloque.", " reglas."), re: /sigue contando todas las reglas sin decir/ },
+  "Configuración › Áreas deja de avisar": { src: jsx.replace("          const malas = REGLAS_CLIENTE.filter((r2) => reglaNoEjecutable(r2).noEjecutable);", "          const malas = [];"), re: /`CfgAreas` no avisa de los criterios sin área/ },
 };
 
 for (const [nombre, m] of Object.entries(MUTANTES)) {
