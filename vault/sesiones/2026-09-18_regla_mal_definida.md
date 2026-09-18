@@ -60,6 +60,34 @@ simular** o la versión ya está armada sin ella.
      denominador es la forma más silenciosa de todas, porque la cifra sigue pareciendo correcta.
    - La **mesa de reglas**, que es **donde se arregla**, mostraba un chip de área VACÍO y nada más.
 
+## La tercera vuelta: «si la regla está mal definida, debes mostrarlo en la pantalla»
+
+El usuario lo pidió una tercera vez, y tenía razón otra vez. Lo que lo destapó no fue leer el fuente sino
+**capturar la pantalla con una regla plantada** — el catálogo de la demo no tiene ninguna mal definida, así
+que sin plantarla no hay nada que ver, y sin la captura no se sabe qué se esconde.
+
+Aparecieron **dos pantallas de mantenedor** que la escondían **por construcción**, no por olvido:
+
+- `Configuración › Otorgamiento › Criterios de verificación` **agrupa por área** sobre una lista fija
+  (`["operaciones","comercial","riesgo","extras"]`, `r.area === area`). Una regla sin área **no pertenece a
+  ningún grupo y desaparece de la pantalla que la cataloga**, mientras la bajada seguía diciendo «las 78
+  reglas del cliente». Es la vía más silenciosa de todas: no hay nada que mirar mal, simplemente **no está**.
+  Ahora las que no caen en ningún grupo van **primero**, en su propio bloque naranjo, y la bajada dice
+  cuántas son. De paso cubre un área que el tenant cree y esta lista fija no agrupe: ésas sí se ejecutan y
+  se marcan distinto.
+- `Configuración › Áreas`, **donde se declaran**, cuenta «Criterios que rutean acá» por fila. Una regla sin
+  área no rutea a ninguna, así que la suma dejaba de cuadrar con el catálogo sin que nada lo dijera. Ahora
+  un recuadro arriba los lista **uno por uno con su número**, porque lo que hay que hacer es ir a buscarlos.
+
+Con eso son **ocho** sitios. Las capturas de los seis que muestran la regla plantada se le enviaron al
+usuario: el detalle (fila y aviso de cabecera), la tarjeta del Kanban, el catálogo por área, Atribuciones
+de aprobación y Configuración › Áreas.
+
+**La lección, que es la que importa para la próxima:** una pantalla que **agrupa o filtra por un campo**
+esconde por construcción lo que no tiene ese campo, y ninguna capa lo ve — ni `tsc`, ni los gates, ni la
+suite, ni el e2e, porque todos preguntan por lo que existe. La única forma de encontrarlo es **plantar el
+caso y mirar la pantalla**.
+
 ## Lo que NO cambió, a propósito
 
 **«Sin aprobador definido»** (spec de excepciones §6.4) sigue siendo la respuesta cuando el área **existe

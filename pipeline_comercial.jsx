@@ -14489,7 +14489,51 @@ function ReglasClienteCatalogo() {
   return (
     <div>
       <div className="t12 font-semibold uppercase tracking-wide" style={{ color: C.sub }}>Criterios de verificación (visado) por área</div>
-      <div className="mt-1 t10" style={{ color: C.faint }}>Catálogo de las {REGLAS_CLIENTE.length} reglas del cliente (Excel "Rules Cliente"). Cada regla es un risk tier que evalúa una variable de la API y define si cae en <b>Aprobado</b>, <b>Rechazado</b> o <b>Sujeto a excepción</b>. Se evalúan en cada simulación (ver el resultado en <b>Visado Cliente</b>). Interfaz de <b>solo consulta</b>; usa <b>Consultar</b> para ver el detalle. Las reglas de segmentación son clasificación interna.</div>
+      <div className="mt-1 t10" style={{ color: C.faint }}>Catálogo de las {REGLAS_CLIENTE.length} reglas del cliente (Excel "Rules Cliente").{(() => {
+        const n = REGLAS_CLIENTE.filter((r) => !areas.includes(r.area)).length;
+        return n ? <b style={{ color: "#C2410C" }}> {n} de ellas no cae en ninguna de las áreas de abajo y va en el primer bloque.</b> : null;
+      })()} Cada regla es un risk tier que evalúa una variable de la API y define si cae en <b>Aprobado</b>, <b>Rechazado</b> o <b>Sujeto a excepción</b>. Se evalúan en cada simulación (ver el resultado en <b>Visado Cliente</b>). Interfaz de <b>solo consulta</b>; usa <b>Consultar</b> para ver el detalle. Las reglas de segmentación son clasificación interna.</div>
+      {/* REGLA 35 · LAS QUE NO CAEN EN NINGÚN GRUPO, PRIMERO. Esta pantalla agrupa por área y filtra
+          `r.area === area` sobre una lista FIJA de cuatro: una regla sin área —o con un área que el
+          tenant creó y no está en la lista— no pertenece a ningún grupo y DESAPARECÍA de acá, mientras
+          la bajada seguía diciendo «las N reglas del cliente». Una regla que se esfuma de la pantalla
+          que la cataloga es la vía más silenciosa de todas: no hay nada que mirar mal, simplemente no
+          está. Va ARRIBA y no al final, porque lo que hay que hacer es ir a arreglarla. */}
+      {(() => {
+        const fuera = REGLAS_CLIENTE.filter((r) => !areas.includes(r.area));
+        if (!fuera.length) return null;
+        const malas = fuera.filter((r) => reglaNoEjecutable(r).noEjecutable);
+        return (
+          <div className="mt-3 overflow-hidden rounded-xl" style={{ border: "2px solid #F97316" }}>
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2" style={{ backgroundColor: "#FFF7ED" }}>
+              <AlertTriangle size={14} style={{ color: "#9A3412" }} />
+              <span className="t13 font-bold" style={{ color: "#9A3412" }}>Sin área · {malas.length ? "NO SE EJECUTAN" : "fuera de las áreas listadas"}</span>
+              <span className="t10 font-semibold" style={{ color: "#9A3412", opacity: 0.75 }}>· {fuera.length} criterio(s)</span>
+            </div>
+            <div className="space-y-2 p-2.5">
+              <div className="t10" style={{ color: "#9A3412", lineHeight: 1.5 }}>
+                {malas.length > 0
+                  ? <>Tienen un tramo de excepción y <b>no declaran a quién pedírsela</b>, así que el motor los salta y <b>las operaciones se evalúan sin ellos</b>. Se arregla declarando su área acá y en <b>Configuración › Áreas</b>.</>
+                  : <>Declaran un área que esta pantalla no agrupa. Se ejecutan igual —tienen a quién pedirle la excepción—, pero conviene revisar el catálogo de áreas.</>}
+              </div>
+              {fuera.map((r) => {
+                const ne = reglaNoEjecutable(r);
+                return (
+                  <div key={r.n} className="rounded-lg p-2.5" style={{ border: `1px solid ${ne.noEjecutable ? "#F97316" : C.line}`, borderLeft: `3px solid ${ne.noEjecutable ? "#C2410C" : C.faint}`, backgroundColor: "#fff" }}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="t9 font-bold" style={{ color: C.faint }}>#{r.n}</span>
+                      <div className="t11 font-medium" style={{ color: C.ink }}>{r.nombre}</div>
+                      {ne.noEjecutable && <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: "#C2410C", color: "#fff" }}>No se ejecuta ni se verifica</span>}
+                      <span className="t9" style={{ color: C.faint }}>área declarada: {r.area ? <b>{r.area}</b> : <i>(ninguna)</i>}</span>
+                    </div>
+                    {r.hallazgo && <div className="mt-0.5 t10" style={{ color: C.sub }}>{r.hallazgo}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
       {areas.map((area) => {
         const rs = REGLAS_CLIENTE.filter((r) => r.area === area);
         if (!rs.length) return null;
@@ -18428,6 +18472,33 @@ function CfgAreas() {
           Las áreas que aprueban excepciones de otorgamiento en <b>{CFG_ACTIVA.marcaNombre || TENANT_ACTUAL}</b>, guardadas <b>por tenant</b> (<code style={{ fontFamily: "ui-monospace,monospace" }}>{AREAS_KEY}</code>).
           Cada criterio declara <b>un área y un nivel</b>; con ese par se buscan en <b>Usuarios</b> los que tienen esa área en ese nivel o superior.
         </div>
+        {/* REGLA 35 · ACÁ ES DONDE SE DECLARAN LAS ÁREAS, así que acá tiene que verse cuáles criterios se
+            quedaron sin una. Un criterio sin área no rutea a ninguna parte: no aparece en NINGUNA fila de
+            la tabla de abajo, y la suma de «Criterios que rutean acá» deja de cuadrar con el catálogo sin
+            que nada lo diga. Se listan uno por uno —no un contador— porque lo que hay que hacer es ir a
+            buscarlos por su número. */}
+        {(() => {
+          const malas = REGLAS_CLIENTE.filter((r2) => reglaNoEjecutable(r2).noEjecutable);
+          if (!malas.length) return null;
+          return (
+            <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: "#FFF7ED", border: "2px solid #F97316" }}>
+              <div className="flex items-center gap-1.5 t12 font-bold" style={{ color: "#9A3412" }}>
+                <AlertTriangle size={14} /> {malas.length} criterio(s) SIN ÁREA: no se ejecutan ni se verifican
+              </div>
+              <div className="mt-1 t11" style={{ color: "#9A3412", lineHeight: 1.5 }}>
+                Tienen un tramo de excepción y no declaran a quién pedírsela, así que el motor los salta y
+                <b> las operaciones se evalúan sin ellos</b>. No aparecen en ninguna fila de la tabla de abajo:
+                el total de «Criterios que rutean acá» no cuadra con el catálogo. Se arregla declarando su área
+                en el catálogo de otorgamiento.
+              </div>
+              <ul className="mt-1.5 grid gap-0.5">
+                {malas.map((r2) => (
+                  <li key={r2.n} className="t11" style={{ color: "#9A3412" }}>· <b>#{r2.n}</b> {r2.nombre}</li>
+                ))}
+              </ul>
+            </div>
+          );
+        })()}
         <table className="mt-3 w-full border-collapse t11">
           <thead><tr>{["Área", "Identificador", "Criterios que rutean acá", "Quién la tiene", ""].map((h, i) => (
             <th key={i} className="px-2 py-1 text-left t10 font-semibold uppercase tracking-wide" style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}>{h}</th>
