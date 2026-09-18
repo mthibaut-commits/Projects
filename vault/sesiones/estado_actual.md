@@ -33,7 +33,7 @@ fila y otro intentó refutarlos (log), y **lo que destaparon sí cambió el prod
 
 | Trabajo | Estado | Rama | Siguiente paso |
 |---|---|---|---|
-| Cerrar la tabla de invariantes | ✅ mergeada a `main` con `--no-ff` · 30 filas · suite 116→140 · e2e 1→16 · contrato 7→25 | `claude/ecstatic-ptolemy-f7cb4m` | — |
+| Cerrar la tabla de invariantes | ✅ mergeada a `main` con `--no-ff` (4cd5be6) · 30 filas · suite 116→140 · e2e 1→16 · contrato 7→25 | `claude/ecstatic-ptolemy-f7cb4m` | — |
 | «Operación creada» + Editar · punto fijo · restyle | ✅ mergeadas a `main` | `claude/vibrant-hopper-33tg8j` | — |
 | Cablear los gates · partir `CLAUDE.md` | ✅ mergeadas (bd14091) | ídem | **pushear el tag `v0.1.0`** (abajo) |
 
