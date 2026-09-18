@@ -13237,6 +13237,14 @@ SIM_VERSIONS = repoSimVersions.all();
 // y lo que pase después es resorte de los módulos siguientes al pipeline comercial. Congelarlo es
 // además lo único que evita que una reevaluación posterior mueva una cifra que Tesorería ya tomó.
 const repoGiro = crearRepo("giro_asignacion");
+// La última solicitud al comité inyectada por el cierre de CADA operación, para que volver a cerrarla
+// no pida dos veces lo mismo. Va en un repositorio y no en `SOLICITUDES_LINEA` porque esa lista es la
+// memoria de ESTA pestaña: el detalle es pestaña propia desde el 02-09-2026, así que cerrar, cerrar la
+// pestaña y volver a abrir la operación dejaba la guarda sin nada con qué comparar y entraba una
+// segunda petición idéntica — y NEX no puede retirar la anterior (regla 15), o sea que el comité veía
+// las dos. Guarda sólo lo que `mismaSolicitudComite` compara (el rut y el detalle) más el `idProceso`
+// que el log necesita nombrar; el registro completo sigue siendo del sistema externo. Regla 33.
+const repoSolicitudComite = crearRepo("solicitud_comite");
 let GIRO_STATE = repoGiro.all();   // { [dealId]: { tipos:[...], montoGirar, ts, por } }
 // ── ADAPTADOR: de los motores a la entrada del modelo de giros ────────────────────────────────
 // Es el ÚNICO sitio que conoce a los tres motores a la vez. `asignarGiros` no los llama: recibe sus
@@ -23937,7 +23945,10 @@ export default function PipelineComercial() {
         // La previa se busca en las solicitudes de ESTA pestaña, que es la que las inyecta; si el
         // ejecutivo cerró la pestaña del detalle en medio, la comparación no tiene con qué y entra
         // una segunda solicitud, que es lo que pasaría también con dos sesiones en paralelo.
-        const previa = sol ? SOLICITUDES_LINEA.find((x) => x && x.origen && x.origen.dealId === id) : null;
+        // La previa se busca PRIMERO en esta pestaña —donde está el registro entero— y, si no está, en el
+        // repositorio, que sí cruza pestañas. El orden importa poco para el resultado y mucho para el log:
+        // el de la pestaña trae el estado vivo del proceso.
+        const previa = sol ? (SOLICITUDES_LINEA.find((x) => x && x.origen && x.origen.dealId === id) || repoSolicitudComite.get(id) || null) : null;
         if (sol && previa && mismaSolicitudComite(previa, sol)) {
           logSys("info", "linea", `Solicitud de línea no re-inyectada al cerrar: pide lo mismo que ${previa.idProceso}, que sigue en gestión`,
             { empresa: cli, operacion: id, proceso: previa.idProceso });
@@ -23949,6 +23960,9 @@ export default function PipelineComercial() {
           // la del tubo: sin este aviso la solicitud quedaba sólo en la memoria de esta pestaña y el
           // ejecutivo no la veía nunca. Mismo canal que `nex-simulado` y `nex-preeval`.
           try { if (window.opener) window.opener.postMessage({ type: "nex-solicitud", registro: SOLICITUDES_LINEA[0] }, ORIGEN_APP); } catch (_) {}
+          // Y queda en el repositorio, que sobrevive a cerrar esta pestaña: es lo que la guarda de arriba
+          // encontrará la próxima vez que se cierre esta misma operación (regla 33).
+          repoSolicitudComite.set(id, { idProceso: idProc, rut: sol.rut, detalle: sol.detalle, pedido: sol.pedido, ts: nowStamp() });
           setDeals((prev) => prev.map((x) => (x.id === id ? { ...x, solicitudComite: idProc } : x)));
           setSelected((x) => (x && x.id === id ? { ...x, solicitudComite: idProc } : x));
           avisarTubo(id, { solicitudComite: idProc });
@@ -25951,7 +25965,10 @@ export default function PipelineComercial() {
         ) : vistaApp === "panel" ? (
           <>
             <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>Comercial <ChevronRight size={12} /> Reportes</div>
-            <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Gestión de Clientes</h1>
+            {/* El h1 dice lo MISMO que el botón y la miga: son la ruta del menú (regla 27-bis). Decía
+                «Gestión de Clientes», que era el nombre de antes del 16-09-2026: el rótulo se renombró en
+                la navbar, en `irA`, en la miga y en el Command-K, y éste quedó atrás. Lo fija `e2e-27-bis`. */}
+            <h1 className="mt-1 mb-4 text-2xl font-semibold tracking-tight">Reportes</h1>
             <PanelClientes soloExec={soloExec} deals={deals} usuario={usuario}
               reporteActivo={reporteGestion}
               onReporte={(k) => {
