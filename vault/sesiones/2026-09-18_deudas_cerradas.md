@@ -137,7 +137,37 @@ De paso, el tablero: volvieron los **dos** items del informe de cierre que se ha
 `pipeline.zip` — **2,7 MB versionados**, no 29,6; ese número era el contenido descomprimido. La tarea sigue en
 pie, pero por ser un build del 12-08 de algo generado, no por su peso.
 
-## 6 · La separación por género no es deuda
+## 6 · La escalera de ceremonia, que era una referencia colgando
+
+`.claude/rules/workflow.md`. «T3» se usaba en el tablero, en `flujo_git.md`, en el comentario de
+`gitflow_guard.mjs` y en cinco mensajes de commit, y **T1 y T2 no aparecían en ninguna parte**: una sesión nueva
+leía «commit T3», no encontraba qué era, y elegía entre inventarlo o cobrar el paquete completo.
+
+La escalera queda calibrada a NEX, y con dos cosas que la tabla original del skill no decía:
+
+- **Cómo se elige el nivel, que no es por tamaño.** La pregunta es *¿qué pasa si esto está mal?* Si el sistema
+  decide distinto sobre la plata de alguien es **T1** aunque sean tres líneas; si se ve distinto pero decide
+  igual es **T2** aunque sean trescientas; si nadie puede actuar sobre lo que dice es **T3**.
+- **Qué lleva un T1 EN ESTE REPO.** La tabla del skill pedía «feature + spec + plan + tareas», y esos
+  directorios no corresponden acá: el trabajo no nace de un backlog y el contrato son las reglas ya gateadas.
+  Un T1 lleva regla en el vault, fila en `invariantes.md`, gate, ADR si hubo alternativas descartadas, rama,
+  verificación completa y log. `vault/specs/<slug>/` se crea **cuando llegue un T1 de verdad**, no antes.
+
+Y lo que ningún nivel compra: la verificación completa no se salta en un T3 —el tablero está gateado y sus
+cifras también—, `GITFLOW_ALLOW=1` es un escape consciente y acordado, no un atajo, y despachar agentes no baja
+el nivel de nada.
+
+**El gate** (`vault.test.mjs`): todo nivel citado por un documento **vivo** tiene que estar definido en la tabla
+de la escalera, con sonda negativa. Los logs de sesión quedan fuera a propósito — son historia, y un log del año
+pasado no puede obligar al documento de hoy. La dirección que se exige es *citado ⊆ definido*: definir un nivel
+que nadie usa todavía no rompe nada.
+
+Con esto, del informe de cierre del bootstrap queda **uno solo**: decidir el cuarteto de gates. El porqué de no
+tener formateador ya está escrito en `loop_agentico_hooks.md` —un prettier sobre 26.000 líneas destruye las
+ediciones quirúrgicas con anclas únicas que ese archivo exige—; lo que falta es el ADR que lo cierre, y eso
+necesita la decisión antes.
+
+## 7 · La separación por género no es deuda
 
 El tablero la arrastraba como pendiente. **ADR-0001 ya la decidió**: las reglas mezclan los tres géneros
 —regla, porqué e historia— oración por oración, separarlas exige reescribirlas, y la decisión fue hacerlo

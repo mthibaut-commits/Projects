@@ -38,6 +38,7 @@ timestamp: 2026-09-17T15:29:14Z
 | Una regla de dominio (lo que un review rechaza sin discusión) | `reglas/<tema>.md` al final del tema, con su fila en `invariantes.md` |
 | Un invariante que se puede comprobar por introspección | un gate en `tests/contract/` con sonda negativa, y su fila en `invariantes.md` § Gates |
 | Una fricción con un hook | `loop_agentico_hooks.md`, con fecha |
+| Cuánta ceremonia lleva un cambio (T1/T2/T3) | `.claude/rules/workflow.md` — fuera del vault: se carga con el trabajo, no con el conocimiento |
 | Algo aprendido despachando agentes en paralelo | `despacho_agentes.md` — el brief es **invariante**: se corrige, no se resume |
 | Una decisión con alternativas descartadas | `../adr/` — inmutable |
 | El estado presente de la arquitectura | `arquitectura.md` — se actualiza |
