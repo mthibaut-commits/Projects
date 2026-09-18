@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-18T05:30:00Z
+timestamp: 2026-09-18T06:20:00Z
 ---
 
 # Estado actual
@@ -13,7 +13,7 @@ timestamp: 2026-09-18T05:30:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone de 40,7 MB, **140/140 PASA**, **27 archivos de gate de contrato**, **29 casos
+(`pipeline_comercial.jsx`), build standalone de 40,7 MB, **140/140 PASA**, **28 archivos de gate de contrato**, **29 casos
 e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (63 reglas verbatim por tema, índice en
 `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró la tabla de invariantes**: las 63 reglas y los 12
 invariantes del contrato tienen gate; ninguna fila dice ya «sin gate». Lo que esos gates destaparon cambió el
@@ -42,14 +42,15 @@ producto —ocho defectos, abajo—. El generador tiene **punto fijo** (32, ADR-
 
 **Ocho defectos de producto**: retirar la última factura vetado aunque la 13-sexdecies lo permite · la vía «no
 confirmada» sin re-evaluación (14) · `revertirVisado`/`revertirExc` con `ReferenceError` y un O05 revertido sin
-revocar su evidencia (OTG-01) · una Perdida que revivía arrastrándola (5) · el paquete cerrado escondía el reset
-que 13-quaterdecies exige visible · más 15-quinquies, 27-bis y RAT-01.
+revocar su evidencia (OTG-01) · una Perdida que revivía (5) · el reset escondido por el paquete cerrado · más
+15-quinquies, 27-bis y RAT-01.
 **Y el paso 2 de la verificación**, que no veía 11 declaraciones (diez `async function` y el `export default`): una
 colisión con una de ellas sólo se sabía en el paso 5, dos minutos más tarde y sin nombrar el símbolo. Ahora usa el
 patrón del auditor con cola `$NF`, y `fuente.test.mjs` exige que `CLAUDE.md`, el vault y el CI escriban el MISMO
-paso 2. Y el 18-09: el **health check de hooks es un comando** (`node verificar_hooks.mjs`, gateado en el CI, que
-subió a `@v5`) y **`cifras.test.mjs`** cuenta lo que los documentos afirman — exactas las estructurales, en banda
-las continuas—: destapó nueve cifras viejas, y otras cinco al mezclar esto. Uno por uno: [invariantes](./2026-09-17_cerrar_invariantes.md) ·
+paso 2. Y el 18-09: el **health check de hooks es un comando** (`node verificar_hooks.mjs`, gateado; el CI subió
+a `@v5`), **`cifras.test.mjs`** cuenta lo que los documentos afirman —nueve cifras viejas, y otras cinco al
+mezclar esto— y caen los dos pendientes de regla que eran defectos: el `<h1>` de Reportes (27-bis, `e2e-27-bis`
+ya lo exige) y la guarda contra una solicitud duplicada, que cruza de pestaña (33). Uno por uno: [invariantes](./2026-09-17_cerrar_invariantes.md) ·
 [integración](./2026-09-18_integracion_y_tab_todos.md) · [auditorías](./2026-09-18_auditorias_y_paso_2.md).
 
 ## Bloqueos · los dos son del usuario, desde Windows
@@ -63,9 +64,9 @@ rodea), y el MCP de GitHub sólo sabe crear ramas. Queda **el tag `v0.1.0`** sob
 1. **Auditores**: `BASE_MUERTOS` bajó a 6 (sale `lineaDeVersion`: el caso 124 la ejercita); quedan 6 hallazgos
    «revisar a mano» y 7 `useState` sin uso, uno por uno. · 2. **GN como disyunción** (22), pendiente del negocio;
    la separación por género no es deuda: ADR-0001 la decidió regla por regla, al tocarla.
-3. Pendientes escritos en las reglas: el `<h1>` de Reportes dice «Gestión de Clientes» (27-bis); `STATUS_ETAPA` no
-   es tenant-aware y `OperacionesView` duplica filas (28); el A1 no trae `MntNotaCredito` (13-quater); la guarda
-   contra una solicitud duplicada sólo ve las de su pestaña (33); sin gate, la concentración del Directorio (31).
+3. De los pendientes de las reglas quedan **decisiones, no defectos** (log de hoy): las filas que Operaciones
+   repite del tubo y `STATUS_ETAPA` a tenant-aware con sus regexes (28); si el A1 real trae `MntNotaCredito`
+   (13-quater, pregunta al dueño del dato). Sin gate: la concentración del Directorio (31).
 4. **Hooks en Windows**: correr `node verificar_hooks.mjs` una vez; es lo único que el CI no puede atestiguar.
 5. **Dos sesiones paralelas toman el mismo «siguiente entero libre»** y el mismo archivo: pasó con las reglas
    32/33, con los casos 116–140 y con este tablero. Se confirma al mezclar `main`; quien mezcla después renumera.
@@ -76,4 +77,4 @@ rodea), y el MCP de GitHub sólo sabe crear ramas. Queda **el tag `v0.1.0`** sob
 
 [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [hooks](../conocimiento/loop_agentico_hooks.md) ·
 [flujo git](../conocimiento/flujo_git.md) · [arquitectura](../conocimiento/arquitectura.md) · [verificación](../conocimiento/verificacion.md) · [decisiones](../adr/index.md) · últimas:
-[integración](./2026-09-18_integracion_y_tab_todos.md) · [auditorías y paso 2](./2026-09-18_auditorias_y_paso_2.md) · [spec de excepciones](./2026-09-18_spec_gestion_excepciones.md)
+[auditorías y paso 2](./2026-09-18_auditorias_y_paso_2.md) · [deudas cerradas](./2026-09-18_deudas_cerradas.md) · [spec de excepciones](./2026-09-18_spec_gestion_excepciones.md)
