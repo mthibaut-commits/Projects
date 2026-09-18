@@ -13,8 +13,8 @@ timestamp: 2026-09-18T14:10:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone de 40,7 MB, **141/141 PASA**, **29 archivos de gate de contrato**
-(177 tests), **29 casos e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (64 reglas verbatim por tema, índice en
+(`pipeline_comercial.jsx`), build standalone de 40,7 MB, **142/142 PASA**, **30 archivos de gate de contrato**
+(177 tests), **29 casos e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (65 reglas verbatim por tema, índice en
 `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró la tabla de invariantes**: cada regla y los 12
 invariantes del contrato tienen gate; ninguna fila dice ya «sin gate». Lo que esos gates destaparon cambió el
 producto —ocho defectos, abajo—. El generador tiene punto fijo (32, ADR-0003), el id de una operación es estable

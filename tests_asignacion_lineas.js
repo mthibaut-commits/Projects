@@ -3198,7 +3198,11 @@
        `6/6 coinciden ${mismoOk} · máquina ${m["otorgamiento"]} → ${m["pend. integración"]} → ${m["pend. de giro"]} → ${m["girada"]} (4 distintos) ${maquinaOk} · antes de firmar manda la etapa del tenant ${tenantOk} · fuera del tubo ${fueraOk}`);
   }
 
-  // ── 112 · LA LISTA DE OPORTUNIDADES: DE LA MÁS AVANZADA A LA MENOS, Y DENTRO DE CADA ETAPA POR PLATA.
+  // ── 112 · LA LISTA DE OPORTUNIDADES: POR PRIORIDAD DE GESTIÓN, Y DENTRO DE CADA ETAPA POR PLATA.
+  //    El orden es `oferta → publicada → prospección → otorgamiento → aceptada → cesión` (18-09-2026,
+  //    pedido del usuario), y NO «de la más avanzada a la menos», que es lo que hacía antes. Responde
+  //    «¿qué tengo que hacer hoy?» y no «¿cuál va más adelante?»: la oferta espera una acción del
+  //    ejecutivo, la publicada espera al cliente, y lo que ya se está cursando no depende de él.
   //    Con la oferta cuando la hay y con el tamaño de la oportunidad cuando todavía no: en prospección
   //    nadie tiene oferta, así que mirar sólo `monto` dejaba toda esa etapa empatada en cero.
   {
@@ -3207,23 +3211,57 @@
     const D = (id, stage, monto, extra) => ({ id, stage, monto: monto || 0, simulado: true, cliente: id, ...(extra || {}) });
     const publicada = (id, monto) => D(id, "oferta", monto, { ofertaCerrada: true, negocioNum: "N" + id, ofertaComunicada: true });
 
-    // (a) MANDA EL AVANCE. Una prospección con MUCHA plata va debajo de una oferta con poca: primero
-    //     se ordena por dónde está en el tubo, no por cuánto trae.
+    // (a) MANDA LA PRIORIDAD DE GESTIÓN. Una prospección con MUCHA plata va debajo de una oferta con
+    //     poca: primero se ordena por lo que hay que hacer, no por cuánto trae. Y el orden completo,
+    //     con las seis etapas a la vez, es el que pidió el usuario.
     const avance = ordenarOportunidades([
       D("p", "prospeccion", 900e6), D("o", "oferta", 1e6), D("c", "cesion", 1e6), D("t", "otorgamiento", 1e6),
     ]).map((d) => d.id);
-    const avanceOk = avance.join(",") === "c,t,o,p";
+    const avanceOk = avance.join(",") === "o,p,t,c";
+    const seis = ordenarOportunidades([
+      D("f_cesion", "cesion", 1e6), D("d_prosp", "prospeccion", 1e6), D("e_acept", "aceptadas", 1e6),
+      publicada("b_publi", 1e6), D("c_otorg", "otorgamiento", 1e6), D("a_ofert", "oferta", 1e6),
+    ]).map((d) => d.id);
+    const seisOk = seis.join(",") === "a_ofert,b_publi,d_prosp,c_otorg,e_acept,f_cesion";
 
-    // (b) UNA OFERTA PUBLICADA VA POR DELANTE de una que no lo está, aunque las dos estén en `oferta`:
-    //     se rankea sobre la etapa VISUAL, que es lo que el ejecutivo ve.
-    const pubOk = ordenarOportunidades([D("sin", "oferta", 50e6), publicada("pub", 1e6)]).map((d) => d.id).join(",") === "pub,sin";
+    // (b) UNA OFERTA SIN PUBLICAR VA POR DELANTE de una publicada, aunque las dos estén en `oferta`:
+    //     se rankea sobre la etapa VISUAL, y la sin publicar es la que espera una acción del ejecutivo.
+    //     Estaba al revés hasta el 18-09-2026, cuando el orden pasó a ser prioridad de gestión.
+    const pubOk = ordenarOportunidades([publicada("pub", 50e6), D("sin", "oferta", 1e6)]).map((d) => d.id).join(",") === "sin,pub";
 
     // (c) UNA PÉRDIDA ES TERMINAL, NO ADELANTADA. `STAGE_ORDER` la deja al final del array y usarlo
     //     como progresión la habría puesto primera, arriba de todo lo vivo.
     const perdidaOk = ordenarOportunidades([D("x", "perdida", 900e6), D("y", "prospeccion", 1e6)])
-      .map((d) => d.id).join(",") === "y,x" && avanceDeDeal(D("x", "perdida", 0)) === -1;
+      .map((d) => d.id).join(",") === "y,x" && prioridadDeDeal(D("x", "perdida", 0)) === -1;
 
-    // (d) DENTRO DE LA MISMA ETAPA, LA PLATA, de mayor a menor.
+    // (d-bis) DENTRO DE LA ETAPA, PRIMERO LAS QUE TIENEN LÍNEA GLOBAL DISPONIBLE (18-09-2026, pedido
+    //     del usuario). Son dos grupos y cada uno se ordena por plata: sin este corte, una oportunidad
+    //     enorme SIN cupo se sentaba arriba de una mediana que sí se podía cursar hoy.
+    //     Se planta la línea del cliente con `LINEAS_DATA`, que es de donde `lineaCreditoDe` la lee.
+    const conLinea = (id, monto, disp) => D(id, "oferta", monto, { rutEmisor: "R" + id, cliente: "C" + id, _dispPlantado: disp });
+    const guardarLD = typeof LINEAS_DATA !== "undefined" ? LINEAS_DATA.slice() : null;
+    let lineaOk = false, ordenLinea = "(no se pudo plantar)";
+    if (guardarLD) {
+      // Dos con cupo (una grande, una chica) y dos sin cupo (una ENORME y una chica).
+      const plant = [["Rg1", 1000e6, 400e6], ["Rg2", 1000e6, 50e6], ["Rs1", 1000e6, 1000e6], ["Rs2", 500e6, 500e6]];
+      plant.forEach(([rut, apr, uso]) => LINEAS_DATA.push({ rut, aprobada: apr, uso }));
+      // `_lineaIdx` está MEMOIZADO: sin invalidarlo la línea plantada no se ve y `lineaCreditoDe` se cae
+      // al uso sintético por hash, que da cualquier cosa. Es la misma invalidación que hace el fuente al
+      // constituir una línea nueva.
+      _lineaIdx = null;
+      const lst = [
+        D("g_chica", "oferta", 10e6, { rutEmisor: "Rg2" }),      // con cupo, chica
+        D("s_enorme", "oferta", 900e6, { rutEmisor: "Rs1" }),    // SIN cupo, enorme
+        D("g_grande", "oferta", 80e6, { rutEmisor: "Rg1" }),     // con cupo, grande
+        D("s_chica", "oferta", 5e6, { rutEmisor: "Rs2" }),       // SIN cupo, chica
+      ];
+      ordenLinea = ordenarOportunidades(lst).map((d) => d.id).join(",");
+      lineaOk = ordenLinea === "g_grande,g_chica,s_enorme,s_chica"
+        && conLineaGlobalDeal(lst[2]) === 1 && conLineaGlobalDeal(lst[1]) === 0;
+      LINEAS_DATA.length = 0; guardarLD.forEach((x) => LINEAS_DATA.push(x)); _lineaIdx = null;
+    }
+
+    // (d) DENTRO DEL MISMO GRUPO, LA PLATA, de mayor a menor.
     const plataOk = ordenarOportunidades([D("a", "oferta", 10e6), D("b", "oferta", 80e6), D("c2", "oferta", 40e6)])
       .map((d) => d.id).join(",") === "b,c2,a";
 
@@ -3249,9 +3287,20 @@
     const puroOk = orig.map((d) => d.id).join(",") === copia && r1 === r2
       && ordenarOportunidades([]).length === 0 && ordenarOportunidades(null).length === 0;
 
-    ok("112 la lista va de la más avanzada a la menos, y dentro de cada etapa por plata",
-       avanceOk && pubOk && perdidaOk && plataOk && dispOk && ofertaMandaOk && puroOk,
-       `avance ${avance.join(" > ")} ${avanceOk} · publicada primero ${pubOk} · pérdida al fondo ${perdidaOk} · plata desc ${plataOk} · sin oferta manda la oportunidad ${dispOk} · con oferta manda la oferta ${ofertaMandaOk} · pura y estable ${puroOk}`);
+    // (h) EL ORDEN NO SE APLICA EN CADA LOTE. `ordenEstable` conserva el orden que el ejecutivo está
+    //     mirando mientras la ventana no vence, y mete las filas NUEVAS al final —retenerlas sería
+    //     esconder trabajo, que es peor que un salto—; las que ya no están se caen. Pura y sin mutar.
+    const nuevoOrden = [D("n1", "oferta", 90e6), D("n2", "oferta", 80e6), D("n3", "oferta", 70e6)];
+    const estableOk = ordenEstable(nuevoOrden, ["n3", "n1", "n2"]).map((d) => d.id).join(",") === "n3,n1,n2"
+      && ordenEstable(nuevoOrden, []).map((d) => d.id).join(",") === "n1,n2,n3"          // sin previo, el fresco
+      && ordenEstable(nuevoOrden, ["n2", "n1"]).map((d) => d.id).join(",") === "n2,n1,n3" // la nueva (n3) al final
+      && ordenEstable(nuevoOrden, ["se_fue", "n2"]).map((d) => d.id).join(",") === "n2,n1,n3" // la que ya no está se cae
+      && ordenEstable([], ["n1"]).length === 0
+      && (() => { const a = [...nuevoOrden]; ordenEstable(a, ["n3"]); return a.map((d) => d.id).join(",") === "n1,n2,n3"; })();
+
+    ok("112 la lista va por prioridad de gestión (oferta → publicada → prospección → otorgamiento → aceptada → cesión), dentro de cada etapa primero las que tienen línea global disponible y luego por plata, y el orden no se re-aplica en cada lote",
+       avanceOk && seisOk && pubOk && perdidaOk && lineaOk && plataOk && dispOk && ofertaMandaOk && puroOk && estableOk,
+       `prioridad ${avance.join(" > ")} ${avanceOk} · las seis etapas ${seis.join(" > ")} ${seisOk} · sin publicar antes que publicada ${pubOk} · pérdida al fondo ${perdidaOk} · con línea global disponible primero ${lineaOk} (${ordenLinea}) · plata desc ${plataOk} · sin oferta manda la oportunidad ${dispOk} · con oferta manda la oferta ${ofertaMandaOk} · pura y estable ${puroOk} · orden estable dentro de la ventana ${estableOk}`);
   }
 
   // ── 113 · LO QUE EL DETALLE ESCRIBE EN UN REPOSITORIO LO VE LA SIGUIENTE PESTAÑA.
@@ -3663,7 +3712,7 @@
       && caducada.causaPerdida === closeReasonLabel("inactivity") && dealResult(caducada) === "expired"
       && [...Object.values(perdidas), caducada].every((d) => dealStatus(d) === "closed" && dealDisbursement(d) === null)
       && dealResult(abierta) === null && dealStatus(abierta) === "open";
-    const fondoOk = Object.values(perdidas).every((d) => avanceDeDeal(d) === -1 && estadoOperacion(d) === null && etapaDeDeal(d) === stageName("perdida") && !fueraDelTubo(d))
+    const fondoOk = Object.values(perdidas).every((d) => prioridadDeDeal(d) === -1 && estadoOperacion(d) === null && etapaDeDeal(d) === stageName("perdida") && !fueraDelTubo(d))
       && ordenarOportunidades([perdidas.rechazo, base5("T5l", { stage: "prospeccion", simulado: false })]).map((d) => d.id).join(",") === "T5l,T5a";
     const ultimaOk = STAGE_ORDER[STAGE_ORDER.length - 1] === "perdida"
       && STAGES.filter((st) => STAGE_ORDER.indexOf(st.id) > STAGE_ORDER.indexOf("perdida")).length === 0
@@ -6524,6 +6573,63 @@
     ok("141 una regla mal definida (tramo de excepción sin área) no se ejecuta ni se verifica y sale nombrada en el veredicto; un knock out sin área SÍ se ejecuta",
        compuertaOk && koOk && mesaOk && noEjecutaOk && tampocoAprobadoOk && clasifOk && motivoOk && puraOk && veredictoOk && restauradoOk,
        `compuerta ${compuertaOk} (excepción sin área ✓ · con área ✗ · área "" ✓ · clasificación ✗ · sin tramos ✗ · KNOCK OUT sin área ✗ · mixta sin área ✓ · null ✓) · el knock out se ejecuta en las dos direcciones ${koOk} · mismo criterio que la mesa ${mesaOk} (${conExc.length} con excepción · ${soloKo.length} knock out) · no se ejecuta ${noEjecutaOk} («${eSin.disp}» sin nivel ni tramo vs «${eCon.disp} N${eCon.nivel}») · tampoco cuando habría aprobado ${tampocoAprobadoOk} · la clasificación sí se evalúa ${clasifOk} · motivo distingue la causa ${motivoOk} («${eSin.motivo}») · pura ${puraOk} · veredicto ${veredictoOk} (noEjec ${mia ? 1 : 0} · fuera de exc/rech · estado «${vDespues && vDespues.estado}» = «${vAntes.estado}» · catálogo real sin ninguna) · catálogo restaurado ${restauradoOk}${err ? " · ERROR " + err : ""}`);
+  }
+
+  // ── 142 · LA BANDEJA INBOUND ES UNA VENTANA CON TOPE, Y LO QUE EL TOPE BOTA SE CUENTA ──────────
+  // El contador de «Otras Empresas» sube y baja porque la bandeja guarda sólo las últimas N facturas
+  // sin clasificar. Eso está bien —una ventana tiene que tener tope— y lo que estaba mal era que el
+  // tope (60) no alcanzaba ni para un lote de ingesta (250), así que botaba en CADA lote, en silencio.
+  // El recorte se prueba con la misma expresión que corre en el stream, sobre datos plantados.
+  {
+    // Se prueba la función REAL del fuente, no una copia: `recortarBandeja` es pura y de nivel módulo.
+    const recortar = (feed, lote, tope) => recortarBandeja([...lote.slice().reverse(), ...feed], tope);
+    const fac = (n, mia) => ({ id: "F" + n, esCliente: !!mia, cedente: mia ? "Cliente propio" : "Otro" });
+    const lote = (desde, n, mias) => Array.from({ length: n }, (_, i) => fac(desde + i, i < mias));
+
+    // (a) LA VENTANA ES UNA VENTANA: lo nuevo entra adelante y lo viejo sale por atrás, y el orden de
+    //     llegada se conserva (la bandeja se lee de lo más nuevo a lo más viejo).
+    const r1 = recortar(lote(1, 3, 0), lote(10, 2, 0), 4);
+    const ventanaOk = r1.lista.length === 4 && r1.fuera === 1
+      && r1.lista.map((f) => f.id).join(",") === "F11,F10,F1,F2"   // el lote entra invertido, al frente
+      && !r1.lista.some((f) => f.id === "F3");                     // la más antigua salió
+
+    // (b) EL DEFECTO: con el tope bajo el lote, recorta SIEMPRE. Con el tope de hoy, un lote entero cabe.
+    const base = (typeof CFG_OPER_BASE !== "undefined") ? CFG_OPER_BASE : null;
+    const tope = base ? base.topeBandeja : null, loteN = base ? base.loteStream : null;
+    const chico = recortar([], lote(1, loteN || 250, 0), 60);
+    const holgadoOk = !!base && tope >= loteN                       // la perilla alcanza para un lote
+      && recortar([], lote(1, loteN, 0), tope).fuera === 0          // y con ella un lote no bota nada
+      && chico.fuera === (loteN - 60)                               // con el tope viejo botaba 190 de 250
+      && base.topeDocsCorrida === undefined;                        // el nombre viejo no vuelve
+
+    // (c) LO QUE SALE SE CUENTA, y contar es lo único que permite decirlo. Sin recorte, cero.
+    const contarOk = recortar([], lote(1, 10, 0), 100).fuera === 0
+      && recortar(lote(1, 90, 0), lote(100, 30, 0), 100).fuera === 20;
+
+    // (d) LO QUE SALE PRIMERO ES LO QUE NO ES DE NADIE. Es la decisión de la regla 36 y la razón por la
+    //     que el contador dejó de bajar solo: una factura de la cartera sale únicamente cuando ya no
+    //     queda otra cosa que botar. Se mide en el caso peor: un lote entero contra un tope chico.
+    const mias = (l) => l.filter((f) => f.esCliente).length;
+    const conLote = lote(1, 250, 40);
+    const apretado = recortarBandeja([...conLote].reverse(), 60);
+    const holgura  = recortarBandeja([...conLote].reverse(), 100);
+    const prioridadOk = mias(holgura.lista) === 40 && holgura.fueraConDueno === 0   // caben las 40: no sale ninguna
+      && holgura.fuera === 150 && holgura.lista.length === 100
+      && mias(apretado.lista) === 40 && apretado.fueraConDueno === 0                // 40 ≤ 60: tampoco
+      && apretado.lista.length === 60;
+    // Y cuando NI ASÍ alcanza, salen de la cartera pero contadas: es lo que el aviso muestra en rojo.
+    const extremo = recortarBandeja([...lote(1, 250, 40)].reverse(), 25);
+    const extremoOk = extremo.lista.length === 25 && extremo.fueraConDueno === 15 && mias(extremo.lista) === 25;
+    // Contra el criterio viejo —`slice(0, tope)`, por el final y sin mirar de quién era— de las 40
+    // sobrevivían 0. Se compara sobre la lista COMO LLEGA al recorte: el lote se antepone INVERTIDO,
+    // así que las primeras del lote quedan al final de la bandeja y son justo las que el corte se lleva.
+    const comoLlega = [...conLote].reverse();
+    const viejoQueda = mias(comoLlega.slice(0, 60));
+    const danoOk = prioridadOk && extremoOk && viejoQueda === 0;
+
+    ok("142 la Bandeja Inbound es una ventana con tope: lo nuevo entra adelante, sale primero lo que no es de nadie, y lo que sale se cuenta",
+       ventanaOk && holgadoOk && contarOk && danoOk,
+       `ventana ${ventanaOk} (${r1.lista.map((f) => f.id).join(",")}, fuera ${r1.fuera}) \u00b7 la perilla alcanza para un lote ${holgadoOk} (topeBandeja ${tope} \u2265 loteStream ${loteN}; con el tope viejo 60 botaba ${chico.fuera} de ${loteN}) \u00b7 lo que sale se cuenta ${contarOk} \u00b7 sale primero lo que no es de nadie ${danoOk} (de 40 de cartera en un lote de 250: con tope 100 quedan ${mias(holgura.lista)} y salen ${holgura.fueraConDueno} de cartera; con tope 25 quedan ${mias(extremo.lista)} y salen ${extremo.fueraConDueno} contadas; el criterio viejo dejaba ${viejoQueda})`);
   }
 
   console.log(out.join("\n"));
