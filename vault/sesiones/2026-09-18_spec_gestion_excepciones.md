@@ -40,8 +40,8 @@ feature: null
   invariantes cerrada). Se mezcló `main` en la rama; el único conflicto fue el tablero (se tomó el de `main` y se
   conservó el enlace a este log). Los casos que cita el spec conservan sus títulos. Sobre el árbol mezclado:
   `tsc` 0 TS1, 0 duplicados, build, **151/151 gates**, **140/140 PASA**; la capa e2e (29 casos, ~8 min) seguía
-  corriendo cuando el usuario pidió el merge («hace merge»): se mezcló con los cinco primeros pasos en verde y el
-  resultado del sexto se reporta al llegar.
+  corriendo cuando el usuario pidió el merge («hace merge»): se mezcló con los cinco primeros pasos en verde, y el
+  sexto terminó después en verde: **29/29 PASA**.
 
 ## Decisiones tomadas con el usuario
 
