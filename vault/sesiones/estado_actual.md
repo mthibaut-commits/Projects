@@ -28,9 +28,9 @@ producto —ocho defectos, abajo—. El generador tiene punto fijo (32, ADR-0003
 >    la cláusula «tasa bajo el mínimo del deudor» de la regla 8 **no existe en el código**; `validarMutacion` tiene
 >    **un solo call site** (LIN-01, GIR-01 y ATR-01 declarados y nunca invocados); y el `idProceso` de la solicitud
 >    al comité **colisiona entre pestañas** y descarta la segunda en silencio.
-> 2. **Decidir los datos**: razones sociales reales sobre RUT sintéticos — un ADR y un gate que lo sostenga.
-> 3. Sacar `pipeline.zip`: **mide 2,7 MB, no 29,6** (eso es lo descomprimido); el motivo no es el peso sino que es
->    un build del 12-08 de algo generado (regla 10).
+> 2. **Decidir los datos**: razones sociales reales sobre RUT sintéticos — un ADR y un gate que lo sostenga (hoy
+>    ningún test lo afirma ni lo niega). · 3. Sacar `pipeline.zip`: **2,7 MB** (1024², como los informa el build),
+>    no los 29,6 que decía este tablero — ésos son los 28,3 descomprimidos. Es un build del 12-08 de un generado.
 
 ## En vuelo ahora · nada: todo está en `main`, sólo quedan las tareas del usuario (abajo)
 
