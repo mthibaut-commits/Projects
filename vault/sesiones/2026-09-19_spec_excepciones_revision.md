@@ -48,7 +48,9 @@ feature: null
   reconcilió: §1 (disposición `no_ejecutada`), §2.2 punto 4, §2.3, §2.4, §6.4 reescrito con las dos
   situaciones y sus textos exactos (el párrafo que `main` había insertado quedaba a medias y decía
   «compuerta»), observación 7 acotada al piso, caso **141** citado. Cotejo: 44 textos y 11 casos citados
-  existen en el fuente y la suite mezclados. PDF regenerado.
+  existen en el fuente y la suite mezclados. PDF regenerado. Verificación sobre el árbol mezclado, con el
+  procedimiento nuevo: paso 0 Prettier OK, `tsc` 0 TS1, 0 duplicados, build 41,3 MB, **233/233 gates**,
+  **143/143 PASA**, **e2e 29/29 PASA**.
 - Verificación sobre el árbol (docs y vault; el fuente no cambió): `tsc` 0 TS1, 0 duplicados, build 40,7 MB, **151/151 gates**,
   **140/140 PASA**; la capa e2e (29 casos) terminó después, también en verde: **29/29 PASA**.
 
