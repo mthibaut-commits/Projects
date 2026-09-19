@@ -6752,6 +6752,54 @@
        `idempotencia (mismo registro 2× ⇒ 1 entrada) ${Q.idemOk} · colisión (mismo id, contenido distinto ⇒ 2 entradas con ids distintos [${(Q.ids || []).join(", ")}]) ${Q.colisionOk} · procedencia (idProcesoOrigen «PRC-COLISION» → «${Q.idB}») ${Q.trazaOk} · el id asignado está libre ${Q.libreOk} · sin idProceso no escribe ${Q.sinIdOk} · el tubo no re-emite un id recibido (${Q.idEmitido}) ${Q.emiteLibreOk} · bandeja restaurada ${api2ListarProcesos().length === n0}${err ? " · ERROR " + err : ""}`);
   }
 
+  // ── 145 · regla 37 · EL GIRO LLEGA COMO NOTICIA, NO SE FIJA DESDE ACÁ ────────────────────────
+  // NEX termina en la inyección a Tesorería; el desembolso ocurre allá. Así que «Girada» no es algo
+  // que este sistema DECIDA: es un aviso que LLEGA. Hasta el 19-09-2026 nadie escribía
+  // `giroPendiente: false` —todas las escrituras eran `true`—, o sea que una operación inyectada se
+  // quedaba en «Pendiente de Giro» para siempre. El callback de Tesorería es quien la cierra.
+  // Se prueba en las DOS direcciones, que es lo que separa un receptor de un setter: el aviso bueno
+  // cierra la operación, y el que no corresponde —otra etapa, ya girada, sin id— no escribe nada.
+  {
+    let R = null, err = "";
+    try {
+      const base = (extra) => ({ id: "OP-GIRO-1", cliente: "Cliente Giro", stage: "giro", giroPendiente: true, ...extra });
+      const existe = typeof recibirGiroTesoreria === "function";
+      const r = (ev, deal) => (existe ? recibirGiroTesoreria(ev, deal) : null);
+      const EV = { operacionId: "OP-GIRO-1", montoGirado: 12345678, referencia: "TES-9001", ts: "19-09-2026 10:00" };
+
+      // (a) El aviso bueno CIERRA: devuelve el patch que apaga `giroPendiente` y deja la referencia.
+      const ok = r(EV, base());
+      const cierraOk = !!ok && ok.ok === true && ok.patch && ok.patch.giroPendiente === false
+        && ok.patch.giroRef === "TES-9001" && !!ok.patch.giroTs && /Girada/.test(ok.patch.status || "");
+
+      // (b) IDEMPOTENTE: el mismo aviso sobre una operación YA girada no vuelve a escribir. Un callback
+      //     se reintenta —es la naturaleza de un push— y reprocesarlo duplicaría el hecho en la bitácora.
+      const dup = r(EV, base({ giroPendiente: false }));
+      const idemOk = !!dup && dup.ok === false && dup.motivo === "ya_girada" && !dup.patch;
+
+      // (c) NO CORRESPONDE: una operación que no está en `giro` (no se inyectó) no se puede girar, y el
+      //     receptor lo dice en vez de escribir igual. Es la dirección que convierte esto en un control.
+      const fuera = r(EV, base({ stage: "cesion" }));
+      const etapaOk = !!fuera && fuera.ok === false && fuera.motivo === "no_inyectada" && !fuera.patch;
+
+      // (d) FALLA CERRADO con un aviso mal formado o sin operación: no hay con qué decidir.
+      const malos = [r(null, base()), r({}, base()), r(EV, null), r({ montoGirado: 1 }, base())];
+      const cerradoOk = malos.every((x) => x && x.ok === false && !x.patch);
+
+      // (e) El aviso trae el MONTO girado y el receptor no lo inventa: si no viene, no se afirma.
+      const sinMonto = r({ operacionId: "OP-GIRO-1", referencia: "TES-9002" }, base());
+      const montoOk = !!sinMonto && sinMonto.ok === true && sinMonto.patch.giroMonto == null;
+
+      R = { existe, cierraOk, idemOk, etapaOk, cerradoOk, montoOk, motivos: [dup && dup.motivo, fuera && fuera.motivo] };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    }
+    const Q = R || {};
+    ok("145 el giro llega como NOTICIA de Tesorería y no se fija desde NEX: el aviso cierra la operación, el reintento no la reescribe, una que no se inyectó no se gira y un aviso mal formado falla cerrado",
+       !!R && Q.existe && Q.cierraOk && Q.idemOk && Q.etapaOk && Q.cerradoOk && Q.montoOk,
+       `receptor de nivel módulo ${Q.existe} · el aviso cierra (giroPendiente→false, referencia y fecha) ${Q.cierraOk} · reintento sobre una ya girada no reescribe ${Q.idemOk} · una que no se inyectó no se gira ${Q.etapaOk} · aviso mal formado o sin operación falla cerrado ${Q.cerradoOk} · el monto no se inventa si no viene ${Q.montoOk} · motivos [${(Q.motivos || []).join(", ")}]${err ? " · ERROR " + err : ""}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

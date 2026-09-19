@@ -21,16 +21,19 @@ en 0 oportunidades**) en un HTML standalone que se abre en Chrome. El porqué de
 
 ```bash
 npx prettier --check pipeline_comercial.jsx                                                                   # 0 · el formato (ADR-0005)
+npx eslint pipeline_comercial.jsx                                                                             # 0-bis · el linter (0 hallazgos)
 npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx                              # 1 · sin errores TS1
 grep -oE '^(export default )?(async )?(function|const|let|var|class) [A-Za-z_$][A-Za-z0-9_$]*' pipeline_comercial.jsx | awk '{print $NF}' | sort | uniq -d  # 2 · debe salir vacío
 node build_app.mjs                                                                                            # 3 · valida los hashes del vendor
 node --test "tests/contract/*.test.mjs"                                                                       # 4 · gates de contrato (~10 s)
-PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 144/144 PASA (~2 min)
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 145/145 PASA (~2 min)
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node tests/e2e/correr.mjs                                           # 6 · e2e: 29 casos de pantalla (~8 min)
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs                                         # 7 · sólo si toca la UI (~5 min)
 ```
 
-El **paso 0** no verifica una conducta: protege a los otros. Los gates `regla_<slug>` y los dos auditores
+Los pasos **0 y 0-bis** no verifican una conducta: protegen a los otros. El linter (`eslint.config.mjs`) no trae
+reglas de estilo —de la forma se encarga Prettier— y cada regla suya cita el incidente de este repo que habría
+cazado; al adoptarlo encontró una clave duplicada en un objeto de pricing. Los gates `regla_<slug>` y los dos auditores
 leen el fuente como TEXTO y están re-anclados contra el `.jsx` formateado (ADR-0005), así que deshacer el formato
 los tumba de a uno en sesiones distintas. Para arreglarlo: `npx prettier --write pipeline_comercial.jsx`.
 Ninguno de los seis subsume a otro, **y los cinco primeros juntos tampoco bastan**: la colisión parámetro/variable local, un

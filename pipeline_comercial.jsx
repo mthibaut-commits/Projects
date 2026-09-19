@@ -18744,7 +18744,6 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
       financiado: +fin.financiado.toFixed(2),
       interes: +fin.dif.toFixed(2),
       montoDescuento: fin.dif,
-      comision,
       desc: +fin.subtotal.toFixed(2),
       descCxC: 0,
       giro: +fin.girar.toFixed(2),
@@ -40669,6 +40668,35 @@ function recibirSolicitudLinea(reg) {
     });
   return true;
 }
+// CALLBACK DE GIRO (regla 37). NEX termina en la INYECCIÓN a Tesorería: Operaciones verifica y aprueba
+// la integración, y el desembolso ocurre allá. Así que «Girada» no es algo que este sistema DECIDA —es
+// un hecho que OCURRE afuera y del que nos enteramos—, y hasta el 19-09-2026 nadie lo escribía: todas
+// las escrituras de `giroPendiente` eran `true`, así que una operación inyectada se quedaba en
+// «Pendiente de Giro» para siempre. El sistema de giro avisa por acá.
+//
+// Es una FUNCIÓN PURA que devuelve el patch, no un setter: así la suite la prueba por su nombre (caso
+// 145) sin montar la app, y quien la llama decide cuándo escribir. Las tres negativas importan tanto
+// como la positiva:
+//  · `ya_girada` — un callback SE REINTENTA, es la naturaleza de un push. Reprocesarlo duplicaría el
+//    hecho en la bitácora y en los KPI de venta.
+//  · `no_inyectada` — sólo se gira lo que se inyectó. Un aviso sobre una operación que no pasó por
+//    Operaciones es un error del otro lado, y se dice en vez de escribirlo igual.
+//  · `aviso_incompleto` — sin `operacionId` no hay con qué decidir. Falla cerrado.
+// El MONTO no se inventa: si el aviso no lo trae, el patch no lo afirma. Un número inventado acá
+// cuadraría contra nada y nadie podría distinguirlo de uno real.
+function recibirGiroTesoreria(ev, deal) {
+  if (!ev || !ev.operacionId || !deal) return { ok: false, motivo: "aviso_incompleto" };
+  if (deal.stage !== "giro") return { ok: false, motivo: "no_inyectada" };
+  if (!deal.giroPendiente) return { ok: false, motivo: "ya_girada" };
+  const patch = {
+    giroPendiente: false,
+    giroTs: ev.ts || nowStamp(),
+    giroRef: ev.referencia || "",
+    status: `Girada${ev.referencia ? ` · ${ev.referencia}` : ""}`,
+  };
+  if (ev.montoGirado != null) patch.giroMonto = Math.round(ev.montoGirado);
+  return { ok: true, patch };
+}
 // Los deudores que YA están pedidos al comité por el cierre de una oferta de este cliente, con el
 // monto y el tipo de línea que se pidió. El wizard los precarga en el paso 4 en vez de hacer que el
 // ejecutivo los vuelva a escribir: la solicitud entró sola y esto es la misma solicitud, abierta.
@@ -44455,7 +44483,7 @@ export default function PipelineComercial() {
     if (!selected) return;
     const fresh = deals.find((d) => d.id === selected.id);
     if (fresh && fresh !== selected) setSelected(fresh);
-  }, [deals]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [deals]); // deps a propósito: sigue a `deals` y NO a `selected`, o el efecto se re-dispararía a sí mismo
   // En modo detalle (_blank), el título de la pestaña deja claro qué oportunidad/cliente es.
   useEffect(() => {
     if (soloDetalle && selected) {
@@ -45943,6 +45971,25 @@ export default function PipelineComercial() {
       // Solicitud al comité inyectada al CERRAR LA OFERTA en la pestaña del detalle. Sin esto la
       // bandeja «Líneas › Solicitudes» de esta pestaña no la tiene —es otro módulo—, que es la forma
       // en que esta entrega se rompía en la práctica: la solicitud se creaba y nadie la veía.
+      // El callback de Tesorería. En producción entra por el endpoint que el otro sistema llame; acá
+      // viaja por el mismo canal que los demás avisos, que es lo que este mock tiene. Lo que importa y
+      // no cambia al cablearlo de verdad es QUIÉN DECIDE: `recibirGiroTesoreria` valida y devuelve el
+      // patch, y acá sólo se aplica y se audita. El rechazo también se audita: un aviso que llega y no
+      // corresponde es información sobre el otro lado, y perderlo deja el problema invisible.
+      if (m && m.type === "nex-giro" && m.evento) {
+        const dG = (dealsRef.current || []).find((x) => x.id === m.evento.operacionId);
+        const res = recibirGiroTesoreria(m.evento, dG);
+        registrarAuditoria({
+          usuario: "-- Sistema --",
+          modulo: "Giro · Tesorería",
+          accion: res.ok ? "Giro notificado por Tesorería" : `Aviso de giro descartado (${res.motivo})`,
+          glosa: `${(dG && dG.cliente) || m.evento.operacionId}: ${res.ok ? `girada${m.evento.referencia ? ` · ${m.evento.referencia}` : ""}` : res.motivo}`,
+          empresaId: m.evento.operacionId,
+          exito: res.ok,
+        });
+        if (res.ok) setDeals((prev) => prev.map((d) => (d.id === m.evento.operacionId ? { ...d, ...res.patch, time: nowStamp() } : d)));
+        return;
+      }
       if (m && m.type === "nex-solicitud" && m.registro) {
         if (recibirSolicitudLinea(m.registro)) setDeals((prev) => prev.slice()); // re-render: la bandeja lee la lista al pintar
         return;
