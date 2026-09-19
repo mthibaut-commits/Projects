@@ -40,3 +40,24 @@ export const numerosDeCasos = (texto) => [...texto.matchAll(CASO)].map((m) => +m
    de guarda que lo reporta fallido cuando no hay con qué probarlo); dos títulos distintos bajo un número sí
    son dos casos pisándose. */
 export const casosDeSuite = (texto) => [...texto.matchAll(/\b(?:ok\(\s*|const TIT = )["'`](\d+) ([^"'`]*)/g)].map((m) => ({ n: +m[1], titulo: m[2].trim() }));
+
+/* FORMA CANÓNICA del fuente, para los gates que se fijan sobre su TEXTO.
+
+   El 18-09-2026 el `.jsx` pasó por prettier (ADR-0005) y 59 gates se cayeron de una vez: ninguno estaba
+   equivocado, todos asumían la forma que el fuente tenía escrita a mano. Prettier hace tres cosas que rompen
+   un patrón sin cambiar el significado —abre una llamada en varias líneas, agrega la coma final, y aprieta o
+   suelta los espacios dentro de los paréntesis—, así que un gate que compara contra el texto crudo mide
+   FORMATO además de comportamiento, y vuelve a caerse con el próximo reformat.
+
+   `canonico` quita esas tres: colapsa todo espacio en uno, borra la coma antes de un cierre y pega los
+   paréntesis a su contenido. `recortarAsignacion(\n  lineaPrev,\n  ids,\n)` y `recortarAsignacion(lineaPrev, ids)`
+   quedan idénticos. Lo que NO toca es el contenido de los strings ni el orden: un gate sigue midiendo lo que medía.
+
+   Cuándo NO usarla: cuando lo que el gate fija ES la forma de las líneas —una declaración a columna 0, una
+   función de una sola línea, el `}` final del fuente—. Ahí el salto de línea es el dato. */
+export const canonico = (texto) =>
+  String(texto)
+    .replace(/\s+/g, " ")
+    .replace(/,\s*([)\]}])/g, "$1")
+    .replace(/([([{])\s+/g, "$1")
+    .replace(/\s+([)\]}])/g, "$1");

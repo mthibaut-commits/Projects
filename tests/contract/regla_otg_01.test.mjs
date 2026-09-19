@@ -8,7 +8,7 @@
    la comprobación borrada de un camino y el gate lo nombra. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { leer } from "./_comun.mjs";
+import { leer, canonico} from "./_comun.mjs";
 
 const jsx = leer("pipeline_comercial.jsx");
 /* Una declaración de función, en las dos formas que usa el fuente: `const f = (a) => {` y `function f(a) {`.
@@ -40,7 +40,7 @@ export function sitiosSinGate(src) {
 }
 
 test("OTG-01 · la invariante del contrato cubre aprobar y rechazar y delega en puedeAprobarExc", () => {
-  const m = jsx.match(/\{ codigo: "OTG-01",[\s\S]*?evaluar: \(p\) => ([^}]*)\}/);
+  const m = canonico(jsx).match(/\{codigo: "OTG-01",.*?evaluar: \(p\) => ([^}]*)\}/);
   assert.ok(m, "no se encontró la entrada OTG-01 de INVARIANTES con su evaluar");
   const entrada = m[0];
   assert.match(entrada, /mutaciones: \["excepcion\.aprobar", "excepcion\.rechazar"\]/);

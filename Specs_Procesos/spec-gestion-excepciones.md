@@ -29,6 +29,7 @@ El motor de otorgamiento evalúa cada criterio del catálogo sobre la operación
 | **`excepcion`** | se incumple, y **un apoderado puede autorizarlo** | **este documento** |
 | `rechazado` | se incumple y **no se autoriza** | la operación se pierde (§8) |
 | `clasificacion` | informa, no decide | se muestra, no se gestiona |
+| `no_ejecutada` | la regla está **mal definida**: tiene un tramo de excepción y no hay a quién pedírsela | no se evalúa, y la salida lo dice (§6.4) |
 
 Una **excepción** es entonces un criterio incumplido que la casa puede aceptar **a sabiendas**, a
 cambio de que alguien con atribución lo firme. El ciclo completo es:
@@ -79,14 +80,15 @@ en ese nivel **o superior**.
 2. **La escalada no cruza áreas.** Un Gerente General (Comercial N3) no visa una excepción de Riesgo.
 3. **El monto de la operación impone un piso.** El nivel exigido es el **mayor** entre el del tramo y
    el piso del área para el tramo de monto de la operación (§2.3). Nunca baja el nivel del tramo.
-4. Un criterio **sin área no lo aprueba nadie**, y un área que el tenant no tiene tampoco: son
-   configuraciones que faltan, y el motor **no las tapa con un default**. La excepción sale con el cargo
-   **«Sin aprobador definido»**, el requisito («{Área} · N{nivel}») y la causa, que es una de tres:
-   - «el criterio no declara área»;
-   - «el área «{identificador}» no existe en este tenant — créala en Configuración › Áreas»;
-   - «nadie tiene {Área} en nivel N{nivel} o superior — asígnalo en Configuración › Usuarios».
-
-   Los tres avisos nombran el mantenedor donde se arregla cada uno. En qué pantallas aparecen: §6.4.
+4. **Una regla que no llega a nadie no se ejecuta.** Si un criterio tiene un tramo de excepción y ese
+   tramo no se puede dirigir a una persona —no declara área, declara un área que este tenant no tiene, o
+   nadie tiene esa área en ese nivel ni en uno superior—, el criterio está **mal definido** y el motor
+   **no lo evalúa ni lo verifica**: sale como **«No ejecutada · falta configuración»**, con la causa y el
+   mantenedor donde se arregla (§6.4). El super administrador no cuenta como aprobador. Los knock out no
+   necesitan área (no se aprueban: incumplen y se acabó), ni las reglas de clasificación ni las que no
+   tienen tramos. Caso distinto: la regla está bien definida pero el **piso por monto** de esta operación
+   pide un nivel que nadie tiene; ahí la excepción sí se ejecuta y sale con **«Sin aprobador definido»**
+   (§2.3, §6.4).
 
 El cargo que se muestra como responsable es el del nivel exacto si existe; si no, el primer cargo del
 área que lo alcance, marcado como escalada. Es la misma regla con que se decide quién puede firmar, así
@@ -104,11 +106,16 @@ que lo que la pantalla anuncia es quien de verdad puede hacerlo.
 Cada columna **satura en el tope de su área** (Comercial en N3, Riesgo en N5): pedirle a un área un
 nivel que no tiene no exige más, deja la excepción sin aprobador. Los cortes y el piso viven en la
 configuración del tenant y se ven en `Configuración › Otorgamiento`, junto a las atribuciones por
-criterio, donde cada tramo muestra el cargo que lo firma hoy o, en naranja, **«Sin aprobador definido ·
-requiere {Área} · N{nivel}»** con la causa debajo («nadie tiene {Área} en nivel N{nivel} o superior —
-asígnalo en Configuración › Usuarios»). Si alguien deja sin titular el nivel que el piso exige, ese aviso
-aparece ahí y en cada excepción afectada (§6.4): la operación no se pierde ni se aprueba sola, queda
-**sujeta a aprobación** hasta que alguien configure a quien la firme.
+criterio, donde cada tramo muestra el cargo que lo firma hoy o, en naranja, «Sin área · NO SE EJECUTA» /
+«Sin aprobador · NO SE EJECUTA» si la regla está mal definida (§6.4).
+
+El piso es distinto de la definición de la regla: es **de la operación**. La misma regla se dirige bien
+en una operación chica y pide más arriba en una grande, así que no corresponde dejar de ejecutarla:
+corresponde decir que **a ese monto no hay quien firme**. Si alguien deja sin titular el nivel que el
+piso exige, la excepción sí se ejecuta y sale con **«Sin aprobador definido · requiere {Área} ·
+N{nivel}»** y la causa («nadie tiene {Área} en nivel N{nivel} o superior — asígnalo en Configuración ›
+Usuarios»), en la tarjeta, en la mesa y en la tarea (§6.4). La operación no se pierde ni se aprueba sola:
+queda **sujeta a aprobación** hasta que alguien configure a quien la firme.
 
 **Consecuencia para el proceso:** la misma excepción, en una operación de M$15 y en una de M$90, le
 llega a personas distintas. Y el monto puede cambiar **después** de que el ejecutivo pidió la
@@ -128,9 +135,11 @@ Medido sobre `atribuciones_otorgamiento.json` (18-09-2026), el catálogo tiene *
 | Comercial | **29** | N1 18 · N2 11 | Jefe de Grupo Comercial 18 · Gerente Comercial 11 |
 | Operaciones | **7** | N1 3 · N2 1 · N3 2 · N5 1 | Jefe de Operaciones 6 · Operaciones 1 |
 
-**Ninguno queda sin aprobador.** Riesgo no tiene cargos en N1–N3, así que sus 77 tramos de N1–N4 caen
-todos en el Jefe de Riesgo por escalada: distinguirlos es dar de alta usuarios de Riesgo en esos
-niveles, no cambiar el catálogo. Los niveles de la tabla son los del tramo; el piso por monto los sube.
+**Ninguno queda sin aprobador, y ninguna regla del catálogo está mal definida** (§6.4): las 77 declaran
+área y las 69 con excepción tienen a quién pedírsela en este tenant. Riesgo no tiene cargos en N1–N3,
+así que sus 77 tramos de N1–N4 caen todos en el Jefe de Riesgo por escalada: distinguirlos es dar de
+alta usuarios de Riesgo en esos niveles, no cambiar el catálogo. Los niveles de la tabla son los del
+tramo; el piso por monto los sube.
 
 De los 77 criterios, **28 no son re-evaluables**: los datos de burós del cliente y del deudor
 (C10–C22, D02–D13) y los tres knockout de la Tesorería General (C30–C32). Sólo estos tres **rechazan**;
@@ -488,32 +497,66 @@ de una línea es la decisión más estructural del proceso. La línea misma se t
 comité** ([`spec-asignacion-lineas.md`](./spec-asignacion-lineas.md)); la excepción sólo deja constancia
 de que se está cursando sin ella.
 
-### 6.4 «Sin aprobador definido»
+### 6.4 «No ejecutada · falta configuración» y «Sin aprobador definido»
 
-Cuando ningún usuario del tenant puede firmar un par (área, nivel), el motor lo dice con esas
-palabras en la tarjeta, en la mesa y en la tarea, con el requisito («{área} · N{nivel}») y **la
-causa**, que son dos y se arreglan en mantenedores distintos:
+Son dos situaciones distintas, con dos avisos distintos, y ninguna ocurre en silencio.
 
-| Causa | Dónde se arregla |
+#### Una regla mal definida no se ejecuta
+
+Una regla está **mal definida** cuando tiene al menos un tramo de excepción y ese tramo **no llega a
+nadie**: el ruteo de una excepción es el par (área, nivel), y con ese par tiene que existir una persona
+que pueda firmarla. Son tres causas, y las tres detienen la regla:
+
+| Causa | Qué dice la tarjeta | Cómo se arregla (texto de la tarjeta) |
+|---|---|---|
+| **sin área**: la regla no declara área | «el criterio tiene un tramo de excepción y no declara área, así que no hay a quién pedírsela» | «Declara el área de la regla en el catálogo de otorgamiento.» |
+| **área inexistente**: declara un área que este tenant no tiene | «su tramo de excepción pide {Área} · N{nivel} y el área «{identificador}» no existe en este tenant» | «Crea el área «{identificador}» en Configuración › Áreas, o corrige la que la regla declara.» |
+| **sin usuario**: el área existe y nadie la tiene en ese nivel ni en uno superior | «su tramo de excepción pide {Área} · N{nivel} y nadie tiene {Área} en nivel N{nivel} o superior» | «Asigna a alguien {Área} en nivel N{nivel} o superior en Configuración › Usuarios.» |
+
+Se prueban **todos** los tramos de excepción de la regla, no sólo el primero, y el super administrador
+no cuenta: puede firmar cualquier cosa, pero es la llave maestra del tenant, no el aprobador que la
+política designa. Una regla intacta puede pasar a estar mal definida el día que alguien borra un área o
+deja un nivel sin gente: la definición se juzga contra el padrón vigente.
+
+**No necesitan área** los knock out —tramos sólo de rechazo: incumplen y se acabó, no hay a quién
+pedirle nada—, las reglas de clasificación (informan) ni las que no tienen tramos (no deciden).
+
+**Qué pasa con la operación.** El motor corta antes de mirar los tramos y devuelve la regla como
+**«No ejecutada · falta configuración»**. No entra entre las excepciones ni entre los rechazos —no se
+evaluó, así que no puede concluir nada— y por eso **no bloquea**: la operación se evaluó **sin** esa
+regla. Lo que la protege no es un bloqueo, es que el problema se vea, y se ve en ocho sitios:
+
+| Dónde | Qué muestra |
 |---|---|
-| el criterio no declara área | el catálogo |
-| el área no existe en este tenant | `Configuración › Áreas` |
-| nadie tiene esa área en ese nivel o superior | `Configuración › Usuarios` |
+| **Tab Otorgamiento**, fila del criterio | badge ámbar «No ejecutada · falta configuración» y un recuadro: «**Esta regla no se ejecutó ni se verificó.** {causa}. La operación se evaluó SIN ella.», con el texto de cómo se arregla. El hallazgo de la regla **no** se muestra: afirmaría algo que nadie midió |
+| **Tab Otorgamiento**, cabecera de cada bloque | «⚠ N regla(s) de el cliente / este deudor NO se ejecutaron: les falta configuración y la operación se evaluó sin ellas.», y las reglas en su propio bloque, nunca dentro del acordeón de las aprobadas |
+| **Detalle**, pie del panel y aviso de la etapa de Otorgamiento | «N regla(s) no se ejecutaron: les falta configuración (tab Otorgamiento)» y «N regla(s) NO SE EJECUTARON por falta de configuración: la operación se evaluó sin ellas.» |
+| **Tarjeta del Kanban** | badge ámbar «N criterio(s) sin ejecutar», con el detalle en el tooltip |
+| **Tubo**, contador «N/M criterios» | la regla no ejecutada **sigue contando** en el total M; encoger el denominador sería la forma más silenciosa de esconderla |
+| **`Configuración › Otorgamiento`**, atribuciones por criterio | la fila en naranja: «Sin área · NO SE EJECUTA» o «Sin aprobador · NO SE EJECUTA», con la frase de arreglo como tooltip |
+| **`Configuración › Otorgamiento`**, criterios de verificación | las reglas sin área no caen en ningún grupo del catálogo: se listan aparte, «Fuera de las áreas listadas · N NO SE EJECUTAN» |
+| **`Configuración › Áreas`** | un recuadro naranjo arriba, «N criterio(s) MAL DEFINIDOS: no se ejecutan ni se verifican», que los lista uno por uno con su número y su causa; y en la tabla, la columna «Quién la tiene» dice «⚠ nadie — hay criterios sin aprobador posible» para un área con criterios y sin usuarios |
 
-Una lista de aprobadores vacía se leería como «todavía no lo miran», cuando la operación está pegada
-esperando a alguien que no existe. Por eso el aviso es explícito en cada sitio donde alguien podría
-esperar un nombre:
+Hoy ninguna regla del catálogo está en este caso (§2.4). Se prueba plantando una regla sin área en la
+suite, porque un control que compara el catálogo consigo mismo pasa siempre y no vigila nada.
+
+#### «Sin aprobador definido»: el piso por monto
+
+Cuando la regla está bien definida pero el **piso por monto** de esta operación (§2.3) sube el nivel a
+uno que nadie tiene, la excepción **sí se ejecuta**: el nivel es de la operación, no de la regla. El
+motor entonces la dirige al cargo **«Sin aprobador definido»**, con el requisito («{Área} · N{nivel}») y
+la causa («nadie tiene {Área} en nivel N{nivel} o superior — asígnalo en Configuración › Usuarios»),
+porque una lista de aprobadores vacía se leería como «todavía no lo miran» cuando la operación está
+pegada esperando a alguien que no existe:
 
 | Dónde | Qué muestra |
 |---|---|
 | **Mesa Otorgamientos**, tarjeta de la excepción | en naranja, en el lugar de «Aprueban: {nombres}»: **«Sin aprobador definido · {causa}»**; en el bloque de excepciones de otros aprobadores: «**Sin aprobador definido** · requiere {Área} · N{nivel} · {causa}» |
 | **Tab Otorgamiento** del detalle, tarjeta del ejecutivo | «Requiere visto bueno de **Sin aprobador definido** (N{nivel})». El formulario de solicitud se abre igual y la solicitud queda registrada; la tarea nombra al requisito y el aviso de mensajería sale sin destinatarios (§10) |
 | **Tarea** «Aprobar excepción #n …» | destinatario **«Sin aprobador definido»**, en vez de una lista vacía; se resuelve cada vez que se mira, así que desaparece en cuanto alguien recibe la atribución |
-| **`Configuración › Otorgamiento`**, atribuciones por criterio | en la fila del tramo: «Sin aprobador definido · requiere {Área} · N{nivel}» y la causa debajo; en la tabla resumen, la columna de aprobadores en naranja con la causa como tooltip |
-| **`Configuración › Áreas`** | columna «Quién la tiene»: **«⚠ nadie — hay criterios sin aprobador posible»** cuando el área tiene tramos que rutean a ella y ningún usuario; «nadie» en gris si no tiene criterios. Un área en uso no se elimina («{n} criterio(s) rutean a esta área; quedarían sin aprobador»), y las cuatro base tampoco |
 
-El aviso se corrige donde nació —el catálogo, `Configuración › Áreas` o `Configuración › Usuarios`— y
-desaparece solo: el padrón se recalcula con cada cambio de roles, áreas o reemplazos.
+Los dos avisos se corrigen donde nacieron —el catálogo, `Configuración › Áreas` o `Configuración ›
+Usuarios`— y desaparecen solos: el padrón se recalcula con cada cambio de roles, áreas o reemplazos.
 
 ### 6.5 La excepción de verificación
 
@@ -583,7 +626,7 @@ Ninguna bloquea la operación; todas cambian el contrato del servicio o la confi
 | 4 | Parámetros que la política declara sin definir: tramos de C07, umbrales de C08 y C37, C13/D05 (¿escala o firme?), C27, C39, banda de O01, semántica del 30% de O03, escala de la nota | Riesgo (`Inconsistencias_Motor_Otorgamiento.md` §5) |
 | 5 | **Concurrencia del visado**: dos apoderados decidiendo la misma excepción a la vez necesitan una respuesta 409 con semántica definida; hoy la escritura es optimista con confirmación | plataforma (`spec-otorgamiento.md` §12) |
 | 6 | Los criterios de burós de **deudor** (D02–D13) son excepciones no re-evaluables, no bloqueos firmes: sólo C30–C32 rechazan. Los documentos que los describen como knockout deben decirlo así | documentación |
-| 7 | En el **tab del detalle**, una excepción sin aprobador se puede **solicitar** igual: la tarjeta dice «Solicitar aprobación al Sin aprobador definido (N{nivel})», la solicitud se registra y el hilo sale sin destinatarios. La mesa, en cambio, muestra la causa y el mantenedor donde se arregla. Conviene que la tarjeta haga lo mismo | producto |
+| 7 | Cuando el **piso por monto** deja una excepción sin aprobador, en el **tab del detalle** se puede **solicitar** igual: la tarjeta dice «Solicitar aprobación al Sin aprobador definido (N{nivel})», la solicitud se registra y el aviso sale sin destinatarios. La mesa, en cambio, muestra la causa y el mantenedor donde se arregla. Conviene que la tarjeta haga lo mismo | producto |
 
 ---
 
@@ -596,8 +639,9 @@ las transiciones de etapa tras la firma y tras el visado. Las cifras del catálo
 `atribuciones_otorgamiento.json`. La suite de la aplicación cubre el proceso con los casos **44**
 (el motor decide con el padrón inyectado), **56–59** (el visado y las versiones entran por parámetro),
 **88** (a qué etapa va la operación al firmar, las 16 combinaciones), **90** (los umbrales se leen de la
-configuración), **91** (traspaso de cartera), **96** (O06) y **114** (solicitar no cierra la puerta:
-la información agregada se conserva junto a la solicitud original).
+configuración), **91** (traspaso de cartera), **96** (O06), **114** (solicitar no cierra la puerta:
+la información agregada se conserva junto a la solicitud original) y **141** (una regla mal definida no
+se ejecuta ni se verifica, y sale nombrada en el veredicto).
 
 ---
 

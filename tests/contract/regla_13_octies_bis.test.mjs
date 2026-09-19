@@ -11,17 +11,25 @@
    nombrar la suya. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { leer } from "./_comun.mjs";
+import { leer, canonico} from "./_comun.mjs";
 
 const jsx = leer("pipeline_comercial.jsx");
-const TIT_OFERTA = ">Documentos en la oferta</span>";
-const TIT_DISP = ">Documentos disponibles</span>";
+/* Los dos títulos de sección, tolerando el salto de línea: prettier saca el texto JSX a su propia línea,
+   así que `>Documentos en la oferta</span>` dejó de existir como texto contiguo. Lo que el gate fija es que
+   el título esté, no cómo quedó envuelto. */
+const TIT_OFERTA = />\s*Documentos en la oferta\s*<\/span>/;
+const TIT_DISP = />\s*Documentos disponibles\s*<\/span>/;
+const indiceDe = (src, re, desde = 0) => { const m = src.slice(desde).match(re); return m ? desde + m.index : -1; };
+// Los tokens del vacío SE MIDIERON dos veces, y la segunda movió el par: mientras la caja vivía sobre
+// blanco eran #EDECF3 / #DEDCE7; al mudarse la oferta al panel lila (regla 29, 17-09-2026) ese gris
+// dejó de distinguirse del fondo y quedó en el tono de una tarjeta de fila. Lo que el gate defiende es
+// que el vacío SE VEA: `viejoFondo` (#F7F7FA) y C.faint son los que lo hacían desaparecer y no vuelven.
 const TOKENS = { fondo: "#F5F4F8", borde: "#E4E2EC", alto: 72, viejoFondo: "#F7F7FA" };
 
 /* Recorta la sección de la oferta: desde su título hasta el título de «Documentos disponibles». */
 export function seccionOferta(src) {
-  const a = src.indexOf(TIT_OFERTA); if (a < 0) return null;
-  const b = src.indexOf(TIT_DISP, a); if (b < 0) return null;
+  const a = indiceDe(src, TIT_OFERTA); if (a < 0) return null;
+  const b = indiceDe(src, TIT_DISP, a); if (b < 0) return null;
   return { texto: src.slice(a, b), desde: a, hasta: b };
 }
 /* Recorta `filaDoc(f, plana)`: desde su declaración hasta la de `cabDeudor`, que la sigue. */
@@ -33,15 +41,15 @@ export function tramoFilaDoc(src) {
 
 export function auditarOferta(src) {
   const fallos = [];
-  if (src.indexOf(TIT_OFERTA) < 0) fallos.push("titulo: no existe el título «Documentos en la oferta»");
+  if (!TIT_OFERTA.test(src)) fallos.push("titulo: no existe el título «Documentos en la oferta»");
   if (/>Deudores en la oferta</.test(src)) fallos.push("titulo: sigue el título viejo «Deudores en la oferta»");
   const sec = seccionOferta(src);
   if (!sec) { fallos.push("seccion: no se pudo recortar la sección de la oferta"); return fallos; }
-  const s = sec.texto;
+  const s = canonico(sec.texto);   // ver `canonico` en _comun.mjs: el patrón sigue siendo el de siempre
   // 1 · El segmentado sólo con la oferta no vacía: el `&&` de guarda va INMEDIATAMENTE antes del control.
   const iSeg = s.indexOf('lbl: "Por deudor"');
   if (iSeg < 0) fallos.push("segmentado: la sección de la oferta no tiene el control Por deudor / Por factura");
-  else if (!/\{(?:validas|deudOf|deudOfF)\.length > 0 && \(\s*<div[^\n]*\n\s*\{\[\{ k: "deudor"/.test(s.slice(Math.max(0, iSeg - 400), iSeg + 20)))
+  else if (!/\{(?:validas|deudOf|deudOfF)\.length > 0 && \(<div.{0,300}?\{\[\{k: "deudor"/.test(s.slice(Math.max(0, iSeg - 500), iSeg + 20)))
     fallos.push("segmentado: el control Por deudor / Por factura de la oferta no está gateado por `validas.length > 0 &&` (con la oferta vacía no hay nada que presentar de dos formas)");
   if (!/lbl: "Por factura", tip: "Todas las facturas de la oferta en una sola lista/.test(s)) fallos.push("segmentado: falta «Por factura» con su tooltip propio de la oferta");
   // 2 · La plana es la MISMA función que la de disponibles (caso 98) y agrega RUT deudor + razón social:
@@ -53,9 +61,9 @@ export function auditarOferta(src) {
   // exige que haya otro call site distinto del de la oferta, o las dos vistas dejaron de compartir función.
   const llamadas = [...src.matchAll(/facturasDeDeudores\(([^)]*)\)/g)].map((m) => m[1].trim()).filter((a) => a !== "deudores, porDeudor");
   if (!llamadas.some((a) => a !== "deudOfF, grpOf")) fallos.push("plana: la plana de «Documentos disponibles» ya no usa `facturasDeDeudores` (las dos vistas dejaron de compartir función)");
-  const headDoc = src.match(/const headDoc = \(plana\) => \([\s\S]*?\);\n/);
-  if (!headDoc || !/\{plana && <><span>RUT deudor<\/span><span>Razón social<\/span><\/>\}/.test(headDoc[0])) fallos.push("plana: `headDoc(plana)` no agrega las columnas «RUT deudor» y «Razón social»");
-  const fila = tramoFilaDoc(src);
+  const headDoc = canonico(src).match(/const headDoc = \(plana\) => \(.*?\);/);
+  if (!headDoc || !/\{plana && \(?<>\s*<span>RUT deudor<\/span>\s*<span>Razón social<\/span>\s*<\/>\)?\}/.test(headDoc[0])) fallos.push("plana: `headDoc(plana)` no agrega las columnas «RUT deudor» y «Razón social»");
+  const fila = tramoFilaDoc(canonico(src));
   const bloque = fila && fila.texto.match(/\{plana && \(<>([\s\S]*?)<\/>\)\}/);
   if (!fila) fallos.push("plana: no encuentro `filaDoc(f, plana)` seguido de `cabDeudor`");
   else if (!bloque || !/\{f\.rutRecep\b/.test(bloque[1]) || !/\{f\.deudor\}/.test(bloque[1]))
@@ -87,14 +95,14 @@ function mutarFila(src, f) { const t = tramoFilaDoc(src); return src.slice(0, t.
 const MUTANTES = {
   "fondo viejo #F7F7FA": { src: mutar(jsx, (s) => s.replace(`backgroundColor: "${TOKENS.fondo}"`, `backgroundColor: "${TOKENS.viejoFondo}"`)), re: /^vacio: .*fondo|estilo que desaparecía/ },
   "texto en C.faint": { src: mutar(jsx, (s) => s.replace(/(minHeight: 72[^}]*)color: C\.sub/, "$1color: C.faint")), re: /^vacio: .*C\.sub|C\.faint/ },
-  "clase t9 en vez de t11": { src: mutar(jsx, (s) => s.replace(/rounded-xl px-3 t11 font-medium" style=\{\{ minHeight: 72/, 'rounded-xl px-3 t9 font-medium" style={{ minHeight: 72')), re: /^vacio: .*clase t11/ },
+  "clase t9 en vez de t11": { src: mutar(jsx, (s) => s.replace(/rounded-xl px-3 t11 font-medium"(\s*)style=\{\{\s*minHeight: 72/, 'rounded-xl px-3 t9 font-medium"$1style={{ minHeight: 72')), re: /^vacio: .*clase t11/ },
   "minHeight 72.5 en vez de 72": { src: mutar(jsx, (s) => s.replace("minHeight: 72,", "minHeight: 72.5,")), re: /^vacio: .*minHeight: 72/ },
   "caja con visibility hidden en el style": { src: mutar(jsx, (s) => s.replace("minHeight: 72,", 'minHeight: 72, visibility: "hidden",')), re: /^vacio: .*visibility.*SE VE/ },
   "caja con maxHeight 10 (minHeight 72 intacto)": { src: mutar(jsx, (s) => s.replace("minHeight: 72,", "minHeight: 72, maxHeight: 10,")), re: /^vacio: .*maxHeight.*SE VE/ },
   "segmentado sin guarda de oferta vacía": { src: mutar(jsx, (s) => s.replace(/\{validas\.length > 0 && \(\s*(<div className="flex shrink-0 items-center rounded-lg p-0\.5")/, "{(\n$1")), re: /^segmentado: .*gateado/ },
   "plana reimplementada sin facturasDeDeudores": { src: mutar(jsx, (s) => s.replace("facturasDeDeudores(deudOfF, grpOf).map((f) => filaDoc(f, true))", "deudOfF.flatMap((dn) => grpOf[dn]).map((f) => filaDoc(f, true))")), re: /^plana: .*facturasDeDeudores\(deudOfF, grpOf\)/ },
-  "filaDoc plana sin RUT ni razón social (cabecera intacta)": { src: mutarFila(jsx, (s) => s.replace(/\{plana && \(<>[\s\S]*?<\/>\)\}/, "{plana && null}")), re: /^plana: .*filaDoc\(f, plana\)/ },
-  "título viejo": { src: jsx.replace(TIT_OFERTA, ">Deudores en la oferta</span>"), re: /^titulo:/ },
+  "filaDoc plana sin RUT ni razón social (cabecera intacta)": { src: mutarFila(jsx, (s) => s.replace(/\{plana && \(\s*<>[\s\S]*?<\/>\s*\)\}/, "{plana && null}")), re: /^plana: .*filaDoc\(f, plana\)/ },
+  "título viejo": { src: jsx.replace(TIT_OFERTA, ">\n Deudores en la oferta\n </span>"), re: /^titulo:/ },
 };
 
 test("13-octies-bis · el fuente cumple: título, segmentado gateado, plana con facturasDeDeudores y RUT/razón social en cabecera (headDoc) y en cada fila (filaDoc), caja de vacío con sus tokens y sin nada que la esconda", () => {

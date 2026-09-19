@@ -15,7 +15,7 @@
    violación PLANTADA. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { leer } from "./_comun.mjs";
+import { leer, canonico} from "./_comun.mjs";
 
 const jsx = leer("pipeline_comercial.jsx");
 
@@ -32,7 +32,7 @@ export const sinComentarios = (s) => String(s).replace(/\/\*[\s\S]*?\*\//g, "").
 /* 1 · La pestaña de las solicitudes nuevas se rotula «Solicitudes». La clave interna sigue siendo
    `enproceso` (es lo que compara `setSub`), lo que la regla fija es lo que el ejecutivo LEE. */
 export function pestanaSolicitudes(src) {
-  const m = src.match(/\[\["vigentes", "Vigentes", \w+\], \["enproceso", (`[^`]*`|"[^"]*"), \w+\]\]/);
+  const m = canonico(src).match(/\[\["vigentes", "Vigentes", \w+\], \["enproceso", (`[^`]*`|"[^"]*"), \w+\]\]/);
   if (!m) return ["no encuentro la definición de las dos pestañas de Líneas ([\"vigentes\", …], [\"enproceso\", …])"];
   const rotulo = m[1].slice(1, -1);
   const fallos = [];
@@ -108,9 +108,9 @@ export function unaPorLinea(src) {
       if (!/\blineaId:\s*linea\b/.test(payload)) fallos.push("el payload que el wizard manda a api1Inyeccion no lleva `lineaId` de la línea desde la que se abrió: ninguna solicitud real quedaría ligada a su línea");
     }
   }
-  if (!/const conSolicitud = new Set\(api2ListarProcesos\(\)[^\n]*\.lineaId\b/.test(src)) fallos.push("`conSolicitud` no se deriva de la bandeja (api2ListarProcesos) por `lineaId`");
+  if (!/const conSolicitud = new Set\(api2ListarProcesos\(\).{0,200}?\.lineaId\b/.test(canonico(src))) fallos.push("`conSolicitud` no se deriva de la bandeja (api2ListarProcesos) por `lineaId`");
   if (!/const enCurso = conSolicitud\.has\(/.test(src)) fallos.push("la fila de Vigentes no consulta `conSolicitud` para saber si la línea ya tiene solicitud");
-  if (!/<tr key=\{l\.id\} onClick=\{\(\) => \{\s*if \(enCurso\) return;/.test(src)) fallos.push("la fila con solicitud en curso sigue abriendo el wizard: falta `if (enCurso) return;` al inicio del onClick");
+  if (!/<tr key=\{l\.id\}\s*onClick=\{\(\) => \{\s*if \(enCurso\) return;/.test(canonico(src))) fallos.push("la fila con solicitud en curso sigue abriendo el wizard: falta `if (enCurso) return;` al inicio del onClick");
   if (!/disabled=\{enCurso\}/.test(src)) fallos.push("el botón de acciones de la fila no se deshabilita con una solicitud en curso");
   return fallos;
 }
@@ -154,20 +154,20 @@ test("sólo el veredicto del sistema externo constituye la línea: api1 deja «E
 test("una solicitud por línea: el wizard liga la solicitud a su línea (lineaId) y la fila de Vigentes con solicitud en la bandeja no abre otra (con sondas)", () => {
   assert.deepEqual(unaPorLinea(jsx), []);
   // Sonda 1 (REF-1): el wizard deja de mandar lineaId — la regla se rompe en el camino real con la pantalla intacta.
-  const plant1 = jsx.replace("ejecutivo: usuarioNombre, lineaId: linea ? linea.id : null });", "ejecutivo: usuarioNombre });");
+  const plant1 = jsx.replace(/ejecutivo: usuarioNombre,\s*lineaId: linea \? linea\.id : null,?\s*\}\);/, "ejecutivo: usuarioNombre });");
   assert.notEqual(plant1, jsx, "no encontré el payload del wizard para plantar");
   assert.ok(unaPorLinea(plant1).some((f) => /no lleva `lineaId`/.test(f)), "el gate no caza un wizard que inyecta sin lineaId");
   // Sonda 2: la fila en curso vuelve a abrir el wizard.
-  const plant2 = jsx.replace("<tr key={l.id} onClick={() => { if (enCurso) return; ", "<tr key={l.id} onClick={() => { ");
+  const plant2 = jsx.replace(/(<tr\s*key=\{l\.id\}\s*onClick=\{\(\) => \{)\s*if \(enCurso\) return;/, "$1");
   assert.notEqual(plant2, jsx);
   assert.ok(unaPorLinea(plant2).some((f) => /sigue abriendo el wizard/.test(f)), "el gate no caza la fila en curso que abre el wizard");
   // Sonda 3: conSolicitud deja de mirar lineaId (se deriva por rut, por ejemplo).
-  const plant3 = jsx.replace("const conSolicitud = new Set(api2ListarProcesos().map((s) => s.lineaId).filter(Boolean));",
+  const plant3 = jsx.replace(/const conSolicitud = new Set\(\s*api2ListarProcesos\(\)\s*\.map\(\(s\) => s\.lineaId\)\s*\.filter\(Boolean\),?\s*\);/,
     "const conSolicitud = new Set(api2ListarProcesos().map((s) => s.rut).filter(Boolean));");
   assert.notEqual(plant3, jsx);
   assert.ok(unaPorLinea(plant3).some((f) => /por `lineaId`/.test(f)), "el gate no caza un conSolicitud que no va por lineaId");
   // Tolerancia (REF-2): ARREGLAR el defecto documentado —excluir las solicitudes ya resueltas— sigue en verde.
-  const arreglo = jsx.replace("const conSolicitud = new Set(api2ListarProcesos().map((s) => s.lineaId).filter(Boolean));",
+  const arreglo = jsx.replace(/const conSolicitud = new Set\(\s*api2ListarProcesos\(\)\s*\.map\(\(s\) => s\.lineaId\)\s*\.filter\(Boolean\),?\s*\);/,
     "const conSolicitud = new Set(api2ListarProcesos().filter((s) => !s.constituida).map((s) => s.lineaId).filter(Boolean));");
   assert.notEqual(arreglo, jsx);
   assert.deepEqual(unaPorLinea(arreglo), [], "el gate rechaza el arreglo del defecto 2(b): sería un snapshot");

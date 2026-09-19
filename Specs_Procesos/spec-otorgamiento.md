@@ -111,7 +111,7 @@ Decisiones de negocio que rigen la búsqueda:
 2. Dos personas con el mismo rol aprueban las dos.
 3. Un cargo **vacante** lo cubre la jefatura de su área.
 4. **La escalada no cruza áreas.** Un Gerente General no visa una excepción de Riesgo.
-5. Una regla **sin área no la aprueba nadie**. Un default silencioso escondería una regla mal
+5. Una regla con un **tramo de excepción y sin área NO SE EJECUTA** —el área es a quién se le pide la excepción, así que una **knock out** no la necesita: no se aprueba—. Desde el 18-09-2026 no se evalúa siquiera: el motor la devuelve como «No ejecutada · falta configuración», con la causa y dónde se arregla, y la operación se evalúa SIN ella. Antes se evaluaba igual y su excepción salía «Sin aprobador definido», o sea que la operación quedaba esperando a alguien que no existe. Un default silencioso escondería una regla mal
    configurada.
 
 Cuando no hay nadie, el motor lo dice con esas palabras: **«Sin aprobador definido»**, con el requisito
@@ -184,7 +184,7 @@ que llega la ve y el que se fue deja de verla, sin migrar nada.
 El proceso operativo completo del visado —quién hace qué, en qué pantalla, qué queda registrado en
 cada paso y qué efecto tiene la decisión— está en [`spec-gestion-excepciones.md`](./spec-gestion-excepciones.md).
 
-### 6. O05 · Evidencia del Contrato de Cesión — la regla que no viene de la política
+### 6. O05 · Contrato firmado por cliente de la operación — la regla que no viene de la política
 
 Existe **siempre**, en las dos vías de publicación; lo que cambia es **quién crea la evidencia**:
 

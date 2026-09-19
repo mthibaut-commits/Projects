@@ -1,5 +1,10 @@
-# Salida generada por build_app.ps1 (regenerable; ~29 MB)
+# Salida generada por el build (regenerable). Sin cifra a proposito: el peso cambia con cada version y
+# una cifra sin gate se desfasa en silencio, que es el hallazgo 2.3 de la auditoria de bootstrap.
 pipeline_comercial.html
+
+# Lo mismo para un empaquetado del entregable: `pipeline.zip` estuvo versionado hasta el 18-09-2026 con un
+# build del 12-08 adentro. Nada lo produce hoy; si alguien vuelve a empaquetar, no entra al repo.
+pipeline.zip
 
 # PNG de referencia de capturar_pantallas.mjs: se regeneran en cada corrida y no comprimen, asi que
 # versionarlos hace crecer el repo unos 5 MB por vez. El HTML de al lado si va: es el entregable.

@@ -20,7 +20,9 @@ const jsx = leer("pipeline_comercial.jsx");
 const INICIO = /MODO DIRECTORIO · demo acotada/, FIN = /fin del bloque MODO DIRECTORIO/;
 const SIMBOLOS = ["DIRECTORIO_PERFIL", "construirDirectorio", "ToggleDirectorio"];
 const REF = /\bdirectorio\b|_directorio|setDirectorio|construirDirectorio|ToggleDirectorio|DIRECTORIO_PERFIL/;
-const VENTANA = 8;
+const VENTANA = 20;   // era 8 hasta el 18-09-2026: el formateo (ADR-0005) abre cada enganche en varias
+                      // líneas, así que la misma distancia lógica ocupa más. Lo que la regla fija —que
+                      // retirar el modo sea un grep— no cambió; cambió el largo del código, no su forma.
 
 /* Límites del bloque (índices de línea, base 0) o null si falta un rótulo. */
 export function bloqueDirectorio(src) {

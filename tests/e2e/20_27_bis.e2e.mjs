@@ -52,13 +52,16 @@ export const casos = [
         if (migaGD !== "Comercial Gestión diaria") throw new Error(`la miga de Gestión diaria dice «${migaGD}» y no «Comercial Gestión diaria»`);
         if (h1GD !== "Gestión diaria comercial") throw new Error(`el h1 de Gestión diaria dice «${h1GD}»`);
 
-        // Reportes por el BOTÓN: la miga repite el rótulo; el h1 se reporta (desfase anotado).
+        // Reportes por el BOTÓN: la miga y el h1 repiten el rótulo. Hasta el 18-09-2026 el h1 decía
+        // «Gestión de Clientes» —el nombre anterior al renombre del 16-09— y este caso sólo lo REPORTABA,
+        // porque el desfase estaba anotado en la regla. Corregido el h1, pasa a exigirse: es el cuarto
+        // sitio que nombra la vista y quedarse atrás es justo lo que la regla 27-bis persigue.
         await h.irA("Reportes");
         await esperarMiga(p, "Reportes").catch(() => {});
         const migaR = await miga(p), h1R = await h1(p);
         if (migaR !== "Comercial Reportes") throw new Error(`la miga de Reportes dice «${migaR}» y no «Comercial Reportes»`);
-        if (h1R === "Gestión" || h1R === "Tubo diario") throw new Error(`el h1 de Reportes volvió a un nombre viejo: «${h1R}»`);
-        const notaH1 = h1R === "Reportes" ? "h1 «Reportes»" : `h1 «${h1R}» (desfase anotado en la regla: no dice «Reportes»)`;
+        if (h1R !== "Reportes") throw new Error(`el h1 de Reportes dice «${h1R}» y no «Reportes»: el botón, la miga, el h1 y el Command-K nombran la misma vista`);
+        const notaH1 = "h1 «Reportes»";
 
         // Command-K desde Gestión diaria (para que el cambio de miga sea observable): «Reportes» aparece en el
         // grupo «Ir a», el CLIC sobre ese ítem navega y cierra la paleta.

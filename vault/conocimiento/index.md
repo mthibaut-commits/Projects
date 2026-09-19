@@ -23,12 +23,14 @@ timestamp: 2026-09-17T15:29:14Z
 | [`reglas/datos_y_activos.md`](./reglas/datos_y_activos.md) | ¿De qué activo sale cada dato, y por qué el pipeline lee y no genera? |
 | [`reglas/ui_detalle_y_tubo.md`](./reglas/ui_detalle_y_tubo.md) | ¿Cómo se parte, ordena y rotula lo que muestran el detalle y el tubo? |
 | [`reglas/modo_directorio.md`](./reglas/modo_directorio.md) | ¿Qué es el toggle de demo acotada y por qué es desechable? |
+| [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | ¿Qué muestra la portada, de dónde sale su arte, y de qué cuelga la transición al dashboard? |
 | [`arquitectura.md`](./arquitectura.md) | ¿Cómo se construye el HTML, qué hay en `vendor/`, qué son los datos inyectados? |
-| [`verificacion.md`](./verificacion.md) | ¿Qué cubre cada uno de los 116 casos de la suite y cada paso de verificación? |
+| [`verificacion.md`](./verificacion.md) | ¿Qué cubre cada uno de los 143 casos de la suite y cada paso de verificación? |
 | [`contrato_servidor_y_auditoria.md`](./contrato_servidor_y_auditoria.md) | ¿Qué debe implementar el resolver 1:1, qué es y qué no es un control de seguridad acá, cómo se audita? |
 | [`mapa_documentos.md`](./mapa_documentos.md) | ¿Qué es cada documento fuera del vault (specs, integraciones, auditorías, capturas) y para qué sirve? |
 | [`flujo_git.md`](./flujo_git.md) | ¿En qué rama se trabaja, cómo se integra, qué bloquea el guard de git y cómo se escapa a propósito, cómo se versiona? |
 | [`loop_agentico_hooks.md`](./loop_agentico_hooks.md) | ¿Qué hook bloquea qué, cómo se comprueba que están vivos, por qué no hay formateador ni tdd-guard, y qué fricciones ya se conocen? |
+| [`despacho_agentes.md`](./despacho_agentes.md) | ¿Qué brief recibe un agente despachado, cómo se refuta su trabajo, qué cuatro errores encontró la refutación en 30 gates, y qué se hace cuando la orquestación se cae a la mitad? |
 
 ## Dónde va cada cosa
 
@@ -37,6 +39,8 @@ timestamp: 2026-09-17T15:29:14Z
 | Una regla de dominio (lo que un review rechaza sin discusión) | `reglas/<tema>.md` al final del tema, con su fila en `invariantes.md` |
 | Un invariante que se puede comprobar por introspección | un gate en `tests/contract/` con sonda negativa, y su fila en `invariantes.md` § Gates |
 | Una fricción con un hook | `loop_agentico_hooks.md`, con fecha |
+| Cuánta ceremonia lleva un cambio (T1/T2/T3) | `.claude/rules/workflow.md` — fuera del vault: se carga con el trabajo, no con el conocimiento |
+| Algo aprendido despachando agentes en paralelo | `despacho_agentes.md` — el brief es **invariante**: se corrige, no se resume |
 | Una decisión con alternativas descartadas | `../adr/` — inmutable |
 | El estado presente de la arquitectura | `arquitectura.md` — se actualiza |
 | Algo que aprendí hoy y mañana no importa | el log de sesión (`../sesiones/`) |

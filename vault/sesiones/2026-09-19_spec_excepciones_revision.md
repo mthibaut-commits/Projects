@@ -39,6 +39,16 @@ feature: null
   en el documento ya nombra a las reglas del catálogo. Observación nueva en §10: en el tab, una excepción sin
   aprobador se puede solicitar igual. PDF regenerado y enviado; `mapa_documentos.md` con el mismo vocabulario.
 - Context7 volvió a invocarse por slash command: sigue sin herramientas MCP en la sesión y no aplica.
+- **`main` avanzó 40 commits mientras tanto y cambió la definición que acababa de documentar.** La **regla 35**
+  (18-09, otra sesión) hace que una regla con tramo de excepción que no llega a nadie —sin área, área
+  inexistente o sin usuario— **no se ejecute** y salga como «No ejecutada · falta configuración» (quinta
+  disposición, ocho pantallas); «Sin aprobador definido» queda sólo para el **piso por monto**, que es de la
+  operación y no de la regla. Además el fuente se formateó con Prettier (paso 0 nuevo), el paso 2 cambió de
+  expresión y la suite es 143/143. Se mezcló `main` en la rama (conflicto sólo en el tablero) y el spec se
+  reconcilió: §1 (disposición `no_ejecutada`), §2.2 punto 4, §2.3, §2.4, §6.4 reescrito con las dos
+  situaciones y sus textos exactos (el párrafo que `main` había insertado quedaba a medias y decía
+  «compuerta»), observación 7 acotada al piso, caso **141** citado. Cotejo: 44 textos y 11 casos citados
+  existen en el fuente y la suite mezclados. PDF regenerado.
 - Verificación sobre el árbol (docs y vault; el fuente no cambió): `tsc` 0 TS1, 0 duplicados, build 40,7 MB, **151/151 gates**,
   **140/140 PASA**; la capa e2e (29 casos) terminó después, también en verde: **29/29 PASA**.
 

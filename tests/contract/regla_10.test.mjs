@@ -69,7 +69,7 @@ export function topeReintentos(src) {
   const k = c.lastIndexOf("if (exito) {", j);
   const ramaExito = k < 0 ? null : bloqueLlaves(c, k + "if (exito) ".length);
   if (!ramaExito || !/reintentosNoResp: 0/.test(ramaExito)) fallosReinicio.push("responder ya no reinicia el contador (`reintentosNoResp: 0` en la rama exito que precede a eraNoVerif)");
-  if (!/if \(reint >= \d+\) \{[^\n]*reintentosNoResp: 0/.test(rama)) fallosReinicio.push("agotar el tope ya no reinicia el contador (la rama `reint >= N` tiene que dejar reintentosNoResp: 0)");
+  if (!/if \(reint >= \d+\) \{[\s\S]{0,600}?reintentosNoResp: 0/.test(rama)) fallosReinicio.push("agotar el tope ya no reinicia el contador (la rama `reint >= N` tiene que dejar reintentosNoResp: 0)");
   return { fallos, fallosReinicio, topes, linea: b.linea };
 }
 
@@ -90,7 +90,7 @@ test("sonda negativa: un tope distinto en el contador, la glosa cambiada o dupli
   assert.ok(a.fallos.some((f) => /no es uno solo/.test(f)) && a.topes.contador === 5, "no cazó el contador en 5 con la glosa en 3");
   const b = topeReintentos(planta("Intento ${reint}/3 sin respuesta del cliente", "Sin respuesta (${reint})"));
   assert.ok(b.fallos.some((f) => /ya no tiene la glosa/.test(f)), "no cazó la glosa cambiada");
-  const c = topeReintentos(planta("      const stageNuevo = (canal === \"WhatsApp\"", "      hist.push({ resultado: `Intento ${reint}/3 sin respuesta del cliente` });\n      const stageNuevo = (canal === \"WhatsApp\""));
+  const c = topeReintentos(planta("      const stageNuevo = canal === \"WhatsApp\"", "      hist.push({ resultado: `Intento ${reint}/3 sin respuesta del cliente` });\n      const stageNuevo = canal === \"WhatsApp\""));
   assert.ok(c.fallos.some((f) => /FUERA de la rama/.test(f)), "no cazó la glosa duplicada fuera de la rama");
   const d = topeReintentos(planta("verifFields = { contactoModificado: false, reintentosNoResp: 0 }; // respondió", "verifFields = { contactoModificado: false }; // respondió"));
   assert.ok(d.fallosReinicio.some((f) => /responder ya no reinicia/.test(f)), "no cazó el reinicio borrado al responder");

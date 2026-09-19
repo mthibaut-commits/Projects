@@ -10,7 +10,8 @@
      principal sí ofrece cerrar y avanzar: la diferencia está en el MENÚ, no en el estado de la operación.
      Y el reset tiene su negativa: con la oferta PUBLICADA (detalle abierto por el mismo ticket opaco de la app,
      `emitirTicketDetalle`, con `ofertaCerrada`+`ofertaComunicada` y sesión ADMIN en el payload) el ítem sigue en el
-     menú, deshabilitado, con el motivo ESCRITO debajo, y un clic forzado no abre el ConfirmDialog.
+     menú, deshabilitado, con el motivo ESCRITO debajo, y un clic forzado no abre el ConfirmDialog — y ahí el
+     menú lleva un ítem más, «Editar la oferta» (regla 33), que reabre el paquete: no cierra ni avanza.
    DIRECCIÓN POSITIVA (lo que sí existe): el botón principal de Negocio › Detalle —único camino al cierre— abre
      «Acción del botón» con «Cerrar oferta y publicar» / «Enviar a Comité y Publicar» y la sección «Avanzar a» con
      los destinos que el catálogo declara, CALCULADOS en la página del tubo con la misma regla que `panelAcciones`
@@ -30,12 +31,12 @@
 
 const SEL_SESION = 'select[title="Sesión de usuario (sólo demo)"]';
 const ITEM_RESET = "Eliminar la simulación y vaciar la oferta";
-const EDITAR = "Editar la oferta";   // regla 33: sólo con la oferta cerrada, y no cierra ni avanza de etapa
+const ITEM_EDITAR = "Editar la oferta";
 const ESPERADOS = ["Guardar borrador", "Rechazar…", /^(Marcar|Quitar) prioridad de curse$/, ITEM_RESET];
-/* Lo esperado con la oferta cerrada: el mismo menú más «Editar la oferta» antes del reset. */
-const esperadosPara = (textos) => textos.includes(EDITAR)
-  ? ["Guardar borrador", "Rechazar…", /^(Marcar|Quitar) prioridad de curse$/, EDITAR, ITEM_RESET]
-  : ESPERADOS;
+/* Cerrada la oferta el menú gana «Editar la oferta» (regla 33, 17-09-2026): es la ÚNICA puerta para volver a
+   tocar el paquete, y la regla 30 sigue intacta porque reabrir no cierra ni avanza —el `PROHIBIDO` lo vigila—.
+   Va antes del reset, que ahí queda deshabilitado con su motivo. */
+const ESPERADOS_CERRADA = ["Guardar borrador", "Rechazar…", /^(Marcar|Quitar) prioridad de curse$/, ITEM_EDITAR, ITEM_RESET];
 const PROHIBIDO = /Cerrar oferta|Enviar a Comité|Avanzar a|Girar|Avanzar\b/;
 const TITULO_CONFIRM_RESET = "¿Eliminar la simulación y partir de cero?";
 
@@ -84,15 +85,15 @@ const cerrarMenu = async (pg) => { const b = btnAcciones(pg); if (await b.count(
 const itemAcciones = (pg, re) => btnAcciones(pg).locator("..").getByRole("button", { name: re }).first();
 
 /* La dirección negativa completa sobre un tab: lista EXACTA, una sección, nada de cerrar/avanzar, reset rojo. */
-async function comprobarMenu(pg, donde, { resetHabilitado = true } = {}) {
+async function comprobarMenu(pg, donde, { resetHabilitado = true, cerrada = false } = {}) {
   const m = await leerMenuAcciones(pg, donde);
   const textos = m.items.map((i) => i.t);
-  const esperados = esperadosPara(textos);
-  if (textos.length !== esperados.length || !esperados.every((e, i) => (e instanceof RegExp ? e.test(textos[i]) : textos[i] === e)))
-    throw new Error(`${donde}: el menú ofrece [${textos.join(" · ")}] y tiene que ser exactamente [${esperados.map((e) => (e instanceof RegExp ? "Marcar prioridad de curse" : e)).join(" · ")}]`);
+  const esp = cerrada ? ESPERADOS_CERRADA : ESPERADOS;
+  if (textos.length !== esp.length || !esp.every((e, i) => (e instanceof RegExp ? e.test(textos[i]) : textos[i] === e)))
+    throw new Error(`${donde}: el menú ofrece [${textos.join(" · ")}] y tiene que ser exactamente [Guardar borrador · Rechazar… · Marcar prioridad de curse${cerrada ? " · " + ITEM_EDITAR : ""} · ${ITEM_RESET}]`);
   if (m.secciones.length !== 1 || m.secciones[0] !== "Acciones") throw new Error(`${donde}: secciones del menú [${m.secciones.join(" · ")}]; tiene que haber UNA («Acciones»)`);
   if (PROHIBIDO.test(m.texto)) throw new Error(`${donde}: el menú menciona cerrar/avanzar: «${m.texto}»`);
-  const reset = m.items[esperados.length - 1];   // el reset va SIEMPRE al final, en rojo
+  const reset = m.items[esp.length - 1];
   if (reset.color !== m.rojo) throw new Error(`${donde}: «${ITEM_RESET}» no va en C.red (${m.rojo}): ${reset.color}`);
   if (resetHabilitado && reset.dis) throw new Error(`${donde}: «${ITEM_RESET}» está deshabilitado sobre una oferta que sigue siendo del ejecutivo (${reset.title})`);
   if (!resetHabilitado && !reset.dis) throw new Error(`${donde}: «${ITEM_RESET}» está HABILITADO sobre una oferta publicada`);
@@ -226,10 +227,10 @@ export const casos = [
         // ── NEGATIVA del reset: oferta PUBLICADA (ticket crafteado, sesión ADMIN en el payload) → deshabilitado con el motivo escrito.
         const pP = await abrirConTicket(h, { ofertaCerrada: true, ofertaComunicada: true }, "ADMIN"); extras.push(pP);
         await tabBtn(pP, "Bitácora").click(); await pP.waitForTimeout(500);
-        const mP = await comprobarMenu(pP, "Bitácora (oferta publicada)", { resetHabilitado: false });
-        // El reset es SIEMPRE el último ítem; con la oferta cerrada, «Editar la oferta» (regla 33) se mete antes.
-        const resetP = mP.items[mP.items.length - 1];
-        if (!/La oferta ya se publicó al cliente/.test(resetP.title)) throw new Error(`publicada: el tooltip del reset no lleva el motivo: «${resetP.title}»`);
+        const mP = await comprobarMenu(pP, "Bitácora (oferta publicada)", { resetHabilitado: false, cerrada: true });
+        const itemReset = mP.items.find((i) => i.t === ITEM_RESET);
+        if (!itemReset) throw new Error(`publicada: no encuentro «${ITEM_RESET}» entre [${mP.items.map((i) => i.t).join(" · ")}]`);
+        if (!/La oferta ya se publicó al cliente/.test(itemReset.title)) throw new Error(`publicada: el tooltip del reset no lleva el motivo: «${itemReset.title}»`);
         if (!/La oferta ya se publicó al cliente/.test(mP.texto) || !/Reabrir para modificar/.test(mP.texto)) throw new Error(`publicada: el motivo no está ESCRITO debajo del ítem apuntando a «Reabrir para modificar» (menú: «${mP.texto.slice(-220)}»)`);
         await itemAcciones(pP, new RegExp(ITEM_RESET)).dispatchEvent("click"); await pP.waitForTimeout(400);
         if (await pP.getByText(TITULO_CONFIRM_RESET).count()) throw new Error("publicada: un clic sobre el ítem deshabilitado abrió el ConfirmDialog");

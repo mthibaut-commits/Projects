@@ -11,7 +11,7 @@
    automáticos, y ni `moveTo` ni `moverEtapa` miran si el origen es `perdida`. Documentan el defecto. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { leer } from "./_comun.mjs";
+import { leer, canonico} from "./_comun.mjs";
 
 const jsx = leer("pipeline_comercial.jsx");
 const GENERICO = /no super[oó] (las )?reglas de otorgamiento/i;
@@ -31,14 +31,6 @@ export function cuerpoInterno(src, nombre) {
   const i = src.indexOf(`  const ${nombre} = (`);
   if (i < 0) return null;
   const fin = src.indexOf("\n  };", i);
-  return fin < 0 ? null : src.slice(i, fin);
-}
-
-/* El cuerpo de una función de NIVEL MÓDULO (`function nombre(`), hasta su `}` a columna 0. */
-export function cuerpoModulo(src, nombre) {
-  const i = src.indexOf(`function ${nombre}(`);
-  if (i < 0) return null;
-  const fin = src.indexOf("\n}", i);
   return fin < 0 ? null : src.slice(i, fin);
 }
 
@@ -88,13 +80,17 @@ export function lectorDeCausa(src) {
 /* La tarjeta: cada badge ACCIONABLE va detrás de `!isPerdida`, nombrado —verificación pendiente,
    contactabilidad, cedidas en parte, desembolso—, y el badge del visado sólo se evalúa en etapas vivas. */
 export const BADGES_ACCIONABLES = [
-  ["verificación pendiente", /\{!isPerdida && \(\(\) => \{ const vr = verifResumenDeal\(deal\)/],
+  ["verificación pendiente", /\{!isPerdida && \(\(\) => \{\s*const vr = verifResumenDeal\(deal\)/],
   ["error de contactabilidad", /\{deal\.contactable === false && !isPerdida &&/],
   ["cedidas en parte", /\{!isPerdida && deal\.cedidasOtro > 0/],
   ["estado del desembolso", /\{!isPerdida && dealDisbursement\(deal\) &&/],
 ];
 export function badgesDeTarjeta(src) {
-  const c = cuerpoDe(src, "DealCard"); const fallos = [];
+  // El CUERPO se recorta sobre el fuente crudo (la extracción se apoya en las líneas) y recién ahí se
+  // canoniza: los badges son JSX y el formateo los abre. Ver `canonico` en _comun.mjs (ADR-0005).
+  const c0 = cuerpoDe(src, "DealCard"); const fallos = [];
+  if (!c0) return { fallos: ["no existe `function DealCard`"] };
+  const c = canonico(c0);
   if (!c) return { fallos: ["no existe `function DealCard`"] };
   if (!/const isPerdida = deal\.stage === "perdida"/.test(c)) fallos.push("DealCard no define isPerdida");
   for (const [nombre, re] of BADGES_ACCIONABLES) if (!re.test(c)) fallos.push(`el badge «${nombre}» de DealCard no va detrás de !isPerdida`);
@@ -104,17 +100,29 @@ export function badgesDeTarjeta(src) {
   return { fallos };
 }
 
-/* Reabrir en sitio no admite una perdida: se reactiva con una operación NUEVA. Desde el 17-09-2026 (regla 33) la
-   compuerta vive en `edicionOperacion`, que `reabrirOperacion` consulta antes de tocar nada. */
+/* Una perdida NO se reabre en sitio: se reactiva con una operación NUEVA con referencia. El gate admite
+   las dos formas de cerrar esa puerta, porque el 17-09-2026 la compuerta se mudó:
+     (a) el filtro inline por etapa de origen (`![…].includes(d0.stage)) return`), como estaba, o
+     (b) la delegación en la compuerta PURA `edicionOperacion(d0)` + `if (!ed.aplica || !ed.ok) return`
+         —y entonces se exige a `edicionOperacion` que devuelva `ok: false` para `perdida`—.
+   Lo que el gate vigila es la GARANTÍA, no el sitio: con (b) la compuerta es además la que apaga el
+   botón en la UI y la que el menú consulta, así que la puerta se cierra una vez y en un solo lugar. */
 export function reaperturaEnSitio(src) {
   const c = cuerpoInterno(src, "reabrirOperacion"); const fallos = [];
   if (!c) return { fallos: ["no existe reabrirOperacion"] };
-  if (!/const ed = edicionOperacion\(d0\);/.test(c) || !/if \(![^)]*ed\.ok\) return;/.test(c))
-    fallos.push("reabrirOperacion ya no consulta `edicionOperacion(d0)` antes de reabrir");
-  const e = cuerpoModulo(src, "edicionOperacion") || "";
-  if (!e) fallos.push("no existe edicionOperacion");
-  else if (!/if \(deal\.stage === "perdida"\) return \{ aplica: true, ok: false/.test(e))
-    fallos.push("edicionOperacion admite una perdida: la reapertura tiene que ser una operación nueva con referencia");
+  const inline = c.match(/!\[([^\]]*)\]\.includes\(d0\.stage\)\) return/);
+  // (b): se consulta la compuerta y se ABANDONA cuando dice que no. Un `edicionOperacion(d0)` cuyo
+  // veredicto nadie lee no filtra nada, así que el `return` se exige aparte.
+  const delega = /\bedicionOperacion\(d0\)/.test(c) && /if \(![^\n]*\b(ok|aplica)\b[^\n]*\) return/.test(c);
+  if (!inline && !delega) fallos.push("reabrirOperacion no filtra por etapa de origen");
+  if (inline && /"perdida"/.test(inline[1])) fallos.push("reabrirOperacion admite una perdida: la reapertura tiene que ser una operación nueva con referencia");
+  if (delega) {
+    const cg = cuerpoDe(src, "edicionOperacion");
+    if (!cg) fallos.push("reabrirOperacion delega en edicionOperacion y esa compuerta no existe");
+    // La compuerta tiene que NEGAR la perdida: `stage === "perdida"` devolviendo `ok: false`.
+    else if (!/deal\.stage === "perdida"\) return \{[^\n]*ok: false/.test(cg))
+      fallos.push("edicionOperacion admite una perdida: la reapertura tiene que ser una operación nueva con referencia");
+  }
   return { fallos };
 }
 
@@ -128,7 +136,9 @@ export function terminalidadDeEtapa(src) {
     if (!c) { fallos.push(`no existe ${nombre}`); continue; }
     // la guarda tiene que leer la etapa de la OPERACIÓN (`orig` o `….stage`) y compararla con perdida; una
     // que sólo mire el destino (`stageId === "perdida"`) no cierra esta puerta
-    const lineasIf = (c.match(/if \([^\n]*["'`]perdida["'`][^\n]*\)[^\n]*return/g) || []);
+    // La guarda ya no cabe en una línea: se busca sobre la forma canónica con una cota, que es lo que
+    // «esta guarda, no otra del archivo» significaba cuando el `if` cabía en una sola.
+    const lineasIf = (canonico(c).match(/if \([\s\S]{0,250}?["'`]perdida["'`][\s\S]{0,120}?\)\s*\{?[\s\S]{0,200}?return/g) || []);
     const guarda = lineasIf.some((l) => /\borig\b|\.stage\b/.test(l));
     if (!guarda) fallos.push(`${nombre} no mira si el ORIGEN es perdida: arrastrar o mover una perdida la revive sin causa, sin auditoría y sin operación nueva`);
   }
@@ -149,7 +159,7 @@ test("la tarjeta del Kanban suprime cada badge accionable de una perdida (verifi
   assert.deepEqual(badgesDeTarjeta(jsx).fallos, []);
 });
 
-test("una perdida no se reabre en sitio (reabrirOperacion consulta edicionOperacion, que la rechaza por terminal)", () => {
+test("una perdida no se reabre en sitio (reabrirOperacion filtra por origen o delega en una compuerta que niega la perdida)", () => {
   assert.deepEqual(reaperturaEnSitio(jsx).fallos, []);
 });
 
@@ -174,7 +184,7 @@ test("SONDA · plantar la violación la caza: escritor sin origen, con el genér
   assert.ok(r1.fallos.some((f) => /genérico/.test(f)), "no cazó el genérico");
   assert.ok(r1.fallos.some((f) => /sin causa específica/.test(f)), "no cazó la causa no específica");
   // (2) a un escritor REAL se le quita la etapa de origen
-  const s2 = jsx.replace('stage: "perdida", etapaPerdida: d.stage, perdidaOtorg: true,', 'stage: "perdida", perdidaOtorg: true,');
+  const s2 = jsx.replace(/stage: "perdida",(\s*)etapaPerdida: d\.stage,(\s*)perdidaOtorg: true,/, 'stage: "perdida",$1perdidaOtorg: true,');
   assert.notEqual(s2, jsx, "la sonda no encontró el escritor del bloqueo firme para mutarlo");
   assert.equal(escritoresDePerdida(s2).fallos.length, 1);
   // (3) el genérico llega por una VARIABLE declarada en la línea anterior (`causaPerdida: causa`)
@@ -195,23 +205,26 @@ test("SONDA · plantar la violación la caza: escritor sin origen, con el genér
   // (6) el lector cae al status ANTES de mirar el bloqueo firme, se acceda como se acceda
   const c = cuerpoDe(jsx, "causaPerdidaDeal");
   for (const acceso of ["deal.status", 'deal["status"]', "deal?.status"]) {
-    const s = jsx.replace(c, c.replace("  if (deal.causaPerdida) return deal.causaPerdida;\n", `  if (deal.causaPerdida) return deal.causaPerdida;\n  if (${acceso}) return ${acceso};\n`));
+    const s = jsx.replace(c, c.replace(/if \(deal\.causaPerdida\) return deal\.causaPerdida;/, `if (deal.causaPerdida) return deal.causaPerdida;\n  if (${acceso}) return ${acceso};`));
     assert.notEqual(s, jsx);
     assert.ok(lectorDeCausa(s).fallos.some((f) => /antes que el bloqueo firme/.test(f)), `no cazó ${acceso}`);
   }
-  // (7) reabrir admite perdida
-  const s7 = jsx.replace('  if (deal.stage === "perdida") return { aplica: true, ok: false', '  if (false) return { aplica: true, ok: false');
-  assert.notEqual(s7, jsx);
-  assert.ok(reaperturaEnSitio(s7).fallos.some((f) => /admite una perdida/.test(f)));
-  const s7b = jsx.replace("    const ed = edicionOperacion(d0);\n", "");
-  assert.notEqual(s7b, jsx);
-  assert.ok(reaperturaEnSitio(s7b).fallos.some((f) => /ya no consulta/.test(f)));
+  // (7) reabrir admite perdida, en las DOS formas de cerrar la puerta: la compuerta deja pasar la
+  // perdida, y —si alguien volviera al filtro inline— el filtro la incluye. Y la tercera: nadie filtra.
+  const s7 = jsx.replace(/if \(deal\.stage === "perdida"\)(\s*)return \{(\s*)aplica: true,/, 'if (false)$1return {$2aplica: true,');
+  assert.notEqual(s7, jsx, "la sonda no encontró la guarda de perdida de edicionOperacion");
+  assert.ok(reaperturaEnSitio(s7).fallos.some((f) => /admite una perdida/.test(f)), "no cazó la compuerta que deja pasar una perdida");
+  const s7b = jsx.replace(/const ed = edicionOperacion\(d0\);\s*if \(!ed\.aplica \|\| !ed\.ok\) return;/, "const ed = edicionOperacion(d0);");
+  assert.notEqual(s7b, jsx, "la sonda no encontró el abandono de reabrirOperacion");
+  assert.ok(reaperturaEnSitio(s7b).fallos.some((f) => /no filtra por etapa de origen/.test(f)), "no cazó el veredicto que nadie lee");
+  const s7c = jsx.replace(/!\["aceptadas",\s*"cesion"\]\.includes\(d0\.stage\)\s*\)\s*return/, '!["aceptadas", "cesion", "perdida"].includes(d0.stage)) return');
+  if (s7c !== jsx) assert.ok(reaperturaEnSitio(s7c).fallos.some((f) => /admite una perdida/.test(f)));
   // (8) el badge de visado se evalúa también en perdida
-  const s8 = jsx.replace('{["prospeccion", "oferta", "aceptadas", "otorgamiento"].includes(deal.stage) && (() => {', '{["prospeccion", "oferta", "aceptadas", "otorgamiento", "perdida"].includes(deal.stage) && (() => {');
+  const s8 = jsx.replace(/\{\["prospeccion",\s*"oferta",\s*"aceptadas",\s*"otorgamiento"\]\.includes\(deal\.stage\) &&\s*\(\(\) => \{/, '{["prospeccion", "oferta", "aceptadas", "otorgamiento", "perdida"].includes(deal.stage) && (() => {');
   assert.notEqual(s8, jsx);
   assert.ok(badgesDeTarjeta(s8).fallos.some((f) => /también en perdida/.test(f)));
   // (9) a UN badge accionable se le quita la guarda: el gate lo nombra (antes contaba «≥3» y no lo veía)
-  const s9 = jsx.replace("{!isPerdida && deal.cedidasOtro > 0 && deal.cedidasOtro < deal.facturas && (", "{deal.cedidasOtro > 0 && deal.cedidasOtro < deal.facturas && (");
+  const s9 = jsx.replace(/\{!isPerdida &&\s*deal\.cedidasOtro > 0 &&\s*deal\.cedidasOtro < deal\.facturas && \(/, "{deal.cedidasOtro > 0 && deal.cedidasOtro < deal.facturas && (");
   assert.notEqual(s9, jsx);
   assert.deepEqual(badgesDeTarjeta(s9).fallos, ["el badge «cedidas en parte» de DealCard no va detrás de !isPerdida"]);
 });
@@ -219,25 +232,25 @@ test("SONDA · plantar la violación la caza: escritor sin origen, con el genér
 test("SONDA de actor y terminalidad: quitar el actor a un escritor se caza; quitar una guarda de origen se caza, y una guarda que sólo mira el destino no la reemplaza", () => {
   // Actor: los seis escritores lo graban (los cuatro automáticos desde el 17-09-2026); quitárselo se caza uno a uno
   const sinActorAuto = jsx
-    .split('perdidaPor: "sistema", fechaPerdida: nowStamp(), cesionEval: true,').join("cesionEval: true,")
-    .split('perdidaPor: "sistema", fechaPerdida: nowStamp(), ofertaEval: true,').join("ofertaEval: true,");
+    .replace(/perdidaPor: "sistema",\s*fechaPerdida: nowStamp\(\),\s*cesionEval: true,/g, "cesionEval: true,")
+    .replace(/perdidaPor: "sistema",\s*fechaPerdida: nowStamp\(\),\s*ofertaEval: true,/g, "ofertaEval: true,");
   assert.notEqual(sinActorAuto, jsx);
   assert.equal(escritoresDePerdida(sinActorAuto).sinActor.length, escritoresDePerdida(jsx).sinActor.length + 4);
   const sinActor = sinActorAuto
-    .replace('fechaPerdida: nowStamp(), perdidaPor: (USERS[usuario] || usuario), ', "")
-    .replace('fechaPerdida: nowStamp(), perdidaPor: "sistema", ', "");
+    .replace(/fechaPerdida: nowStamp\(\),\s*perdidaPor: USERS\[usuario\] \|\| usuario,\s*/, "")
+    .replace(/fechaPerdida: nowStamp\(\),\s*perdidaPor: "sistema",\s*/, "");
   assert.notEqual(sinActor, sinActorAuto);
   assert.equal(escritoresDePerdida(sinActor).sinActor.length, escritoresDePerdida(jsx).sinActor.length + 6);
   // Terminalidad: sin la guarda de origen en cada puerta el gate se pone rojo…
   const sinGuarda = jsx
-    .replace('    if (orig === "perdida") { setDraggingId(null); return; }\n', "")
-    .replace('    if (((dealsRef.current || []).find((x) => x.id === id) || {}).stage === "perdida") return;\n', "");
+    .replace(/\s*if \(orig === "perdida"\) \{\s*setDraggingId\(null\);\s*return;\s*\}/, "")
+    .replace(/\s*if \(\(\(dealsRef\.current \|\| \[\]\)\.find\(\(x\) => x\.id === id\) \|\| \{\}\)\.stage === "perdida"\)\s*return;/, "");
   assert.notEqual(sinGuarda, jsx);
   assert.equal(terminalidadDeEtapa(sinGuarda).fallos.length, 2);
   // …y una guarda que sólo mira el DESTINO (`stageId === "perdida"`) no abre el gate: la puerta es el origen
   const soloDestino = sinGuarda
-    .replace("    if (!draggingId) return;\n", '    if (!draggingId) return;\n    if (stageId === "perdida") { setDraggingId(null); return; }\n')
-    .replace("  const moverEtapa = (id, stageId) => {\n", '  const moverEtapa = (id, stageId) => {\n    if (stageId === "perdida") return;\n');
+    .replace(/if \(!draggingId\) return;/, 'if (!draggingId) return;\n    if (stageId === "perdida") { setDraggingId(null); return; }')
+    .replace(/const moverEtapa = \(id, stageId\) => \{/, 'const moverEtapa = (id, stageId) => {\n    if (stageId === "perdida") return;');
   assert.notEqual(soloDestino, sinGuarda);
   assert.equal(terminalidadDeEtapa(soloDestino).fallos.length, 2);
   assert.deepEqual(terminalidadDeEtapa(jsx).fallos, []);

@@ -9,8 +9,8 @@ globs: ["tests/**", "tests_asignacion_lineas.js", "run_tests.mjs", "auditar_*.mj
 
 | Capa | Qué es | Cuánto tarda | Corre |
 |---|---|---|---|
-| `tests/contract/` | Gates de **contrato**: el vault, el índice de reglas, la forma del fuente, la forma de la suite, las líneas base de los auditores, los hooks y **un `regla_<slug>.test.mjs` por regla que vive en JSX** (18 archivos desde el 17-09-2026) | milisegundos (los auditores, ~8 s) | `node --test "tests/contract/*.test.mjs"` — sin dependencias: es el runner de Node |
-| `tests_asignacion_lineas.js` | **La suite**: 140 casos que prueban los motores y las reglas de dominio contra el HTML construido, en Chromium real | ~2 min | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs` (necesita `node build_app.mjs` antes) |
+| `tests/contract/` | Gates de **contrato**: el vault, el índice de reglas, la forma del fuente, la forma de la suite, las líneas base de los auditores, el punto fijo del generador y **un `regla_<slug>.test.mjs` por regla que vive en JSX** (26 archivos desde el 17-09-2026) | milisegundos (los auditores, ~8 s) | `node --test "tests/contract/*.test.mjs"` — sin dependencias: es el runner de Node |
+| `tests_asignacion_lineas.js` | **La suite**: 143 casos que prueban los motores y las reglas de dominio contra el HTML construido, en Chromium real | ~2 min | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs` (necesita `node build_app.mjs` antes) |
 | `tests/e2e/` | **Casos e2e**: la app con la sesión iniciada (el OTP se lee de la pantalla), el Modo Directorio para tener operaciones sin stream y el detalle abierto en su pestaña; cada archivo `*.e2e.mjs` exporta `casos: [{ id: "e2e-<regla>", titulo, correr(h) }]`. **29 casos en 16 archivos**; el runner reinicia el estado al empezar cada ARCHIVO (Directorio apagado, filtro «Con línea», sin modal) y `h` trae `encenderDirectorio`, `apagarDirectorio` y `reiniciar` | ~8 min | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node tests/e2e/correr.mjs [archivo…]` (harness en `_harness.mjs`) |
 
 No hay capa `unit` aparte: el fuente es un solo archivo y la suite ya prueba las funciones puras por su
@@ -64,5 +64,16 @@ decida, ningún test la afirma ni la niega.
 ## Higiene
 
 - Exit codes **condicionados** (`&&`, `$?`): un pipe con `tail` se come el código de salida.
+- **`rev` no termina en este contenedor**: en una tubería gira al 99% de CPU para siempre. Para recortar el final
+  de una línea (la cola de un `FALLA …`, la última celda de una fila del índice) va `python3 -c` o `awk`. Y un
+  comando que se pasa del tiempo de espera **deja su proceso vivo**: se revisa con
+  `ps -eo pid,etime,pcpu,comm | awk '$3+0>1'` antes de seguir, o le roba núcleos a la suite y a la capa e2e, que
+  son justo lo que uno está esperando (17-09-2026).
 - Un test flaky se arregla o se borra en la misma sesión.
-- Antes de commitear: los seis pasos de `CLAUDE.md` en orden. Ninguno subsume a otro.
+- Antes de commitear: el **paso 0** (`npx prettier --check pipeline_comercial.jsx`) y los seis pasos de
+  `CLAUDE.md` en orden. Ninguno subsume a otro.
+- **Un gate de texto que cae tras formatear el fuente se RE-ANCLA, no se afloja** (ADR-0005). Los gates
+  `regla_<slug>` leen el `.jsx` como texto: el patrón se aplica sobre `canonico(src)` —espacios
+  colapsados, sin coma final antes de un cierre, corchetes apretados— y la SONDA se planta también sobre
+  el texto canónico, porque `canonico` es idempotente. Bajar una exigencia para que el gate pase deja de
+  vigilar lo que la regla dice, y su propia sonda negativa lo delata al primer intento.

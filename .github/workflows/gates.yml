@@ -13,26 +13,35 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45   # la capa e2e pasó de 1 a 16 archivos (29 casos, ~8 min) el 17-09-2026
     steps:
-      - uses: actions/checkout@v4
+      # v5 y no v4: las v4 corren sobre Node 20 en el runner y GitHub ya las avisa como
+      # deprecadas. El `node-version: 22` de abajo es el de la app y no cambia con esto.
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
       # TypeScript y Playwright se instalan A PROPÓSITO, globales y fijados: el repo no tiene package.json
       # (sin bundler, dependencias vendorizadas) y `npx tsc` sin TypeScript instalado baja un paquete
       # llamado «tsc» que NO es TypeScript. Las versiones son las del contenedor donde se verificó.
-      - name: Herramientas (TypeScript y Playwright)
+      - name: Herramientas (TypeScript, Prettier y Playwright)
         run: |
-          npm i -g typescript@6.0.2 playwright@1.56.1
+          npm i -g typescript@6.0.2 prettier@3.6.2 playwright@1.56.1
           npx playwright install --with-deps chromium
+
+      # Va ANTES de los seis pasos y numerado 0 porque no verifica una conducta: protege a los que sí.
+      # Veintiún gates `regla_<slug>` y los dos auditores leen el fuente como TEXTO, y se re-anclaron contra
+      # el .jsx formateado (ADR-0005). Un commit que deshaga el formato los vuelve a tumbar de a uno, en
+      # sesiones distintas, sin que nadie relacione la caída con el formato.
+      - name: 0 · Formato del fuente
+        run: npx prettier --check pipeline_comercial.jsx
 
       - name: 1 · Tipos
         run: npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx
 
       - name: 2 · Duplicados de nivel módulo
         run: |
-          dup=$(grep -oE "^(function|const|let|var) [A-Za-z0-9_]+" pipeline_comercial.jsx | awk '{print $2}' | sort | uniq -d)
+          dup=$(grep -oE '^(export default )?(async )?(function|const|let|var|class) [A-Za-z_$][A-Za-z0-9_$]*' pipeline_comercial.jsx | awk '{print $NF}' | sort | uniq -d)
           if [ -n "$dup" ]; then echo "símbolos duplicados: $dup"; exit 1; fi
           echo "sin duplicados"
 

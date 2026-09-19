@@ -24,6 +24,9 @@ import { leer } from "./_comun.mjs";
 
 const jsx = leer("pipeline_comercial.jsx");
 const ITEM = "Eliminar la simulación y vaciar la oferta";
+/* El rótulo puede venir partido por el formateador («… y vaciar\n la oferta»), así que se busca con una
+   expresión que tolera el salto. Lo que el gate fija es que el ítem esté y cómo está, no su envoltura. */
+const RE_ITEM = /Eliminar la simulación y vaciar\s+la oferta/g;
 const REPOS_EVIDENCIA = ["repoVisado", "repoVisadoDetalle", "repoSolicitudExc", "repoVerifExc", "repoOtorgEventos", "repoVerifTel",
   "repoNoConfirmadas", "repoVerifVeredicto", "repoContratoEvidencia", "repoSimVersions", "repoGiro", "SIM_VERSIONS", "VISADO_STATE",
   "VERIF_TEL", "GIRO_STATE", "REPOS[", "localStorage"];
@@ -64,14 +67,16 @@ export function ramaMotivo(tramo, condicion) {
    `<button …>` abierta (`apertura`) y las 3 líneas que lo siguen (`despues`). */
 export function botonesItem(src) {
   const out = [];
-  let i = -1;
-  while ((i = src.indexOf(ITEM, i + 1)) >= 0) {
-    const antes = src.slice(Math.max(0, i - 900), i);
+  let m;
+  RE_ITEM.lastIndex = 0;
+  while ((m = RE_ITEM.exec(src))) {
+    const i = m.index;
+    const antes = src.slice(Math.max(0, i - 2600), i);   // 900 hasta el 18-09-2026: el formateo (ADR-0005) abre el <button> en varias líneas y la apertura queda más lejos
     const ab = antes.lastIndexOf("<button");
     if (ab < 0) continue;                                   // un ConfirmDialog o un comentario, no un botón
     const apertura = antes.slice(ab).replace(/<[A-Z][A-Za-z]* [^>]*\/>/g, ""); // fuera los íconos (<RotateCcw … />)
     if (/<\/button>/.test(apertura)) continue;               // el <button más cercano ya se cerró: no es el del ítem
-    const despues = src.slice(i, src.indexOf("\n", src.indexOf("\n", src.indexOf("\n", i) + 1) + 1) + 1);
+    const despues = src.slice(i, i + 900);   // el bloque que sigue al rótulo: antes eran tres líneas, ahora el mismo JSX ocupa más
     out.push({ previo: antes.slice(0, ab), apertura, despues, pos: i });
   }
   return out;
@@ -82,7 +87,7 @@ export function auditarReset(src) {
   const cl = closureDe(src, "limpiarSimulacion");
   if (!cl) { fallos.push("closure: no existe `const limpiarSimulacion =` en PipelineComercial"); return fallos; }
   // (1) la lista de campos sale de finanzasDe, la misma función que los escribe, y se borran (undefined)
-  if (!/Object\.keys\(finanzasDe\(d\.cliente, d\.deudor, 0\)\)\.forEach\(\(k\) => \{ vacios\[k\] = undefined; \}\)/.test(cl))
+  if (!/Object\.keys\(finanzasDe\(d\.cliente, d\.deudor, 0\)\)\.forEach\(\(k\) => \{\s*vacios\[k\] = undefined;\s*\}\)/.test(cl))
     fallos.push("campos: los campos a borrar no salen de `Object.keys(finanzasDe(d.cliente, d.deudor, 0))` puestos en `undefined` — con una lista escrita a mano, un concepto nuevo se queda viejo en el tubo");
   const patch = patchDe(cl);
   if (!patch) fallos.push("patch: el closure no arma `const patch = { … }`");
@@ -103,8 +108,8 @@ export function auditarReset(src) {
   for (const r of REPOS_EVIDENCIA) if (cl.includes(r)) fallos.push(`evidencia: limpiarSimulacion nombra \`${r}\` — el reset no toca visado, verificaciones, vetos ni versiones`);
   if (/\bdelete\b/.test(cl)) fallos.push("evidencia: limpiarSimulacion usa `delete` (borra algo que no es suyo)");
   // (4) aviso al tubo por el mismo canal que la simulación
-  if (!/avisarTubo\(id, patch\)/.test(cl)) fallos.push("aviso: limpiarSimulacion no encola el patch con `avisarTubo(id, patch)` (el tubo no se entera: vacía acá, simulada allá)");
-  if (!/avisoTuboRef\.current;[\s\S]{0,400}?postMessage\(\{ type: "nex-simulado", dealId: av\.id, patch: av\.patch \}/.test(src))
+  if (!/avisarTubo\(id, patch\)/.test(cl)) fallos.push("aviso: limpiarSimulacion no llama a `avisarTubo(id, patch)` (el tubo no se entera: vacía acá, simulada allá)");
+  if (!/avisoTuboRef\.current;[\s\S]{0,600}?postMessage\(\{ type: "nex-simulado", dealId: av\.id, patch: av\.patch \}/.test(src))
     fallos.push("aviso: el efecto que drena `avisoTuboRef` no postea `nex-simulado` con `{ dealId, patch }`");
   // (5) DealDrawer: sólo mientras la oferta siga siendo del ejecutivo, con el motivo escrito
   const tm = tramoMotivo(src);
@@ -122,12 +127,12 @@ export function auditarReset(src) {
   bts.forEach((b, k) => {
     if (ENVOLTURA.test(b.previo)) fallos.push(`boton ${k + 1}: el ítem se envuelve en una condición (\`puedeReiniciar && …\`) y DESAPARECE en vez de deshabilitarse con el motivo escrito (regla 24)`);
     if (!/disabled=\{!puedeReiniciar\}/.test(b.apertura)) fallos.push(`boton ${k + 1}: el botón «${ITEM}» no va \`disabled={!puedeReiniciar}\``);
-    if (!/title=\{motivoNoReset \|\|/.test(b.apertura)) fallos.push(`boton ${k + 1}: el tooltip del botón no lleva el motivo (\`title={motivoNoReset || …}\`)`);
+    if (!/title=\{\s*motivoNoReset \|\|/.test(b.apertura)) fallos.push(`boton ${k + 1}: el tooltip del botón no lleva el motivo (\`title={motivoNoReset || …}\`)`);
     if (!/color: C\.red/.test(b.apertura)) fallos.push(`boton ${k + 1}: el botón no va en rojo (\`color: C.red\`) — es lo único destructivo de la pantalla`);
     if (!/setConfirmReset\(true\)/.test(b.apertura)) fallos.push(`boton ${k + 1}: el botón no abre el ConfirmDialog (\`setConfirmReset(true)\`)`);
-    if (!/\{!puedeReiniciar && <div[^\n]*\{motivoNoReset\}<\/div>\}/.test(b.despues)) fallos.push(`boton ${k + 1}: el motivo no se escribe debajo del botón deshabilitado (\`{!puedeReiniciar && <div…>{motivoNoReset}</div>}\`)`);
+    if (!/\{!puedeReiniciar && \(?\s*<div[\s\S]{0,200}?\{motivoNoReset\}\s*<\/div>/.test(b.despues)) fallos.push(`boton ${k + 1}: el motivo no se escribe debajo del botón deshabilitado (\`{!puedeReiniciar && <div…>{motivoNoReset}</div>}\`)`);
   });
-  if (!/<ConfirmDialog abierto=\{confirmReset\}[\s\S]{0,900}?onConfirmar=\{\(\) => \{ setConfirmReset\(false\); onLimpiarSimulacion && onLimpiarSimulacion\(deal\.id\); \}\}/.test(src))
+  if (!/<ConfirmDialog\s*abierto=\{confirmReset\}[\s\S]{0,1400}?onConfirmar=\{\(\) => \{\s*setConfirmReset\(false\);\s*onLimpiarSimulacion && onLimpiarSimulacion\(deal\.id\);\s*\}\}/.test(src))
     fallos.push("dialogo: el `ConfirmDialog` de `confirmReset` no es quien llama a `onLimpiarSimulacion(deal.id)`");
   if (!/onLimpiarSimulacion=\{limpiarSimulacion\}/.test(src)) fallos.push("cableado: DealDrawer no recibe `onLimpiarSimulacion={limpiarSimulacion}`");
   return fallos;
@@ -156,29 +161,29 @@ test("13-quaterdecies · SONDAS: cada violación plantada la caza su gate", () =
   const cl = closureDe(jsx, "limpiarSimulacion");
   const MSG_FIRMADA = '"El cliente ya firmó esta oferta: para modificarla, usa «Reabrir para modificar»."';
   const MSG_PUBLICADA = '"La oferta ya se publicó al cliente: para modificarla, usa «Reabrir para modificar»."';
-  const BOTON_OPCIONES = "<button onClick={() => { setPrimeMenu(false); setConfirmReset(true); }} disabled={!puedeReiniciar}";
-  const CIERRE_OPCIONES = "Eliminar la simulación y vaciar la oferta</span>\n                                          </button>";
-  const BOTON_ACCIONES = "<button onClick={() => { setAccMenu(false); setConfirmReset(true); }} disabled={!puedeReiniciar}";
+  const BOTON_OPCIONES = (jsx.match(/<button\s*onClick=\{\(\) => \{\s*setPrimeMenu\(false\);\s*setConfirmReset\(true\);\s*\}\}\s*disabled=\{!puedeReiniciar\}/) || [""])[0];
+  const CIERRE_OPCIONES = (jsx.match(/Eliminar la simulación y vaciar\s+la oferta\s*<\/span>[\s\S]{0,80}?<\/button>/) || [""])[0];
+  const BOTON_ACCIONES = (jsx.match(/<button\s*onClick=\{\(\) => \{\s*setAccMenu\(false\);\s*setConfirmReset\(true\);\s*\}\}\s*disabled=\{!puedeReiniciar\}/) || [""])[0];
   const CIERRE_ACCIONES = "Eliminar la simulación y vaciar la oferta\n            </button>";
   const mutantes = [
-    ["lista a mano en vez de finanzasDe", jsx.replace('Object.keys(finanzasDe(d.cliente, d.deudor, 0)).forEach((k) => { vacios[k] = undefined; });', '["tasaDescuento", "giro", "comision"].forEach((k) => { vacios[k] = undefined; });'), /^campos:/],
-    ["cifras viejas en vez de borradas", jsx.replace("vacios[k] = undefined; });", "vacios[k] = d[k]; });"), /^campos:/],
-    ["el patch pisado por el estado viejo ({ ...patch, ...d })", jsx.replace(cl, cl.replace("return { ...d, ...patch, historialContacto", "return { ...patch, ...d, historialContacto")), /^patch: el closure no devuelve/],
-    ["el reset borra el visado", jsx.replace(cl, cl.replace("const upd = (d) => {", "const upd = (d) => {\n      repoVisado.del(id);")), /^evidencia: .*repoVisado/],
-    ["el reset borra las versiones", jsx.replace(cl, cl.replace("const upd = (d) => {", "const upd = (d) => {\n      delete SIM_VERSIONS[id];")), /^evidencia:/],
-    ["sin aviso al tubo", jsx.replace(cl, cl.replace("      avisarTubo(id, patch);\n", "")), /^aviso: limpiarSimulacion/],
-    ["la oferta no queda vacía", jsx.replace(cl, cl.replace("facturasOp: [], facturasDisponibles: pool", "facturasOp: d.facturasOp, facturasDisponibles: pool")), /^patch: la oferta no queda vacía/],
+    ["lista a mano en vez de finanzasDe", jsx.replace(/Object\.keys\(finanzasDe\(d\.cliente, d\.deudor, 0\)\)\.forEach\(\(k\) => \{\s*vacios\[k\] = undefined;\s*\}\);/, '["tasaDescuento", "giro", "comision"].forEach((k) => { vacios[k] = undefined; });'), /^campos:/],
+    ["cifras viejas en vez de borradas", jsx.replace(/vacios\[k\] = undefined;/, "vacios[k] = d[k];"), /^campos:/],
+    ["el patch pisado por el estado viejo ({ ...patch, ...d })", jsx.replace(cl, cl.replace(/return \{\s*\.\.\.d,\s*\.\.\.patch,(\s*)historialContacto/, "return { ...patch, ...d,$1historialContacto")), /^patch: el closure no devuelve/],
+    ["el reset borra el visado", jsx.replace(cl, cl.replace(/const upd = \(d\) => \{/, "const upd = (d) => {\n      repoVisado.del(id);")), /^evidencia: .*repoVisado/],
+    ["el reset borra las versiones", jsx.replace(cl, cl.replace(/const upd = \(d\) => \{/, "const upd = (d) => {\n      delete SIM_VERSIONS[id];")), /^evidencia:/],
+    ["sin aviso al tubo", jsx.replace(cl, cl.replace(/\s*avisarTubo\(id, patch\);/, "")), /^aviso: limpiarSimulacion/],
+    ["la oferta no queda vacía", jsx.replace(cl, cl.replace(/facturasOp: \[\],(\s*)facturasDisponibles: pool/, "facturasOp: d.facturasOp,$1facturasDisponibles: pool")), /^patch: la oferta no queda vacía/],
     ["se pierden las facturas de la oferta", jsx.replace(cl, cl.replace("[...(d.facturasOp || []), ...(d.facturasDisponibles || [])].forEach", "[...(d.facturasDisponibles || [])].forEach")), /^pool:/],
-    ["una publicada se puede vaciar", jsx.replace('    : ofertaPublicada(deal) ? ' + MSG_PUBLICADA + '\n', ""), /^motivo: `motivoNoReset` no consulta `ofertaPublicada/],
-    ["una firmada se puede vaciar", jsx.replace("    : aprobacionFormalCliente(deal) || deal.clienteAcepto ? ", "    : false ? "), /^motivo: `motivoNoReset` no consulta `aprobacionFormalCliente/],
+    ["una publicada se puede vaciar", jsx.replace(new RegExp(":\\s*ofertaPublicada\\(deal\\)\\s*\\?\\s*" + MSG_PUBLICADA.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), ": false ?"), /^motivo: `motivoNoReset` no consulta `ofertaPublicada/],
+    ["una firmada se puede vaciar", jsx.replace(/:?\s*aprobacionFormalCliente\(deal\) \|\| deal\.clienteAcepto\s*\?/, ": false ?"), /^motivo: `motivoNoReset` no consulta `aprobacionFormalCliente/],
     ["publicada apunta a otra puerta aunque firmada lo repita dos veces", jsx.replace(MSG_PUBLICADA, '"La oferta ya se publicó al cliente: cierra la pestaña."').replace(MSG_FIRMADA, '"El cliente ya firmó esta oferta: usa «Reabrir para modificar» («Reabrir para modificar»)."'), /^motivo: el mensaje de PUBLICADA/],
     ["firmada apunta a otra puerta", jsx.replace(MSG_FIRMADA, '"El cliente ya firmó esta oferta: cierra la pestaña."'), /^motivo: el mensaje de FIRMADA/],
-    ["el botón no se deshabilita", jsx.replace("disabled={!puedeReiniciar}\n                                            title={motivoNoReset ||", "\n                                            title={motivoNoReset ||"), /^boton \d: el botón «.*» no va `disabled/],
+    ["el botón no se deshabilita", jsx.replace(/disabled=\{!puedeReiniciar\}(\s*title=\{\s*motivoNoReset \|\|)/, "$1"), /^boton \d: el botón «.*» no va `disabled/],
     ["el ítem de Opciones desaparece en vez de deshabilitarse", jsx.replace(BOTON_OPCIONES, "{puedeReiniciar && " + BOTON_OPCIONES).replace(CIERRE_OPCIONES, CIERRE_OPCIONES + "}"), /^boton \d: el ítem se envuelve/],
     ["el ítem de Acciones desaparece en vez de deshabilitarse", jsx.replace(BOTON_ACCIONES, "{puedeReiniciar && (\n            " + BOTON_ACCIONES).replace(CIERRE_ACCIONES, CIERRE_ACCIONES + ")}"), /^boton \d: el ítem se envuelve/],
     ["el ítem se oculta con el disfraz !motivoNoReset", jsx.replace(BOTON_OPCIONES, "{!motivoNoReset && " + BOTON_OPCIONES).replace(CIERRE_OPCIONES, CIERRE_OPCIONES + "}"), /^boton \d: el ítem se envuelve/],
-    ["el motivo no se escribe", jsx.replace("            {!puedeReiniciar && <div className=\"px-2 pb-1 t9\" style={{ color: C.faint }}>{motivoNoReset}</div>}\n          </>)}", "          </>)}"), /^boton \d: el motivo no se escribe/],
-    ["el diálogo no llama al reset", jsx.replace("onConfirmar={() => { setConfirmReset(false); onLimpiarSimulacion && onLimpiarSimulacion(deal.id); }}", "onConfirmar={() => { setConfirmReset(false); }}"), /^dialogo:/],
+    ["el motivo no se escribe", jsx.replace(/\{!puedeReiniciar && \(?\s*<div className="px-2 pb-1 t9"[\s\S]{0,200}?\{motivoNoReset\}\s*<\/div>\s*\)?\}/, ""), /^boton \d: el motivo no se escribe/],
+    ["el diálogo no llama al reset", jsx.replace(/onConfirmar=\{\(\) => \{\s*setConfirmReset\(false\);\s*onLimpiarSimulacion && onLimpiarSimulacion\(deal\.id\);\s*\}\}/, "onConfirmar={() => { setConfirmReset(false); }}"), /^dialogo:/],
   ];
   for (const [nombre, src, re] of mutantes) {
     assert.notEqual(src, jsx, `el mutante «${nombre}» no cambió el fuente: el ancla del replace no calza`);

@@ -75,9 +75,10 @@ export async function apagarDirectorio(pagina) {
 }
 
 /* Estado conocido para empezar un archivo de casos: sin modal abierto, en «Gestión diaria», el filtro rápido
-   con que arranca el tubo («Con línea»: con el Directorio encendido muestra 3 de sus 5 filas, y las filas 0–2
-   que los casos abren son ésas) y Directorio apagado. No recarga la página: lo que un caso persistió
-   (auditoría, repos) queda. */
+   en «Con línea» y Directorio apagado. Ese filtro es la LÍNEA BASE de esta capa, no el arranque de la app
+   —desde la regla 34 el tubo abre en «Todos»—: los casos abren las filas 0–2 de «Con línea», que con el
+   Directorio encendido son 3 de sus 5. Por eso se fija acá y no se hereda. No recarga la página: lo que un
+   caso persistió (auditoría, repos) queda. */
 export async function reiniciar(pagina) {
   await pagina.keyboard.press("Escape").catch(() => {});
   await irA(pagina, "Gestión diaria");
