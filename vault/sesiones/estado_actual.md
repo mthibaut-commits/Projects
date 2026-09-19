@@ -51,8 +51,8 @@ hooks como comando, `cifras.test.mjs`, y los dos pendientes de regla que eran de
 
 ## Bloqueos · los dos son del usuario, desde Windows
 
-El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403, política; se reporta, no se rodea). Queda
-**el tag `v0.1.0`** sobre `bd14091` y **borrar las ramas integradas**; hoy sólo quedan `main` y la de esta sesión.
+El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403, política; se reporta, no se rodea). Queda **el tag
+`v0.1.0`** sobre `bd14091` y **borrar las 7 remotas integradas** (`git branch -r --merged main`; una es el respaldo).
 
 ## Deudas anotadas (no bloquean, no olvidar)
 
