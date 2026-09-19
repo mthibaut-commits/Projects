@@ -40,7 +40,7 @@ feature: null
   aprobador se puede solicitar igual. PDF regenerado y enviado; `mapa_documentos.md` con el mismo vocabulario.
 - Context7 volvió a invocarse por slash command: sigue sin herramientas MCP en la sesión y no aplica.
 - Verificación sobre el árbol (docs y vault; el fuente no cambió): `tsc` 0 TS1, 0 duplicados, build 40,7 MB, **151/151 gates**,
-  **140/140 PASA**; la capa e2e (29 casos) seguía corriendo al commitear en la rama y su resultado se anota al llegar.
+  **140/140 PASA**; la capa e2e (29 casos) terminó después, también en verde: **29/29 PASA**.
 
 ## Decisiones tomadas con el usuario
 
