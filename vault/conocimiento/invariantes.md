@@ -81,6 +81,7 @@ timestamp: 2026-09-18T02:18:36Z
 | 34 | El tubo de Gestión diaria abre en «Todos», y «Todos» es el PRIMER tab | [`reglas/ui_detalle_y_tubo.md`](./reglas/ui_detalle_y_tubo.md) | `regla_34.test.mjs` |
 | 35 | Una regla mal definida (criterio sin área) no se ejecuta ni se verifica, y la salida lo dice | [`reglas/otorgamiento_y_atribucion.md`](./reglas/otorgamiento_y_atribucion.md) | 141, `regla_35.test.mjs` |
 | 36 | La Bandeja Inbound es una ventana con tope, y lo que el tope bota se dice | [`reglas/prospeccion_cartera_y_churn.md`](./reglas/prospeccion_cartera_y_churn.md) | 142, `regla_36.test.mjs` |
+| 37 | Girar no es una acción de NEX: el sistema termina en la inyección a Tesorería, que autoriza Operaciones | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | `regla_transiciones.test.mjs` |
 | 17 | Teléfonos ofuscados en logs | [`contrato_servidor_y_auditoria.md`](./contrato_servidor_y_auditoria.md) | 130, `regla_17.test.mjs` |
 
 ## Contrato con el servidor (12 invariantes, `INVARIANTES` en el fuente)
@@ -96,7 +97,7 @@ timestamp: 2026-09-18T02:18:36Z
 | OTG-01 | Sólo aprueba quien tiene atribución | La excepción la resuelve un apoderado con atribución en el área y nivel que la regla exige. | servidor | 135, `regla_otg_01.test.mjs` |
 | OTG-02 | No avanza a Cesión con excepciones pendientes | Con excepciones o rechazos re-evaluables sin resolver, la operación no puede pasar a Cesión. | servidor | 88, `regla_transiciones.test.mjs` |
 | VER-01 | No cursa con verificación pendiente | Todas las facturas de la operación tienen que tener su verificación telefónica completa. | servidor | 52, 88 |
-| GIR-01 | No gira sin pasar por Cesión | El desembolso exige que la operación haya pasado por Cesión (documentos cedidos a Security). | servidor | 136, `regla_transiciones.test.mjs` |
+| GIR-01 | No gira sin pasar por Cesión | El desembolso exige que la operación haya pasado por Cesión (documentos cedidos a Security). | servidor | 136, `regla_transiciones.test.mjs` · **NEX no lo aplica**: el giro es de Tesorería (regla 37) |
 | GIR-02 | El paquete girado es el que se autorizó | El desembolso exige una evidencia de contrato de cesión (O05) cuya huella calce con la operación que se inyecta. | servidor | 86, 88 |
 | ATR-01 | Descuento dentro de la atribución | El descuento aplicado no puede exceder la atribución del rol sin autorización de la jefatura correspondiente. **Quién autoriza se comprueba ANTES de escribir, contra el padrón y no contra un prop de la pantalla** (regla 24). | servidor | 137, 143, `regla_atr_01.test.mjs` |
 | CRY-01 | El hash del OTP no sale del servidor | El OTP se guarda como SHA-256 con sal por emisión; el hash nunca viaja al cliente ni a otra página. La validación ocurre server-side, con límite de intentos y TTL. | servidor | 138, `e2e-CRY-01-limite`, `e2e-CRY-01-bajo-limite`, `regla_cry_01.test.mjs` |

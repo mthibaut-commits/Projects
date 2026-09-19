@@ -203,7 +203,11 @@ test("sonda negativa: una fila plantada para una regla inexistente, un caso inex
    La regla que lo caza es barata y de una sola dirección: **si el código aparece en el fuente FUERA de la
    tabla, `aplicado` no puede ser `ui`**, porque esa aparición ES la guarda o su auditoría. Al revés no se
    exige nada: un invariante que sólo vive en la tabla puede legítimamente apoyarse en la pantalla. */
-export const APLICADO_VALIDOS = new Set(["repositorio", "motor", "funcion", "observado", "ui"]);
+/* `externo` se agregó el 19-09-2026: hay invariantes que el contrato declara para que el resolver los
+   implemente y que NEX NO anticipa, porque la ACCIÓN no es suya. GIR-01 es el caso: el giro lo autoriza
+   Operaciones al aprobar la integración y lo ejecuta Tesorería, fuera de este sistema. Decir `funcion`
+   ahí sería afirmar una guarda que no existe, y decir `ui` sería peor todavía. */
+export const APLICADO_VALIDOS = new Set(["repositorio", "motor", "funcion", "observado", "ui", "externo"]);
 
 export function aplicadoDe(jsx) {
   const ini = jsx.indexOf("const INVARIANTES = [");

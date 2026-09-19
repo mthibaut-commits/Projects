@@ -12340,18 +12340,23 @@ function DealDrawer({
             const destinos = STAGES.filter((st) => {
               if (["aceptadas", "cesion", "perdida"].includes(st.id)) return false;
               if (STAGE_ORDER.indexOf(st.id) <= iAct) return false;
-              // Además de la aceptación vigente (regla 1), la huella del paquete tiene que calzar con
-              // la evidencia del contrato (GIR-02). Ocultar el destino no es el control —lo impone el
-              // resolver— pero ofrecer un botón que va a fallar es peor que no ofrecerlo.
-              if (st.id === "giro") return aprobacionFormalCliente(deal) && evidenciaContratoOk(deal).ok;
+              // GIRAR NO ES DEL COMERCIAL. Lo autoriza Operaciones al aprobar la integración al core, y
+              // el desembolso lo hace Tesorería, fuera de NEX. Ofrecerlo acá dejaba que el comercial
+              // pusiera la operación en «Pendiente de Giro» sin que Operaciones verificara nada. NO
+              // desaparece en silencio: abajo se muestra apagado con el motivo (regla 24).
+              if (st.id === "giro") return false;
               return true;
             });
             // Cuando lo ÚNICO que falta es la huella —el cliente firmó, pero la operación cambió
             // después— el destino no desaparece: se muestra apagado con el motivo. Desaparecer sin
             // explicación es el peor de los dos: el ejecutivo ve una operación aceptada que no puede
             // girar y no tiene dónde enterarse de por qué.
+            // El destino «Girar» ya no se ofrece nunca, así que el motivo tiene TRES formas: la huella que
+            // no calza y la evidencia que falta (las de siempre), y —cuando no falta ninguna de las dos—
+            // la que explica de quién es la acción. Sin esta tercera, el ejecutivo veía una operación
+            // aceptada y en regla que simplemente no aparecía como destino (regla 24).
             const evGiro = aprobacionFormalCliente(deal) && STAGE_ORDER.indexOf("giro") > iAct ? evidenciaContratoOk(deal) : null;
-            const giroTrabado = evGiro && !evGiro.ok ? evGiro : null;
+            const giroTrabado = evGiro ? (evGiro.ok ? { motivo: "lo_autoriza_operaciones" } : evGiro) : null;
             if (!destinos.length && !giroTrabado) return null;
             return (
               <>
@@ -12364,17 +12369,21 @@ function DealDrawer({
                     className="flex items-start gap-1.5 rounded-md px-2 py-1.5 t10"
                     style={{ color: C.sub, backgroundColor: "#FFF7ED", cursor: "help" }}
                     title={
-                      giroTrabado.motivo === "sin_evidencia"
-                        ? "Falta la evidencia del contrato de cesión (criterio O05 del tab Otorgamiento)."
-                        : `Lo autorizado: ${giroTrabado.firmado}\nLo que se giraría: ${giroTrabado.actual}`
+                      giroTrabado.motivo === "lo_autoriza_operaciones"
+                        ? "El giro lo autoriza OPERACIONES: al verificar los adjuntos de las excepciones, la verificación telefónica, las excepciones resueltas y la cobertura de línea, aprueba la integración al core y eso inyecta la operación en TESORERÍA, que es quien gira. No es una acción del comercial."
+                        : giroTrabado.motivo === "sin_evidencia"
+                          ? "Falta la evidencia del contrato de cesión (criterio O05 del tab Otorgamiento)."
+                          : `Lo autorizado: ${giroTrabado.firmado}\nLo que se giraría: ${giroTrabado.actual}`
                     }
                   >
                     <AlertTriangle size={11} className="mt-0.5 shrink-0" style={{ color: "#C2410C" }} />
                     <span>
                       <b>Girar</b> no está disponible:{" "}
-                      {giroTrabado.motivo === "sin_evidencia"
-                        ? "falta la evidencia del contrato de cesión (O05)."
-                        : "la operación cambió después de que el cliente la autorizó — hay que volver a firmarla."}
+                      {giroTrabado.motivo === "lo_autoriza_operaciones"
+                        ? "lo autoriza Operaciones al aprobar la integración al core, y el desembolso lo hace Tesorería."
+                        : giroTrabado.motivo === "sin_evidencia"
+                          ? "falta la evidencia del contrato de cesión (O05)."
+                          : "la operación cambió después de que el cliente la autorizó — hay que volver a firmarla."}
                     </span>
                   </div>
                 )}
@@ -23060,7 +23069,7 @@ const INVARIANTES = [
     codigo: "GIR-01",
     nombre: "No gira sin pasar por Cesión",
     autoridad: "servidor",
-    aplicado: "funcion", // `moverEtapa`: la etapa de origen se comprueba antes de escribir (gate `regla_transiciones.test.mjs`)
+    aplicado: "externo", // el giro no es una acción de NEX: lo autoriza Operaciones al integrar y lo ejecuta Tesorería (19-09-2026)
     mutaciones: ["oportunidad.girar"],
     regla: "El desembolso exige que la operación haya pasado por Cesión (documentos cedidos a Security).",
     servidor: "El giro se emite contra el AEC confirmado, no contra el stage que reporta el cliente.",
@@ -46355,23 +46364,21 @@ export default function PipelineComercial() {
     // El predicado NO se escribe acá: se le pregunta al invariante por su CÓDIGO, porque una segunda copia
     // de «pasó por cesión» se desfasa de la tabla del contrato sin que nadie lo note. Cada transición lleva
     // su código literal y no una variable, para que el gate pueda fijar QUÉ invariante cubre QUÉ paso.
-    if (stageId === "giro") {
-      const dT = (dealsRef.current || []).find((x) => x.id === id);
-      if (dT && !invarianteCumple("GIR-01", "oportunidad.girar", { deal: dT }).ok) {
-        const porQue = `la operación está en «${etapaDeDeal(dT)}» y el desembolso exige haber pasado por Cesión`;
-        logSys("warn", "giro", `Transición bloqueada (GIR-01) · ${id} · ${porQue}`, { operacion: id, codigo: "GIR-01" });
-        registrarAuditoria({
-          usuario: USERS[usuario] || usuario,
-          modulo: "Giro",
-          accion: "Avance de etapa bloqueado (GIR-01)",
-          glosa: `${dT.cliente || id}: ${porQue}`,
-          empresaId: id,
-          severidad: "alta",
-          exito: false,
-        });
-        return;
-      }
-    }
+    // GIRAR NO ES UNA ACCIÓN DE NEX (19-09-2026, corrección del usuario). Mismo tratamiento que
+    // «Aceptada» de arriba, y por la misma razón: no la fija este sistema. El camino real es que
+    // OPERACIONES verifique los adjuntos de las excepciones, la verificación telefónica, las excepciones
+    // resueltas y la cobertura de línea, y apriete «Aprobar integración al core» (`aprobarIntegracion`):
+    // eso INYECTA la operación en TESORERÍA, y Tesorería gira. Así que acá no se rechaza ni se audita
+    // nada sobre el giro —el control es del otro sistema—: la transición simplemente no existe como
+    // acción manual. GIR-02, la huella de lo que se inyecta, sigue comprobándose donde sirve, que es
+    // `aprobarIntegracion`: es el último punto ANTES de inyectar, y ese sí es un acto de NEX.
+    //
+    // PENDIENTE DE DEFINIR (19-09-2026): CÓMO NOS ENTERAMOS DEL GIRO. Hoy `giroPendiente: false` —o sea
+    // «Girada»— no tiene quién lo escriba desde afuera: no hay callback de Tesorería, ni consulta, ni
+    // archivo. La operación queda en «Pendiente de Giro» y el paso a «Girada» no está modelado como
+    // NOTICIA que llega, que es lo que es. Decidirlo (¿push?, ¿pull como el de estados de línea?,
+    // ¿batch diario?) cambia qué escribe ese campo y quién lo audita. Está en el tablero.
+    if (stageId === "giro") return;
     if (stageId === "cesion") {
       const dT = (dealsRef.current || []).find((x) => x.id === id);
       if (dT && !invarianteCumple("OTG-02", "oportunidad.avanzarEtapa", { deal: dT }).ok) {
@@ -46382,33 +46389,6 @@ export default function PipelineComercial() {
           modulo: "Otorgamiento",
           accion: "Avance de etapa bloqueado (OTG-02)",
           glosa: `${dT.cliente || id}: ${porQue}`,
-          empresaId: id,
-          severidad: "alta",
-          exito: false,
-        });
-        return;
-      }
-    }
-    // GIR-02 · GATE DE INYECCIÓN AL CORE. Girar es entregarle la operación a Tesorería, así que acá se
-    // compara la huella de lo que se va a inyectar contra la de la evidencia del contrato (O05). Es el
-    // último punto en que la comparación sirve de algo: después el dinero ya salió. En producción esto
-    // lo decide el resolver —acá se ANTICIPA el rechazo, no se impone: el atacante es el cliente—.
-    if (stageId === "giro") {
-      const d0 = (dealsRef.current || []).find((x) => x.id === id);
-      const ev = evidenciaContratoOk(d0);
-      if (!ev.ok) {
-        const nom = USERS[usuario] || usuario;
-        logSys("warn", "giro", `Inyección al core bloqueada · ${id} · ${ev.motivo}`, {
-          operacion: id,
-          motivo: ev.motivo,
-          firmado: ev.firmado || null,
-          actual: ev.actual || null,
-        });
-        registrarAuditoria({
-          usuario: nom,
-          modulo: "Giro",
-          accion: "Inyección al core bloqueada (GIR-02)",
-          glosa: `${(d0 && d0.cliente) || id}: ${ev.detalle}${ev.firmado ? ` · firmado «${ev.firmado}» · actual «${ev.actual}»` : ""}`,
           empresaId: id,
           severidad: "alta",
           exito: false,
