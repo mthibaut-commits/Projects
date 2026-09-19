@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-18T22:40:00Z
+timestamp: 2026-09-19T00:05:00Z
 ---
 
 # Estado actual
@@ -34,11 +34,11 @@ con el fuente **formateado con Prettier** (ADR-0006).
 > 2. **Decidir los datos**: razones sociales reales sobre RUT sintéticos — un ADR y un gate (hoy ningún test lo
 >    afirma ni lo niega). · 3. Sacar `pipeline.zip` (**2,7 MB**, un build del 12-08 de un generado).
 
-## En vuelo ahora · `claude/migrate-project-session-vui9dl`, verde y pusheada; falta mezclarla a `main`
+## En vuelo ahora · nada: todo está en `main`, sólo quedan las tareas del usuario (abajo)
 
 | Trabajo | Integrado en `main` |
 |---|---|
-| **Regla 35, ampliada por el usuario**: una regla excepcionable sin nadie que pueda firmarla tampoco se ejecuta (tres causas, tres mantenedores). La compuerta recibe el PADRÓN por parámetro y el núcleo se partió en `cargoDeAreaNivel` para no sacar a `evalReglaCli` de las puras (caso 143) | **no, en la rama** |
+| **Regla 35, ampliada por el usuario**: una regla excepcionable sin nadie que pueda firmarla tampoco se ejecuta (tres causas, tres mantenedores). La compuerta recibe el PADRÓN por parámetro y el núcleo se partió en `cargoDeAreaNivel` para no sacar a `evalReglaCli` de las puras (caso 143) | este merge |
 | **Portada que muestra el producto** (36, 37, 38 · ADR-0005): arte generado, un solo morado, zoom al dashboard. Los colores no llegaban a quien tenía config guardada: `cfgOper` subió a v2 con migración (39) | `daf3493` |
 | Invariantes · e2e · O05 · tab «Todos» (34) · regla mal definida (35) · paso 2 · auditorías · spec exc. | `d389379` |
 | «Operación creada» + id estable + restyle (33, 29, 22 · ADR-0004) `8b75a03` · punto fijo (32 · ADR-0003) `3a27737` · gates y partir `CLAUDE.md` (ADR-0001/2) `bd14091` | ✓ |
