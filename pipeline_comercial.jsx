@@ -21739,6 +21739,9 @@ function evaluarOtorgItems(deal, estado) {
   const vCli = { ...varsClienteActual(deal, versiones, estado), ...varsModeloExt(deal) };
   const deudores = deudoresDeDeal(deal);
   const monto = (deal && deal.monto) || 0;
+  // El padrón del tenant, UNA vez para todo el catálogo: con él la compuerta de la regla 35 decide si la
+  // excepción de cada criterio tiene a quién pedírsela. Acá —que es el adaptador— y no dentro del motor.
+  const padron = padronAprobadores();
   const items = [];
   // El MONTO escala la atribución (INC-05) y se aplica acá, en el único sitio que arma los ítems: todo
   // lo que decide después —`visadoDealCalc`, el tab del detalle, la bandeja de otorgamientos— lee
@@ -21747,10 +21750,15 @@ function evaluarOtorgItems(deal, estado) {
   const conPiso = (r, ev) => (ev.disp === "excepcion" ? { ...ev, nivel: nivelExigido(r.area, ev.nivel, monto), nivelTramo: ev.nivel } : ev);
   REGLAS_CLIENTE.forEach((r) => {
     if (!esReglaDeudor(r)) {
-      items.push({ regla: r, ...conPiso(r, evalReglaCli(r, vCli)), deudor: null, stKey: String(r.n) });
+      items.push({ regla: r, ...conPiso(r, evalReglaCli(r, vCli, padron)), deudor: null, stKey: String(r.n) });
     } else
       deudores.forEach((d) => {
-        items.push({ regla: r, ...conPiso(r, evalReglaCli(r, { ...vCli, ...deudorBlock(deal, d, rev) })), deudor: d, stKey: r.n + "@" + (d.rut || d.nombre) });
+        items.push({
+          regla: r,
+          ...conPiso(r, evalReglaCli(r, { ...vCli, ...deudorBlock(deal, d, rev) }, padron)),
+          deudor: d,
+          stKey: r.n + "@" + (d.rut || d.nombre),
+        });
       });
   });
   return items;
@@ -22357,15 +22365,22 @@ function varsModeloExt(deal) {
   );
 })();
 // ¿La regla está BIEN DEFINIDA para decidir? El ruteo de una excepción es el par (ÁREA, NIVEL): la regla
-// declara el área y su tramo el nivel. Una regla que DECIDE —que tiene tramos— y no declara área no se
-// puede rutear: no hay a quién pedirle la excepción ni a quién atribuirle el rechazo. Hasta hoy se
-// evaluaba igual y el resultado salía con «Sin aprobador definido», o sea que la operación quedaba
-// pegada esperando a alguien que no existe. Decisión del usuario (18-09-2026): **esa regla no se ejecuta
-// ni se verifica**, y la salida lo DICE. Lo que no cambia es el otro caso: si el área existe en el
-// catálogo pero el tenant no la tiene, o nadie la tiene en ese nivel, la regla sí se evalúa y su
-// excepción sale con «Sin aprobador definido» — ahí falta un usuario, no falta la definición.
+// declara el área y su tramo el nivel, y con ese par se busca a la PERSONA que puede firmarla. Una regla
+// que DECIDE —que tiene un tramo de excepción— y cuyo par no llega a nadie no se puede rutear: no hay a
+// quién pedirle la excepción. Hasta hoy se evaluaba igual y el resultado salía con «Sin aprobador
+// definido», o sea que la operación quedaba pegada esperando a alguien que no existe. Decisión del
+// usuario (18-09-2026): **esa regla no se ejecuta ni se verifica**, y la salida lo DICE.
+// SON TRES CAUSAS, no una (el usuario, 18-09-2026, ampliando la primera versión: «si la regla especifica
+// que es excepcionable debe gatillar el mensaje que está mal definido»). La regla no declara área; el
+// área que declara no existe en este tenant; o existe y NADIE la tiene en ese nivel ni en uno superior.
+// Las tres dejan la excepción sin destinatario, que es lo único que importa acá, y por eso las tres
+// paran la regla. Se distinguen igual por su `causa` porque se arreglan en mantenedores distintos: el
+// catálogo de otorgamiento, Configuración › Áreas y Configuración › Usuarios.
+// EL PADRÓN ENTRA POR PARÁMETRO: la compuerta juzga si la regla es ROUTEABLE en un tenant dado, así que
+// necesita el padrón de ese tenant — pero no lo lee por su cuenta, para que el motor siga siendo
+// extraíble al servidor (`auditar_aislamiento.mjs`). Quien itera el catálogo lo calcula UNA vez y lo pasa.
 // Las de CLASIFICACIÓN quedan fuera: informan y no deciden, así que no necesitan a quién pedirle nada.
-function reglaNoEjecutable(regla) {
+function reglaNoEjecutable(regla, padron) {
   if (!regla) return { noEjecutable: true, motivo: "no hay regla que evaluar" };
   if (regla.clasif) return { noEjecutable: false };
   if (!(regla.tiers && regla.tiers.length)) return { noEjecutable: false }; // sin tramos no decide nada
@@ -22377,20 +22392,52 @@ function reglaNoEjecutable(regla) {
   // la mesa de reglas arma su lista
   // (`tiers.some((t) => t[1] === "excepcion")`): si divergieran, la mesa mostraría reglas que el motor
   // no rutea, o al revés.
-  if (!regla.area && (regla.tiers || []).some((t) => t[1] === "excepcion"))
+  const excs = (regla.tiers || []).filter((t) => t[1] === "excepcion");
+  if (!excs.length) return { noEjecutable: false };
+  if (!regla.area)
     return {
       noEjecutable: true,
+      causa: "sin_area",
       motivo: "el criterio tiene un tramo de excepción y no declara área, así que no hay a quién pedírsela",
       arregla: "Declara el área de la regla en el catálogo de otorgamiento (Configuración › Áreas define cuáles existen).",
     };
+  // Sin padrón no se puede juzgar el ruteo, y callarse sería exactamente lo que esta regla prohibe: falla
+  // CERRADO. No es configuración que falte sino un defecto del código —quien llama al motor se olvidó de
+  // inyectarlo—, y así se ve en pantalla en vez de pasar como un criterio aprobado.
+  if (!padron)
+    return {
+      noEjecutable: true,
+      causa: "sin_padron",
+      motivo: "el motor no recibió el padrón de aprobadores, así que no puede saber si la excepción tiene a quién pedírsela",
+      arregla: "Es un defecto del código, no de la configuración: quien llama al motor tiene que inyectarle el padrón de aprobadores del tenant.",
+    };
+  // Declarar el área no basta: la excepción se le pide a una PERSONA. Se prueban TODOS los tramos de
+  // excepción —no sólo el primero— porque cualquiera de ellos puede ser el que dispare, y uno solo sin
+  // destinatario deja la operación pegada igual. El núcleo escala hacia arriba, así que «nadie» significa
+  // nadie en ese nivel NI en uno superior. «Nadie» es nadie de la ESCALERA DE ATRIBUCIÓN: el super-admin
+  // puede visar cualquier cosa (`puedeAprobarExc` lo deja pasar antes de mirar el área) y eso no cuenta —
+  // es la llave maestra del tenant, no el aprobador que la política designa; con el mismo criterio una
+  // regla sin área tampoco se ejecuta aunque el super-admin pudiera firmarla.
+  for (const t of excs) {
+    const cargo = cargoDeAreaNivel(regla.area, t[2], padron);
+    if (cargo && cargo.sinAprobador)
+      return {
+        noEjecutable: true,
+        causa: cargo.causa,
+        requiere: cargo.requiere,
+        motivo: `su tramo de excepción pide ${cargo.requiere} y ${cargo.motivo.split(" — ")[0]}`,
+        arregla: cargo.arregla,
+      };
+  }
   return { noEjecutable: false };
 }
-function evalReglaCli(rule, v) {
+function evalReglaCli(rule, v, padron) {
   if (rule.clasif) return { disp: "clasificacion", label: rule.clfn ? rule.clfn(v) : "" };
   // ANTES de mirar los tramos: una regla mal definida no se ejecuta ni se verifica (regla 35). Va acá
   // —el único sitio por donde pasan las de cliente y las de deudor— y no en cada consumidor, porque el
-  // que se olvidara la evaluaría igual.
-  const nd = reglaNoEjecutable(rule);
+  // que se olvidara la evaluaría igual. El padrón viaja de largo: la compuerta necesita saber si hay
+  // alguien que pueda firmar la excepción, y este motor no lo lee por su cuenta.
+  const nd = reglaNoEjecutable(rule, padron);
   if (nd.noEjecutable) return { disp: "no_ejecutada", motivo: nd.motivo, arregla: nd.arregla, tierIdx: null };
   for (let i = 0; i < rule.tiers.length; i++) {
     if (rule.tiers[i][0](v)) return { disp: rule.tiers[i][1], nivel: rule.tiers[i][2], tierIdx: i };
@@ -22554,8 +22601,9 @@ function snapVersionCli(deal, rev) {
   }
   // Sólo reglas del CLIENTE (las de deudor se evalúan por deudor aparte en evaluarOtorgItems). Ya sin forzar el
   // disp: las reglas re-evaluables mejoran porque su VARIABLE se reparó arriba (consistente con el diff).
+  const padron = padronAprobadores();
   const res = REGLAS_CLIENTE.filter((r) => !esReglaDeudor(r)).map((r) => {
-    const e = evalReglaCli(r, vars);
+    const e = evalReglaCli(r, vars, padron);
     // `motivo`/`arregla` viajan en el snapshot: si no, la fila del cliente diría «No ejecutada» sin decir
     // por qué, que es justo la mitad que importa (regla 35).
     return {
@@ -23811,9 +23859,13 @@ const ROL_ATRIB = {
 // Lo que el motor muestra cuando un criterio no tiene a quién pedirle la excepción. Es una sola
 // constante para que la frase sea idéntica en las cinco pantallas donde puede aparecer.
 const SIN_APROBADOR = "Sin aprobador definido";
-function rolDeAreaNivel(area, nivel, padron) {
-  const pad = padron || padronAprobadores();
-  const delArea = pad.cargos.filter((c) => c.area === area);
+// EL NÚCLEO, PURO: resuelve (ÁREA, NIVEL) contra el padrón que le DAN y no sabe de dónde sale. Existe
+// aparte del adaptador de abajo porque la compuerta de la regla 35 lo llama desde DENTRO del motor: si
+// llamara a `rolDeAreaNivel` —que sabe buscarse el padrón del tenant cuando no se lo pasan— arrastraría
+// `USERS`, `AREAS_CAT` y compañía hasta `evalReglaCli`, y el motor dejaría de ser extraíble al servidor.
+// `auditar_aislamiento.mjs` sigue las llamadas, así que la distinción no es decorativa: la mide.
+function cargoDeAreaNivel(area, nivel, pad) {
+  const delArea = (pad && pad.cargos ? pad.cargos : []).filter((c) => c.area === area);
   const exacto = delArea.find((c) => c.nivel === nivel);
   if (exacto) return { rol: exacto.rol, area, id: exacto.id };
   const sup = delArea.filter((c) => c.nivel >= nivel).sort((x, y) => x.nivel - y.nivel)[0];
@@ -23824,18 +23876,32 @@ function rolDeAreaNivel(area, nivel, padron) {
   // sepa por qué. Se distinguen las dos causas porque se arreglan en mantenedores distintos.
   const areaDef = pad.areas.find((a) => a.id === area);
   const areaLbl = (areaDef && areaDef.label) || area || "—";
+  // La CAUSA va aparte del texto porque quien la consume decide distinto según cuál sea: `reglaNoEjecutable`
+  // (regla 35) usa las tres para no ejecutar la regla, y cada una se arregla en un mantenedor distinto.
+  const causa = !area ? "sin_area" : !areaDef ? "area_inexistente" : "sin_usuario";
   return {
     rol: SIN_APROBADOR,
     area,
     id: null,
     sinAprobador: true,
+    causa,
     requiere: `${areaLbl} · N${nivel}`,
     motivo: !area
       ? "el criterio no declara área"
       : !areaDef
         ? `el área «${area}» no existe en este tenant — créala en Configuración › Áreas`
         : `nadie tiene ${areaLbl} en nivel N${nivel} o superior — asígnalo en Configuración › Usuarios`,
+    arregla:
+      causa === "sin_area"
+        ? "Declara el área de la regla en el catálogo de otorgamiento."
+        : causa === "area_inexistente"
+          ? `Crea el área «${area}» en Configuración › Áreas, o corrige la que la regla declara.`
+          : `Asigna a alguien ${areaLbl} en nivel N${nivel} o superior en Configuración › Usuarios.`,
   };
+}
+// El ADAPTADOR: el mismo cálculo para quien no trae padrón —las pantallas—, que lo busca en el tenant.
+function rolDeAreaNivel(area, nivel, padron) {
+  return cargoDeAreaNivel(area, nivel, padron || padronAprobadores());
 }
 function atribDeRol(code) {
   if (code === "ADMIN") return { riesgo: 5, comercial: 5, operaciones: 5 };
@@ -25798,6 +25864,10 @@ function CentroMensajeria({ usuario, deals, onClose, onOpenDeal, onChange }) {
 // verificación": unifica ambos, ya que una regla del cliente ES un criterio de verificación (risk tier).
 function ReglasClienteCatalogo() {
   const [modal, setModal] = useState(null); // regla en consulta (solo lectura)
+  // El padrón, una vez: la compuerta de la regla 35 lo necesita para saber si la excepción de cada
+  // criterio tiene destinatario, y una regla puede quedar mal definida SIN que el catálogo cambie —basta
+  // borrar el área en Configuración o dejarla sin gente—, así que esta pantalla no puede juzgarla sola.
+  const padron = padronAprobadores();
   const areas = ["operaciones", "comercial", "riesgo", "extras"];
   const areaLbl = { operaciones: "Operaciones", comercial: "Comercial", riesgo: "Riesgo", extras: "Extras" };
   const areaCol = (a) => AREA_COLOR[a] || { bg2: "#E5E7EB", fg: "#4B5563" };
@@ -25833,13 +25903,13 @@ function ReglasClienteCatalogo() {
       {(() => {
         const fuera = REGLAS_CLIENTE.filter((r) => !areas.includes(r.area));
         if (!fuera.length) return null;
-        const malas = fuera.filter((r) => reglaNoEjecutable(r).noEjecutable);
+        const malas = fuera.filter((r) => reglaNoEjecutable(r, padron).noEjecutable);
         return (
           <div className="mt-3 overflow-hidden rounded-xl" style={{ border: "2px solid #F97316" }}>
             <div className="flex flex-wrap items-center gap-2 px-3 py-2" style={{ backgroundColor: "#FFF7ED" }}>
               <AlertTriangle size={14} style={{ color: "#9A3412" }} />
               <span className="t13 font-bold" style={{ color: "#9A3412" }}>
-                Sin área · {malas.length ? "NO SE EJECUTAN" : "fuera de las áreas listadas"}
+                Fuera de las áreas listadas{malas.length ? " · " + malas.length + " NO SE EJECUTAN" : ""}
               </span>
               <span className="t10 font-semibold" style={{ color: "#9A3412", opacity: 0.75 }}>
                 · {fuera.length} criterio(s)
@@ -25849,8 +25919,8 @@ function ReglasClienteCatalogo() {
               <div className="t10" style={{ color: "#9A3412", lineHeight: 1.5 }}>
                 {malas.length > 0 ? (
                   <>
-                    Tienen un tramo de excepción y <b>no declaran a quién pedírsela</b>, así que el motor los salta y{" "}
-                    <b>las operaciones se evalúan sin ellos</b>. Se arregla declarando su área acá y en <b>Configuración › Áreas</b>.
+                    Tienen un tramo de excepción y <b>no hay a quién pedírsela</b>, así que el motor los salta y <b>las operaciones se evalúan sin ellos</b>.
+                    Cada uno dice por qué y dónde se arregla.
                   </>
                 ) : (
                   <>
@@ -25860,7 +25930,7 @@ function ReglasClienteCatalogo() {
                 )}
               </div>
               {fuera.map((r) => {
-                const ne = reglaNoEjecutable(r);
+                const ne = reglaNoEjecutable(r, padron);
                 return (
                   <div
                     key={r.n}
@@ -25887,6 +25957,14 @@ function ReglasClienteCatalogo() {
                         área declarada: {r.area ? <b>{r.area}</b> : <i>(ninguna)</i>}
                       </span>
                     </div>
+                    {ne.noEjecutable && (
+                      <div
+                        className="mt-1 rounded-md px-2 py-1.5 t9 font-semibold"
+                        style={{ backgroundColor: "#fff", border: "1px solid #FED7AA", color: "#9A3412" }}
+                      >
+                        ⚠ {ne.motivo}. {ne.arregla}
+                      </div>
+                    )}
                     {r.hallazgo && (
                       <div className="mt-0.5 t10" style={{ color: C.sub }}>
                         {r.hallazgo}
@@ -25903,91 +25981,121 @@ function ReglasClienteCatalogo() {
         const rs = REGLAS_CLIENTE.filter((r) => r.area === area);
         if (!rs.length) return null;
         const ac = areaCol(area);
+        // REGLA 35 · TENER ÁREA NO BASTA. Estas reglas SÍ caen en un grupo —declaran una de las cuatro— y
+        // aun así pueden estar mal definidas: el tenant borró esa área, o no tiene a nadie en el nivel que
+        // el tramo pide. Sin esta marca la regla se veía normal justo en la pantalla que la cataloga, que
+        // es donde uno va a mirarla.
+        const malasGrupo = rs.filter((r) => reglaNoEjecutable(r, padron).noEjecutable);
         return (
-          <div key={area} className="mt-3 overflow-hidden rounded-xl" style={{ border: `1px solid ${C.line}` }}>
-            <div className="flex items-center gap-2 px-3 py-2" style={{ backgroundColor: ac.bg2 }}>
+          <div key={area} className="mt-3 overflow-hidden rounded-xl" style={{ border: `1px solid ${malasGrupo.length ? "#F97316" : C.line}` }}>
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2" style={{ backgroundColor: ac.bg2 }}>
               <span className="t13 font-bold" style={{ color: ac.fg }}>
                 {areaLbl[area]}
               </span>
               <span className="t10 font-semibold" style={{ color: ac.fg, opacity: 0.75 }}>
                 · {rs.length} criterio(s)
               </span>
+              {malasGrupo.length > 0 && (
+                <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: "#C2410C", color: "#fff" }}>
+                  ⚠ {malasGrupo.length} NO SE EJECUTAN
+                </span>
+              )}
             </div>
             <div className="space-y-2 p-2.5">
-              {rs.map((r) => (
-                <div
-                  key={r.n}
-                  className="rounded-lg p-2.5"
-                  style={{ border: `1px solid ${C.line}`, borderLeft: `3px solid ${ac.fg}`, backgroundColor: "#fff" }}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="t9 font-bold" style={{ color: C.faint }}>
-                          #{r.n}
-                        </span>
-                        <div className="t11 font-medium" style={{ color: C.ink }}>
-                          {r.nombre}
-                        </div>
-                        <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#EFF6FF", color: "#2563EB" }}>
-                          Automática
-                        </span>
-                        <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F3F4F6", color: C.sub }}>
-                          Criticidad: Mínima
-                        </span>
-                        <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>
-                          Cliente
-                        </span>
-                        {r.clasif && (
-                          <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#5B21D6" }}>
-                            Clasificación interna
+              {rs.map((r) => {
+                const ne = reglaNoEjecutable(r, padron);
+                return (
+                  <div
+                    key={r.n}
+                    className="rounded-lg p-2.5"
+                    style={{
+                      border: `1px solid ${ne.noEjecutable ? "#F97316" : C.line}`,
+                      borderLeft: `3px solid ${ne.noEjecutable ? "#C2410C" : ac.fg}`,
+                      backgroundColor: ne.noEjecutable ? "#FFF7ED" : "#fff",
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="t9 font-bold" style={{ color: C.faint }}>
+                            #{r.n}
                           </span>
+                          <div className="t11 font-medium" style={{ color: C.ink }}>
+                            {r.nombre}
+                          </div>
+                          <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#EFF6FF", color: "#2563EB" }}>
+                            Automática
+                          </span>
+                          <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F3F4F6", color: C.sub }}>
+                            Criticidad: Mínima
+                          </span>
+                          <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>
+                            Cliente
+                          </span>
+                          {r.clasif && (
+                            <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F1ECFF", color: "#5B21D6" }}>
+                              Clasificación interna
+                            </span>
+                          )}
+                          {ne.noEjecutable && (
+                            <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: "#C2410C", color: "#fff" }}>
+                              No se ejecuta ni se verifica
+                            </span>
+                          )}
+                        </div>
+                        {ne.noEjecutable && (
+                          <div
+                            className="mt-1 rounded-md px-2 py-1.5 t9 font-semibold"
+                            style={{ backgroundColor: "#fff", border: "1px solid #FED7AA", color: "#9A3412" }}
+                          >
+                            ⚠ Mal definida: {ne.motivo}. Las operaciones se evalúan sin ella. {ne.arregla}
+                          </div>
+                        )}
+                        {(r.hallazgo || r.cond) && (
+                          <div className="t9" style={{ color: C.sub }}>
+                            {r.hallazgo || r.cond}
+                          </div>
+                        )}
+                        {r.clasif ? (
+                          <div className="mt-1">
+                            <span className="rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>
+                              Clasificación (no decide)
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="mt-1.5 space-y-0.5">
+                            {(r.tiers || []).map((t, i) => {
+                              const c = tierChip(t);
+                              return (
+                                <div key={i} className="flex items-start gap-1.5 t9">
+                                  <span
+                                    className="shrink-0 rounded-full px-1.5 py-0.5 font-semibold"
+                                    style={{ backgroundColor: c.bg, color: c.fg, whiteSpace: "nowrap" }}
+                                  >
+                                    {c.l}
+                                  </span>
+                                  <span style={{ color: C.sub }}>
+                                    si <b style={{ color: C.ink, fontFamily: "ui-monospace, monospace" }}>{tramoCond(t[0])}</b>
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
                         )}
                       </div>
-                      {(r.hallazgo || r.cond) && (
-                        <div className="t9" style={{ color: C.sub }}>
-                          {r.hallazgo || r.cond}
-                        </div>
-                      )}
-                      {r.clasif ? (
-                        <div className="mt-1">
-                          <span className="rounded-full px-1.5 py-0.5 t9 font-medium" style={{ backgroundColor: "#f5f3ff", color: "#7C3AED" }}>
-                            Clasificación (no decide)
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="mt-1.5 space-y-0.5">
-                          {(r.tiers || []).map((t, i) => {
-                            const c = tierChip(t);
-                            return (
-                              <div key={i} className="flex items-start gap-1.5 t9">
-                                <span
-                                  className="shrink-0 rounded-full px-1.5 py-0.5 font-semibold"
-                                  style={{ backgroundColor: c.bg, color: c.fg, whiteSpace: "nowrap" }}
-                                >
-                                  {c.l}
-                                </span>
-                                <span style={{ color: C.sub }}>
-                                  si <b style={{ color: C.ink, fontFamily: "ui-monospace, monospace" }}>{tramoCond(t[0])}</b>
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <button
-                        onClick={() => setModal(r)}
-                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold"
-                        style={{ border: `1px solid ${C.indigo}`, color: C.indigo, backgroundColor: "#fff" }}
-                      >
-                        <Eye size={11} /> Consultar
-                      </button>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button
+                          onClick={() => setModal(r)}
+                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold"
+                          style={{ border: `1px solid ${C.indigo}`, color: C.indigo, backgroundColor: "#fff" }}
+                        >
+                          <Eye size={11} /> Consultar
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         );
@@ -26567,6 +26675,7 @@ function buildAtribucionesJSON() {
 // Mantenedor: atribuciones de aprobación por criterio (solo lectura + descarga del JSON de configuración).
 function AtribucionesMantenedor() {
   const [fArea, setFArea] = useState("todas");
+  const padron = padronAprobadores();
   const dispMeta = {
     aprobado: { l: "Aprobado", bg: "#F0FDF4", fg: "#16A34A" },
     excepcion: { l: "Excepción", bg: "#FFF7ED", fg: "#C2410C" },
@@ -26675,10 +26784,11 @@ function AtribucionesMantenedor() {
         {list.map((r) => {
           const ac = AREA_COLOR[r.area] || AREA_COLOR.riesgo;
           // ACÁ ES DONDE SE ARREGLA, así que acá tiene que verse: esta lista son las reglas que necesitan
-          // aprobador (`tiers.some(excepcion)`), o sea exactamente las que quedan mal definidas sin área.
+          // aprobador (`tiers.some(excepcion)`), o sea exactamente las que pueden quedar mal definidas.
           // Sin esta marca, la fila mostraba un chip de área VACÍO —`AREA_LBL[undefined]`— y el mantenedor
-          // no tenía cómo saber que esa regla dejó de ejecutarse (regla 35).
-          const ne = reglaNoEjecutable(r);
+          // no tenía cómo saber que esa regla dejó de ejecutarse (regla 35). Y con el padrón, tampoco basta
+          // que declare área: la columna «Aprobadores» de la derecha puede venir vacía, y eso es lo mismo.
+          const ne = reglaNoEjecutable(r, padron);
           return (
             <div
               key={r.n}
@@ -26690,9 +26800,16 @@ function AtribucionesMantenedor() {
                   #{r.n} · {r.nombre}
                 </span>
                 {ne.noEjecutable ? (
-                  <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: "#C2410C", color: "#fff" }} title={ne.arregla}>
-                    Sin área · NO SE EJECUTA
-                  </span>
+                  <>
+                    <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: "#C2410C", color: "#fff" }} title={ne.arregla}>
+                      {ne.causa === "sin_area" ? "Sin área" : "Sin aprobador"} · NO SE EJECUTA
+                    </span>
+                    {r.area && (
+                      <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: ac.bg2, color: ac.fg }}>
+                        {AREA_LBL[r.area] || r.area}
+                      </span>
+                    )}
+                  </>
                 ) : (
                   <span className="rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: ac.bg2, color: ac.fg }}>
                     {AREA_LBL[r.area]}
@@ -34043,28 +34160,38 @@ function CfgAreas() {
           <code style={{ fontFamily: "ui-monospace,monospace" }}>{AREAS_KEY}</code>). Cada criterio declara <b>un área y un nivel</b>; con ese par se buscan en{" "}
           <b>Usuarios</b> los que tienen esa área en ese nivel o superior.
         </div>
-        {/* REGLA 35 · ACÁ ES DONDE SE DECLARAN LAS ÁREAS, así que acá tiene que verse cuáles criterios se
-            quedaron sin una. Un criterio sin área no rutea a ninguna parte: no aparece en NINGUNA fila de
-            la tabla de abajo, y la suma de «Criterios que rutean acá» deja de cuadrar con el catálogo sin
-            que nada lo diga. Se listan uno por uno —no un contador— porque lo que hay que hacer es ir a
-            buscarlos por su número. */}
+        {/* REGLA 35 · ACÁ ES DONDE SE DECLARAN LAS ÁREAS, así que acá tiene que verse cuáles criterios
+            quedaron sin destinatario. Son TRES causas y esta pantalla puede provocar dos: un criterio sin
+            área no rutea a ninguna parte —no aparece en NINGUNA fila de la tabla de abajo, y la suma de
+            «Criterios que rutean acá» deja de cuadrar con el catálogo—, y borrar acá un área que un
+            criterio declara, o dejarla sin nadie en el nivel que pide, lo deja igual de huérfano sin que
+            el catálogo de reglas haya cambiado una coma. Se listan uno por uno —no un contador— con su
+            causa, porque lo que hay que hacer es ir a arreglarlos por su número. */}
         {(() => {
-          const malas = REGLAS_CLIENTE.filter((r2) => reglaNoEjecutable(r2).noEjecutable);
+          const padron = padronAprobadores();
+          const malas = REGLAS_CLIENTE.map((r2) => ({ r: r2, ne: reglaNoEjecutable(r2, padron) })).filter((x) => x.ne.noEjecutable);
           if (!malas.length) return null;
+          const sinArea = malas.filter((x) => x.ne.causa === "sin_area").length;
           return (
             <div className="mt-3 rounded-xl p-3" style={{ backgroundColor: "#FFF7ED", border: "2px solid #F97316" }}>
               <div className="flex items-center gap-1.5 t12 font-bold" style={{ color: "#9A3412" }}>
-                <AlertTriangle size={14} /> {malas.length} criterio(s) SIN ÁREA: no se ejecutan ni se verifican
+                <AlertTriangle size={14} /> {malas.length} criterio(s) MAL DEFINIDOS: no se ejecutan ni se verifican
               </div>
               <div className="mt-1 t11" style={{ color: "#9A3412", lineHeight: 1.5 }}>
-                Tienen un tramo de excepción y no declaran a quién pedírsela, así que el motor los salta y<b> las operaciones se evalúan sin ellos</b>. No
-                aparecen en ninguna fila de la tabla de abajo: el total de «Criterios que rutean acá» no cuadra con el catálogo. Se arregla declarando su área
-                en el catálogo de otorgamiento.
+                Tienen un tramo de excepción y <b>no hay a quién pedírsela</b>, así que el motor los salta y<b> las operaciones se evalúan sin ellos</b>.
+                {sinArea > 0 && (
+                  <>
+                    {" "}
+                    {sinArea} de ellos no declara área: no aparecen en ninguna fila de la tabla de abajo, así que el total de «Criterios que rutean acá» no
+                    cuadra con el catálogo.
+                  </>
+                )}{" "}
+                Cada uno dice dónde se arregla.
               </div>
               <ul className="mt-1.5 grid gap-0.5">
-                {malas.map((r2) => (
+                {malas.map(({ r: r2, ne }) => (
                   <li key={r2.n} className="t11" style={{ color: "#9A3412" }}>
-                    · <b>#{r2.n}</b> {r2.nombre}
+                    · <b>#{r2.n}</b> {r2.nombre} — {ne.motivo}. <i>{ne.arregla}</i>
                   </li>
                 ))}
               </ul>

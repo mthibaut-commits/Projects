@@ -32,5 +32,7 @@ timestamp: 2026-09-18T03:25:00Z
 
 | 18-09-2026 | [`2026-09-18_orden_tabla_y_bandeja.md`](./2026-09-18_orden_tabla_y_bandeja.md) | El orden de la tabla pasa a ser prioridad de gestión con las que tienen línea global disponible primero (30-bis), deja de re-ordenarse en cada lote, y la Bandeja Inbound deja de botar facturas de la cartera en silencio (36). Tres preguntas del usuario contestadas midiendo en el navegador, y un contador que decía 262 sobre una tabla de 307 |
 
+| 18-09-2026 | [`2026-09-18_regla_sin_aprobador.md`](./2026-09-18_regla_sin_aprobador.md) | Ampliación de la regla 35: tener área no basta —una regla excepcionable a la que nadie puede firmarle la excepción tampoco se ejecuta, con tres causas y tres mantenedores—. La compuerta recibe el PADRÓN por parámetro y el núcleo se partió en `cargoDeAreaNivel` porque `auditar_aislamiento` sacó a `evalReglaCli` de las puras; y un identificador citado dentro de un string cuenta como lectura para ese auditor |
+
 La historia anterior al vault (02-09 → 16-09-2026) no tiene logs propios: vive dentro de las reglas de
 dominio (cada una trae fecha y qué la motivó) y en `Auditoria_*.md` e `Inconsistencias_*.md`.
