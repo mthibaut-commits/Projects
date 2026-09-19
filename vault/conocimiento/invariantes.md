@@ -81,7 +81,7 @@ timestamp: 2026-09-18T02:18:36Z
 | 34 | El tubo de Gestión diaria abre en «Todos», y «Todos» es el PRIMER tab | [`reglas/ui_detalle_y_tubo.md`](./reglas/ui_detalle_y_tubo.md) | `regla_34.test.mjs` |
 | 35 | Una regla mal definida (criterio sin área) no se ejecuta ni se verifica, y la salida lo dice | [`reglas/otorgamiento_y_atribucion.md`](./reglas/otorgamiento_y_atribucion.md) | 141, `regla_35.test.mjs` |
 | 36 | La Bandeja Inbound es una ventana con tope, y lo que el tope bota se dice | [`reglas/prospeccion_cartera_y_churn.md`](./reglas/prospeccion_cartera_y_churn.md) | 142, `regla_36.test.mjs` |
-| 37 | Girar no es una acción de NEX: el sistema termina en la inyección a Tesorería, que autoriza Operaciones, y el giro vuelve como CALLBACK | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 145, `regla_transiciones.test.mjs` |
+| 37 | Girar no es una acción de NEX: el sistema termina en la inyección a Tesorería, que autoriza Operaciones, y el giro vuelve como CALLBACK | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 145, 146, `regla_transiciones.test.mjs` |
 | 17 | Teléfonos ofuscados en logs | [`contrato_servidor_y_auditoria.md`](./contrato_servidor_y_auditoria.md) | 130, `regla_17.test.mjs` |
 
 ## Contrato con el servidor (12 invariantes, `INVARIANTES` en el fuente)

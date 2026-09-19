@@ -6800,6 +6800,48 @@
        `receptor de nivel módulo ${Q.existe} · el aviso cierra (giroPendiente→false, referencia y fecha) ${Q.cierraOk} · reintento sobre una ya girada no reescribe ${Q.idemOk} · una que no se inyectó no se gira ${Q.etapaOk} · aviso mal formado o sin operación falla cerrado ${Q.cerradoOk} · el monto no se inventa si no viene ${Q.montoOk} · motivos [${(Q.motivos || []).join(", ")}]${err ? " · ERROR " + err : ""}`);
   }
 
+  // ── 146 · regla 37 · LA ASIGNACIÓN DE GIROS SE CONGELA EN LA INYECCIÓN ───────────────────────
+  // El paquete que vale es el que se ENTREGA: desde que Operaciones aprueba la integración, la
+  // asignación que viaja a Tesorería es la que se inyectó. Recalcularla movería una cifra que el otro
+  // sistema ya tomó, y la pantalla mostraría algo distinto de lo que se giró.
+  // `giroDeal` ya sabía leer el congelado desde siempre —«el congelado gana»— pero NADIE lo llamaba y
+  // `GIRO_STATE` no tenía escritor: la regla estaba probada con estado inyectado y no ocurría en
+  // ninguna pantalla. Lo que dibuja es `giroResumenDeal`, que recalculaba siempre.
+  {
+    let R = null, err = "";
+    try {
+      // Un deal mínimo basta: lo que se prueba es el CORTOCIRCUITO del congelado, que ocurre antes de
+      // cualquier cálculo. Con un deal rico la aserción diría lo mismo y dependería del activo.
+      const deal = { id: "OP-GIRO-CONG", cliente: "Cliente congelado", stage: "giro", facturasOp: [] };
+      const hayHelper = typeof giroCongelado === "function";
+      // (a) Sin congelar: ninguno de los dos se declara congelado y el helper devuelve null.
+      const vivo = giroDeal(deal, {});
+      const vivoOk = !!vivo && vivo.congelado === false && hayHelper && giroCongelado(deal, {}) === null;
+      // (b) Con un congelado INYECTADO que contradice al cálculo: gana el congelado, en los DOS
+      //     lectores. Se planta una cifra imposible a propósito — si el lector recalcula, no aparece.
+      const plantado = { montoGirar: 777777, tipos: [], porTipo: {}, porDeudor: {}, filas: [], asignado: 777777, cuadra: true, descuadre: 0, ts: "x", por: "OP" };
+      const est = { giro: { [deal.id]: plantado } };
+      const cLista = giroResumenDeal(deal, est);
+      const cDeal = giroDeal(deal, est);
+      const ganaOk = !!cLista && cLista.montoGirar === 777777 && cLista.congelado === true
+        && !!cDeal && cDeal.montoGirar === 777777 && cDeal.congelado === true;
+      // `giroResumenDeal` sin congelado y con un deal vacío no tiene nada que repartir: devuelve null y
+      // NO se inventa un giro. Es la otra mitad de (a), y la que distingue «no hay» de «cero».
+      const vacioOk = giroResumenDeal(deal, {}) === null;
+      // (c) El helper es la ÚNICA fuente del congelado: devuelve lo plantado tal cual, y null para otro id.
+      const helperOk = hayHelper && giroCongelado(deal, est) === plantado && giroCongelado({ id: "NO-EXISTE" }, est) === null;
+      // (d) Y no ensucia: consultar el congelado de una operación no escribe nada en el repositorio real.
+      const limpioOk = Object.keys(GIRO_STATE || {}).length === 0 || !(deal.id in (GIRO_STATE || {}));
+      R = { hayHelper, vivoOk, ganaOk, helperOk, limpioOk, vacioOk };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    }
+    const Q = R || {};
+    ok("146 la asignación de giros congelada en la inyección gana sobre el recálculo, y la leen los DOS lectores por la misma fuente",
+       !!R && Q.hayHelper && Q.vivoOk && Q.ganaOk && Q.helperOk && Q.limpioOk && Q.vacioOk,
+       `helper \`giroCongelado\` de nivel módulo ${Q.hayHelper} · sin congelar ninguno se declara congelado ${Q.vivoOk} · un deal sin nada que repartir da null y no inventa un giro ${Q.vacioOk} · con un congelado plantado gana en giroResumenDeal Y en giroDeal ${Q.ganaOk} · el helper es la única fuente y devuelve null para otro id ${Q.helperOk} · consultar no escribe ${Q.limpioOk}${err ? " · ERROR " + err : ""}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

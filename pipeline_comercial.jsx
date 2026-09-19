@@ -23463,7 +23463,10 @@ const repoGiro = crearRepo("giro_asignacion");
 // las dos. Guarda sólo lo que `mismaSolicitudComite` compara (el rut y el detalle) más el `idProceso`
 // que el log necesita nombrar; el registro completo sigue siendo del sistema externo. Regla 33.
 const repoSolicitudComite = crearRepo("solicitud_comite");
-let GIRO_STATE = repoGiro.all(); // { [dealId]: { tipos:[...], montoGirar, ts, por } }
+let GIRO_STATE = repoGiro.all(); // { [dealId]: la salida de `asignarGiros` (tipos, porTipo, porDeudor, filas,
+// asignado, montoGirar, cuadra, descuadre, motivo) + { ts, por } } — la asignación CONGELADA en la inyección a
+// Tesorería. La escribe `aprobarIntegracion` (regla 37) y la lee `giroCongelado`; antes del 19-09-2026 sólo se
+// hidrataba, así que el congelado nunca existía en pantalla.
 // ── ADAPTADOR: de los motores a la entrada del modelo de giros ────────────────────────────────
 // Es el ÚNICO sitio que conoce a los tres motores a la vez. `asignarGiros` no los llama: recibe sus
 // veredictos, y esto es lo que se los pregunta. Separarlos no es ceremonia — es lo que permite
@@ -23539,6 +23542,13 @@ function girosDeDeal(deal, estado) {
 // los tres commits que pueden mover el veredicto sin pasar por el visado.
 let _GIRO_LISTA = {};
 function giroResumenDeal(deal, estado) {
+  // El congelado gana, y se consulta PRIMERO: antes del cálculo, antes del memo y antes incluso de
+  // exigir simulación (regla 37). Una asignación congelada existe porque la operación se INYECTÓ a
+  // Tesorería, y eso es un hecho del otro sistema: sigue siendo lo que se giró aunque el paquete de
+  // esta pantalla haya cambiado después. Hasta el 19-09-2026 esto sólo lo sabía `giroDeal`, al que no
+  // llamaba nadie, así que la pantalla recalculaba siempre y podía mostrar algo distinto de lo girado.
+  const congR = giroCongelado(deal, estado);
+  if (congR) return { ...congR, congelado: true };
   if (!deal || !deal.simulado) return null;
   const fs = (deal.facturasOp || []).filter(Boolean);
   const giroTotal = Math.round(deal.giro || 0);
@@ -23586,12 +23596,21 @@ function ChipGiro({ codigo, label, monto, titulo, compacto, soloTipo }) {
     />
   );
 }
-// La asignación VIGENTE de una operación: la congelada si el cliente ya aceptó, y el cálculo del día
-// si todavía no. El congelado gana siempre — recalcular una operación aceptada movería una cifra que
-// Tesorería ya tomó.
+// La asignación CONGELADA de una operación, si la hay. Se congela en la INYECCIÓN a Tesorería (regla
+// 37): desde que Operaciones aprueba la integración, el paquete que vale es el que se entregó, y
+// recalcularlo movería una cifra que el otro sistema YA TOMÓ. Vive en una sola función porque la leen
+// los dos lectores —`giroDeal` y `giroResumenDeal`— y dos copias del «gana el congelado» se desfasan.
+function giroCongelado(deal, estado) {
+  const est = estado || {};
+  return (est.giro || (typeof GIRO_STATE !== "undefined" ? GIRO_STATE : {}) || {})[deal && deal.id] || null;
+}
+// La asignación VIGENTE de una operación: la congelada si ya se inyectó a Tesorería, y el cálculo del
+// día si todavía no. El congelado gana siempre — recalcular una operación ya entregada movería una
+// cifra que el otro sistema tomó. Hasta el 19-09-2026 este comentario decía «si el cliente ya aceptó»:
+// la aceptación del cliente no congela nada, congela la aprobación de Operaciones (regla 37).
 function giroDeal(deal, estado) {
   const est = estado || {};
-  const cong = (est.giro || (typeof GIRO_STATE !== "undefined" ? GIRO_STATE : {}) || {})[deal && deal.id];
+  const cong = giroCongelado(deal, est);
   if (cong) return { ...cong, congelado: true };
   return { ...asignarGiros(girosDeDeal(deal, est), { tipos: est.tiposGiro }), congelado: false };
 }
@@ -47811,6 +47830,15 @@ export default function PipelineComercial() {
         exito: false,
       });
       return;
+    }
+    // CONGELAR LO QUE SE ENTREGA (regla 37). Éste es el instante en que la operación pasa a Tesorería,
+    // así que la asignación de giros que viaja es la que vale: se guarda tal cual, con quién la aprobó
+    // y cuándo. `GIRO_STATE` no tenía escritor hasta el 19-09-2026 —la regla estaba probada con estado
+    // inyectado y no ocurría en ninguna pantalla—, y `repoGiro` sólo se hidrataba.
+    const giroEntregado = giroResumenDeal(d0);
+    if (giroEntregado) {
+      repoGiro.set(id, { ...giroEntregado, congelado: undefined, ts: nowStamp(), por: nom });
+      GIRO_STATE = repoGiro.all();
     }
     const upd = (d) =>
       d.id !== id
