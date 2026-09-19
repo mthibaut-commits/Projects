@@ -29,13 +29,14 @@ El motor de otorgamiento evalúa cada criterio del catálogo sobre la operación
 | **`excepcion`** | se incumple, y **un apoderado puede autorizarlo** | **este documento** |
 | `rechazado` | se incumple y **no se autoriza** | la operación se pierde (§8) |
 | `clasificacion` | informa, no decide | se muestra, no se gestiona |
+| `no_ejecutada` | la regla está **mal definida**: tiene un tramo de excepción y no hay a quién pedírsela | no se evalúa, y la salida lo dice (§6.4) |
 
 Una **excepción** es entonces un criterio incumplido que la casa puede aceptar **a sabiendas**, a
 cambio de que alguien con atribución lo firme. El ciclo completo es:
 
 ```
   evaluación ──► excepción PENDIENTE ──► SOLICITADA (justificada por el ejecutivo) ──► en BANDEJA
-                                            │  + ampliaciones (append-only)              │
+                                            │  + información agregada después            │
                                             └──────────────────────────────────────────►│
                                                                                   el apoderado DECIDE
                                                                                           │
@@ -79,8 +80,15 @@ en ese nivel **o superior**.
 2. **La escalada no cruza áreas.** Un Gerente General (Comercial N3) no visa una excepción de Riesgo.
 3. **El monto de la operación impone un piso.** El nivel exigido es el **mayor** entre el del tramo y
    el piso del área para el tramo de monto de la operación (§2.3). Nunca baja el nivel del tramo.
-4. Un criterio **sin área no lo aprueba nadie**, y un área que el tenant no tiene tampoco: son
-   configuraciones que faltan, y el motor las nombra («Sin aprobador definido», §6.4).
+4. **Una regla que no llega a nadie no se ejecuta.** Si un criterio tiene un tramo de excepción y ese
+   tramo no se puede dirigir a una persona —no declara área, declara un área que este tenant no tiene, o
+   nadie tiene esa área en ese nivel ni en uno superior—, el criterio está **mal definido** y el motor
+   **no lo evalúa ni lo verifica**: sale como **«No ejecutada · falta configuración»**, con la causa y el
+   mantenedor donde se arregla (§6.4). El super administrador no cuenta como aprobador. Los knock out no
+   necesitan área (no se aprueban: incumplen y se acabó), ni las reglas de clasificación ni las que no
+   tienen tramos. Caso distinto: la regla está bien definida pero el **piso por monto** de esta operación
+   pide un nivel que nadie tiene; ahí la excepción sí se ejecuta y sale con **«Sin aprobador definido»**
+   (§2.3, §6.4).
 
 El cargo que se muestra como responsable es el del nivel exacto si existe; si no, el primer cargo del
 área que lo alcance, marcado como escalada. Es la misma regla con que se decide quién puede firmar, así
@@ -96,12 +104,25 @@ que lo que la pantalla anuncia es quien de verdad puede hacerlo.
 | sobre M$120 | crítico | N3 | N5 | N4 |
 
 Cada columna **satura en el tope de su área** (Comercial en N3, Riesgo en N5): pedirle a un área un
-nivel que no tiene no exige más, deja la excepción sin aprobador. Los cortes viven en la configuración
-del tenant y se ven en `Configuración › Otorgamiento`, junto a las atribuciones por criterio.
+nivel que no tiene no exige más, deja la excepción sin aprobador. Los cortes y el piso viven en la
+configuración del tenant y se ven en `Configuración › Otorgamiento`, junto a las atribuciones por
+criterio, donde cada tramo muestra el cargo que lo firma hoy o, en naranja, «Sin área · NO SE EJECUTA» /
+«Sin aprobador · NO SE EJECUTA» si la regla está mal definida (§6.4).
+
+El piso es distinto de la definición de la regla: es **de la operación**. La misma regla se dirige bien
+en una operación chica y pide más arriba en una grande, así que no corresponde dejar de ejecutarla:
+corresponde decir que **a ese monto no hay quien firme**. Si alguien deja sin titular el nivel que el
+piso exige, la excepción sí se ejecuta y sale con **«Sin aprobador definido · requiere {Área} ·
+N{nivel}»** y la causa («nadie tiene {Área} en nivel N{nivel} o superior — asígnalo en Configuración ›
+Usuarios»), en la tarjeta, en la mesa y en la tarea (§6.4). La operación no se pierde ni se aprueba sola:
+queda **sujeta a aprobación** hasta que alguien configure a quien la firme.
 
 **Consecuencia para el proceso:** la misma excepción, en una operación de M$15 y en una de M$90, le
-llega a personas distintas. Por eso la tarjeta de la excepción muestra el **cargo vigente** calculado
-en el momento, y no el que se anotó al solicitarla (§4.4).
+llega a personas distintas. Y el monto puede cambiar **después** de que el ejecutivo pidió la
+aprobación —se agrega una factura, se re-evalúa—, con lo que también cambia el cargo que corresponde.
+Por eso la tarjeta muestra el cargo **calculado con el monto y el tramo de hoy**, no el que regía el
+día en que se envió la solicitud: la solicitud guarda quién pidió y cuándo (historia); a quién le toca
+decidir lo dice siempre la tarjeta (§4.4).
 
 ### 2.4 Lo que la configuración vigente produce
 
@@ -114,9 +135,11 @@ Medido sobre `atribuciones_otorgamiento.json` (18-09-2026), el catálogo tiene *
 | Comercial | **29** | N1 18 · N2 11 | Jefe de Grupo Comercial 18 · Gerente Comercial 11 |
 | Operaciones | **7** | N1 3 · N2 1 · N3 2 · N5 1 | Jefe de Operaciones 6 · Operaciones 1 |
 
-**Ninguno queda sin aprobador.** Riesgo no tiene cargos en N1–N3, así que sus 77 tramos de N1–N4 caen
-todos en el Jefe de Riesgo por escalada: distinguirlos es dar de alta usuarios de Riesgo en esos
-niveles, no cambiar el catálogo. Los niveles de la tabla son los del tramo; el piso por monto los sube.
+**Ninguno queda sin aprobador, y ninguna regla del catálogo está mal definida** (§6.4): las 77 declaran
+área y las 69 con excepción tienen a quién pedírsela en este tenant. Riesgo no tiene cargos en N1–N3,
+así que sus 77 tramos de N1–N4 caen todos en el Jefe de Riesgo por escalada: distinguirlos es dar de
+alta usuarios de Riesgo en esos niveles, no cambiar el catálogo. Los niveles de la tabla son los del
+tramo; el piso por monto los sube.
 
 De los 77 criterios, **28 no son re-evaluables**: los datos de burós del cliente y del deudor
 (C10–C22, D02–D13) y los tres knockout de la Tesorería General (C30–C32). Sólo estos tres **rechazan**;
@@ -127,16 +150,17 @@ porque una firma no borra un dato de bureau.
 
 ## 3. Los registros del proceso
 
-Todo lo que el proceso escribe tiene dueño, nombre y hora. Son cinco registros por operación, más la
-auditoría y la mensajería:
+Todo lo que el proceso escribe tiene dueño, nombre y hora. Son seis registros por operación, más la
+auditoría, la mensajería y las tareas:
 
 | Registro | Qué guarda | Quién escribe | Cuándo |
 |---|---|---|---|
-| **Solicitud** (por excepción) | comentario, respaldos, la declaración «sin comentarios», quién, cuándo, y el cargo y nivel **al momento de solicitar**; más las **ampliaciones** apiladas | el ejecutivo | al solicitar y al ampliar (§4.2, §4.3) |
+| **Solicitud** (por excepción) | comentario, respaldos, la declaración «sin comentarios», quién, cuándo, y el cargo y nivel **al momento de solicitar**; más cada **información agregada después**, con su autor y su fecha | el ejecutivo | al solicitar y al agregar información (§4.2, §4.3) |
 | **Visado** (por excepción) | `aprobado` / `rechazado`; ausente = pendiente | el apoderado | al decidir; se borra al revertir |
 | **Detalle del visado** (por excepción) | justificación de la decisión, respaldos, quién (con su reemplazo, si cubre a otro), cuándo | el apoderado | junto con el visado |
-| **Bitácora de otorgamiento** (por operación) | cada evento del proceso con actor y fecha-hora: solicitud, ampliación, pre-evaluación, decisión, pérdida por bloqueo firme, integración | el sistema, en cada acción | append-only |
+| **Bitácora de otorgamiento** (por operación) | cada evento del proceso con actor y fecha-hora: solicitud, información agregada, pre-evaluación, decisión, pérdida por bloqueo firme, integración | el sistema, en cada acción | en cada acción; sólo se agrega, nunca se edita |
 | **Pre-evaluación** (por operación) | que el ejecutivo pidió adelantar la revisión: quién y cuándo | el ejecutivo | al enviar a pre-evaluación |
+| **Versión de evaluación** (por operación) | la foto de cada corrida del motor: las variables del cliente tal como las entregó el origen y la disposición de cada criterio, con fecha y número (v1, v2…); la v1 es la evaluación de la simulación | el sistema | en cada **re-evaluación de la simulación** (§5.4); sólo se agrega, nunca se edita ni se borra |
 | **Auditoría** (global) | módulo, acción, glosa, actor, éxito, severidad, y la **huella encadenada** de cada registro; incluye los **intentos rechazados** por atribución | toda acción | siempre |
 | **Mensajería** (hilos por operación) | los avisos entre ejecutivo y apoderados: solicitud, pre-evaluación, avance, requerimientos de información | quien actúa | según la acción |
 | **Tareas** | «Aprobar excepción #n …», con el par (área, nivel) como destinatario | al solicitar | vence en un día |
@@ -151,10 +175,19 @@ aprobación que no ocurrió.
 
 ### 4.1 La excepción nace en la evaluación
 
-El motor corre en cuatro momentos: cuando el ejecutivo pide una **pre-evaluación**, cuando aprieta
-**«Re-evaluar operación»**, al **cerrar la oferta** y **tras la firma** del cliente. Agregar o quitar
-facturas **no** re-evalúa: lo que depende del motor queda en «Por evaluar», sin número, hasta que
-alguien lo pida.
+El motor corre sobre la operación en cinco momentos:
+
+| Momento | Quién lo dispara | Qué produce |
+|---|---|---|
+| **La simulación** | el ejecutivo arma la oferta y simula | la **primera evaluación**: la operación pasa a Oferta con su monto y sus facturas, y cada criterio queda con su disposición. Es la versión **v1** |
+| **La pre-evaluación** | el ejecutivo, desde el detalle, con la oferta abierta | adelanta el veredicto y abre la bandeja (§4.5) |
+| **«Re-evaluar operación»** | el ejecutivo, después de agregar o quitar facturas | vuelve a evaluar la operación **tal como quedó** —monto, piso, tramos— con las mismas variables del origen |
+| **«Re-evaluación de la simulación»** | el ejecutivo, desde el tab Otorgamiento, cuando quedan re-evaluables pendientes | pide al origen las variables de hoy y guarda una **versión nueva** (§5.4) |
+| **El cierre de la oferta y la firma** | la confirmación del cierre en el modal de curse; el cliente al firmar | decide si la oferta puede publicarse; decide a qué etapa va la operación firmada (§5.3) |
+
+Agregar o quitar facturas **no** re-evalúa solo: lo que depende del motor queda en «Por evaluar», sin
+número, hasta que el ejecutivo aprieta «Re-evaluar operación». Una cifra vieja atenuada igual se lee
+como cifra, y alguien la va a citar.
 
 Cada corrida produce la lista de ítems (criterio × deudor) con su disposición, el nivel exigido ya con
 el piso por monto aplicado, el cargo responsable y la lista de quienes pueden firmar. Las excepciones
@@ -201,29 +234,44 @@ Al enviar, en un solo gesto:
 excepción**, cada una a su apoderado, declarando que no hay comentarios adicionales. Las que ya fueron
 justificadas con un comentario o un respaldo **no se tocan**.
 
-### 4.3 Ampliar una solicitud ya enviada
+### 4.3 Agregar información a una solicitud ya enviada
 
-Solicitar **no cierra la puerta**. Mientras la excepción siga pendiente, la tarjeta dice «En espera del
-visto bueno de {cargo} (N{nivel})» y ofrece **«Agregar información»**: el contrato firmado que llega dos
-días después, la aclaración que el apoderado pidió por teléfono.
+Después de enviar la solicitud, el ejecutivo suele recibir cosas que el apoderado necesita ver: el
+contrato firmado que llega dos días más tarde, la aclaración que el apoderado le pidió por teléfono, un
+respaldo que no tenía a mano. Enviar la solicitud **no cierra esa puerta**: mientras la excepción siga
+pendiente, la tarjeta muestra «En espera del visto bueno de {cargo} (N{nivel})» y el botón **«Agregar
+información»**, que abre un comentario y la opción de adjuntar archivos.
 
-- La ampliación **se apila** bajo la solicitud, con **su** autor y **su** hora; la justificación
-  original no se toca, porque el apoderado pudo haberla leído ya y saber qué se sabía en cada momento es
-  justamente lo que se audita.
-- **Sin solicitud previa no escribe nada**: una ampliación es información *para* alguien, y fabricar
-  ahí una solicitud se saltaría el aviso y la tarea. Una ampliación **vacía** tampoco: anunciaría algo
-  nuevo que leer cuando no lo hay.
-- Aportar respaldo **no decide nada**. Lo único gateado por atribución es **visar**.
+Cómo funciona, y por qué:
+
+- **Lo nuevo se agrega debajo de la solicitud original, como una entrada más**, con el nombre de quien
+  lo agregó y la fecha y hora («＋ Información agregada por {persona} · {fecha}»). La solicitud original
+  **no se modifica ni se reemplaza**. La razón es de auditoría: el apoderado pudo haber leído ya la
+  solicitud tal como se envió, y después hay que poder reconstruir qué información existía en cada
+  momento y quién la aportó. Si el texto original se pudiera editar, esa reconstrucción sería imposible.
+- **Sólo se puede agregar información a una excepción que ya fue solicitada.** Si todavía no se envió al
+  apoderado, el camino es «Solicitar aprobación» (§4.2): ese gesto es el que le avisa y le crea la tarea.
+  Guardar antecedentes sobre una solicitud que no existe dejaría el respaldo escrito sin que nadie
+  supiera que tiene que mirarlo.
+- **Una entrada sin comentario y sin archivos no se guarda.** El botón «Enviar» exige al menos uno de los
+  dos; un bloque vacío le anunciaría al apoderado que hay algo nuevo que leer cuando no lo hay.
+- **Agregar información no aprueba ni rechaza nada.** Son antecedentes para quien decide. Lo único que
+  exige atribución es la decisión (§4.7); aportar información lo hace el ejecutivo cuantas veces haga
+  falta mientras la excepción esté pendiente.
 
 ### 4.4 A quién le llega, y por qué el cargo se calcula en vivo
 
-La solicitud congela el cargo y el nivel **como historia** («Aprobación solicitada por … · fecha»).
-Pero el requisito **se mueve**: el tramo cambia al re-evaluar y el piso sube o baja con el monto de la
-operación. Por eso el destinatario vigente lo dice el **badge**, que se recalcula en cada lectura, y no
-la línea de la solicitud. Dos destinatarios distintos para la misma excepción serían un error de
-lectura; el vigente es siempre el del badge.
+Cuando el ejecutivo envía la solicitud, el sistema anota **quién la pidió y cuándo**, y la tarjeta lo
+muestra como historia («Aprobación solicitada por … · fecha»). Lo que **no** se muestra de esa
+anotación es el cargo que correspondía ese día, porque el requisito **se mueve**: el tramo cambia al
+re-evaluar y el piso sube o baja con el monto de la operación. Ejemplo: se solicita una excepción de
+Comercial con la operación en M$15 (le toca el Jefe de Grupo, N1); antes de que alguien la decida se
+incorpora una factura y la operación pasa a M$50, y el piso la sube a N2 (Gerente Comercial). La
+tarjeta dice «Gerente Comercial (N2)», que es quien de verdad puede firmarla hoy; mostrar además el
+cargo anotado al solicitar dejaría dos destinatarios distintos para la misma excepción. El vigente es
+siempre el que la tarjeta calcula al momento de mirarla.
 
-### 4.5 La compuerta de la bandeja: pre-evaluación o aceptación
+### 4.5 Cuándo se puede visar: con pre-evaluación o con la aceptación del cliente
 
 **Sólo se puede visar cuando la operación está en bandeja**: desde la aceptación del cliente en
 adelante (Aceptada, Otorgamiento / Verificación, Pendiente Integración, Giro), o con la
@@ -286,7 +334,7 @@ comentario es opcional (§10). Al confirmar:
    en la auditoría como «Decisión rechazada por atribución (OTG-01)», severidad alta. En producción
    esto lo rechaza el servidor desde el rol del token; la pantalla sólo lo anticipa.
 2. Si el criterio es **O05** y se aprueba, visar **crea la evidencia del contrato**: la huella del
-   paquete que después compara el gate del core (§6.1).
+   paquete que después compara el control de integración al core (§6.1).
 3. Se escriben el **visado** y su **detalle**, se anota en la **bitácora** («{apoderado} aprobó /
    rechazó la excepción · regla #n … ({área} N{nivel})») y en la **auditoría**, y se invalida el
    cálculo cacheado de la operación para que el tubo, el detalle y la mesa cambien a la vez.
@@ -308,7 +356,7 @@ operación, el Gerente Comercial, la jefatura del ejecutivo, el Jefe de Operacio
 Operaciones), escribe qué necesita (obligatorio) y adjunta un documento si corresponde. Abre un hilo
 de mensajería **«Requerimiento · regla #n {criterio}»** atado a la operación y a esa excepción, que la
 mesa muestra bajo la tarjeta con su último mensaje. La respuesta del ejecutivo vuelve por el mismo
-hilo o como **ampliación** de la solicitud (§4.3).
+hilo o agregándola a la solicitud (§4.3).
 
 ### 4.9 Coordinar entre apoderados
 
@@ -383,14 +431,38 @@ inyectar contra la de lo que el cliente autorizó (GIR-02; si no calza, «Integr
 dos huellas en la auditoría). Aprobada, la operación queda **Pendiente de Giro**, que es lo que toma
 Tesorería, con la huella verificada anotada en su bitácora.
 
-### 5.4 Re-evaluar no reabre lo decidido
+### 5.4 Qué es la re-evaluación, y por qué no reabre lo decidido
 
-Cada evaluación emite una **versión** inmutable. Re-evaluar trae datos frescos del origen y **no toca
-las excepciones ya resueltas**: si el origen devolviera el valor original, una excepción visada se
-reabriría y se perdería la firma del apoderado, que es evidencia. Los criterios re-evaluables dicen en
-la mesa cómo se regularizan («se regulariza al re-evaluar sincronizando la información financiera con el
-SII», «al actualizar los protestos vigentes», «al actualizar la información con las fuentes»); los de
-burós y los knockout no se re-evalúan (§2.4).
+**Re-evaluar es volver a correr los criterios sobre la operación con los datos de hoy.** Los criterios
+no se evalúan una vez y quedan fijos: cada vez que el sistema los muestra —en el tab, en la mesa, en el
+tubo— los calcula sobre la operación tal como está en ese momento. Lo que cambia entre una corrida y
+otra son sus dos entradas: **la operación** (qué facturas, qué monto, qué deudores) y **las variables del
+cliente y de los deudores** que entrega el origen (el activo de otorgamiento del día). De ahí que haya
+dos gestos distintos con el mismo verbo:
+
+- **«Re-evaluar operación»** (cabecera del detalle). Se usa después de agregar o quitar facturas:
+  vuelve a evaluar la operación **tal como quedó** —el monto nuevo mueve el piso por monto y los tramos
+  que dependen de él— con las mismas variables del origen. No crea una versión.
+- **«Re-evaluación de la simulación»** (tab Otorgamiento). Vuelve a pedir al origen las variables del
+  cliente y guarda una **versión nueva** (v2, v3…), inmutable, con las variables recibidas y la
+  disposición de cada criterio. El tab muestra cuántas versiones hay, deja elegir cualquiera y marca el
+  **diff** entre una y la anterior: qué variables cambiaron y qué criterios cambiaron de disposición.
+  El botón se habilita sólo mientras queden re-evaluables pendientes —excepciones sin decidir o
+  rechazos re-evaluables— y la operación no esté perdida. Es el gesto que corresponde cuando el
+  ejecutivo consiguió lo que faltaba: el pagaré firmado, la información financiera al día, la línea
+  aprobada por el comité.
+
+**Qué puede cambiar al re-evaluar.** Sólo los criterios **re-evaluables** (documentación, garantías,
+vigencias, la línea, el comportamiento comercial ajustable, el precio de la operación): un rechazo
+re-evaluable se regulariza y una excepción puede dejar de serlo. La mesa dice, por criterio, con qué se
+regulariza («se regulariza al re-evaluar sincronizando la información financiera con el SII», «al
+actualizar los protestos vigentes», «al actualizar la información con las fuentes»).
+
+**Qué no cambia.** Los criterios de burós y los knockout no se re-evalúan (§2.4): una firma no borra un
+dato de bureau. Y **las excepciones ya decididas conservan su visado**: si el origen devolviera el valor
+original, una excepción aprobada se reabriría y se perdería la firma del apoderado, que es evidencia.
+Las versiones anteriores tampoco se borran: son la constancia de qué se evaluó y cuándo, y por eso
+sobreviven incluso a vaciar la oferta y empezar de cero.
 
 ---
 
@@ -405,9 +477,9 @@ Existe **siempre**, en las dos vías de publicación; lo que cambia es **quién 
 - **Física (contrato en papel).** El papel se firmó fuera del sistema: queda como **excepción de
   Operaciones N3**. La tarjeta lo dice con esas palabras —«📎 Acá se carga el contrato de cesión
   firmado… lo autoriza el {cargo} ({área})»—; el ejecutivo adjunta el comprobante como respaldo de la
-  solicitud (o como ampliación, si llega después) y el apoderado de Operaciones lo visa. **Visar O05 es
+  solicitud (o agregándolo después, si el papel llega más tarde) y el apoderado de Operaciones lo visa. **Visar O05 es
   lo que crea la evidencia**: la huella del paquete (número de operación, RUT del cliente, número de
-  deudores y de facturas, monto total y monto por deudor) que el gate de integración compara.
+  deudores y de facturas, monto total y monto por deudor) que el control de integración al core compara.
 
 Si el paquete cambia después de la firma, la huella no calza y el criterio vuelve a abrirse solo.
 
@@ -425,31 +497,66 @@ de una línea es la decisión más estructural del proceso. La línea misma se t
 comité** ([`spec-asignacion-lineas.md`](./spec-asignacion-lineas.md)); la excepción sólo deja constancia
 de que se está cursando sin ella.
 
-### 6.4 «Sin aprobador definido»
+### 6.4 «No ejecutada · falta configuración» y «Sin aprobador definido»
 
-Cuando ningún usuario del tenant puede firmar un par (área, nivel), el motor lo dice con esas
-palabras en la tarjeta, en la mesa y en la tarea, con el requisito («{área} · N{nivel}») y **la
-causa**, que son dos y se arreglan en mantenedores distintos:
+Son dos situaciones distintas, con dos avisos distintos, y ninguna ocurre en silencio.
 
-| Causa | Dónde se arregla |
+#### Una regla mal definida no se ejecuta
+
+Una regla está **mal definida** cuando tiene al menos un tramo de excepción y ese tramo **no llega a
+nadie**: el ruteo de una excepción es el par (área, nivel), y con ese par tiene que existir una persona
+que pueda firmarla. Son tres causas, y las tres detienen la regla:
+
+| Causa | Qué dice la tarjeta | Cómo se arregla (texto de la tarjeta) |
+|---|---|---|
+| **sin área**: la regla no declara área | «el criterio tiene un tramo de excepción y no declara área, así que no hay a quién pedírsela» | «Declara el área de la regla en el catálogo de otorgamiento.» |
+| **área inexistente**: declara un área que este tenant no tiene | «su tramo de excepción pide {Área} · N{nivel} y el área «{identificador}» no existe en este tenant» | «Crea el área «{identificador}» en Configuración › Áreas, o corrige la que la regla declara.» |
+| **sin usuario**: el área existe y nadie la tiene en ese nivel ni en uno superior | «su tramo de excepción pide {Área} · N{nivel} y nadie tiene {Área} en nivel N{nivel} o superior» | «Asigna a alguien {Área} en nivel N{nivel} o superior en Configuración › Usuarios.» |
+
+Se prueban **todos** los tramos de excepción de la regla, no sólo el primero, y el super administrador
+no cuenta: puede firmar cualquier cosa, pero es la llave maestra del tenant, no el aprobador que la
+política designa. Una regla intacta puede pasar a estar mal definida el día que alguien borra un área o
+deja un nivel sin gente: la definición se juzga contra el padrón vigente.
+
+**No necesitan área** los knock out —tramos sólo de rechazo: incumplen y se acabó, no hay a quién
+pedirle nada—, las reglas de clasificación (informan) ni las que no tienen tramos (no deciden).
+
+**Qué pasa con la operación.** El motor corta antes de mirar los tramos y devuelve la regla como
+**«No ejecutada · falta configuración»**. No entra entre las excepciones ni entre los rechazos —no se
+evaluó, así que no puede concluir nada— y por eso **no bloquea**: la operación se evaluó **sin** esa
+regla. Lo que la protege no es un bloqueo, es que el problema se vea, y se ve en ocho sitios:
+
+| Dónde | Qué muestra |
 |---|---|
-| el criterio no declara área | el catálogo |
-| el área no existe en este tenant | `Configuración › Áreas` |
-| nadie tiene esa área en ese nivel o superior | `Configuración › Usuarios` |
+| **Tab Otorgamiento**, fila del criterio | badge ámbar «No ejecutada · falta configuración» y un recuadro: «**Esta regla no se ejecutó ni se verificó.** {causa}. La operación se evaluó SIN ella.», con el texto de cómo se arregla. El hallazgo de la regla **no** se muestra: afirmaría algo que nadie midió |
+| **Tab Otorgamiento**, cabecera de cada bloque | «⚠ N regla(s) de el cliente / este deudor NO se ejecutaron: les falta configuración y la operación se evaluó sin ellas.», y las reglas en su propio bloque, nunca dentro del acordeón de las aprobadas |
+| **Detalle**, pie del panel y aviso de la etapa de Otorgamiento | «N regla(s) no se ejecutaron: les falta configuración (tab Otorgamiento)» y «N regla(s) NO SE EJECUTARON por falta de configuración: la operación se evaluó sin ellas.» |
+| **Tarjeta del Kanban** | badge ámbar «N criterio(s) sin ejecutar», con el detalle en el tooltip |
+| **Tubo**, contador «N/M criterios» | la regla no ejecutada **sigue contando** en el total M; encoger el denominador sería la forma más silenciosa de esconderla |
+| **`Configuración › Otorgamiento`**, atribuciones por criterio | la fila en naranja: «Sin área · NO SE EJECUTA» o «Sin aprobador · NO SE EJECUTA», con la frase de arreglo como tooltip |
+| **`Configuración › Otorgamiento`**, criterios de verificación | las reglas sin área no caen en ningún grupo del catálogo: se listan aparte, «Fuera de las áreas listadas · N NO SE EJECUTAN» |
+| **`Configuración › Áreas`** | un recuadro naranjo arriba, «N criterio(s) MAL DEFINIDOS: no se ejecutan ni se verifican», que los lista uno por uno con su número y su causa; y en la tabla, la columna «Quién la tiene» dice «⚠ nadie — hay criterios sin aprobador posible» para un área con criterios y sin usuarios |
 
-Una lista de aprobadores vacía se leería como «todavía no lo miran», cuando la operación está pegada
-esperando a alguien que no existe.
+Hoy ninguna regla del catálogo está en este caso (§2.4). Se prueba plantando una regla sin área en la
+suite, porque un control que compara el catálogo consigo mismo pasa siempre y no vigila nada.
 
-**Salvo la primera fila, que desde el 18-09-2026 no llega hasta acá.** Un criterio con un **tramo de excepción** que **no declara
-área** no está mal atendido: está **mal definido**, y una regla mal definida **no se ejecuta ni se
-verifica**. Una **knock out** no entra acá: no se aprueba, así que no necesita aprobador ni área. El motor corta antes de mirar los tramos y la devuelve como **«No ejecutada · falta
-configuración»**, con la causa y el mantenedor donde se arregla. Se ve en la fila del criterio —en su
-propio bloque del tab, nunca dentro del acordeón de las aprobadas—, en el contador del panel y en el
-tooltip de la compuerta de Otorgamiento, y la tarjeta dice la consecuencia con todas sus letras: **la
-operación se evaluó SIN ella**. No bloquea, porque nada se evaluó y por tanto nada concluyó; lo que
-protege a la operación es que el problema se VEA. Las reglas de **clasificación** y las **sin tramos** quedan
-fuera por lo mismo: informan o no deciden. Las otras dos filas de la tabla siguen igual —
-ahí la regla está bien definida y lo que falta es un usuario—.
+#### «Sin aprobador definido»: el piso por monto
+
+Cuando la regla está bien definida pero el **piso por monto** de esta operación (§2.3) sube el nivel a
+uno que nadie tiene, la excepción **sí se ejecuta**: el nivel es de la operación, no de la regla. El
+motor entonces la dirige al cargo **«Sin aprobador definido»**, con el requisito («{Área} · N{nivel}») y
+la causa («nadie tiene {Área} en nivel N{nivel} o superior — asígnalo en Configuración › Usuarios»),
+porque una lista de aprobadores vacía se leería como «todavía no lo miran» cuando la operación está
+pegada esperando a alguien que no existe:
+
+| Dónde | Qué muestra |
+|---|---|
+| **Mesa Otorgamientos**, tarjeta de la excepción | en naranja, en el lugar de «Aprueban: {nombres}»: **«Sin aprobador definido · {causa}»**; en el bloque de excepciones de otros aprobadores: «**Sin aprobador definido** · requiere {Área} · N{nivel} · {causa}» |
+| **Tab Otorgamiento** del detalle, tarjeta del ejecutivo | «Requiere visto bueno de **Sin aprobador definido** (N{nivel})». El formulario de solicitud se abre igual y la solicitud queda registrada; la tarea nombra al requisito y el aviso de mensajería sale sin destinatarios (§10) |
+| **Tarea** «Aprobar excepción #n …» | destinatario **«Sin aprobador definido»**, en vez de una lista vacía; se resuelve cada vez que se mira, así que desaparece en cuanto alguien recibe la atribución |
+
+Los dos avisos se corrigen donde nacieron —el catálogo, `Configuración › Áreas` o `Configuración ›
+Usuarios`— y desaparecen solos: el padrón se recalcula con cada cambio de roles, áreas o reemplazos.
 
 ### 6.5 La excepción de verificación
 
@@ -470,7 +577,7 @@ tab de Verificación del detalle.
 - **Es aditivo por defecto**: el ausente sigue pudiendo aprobar. La ausencia **total** (licencia,
   salida) se marca caso a caso, y entonces el reemplazante es el único que puede.
 - La mesa le muestra al reemplazante su atribución **efectiva** y «En reemplazo de {persona} (hasta el
-  {fecha})»; el visado, la solicitud y la ampliación **firman** con «{nombre} (en reemplazo de …)», y la
+  {fecha})»; el visado, la solicitud y la información agregada **firman** con «{nombre} (en reemplazo de …)», y la
   auditoría estampa sola «Acción ejecutada bajo configuración de REEMPLAZANTE de …», para que en seis
   meses se pueda decir por qué esta persona pudo aprobar esto.
 - **Firmar una verificación también se delega**, aunque sea un rol y no un nivel.
@@ -519,6 +626,7 @@ Ninguna bloquea la operación; todas cambian el contrato del servicio o la confi
 | 4 | Parámetros que la política declara sin definir: tramos de C07, umbrales de C08 y C37, C13/D05 (¿escala o firme?), C27, C39, banda de O01, semántica del 30% de O03, escala de la nota | Riesgo (`Inconsistencias_Motor_Otorgamiento.md` §5) |
 | 5 | **Concurrencia del visado**: dos apoderados decidiendo la misma excepción a la vez necesitan una respuesta 409 con semántica definida; hoy la escritura es optimista con confirmación | plataforma (`spec-otorgamiento.md` §12) |
 | 6 | Los criterios de burós de **deudor** (D02–D13) son excepciones no re-evaluables, no bloqueos firmes: sólo C30–C32 rechazan. Los documentos que los describen como knockout deben decirlo así | documentación |
+| 7 | Cuando el **piso por monto** deja una excepción sin aprobador, en el **tab del detalle** se puede **solicitar** igual: la tarjeta dice «Solicitar aprobación al Sin aprobador definido (N{nivel})», la solicitud se registra y el aviso sale sin destinatarios. La mesa, en cambio, muestra la causa y el mantenedor donde se arregla. Conviene que la tarjeta haga lo mismo | producto |
 
 ---
 
@@ -531,8 +639,9 @@ las transiciones de etapa tras la firma y tras el visado. Las cifras del catálo
 `atribuciones_otorgamiento.json`. La suite de la aplicación cubre el proceso con los casos **44**
 (el motor decide con el padrón inyectado), **56–59** (el visado y las versiones entran por parámetro),
 **88** (a qué etapa va la operación al firmar, las 16 combinaciones), **90** (los umbrales se leen de la
-configuración), **91** (traspaso de cartera), **96** (O06) y **114** (solicitar no cierra la puerta:
-la ampliación se apila).
+configuración), **91** (traspaso de cartera), **96** (O06), **114** (solicitar no cierra la puerta:
+la información agregada se conserva junto a la solicitud original) y **141** (una regla mal definida no
+se ejecuta ni se verifica, y sale nombrada en el veredicto).
 
 ---
 

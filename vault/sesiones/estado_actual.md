@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-19T00:05:00Z
+timestamp: 2026-09-19T17:10:00Z
 ---
 
 # Estado actual
@@ -77,4 +77,4 @@ El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403, política; s
 ## Conocimiento clave
 
 [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [hooks](../conocimiento/loop_agentico_hooks.md) · [despacho de agentes](../conocimiento/despacho_agentes.md) · [flujo git](../conocimiento/flujo_git.md) · [arquitectura](../conocimiento/arquitectura.md) · [verificación](../conocimiento/verificacion.md) · [decisiones](../adr/index.md)
-Últimas: [sin aprobador](./2026-09-18_regla_sin_aprobador.md) · [portada](./2026-09-18_portada_que_muestra_el_producto.md) · [orden y bandeja](./2026-09-18_orden_tabla_y_bandeja.md) · [formateo](./2026-09-18_formatear_el_fuente.md)
+Últimas: [revisión del spec de excepciones](./2026-09-19_spec_excepciones_revision.md) · [sin aprobador](./2026-09-18_regla_sin_aprobador.md) · [portada](./2026-09-18_portada_que_muestra_el_producto.md) · [orden y bandeja](./2026-09-18_orden_tabla_y_bandeja.md) · [formateo](./2026-09-18_formatear_el_fuente.md)
