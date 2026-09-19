@@ -23,7 +23,7 @@ timestamp: 2026-09-18T02:18:36Z
 | 5 | Pérdida es estado terminal | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 117, 118, `regla_5.test.mjs` |
 | 6 | Verificación de facturas = rutina AISLADA, y la decisión es POR DEUDOR | [`reglas/verificacion.md`](./reglas/verificacion.md) | ~27–32, ~52–55, ~76–77 |
 | 7 | Motor de asignación de líneas | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | ~1–15, ~89 |
-| 8 | Oferta | [`reglas/oferta_pricing_y_giro.md`](./reglas/oferta_pricing_y_giro.md) | 119 |
+| 8 | Oferta | [`reglas/oferta_pricing_y_giro.md`](./reglas/oferta_pricing_y_giro.md) | 119, 147 |
 | 9-bis | Un umbral de política se lee con `pol(clave, default)` y no se incrusta en ninguna parte. | [`reglas/otorgamiento_y_atribucion.md`](./reglas/otorgamiento_y_atribucion.md) | 90 |
 | 9-ter | Una COMPARACIÓN se hace en PESOS. El `M$` no cruza a la lógica | [`reglas/verificacion.md`](./reglas/verificacion.md) | 115 |
 | 9 | Pricing | [`reglas/oferta_pricing_y_giro.md`](./reglas/oferta_pricing_y_giro.md) | ~69 |

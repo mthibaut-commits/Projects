@@ -3779,9 +3779,12 @@
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · REGLA 8 · OFERTA — PROXY. Las dos primeras cláusulas («cerrar» es prerequisito de publicar;
   //    el Agente IA es opcional) ya las fijan los casos 31 y 32 sobre `ofertaPublicada`. La tercera
-  //    («fuera de atribución si el cliente pide tasa bajo el mínimo del deudor») NO tiene predicado en el
-  //    fuente —lo documenta `sonda_clausula_cliente.js`, que queda en FALLA a propósito—. Este caso fija
-  //    lo que SÍ existe y de lo que esa cláusula depende:
+  //    («fuera de atribución si el cliente pide tasa bajo el mínimo del deudor») YA TIENE PREDICADO desde
+  //    el 19-09-2026 y la fija el caso 147: `evalAtribucion` recibe el piso del deudor y lo aplica. Este
+  //    caso sigue fijando los INSUMOS de esa cláusula, que es para lo que sirve, y el 147 el enlace entre
+  //    ellos. (Hasta esa fecha el comentario citaba una `sonda_clausula_cliente.js` «que queda en FALLA a
+  //    propósito»: ese archivo nunca se commiteó, vivía en el scratchpad de aquella sesión, así que la
+  //    referencia mandaba a leer algo que no existe.) Los insumos:
   //    (b) el MÍNIMO del deudor es `tasaMinIA` = `spreadMinDeudor` (piso de riesgo) + costo de fondo del
   //        TENANT; un deudor que la tabla no conoce tiene piso ≥ que todos los listados; y la contactabilidad
   //        viaja con ese piso (`spreadMinNeg`), que es la entrada que un predicado futuro tendría que leer;
@@ -3792,8 +3795,8 @@
   //        Se afirma sólo lo que las dos lecturas de la regla comparten: dentro de la banda Y sobre el mínimo
   //        → aprobado; bajo la banda (esté o no bajo el mínimo) → excepción; bajo el mínimo absoluto →
   //        excepción; sin simular → no se pronuncia (regla 14). La zona «dentro de la banda pero bajo el
-  //        mínimo del deudor» —que aparece cuando el sugerido queda topado— se MIDE y se informa, no se
-  //        fija (hallazgo 2: el piso del deudor hoy es techo del Agente, no del ejecutivo).
+  //        mínimo del deudor» —que aparece cuando el sugerido queda topado— este caso la MIDE y la informa;
+  //        quien la FIJA es el 147, desde que el piso del deudor dejó de ser techo sólo del Agente IA.
   {
     const guardado = { ...CFG_ACTIVA };
     const restaurar = () => aplicarCfgActiva(guardado);
@@ -6840,6 +6843,84 @@
     ok("146 la asignación de giros congelada en la inyección gana sobre el recálculo, y la leen los DOS lectores por la misma fuente",
        !!R && Q.hayHelper && Q.vivoOk && Q.ganaOk && Q.helperOk && Q.limpioOk && Q.vacioOk,
        `helper \`giroCongelado\` de nivel módulo ${Q.hayHelper} · sin congelar ninguno se declara congelado ${Q.vivoOk} · un deal sin nada que repartir da null y no inventa un giro ${Q.vacioOk} · con un congelado plantado gana en giroResumenDeal Y en giroDeal ${Q.ganaOk} · el helper es la única fuente y devuelve null para otro id ${Q.helperOk} · consultar no escribe ${Q.limpioOk}${err ? " · ERROR " + err : ""}`);
+  }
+
+  // ── 147 · regla 8 · LA TASA SIMULADA SE VALIDA CONTRA EL MÍNIMO DEL DEUDOR ───────────────────
+  // «Fuera de atribución si el cliente pide tasa bajo el mínimo del deudor» (regla 8, tercera cláusula).
+  // El caso 119 la declaraba SIN PREDICADO y fijaba sólo sus insumos: el mínimo (`tasaMinIA`) y la escalera
+  // (`evalAtribucion`), cada uno por su lado. El hueco era que la escalera no MIRABA el mínimo: su único piso
+  // era `tasaMinAbsoluta`, un umbral global. Medido sobre los pisos reales —todos entre 0,86 % y 1,18 %, y
+  // todos POR ENCIMA de la absoluta de 0,78 %—: de 30.637 pares (tasa original, tasa simulada) bajo el piso
+  // del deudor, 1.940 salían «ok», o sea el ejecutivo cerraba solo bajo el piso de riesgo que la regla 9
+  // declara no negociable. El resto escalaba, pero por el % de descuento y no por el piso.
+  // La validación ocurre AL SIMULAR (decisión del usuario, 19-09-2026): la tasa es una condición que el
+  // ejecutivo edita en el panel del detalle y la escalera se evalúa ahí.
+  {
+    const guardado = { ...CFG_ACTIVA };
+    const restaurar = () => aplicarCfgActiva(guardado);
+    let R = null, err = "";
+    try {
+      // Tenant INYECTADO para que el piso sea aritmética y no el default: el piso de Cencosud más un costo
+      // de fondo de 0,58. La absoluta baja a 0,50 para AISLAR la cláusula nueva — con el default (0,78) una
+      // tasa de 0,49 saldría «bajoMinimo» por el otro piso y el caso no probaría nada.
+      aplicarCfgActiva({ ...guardado, costoFondo: 0.58, descEjec: 10, descMax: 16, tasaMinAbsoluta: 0.5 });
+      const piso = tasaMinIA("Cencosud"); // spreadMinDeudor + costo de fondo
+      const est = (o, n, esTasa, p) => evalAtribucion(o, n, o, esTasa, p).estado;
+      // (a) EL HUECO MEDIDO: 0,96 → 0,89 es un descuento de 7,3 %, dentro de la atribución del ejecutivo…
+      //     pero 0,89 está bajo el piso de 0,90. Con el piso, fuera de atribución.
+      const hueco = evalAtribucion(0.96, 0.89, 0.96, true, piso);
+      const huecoOk = hueco.estado === "requiereGerente";
+      // (g) El veredicto DICE por qué: la pantalla tiene que explicarlo, no sólo apagar el botón (regla 24),
+      //     y «requiere gerente» por descuento y por perforar el piso no son la misma noticia.
+      const diceOk = hueco.bajoPisoDeudor === true && hueco.pisoDeudor === piso;
+      // (b) EL ABSOLUTO SIGUE GANANDO. Bajo los dos pisos el veredicto es el duro, no el escalable: uno se
+      //     autoriza hacia arriba y el otro no se autoriza nunca.
+      const absOk = est(0.96, 0.49, true, piso) === "bajoMinimo";
+      // (c) EL PISO ES ESTRICTO (<). Justo EN el piso se puede ofertar: es el mínimo, no el primer valor vetado.
+      const bordeOk = est(0.96, piso, true, piso) === "ok";
+      // (d) COMPATIBILIDAD: sin el piso —las llamadas de cuatro argumentos que ya existen— la conducta es
+      //     exactamente la de hoy. Un parámetro nuevo que cambia lo que ya andaba no es compatible, es otro bug.
+      const viejoOk = est(0.96, 0.89, true) === "ok" && est(0.96, 0.89, true, 0) === "ok";
+      // (e) SÓLO LA TASA. La comisión no tiene piso de deudor: el piso es de riesgo de crédito, no de precio.
+      const comOk = est(0.96, 0.89, false, piso) === "ok";
+      // (f) SUBIR NUNCA ES LA CLÁUSULA. El cliente que paga MÁS que el piso no está fuera de atribución.
+      const subeOk = est(0.96, 1.2, true, piso) === "ok";
+      // (h) EL PISO SIGUE AL TENANT, no a una constante: con otro costo de fondo la MISMA tasa cambia de
+      //     veredicto. Es lo que distingue leer el mínimo del deudor de haber cableado un número.
+      aplicarCfgActiva({ ...guardado, costoFondo: 1.23, descEjec: 10, descMax: 16, tasaMinAbsoluta: 0.5 });
+      const pisoAlto = tasaMinIA("Cencosud");
+      // El valor se DERIVA de la tabla, no se cablea: un literal acá se desfasa el día que cambie el piso
+      // del deudor y el caso pasaría a probar el literal en vez de la regla (pasó al escribirlo).
+      const tenantOk = pisoAlto === +(spreadMinDeudor("Cencosud") + 1.23).toFixed(2) && pisoAlto > piso
+        && est(1.6, 1.5, true, pisoAlto) === "requiereGerente" && est(1.6, 1.5, true, piso) === "ok";
+      restaurar();
+      aplicarCfgActiva({ ...guardado, costoFondo: 0.58, descEjec: 10, descMax: 16, tasaMinAbsoluta: 0.5 });
+      // (i) EL PISO DE LA OPERACIÓN ES EL MÁS EXIGENTE DE SUS DEUDORES, no el promedio ni el primero. Una
+      //     oferta cubre varias facturas: si se promediara, una tasa que perfora el piso del deudor más
+      //     riesgoso pasaría por quedar sobre el promedio — que es exactamente el caso que la regla cubre.
+      const baratos = Object.keys(SPREAD_MIN_DEUDOR).sort((a, b) => SPREAD_MIN_DEUDOR[a] - SPREAD_MIN_DEUDOR[b]);
+      const barato = baratos[0], caro = baratos[baratos.length - 1];
+      const facs = [{ deudor: barato, monto: 1 }, { deudor: caro, monto: 1 }];
+      const pOp = pisoTasaOperacion({ deudor: barato }, facs);
+      const promedio = +((tasaMinIA(barato) + tasaMinIA(caro)) / 2).toFixed(2);
+      const maxOk = tasaMinIA(caro) > tasaMinIA(barato) && pOp === tasaMinIA(caro) && pOp !== promedio;
+      // (j) SIN FACTURAS cae al deudor del deal, y (k) sin nada devuelve 0 — que es «sin piso», el mismo
+      //     valor que (d) usa para pedir la conducta vieja. Un piso inventado acá vetaría operaciones reales.
+      const caidaOk = pisoTasaOperacion({ deudor: caro }, []) === tasaMinIA(caro)
+        && pisoTasaOperacion({ deudor: caro }, null) === tasaMinIA(caro)
+        && pisoTasaOperacion({}, []) === 0 && pisoTasaOperacion(null, null) === 0;
+      // Y el piso de la operación entra en la escalera igual que el de un deudor suelto.
+      const enEscaleraOk = evalAtribucion(pOp + 0.1, pOp - 0.01, pOp + 0.1, true, pOp).bajoPisoDeudor === true;
+      restaurar();
+      R = { huecoOk, diceOk, absOk, bordeOk, viejoOk, comOk, subeOk, tenantOk, maxOk, caidaOk, enEscaleraOk, piso, pisoAlto, pOp, promedio };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    }
+    restaurar();
+    const Q = R || {};
+    ok("147 la tasa simulada se valida contra el mínimo DEL DEUDOR: bajo su piso de riesgo queda fuera de atribución, y el mínimo absoluto sigue ganando",
+       !!R && Q.huecoOk && Q.diceOk && Q.absOk && Q.bordeOk && Q.viejoOk && Q.comOk && Q.subeOk && Q.tenantOk && Q.maxOk && Q.caidaOk && Q.enEscaleraOk,
+       `bajo el piso del deudor (0,89 < ${Q.piso}) sale de atribución ${Q.huecoOk} · el veredicto dice por qué ${Q.diceOk} · bajo el ABSOLUTO gana el bloqueo duro ${Q.absOk} · justo en el piso se puede ofertar ${Q.bordeOk} · sin piso la conducta vieja intacta ${Q.viejoOk} · la comisión no tiene piso de deudor ${Q.comOk} · subir la tasa no es la cláusula ${Q.subeOk} · el piso sigue al costo de fondo del tenant (${Q.piso} → ${Q.pisoAlto}) ${Q.tenantOk} · el piso de la OPERACIÓN es el deudor más exigente y no el promedio (${Q.pOp} ≠ ${Q.promedio}) ${Q.maxOk} · sin facturas cae al deudor del deal y sin nada da 0 ${Q.caidaOk} · y entra en la escalera ${Q.enEscaleraOk}${err ? " · ERROR " + err : ""}`);
   }
 
   console.log(out.join("\n"));

@@ -2066,6 +2066,18 @@ const SPREAD_MIN_DEFAULT = 0.6; // deudores no listados (mayor riesgo => piso m�
 const spreadMinDeudor = (deudor) => (SPREAD_MIN_DEUDOR[deudor] != null ? SPREAD_MIN_DEUDOR[deudor] : SPREAD_MIN_DEFAULT);
 // Tasa mínima mensual que el Agente IA puede autorizar para un deudor (spread mínimo + costo de fondo).
 const tasaMinIA = (deudor) => +(spreadMinDeudor(deudor) + CFG_ACTIVA.costoFondo).toFixed(2);
+// El piso de tasa de una OPERACIÓN: el MÁS EXIGENTE de sus deudores (regla 8). Una oferta cubre varias
+// facturas y cada deudor trae su propio piso de riesgo, así que el de la operación es el mayor: una tasa
+// que perfora el piso de UNO ya está bajo el mínimo de ese deudor. Promediarlos —que es lo que hace la
+// vista por cliente, donde el número es informativo y no gatea nada— dejaría pasar justo ese caso.
+// Recibe las facturas por parámetro (las válidas de la simulación) y cae al deudor del deal cuando no
+// las hay. Puro y de nivel módulo porque lo miran el panel de simulación y su caso (147).
+function pisoTasaOperacion(deal, facturas) {
+  const nombres = [...new Set((facturas || []).map((f) => f && f.deudor).filter(Boolean))];
+  const lista = nombres.length ? nombres : [deal && deal.deudor].filter(Boolean);
+  if (!lista.length) return 0;
+  return +Math.max(...lista.map((d) => tasaMinIA(d))).toFixed(2);
+}
 // ── Precio por Share of Wallet ──────────────────────────────────────────────────────────────────
 // El SOW define cuán agresivo se es en precio: se parte del spread ESTÁNDAR (de lista) y se descuentan
 // puntos según el estado del SOW del cliente. El piso de riesgo del deudor SIEMPRE manda: si el
@@ -5579,14 +5591,30 @@ const bandaDescuentoDeTasa = (tasaRef) => {
 // BAJA el valor nuevo respecto del original; la banda la fija la tasa de referencia de la operación.
 //  · ok             → dentro de la atribución del ejecutivo.
 //  · requiereJefe   → sobre la atribución del ejecutivo pero ≤ descuento máximo: la jefatura autoriza.
-//  · requiereGerente→ sobre el máximo de jefatura: requiere la atribución del Gerente Comercial.
+//  · requiereGerente→ sobre el máximo de jefatura: requiere la atribución del Gerente Comercial. TAMBIÉN
+//                     cuando la tasa perfora el piso de riesgo del deudor, y por un motivo DISTINTO: ahí
+//                     el descuento puede caber entero en la atribución del ejecutivo. El veredicto lo
+//                     distingue con `bajoPisoDeudor` + `pisoDeudor` para que la pantalla no diga «sobre el
+//                     máximo de jefatura» con un 7 % a la vista (reglas 8 y 24, ADR-0006).
 //  · bajoMinimo     → sólo para tasa: cae bajo la tasa mínima absoluta: nunca.
-function evalAtribucion(orig, nueva, tasaBanda, esTasa) {
+// `pisoDeudor` es OPCIONAL: sin él la escalera se comporta exactamente como antes del 19-09-2026, que es
+// lo que mantiene válidos los call sites de cuatro argumentos (caso 147).
+function evalAtribucion(orig, nueva, tasaBanda, esTasa, pisoDeudor) {
   const o = +orig || 0,
     n = +nueva || 0;
   const banda = bandaDescuentoDeTasa(tasaBanda);
   const pctDesc = o > 0 ? +(((o - n) / o) * 100).toFixed(1) : 0;
   if (esTasa && n > 0 && n < pol("tasaMinAbsoluta", 0.78)) return { estado: "bajoMinimo", pctDesc, banda };
+  // REGLA 8, tercera cláusula: «fuera de atribución si el cliente pide tasa bajo el mínimo DEL DEUDOR».
+  // El piso del deudor (spread de riesgo + costo de fondo) es de RIESGO y la regla 9 lo declara no
+  // negociable; perforarlo sale de la atribución del ejecutivo Y de la de la jefatura, porque no es un
+  // descuento comercial más grande sino otra clase de decisión. Va DESPUÉS del mínimo absoluto: ése no se
+  // autoriza nunca y éste sí, hacia arriba. Hasta el 19-09-2026 la escalera sólo miraba el absoluto —un
+  // umbral global— y los 12 pisos por deudor están TODOS sobre él, así que el piso de riesgo era techo
+  // del Agente IA y no del ejecutivo: medidos sobre la tabla real, 5.154 pares (tasa original, tasa
+  // simulada) bajo el piso salían «ok» y el ejecutivo los cerraba solo.
+  const piso = +pisoDeudor || 0;
+  if (esTasa && n > 0 && piso > 0 && n < piso) return { estado: "requiereGerente", pctDesc, banda, bajoPisoDeudor: true, pisoDeudor: piso };
   if (pctDesc <= 0 || !banda) return { estado: "ok", pctDesc: Math.max(0, pctDesc), banda };
   if (pctDesc <= banda.descEjec) return { estado: "ok", pctDesc, banda };
   if (pctDesc <= banda.descMax) return { estado: "requiereJefe", pctDesc, banda };
@@ -8657,7 +8685,10 @@ function SimResumen({
   const setNcK = (k, v) => setNc((s) => ({ ...s, [k]: Math.max(0, +v || 0) }));
   // ── Atribuciones de descuento del ejecutivo (bandas por tasa de referencia) ──
   // El descuento (baja respecto de la condición original) se clasifica por la banda de la tasa original.
-  const evalTasa = evalAtribucion(orig.tasa, nc.tasa, orig.tasa, true);
+  // El piso de riesgo entra ACÁ, que es donde se valida la tasa: al simular (regla 8). `deudoresOp` son
+  // las facturas válidas de la simulación, así que el piso es el del deudor más exigente de la operación.
+  const pisoOperacion = pisoTasaOperacion(deal, deudoresOp);
+  const evalTasa = evalAtribucion(orig.tasa, nc.tasa, orig.tasa, true, pisoOperacion);
   const evalCom = evalAtribucion(orig.comMin, nc.comMin, orig.tasa, false);
   const atrib = atribResumen([evalTasa, evalCom]);
   const bandaRef = bandaDescuentoDeTasa(orig.tasa);
@@ -8667,6 +8698,10 @@ function SimResumen({
   const requiereJefe = atrib.estado === "requiereJefe";
   const requiereGerente = atrib.estado === "requiereGerente"; // sobre el máximo de jefatura → Gerente Comercial
   const bloqueoDuro = atrib.estado === "bajoMinimo"; // sólo la tasa mínima absoluta no es ofertable nunca
+  // Por qué escaló, que NO siempre es el descuento (regla 8): perforar el piso de riesgo del deudor saca
+  // de atribución aunque el descuento quepa entero en la del ejecutivo. Decir «descuento sobre el máximo
+  // de jefatura» en ese caso sería falso en pantalla con un 7 % de descuento a la vista (regla 24).
+  const bajoPisoDeudor = atrib.estado === "requiereGerente" && atrib.bajoPisoDeudor === true;
   // UN SOLO predicado para dibujar el botón y para dejar escribir. Era `requiereGerente ? esGerente : esJefe`,
   // y ese `esJefe` es un PROP: decía «esta pantalla cree que eres jefe», que no es lo mismo que tener hoy
   // la atribución. Con dos fuentes, la que gatea el botón y la que autoriza podían discrepar (ATR-01).
@@ -8865,9 +8900,11 @@ function SimResumen({
           <AlertTriangle size={12} />{" "}
           {atrib.estado === "bajoMinimo"
             ? "Tasa bajo el mínimo permitido — no ofertable"
-            : requiereGerente
-              ? "Descuento sobre el máximo de jefatura — requiere autorización del Gerente Comercial"
-              : "Descuento sobre tu atribución — requiere autorización de jefatura"}
+            : bajoPisoDeudor
+              ? "Tasa bajo el mínimo del deudor — requiere autorización del Gerente Comercial"
+              : requiereGerente
+                ? "Descuento sobre el máximo de jefatura — requiere autorización del Gerente Comercial"
+                : "Descuento sobre tu atribución — requiere autorización de jefatura"}
         </div>
         <div className="mt-1 t10" style={{ color: C.sub }}>
           Descuento aplicado <b>{atrib.pctDesc}%</b>
@@ -8875,6 +8912,12 @@ function SimResumen({
             <>
               {" "}
               · tu atribución <b>{bandaRef.descEjec}%</b> · máximo con jefatura <b>{bandaRef.descMax}%</b>
+            </>
+          )}
+          {bajoPisoDeudor && (
+            <>
+              {" "}
+              · mínimo del deudor <b>{atrib.pisoDeudor}%</b>, que es piso de RIESGO y no se negocia
             </>
           )}
           {requiereGerente && (
@@ -9056,8 +9099,14 @@ function SimResumen({
           {modoEdit && bandaRef && (
             <>
               Atribución (banda tasa {bandaRef.tMin}%–{bandaRef.tMax === Infinity ? "+" : bandaRef.tMax + "%"}): descuento ejecutivo{" "}
-              <b style={{ color: C.sub }}>{bandaRef.descEjec}%</b> · máximo con jefatura <b style={{ color: C.sub }}>{bandaRef.descMax}%</b> · tasa mínima
-              absoluta {CFG_ATRIB_DESCUENTO.tasaMinAbsoluta}%.
+              <b style={{ color: C.sub }}>{bandaRef.descEjec}%</b> · máximo con jefatura <b style={{ color: C.sub }}>{bandaRef.descMax}%</b>
+              {pisoOperacion > 0 && (
+                <>
+                  {" "}
+                  · mínimo del deudor <b style={{ color: C.sub }}>{pisoOperacion}%</b>
+                </>
+              )}{" "}
+              · tasa mínima absoluta {pol("tasaMinAbsoluta", 0.78)}%.
             </>
           )}
         </div>
@@ -9176,8 +9225,14 @@ function SimResumen({
           {bandaRef && !colapsable && (
             <div className="mt-2 t9" style={{ color: C.faint }}>
               Atribución (banda tasa {bandaRef.tMin}%–{bandaRef.tMax === Infinity ? "+" : bandaRef.tMax + "%"}): descuento ejecutivo{" "}
-              <b style={{ color: C.sub }}>{bandaRef.descEjec}%</b> · máximo con jefatura <b style={{ color: C.sub }}>{bandaRef.descMax}%</b> · tasa mínima
-              absoluta {CFG_ATRIB_DESCUENTO.tasaMinAbsoluta}%.
+              <b style={{ color: C.sub }}>{bandaRef.descEjec}%</b> · máximo con jefatura <b style={{ color: C.sub }}>{bandaRef.descMax}%</b>
+              {pisoOperacion > 0 && (
+                <>
+                  {" "}
+                  · mínimo del deudor <b style={{ color: C.sub }}>{pisoOperacion}%</b>
+                </>
+              )}{" "}
+              · tasa mínima absoluta {pol("tasaMinAbsoluta", 0.78)}%.
             </div>
           )}
           {bloqueAtribucion}

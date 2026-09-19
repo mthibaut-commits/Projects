@@ -24,7 +24,7 @@ timestamp: 2026-09-17T15:29:14Z
 | [`reglas/ui_detalle_y_tubo.md`](./reglas/ui_detalle_y_tubo.md) | ¿Cómo se parte, ordena y rotula lo que muestran el detalle y el tubo? |
 | [`reglas/modo_directorio.md`](./reglas/modo_directorio.md) | ¿Qué es el toggle de demo acotada y por qué es desechable? |
 | [`arquitectura.md`](./arquitectura.md) | ¿Cómo se construye el HTML, qué hay en `vendor/`, qué son los datos inyectados? |
-| [`verificacion.md`](./verificacion.md) | ¿Qué cubre cada uno de los 146 casos de la suite y cada paso de verificación? |
+| [`verificacion.md`](./verificacion.md) | ¿Qué cubre cada uno de los 147 casos de la suite y cada paso de verificación? |
 | [`contrato_servidor_y_auditoria.md`](./contrato_servidor_y_auditoria.md) | ¿Qué debe implementar el resolver 1:1, qué es y qué no es un control de seguridad acá, cómo se audita? |
 | [`mapa_documentos.md`](./mapa_documentos.md) | ¿Qué es cada documento fuera del vault (specs, integraciones, auditorías, capturas) y para qué sirve? |
 | [`flujo_git.md`](./flujo_git.md) | ¿En qué rama se trabaja, cómo se integra, qué bloquea el guard de git y cómo se escapa a propósito, cómo se versiona? |
