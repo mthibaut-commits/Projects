@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-18T03:40:00Z
+timestamp: 2026-09-19T00:40:00Z
 ---
 
 # Estado actual
@@ -76,5 +76,5 @@ fila y otro intentó refutarlos (log), y **lo que destaparon sí cambió el prod
 
 ## Última sesión
 
-[18-09-2026 — spec de gestión de excepciones](./2026-09-18_spec_gestion_excepciones.md) · [17-09-2026 — cerrar la tabla de invariantes](./2026-09-17_cerrar_invariantes.md) ·
+[19-09-2026 — revisión del spec de excepciones con el usuario](./2026-09-19_spec_excepciones_revision.md) · [18-09-2026 — spec de gestión de excepciones](./2026-09-18_spec_gestion_excepciones.md) · [17-09-2026 — cerrar la tabla de invariantes](./2026-09-17_cerrar_invariantes.md) ·
 [17-09-2026 — «Operación creada» + Editar](./2026-09-17_operacion_creada_y_editar.md)
