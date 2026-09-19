@@ -38,6 +38,12 @@ feature: null
   «ampliación / se apila» → «información agregada después». «Criterio», que el usuario sugirió, se descartó porque
   en el documento ya nombra a las reglas del catálogo. Observación nueva en §10: en el tab, una excepción sin
   aprobador se puede solicitar igual. PDF regenerado y enviado; `mapa_documentos.md` con el mismo vocabulario.
+- **El párrafo de apertura, redactado por el usuario** (19-09, sexta petición, con su texto de referencia):
+  la premisa decía «una excepción es una decisión con nombre y hora», que describe la EVIDENCIA y no el
+  HECHO. Ahora dice de dónde nace —una regla de negocio que se evalúa y **no se cumple**—, que no cumplir
+  no bota la operación sino que habilita a alguien **facultado** a autorizarla, y para qué existe todo lo
+  demás: que un negocio que **no cumple al 100%** se apruebe igual, con la trazabilidad y la auditoría que
+  **Operaciones** necesita. El rótulo pasó a «Contexto y orden del documento».
 - Context7 volvió a invocarse por slash command: sigue sin herramientas MCP en la sesión y no aplica.
 - **`main` avanzó 40 commits mientras tanto y cambió la definición que acababa de documentar.** La **regla 35**
   (18-09, otra sesión) hace que una regla con tramo de excepción que no llega a nadie —sin área, área

@@ -12,9 +12,15 @@ Lo que **no** repite: el modelo de riesgo (el catálogo de criterios, sus tramos
 el par área-nivel) y el contrato del motor como servicio viven en
 [`spec-otorgamiento.md`](./spec-otorgamiento.md). Acá se citan sólo cuando el proceso los necesita.
 
-> **La premisa que ordena el documento:** una excepción es una **decisión con nombre y hora**. Todo lo
-> que pasa entre que el motor la levanta y que un apoderado la firma existe para que esa decisión llegue
-> **justificada** a quien tiene la **atribución** de tomarla, y para que después se pueda **auditar**.
+> **Contexto y orden del documento.** Una excepción nace de una **regla de negocio** que el sistema
+> evalúa sobre la operación y que **no se cumple**. Que no se cumpla no significa que la operación se
+> caiga: significa que alguien **facultado** puede autorizarla igual, a sabiendas. Eso es excepcionar.
+>
+> Todo lo que pasa entre que el motor levanta la excepción y que el apoderado con **atribución** la
+> autoriza —la justificación del ejecutivo, el ruteo a quien corresponde, el respaldo, la decisión
+> firmada— existe para lo mismo: que un negocio que **no cumple al 100%** las reglas establecidas pueda
+> aprobarse igual, con la **trazabilidad y la auditoría** que Operaciones necesita para responder, meses
+> después, quién autorizó qué y con qué antecedentes a la vista.
 
 ---
 
