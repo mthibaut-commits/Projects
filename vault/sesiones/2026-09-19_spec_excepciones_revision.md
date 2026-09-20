@@ -44,6 +44,14 @@ feature: null
   no bota la operación sino que habilita a alguien **facultado** a autorizarla, y para qué existe todo lo
   demás: que un negocio que **no cumple al 100%** se apruebe igual, con la trazabilidad y la auditoría que
   **Operaciones** necesita. El rótulo pasó a «Contexto y orden del documento».
+- **Los tres controles del giro, en tabla** (19-09, séptima petición). §5.3 decía «sólo después de que sus
+  tres controles pasen» y no los nombraba. Ahora abre con una tabla: **OTG-02** (ninguna excepción sin
+  decidir ni rechazo re-evaluable sin regularizar · lo levantan los apoderados visando · bloquea la salida
+  de «Otorgamiento / Verificación»), **VER-01** (todas las facturas con su verificación telefónica · lo
+  levanta el equipo de verificación · bloquea en el mismo punto) y **GIR-02** (la huella de lo que se va a
+  inyectar calza con la de lo firmado · se repara solo · bloquea la integración al core, el último punto
+  antes del dinero), más **GIR-01** aparte, que no es un pendiente sino consecuencia del camino. Los
+  enunciados salen literal de `INVARIANTES` en el fuente.
 - Context7 volvió a invocarse por slash command: sigue sin herramientas MCP en la sesión y no aplica.
 - **`main` avanzó 40 commits mientras tanto y cambió la definición que acababa de documentar.** La **regla 35**
   (18-09, otra sesión) hace que una regla con tramo de excepción que no llega a nadie —sin área, área
