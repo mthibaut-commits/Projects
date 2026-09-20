@@ -37,21 +37,26 @@ los dos caminos** (casos 150 y 151) y lo que constituye queda marcado `Origen: C
 
 > ## 🎯 Siguiente paso
 >
-> 1. **Subir a `main`.** La rama quedó **verde entera** por primera vez desde el 20-09 (los seis pasos,
->    29/29 e2e incluido), así que el bloqueo del clasificador por `[CI Bypass]` ya no aplica. La mezcla
->    se había hecho y `main` local quedó reseteado a `origin/main`: hay que rehacerla con `merge --no-ff`
->    y **confirmar antes con el usuario**, que es a quien le toca autorizar el push a `main`.
-> 2. **Correr el `.bat` una vez**: `build_app.ps1` cambió y acá no se ejecuta; la simetría está gateada,
->    no probada. · 4. **Regenerar `Capturas_UI/`**, desfasadas desde el padrón real (atado a la deuda 2).
+> 1. **Correr el `.bat` una vez** en la máquina del usuario: `build_app.ps1` cambió y acá no se ejecuta;
+>    la simetría con `build_app.mjs` está gateada, no probada.
+> 2. **Regenerar `Capturas_UI/`**, desfasadas desde el padrón real (atado a la deuda 2).
 > 3. **Motor O01** (la versión débil del hueco de la regla 8: compara contra el promedio ponderado sin el
 >    piso del deudor) · 4. **Regla 28** y **13-quater**: de negocio · 5. Sacar `pipeline.zip` (2,7 MB).
 
-## En vuelo ahora · nada: la rama queda VERDE ENTERA (6/6 pasos)
+## En vuelo ahora · nada
+
+**Mezclado a `main` el 20-09 en `5f2cb18`**, con el CI verde en `1c8eddc` (primera corrida verde del
+CI desde el 20-09: los seis pasos, 29/29 e2e incluido). La rama de sesión quedó re-basada sobre `main`.
 
 ## Bloqueos · los dos son del usuario, desde Windows
 
-El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403, política; se reporta, no se rodea).
-Queda **el tag `v0.1.0`** sobre `bd14091` y **borrar las ramas integradas**.
+El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403 de política, con el proxy sano y sin
+fallos de relay; se reporta, no se rodea). Queda **el tag `v0.1.0`** sobre `bd14091` y **borrar las 6
+ramas integradas** —`claude/elegant-fermat-pyfpnm`, `claude/migrate-project-session-vui9dl`,
+`claude/sleepy-bohr-0x3j73`, `claude/vibrant-hawking-qrzskw`, `claude/vibrant-hopper-33tg8j`,
+`local-mauricio-11sep`—, intentadas una a una y las seis con 403. **No se tocan** `respaldo/main-2026-09-17`
+(respaldo explícito) ni las 5 con trabajo sin mezclar (`bandeja-solicitudes-tabla`, `blissful-brown-oocq4f`,
+`local-mauricio-20260910`, `unidades-peso-verificacion`, `prueba-permiso-rama`).
 
 ## Deudas anotadas (no bloquean, no olvidar)
 

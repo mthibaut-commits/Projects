@@ -62,7 +62,19 @@ Los seis pasos, y esta vez enteros: prettier · eslint 0 · `tsc` sin TS1 · 0 d
 verde desde el 20-09. El paso 7 no aplica: el elenco del Directorio no sale en las capturas, que
 retratan el tubo con el stream corriendo.
 
-## Lo que queda
+## El cierre
 
-Nada mío en la rama. Del usuario, desde Windows: el tag `v0.1.0` y borrar las ramas integradas (proxy
-403), correr el `.bat` una vez, y decidir sobre `Capturas_UI/` (deuda 2: no es determinista).
+Mezclado a `main` en **`5f2cb18`** (`merge --no-ff`, regla 6) después de esperar el CI: `1c8eddc` dio
+**success**, la primera corrida verde del CI desde el 20-09. `main` era ancestro de la rama, así que el
+árbol de la mezcla es idéntico al verificado y no se re-corrieron los doce minutos de suite + e2e.
+
+**El borrado de las 6 ramas integradas falló, las 6 con HTTP 403**, que es la política conocida del
+relay git —el proxy responde sano y sin fallos de relay, así que no es un problema de permisos de
+GitHub ni algo que se pueda reintentar—. Quedan para el usuario desde su máquina, junto con el tag
+`v0.1.0`. **No se intentó borrar** `respaldo/main-2026-09-17` (es un respaldo explícito) ni las 5 ramas
+con trabajo sin mezclar.
+
+**Un falso positivo del hook, anotado para no redescubrirlo:** `gitflow_guard.mjs` bloquea
+`git merge-base --is-ancestor` con «un merge a main va SIEMPRE con --no-ff». Le basta ver `git merge` al
+principio del comando; `merge-base` no mezcla nada, sólo pregunta. Se rodeó usando `git branch -r
+--merged`, que responde lo mismo — no tocando el hook.
