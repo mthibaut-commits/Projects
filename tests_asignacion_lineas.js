@@ -6725,6 +6725,69 @@
        `el padrón manda ${padronMandaOk} (mismo criterio: con cargo se ejecuta, sin cargo no) · tres causas ${causasOk} (${gSinArea.causa} · ${gInexist.causa} · ${gPobre.causa}) · el knock out se ejecuta igual ${koOk} · mira todos los tramos ${todosLosTramosOk} · el motor lo respeta ${motorOk} · veredicto ${veredictoOk} («${mia && mia.motivo}» · estado «${vDespues && vDespues.estado}» = «${vAntes.estado}») · el catálogo real no tiene ninguna ${catalogoOk} (${malasReales.length} de ${REGLAS_CLIENTE.length})${err ? " · ERROR " + err : ""}`);
   }
 
+  // ── 144 · LOS TRES CONTROLES QUE FIRMA OPERACIONES (regla 41) ─────────────────────────────────
+  // La aprobación de la integración al core es el último gesto antes de que salga el dinero. Antes acá
+  // sólo se miraba la huella (GIR-02) y se confiaba en que `etapaTrasFirma` no podía haber dejado pasar
+  // una operación con algo pendiente — pero esa foto es del día de la firma: un visado se puede
+  // REVERTIR, la verificación puede retirar una factura y el cupo se puede consumir en otro negocio.
+  // Se prueba en LAS DOS direcciones (una operación limpia integra; cada falta por separado bloquea),
+  // que es lo que pide un control: el caso VER-01 falló en ambas por mirar una sola.
+  {
+    const op = { id: "OP-CTRL-1", cliente: "Prueba Controles SpA", rutEmisor: "76.111.111-1", stage: "cesion", integracion: "pendiente",
+                 clienteAcepto: true, negocioNum: "N-CTRL-1", monto: 30e6,
+                 facturasOp: [{ id: "f1", folio: 9001, monto: 20e6, deudor: "Deudor Uno", rutRecep: "77.222.222-2" },
+                              { id: "f2", folio: 9002, monto: 10e6, deudor: "Deudor Uno", rutRecep: "77.222.222-2" }] };
+    // La asignación y la evidencia entran POR PARÁMETRO: así el caso no depende de las líneas del
+    // tenant ni de lo que el navegador tenga cacheado, y prueba el motor y no la pantalla.
+    const conLinea = { facturas: [{ id: "f1", folio: 9001, estado: "CON_LINEA" }, { id: "f2", folio: 9002, estado: "CON_LINEA" }] };
+    const sinLinea = { facturas: [{ id: "f1", folio: 9001, estado: "CON_LINEA" }, { id: "f2", folio: 9002, estado: "REQUIERE_COMITE" }] };
+    const huella = huellaOperacion(op);
+    const evidOk = { [op.id]: { via: "electronica", canonico: huella, hash: "x", por: "Prueba", fecha: "hoy" } };
+    // La verificación telefónica se da por hecha en la base (VER-01 se prueba aparte, más abajo): lo
+    // que este caso aísla es que CADA control bloquee por su cuenta.
+    const telHecha = { [op.id]: { f1: { por: "Camila Soto", fecha: "hoy" }, f2: { por: "Camila Soto", fecha: "hoy" } } };
+    const base = { visado: {}, linea: conLinea, evidencia: evidOk, tel: telHecha, vetadas: {}, veredicto: {} };
+    const vis = visadoDeal(op, base);
+    // (b) LIN-01 · una factura sin línea asignada bloquea aunque todo lo demás esté.
+    const conSinLinea = controlesIntegracion(op, { ...base, linea: sinLinea });
+    const sinAsignacion = controlesIntegracion(op, { ...base, linea: { facturas: [] } });
+    // (c) GIR-02 · el paquete cambió después de la firma.
+    const otraHuella = { [op.id]: { via: "electronica", canonico: huella + "|cambiado", hash: "y", por: "Prueba", fecha: "hoy" } };
+    const conHuellaMala = controlesIntegracion(op, { ...base, evidencia: otraHuella });
+    const sinEvidencia = controlesIntegracion(op, { ...base, evidencia: {} });
+    const cod = (r) => (r.faltas || []).map((x) => x.codigo);
+    // Cada falta trae su código Y su detalle: un botón apagado sin causa manda a adivinar por qué no
+    // sale la plata.
+    const detallan = [conSinLinea, sinAsignacion, conHuellaMala, sinEvidencia].every(
+      (r) => !r.ok && r.faltas.every((x) => x.codigo && x.detalle && x.detalle.length > 10));
+    const linOk = cod(conSinLinea).includes("LIN-01") && cod(sinAsignacion).includes("LIN-01")
+      && conSinLinea.sinLinea === 1 && /9002/.test(conSinLinea.faltas.find((x) => x.codigo === "LIN-01").detalle);
+    const girOk = cod(conHuellaMala).includes("GIR-02") && cod(sinEvidencia).includes("GIR-02")
+      && /volver a firmarla/.test(conHuellaMala.faltas.find((x) => x.codigo === "GIR-02").detalle)
+      && /O05/.test(sinEvidencia.faltas.find((x) => x.codigo === "GIR-02").detalle);
+    // Varias faltas a la vez se reportan TODAS, no la primera: quien las arregla necesita la lista.
+    const todas = controlesIntegracion(op, { ...base, linea: sinLinea, evidencia: {} });
+    const acumulaOk = !todas.ok && cod(todas).includes("LIN-01") && cod(todas).includes("GIR-02") && todas.faltas.length >= 2;
+    // Y la dirección positiva: con todo en regla, integra. Si la operación de prueba levanta
+    // excepciones propias del catálogo, se aprueban todas para aislar lo que este caso mide.
+    const visadoTodo = {};
+    vis.exc.forEach((x) => { visadoTodo[x.stKey] = "aprobado"; });
+    const limpiaReal = controlesIntegracion(op, { ...base, visado: visadoTodo });
+    const pasaOk = limpiaReal.ok && limpiaReal.faltas.length === 0 && limpiaReal.sinLinea === 0;
+    // OTG-02 en la otra dirección: se rechaza una excepción y la operación deja de poder integrarse.
+    const visadoRech = { ...visadoTodo };
+    if (vis.exc.length) visadoRech[vis.exc[0].stKey] = undefined;
+    const conPendiente = vis.exc.length ? controlesIntegracion(op, { ...base, visado: {} }) : { ok: false, faltas: [{ codigo: "OTG-02" }] };
+    const otgOk = !conPendiente.ok && cod(conPendiente).includes("OTG-02");
+    // VER-01 en las dos direcciones: sin la llamada registrada bloquea; con ella, deja de bloquear.
+    const sinLlamada = controlesIntegracion(op, { ...base, visado: visadoTodo, tel: {} });
+    const verOk = !sinLlamada.ok && cod(sinLlamada).includes("VER-01") && sinLlamada.pendVerif > 0 && limpiaReal.pendVerif === 0;
+
+    ok("144 la integración al core exige los tres controles: otorgamiento resuelto, verificación completa y cada factura con línea",
+       pasaOk && otgOk && verOk && linOk && girOk && acumulaOk && detallan,
+       `limpia integra ${pasaOk} (faltas ${cod(limpiaReal).join("+") || "ninguna"}) · OTG-02 bloquea ${otgOk} · VER-01 bloquea ${verOk} (pendientes ${sinLlamada.pendVerif}) · LIN-01 bloquea ${linOk} (sin línea ${conSinLinea.sinLinea}) · GIR-02 bloquea ${girOk} · acumula ${acumulaOk} (${cod(todas).join("+")}) · cada falta con detalle ${detallan}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

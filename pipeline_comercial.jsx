@@ -13136,7 +13136,7 @@ function DealDrawer({
                           acción lo vuelve a comprobar antes de escribir. */}
                     {deal.integracion === "pendiente" &&
                       (() => {
-                        const ev = evidenciaContratoOk(deal);
+                        const ctrl = controlesIntegracion(deal);
                         const puede = puedeAprobarExc(usuario, { area: "operaciones" }, 3);
                         return (
                           <div className="mt-2 rounded-lg p-2.5" style={{ backgroundColor: C.lilac, border: "1px solid #DDD6FE" }}>
@@ -13144,25 +13144,44 @@ function DealDrawer({
                               Pendiente Integración
                             </div>
                             <div className="mt-0.5 t10" style={{ color: C.sub }}>
-                              Los criterios de otorgamiento y la verificación quedaron resueltos. Falta que <b>Operaciones (N3)</b> apruebe la integración al
-                              core; recién ahí la operación queda <b>Pendiente de Giro</b> para Tesorería.
+                              {ctrl.ok
+                                ? "Los criterios de otorgamiento y la verificación quedaron resueltos, y cada factura tiene línea asignada. Falta que Operaciones (N3) apruebe la integración al core; recién ahí la operación queda Pendiente de Giro para Tesorería."
+                                : "Operaciones firma que la operación está en condiciones de entrar al core. Mientras falte alguno de sus controles, la aprobación no se habilita."}
                             </div>
-                            {!ev.ok && (
+                            {/* QUÉ FALTA, UNO POR UNO Y CON SU CÓDIGO. Un botón apagado sin causa manda a
+                                adivinar, y lo que se adivina acá es por qué no sale la plata. Cada falta
+                                nombra su control —el mismo que el resolver del servidor devuelve— y dice
+                                qué hay que hacer para levantarla. */}
+                            {!ctrl.ok && (
                               <div
                                 className="mt-1.5 rounded-md px-2 py-1.5 t9"
                                 style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#7c3a10" }}
-                                title={ev.firmado ? `Lo autorizado: ${ev.firmado}\nLo que se integraría: ${ev.actual}` : undefined}
                               >
-                                <b>No se puede integrar:</b>{" "}
-                                {ev.motivo === "sin_evidencia"
-                                  ? "falta la evidencia del contrato de cesión (criterio O05)."
-                                  : "la operación cambió después de que el cliente la autorizó — hay que volver a firmarla."}
+                                <b>
+                                  No se puede integrar: falta{ctrl.faltas.length > 1 ? "n" : ""} {ctrl.faltas.length} control
+                                  {ctrl.faltas.length > 1 ? "es" : ""}.
+                                </b>
+                                <ul className="mt-1 space-y-0.5" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                                  {ctrl.faltas.map((x) => (
+                                    <li
+                                      key={x.codigo}
+                                      title={
+                                        x.codigo === "GIR-02" && ctrl.evidencia && ctrl.evidencia.firmado
+                                          ? `Lo autorizado: ${ctrl.evidencia.firmado}\nLo que se integraría: ${ctrl.evidencia.actual}`
+                                          : undefined
+                                      }
+                                    >
+                                      <b>{x.codigo}</b> · {x.detalle}
+                                    </li>
+                                  ))}
+                                </ul>
                               </div>
                             )}
                             {puede ? (
                               <button
                                 onClick={() => onIntegrar && onIntegrar(deal.id)}
-                                disabled={!ev.ok}
+                                disabled={!ctrl.ok}
+                                title={ctrl.ok ? undefined : ctrl.faltas.map((x) => `${x.codigo} · ${x.detalle}`).join("\n")}
                                 className="mt-2 rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed"
                                 style={{ backgroundColor: C.indigo }}
                               >
@@ -23021,6 +23040,95 @@ function otorgamientoCompleto(deal, estado) {
   if (deal.otorgAuto) return true;
   const v = visadoDeal(deal, estado);
   return v.exc.length > 0 && v.estado === "aprobada";
+}
+// LA ASIGNACIÓN DE LÍNEA QUE RESPALDA EL PAQUETE. Una operación aceptada se LEE de su versión y no se
+// re-evalúa (regla 12): el cupo ya está reservado en el sistema de líneas, así que recalcular mostraría
+// menos cursable del que el cliente firmó. Por eso se busca la versión más reciente que traiga
+// asignación, y sólo si no hay ninguna —una operación que nunca se versionó— se calcula, que es lo
+// mismo que hace la pantalla del detalle mientras la oferta se arma.
+function lineaAsignadaDe(deal, estado) {
+  const est = estado || {};
+  if (est.linea) return est.linea;
+  const versiones = est.versiones || (typeof SIM_VERSIONS !== "undefined" ? SIM_VERSIONS : {}) || {};
+  const vs = (deal && versiones[deal.id]) || [];
+  for (let i = vs.length - 1; i >= 0; i--) if (vs[i] && vs[i].linea) return vs[i].linea;
+  const fs2 = ((deal && deal.facturasOp) || []).filter((x) => x && (x.monto || 0) > 0);
+  if (!fs2.length || !deal || !deal.rutEmisor) return null;
+  return asignarLineas(fs2, deal.rutEmisor);
+}
+// LOS CONTROLES QUE FIRMA OPERACIONES (regla 41). Aprobar la integración al core es el último gesto
+// antes de que el dinero salga y quien lo hace RESPONDE por lo que entra: que lo excepcionado esté
+// excepcionado, que las llamadas estén hechas, que cada factura tenga cupo y que el paquete sea el que
+// el cliente firmó.
+//
+// Antes acá sólo se miraba la huella (GIR-02) y se confiaba en que la operación no podía haber llegado
+// de otra forma: `etapaTrasFirma` la deja en «Otorgamiento / Verificación» mientras falte algo. Pero esa
+// foto es del día de la firma, y entre ese día y éste pueden pasar días: un apoderado puede REVERTIR un
+// visado, la verificación puede retirar una factura por no confirmada, y el cupo de una línea puede
+// consumirse en otro negocio del mismo cliente. La compuerta se vuelve a mirar ACÁ, que es el último
+// punto donde mirarla sirve de algo.
+//
+// Devuelve las faltas CON SU CÓDIGO —el mismo que el resolver del servidor tiene que devolver— para que
+// la pantalla diga qué falta y no un «no se puede» sin causa. PURA: todo lo que decide entra por
+// `estado` (visado, versiones, verificación, asignación de línea, evidencia).
+function controlesIntegracion(deal, estado) {
+  const faltas = [];
+  if (!deal) return { ok: false, faltas: [{ codigo: "GIR-01", titulo: "Sin operación", detalle: "no hay operación que integrar" }] };
+  const vis = visadoDeal(deal, estado);
+  const pendVisado = vis.excPend.length + vis.rechReev.length;
+  if (pendVisado > 0) {
+    faltas.push({
+      codigo: "OTG-02",
+      titulo: "Otorgamiento sin resolver",
+      detalle: `${pendVisado} criterio(s) de otorgamiento sin resolver: hay que excepcionarlos o regularizarlos antes de integrar`,
+    });
+  }
+  const pendVerif = verifResumenDeal(deal, estado).pend;
+  if (pendVerif > 0) {
+    faltas.push({
+      codigo: "VER-01",
+      titulo: "Verificación incompleta",
+      detalle: `${pendVerif} factura(s) esperan la verificación telefónica con el deudor`,
+    });
+  }
+  // LA LÍNEA, FACTURA POR FACTURA. El cupo se asigna al armar la oferta y lo que no cabe sale marcado
+  // para el comité; lo que no puede pasar es que una factura sin cupo llegue al core, porque el core
+  // no tiene contra qué imputarla. Se mira el estado de CADA factura de la asignación, no el total:
+  // un paquete puede estar dentro de la línea del cliente y tener una factura sin línea de par.
+  const lin = lineaAsignadaDe(deal, estado);
+  const facturasLin = (lin && lin.facturas) || [];
+  const sinLinea = facturasLin.filter((x) => x && x.estado !== "CON_LINEA");
+  if (sinLinea.length > 0) {
+    const folios = sinLinea
+      .slice(0, 4)
+      .map((x) => "#" + (x.folio || x.id))
+      .join(", ");
+    faltas.push({
+      codigo: "LIN-01",
+      titulo: "Facturas sin línea asignada",
+      detalle: `${sinLinea.length} factura(s) sin línea aprobada y asignada (${folios}${sinLinea.length > 4 ? ", …" : ""}): esperan al comité`,
+    });
+  } else if (!facturasLin.length) {
+    // Sin asignación no se puede AFIRMAR que cada factura tenga cupo, y acá se falla cerrado: lo que
+    // está en juego es plata que sale.
+    faltas.push({
+      codigo: "LIN-01",
+      titulo: "Sin asignación de línea",
+      detalle: "no hay una asignación de línea que respalde este paquete: no se puede afirmar que cada factura tenga cupo",
+    });
+  }
+  const evidencia = evidenciaContratoOk(deal, estado);
+  if (!evidencia.ok) {
+    faltas.push({
+      codigo: "GIR-02",
+      titulo: "El paquete no es el autorizado",
+      detalle:
+        evidencia.motivo === "sin_evidencia"
+          ? "falta la evidencia del contrato de cesión (criterio O05)"
+          : "la operación cambió después de que el cliente la autorizó — hay que volver a firmarla",
+    });
+  }
+  return { ok: faltas.length === 0, faltas, pendVisado, pendVerif, sinLinea: sinLinea.length, evidencia };
 }
 // ── CAPA DE REPOSITORIOS (SERVER-SIDE) ──────────────────────────────────────────────────────────
 // Los objetos de módulo que vienen a continuación NO son estado de UI: son TABLAS. Hoy viven en la
@@ -48049,25 +48157,33 @@ export default function PipelineComercial() {
       });
       return;
     }
-    const ev = evidenciaContratoOk(d0);
-    if (!ev.ok) {
-      logSys("warn", "giro", `Integración al core bloqueada · ${id} · ${ev.motivo}`, {
+    // LOS CONTROLES SE VUELVEN A MIRAR ANTES DE ESCRIBIR (regla 41). El botón deshabilitado no es el
+    // control: la pantalla puede venir de hace un rato, y entre medio un apoderado pudo revertir un
+    // visado o la verificación retirar una factura. En producción esto lo rechaza el resolver con el
+    // mismo código; acá se anticipa, que es lo que este cliente puede hacer.
+    const ctrl = controlesIntegracion(d0);
+    if (!ctrl.ok) {
+      const ev = ctrl.evidencia || {};
+      const codigos = ctrl.faltas.map((x) => x.codigo).join(" · ");
+      logSys("warn", "giro", `Integración al core bloqueada · ${id} · ${codigos}`, {
         operacion: id,
-        motivo: ev.motivo,
+        faltas: ctrl.faltas.map((x) => x.codigo),
+        motivo: ev.motivo || null,
         firmado: ev.firmado || null,
         actual: ev.actual || null,
       });
       registrarAuditoria({
         usuario: nom,
         modulo: "Operaciones · Integración",
-        accion: "Integración bloqueada (GIR-02)",
-        glosa: `${d0.cliente}: ${ev.detalle}${ev.firmado ? ` · firmado «${ev.firmado}» · actual «${ev.actual}»` : ""}`,
+        accion: `Integración bloqueada (${codigos})`,
+        glosa: `${d0.cliente}: ${ctrl.faltas.map((x) => x.detalle).join(" · ")}${ev.firmado && !ev.ok ? ` · firmado «${ev.firmado}» · actual «${ev.actual}»` : ""}`,
         empresaId: id,
         severidad: "alta",
         exito: false,
       });
       return;
     }
+    const ev = ctrl.evidencia;
     const upd = (d) =>
       d.id !== id
         ? d
