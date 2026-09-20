@@ -40,6 +40,31 @@ const CERO = new Set(["—", "0", "$0"]); // las formas en que un cero puede pin
 const TIT_NEUTRO = "Monto que propone el sistema para este par.";
 const TIT_PROPUESTA = "Monto de línea que se le pide al comité para este deudor. Se digita en pesos."; // title del InputPesos de la fila
 const digitos = (s) => +String(s || "").replace(/[^\d]/g, "");
+// El RUT del deudor, tal como el sistema lo escribe: formato canónico chileno con puntos. El patrón
+// viejo era `\d{8}-[\dK]` —ocho dígitos SEGUIDOS—, que sólo calzaba con el RUT que el wizard
+// INVENTABA (`76000000 + hash`, sin puntos, y con un dígito verificador sorteado de una cadena).
+// Desde la regla 46 el RUT se resuelve contra el universo conocido y llega con su forma real, así que
+// el gate se re-ancla y de paso EXIGE MÁS: que el dígito verificador sea válido. Aflojarlo a «hay algo
+// con guión» habría dejado pasar exactamente el defecto que esta regla vino a cerrar.
+// El activo lleva los DOS formatos a propósito (`migrar_padron.js`: «el formato del RUT se conserva
+// por campo» — `RUTEmisor` sin puntos, `RUTRecep` con ellos), así que el patrón acepta los dos. Las
+// dos miradas atrás importan: `(?<!\d)` impide empezar a media cifra y `(?<!\d\.)` impide arrancar
+// en el segundo grupo de un RUT con puntos — sin ellas, «76121572-8» calzaba como «572-8» y el gate
+// reportaba un dígito verificador inválido que no existía. El `(?!\d)` cierra por la derecha.
+const RUT_EN_CELDA = /(?<!\d)(?<!\d\.)(\d{1,3}(?:\.\d{3})+|\d{7,9})-([\dkK])(?!\d)/;
+const dvDeRut = (cuerpo) => {
+  let s = 0, m = 2;
+  for (const c of String(cuerpo).replace(/\./g, "").split("").reverse()) {
+    s += +c * m;
+    m = m === 7 ? 2 : m + 1;
+  }
+  const r = 11 - (s % 11);
+  return r === 11 ? "0" : r === 10 ? "K" : String(r);
+};
+const rutValidoEn = (texto) => {
+  const m = RUT_EN_CELDA.exec(String(texto || ""));
+  return !!m && dvDeRut(m[1]) === m[2].toUpperCase();
+};
 
 /* Elige, en la página, un cliente SIN línea vigente (los que ofrece «Crear Línea — nueva») con ≥ 2
    deudores recurrentes, para que la tabla traiga filas y el promedio ponderado tenga con qué ponderar. */
@@ -157,7 +182,8 @@ export const casos = [
         if (!T.filas.length) throw new Error(`la tabla de sugeridos no trae filas (cliente ${cli.nombre}, ${cli.recurrentes} recurrentes)`);
         if (T.filas.length !== cli.recurrentes) fallos.push(`filas ${T.filas.length} ≠ recurrentes ${cli.recurrentes}`);
         for (const f of T.filas) {
-          if (!/\d{8}-[\dK]/.test(f.celdaNombre)) fallos.push(`${f.nombre}: el RUT no va dentro de la celda del nombre`);
+          if (!RUT_EN_CELDA.test(f.celdaNombre)) fallos.push(`${f.nombre}: el RUT no va dentro de la celda del nombre`);
+          else if (!rutValidoEn(f.celdaNombre)) fallos.push(`${f.nombre}: el RUT de la celda tiene dígito verificador INVÁLIDO (regla 46: se resuelve, no se arma) — «${f.celdaNombre}»`);
           if (!/Recurrente/.test(f.celdaNombre)) fallos.push(`${f.nombre}: el chip Recurrente no va dentro de la celda del nombre`);
           if (f.sugerido !== f.propuesta) fallos.push(`${f.nombre}: sugerido «${f.sugerido}» ≠ propuesta «${f.propuesta}» al nacer`);
           if (!PESOS.test(f.sugerido) || !PESOS.test(f.propuesta)) fallos.push(`${f.nombre}: sugerido/propuesta no van en pesos: «${f.sugerido}» «${f.propuesta}»`);

@@ -89,6 +89,8 @@ timestamp: 2026-09-18T02:18:36Z
 | 41 | Los tres controles que firma OPERACIONES se vuelven a mirar al aprobar la integración al core, no sólo el día de la firma | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 144, `regla_41.test.mjs` |
 | 43 | Girar no es una acción de NEX: el sistema termina en la inyección a Tesorería, que autoriza Operaciones, y el giro vuelve como CALLBACK | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 145, 146, `regla_transiciones.test.mjs` |
 | 44 | La ESTRUCTURA de líneas es un INSUMO: los tres niveles llegan por el activo A23 y el pipeline sólo los lee; lo que el comité constituye se superpone | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 150, `regla_lineas_activo.test.mjs` |
+| 45 | La línea del RUT cliente ES la suma de sus líneas (por par y comodín), en los tres estados y también en el utilizado | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 151, `regla_lineas_activo.test.mjs` |
+| 46 | El RUT de un deudor se RESUELVE contra el universo conocido, nunca se arma: uno inventado es, para el motor, otro deudor | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 151, `regla_lineas_activo.test.mjs`, `padron.test.mjs` |
 | 17 | Teléfonos ofuscados en logs | [`contrato_servidor_y_auditoria.md`](./contrato_servidor_y_auditoria.md) | 130, `regla_17.test.mjs` |
 
 ## Contrato con el servidor (12 invariantes, `INVARIANTES` en el fuente)

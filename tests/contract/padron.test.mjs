@@ -66,7 +66,13 @@ export function identidadesHuerfanas(activo, padron) {
   const declarados = new Set();
   for (const lista of LISTAS) for (const x of padron[lista] || []) declarados.add(String(x.rut).replace(/\./g, "").toUpperCase());
   const huerfanas = new Set();
-  for (const campo of ["RUTEmisor", "RUTRecep"]) {
+  // TODOS los campos que llevan un RUT, no sólo los del A1. Hasta el 20-09-2026 esto miraba
+  // `RUTEmisor` y `RUTRecep` y nada más, así que el campo `RUT` de los catálogos A3/A4 nunca se
+  // revisó: `4.603.315-2 · Automotriz Puerto Montt y Cía. Ltda.` sobrevivió entero a la migración
+  // —RUT en rango de PERSONA NATURAL y con dígito verificador INVÁLIDO— porque ese deudor no aparece
+  // en ninguna factura y `migrar_padron.js` mapea por los RUT del A1. Un gate que mira dos campos de
+  // siete no dice «el padrón es la única fuente»: dice «en dos campos lo es».
+  for (const campo of ["RUTEmisor", "RUTRecep", "RUT", "RUTCliente", "RUTDeudor"]) {
     for (const m of activo.matchAll(new RegExp(`"${campo}":"([^"]+)"`, "g"))) {
       const r = m[1].replace(/\./g, "").toUpperCase();
       if (!declarados.has(r)) huerfanas.add(r);
@@ -111,6 +117,15 @@ test("padrón: el activo no usa ninguna identidad que el padrón no declare", ()
 test("sonda negativa: una identidad del activo fuera del padrón la caza el gate", () => {
   const plantado = `[{"RUTEmisor":"41604007-5","RznSoc":"Constructora RM SA"}]`;
   assert.deepEqual(identidadesHuerfanas(plantado, PADRON), ["41604007-5"]);
+});
+
+test("sonda negativa: la identidad huérfana en CUALQUIER campo con RUT la caza el gate", () => {
+  // Una por campo: es el agujero que dejó pasar a «Automotriz Puerto Montt» durante tres días, y con
+  // una sonda sobre un solo campo habría seguido pasando.
+  for (const campo of ["RUT", "RUTCliente", "RUTDeudor"]) {
+    const plantado = `[{"${campo}":"4.603.315-2","RazonSocial":"Automotriz Puerto Montt y Cía. Ltda."}]`;
+    assert.deepEqual(identidadesHuerfanas(plantado, PADRON), ["4603315-2"], `el gate no mira el campo ${campo}`);
+  }
 });
 
 test("padrón: las cuatro listas tienen el tamaño que el activo necesita", () => {

@@ -6793,8 +6793,14 @@ function ventaL6M(dh) {
 // Deudores con flujo comercial RECURRENTE del cliente en los últimos 6 meses. Se usan para pre-cargar
 // la sección de deudores de la presentación de línea (el ejecutivo sólo ingresa la información de línea).
 // Recurrente = facturó en ≥ 4 de los últimos 6 meses. Ordenados por facturación total (deudoresHistorial).
-function deudoresRecurrentesLinea(cliente) {
-  const cand = Object.keys(SPREAD_MIN_DEUDOR).map((name) => ({ name }));
+// Los deudores del cliente con flujo RECURRENTE, que el wizard pre-carga en el paso de deudores.
+// Los candidatos son los deudores REALES a los que ese cliente le factura (regla 46); antes salían de
+// las 23 razones sociales de `SPREAD_MIN_DEUDOR`, que es la tabla de spreads mínimos por deudor
+// canónico y no tiene por qué contener a los deudores de nadie en particular: el ejecutivo veía
+// pre-cargadas empresas con las que su cliente jamás había trabajado.
+function deudoresRecurrentesLinea(cliente, rutCliente) {
+  const propios = rutCliente ? deudoresDelCliente(rutCliente) : [];
+  const cand = (propios.length ? propios : Object.keys(SPREAD_MIN_DEUDOR)).map((name) => ({ name }));
   return deudoresHistorial(cliente, cand)
     .filter((h) => h.meses.slice(0, 6).filter((m) => m.fac > 0).length >= 4)
     .slice(0, 5);
@@ -13914,11 +13920,13 @@ function DealDrawer({
                         deudoresDeDeal(deal).forEach((d) => {
                           if (d.rut) rutMap[d.nombre] = d.rut;
                         });
-                        const rutDe = (n) => {
-                          if (rutMap[n]) return rutMap[n];
-                          const h = Math.abs(hashStr("rut:" + n));
-                          return `${76 + (h % 20)}.${String(100 + (h % 900))}.${String(h % 1000).padStart(3, "0")}-${"0123456789K"[h % 11]}`;
-                        };
+                        // El RUT del deudor de la operación; si la fila no lo trae, se RESUELVE contra
+                        // el universo conocido (regla 46). Antes se armaba con un dígito verificador
+                        // sorteado, y este `rutDe` alimenta la evaluación de línea de más abajo: un
+                        // RUT fabricado es, para el motor, un deudor distinto — no calza con su línea
+                        // de par, cae a la de otros deudores y el desglose muestra las dos a la vez.
+                        // Vacío cuando el sistema no lo conoce: mejor sin RUT que con uno inventado.
+                        const rutDe = (n) => rutMap[n] || rutDeDeudorPorNombre(n);
                         // EVALUACIÓN DE LÍNEA de la oferta: el motor completo sobre los tres niveles, no una
                         // estimación por deudor. Se recalcula la operación ENTERA porque la línea del cliente se
                         // consume acumulativamente en orden de nota y la línea de otros deudores es compartida,
@@ -39794,6 +39802,52 @@ function paresPorEmisor() {
   return _dtePares;
 }
 
+// ── EL UNIVERSO DE DEUDORES QUE EL SISTEMA CONOCE, por nombre ─────────────────────────────────────
+// Un deudor se identifica por su RUT, nunca por su razón social: la línea del par, la exposición del
+// nivel 3 y el veredicto de verificación se llevan todos por RUT. Un nombre sin RUT es, para el motor,
+// un deudor DISTINTO — no calza con su línea de par, cae a la de otros deudores, y el desglose termina
+// mostrando las dos a la vez.
+//
+// Por eso esto existe: el wizard del comité construía la fila de un deudor con un RUT INVENTADO
+// (`76000000 + (hash % 20000000)` y un dígito verificador sorteado de una cadena). Medido sobre 400
+// deudores del activo: el **92% con dígito verificador inválido** y el **100% desconocidos** para el
+// sistema. La línea que el comité otorgaba por ahí caía sobre un par que no existe, así que el deudor
+// seguía yendo al comodín y la solicitud no servía de nada (regla 46).
+//
+// La resolución es limpia porque el dato lo permite: los 741 deudores del A1 tienen razón social única
+// —CERO nombres con dos RUT— y 621 de los 622 nombres de los catálogos A3/A4 están entre ellos.
+let _deuPorNombre = null;
+function deudoresConocidos() {
+  if (_deuPorNombre) return _deuPorNombre;
+  _deuPorNombre = new Map();
+  const add = (nombre, rut) => {
+    if (nombre && rut && !_deuPorNombre.has(nombre)) _deuPorNombre.set(nombre, rut);
+  };
+  // El A1 primero: es donde el par existe de verdad, con facturas detrás. Se reusa
+  // `RUT_DEUDOR_POR_NOMBRE`, que ya recorre DTESync con este mismo criterio — un segundo índice sobre
+  // el mismo dato es la puerta por la que los dos empiezan a decir cosas distintas.
+  for (const [nombre, rut] of Object.entries(RUT_DEUDOR_POR_NOMBRE)) add(nombre, rut);
+  // Y los catálogos A3/A4, que declaran deudores a los que este cliente todavía no le factura.
+  const cat = (arr) => {
+    for (const x of arr || []) add(x.RazonSocial, x.RUT);
+  };
+  if (typeof window !== "undefined") {
+    cat(window.LISTA_BLANCA);
+    cat(window.DEUDORES_AUTORIZADOS);
+  }
+  return _deuPorNombre;
+}
+// RUT real del deudor, o "" si el sistema no lo conoce. Devolver vacío es deliberado: aguas abajo
+// `constituirLineasDeDetalle` descarta la línea sin RUT en vez de crear un par fantasma.
+function rutDeDeudorPorNombre(nombre) {
+  return deudoresConocidos().get(nombre) || "";
+}
+// Los deudores a los que ESTE cliente le factura, de mayor a menor volumen. Es lo que el wizard ofrece
+// primero: pedirle línea a un deudor con el que no hay actividad es el caso raro, no el normal.
+function deudoresDelCliente(rutCliente) {
+  return (paresPorEmisor().get(rutCliente) || []).map((d) => d.nombre).filter(Boolean);
+}
+
 // ESTADO DE LÍNEAS DE UN CLIENTE — LECTURA del activo A23 (`LINEA_CUPO`), memoizada por RUT.
 //
 // Devuelve el estado COMPLETO —todas sus líneas, no sólo las de la oferta abierta— porque los
@@ -39849,6 +39903,13 @@ function idxCupo() {
     if (r.UnSoloUso) ln.unSoloUso = true;
     if (r.SoloPrime) ln.soloPrime = true;
     if (r.Consumida) ln.quemada = true;
+    // El ORIGEN viaja desde el activo. El maestro no se marca en el objeto —es el caso normal y
+    // marcarlo engordaría 3.667 filas para no decir nada—; lo que se conserva es la marca del COMITÉ,
+    // que es la que permite distinguir el cupo nacido de una solicitud del que ya estaba.
+    if (r.Origen === "COMITE") {
+      ln.origen = "comite";
+      ln.idProceso = r.IdProceso || "";
+    }
     st.lineas.push(ln);
   }
   // ── LO QUE EL COMITÉ CONSTITUYÓ EN ESTA SESIÓN, superpuesto a la foto ──────────────────────────
@@ -39867,13 +39928,17 @@ function idxCupo() {
     // daría al cliente un cupo comodín de $30.000.000 que ya nadie le aprobó.
     if (st.estado === "A") st.lineas = st.lineas.filter((l) => l.tipo !== "LF1");
     st.estado = "B";
-    if (g.aprobadaCliente > 0) st.asignadaCliente = g.aprobadaCliente;
     g.lineas.forEach((nueva, i) => {
       const previa = nueva.tipo === "LF2" ? st.lineas.find((l) => l.tipo === "LF2" && l.rutDeudor === nueva.rutDeudor) : null;
       // Al par que YA tiene línea normal se le AUMENTA el monto; al que no tiene, se le crea. Una
       // PUNTUAL es siempre nueva: es un cupo a medida de una operación, no una ampliación.
       if (previa) {
+        // Ampliar también deja rastro: el cupo que se sumó nació de una solicitud, y sin la marca la
+        // línea quedaría indistinguible de una que el maestro trajo con ese monto desde el principio.
         previa.aprobado = mmRound(previa.aprobado + nueva.monto);
+        previa.origen = "comite";
+        previa.idProceso = idProceso;
+        previa.ampliadoPorComite = mmRound((previa.ampliadoPorComite || 0) + nueva.monto);
         return;
       }
       st.lineas.push({
@@ -39885,9 +39950,49 @@ function idxCupo() {
         aprobado: nueva.monto,
         vigente: 0,
         ...(nueva.tipo === "LF3" ? { unSoloUso: true } : {}),
-        origenComite: idProceso,
+        // La MARCA que pidió el usuario, en la misma forma que traería el activo si la entrega
+        // siguiente del sistema de líneas ya la incluyera: `Origen: "COMITE"` + su `IdProceso`.
+        origen: "comite",
+        idProceso,
       });
     });
+    // EL TECHO QUE APROBÓ EL COMITÉ, MENOS LO COMPROMETIDO POR PAR, ES CAPACIDAD PARA LOS OTROS
+    // DEUDORES: va al comodín, que es exactamente el nivel que los financia (regla 45). Sin esto el
+    // excedente no sería la suma de nada y el nivel 1 volvería a ser un número suelto — el defecto que
+    // esta misma sesión midió en 217 de 224 clientes.
+    const sumaPar = st.lineas.reduce((x, l) => x + l.aprobado, 0);
+    const sobra = mmRound((g.aprobadaCliente || 0) - sumaPar);
+    if (sobra > 0) {
+      const comodines = st.lineas.filter((l) => l.granularidad === "comodin" && l.tipo !== "LF1");
+      if (comodines.length) {
+        // Al MAYOR: repartir entre categorías exigiría una decisión de riesgo que el comité no tomó.
+        let may = comodines[0];
+        for (const c of comodines) if (c.aprobado > may.aprobado) may = c;
+        may.aprobado = mmRound(may.aprobado + sobra);
+        may.origen = "comite";
+        may.idProceso = idProceso;
+      } else {
+        // El cliente venía sin comodín (estado A, o uno cuyo comodín no alcanzaba el piso). El modelo
+        // dice que un cliente con comité tiene LF2+LF3+LF4, así que crearlo COMPLETA el modelo en vez
+        // de inventar: la categoría es la de los deudores que el comité acaba de mirar.
+        const cats = g.lineas.map((n) => tipoLineaDeDeudor(tipoDeudor(n.rutDeudor, n.nombreDeudor)));
+        const lb = cats.filter((c) => c === "Lista Blanca").length;
+        st.lineas.push({
+          id: "LF4-COM-" + idProceso,
+          tipo: "LF4",
+          granularidad: "comodin",
+          categoria: lb > cats.length / 2 ? "Lista Blanca" : "Deudores Autorizados",
+          rutDeudor: null,
+          aprobado: sobra,
+          vigente: 0,
+          origen: "comite",
+          idProceso,
+        });
+      }
+    }
+    // LA CABECERA ES LA SUMA, siempre y por construcción (regla 45). No se copia `aprobadaCliente`:
+    // si el detalle y el techo no cuadran, la verdad es lo que las líneas pueden ejercer.
+    st.asignadaCliente = st.lineas.reduce((x, l) => x + l.aprobado, 0);
   }
   return _cacheCli;
 }
@@ -41226,6 +41331,10 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
   // «Recurrente». Sirve para los recurrentes pre-cargados y para los que el ejecutivo agrega.
   const construirDeudorLinea = (nombre) => {
     const h = Math.abs(hashStr("deu" + nombre));
+    // EL RUT SE RESUELVE, NO SE INVENTA (regla 46). Antes salía de `76000000 + (h % 20000000)` con un
+    // dígito verificador sorteado: 92% inválidos y 100% desconocidos para el sistema, así que la línea
+    // que el comité otorgaba caía sobre un par inexistente y el deudor seguía yendo al comodín.
+    const rutReal = rutDeDeudorPorNombre(nombre);
     const prop = (50 + (h % 20) * 10) * 1e6;
     const ant = h % 2 ? (50 + (h % 10) * 10) * 1e6 : 0;
     const esCliente = typeof PC_CLIENTES !== "undefined" && PC_CLIENTES.some((c) => c.nombre === nombre) ? true : h % 3 === 0;
@@ -41235,8 +41344,8 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
     // apartó de la sugerencia; con un solo campo esa diferencia no queda en ninguna parte.
     return {
       nombre,
-      rut: `${76000000 + (h % 20000000)}-${"0123456789K"[h % 11]}`,
-      nota: notaDeudor(nombre) || 0,
+      rut: rutReal,
+      nota: notaDeudor(nombre, rutReal) || 0,
       esCliente,
       politicaPct: pol("concentracionDeudorPct", 30),
       anterior: ant,
@@ -41254,7 +41363,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
   // Pre-carga: los deudores con flujo recurrente ya vienen SUGERIDOS; el ejecutivo sólo revisa el monto
   // propuesto. Los demás los agrega él en «Otros deudores».
   const [deudores, setDeudores] = useState(() => {
-    const base = deudoresRecurrentesLinea(cliente).map((hh) => ({
+    const base = deudoresRecurrentesLinea(cliente, rut).map((hh) => ({
       ...construirDeudorLinea(hh.name),
       flags: { V: true, N: true, C: true, FR: false, CP: false },
       recurrente: true,
@@ -41290,7 +41399,15 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
   const [addPrev, setAddPrev] = useState(null); // preview API 4 del deudor por aceptar
   const [editDeu, setEditDeu] = useState(null); // índice del deudor en edición (modal Editar Deudor Factoring)
   const [otrosLimite, setOtrosLimite] = useState(10); // Otros Deudores Límite Máx. %
-  const candidatosDeu = Object.keys(SPREAD_MIN_DEUDOR).filter((n) => !deudores.some((d) => d.nombre === n));
+  // Los candidatos son los deudores que el sistema CONOCE —los del cliente primero, por volumen
+  // facturado, y después el resto del universo—, no las 23 razones sociales canónicas de
+  // `SPREAD_MIN_DEUDOR`, que es una tabla de spreads mínimos y no un catálogo de empresas.
+  const candidatosDeu = useMemo(() => {
+    const propios = deudoresDelCliente(rut);
+    const vistos = new Set(propios);
+    const resto = [...deudoresConocidos().keys()].filter((n) => !vistos.has(n));
+    return propios.concat(resto);
+  }, [rut]).filter((n) => !deudores.some((d) => d.nombre === n));
   const candFiltrados = buscaDeu.trim() ? candidatosDeu.filter((n) => n.toLowerCase().includes(buscaDeu.trim().toLowerCase())) : candidatosDeu;
   const promNota = deudores.length
     ? +(deudores.reduce((s, d) => s + d.nota * (d.propuesta || 1), 0) / deudores.reduce((s, d) => s + (d.propuesta || 1), 0)).toFixed(2)

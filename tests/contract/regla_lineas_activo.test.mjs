@@ -78,6 +78,35 @@ export function auditarLector(src0) {
     if (!/repoLineaComite\.all\(\)\[idProceso\]/.test(det))
       fallos.push("`constituirLineasDeDetalle` no es idempotente por `idProceso`: la API 3 se consulta en cada refresco y constituiría dos veces");
   }
+  // EL RUT DEL DEUDOR SE RESUELVE, NO SE INVENTA (regla 46). El wizard del comité lo armaba con
+  // `76000000 + (h % 20000000)` y un dígito verificador sorteado de una cadena: 92% inválidos y 100%
+  // desconocidos, así que la línea otorgada caía sobre un par inexistente.
+  // Se ancla en los DOS sitios que arman la identidad de un DEUDOR para el motor —el wizard del
+  // comité y el `rutDe` de la evaluación de línea del detalle—, no en el patrón suelto: `rutDe` de
+  // nivel módulo y la rama de degradación de `PC_CLIENTES` arman un RUT de CLIENTE para el alta
+  // manual y para cuando no hay activo, que es otra cosa y no llega al par cliente-deudor. Prohibir
+  // el patrón en todo el archivo sonaría más fuerte y vigilaría lo mismo, con dos falsos positivos.
+  if (/const rutDe = \(n\) => \{/.test(src) && /rut:" \+ n/.test(src))
+    fallos.push("el `rutDe` de la evaluación de línea vuelve a ARMAR el RUT del deudor: alimenta los tres niveles, y uno inventado es un deudor distinto");
+  if (!/function rutDeDeudorPorNombre\(nombre\)/.test(src))
+    fallos.push("no existe `rutDeDeudorPorNombre`: sin resolver contra el universo conocido, el wizard vuelve a fabricar identidades");
+  const cdl = entre(src, "const construirDeudorLinea = (nombre) => {", "// Pre-carga:");
+  if (cdl && !/rut: rutReal/.test(cdl))
+    fallos.push("`construirDeudorLinea` no usa el RUT resuelto: es la fila que el comité aprueba y la que `constituirLineasDeDetalle` convierte en línea");
+  if (/Object\.keys\(SPREAD_MIN_DEUDOR\)\.filter\(\(n\) => !deudores\.some/.test(src))
+    fallos.push("los candidatos del wizard vuelven a salir de `SPREAD_MIN_DEUDOR`: son 23 razones sociales canónicas, no el catálogo de empresas deudoras");
+
+  // LA CABECERA NO SE COPIA DEL TECHO APROBADO (regla 45): es la suma, también después de que el
+  // comité constituye. Copiar `aprobadaCliente` devolvería el nivel 1 a ser un número suelto.
+  const ov = entre(src, "for (const [idProceso, g] of Object.entries(repoLineaComite.all()))", "return _cacheCli;");
+  if (ov) {
+    if (/st\.asignadaCliente = g\.aprobadaCliente/.test(ov))
+      fallos.push("el overlay copia `aprobadaCliente` en la cabecera: el nivel 1 es la SUMA de las líneas, no el techo que se pidió");
+    if (!/st\.asignadaCliente = st\.lineas\.reduce\(/.test(ov))
+      fallos.push("el overlay no recalcula la cabecera como suma tras constituir");
+    if (!/origen: "comite"/.test(ov)) fallos.push("lo que el comité constituye no queda marcado: era el pedido explícito del usuario");
+  }
+
   // Y NO se muta la entrega del sistema externo: sería fingir que el batch dice algo que no dice.
   if (/window\.LINEA_CUPO\s*(\.push|\[[^\]]*\]\s*=|=[^=])/.test(src))
     fallos.push("algo escribe sobre `window.LINEA_CUPO`: la entrega del sistema de líneas se lee, y lo que el comité constituye se superpone (repoLineaComite)");
@@ -164,6 +193,21 @@ test("sonda negativa: cada violación plantada en una copia del fuente hace fall
     ["se pierde la idempotencia", canon.replace("repoLineaComite.all()[idProceso]", "false"), /idempotente/],
     ["se muta la entrega del sistema externo", canon.replace("function idxCupo() {", "function ensuciar() { window.LINEA_CUPO.push({}); }\nfunction idxCupo() {"), /escribe sobre/],
     ["el hint deja de declarar la perilla", canon.replace(/DECLARATIVO/g, "aplicado"), /DECLARATIVO/],
+    [
+      "el wizard vuelve a inventar el RUT del deudor",
+      canon.replace("rut: rutReal,", 'rut: `${76000000 + (h % 20000000)}-0`,'),
+      /construirDeudorLinea. no usa el RUT resuelto/,
+    ],
+    [
+      "los candidatos vuelven al catálogo de spreads",
+      canon.replace(
+        "const candidatosDeu = useMemo(",
+        "const candidatosDeu = Object.keys(SPREAD_MIN_DEUDOR).filter((n) => !deudores.some((d) => d.nombre === n)); const noUsado = useMemo(",
+      ),
+      /SPREAD_MIN_DEUDOR/,
+    ],
+    ["la evaluación de línea vuelve a armar el RUT", canon.replace("const rutDe = (n) => rutMap[n]", 'const rutDe = (n) => { const h = hashStr("rut:" + n); return rutMap[n]'), /evaluación de línea/],
+    ["la cabecera vuelve a copiar el techo", canon.replace("st.asignadaCliente = st.lineas.reduce(", "st.asignadaCliente = g.aprobadaCliente; const x = ("), /copia .aprobadaCliente./],
   ];
   for (const [nombre, plantado, espera] of sondas) {
     assert.notEqual(plantado, canon, `la sonda «${nombre}» no cambió el fuente: no está plantando nada`);
@@ -192,7 +236,7 @@ test("el activo A23 trae los dos bloques con la forma que el lector espera (snap
   // SNAPSHOT: estas cifras se mueven cuando se regeneran los activos, y moverlas es una decisión que
   // va al commit. La migración del 20-09-2026 las dejó IDÉNTICAS a lo que el pipeline fabricaba.
   const porTipo = cupo.reduce((m, r) => ((m[r.TipoLinea] = (m[r.TipoLinea] || 0) + 1), m), {});
-  assert.deepEqual(porTipo, { CLIENTE: 500, LF1: 267, LF2: 2515, LF3: 428, LF4: 426 });
+  assert.deepEqual(porTipo, { CLIENTE: 500, LF1: 267, LF2: 2526, LF3: 445, LF4: 429 });
   assert.equal(deudor.length, 741);
   // REGLA, no snapshot: la forma no puede degradarse aunque los conteos cambien.
   const cli = cupo.filter((r) => r.TipoLinea === "CLIENTE");
@@ -207,6 +251,30 @@ test("el activo A23 trae los dos bloques con la forma que el lector espera (snap
   );
   assert.ok(cupo.every((r) => Number.isInteger(r.MontoAprobado) && Number.isInteger(r.MontoUtilizado)), "todo monto es un peso ENTERO (regla núcleo 9)");
   assert.ok(deudor.every((d) => d.MontoDisponible === d.MontoAprobado - d.MontoUtilizado), "disponible = aprobado − utilizado, sin reservado que NEX lleve aparte (regla 12)");
+  // EL NIVEL 1 ES EL CONSOLIDADO (regla 45): la línea del RUT cliente ES la suma de lo que se le
+  // asignó, por par o con los otros deudores. Se comprueba en aprobado Y en utilizado: hasta el
+  // 20-09-2026 la cabecera superaba a la suma en 217 de 224 clientes —brecha mediana 13,7%,
+  // $36.024.682.300— porque el dimensionamiento le dejaba una holgura sorteada del 8 al 22%.
+  {
+    const porRut = new Map();
+    for (const r of cupo) {
+      if (!porRut.has(r.RUTCliente)) porRut.set(r.RUTCliente, []);
+      porRut.get(r.RUTCliente).push(r);
+    }
+    for (const [rut, filas] of porRut) {
+      const cab = filas.find((f) => f.TipoLinea === "CLIENTE");
+      assert.ok(cab, `${rut}: sin fila CLIENTE, el nivel 1 no existiría`);
+      const L = filas.filter((f) => f.TipoLinea !== "CLIENTE");
+      assert.equal(cab.MontoAprobado, L.reduce((a, f) => a + f.MontoAprobado, 0), `${rut}: la cabecera no es la suma de lo aprobado`);
+      assert.equal(cab.MontoUtilizado, L.reduce((a, f) => a + f.MontoUtilizado, 0), `${rut}: la cabecera no es la suma de lo utilizado`);
+    }
+  }
+  // LA MARCA (pedido del usuario): el activo trae SÓLO líneas del maestro. `COMITE` la escribe el
+  // pipeline sobre lo que constituye una solicitud aprobada, así que una en el activo significaría
+  // que la marca dejó de distinguir nada.
+  assert.deepEqual([...new Set(cupo.map((r) => r.Origen))], ["MAESTRO"], "el activo no puede traer líneas marcadas como del COMITÉ");
+  assert.ok(cupo.every((r) => r.IdProceso === ""), "una línea del maestro no nace de ningún proceso de comité");
+
   // Un cliente en estado A tiene LF1 y ninguna línea de par; uno en B, al revés. La LF1 es EXCLUYENTE.
   const porCli = new Map();
   for (const r of cupo) {

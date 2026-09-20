@@ -7178,6 +7178,98 @@
        `cliente ${Q.rutCli} · deudor ${Q.deuCola} sin línea propia ${Q.sinPropiaOk} · antes se financia por ${Q.oA} (ninguna de par ${Q.antesOk}) · el comité aprueba una puntual de ${Q.monto} y queda constituida ${Q.constituidaOk} (${Q.nid}) · después se financia por ${Q.oD} ${Q.usaLF3Ok} · el techo del cliente la cubre ${Q.techoOk} · el mismo idProceso no constituye dos veces ${Q.idemOk}${err ? " · ERROR " + err : ""}`);
   }
 
+  // ── 151 · EL NIVEL 1 ES EL CONSOLIDADO Y EL DEUDOR DEL COMITÉ ES UN RUT REAL ─────────────────
+  // Definición del usuario, 20-09-2026: «el sistema debiera trabajar con lineas al rut cliente (que
+  // es un monto global de la suma de las lineas asignadas al cliente ya sea por par (puntual o
+  // normal) o al rut cliente con los otros deudores (comodin)). Si los datos no vienen asi estamos
+  // mal». Estaban mal: la cabecera superaba a la suma en **217 de 224** clientes, con una brecha
+  // mediana del 13,7% y $36.024.682.300 de cupo que ninguna línea podía ejercer (regla 45).
+  //
+  // Y la primera pantalla del wizard —«buscas empresas deudoras y le asignas un monto puntual o
+  // normal»— construía la fila del deudor con un RUT INVENTADO: 92% con dígito verificador inválido
+  // y 100% desconocidos para el sistema, así que la línea que el comité otorgaba caía sobre un par
+  // inexistente y el deudor seguía yendo al comodín (regla 46).
+  {
+    let R = null, err = "";
+    const ID = "TEST-COMITE-151";
+    try {
+      // (a) LA CABECERA ES LA SUMA, en los tres estados y como la lee la APP (no el archivo).
+      const ruts = [...new Set(LINEAS_DATA.map((l) => l.rut))];
+      let malAprob = 0, malUso = 0, revisados = 0, conLineas = 0;
+      for (const rut of ruts) {
+        const st = lineasDeCliente(rut);
+        if (!st) continue;
+        revisados++;
+        if (st.lineas.length) conLineas++;
+        if (st.asignadaCliente !== st.lineas.reduce((a, l) => a + l.aprobado, 0)) malAprob++;
+        if (st.usoCliente !== st.lineas.reduce((a, l) => a + l.vigente, 0)) malUso++;
+      }
+      const consolidadoOk = revisados > 200 && conLineas > 200 && malAprob === 0 && malUso === 0;
+
+      // (b) EL RUT DEL DEUDOR ES REAL: se resuelve, tiene dígito verificador válido y el sistema lo
+      //     conoce. Se mide sobre TODO el universo que el wizard ofrece, no sobre una muestra.
+      const dvDe = (n) => { let s = 0, m = 2; for (const c of String(n).split("").reverse()) { s += +c * m; m = m === 7 ? 2 : m + 1; } const r = 11 - (s % 11); return r === 11 ? "0" : r === 10 ? "K" : String(r); };
+      const dvOk = (r) => { const [c, d] = String(r).replace(/\./g, "").split("-"); return !!d && dvDe(c) === d.toUpperCase(); };
+      const universo = [...deudoresConocidos().keys()];
+      let sinRut = 0, dvMalo = 0, personaNatural = 0;
+      for (const n of universo) {
+        const r = rutDeDeudorPorNombre(n);
+        if (!r) { sinRut++; continue; }
+        if (!dvOk(r)) dvMalo++;
+        if (+String(r).replace(/\./g, "").split("-")[0] < 50000000) personaNatural++;
+      }
+      const rutOk = universo.length > 700 && sinRut === 0 && dvMalo === 0 && personaNatural === 0;
+      // …y un nombre que el sistema NO conoce devuelve vacío, no un RUT armado: es lo que impide que
+      // aguas abajo se cree un par fantasma.
+      const cerradoOk = rutDeDeudorPorNombre("EMPRESA QUE NO EXISTE SPA") === "";
+
+      // (c) LOS CANDIDATOS SON LOS DEUDORES DEL CLIENTE, y son los suyos de verdad.
+      const rutCli = LINEAS_DATA.map((l) => l.rut).find((r) => (paresPorEmisor().get(r) || []).length >= 3);
+      const propios = deudoresDelCliente(rutCli);
+      const realesDelCliente = new Set((paresPorEmisor().get(rutCli) || []).map((d) => d.nombre));
+      const propiosOk = propios.length >= 3 && propios.every((n) => realesDelCliente.has(n))
+        && propios[0] === (paresPorEmisor().get(rutCli) || [])[0].nombre;  // ordenados por volumen
+
+      // (d) LA MARCA. Lo que el comité constituye queda distinguible, y la cabecera SIGUE siendo la
+      //     suma después de constituir — incluido el excedente del techo, que va al comodín.
+      const deuNuevo = (paresPorEmisor().get(rutCli) || [])
+        .map((d) => d.rut)
+        .find((r) => !lineasDeCliente(rutCli).lineas.some((x) => x.granularidad === "par" && x.rutDeudor === r));
+      if (!deuNuevo) throw new Error("el cliente elegido ya tiene línea de par con todos sus deudores");
+      const antesCab = lineasDeCliente(rutCli).asignadaCliente;
+      const MONTO = 40e6, EXCEDENTE = 15e6;
+      constituirLineasDeDetalle({
+        rut: rutCli, idProceso: ID, ejecutivo: "Suite 151",
+        propFactoring: antesCab + MONTO + EXCEDENTE,
+        detalle: [{ deudor: "X", rutDeudor: deuNuevo, monto: MONTO, tipoLinea: "puntual" }],
+      });
+      const st2 = lineasDeCliente(rutCli);
+      const nueva = st2.lineas.find((x) => x.rutDeudor === deuNuevo && x.granularidad === "par");
+      const marcaOk = !!nueva && nueva.origen === "comite" && nueva.idProceso === ID
+        && st2.lineas.filter((x) => x.origen === "comite").length >= 1
+        // …y el resto del cliente NO queda marcado: una marca que se pone en todo no distingue nada.
+        && st2.lineas.some((x) => !x.origen);
+      const sumaDespues = st2.lineas.reduce((a, l) => a + l.aprobado, 0);
+      const cuadraOk = st2.asignadaCliente === sumaDespues && sumaDespues === antesCab + MONTO + EXCEDENTE;
+      // El excedente del techo sobre el detalle por par va al COMODÍN, que es el nivel que financia a
+      // los otros deudores: es lo que hace que la cabecera siga siendo una suma y no un número suelto.
+      const comodines = st2.lineas.filter((x) => x.granularidad === "comodin");
+      const excedenteOk = comodines.some((c) => c.origen === "comite");
+
+      R = { consolidadoOk, rutOk, cerradoOk, propiosOk, marcaOk, cuadraOk, excedenteOk,
+            revisados, malAprob, malUso, universo: universo.length, sinRut, dvMalo, personaNatural,
+            rutCli, nPropios: propios.length, deuNuevo, antesCab, sumaDespues };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    }
+    try { repoLineaComite.del(ID); } catch (_) { /* puede no existir */ }
+    invalidarCupo();
+    const Q = R || {};
+    ok("151 la línea del cliente ES la suma de sus líneas, y el deudor al que el comité le asigna una es un RUT real del sistema",
+       !!R && Q.consolidadoOk && Q.rutOk && Q.cerradoOk && Q.propiosOk && Q.marcaOk && Q.cuadraOk && Q.excedenteOk,
+       `consolidado: ${Q.revisados} clientes, cabecera ≠ Σ aprobado ${Q.malAprob}, ≠ Σ vigente ${Q.malUso} (antes 217 de 224 descuadraban) ${Q.consolidadoOk} · universo de deudores ${Q.universo}: sin RUT ${Q.sinRut}, DV inválido ${Q.dvMalo} (antes 92%), en rango de persona natural ${Q.personaNatural} ${Q.rutOk} · un nombre desconocido devuelve vacío ${Q.cerradoOk} · candidatos del cliente ${Q.rutCli}: ${Q.nPropios} y son los suyos, por volumen ${Q.propiosOk} · la línea del comité queda marcada ${Q.marcaOk} · tras constituir la cabecera sigue siendo la suma (${Q.antesCab} → ${Q.sumaDespues}) ${Q.cuadraOk} · el excedente del techo va al comodín ${Q.excedenteOk}${err ? " · ERROR " + err : ""}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

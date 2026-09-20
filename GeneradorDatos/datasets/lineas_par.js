@@ -129,11 +129,17 @@ function estadoDeCliente(rutCli, { fila, enMaestro, meta, deudores }) {
 
   const rnd = pcRng(hashStr("lpar" + rutCli));
 
-  // Presupuesto del cliente: la línea asignada MENOS su holgura (entre 8% y 22%). De ahí, la comodín
-  // se lleva un % de la suma de cupos de par y el resto va a las líneas de par. Se pide «% sobre los
-  // cupos de PAR», así que sobre el total es pct/(100+pct): con 10 da 0,0909.
-  let objetivoTotal = Math.max(Math.round(fila.aprobada * (0.78 + rnd() * 0.14)), Math.ceil(fila.uso / 0.88));
-  objetivoTotal = Math.min(objetivoTotal, fila.aprobada);
+  // EL NIVEL 1 ES EL CONSOLIDADO: la línea del RUT cliente **es** la suma de lo que se le asignó, sea
+  // por par (LF2 normal, LF3 puntual) o al cliente con los otros deudores (LF4 comodín). No es un
+  // tope aparte que se compare contra esa suma (20-09-2026, definición del usuario; ver regla 45).
+  //
+  // Hasta hoy el presupuesto era la línea asignada MENOS una holgura sorteada entre el 8% y el 22%,
+  // heredada de cuando el nivel 1 se modelaba como un campo independiente. El resultado medido: en
+  // **217 de 224** clientes la cabecera quedaba por sobre la suma de sus líneas, con una brecha
+  // mediana del **13,7%** y **$36.024.682.300** acumulados de cupo que el cliente tenía en su ficha y
+  // ninguna línea podía usar. Se reparte TODO lo aprobado, así que cabecera = Σ líneas por
+  // construcción y no por comprobación.
+  const objetivoTotal = fila.aprobada;
   const pctOtros = Math.max(0, Math.min(100, OTROS_DEUDORES_PCT));
   // EL PISO NO CREA CAPACIDAD. Se acota a lo que el comité aprobó: un cliente con casi todas sus líneas
   // suspendidas puede quedar con un presupuesto efectivo bajo el mínimo, y darle igual una línea de
@@ -269,11 +275,29 @@ function estadoDeCliente(rutCli, { fila, enMaestro, meta, deudores }) {
     resto = mmRound(resto - t);
   }
 
+  const todas = lineas.concat(comodines);
+
+  // NADA DE LO APROBADO SE PIERDE POR EL CAMINO. `repartirConPiso` devuelve 0 en las partes que no
+  // alcanzan el mínimo, y esas sobras ya vuelven al comodín; pero si el comodín TAMPOCO alcanza el
+  // piso, su reparto sale en ceros y ese tramo se evaporaba. Con el nivel 1 como consolidado eso
+  // dejaría de cuadrar, así que el residuo se le entrega a la línea MAYOR, que siempre puede
+  // recibirlo sin cruzar ningún piso — mismo criterio que el prorrateo por factura.
+  const colocado = todas.reduce((s, l) => s + l.aprobado, 0);
+  const residuo = objetivoTotal - colocado;
+  if (residuo > 0 && todas.length) {
+    let may = todas[0];
+    for (const l of todas) if (l.aprobado > may.aprobado) may = l;
+    may.aprobado = mmRound(may.aprobado + residuo);
+  }
+
   return {
     estado: "B",
-    asignadaCliente: fila.aprobada,
+    // La cabecera es la SUMA, no `fila.aprobada`: si un cliente quedara sin ninguna línea colocable,
+    // su nivel 1 es 0 y no el cupo de su ficha — decir lo contrario sería prometer capacidad que
+    // ninguna línea puede ejercer, que es exactamente el defecto que esto corrige.
+    asignadaCliente: todas.reduce((s, l) => s + l.aprobado, 0),
     usoCliente: fila.uso,
-    lineas: lineas.concat(comodines),
+    lineas: todas,
     cola: deudores.slice(nPar),
   };
 }
@@ -440,6 +464,11 @@ function hacerTipoDeudor({ LISTA_BLANCA, DEUDORES_AUTORIZADOS }) {
 }
 
 const FECHA_SNAPSHOT = "2026-06-23"; // la misma foto que A7/A8
+// ORIGEN de una línea. El activo trae sólo las del maestro; `ORIGEN_COMITE` lo escribe el pipeline
+// sobre las que constituye una solicitud aprobada, y se declara acá para que el nombre viva en un
+// solo lugar y el gate pueda exigir que el activo no traiga ninguna del comité.
+const ORIGEN_MAESTRO = "MAESTRO";
+const ORIGEN_COMITE = "COMITE";
 
 // ── LOS DOS BLOQUES ───────────────────────────────────────────────────────────────────────────────
 function generarCupo(datos) {
@@ -466,6 +495,8 @@ function generarCupo(datos) {
       UnSoloUso: 0,
       SoloPrime: 0,
       Consumida: 0,
+      Origen: ORIGEN_MAESTRO,
+      IdProceso: "",
       FechaSnapshot: FECHA_SNAPSHOT,
     });
     for (const l of st.lineas)
@@ -486,6 +517,11 @@ function generarCupo(datos) {
         UnSoloUso: l.unSoloUso ? 1 : 0,
         SoloPrime: l.soloPrime ? 1 : 0,
         Consumida: l.quemada ? 1 : 0,
+        // De dónde viene la línea. El maestro es la entrega del sistema de gestión de líneas; las que
+        // el COMITÉ otorga entran marcadas y con su `idProceso`, para que se puedan distinguir de las
+        // que ya estaban — es lo que permite auditar qué cupo nació de una solicitud y cuál no.
+        Origen: ORIGEN_MAESTRO,
+        IdProceso: "",
         FechaSnapshot: FECHA_SNAPSHOT,
       });
   }
@@ -512,6 +548,8 @@ module.exports = {
   hacerTipoDeudor,
   LINEA_MINIMA,
   OTROS_DEUDORES_PCT,
+  ORIGEN_MAESTRO,
+  ORIGEN_COMITE,
   TRAMO_LINEA,
   LF1_PESOS,
 };
