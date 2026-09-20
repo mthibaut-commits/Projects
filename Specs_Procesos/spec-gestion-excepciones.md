@@ -416,8 +416,10 @@ perdida, el camino es una operación nueva.
 ### 5.3 Qué libera el giro
 
 Firmar es del **cliente**; girar es de la casa, y sólo después de que pasen **sus controles**. Son
-cuatro automáticos y uno humano —la firma de Operaciones—, cada uno mirando una cosa distinta y
-bloqueando en un punto distinto del camino:
+cinco automáticos y uno humano —la firma de Operaciones—, cada uno mirando una cosa distinta y
+bloqueando en un punto distinto del camino. Uno de los cinco, **O05**, no es un invariante técnico sino
+un **criterio del propio catálogo de otorgamiento**: el que exige que el cliente haya **autorizado
+explícitamente esta operación** y que exista el comprobante.
 
 | Control | Qué exige | Quién lo levanta | Dónde bloquea |
 |---|---|---|---|
@@ -425,7 +427,8 @@ bloqueando en un punto distinto del camino:
 | **OTG-02** · no avanza con excepciones pendientes | ninguna excepción sin decidir ni rechazo re-evaluable sin regularizar | los apoderados, visando (§4.7) | la operación no sale de «Otorgamiento / Verificación» |
 | **VER-01** · no cursa con verificación pendiente | todas las facturas de la operación con su verificación telefónica completa | el equipo de verificación, llamando al deudor | la operación no sale de «Otorgamiento / Verificación» |
 | **La aprobación de Operaciones** · alguien responde por lo que entra al core | que un apoderado de **Operaciones N3** revise la operación y **apruebe la integración al core**. El botón **no se habilita** mientras falte cualquiera de los otros cuatro: la firma se da sobre una operación que ya está en regla | el **Jefe de Operaciones** (o quien tenga Operaciones N3 o superior), desde el detalle | el paso de «Pendiente Integración» a «Pendiente de Giro». Sin esa firma la operación no llega a Tesorería |
-| **GIR-02** · el paquete girado es el que se autorizó | que la **huella** de lo que se va a inyectar al core calce con la de lo que el cliente firmó | nadie: se repara solo cuando el paquete vuelve a ser el firmado, o se vuelve a firmar | dentro de esa misma aprobación, antes de escribirla: es el último punto en que la comparación sirve |
+| **O05** · el cliente autorizó explícitamente la operación | que **conste la autorización del cliente sobre este paquete**, con su comprobante: la firma en el portal si la oferta se publicó por correo, o el **contrato de cesión firmado en papel**, adjunto y visado, si se publicó físicamente. Es un **criterio del catálogo** (Operaciones N3), así que se gestiona como cualquier excepción y **OTG-02 lo cubre**: mientras no conste, hay una excepción pendiente | el **cliente**, firmando; en la vía física, el ejecutivo adjuntando el contrato y **Operaciones** visándolo (§6.1) | la operación no sale de «Otorgamiento / Verificación»: sin constancia de que el cliente autorizó, no hay nada que girar |
+| **GIR-02** · el paquete girado es el que se autorizó | que la **huella** de lo que se va a inyectar al core calce con la de **esa misma autorización**. O05 comprueba que la autorización EXISTA; GIR-02, que siga describiendo lo que se va a girar | nadie: se repara solo cuando el paquete vuelve a ser el autorizado, o el cliente vuelve a autorizarlo | dentro de esa misma aprobación, antes de escribirla: es el último punto en que la comparación sirve |
 
 **Los tres primeros se levantan trabajando**; el cuarto es una **decisión de una persona** y por eso
 lleva su atribución (§2.2) y queda en la bitácora con nombre y hora; el quinto no se levanta, se
@@ -497,7 +500,10 @@ aviso de que la firma es de esa área.
   del cliente. Un paquete puede caber holgado y traer igual una factura sin línea de par. Si no hay
   ninguna asignación que respalde el paquete, **se falla cerrado**: no poder afirmar que cada factura
   tiene cupo no es lo mismo que afirmar que lo tiene.
-- **GIR-02** compara las dos huellas, como siempre.
+- **GIR-02** compara las dos huellas, como siempre: la del paquete que el cliente autorizó (O05) contra
+  la del que se va a inyectar.
+- **O05** no aparece por separado en esta lista porque es un criterio del catálogo: si la autorización
+  del cliente no consta, hay una excepción pendiente y **OTG-02** ya bloquea.
 
 Por qué acá y no antes: es el **último punto en que mirar sirve**. Después, el dinero ya salió. Las
 alternativas descartadas —avisar sin bloquear, dejarlo sólo para el servidor, re-asignar la línea en
@@ -540,9 +546,15 @@ sobreviven incluso a vaciar la oferta y empezar de cero.
 
 ## 6. Casos particulares
 
-### 6.1 O05 · La evidencia del contrato de cesión
+### 6.1 O05 · El cliente autoriza explícitamente la operación
 
-Existe **siempre**, en las dos vías de publicación; lo que cambia es **quién crea la evidencia**:
+**Ninguna operación se gira sin que conste que el cliente la autorizó.** No es una cortesía del proceso
+ni un supuesto: es un **criterio del catálogo de otorgamiento** —O05, «Contrato firmado por cliente de
+la operación», de Operaciones N3— y mientras no conste queda como **excepción pendiente**, con todo lo
+que eso implica: la operación no sale de «Otorgamiento / Verificación» y el giro no se libera.
+
+Lo que se exige es **el comprobante**, no la palabra de nadie. Existe **siempre**, en las dos vías de
+publicación; lo que cambia es **quién lo crea**:
 
 - **Electrónica.** La firma del cliente en el portal es la evidencia: el criterio queda aprobado sin que
   nadie lo vise.

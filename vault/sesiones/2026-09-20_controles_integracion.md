@@ -34,6 +34,13 @@ feature: null
   ve; **ADR-0007** con las cinco alternativas descartadas. Spec: §5.3 reescrita, **§5.4 nueva** («La
   aprobación de Operaciones comprueba los controles, dos veces») y la observación 8 **cerrada**. PDF
   regenerado.
+- **O05 explícito en la tabla de controles** (20-09, cierre del usuario): que el cliente **autorice
+  explícitamente** la operación y que exista el **comprobante** es una regla del otorgamiento, no un
+  supuesto del proceso, y la tabla del §5.3 no lo decía —sólo hablaba de la huella—. Se agregó como su
+  propia fila, diciendo que es un criterio del catálogo (Operaciones N3) y que por eso **OTG-02 lo
+  cubre**: mientras no conste, hay una excepción pendiente. El §6.1 se retituló «El cliente autoriza
+  explícitamente la operación» y abre con esa frase. GIR-02 quedó dicho como lo que es: comprueba que
+  **esa misma autorización** siga describiendo el paquete.
 - Verificación: prettier OK, `tsc` 0 TS1, 0 duplicados, build 41,3 MB, **245/245 gates**, **144/144 PASA**,
   y la compuerta comprobada **en Chromium sobre el HTML construido** —0 errores de página, los cuatro
   códigos con su texto—, que es lo que la suite no monta. La capa e2e (29 casos) seguía corriendo al
