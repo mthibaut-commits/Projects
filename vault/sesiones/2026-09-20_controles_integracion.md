@@ -46,8 +46,8 @@ feature: null
   que ya está en regla, así que leerla en medio de los automáticos confundía el orden del proceso.
 - Verificación: prettier OK, `tsc` 0 TS1, 0 duplicados, build 41,3 MB, **245/245 gates**, **144/144 PASA**,
   y la compuerta comprobada **en Chromium sobre el HTML construido** —0 errores de página, los cuatro
-  códigos con su texto—, que es lo que la suite no monta. La capa e2e (29 casos) seguía corriendo al
-  commitear y su resultado se anota al llegar.
+  códigos con su texto—, que es lo que la suite no monta. La capa e2e terminó después, también en verde:
+  **29/29 PASA**.
 
 ## Decisiones tomadas con el usuario
 
