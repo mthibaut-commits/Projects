@@ -52,6 +52,16 @@ feature: null
   inyectar calza con la de lo firmado · se repara solo · bloquea la integración al core, el último punto
   antes del dinero), más **GIR-01** aparte, que no es un pendiente sino consecuencia del camino. Los
   enunciados salen literal de `INVARIANTES` en el fuente.
+- **Faltaban dos controles en esa tabla** (20-09, corrección del usuario): la **línea** —cada factura con cupo
+  aprobado y asignado; la que no cabe va al comité y la solicitud sale sola al cerrar— y la **aprobación de
+  Operaciones N3**, que es el control HUMANO: alguien responde por lo que entra al core (que lo excepcionado
+  esté bien excepcionado, las llamadas hechas, la documentación en regla). Quedan cinco filas: tres que se
+  levantan trabajando, una que es la firma de una persona y GIR-02, que no se levanta sino que se cumple.
+  **Medido antes de escribir:** la aprobación de Operaciones existe (`aprobarIntegracion`, exige Operaciones
+  N3 y la huella), pero **el control de línea no se vuelve a comprobar factura por factura antes de girar**:
+  el cupo se asigna al armar la oferta y la única compuerta de línea posterior a la firma es de nivel
+  operación (`requiereOtorgamiento` → «excede la línea de crédito aprobada»). Queda como observación 8 del
+  §10, para que el usuario decida si la firma de Operaciones debe exigirlo por factura.
 - Context7 volvió a invocarse por slash command: sigue sin herramientas MCP en la sesión y no aplica.
 - **`main` avanzó 40 commits mientras tanto y cambió la definición que acababa de documentar.** La **regla 35**
   (18-09, otra sesión) hace que una regla con tramo de excepción que no llega a nadie —sin área, área

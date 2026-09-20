@@ -415,19 +415,24 @@ perdida, el camino es una operación nueva.
 
 ### 5.3 Qué libera el giro
 
-Firmar es del **cliente**; girar es de la casa, y sólo después de que pasen sus **tres controles**.
-Cada uno tiene su código, mira una cosa distinta y bloquea en un punto distinto del camino:
+Firmar es del **cliente**; girar es de la casa, y sólo después de que pasen **sus controles**. Son
+cuatro automáticos y uno humano —la firma de Operaciones—, cada uno mirando una cosa distinta y
+bloqueando en un punto distinto del camino:
 
 | Control | Qué exige | Quién lo levanta | Dónde bloquea |
 |---|---|---|---|
+| **La línea** · no se gira lo que no tiene cupo | que cada factura esté cubierta por una **línea aprobada y asignada**. La que no cabe no se descarta: sale marcada para el **comité**, y la solicitud se genera sola al cerrar la oferta | el **comité de crédito**, aprobando o ampliando la línea (vive en el sistema de gestión de líneas, no en NEX) | al armar y al cerrar la oferta: lo que no tiene cupo no es cursable. Si la operación excede la línea del cliente, además deriva a «Otorgamiento / Verificación» |
 | **OTG-02** · no avanza con excepciones pendientes | ninguna excepción sin decidir ni rechazo re-evaluable sin regularizar | los apoderados, visando (§4.7) | la operación no sale de «Otorgamiento / Verificación» |
 | **VER-01** · no cursa con verificación pendiente | todas las facturas de la operación con su verificación telefónica completa | el equipo de verificación, llamando al deudor | la operación no sale de «Otorgamiento / Verificación» |
-| **GIR-02** · el paquete girado es el que se autorizó | que la **huella** de lo que se va a inyectar al core calce con la de lo que el cliente firmó | nadie: se repara solo cuando el paquete vuelve a ser el firmado, o se vuelve a firmar | la aprobación de la integración al core, el último punto antes de que salga el dinero |
+| **La aprobación de Operaciones** · alguien responde por lo que entra al core | que un apoderado de **Operaciones N3** revise la operación y **apruebe la integración al core**: que el otorgamiento esté correctamente excepcionado, las llamadas hechas y la documentación en regla | el **Jefe de Operaciones** (o quien tenga Operaciones N3 o superior), desde el detalle | el paso de «Pendiente Integración» a «Pendiente de Giro». Sin esa firma la operación no llega a Tesorería |
+| **GIR-02** · el paquete girado es el que se autorizó | que la **huella** de lo que se va a inyectar al core calce con la de lo que el cliente firmó | nadie: se repara solo cuando el paquete vuelve a ser el firmado, o se vuelve a firmar | dentro de esa misma aprobación, antes de escribirla: es el último punto en que la comparación sirve |
 
-Los tres se comprueban **en el servidor** en producción: la pantalla que esconde un botón no es el
-control. Un cuarto, **GIR-01**, exige que la operación haya pasado por Cesión —el giro se emite contra
-la cesión confirmada, no contra la etapa que informa el navegador—, pero no es un pendiente que alguien
-tenga que resolver: es consecuencia de haber recorrido el camino.
+**Los tres primeros se levantan trabajando**; el cuarto es una **decisión de una persona** y por eso
+lleva su atribución (§2.2) y queda en la bitácora con nombre y hora; el quinto no se levanta, se
+cumple. Todos se comprueban **en el servidor** en producción: la pantalla que esconde un botón no es el
+control. Hay además un **GIR-01**, que exige que la operación haya pasado por Cesión —el giro se emite
+contra la cesión confirmada, no contra la etapa que informa el navegador—, pero no es un pendiente que
+alguien resuelva: es consecuencia de haber recorrido el camino.
 
 Cuando el cliente firma, la operación va a:
 
@@ -444,12 +449,17 @@ sus excepciones están aprobadas (OTG-02) y no queda verificación pendiente (VE
 **Pendiente Integración · esperando a Operaciones**: deja de ser una oportunidad del tubo y aparece en
 **Operaciones**.
 
-**Pendiente de Giro.** Un apoderado de **Operaciones N3** aprueba la **integración al core** desde el
-detalle. La acción vuelve a comprobar dos cosas antes de escribir, porque el botón no es el control:
-la atribución (un intento sin ella queda auditado como OTG-01) y la **huella** de lo que se va a
-inyectar contra la de lo que el cliente autorizó (GIR-02; si no calza, «Integración bloqueada» con las
-dos huellas en la auditoría). Aprobada, la operación queda **Pendiente de Giro**, que es lo que toma
-Tesorería, con la huella verificada anotada en su bitácora.
+**Pendiente de Giro.** Acá entra el control humano: un apoderado de **Operaciones N3** revisa la
+operación y aprueba la **integración al core** desde el detalle. Es la firma con que Operaciones
+responde por lo que entra al core —que lo excepcionado esté bien excepcionado, que las llamadas estén
+hechas, que la documentación esté— y no una confirmación de trámite: por eso exige atribución y queda
+en la bitácora con nombre y hora.
+
+La acción vuelve a comprobar dos cosas **antes de escribir**, porque el botón no es el control: la
+atribución (un intento sin ella queda auditado como OTG-01, severidad alta) y la **huella** de lo que
+se va a inyectar contra la de lo que el cliente autorizó (GIR-02; si no calza, «Integración bloqueada»
+con las dos huellas en la auditoría). Aprobada, la operación queda **Pendiente de Giro**, que es lo que
+toma Tesorería, con la huella verificada anotada en su bitácora.
 
 ### 5.4 Qué es la re-evaluación, y por qué no reabre lo decidido
 
@@ -647,6 +657,7 @@ Ninguna bloquea la operación; todas cambian el contrato del servicio o la confi
 | 5 | **Concurrencia del visado**: dos apoderados decidiendo la misma excepción a la vez necesitan una respuesta 409 con semántica definida; hoy la escritura es optimista con confirmación | plataforma (`spec-otorgamiento.md` §12) |
 | 6 | Los criterios de burós de **deudor** (D02–D13) son excepciones no re-evaluables, no bloqueos firmes: sólo C30–C32 rechazan. Los documentos que los describen como knockout deben decirlo así | documentación |
 | 7 | Cuando el **piso por monto** deja una excepción sin aprobador, en el **tab del detalle** se puede **solicitar** igual: la tarjeta dice «Solicitar aprobación al Sin aprobador definido (N{nivel})», la solicitud se registra y el aviso sale sin destinatarios. La mesa, en cambio, muestra la causa y el mantenedor donde se arregla. Conviene que la tarjeta haga lo mismo | producto |
+| 8 | **El control de la línea no se vuelve a comprobar factura por factura antes de girar.** El cupo se asigna al armar la oferta y lo que no cabe sale marcado para el comité; después, lo que llega al giro es lo que el cliente firmó. Entre una cosa y otra pueden pasar días, y hoy la única compuerta de línea posterior a la firma es de nivel operación («excede la línea de crédito aprobada»), no por factura. Conviene decidir si la aprobación de Operaciones tiene que exigir además que **ninguna factura del paquete** esté sin línea asignada | producto · negocio |
 
 ---
 
