@@ -5041,7 +5041,15 @@
           for (const [, fs] of top) { for (const f of fs) { if (elegidas.length >= P.facturas) break; elegidas.push(f); } if (elegidas.length >= P.facturas) break; }
           const monto = elegidas.reduce((a, f) => a + (f.monto || 0), 0);
           const disponible = Math.max(0, Math.round((lin.aprobada || 0) - (lin.uso || 0)));
-          cands.push({ rut, facturas: elegidas, monto, disponible, parcial: monto > disponible });
+          // «un deudor de CUPO CERO»: sin línea de par viva y con el comodín del cliente sin nada
+          // disponible. Escrito acá desde la regla 31, igual que el resto de esta referencia: si la
+          // implementación y esta copia no coinciden, el caso lo dice.
+          const stL = lineasDeCliente(rut) || { lineas: [] };
+          const propias = new Set(stL.lineas.filter((l) => l.granularidad === "par" && !l.suspendida).map((l) => l.rutDeudor));
+          const capCmd = stL.lineas.filter((l) => l.granularidad === "comodin" && !l.suspendida)
+            .reduce((a, l) => a + Math.max(0, (l.aprobado || 0) - (l.vigente || 0)), 0);
+          const carencia = capCmd <= 0 && elegidas.some((f) => f.rutRecep && !propias.has(f.rutRecep));
+          cands.push({ rut, facturas: elegidas, monto, disponible, parcial: monto > disponible, carencia });
         }
         cands.sort((a, b) => a.rut.localeCompare(b.rut));                   // «desempate por RUT»
         const eleg = [];
@@ -5056,6 +5064,7 @@
             c.facturas = fs; c.monto = m; c.parcial = false; c.recortado = true; eleg.push(c);
           }
         }
+        cuota((c) => c.parcial && c.carencia, P.carencia);   // «las DOS parciales con un deudor sin cupo»
         cuota((c) => c.parcial, P.parciales);
         cuota(() => true, P.clientes);
         return eleg;

@@ -14,7 +14,7 @@ timestamp: 2026-09-20T22:20:00Z
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
 (`pipeline_comercial.jsx`), build standalone, **151/151 PASA**, **39 archivos de gate de contrato**
-(265 tests), **29 casos e2e** (28 verdes), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su
+(265 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su
 vault (75 reglas verbatim por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y
 **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen gate. La crónica del 17 al 19-09
 vive en sus logs (reglas 32–40, ADR-0003 a 0006, y el **linter** en 0 como paso 0-bis).
@@ -37,21 +37,16 @@ los dos caminos** (casos 150 y 151) y lo que constituye queda marcado `Origen: C
 
 > ## 🎯 Siguiente paso
 >
-> 1. **Las tres casuísticas del pool, ahora que se pueden fijar.** Pedido del usuario: «debes forzar que
->    en pool de datos existan rut deudores sin linea (fuera del directorio), otras con un mix de deudores
->    con linea, y con linea parcial; asi estan los 3 casos». Hasta la regla 44 era imposible de garantizar
->    —la estructura se sorteaba al leer—; hoy la produce el generador y las tres casuísticas se fijan como
->    **propiedad del activo**, con su gate. **Cierra de paso `e2e-29-b`**, el único e2e en rojo: pide un
->    deudor de **cupo cero** fuera de la oferta y con el padrón real no queda ninguno (los 17 que piden son
->    todos parciales). Aflojar la aserción está prohibido (`testing.md`).
-> 2. **Subir a `main`.** La mezcla se hizo y el push lo denegó el clasificador por `[CI Bypass]` (e2e en
->    rojo); `main` local quedó reseteado a `origin/main`. Con el punto 1 verde deja de haber motivo.
-> 3. **Correr el `.bat` una vez**: `build_app.ps1` cambió y acá no se ejecuta; la simetría está gateada,
+> 1. **Subir a `main`.** La rama quedó **verde entera** por primera vez desde el 20-09 (los seis pasos,
+>    29/29 e2e incluido), así que el bloqueo del clasificador por `[CI Bypass]` ya no aplica. La mezcla
+>    se había hecho y `main` local quedó reseteado a `origin/main`: hay que rehacerla con `merge --no-ff`
+>    y **confirmar antes con el usuario**, que es a quien le toca autorizar el push a `main`.
+> 2. **Correr el `.bat` una vez**: `build_app.ps1` cambió y acá no se ejecuta; la simetría está gateada,
 >    no probada. · 4. **Regenerar `Capturas_UI/`**, desfasadas desde el padrón real (atado a la deuda 2).
-> 5. **Motor O01** (la versión débil del hueco de la regla 8: compara contra el promedio ponderado sin el
->    piso del deudor) · 6. **Regla 28** y **13-quater**: de negocio · 7. Sacar `pipeline.zip` (2,7 MB).
+> 3. **Motor O01** (la versión débil del hueco de la regla 8: compara contra el promedio ponderado sin el
+>    piso del deudor) · 4. **Regla 28** y **13-quater**: de negocio · 5. Sacar `pipeline.zip` (2,7 MB).
 
-## En vuelo ahora · nada: la rama queda verde salvo el `e2e-29-b` de arriba
+## En vuelo ahora · nada: la rama queda VERDE ENTERA (6/6 pasos)
 
 ## Bloqueos · los dos son del usuario, desde Windows
 
@@ -76,4 +71,4 @@ Queda **el tag `v0.1.0`** sobre `bd14091` y **borrar las ramas integradas**.
 ## Conocimiento clave
 
 [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto, en [`vault/index.md`](../index.md)
-Últimas: [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md) · [las líneas son un insumo](./2026-09-20_las_lineas_son_un_insumo.md) · [el padrón real](./2026-09-20_padron_real_del_aec.md)
+Últimas: [las tres casuísticas del elenco](./2026-09-20_las_tres_casuisticas_del_elenco.md) · [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md) · [las líneas son un insumo](./2026-09-20_las_lineas_son_un_insumo.md)

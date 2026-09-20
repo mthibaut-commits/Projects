@@ -20080,7 +20080,7 @@ function ChipCond({ fg, bg, Icono, texto, tip, badge, plano }) {
 // sea que «5 deudores» y «30 facturas» no pueden cumplirse a la vez con datos reales: manda el
 // volumen —una demo con 15 facturas no se ve como una operación— y los deudores quedan en los que
 // hagan falta para juntarlas, del orden de diez.
-const DIRECTORIO_PERFIL = { clientes: 5, deudores: 5, facturas: 30, minFacturas: 12, cubren: 3, parciales: 2 };
+const DIRECTORIO_PERFIL = { clientes: 5, deudores: 5, facturas: 30, minFacturas: 12, cubren: 3, parciales: 2, carencia: 2 };
 
 // Arma el elenco de la demo. NO inventa datos: cada oportunidad se compone con facturas REALES del
 // libro de ventas del cliente (activo A1, el mismo que lee el resto del pipeline) y con su línea
@@ -20136,7 +20136,19 @@ function construirDirectorio(execSesion) {
     if (elegidas.length < DIRECTORIO_PERFIL.facturas) continue;
     const monto = elegidas.reduce((a, f) => a + (f.monto || 0), 0);
     const disponible = Math.max(0, Math.round((lin.aprobada || 0) - (lin.uso || 0)));
-    cands.push({ rut, cliente: nombres.get(rut) || rut, facturas: elegidas, monto, disponible, parcial: monto > disponible });
+    // ¿Alguno de sus deudores queda con CUPO CERO? O sea: sin línea de par viva y con el comodín de
+    // su cliente sin nada disponible, que es el único caso en que la factura no tiene de dónde
+    // financiarse ni por el par ni por el pozo genérico. Es la tercera casuística que la demo tiene
+    // que mostrar (regla 31): el deudor sale ENTERO de la oferta al «Sacar facturas sin línea», que
+    // es distinto del parcial —ése se queda con lo que cabía—. NO se fabrica: se mide sobre las
+    // líneas reales del cliente, y la cartera trae 37 clientes elegibles que ya lo cumplen.
+    const stLin = lineasDeCliente(rut) || { lineas: [] };
+    const conPropia = new Set(stLin.lineas.filter((l) => l.granularidad === "par" && !l.suspendida).map((l) => l.rutDeudor));
+    const capComodin = stLin.lineas
+      .filter((l) => l.granularidad === "comodin" && !l.suspendida)
+      .reduce((a, l) => a + Math.max(0, (l.aprobado || 0) - (l.vigente || 0)), 0);
+    const carencia = capComodin <= 0 && elegidas.some((f) => f.rutRecep && !conPropia.has(f.rutRecep));
+    cands.push({ rut, cliente: nombres.get(rut) || rut, facturas: elegidas, monto, disponible, parcial: monto > disponible, carencia });
   }
   cands.sort((a, b) => a.rut.localeCompare(b.rut));
 
@@ -20173,6 +20185,15 @@ function construirDirectorio(execSesion) {
       elegidos.push(c);
     }
   }
+  // …y los DOS parciales, con un deudor de CUPO CERO cada uno. Sin esta cuota la demo mostraba
+  // sólo dos de los tres casos —cubre y parcial—, y el tercero —el deudor que no tiene de dónde
+  // financiarse— quedaba fuera aunque la cartera lo tenga: el elenco se elegía por RUT y por si la
+  // línea del CLIENTE cubría la oferta, sin mirar nunca si algún DEUDOR quedaba sin cupo. Va antes
+  // de la cuota general de parciales para que no se la coman los primeros por orden de RUT.
+  // Son los DOS y no uno porque quien recorre la demo —o un caso e2e— abre la primera fila de «Sin
+  // línea» que encuentre, no la que tenga el escenario: con uno solo, la mitad de las veces el tercer
+  // caso seguía sin verse. La cartera lo permite sin forzar nada: 37 clientes elegibles lo cumplen.
+  cuota((c) => c.parcial && c.carencia, DIRECTORIO_PERFIL.carencia);
   cuota((c) => c.parcial, DIRECTORIO_PERFIL.parciales);
   cuota(() => true, DIRECTORIO_PERFIL.clientes); // relleno si una de las dos poblaciones no alcanzó
 
