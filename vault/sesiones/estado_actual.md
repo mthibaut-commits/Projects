@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-19T17:10:00Z
+timestamp: 2026-09-20T04:30:00Z
 ---
 
 # Estado actual
@@ -13,8 +13,8 @@ timestamp: 2026-09-19T17:10:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone de 41,3 MB, **143/143 PASA**, **34 archivos de gate de contrato**
-(233 tests), **29 casos e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (69 reglas verbatim
+(`pipeline_comercial.jsx`), build standalone de 41,3 MB, **144/144 PASA**, **35 archivos de gate de contrato**
+(245 tests), **29 casos e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (70 reglas verbatim
 por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró la tabla de invariantes**:
 cada regla y los 12 del contrato tienen gate. Lo que destaparon cambió el producto —ocho defectos, abajo—. El
 generador tiene punto fijo (32, ADR-0003), el id de una operación es estable (ADR-0004) con «Operación creada» +
@@ -77,4 +77,4 @@ El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403, política; s
 ## Conocimiento clave
 
 [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [hooks](../conocimiento/loop_agentico_hooks.md) · [despacho de agentes](../conocimiento/despacho_agentes.md) · [flujo git](../conocimiento/flujo_git.md) · [arquitectura](../conocimiento/arquitectura.md) · [verificación](../conocimiento/verificacion.md) · [decisiones](../adr/index.md)
-Últimas: [revisión del spec de excepciones](./2026-09-19_spec_excepciones_revision.md) · [sin aprobador](./2026-09-18_regla_sin_aprobador.md) · [portada](./2026-09-18_portada_que_muestra_el_producto.md) · [orden y bandeja](./2026-09-18_orden_tabla_y_bandeja.md) · [formateo](./2026-09-18_formatear_el_fuente.md)
+Últimas: [controles del giro](./2026-09-20_controles_integracion.md) · [revisión del spec de excepciones](./2026-09-19_spec_excepciones_revision.md) · [sin aprobador](./2026-09-18_regla_sin_aprobador.md) · [portada](./2026-09-18_portada_que_muestra_el_producto.md) · [orden y bandeja](./2026-09-18_orden_tabla_y_bandeja.md) · [formateo](./2026-09-18_formatear_el_fuente.md)

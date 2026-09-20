@@ -166,7 +166,7 @@ auditoría, la mensajería y las tareas:
 | **Detalle del visado** (por excepción) | justificación de la decisión, respaldos, quién (con su reemplazo, si cubre a otro), cuándo | el apoderado | junto con el visado |
 | **Bitácora de otorgamiento** (por operación) | cada evento del proceso con actor y fecha-hora: solicitud, información agregada, pre-evaluación, decisión, pérdida por bloqueo firme, integración | el sistema, en cada acción | en cada acción; sólo se agrega, nunca se edita |
 | **Pre-evaluación** (por operación) | que el ejecutivo pidió adelantar la revisión: quién y cuándo | el ejecutivo | al enviar a pre-evaluación |
-| **Versión de evaluación** (por operación) | la foto de cada corrida del motor: las variables del cliente tal como las entregó el origen y la disposición de cada criterio, con fecha y número (v1, v2…); la v1 es la evaluación de la simulación | el sistema | en cada **re-evaluación de la simulación** (§5.4); sólo se agrega, nunca se edita ni se borra |
+| **Versión de evaluación** (por operación) | la foto de cada corrida del motor: las variables del cliente tal como las entregó el origen y la disposición de cada criterio, con fecha y número (v1, v2…); la v1 es la evaluación de la simulación | el sistema | en cada **re-evaluación de la simulación** (§5.5); sólo se agrega, nunca se edita ni se borra |
 | **Auditoría** (global) | módulo, acción, glosa, actor, éxito, severidad, y la **huella encadenada** de cada registro; incluye los **intentos rechazados** por atribución | toda acción | siempre |
 | **Mensajería** (hilos por operación) | los avisos entre ejecutivo y apoderados: solicitud, pre-evaluación, avance, requerimientos de información | quien actúa | según la acción |
 | **Tareas** | «Aprobar excepción #n …», con el par (área, nivel) como destinatario | al solicitar | vence en un día |
@@ -188,7 +188,7 @@ El motor corre sobre la operación en cinco momentos:
 | **La simulación** | el ejecutivo arma la oferta y simula | la **primera evaluación**: la operación pasa a Oferta con su monto y sus facturas, y cada criterio queda con su disposición. Es la versión **v1** |
 | **La pre-evaluación** | el ejecutivo, desde el detalle, con la oferta abierta | adelanta el veredicto y abre la bandeja (§4.5) |
 | **«Re-evaluar operación»** | el ejecutivo, después de agregar o quitar facturas | vuelve a evaluar la operación **tal como quedó** —monto, piso, tramos— con las mismas variables del origen |
-| **«Re-evaluación de la simulación»** | el ejecutivo, desde el tab Otorgamiento, cuando quedan re-evaluables pendientes | pide al origen las variables de hoy y guarda una **versión nueva** (§5.4) |
+| **«Re-evaluación de la simulación»** | el ejecutivo, desde el tab Otorgamiento, cuando quedan re-evaluables pendientes | pide al origen las variables de hoy y guarda una **versión nueva** (§5.5) |
 | **El cierre de la oferta y la firma** | la confirmación del cierre en el modal de curse; el cliente al firmar | decide si la oferta puede publicarse; decide a qué etapa va la operación firmada (§5.3) |
 
 Agregar o quitar facturas **no** re-evalúa solo: lo que depende del motor queda en «Por evaluar», sin
@@ -421,10 +421,10 @@ bloqueando en un punto distinto del camino:
 
 | Control | Qué exige | Quién lo levanta | Dónde bloquea |
 |---|---|---|---|
-| **La línea** · no se gira lo que no tiene cupo | que cada factura esté cubierta por una **línea aprobada y asignada**. La que no cabe no se descarta: sale marcada para el **comité**, y la solicitud se genera sola al cerrar la oferta | el **comité de crédito**, aprobando o ampliando la línea (vive en el sistema de gestión de líneas, no en NEX) | al armar y al cerrar la oferta: lo que no tiene cupo no es cursable. Si la operación excede la línea del cliente, además deriva a «Otorgamiento / Verificación» |
+| **LIN-01** · no se gira lo que no tiene cupo | que **cada factura** esté cubierta por una **línea aprobada y asignada**. La que no cabe no se descarta: sale marcada para el **comité**, y la solicitud se genera sola al cerrar la oferta | el **comité de crédito**, aprobando o ampliando la línea (vive en el sistema de gestión de líneas, no en NEX) | al armar y al cerrar la oferta, y otra vez en la aprobación de Operaciones: una factura sin cupo no se puede imputar a nada en el core |
 | **OTG-02** · no avanza con excepciones pendientes | ninguna excepción sin decidir ni rechazo re-evaluable sin regularizar | los apoderados, visando (§4.7) | la operación no sale de «Otorgamiento / Verificación» |
 | **VER-01** · no cursa con verificación pendiente | todas las facturas de la operación con su verificación telefónica completa | el equipo de verificación, llamando al deudor | la operación no sale de «Otorgamiento / Verificación» |
-| **La aprobación de Operaciones** · alguien responde por lo que entra al core | que un apoderado de **Operaciones N3** revise la operación y **apruebe la integración al core**: que el otorgamiento esté correctamente excepcionado, las llamadas hechas y la documentación en regla | el **Jefe de Operaciones** (o quien tenga Operaciones N3 o superior), desde el detalle | el paso de «Pendiente Integración» a «Pendiente de Giro». Sin esa firma la operación no llega a Tesorería |
+| **La aprobación de Operaciones** · alguien responde por lo que entra al core | que un apoderado de **Operaciones N3** revise la operación y **apruebe la integración al core**. El botón **no se habilita** mientras falte cualquiera de los otros cuatro: la firma se da sobre una operación que ya está en regla | el **Jefe de Operaciones** (o quien tenga Operaciones N3 o superior), desde el detalle | el paso de «Pendiente Integración» a «Pendiente de Giro». Sin esa firma la operación no llega a Tesorería |
 | **GIR-02** · el paquete girado es el que se autorizó | que la **huella** de lo que se va a inyectar al core calce con la de lo que el cliente firmó | nadie: se repara solo cuando el paquete vuelve a ser el firmado, o se vuelve a firmar | dentro de esa misma aprobación, antes de escribirla: es el último punto en que la comparación sirve |
 
 **Los tres primeros se levantan trabajando**; el cuarto es una **decisión de una persona** y por eso
@@ -433,6 +433,11 @@ cumple. Todos se comprueban **en el servidor** en producción: la pantalla que e
 control. Hay además un **GIR-01**, que exige que la operación haya pasado por Cesión —el giro se emite
 contra la cesión confirmada, no contra la etapa que informa el navegador—, pero no es un pendiente que
 alguien resuelva: es consecuencia de haber recorrido el camino.
+
+**Los cuatro automáticos se vuelven a mirar en la aprobación de Operaciones, no sólo el día de la
+firma** (§5.5). Entre que la operación queda «Pendiente Integración» y que alguien la firma pueden
+pasar días, y en ese rato un visado se puede revertir, una factura se puede retirar por no confirmada y
+el cupo de una línea se puede consumir en otro negocio.
 
 Cuando el cliente firma, la operación va a:
 
@@ -461,7 +466,44 @@ se va a inyectar contra la de lo que el cliente autorizó (GIR-02; si no calza, 
 con las dos huellas en la auditoría). Aprobada, la operación queda **Pendiente de Giro**, que es lo que
 toma Tesorería, con la huella verificada anotada en su bitácora.
 
-### 5.4 Qué es la re-evaluación, y por qué no reabre lo decidido
+### 5.4 La aprobación de Operaciones comprueba los controles, dos veces
+
+El botón **«Aprobar integración al core»** del detalle no es una confirmación de trámite: es donde
+Operaciones firma que la operación está en condiciones de entrar al core. Por eso **no se habilita**
+mientras falte alguno de los controles, y la tarjeta lista **qué** falta, una línea por control, con su
+código y qué hay que hacer:
+
+> **No se puede integrar: faltan 2 controles.**
+> **OTG-02** · 3 criterio(s) de otorgamiento sin resolver: hay que excepcionarlos o regularizarlos antes de integrar
+> **LIN-01** · 1 factura(s) sin línea aprobada y asignada (#9002): esperan al comité
+
+Un botón apagado sin causa manda a adivinar, y lo que se adivina acá es por qué no sale la plata.
+
+**Se comprueba dos veces, y la segunda es la que vale.** Al apretar, la acción vuelve a correr los
+controles **antes de escribir**: la pantalla pudo abrirse hace un rato y entre medio alguien pudo
+revertir un visado. El intento bloqueado queda en la auditoría con los códigos en la acción
+(«Integración bloqueada (OTG-02 · LIN-01)»), severidad alta, y en el log del sistema con la lista. La
+**atribución se mira primero**: quien no tiene Operaciones N3 ni ve el detalle de lo que falta, sólo el
+aviso de que la firma es de esa área.
+
+**Qué mira cada control acá**, que no es exactamente lo mismo que el día de la firma:
+
+- **OTG-02** lee el visado **vigente**, no el que había cuando la operación cambió de etapa: una
+  excepción revertida vuelve a bloquear.
+- **VER-01** lee la verificación vigente: una factura retirada porque el deudor no la confirmó vuelve a
+  bloquear, porque el paquete cambió.
+- **LIN-01** mira **factura por factura** la asignación que la operación tiene congelada en su versión
+  —lo que el cliente firmó y lo que el sistema de líneas tiene reservado—, no el total contra la línea
+  del cliente. Un paquete puede caber holgado y traer igual una factura sin línea de par. Si no hay
+  ninguna asignación que respalde el paquete, **se falla cerrado**: no poder afirmar que cada factura
+  tiene cupo no es lo mismo que afirmar que lo tiene.
+- **GIR-02** compara las dos huellas, como siempre.
+
+Por qué acá y no antes: es el **último punto en que mirar sirve**. Después, el dinero ya salió. Las
+alternativas descartadas —avisar sin bloquear, dejarlo sólo para el servidor, re-asignar la línea en
+ese momento— están en ADR-0007.
+
+### 5.5 Qué es la re-evaluación, y por qué no reabre lo decidido
 
 **Re-evaluar es volver a correr los criterios sobre la operación con los datos de hoy.** Los criterios
 no se evalúan una vez y quedan fijos: cada vez que el sistema los muestra —en el tab, en la mesa, en el
@@ -657,7 +699,7 @@ Ninguna bloquea la operación; todas cambian el contrato del servicio o la confi
 | 5 | **Concurrencia del visado**: dos apoderados decidiendo la misma excepción a la vez necesitan una respuesta 409 con semántica definida; hoy la escritura es optimista con confirmación | plataforma (`spec-otorgamiento.md` §12) |
 | 6 | Los criterios de burós de **deudor** (D02–D13) son excepciones no re-evaluables, no bloqueos firmes: sólo C30–C32 rechazan. Los documentos que los describen como knockout deben decirlo así | documentación |
 | 7 | Cuando el **piso por monto** deja una excepción sin aprobador, en el **tab del detalle** se puede **solicitar** igual: la tarjeta dice «Solicitar aprobación al Sin aprobador definido (N{nivel})», la solicitud se registra y el aviso sale sin destinatarios. La mesa, en cambio, muestra la causa y el mantenedor donde se arregla. Conviene que la tarjeta haga lo mismo | producto |
-| 8 | **El control de la línea no se vuelve a comprobar factura por factura antes de girar.** El cupo se asigna al armar la oferta y lo que no cabe sale marcado para el comité; después, lo que llega al giro es lo que el cliente firmó. Entre una cosa y otra pueden pasar días, y hoy la única compuerta de línea posterior a la firma es de nivel operación («excede la línea de crédito aprobada»), no por factura. Conviene decidir si la aprobación de Operaciones tiene que exigir además que **ninguna factura del paquete** esté sin línea asignada | producto · negocio |
+| 8 | ~~El control de la línea no se vuelve a comprobar factura por factura antes de girar~~ — **cerrada el 20-09-2026**: la aprobación de Operaciones exige ahora los cuatro controles, y LIN-01 se mira factura por factura (§5.4, regla 41, ADR-0007) | cerrada |
 
 ---
 
