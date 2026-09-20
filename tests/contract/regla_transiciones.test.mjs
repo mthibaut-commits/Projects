@@ -10,7 +10,7 @@
    y que **no re-implementen el predicado**: lo preguntan por código al invariante, que es la única fuente.
    Un `["cesion","giro"].includes(...)` escrito a mano dentro de `moverEtapa` sería una segunda copia de la
    regla, que es como GIR-01 y su tabla se desfasan sin que nadie lo note.
-   Patrones sobre `canonico(src)` y sondas plantadas sobre el texto canónico (ADR-0005). */
+   Patrones sobre `canonico(src)` y sondas plantadas sobre el texto canónico (ADR-0006). */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { leer, canonico } from "./_comun.mjs";
@@ -83,7 +83,14 @@ export function auditarTransiciones(src0) {
     fallos.push("«Girar» desaparece del menú sin motivo: la regla 24 pide mostrarlo apagado y explicar por qué (lo autoriza Operaciones)");
   // GIR-02 —la huella de lo que se inyecta— sigue donde sirve: `aprobarIntegracion`, que es el último
   // punto ANTES de inyectar a Tesorería, y ése sí es un acto de NEX.
-  if (!/Integración bloqueada \(GIR-02\)/.test(src))
+  // RE-ANCLADO el 20-09-2026 al mezclar con `main`: la huella dejó de compararse suelta y pasó a ser una de
+  // las cuatro faltas de `controlesIntegracion` (regla 41), que `aprobarIntegracion` vuelve a llamar antes de
+  // escribir. La REGLA no cambió —GIR-02 se comprueba en el último punto útil— así que el gate se re-ancla
+  // en el mecanismo nuevo en vez de aflojarse: se exige que la compuerta nombre GIR-02 y que el handler la
+  // llame. Pedir el rótulo viejo dejaría de vigilar lo que la regla dice.
+  if (!/"GIR-02"/.test(src))
+    fallos.push("`controlesIntegracion` ya no nombra GIR-02: la huella es una de las cuatro faltas que bloquean la integración");
+  if (!/const ctrl = controlesIntegracion\(d0\);/.test(src) || !/if \(!ctrl\.ok\)/.test(src))
     fallos.push("`aprobarIntegracion` ya no comprueba GIR-02 antes de inyectar: es el último punto en que comparar la huella sirve de algo");
   // La regla vive en la tabla, no en el handler: una copia inline es cómo se desfasan.
   if (/\["cesion", "giro"\]\.includes\(/.test(cab))
@@ -119,7 +126,7 @@ test("SONDAS: cada violación plantada en una copia del fuente hace fallar al au
     ["«Girar» desaparece sin explicación", can.replace(/lo_autoriza_operaciones/g, "sinMotivo"), /sin motivo/],
     [
       "la huella deja de comprobarse antes de inyectar",
-      can.replace("Integración bloqueada (GIR-02)", "Integración bloqueada"),
+      can.replace("const ctrl = controlesIntegracion(d0);", "const ctrl = { ok: true };"),
       /último punto en que comparar la huella/,
     ],
     [

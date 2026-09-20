@@ -243,7 +243,7 @@ haría notar.**
 | 2.5 | El pipeline genera las facturas y su estado | **Corregido** — libro y estados desde A1/A2; caso 94 |
 | 2.2 | La fecha de emisión sale del reloj, con cinco fórmulas, y el inbound descartaba `FchEmis`/`FchVenc` del activo | **Corregido** — un solo resolver (`fechasDocumento`) anclado en la fecha de corte del activo; caso 93 |
 | 1.3 | `diaModal` nunca se abre | **Abierto** — falta decidir si sobra el modal o falta quien lo abra |
-| 1.5 | `giroDeal` probado y sin llamador | **Cerrado el hallazgo, abierto el símbolo** — la congelación del giro YA ocurre en el producto: se congela en la inyección a Tesorería (regla 37, caso 146), la escribe `aprobarIntegracion` y la lee la pantalla por `giroCongelado`. `giroDeal` sigue sin llamador y pasa a ser candidato a poda, no un hallazgo de producto |
+| 1.5 | `giroDeal` probado y sin llamador | **Cerrado el hallazgo, abierto el símbolo** — la congelación del giro YA ocurre en el producto: se congela en la inyección a Tesorería (regla 43, caso 148), la escribe `aprobarIntegracion` y la lee la pantalla por `giroCongelado`. `giroDeal` sigue sin llamador y pasa a ser candidato a poda, no un hallazgo de producto |
 | 1.4 | 5 estados que se leen y nunca se escriben | **Abierto** — cada uno es una edición que la UI promete y no existe |
 
 **La verificación de una poda no es `tsc` ni el build.** Los dos pasan con el login roto: así

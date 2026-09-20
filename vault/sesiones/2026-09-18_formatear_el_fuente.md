@@ -14,7 +14,7 @@ El usuario eligió la opción **(c) entera** —«formatear el `.jsx` en un comm
 de que se midiera el costo, que es lo que hace útil la decisión: **59 de 178** tests de contrato caían, más el
 **caso 118** de la suite y **dos regresiones de auditor**, con el fuente pasando de **26.448 a 49.583 líneas**
 (+87 %). Las alternativas descartadas —no formatear, y formatear sólo lo que se toca— y el porqué están en
-[ADR-0005](../adr/ADR-0005-formatear-el-fuente.md).
+[ADR-0006](../adr/ADR-0006-formatear-el-fuente.md).
 
 ## El método, porque se va a volver a necesitar
 

@@ -17,7 +17,7 @@ fuera del rango de empresa y el **39,3 %** en rango de **persona natural** — �
 sintéticos» y eso era cierto y tranquilizador y no describía el problema.
 
 El usuario pidió el corte correcto —*«no inventes los RUT, toma pares de RUT y razón social que sean
-reales»*— y entregó el AEC (REQ-15, 411.526 cesiones). **ADR-0007** fija qué entra y qué no.
+reales»*— y entregó el AEC (REQ-15, 411.526 cesiones). **ADR-0009** fija qué entra y qué no.
 
 ## Lo que NO se hizo, y es la mitad de la decisión
 

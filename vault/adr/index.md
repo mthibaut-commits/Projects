@@ -17,9 +17,11 @@ Un ADR aceptado es **inmutable**. Para cambiar de rumbo: ADR nuevo con `reemplaz
 | [ADR-0002](./ADR-0002-cablear-los-gates.md) | Cablear los gates: tests de contrato, hooks deterministas y CI | aceptada · decidida con el usuario 17-09-2026 |
 | [ADR-0003](./ADR-0003-intencion-de-participacion-declarada.md) | La intención de participación es un insumo declarado del generador, no una lectura de su salida | aceptada · el usuario pidió cerrar el bucle 17-09-2026; el mecanismo lo eligió la sesión |
 | [ADR-0004](./ADR-0004-id-estable-y-dos-marcas-al-editar.md) | El id de la operación es estable, y editar una oferta cerrada usa dos marcas | aceptada · 17-09-2026 |
-| [ADR-0005](./ADR-0005-formatear-el-fuente.md) | El fuente se formatea con Prettier, y los gates de contrato se re-anclan sobre texto canónico | aceptada · decidida con el usuario 18-09-2026, con el costo medido |
-| [ADR-0006](./ADR-0006-el-piso-del-deudor-escala-no-bloquea.md) | Perforar el piso de riesgo del deudor ESCALA a Gerente Comercial, no veta: como veto dejaría `tasaMinAbsoluta` inalcanzable | aceptada · 19-09-2026, tras la decisión del usuario de validar la tasa al simular |
-| [ADR-0007](./ADR-0007-identidades-reales-del-aec.md) | La IDENTIDAD es real y sale del AEC (pares RUT ↔ razón social, sin personas naturales); la TRANSACCIÓN sigue sintética | aceptada · 20-09-2026, decisión del usuario con el AEC entregado |
+| [ADR-0005](./ADR-0005-portada-que-muestra-el-producto.md) | La portada de ingreso muestra el producto, con #703EFF como único morado de marca | aceptada · 18-09-2026 |
+| [ADR-0006](./ADR-0006-formatear-el-fuente.md) | El fuente se formatea con Prettier y los gates de texto se re-anclan sobre `canonico()` | aceptada · 18-09-2026 |
+| [ADR-0007](./ADR-0007-controles-en-la-integracion-al-core.md) | Los controles del giro se vuelven a mirar al aprobar la integración al core | aceptada · pedido del usuario 20-09-2026 |
+| [ADR-0008](./ADR-0008-el-piso-del-deudor-escala-no-bloquea.md) | Perforar el piso de riesgo del deudor ESCALA a Gerente Comercial, no veta: como veto dejaría `tasaMinAbsoluta` inalcanzable | aceptada · 19-09-2026, tras la decisión del usuario de validar la tasa al simular |
+| [ADR-0009](./ADR-0009-identidades-reales-del-aec.md) | La IDENTIDAD es real y sale del AEC (pares RUT ↔ razón social, sin personas naturales); la TRANSACCIÓN sigue sintética | aceptada · 20-09-2026, decisión del usuario con el AEC entregado |
 
 ## Decisiones cerradas antes del vault — registro con punteros
 
@@ -62,4 +64,5 @@ decididas** y no las vuelva a proponer. Si una se reabre, se escribe un ADR nuev
 | 17-09-2026 | Gates por línea base, hooks en Node, CI de un solo job, preset A de git; sin tdd-guard ni formateador | [ADR-0002](./ADR-0002-cablear-los-gates.md) | cerrada |
 | 17-09-2026 | **El generador tiene punto fijo**: la intención de participación es un insumo declarado (`lib/intencion_sow.js`), no una lectura del A5 medido | [ADR-0003](./ADR-0003-intencion-de-participacion-declarada.md) · regla 32 | cerrada |
 | 17-09-2026 | El **id de la operación no cambia** con el cierre del día; **Editar** una oferta cerrada marca `enEdicion` aparte de `reabierta` | [ADR-0004](./ADR-0004-id-estable-y-dos-marcas-al-editar.md) · regla 33 | cerrada (pedido del usuario) |
+| 18-09-2026 | La **portada muestra el producto** con profundidad real; su arte es un **activo generado** que embeben los dos builds; el acento de marca queda en **#703EFF** | [ADR-0005](./ADR-0005-portada-que-muestra-el-producto.md) · reglas 36, 37, 38 | cerrada (pedido del usuario) |
 | 17-09-2026 | **V10 es del DEUDOR**, no del par: lo pagado al factoring en 3M sumando todos sus cedentes, como dice la política | regla 9-ter · `reglas/verificacion.md` | cerrada (ratificación del usuario) |

@@ -60,7 +60,7 @@ máquina los hooks no responden, el health check de arriba lo dice en diez segun
 
 ## Lo que NO hay, a propósito
 
-- **Formateador por HOOK.** Desde el 18-09-2026 sí hay formateador —Prettier, el fuente entero, ADR-0005—,
+- **Formateador por HOOK.** Desde el 18-09-2026 sí hay formateador —Prettier, el fuente entero, ADR-0006—,
   pero como **gate del CI** (`prettier --check`, paso 0) y no como hook de `PostToolUse`. La diferencia importa:
   un hook que formatea después de cada edición reescribe tramos que el agente no tocó, y entre dos ediciones de
   la misma sesión los anclajes de la siguiente ya no existen. El gate pide el archivo formateado **al

@@ -1,13 +1,13 @@
 ---
 type: adr
-title: "ADR-0007 · Las identidades son pares reales del AEC; las transacciones siguen sintéticas"
+title: "ADR-0009 · Las identidades son pares reales del AEC; las transacciones siguen sintéticas"
 description: "Reemplaza «nunca datos reales en fixtures» por un corte preciso: la identidad (RUT ↔ razón social) es real y viene del AEC de BICE Factoring; la transacción no. Las personas naturales quedan fuera"
 tags: [adr, datos, padron, privacidad]
 estado: aceptado
 timestamp: 2026-09-20T03:40:00Z
 ---
 
-# ADR-0007 · Las identidades son pares reales del AEC; las transacciones siguen sintéticas
+# ADR-0009 · Las identidades son pares reales del AEC; las transacciones siguen sintéticas
 
 ## Contexto
 

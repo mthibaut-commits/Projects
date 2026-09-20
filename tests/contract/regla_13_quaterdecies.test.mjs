@@ -71,7 +71,7 @@ export function botonesItem(src) {
   RE_ITEM.lastIndex = 0;
   while ((m = RE_ITEM.exec(src))) {
     const i = m.index;
-    const antes = src.slice(Math.max(0, i - 2600), i);   // 900 hasta el 18-09-2026: el formateo (ADR-0005) abre el <button> en varias líneas y la apertura queda más lejos
+    const antes = src.slice(Math.max(0, i - 2600), i);   // 900 hasta el 18-09-2026: el formateo (ADR-0006) abre el <button> en varias líneas y la apertura queda más lejos
     const ab = antes.lastIndexOf("<button");
     if (ab < 0) continue;                                   // un ConfirmDialog o un comentario, no un botón
     const apertura = antes.slice(ab).replace(/<[A-Z][A-Za-z]* [^>]*\/>/g, ""); // fuera los íconos (<RotateCcw … />)

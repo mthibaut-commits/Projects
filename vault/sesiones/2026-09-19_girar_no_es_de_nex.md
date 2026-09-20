@@ -70,7 +70,7 @@ el gate de `aplicado` —escrito ayer— lo habría rechazado. Se amplió el voc
 callback de Tesorería, ni consulta, ni archivo. La operación queda en «Pendiente de Giro» y el paso a
 «Girada» **no está modelado como noticia que llega**, que es lo que es. Decidirlo —¿push?, ¿pull como el de
 estados de línea de la regla 15?, ¿batch diario?— define quién escribe ese campo y quién lo audita. Queda
-en la regla 37 y en el tablero.
+en la regla 43 y en el tablero.
 
 ## Verificación
 

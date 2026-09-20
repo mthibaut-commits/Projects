@@ -1,13 +1,13 @@
 ---
 type: adr
-title: "ADR-0006 · Perforar el piso de riesgo del deudor ESCALA, no bloquea"
+title: "ADR-0008 · Perforar el piso de riesgo del deudor ESCALA, no bloquea"
 description: "La tercera cláusula de la regla 8 se implementa como escalón de atribución (requiereGerente) y no como bloqueo duro. Alternativa descartada, con el argumento estructural que la descarta"
 tags: [adr, regla-8, pricing, atribucion]
 estado: aceptado
 timestamp: 2026-09-19T23:10:00Z
 ---
 
-# ADR-0006 · Perforar el piso de riesgo del deudor ESCALA, no bloquea
+# ADR-0008 · Perforar el piso de riesgo del deudor ESCALA, no bloquea
 
 ## Contexto
 
@@ -59,4 +59,4 @@ quién tiene la atribución cuando alguien pide perforarlo, no que sea gratis.
 
 ## Gate
 
-Caso **147** de la suite, citado en la fila de la regla 8 de `invariantes.md`.
+Caso **149** de la suite, citado en la fila de la regla 8 de `invariantes.md`.

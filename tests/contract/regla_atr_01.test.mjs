@@ -14,7 +14,7 @@
        peor que una que se bloquea, porque nadie se entera (regla 24).
    (4) El render usa el MISMO predicado y ya no el prop `esJefe`: con dos fuentes, la que gatea el botón y la
        que autoriza pueden discrepar, que es exactamente el defecto.
-   Los patrones se aplican sobre `canonico(src)` (ADR-0005) y las sondas se plantan sobre el texto canónico. */
+   Los patrones se aplican sobre `canonico(src)` (ADR-0006) y las sondas se plantan sobre el texto canónico. */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { leer, canonico } from "./_comun.mjs";

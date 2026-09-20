@@ -20,7 +20,7 @@ const plantillas = (bloque) => [...bloque.matchAll(/\$\{([^}]*)\}/g)].map((m) =>
 
 /* 1 · El titular del veredicto (las tres ramas con «Se puede cursar» / «No se puede cursar») sólo usa fmtCLP. */
 export function veredictoEnPesos(src0) {
-  const src = canonico(src0);   // ver `canonico` en _comun.mjs (ADR-0005): el JSX ya no cabe en una línea
+  const src = canonico(src0);   // ver `canonico` en _comun.mjs (ADR-0006): el JSX ya no cabe en una línea
   const b = entre(src, 'evalLin.requiereComite === 0 ? {tono: "con_linea"', "cursar el resto hoy.`}");
   if (!b) return ["no encuentro el bloque del veredicto (las tres ramas con_linea / sin_linea / parcial)"];
   const fallos = [];
@@ -32,7 +32,7 @@ export function veredictoEnPesos(src0) {
 /* 2 · Monto del deudor (tres ramas), «Línea disponible» (rótulo y tooltip), «Solicitud línea» (rótulo, tooltip,
    ámbar de texto y fondo, el FALTANTE como cifra, sólo en la oferta) y «Total oferta»: fmtCLP. */
 export function documentoEnPesos(src0) {
-  const src = canonico(src0);   // ver `canonico` en _comun.mjs (ADR-0005): el JSX ya no cabe en una línea
+  const src = canonico(src0);   // ver `canonico` en _comun.mjs (ADR-0006): el JSX ya no cabe en una línea
   const fallos = [];
   if (!/<span>\s*Total oferta · \{deudOf\.length\} deudor\(es\) · \{validas\.length\} factura\(s\)\s*<\/span>\s*<span>\{fmtCLP\(totalOf\)\}<\/span>/.test(src)) fallos.push("«Total oferta» no va en fmtCLP(totalOf)");
   if (!/const lbl = hay \? `Línea disponible \$\{fmtCLP\(ld\.disponible\)\}`/.test(src)) fallos.push("«Línea disponible» no va en fmtCLP(ld.disponible)");
@@ -63,7 +63,7 @@ export function documentoEnPesos(src0) {
 }
 /* 3 · Lo que se queda en M$: chip de sección, IndicadorLinea (sin un solo fmtCLP), badge de ChipGiro. */
 export function resumenesEnMM(src0) {
-  const src = canonico(src0);   // ver `canonico` en _comun.mjs (ADR-0005): el JSX ya no cabe en una línea
+  const src = canonico(src0);   // ver `canonico` en _comun.mjs (ADR-0006): el JSX ya no cabe en una línea
   const fallos = [];
   if (!/title="Monto seleccionado para esta oferta"\s*>\s*\{fmtMM\(totalOf\)\}/.test(src)) fallos.push("el chip de conteo de sección no va en fmtMM(totalOf)");
   // `entre` trabaja sobre el texto canónico (sin saltos), así que el cierre de la función se busca por su forma.
@@ -76,7 +76,7 @@ export function resumenesEnMM(src0) {
 }
 /* 4 · El CTA nombra lo que va a pasar, y lo decide `evalLin.requiereComite > 0`. */
 export function ctaComite(src0) {
-  const src = canonico(src0);   // ver `canonico` en _comun.mjs (ADR-0005): el JSX ya no cabe en una línea
+  const src = canonico(src0);   // ver `canonico` en _comun.mjs (ADR-0006): el JSX ya no cabe en una línea
   const fallos = [];
   if (!/const labelAccion = \(k, aComite\) => \(?k === "cerrar" && aComite\)? \? "Enviar a Comité y Publicar"/.test(src)) fallos.push("labelAccion no devuelve «Enviar a Comité y Publicar» con aComite");
   if (!/\{\s*k: "cerrar", label: "Cerrar oferta y publicar"/.test(src)) fallos.push("la acción base ya no se llama «Cerrar oferta y publicar»");
@@ -92,7 +92,7 @@ test("29 · el CTA dice «Enviar a Comité y Publicar» sólo cuando evalLin.req
 test("29 · SONDAS: cada violación plantada en una copia del fuente hace fallar a su detector", () => {
   /* Las sondas se plantan sobre el fuente CANÓNICO, no sobre el crudo: `canonico` es idempotente, así que
      el detector lo vuelve a normalizar sin efecto, y así la sonda deja de depender de dónde el formateador
-     puso los saltos de línea (ADR-0005). Una sonda que ya no cambia nada se caza abajo, con `src === can`. */
+     puso los saltos de línea (ADR-0006). Una sonda que ya no cambia nada se caza abajo, con `src === can`. */
   const can = canonico(jsx);
   const b = entre(can, 'evalLin.requiereComite === 0 ? {tono: "con_linea"', "cursar el resto hoy.`}");
   assert.ok(b, "no encuentro el bloque del veredicto para plantar la sonda del titular");

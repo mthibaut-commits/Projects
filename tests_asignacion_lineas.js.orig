@@ -3780,12 +3780,9 @@
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · REGLA 8 · OFERTA — PROXY. Las dos primeras cláusulas («cerrar» es prerequisito de publicar;
   //    el Agente IA es opcional) ya las fijan los casos 31 y 32 sobre `ofertaPublicada`. La tercera
-  //    («fuera de atribución si el cliente pide tasa bajo el mínimo del deudor») YA TIENE PREDICADO desde
-  //    el 19-09-2026 y la fija el caso 149: `evalAtribucion` recibe el piso del deudor y lo aplica. Este
-  //    caso sigue fijando los INSUMOS de esa cláusula, que es para lo que sirve, y el 149 el enlace entre
-  //    ellos. (Hasta esa fecha el comentario citaba una `sonda_clausula_cliente.js` «que queda en FALLA a
-  //    propósito»: ese archivo nunca se commiteó, vivía en el scratchpad de aquella sesión, así que la
-  //    referencia mandaba a leer algo que no existe.) Los insumos:
+  //    («fuera de atribución si el cliente pide tasa bajo el mínimo del deudor») NO tiene predicado en el
+  //    fuente —lo documenta `sonda_clausula_cliente.js`, que queda en FALLA a propósito—. Este caso fija
+  //    lo que SÍ existe y de lo que esa cláusula depende:
   //    (b) el MÍNIMO del deudor es `tasaMinIA` = `spreadMinDeudor` (piso de riesgo) + costo de fondo del
   //        TENANT; un deudor que la tabla no conoce tiene piso ≥ que todos los listados; y la contactabilidad
   //        viaja con ese piso (`spreadMinNeg`), que es la entrada que un predicado futuro tendría que leer;
@@ -3796,8 +3793,8 @@
   //        Se afirma sólo lo que las dos lecturas de la regla comparten: dentro de la banda Y sobre el mínimo
   //        → aprobado; bajo la banda (esté o no bajo el mínimo) → excepción; bajo el mínimo absoluto →
   //        excepción; sin simular → no se pronuncia (regla 14). La zona «dentro de la banda pero bajo el
-  //        mínimo del deudor» —que aparece cuando el sugerido queda topado— este caso la MIDE y la informa;
-  //        quien la FIJA es el 149, desde que el piso del deudor dejó de ser techo sólo del Agente IA.
+  //        mínimo del deudor» —que aparece cuando el sugerido queda topado— se MIDE y se informa, no se
+  //        fija (hallazgo 2: el piso del deudor hoy es techo del Agente, no del ejecutivo).
   {
     const guardado = { ...CFG_ACTIVA };
     const restaurar = () => aplicarCfgActiva(guardado);
@@ -4477,14 +4474,7 @@
       const mueveOk = quedaDe(det2.texto) === fmtMM(disp - m2) && quedaDe(det2.texto) !== quedaDe(det1.texto)
         && disponibleDe(det2.texto) === fmtMM(disp)
         && detX.texto.includes(`excede por ${fmtMM(mX - disp)}`) && !/queda /.test(detX.texto)
-        // EL TOOLTIP DICE LO MISMO Y CON LAS MISMAS PALABRAS QUE EL TEXTO (20-09-2026). Hasta ese día este
-        // caso exigía lo contrario —`quedarían ${fmtMM(disp - mX)}`, o sea «quedarían M$-X»— y fijaba una
-        // contradicción: al lado se leía «excede por M$X». El estado no se veía nunca porque ninguna
-        // operación del Directorio excedía su línea; lo destapó migrar al padrón real (ADR-0007), y lo
-        // cazó `e2e-13-terdecies` al no poder ni parsear el signo. Se exige en los DOS sentidos: cuando
-        // cabe, las dos formas dicen «queda/quedarían»; cuando no, las dos dicen «excede por».
-        && detX.title.includes(`excede por ${fmtMM(mX - disp)}`) && !/quedarían/.test(detX.title)
-        && det2.title.includes(`quedarían ${fmtMM(disp - m2)}`) && !/excede por/.test(det2.title);
+        && detX.title.includes(`quedarían ${fmtMM(disp - mX)}`);
 
       // (f) BORDES: sin línea en el índice → «Sin línea»; sin cupo (uso = aprobada) → «Sin cupo disponible»
       //     y sin «queda» aunque esté simulada. La fila se muta y se RESTAURA (el índice apunta al mismo objeto).
@@ -4753,10 +4743,8 @@
     const recibeOk = r1 === true && lista.length === n0 + 1 && mismo() && SOLIC_SEQ === seq0
       && api3EstadoProceso(idA) === "En gestión" && pre.length === 2 && pre.every((x) => x.idProceso === idA);
 
-    // (c) IDEMPOTENTE: el mismo registro otra vez → false y UNA entrada; un clon con el mismo id que
-    //     cambia `pedido` y `cliente` pero NO el rut ni el detalle → tampoco entra ni pisa el que está.
-    //     Desde el 18-09-2026 el motivo es `mismaSolicitudComite` —mismo rut y mismo detalle, que es lo
-    //     que el comité aprueba línea a línea— y ya no «mismo id»: el id dejó de ser identidad.
+    // (c) IDEMPOTENTE POR id: el mismo registro otra vez → false y UNA entrada; un clon con el mismo id
+    //     y otro contenido → tampoco entra ni pisa el que está.
     const r2 = recibirSolicitudLinea(viaje1);
     const viaje2 = clon(enCero); viaje2.pedido = 1; viaje2.cliente = "OTRO";
     const r3 = recibirSolicitudLinea(viaje2);
@@ -4768,28 +4756,23 @@
     const r4 = recibirSolicitudLinea(null), r5 = recibirSolicitudLinea({}), r6 = recibirSolicitudLinea({ ...clon(sol), idProceso: "" });
     const negOk = r4 === false && r5 === false && r6 === false && lista.length === n0 + 1 && mismo();
 
-    // (e) COLISIÓN, que NO es un duplicado. Una operación DISTINTA que llega con un id ya visto entra
-    //     igual, con un id LIBRE que asigna el tubo y su procedencia en `idProcesoOrigen`. Hasta el
-    //     18-09-2026 se descartaba: el id sale de una secuencia POR PESTAÑA que arranca en 0 en cada
-    //     documento, así que dos pestañas de detalle proponen el mismo «PRC-2601» y la segunda petición
-    //     al comité se perdía EN SILENCIO —el ejecutivo la creía enviada y nadie iba a mirarla—. Este
-    //     caso medía ese defecto a propósito; ahora fija el arreglo, y (c) sigue cuidando la dirección
-    //     contraria: que arreglar esto no haya roto la idempotencia.
+    // (e) SONDA: un registro DISTINTO (otra operación) que llegue con un id ya visto se descarta como
+    //     duplicado. Es la regla tal como está escrita —idempotente por id— y también su borde: el id
+    //     sale de una secuencia POR PESTAÑA que arranca en 0 en cada documento, así que dos pestañas
+    //     de detalle producen el mismo «PRC-2601» y la segunda se pierde en silencio (se documenta en
+    //     hallazgos; acá sólo se mide).
     const viaje3 = clon(enCero); viaje3.origen = { dealId: "OP-OTRA", negocio: null }; viaje3.rut = "76.000.000-0";
     const r7 = recibirSolicitudLinea(viaje3);
-    const reColis = lista.find((x) => x && x.origen && x.origen.dealId === "OP-OTRA");
-    const orig = lista.find((x) => x && x.idProceso === idA);
-    const sondaOk = r7 === true && cuenta(idA) === 1 && !!orig && huella(orig) === foto
-      && !!reColis && reColis.idProceso !== idA && reColis.idProcesoOrigen === idA && cuenta(reColis.idProceso) === 1;
+    const sondaOk = r7 === false && cuenta(idA) === 1 && mismo() && lista[0].origen.dealId === "OP-15BB";
 
-    // Se retira lo del caso —las dos solicitudes y el señuelo— y se restaura la secuencia. La auditoría no.
-    quitar(idA); if (reColis) quitar(reColis.idProceso); quitar(ID_SENUELO); SOLIC_SEQ = seq0;
+    // Se retira lo del caso —la solicitud y el señuelo— y se restaura la secuencia. La auditoría no.
+    quitar(idA); quitar(ID_SENUELO); SOLIC_SEQ = seq0;
     const auditN = AUDIT_LOG.length;
     const restauraOk = lista.length === nBase && cuenta(ID_SENUELO) === 0 && SOLIC_SEQ === seq0;
 
-    ok("126 la solicitud inyectada al cerrar la oferta cruza de pestaña: se incorpora el registro ya armado, una sola vez por solicitud —y si el id viene tomado, el tubo le asigna uno libre en vez de perderla",
+    ok("126 la solicitud inyectada al cerrar la oferta cruza de pestaña: se incorpora el registro ya armado, una sola vez por idProceso",
        emisorOk && aislOk && recibeOk && idemOk && negOk && sondaOk && restauraOk,
-       `con el señuelo ${ID_SENUELO} delante, el emisor postea SOLICITUDES_LINEA[0] = ${idA} ${emisorOk} · aislada de esta lista ${aislOk} · incorporada tal cual (mismo id y JSON, al frente, SOLIC_SEQ ${seq0}→${SOLIC_SEQ}) y visible para bandeja y wizard (${pre.length} deudores) ${recibeOk} · 2× el mismo registro y un clon con otro contenido ⇒ ${nIdem} entrada ${idemOk} · sin idProceso no escribe ${negOk} · otra operación con el mismo id entra con un id LIBRE (${reColis && reColis.idProcesoOrigen} → ${reColis && reColis.idProceso}) y el original queda intacto ${sondaOk} · lista (${nBase}) y secuencia restauradas ${restauraOk} · AUDIT_LOG ${audit0}→${auditN} (+${audit1 - audit0} por api1Inyeccion, +${auditN - audit1} por el receptor; cadena append-only, no se restaura)`);
+       `con el señuelo ${ID_SENUELO} delante, el emisor postea SOLICITUDES_LINEA[0] = ${idA} ${emisorOk} · aislada de esta lista ${aislOk} · incorporada tal cual (mismo id y JSON, al frente, SOLIC_SEQ ${seq0}→${SOLIC_SEQ}) y visible para bandeja y wizard (${pre.length} deudores) ${recibeOk} · 2× el mismo registro y un clon con otro contenido ⇒ ${nIdem} entrada ${idemOk} · sin idProceso no escribe ${negOk} · otra operación con el mismo id se descarta ${sondaOk} · lista (${nBase}) y secuencia restauradas ${restauraOk} · AUDIT_LOG ${audit0}→${auditN} (+${audit1 - audit0} por api1Inyeccion, +${auditN - audit1} por el receptor; cadena append-only, no se restaura)`);
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════

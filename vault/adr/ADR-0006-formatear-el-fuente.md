@@ -1,6 +1,6 @@
 ---
 type: adr
-title: "ADR-0005 — El fuente se formatea con Prettier, y los gates de contrato se re-anclan sobre texto canónico"
+title: "ADR-0006 — El fuente se formatea con Prettier, y los gates de contrato se re-anclan sobre texto canónico"
 description: "Decisión del usuario (18-09-2026) de formatear pipeline_comercial.jsx entero en un commit propio, con el costo medido de antemano: 59 de 178 tests de contrato, un caso de la suite y dos auditores a re-anclar. Se descartaron formatear sólo lo que se toca y no formatear"
 tags: [adr, fuente, gates, formato, verificacion]
 timestamp: 2026-09-18T20:05:00Z
@@ -8,7 +8,7 @@ estado: aceptada
 reemplaza: null
 ---
 
-# ADR-0005: el fuente se formatea, y los gates se re-anclan sobre texto canónico
+# ADR-0006: el fuente se formatea, y los gates se re-anclan sobre texto canónico
 
 ## Contexto
 

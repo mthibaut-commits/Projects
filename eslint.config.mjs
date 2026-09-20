@@ -1,4 +1,4 @@
-/* Linter del repo. Cierra el cuarteto de gates que quedaba en tres desde el formateo (ADR-0005).
+/* Linter del repo. Cierra el cuarteto de gates que quedaba en tres desde el formateo (ADR-0006).
    NO hay reglas de estilo: de la forma se encarga Prettier, y duplicar esa autoridad es cómo se pelean.
    Cada regla de acá habría cazado un incidente REAL de este proyecto, escrito en el vault o en
    `.claude/rules/code_style.md`. Una regla que no pueda citar su incidente no entra.
@@ -19,8 +19,10 @@ export default [
       parserOptions: { ecmaFeatures: { jsx: true } },
       globals: Object.fromEntries(
         [
-          // El navegador, medido: son los 20 que el fuente usa, ni uno más.
-          "window", "document", "location", "history", "navigator", "localStorage",
+          // El navegador, medido: son los 21 que el fuente usa, ni uno más. `matchMedia` entró el 20-09-2026
+          // con la portada (ADR-0005), que lee `prefers-color-scheme`: la lista dice exactamente qué toca
+          // esta app, así que crece cuando el fuente crece y el linter avisa cuál falta.
+          "window", "document", "location", "history", "navigator", "localStorage", "matchMedia",
           "setTimeout", "clearTimeout", "setInterval", "clearInterval",
           "URL", "URLSearchParams", "Blob", "DOMParser", "TextEncoder", "btoa",
           "ResizeObserver", "HTMLElement", "customElements",

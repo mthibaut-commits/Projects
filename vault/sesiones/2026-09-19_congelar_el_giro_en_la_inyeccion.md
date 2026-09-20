@@ -1,7 +1,7 @@
 ---
 type: sesion
 title: "La asignación de giros se congela en la inyección: GIRO_STATE gana su escritor"
-description: "Consecuencia directa de la regla 37. repoGiro sólo se hidrataba y giroDeal no tenía llamador: la regla «el congelado gana» estaba probada con estado inyectado y no ocurría en ninguna pantalla. Ahora aprobarIntegracion la congela y los dos lectores la consultan por una sola fuente"
+description: "Consecuencia directa de la regla 43. repoGiro sólo se hidrataba y giroDeal no tenía llamador: la regla «el congelado gana» estaba probada con estado inyectado y no ocurría en ninguna pantalla. Ahora aprobarIntegracion la congela y los dos lectores la consultan por una sola fuente"
 tags: [sesion, giro, regla-37, tesoreria]
 timestamp: 2026-09-19T03:30:00Z
 ---

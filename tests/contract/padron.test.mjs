@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════════════════════════════════
-// GATE · EL PADRÓN DE IDENTIDADES (ADR-0007)
+// GATE · EL PADRÓN DE IDENTIDADES (ADR-0009)
 //
 // Desde el 20-09-2026 las identidades del sistema son PARES REALES extraídos del AEC de BICE Factoring,
 // no cadenas inventadas. Este gate vigila las cuatro cosas que hacen que eso siga siendo cierto y no

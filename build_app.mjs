@@ -86,6 +86,12 @@ try {
   // clasifica ninguna factura y el pipeline queda vacio (rescatadas del build original de Cowork).
   const datosJs = leerSiExiste(join(root, "datos_inyectados.js"));
 
+  // Arte de la portada de ingreso (window.ARTE_LOGIN): dos pantallas reales del producto en WebP,
+  // producidas por generar_arte_login.mjs desde Capturas_UI/. Es un activo GENERADO, como los datos
+  // de arriba, y por eso no vive dentro del .jsx. Si falta, la portada cae a su fondo sin paneles:
+  // se degrada, no rompe.
+  const arteJs = leerSiExiste(join(root, "arte_login.js"));
+
   // ---- Dependencias VENDORIZADAS (OWASP A08) ------------------------------------------------
   // Antes React, recharts, lucide y d3-sankey se cargaban desde esm.sh por importmap, SIN integrity.
   // Un import map no permite proteger la cadena completa: la URL de entrada de esm.sh es un shim de
@@ -223,6 +229,7 @@ document.getElementById("root").appendChild(document.createElement("nex-pipeline
   let payload = buildJs + "\n" + vendorJs;
   if (datosJs) payload = payload + "\n" + datosJs;
   if (provJs) payload = payload + "\n" + provJs;
+  if (arteJs) payload = payload + "\n" + arteJs;
   const datosBlock = "</script>\n<script>\n" + payload + "\n</script>\n<script>\n";
 
   // Si falta algun recurso local, cae a CDN online como respaldo.

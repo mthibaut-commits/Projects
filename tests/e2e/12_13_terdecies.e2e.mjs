@@ -61,7 +61,7 @@ export const casos = [
         // aprobada». Simular «Todo lo disponible» puede hacerla excederla, y entonces la fila se va a
         // «Sin línea» y desaparece del tubo filtrado: la app hace exactamente lo que debe, pero este caso
         // se queda sin fila que vigilar y acusa «el tubo no se enteró». Lo destapó el padrón real
-        // (ADR-0007), que cambió qué cliente cae en la fila 0; el acoplamiento existía desde antes y
+        // (ADR-0009), que cambió qué cliente cae en la fila 0; el acoplamiento existía desde antes y
         // sólo no se ejercitaba. Este caso es sobre el INDICADOR de línea en la cabecera y su espejo en
         // el tubo, no sobre el filtro rápido, así que se para en «Todos» y lo restaura al salir.
         const filtroTodos = h.pagina.locator('button[title="Filtrar oportunidades"]', { hasText: /^\s*Todos/ }).first();
@@ -106,7 +106,7 @@ export const casos = [
         await det.waitForFunction(() => /condiciones comerciales/i.test(document.body.innerText || ""), null, { timeout: 30000 });
         await det.waitForFunction(() => !/simulando/i.test(document.body.innerText || ""), null, { timeout: 30000 }).catch(() => {});
         // El tooltip tiene DOS formas según quepa o no la operación —«quedarían M$X» y «excede por M$X»— y
-        // la espera tiene que aceptar las dos: con el padrón real (ADR-0007) esta operación pasó a exceder
+        // la espera tiene que aceptar las dos: con el padrón real (ADR-0009) esta operación pasó a exceder
         // su línea, y esperar sólo la positiva dejaba el caso en timeout sobre un indicador que sí se movió.
         await det.waitForFunction(() => [...document.querySelectorAll('div[title^="Línea aprobada"]')].some((el) => /quedarían|excede por/.test(el.getAttribute("title") || "")), null, { timeout: 15000 })
           .catch(() => { throw new Error("tras simular, la cabecera no muestra «quedarían»/«excede por»: el indicador no se mueve con la simulación"); });

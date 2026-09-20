@@ -31,8 +31,8 @@ import { RAIZ } from "./_comun.mjs";
    tenía escritor (`repoGiro` sólo se hidrataba), así que «la asignación congelada manda sobre el recálculo del día»
    estaba probada por la suite con un estado INYECTADO y no ocurría en ninguna pantalla. Eso YA NO ES CIERTO y la
    pregunta que la nota dejaba abierta —¿congela al aceptar, al firmar?— está contestada: congela en la INYECCIÓN a
-   Tesorería (regla 37). `aprobarIntegracion` escribe `GIRO_STATE` y el congelado se lee en pantalla, pero por
-   `giroResumenDeal` a través de `giroCongelado`, que es la única fuente del «gana el congelado» (caso 146).
+   Tesorería (regla 43). `aprobarIntegracion` escribe `GIRO_STATE` y el congelado se lee en pantalla, pero por
+   `giroResumenDeal` a través de `giroCongelado`, que es la única fuente del «gana el congelado» (caso 148).
    `giroDeal` sigue sin call site, y ahora por otro motivo: devuelve la MISMA forma que `giroResumenDeal` pero su
    rama viva calcula sin el prorrateo por factura, así que no son intercambiables. Lo mantienen vivo los casos 82 y
    146, que fijan la regla sobre la ruta simple. Es candidato a poda de una sesión futura —con sus dos casos
@@ -54,13 +54,20 @@ export const BASE_USESTATE = ["alertF", "channel", "dealTabInicial", "diaModal",
    SALE `lineaDeDeudor`, y no porque se haya acoplado: **nunca fue pura**. Era una función de UNA SOLA LÍNEA
    —`function lineaDeDeudor(rutDeudor) { return lineasDeudor().get(rutDeudor) || null; }`— y el auditor
    extrae el cuerpo a partir de la línea SIGUIENTE a la declaración, así que veía un cuerpo vacío y la
-   declaraba limpia. Al formatear el fuente (ADR-0005) el cuerpo bajó de línea, el auditor lo vio, y con él
+   declaraba limpia. Al formatear el fuente (ADR-0006) el cuerpo bajó de línea, el auditor lo vio, y con él
    la llamada a `lineasDeudor()`, que está memoizada. La línea base cargaba un falso negativo.
    Se revisaron las otras dos de una línea que había en la lista —`difPrecioDoc` y `tramoNota`—: ésas sí son
    puras, el auditor las sigue declarando limpias con el cuerpo a la vista. El punto ciego ya no existe en la
    práctica (el formateador no deja cuerpos de una línea), pero queda escrito por si alguien lo reintroduce. */
+/* 18-09-2026: ENTRAN `reglaNoEjecutable` y `cargoDeAreaNivel`, y la decisión va en el commit. La regla 35
+   se amplió —una regla excepcionable sin nadie que pueda firmarla tampoco se ejecuta—, así que la compuerta
+   necesita el padrón del tenant. Se le pasa por PARÁMETRO y el núcleo que resuelve (área, nivel) se partió
+   de su adaptador: el primer intento llamaba a `rolDeAreaNivel`, que se busca el padrón cuando no se lo
+   dan, y el auditor —que sigue las llamadas— sacó a `evalReglaCli` de esta lista en el acto. Eso es
+   exactamente lo que esta línea base existe para impedir. */
 export const BASE_PURAS = [
-  "evalReglaCli", "deudorBlock", "nivelExigido", "pisoPorMonto", "esReglaDeudor", "verifDecision", "verifEvaluar",
+  "evalReglaCli", "reglaNoEjecutable", "cargoDeAreaNivel",
+  "deudorBlock", "nivelExigido", "pisoPorMonto", "esReglaDeudor", "verifDecision", "verifEvaluar",
   "causasVerif", "claveVeredicto", "facturasDeudorEnDeal", "reemplazoVigente", "validarSimCfg", "parseFormula",
   "evalFormula", "varsDeFormula", "tokenizarFormula", "sowEstado", "calcularOferta", "tasaMinIA", "prorratearOperacion",
   "prorratearConcepto", "difPrecioDoc", "valorPresenteDoc", "plazoEquivalente", "tasaEquivalente", "asignarGiros",

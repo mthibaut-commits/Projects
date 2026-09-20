@@ -42,7 +42,7 @@ alguna vez se congela la asignación de giros, se congela ahí. Hoy `giroDeal` s
 Era lo último que le faltaba al cuarteto de gates del bootstrap. El criterio para elegir reglas fue
 estrecho a propósito: **cada una cita un incidente REAL de este repo**, escrito en el vault o en
 `code_style.md`. Una regla que no pueda citar su incidente no entra. Y **ninguna regla de estilo**: de la
-forma se encarga Prettier (ADR-0005), y duplicar esa autoridad es cómo las dos herramientas se pelean.
+forma se encarga Prettier (ADR-0006), y duplicar esa autoridad es cómo las dos herramientas se pelean.
 
 La medición, que es lo que hizo barata la decisión:
 
