@@ -415,7 +415,20 @@ perdida, el camino es una operación nueva.
 
 ### 5.3 Qué libera el giro
 
-Firmar es del **cliente**; girar es de la casa, y sólo después de que sus tres controles pasen.
+Firmar es del **cliente**; girar es de la casa, y sólo después de que pasen sus **tres controles**.
+Cada uno tiene su código, mira una cosa distinta y bloquea en un punto distinto del camino:
+
+| Control | Qué exige | Quién lo levanta | Dónde bloquea |
+|---|---|---|---|
+| **OTG-02** · no avanza con excepciones pendientes | ninguna excepción sin decidir ni rechazo re-evaluable sin regularizar | los apoderados, visando (§4.7) | la operación no sale de «Otorgamiento / Verificación» |
+| **VER-01** · no cursa con verificación pendiente | todas las facturas de la operación con su verificación telefónica completa | el equipo de verificación, llamando al deudor | la operación no sale de «Otorgamiento / Verificación» |
+| **GIR-02** · el paquete girado es el que se autorizó | que la **huella** de lo que se va a inyectar al core calce con la de lo que el cliente firmó | nadie: se repara solo cuando el paquete vuelve a ser el firmado, o se vuelve a firmar | la aprobación de la integración al core, el último punto antes de que salga el dinero |
+
+Los tres se comprueban **en el servidor** en producción: la pantalla que esconde un botón no es el
+control. Un cuarto, **GIR-01**, exige que la operación haya pasado por Cesión —el giro se emite contra
+la cesión confirmada, no contra la etapa que informa el navegador—, pero no es un pendiente que alguien
+tenga que resolver: es consecuencia de haber recorrido el camino.
+
 Cuando el cliente firma, la operación va a:
 
 | Destino | Cuándo | Motivo que se anota |
@@ -427,8 +440,9 @@ Es **una** etapa y no dos porque el ejecutivo tiene un solo pendiente: que la ca
 
 Desde «Otorgamiento / Verificación», la operación sale sola cuando se cumplen **las cuatro** cosas a
 la vez: no tiene bloqueo firme, el cliente mantiene su aprobación formal (reabrir la revoca), **todas**
-sus excepciones están aprobadas y no queda verificación pendiente. Ahí pasa a **Pendiente Integración
-· esperando a Operaciones**: deja de ser una oportunidad del tubo y aparece en **Operaciones**.
+sus excepciones están aprobadas (OTG-02) y no queda verificación pendiente (VER-01). Ahí pasa a
+**Pendiente Integración · esperando a Operaciones**: deja de ser una oportunidad del tubo y aparece en
+**Operaciones**.
 
 **Pendiente de Giro.** Un apoderado de **Operaciones N3** aprueba la **integración al core** desde el
 detalle. La acción vuelve a comprobar dos cosas antes de escribir, porque el botón no es el control:
