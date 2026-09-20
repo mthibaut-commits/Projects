@@ -426,14 +426,17 @@ explícitamente esta operación** y que exista el comprobante.
 | **LIN-01** · no se gira lo que no tiene cupo | que **cada factura** esté cubierta por una **línea aprobada y asignada**. La que no cabe no se descarta: sale marcada para el **comité**, y la solicitud se genera sola al cerrar la oferta | el **comité de crédito**, aprobando o ampliando la línea (vive en el sistema de gestión de líneas, no en NEX) | al armar y al cerrar la oferta, y otra vez en la aprobación de Operaciones: una factura sin cupo no se puede imputar a nada en el core |
 | **OTG-02** · no avanza con excepciones pendientes | ninguna excepción sin decidir ni rechazo re-evaluable sin regularizar | los apoderados, visando (§4.7) | la operación no sale de «Otorgamiento / Verificación» |
 | **VER-01** · no cursa con verificación pendiente | todas las facturas de la operación con su verificación telefónica completa | el equipo de verificación, llamando al deudor | la operación no sale de «Otorgamiento / Verificación» |
-| **La aprobación de Operaciones** · alguien responde por lo que entra al core | que un apoderado de **Operaciones N3** revise la operación y **apruebe la integración al core**. El botón **no se habilita** mientras falte cualquiera de los otros cuatro: la firma se da sobre una operación que ya está en regla | el **Jefe de Operaciones** (o quien tenga Operaciones N3 o superior), desde el detalle | el paso de «Pendiente Integración» a «Pendiente de Giro». Sin esa firma la operación no llega a Tesorería |
 | **O05** · el cliente autorizó explícitamente la operación | que **conste la autorización del cliente sobre este paquete**, con su comprobante: la firma en el portal si la oferta se publicó por correo, o el **contrato de cesión firmado en papel**, adjunto y visado, si se publicó físicamente. Es un **criterio del catálogo** (Operaciones N3), así que se gestiona como cualquier excepción y **OTG-02 lo cubre**: mientras no conste, hay una excepción pendiente | el **cliente**, firmando; en la vía física, el ejecutivo adjuntando el contrato y **Operaciones** visándolo (§6.1) | la operación no sale de «Otorgamiento / Verificación»: sin constancia de que el cliente autorizó, no hay nada que girar |
 | **GIR-02** · el paquete girado es el que se autorizó | que la **huella** de lo que se va a inyectar al core calce con la de **esa misma autorización**. O05 comprueba que la autorización EXISTA; GIR-02, que siga describiendo lo que se va a girar | nadie: se repara solo cuando el paquete vuelve a ser el autorizado, o el cliente vuelve a autorizarlo | dentro de esa misma aprobación, antes de escribirla: es el último punto en que la comparación sirve |
+| **La aprobación de Operaciones** · alguien responde por lo que entra al core | que un apoderado de **Operaciones N3** revise la operación y **apruebe la integración al core**. El botón **no se habilita** mientras falte cualquiera de los otros cuatro: la firma se da sobre una operación que ya está en regla | el **Jefe de Operaciones** (o quien tenga Operaciones N3 o superior), desde el detalle | el paso de «Pendiente Integración» a «Pendiente de Giro». Sin esa firma la operación no llega a Tesorería |
 
-**Los tres primeros se levantan trabajando**; el cuarto es una **decisión de una persona** y por eso
-lleva su atribución (§2.2) y queda en la bitácora con nombre y hora; el quinto no se levanta, se
-cumple. Todos se comprueban **en el servidor** en producción: la pantalla que esconde un botón no es el
-control. Hay además un **GIR-01**, que exige que la operación haya pasado por Cesión —el giro se emite
+**La tabla va en el orden en que se cumplen.** Los cuatro primeros se levantan trabajando —el comité
+aprobando la línea, los apoderados visando, la verificación llamando, el cliente firmando—; **GIR-02**
+no se levanta, se cumple solo cuando el paquete sigue siendo el autorizado; y la **firma de
+Operaciones** va al final porque es lo último y porque se da **sobre una operación que ya está en
+regla**: es una **decisión de una persona**, con su atribución (§2.2) y su registro en la bitácora con
+nombre y hora, no una confirmación de trámite. Todos se comprueban **en el servidor** en producción: la
+pantalla que esconde un botón no es el control. Hay además un **GIR-01**, que exige que la operación haya pasado por Cesión —el giro se emite
 contra la cesión confirmada, no contra la etapa que informa el navegador—, pero no es un pendiente que
 alguien resuelva: es consecuencia de haber recorrido el camino.
 

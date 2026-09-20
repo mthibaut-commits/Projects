@@ -41,6 +41,9 @@ feature: null
   cubre**: mientras no conste, hay una excepción pendiente. El §6.1 se retituló «El cliente autoriza
   explícitamente la operación» y abre con esa frase. GIR-02 quedó dicho como lo que es: comprueba que
   **esa misma autorización** siga describiendo el paquete.
+- **La tabla va en el orden en que se cumplen** (20-09, cierre del usuario): la firma de Operaciones
+  pasa a ser la **última fila**, después de GIR-02. Es lo último que ocurre y se da sobre una operación
+  que ya está en regla, así que leerla en medio de los automáticos confundía el orden del proceso.
 - Verificación: prettier OK, `tsc` 0 TS1, 0 duplicados, build 41,3 MB, **245/245 gates**, **144/144 PASA**,
   y la compuerta comprobada **en Chromium sobre el HTML construido** —0 errores de página, los cuatro
   códigos con su texto—, que es lo que la suite no monta. La capa e2e (29 casos) seguía corriendo al
