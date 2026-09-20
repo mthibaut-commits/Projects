@@ -3624,8 +3624,59 @@ function lineaIdxPorRut() {
 // RE-EVALUACIÓN una vez constituida la línea, y re-evaluar contra una cartera que no se enteró de la
 // aprobación devuelve siempre el mismo hallazgo. El visado N5 queda como salida forzada, para cursar
 // antes de que la línea exista, no como el camino normal.
+//
+// SON DOS NIVELES Y HAY QUE ESCRIBIR LOS DOS. Hasta el 20-09-2026 esto sólo tocaba el cupo del
+// CLIENTE y DESCARTABA `sol.detalle` entero —el deudor, el monto y el tipo que el comité aprobó línea
+// a línea—, porque las líneas por par no vivían en ninguna parte: se re-sorteaban en cada lectura.
+// Consecuencia: al deudor que fue al comité justamente por no tener LF2/LF3 se le aprobaba una
+// puntual y la asignación siguiente lo mandaba igual a la línea de otros deudores, como si nada
+// hubiera pasado. Con la estructura como activo (A23) el detalle tiene dónde ir: cada línea aprobada
+// se registra y `asignarLineas` ve al par con línea propia, que es lo que el comité decidió.
+// Las líneas POR PAR que el comité aprobó, del detalle de la solicitud al repositorio que se
+// superpone al activo. Dos casos, los dos que el negocio pide: al par que YA tiene línea se le
+// AUMENTA el monto; al que no tiene, se le CREA una. El tipo lo eligió el ejecutivo en el paso 4 del
+// wizard: «puntual» es una LF3 —un solo uso, tallada para esta operación— y «normal» una LF2.
+function constituirLineasDeDetalle(sol) {
+  const rut = sol && sol.rut;
+  const idProceso = (sol && sol.idProceso) || "";
+  const det = (sol && sol.detalle) || [];
+  const aprobadaCliente = mmRound((sol && (sol.propFactoring || sol.totalPropuesto)) || 0);
+  if (!rut || !idProceso) return 0;
+  if (repoLineaComite.all()[idProceso]) return 0; // ya constituida: no se aprueba dos veces
+  const lineas = [];
+  for (const d of det) {
+    const monto = mmRound(d && d.monto);
+    // Sin RUT del deudor no hay par que reconocer: el nombre no identifica una relación en el sistema
+    // de líneas, y dos razones sociales iguales con RUT distinto son dos deudores.
+    if (!d || !d.rutDeudor || !(monto > 0)) continue;
+    lineas.push({
+      tipo: d.tipoLinea === "puntual" ? "LF3" : "LF2",
+      rutDeudor: d.rutDeudor,
+      nombreDeudor: d.deudor || "",
+      monto,
+    });
+  }
+  // Una solicitud sin detalle aprovechable todavía mueve el TECHO del cliente, así que se registra
+  // igual: si no, el nivel 1 se quedaría leyendo la foto vieja y bloquearía lo recién aprobado.
+  if (!lineas.length && !(aprobadaCliente > 0)) return 0;
+  repoLineaComite.set(idProceso, {
+    rut,
+    ts: nowStamp(),
+    por: (sol && sol.ejecutivo) || "—",
+    // El techo del CLIENTE que el comité aprobó junto con el detalle. Va acá y no se deduce sumando
+    // las líneas: el nivel 1 es una decisión propia, y si quedara bajo la suma de los niveles 2
+    // bloquearía justo lo que el comité acaba de autorizar.
+    aprobadaCliente,
+    lineas,
+  });
+  invalidarCupo(); // el índice está memoizado: sin esto la línea nueva no la ve el motor
+  return lineas.length;
+}
 function constituirLinea(sol) {
   const rut = sol && sol.rut;
+  // EL DETALLE PRIMERO, porque vale aunque el total no cambie: una solicitud puede repartir el mismo
+  // cupo de otra manera entre los deudores sin mover el techo del cliente.
+  constituirLineasDeDetalle(sol);
   // La solicitud viaja en PESOS, como todo el sistema: `toFixed(1)` era un resto de cuando el wizard
   // capturaba millones y dejaba una línea con décimas de peso.
   const aprobada = mmRound((sol && (sol.propFactoring || sol.totalPropuesto)) || 0);
@@ -23728,6 +23779,14 @@ const repoGiro = crearRepo("giro_asignacion");
 // las dos. Guarda sólo lo que `mismaSolicitudComite` compara (el rut y el detalle) más el `idProceso`
 // que el log necesita nombrar; el registro completo sigue siendo del sistema externo. Regla 33.
 const repoSolicitudComite = crearRepo("solicitud_comite");
+// LAS LÍNEAS QUE EL COMITÉ CONSTITUYÓ EN ESTA DEMO, por `idProceso`. El activo A23 es la foto que
+// entregó el sistema de gestión de líneas; cuando el comité aprueba una solicitud, ese sistema
+// registra la línea nueva y la foto siguiente ya la trae. Acá no se puede esperar a la entrega
+// siguiente —la demo dura una sesión—, así que la línea aprobada vive en este repositorio y se
+// SUPERPONE al activo al leerlo. Lo que NO se hace es mutar `window.LINEA_CUPO`: sería fingir que el
+// batch del sistema externo dice algo que no dice, y la próxima regeneración lo desmentiría.
+// Forma: { [idProceso]: { rut, ts, por, lineas: [{ tipo, rutDeudor, nombreDeudor, monto }] } }.
+const repoLineaComite = crearRepo("linea_comite");
 let GIRO_STATE = repoGiro.all(); // { [dealId]: la salida de `asignarGiros` (tipos, porTipo, porDeudor, filas,
 // asignado, montoGirar, cuadra, descuadre, motivo) + { ts, por } } — la asignación CONGELADA en la inyección a
 // Tesorería. La escribe `aprobarIntegracion` (regla 43) y la lee `giroCongelado`; antes del 19-09-2026 sólo se
@@ -33235,7 +33294,7 @@ function CfgOperacion({ cfgOper, setCfgOper }) {
         </CfgCampo>
         <CfgCampo
           l="Línea aprobada mínima"
-          hint="Monto mínimo con que se constituye una línea. La PUNTUAL (LF3) queda exenta: es un cupo a medida de una operación. Una línea bajo el mínimo no financia ninguna factura y sólo produce rechazos."
+          hint="Monto mínimo con que se constituye una línea. La PUNTUAL (LF3) queda exenta: es un cupo a medida de una operación. Una línea bajo el mínimo no financia ninguna factura y sólo produce rechazos. DECLARATIVO: quien lo aplica al dimensionar es el sistema de gestión de líneas, y el cambio se ve en su entrega siguiente."
         >
           <div className="flex items-center gap-2">
             <input {...num("lineaMinima", 0, 200000000, 1000000)} />
@@ -33244,7 +33303,10 @@ function CfgOperacion({ cfgOper, setCfgOper }) {
             </span>
           </div>
         </CfgCampo>
-        <CfgCampo l="Otros deudores · límite" hint="% máximo de la línea asignable al grupo «otros deudores».">
+        <CfgCampo
+          l="Otros deudores · límite"
+          hint="% máximo de la línea asignable al grupo «otros deudores». DECLARATIVO: quien lo aplica al dimensionar es el sistema de gestión de líneas, y el cambio se ve en su entrega siguiente."
+        >
           <div className="flex items-center gap-2">
             <input {...num("otrosDeudoresPct", 0, 100)} />
             <span className="t10" style={{ color: C.faint }}>
@@ -39685,62 +39747,24 @@ const LINEAS_DATA = (() => {
 //      consumen TODOS los clientes que le ceden facturas, y por eso su ampliación afecta carteras
 //      que el ejecutivo no ve.
 // La LF1 es EXCLUYENTE: se elimina cuando el comité asigna LF2/LF3/LF4. Un cliente está siempre en
-// uno de dos estados, nunca en ambos:
+// uno de tres estados, nunca en dos:
 //   estado A · enrolado sin comité → sólo LF1 $30.000.000, deudores prime, un solo uso, se consume completa
 //   estado B · con comité         → LF2 + LF3 + LF4, sin LF1
+//   estado S · con comité y todas sus líneas suspendidas → sin cupo. No es un cliente nuevo: darle la
+//              LF1 rodearía una decisión de riesgo. Lo utilizado sigue vigente.
+//
+// LOS TRES NIVELES SON UN INSUMO, NO UN PRODUCTO (20-09-2026). Quién tiene línea con quién, de cuánto
+// y de qué clase lo decide el SISTEMA DE GESTIÓN DE LÍNEAS y llega por el activo A23 —`LINEA_CUPO`
+// (niveles 1 y 2) y `LINEA_DEUDOR` (nivel 3)—; acá sólo se indexa. Hasta esta fecha la estructura se
+// fabricaba acá adentro a partir del A7/A8, que es lo que el levantamiento prohíbe en una línea: «A7 y
+// A16 nunca alimentan el motor de líneas; A23 nunca alimenta la vista Líneas». El dimensionamiento
+// vive ahora en `GeneradorDatos/datasets/lineas_par.js`, que es la app externa: `TRAMO_LINEA`,
+// `LF1_PESOS`, el piso por línea y el % de otros deudores están declarados allá.
 // ============================================================
 // Montos en PESOS enteros. El peso chileno no tiene decimales, asi que redondear al peso no pierde
 // nada y ademas mata el ruido de punto flotante, que sin esto rompe los invariantes por 1e-13.
 // Antes esto redondeaba a 0,1 MM —o sea a $100.000— y cada asignacion se comia hasta $99.999.
 const mmRound = (n) => Math.round(n);
-const TRAMO_LINEA = 5e6; // las lineas se tallan en tramos de $5.000.000
-// MONTO MÍNIMO de una línea aprobada (política del tenant, `lineaMinima`). La **PUNTUAL (LF3) está
-// exenta**: es un cupo a medida de UNA operación, así que su tamaño lo fija esa operación.
-const lineaMin = () => Math.max(0, pol("lineaMinima", 10e6));
-
-// REPARTE `total` entre `pesos` con un PISO por parte y suma EXACTA.
-//
-// La trampa que resuelve: **un piso por línea significa MENOS líneas, no líneas más grandes.** El
-// presupuesto del cliente es el que es, así que repartirlo entre más de `total/piso` partes es
-// imposible — dar menos del piso lo violaría, y dar el piso a todas se pasaría del tope del cliente,
-// que es justamente lo que el nivel 1 controla. Así que primero se decide CUÁNTAS partes caben y
-// después se reparte entre ésas; las que sobran quedan en 0 y su deudor pasa a financiarse por el
-// comodín, que es exactamente para lo que existe.
-//
-// Se conserva el orden de `pesos` en la salida (un 0 marca «no alcanzó»), se talla en `tramo` y el
-// residuo lo absorbe la parte MAYOR, que siempre puede hacerlo sin cruzar el piso — mismo criterio
-// que el prorrateo por factura.
-function repartirConPiso(total, pesos, piso, tramo) {
-  const n0 = pesos.length;
-  const out = new Array(n0).fill(0);
-  if (!(total > 0) || !n0) return out;
-  const paso = Math.max(1, tramo || 1);
-  const min = Math.max(0, piso);
-  // Cuántas caben. Con piso 0 caben todas.
-  const cabenN = min > 0 ? Math.min(n0, Math.floor(total / min)) : n0;
-  if (cabenN <= 0) return out; // ni una línea cabe: todo al comodín
-  // Se quedan las de MAYOR peso: si hay que dejar deudores sin línea propia, que sean los que menos
-  // volumen aportan.
-  const idx = pesos
-    .map((w, i) => ({ i, w: +w || 0 }))
-    .sort((a, b) => b.w - a.w)
-    .slice(0, cabenN);
-  const sumaW = idx.reduce((a, x) => a + x.w, 0) || idx.length;
-  let repartido = 0;
-  idx.forEach((x, k) => {
-    const ultimo = k === idx.length - 1;
-    // El último toma el remanente exacto; los demás su proporción tallada y acotada por abajo al
-    // piso y por arriba a lo que queda dejando piso para los que faltan.
-    let v = ultimo ? total - repartido : Math.max(min, Math.round((total * (x.w / sumaW)) / paso) * paso);
-    const restanN = idx.length - k - 1;
-    v = Math.min(v, total - repartido - restanN * min);
-    v = Math.max(min, v);
-    out[x.i] = v;
-    repartido += v;
-  });
-  return out;
-}
-const LF1_PESOS = 30e6; // linea inicial al enrolar un cliente: $30.000.000
 
 // Índice (RUTEmisor → [{ rut, nombre, vol }]) de los deudores a los que cada cliente factura,
 // ordenados por volumen facturado. Es el insumo del dimensionamiento: el cupo del par se aprueba
@@ -39770,354 +39794,141 @@ function paresPorEmisor() {
   return _dtePares;
 }
 
-// LÍNEA DE OTROS DEUDORES del cliente (LF4), POR CATEGORÍA DE DEUDOR. Se DIMENSIONA con la regla del
-// spec —10% de la suma de cupos— y no con el monto de window.LINEA_DISPONIBLE. El motivo original era
-// que ese activo traía 15–40MM por fila y dejaba a veinte deudores de la cola compitiendo por 15MM;
-// desde que el maestro se genera del volumen real de facturas ya no es así (p50 560MM por fila), pero
-// la regla del 10% se mantiene porque es del spec, no un parche. De LINEA_DISPONIBLE se conservan
-// que sí aportan y no se pueden derivar: el corte por categoría de deudor (la misma llave que usa
-// `tipoLineaDeDeudor`) y el estado «Suspendida». Una línea suspendida conserva su exposición vigente
-// —la suspensión no libera lo cedido— pero NO admite operaciones nuevas.
-let _lf4Idx = null;
-function lf4MetaPorCliente(rutCli) {
-  if (!_lf4Idx) {
-    _lf4Idx = new Map();
-    const arr = typeof window !== "undefined" && Array.isArray(window.LINEA_DISPONIBLE) ? window.LINEA_DISPONIBLE : [];
-    for (const r of arr) {
-      let g = _lf4Idx.get(r.RUTCliente);
-      if (!g) {
-        g = [];
-        _lf4Idx.set(r.RUTCliente, g);
-      }
-      g.push({ categoria: r.TipoLinea, peso: r.MontoAprobado || 0, suspendida: r.Estado === "Suspendida", uso: +r.MontoUtilizado || 0 });
+// ESTADO DE LÍNEAS DE UN CLIENTE — LECTURA del activo A23 (`LINEA_CUPO`), memoizada por RUT.
+//
+// Devuelve el estado COMPLETO —todas sus líneas, no sólo las de la oferta abierta— porque los
+// invariantes se sostienen sobre el total: si el uso se repartiera sólo entre los pares consultados,
+// la suma dejaría de cuadrar con el menú Líneas.
+//
+// LO QUE ESTA FUNCIÓN YA NO HACE. Hasta el 20-09-2026 dimensionaba: sorteaba con
+// `pcRng(hashStr("lpar"+rut))` qué deudores llevaban línea propia (los que concentran el 85% del
+// volumen, entre 6 y 12), cuánto recibía cada uno, cuáles llevaban además una puntual y si estaba
+// consumida. Eran 3.170 objetos de línea que ningún activo declaraba, derivados del A7/A8 —el mismo
+// que el levantamiento prohíbe conectar al motor—. Hoy la estructura llega hecha y acá sólo se
+// agrupa: el índice se construye UNA vez y cada cliente queda con su objeto estable, que es lo que
+// deja a `asignarLineas` ser puro (caso 122 comprueba la identidad del objeto entre dos llamadas).
+// EL TESTIGO VA APARTE DEL MAPA, a propósito: «índice vacío» e «índice sin construir» son estados
+// distintos y confundirlos sale caro. Con el mapa como única señal, un `_cacheCli.clear()` de afuera
+// deja un Map vacío y VERDADERO, así que `idxCupo` lo da por bueno, todo cliente queda sin líneas y
+// pasa a leerse como estado A — sin ningún error, sólo una demo donde nadie tiene cupo. Se invalida
+// por `invalidarCupo()`, que es el único punto que sabe qué hay que soltar.
+let _cacheCli = new Map();
+let _cupoListo = false;
+function idxCupo() {
+  if (_cupoListo) return _cacheCli;
+  _cupoListo = true;
+  _cacheCli = new Map();
+  const arr = typeof window !== "undefined" && Array.isArray(window.LINEA_CUPO) ? window.LINEA_CUPO : [];
+  for (const r of arr) {
+    if (!r || !r.RUTCliente) continue;
+    let st = _cacheCli.get(r.RUTCliente);
+    if (!st) {
+      st = { estado: r.EstadoCliente || "A", asignadaCliente: 0, usoCliente: 0, lineas: [] };
+      _cacheCli.set(r.RUTCliente, st);
     }
-  }
-  return (
-    _lf4Idx.get(rutCli) || [
-      { categoria: "Lista Blanca", peso: 1, suspendida: false },
-      { categoria: "Deudores Autorizados", peso: 1, suspendida: false },
-    ]
-  );
-}
-// ¿El maestro A7/A8 conoce a este cliente? Distinto de «tiene cupo»: LINEAS_DATA deja fuera al que
-// suma 0 aprobado —no es una línea vigente y no va en la cartera— y sin esta pregunta ese cliente
-// sería indistinguible de uno sin comité, que es justo lo que le daría una LF1 nueva.
-function clienteEnMaestroLineas(rutCli) {
-  lf4MetaPorCliente(rutCli); // fuerza el índice
-  return !!(_lf4Idx && _lf4Idx.has(rutCli));
-}
-
-// Estado de líneas de un cliente, memoizado por RUT. El cálculo es COMPLETO —todas sus líneas, no
-// sólo las de la oferta abierta— porque los invariantes se sostienen sobre el total: si el uso se
-// repartiera sólo entre los pares consultados, la suma dejaría de cuadrar con el menú Líneas.
-const _cacheCli = new Map();
-// El cache se valida por FIRMA de lo que el tenant configura y este cálculo usa, no por un invalidador
-// que haya que acordarse de llamar desde el mantenedor. Cambiar `otrosDeudoresPct` y seguir leyendo un
-// dimensionamiento hecho con el valor anterior es la misma trampa que tuvo el padrón de aprobadores:
-// la perilla se mueve, la pantalla no, y nadie sabe si el motor la aplicó.
-let _cacheCliFirma = null;
-function lineasDeCliente(rutCli) {
-  // La firma lleva TODOS los umbrales que dimensionan: mover uno en el mantenedor y quedarse con el
-  // dimensionamiento anterior servido es el defecto que la regla 9-bis documenta.
-  const firma = String(pol("otrosDeudoresPct", 10)) + "|" + String(pol("lineaMinima", 10e6));
-  if (firma !== _cacheCliFirma) {
-    _cacheCli.clear();
-    _cacheCliFirma = firma;
-  }
-  if (_cacheCli.has(rutCli)) return _cacheCli.get(rutCli);
-  const idx = lineaIdxPorRut();
-  const fila = idx ? idx.get(rutCli) || null : null;
-  const deudores = paresPorEmisor().get(rutCli) || [];
-  let res;
-
-  if (!fila && clienteEnMaestroLineas(rutCli)) {
-    // ESTADO S · el comité SÍ le constituyó líneas y hoy están todas suspendidas. No es un cliente
-    // nuevo: darle la LF1 rodearía una decisión de riesgo deliberada. Sin cupo de ninguna clase, y
-    // lo que corresponde pedir es reactivar, no crear —por eso su propio motivo—.
-    // Lo utilizado sigue vigente: suspender una línea no libera lo ya cedido.
-    const usado = mmRound(lf4MetaPorCliente(rutCli).reduce((x, m) => x + (m.uso || 0), 0));
-    res = { estado: "S", asignadaCliente: 0, usoCliente: usado, cola: deudores, lineas: [] };
-    _cacheCli.set(rutCli, res);
-    return res;
-  }
-
-  if (!fila) {
-    // ESTADO A · enrolado, sin comité. Sólo LF1, excluyente con LF2/LF3/LF4.
-    res = {
-      estado: "A",
-      asignadaCliente: LF1_PESOS,
-      usoCliente: 0,
-      cola: deudores,
-      lineas: [
-        { id: "LF1-" + rutCli, tipo: "LF1", granularidad: "comodin", rutDeudor: null, aprobado: LF1_PESOS, vigente: 0, soloPrime: true, unSoloUso: true },
-      ],
+    // La fila CLIENTE es el nivel 1: el cupo que el comité le asignó y lo que lleva utilizado. Existe
+    // siempre, también para el cliente en estado S que no tiene ninguna línea — sin ella ese cliente
+    // sería indistinguible de uno que nunca pasó por comité, que es justo lo que le daría una LF1.
+    if (r.TipoLinea === "CLIENTE") {
+      st.estado = r.EstadoCliente || st.estado;
+      st.asignadaCliente = +r.MontoAprobado || 0;
+      st.usoCliente = +r.MontoUtilizado || 0;
+      continue;
+    }
+    const ln = {
+      id: r.IdLinea,
+      tipo: r.TipoLinea,
+      granularidad: +r.Nivel === 2 ? "par" : "comodin",
+      rutDeudor: r.RUTDeudor || null,
+      aprobado: +r.MontoAprobado || 0,
+      vigente: +r.MontoUtilizado || 0,
     };
-    _cacheCli.set(rutCli, res);
-    return res;
+    if (r.RazonSocialDeudor) ln.nombreDeudor = r.RazonSocialDeudor;
+    if (r.Categoria) ln.categoria = r.Categoria;
+    if (r.Estado === "Suspendida") ln.suspendida = true;
+    if (r.UnSoloUso) ln.unSoloUso = true;
+    if (r.SoloPrime) ln.soloPrime = true;
+    if (r.Consumida) ln.quemada = true;
+    st.lineas.push(ln);
   }
-
-  // ESTADO B · con comité.
-  const rnd = pcRng(hashStr("lpar" + rutCli));
-
-  // Presupuesto del cliente: la línea asignada MENOS su holgura (entre 8% y 22%). De ahí, la línea
-  // comodín se lleva un % de la suma de cupos de par y el resto va a las líneas de par. Ese % es
-  // política del TENANT (`otrosDeudoresPct`, 10 por defecto): cuánta exposición está dispuesto cada
-  // factoring a dejar en el pozo genérico, que financia a deudores sin línea propia.
-  let objetivoTotal = Math.max(Math.round(fila.aprobada * (0.78 + rnd() * 0.14)), Math.ceil(fila.uso / 0.88));
-  objetivoTotal = Math.min(objetivoTotal, fila.aprobada);
-  // Se pide «% sobre los cupos de PAR», así que sobre el total es pct/(100+pct): con 10 da 0,0909.
-  const pctOtros = Math.max(0, Math.min(100, pol("otrosDeudoresPct", 10)));
-  // EL PISO NO CREA CAPACIDAD. Se acota a lo que el comité aprobó: un cliente con casi todas sus
-  // líneas suspendidas puede quedar con un presupuesto efectivo bajo el mínimo, y darle igual una
-  // línea de 10MM sería aprobarle cupo que nadie aprobó — el tope del cliente es una decisión de
-  // riesgo y el mínimo es sólo una regla de cómo se REPARTE. Ahí su única línea vale lo que le queda,
-  // por debajo del mínimo, y eso es un dato que el maestro de líneas ya dice.
-  const pisoLinea = Math.min(lineaMin(), objetivoTotal);
-  const apComodinBase = Math.max(pisoLinea, Math.round(objetivoTotal * (pctOtros / (100 + pctOtros))));
-  const objetivoPares = Math.max(0, objetivoTotal - apComodinBase);
-
-  // La cabeza de la distribución tiene línea propia; la cola la financia la de otros deudores. Se toman los
-  // deudores que concentran el 85% del volumen del cliente: dejar sólo 4–11 con línea mandaba a
-  // veinte deudores a la de otros deudores y convertía casi toda la oferta en solicitud al comité.
-  // deudores que concentran el 85% del volumen, entre 6 y 12. El tope de 12 importa: repartir el
-  // presupuesto entre veinte pares dejaba líneas de 5MM contra facturas de 8MM de mediana, y cada
-  // factura quedaba sobre su propio cupo. Fragmentar la línea la vuelve inútil.
-  const volTotalCli = deudores.reduce((s, d) => s + d.vol, 0) || 1;
-  let acum = 0,
-    nPar85 = 0;
-  for (const d of deudores) {
-    nPar85++;
-    acum += d.vol;
-    if (acum / volTotalCli >= 0.85) break;
-  }
-  // Deudores con línea propia: los que concentran el 85% del volumen, entre 6 y 12. El tope de 12
-  // importa —repartir el presupuesto entre veinte pares dejaba líneas de 5MM contra facturas de 8MM
-  // de mediana— y el piso de 6 también: escalar el número de pares con el tamaño de la línea (~1 por
-  // cada 100MM) se midió PEOR, porque deja a más deudores de la oferta sin línea propia y los manda
-  // sin línea propia. 6–12 dio 84% de ofertas cursables completas contra 80% de la variante escalada.
-  const nPar = Math.max(1, Math.min(deudores.length, Math.max(6, Math.min(12, nPar85))));
-  const cabeza = deudores.slice(0, nPar);
-
-  // Cupo por par: proporcional al volumen, con un PISO proporcional al presupuesto (no 5MM planos —
-  // en un cliente de 1.200MM una línea de 5MM no financia ninguna factura y sólo produce rechazos).
-  // Después se normaliza para que la suma sea exactamente el presupuesto de pares: aplicar el piso
-  // sin normalizar podía pasarse del presupuesto y romper el tope del cliente.
-  // Cupo por par: proporcional al volumen y con el PISO de política (`lineaMinima`, hoy 10MM). El
-  // piso es por LÍNEA, así que **limita cuántos pares tienen línea propia, no cuánto recibe cada
-  // uno**: si el presupuesto no alcanza para dar el mínimo a los 12 de la cabeza, los de menor
-  // volumen quedan en 0 y su deudor pasa a financiarse por el comodín — que es para lo que existe.
-  const cupos = repartirConPiso(
-    objetivoPares,
-    cabeza.map((d) => d.vol),
-    pisoLinea,
-    TRAMO_LINEA,
-  );
-  // Lo que el piso dejó sin repartir NO se pierde: vuelve al comodín. Descontarlo del cliente sería
-  // quitarle capacidad que el comité sí le aprobó, por una regla de tamaño mínimo de línea.
-  const sobranteAlComodin = Math.max(0, objetivoPares - cupos.reduce((s, x) => s + x, 0));
-
-  // ── EL COMODÍN, ya con el sobrante de los pares ───────────────────────────────────────────────
-  // Va DESPUÉS del reparto de pares porque depende de él: lo que el piso dejó sin poder ser una línea
-  // propia se financia por acá. Su monto sale de la regla y el corte por categoría del dato.
-  // El reparto entre categorías respeta el MISMO piso —una LF4 bajo el mínimo tampoco financia nada—,
-  // así que si sólo cabe una, esa categoría se queda con todo y la otra sin comodín propio.
-  const apComodin = apComodinBase + sobranteAlComodin;
-  const meta = lf4MetaPorCliente(rutCli);
-  const repComodin = repartirConPiso(
-    apComodin,
-    meta.map((m) => m.peso || 1),
-    pisoLinea,
-    TRAMO_LINEA,
-  );
-  const comodines = meta
-    .map((m, i) => ({
-      id: "LF4-" + rutCli + "-" + (m.categoria === "Lista Blanca" ? "LB" : "DA"),
-      tipo: "LF4",
-      granularidad: "comodin",
-      categoria: m.categoria,
-      rutDeudor: null,
-      suspendida: m.suspendida,
-      aprobado: repComodin[i],
-      vigente: 0,
-    }))
-    .filter((x) => x.aprobado > 0);
-  // Uso repartido en la misma proporción que lo aprobado: la utilización se distribuye sobre toda la
-  // capacidad, no sólo sobre los pares.
-  let usComodin = Math.min(apComodin, mmRound(fila.uso * (apComodin / (objetivoTotal || 1))));
-  {
-    let q = usComodin;
-    for (const p of comodines) {
-      const t2 = Math.min(p.aprobado, mmRound(q));
-      p.vigente = t2;
-      q = mmRound(q - t2);
+  // ── LO QUE EL COMITÉ CONSTITUYÓ EN ESTA SESIÓN, superpuesto a la foto ──────────────────────────
+  // En producción la entrega siguiente del A23 ya la trae; acá la demo dura una sesión, así que se
+  // aplica encima. Es el cierre del bucle: el deudor que fue al comité POR no tener línea propia
+  // vuelve con una, y `asignarLineas` lo ve como par con cascada propia en vez de mandarlo otra vez a
+  // la línea de otros deudores.
+  for (const [idProceso, g] of Object.entries(repoLineaComite.all())) {
+    if (!g || !g.rut || !Array.isArray(g.lineas)) continue;
+    let st = _cacheCli.get(g.rut);
+    if (!st) {
+      st = { estado: "B", asignadaCliente: 0, usoCliente: 0, lineas: [] };
+      _cacheCli.set(g.rut, st);
     }
-    usComodin = mmRound(usComodin - Math.max(0, q));
-  }
-  const necesario = Math.max(0, mmRound(fila.uso - usComodin));
-
-  const lineas = [];
-  cabeza.forEach((d, i) => {
-    const cupo = cupos[i];
-    if (cupo <= 0) return; // no alcanzó para una línea propia: lo cubre el comodín
-    // ~18% de los pares con línea llevan además una PUNTUAL (LF3) tallada sobre su cupo. Una LF3
-    // sólo puede estar intacta o consumida COMPLETA (§3.6): nunca a medias.
-    // La PUNTUAL (LF3) está EXENTA del mínimo: es un cupo a medida de UNA operación, así que su
-    // tamaño lo fija esa operación y no la política. Pero se talla para que **lo que le quede a la
-    // LF2 siga sobre el piso** — si no, partir el cupo en dos dejaría la normal bajo el mínimo por
-    // la puerta de atrás.
-    const techoLF3 = Math.max(0, cupo - pisoLinea);
-    const mLF3 =
-      rnd() < 0.18 && techoLF3 >= TRAMO_LINEA
-        ? Math.min(techoLF3, Math.max(TRAMO_LINEA, Math.round((cupo * (0.2 + rnd() * 0.3)) / TRAMO_LINEA) * TRAMO_LINEA))
-        : 0;
-    if (mLF3 > 0)
-      lineas.push({
-        id: "LF3-" + rutCli + "-" + i,
-        tipo: "LF3",
+    // LA LF1 ES EXCLUYENTE: se elimina cuando el comité asigna líneas por par. Dejarla conviviendo le
+    // daría al cliente un cupo comodín de $30.000.000 que ya nadie le aprobó.
+    if (st.estado === "A") st.lineas = st.lineas.filter((l) => l.tipo !== "LF1");
+    st.estado = "B";
+    if (g.aprobadaCliente > 0) st.asignadaCliente = g.aprobadaCliente;
+    g.lineas.forEach((nueva, i) => {
+      const previa = nueva.tipo === "LF2" ? st.lineas.find((l) => l.tipo === "LF2" && l.rutDeudor === nueva.rutDeudor) : null;
+      // Al par que YA tiene línea normal se le AUMENTA el monto; al que no tiene, se le crea. Una
+      // PUNTUAL es siempre nueva: es un cupo a medida de una operación, no una ampliación.
+      if (previa) {
+        previa.aprobado = mmRound(previa.aprobado + nueva.monto);
+        return;
+      }
+      st.lineas.push({
+        id: nueva.tipo + "-COM-" + idProceso + "-" + i,
+        tipo: nueva.tipo,
         granularidad: "par",
-        rutDeudor: d.rut,
-        nombreDeudor: d.nombre,
-        aprobado: mLF3,
+        rutDeudor: nueva.rutDeudor,
+        nombreDeudor: nueva.nombreDeudor || "",
+        aprobado: nueva.monto,
         vigente: 0,
-        unSoloUso: true,
-        quemada: rnd() < 0.34,
+        ...(nueva.tipo === "LF3" ? { unSoloUso: true } : {}),
+        origenComite: idProceso,
       });
-    lineas.push({
-      id: "LF2-" + rutCli + "-" + i,
-      tipo: "LF2",
-      granularidad: "par",
-      rutDeudor: d.rut,
-      nombreDeudor: d.nombre,
-      aprobado: Math.max(pisoLinea, cupo - mLF3),
-      vigente: 0,
     });
-  });
-
-  // Si la talla de una LF3 deja a las LF2 sin capacidad para sostener el uso vigente, la puntual se
-  // devuelve a su LF2: es preferible a un cliente cuyo uso no cabe en ninguna línea.
-  for (const l3 of lineas.filter((l) => l.tipo === "LF3")) {
-    if (lineas.filter((l) => l.tipo === "LF2").reduce((s, l) => s + l.aprobado, 0) >= necesario) break;
-    const par = lineas.find((l) => l.tipo === "LF2" && l.rutDeudor === l3.rutDeudor);
-    if (!par) continue;
-    par.aprobado = mmRound(par.aprobado + l3.aprobado);
-    l3.descartada = true;
   }
-  for (let i = lineas.length - 1; i >= 0; i--) if (lineas[i].descartada) lineas.splice(i, 1);
-
-  // Uso: primero las LF3 ya quemadas (que van completas por definición) y el resto sobre las LF2,
-  // proporcional a lo aprobado. Cuadra EXACTO con el uso del cliente menos el de las comodín: la
-  // utilización es una medición del mismo cedido-no-pagado, se corte por par o por cliente.
-  let objetivoUso = necesario;
-  const lf2 = lineas.filter((l) => l.tipo === "LF2");
-  const capLF2 = lf2.reduce((s, l) => s + l.aprobado, 0);
-  for (const l of lineas) {
-    if (l.tipo !== "LF3" || !l.quemada) continue;
-    if (objetivoUso - l.aprobado < 0 || objetivoUso - l.aprobado > capLF2) continue;
-    l.vigente = l.aprobado;
-    objetivoUso = mmRound(objetivoUso - l.aprobado);
-  }
-  const apLF2 = capLF2 || 1;
-  let usado = 0;
-  lf2.forEach((l, i) => {
-    const ultimo = i === lf2.length - 1;
-    let v = ultimo ? mmRound(objetivoUso - usado) : mmRound(Math.min(l.aprobado, objetivoUso * (l.aprobado / apLF2)));
-    v = Math.max(0, Math.min(l.aprobado, v));
-    l.vigente = v;
-    usado = mmRound(usado + v);
-  });
-  let resto = mmRound(objetivoUso - usado);
-  for (const l of lf2) {
-    if (resto <= 0) break;
-    const t = Math.min(mmRound(l.aprobado - l.vigente), resto);
-    l.vigente = mmRound(l.vigente + t);
-    resto = mmRound(resto - t);
-  }
-
-  res = {
-    estado: "B",
-    asignadaCliente: fila.aprobada,
-    usoCliente: fila.uso,
-    lineas: lineas.concat(comodines),
-    cola: deudores.slice(nPar),
-    restoUso: resto,
-  };
-  _cacheCli.set(rutCli, res);
-  return res;
+  return _cacheCli;
+}
+// Un RUT que el activo no declara es un cliente que el sistema de líneas no conoce: sin comité y sin
+// LF1 —la LF1 se otorga AL ENROLAR, y enrolar es un acto de ese sistema, no una deducción de acá—.
+const _SIN_LINEAS = { estado: "A", asignadaCliente: 0, usoCliente: 0, lineas: [] };
+function lineasDeCliente(rutCli) {
+  return idxCupo().get(rutCli) || _SIN_LINEAS;
+}
+// El activo se relee cuando el comité constituye una línea nueva (`constituirLinea`): es el único
+// momento en que la estructura cambia dentro de una sesión.
+function invalidarCupo() {
+  _cupoListo = false;
+  _deudorIdx = null;
 }
 
-// Líneas del DEUDOR (nivel 3), indexadas por RUT. Su utilización es la suma de lo que TODOS los
-// clientes le tienen cedido y no pagado: es lo que la convierte en un control de concentración y lo
-// que hace verdadera la columna «a quién afecta» del modal de confirmación.
+// LÍNEA DEL DEUDOR (nivel 3) — LECTURA del activo A23 (`LINEA_DEUDOR`), indexada por RUT.
+//
+// Su utilización es la suma de lo que TODOS los clientes le tienen cedido y no pagado: es lo que la
+// convierte en un control de concentración y lo que hace verdadera la columna «a quién afecta» del
+// modal de confirmación de curse. Por eso la calcula el sistema de gestión de líneas y no NEX: acá se
+// ve una cartera, y la exposición del deudor cruza todas.
+//
+// Antes se construía ENCIMA de `lineasDeCliente` —recorriendo las líneas de cada cliente y atribuyendo
+// el uso de la comodín a los deudores sin línea propia— y sorteaba la holgura de cada deudor. Ese
+// cálculo vive ahora en `GeneradorDatos/datasets/lineas_par.js`.
 let _deudorIdx = null;
-let _deudorIdxFirma = null;
 function lineasDeudor() {
-  // Este índice se construye sobre `lineasDeCliente`, así que depende del mismo umbral: sin validar
-  // por firma, mover `lineaMinima` en el mantenedor dejaba servido el índice anterior y el nivel 3
-  // seguía decidiendo con las líneas viejas. Es la trampa de la regla 9-bis, acá heredada.
-  const firma = String(pol("lineaMinima", 10e6)) + "|" + String(pol("otrosDeudoresPct", 10));
-  if (_deudorIdx && firma === _deudorIdxFirma) return _deudorIdx;
-  _deudorIdxFirma = firma;
-  const uso = new Map(),
-    clientes = new Map(),
-    nombres = new Map();
-  const anotarDeudor = (rut, nombre, monto, rutCli) => {
-    if (!rut) return;
-    uso.set(rut, mmRound((uso.get(rut) || 0) + monto));
-    if (!clientes.has(rut)) clientes.set(rut, new Set());
-    if (monto > 0 && rutCli) clientes.get(rut).add(rutCli);
-    if (nombre && !nombres.has(rut)) nombres.set(rut, nombre);
-  };
-  for (const l of LINEAS_DATA) {
-    const st = lineasDeCliente(l.rut);
-    for (const ln of st.lineas) if (ln.rutDeudor) anotarDeudor(ln.rutDeudor, ln.nombreDeudor, ln.vigente, l.rut);
-    // Lo usado en la línea de otros deudores se atribuye a la COLA de deudores del cliente —los que no
-    // tienen línea propia—, proporcional a su volumen. Sin esta atribución ese uso no se
-    // descontaría de ninguna línea de deudor y el nivel 3 quedaría subestimado justo en la cola.
-    const usComodin = st.lineas.filter((x) => x.granularidad === "comodin").reduce((s, x) => s + x.vigente, 0);
-    const cola = st.cola || [];
-    const volCola = cola.reduce((s, d) => s + d.vol, 0);
-    if (usComodin > 0 && volCola > 0) cola.forEach((d) => anotarDeudor(d.rut, d.nombre, mmRound(usComodin * (d.vol / volCola)), l.rut));
-    else cola.forEach((d) => anotarDeudor(d.rut, d.nombre, 0, l.rut));
-  }
-  // El universo son TODOS los deudores de las facturas, no sólo los que hoy tienen saldo: la línea
-  // del deudor existe aunque nadie le haya cedido todavía, porque es un tope de concentración.
-  for (const [, lista] of paresPorEmisor()) for (const d of lista) anotarDeudor(d.rut, d.nombre, 0, null);
-
+  if (_deudorIdx) return _deudorIdx;
   _deudorIdx = new Map();
-  for (const [rut, u] of uso) {
-    const rnd = pcRng(hashStr("ldeu" + rut));
-    // Los deudores prime toleran más concentración; en los «Otro» es donde el control muerde.
-    // `ceil` y no `round`: al redondear a tramos de 5 la línea podía nacer BAJO su propio uso.
-    const t = tipoDeudor(rut, nombres.get(rut) || "");
-    // Un 15% de los deudores están CONCENTRADOS: su línea propia queda apenas por sobre lo ya
-    // colocado, así que es ella —y no la del par— la que frena la operación. Sin este tramo el nivel
-    // 3 casi nunca mordía y el caso «hay que ampliar la exposición del deudor», que es el único que
-    // afecta a carteras de otros ejecutivos, prácticamente no aparecía en la demo.
-    const concentrado = hashStr("conc" + rut) % 100 < 8;
-    const holgura = concentrado
-      ? 1.03 + rnd() * 0.09
-      : t === "Lista Blanca"
-        ? 1.25 + rnd() * 0.55
-        : t === "Deudor Autorizado"
-          ? 1.12 + rnd() * 0.38
-          : 1.02 + rnd() * 0.2;
-    // EN PESOS, y tallada en tramos de $5.000.000 como las demás. El respaldo del deudor SIN uso
-    // —el que no tiene nada cedido todavía— se quedó en millones cuando todo migró al peso el
-    // 14-09-2026: daba una línea de «80», que en pesos son 80 pesos, así que a esos 24 deudores de
-    // 741 no les cabía jamás una factura y el nivel 3 los bloqueaba enteros. Un monto que no dice su
-    // unidad se migra en silencio y sólo se nota mirando una cifra absurda.
-    const base = u > 0 ? u * holgura : (40 + Math.floor(rnd() * 24) * 5) * 1e6;
-    // El PISO de política también aplica acá: la del deudor es una línea aprobada como cualquier otra
-    // y una bajo el mínimo no deja pasar ninguna factura — bloquearía al deudor entero en el nivel 3.
-    const tallado = Math.max(lineaMin(), Math.ceil(base / TRAMO_LINEA) * TRAMO_LINEA, Math.ceil(u / TRAMO_LINEA) * TRAMO_LINEA);
-    _deudorIdx.set(rut, {
-      rutDeudor: rut,
-      nombre: nombres.get(rut) || "",
-      tipo: t,
-      aprobado: tallado,
-      vigente: u,
-      disponible: mmRound(tallado - u),
-      nClientes: clientes.get(rut) ? clientes.get(rut).size : 0,
+  const arr = typeof window !== "undefined" && Array.isArray(window.LINEA_DEUDOR) ? window.LINEA_DEUDOR : [];
+  for (const d of arr) {
+    if (!d || !d.RUTDeudor) continue;
+    _deudorIdx.set(d.RUTDeudor, {
+      rutDeudor: d.RUTDeudor,
+      nombre: d.RazonSocialDeudor || "",
+      tipo: d.TipoDeudor || "Otro",
+      aprobado: +d.MontoAprobado || 0,
+      vigente: +d.MontoUtilizado || 0,
+      disponible: +d.MontoDisponible || 0,
+      nClientes: +d.ClientesConCesion || 0,
     });
   }
   return _deudorIdx;

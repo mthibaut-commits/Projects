@@ -1755,8 +1755,14 @@
       const bajo = evalAtribucion(2.00, 1.00, 2.00, true);
       tasaOk = alto.estado === "bajoMinimo" && bajo.estado !== "bajoMinimo";
 
-      // (b) El % de «otros deudores» dimensiona el comodín LF4, y el cache se invalida solo: si no,
-      //     la segunda lectura devolvería el dimensionamiento hecho con el valor anterior.
+      // (b) El % de «otros deudores» YA NO dimensiona el comodín LF4 desde acá, y esa es la prueba.
+      //     Hasta el 20-09-2026 `lineasDeCliente` lo leía con `pol()` para tallar la LF4, y lo que
+      //     este tramo vigilaba era que el cache no sirviera el dimensionamiento anterior. Dimensionar
+      //     dejó de ser de NEX: la estructura llega por el A23 y acá sólo se lee, así que la perilla
+      //     viaja en el contrato del tenant y la aplica el sistema de gestión de líneas — como
+      //     `concentracionDeudorPct` y `frecuenciaMin`, y su `hint` lo dice. Se prueba que moverla no
+      //     mueve NADA, que es justamente lo que un lector tiene que garantizar: si la app pudiera
+      //     re-tallar la LF4 por su cuenta, estaría decidiendo sobre cupo que otro sistema aprobó.
       const rutCli = (PC_CLIENTES[0] && PC_CLIENTES[0].rut) || null;
       const comodinCon = (pct) => {
         aplicarCfgActiva({ ...guardado, otrosDeudoresPct: pct });
@@ -1764,8 +1770,10 @@
         return (est.lineas || []).filter((l) => l.tipo === "LF4").reduce((a, l) => a + (l.aprobado || 0), 0);
       };
       const c10 = comodinCon(10), c40 = comodinCon(40), c10bis = comodinCon(10);
-      otrosOk = rutCli != null && c40 > c10 * 1.5;
-      cacheOk = c10bis === c10; // vuelve al valor anterior: el cache no se quedó con el de 40
+      // …y la LF4 tiene que EXISTIR: si el cliente no tuviera ninguna, «no se movió» se cumpliría
+      // sola con dos ceros y este tramo no vigilaría nada.
+      otrosOk = rutCli != null && c10 > 0 && c40 === c10;
+      cacheOk = c10bis === c10;
 
       // (c) La ventana del libro de ventas. Con 7 días ninguna candidata puede tener más de 7 de
       //     emitida; con 180, alguna pasa de 60.
@@ -1787,8 +1795,8 @@
       const glosa = generarNotasIA(ctx).negocio;
       notaOk = /nota ≥ 4,4/.test(glosa) && /vigencia de 24 meses/.test(glosa) && !/3,7/.test(glosa) && !/12 meses/.test(glosa);
       detalle = `piso 1,50→${alto.estado} · piso 0,50→${bajo.estado} · LF4 10%→${c10} 40%→${c40} vuelta→${c10bis} · libro 7d→${maxDias(corto)} 180d→${maxDias(largo)} · glosa «nota ≥ 4,4 / 24 meses» ${notaOk ? "sí" : "no"}`;
-    } finally { restaurar(); _cacheCli.clear(); }
-    ok("90 lo que el tenant configura en Otorgamiento lo aplica el motor, y el cache no se queda atrás",
+    } finally { restaurar(); invalidarCupo(); }
+    ok("90 lo que el tenant configura en Otorgamiento lo aplica el motor, lo declarativo no mueve nada, y el cache no se queda atrás",
        tasaOk && otrosOk && ventanaOk && notaOk && cacheOk, detalle);
   }
 
@@ -2683,45 +2691,56 @@
     //     es lo que financia a los deudores que el piso dejó sin línea propia.
     const topeOk = excede === 0 && sinComodin === 0 && usoNoCabe === 0;
 
-    // (c) EL PISO NO CREA CAPACIDAD: acotado por el presupuesto. Se prueba en la función de reparto,
-    //     que es donde vive la decisión. Con 25 de total y piso 10 caben DOS partes, no cuatro: el
-    //     piso limita CUÁNTAS líneas hay, no cuánto recibe cada una — es la consecuencia que hace que
-    //     algunos deudores pasen al comodín.
-    const r1 = repartirConPiso(100e6, [1, 1, 1, 1], 10e6, 5e6);
-    const r2 = repartirConPiso(25e6, [4, 3, 2, 1], 10e6, 5e6);
-    const r3 = repartirConPiso(8e6, [1, 1, 1], 10e6, 5e6);
-    const r4 = repartirConPiso(37e6, [2, 1], 0, 5e6);            // piso 0 = el caso de la LF3
-    const suma = (a) => a.reduce((x, y) => x + y, 0);
-    const repartoOk =
-      suma(r1) === 100e6 && r1.every((x) => x >= 10e6)
-      && suma(r2) === 25e6 && r2.filter((x) => x > 0).length === 2 && r2.every((x) => x === 0 || x >= 10e6)
-      && suma(r3) === 0                                          // no cabe ninguna: nada se asigna
-      && suma(r4) === 37e6 && r4.every((x) => x > 0)             // sin piso entran todas
-      // …y se queda con las de MAYOR peso: si alguien pierde su línea propia, que sea el que menos aporta
-      && r2[0] > 0 && r2[1] > 0 && r2[2] === 0 && r2[3] === 0;
+    // (c) EL PISO NO CREA CAPACIDAD, y su CONSECUENCIA tiene que verse: un piso por línea significa
+    //     MENOS líneas, no líneas más grandes, así que los deudores de menor volumen se quedan sin
+    //     línea propia y los financia el comodín. La función de reparto ya no vive acá —dimensionar
+    //     es del sistema de gestión de líneas, `GeneradorDatos/datasets/lineas_par.js`, y la prueban
+    //     sus casos en `tests/contract/lineas_activo.test.mjs`—: lo que la app puede comprobar es que
+    //     el activo que lee tiene esa forma. Sin esto, un maestro que le diera línea propia a TODOS
+    //     los deudores pasaría los controles de arriba y la línea de otros deudores no financiaría
+    //     nunca a nadie, que es el escenario entero de la regla 7.
+    let conCola = 0, paresConLinea = 0;
+    for (const rut of ruts) {
+      const st = lineasDeCliente(rut);
+      if (!st || st.estado !== "B") continue;
+      const propios = new Set(st.lineas.filter((l) => l.granularidad === "par").map((l) => l.rutDeudor));
+      const todos = (paresPorEmisor().get(rut) || []).length;
+      paresConLinea += propios.size;
+      if (todos > propios.size) conCola++;
+    }
+    const repartoOk = conCola > 100 && paresConLinea > 500;
 
     // (d) LA LÍNEA DEL DEUDOR también respeta el piso: es una línea aprobada como cualquier otra, y
     //     una bajo el mínimo bloquea al deudor entero en el nivel 3 de la regla de validación.
     const deu = [...lineasDeudor().values()];
     const deudorOk = deu.length > 400 && deu.every((d) => (d.aprobado || 0) >= MIN);
 
-    // (e) EL CACHE NO SE QUEDA CON EL DIMENSIONAMIENTO ANTERIOR. Es la trampa de la regla 9-bis:
-    //     `lineasDeCliente` memoiza por RUT y `lineasDeudor` no tenía invalidación ninguna, así que
-    //     mover el umbral en el mantenedor dejaba servidas las líneas viejas. Se valida por FIRMA.
+    // (e) EL UMBRAL ES DECLARATIVO Y MOVERLO NO RE-DIMENSIONA. Hasta el 20-09-2026 `lineasDeCliente`
+    //     fabricaba la estructura leyendo `lineaMinima` con `pol()`, así que mover el mantenedor
+    //     cambiaba las líneas y el riesgo era el cache (regla 9-bis). Dimensionar dejó de ser de NEX:
+    //     quién tiene línea con quién y de cuánto llega por el A23 y acá sólo se lee, así que la
+    //     perilla viaja en el contrato del tenant y la aplica el sistema de gestión de líneas — su
+    //     `hint` lo dice con todas las letras. Se prueba en las DOS direcciones: que la estructura NO
+    //     se mueva al tocarla, y que el lector siga devolviendo el MISMO objeto (es lo que deja puro a
+    //     `asignarLineas`; si cada llamada reconstruyera, el caso 122 dejaría de significar nada).
     const rutP = ruts.find((r) => lineasDeCliente(r).estado === "B");
-    const antes = lineasDeCliente(rutP).lineas.length;
+    const foto = (r) => JSON.stringify(lineasDeCliente(r).lineas);
+    const antes = foto(rutP);
     const antesDeu = lineaDeDeudor([...lineasDeudor().keys()][0]).aprobado;
+    const idAntes = lineasDeCliente(rutP);
     const cfgPrev = CFG_ACTIVA.lineaMinima;
-    CFG_ACTIVA.lineaMinima = 60e6;                               // sube el piso: tienen que caber MENOS líneas
-    const despues = lineasDeCliente(rutP).lineas.length;
+    CFG_ACTIVA.lineaMinima = 60e6;                               // sube el piso: el activo no se entera
+    const despues = foto(rutP);
     const despuesDeu = lineaDeDeudor([...lineasDeudor().keys()][0]).aprobado;
     CFG_ACTIVA.lineaMinima = cfgPrev;
-    const vuelta = lineasDeCliente(rutP).lineas.length;
-    const cacheOk = despues < antes && despuesDeu >= 60e6 && despuesDeu !== antesDeu && vuelta === antes;
+    const declarativoOk = despues === antes && despuesDeu === antesDeu && lineasDeCliente(rutP) === idAntes;
+    // Que el `hint` del mantenedor DIGA que es declarativo no se comprueba acá: es texto del fuente y
+    // lo gatea `tests/contract/regla_lineas_activo.test.mjs`. Afirmarlo desde la página sólo se podría
+    // hacer contra el propio fuente, que es un gate comparando un documento consigo mismo.
 
     ok("102 ninguna línea aprobada bajo el mínimo, salvo la PUNTUAL, y el tope del cliente manda",
-       pisoOk && exentaOk && topeOk && repartoOk && deudorOk && cacheOk,
-       `${clientes} clientes · ${nLineas} líneas · bajo el mínimo: ${bajo} (antes 372 de 3.521) · acotadas por su propio aprobado: ${acotadas} · LF3 exentas bajo el mínimo: ${lf3Bajo} de ${nLF3} (ejercitada ${exentaOk}) · exceden su aprobada: ${excede} · sin comodín: ${sinComodin} · uso que no cabe: ${usoNoCabe} · línea de deudor ≥ mínimo ${deudorOk} · reparto con piso ${repartoOk} · cache por firma ${cacheOk} (${antes}→${despues}→${vuelta} líneas al mover el umbral)`);
+       pisoOk && exentaOk && topeOk && repartoOk && deudorOk && declarativoOk,
+       `${clientes} clientes · ${nLineas} líneas · bajo el mínimo: ${bajo} (antes 372 de 3.521) · acotadas por su propio aprobado: ${acotadas} · LF3 exentas bajo el mínimo: ${lf3Bajo} de ${nLF3} (ejercitada ${exentaOk}) · exceden su aprobada: ${excede} · sin comodín: ${sinComodin} · uso que no cabe: ${usoNoCabe} · línea de deudor ≥ mínimo ${deudorOk} · pares con línea propia ${paresConLinea} y clientes con cola ${conCola} (reparto ${repartoOk}) · umbral declarativo: la estructura no se mueve al tocarlo ${declarativoOk}`);
   }
 
   // ── 103 · «FACTORING TARGET» ES POLÍTICA DEL TENANT, NO UN ATRIBUTO DEL CESIONARIO ──────────
@@ -3883,7 +3902,7 @@
         + puntos.map((x) => `${x.rot} ${x.tasa}%→${x.obt}${x.it && x.obt === "excepcion" ? " N" + x.it.nivel : ""}${x.obt === x.esp ? "" : "≠" + x.esp}`).join(" · ")
         + ` · [medición, no gate] ${zonaGris}`;
     } catch (err) { det = "ERROR " + String(err).slice(0, 300); }
-    finally { restaurar(); if (typeof _cacheCli !== "undefined") _cacheCli.clear(); }
+    finally { restaurar(); if (typeof invalidarCupo === "function") invalidarCupo(); }
     ok("119 oferta (proxy de la regla 8): el mínimo del deudor es su piso más el costo de fondo del tenant, y la escalera de atribución —en el panel y en O01 del motor— mide el descuento contra la referencia del deudor con los umbrales del tenant",
        pisoOk && escaleraOk && motorOk,
        `piso ${pisoOk} · escalera ${escaleraOk} · motor ${motorOk} · ${det}`);
@@ -7082,6 +7101,81 @@
     ok("149 la tasa simulada se valida contra el mínimo DEL DEUDOR: bajo su piso de riesgo queda fuera de atribución, y el mínimo absoluto sigue ganando",
        !!R && Q.huecoOk && Q.diceOk && Q.absOk && Q.bordeOk && Q.viejoOk && Q.comOk && Q.subeOk && Q.tenantOk && Q.maxOk && Q.caidaOk && Q.enEscaleraOk,
        `bajo el piso del deudor (0,89 < ${Q.piso}) sale de atribución ${Q.huecoOk} · el veredicto dice por qué ${Q.diceOk} · bajo el ABSOLUTO gana el bloqueo duro ${Q.absOk} · justo en el piso se puede ofertar ${Q.bordeOk} · sin piso la conducta vieja intacta ${Q.viejoOk} · la comisión no tiene piso de deudor ${Q.comOk} · subir la tasa no es la cláusula ${Q.subeOk} · el piso sigue al costo de fondo del tenant (${Q.piso} → ${Q.pisoAlto}) ${Q.tenantOk} · el piso de la OPERACIÓN es el deudor más exigente y no el promedio (${Q.pOp} ≠ ${Q.promedio}) ${Q.maxOk} · sin facturas cae al deudor del deal y sin nada da 0 ${Q.caidaOk} · y entra en la escalera ${Q.enEscaleraOk}${err ? " · ERROR " + err : ""}`);
+  }
+
+  // ── 150 · EL COMITÉ CIERRA EL BUCLE: LA LÍNEA QUE APRUEBA LA USA LA ASIGNACIÓN SIGUIENTE ─────
+  // Pedido del usuario, 20-09-2026: «si al momento de ir al comité un deudor sin línea LF2-LF3, el
+  // comité le asigna una LF3, ahora al momento de ejecutar el proceso de asignación se le asignará
+  // esa LF3 y no la LF4, porque ahora ya está reconocido como una relación con línea asignada en el
+  // sistema de líneas; aunque la línea sea puntual».
+  //
+  // Esto NO podía ocurrir hasta hoy, y no por un defecto puntual: `constituirLinea` descartaba
+  // `sol.detalle` entero —el deudor, el monto y el tipo que el comité aprueba línea a línea— porque
+  // las líneas por par no vivían en ninguna parte, se re-sorteaban en cada lectura. Con la estructura
+  // como activo (A23) el detalle tiene dónde ir.
+  //
+  // SE PRUEBA EN LAS DOS DIRECCIONES, que es lo que `testing.md` exige de un control que abre una
+  // puerta: ANTES el deudor se financia por el comodín (o no se financia), DESPUÉS por su línea
+  // propia. Sin la primera mitad, «usa la LF3» se cumpliría también si la hubiera usado desde siempre.
+  {
+    let R = null, err = "";
+    const ID = "TEST-COMITE-150";
+    try {
+      // Un cliente en estado B con un deudor en la COLA: factura, y el comité no le ha dado línea.
+      const libro = libroPorEmisor();
+      let rutCli = null, deuCola = null, facs = [];
+      for (const l of LINEAS_DATA) {
+        const st = lineasDeCliente(l.rut);
+        if (!st || st.estado !== "B") continue;
+        const conLinea = new Set(st.lineas.filter((x) => x.granularidad === "par").map((x) => x.rutDeudor));
+        const f = (libro.get(l.rut) || []).filter((x) => x.credito && !x.reclamada && !x.notaCredito && x.monto > 0 && !conLinea.has(x.rutRecep));
+        if (!f.length) continue;
+        rutCli = l.rut; deuCola = f[0].rutRecep; facs = f.filter((x) => x.rutRecep === deuCola).slice(0, 2);
+        break;
+      }
+      if (!rutCli) throw new Error("sin cliente en estado B con un deudor fuera de sus líneas de par");
+
+      const origenDe = (r) => r.facturas.filter((f) => f.rutDeudor === deuCola).flatMap((f) => (f.origen || []).map((o) => o.lineaId));
+      const antes = asignarLineas(facs, rutCli);
+      const origAntes = origenDe(antes);
+      // ANTES: o lo financia un comodín (LF1/LF4) o no lo financia nadie. Lo que NO puede es venir de
+      // una línea de par, porque no tiene.
+      const antesOk = origAntes.every((id) => !/^LF[23]-/.test(id));
+      const sinPropiaOk = !lineasDeCliente(rutCli).lineas.some((x) => x.granularidad === "par" && x.rutDeudor === deuCola);
+
+      // El comité aprueba una PUNTUAL por el monto que no cabía.
+      const monto = mmRound(facs.reduce((a, f) => a + f.monto, 0));
+      const nEscritas = constituirLineasDeDetalle({
+        rut: rutCli, idProceso: ID, ejecutivo: "Suite 150",
+        propFactoring: mmRound(lineasDeCliente(rutCli).asignadaCliente + monto),
+        detalle: [{ deudor: facs[0].deudor || "", rutDeudor: deuCola, monto, tipoLinea: "puntual" }],
+      });
+
+      // DESPUÉS: el par tiene línea propia, es una LF3, y la asignación la usa.
+      const st2 = lineasDeCliente(rutCli);
+      const nueva = st2.lineas.find((x) => x.granularidad === "par" && x.rutDeudor === deuCola);
+      const constituidaOk = nEscritas === 1 && !!nueva && nueva.tipo === "LF3" && nueva.aprobado === monto && nueva.unSoloUso === true;
+      const despues = asignarLineas(facs, rutCli);
+      const origDespues = origenDe(despues);
+      const usaLF3Ok = origDespues.length > 0 && origDespues.every((id) => id === nueva.id);
+      // …y el techo del CLIENTE sube con ella: si el nivel 1 se quedara en la foto vieja, bloquearía
+      // justo lo que el comité acaba de aprobar y el bucle seguiría abierto un nivel más arriba.
+      const techoOk = st2.asignadaCliente >= lineasDeCliente(rutCli).lineas.reduce((a, x) => a + x.aprobado, 0) - monto;
+      // Idempotente: el mismo `idProceso` no constituye dos veces (API 3 se consulta en cada refresco).
+      const idemOk = constituirLineasDeDetalle({ rut: rutCli, idProceso: ID, detalle: [{ rutDeudor: deuCola, monto, tipoLinea: "puntual" }] }) === 0;
+
+      R = { antesOk, sinPropiaOk, constituidaOk, usaLF3Ok, techoOk, idemOk, rutCli, deuCola, monto, nid: nueva ? nueva.id : "—",
+            oA: origAntes.join("|") || "ninguna", oD: origDespues.join("|") || "ninguna" };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    }
+    // Se deshace SIEMPRE: el repositorio es storage y sobrevive a la corrida.
+    try { repoLineaComite.del(ID); } catch (_) { /* el repo puede no tenerlo */ }
+    invalidarCupo();
+    const Q = R || {};
+    ok("150 la línea que el comité constituye la usa la asignación siguiente: el deudor sin LF2/LF3 deja de ir al comodín y pasa a su puntual",
+       !!R && Q.antesOk && Q.sinPropiaOk && Q.constituidaOk && Q.usaLF3Ok && Q.techoOk && Q.idemOk,
+       `cliente ${Q.rutCli} · deudor ${Q.deuCola} sin línea propia ${Q.sinPropiaOk} · antes se financia por ${Q.oA} (ninguna de par ${Q.antesOk}) · el comité aprueba una puntual de ${Q.monto} y queda constituida ${Q.constituidaOk} (${Q.nid}) · después se financia por ${Q.oD} ${Q.usaLF3Ok} · el techo del cliente la cubre ${Q.techoOk} · el mismo idProceso no constituye dos veces ${Q.idemOk}${err ? " · ERROR " + err : ""}`);
   }
 
   console.log(out.join("\n"));
