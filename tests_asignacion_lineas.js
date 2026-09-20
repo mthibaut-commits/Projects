@@ -4476,7 +4476,14 @@
       const mueveOk = quedaDe(det2.texto) === fmtMM(disp - m2) && quedaDe(det2.texto) !== quedaDe(det1.texto)
         && disponibleDe(det2.texto) === fmtMM(disp)
         && detX.texto.includes(`excede por ${fmtMM(mX - disp)}`) && !/queda /.test(detX.texto)
-        && detX.title.includes(`quedarían ${fmtMM(disp - mX)}`);
+        // EL TOOLTIP DICE LO MISMO Y CON LAS MISMAS PALABRAS QUE EL TEXTO (20-09-2026). Hasta ese día este
+        // caso exigía lo contrario —`quedarían ${fmtMM(disp - mX)}`, o sea «quedarían M$-X»— y fijaba una
+        // contradicción: al lado se leía «excede por M$X». El estado no se veía nunca porque ninguna
+        // operación del Directorio excedía su línea; lo destapó migrar al padrón real (ADR-0007), y lo
+        // cazó `e2e-13-terdecies` al no poder ni parsear el signo. Se exige en los DOS sentidos: cuando
+        // cabe, las dos formas dicen «queda/quedarían»; cuando no, las dos dicen «excede por».
+        && detX.title.includes(`excede por ${fmtMM(mX - disp)}`) && !/quedarían/.test(detX.title)
+        && det2.title.includes(`quedarían ${fmtMM(disp - m2)}`) && !/excede por/.test(det2.title);
 
       // (f) BORDES: sin línea en el índice → «Sin línea»; sin cupo (uso = aprobada) → «Sin cupo disponible»
       //     y sin «queda» aunque esté simulada. La fila se muta y se RESTAURA (el índice apunta al mismo objeto).

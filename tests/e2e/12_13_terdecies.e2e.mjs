@@ -21,7 +21,11 @@ const leerIndicador = (pag, dentroDe) => pag.evaluate((sel) => {
     const g = (re) => (t.match(re) || [])[1] || null;
     return { title: t, texto: (el.innerText || "").replace(/\s+/g, " ").trim(), ancho: el.style.width,
       aprobada: g(/Línea aprobada (M?\$[\d.,]+)/), utilizada: g(/utilizada (M?\$[\d.,]+)/), disponible: g(/disponible (M?\$[\d.,]+)/),
-      operacion: g(/esta operación (M?\$[\d.,]+)/), quedarian: g(/quedarían (M?\$[\d.,]+)/) };
+      operacion: g(/esta operación (M?\$[\d.,]+)/),
+      // El tooltip usa las MISMAS dos formas que el texto visible: «quedarían M$X» si cabe y «excede por
+      // M$X» si no. Se leen las dos y la segunda se devuelve negada, igual que abajo con el texto, para
+      // que la comparación tooltip↔texto siga siendo exacta en los dos signos y no sólo en el positivo.
+      quedarian: (() => { const q = g(/quedarían (M?\$[\d.,]+)/), e = g(/excede por (M?\$[\d.,]+)/); return q != null ? q : e != null ? "-" + e : null; })() };
   });
 }, dentroDe || null);
 const celdaTubo = async (pagina, id) => {
@@ -52,6 +56,17 @@ export const casos = [
       let det = null;
       try {
         await h.encenderDirectorio();
+        // EL CASO MIRA EN «TODOS», NO EN «CON LÍNEA» (20-09-2026). El reinicio del runner deja puesto el
+        // filtro «Con línea», y ése significa —por definición del tubo— «la operación NO excede la línea
+        // aprobada». Simular «Todo lo disponible» puede hacerla excederla, y entonces la fila se va a
+        // «Sin línea» y desaparece del tubo filtrado: la app hace exactamente lo que debe, pero este caso
+        // se queda sin fila que vigilar y acusa «el tubo no se enteró». Lo destapó el padrón real
+        // (ADR-0007), que cambió qué cliente cae en la fila 0; el acoplamiento existía desde antes y
+        // sólo no se ejercitaba. Este caso es sobre el INDICADOR de línea en la cabecera y su espejo en
+        // el tubo, no sobre el filtro rápido, así que se para en «Todos» y lo restaura al salir.
+        const filtroTodos = h.pagina.locator('button[title="Filtrar oportunidades"]', { hasText: /^\s*Todos/ }).first();
+        if (await filtroTodos.count()) await filtroTodos.click();
+        await h.pagina.waitForTimeout(600);
         const id = await h.pagina.evaluate(() => ((document.querySelector("tr.pl-row")?.innerText || "").match(/OP-DIR\d+/) || [])[0] || null);
         if (!id) throw new Error("la primera fila del Directorio no trae id OP-DIR…");
         const tubo0 = await celdaTubo(h.pagina, id);
@@ -90,8 +105,11 @@ export const casos = [
         await chip.click();
         await det.waitForFunction(() => /condiciones comerciales/i.test(document.body.innerText || ""), null, { timeout: 30000 });
         await det.waitForFunction(() => !/simulando/i.test(document.body.innerText || ""), null, { timeout: 30000 }).catch(() => {});
-        await det.waitForFunction(() => [...document.querySelectorAll('div[title^="Línea aprobada"]')].some((el) => /quedarían/.test(el.getAttribute("title") || "")), null, { timeout: 15000 })
-          .catch(() => { throw new Error("tras simular, la cabecera no muestra «quedarían»/«queda»: el indicador no se mueve con la simulación"); });
+        // El tooltip tiene DOS formas según quepa o no la operación —«quedarían M$X» y «excede por M$X»— y
+        // la espera tiene que aceptar las dos: con el padrón real (ADR-0007) esta operación pasó a exceder
+        // su línea, y esperar sólo la positiva dejaba el caso en timeout sobre un indicador que sí se movió.
+        await det.waitForFunction(() => [...document.querySelectorAll('div[title^="Línea aprobada"]')].some((el) => /quedarían|excede por/.test(el.getAttribute("title") || "")), null, { timeout: 15000 })
+          .catch(() => { throw new Error("tras simular, la cabecera no muestra «quedarían»/«excede por»: el indicador no se mueve con la simulación"); });
         // Lo que se lee después ya está en el DOM cuando la oferta muestra su «Total oferta $N» y no queda «simulando».
         await det.waitForFunction(() => /Total oferta[\s\S]{0,120}?\$[\d.]{5,}/.test(document.body.innerText || "") && !/simulando/i.test(document.body.innerText || ""), null, { timeout: 15000 })
           .catch(() => { throw new Error("tras simular no aparece el «Total oferta $N» de la oferta armada"); });
@@ -102,7 +120,8 @@ export const casos = [
         const quedaNum = quedaTexto[1] ? num(quedaTexto[1]) : quedaTexto[2] ? -num(quedaTexto[2]) : null;
         if (quedaNum == null) throw new Error("la cabecera simulada no dice «queda M$X» ni «excede por M$X»: " + cab1.texto);
         if (Math.abs(quedaNum - esperado) > 0.15) throw new Error(`queda ${quedaNum} ≠ disponible ${num(cab1.disponible)} − operación ${num(cab1.operacion)} = ${esperado.toFixed(1)}`);
-        if (Math.abs(num(cab1.quedarian) - quedaNum) > 0.15) throw new Error(`el tooltip dice quedarían ${cab1.quedarian} y el texto ${quedaNum}`);
+        const quedarianNum = cab1.quedarian == null ? null : cab1.quedarian.startsWith("-") ? -num(cab1.quedarian.slice(1)) : num(cab1.quedarian);
+        if (quedarianNum == null || Math.abs(quedarianNum - quedaNum) > 0.15) throw new Error(`el tooltip dice ${cab1.quedarian} y el texto ${quedaNum} · title: ${cab1.title}`);
         if (!mismas(cab1, cab0)) throw new Error(`simular movió aprobada/utilizada/disponible: antes ${cab0.title} · después ${cab1.title}`);
         // La operación que el indicador descuenta es la OFERTA que se acaba de armar (el «Total oferta» en pesos, regla 29).
         const totalOf = await det.evaluate(() => ((document.body.innerText || "").match(/Total oferta[\s\S]{0,120}?\$([\d.]{5,})/) || [])[1] || null);
@@ -124,7 +143,7 @@ export const casos = [
         const confirmar = det.getByRole("button", { name: "Eliminar la simulación", exact: true });
         await confirmar.waitFor({ state: "visible", timeout: 10000 }).catch(() => { throw new Error("el ítem no abrió el ConfirmDialog «¿Eliminar la simulación y partir de cero?»"); });
         await confirmar.click();
-        await det.waitForFunction(() => [...document.querySelectorAll('div[title^="Línea aprobada"]')].every((el) => !/quedarían/.test(el.getAttribute("title") || "")), null, { timeout: 15000 })
+        await det.waitForFunction(() => [...document.querySelectorAll('div[title^="Línea aprobada"]')].every((el) => !/quedarían|excede por/.test(el.getAttribute("title") || "")), null, { timeout: 15000 })
           .catch(() => { throw new Error("tras eliminar la simulación la cabecera sigue diciendo «quedarían»"); });
         // La oferta vacía trae de vuelta el panel de arranque: ahí ya está pintado el estado de entrada entero.
         await det.waitForFunction(() => /¿Qué facturas quieres incluir en la oferta\?/.test(document.body.innerText || ""), null, { timeout: 15000 })
@@ -136,6 +155,8 @@ export const casos = [
         if (errs.length) throw new Error("errores de página en el detalle: " + errs.join(" | "));
         return `${id} (${sinSim ? "sin simular" : "?"}) · tubo «${tubo0.texto}» = cabecera «${cab0.texto}» (a la altura de «${sitio.nombre}», selector arriba, sin stepper) · simulada → «${cab1.texto}» (queda ${quedaNum} = ${num(cab1.disponible)} − ${num(cab1.operacion)}; Total oferta $${totalOf} = M$${totalOfMM.toFixed(1)}) · tubo tras simular «${tubo1.texto}» sin queda · eliminada → «${cab2.texto}»`;
       } finally {
+        // Devolver el filtro a «Con línea», que es como el runner deja el estado entre archivos.
+        await h.pagina.locator('button[title="Filtrar oportunidades"]', { hasText: /^\s*Con línea/ }).first().click().catch(() => {});
         if (det) await det.close().catch(() => {});
         await apagarDirectorio(h);
       }

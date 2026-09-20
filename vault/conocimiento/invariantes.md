@@ -78,6 +78,7 @@ timestamp: 2026-09-18T02:18:36Z
 | 33 | Cerrada la oferta, el CTA se va y queda «Operación creada» + Acciones › Editar; la guarda contra una solicitud duplicada cruza de pestaña | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 140, `regla_33.test.mjs` |
 | 31 | MODO DIRECTORIO — demo acotada | [`reglas/modo_directorio.md`](./reglas/modo_directorio.md) | 129, `e2e-31`, `regla_31.test.mjs` |
 | 32 | El generador tiene PUNTO FIJO: el archivo commiteado es lo que una corrida completa produce, byte a byte | [`reglas/datos_y_activos.md`](./reglas/datos_y_activos.md) | gate `generador.test.mjs` |
+| 42 | La IDENTIDAD es real y sale del padrón (pares RUT ↔ razón social del AEC, sin personas naturales); la TRANSACCIÓN es sintética | [`reglas/datos_y_activos.md`](./reglas/datos_y_activos.md) | `padron.test.mjs` |
 | 34 | El tubo de Gestión diaria abre en «Todos», y «Todos» es el PRIMER tab | [`reglas/ui_detalle_y_tubo.md`](./reglas/ui_detalle_y_tubo.md) | `regla_34.test.mjs` |
 | 35 | Una regla mal definida (criterio sin área) no se ejecuta ni se verifica, y la salida lo dice | [`reglas/otorgamiento_y_atribucion.md`](./reglas/otorgamiento_y_atribucion.md) | 141, `regla_35.test.mjs` |
 | 36 | La Bandeja Inbound es una ventana con tope, y lo que el tope bota se dice | [`reglas/prospeccion_cartera_y_churn.md`](./reglas/prospeccion_cartera_y_churn.md) | 142, `regla_36.test.mjs` |

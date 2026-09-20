@@ -19,6 +19,7 @@ Un ADR aceptado es **inmutable**. Para cambiar de rumbo: ADR nuevo con `reemplaz
 | [ADR-0004](./ADR-0004-id-estable-y-dos-marcas-al-editar.md) | El id de la operación es estable, y editar una oferta cerrada usa dos marcas | aceptada · 17-09-2026 |
 | [ADR-0005](./ADR-0005-formatear-el-fuente.md) | El fuente se formatea con Prettier, y los gates de contrato se re-anclan sobre texto canónico | aceptada · decidida con el usuario 18-09-2026, con el costo medido |
 | [ADR-0006](./ADR-0006-el-piso-del-deudor-escala-no-bloquea.md) | Perforar el piso de riesgo del deudor ESCALA a Gerente Comercial, no veta: como veto dejaría `tasaMinAbsoluta` inalcanzable | aceptada · 19-09-2026, tras la decisión del usuario de validar la tasa al simular |
+| [ADR-0007](./ADR-0007-identidades-reales-del-aec.md) | La IDENTIDAD es real y sale del AEC (pares RUT ↔ razón social, sin personas naturales); la TRANSACCIÓN sigue sintética | aceptada · 20-09-2026, decisión del usuario con el AEC entregado |
 
 ## Decisiones cerradas antes del vault — registro con punteros
 

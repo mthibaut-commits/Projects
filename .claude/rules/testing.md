@@ -57,9 +57,17 @@ refactorización no cambió la lógica.
 
 ## Datos
 
-**Nunca datos reales en fixtures.** Los RUT del sistema son sintéticos; las razones sociales de los
-deudores son reales y eso es una decisión pendiente del usuario (tablero), no un gate: mientras no se
-decida, ningún test la afirma ni la niega.
+**La IDENTIDAD es real; la TRANSACCIÓN es sintética** (20-09-2026, ADR-0007 — reemplaza al «nunca datos
+reales en fixtures» que esta sección decía). Los pares `RUT ↔ razón social` salen del AEC de BICE
+Factoring y viven en `GeneradorDatos/lib/padron.js`: son registro público, viajan en cada factura
+electrónica, y es el mismo patrón que `lib/cesionarios.js`. De las 411.526 cesiones del archivo **no entra
+ninguna**: ni folios, ni montos, ni fechas, ni quién cedió a quién — eso es la cartera comercial del
+factoring. El AEC **no se commitea**; el extractor sí.
+
+**Ninguna persona natural**: el AEC trae empresarios individuales con nombre completo y RUT, y los 93 que
+hay quedan fuera (`RUT < 50.000.000`). Lo vigila `tests/contract/padron.test.mjs`, que además exige
+dígito verificador válido en los 1.983 RUT, listas disjuntas y que el activo no use ninguna identidad que
+el padrón no declare. Un fixture que necesite una identidad la toma del padrón, no la inventa.
 
 ## Higiene
 
