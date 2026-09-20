@@ -15,7 +15,7 @@ const jsx = leer("pipeline_comercial.jsx");
 
 export function auditarRegla41(src) {
   const fallos = [];
-  // Prettier parte las llamadas largas y agrega coma final (ADR-0005): se mide sobre el canónico, que
+  // Prettier parte las llamadas largas y agrega coma final (ADR-0006): se mide sobre el canónico, que
   // fija el COMPORTAMIENTO y no el formato.
   const can = canonico(src);
   const cuerpo = (src.match(/^function controlesIntegracion\(deal, estado\) \{[\s\S]*?\n\}/m) || [""])[0];

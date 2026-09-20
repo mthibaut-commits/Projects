@@ -43,7 +43,7 @@ export const casosDeSuite = (texto) => [...texto.matchAll(/\b(?:ok\(\s*|const TI
 
 /* FORMA CANÓNICA del fuente, para los gates que se fijan sobre su TEXTO.
 
-   El 18-09-2026 el `.jsx` pasó por prettier (ADR-0005) y 59 gates se cayeron de una vez: ninguno estaba
+   El 18-09-2026 el `.jsx` pasó por prettier (ADR-0006) y 59 gates se cayeron de una vez: ninguno estaba
    equivocado, todos asumían la forma que el fuente tenía escrita a mano. Prettier hace tres cosas que rompen
    un patrón sin cambiar el significado —abre una llamada en varias líneas, agrega la coma final, y aprieta o
    suelta los espacios dentro de los paréntesis—, así que un gate que compara contra el texto crudo mide

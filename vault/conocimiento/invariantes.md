@@ -23,7 +23,7 @@ timestamp: 2026-09-18T02:18:36Z
 | 5 | Pérdida es estado terminal | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 117, 118, `regla_5.test.mjs` |
 | 6 | Verificación de facturas = rutina AISLADA, y la decisión es POR DEUDOR | [`reglas/verificacion.md`](./reglas/verificacion.md) | ~27–32, ~52–55, ~76–77 |
 | 7 | Motor de asignación de líneas | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | ~1–15, ~89 |
-| 8 | Oferta | [`reglas/oferta_pricing_y_giro.md`](./reglas/oferta_pricing_y_giro.md) | 119 |
+| 8 | Oferta | [`reglas/oferta_pricing_y_giro.md`](./reglas/oferta_pricing_y_giro.md) | 119, 147 |
 | 9-bis | Un umbral de política se lee con `pol(clave, default)` y no se incrusta en ninguna parte. | [`reglas/otorgamiento_y_atribucion.md`](./reglas/otorgamiento_y_atribucion.md) | 90 |
 | 9-ter | Una COMPARACIÓN se hace en PESOS. El `M$` no cruza a la lógica | [`reglas/verificacion.md`](./reglas/verificacion.md) | 115 |
 | 9 | Pricing | [`reglas/oferta_pricing_y_giro.md`](./reglas/oferta_pricing_y_giro.md) | ~69 |
@@ -52,7 +52,7 @@ timestamp: 2026-09-18T02:18:36Z
 | 14 | Reevaluación explícita | [`reglas/oferta_pricing_y_giro.md`](./reglas/oferta_pricing_y_giro.md) | 124, `e2e-14-a`, `e2e-14-b`, `e2e-14-c`, `regla_14.test.mjs` |
 | 15 | Solicitud de línea | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 125, `e2e-15`, `regla_15.test.mjs` |
 | 15-bis | La solicitud se genera SOLA al cerrar la oferta | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 106–107 |
-| 15-bis-bis | La solicitud inyectada al cerrar la oferta tiene que CRUZAR de pestaña | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 126, `e2e-15-bis-bis-a`, `e2e-15-bis-bis-b`, `regla_15_bis_bis.test.mjs` |
+| 15-bis-bis | La solicitud inyectada al cerrar la oferta tiene que CRUZAR de pestaña | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 126, 144, `e2e-15-bis-bis-a`, `e2e-15-bis-bis-b`, `regla_15_bis_bis.test.mjs` |
 | 15-bis-ter | Y lo que el detalle escribe en un REPOSITORIO también tiene que cruzar | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 113 |
 | 15-quater | La solicitud al comité se ABRE y muestra sus líneas de detalle | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 109 |
 | 15-quinquies | El DOCUMENTO de la solicitud: qué terminó inyectando el sistema | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | `e2e-15-quinquies` |
@@ -78,6 +78,7 @@ timestamp: 2026-09-18T02:18:36Z
 | 33 | Cerrada la oferta, el CTA se va y queda «Operación creada» + Acciones › Editar; la guarda contra una solicitud duplicada cruza de pestaña | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 140, `regla_33.test.mjs` |
 | 31 | MODO DIRECTORIO — demo acotada | [`reglas/modo_directorio.md`](./reglas/modo_directorio.md) | 129, `e2e-31`, `regla_31.test.mjs` |
 | 32 | El generador tiene PUNTO FIJO: el archivo commiteado es lo que una corrida completa produce, byte a byte | [`reglas/datos_y_activos.md`](./reglas/datos_y_activos.md) | gate `generador.test.mjs` |
+| 42 | La IDENTIDAD es real y sale del padrón (pares RUT ↔ razón social del AEC, sin personas naturales); la TRANSACCIÓN es sintética | [`reglas/datos_y_activos.md`](./reglas/datos_y_activos.md) | `padron.test.mjs` |
 | 34 | El tubo de Gestión diaria abre en «Todos», y «Todos» es el PRIMER tab | [`reglas/ui_detalle_y_tubo.md`](./reglas/ui_detalle_y_tubo.md) | `regla_34.test.mjs` |
 | 35 | Una regla excepcionable sin nadie que pueda firmarle la excepción —sin área, área inexistente o área sin gente— no se ejecuta ni se verifica, y la salida lo dice | [`reglas/otorgamiento_y_atribucion.md`](./reglas/otorgamiento_y_atribucion.md) | 141, 143, `regla_35.test.mjs` |
 | 36 | La portada muestra pantallas REALES del producto, y su arte es un activo generado que embeben los dos builds | [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | `regla_36.test.mjs` |
@@ -86,6 +87,10 @@ timestamp: 2026-09-18T02:18:36Z
 | 39 | Cambiar un default de `CFG_OPER_BASE` no llega a quien ya tiene configuración guardada: sube el esquema y migra | [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | `regla_39.test.mjs` |
 | 40 | La Bandeja Inbound es una ventana con tope, y lo que el tope bota se dice | [`reglas/prospeccion_cartera_y_churn.md`](./reglas/prospeccion_cartera_y_churn.md) | 142, `regla_40.test.mjs` |
 | 41 | Los tres controles que firma OPERACIONES se vuelven a mirar al aprobar la integración al core, no sólo el día de la firma | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 144, `regla_41.test.mjs` |
+| 43 | Girar no es una acción de NEX: el sistema termina en la inyección a Tesorería, que autoriza Operaciones, y el giro vuelve como CALLBACK | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 145, 146, `regla_transiciones.test.mjs` |
+| 44 | La ESTRUCTURA de líneas es un INSUMO: los tres niveles llegan por el activo A23 y el pipeline sólo los lee; lo que el comité constituye se superpone | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 150, `regla_lineas_activo.test.mjs` |
+| 45 | La línea del RUT cliente ES la suma de sus líneas (por par y comodín), en los tres estados y también en el utilizado | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 151, `regla_lineas_activo.test.mjs` |
+| 46 | El RUT de un deudor se RESUELVE contra el universo conocido, nunca se arma: uno inventado es, para el motor, otro deudor | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 151, `regla_lineas_activo.test.mjs`, `padron.test.mjs` |
 | 17 | Teléfonos ofuscados en logs | [`contrato_servidor_y_auditoria.md`](./contrato_servidor_y_auditoria.md) | 130, `regla_17.test.mjs` |
 
 ## Contrato con el servidor (12 invariantes, `INVARIANTES` en el fuente)
@@ -99,11 +104,11 @@ timestamp: 2026-09-18T02:18:36Z
 | IDM-01 | Idempotencia de la mutación | La misma mutación no se aplica dos veces. Acá sólo se CUENTAN los duplicados: la idempotencia real necesita una clave generada por el cliente, que este código todavía no emite. | servidor | 133 |
 | LIN-01 | La operación no supera la línea disponible | El monto de la operación tiene que caber en la línea disponible del cliente al momento de armarla. | servidor | 134 |
 | OTG-01 | Sólo aprueba quien tiene atribución | La excepción la resuelve un apoderado con atribución en el área y nivel que la regla exige. | servidor | 135, `regla_otg_01.test.mjs` |
-| OTG-02 | No avanza a Cesión con excepciones pendientes | Con excepciones o rechazos re-evaluables sin resolver, la operación no puede pasar a Cesión. | servidor | 88 |
+| OTG-02 | No avanza a Cesión con excepciones pendientes | Con excepciones o rechazos re-evaluables sin resolver, la operación no puede pasar a Cesión. | servidor | 88, `regla_transiciones.test.mjs` |
 | VER-01 | No cursa con verificación pendiente | Todas las facturas de la operación tienen que tener su verificación telefónica completa. | servidor | 52, 88 |
-| GIR-01 | No gira sin pasar por Cesión | El desembolso exige que la operación haya pasado por Cesión (documentos cedidos a Security). | servidor | 136 |
+| GIR-01 | No gira sin pasar por Cesión | El desembolso exige que la operación haya pasado por Cesión (documentos cedidos a Security). | servidor | 136, `regla_transiciones.test.mjs` · **NEX no lo aplica**: el giro es de Tesorería (regla 43) |
 | GIR-02 | El paquete girado es el que se autorizó | El desembolso exige una evidencia de contrato de cesión (O05) cuya huella calce con la operación que se inyecta. | servidor | 86, 88 |
-| ATR-01 | Descuento dentro de la atribución | El descuento aplicado no puede exceder la atribución del rol sin autorización de la jefatura correspondiente. | servidor | 137 |
+| ATR-01 | Descuento dentro de la atribución | El descuento aplicado no puede exceder la atribución del rol sin autorización de la jefatura correspondiente. **Quién autoriza se comprueba ANTES de escribir, contra el padrón y no contra un prop de la pantalla** (regla 24). | servidor | 137, 143, `regla_atr_01.test.mjs` |
 | CRY-01 | El hash del OTP no sale del servidor | El OTP se guarda como SHA-256 con sal por emisión; el hash nunca viaja al cliente ni a otra página. La validación ocurre server-side, con límite de intentos y TTL. | servidor | 138, `e2e-CRY-01-limite`, `e2e-CRY-01-bajo-limite`, `regla_cry_01.test.mjs` |
 | PRI-01 | La prioridad de curse la pide una jefatura | Marcar una oportunidad como prioritaria es una instrucción de jefatura, no del ejecutivo dueño del negocio. | servidor | 139 |
 ## Gates de contrato (`tests/contract/`, desde el 17-09-2026)
@@ -120,7 +125,7 @@ timestamp: 2026-09-18T02:18:36Z
 | `fuente.test.mjs` | Sin símbolos duplicados de nivel módulo (paso 2) · el **paso 2 dice lo mismo** en los tres sitios que lo escriben (`CLAUDE.md`, este vault y el CI) y reconoce **las mismas declaraciones que `auditar_muerto.mjs`** —hasta el 18-09-2026 no veía once: diez `async function` y el `export default`— · el fuente no monta la app (termina en el `}` de `PipelineComercial`, sin `definirWebComponent(` a columna 0) · toda clase propia del `<style>` usada está declarada y viceversa (el caso `t14`) · `stageName` es de nivel módulo · `vendorOrden` idéntico en `build_app.mjs` y `build_app.ps1` y cada archivo existe en `vendor/` | regla |
 | `suite.test.mjs` | Cada número de caso tiene un solo título y van consecutivos desde 1 · la suite declara `CASOS_ESPERADOS` casos | regla · **snapshot** (`CASOS_ESPERADOS`) |
 | `auditores.test.mjs` | `auditar_muerto`: los hallazgos y los `useState` sin uso son exactamente los conocidos (`BASE_MUERTOS`, `BASE_USESTATE`), y las clases del `<style>` dan «ninguna» en los dos sentidos · `auditar_aislamiento`: las funciones puras (`BASE_PURAS`, 39) siguen puras — lo que se desacopló no se vuelve a acoplar | **snapshot** · regla |
-| `regla_<slug>.test.mjs` (27 archivos, 17-09-2026) | Un gate por regla de dominio que vive en JSX o en un closure y no tiene función pura que la suite pueda llamar: se fija sobre el TEXTO del fuente (el sitio, la compuerta, el rótulo, la unidad) y cada uno trae sus sondas | regla · alguno **snapshot** (`TOPE_REINTENTOS`) |
+| `regla_<slug>.test.mjs` (30 archivos, 17-09-2026) | Un gate por regla de dominio que vive en JSX o en un closure y no tiene función pura que la suite pueda llamar: se fija sobre el TEXTO del fuente (el sitio, la compuerta, el rótulo, la unidad) y cada uno trae sus sondas | regla · alguno **snapshot** (`TOPE_REINTENTOS`) |
 | `hooks.test.mjs` | La lógica de los tres hooks (`protect_paths`, `gitflow_guard` con integración = `main`, `worktree_guard`), una corrida de punta a punta por stdin y **el health check entero** (`verificar_hooks.mjs`: matcher declarado, archivo existente, shell, expansión de `$CLAUDE_PROJECT_DIR` y las dos direcciones de cada hook) | regla |
 | `cifras.test.mjs` (18-09-2026) | **Las cifras que los documentos afirman contra la medición del repo**: reglas de dominio, invariantes del contrato, archivos de gate, casos de la suite y e2e —**exactas**— y líneas del fuente, componentes y peso de `datos_inyectados.js` —**en banda ±15/20 %**, porque cambian con cada edición—. Si la afirmación ya no está en el documento, falla igual: un gate que no encuentra qué vigilar no vigila nada | regla |
 | `generador.test.mjs` | El archivo commiteado es un **punto fijo** del generador: la cadena entera, corrida en proceso, reproduce cada bloque derivado byte a byte · `cesiones.generar` da lo mismo con y sin A2/A5 en la entrada (el bucle A2 → A5 → A2, vigilado por su nombre) | regla |

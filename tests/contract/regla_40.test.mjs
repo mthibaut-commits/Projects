@@ -19,7 +19,7 @@ export function cfgBase(src) {
 
 export function auditarRegla40(src) {
   const fallos = [];
-  // Prettier abre las llamadas largas en varias líneas y agrega la coma final (ADR-0005): lo que estos
+  // Prettier abre las llamadas largas en varias líneas y agrega la coma final (ADR-0006): lo que estos
   // patrones fijan es el COMPORTAMIENTO, no el formato, así que se miden sobre `canonico`.
   const can = canonico(src);
   const cfg = cfgBase(src);

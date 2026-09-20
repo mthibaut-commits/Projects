@@ -27,11 +27,16 @@ import { RAIZ } from "./_comun.mjs";
      usaban salía «vivo sólo entre muertos». Se indentó el `const` y los cuatro desaparecieron.
    · `CLIENTE_ESTADOS`: era un catálogo vivo sólo por su test —`estadoCliente` repetía los cuatro nombres como
      literales—. Ahora los LEE del catálogo, así que gobierna algo y la duplicación no puede desfasarse.
-   Queda `giroDeal`, y no es código muerto que se borra: es un HALLAZGO DE PRODUCTO. Es el único lector de
-   `GIRO_STATE` —la asignación de giros congelada al aceptar— y no tiene call site en la app; `GIRO_STATE` tampoco
-   tiene escritor (`repoGiro` sólo se hidrata). O sea que «la asignación congelada manda sobre el recálculo del día»
-   está probada por la suite con un estado INYECTADO y no ocurre en ninguna pantalla. Borrarla sería borrar la regla;
-   cablearla es una decisión de producto (¿congela al aceptar, al firmar?) y está anotada en el tablero. */
+   Queda `giroDeal`. Hasta el 19-09-2026 era un HALLAZGO DE PRODUCTO: era el único lector de `GIRO_STATE`, que no
+   tenía escritor (`repoGiro` sólo se hidrataba), así que «la asignación congelada manda sobre el recálculo del día»
+   estaba probada por la suite con un estado INYECTADO y no ocurría en ninguna pantalla. Eso YA NO ES CIERTO y la
+   pregunta que la nota dejaba abierta —¿congela al aceptar, al firmar?— está contestada: congela en la INYECCIÓN a
+   Tesorería (regla 43). `aprobarIntegracion` escribe `GIRO_STATE` y el congelado se lee en pantalla, pero por
+   `giroResumenDeal` a través de `giroCongelado`, que es la única fuente del «gana el congelado» (caso 148).
+   `giroDeal` sigue sin call site, y ahora por otro motivo: devuelve la MISMA forma que `giroResumenDeal` pero su
+   rama viva calcula sin el prorrateo por factura, así que no son intercambiables. Lo mantienen vivo los casos 82 y
+   146, que fijan la regla sobre la ruta simple. Es candidato a poda de una sesión futura —con sus dos casos
+   reescritos sobre `giroCongelado`—, no de ésta: borrar un símbolo de nivel módulo se verifica con las capturas. */
 export const BASE_MUERTOS = ["giroDeal"];
 /* Los 7 `useState` sin uso, revisados uno por uno el 18-09-2026. Ninguno se tocó todavía y el veredicto de cada uno
    queda acá para que la próxima revisión no empiece de cero:
@@ -49,7 +54,7 @@ export const BASE_USESTATE = ["alertF", "channel", "dealTabInicial", "diaModal",
    SALE `lineaDeDeudor`, y no porque se haya acoplado: **nunca fue pura**. Era una función de UNA SOLA LÍNEA
    —`function lineaDeDeudor(rutDeudor) { return lineasDeudor().get(rutDeudor) || null; }`— y el auditor
    extrae el cuerpo a partir de la línea SIGUIENTE a la declaración, así que veía un cuerpo vacío y la
-   declaraba limpia. Al formatear el fuente (ADR-0005) el cuerpo bajó de línea, el auditor lo vio, y con él
+   declaraba limpia. Al formatear el fuente (ADR-0006) el cuerpo bajó de línea, el auditor lo vio, y con él
    la llamada a `lineasDeudor()`, que está memoizada. La línea base cargaba un falso negativo.
    Se revisaron las otras dos de una línea que había en la lista —`difPrecioDoc` y `tramoNota`—: ésas sí son
    puras, el auditor las sigue declarando limpias con el cuerpo a la vista. El punto ciego ya no existe en la

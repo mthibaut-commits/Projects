@@ -50,7 +50,7 @@ const MUTANTES = {
     src: (() => {
       const linea = '    { id: "todos", label: "Todos", count: dealsTubo.length + (directorio ? 0 : inboundCount) },\n';
       const s = jsx.replace(linea, "");
-      // Prettier abrió los objetos largos en varias líneas (ADR-0005): el ancla es el bloque, no la línea.
+      // Prettier abrió los objetos largos en varias líneas (ADR-0006): el ancla es el bloque, no la línea.
       return s.replace('    {\n      id: "otrasfacturas",', linea + '    {\n      id: "otrasfacturas",');
     })(), re: /el primer tab es «prioritarios» y no «todos»|el primer tab es «conlinea» y no «todos»/,
   },
