@@ -26700,8 +26700,9 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
       <h1 className="mt-1 text-2xl font-semibold tracking-tight">Mesa de verificación</h1>
       <p className="mt-1 t11" style={{ color: C.sub }}>
         El contacto con el deudor busca dejar por escrito o grabado que pagará. La decisión es <b style={{ color: C.ink }}>por deudor</b>: una llamada cubre
-        todas sus facturas en la operación. Cada fila trae <b style={{ color: C.ink }}>las causas</b> que la gatillaron — si son varias, hay que confirmarlas
-        todas en la misma llamada.
+        todas sus facturas en la operación. Cada fila lista <b style={{ color: C.ink }}>las facturas a verificar</b> —folio, fechas y monto, que es lo que se
+        lee al teléfono— y deja a demanda <b style={{ color: C.ink }}>las causas</b> que la gatillaron; si son varias, hay que confirmarlas todas en la misma
+        llamada.
       </p>
       <div className="mt-4 grid gap-2" style={{ gridTemplateColumns: "repeat(3, minmax(0,1fr))" }}>
         {kpi("Por verificar", nPend, montoPend ? fmtMM(montoPend) : "", nPend ? "#C2410C" : C.ink)}
@@ -26828,74 +26829,103 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
                       ))}
                   </div>
                 </div>
-                {/* Las causas SIEMPRE visibles en resumen; el detalle (qué mide y por qué) se abre a
-                    demanda: el que llama necesita el titular, el analista necesita el fundamento. */}
+                {/* LAS FACTURAS PRIMERO Y EXPLÍCITAS; LAS CAUSAS, COLAPSADAS (21-09-2026, pedido del
+                    usuario). Estaba al revés: las causas se listaban siempre —sólo su descripción se
+                    abría a demanda— y las facturas NO aparecían en ninguna parte salvo que la sesión
+                    pudiera marcar la verificación, porque su única lista vivía dentro del bloque de
+                    confirmación. Quien no es Ejecutivo de verificación leía «3 factura(s)» y no tenía
+                    cómo saber CUÁLES: justo el dato con el que se llama al deudor. La lista es la
+                    misma para todo rol; lo que cambia es si se puede desmarcar. */}
                 <div className="px-3 pb-3">
+                  <div className="t10 uppercase tracking-wide" style={{ color: C.faint }}>
+                    {f.facturas.length === 1 ? "Factura a verificar" : `${f.facturas.length} facturas a verificar`}
+                    {f.estado === "pendiente" && puedeMarcar ? " · desmarca lo que el deudor no reconoció" : ""}
+                  </div>
+                  <ul className="mt-1.5 space-y-1">
+                    {f.facturas.map((x) => {
+                      const fd = fechasDocumento(x);
+                      const off = !!desmarcadas(f)[x.id];
+                      const interactiva = f.estado === "pendiente" && puedeMarcar;
+                      // El monto de un DOCUMENTO va en pesos y el `M$` queda para los resúmenes
+                      // (regla 29): el total del deudor, arriba, sigue abreviado.
+                      const cuerpo = (
+                        <div className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                          <span className="t11 font-semibold" style={{ color: off ? C.red : C.ink, textDecoration: off ? "line-through" : "none" }}>
+                            #{x.folio || x.id}
+                          </span>
+                          <span className="t10" style={{ color: C.faint }}>
+                            emitida {fmtFechaDoc(fd.emision)} · vence {fmtFechaDoc(fd.vencimiento)}
+                          </span>
+                          <span className="ml-auto t11 font-semibold" style={{ color: off ? C.red : C.ink, textDecoration: off ? "line-through" : "none" }}>
+                            {fmtCLP(x.monto || 0)}
+                          </span>
+                        </div>
+                      );
+                      return (
+                        <li key={x.id}>
+                          {interactiva ? (
+                            <button
+                              onClick={() => toggleFac(f, x.id)}
+                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left"
+                              style={{ border: `1px solid ${off ? "#fecaca" : C.line}`, backgroundColor: off ? "#fef2f2" : "#fff" }}
+                              title={off ? "El deudor NO reconoció esta factura: al registrar, sale de la operación" : "El deudor la reconoce"}
+                            >
+                              {off ? <X size={11} style={{ color: C.red }} /> : <Check size={11} style={{ color: "#16A34A" }} />}
+                              {cuerpo}
+                            </button>
+                          ) : (
+                            <div
+                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5"
+                              style={{ border: `1px solid ${C.line}`, backgroundColor: "#FAF9FB" }}
+                            >
+                              {cuerpo}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  {f.estado === "pendiente" && puedeMarcar && !!nNoConf(f) && (
+                    <div className="mt-1.5 t10" style={{ color: C.red }}>
+                      Al registrar, esas {nNoConf(f)} factura(s) se retiran de la operación y quedan vetadas para ella.
+                    </div>
+                  )}
+                  {/* LAS CAUSAS, COLAPSADAS. Quien llama necesita saber A QUIÉN y POR QUÉ FACTURAS;
+                      el fundamento —qué midió cada regla y contra qué umbral— es del analista y se
+                      abre cuando hace falta. */}
                   <button
                     onClick={() => setAbierto((m) => ({ ...m, [f.id]: !abrir }))}
-                    className="flex w-full items-center gap-1.5 t10 uppercase tracking-wide"
+                    className="mt-2 flex w-full items-center gap-1.5 t10 uppercase tracking-wide"
                     style={{ color: C.faint }}
                   >
                     {f.causas.length === 1 ? "Causa que gatilló la verificación" : `${f.causas.length} causas que gatillaron la verificación`}
                     <ChevronRight size={11} style={{ transform: abrir ? "rotate(90deg)" : "none" }} />
                   </button>
-                  <ul className="mt-1.5 space-y-1">
-                    {f.causas.map((c) => (
-                      <li key={c.id} className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
-                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                          <span className="t10 font-bold" style={{ color: C.indigo }}>
-                            {c.id}
-                          </span>
-                          <span className="t11 font-medium" style={{ color: C.ink }}>
-                            {c.nombre}
-                          </span>
-                          <span className="ml-auto t10 font-semibold" style={{ color: c.sinDato ? C.faint : C.red }}>
-                            {c.valor}
-                          </span>
-                          <span className="t10" style={{ color: C.faint }}>
-                            umbral {c.umbral}
-                          </span>
-                        </div>
-                        {abrir && (
+                  {abrir && (
+                    <ul className="mt-1.5 space-y-1">
+                      {f.causas.map((c) => (
+                        <li key={c.id} className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
+                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                            <span className="t10 font-bold" style={{ color: C.indigo }}>
+                              {c.id}
+                            </span>
+                            <span className="t11 font-medium" style={{ color: C.ink }}>
+                              {c.nombre}
+                            </span>
+                            <span className="ml-auto t10 font-semibold" style={{ color: c.sinDato ? C.faint : C.red }}>
+                              {c.valor}
+                            </span>
+                            <span className="t10" style={{ color: C.faint }}>
+                              umbral {c.umbral}
+                            </span>
+                          </div>
                           <div className="mt-1 t10" style={{ color: C.sub }}>
                             {c.desc}
                             {c.sinDato ? " · Sin dato disponible: la política lo trata como incumplimiento, no como «no aplica»." : ""}
                           </div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                  {f.estado === "pendiente" && puedeMarcar && (
-                    <div className="mt-2 rounded-lg p-2" style={{ border: `1px solid ${C.line}`, backgroundColor: "#FAF9FB" }}>
-                      <div className="t10 uppercase tracking-wide" style={{ color: C.faint }}>
-                        Qué confirmó el deudor · desmarca lo que no reconoció
-                      </div>
-                      <div className="mt-1 flex flex-wrap gap-1.5">
-                        {f.facturas.map((x) => {
-                          const off = !!desmarcadas(f)[x.id];
-                          return (
-                            <button
-                              key={x.id}
-                              onClick={() => toggleFac(f, x.id)}
-                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 t10 font-medium"
-                              style={{
-                                border: `1px solid ${off ? "#fecaca" : C.line}`,
-                                backgroundColor: off ? "#fef2f2" : "#fff",
-                                color: off ? C.red : C.ink,
-                                textDecoration: off ? "line-through" : "none",
-                              }}
-                            >
-                              {off ? <X size={10} /> : <Check size={10} style={{ color: "#16A34A" }} />} {x.folio || x.id} · {fmtMM(x.monto || 0)}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {!!nNoConf(f) && (
-                        <div className="mt-1.5 t10" style={{ color: C.red }}>
-                          Al registrar, esas {nNoConf(f)} factura(s) se retiran de la operación y quedan vetadas para ella.
-                        </div>
-                      )}
-                    </div>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                   {f.estado === "verificada" && (
                     <div className="mt-1.5 t10" style={{ color: "#16A34A" }}>
@@ -42975,9 +43005,7 @@ function DocumentoSolicitud({ sol, onClose }) {
               </span>
             </div>
             <div className="mt-1 t10" style={{ color: C.sub }}>
-              {auto
-                ? "Entró sola al cerrar la oferta (API 1): el wizard nunca se abrió, así que esto es el payload tal como se inyectó."
-                : "Armada en el asistente de presentación al comité e inyectada por API 1."}
+              {auto ? "Generado automáticamente a partir del curse comercial." : "Armada en el asistente de presentación al comité e inyectada por API 1."}
             </div>
           </div>
           <button onClick={onClose} className="shrink-0 rounded-md p-1 hover:bg-stone-100" title="Cerrar">
@@ -43324,18 +43352,44 @@ function DetalleSolicitud({ sol }) {
         )}
         {det.length > 0 && (
           <div className="mt-2 grid items-center gap-2 t10" style={{ gridTemplateColumns: GD, paddingTop: 6 }}>
-            <span className="font-semibold" style={{ color: C.sub }}>
-              {det.length} línea(s) de detalle
-            </span>
-            <span></span>
-            <span></span>
-            <span></span>
-            <span className="text-right font-bold" style={{ color: C.indigo }}>
-              {fmtMM(mmRound(det.reduce((a, d) => a + (d.monto || 0), 0)))}
-            </span>
-            <span></span>
-            <span></span>
-            <span></span>
+            {(() => {
+              // SUMA DEL PIE (21-09-2026, pedido del usuario). Se suma SÓLO lo que tiene línea propia:
+              // un par sin línea muestra «—», no 0, y contarlo como cero diría que su disponible es
+              // cero cuando lo que pasa es que no hay línea que consultar. Por eso el pie declara
+              // cuántos pares aportan a la suma: sin ese dato, un total de aprobada más chico que la
+              // cuenta de filas parece un error de cálculo y es la mitad del negocio de esta pantalla.
+              const conL = det.map((d) => lineaParDeSolicitud(d.rutDeudor, lineas)).filter((lp) => lp.propia);
+              const sum = (k) => mmRound(conL.reduce((a, lp) => a + (lp[k] || 0), 0));
+              const solicitada = mmRound(det.reduce((a, d) => a + (d.monto || 0), 0));
+              const tot = (v, color, tip) => (
+                <span className="text-right font-bold" style={{ color }} title={tip}>
+                  {fmtMM(v)}
+                </span>
+              );
+              return (
+                <>
+                  <span className="font-semibold" style={{ color: C.sub }}>
+                    {det.length} línea(s) de detalle
+                    {conL.length !== det.length ? ` · ${conL.length} con línea propia` : ""}
+                  </span>
+                  {tot(
+                    sum("aprobada"),
+                    C.ink,
+                    `Suma de lo aprobado en los ${conL.length} par(es) que HOY tienen línea propia. Los que dicen «Sin línea propia» no entran: no tienen línea que sumar.`,
+                  )}
+                  {tot(sum("utilizada"), C.ink, "Suma de lo utilizado en esos mismos pares.")}
+                  {tot(sum("disponible"), sum("disponible") > 0 ? C.green : C.sub, "Suma de lo disponible en esos mismos pares: aprobada − utilizada.")}
+                  {tot(
+                    solicitada,
+                    C.indigo,
+                    "Total que esta solicitud le pide al comité, sobre TODAS las líneas de detalle — también las de los pares sin línea propia.",
+                  )}
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </>
+              );
+            })()}
           </div>
         )}
       </div>
