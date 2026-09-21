@@ -134,6 +134,6 @@ timestamp: 2026-09-18T02:18:36Z
 | `tests/e2e/*.e2e.mjs` (paso 6, `node tests/e2e/correr.mjs`) | Las reglas de PANTALLA, con la sesión iniciada y el detalle abierto en su pestaña: un caso por regla, citado en la tabla de arriba como `e2e-<regla>`; `00_sesion` es el humo del harness. Desde el 17-09-2026 son 16 archivos y 29 casos, y el runner **reinicia el estado al empezar cada archivo** (Directorio apagado, filtro «Con línea», sin modal): dentro del archivo los casos se encadenan como los ordenó su autor | regla |
 | `generador.test.mjs` | El archivo commiteado es un **punto fijo** del generador: la cadena entera, corrida en proceso, reproduce cada bloque derivado byte a byte · `cesiones.generar` da lo mismo con y sin A2/A5 en la entrada (el bucle A2 → A5 → A2, vigilado por su nombre) | regla |
 
-Lo que **no** es gate y por qué: `regresion_diferencial.mjs` compara dos builds y el CI no tiene el anterior (se corre a
+Lo que **no** es gate y por qué: `Regresiones/regresion_diferencial.mjs` compara dos builds y el CI no tiene el anterior (se corre a
 mano); la suite entera es el paso 5, no un gate de contrato; y los datos —RUT sintéticos, razones sociales reales— son
 una decisión pendiente del usuario (tablero), así que ningún test la afirma ni la niega todavía.

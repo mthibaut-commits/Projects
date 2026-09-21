@@ -33,7 +33,7 @@ timestamp: 2026-09-18T18:10:00Z
     resuelven lo mismo —esperan a que la palabra **`Bienvenido`** aparezca en el texto de la página— y
     son ocho: `run_tests.mjs`, `tests/e2e/_harness.mjs`, `tests/e2e/24_cry_01.e2e.mjs`,
     `capturar_pantallas.mjs`, `capturar_variantes.mjs`, `capturar_tabla_simulada.mjs`,
-    `regenerar_atribuciones.mjs` y `regresion_diferencial.mjs`. Borrarla del fuente **no rompe nada al
+    `regenerar_atribuciones.mjs` y `Regresiones/regresion_diferencial.mjs`. Borrarla del fuente **no rompe nada al
     instante**: cada uno se cuelga los 300 s de su timeout y recién ahí falla, sin decir por qué. Al
     rediseñar la portada la palabra dejó de ser el titular —ahora el titular es el claim del tenant— y
     pasó a ser **el título de la tarjeta**, que además es donde corresponde saludar. Si algún día hay

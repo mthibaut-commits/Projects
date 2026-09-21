@@ -50,7 +50,7 @@ refactor en verde— y no como hook; se dice acá para que nadie lo busque.
 **línea base** en `tests/contract/auditores.test.mjs`. Un hallazgo nuevo rompe —código muerto que alguien
 dejó, o un falso positivo nuevo; en los dos casos se mira—. Uno que desaparece también rompe, a propósito:
 encoger la línea base queda en el commit. Y una función que era pura y vuelve a leer un global rompe
-siempre: **lo que se desacopló no se vuelve a acoplar**. `regresion_diferencial.mjs` no está cableado:
+siempre: **lo que se desacopló no se vuelve a acoplar**. `Regresiones/regresion_diferencial.mjs` no está cableado:
 compara dos builds y el CI no tiene el «anterior»; se corre a mano cuando se quiere probar que una
 refactorización no cambió la lógica.
 

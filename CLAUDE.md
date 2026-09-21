@@ -6,7 +6,7 @@ Demo de un pipeline comercial de factoring chileno para Datamart. UI en español
 
 La fase, lo que está en vuelo y el siguiente paso viven **solo** en `vault/sesiones/estado_actual.md`
 (regla núcleo 1: se lee al abrir toda sesión). Este documento no afirma la fase ni cita conteos del código:
-cuando lo hacía, tres cifras quedaron obsoletas en silencio (`Auditoria_Bootstrap_Agentico.md`, §2.3).
+cuando lo hacía, tres cifras quedaron obsoletas en silencio (`Auditorias/Auditoria_Bootstrap_Agentico.md`, §2.3).
 
 ## Stack
 

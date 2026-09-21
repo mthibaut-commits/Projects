@@ -50,7 +50,7 @@ Convención de referencias: todas las líneas apuntan a `pipeline_comercial.jsx`
 
 | Fuente | Rol | Referencia |
 |---|---|---|
-| `Specs_Procesos/Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf` | **Política vigente** (18-08-2026, reemplaza íntegramente a v1.0) | Normativa |
+| `Specs_Procesos/Otorgamiento/Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf` | **Política vigente** (18-08-2026, reemplaza íntegramente a v1.0) | Normativa |
 | `Integraciones/spec_s3_otorgamiento.md` | Contrato de datos de entrada (Activo A16) + upsert intradía A22 | Normativa |
 | `pipeline_comercial.jsx` | Implementación actual (demo) | Auditada |
 | `atribuciones_otorgamiento.json` | Export de atribuciones | Desactualizado (ver INC-07) |
@@ -410,7 +410,7 @@ depender del orden numérico), con su rol y área, y apuntar C05 a él. Si se us
 explícito en vez de comparación numérica.
 
 **Decisión pendiente.** Definir si el Comité es un **usuario** del sistema (una cuenta que visa en la bandeja) o un **estado
-externo** (la operación sale del flujo, va al módulo de Solicitud de Línea al Comité —ver `Analisis_Solicitud_Linea_Comite.md`—
+externo** (la operación sale del flujo, va al módulo de Solicitud de Línea al Comité —ver `Specs_Procesos/Lineas/Analisis_Solicitud_Linea_Comite.md`—
 y vuelve con una resolución). La segunda opción es la que sugiere el resto del diseño y cambia el contrato del servicio:
 el motor no devolvería «excepción nivel Comité» sino «requiere constitución de línea», un resultado de otra naturaleza.
 
@@ -566,7 +566,7 @@ grep -n -A6 '^let PISO_ATRIB_MONTO'  pipeline_comercial.jsx   # INC-05 · el pis
 #      area: { riesgo: 97, comercial: 33, operaciones: 4 }, huerfanos: [] }
 
 # 5) Texto de la política vigente (requiere pypdf)
-python3 -c "from pypdf import PdfReader; print('\n'.join((p.extract_text() or '') for p in PdfReader('Specs_Procesos/Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf').pages))" | less
+python3 -c "from pypdf import PdfReader; print('\n'.join((p.extract_text() or '') for p in PdfReader('Specs_Procesos/Otorgamiento/Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf').pages))" | less
 ```
 
 ---

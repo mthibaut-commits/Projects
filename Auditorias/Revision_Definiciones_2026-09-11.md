@@ -11,10 +11,10 @@ código y **por qué** difieren, que casi siempre es una decisión de negocio po
 
 Tres orígenes distintos, y conviene no mezclarlos:
 
-1. **Decisiones del 11-09-2026** que cerraron la auditoría `Inconsistencias_Motor_Otorgamiento.md`
+1. **Decisiones del 11-09-2026** que cerraron la auditoría `Auditorias/Inconsistencias_Motor_Otorgamiento.md`
    (INC-01 a INC-07). El PDF describe el modelo anterior porque es anterior a esas decisiones.
 2. **Una versión más nueva del predictor de verificación** que ya existe en el repo como
-   `Specs_Procesos/spec-verificacion-facturas.md` y que el PDF v1.1 no incorporó. Ahí el `.md` es la
+   `Specs_Procesos/Verificacion/spec-verificacion-facturas.md` y que el PDF v1.1 no incorporó. Ahí el `.md` es la
    fuente normativa vigente y el PDF es el que quedó atrás — su §14 ni siquiera existe: el propio `.md`
    trae una tabla de «qué cambió respecto de la versión anterior».
 3. **Un apartado que el PDF dejó «por definir»** y que el negocio resolvió después (la reserva de cupo).
@@ -143,7 +143,7 @@ ahora son **D01–D23 y C47–C50**. Y el layout A16 suma cuatro columnas `*_CD`
 ## 2. `Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf` — parte VERIFICACIÓN
 
 Acá el desfase no viene de decisiones del 11-09 sino de que **el predictor tiene una versión posterior**
-que vive en `Specs_Procesos/spec-verificacion-facturas.md`. Ese `.md` es la fuente normativa vigente —
+que vive en `Specs_Procesos/Verificacion/spec-verificacion-facturas.md`. Ese `.md` es la fuente normativa vigente —
 trae su propia tabla de cambios respecto de la versión que el PDF describe— y el código lo implementa.
 
 ### 2.1 · §10 — Los segmentos se llaman PRIME y OTROS
@@ -255,8 +255,8 @@ Estos ya están arreglados; se listan para que no se vuelvan a auditar.
 | `Integraciones/spec_s3_verificacion.md` (A10) | V05 `> 4`; V06 `< 5 días` en una columna `V06_DIF_FECHA_PAGO_DIAS`; V10 `> 20× op ó > MM$1.500`; `SEGMENTO ELITE\|OTHERS`; `NOTA_DEUDOR ≥ 3,7 para Elite` | V05 **≥ 4**; V06 **≤ 5% del plazo**, con la columna renombrada a `V06_PLAZO_PROM_PAGO_DIAS` (trae el plazo promedio del par y NEX calcula la desviación); V10 **> MM$1.000** fijo; `PRIME\|OTROS` informativo; la entrada es `prime` **o** nota **> 4,2` |
 | `Integraciones/s3_verificacion.csv` | Igual que arriba, con `ELITE` en los datos | Columna renombrada y filas al modelo vigente |
 | `Integraciones/spec_s3_otorgamiento.md` (A16) | Cartera del par y del cliente en las mismas cuatro columnas; homologación `6 − N` | Cuatro columnas `*_CD` propias en la fila `DEUDOR`; niveles sin homologar y ruteo (área, nivel) |
-| `Specs_Procesos/spec-verificacion-facturas.md` | Pseudocódigo con 5 criterios en el recortado; regla 9 con `MntFactura` **y** `MntOpC-D` | Seis criterios (la 1 incluida); la 9 sólo sobre el total, con el motivo explicado |
-| `Specs_Procesos/spec-asignacion-lineas.md` | Orden por nota; cascada sin LF1 ni estados A/B; motivo `paraguas`; §3.9 «no implementado»; §8.8 «pasan de reservadas a aprobadas» | Orden por **tramo** y después nota; estados A/B con la LF1 y el quinto motivo `lf1`; motivos con sus nombres reales y las dos resoluciones del deudor; §3.9 y §6 marcados como implementados en parte / no implementados; §8.8 alineado con §3.7 |
+| `Specs_Procesos/Verificacion/spec-verificacion-facturas.md` | Pseudocódigo con 5 criterios en el recortado; regla 9 con `MntFactura` **y** `MntOpC-D` | Seis criterios (la 1 incluida); la 9 sólo sobre el total, con el motivo explicado |
+| `Specs_Procesos/Lineas/spec-asignacion-lineas.md` | Orden por nota; cascada sin LF1 ni estados A/B; motivo `paraguas`; §3.9 «no implementado»; §8.8 «pasan de reservadas a aprobadas» | Orden por **tramo** y después nota; estados A/B con la LF1 y el quinto motivo `lf1`; motivos con sus nombres reales y las dos resoluciones del deudor; §3.9 y §6 marcados como implementados en parte / no implementados; §8.8 alineado con §3.7 |
 | `Levantamiento_Activos_Informacion.md` | A10 con «segmento (Elite / Otros)» y «V06 diferencia fecha de pago»; A16 con la homologación | Segmento decidido por NEX, V06 como plazo promedio, V09 fuera del archivo; A16 con la cartera del par y el ruteo (área, nivel) |
 | `pipeline_comercial.jsx` | El modal de curse decía «las asignaciones de línea pasan de **reservadas** a **aprobadas**» | Dice que la asignación es una **evaluación**: la reserva la crea el sistema de gestión de líneas cuando el cliente firma, y el core la commitea cuando Operaciones aprueba |
 

@@ -30,7 +30,7 @@ PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                    
 | Entender el proyecto antes de tocar nada | **`CLAUDE.md`** (comandos y reglas núcleo) → `vault/sesiones/estado_actual.md` (estado y siguiente paso) → `vault/conocimiento/invariantes.md` (las reglas de dominio, por tema, con qué caso las verifica) |
 | Saber cómo funciona el negocio | `Specs_Procesos/` (PDFs vigentes + los dos specs en Markdown) |
 | Integrar con los sistemas de Security | `Levantamiento_Activos_Informacion.md` (A1–A23) y `Integraciones/` |
-| Trabajar en el motor de otorgamiento | `Inconsistencias_Motor_Otorgamiento.md` — **7 hallazgos abiertos; leer antes de corregir** |
+| Trabajar en el motor de otorgamiento | `Auditorias/Inconsistencias_Motor_Otorgamiento.md` — **7 hallazgos abiertos; leer antes de corregir** |
 | Exportar pantallas a Figma | `Capturas_UI/` — capturas del DOM real, generadas por `capturar_pantallas.mjs` |
 
 ## Cómo está organizado
