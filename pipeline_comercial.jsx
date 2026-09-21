@@ -23176,6 +23176,14 @@ function aprobacionFormalCliente(deal) {
 // ninguna causa era autorizable desde la UI.
 // Lo que LIBERA EL GIRO. Por eso el estado entra por parámetro: en producción esta decisión la toma
 // el resolver con el visado que tiene la base, no con el que el navegador haya cacheado.
+// EL PAQUETE TAL COMO QUEDA AL FIRMAR, en un solo sitio. Lo preguntan DOS: el updater de
+// `confirmarCierre`, que lo guarda, y el aviso a los aprobadores, que se arma FUERA del updater
+// —`setDeals(fn)` no ejecuta `fn` en el acto y un envío ahí adentro se repetiría en cada render—.
+// Dos copias de esta expresión se desfasan sin que nada lo diga: es el patrón de VER-01, dos cómputos
+// del mismo hecho que se separan. El `monto` va aparte porque el curse puede recortar el paquete
+// (`opts.montoValido`) y lo que se evalúa es lo FIRMADO, no lo ofertado.
+const montoFirmado = (deal, opts) => (opts && opts.montoValido != null ? opts.montoValido : deal && deal.monto);
+const dealFirmado = (deal, monto) => ({ ...deal, monto, stage: "cesion", clienteAcepto: true, reabierta: undefined });
 // ¿A QUÉ ETAPA VA UNA OPERACIÓN CUANDO EL CLIENTE FIRMA? Firmar es del CLIENTE; girar es de la casa,
 // y sólo después de que sus controles pasen. La decisión vive acá y no dentro del handler porque es
 // exactamente el tipo de cosa que en producción resuelve el servidor: entra el estado de las tres
@@ -24578,6 +24586,50 @@ const tienePreEval = (dealId) => !!PRE_EVAL[dealId];
 // nivel, y el botón lo llevaba a una mesa donde esa operación no aparece mientras cada fila de abajo
 // decía lo contrario. Es el mismo patrón que VER-01: dos cómputos del mismo hecho que se separan.
 const excEnBandeja = (deal) => !!deal && (["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage) || tienePreEval(deal.id));
+// A QUIÉN SE LE ESCRIBE. `aprobadoresExc` devuelve ETIQUETAS —sirve para pintar «Aprueban: …»— y la
+// mensajería necesita CÓDIGOS, que no es lo mismo: escribirle a una etiqueta no le llega a nadie. La
+// lista sale del PADRÓN y no de `ATRIB_USUARIO`, que es sólo quién existe: el padrón ya aplica los
+// reemplazos por vacaciones (regla 19), así que el que cubre a un ausente recibe el aviso mientras lo
+// cubre. El super-administrador queda fuera a propósito: puede firmar todo, así que estaría en cada
+// hilo del sistema y el badge de mensajes dejaría de significar algo.
+// Acepta las dos formas del ítem de excepción que circulan: la de `evaluarOtorgItems` (`x.regla`) y la
+// de `visadoDeal`, que aplana el área sobre el ítem. Una tercera copia de este bucle era lo que tenía
+// `avisarPreEval` escrito a mano, y miraba `ATRIB_USUARIO` — o sea, se saltaba los reemplazos.
+function codigosAprobadoresDe(excPend, padron) {
+  const pad = padron || padronAprobadores();
+  const codes = new Set();
+  (excPend || []).forEach((x) => {
+    const regla = (x && x.regla) || x;
+    pad.usuarios.forEach((u) => {
+      if (!u.superAdmin && puedeAprobarExc(u.code, regla, (x && x.nivel) || 4, pad)) codes.add(u.code);
+    });
+  });
+  return Array.from(codes);
+}
+// LOS TRAMOS (área, nivel) de un conjunto de excepciones pendientes, con cuántas hay en cada uno y
+// quién las firma. Es lo que un aviso tiene que decir para que el que lo lee sepa si le toca: «12
+// criterios» no le dice nada a nadie; «12 de Operaciones N4, las firma Andrés Mella» sí.
+function tramosDeExcepciones(excPend, padron) {
+  const pad = padron || padronAprobadores();
+  const porTramo = new Map();
+  (excPend || []).forEach((x) => {
+    const regla = (x && x.regla) || x;
+    const area = (regla && regla.area) || "";
+    const niv = (x && x.nivel) || 4;
+    const k = area + "|" + niv;
+    const g = porTramo.get(k) || { area, niv, n: 0, quienes: aprobadoresExc(regla, niv, pad) };
+    g.n++;
+    porTramo.set(k, g);
+  });
+  return Array.from(porTramo.values()).sort((a, b) => b.n - a.n || a.niv - b.niv);
+}
+// EL REMITENTE DE LO QUE NO ESCRIBE UNA PERSONA. El cierre del negocio lo gatilla la FIRMA DEL CLIENTE
+// en el portal de Factoring Security, no un clic de nadie en NEX. Mandar ese aviso «de parte» del
+// ejecutivo sería atribuirle un mensaje que no escribió y —peor— `hiloNoLeido` lo daría por leído para
+// él, que es justo a quien el usuario dijo que no le llega nada. Es el mismo actor que ya usa la
+// bitácora de auditoría para lo automático.
+const CODE_SISTEMA = "SIS";
+const NOMBRE_SISTEMA = "-- Sistema --";
 // El ejecutivo solicita la pre-evaluación: registra el evento en la bitácora (hora completa) y avisa por
 // la mensajería de la operación a los aprobadores involucrados (los responsables de las excepciones pendientes).
 function avisarPreEval(deal, execCode) {
@@ -24591,13 +24643,7 @@ function avisarPreEval(deal, execCode) {
     "",
   );
   if (!excPend.length) return;
-  const codes = new Set();
-  excPend.forEach((x) => {
-    Object.keys(ATRIB_USUARIO).forEach((k) => {
-      if (k !== "ADMIN" && USERS[k] && puedeAprobarExc(k, x.regla, x.nivel || 4)) codes.add(k);
-    });
-  });
-  const dests = Array.from(codes);
+  const dests = codigosAprobadoresDe(excPend);
   const asunto = `Pre-evaluación de otorgamiento · ${deal.id}`;
   const prev = hilosDeDeal(deal.id).find((h) => h.asunto === asunto);
   const h =
@@ -24611,6 +24657,60 @@ function avisarPreEval(deal, execCode) {
     `${USERS[execCode] || execCode} solicitó iniciar la PRE-EVALUACIÓN de otorgamiento de ${deal.cliente} (${deal.id}). Hay ${excPend.length} criterio(s) por excepcionar; por favor revisen y gestionen sus aprobaciones para adelantar el curse.`,
     null,
   );
+}
+// EL CIERRE DEL NEGOCIO AVISA A QUIEN TIENE QUE FIRMAR (21-09-2026, reportado por el usuario: «cuando
+// se cierra un negocio no se están enviando los mensajes a los responsables ni al ejecutivo que tienen
+// responsabilidad de aprobar»). Tenía razón y se midió: `confirmarCierre` —162 líneas, la firma del
+// cliente en el portal— no llamaba a `hiloEnviar` ni a `hiloNuevo` una sola vez.
+//
+// Por qué se notaba tan poco: de las DOS puertas a la mesa de otorgamiento sólo una avisaba. La
+// manual —el ejecutivo aprieta «Pre-evaluación»— llama a `avisarPreEval`, y la automática —el cliente
+// firma y «la bandeja de otorgamiento la toma sin que nadie la envíe»— no llamaba a nada. O sea que
+// justo el camino que NO tiene a nadie apretando un botón era el que no le escribía a nadie, y la
+// operación quedaba esperando una firma que sus firmantes no sabían que existía.
+//
+// Va acá, a nivel de módulo y no dentro del updater de React: `setDeals(fn)` no ejecuta `fn` en el
+// acto, así que un envío ahí adentro se repetiría en cada render del updater (StrictMode lo llama dos
+// veces) y mandaría el mismo aviso dos veces. Es el mismo motivo por el que `cerrarOferta` arma su
+// patch afuera.
+function avisarCierreNegocio(deal, excPend, pendVerif) {
+  if (!deal) return null;
+  const ejec = deal.exec && USERS[deal.exec] ? deal.exec : null;
+  const dests = codigosAprobadoresDe(excPend);
+  // Nada que firmar y nada que verificar: no hay aviso. Un mensaje «no tienes nada que hacer» en cada
+  // operación cursada vacía el badge de significado — y las operaciones que se cursan limpias son la
+  // mayoría.
+  if (!dests.length && !(excPend || []).length && !pendVerif) return null;
+  const asunto = `Cierre de negocio · ${deal.id}`;
+  const prev = hilosDeDeal(deal.id).find((h) => h.asunto === asunto);
+  const h =
+    prev ||
+    hiloNuevo({
+      tipo: "requerimiento",
+      dealId: deal.id,
+      cliente: deal.cliente,
+      asunto,
+      participantes: [ejec, ...dests],
+      creadoPor: CODE_SISTEMA,
+    });
+  [ejec, ...dests].forEach((c) => {
+    if (c && !h.participantes.includes(c)) h.participantes.push(c);
+  });
+  const neg = deal.negocioNum ? `N° ${deal.negocioNum}` : deal.id;
+  const tramos = tramosDeExcepciones(excPend);
+  const detalle = tramos.length
+    ? " Por firmar: " +
+      tramos.map((t) => `${t.n} de ${AREA_LBL[t.area] || t.area || "—"} N${t.niv} (${t.quienes.length ? t.quienes.join(", ") : SIN_APROBADOR})`).join(" · ") +
+      "."
+    : "";
+  const verif = pendVerif ? ` Quedan ${pendVerif} factura(s) esperando la verificación telefónica con el deudor.` : "";
+  const texto =
+    `${deal.cliente} firmó el negocio ${neg} (${deal.id}) por ${fmtMM(deal.monto)}: la operación entró a la mesa de otorgamiento.` +
+    ((excPend || []).length ? ` Hay ${excPend.length} criterio(s) por excepcionar antes de poder girar.${detalle}` : " No quedan criterios por excepcionar.") +
+    verif +
+    ` Ejecutivo a cargo: ${nombreEjec(deal.exec)}.`;
+  hiloEnviar(h, CODE_SISTEMA, texto, null);
+  return h;
 }
 // Excepciones de la operación PENDIENTES (no resueltas por un apoderado) que el ejecutivo AÚN no comentó
 // ni respaldó (sin SOLICITUD_EXC con comentario/archivo). Al pre-evaluar se advierte de estas "tareas".
@@ -24778,12 +24878,17 @@ function hiloNuevo({ tipo, dealId, cliente, reglaN, asunto, participantes, cread
 function hiloUltimoTs(h) {
   return h.mensajes.length ? h.mensajes[h.mensajes.length - 1].ts : h.ts;
 }
+// EL NOMBRE DE QUIEN ESCRIBE EN UN HILO. Un solo resolutor porque el remitente puede no ser una
+// persona: `CODE_SISTEMA` no está en `USERS` —no es un login, no tiene atribución y no aparece en el
+// selector de sesión— y sin esto la mensajería mostraría «SIS» como autor y la bitácora registraría
+// «SIS» como usuario.
+const nombreEnHilo = (code) => USERS[code] || (code === CODE_SISTEMA ? NOMBRE_SISTEMA : code);
 function hiloEnviar(h, deCode, texto, arch, menciones) {
   if (!(texto || "").trim() && !arch) return;
   const men = (menciones || []).filter(Boolean);
   h.mensajes.push({
     de: deCode,
-    deNombre: USERS[deCode] || deCode,
+    deNombre: nombreEnHilo(deCode),
     texto: texto || "",
     arch: arch || null,
     menciones: men,
@@ -24791,13 +24896,17 @@ function hiloEnviar(h, deCode, texto, arch, menciones) {
     ts: Date.now(),
   });
   h.leido = { [deCode]: true }; // los demás participantes (incluidos los mencionados) quedan con "no leído"
-  if (!h.participantes.includes(deCode)) h.participantes.push(deCode);
+  // EL SISTEMA POSTEA, NO SE SUMA AL HILO. `participantes` son códigos de USUARIO: `hilosDeUsuario`
+  // filtra por ahí y las cinco pantallas que los listan los resuelven contra `USERS`. Meter a
+  // `CODE_SISTEMA` ahí pondría un «SIS» entre los nombres y un participante al que nadie puede
+  // iniciar sesión. El remitente sí queda en el mensaje (`de`/`deNombre`), que es donde corresponde.
+  if (deCode !== CODE_SISTEMA && !h.participantes.includes(deCode)) h.participantes.push(deCode);
   men.forEach((c) => {
     if (c && !h.participantes.includes(c)) h.participantes.push(c);
   }); // @mención → se suma al hilo
   if (typeof registrarAuditoria === "function")
     registrarAuditoria({
-      usuario: USERS[deCode] || deCode,
+      usuario: nombreEnHilo(deCode),
       modulo: "Mensajería interna",
       accion: "Mensaje enviado",
       glosa: `${h.cliente || ""}${h.dealId ? " · " + h.dealId : ""}${texto ? " · " + texto : ""}`.trim(),
@@ -24842,6 +24951,25 @@ function hilosNoLeidos(usuario) {
 }
 function hilosDeDeal(dealId) {
   return HILOS.filter((h) => h.dealId === dealId).sort((a, b) => hiloUltimoTs(b) - hiloUltimoTs(a));
+}
+// UN HILO QUE NACIÓ EN OTRA PESTAÑA. `HILOS` es memoria de CADA documento y el detalle es pestaña
+// propia —y sin campana: `soloDetalle` monta el `DealDrawer` y nada más—. El aviso del cierre se crea
+// donde el portal devolvió la firma, que es justo esa pestaña, así que sin este puente el mensaje
+// existía y no lo veía nadie. Mismo canal y misma forma que `nex-solicitud` (regla 15-bis-bis).
+// Se identifica por (operación, asunto) y NO por `h.id`, que se numera con el largo de la lista LOCAL
+// y por lo tanto colisiona entre pestañas: dos hilos distintos pueden ser los dos «H1001».
+function recibirHilo(hilo) {
+  if (!hilo || !hilo.asunto) return false;
+  const copia = {
+    ...hilo,
+    mensajes: [...(hilo.mensajes || [])],
+    participantes: [...(hilo.participantes || [])],
+    leido: { ...(hilo.leido || {}) },
+  };
+  const i = HILOS.findIndex((h) => h.dealId === hilo.dealId && h.asunto === hilo.asunto);
+  if (i >= 0) HILOS[i] = { ...copia, id: HILOS[i].id };
+  else HILOS.push({ ...copia, id: "H" + (HILOS.length + 1001) });
+  return true;
 }
 function notifSolic(usuario) {
   const noLeidos = hilosNoLeidos(usuario);
@@ -25130,10 +25258,48 @@ function VisadoClienteView({ deals, usuario, onChange }) {
         </button>
       </div>
       {ops.length === 0 && (
-        <div className="rounded-xl p-6 text-center t11" style={{ color: C.faint, backgroundColor: C.page, border: `1px solid ${C.line}` }}>
-          {soloMias
-            ? "No tienes operaciones con acciones pendientes. Quita “Sólo mis pendientes” para ver todas."
-            : "No hay operaciones en esta fase de otorgamiento."}
+        <div className="rounded-xl p-6 t11" style={{ color: C.faint, backgroundColor: C.page, border: `1px solid ${C.line}` }}>
+          {(() => {
+            // UNA BANDEJA VACÍA TIENE DOS CAUSAS DISTINTAS Y HAY QUE DECIR CUÁL (21-09-2026, reportado
+            // por el usuario: «en el menú otorgamiento, cuando cambias a uno de los aprobadores no se
+            // lista nada»). Medido: hay 180 excepciones pendientes, y sólo tres cargos las alcanzan
+            // —Gerente General las de comercial N3, Subgerente de Riesgo las de riesgo N5 y
+            // Operaciones las de operaciones N4—; los otros cuatro ven la bandeja vacía. El motor
+            // está bien: `puedeAprobarExc` exige nivel ≥ requerido DENTRO del área del criterio. Lo
+            // que estaba mal era el cartel: «No tienes operaciones con acciones pendientes» se lee
+            // como «no hay nada que hacer» cuando hay 180 cosas que hacer y ninguna es tuya.
+            const pendientes = opsAll.flatMap((o) => o.excPend);
+            if (!pendientes.length)
+              return <div className="text-center">No hay excepciones pendientes en esta fase de otorgamiento: nadie tiene nada que firmar.</div>;
+            if (!soloMias) return <div className="text-center">No hay operaciones en esta fase de otorgamiento.</div>;
+            // Agrupadas por (área, nivel), que es el par con el que se decide quién puede firmarlas.
+            // La misma función que arma el aviso del cierre (regla 48): si el cartel agrupara por su
+            // cuenta, los dos textos que explican lo mismo podrían decir cosas distintas.
+            const tramos = tramosDeExcepciones(pendientes);
+            const mia = atribEfectiva(usuario);
+            const miAtrib = Object.entries(mia)
+              .map(([a2, l]) => AREA_LBL[a2] + " N" + l)
+              .join(" · ");
+            return (
+              <>
+                <div className="t11 font-semibold" style={{ color: C.ink }}>
+                  Hay {pendientes.length} excepción(es) pendiente(s) en {opsAll.filter((o) => o.excPend.length).length} operación(es), pero ninguna requiere tu
+                  atribución{miAtrib ? ` (${miAtrib})` : " (no tienes atribución de otorgamiento)"}.
+                </div>
+                <ul className="mt-2 space-y-1">
+                  {tramos.map((t) => (
+                    <li key={t.area + t.niv} className="t10">
+                      <b style={{ color: C.ink }}>
+                        {t.n} en {AREA_LBL[t.area] || t.area} N{t.niv}
+                      </b>{" "}
+                      · las firma {t.quienes.length ? t.quienes.join(", ") : SIN_APROBADOR}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-2 t10">Quita «Sólo mis pendientes» para verlas igual, en sólo lectura.</div>
+              </>
+            );
+          })()}
         </div>
       )}
       {ops.map((o) => {
@@ -46392,7 +46558,7 @@ export default function PipelineComercial() {
       // TODA operación aceptada pasa por Otorgamiento. Si solo tiene buenos deudores y está dentro de
       // la línea aprobada → otorgamiento AUTOMÁTICO (se aprueba solo). Si supera la línea y/o incluye
       // deudores "Otro" → otorgamiento MANUAL (lo decide un especialista).
-      const montoFinal = opts && opts.montoValido != null ? opts.montoValido : d.monto;
+      const montoFinal = montoFirmado(d, opts);
       const otorg = requiereOtorgamiento({ ...d, monto: montoFinal, facturasOp: d.facturasOp });
       const auto = !otorg;
 
@@ -46415,7 +46581,7 @@ export default function PipelineComercial() {
       // operación que quedó «Girada» con 42 criterios por aprobar y 8 facturas por verificar a la
       // vista, en la misma pantalla. Firmar es del CLIENTE; girar es de la casa, y sólo después de
       // que sus controles pasen.
-      const dFirmado = { ...d, monto: montoFinal, stage: "cesion", clienteAcepto: true, reabierta: undefined };
+      const dFirmado = dealFirmado(d, montoFinal);
       const visF = visadoDeal(dFirmado);
       const pendVisado = visF.excPend.length + visF.rechReev.length; // OTG-02
       const pendVerif = verifResumenDeal(dFirmado).pend; // VER-01
@@ -46503,6 +46669,22 @@ export default function PipelineComercial() {
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
+    // EL CIERRE AVISA A QUIEN TIENE QUE FIRMAR (regla 48). Acá y no dentro del updater, por lo mismo
+    // que `cerrarOferta` arma su patch afuera: `setDeals(fn)` no ejecuta `fn` en el acto y puede
+    // llamarlo más de una vez, así que un envío ahí adentro mandaría el aviso dos veces. Se evalúa el
+    // paquete FIRMADO —`dealFirmado`, la misma expresión que guarda el updater— porque las
+    // excepciones de una operación en cesión no son las mismas que las de la oferta.
+    if (dFirma) {
+      const dCerrado = dealFirmado(dFirma, montoFirmado(dFirma, opts));
+      const visC = visadoDeal(dCerrado);
+      const hCierre = avisarCierreNegocio({ ...dCerrado, negocioNum: dFirma.negocioNum || negDe(dFirma) }, visC.excPend, verifResumenDeal(dCerrado).pend);
+      // La firma vuelve del portal a la pestaña que lo abrió, y ésa puede ser la del DETALLE, que no
+      // tiene campana ni bandeja de mensajes. Sin este aviso el hilo quedaba en la memoria de un
+      // documento que no lo muestra: exactamente el agujero de `nex-solicitud` y `nex-preeval`.
+      try {
+        if (hCierre && window.opener) window.opener.postMessage({ type: "nex-hilo", hilo: hCierre }, ORIGEN_APP);
+      } catch (_) {}
+    }
     setCierreModal(null);
     curseForget(negDe({ id })); // operación cursada: su payload+OTP del cierre ya no se necesitan
   };
@@ -46601,6 +46783,11 @@ export default function PipelineComercial() {
       }
       if (m && m.type === "nex-solicitud" && m.registro) {
         if (recibirSolicitudLinea(m.registro)) setDeals((prev) => prev.slice()); // re-render: la bandeja lee la lista al pintar
+        return;
+      }
+      // Hilo de mensajería creado en la pestaña del detalle (hoy, el aviso de cierre de la regla 48).
+      if (m && m.type === "nex-hilo" && m.hilo) {
+        if (recibirHilo(m.hilo)) setDeals((prev) => prev.slice()); // re-render: la campana lee HILOS al pintar
         return;
       }
       // Pre-evaluación solicitada (o cancelada) desde la pestaña del detalle. La mesa de Otorgamientos

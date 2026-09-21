@@ -7279,6 +7279,68 @@
        `consolidado: ${Q.revisados} clientes, cabecera ≠ Σ aprobado ${Q.malAprob}, ≠ Σ vigente ${Q.malUso} (antes 217 de 224 descuadraban) ${Q.consolidadoOk} · universo de deudores ${Q.universo}: sin RUT ${Q.sinRut}, DV inválido ${Q.dvMalo} (antes 92%), en rango de persona natural ${Q.personaNatural} ${Q.rutOk} · un nombre desconocido devuelve vacío ${Q.cerradoOk} · candidatos del cliente ${Q.rutCli}: ${Q.nPropios} y son los suyos, por volumen ${Q.propiosOk} · la línea del comité queda marcada ${Q.marcaOk} · tras constituir la cabecera sigue siendo la suma (${Q.antesCab} → ${Q.sumaDespues}) ${Q.cuadraOk} · el excedente del techo va al comodín ${Q.excedenteOk}${err ? " · ERROR " + err : ""}`);
   }
 
+  // ── 152 · EL CIERRE DEL NEGOCIO LE ESCRIBE A QUIEN TIENE QUE FIRMAR ─────────────────────────
+  // Reporte del usuario, 21-09-2026: «cuando se cierra un negocio no se están enviando los mensajes
+  // a los responsables ni al ejecutivo que tienen responsabilidad de aprobar». Medido: de las dos
+  // puertas a la mesa de otorgamiento sólo avisaba la MANUAL (`avisarPreEval`); la automática —el
+  // cliente firma y la bandeja la toma sola— no llamaba a `hiloEnviar` ni una vez (regla 48).
+  //
+  // Se prueba en las DOS direcciones, que es lo que pide `testing.md` para un control: avisa cuando
+  // hay algo que firmar, y NO avisa cuando no queda nada — un mensaje «no tienes nada que hacer» en
+  // cada operación cursada limpia vacía la campana de significado, y ésas son la mayoría.
+  {
+    let R = null, err = "";
+    const antes = HILOS.length;
+    try {
+      // El destinatario sale del PADRÓN, así que el escenario se arma con un área y un nivel que el
+      // tenant sí tiene. Se pregunta quién los firma en vez de cablear «GG»: si mañana el cargo lo
+      // ocupa otro, el caso sigue midiendo la regla y no el nombre de una persona.
+      const exc = (n, area, nivel) => ({ regla: { n, area, nombre: "Criterio " + n }, nivel, stKey: "R" + n });
+      const deal = { id: "TEST-CIERRE-152", cliente: "Cliente 152 SpA", exec: "CR", monto: 120e6, negocioNum: "152" };
+      const pend = [exc(9001, "comercial", 3), exc(9002, "comercial", 3), exc(9003, "riesgo", 5)];
+      const esperados = new Set(codigosAprobadoresDe(pend));
+      // (a) EL SUPER-ADMIN NO ENTRA: puede firmar todo, así que estaría en cada hilo del sistema.
+      const sinAdminOk = esperados.size > 0 && !esperados.has("ADMIN");
+      // …y los que salen son de verdad los que pueden firmar alguna de las tres.
+      const codigosOk = [...esperados].every((c) => pend.some((x) => puedeAprobarExc(c, x.regla, x.nivel)));
+
+      const h = avisarCierreNegocio(deal, pend, 4);
+      const dests = new Set(h ? h.participantes : []);
+      // (b) LOS RESPONSABLES Y EL EJECUTIVO. Las dos mitades de lo que el usuario reportó.
+      const aprobadoresOk = !!h && [...esperados].every((c) => dests.has(c));
+      const ejecutivoOk = dests.has("CR");
+      // (c) EL REMITENTE ES EL SISTEMA, no el ejecutivo: la firma la hizo el cliente en el portal.
+      //     Importa además porque `hiloEnviar` marca leído SÓLO al remitente: si el aviso saliera de
+      //     parte del ejecutivo, le llegaría ya leído justo a quien dijo que no le llega nada.
+      const msg = h && h.mensajes[h.mensajes.length - 1];
+      const remitenteOk = !!msg && msg.de === CODE_SISTEMA && msg.deNombre === NOMBRE_SISTEMA && !dests.has(CODE_SISTEMA);
+      const noLeidoOk = !!h && [...dests].every((c) => hiloNoLeido(h, c));
+      // (d) EL TEXTO DICE QUÉ FALTA Y QUIÉN LO FIRMA: «3 criterios» no le sirve a nadie para saber
+      //     si le toca. Lleva los tramos (área, nivel) y la verificación pendiente.
+      const tr = tramosDeExcepciones(pend);
+      const textoOk = !!msg && /3 criterio/.test(msg.texto) && /4 factura/.test(msg.texto)
+        && tr.length === 2 && tr[0].n === 2 && tr[0].area === "comercial" && tr[1].n === 1 && tr[1].area === "riesgo"
+        && tr.every((t) => msg.texto.includes("N" + t.niv) && t.quienes.every((q) => msg.texto.includes(q)));
+      // (e) NO SE DUPLICA: volver a cerrar la misma operación reusa el hilo, no abre uno nuevo.
+      const h2 = avisarCierreNegocio(deal, pend, 0);
+      const unSoloHiloOk = h2 === h && HILOS.filter((x) => x.dealId === deal.id).length === 1 && h.mensajes.length === 2;
+      // (f) LA OTRA DIRECCIÓN: sin excepciones y sin verificación pendiente no se escribe nada.
+      const limpio = { ...deal, id: "TEST-CIERRE-152-LIMPIO" };
+      const mudoOk = avisarCierreNegocio(limpio, [], 0) === null && !HILOS.some((x) => x.dealId === limpio.id);
+
+      R = { sinAdminOk, codigosOk, aprobadoresOk, ejecutivoOk, remitenteOk, noLeidoOk, textoOk, unSoloHiloOk, mudoOk,
+            esperados: [...esperados].join(","), participantes: [...dests].join(","), tramos: tr.length };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    }
+    // El hilo es memoria del documento y la suite corre sobre la app viva: se deshace lo plantado.
+    HILOS.length = antes;
+    const Q = R || {};
+    ok("152 al cerrar el negocio el sistema le escribe a los aprobadores de las excepciones pendientes y al ejecutivo, y calla si no queda nada que firmar",
+       !!R && Q.sinAdminOk && Q.codigosOk && Q.aprobadoresOk && Q.ejecutivoOk && Q.remitenteOk && Q.noLeidoOk && Q.textoOk && Q.unSoloHiloOk && Q.mudoOk,
+       `aprobadores esperados [${Q.esperados}] sin ADMIN ${Q.sinAdminOk} y todos pueden firmar ${Q.codigosOk} · participantes [${Q.participantes}]: los aprobadores ${Q.aprobadoresOk} y el ejecutivo ${Q.ejecutivoOk} · remitente el sistema ${Q.remitenteOk} y a todos les llega sin leer ${Q.noLeidoOk} · el texto trae los ${Q.tramos} tramos con quién firma ${Q.textoOk} · cerrar dos veces no abre dos hilos ${Q.unSoloHiloOk} · sin nada pendiente no escribe ${Q.mudoOk}${err ? " · ERROR " + err : ""}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
