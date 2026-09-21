@@ -1,5 +1,5 @@
-/* Gate de contrato de la regla 41 (la identidad de la sesión es una sola) sobre el TEXTO del fuente.
-   La suite prueba el COMPORTAMIENTO con el caso 144 —la identidad cambia y los relojes no se
+/* Gate de contrato de la regla 47 (la identidad de la sesión es una sola) sobre el TEXTO del fuente.
+   La suite prueba el COMPORTAMIENTO con el caso 152 —la identidad cambia y los relojes no se
    reinician—; acá se fija la FORMA, que es lo que se rompe por descuido: que exista un único sitio que
    cambie de persona, que ese sitio mueva las dos mitades (la sesión y lo que la pantalla muestra) y que
    el respaldo `|| usuario` siga en pie, porque la pestaña del detalle no tiene sesión.
@@ -19,7 +19,7 @@ export function cuerpoDe(src, nombre) {
   return src.slice(m.index, fin < 0 ? undefined : m.index + m[0].length + fin);
 }
 
-export function auditarRegla41(src) {
+export function auditarRegla47(src) {
   const fallos = [];
   // 1 · La suplantación existe y cambia la SESIÓN.
   const c = cuerpoDe(src, "suplantarSesion");
@@ -50,8 +50,8 @@ export function auditarRegla41(src) {
   return fallos;
 }
 
-test("41 · la identidad de la sesión es una sola: un solo sitio la cambia, cambia la SESIÓN y no reinicia sus relojes", () => {
-  assert.deepEqual(auditarRegla41(jsx), []);
+test("47 · la identidad de la sesión es una sola: un solo sitio la cambia, cambia la SESIÓN y no reinicia sus relojes", () => {
+  assert.deepEqual(auditarRegla47(jsx), []);
 });
 
 const MUTANTES = {
@@ -96,9 +96,9 @@ const MUTANTES = {
 };
 
 for (const [nombre, m] of Object.entries(MUTANTES)) {
-  test(`41 · sonda: el mutante «${nombre}» lo atrapa el auditor`, () => {
+  test(`47 · sonda: el mutante «${nombre}» lo atrapa el auditor`, () => {
     assert.notEqual(m.src, jsx, "el mutante no cambió el fuente: la sonda no probaría nada");
-    const fallos = auditarRegla41(m.src);
+    const fallos = auditarRegla47(m.src);
     assert.ok(fallos.some((f) => m.re.test(f)), `esperaba un fallo ${m.re}; obtuve ${JSON.stringify(fallos)}`);
   });
 }

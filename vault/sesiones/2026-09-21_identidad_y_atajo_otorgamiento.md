@@ -23,7 +23,7 @@ Dos reportes del usuario, los dos con captura y los dos de la forma «esto está
 (Queda **pendiente** la petición con la que se abrió la sesión: reestructurar la Mesa de verificación
 como un listado de FACTURAS agrupadas por deudor, con marcar/adjuntar/anotar por factura. No se empezó.)
 
-## 1 · La identidad de la sesión (regla 41)
+## 1 · La identidad de la sesión (regla 47)
 
 **Diagnóstico, medido y no leído.** El selector de usuario de la demo llama a `setUsuario` —estado de
 React— y **no toca `SESION`**. Los permisos preguntan por `SESION.usuario`, que es el código con que se
@@ -40,7 +40,7 @@ sesión en curso —sin reabrirla: los dos relojes y el tenant son de la sesión
 `cambiarUsuario` queda como el único sitio que cambia de persona, moviendo las dos mitades. El cambio de
 identidad va a la bitácora. El `|| usuario` se queda, porque es el respaldo de la pestaña del detalle.
 
-## 2 · El atajo del otorgamiento automático (regla 42)
+## 2 · El atajo del otorgamiento automático (regla 48)
 
 **Son dos preguntas distintas y el código las trataba como una.** `requiereOtorgamiento` es una
 heurística **anterior al motor de reglas**: ¿hay deudores «Otro»?, ¿se supera la línea? Responde si hace
@@ -66,11 +66,11 @@ lo único que cambiaba entre ellas era la glosa, y separadas volverían a separa
   redescubrió el 18-09 y se volvió a confirmar acá al revisar la pureza de `otorgAutoVigente`).
 - **`subEstadoDe` sigue rotulando «Automático»** mirando sólo `d.otorgAuto`: la misma contradicción en
   chico, en el chip del tubo. No se tocó porque esos rótulos están gateados (casos 110, 111) y merece su
-  propio caso. Está escrito en la regla 42 para que no se redescubra.
-- **Los casos 144 y 145 se escribieron DESPUÉS del arreglo**, y conviene decirlo: el diagnóstico vino con
+  propio caso. Está escrito en la regla 48 para que no se redescubra.
+- **Los casos 152 y 153 se escribieron DESPUÉS del arreglo**, y conviene decirlo: el diagnóstico vino con
   el reporte del usuario, así que no hubo un rojo previo que mirar. Cada uno afirma exactamente la
-  conducta invertida (con el código anterior, 145 habría dado `otorgamientoCompleto === true` con 38
-  pendientes y 144 ni siquiera habría encontrado `suplantarSesion`).
+  conducta invertida (con el código anterior, 153 habría dado `otorgamientoCompleto === true` con 38
+  pendientes y 152 ni siquiera habría encontrado `suplantarSesion`).
 
 ## Verificación
 

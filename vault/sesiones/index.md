@@ -34,7 +34,7 @@ timestamp: 2026-09-18T03:25:00Z
 
 | 18-09-2026 | [`2026-09-18_regla_sin_aprobador.md`](./2026-09-18_regla_sin_aprobador.md) | Ampliación de la regla 35: tener área no basta —una regla excepcionable a la que nadie puede firmarle la excepción tampoco se ejecuta, con tres causas y tres mantenedores—. La compuerta recibe el PADRÓN por parámetro y el núcleo se partió en `cargoDeAreaNivel` porque `auditar_aislamiento` sacó a `evalReglaCli` de las puras; y un identificador citado dentro de un string cuenta como lectura para ese auditor |
 
-| 21-09-2026 | [`2026-09-21_identidad_y_atajo_otorgamiento.md`](./2026-09-21_identidad_y_atajo_otorgamiento.md) | Dos defectos que el usuario vio en pantalla: el selector de usuario de la demo movía el rótulo y no `SESION.usuario`, así que la mesa le negaba marcar a la Ejecutiva de verificación (41); y el atajo del otorgamiento automático no miraba el visado, con lo que una operación con 38 criterios por aprobar llegaba a «Pendiente Integración» —OTG-02 declarado y no obedecido— (42) |
+| 21-09-2026 | [`2026-09-21_identidad_y_atajo_otorgamiento.md`](./2026-09-21_identidad_y_atajo_otorgamiento.md) | Dos defectos que el usuario vio en pantalla: el selector de usuario de la demo movía el rótulo y no `SESION.usuario`, así que la mesa le negaba marcar a la Ejecutiva de verificación (47); y el atajo del otorgamiento automático no miraba el visado, con lo que una operación con 38 criterios por aprobar llegaba a «Pendiente Integración» —OTG-02 declarado y no obedecido— (48) |
 
 La historia anterior al vault (02-09 → 16-09-2026) no tiene logs propios: vive dentro de las reglas de
 dominio (cada una trae fecha y qué la motivó) y en `Auditoria_*.md` e `Inconsistencias_*.md`.

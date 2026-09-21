@@ -1,5 +1,5 @@
-/* Gate de contrato de la regla 42 (el atajo del otorgamiento automático no pasa por encima del visado,
-   OTG-02) sobre el TEXTO del fuente. La suite prueba el COMPORTAMIENTO con el caso 145 —con criterios
+/* Gate de contrato de la regla 48 (el atajo del otorgamiento automático no pasa por encima del visado,
+   OTG-02) sobre el TEXTO del fuente. La suite prueba el COMPORTAMIENTO con el caso 153 —con criterios
    pendientes el atajo no está vigente ni completa la operación, en la automática y en la manual—; acá se
    fija la FORMA: que la compuerta sea pura y reciba el estado, que `otorgamientoCompleto` mire el visado
    ANTES del atajo, que el avance tenga UNA sola rama (separadas volverían a separarse) y que la pantalla
@@ -18,7 +18,7 @@ export function cuerpoDe(src, nombre) {
   return src.slice(m.index, fin < 0 ? undefined : m.index + m[0].length + fin);
 }
 
-export function auditarRegla42(src) {
+export function auditarRegla48(src) {
   const fallos = [];
   // 1 · La compuerta existe, es de nivel módulo, y responde lo que su nombre dice.
   const c = cuerpoDe(src, "otorgAutoVigente");
@@ -56,8 +56,8 @@ export function auditarRegla42(src) {
   return fallos;
 }
 
-test("42 · el atajo del otorgamiento automático no pasa por encima del visado: OTG-02 primero, una sola rama y la pantalla no lo esconde", () => {
-  assert.deepEqual(auditarRegla42(jsx), []);
+test("48 · el atajo del otorgamiento automático no pasa por encima del visado: OTG-02 primero, una sola rama y la pantalla no lo esconde", () => {
+  assert.deepEqual(auditarRegla48(jsx), []);
 });
 
 const MUTANTES = {
@@ -96,9 +96,9 @@ const MUTANTES = {
 };
 
 for (const [nombre, m] of Object.entries(MUTANTES)) {
-  test(`42 · sonda: el mutante «${nombre}» lo atrapa el auditor`, () => {
+  test(`48 · sonda: el mutante «${nombre}» lo atrapa el auditor`, () => {
     assert.notEqual(m.src, jsx, "el mutante no cambió el fuente: la sonda no probaría nada");
-    const fallos = auditarRegla42(m.src);
+    const fallos = auditarRegla48(m.src);
     assert.ok(fallos.some((f) => m.re.test(f)), `esperaba un fallo ${m.re}; obtuve ${JSON.stringify(fallos)}`);
   });
 }

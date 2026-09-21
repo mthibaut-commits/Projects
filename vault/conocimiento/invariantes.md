@@ -85,8 +85,8 @@ timestamp: 2026-09-18T02:18:36Z
 | 38 | La entrada al sistema cuelga del éxito FINAL de autenticación, no del botón «Ingresar» | [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | `regla_38.test.mjs`, `e2e-CRY-01-bajo-limite` |
 | 39 | Cambiar un default de `CFG_OPER_BASE` no llega a quien ya tiene configuración guardada: sube el esquema y migra | [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | `regla_39.test.mjs` |
 | 40 | La Bandeja Inbound es una ventana con tope, y lo que el tope bota se dice | [`reglas/prospeccion_cartera_y_churn.md`](./reglas/prospeccion_cartera_y_churn.md) | 142, `regla_40.test.mjs` |
-| 41 | La identidad de la sesión es una sola: el selector de la demo la cambia, sin reiniciar sus relojes | [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | 144, `regla_41.test.mjs` |
-| 42 | El atajo del otorgamiento automático no pasa por encima del visado (OTG-02) | [`reglas/otorgamiento_y_atribucion.md`](./reglas/otorgamiento_y_atribucion.md) | 145, `regla_42.test.mjs` |
+| 47 | La identidad de la sesión es una sola: el selector de la demo la cambia, sin reiniciar sus relojes | [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | 152, `regla_47.test.mjs` |
+| 48 | El atajo del otorgamiento automático no pasa por encima del visado (OTG-02) | [`reglas/otorgamiento_y_atribucion.md`](./reglas/otorgamiento_y_atribucion.md) | 153, `regla_48.test.mjs` |
 | 17 | Teléfonos ofuscados en logs | [`contrato_servidor_y_auditoria.md`](./contrato_servidor_y_auditoria.md) | 130, `regla_17.test.mjs` |
 
 ## Contrato con el servidor (12 invariantes, `INVARIANTES` en el fuente)

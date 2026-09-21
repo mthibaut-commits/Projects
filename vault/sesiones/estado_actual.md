@@ -21,7 +21,7 @@ generador tiene punto fijo (32, ADR-0003), el id de una operación es estable (A
 Editar (33) y el detalle sigue el mockup (29, 22); el 18-09 el tubo abre en «Todos» (34), **una regla con un tramo
 sin aprobador posible ya no se ejecuta ni se verifica** (35), la **portada muestra el producto** (36–38 · ADR-0005), el
 orden de la tabla es **prioridad de gestión** y la Bandeja Inbound deja de botar trabajo en silencio (30-bis, 40),
-con el fuente **formateado con Prettier** (ADR-0006); y el 21-09 la **identidad de la sesión es una sola** (41) y el **atajo del otorgamiento no se salta el visado** (42).
+con el fuente **formateado con Prettier** (ADR-0006); y el 21-09 la **identidad de la sesión es una sola** (47) y el **atajo del otorgamiento no se salta el visado** (48).
 
 > ## 🎯 Siguiente paso
 >
@@ -38,7 +38,7 @@ con el fuente **formateado con Prettier** (ADR-0006); y el 21-09 la **identidad 
 
 | Trabajo | Integrado en `main` |
 |---|---|
-| **Identidad de la sesión** (41) y **atajo del otorgamiento automático** (42): el selector de la demo cambia `SESION.usuario` —antes la mesa le negaba marcar a la Ejecutiva de verificación— y `otorgAuto` deja de saltarse OTG-02: con criterios por aprobar no hay cartel verde ni avance a «Pendiente Integración» (144, 145) | **no, en la rama** |
+| **Identidad de la sesión** (41) y **atajo del otorgamiento automático** (42): el selector de la demo cambia `SESION.usuario` —antes la mesa le negaba marcar a la Ejecutiva de verificación— y `otorgAuto` deja de saltarse OTG-02: con criterios por aprobar no hay cartel verde ni avance a «Pendiente Integración» (152, 153) | **no, en la rama** |
 | **Regla 35, ampliada por el usuario**: una regla excepcionable sin nadie que pueda firmarla tampoco se ejecuta (tres causas, tres mantenedores). La compuerta recibe el PADRÓN por parámetro y el núcleo se partió en `cargoDeAreaNivel` para no sacar a `evalReglaCli` de las puras (caso 143) | `895845c` |
 | **Portada que muestra el producto** (36, 37, 38 · ADR-0005): arte generado, un solo morado, zoom al dashboard. Los colores no llegaban a quien tenía config guardada: `cfgOper` subió a v2 con migración (39) | `daf3493` |
 | Invariantes · e2e · O05 · tab «Todos» (34) · regla mal definida (35) · paso 2 · auditorías · spec exc. `d389379` · «Operación creada» + id estable + restyle (33, 29, 22 · ADR-0004) `8b75a03` · punto fijo (32 · ADR-0003) `3a27737` · gates y partir `CLAUDE.md` (ADR-0001/2) `bd14091` | ✓ |

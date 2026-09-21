@@ -6725,7 +6725,7 @@
        `el padrón manda ${padronMandaOk} (mismo criterio: con cargo se ejecuta, sin cargo no) · tres causas ${causasOk} (${gSinArea.causa} · ${gInexist.causa} · ${gPobre.causa}) · el knock out se ejecuta igual ${koOk} · mira todos los tramos ${todosLosTramosOk} · el motor lo respeta ${motorOk} · veredicto ${veredictoOk} («${mia && mia.motivo}» · estado «${vDespues && vDespues.estado}» = «${vAntes.estado}») · el catálogo real no tiene ninguna ${catalogoOk} (${malasReales.length} de ${REGLAS_CLIENTE.length})${err ? " · ERROR " + err : ""}`);
   }
 
-  // ── 144 · LA IDENTIDAD DE LA SESIÓN ES UNA SOLA ────────────────────────────────────
+  // ── 152 · LA IDENTIDAD DE LA SESIÓN ES UNA SOLA ────────────────────────────────────
   // El selector de usuario de la demo movía sólo el estado de React y los permisos preguntan por
   // `SESION.usuario`: la pantalla mostraba a Camila Soto y el permiso seguía preguntando por quién
   // había hecho login, así que la mesa le decía «sólo el Ejecutivo de verificación puede marcarla» a la
@@ -6753,52 +6753,52 @@
     } finally {
       SESION = previa;
     }
-    ok("144 cambiar de usuario cambia la IDENTIDAD de la sesión, no sólo el rótulo, y no reinicia sus relojes",
+    ok("152 cambiar de usuario cambia la IDENTIDAD de la sesión, no sólo el rótulo, y no reinicia sus relojes",
        r.antesPuede === false && r.tras && r.tras.u === "EV" && r.tras.puede === true && r.tras.relojes === true && r.tras.suplantado === true
        && r.vuelta && r.vuelta.u === "CR" && r.vuelta.puede === false && r.noop === true && !r.err
        && typeof SESION !== "undefined" && SESION === previa,
        `CR no puede (${r.antesPuede}) → EV «${r.tras && r.tras.u}» puede ${r.tras && r.tras.puede} (${r.rol}), relojes intactos ${r.tras && r.tras.relojes} · de vuelta a «${r.vuelta && r.vuelta.u}» puede ${r.vuelta && r.vuelta.puede} · no-ops ${r.noop} · sesión restaurada${r.err ? " · ERROR " + r.err : ""}`);
   }
 
-  // ── 145 · EL ATAJO DEL OTORGAMIENTO AUTOMÁTICO NO PASA POR ENCIMA DEL VISADO (OTG-02) ───────
+  // ── 153 · EL ATAJO DEL OTORGAMIENTO AUTOMÁTICO NO PASA POR ENCIMA DEL VISADO (OTG-02) ───────
   // `requiereOtorgamiento` nació antes del motor de reglas: mira si hay deudores «Otro» y si se supera
   // la línea, y nada más. Una operación de puros deudores Prime y dentro de línea puede tener decenas
   // de criterios del CLIENTE esperando excepción —el usuario la vio: cartel verde de «otorgamiento
   // automático, sin intervención de un especialista» con «Criterios por aprobar 38» al lado—, y con
   // `otorgAuto` la operación avanzaba a «Pendiente Integración» sin que nadie los mirara.
   {
-    const deal145 = { id: "T-145", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", monto: 30 * MMF,
+    const deal153 = { id: "T-153", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", monto: 30 * MMF,
                       stage: "otorgamiento", facturasOp: [fac("w1", LB[3], 30)], aceptada: true, firmada: true,
                       clienteAcepto: true, otorgAuto: true, otorgMotivo: "automatico" };
     const sinVisar = { visado: {} };
-    const v0 = visadoDeal(deal145, sinVisar);
+    const v0 = visadoDeal(deal153, sinVisar);
     const todoAprobado = {};
     v0.exc.forEach((e) => { todoAprobado[e.stKey] = "aprobado"; });
     const visado = { visado: todoAprobado };
-    const manual = { ...deal145, otorgAuto: false, otorgMotivo: "otros" };
+    const manual = { ...deal153, otorgAuto: false, otorgMotivo: "otros" };
     // (a) El fixture tiene de verdad criterios por resolver y no está bloqueado por un knock out: sin
     //     esto el caso pasaría por vacuidad el día que el catálogo deje de gatillar excepciones acá.
-    const fixtureOk = v0.exc.length > 0 && v0.excPend.length === v0.exc.length && otorgBloqueado(deal145, sinVisar) === false;
+    const fixtureOk = v0.exc.length > 0 && v0.excPend.length === v0.exc.length && otorgBloqueado(deal153, sinVisar) === false;
     // (b) EL ATAJO NO ESTÁ VIGENTE con criterios pendientes, y sí lo está cuando no queda ninguno.
-    const vigenteOk = otorgAutoVigente(deal145, sinVisar) === false
-      && otorgAutoVigente(deal145, visado) === true
+    const vigenteOk = otorgAutoVigente(deal153, sinVisar) === false
+      && otorgAutoVigente(deal153, visado) === true
       && otorgAutoVigente(manual, visado) === false          // sin `otorgAuto` no hay atajo que valga
       && otorgAutoVigente(null, visado) === false;
     // (c) OTG-02, que es lo que estaba roto: no se completa el otorgamiento con excepciones pendientes,
     //     TAMPOCO por el atajo. Las dos direcciones, que es lo que un control exige (VER-01 falló años
     //     por mirarse en una sola).
-    const otg02Ok = otorgamientoCompleto(deal145, sinVisar) === false
-      && otorgamientoCompleto(deal145, visado) === true
+    const otg02Ok = otorgamientoCompleto(deal153, sinVisar) === false
+      && otorgamientoCompleto(deal153, visado) === true
       && otorgamientoCompleto(manual, sinVisar) === false
       && otorgamientoCompleto(manual, visado) === true;
     // (d) Y lo que el atajo SÍ significa no se perdió: una operación automática con el visado limpio no
     //     necesita que nadie apruebe excepciones —la manual sí las necesita aprobadas, y es la misma
     //     respuesta porque `todoAprobado` las aprobó—.
-    const sentidoOk = otorgAutoVigente({ ...deal145, stage: "cesion" }, visado) === true
-      && otorgamientoCompleto({ ...deal145, stage: "cesion" }, visado) === false; // fuera de Otorgamiento no se completa
-    ok("145 el otorgamiento automático no se salta el visado: con criterios por aprobar no está vigente ni completa la operación (OTG-02)",
+    const sentidoOk = otorgAutoVigente({ ...deal153, stage: "cesion" }, visado) === true
+      && otorgamientoCompleto({ ...deal153, stage: "cesion" }, visado) === false; // fuera de Otorgamiento no se completa
+    ok("153 el otorgamiento automático no se salta el visado: con criterios por aprobar no está vigente ni completa la operación (OTG-02)",
        fixtureOk && vigenteOk && otg02Ok && sentidoOk,
-       `fixture ${fixtureOk} (${v0.exc.length} excepciones, ${v0.excPend.length} pendientes) · atajo vigente ${vigenteOk} (sin visar ${otorgAutoVigente(deal145, sinVisar)} · visado ${otorgAutoVigente(deal145, visado)}) · OTG-02 ${otg02Ok} (auto sin visar ${otorgamientoCompleto(deal145, sinVisar)} · auto visado ${otorgamientoCompleto(deal145, visado)} · manual sin visar ${otorgamientoCompleto(manual, sinVisar)}) · sentido ${sentidoOk}`);
+       `fixture ${fixtureOk} (${v0.exc.length} excepciones, ${v0.excPend.length} pendientes) · atajo vigente ${vigenteOk} (sin visar ${otorgAutoVigente(deal153, sinVisar)} · visado ${otorgAutoVigente(deal153, visado)}) · OTG-02 ${otg02Ok} (auto sin visar ${otorgamientoCompleto(deal153, sinVisar)} · auto visado ${otorgamientoCompleto(deal153, visado)} · manual sin visar ${otorgamientoCompleto(manual, sinVisar)}) · sentido ${sentidoOk}`);
   }
 
   console.log(out.join("\n"));

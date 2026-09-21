@@ -74,7 +74,7 @@ timestamp: 2026-09-18T18:10:00Z
     cualquier otro default: **si cambia un valor que ya pudo quedar guardado, sube el esquema**.
 
 
-41. **LA IDENTIDAD DE LA SESIÓN ES UNA SOLA, Y EL SELECTOR DE LA DEMO LA CAMBIA** (21-09-2026, reportado
+47. **LA IDENTIDAD DE LA SESIÓN ES UNA SOLA, Y EL SELECTOR DE LA DEMO LA CAMBIA** (21-09-2026, reportado
     por el usuario: «revisa por qué el ejecutivo de verificación no puede verificar», con la pantalla
     mostrando **Camila Soto · Ejecutivo de verificación** y las cuatro filas de la mesa diciendo «sólo el
     Ejecutivo de verificación puede marcarla»).
@@ -100,5 +100,5 @@ timestamp: 2026-09-18T18:10:00Z
     - **En producción este selector no existe** (ya estaba escrito en el fuente y sigue valiendo): la
       identidad la fija el token. Un «ver como» para soporte sería del backend, auditado y con el
       impersonador registrado en cada acción.
-    - Caso **144**, y prueba las dos mitades: que la identidad cambie **y** que los relojes no se
-      reinicien. Gate de forma: `regla_41.test.mjs`.
+    - Caso **152**, y prueba las dos mitades: que la identidad cambie **y** que los relojes no se
+      reinicien. Gate de forma: `regla_47.test.mjs`.

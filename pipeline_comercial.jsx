@@ -23022,7 +23022,7 @@ function etapaTrasFirma(e) {
 // (CMF, TGR, concentración…) esperando excepción. El atajo dice quién NO tiene que mirarla por línea
 // o por deudor; no dice que el visado no exista. Con excepciones o rechazos re-evaluables sin resolver
 // el atajo NO está vigente, y es literalmente lo que OTG-02 declara: sin resolverlos no se pasa a
-// Cesión. Es puro y recibe el estado por parámetro, como el resto del motor (regla 42).
+// Cesión. Es puro y recibe el estado por parámetro, como el resto del motor (regla 48).
 function otorgAutoVigente(deal, estado) {
   if (!deal || !deal.otorgAuto) return false;
   const v = visadoDeal(deal, estado);
@@ -44035,7 +44035,7 @@ function abrirSesion(code, via) {
   return SESION;
 }
 // El selector de usuario de la demo cambia la IDENTIDAD DE LA SESIÓN, no sólo el rótulo de la navbar
-// (regla 41). Hasta el 21-09-2026 sólo movía el estado de React, y los permisos preguntan por
+// (regla 47). Hasta el 21-09-2026 sólo movía el estado de React, y los permisos preguntan por
 // `SESION.usuario`: la mesa de verificación le decía «sólo el Ejecutivo de verificación puede marcarla»
 // a la Ejecutiva de verificación, porque la pantalla mostraba a Camila y el permiso seguía preguntando
 // por quién había hecho login. NO se reabre la sesión: los dos relojes —el absoluto y el de
@@ -44828,7 +44828,7 @@ export default function PipelineComercial() {
   const [directorio, setDirectorio] = useState(null); // DIRECTORIO · demo acotada (bloque desechable)
   const [channel, setChannel] = useState("Manual");
   const [usuario, setUsuario] = useState(soloDetalle && detallePayload.usuario ? detallePayload.usuario : USUARIO); // usuario logueado
-  // CAMBIAR DE USUARIO ES CAMBIAR LA SESIÓN (regla 41). Va por acá —y no por `setUsuario` suelto— para
+  // CAMBIAR DE USUARIO ES CAMBIAR LA SESIÓN (regla 47). Va por acá —y no por `setUsuario` suelto— para
   // que todo selector que se agregue después mueva las dos cosas: lo que la pantalla muestra y lo que
   // los permisos preguntan. En la pestaña del detalle `SESION` es null y `suplantarSesion` no hace nada:
   // ahí el permiso ya cae en el `|| usuario`, que es para lo que ese respaldo existe.
@@ -47301,7 +47301,7 @@ export default function PipelineComercial() {
           // atribución—, el cliente mantiene su aprobación formal y no quedan llamadas pendientes.
           // Resuelta, la operación NO gira: sale del tubo comercial y queda esperando que Operaciones la
           // integre al core. Girar es el último paso y lo autoriza otra área.
-          // UNA SOLA RAMA para el automático y el manual (21-09-2026, regla 42). Eran dos, y la del
+          // UNA SOLA RAMA para el automático y el manual (21-09-2026, regla 48). Eran dos, y la del
           // atajo no miraba el visado: con `otorgAuto` bastaba que no faltaran llamadas para llegar a
           // «Pendiente Integración» con 38 criterios por aprobar —OTG-02 declarado y no obedecido—.
           // Separadas volverían a separarse: lo único que cambia entre las dos es la GLOSA.
