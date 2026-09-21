@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-21T23:40:00Z
+timestamp: 2026-09-22T00:15:00Z
 ---
 
 # Estado actual
@@ -13,9 +13,9 @@ timestamp: 2026-09-21T23:40:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **151/151 PASA**, **39 archivos de gate de contrato**
+(`pipeline_comercial.jsx`), build standalone, **153/153 PASA**, **41 archivos de gate de contrato**
 (268 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su
-vault (75 reglas verbatim por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y
+vault (77 reglas verbatim por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y
 **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen gate. La crónica del 17 al 19-09
 vive en sus logs (reglas 32–40, ADR-0003 a 0006, y el **linter** en 0 como paso 0-bis).
 
@@ -31,8 +31,10 @@ definición contra implementación), los cuatro PDF de contrato se van a `Integr
 queda en cinco temas: `Otorgamiento`, `Verificacion`, `Lineas`, `Excepciones` y `Evaluacion_Factura`. Son
 **41 renombres**; las **77 referencias** que rompieron se midieron con un verificador diferencial de enlaces
 y se repararon 63 — los logs y el ADR citan las rutas viejas **a propósito**, y la tabla de
-`conocimiento/mapa_documentos.md` las resuelve. Cada carpeta nueva trae `README.md` con el criterio de qué
-entra. Y tres defectos que venían de `main`: **el paso 0 estaba en rojo** (dos líneas partidas a mano tras
+`conocimiento/mapa_documentos.md` las resuelve. Cada carpeta nueva trae `README.md` con el criterio de qué entra. Y
+dos defectos que el usuario vio en pantalla (152, 153): la **identidad de la sesión es una sola** (47 — el
+selector de la demo no tocaba `SESION`, así que la mesa le negaba marcar a la Ejecutiva de verificación) y
+el **atajo del otorgamiento no se salta el visado** (48 — OTG-02 declarado y no obedecido). Y tres defectos que venían de `main`: **el paso 0 estaba en rojo** (dos líneas partidas a mano tras
 formatear) y `CLAUDE.md`, `README.md` y `.claude/rules/testing.md` habían perdido un salto de línea, con lo
 que el bloque canónico de verificación mostraba ocho pasos y no nueve. Los tres cerrados.
 
@@ -56,8 +58,7 @@ quedaron declarativas y su `hint` lo dice.
 
 ## Bloqueos · los dos son del usuario, desde Windows
 
-El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403, política; se reporta, no se rodea).
-Queda **el tag `v0.1.0`** sobre `bd14091` y **borrar las ramas integradas**.
+El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403, política; se reporta, no se rodea): queda **el tag `v0.1.0`** sobre `bd14091` y **borrar las ramas integradas**.
 
 ## Deudas anotadas (no bloquean, no olvidar)
 
@@ -71,10 +72,9 @@ Queda **el tag `v0.1.0`** sobre `bd14091` y **borrar las ramas integradas**.
 3. **Dos sesiones paralelas toman el mismo «siguiente entero libre»** — reglas, casos Y ADR, las tres
    cosas. Quien mezcla después renumera lo suyo, y hay que revisar también las CITAS del otro lado.
 4. **Hooks en Windows**: `node verificar_hooks.mjs` una vez; es lo único que el CI no atestigua. · Los 13
-   skills de `taste-skill` viven en el `~/.claude/skills/` del CONTENEDOR, efímero:
-   `/plugin marketplace add leonxlnx/taste-skill` en su máquina.
+   skills de `taste-skill` viven en el `~/.claude/skills/` del CONTENEDOR, efímero: `/plugin marketplace add leonxlnx/taste-skill` en su máquina.
 
 ## Conocimiento clave
 
 [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto, en [`vault/index.md`](../index.md)
-Últimas: [ordenar la carpeta](./2026-09-21_ordenar_la_carpeta.md) · [mensajería](./2026-09-21_spec_mensajeria.md) · [las tres casuísticas del elenco](./2026-09-20_las_tres_casuisticas_del_elenco.md) · [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md) · [las líneas son un insumo](./2026-09-20_las_lineas_son_un_insumo.md)
+Últimas: [identidad y atajo](./2026-09-21_identidad_y_atajo_otorgamiento.md) · [ordenar la carpeta](./2026-09-21_ordenar_la_carpeta.md) · [mensajería](./2026-09-21_spec_mensajeria.md) · [las tres casuísticas del elenco](./2026-09-20_las_tres_casuisticas_del_elenco.md) · [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md) · [las líneas son un insumo](./2026-09-20_las_lineas_son_un_insumo.md)

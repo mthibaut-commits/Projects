@@ -12878,19 +12878,19 @@ function DealDrawer({
               />
             </div>
           )}
-          {tab === "otorgamiento" && deal.otorgAuto && (
+          {tab === "otorgamiento" && otorgAutoVigente(deal) && (
             <div className="mt-4 rounded-lg p-3" style={{ backgroundColor: C.greenBg, border: "1px solid #bbf7d0" }}>
               <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: C.green }}>
                 <Check size={12} /> Otorgamiento automático
               </div>
               <div className="mt-1.5 t12" style={{ color: C.ink, lineHeight: 1.5 }}>
-                Esta operación solo tiene deudores de Lista Blanca / Autorizados y está dentro de la línea de crédito aprobada ({fmtMM(lineaAprobadaDe(deal))}).
-                Se otorga automáticamente, sin intervención de un especialista, y continúa a Cesión.
+                Esta operación solo tiene deudores de Lista Blanca / Autorizados y está dentro de la línea de crédito aprobada ({fmtMM(lineaAprobadaDe(deal))}),
+                y el visado del cliente no dejó nada por resolver. Se otorga automáticamente, sin intervención de un especialista, y continúa a Cesión.
               </div>
             </div>
           )}
           {tab === "otorgamiento" &&
-            !deal.otorgAuto &&
+            !otorgAutoVigente(deal) &&
             (() => {
               // VISTA DE SOLO LECTURA para el ejecutivo: las reglas del cliente (visado) que dejan la operación
               // en otorgamiento. La aprobación de las excepciones se realiza en el menú "Otorgamientos".
@@ -23199,10 +23199,26 @@ function etapaTrasFirma(e) {
   // Todo resuelto en el acto: sale del tubo y queda esperando que Operaciones la integre al core.
   return { stage: "cesion", integracion: "pendiente", motivo: "sin_pendientes" };
 }
+// ¿SIGUE EN PIE EL ATAJO DEL OTORGAMIENTO AUTOMÁTICO? `requiereOtorgamiento` es una heurística vieja
+// —¿supera la línea?, ¿hay deudores «Otro»?— que nació ANTES del motor de reglas y no lo mira: una
+// operación de puros deudores Prime, dentro de línea, puede tener decenas de criterios del CLIENTE
+// (CMF, TGR, concentración…) esperando excepción. El atajo dice quién NO tiene que mirarla por línea
+// o por deudor; no dice que el visado no exista. Con excepciones o rechazos re-evaluables sin resolver
+// el atajo NO está vigente, y es literalmente lo que OTG-02 declara: sin resolverlos no se pasa a
+// Cesión. Es puro y recibe el estado por parámetro, como el resto del motor (regla 48).
+function otorgAutoVigente(deal, estado) {
+  if (!deal || !deal.otorgAuto) return false;
+  const v = visadoDeal(deal, estado);
+  return v.excPend.length === 0 && v.rechReev.length === 0;
+}
 function otorgamientoCompleto(deal, estado) {
   if (!deal || deal.stage !== "otorgamiento" || otorgBloqueado(deal, estado) || !aprobacionFormalCliente(deal)) return false;
-  if (deal.otorgAuto) return true;
   const v = visadoDeal(deal, estado);
+  // OTG-02 PRIMERO, también para el atajo: acá `deal.otorgAuto` devolvía `true` sin mirar el visado, y
+  // por ahí una operación con 38 criterios por aprobar llegaba a «Pendiente Integración» con el
+  // otorgamiento sin hacer. El contrato ya lo decía; lo que faltaba era que el código lo obedeciera.
+  if (v.excPend.length || v.rechReev.length) return false;
+  if (deal.otorgAuto) return true;
   return v.exc.length > 0 && v.estado === "aprobada";
 }
 // LA ASIGNACIÓN DE LÍNEA QUE RESPALDA EL PAQUETE. Una operación aceptada se LEE de su versión y no se
@@ -44269,6 +44285,28 @@ function abrirSesion(code, via) {
   registrarAuditoria({ usuario: USERS[code] || code, modulo: "Autenticación", accion: "Inicio de sesión", glosa: `Ingreso exitoso vía ${via}`, exito: true });
   return SESION;
 }
+// El selector de usuario de la demo cambia la IDENTIDAD DE LA SESIÓN, no sólo el rótulo de la navbar
+// (regla 47). Hasta el 21-09-2026 sólo movía el estado de React, y los permisos preguntan por
+// `SESION.usuario`: la mesa de verificación le decía «sólo el Ejecutivo de verificación puede marcarla»
+// a la Ejecutiva de verificación, porque la pantalla mostraba a Camila y el permiso seguía preguntando
+// por quién había hecho login. NO se reabre la sesión: los dos relojes —el absoluto y el de
+// inactividad— y el tenant son de la sesión, no de la persona, y reiniciarlos convertiría un cambio de
+// identidad en una sesión eterna. Queda en la bitácora porque es un cambio de identidad, que es
+// exactamente lo que un registro de evidencia tiene que poder explicar.
+function suplantarSesion(code) {
+  if (!SESION || !code || SESION.usuario === code) return SESION;
+  const antes = SESION.usuario;
+  SESION = { ...SESION, usuario: code, suplantado: true, actividad: Date.now() };
+  logSys("warn", "app", `Identidad de la sesión cambiada (demo) · ${USERS[antes] || antes} → ${USERS[code] || code}`, { antes, ahora: code });
+  registrarAuditoria({
+    usuario: USERS[code] || code,
+    modulo: "Autenticación",
+    accion: "Cambio de identidad (demo)",
+    glosa: `La sesión pasa de ${USERS[antes] || antes} a ${USERS[code] || code} sin volver a autenticar`,
+    exito: true,
+  });
+  return SESION;
+}
 function LoginScreen({ usuarioInicial, onIngresar }) {
   const [u, setU] = useState(usuarioInicial || "CR"); // código de la sesión, resuelto al verificar
   const [email, setEmail] = useState("carla.rivas@security.cl"); // el usuario visible es el email
@@ -45041,6 +45079,14 @@ export default function PipelineComercial() {
   const [directorio, setDirectorio] = useState(null); // DIRECTORIO · demo acotada (bloque desechable)
   const [channel, setChannel] = useState("Manual");
   const [usuario, setUsuario] = useState(soloDetalle && detallePayload.usuario ? detallePayload.usuario : USUARIO); // usuario logueado
+  // CAMBIAR DE USUARIO ES CAMBIAR LA SESIÓN (regla 47). Va por acá —y no por `setUsuario` suelto— para
+  // que todo selector que se agregue después mueva las dos cosas: lo que la pantalla muestra y lo que
+  // los permisos preguntan. En la pestaña del detalle `SESION` es null y `suplantarSesion` no hace nada:
+  // ahí el permiso ya cae en el `|| usuario`, que es para lo que ese respaldo existe.
+  const cambiarUsuario = (u) => {
+    suplantarSesion(u);
+    setUsuario(u);
+  };
   const [logueado, setLogueado] = useState(soloDetalle || soloOpDetalle ? true : false); // gate de login; en modo detalle (deal u operación) ya viene autenticado
   const [cmdOpen, setCmdOpen] = useState(false); // command palette Ctrl+K (spec §38)
   // Reportes de Gestión: se abren INLINE en la vista (no como modal). Un solo estado con la clave activa.
@@ -47533,48 +47579,30 @@ export default function PipelineComercial() {
       const mapped = prev.map((d) => {
         if (d.stage === "perdida" || d.stage === "giro") return d; // etapas terminales
         if (d.stage === "otorgamiento") {
-          // Otorgamiento ocurre TRAS la cesión y deja la operación lista para INTEGRARSE al core.
-          // AUTOMÁTICO: se aprueba solo, pero tampoco gira solo —y sigue esperando las llamadas del
-          // equipo de verificación, que el otorgamiento automático no cubre—. Antes esta rama
-          // desembolsaba en el acto: el control de Operaciones no existía y VER-01 quedaba fuera.
-          if (d.otorgAuto) {
-            if (verifResumenDeal(d).pend > 0) return d; // faltan llamadas: se queda en Otorgamiento / Verificación
-            return {
-              ...d,
-              stage: "cesion",
-              otorgada: true,
-              integracion: "pendiente",
-              giroPendiente: true,
-              status: "Pendiente Integración · esperando a Operaciones",
-              time: nowStamp(),
-              historialContacto: traza(
-                d,
-                "Otorgamiento automático aprobado (buenos deudores y dentro de línea) y verificación completa → pasa a Operaciones para su integración al core",
-                true,
-                DET_ETAPA.cesion,
-              ),
-            };
-          }
-          // Manual: se libera cuando el VISADO queda resuelto —todas las excepciones aprobadas por quien
-          // tiene la atribución— y el cliente mantiene su aprobación formal. Antes esta rama miraba
-          // `d.causas` del modelo de desvíos, que nadie podía autorizar: una operación derivada a
-          // otorgamiento manual se quedaba acá para siempre salvo que alguien la moviera a mano.
-          // Resuelto el visado, la operación NO gira: sale del tubo comercial y queda esperando que
-          // Operaciones la integre al core. Girar es el último paso y lo autoriza otra área — antes
-          // esta rama desembolsaba sola, así que el control de Operaciones no existía.
+          // Otorgamiento ocurre TRAS la cesión y deja la operación lista para INTEGRARSE al core. Se
+          // libera cuando el VISADO queda resuelto —todas las excepciones aprobadas por quien tiene la
+          // atribución—, el cliente mantiene su aprobación formal y no quedan llamadas pendientes.
+          // Resuelta, la operación NO gira: sale del tubo comercial y queda esperando que Operaciones la
+          // integre al core. Girar es el último paso y lo autoriza otra área.
+          // UNA SOLA RAMA para el automático y el manual (21-09-2026, regla 48). Eran dos, y la del
+          // atajo no miraba el visado: con `otorgAuto` bastaba que no faltaran llamadas para llegar a
+          // «Pendiente Integración» con 38 criterios por aprobar —OTG-02 declarado y no obedecido—.
+          // Separadas volverían a separarse: lo único que cambia entre las dos es la GLOSA.
           if (otorgamientoCompleto(d) && verifResumenDeal(d).pend === 0) {
             return {
               ...d,
               stage: "cesion",
               otorgada: true,
-              otorgPorExcepcion: true,
+              ...(d.otorgAuto ? {} : { otorgPorExcepcion: true }),
               integracion: "pendiente",
               giroPendiente: true,
               status: "Pendiente Integración · esperando a Operaciones",
               time: nowStamp(),
               historialContacto: traza(
                 d,
-                "Otorgada por excepción — visado resuelto y verificación completa → pasa a Operaciones para su integración al core",
+                d.otorgAuto
+                  ? "Otorgamiento automático aprobado (buenos deudores y dentro de línea), visado sin pendientes y verificación completa → pasa a Operaciones para su integración al core"
+                  : "Otorgada por excepción — visado resuelto y verificación completa → pasa a Operaciones para su integración al core",
                 true,
                 DET_ETAPA.cesion,
               ),
@@ -49407,7 +49435,7 @@ export default function PipelineComercial() {
                 cierre={cierreModal}
                 onConfirmCierre={confirmarCierre}
                 usuario={usuario}
-                onCambiarUsuario={setUsuario}
+                onCambiarUsuario={cambiarUsuario}
                 tabInicial={(detallePayload && detallePayload.tab) || dealTabInicial}
                 onIrOtorgamientos={() => {}}
               />
@@ -49572,7 +49600,7 @@ export default function PipelineComercial() {
                     <User size={14} style={{ color: C.faint }} />
                     <select
                       value={usuario}
-                      onChange={(e) => setUsuario(e.target.value)}
+                      onChange={(e) => cambiarUsuario(e.target.value)}
                       title="Sesión de usuario (sólo demo)"
                       className="rounded-lg px-2 py-1.5 t12 font-medium"
                       style={{ border: `1px dashed ${C.amber}`, color: C.ink, backgroundColor: "#fff" }}
