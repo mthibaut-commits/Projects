@@ -1,5 +1,7 @@
 # Spec — Inbound de facturas (selección y originación automática)
 
+**Versión 1.0.0 · 12-09-2026 · NEX Factoring**
+
 **Qué es.** El proceso que mira **todas** las facturas electrónicas que emiten los cedentes, decide cuáles
 vale la pena financiar y con cuáles abre una oportunidad comercial. Es el único proceso del pipeline que
 corre **sin que nadie lo pida**: llega un DTE y se decide solo.
@@ -367,3 +369,13 @@ Tres observaciones, en orden de importancia:
    tenant?** Hoy están en el código; el resto de los parámetros operativos ya salieron a configuración.
 5. **¿El cupo tentativo de los clientes sin línea (MM$300–1.300) es una banda del negocio?** Hoy es
    sintético y determinista por RUT.
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.0.0** | 12-09-2026 | Primera versión: qué facturas entran y cuáles abren oportunidad, con su auditoría de aislamiento. |

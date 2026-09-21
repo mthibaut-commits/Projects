@@ -44,7 +44,10 @@ const leer = (slug) => {
   const src = readFileSync(join(DIR, slug + ".md"), "utf8").replace(/\s*$/, "\n");
   const titulo = (src.match(/^#\s+(.*)$/m) || [])[1] || slug;
   const mT = titulo.match(/^Spec\s*[—-]\s*(.+?)\s*\((Activos?)\s+([^)]+)\)\s*$/i);
-  const cuerpo = src.replace(/^#\s+.*\n/, "");
+  // El anexo de control de versiones de cada spec NO entra: doce anexos seguidos dentro de un
+  // consolidado no se leen, y el consolidado lleva el suyo al final. La LÍNEA de versión sí se
+  // queda en el capítulo: dice qué versión de ese spec es la que este documento reproduce.
+  const cuerpo = src.replace(/^#\s+.*\n/, "").replace(/\n*(?:---\n\n)?## Anexo · Control de versiones\n[\s\S]*$/, "\n");
   return {
     slug, titulo,
     nombre: mT ? mT[1] : titulo,
@@ -60,11 +63,23 @@ const leer = (slug) => {
 const specs = GRUPOS.flatMap((g) => g.specs.map(leer));
 const hoy = new Date().toISOString().slice(0, 10);
 
+// El consolidado tiene versión PROPIA: reúne a los doce, así que no puede heredar la de ninguno. Se
+// declara acá y no en el .md porque el .md es generado — editarlo a mano lo pisa la próxima corrida.
+const VERSION = "1.2.1";
+const HISTORIAL = [
+  ["1.2.1", "21-09-2026", "Rutas de los documentos citados, tras agrupar la documentación por carpetas."],
+  ["1.2.0", "18-09-2026", "Correcciones del A16: D02–D13 son excepciones no re-evaluables y no bloqueos firmes, C47–C50 salen del catálogo y el tipo `porDeudor` lo declara la regla."],
+  ["1.1.0", "17-09-2026", "V04 y V10 pasan a ser alcanzables con el A10, y las comparaciones del predictor van en pesos."],
+  ["1.0.0", "16-09-2026", "Primera versión: reúne los doce specs de integración, ya sobre S3."],
+];
+
 const doc = [];
 doc.push("# Integraciones — APIs y S3");
 doc.push("");
 doc.push(`**Propósito:** el contrato de las entregas que alimentan NEX Factoring y de las APIs que expone o consume. Reúne los ${specs.length} specs de \`Integraciones/\`, que siguen siendo la fuente de cada uno.`);
 doc.push(`**Alcance:** ${specs.length} integraciones · generado el ${hoy}.`);
+doc.push("");
+doc.push(`**Versión ${VERSION} · ${HISTORIAL[0][1]} · NEX Factoring**`);
 doc.push("");
 doc.push("---");
 doc.push("");
@@ -98,6 +113,18 @@ for (const g of GRUPOS) {
     doc.push("");
   }
 }
+
+// El anexo cierra el documento, en hoja propia cuando sale a PDF.
+doc.push("---");
+doc.push("");
+doc.push("## Anexo · Control de versiones");
+doc.push("");
+doc.push("**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.");
+doc.push("");
+doc.push("| Versión | Fecha | Qué cambió |");
+doc.push("|---|---|---|");
+HISTORIAL.forEach(([v, f, q], i) => doc.push(`| ${i === 0 ? `**${v}**` : v} | ${f} | ${q} |`));
+doc.push("");
 
 writeFileSync(SALIDA, doc.join("\n").replace(/\n{3,}/g, "\n\n"));
 console.log(`OK: ${SALIDA} · ${specs.length} specs · ${doc.join("\n").split("\n").length} líneas`);

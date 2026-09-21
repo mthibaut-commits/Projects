@@ -1,5 +1,7 @@
 # Spec — s3_verificacion.csv (Activo A10)
 
+**Versión 2.1.1 · 21-09-2026 · NEX Factoring**
+
 **Propósito:** variables del **Predictor de Verificación** (V01–V10) por **par cliente-deudor** (ventana 3M/6M). Monta la sección VERIFICACION de la **tabla interna**. NEX decide localmente: VERIFICADA POR MODELO o VERIFICACIÓN TELEFÓNICA antes de girar.
 **Transporte:** S3 · `s3://nex-ingesta-<ambiente>/verificacion/VERIFICACION_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** upserts vía API A22 (dominio `VERIFICACION`) — clave para V07/V08 que son **degradables intramés**.
 **Clave:** `RUT_CLIENTE` + `RUT_DEUDOR`. Full-replace diario + upserts.
@@ -33,3 +35,18 @@
 - La verificación telefónica registrada en NEX no se pierde con las cargas.
 
 **Fuente normativa:** `Specs_Procesos/Verificacion/spec-verificacion-facturas.md`, que es la versión vigente del predictor. El PDF `Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf` describe la versión anterior (segmentos «Elite/Others», V10 con el múltiplo, entrada por conjunción) y quedó atrás en esos puntos.
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **2.1.1** | 21-09-2026 | Rutas de los documentos citados. |
+| 2.1.0 | 17-09-2026 | V04 y V10 pasan a ser alcanzables con el A10, y las comparaciones van en pesos: el predictor medía pesos contra millones. |
+| 2.0.0 | 16-09-2026 | El transporte pasa de SFTP a S3. El layout no cambia. |
+| 1.2.0 | 14-09-2026 | El predictor de verificación pasa a leer este activo. |
+| 1.1.0 | 11-09-2026 | Cotejo contra el código: PRIME/OTROS, la entrada por disyunción y los umbrales vigentes. |
+| 1.0.0 | 29-08-2026 | Primera versión: el activo del predictor de verificación (A10). |

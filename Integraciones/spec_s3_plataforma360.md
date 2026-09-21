@@ -1,5 +1,7 @@
 # Spec — s3_plataforma360.csv (Activo A11)
 
+**Versión 2.0.0 · 16-09-2026 · NEX Factoring**
+
 **Propósito:** información de empresa de la Plataforma 360 (firmográfica, comercial, índices, ventas, socios) por RUT — clientes y deudores. Monta la sección PLATAFORMA360 de la **tabla interna**. Alimenta la presentación al comité (pasos 1, 2 y 4) y la generación IA de notas.
 **Transporte:** S3 · `s3://nex-ingesta-<ambiente>/plataforma360/PLATAFORMA360_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** upserts vía API A22 (dominio `PLATAFORMA360`).
 **Clave:** `RUT` + `ROL` (CLIENTE | DEUDOR). Full-replace diario + upserts intradía.
@@ -26,3 +28,16 @@
 **Por qué el mix vive acá, y dónde se mide.** Alimenta la columna **SOW** del tubo comercial en versión tabla. El sujeto del campo es la EMPRESA —no su cartera, no un par cliente-deudor—, así que por el criterio del Levantamiento §5 el maestro de publicación es este activo. Pero **el dato se mide en A2 · AECSync**, que registra todas las cesiones del cliente —bancarias y no bancarias— e identifica al cesionario de cada una: es el único que puede decir con quién se financia. Acá llega **inyectado**, igual que `COLOC_PROM_12M_M` y `FECHA_PRIMERA_OPERACION`, que también se miden sobre las cesiones. `SOW_SECURITY_PCT` se ancla al `SOWActualPct` del A5 —ver el hueco abierto en Levantamiento §5.6, donde los dos activos miden esa cifra con 13,8 pto de desvío mediano—.
 
 **Notas:** campos vacíos = sin información (no 0). La nota de comportamiento se **consolidó acá** (antes viajaba además en A16 y A10, y el layout de A3/A4 también la declaraba): es un atributo de la empresa, y tres copias podían discrepar sobre el mismo RUT. Para deudores, los campos comerciales de cliente pueden venir vacíos. Solapa variables con A16: mantener consistencia de nombres o consolidar entrega (ver Levantamiento §4).
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **2.0.0** | 16-09-2026 | El transporte pasa de SFTP a S3. El layout no cambia. |
+| 1.2.0 | 15-09-2026 | El share of wallet entra como columna del tubo, alimentado por este activo. |
+| 1.1.0 | 14-09-2026 | El layout se ajusta a lo que produce el generador de activos. |
+| 1.0.0 | 29-08-2026 | Primera versión: la plataforma 360 del cliente (A11). |

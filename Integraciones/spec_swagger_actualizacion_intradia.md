@@ -1,5 +1,7 @@
 # Spec — swagger_actualizacion_intradia.yaml (Activo A22)
 
+**Versión 1.0.1 · 16-09-2026 · NEX Factoring**
+
 **Propósito:** endpoint **expuesto por NEX** para que Security actualice la **tabla interna** (montada desde las entregas diarias de otorgamiento A16, verificación A10 y Plataforma 360 A11) cuando los registros varían dentro del día. La aplicación nunca consulta a Security en línea: siempre lee la tabla interna (batch + estos upserts).
 
 | Endpoint | Uso |
@@ -11,3 +13,14 @@
 **Casos de uso típicos:** regularización de una mora TGR (des-bloquea un HARD_BLOCK en la re-evaluación), degradación intramés de V07/V08 (mora/reclamos del par), cambio de línea aprobada tras comité.
 **Seguridad:** mTLS o OAuth2 client-credentials (por definir); origen autorizado único (Security). Reintentos idempotentes: mismo registro + mismo timestamp no duplica.
 **Auditoría:** cada upsert queda en la bitácora de NEX (origen, dominio, n° registros, timestamp).
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.0.1** | 16-09-2026 | Redacción alineada con el cambio de transporte de las entregas diarias. |
+| 1.0.0 | 29-08-2026 | Primera versión: el upsert intradía que NEX expone (A22). |

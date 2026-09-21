@@ -1,5 +1,7 @@
 # Especificación · Asignación de líneas de crédito en el armado de ofertas de factoring
 
+**Versión 1.2.0 · 15-09-2026 · NEX Factoring**
+
 **Producto:** Factoring Security · módulo de originación
 **Alcance:** motor de asignación de línea y pantalla de armado de oferta (etapa Oferta y Negociación)
 **Estado:** especificación para implementación. El prototipo funcional adjunto (`asignacion-linea.html`) es la referencia de comportamiento.
@@ -72,7 +74,6 @@ Dos consecuencias que el mínimo tiene sobre el reparto y conviene no descubrirl
    mínimo. Un cliente cuyo cupo vigente sea menor que el mínimo (por ejemplo con líneas suspendidas)
    recibe una sola línea por lo que le queda, **por debajo del mínimo**: darle una de $10.000.000
    sería aprobarle cupo que nadie aprobó.
-
 
 ### 2.2 Paraguas del deudor
 
@@ -546,7 +547,6 @@ El ejecutivo arma una propuesta comercial agregando y quitando facturas. El feed
 
 No hay filtro de listas ni panel de análisis de líneas. Todo dato de línea aparece contextualmente en la fila que lo necesita.
 
-
 ```
 Encabezado de oportunidad
 Tarjeta de veredicto          ← la respuesta, con la acción principal
@@ -674,3 +674,15 @@ Datos sintéticos del prototipo. Cliente Comercial del Valle S.A. con 7 deudores
 | 13 | Entre versiones otro negocio consumió el cupo | Las que se cursaban pasan a `REQUIERE_COMITE` con `cambio: perdio_linea`. Es el caso que, sin explicación, se lee como error del sistema. |
 | 14 | La puntual se agotó entre versiones | La misma factura se financia ahora con la normal: `cambio: cambio_de_linea`. |
 | 15 | La versión anterior no altera la asignación | Con y sin `version_anterior` el resultado es idéntico —mismo cursable, mismos `origen`, mismas solicitudes—; lo único que cambia es que aparece el diff. Guardarraíl del principio: la API es la verdad. |
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.2.0** | 15-09-2026 | Monto mínimo de línea aprobada ($10.000.000), con la línea puntual exenta. |
+| 1.1.0 | 11-09-2026 | Cotejo contra el código: manda el tramo y después la nota, entran los estados A/B del cliente, la LF1 en la cascada y el quinto motivo `lf1`. |
+| 1.0.0 | 10-09-2026 | Primera versión: la cascada de líneas, la conciliación al reevaluar y el A23 en tres niveles. |

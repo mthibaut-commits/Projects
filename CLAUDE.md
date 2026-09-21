@@ -55,7 +55,7 @@ contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ni
 | Regenerar los activos sintéticos | `node GeneradorDatos/generar.js` — tiene punto fijo: reproduce el archivo commiteado byte a byte (gate `generador.test.mjs`) · un solo bloque: `--solo=VERIFICACION` |
 | Spec `.md` → PDF | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node md_a_pdf.mjs <archivo.md>` |
 | Consolidado de integraciones | `node armar_integraciones.mjs` |
-| Tubo con una operación simulada | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_tabla_simulada.mjs` |
+| Tubo con una operación simulada | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_tabla_simulada.mjs` → `Capturas_Simuladas/` |
 
 ## Reglas núcleo
 
@@ -118,5 +118,6 @@ contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ni
   - `adr/` — decisiones · `sesiones/estado_actual.md` — el tablero · `sesiones/` — logs
 - `Specs_Procesos/<tema>/` (`Otorgamiento` · `Verificacion` · `Lineas` · `Excepciones` · `Evaluacion_Factura`) · `Integraciones/` · `Levantamiento_Activos_Informacion.md` — la fuente de verdad de negocio; qué es cada uno: `vault/conocimiento/mapa_documentos.md`
 - `GeneradorDatos/` — produce los activos sintéticos (`datos_inyectados.js`, `proveedores_clientes.json`)
-- `Capturas_UI/` — el DOM real capturado, fuente para Figma; `Figma_Export/` quedó obsoleto como fuente
+- `Capturas_UI/` (el estado por defecto) · `Variantes_UI/` (los estados del detalle) · `Capturas_Simuladas/` (lo que
+  exige conducir la app) — el DOM real capturado, fuente para Figma; `Figma_Export/` quedó obsoleto como fuente
 - `Auditoria/` — los informes que MIDEN (el repo, el fuente, el generador) · `Regresiones/` — lo que cotejó definición contra implementación y dejó hallazgos; la historia del proyecto vive ahí y en `vault/sesiones/`

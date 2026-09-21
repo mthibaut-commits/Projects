@@ -39,5 +39,7 @@ timestamp: 2026-09-19T00:40:00Z
 
 | 21-09-2026 | [`2026-09-21_ordenar_la_carpeta.md`](./2026-09-21_ordenar_la_carpeta.md) | Los `.md` y `.pdf` de la raíz se ordenan por lo que el documento ES: `Auditoria/` (lo que mide), `Regresiones/` (lo que cotejó definición contra implementación), los PDF de contrato a `Integraciones/` y `Specs_Procesos/` partido en cinco temas. 41 renombres, 77 referencias rotas medidas con un verificador diferencial de enlaces y 63 reparadas; de paso, el paso 0 estaba en rojo en `main` y dos bloques de comandos habían perdido un salto de línea |
 
+| 21-09-2026 | [`2026-09-21_versionado_de_entregables.md`](./2026-09-21_versionado_de_entregables.md) | Los 23 entregables declaran `Versión N.N.N` bajo el título y cierran con un anexo de control de versiones reconstruido del historial del repo; el PDF la estampa en cada hoja y abre el anexo en hoja nueva, y `versiones.test.mjs` exige que la cabecera y la primera fila del anexo calcen. Nace `Capturas_Simuladas/`, la tercera clase de captura: la que exige conducir la app |
+
 La historia anterior al vault (02-09 → 16-09-2026) no tiene logs propios: vive dentro de las reglas de
 dominio (cada una trae fecha y qué la motivó) y en `Auditoria/` y `Regresiones/`.

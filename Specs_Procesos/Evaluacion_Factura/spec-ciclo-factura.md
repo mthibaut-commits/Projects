@@ -1,6 +1,6 @@
 # El ciclo de una factura — de la sincronización al giro
 
-**Versión:** 1.0 · **Fecha:** 17-09-2026 · **Sistema:** NEX Factoring · Pipeline Comercial
+**Versión 1.1.1 · 21-09-2026 · NEX Factoring**
 
 Este documento sigue **un documento tributario** desde que Security lo recibe hasta que Tesorería
 transfiere el dinero. Existen ya seis specs de proceso —inbound, líneas, otorgamiento, verificación,
@@ -1343,3 +1343,15 @@ describen conducta:
 | `Levantamiento_Activos_Informacion.md` | los activos A1–A25 y, en su §5, cuál es el maestro de cada campo |
 | `Integraciones/Integraciones_APIs_y_S3.md` | los contratos de integración: swaggers, layouts y el transporte |
 | `Regresiones/Inconsistencias_Motor_Otorgamiento.md` | la auditoría de la política contra el motor, con sus decisiones de negocio |
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.1.1** | 21-09-2026 | Rutas de los documentos citados. |
+| 1.1.0 | 18-09-2026 | La regla mal definida entra al camino general, y el desfase de unidades de V03/V04/V09 que este documento reportaba queda corregido. |
+| 1.0.0 | 17-09-2026 | Primera versión: la costura de los siete motores, las diez variantes y los cortes transversales, verificada afirmación por afirmación contra el fuente. |

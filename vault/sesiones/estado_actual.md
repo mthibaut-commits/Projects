@@ -13,36 +13,33 @@ timestamp: 2026-09-21T23:40:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **151/151 PASA**, **39 archivos de gate de contrato**
-(268 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su
+(`pipeline_comercial.jsx`), build standalone, **151/151 PASA**, **40 archivos de gate de contrato**
+(271 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su
 vault (75 reglas verbatim por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y
 **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen gate. La crónica del 17 al 19-09
 vive en sus logs (reglas 32–40, ADR-0003 a 0006, y el **linter** en 0 como paso 0-bis).
 
 El **20-09** entró todo lo de esta rama, sobre plata: la **regla 8 deja de ser proxy** (149, ADR-0008),
-**girar no es una acción de NEX** (43, 147, 148), **ATR-01 en el handler** (145), el **id de la solicitud
-al comité** (146), las **identidades pasan a ser pares reales del AEC** (42, ADR-0009) y, al cierre, las
-**líneas** (44–46, casos 150–151, ADR-0010 y ADR-0011). De `main`, los **controles de la integración al
-core** (41, ADR-0007) y la **spec de mensajería**.
+**girar no es una acción de NEX** (43, 147, 148), **ATR-01 en el handler** (145), el **id de la solicitud al
+comité** (146), las **identidades reales del AEC** (42, ADR-0009) y las **líneas** (44–46, casos 150–151,
+ADR-0010 y 0011). De `main`, los **controles de la integración al core** (41, ADR-0007) y la mensajería.
 
-El **21-09** se ordenó la carpeta (pedido del usuario): la raíz baja a tres `.md` —`CLAUDE.md`, `README.md`,
-`Levantamiento_Activos_Informacion.md`—, nacen `Auditoria/` (lo que mide) y `Regresiones/` (lo que cotejó
-definición contra implementación), los cuatro PDF de contrato se van a `Integraciones/` y `Specs_Procesos/`
-queda en cinco temas: `Otorgamiento`, `Verificacion`, `Lineas`, `Excepciones` y `Evaluacion_Factura`. Son
-**41 renombres**; las **77 referencias** que rompieron se midieron con un verificador diferencial de enlaces
-y se repararon 63 — los logs y el ADR citan las rutas viejas **a propósito**, y la tabla de
-`conocimiento/mapa_documentos.md` las resuelve. Cada carpeta nueva trae `README.md` con el criterio de qué
-entra. Y tres defectos que venían de `main`: **el paso 0 estaba en rojo** (dos líneas partidas a mano tras
-formatear) y `CLAUDE.md`, `README.md` y `.claude/rules/testing.md` habían perdido un salto de línea, con lo
-que el bloque canónico de verificación mostraba ocho pasos y no nueve. Los tres cerrados.
+El **21-09**, tres pedidos del usuario. **Ordenar la carpeta**: la raíz baja a tres `.md`, nacen `Auditoria/`
+(lo que mide) y `Regresiones/` (lo que cotejó definición contra implementación), los PDF de contrato se van a
+`Integraciones/` y `Specs_Procesos/` queda en cinco temas. Son **41 renombres**; las **77 referencias** que
+rompieron se midieron con un verificador diferencial y se repararon 63 — los logs y el ADR citan las rutas
+viejas **a propósito** y el mapa las resuelve. **Versionar los entregables**: los 23 declaran `Versión N.N.N`
+y cierran con su anexo de control de versiones, reconstruido del historial del repo; `md_a_pdf.mjs` la
+estampa en el encabezado de **cada hoja** y el **gate 40** exige que la cabecera y la primera fila calcen. Y
+**`Capturas_Simuladas/`**, la tercera clase de captura: la que exige conducir la app. De paso, tres defectos
+que venían de `main`: el **paso 0 en rojo** y dos bloques de comandos a los que les faltaba un salto de
+línea, con lo que la verificación canónica mostraba ocho pasos y no nueve. Los tres cerrados.
 
-**Las líneas, en un párrafo.** La ESTRUCTURA es un insumo (44, ADR-0010): el **activo A23** (`LINEA_CUPO`
-4.167 filas + `LINEA_DEUDOR` 741) reemplaza los 3.170 de 3.636 objetos que el pipeline fabricaba desde el
-A7, que el levantamiento §5.4 prohíbe. El **nivel 1 es el CONSOLIDADO** (45, ADR-0011): la cabecera ES la
-suma de las líneas y las superaba en 217 de 224 clientes. El **RUT del deudor se resuelve, no se arma**
-(46): el wizard lo inventaba con 92 % de DV inválidos, así que su línea caía en un par inexistente. Con los
-tres, el bucle del comité cierra por los dos caminos (casos 150–151); `lineaMinima` y `otrosDeudoresPct`
-quedaron declarativas y su `hint` lo dice.
+**Las líneas, en un párrafo.** La ESTRUCTURA es un insumo (44, ADR-0010): el **activo A23** reemplaza los
+3.170 de 3.636 objetos que el pipeline fabricaba desde el A7, que el levantamiento §5.4 prohíbe. El **nivel 1
+es el CONSOLIDADO** (45, ADR-0011): la cabecera ES la suma, y las superaba en 217 de 224 clientes. El **RUT
+del deudor se resuelve, no se arma** (46): el wizard lo inventaba con 92 % de DV inválidos. Con los tres, el
+bucle del comité cierra por los dos caminos (150–151); `lineaMinima` y `otrosDeudoresPct` son declarativas.
 
 > ## 🎯 Siguiente paso
 >
@@ -77,4 +74,4 @@ Queda **el tag `v0.1.0`** sobre `bd14091` y **borrar las ramas integradas**.
 ## Conocimiento clave
 
 [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto, en [`vault/index.md`](../index.md)
-Últimas: [ordenar la carpeta](./2026-09-21_ordenar_la_carpeta.md) · [mensajería](./2026-09-21_spec_mensajeria.md) · [las tres casuísticas del elenco](./2026-09-20_las_tres_casuisticas_del_elenco.md) · [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md) · [las líneas son un insumo](./2026-09-20_las_lineas_son_un_insumo.md)
+Últimas: [versionado](./2026-09-21_versionado_de_entregables.md) · [ordenar la carpeta](./2026-09-21_ordenar_la_carpeta.md) · [mensajería](./2026-09-21_spec_mensajeria.md) · [las tres casuísticas del elenco](./2026-09-20_las_tres_casuisticas_del_elenco.md) · [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md) · [las líneas son un insumo](./2026-09-20_las_lineas_son_un_insumo.md)
