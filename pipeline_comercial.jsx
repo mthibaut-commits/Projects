@@ -621,6 +621,8 @@ const SCHEMA_VERSION = {
   curse: 3, // payload de curse por negocio (v3: OTP con SHA-256 + sal; v2 usaba un hash de 32 bits)
   snapshot: 1, // snapshots de deal/operación para abrir en otra pestaña
   syslog: 1, // log técnico persistido entre sesiones
+  tenants: 1, // catálogo de FACTORINGS de la plataforma (no lleva sufijo de tenant: es la lista de todos)
+  usuariosTenant: 1, // usuarios dados de alta desde Configuración › Tenants (por tenant)
 };
 
 // ── Contratos de datos externos ─────────────────────────────────────────────────────────────────
@@ -4408,7 +4410,41 @@ function borrarReglas() {
 // y estos mismos campos viajarían en la query `configuracionOperativa(tenantId)`. Aquí se persiste en
 // localStorage con idéntica forma para que el reemplazo por la API sea directo.
 // ============================================================
-const TENANTS = [{ id: "security", nombre: "Factoring Security", rut: "96.684.990-8", activo: true }];
+// EL CATÁLOGO DE FACTORINGS ES DE LA PLATAFORMA, NO DE UN TENANT (21-09-2026, pedido del usuario:
+// «un menú Tenant en donde se cree el Tenant de Security y/o otro cliente»). Por eso su clave NO lleva
+// sufijo: `pc_roles_security` es «los roles DE Security», pero la lista de factorings es una sola para
+// toda la instalación —guardarla por tenant sería que cada uno tenga su propia idea de quién existe—.
+// En producción esto es la tabla `tenant` y el alta la hace la plataforma, no el factoring.
+const TENANTS_KEY = "nex_tenants";
+const TENANTS_BASE = [{ id: "security", nombre: "Factoring Security", rut: "96.684.990-8", activo: true }];
+// Misma higiene que roles, áreas y etapas: el storage lo edita el usuario a mano, así que sólo entra lo
+// que tiene la forma declarada. Un tenant sin id válido no es «un tenant raro»: es un id que después
+// compone claves de storage (`pc_roles_<id>`), así que se descarta entero.
+function cargarTenants() {
+  const guardado = leerVersionado(TENANTS_KEY, "tenants", null);
+  if (!Array.isArray(guardado)) return TENANTS_BASE.map((t) => ({ ...t }));
+  const vistos = new Set();
+  const out = [];
+  let ignorados = 0;
+  for (const t of guardado) {
+    const id = t && typeof t.id === "string" ? t.id.trim().toLowerCase() : "";
+    const nombre = t && typeof t.nombre === "string" ? t.nombre.trim().slice(0, 60) : "";
+    if (!/^[a-z][a-z0-9_-]{1,23}$/.test(id) || !nombre || vistos.has(id)) {
+      ignorados++;
+      continue;
+    }
+    vistos.add(id);
+    out.push({ id, nombre, rut: (t.rut || "").toString().slice(0, 15), activo: t.activo !== false });
+  }
+  // El tenant base no se pierde nunca: es el que la demo arranca y el que resuelve el fallback.
+  for (const b of TENANTS_BASE) if (!vistos.has(b.id)) out.unshift({ ...b });
+  if (ignorados) logSys("warn", "app", `Tenants: ${ignorados} entrada(s) del storage ignoradas (id o nombre inválido)`);
+  return out;
+}
+let TENANTS = cargarTenants();
+function guardarTenants() {
+  escribirVersionado(TENANTS_KEY, "tenants", TENANTS);
+}
 // ── Resolución del TENANT (SEGURIDAD / CDN) ─────────────────────────────────────────────────────
 // El tenant NO puede estar escrito en el bundle. La app va a ser un asset estático servido por CDN,
 // el MISMO archivo para todos los factorings: si el id del tenant viene compilado adentro, o hay un
@@ -24279,8 +24315,15 @@ function cargoDeAreaNivel(area, nivel, pad) {
 function rolDeAreaNivel(area, nivel, padron) {
   return cargoDeAreaNivel(area, nivel, padron || padronAprobadores());
 }
+// EL SUPER-ADMIN ES UN ROL, NO UN CÓDIGO (21-09-2026, hallazgo al dar de alta usuarios desde
+// `Configuración › Tenants`). Esta función decía «la atribución sigue al ROL» y sin embargo resolvía
+// el super-admin por el código literal `"ADMIN"`, que es el del elenco de la demo. Medido: un usuario
+// creado con rol `admin` salía con atribución VACÍA y no entraba al padrón —o sea, el administrador
+// del tenant nuevo no podía aprobar nada, que es justo para lo que se lo crea—. `ROL_ATRIB` no lo
+// declara a propósito: cubre las tres áreas en el nivel máximo y no un par (área, nivel).
+const esRolAdmin = (code) => ROL_USUARIO[code] === "admin" || code === "ADMIN";
 function atribDeRol(code) {
-  if (code === "ADMIN") return { riesgo: 5, comercial: 5, operaciones: 5 };
+  if (esRolAdmin(code)) return { riesgo: 5, comercial: 5, operaciones: 5 };
   const a = ROL_ATRIB[ROL_USUARIO[code]];
   return a ? { [a.area]: a.nivel } : {};
 }
@@ -24322,6 +24365,77 @@ function cargarRoles() {
   }
   if (ignoradas) logSys("warn", "app", `Roles: ${ignoradas} entrada(s) del storage ignoradas (usuario o rol desconocido)`, { tenant: TENANT_ACTUAL });
   return base;
+}
+// ── USUARIOS DADOS DE ALTA DESDE CONFIGURACIÓN (por tenant) ─────────────────────────────────────
+// `USERS` es el elenco que trae la demo. Un tenant nuevo no tiene ninguno, y alguien tiene que poder
+// entrar a crear al resto: ése es el ADMIN, y se da de alta en `Configuración › Tenants` (regla 50).
+//
+// Se hidrata ACÁ y no más arriba porque necesita el catálogo de roles (`ROL_POR_ID`) para validar, y
+// tiene que correr ANTES de `cargarRoles()`: esa función IGNORA todo código que no esté en `USERS`,
+// así que un usuario creado ayer perdería su rol al recargar si entrara después.
+const USUARIOS_KEY = "pc_usuarios_" + TENANT_ACTUAL;
+// El email es la CREDENCIAL, así que el alta exige uno y no se repite: dos personas con el mismo
+// correo son la misma sesión. El código es la identidad interna (lo guardan `deal.exec`, la auditoría
+// y los hilos) y por eso se deriva del nombre y se deja fijo — renombrar a alguien no lo convierte en
+// otro. `atribDe` lo ignora si no figura en `ATRIB_USUARIO`, así que un usuario sin atribución es un
+// usuario de pipeline: existe, entra, y no aprueba nada hasta que su ROL diga lo contrario.
+let USUARIOS_TENANT = [];
+function cargarUsuariosTenant() {
+  const guardado = leerVersionado(USUARIOS_KEY, "usuariosTenant", null);
+  if (!Array.isArray(guardado)) return [];
+  const vistos = new Set(),
+    correos = new Set();
+  const out = [];
+  let ignoradas = 0;
+  for (const u of guardado) {
+    const code = u && typeof u.code === "string" ? u.code.trim().toUpperCase() : "";
+    const nombre = u && typeof u.nombre === "string" ? u.nombre.trim().slice(0, 60) : "";
+    const email = u && typeof u.email === "string" ? u.email.trim().toLowerCase().slice(0, 80) : "";
+    const rol = u && typeof u.rol === "string" ? u.rol : "";
+    if (
+      !/^[A-Z][A-Z0-9]{1,7}$/.test(code) ||
+      !nombre ||
+      !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) ||
+      !ROL_POR_ID[rol] ||
+      vistos.has(code) ||
+      correos.has(email)
+    ) {
+      ignoradas++;
+      continue;
+    }
+    vistos.add(code);
+    correos.add(email);
+    out.push({ code, nombre, email, rol });
+  }
+  if (ignoradas)
+    logSys("warn", "app", `Usuarios del tenant: ${ignoradas} entrada(s) del storage ignoradas (código, correo o rol inválido)`, { tenant: TENANT_ACTUAL });
+  return out;
+}
+// Los mete en los catálogos que el resto del código ya consulta. Es lo que hace que un usuario creado
+// aparezca en el selector de sesión, en `Configuración › Usuarios` y en el padrón de aprobadores sin
+// que ninguno de esos sitios sepa que existe un alta.
+function montarUsuariosTenant() {
+  for (const u of USUARIOS_TENANT) {
+    USERS[u.code] = u.nombre;
+    ROLES_DEFAULT[u.code] = u.rol;
+    const atrib = atribDeRol2(u.rol);
+    // Sólo entra a `ATRIB_USUARIO` quien su ROL hace aprobador: `atribDe` devuelve atribución vacía a
+    // quien no figure, y dar de alta el cargo sin dar de alta a quien lo ocupa es justo lo que deja un
+    // (área, nivel) con nombre y sin nadie que lo firme (regla 18).
+    if (Object.keys(atrib).length) ATRIB_USUARIO[u.code] = { tipo: "aprobador", atrib };
+  }
+}
+// El nivel y el área que implica un rol, sin pasar por `atribDeRol`, que resuelve por CÓDIGO y todavía
+// no conoce a este usuario. Es la misma tabla: `ROL_ATRIB`.
+function atribDeRol2(rolId) {
+  if (rolId === "admin") return { riesgo: 5, comercial: 5, operaciones: 5 };
+  const a = ROL_ATRIB[rolId];
+  return a ? { [a.area]: a.nivel } : {};
+}
+USUARIOS_TENANT = cargarUsuariosTenant();
+montarUsuariosTenant();
+function guardarUsuariosTenant() {
+  escribirVersionado(USUARIOS_KEY, "usuariosTenant", USUARIOS_TENANT);
 }
 let ROL_USUARIO = cargarRoles();
 function guardarRoles() {
@@ -24461,7 +24575,7 @@ function padronAprobadores(hoy, reemplazos) {
     rol: rolLabel(code),
     etiqueta: USERS[code] || nombreDe(code),
     atrib: atribDe(code).atrib,
-    superAdmin: code === "ADMIN",
+    superAdmin: esRolAdmin(code),
   }));
   // REEMPLAZOS VIGENTES. Quien cubre a alguien suma sus atribuciones, tomando el MAYOR nivel por área:
   // si el reemplazante ya tenía Comercial N2 y el ausente tiene N1, quedarse con N2 es lo correcto; si
@@ -24543,7 +24657,7 @@ const nombreDe = (code) => String(USERS[code] || code).split(" · ")[0];
 // una llamada y las operaciones se pegan en el giro. Quien la cubre la ejerce mientras dure el período,
 // y la bitácora lo deja escrito como reemplazante (`actorEtiqueta`).
 const puedeVerificarFacturas = (code, hoy, lista) => {
-  if (code === "ADMIN") return true;
+  if (esRolAdmin(code)) return true;
   // La delega quien está fuera…
   if (aQuienCubre(code, hoy, lista).some((r) => ROL_USUARIO[r.ausente] === "ejec_verif")) return true;
   if (ROL_USUARIO[code] !== "ejec_verif") return false;
@@ -24551,13 +24665,16 @@ const puedeVerificarFacturas = (code, hoy, lista) => {
   const cubierto = quienCubreA(code, hoy, lista);
   return !(cubierto && cubierto.ausenteAprueba === false);
 };
-const puedeExcepcionarVerif = (code) => code === "ADMIN" || CFG_EXC_VERIF[code] === true;
-const puedeVerBitacora = (code) => code === "ADMIN" || CFG_VER_BITACORA[code] === true;
-const puedeVerMensajeria = (code) => code === "ADMIN" || CFG_VER_MENSAJERIA[code] === true;
-const puedeVerCobranza = (code) => code === "ADMIN" || CFG_VER_COBRANZA[code] === true;
-const puedeVerPlanEjec = (code) => code === "ADMIN" || CFG_VER_PLANEJEC[code] === true;
-const puedeVerFunnel = (code) => code === "ADMIN" || CFG_VER_FUNNEL[code] === true;
-const aprobMasivaHabilitada = (code) => code === "ADMIN" || CFG_APROB_MASIVA[code] !== false; // default: habilitada
+// Los siete permisos de VISIBILIDAD, todos con la misma forma: el administrador ve todo y el resto
+// depende de su fila en `PERMISOS`. Van por `esRolAdmin` y no por el código literal, por lo mismo que
+// `atribDeRol`: el administrador de un tenant recién creado no se llama «ADMIN».
+const puedeExcepcionarVerif = (code) => esRolAdmin(code) || CFG_EXC_VERIF[code] === true;
+const puedeVerBitacora = (code) => esRolAdmin(code) || CFG_VER_BITACORA[code] === true;
+const puedeVerMensajeria = (code) => esRolAdmin(code) || CFG_VER_MENSAJERIA[code] === true;
+const puedeVerCobranza = (code) => esRolAdmin(code) || CFG_VER_COBRANZA[code] === true;
+const puedeVerPlanEjec = (code) => esRolAdmin(code) || CFG_VER_PLANEJEC[code] === true;
+const puedeVerFunnel = (code) => esRolAdmin(code) || CFG_VER_FUNNEL[code] === true;
+const aprobMasivaHabilitada = (code) => esRolAdmin(code) || CFG_APROB_MASIVA[code] !== false; // default: habilitada
 // ── Eventos de otorgamiento por operación (para la bitácora). Se guardan con hora completa (nowStamp, con segundos).
 let OTORG_EVENTOS = repoOtorgEventos.all(); // { [dealId]: [{ fecha, canal:"Otorgamiento", actor, resultado, detalle, esEvento:true }] }
 // Bitácora append-only del otorgamiento. Devuelve la promesa de confirmación: hoy nadie la espera
@@ -24570,9 +24687,9 @@ function logOtorgEvento(dealId, actor, resultado, detalle) {
 // ejecutivo las priorice. { [dealId]: { por, porNombre, ts } }. Se conserva aunque la op se gane/pierda.
 let PRIORIDAD_CURSE = {};
 // ¿El usuario es jefatura o gerencia comercial (puede pedir/quitar prioridad)? Los ejecutivos no.
-const esJefeComercial = (code) => code === "ADMIN" || atribEfectiva(code).comercial != null;
+const esJefeComercial = (code) => esRolAdmin(code) || atribEfectiva(code).comercial != null;
 // Gerente Comercial (o superior): atribución comercial N2+ (autoriza descuentos sobre el máximo de jefatura).
-const esGerenteComercial = (code) => code === "ADMIN" || (atribEfectiva(code).comercial != null && atribEfectiva(code).comercial >= 2);
+const esGerenteComercial = (code) => esRolAdmin(code) || (atribEfectiva(code).comercial != null && atribEfectiva(code).comercial >= 2);
 // ATR-01 · ¿ESTE usuario puede autorizar ESTE descuento? El rol exigido sale del ESTADO de la atribución
 // (`requiereJefe` → jefatura, `requiereGerente` → Gerente Comercial) y la atribución sale del PADRÓN por
 // código, no de un prop: la pantalla puede venir de una sesión vieja, de un rol que cambió o de un
@@ -33097,6 +33214,7 @@ function CfgCorreo() {
   );
 }
 const CFG_SECCIONES = [
+  { k: "tenants", label: "Tenants", Icon: LayoutGrid },
   { k: "operacion", label: "Operación", Icon: Clock },
   { k: "sistema", label: "Logs y versión", Icon: ShieldCheck },
   { k: "auditoria", label: "Auditoría", Icon: Eye },
@@ -34095,79 +34213,6 @@ function CfgFuncionalidades({ cfgOper, setCfgOper }) {
           Tenant: <b style={{ color: C.sub }}>{t.nombre}</b> · {t.rut}
         </div>
       </div>
-      {/* Marca del tenant: NEX es la plataforma, pero el ejecutivo ve la marca de SU factoring. */}
-      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-        <div className="t12 font-semibold" style={{ color: C.ink }}>
-          Marca
-        </div>
-        <div className="mt-0.5 mb-3 t11" style={{ color: C.faint }}>
-          Logotipo y colores que ve el ejecutivo en el login y la barra superior. NEX queda como plataforma en el «powered by».
-        </div>
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
-            <Marca variante={cfg.marcaLogo} />
-          </div>
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <span className="t11" style={{ color: C.sub, width: 74 }}>
-                Logotipo
-              </span>
-              {[
-                ["nex", "NEX"],
-                ["security", "Security"],
-              ].map(([k, l]) => (
-                <button
-                  key={k}
-                  onClick={() => set("marcaLogo", k)}
-                  className="rounded-full px-3 py-1 t11 font-semibold"
-                  style={{
-                    backgroundColor: cfg.marcaLogo === k ? C.lilac : "#fff",
-                    color: cfg.marcaLogo === k ? C.indigo : C.sub,
-                    border: `1px solid ${cfg.marcaLogo === k ? C.indigo : C.line}`,
-                  }}
-                >
-                  {l}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="t11" style={{ color: C.sub, width: 74 }}>
-                Nombre
-              </span>
-              <input
-                value={cfg.marcaNombre || ""}
-                onChange={(e) => set("marcaNombre", e.target.value)}
-                className="rounded-lg px-2.5 py-1 t11"
-                style={{ border: `1px solid ${C.line}`, color: C.ink, width: 200 }}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="t11" style={{ color: C.sub, width: 74 }}>
-                Acento
-              </span>
-              <input
-                type="color"
-                value={cfg.marcaPrimario || "#703EFF"}
-                onChange={(e) => set("marcaPrimario", e.target.value)}
-                style={{ width: 34, height: 24, border: `1px solid ${C.line}`, borderRadius: 6, background: "#fff" }}
-              />
-              <span className="t11" style={{ color: C.faint, fontVariantNumeric: "tabular-nums" }}>
-                {cfg.marcaPrimario}
-              </span>
-            </div>
-          </div>
-          <div className="flex-1" style={{ minWidth: 220 }}>
-            <div className="t11" style={{ color: C.sub }}>
-              Panel del login
-            </div>
-            <div className="mt-1 h-12 rounded-xl" style={{ background: cfg.marcaPanel }} />
-            <div className="mt-2 t11" style={{ color: C.sub }}>
-              Botón principal
-            </div>
-            <div className="mt-1 h-7 rounded-full" style={{ background: cfg.marcaCta }} />
-          </div>
-        </div>
-      </div>
       <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
         <div className="t12 font-semibold" style={{ color: C.ink }}>
           Detalle de la oportunidad · sub-tabs del Negocio
@@ -34713,6 +34758,358 @@ function CfgFactoringTarget() {
     </div>
   );
 }
+// Configuración › TENANTS. El alta de un factoring en la plataforma (21-09-2026, pedido del usuario:
+// «un menú Tenant en donde se cree el Tenant de Security y/o otro cliente; saca la configuración del
+// logo y de los colores y déjalos en ese menú; en ese menú también deberías poder crear al admin del
+// Tenant para que pueda ingresar y empezar a crear a los otros usuarios»). Regla 50.
+//
+// SON TRES COSAS EN UN ORDEN, y el orden es el punto: un tenant sin admin es una carpeta vacía —nadie
+// puede entrar a crear al resto— y por eso el alta del admin vive acá y no en `Configuración ›
+// Usuarios`, que asigna roles a gente que ya existe. La marca se mudó desde `Funcionalidades`, donde
+// estaba junto a los toggles de módulos: es identidad del tenant, no una funcionalidad suya.
+function CfgTenants({ cfgOper, setCfgOper }) {
+  const cfg = { ...CFG_ACTIVA, ...(cfgOper || {}) };
+  const set = (k, v) => setCfgOper({ ...(cfgOper || {}), [k]: v });
+  const [, force] = useState(0);
+  const [nuevoT, setNuevoT] = useState({ nombre: "", id: "", rut: "" });
+  const [errT, setErrT] = useState(null);
+  const [nuevoU, setNuevoU] = useState({ nombre: "", email: "", rol: "admin" });
+  const [errU, setErrU] = useState(null);
+  const [creado, setCreado] = useState(null);
+  const auditar = (accion, glosa) => {
+    const actor = (SESION && SESION.usuario) || "—";
+    registrarAuditoria({ usuario: USERS[actor] || actor, modulo: "Tenants", accion, glosa, severidad: "alta" });
+  };
+  const crearTenant = () => {
+    const nombre = nuevoT.nombre.trim();
+    const id = nuevoT.id.trim().toLowerCase();
+    if (!nombre) return setErrT("Ponle un nombre al factoring.");
+    if (!/^[a-z][a-z0-9_-]{1,23}$/.test(id))
+      return setErrT("El identificador va en minúsculas, sin espacios ni acentos, y parte con letra: compone las claves de su configuración.");
+    if (TENANTS.some((t) => t.id === id)) return setErrT(`Ya existe un tenant con el identificador «${id}».`);
+    TENANTS.push({ id, nombre: nombre.slice(0, 60), rut: nuevoT.rut.trim().slice(0, 15), activo: true });
+    guardarTenants();
+    auditar("Tenant creado", `${id} · ${nombre}`);
+    setNuevoT({ nombre: "", id: "", rut: "" });
+    setErrT(null);
+    force((v) => v + 1);
+  };
+  // EL CÓDIGO SE DERIVA DEL NOMBRE Y ES LA IDENTIDAD INTERNA: lo guardan `deal.exec`, la auditoría y
+  // los hilos, así que no puede cambiar cuando alguien se cambia el apellido. Dos iniciales, y si
+  // están tomadas se numera — nunca se reusa uno vivo, que sería atribuirle a alguien lo que hizo otro.
+  const codigoLibre = (nombre) => {
+    const partes = nombre.trim().toUpperCase().split(/\s+/).filter(Boolean);
+    const base = ((partes[0] || "X")[0] + ((partes[1] || partes[0] || "X")[0] || "X")).replace(/[^A-Z]/g, "X");
+    if (!USERS[base]) return base;
+    for (let i = 2; i < 100; i++) if (!USERS[base + i]) return base + i;
+    return base + Date.now().toString().slice(-4);
+  };
+  const crearUsuario = () => {
+    const nombre = nuevoU.nombre.trim();
+    const email = nuevoU.email.trim().toLowerCase();
+    if (!nombre) return setErrU("Ponle nombre y apellido.");
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return setErrU("El correo es la credencial con la que entra: tiene que ser uno válido.");
+    if (USUARIOS_TENANT.some((u) => u.email === email) || CUENTAS_DEMO[email])
+      return setErrU("Ese correo ya tiene una cuenta: dos personas con el mismo correo son la misma sesión.");
+    if (!ROL_POR_ID[nuevoU.rol]) return setErrU("Elige un rol del catálogo.");
+    const code = codigoLibre(nombre);
+    USUARIOS_TENANT.push({ code, nombre: nombre.slice(0, 60), email, rol: nuevoU.rol });
+    guardarUsuariosTenant();
+    montarUsuariosTenant();
+    ROL_USUARIO[code] = nuevoU.rol;
+    guardarRoles();
+    // El padrón no se invalida a mano: se valida por FIRMA, y la firma sale de `ROL_USUARIO`, que
+    // acaba de cambiar. Es justamente el diseño que evita «acordarse de invalidar».
+    auditar("Usuario creado", `${nombre} (${code}) · ${email} · ${ROL_POR_ID[nuevoU.rol].label}`);
+    setCreado({ code, nombre, email, rol: ROL_POR_ID[nuevoU.rol].label });
+    setNuevoU({ nombre: "", email: "", rol: "admin" });
+    setErrU(null);
+    force((v) => v + 1);
+  };
+  const tieneAdmin = (id) => id === TENANT_ACTUAL && (USUARIOS_TENANT.some((u) => u.rol === "admin") || Object.keys(USERS).includes("ADMIN"));
+  return (
+    <div className="grid gap-4">
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div className="text-lg font-semibold" style={{ color: C.ink }}>
+          Tenants
+        </div>
+        <div className="mt-0.5 t12" style={{ color: C.faint }}>
+          Los factorings que viven en esta instalación de NEX. La lista es de la <b>plataforma</b> y no de un tenant (
+          <code style={{ fontFamily: "ui-monospace,monospace" }}>{TENANTS_KEY}</code>): guardarla por tenant sería que cada uno tuviera su propia idea de quién
+          existe. El <b>identificador</b> compone las claves de toda su configuración —roles, áreas, etapas—, así que no se cambia después.
+        </div>
+        <table className="mt-3 w-full border-collapse t11">
+          <thead>
+            <tr>
+              {["Factoring", "Identificador", "RUT", "Estado"].map((h) => (
+                <th
+                  key={h}
+                  className="px-2 py-1 text-left t10 font-semibold uppercase tracking-wide"
+                  style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {TENANTS.map((t) => (
+              <tr key={t.id} style={{ borderBottom: `1px solid ${C.line}` }}>
+                <td className="px-2 py-1.5 font-medium" style={{ color: C.ink }}>
+                  {t.nombre}
+                  {t.id === TENANT_ACTUAL && (
+                    <span className="ml-2 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}>
+                      esta sesión
+                    </span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5 t10" style={{ color: C.faint, fontFamily: "ui-monospace,monospace" }}>
+                  {t.id}
+                </td>
+                <td className="px-2 py-1.5" style={{ color: C.sub }}>
+                  {t.rut || "—"}
+                </td>
+                <td className="px-2 py-1.5 t10" style={{ color: tieneAdmin(t.id) ? C.sub : "#C2410C" }}>
+                  {t.id === TENANT_ACTUAL ? (tieneAdmin(t.id) ? "con administrador" : "⚠ sin administrador") : "sin sesión acá"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="mt-4 rounded-xl p-3" style={{ backgroundColor: C.lilac, border: `1px solid ${C.line}` }}>
+          <div className="t11 font-semibold" style={{ color: C.ink }}>
+            Crear un factoring
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input
+              value={nuevoT.nombre}
+              onChange={(e) => {
+                setNuevoT((v) => ({ ...v, nombre: e.target.value }));
+                setErrT(null);
+              }}
+              placeholder="Nombre, p. ej. Factoring Security"
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 240 }}
+            />
+            <input
+              value={nuevoT.id}
+              onChange={(e) => {
+                setNuevoT((v) => ({ ...v, id: e.target.value }));
+                setErrT(null);
+              }}
+              placeholder="identificador, p. ej. security"
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 210, fontFamily: "ui-monospace,monospace" }}
+            />
+            <input
+              value={nuevoT.rut}
+              onChange={(e) => setNuevoT((v) => ({ ...v, rut: e.target.value }))}
+              placeholder="RUT"
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 130 }}
+            />
+            <button onClick={crearTenant} className="rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>
+              Crear
+            </button>
+          </div>
+          {errT && (
+            <div className="mt-1.5 t10 font-medium" style={{ color: C.red }}>
+              {errT}
+            </div>
+          )}
+          <div className="mt-1.5 t10" style={{ color: C.faint }}>
+            Un tenant nuevo arranca <b>vacío</b>: su configuración se crea la primera vez que alguien entra con su identificador. Lo siguiente es darle un{" "}
+            <b>administrador</b>, acá abajo, porque es quien va a crear al resto.
+          </div>
+        </div>
+      </div>
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div className="t12 font-semibold" style={{ color: C.ink }}>
+          Marca
+        </div>
+        <div className="mt-0.5 mb-3 t11" style={{ color: C.faint }}>
+          Logotipo y colores que ve el ejecutivo en el login y la barra superior. NEX queda como plataforma en el «powered by».
+        </div>
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
+            <Marca variante={cfg.marcaLogo} />
+          </div>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span className="t11" style={{ color: C.sub, width: 74 }}>
+                Logotipo
+              </span>
+              {[
+                ["nex", "NEX"],
+                ["security", "Security"],
+              ].map(([k, l]) => (
+                <button
+                  key={k}
+                  onClick={() => set("marcaLogo", k)}
+                  className="rounded-full px-3 py-1 t11 font-semibold"
+                  style={{
+                    backgroundColor: cfg.marcaLogo === k ? C.lilac : "#fff",
+                    color: cfg.marcaLogo === k ? C.indigo : C.sub,
+                    border: `1px solid ${cfg.marcaLogo === k ? C.indigo : C.line}`,
+                  }}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="t11" style={{ color: C.sub, width: 74 }}>
+                Nombre
+              </span>
+              <input
+                value={cfg.marcaNombre || ""}
+                onChange={(e) => set("marcaNombre", e.target.value)}
+                className="rounded-lg px-2.5 py-1 t11"
+                style={{ border: `1px solid ${C.line}`, color: C.ink, width: 200 }}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="t11" style={{ color: C.sub, width: 74 }}>
+                Acento
+              </span>
+              <input
+                type="color"
+                value={cfg.marcaPrimario || "#703EFF"}
+                onChange={(e) => set("marcaPrimario", e.target.value)}
+                style={{ width: 34, height: 24, border: `1px solid ${C.line}`, borderRadius: 6, background: "#fff" }}
+              />
+              <span className="t11" style={{ color: C.faint, fontVariantNumeric: "tabular-nums" }}>
+                {cfg.marcaPrimario}
+              </span>
+            </div>
+          </div>
+          <div className="flex-1" style={{ minWidth: 220 }}>
+            <div className="t11" style={{ color: C.sub }}>
+              Panel del login
+            </div>
+            <div className="mt-1 h-12 rounded-xl" style={{ background: cfg.marcaPanel }} />
+            <div className="mt-2 t11" style={{ color: C.sub }}>
+              Botón principal
+            </div>
+            <div className="mt-1 h-7 rounded-full" style={{ background: cfg.marcaCta }} />
+          </div>
+        </div>
+      </div>
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div className="t12 font-semibold" style={{ color: C.ink }}>
+          Administrador del tenant
+        </div>
+        <div className="mt-0.5 mb-3 t11" style={{ color: C.faint }}>
+          Un tenant sin administrador no lo puede usar nadie: es el que entra y da de alta al resto en <b>Configuración › Usuarios</b>. El{" "}
+          <b>correo es la credencial</b> y el <b>código</b> se deriva del nombre y queda fijo —lo guardan las operaciones, la auditoría y los mensajes, así que
+          renombrar a alguien no puede convertirlo en otro—.
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <div className="t10 mb-1" style={{ color: C.sub }}>
+              Nombre y apellido
+            </div>
+            <input
+              value={nuevoU.nombre}
+              onChange={(e) => {
+                setNuevoU((v) => ({ ...v, nombre: e.target.value }));
+                setErrU(null);
+              }}
+              placeholder="p. ej. Mauricio Thibaut"
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 230 }}
+            />
+          </div>
+          <div>
+            <div className="t10 mb-1" style={{ color: C.sub }}>
+              Correo (con el que entra)
+            </div>
+            <input
+              value={nuevoU.email}
+              onChange={(e) => {
+                setNuevoU((v) => ({ ...v, email: e.target.value }));
+                setErrU(null);
+              }}
+              placeholder="nombre@factoring.cl"
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 240 }}
+            />
+          </div>
+          <div>
+            <div className="t10 mb-1" style={{ color: C.sub }}>
+              Rol
+            </div>
+            <select
+              value={nuevoU.rol}
+              onChange={(e) => {
+                setNuevoU((v) => ({ ...v, rol: e.target.value }));
+                setErrU(null);
+              }}
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 220 }}
+            >
+              {ROLES_CAT.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button onClick={crearUsuario} className="rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>
+            Crear usuario
+          </button>
+        </div>
+        {errU && (
+          <div className="mt-1.5 t10 font-medium" style={{ color: C.red }}>
+            {errU}
+          </div>
+        )}
+        {creado && (
+          <div className="mt-2 rounded-xl p-3 t11" style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0", color: "#166534" }}>
+            <b>{creado.nombre}</b> quedó creado como <b>{creado.rol}</b>, código <code style={{ fontFamily: "ui-monospace,monospace" }}>{creado.code}</code>. Ya
+            puede entrar con <b>{creado.email}</b> y la clave de la demo. En producción acá sale la invitación por correo y la clave la pone él: una clave que
+            el administrador conoce no sirve como evidencia de quién firmó.
+          </div>
+        )}
+        {USUARIOS_TENANT.length > 0 && (
+          <table className="mt-3 w-full border-collapse t11">
+            <thead>
+              <tr>
+                {["Usuario", "Código", "Correo", "Rol"].map((h) => (
+                  <th
+                    key={h}
+                    className="px-2 py-1 text-left t10 font-semibold uppercase tracking-wide"
+                    style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {USUARIOS_TENANT.map((u) => (
+                <tr key={u.code} style={{ borderBottom: `1px solid ${C.line}` }}>
+                  <td className="px-2 py-1.5 font-medium" style={{ color: C.ink }}>
+                    {u.nombre}
+                  </td>
+                  <td className="px-2 py-1.5 t10" style={{ color: C.faint, fontFamily: "ui-monospace,monospace" }}>
+                    {u.code}
+                  </td>
+                  <td className="px-2 py-1.5" style={{ color: C.sub }}>
+                    {u.email}
+                  </td>
+                  <td className="px-2 py-1.5" style={{ color: C.sub }}>
+                    {(ROL_POR_ID[ROL_USUARIO[u.code] || u.rol] || {}).label || u.rol}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
 function CfgAreas() {
   const [, force] = useState(0);
   const [nueva, setNueva] = useState({ id: "", label: "" });
@@ -34722,10 +35119,6 @@ function CfgAreas() {
     const actor = (SESION && SESION.usuario) || "—";
     registrarAuditoria({ usuario: USERS[actor] || actor, modulo: "Áreas del tenant", accion, glosa, severidad: "alta" });
   };
-  const usuariosDe = (id) =>
-    Object.keys(USERS)
-      .filter((k) => k !== "ADMIN" && atribDe(k).atrib[id] != null)
-      .map((k) => `${nombreDe(k)} (N${atribDe(k).atrib[id]})`);
   const renombrar = (id, label) => {
     const a = AREAS_CAT.find((x) => x.id === id);
     if (!a || !label.trim()) return;
@@ -34769,12 +35162,13 @@ function CfgAreas() {
           <b>Usuarios</b> los que tienen esa área en ese nivel o superior.
         </div>
         {/* REGLA 35 · ACÁ ES DONDE SE DECLARAN LAS ÁREAS, así que acá tiene que verse cuáles criterios
-            quedaron sin destinatario. Son TRES causas y esta pantalla puede provocar dos: un criterio sin
-            área no rutea a ninguna parte —no aparece en NINGUNA fila de la tabla de abajo, y la suma de
-            «Criterios que rutean acá» deja de cuadrar con el catálogo—, y borrar acá un área que un
-            criterio declara, o dejarla sin nadie en el nivel que pide, lo deja igual de huérfano sin que
-            el catálogo de reglas haya cambiado una coma. Se listan uno por uno —no un contador— con su
-            causa, porque lo que hay que hacer es ir a arreglarlos por su número. */}
+            quedaron sin destinatario. Son TRES causas y esta pantalla puede provocar dos: borrar un área
+            que un criterio declara, y dejarla sin nadie en el nivel que pide; las dos dejan el criterio
+            huérfano sin que el catálogo de reglas haya cambiado una coma. Se listan uno por uno —no un
+            contador— con su causa, porque lo que hay que hacer es ir a arreglarlos por su número.
+            El 21-09-2026 la tabla perdió las columnas «Criterios que rutean acá» y «Quién la tiene»
+            (pedido del usuario), y por eso este aviso pasa a ser la ÚNICA señal de la pantalla: el
+            control de la regla 35 no se fue con las columnas, se quedó acá entero. */}
         {(() => {
           const padron = padronAprobadores();
           const malas = REGLAS_CLIENTE.map((r2) => ({ r: r2, ne: reglaNoEjecutable(r2, padron) })).filter((x) => x.ne.noEjecutable);
@@ -34790,8 +35184,7 @@ function CfgAreas() {
                 {sinArea > 0 && (
                   <>
                     {" "}
-                    {sinArea} de ellos no declara área: no aparecen en ninguna fila de la tabla de abajo, así que el total de «Criterios que rutean acá» no
-                    cuadra con el catálogo.
+                    {sinArea} de ellos <b>no declara área</b>, así que no rutea a ninguna de las de abajo y esta lista es el único sitio donde se ven.
                   </>
                 )}{" "}
                 Cada uno dice dónde se arregla.
@@ -34809,7 +35202,7 @@ function CfgAreas() {
         <table className="mt-3 w-full border-collapse t11">
           <thead>
             <tr>
-              {["Área", "Identificador", "Criterios que rutean acá", "Quién la tiene", ""].map((h, i) => (
+              {["Área", "Identificador", ""].map((h, i) => (
                 <th
                   key={i}
                   className="px-2 py-1 text-left t10 font-semibold uppercase tracking-wide"
@@ -34822,8 +35215,9 @@ function CfgAreas() {
           </thead>
           <tbody>
             {AREAS_CAT.map((a) => {
+              // `n` ya no se MUESTRA (se fueron las columnas), pero sigue decidiendo si el área se
+              // puede borrar: un área con criterios ruteando a ella los dejaría sin aprobador posible.
               const n = tramosDeArea(a.id);
-              const quienes = usuariosDe(a.id);
               const base = esAreaBase(a.id);
               return (
                 <tr key={a.id} style={{ borderBottom: `1px solid ${C.line}` }}>
@@ -34841,12 +35235,6 @@ function CfgAreas() {
                     title="Es lo que el catálogo de criterios compara contra el área de cada regla. No se edita: renombrarlo dejaría reglas apuntando a un área inexistente."
                   >
                     {a.id}
-                  </td>
-                  <td className="px-2 py-1.5" style={{ color: n ? C.ink : C.faint }}>
-                    {n ? `${n} tramo${n === 1 ? "" : "s"}` : "ninguno"}
-                  </td>
-                  <td className="px-2 py-1.5 t10" style={{ color: quienes.length ? C.sub : "#C2410C" }}>
-                    {quienes.length ? quienes.join(" · ") : n ? "⚠ nadie — hay criterios sin aprobador posible" : "nadie"}
                   </td>
                   <td className="px-2 py-1.5 text-right">
                     {base || n ? (
@@ -35980,6 +36368,50 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper, deals, onMigrarExec }
         ))}
       </aside>
       <div>
+        {/* SOBRE QUÉ TENANT SE ESTÁ CONFIGURANDO (21-09-2026, pedido del usuario: «cada uno de los menús
+            de configuración debiera arriba indicar el Tenant en el que está configurando, ya que todas
+            esas configuraciones son específicas para el Tenant»). Va ACÁ, en el contenedor, y no en
+            cada sección: son veinte pantallas y la que se agregue mañana lo tendría que recordar sola.
+            Cada `pc_*_<tenant>` que nombran las bajadas es exactamente eso, y sin este rótulo hay que
+            leer una clave de storage para saberlo.
+            `tenants` es la ÚNICA que no configura un tenant sino la lista de todos, y lo dice en vez
+            de mentir: un rótulo que afirma lo mismo en todas partes deja de significar algo. */}
+        {(() => {
+          const t = TENANTS.find((x) => x.id === TENANT_ACTUAL);
+          const plataforma = sec === "tenants";
+          return (
+            <div
+              className="mb-3 flex flex-wrap items-center gap-2 rounded-xl px-3 py-2"
+              style={{ backgroundColor: plataforma ? "#F9FAFB" : C.lilac, border: `1px solid ${plataforma ? C.line : "#E4DBFF"}` }}
+            >
+              <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>
+                {plataforma ? "Alcance" : "Configurando"}
+              </span>
+              {plataforma ? (
+                <span className="t11" style={{ color: C.sub }}>
+                  Toda la <b style={{ color: C.ink }}>plataforma</b>: acá viven los factorings, no la configuración de uno.
+                </span>
+              ) : (
+                <>
+                  <span className="t12 font-semibold" style={{ color: C.indigo }}>
+                    {(t && t.nombre) || CFG_ACTIVA.marcaNombre || TENANT_ACTUAL}
+                  </span>
+                  <span className="t10" style={{ color: C.faint, fontFamily: "ui-monospace,monospace" }}>
+                    {TENANT_ACTUAL}
+                  </span>
+                  {t && t.rut && (
+                    <span className="t10" style={{ color: C.faint }}>
+                      · {t.rut}
+                    </span>
+                  )}
+                  <span className="t10" style={{ color: C.faint }}>
+                    · «{activa.label}» aplica sólo a este factoring
+                  </span>
+                </>
+              )}
+            </div>
+          );
+        })()}
         {sec === "simulacion" ? (
           <CfgSimulacion usuario={usuario} />
         ) : sec === "correo" ? (
@@ -36000,6 +36432,8 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper, deals, onMigrarExec }
           <CfgRoles />
         ) : sec === "usuarios" ? (
           <CfgUsuarios />
+        ) : sec === "tenants" ? (
+          <CfgTenants cfgOper={cfgOper} setCfgOper={setCfgOper} />
         ) : sec === "areas" ? (
           <CfgAreas />
         ) : sec === "factoringtarget" ? (
@@ -44481,6 +44915,16 @@ const AUTH_BLOQUEO_MS = 60000; // duración del bloqueo
 const AUTH_OTP_MAX = 3; // intentos de código antes de volver a credenciales
 const SESION_ABSOLUTA_MS = 8 * 3600000; // vida máxima de la sesión, se renueve o no
 // Cuentas del demo. En producción NO existe un directorio en el bundle: el backend resuelve el usuario.
+// EL CORREO ES LA CREDENCIAL. Se resuelve contra el elenco de la demo Y contra los usuarios que el
+// tenant dio de alta (regla 50): el admin que se acaba de crear tiene que poder entrar SIN recargar,
+// así que se consulta la lista viva y no una copia que se armó al montar el módulo.
+const codigoDeCorreo = (email) => {
+  const k = String(email || "")
+    .trim()
+    .toLowerCase();
+  const u = USUARIOS_TENANT.find((x) => x.email === k);
+  return (u && u.code) || CUENTAS_DEMO[k] || null;
+};
 const CUENTAS_DEMO = {
   "carla.rivas@security.cl": "CR",
   "sofia.herrera@security.cl": "JG",
@@ -44546,7 +44990,7 @@ function verificarCredenciales(email, clave) {
         .toLowerCase();
       const ms = authBloqueo(k);
       if (ms > 0) return res({ ok: false, motivo: "bloqueada", segundos: Math.ceil(ms / 1000) });
-      const code = CUENTAS_DEMO[k];
+      const code = codigoDeCorreo(k);
       // Mensaje único para usuario inexistente y clave incorrecta: distinguirlos permite enumerar cuentas.
       if (!code || String(clave) !== CLAVE_DEMO) {
         const b = authFallo(k);

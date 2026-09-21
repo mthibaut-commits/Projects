@@ -13,9 +13,9 @@ timestamp: 2026-09-21T20:10:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **153/153 PASA**, **42 archivos de gate de contrato**
+(`pipeline_comercial.jsx`), build standalone, **154/154 PASA**, **43 archivos de gate de contrato**
 (289 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su
-vault (78 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato
+vault (79 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato
 tienen gate. La crónica del 17 al 19-09 vive en sus logs (ADR-0001 a 0006, el linter como paso 0-bis).
 
 El **20-09** entró todo lo de plata: **regla 8 sin proxy** (149, ADR-0008), **girar no es acción de NEX**
@@ -26,14 +26,18 @@ el CONSOLIDADO** (45, ADR-0011) y el **RUT del deudor se resuelve, no se arma** 
 
 El **21-09**, mirando pantallas con el usuario: la mesa de verificación lista las facturas y colapsa sus
 causas · el pie de «Líneas solicitadas» suma · el **stream del inbound se reparte por ROL** y nace el rol
-`inbound` (47) · el **cierre del negocio le escribe a quien tiene que firmar** (48): `confirmarCierre` no
-llamaba a la mensajería ni una vez ([log](./2026-09-21_el_cierre_le_escribe_a_quien_firma.md)) · **UN
-DEFECTO, TRES SÍNTOMAS** (49, ADR-0012): `PRE_EVAL` y `HILOS` eran `let` de módulo y el detalle es
-pestaña propia, así que la bandeja del aprobador, el Centro de mensajería y el EV veían un estado que
-nunca salía del detalle; ahora van a repositorio Y avisan al opener
-([log](./2026-09-21_un_defecto_tres_sintomas.md)) · y se **ordenaron las carpetas**:
-`Auditorias/`, `Regresiones/`, los PDF de integración a `Integraciones/` y `Specs_Procesos/` por proceso,
-con gate `rutas.test.mjs` para las referencias ([log](./2026-09-21_ordenar_las_carpetas.md)).
+`inbound` (47) · el **cierre del negocio le escribe a quien tiene que firmar** (48)
+([log](./2026-09-21_el_cierre_le_escribe_a_quien_firma.md)) · **UN DEFECTO, TRES SÍNTOMAS** (49,
+ADR-0012): `PRE_EVAL` y `HILOS` eran `let` de módulo y el detalle es pestaña propia, así que la bandeja
+del aprobador, el Centro de mensajería y el EV veían un estado que nunca salía del detalle; ahora van a
+repositorio Y avisan al opener ([log](./2026-09-21_un_defecto_tres_sintomas.md)) · se **ordenaron las
+carpetas** (`Auditorias/`, `Regresiones/`, `Specs_Procesos/` por proceso, gate `rutas.test.mjs`
+[log](./2026-09-21_ordenar_las_carpetas.md)) · y
+**`Configuración › Tenants`** (50): el alta del factoring vive en la plataforma (`nex_tenants`, sin
+sufijo), la marca se mudó ahí desde Funcionalidades, se crea al **administrador** que después da de alta
+al resto, y toda sección de Configuración dice sobre qué tenant configura. Construirlo destapó que
+`atribDeRol` resolvía el super-admin por el CÓDIGO «ADMIN» y no por el rol: el admin de un tenant nuevo
+salía con atribución vacía ([log](./2026-09-21_el_tenant_se_da_de_alta.md)).
 
 > ## 🎯 Siguiente paso
 >

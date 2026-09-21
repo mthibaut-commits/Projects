@@ -7419,6 +7419,69 @@
        `pre-eval en repositorio y alias sobre la misma tabla ${Q.persisteOk} · apagarla la saca de los dos ${Q.apagaOk} · recargar rellena el MISMO objeto ${Q.recargaOk} · el hilo y su mensaje quedan guardados ${Q.hilosOk} · un hilo ajeno se fusiona por (operación, asunto) y no por id ${Q.fusionOk} · solicitar una excepción habilita la bandeja ${Q.bandejaOk} · y le escribe a [${Q.esperados}] ${Q.avisaOk}${err ? " · ERROR " + err : ""}`);
   }
 
+  // ── 154 · EL TENANT SE DA DE ALTA, Y SU ADMINISTRADOR TAMBIÉN ───────────────────────────────
+  // Pedido del usuario: un menú para crear el tenant de Security «y/o otro cliente», con su marca y
+  // con el admin que después crea al resto (regla 50). Lo que este caso fija es lo que se rompió al
+  // construirlo: `atribDeRol` decía «la atribución sigue al ROL» y resolvía el super-admin por el
+  // CÓDIGO literal "ADMIN", así que el administrador de un tenant nuevo salía con atribución vacía y
+  // no entraba al padrón — o sea, no podía aprobar nada, que es justo para lo que se lo crea.
+  {
+    let R = null, err = "";
+    const nT = TENANTS.length, nU = USUARIOS_TENANT.length;
+    try {
+      // (a) EL CATÁLOGO DE FACTORINGS ES DE LA PLATAFORMA: su clave no lleva sufijo de tenant.
+      const claveOk = TENANTS_KEY === "nex_tenants" && !TENANTS_KEY.includes(TENANT_ACTUAL);
+      TENANTS.push({ id: "suite154", nombre: "Factoring Suite 154", rut: "1-9", activo: true });
+      guardarTenants();
+      const crudo = JSON.parse(localStorage.getItem(TENANTS_KEY) || "{}");
+      const persisteOk = (crudo.datos || []).some((t) => t.id === "suite154");
+      // …y la higiene: el id se NORMALIZA a minúsculas —igual que en Áreas, y es lo que el formulario
+      // hace antes de validar— pero lo que no tiene forma de tenant se descarta entero, porque ese id
+      // compone las claves de storage de toda su configuración. El tenant base nunca se pierde.
+      const basura = [{ id: "MAYUS", nombre: "x" }, { id: "ok", nombre: "" }, { id: "b u e n o", nombre: "y" }, { nombre: "sin id" }, { id: "suite154", nombre: "Otro con el mismo id" }];
+      escribirVersionado(TENANTS_KEY, "tenants", basura.concat([{ id: "suite154", nombre: "Factoring Suite 154" }]));
+      const releido = cargarTenants();
+      const ids = releido.map((t) => t.id).sort().join(",");
+      const higieneOk = ids === "mayus,security,suite154" && releido.filter((t) => t.id === "suite154").length === 1;
+
+      // (b) EL SUPER-ADMIN ES UN ROL. Un código cualquiera con rol `admin` tiene que cubrir las tres
+      //     áreas en el nivel máximo y contar como super-admin en el padrón.
+      USUARIOS_TENANT.push({ code: "ZQ", nombre: "Admin Suite 154", email: "suite154@x.cl", rol: "admin" });
+      guardarUsuariosTenant();
+      montarUsuariosTenant();
+      ROL_USUARIO.ZQ = "admin";
+      const at = atribDe("ZQ").atrib;
+      const atribOk = at.riesgo === 5 && at.comercial === 5 && at.operaciones === 5;
+      const uPadron = padronAprobadores().usuarios.find((u) => u.code === "ZQ");
+      const padronOk = !!uPadron && uPadron.superAdmin === true;
+      // …y por lo tanto puede firmar una excepción de cualquier área, que es el punto.
+      const firmaOk = ["comercial", "riesgo", "operaciones"].every((area) => puedeAprobarExc("ZQ", { area }, 5));
+      // …y los permisos de visibilidad lo siguen: iban por el código literal y no lo alcanzaban.
+      const permisosOk = puedeVerBitacora("ZQ") && puedeVerMensajeria("ZQ") && puedeVerificarFacturas("ZQ") && esGerenteComercial("ZQ");
+      // …mientras que un usuario SIN rol de atribución sigue sin nada: el permiso no se regala.
+      const noRegalaOk = !puedeVerBitacora("CR") && Object.keys(atribDe("CR").atrib).length === 0;
+
+      // (c) EL CORREO ES LA CREDENCIAL, y resuelve contra la lista VIVA: el admin recién creado entra
+      //     sin recargar. Un correo desconocido no entra.
+      const loginOk = codigoDeCorreo("suite154@x.cl") === "ZQ" && codigoDeCorreo("SUITE154@X.CL ") === "ZQ" && codigoDeCorreo("nadie@x.cl") === null;
+      // …y el elenco de la demo sigue entrando: la lista nueva se suma, no reemplaza.
+      const demoOk = codigoDeCorreo("carla.rivas@security.cl") === "CR";
+
+      R = { claveOk, persisteOk, higieneOk, atribOk, padronOk, firmaOk, permisosOk, noRegalaOk, loginOk, demoOk, ids };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    }
+    // Se deshace TODO: esto es storage y sobrevive a la corrida.
+    TENANTS.length = nT;
+    USUARIOS_TENANT.length = nU;
+    delete USERS.ZQ; delete ATRIB_USUARIO.ZQ; delete ROL_USUARIO.ZQ; delete ROLES_DEFAULT.ZQ;
+    try { guardarTenants(); guardarUsuariosTenant(); } catch (_) { /* idem */ }
+    const Q = R || {};
+    ok("154 el tenant se da de alta en la plataforma y su administrador también: el super-admin es un ROL, no el código «ADMIN»",
+       !!R && Q.claveOk && Q.persisteOk && Q.higieneOk && Q.atribOk && Q.padronOk && Q.firmaOk && Q.permisosOk && Q.noRegalaOk && Q.loginOk && Q.demoOk,
+       `la clave del catálogo es de la plataforma ${Q.claveOk} · el alta persiste ${Q.persisteOk} · la higiene normaliza y descarta: quedan [${Q.ids}] de 6 ${Q.higieneOk} · un rol admin cubre las tres áreas en N5 ${Q.atribOk} · y entra al padrón como super-admin ${Q.padronOk} · y puede firmar en las tres ${Q.firmaOk} · los permisos de visibilidad lo siguen ${Q.permisosOk} · y a un ejecutivo no se le regalan ${Q.noRegalaOk} · el correo es la credencial y resuelve en vivo ${Q.loginOk} · el elenco de la demo sigue entrando ${Q.demoOk}${err ? " · ERROR " + err : ""}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;
