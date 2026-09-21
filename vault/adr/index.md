@@ -24,6 +24,7 @@ Un ADR aceptado es **inmutable**. Para cambiar de rumbo: ADR nuevo con `reemplaz
 | [ADR-0009](./ADR-0009-identidades-reales-del-aec.md) | La IDENTIDAD es real y sale del AEC (pares RUT ↔ razón social, sin personas naturales); la TRANSACCIÓN sigue sintética | aceptada · 20-09-2026, decisión del usuario con el AEC entregado |
 | [ADR-0010](./ADR-0010-las-lineas-son-un-insumo.md) | La ESTRUCTURA de líneas es un insumo del pipeline: los tres niveles llegan por el activo A23, el generador los produce y dos perillas del tenant quedan declarativas | aceptada · pedido del usuario 20-09-2026 |
 | [ADR-0011](./ADR-0011-el-nivel-1-es-el-consolidado.md) | La línea del RUT cliente es el CONSOLIDADO de sus líneas, no un tope aparte; reemplaza la primera viñeta de la regla 7 | aceptada · definición del usuario 20-09-2026 |
+| [ADR-0012](./ADR-0012-storage-y-aviso-para-cruzar-de-pestana.md) | El estado que cruza de pestaña va con storage Y aviso al opener: `BroadcastChannel` y el evento `storage` no sirven con `file://` | aceptada · tres síntomas reportados por el usuario 21-09-2026 |
 
 ## Decisiones cerradas antes del vault — registro con punteros
 

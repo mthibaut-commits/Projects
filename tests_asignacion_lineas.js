@@ -7341,6 +7341,84 @@
        `aprobadores esperados [${Q.esperados}] sin ADMIN ${Q.sinAdminOk} y todos pueden firmar ${Q.codigosOk} · participantes [${Q.participantes}]: los aprobadores ${Q.aprobadoresOk} y el ejecutivo ${Q.ejecutivoOk} · remitente el sistema ${Q.remitenteOk} y a todos les llega sin leer ${Q.noLeidoOk} · el texto trae los ${Q.tramos} tramos con quién firma ${Q.textoOk} · cerrar dos veces no abre dos hilos ${Q.unSoloHiloOk} · sin nada pendiente no escribe ${Q.mudoOk}${err ? " · ERROR " + err : ""}`);
   }
 
+  // ── 153 · EL ESTADO DEL OTORGAMIENTO CRUZA DE PESTAÑA ───────────────────────────────────────
+  // El usuario reportó tres cosas como si fueran tres defectos —el Gerente Comercial ve la bandeja
+  // en cero con criterios suyos en el detalle, no llega ningún mensaje al Centro de mensajería, y el
+  // Ejecutivo de verificación no puede accionar— y era UNO: `PRE_EVAL` y `HILOS` eran `let` de
+  // módulo, o sea memoria de CADA documento, y el detalle es pestaña propia (regla 49, ADR-0012).
+  //
+  // Se prueba lo que la suite SÍ puede probar sin dos pestañas: que el estado se PERSISTE (que es lo
+  // que lo hace sobrevivir al documento) y que solicitar la aprobación de UNA excepción habilita la
+  // bandeja, que es el camino que no avisaba. El aviso al opener lo fija el gate de contrato.
+  {
+    let R = null, err = "";
+    const ID = "TEST-PESTANA-153";
+    const nHilos = HILOS.length;
+    try {
+      // (a) LA PRE-EVALUACIÓN VIVE EN UN REPOSITORIO, no en un objeto de módulo.
+      setPreEval(ID, "CR", true);
+      const enRepo = !!repoPreEval.get(ID);
+      const enAlias = tienePreEval(ID);
+      // …y el repositorio y el alias son LA MISMA tabla: si no, escribir por uno deja al otro ciego,
+      // que es la forma en que este defecto se disfraza de «a veces sí y a veces no».
+      const mismaTabla = PRE_EVAL === repoPreEval.all();
+      const persisteOk = enRepo && enAlias && mismaTabla;
+      // …y apagarla la saca de los dos.
+      setPreEval(ID, "CR", false);
+      const apagaOk = !repoPreEval.get(ID) && !tienePreEval(ID);
+
+      // (b) RECARGAR RELLENA EL MISMO OBJETO. Es lo que permite que una pestaña ya abierta vea lo que
+      //     otra escribió sin que los alias queden apuntando a una tabla vieja.
+      setPreEval(ID, "CR", true);
+      const antesRef = repoPreEval.all();
+      repoPreEval.recargar();
+      const recargaOk = repoPreEval.all() === antesRef && !!repoPreEval.get(ID) && tienePreEval(ID);
+
+      // (c) LOS HILOS SE PERSISTEN. Un hilo nuevo y su mensaje tienen que quedar en el repositorio:
+      //     sin eso, el Centro de mensajería de la otra pestaña no tiene de dónde leerlos.
+      const h = hiloNuevo({ tipo: "general", dealId: ID, cliente: "Cliente 153", asunto: "Prueba 153", participantes: ["CR"], creadoPor: "CR" });
+      hiloEnviar(h, "CR", "mensaje de prueba", null);
+      const guardados = repoHilos.get("lista") || [];
+      const hg = guardados.find((x) => x.dealId === ID && x.asunto === "Prueba 153");
+      const hilosOk = !!hg && hg.mensajes.length === 1 && hg.mensajes[0].texto === "mensaje de prueba";
+
+      // (d) UN HILO QUE LLEGA DE OTRA PESTAÑA SE FUSIONA POR (operación, asunto), NO POR ID: los id se
+      //     numeran con el largo de la lista LOCAL, así que dos pestañas producen dos «H1001».
+      const copiaAjena = JSON.parse(JSON.stringify(hg));
+      copiaAjena.id = "H1001";
+      copiaAjena.mensajes.push({ de: "JG", deNombre: "Otro", texto: "desde la otra pestaña", fecha: "", ts: Date.now(), menciones: [] });
+      recibirHilo(copiaAjena);
+      const delDeal = HILOS.filter((x) => x.dealId === ID && x.asunto === "Prueba 153");
+      const fusionOk = delDeal.length === 1 && delDeal[0].mensajes.length === 2 && delDeal[0].id === h.id;
+
+      // (e) EL CAMINO QUE NO AVISABA: solicitar la aprobación de UNA excepción habilita la bandeja.
+      //     `excEnBandeja` consulta `tienePreEval`, y es lo que decide si el aprobador puede visar.
+      setPreEval(ID, "CR", false);
+      const deal = { id: ID, cliente: "Cliente 153", exec: "CR", stage: "oferta" };
+      const x = { stKey: "R9001", nivel: 2, regla: { n: 9001, nombre: "Criterio 153", area: "comercial" } };
+      const antesBandeja = excEnBandeja(deal);
+      solicitarAprobacionExc(deal, x, "CR", "justifico", [], false);
+      const despuesBandeja = excEnBandeja(deal);
+      const bandejaOk = antesBandeja === false && despuesBandeja === true;
+      // …y al solicitarla se le escribe a quien puede firmarla, por el padrón y no a mano.
+      const hExc = hilosDeDeal(ID).find((y) => y.asunto === `Aprobación de excepciones · ${ID}`);
+      const esperados = codigosAprobadoresDe([x]);
+      const avisaOk = !!hExc && esperados.length > 0 && esperados.every((c) => hExc.participantes.includes(c));
+
+      R = { persisteOk, apagaOk, recargaOk, hilosOk, fusionOk, bandejaOk, avisaOk, esperados: esperados.join(",") };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    }
+    // Se deshace TODO: los repositorios son storage y sobreviven a la corrida.
+    try { repoPreEval.del(ID); repoSolicitudExc.del(ID); repoOtorgEventos.del(ID); } catch (_) { /* puede no existir */ }
+    HILOS.length = nHilos;
+    try { repoHilos.set("lista", HILOS); } catch (_) { /* idem */ }
+    const Q = R || {};
+    ok("153 el estado del otorgamiento cruza de pestaña: la pre-evaluación y los hilos se persisten, y solicitar UNA excepción habilita la bandeja",
+       !!R && Q.persisteOk && Q.apagaOk && Q.recargaOk && Q.hilosOk && Q.fusionOk && Q.bandejaOk && Q.avisaOk,
+       `pre-eval en repositorio y alias sobre la misma tabla ${Q.persisteOk} · apagarla la saca de los dos ${Q.apagaOk} · recargar rellena el MISMO objeto ${Q.recargaOk} · el hilo y su mensaje quedan guardados ${Q.hilosOk} · un hilo ajeno se fusiona por (operación, asunto) y no por id ${Q.fusionOk} · solicitar una excepción habilita la bandeja ${Q.bandejaOk} · y le escribe a [${Q.esperados}] ${Q.avisaOk}${err ? " · ERROR " + err : ""}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

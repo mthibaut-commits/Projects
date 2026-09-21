@@ -13,9 +13,9 @@ timestamp: 2026-09-21T20:10:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **152/152 PASA**, **41 archivos de gate de contrato**
+(`pipeline_comercial.jsx`), build standalone, **153/153 PASA**, **42 archivos de gate de contrato**
 (289 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su
-vault (77 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato
+vault (78 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato
 tienen gate. La crónica del 17 al 19-09 vive en sus logs (ADR-0001 a 0006, el linter como paso 0-bis).
 
 El **20-09** entró todo lo de plata: **regla 8 sin proxy** (149, ADR-0008), **girar no es acción de NEX**
@@ -27,25 +27,23 @@ el CONSOLIDADO** (45, ADR-0011) y el **RUT del deudor se resuelve, no se arma** 
 El **21-09**, mirando pantallas con el usuario: la mesa de verificación lista las facturas y colapsa sus
 causas · el pie de «Líneas solicitadas» suma · el **stream del inbound se reparte por ROL** y nace el rol
 `inbound` (47) · el **cierre del negocio le escribe a quien tiene que firmar** (48): `confirmarCierre` no
-llamaba a la mensajería ni una vez, y de las dos puertas a la mesa sólo avisaba la manual
-([log](./2026-09-21_el_cierre_le_escribe_a_quien_firma.md)) · y se **ordenaron las carpetas**:
+llamaba a la mensajería ni una vez ([log](./2026-09-21_el_cierre_le_escribe_a_quien_firma.md)) · **UN
+DEFECTO, TRES SÍNTOMAS** (49, ADR-0012): `PRE_EVAL` y `HILOS` eran `let` de módulo y el detalle es
+pestaña propia, así que la bandeja del aprobador, el Centro de mensajería y el EV veían un estado que
+nunca salía del detalle; ahora van a repositorio Y avisan al opener
+([log](./2026-09-21_un_defecto_tres_sintomas.md)) · y se **ordenaron las carpetas**:
 `Auditorias/`, `Regresiones/`, los PDF de integración a `Integraciones/` y `Specs_Procesos/` por proceso,
 con gate `rutas.test.mjs` para las referencias ([log](./2026-09-21_ordenar_las_carpetas.md)).
 
 > ## 🎯 Siguiente paso
 >
-> 1. **EL ESTADO DEL OTORGAMIENTO NO CRUZA DE PESTAÑA** y es la causa de tres síntomas que el usuario
->    reportó por separado: el Gerente Comercial ve 0 en Otorgamientos con criterios N1/N2 suyos en el
->    detalle, no llega ningún mensaje al Centro de mensajería, y el Ejecutivo de verificación no puede
->    accionar. `PRE_EVAL`, `HILOS` y lo que escribe `solicitarAprobacionExc` son memoria de CADA
->    documento; el detalle es pestaña propia y sólo el botón «Pre-evaluación» avisa al tubo. Es un T1.
-> 2. **El tab VERIFICACIÓN**, tres pedidos: (a) habilitarlo al SIMULAR, informativo; (b) chip **PRIME** +
+> 1. **El tab VERIFICACIÓN**, tres pedidos: (a) habilitarlo al SIMULAR, informativo; (b) chip **PRIME** +
 >    Nota Deudor en vez de «Lista Blanca», que el usuario da por retirado; (c) **separar** la evaluación
 >    del DEUDOR (V00–V10 y causas, que son del par) del **quiz por FACTURA**.
-> 3. **UI**: la card de la columna Oferta se corta · una oportunidad enviada a comité sigue diciendo
+> 2. **UI**: la card de la columna Oferta se corta · una oportunidad enviada a comité sigue diciendo
 >    «Negociación» · el selector de sesión de la navbar, 1/3 más angosto y con elipsis.
-> 4. **El join de empresas SIEMPRE por RUT**, nunca por razón social: 8 sitios medidos. Es un T1.
-> 5. **Correr el `.bat` una vez** · **Regenerar `Capturas_UI/`** · **Motor O01** · **28** y **13-quater**.
+> 3. **El join de empresas SIEMPRE por RUT**, nunca por razón social: 8 sitios medidos. Es un T1.
+> 4. **Correr el `.bat` una vez** · **Regenerar `Capturas_UI/`** · **Motor O01** · **28** y **13-quater**.
 
 ## En vuelo · `main` en `5f2cb18` (20-09); la rama de sesión lleva lo del 21-09 encima
 

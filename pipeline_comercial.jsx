@@ -12776,11 +12776,6 @@ function DealDrawer({
                 // Otorgamientos, que vive en la pestaña del tubo, seguía mostrando cero al aprobador y
                 // el «Ir a aprobar» lo dejaba en una bandeja vacía. Es el mismo agujero que tenía el
                 // aviso de simulación al tubo, y se cierra igual: postMessage al opener.
-                const avisarOpenerPreEval = (encendida) => {
-                  try {
-                    if (window.opener) window.opener.postMessage({ type: "nex-preeval", dealId: deal.id, on: encendida, por: usuario }, ORIGEN_APP);
-                  } catch (_) {}
-                };
                 // Envío explícito al proceso de excepción. Si hay excepciones pendientes sin comentario/respaldo
                 // del ejecutivo, primero se advierte con un diálogo (puede enviar igual tras el warning).
                 const enviarPreEval = () => {
@@ -12793,14 +12788,12 @@ function DealDrawer({
                     .forEach((it) => solicitarAprobacionExc(deal, it, usuario, "", []));
                   setPreEval(deal.id, usuario, true);
                   avisarPreEval(deal, usuario);
-                  avisarOpenerPreEval(true);
                   setPreEvalWarn(null);
                   setReevTick((x) => x + 1);
                 };
                 const onClickPreEval = () => {
                   if (on) {
                     setPreEval(deal.id, usuario, false);
-                    avisarOpenerPreEval(false);
                     setReevTick((x) => x + 1);
                     return;
                   } // cancelar
@@ -23616,6 +23609,34 @@ function crearRepo(nombre) {
     // Lecturas (cache local)
     get: (id) => tabla()[id],
     all: (t) => tabla(t),
+    // RELEER EL STORAGE. `datos` se carga UNA vez al montar el módulo, así que una pestaña que ya
+    // estaba abierta no ve lo que otra escribió: el storage sirve para sobrevivir a cerrar la
+    // pestaña, no para enterarse en vivo. Eso lo avisa el postMessage, y esto es lo que aplica el
+    // aviso.
+    //
+    // SE RELLENA LA TABLA DEL TENANT, NO SE REEMPLAZA, y no es un detalle: los alias
+    // (`VISADO_STATE`, `SOLICITUD_EXC`, `PRE_EVAL`…) apuntan a ESE objeto, no a `datos`. La primera
+    // versión de esto vaciaba `datos` y lo rellenaba, con lo que `datos[tenant]` pasaba a ser un
+    // objeto NUEVO y los alias quedaban leyendo la tabla vieja: escribir por el repo dejaba ciego al
+    // alias y al revés. Lo cazó el caso 153, en la aserción de que los dos son la MISMA tabla —es la
+    // misma familia del `_cacheCli` que se daba por construido estando vacío—.
+    recargar() {
+      let v = {};
+      try {
+        v = JSON.parse(localStorage.getItem(KEY) || "{}") || {};
+      } catch (_) {
+        v = {};
+      }
+      if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+      for (const t of Object.keys(datos)) {
+        const dest = datos[t],
+          src = (v[t] && typeof v[t] === "object" && v[t]) || {};
+        for (const k of Object.keys(dest)) delete dest[k];
+        Object.assign(dest, src);
+      }
+      for (const t of Object.keys(v)) if (!datos[t]) datos[t] = v[t];
+      return true;
+    },
     // Escrituras (optimistas; la promesa es la confirmación del servidor)
     set(id, valor) {
       const v = gate("set", id, valor);
@@ -23679,6 +23700,16 @@ const repoVisadoDetalle = crearRepo("otorgamiento_visado_detalle");
 const repoSolicitudExc = crearRepo("solicitud_excepcion");
 const repoVerifExc = crearRepo("verificacion_excepcion");
 const repoOtorgEventos = crearRepo("otorgamiento_evento");
+// LA PRE-EVALUACIÓN ES ESTADO DEL OTORGAMIENTO, NO DE UNA PESTAÑA (21-09-2026, regla 49). Era un
+// `let PRE_EVAL = {}` de módulo, y `excEnBandeja` la consulta para decidir si una operación se puede
+// VISAR: con el detalle en pestaña propia, el ejecutivo solicitaba la aprobación allá y el aprobador
+// —en la pestaña del tubo, que es donde vive la mesa— seguía viendo la bandeja en cero. Mismo trato
+// que el visado y las solicitudes de excepción, que ya eran repositorio.
+const repoPreEval = crearRepo("otorgamiento_preeval");
+// LOS HILOS DE LA MENSAJERÍA, por el mismo motivo: `HILOS` era un array de módulo, así que todo lo
+// que se escribía desde el detalle —la solicitud de aprobación, el requerimiento de información— no
+// llegaba nunca al Centro de mensajería, que se pinta en la pestaña del tubo.
+const repoHilos = crearRepo("mensajeria_hilo");
 // SIM_VERSIONS se declara más arriba (lo usan varias funciones antes de este punto); acá se reapunta a
 // su repositorio. Es el histórico versionado de la decisión de riesgo: hoy se pierde al recargar, y en
 // producción tiene que ser una tabla inmutable con snapshot jsonb.
@@ -23996,6 +24027,15 @@ let FOLIOS_EN_OPERACION = {};
 let VERIF_VEREDICTO = repoVerifVeredicto.all(); // { [dealId]: { [rutOdeudor]: { est, motivo, razon, causas, por, fecha } } }
 // Reapunta los alias a la tabla del tenant activo. Se llama al cambiar de tenant; con un solo tenant
 // (Security) hoy no se ejecuta, pero deja explícito qué hay que hacer cuando entre el segundo factoring.
+// RELEER EL ESTADO DEL OTORGAMIENTO QUE ESCRIBIÓ OTRA PESTAÑA (regla 49). Los repositorios cargan el
+// storage UNA vez al montar el módulo: el detalle escribe el visado, la solicitud de excepción y la
+// pre-evaluación, y la pestaña del tubo —donde vive la mesa de Otorgamientos— sigue mostrando lo que
+// leyó al abrirse. Se releen los del otorgamiento y se invalida el visado memoizado, que es lo que
+// decide qué excepciones quedan pendientes.
+function refrescarEstadoOtorgamiento() {
+  for (const r of [repoVisado, repoVisadoDetalle, repoSolicitudExc, repoPreEval, repoOtorgEventos, repoHilos]) r.recargar();
+  reapuntarRepos();
+}
 function reapuntarRepos() {
   VISADO_STATE = repoVisado.all();
   VISADO_DETALLE = repoVisadoDetalle.all();
@@ -24006,6 +24046,8 @@ function reapuntarRepos() {
   VERIF_VEREDICTO = repoVerifVeredicto.all();
   OTORG_EVENTOS = repoOtorgEventos.all();
   SIM_VERSIONS = repoSimVersions.all();
+  PRE_EVAL = repoPreEval.all();
+  HILOS = repoHilos.get("lista") || [];
   invalidarVisado();
 }
 // ── PERMISOS DE LA SESIÓN (UX ONLY — la autorización real es del servidor) ──────────────────────
@@ -24571,10 +24613,23 @@ function estadoAtencionPrioridad(deal) {
 }
 // ── Pre-evaluación: el ejecutivo solicita iniciar formalmente la revisión de otorgamiento de una
 // oportunidad con altas chances de cursarse, para adelantar la aprobación antes de la aceptación formal.
-let PRE_EVAL = {};
-function setPreEval(dealId, code, on) {
-  if (on) PRE_EVAL[dealId] = { por: code, porNombre: USERS[code] || code, ts: nowStamp() };
-  else delete PRE_EVAL[dealId];
+let PRE_EVAL = repoPreEval.all();
+// EL AVISO A LA OTRA PESTAÑA, EN UN SOLO SITIO (regla 49). El storage hace que el estado sobreviva a
+// cerrar la pestaña; esto hace que la pestaña que YA está abierta se entere. Son dos cosas distintas y
+// hacen falta las dos: el aprobador tiene el tubo abierto mientras el ejecutivo trabaja en el detalle.
+// Vive a nivel de módulo porque lo llaman funciones que no son componentes (`setPreEval`,
+// `hiloEnviar`), y `window.opener` es null en el tubo, que es donde el aviso termina.
+function avisarOpener(mensaje) {
+  try {
+    if (window.opener) window.opener.postMessage(mensaje, ORIGEN_APP);
+  } catch (_) {}
+}
+// `difundir` en false es para el RECEPTOR del aviso: aplica lo que le contaron sin volver a contarlo.
+// Sin ese corte, dos pestañas que se tengan la una a la otra como opener se rebotan el mensaje.
+function setPreEval(dealId, code, on, difundir = true) {
+  if (on) repoPreEval.set(dealId, { por: code, porNombre: USERS[code] || code, ts: nowStamp() });
+  else repoPreEval.del(dealId);
+  if (difundir) avisarOpener({ type: "nex-preeval", dealId, on: !!on, por: code });
 }
 const tienePreEval = (dealId) => !!PRE_EVAL[dealId];
 // COMPUERTA ÚNICA de la aprobación de excepciones: sólo se puede visar cuando la operación está en la
@@ -24804,7 +24859,7 @@ function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinCome
     comentario || "",
   );
   // Apoderados hábiles para visar esta excepción → aviso + tarea.
-  const dests = Object.keys(ATRIB_USUARIO).filter((k) => k !== "ADMIN" && USERS[k] && puedeAprobarExc(k, x.regla, x.nivel || 4));
+  const dests = codigosAprobadoresDe([x]);
   const asunto = `Aprobación de excepciones · ${deal.id}`;
   const prev = hilosDeDeal(deal.id).find((h) => h.asunto === asunto);
   const h =
@@ -24852,7 +24907,16 @@ function faseOtorgDeal(deal) {
   return null;
 }
 // ── Mensajería interna: hilos de conversación entre usuarios, opcionalmente atados a una operación.
-let HILOS = []; // [{ id, tipo, dealId, cliente, reglaN, asunto, participantes:[codes], mensajes:[...], creadoPor, ts, leido:{} }]
+// LOS HILOS SON ESTADO DEL PROCESO, NO DE UNA PESTAÑA (21-09-2026, regla 49). Era un array de módulo,
+// así que todo lo que se escribía desde el DETALLE —la solicitud de aprobación de una excepción, el
+// requerimiento de información, el aviso del cierre— no llegaba nunca al Centro de mensajería, que se
+// pinta en la pestaña del tubo: el usuario lo reportó con la bandeja vacía a la vista. Ahora vive en
+// un repositorio (storage, sobrevive a cerrar la pestaña) y cada envío avisa al opener (la pestaña
+// abierta se entera). Guardar la lista COMPLETA bajo una clave y no un hilo por clave es lo que hace
+// que los `id` dejen de colisionar: se numeran con el largo de la lista, y dos pestañas que parten de
+// la misma lista numeran igual.
+let HILOS = repoHilos.get("lista") || []; // [{ id, tipo, dealId, cliente, reglaN, asunto, participantes:[codes], mensajes:[...], creadoPor, ts, leido:{} }]
+const guardarHilos = () => repoHilos.set("lista", HILOS);
 const MSG_TIPOS = {
   requerimiento: { l: "Requerimiento de información para otorgamiento", c: "#5B21D6", bg: "#F1ECFF" },
   general: { l: "Mensaje interno", c: "#0f766e", bg: "#f0fdfa" },
@@ -24873,6 +24937,7 @@ function hiloNuevo({ tipo, dealId, cliente, reglaN, asunto, participantes, cread
     estado: "abierto",
   };
   HILOS.push(h);
+  guardarHilos();
   return h;
 }
 function hiloUltimoTs(h) {
@@ -24912,12 +24977,17 @@ function hiloEnviar(h, deCode, texto, arch, menciones) {
       glosa: `${h.cliente || ""}${h.dealId ? " · " + h.dealId : ""}${texto ? " · " + texto : ""}`.trim(),
       exito: true,
     });
+  // Storage para que sobreviva a cerrar la pestaña; aviso para que la que está abierta se entere.
+  guardarHilos();
+  avisarOpener({ type: "nex-hilo", hilo: h });
 }
 function hiloMarcarLeido(h, code) {
   h.leido = { ...(h.leido || {}), [code]: true };
+  guardarHilos();
 }
 function hiloTerminar(h, code) {
   h.estado = "terminado";
+  guardarHilos();
   if (typeof registrarAuditoria === "function")
     registrarAuditoria({
       usuario: USERS[code] || code,
@@ -24929,6 +24999,7 @@ function hiloTerminar(h, code) {
 }
 function hiloReabrir(h) {
   h.estado = "abierto";
+  guardarHilos();
 }
 function hiloMatch(h, q) {
   if (!q) return true;
@@ -24969,6 +25040,7 @@ function recibirHilo(hilo) {
   const i = HILOS.findIndex((h) => h.dealId === hilo.dealId && h.asunto === hilo.asunto);
   if (i >= 0) HILOS[i] = { ...copia, id: HILOS[i].id };
   else HILOS.push({ ...copia, id: "H" + (HILOS.length + 1001) });
+  guardarHilos();
   return true;
 }
 function notifSolic(usuario) {
@@ -46785,7 +46857,8 @@ export default function PipelineComercial() {
         if (recibirSolicitudLinea(m.registro)) setDeals((prev) => prev.slice()); // re-render: la bandeja lee la lista al pintar
         return;
       }
-      // Hilo de mensajería creado en la pestaña del detalle (hoy, el aviso de cierre de la regla 48).
+      // Hilo de mensajería nacido en la pestaña del detalle: el aviso de cierre (48), la solicitud de
+      // aprobación de una excepción y el requerimiento de información (49).
       if (m && m.type === "nex-hilo" && m.hilo) {
         if (recibirHilo(m.hilo)) setDeals((prev) => prev.slice()); // re-render: la campana lee HILOS al pintar
         return;
@@ -46795,7 +46868,8 @@ export default function PipelineComercial() {
       // «OPERACIONES EN OTORGAMIENTO (0)» aunque el ejecutivo acabara de enviársela, que es la forma en
       // que esta compuerta se rompía en la práctica. Se re-emite la lista para que la vista recalcule.
       if (m && m.type === "nex-preeval" && m.dealId) {
-        setPreEval(m.dealId, m.por || "EJ", !!m.on);
+        setPreEval(m.dealId, m.por || "EJ", !!m.on, false);
+        refrescarEstadoOtorgamiento();
         setDeals((prev) => prev.slice());
         return;
       }
