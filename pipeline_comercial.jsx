@@ -1394,6 +1394,7 @@ const USERS = {
   OP: "Andrés Mella · Operaciones",
   JO: "Ignacio Peña · Jefe de Operaciones",
   EV: "Camila Soto · Ejecutivo de verificación",
+  IB: "Tomás Alcaíno · Ejecutivo de Inbound",
   ADMIN: "Super Administrador (ve todo)",
 };
 // EL NOMBRE DEL EJECUTIVO DE UNA OPERACIÓN. «Agente IA» es una respuesta legítima sólo cuando la
@@ -24088,6 +24089,11 @@ const ROLES_CAT = [
   // cargo que falta, no tocar código. O05 (comprobante del contrato físico) es el primero que lo pide.
   { id: "jefe_operaciones", label: "Jefe de Operaciones", area: "operaciones" },
   { id: "ejec_verif", label: "Ejecutivo de verificación", area: "verificacion" },
+  // INBOUND (21-09-2026, pedido del usuario). Su trabajo es la bandeja de facturas SIN CLASIFICAR:
+  // las empresas que el stream trae y que no son de la cartera de nadie. Existía el trabajo y no el
+  // rol —lo hacía la jefatura de paso—, así que no había a quién asignárselo ni cómo distinguir
+  // «nadie lo está mirando» de «lo está mirando quien corresponde».
+  { id: "inbound", label: "Ejecutivo de Inbound", area: "comercial" },
   { id: "admin", label: "Super administrador", area: "*" },
 ];
 // ── ÁREAS DEL TENANT ─────────────────────────────────────────────────────────────────────
@@ -24244,6 +24250,7 @@ const ROLES_DEFAULT = {
   OP: "operaciones",
   JO: "jefe_operaciones",
   EV: "ejec_verif",
+  IB: "inbound",
   ADMIN: "admin",
 };
 const ROLES_KEY = "pc_roles_" + TENANT_ACTUAL;
@@ -45149,6 +45156,14 @@ export default function PipelineComercial() {
   //  · Jefatura/Gerencia → "Otras facturas": facturas SIN asignar (empresas fuera de cartera / prospectos),
   //    que la jefatura debe repartir a un ejecutivo desde la grilla.
   const esEjecutivoSesion = !!EXECS[usuario];
+  // QUÉ DEL STREAM VE CADA ROL. Una sola respuesta, y la usan los DOS contadores y la lista: hasta el
+  // 21-09-2026 «Otras Empresas» filtraba por rol y «Todos» no, así que un EJECUTIVO veía en «Todos»
+  // el inbound entero —la cartera de sus colegas y las empresas sin dueño— y el mismo dato decía dos
+  // cosas según qué pestaña se mirara. El usuario lo pidió explícito: «los ejecutivos sólo pueden ver
+  // las empresas de su cartera».
+  //   · Ejecutivo → SÓLO las empresas de SU cartera (`esCliente` y él es el dueño).
+  //   · Inbound y jefatura → SÓLO las que no son de la cartera de nadie. Es el trabajo del rol
+  //     `inbound`: repartirlas. La jefatura las conserva porque también asigna.
   const ofOtrasVisible = (ev) => (esEjecutivoSesion ? ev.esCliente && asignarEjecutivo(ev) === usuario : !ev.esCliente);
   const [vistaApp, setVistaApp] = useState("dashboard"); // vista principal in-page; aterriza en el Dashboard tras login
   // Navega a un módulo y registra la acción del usuario en la auditoría (con su nombre).
@@ -45273,7 +45288,7 @@ export default function PipelineComercial() {
     // en 500 eso dejaba la tabla en ~570 filas. Una fila por cliente es lo que ya hacía la pestaña.
     // `soloMias`: la pestaña «Otras Empresas» muestra lo que le toca a ESTA sesión; «Todos» muestra el
     // inbound entero. Los dos agrupan por cliente con la MISMA función de nivel módulo, y el contador de
-    // cada tab cuenta exactamente estas filas (ver `inboundFilas`).
+    // cada tab cuenta exactamente estas filas (ver `inboundMiasFilas`, que filtra por rol).
     const streamAgrupadoCliente = (soloMias = true) =>
       agruparInboundPorCliente(
         streamFeed.filter(
@@ -49263,12 +49278,18 @@ export default function PipelineComercial() {
   // Los contadores de los tabs cuentan las MISMAS filas que la tabla dibuja: las del inbound salen de
   // `agruparInboundPorCliente`, la misma función que arma la lista. Contar facturas (`streamFeed.length`)
   // decía «Todos 262» sobre una tabla de 307 filas — medido el 18-09-2026 (regla 40).
-  const inboundFilas = useMemo(() => (showInbound ? agruparInboundPorCliente(streamFeed, asignarEjecutivo).length : 0), [showInbound, streamFeed]);
   const inboundMiasFilas = useMemo(
     () => agruparInboundPorCliente(streamFeed.filter(ofOtrasVisible), asignarEjecutivo).length,
     [streamFeed, usuario, esEjecutivoSesion],
   );
-  const inboundCount = inboundFilas;
+  // «Todos» cuenta lo MISMO que el usuario puede ver, no el stream entero: si contara todo, un
+  // ejecutivo leería un total que incluye filas que la lista de abajo nunca le va a mostrar — el
+  // defecto que la regla 40 ya corrigió una vez en el otro sentido (contar facturas contra una tabla
+  // de filas agrupadas).
+  // …y sigue respetando la compuerta del toggle Inbound, que era de `inboundFilas`: con el toggle
+  // apagado la tabla no dibuja ninguna fila del stream, así que contarlas dejaría el contador por
+  // encima de la lista — el mismo desacuerdo que la regla 40 corrigió en el otro sentido.
+  const inboundCount = showInbound ? inboundMiasFilas : 0;
   const nPrioTubo = dealsVista.filter((d) => tienePrioridadCurse(d.id)).length;
   // «Todos» va PRIMERO (18-09-2026, pedido del usuario): es el tab de entrada, y un tab de entrada al final
   // de la fila se lee como el último recorte de una lista de recortes. Va antes incluso de «Prioritarios»,
