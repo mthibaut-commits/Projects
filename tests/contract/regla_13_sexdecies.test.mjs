@@ -54,7 +54,7 @@ export function panelManual(src) {
   const ini = c.indexOf("{!deal.simulado ? (");
   if (ini < 0) return ["no encuentro el panel de arranque (`{!deal.simulado ? (`)"];
   const finB = c.indexOf("Documentos en la oferta", ini); // la sección que sigue al panel
-  const bloque = canonico(c.slice(ini, finB > ini ? finB : ini + 30000));   // canónico: ver _comun.mjs (ADR-0005)
+  const bloque = canonico(c.slice(ini, finB > ini ? finB : ini + 30000));   // canónico: ver _comun.mjs (ADR-0006)
   const iT = bloque.search(/Tienes \{validas\.length\} factura\{validas\.length === 1 \? "" : "s"\} elegida/);
   const iB = bloque.search(/<button\s*onClick=\{\(\) => elegirInicio\(validas,/);
   const iS = bloque.search(/Simular la oferta/);

@@ -247,7 +247,7 @@ if (CSV) {
       // defecto es un objeto —`filtrosDeal = {}`— y cortar ahí perdía todo lo que venía después. El
       // resultado era que `PCsankey` figuraba sin declarar cuatro props que sí declara, o sea cuatro
       // hallazgos inventados en el informe que existe para encontrar props que nadie recibe.
-      // La cota son 60 líneas y no 12 desde el formateo del fuente (ADR-0005): una lista larga de props
+      // La cota son 60 líneas y no 12 desde el formateo del fuente (ADR-0006): una lista larga de props
       // pasó a ocupar UNA LÍNEA POR PROP —`SimResumen` declara 22 en 24 líneas—, así que cortar en 12 se
       // comía la segunda mitad de la firma y las inventaba como «props que el componente no declara».
       let saldo = 0, txt = "", j = i, empezo = false;

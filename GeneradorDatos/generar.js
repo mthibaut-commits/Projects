@@ -20,7 +20,10 @@
 //                                        cesionario se sortea con la intención de `lib/intencion_sow.js`
 //   SHARE_OF_WALLET   activo A5        · la participación MEDIDA sobre AECSYNC (serie semanal, en pesos);
 //                                        la ficha (target, segmento, horizonte) se conserva de la entrada
-//   LINEA_DISPONIBLE  activo A7 + A8   · líneas de crédito por cliente y tipo
+//   LINEA_DISPONIBLE  activo A7 + A8   · líneas de crédito por cliente y tipo (fotografía de cartera)
+//   LINEA_CUPO        activo A23 (1-2) · la ESTRUCTURA de líneas: una fila por objeto de línea
+//                                        (LF1/LF2/LF3/LF4) más la cabecera del cliente
+//   LINEA_DEUDOR      activo A23 (3)   · exposición global del RUT deudor, compartida entre carteras
 //   PLATAFORMA360     activo A11       · información de empresa por RUT (firmográfica, comercial, socios)
 //   OTORGAMIENTO      activo A16       · variables de riesgo de cliente, deudor y par cliente-deudor
 //   VERIFICACION      activo A10       · variables del predictor de verificación por par cliente-deudor
@@ -40,6 +43,7 @@
 const path = require("path");
 const { leer, escribir, serializar } = require("./lib/archivo");
 const lineas = require("./datasets/lineas");
+const lineasPar = require("./datasets/lineas_par");
 const shareOfWallet = require("./datasets/share_of_wallet");
 const otorgamiento = require("./datasets/otorgamiento");
 const verificacion = require("./datasets/verificacion");
@@ -54,6 +58,10 @@ const DERIVADOS = [
   ["AECSYNC", cesiones],
   ["SHARE_OF_WALLET", shareOfWallet],
   ["LINEA_DISPONIBLE", lineas],
+  // Los dos niveles del A23 van DESPUÉS del A7/A8, que es su insumo estructural: de ahí salen el corte
+  // por categoría de deudor y el estado «Suspendida», y de ahí el cupo asignado al cliente.
+  ["LINEA_CUPO", lineasPar.cupo],
+  ["LINEA_DEUDOR", lineasPar.deudor],
   ["PLATAFORMA360", plataforma360],
   ["OTORGAMIENTO", otorgamiento],
   ["VERIFICACION", verificacion],

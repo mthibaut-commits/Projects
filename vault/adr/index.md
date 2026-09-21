@@ -19,6 +19,11 @@ Un ADR aceptado es **inmutable**. Para cambiar de rumbo: ADR nuevo con `reemplaz
 | [ADR-0004](./ADR-0004-id-estable-y-dos-marcas-al-editar.md) | El id de la operación es estable, y editar una oferta cerrada usa dos marcas | aceptada · 17-09-2026 |
 | [ADR-0005](./ADR-0005-portada-que-muestra-el-producto.md) | La portada de ingreso muestra el producto, con #703EFF como único morado de marca | aceptada · 18-09-2026 |
 | [ADR-0006](./ADR-0006-formatear-el-fuente.md) | El fuente se formatea con Prettier y los gates de texto se re-anclan sobre `canonico()` | aceptada · 18-09-2026 |
+| [ADR-0007](./ADR-0007-controles-en-la-integracion-al-core.md) | Los controles del giro se vuelven a mirar al aprobar la integración al core | aceptada · pedido del usuario 20-09-2026 |
+| [ADR-0008](./ADR-0008-el-piso-del-deudor-escala-no-bloquea.md) | Perforar el piso de riesgo del deudor ESCALA a Gerente Comercial, no veta: como veto dejaría `tasaMinAbsoluta` inalcanzable | aceptada · 19-09-2026, tras la decisión del usuario de validar la tasa al simular |
+| [ADR-0009](./ADR-0009-identidades-reales-del-aec.md) | La IDENTIDAD es real y sale del AEC (pares RUT ↔ razón social, sin personas naturales); la TRANSACCIÓN sigue sintética | aceptada · 20-09-2026, decisión del usuario con el AEC entregado |
+| [ADR-0010](./ADR-0010-las-lineas-son-un-insumo.md) | La ESTRUCTURA de líneas es un insumo del pipeline: los tres niveles llegan por el activo A23, el generador los produce y dos perillas del tenant quedan declarativas | aceptada · pedido del usuario 20-09-2026 |
+| [ADR-0011](./ADR-0011-el-nivel-1-es-el-consolidado.md) | La línea del RUT cliente es el CONSOLIDADO de sus líneas, no un tope aparte; reemplaza la primera viñeta de la regla 7 | aceptada · definición del usuario 20-09-2026 |
 
 ## Decisiones cerradas antes del vault — registro con punteros
 

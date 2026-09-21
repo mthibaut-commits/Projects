@@ -6,7 +6,7 @@ Demo de un pipeline comercial de factoring chileno para Datamart. UI en español
 
 La fase, lo que está en vuelo y el siguiente paso viven **solo** en `vault/sesiones/estado_actual.md`
 (regla núcleo 1: se lee al abrir toda sesión). Este documento no afirma la fase ni cita conteos del código:
-cuando lo hacía, tres cifras quedaron obsoletas en silencio (`Auditoria_Bootstrap_Agentico.md`, §2.3).
+cuando lo hacía, tres cifras quedaron obsoletas en silencio (`Auditoria/Auditoria_Bootstrap_Agentico.md`, §2.3).
 
 ## Stack
 
@@ -20,25 +20,27 @@ en 0 oportunidades**) en un HTML standalone que se abre en Chrome. El porqué de
 ## Verificación — SIEMPRE tras editar el `.jsx`, en este orden
 
 ```bash
-npx prettier --check pipeline_comercial.jsx                                                                   # 0 · el formato (ADR-0005)
+npx prettier --check pipeline_comercial.jsx                                                                   # 0 · el formato (ADR-0006)
+npx eslint pipeline_comercial.jsx                                                                             # 0-bis · el linter (0 hallazgos)
 npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx                              # 1 · sin errores TS1
 grep -oE '^(export default )?(async )?(function|const|let|var|class) [A-Za-z_$][A-Za-z0-9_$]*' pipeline_comercial.jsx | awk '{print $NF}' | sort | uniq -d  # 2 · debe salir vacío
 node build_app.mjs                                                                                            # 3 · valida los hashes del vendor
 node --test "tests/contract/*.test.mjs"                                                                       # 4 · gates de contrato (~10 s)
-PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 145/145 PASA (~2 min)
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 151/151 PASA (~2 min)
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node tests/e2e/correr.mjs                                           # 6 · e2e: 29 casos de pantalla (~8 min)
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs                                         # 7 · sólo si toca la UI (~5 min)
 ```
 
-El **paso 0** no verifica una conducta: protege a los otros. Veintiún gates `regla_<slug>` y los dos auditores
-leen el fuente como TEXTO y están re-anclados contra el `.jsx` formateado (ADR-0005), así que deshacer el formato
+Los pasos **0 y 0-bis** no verifican una conducta: protegen a los otros. El linter (`eslint.config.mjs`) no trae
+reglas de estilo —de la forma se encarga Prettier— y cada regla suya cita el incidente de este repo que habría
+cazado; al adoptarlo encontró una clave duplicada en un objeto de pricing. Los gates `regla_<slug>` y los dos auditores
+leen el fuente como TEXTO y están re-anclados contra el `.jsx` formateado (ADR-0006), así que deshacer el formato
 los tumba de a uno en sesiones distintas. Para arreglarlo: `npx prettier --write pipeline_comercial.jsx`.
 Ninguno de los seis subsume a otro, **y los cinco primeros juntos tampoco bastan**: la colisión parámetro/variable local, un
 bloque declarado antes de su dependencia y un componente no importado pasan `tsc` y el build, y sólo aparecen en
 el paso 5 o al abrir la pantalla — que es lo que hace el paso 6 (`tests/e2e/`, con la sesión iniciada y el detalle
 abierto). El CI (`.github/workflows/gates.yml`) corre los seis en toda rama y todo PR, idénticos. Qué cubre cada caso de la suite: `vault/conocimiento/verificacion.md`; qué fija cada gate de
-contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ninguna regla queda «sin gate»**: las 71 de
-dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `regla_<slug>.test.mjs`.
+contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ninguna regla queda «sin gate»**: las 75 de dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `regla_<slug>.test.mjs`.
 
 ## Otros comandos
 
@@ -114,7 +116,7 @@ dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `
   - `conocimiento/reglas/` — las reglas verbatim, por tema · `arquitectura.md` · `verificacion.md` · `contrato_servidor_y_auditoria.md` · `mapa_documentos.md`
   - `conocimiento/despacho_agentes.md` — **el bloque invariante que recibe todo agente despachado**, la consigna del refutador y los cuatro modos de falla medidos
   - `adr/` — decisiones · `sesiones/estado_actual.md` — el tablero · `sesiones/` — logs
-- `Specs_Procesos/` · `Integraciones/` · `Levantamiento_Activos_Informacion.md` — la fuente de verdad de negocio; qué es cada uno: `vault/conocimiento/mapa_documentos.md`
+- `Specs_Procesos/<tema>/` (`Otorgamiento` · `Verificacion` · `Lineas` · `Excepciones` · `Evaluacion_Factura`) · `Integraciones/` · `Levantamiento_Activos_Informacion.md` — la fuente de verdad de negocio; qué es cada uno: `vault/conocimiento/mapa_documentos.md`
 - `GeneradorDatos/` — produce los activos sintéticos (`datos_inyectados.js`, `proveedores_clientes.json`)
 - `Capturas_UI/` — el DOM real capturado, fuente para Figma; `Figma_Export/` quedó obsoleto como fuente
-- `Auditoria_*.md` · `Inconsistencias_*.md` — auditorías con sus hallazgos; la historia del proyecto vive ahí y en `vault/sesiones/`
+- `Auditoria/` — los informes que MIDEN (el repo, el fuente, el generador) · `Regresiones/` — lo que cotejó definición contra implementación y dejó hallazgos; la historia del proyecto vive ahí y en `vault/sesiones/`

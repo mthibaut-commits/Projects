@@ -1,7 +1,7 @@
 # Integraciones — APIs y S3
 
 **Propósito:** el contrato de las entregas que alimentan NEX Factoring y de las APIs que expone o consume. Reúne los 12 specs de `Integraciones/`, que siguen siendo la fuente de cada uno.
-**Alcance:** 12 integraciones · generado el 2026-09-18.
+**Alcance:** 12 integraciones · generado el 2026-09-21.
 
 ---
 
@@ -377,7 +377,7 @@ El archivo de ejemplo trae 5 filas:
 - **V09** (alto monto, > MM$300) no viaja en el archivo: se evalúa en NEX sobre el **total de la operación con ese deudor** y sólo aplica al segmento OTROS — un PRIME no tiene techo por monto.
 - La verificación telefónica registrada en NEX no se pierde con las cargas.
 
-**Fuente normativa:** `Specs_Procesos/spec-verificacion-facturas.md`, que es la versión vigente del predictor. El PDF `Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf` describe la versión anterior (segmentos «Elite/Others», V10 con el múltiplo, entrada por conjunción) y quedó atrás en esos puntos.
+**Fuente normativa:** `Specs_Procesos/Verificacion/spec-verificacion-facturas.md`, que es la versión vigente del predictor. El PDF `Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf` describe la versión anterior (segmentos «Elite/Others», V10 con el múltiplo, entrada por conjunción) y quedó atrás en esos puntos.
 
 ### s3_lineas_vigentes.csv · A7
 
@@ -529,7 +529,7 @@ La primera la **expone NEX** para que Security actualice la tabla interna dentro
 
 ### swagger_consulta_lineas.yaml · A23
 
-**Propósito:** responder, en el momento de evaluar una oferta, **cuánto cupo hay disponible** en los tres niveles que la regla de validación compara. Es la API que alimenta el motor de asignación de líneas (`Specs_Procesos/spec-asignacion-lineas.md`).
+**Propósito:** responder, en el momento de evaluar una oferta, **cuánto cupo hay disponible** en los tres niveles que la regla de validación compara. Es la API que alimenta el motor de asignación de líneas (`Specs_Procesos/Lineas/spec-asignacion-lineas.md`).
 
 | Endpoint | Uso |
 |---|---|

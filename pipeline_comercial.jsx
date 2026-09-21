@@ -1893,7 +1893,7 @@ const EMPRESA_EJECUTIVO = {
   "Metalúrgica del Bío-Bío": "NB",
   "Packaging Biobío SA": "NB",
   "Servicios Gráficos Sur": "NB",
-  "Transportes Litoral Ltda": "NB",
+  "DYNTEL SPA": "NB",
   "Industria Pesquera Austral": "DC",
   "Maquinaria Forestal Sur": "DC",
   "Frutícola Curicó SpA": "DC",
@@ -2033,38 +2033,38 @@ const RULE_CANAL_COLORS = {
 // ============================================================
 // Top deudores reales (receptores) del CSV cesiones_grupo_bice_2025 (concentran el grueso del monto).
 const BUENOS_PAGADORES = [
-  { name: "Adidas Chile Limitada", sector: "Retail", share: 18 },
-  { name: "Coca Cola Embonor S.A.", sector: "Industriales", share: 15 },
-  { name: "Clorox Chile S.A.", sector: "Industriales", share: 14 },
-  { name: "Sika S.A. Chile", sector: "Industriales", share: 10 },
-  { name: "Agrosuper Comercializadora", sector: "Retail", share: 8 },
-  { name: "Laboratorio Durandin S.A.", sector: "Industriales", share: 6 },
-  { name: "Abbott Laboratories Chile", sector: "Industriales", share: 5 },
-  { name: "Comercial Mar Oceánica", sector: "Retail", share: 5 },
-  { name: "Proquiel Químicos SpA", sector: "Industriales", share: 4 },
-  { name: "Constructora PyL SpA", sector: "Industriales", share: 3 },
-  { name: "SQM S.A.", sector: "Minería", share: 3 },
-  { name: "Walmart Chile S.A.", sector: "Retail", share: 3 },
-  { name: "Mantos Copper S.A.", sector: "Minería", share: 3 },
-  { name: "Ministerio de Obras Públicas", sector: "Industriales", share: 3 },
+  { name: "ECHEVERRIA IZQUIERDO MONTAJES INDUSTRIALES S A", sector: "Retail", share: 18 },
+  { name: "TRABAJOS MARITIMOS OXXEAN S.A.", sector: "Industriales", share: 15 },
+  { name: "SERVIALL SOCIEDAD ANONIMA", sector: "Industriales", share: 14 },
+  { name: "CONSTRUCTORA GARDILCIC LTDA", sector: "Industriales", share: 10 },
+  { name: "INGENIERIA CARO Y CARO LIMITADA", sector: "Retail", share: 8 },
+  { name: "JANSSEN S A", sector: "Industriales", share: 6 },
+  { name: "MARTINEZ Y VALDIVIESO S.A.", sector: "Industriales", share: 5 },
+  { name: "INGENIERIA AVA MONTAJES LIMITADA", sector: "Retail", share: 5 },
+  { name: "PROMET MONTAJES SPA", sector: "Industriales", share: 4 },
+  { name: "INDUSTRIAS DE TECNOLOGIA HIDRAULICA EN MINERIA Y CONSTRUCCION S A", sector: "Industriales", share: 3 },
+  { name: "SOCIEDAD JSA CLIMATIZACION LIMITADA", sector: "Minería", share: 3 },
+  { name: "EBCO S.A.", sector: "Retail", share: 3 },
+  { name: "ACUICOLA E INVERSIONES NALCAHUE LIMITADA", sector: "Minería", share: 3 },
+  { name: "COMERCIAL Y MARKETING SYMBOLS LTDA", sector: "Industriales", share: 3 },
 ];
 
 // ---- Maestro de deudores: días de pago reales (vencimiento − emisión) del CSV ----
 const MAESTRO_DEUDORES = {
-  "Adidas Chile Limitada": 60,
-  "Coca Cola Embonor S.A.": 31,
-  "Clorox Chile S.A.": 60,
-  "Sika S.A. Chile": 45,
-  "Agrosuper Comercializadora": 30,
-  "Laboratorio Durandin S.A.": 33,
-  "Abbott Laboratories Chile": 60,
-  "Comercial Mar Oceánica": 30,
-  "Proquiel Químicos SpA": 39,
-  "Constructora PyL SpA": 35,
-  "SQM S.A.": 35,
-  "Walmart Chile S.A.": 35,
-  "Mantos Copper S.A.": 60,
-  "Ministerio de Obras Públicas": 31,
+  "ECHEVERRIA IZQUIERDO MONTAJES INDUSTRIALES S A": 60,
+  "TRABAJOS MARITIMOS OXXEAN S.A.": 31,
+  "SERVIALL SOCIEDAD ANONIMA": 60,
+  "CONSTRUCTORA GARDILCIC LTDA": 45,
+  "INGENIERIA CARO Y CARO LIMITADA": 30,
+  "JANSSEN S A": 33,
+  "MARTINEZ Y VALDIVIESO S.A.": 60,
+  "INGENIERIA AVA MONTAJES LIMITADA": 30,
+  "PROMET MONTAJES SPA": 39,
+  "INDUSTRIAS DE TECNOLOGIA HIDRAULICA EN MINERIA Y CONSTRUCCION S A": 35,
+  "SOCIEDAD JSA CLIMATIZACION LIMITADA": 35,
+  "EBCO S.A.": 35,
+  "ACUICOLA E INVERSIONES NALCAHUE LIMITADA": 60,
+  "COMERCIAL Y MARKETING SYMBOLS LTDA": 31,
 };
 const diasPagoDeudor = (deudor) => MAESTRO_DEUDORES[deudor] || 35;
 
@@ -2073,35 +2073,47 @@ const diasPagoDeudor = (deudor) => MAESTRO_DEUDORES[deudor] || 35;
 // = spread + costo de fondo. Si el cliente pide una tasa que implica un spread por debajo de este
 // mínimo, el bot no puede autorizarla y deriva la negociación a un ejecutivo.
 const SPREAD_MIN_DEUDOR = {
-  "Adidas Chile Limitada": 0.4,
-  "Coca Cola Embonor S.A.": 0.35,
-  "Clorox Chile S.A.": 0.42,
-  "Sika S.A. Chile": 0.45,
-  "Agrosuper Comercializadora": 0.4,
-  "Laboratorio Durandin S.A.": 0.5,
-  "Abbott Laboratories Chile": 0.45,
-  "Comercial Mar Oceánica": 0.5,
-  "Proquiel Químicos SpA": 0.52,
-  "Constructora PyL SpA": 0.55,
-  "SQM S.A.": 0.32,
-  "Walmart Chile S.A.": 0.3,
-  "Mantos Copper S.A.": 0.45,
-  "Ministerio de Obras Públicas": 0.3,
+  "ECHEVERRIA IZQUIERDO MONTAJES INDUSTRIALES S A": 0.4,
+  "TRABAJOS MARITIMOS OXXEAN S.A.": 0.35,
+  "SERVIALL SOCIEDAD ANONIMA": 0.42,
+  "CONSTRUCTORA GARDILCIC LTDA": 0.45,
+  "INGENIERIA CARO Y CARO LIMITADA": 0.4,
+  "JANSSEN S A": 0.5,
+  "MARTINEZ Y VALDIVIESO S.A.": 0.45,
+  "INGENIERIA AVA MONTAJES LIMITADA": 0.5,
+  "PROMET MONTAJES SPA": 0.52,
+  "INDUSTRIAS DE TECNOLOGIA HIDRAULICA EN MINERIA Y CONSTRUCCION S A": 0.55,
+  "SOCIEDAD JSA CLIMATIZACION LIMITADA": 0.32,
+  "EBCO S.A.": 0.3,
+  "ACUICOLA E INVERSIONES NALCAHUE LIMITADA": 0.45,
+  "COMERCIAL Y MARKETING SYMBOLS LTDA": 0.3,
   // Deudores de los eventos demo / streaming
-  Codelco: 0.3,
-  "Escondida (BHP)": 0.32,
-  CMPC: 0.35,
-  Falabella: 0.4,
-  Cencosud: 0.4,
-  Arauco: 0.38,
-  Sodimac: 0.42,
-  "Antofagasta Minerals": 0.34,
-  "Walmart Chile": 0.3,
+  "BERLIAM SPA": 0.3,
+  "CONSTRUCTORA GONZALEZ GARCIA LIMITADA": 0.32,
+  "ZUBLIN INTERNATIONAL GMBH CHILE SPA": 0.35,
+  "INDEF SERVICIOS FORESTALES LIMITADA": 0.4,
+  "TATTERSALL AGROINSUMOS S.A.": 0.4,
+  "BANCO SANTANDER-CHILE": 0.38,
+  "CONSTRUCTORA INGEVEC S.A.": 0.42,
+  "BESALCO MAQUINARIAS S A": 0.34,
+  "SOC INDUSTRIAL WORLD SERVICE LIMITADA": 0.3,
 };
 const SPREAD_MIN_DEFAULT = 0.6; // deudores no listados (mayor riesgo => piso más alto)
 const spreadMinDeudor = (deudor) => (SPREAD_MIN_DEUDOR[deudor] != null ? SPREAD_MIN_DEUDOR[deudor] : SPREAD_MIN_DEFAULT);
 // Tasa mínima mensual que el Agente IA puede autorizar para un deudor (spread mínimo + costo de fondo).
 const tasaMinIA = (deudor) => +(spreadMinDeudor(deudor) + CFG_ACTIVA.costoFondo).toFixed(2);
+// El piso de tasa de una OPERACIÓN: el MÁS EXIGENTE de sus deudores (regla 8). Una oferta cubre varias
+// facturas y cada deudor trae su propio piso de riesgo, así que el de la operación es el mayor: una tasa
+// que perfora el piso de UNO ya está bajo el mínimo de ese deudor. Promediarlos —que es lo que hace la
+// vista por cliente, donde el número es informativo y no gatea nada— dejaría pasar justo ese caso.
+// Recibe las facturas por parámetro (las válidas de la simulación) y cae al deudor del deal cuando no
+// las hay. Puro y de nivel módulo porque lo miran el panel de simulación y su caso (147).
+function pisoTasaOperacion(deal, facturas) {
+  const nombres = [...new Set((facturas || []).map((f) => f && f.deudor).filter(Boolean))];
+  const lista = nombres.length ? nombres : [deal && deal.deudor].filter(Boolean);
+  if (!lista.length) return 0;
+  return +Math.max(...lista.map((d) => tasaMinIA(d))).toFixed(2);
+}
 // ── Precio por Share of Wallet ──────────────────────────────────────────────────────────────────
 // El SOW define cuán agresivo se es en precio: se parte del spread ESTÁNDAR (de lista) y se descuentan
 // puntos según el estado del SOW del cliente. El piso de riesgo del deudor SIEMPRE manda: si el
@@ -2140,51 +2152,51 @@ const EMAIL_TEMPLATES = ["Oferta disponible", "Remarketing de oferta disponible"
 
 // Cedentes reales (top emisores del CSV) para el stream.
 const CEDENTES = [
-  "Mediplex S.A.",
-  "Marsella SpA",
-  "Ferreminer SpA",
-  "Laboratorio Internacional de Cosm.",
-  "Ingeniería y Serv. Eisesa Ltda",
-  "Molduras y Paneles Chile SpA",
-  "Cía. Agropecuaria Copeval",
-  "Lafitte Chile y Cía. Ltda",
-  "Puelche Servicios Ltda",
-  "Comercializadora y Distribuidora",
-  "Refrigeración Industrial Coldm.",
-  "Novoplast SpA",
-  "Puente Financiero SpA",
-  "X Capital SpA",
-  "Ensus Chile SpA",
-  "Agrícola Tranapuente SpA",
-  "Soc. Comercial Agrofresco",
-  "Soc. Comercial Corte Criollo",
-  "Intcomex S.A.",
-  "Comercial Castro y Cox SpA",
-  "Expro Chile SpA",
-  "Ultrapac Sudamérica S.A.",
-  "Portillo S.A.",
-  "Ferreminer Antofagasta SpA",
-  "Imalab S.A.",
-  "Olimpia SpA",
-  "Rodotrans Austral S.A.",
-  "Foodgroup SpA",
-  "Alfa M.R. Guantes SpA",
-  "Comercial Porvenir SpA",
-  "Vértice SpA",
-  "Impresiones Vinoprint SpA",
-  "Hortitec SpA",
-  "Incofin S.A.",
-  "Inks y Coatings Chile S.A.",
-  "Envases Carrillo S.A.",
-  "Swell Media SpA",
-  "Probio SpA",
-  "Minetec S.A.",
-  "Beka S.A.",
-  "Urzúa y Ahumada SpA",
-  "Soc. Aguas Claras Ltda",
-  "RCA Equipamiento Minero SpA",
-  "Multi Safe SpA",
-  "Comercial Chileno Británica",
+  "ALTAMIRA FROZEN S.A.",
+  "MAQUINFRA SPA",
+  "GIRO PRODUCCIONES LTDA",
+  "M M CLIMATIZACION DE AMBIENTES LIMITADA",
+  "SERVICIOS DE TRANSPORTE PIPAU SPA",
+  "FORESTAL SANTA ANITA SPA",
+  "TALLERES CALIFICADOS SPA",
+  "SOCIEDAD COMERCIAL, CONST. Y TRANSPORTE GLOBAL",
+  "SERVICIOS INDUSTRIALES INTEGRA LTDA.",
+  "SOCIEDAD CONSTRUCTORA LOS MANIOS LIMITADA",
+  "SERVICIOS HIDRA?LICOS FERNANDA GARRIDO E.I.R.L.",
+  "SOCIEDAD DE INVERSIONES MV LIMITADA",
+  "ARRIENDO MAQUINARIA LIMITADA",
+  "INGENIERIA Y CONSTRUCCIONES AREMIN LIMITADA",
+  "RETAIL SPA",
+  "SOCIEDAD DE SERVICIOS SURFORESTAL LIMITADA",
+  "PEPTOFEED SPA",
+  "VERA Y HOLA LIMITADA",
+  "TRANSPORTES  NAHUELBUTA SPA",
+  "TRANSPORTES SAN MIGUEL SPA",
+  "RUSTICOS HANS VERGARA VERGARA E.I.R.L.",
+  "KRIEGER TRANSPORTES ESPECIALES SPA",
+  "SOCIEDAD  COMERCIAL GRAFLEX LIMITADA",
+  "COMERCIALIZADORA JAIME SILVA REYES",
+  "ENERGY TRACKING S.A",
+  "INPPA RADIADORES SPA",
+  "TRANSPORTES QUINZA SPA",
+  "SPORT ZONE SA",
+  "INVERSIONES LH SPA",
+  "GGROUP SPA",
+  "SOCIEDAD COMERCIAL Y CONSTRUCTORA SEGURIEQUIP LIMITADA",
+  "PLASTICOS CBM SPA",
+  "SOCIEDAD VERA Y CHAVEZ LIMITADA",
+  "SERVICIOS DE MANTENCION INDUSTRIAL METALPROF LIMITADA",
+  "COMERCIALIZADORA Y SERVICIO TECNICO AGROSERVICES LTDA",
+  "COMERCIALIZADORA Y DISTRIBUIDORA MOCAT LIMITADA",
+  "MAESTRANZA C-DIAZ  SPA",
+  "SERVICIOS FORESTALES RIO AZUL SPA",
+  "SOCIEDAD TRANSPORTES Y CONSTRUCCION DELMORAL SPA",
+  "GLOBALBUSINESS SPA",
+  "SERVICIOS EL DIAMANTE SPA",
+  "CLINICAL RESEARCH CHILE SPA",
+  "TRANSPORTE DE CARGA MARCELO JOAQUIN CASTRO CARRASCO E.I.R.L.",
+  "VIMETALES SPA",
+  "TRANSPORTE MARIA JULIETA SPA",
 ];
 
 // Venta del mismo mes de 2025 (enero), calculada desde el CSV. Budget = +15%.
@@ -2211,7 +2223,7 @@ const STREAM_SEED = [
     regla: "Rule-01",
     cedente: "Áridos del Maipo SpA",
     cliente: true,
-    pagador: "Codelco",
+    pagador: "BERLIAM SPA",
     sector: "Buenos Deudores - Minería",
     tag: "Factoring",
     nFacturas: 6,
@@ -2226,7 +2238,7 @@ const STREAM_SEED = [
     regla: "Rule-05",
     cedente: "Maestranza Pacífico SA",
     cliente: false,
-    pagador: "Escondida (BHP)",
+    pagador: "CONSTRUCTORA GONZALEZ GARCIA LIMITADA",
     sector: "Buenos Deudores - Minería",
     tag: "Enrolamiento",
     nFacturas: 0,
@@ -2241,7 +2253,7 @@ const STREAM_SEED = [
     regla: "Rule-02",
     cedente: "Packaging Biobío SA",
     cliente: true,
-    pagador: "CMPC",
+    pagador: "ZUBLIN INTERNATIONAL GMBH CHILE SPA",
     sector: "Buenos Deudores - Industriales",
     tag: "Factoring",
     nFacturas: 12,
@@ -2256,7 +2268,7 @@ const STREAM_SEED = [
     regla: "Rule-03",
     cedente: "Logística Coquimbo Ltda",
     cliente: false,
-    pagador: "Falabella",
+    pagador: "INDEF SERVICIOS FORESTALES LIMITADA",
     sector: "Buenos Deudores - Retail",
     tag: "Factoring",
     nFacturas: 3,
@@ -2271,7 +2283,7 @@ const STREAM_SEED = [
     regla: "Rule-05",
     cedente: "Repuestos Mineros Calama SpA",
     cliente: false,
-    pagador: "Codelco",
+    pagador: "BERLIAM SPA",
     sector: "Buenos Deudores - Minería",
     tag: "Enrolamiento",
     nFacturas: 0,
@@ -2286,7 +2298,7 @@ const STREAM_SEED = [
     regla: "Rule-01",
     cedente: "Alimentos del Valle SA",
     cliente: true,
-    pagador: "Cencosud",
+    pagador: "TATTERSALL AGROINSUMOS S.A.",
     sector: "Buenos Deudores - Retail",
     tag: "Confirming",
     nFacturas: 8,
@@ -2301,7 +2313,7 @@ const STREAM_SEED = [
     regla: "Rule-03",
     cedente: "Aceros del Sur SpA",
     cliente: false,
-    pagador: "Arauco",
+    pagador: "BANCO SANTANDER-CHILE",
     sector: "Buenos Deudores - Industriales",
     tag: "Factoring",
     nFacturas: 5,
@@ -2316,7 +2328,7 @@ const STREAM_SEED = [
     regla: "Rule-05",
     cedente: "Servicios Portuarios San Antonio",
     cliente: false,
-    pagador: "Walmart Chile",
+    pagador: "SOC INDUSTRIAL WORLD SERVICE LIMITADA",
     sector: "Buenos Deudores - Retail",
     tag: "Enrolamiento",
     nFacturas: 0,
@@ -2331,7 +2343,7 @@ const STREAM_SEED = [
     regla: "Rule-02",
     cedente: "Electro Montajes RM",
     cliente: true,
-    pagador: "Sodimac",
+    pagador: "CONSTRUCTORA INGEVEC S.A.",
     sector: "Buenos Deudores - Retail",
     tag: "Factoring",
     nFacturas: 4,
@@ -2346,7 +2358,7 @@ const STREAM_SEED = [
     regla: "Rule-01",
     cedente: "Transportes Andinos Ltda",
     cliente: true,
-    pagador: "Escondida (BHP)",
+    pagador: "CONSTRUCTORA GONZALEZ GARCIA LIMITADA",
     sector: "Buenos Deudores - Minería",
     tag: "Factoring",
     nFacturas: 9,
@@ -2361,7 +2373,7 @@ const STREAM_SEED = [
     regla: "Rule-05",
     cedente: "Químicos Industriales Lota",
     cliente: false,
-    pagador: "CMPC",
+    pagador: "ZUBLIN INTERNATIONAL GMBH CHILE SPA",
     sector: "Buenos Deudores - Industriales",
     tag: "Enrolamiento",
     nFacturas: 0,
@@ -2376,7 +2388,7 @@ const STREAM_SEED = [
     regla: "Rule-03",
     cedente: "Frutícola Curicó SpA",
     cliente: false,
-    pagador: "Walmart Chile",
+    pagador: "SOC INDUSTRIAL WORLD SERVICE LIMITADA",
     sector: "Buenos Deudores - Retail",
     tag: "Factoring",
     nFacturas: 7,
@@ -2391,7 +2403,7 @@ const STREAM_SEED = [
     regla: "Rule-02",
     cedente: "Maquinaria Forestal Sur",
     cliente: true,
-    pagador: "Arauco",
+    pagador: "BANCO SANTANDER-CHILE",
     sector: "Buenos Deudores - Industriales",
     tag: "Factoring",
     nFacturas: 11,
@@ -2406,7 +2418,7 @@ const STREAM_SEED = [
     regla: "Rule-05",
     cedente: "Constructora Cordillera SpA",
     cliente: false,
-    pagador: "Antofagasta Minerals",
+    pagador: "BESALCO MAQUINARIAS S A",
     sector: "Buenos Deudores - Minería",
     tag: "Enrolamiento",
     nFacturas: 0,
@@ -2421,7 +2433,7 @@ const STREAM_SEED = [
     regla: "Rule-01",
     cedente: "Ferretería Industrial Norte",
     cliente: true,
-    pagador: "Sodimac",
+    pagador: "CONSTRUCTORA INGEVEC S.A.",
     sector: "Buenos Deudores - Retail",
     tag: "Confirming",
     nFacturas: 5,
@@ -2436,7 +2448,7 @@ const STREAM_SEED = [
     regla: "Rule-03",
     cedente: "Textil Andes SpA",
     cliente: false,
-    pagador: "Falabella",
+    pagador: "INDEF SERVICIOS FORESTALES LIMITADA",
     sector: "Buenos Deudores - Retail",
     tag: "Factoring",
     nFacturas: 2,
@@ -2451,7 +2463,7 @@ const STREAM_SEED = [
     regla: "Rule-05",
     cedente: "Pesquera Pacífico Austral",
     cliente: false,
-    pagador: "Cencosud",
+    pagador: "TATTERSALL AGROINSUMOS S.A.",
     sector: "Buenos Deudores - Retail",
     tag: "Enrolamiento",
     nFacturas: 0,
@@ -2466,7 +2478,7 @@ const STREAM_SEED = [
     regla: "Rule-02",
     cedente: "Servicios Industriales Patagonia",
     cliente: true,
-    pagador: "Codelco",
+    pagador: "BERLIAM SPA",
     sector: "Buenos Deudores - Minería",
     tag: "Factoring",
     nFacturas: 14,
@@ -2481,7 +2493,7 @@ const STREAM_SEED = [
     regla: "Rule-06",
     cedente: "Riego Tecnificado Maule",
     cliente: true,
-    pagador: "CMPC",
+    pagador: "ZUBLIN INTERNATIONAL GMBH CHILE SPA",
     sector: "Buenos Deudores - Industriales",
     tag: "Conexión SII",
     nFacturas: 0,
@@ -2496,7 +2508,7 @@ const STREAM_SEED = [
     regla: "Rule-01",
     cedente: "Reciclajes Metropolitanos",
     cliente: true,
-    pagador: "Cencosud",
+    pagador: "TATTERSALL AGROINSUMOS S.A.",
     sector: "Buenos Deudores - Retail",
     tag: "Factoring",
     nFacturas: 6,
@@ -2595,27 +2607,27 @@ const LB_NOMBRE = new Set(_LB_ARR.map((x) => (x.RazonSocial || "").toLowerCase()
 const DA_NOMBRE = new Set(_DA_ARR.map((x) => (x.RazonSocial || "").toLowerCase()));
 // Fallback (sin inyección de datos): nombres históricos de buenos pagadores.
 const LISTA_BLANCA = new Set([
-  "Adidas Chile Limitada",
-  "Coca Cola Embonor S.A.",
-  "Clorox Chile S.A.",
-  "Sika S.A. Chile",
-  "Agrosuper Comercializadora",
-  "Laboratorio Durandin S.A.",
-  "Abbott Laboratories Chile",
-  "Comercial Mar Oceánica",
-  "Proquiel Químicos SpA",
-  "Constructora PyL SpA",
-  "SQM S.A.",
-  "Walmart Chile S.A.",
-  "Mantos Copper S.A.",
-  "Ministerio de Obras Públicas",
-  "Codelco",
-  "Escondida (BHP)",
-  "CMPC",
-  "Falabella",
-  "Cencosud",
-  "Arauco",
-  "Sodimac",
+  "ECHEVERRIA IZQUIERDO MONTAJES INDUSTRIALES S A",
+  "TRABAJOS MARITIMOS OXXEAN S.A.",
+  "SERVIALL SOCIEDAD ANONIMA",
+  "CONSTRUCTORA GARDILCIC LTDA",
+  "INGENIERIA CARO Y CARO LIMITADA",
+  "JANSSEN S A",
+  "MARTINEZ Y VALDIVIESO S.A.",
+  "INGENIERIA AVA MONTAJES LIMITADA",
+  "PROMET MONTAJES SPA",
+  "INDUSTRIAS DE TECNOLOGIA HIDRAULICA EN MINERIA Y CONSTRUCCION S A",
+  "SOCIEDAD JSA CLIMATIZACION LIMITADA",
+  "EBCO S.A.",
+  "ACUICOLA E INVERSIONES NALCAHUE LIMITADA",
+  "COMERCIAL Y MARKETING SYMBOLS LTDA",
+  "BERLIAM SPA",
+  "CONSTRUCTORA GONZALEZ GARCIA LIMITADA",
+  "ZUBLIN INTERNATIONAL GMBH CHILE SPA",
+  "INDEF SERVICIOS FORESTALES LIMITADA",
+  "TATTERSALL AGROINSUMOS S.A.",
+  "BANCO SANTANDER-CHILE",
+  "CONSTRUCTORA INGEVEC S.A.",
 ]);
 // Tipo de deudor según las listas (por RUT del receptor; fallback por nombre).
 function tipoDeudor(rutRecep, nombre) {
@@ -3612,8 +3624,59 @@ function lineaIdxPorRut() {
 // RE-EVALUACIÓN una vez constituida la línea, y re-evaluar contra una cartera que no se enteró de la
 // aprobación devuelve siempre el mismo hallazgo. El visado N5 queda como salida forzada, para cursar
 // antes de que la línea exista, no como el camino normal.
+//
+// SON DOS NIVELES Y HAY QUE ESCRIBIR LOS DOS. Hasta el 20-09-2026 esto sólo tocaba el cupo del
+// CLIENTE y DESCARTABA `sol.detalle` entero —el deudor, el monto y el tipo que el comité aprobó línea
+// a línea—, porque las líneas por par no vivían en ninguna parte: se re-sorteaban en cada lectura.
+// Consecuencia: al deudor que fue al comité justamente por no tener LF2/LF3 se le aprobaba una
+// puntual y la asignación siguiente lo mandaba igual a la línea de otros deudores, como si nada
+// hubiera pasado. Con la estructura como activo (A23) el detalle tiene dónde ir: cada línea aprobada
+// se registra y `asignarLineas` ve al par con línea propia, que es lo que el comité decidió.
+// Las líneas POR PAR que el comité aprobó, del detalle de la solicitud al repositorio que se
+// superpone al activo. Dos casos, los dos que el negocio pide: al par que YA tiene línea se le
+// AUMENTA el monto; al que no tiene, se le CREA una. El tipo lo eligió el ejecutivo en el paso 4 del
+// wizard: «puntual» es una LF3 —un solo uso, tallada para esta operación— y «normal» una LF2.
+function constituirLineasDeDetalle(sol) {
+  const rut = sol && sol.rut;
+  const idProceso = (sol && sol.idProceso) || "";
+  const det = (sol && sol.detalle) || [];
+  const aprobadaCliente = mmRound((sol && (sol.propFactoring || sol.totalPropuesto)) || 0);
+  if (!rut || !idProceso) return 0;
+  if (repoLineaComite.all()[idProceso]) return 0; // ya constituida: no se aprueba dos veces
+  const lineas = [];
+  for (const d of det) {
+    const monto = mmRound(d && d.monto);
+    // Sin RUT del deudor no hay par que reconocer: el nombre no identifica una relación en el sistema
+    // de líneas, y dos razones sociales iguales con RUT distinto son dos deudores.
+    if (!d || !d.rutDeudor || !(monto > 0)) continue;
+    lineas.push({
+      tipo: d.tipoLinea === "puntual" ? "LF3" : "LF2",
+      rutDeudor: d.rutDeudor,
+      nombreDeudor: d.deudor || "",
+      monto,
+    });
+  }
+  // Una solicitud sin detalle aprovechable todavía mueve el TECHO del cliente, así que se registra
+  // igual: si no, el nivel 1 se quedaría leyendo la foto vieja y bloquearía lo recién aprobado.
+  if (!lineas.length && !(aprobadaCliente > 0)) return 0;
+  repoLineaComite.set(idProceso, {
+    rut,
+    ts: nowStamp(),
+    por: (sol && sol.ejecutivo) || "—",
+    // El techo del CLIENTE que el comité aprobó junto con el detalle. Va acá y no se deduce sumando
+    // las líneas: el nivel 1 es una decisión propia, y si quedara bajo la suma de los niveles 2
+    // bloquearía justo lo que el comité acaba de autorizar.
+    aprobadaCliente,
+    lineas,
+  });
+  invalidarCupo(); // el índice está memoizado: sin esto la línea nueva no la ve el motor
+  return lineas.length;
+}
 function constituirLinea(sol) {
   const rut = sol && sol.rut;
+  // EL DETALLE PRIMERO, porque vale aunque el total no cambie: una solicitud puede repartir el mismo
+  // cupo de otra manera entre los deudores sin mover el techo del cliente.
+  constituirLineasDeDetalle(sol);
   // La solicitud viaja en PESOS, como todo el sistema: `toFixed(1)` era un resto de cuando el wizard
   // capturaba millones y dejaba una línea con décimas de peso.
   const aprobada = mmRound((sol && (sol.propFactoring || sol.totalPropuesto)) || 0);
@@ -3722,7 +3785,12 @@ function IndicadorLinea({ deal, ancho = 122, conOperacion = false }) {
   return (
     <div
       style={{ width: ancho }}
-      title={`Línea aprobada ${fmtMM(L.aprobada)} · utilizada ${fmtMM(L.usoActual)} · disponible ${fmtMM(L.disponible)}${conOp ? ` · esta operación ${fmtMM(L.montoOp)} → quedarían ${fmtMM(queda)}` : ""}`}
+      // El tooltip dice lo MISMO y con las MISMAS palabras que el texto de al lado: cuando la operación
+      // no cabe, «excede por M$X», no «quedarían M$-X». Un «quedarían» en negativo obliga a leer el
+      // signo para entender que no cabe, y al lado se está diciendo lo contrario con otra fórmula.
+      // Apareció el 20-09-2026 al migrar al padrón real: con las identidades anteriores ninguna
+      // operación del Directorio excedía su línea, así que este estado no se dibujaba nunca (e2e-13-terdecies).
+      title={`Línea aprobada ${fmtMM(L.aprobada)} · utilizada ${fmtMM(L.usoActual)} · disponible ${fmtMM(L.disponible)}${conOp ? ` · esta operación ${fmtMM(L.montoOp)} → ${queda < 0 ? `excede por ${fmtMM(-queda)}` : `quedarían ${fmtMM(queda)}`}` : ""}`}
     >
       {/* Tamaños homologados con la columna Monto del tubo: el monto en el tamaño base (t10) semibold
           sobre C.ink y el calificativo en la escala de las sublíneas (t9). El acento es el púrpura de
@@ -5628,14 +5696,30 @@ const bandaDescuentoDeTasa = (tasaRef) => {
 // BAJA el valor nuevo respecto del original; la banda la fija la tasa de referencia de la operación.
 //  · ok             → dentro de la atribución del ejecutivo.
 //  · requiereJefe   → sobre la atribución del ejecutivo pero ≤ descuento máximo: la jefatura autoriza.
-//  · requiereGerente→ sobre el máximo de jefatura: requiere la atribución del Gerente Comercial.
+//  · requiereGerente→ sobre el máximo de jefatura: requiere la atribución del Gerente Comercial. TAMBIÉN
+//                     cuando la tasa perfora el piso de riesgo del deudor, y por un motivo DISTINTO: ahí
+//                     el descuento puede caber entero en la atribución del ejecutivo. El veredicto lo
+//                     distingue con `bajoPisoDeudor` + `pisoDeudor` para que la pantalla no diga «sobre el
+//                     máximo de jefatura» con un 7 % a la vista (reglas 8 y 24, ADR-0006).
 //  · bajoMinimo     → sólo para tasa: cae bajo la tasa mínima absoluta: nunca.
-function evalAtribucion(orig, nueva, tasaBanda, esTasa) {
+// `pisoDeudor` es OPCIONAL: sin él la escalera se comporta exactamente como antes del 19-09-2026, que es
+// lo que mantiene válidos los call sites de cuatro argumentos (caso 149).
+function evalAtribucion(orig, nueva, tasaBanda, esTasa, pisoDeudor) {
   const o = +orig || 0,
     n = +nueva || 0;
   const banda = bandaDescuentoDeTasa(tasaBanda);
   const pctDesc = o > 0 ? +(((o - n) / o) * 100).toFixed(1) : 0;
   if (esTasa && n > 0 && n < pol("tasaMinAbsoluta", 0.78)) return { estado: "bajoMinimo", pctDesc, banda };
+  // REGLA 8, tercera cláusula: «fuera de atribución si el cliente pide tasa bajo el mínimo DEL DEUDOR».
+  // El piso del deudor (spread de riesgo + costo de fondo) es de RIESGO y la regla 9 lo declara no
+  // negociable; perforarlo sale de la atribución del ejecutivo Y de la de la jefatura, porque no es un
+  // descuento comercial más grande sino otra clase de decisión. Va DESPUÉS del mínimo absoluto: ése no se
+  // autoriza nunca y éste sí, hacia arriba. Hasta el 19-09-2026 la escalera sólo miraba el absoluto —un
+  // umbral global— y los 12 pisos por deudor están TODOS sobre él, así que el piso de riesgo era techo
+  // del Agente IA y no del ejecutivo: medidos sobre la tabla real, 5.154 pares (tasa original, tasa
+  // simulada) bajo el piso salían «ok» y el ejecutivo los cerraba solo.
+  const piso = +pisoDeudor || 0;
+  if (esTasa && n > 0 && piso > 0 && n < piso) return { estado: "requiereGerente", pctDesc, banda, bajoPisoDeudor: true, pisoDeudor: piso };
   if (pctDesc <= 0 || !banda) return { estado: "ok", pctDesc: Math.max(0, pctDesc), banda };
   if (pctDesc <= banda.descEjec) return { estado: "ok", pctDesc, banda };
   if (pctDesc <= banda.descMax) return { estado: "requiereJefe", pctDesc, banda };
@@ -6661,7 +6745,7 @@ function posicionCobranza(cliente, deudor, tasaPct, deudores) {
 }
 // Historial de cursado por deudor en los últimos 1..6 meses y periodos anteriores (+6 m).
 function deudoresHistorial(cliente, deudores) {
-  const nombres = deudores && deudores.length ? deudores.map((d) => d.name) : ["Codelco"];
+  const nombres = deudores && deudores.length ? deudores.map((d) => d.name) : ["BERLIAM SPA"];
   return nombres
     .map((name) => {
       const meses = [];
@@ -6709,8 +6793,14 @@ function ventaL6M(dh) {
 // Deudores con flujo comercial RECURRENTE del cliente en los últimos 6 meses. Se usan para pre-cargar
 // la sección de deudores de la presentación de línea (el ejecutivo sólo ingresa la información de línea).
 // Recurrente = facturó en ≥ 4 de los últimos 6 meses. Ordenados por facturación total (deudoresHistorial).
-function deudoresRecurrentesLinea(cliente) {
-  const cand = Object.keys(SPREAD_MIN_DEUDOR).map((name) => ({ name }));
+// Los deudores del cliente con flujo RECURRENTE, que el wizard pre-carga en el paso de deudores.
+// Los candidatos son los deudores REALES a los que ese cliente le factura (regla 46); antes salían de
+// las 23 razones sociales de `SPREAD_MIN_DEUDOR`, que es la tabla de spreads mínimos por deudor
+// canónico y no tiene por qué contener a los deudores de nadie en particular: el ejecutivo veía
+// pre-cargadas empresas con las que su cliente jamás había trabajado.
+function deudoresRecurrentesLinea(cliente, rutCliente) {
+  const propios = rutCliente ? deudoresDelCliente(rutCliente) : [];
+  const cand = (propios.length ? propios : Object.keys(SPREAD_MIN_DEUDOR)).map((name) => ({ name }));
   return deudoresHistorial(cliente, cand)
     .filter((h) => h.meses.slice(0, 6).filter((m) => m.fac > 0).length >= 4)
     .slice(0, 5);
@@ -8667,7 +8757,6 @@ function SimResumen({
   reevalPend,
   onReevaluar,
   onSim,
-  esJefe,
   usuarioCod,
   deudoresOp,
   tasaFuente,
@@ -8707,7 +8796,10 @@ function SimResumen({
   const setNcK = (k, v) => setNc((s) => ({ ...s, [k]: Math.max(0, +v || 0) }));
   // ── Atribuciones de descuento del ejecutivo (bandas por tasa de referencia) ──
   // El descuento (baja respecto de la condición original) se clasifica por la banda de la tasa original.
-  const evalTasa = evalAtribucion(orig.tasa, nc.tasa, orig.tasa, true);
+  // El piso de riesgo entra ACÁ, que es donde se valida la tasa: al simular (regla 8). `deudoresOp` son
+  // las facturas válidas de la simulación, así que el piso es el del deudor más exigente de la operación.
+  const pisoOperacion = pisoTasaOperacion(deal, deudoresOp);
+  const evalTasa = evalAtribucion(orig.tasa, nc.tasa, orig.tasa, true, pisoOperacion);
   const evalCom = evalAtribucion(orig.comMin, nc.comMin, orig.tasa, false);
   const atrib = atribResumen([evalTasa, evalCom]);
   const bandaRef = bandaDescuentoDeTasa(orig.tasa);
@@ -8717,8 +8809,14 @@ function SimResumen({
   const requiereJefe = atrib.estado === "requiereJefe";
   const requiereGerente = atrib.estado === "requiereGerente"; // sobre el máximo de jefatura → Gerente Comercial
   const bloqueoDuro = atrib.estado === "bajoMinimo"; // sólo la tasa mínima absoluta no es ofertable nunca
-  const esGerente = esGerenteComercial(usuarioCod); // atribución de Gerente Comercial (N2+)
-  const puedeAutorizar = requiereGerente ? esGerente : esJefe; // quién puede visar según el nivel del descuento
+  // Por qué escaló, que NO siempre es el descuento (regla 8): perforar el piso de riesgo del deudor saca
+  // de atribución aunque el descuento quepa entero en la del ejecutivo. Decir «descuento sobre el máximo
+  // de jefatura» en ese caso sería falso en pantalla con un 7 % de descuento a la vista (regla 24).
+  const bajoPisoDeudor = atrib.estado === "requiereGerente" && atrib.bajoPisoDeudor === true;
+  // UN SOLO predicado para dibujar el botón y para dejar escribir. Era `requiereGerente ? esGerente : esJefe`,
+  // y ese `esJefe` es un PROP: decía «esta pantalla cree que eres jefe», que no es lo mismo que tener hoy
+  // la atribución. Con dos fuentes, la que gatea el botón y la que autoriza podían discrepar (ATR-01).
+  const puedeAutorizar = puedeAutorizarCondiciones(usuarioCod, atrib.estado);
   const rolAut = requiereGerente ? "Gerente Comercial" : "jefatura"; // rol requerido para autorizar
   const solicitarAutorizacion = () => {
     setSolicSig(condSig);
@@ -8737,6 +8835,22 @@ function SimResumen({
     setEditCond(false); // cierra la edición: la acción de enviar a autorización confirma las condiciones
   };
   const autorizarJefe = () => {
+    // ATR-01 EN EL HANDLER (regla 24). El botón ya está gateado, pero la pantalla que apaga el botón no es
+    // el control: acá se llega con una sesión vieja, con un rol revocado o con un reemplazo vencido, y lo
+    // que se escribe —`condAutJefe`— es lo que después deja publicar la oferta. El rechazo se AUDITA: una
+    // autorización que no ocurre y no deja rastro es peor que una que se bloquea, porque nadie se entera.
+    if (!puedeAutorizarCondiciones(usuarioCod, atrib.estado)) {
+      registrarAuditoria({
+        usuario: usuario,
+        modulo: "Condiciones comerciales",
+        accion: "Autorizar condiciones · bloqueada (ATR-01)",
+        glosa: `${deal ? deal.cliente : ""}: el descuento de ${atrib.pctDesc}% requiere ${rolAut} y quien autoriza no tiene esa atribución hoy`,
+        empresaId: deal ? deal.id : "",
+        severidad: "alta",
+        exito: false,
+      });
+      return;
+    }
     setAutorizSig(condSig);
     registrarAuditoria({
       usuario: usuario,
@@ -8897,9 +9011,11 @@ function SimResumen({
           <AlertTriangle size={12} />{" "}
           {atrib.estado === "bajoMinimo"
             ? "Tasa bajo el mínimo permitido — no ofertable"
-            : requiereGerente
-              ? "Descuento sobre el máximo de jefatura — requiere autorización del Gerente Comercial"
-              : "Descuento sobre tu atribución — requiere autorización de jefatura"}
+            : bajoPisoDeudor
+              ? "Tasa bajo el mínimo del deudor — requiere autorización del Gerente Comercial"
+              : requiereGerente
+                ? "Descuento sobre el máximo de jefatura — requiere autorización del Gerente Comercial"
+                : "Descuento sobre tu atribución — requiere autorización de jefatura"}
         </div>
         <div className="mt-1 t10" style={{ color: C.sub }}>
           Descuento aplicado <b>{atrib.pctDesc}%</b>
@@ -8907,6 +9023,12 @@ function SimResumen({
             <>
               {" "}
               · tu atribución <b>{bandaRef.descEjec}%</b> · máximo con jefatura <b>{bandaRef.descMax}%</b>
+            </>
+          )}
+          {bajoPisoDeudor && (
+            <>
+              {" "}
+              · mínimo del deudor <b>{atrib.pisoDeudor}%</b>, que es piso de RIESGO y no se negocia
             </>
           )}
           {requiereGerente && (
@@ -9088,8 +9210,14 @@ function SimResumen({
           {modoEdit && bandaRef && (
             <>
               Atribución (banda tasa {bandaRef.tMin}%–{bandaRef.tMax === Infinity ? "+" : bandaRef.tMax + "%"}): descuento ejecutivo{" "}
-              <b style={{ color: C.sub }}>{bandaRef.descEjec}%</b> · máximo con jefatura <b style={{ color: C.sub }}>{bandaRef.descMax}%</b> · tasa mínima
-              absoluta {CFG_ATRIB_DESCUENTO.tasaMinAbsoluta}%.
+              <b style={{ color: C.sub }}>{bandaRef.descEjec}%</b> · máximo con jefatura <b style={{ color: C.sub }}>{bandaRef.descMax}%</b>
+              {pisoOperacion > 0 && (
+                <>
+                  {" "}
+                  · mínimo del deudor <b style={{ color: C.sub }}>{pisoOperacion}%</b>
+                </>
+              )}{" "}
+              · tasa mínima absoluta {pol("tasaMinAbsoluta", 0.78)}%.
             </>
           )}
         </div>
@@ -9208,8 +9336,14 @@ function SimResumen({
           {bandaRef && !colapsable && (
             <div className="mt-2 t9" style={{ color: C.faint }}>
               Atribución (banda tasa {bandaRef.tMin}%–{bandaRef.tMax === Infinity ? "+" : bandaRef.tMax + "%"}): descuento ejecutivo{" "}
-              <b style={{ color: C.sub }}>{bandaRef.descEjec}%</b> · máximo con jefatura <b style={{ color: C.sub }}>{bandaRef.descMax}%</b> · tasa mínima
-              absoluta {CFG_ATRIB_DESCUENTO.tasaMinAbsoluta}%.
+              <b style={{ color: C.sub }}>{bandaRef.descEjec}%</b> · máximo con jefatura <b style={{ color: C.sub }}>{bandaRef.descMax}%</b>
+              {pisoOperacion > 0 && (
+                <>
+                  {" "}
+                  · mínimo del deudor <b style={{ color: C.sub }}>{pisoOperacion}%</b>
+                </>
+              )}{" "}
+              · tasa mínima absoluta {pol("tasaMinAbsoluta", 0.78)}%.
             </div>
           )}
           {bloqueAtribucion}
@@ -10939,7 +11073,7 @@ function DealMensajeria({ deal, usuario }) {
 // de nuevo con el sugerido mostraría en esta tabla una tasa distinta de la que se está mirando dos
 // pestañas más allá: el mismo documento con dos precios en la misma pantalla.
 // (El mapa `spreadDeudor` se lee en cinco sitios y su setter no se llama nunca: la EDICIÓN del spread
-// por deudor que su forma de estado promete no existe. Ver `Auditoria_Codigo_Muerto.md` §1.4.)
+// por deudor que su forma de estado promete no existe. Ver `Auditoria/Auditoria_Codigo_Muerto.md` §1.4.)
 function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usuario, tasaDe }) {
   // Misma compuerta que la mesa: registrar la llamada o retirar una factura es firmar lo que el
   // deudor dijo, y eso lo hace el equipo de verificación. Los demás leen el veredicto del modelo.
@@ -12371,18 +12505,23 @@ function DealDrawer({
             const destinos = STAGES.filter((st) => {
               if (["aceptadas", "cesion", "perdida"].includes(st.id)) return false;
               if (STAGE_ORDER.indexOf(st.id) <= iAct) return false;
-              // Además de la aceptación vigente (regla 1), la huella del paquete tiene que calzar con
-              // la evidencia del contrato (GIR-02). Ocultar el destino no es el control —lo impone el
-              // resolver— pero ofrecer un botón que va a fallar es peor que no ofrecerlo.
-              if (st.id === "giro") return aprobacionFormalCliente(deal) && evidenciaContratoOk(deal).ok;
+              // GIRAR NO ES DEL COMERCIAL. Lo autoriza Operaciones al aprobar la integración al core, y
+              // el desembolso lo hace Tesorería, fuera de NEX. Ofrecerlo acá dejaba que el comercial
+              // pusiera la operación en «Pendiente de Giro» sin que Operaciones verificara nada. NO
+              // desaparece en silencio: abajo se muestra apagado con el motivo (regla 24).
+              if (st.id === "giro") return false;
               return true;
             });
             // Cuando lo ÚNICO que falta es la huella —el cliente firmó, pero la operación cambió
             // después— el destino no desaparece: se muestra apagado con el motivo. Desaparecer sin
             // explicación es el peor de los dos: el ejecutivo ve una operación aceptada que no puede
             // girar y no tiene dónde enterarse de por qué.
+            // El destino «Girar» ya no se ofrece nunca, así que el motivo tiene TRES formas: la huella que
+            // no calza y la evidencia que falta (las de siempre), y —cuando no falta ninguna de las dos—
+            // la que explica de quién es la acción. Sin esta tercera, el ejecutivo veía una operación
+            // aceptada y en regla que simplemente no aparecía como destino (regla 24).
             const evGiro = aprobacionFormalCliente(deal) && STAGE_ORDER.indexOf("giro") > iAct ? evidenciaContratoOk(deal) : null;
-            const giroTrabado = evGiro && !evGiro.ok ? evGiro : null;
+            const giroTrabado = evGiro ? (evGiro.ok ? { motivo: "lo_autoriza_operaciones" } : evGiro) : null;
             if (!destinos.length && !giroTrabado) return null;
             return (
               <>
@@ -12395,17 +12534,21 @@ function DealDrawer({
                     className="flex items-start gap-1.5 rounded-md px-2 py-1.5 t10"
                     style={{ color: C.sub, backgroundColor: "#FFF7ED", cursor: "help" }}
                     title={
-                      giroTrabado.motivo === "sin_evidencia"
-                        ? "Falta la evidencia del contrato de cesión (criterio O05 del tab Otorgamiento)."
-                        : `Lo autorizado: ${giroTrabado.firmado}\nLo que se giraría: ${giroTrabado.actual}`
+                      giroTrabado.motivo === "lo_autoriza_operaciones"
+                        ? "El giro lo autoriza OPERACIONES: al verificar los adjuntos de las excepciones, la verificación telefónica, las excepciones resueltas y la cobertura de línea, aprueba la integración al core y eso inyecta la operación en TESORERÍA, que es quien gira. No es una acción del comercial."
+                        : giroTrabado.motivo === "sin_evidencia"
+                          ? "Falta la evidencia del contrato de cesión (criterio O05 del tab Otorgamiento)."
+                          : `Lo autorizado: ${giroTrabado.firmado}\nLo que se giraría: ${giroTrabado.actual}`
                     }
                   >
                     <AlertTriangle size={11} className="mt-0.5 shrink-0" style={{ color: "#C2410C" }} />
                     <span>
                       <b>Girar</b> no está disponible:{" "}
-                      {giroTrabado.motivo === "sin_evidencia"
-                        ? "falta la evidencia del contrato de cesión (O05)."
-                        : "la operación cambió después de que el cliente la autorizó — hay que volver a firmarla."}
+                      {giroTrabado.motivo === "lo_autoriza_operaciones"
+                        ? "lo autoriza Operaciones al aprobar la integración al core, y el desembolso lo hace Tesorería."
+                        : giroTrabado.motivo === "sin_evidencia"
+                          ? "falta la evidencia del contrato de cesión (O05)."
+                          : "la operación cambió después de que el cliente la autorizó — hay que volver a firmarla."}
                     </span>
                   </div>
                 )}
@@ -13136,7 +13279,7 @@ function DealDrawer({
                           acción lo vuelve a comprobar antes de escribir. */}
                     {deal.integracion === "pendiente" &&
                       (() => {
-                        const ev = evidenciaContratoOk(deal);
+                        const ctrl = controlesIntegracion(deal);
                         const puede = puedeAprobarExc(usuario, { area: "operaciones" }, 3);
                         return (
                           <div className="mt-2 rounded-lg p-2.5" style={{ backgroundColor: C.lilac, border: "1px solid #DDD6FE" }}>
@@ -13144,25 +13287,44 @@ function DealDrawer({
                               Pendiente Integración
                             </div>
                             <div className="mt-0.5 t10" style={{ color: C.sub }}>
-                              Los criterios de otorgamiento y la verificación quedaron resueltos. Falta que <b>Operaciones (N3)</b> apruebe la integración al
-                              core; recién ahí la operación queda <b>Pendiente de Giro</b> para Tesorería.
+                              {ctrl.ok
+                                ? "Los criterios de otorgamiento y la verificación quedaron resueltos, y cada factura tiene línea asignada. Falta que Operaciones (N3) apruebe la integración al core; recién ahí la operación queda Pendiente de Giro para Tesorería."
+                                : "Operaciones firma que la operación está en condiciones de entrar al core. Mientras falte alguno de sus controles, la aprobación no se habilita."}
                             </div>
-                            {!ev.ok && (
+                            {/* QUÉ FALTA, UNO POR UNO Y CON SU CÓDIGO. Un botón apagado sin causa manda a
+                                adivinar, y lo que se adivina acá es por qué no sale la plata. Cada falta
+                                nombra su control —el mismo que el resolver del servidor devuelve— y dice
+                                qué hay que hacer para levantarla. */}
+                            {!ctrl.ok && (
                               <div
                                 className="mt-1.5 rounded-md px-2 py-1.5 t9"
                                 style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#7c3a10" }}
-                                title={ev.firmado ? `Lo autorizado: ${ev.firmado}\nLo que se integraría: ${ev.actual}` : undefined}
                               >
-                                <b>No se puede integrar:</b>{" "}
-                                {ev.motivo === "sin_evidencia"
-                                  ? "falta la evidencia del contrato de cesión (criterio O05)."
-                                  : "la operación cambió después de que el cliente la autorizó — hay que volver a firmarla."}
+                                <b>
+                                  No se puede integrar: falta{ctrl.faltas.length > 1 ? "n" : ""} {ctrl.faltas.length} control
+                                  {ctrl.faltas.length > 1 ? "es" : ""}.
+                                </b>
+                                <ul className="mt-1 space-y-0.5" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                                  {ctrl.faltas.map((x) => (
+                                    <li
+                                      key={x.codigo}
+                                      title={
+                                        x.codigo === "GIR-02" && ctrl.evidencia && ctrl.evidencia.firmado
+                                          ? `Lo autorizado: ${ctrl.evidencia.firmado}\nLo que se integraría: ${ctrl.evidencia.actual}`
+                                          : undefined
+                                      }
+                                    >
+                                      <b>{x.codigo}</b> · {x.detalle}
+                                    </li>
+                                  ))}
+                                </ul>
                               </div>
                             )}
                             {puede ? (
                               <button
                                 onClick={() => onIntegrar && onIntegrar(deal.id)}
-                                disabled={!ev.ok}
+                                disabled={!ctrl.ok}
+                                title={ctrl.ok ? undefined : ctrl.faltas.map((x) => `${x.codigo} · ${x.detalle}`).join("\n")}
                                 className="mt-2 rounded-full px-4 py-1.5 t11 font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed"
                                 style={{ backgroundColor: C.indigo }}
                               >
@@ -13757,11 +13919,13 @@ function DealDrawer({
                         deudoresDeDeal(deal).forEach((d) => {
                           if (d.rut) rutMap[d.nombre] = d.rut;
                         });
-                        const rutDe = (n) => {
-                          if (rutMap[n]) return rutMap[n];
-                          const h = Math.abs(hashStr("rut:" + n));
-                          return `${76 + (h % 20)}.${String(100 + (h % 900))}.${String(h % 1000).padStart(3, "0")}-${"0123456789K"[h % 11]}`;
-                        };
+                        // El RUT del deudor de la operación; si la fila no lo trae, se RESUELVE contra
+                        // el universo conocido (regla 46). Antes se armaba con un dígito verificador
+                        // sorteado, y este `rutDe` alimenta la evaluación de línea de más abajo: un
+                        // RUT fabricado es, para el motor, un deudor distinto — no calza con su línea
+                        // de par, cae a la de otros deudores y el desglose muestra las dos a la vez.
+                        // Vacío cuando el sistema no lo conoce: mejor sin RUT que con uno inventado.
+                        const rutDe = (n) => rutMap[n] || rutDeDeudorPorNombre(n);
                         // EVALUACIÓN DE LÍNEA de la oferta: el motor completo sobre los tres niveles, no una
                         // estimación por deudor. Se recalcula la operación ENTERA porque la línea del cliente se
                         // consume acumulativamente en orden de nota y la línea de otros deudores es compartida,
@@ -15054,7 +15218,6 @@ function DealDrawer({
                                     reevalPend={reevalPend}
                                     onReevaluar={() => setReevalPend(false)}
                                     onSim={setSimOp}
-                                    esJefe={esJefeComercial(usuario)}
                                     usuarioCod={usuario}
                                     deudoresOp={validas}
                                     tasaFuente={{ usaUltNeg, riesgo: tasaPondRiesgo, ultNeg: tul }}
@@ -18767,7 +18930,6 @@ function NuevoNegocioWizard({ usuario, onClose, onConfirm, deal, deals = [], onO
       financiado: +fin.financiado.toFixed(2),
       interes: +fin.dif.toFixed(2),
       montoDescuento: fin.dif,
-      comision,
       desc: +fin.subtotal.toFixed(2),
       descCxC: 0,
       giro: +fin.girar.toFixed(2),
@@ -19399,7 +19561,7 @@ function benchmarkPor(deals, by = "deudor") {
     }
   });
   // 2) Completar con histórico de mercado (determinista) para los deudores presentes.
-  const cl = ["Constructora Andes SpA", "Áridos del Maipo SpA", "Packaging Biobío SA", "Transportes Litoral Ltda", "Metalúrgica del Bío-Bío"];
+  const cl = ["Constructora Andes SpA", "Áridos del Maipo SpA", "Packaging Biobío SA", "DYNTEL SPA", "Metalúrgica del Bío-Bío"];
   const deudoresPresentes = [...new Set(rows.map((r) => r.deudor))];
   deudoresPresentes.forEach((deudor) => {
     const base = tasaMinIA(deudor);
@@ -19917,7 +20079,7 @@ function ChipCond({ fg, bg, Icono, texto, tip, badge, plano }) {
 // sea que «5 deudores» y «30 facturas» no pueden cumplirse a la vez con datos reales: manda el
 // volumen —una demo con 15 facturas no se ve como una operación— y los deudores quedan en los que
 // hagan falta para juntarlas, del orden de diez.
-const DIRECTORIO_PERFIL = { clientes: 5, deudores: 5, facturas: 30, minFacturas: 12, cubren: 3, parciales: 2 };
+const DIRECTORIO_PERFIL = { clientes: 5, deudores: 5, facturas: 30, minFacturas: 12, cubren: 3, parciales: 2, carencia: 2 };
 
 // Arma el elenco de la demo. NO inventa datos: cada oportunidad se compone con facturas REALES del
 // libro de ventas del cliente (activo A1, el mismo que lee el resto del pipeline) y con su línea
@@ -19973,7 +20135,19 @@ function construirDirectorio(execSesion) {
     if (elegidas.length < DIRECTORIO_PERFIL.facturas) continue;
     const monto = elegidas.reduce((a, f) => a + (f.monto || 0), 0);
     const disponible = Math.max(0, Math.round((lin.aprobada || 0) - (lin.uso || 0)));
-    cands.push({ rut, cliente: nombres.get(rut) || rut, facturas: elegidas, monto, disponible, parcial: monto > disponible });
+    // ¿Alguno de sus deudores queda con CUPO CERO? O sea: sin línea de par viva y con el comodín de
+    // su cliente sin nada disponible, que es el único caso en que la factura no tiene de dónde
+    // financiarse ni por el par ni por el pozo genérico. Es la tercera casuística que la demo tiene
+    // que mostrar (regla 31): el deudor sale ENTERO de la oferta al «Sacar facturas sin línea», que
+    // es distinto del parcial —ése se queda con lo que cabía—. NO se fabrica: se mide sobre las
+    // líneas reales del cliente, y la cartera trae 37 clientes elegibles que ya lo cumplen.
+    const stLin = lineasDeCliente(rut) || { lineas: [] };
+    const conPropia = new Set(stLin.lineas.filter((l) => l.granularidad === "par" && !l.suspendida).map((l) => l.rutDeudor));
+    const capComodin = stLin.lineas
+      .filter((l) => l.granularidad === "comodin" && !l.suspendida)
+      .reduce((a, l) => a + Math.max(0, (l.aprobado || 0) - (l.vigente || 0)), 0);
+    const carencia = capComodin <= 0 && elegidas.some((f) => f.rutRecep && !conPropia.has(f.rutRecep));
+    cands.push({ rut, cliente: nombres.get(rut) || rut, facturas: elegidas, monto, disponible, parcial: monto > disponible, carencia });
   }
   cands.sort((a, b) => a.rut.localeCompare(b.rut));
 
@@ -20010,6 +20184,15 @@ function construirDirectorio(execSesion) {
       elegidos.push(c);
     }
   }
+  // …y los DOS parciales, con un deudor de CUPO CERO cada uno. Sin esta cuota la demo mostraba
+  // sólo dos de los tres casos —cubre y parcial—, y el tercero —el deudor que no tiene de dónde
+  // financiarse— quedaba fuera aunque la cartera lo tenga: el elenco se elegía por RUT y por si la
+  // línea del CLIENTE cubría la oferta, sin mirar nunca si algún DEUDOR quedaba sin cupo. Va antes
+  // de la cuota general de parciales para que no se la coman los primeros por orden de RUT.
+  // Son los DOS y no uno porque quien recorre la demo —o un caso e2e— abre la primera fila de «Sin
+  // línea» que encuentre, no la que tenga el escenario: con uno solo, la mitad de las veces el tercer
+  // caso seguía sin verse. La cartera lo permite sin forzar nada: 37 clientes elegibles lo cumplen.
+  cuota((c) => c.parcial && c.carencia, DIRECTORIO_PERFIL.carencia);
   cuota((c) => c.parcial, DIRECTORIO_PERFIL.parciales);
   cuota(() => true, DIRECTORIO_PERFIL.clientes); // relleno si una de las dos poblaciones no alcanzó
 
@@ -23038,6 +23221,95 @@ function otorgamientoCompleto(deal, estado) {
   if (deal.otorgAuto) return true;
   return v.exc.length > 0 && v.estado === "aprobada";
 }
+// LA ASIGNACIÓN DE LÍNEA QUE RESPALDA EL PAQUETE. Una operación aceptada se LEE de su versión y no se
+// re-evalúa (regla 12): el cupo ya está reservado en el sistema de líneas, así que recalcular mostraría
+// menos cursable del que el cliente firmó. Por eso se busca la versión más reciente que traiga
+// asignación, y sólo si no hay ninguna —una operación que nunca se versionó— se calcula, que es lo
+// mismo que hace la pantalla del detalle mientras la oferta se arma.
+function lineaAsignadaDe(deal, estado) {
+  const est = estado || {};
+  if (est.linea) return est.linea;
+  const versiones = est.versiones || (typeof SIM_VERSIONS !== "undefined" ? SIM_VERSIONS : {}) || {};
+  const vs = (deal && versiones[deal.id]) || [];
+  for (let i = vs.length - 1; i >= 0; i--) if (vs[i] && vs[i].linea) return vs[i].linea;
+  const fs2 = ((deal && deal.facturasOp) || []).filter((x) => x && (x.monto || 0) > 0);
+  if (!fs2.length || !deal || !deal.rutEmisor) return null;
+  return asignarLineas(fs2, deal.rutEmisor);
+}
+// LOS CONTROLES QUE FIRMA OPERACIONES (regla 41). Aprobar la integración al core es el último gesto
+// antes de que el dinero salga y quien lo hace RESPONDE por lo que entra: que lo excepcionado esté
+// excepcionado, que las llamadas estén hechas, que cada factura tenga cupo y que el paquete sea el que
+// el cliente firmó.
+//
+// Antes acá sólo se miraba la huella (GIR-02) y se confiaba en que la operación no podía haber llegado
+// de otra forma: `etapaTrasFirma` la deja en «Otorgamiento / Verificación» mientras falte algo. Pero esa
+// foto es del día de la firma, y entre ese día y éste pueden pasar días: un apoderado puede REVERTIR un
+// visado, la verificación puede retirar una factura por no confirmada, y el cupo de una línea puede
+// consumirse en otro negocio del mismo cliente. La compuerta se vuelve a mirar ACÁ, que es el último
+// punto donde mirarla sirve de algo.
+//
+// Devuelve las faltas CON SU CÓDIGO —el mismo que el resolver del servidor tiene que devolver— para que
+// la pantalla diga qué falta y no un «no se puede» sin causa. PURA: todo lo que decide entra por
+// `estado` (visado, versiones, verificación, asignación de línea, evidencia).
+function controlesIntegracion(deal, estado) {
+  const faltas = [];
+  if (!deal) return { ok: false, faltas: [{ codigo: "GIR-01", titulo: "Sin operación", detalle: "no hay operación que integrar" }] };
+  const vis = visadoDeal(deal, estado);
+  const pendVisado = vis.excPend.length + vis.rechReev.length;
+  if (pendVisado > 0) {
+    faltas.push({
+      codigo: "OTG-02",
+      titulo: "Otorgamiento sin resolver",
+      detalle: `${pendVisado} criterio(s) de otorgamiento sin resolver: hay que excepcionarlos o regularizarlos antes de integrar`,
+    });
+  }
+  const pendVerif = verifResumenDeal(deal, estado).pend;
+  if (pendVerif > 0) {
+    faltas.push({
+      codigo: "VER-01",
+      titulo: "Verificación incompleta",
+      detalle: `${pendVerif} factura(s) esperan la verificación telefónica con el deudor`,
+    });
+  }
+  // LA LÍNEA, FACTURA POR FACTURA. El cupo se asigna al armar la oferta y lo que no cabe sale marcado
+  // para el comité; lo que no puede pasar es que una factura sin cupo llegue al core, porque el core
+  // no tiene contra qué imputarla. Se mira el estado de CADA factura de la asignación, no el total:
+  // un paquete puede estar dentro de la línea del cliente y tener una factura sin línea de par.
+  const lin = lineaAsignadaDe(deal, estado);
+  const facturasLin = (lin && lin.facturas) || [];
+  const sinLinea = facturasLin.filter((x) => x && x.estado !== "CON_LINEA");
+  if (sinLinea.length > 0) {
+    const folios = sinLinea
+      .slice(0, 4)
+      .map((x) => "#" + (x.folio || x.id))
+      .join(", ");
+    faltas.push({
+      codigo: "LIN-01",
+      titulo: "Facturas sin línea asignada",
+      detalle: `${sinLinea.length} factura(s) sin línea aprobada y asignada (${folios}${sinLinea.length > 4 ? ", …" : ""}): esperan al comité`,
+    });
+  } else if (!facturasLin.length) {
+    // Sin asignación no se puede AFIRMAR que cada factura tenga cupo, y acá se falla cerrado: lo que
+    // está en juego es plata que sale.
+    faltas.push({
+      codigo: "LIN-01",
+      titulo: "Sin asignación de línea",
+      detalle: "no hay una asignación de línea que respalde este paquete: no se puede afirmar que cada factura tenga cupo",
+    });
+  }
+  const evidencia = evidenciaContratoOk(deal, estado);
+  if (!evidencia.ok) {
+    faltas.push({
+      codigo: "GIR-02",
+      titulo: "El paquete no es el autorizado",
+      detalle:
+        evidencia.motivo === "sin_evidencia"
+          ? "falta la evidencia del contrato de cesión (criterio O05)"
+          : "la operación cambió después de que el cliente la autorizó — hay que volver a firmarla",
+    });
+  }
+  return { ok: faltas.length === 0, faltas, pendVisado, pendVerif, sinLinea: sinLinea.length, evidencia };
+}
 // ── CAPA DE REPOSITORIOS (SERVER-SIDE) ──────────────────────────────────────────────────────────
 // Los objetos de módulo que vienen a continuación NO son estado de UI: son TABLAS. Hoy viven en la
 // memoria del bundle, sin `tenant_id`, sin control de concurrencia, sin auditoría transaccional, y se
@@ -23122,7 +23394,7 @@ const INVARIANTES = [
     codigo: "OTG-01",
     nombre: "Sólo aprueba quien tiene atribución",
     autoridad: "servidor",
-    aplicado: "ui",
+    aplicado: "funcion", // handler de visado: `puedeAprobarExc` antes de escribir
     mutaciones: ["excepcion.aprobar", "excepcion.rechazar"],
     regla: "La excepción la resuelve un apoderado con atribución en el área y nivel que la regla exige.",
     servidor: "El resolver recalcula la atribución desde el rol del token, no desde el payload. La UI que oculta el botón no es el control.",
@@ -23132,7 +23404,8 @@ const INVARIANTES = [
     codigo: "OTG-02",
     nombre: "No avanza a Cesión con excepciones pendientes",
     autoridad: "servidor",
-    aplicado: "ui",
+    aplicado: "funcion", // `etapaTrasFirma` tras la firma (caso 88) y `moverEtapa` en el «Avanzar a» manual (gate `regla_transiciones.test.mjs`)
+
     mutaciones: ["oportunidad.avanzarEtapa"],
     regla: "Con excepciones o rechazos re-evaluables sin resolver, la operación no puede pasar a Cesión.",
     servidor: "Transición de estado validada en el servidor contra la máquina de estados; el stage no se acepta como dato del cliente.",
@@ -23145,7 +23418,7 @@ const INVARIANTES = [
     codigo: "VER-01",
     nombre: "No cursa con verificación pendiente",
     autoridad: "servidor",
-    aplicado: "ui",
+    aplicado: "funcion", // `etapaTrasFirma`: una de las tres compuertas previas al giro (caso 88)
     mutaciones: ["oportunidad.cursar"],
     regla: "Todas las facturas de la operación tienen que tener su verificación telefónica completa.",
     servidor: "El resolver de curse cuenta las verificaciones en estado final; si falta una, 409 con el detalle.",
@@ -23155,7 +23428,7 @@ const INVARIANTES = [
     codigo: "GIR-01",
     nombre: "No gira sin pasar por Cesión",
     autoridad: "servidor",
-    aplicado: "ui",
+    aplicado: "externo", // el giro no es una acción de NEX: lo autoriza Operaciones al integrar y lo ejecuta Tesorería (19-09-2026)
     mutaciones: ["oportunidad.girar"],
     regla: "El desembolso exige que la operación haya pasado por Cesión (documentos cedidos a Security).",
     servidor: "El giro se emite contra el AEC confirmado, no contra el stage que reporta el cliente.",
@@ -23179,7 +23452,7 @@ const INVARIANTES = [
     codigo: "ATR-01",
     nombre: "Descuento dentro de la atribución",
     autoridad: "servidor",
-    aplicado: "ui",
+    aplicado: "funcion", // `autorizarJefe`: `puedeAutorizarCondiciones` antes de escribir (caso 142)
     mutaciones: ["condiciones.guardar"],
     regla: "El descuento aplicado no puede exceder la atribución del rol sin autorización de la jefatura correspondiente.",
     servidor: "El resolver recalcula la banda de tasa y la atribución del rol del token; el % máximo no viaja en el payload.",
@@ -23220,6 +23493,25 @@ function registrarRechazo(inv, mutacion, datos) {
 // Valida una mutación contra las invariantes que la cubren. Devuelve los códigos violados para que la
 // UI muestre el motivo real; un evaluador que revienta NO bloquea la operación (el control es del
 // servidor, y un bug acá no puede dejar al ejecutivo sin poder trabajar).
+// Evalúa UN invariante por su código. `validarMutacion` corre TODOS los que cubren la mutación, y eso no
+// sirve donde dos invariantes de la misma mutación se explican distinto: `oportunidad.girar` la cubren
+// GIR-01 (la etapa de origen) y GIR-02 (la huella del paquete), y GIR-02 ya tiene su bloque, que audita las
+// DOS huellas —que es lo que se revisa después—. Un rechazo genérico perdería ese detalle.
+// Se lee de `INVARIANTES` por código a propósito: escribir el predicado a mano en el handler es una segunda
+// copia de la regla, y dos copias se desfasan sin que nadie lo note. Un evaluador que revienta NO bloquea.
+function invarianteCumple(codigo, mutacion, payload) {
+  const inv = INVARIANTES.find((i) => i.codigo === codigo);
+  if (!inv || typeof inv.evaluar !== "function") return { ok: true, inv: null };
+  let ok = true;
+  try {
+    ok = inv.evaluar(payload || {}) !== false;
+  } catch (e) {
+    ok = true;
+    logSys("error", "contrato", `Evaluador de ${codigo} falló: ${e.message}`, { codigo, mutacion });
+  }
+  if (!ok) registrarRechazo(inv, mutacion, {});
+  return { ok, inv };
+}
 function validarMutacion(tipo, payload) {
   const violaciones = [];
   for (const inv of invariantesDe(tipo)) {
@@ -23531,7 +23823,18 @@ const repoGiro = crearRepo("giro_asignacion");
 // las dos. Guarda sólo lo que `mismaSolicitudComite` compara (el rut y el detalle) más el `idProceso`
 // que el log necesita nombrar; el registro completo sigue siendo del sistema externo. Regla 33.
 const repoSolicitudComite = crearRepo("solicitud_comite");
-let GIRO_STATE = repoGiro.all(); // { [dealId]: { tipos:[...], montoGirar, ts, por } }
+// LAS LÍNEAS QUE EL COMITÉ CONSTITUYÓ EN ESTA DEMO, por `idProceso`. El activo A23 es la foto que
+// entregó el sistema de gestión de líneas; cuando el comité aprueba una solicitud, ese sistema
+// registra la línea nueva y la foto siguiente ya la trae. Acá no se puede esperar a la entrega
+// siguiente —la demo dura una sesión—, así que la línea aprobada vive en este repositorio y se
+// SUPERPONE al activo al leerlo. Lo que NO se hace es mutar `window.LINEA_CUPO`: sería fingir que el
+// batch del sistema externo dice algo que no dice, y la próxima regeneración lo desmentiría.
+// Forma: { [idProceso]: { rut, ts, por, lineas: [{ tipo, rutDeudor, nombreDeudor, monto }] } }.
+const repoLineaComite = crearRepo("linea_comite");
+let GIRO_STATE = repoGiro.all(); // { [dealId]: la salida de `asignarGiros` (tipos, porTipo, porDeudor, filas,
+// asignado, montoGirar, cuadra, descuadre, motivo) + { ts, por } } — la asignación CONGELADA en la inyección a
+// Tesorería. La escribe `aprobarIntegracion` (regla 43) y la lee `giroCongelado`; antes del 19-09-2026 sólo se
+// hidrataba, así que el congelado nunca existía en pantalla.
 // ── ADAPTADOR: de los motores a la entrada del modelo de giros ────────────────────────────────
 // Es el ÚNICO sitio que conoce a los tres motores a la vez. `asignarGiros` no los llama: recibe sus
 // veredictos, y esto es lo que se los pregunta. Separarlos no es ceremonia — es lo que permite
@@ -23607,6 +23910,13 @@ function girosDeDeal(deal, estado) {
 // los tres commits que pueden mover el veredicto sin pasar por el visado.
 let _GIRO_LISTA = {};
 function giroResumenDeal(deal, estado) {
+  // El congelado gana, y se consulta PRIMERO: antes del cálculo, antes del memo y antes incluso de
+  // exigir simulación (regla 43). Una asignación congelada existe porque la operación se INYECTÓ a
+  // Tesorería, y eso es un hecho del otro sistema: sigue siendo lo que se giró aunque el paquete de
+  // esta pantalla haya cambiado después. Hasta el 19-09-2026 esto sólo lo sabía `giroDeal`, al que no
+  // llamaba nadie, así que la pantalla recalculaba siempre y podía mostrar algo distinto de lo girado.
+  const congR = giroCongelado(deal, estado);
+  if (congR) return { ...congR, congelado: true };
   if (!deal || !deal.simulado) return null;
   const fs = (deal.facturasOp || []).filter(Boolean);
   const giroTotal = Math.round(deal.giro || 0);
@@ -23654,12 +23964,21 @@ function ChipGiro({ codigo, label, monto, titulo, compacto, soloTipo }) {
     />
   );
 }
-// La asignación VIGENTE de una operación: la congelada si el cliente ya aceptó, y el cálculo del día
-// si todavía no. El congelado gana siempre — recalcular una operación aceptada movería una cifra que
-// Tesorería ya tomó.
+// La asignación CONGELADA de una operación, si la hay. Se congela en la INYECCIÓN a Tesorería (regla
+// 37): desde que Operaciones aprueba la integración, el paquete que vale es el que se entregó, y
+// recalcularlo movería una cifra que el otro sistema YA TOMÓ. Vive en una sola función porque la leen
+// los dos lectores —`giroDeal` y `giroResumenDeal`— y dos copias del «gana el congelado» se desfasan.
+function giroCongelado(deal, estado) {
+  const est = estado || {};
+  return (est.giro || (typeof GIRO_STATE !== "undefined" ? GIRO_STATE : {}) || {})[deal && deal.id] || null;
+}
+// La asignación VIGENTE de una operación: la congelada si ya se inyectó a Tesorería, y el cálculo del
+// día si todavía no. El congelado gana siempre — recalcular una operación ya entregada movería una
+// cifra que el otro sistema tomó. Hasta el 19-09-2026 este comentario decía «si el cliente ya aceptó»:
+// la aceptación del cliente no congela nada, congela la aprobación de Operaciones (regla 43).
 function giroDeal(deal, estado) {
   const est = estado || {};
-  const cong = (est.giro || (typeof GIRO_STATE !== "undefined" ? GIRO_STATE : {}) || {})[deal && deal.id];
+  const cong = giroCongelado(deal, est);
   if (cong) return { ...cong, congelado: true };
   return { ...asignarGiros(girosDeDeal(deal, est), { tipos: est.tiposGiro }), congelado: false };
 }
@@ -23765,7 +24084,7 @@ const guardarCfgAprobMasiva = guardarPermisos;
 // OJO — el `area` de acá es DESCRIPTIVO. El ruteo de las excepciones de otorgamiento lo siguen
 // resolviendo `ATRIB_USUARIO` (qué nivel aprueba cada uno) y `NIVEL_ROL` (qué área manda en cada
 // nivel), que están auditados y con seis decisiones de negocio pendientes —ver
-// `Inconsistencias_Motor_Otorgamiento.md`, INC-01 a INC-03—. Cambiarle el rol a alguien NO le
+// `Regresiones/Inconsistencias_Motor_Otorgamiento.md`, INC-01 a INC-03—. Cambiarle el rol a alguien NO le
 // cambia la atribución de aprobación: unir las dos cosas acá cerraría a mano un contrato que
 // todavía no está decidido, y con la homologación de niveles invertida el resultado sería peor
 // que el de hoy. Cuando esas decisiones se cierren, éste es el lugar donde se unen.
@@ -24212,6 +24531,16 @@ let PRIORIDAD_CURSE = {};
 const esJefeComercial = (code) => code === "ADMIN" || atribEfectiva(code).comercial != null;
 // Gerente Comercial (o superior): atribución comercial N2+ (autoriza descuentos sobre el máximo de jefatura).
 const esGerenteComercial = (code) => code === "ADMIN" || (atribEfectiva(code).comercial != null && atribEfectiva(code).comercial >= 2);
+// ATR-01 · ¿ESTE usuario puede autorizar ESTE descuento? El rol exigido sale del ESTADO de la atribución
+// (`requiereJefe` → jefatura, `requiereGerente` → Gerente Comercial) y la atribución sale del PADRÓN por
+// código, no de un prop: la pantalla puede venir de una sesión vieja, de un rol que cambió o de un
+// reemplazo vencido, y autorizar un descuento es evidencia. `ok` no necesita autorización y `bajoMinimo`
+// no la admite —la tasa mínima absoluta no es ofertable NUNCA—, así que en los dos casos no autoriza
+// nadie: firmar lo que nadie pidió deja evidencia de algo que no ocurrió. Falla CERRADO con un código que
+// el padrón no conoce (caso 87). Lo consultan el render Y `autorizarJefe`, porque la pantalla que apaga el
+// botón no es el control (regla 24). Caso 143.
+const puedeAutorizarCondiciones = (code, estado) =>
+  estado === "requiereGerente" ? esGerenteComercial(code) : estado === "requiereJefe" ? esJefeComercial(code) : false;
 function setPrioridadCurse(dealId, code, on) {
   // PRI-01 del contrato: el chequeo va en la FUNCIÓN, no sólo en el botón. Ocultar el control en la UI
   // no impide llamar a esto desde la consola, y así al menos queda registrado el intento con su código.
@@ -31980,9 +32309,9 @@ function EmpresaEditor({ empresa, soloExec, onBack }) {
                     </thead>
                     <tbody>
                       {[
-                        ["Codelco", 150, 90],
-                        ["Falabella", 120, 40],
-                        ["Cencosud", 100, 75],
+                        ["BERLIAM SPA", 150, 90],
+                        ["INDEF SERVICIOS FORESTALES LIMITADA", 120, 40],
+                        ["TATTERSALL AGROINSUMOS S.A.", 100, 75],
                       ].map((r, i) => (
                         <tr key={i} style={{ borderBottom: `1px solid ${C.line}` }}>
                           <td className="px-4 py-3 t13 font-medium" style={{ color: C.ink }}>
@@ -33009,7 +33338,7 @@ function CfgOperacion({ cfgOper, setCfgOper }) {
         </CfgCampo>
         <CfgCampo
           l="Línea aprobada mínima"
-          hint="Monto mínimo con que se constituye una línea. La PUNTUAL (LF3) queda exenta: es un cupo a medida de una operación. Una línea bajo el mínimo no financia ninguna factura y sólo produce rechazos."
+          hint="Monto mínimo con que se constituye una línea. La PUNTUAL (LF3) queda exenta: es un cupo a medida de una operación. Una línea bajo el mínimo no financia ninguna factura y sólo produce rechazos. DECLARATIVO: quien lo aplica al dimensionar es el sistema de gestión de líneas, y el cambio se ve en su entrega siguiente."
         >
           <div className="flex items-center gap-2">
             <input {...num("lineaMinima", 0, 200000000, 1000000)} />
@@ -33018,7 +33347,10 @@ function CfgOperacion({ cfgOper, setCfgOper }) {
             </span>
           </div>
         </CfgCampo>
-        <CfgCampo l="Otros deudores · límite" hint="% máximo de la línea asignable al grupo «otros deudores».">
+        <CfgCampo
+          l="Otros deudores · límite"
+          hint="% máximo de la línea asignable al grupo «otros deudores». DECLARATIVO: quien lo aplica al dimensionar es el sistema de gestión de líneas, y el cambio se ve en su entrega siguiente."
+        >
           <div className="flex items-center gap-2">
             <input {...num("otrosDeudoresPct", 0, 100)} />
             <span className="t10" style={{ color: C.faint }}>
@@ -38442,18 +38774,18 @@ const OP_SINTETICAS = (() => {
   ];
   const suf = ["SpA", "Ltda", "S.A.", "EIRL"];
   const deudores = [
-    "Codelco",
-    "Falabella",
-    "Walmart Chile S.A.",
-    "Cencosud",
-    "CMPC",
-    "Arauco",
-    "Sodimac",
-    "SQM S.A.",
-    "Agrosuper Comercializadora",
-    "Coca Cola Embonor S.A.",
-    "Mantos Copper S.A.",
-    "Abbott Laboratories Chile",
+    "BERLIAM SPA",
+    "INDEF SERVICIOS FORESTALES LIMITADA",
+    "EBCO S.A.",
+    "TATTERSALL AGROINSUMOS S.A.",
+    "ZUBLIN INTERNATIONAL GMBH CHILE SPA",
+    "BANCO SANTANDER-CHILE",
+    "CONSTRUCTORA INGEVEC S.A.",
+    "SOCIEDAD JSA CLIMATIZACION LIMITADA",
+    "INGENIERIA CARO Y CARO LIMITADA",
+    "TRABAJOS MARITIMOS OXXEAN S.A.",
+    "ACUICOLA E INVERSIONES NALCAHUE LIMITADA",
+    "MARTINEZ Y VALDIVIESO S.A.",
   ];
   const execs = Object.values(EXECS);
   for (let i = 0; i < 48; i++) {
@@ -39459,62 +39791,24 @@ const LINEAS_DATA = (() => {
 //      consumen TODOS los clientes que le ceden facturas, y por eso su ampliación afecta carteras
 //      que el ejecutivo no ve.
 // La LF1 es EXCLUYENTE: se elimina cuando el comité asigna LF2/LF3/LF4. Un cliente está siempre en
-// uno de dos estados, nunca en ambos:
+// uno de tres estados, nunca en dos:
 //   estado A · enrolado sin comité → sólo LF1 $30.000.000, deudores prime, un solo uso, se consume completa
 //   estado B · con comité         → LF2 + LF3 + LF4, sin LF1
+//   estado S · con comité y todas sus líneas suspendidas → sin cupo. No es un cliente nuevo: darle la
+//              LF1 rodearía una decisión de riesgo. Lo utilizado sigue vigente.
+//
+// LOS TRES NIVELES SON UN INSUMO, NO UN PRODUCTO (20-09-2026). Quién tiene línea con quién, de cuánto
+// y de qué clase lo decide el SISTEMA DE GESTIÓN DE LÍNEAS y llega por el activo A23 —`LINEA_CUPO`
+// (niveles 1 y 2) y `LINEA_DEUDOR` (nivel 3)—; acá sólo se indexa. Hasta esta fecha la estructura se
+// fabricaba acá adentro a partir del A7/A8, que es lo que el levantamiento prohíbe en una línea: «A7 y
+// A16 nunca alimentan el motor de líneas; A23 nunca alimenta la vista Líneas». El dimensionamiento
+// vive ahora en `GeneradorDatos/datasets/lineas_par.js`, que es la app externa: `TRAMO_LINEA`,
+// `LF1_PESOS`, el piso por línea y el % de otros deudores están declarados allá.
 // ============================================================
 // Montos en PESOS enteros. El peso chileno no tiene decimales, asi que redondear al peso no pierde
 // nada y ademas mata el ruido de punto flotante, que sin esto rompe los invariantes por 1e-13.
 // Antes esto redondeaba a 0,1 MM —o sea a $100.000— y cada asignacion se comia hasta $99.999.
 const mmRound = (n) => Math.round(n);
-const TRAMO_LINEA = 5e6; // las lineas se tallan en tramos de $5.000.000
-// MONTO MÍNIMO de una línea aprobada (política del tenant, `lineaMinima`). La **PUNTUAL (LF3) está
-// exenta**: es un cupo a medida de UNA operación, así que su tamaño lo fija esa operación.
-const lineaMin = () => Math.max(0, pol("lineaMinima", 10e6));
-
-// REPARTE `total` entre `pesos` con un PISO por parte y suma EXACTA.
-//
-// La trampa que resuelve: **un piso por línea significa MENOS líneas, no líneas más grandes.** El
-// presupuesto del cliente es el que es, así que repartirlo entre más de `total/piso` partes es
-// imposible — dar menos del piso lo violaría, y dar el piso a todas se pasaría del tope del cliente,
-// que es justamente lo que el nivel 1 controla. Así que primero se decide CUÁNTAS partes caben y
-// después se reparte entre ésas; las que sobran quedan en 0 y su deudor pasa a financiarse por el
-// comodín, que es exactamente para lo que existe.
-//
-// Se conserva el orden de `pesos` en la salida (un 0 marca «no alcanzó»), se talla en `tramo` y el
-// residuo lo absorbe la parte MAYOR, que siempre puede hacerlo sin cruzar el piso — mismo criterio
-// que el prorrateo por factura.
-function repartirConPiso(total, pesos, piso, tramo) {
-  const n0 = pesos.length;
-  const out = new Array(n0).fill(0);
-  if (!(total > 0) || !n0) return out;
-  const paso = Math.max(1, tramo || 1);
-  const min = Math.max(0, piso);
-  // Cuántas caben. Con piso 0 caben todas.
-  const cabenN = min > 0 ? Math.min(n0, Math.floor(total / min)) : n0;
-  if (cabenN <= 0) return out; // ni una línea cabe: todo al comodín
-  // Se quedan las de MAYOR peso: si hay que dejar deudores sin línea propia, que sean los que menos
-  // volumen aportan.
-  const idx = pesos
-    .map((w, i) => ({ i, w: +w || 0 }))
-    .sort((a, b) => b.w - a.w)
-    .slice(0, cabenN);
-  const sumaW = idx.reduce((a, x) => a + x.w, 0) || idx.length;
-  let repartido = 0;
-  idx.forEach((x, k) => {
-    const ultimo = k === idx.length - 1;
-    // El último toma el remanente exacto; los demás su proporción tallada y acotada por abajo al
-    // piso y por arriba a lo que queda dejando piso para los que faltan.
-    let v = ultimo ? total - repartido : Math.max(min, Math.round((total * (x.w / sumaW)) / paso) * paso);
-    const restanN = idx.length - k - 1;
-    v = Math.min(v, total - repartido - restanN * min);
-    v = Math.max(min, v);
-    out[x.i] = v;
-    repartido += v;
-  });
-  return out;
-}
-const LF1_PESOS = 30e6; // linea inicial al enrolar un cliente: $30.000.000
 
 // Índice (RUTEmisor → [{ rut, nombre, vol }]) de los deudores a los que cada cliente factura,
 // ordenados por volumen facturado. Es el insumo del dimensionamiento: el cupo del par se aprueba
@@ -39544,354 +39838,238 @@ function paresPorEmisor() {
   return _dtePares;
 }
 
-// LÍNEA DE OTROS DEUDORES del cliente (LF4), POR CATEGORÍA DE DEUDOR. Se DIMENSIONA con la regla del
-// spec —10% de la suma de cupos— y no con el monto de window.LINEA_DISPONIBLE. El motivo original era
-// que ese activo traía 15–40MM por fila y dejaba a veinte deudores de la cola compitiendo por 15MM;
-// desde que el maestro se genera del volumen real de facturas ya no es así (p50 560MM por fila), pero
-// la regla del 10% se mantiene porque es del spec, no un parche. De LINEA_DISPONIBLE se conservan
-// que sí aportan y no se pueden derivar: el corte por categoría de deudor (la misma llave que usa
-// `tipoLineaDeDeudor`) y el estado «Suspendida». Una línea suspendida conserva su exposición vigente
-// —la suspensión no libera lo cedido— pero NO admite operaciones nuevas.
-let _lf4Idx = null;
-function lf4MetaPorCliente(rutCli) {
-  if (!_lf4Idx) {
-    _lf4Idx = new Map();
-    const arr = typeof window !== "undefined" && Array.isArray(window.LINEA_DISPONIBLE) ? window.LINEA_DISPONIBLE : [];
-    for (const r of arr) {
-      let g = _lf4Idx.get(r.RUTCliente);
-      if (!g) {
-        g = [];
-        _lf4Idx.set(r.RUTCliente, g);
-      }
-      g.push({ categoria: r.TipoLinea, peso: r.MontoAprobado || 0, suspendida: r.Estado === "Suspendida", uso: +r.MontoUtilizado || 0 });
+// ── EL UNIVERSO DE DEUDORES QUE EL SISTEMA CONOCE, por nombre ─────────────────────────────────────
+// Un deudor se identifica por su RUT, nunca por su razón social: la línea del par, la exposición del
+// nivel 3 y el veredicto de verificación se llevan todos por RUT. Un nombre sin RUT es, para el motor,
+// un deudor DISTINTO — no calza con su línea de par, cae a la de otros deudores, y el desglose termina
+// mostrando las dos a la vez.
+//
+// Por eso esto existe: el wizard del comité construía la fila de un deudor con un RUT INVENTADO
+// (`76000000 + (hash % 20000000)` y un dígito verificador sorteado de una cadena). Medido sobre 400
+// deudores del activo: el **92% con dígito verificador inválido** y el **100% desconocidos** para el
+// sistema. La línea que el comité otorgaba por ahí caía sobre un par que no existe, así que el deudor
+// seguía yendo al comodín y la solicitud no servía de nada (regla 46).
+//
+// La resolución es limpia porque el dato lo permite: los 741 deudores del A1 tienen razón social única
+// —CERO nombres con dos RUT— y 621 de los 622 nombres de los catálogos A3/A4 están entre ellos.
+let _deuPorNombre = null;
+function deudoresConocidos() {
+  if (_deuPorNombre) return _deuPorNombre;
+  _deuPorNombre = new Map();
+  const add = (nombre, rut) => {
+    if (nombre && rut && !_deuPorNombre.has(nombre)) _deuPorNombre.set(nombre, rut);
+  };
+  // El A1 primero: es donde el par existe de verdad, con facturas detrás. Se reusa
+  // `RUT_DEUDOR_POR_NOMBRE`, que ya recorre DTESync con este mismo criterio — un segundo índice sobre
+  // el mismo dato es la puerta por la que los dos empiezan a decir cosas distintas.
+  for (const [nombre, rut] of Object.entries(RUT_DEUDOR_POR_NOMBRE)) add(nombre, rut);
+  // Y los catálogos A3/A4, que declaran deudores a los que este cliente todavía no le factura.
+  const cat = (arr) => {
+    for (const x of arr || []) add(x.RazonSocial, x.RUT);
+  };
+  if (typeof window !== "undefined") {
+    cat(window.LISTA_BLANCA);
+    cat(window.DEUDORES_AUTORIZADOS);
+  }
+  return _deuPorNombre;
+}
+// RUT real del deudor, o "" si el sistema no lo conoce. Devolver vacío es deliberado: aguas abajo
+// `constituirLineasDeDetalle` descarta la línea sin RUT en vez de crear un par fantasma.
+function rutDeDeudorPorNombre(nombre) {
+  return deudoresConocidos().get(nombre) || "";
+}
+// Los deudores a los que ESTE cliente le factura, de mayor a menor volumen. Es lo que el wizard ofrece
+// primero: pedirle línea a un deudor con el que no hay actividad es el caso raro, no el normal.
+function deudoresDelCliente(rutCliente) {
+  return (paresPorEmisor().get(rutCliente) || []).map((d) => d.nombre).filter(Boolean);
+}
+
+// ESTADO DE LÍNEAS DE UN CLIENTE — LECTURA del activo A23 (`LINEA_CUPO`), memoizada por RUT.
+//
+// Devuelve el estado COMPLETO —todas sus líneas, no sólo las de la oferta abierta— porque los
+// invariantes se sostienen sobre el total: si el uso se repartiera sólo entre los pares consultados,
+// la suma dejaría de cuadrar con el menú Líneas.
+//
+// LO QUE ESTA FUNCIÓN YA NO HACE. Hasta el 20-09-2026 dimensionaba: sorteaba con
+// `pcRng(hashStr("lpar"+rut))` qué deudores llevaban línea propia (los que concentran el 85% del
+// volumen, entre 6 y 12), cuánto recibía cada uno, cuáles llevaban además una puntual y si estaba
+// consumida. Eran 3.170 objetos de línea que ningún activo declaraba, derivados del A7/A8 —el mismo
+// que el levantamiento prohíbe conectar al motor—. Hoy la estructura llega hecha y acá sólo se
+// agrupa: el índice se construye UNA vez y cada cliente queda con su objeto estable, que es lo que
+// deja a `asignarLineas` ser puro (caso 122 comprueba la identidad del objeto entre dos llamadas).
+// EL TESTIGO VA APARTE DEL MAPA, a propósito: «índice vacío» e «índice sin construir» son estados
+// distintos y confundirlos sale caro. Con el mapa como única señal, un `_cacheCli.clear()` de afuera
+// deja un Map vacío y VERDADERO, así que `idxCupo` lo da por bueno, todo cliente queda sin líneas y
+// pasa a leerse como estado A — sin ningún error, sólo una demo donde nadie tiene cupo. Se invalida
+// por `invalidarCupo()`, que es el único punto que sabe qué hay que soltar.
+let _cacheCli = new Map();
+let _cupoListo = false;
+function idxCupo() {
+  if (_cupoListo) return _cacheCli;
+  _cupoListo = true;
+  _cacheCli = new Map();
+  const arr = typeof window !== "undefined" && Array.isArray(window.LINEA_CUPO) ? window.LINEA_CUPO : [];
+  for (const r of arr) {
+    if (!r || !r.RUTCliente) continue;
+    let st = _cacheCli.get(r.RUTCliente);
+    if (!st) {
+      st = { estado: r.EstadoCliente || "A", asignadaCliente: 0, usoCliente: 0, lineas: [] };
+      _cacheCli.set(r.RUTCliente, st);
     }
-  }
-  return (
-    _lf4Idx.get(rutCli) || [
-      { categoria: "Lista Blanca", peso: 1, suspendida: false },
-      { categoria: "Deudores Autorizados", peso: 1, suspendida: false },
-    ]
-  );
-}
-// ¿El maestro A7/A8 conoce a este cliente? Distinto de «tiene cupo»: LINEAS_DATA deja fuera al que
-// suma 0 aprobado —no es una línea vigente y no va en la cartera— y sin esta pregunta ese cliente
-// sería indistinguible de uno sin comité, que es justo lo que le daría una LF1 nueva.
-function clienteEnMaestroLineas(rutCli) {
-  lf4MetaPorCliente(rutCli); // fuerza el índice
-  return !!(_lf4Idx && _lf4Idx.has(rutCli));
-}
-
-// Estado de líneas de un cliente, memoizado por RUT. El cálculo es COMPLETO —todas sus líneas, no
-// sólo las de la oferta abierta— porque los invariantes se sostienen sobre el total: si el uso se
-// repartiera sólo entre los pares consultados, la suma dejaría de cuadrar con el menú Líneas.
-const _cacheCli = new Map();
-// El cache se valida por FIRMA de lo que el tenant configura y este cálculo usa, no por un invalidador
-// que haya que acordarse de llamar desde el mantenedor. Cambiar `otrosDeudoresPct` y seguir leyendo un
-// dimensionamiento hecho con el valor anterior es la misma trampa que tuvo el padrón de aprobadores:
-// la perilla se mueve, la pantalla no, y nadie sabe si el motor la aplicó.
-let _cacheCliFirma = null;
-function lineasDeCliente(rutCli) {
-  // La firma lleva TODOS los umbrales que dimensionan: mover uno en el mantenedor y quedarse con el
-  // dimensionamiento anterior servido es el defecto que la regla 9-bis documenta.
-  const firma = String(pol("otrosDeudoresPct", 10)) + "|" + String(pol("lineaMinima", 10e6));
-  if (firma !== _cacheCliFirma) {
-    _cacheCli.clear();
-    _cacheCliFirma = firma;
-  }
-  if (_cacheCli.has(rutCli)) return _cacheCli.get(rutCli);
-  const idx = lineaIdxPorRut();
-  const fila = idx ? idx.get(rutCli) || null : null;
-  const deudores = paresPorEmisor().get(rutCli) || [];
-  let res;
-
-  if (!fila && clienteEnMaestroLineas(rutCli)) {
-    // ESTADO S · el comité SÍ le constituyó líneas y hoy están todas suspendidas. No es un cliente
-    // nuevo: darle la LF1 rodearía una decisión de riesgo deliberada. Sin cupo de ninguna clase, y
-    // lo que corresponde pedir es reactivar, no crear —por eso su propio motivo—.
-    // Lo utilizado sigue vigente: suspender una línea no libera lo ya cedido.
-    const usado = mmRound(lf4MetaPorCliente(rutCli).reduce((x, m) => x + (m.uso || 0), 0));
-    res = { estado: "S", asignadaCliente: 0, usoCliente: usado, cola: deudores, lineas: [] };
-    _cacheCli.set(rutCli, res);
-    return res;
-  }
-
-  if (!fila) {
-    // ESTADO A · enrolado, sin comité. Sólo LF1, excluyente con LF2/LF3/LF4.
-    res = {
-      estado: "A",
-      asignadaCliente: LF1_PESOS,
-      usoCliente: 0,
-      cola: deudores,
-      lineas: [
-        { id: "LF1-" + rutCli, tipo: "LF1", granularidad: "comodin", rutDeudor: null, aprobado: LF1_PESOS, vigente: 0, soloPrime: true, unSoloUso: true },
-      ],
+    // La fila CLIENTE es el nivel 1: el cupo que el comité le asignó y lo que lleva utilizado. Existe
+    // siempre, también para el cliente en estado S que no tiene ninguna línea — sin ella ese cliente
+    // sería indistinguible de uno que nunca pasó por comité, que es justo lo que le daría una LF1.
+    if (r.TipoLinea === "CLIENTE") {
+      st.estado = r.EstadoCliente || st.estado;
+      st.asignadaCliente = +r.MontoAprobado || 0;
+      st.usoCliente = +r.MontoUtilizado || 0;
+      continue;
+    }
+    const ln = {
+      id: r.IdLinea,
+      tipo: r.TipoLinea,
+      granularidad: +r.Nivel === 2 ? "par" : "comodin",
+      rutDeudor: r.RUTDeudor || null,
+      aprobado: +r.MontoAprobado || 0,
+      vigente: +r.MontoUtilizado || 0,
     };
-    _cacheCli.set(rutCli, res);
-    return res;
-  }
-
-  // ESTADO B · con comité.
-  const rnd = pcRng(hashStr("lpar" + rutCli));
-
-  // Presupuesto del cliente: la línea asignada MENOS su holgura (entre 8% y 22%). De ahí, la línea
-  // comodín se lleva un % de la suma de cupos de par y el resto va a las líneas de par. Ese % es
-  // política del TENANT (`otrosDeudoresPct`, 10 por defecto): cuánta exposición está dispuesto cada
-  // factoring a dejar en el pozo genérico, que financia a deudores sin línea propia.
-  let objetivoTotal = Math.max(Math.round(fila.aprobada * (0.78 + rnd() * 0.14)), Math.ceil(fila.uso / 0.88));
-  objetivoTotal = Math.min(objetivoTotal, fila.aprobada);
-  // Se pide «% sobre los cupos de PAR», así que sobre el total es pct/(100+pct): con 10 da 0,0909.
-  const pctOtros = Math.max(0, Math.min(100, pol("otrosDeudoresPct", 10)));
-  // EL PISO NO CREA CAPACIDAD. Se acota a lo que el comité aprobó: un cliente con casi todas sus
-  // líneas suspendidas puede quedar con un presupuesto efectivo bajo el mínimo, y darle igual una
-  // línea de 10MM sería aprobarle cupo que nadie aprobó — el tope del cliente es una decisión de
-  // riesgo y el mínimo es sólo una regla de cómo se REPARTE. Ahí su única línea vale lo que le queda,
-  // por debajo del mínimo, y eso es un dato que el maestro de líneas ya dice.
-  const pisoLinea = Math.min(lineaMin(), objetivoTotal);
-  const apComodinBase = Math.max(pisoLinea, Math.round(objetivoTotal * (pctOtros / (100 + pctOtros))));
-  const objetivoPares = Math.max(0, objetivoTotal - apComodinBase);
-
-  // La cabeza de la distribución tiene línea propia; la cola la financia la de otros deudores. Se toman los
-  // deudores que concentran el 85% del volumen del cliente: dejar sólo 4–11 con línea mandaba a
-  // veinte deudores a la de otros deudores y convertía casi toda la oferta en solicitud al comité.
-  // deudores que concentran el 85% del volumen, entre 6 y 12. El tope de 12 importa: repartir el
-  // presupuesto entre veinte pares dejaba líneas de 5MM contra facturas de 8MM de mediana, y cada
-  // factura quedaba sobre su propio cupo. Fragmentar la línea la vuelve inútil.
-  const volTotalCli = deudores.reduce((s, d) => s + d.vol, 0) || 1;
-  let acum = 0,
-    nPar85 = 0;
-  for (const d of deudores) {
-    nPar85++;
-    acum += d.vol;
-    if (acum / volTotalCli >= 0.85) break;
-  }
-  // Deudores con línea propia: los que concentran el 85% del volumen, entre 6 y 12. El tope de 12
-  // importa —repartir el presupuesto entre veinte pares dejaba líneas de 5MM contra facturas de 8MM
-  // de mediana— y el piso de 6 también: escalar el número de pares con el tamaño de la línea (~1 por
-  // cada 100MM) se midió PEOR, porque deja a más deudores de la oferta sin línea propia y los manda
-  // sin línea propia. 6–12 dio 84% de ofertas cursables completas contra 80% de la variante escalada.
-  const nPar = Math.max(1, Math.min(deudores.length, Math.max(6, Math.min(12, nPar85))));
-  const cabeza = deudores.slice(0, nPar);
-
-  // Cupo por par: proporcional al volumen, con un PISO proporcional al presupuesto (no 5MM planos —
-  // en un cliente de 1.200MM una línea de 5MM no financia ninguna factura y sólo produce rechazos).
-  // Después se normaliza para que la suma sea exactamente el presupuesto de pares: aplicar el piso
-  // sin normalizar podía pasarse del presupuesto y romper el tope del cliente.
-  // Cupo por par: proporcional al volumen y con el PISO de política (`lineaMinima`, hoy 10MM). El
-  // piso es por LÍNEA, así que **limita cuántos pares tienen línea propia, no cuánto recibe cada
-  // uno**: si el presupuesto no alcanza para dar el mínimo a los 12 de la cabeza, los de menor
-  // volumen quedan en 0 y su deudor pasa a financiarse por el comodín — que es para lo que existe.
-  const cupos = repartirConPiso(
-    objetivoPares,
-    cabeza.map((d) => d.vol),
-    pisoLinea,
-    TRAMO_LINEA,
-  );
-  // Lo que el piso dejó sin repartir NO se pierde: vuelve al comodín. Descontarlo del cliente sería
-  // quitarle capacidad que el comité sí le aprobó, por una regla de tamaño mínimo de línea.
-  const sobranteAlComodin = Math.max(0, objetivoPares - cupos.reduce((s, x) => s + x, 0));
-
-  // ── EL COMODÍN, ya con el sobrante de los pares ───────────────────────────────────────────────
-  // Va DESPUÉS del reparto de pares porque depende de él: lo que el piso dejó sin poder ser una línea
-  // propia se financia por acá. Su monto sale de la regla y el corte por categoría del dato.
-  // El reparto entre categorías respeta el MISMO piso —una LF4 bajo el mínimo tampoco financia nada—,
-  // así que si sólo cabe una, esa categoría se queda con todo y la otra sin comodín propio.
-  const apComodin = apComodinBase + sobranteAlComodin;
-  const meta = lf4MetaPorCliente(rutCli);
-  const repComodin = repartirConPiso(
-    apComodin,
-    meta.map((m) => m.peso || 1),
-    pisoLinea,
-    TRAMO_LINEA,
-  );
-  const comodines = meta
-    .map((m, i) => ({
-      id: "LF4-" + rutCli + "-" + (m.categoria === "Lista Blanca" ? "LB" : "DA"),
-      tipo: "LF4",
-      granularidad: "comodin",
-      categoria: m.categoria,
-      rutDeudor: null,
-      suspendida: m.suspendida,
-      aprobado: repComodin[i],
-      vigente: 0,
-    }))
-    .filter((x) => x.aprobado > 0);
-  // Uso repartido en la misma proporción que lo aprobado: la utilización se distribuye sobre toda la
-  // capacidad, no sólo sobre los pares.
-  let usComodin = Math.min(apComodin, mmRound(fila.uso * (apComodin / (objetivoTotal || 1))));
-  {
-    let q = usComodin;
-    for (const p of comodines) {
-      const t2 = Math.min(p.aprobado, mmRound(q));
-      p.vigente = t2;
-      q = mmRound(q - t2);
+    if (r.RazonSocialDeudor) ln.nombreDeudor = r.RazonSocialDeudor;
+    if (r.Categoria) ln.categoria = r.Categoria;
+    if (r.Estado === "Suspendida") ln.suspendida = true;
+    if (r.UnSoloUso) ln.unSoloUso = true;
+    if (r.SoloPrime) ln.soloPrime = true;
+    if (r.Consumida) ln.quemada = true;
+    // El ORIGEN viaja desde el activo. El maestro no se marca en el objeto —es el caso normal y
+    // marcarlo engordaría 3.667 filas para no decir nada—; lo que se conserva es la marca del COMITÉ,
+    // que es la que permite distinguir el cupo nacido de una solicitud del que ya estaba.
+    if (r.Origen === "COMITE") {
+      ln.origen = "comite";
+      ln.idProceso = r.IdProceso || "";
     }
-    usComodin = mmRound(usComodin - Math.max(0, q));
+    st.lineas.push(ln);
   }
-  const necesario = Math.max(0, mmRound(fila.uso - usComodin));
-
-  const lineas = [];
-  cabeza.forEach((d, i) => {
-    const cupo = cupos[i];
-    if (cupo <= 0) return; // no alcanzó para una línea propia: lo cubre el comodín
-    // ~18% de los pares con línea llevan además una PUNTUAL (LF3) tallada sobre su cupo. Una LF3
-    // sólo puede estar intacta o consumida COMPLETA (§3.6): nunca a medias.
-    // La PUNTUAL (LF3) está EXENTA del mínimo: es un cupo a medida de UNA operación, así que su
-    // tamaño lo fija esa operación y no la política. Pero se talla para que **lo que le quede a la
-    // LF2 siga sobre el piso** — si no, partir el cupo en dos dejaría la normal bajo el mínimo por
-    // la puerta de atrás.
-    const techoLF3 = Math.max(0, cupo - pisoLinea);
-    const mLF3 =
-      rnd() < 0.18 && techoLF3 >= TRAMO_LINEA
-        ? Math.min(techoLF3, Math.max(TRAMO_LINEA, Math.round((cupo * (0.2 + rnd() * 0.3)) / TRAMO_LINEA) * TRAMO_LINEA))
-        : 0;
-    if (mLF3 > 0)
-      lineas.push({
-        id: "LF3-" + rutCli + "-" + i,
-        tipo: "LF3",
+  // ── LO QUE EL COMITÉ CONSTITUYÓ EN ESTA SESIÓN, superpuesto a la foto ──────────────────────────
+  // En producción la entrega siguiente del A23 ya la trae; acá la demo dura una sesión, así que se
+  // aplica encima. Es el cierre del bucle: el deudor que fue al comité POR no tener línea propia
+  // vuelve con una, y `asignarLineas` lo ve como par con cascada propia en vez de mandarlo otra vez a
+  // la línea de otros deudores.
+  for (const [idProceso, g] of Object.entries(repoLineaComite.all())) {
+    if (!g || !g.rut || !Array.isArray(g.lineas)) continue;
+    let st = _cacheCli.get(g.rut);
+    if (!st) {
+      st = { estado: "B", asignadaCliente: 0, usoCliente: 0, lineas: [] };
+      _cacheCli.set(g.rut, st);
+    }
+    // LA LF1 ES EXCLUYENTE: se elimina cuando el comité asigna líneas por par. Dejarla conviviendo le
+    // daría al cliente un cupo comodín de $30.000.000 que ya nadie le aprobó.
+    if (st.estado === "A") st.lineas = st.lineas.filter((l) => l.tipo !== "LF1");
+    st.estado = "B";
+    g.lineas.forEach((nueva, i) => {
+      const previa = nueva.tipo === "LF2" ? st.lineas.find((l) => l.tipo === "LF2" && l.rutDeudor === nueva.rutDeudor) : null;
+      // Al par que YA tiene línea normal se le AUMENTA el monto; al que no tiene, se le crea. Una
+      // PUNTUAL es siempre nueva: es un cupo a medida de una operación, no una ampliación.
+      if (previa) {
+        // Ampliar también deja rastro: el cupo que se sumó nació de una solicitud, y sin la marca la
+        // línea quedaría indistinguible de una que el maestro trajo con ese monto desde el principio.
+        previa.aprobado = mmRound(previa.aprobado + nueva.monto);
+        previa.origen = "comite";
+        previa.idProceso = idProceso;
+        previa.ampliadoPorComite = mmRound((previa.ampliadoPorComite || 0) + nueva.monto);
+        return;
+      }
+      st.lineas.push({
+        id: nueva.tipo + "-COM-" + idProceso + "-" + i,
+        tipo: nueva.tipo,
         granularidad: "par",
-        rutDeudor: d.rut,
-        nombreDeudor: d.nombre,
-        aprobado: mLF3,
+        rutDeudor: nueva.rutDeudor,
+        nombreDeudor: nueva.nombreDeudor || "",
+        aprobado: nueva.monto,
         vigente: 0,
-        unSoloUso: true,
-        quemada: rnd() < 0.34,
+        ...(nueva.tipo === "LF3" ? { unSoloUso: true } : {}),
+        // La MARCA que pidió el usuario, en la misma forma que traería el activo si la entrega
+        // siguiente del sistema de líneas ya la incluyera: `Origen: "COMITE"` + su `IdProceso`.
+        origen: "comite",
+        idProceso,
       });
-    lineas.push({
-      id: "LF2-" + rutCli + "-" + i,
-      tipo: "LF2",
-      granularidad: "par",
-      rutDeudor: d.rut,
-      nombreDeudor: d.nombre,
-      aprobado: Math.max(pisoLinea, cupo - mLF3),
-      vigente: 0,
     });
-  });
-
-  // Si la talla de una LF3 deja a las LF2 sin capacidad para sostener el uso vigente, la puntual se
-  // devuelve a su LF2: es preferible a un cliente cuyo uso no cabe en ninguna línea.
-  for (const l3 of lineas.filter((l) => l.tipo === "LF3")) {
-    if (lineas.filter((l) => l.tipo === "LF2").reduce((s, l) => s + l.aprobado, 0) >= necesario) break;
-    const par = lineas.find((l) => l.tipo === "LF2" && l.rutDeudor === l3.rutDeudor);
-    if (!par) continue;
-    par.aprobado = mmRound(par.aprobado + l3.aprobado);
-    l3.descartada = true;
+    // EL TECHO QUE APROBÓ EL COMITÉ, MENOS LO COMPROMETIDO POR PAR, ES CAPACIDAD PARA LOS OTROS
+    // DEUDORES: va al comodín, que es exactamente el nivel que los financia (regla 45). Sin esto el
+    // excedente no sería la suma de nada y el nivel 1 volvería a ser un número suelto — el defecto que
+    // esta misma sesión midió en 217 de 224 clientes.
+    const sumaPar = st.lineas.reduce((x, l) => x + l.aprobado, 0);
+    const sobra = mmRound((g.aprobadaCliente || 0) - sumaPar);
+    if (sobra > 0) {
+      const comodines = st.lineas.filter((l) => l.granularidad === "comodin" && l.tipo !== "LF1");
+      if (comodines.length) {
+        // Al MAYOR: repartir entre categorías exigiría una decisión de riesgo que el comité no tomó.
+        let may = comodines[0];
+        for (const c of comodines) if (c.aprobado > may.aprobado) may = c;
+        may.aprobado = mmRound(may.aprobado + sobra);
+        may.origen = "comite";
+        may.idProceso = idProceso;
+      } else {
+        // El cliente venía sin comodín (estado A, o uno cuyo comodín no alcanzaba el piso). El modelo
+        // dice que un cliente con comité tiene LF2+LF3+LF4, así que crearlo COMPLETA el modelo en vez
+        // de inventar: la categoría es la de los deudores que el comité acaba de mirar.
+        const cats = g.lineas.map((n) => tipoLineaDeDeudor(tipoDeudor(n.rutDeudor, n.nombreDeudor)));
+        const lb = cats.filter((c) => c === "Lista Blanca").length;
+        st.lineas.push({
+          id: "LF4-COM-" + idProceso,
+          tipo: "LF4",
+          granularidad: "comodin",
+          categoria: lb > cats.length / 2 ? "Lista Blanca" : "Deudores Autorizados",
+          rutDeudor: null,
+          aprobado: sobra,
+          vigente: 0,
+          origen: "comite",
+          idProceso,
+        });
+      }
+    }
+    // LA CABECERA ES LA SUMA, siempre y por construcción (regla 45). No se copia `aprobadaCliente`:
+    // si el detalle y el techo no cuadran, la verdad es lo que las líneas pueden ejercer.
+    st.asignadaCliente = st.lineas.reduce((x, l) => x + l.aprobado, 0);
   }
-  for (let i = lineas.length - 1; i >= 0; i--) if (lineas[i].descartada) lineas.splice(i, 1);
-
-  // Uso: primero las LF3 ya quemadas (que van completas por definición) y el resto sobre las LF2,
-  // proporcional a lo aprobado. Cuadra EXACTO con el uso del cliente menos el de las comodín: la
-  // utilización es una medición del mismo cedido-no-pagado, se corte por par o por cliente.
-  let objetivoUso = necesario;
-  const lf2 = lineas.filter((l) => l.tipo === "LF2");
-  const capLF2 = lf2.reduce((s, l) => s + l.aprobado, 0);
-  for (const l of lineas) {
-    if (l.tipo !== "LF3" || !l.quemada) continue;
-    if (objetivoUso - l.aprobado < 0 || objetivoUso - l.aprobado > capLF2) continue;
-    l.vigente = l.aprobado;
-    objetivoUso = mmRound(objetivoUso - l.aprobado);
-  }
-  const apLF2 = capLF2 || 1;
-  let usado = 0;
-  lf2.forEach((l, i) => {
-    const ultimo = i === lf2.length - 1;
-    let v = ultimo ? mmRound(objetivoUso - usado) : mmRound(Math.min(l.aprobado, objetivoUso * (l.aprobado / apLF2)));
-    v = Math.max(0, Math.min(l.aprobado, v));
-    l.vigente = v;
-    usado = mmRound(usado + v);
-  });
-  let resto = mmRound(objetivoUso - usado);
-  for (const l of lf2) {
-    if (resto <= 0) break;
-    const t = Math.min(mmRound(l.aprobado - l.vigente), resto);
-    l.vigente = mmRound(l.vigente + t);
-    resto = mmRound(resto - t);
-  }
-
-  res = {
-    estado: "B",
-    asignadaCliente: fila.aprobada,
-    usoCliente: fila.uso,
-    lineas: lineas.concat(comodines),
-    cola: deudores.slice(nPar),
-    restoUso: resto,
-  };
-  _cacheCli.set(rutCli, res);
-  return res;
+  return _cacheCli;
+}
+// Un RUT que el activo no declara es un cliente que el sistema de líneas no conoce: sin comité y sin
+// LF1 —la LF1 se otorga AL ENROLAR, y enrolar es un acto de ese sistema, no una deducción de acá—.
+const _SIN_LINEAS = { estado: "A", asignadaCliente: 0, usoCliente: 0, lineas: [] };
+function lineasDeCliente(rutCli) {
+  return idxCupo().get(rutCli) || _SIN_LINEAS;
+}
+// El activo se relee cuando el comité constituye una línea nueva (`constituirLinea`): es el único
+// momento en que la estructura cambia dentro de una sesión.
+function invalidarCupo() {
+  _cupoListo = false;
+  _deudorIdx = null;
 }
 
-// Líneas del DEUDOR (nivel 3), indexadas por RUT. Su utilización es la suma de lo que TODOS los
-// clientes le tienen cedido y no pagado: es lo que la convierte en un control de concentración y lo
-// que hace verdadera la columna «a quién afecta» del modal de confirmación.
+// LÍNEA DEL DEUDOR (nivel 3) — LECTURA del activo A23 (`LINEA_DEUDOR`), indexada por RUT.
+//
+// Su utilización es la suma de lo que TODOS los clientes le tienen cedido y no pagado: es lo que la
+// convierte en un control de concentración y lo que hace verdadera la columna «a quién afecta» del
+// modal de confirmación de curse. Por eso la calcula el sistema de gestión de líneas y no NEX: acá se
+// ve una cartera, y la exposición del deudor cruza todas.
+//
+// Antes se construía ENCIMA de `lineasDeCliente` —recorriendo las líneas de cada cliente y atribuyendo
+// el uso de la comodín a los deudores sin línea propia— y sorteaba la holgura de cada deudor. Ese
+// cálculo vive ahora en `GeneradorDatos/datasets/lineas_par.js`.
 let _deudorIdx = null;
-let _deudorIdxFirma = null;
 function lineasDeudor() {
-  // Este índice se construye sobre `lineasDeCliente`, así que depende del mismo umbral: sin validar
-  // por firma, mover `lineaMinima` en el mantenedor dejaba servido el índice anterior y el nivel 3
-  // seguía decidiendo con las líneas viejas. Es la trampa de la regla 9-bis, acá heredada.
-  const firma = String(pol("lineaMinima", 10e6)) + "|" + String(pol("otrosDeudoresPct", 10));
-  if (_deudorIdx && firma === _deudorIdxFirma) return _deudorIdx;
-  _deudorIdxFirma = firma;
-  const uso = new Map(),
-    clientes = new Map(),
-    nombres = new Map();
-  const anotarDeudor = (rut, nombre, monto, rutCli) => {
-    if (!rut) return;
-    uso.set(rut, mmRound((uso.get(rut) || 0) + monto));
-    if (!clientes.has(rut)) clientes.set(rut, new Set());
-    if (monto > 0 && rutCli) clientes.get(rut).add(rutCli);
-    if (nombre && !nombres.has(rut)) nombres.set(rut, nombre);
-  };
-  for (const l of LINEAS_DATA) {
-    const st = lineasDeCliente(l.rut);
-    for (const ln of st.lineas) if (ln.rutDeudor) anotarDeudor(ln.rutDeudor, ln.nombreDeudor, ln.vigente, l.rut);
-    // Lo usado en la línea de otros deudores se atribuye a la COLA de deudores del cliente —los que no
-    // tienen línea propia—, proporcional a su volumen. Sin esta atribución ese uso no se
-    // descontaría de ninguna línea de deudor y el nivel 3 quedaría subestimado justo en la cola.
-    const usComodin = st.lineas.filter((x) => x.granularidad === "comodin").reduce((s, x) => s + x.vigente, 0);
-    const cola = st.cola || [];
-    const volCola = cola.reduce((s, d) => s + d.vol, 0);
-    if (usComodin > 0 && volCola > 0) cola.forEach((d) => anotarDeudor(d.rut, d.nombre, mmRound(usComodin * (d.vol / volCola)), l.rut));
-    else cola.forEach((d) => anotarDeudor(d.rut, d.nombre, 0, l.rut));
-  }
-  // El universo son TODOS los deudores de las facturas, no sólo los que hoy tienen saldo: la línea
-  // del deudor existe aunque nadie le haya cedido todavía, porque es un tope de concentración.
-  for (const [, lista] of paresPorEmisor()) for (const d of lista) anotarDeudor(d.rut, d.nombre, 0, null);
-
+  if (_deudorIdx) return _deudorIdx;
   _deudorIdx = new Map();
-  for (const [rut, u] of uso) {
-    const rnd = pcRng(hashStr("ldeu" + rut));
-    // Los deudores prime toleran más concentración; en los «Otro» es donde el control muerde.
-    // `ceil` y no `round`: al redondear a tramos de 5 la línea podía nacer BAJO su propio uso.
-    const t = tipoDeudor(rut, nombres.get(rut) || "");
-    // Un 15% de los deudores están CONCENTRADOS: su línea propia queda apenas por sobre lo ya
-    // colocado, así que es ella —y no la del par— la que frena la operación. Sin este tramo el nivel
-    // 3 casi nunca mordía y el caso «hay que ampliar la exposición del deudor», que es el único que
-    // afecta a carteras de otros ejecutivos, prácticamente no aparecía en la demo.
-    const concentrado = hashStr("conc" + rut) % 100 < 8;
-    const holgura = concentrado
-      ? 1.03 + rnd() * 0.09
-      : t === "Lista Blanca"
-        ? 1.25 + rnd() * 0.55
-        : t === "Deudor Autorizado"
-          ? 1.12 + rnd() * 0.38
-          : 1.02 + rnd() * 0.2;
-    // EN PESOS, y tallada en tramos de $5.000.000 como las demás. El respaldo del deudor SIN uso
-    // —el que no tiene nada cedido todavía— se quedó en millones cuando todo migró al peso el
-    // 14-09-2026: daba una línea de «80», que en pesos son 80 pesos, así que a esos 24 deudores de
-    // 741 no les cabía jamás una factura y el nivel 3 los bloqueaba enteros. Un monto que no dice su
-    // unidad se migra en silencio y sólo se nota mirando una cifra absurda.
-    const base = u > 0 ? u * holgura : (40 + Math.floor(rnd() * 24) * 5) * 1e6;
-    // El PISO de política también aplica acá: la del deudor es una línea aprobada como cualquier otra
-    // y una bajo el mínimo no deja pasar ninguna factura — bloquearía al deudor entero en el nivel 3.
-    const tallado = Math.max(lineaMin(), Math.ceil(base / TRAMO_LINEA) * TRAMO_LINEA, Math.ceil(u / TRAMO_LINEA) * TRAMO_LINEA);
-    _deudorIdx.set(rut, {
-      rutDeudor: rut,
-      nombre: nombres.get(rut) || "",
-      tipo: t,
-      aprobado: tallado,
-      vigente: u,
-      disponible: mmRound(tallado - u),
-      nClientes: clientes.get(rut) ? clientes.get(rut).size : 0,
+  const arr = typeof window !== "undefined" && Array.isArray(window.LINEA_DEUDOR) ? window.LINEA_DEUDOR : [];
+  for (const d of arr) {
+    if (!d || !d.RUTDeudor) continue;
+    _deudorIdx.set(d.RUTDeudor, {
+      rutDeudor: d.RUTDeudor,
+      nombre: d.RazonSocialDeudor || "",
+      tipo: d.TipoDeudor || "Otro",
+      aprobado: +d.MontoAprobado || 0,
+      vigente: +d.MontoUtilizado || 0,
+      disponible: +d.MontoDisponible || 0,
+      nClientes: +d.ClientesConCesion || 0,
     });
   }
   return _deudorIdx;
@@ -40743,9 +40921,18 @@ const SOLIC_SUBTIPOS = {
   rebajar_linea: "Rebajar línea",
   ratificar_exceso: "Ratificar exceso",
 };
+// El siguiente id LIBRE de la secuencia. Avanza hasta encontrar uno que nadie tenga, porque la bandeja
+// mezcla los ids que emite ESTE documento con los que proponen otras pestañas: `SOLIC_SEQ` arranca en 0
+// en cada uno, así que el siguiente de la secuencia puede estar tomado y emitirlo pisaría una solicitud.
+function siguienteIdProceso() {
+  let id;
+  do {
+    id = "PRC-" + String(2600 + ++SOLIC_SEQ);
+  } while (SOLICITUDES_LINEA.some((s) => s && s.idProceso === id));
+  return id;
+}
 function api1Inyeccion(sol) {
-  SOLIC_SEQ++;
-  const idProceso = "PRC-" + String(2600 + SOLIC_SEQ);
+  const idProceso = siguienteIdProceso();
   SOLICITUDES_LINEA.unshift({ ...sol, idProceso, estado: "En gestión", refrescos: 0, ts: nowStamp(), tsEstado: nowStamp() });
   if (typeof registrarAuditoria === "function")
     registrarAuditoria({
@@ -40769,9 +40956,61 @@ function api2ListarProcesos() {
 // secuencia por pestaña y rearmarlo daría dos ids distintos para la misma solicitud.
 function recibirSolicitudLinea(reg) {
   if (!reg || !reg.idProceso) return false;
-  if (SOLICITUDES_LINEA.some((s) => s && s.idProceso === reg.idProceso)) return false; // idempotente
-  SOLICITUDES_LINEA.unshift(reg);
+  const choque = SOLICITUDES_LINEA.find((s) => s && s.idProceso === reg.idProceso);
+  // DUPLICADO DE VERDAD: el mismo registro llegó dos veces por el mismo canal. Idempotente (caso 126).
+  if (choque && mismaSolicitudComite(choque, reg)) return false;
+  // COLISIÓN, que no es lo mismo y se trataba igual: `SOLIC_SEQ` arranca en 0 en CADA documento, así que
+  // dos cierres en dos pestañas proponen el mismo `PRC-2601` para solicitudes DISTINTAS. Descartar la
+  // segunda perdía una petición al comité EN SILENCIO —el ejecutivo la creía enviada y nadie iba a
+  // mirarla nunca—. El modelo correcto ya está escrito arriba: el id lo asigna un sistema EXTERNO, y en
+  // este mock ese sistema es el tubo, que es quien hospeda la lista. La pestaña PROPONE, el tubo ASIGNA.
+  // El id propuesto se conserva en `idProcesoOrigen`: la bitácora de la otra pestaña lo cita, y sin él
+  // la solicitud entraría con un número que allá no existe (regla 24: nada cambia en silencio).
+  if (!choque) {
+    SOLICITUDES_LINEA.unshift(reg);
+    return true;
+  }
+  const idNuevo = siguienteIdProceso();
+  SOLICITUDES_LINEA.unshift({ ...reg, idProceso: idNuevo, idProcesoOrigen: reg.idProceso });
+  logSys("warn", "linea", `Solicitud recibida con un id ya tomado · ${reg.idProceso} → ${idNuevo}`, { empresa: reg.cliente || "", origen: reg.idProceso });
+  if (typeof registrarAuditoria === "function")
+    registrarAuditoria({
+      usuario: reg.ejecutivo || "—",
+      modulo: "Líneas · Comité",
+      accion: "Solicitud re-identificada al incorporarse",
+      glosa: `${reg.cliente || reg.rut || ""}: la pestaña propuso ${reg.idProceso}, que ya estaba tomado por otra solicitud; se incorpora como ${idNuevo}`,
+      exito: true,
+    });
   return true;
+}
+// CALLBACK DE GIRO (regla 43). NEX termina en la INYECCIÓN a Tesorería: Operaciones verifica y aprueba
+// la integración, y el desembolso ocurre allá. Así que «Girada» no es algo que este sistema DECIDA —es
+// un hecho que OCURRE afuera y del que nos enteramos—, y hasta el 19-09-2026 nadie lo escribía: todas
+// las escrituras de `giroPendiente` eran `true`, así que una operación inyectada se quedaba en
+// «Pendiente de Giro» para siempre. El sistema de giro avisa por acá.
+//
+// Es una FUNCIÓN PURA que devuelve el patch, no un setter: así la suite la prueba por su nombre (caso
+// 145) sin montar la app, y quien la llama decide cuándo escribir. Las tres negativas importan tanto
+// como la positiva:
+//  · `ya_girada` — un callback SE REINTENTA, es la naturaleza de un push. Reprocesarlo duplicaría el
+//    hecho en la bitácora y en los KPI de venta.
+//  · `no_inyectada` — sólo se gira lo que se inyectó. Un aviso sobre una operación que no pasó por
+//    Operaciones es un error del otro lado, y se dice en vez de escribirlo igual.
+//  · `aviso_incompleto` — sin `operacionId` no hay con qué decidir. Falla cerrado.
+// El MONTO no se inventa: si el aviso no lo trae, el patch no lo afirma. Un número inventado acá
+// cuadraría contra nada y nadie podría distinguirlo de uno real.
+function recibirGiroTesoreria(ev, deal) {
+  if (!ev || !ev.operacionId || !deal) return { ok: false, motivo: "aviso_incompleto" };
+  if (deal.stage !== "giro") return { ok: false, motivo: "no_inyectada" };
+  if (!deal.giroPendiente) return { ok: false, motivo: "ya_girada" };
+  const patch = {
+    giroPendiente: false,
+    giroTs: ev.ts || nowStamp(),
+    giroRef: ev.referencia || "",
+    status: `Girada${ev.referencia ? ` · ${ev.referencia}` : ""}`,
+  };
+  if (ev.montoGirado != null) patch.giroMonto = Math.round(ev.montoGirado);
+  return { ok: true, patch };
 }
 // Los deudores que YA están pedidos al comité por el cierre de una oferta de este cliente, con el
 // monto y el tipo de línea que se pidió. El wizard los precarga en el paso 4 en vez de hacer que el
@@ -41128,6 +41367,10 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
   // «Recurrente». Sirve para los recurrentes pre-cargados y para los que el ejecutivo agrega.
   const construirDeudorLinea = (nombre) => {
     const h = Math.abs(hashStr("deu" + nombre));
+    // EL RUT SE RESUELVE, NO SE INVENTA (regla 46). Antes salía de `76000000 + (h % 20000000)` con un
+    // dígito verificador sorteado: 92% inválidos y 100% desconocidos para el sistema, así que la línea
+    // que el comité otorgaba caía sobre un par inexistente y el deudor seguía yendo al comodín.
+    const rutReal = rutDeDeudorPorNombre(nombre);
     const prop = (50 + (h % 20) * 10) * 1e6;
     const ant = h % 2 ? (50 + (h % 10) * 10) * 1e6 : 0;
     const esCliente = typeof PC_CLIENTES !== "undefined" && PC_CLIENTES.some((c) => c.nombre === nombre) ? true : h % 3 === 0;
@@ -41137,8 +41380,8 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
     // apartó de la sugerencia; con un solo campo esa diferencia no queda en ninguna parte.
     return {
       nombre,
-      rut: `${76000000 + (h % 20000000)}-${"0123456789K"[h % 11]}`,
-      nota: notaDeudor(nombre) || 0,
+      rut: rutReal,
+      nota: notaDeudor(nombre, rutReal) || 0,
       esCliente,
       politicaPct: pol("concentracionDeudorPct", 30),
       anterior: ant,
@@ -41156,7 +41399,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
   // Pre-carga: los deudores con flujo recurrente ya vienen SUGERIDOS; el ejecutivo sólo revisa el monto
   // propuesto. Los demás los agrega él en «Otros deudores».
   const [deudores, setDeudores] = useState(() => {
-    const base = deudoresRecurrentesLinea(cliente).map((hh) => ({
+    const base = deudoresRecurrentesLinea(cliente, rut).map((hh) => ({
       ...construirDeudorLinea(hh.name),
       flags: { V: true, N: true, C: true, FR: false, CP: false },
       recurrente: true,
@@ -41192,7 +41435,15 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
   const [addPrev, setAddPrev] = useState(null); // preview API 4 del deudor por aceptar
   const [editDeu, setEditDeu] = useState(null); // índice del deudor en edición (modal Editar Deudor Factoring)
   const [otrosLimite, setOtrosLimite] = useState(10); // Otros Deudores Límite Máx. %
-  const candidatosDeu = Object.keys(SPREAD_MIN_DEUDOR).filter((n) => !deudores.some((d) => d.nombre === n));
+  // Los candidatos son los deudores que el sistema CONOCE —los del cliente primero, por volumen
+  // facturado, y después el resto del universo—, no las 23 razones sociales canónicas de
+  // `SPREAD_MIN_DEUDOR`, que es una tabla de spreads mínimos y no un catálogo de empresas.
+  const candidatosDeu = useMemo(() => {
+    const propios = deudoresDelCliente(rut);
+    const vistos = new Set(propios);
+    const resto = [...deudoresConocidos().keys()].filter((n) => !vistos.has(n));
+    return propios.concat(resto);
+  }, [rut]).filter((n) => !deudores.some((d) => d.nombre === n));
   const candFiltrados = buscaDeu.trim() ? candidatosDeu.filter((n) => n.toLowerCase().includes(buscaDeu.trim().toLowerCase())) : candidatosDeu;
   const promNota = deudores.length
     ? +(deudores.reduce((s, d) => s + d.nota * (d.propuesta || 1), 0) / deudores.reduce((s, d) => s + (d.propuesta || 1), 0)).toFixed(2)
@@ -44809,7 +45060,7 @@ export default function PipelineComercial() {
     if (!selected) return;
     const fresh = deals.find((d) => d.id === selected.id);
     if (fresh && fresh !== selected) setSelected(fresh);
-  }, [deals]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [deals]); // deps a propósito: sigue a `deals` y NO a `selected`, o el efecto se re-dispararía a sí mismo
   // En modo detalle (_blank), el título de la pestaña deja claro qué oportunidad/cliente es.
   useEffect(() => {
     if (soloDetalle && selected) {
@@ -46305,6 +46556,25 @@ export default function PipelineComercial() {
       // Solicitud al comité inyectada al CERRAR LA OFERTA en la pestaña del detalle. Sin esto la
       // bandeja «Líneas › Solicitudes» de esta pestaña no la tiene —es otro módulo—, que es la forma
       // en que esta entrega se rompía en la práctica: la solicitud se creaba y nadie la veía.
+      // El callback de Tesorería. En producción entra por el endpoint que el otro sistema llame; acá
+      // viaja por el mismo canal que los demás avisos, que es lo que este mock tiene. Lo que importa y
+      // no cambia al cablearlo de verdad es QUIÉN DECIDE: `recibirGiroTesoreria` valida y devuelve el
+      // patch, y acá sólo se aplica y se audita. El rechazo también se audita: un aviso que llega y no
+      // corresponde es información sobre el otro lado, y perderlo deja el problema invisible.
+      if (m && m.type === "nex-giro" && m.evento) {
+        const dG = (dealsRef.current || []).find((x) => x.id === m.evento.operacionId);
+        const res = recibirGiroTesoreria(m.evento, dG);
+        registrarAuditoria({
+          usuario: "-- Sistema --",
+          modulo: "Giro · Tesorería",
+          accion: res.ok ? "Giro notificado por Tesorería" : `Aviso de giro descartado (${res.motivo})`,
+          glosa: `${(dG && dG.cliente) || m.evento.operacionId}: ${res.ok ? `girada${m.evento.referencia ? ` · ${m.evento.referencia}` : ""}` : res.motivo}`,
+          empresaId: m.evento.operacionId,
+          exito: res.ok,
+        });
+        if (res.ok) setDeals((prev) => prev.map((d) => (d.id === m.evento.operacionId ? { ...d, ...res.patch, time: nowStamp() } : d)));
+        return;
+      }
       if (m && m.type === "nex-solicitud" && m.registro) {
         if (recibirSolicitudLinea(m.registro)) setDeals((prev) => prev.slice()); // re-render: la bandeja lee la lista al pintar
         return;
@@ -46718,26 +46988,39 @@ export default function PipelineComercial() {
     // "Aceptada" representa la firma FORMAL del cliente (login + firma en el sitio Factoring Security). La
     // fija sólo el cliente al aceptar; el ejecutivo no puede asignarla manualmente.
     if (stageId === "aceptadas") return;
-    // GIR-02 · GATE DE INYECCIÓN AL CORE. Girar es entregarle la operación a Tesorería, así que acá se
-    // compara la huella de lo que se va a inyectar contra la de la evidencia del contrato (O05). Es el
-    // último punto en que la comparación sirve de algo: después el dinero ya salió. En producción esto
-    // lo decide el resolver —acá se ANTICIPA el rechazo, no se impone: el atacante es el cliente—.
-    if (stageId === "giro") {
-      const d0 = (dealsRef.current || []).find((x) => x.id === id);
-      const ev = evidenciaContratoOk(d0);
-      if (!ev.ok) {
-        const nom = USERS[usuario] || usuario;
-        logSys("warn", "giro", `Inyección al core bloqueada · ${id} · ${ev.motivo}`, {
-          operacion: id,
-          motivo: ev.motivo,
-          firmado: ev.firmado || null,
-          actual: ev.actual || null,
-        });
+    // GIR-01 · NO SE GIRA SIN HABER PASADO POR CESIÓN, y OTG-02 · NO SE AVANZA A CESIÓN CON EXCEPCIONES
+    // PENDIENTES. Los dos invariantes tenían su evaluador escrito y probado (casos 136 y 88) y se aplicaban
+    // sólo en el camino AUTOMÁTICO: `etapaTrasFirma` rutea la operación tras la firma del cliente. El
+    // «Avanzar a» del menú y el arrastre del Kanban entran por acá, donde el único control era que el menú
+    // filtrara los destinos — o sea la regla 24 otra vez: la pantalla que esconde la acción no es el control.
+    // El predicado NO se escribe acá: se le pregunta al invariante por su CÓDIGO, porque una segunda copia
+    // de «pasó por cesión» se desfasa de la tabla del contrato sin que nadie lo note. Cada transición lleva
+    // su código literal y no una variable, para que el gate pueda fijar QUÉ invariante cubre QUÉ paso.
+    // GIRAR NO ES UNA ACCIÓN DE NEX (19-09-2026, corrección del usuario). Mismo tratamiento que
+    // «Aceptada» de arriba, y por la misma razón: no la fija este sistema. El camino real es que
+    // OPERACIONES verifique los adjuntos de las excepciones, la verificación telefónica, las excepciones
+    // resueltas y la cobertura de línea, y apriete «Aprobar integración al core» (`aprobarIntegracion`):
+    // eso INYECTA la operación en TESORERÍA, y Tesorería gira. Así que acá no se rechaza ni se audita
+    // nada sobre el giro —el control es del otro sistema—: la transición simplemente no existe como
+    // acción manual. GIR-02, la huella de lo que se inyecta, sigue comprobándose donde sirve, que es
+    // `aprobarIntegracion`: es el último punto ANTES de inyectar, y ese sí es un acto de NEX.
+    //
+    // PENDIENTE DE DEFINIR (19-09-2026): CÓMO NOS ENTERAMOS DEL GIRO. Hoy `giroPendiente: false` —o sea
+    // «Girada»— no tiene quién lo escriba desde afuera: no hay callback de Tesorería, ni consulta, ni
+    // archivo. La operación queda en «Pendiente de Giro» y el paso a «Girada» no está modelado como
+    // NOTICIA que llega, que es lo que es. Decidirlo (¿push?, ¿pull como el de estados de línea?,
+    // ¿batch diario?) cambia qué escribe ese campo y quién lo audita. Está en el tablero.
+    if (stageId === "giro") return;
+    if (stageId === "cesion") {
+      const dT = (dealsRef.current || []).find((x) => x.id === id);
+      if (dT && !invarianteCumple("OTG-02", "oportunidad.avanzarEtapa", { deal: dT }).ok) {
+        const porQue = "quedan excepciones o rechazos re-evaluables sin resolver en el otorgamiento";
+        logSys("warn", "otorgamiento", `Transición bloqueada (OTG-02) · ${id} · ${porQue}`, { operacion: id, codigo: "OTG-02" });
         registrarAuditoria({
-          usuario: nom,
-          modulo: "Giro",
-          accion: "Inyección al core bloqueada (GIR-02)",
-          glosa: `${(d0 && d0.cliente) || id}: ${ev.detalle}${ev.firmado ? ` · firmado «${ev.firmado}» · actual «${ev.actual}»` : ""}`,
+          usuario: USERS[usuario] || usuario,
+          modulo: "Otorgamiento",
+          accion: "Avance de etapa bloqueado (OTG-02)",
+          glosa: `${dT.cliente || id}: ${porQue}`,
           empresaId: id,
           severidad: "alta",
           exito: false,
@@ -48077,24 +48360,44 @@ export default function PipelineComercial() {
       });
       return;
     }
-    const ev = evidenciaContratoOk(d0);
-    if (!ev.ok) {
-      logSys("warn", "giro", `Integración al core bloqueada · ${id} · ${ev.motivo}`, {
+    // LOS CONTROLES SE VUELVEN A MIRAR ANTES DE ESCRIBIR (regla 41). El botón deshabilitado no es el
+    // control: la pantalla puede venir de hace un rato, y entre medio un apoderado pudo revertir un
+    // visado o la verificación retirar una factura. En producción esto lo rechaza el resolver con el
+    // mismo código; acá se anticipa, que es lo que este cliente puede hacer.
+    const ctrl = controlesIntegracion(d0);
+    if (!ctrl.ok) {
+      const ev = ctrl.evidencia || {};
+      const codigos = ctrl.faltas.map((x) => x.codigo).join(" · ");
+      logSys("warn", "giro", `Integración al core bloqueada · ${id} · ${codigos}`, {
         operacion: id,
-        motivo: ev.motivo,
+        faltas: ctrl.faltas.map((x) => x.codigo),
+        motivo: ev.motivo || null,
         firmado: ev.firmado || null,
         actual: ev.actual || null,
       });
       registrarAuditoria({
         usuario: nom,
         modulo: "Operaciones · Integración",
-        accion: "Integración bloqueada (GIR-02)",
-        glosa: `${d0.cliente}: ${ev.detalle}${ev.firmado ? ` · firmado «${ev.firmado}» · actual «${ev.actual}»` : ""}`,
+        accion: `Integración bloqueada (${codigos})`,
+        glosa: `${d0.cliente}: ${ctrl.faltas.map((x) => x.detalle).join(" · ")}${ev.firmado && !ev.ok ? ` · firmado «${ev.firmado}» · actual «${ev.actual}»` : ""}`,
         empresaId: id,
         severidad: "alta",
         exito: false,
       });
       return;
+    }
+    const ev = ctrl.evidencia;
+    // CONGELAR LO QUE SE ENTREGA (regla 43). Éste es el instante en que la operación pasa a Tesorería,
+    // así que la asignación de giros que viaja es la que vale: se guarda tal cual, con quién la aprobó
+    // y cuándo. `GIRO_STATE` no tenía escritor hasta el 19-09-2026 —la regla estaba probada con estado
+    // inyectado y no ocurría en ninguna pantalla—, y `repoGiro` sólo se hidrataba.
+    // VA DESPUÉS DE LA COMPUERTA, y el orden no es casual: `controlesIntegracion` (regla 41) puede
+    // rechazar la integración por OTG-02, VER-01, LIN-01 o GIR-02, y una integración rechazada no
+    // entrega nada. Congelar antes dejaría una asignación «entregada» de una operación que no salió.
+    const giroEntregado = giroResumenDeal(d0);
+    if (giroEntregado) {
+      repoGiro.set(id, { ...giroEntregado, congelado: undefined, ts: nowStamp(), por: nom });
+      GIRO_STATE = repoGiro.all();
     }
     const upd = (d) =>
       d.id !== id

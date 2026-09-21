@@ -93,6 +93,7 @@
 - **La reserva no es de NEX:** la crea el sistema de gestión de líneas cuando el cliente acepta y el core la commitea al aprobar Operaciones, convirtiéndola en utilizada. Acá sólo se lee.
 - **Diferencia con A7/A8:** A7 (batch diario) da la estructura y A8 (horario) refresca montos, ambos por cliente y sin nivel deudor ni reservado; alimentan la vista «Líneas», que es fotografía de cartera. A23 alimenta la **decisión de cursar**, que exige dato fresco, el reservado y la exposición global del deudor.
 - **Consumen:** motor de asignación de líneas, armado de la oferta, modal de confirmación de curse.
+- **Activo en la demo (20-09-2026, regla 44):** dos bloques de `datos_inyectados.js` que produce `GeneradorDatos/datasets/lineas_par.js` — **`LINEA_CUPO`** (4.136 filas: una cabecera `CLIENTE` por cliente con su estado A/B/S, más una fila por objeto de línea LF1/LF2/LF3/LF4) y **`LINEA_DEUDOR`** (741 filas, nivel 3). Hasta esa fecha A23 **no tenía activo** y el pipeline fabricaba los 3.636 objetos de línea partiendo del A7/A8 —justo lo que §5.4 prohíbe—. El `reservado` sigue sin modelarse: no es de NEX (regla 12) y la demo no tiene el sistema que lo lleva, así que `MontoDisponible = MontoAprobado − MontoUtilizado`.
 
 ### A9 · API Riesgo Crédito BICE (swagger `riesgo-credito/v1`)
 - **Tipo:** API REST — 9 endpoints: clasificación deudora, consolidado, deuda BICE, boletín comercial, deuda previsional, protestos, tipo de cambio (UF/USD), mora ACHEF, mora CMF.

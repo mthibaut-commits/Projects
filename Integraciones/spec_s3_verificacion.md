@@ -32,4 +32,4 @@
 - **V09** (alto monto, > MM$300) no viaja en el archivo: se evalúa en NEX sobre el **total de la operación con ese deudor** y sólo aplica al segmento OTROS — un PRIME no tiene techo por monto.
 - La verificación telefónica registrada en NEX no se pierde con las cargas.
 
-**Fuente normativa:** `Specs_Procesos/spec-verificacion-facturas.md`, que es la versión vigente del predictor. El PDF `Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf` describe la versión anterior (segmentos «Elite/Others», V10 con el múltiplo, entrada por conjunción) y quedó atrás en esos puntos.
+**Fuente normativa:** `Specs_Procesos/Verificacion/spec-verificacion-facturas.md`, que es la versión vigente del predictor. El PDF `Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf` describe la versión anterior (segmentos «Elite/Others», V10 con el múltiplo, entrada por conjunción) y quedó atrás en esos puntos.

@@ -26,7 +26,7 @@ jobs:
       # llamado «tsc» que NO es TypeScript. Las versiones son las del contenedor donde se verificó.
       - name: Herramientas (TypeScript, Prettier y Playwright)
         run: |
-          npm i -g typescript@6.0.2 prettier@3.6.2 playwright@1.56.1
+          npm i -g typescript@6.0.2 prettier@3.6.2 eslint@10.1.0 playwright@1.56.1
           npx playwright install --with-deps chromium
 
       # Va ANTES de los seis pasos y numerado 0 porque no verifica una conducta: protege a los que sí.
@@ -35,6 +35,13 @@ jobs:
       # sesiones distintas, sin que nadie relacione la caída con el formato.
       - name: 0 · Formato del fuente
         run: npx prettier --check pipeline_comercial.jsx
+
+      # El LINTER, que cierra el cuarteto de gates. No trae reglas de estilo —de la forma se encarga
+      # Prettier, y duplicar esa autoridad es cómo se pelean—: cada regla de `eslint.config.mjs` cita el
+      # incidente real de este repo que habría cazado. Al adoptarlo encontró UNA clave duplicada en un
+      # objeto de pricing, que es justo la clase que `code_style.md` documenta como silenciosa.
+      - name: 0-bis · Linter
+        run: npx eslint pipeline_comercial.jsx
 
       - name: 1 · Tipos
         run: npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx

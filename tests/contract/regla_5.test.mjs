@@ -87,7 +87,7 @@ export const BADGES_ACCIONABLES = [
 ];
 export function badgesDeTarjeta(src) {
   // El CUERPO se recorta sobre el fuente crudo (la extracción se apoya en las líneas) y recién ahí se
-  // canoniza: los badges son JSX y el formateo los abre. Ver `canonico` en _comun.mjs (ADR-0005).
+  // canoniza: los badges son JSX y el formateo los abre. Ver `canonico` en _comun.mjs (ADR-0006).
   const c0 = cuerpoDe(src, "DealCard"); const fallos = [];
   if (!c0) return { fallos: ["no existe `function DealCard`"] };
   const c = canonico(c0);

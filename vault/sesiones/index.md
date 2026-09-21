@@ -3,7 +3,7 @@ type: indice
 title: "Sesiones — el tablero y los logs"
 description: "estado_actual.md es el tablero (≤80 líneas, se sobrescribe); cada sesión deja un log con lo hecho, los errores y su solución, lo pendiente y las sorpresas"
 tags: [indice, sesiones]
-timestamp: 2026-09-18T03:25:00Z
+timestamp: 2026-09-19T00:40:00Z
 ---
 
 # Sesiones
@@ -23,6 +23,9 @@ timestamp: 2026-09-18T03:25:00Z
 | 17-09-2026 | [`2026-09-17_operacion_creada_y_editar.md`](./2026-09-17_operacion_creada_y_editar.md) | Chip «Operación creada» + Acciones › Editar (regla 33, caso 116); el cierre del día ya no renombra la operación (ADR-0004): el tubo vuelve a enterarse de la simulación |
 | 17-09-2026 | [`2026-09-17_restyle_detalle_simulado.md`](./2026-09-17_restyle_detalle_simulado.md) | El detalle simulado según el mockup del usuario: giro sin badge, chip naranjo de solicitud, panel lila, Express en azul (reglas 29 y 22) |
 | 17-09-2026 | [`2026-09-17_generador_v04_v10.md`](./2026-09-17_generador_v04_v10.md) | El A10 modela la relación por perfil y V10 pasa a ser del deudor: «verificados por modelo» 5% → 50%; se descubre que la cadena A2 → A5 → A2 del generador no tiene punto fijo y se regenera por bloque (`--solo`) |
+| 21-09-2026 | [`2026-09-21_spec_mensajeria.md`](./2026-09-21_spec_mensajeria.md) | Spec del centro de mensajería interna: los dos tipos de conversación, los tres hilos que el otorgamiento abre solo y reutiliza, el puente con el criterio, @menciones, terminar y reabrir, la campana, el permiso y cinco límites medidos —el primero, que las conversaciones viven en memoria de la sesión— |
+| 20-09-2026 | [`2026-09-20_controles_integracion.md`](./2026-09-20_controles_integracion.md) | Documentar la tabla de controles del giro destapa que el botón de integración al core sólo miraba la atribución y la huella: `controlesIntegracion` exige ahora OTG-02, VER-01, LIN-01 factura por factura y GIR-02, en el botón y antes de escribir (regla 41, caso 144, `regla_41.test.mjs`, ADR-0007) |
+| 19-09-2026 | [`2026-09-19_spec_excepciones_revision.md`](./2026-09-19_spec_excepciones_revision.md) | El usuario revisa el PDF del spec de excepciones: se incluyen los mensajes de alerta de configuración («Sin aprobador definido» y dónde aparece), se aclara el cargo vigente con un ejemplo, se explica la re-evaluación y entra la simulación como primer momento del motor, §4.3 reescrito para un lector ajeno al diseño, y sale «compuerta» y la jerga |
 | 18-09-2026 | [`2026-09-18_spec_gestion_excepciones.md`](./2026-09-18_spec_gestion_excepciones.md) | Spec del proceso operativo de una excepción de otorgamiento (`spec-gestion-excepciones.md` + PDF), verificado contra el fuente; Context7 no disponible ni aplicable; se corrigen dos viñetas del layout A16 (D02–D13 son excepciones, no bloqueos firmes) y los conteos del catálogo en `spec-otorgamiento.md` |
 | 17-09-2026 | [`2026-09-17_punto_fijo_generador.md`](./2026-09-17_punto_fijo_generador.md) | Se cierra el bucle A2 → A5 → A2 del generador: la intención de participación pasa a ser un insumo declarado (`lib/intencion_sow.js`, congelado con la trayectoria que produjo el A2 vigente, hallada por arqueología en git), una corrida completa reproduce `datos_inyectados.js` byte a byte sin mover una cesión; gate `generador.test.mjs`, regla 32, ADR-0003 |
 | 17-09-2026 | [`2026-09-17_unidades_v04.md`](./2026-09-17_unidades_v04.md) | El desfase de unidades de V03/V04/V09 se corrigió igual en dos sesiones; se reintegró desde `main` con lo adicional: V04 y V10 siguen mandando al teléfono a casi todos (dato y política), el layout del A10 en miles, el script de regresión en pesos |
@@ -34,7 +37,8 @@ timestamp: 2026-09-18T03:25:00Z
 
 | 18-09-2026 | [`2026-09-18_regla_sin_aprobador.md`](./2026-09-18_regla_sin_aprobador.md) | Ampliación de la regla 35: tener área no basta —una regla excepcionable a la que nadie puede firmarle la excepción tampoco se ejecuta, con tres causas y tres mantenedores—. La compuerta recibe el PADRÓN por parámetro y el núcleo se partió en `cargoDeAreaNivel` porque `auditar_aislamiento` sacó a `evalReglaCli` de las puras; y un identificador citado dentro de un string cuenta como lectura para ese auditor |
 
+| 21-09-2026 | [`2026-09-21_ordenar_la_carpeta.md`](./2026-09-21_ordenar_la_carpeta.md) | Los `.md` y `.pdf` de la raíz se ordenan por lo que el documento ES: `Auditoria/` (lo que mide), `Regresiones/` (lo que cotejó definición contra implementación), los PDF de contrato a `Integraciones/` y `Specs_Procesos/` partido en cinco temas. 41 renombres, 77 referencias rotas medidas con un verificador diferencial de enlaces y 63 reparadas; de paso, el paso 0 estaba en rojo en `main` y dos bloques de comandos habían perdido un salto de línea |
 | 21-09-2026 | [`2026-09-21_identidad_y_atajo_otorgamiento.md`](./2026-09-21_identidad_y_atajo_otorgamiento.md) | Dos defectos que el usuario vio en pantalla: el selector de usuario de la demo movía el rótulo y no `SESION.usuario`, así que la mesa le negaba marcar a la Ejecutiva de verificación (47); y el atajo del otorgamiento automático no miraba el visado, con lo que una operación con 38 criterios por aprobar llegaba a «Pendiente Integración» —OTG-02 declarado y no obedecido— (48) |
 
 La historia anterior al vault (02-09 → 16-09-2026) no tiene logs propios: vive dentro de las reglas de
-dominio (cada una trae fecha y qué la motivó) y en `Auditoria_*.md` e `Inconsistencias_*.md`.
+dominio (cada una trae fecha y qué la motivó) y en `Auditoria/` y `Regresiones/`.

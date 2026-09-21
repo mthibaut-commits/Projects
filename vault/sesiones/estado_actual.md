@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-21T23:58:00Z
+timestamp: 2026-09-21T23:40:00Z
 ---
 
 # Estado actual
@@ -13,68 +13,68 @@ timestamp: 2026-09-21T23:58:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone de 41,3 MB, **145/145 PASA**, **36 archivos de gate de contrato**
-(249 tests), **29 casos e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault (71 reglas verbatim
-por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró la tabla de invariantes**:
-cada regla y los 12 del contrato tienen gate. Lo que destaparon cambió el producto —ocho defectos, abajo—. El
-generador tiene punto fijo (32, ADR-0003), el id de una operación es estable (ADR-0004) con «Operación creada» +
-Editar (33) y el detalle sigue el mockup (29, 22); el 18-09 el tubo abre en «Todos» (34), **una regla con un tramo
-sin aprobador posible ya no se ejecuta ni se verifica** (35), la **portada muestra el producto** (36–38 · ADR-0005), el
-orden de la tabla es **prioridad de gestión** y la Bandeja Inbound deja de botar trabajo en silencio (30-bis, 40),
-con el fuente **formateado con Prettier** (ADR-0006); y el 21-09 la **identidad de la sesión es una sola** (47) y el **atajo del otorgamiento no se salta el visado** (48).
+(`pipeline_comercial.jsx`), build standalone, **151/151 PASA**, **39 archivos de gate de contrato**
+(268 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su
+vault (75 reglas verbatim por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y
+**cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen gate. La crónica del 17 al 19-09
+vive en sus logs (reglas 32–40, ADR-0003 a 0006, y el **linter** en 0 como paso 0-bis).
+
+El **20-09** entró todo lo de esta rama, sobre plata: la **regla 8 deja de ser proxy** (149, ADR-0008),
+**girar no es una acción de NEX** (43, 147, 148), **ATR-01 en el handler** (145), el **id de la solicitud
+al comité** (146), las **identidades pasan a ser pares reales del AEC** (42, ADR-0009) y, al cierre, las
+**líneas** (44–46, casos 150–151, ADR-0010 y ADR-0011). De `main`, los **controles de la integración al
+core** (41, ADR-0007) y la **spec de mensajería**.
+
+El **21-09** se ordenó la carpeta (pedido del usuario): la raíz baja a tres `.md` —`CLAUDE.md`, `README.md`,
+`Levantamiento_Activos_Informacion.md`—, nacen `Auditoria/` (lo que mide) y `Regresiones/` (lo que cotejó
+definición contra implementación), los cuatro PDF de contrato se van a `Integraciones/` y `Specs_Procesos/`
+queda en cinco temas: `Otorgamiento`, `Verificacion`, `Lineas`, `Excepciones` y `Evaluacion_Factura`. Son
+**41 renombres**; las **77 referencias** que rompieron se midieron con un verificador diferencial de enlaces
+y se repararon 63 — los logs y el ADR citan las rutas viejas **a propósito**, y la tabla de
+`conocimiento/mapa_documentos.md` las resuelve. Cada carpeta nueva trae `README.md` con el criterio de qué
+entra. Y tres defectos que venían de `main`: **el paso 0 estaba en rojo** (dos líneas partidas a mano tras
+formatear) y `CLAUDE.md`, `README.md` y `.claude/rules/testing.md` habían perdido un salto de línea, con lo
+que el bloque canónico de verificación mostraba ocho pasos y no nueve. Los tres cerrados.
+
+**Las líneas, en un párrafo.** La ESTRUCTURA es un insumo (44, ADR-0010): el **activo A23** (`LINEA_CUPO`
+4.167 filas + `LINEA_DEUDOR` 741) reemplaza los 3.170 de 3.636 objetos que el pipeline fabricaba desde el
+A7, que el levantamiento §5.4 prohíbe. El **nivel 1 es el CONSOLIDADO** (45, ADR-0011): la cabecera ES la
+suma de las líneas y las superaba en 217 de 224 clientes. El **RUT del deudor se resuelve, no se arma**
+(46): el wizard lo inventaba con 92 % de DV inválidos, así que su línea caía en un par inexistente. Con los
+tres, el bucle del comité cierra por los dos caminos (casos 150–151); `lineaMinima` y `otrosDeudoresPct`
+quedaron declarativas y su `hint` lo dice.
 
 > ## 🎯 Siguiente paso
 >
-> Decisión del usuario; ninguno empezado. **0. Correr el `.bat` una vez**: `build_app.ps1` cambió (embebe
-> `arte_login.js`) y acá no se ejecuta; la simetría está gateada, no probada.
-> 1. **Los 20 desfases regla↔código que midieron los gates** (`2026-09-17_cerrar_invariantes.md`). Los tres grandes:
->    la cláusula «tasa bajo el mínimo del deudor» de la regla 8 **no existe en el código**; `validarMutacion` tiene
->    **un solo call site** (LIN-01, GIR-01 y ATR-01 declarados y nunca invocados); y el `idProceso` del comité
->    **colisiona entre pestañas** y descarta la segunda en silencio.
-> 2. **Decidir los datos**: razones sociales reales sobre RUT sintéticos — un ADR y un gate (hoy ningún test lo
->    afirma ni lo niega). · 3. Sacar `pipeline.zip` (**2,7 MB**, un build del 12-08 de un generado).
+> 1. **Subir a `main`** con `merge --no-ff`, **confirmando antes con el usuario**: es a quien le toca
+>    autorizar el push. La rama trae la mudanza de documentos y queda verde entera (los seis pasos).
+> 2. **Correr el `.bat` una vez** (`build_app.ps1` cambió y acá no se ejecuta: la simetría está gateada, no
+>    probada) · 3. **Regenerar `Capturas_UI/`**, desfasadas desde el padrón real (deuda 2) · 4. **Motor O01**
+>    (el hueco débil de la regla 8) · 5. **Regla 28** y **13-quater**, de negocio · 6. Sacar `pipeline.zip`.
 
-## En vuelo ahora · `claude/migrate-project-session-vui9dl`: los dos defectos del 21-09, verdes; falta mezclar
-
-| Trabajo | Integrado en `main` |
-|---|---|
-| **Identidad de la sesión** (41) y **atajo del otorgamiento automático** (42): el selector de la demo cambia `SESION.usuario` —antes la mesa le negaba marcar a la Ejecutiva de verificación— y `otorgAuto` deja de saltarse OTG-02: con criterios por aprobar no hay cartel verde ni avance a «Pendiente Integración» (152, 153) | **no, en la rama** |
-| **Regla 35, ampliada por el usuario**: una regla excepcionable sin nadie que pueda firmarla tampoco se ejecuta (tres causas, tres mantenedores). La compuerta recibe el PADRÓN por parámetro y el núcleo se partió en `cargoDeAreaNivel` para no sacar a `evalReglaCli` de las puras (caso 143) | `895845c` |
-| **Portada que muestra el producto** (36, 37, 38 · ADR-0005): arte generado, un solo morado, zoom al dashboard. Los colores no llegaban a quien tenía config guardada: `cfgOper` subió a v2 con migración (39) | `daf3493` |
-| Invariantes · e2e · O05 · tab «Todos» (34) · regla mal definida (35) · paso 2 · auditorías · spec exc. `d389379` · «Operación creada» + id estable + restyle (33, 29, 22 · ADR-0004) `8b75a03` · punto fijo (32 · ADR-0003) `3a27737` · gates y partir `CLAUDE.md` (ADR-0001/2) `bd14091` | ✓ |
-
-## Lo que los gates destaparon (todo corregido; el detalle, en los logs)
-**Ocho defectos de producto** (13-sexdecies, 14, OTG-01, 5, el reset, 15-quinquies, 27-bis, RAT-01), **el paso 2**
-que no veía 11 declaraciones —una colisión sólo se sabía en el paso 5, sin nombrar el símbolo—, el health check de
-hooks como comando, `cifras.test.mjs`, y los dos pendientes de regla que eran defectos (27-bis, 33). Uno por uno: [invariantes](./2026-09-17_cerrar_invariantes.md) ·
-[integración](./2026-09-18_integracion_y_tab_todos.md) · [auditorías](./2026-09-18_auditorias_y_paso_2.md) · [regla 35](./2026-09-18_regla_mal_definida.md) y su [ampliación](./2026-09-18_regla_sin_aprobador.md).
+## En vuelo ahora · nada: la rama queda VERDE ENTERA (6/6 pasos)
 
 ## Bloqueos · los dos son del usuario, desde Windows
 
-El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403, política; se reporta, no se rodea). Queda **el tag
-`v0.1.0`** sobre `bd14091` y **borrar las 7 remotas integradas** (`git branch -r --merged main`; una es el respaldo).
+El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403, política; se reporta, no se rodea).
+Queda **el tag `v0.1.0`** sobre `bd14091` y **borrar las ramas integradas**.
 
 ## Deudas anotadas (no bloquean, no olvidar)
 
-1. **Auditores, revisados el 18-09**: `BASE_MUERTOS` baja de 6 a **1** sin borrar nada (cuatro eran un mismo falso
-   positivo —un `const` local a columna 0—, el quinto un catálogo que ahora sí gobierna, y el que queda subió a
-   «siguiente paso»); los 7 `useState` quedan con su veredicto uno por uno en `auditores.test.mjs`. Formatear
-   destapó dos puntos ciegos más, los dos corregidos: `BASE_PURAS` cargaba a `lineaDeDeudor`, que **nunca fue
-   pura** (cuerpo de una línea, invisible al auditor), y la sección C cortaba las firmas a las 12 líneas.
-2. **GN como disyunción** (22), del negocio; la separación por género no es deuda (ADR-0001: regla por regla).
-3. De los pendientes de las reglas quedan **decisiones, no defectos**: las filas que Operaciones repite del tubo y
-   `STATUS_ETAPA` a tenant-aware (28); si el A1 trae `MntNotaCredito` (13-quater). Sin gate, la concentración (31).
-4. **Hooks en Windows**: `node verificar_hooks.mjs` una vez; es lo único que el CI no atestigua. · **`Capturas_UI/`
-   NO es determinista**: dos corridas del mismo build dan tablas distintas porque el tubo se retrata a mitad del
-   stream (el 18-09 volvió a pasar, en `10-tubo-kanban.html`). Capturar en un estado conocido (stream pausado, o
-   Modo Directorio, determinista por construcción, 31) cambia QUÉ muestra la fuente de Figma: decisión suya.
-5. **Dos sesiones paralelas toman el mismo entero libre y el mismo archivo**: pasó con 32/33, los casos 116–140,
-   este tablero, y el 18-09 con la regla 36 y el ADR-0005 a la vez. Quien mezcla después renumera lo suyo.
-6. **Al regenerar las capturas, regenerar `arte_login.js`** o la portada muestra una UI que ya no existe; y
-   `marcaFondo` no está en el selector de colores de Configuración. · 7. Los 13 skills de `taste-skill` viven en
-   el `~/.claude/skills/` del CONTENEDOR, efímero: van con `/plugin marketplace add leonxlnx/taste-skill`.
+1. **Auditores**: `BASE_MUERTOS` queda en **1** (`giroDeal`), candidato a poda. · **GN como disyunción**
+   (22), del negocio. · Sin gate, la concentración del Directorio (31). · `DEUDORES_AUTORIZADOS.
+   LineaSugeridaMM` (599 filas) es un campo heredado **sin uso, sin documentar y nombrado en millones**:
+   no lo confundan con una señal de línea por deudor (ADR-0010). · Quedan **dos** sitios que arman un RUT
+   de CLIENTE (`rutDe` de módulo, la degradación de `PC_CLIENTES`): no llegan al par, y la regla 46 lo dice.
+2. **`Capturas_UI/` NO es determinista**: el tubo se retrata a mitad del stream. Capturar en un estado
+   conocido (stream pausado, o Modo Directorio, 31) cambia QUÉ muestra la fuente de Figma: decisión suya.
+3. **Dos sesiones paralelas toman el mismo «siguiente entero libre»** — reglas, casos Y ADR, las tres
+   cosas. Quien mezcla después renumera lo suyo, y hay que revisar también las CITAS del otro lado.
+4. **Hooks en Windows**: `node verificar_hooks.mjs` una vez; es lo único que el CI no atestigua. · Los 13
+   skills de `taste-skill` viven en el `~/.claude/skills/` del CONTENEDOR, efímero:
+   `/plugin marketplace add leonxlnx/taste-skill` en su máquina.
 
 ## Conocimiento clave
 
-[invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [hooks](../conocimiento/loop_agentico_hooks.md) · [despacho de agentes](../conocimiento/despacho_agentes.md) · [flujo git](../conocimiento/flujo_git.md) · [arquitectura](../conocimiento/arquitectura.md) · [verificación](../conocimiento/verificacion.md) · [decisiones](../adr/index.md)
-Últimas: [identidad y atajo](./2026-09-21_identidad_y_atajo_otorgamiento.md) · [sin aprobador](./2026-09-18_regla_sin_aprobador.md) · [portada](./2026-09-18_portada_que_muestra_el_producto.md) · [orden y bandeja](./2026-09-18_orden_tabla_y_bandeja.md)
+[invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto, en [`vault/index.md`](../index.md)
+Últimas: [ordenar la carpeta](./2026-09-21_ordenar_la_carpeta.md) · [mensajería](./2026-09-21_spec_mensajeria.md) · [las tres casuísticas del elenco](./2026-09-20_las_tres_casuisticas_del_elenco.md) · [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md) · [las líneas son un insumo](./2026-09-20_las_lineas_son_un_insumo.md)

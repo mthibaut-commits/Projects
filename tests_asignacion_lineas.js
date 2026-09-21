@@ -1755,8 +1755,14 @@
       const bajo = evalAtribucion(2.00, 1.00, 2.00, true);
       tasaOk = alto.estado === "bajoMinimo" && bajo.estado !== "bajoMinimo";
 
-      // (b) El % de «otros deudores» dimensiona el comodín LF4, y el cache se invalida solo: si no,
-      //     la segunda lectura devolvería el dimensionamiento hecho con el valor anterior.
+      // (b) El % de «otros deudores» YA NO dimensiona el comodín LF4 desde acá, y esa es la prueba.
+      //     Hasta el 20-09-2026 `lineasDeCliente` lo leía con `pol()` para tallar la LF4, y lo que
+      //     este tramo vigilaba era que el cache no sirviera el dimensionamiento anterior. Dimensionar
+      //     dejó de ser de NEX: la estructura llega por el A23 y acá sólo se lee, así que la perilla
+      //     viaja en el contrato del tenant y la aplica el sistema de gestión de líneas — como
+      //     `concentracionDeudorPct` y `frecuenciaMin`, y su `hint` lo dice. Se prueba que moverla no
+      //     mueve NADA, que es justamente lo que un lector tiene que garantizar: si la app pudiera
+      //     re-tallar la LF4 por su cuenta, estaría decidiendo sobre cupo que otro sistema aprobó.
       const rutCli = (PC_CLIENTES[0] && PC_CLIENTES[0].rut) || null;
       const comodinCon = (pct) => {
         aplicarCfgActiva({ ...guardado, otrosDeudoresPct: pct });
@@ -1764,8 +1770,10 @@
         return (est.lineas || []).filter((l) => l.tipo === "LF4").reduce((a, l) => a + (l.aprobado || 0), 0);
       };
       const c10 = comodinCon(10), c40 = comodinCon(40), c10bis = comodinCon(10);
-      otrosOk = rutCli != null && c40 > c10 * 1.5;
-      cacheOk = c10bis === c10; // vuelve al valor anterior: el cache no se quedó con el de 40
+      // …y la LF4 tiene que EXISTIR: si el cliente no tuviera ninguna, «no se movió» se cumpliría
+      // sola con dos ceros y este tramo no vigilaría nada.
+      otrosOk = rutCli != null && c10 > 0 && c40 === c10;
+      cacheOk = c10bis === c10;
 
       // (c) La ventana del libro de ventas. Con 7 días ninguna candidata puede tener más de 7 de
       //     emitida; con 180, alguna pasa de 60.
@@ -1787,8 +1795,8 @@
       const glosa = generarNotasIA(ctx).negocio;
       notaOk = /nota ≥ 4,4/.test(glosa) && /vigencia de 24 meses/.test(glosa) && !/3,7/.test(glosa) && !/12 meses/.test(glosa);
       detalle = `piso 1,50→${alto.estado} · piso 0,50→${bajo.estado} · LF4 10%→${c10} 40%→${c40} vuelta→${c10bis} · libro 7d→${maxDias(corto)} 180d→${maxDias(largo)} · glosa «nota ≥ 4,4 / 24 meses» ${notaOk ? "sí" : "no"}`;
-    } finally { restaurar(); _cacheCli.clear(); }
-    ok("90 lo que el tenant configura en Otorgamiento lo aplica el motor, y el cache no se queda atrás",
+    } finally { restaurar(); invalidarCupo(); }
+    ok("90 lo que el tenant configura en Otorgamiento lo aplica el motor, lo declarativo no mueve nada, y el cache no se queda atrás",
        tasaOk && otrosOk && ventanaOk && notaOk && cacheOk, detalle);
   }
 
@@ -2683,45 +2691,56 @@
     //     es lo que financia a los deudores que el piso dejó sin línea propia.
     const topeOk = excede === 0 && sinComodin === 0 && usoNoCabe === 0;
 
-    // (c) EL PISO NO CREA CAPACIDAD: acotado por el presupuesto. Se prueba en la función de reparto,
-    //     que es donde vive la decisión. Con 25 de total y piso 10 caben DOS partes, no cuatro: el
-    //     piso limita CUÁNTAS líneas hay, no cuánto recibe cada una — es la consecuencia que hace que
-    //     algunos deudores pasen al comodín.
-    const r1 = repartirConPiso(100e6, [1, 1, 1, 1], 10e6, 5e6);
-    const r2 = repartirConPiso(25e6, [4, 3, 2, 1], 10e6, 5e6);
-    const r3 = repartirConPiso(8e6, [1, 1, 1], 10e6, 5e6);
-    const r4 = repartirConPiso(37e6, [2, 1], 0, 5e6);            // piso 0 = el caso de la LF3
-    const suma = (a) => a.reduce((x, y) => x + y, 0);
-    const repartoOk =
-      suma(r1) === 100e6 && r1.every((x) => x >= 10e6)
-      && suma(r2) === 25e6 && r2.filter((x) => x > 0).length === 2 && r2.every((x) => x === 0 || x >= 10e6)
-      && suma(r3) === 0                                          // no cabe ninguna: nada se asigna
-      && suma(r4) === 37e6 && r4.every((x) => x > 0)             // sin piso entran todas
-      // …y se queda con las de MAYOR peso: si alguien pierde su línea propia, que sea el que menos aporta
-      && r2[0] > 0 && r2[1] > 0 && r2[2] === 0 && r2[3] === 0;
+    // (c) EL PISO NO CREA CAPACIDAD, y su CONSECUENCIA tiene que verse: un piso por línea significa
+    //     MENOS líneas, no líneas más grandes, así que los deudores de menor volumen se quedan sin
+    //     línea propia y los financia el comodín. La función de reparto ya no vive acá —dimensionar
+    //     es del sistema de gestión de líneas, `GeneradorDatos/datasets/lineas_par.js`, y la prueban
+    //     sus casos en `tests/contract/lineas_activo.test.mjs`—: lo que la app puede comprobar es que
+    //     el activo que lee tiene esa forma. Sin esto, un maestro que le diera línea propia a TODOS
+    //     los deudores pasaría los controles de arriba y la línea de otros deudores no financiaría
+    //     nunca a nadie, que es el escenario entero de la regla 7.
+    let conCola = 0, paresConLinea = 0;
+    for (const rut of ruts) {
+      const st = lineasDeCliente(rut);
+      if (!st || st.estado !== "B") continue;
+      const propios = new Set(st.lineas.filter((l) => l.granularidad === "par").map((l) => l.rutDeudor));
+      const todos = (paresPorEmisor().get(rut) || []).length;
+      paresConLinea += propios.size;
+      if (todos > propios.size) conCola++;
+    }
+    const repartoOk = conCola > 100 && paresConLinea > 500;
 
     // (d) LA LÍNEA DEL DEUDOR también respeta el piso: es una línea aprobada como cualquier otra, y
     //     una bajo el mínimo bloquea al deudor entero en el nivel 3 de la regla de validación.
     const deu = [...lineasDeudor().values()];
     const deudorOk = deu.length > 400 && deu.every((d) => (d.aprobado || 0) >= MIN);
 
-    // (e) EL CACHE NO SE QUEDA CON EL DIMENSIONAMIENTO ANTERIOR. Es la trampa de la regla 9-bis:
-    //     `lineasDeCliente` memoiza por RUT y `lineasDeudor` no tenía invalidación ninguna, así que
-    //     mover el umbral en el mantenedor dejaba servidas las líneas viejas. Se valida por FIRMA.
+    // (e) EL UMBRAL ES DECLARATIVO Y MOVERLO NO RE-DIMENSIONA. Hasta el 20-09-2026 `lineasDeCliente`
+    //     fabricaba la estructura leyendo `lineaMinima` con `pol()`, así que mover el mantenedor
+    //     cambiaba las líneas y el riesgo era el cache (regla 9-bis). Dimensionar dejó de ser de NEX:
+    //     quién tiene línea con quién y de cuánto llega por el A23 y acá sólo se lee, así que la
+    //     perilla viaja en el contrato del tenant y la aplica el sistema de gestión de líneas — su
+    //     `hint` lo dice con todas las letras. Se prueba en las DOS direcciones: que la estructura NO
+    //     se mueva al tocarla, y que el lector siga devolviendo el MISMO objeto (es lo que deja puro a
+    //     `asignarLineas`; si cada llamada reconstruyera, el caso 122 dejaría de significar nada).
     const rutP = ruts.find((r) => lineasDeCliente(r).estado === "B");
-    const antes = lineasDeCliente(rutP).lineas.length;
+    const foto = (r) => JSON.stringify(lineasDeCliente(r).lineas);
+    const antes = foto(rutP);
     const antesDeu = lineaDeDeudor([...lineasDeudor().keys()][0]).aprobado;
+    const idAntes = lineasDeCliente(rutP);
     const cfgPrev = CFG_ACTIVA.lineaMinima;
-    CFG_ACTIVA.lineaMinima = 60e6;                               // sube el piso: tienen que caber MENOS líneas
-    const despues = lineasDeCliente(rutP).lineas.length;
+    CFG_ACTIVA.lineaMinima = 60e6;                               // sube el piso: el activo no se entera
+    const despues = foto(rutP);
     const despuesDeu = lineaDeDeudor([...lineasDeudor().keys()][0]).aprobado;
     CFG_ACTIVA.lineaMinima = cfgPrev;
-    const vuelta = lineasDeCliente(rutP).lineas.length;
-    const cacheOk = despues < antes && despuesDeu >= 60e6 && despuesDeu !== antesDeu && vuelta === antes;
+    const declarativoOk = despues === antes && despuesDeu === antesDeu && lineasDeCliente(rutP) === idAntes;
+    // Que el `hint` del mantenedor DIGA que es declarativo no se comprueba acá: es texto del fuente y
+    // lo gatea `tests/contract/regla_lineas_activo.test.mjs`. Afirmarlo desde la página sólo se podría
+    // hacer contra el propio fuente, que es un gate comparando un documento consigo mismo.
 
     ok("102 ninguna línea aprobada bajo el mínimo, salvo la PUNTUAL, y el tope del cliente manda",
-       pisoOk && exentaOk && topeOk && repartoOk && deudorOk && cacheOk,
-       `${clientes} clientes · ${nLineas} líneas · bajo el mínimo: ${bajo} (antes 372 de 3.521) · acotadas por su propio aprobado: ${acotadas} · LF3 exentas bajo el mínimo: ${lf3Bajo} de ${nLF3} (ejercitada ${exentaOk}) · exceden su aprobada: ${excede} · sin comodín: ${sinComodin} · uso que no cabe: ${usoNoCabe} · línea de deudor ≥ mínimo ${deudorOk} · reparto con piso ${repartoOk} · cache por firma ${cacheOk} (${antes}→${despues}→${vuelta} líneas al mover el umbral)`);
+       pisoOk && exentaOk && topeOk && repartoOk && deudorOk && declarativoOk,
+       `${clientes} clientes · ${nLineas} líneas · bajo el mínimo: ${bajo} (antes 372 de 3.521) · acotadas por su propio aprobado: ${acotadas} · LF3 exentas bajo el mínimo: ${lf3Bajo} de ${nLF3} (ejercitada ${exentaOk}) · exceden su aprobada: ${excede} · sin comodín: ${sinComodin} · uso que no cabe: ${usoNoCabe} · línea de deudor ≥ mínimo ${deudorOk} · pares con línea propia ${paresConLinea} y clientes con cola ${conCola} (reparto ${repartoOk}) · umbral declarativo: la estructura no se mueve al tocarlo ${declarativoOk}`);
   }
 
   // ── 103 · «FACTORING TARGET» ES POLÍTICA DEL TENANT, NO UN ATRIBUTO DEL CESIONARIO ──────────
@@ -3755,7 +3774,7 @@
     // Todo call site de `onReject(` del detalle lleva motivo, salvo que esté detrás de `otorgBloqueado(deal) ?`
     // —en la misma línea (botón Rechazar) o en la rama que abre unas líneas antes (`panelAcciones`)—: ahí
     // el motivo lo deriva `reject` del bloqueo firme. Se nombra cada uno por el rótulo de su botón.
-    // La ventana es de 12 líneas y no de 6 desde el formateo del fuente (ADR-0005): el `onClick` de ese
+    // La ventana es de 12 líneas y no de 6 desde el formateo del fuente (ADR-0006): el `onClick` de ese
     // botón pasó a ocupar cuatro líneas propias, así que la apertura de la rama quedó 9 líneas más arriba.
     const lineasF = fuente5.split("\n");
     const callSites = lineasF.map((l, i) => [i, l]).filter(([, l]) => /\bonReject\(deal\.id/.test(l));
@@ -3780,9 +3799,12 @@
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // ── NNN · REGLA 8 · OFERTA — PROXY. Las dos primeras cláusulas («cerrar» es prerequisito de publicar;
   //    el Agente IA es opcional) ya las fijan los casos 31 y 32 sobre `ofertaPublicada`. La tercera
-  //    («fuera de atribución si el cliente pide tasa bajo el mínimo del deudor») NO tiene predicado en el
-  //    fuente —lo documenta `sonda_clausula_cliente.js`, que queda en FALLA a propósito—. Este caso fija
-  //    lo que SÍ existe y de lo que esa cláusula depende:
+  //    («fuera de atribución si el cliente pide tasa bajo el mínimo del deudor») YA TIENE PREDICADO desde
+  //    el 19-09-2026 y la fija el caso 149: `evalAtribucion` recibe el piso del deudor y lo aplica. Este
+  //    caso sigue fijando los INSUMOS de esa cláusula, que es para lo que sirve, y el 149 el enlace entre
+  //    ellos. (Hasta esa fecha el comentario citaba una `sonda_clausula_cliente.js` «que queda en FALLA a
+  //    propósito»: ese archivo nunca se commiteó, vivía en el scratchpad de aquella sesión, así que la
+  //    referencia mandaba a leer algo que no existe.) Los insumos:
   //    (b) el MÍNIMO del deudor es `tasaMinIA` = `spreadMinDeudor` (piso de riesgo) + costo de fondo del
   //        TENANT; un deudor que la tabla no conoce tiene piso ≥ que todos los listados; y la contactabilidad
   //        viaja con ese piso (`spreadMinNeg`), que es la entrada que un predicado futuro tendría que leer;
@@ -3793,8 +3815,8 @@
   //        Se afirma sólo lo que las dos lecturas de la regla comparten: dentro de la banda Y sobre el mínimo
   //        → aprobado; bajo la banda (esté o no bajo el mínimo) → excepción; bajo el mínimo absoluto →
   //        excepción; sin simular → no se pronuncia (regla 14). La zona «dentro de la banda pero bajo el
-  //        mínimo del deudor» —que aparece cuando el sugerido queda topado— se MIDE y se informa, no se
-  //        fija (hallazgo 2: el piso del deudor hoy es techo del Agente, no del ejecutivo).
+  //        mínimo del deudor» —que aparece cuando el sugerido queda topado— este caso la MIDE y la informa;
+  //        quien la FIJA es el 149, desde que el piso del deudor dejó de ser techo sólo del Agente IA.
   {
     const guardado = { ...CFG_ACTIVA };
     const restaurar = () => aplicarCfgActiva(guardado);
@@ -3880,7 +3902,7 @@
         + puntos.map((x) => `${x.rot} ${x.tasa}%→${x.obt}${x.it && x.obt === "excepcion" ? " N" + x.it.nivel : ""}${x.obt === x.esp ? "" : "≠" + x.esp}`).join(" · ")
         + ` · [medición, no gate] ${zonaGris}`;
     } catch (err) { det = "ERROR " + String(err).slice(0, 300); }
-    finally { restaurar(); if (typeof _cacheCli !== "undefined") _cacheCli.clear(); }
+    finally { restaurar(); if (typeof invalidarCupo === "function") invalidarCupo(); }
     ok("119 oferta (proxy de la regla 8): el mínimo del deudor es su piso más el costo de fondo del tenant, y la escalera de atribución —en el panel y en O01 del motor— mide el descuento contra la referencia del deudor con los umbrales del tenant",
        pisoOk && escaleraOk && motorOk,
        `piso ${pisoOk} · escalera ${escaleraOk} · motor ${motorOk} · ${det}`);
@@ -4474,7 +4496,14 @@
       const mueveOk = quedaDe(det2.texto) === fmtMM(disp - m2) && quedaDe(det2.texto) !== quedaDe(det1.texto)
         && disponibleDe(det2.texto) === fmtMM(disp)
         && detX.texto.includes(`excede por ${fmtMM(mX - disp)}`) && !/queda /.test(detX.texto)
-        && detX.title.includes(`quedarían ${fmtMM(disp - mX)}`);
+        // EL TOOLTIP DICE LO MISMO Y CON LAS MISMAS PALABRAS QUE EL TEXTO (20-09-2026). Hasta ese día este
+        // caso exigía lo contrario —`quedarían ${fmtMM(disp - mX)}`, o sea «quedarían M$-X»— y fijaba una
+        // contradicción: al lado se leía «excede por M$X». El estado no se veía nunca porque ninguna
+        // operación del Directorio excedía su línea; lo destapó migrar al padrón real (ADR-0007), y lo
+        // cazó `e2e-13-terdecies` al no poder ni parsear el signo. Se exige en los DOS sentidos: cuando
+        // cabe, las dos formas dicen «queda/quedarían»; cuando no, las dos dicen «excede por».
+        && detX.title.includes(`excede por ${fmtMM(mX - disp)}`) && !/quedarían/.test(detX.title)
+        && det2.title.includes(`quedarían ${fmtMM(disp - m2)}`) && !/excede por/.test(det2.title);
 
       // (f) BORDES: sin línea en el índice → «Sin línea»; sin cupo (uso = aprobada) → «Sin cupo disponible»
       //     y sin «queda» aunque esté simulada. La fila se muta y se RESTAURA (el índice apunta al mismo objeto).
@@ -4743,8 +4772,10 @@
     const recibeOk = r1 === true && lista.length === n0 + 1 && mismo() && SOLIC_SEQ === seq0
       && api3EstadoProceso(idA) === "En gestión" && pre.length === 2 && pre.every((x) => x.idProceso === idA);
 
-    // (c) IDEMPOTENTE POR id: el mismo registro otra vez → false y UNA entrada; un clon con el mismo id
-    //     y otro contenido → tampoco entra ni pisa el que está.
+    // (c) IDEMPOTENTE: el mismo registro otra vez → false y UNA entrada; un clon con el mismo id que
+    //     cambia `pedido` y `cliente` pero NO el rut ni el detalle → tampoco entra ni pisa el que está.
+    //     Desde el 18-09-2026 el motivo es `mismaSolicitudComite` —mismo rut y mismo detalle, que es lo
+    //     que el comité aprueba línea a línea— y ya no «mismo id»: el id dejó de ser identidad.
     const r2 = recibirSolicitudLinea(viaje1);
     const viaje2 = clon(enCero); viaje2.pedido = 1; viaje2.cliente = "OTRO";
     const r3 = recibirSolicitudLinea(viaje2);
@@ -4756,23 +4787,28 @@
     const r4 = recibirSolicitudLinea(null), r5 = recibirSolicitudLinea({}), r6 = recibirSolicitudLinea({ ...clon(sol), idProceso: "" });
     const negOk = r4 === false && r5 === false && r6 === false && lista.length === n0 + 1 && mismo();
 
-    // (e) SONDA: un registro DISTINTO (otra operación) que llegue con un id ya visto se descarta como
-    //     duplicado. Es la regla tal como está escrita —idempotente por id— y también su borde: el id
-    //     sale de una secuencia POR PESTAÑA que arranca en 0 en cada documento, así que dos pestañas
-    //     de detalle producen el mismo «PRC-2601» y la segunda se pierde en silencio (se documenta en
-    //     hallazgos; acá sólo se mide).
+    // (e) COLISIÓN, que NO es un duplicado. Una operación DISTINTA que llega con un id ya visto entra
+    //     igual, con un id LIBRE que asigna el tubo y su procedencia en `idProcesoOrigen`. Hasta el
+    //     18-09-2026 se descartaba: el id sale de una secuencia POR PESTAÑA que arranca en 0 en cada
+    //     documento, así que dos pestañas de detalle proponen el mismo «PRC-2601» y la segunda petición
+    //     al comité se perdía EN SILENCIO —el ejecutivo la creía enviada y nadie iba a mirarla—. Este
+    //     caso medía ese defecto a propósito; ahora fija el arreglo, y (c) sigue cuidando la dirección
+    //     contraria: que arreglar esto no haya roto la idempotencia.
     const viaje3 = clon(enCero); viaje3.origen = { dealId: "OP-OTRA", negocio: null }; viaje3.rut = "76.000.000-0";
     const r7 = recibirSolicitudLinea(viaje3);
-    const sondaOk = r7 === false && cuenta(idA) === 1 && mismo() && lista[0].origen.dealId === "OP-15BB";
+    const reColis = lista.find((x) => x && x.origen && x.origen.dealId === "OP-OTRA");
+    const orig = lista.find((x) => x && x.idProceso === idA);
+    const sondaOk = r7 === true && cuenta(idA) === 1 && !!orig && huella(orig) === foto
+      && !!reColis && reColis.idProceso !== idA && reColis.idProcesoOrigen === idA && cuenta(reColis.idProceso) === 1;
 
-    // Se retira lo del caso —la solicitud y el señuelo— y se restaura la secuencia. La auditoría no.
-    quitar(idA); quitar(ID_SENUELO); SOLIC_SEQ = seq0;
+    // Se retira lo del caso —las dos solicitudes y el señuelo— y se restaura la secuencia. La auditoría no.
+    quitar(idA); if (reColis) quitar(reColis.idProceso); quitar(ID_SENUELO); SOLIC_SEQ = seq0;
     const auditN = AUDIT_LOG.length;
     const restauraOk = lista.length === nBase && cuenta(ID_SENUELO) === 0 && SOLIC_SEQ === seq0;
 
-    ok("126 la solicitud inyectada al cerrar la oferta cruza de pestaña: se incorpora el registro ya armado, una sola vez por idProceso",
+    ok("126 la solicitud inyectada al cerrar la oferta cruza de pestaña: se incorpora el registro ya armado, una sola vez por solicitud —y si el id viene tomado, el tubo le asigna uno libre en vez de perderla",
        emisorOk && aislOk && recibeOk && idemOk && negOk && sondaOk && restauraOk,
-       `con el señuelo ${ID_SENUELO} delante, el emisor postea SOLICITUDES_LINEA[0] = ${idA} ${emisorOk} · aislada de esta lista ${aislOk} · incorporada tal cual (mismo id y JSON, al frente, SOLIC_SEQ ${seq0}→${SOLIC_SEQ}) y visible para bandeja y wizard (${pre.length} deudores) ${recibeOk} · 2× el mismo registro y un clon con otro contenido ⇒ ${nIdem} entrada ${idemOk} · sin idProceso no escribe ${negOk} · otra operación con el mismo id se descarta ${sondaOk} · lista (${nBase}) y secuencia restauradas ${restauraOk} · AUDIT_LOG ${audit0}→${auditN} (+${audit1 - audit0} por api1Inyeccion, +${auditN - audit1} por el receptor; cadena append-only, no se restaura)`);
+       `con el señuelo ${ID_SENUELO} delante, el emisor postea SOLICITUDES_LINEA[0] = ${idA} ${emisorOk} · aislada de esta lista ${aislOk} · incorporada tal cual (mismo id y JSON, al frente, SOLIC_SEQ ${seq0}→${SOLIC_SEQ}) y visible para bandeja y wizard (${pre.length} deudores) ${recibeOk} · 2× el mismo registro y un clon con otro contenido ⇒ ${nIdem} entrada ${idemOk} · sin idProceso no escribe ${negOk} · otra operación con el mismo id entra con un id LIBRE (${reColis && reColis.idProcesoOrigen} → ${reColis && reColis.idProceso}) y el original queda intacto ${sondaOk} · lista (${nBase}) y secuencia restauradas ${restauraOk} · AUDIT_LOG ${audit0}→${auditN} (+${audit1 - audit0} por api1Inyeccion, +${auditN - audit1} por el receptor; cadena append-only, no se restaura)`);
   }
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -5005,7 +5041,15 @@
           for (const [, fs] of top) { for (const f of fs) { if (elegidas.length >= P.facturas) break; elegidas.push(f); } if (elegidas.length >= P.facturas) break; }
           const monto = elegidas.reduce((a, f) => a + (f.monto || 0), 0);
           const disponible = Math.max(0, Math.round((lin.aprobada || 0) - (lin.uso || 0)));
-          cands.push({ rut, facturas: elegidas, monto, disponible, parcial: monto > disponible });
+          // «un deudor de CUPO CERO»: sin línea de par viva y con el comodín del cliente sin nada
+          // disponible. Escrito acá desde la regla 31, igual que el resto de esta referencia: si la
+          // implementación y esta copia no coinciden, el caso lo dice.
+          const stL = lineasDeCliente(rut) || { lineas: [] };
+          const propias = new Set(stL.lineas.filter((l) => l.granularidad === "par" && !l.suspendida).map((l) => l.rutDeudor));
+          const capCmd = stL.lineas.filter((l) => l.granularidad === "comodin" && !l.suspendida)
+            .reduce((a, l) => a + Math.max(0, (l.aprobado || 0) - (l.vigente || 0)), 0);
+          const carencia = capCmd <= 0 && elegidas.some((f) => f.rutRecep && !propias.has(f.rutRecep));
+          cands.push({ rut, facturas: elegidas, monto, disponible, parcial: monto > disponible, carencia });
         }
         cands.sort((a, b) => a.rut.localeCompare(b.rut));                   // «desempate por RUT»
         const eleg = [];
@@ -5020,6 +5064,7 @@
             c.facturas = fs; c.monto = m; c.parcial = false; c.recortado = true; eleg.push(c);
           }
         }
+        cuota((c) => c.parcial && c.carencia, P.carencia);   // «las DOS parciales con un deudor sin cupo»
         cuota((c) => c.parcial, P.parciales);
         cuota(() => true, P.clientes);
         return eleg;
@@ -6723,6 +6768,515 @@
     ok("143 una regla excepcionable sin nadie que pueda firmar tampoco se ejecuta, y la causa dice en qué mantenedor se arregla",
        padronMandaOk && causasOk && koOk && todosLosTramosOk && motorOk && veredictoOk && catalogoOk,
        `el padrón manda ${padronMandaOk} (mismo criterio: con cargo se ejecuta, sin cargo no) · tres causas ${causasOk} (${gSinArea.causa} · ${gInexist.causa} · ${gPobre.causa}) · el knock out se ejecuta igual ${koOk} · mira todos los tramos ${todosLosTramosOk} · el motor lo respeta ${motorOk} · veredicto ${veredictoOk} («${mia && mia.motivo}» · estado «${vDespues && vDespues.estado}» = «${vAntes.estado}») · el catálogo real no tiene ninguna ${catalogoOk} (${malasReales.length} de ${REGLAS_CLIENTE.length})${err ? " · ERROR " + err : ""}`);
+  }
+
+  // ── 144 · LOS TRES CONTROLES QUE FIRMA OPERACIONES (regla 41) ─────────────────────────────────
+  // La aprobación de la integración al core es el último gesto antes de que salga el dinero. Antes acá
+  // sólo se miraba la huella (GIR-02) y se confiaba en que `etapaTrasFirma` no podía haber dejado pasar
+  // una operación con algo pendiente — pero esa foto es del día de la firma: un visado se puede
+  // REVERTIR, la verificación puede retirar una factura y el cupo se puede consumir en otro negocio.
+  // Se prueba en LAS DOS direcciones (una operación limpia integra; cada falta por separado bloquea),
+  // que es lo que pide un control: el caso VER-01 falló en ambas por mirar una sola.
+  {
+    const op = { id: "OP-CTRL-1", cliente: "Prueba Controles SpA", rutEmisor: "76.111.111-1", stage: "cesion", integracion: "pendiente",
+                 clienteAcepto: true, negocioNum: "N-CTRL-1", monto: 30e6,
+                 facturasOp: [{ id: "f1", folio: 9001, monto: 20e6, deudor: "Deudor Uno", rutRecep: "77.222.222-2" },
+                              { id: "f2", folio: 9002, monto: 10e6, deudor: "Deudor Uno", rutRecep: "77.222.222-2" }] };
+    // La asignación y la evidencia entran POR PARÁMETRO: así el caso no depende de las líneas del
+    // tenant ni de lo que el navegador tenga cacheado, y prueba el motor y no la pantalla.
+    const conLinea = { facturas: [{ id: "f1", folio: 9001, estado: "CON_LINEA" }, { id: "f2", folio: 9002, estado: "CON_LINEA" }] };
+    const sinLinea = { facturas: [{ id: "f1", folio: 9001, estado: "CON_LINEA" }, { id: "f2", folio: 9002, estado: "REQUIERE_COMITE" }] };
+    const huella = huellaOperacion(op);
+    const evidOk = { [op.id]: { via: "electronica", canonico: huella, hash: "x", por: "Prueba", fecha: "hoy" } };
+    // La verificación telefónica se da por hecha en la base (VER-01 se prueba aparte, más abajo): lo
+    // que este caso aísla es que CADA control bloquee por su cuenta.
+    const telHecha = { [op.id]: { f1: { por: "Camila Soto", fecha: "hoy" }, f2: { por: "Camila Soto", fecha: "hoy" } } };
+    const base = { visado: {}, linea: conLinea, evidencia: evidOk, tel: telHecha, vetadas: {}, veredicto: {} };
+    const vis = visadoDeal(op, base);
+    // (b) LIN-01 · una factura sin línea asignada bloquea aunque todo lo demás esté.
+    const conSinLinea = controlesIntegracion(op, { ...base, linea: sinLinea });
+    const sinAsignacion = controlesIntegracion(op, { ...base, linea: { facturas: [] } });
+    // (c) GIR-02 · el paquete cambió después de la firma.
+    const otraHuella = { [op.id]: { via: "electronica", canonico: huella + "|cambiado", hash: "y", por: "Prueba", fecha: "hoy" } };
+    const conHuellaMala = controlesIntegracion(op, { ...base, evidencia: otraHuella });
+    const sinEvidencia = controlesIntegracion(op, { ...base, evidencia: {} });
+    const cod = (r) => (r.faltas || []).map((x) => x.codigo);
+    // Cada falta trae su código Y su detalle: un botón apagado sin causa manda a adivinar por qué no
+    // sale la plata.
+    const detallan = [conSinLinea, sinAsignacion, conHuellaMala, sinEvidencia].every(
+      (r) => !r.ok && r.faltas.every((x) => x.codigo && x.detalle && x.detalle.length > 10));
+    const linOk = cod(conSinLinea).includes("LIN-01") && cod(sinAsignacion).includes("LIN-01")
+      && conSinLinea.sinLinea === 1 && /9002/.test(conSinLinea.faltas.find((x) => x.codigo === "LIN-01").detalle);
+    const girOk = cod(conHuellaMala).includes("GIR-02") && cod(sinEvidencia).includes("GIR-02")
+      && /volver a firmarla/.test(conHuellaMala.faltas.find((x) => x.codigo === "GIR-02").detalle)
+      && /O05/.test(sinEvidencia.faltas.find((x) => x.codigo === "GIR-02").detalle);
+    // Varias faltas a la vez se reportan TODAS, no la primera: quien las arregla necesita la lista.
+    const todas = controlesIntegracion(op, { ...base, linea: sinLinea, evidencia: {} });
+    const acumulaOk = !todas.ok && cod(todas).includes("LIN-01") && cod(todas).includes("GIR-02") && todas.faltas.length >= 2;
+    // Y la dirección positiva: con todo en regla, integra. Si la operación de prueba levanta
+    // excepciones propias del catálogo, se aprueban todas para aislar lo que este caso mide.
+    const visadoTodo = {};
+    vis.exc.forEach((x) => { visadoTodo[x.stKey] = "aprobado"; });
+    const limpiaReal = controlesIntegracion(op, { ...base, visado: visadoTodo });
+    const pasaOk = limpiaReal.ok && limpiaReal.faltas.length === 0 && limpiaReal.sinLinea === 0;
+    // OTG-02 en la otra dirección: se rechaza una excepción y la operación deja de poder integrarse.
+    const visadoRech = { ...visadoTodo };
+    if (vis.exc.length) visadoRech[vis.exc[0].stKey] = undefined;
+    const conPendiente = vis.exc.length ? controlesIntegracion(op, { ...base, visado: {} }) : { ok: false, faltas: [{ codigo: "OTG-02" }] };
+    const otgOk = !conPendiente.ok && cod(conPendiente).includes("OTG-02");
+    // VER-01 en las dos direcciones: sin la llamada registrada bloquea; con ella, deja de bloquear.
+    const sinLlamada = controlesIntegracion(op, { ...base, visado: visadoTodo, tel: {} });
+    const verOk = !sinLlamada.ok && cod(sinLlamada).includes("VER-01") && sinLlamada.pendVerif > 0 && limpiaReal.pendVerif === 0;
+
+    ok("144 la integración al core exige los tres controles: otorgamiento resuelto, verificación completa y cada factura con línea",
+       pasaOk && otgOk && verOk && linOk && girOk && acumulaOk && detallan,
+       `limpia integra ${pasaOk} (faltas ${cod(limpiaReal).join("+") || "ninguna"}) · OTG-02 bloquea ${otgOk} · VER-01 bloquea ${verOk} (pendientes ${sinLlamada.pendVerif}) · LIN-01 bloquea ${linOk} (sin línea ${conSinLinea.sinLinea}) · GIR-02 bloquea ${girOk} · acumula ${acumulaOk} (${cod(todas).join("+")}) · cada falta con detalle ${detallan}`);
+  }
+
+  // ── 145 · ATR-01 en el HANDLER (regla 24) ─────────────────────────────────────────────────────
+  // El caso 137 ya prueba que el VALIDADOR del contrato distingue bien; lo que nadie probaba es que
+  // alguien lo PREGUNTE antes de escribir. `autorizarJefe` marcaba `deal.condAutJefe = true` sin
+  // volver a comprobar quién autoriza: el único control era `puedeAutorizar`, que sólo decide si se
+  // DIBUJA el botón, y encima se alimenta de un prop (`esJefe`) que la pantalla recibe de su padre.
+  // Una sesión vieja, un rol revocado o un reemplazo vencido dejaban autorizar un descuento igual.
+  // `puedeAutorizarCondiciones(code, estado)` deriva el rol exigido del ESTADO de la atribución y la
+  // atribución del CÓDIGO (del padrón), no de un prop. Se prueba en las DOS direcciones: quien puede
+  // autoriza y quien no, no — un control que sólo se mira por un lado es el defecto de VER-01.
+  {
+    let R = null, err = "";
+    const rol0 = JSON.stringify(ROL_USUARIO);
+    try {
+      const existe = typeof puedeAutorizarCondiciones === "function";
+      // La escalera medida por el caso 137: JG es jefatura (comercial N1), GC y GG gerencia (N2/N3),
+      // CR ejecutivo sin atribución. Se leen del padrón, no de una lista escrita acá.
+      const jefatura = ["requiereJefe"], gerencia = ["requiereGerente"];
+      const puede = (c, e) => (existe ? puedeAutorizarCondiciones(c, e) : null);
+      // (a) LAS DOS DIRECCIONES sobre el tramo de JEFATURA: JG/GC/GG/ADMIN sí, CR no.
+      const jefeSi = jefatura.every((e) => puede("JG", e) && puede("GC", e) && puede("GG", e) && puede("ADMIN", e));
+      const jefeNo = jefatura.every((e) => puede("CR", e) === false);
+      // (b) El tramo de GERENCIA no lo alcanza la jefatura: JG no, GC/GG/ADMIN sí. Es la mitad que
+      //     `puedeAutorizar` perdía al reducirse a un booleano `esJefe` traído por prop.
+      const gerSi = gerencia.every((e) => puede("GC", e) && puede("GG", e) && puede("ADMIN", e));
+      const gerNo = gerencia.every((e) => puede("JG", e) === false && puede("CR", e) === false);
+      // (c) Lo que NADIE autoriza: `bajoMinimo` (la tasa mínima absoluta no es ofertable nunca) y el
+      //     estado `ok`, que no necesita autorización — autorizar lo que no lo pide deja evidencia falsa.
+      const nadie = ["bajoMinimo", "ok"].every((e) => ["CR", "JG", "GC", "GG", "ADMIN"].every((c) => puede(c, e) === false));
+      // (d) FALLA CERRADO: un código que el padrón no conoce, vacío o nulo no autoriza nada (caso 87).
+      const cerrado = ["NOEXISTE", "", null, undefined].every((c) => gerencia.concat(jefatura).every((e) => puede(c, e) === false));
+      // (e) SIGUE AL ROL, no a la foto: bajarle la atribución a JG le quita la autorización, y
+      //     devolvérsela se la devuelve. Sin esto, el predicado podría estar leyendo una lista fija.
+      let sigueAlRol = false;
+      if (existe) {
+        const antes = puede("JG", "requiereJefe");
+        ROL_USUARIO.JG = "ejec_comercial";
+        const durante = puede("JG", "requiereJefe");
+        ROL_USUARIO.JG = JSON.parse(rol0).JG;
+        sigueAlRol = antes === true && durante === false && puede("JG", "requiereJefe") === true;
+      }
+      R = { existe, jefeSi, jefeNo, gerSi, gerNo, nadie, cerrado, sigueAlRol };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    } finally {
+      const r = JSON.parse(rol0);
+      for (const k of Object.keys(ROL_USUARIO)) delete ROL_USUARIO[k];
+      Object.assign(ROL_USUARIO, r);
+    }
+    const Q = R || {};
+    ok("145 ATR-01 · quién autoriza un descuento se comprueba ANTES de escribir y sale del padrón, no de un prop: la jefatura no alcanza el tramo de gerencia, nadie autoriza bajo el mínimo, un código desconocido falla cerrado y el permiso sigue al rol",
+       !!R && Q.existe && Q.jefeSi && Q.jefeNo && Q.gerSi && Q.gerNo && Q.nadie && Q.cerrado && Q.sigueAlRol,
+       `predicado de nivel módulo ${Q.existe} · jefatura: JG/GC/GG/ADMIN autorizan ${Q.jefeSi} y CR no ${Q.jefeNo} · gerencia: GC/GG/ADMIN sí ${Q.gerSi}, JG y CR no ${Q.gerNo} · nadie autoriza «bajoMinimo» ni «ok» ${Q.nadie} · código desconocido falla cerrado ${Q.cerrado} · sigue al rol (quitar y devolver la atribución de JG) ${Q.sigueAlRol}${err ? " · ERROR " + err : ""}`);
+  }
+
+  // ── 146 · 15-bis-bis · EL ID LO ASIGNA EL TUBO, NO LA PESTAÑA ────────────────────────────────
+  // `SOLIC_SEQ` arranca en 0 en CADA documento y el detalle es pestaña propia, así que dos cierres en
+  // dos pestañas emitían el mismo `PRC-2601`. `recibirSolicitudLinea` deduplicaba por `idProceso` y
+  // descartaba la segunda EN SILENCIO: una petición al comité que el ejecutivo creyó haber enviado y
+  // que nadie iba a mirar nunca. El modelo correcto ya estaba escrito en el fuente —«el id lo asigna un
+  // sistema EXTERNO»—: la pestaña PROPONE y el tubo, que hospeda `SOLICITUDES_LINEA`, ASIGNA.
+  // Se prueban las dos direcciones, que es lo que separa este arreglo de romper la idempotencia:
+  // el MISMO registro dos veces sigue entrando UNA sola vez (caso 126), y dos registros DISTINTOS con
+  // el mismo id entran los dos, con ids distintos y sin perder el original.
+  {
+    let R = null, err = "";
+    const lista = api2ListarProcesos();
+    const n0 = lista.length, seq0 = SOLIC_SEQ;
+    const puestos = [];
+    try {
+      const armar = (rut, monto) => ({
+        idProceso: "PRC-COLISION", rut, cliente: "Cliente " + rut, tipo: "crear", ejecutivo: "CR",
+        totalPropuesto: monto, estado: "En gestión", refrescos: 0, ts: nowStamp(), tsEstado: nowStamp(),
+        detalle: [{ deudor: "Deudor " + rut, rutDeudor: rut, monto, tipoLinea: "puntual" }],
+      });
+      const a = armar("11111111-1", 1000000);
+      const b = armar("22222222-2", 2000000);           // MISMO id, contenido DISTINTO: es colisión, no duplicado
+      const aClon = JSON.parse(JSON.stringify(a));       // MISMO id y MISMO contenido: duplicado de verdad
+      const idsDe = () => lista.filter((x) => puestos.includes(x)).map((x) => x.idProceso);
+
+      const okA = recibirSolicitudLinea(a); puestos.push(lista[0]);
+      const okClon = recibirSolicitudLinea(aClon);       // no entra: idempotencia (caso 126)
+      const trasClon = lista.length;
+      const okB = recibirSolicitudLinea(b); if (lista[0] !== puestos[0]) puestos.push(lista[0]);
+
+      const ids = idsDe();
+      const idemOk = okA === true && okClon === false && trasClon === n0 + 1;
+      const colisionOk = okB === true && lista.length === n0 + 2 && ids.length === 2 && ids[0] !== ids[1];
+      // El original se conserva: entró con el id que propuso la pestaña, y el segundo trae su procedencia.
+      const regB = lista.find((x) => x && x.rut === "22222222-2");
+      const trazaOk = !!regB && regB.idProceso !== "PRC-COLISION" && regB.idProcesoOrigen === "PRC-COLISION";
+      // Y el id asignado es LIBRE: nadie más en la bandeja lo tiene.
+      const libreOk = !!regB && lista.filter((x) => x && x.idProceso === regB.idProceso).length === 1;
+      // Dirección negativa, que es la mitad que suele faltar: sin idProceso no se escribe nada.
+      const sinIdOk = recibirSolicitudLinea({ rut: "33333333-3" }) === false && recibirSolicitudLinea(null) === false;
+      // Y la secuencia del TUBO no vuelve a emitir un id que ya recibió.
+      const idEmitido = api1Inyeccion(armar("44444444-4", 3000000));
+      const reg4 = lista.find((x) => x && x.idProceso === idEmitido); if (reg4) puestos.push(reg4);
+      const emiteLibreOk = lista.filter((x) => x && x.idProceso === idEmitido).length === 1;
+      R = { idemOk, colisionOk, trazaOk, libreOk, sinIdOk, emiteLibreOk, ids, idB: regB && regB.idProceso, idEmitido };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    } finally {
+      for (let i = lista.length - 1; i >= 0; i--) if (puestos.includes(lista[i])) lista.splice(i, 1);
+      SOLIC_SEQ = seq0;
+    }
+    const Q = R || {};
+    ok("146 la solicitud al comité no se pierde por un id repetido: la pestaña PROPONE el idProceso y el tubo ASIGNA uno libre, el duplicado de verdad sigue entrando una sola vez y el original conserva su procedencia",
+       !!R && Q.idemOk && Q.colisionOk && Q.trazaOk && Q.libreOk && Q.sinIdOk && Q.emiteLibreOk && api2ListarProcesos().length === n0,
+       `idempotencia (mismo registro 2× ⇒ 1 entrada) ${Q.idemOk} · colisión (mismo id, contenido distinto ⇒ 2 entradas con ids distintos [${(Q.ids || []).join(", ")}]) ${Q.colisionOk} · procedencia (idProcesoOrigen «PRC-COLISION» → «${Q.idB}») ${Q.trazaOk} · el id asignado está libre ${Q.libreOk} · sin idProceso no escribe ${Q.sinIdOk} · el tubo no re-emite un id recibido (${Q.idEmitido}) ${Q.emiteLibreOk} · bandeja restaurada ${api2ListarProcesos().length === n0}${err ? " · ERROR " + err : ""}`);
+  }
+
+  // ── 147 · regla 37 · EL GIRO LLEGA COMO NOTICIA, NO SE FIJA DESDE ACÁ ────────────────────────
+  // NEX termina en la inyección a Tesorería; el desembolso ocurre allá. Así que «Girada» no es algo
+  // que este sistema DECIDA: es un aviso que LLEGA. Hasta el 19-09-2026 nadie escribía
+  // `giroPendiente: false` —todas las escrituras eran `true`—, o sea que una operación inyectada se
+  // quedaba en «Pendiente de Giro» para siempre. El callback de Tesorería es quien la cierra.
+  // Se prueba en las DOS direcciones, que es lo que separa un receptor de un setter: el aviso bueno
+  // cierra la operación, y el que no corresponde —otra etapa, ya girada, sin id— no escribe nada.
+  {
+    let R = null, err = "";
+    try {
+      const base = (extra) => ({ id: "OP-GIRO-1", cliente: "Cliente Giro", stage: "giro", giroPendiente: true, ...extra });
+      const existe = typeof recibirGiroTesoreria === "function";
+      const r = (ev, deal) => (existe ? recibirGiroTesoreria(ev, deal) : null);
+      const EV = { operacionId: "OP-GIRO-1", montoGirado: 12345678, referencia: "TES-9001", ts: "19-09-2026 10:00" };
+
+      // (a) El aviso bueno CIERRA: devuelve el patch que apaga `giroPendiente` y deja la referencia.
+      const ok = r(EV, base());
+      const cierraOk = !!ok && ok.ok === true && ok.patch && ok.patch.giroPendiente === false
+        && ok.patch.giroRef === "TES-9001" && !!ok.patch.giroTs && /Girada/.test(ok.patch.status || "");
+
+      // (b) IDEMPOTENTE: el mismo aviso sobre una operación YA girada no vuelve a escribir. Un callback
+      //     se reintenta —es la naturaleza de un push— y reprocesarlo duplicaría el hecho en la bitácora.
+      const dup = r(EV, base({ giroPendiente: false }));
+      const idemOk = !!dup && dup.ok === false && dup.motivo === "ya_girada" && !dup.patch;
+
+      // (c) NO CORRESPONDE: una operación que no está en `giro` (no se inyectó) no se puede girar, y el
+      //     receptor lo dice en vez de escribir igual. Es la dirección que convierte esto en un control.
+      const fuera = r(EV, base({ stage: "cesion" }));
+      const etapaOk = !!fuera && fuera.ok === false && fuera.motivo === "no_inyectada" && !fuera.patch;
+
+      // (d) FALLA CERRADO con un aviso mal formado o sin operación: no hay con qué decidir.
+      const malos = [r(null, base()), r({}, base()), r(EV, null), r({ montoGirado: 1 }, base())];
+      const cerradoOk = malos.every((x) => x && x.ok === false && !x.patch);
+
+      // (e) El aviso trae el MONTO girado y el receptor no lo inventa: si no viene, no se afirma.
+      const sinMonto = r({ operacionId: "OP-GIRO-1", referencia: "TES-9002" }, base());
+      const montoOk = !!sinMonto && sinMonto.ok === true && sinMonto.patch.giroMonto == null;
+
+      R = { existe, cierraOk, idemOk, etapaOk, cerradoOk, montoOk, motivos: [dup && dup.motivo, fuera && fuera.motivo] };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    }
+    const Q = R || {};
+    ok("147 el giro llega como NOTICIA de Tesorería y no se fija desde NEX: el aviso cierra la operación, el reintento no la reescribe, una que no se inyectó no se gira y un aviso mal formado falla cerrado",
+       !!R && Q.existe && Q.cierraOk && Q.idemOk && Q.etapaOk && Q.cerradoOk && Q.montoOk,
+       `receptor de nivel módulo ${Q.existe} · el aviso cierra (giroPendiente→false, referencia y fecha) ${Q.cierraOk} · reintento sobre una ya girada no reescribe ${Q.idemOk} · una que no se inyectó no se gira ${Q.etapaOk} · aviso mal formado o sin operación falla cerrado ${Q.cerradoOk} · el monto no se inventa si no viene ${Q.montoOk} · motivos [${(Q.motivos || []).join(", ")}]${err ? " · ERROR " + err : ""}`);
+  }
+
+  // ── 148 · regla 37 · LA ASIGNACIÓN DE GIROS SE CONGELA EN LA INYECCIÓN ───────────────────────
+  // El paquete que vale es el que se ENTREGA: desde que Operaciones aprueba la integración, la
+  // asignación que viaja a Tesorería es la que se inyectó. Recalcularla movería una cifra que el otro
+  // sistema ya tomó, y la pantalla mostraría algo distinto de lo que se giró.
+  // `giroDeal` ya sabía leer el congelado desde siempre —«el congelado gana»— pero NADIE lo llamaba y
+  // `GIRO_STATE` no tenía escritor: la regla estaba probada con estado inyectado y no ocurría en
+  // ninguna pantalla. Lo que dibuja es `giroResumenDeal`, que recalculaba siempre.
+  {
+    let R = null, err = "";
+    try {
+      // Un deal mínimo basta: lo que se prueba es el CORTOCIRCUITO del congelado, que ocurre antes de
+      // cualquier cálculo. Con un deal rico la aserción diría lo mismo y dependería del activo.
+      const deal = { id: "OP-GIRO-CONG", cliente: "Cliente congelado", stage: "giro", facturasOp: [] };
+      const hayHelper = typeof giroCongelado === "function";
+      // (a) Sin congelar: ninguno de los dos se declara congelado y el helper devuelve null.
+      const vivo = giroDeal(deal, {});
+      const vivoOk = !!vivo && vivo.congelado === false && hayHelper && giroCongelado(deal, {}) === null;
+      // (b) Con un congelado INYECTADO que contradice al cálculo: gana el congelado, en los DOS
+      //     lectores. Se planta una cifra imposible a propósito — si el lector recalcula, no aparece.
+      const plantado = { montoGirar: 777777, tipos: [], porTipo: {}, porDeudor: {}, filas: [], asignado: 777777, cuadra: true, descuadre: 0, ts: "x", por: "OP" };
+      const est = { giro: { [deal.id]: plantado } };
+      const cLista = giroResumenDeal(deal, est);
+      const cDeal = giroDeal(deal, est);
+      const ganaOk = !!cLista && cLista.montoGirar === 777777 && cLista.congelado === true
+        && !!cDeal && cDeal.montoGirar === 777777 && cDeal.congelado === true;
+      // `giroResumenDeal` sin congelado y con un deal vacío no tiene nada que repartir: devuelve null y
+      // NO se inventa un giro. Es la otra mitad de (a), y la que distingue «no hay» de «cero».
+      const vacioOk = giroResumenDeal(deal, {}) === null;
+      // (c) El helper es la ÚNICA fuente del congelado: devuelve lo plantado tal cual, y null para otro id.
+      const helperOk = hayHelper && giroCongelado(deal, est) === plantado && giroCongelado({ id: "NO-EXISTE" }, est) === null;
+      // (d) Y no ensucia: consultar el congelado de una operación no escribe nada en el repositorio real.
+      const limpioOk = Object.keys(GIRO_STATE || {}).length === 0 || !(deal.id in (GIRO_STATE || {}));
+      R = { hayHelper, vivoOk, ganaOk, helperOk, limpioOk, vacioOk };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    }
+    const Q = R || {};
+    ok("148 la asignación de giros congelada en la inyección gana sobre el recálculo, y la leen los DOS lectores por la misma fuente",
+       !!R && Q.hayHelper && Q.vivoOk && Q.ganaOk && Q.helperOk && Q.limpioOk && Q.vacioOk,
+       `helper \`giroCongelado\` de nivel módulo ${Q.hayHelper} · sin congelar ninguno se declara congelado ${Q.vivoOk} · un deal sin nada que repartir da null y no inventa un giro ${Q.vacioOk} · con un congelado plantado gana en giroResumenDeal Y en giroDeal ${Q.ganaOk} · el helper es la única fuente y devuelve null para otro id ${Q.helperOk} · consultar no escribe ${Q.limpioOk}${err ? " · ERROR " + err : ""}`);
+  }
+
+  // ── 149 · regla 8 · LA TASA SIMULADA SE VALIDA CONTRA EL MÍNIMO DEL DEUDOR ───────────────────
+  // «Fuera de atribución si el cliente pide tasa bajo el mínimo del deudor» (regla 8, tercera cláusula).
+  // El caso 119 la declaraba SIN PREDICADO y fijaba sólo sus insumos: el mínimo (`tasaMinIA`) y la escalera
+  // (`evalAtribucion`), cada uno por su lado. El hueco era que la escalera no MIRABA el mínimo: su único piso
+  // era `tasaMinAbsoluta`, un umbral global. Medido sobre los pisos reales —todos entre 0,86 % y 1,18 %, y
+  // todos POR ENCIMA de la absoluta de 0,78 %—: de 30.637 pares (tasa original, tasa simulada) bajo el piso
+  // del deudor, 1.940 salían «ok», o sea el ejecutivo cerraba solo bajo el piso de riesgo que la regla 9
+  // declara no negociable. El resto escalaba, pero por el % de descuento y no por el piso.
+  // La validación ocurre AL SIMULAR (decisión del usuario, 19-09-2026): la tasa es una condición que el
+  // ejecutivo edita en el panel del detalle y la escalera se evalúa ahí.
+  {
+    const guardado = { ...CFG_ACTIVA };
+    const restaurar = () => aplicarCfgActiva(guardado);
+    let R = null, err = "";
+    try {
+      // Tenant INYECTADO para que el piso sea aritmética y no el default: el piso de Cencosud más un costo
+      // de fondo de 0,58. La absoluta baja a 0,50 para AISLAR la cláusula nueva — con el default (0,78) una
+      // tasa de 0,49 saldría «bajoMinimo» por el otro piso y el caso no probaría nada.
+      aplicarCfgActiva({ ...guardado, costoFondo: 0.58, descEjec: 10, descMax: 16, tasaMinAbsoluta: 0.5 });
+      const piso = tasaMinIA("Cencosud"); // spreadMinDeudor + costo de fondo
+      const est = (o, n, esTasa, p) => evalAtribucion(o, n, o, esTasa, p).estado;
+      // (a) EL HUECO MEDIDO: 0,96 → 0,89 es un descuento de 7,3 %, dentro de la atribución del ejecutivo…
+      //     pero 0,89 está bajo el piso de 0,90. Con el piso, fuera de atribución.
+      const hueco = evalAtribucion(0.96, 0.89, 0.96, true, piso);
+      const huecoOk = hueco.estado === "requiereGerente";
+      // (g) El veredicto DICE por qué: la pantalla tiene que explicarlo, no sólo apagar el botón (regla 24),
+      //     y «requiere gerente» por descuento y por perforar el piso no son la misma noticia.
+      const diceOk = hueco.bajoPisoDeudor === true && hueco.pisoDeudor === piso;
+      // (b) EL ABSOLUTO SIGUE GANANDO. Bajo los dos pisos el veredicto es el duro, no el escalable: uno se
+      //     autoriza hacia arriba y el otro no se autoriza nunca.
+      const absOk = est(0.96, 0.49, true, piso) === "bajoMinimo";
+      // (c) EL PISO ES ESTRICTO (<). Justo EN el piso se puede ofertar: es el mínimo, no el primer valor vetado.
+      const bordeOk = est(0.96, piso, true, piso) === "ok";
+      // (d) COMPATIBILIDAD: sin el piso —las llamadas de cuatro argumentos que ya existen— la conducta es
+      //     exactamente la de hoy. Un parámetro nuevo que cambia lo que ya andaba no es compatible, es otro bug.
+      const viejoOk = est(0.96, 0.89, true) === "ok" && est(0.96, 0.89, true, 0) === "ok";
+      // (e) SÓLO LA TASA. La comisión no tiene piso de deudor: el piso es de riesgo de crédito, no de precio.
+      const comOk = est(0.96, 0.89, false, piso) === "ok";
+      // (f) SUBIR NUNCA ES LA CLÁUSULA. El cliente que paga MÁS que el piso no está fuera de atribución.
+      const subeOk = est(0.96, 1.2, true, piso) === "ok";
+      // (h) EL PISO SIGUE AL TENANT, no a una constante: con otro costo de fondo la MISMA tasa cambia de
+      //     veredicto. Es lo que distingue leer el mínimo del deudor de haber cableado un número.
+      aplicarCfgActiva({ ...guardado, costoFondo: 1.23, descEjec: 10, descMax: 16, tasaMinAbsoluta: 0.5 });
+      const pisoAlto = tasaMinIA("Cencosud");
+      // El valor se DERIVA de la tabla, no se cablea: un literal acá se desfasa el día que cambie el piso
+      // del deudor y el caso pasaría a probar el literal en vez de la regla (pasó al escribirlo).
+      const tenantOk = pisoAlto === +(spreadMinDeudor("Cencosud") + 1.23).toFixed(2) && pisoAlto > piso
+        && est(1.6, 1.5, true, pisoAlto) === "requiereGerente" && est(1.6, 1.5, true, piso) === "ok";
+      restaurar();
+      aplicarCfgActiva({ ...guardado, costoFondo: 0.58, descEjec: 10, descMax: 16, tasaMinAbsoluta: 0.5 });
+      // (i) EL PISO DE LA OPERACIÓN ES EL MÁS EXIGENTE DE SUS DEUDORES, no el promedio ni el primero. Una
+      //     oferta cubre varias facturas: si se promediara, una tasa que perfora el piso del deudor más
+      //     riesgoso pasaría por quedar sobre el promedio — que es exactamente el caso que la regla cubre.
+      const baratos = Object.keys(SPREAD_MIN_DEUDOR).sort((a, b) => SPREAD_MIN_DEUDOR[a] - SPREAD_MIN_DEUDOR[b]);
+      const barato = baratos[0], caro = baratos[baratos.length - 1];
+      const facs = [{ deudor: barato, monto: 1 }, { deudor: caro, monto: 1 }];
+      const pOp = pisoTasaOperacion({ deudor: barato }, facs);
+      const promedio = +((tasaMinIA(barato) + tasaMinIA(caro)) / 2).toFixed(2);
+      const maxOk = tasaMinIA(caro) > tasaMinIA(barato) && pOp === tasaMinIA(caro) && pOp !== promedio;
+      // (j) SIN FACTURAS cae al deudor del deal, y (k) sin nada devuelve 0 — que es «sin piso», el mismo
+      //     valor que (d) usa para pedir la conducta vieja. Un piso inventado acá vetaría operaciones reales.
+      const caidaOk = pisoTasaOperacion({ deudor: caro }, []) === tasaMinIA(caro)
+        && pisoTasaOperacion({ deudor: caro }, null) === tasaMinIA(caro)
+        && pisoTasaOperacion({}, []) === 0 && pisoTasaOperacion(null, null) === 0;
+      // Y el piso de la operación entra en la escalera igual que el de un deudor suelto.
+      const enEscaleraOk = evalAtribucion(pOp + 0.1, pOp - 0.01, pOp + 0.1, true, pOp).bajoPisoDeudor === true;
+      restaurar();
+      R = { huecoOk, diceOk, absOk, bordeOk, viejoOk, comOk, subeOk, tenantOk, maxOk, caidaOk, enEscaleraOk, piso, pisoAlto, pOp, promedio };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    }
+    restaurar();
+    const Q = R || {};
+    ok("149 la tasa simulada se valida contra el mínimo DEL DEUDOR: bajo su piso de riesgo queda fuera de atribución, y el mínimo absoluto sigue ganando",
+       !!R && Q.huecoOk && Q.diceOk && Q.absOk && Q.bordeOk && Q.viejoOk && Q.comOk && Q.subeOk && Q.tenantOk && Q.maxOk && Q.caidaOk && Q.enEscaleraOk,
+       `bajo el piso del deudor (0,89 < ${Q.piso}) sale de atribución ${Q.huecoOk} · el veredicto dice por qué ${Q.diceOk} · bajo el ABSOLUTO gana el bloqueo duro ${Q.absOk} · justo en el piso se puede ofertar ${Q.bordeOk} · sin piso la conducta vieja intacta ${Q.viejoOk} · la comisión no tiene piso de deudor ${Q.comOk} · subir la tasa no es la cláusula ${Q.subeOk} · el piso sigue al costo de fondo del tenant (${Q.piso} → ${Q.pisoAlto}) ${Q.tenantOk} · el piso de la OPERACIÓN es el deudor más exigente y no el promedio (${Q.pOp} ≠ ${Q.promedio}) ${Q.maxOk} · sin facturas cae al deudor del deal y sin nada da 0 ${Q.caidaOk} · y entra en la escalera ${Q.enEscaleraOk}${err ? " · ERROR " + err : ""}`);
+  }
+
+  // ── 150 · EL COMITÉ CIERRA EL BUCLE: LA LÍNEA QUE APRUEBA LA USA LA ASIGNACIÓN SIGUIENTE ─────
+  // Pedido del usuario, 20-09-2026: «si al momento de ir al comité un deudor sin línea LF2-LF3, el
+  // comité le asigna una LF3, ahora al momento de ejecutar el proceso de asignación se le asignará
+  // esa LF3 y no la LF4, porque ahora ya está reconocido como una relación con línea asignada en el
+  // sistema de líneas; aunque la línea sea puntual».
+  //
+  // Esto NO podía ocurrir hasta hoy, y no por un defecto puntual: `constituirLinea` descartaba
+  // `sol.detalle` entero —el deudor, el monto y el tipo que el comité aprueba línea a línea— porque
+  // las líneas por par no vivían en ninguna parte, se re-sorteaban en cada lectura. Con la estructura
+  // como activo (A23) el detalle tiene dónde ir.
+  //
+  // SE PRUEBA EN LAS DOS DIRECCIONES, que es lo que `testing.md` exige de un control que abre una
+  // puerta: ANTES el deudor se financia por el comodín (o no se financia), DESPUÉS por su línea
+  // propia. Sin la primera mitad, «usa la LF3» se cumpliría también si la hubiera usado desde siempre.
+  {
+    let R = null, err = "";
+    const ID = "TEST-COMITE-150";
+    try {
+      // Un cliente en estado B con un deudor en la COLA: factura, y el comité no le ha dado línea.
+      const libro = libroPorEmisor();
+      let rutCli = null, deuCola = null, facs = [];
+      for (const l of LINEAS_DATA) {
+        const st = lineasDeCliente(l.rut);
+        if (!st || st.estado !== "B") continue;
+        const conLinea = new Set(st.lineas.filter((x) => x.granularidad === "par").map((x) => x.rutDeudor));
+        const f = (libro.get(l.rut) || []).filter((x) => x.credito && !x.reclamada && !x.notaCredito && x.monto > 0 && !conLinea.has(x.rutRecep));
+        if (!f.length) continue;
+        rutCli = l.rut; deuCola = f[0].rutRecep; facs = f.filter((x) => x.rutRecep === deuCola).slice(0, 2);
+        break;
+      }
+      if (!rutCli) throw new Error("sin cliente en estado B con un deudor fuera de sus líneas de par");
+
+      const origenDe = (r) => r.facturas.filter((f) => f.rutDeudor === deuCola).flatMap((f) => (f.origen || []).map((o) => o.lineaId));
+      const antes = asignarLineas(facs, rutCli);
+      const origAntes = origenDe(antes);
+      // ANTES: o lo financia un comodín (LF1/LF4) o no lo financia nadie. Lo que NO puede es venir de
+      // una línea de par, porque no tiene.
+      const antesOk = origAntes.every((id) => !/^LF[23]-/.test(id));
+      const sinPropiaOk = !lineasDeCliente(rutCli).lineas.some((x) => x.granularidad === "par" && x.rutDeudor === deuCola);
+
+      // El comité aprueba una PUNTUAL por el monto que no cabía.
+      const monto = mmRound(facs.reduce((a, f) => a + f.monto, 0));
+      const nEscritas = constituirLineasDeDetalle({
+        rut: rutCli, idProceso: ID, ejecutivo: "Suite 150",
+        propFactoring: mmRound(lineasDeCliente(rutCli).asignadaCliente + monto),
+        detalle: [{ deudor: facs[0].deudor || "", rutDeudor: deuCola, monto, tipoLinea: "puntual" }],
+      });
+
+      // DESPUÉS: el par tiene línea propia, es una LF3, y la asignación la usa.
+      const st2 = lineasDeCliente(rutCli);
+      const nueva = st2.lineas.find((x) => x.granularidad === "par" && x.rutDeudor === deuCola);
+      const constituidaOk = nEscritas === 1 && !!nueva && nueva.tipo === "LF3" && nueva.aprobado === monto && nueva.unSoloUso === true;
+      const despues = asignarLineas(facs, rutCli);
+      const origDespues = origenDe(despues);
+      const usaLF3Ok = origDespues.length > 0 && origDespues.every((id) => id === nueva.id);
+      // …y el techo del CLIENTE sube con ella: si el nivel 1 se quedara en la foto vieja, bloquearía
+      // justo lo que el comité acaba de aprobar y el bucle seguiría abierto un nivel más arriba.
+      const techoOk = st2.asignadaCliente >= lineasDeCliente(rutCli).lineas.reduce((a, x) => a + x.aprobado, 0) - monto;
+      // Idempotente: el mismo `idProceso` no constituye dos veces (API 3 se consulta en cada refresco).
+      const idemOk = constituirLineasDeDetalle({ rut: rutCli, idProceso: ID, detalle: [{ rutDeudor: deuCola, monto, tipoLinea: "puntual" }] }) === 0;
+
+      R = { antesOk, sinPropiaOk, constituidaOk, usaLF3Ok, techoOk, idemOk, rutCli, deuCola, monto, nid: nueva ? nueva.id : "—",
+            oA: origAntes.join("|") || "ninguna", oD: origDespues.join("|") || "ninguna" };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    }
+    // Se deshace SIEMPRE: el repositorio es storage y sobrevive a la corrida.
+    try { repoLineaComite.del(ID); } catch (_) { /* el repo puede no tenerlo */ }
+    invalidarCupo();
+    const Q = R || {};
+    ok("150 la línea que el comité constituye la usa la asignación siguiente: el deudor sin LF2/LF3 deja de ir al comodín y pasa a su puntual",
+       !!R && Q.antesOk && Q.sinPropiaOk && Q.constituidaOk && Q.usaLF3Ok && Q.techoOk && Q.idemOk,
+       `cliente ${Q.rutCli} · deudor ${Q.deuCola} sin línea propia ${Q.sinPropiaOk} · antes se financia por ${Q.oA} (ninguna de par ${Q.antesOk}) · el comité aprueba una puntual de ${Q.monto} y queda constituida ${Q.constituidaOk} (${Q.nid}) · después se financia por ${Q.oD} ${Q.usaLF3Ok} · el techo del cliente la cubre ${Q.techoOk} · el mismo idProceso no constituye dos veces ${Q.idemOk}${err ? " · ERROR " + err : ""}`);
+  }
+
+  // ── 151 · EL NIVEL 1 ES EL CONSOLIDADO Y EL DEUDOR DEL COMITÉ ES UN RUT REAL ─────────────────
+  // Definición del usuario, 20-09-2026: «el sistema debiera trabajar con lineas al rut cliente (que
+  // es un monto global de la suma de las lineas asignadas al cliente ya sea por par (puntual o
+  // normal) o al rut cliente con los otros deudores (comodin)). Si los datos no vienen asi estamos
+  // mal». Estaban mal: la cabecera superaba a la suma en **217 de 224** clientes, con una brecha
+  // mediana del 13,7% y $36.024.682.300 de cupo que ninguna línea podía ejercer (regla 45).
+  //
+  // Y la primera pantalla del wizard —«buscas empresas deudoras y le asignas un monto puntual o
+  // normal»— construía la fila del deudor con un RUT INVENTADO: 92% con dígito verificador inválido
+  // y 100% desconocidos para el sistema, así que la línea que el comité otorgaba caía sobre un par
+  // inexistente y el deudor seguía yendo al comodín (regla 46).
+  {
+    let R = null, err = "";
+    const ID = "TEST-COMITE-151";
+    try {
+      // (a) LA CABECERA ES LA SUMA, en los tres estados y como la lee la APP (no el archivo).
+      const ruts = [...new Set(LINEAS_DATA.map((l) => l.rut))];
+      let malAprob = 0, malUso = 0, revisados = 0, conLineas = 0;
+      for (const rut of ruts) {
+        const st = lineasDeCliente(rut);
+        if (!st) continue;
+        revisados++;
+        if (st.lineas.length) conLineas++;
+        if (st.asignadaCliente !== st.lineas.reduce((a, l) => a + l.aprobado, 0)) malAprob++;
+        if (st.usoCliente !== st.lineas.reduce((a, l) => a + l.vigente, 0)) malUso++;
+      }
+      const consolidadoOk = revisados > 200 && conLineas > 200 && malAprob === 0 && malUso === 0;
+
+      // (b) EL RUT DEL DEUDOR ES REAL: se resuelve, tiene dígito verificador válido y el sistema lo
+      //     conoce. Se mide sobre TODO el universo que el wizard ofrece, no sobre una muestra.
+      const dvDe = (n) => { let s = 0, m = 2; for (const c of String(n).split("").reverse()) { s += +c * m; m = m === 7 ? 2 : m + 1; } const r = 11 - (s % 11); return r === 11 ? "0" : r === 10 ? "K" : String(r); };
+      const dvOk = (r) => { const [c, d] = String(r).replace(/\./g, "").split("-"); return !!d && dvDe(c) === d.toUpperCase(); };
+      const universo = [...deudoresConocidos().keys()];
+      let sinRut = 0, dvMalo = 0, personaNatural = 0;
+      for (const n of universo) {
+        const r = rutDeDeudorPorNombre(n);
+        if (!r) { sinRut++; continue; }
+        if (!dvOk(r)) dvMalo++;
+        if (+String(r).replace(/\./g, "").split("-")[0] < 50000000) personaNatural++;
+      }
+      const rutOk = universo.length > 700 && sinRut === 0 && dvMalo === 0 && personaNatural === 0;
+      // …y un nombre que el sistema NO conoce devuelve vacío, no un RUT armado: es lo que impide que
+      // aguas abajo se cree un par fantasma.
+      const cerradoOk = rutDeDeudorPorNombre("EMPRESA QUE NO EXISTE SPA") === "";
+
+      // (c) LOS CANDIDATOS SON LOS DEUDORES DEL CLIENTE, y son los suyos de verdad.
+      const rutCli = LINEAS_DATA.map((l) => l.rut).find((r) => (paresPorEmisor().get(r) || []).length >= 3);
+      const propios = deudoresDelCliente(rutCli);
+      const realesDelCliente = new Set((paresPorEmisor().get(rutCli) || []).map((d) => d.nombre));
+      const propiosOk = propios.length >= 3 && propios.every((n) => realesDelCliente.has(n))
+        && propios[0] === (paresPorEmisor().get(rutCli) || [])[0].nombre;  // ordenados por volumen
+
+      // (d) LA MARCA. Lo que el comité constituye queda distinguible, y la cabecera SIGUE siendo la
+      //     suma después de constituir — incluido el excedente del techo, que va al comodín.
+      const deuNuevo = (paresPorEmisor().get(rutCli) || [])
+        .map((d) => d.rut)
+        .find((r) => !lineasDeCliente(rutCli).lineas.some((x) => x.granularidad === "par" && x.rutDeudor === r));
+      if (!deuNuevo) throw new Error("el cliente elegido ya tiene línea de par con todos sus deudores");
+      const antesCab = lineasDeCliente(rutCli).asignadaCliente;
+      const MONTO = 40e6, EXCEDENTE = 15e6;
+      constituirLineasDeDetalle({
+        rut: rutCli, idProceso: ID, ejecutivo: "Suite 151",
+        propFactoring: antesCab + MONTO + EXCEDENTE,
+        detalle: [{ deudor: "X", rutDeudor: deuNuevo, monto: MONTO, tipoLinea: "puntual" }],
+      });
+      const st2 = lineasDeCliente(rutCli);
+      const nueva = st2.lineas.find((x) => x.rutDeudor === deuNuevo && x.granularidad === "par");
+      const marcaOk = !!nueva && nueva.origen === "comite" && nueva.idProceso === ID
+        && st2.lineas.filter((x) => x.origen === "comite").length >= 1
+        // …y el resto del cliente NO queda marcado: una marca que se pone en todo no distingue nada.
+        && st2.lineas.some((x) => !x.origen);
+      const sumaDespues = st2.lineas.reduce((a, l) => a + l.aprobado, 0);
+      const cuadraOk = st2.asignadaCliente === sumaDespues && sumaDespues === antesCab + MONTO + EXCEDENTE;
+      // El excedente del techo sobre el detalle por par va al COMODÍN, que es el nivel que financia a
+      // los otros deudores: es lo que hace que la cabecera siga siendo una suma y no un número suelto.
+      const comodines = st2.lineas.filter((x) => x.granularidad === "comodin");
+      const excedenteOk = comodines.some((c) => c.origen === "comite");
+
+      R = { consolidadoOk, rutOk, cerradoOk, propiosOk, marcaOk, cuadraOk, excedenteOk,
+            revisados, malAprob, malUso, universo: universo.length, sinRut, dvMalo, personaNatural,
+            rutCli, nPropios: propios.length, deuNuevo, antesCab, sumaDespues };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    }
+    try { repoLineaComite.del(ID); } catch (_) { /* puede no existir */ }
+    invalidarCupo();
+    const Q = R || {};
+    ok("151 la línea del cliente ES la suma de sus líneas, y el deudor al que el comité le asigna una es un RUT real del sistema",
+       !!R && Q.consolidadoOk && Q.rutOk && Q.cerradoOk && Q.propiosOk && Q.marcaOk && Q.cuadraOk && Q.excedenteOk,
+       `consolidado: ${Q.revisados} clientes, cabecera ≠ Σ aprobado ${Q.malAprob}, ≠ Σ vigente ${Q.malUso} (antes 217 de 224 descuadraban) ${Q.consolidadoOk} · universo de deudores ${Q.universo}: sin RUT ${Q.sinRut}, DV inválido ${Q.dvMalo} (antes 92%), en rango de persona natural ${Q.personaNatural} ${Q.rutOk} · un nombre desconocido devuelve vacío ${Q.cerradoOk} · candidatos del cliente ${Q.rutCli}: ${Q.nPropios} y son los suyos, por volumen ${Q.propiosOk} · la línea del comité queda marcada ${Q.marcaOk} · tras constituir la cabecera sigue siendo la suma (${Q.antesCab} → ${Q.sumaDespues}) ${Q.cuadraOk} · el excedente del techo va al comodín ${Q.excedenteOk}${err ? " · ERROR " + err : ""}`);
   }
 
   // ── 152 · LA IDENTIDAD DE LA SESIÓN ES UNA SOLA ────────────────────────────────────

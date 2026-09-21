@@ -20,7 +20,7 @@ const jsx = leer("pipeline_comercial.jsx");
 const INICIO = /MODO DIRECTORIO · demo acotada/, FIN = /fin del bloque MODO DIRECTORIO/;
 const SIMBOLOS = ["DIRECTORIO_PERFIL", "construirDirectorio", "ToggleDirectorio"];
 const REF = /\bdirectorio\b|_directorio|setDirectorio|construirDirectorio|ToggleDirectorio|DIRECTORIO_PERFIL/;
-const VENTANA = 20;   // era 8 hasta el 18-09-2026: el formateo (ADR-0005) abre cada enganche en varias
+const VENTANA = 20;   // era 8 hasta el 18-09-2026: el formateo (ADR-0006) abre cada enganche en varias
                       // líneas, así que la misma distancia lógica ocupa más. Lo que la regla fija —que
                       // retirar el modo sea un grep— no cambió; cambió el largo del código, no su forma.
 
@@ -114,4 +114,63 @@ test("sonda negativa: Math.random y localStorage en el bloque, un enganche sin m
   assert.equal(d.construirDirectorio.dentro.length, 1);
   // (d) sin rótulo de cierre no hay bloque
   assert.equal(bloqueDirectorio(jsx.replace(FIN, "fin del bloque")), null);
+});
+
+/* ── LAS TRES CASUÍSTICAS DEL ELENCO (regla 31, 20-09-2026) ────────────────────────────────────────
+   El elenco promete 3 operaciones dentro de línea y 2 parciales, y desde hoy exige además que **las
+   dos parciales** traigan un deudor de CUPO CERO — sin línea de par viva y con el comodín de su
+   cliente sin nada disponible—, que es el tercer caso que la demo tiene que mostrar. No se fabrica:
+   37 de los 496 clientes que cumplen el perfil ya lo cumplen, y lo que faltaba era que la selección
+   los mirara. Este gate fija que la cuota EXISTA, que vaya ANTES de la cuota general de parciales
+   —si no, las primeras por orden de RUT se la comen— y que la carencia se MIDA sobre las líneas
+   reales en vez de sortearse. */
+export function cuotasDirectorio(src) {
+  const fallos = [];
+  const bl = bloqueDirectorio(src);
+  if (!bl) return ["no se encuentra el bloque MODO DIRECTORIO"];
+  const txt = src.split("\n").slice(bl.a, bl.b + 1).join("\n");
+  const perfil = /const DIRECTORIO_PERFIL = \{([^}]*)\}/.exec(txt);
+  if (!perfil) return ["no se encuentra `DIRECTORIO_PERFIL`"];
+  const n = (k) => {
+    const m = new RegExp(k + ":\\s*(\\d+)").exec(perfil[1]);
+    return m ? +m[1] : null;
+  };
+  const car = n("carencia"), par = n("parciales"), cli = n("clientes"), cub = n("cubren");
+  if (car === null) fallos.push("`DIRECTORIO_PERFIL` no declara `carencia`: el tercer caso —el deudor sin cupo— vuelve a quedar al azar del orden por RUT");
+  else if (car < par) fallos.push(`carencia ${car} < parciales ${par}: quien abre la primera fila de «Sin línea» puede caer en la parcial que no trae el escenario`);
+  if (cub !== null && par !== null && cli !== null && cub + par !== cli)
+    fallos.push(`las cuotas no suman el elenco: cubren ${cub} + parciales ${par} ≠ clientes ${cli}`);
+  // La cuota, y su ORDEN respecto de la general de parciales.
+  const iCar = txt.indexOf("cuota((c) => c.parcial && c.carencia, DIRECTORIO_PERFIL.carencia)");
+  const iPar = txt.indexOf("cuota((c) => c.parcial, DIRECTORIO_PERFIL.parciales)");
+  if (iCar < 0) fallos.push("no existe la cuota de carencia en `construirDirectorio`");
+  else if (iPar >= 0 && iCar > iPar) fallos.push("la cuota de carencia va DESPUÉS de la general de parciales: las primeras por RUT se la comen y el tercer caso no se ve");
+  // Y se MIDE, no se sortea: sale de las líneas del cliente y del comodín disponible.
+  const def = /const carencia = ([^;]+);/.exec(txt);
+  if (!def) fallos.push("`carencia` no se calcula en `construirDirectorio`");
+  else {
+    if (!/capComodin/.test(def[1]) || !/conPropia/.test(def[1]))
+      fallos.push("`carencia` no se mide contra las líneas del cliente (par viva + comodín disponible): el elenco no puede DECIDIR quién tiene cupo, sólo leerlo");
+    if (/rnd\(|Math\.random|hashStr/.test(def[1])) fallos.push("`carencia` se sortea: el elenco lee la cartera, no la inventa");
+  }
+  return fallos;
+}
+
+test("regla 31: el elenco garantiza las tres casuísticas, y la carencia se mide", () => {
+  assert.deepEqual(cuotasDirectorio(jsx), []);
+});
+
+test("sonda negativa: quitar la cuota, invertir su orden o sortear la carencia se detectan", () => {
+  const sin = jsx.replace("cuota((c) => c.parcial && c.carencia, DIRECTORIO_PERFIL.carencia);\n", "");
+  assert.ok(cuotasDirectorio(sin).some((f) => /no existe la cuota de carencia/.test(f)), "no caza que falte la cuota");
+  const invertido = jsx
+    .replace("cuota((c) => c.parcial && c.carencia, DIRECTORIO_PERFIL.carencia);", "@@CAR@@")
+    .replace("cuota((c) => c.parcial, DIRECTORIO_PERFIL.parciales);", "cuota((c) => c.parcial, DIRECTORIO_PERFIL.parciales);\n  cuota((c) => c.parcial && c.carencia, DIRECTORIO_PERFIL.carencia);")
+    .replace("@@CAR@@", "");
+  assert.ok(cuotasDirectorio(invertido).some((f) => /DESPUÉS de la general/.test(f)), "no caza el orden invertido");
+  const bajada = jsx.replace("parciales: 2, carencia: 2 }", "parciales: 2, carencia: 1 }");
+  assert.ok(cuotasDirectorio(bajada).some((f) => /< parciales/.test(f)), "no caza que la cuota quede bajo la de parciales");
+  const sorteada = jsx.replace(/const carencia = [^;]+;/, "const carencia = pcRng(hashStr(rut))() < 0.2;");
+  const f = cuotasDirectorio(sorteada);
+  assert.ok(f.some((x) => /se sortea/.test(x)) && f.some((x) => /no se mide contra las líneas/.test(x)), `no caza la carencia sorteada: ${JSON.stringify(f)}`);
 });
