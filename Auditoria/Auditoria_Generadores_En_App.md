@@ -102,7 +102,7 @@ usuario, creación, vencimiento). Activo declarado, sin dataset. **Severidad: me
 ### 2.5 · Usuarios y Apoderados de la Empresa
 
 `apoderadosDeEmpresa` / `usuariosDeEmpresa` (`:2537`, `:2545`) generan los contactos, sus cargos y el flag
-APODERADO. Tiene spec propia (`Specs_Procesos/Spec_API_Usuarios_Apoderados_Empresa.pdf`).
+APODERADO. Tiene spec propia (`Integraciones/Spec_API_Usuarios_Apoderados_Empresa.pdf`).
 
 Importa porque **C57 evalúa `apoderados`** (poderes suficientes para autorizar la operación), y ese valor
 sale hoy de `yn(0.92)` en `apiVarsCliente`, no de esta tabla. **Severidad: media.**

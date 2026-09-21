@@ -1,6 +1,6 @@
 # Spec — swagger_consulta_lineas.yaml (Activo A23)
 
-**Propósito:** responder, en el momento de evaluar una oferta, **cuánto cupo hay disponible** en los tres niveles que la regla de validación compara. Es la API que alimenta el motor de asignación de líneas (`Specs_Procesos/spec-asignacion-lineas.md`).
+**Propósito:** responder, en el momento de evaluar una oferta, **cuánto cupo hay disponible** en los tres niveles que la regla de validación compara. Es la API que alimenta el motor de asignación de líneas (`Specs_Procesos/Lineas/spec-asignacion-lineas.md`).
 
 | Endpoint | Uso |
 |---|---|

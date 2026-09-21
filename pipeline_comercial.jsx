@@ -11073,7 +11073,7 @@ function DealMensajeria({ deal, usuario }) {
 // de nuevo con el sugerido mostraría en esta tabla una tasa distinta de la que se está mirando dos
 // pestañas más allá: el mismo documento con dos precios en la misma pantalla.
 // (El mapa `spreadDeudor` se lee en cinco sitios y su setter no se llama nunca: la EDICIÓN del spread
-// por deudor que su forma de estado promete no existe. Ver `Auditoria_Codigo_Muerto.md` §1.4.)
+// por deudor que su forma de estado promete no existe. Ver `Auditoria/Auditoria_Codigo_Muerto.md` §1.4.)
 function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usuario, tasaDe }) {
   // Misma compuerta que la mesa: registrar la llamada o retirar una factura es firmar lo que el
   // deudor dijo, y eso lo hace el equipo de verificación. Los demás leen el veredicto del modelo.
@@ -11293,8 +11293,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
                       v = x.v,
                       isOpen = !!open[f.id];
                     const tel = v.tel;
-                    const estPill =
-                      v.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
+                    const estPill = v.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
                     const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                     const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
                     const fd = fechasDocumento(f);
@@ -24069,7 +24068,7 @@ const guardarCfgAprobMasiva = guardarPermisos;
 // OJO — el `area` de acá es DESCRIPTIVO. El ruteo de las excepciones de otorgamiento lo siguen
 // resolviendo `ATRIB_USUARIO` (qué nivel aprueba cada uno) y `NIVEL_ROL` (qué área manda en cada
 // nivel), que están auditados y con seis decisiones de negocio pendientes —ver
-// `Inconsistencias_Motor_Otorgamiento.md`, INC-01 a INC-03—. Cambiarle el rol a alguien NO le
+// `Regresiones/Inconsistencias_Motor_Otorgamiento.md`, INC-01 a INC-03—. Cambiarle el rol a alguien NO le
 // cambia la atribución de aprobación: unir las dos cosas acá cerraría a mano un contrato que
 // todavía no está decidido, y con la homologación de niveles invertida el resultado sería peor
 // que el de hoy. Cuando esas decisiones se cierren, éste es el lugar donde se unen.
