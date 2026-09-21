@@ -10,7 +10,7 @@ verificación— y sirve para validar el flujo con las áreas y para capacitar.
 
 Lo que **no** repite: el modelo de riesgo (el catálogo de criterios, sus tramos y por qué el ruteo es
 el par área-nivel) y el contrato del motor como servicio viven en
-[`spec-otorgamiento.md`](./spec-otorgamiento.md). Acá se citan sólo cuando el proceso los necesita.
+[`spec-otorgamiento.md`](../Otorgamiento/spec-otorgamiento.md). Acá se citan sólo cuando el proceso los necesita.
 
 > **Contexto y orden del documento.** Una excepción nace de una **regla de negocio** que el sistema
 > evalúa sobre la operación y que **no se cumple**. Que no se cumpla no significa que la operación se
@@ -68,7 +68,7 @@ deudor** de la operación y se visan **por deudor**: aprobar D02 para un deudor 
 | **Apoderados de Comercial** | Jefe de Grupo Comercial · Gerente Comercial · Gerente General | Comercial **N1 · N2 · N3** |
 | **Apoderados de Riesgo** | Jefe de Riesgo · Subgerente de Riesgo | Riesgo **N4 · N5** |
 | **Apoderados de Operaciones** | Jefe de Operaciones · Operaciones | Operaciones **N3 · N5** |
-| **Ejecutivo de verificación** | registra las llamadas al deudor (proceso aparte, [`spec-verificacion-facturas.md`](./spec-verificacion-facturas.md)); comparte la etapa «Otorgamiento / Verificación» | firma verificaciones, no criterios |
+| **Ejecutivo de verificación** | registra las llamadas al deudor (proceso aparte, [`spec-verificacion-facturas.md`](../Verificacion/spec-verificacion-facturas.md)); comparte la etapa «Otorgamiento / Verificación» | firma verificaciones, no criterios |
 | **Super administrador** | cuenta de sistema: cubre todas las áreas en el nivel máximo | no aparece como destinatario de tareas |
 
 La atribución **sigue al cargo, no a la persona**: el nivel y el área los implica el rol que el tenant
@@ -581,7 +581,7 @@ facturas de la oferta.
 
 Un cliente sin línea aprobada levanta **Riesgo N5**, la máxima atribución del modelo: la constitución
 de una línea es la decisión más estructural del proceso. La línea misma se tramita en la **solicitud al
-comité** ([`spec-asignacion-lineas.md`](./spec-asignacion-lineas.md)); la excepción sólo deja constancia
+comité** ([`spec-asignacion-lineas.md`](../Lineas/spec-asignacion-lineas.md)); la excepción sólo deja constancia
 de que se está cursando sin ella.
 
 ### 6.4 «No ejecutada · falta configuración» y «Sin aprobador definido»
@@ -710,8 +710,8 @@ Ninguna bloquea la operación; todas cambian el contrato del servicio o la confi
 | 1 | La **justificación del apoderado** es obligatoria en la mesa y opcional en el tab del detalle, sobre la misma decisión. Conviene un solo criterio | proceso |
 | 2 | «Solicitar más información» anuncia que crea una tarea; lo que crea es un **hilo de mensajería** atado a la excepción. O se crea la tarea, o el texto dice hilo | producto |
 | 3 | **Riesgo no tiene cargos en N1–N3**: 77 de sus 97 tramos caen en el Jefe de Riesgo por escalada | configuración del tenant |
-| 4 | Parámetros que la política declara sin definir: tramos de C07, umbrales de C08 y C37, C13/D05 (¿escala o firme?), C27, C39, banda de O01, semántica del 30% de O03, escala de la nota | Riesgo (`Inconsistencias_Motor_Otorgamiento.md` §5) |
-| 5 | **Concurrencia del visado**: dos apoderados decidiendo la misma excepción a la vez necesitan una respuesta 409 con semántica definida; hoy la escritura es optimista con confirmación | plataforma (`spec-otorgamiento.md` §12) |
+| 4 | Parámetros que la política declara sin definir: tramos de C07, umbrales de C08 y C37, C13/D05 (¿escala o firme?), C27, C39, banda de O01, semántica del 30% de O03, escala de la nota | Riesgo (`Regresiones/Inconsistencias_Motor_Otorgamiento.md` §5) |
+| 5 | **Concurrencia del visado**: dos apoderados decidiendo la misma excepción a la vez necesitan una respuesta 409 con semántica definida; hoy la escritura es optimista con confirmación | plataforma (`Specs_Procesos/Otorgamiento/spec-otorgamiento.md` §12) |
 | 6 | Los criterios de burós de **deudor** (D02–D13) son excepciones no re-evaluables, no bloqueos firmes: sólo C30–C32 rechazan. Los documentos que los describen como knockout deben decirlo así | documentación |
 | 7 | Cuando el **piso por monto** deja una excepción sin aprobador, en el **tab del detalle** se puede **solicitar** igual: la tarjeta dice «Solicitar aprobación al Sin aprobador definido (N{nivel})», la solicitud se registra y el aviso sale sin destinatarios. La mesa, en cambio, muestra la causa y el mantenedor donde se arregla. Conviene que la tarjeta haga lo mismo | producto |
 | 8 | ~~El control de la línea no se vuelve a comprobar factura por factura antes de girar~~ — **cerrada el 20-09-2026**: la aprobación de Operaciones exige ahora los cuatro controles, y LIN-01 se mira factura por factura (§5.4, regla 41, ADR-0007) | cerrada |
@@ -737,9 +737,9 @@ se ejecuta ni se verifica, y sale nombrada en el veredicto).
 
 | Documento | Qué cubre |
 |---|---|
-| [`spec-otorgamiento.md`](./spec-otorgamiento.md) | el modelo de riesgo (catálogo, tramos, ruteo, piso por monto) y el contrato del motor como servicio |
-| [`spec-verificacion-facturas.md`](./spec-verificacion-facturas.md) | la verificación telefónica, que comparte la etapa «Otorgamiento / Verificación» |
-| [`spec-asignacion-lineas.md`](./spec-asignacion-lineas.md) | las líneas y la solicitud al comité (C05) |
-| [`spec-ciclo-factura.md`](./spec-ciclo-factura.md) | en qué orden corren los motores y dónde se bifurca el camino |
-| `Inconsistencias_Motor_Otorgamiento.md` | la auditoría de la política contra la implementación y los parámetros abiertos |
+| [`spec-otorgamiento.md`](../Otorgamiento/spec-otorgamiento.md) | el modelo de riesgo (catálogo, tramos, ruteo, piso por monto) y el contrato del motor como servicio |
+| [`spec-verificacion-facturas.md`](../Verificacion/spec-verificacion-facturas.md) | la verificación telefónica, que comparte la etapa «Otorgamiento / Verificación» |
+| [`spec-asignacion-lineas.md`](../Lineas/spec-asignacion-lineas.md) | las líneas y la solicitud al comité (C05) |
+| [`spec-ciclo-factura.md`](../Evaluacion_Factura/spec-ciclo-factura.md) | en qué orden corren los motores y dónde se bifurca el camino |
+| [`Inconsistencias_Motor_Otorgamiento.md`](../../Regresiones/Inconsistencias_Motor_Otorgamiento.md) | la auditoría de la política contra la implementación y los parámetros abiertos |
 | `Integraciones/spec_s3_otorgamiento.md` | el layout A16: las variables que alimentan el motor |

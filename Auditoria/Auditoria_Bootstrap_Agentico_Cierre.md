@@ -59,7 +59,7 @@ tablero con gate de 80 líneas, tres niveles de memoria declarados, ADR-0001 con
 
 ## 3. El hueco caro: no hay doctrina de despacho, y esta sesión probó que hace falta
 
-> **Cerrado el 18-09-2026** en [`vault/conocimiento/despacho_agentes.md`](vault/conocimiento/despacho_agentes.md),
+> **Cerrado el 18-09-2026** en [`vault/conocimiento/despacho_agentes.md`](../vault/conocimiento/despacho_agentes.md),
 > con el bloque invariante verbatim, la consigna del refutador, los cuatro modos de falla de abajo y los límites
 > del contenedor. `vault.test.mjs` exige que las ocho cláusulas del brief sigan ahí: la forma de perderlo otra vez
 > no es borrar el archivo, es resumirlo. El **routing por modelo** queda fuera a propósito — no está medido en
@@ -94,7 +94,7 @@ cuatro errores y los descubre otra vez a punta de refutación.
 
 ## 4. La referencia colgando: «T3» se usa y no está definido en ninguna parte
 
-> **Cerrado el 18-09-2026** en [`.claude/rules/workflow.md`](.claude/rules/workflow.md): la escalera calibrada a
+> **Cerrado el 18-09-2026** en [`.claude/rules/workflow.md`](../.claude/rules/workflow.md): la escalera calibrada a
 > NEX, el ciclo de una tarea y el cierre de sesión. `vault.test.mjs` exige que **todo nivel citado por un
 > documento vivo esté definido** en esa tabla, con sonda negativa — la referencia no puede volver a quedar
 > colgando. Los logs de sesión quedan fuera del gate a propósito: son historia. Lo que sigue es el hallazgo.

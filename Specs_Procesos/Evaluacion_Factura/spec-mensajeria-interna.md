@@ -200,6 +200,6 @@ de repositorios.
 
 | Documento | Qué cubre |
 |---|---|
-| [`spec-gestion-excepciones.md`](./spec-gestion-excepciones.md) | el proceso donde nacen los requerimientos y los avisos automáticos |
-| [`spec-otorgamiento.md`](./spec-otorgamiento.md) | el modelo de riesgo y los criterios que un requerimiento cita |
-| [`spec-ciclo-factura.md`](./spec-ciclo-factura.md) | en qué orden corren los motores y dónde encaja cada aviso |
+| [`spec-gestion-excepciones.md`](../Excepciones/spec-gestion-excepciones.md) | el proceso donde nacen los requerimientos y los avisos automáticos |
+| [`spec-otorgamiento.md`](../Otorgamiento/spec-otorgamiento.md) | el modelo de riesgo y los criterios que un requerimiento cita |
+| [`spec-ciclo-factura.md`](spec-ciclo-factura.md) | en qué orden corren los motores y dónde encaja cada aviso |

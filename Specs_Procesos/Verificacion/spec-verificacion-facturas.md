@@ -2,7 +2,7 @@
 
 **Producto:** Factoring Security · módulo de originación
 **Alcance:** función aislada que decide si las facturas de una operación deben verificarse con el deudor
-**Relación:** corre junto al motor de asignación de líneas (`spec-asignacion-lineas.md`) en la misma reevaluación de la operación.
+**Relación:** corre junto al motor de asignación de líneas (`Specs_Procesos/Lineas/spec-asignacion-lineas.md`) en la misma reevaluación de la operación.
 
 ---
 

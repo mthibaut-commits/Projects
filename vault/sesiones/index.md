@@ -37,5 +37,7 @@ timestamp: 2026-09-19T00:40:00Z
 
 | 18-09-2026 | [`2026-09-18_regla_sin_aprobador.md`](./2026-09-18_regla_sin_aprobador.md) | Ampliación de la regla 35: tener área no basta —una regla excepcionable a la que nadie puede firmarle la excepción tampoco se ejecuta, con tres causas y tres mantenedores—. La compuerta recibe el PADRÓN por parámetro y el núcleo se partió en `cargoDeAreaNivel` porque `auditar_aislamiento` sacó a `evalReglaCli` de las puras; y un identificador citado dentro de un string cuenta como lectura para ese auditor |
 
+| 21-09-2026 | [`2026-09-21_ordenar_la_carpeta.md`](./2026-09-21_ordenar_la_carpeta.md) | Los `.md` y `.pdf` de la raíz se ordenan por lo que el documento ES: `Auditoria/` (lo que mide), `Regresiones/` (lo que cotejó definición contra implementación), los PDF de contrato a `Integraciones/` y `Specs_Procesos/` partido en cinco temas. 41 renombres, 77 referencias rotas medidas con un verificador diferencial de enlaces y 63 reparadas; de paso, el paso 0 estaba en rojo en `main` y dos bloques de comandos habían perdido un salto de línea |
+
 La historia anterior al vault (02-09 → 16-09-2026) no tiene logs propios: vive dentro de las reglas de
-dominio (cada una trae fecha y qué la motivó) y en `Auditoria_*.md` e `Inconsistencias_*.md`.
+dominio (cada una trae fecha y qué la motivó) y en `Auditoria/` y `Regresiones/`.

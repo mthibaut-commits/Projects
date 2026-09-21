@@ -6,7 +6,7 @@ Demo de un pipeline comercial de factoring chileno para Datamart. UI en español
 
 La fase, lo que está en vuelo y el siguiente paso viven **solo** en `vault/sesiones/estado_actual.md`
 (regla núcleo 1: se lee al abrir toda sesión). Este documento no afirma la fase ni cita conteos del código:
-cuando lo hacía, tres cifras quedaron obsoletas en silencio (`Auditoria_Bootstrap_Agentico.md`, §2.3).
+cuando lo hacía, tres cifras quedaron obsoletas en silencio (`Auditoria/Auditoria_Bootstrap_Agentico.md`, §2.3).
 
 ## Stack
 
@@ -26,7 +26,8 @@ npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx 
 grep -oE '^(export default )?(async )?(function|const|let|var|class) [A-Za-z_$][A-Za-z0-9_$]*' pipeline_comercial.jsx | awk '{print $NF}' | sort | uniq -d  # 2 · debe salir vacío
 node build_app.mjs                                                                                            # 3 · valida los hashes del vendor
 node --test "tests/contract/*.test.mjs"                                                                       # 4 · gates de contrato (~10 s)
-PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 151/151 PASA (~2 min)PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node tests/e2e/correr.mjs                                           # 6 · e2e: 29 casos de pantalla (~8 min)
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 151/151 PASA (~2 min)
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node tests/e2e/correr.mjs                                           # 6 · e2e: 29 casos de pantalla (~8 min)
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs                                         # 7 · sólo si toca la UI (~5 min)
 ```
 
@@ -115,7 +116,7 @@ contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ni
   - `conocimiento/reglas/` — las reglas verbatim, por tema · `arquitectura.md` · `verificacion.md` · `contrato_servidor_y_auditoria.md` · `mapa_documentos.md`
   - `conocimiento/despacho_agentes.md` — **el bloque invariante que recibe todo agente despachado**, la consigna del refutador y los cuatro modos de falla medidos
   - `adr/` — decisiones · `sesiones/estado_actual.md` — el tablero · `sesiones/` — logs
-- `Specs_Procesos/` · `Integraciones/` · `Levantamiento_Activos_Informacion.md` — la fuente de verdad de negocio; qué es cada uno: `vault/conocimiento/mapa_documentos.md`
+- `Specs_Procesos/<tema>/` (`Otorgamiento` · `Verificacion` · `Lineas` · `Excepciones` · `Evaluacion_Factura`) · `Integraciones/` · `Levantamiento_Activos_Informacion.md` — la fuente de verdad de negocio; qué es cada uno: `vault/conocimiento/mapa_documentos.md`
 - `GeneradorDatos/` — produce los activos sintéticos (`datos_inyectados.js`, `proveedores_clientes.json`)
 - `Capturas_UI/` — el DOM real capturado, fuente para Figma; `Figma_Export/` quedó obsoleto como fuente
-- `Auditoria_*.md` · `Inconsistencias_*.md` — auditorías con sus hallazgos; la historia del proyecto vive ahí y en `vault/sesiones/`
+- `Auditoria/` — los informes que MIDEN (el repo, el fuente, el generador) · `Regresiones/` — lo que cotejó definición contra implementación y dejó hallazgos; la historia del proyecto vive ahí y en `vault/sesiones/`
