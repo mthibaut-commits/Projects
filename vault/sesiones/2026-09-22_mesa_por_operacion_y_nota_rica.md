@@ -169,8 +169,17 @@ historias de usuario y los casos de prueba Playwright que el usuario pidió para
 **Lo que costó**: los refutadores de la segunda ronda encontraron casi tantos hallazgos como los de la
 primera (32 contra 36), y no eran regresiones del corrector sino cobertura distinta —cada refutador nuevo
 mira otras afirmaciones—. Un documento de 800 líneas con ~200 anclas al fuente no converge en dos rondas;
-converge cuando el spec se cita en los gates. Las anclas de línea (`l.NNNNN`) valen para el fuente del
-22-09-2026 y se van a desfasar con el primer commit: el spec lo dice en su §14.
+converge cuando el spec se cita en los gates.
+
+**Y una decisión del usuario que quedó como regla de la casa** (`Specs_Procesos/README.md`, regla 3): el
+borrador citaba el fuente por LÍNEA (`l.NNNNN`, 506 veces) y el usuario lo objetó: «no tiene ningún
+sentido porque todo va a cambiar; el spec tiene que ir a la definición de la regla y/o condición, no a la
+línea de código». Tiene razón: la línea es la foto de un día en un archivo de 51.000 líneas, y la
+verificación de los refutadores ya quedó hecha. Se reescribieron las 506 citas a la **definición** —regla
+por número, sección de spec, o la condición del fuente por su nombre— sin perder ninguna evidencia: donde
+la línea sostenía una afirmación («entre l.47300 y l.47400 no consulta `excPend`»), ahora la sostiene la
+condición («`cerrarOferta` no consulta `excPend` antes de escribir»). Ningún otro spec de la carpeta
+citaba líneas: el nuevo era el único, y la regla 3 evita que vuelva a pasar.
 
 ## Verificación
 
