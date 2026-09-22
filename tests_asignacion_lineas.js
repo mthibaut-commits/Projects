@@ -7279,11 +7279,11 @@
        `consolidado: ${Q.revisados} clientes, cabecera ≠ Σ aprobado ${Q.malAprob}, ≠ Σ vigente ${Q.malUso} (antes 217 de 224 descuadraban) ${Q.consolidadoOk} · universo de deudores ${Q.universo}: sin RUT ${Q.sinRut}, DV inválido ${Q.dvMalo} (antes 92%), en rango de persona natural ${Q.personaNatural} ${Q.rutOk} · un nombre desconocido devuelve vacío ${Q.cerradoOk} · candidatos del cliente ${Q.rutCli}: ${Q.nPropios} y son los suyos, por volumen ${Q.propiosOk} · la línea del comité queda marcada ${Q.marcaOk} · tras constituir la cabecera sigue siendo la suma (${Q.antesCab} → ${Q.sumaDespues}) ${Q.cuadraOk} · el excedente del techo va al comodín ${Q.excedenteOk}${err ? " · ERROR " + err : ""}`);
   }
 
-  // ── 152 · EL CIERRE DEL NEGOCIO LE ESCRIBE A QUIEN TIENE QUE FIRMAR ─────────────────────────
+  // ── 154 · EL CIERRE DEL NEGOCIO LE ESCRIBE A QUIEN TIENE QUE FIRMAR ─────────────────────────
   // Reporte del usuario, 21-09-2026: «cuando se cierra un negocio no se están enviando los mensajes
   // a los responsables ni al ejecutivo que tienen responsabilidad de aprobar». Medido: de las dos
   // puertas a la mesa de otorgamiento sólo avisaba la MANUAL (`avisarPreEval`); la automática —el
-  // cliente firma y la bandeja la toma sola— no llamaba a `hiloEnviar` ni una vez (regla 48).
+  // cliente firma y la bandeja la toma sola— no llamaba a `hiloEnviar` ni una vez (regla 52).
   //
   // Se prueba en las DOS direcciones, que es lo que pide `testing.md` para un control: avisa cuando
   // hay algo que firmar, y NO avisa cuando no queda nada — un mensaje «no tienes nada que hacer» en
@@ -7336,23 +7336,23 @@
     // El hilo es memoria del documento y la suite corre sobre la app viva: se deshace lo plantado.
     HILOS.length = antes;
     const Q = R || {};
-    ok("152 al cerrar el negocio el sistema le escribe a los aprobadores de las excepciones pendientes y al ejecutivo, y calla si no queda nada que firmar",
+    ok("154 al cerrar el negocio el sistema le escribe a los aprobadores de las excepciones pendientes y al ejecutivo, y calla si no queda nada que firmar",
        !!R && Q.sinAdminOk && Q.codigosOk && Q.aprobadoresOk && Q.ejecutivoOk && Q.remitenteOk && Q.noLeidoOk && Q.textoOk && Q.unSoloHiloOk && Q.mudoOk,
        `aprobadores esperados [${Q.esperados}] sin ADMIN ${Q.sinAdminOk} y todos pueden firmar ${Q.codigosOk} · participantes [${Q.participantes}]: los aprobadores ${Q.aprobadoresOk} y el ejecutivo ${Q.ejecutivoOk} · remitente el sistema ${Q.remitenteOk} y a todos les llega sin leer ${Q.noLeidoOk} · el texto trae los ${Q.tramos} tramos con quién firma ${Q.textoOk} · cerrar dos veces no abre dos hilos ${Q.unSoloHiloOk} · sin nada pendiente no escribe ${Q.mudoOk}${err ? " · ERROR " + err : ""}`);
   }
 
-  // ── 153 · EL ESTADO DEL OTORGAMIENTO CRUZA DE PESTAÑA ───────────────────────────────────────
+  // ── 155 · EL ESTADO DEL OTORGAMIENTO CRUZA DE PESTAÑA ───────────────────────────────────────
   // El usuario reportó tres cosas como si fueran tres defectos —el Gerente Comercial ve la bandeja
   // en cero con criterios suyos en el detalle, no llega ningún mensaje al Centro de mensajería, y el
   // Ejecutivo de verificación no puede accionar— y era UNO: `PRE_EVAL` y `HILOS` eran `let` de
-  // módulo, o sea memoria de CADA documento, y el detalle es pestaña propia (regla 49, ADR-0012).
+  // módulo, o sea memoria de CADA documento, y el detalle es pestaña propia (regla 51, ADR-0012).
   //
   // Se prueba lo que la suite SÍ puede probar sin dos pestañas: que el estado se PERSISTE (que es lo
   // que lo hace sobrevivir al documento) y que solicitar la aprobación de UNA excepción habilita la
   // bandeja, que es el camino que no avisaba. El aviso al opener lo fija el gate de contrato.
   {
     let R = null, err = "";
-    const ID = "TEST-PESTANA-153";
+    const ID = "TEST-PESTANA-155";
     const nHilos = HILOS.length;
     try {
       // (a) LA PRE-EVALUACIÓN VIVE EN UN REPOSITORIO, no en un objeto de módulo.
@@ -7395,7 +7395,7 @@
       //     `excEnBandeja` consulta `tienePreEval`, y es lo que decide si el aprobador puede visar.
       setPreEval(ID, "CR", false);
       const deal = { id: ID, cliente: "Cliente 153", exec: "CR", stage: "oferta" };
-      const x = { stKey: "R9001", nivel: 2, regla: { n: 9001, nombre: "Criterio 153", area: "comercial" } };
+      const x = { stKey: "R9001", nivel: 2, regla: { n: 9001, nombre: "Criterio 155", area: "comercial" } };
       const antesBandeja = excEnBandeja(deal);
       solicitarAprobacionExc(deal, x, "CR", "justifico", [], false);
       const despuesBandeja = excEnBandeja(deal);
@@ -7414,14 +7414,14 @@
     HILOS.length = nHilos;
     try { repoHilos.set("lista", HILOS); } catch (_) { /* idem */ }
     const Q = R || {};
-    ok("153 el estado del otorgamiento cruza de pestaña: la pre-evaluación y los hilos se persisten, y solicitar UNA excepción habilita la bandeja",
+    ok("155 el estado del otorgamiento cruza de pestaña: la pre-evaluación y los hilos se persisten, y solicitar UNA excepción habilita la bandeja",
        !!R && Q.persisteOk && Q.apagaOk && Q.recargaOk && Q.hilosOk && Q.fusionOk && Q.bandejaOk && Q.avisaOk,
        `pre-eval en repositorio y alias sobre la misma tabla ${Q.persisteOk} · apagarla la saca de los dos ${Q.apagaOk} · recargar rellena el MISMO objeto ${Q.recargaOk} · el hilo y su mensaje quedan guardados ${Q.hilosOk} · un hilo ajeno se fusiona por (operación, asunto) y no por id ${Q.fusionOk} · solicitar una excepción habilita la bandeja ${Q.bandejaOk} · y le escribe a [${Q.esperados}] ${Q.avisaOk}${err ? " · ERROR " + err : ""}`);
   }
 
-  // ── 154 · EL TENANT SE DA DE ALTA, Y SU ADMINISTRADOR TAMBIÉN ───────────────────────────────
+  // ── 156 · EL TENANT SE DA DE ALTA, Y SU ADMINISTRADOR TAMBIÉN ───────────────────────────────
   // Pedido del usuario: un menú para crear el tenant de Security «y/o otro cliente», con su marca y
-  // con el admin que después crea al resto (regla 50). Lo que este caso fija es lo que se rompió al
+  // con el admin que después crea al resto (regla 52). Lo que este caso fija es lo que se rompió al
   // construirlo: `atribDeRol` decía «la atribución sigue al ROL» y resolvía el super-admin por el
   // CÓDIGO literal "ADMIN", así que el administrador de un tenant nuevo salía con atribución vacía y
   // no entraba al padrón — o sea, no podía aprobar nada, que es justo para lo que se lo crea.
@@ -7431,22 +7431,22 @@
     try {
       // (a) EL CATÁLOGO DE FACTORINGS ES DE LA PLATAFORMA: su clave no lleva sufijo de tenant.
       const claveOk = TENANTS_KEY === "nex_tenants" && !TENANTS_KEY.includes(TENANT_ACTUAL);
-      TENANTS.push({ id: "suite154", nombre: "Factoring Suite 154", rut: "1-9", activo: true });
+      TENANTS.push({ id: "suite156", nombre: "Factoring Suite 156", rut: "1-9", activo: true });
       guardarTenants();
       const crudo = JSON.parse(localStorage.getItem(TENANTS_KEY) || "{}");
-      const persisteOk = (crudo.datos || []).some((t) => t.id === "suite154");
+      const persisteOk = (crudo.datos || []).some((t) => t.id === "suite156");
       // …y la higiene: el id se NORMALIZA a minúsculas —igual que en Áreas, y es lo que el formulario
       // hace antes de validar— pero lo que no tiene forma de tenant se descarta entero, porque ese id
       // compone las claves de storage de toda su configuración. El tenant base nunca se pierde.
-      const basura = [{ id: "MAYUS", nombre: "x" }, { id: "ok", nombre: "" }, { id: "b u e n o", nombre: "y" }, { nombre: "sin id" }, { id: "suite154", nombre: "Otro con el mismo id" }];
-      escribirVersionado(TENANTS_KEY, "tenants", basura.concat([{ id: "suite154", nombre: "Factoring Suite 154" }]));
+      const basura = [{ id: "MAYUS", nombre: "x" }, { id: "ok", nombre: "" }, { id: "b u e n o", nombre: "y" }, { nombre: "sin id" }, { id: "suite156", nombre: "Otro con el mismo id" }];
+      escribirVersionado(TENANTS_KEY, "tenants", basura.concat([{ id: "suite156", nombre: "Factoring Suite 156" }]));
       const releido = cargarTenants();
       const ids = releido.map((t) => t.id).sort().join(",");
-      const higieneOk = ids === "mayus,security,suite154" && releido.filter((t) => t.id === "suite154").length === 1;
+      const higieneOk = ids === "mayus,security,suite156" && releido.filter((t) => t.id === "suite156").length === 1;
 
       // (b) EL SUPER-ADMIN ES UN ROL. Un código cualquiera con rol `admin` tiene que cubrir las tres
       //     áreas en el nivel máximo y contar como super-admin en el padrón.
-      USUARIOS_TENANT.push({ code: "ZQ", nombre: "Admin Suite 154", email: "suite154@x.cl", rol: "admin" });
+      USUARIOS_TENANT.push({ code: "ZQ", nombre: "Admin Suite 156", email: "suite156@x.cl", rol: "admin" });
       guardarUsuariosTenant();
       montarUsuariosTenant();
       ROL_USUARIO.ZQ = "admin";
@@ -7463,7 +7463,7 @@
 
       // (c) EL CORREO ES LA CREDENCIAL, y resuelve contra la lista VIVA: el admin recién creado entra
       //     sin recargar. Un correo desconocido no entra.
-      const loginOk = codigoDeCorreo("suite154@x.cl") === "ZQ" && codigoDeCorreo("SUITE154@X.CL ") === "ZQ" && codigoDeCorreo("nadie@x.cl") === null;
+      const loginOk = codigoDeCorreo("suite156@x.cl") === "ZQ" && codigoDeCorreo("SUITE154@X.CL ") === "ZQ" && codigoDeCorreo("nadie@x.cl") === null;
       // …y el elenco de la demo sigue entrando: la lista nueva se suma, no reemplaza.
       const demoOk = codigoDeCorreo("carla.rivas@security.cl") === "CR";
 
@@ -7477,7 +7477,7 @@
     delete USERS.ZQ; delete ATRIB_USUARIO.ZQ; delete ROL_USUARIO.ZQ; delete ROLES_DEFAULT.ZQ;
     try { guardarTenants(); guardarUsuariosTenant(); } catch (_) { /* idem */ }
     const Q = R || {};
-    ok("154 el tenant se da de alta en la plataforma y su administrador también: el super-admin es un ROL, no el código «ADMIN»",
+    ok("156 el tenant se da de alta en la plataforma y su administrador también: el super-admin es un ROL, no el código «ADMIN»",
        !!R && Q.claveOk && Q.persisteOk && Q.higieneOk && Q.atribOk && Q.padronOk && Q.firmaOk && Q.permisosOk && Q.noRegalaOk && Q.loginOk && Q.demoOk,
        `la clave del catálogo es de la plataforma ${Q.claveOk} · el alta persiste ${Q.persisteOk} · la higiene normaliza y descarta: quedan [${Q.ids}] de 6 ${Q.higieneOk} · un rol admin cubre las tres áreas en N5 ${Q.atribOk} · y entra al padrón como super-admin ${Q.padronOk} · y puede firmar en las tres ${Q.firmaOk} · los permisos de visibilidad lo siguen ${Q.permisosOk} · y a un ejecutivo no se le regalan ${Q.noRegalaOk} · el correo es la credencial y resuelve en vivo ${Q.loginOk} · el elenco de la demo sigue entrando ${Q.demoOk}${err ? " · ERROR " + err : ""}`);
   }

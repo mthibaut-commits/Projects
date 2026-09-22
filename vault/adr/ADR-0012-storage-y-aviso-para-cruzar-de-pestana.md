@@ -72,5 +72,5 @@ ya existían. `refrescarEstadoOtorgamiento()` lo corre sobre los seis del otorga
 
 ## Regla
 
-**49**, en [`reglas/otorgamiento_y_atribucion.md`](../conocimiento/reglas/otorgamiento_y_atribucion.md).
-Gate: caso **153** de la suite y `tests/contract/regla_estado_pestanas.test.mjs`.
+**51**, en [`reglas/otorgamiento_y_atribucion.md`](../conocimiento/reglas/otorgamiento_y_atribucion.md).
+Gate: caso **155** de la suite y `tests/contract/regla_estado_pestanas.test.mjs`.

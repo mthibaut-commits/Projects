@@ -6,7 +6,7 @@ tags: [sesion, otorgamiento, pestanas, mensajeria]
 timestamp: 2026-09-21T22:30:00Z
 ---
 
-# Un defecto, tres síntomas · regla 49 · ADR-0012
+# Un defecto, tres síntomas · regla 51 · ADR-0012
 
 ## Lo que reportó el usuario, en tres mensajes distintos
 
@@ -43,11 +43,11 @@ Los dos quedaban en el documento del detalle. La pestaña del tubo —donde se p
 Otorgamientos** y **el Centro de mensajería**— no se enteraba nunca. Tres síntomas, una línea.
 
 **Y el botón «Pre-evaluación» sí avisaba.** Tenía su `postMessage` escrito a mano junto al `onClick`; el
-otro camino no. Es el mismo modo de falla que la regla 48 documentó ayer en el cierre de la oferta:
+otro camino no. Es el mismo modo de falla que la regla 50 documentó ayer en el cierre de la oferta:
 **cuando el aviso vive en el call site, el call site que se escribe después se olvida.** Por eso ahora
 difunde `setPreEval`, que es el punto único por donde pasa el estado.
 
-## Lo que se hizo (regla 49, ADR-0012)
+## Lo que se hizo (regla 51, ADR-0012)
 
 `repoPreEval` y `repoHilos`, con la misma forma que el visado y las solicitudes de excepción, que ya eran
 repositorio. Y **las dos cosas, no una**: el storage hace que sobreviva a cerrar la pestaña; el
@@ -60,7 +60,7 @@ existían. `refrescarEstadoOtorgamiento()` lo corre sobre los seis del otorgamie
 
 ## El fallo inesperado, con causa y solución (regla núcleo 11)
 
-**Mi primera versión de `recargar()` estaba mal, y la cazó el caso 153 antes de llegar a la pantalla.**
+**Mi primera versión de `recargar()` estaba mal, y la cazó el caso 155 antes de llegar a la pantalla.**
 Vaciaba `datos` y lo rellenaba, con lo que `datos[tenant]` pasaba a ser un objeto **nuevo**… y los alias
 —`PRE_EVAL`, `VISADO_STATE`, `SOLICITUD_EXC`— apuntan a ESE objeto, no a `datos`. Resultado: escribir por
 el repositorio dejaba ciego al alias y al revés.
@@ -70,7 +70,7 @@ excepción habilita la bandeja»— no tenía nada que ver con la causa; simplem
 partido de la primera. *Solución:* `recargar` vacía y rellena **la tabla de cada tenant**, no `datos`.
 
 Es la misma familia del `_cacheCli` del 20-09: **un lector memoizado que se queda con la referencia vieja
-no falla, miente.** Por eso el caso 153 exige explícitamente que el repositorio y el alias sean la MISMA
+no falla, miente.** Por eso el caso 155 exige explícitamente que el repositorio y el alias sean la MISMA
 tabla; sin esa aserción el defecto habría pasado los dos y aparecido en pantalla dentro de una semana.
 
 ## Verificación

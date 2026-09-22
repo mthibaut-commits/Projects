@@ -6,7 +6,7 @@ tags: [sesion, tenant, configuracion, atribucion]
 timestamp: 2026-09-21T23:30:00Z
 ---
 
-# El tenant se da de alta · regla 50
+# El tenant se da de alta · regla 52
 
 ## Qué pidió el usuario
 

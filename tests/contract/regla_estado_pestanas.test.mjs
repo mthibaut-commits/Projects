@@ -1,6 +1,6 @@
-/* Gate de contrato de la regla 49 (el estado del otorgamiento cruza de pestaña, con storage Y aviso),
+/* Gate de contrato de la regla 51 (el estado del otorgamiento cruza de pestaña, con storage Y aviso),
    sobre el TEXTO del fuente. Lo que esta regla fija no se puede probar desde la suite: hacen falta DOS
-   documentos, y la suite corre en uno. El caso 153 cubre la mitad que sí se puede —que el estado se
+   documentos, y la suite corre en uno. El caso 155 cubre la mitad que sí se puede —que el estado se
    persiste y que solicitar una excepción habilita la bandeja—; esta es la otra mitad: que el aviso
    salga del PUNTO ÚNICO y no del call site, que el receptor no lo re-difunda, y que releer no deje los
    alias mirando una tabla vieja.
@@ -103,7 +103,7 @@ export function auditarRegla49(src) {
   return fallos;
 }
 
-test("49 · el estado del otorgamiento cruza de pestaña: repositorio, aviso desde el punto único y relectura que no rompe los alias", () => {
+test("51 · el estado del otorgamiento cruza de pestaña: repositorio, aviso desde el punto único y relectura que no rompe los alias", () => {
   assert.deepEqual(auditarRegla49(jsx), []);
 });
 
@@ -140,7 +140,7 @@ const MUTANTES = {
 };
 
 for (const [nombre, m] of Object.entries(MUTANTES)) {
-  test(`49 · sonda: el mutante «${nombre}» lo atrapa el auditor`, () => {
+  test(`51 · sonda: el mutante «${nombre}» lo atrapa el auditor`, () => {
     assert.notEqual(m.src, jsx, "el mutante no cambió el fuente: la sonda no probaría nada");
     const fallos = auditarRegla49(m.src);
     assert.ok(fallos.some((f) => m.re.test(f)), `esperaba un fallo ${m.re}; obtuve ${JSON.stringify(fallos)}`);

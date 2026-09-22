@@ -1,5 +1,5 @@
-/* Gate de contrato de la regla 50 (el tenant se da de alta en la plataforma, con su marca y su
-   administrador), sobre el TEXTO del fuente. El caso 154 cubre los MOTORES —que el catálogo persista,
+/* Gate de contrato de la regla 52 (el tenant se da de alta en la plataforma, con su marca y su
+   administrador), sobre el TEXTO del fuente. El caso 156 cubre los MOTORES —que el catálogo persista,
    que un rol `admin` cubra las tres áreas, que el correo resuelva en vivo—; esto cubre lo que vive en
    pantalla y en la forma del código, que la suite no monta: que la sección exista, que la marca se
    haya IDO de Funcionalidades, y que el rótulo del tenant esté en el contenedor y no copiado en cada
@@ -124,7 +124,7 @@ export function auditarRegla50(src) {
   return fallos;
 }
 
-test("50 · el tenant se da de alta en la plataforma, con su marca y su administrador; el super-admin es un rol", () => {
+test("52 · el tenant se da de alta en la plataforma, con su marca y su administrador; el super-admin es un rol", () => {
   assert.deepEqual(auditarRegla50(jsx), []);
 });
 
@@ -151,7 +151,7 @@ const MUTANTES = {
 };
 
 for (const [nombre, m] of Object.entries(MUTANTES)) {
-  test(`50 · sonda: el mutante «${nombre}» lo atrapa el auditor`, () => {
+  test(`52 · sonda: el mutante «${nombre}» lo atrapa el auditor`, () => {
     assert.notEqual(m.src, jsx, "el mutante no cambió el fuente: la sonda no probaría nada");
     const fallos = auditarRegla50(m.src);
     assert.ok(fallos.some((f) => m.re.test(f)), `esperaba un fallo ${m.re}; obtuve ${JSON.stringify(fallos)}`);

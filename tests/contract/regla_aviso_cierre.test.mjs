@@ -1,4 +1,4 @@
-/* Gate de contrato de la regla 48 (el cierre del negocio le escribe a quien tiene que firmar), sobre el
+/* Gate de contrato de la regla 50 (el cierre del negocio le escribe a quien tiene que firmar), sobre el
    TEXTO del fuente: `confirmarCierre` vive dentro de `PipelineComercial` —es el handler de la firma que
    vuelve del portal— así que ni la suite ni los auditores lo alcanzan, y el defecto que esta regla cierra
    era una AUSENCIA: 162 líneas sin una sola llamada a la mensajería. Una ausencia no la caza ningún test
@@ -126,7 +126,7 @@ export function auditarRegla48(src) {
   return fallos;
 }
 
-test("48 · el cierre del negocio le escribe a los aprobadores y al ejecutivo, de parte del sistema y sin duplicarse", () => {
+test("50 · el cierre del negocio le escribe a los aprobadores y al ejecutivo, de parte del sistema y sin duplicarse", () => {
   assert.deepEqual(auditarRegla48(jsx), []);
 });
 
@@ -203,7 +203,7 @@ const MUTANTES = {
 };
 
 for (const [nombre, m] of Object.entries(MUTANTES)) {
-  test(`48 · sonda: el mutante «${nombre}» lo atrapa el auditor`, () => {
+  test(`50 · sonda: el mutante «${nombre}» lo atrapa el auditor`, () => {
     assert.notEqual(m.src, jsx, "el mutante no cambió el fuente: la sonda no probaría nada");
     const fallos = auditarRegla48(m.src);
     assert.ok(fallos.some((f) => m.re.test(f)), `esperaba un fallo ${m.re}; obtuve ${JSON.stringify(fallos)}`);

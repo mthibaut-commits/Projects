@@ -23736,7 +23736,7 @@ const repoVisadoDetalle = crearRepo("otorgamiento_visado_detalle");
 const repoSolicitudExc = crearRepo("solicitud_excepcion");
 const repoVerifExc = crearRepo("verificacion_excepcion");
 const repoOtorgEventos = crearRepo("otorgamiento_evento");
-// LA PRE-EVALUACIÓN ES ESTADO DEL OTORGAMIENTO, NO DE UNA PESTAÑA (21-09-2026, regla 49). Era un
+// LA PRE-EVALUACIÓN ES ESTADO DEL OTORGAMIENTO, NO DE UNA PESTAÑA (21-09-2026, regla 51). Era un
 // `let PRE_EVAL = {}` de módulo, y `excEnBandeja` la consulta para decidir si una operación se puede
 // VISAR: con el detalle en pestaña propia, el ejecutivo solicitaba la aprobación allá y el aprobador
 // —en la pestaña del tubo, que es donde vive la mesa— seguía viendo la bandeja en cero. Mismo trato
@@ -24063,7 +24063,7 @@ let FOLIOS_EN_OPERACION = {};
 let VERIF_VEREDICTO = repoVerifVeredicto.all(); // { [dealId]: { [rutOdeudor]: { est, motivo, razon, causas, por, fecha } } }
 // Reapunta los alias a la tabla del tenant activo. Se llama al cambiar de tenant; con un solo tenant
 // (Security) hoy no se ejecuta, pero deja explícito qué hay que hacer cuando entre el segundo factoring.
-// RELEER EL ESTADO DEL OTORGAMIENTO QUE ESCRIBIÓ OTRA PESTAÑA (regla 49). Los repositorios cargan el
+// RELEER EL ESTADO DEL OTORGAMIENTO QUE ESCRIBIÓ OTRA PESTAÑA (regla 51). Los repositorios cargan el
 // storage UNA vez al montar el módulo: el detalle escribe el visado, la solicitud de excepción y la
 // pre-evaluación, y la pestaña del tubo —donde vive la mesa de Otorgamientos— sigue mostrando lo que
 // leyó al abrirse. Se releen los del otorgamiento y se invalida el visado memoizado, que es lo que
@@ -24368,7 +24368,7 @@ function cargarRoles() {
 }
 // ── USUARIOS DADOS DE ALTA DESDE CONFIGURACIÓN (por tenant) ─────────────────────────────────────
 // `USERS` es el elenco que trae la demo. Un tenant nuevo no tiene ninguno, y alguien tiene que poder
-// entrar a crear al resto: ése es el ADMIN, y se da de alta en `Configuración › Tenants` (regla 50).
+// entrar a crear al resto: ése es el ADMIN, y se da de alta en `Configuración › Tenants` (regla 52).
 //
 // Se hidrata ACÁ y no más arriba porque necesita el catálogo de roles (`ROL_POR_ID`) para validar, y
 // tiene que correr ANTES de `cargarRoles()`: esa función IGNORA todo código que no esté en `USERS`,
@@ -24731,7 +24731,7 @@ function estadoAtencionPrioridad(deal) {
 // ── Pre-evaluación: el ejecutivo solicita iniciar formalmente la revisión de otorgamiento de una
 // oportunidad con altas chances de cursarse, para adelantar la aprobación antes de la aceptación formal.
 let PRE_EVAL = repoPreEval.all();
-// EL AVISO A LA OTRA PESTAÑA, EN UN SOLO SITIO (regla 49). El storage hace que el estado sobreviva a
+// EL AVISO A LA OTRA PESTAÑA, EN UN SOLO SITIO (regla 51). El storage hace que el estado sobreviva a
 // cerrar la pestaña; esto hace que la pestaña que YA está abierta se entere. Son dos cosas distintas y
 // hacen falta las dos: el aprobador tiene el tubo abierto mientras el ejecutivo trabaja en el detalle.
 // Vive a nivel de módulo porque lo llaman funciones que no son componentes (`setPreEval`,
@@ -25024,7 +25024,7 @@ function faseOtorgDeal(deal) {
   return null;
 }
 // ── Mensajería interna: hilos de conversación entre usuarios, opcionalmente atados a una operación.
-// LOS HILOS SON ESTADO DEL PROCESO, NO DE UNA PESTAÑA (21-09-2026, regla 49). Era un array de módulo,
+// LOS HILOS SON ESTADO DEL PROCESO, NO DE UNA PESTAÑA (21-09-2026, regla 51). Era un array de módulo,
 // así que todo lo que se escribía desde el DETALLE —la solicitud de aprobación de una excepción, el
 // requerimiento de información, el aviso del cierre— no llegaba nunca al Centro de mensajería, que se
 // pinta en la pestaña del tubo: el usuario lo reportó con la bandeja vacía a la vista. Ahora vive en
@@ -25462,7 +25462,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
               return <div className="text-center">No hay excepciones pendientes en esta fase de otorgamiento: nadie tiene nada que firmar.</div>;
             if (!soloMias) return <div className="text-center">No hay operaciones en esta fase de otorgamiento.</div>;
             // Agrupadas por (área, nivel), que es el par con el que se decide quién puede firmarlas.
-            // La misma función que arma el aviso del cierre (regla 48): si el cartel agrupara por su
+            // La misma función que arma el aviso del cierre (regla 50): si el cartel agrupara por su
             // cuenta, los dos textos que explican lo mismo podrían decir cosas distintas.
             const tramos = tramosDeExcepciones(pendientes);
             const mia = atribEfectiva(usuario);
@@ -34761,7 +34761,7 @@ function CfgFactoringTarget() {
 // Configuración › TENANTS. El alta de un factoring en la plataforma (21-09-2026, pedido del usuario:
 // «un menú Tenant en donde se cree el Tenant de Security y/o otro cliente; saca la configuración del
 // logo y de los colores y déjalos en ese menú; en ese menú también deberías poder crear al admin del
-// Tenant para que pueda ingresar y empezar a crear a los otros usuarios»). Regla 50.
+// Tenant para que pueda ingresar y empezar a crear a los otros usuarios»). Regla 52.
 //
 // SON TRES COSAS EN UN ORDEN, y el orden es el punto: un tenant sin admin es una carpeta vacía —nadie
 // puede entrar a crear al resto— y por eso el alta del admin vive acá y no en `Configuración ›
@@ -44916,7 +44916,7 @@ const AUTH_OTP_MAX = 3; // intentos de código antes de volver a credenciales
 const SESION_ABSOLUTA_MS = 8 * 3600000; // vida máxima de la sesión, se renueve o no
 // Cuentas del demo. En producción NO existe un directorio en el bundle: el backend resuelve el usuario.
 // EL CORREO ES LA CREDENCIAL. Se resuelve contra el elenco de la demo Y contra los usuarios que el
-// tenant dio de alta (regla 50): el admin que se acaba de crear tiene que poder entrar SIN recargar,
+// tenant dio de alta (regla 52): el admin que se acaba de crear tiene que poder entrar SIN recargar,
 // así que se consulta la lista viva y no una copia que se armó al montar el módulo.
 const codigoDeCorreo = (email) => {
   const k = String(email || "")
@@ -47185,7 +47185,7 @@ export default function PipelineComercial() {
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
-    // EL CIERRE AVISA A QUIEN TIENE QUE FIRMAR (regla 48). Acá y no dentro del updater, por lo mismo
+    // EL CIERRE AVISA A QUIEN TIENE QUE FIRMAR (regla 50). Acá y no dentro del updater, por lo mismo
     // que `cerrarOferta` arma su patch afuera: `setDeals(fn)` no ejecuta `fn` en el acto y puede
     // llamarlo más de una vez, así que un envío ahí adentro mandaría el aviso dos veces. Se evalúa el
     // paquete FIRMADO —`dealFirmado`, la misma expresión que guarda el updater— porque las

@@ -6,7 +6,7 @@ tags: [sesion, otorgamiento, mensajeria, atribucion]
 timestamp: 2026-09-21T19:40:00Z
 ---
 
-# El cierre le escribe a quien firma · regla 48
+# El cierre le escribe a quien firma · regla 50
 
 ## Qué reportó el usuario
 

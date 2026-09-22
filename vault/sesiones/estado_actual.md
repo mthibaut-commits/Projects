@@ -13,7 +13,7 @@ timestamp: 2026-09-21T23:59:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **154/154 PASA**, **43 archivos de gate de contrato**
+(`pipeline_comercial.jsx`), build standalone, **156/156 PASA**, **43 archivos de gate de contrato**
 (289 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su
 vault (79 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato
 tienen gate. La crónica del 17 al 19-09 vive en sus logs (ADR-0001 a 0006, el linter como paso 0-bis).
@@ -26,8 +26,8 @@ el CONSOLIDADO** (45, ADR-0011) y el **RUT del deudor se resuelve, no se arma** 
 
 El **21-09**, mirando pantallas con el usuario: la mesa de verificación lista las facturas y colapsa sus
 causas · el pie de «Líneas solicitadas» suma · el **stream del inbound se reparte por ROL** y nace el rol
-`inbound` (47) · el **cierre del negocio le escribe a quien tiene que firmar** (48)
-([log](./2026-09-21_el_cierre_le_escribe_a_quien_firma.md)) · **UN DEFECTO, TRES SÍNTOMAS** (49,
+`inbound` (49) · el **cierre del negocio le escribe a quien tiene que firmar** (50)
+([log](./2026-09-21_el_cierre_le_escribe_a_quien_firma.md)) · **UN DEFECTO, TRES SÍNTOMAS** (51,
 ADR-0012): `PRE_EVAL` y `HILOS` eran `let` de módulo y el detalle es pestaña propia, así que la bandeja
 del aprobador, el Centro de mensajería y el EV veían un estado que nunca salía del detalle; ahora van a
 repositorio Y avisan al opener ([log](./2026-09-21_un_defecto_tres_sintomas.md)) · se **ordenó la carpeta** —dos
