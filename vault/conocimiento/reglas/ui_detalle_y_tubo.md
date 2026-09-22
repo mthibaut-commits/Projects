@@ -116,3 +116,24 @@ timestamp: 2026-09-17T15:29:14Z
       operación va a tomar (comité o no), y el usuario nombró otorgamiento y verificación. Queda anotado por
       si se decide lo contrario.
     - Caso **158**, en las dos direcciones. Gate de forma: `regla_54.test.mjs`.
+
+56. **EL QUE SCROLLEA LA TABLA DEL TUBO ES SU PROPIO PANEL** (22-09-2026, reporte del usuario: «de nuevo se
+    descuadró la card de la columna Oferta»; estaba anotado en el tablero como «la card de la columna Oferta
+    se corta»). La raíz de `TablaOportunidades` lleva **`min-w-0`**, y no es cosmética.
+    - **La medición.** A 1366 px de ventana: la raíz —un ITEM flex del contenedor que el tubo comparte con
+      el Kanban (`mt-3 flex items-start gap-3 overflow-x-auto`)— se quedaba en **1536 px** y no cedía, porque
+      un item flex trae `min-width: auto` y no se encoge bajo el ancho mínimo de su contenido, que acá lo fija
+      el `minWidth: 1526px` de la tabla. Consecuencias medidas, las tres a la vez: el `overflow-x-auto` del
+      panel blanco tenía `scrollWidth === clientWidth` (**nada que scrollear**, o sea el mecanismo que el
+      diseño supone no existía), quien desbordaba era el contenedor de ARRIBA —`scrollWidth` 1536 contra
+      `clientWidth` 1318—, y la card de «Oferta» terminaba con su borde derecho en **x=1535 sobre una ventana
+      de 1366**: sus tres chips salían cortados por el borde de la ventana, sin barra a la vista que dijera
+      que había más.
+    - **Con `min-w-0`**: la raíz cede a 1318, el panel blanco vuelve a ser el que scrollea (`scrollWidth` 1534
+      sobre `clientWidth` 1316) y `main` deja de desbordar. De 1600 px para arriba no cambia nada: la tabla
+      cabe entera y no scrollea nadie.
+    - **Lo que NO arregla, y es a propósito:** por debajo de ~1574 px la tabla sigue sin caber —sus cinco
+      columnas suman 1526 px de contenido medido— y hay que desplazarla. Lo que cambia es que el desplazamiento
+      ocurre DENTRO de su marco, que es lo que el comentario de los anchos ya decía que tenía que pasar.
+    - Gate de forma: `regla_56.test.mjs`, con sonda.
+

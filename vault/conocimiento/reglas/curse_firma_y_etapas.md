@@ -88,5 +88,74 @@ timestamp: 2026-09-17T15:29:14Z
     - **NEX no controla el giro y no lo rechaza.** `moverEtapa` dejó de tratar «giro» como transición manual: no hay guarda, no hay auditoría de rechazo, la acción **no existe** — exactamente el mismo tratamiento que «Aceptada», que la fija el cliente al firmar. Antes el «Avanzar a» del menú lo ofrecía con sólo firma del cliente y huella, así que un **comercial** dejaba la operación en «Pendiente de Giro» sin que Operaciones hubiera verificado nada. El destino **no desaparece en silencio** (regla 24): se muestra apagado, con el motivo `lo_autoriza_operaciones`.
     - **GIR-01 pasa a `aplicado: "externo"`**: el contrato lo declara para que el resolver lo implemente, y NEX no lo anticipa porque la acción no es suya. Es el primer invariante con ese valor, y el vocabulario se amplió para no tener que mentir con `funcion` ni con `ui`.
     - **GIR-02 se queda donde sirve**: en `aprobarIntegracion`, que es el último punto ANTES de inyectar — y ése sí es un acto de NEX.
-    - **Cómo nos enteramos del giro: CALLBACK del sistema de giro** (decisión del usuario, 19-09-2026). Es **push**, no pull: el otro sistema avisa el evento. `recibirGiroTesoreria(ev, deal)` es el punto de entrada, y es una **función pura que devuelve el patch**, no un setter — así la suite la prueba por su nombre (caso **145**) y quien la llama decide cuándo escribir. Las tres negativas pesan tanto como la positiva: `ya_girada` (**un callback se reintenta**, es la naturaleza de un push, y reprocesarlo duplicaría el hecho en la bitácora y en los KPI de venta), `no_inyectada` (sólo se gira lo que pasó por Operaciones; un aviso sobre otra cosa es un error del otro lado y se dice, no se escribe) y `aviso_incompleto` (sin `operacionId` no hay con qué decidir: falla cerrado). El **monto no se inventa**: si el aviso no lo trae, el patch no lo afirma — un número inventado acá no cuadraría contra nada y nadie podría distinguirlo de uno real. El rechazo **también se audita**: un aviso que llega y no corresponde es información sobre el otro lado, y perderlo deja el problema invisible.
+    - **Cómo nos enteramos del giro: CALLBACK del sistema de giro** (decisión del usuario, 19-09-2026). Es **push**, no pull: el otro sistema avisa el evento. `recibirGiroTesoreria(ev, deal)` es el punto de entrada, y es una **función pura que devuelve el patch**, no un setter — así la suite la prueba por su nombre (caso **147**) y quien la llama decide cuándo escribir. Las tres negativas pesan tanto como la positiva: `ya_girada` (**un callback se reintenta**, es la naturaleza de un push, y reprocesarlo duplicaría el hecho en la bitácora y en los KPI de venta), `no_inyectada` (sólo se gira lo que pasó por Operaciones; un aviso sobre otra cosa es un error del otro lado y se dice, no se escribe) y `aviso_incompleto` (sin `operacionId` no hay con qué decidir: falla cerrado). El **monto no se inventa**: si el aviso no lo trae, el patch no lo afirma — un número inventado acá no cuadraría contra nada y nadie podría distinguirlo de uno real. El rechazo **también se audita**: un aviso que llega y no corresponde es información sobre el otro lado, y perderlo deja el problema invisible.
     - **La asignación de giros se CONGELA en la inyección** (19-09-2026, consecuencia directa de lo anterior). El paquete que vale es el que se entrega, así que `aprobarIntegracion` guarda en `repoGiro` la asignación tal como está en ese instante, con quién la aprobó y cuándo. Antes `GIRO_STATE` **no tenía escritor** y `giroDeal` —el único lector que sabía que «el congelado gana»— **no tenía llamador**: la regla estaba probada con estado inyectado y no ocurría en ninguna pantalla. Ahora el congelado lo consultan los DOS lectores por **una sola fuente**, `giroCongelado(deal, estado)`, porque dos copias de «gana el congelado» se desfasan. Y se consulta **primero**: antes del cálculo, del memo y de exigir simulación — una asignación congelada existe porque la operación se inyectó, y eso es un hecho del otro sistema que sigue siendo lo que se giró aunque el paquete de la pantalla cambie después. Caso **148**.
+
+55. **LA FIRMA DEL CLIENTE CRUZA A LA PESTAÑA DEL TUBO, COMO TODO LO DEMÁS QUE EL DETALLE ESCRIBE**
+    (22-09-2026, reportado por el usuario: «esta operación la firmó el cliente pero aún sigue el
+    otorgamiento del jefe comercial sin tener ningún tipo de actividad pendiente. La oportunidad sigue
+    en negociación»).
+    - **Qué se veía**: la misma operación decía **«Otorgamiento»** en el detalle y **«Negociación»** en el
+      tubo, y la bandeja del aprobador no la tenía. No eran tres defectos: la etapa que la firma mueve
+      nunca salía de la pestaña del detalle, y todo lo que mira el tubo —el chip de etapa, la fase de la
+      bandeja (`aceptada`), los conteos— la leía de su copia vieja.
+    - **La causa es de dónde llega el evento.** El portal de curse (`curse.html`) le hace `postMessage` a
+      **la pestaña que lo abrió**, y a esa altura el ejecutivo está trabajando en el DETALLE: publica la
+      oferta desde ahí, así que el portal abre desde ahí y la firma vuelve ahí. `confirmarCierre` corría
+      entonces en la pestaña del detalle, escribía su `setDeals` local… y no llamaba a `avisarTubo`. Es
+      **exactamente** el agujero que ya cerraron `nex-simulado` (regla 15-bis-bis), `nex-preeval` y
+      `nex-hilo` (regla 51), en la transición que más importa de todas: la que convierte una oferta en
+      una operación aceptada.
+    - **El arreglo**: `confirmarCierre` arma un **patch** —en vez de devolver el deal entero— y lo difunde
+      con `avisarTubo(id, patch)` antes de aplicarlo. Es el mismo patrón de los otros cuatro sitios que ya
+      avisaban, y `avisarTubo` fusiona por operación, así que llamarlo desde el updater —que React puede
+      correr más de una vez— no duplica el aviso. **Lo que se difunde y lo que se guarda son el mismo
+      objeto**: si fueran dos expresiones, las dos pestañas divergen en cuanto alguien toque una.
+    - **La lección, otra vez**: cuando el aviso vive en el *call site*, el call site que se escribió
+      después se olvida (regla 51 lo dijo del botón de pre-evaluación). Acá el que se olvidó fue el más
+      importante, y nadie lo notó porque el detalle —que es donde el ejecutivo mira— sí se actualizaba.
+    - **El caso 51-bis que NO se reabre**: la bandeja del aprobador ya no depende sólo de esto. Desde la
+      regla 51, solicitar la aprobación de una excepción habilita la bandeja por `tienePreEval` y eso
+      difunde, así que el aprobador ve la operación aunque la firma todavía no haya cruzado. Medido en el
+      build actual: con la operación en `oferta` y sin pre-evaluación la fase es `null` —la bandeja en
+      cero, el síntoma que el usuario reportó—, y en cuanto el ejecutivo solicita una aprobación pasa a
+      `preevaluacion` y aparece.
+    - Gate de forma: `regla_estado_pestanas.test.mjs`, que ya era el dueño de «el estado cruza de
+      pestaña» — la regla nueva es otra instancia del mismo principio y no merece un gate aparte. **Sin
+      caso de suite**: hacen falta DOS documentos y la suite corre en uno, igual que la regla 51.
+
+58. **LA OFERTA PUBLICADA ES UN ESTADO, Y EL TUBO TIENE QUE VERLO** (22-09-2026, reporte del usuario: «la
+    oportunidad en el tubo de negocio sigue diciendo negociación, ya se envió la oferta. No sé si cuando se
+    envía la oferta existe un estado publicado»).
+    - **El estado YA existía y no había que crearlo**: `ETAPA_PUBLICADA = "oferta_publicada"`, rotulado
+      «Oferta publicada» por este tenant, y `etapaVisualId` lo resuelve para una operación en `oferta` cuyo
+      `ofertaPublicada(d)` sea verdadero. Está exactamente donde el usuario lo pedía: **después de la
+      negociación y antes de la aceptación formal del cliente**. Medido sobre el build: `oferta` →
+      «Negociación», con los dos hechos → «Oferta publicada», y al aceptar → «Aceptada».
+    - **Por qué no se veía, y son DOS causas distintas.**
+      1. **`patchCierre` no marcaba `ofertaComunicada`.** El botón dice «Cerrar oferta y publicar» (o
+         «Enviar a Comité y Publicar»), el modal elige **cómo** se publica —electrónica o física—, el
+         historial que ese mismo gesto escribe dice «correo enviado al cliente con el código de negocio y su
+         clave de un solo uso» y el `status` queda en «Oferta publicada». Con todo eso, la bandera seguía en
+         false: la misma pantalla decía **cuatro cosas distintas** y el chip de etapa era la única que se
+         leía de un vistazo. El comentario de encima del patch afirmaba «todavía NO se comunica al cliente»
+         y contradecía al historial de tres líneas más abajo; se corrigió el que estaba equivocado. Lo que
+         viene DESPUÉS (`enviarCierre`) es el enlace para **firmar**, que es otro acto: el cliente ya tiene
+         la oferta.
+      2. **Los tres escritores no le avisaban al tubo.** `cerrarOferta` sí (regla 15-bis-bis), pero
+         `publicarOferta` —el canal del Agente IA— y `enviarCierre` —el envío del enlace— hacían su
+         `setDeals` local y nada más. El detalle es **pestaña propia**, así que la fila del tubo se quedaba
+         con la copia vieja. Es la cuarta vez que aparece el mismo agujero (15-bis-bis, 51, 55, y ésta): el
+         aviso vive en el *call site*, así que el call site que se escribe después se olvida.
+    - **El predicado NO se afloja**: `ofertaPublicada` sigue exigiendo **cerrada Y comunicada**. Lo que
+      cambió es que el cierre asienta los dos, porque hace los dos; el camino del Agente IA sigue
+      comunicando por su lado sin pasar por el cierre, y una oferta cerrada y no comunicada sigue sin ser
+      una oferta publicada. La regla 54 y su caso **158** quedan intactos, y `e2e-58` prueba esa misma
+      distinción en la fila del tubo.
+    - **Consecuencia deliberada**: con la publicación asentada al cerrar, `exigeAcciones` (regla 54) pasa a
+      rojo y el tab de Verificación aparece **en ese momento** y no cuando alguien se acuerde de enviar el
+      enlace. Es lo que el usuario había pedido el mismo día: «cuando el ejecutivo envíe a comité y publicar,
+      se debe empezar a solicitar las acciones de otorgamiento y verificación».
+    - Gates: `regla_58.test.mjs` (forma, con sondas) y **`e2e-58`** (la fila del tubo, en las dos
+      direcciones).
+

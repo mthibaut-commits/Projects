@@ -19,12 +19,14 @@ export default [
       parserOptions: { ecmaFeatures: { jsx: true } },
       globals: Object.fromEntries(
         [
-          // El navegador, medido: son los 21 que el fuente usa, ni uno más. `matchMedia` entró el 20-09-2026
-          // con la portada (ADR-0005), que lee `prefers-color-scheme`: la lista dice exactamente qué toca
-          // esta app, así que crece cuando el fuente crece y el linter avisa cuál falta.
+          // El navegador, medido: son los 23 que el fuente usa, ni uno más. `matchMedia` entró el 20-09-2026
+          // con la portada (ADR-0005), que lee `prefers-color-scheme`; `FileReader` y `atob` el 22-09-2026
+          // con la captura pegada en la nota de verificación (lee el portapapeles y la escribe al disco):
+          // la lista dice exactamente qué toca esta app, así que crece cuando el fuente crece y el linter
+          // avisa cuál falta.
           "window", "document", "location", "history", "navigator", "localStorage", "matchMedia",
           "setTimeout", "clearTimeout", "setInterval", "clearInterval",
-          "URL", "URLSearchParams", "Blob", "DOMParser", "TextEncoder", "btoa",
+          "URL", "URLSearchParams", "Blob", "DOMParser", "TextEncoder", "btoa", "atob", "FileReader",
           "ResizeObserver", "HTMLElement", "customElements",
           // Vendorizado en `vendor/` y cargado como UMD antes del bundle (ver el SBOM).
           "React",
