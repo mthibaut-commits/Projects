@@ -3481,51 +3481,94 @@ function causasVerif(v) {
 }
 // Filas de la mesa: un deudor por operación, sólo los que el predictor mandó a verificación
 // telefónica. Los que el modelo dio por verificados no aparecen — no hay nada que llamar.
-// El COMMIT de la verificación —qué llamada se registró y qué factura quedó vetada— es estado del
-// SERVIDOR: es evidencia de una conversación con el deudor, con actor y hora. Entra por parámetro
-// (`{ tel, vetadas }` por id de operación) para que esta función sea pura; el default es el estado
-// que hoy vive en el navegador. Ver el contrato VER-01 en `INVARIANTES`.
+// El COMMIT de la verificación —qué llamada se registró, qué factura quedó vetada y qué respaldo se
+// adjuntó— es estado del SERVIDOR: es evidencia de una conversación con el deudor, con actor y hora.
+// Entra por parámetro (`{ tel, vetadas, respaldo }` por id de operación) para que esta función sea
+// pura; el default es el estado que hoy vive en el navegador. Ver el contrato VER-01 en `INVARIANTES`.
+//
+// LA UNIDAD DE TRABAJO ES LA FACTURA (regla 53, 22-09-2026): la fila sigue siendo el DEUDOR —una
+// llamada cubre a todas sus facturas y las causas son suyas— pero trae `docs`, un documento por
+// factura con su estado, su respaldo y su nota. Y `docs` incluye las VETADAS, que ya no están en
+// `facturasOp`: retirar una factura la saca de la oferta, así que listándolas sólo desde ahí la
+// evidencia de «esta no la confirmó» desaparecía de la pantalla justo después de registrarla —y con
+// todas vetadas, el deudor entero se esfumaba de la mesa aunque su veredicto estuviera congelado—.
 function filasVerificacion(deals, estado) {
   const out = [];
   for (const d of deals || []) {
-    const fs = (d && d.facturasOp) || [];
-    if (!fs.length) continue;
-    const grupos = new Map();
-    for (const f of fs) {
-      const k = f.rutRecep || f.deudor || "";
-      let g = grupos.get(k);
-      if (!g) {
-        g = [];
-        grupos.set(k, g);
-      }
-      g.push(f);
-    }
     const tel = (estado && estado.tel && estado.tel[d.id]) || (typeof VERIF_TEL !== "undefined" && VERIF_TEL[d.id]) || {};
     const vet = (estado && estado.vetadas && estado.vetadas[d.id]) || (typeof NO_CONFIRMADAS !== "undefined" && NO_CONFIRMADAS[d.id]) || {};
-    for (const [k, suyas] of grupos) {
-      const v = verifFactura(suyas[0], d, estado);
+    const resp = (estado && estado.respaldo && estado.respaldo[d.id]) || (typeof VERIF_RESPALDO !== "undefined" && VERIF_RESPALDO[d.id]) || {};
+    const fs = (d && d.facturasOp) || [];
+    // Las vetadas vuelven a la lista como documentos de pleno derecho: no están en la oferta —por eso
+    // no suman al monto— pero son el resultado de una verificación y tienen que poder mirarse.
+    const vetadas = Object.entries(vet).map(([id, x]) => ({
+      id,
+      folio: (x && x.folio) || id,
+      monto: (x && x.monto) || 0,
+      deudor: (x && x.deudor) || "",
+      rutRecep: (x && x.rutRecep) || "",
+      retirada: true,
+    }));
+    if (!fs.length && !vetadas.length) continue;
+    const grupos = new Map();
+    const clave = (f) => f.rutRecep || f.deudor || "";
+    for (const f of fs) {
+      const k = clave(f);
+      let g = grupos.get(k);
+      if (!g) {
+        g = { enOferta: [], fuera: [] };
+        grupos.set(k, g);
+      }
+      g.enOferta.push(f);
+    }
+    for (const f of vetadas) {
+      // Una vetada sin grupo propio —su deudor ya no tiene facturas vivas— abre el suyo igual.
+      const k = clave(f);
+      let g = grupos.get(k);
+      if (!g) {
+        g = { enOferta: [], fuera: [] };
+        grupos.set(k, g);
+      }
+      g.fuera.push(f);
+    }
+    for (const [k, g] of grupos) {
+      const suyas = g.enOferta;
+      const muestra = suyas[0] || g.fuera[0];
+      const v = verifFactura(muestra, d, estado);
       // Un deudor con veredicto CONGELADO sigue en la mesa aunque el predictor de hoy ya no lo mandaría
       // a teléfono: es evidencia de una llamada que ocurrió, y la fila es donde consta.
-      if (v.est !== "tel" && !v.congelado) continue;
+      if (v.est !== "tel" && !v.congelado && !g.fuera.length) continue;
       const nTel = suyas.filter((f) => tel[f.id]).length;
-      const nVet = suyas.filter((f) => vet[f.id]).length;
+      const nVet = g.fuera.length;
+      const docEstado = (f) => (f.retirada || vet[f.id] ? "no_verificada" : tel[f.id] ? "verificada" : "pendiente");
+      const docs = [...suyas, ...g.fuera].map((f) => ({
+        f,
+        id: f.id,
+        estado: docEstado(f),
+        tel: tel[f.id] || null,
+        respaldo: resp[f.id] || null,
+      }));
       out.push({
         id: d.id + "|" + k,
         deal: d,
         cliente: d.cliente || d.company || d.id,
         op: d.id,
-        rutDeudor: suyas[0].rutRecep || "",
+        rutDeudor: (muestra && muestra.rutRecep) || "",
         deudor: v.nombre,
         tipo: v.tipo,
         nota: v.nota,
         segmento: v.segmento,
         facturas: suyas,
+        docs,
         exec: d.exec,
         monto: mmRound(suyas.reduce((s, f) => s + (f.monto || 0), 0)),
         causas: causasVerif(v),
         nTel,
         nVet,
-        estado: nVet ? "no_verificada" : nTel === suyas.length ? "verificada" : "pendiente",
+        nPend: docs.filter((x) => x.estado === "pendiente").length,
+        // El estado del DEUDOR es el resumen de sus documentos: pendiente mientras quede uno sin
+        // resolver —que es lo que falta hacer—, y si no, no_verificada si alguno se retiró.
+        estado: docs.some((x) => x.estado === "pendiente") ? "pendiente" : nVet ? "no_verificada" : "verificada",
       });
     }
   }
@@ -11330,8 +11373,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
                       v = x.v,
                       isOpen = !!open[f.id];
                     const tel = v.tel;
-                    const estPill =
-                      v.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
+                    const estPill = v.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
                     const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                     const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
                     const fd = fechasDocumento(f);
@@ -12776,7 +12818,7 @@ function DealDrawer({
                             : `${otorgPendOp} criterio(s) de otorgamiento pendientes en esta operación`
                         }
                         className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white"
-                        style={{ backgroundColor: otorgPend > 0 ? "#EF4444" : "#7C3AED" }}
+                        style={{ backgroundColor: exigeAcciones(deal) ? "#EF4444" : "#7C3AED" }}
                       >
                         {otorgPendOp}
                       </span>
@@ -12785,7 +12827,7 @@ function DealDrawer({
                       <span
                         title={`${verifPendOp} deudor(es) esperando la verificación telefónica en esta operación`}
                         className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white"
-                        style={{ backgroundColor: "#C2410C" }}
+                        style={{ backgroundColor: exigeAcciones(deal) ? "#EF4444" : "#7C3AED" }}
                       >
                         {verifPendOp}
                       </span>
@@ -15154,8 +15196,8 @@ function DealDrawer({
                                             "Criterios por aprobar",
                                             otorgRes.nPend,
                                             otorgRes.total,
-                                            "#7C3AED",
-                                            "#f5f3ff",
+                                            exigeAcciones(deal) ? "#EF4444" : "#7C3AED",
+                                            exigeAcciones(deal) ? "#FEF2F2" : "#f5f3ff",
                                             (otorgOk
                                               ? `Todas las reglas del motor de otorgamiento cumplen (${otorgRes.ok}/${otorgRes.total}).`
                                               : `Con observaciones: ${otorgQuien.toLowerCase()}. Reglas aprobadas ${otorgRes.ok} de ${otorgRes.total}. Se resuelven en el tab Otorgamiento.`) +
@@ -15171,8 +15213,8 @@ function DealDrawer({
                                             "Facturas por verificar",
                                             verifRes.facturas.length,
                                             validas.length,
-                                            "#EF4444",
-                                            "#FEF2F2",
+                                            exigeAcciones(deal) ? "#EF4444" : "#7C3AED",
+                                            exigeAcciones(deal) ? "#FEF2F2" : "#f5f3ff",
                                             verifOkTodo
                                               ? "Ninguna factura de la oferta requiere verificación telefónica."
                                               : `${verifRes.facturas.length} factura(s) de ${verifRes.nDeudores} deudor(es) necesitan verificación telefónica antes de girar.`,
@@ -23146,6 +23188,20 @@ function ofertaPublicada(deal) {
   const comunicada = !!deal.ofertaComunicada || (deal.waSesion || []).some((m) => /Oferta de factoring/i.test(m.text || ""));
   return cerrada && comunicada;
 }
+// ¿LAS ACCIONES DE OTORGAMIENTO Y VERIFICACIÓN YA SE EXIGEN, o todavía son un pronóstico? (regla 54,
+// pedido del usuario el 22-09-2026). Mientras el ejecutivo SIMULA, lo que el motor encuentra es una
+// anticipación —sirve para saber en qué se está metiendo y el paquete todavía puede cambiar entero—.
+// Cuando publica —cierra el paquete Y lo comunica al cliente— la casa se compromete, y esos pendientes
+// pasan a ser trabajo que alguien tiene que hacer: el otorgamiento a visar y las llamadas a los
+// deudores. De ahí en adelante la operación ya no vuelve atrás por sí sola, así que las etapas
+// posteriores a la firma también exigen. Es la MISMA compuerta con que aparece el tab de Verificación
+// (`mostrarVerif`, regla 6), menos la pre-evaluación: pre-evaluar es justamente pedir el pronóstico
+// antes de tiempo, así que muestra el tab y no vuelve rojo lo que todavía nadie tiene que hacer.
+function exigeAcciones(deal) {
+  if (!deal) return false;
+  if (["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage)) return true;
+  return ofertaPublicada(deal);
+}
 // ¿La oferta está cerrada AHORA? «Cerrada» es la aprobación INTERNA del paquete —el gate del
 // ejecutivo, regla 8— y es lo único que «Editar» deshace. Son TRES hechos distintos y confundirlos
 // deja o una oferta que no se puede volver a cerrar o una firma que reaparece sola:
@@ -23780,6 +23836,13 @@ const repoNoConfirmadas = crearRepo("factura_no_confirmada");
 // evidencia que alguien acababa de firmar. Volver a predecir sobre el monto ya recortado es además
 // circular: bajar el monto sólo puede mejorar esos tres criterios.
 const repoVerifVeredicto = crearRepo("verificacion_veredicto");
+// RESPALDO POR FACTURA (regla 53): la nota y el archivo con que el equipo justifica lo que hizo con
+// ESE documento. Va aparte de `repoVerifTel` —que es el hecho de la llamada— porque se escribe en
+// otro momento y por otra razón: se puede adjuntar el correo del deudor antes de marcar, y se puede
+// anotar por qué una factura no se confirmó después de retirarla. Del archivo se guarda la
+// REFERENCIA (nombre, tipo, tamaño, quién y cuándo), no los bytes: en producción el documento vive
+// en el gestor documental y NEX guarda a qué apunta, igual que el respaldo de una excepción.
+const repoVerifRespaldo = crearRepo("verificacion_respaldo");
 // ════════════════════════════════════════════════════════════════════════════════════════════
 // EVIDENCIA DEL CONTRATO DE CESIÓN (O05) — un HASH del paquete, no una bandera.
 //
@@ -24076,6 +24139,7 @@ let NO_CONFIRMADAS = repoNoConfirmadas.all(); // { [dealId]: { [facturaId]: { fo
 // una factura figuraba «en otra operación» sin que ninguna operación la tuviera. Lo mantiene al día
 // un efecto de `PipelineComercial`; en producción es un índice del servidor.
 let FOLIOS_EN_OPERACION = {};
+let VERIF_RESPALDO = repoVerifRespaldo.all(); // { [dealId]: { [facturaId]: { nota, adjuntos:[{nombre,tipo,tam}], por, fecha } } }
 let VERIF_VEREDICTO = repoVerifVeredicto.all(); // { [dealId]: { [rutOdeudor]: { est, motivo, razon, causas, por, fecha } } }
 // Reapunta los alias a la tabla del tenant activo. Se llama al cambiar de tenant; con un solo tenant
 // (Security) hoy no se ejecuta, pero deja explícito qué hay que hacer cuando entre el segundo factoring.
@@ -24094,6 +24158,7 @@ function reapuntarRepos() {
   SOLICITUD_EXC = repoSolicitudExc.all();
   VERIF_EXC = repoVerifExc.all();
   VERIF_TEL = repoVerifTel.all();
+  VERIF_RESPALDO = repoVerifRespaldo.all();
   NO_CONFIRMADAS = repoNoConfirmadas.all();
   VERIF_VEREDICTO = repoVerifVeredicto.all();
   OTORG_EVENTOS = repoOtorgEventos.all();
@@ -26990,17 +27055,106 @@ function ReglasClienteCatalogo() {
 // Mesa del EQUIPO DE VERIFICACIÓN, hermana de Otorgamientos. Marca por DEUDOR, no por factura: una
 // llamada cubre todas sus facturas (spec §2.1). Es una vista de trabajo, no de análisis — por eso
 // el orden por defecto es «lo que falta llamar, de mayor monto a menor».
-function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }) {
+// Las columnas del documento, una sola vez: la cabecera y las filas tienen que calzar, y dos literales
+// separados se desalinean en cuanto alguien toca uno.
+const COLS_DOC = "minmax(70px,0.7fr) minmax(110px,1fr) minmax(90px,0.8fr) minmax(90px,0.8fr) minmax(110px,0.9fr) minmax(230px,1.5fr) minmax(150px,1fr)";
+// El RESPALDO de UN documento: la nota de quien llamó y los archivos. Es un componente aparte porque
+// tiene borrador propio —se escribe y después se guarda— y meterlo en la fila obligaba a subir ese
+// borrador al estado de toda la mesa, donde cada tecla re-renderiza las demas filas.
+function RespaldoFactura({ doc, puede, onGuardar }) {
+  const r = (doc && doc.respaldo) || {};
+  const [nota, setNota] = useState(r.nota || "");
+  const [nuevos, setNuevos] = useState([]); // archivos elegidos y todavía no guardados
+  const guardados = r.adjuntos || [];
+  const hayCambio = nota !== (r.nota || "") || nuevos.length > 0;
+  return (
+    <div className="rounded-lg p-2.5" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
+      {(guardados.length > 0 || r.nota) && (
+        <div className="mb-2 rounded-md px-2 py-1.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
+          <div className="t9 uppercase tracking-wide" style={{ color: C.faint }}>
+            Respaldo guardado{r.por ? ` · ${r.por} · ${r.fecha}` : ""}
+          </div>
+          {r.nota && (
+            <div className="mt-0.5 t10" style={{ color: C.ink }}>
+              {r.nota}
+            </div>
+          )}
+          {guardados.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {guardados.map((a, i) => (
+                <span key={i} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9" style={{ backgroundColor: C.lilac, color: C.indigo }}>
+                  📎 {a.nombre}
+                  {a.tam ? ` · ${Math.max(1, Math.round(a.tam / 1024)).toLocaleString("es-CL")} KB` : ""}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {puede ? (
+        <>
+          <textarea
+            value={nota}
+            onChange={(ev) => setNota(ev.target.value)}
+            placeholder="Nota de la verificación de este documento (con quién se habló, qué dijo, qué quedó pendiente)…"
+            rows={2}
+            className="w-full rounded-lg px-2 py-1.5 t10 outline-none"
+            style={{ border: `1px solid ${C.line}`, color: C.ink, resize: "vertical" }}
+          />
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-1 t10 font-medium" style={{ color: C.indigo }}>
+              📎 Adjuntar archivo
+              <input
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(ev) => {
+                  // Se guarda la REFERENCIA del archivo, no sus bytes: en producción el documento vive
+                  // en el gestor documental y NEX apunta a él (misma convención que el respaldo de una
+                  // excepción). Nombre, tipo y tamaño son lo que permite reconocerlo al auditarlo.
+                  setNuevos((a) => [...a, ...Array.from(ev.target.files || []).map((x) => ({ nombre: x.name, tipo: x.type || "", tam: x.size || 0 }))]);
+                  ev.target.value = "";
+                }}
+              />
+            </label>
+            {nuevos.map((a, i) => (
+              <span key={i} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>
+                📎 {a.nombre}
+                <button onClick={() => setNuevos((l) => l.filter((_, j) => j !== i))} style={{ fontWeight: 700 }}>
+                  ×
+                </button>
+              </span>
+            ))}
+            <button
+              onClick={() => onGuardar && onGuardar({ nota, adjuntos: nuevos })}
+              disabled={!hayCambio}
+              className="ml-auto rounded-md px-3 py-1.5 t10 font-semibold text-white"
+              style={{ backgroundColor: hayCambio ? C.indigo : C.faint, cursor: hayCambio ? "pointer" : "not-allowed" }}
+            >
+              Guardar respaldo
+            </button>
+          </div>
+          <div className="mt-1 t9" style={{ color: C.faint }}>
+            Del archivo se guarda la referencia (nombre, tipo y tamaño); el documento vive en el gestor documental.
+          </div>
+        </>
+      ) : (
+        <div className="t10" style={{ color: C.faint }}>
+          Sólo el <b>Ejecutivo de verificación</b> puede adjuntar o anotar.
+        </div>
+      )}
+    </div>
+  );
+}
+function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar, onMarcarFactura, onRespaldo }) {
   const [tick, force] = useState(0);
   const [filtro, setFiltro] = useState("pendiente");
   const [q, setQ] = useState("");
   const [abierto, setAbierto] = useState({});
   const [confirmNo, setConfirmNo] = useState(null);
+  const [confirmDoc, setConfirmDoc] = useState(null); // { fila, doc } cuyo retiro se está confirmando
+  const [respAbierto, setRespAbierto] = useState({}); // { [filaId|facturaId]: true }
   const [llamando, setLlamando] = useState(null); // fila cuya llamada se está registrando
-  // Una llamada puede terminar en confirmación PARCIAL: el deudor reconoce unas facturas y no otras, y
-  // Security retira las no confirmadas. Se guarda lo DESMARCADO, no lo marcado: por defecto el deudor
-  // confirma todo —es el caso normal— y una fila sin nada desmarcado se comporta como antes.
-  const [noConf, setNoConf] = useState({}); // { [filaId]: { [facturaId]: true } }
   const filas = useMemo(() => filasVerificacion(deals), [deals, tick]);
   const nPend = filas.filter((f) => f.estado === "pendiente").length;
   const nOk = filas.filter((f) => f.estado === "verificada").length;
@@ -27020,36 +27174,33 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
   // Marcar una factura es FIRMAR el resultado de una llamada: lo hace quien llamó. El resto de la
   // organización ve la mesa —saber qué está frenando un giro es información de todos— pero no la marca.
   const puedeMarcar = puedeVerificarFacturas((SESION && SESION.usuario) || usuario);
-  const desmarcadas = (f) => noConf[f.id] || {};
-  const nNoConf = (f) => Object.keys(desmarcadas(f)).length;
-  const toggleFac = (f, fid) =>
-    setNoConf((m) => {
-      const d = { ...(m[f.id] || {}) };
-      if (d[fid]) delete d[fid];
-      else d[fid] = true;
-      return { ...m, [f.id]: d };
-    });
   // Registrar una verificación es FIRMAR el resultado de una llamada, así que ya no se aplica con el
   // clic: abre el registro, que es donde queda el checklist, con quién se habló y el respaldo. Sin eso
   // la evidencia que justifica el giro se perdía justo en el acto de registrarla.
-  const marcarOk = (f) => setLlamando(f);
+  // La llamada cubre lo que le queda PENDIENTE al deudor: lo ya resuelto documento a documento no se
+  // vuelve a tocar —re-registrar una verificada no cambia nada, pero retirar una ya verificada sí—.
+  const soloPendientes = (f) => ({ ...f, facturas: (f.docs || []).filter((x) => x.estado === "pendiente").map((x) => x.f) });
+  // Marcar o anotar UN documento escribe en los repositorios (`repoVerifTel`, `repoVerifRespaldo`) y no
+  // toca `deals`, así que la lista memoizada por `[deals, tick]` no se entera sola: hay que mover el
+  // tick. Retirar sí cambia `deals` —saca la factura de la oferta— y por eso ése se veía y los otros
+  // dos no, que es exactamente lo que la sonda de pantalla midió.
+  const marcarDoc = async (f, doc, est) => {
+    if (onMarcarFactura) await onMarcarFactura(f, doc, est);
+    force((v) => v + 1);
+  };
+  const guardarResp = async (f, doc, datos) => {
+    if (onRespaldo) await onRespaldo(f, doc, datos);
+    force((v) => v + 1);
+  };
+  const marcarOk = (f) => setLlamando(soloPendientes(f));
   const confirmarLlamada = async (f, llamada) => {
-    const d = desmarcadas(f);
-    // Manda el selector del modal; los folios ya desmarcados en la fila siguen contando como no
-    // confirmados, porque son el mismo hecho declarado antes de llamar.
-    const sel =
-      llamada && llamada.sel
-        ? f.facturas.reduce((m, x) => ({ ...m, [x.id]: !!llamada.sel[x.id] && !d[x.id] }), {})
-        : Object.keys(d).length
-          ? f.facturas.reduce((m, x) => ({ ...m, [x.id]: !d[x.id] }), {})
-          : null;
+    const sel = llamada && llamada.sel ? f.facturas.reduce((m, x) => ({ ...m, [x.id]: !!llamada.sel[x.id] }), {}) : null;
     if (onVerificar) await onVerificar(f, sel, llamada);
-    setNoConf((m) => ({ ...m, [f.id]: {} }));
     setLlamando(null);
     force((v) => v + 1);
   };
   const marcarNo = (f) => {
-    if (onNoConfirmar) onNoConfirmar(f);
+    if (onNoConfirmar) onNoConfirmar(soloPendientes(f));
     setConfirmNo(null);
     force((v) => v + 1);
   };
@@ -27077,10 +27228,10 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
       </div>
       <h1 className="mt-1 text-2xl font-semibold tracking-tight">Mesa de verificación</h1>
       <p className="mt-1 t11" style={{ color: C.sub }}>
-        El contacto con el deudor busca dejar por escrito o grabado que pagará. La decisión es <b style={{ color: C.ink }}>por deudor</b>: una llamada cubre
-        todas sus facturas en la operación. Cada fila lista <b style={{ color: C.ink }}>las facturas a verificar</b> —folio, fechas y monto, que es lo que se
-        lee al teléfono— y deja a demanda <b style={{ color: C.ink }}>las causas</b> que la gatillaron; si son varias, hay que confirmarlas todas en la misma
-        llamada.
+        El contacto con el deudor busca dejar por escrito o grabado que pagará. Se trabaja <b style={{ color: C.ink }}>por factura</b>: cada documento se marca
+        verificado o no, y lleva su <b style={{ color: C.ink }}>respaldo</b> y su nota. Las <b style={{ color: C.ink }}>causas</b> son del deudor —una llamada
+        las confirma todas— y se abren desde su cabecera; si el deudor confirma todo de una vez, <b style={{ color: C.ink }}>Registrar llamada</b> resuelve lo
+        que le quede pendiente.
       </p>
       <div className="mt-4 grid gap-2" style={{ gridTemplateColumns: "repeat(3, minmax(0,1fr))" }}>
         {kpi("Por verificar", nPend, montoPend ? fmtMM(montoPend) : "", nPend ? "#C2410C" : C.ink)}
@@ -27133,8 +27284,11 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
           {vistas.map((f) => {
             const e = EST[f.estado];
             const abrir = !!abierto[f.id];
+            const pendientes = (f.docs || []).filter((x) => x.estado === "pendiente");
             return (
               <div key={f.id} className="rounded-xl bg-white" style={{ border: `1px solid ${C.line}` }}>
+                {/* CABECERA DEL GRUPO: el DEUDOR. Es de quien es la llamada y de quien son las causas,
+                    así que acá va su identidad y el resumen; el trabajo está en las filas de abajo. */}
                 <div className="flex flex-wrap items-start justify-between gap-3 p-3">
                   <div style={{ minWidth: 260 }}>
                     <div className="flex items-center gap-2">
@@ -27163,7 +27317,9 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
                       {fmtMM(f.monto)}
                     </div>
                     <div className="t10" style={{ color: C.sub }}>
-                      {f.facturas.length} factura(s)
+                      {f.docs.length} documento(s)
+                      {f.nPend ? ` · ${f.nPend} por verificar` : ""}
+                      {f.nVet ? ` · ${f.nVet} retirada(s)` : ""}
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -27173,27 +27329,26 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
                     >
                       {e.lbl}
                     </span>
-                    {f.estado === "pendiente" &&
+                    {/* La llamada sigue siendo del DEUDOR: cubre de una vez todo lo que le quede
+                        pendiente. Es el atajo del caso normal; el trabajo fino va por documento. */}
+                    {pendientes.length > 0 &&
                       (puedeMarcar ? (
                         <>
                           <button
                             onClick={() => marcarOk(f)}
                             className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 t11 font-semibold text-white"
-                            style={{ backgroundColor: nNoConf(f) ? "#C2410C" : "#16A34A" }}
-                            title={
-                              nNoConf(f)
-                                ? `Registra la llamada de las ${f.facturas.length - nNoConf(f)} confirmadas y retira las ${nNoConf(f)} que el deudor no reconoció`
-                                : undefined
-                            }
+                            style={{ backgroundColor: "#16A34A" }}
+                            title={`Registra la llamada y da por verificadas las ${pendientes.length} pendientes de este deudor`}
                           >
-                            <Check size={12} /> {nNoConf(f) ? `Registrar ${f.facturas.length - nNoConf(f)} de ${f.facturas.length}` : "Verificada"}
+                            <Check size={12} /> Registrar llamada
                           </button>
                           <button
                             onClick={() => setConfirmNo(f)}
                             className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 t11 font-semibold"
                             style={{ border: `1px solid ${C.red}`, color: C.red, backgroundColor: "#fff" }}
+                            title="El deudor no reconoció ninguna: retira y veta todo lo que le queda pendiente"
                           >
-                            No verificada
+                            No confirmó nada
                           </button>
                         </>
                       ) : (
@@ -27207,76 +27362,22 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
                       ))}
                   </div>
                 </div>
-                {/* LAS FACTURAS PRIMERO Y EXPLÍCITAS; LAS CAUSAS, COLAPSADAS (21-09-2026, pedido del
-                    usuario). Estaba al revés: las causas se listaban siempre —sólo su descripción se
-                    abría a demanda— y las facturas NO aparecían en ninguna parte salvo que la sesión
-                    pudiera marcar la verificación, porque su única lista vivía dentro del bloque de
-                    confirmación. Quien no es Ejecutivo de verificación leía «3 factura(s)» y no tenía
-                    cómo saber CUÁLES: justo el dato con el que se llama al deudor. La lista es la
-                    misma para todo rol; lo que cambia es si se puede desmarcar. */}
-                <div className="px-3 pb-3">
-                  <div className="t10 uppercase tracking-wide" style={{ color: C.faint }}>
-                    {f.facturas.length === 1 ? "Factura a verificar" : `${f.facturas.length} facturas a verificar`}
-                    {f.estado === "pendiente" && puedeMarcar ? " · desmarca lo que el deudor no reconoció" : ""}
-                  </div>
-                  <ul className="mt-1.5 space-y-1">
-                    {f.facturas.map((x) => {
-                      const fd = fechasDocumento(x);
-                      const off = !!desmarcadas(f)[x.id];
-                      const interactiva = f.estado === "pendiente" && puedeMarcar;
-                      // El monto de un DOCUMENTO va en pesos y el `M$` queda para los resúmenes
-                      // (regla 29): el total del deudor, arriba, sigue abreviado.
-                      const cuerpo = (
-                        <div className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                          <span className="t11 font-semibold" style={{ color: off ? C.red : C.ink, textDecoration: off ? "line-through" : "none" }}>
-                            #{x.folio || x.id}
-                          </span>
-                          <span className="t10" style={{ color: C.faint }}>
-                            emitida {fmtFechaDoc(fd.emision)} · vence {fmtFechaDoc(fd.vencimiento)}
-                          </span>
-                          <span className="ml-auto t11 font-semibold" style={{ color: off ? C.red : C.ink, textDecoration: off ? "line-through" : "none" }}>
-                            {fmtCLP(x.monto || 0)}
-                          </span>
-                        </div>
-                      );
-                      return (
-                        <li key={x.id}>
-                          {interactiva ? (
-                            <button
-                              onClick={() => toggleFac(f, x.id)}
-                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left"
-                              style={{ border: `1px solid ${off ? "#fecaca" : C.line}`, backgroundColor: off ? "#fef2f2" : "#fff" }}
-                              title={off ? "El deudor NO reconoció esta factura: al registrar, sale de la operación" : "El deudor la reconoce"}
-                            >
-                              {off ? <X size={11} style={{ color: C.red }} /> : <Check size={11} style={{ color: "#16A34A" }} />}
-                              {cuerpo}
-                            </button>
-                          ) : (
-                            <div
-                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5"
-                              style={{ border: `1px solid ${C.line}`, backgroundColor: "#FAF9FB" }}
-                            >
-                              {cuerpo}
-                            </div>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  {f.estado === "pendiente" && puedeMarcar && !!nNoConf(f) && (
-                    <div className="mt-1.5 t10" style={{ color: C.red }}>
-                      Al registrar, esas {nNoConf(f)} factura(s) se retiran de la operación y quedan vetadas para ella.
-                    </div>
-                  )}
-                  {/* LAS CAUSAS, COLAPSADAS. Quien llama necesita saber A QUIÉN y POR QUÉ FACTURAS;
-                      el fundamento —qué midió cada regla y contra qué umbral— es del analista y se
-                      abre cuando hace falta. */}
+                {/* LAS CAUSAS, detrás del deudor. Son de él —una llamada las confirma todas— y por eso
+                    no se repiten en cada documento; se abren desde acá, que es donde se pregunta. */}
+                <div className="px-3">
                   <button
                     onClick={() => setAbierto((m) => ({ ...m, [f.id]: !abrir }))}
                     className="mt-2 flex w-full items-center gap-1.5 t10 uppercase tracking-wide"
                     style={{ color: C.faint }}
                   >
                     {f.causas.length === 1 ? "Causa que gatilló la verificación" : `${f.causas.length} causas que gatillaron la verificación`}
+                    <span className="flex flex-wrap gap-1">
+                      {f.causas.map((c) => (
+                        <span key={c.id} className="rounded px-1 t9 font-bold" style={{ backgroundColor: C.lilac, color: C.indigo }}>
+                          {c.id}
+                        </span>
+                      ))}
+                    </span>
                     <ChevronRight size={11} style={{ transform: abrir ? "rotate(90deg)" : "none" }} />
                   </button>
                   {abrir && (
@@ -27305,14 +27406,124 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
                       ))}
                     </ul>
                   )}
-                  {f.estado === "verificada" && (
+                </div>
+                {/* EL NÚCLEO: un documento por fila. Acá se marca, se adjunta y se anota. */}
+                <div className="mt-2 px-3 pb-3">
+                  <div className="overflow-hidden rounded-lg" style={{ border: `1px solid ${C.line}` }}>
+                    <div
+                      className="grid items-center gap-2 px-2.5 py-1.5 t9 font-semibold uppercase tracking-wide"
+                      style={{ gridTemplateColumns: COLS_DOC, backgroundColor: "#FAF9FB", color: C.faint }}
+                    >
+                      <span>Folio</span>
+                      <span>Tipo doc.</span>
+                      <span>F. emisión</span>
+                      <span>F. vencimiento</span>
+                      <span className="text-right">Monto</span>
+                      <span>Verificación</span>
+                      <span className="text-right">Respaldo</span>
+                    </div>
+                    {f.docs.map((doc) => {
+                      const de = EST[doc.estado];
+                      const abrirResp = !!respAbierto[f.id + "|" + doc.id];
+                      const r = doc.respaldo || {};
+                      const nAdj = (r.adjuntos || []).length;
+                      return (
+                        <div key={doc.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                          <div
+                            className="grid items-center gap-2 px-2.5 py-2"
+                            style={{ gridTemplateColumns: COLS_DOC, backgroundColor: doc.estado === "no_verificada" ? "#FEF7F7" : "#fff" }}
+                          >
+                            <span
+                              className="t11 font-semibold"
+                              style={{ color: C.ink, textDecoration: doc.estado === "no_verificada" ? "line-through" : "none" }}
+                            >
+                              {doc.f.folio || doc.id}
+                            </span>
+                            <span className="t10" style={{ color: C.sub }}>
+                              {doc.f.tipoDoc || "Factura electrónica"}
+                            </span>
+                            <span className="t10" style={{ color: C.sub }}>
+                              {fmtFechaDoc(fechasDocumento(doc.f).emision)}
+                            </span>
+                            <span className="t10" style={{ color: C.sub }}>
+                              {fmtFechaDoc(fechasDocumento(doc.f).vencimiento)}
+                            </span>
+                            <span className="t11 text-right font-semibold" style={{ color: C.ink }}>
+                              {fmtCLP(doc.f.monto || 0)}
+                            </span>
+                            <span className="flex flex-wrap items-center gap-1.5">
+                              <span
+                                className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold"
+                                style={{ backgroundColor: de.bg, color: de.fg, border: `1px solid ${de.bd}` }}
+                                title={doc.tel ? `Registrada por ${doc.tel.por} · ${doc.tel.fecha}` : undefined}
+                              >
+                                {de.lbl}
+                              </span>
+                              {doc.estado === "pendiente" && puedeMarcar && (
+                                <>
+                                  <button
+                                    onClick={() => marcarDoc(f, doc, "verificada")}
+                                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold text-white"
+                                    style={{ backgroundColor: "#16A34A" }}
+                                    title="El deudor confirmó ESTE documento"
+                                  >
+                                    <Check size={10} /> Verificada
+                                  </button>
+                                  <button
+                                    onClick={() => setConfirmDoc({ fila: f, doc })}
+                                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 t9 font-semibold"
+                                    style={{ border: `1px solid ${C.red}`, color: C.red, backgroundColor: "#fff" }}
+                                    title="El deudor NO reconoció este documento: se retira de la oferta y queda vetado"
+                                  >
+                                    No verificada
+                                  </button>
+                                </>
+                              )}
+                            </span>
+                            <span className="flex items-center justify-end gap-1.5">
+                              {nAdj > 0 && (
+                                <span className="t9 font-semibold" style={{ color: C.indigo }} title={(r.adjuntos || []).map((a) => a.nombre).join(" · ")}>
+                                  📎 {nAdj}
+                                </span>
+                              )}
+                              {r.nota ? (
+                                <span className="t9" style={{ color: C.sub }} title={r.nota}>
+                                  📝
+                                </span>
+                              ) : null}
+                              <button
+                                onClick={() => setRespAbierto((m) => ({ ...m, [f.id + "|" + doc.id]: !abrirResp }))}
+                                className="rounded-md px-2 py-1 t9 font-semibold"
+                                style={{ border: `1px solid ${C.line}`, color: C.indigo, backgroundColor: "#fff" }}
+                              >
+                                {abrirResp ? "Cerrar" : nAdj || r.nota ? "Ver respaldo" : "Adjuntar / anotar"}
+                              </button>
+                            </span>
+                          </div>
+                          {abrirResp && (
+                            <div className="px-2.5 pb-2.5" style={{ backgroundColor: "#FAF9FB" }}>
+                              <RespaldoFactura
+                                doc={doc}
+                                puede={puedeMarcar}
+                                onGuardar={(datos) => {
+                                  guardarResp(f, doc, datos);
+                                  setRespAbierto((m) => ({ ...m, [f.id + "|" + doc.id]: false }));
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {f.estado === "verificada" && !f.nVet && (
                     <div className="mt-1.5 t10" style={{ color: "#16A34A" }}>
-                      Confirmada con el deudor: sus {f.facturas.length} factura(s) quedan habilitadas para girar.
+                      Confirmada con el deudor: sus {f.docs.length} factura(s) quedan habilitadas para girar.
                     </div>
                   )}
-                  {f.estado === "no_verificada" && (
+                  {!!f.nVet && (
                     <div className="mt-1.5 t10" style={{ color: C.red }}>
-                      El deudor no confirmó: {f.nVet} factura(s) retiradas de la operación y vetadas para ella.
+                      {f.nVet} factura(s) retiradas de la operación y vetadas para ella: el monto a girar bajó y quedó una versión nueva.
                     </div>
                   )}
                 </div>
@@ -27333,6 +27544,23 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
         etiquetaConfirmar="Retirar facturas no confirmadas"
         onConfirmar={() => marcarNo(confirmNo)}
         onCancelar={() => setConfirmNo(null)}
+      />
+      {/* Retirar UN documento también saca plata de una operación viva: va con confirmación, igual
+          que el deudor entero. Lo que cambia es el alcance, no el peso del acto. */}
+      <ConfirmDialog
+        abierto={!!confirmDoc}
+        titulo="¿El deudor no confirmó este documento?"
+        descripcion={
+          confirmDoc
+            ? `Folio ${confirmDoc.doc.f.folio || confirmDoc.doc.id} por ${fmtCLP(confirmDoc.doc.f.monto || 0)} · ${confirmDoc.fila.deudor} · ${confirmDoc.fila.cliente}. Sale de la operación, baja el monto a girar y queda vetado: no se podrá volver a seleccionar en esta operación. Las demás facturas del deudor siguen como están.`
+            : ""
+        }
+        etiquetaConfirmar="Retirar el documento"
+        onConfirmar={() => {
+          marcarDoc(confirmDoc.fila, confirmDoc.doc, "no_verificada");
+          setConfirmDoc(null);
+        }}
+        onCancelar={() => setConfirmDoc(null)}
       />
       {llamando && <ModalLlamadaVerif fila={llamando} onCerrar={() => setLlamando(null)} onConfirmar={(ll) => confirmarLlamada(llamando, ll)} />}
     </>
@@ -49700,6 +49928,73 @@ export default function PipelineComercial() {
     });
     setVerifVer((v) => v + 1);
   };
+  // ── MESA POR FACTURA (regla 53) ───────────────────────────────────────────────
+  // Marcar UN documento es el mismo hecho que marcar al deudor, aplicado a un documento: se registra
+  // su llamada, o se retira y se veta. No es un atajo del anterior ni una regla nueva —`verificarDeudor`
+  // ya escribía factura por factura—: lo que cambia es que ahora el equipo puede resolverlas de a una,
+  // que es como ocurre cuando el deudor reconoce unas y otras no.
+  const estadoDeudorTras = (fila, doc, est) => {
+    const otros = (fila.docs || []).filter((x) => x.id !== doc.id).map((x) => x.estado);
+    const todos = [...otros, est];
+    if (todos.some((e) => e === "pendiente")) return "parcial";
+    if (todos.every((e) => e === "no_verificada")) return "no_verificada";
+    return todos.some((e) => e === "no_verificada") ? "parcial" : "verificada";
+  };
+  const marcarFactura = async (fila, doc, est) => {
+    if (!fila || !doc || doc.estado !== "pendiente") return;
+    const f = doc.f;
+    if (est === "verificada") {
+      const m = { ...(repoVerifTel.get(fila.deal.id) || {}) };
+      m[f.id] = { por: actorEtiqueta(usuario), fecha: nowStamp() };
+      const conf = await confirmarEscrituras([repoVerifTel.set(fila.deal.id, m), congelarVeredicto(fila, estadoDeudorTras(fila, doc, est))]);
+      registrarAuditoria({
+        usuario: USERS[usuario] || usuario,
+        modulo: "Verificación de facturas",
+        accion: conf.ok ? "Factura verificada con el deudor" : "Verificación rechazada por el contrato",
+        glosa: `${fila.cliente} · ${fila.deudor} · folio ${f.folio || f.id} por ${fmtMM(f.monto || 0)}${doc.respaldo && doc.respaldo.adjuntos && doc.respaldo.adjuntos.length ? ` · respaldo: ${doc.respaldo.adjuntos.map((a) => a.nombre).join(", ")}` : " · sin respaldo adjunto"}`,
+        exito: !!conf.ok,
+      });
+    } else {
+      // Retirar es lo que recorta la asignación y emite versión nueva; el veto lo deja fuera de esta
+      // operación para siempre. Se congela ANTES, porque retirar puede dejar al deudor sin facturas
+      // vivas y entonces el veredicto es lo único que sostiene su fila en la mesa.
+      congelarVeredicto(fila, estadoDeudorTras(fila, doc, est));
+      retirarFacturaOferta(fila.deal.id, f, "noConfirmada");
+      registrarAuditoria({
+        usuario: USERS[usuario] || usuario,
+        modulo: "Verificación de facturas",
+        accion: "Factura NO confirmada por el deudor",
+        glosa: `${fila.cliente} · ${fila.deudor} · folio ${f.folio || f.id} por ${fmtMM(f.monto || 0)} · retirada de la oferta y vetada para esta operación`,
+        exito: true,
+      });
+    }
+    setVerifVer((v) => v + 1);
+  };
+  // El RESPALDO de un documento: la nota de quien llamó y la referencia del archivo. Se guarda aunque
+  // la factura siga pendiente —el correo del deudor suele llegar antes que la decisión— y es
+  // append-only en la auditoría, como todo lo que justifica un giro.
+  const guardarRespaldoFactura = async (fila, doc, datos) => {
+    if (!fila || !doc) return;
+    const m = { ...(repoVerifRespaldo.get(fila.deal.id) || {}) };
+    const previo = m[doc.id] || {};
+    const adjuntos = [...(previo.adjuntos || []), ...((datos && datos.adjuntos) || [])];
+    m[doc.id] = {
+      nota: datos && datos.nota != null ? datos.nota : previo.nota || "",
+      adjuntos,
+      por: actorEtiqueta(usuario),
+      fecha: nowStamp(),
+    };
+    const conf = await confirmarEscrituras([repoVerifRespaldo.set(fila.deal.id, m)]);
+    const nuevos = ((datos && datos.adjuntos) || []).map((a) => a.nombre);
+    registrarAuditoria({
+      usuario: USERS[usuario] || usuario,
+      modulo: "Verificación de facturas",
+      accion: conf.ok ? "Respaldo de verificación guardado" : "Respaldo rechazado por el contrato",
+      glosa: `${fila.cliente} · ${fila.deudor} · folio ${(doc.f && (doc.f.folio || doc.f.id)) || doc.id}${nuevos.length ? ` · adjunta ${nuevos.join(", ")}` : ""}${datos && datos.nota ? ` · nota: ${String(datos.nota).slice(0, 120)}` : ""}`,
+      exito: !!conf.ok,
+    });
+    setVerifVer((v) => v + 1);
+  };
   const noConfirmoDeudor = (fila) => {
     if (!fila) return;
     repoVerifVeredicto.set(fila.deal.id, veredictoNuevo(fila, "no_verificada"));
@@ -50568,7 +50863,15 @@ export default function PipelineComercial() {
                 }}
               />
             ) : vistaApp === "verificacion" ? (
-              <VerificacionView deals={deals} usuario={usuario} onOpen={abrirDetalle} onVerificar={verificarDeudor} onNoConfirmar={noConfirmoDeudor} />
+              <VerificacionView
+                deals={deals}
+                usuario={usuario}
+                onOpen={abrirDetalle}
+                onVerificar={verificarDeudor}
+                onNoConfirmar={noConfirmoDeudor}
+                onMarcarFactura={marcarFactura}
+                onRespaldo={guardarRespaldoFactura}
+              />
             ) : (
               <>
                 <div className="flex items-start justify-between gap-3">

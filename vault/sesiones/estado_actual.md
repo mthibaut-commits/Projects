@@ -13,9 +13,9 @@ timestamp: 2026-09-22T01:00:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **156/156 PASA**, **45 archivos de gate de contrato**
+(`pipeline_comercial.jsx`), build standalone, **158/158 PASA**, **47 archivos de gate de contrato**
 (289 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su
-vault (81 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato
+vault (83 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato
 tienen gate. La crónica del 17 al 19-09 vive en sus logs (ADR-0001 a 0006, el linter como paso 0-bis).
 El **20-09** entró todo lo de plata: **regla 8 sin proxy** (149, ADR-0008), **girar no es acción de NEX**
 (43, 147, 148), **ATR-01 en el handler** (145), el **id de la solicitud al comité** (146), las
@@ -24,7 +24,7 @@ ADR-0007) y las **líneas**: estructura como insumo por el **activo A23** (44, A
 el CONSOLIDADO** (45, ADR-0011) y el **RUT del deudor se resuelve, no se arma** (46); casos 150–151.
 
 El **21-09 y 22-09**, mirando pantallas con el usuario, y en DOS sesiones en paralelo que se mezclaron
-acá: la mesa de verificación lista las facturas y colapsa sus causas · el pie de «Líneas solicitadas»
+acá: la mesa de verificación **trabaja por FACTURA** —marcar, adjuntar y anotar por documento, y la retirada sigue en la mesa— (53) y el **color del badge dice si el pendiente ya se exige** (54) · el pie de «Líneas solicitadas»
 suma · la **identidad de la sesión es una sola** (47) y el **atajo del otorgamiento no se salta el
 visado** (48), los dos de la otra rama · el **stream del inbound se reparte por ROL** y nace el rol
 `inbound` (49) · el **cierre del negocio le escribe a quien tiene que firmar** (50)
@@ -49,7 +49,7 @@ implementación— y de acá quedó el gate `rutas.test.mjs`
 >    «Negociación» · el selector de sesión de la navbar, 1/3 más angosto y con elipsis.
 > 3. **El join de empresas SIEMPRE por RUT**, nunca por razón social: 8 sitios medidos. Es un T1.
 > 4. **Correr el `.bat` una vez** · **Regenerar `Capturas_UI/`** · **Motor O01** · **28** y **13-quater**.
-## En vuelo · `main` en `5f2cb18` (20-09); la rama de sesión lleva lo del 21-09 encima
+## En vuelo · esta rama, encima de `main`: la **mesa por factura** (53, 157) y el **color del badge** (54, 158)
 
 ## Bloqueos · los dos son del usuario, desde Windows
 

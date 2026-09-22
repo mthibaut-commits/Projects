@@ -10,7 +10,7 @@ timestamp: 2026-09-17T15:29:14Z
 
 > Reglas de dominio de NEX, **verbatim** desde el `CLAUDE.md` anterior al 17-09-2026, agrupadas por tema. Se citan por su número (`regla 6`) y **no se renumeran**: el fuente y otros documentos las referencian así. Índice de todas, con qué caso de la suite verifica cada una: [`invariantes.md`](../invariantes.md).
 >
-> Reglas en este archivo: **6** · **9-ter**.
+> Reglas en este archivo: **6** · **9-ter** · **53**.
 
 6. **Verificación de facturas = rutina AISLADA, y la decisión es POR DEUDOR** (`Specs_Procesos/Verificacion/spec-verificacion-facturas.md`). El contacto con el deudor busca dejar por escrito o grabado que pagará; toma **3–4 horas y retrasa el giro**, y si el deudor no confirma **Security retira las facturas no confirmadas**. Por eso el ejecutivo tiene que saber ANTES de comprometer un plazo. `verifDecision(par, facturas)` es la función pura; `verifEvaluar` la adapta a la UI, `verifDeudorDeal` la consulta y `verifFactura` sólo delega — **la verificación de una factura ES la de su deudor**, porque una llamada cubre todas sus facturas y evaluarla por documento daba veredictos distintos entre facturas del mismo deudor. Detalle:
    - **`verifPar(rutCliente, deudor, tipo)`** memoiza en `_VERIF_PAR` el estado del PAR (protocolo propio, % pagado 3M, recurrencia, mora, reclamos, historial). Semilla = el par, **nunca el folio**.
@@ -45,3 +45,41 @@ timestamp: 2026-09-17T15:29:14Z
     - **Con la unidad arreglada, el predictor sigue mandando al teléfono a casi todos, y la causa ya es DATO y POLÍTICA, no código** (17-09-2026, medido criterio por criterio sobre los 13.302 pares del A10 que tienen facturas en el libro, con tres ofertas: todas las facturas del par, una sola, las del último mes). V03 pasa del 0% al 100% y V09 al 98%. Pero **V04** —que aplica a los DOS segmentos— lo pasa el 28% de los pares PRIME y el 1% de OTROS **aun con una sola factura**: `V04_VENTA_PROM_3M_M` es la venta mensual del par derivada de una ventana de **47 días con ~2 facturas por par** (`p.mm × 30/47` en `GeneradorDatos/datasets/verificacion.js`), así que una factura sola ya vale más que el «promedio mensual». Y **V10** (MM$1.000 pagados en 3 meses) lo pasa el 15% de PRIME y el 5% de OTROS. Por unanimidad (§4.2) quedan «verificados por modelo» el **5,3% de los pares PRIME y ninguno de OTROS**: Giro Express es alcanzable pero raro. No se tocó nada: V04 hace lo que la política dice sobre un archivo donde casi toda relación parece esporádica, y V10 es un umbral de política sobre pares chicos. La perilla estaba en el **generador**, no en el motor, y se movió el mismo día (abajo).
     - **Cerrado el 17-09-2026 en el generador, sin tocar el motor ni la política.** `datasets/verificacion.js` extrapolaba la ventana de 47 días linealmente (`p.mm × 30/47` como venta mensual, `× 90/47` como compra en 3M), o sea trataba una muestra corta como si fuera la relación entera, y sembraba V10 por PAR. Ahora la **factura típica se mide** y la **frecuencia mensual** y la **fracción cedida se modelan por perfil** de la relación —el mismo perfil que decide la recurrencia V05, nunca por debajo del ritmo que la ventana muestra— y **V10 es del DEUDOR**: lo que le pagó al factoring en 3M sumando todos sus cedentes, que es lo que la política pide («evita el falso positivo del deudor que operó una sola vez con Security… para que *sus* estadísticas sean representativas»). Con flujos de RNG propios, para que V01/V02/V05/V06/V07/V08 quedaran byte a byte iguales: sólo cambiaron V03, V04 y V10. Medido con una factura en la oferta: V04 pasa **80% PRIME / 82% OTROS** (antes 28% / 1%) y V10 **90% / 93%** (antes 15% / 5%); «verificados por modelo» **49,8% / 50,3%** (antes 5,3% / 0). Ninguna cifra se colocó respecto de un umbral: son propiedad emergente del perfil. Y se regeneró **sólo el bloque** (`generar.js --solo=VERIFICACION`) porque la cadena A2 → A5 → A2 del generador no tenía punto fijo (cerrado ese mismo día: regla 32).
     - **V10 a nivel DEUDOR, ratificado por el usuario el 17-09-2026** («ratifica V10 a nivel deudor»). Lo pagado al factoring en 3M se suma sobre todos los cedentes del deudor, como dice la política; el generador lo modela así (`V10_MNT_PAGADO_3M_M` es del deudor, no del par) y el motor lee la misma columna. Volver a par era una línea del generador y dejó de ser una opción abierta: no se re-litiga.
+
+53. **LA MESA DE VERIFICACIÓN TRABAJA POR FACTURA, AGRUPADA POR DEUDOR** (22-09-2026, pedido del usuario:
+    «necesito que esta funcionalidad sea la operación, un listado de facturas agrupada por deudor —a través
+    del deudor se pueda acceder a las razones que gatilló la verificación—, pero que el core sea poder marcar
+    si la factura está verificada o no, adjuntar un archivo y agregar una nota»).
+    - **Qué NO cambia: el agrupamiento y de quién son las causas.** La llamada sigue siendo del DEUDOR —una
+      cubre todas sus facturas— y las causas son suyas, así que no se repiten documento a documento: viven en
+      la cabecera del grupo, detrás de un disclosure con sus códigos a la vista. La regla 6 sigue entera; lo
+      que cambia es la **unidad de trabajo**, no la unidad de decisión.
+    - **Qué SÍ cambia: la unidad de trabajo es el documento.** Cada factura trae folio, tipo, las dos fechas,
+      monto, su estado (`por verificar` · `verificada` · `no verificada`) y sus acciones: marcarla, **adjuntar
+      un archivo** y **anotar**. No es una regla nueva del motor: `verificarDeudor` ya escribía factura por
+      factura y la confirmación PARCIAL ya existía —el deudor reconoce unas y otras no—; lo que faltaba era
+      poder resolverlas de a una, que es como ocurre la llamada.
+    - **«Registrar llamada» sigue siendo el atajo del caso normal**, y cubre sólo lo que al deudor le queda
+      PENDIENTE: lo ya resuelto documento a documento no se vuelve a tocar. Re-registrar una verificada no
+      cambiaría nada, pero retirar una ya verificada sí, y por eso el alcance se acota en un solo sitio
+      (`soloPendientes`) en vez de en cada llamador.
+    - **LA RETIRADA SIGUE EN LA MESA, y ése fue el hallazgo.** Retirar una factura la saca de `facturasOp`,
+      así que listándolas sólo desde ahí la evidencia de «ésta no la confirmó» **desaparecía de la pantalla
+      justo después de registrarla** — y con todas retiradas, el deudor entero se esfumaba de la mesa aunque
+      su veredicto estuviera congelado, que es lo contrario de lo que la regla 6 pide. Ahora `filasVerificacion`
+      arma `docs` con las de la oferta **y** las vetadas: las retiradas se ven, tachadas, y no suman al monto
+      porque no están en la oferta. Caso **157**, en sus dos formas: una retirada entre facturas vivas, y el
+      deudor con todas retiradas.
+    - **El RESPALDO es del documento** (`repoVerifRespaldo`, `{ nota, adjuntos, por, fecha }` por factura).
+      Va aparte de `repoVerifTel` —que es el hecho de la llamada— porque se escribe en otro momento y por
+      otra razón: el correo del deudor suele llegar antes que la decisión, y el porqué de una no confirmación
+      se anota después de retirarla. Del archivo se guarda la **referencia** (nombre, tipo, tamaño, quién y
+      cuándo), no los bytes: en producción el documento vive en el gestor documental y NEX apunta a él, igual
+      que el respaldo de una excepción de otorgamiento.
+    - **VER-01 no se tocó.** El contrato cuenta llamadas registradas por factura y eso es exactamente lo que
+      la mesa escribe ahora, documento a documento: el gate del giro sigue diciendo lo mismo.
+    - **Lo que la pantalla escondía y sólo se vio al usarla**: marcar y anotar escriben en los repositorios y
+      no en `deals`, así que la lista memoizada por `[deals, tick]` no se enteraba y el KPI no se movía.
+      Retirar sí cambia `deals` —saca la factura de la oferta— y por eso ése se veía y los otros dos no. Se
+      arregla moviendo el tick en las dos acciones; lo midió una sonda de pantalla, no el fuente.
+    - Gate de forma: `regla_53.test.mjs`.

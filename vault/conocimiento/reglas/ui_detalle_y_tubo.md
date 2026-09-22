@@ -91,3 +91,28 @@ timestamp: 2026-09-17T15:29:14Z
     - **Abre sin filtro.** `quickFilter` arrancaba en `"conlinea"`: la pantalla de entrada mostraba 30 de 128 oportunidades y las otras 98 no estaban a la vista. Un filtro que nadie puso no se nota —lo que se ve es una tabla, no una tabla recortada—, así que para verlas había que **darse cuenta** de que había un tab activo. El resto de la pantalla ya lo decía a su modo: `anyFilter` —el que enciende «limpiar filtros»— arrancaba en `true` contra un tab que el ejecutivo no eligió, y `clearAll` deja exactamente `"todos"`, o sea que el destino de «limpiar» nunca fue el punto de partida. Ahora coinciden.
     - **Va primero en la fila**, antes incluso de «Prioritarios», que es condicional (`nPrioTubo > 0`). Un tab de entrada al final de la fila se lee como el último recorte de una lista de recortes; y si fuera segundo, su posición **saltaría** cada vez que la jefatura prioriza un negocio desde el Dashboard.
     - **La capa e2e no hereda este arranque**, a propósito: `reiniciar()` del harness fija «Con línea» al empezar cada archivo, porque los casos abren las filas 0–2 de ESA pestaña y con el Directorio encendido son 3 de sus 5. El default de la app y la línea base de los casos son dos decisiones distintas; lo que las mantenía juntas era una coincidencia, y la coincidencia se acabó acá.
+
+54. **MIENTRAS SE SIMULA, LOS PENDIENTES SON UN PRONÓSTICO; AL PUBLICAR, SE EXIGEN** (22-09-2026, pedido
+    del usuario: «al simular muestra el tab de verificación pero con el badge en morado; cuando el ejecutivo
+    envíe a comité y publicar, se debe empezar a solicitar las acciones de otorgamiento y verificación, por
+    lo que los badges son en rojo»).
+    - **El color dice si eso ya es trabajo de alguien.** Mientras el ejecutivo arma la oferta, lo que el
+      motor encuentra —criterios por visar, facturas por llamar— es una **anticipación**: sirve para saber en
+      qué se está metiendo y el paquete todavía puede cambiar entero. Cuando **publica** —cierra el paquete Y
+      lo comunica al cliente— la casa se comprometió, y esos pendientes pasan a ser trabajo que alguien tiene
+      que hacer. **Morado** antes, **rojo** después, en las dos superficies: los badges de las pestañas del
+      detalle y los chips de las tres compuertas del resumen.
+    - **Estaba inconsistente, y eso era lo que se veía raro**: el chip de Verificación nacía ROJO desde la
+      simulación mientras el de Otorgamiento era morado, en la misma barra y sobre la misma operación. Dos
+      colores para el mismo momento del proceso: uno de los dos mentía.
+    - **`exigeAcciones(deal)` es una sola función** y es la MISMA compuerta con que aparece el tab de
+      Verificación (`mostrarVerif`, regla 6) **menos la pre-evaluación**: pre-evaluar es justamente pedir el
+      pronóstico antes de tiempo, así que muestra el tab y no vuelve rojo lo que todavía nadie tiene que
+      hacer. El caso 158 lo comprueba contra `ofertaPublicada` para que no se separen.
+    - **Cerrar no basta**: publicar son dos hechos —el cierre interno y la comunicación al cliente— y con uno
+      solo la casa todavía no se comprometió. Desde la firma en adelante (`aceptadas`, `cesion`,
+      `otorgamiento`, `giro`) se exige siempre: la operación ya no vuelve atrás por sí sola.
+    - **La compuerta de Línea no cambió**: no es una acción que alguien deba ejecutar sino el camino que la
+      operación va a tomar (comité o no), y el usuario nombró otorgamiento y verificación. Queda anotado por
+      si se decide lo contrario.
+    - Caso **158**, en las dos direcciones. Gate de forma: `regla_54.test.mjs`.
