@@ -23,7 +23,7 @@ timestamp: 2026-09-18T02:18:36Z
 | 5 | Pérdida es estado terminal | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 117, 118, `regla_5.test.mjs` |
 | 6 | Verificación de facturas = rutina AISLADA, y la decisión es POR DEUDOR | [`reglas/verificacion.md`](./reglas/verificacion.md) | ~27–32, ~52–55, ~76–77 |
 | 7 | Motor de asignación de líneas | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | ~1–15, ~89 |
-| 8 | Oferta | [`reglas/oferta_pricing_y_giro.md`](./reglas/oferta_pricing_y_giro.md) | 119, 147 |
+| 8 | Oferta | [`reglas/oferta_pricing_y_giro.md`](./reglas/oferta_pricing_y_giro.md) | 119, 149 |
 | 9-bis | Un umbral de política se lee con `pol(clave, default)` y no se incrusta en ninguna parte. | [`reglas/otorgamiento_y_atribucion.md`](./reglas/otorgamiento_y_atribucion.md) | 90 |
 | 9-ter | Una COMPARACIÓN se hace en PESOS. El `M$` no cruza a la lógica | [`reglas/verificacion.md`](./reglas/verificacion.md) | 115 |
 | 9 | Pricing | [`reglas/oferta_pricing_y_giro.md`](./reglas/oferta_pricing_y_giro.md) | ~69 |
@@ -52,7 +52,7 @@ timestamp: 2026-09-18T02:18:36Z
 | 14 | Reevaluación explícita | [`reglas/oferta_pricing_y_giro.md`](./reglas/oferta_pricing_y_giro.md) | 124, `e2e-14-a`, `e2e-14-b`, `e2e-14-c`, `regla_14.test.mjs` |
 | 15 | Solicitud de línea | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 125, `e2e-15`, `regla_15.test.mjs` |
 | 15-bis | La solicitud se genera SOLA al cerrar la oferta | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 106–107 |
-| 15-bis-bis | La solicitud inyectada al cerrar la oferta tiene que CRUZAR de pestaña | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 126, 144, `e2e-15-bis-bis-a`, `e2e-15-bis-bis-b`, `regla_15_bis_bis.test.mjs` |
+| 15-bis-bis | La solicitud inyectada al cerrar la oferta tiene que CRUZAR de pestaña | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 126, 146, `e2e-15-bis-bis-a`, `e2e-15-bis-bis-b`, `regla_15_bis_bis.test.mjs` |
 | 15-bis-ter | Y lo que el detalle escribe en un REPOSITORIO también tiene que cruzar | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 113 |
 | 15-quater | La solicitud al comité se ABRE y muestra sus líneas de detalle | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 109 |
 | 15-quinquies | El DOCUMENTO de la solicitud: qué terminó inyectando el sistema | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | `e2e-15-quinquies` |
@@ -87,7 +87,7 @@ timestamp: 2026-09-18T02:18:36Z
 | 39 | Cambiar un default de `CFG_OPER_BASE` no llega a quien ya tiene configuración guardada: sube el esquema y migra | [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | `regla_39.test.mjs` |
 | 40 | La Bandeja Inbound es una ventana con tope, y lo que el tope bota se dice | [`reglas/prospeccion_cartera_y_churn.md`](./reglas/prospeccion_cartera_y_churn.md) | 142, `regla_40.test.mjs` |
 | 41 | Los tres controles que firma OPERACIONES se vuelven a mirar al aprobar la integración al core, no sólo el día de la firma | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 144, `regla_41.test.mjs` |
-| 43 | Girar no es una acción de NEX: el sistema termina en la inyección a Tesorería, que autoriza Operaciones, y el giro vuelve como CALLBACK | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 145, 146, `regla_transiciones.test.mjs` |
+| 43 | Girar no es una acción de NEX: el sistema termina en la inyección a Tesorería, que autoriza Operaciones, y el giro vuelve como CALLBACK | [`reglas/curse_firma_y_etapas.md`](./reglas/curse_firma_y_etapas.md) | 147, 148, `regla_transiciones.test.mjs` |
 | 44 | La ESTRUCTURA de líneas es un INSUMO: los tres niveles llegan por el activo A23 y el pipeline sólo los lee; lo que el comité constituye se superpone | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 150, `regla_lineas_activo.test.mjs` |
 | 45 | La línea del RUT cliente ES la suma de sus líneas (por par y comodín), en los tres estados y también en el utilizado | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 151, `regla_lineas_activo.test.mjs` |
 | 46 | El RUT de un deudor se RESUELVE contra el universo conocido, nunca se arma: uno inventado es, para el motor, otro deudor | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 151, `regla_lineas_activo.test.mjs`, `padron.test.mjs` |

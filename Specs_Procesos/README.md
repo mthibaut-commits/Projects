@@ -11,7 +11,7 @@ originales de política del cliente: ésos no se regeneran, son la entrada.
 | `Verificacion/` | si el deudor confirma que va a pagar | `spec-verificacion-facturas.md` |
 | `Lineas/` | cuánto cupo hay y cómo se pide uno nuevo al comité | `spec-asignacion-lineas.md` · `Analisis_Solicitud_Linea_Comite.md` · `Spec_Proceso_Solicitud_Linea_Comite.pdf` |
 | `Excepciones/` | qué pasa entre que el motor levanta una excepción y un apoderado la resuelve | `spec-gestion-excepciones.md` |
-| `Evaluacion_Factura/` | **lo transversal del proceso de evaluación**: en qué orden corre todo y qué pasa antes y después | `spec-ciclo-factura.md` (la costura entre los motores) · `spec-inbound-facturas.md` · `spec-pricing-simulacion.md` · `spec-modelo-giro.md` · `spec-mensajeria-interna.md` · `Spec_Proceso_Inbound_Facturas.pdf` · `Spec_Proceso_Gestion_Oportunidad_Kanban*.pdf` (vigente: v1.2) |
+| `Evaluacion_Factura/` | **lo transversal del proceso de evaluación**: en qué orden corre todo y qué pasa antes y después | `spec-proceso-curse.md` (el curse de la OPERACIÓN: su máquina de estados, y el modelo del negocio conciliado cláusula por cláusula contra lo implementado) · `spec-ciclo-factura.md` (la costura entre los motores) · `spec-inbound-facturas.md` · `spec-pricing-simulacion.md` · `spec-modelo-giro.md` · `spec-mensajeria-interna.md` · `Spec_Proceso_Inbound_Facturas.pdf` · `Spec_Proceso_Gestion_Oportunidad_Kanban*.pdf` (vigente: v1.2) |
 
 ## Lo que no vive acá
 

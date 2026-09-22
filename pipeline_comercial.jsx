@@ -3364,7 +3364,10 @@ function verifFactura(f, deal, estado) {
   // invariante VER-01 —«no cursa con verificación pendiente»— fallaba en las dos direcciones: una
   // operación con todas sus llamadas firmadas podía seguir bloqueada, y una SIN NINGUNA podía pasar
   // el control si a cada deudor le tocaba «Completada». Una llamada está registrada o no lo está: no
-  // hay estado intermedio que persistir, porque el repositorio guarda `{por, fecha}` y nada más.
+  // hay estado intermedio que persistir. El repositorio guarda, además de `{por, fecha}`, el registro
+  // de la llamada que firmó el panel lateral —checklist, contacto, fecha comprometida, respaldo y
+  // nota (regla 53)—, y `checks` se lee de ahí; pero lo que decide «registrada» sigue siendo que la
+  // entrada exista.
   let tel = null;
   if (r.est === "tel") {
     const reg = ((estado && estado.tel) || (typeof VERIF_TEL !== "undefined" ? VERIF_TEL : {}) || {})[deal && deal.id] || {};

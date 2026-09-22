@@ -139,6 +139,39 @@ cayó en `publicarOferta` y dejó intacta la que la sonda vigila: el gate pasó 
 mutar **dentro del cuerpo** de `confirmarCierre` (`sinAviso(src, firma)`). Una sonda que muta por texto
 global caduca en cuanto el patrón se repite.
 
+## 7 · El spec del proceso de curse (`Specs_Procesos/Evaluacion_Factura/spec-proceso-curse.md`)
+
+El usuario dictó el **modelo de curse** —DTESync, corrida horaria, hora de corte 23:00 / reinicio 06:00,
+los cinco motores en paralelo, lo que cada evaluación produce versionado— y pidió el spec. Se escribió con
+un workflow de 16 agentes: **seis lectores** en paralelo (la costura, cuatro pares de specs de motor, las
+reglas del vault, el fuente), **una conciliación** que partió el modelo en 40 cláusulas M-nn y les dio
+estado con evidencia, **un redactor** en el formato de la casa, y **dos rondas de tres refutadores**
+(contra el fuente, contra el vault/specs, cobertura del modelo) con corrector: 36 + 33 correcciones
+aplicadas, todas verificadas contra el código antes de aplicarse. Resultado: 845 líneas, **16
+implementadas · 19 implementadas distinto · 3 pendientes · 3 decisiones abiertas**, seis contradicciones
+que no se cierran programando (§15) y lo pendiente por motor (§16). Es el insumo del análisis de gaps, las
+historias de usuario y los casos de prueba Playwright que el usuario pidió para después de evaluarlo.
+
+**Tres cosas que el proceso destapó fuera del spec, y se corrigieron en el mismo commit:**
+
+1. **Tres citas de caso del índice estaban corridas en +2** desde la renumeración de la mezcla del 21-09:
+   la regla 8 citaba el 147 (Tesorería) en vez del 149 (la tasa contra el mínimo del deudor), la 15-bis-bis
+   el 144 (integración al core) en vez del 146 (la solicitud no se pierde por un id repetido), y la 43 los
+   145–146 en vez de los 147–148. `invariantes.test.mjs` no lo vio porque comprueba que el caso citado
+   EXISTE, no que sea el correcto: queda como deuda mejorar ese gate para que cruce el número con el título
+   del caso (la regla nombra lo que su caso prueba).
+2. El comentario de `verifFactura` decía que el repositorio guarda «`{por, fecha}` y nada más»; desde el
+   panel lateral guarda el registro entero. Se corrigió.
+3. Un desfase entre documentos que el spec deja escrito: `spec-ciclo-factura.md` §17 dice que el cierre del
+   día «re-origina como oportunidad NUEVA con identificador propio» y el fuente (`rolloverDia`, «EL ID NO
+   CAMBIA») y la regla 22 dicen lo contrario. Va a la decisión #3 de §15; no se tocó el spec del ciclo.
+
+**Lo que costó**: los refutadores de la segunda ronda encontraron casi tantos hallazgos como los de la
+primera (32 contra 36), y no eran regresiones del corrector sino cobertura distinta —cada refutador nuevo
+mira otras afirmaciones—. Un documento de 800 líneas con ~200 anclas al fuente no converge en dos rondas;
+converge cuando el spec se cita en los gates. Las anclas de línea (`l.NNNNN`) valen para el fuente del
+22-09-2026 y se van a desfasar con el primer commit: el spec lo dice en su §14.
+
 ## Verificación
 
 prettier · eslint · tsc sin TS1 · sin duplicados · build 44,1 MB · **415 gates de contrato** · **158/158** ·
