@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-22T01:00:00Z
+timestamp: 2026-09-22T08:00:00Z
 ---
 
 # Estado actual
@@ -13,9 +13,9 @@ timestamp: 2026-09-22T01:00:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **156/156 PASA**, **45 archivos de gate de contrato**
-(289 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su
-vault (81 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato
+(`pipeline_comercial.jsx`), build standalone, **156/156 PASA**, **46 archivos de gate de contrato**
+(363 tests), **31 casos e2e** (31/31), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su
+vault (82 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato
 tienen gate. La crónica del 17 al 19-09 vive en sus logs (ADR-0001 a 0006, el linter como paso 0-bis).
 El **20-09** entró todo lo de plata: **regla 8 sin proxy** (149, ADR-0008), **girar no es acción de NEX**
 (43, 147, 148), **ATR-01 en el handler** (145), el **id de la solicitud al comité** (146), las
@@ -38,18 +38,19 @@ destapó que `atribDeRol` resolvía el super-admin por el CÓDIGO «ADMIN» y no
 ([log](./2026-09-21_el_tenant_se_da_de_alta.md)) · y se **ordenó la carpeta**, que las dos ramas hicieron
 a la vez: ganó la de `main` —`Auditoria/` es lo que MIDE y `Regresiones/` lo que COTEJA definición contra
 implementación— y de acá quedó el gate `rutas.test.mjs`
-([log](./2026-09-21_ordenar_las_carpetas.md)).
+([log](./2026-09-21_ordenar_las_carpetas.md)) · y el **tab de Verificación** (53): se ve al SIMULAR
+—en modo informativo, porque lo que la compuerta de la regla 6 protege es la LLAMADA y no la
+información—, el chip del deudor dice **Prime** y la nota va rotulada en vez de «Lista Blanca», y los
+criterios V00–V10 subieron al panel del DEUDOR dejando en la factura sólo su quiz telefónico
+([log](./2026-09-22_el_deudor_decide_la_factura_se_llama.md)).
 
 > ## 🎯 Siguiente paso
 >
-> 1. **El tab VERIFICACIÓN**, tres pedidos: (a) habilitarlo al SIMULAR, informativo; (b) chip **PRIME** +
->    Nota Deudor en vez de «Lista Blanca», que el usuario da por retirado; (c) **separar** la evaluación
->    del DEUDOR (V00–V10 y causas, que son del par) del **quiz por FACTURA**.
-> 2. **UI**: la card de la columna Oferta se corta · una oportunidad enviada a comité sigue diciendo
+> 1. **UI**: la card de la columna Oferta se corta · una oportunidad enviada a comité sigue diciendo
 >    «Negociación» · el selector de sesión de la navbar, 1/3 más angosto y con elipsis.
-> 3. **El join de empresas SIEMPRE por RUT**, nunca por razón social: 8 sitios medidos. Es un T1.
-> 4. **Correr el `.bat` una vez** · **Regenerar `Capturas_UI/`** · **Motor O01** · **28** y **13-quater**.
-## En vuelo · `main` en `5f2cb18` (20-09); la rama de sesión lleva lo del 21-09 encima
+> 2. **El join de empresas SIEMPRE por RUT**, nunca por razón social: 8 sitios medidos. Es un T1.
+> 3. **Correr el `.bat` una vez** · **Regenerar `Capturas_UI/`** · **Motor O01** · **28** y **13-quater**.
+## En vuelo · `main` y la rama de sesión en `160ca58` (21-09); encima va la regla 53, sin mezclar aún
 
 ## Bloqueos · los dos son del usuario, desde Windows
 
@@ -76,4 +77,4 @@ mezclar.
    creyéndolo un merge a `main`: usar `git branch -r --merged`, que responde lo mismo.
 ## Conocimiento clave
 [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto, en [`vault/index.md`](../index.md)
-Últimas: [el cierre le escribe a quien firma](./2026-09-21_el_cierre_le_escribe_a_quien_firma.md) · [las tres casuísticas del elenco](./2026-09-20_las_tres_casuisticas_del_elenco.md) · [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md)
+Últimas: [el deudor decide, la factura se llama](./2026-09-22_el_deudor_decide_la_factura_se_llama.md) · [el tenant se da de alta](./2026-09-21_el_tenant_se_da_de_alta.md) · [un defecto, tres síntomas](./2026-09-21_un_defecto_tres_sintomas.md)

@@ -2696,21 +2696,6 @@ const CAT_META = {
 // calzara se pintaba del verde de la MEJOR categoría. Un desconocido se ve neutro.
 const CAT_NEUTRA = { bg: "#F3F4F6", fg: "#6B7280", q: "sin clasificar", desc: "Todavía no hay facturas con las que clasificar esta operación." };
 const catMeta = (c) => CAT_META[c] || CAT_META[(c || "").slice(0, 5)] || CAT_NEUTRA;
-// Clasificación corta + chip de color por tipo de deudor.
-const DEUDOR_LABEL = {
-  "Lista Blanca": "Lista Blanca",
-  "Deudor Autorizado": "Autorizada",
-  "Histórico BICE": "Histórico BICE",
-  Histórico: "Histórico",
-  Otro: "Otro",
-};
-const DEUDOR_CHIP = {
-  "Lista Blanca": { bg: "#F0FDF4", fg: "#16A34A" },
-  "Deudor Autorizado": { bg: "#eff6ff", fg: "#2563EB" },
-  "Histórico BICE": { bg: "#ecfeff", fg: "#0e7490" },
-  Histórico: { bg: "#fff7ed", fg: "#c2410c" },
-  Otro: { bg: "#F3F4F6", fg: "#4B5563" },
-};
 // Tipo de deudor para MOSTRAR (chip/score): los históricos del último año NO son "Otro" — se distinguen
 // como "Histórico BICE" (ya factorizado con nosotros) o "Histórico" (con otro factor). El resto usa su lista.
 function tipoDeudorDisp(f) {
@@ -3401,6 +3386,7 @@ function verifFactura(f, deal, estado) {
       exc: null,
       nombre,
       tipo: par.tipo,
+      prime: par.prime,
       nota: par.nota,
       sc: par.sc,
       segmento: par.segmento,
@@ -3421,6 +3407,7 @@ function verifFactura(f, deal, estado) {
     exc: null,
     nombre,
     tipo: par.tipo,
+    prime: par.prime,
     nota: par.nota,
     sc: par.sc,
     segmento: par.segmento,
@@ -11111,13 +11098,21 @@ function DealMensajeria({ deal, usuario }) {
 // pestañas más allá: el mismo documento con dos precios en la misma pantalla.
 // (El mapa `spreadDeudor` se lee en cinco sitios y su setter no se llama nunca: la EDICIÓN del spread
 // por deudor que su forma de estado promete no existe. Ver `Auditoria/Auditoria_Codigo_Muerto.md` §1.4.)
-function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usuario, tasaDe }) {
+function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoConfirmada, usuario, tasaDe }) {
   // Misma compuerta que la mesa: registrar la llamada o retirar una factura es firmar lo que el
   // deudor dijo, y eso lo hace el equipo de verificación. Los demás leen el veredicto del modelo.
   const puedeMarcar = puedeVerificarFacturas((SESION && SESION.usuario) || usuario);
+  // INFORMATIVO: hay oferta simulada, pero la verificación todavía no es trabajo del equipo. Se ve
+  // el veredicto —qué se va a tener que llamar y qué no— y no se puede firmar nada: llamar a un
+  // deudor por facturas que el ejecutivo quizá retire son 3–4 horas tiradas (regla 6). `soloInforma`
+  // es para el CARTEL y `puedeAccionar` para los botones: en Giro/Perdida el tab ya está bloqueado y
+  // repetir ahí el cartel del informativo diría algo falso.
+  const soloInforma = !!informativo && !bloqueado;
+  const puedeAccionar = puedeMarcar && !informativo;
   const [refrescado, setRefrescado] = useState(nowStamp());
   const [filtro, setFiltro] = useState("all");
   const [open, setOpen] = useState({});
+  const [abiertoDeudor, setAbiertoDeudor] = useState({});
   // Columnas de la fila de factura: chevron · folio · tipo · emisión · vencimiento · tasa · monto · verif.
   const GC_VF = "14px minmax(72px,1fr) 104px 88px 88px 56px 82px 112px";
   // Las verificaciones telefónicas se persisten: vivían en este useState y se perdían al cerrar el
@@ -11175,7 +11170,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
     vistos.forEach((x) => {
       const k = x.f.deudor || "—";
       if (!por[k]) {
-        por[k] = { deudor: k, items: [], tipo: x.v.tipo, nota: x.v.nota, monto: 0 };
+        por[k] = { deudor: k, items: [], prime: x.v.prime, nota: x.v.nota, segmento: x.v.segmento, v0: x.v, monto: 0 };
         orden.push(k);
       }
       por[k].items.push(x);
@@ -11183,13 +11178,29 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
     });
     return orden.map((k) => por[k]);
   })();
-  const notaCol = (n) => (n >= 4 ? "#0a7d3f" : n >= 3 ? "#C2410C" : "#EF4444");
+  // La Nota Deudor viene del maestro de comportamiento de pago: de 1 a 5 con un decimal, y en la UI
+  // con coma. Sin nota en el maestro NO es «0» —que es la peor nota posible— sino ausencia de dato.
+  const fmtNota = (n) => (n > 0 ? String(n).replace(".", ",") : "s/n");
   const CHECKS = ["Existencia de la factura", "Recepción conforme", "Fecha de pago comprometida"];
   return (
     <>
       <div className="mt-1.5 t10 uppercase tracking-wide" style={{ color: C.faint }}>
-        Por documento · folio, deudor, criterios del predictor (V01–V10), verificación telefónica y estado
+        Por deudor · criterios del predictor (V00–V10) y veredicto · por factura · el quiz de la verificación telefónica
       </div>
+      {/* El cartel del modo informativo. Un tab de sólo lectura sin explicación se lee como un tab
+          roto —el usuario aprieta «Registrar verificación», no está, y reporta un defecto—, así que
+          dice las dos cosas: qué SÍ trae esta pantalla hoy y qué abre la llamada. */}
+      {soloInforma && (
+        <div className="mt-1 flex items-start gap-1.5 rounded-lg p-2 t9" style={{ backgroundColor: C.lilac, border: "1px solid #DDD3FF", color: "#5B21D6" }}>
+          <Eye size={11} className="mt-[2px] shrink-0" />
+          <span>
+            <b>Informativo.</b> La oferta está simulada y todavía se puede editar, así que acá se ve{" "}
+            <b>qué facturas van a requerir verificación telefónica y cuáles no</b>, y no se registra ninguna llamada. El contacto con el deudor toma{" "}
+            <b>3–4 horas</b> y retrasa el giro: llamar por facturas que quizá se retiren es lo que esta compuerta evita. Se habilita al <b>pre-evaluar</b> o al{" "}
+            <b>cerrar y publicar</b> la oferta.
+          </span>
+        </div>
+      )}
       <div
         className="mt-1 rounded-lg p-2 t9"
         style={{ backgroundColor: nTel ? "#FFF7ED" : "#F0FDF4", border: `1px solid ${nTel ? "#FED7AA" : "#bbf7d0"}`, color: nTel ? "#C2410C" : "#16A34A" }}
@@ -11267,7 +11278,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
       </div>
       <div className="mt-1">
         {grupos.map((g) => {
-          const chip = DEUDOR_CHIP[g.tipo] || DEUDOR_CHIP["Otro"];
+          const abierto = !!abiertoDeudor[g.deudor];
           const nTelG = g.items.filter((y) => y.v.est === "tel").length;
           // Tres estados de grupo, y el tercero es el que importa: con la confirmación parcial el
           // deudor queda partido, y decir sólo «Req. verif.» escondería que la mitad ya está.
@@ -11280,13 +11291,38 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
           return (
             <div key={g.deudor} className="mb-1.5 overflow-hidden rounded-lg" style={{ border: `1px solid ${C.line}` }}>
               {/* El chip, la nota y el nombre viven ACÁ y no en cada fila: son del deudor, y repetidos
-                siete veces tapaban lo único que cambia entre facturas, que es el folio y el monto. */}
-              <div className="flex items-center gap-2 px-2 py-1.5 t11" style={{ backgroundColor: C.page, borderBottom: `1px solid ${C.line}` }}>
-                <span className="shrink-0 rounded-full px-1 py-0.5 t9 font-medium" style={{ backgroundColor: chip.bg, color: chip.fg }}>
-                  {DEUDOR_LABEL[g.tipo] || "Otro"}
+                siete veces tapaban lo único que cambia entre facturas, que es el folio y el monto.
+                El chip nombra el SEGMENTO —**Prime**, que es Lista Blanca ∪ Autorizados y es lo que
+                el predictor usa para recortar el protocolo (regla 6)— y no la lista interna de la
+                que salió: «Lista Blanca» era un rótulo que el negocio ya no usa y que además decía
+                cosas distintas de las dos listas que comparten segmento. La nota va ROTULADA: un
+                número suelto al lado del nombre del deudor no dice de qué es. La cabecera abre y
+                cierra la evaluación del deudor. */}
+              <div
+                onClick={() => setAbiertoDeudor((o) => ({ ...o, [g.deudor]: !o[g.deudor] }))}
+                className="flex items-center gap-2 px-2 py-1.5 t11"
+                style={{ backgroundColor: C.page, borderBottom: `1px solid ${C.line}`, cursor: "pointer" }}
+                title="Ver los criterios V00–V10 y el veredicto de este deudor"
+              >
+                <ChevronRight size={11} style={{ color: C.faint, transform: abierto ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                {g.prime && (
+                  <span
+                    className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold"
+                    style={{ backgroundColor: C.lilac, color: "#5B21D6" }}
+                    title="Deudor Prime: Lista Prime del maestro. Aplica el protocolo recortado de 6 criterios (V01, V04, V05, V07, V08, V10)."
+                  >
+                    Prime
+                  </span>
+                )}
+                <span className="shrink-0 t9" style={{ color: C.faint }}>
+                  Nota Deudor
                 </span>
-                <span className="w-8 shrink-0 text-right font-semibold" style={{ color: notaCol(g.nota) }}>
-                  {g.nota}
+                <span
+                  className="w-8 shrink-0 text-right font-semibold"
+                  style={{ color: g.nota > 0 ? NOTA_COLOR(g.nota) : C.faint }}
+                  title="Nota de comportamiento de pago del deudor (maestro de riesgo), de 1 a 5"
+                >
+                  {fmtNota(g.nota)}
                 </span>
                 <span className="min-w-0 flex-1 truncate font-semibold" style={{ color: C.ink }}>
                   {g.deudor}
@@ -11305,6 +11341,77 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
                   {estG.t}
                 </span>
               </div>
+              {/* LA EVALUACIÓN ES DEL DEUDOR. `verifDecision` calcula V00–V10 UNA vez sobre el conjunto
+                  de facturas del par cliente-deudor: dibujarlos dentro de cada fila mostraba el mismo
+                  dato N veces y, peor, sugería que la factura tenía criterios propios — no los tiene,
+                  y la única pregunta que sí es del documento (¿qué dijo el deudor de ESTE folio?) es
+                  la que vive abajo, en el quiz telefónico. */}
+              {abiertoDeudor[g.deudor] && (
+                <div
+                  className="grid gap-3 px-2 py-2"
+                  style={{ backgroundColor: C.page, borderBottom: `1px solid ${C.line}`, gridTemplateColumns: "1.3fr .85fr" }}
+                >
+                  <div>
+                    <div className="t9 font-bold uppercase tracking-wide mb-1.5" style={{ color: C.ink }}>
+                      Criterios del deudor · par cliente-deudor (3M)
+                    </div>
+                    {g.v0.evals.map((e) => {
+                      const rc =
+                        e.st === "ok"
+                          ? { bg: "#F0FDF4", fg: "#16A34A", t: `✓ ${e.r.fmt(e.v)}` }
+                          : e.st === "no"
+                            ? { bg: "#fef2f2", fg: "#EF4444", t: `✕ ${e.r.fmt(e.v)} · umbral ${e.r.thr}` }
+                            : { bg: "#FAF9FB", fg: "#6B7280", t: "? sin información" };
+                      return (
+                        <div key={e.r.id} className="mb-1.5 rounded-lg bg-white p-2" style={{ border: `1px solid ${C.line}` }}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="t10 font-semibold" style={{ color: C.ink }}>
+                              {e.r.id} · {e.r.name}
+                            </div>
+                            <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: rc.bg, color: rc.fg }}>
+                              {rc.t}
+                            </span>
+                          </div>
+                          <div className="t9" style={{ color: C.sub }}>
+                            {e.r.desc}
+                          </div>
+                          <div className="t9" style={{ color: C.faint }}>
+                            Dominio: <b style={{ color: C.sub }}>{e.r.dom}</b> · Umbral: <b style={{ color: C.sub }}>{e.r.thr}</b>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div>
+                    <div className="rounded-lg bg-white p-2.5" style={{ border: `1px solid ${C.line}` }}>
+                      <div className="t10 font-bold" style={{ color: C.ink }}>
+                        {g.v0.est === "ok" ? (
+                          <>
+                            <span className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#F0FDF4", color: "#16A34A" }}>
+                              ✓ Verificada
+                            </span>{" "}
+                            por el modelo
+                          </>
+                        ) : (
+                          <>
+                            <span className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>
+                              ⚠ Req. verif.
+                            </span>{" "}
+                            verificación telefónica
+                          </>
+                        )}
+                      </div>
+                      <div className="mt-1 t9" style={{ color: C.sub }}>
+                        {g.v0.est === "ok" ? "Todas las reglas dentro de umbral. Puede continuar a cesión y curse." : g.v0.motivo}
+                      </div>
+                      <div className="mt-1.5 t9" style={{ color: C.faint }}>
+                        Segmento <b style={{ color: C.sub }}>{g.segmento}</b> · el veredicto cubre las {g.items.length} factura{g.items.length === 1 ? "" : "s"}{" "}
+                        de este deudor en la oferta: una llamada las cubre todas.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
               {/* Los DATOS DEL DOCUMENTO, en el mismo orden y con los mismos títulos que la tabla de
               candidatas: folio · tipo · emisión · vencimiento · tasa · monto. La fila traía sólo el
               folio y el monto, y quien está por gastar 3–4 horas llamando al deudor necesita saber qué
@@ -11341,11 +11448,16 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
                     return (
                       <div key={f.id} style={{ borderBottom: `1px solid ${C.line}` }}>
                         <div
-                          onClick={() => setOpen((o) => ({ ...o, [f.id]: !o[f.id] }))}
+                          onClick={() => tel && setOpen((o) => ({ ...o, [f.id]: !o[f.id] }))}
                           className="grid items-center gap-2 py-1.5 t11"
-                          style={{ gridTemplateColumns: GC_VF, cursor: "pointer" }}
+                          style={{ gridTemplateColumns: GC_VF, cursor: tel ? "pointer" : "default" }}
+                          title={tel ? "Ver el quiz de la verificación telefónica de este folio" : "Verificada por el modelo: no hay llamada que registrar"}
                         >
-                          <ChevronRight size={11} style={{ color: C.faint, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                          {tel ? (
+                            <ChevronRight size={11} style={{ color: C.faint, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                          ) : (
+                            <span />
+                          )}
                           <span className="truncate font-medium" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>
                             #{f.folio}
                           </span>
@@ -11371,173 +11483,113 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
                             {estPill.t}
                           </span>
                         </div>
-                        {isOpen && (
-                          <div className="grid gap-3 rounded-lg p-3 mb-1.5" style={{ backgroundColor: C.page, gridTemplateColumns: "1.3fr .85fr" }}>
-                            <div>
-                              <div className="t9 font-bold uppercase tracking-wide mb-1.5" style={{ color: C.ink }}>
-                                Reglas de verificación · cliente-deudor (3M)
+                        {/* EL QUIZ ES DE LA FACTURA: «¿existe este folio, se recibió conforme y cuándo se
+                            paga?» es la única pregunta de la verificación que se responde por documento,
+                            y por eso es lo único que abre esta fila. Abre sólo si hay llamada que mirar
+                            —la pendiente o la ya registrada—: una factura que el modelo dio por verificada
+                            no tiene quiz, y ofrecerle un panel vacío es peor que no ofrecerle nada. */}
+                        {isOpen && tel && (
+                          <div className="rounded-lg p-3 mb-1.5" style={{ backgroundColor: C.page }}>
+                            <div className="rounded-lg bg-white p-2.5" style={{ border: `1px solid ${C.line}`, maxWidth: 620 }}>
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="t9 font-bold uppercase tracking-wide" style={{ color: C.ink }}>
+                                  Verificación telefónica
+                                </span>
+                                <span
+                                  className="rounded-full px-1.5 py-0.5 t9 font-semibold"
+                                  style={{
+                                    backgroundColor: tel.estado === "Completada" ? "#F0FDF4" : tel.estado === "En curso" ? "#FFF7ED" : "#FAF9FB",
+                                    color: tel.estado === "Completada" ? "#16A34A" : tel.estado === "En curso" ? "#C2410C" : "#6B7280",
+                                  }}
+                                >
+                                  {tel.estado}
+                                </span>
                               </div>
-                              {v.evals.map((e) => {
-                                const rc =
-                                  e.st === "ok"
-                                    ? { bg: "#F0FDF4", fg: "#16A34A", t: `✓ ${e.r.fmt(e.v)}` }
-                                    : e.st === "no"
-                                      ? { bg: "#fef2f2", fg: "#EF4444", t: `✕ ${e.r.fmt(e.v)} · umbral ${e.r.thr}` }
-                                      : { bg: "#FAF9FB", fg: "#6B7280", t: "? sin información" };
-                                return (
-                                  <div key={e.r.id} className="mb-1.5 rounded-lg bg-white p-2" style={{ border: `1px solid ${C.line}` }}>
-                                    <div className="flex items-start justify-between gap-2">
-                                      <div className="t10 font-semibold" style={{ color: C.ink }}>
-                                        {e.r.id} · {e.r.name}
-                                      </div>
-                                      <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: rc.bg, color: rc.fg }}>
-                                        {rc.t}
-                                      </span>
-                                    </div>
-                                    <div className="t9" style={{ color: C.sub }}>
-                                      {e.r.desc}
-                                    </div>
-                                    <div className="t9" style={{ color: C.faint }}>
-                                      Dominio: <b style={{ color: C.sub }}>{e.r.dom}</b> · Umbral: <b style={{ color: C.sub }}>{e.r.thr}</b>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            <div>
-                              <div className="rounded-lg bg-white p-2.5 mb-2" style={{ border: `1px solid ${C.line}` }}>
-                                <div className="t10 font-bold" style={{ color: C.ink }}>
-                                  {v.est === "ok" ? (
-                                    <>
-                                      <span className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#F0FDF4", color: "#16A34A" }}>
-                                        ✓ Verificada
-                                      </span>{" "}
-                                      por el modelo
-                                    </>
-                                  ) : (
-                                    <>
-                                      <span className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>
-                                        ⚠ Req. verif.
-                                      </span>{" "}
-                                      verificación telefónica
-                                    </>
-                                  )}
-                                </div>
-                                <div className="mt-1 t9" style={{ color: C.sub }}>
-                                  {v.est === "ok" ? "Todas las reglas dentro de umbral. Puede continuar a cesión y curse." : v.motivo}
-                                </div>
-                                {v.exc && (
-                                  <div
-                                    className="mt-1.5 rounded-md px-2 py-1 t9"
-                                    style={{ backgroundColor: "#F1ECFF", border: "1px solid #F1ECFF", color: "#5B21D6" }}
+                              {CHECKS.map((c, i) => (
+                                <div
+                                  key={i}
+                                  className="flex items-center gap-2 py-1 t10"
+                                  style={{ borderBottom: i < 2 ? `1px solid ${C.line}` : "none", color: C.sub }}
+                                >
+                                  <span
+                                    className="flex h-4 w-4 items-center justify-center rounded"
+                                    style={{
+                                      border: `1.5px solid ${tel.checks[i] ? "#16a34a" : "#D1D5DB"}`,
+                                      backgroundColor: tel.checks[i] ? "#16a34a" : "#fff",
+                                      color: "#fff",
+                                      fontSize: 9,
+                                      fontWeight: 700,
+                                    }}
                                   >
-                                    🔒 Cursar requiere verificación completada + <b>{v.exc}</b>
-                                  </div>
-                                )}
-                              </div>
-                              {tel && (
-                                <div className="rounded-lg bg-white p-2.5" style={{ border: `1px solid ${C.line}` }}>
-                                  <div className="flex items-center justify-between mb-1">
-                                    <span className="t9 font-bold uppercase tracking-wide" style={{ color: C.ink }}>
-                                      Verificación telefónica
-                                    </span>
-                                    <span
-                                      className="rounded-full px-1.5 py-0.5 t9 font-semibold"
-                                      style={{
-                                        backgroundColor: tel.estado === "Completada" ? "#F0FDF4" : tel.estado === "En curso" ? "#FFF7ED" : "#FAF9FB",
-                                        color: tel.estado === "Completada" ? "#16A34A" : tel.estado === "En curso" ? "#C2410C" : "#6B7280",
-                                      }}
-                                    >
-                                      {tel.estado}
-                                    </span>
-                                  </div>
-                                  {CHECKS.map((c, i) => (
-                                    <div
-                                      key={i}
-                                      className="flex items-center gap-2 py-1 t10"
-                                      style={{ borderBottom: i < 2 ? `1px solid ${C.line}` : "none", color: C.sub }}
-                                    >
-                                      <span
-                                        className="flex h-4 w-4 items-center justify-center rounded"
-                                        style={{
-                                          border: `1.5px solid ${tel.checks[i] ? "#16a34a" : "#D1D5DB"}`,
-                                          backgroundColor: tel.checks[i] ? "#16a34a" : "#fff",
-                                          color: "#fff",
-                                          fontSize: 9,
-                                          fontWeight: 700,
-                                        }}
-                                      >
-                                        {tel.checks[i] ? "✓" : ""}
-                                      </span>
-                                      {c}
-                                    </div>
-                                  ))}
-                                  {tel.who && (
-                                    <div className="mt-1.5 t9" style={{ color: C.faint }}>
-                                      Registrado por {tel.who}
-                                    </div>
-                                  )}
-                                  {/* La EVIDENCIA de la llamada, que es lo que justifica girar contra esta factura.
+                                    {tel.checks[i] ? "✓" : ""}
+                                  </span>
+                                  {c}
+                                </div>
+                              ))}
+                              {tel.who && (
+                                <div className="mt-1.5 t9" style={{ color: C.faint }}>
+                                  Registrado por {tel.who}
+                                </div>
+                              )}
+                              {/* La EVIDENCIA de la llamada, que es lo que justifica girar contra esta factura.
                           Un registro viejo no la trae: se omite en vez de dibujar campos vacíos. */}
-                                  {tel.reg && tel.reg.contacto && (
-                                    <div
-                                      className="mt-1.5 rounded-md px-2 py-1.5 t9"
-                                      style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0", color: "#166534" }}
-                                    >
-                                      <div>
-                                        Habló con <b>{tel.reg.contacto.nombre}</b>
-                                        {tel.reg.contacto.cargo ? ` · ${tel.reg.contacto.cargo}` : ""} · {fonoOfuscado(tel.reg.contacto.fono)}
-                                      </div>
-                                      {tel.reg.compromiso && (
-                                        <div className="mt-0.5">
-                                          Pago comprometido: <b>{tel.reg.compromiso}</b>
-                                        </div>
-                                      )}
-                                      <div className="mt-0.5">
-                                        {tel.reg.respaldo && tel.reg.respaldo.length ? (
-                                          <>
-                                            Respaldo:{" "}
-                                            {tel.reg.respaldo.map((a, i) => (
-                                              <span key={i}>
-                                                📎 {a}
-                                                {i < tel.reg.respaldo.length - 1 ? " · " : ""}
-                                              </span>
-                                            ))}
-                                          </>
-                                        ) : (
-                                          <span style={{ color: "#C2410C" }}>Sin respaldo documental (declarado por quien registró)</span>
-                                        )}
-                                      </div>
-                                      {tel.reg.notas && (
-                                        <div className="mt-0.5" style={{ color: C.sub }}>
-                                          “{tel.reg.notas}”
-                                        </div>
-                                      )}
+                              {tel.reg && tel.reg.contacto && (
+                                <div
+                                  className="mt-1.5 rounded-md px-2 py-1.5 t9"
+                                  style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0", color: "#166534" }}
+                                >
+                                  <div>
+                                    Habló con <b>{tel.reg.contacto.nombre}</b>
+                                    {tel.reg.contacto.cargo ? ` · ${tel.reg.contacto.cargo}` : ""} · {fonoOfuscado(tel.reg.contacto.fono)}
+                                  </div>
+                                  {tel.reg.compromiso && (
+                                    <div className="mt-0.5">
+                                      Pago comprometido: <b>{tel.reg.compromiso}</b>
                                     </div>
                                   )}
-                                  {!bloqueado && puedeMarcar && tel.estado !== "Completada" && (
-                                    <button
-                                      onClick={() => registrarTel(f)}
-                                      className="mt-2 rounded-md px-3 py-1.5 t10 font-semibold"
-                                      style={{ border: "1px solid #F1ECFF", color: "#5B21D6", backgroundColor: "#fff" }}
-                                    >
-                                      Registrar verificación
-                                    </button>
+                                  <div className="mt-0.5">
+                                    {tel.reg.respaldo && tel.reg.respaldo.length ? (
+                                      <>
+                                        Respaldo:{" "}
+                                        {tel.reg.respaldo.map((a, i) => (
+                                          <span key={i}>
+                                            📎 {a}
+                                            {i < tel.reg.respaldo.length - 1 ? " · " : ""}
+                                          </span>
+                                        ))}
+                                      </>
+                                    ) : (
+                                      <span style={{ color: "#C2410C" }}>Sin respaldo documental (declarado por quien registró)</span>
+                                    )}
+                                  </div>
+                                  {tel.reg.notas && (
+                                    <div className="mt-0.5" style={{ color: C.sub }}>
+                                      “{tel.reg.notas}”
+                                    </div>
                                   )}
-                                  {/* Si el deudor NO confirma, Security retira esa factura de la operación (spec de
+                                </div>
+                              )}
+                              {!bloqueado && puedeAccionar && tel.estado !== "Completada" && (
+                                <button
+                                  onClick={() => registrarTel(f)}
+                                  className="mt-2 rounded-md px-3 py-1.5 t10 font-semibold"
+                                  style={{ border: "1px solid #F1ECFF", color: "#5B21D6", backgroundColor: "#fff" }}
+                                >
+                                  Registrar verificación
+                                </button>
+                              )}
+                              {/* Si el deudor NO confirma, Security retira esa factura de la operación (spec de
                           verificación §1). Es la única mutación que admite una operación ya firmada, y
                           sólo puede QUITAR: la asignación de las demás no se toca y no se vuelve a
                           asignar contra el estado nuevo de las líneas (ver `recortarAsignacion`). */}
-                                  {!bloqueado && puedeMarcar && onNoConfirmada && tel.estado !== "Completada" && (
-                                    <button
-                                      onClick={() => onNoConfirmada(f)}
-                                      className="mt-2 ml-1.5 rounded-md px-3 py-1.5 t10 font-semibold"
-                                      style={{ border: `1px solid ${C.red}`, color: C.red, backgroundColor: "#fff" }}
-                                    >
-                                      El deudor no confirmó · retirar
-                                    </button>
-                                  )}
-                                </div>
+                              {!bloqueado && puedeAccionar && onNoConfirmada && tel.estado !== "Completada" && (
+                                <button
+                                  onClick={() => onNoConfirmada(f)}
+                                  className="mt-2 ml-1.5 rounded-md px-3 py-1.5 t10 font-semibold"
+                                  style={{ border: `1px solid ${C.red}`, color: C.red, backgroundColor: "#fff" }}
+                                >
+                                  El deudor no confirmó · retirar
+                                </button>
                               )}
                             </div>
                           </div>
@@ -12235,18 +12287,19 @@ function DealDrawer({
       return 0;
     }
   })();
-  // El tab de Verificación aparece cuando la verificación deja de ser una predicción y pasa a ser
-  // trabajo del equipo: al PRE-EVALUAR (el ejecutivo adelanta el proceso, igual que con el
-  // otorgamiento) o con la oferta ya cerrada y PUBLICADA (hay un compromiso con el cliente y la
-  // llamada queda en el camino al giro). Antes de eso la oferta todavía se está armando y llamar a un
-  // deudor por facturas que quizá se retiren es quemar 3–4 horas por deudor (regla 6).
-  // Sin facturas no hay nada que verificar, y en Giro/Perdida el tab se muestra sólo de lectura
+  // VERIFICACIÓN ACCIONABLE: cuándo deja de ser una predicción y pasa a ser trabajo del equipo. Al
+  // PRE-EVALUAR (el ejecutivo adelanta el proceso, igual que con el otorgamiento) o con la oferta ya
+  // cerrada y PUBLICADA (hay un compromiso con el cliente y la llamada queda en el camino al giro).
+  const verifAccionable = !!(deal && (tienePreEval(deal.id) || ofertaPublicada(deal) || ["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage)));
+  // Y el TAB aparece antes: en cuanto hay oferta SIMULADA. Lo que la compuerta de la regla 6 protege
+  // es la LLAMADA —3–4 horas por deudor que se queman si las facturas se retiran—, no la
+  // información: saber qué va a haber que verificar y qué no es justo lo que el ejecutivo necesita
+  // ANTES de comprometer un plazo, y esconderlo hasta publicar lo dejaba prometiendo a ciegas. Con la
+  // oferta sólo simulada el tab entra en modo INFORMATIVO (`informativo`), que muestra el veredicto y
+  // no deja registrar ninguna llamada ni retirar ninguna factura.
+  // Sin facturas no hay nada que verificar, y en Giro/Perdida se muestra sólo de lectura
   // (`bloqueado`), porque la llamada ya es historia y su registro es evidencia.
-  const mostrarVerif = !!(
-    deal &&
-    (deal.facturasOp || []).length &&
-    (tienePreEval(deal.id) || ofertaPublicada(deal) || ["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage))
-  );
+  const mostrarVerif = !!(deal && (deal.facturasOp || []).length && (verifAccionable || deal.simulado));
   const cont = deal.contacto || null;
   // Contacto validado: el cliente respondió por ese canal (WhatsApp/Call → teléfono; Email → correo).
   const telValidado = !!deal.telValidado || (deal.waSesion || []).some((m) => m.from === "cliente");
@@ -12900,6 +12953,7 @@ function DealDrawer({
               <VerificacionTab
                 deal={deal}
                 facturasOp={deal.facturasOp || []}
+                informativo={!verifAccionable}
                 bloqueado={["giro", "perdida"].includes(deal.stage)}
                 onNoConfirmada={(f) => setConfirmNoConf(f)}
                 usuario={usuario}
