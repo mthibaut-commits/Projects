@@ -1,6 +1,6 @@
 /* Gate de CIFRAS: los números que los documentos afirman contra los que el repo mide.
 
-   Es el hallazgo 2.3 de `Auditorias/Auditoria_Bootstrap_Agentico.md`, que ya pasó TRES veces: un documento cita un
+   Es el hallazgo 2.3 de `Auditoria/Auditoria_Bootstrap_Agentico.md`, que ya pasó TRES veces: un documento cita un
    conteo, el repo crece, y la cifra queda vieja en silencio. El 18-09-2026 había tres versiones vivas del
    mismo número —`CLAUDE.md` decía 61 reglas de dominio, el tablero 63 y la medición daba 62— y ninguna era
    un error de nadie: no había quién las contara. Copiar los números correctos en un commit no arregla eso;

@@ -8,6 +8,13 @@ timestamp: 2026-09-21T21:00:00Z
 
 # Ordenar las carpetas · `rutas.test.mjs`
 
+> **Nota del 21-09, al mezclar.** Otra sesión (`claude/vibrant-hopper-33tg8j`) hizo este mismo
+> reordenamiento en paralelo y llegó antes a `main`. Al mezclar ganó **su** estructura, que separa mejor:
+> `Auditoria/` es lo que MIDE el repo o el código, y `Regresiones/` lo que COTEJA definición contra
+> implementación —`Inconsistencias_Motor_Otorgamiento` y la `Revision_Definiciones` viven ahí, no entre
+> las auditorías—. De esta rama sobrevive el gate `tests/contract/rutas.test.mjs`, que main no tenía.
+> Lo que sigue describe lo que se hizo acá y conserva las rutas de ese momento, que es lo que un log es.
+
 ## Qué pidió el usuario
 
 > «Puedes ordenar la estructuras de archivos PDF, .MD de la carpeta; crear una carpeta auditoría; una

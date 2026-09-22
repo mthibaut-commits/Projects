@@ -11,7 +11,7 @@ código y **por qué** difieren, que casi siempre es una decisión de negocio po
 
 Tres orígenes distintos, y conviene no mezclarlos:
 
-1. **Decisiones del 11-09-2026** que cerraron la auditoría `Auditorias/Inconsistencias_Motor_Otorgamiento.md`
+1. **Decisiones del 11-09-2026** que cerraron la auditoría `Regresiones/Inconsistencias_Motor_Otorgamiento.md`
    (INC-01 a INC-07). El PDF describe el modelo anterior porque es anterior a esas decisiones.
 2. **Una versión más nueva del predictor de verificación** que ya existe en el repo como
    `Specs_Procesos/Verificacion/spec-verificacion-facturas.md` y que el PDF v1.1 no incorporó. Ahí el `.md` es la
@@ -25,7 +25,7 @@ Tres orígenes distintos, y conviene no mezclarlos:
 
 ---
 
-## 1. `Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf` — parte OTORGAMIENTO
+## 1. `Specs_Procesos/Otorgamiento/Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf` — parte OTORGAMIENTO
 
 ### 1.1 · §3 — La homologación de niveles se retiró
 
@@ -140,7 +140,7 @@ ahora son **D01–D23 y C47–C50**. Y el layout A16 suma cuatro columnas `*_CD`
 
 ---
 
-## 2. `Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf` — parte VERIFICACIÓN
+## 2. `Specs_Procesos/Otorgamiento/Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf` — parte VERIFICACIÓN
 
 Acá el desfase no viene de decisiones del 11-09 sino de que **el predictor tiene una versión posterior**
 que vive en `Specs_Procesos/Verificacion/spec-verificacion-facturas.md`. Ese `.md` es la fuente normativa vigente —
@@ -205,7 +205,7 @@ que nadie implemente dos umbrales donde hay uno.
 
 ---
 
-## 3. `Spec_Proceso_Solicitud_Linea_Comite.pdf` y el §3.7 del spec de asignación
+## 3. `Specs_Procesos/Lineas/Spec_Proceso_Solicitud_Linea_Comite.pdf` y el §3.7 del spec de asignación
 
 **PDF / spec:** el ciclo de vida de la **reserva de cupo** quedó «por definir».
 
@@ -525,7 +525,7 @@ operación, en todos los conceptos.** Descuento **racional** (no lineal), plazo 
 el peso en la **diferencia de precio** (no en el monto — por monto da 46,5 días donde la planilla del
 negocio da 52,79), cálculo con 6 decimales y presentación con 2 y 1, y la factura **más grande** absorbe
 el residuo del redondeo al peso. El descuadre es **estructural**, no un defecto: el peso no tiene
-decimales. Ver `spec-pricing-simulacion.md` §4. Casos 65–75.
+decimales. Ver `Specs_Procesos/Evaluacion_Factura/spec-pricing-simulacion.md` §4. Casos 65–75.
 
 ### 10.6 · El último eslabón: la **asignación de giros** (GE / GN)
 
@@ -537,7 +537,7 @@ heredan, porque los dos motores de los que depende deciden por deudor.
 **Supuesto explícito que falta confirmar:** el enunciado decía «por verificar **y** con excepciones»; se
 implementó como **disyunción**, porque con conjunción una factura por verificar y sin excepciones no
 calificaría en ningún tipo y la regla de oro se rompería. Y el enunciado menciona **tres** formas de
-giro y define dos: falta la tercera. Ver `spec-modelo-giro.md`. Casos 78–84.
+giro y define dos: falta la tercera. Ver `Specs_Procesos/Evaluacion_Factura/spec-modelo-giro.md`. Casos 78–84.
 
 ### 10.7 · Decisiones abiertas — al día
 

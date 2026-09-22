@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-21T20:10:00Z
+timestamp: 2026-09-21T23:59:00Z
 ---
 
 # Estado actual
@@ -30,14 +30,15 @@ causas · el pie de «Líneas solicitadas» suma · el **stream del inbound se r
 ([log](./2026-09-21_el_cierre_le_escribe_a_quien_firma.md)) · **UN DEFECTO, TRES SÍNTOMAS** (49,
 ADR-0012): `PRE_EVAL` y `HILOS` eran `let` de módulo y el detalle es pestaña propia, así que la bandeja
 del aprobador, el Centro de mensajería y el EV veían un estado que nunca salía del detalle; ahora van a
-repositorio Y avisan al opener ([log](./2026-09-21_un_defecto_tres_sintomas.md)) · se **ordenaron las
-carpetas** (`Auditorias/`, `Regresiones/`, `Specs_Procesos/` por proceso, gate `rutas.test.mjs`
-[log](./2026-09-21_ordenar_las_carpetas.md)) · y
+repositorio Y avisan al opener ([log](./2026-09-21_un_defecto_tres_sintomas.md)) · se **ordenó la carpeta** —dos
+sesiones a la vez, y al mezclar ganó la de `main`: `Auditoria/` (lo que MIDE) y `Regresiones/` (lo que
+COTEJA definición contra implementación), `Specs_Procesos/` en cinco temas, y de acá el gate
+`rutas.test.mjs` ([log](./2026-09-21_ordenar_las_carpetas.md)) · de `main`, la **spec de mensajería
+interna** y tres renglones partidos que tenían el paso 0 en rojo · y
 **`Configuración › Tenants`** (50): el alta del factoring vive en la plataforma (`nex_tenants`, sin
-sufijo), la marca se mudó ahí desde Funcionalidades, se crea al **administrador** que después da de alta
-al resto, y toda sección de Configuración dice sobre qué tenant configura. Construirlo destapó que
-`atribDeRol` resolvía el super-admin por el CÓDIGO «ADMIN» y no por el rol: el admin de un tenant nuevo
-salía con atribución vacía ([log](./2026-09-21_el_tenant_se_da_de_alta.md)).
+sufijo), la marca se mudó ahí, se crea al **administrador** que después da de alta al resto, y cada
+sección dice sobre qué tenant configura. Destapó que `atribDeRol` resolvía el super-admin por el CÓDIGO
+«ADMIN» y no por el rol ([log](./2026-09-21_el_tenant_se_da_de_alta.md)).
 
 > ## 🎯 Siguiente paso
 >
@@ -48,7 +49,6 @@ salía con atribución vacía ([log](./2026-09-21_el_tenant_se_da_de_alta.md)).
 >    «Negociación» · el selector de sesión de la navbar, 1/3 más angosto y con elipsis.
 > 3. **El join de empresas SIEMPRE por RUT**, nunca por razón social: 8 sitios medidos. Es un T1.
 > 4. **Correr el `.bat` una vez** · **Regenerar `Capturas_UI/`** · **Motor O01** · **28** y **13-quater**.
-
 ## En vuelo · `main` en `5f2cb18` (20-09); la rama de sesión lleva lo del 21-09 encima
 
 ## Bloqueos · los dos son del usuario, desde Windows

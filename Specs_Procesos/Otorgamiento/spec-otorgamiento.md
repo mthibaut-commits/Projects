@@ -52,7 +52,7 @@ vieja atenuada igual se lee como cifra y alguien la va a citar.
 ### 3. El catálogo de reglas — Modelo de Riesgo v1.0
 
 **77 reglas** medidas al 18-09-2026: **48 C** (cliente) · **23 D** (deudor) · **6 O** (operación).
-75 vienen de la política v1.0; **O05 y O06 no** — son del proceso (§6 y `Auditorias/Inconsistencias_Motor_Otorgamiento.md` §8).
+75 vienen de la política v1.0; **O05 y O06 no** — son del proceso (§6 y `Regresiones/Inconsistencias_Motor_Otorgamiento.md` §8).
 
 - **183 tramos** en total: **133 de excepción**, 47 de aprobación y 3 de rechazo.
 - **69 reglas** tienen al menos un tramo de excepción.
@@ -372,7 +372,7 @@ que falta no obliga a rescribir reglas.
 
 No son hallazgos ni deuda técnica: son huecos de la **política**, y se cierran con Riesgo, no con
 código. Entre ellos: los tramos de C07, los umbrales de C08 y C37, y la semántica de O03. Están
-listados uno por uno en `Auditorias/Inconsistencias_Motor_Otorgamiento.md` §5.
+listados uno por uno en `Regresiones/Inconsistencias_Motor_Otorgamiento.md` §5.
 
 ---
 
@@ -380,11 +380,11 @@ listados uno por uno en `Auditorias/Inconsistencias_Motor_Otorgamiento.md` §5.
 
 | Documento | Qué cubre |
 |---|---|
-| `Auditorias/Inconsistencias_Motor_Otorgamiento.md` | la auditoría de la política contra la implementación, y §8, O05 |
-| `Revision_Definiciones_2026-09-11.md` | qué debe recoger la próxima versión del PDF de política |
-| `spec-gestion-excepciones.md` | el proceso operativo de una excepción: justificación, solicitud, bandeja, decisión, efectos y evidencia |
-| `spec-verificacion-facturas.md` | la segunda rutina de la misma reevaluación |
-| `spec-asignacion-lineas.md` | la tercera: cuánto cupo hay |
-| `spec-pricing-simulacion.md` · `spec-modelo-giro.md` | lo que viene después del otorgamiento |
+| [`Inconsistencias_Motor_Otorgamiento.md`](../../Regresiones/Inconsistencias_Motor_Otorgamiento.md) | la auditoría de la política contra la implementación, y §8, O05 |
+| [`Revision_Definiciones_2026-09-11.md`](../../Regresiones/Revision_Definiciones_2026-09-11.md) | qué debe recoger la próxima versión del PDF de política |
+| [`spec-gestion-excepciones.md`](../Excepciones/spec-gestion-excepciones.md) | el proceso operativo de una excepción: justificación, solicitud, bandeja, decisión, efectos y evidencia |
+| [`spec-verificacion-facturas.md`](../Verificacion/spec-verificacion-facturas.md) | la segunda rutina de la misma reevaluación |
+| [`spec-asignacion-lineas.md`](../Lineas/spec-asignacion-lineas.md) | la tercera: cuánto cupo hay |
+| [`spec-pricing-simulacion.md`](../Evaluacion_Factura/spec-pricing-simulacion.md) · [`spec-modelo-giro.md`](../Evaluacion_Factura/spec-modelo-giro.md) | lo que viene después del otorgamiento |
 | `Integraciones/spec_s3_otorgamiento.md` | el layout A16: las variables que alimentan el motor |
 | `Levantamiento_Activos_Informacion.md` | el inventario A1–A23 y, en §5, qué activo es maestro de cada campo |

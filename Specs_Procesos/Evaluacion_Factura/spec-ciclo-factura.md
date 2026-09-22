@@ -1338,8 +1338,8 @@ describen conducta:
 | `Specs_Procesos/Lineas/spec-asignacion-lineas.md` | ③a — las cinco líneas, los tres niveles, la cascada |
 | `Specs_Procesos/Otorgamiento/spec-otorgamiento.md` | ③b — el catálogo, la atribución y el motor como servicio |
 | `Specs_Procesos/Verificacion/spec-verificacion-facturas.md` | ③c — los dos protocolos y los diez criterios |
-| `Specs_Procesos/spec-pricing-simulacion.md` | ④ y ⑤ — la tasa, el catálogo de conceptos y el prorrateo |
-| `Specs_Procesos/spec-modelo-giro.md` | ⑧ — los tipos de giro y la entrega a Tesorería |
+| `Specs_Procesos/Evaluacion_Factura/spec-pricing-simulacion.md` | ④ y ⑤ — la tasa, el catálogo de conceptos y el prorrateo |
+| `Specs_Procesos/Evaluacion_Factura/spec-modelo-giro.md` | ⑧ — los tipos de giro y la entrega a Tesorería |
 | `Levantamiento_Activos_Informacion.md` | los activos A1–A25 y, en su §5, cuál es el maestro de cada campo |
 | `Integraciones/Integraciones_APIs_y_S3.md` | los contratos de integración: swaggers, layouts y el transporte |
-| `Auditorias/Inconsistencias_Motor_Otorgamiento.md` | la auditoría de la política contra el motor, con sus decisiones de negocio |
+| `Regresiones/Inconsistencias_Motor_Otorgamiento.md` | la auditoría de la política contra el motor, con sus decisiones de negocio |

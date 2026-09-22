@@ -68,7 +68,7 @@ test("el gate mira lo que tiene que mirar: los specs, las integraciones, las aud
     "README.md",
     "vault/conocimiento/mapa_documentos.md",
     "Specs_Procesos/Excepciones/spec-gestion-excepciones.md",
-    "Auditorias/Inconsistencias_Motor_Otorgamiento.md",
+    "Regresiones/Inconsistencias_Motor_Otorgamiento.md",
     "Integraciones/spec_s3_verificacion.md",
   ])
     assert.ok(docs.includes(esperado), `${esperado} debería estar en el barrido`);
@@ -92,9 +92,9 @@ const MUTANTES = {
     texto: "el cotejo vive en `Specs_Procesos/Revision_Definiciones_2026-09-11.md` y se lee entero",
     re: /Revision_Definiciones_2026-09-11\.md` y no existe/,
   },
-  "una auditoría citada sin su carpeta": {
+  "una regresión citada sin su carpeta": {
     rel: "README.md",
-    texto: "leer `Auditorias/Inconsistencias_Motor_Otorgamiento_v9.md` antes de corregir",
+    texto: "leer `Regresiones/Inconsistencias_Motor_Otorgamiento_v9.md` antes de corregir",
     re: /Inconsistencias_Motor_Otorgamiento_v9\.md` y no existe/,
   },
 };
