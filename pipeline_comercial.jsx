@@ -47235,8 +47235,10 @@ export default function PipelineComercial() {
       const stage = d.stage === "prospeccion" ? "oferta" : d.stage;
       // Publicar la oferta reactiva el flujo por botones (aunque el cliente estuviera en chat libre): ahora
       // corresponde mostrar las opciones de cierre para que confirme.
-      return {
-        ...d,
+      // EL PATCH VA APARTE PORQUE TIENE QUE CRUZAR A LA PESTAÑA DEL TUBO (regla 58). Publicar es lo
+      // que convierte la oportunidad en «Oferta publicada», y el tubo lo leía de su copia vieja: la
+      // fila seguía diciendo «Negociación» con la oferta ya en manos del cliente.
+      const patch = {
         stage,
         negocioNum: neg,
         ofertaComunicada: true,
@@ -47248,6 +47250,8 @@ export default function PipelineComercial() {
         tasaDescuento: nuevaTasa,
         status: `Oferta comunicada por ${canal} · esperando aceptación del cliente`,
       };
+      avisarTubo(id, patch);
+      return { ...d, ...patch };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
@@ -47311,8 +47315,18 @@ export default function PipelineComercial() {
     // paquete es del ejecutivo (`ofertaCerradaVigente`), y volver a cerrar es precisamente lo que lo
     // devuelve. `reabierta` NO se toca acá: esa marca revoca la FIRMA del cliente y sólo la limpia
     // una firma nueva — limpiarla al cerrar dejaría girable una operación que nadie firmó.
+    // `ofertaComunicada` VA ACÁ (regla 58, 22-09-2026, reporte del usuario: «la oportunidad en el tubo
+    // sigue diciendo negociación, ya se envió la oferta»). Este botón dice «y publicar», elige CÓMO se
+    // publica —electrónica o física—, escribe en el historial «correo enviado al cliente con el código
+    // de negocio y su clave de un solo uso» y deja el status en «Oferta publicada»: la publicación ya
+    // ocurrió. Sin la bandera, `ofertaPublicada` seguía en false y la MISMA pantalla decía cuatro cosas
+    // distintas —el botón que publicó, el status que dice publicada, el historial que dice que el correo
+    // salió, y el chip de etapa diciendo «Negociación»—. El predicado NO cambia: sigue exigiendo los dos
+    // hechos, y el camino del Agente IA sigue publicando por su lado sin pasar por el cierre (regla 54,
+    // caso 158). Lo que cambia es que el cierre asienta los DOS, porque hace los dos.
     const patchCierre = {
       ofertaCerrada: true,
+      ofertaComunicada: true,
       ofertaCerradaTs: nowStamp(),
       ofertaSolicitada: false,
       negocioNum: negCierre,
@@ -47341,8 +47355,12 @@ export default function PipelineComercial() {
               : "Todas las facturas candidatas quedaron dentro del paquete.",
         exito: true,
       });
-      // Cerrar la oferta CREA el negocio (asigna N° y avanza a Oferta y Negociación). Todavía NO se
-      // comunica al cliente: el ejecutivo elige después el canal (WhatsApp / Email) para enviarla.
+      // Cerrar la oferta CREA el negocio (asigna N° y avanza a Oferta y Negociación) Y LA PUBLICA: con
+      // publicación electrónica sale el correo con el N° y la clave de un solo uso, y con publicación
+      // física queda el contrato en papel. Lo que viene DESPUÉS —`enviarCierre`— es el enlace para
+      // FIRMAR, que es otro acto: el cliente ya tiene la oferta. Hasta el 22-09-2026 el comentario de acá
+      // decía «todavía NO se comunica al cliente» y el historial de tres líneas más abajo decía que el
+      // correo ya había salido: se corrigió el que estaba equivocado (regla 58).
       // Volver a cerrar una oferta EDITADA conserva el N°: el cliente ya lo tiene, y el negocio es el
       // mismo — lo que cambió es su paquete.
       if (!d.negocioNum)
@@ -47553,8 +47571,9 @@ export default function PipelineComercial() {
         ...(d.historialContacto || []),
         { fecha: stamp, canal, resultado: `Oferta comunicada por ${canal} · enlace para firmar enviado (N° ${neg})`, detalle, exito: true },
       ];
-      return {
-        ...d,
+      // EL PATCH VA APARTE PORQUE TIENE QUE CRUZAR A LA PESTAÑA DEL TUBO (regla 58): el enlace para
+      // firmar sale desde el detalle, y sin el aviso el tubo no se entera de que la oferta salió.
+      const patch = {
         waSesion: wa,
         emailThread,
         historialContacto: hist,
@@ -47563,6 +47582,8 @@ export default function PipelineComercial() {
         ofertaComunicada: true,
         status: `Oferta comunicada por ${canal} · pendiente firma del cliente`,
       };
+      avisarTubo(id, patch);
+      return { ...d, ...patch };
     };
     setDeals((prev) => prev.map((d) => (d.id === id ? makeUpdated(d) : d)));
     setSelected((s) => (s && s.id === id ? makeUpdated(s) : s));

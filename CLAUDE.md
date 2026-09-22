@@ -26,7 +26,7 @@ npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx 
 grep -oE '^(export default )?(async )?(function|const|let|var|class) [A-Za-z_$][A-Za-z0-9_$]*' pipeline_comercial.jsx | awk '{print $NF}' | sort | uniq -d  # 2 · debe salir vacío
 node build_app.mjs                                                                                            # 3 · valida los hashes del vendor
 node --test "tests/contract/*.test.mjs"                                                                       # 4 · gates de contrato (~10 s)
-PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 158/158 PASA (~2 min)PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node tests/e2e/correr.mjs                                           # 6 · e2e: 29 casos de pantalla (~8 min)
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                                                  # 5 · 158/158 PASA (~2 min)PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node tests/e2e/correr.mjs                                           # 6 · e2e: 30 casos de pantalla (~8 min)
 PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs                                         # 7 · sólo si toca la UI (~5 min)
 ```
 
@@ -39,7 +39,7 @@ Ninguno de los seis subsume a otro, **y los cinco primeros juntos tampoco bastan
 bloque declarado antes de su dependencia y un componente no importado pasan `tsc` y el build, y sólo aparecen en
 el paso 5 o al abrir la pantalla — que es lo que hace el paso 6 (`tests/e2e/`, con la sesión iniciada y el detalle
 abierto). El CI (`.github/workflows/gates.yml`) corre los seis en toda rama y todo PR, idénticos. Qué cubre cada caso de la suite: `vault/conocimiento/verificacion.md`; qué fija cada gate de
-contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ninguna regla queda «sin gate»**: las 86 de dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `regla_<slug>.test.mjs`.
+contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ninguna regla queda «sin gate»**: las 87 de dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `regla_<slug>.test.mjs`.
 ## Otros comandos
 
 | Acción | Comando |

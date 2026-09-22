@@ -102,7 +102,45 @@ pantalla nueva (no se aflojó: pasó de 4 comprobaciones de forma a 13, y de 9 s
 4. **`atob` y `FileReader`** entraron a la lista de globales del linter. La lista dice exactamente qué toca
    esta app: crece cuando el fuente crece, y el linter avisa cuál falta.
 
+## 6 · «El tubo sigue diciendo negociación, ya se envió la oferta» → regla 58
+
+El usuario preguntó si existe un estado «publicado» y pidió crearlo entre la negociación y la aceptación
+formal. **Ya existía** —`ETAPA_PUBLICADA = "oferta_publicada"`, rotulado «Oferta publicada»— y está
+exactamente ahí. Medido sobre el build antes de tocar nada:
+
+| paso | `ofertaPublicada` | chip |
+|---|---|---|
+| simulada | false | Negociación |
+| tras «Cerrar oferta y publicar» | **false** | **Negociación** |
+| con `ofertaComunicada` | true | Oferta publicada |
+| aceptada | true | Aceptada |
+
+**Dos causas, no una.**
+
+1. **`patchCierre` no marcaba `ofertaComunicada`.** El botón dice «y publicar», el modal elige CÓMO se
+   publica, el historial que ese gesto escribe dice «correo enviado al cliente con el código de negocio y su
+   clave de un solo uso» y el `status` queda en «Oferta publicada» — y la bandera seguía en false. La misma
+   pantalla decía cuatro cosas distintas. El comentario de encima del patch afirmaba «todavía NO se comunica
+   al cliente» y contradecía al historial tres líneas más abajo: se corrigió el comentario, que era el
+   equivocado.
+2. **Los tres escritores no avisaban al tubo.** `cerrarOferta` sí; `publicarOferta` (el canal del Agente IA)
+   y `enviarCierre` (el enlace para firmar) hacían su `setDeals` local y nada más. **Cuarta vez** que aparece
+   el mismo agujero (15-bis-bis, 51, 55, 58): el aviso vive en el *call site*, así que el call site que se
+   escribe después se olvida.
+
+**El predicado no se afloja**: sigue exigiendo cerrada Y comunicada. Lo que cambia es que el cierre asienta
+los dos porque hace los dos. La regla 54 y el caso 158 quedan intactos, y `e2e-58` prueba la distinción en la
+fila del tubo, en las dos direcciones.
+
+**Trampa que costó, y queda anotada**: la sonda de la regla 55 mutaba con
+`jsx.replace("avisarTubo(id, patch);\n      return { ...d, ...patch };", …)`, o sea **la primera
+coincidencia del fuente**. Con tres funciones difundiendo un `patch` con las mismas dos líneas, la mutación
+cayó en `publicarOferta` y dejó intacta la que la sonda vigila: el gate pasó sin probar nada. Se corrigió a
+mutar **dentro del cuerpo** de `confirmarCierre` (`sinAviso(src, firma)`). Una sonda que muta por texto
+global caduca en cuanto el patrón se repite.
+
 ## Verificación
 
-prettier · eslint · tsc sin TS1 · sin duplicados · build 44,1 MB · **395 gates de contrato** · **158/158** ·
-e2e 29/29 · capturas regeneradas. Reglas **56** y **57** nuevas, **53** ampliada, las tres con gate y sondas.
+prettier · eslint · tsc sin TS1 · sin duplicados · build 44,1 MB · **415 gates de contrato** · **158/158** ·
+**e2e 30/30** · capturas regeneradas. Reglas **56**, **57** y **58** nuevas y **53** ampliada, todas con gate
+y sondas; `e2e-58` es el caso 30.

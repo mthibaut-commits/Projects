@@ -123,3 +123,39 @@ timestamp: 2026-09-17T15:29:14Z
     - Gate de forma: `regla_estado_pestanas.test.mjs`, que ya era el dueño de «el estado cruza de
       pestaña» — la regla nueva es otra instancia del mismo principio y no merece un gate aparte. **Sin
       caso de suite**: hacen falta DOS documentos y la suite corre en uno, igual que la regla 51.
+
+58. **LA OFERTA PUBLICADA ES UN ESTADO, Y EL TUBO TIENE QUE VERLO** (22-09-2026, reporte del usuario: «la
+    oportunidad en el tubo de negocio sigue diciendo negociación, ya se envió la oferta. No sé si cuando se
+    envía la oferta existe un estado publicado»).
+    - **El estado YA existía y no había que crearlo**: `ETAPA_PUBLICADA = "oferta_publicada"`, rotulado
+      «Oferta publicada» por este tenant, y `etapaVisualId` lo resuelve para una operación en `oferta` cuyo
+      `ofertaPublicada(d)` sea verdadero. Está exactamente donde el usuario lo pedía: **después de la
+      negociación y antes de la aceptación formal del cliente**. Medido sobre el build: `oferta` →
+      «Negociación», con los dos hechos → «Oferta publicada», y al aceptar → «Aceptada».
+    - **Por qué no se veía, y son DOS causas distintas.**
+      1. **`patchCierre` no marcaba `ofertaComunicada`.** El botón dice «Cerrar oferta y publicar» (o
+         «Enviar a Comité y Publicar»), el modal elige **cómo** se publica —electrónica o física—, el
+         historial que ese mismo gesto escribe dice «correo enviado al cliente con el código de negocio y su
+         clave de un solo uso» y el `status` queda en «Oferta publicada». Con todo eso, la bandera seguía en
+         false: la misma pantalla decía **cuatro cosas distintas** y el chip de etapa era la única que se
+         leía de un vistazo. El comentario de encima del patch afirmaba «todavía NO se comunica al cliente»
+         y contradecía al historial de tres líneas más abajo; se corrigió el que estaba equivocado. Lo que
+         viene DESPUÉS (`enviarCierre`) es el enlace para **firmar**, que es otro acto: el cliente ya tiene
+         la oferta.
+      2. **Los tres escritores no le avisaban al tubo.** `cerrarOferta` sí (regla 15-bis-bis), pero
+         `publicarOferta` —el canal del Agente IA— y `enviarCierre` —el envío del enlace— hacían su
+         `setDeals` local y nada más. El detalle es **pestaña propia**, así que la fila del tubo se quedaba
+         con la copia vieja. Es la cuarta vez que aparece el mismo agujero (15-bis-bis, 51, 55, y ésta): el
+         aviso vive en el *call site*, así que el call site que se escribe después se olvida.
+    - **El predicado NO se afloja**: `ofertaPublicada` sigue exigiendo **cerrada Y comunicada**. Lo que
+      cambió es que el cierre asienta los dos, porque hace los dos; el camino del Agente IA sigue
+      comunicando por su lado sin pasar por el cierre, y una oferta cerrada y no comunicada sigue sin ser
+      una oferta publicada. La regla 54 y su caso **158** quedan intactos, y `e2e-58` prueba esa misma
+      distinción en la fila del tubo.
+    - **Consecuencia deliberada**: con la publicación asentada al cerrar, `exigeAcciones` (regla 54) pasa a
+      rojo y el tab de Verificación aparece **en ese momento** y no cuando alguien se acuerde de enviar el
+      enlace. Es lo que el usuario había pedido el mismo día: «cuando el ejecutivo envíe a comité y publicar,
+      se debe empezar a solicitar las acciones de otorgamiento y verificación».
+    - Gates: `regla_58.test.mjs` (forma, con sondas) y **`e2e-58`** (la fila del tubo, en las dos
+      direcciones).
+

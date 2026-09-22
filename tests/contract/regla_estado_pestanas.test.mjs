@@ -122,8 +122,18 @@ test("51 · el estado del otorgamiento cruza de pestaña: repositorio, aviso des
   assert.deepEqual(auditarRegla49(jsx), []);
 });
 
+/* Quita el `avisarTubo(id, patch);` del cuerpo de UNA función, sin tocar el de las demás. */
+function sinAviso(src, firma) {
+  const cuerpo = cuerpoDe(src, firma);
+  if (!cuerpo) throw new Error(`no encuentro ${firma}`);
+  return src.replace(cuerpo, cuerpo.replace("      avisarTubo(id, patch);\n", ""));
+}
+
 const MUTANTES = {
-  "la firma del cliente deja de cruzar al tubo": { src: jsx.replace("      avisarTubo(id, patch);\n      return { ...d, ...patch };", "      return { ...d, ...patch };"), re: /no avisa al tubo/ },
+  // La mutación va sobre el cuerpo de `confirmarCierre` y no sobre la primera coincidencia del fuente:
+  // desde la regla 58 hay TRES funciones que difunden un `patch` con las mismas dos líneas, y un
+  // `replace` a secas mutaba la primera —`publicarOferta`— dejando intacta la que esta sonda vigila.
+  "la firma del cliente deja de cruzar al tubo": { src: sinAviso(jsx, "const confirmarCierre = (id, tasa, opts, usuario) => {"), re: /no avisa al tubo/ },
   "el cierre vuelve a devolver el deal entero": { src: jsx.replace("      const patch = {\n        reabierta: undefined,", "      return {\n        ...d,\n        reabierta: undefined,"), re: /no arma un PATCH|aplica algo distinto/ },
   "la pre-evaluación vuelve a ser un objeto de módulo": { src: jsx.replace("let PRE_EVAL = repoPreEval.all();", "let PRE_EVAL = {};"), re: /vuelve a ser un objeto de módulo|no es el alias de `repoPreEval`/ },
   "los hilos vuelven a ser un array de módulo": { src: jsx.replace('let HILOS = repoHilos.get("lista") || [];', "let HILOS = [];"), re: /vuelve a ser un array de módulo|no se hidrata/ },

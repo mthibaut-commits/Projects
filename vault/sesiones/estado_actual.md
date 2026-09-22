@@ -13,10 +13,10 @@ timestamp: 2026-09-22T01:00:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **158/158 PASA**, **49 archivos de gate de contrato**
-(289 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su
-vault (86 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato
-tienen gate. La crónica del 17 al 19-09 vive en sus logs (ADR-0001 a 0006, el linter como paso 0-bis).
+(`pipeline_comercial.jsx`), build standalone, **158/158 PASA**, **50 archivos de gate de contrato**
+(289 tests), **30 casos e2e** (30/30), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
+(87 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
+gate. La crónica del 17 al 19-09 vive en sus logs (ADR-0001 a 0006, el linter como paso 0-bis).
 El **20-09** entró todo lo de plata: **regla 8 sin proxy** (149, ADR-0008), **girar no es acción de NEX**
 (43, 147, 148), **ATR-01 en el handler** (145), el **id de la solicitud al comité** (146), las
 **identidades son pares reales del AEC** (42, ADR-0009), los **controles de la integración al core** (41,
@@ -42,17 +42,17 @@ y `Regresiones/` lo que COTEJA definición contra implementación, con el gate `
 > 1. **El tab VERIFICACIÓN**, tres pedidos: (a) habilitarlo al SIMULAR, informativo; (b) chip **PRIME** +
 >    Nota Deudor en vez de «Lista Blanca», que el usuario da por retirado; (c) **separar** la evaluación
 >    del DEUDOR (V00–V10 y causas, que son del par) del **quiz por FACTURA**.
-> 2. **UI**: el selector de sesión de la navbar, 1/3 más angosto y con elipsis (la página sigue
->    desbordando por él a 1366 px) · la tabla del tubo no CABE bajo ~1574 px: desplaza, no se corta (56).
+> 2. **UI**: el selector de sesión de la navbar, 1/3 más angosto y con elipsis — la página sigue desbordando
+>    por él a 1366 px (la tabla del tubo no CABE bajo ~1574 px: desplaza dentro de su marco, regla 56).
 > 3. **El join de empresas SIEMPRE por RUT**, nunca por razón social: 8 sitios medidos. Es un T1.
 > 4. **Correr el `.bat` una vez** · **Motor O01** · **28** y **13-quater**.
 ## En vuelo · esta rama, encima de `main`: lo del **22-09** ([log](./2026-09-22_mesa_por_operacion_y_nota_rica.md))
-
 La mesa por factura (53, 157) y el color del badge (54, 158); la firma del cliente cruza al tubo (**55**); el
-scroller de la tabla es su propio panel (**56** — la card de «Oferta» se cortaba porque desbordaba la PÁGINA,
+scroller de la tabla es su propio panel (**56**: la card de «Oferta» se cortaba porque desbordaba la PÁGINA,
 no la celda); la mesa va **operación → deudor colapsable → factura** con **panel lateral para las dos
-decisiones** (53 ampliada: retirar plata ya no se resuelve con un sí/no sin motivo); y la nota es **rica con
-captura pegada** (**57**: inline + al disco + como adjunto, saneada al leerla, texto plano en la bitácora).
+decisiones** (53 ampliada: retirar plata ya no se resuelve con un sí/no sin motivo); la nota es **rica con
+captura pegada** (**57**); y la **oferta publicada se ve en el tubo** (**58**: el estado ya existía — cerrar no
+asentaba `ofertaComunicada` y dos de los tres escritores no avisaban; `e2e-58`).
 
 ## Bloqueos · los dos son del usuario, desde Windows
 
