@@ -93,8 +93,8 @@ timestamp: 2026-09-18T02:18:36Z
 | 46 | El RUT de un deudor se RESUELVE contra el universo conocido, nunca se arma: uno inventado es, para el motor, otro deudor | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 151, `regla_lineas_activo.test.mjs`, `padron.test.mjs` |
 | 47 | La identidad de la sesión es una sola: el selector de la demo la cambia, sin reiniciar sus relojes | [`reglas/portada_y_sesion.md`](./reglas/portada_y_sesion.md) | 152, `regla_47.test.mjs` |
 | 48 | El atajo del otorgamiento automático no pasa por encima del visado (OTG-02) | [`reglas/otorgamiento_y_atribucion.md`](./reglas/otorgamiento_y_atribucion.md) | 153, `regla_48.test.mjs` |
-| 49 | La mesa de verificación trabaja por FACTURA, agrupada por deudor: marcar, adjuntar y anotar por documento, y la retirada sigue en la mesa | [`reglas/verificacion.md`](./reglas/verificacion.md) | 154, `regla_49.test.mjs` |
-| 50 | Mientras se simula los pendientes son un pronóstico (morado); al publicar la oferta se exigen (rojo) | [`reglas/ui_detalle_y_tubo.md`](./reglas/ui_detalle_y_tubo.md) | 155, `regla_50.test.mjs` |
+| 53 | La mesa de verificación trabaja por FACTURA, agrupada por deudor: marcar, adjuntar y anotar por documento, y la retirada sigue en la mesa | [`reglas/verificacion.md`](./reglas/verificacion.md) | 157, `regla_53.test.mjs` |
+| 54 | Mientras se simula los pendientes son un pronóstico (morado); al publicar la oferta se exigen (rojo) | [`reglas/ui_detalle_y_tubo.md`](./reglas/ui_detalle_y_tubo.md) | 158, `regla_54.test.mjs` |
 | 17 | Teléfonos ofuscados en logs | [`contrato_servidor_y_auditoria.md`](./contrato_servidor_y_auditoria.md) | 130, `regla_17.test.mjs` |
 
 ## Contrato con el servidor (12 invariantes, `INVARIANTES` en el fuente)

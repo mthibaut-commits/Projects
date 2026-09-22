@@ -7355,36 +7355,36 @@
        `fixture ${fixtureOk} (${v0.exc.length} excepciones, ${v0.excPend.length} pendientes) · atajo vigente ${vigenteOk} (sin visar ${otorgAutoVigente(deal153, sinVisar)} · visado ${otorgAutoVigente(deal153, visado)}) · OTG-02 ${otg02Ok} (auto sin visar ${otorgamientoCompleto(deal153, sinVisar)} · auto visado ${otorgamientoCompleto(deal153, visado)} · manual sin visar ${otorgamientoCompleto(manual, sinVisar)}) · sentido ${sentidoOk}`);
   }
 
-  // ── 154 · LA MESA TRABAJA POR FACTURA, Y LA RETIRADA SIGUE EN LA MESA ──────────────────
+  // ── 157 · LA MESA TRABAJA POR FACTURA, Y LA RETIRADA SIGUE EN LA MESA ──────────────────
   // Pedido del usuario (22-09-2026): el núcleo de la mesa es marcar CADA factura, adjuntar y anotar;
   // las causas se llegan a través del deudor. El agrupamiento no cambia —la llamada es del deudor y
   // las causas son suyas (regla 6)—, lo que cambia es la unidad de trabajo. Y con ella aparece el
   // defecto que el diseño anterior escondía: retirar una factura la saca de `facturasOp`, así que
   // listándolas sólo desde ahí la evidencia de «esta no la confirmó» desaparecía de la pantalla.
   {
-    const deudorTel154 = TODOS_LB.map((r) => ({ r, v: verifFactura(fac("x", r, 10), { id: "T-154", rutEmisor: "76.111.111-1" }) })).find((x) => x.v.est === "tel");
-    if (!deudorTel154) { ok("154 la mesa trabaja por factura: cada documento trae su estado y su respaldo, y la retirada sigue en la mesa", false, "ningún deudor de prueba requiere verificación"); }
+    const deudorTel157 = TODOS_LB.map((r) => ({ r, v: verifFactura(fac("x", r, 10), { id: "T-157", rutEmisor: "76.111.111-1" }) })).find((x) => x.v.est === "tel");
+    if (!deudorTel157) { ok("157 la mesa trabaja por factura: cada documento trae su estado y su respaldo, y la retirada sigue en la mesa", false, "ningún deudor de prueba requiere verificación"); }
     else {
-      const f1 = fac("f1", deudorTel154.r, 30), f2 = fac("f2", deudorTel154.r, 20), f3 = fac("f3", deudorTel154.r, 10);
-      const deal154 = { id: "T-154", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", facturasOp: [f1, f2, f3] };
-      const fila = (st) => (filasVerificacion([deal154], st) || []).find((x) => x.rutDeudor === deudorTel154.r);
+      const f1 = fac("f1", deudorTel157.r, 30), f2 = fac("f2", deudorTel157.r, 20), f3 = fac("f3", deudorTel157.r, 10);
+      const deal157 = { id: "T-157", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", facturasOp: [f1, f2, f3] };
+      const fila = (st) => (filasVerificacion([deal157], st) || []).find((x) => x.rutDeudor === deudorTel157.r);
 
       // (a) Cada documento trae su propio estado, y el del DEUDOR es el resumen: mientras quede uno
       //     pendiente, la fila está pendiente —es lo que falta hacer—.
       const f0 = fila({ tel: {}, vetadas: {} });
-      const unaOk = fila({ tel: { "T-154": { [f1.id]: 1 } }, vetadas: {} });
+      const unaOk = fila({ tel: { "T-157": { [f1.id]: 1 } }, vetadas: {} });
       const porDocOk = !!f0 && f0.docs.length === 3 && f0.docs.every((d) => d.estado === "pendiente") && f0.estado === "pendiente" && f0.nPend === 3
         && !!unaOk && unaOk.docs.filter((d) => d.estado === "verificada").length === 1 && unaOk.nPend === 2 && unaOk.estado === "pendiente";
 
       // (b) Con TODAS registradas, el deudor queda verificado.
-      const todas = fila({ tel: { "T-154": { [f1.id]: 1, [f2.id]: 1, [f3.id]: 1 } }, vetadas: {} });
+      const todas = fila({ tel: { "T-157": { [f1.id]: 1, [f2.id]: 1, [f3.id]: 1 } }, vetadas: {} });
       const todasOk = !!todas && todas.estado === "verificada" && todas.nPend === 0 && todas.docs.every((d) => d.estado === "verificada");
 
       // (c) LA RETIRADA SIGUE EN LA MESA. Se simula el estado real: la factura sale de `facturasOp`
       //     —eso hace `retirarFacturaOferta`— y queda en el veto. Antes desaparecía de la pantalla.
-      const dealSin = { ...deal154, facturasOp: [f1, f2] };
-      const conVeto = { tel: { "T-154": { [f1.id]: 1 } }, vetadas: { "T-154": { [f3.id]: { folio: f3.folio, monto: f3.monto, deudor: f3.deudor, rutRecep: f3.rutRecep } } } };
-      const fv = (filasVerificacion([dealSin], conVeto) || []).find((x) => x.rutDeudor === deudorTel154.r);
+      const dealSin = { ...deal157, facturasOp: [f1, f2] };
+      const conVeto = { tel: { "T-157": { [f1.id]: 1 } }, vetadas: { "T-157": { [f3.id]: { folio: f3.folio, monto: f3.monto, deudor: f3.deudor, rutRecep: f3.rutRecep } } } };
+      const fv = (filasVerificacion([dealSin], conVeto) || []).find((x) => x.rutDeudor === deudorTel157.r);
       const retiradaOk = !!fv && fv.docs.length === 3
         && (fv.docs.find((d) => d.id === f3.id) || {}).estado === "no_verificada"
         && fv.nVet === 1 && fv.facturas.length === 2
@@ -7392,17 +7392,17 @@
         && mm(fv.monto) === 50;
 
       // (d) Y con TODAS retiradas el deudor no se esfuma: su fila es la evidencia de lo que pasó.
-      const dealVacio = { ...deal154, facturasOp: [] };
-      const todoVetado = { tel: {}, vetadas: { "T-154": {
+      const dealVacio = { ...deal157, facturasOp: [] };
+      const todoVetado = { tel: {}, vetadas: { "T-157": {
         [f1.id]: { folio: f1.folio, monto: f1.monto, deudor: f1.deudor, rutRecep: f1.rutRecep },
         [f2.id]: { folio: f2.folio, monto: f2.monto, deudor: f2.deudor, rutRecep: f2.rutRecep },
         [f3.id]: { folio: f3.folio, monto: f3.monto, deudor: f3.deudor, rutRecep: f3.rutRecep } } } };
-      const fz = (filasVerificacion([dealVacio], todoVetado) || []).find((x) => x.rutDeudor === deudorTel154.r);
+      const fz = (filasVerificacion([dealVacio], todoVetado) || []).find((x) => x.rutDeudor === deudorTel157.r);
       const noSeEsfumaOk = !!fz && fz.docs.length === 3 && fz.estado === "no_verificada" && fz.nVet === 3 && mm(fz.monto) === 0;
 
       // (e) EL RESPALDO viaja con el documento, no con el deudor: es lo que se adjunta y se anota por
       //     factura, y tiene que poder leerse desde la fila del documento.
-      const conResp = fila({ tel: {}, vetadas: {}, respaldo: { "T-154": { [f2.id]: { nota: "El deudor pide el AEC", adjuntos: [{ nombre: "correo.eml", tam: 2048 }], por: "Camila Soto", fecha: "22-09-2026 10:00" } } } });
+      const conResp = fila({ tel: {}, vetadas: {}, respaldo: { "T-157": { [f2.id]: { nota: "El deudor pide el AEC", adjuntos: [{ nombre: "correo.eml", tam: 2048 }], por: "Camila Soto", fecha: "22-09-2026 10:00" } } } });
       const d2 = conResp && conResp.docs.find((d) => d.id === f2.id);
       const respaldoOk = !!d2 && !!d2.respaldo && d2.respaldo.adjuntos.length === 1 && /AEC/.test(d2.respaldo.nota)
         && (conResp.docs.find((d) => d.id === f1.id) || {}).respaldo === null;   // y no se contagia
@@ -7410,13 +7410,13 @@
       // (f) La función sigue siendo PURA: el estado entra y no se lee el del navegador.
       const puraOk = JSON.stringify((fila({ tel: {}, vetadas: {} }) || {}).docs.map((d) => d.estado)) === JSON.stringify(["pendiente", "pendiente", "pendiente"]);
 
-      ok("154 la mesa trabaja por factura: cada documento trae su estado y su respaldo, y la retirada sigue en la mesa",
+      ok("157 la mesa trabaja por factura: cada documento trae su estado y su respaldo, y la retirada sigue en la mesa",
          porDocOk && todasOk && retiradaOk && noSeEsfumaOk && respaldoOk && puraOk,
          `por documento ${porDocOk} (3 pendientes → 1 verificada, deudor sigue pendiente) · todas ${todasOk} · retirada visible ${retiradaOk} (${fv ? fv.docs.length : 0} docs, ${fv ? fv.nVet : 0} vetada, monto ${fv ? mm(fv.monto) : "-"}) · el deudor no se esfuma ${noSeEsfumaOk} · respaldo por documento ${respaldoOk} · pura ${puraOk}`);
     }
   }
 
-  // ── 155 · MIENTRAS SE SIMULA ES UN PRONÓSTICO; AL PUBLICAR SE EXIGE ────────────────────
+  // ── 158 · MIENTRAS SE SIMULA ES UN PRONÓSTICO; AL PUBLICAR SE EXIGE ────────────────────
   // Pedido del usuario (22-09-2026): «al simular muestra el tab de verificación pero con el badge en
   // morado; cuando el ejecutivo envíe a comité y publicar se debe empezar a solicitar las acciones de
   // otorgamiento y verificación, por lo que los badges son en rojo». El color no es decoración: dice si
@@ -7426,7 +7426,7 @@
     const enSimulacion = { stage: "oferta" };
     const cerradaSinComunicar = { stage: "oferta", ofertaCerrada: true };
     const publicada = { stage: "oferta", ofertaCerrada: true, ofertaComunicada: true };
-    const porNegocio = { stage: "oferta", negocioNum: "N-155", ofertaComunicada: true };
+    const porNegocio = { stage: "oferta", negocioNum: "N-158", ofertaComunicada: true };
     const antesOk = exigeAcciones(null) === false
       && exigeAcciones(enSimulacion) === false
       && exigeAcciones(cerradaSinComunicar) === false         // cerrar es interno: todavía no se exige
@@ -7441,7 +7441,7 @@
     const mismoCriterioOk = [enSimulacion, cerradaSinComunicar, publicada, porNegocio].every(
       (d) => exigeAcciones(d) === ofertaPublicada(d),
     );
-    ok("155 mientras se simula los pendientes son un pronóstico; al publicar la oferta pasan a exigirse",
+    ok("158 mientras se simula los pendientes son un pronóstico; al publicar la oferta pasan a exigirse",
        antesOk && despuesOk && etapasOk && mismoCriterioOk,
        `antes ${antesOk} (simulando y cerrada-sin-comunicar no exigen) · al publicar ${despuesOk} · etapas posteriores ${etapasOk} · mismo criterio que ofertaPublicada ${mismoCriterioOk}`);
   }

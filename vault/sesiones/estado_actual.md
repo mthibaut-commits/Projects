@@ -34,7 +34,7 @@ y se repararon 63 — los logs y el ADR citan las rutas viejas **a propósito**,
 `conocimiento/mapa_documentos.md` las resuelve. Cada carpeta nueva trae `README.md` con el criterio de qué entra. Y
 dos defectos que el usuario vio en pantalla (152, 153): la **identidad de la sesión es una sola** (47 — el
 selector de la demo no tocaba `SESION`, así que la mesa le negaba marcar a la Ejecutiva de verificación) y
-el **atajo del otorgamiento no se salta el visado** (48 — OTG-02 declarado y no obedecido). El **22-09**, la **mesa de verificación trabaja por FACTURA** agrupada por deudor, con marcar, adjuntar y anotar por documento (49, 154), y el color del badge dice si el pendiente ya se exige o todavía es pronóstico (50, 155). Y tres defectos que venían de `main`: **el paso 0 estaba en rojo** (dos líneas partidas a mano tras
+el **atajo del otorgamiento no se salta el visado** (48 — OTG-02 declarado y no obedecido). El **22-09**, la **mesa de verificación trabaja por FACTURA** agrupada por deudor, con marcar, adjuntar y anotar por documento (53, 157), y el color del badge dice si el pendiente ya se exige o todavía es pronóstico (54, 158). Y tres defectos que venían de `main`: **el paso 0 estaba en rojo** (dos líneas partidas a mano tras
 formatear) y `CLAUDE.md`, `README.md` y `.claude/rules/testing.md` habían perdido un salto de línea, con lo
 que el bloque canónico de verificación mostraba ocho pasos y no nueve. Los tres cerrados.
 
@@ -54,7 +54,7 @@ quedaron declarativas y su `hint` lo dice.
 >    probada) · 3. **Regenerar `Capturas_UI/`**, desfasadas desde el padrón real (deuda 2) · 4. **Motor O01**
 >    (el hueco débil de la regla 8) · 5. **Regla 28** y **13-quater**, de negocio · 6. Sacar `pipeline.zip`.
 
-## En vuelo ahora · `claude/migrate-project-session-vui9dl`: la mesa por factura (49) y el color del badge (50)
+## En vuelo ahora · `claude/migrate-project-session-vui9dl`: la mesa por factura (53) y el color del badge (54)
 
 ## Bloqueos · los dos son del usuario, desde Windows
 

@@ -1,5 +1,5 @@
-/* Gate de contrato de la regla 50 (mientras se simula es un pronóstico; al publicar se exige) sobre el
-   TEXTO del fuente. La suite prueba el PREDICADO con el caso 155 —las dos direcciones y el borde de
+/* Gate de contrato de la regla 54 (mientras se simula es un pronóstico; al publicar se exige) sobre el
+   TEXTO del fuente. La suite prueba el PREDICADO con el caso 158 —las dos direcciones y el borde de
    «cerrada sin comunicar»—; acá se fija que la pantalla lo USE: que las dos superficies (los badges de
    las pestañas y los chips de las compuertas) pregunten por la misma función y no vuelvan a pintar un
    color fijo, que es como nació la inconsistencia que el usuario vio. Con sonda negativa. */
@@ -17,7 +17,7 @@ export function cuerpoDe(src, nombre) {
   return src.slice(m.index, fin < 0 ? undefined : m.index + m[0].length + fin);
 }
 
-export function auditarRegla50(src) {
+export function auditarRegla54(src) {
   const fallos = [];
   const c = cuerpoDe(src, "exigeAcciones");
   if (!c) { fallos.push("no existe `function exigeAcciones(deal)` de nivel módulo: sin una sola función, cada superficie elige su color"); return fallos; }
@@ -43,8 +43,8 @@ export function auditarRegla50(src) {
   return fallos;
 }
 
-test("50 · una sola compuerta decide si los pendientes son pronóstico o trabajo, y las dos superficies la consultan", () => {
-  assert.deepEqual(auditarRegla50(jsx), []);
+test("54 · una sola compuerta decide si los pendientes son pronóstico o trabajo, y las dos superficies la consultan", () => {
+  assert.deepEqual(auditarRegla54(jsx), []);
 });
 
 const MUTANTES = {
@@ -77,9 +77,9 @@ const MUTANTES = {
 };
 
 for (const [nombre, m] of Object.entries(MUTANTES)) {
-  test(`50 · sonda: el mutante «${nombre}» lo atrapa el auditor`, () => {
+  test(`54 · sonda: el mutante «${nombre}» lo atrapa el auditor`, () => {
     assert.notEqual(m.src, jsx, "el mutante no cambió el fuente: la sonda no probaría nada");
-    const fallos = auditarRegla50(m.src);
+    const fallos = auditarRegla54(m.src);
     assert.ok(fallos.some((f) => m.re.test(f)), `esperaba un fallo ${m.re}; obtuve ${JSON.stringify(fallos)}`);
   });
 }

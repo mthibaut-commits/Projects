@@ -92,7 +92,7 @@ timestamp: 2026-09-17T15:29:14Z
     - **Va primero en la fila**, antes incluso de «Prioritarios», que es condicional (`nPrioTubo > 0`). Un tab de entrada al final de la fila se lee como el último recorte de una lista de recortes; y si fuera segundo, su posición **saltaría** cada vez que la jefatura prioriza un negocio desde el Dashboard.
     - **La capa e2e no hereda este arranque**, a propósito: `reiniciar()` del harness fija «Con línea» al empezar cada archivo, porque los casos abren las filas 0–2 de ESA pestaña y con el Directorio encendido son 3 de sus 5. El default de la app y la línea base de los casos son dos decisiones distintas; lo que las mantenía juntas era una coincidencia, y la coincidencia se acabó acá.
 
-50. **MIENTRAS SE SIMULA, LOS PENDIENTES SON UN PRONÓSTICO; AL PUBLICAR, SE EXIGEN** (22-09-2026, pedido
+54. **MIENTRAS SE SIMULA, LOS PENDIENTES SON UN PRONÓSTICO; AL PUBLICAR, SE EXIGEN** (22-09-2026, pedido
     del usuario: «al simular muestra el tab de verificación pero con el badge en morado; cuando el ejecutivo
     envíe a comité y publicar, se debe empezar a solicitar las acciones de otorgamiento y verificación, por
     lo que los badges son en rojo»).
@@ -108,11 +108,11 @@ timestamp: 2026-09-17T15:29:14Z
     - **`exigeAcciones(deal)` es una sola función** y es la MISMA compuerta con que aparece el tab de
       Verificación (`mostrarVerif`, regla 6) **menos la pre-evaluación**: pre-evaluar es justamente pedir el
       pronóstico antes de tiempo, así que muestra el tab y no vuelve rojo lo que todavía nadie tiene que
-      hacer. El caso 155 lo comprueba contra `ofertaPublicada` para que no se separen.
+      hacer. El caso 158 lo comprueba contra `ofertaPublicada` para que no se separen.
     - **Cerrar no basta**: publicar son dos hechos —el cierre interno y la comunicación al cliente— y con uno
       solo la casa todavía no se comprometió. Desde la firma en adelante (`aceptadas`, `cesion`,
       `otorgamiento`, `giro`) se exige siempre: la operación ya no vuelve atrás por sí sola.
     - **La compuerta de Línea no cambió**: no es una acción que alguien deba ejecutar sino el camino que la
       operación va a tomar (comité o no), y el usuario nombró otorgamiento y verificación. Queda anotado por
       si se decide lo contrario.
-    - Caso **155**, en las dos direcciones. Gate de forma: `regla_50.test.mjs`.
+    - Caso **158**, en las dos direcciones. Gate de forma: `regla_54.test.mjs`.

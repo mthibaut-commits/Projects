@@ -18,7 +18,7 @@ feature: null
    comité y publicar, se debe empezar a solicitar las acciones de otorgamiento y verificación, por lo que
    los badges son en rojo.»*
 
-## 1 · La mesa trabaja por factura (regla 49)
+## 1 · La mesa trabaja por factura (regla 53)
 
 **Lo que NO cambió, y es la mitad del diseño:** el agrupamiento sigue siendo por DEUDOR y las causas son
 suyas. Una llamada cubre a todas sus facturas (regla 6), así que repetir las causas documento a documento
@@ -45,7 +45,7 @@ lista memoizada por `[deals, tick]` no se enteraba: el KPI no se movía y la not
 cambia `deals`** —saca la factura de la oferta— y por eso ése funcionaba y los otros dos no. La sonda de
 pantalla lo midió: `por verificar 4 · verificadas 0` después de marcar una. Se arregla moviendo el tick.
 
-## 2 · Morado mientras se simula, rojo cuando se exige (regla 50)
+## 2 · Morado mientras se simula, rojo cuando se exige (regla 54)
 
 El color no es decoración: dice **si eso ya es trabajo de alguien**. Mientras el ejecutivo arma la oferta,
 los pendientes son una anticipación y el paquete puede cambiar entero; al **publicar** —cerrar y comunicar
@@ -56,14 +56,14 @@ barra y sobre la misma operación. Dos colores para el mismo momento: uno de los
 `exigeAcciones(deal)` es una sola función y es la misma compuerta del tab de Verificación **menos la
 pre-evaluación**: pre-evaluar es justamente pedir el pronóstico antes de tiempo. Medido en pantalla con la
 oferta simulada: los tres chips y el badge del tab en `rgb(124, 58, 237)` — morado. La transición la fija
-el caso 155 en las dos direcciones y en el borde (cerrada sin comunicar **no** basta: publicar son dos
+el caso 158 en las dos direcciones y en el borde (cerrada sin comunicar **no** basta: publicar son dos
 hechos); el gate exige que las dos superficies pregunten por la misma función.
 
 ## Dos defectos de mis propios gates, cazados por sus sondas
 
-- `regla_49`: el patrón `[\s\S]{0,200}` para comprobar que `marcarDoc` mueve el tick **se colaba a la
+- `regla_53`: el patrón `[\s\S]{0,200}` para comprobar que `marcarDoc` mueve el tick **se colaba a la
   función siguiente** y pasaba con el `force` de `guardarResp`. Se ancló al cuerpo exacto de cada flecha.
-- `regla_50`: contar los usos de `exigeAcciones` **en total** sobrevivía a que un chip volviera a un color
+- `regla_54`: contar los usos de `exigeAcciones` **en total** sobrevivía a que un chip volviera a un color
   fijo, porque cada chip lleva dos expresiones. Se cuenta por superficie.
 
 Las dos veces la sonda negativa hizo exactamente lo que existe para hacer: un gate que no caza su propio

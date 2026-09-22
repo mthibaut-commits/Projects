@@ -3483,7 +3483,7 @@ function causasVerif(v) {
 // Entra por parámetro (`{ tel, vetadas, respaldo }` por id de operación) para que esta función sea
 // pura; el default es el estado que hoy vive en el navegador. Ver el contrato VER-01 en `INVARIANTES`.
 //
-// LA UNIDAD DE TRABAJO ES LA FACTURA (regla 49, 22-09-2026): la fila sigue siendo el DEUDOR —una
+// LA UNIDAD DE TRABAJO ES LA FACTURA (regla 53, 22-09-2026): la fila sigue siendo el DEUDOR —una
 // llamada cubre a todas sus facturas y las causas son suyas— pero trae `docs`, un documento por
 // factura con su estado, su respaldo y su nota. Y `docs` incluye las VETADAS, que ya no están en
 // `facturasOp`: retirar una factura la saca de la oferta, así que listándolas sólo desde ahí la
@@ -23158,7 +23158,7 @@ function ofertaPublicada(deal) {
   const comunicada = !!deal.ofertaComunicada || (deal.waSesion || []).some((m) => /Oferta de factoring/i.test(m.text || ""));
   return cerrada && comunicada;
 }
-// ¿LAS ACCIONES DE OTORGAMIENTO Y VERIFICACIÓN YA SE EXIGEN, o todavía son un pronóstico? (regla 50,
+// ¿LAS ACCIONES DE OTORGAMIENTO Y VERIFICACIÓN YA SE EXIGEN, o todavía son un pronóstico? (regla 54,
 // pedido del usuario el 22-09-2026). Mientras el ejecutivo SIMULA, lo que el motor encuentra es una
 // anticipación —sirve para saber en qué se está metiendo y el paquete todavía puede cambiar entero—.
 // Cuando publica —cierra el paquete Y lo comunica al cliente— la casa se compromete, y esos pendientes
@@ -23760,7 +23760,7 @@ const repoNoConfirmadas = crearRepo("factura_no_confirmada");
 // evidencia que alguien acababa de firmar. Volver a predecir sobre el monto ya recortado es además
 // circular: bajar el monto sólo puede mejorar esos tres criterios.
 const repoVerifVeredicto = crearRepo("verificacion_veredicto");
-// RESPALDO POR FACTURA (regla 49): la nota y el archivo con que el equipo justifica lo que hizo con
+// RESPALDO POR FACTURA (regla 53): la nota y el archivo con que el equipo justifica lo que hizo con
 // ESE documento. Va aparte de `repoVerifTel` —que es el hecho de la llamada— porque se escribe en
 // otro momento y por otra razón: se puede adjuntar el correo del deudor antes de marcar, y se puede
 // anotar por qué una factura no se confirmó después de retirarla. Del archivo se guarda la
@@ -49184,7 +49184,7 @@ export default function PipelineComercial() {
     });
     setVerifVer((v) => v + 1);
   };
-  // ── MESA POR FACTURA (regla 49) ───────────────────────────────────────────────
+  // ── MESA POR FACTURA (regla 53) ───────────────────────────────────────────────
   // Marcar UN documento es el mismo hecho que marcar al deudor, aplicado a un documento: se registra
   // su llamada, o se retira y se veta. No es un atajo del anterior ni una regla nueva —`verificarDeudor`
   // ya escribía factura por factura—: lo que cambia es que ahora el equipo puede resolverlas de a una,

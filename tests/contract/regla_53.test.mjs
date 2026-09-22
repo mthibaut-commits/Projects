@@ -1,5 +1,5 @@
-/* Gate de contrato de la regla 49 (la mesa de verificación trabaja por FACTURA, agrupada por deudor)
-   sobre el TEXTO del fuente. La suite prueba el MODELO con el caso 154 —`docs` por documento, la
+/* Gate de contrato de la regla 53 (la mesa de verificación trabaja por FACTURA, agrupada por deudor)
+   sobre el TEXTO del fuente. La suite prueba el MODELO con el caso 157 —`docs` por documento, la
    retirada que sigue en la mesa, el respaldo que no se contagia—; acá se fija la FORMA de la pantalla y
    del repositorio, que es lo que un refactor rompe sin que ningún motor se entere: que las vetadas se
    sumen a la lista, que exista el respaldo por factura, que las acciones por documento muevan el tick
@@ -31,7 +31,7 @@ export function cuerpoDe(src, nombre) {
   return src.slice(m.index, fin < 0 ? undefined : m.index + m[0].length + fin);
 }
 
-export function auditarRegla49(src) {
+export function auditarRegla53(src) {
   const fallos = [];
   // 1 · El MODELO: `filasVerificacion` arma un documento por factura, con las vetadas adentro.
   const c = cuerpoDe(src, "filasVerificacion");
@@ -79,8 +79,8 @@ export function auditarRegla49(src) {
   return fallos;
 }
 
-test("49 · la mesa trabaja por factura: documentos con estado y respaldo, las vetadas adentro y las causas en el deudor", () => {
-  assert.deepEqual(auditarRegla49(jsx), []);
+test("53 · la mesa trabaja por factura: documentos con estado y respaldo, las vetadas adentro y las causas en el deudor", () => {
+  assert.deepEqual(auditarRegla53(jsx), []);
 });
 
 const MUTANTES = {
@@ -136,9 +136,9 @@ const MUTANTES = {
 };
 
 for (const [nombre, m] of Object.entries(MUTANTES)) {
-  test(`49 · sonda: el mutante «${nombre}» lo atrapa el auditor`, () => {
+  test(`53 · sonda: el mutante «${nombre}» lo atrapa el auditor`, () => {
     assert.notEqual(m.src, jsx, "el mutante no cambió el fuente: la sonda no probaría nada");
-    const fallos = auditarRegla49(m.src);
+    const fallos = auditarRegla53(m.src);
     assert.ok(fallos.some((f) => m.re.test(f)), `esperaba un fallo ${m.re}; obtuve ${JSON.stringify(fallos)}`);
   });
 }
