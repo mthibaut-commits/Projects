@@ -7279,11 +7279,87 @@
        `consolidado: ${Q.revisados} clientes, cabecera ≠ Σ aprobado ${Q.malAprob}, ≠ Σ vigente ${Q.malUso} (antes 217 de 224 descuadraban) ${Q.consolidadoOk} · universo de deudores ${Q.universo}: sin RUT ${Q.sinRut}, DV inválido ${Q.dvMalo} (antes 92%), en rango de persona natural ${Q.personaNatural} ${Q.rutOk} · un nombre desconocido devuelve vacío ${Q.cerradoOk} · candidatos del cliente ${Q.rutCli}: ${Q.nPropios} y son los suyos, por volumen ${Q.propiosOk} · la línea del comité queda marcada ${Q.marcaOk} · tras constituir la cabecera sigue siendo la suma (${Q.antesCab} → ${Q.sumaDespues}) ${Q.cuadraOk} · el excedente del techo va al comodín ${Q.excedenteOk}${err ? " · ERROR " + err : ""}`);
   }
 
+  // ── 152 · LA IDENTIDAD DE LA SESIÓN ES UNA SOLA ────────────────────────────────────
+  // El selector de usuario de la demo movía sólo el estado de React y los permisos preguntan por
+  // `SESION.usuario`: la pantalla mostraba a Camila Soto y el permiso seguía preguntando por quién
+  // había hecho login, así que la mesa le decía «sólo el Ejecutivo de verificación puede marcarla» a la
+  // Ejecutiva de verificación. El caso mide las DOS mitades: que la identidad cambie y que los relojes
+  // de la sesión no se reinicien —cambiar de persona no puede regalar ocho horas de sesión—.
+  {
+    const previa = typeof SESION !== "undefined" ? SESION : null;
+    let r = {};
+    try {
+      abrirSesion("CR", "prueba");
+      const t0 = { expira: SESION.expira, iniciada: SESION.iniciada, tenant: SESION.tenant };
+      const antesPuede = puedeVerificarFacturas(SESION.usuario);
+      suplantarSesion("EV");
+      r.tras = { u: SESION.usuario, puede: puedeVerificarFacturas(SESION.usuario), relojes: SESION.expira === t0.expira && SESION.iniciada === t0.iniciada && SESION.tenant === t0.tenant, suplantado: SESION.suplantado === true };
+      suplantarSesion("CR");
+      r.vuelta = { u: SESION.usuario, puede: puedeVerificarFacturas(SESION.usuario) };
+      // No-ops: el mismo código, un código vacío y sin sesión no rompen ni inventan identidad.
+      const mismo = suplantarSesion("CR");
+      r.noop = mismo.usuario === "CR" && suplantarSesion("").usuario === "CR" && suplantarSesion(null).usuario === "CR";
+      r.antesPuede = antesPuede;
+      // Y el rol se lee de la identidad de la SESIÓN, no del código que la pantalla esté mostrando.
+      r.rol = rolLabel("EV");
+    } catch (e) {
+      r.err = e.message;
+    } finally {
+      SESION = previa;
+    }
+    ok("152 cambiar de usuario cambia la IDENTIDAD de la sesión, no sólo el rótulo, y no reinicia sus relojes",
+       r.antesPuede === false && r.tras && r.tras.u === "EV" && r.tras.puede === true && r.tras.relojes === true && r.tras.suplantado === true
+       && r.vuelta && r.vuelta.u === "CR" && r.vuelta.puede === false && r.noop === true && !r.err
+       && typeof SESION !== "undefined" && SESION === previa,
+       `CR no puede (${r.antesPuede}) → EV «${r.tras && r.tras.u}» puede ${r.tras && r.tras.puede} (${r.rol}), relojes intactos ${r.tras && r.tras.relojes} · de vuelta a «${r.vuelta && r.vuelta.u}» puede ${r.vuelta && r.vuelta.puede} · no-ops ${r.noop} · sesión restaurada${r.err ? " · ERROR " + r.err : ""}`);
+  }
+
+  // ── 153 · EL ATAJO DEL OTORGAMIENTO AUTOMÁTICO NO PASA POR ENCIMA DEL VISADO (OTG-02) ───────
+  // `requiereOtorgamiento` nació antes del motor de reglas: mira si hay deudores «Otro» y si se supera
+  // la línea, y nada más. Una operación de puros deudores Prime y dentro de línea puede tener decenas
+  // de criterios del CLIENTE esperando excepción —el usuario la vio: cartel verde de «otorgamiento
+  // automático, sin intervención de un especialista» con «Criterios por aprobar 38» al lado—, y con
+  // `otorgAuto` la operación avanzaba a «Pendiente Integración» sin que nadie los mirara.
+  {
+    const deal153 = { id: "T-153", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", monto: 30 * MMF,
+                      stage: "otorgamiento", facturasOp: [fac("w1", LB[3], 30)], aceptada: true, firmada: true,
+                      clienteAcepto: true, otorgAuto: true, otorgMotivo: "automatico" };
+    const sinVisar = { visado: {} };
+    const v0 = visadoDeal(deal153, sinVisar);
+    const todoAprobado = {};
+    v0.exc.forEach((e) => { todoAprobado[e.stKey] = "aprobado"; });
+    const visado = { visado: todoAprobado };
+    const manual = { ...deal153, otorgAuto: false, otorgMotivo: "otros" };
+    // (a) El fixture tiene de verdad criterios por resolver y no está bloqueado por un knock out: sin
+    //     esto el caso pasaría por vacuidad el día que el catálogo deje de gatillar excepciones acá.
+    const fixtureOk = v0.exc.length > 0 && v0.excPend.length === v0.exc.length && otorgBloqueado(deal153, sinVisar) === false;
+    // (b) EL ATAJO NO ESTÁ VIGENTE con criterios pendientes, y sí lo está cuando no queda ninguno.
+    const vigenteOk = otorgAutoVigente(deal153, sinVisar) === false
+      && otorgAutoVigente(deal153, visado) === true
+      && otorgAutoVigente(manual, visado) === false          // sin `otorgAuto` no hay atajo que valga
+      && otorgAutoVigente(null, visado) === false;
+    // (c) OTG-02, que es lo que estaba roto: no se completa el otorgamiento con excepciones pendientes,
+    //     TAMPOCO por el atajo. Las dos direcciones, que es lo que un control exige (VER-01 falló años
+    //     por mirarse en una sola).
+    const otg02Ok = otorgamientoCompleto(deal153, sinVisar) === false
+      && otorgamientoCompleto(deal153, visado) === true
+      && otorgamientoCompleto(manual, sinVisar) === false
+      && otorgamientoCompleto(manual, visado) === true;
+    // (d) Y lo que el atajo SÍ significa no se perdió: una operación automática con el visado limpio no
+    //     necesita que nadie apruebe excepciones —la manual sí las necesita aprobadas, y es la misma
+    //     respuesta porque `todoAprobado` las aprobó—.
+    const sentidoOk = otorgAutoVigente({ ...deal153, stage: "cesion" }, visado) === true
+      && otorgamientoCompleto({ ...deal153, stage: "cesion" }, visado) === false; // fuera de Otorgamiento no se completa
+    ok("153 el otorgamiento automático no se salta el visado: con criterios por aprobar no está vigente ni completa la operación (OTG-02)",
+       fixtureOk && vigenteOk && otg02Ok && sentidoOk,
+       `fixture ${fixtureOk} (${v0.exc.length} excepciones, ${v0.excPend.length} pendientes) · atajo vigente ${vigenteOk} (sin visar ${otorgAutoVigente(deal153, sinVisar)} · visado ${otorgAutoVigente(deal153, visado)}) · OTG-02 ${otg02Ok} (auto sin visar ${otorgamientoCompleto(deal153, sinVisar)} · auto visado ${otorgamientoCompleto(deal153, visado)} · manual sin visar ${otorgamientoCompleto(manual, sinVisar)}) · sentido ${sentidoOk}`);
+  }
+
   // ── 154 · EL CIERRE DEL NEGOCIO LE ESCRIBE A QUIEN TIENE QUE FIRMAR ─────────────────────────
   // Reporte del usuario, 21-09-2026: «cuando se cierra un negocio no se están enviando los mensajes
   // a los responsables ni al ejecutivo que tienen responsabilidad de aprobar». Medido: de las dos
   // puertas a la mesa de otorgamiento sólo avisaba la MANUAL (`avisarPreEval`); la automática —el
-  // cliente firma y la bandeja la toma sola— no llamaba a `hiloEnviar` ni una vez (regla 52).
+  // cliente firma y la bandeja la toma sola— no llamaba a `hiloEnviar` ni una vez (regla 50).
   //
   // Se prueba en las DOS direcciones, que es lo que pide `testing.md` para un control: avisa cuando
   // hay algo que firmar, y NO avisa cuando no queda nada — un mensaje «no tienes nada que hacer» en
@@ -7296,7 +7372,7 @@
       // tenant sí tiene. Se pregunta quién los firma en vez de cablear «GG»: si mañana el cargo lo
       // ocupa otro, el caso sigue midiendo la regla y no el nombre de una persona.
       const exc = (n, area, nivel) => ({ regla: { n, area, nombre: "Criterio " + n }, nivel, stKey: "R" + n });
-      const deal = { id: "TEST-CIERRE-152", cliente: "Cliente 152 SpA", exec: "CR", monto: 120e6, negocioNum: "152" };
+      const deal = { id: "TEST-CIERRE-154", cliente: "Cliente 154 SpA", exec: "CR", monto: 120e6, negocioNum: "154" };
       const pend = [exc(9001, "comercial", 3), exc(9002, "comercial", 3), exc(9003, "riesgo", 5)];
       const esperados = new Set(codigosAprobadoresDe(pend));
       // (a) EL SUPER-ADMIN NO ENTRA: puede firmar todo, así que estaría en cada hilo del sistema.
@@ -7325,7 +7401,7 @@
       const h2 = avisarCierreNegocio(deal, pend, 0);
       const unSoloHiloOk = h2 === h && HILOS.filter((x) => x.dealId === deal.id).length === 1 && h.mensajes.length === 2;
       // (f) LA OTRA DIRECCIÓN: sin excepciones y sin verificación pendiente no se escribe nada.
-      const limpio = { ...deal, id: "TEST-CIERRE-152-LIMPIO" };
+      const limpio = { ...deal, id: "TEST-CIERRE-154-LIMPIO" };
       const mudoOk = avisarCierreNegocio(limpio, [], 0) === null && !HILOS.some((x) => x.dealId === limpio.id);
 
       R = { sinAdminOk, codigosOk, aprobadoresOk, ejecutivoOk, remitenteOk, noLeidoOk, textoOk, unSoloHiloOk, mudoOk,
@@ -7376,10 +7452,10 @@
 
       // (c) LOS HILOS SE PERSISTEN. Un hilo nuevo y su mensaje tienen que quedar en el repositorio:
       //     sin eso, el Centro de mensajería de la otra pestaña no tiene de dónde leerlos.
-      const h = hiloNuevo({ tipo: "general", dealId: ID, cliente: "Cliente 153", asunto: "Prueba 153", participantes: ["CR"], creadoPor: "CR" });
+      const h = hiloNuevo({ tipo: "general", dealId: ID, cliente: "Cliente 155", asunto: "Prueba 155", participantes: ["CR"], creadoPor: "CR" });
       hiloEnviar(h, "CR", "mensaje de prueba", null);
       const guardados = repoHilos.get("lista") || [];
-      const hg = guardados.find((x) => x.dealId === ID && x.asunto === "Prueba 153");
+      const hg = guardados.find((x) => x.dealId === ID && x.asunto === "Prueba 155");
       const hilosOk = !!hg && hg.mensajes.length === 1 && hg.mensajes[0].texto === "mensaje de prueba";
 
       // (d) UN HILO QUE LLEGA DE OTRA PESTAÑA SE FUSIONA POR (operación, asunto), NO POR ID: los id se
@@ -7388,13 +7464,13 @@
       copiaAjena.id = "H1001";
       copiaAjena.mensajes.push({ de: "JG", deNombre: "Otro", texto: "desde la otra pestaña", fecha: "", ts: Date.now(), menciones: [] });
       recibirHilo(copiaAjena);
-      const delDeal = HILOS.filter((x) => x.dealId === ID && x.asunto === "Prueba 153");
+      const delDeal = HILOS.filter((x) => x.dealId === ID && x.asunto === "Prueba 155");
       const fusionOk = delDeal.length === 1 && delDeal[0].mensajes.length === 2 && delDeal[0].id === h.id;
 
       // (e) EL CAMINO QUE NO AVISABA: solicitar la aprobación de UNA excepción habilita la bandeja.
       //     `excEnBandeja` consulta `tienePreEval`, y es lo que decide si el aprobador puede visar.
       setPreEval(ID, "CR", false);
-      const deal = { id: ID, cliente: "Cliente 153", exec: "CR", stage: "oferta" };
+      const deal = { id: ID, cliente: "Cliente 155", exec: "CR", stage: "oferta" };
       const x = { stKey: "R9001", nivel: 2, regla: { n: 9001, nombre: "Criterio 155", area: "comercial" } };
       const antesBandeja = excEnBandeja(deal);
       solicitarAprobacionExc(deal, x, "CR", "justifico", [], false);
@@ -7463,7 +7539,7 @@
 
       // (c) EL CORREO ES LA CREDENCIAL, y resuelve contra la lista VIVA: el admin recién creado entra
       //     sin recargar. Un correo desconocido no entra.
-      const loginOk = codigoDeCorreo("suite156@x.cl") === "ZQ" && codigoDeCorreo("SUITE154@X.CL ") === "ZQ" && codigoDeCorreo("nadie@x.cl") === null;
+      const loginOk = codigoDeCorreo("suite156@x.cl") === "ZQ" && codigoDeCorreo("SUITE156@X.CL ") === "ZQ" && codigoDeCorreo("nadie@x.cl") === null;
       // …y el elenco de la demo sigue entrando: la lista nueva se suma, no reemplaza.
       const demoOk = codigoDeCorreo("carla.rivas@security.cl") === "CR";
 
