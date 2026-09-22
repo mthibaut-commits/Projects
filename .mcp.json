@@ -26,11 +26,9 @@
       }
     },
     "playwright": {
-      "command": "npx",
+      "command": "node",
       "args": [
-        "-y",
-        "@playwright/mcp@latest",
-        "--isolated"
+        ".mcp-servers/playwright/lanzar.mjs"
       ]
     }
   }

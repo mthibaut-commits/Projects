@@ -17,3 +17,6 @@ node_modules/
 
 # Worktrees: solo a pedido explicito del usuario (hook worktree_guard)
 .worktrees/
+
+# Snapshots que @playwright/mcp deja al navegar (regenerables, no son del proyecto)
+.playwright-mcp/
