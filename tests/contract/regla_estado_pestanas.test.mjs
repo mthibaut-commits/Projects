@@ -100,6 +100,21 @@ export function auditarRegla49(src) {
     if (!/if \(!tienePreEval\(deal\.id\)\) setPreEval\(deal\.id, execCode, true\);/.test(canonico(sa)))
       fallos.push("solicitar una excepción ya no habilita la bandeja: `excEnBandeja` consulta `tienePreEval`, así que el aprobador no podría visarla");
   }
+  // REGLA 55 · LA FIRMA DEL CLIENTE TAMBIÉN CRUZA. El portal de curse le postea a la pestaña que lo
+  // abrió —la del DETALLE—, así que `confirmarCierre` corre allá: sin avisar al tubo, el detalle
+  // mostraba «Otorgamiento» y el tubo seguía en «Negociación» sobre la misma operación, y la bandeja
+  // del aprobador la trataba como no aceptada. Se exige que el updater arme un PATCH y lo difunda,
+  // no que devuelva el deal entero: sin patch no hay nada que mandar.
+  const cc = cuerpoDe(src, "const confirmarCierre = (id, tasa, opts, usuario) => {");
+  if (!cc) fallos.push("no existe `confirmarCierre`");
+  else {
+    if (!/const patch = \{/.test(cc))
+      fallos.push("`confirmarCierre` no arma un PATCH: devolviendo el deal entero no hay qué mandarle al tubo, y la etapa que la firma mueve se queda en la pestaña del detalle");
+    if (!/avisarTubo\(id, patch\);/.test(cc))
+      fallos.push("`confirmarCierre` no avisa al tubo: la firma del cliente llega a la pestaña del detalle y el tubo se queda con la etapa vieja (regla 55)");
+    if (!/return \{\s*\.\.\.d,\s*\.\.\.patch\s*\};/.test(cc))
+      fallos.push("`confirmarCierre` aplica algo distinto de lo que difunde: el patch y lo que guarda tienen que ser lo mismo o las dos pestañas divergen");
+  }
   return fallos;
 }
 
@@ -108,6 +123,8 @@ test("51 · el estado del otorgamiento cruza de pestaña: repositorio, aviso des
 });
 
 const MUTANTES = {
+  "la firma del cliente deja de cruzar al tubo": { src: jsx.replace("      avisarTubo(id, patch);\n      return { ...d, ...patch };", "      return { ...d, ...patch };"), re: /no avisa al tubo/ },
+  "el cierre vuelve a devolver el deal entero": { src: jsx.replace("      const patch = {\n        reabierta: undefined,", "      return {\n        ...d,\n        reabierta: undefined,"), re: /no arma un PATCH|aplica algo distinto/ },
   "la pre-evaluación vuelve a ser un objeto de módulo": { src: jsx.replace("let PRE_EVAL = repoPreEval.all();", "let PRE_EVAL = {};"), re: /vuelve a ser un objeto de módulo|no es el alias de `repoPreEval`/ },
   "los hilos vuelven a ser un array de módulo": { src: jsx.replace('let HILOS = repoHilos.get("lista") || [];', "let HILOS = [];"), re: /vuelve a ser un array de módulo|no se hidrata/ },
   "setPreEval deja de difundir": { src: jsx.replace('  if (difundir) avisarOpener({ type: "nex-preeval", dealId, on: !!on, por: code });', ""), re: /`setPreEval` no difunde/ },

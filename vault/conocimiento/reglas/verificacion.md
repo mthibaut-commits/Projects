@@ -59,7 +59,34 @@ timestamp: 2026-09-17T15:29:14Z
       un archivo** y **anotar**. No es una regla nueva del motor: `verificarDeudor` ya escribía factura por
       factura y la confirmación PARCIAL ya existía —el deudor reconoce unas y otras no—; lo que faltaba era
       poder resolverlas de a una, que es como ocurre la llamada.
-    - **«Registrar llamada» sigue siendo el atajo del caso normal**, y cubre sólo lo que al deudor le queda
+    - **TRES NIVELES, no uno** (22-09-2026, pedido del usuario). Arriba la **OPERACIÓN** —su número, su fecha
+      (`fechaOportunidad`) y cómo va su verificación completa—, adentro sus **DEUDORES** como cards colapsables
+      iguales a las del detalle, y al abrir una, sus **FACTURAS** con un estado cada una. La mesa listaba
+      deudores sueltos: el verificador llama POR OPERACIÓN —es lo que frena un giro— y tenía que reconstruir a
+      qué operación pertenecía cada fila leyendo el enlace del cliente. El agrupador (`filasVerificacion`) NO
+      cambió: sigue devolviendo una fila por (operación, deudor) y el nivel de arriba se arma en la vista.
+    - **Los contadores van al costado de la razón social, y UN CHIP EN CERO NO SE DIBUJA** (`cuentaVerif` +
+      `chipsVerif`): «Verificadas 2 · No verificadas 3 · Pendientes 0» deja de mostrar el último. El usuario lo
+      pidió para «Pendientes» y vale para los tres: un cero no es un estado, es la ausencia de uno, y tres chips
+      donde dos dicen cero esconden al único que había que leer. La misma función alimenta los dos niveles, para
+      que el de la operación no pueda dejar de cuadrar con la suma de los de abajo.
+    - **LAS DOS DECISIONES PASAN POR EL PANEL LATERAL** (`DrawerVerificacion`, `fixed inset-0 flex justify-end`).
+      Lateral y no centrado porque se registra MIRANDO la lista —qué deudor, qué folio, qué queda pendiente— y un
+      modal centrado tapa justo eso. Y sirve para las dos: el «no verificó» también tiene información que
+      capturar —con quién se habló, POR QUÉ no confirmó (`MOTIVOS_NO_VERIF`), el correo donde lo dice— y hasta
+      acá se resolvía con el sí/no de un diálogo de confirmación, o sea **retirando plata de una operación viva
+      sin dejar un solo dato de por qué**. El ALCANCE lo trae quien lo abre: un folio desde su fila, o todo lo
+      pendiente del deudor desde su cabecera. Si el alcance cubre TODO lo pendiente se usa el escritor del deudor
+      (`onVerificar`/`onNoConfirmar`), que además congela su veredicto de una vez; si es un folio suelto, el del
+      documento. En los dos casos el respaldo se escribe en CADA documento del alcance, porque la evidencia se
+      pregunta desde el folio.
+    - **La fecha de pago vive DENTRO de su check** y se habilita al marcarlo. Estaba como un campo suelto de la
+      grilla de contacto, así que el check podía quedar marcado y la fecha vacía: exactamente el caso que el
+      propio rótulo declara imposible —«sin fecha no hay compromiso que verificar»—. Ahora son un solo dato y se
+      validan juntos (`completo` exige `compromiso`), y el campo es un `type="date"`, no texto libre.
+    - **Sin causas no hay disclosure**: una fila que dice «0 causas que gatillaron la verificación» es ruido con
+      la tipografía de un título.
+    - **«Verificar» en la cabecera del deudor sigue siendo el atajo del caso normal**, y cubre sólo lo que al deudor le queda
       PENDIENTE: lo ya resuelto documento a documento no se vuelve a tocar. Re-registrar una verificada no
       cambiaría nada, pero retirar una ya verificada sí, y por eso el alcance se acota en un solo sitio
       (`soloPendientes`) en vez de en cada llamador.
@@ -83,3 +110,32 @@ timestamp: 2026-09-17T15:29:14Z
       Retirar sí cambia `deals` —saca la factura de la oferta— y por eso ése se veía y los otros dos no. Se
       arregla moviendo el tick en las dos acciones; lo midió una sonda de pantalla, no el fuente.
     - Gate de forma: `regla_53.test.mjs`.
+
+57. **LA NOTA DE UNA VERIFICACIÓN ES RICA Y ACEPTA UNA CAPTURA PEGADA** (`NotaRica`, 22-09-2026, pedido del
+    usuario: «el editor de texto debe ser un editor rich text que permita pegar un screenshot… al pegar el
+    screenshot el sistema igual debe guardarlo como imagen en el file system»). Una verificación telefónica se
+    respalda con lo que se VIO —el correo del deudor, la pantalla del portal, el WhatsApp donde confirma la
+    fecha—, y obligar a guardar esa imagen a un archivo, buscarla y adjuntarla por separado es justo el paso
+    donde la evidencia se pierde.
+    - **Son DOS cosas y no una.** La captura queda **inline** en la nota —que es donde se lee en contexto— y
+      además **baja al disco** (`guardarImagenPegada`), porque el respaldo de un giro se pide fuera de esta
+      pantalla y meses después. Esto es un HTML sin servidor: el único sistema de archivos al que puede escribir
+      es la carpeta de descargas del navegador, así que ahí va, con nombre determinista (`nombreCaptura`) para
+      poder aparear a mano el archivo con el adjunto registrado.
+    - **Y una tercera: entra como ADJUNTO.** La referencia que devuelve el guardado (`{nombre, tipo, tam}`) se
+      suma a la misma lista que lo elegido con el selector, porque aguas abajo el respaldo no distingue de dónde
+      vino el archivo — y es lo que habilita el botón sin tener que declarar «no hay respaldo».
+    - **El texto se pega SIEMPRE PLANO.** Copiar de un correo arrastra su hoja de estilos y la nota termina con
+      tipografías y fondos que no son de esta pantalla.
+    - **Lo que se guarda se vuelve a pintar SANEADO** (`notaSegura` + `NotaLeida`): lista blanca de elementos
+      (`NOTA_TAGS_OK`), ningún atributo sobrevive salvo el `src` de una imagen embebida en `data:` y su `alt`, y
+      el árbol se arma en un `<template>`, que es inerte. No es una precaución teórica: `execCommand` pega lo que
+      haya en el portapapeles y esto se le muestra meses después a quien audita un giro.
+    - **En la bitácora va TEXTO PLANO** (`notaTextoPlano`): una glosa con `<div>` adentro no se lee, y una
+      captura en base64 son cien mil caracteres en una fila de log. La imagen se nombra: `[imagen: archivo.png]`.
+    - **El `innerHTML` se escribe sólo cuando difiere del DOM.** Reescribirlo en cada render mueve el cursor al
+      principio y la nota se digita al revés — el defecto clásico de un `contentEditable` controlado, que no caza
+      ningún gate: sólo se ve tecleando.
+    - Gate de forma: `regla_57.test.mjs`, con sondas. `atob` y `FileReader` entraron a la lista de globales del
+      linter: la lista dice exactamente qué toca esta app.
+

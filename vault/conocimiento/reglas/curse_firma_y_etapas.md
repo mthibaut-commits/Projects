@@ -90,3 +90,36 @@ timestamp: 2026-09-17T15:29:14Z
     - **GIR-02 se queda donde sirve**: en `aprobarIntegracion`, que es el último punto ANTES de inyectar — y ése sí es un acto de NEX.
     - **Cómo nos enteramos del giro: CALLBACK del sistema de giro** (decisión del usuario, 19-09-2026). Es **push**, no pull: el otro sistema avisa el evento. `recibirGiroTesoreria(ev, deal)` es el punto de entrada, y es una **función pura que devuelve el patch**, no un setter — así la suite la prueba por su nombre (caso **145**) y quien la llama decide cuándo escribir. Las tres negativas pesan tanto como la positiva: `ya_girada` (**un callback se reintenta**, es la naturaleza de un push, y reprocesarlo duplicaría el hecho en la bitácora y en los KPI de venta), `no_inyectada` (sólo se gira lo que pasó por Operaciones; un aviso sobre otra cosa es un error del otro lado y se dice, no se escribe) y `aviso_incompleto` (sin `operacionId` no hay con qué decidir: falla cerrado). El **monto no se inventa**: si el aviso no lo trae, el patch no lo afirma — un número inventado acá no cuadraría contra nada y nadie podría distinguirlo de uno real. El rechazo **también se audita**: un aviso que llega y no corresponde es información sobre el otro lado, y perderlo deja el problema invisible.
     - **La asignación de giros se CONGELA en la inyección** (19-09-2026, consecuencia directa de lo anterior). El paquete que vale es el que se entrega, así que `aprobarIntegracion` guarda en `repoGiro` la asignación tal como está en ese instante, con quién la aprobó y cuándo. Antes `GIRO_STATE` **no tenía escritor** y `giroDeal` —el único lector que sabía que «el congelado gana»— **no tenía llamador**: la regla estaba probada con estado inyectado y no ocurría en ninguna pantalla. Ahora el congelado lo consultan los DOS lectores por **una sola fuente**, `giroCongelado(deal, estado)`, porque dos copias de «gana el congelado» se desfasan. Y se consulta **primero**: antes del cálculo, del memo y de exigir simulación — una asignación congelada existe porque la operación se inyectó, y eso es un hecho del otro sistema que sigue siendo lo que se giró aunque el paquete de la pantalla cambie después. Caso **148**.
+
+55. **LA FIRMA DEL CLIENTE CRUZA A LA PESTAÑA DEL TUBO, COMO TODO LO DEMÁS QUE EL DETALLE ESCRIBE**
+    (22-09-2026, reportado por el usuario: «esta operación la firmó el cliente pero aún sigue el
+    otorgamiento del jefe comercial sin tener ningún tipo de actividad pendiente. La oportunidad sigue
+    en negociación»).
+    - **Qué se veía**: la misma operación decía **«Otorgamiento»** en el detalle y **«Negociación»** en el
+      tubo, y la bandeja del aprobador no la tenía. No eran tres defectos: la etapa que la firma mueve
+      nunca salía de la pestaña del detalle, y todo lo que mira el tubo —el chip de etapa, la fase de la
+      bandeja (`aceptada`), los conteos— la leía de su copia vieja.
+    - **La causa es de dónde llega el evento.** El portal de curse (`curse.html`) le hace `postMessage` a
+      **la pestaña que lo abrió**, y a esa altura el ejecutivo está trabajando en el DETALLE: publica la
+      oferta desde ahí, así que el portal abre desde ahí y la firma vuelve ahí. `confirmarCierre` corría
+      entonces en la pestaña del detalle, escribía su `setDeals` local… y no llamaba a `avisarTubo`. Es
+      **exactamente** el agujero que ya cerraron `nex-simulado` (regla 15-bis-bis), `nex-preeval` y
+      `nex-hilo` (regla 51), en la transición que más importa de todas: la que convierte una oferta en
+      una operación aceptada.
+    - **El arreglo**: `confirmarCierre` arma un **patch** —en vez de devolver el deal entero— y lo difunde
+      con `avisarTubo(id, patch)` antes de aplicarlo. Es el mismo patrón de los otros cuatro sitios que ya
+      avisaban, y `avisarTubo` fusiona por operación, así que llamarlo desde el updater —que React puede
+      correr más de una vez— no duplica el aviso. **Lo que se difunde y lo que se guarda son el mismo
+      objeto**: si fueran dos expresiones, las dos pestañas divergen en cuanto alguien toque una.
+    - **La lección, otra vez**: cuando el aviso vive en el *call site*, el call site que se escribió
+      después se olvida (regla 51 lo dijo del botón de pre-evaluación). Acá el que se olvidó fue el más
+      importante, y nadie lo notó porque el detalle —que es donde el ejecutivo mira— sí se actualizaba.
+    - **El caso 51-bis que NO se reabre**: la bandeja del aprobador ya no depende sólo de esto. Desde la
+      regla 51, solicitar la aprobación de una excepción habilita la bandeja por `tienePreEval` y eso
+      difunde, así que el aprobador ve la operación aunque la firma todavía no haya cruzado. Medido en el
+      build actual: con la operación en `oferta` y sin pre-evaluación la fase es `null` —la bandeja en
+      cero, el síntoma que el usuario reportó—, y en cuanto el ejecutivo solicita una aprobación pasa a
+      `preevaluacion` y aparece.
+    - Gate de forma: `regla_estado_pestanas.test.mjs`, que ya era el dueño de «el estado cruza de
+      pestaña» — la regla nueva es otra instancia del mismo principio y no merece un gate aparte. **Sin
+      caso de suite**: hacen falta DOS documentos y la suite corre en uno, igual que la regla 51.

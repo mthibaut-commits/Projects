@@ -1,5 +1,7 @@
-/* Gate de contrato de la regla 53 (la mesa de verificación trabaja por FACTURA, agrupada por deudor)
-   sobre el TEXTO del fuente. La suite prueba el MODELO con el caso 157 —`docs` por documento, la
+/* Gate de contrato de la regla 53 (la mesa de verificación: OPERACIÓN → deudor colapsable → FACTURA)
+   sobre el TEXTO del fuente. Los tres niveles y el panel lateral entraron el 22-09-2026 a pedido del
+   usuario; lo que NO cambió es el modelo, y por eso el bloque 1 sigue intacto.
+   La suite prueba el MODELO con el caso 157 —`docs` por documento, la
    retirada que sigue en la mesa, el respaldo que no se contagia—; acá se fija la FORMA de la pantalla y
    del repositorio, que es lo que un refactor rompe sin que ningún motor se entere: que las vetadas se
    sumen a la lista, que exista el respaldo por factura, que las acciones por documento muevan el tick
@@ -51,14 +53,36 @@ export function auditarRegla53(src) {
     fallos.push("no existe el repositorio `verificacion_respaldo`: sin él la nota y el adjunto no sobreviven a la pantalla");
   if (!/nombre: x\.name, tipo: x\.type \|\| "", tam: x\.size \|\| 0/.test(src))
     fallos.push("el adjunto no guarda la REFERENCIA del archivo (nombre, tipo, tamaño): los bytes viven en el gestor documental, no acá");
-  // 3 · LA PANTALLA: acciones por documento, y el tick que las hace visibles.
+  if (!/const nombresArch = \(l\) => \(l \|\| \[\]\)\.map\(\(a\) => \(a && a\.nombre\) \|\| String\(a \|\| ""\)\)\.filter\(Boolean\);/.test(src))
+    fallos.push("no existe `nombresArch`: cuatro registradores distintos escriben la misma lista de respaldos en la bitácora y con cuatro copias se separan a la primera corrección");
+  // 3 · LA PANTALLA: TRES niveles (operación → deudor → factura), las dos decisiones por el panel
+  // lateral, y el tick que las hace visibles.
   for (const [re, msg] of [
-    [/onClick=\{\(\) => marcarDoc\(f, doc, "verificada"\)\}/, "la fila del documento no ofrece marcarlo verificado"],
-    [/onClick=\{\(\) => setConfirmDoc\(\{ fila: f, doc \}\)\}/, "retirar un documento no pasa por confirmación: saca plata de una operación viva"],
-    [/<RespaldoFactura/, "la fila del documento no ofrece adjuntar ni anotar"],
-    [/function RespaldoFactura\(\{ doc, puede, onGuardar \}\)/, "no existe `RespaldoFactura`: el borrador de la nota tiene que vivir en la fila, no en el estado de toda la mesa"],
+    [/const ops = useMemo\(/, "la mesa dejó de agrupar por operación: el verificador llama POR OPERACIÓN —es lo que frena un giro— y una lista de deudores sueltos lo obliga a reconstruir a cuál pertenece cada fila"],
+    [/o = \{ op: f\.op, deal: f\.deal, cliente: f\.cliente, filas: \[\] \};/, "el nivel de la operación no lleva su deal: sin él no hay número, ni fecha, ni forma de abrirla"],
+    [/Oportunidad del \{fechaOportunidad\(o\.deal\)\}/, "la card de la operación no dice su fecha"],
+    [/\{chipsVerif\(o\.cuenta\)\}/, "la operación no muestra su estado de verificación global"],
+    [/\{chipsVerif\(cuenta\)\}/, "el deudor no lleva sus contadores al costado de la razón social"],
+    [/setAbiertoDeu\(\(m\) => \(\{ \.\.\.m, \[f\.id\]: !abrirDeu \}\)\)/, "la card del deudor dejó de ser colapsable: las facturas se despliegan al abrirla"],
+    [/\{doc\.estado === "pendiente" && puedeMarcar && botonesDoc\(f, \[doc\], true\)\}/, "la factura pendiente no ofrece «Verificar» / «No verificar»"],
+    [/setPanel\(\{ fila: f, docs, modo: "verificar" \}\)/, "«Verificar» no abre el panel lateral: la información de la llamada no tendría dónde entrar"],
+    [/setPanel\(\{ fila: f, docs, modo: "no_verificar" \}\)/, "«No verificar» no abre el panel lateral: retirar plata de una operación viva volvería a resolverse con un sí/no, sin motivo ni respaldo"],
+    [/function DrawerVerificacion\(\{ fila, docs, modo, onCerrar, onConfirmar \}\)/, "no existe `DrawerVerificacion`: el registro es lateral y sirve para las dos decisiones"],
+    [/className="fixed inset-0 z-50 flex justify-end ovl"/, "el registro dejó de ser lateral: un modal centrado tapa la lista que se está mirando al registrar"],
+    [/\.filter\(\(x\) => x\[2\] > 0\)/, "un contador en CERO vuelve a dibujarse: «Pendientes 0» es lo que el usuario pidió esconder, y tres chips donde dos dicen cero esconden al único que había que leer"],
+    [/\{f\.causas\.length > 0 && \(/, "la fila de causas se dibuja aunque no haya ninguna: «0 causas» es ruido con la tipografía de un título"],
   ]) {
     if (!re.test(src)) fallos.push(msg);
+  }
+  // 3-bis · El panel escribe el respaldo en CADA documento de su alcance: la evidencia se recupera
+  // desde el folio, que es por donde se pregunta cuando alguien audita un giro.
+  const ap = cuerpoFlecha(src, "aplicarPanel");
+  if (!ap) fallos.push("no existe `aplicarPanel`");
+  else {
+    if (!/for \(const d of datos\.docs \|\| \[\]\) await guardarResp\(f, d, respaldo\);/.test(ap))
+      fallos.push("el panel no guarda el respaldo en cada documento de su alcance: la nota y las capturas quedarían fuera del folio");
+    if (!/const todos = pend\.length > 0 && pend\.every\(\(x\) => ids\.has\(x\.id\)\);/.test(ap))
+      fallos.push("el panel no distingue el alcance: cubrir TODO lo pendiente del deudor usa su escritor —que además congela el veredicto— y un folio suelto no");
   }
   // Y el tick: marcar y anotar escriben en un repositorio y no en `deals`, así que la lista memoizada
   // por `[deals, tick]` no se entera sola. Se mira el cuerpo EXACTO de cada flecha, no un comodín.
@@ -75,11 +99,11 @@ export function auditarRegla53(src) {
     fallos.push("las causas dejaron la cabecera del grupo: son del deudor —una llamada las confirma todas— y repetirlas por documento dice que cada factura tiene las suyas");
   // 5 · La llamada del deudor cubre sólo lo PENDIENTE.
   if (!/const soloPendientes = \(f\) => \(\{ \.\.\.f, facturas: \(f\.docs \|\| \[\]\)\.filter\(\(x\) => x\.estado === "pendiente"\)\.map\(\(x\) => x\.f\) \}\);/.test(src))
-    fallos.push("«Registrar llamada» no se acota a lo pendiente: retiraría o re-registraría documentos ya resueltos de a uno");
+    fallos.push("el «Verificar» del deudor no se acota a lo pendiente: retiraría o re-registraría documentos ya resueltos de a uno");
   return fallos;
 }
 
-test("53 · la mesa trabaja por factura: documentos con estado y respaldo, las vetadas adentro y las causas en el deudor", () => {
+test("53 · la mesa va por operación → deudor → factura: estado y respaldo por documento, las vetadas adentro y las dos decisiones por el panel lateral", () => {
   assert.deepEqual(auditarRegla53(jsx), []);
 });
 
@@ -98,11 +122,11 @@ const MUTANTES = {
     re: /no entra por parámetro/,
   },
   "marcar deja de refrescar la mesa": {
-    src: jsx.replace(`  const marcarDoc = async (f, doc, est) => {
-    if (onMarcarFactura) await onMarcarFactura(f, doc, est);
+    src: jsx.replace(`  const marcarDoc = async (f, doc, est, llamada) => {
+    if (onMarcarFactura) await onMarcarFactura(f, doc, est, llamada);
     force((v) => v + 1);
-  };`, `  const marcarDoc = async (f, doc, est) => {
-    if (onMarcarFactura) await onMarcarFactura(f, doc, est);
+  };`, `  const marcarDoc = async (f, doc, est, llamada) => {
+    if (onMarcarFactura) await onMarcarFactura(f, doc, est, llamada);
   };`),
     re: /`marcarDoc` no mueve el tick/,
   },
@@ -115,12 +139,28 @@ const MUTANTES = {
   };`),
     re: /`guardarResp` no mueve el tick/,
   },
-  "retirar un documento sin confirmación": {
-    src: jsx.replace('onClick={() => setConfirmDoc({ fila: f, doc })}', 'onClick={() => marcarDoc(f, doc, "no_verificada")}'),
-    re: /no pasa por confirmación/,
+  "«No verificar» deja de abrir el panel": {
+    src: jsx.replace('onClick={() => setPanel({ fila: f, docs, modo: "no_verificar" })}', 'onClick={() => marcarDoc(f, docs[0], "no_verificada")}'),
+    re: /no abre el panel lateral/,
+  },
+  "un contador en cero vuelve a dibujarse": {
+    src: jsx.replace("      .filter((x) => x[2] > 0)", "      .filter(() => true)"),
+    re: /en CERO vuelve a dibujarse/,
+  },
+  "la mesa vuelve a listar deudores sueltos": {
+    src: jsx.replace("  const ops = useMemo(", "  const opsViejo = useMemo("),
+    re: /dejó de agrupar por operación/,
+  },
+  "la fila de causas se dibuja vacía": {
+    src: jsx.replace("                        {f.causas.length > 0 && (", "                        {true && ("),
+    re: /aunque no haya ninguna/,
+  },
+  "el respaldo del panel no baja al folio": {
+    src: jsx.replace("    for (const d of datos.docs || []) await guardarResp(f, d, respaldo);", "    await guardarResp(f, datos.docs[0], respaldo);"),
+    re: /no guarda el respaldo en cada documento/,
   },
   "el adjunto se guarda como un nombre suelto": {
-    src: jsx.replace("nombre: x.name, tipo: x.type || \"\", tam: x.size || 0", "nombre: x.name"),
+    src: jsx.replace("{ nombre: x.name, tipo: x.type || \"\", tam: x.size || 0 }", "x.name"),
     re: /no guarda la REFERENCIA del archivo/,
   },
   "la llamada del deudor vuelve a cubrirlo todo": {
