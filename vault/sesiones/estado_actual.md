@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-22T00:15:00Z
+timestamp: 2026-09-22T01:10:00Z
 ---
 
 # Estado actual
@@ -13,9 +13,9 @@ timestamp: 2026-09-22T00:15:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **153/153 PASA**, **41 archivos de gate de contrato**
+(`pipeline_comercial.jsx`), build standalone, **155/155 PASA**, **43 archivos de gate de contrato**
 (268 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su
-vault (77 reglas verbatim por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y
+vault (79 reglas verbatim por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y
 **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen gate. La crónica del 17 al 19-09
 vive en sus logs (reglas 32–40, ADR-0003 a 0006, y el **linter** en 0 como paso 0-bis).
 
@@ -34,7 +34,7 @@ y se repararon 63 — los logs y el ADR citan las rutas viejas **a propósito**,
 `conocimiento/mapa_documentos.md` las resuelve. Cada carpeta nueva trae `README.md` con el criterio de qué entra. Y
 dos defectos que el usuario vio en pantalla (152, 153): la **identidad de la sesión es una sola** (47 — el
 selector de la demo no tocaba `SESION`, así que la mesa le negaba marcar a la Ejecutiva de verificación) y
-el **atajo del otorgamiento no se salta el visado** (48 — OTG-02 declarado y no obedecido). Y tres defectos que venían de `main`: **el paso 0 estaba en rojo** (dos líneas partidas a mano tras
+el **atajo del otorgamiento no se salta el visado** (48 — OTG-02 declarado y no obedecido). El **22-09**, la **mesa de verificación trabaja por FACTURA** agrupada por deudor, con marcar, adjuntar y anotar por documento (49, 154), y el color del badge dice si el pendiente ya se exige o todavía es pronóstico (50, 155). Y tres defectos que venían de `main`: **el paso 0 estaba en rojo** (dos líneas partidas a mano tras
 formatear) y `CLAUDE.md`, `README.md` y `.claude/rules/testing.md` habían perdido un salto de línea, con lo
 que el bloque canónico de verificación mostraba ocho pasos y no nueve. Los tres cerrados.
 
@@ -54,7 +54,7 @@ quedaron declarativas y su `hint` lo dice.
 >    probada) · 3. **Regenerar `Capturas_UI/`**, desfasadas desde el padrón real (deuda 2) · 4. **Motor O01**
 >    (el hueco débil de la regla 8) · 5. **Regla 28** y **13-quater**, de negocio · 6. Sacar `pipeline.zip`.
 
-## En vuelo ahora · nada: la rama queda VERDE ENTERA (6/6 pasos)
+## En vuelo ahora · `claude/migrate-project-session-vui9dl`: la mesa por factura (49) y el color del badge (50)
 
 ## Bloqueos · los dos son del usuario, desde Windows
 
@@ -77,4 +77,4 @@ El proxy git deniega `refs/tags/*` y el borrado de ramas (HTTP 403, política; s
 ## Conocimiento clave
 
 [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto, en [`vault/index.md`](../index.md)
-Últimas: [identidad y atajo](./2026-09-21_identidad_y_atajo_otorgamiento.md) · [ordenar la carpeta](./2026-09-21_ordenar_la_carpeta.md) · [mensajería](./2026-09-21_spec_mensajeria.md) · [las tres casuísticas del elenco](./2026-09-20_las_tres_casuisticas_del_elenco.md) · [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md) · [las líneas son un insumo](./2026-09-20_las_lineas_son_un_insumo.md)
+Últimas: [mesa por factura](./2026-09-22_mesa_por_factura_y_badges.md) · [identidad y atajo](./2026-09-21_identidad_y_atajo_otorgamiento.md) · [ordenar la carpeta](./2026-09-21_ordenar_la_carpeta.md) · [mensajería](./2026-09-21_spec_mensajeria.md) · [las tres casuísticas del elenco](./2026-09-20_las_tres_casuisticas_del_elenco.md) · [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md) · [las líneas son un insumo](./2026-09-20_las_lineas_son_un_insumo.md)
