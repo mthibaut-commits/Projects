@@ -11,7 +11,7 @@ código y **por qué** difieren, que casi siempre es una decisión de negocio po
 
 Tres orígenes distintos, y conviene no mezclarlos:
 
-1. **Decisiones del 11-09-2026** que cerraron la auditoría `Inconsistencias_Motor_Otorgamiento.md`
+1. **Decisiones del 11-09-2026** que cerraron la auditoría `Regresiones/Inconsistencias_Motor_Otorgamiento.md`
    (INC-01 a INC-07). El PDF describe el modelo anterior porque es anterior a esas decisiones.
 2. **Una versión más nueva del predictor de verificación** que ya existe en el repo como
    `Specs_Procesos/Verificacion/spec-verificacion-facturas.md` y que el PDF v1.1 no incorporó. Ahí el `.md` es la
