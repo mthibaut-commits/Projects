@@ -28,3 +28,9 @@ originales de política del cliente: ésos no se regeneran, son la entrada.
    lo que se va es el relato de que antes estaba mal.
 2. **Lo que el documento afirma del código se verifica contra el código**, afirmación por afirmación, antes
    de entregarlo. Qué está medido y qué es decisión abierta se dice con esas palabras.
+3. **La evidencia es la DEFINICIÓN, nunca la línea de código** (22-09-2026, decisión del usuario). Un spec
+   cita la regla del vault por su número, la sección del spec que la desarrolla, o la **condición** del
+   fuente por su nombre —el predicado o la función que la encarna, `ofertaPublicada` = «cerrada **y**
+   comunicada»—. Una cita `l.NNNNN` vale para el fuente de un día: el primer commit que agregue una línea
+   más arriba la corre, sin que la condición haya cambiado. El fuente es un solo archivo de ~51.000
+   líneas, así que eso pasa en cada commit.
