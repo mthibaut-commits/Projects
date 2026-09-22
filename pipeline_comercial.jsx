@@ -621,6 +621,8 @@ const SCHEMA_VERSION = {
   curse: 3, // payload de curse por negocio (v3: OTP con SHA-256 + sal; v2 usaba un hash de 32 bits)
   snapshot: 1, // snapshots de deal/operación para abrir en otra pestaña
   syslog: 1, // log técnico persistido entre sesiones
+  tenants: 1, // catálogo de FACTORINGS de la plataforma (no lleva sufijo de tenant: es la lista de todos)
+  usuariosTenant: 1, // usuarios dados de alta desde Configuración › Tenants (por tenant)
 };
 
 // ── Contratos de datos externos ─────────────────────────────────────────────────────────────────
@@ -1394,6 +1396,7 @@ const USERS = {
   OP: "Andrés Mella · Operaciones",
   JO: "Ignacio Peña · Jefe de Operaciones",
   EV: "Camila Soto · Ejecutivo de verificación",
+  IB: "Tomás Alcaíno · Ejecutivo de Inbound",
   ADMIN: "Super Administrador (ve todo)",
 };
 // EL NOMBRE DEL EJECUTIVO DE UNA OPERACIÓN. «Agente IA» es una respuesta legítima sólo cuando la
@@ -4450,7 +4453,41 @@ function borrarReglas() {
 // y estos mismos campos viajarían en la query `configuracionOperativa(tenantId)`. Aquí se persiste en
 // localStorage con idéntica forma para que el reemplazo por la API sea directo.
 // ============================================================
-const TENANTS = [{ id: "security", nombre: "Factoring Security", rut: "96.684.990-8", activo: true }];
+// EL CATÁLOGO DE FACTORINGS ES DE LA PLATAFORMA, NO DE UN TENANT (21-09-2026, pedido del usuario:
+// «un menú Tenant en donde se cree el Tenant de Security y/o otro cliente»). Por eso su clave NO lleva
+// sufijo: `pc_roles_security` es «los roles DE Security», pero la lista de factorings es una sola para
+// toda la instalación —guardarla por tenant sería que cada uno tenga su propia idea de quién existe—.
+// En producción esto es la tabla `tenant` y el alta la hace la plataforma, no el factoring.
+const TENANTS_KEY = "nex_tenants";
+const TENANTS_BASE = [{ id: "security", nombre: "Factoring Security", rut: "96.684.990-8", activo: true }];
+// Misma higiene que roles, áreas y etapas: el storage lo edita el usuario a mano, así que sólo entra lo
+// que tiene la forma declarada. Un tenant sin id válido no es «un tenant raro»: es un id que después
+// compone claves de storage (`pc_roles_<id>`), así que se descarta entero.
+function cargarTenants() {
+  const guardado = leerVersionado(TENANTS_KEY, "tenants", null);
+  if (!Array.isArray(guardado)) return TENANTS_BASE.map((t) => ({ ...t }));
+  const vistos = new Set();
+  const out = [];
+  let ignorados = 0;
+  for (const t of guardado) {
+    const id = t && typeof t.id === "string" ? t.id.trim().toLowerCase() : "";
+    const nombre = t && typeof t.nombre === "string" ? t.nombre.trim().slice(0, 60) : "";
+    if (!/^[a-z][a-z0-9_-]{1,23}$/.test(id) || !nombre || vistos.has(id)) {
+      ignorados++;
+      continue;
+    }
+    vistos.add(id);
+    out.push({ id, nombre, rut: (t.rut || "").toString().slice(0, 15), activo: t.activo !== false });
+  }
+  // El tenant base no se pierde nunca: es el que la demo arranca y el que resuelve el fallback.
+  for (const b of TENANTS_BASE) if (!vistos.has(b.id)) out.unshift({ ...b });
+  if (ignorados) logSys("warn", "app", `Tenants: ${ignorados} entrada(s) del storage ignoradas (id o nombre inválido)`);
+  return out;
+}
+let TENANTS = cargarTenants();
+function guardarTenants() {
+  escribirVersionado(TENANTS_KEY, "tenants", TENANTS);
+}
 // ── Resolución del TENANT (SEGURIDAD / CDN) ─────────────────────────────────────────────────────
 // El tenant NO puede estar escrito en el bundle. La app va a ser un asset estático servido por CDN,
 // el MISMO archivo para todos los factorings: si el id del tenant viene compilado adentro, o hay un
@@ -12817,11 +12854,6 @@ function DealDrawer({
                 // Otorgamientos, que vive en la pestaña del tubo, seguía mostrando cero al aprobador y
                 // el «Ir a aprobar» lo dejaba en una bandeja vacía. Es el mismo agujero que tenía el
                 // aviso de simulación al tubo, y se cierra igual: postMessage al opener.
-                const avisarOpenerPreEval = (encendida) => {
-                  try {
-                    if (window.opener) window.opener.postMessage({ type: "nex-preeval", dealId: deal.id, on: encendida, por: usuario }, ORIGEN_APP);
-                  } catch (_) {}
-                };
                 // Envío explícito al proceso de excepción. Si hay excepciones pendientes sin comentario/respaldo
                 // del ejecutivo, primero se advierte con un diálogo (puede enviar igual tras el warning).
                 const enviarPreEval = () => {
@@ -12834,14 +12866,12 @@ function DealDrawer({
                     .forEach((it) => solicitarAprobacionExc(deal, it, usuario, "", []));
                   setPreEval(deal.id, usuario, true);
                   avisarPreEval(deal, usuario);
-                  avisarOpenerPreEval(true);
                   setPreEvalWarn(null);
                   setReevTick((x) => x + 1);
                 };
                 const onClickPreEval = () => {
                   if (on) {
                     setPreEval(deal.id, usuario, false);
-                    avisarOpenerPreEval(false);
                     setReevTick((x) => x + 1);
                     return;
                   } // cancelar
@@ -23231,6 +23261,14 @@ function aprobacionFormalCliente(deal) {
 // ninguna causa era autorizable desde la UI.
 // Lo que LIBERA EL GIRO. Por eso el estado entra por parámetro: en producción esta decisión la toma
 // el resolver con el visado que tiene la base, no con el que el navegador haya cacheado.
+// EL PAQUETE TAL COMO QUEDA AL FIRMAR, en un solo sitio. Lo preguntan DOS: el updater de
+// `confirmarCierre`, que lo guarda, y el aviso a los aprobadores, que se arma FUERA del updater
+// —`setDeals(fn)` no ejecuta `fn` en el acto y un envío ahí adentro se repetiría en cada render—.
+// Dos copias de esta expresión se desfasan sin que nada lo diga: es el patrón de VER-01, dos cómputos
+// del mismo hecho que se separan. El `monto` va aparte porque el curse puede recortar el paquete
+// (`opts.montoValido`) y lo que se evalúa es lo FIRMADO, no lo ofertado.
+const montoFirmado = (deal, opts) => (opts && opts.montoValido != null ? opts.montoValido : deal && deal.monto);
+const dealFirmado = (deal, monto) => ({ ...deal, monto, stage: "cesion", clienteAcepto: true, reabierta: undefined });
 // ¿A QUÉ ETAPA VA UNA OPERACIÓN CUANDO EL CLIENTE FIRMA? Firmar es del CLIENTE; girar es de la casa,
 // y sólo después de que sus controles pasen. La decisión vive acá y no dentro del handler porque es
 // exactamente el tipo de cosa que en producción resuelve el servidor: entra el estado de las tres
@@ -23679,6 +23717,34 @@ function crearRepo(nombre) {
     // Lecturas (cache local)
     get: (id) => tabla()[id],
     all: (t) => tabla(t),
+    // RELEER EL STORAGE. `datos` se carga UNA vez al montar el módulo, así que una pestaña que ya
+    // estaba abierta no ve lo que otra escribió: el storage sirve para sobrevivir a cerrar la
+    // pestaña, no para enterarse en vivo. Eso lo avisa el postMessage, y esto es lo que aplica el
+    // aviso.
+    //
+    // SE RELLENA LA TABLA DEL TENANT, NO SE REEMPLAZA, y no es un detalle: los alias
+    // (`VISADO_STATE`, `SOLICITUD_EXC`, `PRE_EVAL`…) apuntan a ESE objeto, no a `datos`. La primera
+    // versión de esto vaciaba `datos` y lo rellenaba, con lo que `datos[tenant]` pasaba a ser un
+    // objeto NUEVO y los alias quedaban leyendo la tabla vieja: escribir por el repo dejaba ciego al
+    // alias y al revés. Lo cazó el caso 153, en la aserción de que los dos son la MISMA tabla —es la
+    // misma familia del `_cacheCli` que se daba por construido estando vacío—.
+    recargar() {
+      let v = {};
+      try {
+        v = JSON.parse(localStorage.getItem(KEY) || "{}") || {};
+      } catch (_) {
+        v = {};
+      }
+      if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+      for (const t of Object.keys(datos)) {
+        const dest = datos[t],
+          src = (v[t] && typeof v[t] === "object" && v[t]) || {};
+        for (const k of Object.keys(dest)) delete dest[k];
+        Object.assign(dest, src);
+      }
+      for (const t of Object.keys(v)) if (!datos[t]) datos[t] = v[t];
+      return true;
+    },
     // Escrituras (optimistas; la promesa es la confirmación del servidor)
     set(id, valor) {
       const v = gate("set", id, valor);
@@ -23742,6 +23808,16 @@ const repoVisadoDetalle = crearRepo("otorgamiento_visado_detalle");
 const repoSolicitudExc = crearRepo("solicitud_excepcion");
 const repoVerifExc = crearRepo("verificacion_excepcion");
 const repoOtorgEventos = crearRepo("otorgamiento_evento");
+// LA PRE-EVALUACIÓN ES ESTADO DEL OTORGAMIENTO, NO DE UNA PESTAÑA (21-09-2026, regla 51). Era un
+// `let PRE_EVAL = {}` de módulo, y `excEnBandeja` la consulta para decidir si una operación se puede
+// VISAR: con el detalle en pestaña propia, el ejecutivo solicitaba la aprobación allá y el aprobador
+// —en la pestaña del tubo, que es donde vive la mesa— seguía viendo la bandeja en cero. Mismo trato
+// que el visado y las solicitudes de excepción, que ya eran repositorio.
+const repoPreEval = crearRepo("otorgamiento_preeval");
+// LOS HILOS DE LA MENSAJERÍA, por el mismo motivo: `HILOS` era un array de módulo, así que todo lo
+// que se escribía desde el detalle —la solicitud de aprobación, el requerimiento de información— no
+// llegaba nunca al Centro de mensajería, que se pinta en la pestaña del tubo.
+const repoHilos = crearRepo("mensajeria_hilo");
 // SIM_VERSIONS se declara más arriba (lo usan varias funciones antes de este punto); acá se reapunta a
 // su repositorio. Es el histórico versionado de la decisión de riesgo: hoy se pierde al recargar, y en
 // producción tiene que ser una tabla inmutable con snapshot jsonb.
@@ -24067,6 +24143,15 @@ let VERIF_RESPALDO = repoVerifRespaldo.all(); // { [dealId]: { [facturaId]: { no
 let VERIF_VEREDICTO = repoVerifVeredicto.all(); // { [dealId]: { [rutOdeudor]: { est, motivo, razon, causas, por, fecha } } }
 // Reapunta los alias a la tabla del tenant activo. Se llama al cambiar de tenant; con un solo tenant
 // (Security) hoy no se ejecuta, pero deja explícito qué hay que hacer cuando entre el segundo factoring.
+// RELEER EL ESTADO DEL OTORGAMIENTO QUE ESCRIBIÓ OTRA PESTAÑA (regla 51). Los repositorios cargan el
+// storage UNA vez al montar el módulo: el detalle escribe el visado, la solicitud de excepción y la
+// pre-evaluación, y la pestaña del tubo —donde vive la mesa de Otorgamientos— sigue mostrando lo que
+// leyó al abrirse. Se releen los del otorgamiento y se invalida el visado memoizado, que es lo que
+// decide qué excepciones quedan pendientes.
+function refrescarEstadoOtorgamiento() {
+  for (const r of [repoVisado, repoVisadoDetalle, repoSolicitudExc, repoPreEval, repoOtorgEventos, repoHilos]) r.recargar();
+  reapuntarRepos();
+}
 function reapuntarRepos() {
   VISADO_STATE = repoVisado.all();
   VISADO_DETALLE = repoVisadoDetalle.all();
@@ -24078,6 +24163,8 @@ function reapuntarRepos() {
   VERIF_VEREDICTO = repoVerifVeredicto.all();
   OTORG_EVENTOS = repoOtorgEventos.all();
   SIM_VERSIONS = repoSimVersions.all();
+  PRE_EVAL = repoPreEval.all();
+  HILOS = repoHilos.get("lista") || [];
   invalidarVisado();
 }
 // ── PERMISOS DE LA SESIÓN (UX ONLY — la autorización real es del servidor) ──────────────────────
@@ -24169,6 +24256,11 @@ const ROLES_CAT = [
   // cargo que falta, no tocar código. O05 (comprobante del contrato físico) es el primero que lo pide.
   { id: "jefe_operaciones", label: "Jefe de Operaciones", area: "operaciones" },
   { id: "ejec_verif", label: "Ejecutivo de verificación", area: "verificacion" },
+  // INBOUND (21-09-2026, pedido del usuario). Su trabajo es la bandeja de facturas SIN CLASIFICAR:
+  // las empresas que el stream trae y que no son de la cartera de nadie. Existía el trabajo y no el
+  // rol —lo hacía la jefatura de paso—, así que no había a quién asignárselo ni cómo distinguir
+  // «nadie lo está mirando» de «lo está mirando quien corresponde».
+  { id: "inbound", label: "Ejecutivo de Inbound", area: "comercial" },
   { id: "admin", label: "Super administrador", area: "*" },
 ];
 // ── ÁREAS DEL TENANT ─────────────────────────────────────────────────────────────────────
@@ -24304,8 +24396,15 @@ function cargoDeAreaNivel(area, nivel, pad) {
 function rolDeAreaNivel(area, nivel, padron) {
   return cargoDeAreaNivel(area, nivel, padron || padronAprobadores());
 }
+// EL SUPER-ADMIN ES UN ROL, NO UN CÓDIGO (21-09-2026, hallazgo al dar de alta usuarios desde
+// `Configuración › Tenants`). Esta función decía «la atribución sigue al ROL» y sin embargo resolvía
+// el super-admin por el código literal `"ADMIN"`, que es el del elenco de la demo. Medido: un usuario
+// creado con rol `admin` salía con atribución VACÍA y no entraba al padrón —o sea, el administrador
+// del tenant nuevo no podía aprobar nada, que es justo para lo que se lo crea—. `ROL_ATRIB` no lo
+// declara a propósito: cubre las tres áreas en el nivel máximo y no un par (área, nivel).
+const esRolAdmin = (code) => ROL_USUARIO[code] === "admin" || code === "ADMIN";
 function atribDeRol(code) {
-  if (code === "ADMIN") return { riesgo: 5, comercial: 5, operaciones: 5 };
+  if (esRolAdmin(code)) return { riesgo: 5, comercial: 5, operaciones: 5 };
   const a = ROL_ATRIB[ROL_USUARIO[code]];
   return a ? { [a.area]: a.nivel } : {};
 }
@@ -24325,6 +24424,7 @@ const ROLES_DEFAULT = {
   OP: "operaciones",
   JO: "jefe_operaciones",
   EV: "ejec_verif",
+  IB: "inbound",
   ADMIN: "admin",
 };
 const ROLES_KEY = "pc_roles_" + TENANT_ACTUAL;
@@ -24346,6 +24446,77 @@ function cargarRoles() {
   }
   if (ignoradas) logSys("warn", "app", `Roles: ${ignoradas} entrada(s) del storage ignoradas (usuario o rol desconocido)`, { tenant: TENANT_ACTUAL });
   return base;
+}
+// ── USUARIOS DADOS DE ALTA DESDE CONFIGURACIÓN (por tenant) ─────────────────────────────────────
+// `USERS` es el elenco que trae la demo. Un tenant nuevo no tiene ninguno, y alguien tiene que poder
+// entrar a crear al resto: ése es el ADMIN, y se da de alta en `Configuración › Tenants` (regla 52).
+//
+// Se hidrata ACÁ y no más arriba porque necesita el catálogo de roles (`ROL_POR_ID`) para validar, y
+// tiene que correr ANTES de `cargarRoles()`: esa función IGNORA todo código que no esté en `USERS`,
+// así que un usuario creado ayer perdería su rol al recargar si entrara después.
+const USUARIOS_KEY = "pc_usuarios_" + TENANT_ACTUAL;
+// El email es la CREDENCIAL, así que el alta exige uno y no se repite: dos personas con el mismo
+// correo son la misma sesión. El código es la identidad interna (lo guardan `deal.exec`, la auditoría
+// y los hilos) y por eso se deriva del nombre y se deja fijo — renombrar a alguien no lo convierte en
+// otro. `atribDe` lo ignora si no figura en `ATRIB_USUARIO`, así que un usuario sin atribución es un
+// usuario de pipeline: existe, entra, y no aprueba nada hasta que su ROL diga lo contrario.
+let USUARIOS_TENANT = [];
+function cargarUsuariosTenant() {
+  const guardado = leerVersionado(USUARIOS_KEY, "usuariosTenant", null);
+  if (!Array.isArray(guardado)) return [];
+  const vistos = new Set(),
+    correos = new Set();
+  const out = [];
+  let ignoradas = 0;
+  for (const u of guardado) {
+    const code = u && typeof u.code === "string" ? u.code.trim().toUpperCase() : "";
+    const nombre = u && typeof u.nombre === "string" ? u.nombre.trim().slice(0, 60) : "";
+    const email = u && typeof u.email === "string" ? u.email.trim().toLowerCase().slice(0, 80) : "";
+    const rol = u && typeof u.rol === "string" ? u.rol : "";
+    if (
+      !/^[A-Z][A-Z0-9]{1,7}$/.test(code) ||
+      !nombre ||
+      !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) ||
+      !ROL_POR_ID[rol] ||
+      vistos.has(code) ||
+      correos.has(email)
+    ) {
+      ignoradas++;
+      continue;
+    }
+    vistos.add(code);
+    correos.add(email);
+    out.push({ code, nombre, email, rol });
+  }
+  if (ignoradas)
+    logSys("warn", "app", `Usuarios del tenant: ${ignoradas} entrada(s) del storage ignoradas (código, correo o rol inválido)`, { tenant: TENANT_ACTUAL });
+  return out;
+}
+// Los mete en los catálogos que el resto del código ya consulta. Es lo que hace que un usuario creado
+// aparezca en el selector de sesión, en `Configuración › Usuarios` y en el padrón de aprobadores sin
+// que ninguno de esos sitios sepa que existe un alta.
+function montarUsuariosTenant() {
+  for (const u of USUARIOS_TENANT) {
+    USERS[u.code] = u.nombre;
+    ROLES_DEFAULT[u.code] = u.rol;
+    const atrib = atribDeRol2(u.rol);
+    // Sólo entra a `ATRIB_USUARIO` quien su ROL hace aprobador: `atribDe` devuelve atribución vacía a
+    // quien no figure, y dar de alta el cargo sin dar de alta a quien lo ocupa es justo lo que deja un
+    // (área, nivel) con nombre y sin nadie que lo firme (regla 18).
+    if (Object.keys(atrib).length) ATRIB_USUARIO[u.code] = { tipo: "aprobador", atrib };
+  }
+}
+// El nivel y el área que implica un rol, sin pasar por `atribDeRol`, que resuelve por CÓDIGO y todavía
+// no conoce a este usuario. Es la misma tabla: `ROL_ATRIB`.
+function atribDeRol2(rolId) {
+  if (rolId === "admin") return { riesgo: 5, comercial: 5, operaciones: 5 };
+  const a = ROL_ATRIB[rolId];
+  return a ? { [a.area]: a.nivel } : {};
+}
+USUARIOS_TENANT = cargarUsuariosTenant();
+montarUsuariosTenant();
+function guardarUsuariosTenant() {
+  escribirVersionado(USUARIOS_KEY, "usuariosTenant", USUARIOS_TENANT);
 }
 let ROL_USUARIO = cargarRoles();
 function guardarRoles() {
@@ -24485,7 +24656,7 @@ function padronAprobadores(hoy, reemplazos) {
     rol: rolLabel(code),
     etiqueta: USERS[code] || nombreDe(code),
     atrib: atribDe(code).atrib,
-    superAdmin: code === "ADMIN",
+    superAdmin: esRolAdmin(code),
   }));
   // REEMPLAZOS VIGENTES. Quien cubre a alguien suma sus atribuciones, tomando el MAYOR nivel por área:
   // si el reemplazante ya tenía Comercial N2 y el ausente tiene N1, quedarse con N2 es lo correcto; si
@@ -24567,7 +24738,7 @@ const nombreDe = (code) => String(USERS[code] || code).split(" · ")[0];
 // una llamada y las operaciones se pegan en el giro. Quien la cubre la ejerce mientras dure el período,
 // y la bitácora lo deja escrito como reemplazante (`actorEtiqueta`).
 const puedeVerificarFacturas = (code, hoy, lista) => {
-  if (code === "ADMIN") return true;
+  if (esRolAdmin(code)) return true;
   // La delega quien está fuera…
   if (aQuienCubre(code, hoy, lista).some((r) => ROL_USUARIO[r.ausente] === "ejec_verif")) return true;
   if (ROL_USUARIO[code] !== "ejec_verif") return false;
@@ -24575,13 +24746,16 @@ const puedeVerificarFacturas = (code, hoy, lista) => {
   const cubierto = quienCubreA(code, hoy, lista);
   return !(cubierto && cubierto.ausenteAprueba === false);
 };
-const puedeExcepcionarVerif = (code) => code === "ADMIN" || CFG_EXC_VERIF[code] === true;
-const puedeVerBitacora = (code) => code === "ADMIN" || CFG_VER_BITACORA[code] === true;
-const puedeVerMensajeria = (code) => code === "ADMIN" || CFG_VER_MENSAJERIA[code] === true;
-const puedeVerCobranza = (code) => code === "ADMIN" || CFG_VER_COBRANZA[code] === true;
-const puedeVerPlanEjec = (code) => code === "ADMIN" || CFG_VER_PLANEJEC[code] === true;
-const puedeVerFunnel = (code) => code === "ADMIN" || CFG_VER_FUNNEL[code] === true;
-const aprobMasivaHabilitada = (code) => code === "ADMIN" || CFG_APROB_MASIVA[code] !== false; // default: habilitada
+// Los siete permisos de VISIBILIDAD, todos con la misma forma: el administrador ve todo y el resto
+// depende de su fila en `PERMISOS`. Van por `esRolAdmin` y no por el código literal, por lo mismo que
+// `atribDeRol`: el administrador de un tenant recién creado no se llama «ADMIN».
+const puedeExcepcionarVerif = (code) => esRolAdmin(code) || CFG_EXC_VERIF[code] === true;
+const puedeVerBitacora = (code) => esRolAdmin(code) || CFG_VER_BITACORA[code] === true;
+const puedeVerMensajeria = (code) => esRolAdmin(code) || CFG_VER_MENSAJERIA[code] === true;
+const puedeVerCobranza = (code) => esRolAdmin(code) || CFG_VER_COBRANZA[code] === true;
+const puedeVerPlanEjec = (code) => esRolAdmin(code) || CFG_VER_PLANEJEC[code] === true;
+const puedeVerFunnel = (code) => esRolAdmin(code) || CFG_VER_FUNNEL[code] === true;
+const aprobMasivaHabilitada = (code) => esRolAdmin(code) || CFG_APROB_MASIVA[code] !== false; // default: habilitada
 // ── Eventos de otorgamiento por operación (para la bitácora). Se guardan con hora completa (nowStamp, con segundos).
 let OTORG_EVENTOS = repoOtorgEventos.all(); // { [dealId]: [{ fecha, canal:"Otorgamiento", actor, resultado, detalle, esEvento:true }] }
 // Bitácora append-only del otorgamiento. Devuelve la promesa de confirmación: hoy nadie la espera
@@ -24594,9 +24768,9 @@ function logOtorgEvento(dealId, actor, resultado, detalle) {
 // ejecutivo las priorice. { [dealId]: { por, porNombre, ts } }. Se conserva aunque la op se gane/pierda.
 let PRIORIDAD_CURSE = {};
 // ¿El usuario es jefatura o gerencia comercial (puede pedir/quitar prioridad)? Los ejecutivos no.
-const esJefeComercial = (code) => code === "ADMIN" || atribEfectiva(code).comercial != null;
+const esJefeComercial = (code) => esRolAdmin(code) || atribEfectiva(code).comercial != null;
 // Gerente Comercial (o superior): atribución comercial N2+ (autoriza descuentos sobre el máximo de jefatura).
-const esGerenteComercial = (code) => code === "ADMIN" || (atribEfectiva(code).comercial != null && atribEfectiva(code).comercial >= 2);
+const esGerenteComercial = (code) => esRolAdmin(code) || (atribEfectiva(code).comercial != null && atribEfectiva(code).comercial >= 2);
 // ATR-01 · ¿ESTE usuario puede autorizar ESTE descuento? El rol exigido sale del ESTADO de la atribución
 // (`requiereJefe` → jefatura, `requiereGerente` → Gerente Comercial) y la atribución sale del PADRÓN por
 // código, no de un prop: la pantalla puede venir de una sesión vieja, de un rol que cambió o de un
@@ -24637,10 +24811,23 @@ function estadoAtencionPrioridad(deal) {
 }
 // ── Pre-evaluación: el ejecutivo solicita iniciar formalmente la revisión de otorgamiento de una
 // oportunidad con altas chances de cursarse, para adelantar la aprobación antes de la aceptación formal.
-let PRE_EVAL = {};
-function setPreEval(dealId, code, on) {
-  if (on) PRE_EVAL[dealId] = { por: code, porNombre: USERS[code] || code, ts: nowStamp() };
-  else delete PRE_EVAL[dealId];
+let PRE_EVAL = repoPreEval.all();
+// EL AVISO A LA OTRA PESTAÑA, EN UN SOLO SITIO (regla 51). El storage hace que el estado sobreviva a
+// cerrar la pestaña; esto hace que la pestaña que YA está abierta se entere. Son dos cosas distintas y
+// hacen falta las dos: el aprobador tiene el tubo abierto mientras el ejecutivo trabaja en el detalle.
+// Vive a nivel de módulo porque lo llaman funciones que no son componentes (`setPreEval`,
+// `hiloEnviar`), y `window.opener` es null en el tubo, que es donde el aviso termina.
+function avisarOpener(mensaje) {
+  try {
+    if (window.opener) window.opener.postMessage(mensaje, ORIGEN_APP);
+  } catch (_) {}
+}
+// `difundir` en false es para el RECEPTOR del aviso: aplica lo que le contaron sin volver a contarlo.
+// Sin ese corte, dos pestañas que se tengan la una a la otra como opener se rebotan el mensaje.
+function setPreEval(dealId, code, on, difundir = true) {
+  if (on) repoPreEval.set(dealId, { por: code, porNombre: USERS[code] || code, ts: nowStamp() });
+  else repoPreEval.del(dealId);
+  if (difundir) avisarOpener({ type: "nex-preeval", dealId, on: !!on, por: code });
 }
 const tienePreEval = (dealId) => !!PRE_EVAL[dealId];
 // COMPUERTA ÚNICA de la aprobación de excepciones: sólo se puede visar cuando la operación está en la
@@ -24652,6 +24839,50 @@ const tienePreEval = (dealId) => !!PRE_EVAL[dealId];
 // nivel, y el botón lo llevaba a una mesa donde esa operación no aparece mientras cada fila de abajo
 // decía lo contrario. Es el mismo patrón que VER-01: dos cómputos del mismo hecho que se separan.
 const excEnBandeja = (deal) => !!deal && (["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage) || tienePreEval(deal.id));
+// A QUIÉN SE LE ESCRIBE. `aprobadoresExc` devuelve ETIQUETAS —sirve para pintar «Aprueban: …»— y la
+// mensajería necesita CÓDIGOS, que no es lo mismo: escribirle a una etiqueta no le llega a nadie. La
+// lista sale del PADRÓN y no de `ATRIB_USUARIO`, que es sólo quién existe: el padrón ya aplica los
+// reemplazos por vacaciones (regla 19), así que el que cubre a un ausente recibe el aviso mientras lo
+// cubre. El super-administrador queda fuera a propósito: puede firmar todo, así que estaría en cada
+// hilo del sistema y el badge de mensajes dejaría de significar algo.
+// Acepta las dos formas del ítem de excepción que circulan: la de `evaluarOtorgItems` (`x.regla`) y la
+// de `visadoDeal`, que aplana el área sobre el ítem. Una tercera copia de este bucle era lo que tenía
+// `avisarPreEval` escrito a mano, y miraba `ATRIB_USUARIO` — o sea, se saltaba los reemplazos.
+function codigosAprobadoresDe(excPend, padron) {
+  const pad = padron || padronAprobadores();
+  const codes = new Set();
+  (excPend || []).forEach((x) => {
+    const regla = (x && x.regla) || x;
+    pad.usuarios.forEach((u) => {
+      if (!u.superAdmin && puedeAprobarExc(u.code, regla, (x && x.nivel) || 4, pad)) codes.add(u.code);
+    });
+  });
+  return Array.from(codes);
+}
+// LOS TRAMOS (área, nivel) de un conjunto de excepciones pendientes, con cuántas hay en cada uno y
+// quién las firma. Es lo que un aviso tiene que decir para que el que lo lee sepa si le toca: «12
+// criterios» no le dice nada a nadie; «12 de Operaciones N4, las firma Andrés Mella» sí.
+function tramosDeExcepciones(excPend, padron) {
+  const pad = padron || padronAprobadores();
+  const porTramo = new Map();
+  (excPend || []).forEach((x) => {
+    const regla = (x && x.regla) || x;
+    const area = (regla && regla.area) || "";
+    const niv = (x && x.nivel) || 4;
+    const k = area + "|" + niv;
+    const g = porTramo.get(k) || { area, niv, n: 0, quienes: aprobadoresExc(regla, niv, pad) };
+    g.n++;
+    porTramo.set(k, g);
+  });
+  return Array.from(porTramo.values()).sort((a, b) => b.n - a.n || a.niv - b.niv);
+}
+// EL REMITENTE DE LO QUE NO ESCRIBE UNA PERSONA. El cierre del negocio lo gatilla la FIRMA DEL CLIENTE
+// en el portal de Factoring Security, no un clic de nadie en NEX. Mandar ese aviso «de parte» del
+// ejecutivo sería atribuirle un mensaje que no escribió y —peor— `hiloNoLeido` lo daría por leído para
+// él, que es justo a quien el usuario dijo que no le llega nada. Es el mismo actor que ya usa la
+// bitácora de auditoría para lo automático.
+const CODE_SISTEMA = "SIS";
+const NOMBRE_SISTEMA = "-- Sistema --";
 // El ejecutivo solicita la pre-evaluación: registra el evento en la bitácora (hora completa) y avisa por
 // la mensajería de la operación a los aprobadores involucrados (los responsables de las excepciones pendientes).
 function avisarPreEval(deal, execCode) {
@@ -24665,13 +24896,7 @@ function avisarPreEval(deal, execCode) {
     "",
   );
   if (!excPend.length) return;
-  const codes = new Set();
-  excPend.forEach((x) => {
-    Object.keys(ATRIB_USUARIO).forEach((k) => {
-      if (k !== "ADMIN" && USERS[k] && puedeAprobarExc(k, x.regla, x.nivel || 4)) codes.add(k);
-    });
-  });
-  const dests = Array.from(codes);
+  const dests = codigosAprobadoresDe(excPend);
   const asunto = `Pre-evaluación de otorgamiento · ${deal.id}`;
   const prev = hilosDeDeal(deal.id).find((h) => h.asunto === asunto);
   const h =
@@ -24685,6 +24910,60 @@ function avisarPreEval(deal, execCode) {
     `${USERS[execCode] || execCode} solicitó iniciar la PRE-EVALUACIÓN de otorgamiento de ${deal.cliente} (${deal.id}). Hay ${excPend.length} criterio(s) por excepcionar; por favor revisen y gestionen sus aprobaciones para adelantar el curse.`,
     null,
   );
+}
+// EL CIERRE DEL NEGOCIO AVISA A QUIEN TIENE QUE FIRMAR (21-09-2026, reportado por el usuario: «cuando
+// se cierra un negocio no se están enviando los mensajes a los responsables ni al ejecutivo que tienen
+// responsabilidad de aprobar»). Tenía razón y se midió: `confirmarCierre` —162 líneas, la firma del
+// cliente en el portal— no llamaba a `hiloEnviar` ni a `hiloNuevo` una sola vez.
+//
+// Por qué se notaba tan poco: de las DOS puertas a la mesa de otorgamiento sólo una avisaba. La
+// manual —el ejecutivo aprieta «Pre-evaluación»— llama a `avisarPreEval`, y la automática —el cliente
+// firma y «la bandeja de otorgamiento la toma sin que nadie la envíe»— no llamaba a nada. O sea que
+// justo el camino que NO tiene a nadie apretando un botón era el que no le escribía a nadie, y la
+// operación quedaba esperando una firma que sus firmantes no sabían que existía.
+//
+// Va acá, a nivel de módulo y no dentro del updater de React: `setDeals(fn)` no ejecuta `fn` en el
+// acto, así que un envío ahí adentro se repetiría en cada render del updater (StrictMode lo llama dos
+// veces) y mandaría el mismo aviso dos veces. Es el mismo motivo por el que `cerrarOferta` arma su
+// patch afuera.
+function avisarCierreNegocio(deal, excPend, pendVerif) {
+  if (!deal) return null;
+  const ejec = deal.exec && USERS[deal.exec] ? deal.exec : null;
+  const dests = codigosAprobadoresDe(excPend);
+  // Nada que firmar y nada que verificar: no hay aviso. Un mensaje «no tienes nada que hacer» en cada
+  // operación cursada vacía el badge de significado — y las operaciones que se cursan limpias son la
+  // mayoría.
+  if (!dests.length && !(excPend || []).length && !pendVerif) return null;
+  const asunto = `Cierre de negocio · ${deal.id}`;
+  const prev = hilosDeDeal(deal.id).find((h) => h.asunto === asunto);
+  const h =
+    prev ||
+    hiloNuevo({
+      tipo: "requerimiento",
+      dealId: deal.id,
+      cliente: deal.cliente,
+      asunto,
+      participantes: [ejec, ...dests],
+      creadoPor: CODE_SISTEMA,
+    });
+  [ejec, ...dests].forEach((c) => {
+    if (c && !h.participantes.includes(c)) h.participantes.push(c);
+  });
+  const neg = deal.negocioNum ? `N° ${deal.negocioNum}` : deal.id;
+  const tramos = tramosDeExcepciones(excPend);
+  const detalle = tramos.length
+    ? " Por firmar: " +
+      tramos.map((t) => `${t.n} de ${AREA_LBL[t.area] || t.area || "—"} N${t.niv} (${t.quienes.length ? t.quienes.join(", ") : SIN_APROBADOR})`).join(" · ") +
+      "."
+    : "";
+  const verif = pendVerif ? ` Quedan ${pendVerif} factura(s) esperando la verificación telefónica con el deudor.` : "";
+  const texto =
+    `${deal.cliente} firmó el negocio ${neg} (${deal.id}) por ${fmtMM(deal.monto)}: la operación entró a la mesa de otorgamiento.` +
+    ((excPend || []).length ? ` Hay ${excPend.length} criterio(s) por excepcionar antes de poder girar.${detalle}` : " No quedan criterios por excepcionar.") +
+    verif +
+    ` Ejecutivo a cargo: ${nombreEjec(deal.exec)}.`;
+  hiloEnviar(h, CODE_SISTEMA, texto, null);
+  return h;
 }
 // Excepciones de la operación PENDIENTES (no resueltas por un apoderado) que el ejecutivo AÚN no comentó
 // ni respaldó (sin SOLICITUD_EXC con comentario/archivo). Al pre-evaluar se advierte de estas "tareas".
@@ -24778,7 +25057,7 @@ function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinCome
     comentario || "",
   );
   // Apoderados hábiles para visar esta excepción → aviso + tarea.
-  const dests = Object.keys(ATRIB_USUARIO).filter((k) => k !== "ADMIN" && USERS[k] && puedeAprobarExc(k, x.regla, x.nivel || 4));
+  const dests = codigosAprobadoresDe([x]);
   const asunto = `Aprobación de excepciones · ${deal.id}`;
   const prev = hilosDeDeal(deal.id).find((h) => h.asunto === asunto);
   const h =
@@ -24826,7 +25105,16 @@ function faseOtorgDeal(deal) {
   return null;
 }
 // ── Mensajería interna: hilos de conversación entre usuarios, opcionalmente atados a una operación.
-let HILOS = []; // [{ id, tipo, dealId, cliente, reglaN, asunto, participantes:[codes], mensajes:[...], creadoPor, ts, leido:{} }]
+// LOS HILOS SON ESTADO DEL PROCESO, NO DE UNA PESTAÑA (21-09-2026, regla 51). Era un array de módulo,
+// así que todo lo que se escribía desde el DETALLE —la solicitud de aprobación de una excepción, el
+// requerimiento de información, el aviso del cierre— no llegaba nunca al Centro de mensajería, que se
+// pinta en la pestaña del tubo: el usuario lo reportó con la bandeja vacía a la vista. Ahora vive en
+// un repositorio (storage, sobrevive a cerrar la pestaña) y cada envío avisa al opener (la pestaña
+// abierta se entera). Guardar la lista COMPLETA bajo una clave y no un hilo por clave es lo que hace
+// que los `id` dejen de colisionar: se numeran con el largo de la lista, y dos pestañas que parten de
+// la misma lista numeran igual.
+let HILOS = repoHilos.get("lista") || []; // [{ id, tipo, dealId, cliente, reglaN, asunto, participantes:[codes], mensajes:[...], creadoPor, ts, leido:{} }]
+const guardarHilos = () => repoHilos.set("lista", HILOS);
 const MSG_TIPOS = {
   requerimiento: { l: "Requerimiento de información para otorgamiento", c: "#5B21D6", bg: "#F1ECFF" },
   general: { l: "Mensaje interno", c: "#0f766e", bg: "#f0fdfa" },
@@ -24847,17 +25135,23 @@ function hiloNuevo({ tipo, dealId, cliente, reglaN, asunto, participantes, cread
     estado: "abierto",
   };
   HILOS.push(h);
+  guardarHilos();
   return h;
 }
 function hiloUltimoTs(h) {
   return h.mensajes.length ? h.mensajes[h.mensajes.length - 1].ts : h.ts;
 }
+// EL NOMBRE DE QUIEN ESCRIBE EN UN HILO. Un solo resolutor porque el remitente puede no ser una
+// persona: `CODE_SISTEMA` no está en `USERS` —no es un login, no tiene atribución y no aparece en el
+// selector de sesión— y sin esto la mensajería mostraría «SIS» como autor y la bitácora registraría
+// «SIS» como usuario.
+const nombreEnHilo = (code) => USERS[code] || (code === CODE_SISTEMA ? NOMBRE_SISTEMA : code);
 function hiloEnviar(h, deCode, texto, arch, menciones) {
   if (!(texto || "").trim() && !arch) return;
   const men = (menciones || []).filter(Boolean);
   h.mensajes.push({
     de: deCode,
-    deNombre: USERS[deCode] || deCode,
+    deNombre: nombreEnHilo(deCode),
     texto: texto || "",
     arch: arch || null,
     menciones: men,
@@ -24865,24 +25159,33 @@ function hiloEnviar(h, deCode, texto, arch, menciones) {
     ts: Date.now(),
   });
   h.leido = { [deCode]: true }; // los demás participantes (incluidos los mencionados) quedan con "no leído"
-  if (!h.participantes.includes(deCode)) h.participantes.push(deCode);
+  // EL SISTEMA POSTEA, NO SE SUMA AL HILO. `participantes` son códigos de USUARIO: `hilosDeUsuario`
+  // filtra por ahí y las cinco pantallas que los listan los resuelven contra `USERS`. Meter a
+  // `CODE_SISTEMA` ahí pondría un «SIS» entre los nombres y un participante al que nadie puede
+  // iniciar sesión. El remitente sí queda en el mensaje (`de`/`deNombre`), que es donde corresponde.
+  if (deCode !== CODE_SISTEMA && !h.participantes.includes(deCode)) h.participantes.push(deCode);
   men.forEach((c) => {
     if (c && !h.participantes.includes(c)) h.participantes.push(c);
   }); // @mención → se suma al hilo
   if (typeof registrarAuditoria === "function")
     registrarAuditoria({
-      usuario: USERS[deCode] || deCode,
+      usuario: nombreEnHilo(deCode),
       modulo: "Mensajería interna",
       accion: "Mensaje enviado",
       glosa: `${h.cliente || ""}${h.dealId ? " · " + h.dealId : ""}${texto ? " · " + texto : ""}`.trim(),
       exito: true,
     });
+  // Storage para que sobreviva a cerrar la pestaña; aviso para que la que está abierta se entere.
+  guardarHilos();
+  avisarOpener({ type: "nex-hilo", hilo: h });
 }
 function hiloMarcarLeido(h, code) {
   h.leido = { ...(h.leido || {}), [code]: true };
+  guardarHilos();
 }
 function hiloTerminar(h, code) {
   h.estado = "terminado";
+  guardarHilos();
   if (typeof registrarAuditoria === "function")
     registrarAuditoria({
       usuario: USERS[code] || code,
@@ -24894,6 +25197,7 @@ function hiloTerminar(h, code) {
 }
 function hiloReabrir(h) {
   h.estado = "abierto";
+  guardarHilos();
 }
 function hiloMatch(h, q) {
   if (!q) return true;
@@ -24916,6 +25220,26 @@ function hilosNoLeidos(usuario) {
 }
 function hilosDeDeal(dealId) {
   return HILOS.filter((h) => h.dealId === dealId).sort((a, b) => hiloUltimoTs(b) - hiloUltimoTs(a));
+}
+// UN HILO QUE NACIÓ EN OTRA PESTAÑA. `HILOS` es memoria de CADA documento y el detalle es pestaña
+// propia —y sin campana: `soloDetalle` monta el `DealDrawer` y nada más—. El aviso del cierre se crea
+// donde el portal devolvió la firma, que es justo esa pestaña, así que sin este puente el mensaje
+// existía y no lo veía nadie. Mismo canal y misma forma que `nex-solicitud` (regla 15-bis-bis).
+// Se identifica por (operación, asunto) y NO por `h.id`, que se numera con el largo de la lista LOCAL
+// y por lo tanto colisiona entre pestañas: dos hilos distintos pueden ser los dos «H1001».
+function recibirHilo(hilo) {
+  if (!hilo || !hilo.asunto) return false;
+  const copia = {
+    ...hilo,
+    mensajes: [...(hilo.mensajes || [])],
+    participantes: [...(hilo.participantes || [])],
+    leido: { ...(hilo.leido || {}) },
+  };
+  const i = HILOS.findIndex((h) => h.dealId === hilo.dealId && h.asunto === hilo.asunto);
+  if (i >= 0) HILOS[i] = { ...copia, id: HILOS[i].id };
+  else HILOS.push({ ...copia, id: "H" + (HILOS.length + 1001) });
+  guardarHilos();
+  return true;
 }
 function notifSolic(usuario) {
   const noLeidos = hilosNoLeidos(usuario);
@@ -25204,10 +25528,48 @@ function VisadoClienteView({ deals, usuario, onChange }) {
         </button>
       </div>
       {ops.length === 0 && (
-        <div className="rounded-xl p-6 text-center t11" style={{ color: C.faint, backgroundColor: C.page, border: `1px solid ${C.line}` }}>
-          {soloMias
-            ? "No tienes operaciones con acciones pendientes. Quita “Sólo mis pendientes” para ver todas."
-            : "No hay operaciones en esta fase de otorgamiento."}
+        <div className="rounded-xl p-6 t11" style={{ color: C.faint, backgroundColor: C.page, border: `1px solid ${C.line}` }}>
+          {(() => {
+            // UNA BANDEJA VACÍA TIENE DOS CAUSAS DISTINTAS Y HAY QUE DECIR CUÁL (21-09-2026, reportado
+            // por el usuario: «en el menú otorgamiento, cuando cambias a uno de los aprobadores no se
+            // lista nada»). Medido: hay 180 excepciones pendientes, y sólo tres cargos las alcanzan
+            // —Gerente General las de comercial N3, Subgerente de Riesgo las de riesgo N5 y
+            // Operaciones las de operaciones N4—; los otros cuatro ven la bandeja vacía. El motor
+            // está bien: `puedeAprobarExc` exige nivel ≥ requerido DENTRO del área del criterio. Lo
+            // que estaba mal era el cartel: «No tienes operaciones con acciones pendientes» se lee
+            // como «no hay nada que hacer» cuando hay 180 cosas que hacer y ninguna es tuya.
+            const pendientes = opsAll.flatMap((o) => o.excPend);
+            if (!pendientes.length)
+              return <div className="text-center">No hay excepciones pendientes en esta fase de otorgamiento: nadie tiene nada que firmar.</div>;
+            if (!soloMias) return <div className="text-center">No hay operaciones en esta fase de otorgamiento.</div>;
+            // Agrupadas por (área, nivel), que es el par con el que se decide quién puede firmarlas.
+            // La misma función que arma el aviso del cierre (regla 50): si el cartel agrupara por su
+            // cuenta, los dos textos que explican lo mismo podrían decir cosas distintas.
+            const tramos = tramosDeExcepciones(pendientes);
+            const mia = atribEfectiva(usuario);
+            const miAtrib = Object.entries(mia)
+              .map(([a2, l]) => AREA_LBL[a2] + " N" + l)
+              .join(" · ");
+            return (
+              <>
+                <div className="t11 font-semibold" style={{ color: C.ink }}>
+                  Hay {pendientes.length} excepción(es) pendiente(s) en {opsAll.filter((o) => o.excPend.length).length} operación(es), pero ninguna requiere tu
+                  atribución{miAtrib ? ` (${miAtrib})` : " (no tienes atribución de otorgamiento)"}.
+                </div>
+                <ul className="mt-2 space-y-1">
+                  {tramos.map((t) => (
+                    <li key={t.area + t.niv} className="t10">
+                      <b style={{ color: C.ink }}>
+                        {t.n} en {AREA_LBL[t.area] || t.area} N{t.niv}
+                      </b>{" "}
+                      · las firma {t.quienes.length ? t.quienes.join(", ") : SIN_APROBADOR}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-2 t10">Quita «Sólo mis pendientes» para verlas igual, en sólo lectura.</div>
+              </>
+            );
+          })()}
         </div>
       )}
       {ops.map((o) => {
@@ -27005,7 +27367,7 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar, 
                 <div className="px-3">
                   <button
                     onClick={() => setAbierto((m) => ({ ...m, [f.id]: !abrir }))}
-                    className="flex w-full items-center gap-1.5 t10 uppercase tracking-wide"
+                    className="mt-2 flex w-full items-center gap-1.5 t10 uppercase tracking-wide"
                     style={{ color: C.faint }}
                   >
                     {f.causas.length === 1 ? "Causa que gatilló la verificación" : `${f.causas.length} causas que gatillaron la verificación`}
@@ -27081,10 +27443,10 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar, 
                               {doc.f.tipoDoc || "Factura electrónica"}
                             </span>
                             <span className="t10" style={{ color: C.sub }}>
-                              {doc.f.fchEmis || doc.f.emision || "—"}
+                              {fmtFechaDoc(fechasDocumento(doc.f).emision)}
                             </span>
                             <span className="t10" style={{ color: C.sub }}>
-                              {doc.f.fchVenc || doc.f.vencimiento || "—"}
+                              {fmtFechaDoc(fechasDocumento(doc.f).vencimiento)}
                             </span>
                             <span className="t11 text-right font-semibold" style={{ color: C.ink }}>
                               {fmtCLP(doc.f.monto || 0)}
@@ -33096,6 +33458,7 @@ function CfgCorreo() {
   );
 }
 const CFG_SECCIONES = [
+  { k: "tenants", label: "Tenants", Icon: LayoutGrid },
   { k: "operacion", label: "Operación", Icon: Clock },
   { k: "sistema", label: "Logs y versión", Icon: ShieldCheck },
   { k: "auditoria", label: "Auditoría", Icon: Eye },
@@ -34094,79 +34457,6 @@ function CfgFuncionalidades({ cfgOper, setCfgOper }) {
           Tenant: <b style={{ color: C.sub }}>{t.nombre}</b> · {t.rut}
         </div>
       </div>
-      {/* Marca del tenant: NEX es la plataforma, pero el ejecutivo ve la marca de SU factoring. */}
-      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-        <div className="t12 font-semibold" style={{ color: C.ink }}>
-          Marca
-        </div>
-        <div className="mt-0.5 mb-3 t11" style={{ color: C.faint }}>
-          Logotipo y colores que ve el ejecutivo en el login y la barra superior. NEX queda como plataforma en el «powered by».
-        </div>
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
-            <Marca variante={cfg.marcaLogo} />
-          </div>
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <span className="t11" style={{ color: C.sub, width: 74 }}>
-                Logotipo
-              </span>
-              {[
-                ["nex", "NEX"],
-                ["security", "Security"],
-              ].map(([k, l]) => (
-                <button
-                  key={k}
-                  onClick={() => set("marcaLogo", k)}
-                  className="rounded-full px-3 py-1 t11 font-semibold"
-                  style={{
-                    backgroundColor: cfg.marcaLogo === k ? C.lilac : "#fff",
-                    color: cfg.marcaLogo === k ? C.indigo : C.sub,
-                    border: `1px solid ${cfg.marcaLogo === k ? C.indigo : C.line}`,
-                  }}
-                >
-                  {l}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="t11" style={{ color: C.sub, width: 74 }}>
-                Nombre
-              </span>
-              <input
-                value={cfg.marcaNombre || ""}
-                onChange={(e) => set("marcaNombre", e.target.value)}
-                className="rounded-lg px-2.5 py-1 t11"
-                style={{ border: `1px solid ${C.line}`, color: C.ink, width: 200 }}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="t11" style={{ color: C.sub, width: 74 }}>
-                Acento
-              </span>
-              <input
-                type="color"
-                value={cfg.marcaPrimario || "#703EFF"}
-                onChange={(e) => set("marcaPrimario", e.target.value)}
-                style={{ width: 34, height: 24, border: `1px solid ${C.line}`, borderRadius: 6, background: "#fff" }}
-              />
-              <span className="t11" style={{ color: C.faint, fontVariantNumeric: "tabular-nums" }}>
-                {cfg.marcaPrimario}
-              </span>
-            </div>
-          </div>
-          <div className="flex-1" style={{ minWidth: 220 }}>
-            <div className="t11" style={{ color: C.sub }}>
-              Panel del login
-            </div>
-            <div className="mt-1 h-12 rounded-xl" style={{ background: cfg.marcaPanel }} />
-            <div className="mt-2 t11" style={{ color: C.sub }}>
-              Botón principal
-            </div>
-            <div className="mt-1 h-7 rounded-full" style={{ background: cfg.marcaCta }} />
-          </div>
-        </div>
-      </div>
       <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
         <div className="t12 font-semibold" style={{ color: C.ink }}>
           Detalle de la oportunidad · sub-tabs del Negocio
@@ -34712,6 +35002,358 @@ function CfgFactoringTarget() {
     </div>
   );
 }
+// Configuración › TENANTS. El alta de un factoring en la plataforma (21-09-2026, pedido del usuario:
+// «un menú Tenant en donde se cree el Tenant de Security y/o otro cliente; saca la configuración del
+// logo y de los colores y déjalos en ese menú; en ese menú también deberías poder crear al admin del
+// Tenant para que pueda ingresar y empezar a crear a los otros usuarios»). Regla 52.
+//
+// SON TRES COSAS EN UN ORDEN, y el orden es el punto: un tenant sin admin es una carpeta vacía —nadie
+// puede entrar a crear al resto— y por eso el alta del admin vive acá y no en `Configuración ›
+// Usuarios`, que asigna roles a gente que ya existe. La marca se mudó desde `Funcionalidades`, donde
+// estaba junto a los toggles de módulos: es identidad del tenant, no una funcionalidad suya.
+function CfgTenants({ cfgOper, setCfgOper }) {
+  const cfg = { ...CFG_ACTIVA, ...(cfgOper || {}) };
+  const set = (k, v) => setCfgOper({ ...(cfgOper || {}), [k]: v });
+  const [, force] = useState(0);
+  const [nuevoT, setNuevoT] = useState({ nombre: "", id: "", rut: "" });
+  const [errT, setErrT] = useState(null);
+  const [nuevoU, setNuevoU] = useState({ nombre: "", email: "", rol: "admin" });
+  const [errU, setErrU] = useState(null);
+  const [creado, setCreado] = useState(null);
+  const auditar = (accion, glosa) => {
+    const actor = (SESION && SESION.usuario) || "—";
+    registrarAuditoria({ usuario: USERS[actor] || actor, modulo: "Tenants", accion, glosa, severidad: "alta" });
+  };
+  const crearTenant = () => {
+    const nombre = nuevoT.nombre.trim();
+    const id = nuevoT.id.trim().toLowerCase();
+    if (!nombre) return setErrT("Ponle un nombre al factoring.");
+    if (!/^[a-z][a-z0-9_-]{1,23}$/.test(id))
+      return setErrT("El identificador va en minúsculas, sin espacios ni acentos, y parte con letra: compone las claves de su configuración.");
+    if (TENANTS.some((t) => t.id === id)) return setErrT(`Ya existe un tenant con el identificador «${id}».`);
+    TENANTS.push({ id, nombre: nombre.slice(0, 60), rut: nuevoT.rut.trim().slice(0, 15), activo: true });
+    guardarTenants();
+    auditar("Tenant creado", `${id} · ${nombre}`);
+    setNuevoT({ nombre: "", id: "", rut: "" });
+    setErrT(null);
+    force((v) => v + 1);
+  };
+  // EL CÓDIGO SE DERIVA DEL NOMBRE Y ES LA IDENTIDAD INTERNA: lo guardan `deal.exec`, la auditoría y
+  // los hilos, así que no puede cambiar cuando alguien se cambia el apellido. Dos iniciales, y si
+  // están tomadas se numera — nunca se reusa uno vivo, que sería atribuirle a alguien lo que hizo otro.
+  const codigoLibre = (nombre) => {
+    const partes = nombre.trim().toUpperCase().split(/\s+/).filter(Boolean);
+    const base = ((partes[0] || "X")[0] + ((partes[1] || partes[0] || "X")[0] || "X")).replace(/[^A-Z]/g, "X");
+    if (!USERS[base]) return base;
+    for (let i = 2; i < 100; i++) if (!USERS[base + i]) return base + i;
+    return base + Date.now().toString().slice(-4);
+  };
+  const crearUsuario = () => {
+    const nombre = nuevoU.nombre.trim();
+    const email = nuevoU.email.trim().toLowerCase();
+    if (!nombre) return setErrU("Ponle nombre y apellido.");
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return setErrU("El correo es la credencial con la que entra: tiene que ser uno válido.");
+    if (USUARIOS_TENANT.some((u) => u.email === email) || CUENTAS_DEMO[email])
+      return setErrU("Ese correo ya tiene una cuenta: dos personas con el mismo correo son la misma sesión.");
+    if (!ROL_POR_ID[nuevoU.rol]) return setErrU("Elige un rol del catálogo.");
+    const code = codigoLibre(nombre);
+    USUARIOS_TENANT.push({ code, nombre: nombre.slice(0, 60), email, rol: nuevoU.rol });
+    guardarUsuariosTenant();
+    montarUsuariosTenant();
+    ROL_USUARIO[code] = nuevoU.rol;
+    guardarRoles();
+    // El padrón no se invalida a mano: se valida por FIRMA, y la firma sale de `ROL_USUARIO`, que
+    // acaba de cambiar. Es justamente el diseño que evita «acordarse de invalidar».
+    auditar("Usuario creado", `${nombre} (${code}) · ${email} · ${ROL_POR_ID[nuevoU.rol].label}`);
+    setCreado({ code, nombre, email, rol: ROL_POR_ID[nuevoU.rol].label });
+    setNuevoU({ nombre: "", email: "", rol: "admin" });
+    setErrU(null);
+    force((v) => v + 1);
+  };
+  const tieneAdmin = (id) => id === TENANT_ACTUAL && (USUARIOS_TENANT.some((u) => u.rol === "admin") || Object.keys(USERS).includes("ADMIN"));
+  return (
+    <div className="grid gap-4">
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div className="text-lg font-semibold" style={{ color: C.ink }}>
+          Tenants
+        </div>
+        <div className="mt-0.5 t12" style={{ color: C.faint }}>
+          Los factorings que viven en esta instalación de NEX. La lista es de la <b>plataforma</b> y no de un tenant (
+          <code style={{ fontFamily: "ui-monospace,monospace" }}>{TENANTS_KEY}</code>): guardarla por tenant sería que cada uno tuviera su propia idea de quién
+          existe. El <b>identificador</b> compone las claves de toda su configuración —roles, áreas, etapas—, así que no se cambia después.
+        </div>
+        <table className="mt-3 w-full border-collapse t11">
+          <thead>
+            <tr>
+              {["Factoring", "Identificador", "RUT", "Estado"].map((h) => (
+                <th
+                  key={h}
+                  className="px-2 py-1 text-left t10 font-semibold uppercase tracking-wide"
+                  style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {TENANTS.map((t) => (
+              <tr key={t.id} style={{ borderBottom: `1px solid ${C.line}` }}>
+                <td className="px-2 py-1.5 font-medium" style={{ color: C.ink }}>
+                  {t.nombre}
+                  {t.id === TENANT_ACTUAL && (
+                    <span className="ml-2 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}>
+                      esta sesión
+                    </span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5 t10" style={{ color: C.faint, fontFamily: "ui-monospace,monospace" }}>
+                  {t.id}
+                </td>
+                <td className="px-2 py-1.5" style={{ color: C.sub }}>
+                  {t.rut || "—"}
+                </td>
+                <td className="px-2 py-1.5 t10" style={{ color: tieneAdmin(t.id) ? C.sub : "#C2410C" }}>
+                  {t.id === TENANT_ACTUAL ? (tieneAdmin(t.id) ? "con administrador" : "⚠ sin administrador") : "sin sesión acá"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="mt-4 rounded-xl p-3" style={{ backgroundColor: C.lilac, border: `1px solid ${C.line}` }}>
+          <div className="t11 font-semibold" style={{ color: C.ink }}>
+            Crear un factoring
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input
+              value={nuevoT.nombre}
+              onChange={(e) => {
+                setNuevoT((v) => ({ ...v, nombre: e.target.value }));
+                setErrT(null);
+              }}
+              placeholder="Nombre, p. ej. Factoring Security"
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 240 }}
+            />
+            <input
+              value={nuevoT.id}
+              onChange={(e) => {
+                setNuevoT((v) => ({ ...v, id: e.target.value }));
+                setErrT(null);
+              }}
+              placeholder="identificador, p. ej. security"
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 210, fontFamily: "ui-monospace,monospace" }}
+            />
+            <input
+              value={nuevoT.rut}
+              onChange={(e) => setNuevoT((v) => ({ ...v, rut: e.target.value }))}
+              placeholder="RUT"
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 130 }}
+            />
+            <button onClick={crearTenant} className="rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>
+              Crear
+            </button>
+          </div>
+          {errT && (
+            <div className="mt-1.5 t10 font-medium" style={{ color: C.red }}>
+              {errT}
+            </div>
+          )}
+          <div className="mt-1.5 t10" style={{ color: C.faint }}>
+            Un tenant nuevo arranca <b>vacío</b>: su configuración se crea la primera vez que alguien entra con su identificador. Lo siguiente es darle un{" "}
+            <b>administrador</b>, acá abajo, porque es quien va a crear al resto.
+          </div>
+        </div>
+      </div>
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div className="t12 font-semibold" style={{ color: C.ink }}>
+          Marca
+        </div>
+        <div className="mt-0.5 mb-3 t11" style={{ color: C.faint }}>
+          Logotipo y colores que ve el ejecutivo en el login y la barra superior. NEX queda como plataforma en el «powered by».
+        </div>
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
+            <Marca variante={cfg.marcaLogo} />
+          </div>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span className="t11" style={{ color: C.sub, width: 74 }}>
+                Logotipo
+              </span>
+              {[
+                ["nex", "NEX"],
+                ["security", "Security"],
+              ].map(([k, l]) => (
+                <button
+                  key={k}
+                  onClick={() => set("marcaLogo", k)}
+                  className="rounded-full px-3 py-1 t11 font-semibold"
+                  style={{
+                    backgroundColor: cfg.marcaLogo === k ? C.lilac : "#fff",
+                    color: cfg.marcaLogo === k ? C.indigo : C.sub,
+                    border: `1px solid ${cfg.marcaLogo === k ? C.indigo : C.line}`,
+                  }}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="t11" style={{ color: C.sub, width: 74 }}>
+                Nombre
+              </span>
+              <input
+                value={cfg.marcaNombre || ""}
+                onChange={(e) => set("marcaNombre", e.target.value)}
+                className="rounded-lg px-2.5 py-1 t11"
+                style={{ border: `1px solid ${C.line}`, color: C.ink, width: 200 }}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="t11" style={{ color: C.sub, width: 74 }}>
+                Acento
+              </span>
+              <input
+                type="color"
+                value={cfg.marcaPrimario || "#703EFF"}
+                onChange={(e) => set("marcaPrimario", e.target.value)}
+                style={{ width: 34, height: 24, border: `1px solid ${C.line}`, borderRadius: 6, background: "#fff" }}
+              />
+              <span className="t11" style={{ color: C.faint, fontVariantNumeric: "tabular-nums" }}>
+                {cfg.marcaPrimario}
+              </span>
+            </div>
+          </div>
+          <div className="flex-1" style={{ minWidth: 220 }}>
+            <div className="t11" style={{ color: C.sub }}>
+              Panel del login
+            </div>
+            <div className="mt-1 h-12 rounded-xl" style={{ background: cfg.marcaPanel }} />
+            <div className="mt-2 t11" style={{ color: C.sub }}>
+              Botón principal
+            </div>
+            <div className="mt-1 h-7 rounded-full" style={{ background: cfg.marcaCta }} />
+          </div>
+        </div>
+      </div>
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div className="t12 font-semibold" style={{ color: C.ink }}>
+          Administrador del tenant
+        </div>
+        <div className="mt-0.5 mb-3 t11" style={{ color: C.faint }}>
+          Un tenant sin administrador no lo puede usar nadie: es el que entra y da de alta al resto en <b>Configuración › Usuarios</b>. El{" "}
+          <b>correo es la credencial</b> y el <b>código</b> se deriva del nombre y queda fijo —lo guardan las operaciones, la auditoría y los mensajes, así que
+          renombrar a alguien no puede convertirlo en otro—.
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <div className="t10 mb-1" style={{ color: C.sub }}>
+              Nombre y apellido
+            </div>
+            <input
+              value={nuevoU.nombre}
+              onChange={(e) => {
+                setNuevoU((v) => ({ ...v, nombre: e.target.value }));
+                setErrU(null);
+              }}
+              placeholder="p. ej. Mauricio Thibaut"
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 230 }}
+            />
+          </div>
+          <div>
+            <div className="t10 mb-1" style={{ color: C.sub }}>
+              Correo (con el que entra)
+            </div>
+            <input
+              value={nuevoU.email}
+              onChange={(e) => {
+                setNuevoU((v) => ({ ...v, email: e.target.value }));
+                setErrU(null);
+              }}
+              placeholder="nombre@factoring.cl"
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 240 }}
+            />
+          </div>
+          <div>
+            <div className="t10 mb-1" style={{ color: C.sub }}>
+              Rol
+            </div>
+            <select
+              value={nuevoU.rol}
+              onChange={(e) => {
+                setNuevoU((v) => ({ ...v, rol: e.target.value }));
+                setErrU(null);
+              }}
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 220 }}
+            >
+              {ROLES_CAT.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button onClick={crearUsuario} className="rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>
+            Crear usuario
+          </button>
+        </div>
+        {errU && (
+          <div className="mt-1.5 t10 font-medium" style={{ color: C.red }}>
+            {errU}
+          </div>
+        )}
+        {creado && (
+          <div className="mt-2 rounded-xl p-3 t11" style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0", color: "#166534" }}>
+            <b>{creado.nombre}</b> quedó creado como <b>{creado.rol}</b>, código <code style={{ fontFamily: "ui-monospace,monospace" }}>{creado.code}</code>. Ya
+            puede entrar con <b>{creado.email}</b> y la clave de la demo. En producción acá sale la invitación por correo y la clave la pone él: una clave que
+            el administrador conoce no sirve como evidencia de quién firmó.
+          </div>
+        )}
+        {USUARIOS_TENANT.length > 0 && (
+          <table className="mt-3 w-full border-collapse t11">
+            <thead>
+              <tr>
+                {["Usuario", "Código", "Correo", "Rol"].map((h) => (
+                  <th
+                    key={h}
+                    className="px-2 py-1 text-left t10 font-semibold uppercase tracking-wide"
+                    style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {USUARIOS_TENANT.map((u) => (
+                <tr key={u.code} style={{ borderBottom: `1px solid ${C.line}` }}>
+                  <td className="px-2 py-1.5 font-medium" style={{ color: C.ink }}>
+                    {u.nombre}
+                  </td>
+                  <td className="px-2 py-1.5 t10" style={{ color: C.faint, fontFamily: "ui-monospace,monospace" }}>
+                    {u.code}
+                  </td>
+                  <td className="px-2 py-1.5" style={{ color: C.sub }}>
+                    {u.email}
+                  </td>
+                  <td className="px-2 py-1.5" style={{ color: C.sub }}>
+                    {(ROL_POR_ID[ROL_USUARIO[u.code] || u.rol] || {}).label || u.rol}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
 function CfgAreas() {
   const [, force] = useState(0);
   const [nueva, setNueva] = useState({ id: "", label: "" });
@@ -34721,10 +35363,6 @@ function CfgAreas() {
     const actor = (SESION && SESION.usuario) || "—";
     registrarAuditoria({ usuario: USERS[actor] || actor, modulo: "Áreas del tenant", accion, glosa, severidad: "alta" });
   };
-  const usuariosDe = (id) =>
-    Object.keys(USERS)
-      .filter((k) => k !== "ADMIN" && atribDe(k).atrib[id] != null)
-      .map((k) => `${nombreDe(k)} (N${atribDe(k).atrib[id]})`);
   const renombrar = (id, label) => {
     const a = AREAS_CAT.find((x) => x.id === id);
     if (!a || !label.trim()) return;
@@ -34768,12 +35406,13 @@ function CfgAreas() {
           <b>Usuarios</b> los que tienen esa área en ese nivel o superior.
         </div>
         {/* REGLA 35 · ACÁ ES DONDE SE DECLARAN LAS ÁREAS, así que acá tiene que verse cuáles criterios
-            quedaron sin destinatario. Son TRES causas y esta pantalla puede provocar dos: un criterio sin
-            área no rutea a ninguna parte —no aparece en NINGUNA fila de la tabla de abajo, y la suma de
-            «Criterios que rutean acá» deja de cuadrar con el catálogo—, y borrar acá un área que un
-            criterio declara, o dejarla sin nadie en el nivel que pide, lo deja igual de huérfano sin que
-            el catálogo de reglas haya cambiado una coma. Se listan uno por uno —no un contador— con su
-            causa, porque lo que hay que hacer es ir a arreglarlos por su número. */}
+            quedaron sin destinatario. Son TRES causas y esta pantalla puede provocar dos: borrar un área
+            que un criterio declara, y dejarla sin nadie en el nivel que pide; las dos dejan el criterio
+            huérfano sin que el catálogo de reglas haya cambiado una coma. Se listan uno por uno —no un
+            contador— con su causa, porque lo que hay que hacer es ir a arreglarlos por su número.
+            El 21-09-2026 la tabla perdió las columnas «Criterios que rutean acá» y «Quién la tiene»
+            (pedido del usuario), y por eso este aviso pasa a ser la ÚNICA señal de la pantalla: el
+            control de la regla 35 no se fue con las columnas, se quedó acá entero. */}
         {(() => {
           const padron = padronAprobadores();
           const malas = REGLAS_CLIENTE.map((r2) => ({ r: r2, ne: reglaNoEjecutable(r2, padron) })).filter((x) => x.ne.noEjecutable);
@@ -34789,8 +35428,7 @@ function CfgAreas() {
                 {sinArea > 0 && (
                   <>
                     {" "}
-                    {sinArea} de ellos no declara área: no aparecen en ninguna fila de la tabla de abajo, así que el total de «Criterios que rutean acá» no
-                    cuadra con el catálogo.
+                    {sinArea} de ellos <b>no declara área</b>, así que no rutea a ninguna de las de abajo y esta lista es el único sitio donde se ven.
                   </>
                 )}{" "}
                 Cada uno dice dónde se arregla.
@@ -34808,7 +35446,7 @@ function CfgAreas() {
         <table className="mt-3 w-full border-collapse t11">
           <thead>
             <tr>
-              {["Área", "Identificador", "Criterios que rutean acá", "Quién la tiene", ""].map((h, i) => (
+              {["Área", "Identificador", ""].map((h, i) => (
                 <th
                   key={i}
                   className="px-2 py-1 text-left t10 font-semibold uppercase tracking-wide"
@@ -34821,8 +35459,9 @@ function CfgAreas() {
           </thead>
           <tbody>
             {AREAS_CAT.map((a) => {
+              // `n` ya no se MUESTRA (se fueron las columnas), pero sigue decidiendo si el área se
+              // puede borrar: un área con criterios ruteando a ella los dejaría sin aprobador posible.
               const n = tramosDeArea(a.id);
-              const quienes = usuariosDe(a.id);
               const base = esAreaBase(a.id);
               return (
                 <tr key={a.id} style={{ borderBottom: `1px solid ${C.line}` }}>
@@ -34840,12 +35479,6 @@ function CfgAreas() {
                     title="Es lo que el catálogo de criterios compara contra el área de cada regla. No se edita: renombrarlo dejaría reglas apuntando a un área inexistente."
                   >
                     {a.id}
-                  </td>
-                  <td className="px-2 py-1.5" style={{ color: n ? C.ink : C.faint }}>
-                    {n ? `${n} tramo${n === 1 ? "" : "s"}` : "ninguno"}
-                  </td>
-                  <td className="px-2 py-1.5 t10" style={{ color: quienes.length ? C.sub : "#C2410C" }}>
-                    {quienes.length ? quienes.join(" · ") : n ? "⚠ nadie — hay criterios sin aprobador posible" : "nadie"}
                   </td>
                   <td className="px-2 py-1.5 text-right">
                     {base || n ? (
@@ -35979,6 +36612,50 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper, deals, onMigrarExec }
         ))}
       </aside>
       <div>
+        {/* SOBRE QUÉ TENANT SE ESTÁ CONFIGURANDO (21-09-2026, pedido del usuario: «cada uno de los menús
+            de configuración debiera arriba indicar el Tenant en el que está configurando, ya que todas
+            esas configuraciones son específicas para el Tenant»). Va ACÁ, en el contenedor, y no en
+            cada sección: son veinte pantallas y la que se agregue mañana lo tendría que recordar sola.
+            Cada `pc_*_<tenant>` que nombran las bajadas es exactamente eso, y sin este rótulo hay que
+            leer una clave de storage para saberlo.
+            `tenants` es la ÚNICA que no configura un tenant sino la lista de todos, y lo dice en vez
+            de mentir: un rótulo que afirma lo mismo en todas partes deja de significar algo. */}
+        {(() => {
+          const t = TENANTS.find((x) => x.id === TENANT_ACTUAL);
+          const plataforma = sec === "tenants";
+          return (
+            <div
+              className="mb-3 flex flex-wrap items-center gap-2 rounded-xl px-3 py-2"
+              style={{ backgroundColor: plataforma ? "#F9FAFB" : C.lilac, border: `1px solid ${plataforma ? C.line : "#E4DBFF"}` }}
+            >
+              <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>
+                {plataforma ? "Alcance" : "Configurando"}
+              </span>
+              {plataforma ? (
+                <span className="t11" style={{ color: C.sub }}>
+                  Toda la <b style={{ color: C.ink }}>plataforma</b>: acá viven los factorings, no la configuración de uno.
+                </span>
+              ) : (
+                <>
+                  <span className="t12 font-semibold" style={{ color: C.indigo }}>
+                    {(t && t.nombre) || CFG_ACTIVA.marcaNombre || TENANT_ACTUAL}
+                  </span>
+                  <span className="t10" style={{ color: C.faint, fontFamily: "ui-monospace,monospace" }}>
+                    {TENANT_ACTUAL}
+                  </span>
+                  {t && t.rut && (
+                    <span className="t10" style={{ color: C.faint }}>
+                      · {t.rut}
+                    </span>
+                  )}
+                  <span className="t10" style={{ color: C.faint }}>
+                    · «{activa.label}» aplica sólo a este factoring
+                  </span>
+                </>
+              )}
+            </div>
+          );
+        })()}
         {sec === "simulacion" ? (
           <CfgSimulacion usuario={usuario} />
         ) : sec === "correo" ? (
@@ -35999,6 +36676,8 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper, deals, onMigrarExec }
           <CfgRoles />
         ) : sec === "usuarios" ? (
           <CfgUsuarios />
+        ) : sec === "tenants" ? (
+          <CfgTenants cfgOper={cfgOper} setCfgOper={setCfgOper} />
         ) : sec === "areas" ? (
           <CfgAreas />
         ) : sec === "factoringtarget" ? (
@@ -43249,9 +43928,7 @@ function DocumentoSolicitud({ sol, onClose }) {
               </span>
             </div>
             <div className="mt-1 t10" style={{ color: C.sub }}>
-              {auto
-                ? "Entró sola al cerrar la oferta (API 1): el wizard nunca se abrió, así que esto es el payload tal como se inyectó."
-                : "Armada en el asistente de presentación al comité e inyectada por API 1."}
+              {auto ? "Generado automáticamente a partir del curse comercial." : "Armada en el asistente de presentación al comité e inyectada por API 1."}
             </div>
           </div>
           <button onClick={onClose} className="shrink-0 rounded-md p-1 hover:bg-stone-100" title="Cerrar">
@@ -43598,18 +44275,44 @@ function DetalleSolicitud({ sol }) {
         )}
         {det.length > 0 && (
           <div className="mt-2 grid items-center gap-2 t10" style={{ gridTemplateColumns: GD, paddingTop: 6 }}>
-            <span className="font-semibold" style={{ color: C.sub }}>
-              {det.length} línea(s) de detalle
-            </span>
-            <span></span>
-            <span></span>
-            <span></span>
-            <span className="text-right font-bold" style={{ color: C.indigo }}>
-              {fmtMM(mmRound(det.reduce((a, d) => a + (d.monto || 0), 0)))}
-            </span>
-            <span></span>
-            <span></span>
-            <span></span>
+            {(() => {
+              // SUMA DEL PIE (21-09-2026, pedido del usuario). Se suma SÓLO lo que tiene línea propia:
+              // un par sin línea muestra «—», no 0, y contarlo como cero diría que su disponible es
+              // cero cuando lo que pasa es que no hay línea que consultar. Por eso el pie declara
+              // cuántos pares aportan a la suma: sin ese dato, un total de aprobada más chico que la
+              // cuenta de filas parece un error de cálculo y es la mitad del negocio de esta pantalla.
+              const conL = det.map((d) => lineaParDeSolicitud(d.rutDeudor, lineas)).filter((lp) => lp.propia);
+              const sum = (k) => mmRound(conL.reduce((a, lp) => a + (lp[k] || 0), 0));
+              const solicitada = mmRound(det.reduce((a, d) => a + (d.monto || 0), 0));
+              const tot = (v, color, tip) => (
+                <span className="text-right font-bold" style={{ color }} title={tip}>
+                  {fmtMM(v)}
+                </span>
+              );
+              return (
+                <>
+                  <span className="font-semibold" style={{ color: C.sub }}>
+                    {det.length} línea(s) de detalle
+                    {conL.length !== det.length ? ` · ${conL.length} con línea propia` : ""}
+                  </span>
+                  {tot(
+                    sum("aprobada"),
+                    C.ink,
+                    `Suma de lo aprobado en los ${conL.length} par(es) que HOY tienen línea propia. Los que dicen «Sin línea propia» no entran: no tienen línea que sumar.`,
+                  )}
+                  {tot(sum("utilizada"), C.ink, "Suma de lo utilizado en esos mismos pares.")}
+                  {tot(sum("disponible"), sum("disponible") > 0 ? C.green : C.sub, "Suma de lo disponible en esos mismos pares: aprobada − utilizada.")}
+                  {tot(
+                    solicitada,
+                    C.indigo,
+                    "Total que esta solicitud le pide al comité, sobre TODAS las líneas de detalle — también las de los pares sin línea propia.",
+                  )}
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </>
+              );
+            })()}
           </div>
         )}
       </div>
@@ -44456,6 +45159,16 @@ const AUTH_BLOQUEO_MS = 60000; // duración del bloqueo
 const AUTH_OTP_MAX = 3; // intentos de código antes de volver a credenciales
 const SESION_ABSOLUTA_MS = 8 * 3600000; // vida máxima de la sesión, se renueve o no
 // Cuentas del demo. En producción NO existe un directorio en el bundle: el backend resuelve el usuario.
+// EL CORREO ES LA CREDENCIAL. Se resuelve contra el elenco de la demo Y contra los usuarios que el
+// tenant dio de alta (regla 52): el admin que se acaba de crear tiene que poder entrar SIN recargar,
+// así que se consulta la lista viva y no una copia que se armó al montar el módulo.
+const codigoDeCorreo = (email) => {
+  const k = String(email || "")
+    .trim()
+    .toLowerCase();
+  const u = USUARIOS_TENANT.find((x) => x.email === k);
+  return (u && u.code) || CUENTAS_DEMO[k] || null;
+};
 const CUENTAS_DEMO = {
   "carla.rivas@security.cl": "CR",
   "sofia.herrera@security.cl": "JG",
@@ -44521,7 +45234,7 @@ function verificarCredenciales(email, clave) {
         .toLowerCase();
       const ms = authBloqueo(k);
       if (ms > 0) return res({ ok: false, motivo: "bloqueada", segundos: Math.ceil(ms / 1000) });
-      const code = CUENTAS_DEMO[k];
+      const code = codigoDeCorreo(k);
       // Mensaje único para usuario inexistente y clave incorrecta: distinguirlos permite enumerar cuentas.
       if (!code || String(clave) !== CLAVE_DEMO) {
         const b = authFallo(k);
@@ -45399,6 +46112,14 @@ export default function PipelineComercial() {
   //  · Jefatura/Gerencia → "Otras facturas": facturas SIN asignar (empresas fuera de cartera / prospectos),
   //    que la jefatura debe repartir a un ejecutivo desde la grilla.
   const esEjecutivoSesion = !!EXECS[usuario];
+  // QUÉ DEL STREAM VE CADA ROL. Una sola respuesta, y la usan los DOS contadores y la lista: hasta el
+  // 21-09-2026 «Otras Empresas» filtraba por rol y «Todos» no, así que un EJECUTIVO veía en «Todos»
+  // el inbound entero —la cartera de sus colegas y las empresas sin dueño— y el mismo dato decía dos
+  // cosas según qué pestaña se mirara. El usuario lo pidió explícito: «los ejecutivos sólo pueden ver
+  // las empresas de su cartera».
+  //   · Ejecutivo → SÓLO las empresas de SU cartera (`esCliente` y él es el dueño).
+  //   · Inbound y jefatura → SÓLO las que no son de la cartera de nadie. Es el trabajo del rol
+  //     `inbound`: repartirlas. La jefatura las conserva porque también asigna.
   const ofOtrasVisible = (ev) => (esEjecutivoSesion ? ev.esCliente && asignarEjecutivo(ev) === usuario : !ev.esCliente);
   const [vistaApp, setVistaApp] = useState("dashboard"); // vista principal in-page; aterriza en el Dashboard tras login
   // Navega a un módulo y registra la acción del usuario en la auditoría (con su nombre).
@@ -45523,7 +46244,7 @@ export default function PipelineComercial() {
     // en 500 eso dejaba la tabla en ~570 filas. Una fila por cliente es lo que ya hacía la pestaña.
     // `soloMias`: la pestaña «Otras Empresas» muestra lo que le toca a ESTA sesión; «Todos» muestra el
     // inbound entero. Los dos agrupan por cliente con la MISMA función de nivel módulo, y el contador de
-    // cada tab cuenta exactamente estas filas (ver `inboundFilas`).
+    // cada tab cuenta exactamente estas filas (ver `inboundMiasFilas`, que filtra por rol).
     const streamAgrupadoCliente = (soloMias = true) =>
       agruparInboundPorCliente(
         streamFeed.filter(
@@ -46627,7 +47348,7 @@ export default function PipelineComercial() {
       // TODA operación aceptada pasa por Otorgamiento. Si solo tiene buenos deudores y está dentro de
       // la línea aprobada → otorgamiento AUTOMÁTICO (se aprueba solo). Si supera la línea y/o incluye
       // deudores "Otro" → otorgamiento MANUAL (lo decide un especialista).
-      const montoFinal = opts && opts.montoValido != null ? opts.montoValido : d.monto;
+      const montoFinal = montoFirmado(d, opts);
       const otorg = requiereOtorgamiento({ ...d, monto: montoFinal, facturasOp: d.facturasOp });
       const auto = !otorg;
 
@@ -46650,7 +47371,7 @@ export default function PipelineComercial() {
       // operación que quedó «Girada» con 42 criterios por aprobar y 8 facturas por verificar a la
       // vista, en la misma pantalla. Firmar es del CLIENTE; girar es de la casa, y sólo después de
       // que sus controles pasen.
-      const dFirmado = { ...d, monto: montoFinal, stage: "cesion", clienteAcepto: true, reabierta: undefined };
+      const dFirmado = dealFirmado(d, montoFinal);
       const visF = visadoDeal(dFirmado);
       const pendVisado = visF.excPend.length + visF.rechReev.length; // OTG-02
       const pendVerif = verifResumenDeal(dFirmado).pend; // VER-01
@@ -46738,6 +47459,22 @@ export default function PipelineComercial() {
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
+    // EL CIERRE AVISA A QUIEN TIENE QUE FIRMAR (regla 50). Acá y no dentro del updater, por lo mismo
+    // que `cerrarOferta` arma su patch afuera: `setDeals(fn)` no ejecuta `fn` en el acto y puede
+    // llamarlo más de una vez, así que un envío ahí adentro mandaría el aviso dos veces. Se evalúa el
+    // paquete FIRMADO —`dealFirmado`, la misma expresión que guarda el updater— porque las
+    // excepciones de una operación en cesión no son las mismas que las de la oferta.
+    if (dFirma) {
+      const dCerrado = dealFirmado(dFirma, montoFirmado(dFirma, opts));
+      const visC = visadoDeal(dCerrado);
+      const hCierre = avisarCierreNegocio({ ...dCerrado, negocioNum: dFirma.negocioNum || negDe(dFirma) }, visC.excPend, verifResumenDeal(dCerrado).pend);
+      // La firma vuelve del portal a la pestaña que lo abrió, y ésa puede ser la del DETALLE, que no
+      // tiene campana ni bandeja de mensajes. Sin este aviso el hilo quedaba en la memoria de un
+      // documento que no lo muestra: exactamente el agujero de `nex-solicitud` y `nex-preeval`.
+      try {
+        if (hCierre && window.opener) window.opener.postMessage({ type: "nex-hilo", hilo: hCierre }, ORIGEN_APP);
+      } catch (_) {}
+    }
     setCierreModal(null);
     curseForget(negDe({ id })); // operación cursada: su payload+OTP del cierre ya no se necesitan
   };
@@ -46838,12 +47575,19 @@ export default function PipelineComercial() {
         if (recibirSolicitudLinea(m.registro)) setDeals((prev) => prev.slice()); // re-render: la bandeja lee la lista al pintar
         return;
       }
+      // Hilo de mensajería nacido en la pestaña del detalle: el aviso de cierre (48), la solicitud de
+      // aprobación de una excepción y el requerimiento de información (49).
+      if (m && m.type === "nex-hilo" && m.hilo) {
+        if (recibirHilo(m.hilo)) setDeals((prev) => prev.slice()); // re-render: la campana lee HILOS al pintar
+        return;
+      }
       // Pre-evaluación solicitada (o cancelada) desde la pestaña del detalle. La mesa de Otorgamientos
       // filtra por `tienePreEval`, y ese estado es de CADA documento: sin este aviso el aprobador veía
       // «OPERACIONES EN OTORGAMIENTO (0)» aunque el ejecutivo acabara de enviársela, que es la forma en
       // que esta compuerta se rompía en la práctica. Se re-emite la lista para que la vista recalcule.
       if (m && m.type === "nex-preeval" && m.dealId) {
-        setPreEval(m.dealId, m.por || "EJ", !!m.on);
+        setPreEval(m.dealId, m.por || "EJ", !!m.on, false);
+        refrescarEstadoOtorgamiento();
         setDeals((prev) => prev.slice());
         return;
       }
@@ -49562,12 +50306,18 @@ export default function PipelineComercial() {
   // Los contadores de los tabs cuentan las MISMAS filas que la tabla dibuja: las del inbound salen de
   // `agruparInboundPorCliente`, la misma función que arma la lista. Contar facturas (`streamFeed.length`)
   // decía «Todos 262» sobre una tabla de 307 filas — medido el 18-09-2026 (regla 40).
-  const inboundFilas = useMemo(() => (showInbound ? agruparInboundPorCliente(streamFeed, asignarEjecutivo).length : 0), [showInbound, streamFeed]);
   const inboundMiasFilas = useMemo(
     () => agruparInboundPorCliente(streamFeed.filter(ofOtrasVisible), asignarEjecutivo).length,
     [streamFeed, usuario, esEjecutivoSesion],
   );
-  const inboundCount = inboundFilas;
+  // «Todos» cuenta lo MISMO que el usuario puede ver, no el stream entero: si contara todo, un
+  // ejecutivo leería un total que incluye filas que la lista de abajo nunca le va a mostrar — el
+  // defecto que la regla 40 ya corrigió una vez en el otro sentido (contar facturas contra una tabla
+  // de filas agrupadas).
+  // …y sigue respetando la compuerta del toggle Inbound, que era de `inboundFilas`: con el toggle
+  // apagado la tabla no dibuja ninguna fila del stream, así que contarlas dejaría el contador por
+  // encima de la lista — el mismo desacuerdo que la regla 40 corrigió en el otro sentido.
+  const inboundCount = showInbound ? inboundMiasFilas : 0;
   const nPrioTubo = dealsVista.filter((d) => tienePrioridadCurse(d.id)).length;
   // «Todos» va PRIMERO (18-09-2026, pedido del usuario): es el tab de entrada, y un tab de entrada al final
   // de la fila se lee como el último recorte de una lista de recortes. Va antes incluso de «Prioritarios»,

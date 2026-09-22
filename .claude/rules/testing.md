@@ -9,9 +9,8 @@ globs: ["tests/**", "tests_asignacion_lineas.js", "run_tests.mjs", "auditar_*.mj
 
 | Capa | Qué es | Cuánto tarda | Corre |
 |---|---|---|---|
-| `tests/contract/` | Gates de **contrato**: el vault, el índice de reglas, la forma del fuente, la forma de la suite, las líneas base de los auditores, el punto fijo del generador y **un `regla_<slug>.test.mjs` por regla que vive en JSX** (34 archivos desde el 17-09-2026) | milisegundos (los auditores, ~8 s) | `node --test "tests/contract/*.test.mjs"` — sin dependencias: es el runner de Node |
-| `tests_asignacion_lineas.js` | **La suite**: 155 casos que prueban los motores y las reglas de dominio contra el HTML construido, en Chromium real | ~2 min | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs` (necesita `node build_app.mjs` antes) |
-| `tests/e2e/` | **Casos e2e**: la app con la sesión iniciada (el OTP se lee de la pantalla), el Modo Directorio para tener operaciones sin stream y el detalle abierto en su pestaña; cada archivo `*.e2e.mjs` exporta `casos: [{ id: "e2e-<regla>", titulo, correr(h) }]`. **29 casos en 16 archivos**; el runner reinicia el estado al empezar cada ARCHIVO (Directorio apagado, filtro «Con línea», sin modal) y `h` trae `encenderDirectorio`, `apagarDirectorio` y `reiniciar` | ~8 min | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node tests/e2e/correr.mjs [archivo…]` (harness en `_harness.mjs`) |
+| `tests/contract/` | Gates de **contrato**: el vault, el índice de reglas, la forma del fuente, la forma de la suite, las líneas base de los auditores, el punto fijo del generador y **un `regla_<slug>.test.mjs` por regla que vive en JSX** (35 archivos desde el 17-09-2026) | milisegundos (los auditores, ~8 s) | `node --test "tests/contract/*.test.mjs"` — sin dependencias: es el runner de Node |
+| `tests_asignacion_lineas.js` | **La suite**: 156 casos que prueban los motores y las reglas de dominio contra el HTML construido, en Chromium real | ~2 min | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs` (necesita `node build_app.mjs` antes) || `tests/e2e/` | **Casos e2e**: la app con la sesión iniciada (el OTP se lee de la pantalla), el Modo Directorio para tener operaciones sin stream y el detalle abierto en su pestaña; cada archivo `*.e2e.mjs` exporta `casos: [{ id: "e2e-<regla>", titulo, correr(h) }]`. **29 casos en 16 archivos**; el runner reinicia el estado al empezar cada ARCHIVO (Directorio apagado, filtro «Con línea», sin modal) y `h` trae `encenderDirectorio`, `apagarDirectorio` y `reiniciar` | ~8 min | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node tests/e2e/correr.mjs [archivo…]` (harness en `_harness.mjs`) |
 
 No hay capa `unit` aparte: el fuente es un solo archivo y la suite ya prueba las funciones puras por su
 nombre (`asignarLineas`, `verifDecision`, `prorratearOperacion`…) inyectándoles el estado. Las reglas de
@@ -51,7 +50,7 @@ refactor en verde— y no como hook; se dice acá para que nadie lo busque.
 **línea base** en `tests/contract/auditores.test.mjs`. Un hallazgo nuevo rompe —código muerto que alguien
 dejó, o un falso positivo nuevo; en los dos casos se mira—. Uno que desaparece también rompe, a propósito:
 encoger la línea base queda en el commit. Y una función que era pura y vuelve a leer un global rompe
-siempre: **lo que se desacopló no se vuelve a acoplar**. `regresion_diferencial.mjs` no está cableado:
+siempre: **lo que se desacopló no se vuelve a acoplar**. `Regresiones/regresion_diferencial.mjs` no está cableado:
 compara dos builds y el CI no tiene el «anterior»; se corre a mano cuando se quiere probar que una
 refactorización no cambió la lógica.
 

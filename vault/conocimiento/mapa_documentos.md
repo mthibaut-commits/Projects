@@ -24,6 +24,12 @@ timestamp: 2026-09-17T15:29:14Z
 > Los logs de `vault/sesiones/` y los ADR citan las rutas **anteriores** y no se reescribieron: son registros
 > con fecha, y reescribirlos diría que el archivo siempre estuvo ahí. Ningún nombre de archivo cambió —sólo
 > la carpeta—, así que una ruta vieja se resuelve buscando el nombre en esta tabla.
+>
+> **Los enlaces relativos entre specs llevan `../<tema>/`**: al separarlos en carpetas, los que se citaban
+> entre sí habrían quedado apuntando a nada, y **nada lo habría dicho** —un `.md` no se ejecuta—. Lo vigila
+> `tests/contract/rutas.test.mjs`: toda ruta que un documento cita tiene que existir, en las dos formas que
+> este repo usa (el enlace markdown relativo y la ruta en backticks). Exentas `vault/sesiones/` y
+> `vault/adr/`, por lo mismo que dice el párrafo de arriba.
 
 - `Levantamiento_Activos_Informacion.md` — inventario **A1–A24** de APIs/SFTP/streams (patrón: SFTP diario → tabla interna + upsert intradía A22). Su **§5** fija, campo por campo, **cuál activo es el maestro** cuando el mismo dato llega por más de una entrega: el criterio es que **el maestro es el activo cuyo SUJETO es el del campo** —la nota de comportamiento es de la EMPRESA, así que sale de A11 y no de A16 aunque A16 sea la entrega del modelo de riesgo—. Razón social en tres entregas (A11), nota en cuatro (A11), clasificación en dos (A3/A4, que es la lista que la define), línea aprobada en dos que además **no sirven para decidir** —esa es A23, la única neta de reservas: A7/A16 nunca alimentan el motor de líneas y A23 nunca alimenta la vista Líneas—. `SEGMENTO` **no es un duplicado sino una colisión de nombre**: en A11 es el segmento comercial del cliente y en A10 el del par para el predictor, que además NEX calcula y el archivo no debe aportar. Y un **hueco**: `EJECUTIVO`/`ZONA` cuelgan de la LÍNEA cuando el ejecutivo se asigna por cedente, y la **jefatura no la declara ningún activo** — falta levantar el archivo de cartera.
 - `Specs_Procesos/Lineas/Analisis_Solicitud_Linea_Comite.md` — diseño del módulo de líneas.
