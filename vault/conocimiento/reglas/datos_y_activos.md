@@ -135,5 +135,16 @@ timestamp: 2026-09-17T15:29:14Z
       dijeran lo mismo —el generador, la declaración y el lector— y el 23-09 se encontró que en A11 no lo
       decían: el layout declaraba millones donde el generador ponía miles. Sin sufijo no hay nada que
       sincronizar.
-    - Gate: el caso **115** (el activo calza peso a peso sobre 200 filas), `generador.test.mjs` (el punto
-      fijo se conserva) y la línea base **cero** de `auditar_unidades` en `auditores.test.mjs`.
+    - **Y los bloques BASE no los alcanza ninguna corrida.** Los derivados se arreglan en su generador y se
+      regeneran; los base se copian tal cual desde el activo de entrada. Medido sobre las **119 claves
+      distintas** del activo quedaban **dos** con nombre de escala, ninguna con lectores:
+      `DEUDORES_AUTORIZADOS.LineaSugeridaMM` (599 filas, BASE) y `RequeridoParaTargetMM` del A5 (233,
+      derivado). Se sacaron las dos por instrucción del usuario —«si nadie lo ocupa, elimínalo»—: la
+      derivada en su generador, la base con `GeneradorDatos/sanear_campos_muertos.js`, que corre una vez y
+      queda commiteado como los otros saneadores. **La segunda era una trampa**: guardaba PESOS
+      (202.175.551) bajo un nombre que dice millones, así que quien le creyera al nombre habría
+      multiplicado por un millón. Un campo que nadie lee y que miente sobre su unidad no es información.
+    - Gate: el caso **115** (el activo calza peso a peso sobre 200 filas), `generador.test.mjs` —el punto
+      fijo, más **«ningún campo del activo nombra una escala»**, que se mide sobre el ARCHIVO porque es
+      donde el sufijo sobrevive sin que nadie lo note— y la línea base **cero** de `auditar_unidades` en
+      `auditores.test.mjs`.

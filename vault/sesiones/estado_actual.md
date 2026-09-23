@@ -39,7 +39,10 @@ dejaba vivir el sufijo `_M`: **todo generador produce en PESOS**. Veinte campos 
 miles, cuantizados de a $1.000, y dos entran en criterios que DECIDEN —`MNT_PAGARES` en C02 y V03/V04 como
 denominadores del predictor—. Se van veinte multiplicaciones por mil del fuente; A10 sube a 3.0.0, A11 y A16
 a 4.0.0; el caso **115 se re-ancla** a comparar contra la celda tal cual, que es más fuerte que el `×1000`
-que tenía. `auditar_unidades` estrena el patrón **(d)** y **queda cableado** con línea base **cero**.
+que tenía. `auditar_unidades` estrena el patrón **(d)** y **queda cableado** con línea base **cero**. Y los dos
+campos que quedaban con nombre de escala en el activo —`LineaSugeridaMM` (BASE) y `RequeridoParaTargetMM`,
+que guardaba PESOS bajo nombre de millones— **se eliminaron**: nadie los leía. El gate nuevo los mide
+sobre el ARCHIVO, que es donde un bloque BASE esconde lo que ninguna corrida alcanza.
 
 **Las líneas, en un párrafo.** La ESTRUCTURA es un insumo (44, ADR-0010): el **activo A23** reemplaza los 3.170 de
 3.636 objetos que salían del A7; el **nivel 1 es la SUMA** (45) y el **RUT del deudor se resuelve, no se arma** (46).
@@ -61,9 +64,7 @@ Queda **el tag `v0.1.0`** sobre `bd14091` y **borrar las ramas integradas**.
 ## Deudas anotadas (no bloquean, no olvidar)
 
 1. **Auditores**: `BASE_MUERTOS` queda en **1** (`giroDeal`), candidato a poda. · **GN como disyunción**
-   (22), del negocio. · Sin gate, la concentración del Directorio (31). · `DEUDORES_AUTORIZADOS.
-   LineaSugeridaMM` (599 filas) es un campo heredado **sin uso, sin documentar y nombrado en millones**:
-   no lo confundan con una señal de línea por deudor (ADR-0010). · Quedan **dos** sitios que arman un RUT
+   (22), del negocio. · Sin gate, la concentración del Directorio (31). · Quedan **dos** sitios que arman un RUT
    de CLIENTE (`rutDe` de módulo, la degradación de `PC_CLIENTES`): no llegan al par, y la regla 46 lo dice.
 2. **`Capturas_UI/` NO es determinista**: el tubo se retrata a mitad del stream. Capturar en un estado
    conocido (stream pausado, o Modo Directorio, 31) cambia QUÉ muestra la fuente de Figma: decisión suya.

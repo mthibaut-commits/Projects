@@ -25,6 +25,12 @@ feature: null
 - **Tres specs suben de versión MAYOR** —A10 a 3.0.0, A11 y A16 a 4.0.0— con la fila del anexo diciendo qué
   hacer si ya se implementó: multiplicar por mil. Los tres CSV de ejemplo migrados.
 - **Regla 48** en `reglas/datos_y_activos.md`, con su fila en `invariantes.md`.
+- **Y los dos campos que quedaban en el activo, fuera** (instrucción del usuario a mitad de camino: «si
+  nadie lo ocupa, elimínalo»). Medido sobre las **119 claves distintas** del activo quedaban dos con
+  nombre de escala y **ninguna con lectores**: `DEUDORES_AUTORIZADOS.LineaSugeridaMM` (599 filas, bloque
+  **BASE**) y `RequeridoParaTargetMM` del A5 (233, derivado). La derivada salió en su generador; la base
+  necesitó `GeneradorDatos/sanear_campos_muertos.js`, porque **un bloque base no lo alcanza ninguna
+  corrida**: se copia tal cual desde el activo de entrada. Quedan 117 claves y **cero** con escala.
 
 ## Decisiones tomadas con el usuario
 
@@ -59,9 +65,17 @@ feature: null
   como `$X MM` (`pipeline_comercial.jsx` 31429 y 31498, eje en 31357). No se tocaron acá: son parte de la
   deuda que `Auditoria/Auditoria_Generadores_En_App.md` ya levantó —la app **no debería** fabricar activos—
   y el arreglo correcto es que salgan de un activo, no reescalarlos.
-- `DEUDORES_AUTORIZADOS.LineaSugeridaMM` sigue en un bloque BASE del activo que nadie lee (deuda 1).
 
 ## Sorpresas y aprendizajes
+
+- **El peor de los dos campos muertos no era el inútil: era el que mentía.** `RequeridoParaTargetMM`
+  guardaba **pesos** (202.175.551) bajo un nombre que dice millones. Nadie lo leía, pero el día que
+  alguien lo leyera le creería al nombre y multiplicaría por un millón — que es literalmente el defecto
+  que la regla 47 acababa de cerrar. Un campo que nadie usa y que miente sobre su unidad no es ruido
+  inofensivo: es una mina con el seguro puesto.
+- **Un bloque BASE es un punto ciego del generador.** El punto fijo garantiza que los DERIVADOS se
+  reproducen; los base se copian y nadie los mira. Por eso el gate nuevo se mide sobre el **archivo** y no
+  sobre el código: es el único sitio donde el defecto es observable.
 
 - **«Consistente» no es «correcto».** El `_M` estaba declarado, el generador lo producía y el lector lo
   convertía: tres piezas de acuerdo. Y aun así perdía plata en cada valor. Una convención puede estar
