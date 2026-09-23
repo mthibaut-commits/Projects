@@ -10228,7 +10228,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
   // Estado de visado (aprobación de excepciones) de esta operación, por stKey.
   const visSt = (typeof VISADO_STATE !== "undefined" && VISADO_STATE[deal.id]) || {};
   // "Requiere aprobación" = es excepción/rechazo Y aún no fue resuelta por un apoderado (visado).
-  const reqAprob = (x) => (x.disp === "excepcion" || x.disp === "rechazado") && !visSt[x.stKey];
+  const reqAprob = (x) => (x.disp === "excepcion" || x.disp === "rechazado") && excSinVisar(visSt, x.stKey);
   // Ordena: primero las que requieren autorización (excepción/rechazo), luego por severidad y número.
   const ordenBy = (arr) => arr.slice().sort((a, b) => reqAprob(b) - reqAprob(a) || orden[a.disp] - orden[b.disp] || a.n - b.n);
   // Aprobar/rechazar una excepción DIRECTAMENTE desde el detalle (si el usuario tiene la atribución). Escribe el
@@ -10242,7 +10242,13 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
     const st = { ...(repoVisado.get(deal.id) || {}), [x.stKey]: val };
     const det = {
       ...(repoVisadoDetalle.get(deal.id) || {}),
-      [x.stKey]: { msg: msg || "", archs: arr, por: actorEtiqueta(usuario), fecha: new Date().toLocaleString("es-CL") },
+      [x.stKey]: {
+        msg: msg || "",
+        archs: arr,
+        por: actorEtiqueta(usuario),
+        fecha: new Date().toLocaleString("es-CL"),
+        ...historiaVisado((repoVisadoDetalle.get(deal.id) || {})[x.stKey]), // regla 66: nada se borra
+      },
     };
     // OTG-01 · SE COMPRUEBA LA ATRIBUCIÓN ANTES DE ESCRIBIR, no sólo al dibujar el botón. Quien visa
     // tiene que tener HOY el (área, nivel) que la regla exige: la pantalla puede venir de una sesión
@@ -10424,6 +10430,49 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
     g.mias = g.rows.filter(puedeVisarX).length;
   });
   const truncD = (s, n) => (s && s.length > n ? s.slice(0, n).trim() + "…" : s);
+  // REGLA 66 · Historia de una excepción que la versión vigente ya no levanta: la solicitud marcada, el visado
+  // marcado o los dos, con «ya no aplica desde la versión N», actor sistema y hora. `null` si esa clave nunca tuvo
+  // excepción o si sigue vigente. Es lo que hace auditable que la regla quedó así en el cambio de versión.
+  const tieneExcepcionAnterior = (stKey) => {
+    const s = (SOLICITUD_EXC[deal.id] || {})[stKey];
+    return !!((s && s.estado === VISADO_NO_APLICA) || visSt[stKey] === VISADO_NO_APLICA);
+  };
+  const excepcionAnteriorBlock = (stKey) => {
+    const s = (SOLICITUD_EXC[deal.id] || {})[stKey];
+    const v = visSt[stKey];
+    const dt = (VISADO_DETALLE[deal.id] || {})[stKey] || {};
+    const marcaSol = s && s.estado === VISADO_NO_APLICA ? s.noAplica : null;
+    const marcaVis = v === VISADO_NO_APLICA ? dt.noAplica : null;
+    const marca = marcaSol || marcaVis;
+    if (!marca) return null;
+    return (
+      <div className="mt-1.5 rounded-md px-2 py-1.5" style={{ backgroundColor: "#F3F4F6", border: `1px solid ${C.line}` }}>
+        <div className="t9 font-semibold" style={{ color: C.sub }}>
+          ↺ Excepción anterior · {rotuloNoAplica(marca.desdeVersion)} · {marca.por} · {marca.fecha}
+        </div>
+        {marcaSol && (
+          <div className="mt-0.5 t9" style={{ color: C.faint }}>
+            Solicitada por {s.por} · {s.fecha}
+            {s.comentario ? ` · “${s.comentario}”` : ""}
+          </div>
+        )}
+        {marcaVis && (
+          <div className="mt-0.5 t9" style={{ color: C.faint }}>
+            Visado «{dt.decision === "aprobado" ? "aprobada" : "rechazada"}»{dt.por ? ` por ${dt.por}` : ""}
+            {dt.fecha ? ` · ${dt.fecha}` : ""}
+          </div>
+        )}
+      </div>
+    );
+  };
+  // Las marcadas cuya fila ya no existe —el deudor salió de la operación— no tienen tarjeta donde mostrarse: van en
+  // su propia lista, para que la historia del visado no dependa de que el sujeto siga en la oferta (regla 66).
+  const clavesEnPantalla = new Set([...cliRules.map((x) => x.stKey), ...deudGrupos.flatMap((g) => g.rows.map((x) => x.stKey))]);
+  const solTodasDeal = SOLICITUD_EXC[deal.id] || {};
+  const huerfanasMarcadas = Array.from(new Set([...Object.keys(solTodasDeal), ...Object.keys(visSt)]))
+    .filter((k) => !clavesEnPantalla.has(k))
+    .filter((k) => (solTodasDeal[k] && solTodasDeal[k].estado === VISADO_NO_APLICA) || visSt[k] === VISADO_NO_APLICA);
+  const marcaDe = (k) => (solTodasDeal[k] && solTodasDeal[k].noAplica) || ((VISADO_DETALLE[deal.id] || {})[k] || {}).noAplica || {};
   // Tarjeta de regla reutilizable (cliente y deudor).
   const reglaCard = (x, kpref) => {
     // El default del nivel es 4, el MISMO que usa `puedeAprobarExc` en esta tarjeta: con `|| 1` el badge
@@ -10488,7 +10537,7 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
             saber por dónde entra el papel: el modal de curse lo decía al confirmar y el badge de la oferta
             publicada también, pero en la tarjeta del criterio —que es dónde se actúa— no lo decía nadie.
             El destinatario se DERIVA (`nr`), no se escribe: el cargo que autoriza lo configura el tenant. */}
-        {x.cond === "O05" && x.disp === "excepcion" && !visSt[x.stKey] && (
+        {x.cond === "O05" && x.disp === "excepcion" && excSinVisar(visSt, x.stKey) && (
           <div
             className="mt-1 rounded-md px-2 py-1.5 t9"
             style={{ backgroundColor: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412", lineHeight: 1.5 }}
@@ -10508,9 +10557,13 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         )}
         {x.disp === "excepcion" &&
           (() => {
-            const estado = visSt[x.stKey]; // "aprobado" | "rechazado" | undefined
+            // «Ya no aplica» NO es una decisión vigente: si la regla volvió a levantar, la excepción está pendiente otra
+            // vez y la solicitud marcada se muestra como ANTERIOR, no como la de hoy (regla 66).
+            const estado = excSinVisar(visSt, x.stKey) ? undefined : visSt[x.stKey]; // "aprobado" | "rechazado" | undefined
             const puedeVisar = x.regla && puedeAprobarExc(usuario, x.regla, x.nivel || 4);
-            const sol = (SOLICITUD_EXC[deal.id] || {})[x.stKey]; // solicitud del ejecutivo (comentario + adjuntos)
+            const solTodas = SOLICITUD_EXC[deal.id] || {};
+            const sol = solVigente(solTodas, x.stKey); // solicitud del ejecutivo (comentario + adjuntos)
+            const solAnterior = solTodas[x.stKey] && solTodas[x.stKey].estado === VISADO_NO_APLICA ? solTodas[x.stKey] : null;
             const solBlock = sol ? (
               <div className="mt-1.5 rounded-md px-2 py-1.5" style={{ backgroundColor: "#F1ECFF" }}>
                 {/* El destinatario NO se repite acá. `sol.rol`/`sol.nivel` se congelan al solicitar, y el
@@ -10560,6 +10613,15 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
                     )}
                   </div>
                 ))}
+              </div>
+            ) : solAnterior ? (
+              <div className="mt-1.5 rounded-md px-2 py-1.5" style={{ backgroundColor: "#F3F4F6" }}>
+                <div className="t9 font-semibold" style={{ color: C.sub }}>
+                  ↺ Solicitud anterior de {solAnterior.por} · {solAnterior.fecha} · {rotuloNoAplica((solAnterior.noAplica || {}).desdeVersion)}
+                </div>
+                <div className="mt-0.5 t9" style={{ color: C.faint }}>
+                  La regla volvió a levantar la excepción en la versión vigente: se solicita y se visa de nuevo; la anterior queda como historia.
+                </div>
               </div>
             ) : null;
             const dtArchsView = (dt) => {
@@ -10841,6 +10903,9 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
               </div>
             );
           })()}
+        {/* REGLA 66 · La excepción que esta versión ya no levanta no desaparece: el criterio sale cumplido y la
+            solicitud o el visado anteriores se muestran con su estado nuevo. */}
+        {x.disp !== "excepcion" && excepcionAnteriorBlock(x.stKey)}
       </div>
     );
   };
@@ -10862,6 +10927,17 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
       {reevPend.length > 0 && (
         <div className="mt-2 t10" style={{ color: "#7C3AED" }}>
           ♻ Re-evaluables ({reevPend.length}): {reevPend.map((x) => "#" + x.n).join(", ")}
+        </div>
+      )}
+      {huerfanasMarcadas.length > 0 && (
+        <div className="mt-2 rounded-md px-2 py-1.5 t10" style={{ backgroundColor: "#F3F4F6", border: `1px solid ${C.line}`, color: C.sub }}>
+          <b>↺ {huerfanasMarcadas.length} excepción(es) anterior(es) que ya no aplican</b> — su sujeto ya no está en la operación; se conservan con su estado:
+          {huerfanasMarcadas.map((k) => (
+            <div key={k} className="mt-1">
+              <span className="font-semibold">{descripcionExcepcion(deal, k, solTodasDeal[k])}</span> · {rotuloNoAplica(marcaDe(k).desdeVersion)} ·{" "}
+              {marcaDe(k).por} · {marcaDe(k).fecha}
+            </div>
+          ))}
         </div>
       )}
       {firmes.length > 0 && (
@@ -10994,7 +11070,11 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
         const active = tabsAll.find((t) => t.key === otorgTab) || tabsAll[0];
         const reqRows = active.rows.filter(reqAprob);
         const noEjecRows = active.rows.filter((x) => x.disp === "no_ejecutada");
-        const okRows = active.rows.filter((x) => !reqAprob(x) && x.disp !== "no_ejecutada");
+        // REGLA 66 · El criterio cumplido que TUVO excepción va en su propio balde, siempre a la vista: dentro del
+        // colapsable de aprobadas la marca «ya no aplica desde la versión N» no la veía nadie, que es exactamente lo
+        // que la regla existe para impedir (medido al abrir la pantalla el 23-09-2026).
+        const antRows = active.rows.filter((x) => !reqAprob(x) && x.disp !== "no_ejecutada" && tieneExcepcionAnterior(x.stKey));
+        const okRows = active.rows.filter((x) => !reqAprob(x) && x.disp !== "no_ejecutada" && !tieneExcepcionAnterior(x.stKey));
         // Carrusel sobre los tabs de deudor (el de Cliente queda siempre fijo a la izquierda).
         const VIS = 3;
         const maxOff = Math.max(0, deudSorted.length - VIS);
@@ -11227,6 +11307,15 @@ function ReevaluacionPanel({ deal, usuario, onReev }) {
                     </div>
                   )}
                   {noEjecRows.map((x) => reglaCard(x, active.key + "-ne-"))}
+                  {antRows.length > 0 && (
+                    <div
+                      className="rounded-md px-2 py-1.5 t10 font-semibold"
+                      style={{ backgroundColor: "#F3F4F6", border: `1px solid ${C.line}`, color: C.sub }}
+                    >
+                      ↺ {antRows.length} criterio(s) cumplido(s) con una excepción anterior que ya no aplica: se conserva con su estado, no se borra.
+                    </div>
+                  )}
+                  {antRows.map((x) => reglaCard(x, active.key + "-ant-"))}
                   {okRows.length > 0 && (
                     <div className="rounded-md" style={{ border: `1px solid ${C.line}`, backgroundColor: "#fff" }}>
                       <button
@@ -12782,14 +12871,14 @@ function DealDrawer({
       const cliN = (ver.res || []).filter(
         (x) =>
           (x.disp === "excepcion" || x.disp === "rechazado") &&
-          !st[String(x.n)] &&
+          excSinVisar(st, String(x.n)) &&
           puede(
             REGLAS_CLIENTE.find((r) => r.n === x.n),
             x.nivel,
           ),
       ).length;
       const dN = evaluarOtorgItems(deal).filter(
-        (it) => it.deudor && (it.disp === "excepcion" || it.disp === "rechazado") && !st[it.stKey] && puede(it.regla, it.nivel),
+        (it) => it.deudor && (it.disp === "excepcion" || it.disp === "rechazado") && excSinVisar(st, it.stKey) && puede(it.regla, it.nivel),
       ).length;
       return cliN + dN;
     } catch (e) {
@@ -13428,7 +13517,7 @@ function DealDrawer({
                   const st = (typeof VISADO_STATE !== "undefined" && VISADO_STATE[deal.id]) || {};
                   const sol = (typeof SOLICITUD_EXC !== "undefined" && SOLICITUD_EXC[deal.id]) || {};
                   evaluarOtorgItems(deal)
-                    .filter((it) => it.disp === "excepcion" && !st[it.stKey] && !sol[it.stKey])
+                    .filter((it) => it.disp === "excepcion" && excSinVisar(st, it.stKey) && !solVigente(sol, it.stKey))
                     .forEach((it) => solicitarAprobacionExc(deal, it, usuario, "", [], true));
                   setPreEval(deal.id, usuario, true);
                   avisarPreEval(deal, usuario);
@@ -13558,7 +13647,7 @@ function DealDrawer({
                     // Acceso directo para el aprobador que tiene criterios por excepcionar en ESTA operación (según su atribución).
                     const st0 = VISADO_STATE[deal.id] || {};
                     const misExc = vis0.exc
-                      .filter((e) => !st0[e.stKey])
+                      .filter((e) => excSinVisar(st0, e.stKey))
                       .filter((e) =>
                         puedeAprobarExc(
                           usuario,
@@ -23631,18 +23720,143 @@ function reevaluarCliente(deal, usuario) {
   if (!vs.length) repoSimVersions.push(deal.id, snapVersionCli(deal, 0)); // persiste la evaluación inicial (v1)
   const nv = snapVersionCli(deal, (repoSimVersions.get(deal.id) || []).length); // siguiente rev → v2, v3, …
   repoSimVersions.push(deal.id, nv);
-  // NO se tocan las excepciones ya resueltas manualmente por los apoderados (VISADO_STATE). Re-evaluar sólo
-  // trae datos frescos del origen; las reglas ya excepcionadas conservan su resolución para no re-abrir
-  // trabajo hecho ni perder la excepción si la API devolviera el valor original.
+  // Las excepciones ya resueltas por los apoderados (VISADO_STATE) CONSERVAN su decisión: re-evaluar trae datos
+  // frescos del origen y no re-abre trabajo hecho ni pierde la excepción si la API devolviera el valor original.
+  // Lo único que cambia es la que la versión nueva YA NO LEVANTA: se marca «ya no aplica desde la versión N»
+  // —solicitud, visado, tarea e hilo—, no se borra (regla 66, ADR-0016).
+  const yaNoAplican = marcarExcepcionesQueYaNoAplican(deal, nv.v);
   if (typeof registrarAuditoria === "function")
     registrarAuditoria({
       usuario: (typeof USERS !== "undefined" && USERS[usuario]) || usuario || "—",
       modulo: "Otorgamiento · Visado Cliente",
       accion: "Re-evaluación de simulación",
-      glosa: `${(deal && (deal.company || deal.name)) || (deal && deal.id) || "—"} · v${nv.v} · ${nv.estado} (${nv.nRech} rechazos · ${nv.nExc} excepciones)`,
+      glosa: `${(deal && (deal.company || deal.name)) || (deal && deal.id) || "—"} · v${nv.v} · ${nv.estado} (${nv.nRech} rechazos · ${nv.nExc} excepciones)${yaNoAplican.length ? ` · ${yaNoAplican.length} excepción(es) ya no aplica(n)` : ""}`,
       exito: true,
     });
   return nv;
+}
+// ── Regla 66 (ADR-0016) · LA EXCEPCIÓN QUE LA VERSIÓN N YA NO LEVANTA SE MARCA, NO SE BORRA ──────────────────
+// Cuando una re-evaluación deja de levantar una excepción que ya estaba solicitada o visada, el criterio pasa a
+// cumplido y ANTES el visado, la solicitud, la tarea y el hilo quedaban huérfanos: aprobados sobre una regla que ya
+// no gatilla, indistinguibles de una aprobación vigente. El usuario (22-09-2026): «no debería quedar huérfano,
+// debería quedar con un estado que identifique que cambió, para poder auditar que esa regla quedó así en el cambio
+// de versión». Nada se borra: la solicitud y el visado pasan a `no_aplica` con `{desdeVersion, por: "sistema",
+// fecha}`, la tarea se cierra con ese motivo y el hilo recibe el aviso del sistema. La marcada NO se reactiva: si
+// una versión posterior vuelve a levantar la misma excepción, está pendiente otra vez —se solicita y se visa de
+// nuevo— y la anterior queda como historia (`anteriores`).
+const VISADO_NO_APLICA = "no_aplica";
+function rotuloNoAplica(version) {
+  return `ya no aplica desde la versión ${version}`;
+}
+// ¿La excepción sigue SIN decisión vigente? Sin visado, o con la marca «ya no aplica». Es la ÚNICA lectura del
+// visado que decide si algo está pendiente: un `!st[k]` suelto trataría la marca como una decisión.
+function excSinVisar(st, stKey) {
+  return !st || !st[stKey] || st[stKey] === VISADO_NO_APLICA;
+}
+// La solicitud VIGENTE de una excepción: la marcada «ya no aplica» no justifica la de hoy ni cuenta como enviada.
+function solVigente(sol, stKey) {
+  const s = sol && sol[stKey];
+  return s && s.estado !== VISADO_NO_APLICA ? s : null;
+}
+// La versión vigente de la simulación (v1 sin versiones emitidas): la que la solicitud anota como origen.
+function versionVigente(dealId, versiones) {
+  const todas = versiones || (typeof SIM_VERSIONS !== "undefined" ? SIM_VERSIONS : {}) || {};
+  return Math.max(1, ((dealId != null && todas[dealId]) || []).length);
+}
+// El detalle de un visado nuevo hereda la HISTORIA del anterior si éste estaba marcado: nada se borra.
+function historiaVisado(detPrevio) {
+  if (!detPrevio) return {};
+  const previas = detPrevio.anteriores || [];
+  if (detPrevio.noAplica) return { anteriores: [...previas, Object.fromEntries(Object.entries(detPrevio).filter(([k]) => k !== "anteriores"))] };
+  return previas.length ? { anteriores: previas } : {};
+}
+// Cómo se nombra una excepción por su clave, aun cuando el deudor ya salió de la operación: la solicitud guarda la
+// regla y el deudor; sin solicitud, el catálogo por número y el RUT de la clave.
+function descripcionExcepcion(deal, stKey, sol) {
+  const [nStr, rut] = String(stKey).split("@");
+  const regla = REGLAS_CLIENTE.find((r) => String(r.n) === nStr);
+  const nombre = (sol && sol.reglaNombre) || (regla && regla.nombre) || "";
+  let deudor = sol && sol.deudorNombre;
+  if (!deudor && rut) {
+    const d = deudoresDeDeal(deal).find((x) => x.rut === rut || x.nombre === rut);
+    deudor = (d && d.nombre) || rut;
+  }
+  return `#${nStr}${nombre ? " " + nombre : ""}${deudor ? " · deudor " + deudor : ""}`;
+}
+// DECISIÓN PURA: qué claves dejaron de aplicar y los tres registros ya marcados. Recibe los ítems de la evaluación
+// vigente, la solicitud, el visado y su detalle; no lee ni escribe globales, así que la suite la prueba con entradas
+// plantadas y el servidor la puede correr tal cual al emitir la versión.
+function excepcionesQueYaNoAplican(items, sol, st, det, version, fecha) {
+  const levanta = new Set((items || []).filter((it) => it && it.disp === "excepcion").map((it) => it.stKey));
+  const marca = { desdeVersion: version, por: "sistema", fecha };
+  const nSol = { ...(sol || {}) },
+    nSt = { ...(st || {}) },
+    nDet = { ...(det || {}) };
+  const salen = [];
+  for (const k of new Set([...Object.keys(sol || {}), ...Object.keys(st || {})])) {
+    if (levanta.has(k)) continue; // sigue gatillando: nada se marca
+    const s = sol && sol[k],
+      v = st && st[k];
+    const teniaSol = !!(s && s.estado !== VISADO_NO_APLICA);
+    const teniaVis = !!(v && v !== VISADO_NO_APLICA);
+    if (!teniaSol && !teniaVis) continue; // ya estaba marcada: no se marca dos veces
+    if (teniaSol) nSol[k] = { ...s, estado: VISADO_NO_APLICA, noAplica: marca };
+    if (teniaVis) {
+      nSt[k] = VISADO_NO_APLICA;
+      nDet[k] = { ...((det && det[k]) || {}), decision: v, noAplica: marca };
+    }
+    salen.push({ stKey: k, solicitud: teniaSol ? s : null, visado: teniaVis ? v : null, detalle: teniaVis ? (det && det[k]) || null : null });
+  }
+  return { salen, sol: nSol, st: nSt, det: nDet, rotulo: rotuloNoAplica(version) };
+}
+// LA MUTACIÓN sólo escribe lo que la decisión dice, y avisa: los tres repositorios, la tarea del aprobador (cerrada
+// con el motivo), el hilo «Aprobación de excepciones» (mensaje del sistema; se termina cuando ya no queda ninguna
+// excepción por visar en la operación), la bitácora y la auditoría. La llama `reevaluarCliente` tras emitir la versión.
+function marcarExcepcionesQueYaNoAplican(deal, version) {
+  if (!deal || deal.id == null) return [];
+  const sol = repoSolicitudExc.get(deal.id) || {},
+    st = repoVisado.get(deal.id) || {},
+    det = repoVisadoDetalle.get(deal.id) || {};
+  if (!Object.keys(sol).length && !Object.keys(st).length) return [];
+  const fecha = new Date().toLocaleString("es-CL");
+  const r = excepcionesQueYaNoAplican(evaluarOtorgItems(deal), sol, st, det, version, fecha);
+  if (!r.salen.length) return [];
+  repoSolicitudExc.set(deal.id, r.sol);
+  repoVisado.set(deal.id, r.st);
+  repoVisadoDetalle.set(deal.id, r.det);
+  invalidarVisado();
+  const h = hilosDeDeal(deal.id).find((x) => x.asunto === `Aprobación de excepciones · ${deal.id}`) || null;
+  r.salen.forEach((e) => {
+    const desc = descripcionExcepcion(deal, e.stKey, e.solicitud);
+    const que = [
+      e.solicitud ? `la solicitud de ${e.solicitud.por} (${e.solicitud.fecha})` : "",
+      e.visado ? `el visado «${e.visado}»${e.detalle && e.detalle.por ? " de " + e.detalle.por : ""}` : "",
+    ]
+      .filter(Boolean)
+      .join(" y ");
+    PANEL_TAREAS.filter((tt) => !tt.hecha && tt.stKey === e.stKey && (tt.ops || []).includes(deal.id)).forEach((tt) => {
+      tt.hecha = true;
+      tt.cierre = { motivo: r.rotulo, por: "sistema", fecha };
+    });
+    registrarAuditoria({
+      usuario: NOMBRE_SISTEMA,
+      modulo: "Otorgamiento · Visado",
+      accion: "Excepción ya no aplica",
+      glosa: `Regla ${desc} · ${deal.cliente} · ${r.rotulo}: la re-evaluación no la levanta; ${que} queda marcado, no se borra`,
+      empresaId: deal.id,
+      exito: true,
+    });
+    logOtorgEvento(deal.id, NOMBRE_SISTEMA, `La excepción ${desc} ${r.rotulo}: la re-evaluación no la levanta. Queda marcado, no se borra: ${que}`);
+    if (h)
+      hiloEnviar(
+        h,
+        CODE_SISTEMA,
+        `La excepción ${desc} de ${deal.cliente} (${deal.id}) ${r.rotulo}: la re-evaluación no la levanta. Queda marcado con ese estado ${que}, y la tarea se cerró con ese motivo; si una versión posterior la vuelve a levantar, se solicita de nuevo.`,
+        null,
+      );
+  });
+  if (h && h.estado !== "terminado" && !visadoDeal(deal).excPend.length) hiloTerminar(h, CODE_SISTEMA);
+  return r.salen;
 }
 // ── Cache del visado (RENDIMIENTO / SERVER-SIDE) ────────────────────────────────────────────────
 // `visadoDeal` evalúa ~60 reglas × N deudores y se llamaba POR FILA de la tabla y POR TARJETA del
@@ -23722,7 +23936,7 @@ function visadoDealCalc(deal, visado, estado) {
   // Sin visado inyectado se cae al de la app: es la comodidad de los call sites, no una dependencia.
   const st = visado || (typeof VISADO_STATE !== "undefined" && deal && VISADO_STATE[deal.id]) || {};
   const excRech = exc.filter((e) => st[e.stKey] === "rechazado");
-  const excPend = exc.filter((e) => !st[e.stKey]);
+  const excPend = exc.filter((e) => excSinVisar(st, e.stKey)); // la marcada «ya no aplica» no cuenta como decisión (regla 66)
   const rechFirme = rech.filter((r) => !r.reev); // rechazos definitivos → pérdida
   const rechReev = rech.filter((r) => r.reev); // rechazos re-evaluables → NO pérdida (el dato puede cambiar)
   // `estadoAgregado`, no `estado`: el parámetro `estado` es el bag de entrada inyectado. Llamar igual
@@ -24728,11 +24942,11 @@ function giroDeal(deal, estado) {
   return { ...asignarGiros(girosDeDeal(deal, est), { tipos: est.tiposGiro }), congelado: false };
 }
 
-let VISADO_STATE = repoVisado.all(); // { [dealId]: { [ruleN]: "aprobado"|"rechazado" } } — resolución de excepciones
-let VISADO_DETALLE = repoVisadoDetalle.all(); // { [dealId]: { [ruleN]: { msg, archs:[], por, fecha } } } — comentario/respaldo de la DECISIÓN del apoderado
+let VISADO_STATE = repoVisado.all(); // { [dealId]: { [stKey]: "aprobado"|"rechazado"|"no_aplica" } } — resolución de excepciones; `no_aplica` = marcada por el sistema (regla 66), NO es decisión
+let VISADO_DETALLE = repoVisadoDetalle.all(); // { [dealId]: { [stKey]: { msg, archs:[], por, fecha, decision?, noAplica?:{desdeVersion,por,fecha}, anteriores?:[] } } } — comentario/respaldo de la DECISIÓN del apoderado
 // Solicitud de aprobación de una excepción que el EJECUTIVO envía al apoderado responsable (N1–N5):
 // comentario + archivos de respaldo. Precede a la decisión (VISADO_STATE/DETALLE) que toma el apoderado.
-let SOLICITUD_EXC = repoSolicitudExc.all(); // { [dealId]: { [stKey]: { comentario, archivos:[], por, porCode, fecha, nivel, rol } } }
+let SOLICITUD_EXC = repoSolicitudExc.all(); // { [dealId]: { [stKey]: { comentario, archivos:[], por, porCode, fecha, nivel, rol, reglaN, reglaNombre, deudorNombre, version, ampliaciones?:[], estado?:"no_aplica", noAplica?:{desdeVersion,por,fecha}, anteriores?:[] } } }
 // Excepción de VERIFICACIÓN por factura: el Gerente Comercial (u otro apoderado habilitado) exime a una
 // factura de la verificación telefónica antes del giro. { [dealId]: { [facturaId]: { por, fecha, msg } } }
 let VERIF_EXC = repoVerifExc.all();
@@ -25493,7 +25707,7 @@ const NOMBRE_SISTEMA = "-- Sistema --";
 function avisarPreEval(deal, execCode) {
   const res = evaluarOtorgItems(deal);
   const st = VISADO_STATE[deal.id] || {};
-  const excPend = res.filter((x) => x.disp === "excepcion" && !st[x.stKey]);
+  const excPend = res.filter((x) => x.disp === "excepcion" && excSinVisar(st, x.stKey));
   logOtorgEvento(
     deal.id,
     USERS[execCode] || execCode,
@@ -25578,11 +25792,12 @@ function excepcionesSinComentario(deal) {
   const sol = (typeof SOLICITUD_EXC !== "undefined" && SOLICITUD_EXC[deal.id]) || {};
   return (
     evaluarOtorgItems(deal)
-      .filter((it) => it.disp === "excepcion" && !st[it.stKey])
+      .filter((it) => it.disp === "excepcion" && excSinVisar(st, it.stKey))
       // Resuelta = solicitada CON justificación: comentario, respaldo, o la declaración explícita de
-      // que no hay comentarios adicionales. El silencio no cuenta.
+      // que no hay comentarios adicionales. El silencio no cuenta. La solicitud marcada «ya no aplica» no
+      // justifica la de hoy (regla 66): si la regla volvió a levantar, se solicita de nuevo.
       .filter((it) => {
-        const s = sol[it.stKey];
+        const s = solVigente(sol, it.stKey);
         return !s || (!(s.comentario || "").trim() && !(s.archivos && s.archivos.length) && !s.sinComentarios);
       })
   );
@@ -25653,6 +25868,14 @@ function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinCome
     return { ok: false, motivo: "La solicitud de excepción necesita un comentario, un respaldo o la declaración de que no hay comentarios adicionales." };
   }
   const nr = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", x.nivel || 1);
+  // La solicitud anterior marcada «ya no aplica» (regla 66) no se pisa ni se reactiva: la nueva la lleva como historia
+  // en `anteriores`, cada una con la versión en la que se pidió. Y guarda de qué regla y deudor es, porque cuando el
+  // deudor sale de la operación la clave es lo único que queda para nombrarla.
+  const previa = (repoSolicitudExc.get(deal.id) || {})[x.stKey];
+  const anteriores =
+    previa && previa.estado === VISADO_NO_APLICA
+      ? [...(previa.anteriores || []), Object.fromEntries(Object.entries(previa).filter(([k]) => k !== "anteriores"))]
+      : (previa && previa.anteriores) || [];
   // Escritura optimista + confirmación (la promesa no se espera aquí: la función es síncrona por sus
   // muchos call sites; el punto de await queda listo para cuando la mutation sea real).
   const sol = {
@@ -25666,6 +25889,11 @@ function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinCome
       fecha: new Date().toLocaleString("es-CL"),
       nivel: x.nivel || 4,
       rol: nr.rol,
+      reglaN: x.regla.n,
+      reglaNombre: x.regla.nombre,
+      deudorNombre: x.deudor ? x.deudor.nombre : null,
+      version: versionVigente(deal.id),
+      ...(anteriores.length ? { anteriores } : {}),
     },
   };
   repoSolicitudExc.set(deal.id, sol);
@@ -25711,6 +25939,7 @@ function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinCome
     para: dests.map((c) => (USERS[c] || c).split(" · ")[0]),
     ops: [deal.id],
     nodo: "Otorgamiento",
+    stKey: x.stKey, // la tarea conoce su excepción: es lo que permite cerrarla cuando la versión ya no la levanta (regla 66)
   });
 }
 // Fase de otorgamiento de una oportunidad: "preevaluacion" | "evaluacion" | "finalizada" | null.
@@ -25722,7 +25951,7 @@ function faseOtorgDeal(deal) {
   const exc = res.filter((x) => x.disp === "excepcion");
   const st = VISADO_STATE[deal.id] || {};
   const excRech = exc.filter((x) => st[x.stKey] === "rechazado");
-  const excPend = exc.filter((x) => !st[x.stKey]);
+  const excPend = exc.filter((x) => excSinVisar(st, x.stKey));
   const estado = rechFirme.length || excRech.length ? "rechazada" : excPend.length || rechReev.length ? "sujeta" : "aprobada";
   const requiere = exc.length > 0 || rechReev.length > 0 || rechFirme.length > 0;
   const aceptada = ["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage);
@@ -25817,7 +26046,7 @@ function hiloTerminar(h, code) {
   guardarHilos();
   if (typeof registrarAuditoria === "function")
     registrarAuditoria({
-      usuario: USERS[code] || code,
+      usuario: nombreEnHilo(code), // el sistema también termina hilos (regla 66) y no está en USERS
       modulo: "Mensajería interna",
       accion: "Conversación terminada",
       glosa: `${h.cliente || ""}${h.dealId ? " · " + h.dealId : ""}`.trim(),
@@ -25910,7 +26139,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
   const avisarAvanceOtorg = (deal) => {
     const res = evaluarOtorgItems(deal);
     const st = VISADO_STATE[deal.id] || {};
-    const excPend = res.filter((x) => x.disp === "excepcion" && !st[x.stKey]);
+    const excPend = res.filter((x) => x.disp === "excepcion" && excSinVisar(st, x.stKey));
     const misPend = excPend.filter((x) => puede(x.regla, x.nivel || 4));
     if (misPend.length > 0) return; // aún le quedan excepciones a ESTE aprobador → no completó su parte
     const porNivel = {};
@@ -25948,7 +26177,13 @@ function VisadoClienteView({ deals, usuario, onChange }) {
     const st = { ...(repoVisado.get(deal.id) || {}), [k]: val };
     const det = {
       ...(repoVisadoDetalle.get(deal.id) || {}),
-      [k]: { msg: msg || "", arch: arch || null, por: actorEtiqueta(usuario), fecha: new Date().toLocaleString("es-CL") },
+      [k]: {
+        msg: msg || "",
+        arch: arch || null,
+        por: actorEtiqueta(usuario),
+        fecha: new Date().toLocaleString("es-CL"),
+        ...historiaVisado((repoVisadoDetalle.get(deal.id) || {})[k]), // regla 66: nada se borra
+      },
     };
     // OTG-01 · SE COMPRUEBA LA ATRIBUCIÓN ANTES DE ESCRIBIR, no sólo al dibujar el botón. Quien visa
     // tiene que tener HOY el (área, nivel) que la regla exige: la pantalla puede venir de una sesión
@@ -26077,7 +26312,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
       const aprob = res.filter((x) => x.disp === "aprobado");
       const st = VISADO_STATE[deal.id] || {};
       const excRech = exc.filter((x) => st[x.stKey] === "rechazado");
-      const excPend = exc.filter((x) => !st[x.stKey]);
+      const excPend = exc.filter((x) => excSinVisar(st, x.stKey));
       // Sólo un rechazo FIRME (no excepcionable / no re-evaluable) deja la operación rechazada. Si el criterio
       // rechazado es re-evaluable o hay excepciones por aprobar, la operación queda "sujeta", no rechazada.
       const estado = rechFirme.length || excRech.length ? "rechazada" : excPend.length || rechReev.length ? "sujeta" : "aprobada";
@@ -26209,7 +26444,7 @@ function VisadoClienteView({ deals, usuario, onChange }) {
         // accionar; las de otros aprobadores se listan aparte (solo lectura) para ver el panorama completo.
         const stOp = VISADO_STATE[o.deal.id] || {};
         const excShow = soloMias ? o.exc.filter((x) => puede(x.regla, x.nivel || 4)) : o.exc;
-        const excOtros = soloMias ? o.exc.filter((x) => !stOp[x.stKey] && !puede(x.regla, x.nivel || 4)) : [];
+        const excOtros = soloMias ? o.exc.filter((x) => excSinVisar(stOp, x.stKey) && !puede(x.regla, x.nivel || 4)) : [];
         // Agrupación de las excepciones: primero las reglas del CLIENTE, luego una SECCIÓN POR CADA DEUDOR
         // (razón social), cada regla de deudor evaluada con las variables de ESE deudor.
         const grpKey = (x) => (x.deudor ? x.deudor.rut || x.deudor.nombre : "__cli");
@@ -26330,7 +26565,8 @@ function VisadoClienteView({ deals, usuario, onChange }) {
                         const _hdr = _i === 0 || grpKey(excSorted[_i - 1]) !== grpKey(x);
                         const key = o.deal.id + "-" + x.stKey;
                         const f = form[key] || {};
-                        const ee = (VISADO_STATE[o.deal.id] || {})[x.stKey] || "pendiente";
+                        // «Ya no aplica» vuelve a ser pendiente si la regla levantó de nuevo (regla 66).
+                        const ee = excSinVisar(VISADO_STATE[o.deal.id], x.stKey) ? "pendiente" : VISADO_STATE[o.deal.id][x.stKey];
                         const det = (VISADO_DETALLE[o.deal.id] || {})[x.stKey];
                         const niv = x.nivel || 1;
                         const nr = rolDeAreaNivel(x.regla.area, niv);
@@ -38637,7 +38873,10 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
   const rows = (vista === "resueltas" ? resueltas : activas).filter((r) => fTipo === "todos" || r.kind === fTipo);
   const selRow = sel ? todas.find((r) => r.kind === sel.kind && r.id === sel.id) : null;
   const marcarHecha = (r) => {
-    if (r.kind === "task") r.task.hecha = !r.task.hecha;
+    if (r.kind === "task") {
+      r.task.hecha = !r.task.hecha;
+      if (!r.task.hecha) delete r.task.cierre; // reabrir a mano borra el cierre del sistema (regla 66)
+    }
     bump();
   };
   const nPrioPend = rowsPrio.filter((r) => !r.hecha).length;
@@ -38656,6 +38895,7 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
   const estadoPill = (r) => {
     if (r.kind === "linea") return r.sow ? { l: "Asegurar SOW", c: "#C2410C", bg: "#FFF7ED" } : { l: "Urgente para el curse", c: "#2563EB", bg: "#EFF6FF" };
     if (r.kind === "prio") return r.at.atendida ? { l: r.at.label, c: r.at.col, bg: r.at.bg } : { l: "Por atender", c: "#C2410C", bg: "#FFF7ED" };
+    if (r.hecha && r.kind === "task" && r.task.cierre) return { l: "Cerrada por el sistema", c: "#4B5563", bg: "#F3F4F6" }; // regla 66
     return r.hecha ? { l: "Hecha", c: "#16A34A", bg: "#F0FDF4" } : { l: "Pendiente", c: "#703EFF", bg: "#F1ECFF" };
   };
   const vistas = [
@@ -39021,6 +39261,12 @@ function PCtareas({ deals, execFilter, onOpen, esJefe, usuarioNombre, usuario, o
                         </>
                       )}
                     </div>
+                    {/* REGLA 66 · Una tarea que cerró el sistema dice por qué: «ya no aplica desde la versión N». */}
+                    {r.kind === "task" && r.task.cierre && (
+                      <div className="mt-2 t11" style={{ color: C.sub, lineHeight: 1.4 }}>
+                        Cerrada por el {r.task.cierre.por} · {r.task.cierre.fecha}: {r.task.cierre.motivo}.
+                      </div>
+                    )}
                     {r.kind === "task" && destinatariosTarea(r.task).length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
                         {destinatariosTarea(r.task).map((p, i) => (
@@ -46848,7 +47094,7 @@ export default function PipelineComercial() {
       if (!faseOtorgDeal(d)) return; // no está en la bandeja de otorgamiento
       const res = evaluarOtorgItems(d);
       const st = VISADO_STATE[d.id] || {};
-      const excPend = res.filter((x) => x.disp === "excepcion" && !st[x.stKey]);
+      const excPend = res.filter((x) => x.disp === "excepcion" && excSinVisar(st, x.stKey));
       const mias = excPend.filter((x) => puedeU(x.regla, x.nivel || 4));
       if (mias.length) n++;
     });

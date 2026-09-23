@@ -92,7 +92,7 @@ selector y **por qué el sustituto es legítimo** cuando el disparador real no s
 | **MN-09** | Ticket crafteado | `abrirConTicket(h, extra, usuario)` (`e2e-30`): `emitirTicketDetalle("deal", id, usuario, { deal: {...payload.deal, ...últimoPatch, ...extra}, usuario, tab: null, ts })` en el tubo y `ctx.newPage().goto(url + "?t=" + uuid)`. Sirve para menús y compuertas en un estado que el flujo no da rápido (publicada, otra sesión); no para el veredicto (la foto no vuelve al tubo). **Prerrequisito**: `abrirConTicket` toma el PRIMER ticket `tipo: "deal"` de `TICKETS_EMITIDOS` y lanza «no encuentro el ticket del detalle … ¿se abrió el detalle desde el tubo?» si no hay ninguno; por tanto exige un MN-02 previo en la misma sesión (dentro del caso o del archivo) y craftea ESE deal, no uno elegido por id. |
 | **MN-10** | Restauración | `fotoRepos` / `restaurarRepos` de las claves `pc_repo_*` (`e2e-29`, `e2e-15-bis-bis`; barren todo `pc_repo_*`). Las claves reales las arma `crearRepo(nombre)` como `"pc_repo_" + nombre` con forma `{[tenantId]: {[id]: valor}}`: `pc_repo_otorgamiento_visado` (`repoVisado`), `pc_repo_verificacion_telefonica` (`repoVerifTel`), `pc_repo_giro_asignacion` (`repoGiro`), `pc_repo_linea_comite` (`repoLineaComite`), `pc_repo_simulacion_version` (`repoSimVersions`), `pc_repo_solicitud_comite` (`repoSolicitudComite`), `pc_repo_factura_no_confirmada` (`repoNoConfirmadas`, el veto de CP-091; regla 6). En los CP se lee por `repoX.get(id)` desde `evaluate`, nunca por una clave abreviada. Retiro de la solicitud en `api2ListarProcesos()` y de `SOLIC_SEQ`, borrado de `fs_curse_<neg>`, filtro rápido al que estaba, sesión al `usuario0`, `det.close()`, `h.apagarDirectorio()`. Todo en el `finally`. |
 
-Y las capas que la suite exige: un caso nuevo toma el siguiente entero (166 en adelante), sube `CASOS_ESPERADOS` en
+Y las capas que la suite exige: un caso nuevo toma el siguiente entero (167 en adelante), sube `CASOS_ESPERADOS` en
 `tests/contract/suite.test.mjs` y se cita en la regla y en `invariantes.md`; un gate de contrato nuevo lleva
 `sonda negativa` y lee `canonico(src)` (ADR-0006).
 
@@ -681,24 +681,24 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (166 en a
 ## HU-32 · La excepción que dejó de aplicar se marca «ya no aplica desde la versión N», no se borra (decidido el 22-09-2026: ADR-0016, G-35, T1)
 
 ### CP-087 · Cuando ya no gatilla: el visado y la solicitud pasan a «ya no aplica desde la versión N» con actor «sistema» y hora; la tarea se cierra y el hilo recibe el aviso
-- **Criterio**: CA-1 de HU-32 · **Dirección**: positiva · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0016; G-14 y G-35; T1: cambia lo que un visado significa). «No debería quedar huérfano, debería quedar con un estado que identifique que cambió, para poder auditar que esa regla quedó así en el cambio de versión».
+- **Criterio**: CA-1 de HU-32 · **Dirección**: positiva · **Capa**: suite. · **Cobertura actual**: suite: caso **166** (`reevaluarCliente` marca la solicitud de C07 «ya no aplica desde la versión 2» con actor sistema y hora, cierra la tarea con el motivo, postea en el hilo como el sistema y deja auditoría y bitácora; sin el deudor, el visado de D19 se marca conservando la decisión; nada se borra), implementado el 23-09-2026 (ADR-0016, regla 66; G-14 y G-35). «No debería quedar huérfano, debería quedar con un estado que identifique que cambió, para poder auditar que esa regla quedó así en el cambio de versión».
 - **Precondición**: `SOLICITUD_EXC` con una solicitud abierta por `stKey` (y, en una segunda corrida, `repoVisado` con la misma clave aprobada) y una re-evaluación (`reevaluarCliente` con variables que dejan de gatillar el criterio) que emite la versión N.
 - **Pasos**: 1) re-evaluar; 2) leer `repoVisado.get(id)[stKey]` y `SOLICITUD_EXC[id][stKey]`; 3) leer la tarea del aprobador y el hilo; 4) leer la auditoría.
-- **Resultado esperado**: estado «ya no aplica desde la versión N» (nombre del estado por definir en `VISADO_STATE`; con `desdeVersion: N`, `por: "sistema"` y hora), la tarea cerrada con ese motivo, un mensaje del sistema en el hilo, una fila de auditoría; nada se borra (`repoVisado` y `SOLICITUD_EXC` conservan la entrada). En la versión N el criterio figura como cumplido.
+- **Resultado esperado**: estado «ya no aplica desde la versión N» (`no_aplica` en `VISADO_STATE` y `estado: "no_aplica"` en la solicitud, con `noAplica: {desdeVersion: N, por: "sistema", fecha}`), la tarea cerrada con ese motivo, un mensaje del sistema en el hilo, una fila de auditoría; nada se borra (`repoVisado` y `SOLICITUD_EXC` conservan la entrada). En la versión N el criterio figura como cumplido.
 
 ### CP-088 · Si sigue gatillando nada se marca
-- **Criterio**: CA-2 de HU-32 · **Dirección**: negativa · **Capa**: suite · **Cobertura actual**: NUEVO. · **Resultado esperado**: tarea abierta y visado sin cambio.
+- **Criterio**: CA-2 de HU-32 · **Dirección**: negativa · **Capa**: suite · **Cobertura actual**: caso **166** (O05 sigue gatillando: su solicitud y su tarea quedan intactas; el visado de D19 sigue «aprobado» mientras el deudor está en la oferta), implementado el 23-09-2026. · **Resultado esperado**: tarea abierta y visado sin cambio.
 
 ### CP-124 · «Ya no aplica desde la versión N» se ve en el tab Otorgamiento y queda auditado: el criterio cumplido, la excepción anterior visible con su estado, la tarea cerrada
-- **Criterio**: CA-1 de HU-32 (en pantalla; ADR-0016: «el criterio se muestra como cumplido en la versión vigente, y la excepción anterior sigue visible en el historial del visado con su nuevo estado») · **Dirección**: positiva · **Capa**: e2e. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0016, G-35). Hoy el estado no existe y el tab no muestra excepciones que dejaron de gatillar: nace en rojo.
+- **Criterio**: CA-1 de HU-32 (en pantalla; ADR-0016: «el criterio se muestra como cumplido en la versión vigente, y la excepción anterior sigue visible en el historial del visado con su nuevo estado») · **Dirección**: positiva · **Capa**: e2e. · **Cobertura actual**: NUEVO en pantalla; la conducta está implementada el 23-09-2026 (regla 66, caso 166 en la suite; `regla_66.test.mjs` fija que el tab muestra la excepción anterior con su estado, que la huérfana tiene lista propia y que la bandeja de Tareas dice el motivo). Falta el caso e2e.
 - **Precondición**: MN-01 «Sin línea» fila 0, MN-02, MN-03 «Todo lo disponible» (trae excepciones de deudores, `e2e-15-bis-bis-a`); tab «Otorgamiento» (`det.locator("button").filter({ hasText: /^\s*Otorgamiento\s*\d*\s*$/ }).first()`) → «Marcar sin comentarios y solicitar (N)» → «Enviar N solicitud(es)»: queda una solicitud por `stKey` de un criterio D de un deudor X; `n0 = SIM_VERSIONS[id].length`. El disparador que deja de gatillar SÍ existe en la UI, sin sustituto: en Negocio › Detalle, vista plana `button[title^="Todas las facturas en una sola lista"]` → `button[title="Retirar esta factura de la oferta"]` de TODAS las facturas del deudor X → «Re-evaluar operación» (la regla D de X ya no tiene sujeto en la versión N = n0 + 1).
 - **Pasos**: 1) retirar las facturas de X y re-evaluar; 2) tab «Otorgamiento»: leer la fila del criterio de X; 3) `h.irA("Tareas")` en el tubo y buscar la tarea del aprobador por el id de la operación; 4) MN-07 a ADMIN en el detalle → tab «Mensajería» → el hilo de la excepción; 5) `evaluate`: `repoVisado.get(id)[stKey]`, `SOLICITUD_EXC[id][stKey]` y la última auditoría de la operación.
 - **Resultado esperado**: la fila del criterio de X ya no está pendiente y muestra la excepción anterior con el rótulo «ya no aplica desde la versión N» (N = n0 + 1), sin botón «Aprobar excepción»; la tarea aparece cerrada con ese motivo; el hilo tiene un mensaje del sistema con la versión; el repositorio conserva la entrada con `desdeVersion: N` y `por: "sistema"`; la auditoría tiene la fila. Nada se borró: `SOLICITUD_EXC[id][stKey]` existe.
 - **Esbozo e2e**: id `e2e-HU-32-a` · archivo `31_otorgamiento_visado.e2e.mjs` · el `button` del tab «Otorgamiento», `button[title="Retirar esta factura de la oferta"]`, `h.irA("Tareas")` · `finally`: `sel.selectOption(usuario0)`, MN-10 (incluye `pc_repo_otorgamiento_visado` y la solicitud en `SOLICITUD_EXC`).
 
 ### CP-125 · Si una versión posterior vuelve a levantar la misma excepción, se abre una solicitud nueva y la marcada no se reactiva
-- **Criterio**: CA-3 de HU-32 (ADR-0016: «si una versión posterior vuelve a levantar la misma excepción, se abre una solicitud nueva: la marcada no se reactiva») · **Dirección**: negativa (la marcada sigue «ya no aplica») y positiva (existe una solicitud nueva) · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0016, G-35).
-- **Precondición**: el estado final de CP-087 (la excepción marcada desde la versión N) y una re-evaluación con las variables que vuelven a gatillar el criterio (versión N + 1). Cómo conviven dos entradas bajo la clave estable `dealId + stKey` (historial por clave, o la versión como parte de la clave) lo define la implementación; el caso asierta que son dos y distinguibles.
+- **Criterio**: CA-3 de HU-32 (ADR-0016: «si una versión posterior vuelve a levantar la misma excepción, se abre una solicitud nueva: la marcada no se reactiva») · **Dirección**: negativa (la marcada sigue «ya no aplica») y positiva (existe una solicitud nueva) · **Capa**: suite. · **Cobertura actual**: caso **166** (la versión que vuelve a levantar C07 y D19 los deja pendientes otra vez; la solicitud marcada no justifica —`excepcionesSinComentario` la lista— ni se reactiva; la solicitud nueva anota su versión y lleva la anterior en `anteriores`; la re-evaluación siguiente la marca de nuevo), implementado el 23-09-2026.
+- **Precondición**: el estado final de CP-087 (la excepción marcada desde la versión N) y una re-evaluación con las variables que vuelven a gatillar el criterio (versión N + 1). Cómo conviven dos entradas bajo la clave estable `dealId + stKey` (historial por clave, o la versión como parte de la clave) lo define la implementación; el caso asierta que son dos y distinguibles. La implementación eligió la historia por clave: la solicitud vigente lleva `anteriores` y el detalle del visado nuevo hereda la del marcado.
 - **Pasos**: 1) re-evaluar; 2) leer las entradas por `stKey`; 3) leer la bandeja del apoderado.
 - **Resultado esperado**: la entrada marcada conserva «ya no aplica desde la versión N»; hay una solicitud nueva, pendiente, con su propia fecha y `desdeVersion: N + 1` como origen; la bandeja del apoderado la muestra una sola vez; el visado anterior no vuelve a «aprobado».
 
@@ -1017,7 +1017,7 @@ Una fila por historia: sus CP, cuáles están cubiertos hoy (con el id que los c
 | HU-29 | 078–081 | 078 (casos 88, 154), 080 (casos 24, 26), 081 parcial (e2e-30) | 078, 079, 080, 081 | — | — |
 | HU-30 | 082–083 | — | — | 082, 083 | — |
 | HU-31 [definición ajustada] | 084–086 | 085 (caso 58, e2e-13-quaterdecies), 086 (e2e-13-quaterdecies) | — | 084 | — |
-| HU-32 [ADR-0016] | 087–088, 124, 125 | — | 124 | 087, 088, 125 | — |
+| HU-32 [ADR-0016; implementada 23-09-2026] | 087–088, 124, 125 | 087, 088, 125 (caso 166, `regla_66`) | 124 | — | — |
 | HU-33 | 089–092 | 089 (caso 157), 091 (casos 21, 25: vigente hoy · cambia con ADR-0018, se invierte), 092 (caso 33) | 089, 090, 091, 092 | — | — |
 | HU-34 [definición ajustada] | 093–094 | 093 (casos 55, 52), 094 (casos 55, 52) | — | — | — |
 | HU-42 [ADR-0018; 130 retirado] | 129, 131, 132, 138–142 | 129 (casos 21–23, vía CP-119: vigente hoy · cambia con ADR-0018, se invierte), 131 (casos 21, 25, 157), 141 parcial (casos 25, 95: el veto en la suite) | 138, 139, 140, 141, 142 | 132, 138, 139, 140, 141 | — |
@@ -1088,9 +1088,9 @@ dan vuelta con su mismo id en el commit del ADR: CP-091 (`e2e-6-b`), CP-119 y CP
 Por la capa e2e: `e2e-13-octies-bis-a`, `e2e-13-sexdecies-a/c/d`, `e2e-12-bis-a/b/d`, `e2e-14-a/b/c`, `e2e-29-a/b`,
 `e2e-15-bis-bis-a/b`, `e2e-58`, `e2e-30`, `e2e-13-quaterdecies`. Por la suite: casos 3, 4, 21–33, 36, 38, 47, 52, 55,
 56, 58, 76–81, 83, 85, 86, 88, 99, 100, 105, 106, 110, 112, 114, 117–119, 124–126, 134–136, 140–144, 146–150, 154, 157,
-158, 159, 160, 161, 162, 163, 164, 165 (el 145 —ATR-01, quién autoriza un descuento— no lo cita ningún CP; y `regla_35`, `regla_40`, `regla_transiciones`,
+158, 159, 160, 161, 162, 163, 164, 165, 166 (el 145 —ATR-01, quién autoriza un descuento— no lo cita ningún CP; y `regla_35`, `regla_40`, `regla_transiciones`,
 `regla_estado_pestanas` como texto; `regla_33` vigila la solicitud duplicada, no las mutaciones del paquete). De esos
-79, **42 están cubiertos del todo** —entre ellos los tres que la decisión del usuario dejó **implementados como están**:
+82, **45 están cubiertos del todo** —entre ellos los tres que la decisión del usuario dejó **implementados como están**:
 CP-085 y CP-094 (la clave estable es el versionado, G-13 cerrado) y CP-028 (el gesto explícito, D1), y los dos de HU-42
 que remiten a lo que los casos 21–23 y 157 ya fijan (CP-129, que se da vuelta con ADR-0018, y CP-131)— y **35 son
 parciales** (CP-001, 015, 027, 037, 041, 042, 046, 054, 058, 065, 066, 068, 069, 072, 074, 076, 078, 080, 081, 089, 091,
@@ -1098,18 +1098,18 @@ parciales** (CP-001, 015, 027, 037, 041, 042, 046, 054, 058, 065, 066, 068, 069,
 vecino y falta el caso en pantalla (HU-01, HU-06, HU-10, HU-14, HU-15, HU-16, HU-18, HU-23, HU-25, HU-26, HU-27, HU-28,
 HU-29, HU-33, HU-35, HU-36, HU-38, HU-39, HU-41), falta la dirección negativa (CP-054, CP-069, CP-074, CP-099), el e2e
 que se cita sólo la cubre bajo condición (CP-066) o sólo mide el aviso sin contar versiones (CP-134). CP-141 es parcial
-en la suite (casos 25 y 95 fijan el veto) pero nace con ADR-0018 y se cuenta entre los nuevos. Los otros **54 CP
-son enteramente nuevos**; en total, 89 CP piden al menos un caso nuevo (35 + 54), y 79 + 54 = 133.
+en la suite (casos 25 y 95 fijan el veto) pero nace con ADR-0018 y se cuenta entre los nuevos. Los otros **51 CP
+son enteramente nuevos**; en total, 86 CP piden al menos un caso nuevo (35 + 51), y 82 + 51 = 133.
 
 **Nuevos por capa:** **e2e 50** (en 12 archivos nuevos, `27` … `38`, más tres ids que van a archivos existentes,
 `21_29` y `17_15_bis_bis`; 30 de ellos fijan conducta vigente sin gate en pantalla —CP-001, 015, 027, 037, 041, 046,
 058, 065, 066, 068, 069, 072, 074, 076, 078–081, 089–092, 098, 100, 102, 107, 108, 109, 115, 116; CP-091 se escribe
 fijando lo vigente y se da vuelta con ADR-0018— y 20 dependen de un gap o de una decisión ya tomada —CP-013, 034–036,
 042 (el tooltip, nace en rojo), 071, 095, 110, 118 (`moveTo`), 123, 124, 126, 127, 128, 137, 138–142—; CP-111 es sólo
-de suite porque «Avanzar a» no ofrece «Cesión») · **suite 48** (del 166 en adelante; `CASOS_ESPERADOS` sube en cada
+de suite porque «Avanzar a» no ofrece «Cesión») · **suite 45** (del 167 en adelante; `CASOS_ESPERADOS` sube en cada
 commit que los agrega, y se dice) · **contrato 4** (CP-011, CP-031, CP-033, CP-112; todos con sonda negativa
-sobre `canonico(src)`). Un CP suma en dos capas cuando la conducta se prueba en el motor y en la pantalla (50 + 48 + 4 =
-102 casos para 89 CP).
+sobre `canonico(src)`). Un CP suma en dos capas cuando la conducta se prueba en el motor y en la pantalla (50 + 45 + 4 =
+99 casos para 86 CP).
 
 **Decisiones del 22 y del 23-09-2026.** Cerradas y aplicadas: **D1** (ADR-0013: CP-028 y CP-030 protegen el gesto
 explícito; CP-031/033 retiran el anuncio; CP-034–036, CP-122 y CP-123 fijan el evento de evaluación, las cinco versiones
@@ -1117,7 +1117,7 @@ y su contenido), **D2** (ADR-0015: no hay bloqueo por deudor; CP-061/117 fijan M
 destino (ADR-0019: CP-022, CP-023 y CP-143), **D4** (ADR-0015: CP-096 en la suite, CP-126/127 en pantalla; CP-095 y
 G-33 para el estado «Rechazada»), **D2 en la verificación, 23-09-2026** (ADR-0018: CP-138/139/140/141/142 en rojo,
 CP-132 en su dirección nueva; CP-091, CP-119 y CP-129 fijan lo de hoy y se dan vuelta), **D6** (ADR-0014:
-CP-007/008/009), **M-21** (ADR-0016: CP-087/088/124/125), **M-33** (ADR-0017: CP-104/128), **M-10** (G-31: CP-012/120),
+CP-007/008/009), **M-21** (ADR-0016: CP-087/088/125 en la suite —caso 166—, CP-124 por e2e), **M-33** (ADR-0017: CP-104/128), **M-10** (G-31: CP-012/120),
 **M-02/M-07/M-08** en el reloj (CP-019/020/121), **M-19** (CP-064), **M-36** (CP-053/123), **M-01** en el dato (G-01:
 CP-011). Dadas por buenas como están: M-05/M-06 (CP-015/016), M-15 (CP-061), M-20/M-25 (CP-085/094), M-22 y M-23
 (CP-046/047; CP-048 retirado el 23-09-2026), M-27 (CP-042), M-28 (CP-068/069; CP-070 retirado el 23-09-2026), M-35

@@ -8017,6 +8017,117 @@
        + ` · en cero pérdida «committee_reject» ${perdidaOk} · Observada/Aprobada/girada no tocan ${bloqueaOk} · API 3 «Rechazada» por línea ${apiOk} · restaurado ${restauradoOk}`);
   }
 
+  {
+    // 166 · LA EXCEPCIÓN QUE LA VERSIÓN N YA NO LEVANTA SE MARCA «ya no aplica desde la versión N», NO SE BORRA (regla 66,
+    //       ADR-0016, M-21; G-14 y G-35). «No debería quedar huérfano, debería quedar con un estado que identifique que
+    //       cambió, para poder auditar que esa regla quedó así en el cambio de versión» (el usuario, 22-09-2026).
+    //       Fixture del caso 124 (el cedente con libro): C07 «Cupo suficiente» es excepción en v1 y la re-evaluación la
+    //       regulariza (`mntLinea`); O05 sigue siendo excepción (sin evidencia del contrato); D19 del segundo deudor deja de
+    //       tener sujeto cuando su factura sale de la oferta. Direcciones: (a) marca la solicitud —tarea cerrada con motivo,
+    //       mensaje del sistema en el hilo, auditoría y bitácora—; (b) la que sigue gatillando no se toca; (c) el visado
+    //       marcado conserva la decisión del apoderado; (d) si vuelve a levantar está pendiente otra vez, la marcada no
+    //       justifica ni se reactiva, y la solicitud nueva la lleva como historia; (e) la decisión pura con entradas plantadas.
+    const ID = "T-NNN-noaplica";
+    const habia = repoSimVersions.get(ID);
+    const auditSnap = AUDIT_LOG.slice(); const auditDesc = AUDIT_DESCARTADOS;
+    const rateSnap = Object.fromEntries(Object.keys(RATE_BUCKETS).map((k) => [k, RATE_BUCKETS[k].slice()]));
+    const idemSnap = new Map(IDEM_APLICADAS);
+    const f1 = fac("r1", LB[0], 20), f2 = fac("r2", LB[1], 12);
+    const deal = { id: ID, rutEmisor: EMISOR_LIBRO, cliente: "Cliente noaplica", stage: "oferta", simulado: true, monto: 32 * MMF, facturas: 2, facturasOp: [f1, f2] };
+    const tareasDe = () => PANEL_TAREAS.filter((t) => (t.ops || []).includes(ID));
+    const limpiar = () => {
+      repoSimVersions.del(ID); repoSolicitudExc.del(ID); repoVisado.del(ID); repoVisadoDetalle.del(ID); repoOtorgEventos.del(ID);
+      setPreEval(ID, "CR", false, false);
+      hilosDeDeal(ID).forEach((x) => repoHilos.del(x.id));
+      for (let i = PANEL_TAREAS.length - 1; i >= 0; i--) if ((PANEL_TAREAS[i].ops || []).includes(ID)) PANEL_TAREAS.splice(i, 1);
+    };
+    let fixtureOk = false, marcaOk = false, avisaOk = false, intactaOk = false, visadoOk = false, huerfanaOk = false, reLevantaOk = false, nuevaOk = false, puraOk = false;
+    let det = "";
+    limpiar();
+    try {
+      const items0 = evaluarOtorgItems(deal);
+      const c07 = items0.find((i) => i.regla.cond === "C07" && i.disp === "excepcion" && !i.deudor);
+      const o05 = items0.find((i) => i.regla.cond === "O05" && i.disp === "excepcion" && !i.deudor);
+      const d19 = items0.find((i) => i.regla.cond === "D19" && i.disp === "excepcion" && i.deudor && i.deudor.rut === LB[1]);
+      fixtureOk = !!(c07 && o05 && d19);
+      if (fixtureOk) {
+        const kC = c07.stKey, kO = o05.stKey, kD = d19.stKey;
+        solicitarAprobacionExc(deal, c07, "CR", "justifico C07", [], false);
+        solicitarAprobacionExc(deal, o05, "CR", "", [], true);
+        repoVisado.set(ID, { [kD]: "aprobado" }); repoVisadoDetalle.set(ID, { [kD]: { msg: "ok", archs: [], por: "GG", fecha: "ayer" } });
+        const sol0 = repoSolicitudExc.get(ID) || {};
+        const t0 = tareasDe();
+        const antes = !!sol0[kC] && sol0[kC].version === 1 && sol0[kC].reglaN === c07.regla.n && !sol0[kC].estado && t0.length === 2 && t0.every((t) => !t.hecha && !!t.stKey)
+          && visadoDeal(deal).excPend.some((e) => e.stKey === kC);
+        // (a) Re-evaluar: C07 deja de levantar → la solicitud queda marcada con la versión, actor sistema y hora; la tarea
+        //     cerrada con el motivo; el hilo recibe el mensaje del sistema; auditoría y bitácora tienen la fila. Nada se borró.
+        const nv = reevaluarCliente(deal, "CR");
+        const sol1 = repoSolicitudExc.get(ID) || {};
+        const sC = sol1[kC];
+        const rot = `ya no aplica desde la versión ${nv.v}`;
+        marcaOk = antes && !!sC && sC.estado === "no_aplica" && !!sC.noAplica && sC.noAplica.desdeVersion === nv.v && sC.noAplica.por === "sistema" && !!sC.noAplica.fecha
+          && sC.comentario === "justifico C07" && rotuloNoAplica(nv.v) === rot
+          && evaluarOtorgItems(deal).find((i) => i.stKey === kC).disp === "aprobado" && !visadoDeal(deal).excPend.some((e) => e.stKey === kC);
+        const tC = tareasDe().find((t) => t.stKey === kC);
+        const hilo = hilosDeDeal(ID).find((x) => x.asunto === `Aprobación de excepciones · ${ID}`);
+        const msgSis = hilo && hilo.mensajes.find((m) => m.de === CODE_SISTEMA && m.texto.includes(rot) && m.texto.includes("#" + c07.regla.n));
+        const audit = AUDIT_LOG.find((a) => a.accion === "Excepción ya no aplica" && a.empresaId === ID && (a.glosa || "").includes(rot));
+        const bit = (repoOtorgEventos.get(ID) || []).find((e) => e.actor === NOMBRE_SISTEMA && (e.resultado || "").includes(rot));
+        avisaOk = !!tC && tC.hecha === true && !!tC.cierre && tC.cierre.motivo === rot && tC.cierre.por === "sistema" && !!msgSis && !!audit && audit.usuario === NOMBRE_SISTEMA && !!bit
+          && !!hilo && hilo.estado === "abierto"; // quedan excepciones por visar (O05): el hilo sigue abierto
+        // (b) La que sigue gatillando no se toca: O05 con su solicitud y su tarea abierta; el visado de D19 sigue aprobado.
+        const sO = sol1[kO], tO = tareasDe().find((t) => t.stKey === kO);
+        intactaOk = !!sO && !sO.estado && !sO.noAplica && !!tO && tO.hecha === false && (repoVisado.get(ID) || {})[kD] === "aprobado";
+        // (c) Sin la factura del segundo deudor, D19 deja de tener sujeto: el visado se marca y el detalle conserva la
+        //     decisión del apoderado con la marca encima; el criterio no cuenta como pendiente ni como aprobado vigente.
+        const sinD2 = { ...deal, facturasOp: [f1], facturas: 1, monto: 20 * MMF };
+        const nv2 = reevaluarCliente(sinD2, "CR");
+        const vD = (repoVisado.get(ID) || {})[kD], dD = (repoVisadoDetalle.get(ID) || {})[kD] || {};
+        visadoOk = vD === "no_aplica" && dD.decision === "aprobado" && dD.por === "GG" && dD.msg === "ok" && !!dD.noAplica && dD.noAplica.desdeVersion === nv2.v && dD.noAplica.por === "sistema"
+          && excSinVisar(repoVisado.get(ID), kD) === true && !visadoDeal(sinD2).excPend.some((e) => e.stKey === kD);
+        huerfanaOk = /^#\d+ .*· deudor /.test(descripcionExcepcion(sinD2, kD, null)) && descripcionExcepcion(deal, kC, sol1[kC]).startsWith("#" + c07.regla.n + " ");
+        // (d) Una versión que vuelve a levantar C07 y D19 (las variables de la evaluación inicial): pendientes otra vez; la
+        //     marcada no justifica (`excepcionesSinComentario` la lista) ni se reactiva (sigue «no_aplica»); la solicitud
+        //     nueva anota su versión y lleva la anterior como historia; la re-evaluación siguiente la marca de nuevo.
+        repoSimVersions.push(ID, snapVersionCli(deal, 0));
+        const vAhora = (SIM_VERSIONS[ID] || []).length;
+        const pend3 = visadoDeal(deal).excPend.map((e) => e.stKey);
+        reLevantaOk = pend3.includes(kC) && pend3.includes(kD) && (repoVisado.get(ID) || {})[kD] === "no_aplica" && (repoSolicitudExc.get(ID) || {})[kC].estado === "no_aplica"
+          && excepcionesSinComentario(deal).some((i) => i.stKey === kC) && !excepcionesSinComentario(deal).some((i) => i.stKey === kO);
+        solicitarAprobacionExc(deal, evaluarOtorgItems(deal).find((i) => i.stKey === kC), "CR", "de nuevo", [], false);
+        const sN = (repoSolicitudExc.get(ID) || {})[kC];
+        const nuevaSola = !!sN && !sN.estado && sN.comentario === "de nuevo" && sN.version === vAhora && Array.isArray(sN.anteriores) && sN.anteriores.length === 1
+          && sN.anteriores[0].comentario === "justifico C07" && sN.anteriores[0].estado === "no_aplica" && sN.anteriores[0].noAplica.desdeVersion === nv.v
+          && !excepcionesSinComentario(deal).some((i) => i.stKey === kC) && tareasDe().filter((t) => t.stKey === kC && !t.hecha).length === 1;
+        const nv4 = reevaluarCliente(deal, "CR");
+        const sM = (repoSolicitudExc.get(ID) || {})[kC];
+        nuevaOk = nuevaSola && !!sM && sM.estado === "no_aplica" && sM.noAplica.desdeVersion === nv4.v && sM.anteriores.length === 1 && sM.comentario === "de nuevo";
+        // (e) La decisión pura con entradas plantadas: marca lo que ya no levanta (con o sin solicitud, con o sin visado),
+        //     deja lo que levanta, no marca dos veces, y sólo escribe la marca.
+        const items = [{ stKey: "1", disp: "excepcion" }, { stKey: "2", disp: "aprobado" }];
+        const r = excepcionesQueYaNoAplican(items, { 1: { por: "a" }, 2: { por: "b" }, 3: { por: "c", estado: "no_aplica", noAplica: { desdeVersion: 1 } } },
+                                            { 2: "aprobado", 4: "rechazado" }, { 2: { por: "GG" } }, 7, "hoy");
+        puraOk = r.salen.map((e) => e.stKey).sort().join(",") === "2,4" && r.sol["1"].estado === undefined && r.sol["2"].estado === "no_aplica" && r.sol["2"].noAplica.desdeVersion === 7
+          && r.sol["3"].noAplica.desdeVersion === 1 && r.st["2"] === "no_aplica" && r.st["4"] === "no_aplica" && r.det["2"].decision === "aprobado" && r.det["2"].por === "GG"
+          && r.det["4"].decision === "rechazado" && r.rotulo === "ya no aplica desde la versión 7" && excSinVisar(r.st, "2") && !excSinVisar({ 2: "aprobado" }, "2")
+          && solVigente(r.sol, "2") === null && !!solVigente(r.sol, "1");
+        det = `C07 ${kC} marcada desde v${nv.v} ${marcaOk} · tarea cerrada con motivo, mensaje del sistema, auditoría y bitácora ${avisaOk} · O05 y el visado de D19 intactos ${intactaOk}`
+          + ` · sin el deudor: visado D19 marcado desde v${nv2.v} conservando «aprobado» de GG ${visadoOk} · se nombra sin el sujeto ${huerfanaOk}`
+          + ` · vuelve a levantar: pendientes de nuevo, la marcada no justifica ni se reactiva ${reLevantaOk} · solicitud nueva v${vAhora} con la anterior como historia y marcada otra vez en v${nv4.v} ${nuevaOk}`
+          + ` · decisión pura ${puraOk}`;
+      }
+    } finally {
+      limpiar();
+      if (habia !== undefined) repoSimVersions.set(ID, habia);
+      AUDIT_LOG.length = 0; AUDIT_LOG.push(...auditSnap); AUDIT_DESCARTADOS = auditDesc;
+      Object.keys(RATE_BUCKETS).forEach((k) => { delete RATE_BUCKETS[k]; }); Object.keys(rateSnap).forEach((k) => { RATE_BUCKETS[k] = rateSnap[k]; });
+      IDEM_APLICADAS.clear(); idemSnap.forEach((v, k) => IDEM_APLICADAS.set(k, v));
+    }
+    ok("166 la excepción que la versión N ya no levanta se marca «ya no aplica desde la versión N» —solicitud, visado, tarea e hilo, con actor sistema y hora— y no se borra; la que sigue gatillando no se toca; si vuelve a levantar está pendiente otra vez, la marcada no justifica ni se reactiva y la solicitud nueva la lleva como historia",
+       fixtureOk && marcaOk && avisaOk && intactaOk && visadoOk && huerfanaOk && reLevantaOk && nuevaOk && puraOk,
+       fixtureOk ? det : "la fixture no trae C07, O05 y D19 del segundo deudor como excepciones: cambió el activo o el catálogo");
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

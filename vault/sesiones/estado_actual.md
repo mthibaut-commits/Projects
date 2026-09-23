@@ -13,9 +13,9 @@ timestamp: 2026-09-23T05:00:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **165/165 PASA**, **55 archivos de gate de contrato**
-(458 tests), **32 casos e2e** (32/32), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
-(94 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
+(`pipeline_comercial.jsx`), build standalone, **166/166 PASA**, **56 archivos de gate de contrato**
+(473 tests), **32 casos e2e** (32/32), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
+(95 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
 gate. La crónica del 17 al 19-09 vive en sus logs (ADR-0001 a 0006, el linter como paso 0-bis).
 El **20-09** entró todo lo de plata: **regla 8 sin proxy** (149, ADR-0008), **girar no es acción de NEX**
 (43, 147, 148), **ATR-01 en el handler** (145), el **id de la solicitud al comité** (146), las
@@ -69,7 +69,7 @@ ramas ya integradas** (`elegant-fermat-pyfpnm`, `migrate-project-session-vui9dl`
 2. **Mojibake en el padrón**: 38 de 1.983 identidades traen `?` donde va `Ñ`/`Ó`/`Í`. Se arregla
    re-extrayendo del AEC, que no está commiteado. · **`Capturas_UI/` NO es determinista**: el tubo se
    retrata a mitad del stream, así que capturar en un estado conocido es decisión suya.
-3. `BASE_MUERTOS` en **1** (`giroDeal`) · **GN como disyunción** (22) · sin gate, la concentración del
+3. `BASE_MUERTOS` en **1** (`giroDeal`) · **GN como disyunción** (22) · `PANEL_TAREAS` es `let` de módulo sin storage ni aviso: la tarea creada en el DETALLE no llega al tubo (familia de la 51; medido el 23-09 con la regla 66) · sin gate, la concentración del
    Directorio (31) · una fila «Sin clasificar» dice «2 deudores» y el desglose suma 0 · **dos sesiones
    paralelas toman el mismo «siguiente entero libre»** (reglas, casos, ADR y archivos e2e): quien mezcla renumera.
 4. **Hooks en Windows**: `node verificar_hooks.mjs` una vez · los 13 skills de `taste-skill` viven en el

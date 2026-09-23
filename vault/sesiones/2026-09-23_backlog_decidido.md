@@ -206,3 +206,46 @@ Líneas › Solicitudes (`onRechazo`), una vez por solicitud. La bandeja y el de
 **Documentos:** regla 65, punteros en 13, 15 y 5, contrato de la API 3 (Integraciones y swagger), spec del curse (M-29;
 M-18 a medias: la mitad de la verificación va con ADR-0018), gaps (G-19, G-33 cerrados), HU-35 vigente, CP-095/096/133
 (caso 165; CP-126/127 siguen por e2e), cifras.
+
+## 7 · ADR-0016 · La excepción que la versión N ya no levanta se marca, no se borra (regla 66, caso 166)
+
+**Qué cambió.** `reevaluarCliente` llama, tras emitir la versión y con su número, a `marcarExcepcionesQueYaNoAplican`:
+la decisión pura `excepcionesQueYaNoAplican` compara las claves con solicitud o visado contra lo que la evaluación vigente
+levanta y marca lo que ya no levanta —solicitud `estado: "no_aplica"`, visado `"no_aplica"` conservando la decisión en su
+detalle, `{desdeVersion, por: "sistema", fecha}`—; la mutación escribe los tres repositorios, cierra la tarea del aprobador
+con el motivo (la tarea conoce su `stKey` desde `solicitarAprobacionExc`), postea en el hilo como `CODE_SISTEMA` (y lo
+termina sólo cuando no queda excepción por visar), audita y deja bitácora. `excSinVisar`/`solVigente` son las únicas
+lecturas del visado y de la solicitud en los doce lectores (`visadoDealCalc`, `faseOtorgDeal`, `excepcionesSinComentario`,
+avisos, mesa, contadores, tab): la marca no es decisión, y si la regla vuelve a levantar está pendiente otra vez; la
+solicitud nueva anota `version` y lleva la anterior en `anteriores`; el visado nuevo hereda la historia (`historiaVisado`).
+El tab muestra «↺ Excepción anterior · ya no aplica desde la versión N · sistema · hora» en el criterio cumplido y una lista
+propia para las huérfanas (deudor fuera de la oferta); la bandeja de Tareas dice «Cerrada por el sistema» y el motivo.
+
+**Lo que costó / sorpresas.**
+- **Qué regla usar de fixture no era obvio**: `evaluarOtorgItems` pisa las variables versionadas con `varsModeloExt(deal)`
+  (pagaré, cliente nuevo, mora interna…), así que de todo lo que `snapVersionCli` regulariza sólo cambian de disposición
+  las que el modelo no recalcula en vivo. Medido en la página sobre seis cedentes: C07 «Cupo suficiente» (`mntLinea`) o C02
+  según el cliente; O05 nunca (la evidencia del contrato es de la operación). El caso usa el cedente del libro y C07, y
+  para el visado usa D19 del segundo deudor quitándole la factura: la clave `n@rut` deja de existir y se marca igual.
+- **La guarda del script de edición se cazó a sí misma**: el patrón «ningún `!st[…stKey]` suelto» encontró el `!st[stKey]`
+  del propio `excSinVisar`. El gate exige `.stKey` (acceso a propiedad), que es lo que distingue un lector de la definición.
+- **El gate de OTG-01 nombró el camino del sistema**: `marcarExcepcionesQueYaNoAplican` escribe `repoVisado.set` sin
+  `puedeAprobarExc`, porque no hay apoderado. Se eximió con condición comprobada —lo que escribe sale de la decisión pura
+  y el tramo no escribe «aprobado» ni «rechazado»— y con sonda: si el sistema aprobara, el gate lo nombra.
+- **El hilo es por operación, no por excepción** («Aprobación de excepciones · OP»): cerrarlo al marcar una excepción
+  escondería las que siguen pendientes. Recibe el aviso siempre y se termina cuando no queda nada por visar.
+- **Abrir la pantalla mostró la marca escondida**: con la maniobra de CP-124 (Directorio › «Sin línea» › «Todo lo
+  disponible» › 76 solicitudes › «Re-evaluar simulación») se marcaron cinco criterios del cliente (C02, C07, C35–C37,
+  «desde v2») y el tab no mostraba NINGUNA «↺ Excepción anterior»: el criterio cumplido cae en `okRows`, que vive dentro
+  del colapsable «N regla(s) aprobada(s)». Se le dio un balde propio (`antRows`), siempre a la vista, con su sonda.
+- **El gate de la regla 35 fijaba la línea de `okRows` como texto** («las no ejecutadas no caen en el balde de las
+  aprobadas»): el balde nuevo la extendió y el gate cayó con su sonda. Se re-ancló —la condición de la 35 sigue siendo
+  obligatoria y el patrón admite condiciones adicionales—, no se aflojó (ADR-0006).
+- **Deuda anotada, no tocada**: `PANEL_TAREAS` es un `let` de módulo sin storage ni aviso (la familia de la regla 51),
+  así que la tarea creada y cerrada en el DETALLE no existe para la pestaña del tubo: «Tareas» no la muestra ni abierta
+  ni cerrada. Es anterior a esta regla y va al tablero.
+
+**Documentos:** regla 66 (puntero en la 4), fila en `invariantes.md`, spec del curse (M-21 implementada: 33 · 6 · 1; §15),
+gaps (G-14 y G-35 cerrados; 11 implementados · 7 decididos; GD-06 escrito), HU-32 vigente (27 · 15), CP-087/088/125 con
+el caso 166 (CP-124 sigue por e2e), `spec-gestion-excepciones.md` §3, §5.5 y §11, cifras (166/166; 95 reglas; 56 archivos
+de gate, 46 por regla; 473 tests).
