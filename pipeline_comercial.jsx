@@ -2725,7 +2725,7 @@ const P360 = (() => {
 // cesiones —bancarias y no bancarias— identificando en cada una al cesionario. O sea que el activo
 // contesta la pregunta entera: con quién se financia el cliente y en qué proporción. Se MIDE sobre el
 // A2, se INYECTA en el A11 (Plataforma 360) y de ahí lo lee esta pantalla, que es el mismo camino de
-// `COLOC_PROM_12M_M` y `FECHA_PRIMERA_OPERACION`.
+// `COLOC_PROM_12M` y `FECHA_PRIMERA_OPERACION`.
 //
 // Lo que el archivo trae es el DETALLE por cesionario, que es la medición. La PARTICIÓN en cuatro
 // porciones se aplica acá, al leer, porque una de las cuatro —el factoring target— es política
@@ -3176,13 +3176,13 @@ function verifPar(rutCliente, nombre, rutDeudor) {
     // EN PESOS. El sufijo `_M` del layout son MILES, así que el activo se multiplica por 1.000; se
     // dividía por 1.000 y quedaban en MILLONES mientras `montoOp` se suma en pesos, o sea que V03 y
     // V04 dividían dos magnitudes con un factor 1.000.000 entre medio y no los cumplía NADIE.
-    mntCompraOp3M: F ? Math.round(N("V03_MNT_COMPRA_3M_M") * 1000) : null, // MILES → PESOS. Total comprado al par en 3M
-    avgVentaProm3M: F ? Math.round(N("V04_VENTA_PROM_3M_M") * 1000) : null, // MILES → PESOS. Venta mensual del par
+    mntCompraOp3M: F ? N("V03_MNT_COMPRA_3M") : null, // MILES → PESOS. Total comprado al par en 3M
+    avgVentaProm3M: F ? N("V04_VENTA_PROM_3M") : null, // MILES → PESOS. Venta mensual del par
     mesesConVenta6M: N("V05_RECURRENCIA_MESES_6M"),
     fchVctoProm: N("V06_PLAZO_PROM_PAGO_DIAS"), // días, plazo histórico del par
     pctMora25d: N("V07_PCT_MORA_25D"),
     pctReclamadas: N("V08_PCT_RECLAMADAS"),
-    mntPagoDeudor3M: F ? Math.round(N("V10_MNT_PAGADO_3M_M") * 1000) : null, // MILES → PESOS
+    mntPagoDeudor3M: F ? N("V10_MNT_PAGADO_3M") : null, // MILES → PESOS
     h,
   };
   _VERIF_PAR.set(k, out);
@@ -11808,8 +11808,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoCo
                       v = x.v,
                       isOpen = !!open[f.id];
                     const tel = v.tel;
-                    const estPill =
-                      v.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
+                    const estPill = v.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
                     const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                     const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
                     const fd = fechasDocumento(f);
@@ -14269,10 +14268,7 @@ function DealDrawer({
                                         const msg =
                                           "Para poder ceder las facturas y cursar se requiere que envíe las siguientes facturas:\n" +
                                           faltantes
-                                            .map(
-                                              (f, i) =>
-                                                `${i + 1}) ${f.tipo} Folio #${f.folio} Deudor: ${f.deudor}, Monto Total: ${fmtCLP((f.monto || 0) * 1e6)}`,
-                                            )
+                                            .map((f, i) => `${i + 1}) ${f.tipo} Folio #${f.folio} Deudor: ${f.deudor}, Monto Total: ${fmtCLP(f.monto || 0)}`)
                                             .join("\n");
                                         return (
                                           <button
@@ -21630,7 +21626,7 @@ function apiVarsCliente(deal, rev) {
     cxcPend: A("CXC_PENDIENTES"),
     // C02: los pagarés deben cubrir la cartera vigente más esta simulación. C03: y seguir vigentes 60 días
     // después del último vencimiento. Ambas se DERIVAN de la tabla, como haría el motor en producción.
-    pagaresSuf: A("MNT_PAGARES_M") * 1000 >= L.usoActual + ((deal && deal.monto) || 0),
+    pagaresSuf: A("MNT_PAGARES") >= L.usoActual + ((deal && deal.monto) || 0),
     pagareCubre60: (() => {
       const v = At("FCH_VCTO_PAGARE");
       return !v || v >= "2026-08-21";
@@ -23163,8 +23159,11 @@ function tramoCond(fn) {
   s = s.replace(/[{}]/g, " ").replace(/;/g, " ").trim();
   if (/^true$/.test(s)) return "cualquier otro caso";
   s = s.replace(/0?\.(\d+)\s*\*\s*v\.([a-zA-Z0-9_]+)/g, (m, d, v) => Math.round(parseFloat("0." + d) * 100) + "% de " + (VAR_LBL[v] || v));
-  s = s.replace(/(\d+)e6\b/g, (m, n) => "$" + n + "M");
-  s = s.replace(/\b(\d{7,})\b/g, (m, n) => "$" + +n / 1e6 + "M");
+  // El umbral se compara en PESOS y se MUESTRA en la escala única de la casa, `M$` (regla 9-ter y
+  // «los montos se abrevian en una sola escala»). Decía «$20M», que es justo la forma en que se veía
+  // la unidad rota del 14-09-2026: «M$100» salía como «$100M» cuando el monto venía ya dividido.
+  s = s.replace(/(\d+)e6\b/g, (m, n) => "M$" + (+n).toLocaleString("es-CL"));
+  s = s.replace(/\b(\d{7,})\b/g, (m, n) => "M$" + (+n / 1e6).toLocaleString("es-CL", { maximumFractionDigits: 1 }));
   s = s.replace(/\[([^\]]*)\]\.includes\(v\.([a-zA-Z0-9_]+)\)/g, (m, arr, v) => (VAR_LBL[v] || v) + " está en {" + arr.replace(/["\s]/g, "") + "}");
   s = s.replace(/!\s*v\.([a-zA-Z0-9_]+)/g, (m, v) => "no " + (VAR_LBL[v] || v));
   s = s.replace(/v\.([a-zA-Z0-9_]+)/g, (m, v) => VAR_LBL[v] || v);
@@ -28573,12 +28572,16 @@ const PC_COMPETIDORES = [
   { name: "Banco Estado", mm: 82825 },
   { name: "Banco Itaú Corpbanca", mm: 79741 },
 ];
-const PC_MERCADO = [245, 200, 215, 210, 206, 191, 196, 193, 192, 188, 184, 196]; // B CLP/mes (mercado total)
-const PC_SECURITY = [60, 57, 62, 63, 61, 58, 59, 59, 60, 59, 57, 58]; // B CLP/mes (Security)
+// Referencia de mercado del demo, EN PESOS y por mes (regla 61). Venían escritas en miles de millones
+// —«245» por 245 B CLP— y el eje del gráfico de zonas las rotulaba «$13 MM», que dice millones donde
+// el dato son miles de millones. Escribirlas en pesos deja al formateador único resolver la escala.
+const MM = 1e9; // un mil millones de pesos: la unidad en la que estas series se estimaron
+const PC_MERCADO = [245, 200, 215, 210, 206, 191, 196, 193, 192, 188, 184, 196].map((v) => v * MM); // mercado total
+const PC_SECURITY = [60, 57, 62, 63, 61, 58, 59, 59, 60, 59, 57, 58].map((v) => v * MM); // Security
 const PC_ZONA = {
-  Norte: [13.0, 18.2, 15.0, 15.4, 17.0, 12.2, 10.6, 14.3, 14.0, 16.4, 13.2, 15.2],
-  Centro: [30.0, 21.2, 23.4, 26.4, 28.2, 21.4, 23.6, 18.6, 19.0, 19.4, 18.7, 21.6],
-  Sur: [15.4, 13.4, 14.0, 16.0, 11.8, 14.6, 12.8, 13.4, 17.2, 14.9, 17.4, 13.0],
+  Norte: [13.0, 18.2, 15.0, 15.4, 17.0, 12.2, 10.6, 14.3, 14.0, 16.4, 13.2, 15.2].map((v) => v * MM),
+  Centro: [30.0, 21.2, 23.4, 26.4, 28.2, 21.4, 23.6, 18.6, 19.0, 19.4, 18.7, 21.6].map((v) => v * MM),
+  Sur: [15.4, 13.4, 14.0, 16.0, 11.8, 14.6, 12.8, 13.4, 17.2, 14.9, 17.4, 13.0].map((v) => v * MM),
 };
 const fmtMMc = (n) => "M$" + Math.round((n || 0) / 1e6).toLocaleString("es-CL");
 // ============================================================
@@ -32362,7 +32365,7 @@ function PClineas({ series, cols, modo }) {
           <g key={i}>
             <line x1={padL} y1={y} x2={W - padR} y2={y} stroke={C.line} strokeWidth="1" strokeDasharray="3 4" />
             <text x={padL - 4} y={y + 3} textAnchor="end" fontSize="8" fill={C.faint}>
-              {modo === "sow" ? Math.round(v) + "%" : "$" + Math.round(v) + (modo === "vol" ? " MM" : "")}
+              {modo === "sow" ? Math.round(v) + "%" : fmtMM(v)}
             </text>
           </g>
         );
@@ -32379,17 +32382,6 @@ function PClineas({ series, cols, modo }) {
     </svg>
   );
 }
-const PC_COMPET_NAMES = [
-  "Bci Factoring",
-  "Banco De Chile",
-  "BICE Factoring",
-  "Banco Santander Chile",
-  "Scotiabank Chile",
-  "Tanner",
-  "Banco Estado",
-  "Banco Itaú Corpbanca",
-  "Penta Financiero",
-];
 function pcRng(seed) {
   let a = seed >>> 0;
   return () => {
@@ -32408,15 +32400,20 @@ const PC_CLIENTES = (() => {
   const dte = typeof window !== "undefined" && Array.isArray(window.DTESYNC) ? window.DTESYNC : [];
   if (dte.length) {
     const vistos = new Map(); // RUTEmisor -> RznSoc (empresa)
+    const deudoresDe = new Map(); // RUTEmisor -> Set(RUTRecep): con quién factura cada cliente
     for (const r of dte) {
-      if (r && r.RUTEmisor && !vistos.has(r.RUTEmisor)) vistos.set(r.RUTEmisor, r.RznSoc);
+      if (!r || !r.RUTEmisor) continue;
+      if (!vistos.has(r.RUTEmisor)) vistos.set(r.RUTEmisor, r.RznSoc);
+      if (!r.RUTRecep) continue;
+      let s = deudoresDe.get(r.RUTEmisor);
+      if (!s) deudoresDe.set(r.RUTEmisor, (s = new Set()));
+      s.add(r.RUTRecep);
     }
     const out = [];
     let i = 0;
     for (const [rut, nombre] of vistos) {
       const ini = asignarEjecutivo({ cedente: nombre, rutEmisor: rut });
       const ex = PC_EXECS.find((e) => e.ini === ini) || PC_EXECS[0];
-      const r = pcRng(hashStr("cli" + rut));
       const s = SOW_POR_RUT[rut] || null; // SOW real si es cliente; null si prospecto
       const act = s ? Math.round(s.SOWActualPct || 0) : 0;
       const tgt = s ? Math.round(s.SOWTargetPct || 60) : 60;
@@ -32434,10 +32431,32 @@ const PC_CLIENTES = (() => {
         estado = "Security";
         tag = act < tgt ? "CAÍDA" : null;
       } // cliente sano / en caída leve
-      const vol = Math.round((5 + r() * 60) * 1000);
-      const malos = r() < 0.18;
-      const malosPct = 28 + Math.floor(r() * 14);
-      const vaA = PC_COMPET_NAMES[Math.floor(r() * PC_COMPET_NAMES.length)];
+      // LOS CUATRO SE LEEN, NO SE SORTEAN (regla 62). Se sorteaban con `pcRng`, y el `vol` además
+      // salía en una escala que no declaraba nadie —5.000 a 65.000— mientras cuatro KPI de esta misma
+      // pantalla lo pasaban por `fmtMMc`, que divide por un millón: «Brecha de wallet» mostraba M$5.
+      // El volumen que el cliente opera con nosotros lo publica el A11 (colocación promedio 12m, en
+      // pesos), que a su vez lo MIDE sobre las cesiones del A2 — el mismo camino que el mix.
+      const f360 = P360.porRut[rut] || null;
+      const vol = f360 ? +f360[P360.ix.COLOC_PROM_12M] || 0 : 0;
+      // A quién se le va el volumen: el CESIONARIO más grande que no somos nosotros, del detalle que
+      // el A11 publica (regla 13-quindecies). Antes salía de una lista de nombres al azar, así que la
+      // ficha podía nombrar a un factoring que jamás le compró una factura a ese cliente.
+      let vaA = null,
+        mayor = -1;
+      for (const parte of mixSowDe(rut) || []) {
+        if (parte.nuestro) continue;
+        for (const d of parte.detalle || []) if ((+d.pct || 0) > mayor) ((mayor = +d.pct || 0), (vaA = d.nombre || d.rut));
+      }
+      // «Con malos deudores»: la proporción de sus deudores bajo la nota de corte que el propio sistema
+      // usa para decidir a quién le abre oportunidad (`NOTA_PRIORITARIA`). El corte del 50% es de
+      // PANTALLA —parte en dos el panel de segmentos— y no una regla de negocio: la regla es la nota.
+      const deu = [...(deudoresDe.get(rut) || [])];
+      const bajos = deu.filter((rd) => {
+        const n = notaDeudor(null, rd);
+        return n != null && n < NOTA_PRIORITARIA;
+      }).length;
+      const malosPct = deu.length ? Math.round((bajos / deu.length) * 100) : 0;
+      const malos = malosPct >= 50;
       out.push({
         id: i++,
         nombre,
@@ -32458,62 +32477,12 @@ const PC_CLIENTES = (() => {
     }
     return out.sort((a, b) => b.vol - a.vol);
   }
-  // Fallback sintético (sin inyección de datos): universo determinista de 80 empresas.
-  const rnd = pcRng(20260630);
-  const out = [];
-  const pref = [
-    "CONSTRUCTORA",
-    "INGENIERIA",
-    "TRANSPORTES",
-    "COMERCIAL",
-    "SERVICIOS",
-    "INVERSIONES",
-    "DISTRIBUIDORA",
-    "DESARROLLOS",
-    "INDUSTRIAS",
-    "MAESTRANZA",
-    "AGRICOLA",
-    "SOCIEDAD",
-    "INGENIERIA Y CONSTRUCCION",
-  ];
-  const mid = [
-    "CERRO NEVADO",
-    "DEL SUR",
-    "ANDINA",
-    "PACIFICO",
-    "CENTRAL",
-    "DEL VALLE",
-    "AUSTRAL",
-    "CORDILLERA",
-    "DEL MAIPO",
-    "SAN PEDRO",
-    "LOS ANDES",
-    "EL ROBLE",
-    "BAPA GRAMATE",
-    "AVA MONTAJES",
-    "MST",
-    "L Y D",
-    "DIGUA",
-    "QUILIN",
-  ];
-  const suf = ["S.A.", "SPA", "LTDA", "LIMITADA", "EIRL"];
-  for (let i = 0; i < 80; i++) {
-    const ej = PC_EXECS[Math.floor(rnd() * PC_EXECS.length)];
-    const er = rnd();
-    const estado = er < 0.32 ? "Security" : er < 0.68 ? "Competencia" : "Inactivo";
-    const tr = rnd();
-    const tag = estado === "Security" ? (tr < 0.45 ? "CAÍDA" : null) : tr < 0.82 ? "FUGA" : null;
-    const vol = Math.round((5 + rnd() * 60) * 1000);
-    const malos = rnd() < 0.18;
-    const malosPct = 28 + Math.floor(rnd() * 14);
-    const sow = Math.round(rnd() * 55);
-    const target = rnd() < 0.18 ? 80 : 60;
-    const vaA = PC_COMPET_NAMES[Math.floor(rnd() * PC_COMPET_NAMES.length)];
-    const rut = `${76000000 + Math.floor(rnd() * 3900000)}-${"0123456789K"[Math.floor(rnd() * 11)]}`;
-    const nombre = `${pref[Math.floor(rnd() * pref.length)]} ${mid[Math.floor(rnd() * mid.length)]} ${suf[Math.floor(rnd() * suf.length)]}`;
-    out.push({ id: i, nombre, rut, estado, tag, ej: ej.nombre, ejIni: ej.ini, zona: ej.zona, jefatura: ej.jefatura, vol, malos, malosPct, sow, target, vaA });
-  }
-  return out.sort((a, b) => b.vol - a.vol);
+  // SIN ACTIVO NO HAY CARTERA. Acá vivía un universo sintético de 80 empresas —nombres armados con
+  // tres listas, RUT sorteados, volumen y SOW inventados— para cuando `datos_inyectados.js` no está.
+  // Se retiró (regla 62): sin ese archivo el pipeline muestra 0 oportunidades de todos modos, así que
+  // una cartera falsa al lado de un tubo vacío no rescata la demo, la vuelve incoherente — y esas 80
+  // empresas se mezclaban con las reales en cuanto el activo aparecía a medias.
+  return [];
 })();
 // ============================================================
 // CLIENTES — listado de empresas cliente (estilo administración de empresas).
@@ -37179,7 +37148,7 @@ function generarTareasConsolidadas(deals) {
         cat: "retener",
         prio: "critica",
         impacto: Math.round(c.vol * 0.8),
-        detalle: `Dejó de operar; su volumen se va a ${c.vaA}. Contacto directo con oferta de tasa de negocio.`,
+        detalle: `Dejó de operar${c.vaA ? `; su volumen se va a ${c.vaA}` : ""}. Contacto directo con oferta de tasa de negocio.`,
       });
     else if (c.estado === "Security" && c.tag === "CAÍDA")
       t.push({
@@ -37188,7 +37157,7 @@ function generarTareasConsolidadas(deals) {
         cat: "retener",
         prio: "alta",
         impacto: Math.round(c.vol * 0.6),
-        detalle: `Redujo sus operaciones Security y derivó facturas a ${c.vaA}. Visita de retención.`,
+        detalle: `Redujo sus operaciones Security${c.vaA ? ` y derivó facturas a ${c.vaA}` : ""}. Visita de retención.`,
       });
     else if (c.estado === "Competencia")
       t.push({
@@ -37206,7 +37175,7 @@ function generarTareasConsolidadas(deals) {
         cat: "reactivar",
         prio: "media",
         impacto: Math.round(c.vol * 0.5),
-        detalle: `Sin operar en el período. Reabrir la relación (última cesión a ${c.vaA}).`,
+        detalle: `Sin operar en el período. Reabrir la relación${c.vaA ? ` (última cesión a ${c.vaA})` : ""}.`,
       });
   });
   return t;
@@ -37567,7 +37536,7 @@ function TareaPanel({ tarea, deals, onClose, onOpenDeal, onAtender }) {
                 <Row k="Volumen" v={fmtMMc(cli.vol)} />
                 <Row k="SoW / target" v={`${cli.sow}% / ${cli.target}%`} />
                 <Row k="Deudores" v={cli.malos ? `Malos ${cli.malosPct}%` : "Buenos"} />
-                <Row k="Su volumen va a" v={cli.vaA} />
+                <Row k="Su volumen va a" v={cli.vaA || "— sólo cede a Security"} />
               </div>
             </div>
           )}
@@ -42386,12 +42355,12 @@ function api4Empresa360(rut, nombre) {
     },
     comercial: {
       quintil: N("QUINTIL"),
-      margenUltMes: N("MARGEN_ULT_MES_M"),
-      margen12m: N("MARGEN_12M_M"),
-      colocProm12m: N("COLOC_PROM_12M_M"),
+      margenUltMes: N("MARGEN_ULT_MES"),
+      margen12m: N("MARGEN_12M"),
+      colocProm12m: N("COLOC_PROM_12M"),
       spreadReal12m: N("SPREAD_REAL_12M_PCT"),
       tasaUltOp: N("TASA_ULT_OP_PCT"),
-      comisionUltOp: N("COMISION_ULT_OP_M"),
+      comisionUltOp: N("COMISION_ULT_OP"),
       segmento: A("SEGMENTO") || "—",
       subSegmento: A("SUB_SEGMENTO") || "—",
       jefeGrupo: "JAVIER MARTINEZ (JG)",
@@ -42401,11 +42370,11 @@ function api4Empresa360(rut, nombre) {
     socios,
     indices: {
       pasExGen: N("PAS_EXIGIBLE_GEN_BRUTA"),
-      patrimonio: N("PATRIMONIO_M") * 1000,
-      generacion: N("GENERACION_M") * 1000,
+      patrimonio: N("PATRIMONIO"),
+      generacion: N("GENERACION"),
       leverage: N("LEVERAGE"),
-      ventas: [N("VENTAS_A1_M"), N("VENTAS_A2_M"), N("VENTAS_A3_M")],
-      ventasSII: [N("VENTAS_SII_A1_M"), N("VENTAS_SII_A2_M"), N("VENTAS_SII_A3_M")],
+      ventas: [N("VENTAS_A1"), N("VENTAS_A2"), N("VENTAS_A3")],
+      ventasSII: [N("VENTAS_SII_A1"), N("VENTAS_SII_A2"), N("VENTAS_SII_A3")],
     },
   };
 }
@@ -42418,12 +42387,12 @@ function resumenEmpresa(deal) {
     x = e.indices;
   // EN PESOS, porque es lo que `fmtMM` espera: dividían por mil y por un millón y después `fmtMM`
   // volvía a dividir, así que la facturación anual de un cliente salía como «$1.234» en vez de
-  // «M$1.234». El resto del archivo ya lo hacía bien (`fmtMM(ventasSII[i] * 1000)`), así que la
+  // «M$1.234». El resto del archivo ya lo hacía bien (`fmtMM(ventasSII[i])`), así que la
   // misma cifra se leía distinta en dos pantallas. El sufijo `_M` del layout son MILES; el
   // patrimonio ya viene en pesos desde `api4Empresa360`.
-  const ventaAnual = Math.round((x.ventasSII[1] || x.ventasSII[0] || 0) * 1000); // MILES → PESOS
+  const ventaAnual = Math.round(x.ventasSII[1] || x.ventasSII[0] || 0); // el A11 ya viene en PESOS
   const patrimonio = Math.round(x.patrimonio || 0); // ya viene en PESOS
-  const coloc = Math.round((c.colocProm12m || 0) * 1000); // MILES → PESOS
+  const coloc = Math.round(c.colocProm12m || 0); // el A11 ya viene en PESOS
   const nDeud = (deal.deudores && deal.deudores.length) || 1;
   const out = [];
   out.push(
@@ -42478,18 +42447,18 @@ function api6RiesgoBICE(rut) {
   const moraInterna = A("MORA_INTERNA_MAS_25D") + A("MORA_INTERNA_30_90") + A("MORA_INTERNA_90_180") + A("MORA_INTERNA_180_3A");
   return {
     // Del A9: el desglose de la deuda total que ya declara el A16, más lo que sólo esta API reporta.
-    deudaDirecta: B("CMF_DEUDA_DIRECTA_M") * 1000,
-    deudaIndirecta: B("CMF_DEUDA_INDIRECTA_M") * 1000,
+    deudaDirecta: B("CMF_DEUDA_DIRECTA"),
+    deudaIndirecta: B("CMF_DEUDA_INDIRECTA"),
     leasingUF: B("LEASING_UF"),
     boletinComercial: B("BOLETIN_COMERCIAL_N"),
-    deudaPrevisional: B("DEUDA_PREVISIONAL_M") * 1000,
+    deudaPrevisional: B("DEUDA_PREVISIONAL"),
     protestos: B("PROTESTOS_N"),
     clasificacion: (R && R[RIESGO_A9.ix.CLASIFICACION_DEUDORA]) || "—",
     // Del A16: las mismas cifras que evalúa el otorgamiento.
     moraCMF: A("CMF_DIR_MOROSA_30_90") + A("CMF_DIR_MOROSA_90_180") + A("CMF_DIR_MOROSA_180_3A"),
     moraACHEF: {
       nroEmpresas: A("NRO_FACTORINGS_LM"),
-      vigente: B("ACHEF_VIGENTE_M") * 1000,
+      vigente: B("ACHEF_VIGENTE"),
       morosas: A("ACHEF_MOROSA_60_90") + A("ACHEF_MOROSA_90_180") + A("ACHEF_MOROSA_MAS_180"),
       facturas: B("ACHEF_FACTURAS"),
       cheques: 0,
@@ -42509,10 +42478,10 @@ function generarNotasIA(ctx) {
     ix = api4.indices;
   return {
     negocio: `Se propone ${SOLIC_TIPOS[tipo].toLowerCase()}${subtipo ? " (" + SOLIC_SUBTIPOS[subtipo].toLowerCase() + ")" : ""} para ${cliente} por un total de ${fmtMM(totalPropuesto)}, con vigencia de ${pol("vigenciaLineaMeses", 12)} meses. La operación se sustenta en ${nDeudores} deudor(es) calificados con nota promedio ponderada ${promNota}, alineada a la política de compra (nota ≥ ${String(pol("notaMinCompra", 3.7)).replace(".", ",")}).`,
-    referencias: `Cliente del segmento ${c.segmento} (${c.subSegmento}), quintil ${c.quintil}. Margen de contribución últimos 12 meses de ${fmtMM(c.margen12m * 1000)} con colocación promedio de ${fmtMM(c.colocProm12m * 1000)} y spread real de ${c.spreadReal12m}%. Última operación a tasa ${c.tasaUltOp}%.`,
+    referencias: `Cliente del segmento ${c.segmento} (${c.subSegmento}), quintil ${c.quintil}. Margen de contribución últimos 12 meses de ${fmtMM(c.margen12m)} con colocación promedio de ${fmtMM(c.colocProm12m)} y spread real de ${c.spreadReal12m}%. Última operación a tasa ${c.tasaUltOp}%.`,
     antecedentes: `${cliente} opera en ${f.actividad.toLowerCase()} (sector ${f.sector.toLowerCase()}), con ${f.trabajadores} trabajadores. Cliente desde ${f.fechaIngreso}; primera operación el ${f.primeraOperacion}. ${f.clienteBanco === "Sí" ? "Mantiene relación vigente con el Banco." : "Sin relación bancaria vigente con BICE."} ${f.alertas === "Sí" ? "Registra alertas que se detallan en la ficha." : "Sin alertas registradas."}`,
     mercado: `El sector ${f.sector.toLowerCase()} presenta una demanda estable de financiamiento de capital de trabajo. La cartera de deudores propuesta concentra pagadores de buena calidad crediticia (nota promedio ${promNota}), lo que acota el riesgo de la línea frente al ciclo del sector.`,
-    financiero: `Ventas anuales según SII de ${fmtMM(ix.ventasSII[1] * 1000)} (año anterior ${fmtMM(ix.ventasSII[0] * 1000)}). Leverage ${ix.leverage}x, patrimonio ${fmtMM(ix.patrimonio)} y generación ${fmtMM(ix.generacion)}. ${api6.moraCMF > 0 ? "Presenta mora CMF de " + fmtMM(api6.moraCMF) + " que debe considerarse en la resolución." : "Sin mora CMF vigente."} ${api6.protestos > 0 ? api6.protestos + " protesto(s) no aclarado(s)." : "Sin protestos no aclarados."} Morosidad ACHEF ${api6.moraACHEF.morosas > 0 ? fmtMM(api6.moraACHEF.morosas) + " en " + api6.moraACHEF.nroEmpresas + " empresa(s)" : "sin registros"}.`,
+    financiero: `Ventas anuales según SII de ${fmtMM(ix.ventasSII[1])} (año anterior ${fmtMM(ix.ventasSII[0])}). Leverage ${ix.leverage}x, patrimonio ${fmtMM(ix.patrimonio)} y generación ${fmtMM(ix.generacion)}. ${api6.moraCMF > 0 ? "Presenta mora CMF de " + fmtMM(api6.moraCMF) + " que debe considerarse en la resolución." : "Sin mora CMF vigente."} ${api6.protestos > 0 ? api6.protestos + " protesto(s) no aclarado(s)." : "Sin protestos no aclarados."} Morosidad ACHEF ${api6.moraACHEF.morosas > 0 ? fmtMM(api6.moraACHEF.morosas) + " en " + api6.moraACHEF.nroEmpresas + " empresa(s)" : "sin registros"}.`,
   };
 }
 // Panel del patrón interactivo: RECUPERAR (API) → ACEPTAR Y CARGAR → editar → confirmar el paso.
@@ -42897,7 +42866,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
           <Fila k="N° trabajadores" v={api4.firmografica.trabajadores} />
           <Fila k="Cliente banco / Alertas" v={`${api4.firmografica.clienteBanco} / ${api4.firmografica.alertas}`} />
           <Fila k="Segmento" v={`${api4.comercial.segmento} · ${api4.comercial.subSegmento}`} />
-          <Fila k="Margen 12m / Coloc. prom." v={`${fmtMM(api4.comercial.margen12m * 1000)} · ${fmtMM(api4.comercial.colocProm12m * 1000)}`} />
+          <Fila k="Margen 12m / Coloc. prom." v={`${fmtMM(api4.comercial.margen12m)} · ${fmtMM(api4.comercial.colocProm12m)}`} />
         </div>
         <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
           <div className="t9 font-bold uppercase tracking-wide mb-1" style={{ color: "#7C3AED" }}>
@@ -42949,7 +42918,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
             ["Deuda previsional", api6.deudaPrevisional > 0 ? `${fmtMM(api6.deudaPrevisional)} ⚠` : "Sin deuda"],
             ["Protestos no aclarados", api6.protestos || 0],
             ["Leverage / Patrimonio", `${api4.indices.leverage}x · ${fmtMM(api4.indices.patrimonio)}`],
-            ["Ventas SII (últ. año)", fmtMM(api4.indices.ventasSII[1] * 1000)],
+            ["Ventas SII (últ. año)", fmtMM(api4.indices.ventasSII[1])],
             ["Morosidad interna / Protesto %", `${api6.morosidadInterna} / ${api6.protestoPctInterno}`],
           ]}
         />
@@ -43022,7 +42991,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                           <div className="t9 text-left" style={{ color: C.faint }}>
                             {2024 + i} · {v ? "12" : "0"} de 12 m
                           </div>
-                          {v ? fmtMM(v * 1000) : "---"}
+                          {v ? fmtMM(v) : "---"}
                         </div>
                       ))}
                     </div>
@@ -43037,7 +43006,7 @@ function PresentacionComite({ linea, clienteInicial, rutInicial, tipoInicial, su
                           <div className="t9 text-left" style={{ color: C.faint }}>
                             {2024 + i} · {i === 2 ? "6" : "12"} de 12 m
                           </div>
-                          {fmtMM(v * 1000)}
+                          {fmtMM(v)}
                         </div>
                       ))}
                     </div>

@@ -78,3 +78,106 @@ timestamp: 2026-09-17T15:29:14Z
     - **Se mapea por RUT, nunca por nombre.** En el activo sintético había **50 razones sociales compartidas por dos RUT distintos** («Constructora RM SA» era 39663693-3 y 41604007-5): un reemplazo por nombre las habría fusionado. El nombre se deriva siempre del RUT que tiene al lado (`spec_aecsync.md` §81: «la identidad es el RUT, no el nombre»), y de paso las 50 colisiones desaparecen.
     - **Lo que esto arregló, medido.** Antes: 51,5 % de los RUT de deudor fuera del rango de empresa y **39,3 % en rango de persona natural**, con razones sociales reales encima —«Clorox Chile S.A.» llevaba `9.710.034-4`—. Después: **100 % en rango de empresa** y los 1.983 RUT del padrón con dígito verificador válido, que es lo que distingue un RUT real de uno escrito a mano.
     - Gate: `tests/contract/padron.test.mjs` (9 tests, 4 sondas negativas). El punto fijo del generador se conserva (`generador.test.mjs`).
+
+60. **EL MILLÓN ES LA ÚLTIMA CAPA: ningún campo, ningún contrato y ningún mensaje lo nombran** (23-09-2026,
+    instrucción del usuario: «Los M$ son siempre visuales, corrige para que las comparaciones sean siempre en $»).
+    La regla 9-ter ya decía que una COMPARACIÓN se hace en pesos. Ésta cierra las otras tres puertas por las que
+    el millón volvía a entrar: el nombre de un campo, la declaración de un layout y el texto de un mensaje.
+    - **El único sitio que divide por un millón es el formateador** (`fmtMM`, `fmtMMc`), y el único que lo
+      multiplica no existe: **re-inflar un peso a escala de millones es siempre un error**. Sobrevivía uno:
+      `fmtCLP((f.monto || 0) * 1e6)` en el mensaje que se le manda al cliente para pedirle los XML que faltan,
+      resto del patrón `amountMM * 1e6` que la migración del 14-09-2026 retiró de todas partes menos de un
+      template literal. Ese mensaje le mostraba al cliente **su factura un millón de veces más grande**.
+    - **Un campo del layout NUNCA se llama `_MM` ni se declara en `MM$`.** Quedaban tres sitios: `CUPO_SUGERIDO_MM`
+      en A3/A4, `LINEA_APROBADA_MM` en A16 —y su línea de unidades, que **autorizaba explícitamente** el sufijo—,
+      y tres filas de A11 que declaraban `number (M$)` cuando el generador producía **miles** y el lector
+      multiplicaba por mil. Esa última es la peor de las tres: quien implementara la entrega leyendo el layout
+      habría enviado cifras **mil veces mayores**, y nada lo habría dicho — un margen de $40.000.000 y uno de
+      $40.000.000.000 se ven los dos plausibles en la ficha de una empresa.
+    - ~~**El sufijo `_M` (MILES) sí existe y se queda**~~ — **REEMPLAZADO por la regla 61 al día siguiente**:
+      consistente sí, pero consistentemente cuantizado de a $1.000. El texto original se conserva porque explica
+      el criterio con el que se decidió, que es lo que la 48 corrige. Decía:
+      el generador lo produce en miles, el layout lo dice y el lector lo pasa a pesos antes de formatear. Lo que
+      no puede pasar es que un layout lo llame de una forma y el sistema lo use de otra.
+    - **Y se abrevia en UNA escala.** El explicador de criterios rendía los umbrales como «$20M», que es
+      exactamente la forma en que se veía la unidad rota del 14-09 («M$100» salía como «$100M»). Ahora rinde `M$20`.
+    - Gate: **`auditar_unidades.mjs` pasa a estar cableado** en `tests/contract/auditores.test.mjs` con línea base
+      **cero**, y estrena el patrón **(d)**: el argumento de un formateador MULTIPLICADO por un millón. Antes sólo
+      buscaba divisiones —por eso no vio el defecto en un año de existir— y era un comando de mano, que es la
+      otra mitad de por qué sobrevivió. Cero es una **regla**, no un snapshot: el sistema no tiene ningún campo en
+      millones, así que ningún candidato es legítimo. Con su sonda negativa, que planta las dos formas y comprueba
+      que multiplicar por MIL no se reporta.
+
+61. **TODO GENERADOR PRODUCE EN PESOS. Ningún activo lleva sufijo de escala** (23-09-2026, instrucción del
+    usuario: «todos los generadores que produzcan en pesos, no en miles ni millones, o si no se pierde
+    precisión»). **Reemplaza el punto de la regla 60 que dejaba vivir el sufijo `_M` (MILES)**: era
+    consistente de punta a punta, sí, pero consistentemente cuantizado de a $1.000.
+    - **Lo que se perdía, medido.** Veinte campos de cuatro activos viajaban en miles. Cada uno quedaba
+      cuantizado al múltiplo de $1.000 más cercano: un pagaré de $450.678.123 se guardaba como `450678` y
+      volvía como $450.678.000. Es el mismo defecto del 14-09-2026 —cuando la factura entraba cuantizada de
+      a $10.000— una escala más abajo, y por eso menos visible.
+    - **Y no era sólo presentación.** `MNT_PAGARES` entra en la comparación de **C02** («Pagaré con Monto
+      Suficiente para Cartera»): el criterio comparaba una cifra cuantizada contra el uso exacto de la
+      cartera más el monto de la simulación. `V03` y `V04` son **denominadores de una razón que decide** en
+      el predictor de verificación.
+    - **Qué cambió**: los acumuladores internos de `verificacion.js` y `plataforma360.js` dejan de llevar
+      millones (`p.mm`) y llevan pesos (`p.pesos`); los rangos de `riesgo_bice.js` se declaran en pesos; y
+      los veinte campos pierden el sufijo — `V03_MNT_COMPRA_3M`, `V04_VENTA_PROM_3M`, `V10_MNT_PAGADO_3M`,
+      `MNT_PAGARES`, `CMF_DEUDA_DIRECTA`, `CMF_DEUDA_INDIRECTA`, `DEUDA_PREVISIONAL`, `ACHEF_VIGENTE`,
+      `PATRIMONIO`, `GENERACION`, `MARGEN_ULT_MES`, `MARGEN_12M`, `COLOC_PROM_12M`, `COMISION_ULT_OP`,
+      `VENTAS_A1..A3` y `VENTAS_SII_A1..A3`. Con ellos se van **veinte multiplicaciones por mil** del
+      fuente: diez en los lectores y diez en los sitios que formateaban.
+    - **El caso 115 se RE-ANCLA, no se afloja.** Comparaba el valor leído contra `celda × 1000`; ahora lo
+      compara contra la celda **tal cual**, que es una exigencia más fuerte: cualquier factor —el ×1.000 de
+      antes o el ÷1.000 del defecto original— rompe la igualdad. Sigue midiendo sobre 200 filas reales del
+      A10 y no contra un orden de magnitud.
+    - **Un layout sin sufijos también es un layout sin ambigüedad.** El `_M` obligaba a que tres cosas
+      dijeran lo mismo —el generador, la declaración y el lector— y el 23-09 se encontró que en A11 no lo
+      decían: el layout declaraba millones donde el generador ponía miles. Sin sufijo no hay nada que
+      sincronizar.
+    - **Y los bloques BASE no los alcanza ninguna corrida.** Los derivados se arreglan en su generador y se
+      regeneran; los base se copian tal cual desde el activo de entrada. Medido sobre las **119 claves
+      distintas** del activo quedaban **dos** con nombre de escala, ninguna con lectores:
+      `DEUDORES_AUTORIZADOS.LineaSugeridaMM` (599 filas, BASE) y `RequeridoParaTargetMM` del A5 (233,
+      derivado). Se sacaron las dos por instrucción del usuario —«si nadie lo ocupa, elimínalo»—: la
+      derivada en su generador, la base con `GeneradorDatos/sanear_campos_muertos.js`, que corre una vez y
+      queda commiteado como los otros saneadores. **La segunda era una trampa**: guardaba PESOS
+      (202.175.551) bajo un nombre que dice millones, así que quien le creyera al nombre habría
+      multiplicado por un millón. Un campo que nadie lee y que miente sobre su unidad no es información.
+    - Gate: el caso **115** (el activo calza peso a peso sobre 200 filas), `generador.test.mjs` —el punto
+      fijo, más **«ningún campo del activo nombra una escala»**, que se mide sobre el ARCHIVO porque es
+      donde el sufijo sobrevive sin que nadie lo note— y la línea base **cero** de `auditar_unidades` en
+      `auditores.test.mjs`.
+
+62. **LA CARTERA COMERCIAL SE LEE, NO SE INVENTA: fuera los generadores que quedaban dentro de la app**
+    (23-09-2026, instrucción del usuario: «saca esos generadores y cuando los implementes, que escalen en
+    pesos»). Es la regla núcleo 9 —*el pipeline lee los activos, no los genera*— aplicada al último sitio
+    donde seguía sin cumplirse, y lo que la hace urgente es que **no era sólo suciedad: cuatro KPI estaban
+    mal**.
+    - **`PC_CLIENTES` sorteaba cuatro campos con `pcRng`**: el volumen del cliente, si tenía «malos
+      deudores», en qué proporción, y **a qué competidor se le iba el volumen** —este último de una lista
+      de nombres al azar, así que la ficha podía nombrar a un factoring que jamás le compró una factura a
+      ese cliente—.
+    - **El daño medido.** `vol` salía en una escala que no declaraba nadie (5.000 a 65.000) y cuatro KPI de
+      Reportes lo pasan por `fmtMMc`, que **divide por un millón**: «Brecha de wallet», «cedido», «Buenos»
+      y «Malos» mostraban del orden de **M$5** donde va la cartera de 500 clientes. No es un redondeo: es
+      un factor de un millón, la misma familia del 14-09.
+    - **De dónde sale cada uno ahora**, y todos existían ya: el **volumen** del `COLOC_PROM_12M` del A11
+      —colocación promedio 12m, en pesos, que el propio activo MIDE sobre las cesiones del A2—; el
+      **competidor** del detalle por cesionario del mismo A11, tomando el mayor que no somos nosotros
+      (regla 13-quindecies); y los **malos deudores** de la proporción de sus deudores bajo
+      `NOTA_PRIORITARIA`, que es la nota de corte que el sistema ya usa para decidir a quién le abre
+      oportunidad. El corte del 50% que parte el panel en dos es de **pantalla** y está dicho como tal: la
+      regla es la nota.
+    - **El fallback sintético de 80 empresas se retira entero.** Armaba nombres con tres listas, sorteaba
+      RUT y fabricaba volumen y SOW para cuando falta `datos_inyectados.js`. Sin ese archivo el pipeline
+      muestra **0 oportunidades** de todos modos: una cartera falsa al lado de un tubo vacío no rescata la
+      demo, la vuelve incoherente — y esas 80 empresas se mezclaban con las reales apenas el activo
+      aparecía a medias. Sin activo, `PC_CLIENTES` es `[]`.
+    - **Y las series de referencia del mercado pasan a PESOS.** `PC_MERCADO`, `PC_SECURITY` y `PC_ZONA`
+      estaban escritas en miles de millones («245» por 245 B CLP) y el eje del gráfico de zonas las
+      rotulaba **«$13 MM»**, que dice millones donde el dato son miles de millones. Ahora se escriben en
+      pesos y el eje usa `fmtMM`, el formateador único.
+    - Gate: `regla_62.test.mjs` sobre el texto del fuente —ni `pcRng` ni una lista de competidores dentro
+      de `PC_CLIENTES`, y el catálogo sale de `P360`— más la línea base de `auditar_muerto`, que es la que
+      obliga a que no quede ningún resto sin referencias.

@@ -11,7 +11,7 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 const aqui = dirname(fileURLToPath(import.meta.url));
-const SALIDA = join(aqui, "Variantes_UI");
+const SALIDA = join(aqui, "Capturas_Simuladas");
 const ANCHO = 1600, ALTO = 1200;
 const require = createRequire(import.meta.url);
 const { chromium } = require("/opt/node22/lib/node_modules/playwright");

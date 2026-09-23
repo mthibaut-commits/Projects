@@ -1,6 +1,6 @@
 # Modelo de giro · asignación de giros
 
-**Versión 1.0 · 12-09-2026 · NEX Factoring**
+**Versión 1.0.0 · 12-09-2026 · NEX Factoring**
 
 Cómo se le entrega el dinero al cliente: en cuántas partes y de qué tipo. Es el último eslabón del
 pipeline comercial — toma el **monto a girar** y su desglose por factura (spec de pricing §4) y
@@ -150,3 +150,13 @@ con un ajuste escondería el error en el sitio equivocado.
   detalle de la operación y en el resumen del curse.
 - **La entrega a Tesorería** no está modelada: falta el contrato de salida (qué se le publica, cuándo,
   y con qué idempotencia).
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.0.0** | 12-09-2026 | Primera versión: los dos tipos de giro (GE/GN), su criterio por deudor y el contrato del motor. |

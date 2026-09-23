@@ -1,5 +1,7 @@
 # Spec — swagger_gestion_lineas.yaml (Activos A13 / A14 / A15)
 
+**Versión 1.0.0 · 29-08-2026 · NEX Factoring**
+
 **Propósito:** integrar NEX con el sistema externo de gestión de líneas (comité). NEX **sólo inyecta y consulta**; la resolución (aprobación/rechazo/observación) ocurre en el sistema externo.
 
 | Endpoint | Activo | Uso |
@@ -15,3 +17,13 @@
 **Reglas:** `subtipoModificacion` obligatorio si tipo=MODIFICAR · una línea no admite dos solicitudes en gestión (409) · montos en MM$ · `notaDeudor` escala 1–5 (política de compra ≥ 3,7).
 **Frecuencia:** POST por evento (Solicitar VB); GET al abrir la Bandeja y con "Consultar estados".
 **Autenticación:** por definir con el equipo del sistema de gestión (se sugiere OAuth2 client-credentials).
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.0.0** | 29-08-2026 | Primera versión: la gestión de solicitudes de línea con callback push (A13–A15). |

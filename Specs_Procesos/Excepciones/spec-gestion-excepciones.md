@@ -1,6 +1,6 @@
 # Proceso de Otorgamiento — Gestión de excepciones
 
-**Versión:** 1.0 · **Fecha:** 18-09-2026 · **Sistema:** NEX Factoring · Pipeline Comercial
+**Versión 1.2.1 · 21-09-2026 · NEX Factoring**
 
 Este documento describe **el proceso operativo** con que se gestiona una excepción de otorgamiento:
 cómo nace, quién la justifica, a quién le llega, en qué pantalla se decide, qué queda registrado en
@@ -743,3 +743,16 @@ se ejecuta ni se verifica, y sale nombrada en el veredicto).
 | [`spec-ciclo-factura.md`](../Evaluacion_Factura/spec-ciclo-factura.md) | en qué orden corren los motores y dónde se bifurca el camino |
 | [`Inconsistencias_Motor_Otorgamiento.md`](../../Regresiones/Inconsistencias_Motor_Otorgamiento.md) | la auditoría de la política contra la implementación y los parámetros abiertos |
 | `Integraciones/spec_s3_otorgamiento.md` | el layout A16: las variables que alimentan el motor |
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.2.1** | 21-09-2026 | Rutas de los documentos citados. |
+| 1.2.0 | 20-09-2026 | Los controles que libera el giro pasan de tres a cinco —entran la línea asignada y la firma de Operaciones— y que el cliente autorice explícitamente la operación queda escrito como regla del otorgamiento, con su comprobante. |
+| 1.1.0 | 19-09-2026 | Revisión con el usuario: los mensajes de alerta cuando la configuración falla, qué es la re-evaluación y la simulación como momento del motor. |
+| 1.0.0 | 18-09-2026 | Primera versión: el proceso operativo de una excepción, de la evaluación que la levanta al visado que libera el giro. |

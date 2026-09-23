@@ -30,8 +30,8 @@ function generar({ DTESYNC }) {
   for (const d of DTESYNC) {
     if (!d || !d.RUTEmisor || !d.RUTRecep) continue;
     const k = d.RUTEmisor + "|" + d.RUTRecep;
-    const p = par[k] || (par[k] = { n: 0, mm: 0, dias: 0, nd: 0 });
-    p.n++; p.mm += (+d.MntTotal || 0) / 1e6;
+    const p = par[k] || (par[k] = { n: 0, pesos: 0, dias: 0, nd: 0 });
+    p.n++; p.pesos += +d.MntTotal || 0;
     const e = Date.parse(String(d.FchEmis || "").slice(0, 10)), v = Date.parse(String(d.FchVenc || "").slice(0, 10));
     if (!isNaN(e) && !isNaN(v) && v >= e) { p.dias += (v - e) / 86400000; p.nd++; }
   }
@@ -69,7 +69,7 @@ function generar({ DTESYNC }) {
   const rel = {};
   for (const k of Object.keys(par)) {
     const p = par[k], pfPar = perfil("par|" + k), rRel = pcRng(hashStr("vfRel|" + k));
-    const facturaTipica = p.mm / p.n;
+    const facturaTipica = p.pesos / p.n;
     const ritmoVentana = p.n * (DIAS_MES / DIAS_VENTANA);
     const facturasMes = Math.max(ritmoVentana, rango(rRel, "frecuenciaMes", pfPar, 1));
     const ventaMes = facturaTipica * facturasMes;
@@ -95,24 +95,24 @@ function generar({ DTESYNC }) {
     const pfPar = perfil("par|" + k), pfDeu = perfil("deu|" + rutD);
     const rPar = pcRng(hashStr("vfPar|" + k)), rDeu = pcRng(hashStr("vfDeu|" + rutD));
     // V03 se mide contra el TOTAL comprado al par en 3 meses móviles y V04 contra la venta mensual
-    // promedio del par (spec A10): los dos salen de la relación modelada en el paso 1, en MILES.
-    const compra3M = Math.round(rel[k].compra3M * 1000);
-    const ventaMesM = Math.round(rel[k].ventaMes * 1000);
+    // promedio del par (spec A10): los dos salen de la relación modelada en el paso 1, en PESOS.
+    const compra3M = Math.round(rel[k].compra3M);
+    const ventaMes = Math.round(rel[k].ventaMes);
     filas.push({
       RUT_CLIENTE: rutC, RUT_DEUDOR: rutD,
       // ~9% de los deudores tiene protocolo de verificación propio pactado.
       V01_PROTOCOLO_PROPIO: rDeu() < 0.09 ? 1 : 0,
       V02_PCT_PAGADO_3M: rango(rPar, "pagado", pfPar, 1),
-      V03_MNT_COMPRA_3M_M: compra3M,
-      V04_VENTA_PROM_3M_M: ventaMesM,
+      V03_MNT_COMPRA_3M: compra3M,
+      V04_VENTA_PROM_3M: ventaMes,
       V05_RECURRENCIA_MESES_6M: rango(rPar, "recurrencia", pfPar),
       // Plazo histórico de pago del par, en días. NEX calcula contra él la DESVIACIÓN del documento
       // que se está evaluando (V06): el archivo no puede traerla porque depende de esa factura.
       V06_PLAZO_PROM_PAGO_DIAS: p.nd ? Math.round(p.dias / p.nd) : 30,
       V07_PCT_MORA_25D: rango(rPar, "mora25", pfPar, 1),
       V08_PCT_RECLAMADAS: rango(rPar, "reclamadas", pfPar, 1),
-      // Lo que el DEUDOR le pagó al factoring en 3 meses, sumando todos sus cedentes (paso 2), en MILES.
-      V10_MNT_PAGADO_3M_M: Math.round(pagadoDeudor3M[rutD] * 1000),
+      // Lo que el DEUDOR le pagó al factoring en 3 meses, sumando todos sus cedentes (paso 2), en PESOS.
+      V10_MNT_PAGADO_3M: Math.round(pagadoDeudor3M[rutD]),
       FECHA_CORTE: CORTE,
     });
   }

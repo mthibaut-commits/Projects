@@ -17,7 +17,7 @@ const stdin = (script, input) => spawnSync(process.execPath, [script], { cwd: RA
 test("protect_paths bloquea lo protegido y deja pasar el trabajo normal", () => {
   const bloquea = (p, existe) => proteger(p, existe ?? (() => true)).bloquear;
   for (const p of [".env", "/repo/.env.local", "vendor/react.js", "/x/vendor/SBOM.json", "C:\\repo\\vendor\\xlsx.js", "datos_inyectados.js",
-    "proveedores_clientes.json", "atribuciones_otorgamiento.json", "Capturas_UI/01-dashboard.html", "Variantes_UI/tubo-tabla-simulada.html",
+    "proveedores_clientes.json", "atribuciones_otorgamiento.json", "Capturas_UI/01-dashboard.html", "Capturas_Simuladas/tubo-tabla-simulada.html", "Variantes_UI/detalle-01-oferta-vacia.html",
     "Integraciones/Integraciones_APIs_y_S3.md", "Specs_Procesos/Otorgamiento/spec-otorgamiento.pdf", "pipeline_comercial.html", "Legado/README.md",
     "package-lock.json", "babel.min.js.descarga", "saved_resource", "fuentes/Geist-latin.woff2", "vault/adr/ADR-0001-partir-claude-md-y-abrir-el-vault.md"])
     assert.ok(bloquea(p), `debería bloquear ${p}`);

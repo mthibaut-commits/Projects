@@ -20,6 +20,46 @@ originales de política del cliente: ésos no se regeneran, son la entrada.
 - Lo que cotejó definición contra implementación y dejó hallazgos → `Regresiones/`.
 - El **inventario de activos** A1–A24 → `Levantamiento_Activos_Informacion.md`, en la raíz.
 
+## Versionado (21-09-2026)
+
+Todo entregable —los de acá **y los de `Integraciones/`**— declara su versión bajo el título y cierra con
+su anexo. Lo exige `tests/contract/versiones.test.mjs`.
+
+```markdown
+# Título del documento
+
+**Versión 1.2.1 · 21-09-2026 · NEX Factoring**
+```
+
+| Se sube… | Cuando |
+|---|---|
+| **mayor** | cambia lo que el sistema decide, o el contrato con el servidor. Alguien que implementó contra la versión anterior queda equivocado |
+| **menor** | entra una sección, un campo o un criterio. Lo anterior sigue siendo cierto |
+| **parche** | redacción, una cifra, una referencia |
+
+El anexo va **al final**, con la versión vigente en la primera fila:
+
+```markdown
+## Anexo · Control de versiones
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.2.1** | 21-09-2026 | … |
+```
+
+Tres cosas que conviene saber:
+
+- **El PDF lo estampa solo.** `md_a_pdf.mjs` saca la línea de versión del cuerpo y la pone como píldora en
+  la banda y como tag en el **encabezado de cada hoja**: un PDF circula suelto y una carilla impresa tiene
+  que poder decir de qué versión es. El anexo abre en **hoja nueva**.
+- **La cabecera y la primera fila del anexo tienen que calzar**, y el gate lo comprueba. Sin eso se
+  desfasan en la primera corrección y el documento afirma dos versiones distintas de sí mismo.
+- **Esto no reabre el «sin historial».** El anexo dice qué cambió entre versiones; lo que sigue prohibido
+  dentro del texto es narrar que antes estaba mal («Nuevo en esta versión», «Antes/Ahora»). La razón de una
+  regla se queda; el relato del error, no.
+- `Integraciones_APIs_y_S3.md` es **generado**: su versión y su historial viven en `armar_integraciones.mjs`,
+  no en el `.md`. Editarlo a mano lo pisa la próxima corrida.
+
 ## Dos reglas al escribir uno
 
 1. **Los entregables no llevan historial.** Un spec describe cómo es el proceso **hoy**; qué decía antes y

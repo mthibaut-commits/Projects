@@ -102,8 +102,8 @@ function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
   const emis = {}, recep = {}, razon = {};
   for (const d of DTESYNC) {
     if (!d) continue;
-    if (d.RUTEmisor) { const g = emis[d.RUTEmisor] || (emis[d.RUTEmisor] = { mm: 0, n: 0 }); g.mm += (+d.MntTotal || 0) / 1e6; g.n++; razon[d.RUTEmisor] = razon[d.RUTEmisor] || d.RznSoc; }
-    if (d.RUTRecep) { const g = recep[d.RUTRecep] || (recep[d.RUTRecep] = { mm: 0, n: 0 }); g.mm += (+d.MntTotal || 0) / 1e6; g.n++; razon[d.RUTRecep] = razon[d.RUTRecep] || d.RznSocRecep; }
+    if (d.RUTEmisor) { const g = emis[d.RUTEmisor] || (emis[d.RUTEmisor] = { pesos: 0, n: 0 }); g.pesos += +d.MntTotal || 0; g.n++; razon[d.RUTEmisor] = razon[d.RUTEmisor] || d.RznSoc; }
+    if (d.RUTRecep) { const g = recep[d.RUTRecep] || (recep[d.RUTRecep] = { pesos: 0, n: 0 }); g.pesos += +d.MntTotal || 0; g.n++; razon[d.RUTRecep] = razon[d.RUTRecep] || d.RznSocRecep; }
   }
   // ── Medido: lo que cada cedente nos cedió a NOSOTROS (colocación real) ────────────────────────
   // Se guardan las DOS puntas de la historia: la PRIMERA cesión (cuándo empezó a operar con nosotros)
@@ -113,8 +113,8 @@ function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
   const coloc = {};
   for (const a of (AECSYNC || [])) {
     if (!a || !a.RUTEmisor || a.RUTFactoring !== BICE_RUT) continue;
-    const g = coloc[a.RUTEmisor] || (coloc[a.RUTEmisor] = { mm: 0, n: 0, primera: "", ultima: "" });
-    g.mm += (+a.MontoCesion || 0) / 1e6; g.n++;
+    const g = coloc[a.RUTEmisor] || (coloc[a.RUTEmisor] = { pesos: 0, n: 0, primera: "", ultima: "" });
+    g.pesos += +a.MontoCesion || 0; g.n++;
     const f = (a.FechaCesion || "").slice(0, 10); if (!f) continue;
     if (f > g.ultima) g.ultima = f;
     if (!g.primera || f < g.primera) g.primera = f;
@@ -166,8 +166,8 @@ function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
     const [actividad, sector] = ACTIVIDADES[Math.abs(hashStr("act|" + rut)) % ACTIVIDADES.length];
     // Ventas SII: lo EMITIDO en la ventana de DTESync, anualizado. Las declaradas por el cliente son las
     // del SII con la desviación típica de una declaración propia.
-    const vAnualM = Math.round((emis[rut] ? emis[rut].mm : (recep[rut] ? recep[rut].mm : 0)) * (DIAS_ANIO / DIAS_VENTANA) * 1000);
-    const sii = [Math.round(vAnualM * entre(r, 0.82, 0.95)), Math.round(vAnualM * entre(r, 0.9, 1.0)), vAnualM];
+    const vAnual = Math.round((emis[rut] ? emis[rut].pesos : (recep[rut] ? recep[rut].pesos : 0)) * (DIAS_ANIO / DIAS_VENTANA));
+    const sii = [Math.round(vAnual * entre(r, 0.82, 0.95)), Math.round(vAnual * entre(r, 0.9, 1.0)), vAnual];
     const dec = sii.map((v) => Math.round(v * entre(r, 0.93, 1.02)));
     const c = coloc[rut] || null, s = sow[rut] || null;
     const margenPct = rango(r, "margenPct", pf, true);
@@ -197,9 +197,9 @@ function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
       SEGMENTO: s ? s.Segmento : (esCliente ? "Base" : ""),
       SUB_SEGMENTO: s ? (s.Segmento === "Top" ? "Grandes" : s.Segmento === "Medio" ? "Medianas Grandes" : "Medianas") : "",
       QUINTIL: s ? (s.Segmento === "Top" ? 5 : s.Segmento === "Medio" ? 3 : 2) : "",
-      MARGEN_ULT_MES_M: Math.round(vAnualM / 12 * margenPct / 100),
-      MARGEN_12M_M: Math.round(vAnualM * margenPct / 100),
-      COLOC_PROM_12M_M: c ? Math.round(c.mm * 1000 / 12) : 0,
+      MARGEN_ULT_MES: Math.round(vAnual / 12 * margenPct / 100),
+      MARGEN_12M: Math.round(vAnual * margenPct / 100),
+      COLOC_PROM_12M: c ? Math.round(c.pesos / 12) : 0,
       // ── MIX DE FINANCIAMIENTO DEL CLIENTE («SOW» en el tablero comercial) ─────────────────────
       // Cuatro porcentajes que suman 100: cuánto de su financiamiento toma de nosotros, de los
       // factorings de banco, del resto de los factorings, y cuánto NO es factoring sino crédito
@@ -215,13 +215,13 @@ function generar({ DTESYNC, AECSYNC, SHARE_OF_WALLET }) {
       // cliente que nunca nos cedió no tiene tasa de última operación.
       SPREAD_REAL_12M_PCT: c ? rango(r, "spreadReal", pf, 2) : "",
       TASA_ULT_OP_PCT: c ? +(rango(r, "spreadReal", pf, 2) + 0.58).toFixed(2) : "",
-      COMISION_ULT_OP_M: c ? ent(r, 120, 480) : "",
+      COMISION_ULT_OP: c ? ent(r, 120000, 480000) : "",
       PAS_EXIGIBLE_GEN_BRUTA: rango(r, "pasExGen", pf, 2),
-      PATRIMONIO_M: Math.round(vAnualM * entre(r, 0.15, 0.65)),
-      GENERACION_M: Math.round(vAnualM * margenPct / 100 * entre(r, 0.6, 1.1)),
+      PATRIMONIO: Math.round(vAnual * entre(r, 0.15, 0.65)),
+      GENERACION: Math.round(vAnual * margenPct / 100 * entre(r, 0.6, 1.1)),
       LEVERAGE: rango(r, "leverage", pf, true),
-      VENTAS_A1_M: dec[0], VENTAS_A2_M: dec[1], VENTAS_A3_M: dec[2],
-      VENTAS_SII_A1_M: sii[0], VENTAS_SII_A2_M: sii[1], VENTAS_SII_A3_M: sii[2],
+      VENTAS_A1: dec[0], VENTAS_A2: dec[1], VENTAS_A3: dec[2],
+      VENTAS_SII_A1: sii[0], VENTAS_SII_A2: sii[1], VENTAS_SII_A3: sii[2],
       SOCIOS_JSON: JSON.stringify(socios),
       FECHA_CORTE: CORTE,
     });

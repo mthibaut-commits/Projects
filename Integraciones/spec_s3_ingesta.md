@@ -1,5 +1,7 @@
 # Spec — Ingesta por AWS S3 (Activo A25)
 
+**Versión 1.0.0 · 16-09-2026 · NEX Factoring**
+
 **Propósito:** el transporte de las **entregas diarias**. Security deja el archivo en un bucket S3 y S3 **avisa solo** al backoffice, que lo procesa y monta la tabla interna. Lo comparten las seis entregas de batch (A24, A3+A4, A11, A16, A10, A7), que no lo redefinen: este documento dice **cómo llega** el archivo y cada spec dice **qué trae**.
 **Transporte:** S3 · bucket `nex-ingesta-<ambiente>` · un prefijo por entrega · notificación `s3:ObjectCreated:*` → **SNS** → **SQS** → worker del backoffice.
 
@@ -119,3 +121,13 @@ Con el versionado activo, volver a procesar una entrega no obliga a pedirla de n
 - **La tabla interna.** Es lo único que la aplicación lee. El evento decide *cuándo* se monta, no *qué* se lee.
 - **Los upserts intradía (A22).** Entran por API: son correcciones puntuales dentro del día, no un archivo.
 - **AECSync (A2).** Es un stream, no una entrega de batch, y no pasa por acá.
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.0.0** | 16-09-2026 | Primera versión: la ingesta por S3 con notificación SNS → SQS, que reemplaza al cron y al archivo centinela. |

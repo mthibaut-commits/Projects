@@ -1,6 +1,6 @@
 # El proceso de curse de una operación
 
-**Versión:** 1.0 · **Fecha:** 22-09-2026 · **Sistema:** NEX Factoring · Pipeline Comercial
+**Versión 1.1.0 · 23-09-2026 · NEX Factoring**
 
 El usuario revisó las diferencias de la Parte IV cláusula por cláusula y decidió el 22 y el 23-09-2026:
 lo que dio por bueno tal como está figura como **implementado (definición ajustada)** con la fecha de su
@@ -904,3 +904,14 @@ Cada ítem dice qué pide el modelo o el spec, qué se buscó en el fuente y qu�
 | `vault/conocimiento/reglas/curse_firma_y_etapas.md` | las reglas de la firma, las etapas post-firma y la integración (1, 5, 12-bis, 23, 24, 26, 28, 30, 33, 41, 43, 55, 58) |
 | `Levantamiento_Activos_Informacion.md` | los activos A1–A25 (DTESync, AECSync, listas, líneas A23) y el maestro de cada campo |
 | `Integraciones/Integraciones_APIs_y_S3.md` | los contratos de integración: API 1/2/3 de líneas, swaggers y transporte |
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una ruta.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.1.0** | 23-09-2026 | Cierran las cinco preguntas que quedaban abiertas: la verificación fallida marca la operación y avisa al ejecutivo (ADR-0018) y el corte del día elimina la oportunidad sin oferta y no toca la que la tiene (ADR-0019). Ninguna cláusula queda «por confirmar». |
+| 1.0.0 | 22-09-2026 | Primera versión: la máquina de estados del curse de punta a punta, 40 cláusulas cotejadas contra el fuente y las decisiones del usuario en ADR-0013 a ADR-0017. |

@@ -27,10 +27,10 @@ function generar({ DTESYNC, OTORGAMIENTO }) {
   const RANGO = {
     pctDirecta:   [[55, 92], [45, 88], [35, 82]],   // % de la deuda total que es directa; el resto, indirecta
     leasingUF:    [[0, 900], [0, 2600], [0, 5200]], // leasing vigente, en UF
-    achefVigM:    [[8000, 260000], [5000, 180000], [1500, 90000]], // cartera ACHEF vigente (M$)
+    achefVig:     [[8e6, 260e6], [5e6, 180e6], [1.5e6, 90e6]], // cartera ACHEF vigente, en PESOS
     achefFac:     [[12, 340], [8, 220], [3, 120]],  // documentos en ACHEF
     boletin:      [[0, 0],  [0, 2],   [1, 6]],      // anotaciones vigentes en el boletín comercial
-    previsionalM: [[0, 0],  [0, 3500], [800, 22000]], // deuda previsional (M$)
+    previsional:  [[0, 0],  [0, 3.5e6], [0.8e6, 22e6]], // deuda previsional, en PESOS
   };
   const rango = (r, cual, pf, dec) => { const [a, b] = RANGO[cual][R[pf]]; return dec ? +entre(r, a, b).toFixed(1) : ent(r, a, b); };
   // Clasificación deudora de la CMF. Un perfil problemático rara vez califica A.
@@ -51,14 +51,14 @@ function generar({ DTESYNC, OTORGAMIENTO }) {
     const protestosN = montoProtesto > 0 ? 1 + ent(r, 0, 3) : 0;
     filas.push({
       RUT: rut,
-      CMF_DEUDA_DIRECTA_M: Math.round(directa / 1000),
-      CMF_DEUDA_INDIRECTA_M: Math.round((total - directa) / 1000),
+      CMF_DEUDA_DIRECTA: Math.round(directa),
+      CMF_DEUDA_INDIRECTA: Math.round(total - directa),
       LEASING_UF: rango(r, "leasingUF", pf),
-      ACHEF_VIGENTE_M: rango(r, "achefVigM", pf),
+      ACHEF_VIGENTE: rango(r, "achefVig", pf),
       ACHEF_FACTURAS: rango(r, "achefFac", pf),
       BOLETIN_COMERCIAL_N: rango(r, "boletin", pf),
       PROTESTOS_N: protestosN,
-      DEUDA_PREVISIONAL_M: rango(r, "previsionalM", pf),
+      DEUDA_PREVISIONAL: rango(r, "previsional", pf),
       CLASIFICACION_DEUDORA: CLASE[pf][ent(r, 0, 3)],
       FECHA_CORTE: CORTE,
     });

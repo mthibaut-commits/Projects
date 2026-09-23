@@ -15,6 +15,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { RAIZ } from "./_comun.mjs";
 
 const require = createRequire(import.meta.url);
@@ -59,6 +60,29 @@ test("AECSYNC se genera sólo del A1 y de la intención declarada: sin el A2 ni 
   const { datos } = cargar();
   const entrada = { DTESYNC: datos.DTESYNC, AECSYNC: datos.AECSYNC, SHARE_OF_WALLET: datos.SHARE_OF_WALLET };
   assert.ok(!dependeDe(cesiones.generar, entrada, ["AECSYNC", "SHARE_OF_WALLET"]), "cesiones.js lee el A2 anterior o el A5: es el bucle A2 → A5 → A2 otra vez");
+});
+
+/* Regla 61: ningún activo lleva sufijo de escala. Los bloques DERIVADOS se arreglan en su generador,
+   pero los BASE se copian tal cual desde el activo de entrada y ninguna corrida los alcanza — por eso
+   existe `sanear_campos_muertos.js` y por eso esto se mira sobre el ARCHIVO y no sobre el código. Se
+   miden los NOMBRES de campo del activo, que es donde el sufijo sobrevive sin que nadie lo note: al
+   escribirse este gate quedaban dos, `LineaSugeridaMM` (599 filas, base) y `RequeridoParaTargetMM`
+   (233, derivado), ninguno con lectores y el segundo guardando PESOS bajo un nombre que dice millones. */
+export const ESCALA = /(?:MM|_M)$|miles|millones/i;
+export const camposConEscala = (texto) =>
+  [...new Set([...texto.matchAll(/"([A-Za-z_][A-Za-z0-9_]*)":/g)].map((m) => m[1]))].filter((c) => ESCALA.test(c)).sort();
+
+test("ningún campo del activo nombra una escala: todo monto va en pesos (regla 61)", () => {
+  const txt = readFileSync(join(RAIZ, "datos_inyectados.js"), "utf8");
+  assert.deepEqual(camposConEscala(txt), [],
+    "un campo del activo nombra miles o millones. Si es de un bloque derivado, arréglalo en su generador; si es BASE, va en `sanear_campos_muertos.js`");
+});
+
+test("sonda negativa: un campo con sufijo de escala plantado en el activo se caza", () => {
+  assert.deepEqual(camposConEscala('X=[{"RUT":"1-9","LineaSugeridaMM":126,"Monto":5}]'), ["LineaSugeridaMM"]);
+  assert.deepEqual(camposConEscala('X=[{"MontoEnMiles":3,"Deuda_M":7,"Ok":1}]'), ["Deuda_M", "MontoEnMiles"]);
+  // Un nombre que sólo CONTIENE «M» no es un sufijo de escala: `COLOC_PROM_12M` es un plazo.
+  assert.deepEqual(camposConEscala('X=[{"COLOC_PROM_12M":3,"V03_MNT_COMPRA_3M":7}]'), []);
 });
 
 test("sonda negativa: un bloque que la corrida cambia se reporta con nombre y posición", () => {

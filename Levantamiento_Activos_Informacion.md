@@ -240,7 +240,7 @@ campo **sólo** desde su maestro y usa la copia nada más que para conciliar.
 | Nota de comportamiento | `NOTA_DEUDOR` | — | `NOTA_DEUDOR` | `NOTA_COMPORTAMIENTO` | `NOTA_COMPORTAMIENTO` (fila DEUDOR) | **A11** |
 | Clasificación del deudor | `CLASIFICACION` | — | `CLASIFICACION` | — | — | **A3/A4** |
 | Segmento | — | — | `SEGMENTO` | `SEGMENTO` · `SUB_SEGMENTO` | — | *colisión, ver 5.3* |
-| Línea aprobada | — | `LINEA_APROBADA_MM` | — | — | `LINEA_APROBADA_MM` | **A23** *(ver 5.4)* |
+| Línea aprobada | — | `LINEA_APROBADA` | — | — | `LINEA_APROBADA` | **A23** *(ver 5.4)* |
 | Ejecutivo / zona / jefatura | — | `EJECUTIVO` · `ZONA` | — | — | — | **A24** *(levantado el 14-09, ver 5.5)* |
 | Participación / mix de financiamiento | — | — | — | `SOW_*` (4 porciones) | — | **A2** — lo mide; **A5** y **A11** lo publican, derivados de él (ver 5.6) |
 | Datos del documento cedido | — | — | — | — | — | **A1** — el A2 copia `TipoDTE`, `Folio`, `FechaEmisionDTE`, `MontoDocumento`, `RUTEmisor`, `RUTReceptor`, `FechaVencimientoCesion` para que una cesión se lea sola; si discrepan manda el A1 |

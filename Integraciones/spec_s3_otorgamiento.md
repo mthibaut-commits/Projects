@@ -1,8 +1,10 @@
 # Spec — s3_otorgamiento.csv (Activo A16)
 
+**Versión 4.0.0 · 23-09-2026 · NEX Factoring**
+
 **Propósito:** variables del **Modelo de Riesgo v1.0** para evaluar el catálogo de otorgamiento **C01–C52 (cliente)**, **D01–D23 (deudor)** y **O01–O04 (operación)**. Monta la sección OTORGAMIENTO de la **tabla interna**; el motor de NEX evalúa localmente los tramos (risk tiers) y niveles (N1..N5 / Comité) contra esta tabla, sin recalcular nada en origen.
 **Transporte:** S3 · `s3://nex-ingesta-<ambiente>/otorgamiento/OTORGAMIENTO_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** upserts vía API **A22** (dominio `OTORGAMIENTO`, mismos nombres de campo). Full-replace diario + upserts.
-**Unidades:** montos en **pesos** salvo sufijo `_MM` (millones) o `_M` (miles); porcentajes 0–100; booleanos 1/0; fechas ISO `AAAA-MM-DD` (o `AAAAMM` para IVA).
+**Unidades:** montos en **pesos enteros**, sin excepción — **ningún campo lleva sufijo de escala**: ni `_M` (miles) ni `_MM` (millones); porcentajes 0–100; booleanos 1/0; fechas ISO `AAAA-MM-DD` (o `AAAAMM` para IVA).
 
 ---
 
@@ -38,9 +40,9 @@ La clave primaria es **`RUT` + `ROL` (+ `RUT_CONTRAPARTE`)**. Cada entidad de la
 | RUT | — | ambos | RUT de la entidad de la fila (cliente o deudor) |
 | ROL | — | — | `CLIENTE` \| `DEUDOR` |
 | RUT_CONTRAPARTE | — | DEUDOR | En fila DEUDOR: RUT del cliente del par. Vacío en fila CLIENTE |
-| PAGARE_FIRMADO / MNT_PAGARES_M / FCH_VCTO_PAGARE | C01–C03 | CLIENTE | Pagaré: existencia, monto suficiente (cartera+simulación), vigencia (60d post últ. vcto.) |
+| PAGARE_FIRMADO / MNT_PAGARES / FCH_VCTO_PAGARE | C01–C03 | CLIENTE | Pagaré: existencia, monto suficiente (cartera+simulación), vigencia (60d post últ. vcto.) |
 | IVA_ULT_PERIODO (AAAAMM) | C04 | CLIENTE | Información financiera al día (≤ 2 meses) |
-| LINEA_APROBADA_MM / LINEA_EXTENDIDA | C05–C07 | CLIENTE | Línea vigente, extensión por Riesgo (N4), cupo (excedente ≤10% N2 / >10% N4) |
+| LINEA_APROBADA / LINEA_EXTENDIDA | C05–C07 | CLIENTE | Línea vigente, extensión por Riesgo (N4), cupo (excedente ≤10% N2 / >10% N4) |
 | VAR_VENTA_MENSUAL_PCT | C08 | CLIENTE | Variación de venta vs promedio L6M (−20 / −40) |
 | NOTA_COMPORTAMIENTO | C09 / **D01** | CLIENTE = cliente · DEUDOR = deudor | Nota de comportamiento 1–5 (umbral 3,7 → N4) |
 | CMF_DIR_MOROSA_30_90 / 90_180 / 180_3A | C10–C12 / **D02–D04** | CLIENTE / DEUDOR | Mora directa CMF por tramo. Escala combina monto (MM$5/MM$10) y % del total (5%/10%) |
@@ -95,3 +97,18 @@ El archivo de ejemplo trae 5 filas:
 3. **DEUDOR `77250120-4`** (par de `76920742-2`, mismo cliente ⇒ operación multi-deudor) — mora CMF 30–90 de $8.000.000 sobre $120.000.000 de deuda total (2,6% y &lt; $10 MM ⇒ **D02 excepción N3**), nota 3,5 (&lt; 3,7 ⇒ **D01 N4**) y **`SOCIOS_COMUNES_CD=1`** (**D18 N5**). Además arrastra cartera deteriorada **con este cliente y no con otros**: `CARTERA_RECLAMADA_CD=$3.500.000` (**C47 N1c**) y `CXC_PENDIENTES_CD=$1.800.000` (**C50 N1c**), aunque las `CARTERA_*` del cliente vengan en 0. Sus `stKey` son `"202@77250120-4"` (D02) y `"147@77250120-4"` (C47).
 4. **CLIENTE `79443326-K`** — riesgoso: variación de venta −45%, `TGR_COBRANZA_JUD=$4.500.000` ⇒ **C30 HARD_BLOCK** (rechazo firme, la operación se pierde).
 5. **DEUDOR `91022333-1`** (par de `79443326-K`) — mora Equifax $7.000.000 (**D09**), par con NC 12% (**D22 N2c**), venta cruzada 64% (**D21 N2c**) y `CARTERA_MOROSA_CD=$5.200.000` (**C49 N1c**).
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **4.0.0** | 23-09-2026 | `MNT_PAGARES_M` pasa a `MNT_PAGARES` **en pesos enteros** y el layout deja de admitir cualquier sufijo de escala. El monto del pagaré entra en la comparación de C02 contra el uso de la cartera: en miles se comparaba una cifra cuantizada de a $1.000 contra un peso exacto. |
+| 3.0.0 | 23-09-2026 | `LINEA_APROBADA_MM` pasa a `LINEA_APROBADA` **en pesos**, y la línea de unidades deja de admitir el sufijo `_MM`: ningún campo del layout va en millones. Quien implementó la entrega enviando millones debe multiplicar por un millón. |
+| 2.0.1 | 18-09-2026 | Tres correcciones: D02–D13 son excepciones no re-evaluables y no bloqueos firmes, C47–C50 salen del catálogo y el tipo `porDeudor` lo declara la regla. |
+| 2.0.0 | 16-09-2026 | El transporte pasa de SFTP a S3. El layout no cambia. |
+| 1.1.0 | 11-09-2026 | Cierra INC-04, INC-06 e INC-07 del motor de otorgamiento. |
+| 1.0.0 | 29-08-2026 | Primera versión: las variables del modelo de riesgo (A16). |

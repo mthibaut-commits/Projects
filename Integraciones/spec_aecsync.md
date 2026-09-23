@@ -1,5 +1,7 @@
 # Spec — AECSync (Activo A2)
 
+**Versión 1.0.1 · 16-09-2026 · NEX Factoring**
+
 **Propósito:** todas las **cesiones electrónicas** de un cliente: qué documento cedió, a qué **cesionario**, cuándo y por cuánto. Es el único activo que identifica a las **contrapartes de financiamiento** del cliente, y de ahí sale el **mix de financiamiento** (columna SOW del tubo), la detección de competencia, la pérdida por cesión y el bloqueo «cedida a terceros» de una factura candidata.
 
 **Proveedor:** **Datamart** — servicio `AECSync`. Documentación: <https://docs.datamart.cl/#tag/AEC-Sync>.
@@ -98,3 +100,14 @@ AECSync identifica al cesionario pero **no dice de qué tipo es** — no es un d
 ## 6. Ejemplo
 
 `aecsync_notificacion.json` al lado de este archivo trae el registro tal como llega.
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.0.1** | 16-09-2026 | Regenerado con el estilo Datamart. |
+| 1.0.0 | 15-09-2026 | Primera versión: AECSync como fuente independiente y el mix de financiamiento medido sobre él. |

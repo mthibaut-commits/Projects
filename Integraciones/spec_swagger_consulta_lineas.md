@@ -1,5 +1,7 @@
 # Spec — swagger_consulta_lineas.yaml (Activo A23)
 
+**Versión 1.1.1 · 21-09-2026 · NEX Factoring**
+
 **Propósito:** responder, en el momento de evaluar una oferta, **cuánto cupo hay disponible** en los tres niveles que la regla de validación compara. Es la API que alimenta el motor de asignación de líneas (`Specs_Procesos/Lineas/spec-asignacion-lineas.md`).
 
 | Endpoint | Uso |
@@ -89,3 +91,15 @@ hasta $100.000 por línea. El millón es una abreviatura de pantalla; el contrat
 El cupo que aprueba el comité **puede ser cualquier monto**: típicamente es una cifra redonda, pero
 el consumidor no debe suponerlo. `disponible = aprobada − utilizada − reservada` se cumple de forma
 exacta, sin tolerancia.
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.1.1** | 21-09-2026 | Rutas de los documentos citados. |
+| 1.1.0 | 14-09-2026 | Los montos se declaran en pesos enteros. |
+| 1.0.0 | 10-09-2026 | Primera versión: la consulta de líneas en tres niveles con aprobada, utilizada, reservada y disponible (A23). |

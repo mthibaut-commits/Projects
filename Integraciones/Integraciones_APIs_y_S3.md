@@ -1,7 +1,9 @@
 # Integraciones — APIs y S3
 
 **Propósito:** el contrato de las entregas que alimentan NEX Factoring y de las APIs que expone o consume. Reúne los 12 specs de `Integraciones/`, que siguen siendo la fuente de cada uno.
-**Alcance:** 12 integraciones · generado el 2026-09-21.
+**Alcance:** 12 integraciones · generado el 2026-09-23.
+
+**Versión 1.2.1 · 21-09-2026 · NEX Factoring**
 
 ---
 
@@ -37,6 +39,8 @@ Dos integraciones se salen del patrón a propósito. **A23 · consulta de línea
 Cómo llega una entrega y qué la hace procesarse. Va primero porque las seis entregas diarias comparten este mecanismo y ninguna lo redefine.
 
 ### Ingesta por AWS S3 · A25
+
+**Versión 1.0.0 · 16-09-2026 · NEX Factoring**
 
 **Propósito:** el transporte de las **entregas diarias**. Security deja el archivo en un bucket S3 y S3 **avisa solo** al backoffice, que lo procesa y monta la tabla interna. Lo comparten las seis entregas de batch (A24, A3+A4, A11, A16, A10, A7), que no lo redefinen: este documento dice **cómo llega** el archivo y cada spec dice **qué trae**.
 **Transporte:** S3 · bucket `nex-ingesta-<ambiente>` · un prefijo por entrega · notificación `s3:ObjectCreated:*` → **SNS** → **SQS** → worker del backoffice.
@@ -150,6 +154,8 @@ Cada archivo monta una sección de la **tabla interna**. La aplicación nunca co
 
 ### s3_cartera.csv · A24
 
+**Versión 2.0.0 · 16-09-2026 · NEX Factoring**
+
 **Propósito:** la **estructura comercial** del factoring —quién es ejecutivo, de qué equipo, bajo qué jefatura, en qué zona y sucursal— y la **asignación de cada cliente a su ejecutivo**. Es lo que decide **quién ve qué** en el tubo y a quién se le atribuye una operación.
 **Transporte:** S3 · `s3://nex-ingesta-<ambiente>/cartera/CARTERA_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** upserts vía API A22 (dominio `CARTERA`) — un ejecutivo que entra o una cartera que se traspasa no esperan al batch del día siguiente.
 **Clave:** `TIPO` + `COD_EJECUTIVO` + `RUT_CLIENTE`. Full-replace diario + upserts.
@@ -206,6 +212,8 @@ La columna `TIPO` distingue las dos poblaciones:
 
 ### s3_deudores_listas.csv · A3 + A4
 
+**Versión 3.0.0 · 23-09-2026 · NEX Factoring**
+
 **Propósito:** catálogo diario de **buenos deudores** — Lista Blanca (A3) y Deudores Autorizados (A4) — en un archivo único diferenciado por la columna `LISTA`. Monta la sección de listas de la **tabla interna**. Gobierna la clasificación de deudores, las reglas de prospección (CAT), y la elegibilidad del inbound (sólo LB/Autorizados/históricos abren oportunidad).
 **Transporte:** S3 · `s3://nex-ingesta-<ambiente>/listas/DEUDORES_LISTAS_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** altas/bajas urgentes vía API A22 si se requiere (dominio a habilitar) o esperan al batch siguiente.
 **Clave:** `RUT_DEUDOR` + `LISTA`. Full-replace diario (snapshot): un deudor ausente en el archivo del día queda **fuera de listas** (pasa a "Otro").
@@ -215,7 +223,7 @@ La columna `TIPO` distingue las dos poblaciones:
 | RUT_DEUDOR | string | RUT del deudor (sin puntos, con guión y DV) |
 | RAZON_SOCIAL | string | Razón social |
 | LISTA | BLANCA \| AUTORIZADA | BLANCA = Lista Blanca (A3) · AUTORIZADA = Deudores Autorizados (A4) |
-| CUPO_SUGERIDO_MM | number | Cupo sugerido de exposición por deudor (MM$), informativo |
+| CUPO_SUGERIDO | number | Cupo sugerido de exposición por deudor, en **pesos enteros**; informativo |
 | VIGENTE_DESDE / VIGENTE_HASTA | date | Ventana de vigencia en la lista |
 | ESTADO | VIGENTE \| SUSPENDIDO | SUSPENDIDO mantiene el registro pero lo excluye de elegibilidad |
 | FECHA_CORTE | date | Generación del archivo |
@@ -225,6 +233,8 @@ La columna `TIPO` distingue las dos poblaciones:
 **Reglas:** un RUT no puede estar en ambas listas simultáneamente (prima BLANCA; se loguea el conflicto) · registros con `VIGENTE_HASTA` pasada o `ESTADO=SUSPENDIDO` no habilitan elegibilidad · los cambios de lista impactan la CAT de las oportunidades abiertas en la siguiente evaluación.
 
 ### s3_plataforma360.csv · A11
+
+**Versión 4.0.0 · 23-09-2026 · NEX Factoring**
 
 **Propósito:** información de empresa de la Plataforma 360 (firmográfica, comercial, índices, ventas, socios) por RUT — clientes y deudores. Monta la sección PLATAFORMA360 de la **tabla interna**. Alimenta la presentación al comité (pasos 1, 2 y 4) y la generación IA de notas.
 **Transporte:** S3 · `s3://nex-ingesta-<ambiente>/plataforma360/PLATAFORMA360_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** upserts vía API A22 (dominio `PLATAFORMA360`).
@@ -239,13 +249,13 @@ La columna `TIPO` distingue las dos poblaciones:
 | CLIENTE_BANCO / ALERTAS | SI\|NO | Relación banco y alertas vigentes |
 | NOTA_COMPORTAMIENTO | number 1–5 | **Nota de comportamiento (5 = mejor pagador). ÚNICA fuente**: la consultan C09 (cliente), D01 (deudor), el CAT, el predictor de verificación y la UI. No viaja en ningún otro activo |
 | SEGMENTO / SUB_SEGMENTO / QUINTIL | string / int | Segmentación comercial |
-| MARGEN_ULT_MES_M / MARGEN_12M_M | number (M$) | Márgenes de contribución |
-| COLOC_PROM_12M_M | number (M$) | Colocación promedio 12m |
+| MARGEN_ULT_MES / MARGEN_12M | number (pesos) | Márgenes de contribución |
+| COLOC_PROM_12M | number (pesos) | Colocación promedio 12m |
 | SOW_SECURITY_PCT / SOW_FACTORING_TARGET_PCT / SOW_OTROS_FACTORING_PCT / SOW_OTROS_BANCARIOS_PCT | number (%) | **Mix de financiamiento del cliente**: con quién se financia por cesión y en qué proporción. Las cuatro porciones **suman 100**. Sólo para ROL=CLIENTE; en un deudor vienen vacías (no 0: un deudor no cede facturas, la pregunta no le aplica). **Se miden sobre A2 · AECSync** —el único activo que identifica al cesionario— y se inyectan acá; `SOW_SECURITY_PCT` se **ancla** al `SOWActualPct` del A5 para que la misma cifra no tenga dos valores. **`SOW_FACTORING_TARGET_PCT` se publica con el padrón de cesionarios POR DEFECTO**: quién es «target» es política comercial del tenant, así que el consumidor que la tenga configurada reagrupa desde `SOW_DETALLE_JSON` |
 | SOW_DETALLE_JSON | JSON string | Desglose del mix **por cesionario**: array `{rut, nombre, porcion, pct}`, ordenado de mayor a menor. Es lo que el tooltip de cada chip muestra —«Otros bancarios · 22%» no sirve para llamar a nadie; «Banco Santander 14% · Scotiabank 8%» sí—. Cada porción es **exactamente** la suma de los suyos: el 100 se reparte una sola vez, cesionario por cesionario, y las cuatro porciones se agregan desde acá |
-| SPREAD_REAL_12M_PCT / TASA_ULT_OP_PCT / COMISION_ULT_OP_M | number | Pricing histórico |
-| PAS_EXIGIBLE_GEN_BRUTA / PATRIMONIO_M / GENERACION_M / LEVERAGE | number | Índices financieros |
-| VENTAS_A1..A3_M / VENTAS_SII_A1..A3_M | number (M$) | Ventas 3 años (cliente y SII); vacío = sin período |
+| SPREAD_REAL_12M_PCT / TASA_ULT_OP_PCT / COMISION_ULT_OP | number | Pricing histórico |
+| PAS_EXIGIBLE_GEN_BRUTA / PATRIMONIO / GENERACION / LEVERAGE | number | Índices financieros |
+| VENTAS_A1..A3 / VENTAS_SII_A1..A3 | number (pesos) | Ventas 3 años (cliente y SII); vacío = sin período |
 | SOCIOS_JSON | JSON string | Array `{rut, nombre, participacion, pep, fatca}` |
 | FECHA_CORTE | date | Generación del archivo |
 
@@ -253,11 +263,26 @@ La columna `TIPO` distingue las dos poblaciones:
 
 **Notas:** campos vacíos = sin información (no 0). La nota de comportamiento se **consolidó acá** (antes viajaba además en A16 y A10, y el layout de A3/A4 también la declaraba): es un atributo de la empresa, y tres copias podían discrepar sobre el mismo RUT. Para deudores, los campos comerciales de cliente pueden venir vacíos. Solapa variables con A16: mantener consistencia de nombres o consolidar entrega (ver Levantamiento §4).
 
+### Unidad de los montos
+
+**Todos los montos van en pesos enteros.** Ningún campo lleva sufijo de escala: ni `_M` (miles) ni
+`_MM` (millones). El millón es una abreviatura de PANTALLA y el único sitio del sistema que divide
+por un millón es el formateador.
+
+Este layout pasó por las dos formas del error en tres días. Hasta el **23-09-2026** por la mañana,
+tres filas declaraban `number (M$)` —o sea **millones**— mientras el generador las producía en
+**miles** y el lector las multiplicaba por mil: quien implementara la entrega leyendo el layout
+habría enviado cifras **mil veces mayores**, y nada lo habría dicho. Corregida la declaración, quedaba
+el problema de fondo: **en miles, cada monto se cuantiza de a $1.000**. Por eso los campos perdieron
+el sufijo y van en pesos.
+
 ### s3_otorgamiento.csv · A16
+
+**Versión 4.0.0 · 23-09-2026 · NEX Factoring**
 
 **Propósito:** variables del **Modelo de Riesgo v1.0** para evaluar el catálogo de otorgamiento **C01–C52 (cliente)**, **D01–D23 (deudor)** y **O01–O04 (operación)**. Monta la sección OTORGAMIENTO de la **tabla interna**; el motor de NEX evalúa localmente los tramos (risk tiers) y niveles (N1..N5 / Comité) contra esta tabla, sin recalcular nada en origen.
 **Transporte:** S3 · `s3://nex-ingesta-<ambiente>/otorgamiento/OTORGAMIENTO_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** upserts vía API **A22** (dominio `OTORGAMIENTO`, mismos nombres de campo). Full-replace diario + upserts.
-**Unidades:** montos en **pesos** salvo sufijo `_MM` (millones) o `_M` (miles); porcentajes 0–100; booleanos 1/0; fechas ISO `AAAA-MM-DD` (o `AAAAMM` para IVA).
+**Unidades:** montos en **pesos enteros**, sin excepción — **ningún campo lleva sufijo de escala**: ni `_M` (miles) ni `_MM` (millones); porcentajes 0–100; booleanos 1/0; fechas ISO `AAAA-MM-DD` (o `AAAAMM` para IVA).
 
 ### 1. Modelo de filas: una fila por (RUT, ROL, RUT_CONTRAPARTE)
 
@@ -289,9 +314,9 @@ La clave primaria es **`RUT` + `ROL` (+ `RUT_CONTRAPARTE`)**. Cada entidad de la
 | RUT | — | ambos | RUT de la entidad de la fila (cliente o deudor) |
 | ROL | — | — | `CLIENTE` \| `DEUDOR` |
 | RUT_CONTRAPARTE | — | DEUDOR | En fila DEUDOR: RUT del cliente del par. Vacío en fila CLIENTE |
-| PAGARE_FIRMADO / MNT_PAGARES_M / FCH_VCTO_PAGARE | C01–C03 | CLIENTE | Pagaré: existencia, monto suficiente (cartera+simulación), vigencia (60d post últ. vcto.) |
+| PAGARE_FIRMADO / MNT_PAGARES / FCH_VCTO_PAGARE | C01–C03 | CLIENTE | Pagaré: existencia, monto suficiente (cartera+simulación), vigencia (60d post últ. vcto.) |
 | IVA_ULT_PERIODO (AAAAMM) | C04 | CLIENTE | Información financiera al día (≤ 2 meses) |
-| LINEA_APROBADA_MM / LINEA_EXTENDIDA | C05–C07 | CLIENTE | Línea vigente, extensión por Riesgo (N4), cupo (excedente ≤10% N2 / >10% N4) |
+| LINEA_APROBADA / LINEA_EXTENDIDA | C05–C07 | CLIENTE | Línea vigente, extensión por Riesgo (N4), cupo (excedente ≤10% N2 / >10% N4) |
 | VAR_VENTA_MENSUAL_PCT | C08 | CLIENTE | Variación de venta vs promedio L6M (−20 / −40) |
 | NOTA_COMPORTAMIENTO | C09 / **D01** | CLIENTE = cliente · DEUDOR = deudor | Nota de comportamiento 1–5 (umbral 3,7 → N4) |
 | CMF_DIR_MOROSA_30_90 / 90_180 / 180_3A | C10–C12 / **D02–D04** | CLIENTE / DEUDOR | Mora directa CMF por tramo. Escala combina monto (MM$5/MM$10) y % del total (5%/10%) |
@@ -345,6 +370,8 @@ El archivo de ejemplo trae 5 filas:
 
 ### s3_verificacion.csv · A10
 
+**Versión 3.0.0 · 23-09-2026 · NEX Factoring**
+
 **Propósito:** variables del **Predictor de Verificación** (V01–V10) por **par cliente-deudor** (ventana 3M/6M). Monta la sección VERIFICACION de la **tabla interna**. NEX decide localmente: VERIFICADA POR MODELO o VERIFICACIÓN TELEFÓNICA antes de girar.
 **Transporte:** S3 · `s3://nex-ingesta-<ambiente>/verificacion/VERIFICACION_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** upserts vía API A22 (dominio `VERIFICACION`) — clave para V07/V08 que son **degradables intramés**.
 **Clave:** `RUT_CLIENTE` + `RUT_DEUDOR`. Full-replace diario + upserts.
@@ -353,13 +380,13 @@ El archivo de ejemplo trae 5 filas:
 |---|---|---|---|
 | V01_PROTOCOLO_PROPIO | V01 | Existe → prevalece | 1 = el deudor tiene protocolo propio de verificación |
 | V02_PCT_PAGADO_3M | V02 | ≥ 90% | Monto pagado por el deudor / cartera del par Ult3M |
-| **V03_MNT_COMPRA_3M_M** | V03 | razón ≤ 1,3× | **Total comprado al par en 3M móviles, en miles de pesos.** NEX divide el monto de la operación con ese deudor por este total. El archivo trae el **total**, no la razón: la razón depende de la operación que se está evaluando y el archivo no la conoce |
-| **V04_VENTA_PROM_3M_M** | V04 | razón < 1,0× | **Venta mensual promedio del par, en miles de pesos.** Mismo motivo que V03: viaja el denominador, la razón la calcula NEX |
+| **V03_MNT_COMPRA_3M** | V03 | razón ≤ 1,3× | **Total comprado al par en 3M móviles, en pesos enteros.** NEX divide el monto de la operación con ese deudor por este total. El archivo trae el **total**, no la razón: la razón depende de la operación que se está evaluando y el archivo no la conoce |
+| **V04_VENTA_PROM_3M** | V04 | razón < 1,0× | **Venta mensual promedio del par, en pesos enteros.** Mismo motivo que V03: viaja el denominador, la razón la calcula NEX |
 | V05_RECURRENCIA_MESES_6M | V05 | **≥ 4** | Meses con venta C-D > 0 en Ult6M (sin reclamos/anulaciones). El umbral es **≥ 4**, no > 4: con 4 meses el criterio se cumple |
 | **V06_PLAZO_PROM_PAGO_DIAS** | V06 | desviación **≤ 5% del plazo** | **Plazo promedio de pago del par, en días.** NEX calcula la desviación de cada factura contra él —`abs(plazo_doc − plazo_prom) / plazo_prom`— y aplica el 5%. El umbral **no son 5 días**: en un par que paga a 30 días tolera ±1,5 y en uno de 90 tolera ±4,5. El archivo trae el **plazo promedio**, no la diferencia ya calculada: una diferencia agregada no se puede recomputar por factura |
 | V07_PCT_MORA_25D | V07 | < 3% | % pagado con mora >25d — **degradable intramés** |
 | V08_PCT_RECLAMADAS | V08 | < 4% | % facturas reclamadas — **degradable intramés** |
-| V10_MNT_PAGADO_3M_M | V10 | **> MM$1.000** | Historial de pago factoring relevante, en miles de pesos: lo que el **deudor** le pagó al factoring en 3 meses **sumando todos sus cedentes** —es un atributo del deudor, como V01, y viaja repetido en cada fila del par—. Umbral **fijo**: no mira el tamaño de la operación evaluada. El «> 20× la operación ó > MM$1.500» es de la versión anterior del predictor |
+| V10_MNT_PAGADO_3M | V10 | **> MM$1.000** | Historial de pago factoring relevante, en pesos enteros: lo que el **deudor** le pagó al factoring en 3 meses **sumando todos sus cedentes** —es un atributo del deudor, como V01, y viaja repetido en cada fila del par—. Umbral **fijo**: no mira el tamaño de la operación evaluada. El «> 20× la operación ó > MM$1.500» es de la versión anterior del predictor |
 | SEGMENTO | — | `PRIME` \| `OTROS` | Pre-segmentación del origen, **informativa**: NEX la recalcula siempre (ver nota). Los nombres `ELITE`/`OTHERS` son de la versión anterior |
 | CLASIFICACION | — | `PRIME` \| `NORMAL` | Lista Blanca / Deudor Autorizado. Es **una de las dos** puertas de entrada al protocolo recortado |
 | NOTA_DEUDOR | — | **> 4,2** abre por sí sola | Nota 1–5. La **otra** puerta de entrada: una nota > 4,2 basta aunque el deudor no sea PRIME |
@@ -380,6 +407,8 @@ El archivo de ejemplo trae 5 filas:
 **Fuente normativa:** `Specs_Procesos/Verificacion/spec-verificacion-facturas.md`, que es la versión vigente del predictor. El PDF `Spec_Proceso_Calificacion_Otorgamiento_Verificacion_v1.1.pdf` describe la versión anterior (segmentos «Elite/Others», V10 con el múltiplo, entrada por conjunción) y quedó atrás en esos puntos.
 
 ### s3_lineas_vigentes.csv · A7
+
+**Versión 2.0.0 · 16-09-2026 · NEX Factoring**
 
 **Propósito:** carga diaria de las líneas de crédito vigentes por cliente. Alimenta el tab Líneas (sub-tab Vigentes) y el recomendador. Los montos se refrescan durante el día vía API Montos (A8).
 **Transporte:** S3 · `s3://nex-ingesta-<ambiente>/lineas/LINEAS_VIGENTES_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Montos en PESOS**, enteros, sin separador de miles ni decimales.
@@ -419,6 +448,8 @@ necesariamente—, así que el layout no supone nada sobre su forma.
 Registro electrónico de cesiones. No es una entrega diaria ni una consulta puntual: es el histórico del que se derivan el mix de financiamiento, la detección de competencia y el bloqueo de un documento ya cedido.
 
 ### AECSync · A2
+
+**Versión 1.0.1 · 16-09-2026 · NEX Factoring**
 
 **Propósito:** todas las **cesiones electrónicas** de un cliente: qué documento cedió, a qué **cesionario**, cuándo y por cuánto. Es el único activo que identifica a las **contrapartes de financiamiento** del cliente, y de ahí sale el **mix de financiamiento** (columna SOW del tubo), la detección de competencia, la pérdida por cesión y el bloqueo «cedida a terceros» de una factura candidata.
 
@@ -515,6 +546,8 @@ La primera la **expone NEX** para que Security actualice la tabla interna dentro
 
 ### swagger_actualizacion_intradia.yaml · A22
 
+**Versión 1.0.1 · 16-09-2026 · NEX Factoring**
+
 **Propósito:** endpoint **expuesto por NEX** para que Security actualice la **tabla interna** (montada desde las entregas diarias de otorgamiento A16, verificación A10 y Plataforma 360 A11) cuando los registros varían dentro del día. La aplicación nunca consulta a Security en línea: siempre lee la tabla interna (batch + estos upserts).
 
 | Endpoint | Uso |
@@ -528,6 +561,8 @@ La primera la **expone NEX** para que Security actualice la tabla interna dentro
 **Auditoría:** cada upsert queda en la bitácora de NEX (origen, dominio, n° registros, timestamp).
 
 ### swagger_consulta_lineas.yaml · A23
+
+**Versión 1.1.1 · 21-09-2026 · NEX Factoring**
 
 **Propósito:** responder, en el momento de evaluar una oferta, **cuánto cupo hay disponible** en los tres niveles que la regla de validación compara. Es la API que alimenta el motor de asignación de líneas (`Specs_Procesos/Lineas/spec-asignacion-lineas.md`).
 
@@ -613,6 +648,8 @@ exacta, sin tolerancia.
 
 ### swagger_montos_lineas.yaml · A8
 
+**Versión 1.0.1 · 16-09-2026 · NEX Factoring**
+
 **Propósito:** refrescar durante el día los **montos** (uso, disponible, proyección, morosidad) de las líneas cargadas por el batch diario `s3_lineas_vigentes.csv` (A7). La estructura de las líneas viene del CSV; esta API sólo actualiza montos.
 
 | Endpoint | Uso |
@@ -624,6 +661,8 @@ exacta, sin tolerancia.
 **Resiliencia:** ante error o timeout, NEX conserva los últimos montos válidos y reintenta al ciclo siguiente (backoff); la UI muestra la hora del último refresh exitoso.
 
 ### swagger_gestion_lineas.yaml · A13 / A14 / A15
+
+**Versión 1.0.0 · 29-08-2026 · NEX Factoring**
 
 **Propósito:** integrar NEX con el sistema externo de gestión de líneas (comité). NEX **sólo inyecta y consulta**; la resolución (aprobación/rechazo/observación) ocurre en el sistema externo.
 
@@ -641,3 +680,15 @@ exacta, sin tolerancia.
 **Frecuencia:** POST por evento (Solicitar VB); GET al abrir la Bandeja y con "Consultar estados".
 **Autenticación:** por definir con el equipo del sistema de gestión (se sugiere OAuth2 client-credentials).
 
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.2.1** | 21-09-2026 | Rutas de los documentos citados, tras agrupar la documentación por carpetas. |
+| 1.2.0 | 18-09-2026 | Correcciones del A16: D02–D13 son excepciones no re-evaluables y no bloqueos firmes, C47–C50 salen del catálogo y el tipo `porDeudor` lo declara la regla. |
+| 1.1.0 | 17-09-2026 | V04 y V10 pasan a ser alcanzables con el A10, y las comparaciones del predictor van en pesos. |
+| 1.0.0 | 16-09-2026 | Primera versión: reúne los doce specs de integración, ya sobre S3. |

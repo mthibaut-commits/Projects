@@ -42,5 +42,15 @@ timestamp: 2026-09-19T00:40:00Z
 
 | 22-09-2026 | [`2026-09-22_mesa_por_factura_y_badges.md`](./2026-09-22_mesa_por_factura_y_badges.md) | La Mesa de verificación pasa a ser un listado de facturas agrupado por deudor, con marcar, adjuntar y anotar por documento (53) —y con ella apareció que la factura retirada desaparecía de la mesa justo después de registrarla—; y los badges de otorgamiento y verificación dejan de nacer rojos mientras se simula (54) |
 
+| 23-09-2026 | [`2026-09-23_cartera_leida_no_inventada.md`](./2026-09-23_cartera_leida_no_inventada.md) | Regla 62: la cartera comercial se LEE. `PC_CLIENTES` sorteaba volumen, competidor y «malos deudores», y el volumen iba en una escala sin declarar que cuatro KPI pasaban por `fmtMMc`: mostraban M$5 donde va la cartera de 500 clientes. Fuera también el fallback sintético de 80 empresas |
+
+| 23-09-2026 | [`2026-09-23_generadores_en_pesos.md`](./2026-09-23_generadores_en_pesos.md) | Regla 61: todo generador produce en PESOS y ningún activo lleva sufijo de escala. Veinte campos de cuatro activos viajaban en miles —cuantizados de a $1.000— y dos entran en criterios que DECIDEN (C02 y el predictor). Tres specs suben de versión mayor y el caso 115 se re-ancla a una exigencia más fuerte |
+
+| 23-09-2026 | [`2026-09-23_el_millon_es_la_ultima_capa.md`](./2026-09-23_el_millon_es_la_ultima_capa.md) | Regla 60: el millón es la última capa. Ninguna COMPARACIÓN estaba en millones, pero sí un mensaje al cliente que multiplicaba por un millón, tres layouts que declaraban campos en MM$ —uno contradiciendo a su generador por mil— y el explicador rindiendo «$20M». `auditar_unidades` estrena el patrón (d) y queda cableado con línea base cero |
+
+| 23-09-2026 | [`2026-09-23_casos_de_prueba.md`](./2026-09-23_casos_de_prueba.md) | 96 casos de prueba sobre las cinco pantallas del ciclo de una operación, cada uno con la regla que lo fija y su cobertura medida: 79 automatizados y 17 manuales, 7 de ellos en la Mesa de verificación. Nace `Casos_de_Prueba/`; y dos cifras de `code_style.md` estaban desfasadas contra el fuente |
+
+| 21-09-2026 | [`2026-09-21_versionado_de_entregables.md`](./2026-09-21_versionado_de_entregables.md) | Los 23 entregables declaran `Versión N.N.N` bajo el título y cierran con un anexo de control de versiones reconstruido del historial del repo; el PDF la estampa en cada hoja y abre el anexo en hoja nueva, y `versiones.test.mjs` exige que la cabecera y la primera fila del anexo calcen. Nace `Capturas_Simuladas/`, la tercera clase de captura: la que exige conducir la app |
+
 La historia anterior al vault (02-09 → 16-09-2026) no tiene logs propios: vive dentro de las reglas de
 dominio (cada una trae fecha y qué la motivó) y en `Auditoria/` y `Regresiones/`.

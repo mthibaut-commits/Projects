@@ -91,7 +91,7 @@ function generar({ AECSYNC, SHARE_OF_WALLET }) {
         HistoricoSemanal: semanas,
         EstadoSOW: { Nivel: "red", Label: "Sin cesiones en el registro", ActualPct: 0, TargetPct: target, GapPct: r1(target) },
         Analisis: { Pendiente: "Sin cesiones", PendienteSemanalPts: 0, AsintotaEstimadaPct: 0, ConvergeAlTarget: false,
-                    SemanasParaTarget: null, RequeridoParaTargetMM: 0,
+                    SemanasParaTarget: null,
                     Diagnostico: "El registro de cesiones no trae operaciones de este cliente en la ventana." },
         HistoricoMensual: s.HistoricoMensual || [] });
       continue;
@@ -122,7 +122,6 @@ function generar({ AECSYNC, SHARE_OF_WALLET }) {
     const semParaTarget = gap === 0 ? 0 : converge ? Math.ceil(gap / pts) : null;
     // Cuánto habría que sumar de cesiones NUESTRAS, al volumen del período, para alcanzar el target.
     const totPer = sum(conDato, "MontoTotal");
-    const requerido = Math.max(0, Math.round(totPer * (target / 100) - sum(conDato, "MontoBICE")));
 
     // HistoricoMensual: se conserva la forma y se ANCLA al SOW medido (ver cabecera).
     const mensual = (s.HistoricoMensual || []).slice();
@@ -152,7 +151,6 @@ function generar({ AECSYNC, SHARE_OF_WALLET }) {
         AsintotaEstimadaPct: r1(Math.max(0, Math.min(100, actual + pts * 8))),
         ConvergeAlTarget: gap === 0 || converge,
         SemanasParaTarget: semParaTarget,
-        RequeridoParaTargetMM: requerido,
         Diagnostico: gap === 0 ? "En target." : converge ? "En trayectoria hacia el target."
           : tend === "Decreciente" ? "SOW a la baja: la competencia gana terreno en este cliente."
           : "Estancado bajo el target: no converge al ritmo actual.",

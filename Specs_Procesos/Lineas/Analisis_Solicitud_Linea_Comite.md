@@ -1,5 +1,7 @@
 # Análisis — Solicitud de Línea al Comité (Crear Presentación)
 
+**Versión 1.0.0 · 29-08-2026 · NEX Factoring**
+
 **Módulo:** Tab **Líneas** · NEX Factoring (demo)
 **Naturaleza:** El sistema **solo genera la solicitud** (inyección). La revisión y decisión del comité ocurren en **otro sistema**, integrado vía API. Nuestra app inyecta, lista y consulta estado — no resuelve.
 **Fase actual:** Análisis (este documento). La implementación va en un turno dedicado posterior.
@@ -207,3 +209,13 @@ Salida: borrador editable de las 5 notas. En la demo, un generador determinista 
 3. **"Solicitar VB"** vs **enviar/inyectar**: ¿VB es un paso previo (visto bueno de jefatura) antes de la inyección API 1, o es el envío mismo?
 4. **Permisos**: ¿quién puede crear la solicitud (solo ejecutivo con cartera del cliente) y quién ve la Bandeja completa (jefatura)?
 5. **Nota Deudor en deudores**: ¿reuso el modelo de Nota Deudor ya implementado (1–5) para poblar la columna Nota y el Prom. Ponderado? (asumo que sí).
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.0.0** | 29-08-2026 | Primera versión: el análisis del módulo de solicitud de línea al comité. |

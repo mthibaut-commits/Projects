@@ -39,7 +39,8 @@ Ninguno de los seis subsume a otro, **y los cinco primeros juntos tampoco bastan
 bloque declarado antes de su dependencia y un componente no importado pasan `tsc` y el build, y sólo aparecen en
 el paso 5 o al abrir la pantalla — que es lo que hace el paso 6 (`tests/e2e/`, con la sesión iniciada y el detalle
 abierto). El CI (`.github/workflows/gates.yml`) corre los seis en toda rama y todo PR, idénticos. Qué cubre cada caso de la suite: `vault/conocimiento/verificacion.md`; qué fija cada gate de
-contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ninguna regla queda «sin gate»**: las 88 de dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `regla_<slug>.test.mjs`.
+contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ninguna regla queda «sin gate»**: las 91 de dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `regla_<slug>.test.mjs`.
+
 ## Otros comandos
 
 | Acción | Comando |
@@ -53,7 +54,7 @@ contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ni
 | Regenerar los activos sintéticos | `node GeneradorDatos/generar.js` — tiene punto fijo: reproduce el archivo commiteado byte a byte (gate `generador.test.mjs`) · un solo bloque: `--solo=VERIFICACION` |
 | Spec `.md` → PDF | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node md_a_pdf.mjs <archivo.md>` |
 | Consolidado de integraciones | `node armar_integraciones.mjs` |
-| Tubo con una operación simulada | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_tabla_simulada.mjs` |
+| Tubo con una operación simulada | `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_tabla_simulada.mjs` → `Capturas_Simuladas/` |
 
 ## Reglas núcleo
 
@@ -116,5 +117,7 @@ contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ni
   - `adr/` — decisiones · `sesiones/estado_actual.md` — el tablero · `sesiones/` — logs
 - `Specs_Procesos/<tema>/` (`Otorgamiento` · `Verificacion` · `Lineas` · `Excepciones` · `Evaluacion_Factura`) · `Integraciones/` · `Levantamiento_Activos_Informacion.md` — la fuente de verdad de negocio; qué es cada uno: `vault/conocimiento/mapa_documentos.md`
 - `GeneradorDatos/` — produce los activos sintéticos (`datos_inyectados.js`, `proveedores_clientes.json`)
-- `Capturas_UI/` — el DOM real capturado, fuente para Figma; `Figma_Export/` quedó obsoleto como fuente
+- `Capturas_UI/` (el estado por defecto) · `Variantes_UI/` (los estados del detalle) · `Capturas_Simuladas/` (lo que
+  exige conducir la app) — el DOM real capturado, fuente para Figma; `Figma_Export/` quedó obsoleto como fuente
+- `Casos_de_Prueba/` — qué hay que mirar en pantalla para aceptar una entrega (97 casos, con su regla y su cobertura)
 - `Auditoria/` — los informes que MIDEN (el repo, el fuente, el generador) · `Regresiones/` — lo que cotejó definición contra implementación y dejó hallazgos; la historia del proyecto vive ahí y en `vault/sesiones/`

@@ -1,6 +1,6 @@
 # Centro de Mensajería Interna
 
-**Versión:** 1.0 · **Fecha:** 21-09-2026 · **Sistema:** NEX Factoring · Pipeline Comercial
+**Versión 1.0.0 · 21-09-2026 · NEX Factoring**
 
 Este documento describe **cómo funciona el centro de mensajería**: para qué existe, qué es una
 conversación, quién la abre y desde dónde, cómo se avisa, qué queda registrado y dónde están hoy sus
@@ -203,3 +203,13 @@ de repositorios.
 | [`spec-gestion-excepciones.md`](../Excepciones/spec-gestion-excepciones.md) | el proceso donde nacen los requerimientos y los avisos automáticos |
 | [`spec-otorgamiento.md`](../Otorgamiento/spec-otorgamiento.md) | el modelo de riesgo y los criterios que un requerimiento cita |
 | [`spec-ciclo-factura.md`](spec-ciclo-factura.md) | en qué orden corren los motores y dónde encaja cada aviso |
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.0.0** | 21-09-2026 | Primera versión: el centro de mensajería interna, con sus cinco límites medidos. |

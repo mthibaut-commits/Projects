@@ -1,5 +1,7 @@
 # Especificación · Determinación de verificación de facturas
 
+**Versión 1.2.1 · 21-09-2026 · NEX Factoring**
+
 **Producto:** Factoring Security · módulo de originación
 **Alcance:** función aislada que decide si las facturas de una operación deben verificarse con el deudor
 **Relación:** corre junto al motor de asignación de líneas (`Specs_Procesos/Lineas/spec-asignacion-lineas.md`) en la misma reevaluación de la operación.
@@ -36,7 +38,6 @@ Dos consecuencias de esa fase que sí hay que fijar:
 
 - **La factura no confirmada queda VETADA para esa operación.** No se puede volver a seleccionar, ni siquiera si la operación se reabre para modificarla: es el resultado de una llamada, no una preferencia del ejecutivo. Agregar otras facturas sí se puede, y esas sí pasan por verificación.
 - **La verificación ya realizada se conserva.** El veredicto por deudor y, sobre todo, las llamadas ya registradas persisten por operación. Si se reabre para modificarla, rehacer un contacto que ya se hizo son 3–4 horas por deudor tiradas, y el deudor ya respondió.
-
 
 ### 2.2 Entrada
 
@@ -257,3 +258,16 @@ Un caso concreto que el ejecutivo debería poder ver: si el único criterio que 
 | **Reglas 3 y 8** | El árbol de decisión anterior usaba 1,1× y 5%. La versión actual usa 1,3× y 4%. |
 | **Regla 6, unidad** | Se pasó de un criterio en días (< 5 días) a uno porcentual (≤ 5% del plazo promedio). Sobre 43 días, 5% equivale a poco más de 2 días. |
 | **Reevaluación tras el contacto** | **Resuelto**, y por separado para cada mitad. **La verificación se congela:** el resultado del contacto es un HECHO, no una nueva predicción, y volver a predecir sobre el monto ya recortado sería circular (bajar el monto sólo puede mejorar las reglas 3, 4 y 9, que es justamente lo que la llamada ya resolvió). **La asignación de línea se RECORTA, no se recalcula:** salen las facturas retiradas y las demás conservan su línea y su monto. Re-asignar contra el estado del día expondría a una operación ya firmada al cupo que otro negocio se llevó mientras tanto, y no puede mejorar nada, porque la reserva vigente cubre un monto MAYOR que el que queda. Una operación firmada no pierde línea por una llamada telefónica. El cupo que se libera sigue reservado hasta que lo liberen en el sistema de gestión de líneas. Ver §3.7 y §4.3 del spec de asignación de líneas. |
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.2.1** | 21-09-2026 | Rutas de los documentos citados. |
+| 1.2.0 | 12-09-2026 | Entra la regla 0 de verificación. |
+| 1.1.0 | 11-09-2026 | Cotejo contra el código: el protocolo recortado son seis criterios y no cinco, y la regla 9 lleva un solo umbral, sobre el total. |
+| 1.0.0 | 10-09-2026 | Primera versión: el protocolo de verificación telefónica y sus umbrales. |
