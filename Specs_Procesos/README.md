@@ -11,7 +11,7 @@ originales de política del cliente: ésos no se regeneran, son la entrada.
 | `Verificacion/` | si el deudor confirma que va a pagar | `spec-verificacion-facturas.md` |
 | `Lineas/` | cuánto cupo hay y cómo se pide uno nuevo al comité | `spec-asignacion-lineas.md` · `Analisis_Solicitud_Linea_Comite.md` · `Spec_Proceso_Solicitud_Linea_Comite.pdf` |
 | `Excepciones/` | qué pasa entre que el motor levanta una excepción y un apoderado la resuelve | `spec-gestion-excepciones.md` |
-| `Evaluacion_Factura/` | **lo transversal del proceso de evaluación**: en qué orden corre todo y qué pasa antes y después | `spec-ciclo-factura.md` (la costura entre los motores) · `spec-inbound-facturas.md` · `spec-pricing-simulacion.md` · `spec-modelo-giro.md` · `spec-mensajeria-interna.md` · `Spec_Proceso_Inbound_Facturas.pdf` · `Spec_Proceso_Gestion_Oportunidad_Kanban*.pdf` (vigente: v1.2) |
+| `Evaluacion_Factura/` | **lo transversal del proceso de evaluación**: en qué orden corre todo y qué pasa antes y después | `spec-proceso-curse.md` (el curse de la OPERACIÓN: su máquina de estados, y el modelo del negocio conciliado cláusula por cláusula contra lo implementado) · `spec-ciclo-factura.md` (la costura entre los motores) · `spec-inbound-facturas.md` · `spec-pricing-simulacion.md` · `spec-modelo-giro.md` · `spec-mensajeria-interna.md` · `Spec_Proceso_Inbound_Facturas.pdf` · `Spec_Proceso_Gestion_Oportunidad_Kanban*.pdf` (vigente: v1.2) |
 
 ## Lo que no vive acá
 
@@ -28,3 +28,9 @@ originales de política del cliente: ésos no se regeneran, son la entrada.
    lo que se va es el relato de que antes estaba mal.
 2. **Lo que el documento afirma del código se verifica contra el código**, afirmación por afirmación, antes
    de entregarlo. Qué está medido y qué es decisión abierta se dice con esas palabras.
+3. **La evidencia es la DEFINICIÓN, nunca la línea de código** (22-09-2026, decisión del usuario). Un spec
+   cita la regla del vault por su número, la sección del spec que la desarrolla, o la **condición** del
+   fuente por su nombre —el predicado o la función que la encarna, `ofertaPublicada` = «cerrada **y**
+   comunicada»—. Una cita `l.NNNNN` vale para el fuente de un día: el primer commit que agregue una línea
+   más arriba la corre, sin que la condición haya cambiado. El fuente es un solo archivo de ~51.000
+   líneas, así que eso pasa en cada commit.

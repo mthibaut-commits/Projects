@@ -8,6 +8,13 @@ timestamp: 2026-09-22T08:00:00Z
 
 # El deudor decide, la factura se llama · regla 59
 
+> **Nota del 23-09, al mezclar.** Esta regla nació con el número **53** y se renumeró a **59**: la sesión
+> paralela llegó antes a `main` y tomó del 53 al 58. Es la deuda anotada en el tablero —dos sesiones
+> toman a la vez el mismo «siguiente entero libre» y renumera quien mezcla después—, y por eso el
+> archivo e2e pasó de `25_53` a `26_59`. Las cifras de la verificación que cierran este log son las de
+> ESTA rama antes de mezclar; después de la mezcla son 431 gates de contrato, 158/158 la suite y 32/32
+> e2e. Lo que un log registra es lo que pasó ese día, así que el resto queda como se escribió.
+
 ## Qué pidió el usuario
 
 Tres mensajes distintos, todos sobre el tab de Verificación del detalle:

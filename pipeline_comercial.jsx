@@ -3349,7 +3349,10 @@ function verifFactura(f, deal, estado) {
   // invariante VER-01 —«no cursa con verificación pendiente»— fallaba en las dos direcciones: una
   // operación con todas sus llamadas firmadas podía seguir bloqueada, y una SIN NINGUNA podía pasar
   // el control si a cada deudor le tocaba «Completada». Una llamada está registrada o no lo está: no
-  // hay estado intermedio que persistir, porque el repositorio guarda `{por, fecha}` y nada más.
+  // hay estado intermedio que persistir. El repositorio guarda, además de `{por, fecha}`, el registro
+  // de la llamada que firmó el panel lateral —checklist, contacto, fecha comprometida, respaldo y
+  // nota (regla 53)—, y `checks` se lee de ahí; pero lo que decide «registrada» sigue siendo que la
+  // entrada exista.
   let tel = null;
   if (r.est === "tel") {
     const reg = ((estado && estado.tel) || (typeof VERIF_TEL !== "undefined" ? VERIF_TEL : {}) || {})[deal && deal.id] || {};
@@ -3468,51 +3471,94 @@ function causasVerif(v) {
 }
 // Filas de la mesa: un deudor por operación, sólo los que el predictor mandó a verificación
 // telefónica. Los que el modelo dio por verificados no aparecen — no hay nada que llamar.
-// El COMMIT de la verificación —qué llamada se registró y qué factura quedó vetada— es estado del
-// SERVIDOR: es evidencia de una conversación con el deudor, con actor y hora. Entra por parámetro
-// (`{ tel, vetadas }` por id de operación) para que esta función sea pura; el default es el estado
-// que hoy vive en el navegador. Ver el contrato VER-01 en `INVARIANTES`.
+// El COMMIT de la verificación —qué llamada se registró, qué factura quedó vetada y qué respaldo se
+// adjuntó— es estado del SERVIDOR: es evidencia de una conversación con el deudor, con actor y hora.
+// Entra por parámetro (`{ tel, vetadas, respaldo }` por id de operación) para que esta función sea
+// pura; el default es el estado que hoy vive en el navegador. Ver el contrato VER-01 en `INVARIANTES`.
+//
+// LA UNIDAD DE TRABAJO ES LA FACTURA (regla 53, 22-09-2026): la fila sigue siendo el DEUDOR —una
+// llamada cubre a todas sus facturas y las causas son suyas— pero trae `docs`, un documento por
+// factura con su estado, su respaldo y su nota. Y `docs` incluye las VETADAS, que ya no están en
+// `facturasOp`: retirar una factura la saca de la oferta, así que listándolas sólo desde ahí la
+// evidencia de «esta no la confirmó» desaparecía de la pantalla justo después de registrarla —y con
+// todas vetadas, el deudor entero se esfumaba de la mesa aunque su veredicto estuviera congelado—.
 function filasVerificacion(deals, estado) {
   const out = [];
   for (const d of deals || []) {
-    const fs = (d && d.facturasOp) || [];
-    if (!fs.length) continue;
-    const grupos = new Map();
-    for (const f of fs) {
-      const k = f.rutRecep || f.deudor || "";
-      let g = grupos.get(k);
-      if (!g) {
-        g = [];
-        grupos.set(k, g);
-      }
-      g.push(f);
-    }
     const tel = (estado && estado.tel && estado.tel[d.id]) || (typeof VERIF_TEL !== "undefined" && VERIF_TEL[d.id]) || {};
     const vet = (estado && estado.vetadas && estado.vetadas[d.id]) || (typeof NO_CONFIRMADAS !== "undefined" && NO_CONFIRMADAS[d.id]) || {};
-    for (const [k, suyas] of grupos) {
-      const v = verifFactura(suyas[0], d, estado);
+    const resp = (estado && estado.respaldo && estado.respaldo[d.id]) || (typeof VERIF_RESPALDO !== "undefined" && VERIF_RESPALDO[d.id]) || {};
+    const fs = (d && d.facturasOp) || [];
+    // Las vetadas vuelven a la lista como documentos de pleno derecho: no están en la oferta —por eso
+    // no suman al monto— pero son el resultado de una verificación y tienen que poder mirarse.
+    const vetadas = Object.entries(vet).map(([id, x]) => ({
+      id,
+      folio: (x && x.folio) || id,
+      monto: (x && x.monto) || 0,
+      deudor: (x && x.deudor) || "",
+      rutRecep: (x && x.rutRecep) || "",
+      retirada: true,
+    }));
+    if (!fs.length && !vetadas.length) continue;
+    const grupos = new Map();
+    const clave = (f) => f.rutRecep || f.deudor || "";
+    for (const f of fs) {
+      const k = clave(f);
+      let g = grupos.get(k);
+      if (!g) {
+        g = { enOferta: [], fuera: [] };
+        grupos.set(k, g);
+      }
+      g.enOferta.push(f);
+    }
+    for (const f of vetadas) {
+      // Una vetada sin grupo propio —su deudor ya no tiene facturas vivas— abre el suyo igual.
+      const k = clave(f);
+      let g = grupos.get(k);
+      if (!g) {
+        g = { enOferta: [], fuera: [] };
+        grupos.set(k, g);
+      }
+      g.fuera.push(f);
+    }
+    for (const [k, g] of grupos) {
+      const suyas = g.enOferta;
+      const muestra = suyas[0] || g.fuera[0];
+      const v = verifFactura(muestra, d, estado);
       // Un deudor con veredicto CONGELADO sigue en la mesa aunque el predictor de hoy ya no lo mandaría
       // a teléfono: es evidencia de una llamada que ocurrió, y la fila es donde consta.
-      if (v.est !== "tel" && !v.congelado) continue;
+      if (v.est !== "tel" && !v.congelado && !g.fuera.length) continue;
       const nTel = suyas.filter((f) => tel[f.id]).length;
-      const nVet = suyas.filter((f) => vet[f.id]).length;
+      const nVet = g.fuera.length;
+      const docEstado = (f) => (f.retirada || vet[f.id] ? "no_verificada" : tel[f.id] ? "verificada" : "pendiente");
+      const docs = [...suyas, ...g.fuera].map((f) => ({
+        f,
+        id: f.id,
+        estado: docEstado(f),
+        tel: tel[f.id] || null,
+        respaldo: resp[f.id] || null,
+      }));
       out.push({
         id: d.id + "|" + k,
         deal: d,
         cliente: d.cliente || d.company || d.id,
         op: d.id,
-        rutDeudor: suyas[0].rutRecep || "",
+        rutDeudor: (muestra && muestra.rutRecep) || "",
         deudor: v.nombre,
         tipo: v.tipo,
         nota: v.nota,
         segmento: v.segmento,
         facturas: suyas,
+        docs,
         exec: d.exec,
         monto: mmRound(suyas.reduce((s, f) => s + (f.monto || 0), 0)),
         causas: causasVerif(v),
         nTel,
         nVet,
-        estado: nVet ? "no_verificada" : nTel === suyas.length ? "verificada" : "pendiente",
+        nPend: docs.filter((x) => x.estado === "pendiente").length,
+        // El estado del DEUDOR es el resumen de sus documentos: pendiente mientras quede uno sin
+        // resolver —que es lo que falta hacer—, y si no, no_verificada si alguno se retiró.
+        estado: docs.some((x) => x.estado === "pendiente") ? "pendiente" : nVet ? "no_verificada" : "verificada",
       });
     }
   }
@@ -6935,192 +6981,504 @@ function fonoOfuscado(fono) {
   if (!s) return "—";
   return s.length <= 4 ? "•••" + s : "•••" + s.slice(-4);
 }
-// REGISTRO DE LA LLAMADA de verificación. Hasta ahora una verificación telefónica —3 a 4 horas por
-// deudor, y bloquea el giro— se firmaba con un clic: `repoVerifTel` guardaba `{por, fecha}`, o sea
+// NOTA RICA CON CAPTURA PEGADA. Una verificación telefónica se respalda con lo que se VIO: el correo
+// del deudor, la pantalla del portal, el WhatsApp donde confirma la fecha. Obligar a guardar esa
+// imagen a un archivo, buscarla y adjuntarla por separado es justo el paso donde la evidencia se
+// pierde, así que la nota acepta Ctrl+V de una imagen. Y son DOS cosas, no una: la captura queda
+// INLINE en la nota —que es donde se lee en contexto— y además BAJA AL DISCO, porque el respaldo de
+// un giro se pide fuera de esta pantalla y meses después. Esto es un HTML sin servidor: el único
+// sistema de archivos al que puede escribir es la carpeta de descargas del navegador, así que ahí va,
+// con nombre determinista para que el adjunto registrado y el archivo se puedan aparear a mano.
+// El texto se pega SIEMPRE PLANO: copiar de un correo arrastra su hoja de estilos y la nota termina
+// con tipografías y fondos que no son de esta pantalla.
+const NOTA_RICA_MAX_IMG = 4 * 1024 * 1024; // una captura de pantalla completa en PNG no llega a esto
+function nombreCaptura(prefijo, tipo, n) {
+  const ext = String(tipo || "image/png")
+    .split("/")[1]
+    .replace("jpeg", "jpg")
+    .replace("svg+xml", "svg")
+    .replace(/[^a-z0-9]/g, "");
+  const s = String(prefijo || "captura").replace(/[^A-Za-z0-9_-]+/g, "-");
+  return `${s}-${nowStamp()
+    .replace(/[^0-9]/g, "")
+    .slice(0, 14)}-${n}.${ext || "png"}`;
+}
+// Devuelve la REFERENCIA del archivo escrito (nombre, tipo, tamaño), que es lo mismo que se guarda de
+// un adjunto elegido con el selector: aguas abajo un respaldo pegado y uno adjuntado son el mismo dato.
+function guardarImagenPegada(dataUrl, nombre) {
+  const m = /^data:(image\/[a-z.+-]+);base64,(.*)$/i.exec(String(dataUrl || ""));
+  if (!m) return null;
+  const bin = atob(m[2]);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  const url = URL.createObjectURL(new Blob([buf], { type: m[1] }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  return { nombre, tipo: m[1], tam: buf.length };
+}
+// La bitácora y la auditoría guardan LO QUE SE DIJO, no el marcado: un glosa con `<div>` adentro no se
+// lee, y una captura en base64 son cien mil caracteres en una fila de log. La imagen se nombra.
+function notaTextoPlano(html) {
+  return String(html || "")
+    .replace(/<img[^>]*alt="([^"]*)"[^>]*>/gi, " [imagen: $1] ")
+    .replace(/<img[^>]*>/gi, " [imagen] ")
+    .replace(/<\/(p|div|li|tr)>/gi, " ")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+// ¿La nota tiene algo? El HTML vacío de un `contentEditable` no es la cadena vacía: Chrome deja
+// `<br>` o un `<div><br></div>` en cuanto alguien escribe y borra.
+const notaVacia = (html) => !notaTextoPlano(html) && !/<img/i.test(String(html || ""));
+// Una nota rica se GUARDA y se vuelve a pintar como HTML, así que lo que se pinta pasa por una lista
+// blanca: estos son los únicos elementos que el editor produce, y de todos ellos NO sobrevive ningún
+// atributo salvo el `src` de una imagen embebida y su `alt`. No es una precaución teórica: `execCommand`
+// pega lo que haya en el portapapeles, el respaldo de una verificación se muestra meses después a quien
+// audita un giro, y el árbol se arma en un `<template>`, que es inerte —no carga recursos ni dispara
+// `onerror` mientras se lo recorre—. Un elemento fuera de la lista se DESENVUELVE (se conserva su texto)
+// y una imagen que no venga embebida en `data:` se descarta entera.
+const NOTA_TAGS_OK = ["B", "STRONG", "I", "EM", "U", "BR", "UL", "OL", "LI", "DIV", "P", "SPAN", "IMG"];
+function notaSegura(html) {
+  const entrada = document.createElement("template");
+  entrada.innerHTML = String(html || "");
+  const salida = document.createElement("template");
+  const copiar = (origen, destino) => {
+    for (const n of Array.from(origen.childNodes)) {
+      if (n.nodeType === 3) {
+        destino.appendChild(document.createTextNode(n.nodeValue));
+        continue;
+      }
+      if (n.nodeType !== 1) continue;
+      if (NOTA_TAGS_OK.indexOf(n.tagName) < 0) {
+        copiar(n, destino);
+        continue;
+      }
+      const e = document.createElement(n.tagName.toLowerCase());
+      if (n.tagName === "IMG") {
+        const src = n.getAttribute("src") || "";
+        if (!/^data:image\/[a-z.+-]+;base64,/i.test(src)) continue;
+        e.setAttribute("src", src);
+        e.setAttribute("alt", String(n.getAttribute("alt") || "captura").slice(0, 120));
+        e.setAttribute("class", "nota-img");
+      }
+      destino.appendChild(e);
+      copiar(n, e);
+    }
+  };
+  copiar(entrada.content, salida.content);
+  return salida.innerHTML;
+}
+// Pinta una nota rica ya guardada. Un solo sitio, para que sanear no se olvide en el segundo lector.
+function NotaLeida({ html, className = "t10" }) {
+  return <div className={`nota-leida ${className}`} style={{ color: C.ink }} dangerouslySetInnerHTML={{ __html: notaSegura(html) }} />;
+}
+function NotaRica({ valor, onCambio, onImagen, placeholder, minHeight = 72, escala = "t10" }) {
+  const ref = useRef(null);
+  const [foco, setFoco] = useState(false);
+  // El `innerHTML` se escribe SÓLO cuando lo de afuera y lo del DOM difieren. Reescribirlo en cada
+  // render mueve el cursor al principio y la nota se digita al revés — es el defecto clásico de un
+  // `contentEditable` controlado, y no lo caza ningún gate: sólo se ve tecleando.
+  useEffect(() => {
+    const el = ref.current;
+    if (el && String(valor || "") !== el.innerHTML) el.innerHTML = String(valor || "");
+  }, [valor]);
+  const emitir = () => {
+    const el = ref.current;
+    if (el && onCambio) onCambio(el.innerHTML);
+  };
+  const cmd = (c) => {
+    if (ref.current) ref.current.focus();
+    document.execCommand(c, false, null);
+    emitir();
+  };
+  const pegar = (ev) => {
+    const items = Array.from((ev.clipboardData && ev.clipboardData.items) || []);
+    const img = items.find((x) => x.kind === "file" && /^image\//.test(x.type || ""));
+    ev.preventDefault();
+    if (!img) {
+      document.execCommand("insertText", false, (ev.clipboardData && ev.clipboardData.getData("text/plain")) || "");
+      emitir();
+      return;
+    }
+    const file = img.getAsFile();
+    if (!file) return;
+    if (file.size > NOTA_RICA_MAX_IMG) {
+      document.execCommand("insertText", false, `[captura de ${Math.round(file.size / 1024)} KB: demasiado grande para la nota, adjúntala como archivo]`);
+      emitir();
+      return;
+    }
+    const fr = new FileReader();
+    fr.onload = () => {
+      const dataUrl = String(fr.result || "");
+      const meta = onImagen ? onImagen(dataUrl, file) : null;
+      const alt = ((meta && meta.nombre) || "captura").replace(/"/g, "");
+      document.execCommand("insertHTML", false, `<img src="${dataUrl}" alt="${alt}" class="nota-img" /><br />`);
+      emitir();
+    };
+    fr.readAsDataURL(file);
+  };
+  const boton = (c, etq, tit, estilo) => (
+    <button
+      key={c}
+      type="button"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => cmd(c)}
+      title={tit}
+      className="rounded px-1.5 py-0.5 t10"
+      style={{ color: C.sub, ...estilo }}
+    >
+      {etq}
+    </button>
+  );
+  return (
+    <div className="rounded-lg" style={{ border: `1px solid ${foco ? C.indigo : C.line}`, backgroundColor: "#fff", overflow: "hidden" }}>
+      <div className="flex items-center gap-0.5 px-1 py-0.5" style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: "#FAF9FB" }}>
+        {boton("bold", "B", "Negrita (Ctrl+B)", { fontWeight: 800 })}
+        {boton("italic", "I", "Cursiva (Ctrl+I)", { fontStyle: "italic" })}
+        {boton("insertUnorderedList", "•", "Viñetas")}
+        <span
+          className="ml-auto truncate pr-1 t8"
+          style={{ color: C.faint }}
+          title="La captura queda dentro de la nota y además se guarda como archivo y se registra como adjunto"
+        >
+          Ctrl+V pega una captura
+        </span>
+      </div>
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        role="textbox"
+        aria-multiline="true"
+        aria-label={placeholder}
+        data-vacio={notaVacia(valor) ? "1" : "0"}
+        data-marca={placeholder}
+        onInput={emitir}
+        onBlur={() => {
+          setFoco(false);
+          emitir();
+        }}
+        onFocus={() => setFoco(true)}
+        onPaste={pegar}
+        className={`nota-rica w-full px-2 py-1.5 ${escala} outline-none`}
+        style={{ color: C.ink, minHeight, maxHeight: 260, overflowY: "auto" }}
+      />
+    </div>
+  );
+}
+// REGISTRO DE LA VERIFICACIÓN, en PANEL LATERAL. Hasta ahora una verificación telefónica —3 a 4 horas
+// por deudor, y bloquea el giro— se firmaba con un clic: `repoVerifTel` guardaba `{por, fecha}`, o sea
 // quién y cuándo, sin nada de lo que se preguntó ni de lo que el deudor respondió. El §1 del spec dice
 // que el objetivo del contacto es obtener «un documento —correo o grabación telefónica— donde quede
 // explícito que pagará», y ese documento no tenía dónde guardarse: la evidencia que justifica el giro
 // se perdía en el acto de registrarla.
-// Las tres preguntas van JUNTAS a propósito: confirmar que la factura existe pero no que fue recibida
-// conforme no es una confirmación, y el deudor puede reconocer el documento y discutir la fecha. Por
-// eso habilitan juntas, como la unanimidad del §4.2 del predictor.
-// El veredicto es del DEUDOR (§ mesa), así que la llamada se firma UNA vez para todas sus facturas; el
-// selector de folios existe para la confirmación PARCIAL, donde las que el deudor no reconoce se
-// retiran y quedan vetadas igual que en el «no verificada» completo.
+// LATERAL y no centrado (22-09-2026, pedido del usuario): se registra MIRANDO la lista —qué deudor, qué
+// folio, qué queda pendiente—, y un modal centrado tapa justo eso. Y sirve para las DOS decisiones: el
+// «no verificó» también tiene información que capturar (con quién se habló, por qué no confirmó, el
+// correo donde lo dice), y hasta ahora se resolvía con un sí/no de un diálogo de confirmación, o sea
+// retirando plata de una operación viva sin dejar un solo dato de por qué.
+// Las tres preguntas del modo «verificar» van JUNTAS a propósito: confirmar que la factura existe pero
+// no que fue recibida conforme no es una confirmación, y el deudor puede reconocer el documento y
+// discutir la fecha. Por eso habilitan juntas, como la unanimidad del §4.2 del predictor.
+// El ALCANCE lo trae quien lo abre (`docs`): un folio desde su fila, o todo lo pendiente del deudor
+// desde su cabecera. Un solo panel para los dos, porque lo que se captura es lo mismo.
 // El respaldo se exige o se declara ausente, nunca se calla: es el mismo criterio que la solicitud de
 // excepción —un silencio no distingue «no hubo documento» de «se me olvidó adjuntarlo»—, y acá pesa
 // más, porque esto es lo que se muestra si alguien pregunta por qué se giró contra esta factura.
-function ModalLlamadaVerif({ fila, onCerrar, onConfirmar }) {
-  const facturas = (fila && fila.facturas) || [];
+const MOTIVOS_NO_VERIF = [
+  ["no_reconoce", "No reconoce la factura"],
+  ["reclamo", "Reclamo pendiente o recepción no conforme"],
+  ["ya_pagada", "Dice que ya la pagó"],
+  ["sin_contacto", "No se pudo contactar al deudor"],
+  ["otro", "Otro motivo"],
+];
+function DrawerVerificacion({ fila, docs, modo, onCerrar, onConfirmar }) {
+  const alcance = (docs && docs.length ? docs : (fila && fila.docs) || []).filter((d) => d && d.estado === "pendiente");
+  const verificar = modo !== "no_verificar";
   const [chk, setChk] = useState({ existencia: false, recepcion: false, fechaPago: false });
   const [contacto, setContacto] = useState({ nombre: "", cargo: "", fono: "" });
   const [compromiso, setCompromiso] = useState("");
+  const [motivo, setMotivo] = useState("");
   const [archs, setArchs] = useState([]);
   const [sinRespaldo, setSinRespaldo] = useState(false);
   const [notas, setNotas] = useState("");
-  const [sel, setSel] = useState(() => facturas.reduce((m, f) => ({ ...m, [f.id]: true }), {}));
-  const nSel = facturas.filter((f) => sel[f.id]).length;
-  const completo = chk.existencia && chk.recepcion && chk.fechaPago;
-  const listo = completo && contacto.nombre.trim() && (archs.length > 0 || sinRespaldo) && nSel > 0;
+  const monto = alcance.reduce((s, d) => s + ((d.f && d.f.monto) || 0), 0);
+  // «Fecha de pago» no se cumple con marcar el check: se cumple con la FECHA. Marcado y vacío es
+  // exactamente el caso que el propio rótulo declara imposible —«sin fecha no hay compromiso que
+  // verificar»—, así que el check y su fecha son un solo dato y se validan juntos.
+  const completo = chk.existencia && chk.recepcion && chk.fechaPago && !!compromiso;
+  // Para NO verificar no se piden las tres preguntas —no hubo confirmación que desglosar— pero sí el
+  // motivo: es lo que alguien va a leer cuando pregunte por qué esta factura salió de la oferta. Y con
+  // «no se pudo contactar» no se exige nombre, porque el dato es justamente que no hubo con quién.
+  const listo = verificar
+    ? completo && contacto.nombre.trim() && (archs.length > 0 || sinRespaldo) && alcance.length > 0
+    : !!motivo && (motivo === "sin_contacto" || contacto.nombre.trim()) && (archs.length > 0 || sinRespaldo) && alcance.length > 0;
   const campo = { border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink, borderRadius: 10 };
-  const check = (k, lbl, desc) => (
+  const acento = verificar ? "#16A34A" : C.red;
+  // Una captura pegada en la nota es un RESPALDO: entra a la misma lista que lo adjuntado con el
+  // selector, porque aguas abajo `reg.respaldo` no distingue de dónde vino el archivo — y además es lo
+  // que hace que el botón se habilite sin tener que declarar «no hay respaldo».
+  const capturaPegada = (dataUrl, file) => {
+    const meta = guardarImagenPegada(
+      dataUrl,
+      nombreCaptura(
+        `${verificar ? "verificacion" : "no-verificacion"}-${(fila && fila.deudor) || "deudor"}`,
+        (file && file.type) || "image/png",
+        archs.length + 1,
+      ),
+    );
+    if (meta) setArchs((l) => [...l, meta]);
+    return meta;
+  };
+  const check = (k, lbl, desc, extra) => (
     <label
       key={k}
-      className="flex cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2"
+      className="block cursor-pointer rounded-lg px-2.5 py-2"
       style={{ border: `1px solid ${chk[k] ? "#bbf7d0" : C.line}`, backgroundColor: chk[k] ? "#F0FDF4" : "#fff" }}
     >
-      <input type="checkbox" checked={chk[k]} onChange={(e) => setChk((m) => ({ ...m, [k]: e.target.checked }))} className="mt-0.5" />
-      <span className="min-w-0">
-        <span className="block t11 font-semibold" style={{ color: C.ink }}>
-          {lbl}
-        </span>
-        <span className="block t9" style={{ color: C.sub }}>
-          {desc}
+      <span className="flex items-start gap-2">
+        <input type="checkbox" checked={chk[k]} onChange={(e) => setChk((m) => ({ ...m, [k]: e.target.checked }))} className="mt-0.5" />
+        <span className="min-w-0">
+          <span className="block t11 font-semibold" style={{ color: C.ink }}>
+            {lbl}
+          </span>
+          <span className="block t9" style={{ color: C.sub }}>
+            {desc}
+          </span>
         </span>
       </span>
+      {chk[k] && extra ? <span className="mt-1.5 block pl-6">{extra}</span> : null}
     </label>
   );
+  const rotulo = (t) => (
+    <div className="mt-3 t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>
+      {t}
+    </div>
+  );
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center ovl p-6" onClick={onCerrar}>
+    <div className="fixed inset-0 z-50 flex justify-end ovl" onClick={onCerrar}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-2xl"
-        style={{ border: `1px solid ${C.line}`, maxHeight: "88vh", overflowY: "auto" }}
+        className="flex h-full w-full max-w-xl flex-col bg-white shadow-2xl"
+        style={{ borderLeft: `1px solid ${C.line}` }}
       >
-        <div className="t13 font-bold" style={{ color: C.ink }}>
-          Registrar verificación telefónica
-        </div>
-        <div className="mt-0.5 t11" style={{ color: C.sub }}>
-          {fila && fila.deudor} · {facturas.length} factura(s){fila && fila.cliente ? ` · ${fila.cliente}` : ""}
-        </div>
-
-        <div className="mt-3 t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>
-          Lo que hay que confirmar en la llamada
-        </div>
-        <div className="mt-1.5 grid gap-1.5" style={{ gridTemplateColumns: "1fr" }}>
-          {check("existencia", "Existencia de la factura", "El deudor reconoce el documento y su monto.")}
-          {check("recepcion", "Recepción conforme", "Recibió la mercadería o el servicio, sin reclamo pendiente.")}
-          {check("fechaPago", "Fecha de pago", "Confirma cuándo pagará; sin fecha no hay compromiso que verificar.")}
-        </div>
-
-        <div className="mt-3 grid gap-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
-          <label className="t9" style={{ color: C.sub }}>
-            Con quién se habló
-            <input
-              value={contacto.nombre}
-              onChange={(e) => setContacto((c) => ({ ...c, nombre: e.target.value }))}
-              placeholder="Nombre y apellido"
-              className="mt-1 w-full px-2 py-1.5 t11 outline-none"
-              style={campo}
-            />
-          </label>
-          <label className="t9" style={{ color: C.sub }}>
-            Cargo
-            <input
-              value={contacto.cargo}
-              onChange={(e) => setContacto((c) => ({ ...c, cargo: e.target.value }))}
-              placeholder="Ej.: Jefe de Cuentas por Pagar"
-              className="mt-1 w-full px-2 py-1.5 t11 outline-none"
-              style={campo}
-            />
-          </label>
-          <label className="t9" style={{ color: C.sub }}>
-            Teléfono
-            <input
-              value={contacto.fono}
-              onChange={(e) => setContacto((c) => ({ ...c, fono: e.target.value }))}
-              placeholder="+56 2 ..."
-              className="mt-1 w-full px-2 py-1.5 t11 outline-none"
-              style={campo}
-            />
-            <span className="mt-0.5 block t8" style={{ color: C.faint }}>
-              En la bitácora queda ofuscado: {fonoOfuscado(contacto.fono)}
-            </span>
-          </label>
-          <label className="t9" style={{ color: C.sub }}>
-            Fecha de pago comprometida
-            <input
-              value={compromiso}
-              onChange={(e) => setCompromiso(e.target.value)}
-              placeholder="dd-mm-aaaa"
-              className="mt-1 w-full px-2 py-1.5 t11 outline-none"
-              style={campo}
-            />
-          </label>
-        </div>
-
-        <div className="mt-3 t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>
-          Respaldo del compromiso
-        </div>
-        <div className="mt-1.5 flex flex-wrap items-center gap-2">
-          <label className="inline-flex cursor-pointer items-center gap-1 t10 font-medium" style={{ color: C.indigo }}>
-            📎 Adjuntar correo o grabación
-            <input
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                setArchs((a) => [...a, ...Array.from(e.target.files || []).map((x) => x.name)]);
-                e.target.value = "";
-              }}
-            />
-          </label>
-          {archs.map((a, i) => (
-            <span key={i} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9" style={{ backgroundColor: C.lilac, color: C.indigo }}>
-              📎 {a}
-              <button onClick={() => setArchs((l) => l.filter((_, j) => j !== i))} style={{ fontWeight: 700 }}>
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-        <label className="mt-1.5 flex items-center gap-1.5 t9" style={{ color: C.sub, cursor: "pointer" }}>
-          <input type="checkbox" checked={sinRespaldo} onChange={(e) => setSinRespaldo(e.target.checked)} />
-          No hay respaldo documental de esta llamada (queda declarado)
-        </label>
-        <textarea
-          value={notas}
-          onChange={(e) => setNotas(e.target.value)}
-          placeholder="Notas de la llamada (opcional)…"
-          className="mt-2 w-full p-2 t10 outline-none"
-          style={{ ...campo, minHeight: 48 }}
-        />
-
-        {facturas.length > 1 && (
-          <>
-            <div className="mt-3 t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>
-              Folios que el deudor confirmó ({nSel} de {facturas.length})
+        <div className="flex items-start justify-between gap-3 px-5 py-3" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <div className="min-w-0">
+            <div className="t13 font-bold" style={{ color: C.ink }}>
+              {verificar ? "Registrar verificación telefónica" : "Registrar que el deudor NO confirmó"}
             </div>
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {facturas.map((f) => (
-                <label
-                  key={f.id}
-                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-full px-2 py-1 t9 font-medium"
-                  style={{
-                    border: `1px solid ${sel[f.id] ? "#bbf7d0" : "#fecaca"}`,
-                    backgroundColor: sel[f.id] ? "#F0FDF4" : "#FEF2F2",
-                    color: sel[f.id] ? "#16A34A" : "#EF4444",
-                  }}
-                >
-                  <input type="checkbox" checked={!!sel[f.id]} onChange={(e) => setSel((m) => ({ ...m, [f.id]: e.target.checked }))} />
-                  {f.folio || f.id}
-                  {f.monto != null ? ` · ${fmtMM(f.monto)}` : ""}
-                </label>
+            <div className="mt-0.5 t11" style={{ color: C.sub }}>
+              {fila && fila.deudor} · {alcance.length} factura(s) por {fmtMM(monto)}
+              {fila && fila.cliente ? ` · ${fila.cliente} · ${fila.op}` : ""}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {alcance.map((d) => (
+                <span key={d.id} className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub }}>
+                  #{(d.f && d.f.folio) || d.id}
+                </span>
               ))}
             </div>
-            {nSel < facturas.length && (
-              <div className="mt-1.5 t9" style={{ color: "#C2410C" }}>
-                Las {facturas.length - nSel} no marcadas se retiran de la oferta y quedan vetadas para esta operación.
-              </div>
-            )}
-          </>
-        )}
+          </div>
+          <button onClick={onCerrar} className="shrink-0 rounded-lg p-1" style={{ color: C.sub }} title="Cerrar">
+            <X size={16} />
+          </button>
+        </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-          <span className="t9" style={{ color: C.faint }}>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+          {verificar ? (
+            <>
+              {rotulo("Lo que hay que confirmar en la llamada")}
+              <div className="mt-1.5 grid gap-1.5" style={{ gridTemplateColumns: "1fr" }}>
+                {check("existencia", "Existencia de la factura", "El deudor reconoce el documento y su monto.")}
+                {check("recepcion", "Recepción conforme", "Recibió la mercadería o el servicio, sin reclamo pendiente.")}
+                {check(
+                  "fechaPago",
+                  "Fecha de pago",
+                  "Confirma cuándo pagará; sin fecha no hay compromiso que verificar.",
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="t9" style={{ color: C.sub }}>
+                      Fecha comprometida
+                    </span>
+                    <input
+                      type="date"
+                      value={compromiso}
+                      onChange={(e) => setCompromiso(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="px-2 py-1 t11 outline-none"
+                      style={{ ...campo, borderColor: compromiso ? "#bbf7d0" : "#FDBA74" }}
+                    />
+                    {compromiso ? (
+                      <span className="t9 font-semibold" style={{ color: "#16A34A" }}>
+                        {fmtFechaDoc(compromiso)}
+                      </span>
+                    ) : (
+                      <span className="t9" style={{ color: "#C2410C" }}>
+                        Falta la fecha
+                      </span>
+                    )}
+                  </span>,
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              {rotulo("Por qué no se pudo verificar")}
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {MOTIVOS_NO_VERIF.map(([k, l]) => (
+                  <button
+                    key={k}
+                    onClick={() => setMotivo(k)}
+                    className="rounded-full px-2.5 py-1 t10 font-medium"
+                    style={{
+                      border: `1px solid ${motivo === k ? C.red : C.line}`,
+                      backgroundColor: motivo === k ? "#FEF2F2" : "#fff",
+                      color: motivo === k ? C.red : C.sub,
+                    }}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-2 rounded-lg px-2.5 py-2 t10" style={{ backgroundColor: "#FEF2F2", border: `1px solid #fecaca`, color: C.red }}>
+                Las {alcance.length} factura(s) salen de la operación, bajan el monto a girar y quedan <b>vetadas</b>: no se podrán volver a seleccionar acá.
+                Las de los demás deudores siguen como están.
+              </div>
+            </>
+          )}
+
+          {rotulo(verificar ? "Con quién se habló" : "Con quién se intentó")}
+          <div className="mt-1.5 grid gap-2" style={{ gridTemplateColumns: "repeat(3, minmax(0,1fr))" }}>
+            <label className="t9" style={{ color: C.sub }}>
+              Nombre
+              <input
+                value={contacto.nombre}
+                onChange={(e) => setContacto((c) => ({ ...c, nombre: e.target.value }))}
+                placeholder="Nombre y apellido"
+                className="mt-1 w-full px-2 py-1.5 t11 outline-none"
+                style={campo}
+              />
+            </label>
+            <label className="t9" style={{ color: C.sub }}>
+              Cargo
+              <input
+                value={contacto.cargo}
+                onChange={(e) => setContacto((c) => ({ ...c, cargo: e.target.value }))}
+                placeholder="Ej.: Jefe de Cuentas por Pagar"
+                className="mt-1 w-full px-2 py-1.5 t11 outline-none"
+                style={campo}
+              />
+            </label>
+            <label className="t9" style={{ color: C.sub }}>
+              Teléfono
+              <input
+                value={contacto.fono}
+                onChange={(e) => setContacto((c) => ({ ...c, fono: e.target.value }))}
+                placeholder="+56 2 ..."
+                className="mt-1 w-full px-2 py-1.5 t11 outline-none"
+                style={campo}
+              />
+              <span className="mt-0.5 block t8" style={{ color: C.faint }}>
+                En la bitácora queda ofuscado: {fonoOfuscado(contacto.fono)}
+              </span>
+            </label>
+          </div>
+
+          {/* LO QUE YA ESTABA ANOTADO en estos folios. Se muestra ANTES de pedir el respaldo nuevo:
+              el correo del deudor suele llegar antes que la decisión, y sin esto quien registra
+              vuelve a escribir lo que ya estaba escrito o lo contradice sin saberlo. */}
+          {alcance.some((d) => d.respaldo && (d.respaldo.nota || (d.respaldo.adjuntos || []).length)) && (
+            <>
+              {rotulo("Respaldo ya guardado")}
+              <div className="mt-1.5 space-y-1.5">
+                {alcance
+                  .filter((d) => d.respaldo && (d.respaldo.nota || (d.respaldo.adjuntos || []).length))
+                  .map((d) => (
+                    <div key={d.id} className="rounded-lg px-2.5 py-2" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
+                      <div className="t9 uppercase tracking-wide" style={{ color: C.faint }}>
+                        #{(d.f && d.f.folio) || d.id}
+                        {d.respaldo.por ? ` · ${d.respaldo.por} · ${d.respaldo.fecha}` : ""}
+                      </div>
+                      {d.respaldo.nota && <NotaLeida html={d.respaldo.nota} className="mt-0.5 t10" />}
+                      {(d.respaldo.adjuntos || []).length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {d.respaldo.adjuntos.map((a, i) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9"
+                              style={{ backgroundColor: C.lilac, color: C.indigo }}
+                            >
+                              📎 {a.nombre}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            </>
+          )}
+
+          {rotulo(verificar ? "Respaldo del compromiso" : "Respaldo de la gestión")}
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-1 t10 font-medium" style={{ color: C.indigo }}>
+              📎 Adjuntar correo o grabación
+              <input
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  // Se guarda la REFERENCIA del archivo, no sus bytes: en producción el documento vive
+                  // en el gestor documental y NEX apunta a él. Nombre, tipo y tamaño son lo que permite
+                  // reconocerlo al auditarlo.
+                  setArchs((a) => [...a, ...Array.from(e.target.files || []).map((x) => ({ nombre: x.name, tipo: x.type || "", tam: x.size || 0 }))]);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            {archs.map((a, i) => (
+              <span key={i} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9" style={{ backgroundColor: C.lilac, color: C.indigo }}>
+                📎 {a.nombre}
+                {a.tam ? ` · ${Math.max(1, Math.round(a.tam / 1024)).toLocaleString("es-CL")} KB` : ""}
+                <button onClick={() => setArchs((l) => l.filter((_, j) => j !== i))} style={{ fontWeight: 700 }}>
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+          <label className="mt-1.5 flex items-center gap-1.5 t9" style={{ color: C.sub, cursor: "pointer" }}>
+            <input type="checkbox" checked={sinRespaldo} onChange={(e) => setSinRespaldo(e.target.checked)} />
+            No hay respaldo documental de esta gestión (queda declarado)
+          </label>
+          <div className="mt-2">
+            <NotaRica
+              valor={notas}
+              onCambio={setNotas}
+              onImagen={capturaPegada}
+              placeholder={verificar ? "Notas de la llamada: pega acá la captura del correo o del portal…" : "Qué dijo el deudor, o qué se intentó…"}
+              minHeight={72}
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3" style={{ borderTop: `1px solid ${C.line}` }}>
+          <span className="t9" style={{ color: C.faint, maxWidth: 300 }}>
             {listo
-              ? "Queda firmada con tu nombre, la hora y este respaldo."
-              : "Confirma las tres preguntas, indica con quién hablaste y adjunta el respaldo (o declara que no hay)."}
+              ? `Queda firmada con tu nombre, la hora y este respaldo.`
+              : verificar
+                ? chk.existencia && chk.recepcion && chk.fechaPago && !compromiso
+                  ? "Falta la fecha de pago comprometida: márcala en su recuadro."
+                  : "Confirma las tres preguntas, indica con quién hablaste y adjunta el respaldo (o declara que no hay)."
+                : "Elige el motivo, indica con quién se habló y adjunta el respaldo (o declara que no hay)."}
           </span>
           <div className="flex items-center gap-2">
             <button onClick={onCerrar} className="rounded-lg px-3 py-2 t12 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>
@@ -7128,11 +7486,24 @@ function ModalLlamadaVerif({ fila, onCerrar, onConfirmar }) {
             </button>
             <button
               disabled={!listo}
-              onClick={() => onConfirmar({ checklist: chk, contacto, compromiso, archs, sinRespaldo, notas, sel })}
+              onClick={() =>
+                onConfirmar({
+                  modo: verificar ? "verificada" : "no_verificada",
+                  docs: alcance,
+                  checklist: chk,
+                  contacto,
+                  compromiso,
+                  motivo,
+                  motivoLbl: (MOTIVOS_NO_VERIF.find((m) => m[0] === motivo) || [])[1] || "",
+                  archs,
+                  sinRespaldo,
+                  notas,
+                })
+              }
               className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 t12 font-semibold text-white disabled:opacity-50"
-              style={{ backgroundColor: "#16A34A" }}
+              style={{ backgroundColor: acento }}
             >
-              <Check size={13} /> Registrar verificación
+              <Check size={13} /> {verificar ? "Registrar verificación" : "Retirar y vetar"}
             </button>
           </div>
         </div>
@@ -11124,7 +11495,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoCo
   const [, forceTel] = useState(0);
   const telGuardadas = (typeof VERIF_TEL !== "undefined" && VERIF_TEL[deal.id]) || {};
   const [llamando, setLlamando] = useState(null); // factura cuya llamada se está registrando
-  // Abre el registro en vez de firmar con el clic: mismo componente que usa la mesa, para que la
+  // Abre el panel lateral en vez de firmar con el clic: mismo componente que usa la mesa, para que la
   // evidencia sea la misma se entre por donde se entre. Antes esto guardaba `{por, fecha}` y además
   // atribuía la llamada al EJECUTIVO de la operación aunque la firmara otro; ahora firma quien la hizo.
   const registrarTel = (f) => setLlamando(f);
@@ -11143,7 +11514,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoCo
       usuario: USERS[usuario] || usuario,
       modulo: "Verificación de facturas (detalle)",
       accion: conf.ok ? "Deudor verificado telefónicamente" : "Verificación rechazada por el contrato",
-      glosa: `${deal.cliente} · ${f.deudor} · folio ${f.folio || f.id} · contacto: ${reg.contacto.nombre}${reg.contacto.cargo ? ` (${reg.contacto.cargo})` : ""} ${fonoOfuscado(reg.contacto.fono)}${reg.compromiso ? ` · paga ${reg.compromiso}` : ""} · respaldo: ${reg.respaldo.length ? reg.respaldo.join(", ") : "SIN respaldo documental (declarado)"}${reg.notas ? ` · ${reg.notas}` : ""}`,
+      glosa: `${deal.cliente} · ${f.deudor} · folio ${f.folio || f.id} · contacto: ${reg.contacto.nombre}${reg.contacto.cargo ? ` (${reg.contacto.cargo})` : ""} ${fonoOfuscado(reg.contacto.fono)}${reg.compromiso ? ` · paga ${reg.compromiso}` : ""} · respaldo: ${reg.respaldo.length ? nombresArch(reg.respaldo).join(", ") : "SIN respaldo documental (declarado)"}${notaTextoPlano(reg.notas) ? ` · ${notaTextoPlano(reg.notas)}` : ""}`,
       empresaId: deal.id,
       exito: !!conf.ok,
     });
@@ -11608,8 +11979,10 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoCo
         </div>
       </div>
       {llamando && (
-        <ModalLlamadaVerif
-          fila={{ deudor: llamando.deudor, cliente: deal.cliente, facturas: [llamando] }}
+        <DrawerVerificacion
+          fila={{ deudor: llamando.deudor, cliente: deal.cliente, op: deal.id, docs: [{ id: llamando.id, estado: "pendiente", f: llamando }] }}
+          docs={[{ id: llamando.id, estado: "pendiente", f: llamando }]}
+          modo="verificar"
           onCerrar={() => setLlamando(null)}
           onConfirmar={(ll) => confirmarLlamadaTel(llamando, ll)}
         />
@@ -12829,7 +13202,7 @@ function DealDrawer({
                             : `${otorgPendOp} criterio(s) de otorgamiento pendientes en esta operación`
                         }
                         className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white"
-                        style={{ backgroundColor: otorgPend > 0 ? "#EF4444" : "#7C3AED" }}
+                        style={{ backgroundColor: exigeAcciones(deal) ? "#EF4444" : "#7C3AED" }}
                       >
                         {otorgPendOp}
                       </span>
@@ -12838,7 +13211,7 @@ function DealDrawer({
                       <span
                         title={`${verifPendOp} deudor(es) esperando la verificación telefónica en esta operación`}
                         className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white"
-                        style={{ backgroundColor: "#C2410C" }}
+                        style={{ backgroundColor: exigeAcciones(deal) ? "#EF4444" : "#7C3AED" }}
                       >
                         {verifPendOp}
                       </span>
@@ -15208,8 +15581,8 @@ function DealDrawer({
                                             "Criterios por aprobar",
                                             otorgRes.nPend,
                                             otorgRes.total,
-                                            "#7C3AED",
-                                            "#f5f3ff",
+                                            exigeAcciones(deal) ? "#EF4444" : "#7C3AED",
+                                            exigeAcciones(deal) ? "#FEF2F2" : "#f5f3ff",
                                             (otorgOk
                                               ? `Todas las reglas del motor de otorgamiento cumplen (${otorgRes.ok}/${otorgRes.total}).`
                                               : `Con observaciones: ${otorgQuien.toLowerCase()}. Reglas aprobadas ${otorgRes.ok} de ${otorgRes.total}. Se resuelven en el tab Otorgamiento.`) +
@@ -15225,8 +15598,8 @@ function DealDrawer({
                                             "Facturas por verificar",
                                             verifRes.facturas.length,
                                             validas.length,
-                                            "#EF4444",
-                                            "#FEF2F2",
+                                            exigeAcciones(deal) ? "#EF4444" : "#7C3AED",
+                                            exigeAcciones(deal) ? "#FEF2F2" : "#f5f3ff",
                                             verifOkTodo
                                               ? "Ninguna factura de la oferta requiere verificación telefónica."
                                               : `${verifRes.facturas.length} factura(s) de ${verifRes.nDeudores} deudor(es) necesitan verificación telefónica antes de girar.`,
@@ -20408,7 +20781,16 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
   const PESO_COL = { Cliente: 250, Línea: 230, Oportunidad: 324, SOW: 214, Oferta: 508, Ejecutivo: 140, Asignar: 124 };
   const cols = ["Cliente", ...(mostrarEjec ? ["Ejecutivo"] : []), "Línea", "Oportunidad", "SOW", "Oferta", ...(modoAsignar ? ["Asignar"] : [])];
   return (
-    <div className="flex flex-1 flex-col gap-2">
+    // `min-w-0` NO es cosmética: sin ella el scroll horizontal de la tabla NO EXISTE y la última
+    // columna se ve cortada (regla 56). Esta raíz es un ITEM del contenedor que el tubo comparte con
+    // el Kanban (`flex items-start gap-3 overflow-x-auto`), y un item flex trae `min-width: auto`, así
+    // que no se encoge por debajo del ancho mínimo de su contenido — que acá lo fija el `minWidth` de
+    // la tabla. Resultado medido a 1366 px: la raíz se quedaba en 1536, el `overflow-x-auto` de su
+    // propio panel medía `scrollWidth === clientWidth` (nada que scrollear) y quien desbordaba era el
+    // contenedor de arriba, o sea la PÁGINA: la card de «Oferta» terminaba 169 px fuera de la ventana
+    // y sus tres chips salían cortados. Con `min-w-0` la raíz cede, el panel blanco vuelve a ser el
+    // que scrollea y la tabla se desplaza DENTRO de su marco.
+    <div className="flex min-w-0 flex-1 flex-col gap-2">
       <div className="flex-1 overflow-x-auto rounded-xl bg-white p-1" style={{ border: `1px solid ${C.line}` }}>
         <table className="w-full border-collapse t11" style={{ minWidth: mostrarEjec ? "1666px" : "1526px", tableLayout: "fixed" }}>
           <thead>
@@ -23200,6 +23582,20 @@ function ofertaPublicada(deal) {
   const comunicada = !!deal.ofertaComunicada || (deal.waSesion || []).some((m) => /Oferta de factoring/i.test(m.text || ""));
   return cerrada && comunicada;
 }
+// ¿LAS ACCIONES DE OTORGAMIENTO Y VERIFICACIÓN YA SE EXIGEN, o todavía son un pronóstico? (regla 54,
+// pedido del usuario el 22-09-2026). Mientras el ejecutivo SIMULA, lo que el motor encuentra es una
+// anticipación —sirve para saber en qué se está metiendo y el paquete todavía puede cambiar entero—.
+// Cuando publica —cierra el paquete Y lo comunica al cliente— la casa se compromete, y esos pendientes
+// pasan a ser trabajo que alguien tiene que hacer: el otorgamiento a visar y las llamadas a los
+// deudores. De ahí en adelante la operación ya no vuelve atrás por sí sola, así que las etapas
+// posteriores a la firma también exigen. Es la MISMA compuerta con que aparece el tab de Verificación
+// (`mostrarVerif`, regla 6), menos la pre-evaluación: pre-evaluar es justamente pedir el pronóstico
+// antes de tiempo, así que muestra el tab y no vuelve rojo lo que todavía nadie tiene que hacer.
+function exigeAcciones(deal) {
+  if (!deal) return false;
+  if (["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage)) return true;
+  return ofertaPublicada(deal);
+}
 // ¿La oferta está cerrada AHORA? «Cerrada» es la aprobación INTERNA del paquete —el gate del
 // ejecutivo, regla 8— y es lo único que «Editar» deshace. Son TRES hechos distintos y confundirlos
 // deja o una oferta que no se puede volver a cerrar o una firma que reaparece sola:
@@ -23834,6 +24230,13 @@ const repoNoConfirmadas = crearRepo("factura_no_confirmada");
 // evidencia que alguien acababa de firmar. Volver a predecir sobre el monto ya recortado es además
 // circular: bajar el monto sólo puede mejorar esos tres criterios.
 const repoVerifVeredicto = crearRepo("verificacion_veredicto");
+// RESPALDO POR FACTURA (regla 53): la nota y el archivo con que el equipo justifica lo que hizo con
+// ESE documento. Va aparte de `repoVerifTel` —que es el hecho de la llamada— porque se escribe en
+// otro momento y por otra razón: se puede adjuntar el correo del deudor antes de marcar, y se puede
+// anotar por qué una factura no se confirmó después de retirarla. Del archivo se guarda la
+// REFERENCIA (nombre, tipo, tamaño, quién y cuándo), no los bytes: en producción el documento vive
+// en el gestor documental y NEX guarda a qué apunta, igual que el respaldo de una excepción.
+const repoVerifRespaldo = crearRepo("verificacion_respaldo");
 // ════════════════════════════════════════════════════════════════════════════════════════════
 // EVIDENCIA DEL CONTRATO DE CESIÓN (O05) — un HASH del paquete, no una bandera.
 //
@@ -24130,6 +24533,7 @@ let NO_CONFIRMADAS = repoNoConfirmadas.all(); // { [dealId]: { [facturaId]: { fo
 // una factura figuraba «en otra operación» sin que ninguna operación la tuviera. Lo mantiene al día
 // un efecto de `PipelineComercial`; en producción es un índice del servidor.
 let FOLIOS_EN_OPERACION = {};
+let VERIF_RESPALDO = repoVerifRespaldo.all(); // { [dealId]: { [facturaId]: { nota, adjuntos:[{nombre,tipo,tam}], por, fecha } } }
 let VERIF_VEREDICTO = repoVerifVeredicto.all(); // { [dealId]: { [rutOdeudor]: { est, motivo, razon, causas, por, fecha } } }
 // Reapunta los alias a la tabla del tenant activo. Se llama al cambiar de tenant; con un solo tenant
 // (Security) hoy no se ejecuta, pero deja explícito qué hay que hacer cuando entre el segundo factoring.
@@ -24148,6 +24552,7 @@ function reapuntarRepos() {
   SOLICITUD_EXC = repoSolicitudExc.all();
   VERIF_EXC = repoVerifExc.all();
   VERIF_TEL = repoVerifTel.all();
+  VERIF_RESPALDO = repoVerifRespaldo.all();
   NO_CONFIRMADAS = repoNoConfirmadas.all();
   VERIF_VEREDICTO = repoVerifVeredicto.all();
   OTORG_EVENTOS = repoOtorgEventos.all();
@@ -27044,17 +27449,58 @@ function ReglasClienteCatalogo() {
 // Mesa del EQUIPO DE VERIFICACIÓN, hermana de Otorgamientos. Marca por DEUDOR, no por factura: una
 // llamada cubre todas sus facturas (spec §2.1). Es una vista de trabajo, no de análisis — por eso
 // el orden por defecto es «lo que falta llamar, de mayor monto a menor».
-function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }) {
+// Las columnas del documento, una sola vez: la cabecera y las filas tienen que calzar, y dos literales
+// separados se desalinean en cuanto alguien toca uno.
+// Del adjunto se guarda la REFERENCIA (nombre, tipo, tamaño) y no sus bytes: el documento vive en el
+// gestor documental y NEX apunta a él. Esta función es la que traduce esa lista a la glosa de la
+// bitácora, y está una sola vez porque la escriben cuatro registradores distintos.
+const nombresArch = (l) => (l || []).map((a) => (a && a.nombre) || String(a || "")).filter(Boolean);
+// Los tres contadores de una lista de documentos. Vive acá, de nivel módulo y puro, porque lo piden
+// los DOS niveles de la mesa —la operación y cada deudor— y con dos copias el de arriba dejaría de
+// cuadrar con la suma de los de abajo a la primera corrección.
+function cuentaVerif(docs) {
+  const l = docs || [];
+  return {
+    verificadas: l.filter((x) => x && x.estado === "verificada").length,
+    noVerificadas: l.filter((x) => x && x.estado === "no_verificada").length,
+    pendientes: l.filter((x) => x && x.estado === "pendiente").length,
+  };
+}
+// La FECHA DE LA OPORTUNIDAD. `time` es el sello con que la operación entró al tubo (`nowStamp`), y de
+// ahí sale la fecha; el respaldo es la emisión del documento más antiguo, que es lo más cercano que
+// hay cuando la operación no trae sello. Nunca «hoy»: una fecha inventada se lee igual que una real.
+function fechaOportunidad(deal) {
+  const t = String((deal && deal.time) || "");
+  const m = /(\d{1,2}[-/]\d{1,2}[-/]\d{2,4})/.exec(t);
+  if (m) return m[1].replace(/\//g, "-");
+  const fs = (deal && deal.facturasOp) || [];
+  const emis = fs
+    .map((f) => fechasDocumento(f).emision)
+    .filter(Boolean)
+    .sort();
+  return emis.length ? fmtFechaDoc(emis[0]) : t || "—";
+}
+// CUATRO columnas, no siete (22-09-2026, pedido del usuario: «esta sección está con un layout muy
+// complejo»). Las tres que se fueron no llevaban una decisión: «Tipo doc.» decía «Factura electrónica»
+// en todas y baja a subtítulo del folio; las dos fechas son UN dato —el plazo— y van en una celda con
+// la flecha; y «Respaldo» era una columna propia para un solo botón, que ahora vive con el estado
+// porque marcar y respaldar son el mismo gesto. Con siete, la de verificación —la única donde se
+// trabaja— quedaba comprimida y sus botones envolvían.
+const COLS_DOC = "minmax(120px,1fr) minmax(170px,1fr) minmax(110px,0.8fr) minmax(300px,1.6fr)";
+// LA MESA TRABAJA POR OPERACIÓN (22-09-2026, pedido del usuario). Tres niveles y no uno: la
+// OPORTUNIDAD arriba —su número, su fecha y cómo va su verificación completa—, adentro sus DEUDORES
+// como cards colapsables iguales a las del detalle, y al abrir uno, sus FACTURAS con un estado cada
+// una. La mesa listaba deudores sueltos: el verificador llama por operación —es lo que frena un giro—
+// y tenía que reconstruir a qué operación pertenecía cada fila leyendo el enlace del cliente.
+// `onVerificar` (deudor completo) y `onMarcarFactura` (un folio) siguen siendo los dos escritores: lo
+// que cambia es desde dónde se invocan y que los dos pasan ahora por el panel lateral.
+function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar, onMarcarFactura, onRespaldo }) {
   const [tick, force] = useState(0);
   const [filtro, setFiltro] = useState("pendiente");
   const [q, setQ] = useState("");
-  const [abierto, setAbierto] = useState({});
-  const [confirmNo, setConfirmNo] = useState(null);
-  const [llamando, setLlamando] = useState(null); // fila cuya llamada se está registrando
-  // Una llamada puede terminar en confirmación PARCIAL: el deudor reconoce unas facturas y no otras, y
-  // Security retira las no confirmadas. Se guarda lo DESMARCADO, no lo marcado: por defecto el deudor
-  // confirma todo —es el caso normal— y una fila sin nada desmarcado se comporta como antes.
-  const [noConf, setNoConf] = useState({}); // { [filaId]: { [facturaId]: true } }
+  const [abierto, setAbierto] = useState({}); // causas del deudor
+  const [abiertoDeu, setAbiertoDeu] = useState({}); // card del deudor desplegada
+  const [panel, setPanel] = useState(null); // { fila, docs, modo } del panel lateral
   const filas = useMemo(() => filasVerificacion(deals), [deals, tick]);
   const nPend = filas.filter((f) => f.estado === "pendiente").length;
   const nOk = filas.filter((f) => f.estado === "verificada").length;
@@ -27066,45 +27512,93 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
       (filtro === "todas" || f.estado === filtro) &&
       (!ql || f.cliente.toLowerCase().includes(ql) || f.deudor.toLowerCase().includes(ql) || String(f.op).toLowerCase().includes(ql)),
   );
+  // Las filas ya vienen por (operación, deudor): agruparlas por `op` es armar el nivel de arriba sin
+  // tocar el agrupador, que es puro y está gateado. El orden lo fija la plata pendiente: primero lo
+  // que está frenando más giro.
+  const ops = useMemo(() => {
+    const m = new Map();
+    for (const f of vistas) {
+      let o = m.get(f.op);
+      if (!o) {
+        o = { op: f.op, deal: f.deal, cliente: f.cliente, filas: [] };
+        m.set(f.op, o);
+      }
+      o.filas.push(f);
+    }
+    return [...m.values()]
+      .map((o) => {
+        const docs = o.filas.flatMap((f) => f.docs || []);
+        return {
+          ...o,
+          docs,
+          monto: mmRound(o.filas.reduce((s, f) => s + f.monto, 0)),
+          cuenta: cuentaVerif(docs),
+        };
+      })
+      .sort((a, b) => b.cuenta.pendientes - a.cuenta.pendientes || b.monto - a.monto);
+  }, [vistas]);
   const EST = {
-    pendiente: { lbl: "Por verificar", bg: "#FFF7ED", fg: "#C2410C", bd: "#FED7AA" },
+    pendiente: { lbl: "Pendiente", bg: "#FFF7ED", fg: "#C2410C", bd: "#FED7AA" },
     verificada: { lbl: "Verificada", bg: "#F0FDF4", fg: "#16A34A", bd: "#bbf7d0" },
     no_verificada: { lbl: "No verificada", bg: "#fef2f2", fg: "#EF4444", bd: "#fecaca" },
   };
+  // Los tres contadores, al costado del nombre. UN CHIP EN CERO NO SE DIBUJA: el usuario lo pidió para
+  // «Pendientes», y la razón vale para los tres — un cero no es un estado, es la ausencia de uno, y
+  // tres chips donde dos dicen cero esconden al único que había que leer.
+  const chipsVerif = (c) =>
+    [
+      ["verificada", "Verificadas", c.verificadas],
+      ["no_verificada", "No verificadas", c.noVerificadas],
+      ["pendiente", "Pendientes", c.pendientes],
+    ]
+      .filter((x) => x[2] > 0)
+      .map(([k, l, n]) => (
+        <span
+          key={k}
+          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold"
+          style={{ backgroundColor: EST[k].bg, color: EST[k].fg, border: `1px solid ${EST[k].bd}` }}
+        >
+          {l} {n}
+        </span>
+      ));
   // Marcar una factura es FIRMAR el resultado de una llamada: lo hace quien llamó. El resto de la
   // organización ve la mesa —saber qué está frenando un giro es información de todos— pero no la marca.
   const puedeMarcar = puedeVerificarFacturas((SESION && SESION.usuario) || usuario);
-  const desmarcadas = (f) => noConf[f.id] || {};
-  const nNoConf = (f) => Object.keys(desmarcadas(f)).length;
-  const toggleFac = (f, fid) =>
-    setNoConf((m) => {
-      const d = { ...(m[f.id] || {}) };
-      if (d[fid]) delete d[fid];
-      else d[fid] = true;
-      return { ...m, [f.id]: d };
-    });
-  // Registrar una verificación es FIRMAR el resultado de una llamada, así que ya no se aplica con el
-  // clic: abre el registro, que es donde queda el checklist, con quién se habló y el respaldo. Sin eso
-  // la evidencia que justifica el giro se perdía justo en el acto de registrarla.
-  const marcarOk = (f) => setLlamando(f);
-  const confirmarLlamada = async (f, llamada) => {
-    const d = desmarcadas(f);
-    // Manda el selector del modal; los folios ya desmarcados en la fila siguen contando como no
-    // confirmados, porque son el mismo hecho declarado antes de llamar.
-    const sel =
-      llamada && llamada.sel
-        ? f.facturas.reduce((m, x) => ({ ...m, [x.id]: !!llamada.sel[x.id] && !d[x.id] }), {})
-        : Object.keys(d).length
-          ? f.facturas.reduce((m, x) => ({ ...m, [x.id]: !d[x.id] }), {})
-          : null;
-    if (onVerificar) await onVerificar(f, sel, llamada);
-    setNoConf((m) => ({ ...m, [f.id]: {} }));
-    setLlamando(null);
+  // La llamada del deudor cubre lo que le queda PENDIENTE: lo ya resuelto documento a documento no se
+  // vuelve a tocar —re-registrar una verificada no cambia nada, pero retirar una ya verificada sí—.
+  const soloPendientes = (f) => ({ ...f, facturas: (f.docs || []).filter((x) => x.estado === "pendiente").map((x) => x.f) });
+  // Marcar o anotar UN documento escribe en los repositorios (`repoVerifTel`, `repoVerifRespaldo`) y no
+  // toca `deals`, así que la lista memoizada por `[deals, tick]` no se entera sola: hay que mover el
+  // tick. Retirar sí cambia `deals` —saca la factura de la oferta— y por eso ése se veía y los otros
+  // dos no, que es exactamente lo que la sonda de pantalla midió.
+  const marcarDoc = async (f, doc, est, llamada) => {
+    if (onMarcarFactura) await onMarcarFactura(f, doc, est, llamada);
     force((v) => v + 1);
   };
-  const marcarNo = (f) => {
-    if (onNoConfirmar) onNoConfirmar(f);
-    setConfirmNo(null);
+  const guardarResp = async (f, doc, datos) => {
+    if (onRespaldo) await onRespaldo(f, doc, datos);
+    force((v) => v + 1);
+  };
+  // Lo que el panel devuelve se aplica UNA vez por documento del alcance, y el respaldo —la nota y las
+  // capturas— se guarda en los mismos documentos: así la evidencia se recupera desde el folio, que es
+  // por donde se pregunta cuando alguien audita un giro. Si el alcance es TODO lo pendiente del
+  // deudor, se usa el escritor del deudor (`onVerificar`), que además congela su veredicto de una vez.
+  const aplicarPanel = async (ctx, datos) => {
+    const f = ctx.fila;
+    const ids = new Set((datos.docs || []).map((d) => d.id));
+    const pend = (f.docs || []).filter((x) => x.estado === "pendiente");
+    const respaldo = { nota: datos.notas || "", adjuntos: (datos.archs || []).slice() };
+    const todos = pend.length > 0 && pend.every((x) => ids.has(x.id));
+    if (datos.modo === "verificada" && todos) {
+      const sel = f.facturas.reduce((m, x) => ({ ...m, [x.id]: true }), {});
+      if (onVerificar) await onVerificar(f, sel, datos);
+    } else if (datos.modo === "no_verificada" && todos) {
+      if (onNoConfirmar) await onNoConfirmar(soloPendientes(f), datos);
+    } else {
+      for (const d of datos.docs || []) await marcarDoc(f, d, datos.modo, datos);
+    }
+    for (const d of datos.docs || []) await guardarResp(f, d, respaldo);
+    setPanel(null);
     force((v) => v + 1);
   };
   const kpi = (lbl, val, sub, col) => (
@@ -27124,6 +27618,36 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
       </div>
     </div>
   );
+  // Las dos clases van CONCATENADAS y no interpoladas dentro del template: `auditar_muerto` lee los
+  // `className` con una expresión regular, y un ternario metido en un literal le entrega `t9"` y `t11"}`
+  // como si fueran nombres de clase — un falso positivo que hace caer el gate de clases sin declarar.
+  const clsBoton = (chico) => "inline-flex items-center gap-1 rounded-md font-semibold " + (chico ? "px-2 py-1 t9" : "px-3 py-1.5 t11");
+  const botonesDoc = (f, docs, chico) => (
+    <>
+      <button
+        onClick={() => setPanel({ fila: f, docs, modo: "verificar" })}
+        className={clsBoton(chico) + " text-white"}
+        style={{ backgroundColor: "#16A34A" }}
+        title={
+          docs.length === 1 ? "El deudor confirmó ESTE documento" : `Registra la llamada y da por verificadas las ${docs.length} pendientes de este deudor`
+        }
+      >
+        <Check size={chico ? 10 : 12} /> Verificar
+      </button>
+      <button
+        onClick={() => setPanel({ fila: f, docs, modo: "no_verificar" })}
+        className={clsBoton(chico)}
+        style={{ border: `1px solid ${C.red}`, color: C.red, backgroundColor: "#fff" }}
+        title={
+          docs.length === 1
+            ? "El deudor NO reconoció este documento: se retira de la oferta y queda vetado"
+            : "El deudor no reconoció ninguna: retira y veta todo lo que le queda pendiente"
+        }
+      >
+        No verificar
+      </button>
+    </>
+  );
   return (
     <>
       <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>
@@ -27131,10 +27655,10 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
       </div>
       <h1 className="mt-1 text-2xl font-semibold tracking-tight">Mesa de verificación</h1>
       <p className="mt-1 t11" style={{ color: C.sub }}>
-        El contacto con el deudor busca dejar por escrito o grabado que pagará. La decisión es <b style={{ color: C.ink }}>por deudor</b>: una llamada cubre
-        todas sus facturas en la operación. Cada fila lista <b style={{ color: C.ink }}>las facturas a verificar</b> —folio, fechas y monto, que es lo que se
-        lee al teléfono— y deja a demanda <b style={{ color: C.ink }}>las causas</b> que la gatillaron; si son varias, hay que confirmarlas todas en la misma
-        llamada.
+        El contacto con el deudor busca dejar por escrito o grabado que pagará. Se trabaja <b style={{ color: C.ink }}>por operación</b>: adentro, un deudor por
+        card y sus facturas al abrirla. Cada factura se marca verificada o no desde el panel lateral, que es donde queda con quién se habló, la fecha
+        comprometida y el <b style={{ color: C.ink }}>respaldo</b>. Las <b style={{ color: C.ink }}>causas</b> son del deudor —una llamada las confirma todas— y
+        se abren desde su card.
       </p>
       <div className="mt-4 grid gap-2" style={{ gridTemplateColumns: "repeat(3, minmax(0,1fr))" }}>
         {kpi("Por verificar", nPend, montoPend ? fmtMM(montoPend) : "", nPend ? "#C2410C" : C.ink)}
@@ -27178,217 +27702,238 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
           />
         </div>
       </div>
-      {!vistas.length ? (
+      {!ops.length ? (
         <div className="mt-6 rounded-xl p-12 text-center t12" style={{ border: `1px dashed ${C.line}`, color: C.faint }}>
           {filtro === "pendiente" ? "No hay deudores esperando verificación telefónica." : "Sin resultados para este filtro."}
         </div>
       ) : (
-        <div className="mt-3 space-y-2 pb-8">
-          {vistas.map((f) => {
-            const e = EST[f.estado];
-            const abrir = !!abierto[f.id];
-            return (
-              <div key={f.id} className="rounded-xl bg-white" style={{ border: `1px solid ${C.line}` }}>
-                <div className="flex flex-wrap items-start justify-between gap-3 p-3">
-                  <div style={{ minWidth: 260 }}>
-                    <div className="flex items-center gap-2">
-                      <span className="t13 font-semibold" style={{ color: C.ink }}>
-                        {f.deudor}
-                      </span>
-                      <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}>
-                        {f.segmento}
-                      </span>
-                      <span
-                        className="rounded-full px-1.5 py-0.5 t9 font-semibold"
-                        style={{ backgroundColor: "#F5F4F8", color: NOTA_COLOR ? NOTA_COLOR(f.nota) : C.sub }}
-                      >
-                        Nota {String(f.nota).replace(".", ",")}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 t10" style={{ color: C.sub }}>
-                      {f.rutDeudor || "—"} · {f.tipo}
-                    </div>
-                    <button onClick={() => onOpen && onOpen(f.deal)} className="mt-1 t11 font-medium" style={{ color: C.indigo }}>
-                      {f.cliente} · {f.op}
+        <div className="mt-3 space-y-3 pb-8">
+          {ops.map((o) => (
+            <div key={o.op} className="rounded-xl bg-white" style={{ border: `1px solid ${C.line}` }}>
+              {/* NIVEL 1 · LA OPORTUNIDAD: su número, su fecha y cómo va su verificación completa. */}
+              <div
+                className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-3 py-2.5"
+                style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: "#FAF9FB", borderRadius: "12px 12px 0 0" }}
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <button onClick={() => onOpen && onOpen(o.deal)} className="t12 font-bold" style={{ color: C.indigo }} title="Abrir la operación">
+                      {o.op}
                     </button>
-                  </div>
-                  <div className="text-right" style={{ minWidth: 150 }}>
-                    <div className="t13 font-semibold" style={{ color: C.ink }}>
-                      {fmtMM(f.monto)}
-                    </div>
-                    <div className="t10" style={{ color: C.sub }}>
-                      {f.facturas.length} factura(s)
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t10 font-semibold"
-                      style={{ backgroundColor: e.bg, color: e.fg, border: `1px solid ${e.bd}` }}
-                    >
-                      {e.lbl}
+                    <span className="t12 font-semibold" style={{ color: C.ink }}>
+                      {o.cliente}
                     </span>
-                    {f.estado === "pendiente" &&
-                      (puedeMarcar ? (
-                        <>
-                          <button
-                            onClick={() => marcarOk(f)}
-                            className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 t11 font-semibold text-white"
-                            style={{ backgroundColor: nNoConf(f) ? "#C2410C" : "#16A34A" }}
-                            title={
-                              nNoConf(f)
-                                ? `Registra la llamada de las ${f.facturas.length - nNoConf(f)} confirmadas y retira las ${nNoConf(f)} que el deudor no reconoció`
-                                : undefined
-                            }
-                          >
-                            <Check size={12} /> {nNoConf(f) ? `Registrar ${f.facturas.length - nNoConf(f)} de ${f.facturas.length}` : "Verificada"}
-                          </button>
-                          <button
-                            onClick={() => setConfirmNo(f)}
-                            className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 t11 font-semibold"
-                            style={{ border: `1px solid ${C.red}`, color: C.red, backgroundColor: "#fff" }}
-                          >
-                            No verificada
-                          </button>
-                        </>
-                      ) : (
-                        <span
-                          className="t10"
-                          style={{ color: C.faint }}
-                          title={`Registrar una verificación es firmar el resultado de una llamada. Lo hace el Ejecutivo de verificación; tu rol es ${rolLabel((SESION && SESION.usuario) || usuario)}.`}
-                        >
-                          Sólo el <b>Ejecutivo de verificación</b> puede marcarla
-                        </span>
-                      ))}
+                  </div>
+                  <div className="mt-0.5 t9" style={{ color: C.sub }}>
+                    Oportunidad del {fechaOportunidad(o.deal)} · {o.filas.length} deudor(es) · {o.docs.length} factura(s)
                   </div>
                 </div>
-                {/* LAS FACTURAS PRIMERO Y EXPLÍCITAS; LAS CAUSAS, COLAPSADAS (21-09-2026, pedido del
-                    usuario). Estaba al revés: las causas se listaban siempre —sólo su descripción se
-                    abría a demanda— y las facturas NO aparecían en ninguna parte salvo que la sesión
-                    pudiera marcar la verificación, porque su única lista vivía dentro del bloque de
-                    confirmación. Quien no es Ejecutivo de verificación leía «3 factura(s)» y no tenía
-                    cómo saber CUÁLES: justo el dato con el que se llama al deudor. La lista es la
-                    misma para todo rol; lo que cambia es si se puede desmarcar. */}
-                <div className="px-3 pb-3">
-                  <div className="t10 uppercase tracking-wide" style={{ color: C.faint }}>
-                    {f.facturas.length === 1 ? "Factura a verificar" : `${f.facturas.length} facturas a verificar`}
-                    {f.estado === "pendiente" && puedeMarcar ? " · desmarca lo que el deudor no reconoció" : ""}
-                  </div>
-                  <ul className="mt-1.5 space-y-1">
-                    {f.facturas.map((x) => {
-                      const fd = fechasDocumento(x);
-                      const off = !!desmarcadas(f)[x.id];
-                      const interactiva = f.estado === "pendiente" && puedeMarcar;
-                      // El monto de un DOCUMENTO va en pesos y el `M$` queda para los resúmenes
-                      // (regla 29): el total del deudor, arriba, sigue abreviado.
-                      const cuerpo = (
-                        <div className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                          <span className="t11 font-semibold" style={{ color: off ? C.red : C.ink, textDecoration: off ? "line-through" : "none" }}>
-                            #{x.folio || x.id}
-                          </span>
-                          <span className="t10" style={{ color: C.faint }}>
-                            emitida {fmtFechaDoc(fd.emision)} · vence {fmtFechaDoc(fd.vencimiento)}
-                          </span>
-                          <span className="ml-auto t11 font-semibold" style={{ color: off ? C.red : C.ink, textDecoration: off ? "line-through" : "none" }}>
-                            {fmtCLP(x.monto || 0)}
-                          </span>
-                        </div>
-                      );
-                      return (
-                        <li key={x.id}>
-                          {interactiva ? (
-                            <button
-                              onClick={() => toggleFac(f, x.id)}
-                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left"
-                              style={{ border: `1px solid ${off ? "#fecaca" : C.line}`, backgroundColor: off ? "#fef2f2" : "#fff" }}
-                              title={off ? "El deudor NO reconoció esta factura: al registrar, sale de la operación" : "El deudor la reconoce"}
-                            >
-                              {off ? <X size={11} style={{ color: C.red }} /> : <Check size={11} style={{ color: "#16A34A" }} />}
-                              {cuerpo}
-                            </button>
-                          ) : (
-                            <div
-                              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5"
-                              style={{ border: `1px solid ${C.line}`, backgroundColor: "#FAF9FB" }}
-                            >
-                              {cuerpo}
-                            </div>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  {f.estado === "pendiente" && puedeMarcar && !!nNoConf(f) && (
-                    <div className="mt-1.5 t10" style={{ color: C.red }}>
-                      Al registrar, esas {nNoConf(f)} factura(s) se retiran de la operación y quedan vetadas para ella.
-                    </div>
-                  )}
-                  {/* LAS CAUSAS, COLAPSADAS. Quien llama necesita saber A QUIÉN y POR QUÉ FACTURAS;
-                      el fundamento —qué midió cada regla y contra qué umbral— es del analista y se
-                      abre cuando hace falta. */}
-                  <button
-                    onClick={() => setAbierto((m) => ({ ...m, [f.id]: !abrir }))}
-                    className="mt-2 flex w-full items-center gap-1.5 t10 uppercase tracking-wide"
-                    style={{ color: C.faint }}
-                  >
-                    {f.causas.length === 1 ? "Causa que gatilló la verificación" : `${f.causas.length} causas que gatillaron la verificación`}
-                    <ChevronRight size={11} style={{ transform: abrir ? "rotate(90deg)" : "none" }} />
-                  </button>
-                  {abrir && (
-                    <ul className="mt-1.5 space-y-1">
-                      {f.causas.map((c) => (
-                        <li key={c.id} className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
-                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                            <span className="t10 font-bold" style={{ color: C.indigo }}>
-                              {c.id}
-                            </span>
-                            <span className="t11 font-medium" style={{ color: C.ink }}>
-                              {c.nombre}
-                            </span>
-                            <span className="ml-auto t10 font-semibold" style={{ color: c.sinDato ? C.faint : C.red }}>
-                              {c.valor}
-                            </span>
-                            <span className="t10" style={{ color: C.faint }}>
-                              umbral {c.umbral}
-                            </span>
-                          </div>
-                          <div className="mt-1 t10" style={{ color: C.sub }}>
-                            {c.desc}
-                            {c.sinDato ? " · Sin dato disponible: la política lo trata como incumplimiento, no como «no aplica»." : ""}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {f.estado === "verificada" && (
-                    <div className="mt-1.5 t10" style={{ color: "#16A34A" }}>
-                      Confirmada con el deudor: sus {f.facturas.length} factura(s) quedan habilitadas para girar.
-                    </div>
-                  )}
-                  {f.estado === "no_verificada" && (
-                    <div className="mt-1.5 t10" style={{ color: C.red }}>
-                      El deudor no confirmó: {f.nVet} factura(s) retiradas de la operación y vetadas para ella.
-                    </div>
-                  )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="t12 font-semibold" style={{ color: C.ink }}>
+                    {fmtMM(o.monto)}
+                  </span>
+                  {chipsVerif(o.cuenta)}
                 </div>
               </div>
-            );
-          })}
+              {/* NIVEL 2 · LOS DEUDORES, colapsables como en el detalle de la oportunidad. */}
+              {o.filas.map((f) => {
+                const abrirDeu = !!abiertoDeu[f.id];
+                const abrirCausas = !!abierto[f.id];
+                const pendientes = (f.docs || []).filter((x) => x.estado === "pendiente");
+                const cuenta = cuentaVerif(f.docs);
+                return (
+                  <div key={f.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-3 py-2">
+                      <button
+                        onClick={() => setAbiertoDeu((m) => ({ ...m, [f.id]: !abrirDeu }))}
+                        className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                        style={{ minWidth: 300 }}
+                      >
+                        <ChevronRight size={14} className="mt-0.5 shrink-0" style={{ color: C.faint, transform: abrirDeu ? "rotate(90deg)" : "none" }} />
+                        <span className="min-w-0">
+                          <span className="flex flex-wrap items-center gap-1.5">
+                            <span className="t12 font-semibold" style={{ color: C.ink }}>
+                              {f.deudor}
+                            </span>
+                            {chipsVerif(cuenta)}
+                          </span>
+                          <span className="mt-0.5 flex flex-wrap items-center gap-1.5 t9" style={{ color: C.sub }}>
+                            <span>{f.rutDeudor || "—"}</span>
+                            <span className="rounded-full px-1.5 py-0.5 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}>
+                              {f.segmento}
+                            </span>
+                            <span
+                              className="rounded-full px-1.5 py-0.5 font-semibold"
+                              style={{ backgroundColor: "#F5F4F8", color: NOTA_COLOR ? NOTA_COLOR(f.nota) : C.sub }}
+                            >
+                              Nota {String(f.nota).replace(".", ",")}
+                            </span>
+                            <span>{f.tipo}</span>
+                          </span>
+                        </span>
+                      </button>
+                      <div className="flex shrink-0 flex-wrap items-center gap-3">
+                        <div className="text-right">
+                          <div className="t12 font-semibold" style={{ color: C.ink }}>
+                            {fmtMM(f.monto)}
+                          </div>
+                          <div className="t9" style={{ color: C.sub }}>
+                            {f.docs.length} fact.
+                          </div>
+                        </div>
+                        {pendientes.length > 0 &&
+                          (puedeMarcar ? (
+                            botonesDoc(f, pendientes, false)
+                          ) : (
+                            <span
+                              className="t10"
+                              style={{ color: C.faint }}
+                              title={`Registrar una verificación es firmar el resultado de una llamada. Lo hace el Ejecutivo de verificación; tu rol es ${rolLabel((SESION && SESION.usuario) || usuario)}.`}
+                            >
+                              Sólo el <b>Ejecutivo de verificación</b> puede marcarla
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+                    {abrirDeu && (
+                      <div className="px-3 pb-3">
+                        {/* LAS CAUSAS, detrás del deudor. Son de él —una llamada las confirma todas— y por
+                            eso no se repiten en cada documento. Sin causas no hay disclosure: una fila que
+                            dice «0 causas» es ruido con la tipografía de un título. */}
+                        {f.causas.length > 0 && (
+                          <>
+                            <button
+                              onClick={() => setAbierto((m) => ({ ...m, [f.id]: !abrirCausas }))}
+                              className="flex w-full items-center gap-1.5 pb-1.5 t10 uppercase tracking-wide"
+                              style={{ color: C.faint }}
+                            >
+                              {f.causas.length === 1 ? "Causa que gatilló la verificación" : `${f.causas.length} causas que gatillaron la verificación`}
+                              <span className="flex flex-wrap gap-1">
+                                {f.causas.map((c) => (
+                                  <span key={c.id} className="rounded px-1 t9 font-bold" style={{ backgroundColor: C.lilac, color: C.indigo }}>
+                                    {c.id}
+                                  </span>
+                                ))}
+                              </span>
+                              <ChevronRight size={11} style={{ transform: abrirCausas ? "rotate(90deg)" : "none" }} />
+                            </button>
+                            {abrirCausas && (
+                              <ul className="mb-2 space-y-1">
+                                {f.causas.map((c) => (
+                                  <li key={c.id} className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
+                                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                      <span className="t10 font-bold" style={{ color: C.indigo }}>
+                                        {c.id}
+                                      </span>
+                                      <span className="t11 font-medium" style={{ color: C.ink }}>
+                                        {c.nombre}
+                                      </span>
+                                      <span className="ml-auto t10 font-semibold" style={{ color: c.sinDato ? C.faint : C.red }}>
+                                        {c.valor}
+                                      </span>
+                                      <span className="t10" style={{ color: C.faint }}>
+                                        umbral {c.umbral}
+                                      </span>
+                                    </div>
+                                    <div className="mt-1 t10" style={{ color: C.sub }}>
+                                      {c.desc}
+                                      {c.sinDato ? " · Sin dato disponible: la política lo trata como incumplimiento, no como «no aplica»." : ""}
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </>
+                        )}
+                        {/* NIVEL 3 · LAS FACTURAS: un estado por documento y, si está pendiente, sus dos acciones. */}
+                        <div className="overflow-hidden rounded-lg" style={{ border: `1px solid ${C.line}` }}>
+                          <div
+                            className="grid items-center gap-2 px-2.5 py-1.5 t9 font-semibold uppercase tracking-wide"
+                            style={{ gridTemplateColumns: COLS_DOC, backgroundColor: "#FAF9FB", color: C.faint }}
+                          >
+                            <span>Documento</span>
+                            <span>Emisión → vencimiento</span>
+                            <span className="text-right">Monto</span>
+                            <span className="text-right">Verificación</span>
+                          </div>
+                          {f.docs.map((doc) => {
+                            const de = EST[doc.estado];
+                            const r = doc.respaldo || {};
+                            const nAdj = (r.adjuntos || []).length;
+                            return (
+                              <div
+                                key={doc.id}
+                                className="grid items-center gap-2 px-2.5 py-2"
+                                style={{
+                                  gridTemplateColumns: COLS_DOC,
+                                  borderTop: `1px solid ${C.line}`,
+                                  backgroundColor: doc.estado === "no_verificada" ? "#FEF7F7" : "#fff",
+                                }}
+                              >
+                                <span className="min-w-0">
+                                  <span
+                                    className="block t11 font-semibold"
+                                    style={{ color: C.ink, textDecoration: doc.estado === "no_verificada" ? "line-through" : "none" }}
+                                  >
+                                    #{doc.f.folio || doc.id}
+                                  </span>
+                                  <span className="block t9" style={{ color: C.faint }}>
+                                    {doc.f.tipoDoc || "Factura electrónica"}
+                                  </span>
+                                </span>
+                                <span className="t10" style={{ color: C.sub }}>
+                                  {fmtFechaDoc(fechasDocumento(doc.f).emision)} → {fmtFechaDoc(fechasDocumento(doc.f).vencimiento)}
+                                </span>
+                                <span className="t11 text-right font-semibold" style={{ color: C.ink }}>
+                                  {fmtCLP(doc.f.monto || 0)}
+                                </span>
+                                <span className="flex flex-wrap items-center justify-end gap-1.5">
+                                  {nAdj > 0 && (
+                                    <span className="t9 font-semibold" style={{ color: C.indigo }} title={(r.adjuntos || []).map((a) => a.nombre).join(" · ")}>
+                                      📎 {nAdj}
+                                    </span>
+                                  )}
+                                  {r.nota ? (
+                                    <span className="t9" style={{ color: C.sub }} title={notaTextoPlano(r.nota)}>
+                                      📝
+                                    </span>
+                                  ) : null}
+                                  {/* UN estado por documento, y punto: el que tiene. */}
+                                  <span
+                                    className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold"
+                                    style={{ backgroundColor: de.bg, color: de.fg, border: `1px solid ${de.bd}` }}
+                                    title={doc.tel ? `Registrada por ${doc.tel.por} · ${doc.tel.fecha}` : undefined}
+                                  >
+                                    {de.lbl}
+                                  </span>
+                                  {doc.estado === "pendiente" && puedeMarcar && botonesDoc(f, [doc], true)}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {f.estado === "verificada" && !f.nVet && (
+                          <div className="mt-1.5 t10" style={{ color: "#16A34A" }}>
+                            Confirmada con el deudor: sus {f.docs.length} factura(s) quedan habilitadas para girar.
+                          </div>
+                        )}
+                        {!!f.nVet && (
+                          <div className="mt-1.5 t10" style={{ color: C.red }}>
+                            {f.nVet} factura(s) retiradas de la operación y vetadas para ella: el monto a girar bajó y quedó una versión nueva.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
       )}
-      {/* Marcar «no verificada» retira facturas de una operación viva: va con confirmación. */}
-      <ConfirmDialog
-        abierto={!!confirmNo}
-        titulo="¿El deudor no confirmó estas facturas?"
-        descripcion={
-          confirmNo
-            ? `${confirmNo.deudor} · ${confirmNo.facturas.length} factura(s) por ${fmtMM(confirmNo.monto)} de ${confirmNo.cliente}. Salen de la operación, bajan el monto a girar y quedan vetadas: no se podrán volver a seleccionar en esta operación. Las facturas de los demás deudores conservan su línea.${(confirmNo.deal.facturasOp || []).length <= confirmNo.facturas.length ? " OJO: son todas las facturas de la operación, y una oferta no puede quedar vacía — retira primero las que correspondan o cierra la operación como pérdida." : ""}`
-            : ""
-        }
-        etiquetaConfirmar="Retirar facturas no confirmadas"
-        onConfirmar={() => marcarNo(confirmNo)}
-        onCancelar={() => setConfirmNo(null)}
-      />
-      {llamando && <ModalLlamadaVerif fila={llamando} onCerrar={() => setLlamando(null)} onConfirmar={(ll) => confirmarLlamada(llamando, ll)} />}
+      {panel && (
+        <DrawerVerificacion fila={panel.fila} docs={panel.docs} modo={panel.modo} onCerrar={() => setPanel(null)} onConfirmar={(d) => aplicarPanel(panel, d)} />
+      )}
     </>
   );
 }
@@ -46748,8 +47293,10 @@ export default function PipelineComercial() {
       const stage = d.stage === "prospeccion" ? "oferta" : d.stage;
       // Publicar la oferta reactiva el flujo por botones (aunque el cliente estuviera en chat libre): ahora
       // corresponde mostrar las opciones de cierre para que confirme.
-      return {
-        ...d,
+      // EL PATCH VA APARTE PORQUE TIENE QUE CRUZAR A LA PESTAÑA DEL TUBO (regla 58). Publicar es lo
+      // que convierte la oportunidad en «Oferta publicada», y el tubo lo leía de su copia vieja: la
+      // fila seguía diciendo «Negociación» con la oferta ya en manos del cliente.
+      const patch = {
         stage,
         negocioNum: neg,
         ofertaComunicada: true,
@@ -46761,6 +47308,8 @@ export default function PipelineComercial() {
         tasaDescuento: nuevaTasa,
         status: `Oferta comunicada por ${canal} · esperando aceptación del cliente`,
       };
+      avisarTubo(id, patch);
+      return { ...d, ...patch };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
@@ -46824,8 +47373,18 @@ export default function PipelineComercial() {
     // paquete es del ejecutivo (`ofertaCerradaVigente`), y volver a cerrar es precisamente lo que lo
     // devuelve. `reabierta` NO se toca acá: esa marca revoca la FIRMA del cliente y sólo la limpia
     // una firma nueva — limpiarla al cerrar dejaría girable una operación que nadie firmó.
+    // `ofertaComunicada` VA ACÁ (regla 58, 22-09-2026, reporte del usuario: «la oportunidad en el tubo
+    // sigue diciendo negociación, ya se envió la oferta»). Este botón dice «y publicar», elige CÓMO se
+    // publica —electrónica o física—, escribe en el historial «correo enviado al cliente con el código
+    // de negocio y su clave de un solo uso» y deja el status en «Oferta publicada»: la publicación ya
+    // ocurrió. Sin la bandera, `ofertaPublicada` seguía en false y la MISMA pantalla decía cuatro cosas
+    // distintas —el botón que publicó, el status que dice publicada, el historial que dice que el correo
+    // salió, y el chip de etapa diciendo «Negociación»—. El predicado NO cambia: sigue exigiendo los dos
+    // hechos, y el camino del Agente IA sigue publicando por su lado sin pasar por el cierre (regla 54,
+    // caso 158). Lo que cambia es que el cierre asienta los DOS, porque hace los dos.
     const patchCierre = {
       ofertaCerrada: true,
+      ofertaComunicada: true,
       ofertaCerradaTs: nowStamp(),
       ofertaSolicitada: false,
       negocioNum: negCierre,
@@ -46854,8 +47413,12 @@ export default function PipelineComercial() {
               : "Todas las facturas candidatas quedaron dentro del paquete.",
         exito: true,
       });
-      // Cerrar la oferta CREA el negocio (asigna N° y avanza a Oferta y Negociación). Todavía NO se
-      // comunica al cliente: el ejecutivo elige después el canal (WhatsApp / Email) para enviarla.
+      // Cerrar la oferta CREA el negocio (asigna N° y avanza a Oferta y Negociación) Y LA PUBLICA: con
+      // publicación electrónica sale el correo con el N° y la clave de un solo uso, y con publicación
+      // física queda el contrato en papel. Lo que viene DESPUÉS —`enviarCierre`— es el enlace para
+      // FIRMAR, que es otro acto: el cliente ya tiene la oferta. Hasta el 22-09-2026 el comentario de acá
+      // decía «todavía NO se comunica al cliente» y el historial de tres líneas más abajo decía que el
+      // correo ya había salido: se corrigió el que estaba equivocado (regla 58).
       // Volver a cerrar una oferta EDITADA conserva el N°: el cliente ya lo tiene, y el negocio es el
       // mismo — lo que cambió es su paquete.
       if (!d.negocioNum)
@@ -47066,8 +47629,9 @@ export default function PipelineComercial() {
         ...(d.historialContacto || []),
         { fecha: stamp, canal, resultado: `Oferta comunicada por ${canal} · enlace para firmar enviado (N° ${neg})`, detalle, exito: true },
       ];
-      return {
-        ...d,
+      // EL PATCH VA APARTE PORQUE TIENE QUE CRUZAR A LA PESTAÑA DEL TUBO (regla 58): el enlace para
+      // firmar sale desde el detalle, y sin el aviso el tubo no se entera de que la oferta salió.
+      const patch = {
         waSesion: wa,
         emailThread,
         historialContacto: hist,
@@ -47076,6 +47640,8 @@ export default function PipelineComercial() {
         ofertaComunicada: true,
         status: `Oferta comunicada por ${canal} · pendiente firma del cliente`,
       };
+      avisarTubo(id, patch);
+      return { ...d, ...patch };
     };
     setDeals((prev) => prev.map((d) => (d.id === id ? makeUpdated(d) : d)));
     setSelected((s) => (s && s.id === id ? makeUpdated(s) : s));
@@ -47253,8 +47819,14 @@ export default function PipelineComercial() {
         giroFlags = { giroPendiente: true };
       }
       // El cliente volvió a firmar: la reapertura se cierra y la aceptación vuelve a estar vigente.
-      return {
-        ...d,
+      // EL PATCH VA APARTE PORQUE TIENE QUE CRUZAR A LA PESTAÑA DEL TUBO (regla 55). La firma del
+      // cliente llega por `postMessage` a la pestaña que abrió el portal de curse, y ésa es la del
+      // DETALLE: sin avisar, el detalle mostraba «Otorgamiento» y el tubo seguía en «Negociación»
+      // sobre la misma operación, con la bandeja del aprobador vacía porque para ella la operación
+      // nunca fue aceptada. Es el mismo agujero de `nex-simulado`, `nex-preeval` y `nex-hilo`, en la
+      // transición que más importa. `avisarTubo` fusiona por operación, así que llamarlo desde el
+      // updater —que React puede correr más de una vez— no duplica el aviso.
+      const patch = {
         reabierta: undefined,
         waSesion: wa,
         emailThread,
@@ -47282,6 +47854,8 @@ export default function PipelineComercial() {
         desc: +(o.interes + o.comision).toFixed(2),
         giro: o.giro,
       };
+      avisarTubo(id, patch);
+      return { ...d, ...patch };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
@@ -49749,15 +50323,109 @@ export default function PipelineComercial() {
       usuario: USERS[usuario] || usuario,
       modulo: "Verificación de facturas",
       accion: conf.ok ? (no.length ? "Deudor confirmó parcialmente" : "Deudor verificado telefónicamente") : "Verificación rechazada por el contrato",
-      glosa: `${fila.cliente} · ${fila.deudor} · ${ok.length} confirmada(s)${no.length ? ` · ${no.length} NO confirmada(s), retiradas y vetadas` : ""} de ${fila.facturas.length} por ${fmtMM(fila.monto)} · causas: ${fila.causas.map((c) => c.id).join(", ") || "—"}${reg ? ` · contacto: ${reg.contacto.nombre}${reg.contacto.cargo ? ` (${reg.contacto.cargo})` : ""} ${fonoOfuscado(reg.contacto.fono)}${reg.compromiso ? ` · paga ${reg.compromiso}` : ""} · respaldo: ${reg.respaldo.length ? reg.respaldo.join(", ") : "SIN respaldo documental (declarado)"}${reg.notas ? ` · ${reg.notas}` : ""}` : ""}`,
+      glosa: `${fila.cliente} · ${fila.deudor} · ${ok.length} confirmada(s)${no.length ? ` · ${no.length} NO confirmada(s), retiradas y vetadas` : ""} de ${fila.facturas.length} por ${fmtMM(fila.monto)} · causas: ${fila.causas.map((c) => c.id).join(", ") || "—"}${reg ? ` · contacto: ${reg.contacto.nombre}${reg.contacto.cargo ? ` (${reg.contacto.cargo})` : ""} ${fonoOfuscado(reg.contacto.fono)}${reg.compromiso ? ` · paga ${reg.compromiso}` : ""} · respaldo: ${reg.respaldo.length ? nombresArch(reg.respaldo).join(", ") : "SIN respaldo documental (declarado)"}${notaTextoPlano(reg.notas) ? ` · ${notaTextoPlano(reg.notas)}` : ""}` : ""}`,
       exito: !!conf.ok,
     });
     setVerifVer((v) => v + 1);
   };
-  const noConfirmoDeudor = (fila) => {
+  // ── MESA POR FACTURA (regla 53) ───────────────────────────────────────────────
+  // Marcar UN documento es el mismo hecho que marcar al deudor, aplicado a un documento: se registra
+  // su llamada, o se retira y se veta. No es un atajo del anterior ni una regla nueva —`verificarDeudor`
+  // ya escribía factura por factura—: lo que cambia es que ahora el equipo puede resolverlas de a una,
+  // que es como ocurre cuando el deudor reconoce unas y otras no.
+  const estadoDeudorTras = (fila, doc, est) => {
+    const otros = (fila.docs || []).filter((x) => x.id !== doc.id).map((x) => x.estado);
+    const todos = [...otros, est];
+    if (todos.some((e) => e === "pendiente")) return "parcial";
+    if (todos.every((e) => e === "no_verificada")) return "no_verificada";
+    return todos.some((e) => e === "no_verificada") ? "parcial" : "verificada";
+  };
+  // `gestion` es lo que devolvió el panel lateral: el checklist, con quién se habló, la fecha
+  // comprometida, el motivo del rechazo y el respaldo. Viaja CON EL DOCUMENTO —no con el deudor—
+  // porque por acá se marca de a un folio, y la evidencia se pregunta desde el folio.
+  const marcarFactura = async (fila, doc, est, gestion) => {
+    if (!fila || !doc || doc.estado !== "pendiente") return;
+    const f = doc.f;
+    const reg = gestion
+      ? {
+          checklist: gestion.checklist,
+          contacto: gestion.contacto,
+          compromiso: gestion.compromiso || "",
+          respaldo: (gestion.archs || []).slice(),
+          sinRespaldo: !!gestion.sinRespaldo,
+          notas: gestion.notas || "",
+          motivo: gestion.motivoLbl || gestion.motivo || "",
+        }
+      : null;
+    if (est === "verificada") {
+      const m = { ...(repoVerifTel.get(fila.deal.id) || {}) };
+      m[f.id] = { por: actorEtiqueta(usuario), fecha: nowStamp(), ...(reg || {}) };
+      const conf = await confirmarEscrituras([repoVerifTel.set(fila.deal.id, m), congelarVeredicto(fila, estadoDeudorTras(fila, doc, est))]);
+      registrarAuditoria({
+        usuario: USERS[usuario] || usuario,
+        modulo: "Verificación de facturas",
+        accion: conf.ok ? "Factura verificada con el deudor" : "Verificación rechazada por el contrato",
+        glosa: `${fila.cliente} · ${fila.deudor} · folio ${f.folio || f.id} por ${fmtMM(f.monto || 0)}${reg ? ` · contacto: ${reg.contacto.nombre}${reg.contacto.cargo ? ` (${reg.contacto.cargo})` : ""} ${fonoOfuscado(reg.contacto.fono)}${reg.compromiso ? ` · paga ${reg.compromiso}` : ""}` : ""} · respaldo: ${reg && reg.respaldo.length ? nombresArch(reg.respaldo).join(", ") : doc.respaldo && doc.respaldo.adjuntos && doc.respaldo.adjuntos.length ? nombresArch(doc.respaldo.adjuntos).join(", ") : "SIN respaldo documental (declarado)"}${reg && notaTextoPlano(reg.notas) ? ` · ${notaTextoPlano(reg.notas)}` : ""}`,
+        exito: !!conf.ok,
+      });
+    } else {
+      // Retirar es lo que recorta la asignación y emite versión nueva; el veto lo deja fuera de esta
+      // operación para siempre. Se congela ANTES, porque retirar puede dejar al deudor sin facturas
+      // vivas y entonces el veredicto es lo único que sostiene su fila en la mesa.
+      congelarVeredicto(fila, estadoDeudorTras(fila, doc, est));
+      retirarFacturaOferta(fila.deal.id, f, "noConfirmada");
+      registrarAuditoria({
+        usuario: USERS[usuario] || usuario,
+        modulo: "Verificación de facturas",
+        accion: "Factura NO confirmada por el deudor",
+        glosa: `${fila.cliente} · ${fila.deudor} · folio ${f.folio || f.id} por ${fmtMM(f.monto || 0)} · retirada de la oferta y vetada para esta operación${reg ? ` · motivo: ${reg.motivo || "—"} · contacto: ${reg.contacto.nombre || "sin contacto"} ${fonoOfuscado(reg.contacto.fono)} · respaldo: ${reg.respaldo.length ? nombresArch(reg.respaldo).join(", ") : "SIN respaldo documental (declarado)"}${notaTextoPlano(reg.notas) ? ` · ${notaTextoPlano(reg.notas)}` : ""}` : ""}`,
+        exito: true,
+      });
+    }
+    setVerifVer((v) => v + 1);
+  };
+  // El RESPALDO de un documento: la nota de quien llamó y la referencia del archivo. Se guarda aunque
+  // la factura siga pendiente —el correo del deudor suele llegar antes que la decisión— y es
+  // append-only en la auditoría, como todo lo que justifica un giro.
+  const guardarRespaldoFactura = async (fila, doc, datos) => {
+    if (!fila || !doc) return;
+    const m = { ...(repoVerifRespaldo.get(fila.deal.id) || {}) };
+    const previo = m[doc.id] || {};
+    const adjuntos = [...(previo.adjuntos || []), ...((datos && datos.adjuntos) || [])];
+    m[doc.id] = {
+      nota: datos && datos.nota != null ? datos.nota : previo.nota || "",
+      adjuntos,
+      por: actorEtiqueta(usuario),
+      fecha: nowStamp(),
+    };
+    const conf = await confirmarEscrituras([repoVerifRespaldo.set(fila.deal.id, m)]);
+    const nuevos = ((datos && datos.adjuntos) || []).map((a) => a.nombre);
+    registrarAuditoria({
+      usuario: USERS[usuario] || usuario,
+      modulo: "Verificación de facturas",
+      accion: conf.ok ? "Respaldo de verificación guardado" : "Respaldo rechazado por el contrato",
+      glosa: `${fila.cliente} · ${fila.deudor} · folio ${(doc.f && (doc.f.folio || doc.f.id)) || doc.id}${nuevos.length ? ` · adjunta ${nuevos.join(", ")}` : ""}${datos && notaTextoPlano(datos.nota) ? ` · nota: ${notaTextoPlano(datos.nota).slice(0, 120)}` : ""}`,
+      exito: !!conf.ok,
+    });
+    setVerifVer((v) => v + 1);
+  };
+  // Retirar plata de una operación viva DEJA REGISTRO de por qué: el motivo, con quién se habló y el
+  // respaldo llegan desde el panel lateral. Antes esto se resolvía con el sí/no de un diálogo de
+  // confirmación, así que la operación bajaba de monto sin un solo dato que explicara la decisión.
+  const noConfirmoDeudor = (fila, gestion) => {
     if (!fila) return;
+    // El teléfono se ofusca EN EL SITIO DEL LOG y no al cargarlo (invariante 12, y es lo que el gate
+    // `regla_17` sabe leer): en la bitácora queda el rastro del contacto, no el dato de contacto.
+    const cto = (gestion && gestion.contacto) || {};
     repoVerifVeredicto.set(fila.deal.id, veredictoNuevo(fila, "no_verificada"));
     fila.facturas.forEach((f) => retirarFacturaOferta(fila.deal.id, f, "noConfirmada"));
+    registrarAuditoria({
+      usuario: USERS[usuario] || usuario,
+      modulo: "Verificación de facturas",
+      accion: "Deudor NO confirmó: facturas retiradas y vetadas",
+      glosa: `${fila.cliente} · ${fila.deudor} · ${fila.facturas.length} factura(s) por ${fmtMM(fila.monto)}${gestion ? ` · motivo: ${gestion.motivoLbl || gestion.motivo || "—"} · contacto: ${cto.nombre || "sin contacto"} ${fonoOfuscado(cto.fono)} · respaldo: ${(gestion.archs || []).length ? nombresArch(gestion.archs).join(", ") : "SIN respaldo documental (declarado)"}${notaTextoPlano(gestion.notas) ? ` · ${notaTextoPlano(gestion.notas)}` : ""}` : ""}`,
+      exito: true,
+    });
     setVerifVer((v) => v + 1);
   };
   // El veredicto se CONGELA con el contacto: deja de ser una predicción y pasa a ser evidencia, con
@@ -50171,6 +50839,16 @@ export default function PipelineComercial() {
         .skel::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.85),transparent);animation:skel 1.1s infinite}
         @keyframes skel{100%{transform:translateX(100%)}}
         .pl-spin{animation:pl-spin .8s linear infinite;transform-origin:50% 50%}@keyframes pl-spin{to{transform:rotate(360deg)}}
+        /* NOTA RICA (respaldo de una verificacion). El placeholder de un contentEditable no existe:
+           se dibuja con ::before leyendo el propio atributo, y se apaga en cuanto la nota tiene algo
+           —texto O imagen—, que es lo que decide notaVacia(). La captura pegada se acota acá y no en
+           el style inline del img, porque el HTML de la nota se guarda y se vuelve a pintar despues. */
+        .nota-rica[data-vacio="1"]::before{content:attr(data-marca);color:#9CA3AF;pointer-events:none}
+        .nota-rica img.nota-img{max-width:100%;height:auto;border-radius:8px;border:1px solid #E5E7EB;display:block;margin:4px 0}
+        .nota-rica ul{list-style:disc;padding-left:18px;margin:2px 0}
+        .nota-rica b,.nota-rica strong{font-weight:700}
+        .nota-leida img{max-width:220px;height:auto;border-radius:6px;border:1px solid #E5E7EB;display:block;margin:3px 0}
+        .nota-leida ul{list-style:disc;padding-left:16px;margin:2px 0}
         .bgw50{background-color:rgba(255,255,255,0.5)}
         @media print {
           body * { visibility: hidden !important; }
@@ -50622,7 +51300,15 @@ export default function PipelineComercial() {
                 }}
               />
             ) : vistaApp === "verificacion" ? (
-              <VerificacionView deals={deals} usuario={usuario} onOpen={abrirDetalle} onVerificar={verificarDeudor} onNoConfirmar={noConfirmoDeudor} />
+              <VerificacionView
+                deals={deals}
+                usuario={usuario}
+                onOpen={abrirDetalle}
+                onVerificar={verificarDeudor}
+                onNoConfirmar={noConfirmoDeudor}
+                onMarcarFactura={marcarFactura}
+                onRespaldo={guardarRespaldoFactura}
+              />
             ) : (
               <>
                 <div className="flex items-start justify-between gap-3">
