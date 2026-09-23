@@ -249,3 +249,36 @@ propia para las huérfanas (deudor fuera de la oferta); la bandeja de Tareas dic
 gaps (G-14 y G-35 cerrados; 11 implementados · 7 decididos; GD-06 escrito), HU-32 vigente (27 · 15), CP-087/088/125 con
 el caso 166 (CP-124 sigue por e2e), `spec-gestion-excepciones.md` §3, §5.5 y §11, cifras (166/166; 95 reglas; 56 archivos
 de gate, 46 por regla; 473 tests).
+
+## 8 · ADR-0018 · La verificación fallida marca y avisa, no retira (regla 67, caso 167)
+
+**Qué cambió.** `marcarNoVerificada` es el único escritor del veto y no toca la oferta: los tres caminos de la mesa
+(`verificarDeudor` parcial, `marcarFactura`, `noConfirmoDeudor`) y el diálogo del tab Verificación del detalle marcan en
+vez de retirar; `verifResumenDeal` cuenta las marcadas que siguen en la oferta e `issueVerificacion` lo pone en palabras
+(tarjeta del tubo, tab y cabecera del detalle, VER-01); `avisarNoVerificadas` le escribe al ejecutivo dueño como el
+sistema (molde de la regla 50). `retirarFacturaOferta` perdió la excepción «noConfirmada» —la guarda de sólo lectura aplica
+siempre y ya no recorta ni emite versión—: el ejecutivo pasa por «Editar la oferta» (reabre, revoca la firma), retira,
+re-simula y publica de nuevo. La mesa lista la marcada UNA vez y deriva el estado del deudor de sus documentos.
+
+**Lo que costó / sorpresas.**
+- **Los casos de prueba del 22-09 imaginaban otro retiro**: CP-119/CP-140 suponían que el ejecutivo retira sobre la
+  firmada con `retirarFacturaOferta(id, f, "noConfirmada")` y que la versión «sólo encoge». El ADR dice otra cosa —«abrir la
+  operación, sacar esas facturas, volver a simular y volver a publicar»— y ese camino ya existe («Editar la oferta» reabre y
+  revoca la firma; la versión nueva sale de la simulación). Se eligió el existente y se dejó dicho en los CP.
+- **El gate de la regla 14 (4-bis) fijaba un DEFECTO**: el único emisor de versión incompleto era el recorte de la
+  verificación; desapareció con el retiro. El test se dio vuelta —hoy `emisoresCompletos` devuelve `[]`— y la sonda planta
+  un emisor incompleto para probar que el gate lo sigue cazando. La sonda de la 53 se re-ancló a la línea nueva del deudor.
+- **Abrir la pantalla**: el menú «Verificación» sólo existe para el rol que verifica (hubo que cambiar la sesión antes de
+  navegar) y el botón del navbar lleva un badge, así que `irA` (que exige `^…$`) no lo encuentra: se hace clic por texto. El
+  panel lateral exige motivo, tres campos de contacto y «sin respaldo» antes de habilitar el pie.
+- **La fixture del caso 167**: el primer deudor «tel» de `TODOS_LB` puede ser `LB[0]`, así que la tercera factura —del
+  «otro» deudor— caía en el mismo grupo; se elige un RUT distinto. Y `controlesIntegracion` devuelve `{ok, faltas, …}`, no
+  una lista.
+- **La cabecera del detalle no tenía chip de verificación** (el «Requiere Verificación» vive en la tarjeta del tubo): se
+  agregó «no cursa · N» al tab Verificación.
+
+**Documentos:** regla 67 (punteros en la 6 y en la 13), fila en `invariantes.md`, spec del curse (M-18 implementada
+entera: 34 · 6 · 0; §15 dos filas), gaps (G-11 en M-18 y G-36 cerrados; 13 implementados · 5 decididos), HU-42 vigente y
+HU-33 CA-3 en su dirección nueva (28 · 14), CP-091/119/129/138–142 (caso 167 y `regla_67`; la pantalla sigue por e2e),
+`spec-verificacion-facturas.md` §1 y §9, `spec-ciclo-factura.md` §14, cifras (167/167; 96 reglas; 57 archivos de gate, 47
+por regla; 486 tests).

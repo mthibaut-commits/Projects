@@ -3468,7 +3468,35 @@ function verifResumenDeal(deal, estado) {
       if (!vf.tel || vf.tel.estado !== "Completada") pend++;
     }
   });
-  return { total: fs.length, tel, ok, pend };
+  // REGLA 67 (ADR-0018) · Las marcadas «no verificada» que SIGUEN en la oferta son el issue de la operación: el deudor
+  // no las confirmó y nadie las retiró todavía —retirarlas es decisión del ejecutivo comercial—. Cuentan también en
+  // `pend` (no tienen llamada registrada), así que VER-01 sigue mandando; acá se nombran para que la cabecera, el tab y
+  // el aviso digan qué folios y de qué deudor. El veto entra por `estado.vetadas` para que la función siga siendo pura.
+  const noVerificadas = fs
+    .filter((f) => noConfirmada(deal, f, estado && estado.vetadas))
+    .map((f) => ({ id: f.id, folio: f.folio || f.id, deudor: f.deudor || "" }));
+  return { total: fs.length, tel, ok, pend, noVerif: noVerificadas.length, noVerificadas };
+}
+// El ISSUE de la verificación fallida, en palabras (regla 67): null si ninguna factura marcada sigue en la oferta. Puro
+// y de nivel módulo porque lo consultan la cabecera del detalle, el tab de Verificación, el control VER-01 y el aviso al
+// ejecutivo, y los cuatro tienen que decir lo mismo.
+function issueVerificacion(deal, estado) {
+  const r = verifResumenDeal(deal, estado);
+  if (!r.noVerif) return null;
+  const porDeudor = {};
+  r.noVerificadas.forEach((f) => {
+    const k = f.deudor || "—";
+    (porDeudor[k] = porDeudor[k] || []).push(f.folio);
+  });
+  const deudores = Object.keys(porDeudor);
+  const detalle = deudores.map((d) => `${d} (folio${porDeudor[d].length > 1 ? "s" : ""} ${porDeudor[d].join(", ")})`).join("; ");
+  return {
+    n: r.noVerif,
+    deudores,
+    folios: r.noVerificadas.map((f) => f.folio),
+    titulo: "Facturas no verificadas: no se puede cursar",
+    texto: `${r.noVerif} factura(s) no pudieron ser verificadas con el deudor: ${detalle}. Mientras sigan en la oferta la operación no se cursa: retíralas, vuelve a simular y publica de nuevo la oferta para que el cliente firme la nueva operación.`,
+  };
 }
 // ── MESA DE VERIFICACIÓN ────────────────────────────────────────────────────────────────────────
 // La unidad es el DEUDOR dentro de la operación, no la factura: una llamada cubre todas sus
@@ -3527,16 +3555,20 @@ function filasVerificacion(deals, estado) {
     const vet = (estado && estado.vetadas && estado.vetadas[d.id]) || (typeof NO_CONFIRMADAS !== "undefined" && NO_CONFIRMADAS[d.id]) || {};
     const resp = (estado && estado.respaldo && estado.respaldo[d.id]) || (typeof VERIF_RESPALDO !== "undefined" && VERIF_RESPALDO[d.id]) || {};
     const fs = (d && d.facturasOp) || [];
-    // Las vetadas vuelven a la lista como documentos de pleno derecho: no están en la oferta —por eso
-    // no suman al monto— pero son el resultado de una verificación y tienen que poder mirarse.
-    const vetadas = Object.entries(vet).map(([id, x]) => ({
-      id,
-      folio: (x && x.folio) || id,
-      monto: (x && x.monto) || 0,
-      deudor: (x && x.deudor) || "",
-      rutRecep: (x && x.rutRecep) || "",
-      retirada: true,
-    }));
+    // Las vetadas que YA SALIERON vuelven a la lista como documentos de pleno derecho: no están en la oferta —por eso
+    // no suman al monto— pero son el resultado de una verificación y tienen que poder mirarse. La marcada que SIGUE en
+    // la oferta (regla 67: marcar no retira) ya viene en `fs` y se lee de ahí; listarla dos veces contaría dos folios.
+    const enOfertaIds = new Set(fs.map((f) => f && f.id));
+    const vetadas = Object.entries(vet)
+      .filter(([id]) => !enOfertaIds.has(id))
+      .map(([id, x]) => ({
+        id,
+        folio: (x && x.folio) || id,
+        monto: (x && x.monto) || 0,
+        deudor: (x && x.deudor) || "",
+        rutRecep: (x && x.rutRecep) || "",
+        retirada: true,
+      }));
     if (!fs.length && !vetadas.length) continue;
     const grupos = new Map();
     const clave = (f) => f.rutRecep || f.deudor || "";
@@ -3595,8 +3627,9 @@ function filasVerificacion(deals, estado) {
         nVet,
         nPend: docs.filter((x) => x.estado === "pendiente").length,
         // El estado del DEUDOR es el resumen de sus documentos: pendiente mientras quede uno sin
-        // resolver —que es lo que falta hacer—, y si no, no_verificada si alguno se retiró.
-        estado: docs.some((x) => x.estado === "pendiente") ? "pendiente" : nVet ? "no_verificada" : "verificada",
+        // resolver —que es lo que falta hacer—, y si no, no_verificada si alguno lo está (marcado en la
+        // oferta o ya retirado por el ejecutivo).
+        estado: docs.some((x) => x.estado === "pendiente") ? "pendiente" : docs.some((x) => x.estado === "no_verificada") ? "no_verificada" : "verificada",
       });
     }
   }
@@ -7531,8 +7564,9 @@ function DrawerVerificacion({ fila, docs, modo, onCerrar, onConfirmar }) {
                 ))}
               </div>
               <div className="mt-2 rounded-lg px-2.5 py-2 t10" style={{ backgroundColor: "#FEF2F2", border: `1px solid #fecaca`, color: C.red }}>
-                Las {alcance.length} factura(s) salen de la operación, bajan el monto a girar y quedan <b>vetadas</b>: no se podrán volver a seleccionar acá.
-                Las de los demás deudores siguen como están.
+                Las {alcance.length} factura(s) quedan marcadas <b>no verificadas</b> y SIGUEN en la oferta: la operación no se cursa mientras estén, el
+                ejecutivo comercial recibe el aviso y es él quien las retira, vuelve a simular y publica de nuevo. Quedan <b>vetadas</b>: no se podrán volver a
+                seleccionar. Las de los demás deudores siguen como están.
               </div>
             </>
           )}
@@ -7684,7 +7718,7 @@ function DrawerVerificacion({ fila, docs, modo, onCerrar, onConfirmar }) {
               className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 t12 font-semibold text-white disabled:opacity-50"
               style={{ backgroundColor: acento }}
             >
-              <Check size={13} /> {verificar ? "Registrar verificación" : "Retirar y vetar"}
+              <Check size={13} /> {verificar ? "Registrar verificación" : "Marcar no verificada"}
             </button>
           </div>
         </div>
@@ -7912,21 +7946,37 @@ function DealCard({ deal, onOpen, onDragStart }) {
       {!isPerdida &&
         (() => {
           const vr = verifResumenDeal(deal);
-          return vr.pend > 0 ? (
-            <div
-              className="mt-1.5 flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium"
-              style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}
-              title={`${vr.pend} de ${vr.total} factura(s) en verificación telefónica pendiente/en curso. Desaparece al completar la verificación de todas.`}
-            >
-              <AlertTriangle size={10} /> <span>Requiere Verificación</span>{" "}
-              <span
-                className="ml-auto flex h-4 minw5 items-center justify-center rounded-full px-1.5 t9 font-bold text-white"
-                style={{ backgroundColor: "#C2410C", fontVariantNumeric: "tabular-nums" }}
-              >
-                {vr.pend}/{vr.total}
-              </span>
-            </div>
-          ) : null;
+          // REGLA 67 · La factura marcada «no verificada» que sigue en la oferta es un issue con nombre propio, no un
+          // «pendiente» más: dice que no se cursa y qué tiene que hacer el ejecutivo.
+          const iss = vr.noVerif > 0 ? issueVerificacion(deal) : null;
+          return (
+            <>
+              {vr.pend > 0 ? (
+                <div
+                  className="mt-1.5 flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium"
+                  style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}
+                  title={`${vr.pend} de ${vr.total} factura(s) en verificación telefónica pendiente/en curso. Desaparece al completar la verificación de todas.`}
+                >
+                  <AlertTriangle size={10} /> <span>Requiere Verificación</span>{" "}
+                  <span
+                    className="ml-auto flex h-4 minw5 items-center justify-center rounded-full px-1.5 t9 font-bold text-white"
+                    style={{ backgroundColor: "#C2410C", fontVariantNumeric: "tabular-nums" }}
+                  >
+                    {vr.pend}/{vr.total}
+                  </span>
+                </div>
+              ) : null}
+              {iss && (
+                <div
+                  className="mt-1.5 flex items-center gap-1.5 rounded px-1.5 py-1 t10 font-medium"
+                  style={{ backgroundColor: "#fef2f2", color: "#B91C1C" }}
+                  title={iss.texto}
+                >
+                  <AlertTriangle size={10} /> <span>No se puede cursar · {iss.n} no verificada(s)</span>
+                </div>
+              )}
+            </>
+          );
         })()}
       <div className="mt-2 border-t pt-1.5 t10" style={{ borderColor: C.line, color: C.sub }}>
         Tasa {deal.tasa} | Anticipo {deal.anticipo} | Desc. {deal.simulado ? fmtMM(deal.desc) : "—"}
@@ -11859,6 +11909,17 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoCo
           </>
         )}
       </div>
+      {/* REGLA 67 · El issue de la verificación fallida, en el tab que lo produce: qué folios, de qué deudor y qué
+          tiene que hacer el ejecutivo. Mientras esté, VER-01 bloquea el curse. */}
+      {(() => {
+        const iss = issueVerificacion(deal);
+        return iss ? (
+          <div className="mt-1 rounded-lg p-2 t9" style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", color: "#B91C1C" }}>
+            <AlertTriangle size={10} className="mr-0.5 inline align-[-1px]" />
+            <b>{iss.titulo}.</b> {iss.texto}
+          </div>
+        ) : null;
+      })()}
       <div className="mt-2 rounded-xl p-3" style={{ border: `1px solid ${C.line}` }}>
         <div className="flex items-center justify-between t10 font-bold uppercase tracking-wide" style={{ color: C.ink }}>
           Verificación del modelo · API de riesgo{" "}
@@ -12218,17 +12279,16 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoCo
                                   Registrar verificación
                                 </button>
                               )}
-                              {/* Si el deudor NO confirma, Security retira esa factura de la operación (spec de
-                          verificación §1). Es la única mutación que admite una operación ya firmada, y
-                          sólo puede QUITAR: la asignación de las demás no se toca y no se vuelve a
-                          asignar contra el estado nuevo de las líneas (ver `recortarAsignacion`). */}
+                              {/* Si el deudor NO confirma, la factura se MARCA y sigue en la oferta (regla 67,
+                          ADR-0018): la operación queda con el issue y el ejecutivo comercial recibe el aviso;
+                          retirarla, re-simular y volver a publicar es decisión suya. */}
                               {!bloqueado && puedeAccionar && onNoConfirmada && tel.estado !== "Completada" && (
                                 <button
                                   onClick={() => onNoConfirmada(f)}
                                   className="mt-2 ml-1.5 rounded-md px-3 py-1.5 t10 font-semibold"
                                   style={{ border: `1px solid ${C.red}`, color: C.red, backgroundColor: "#fff" }}
                                 >
-                                  El deudor no confirmó · retirar
+                                  El deudor no confirmó · marcar
                                 </button>
                               )}
                             </div>
@@ -12636,6 +12696,7 @@ function DealDrawer({
   onIncorporar,
   onIncorporarFacturas,
   onRetirarFactura,
+  onMarcarNoVerificada,
   onReabrir,
   onSugerirOferta,
   onSimular,
@@ -13485,6 +13546,21 @@ function DealDrawer({
                         {verifPendOp}
                       </span>
                     )}
+                    {/* REGLA 67 · El issue de la verificación fallida, en la cabecera del detalle: no se cursa hasta que el
+                        ejecutivo retire las marcadas, re-simule y vuelva a publicar. */}
+                    {k === "verificacion" &&
+                      (() => {
+                        const issTab = issueVerificacion(deal);
+                        return issTab ? (
+                          <span
+                            title={issTab.texto}
+                            className="flex h-4 items-center justify-center rounded-full px-1.5 t9 font-bold text-white"
+                            style={{ backgroundColor: "#B91C1C" }}
+                          >
+                            no cursa · {issTab.n}
+                          </span>
+                        ) : null;
+                      })()}
                   </button>
                 );
               })}
@@ -17922,21 +17998,19 @@ function DealDrawer({
         }}
         onCancelar={() => setConfirmRetiro(null)}
       />
-      {/* El deudor no confirmó: Security retira la factura. La operación sólo ENCOGE — el resto de la
-          asignación queda intacta y el cupo liberado sigue reservado en el sistema de gestión de
-          líneas hasta que lo liberen allá (NEX no toca reservas). */}
+      {/* REGLA 67 (ADR-0018) · El deudor no confirmó: la factura se MARCA y SIGUE en la oferta. Retirarla, re-simular
+          y volver a publicar es decisión del ejecutivo comercial, que recibe el aviso por mensajería. */}
       <ConfirmDialog
         abierto={!!confirmNoConf}
         titulo="¿El deudor no confirmó esta factura?"
         descripcion={
           confirmNoConf
-            ? `Folio ${confirmNoConf.folio || confirmNoConf.id || ""} · ${fmtMM(confirmNoConf.monto || 0)}. Sale de la operación y baja el monto a girar. Las demás facturas conservan su línea. El cupo que deja libre sigue reservado en el sistema de gestión de líneas: para recuperarlo hay que pedir allá que lo liberen.`
+            ? `Folio ${confirmNoConf.folio || confirmNoConf.id || ""} · ${fmtMM(confirmNoConf.monto || 0)}. Queda marcada como no verificada y SIGUE en la oferta: la operación no se cursa mientras esté. El ejecutivo comercial recibe el aviso; es él quien la retira, vuelve a simular y publica de nuevo para que el cliente firme la nueva operación.`
             : ""
         }
-        etiquetaConfirmar="Retirar factura no confirmada"
+        etiquetaConfirmar="Marcar no verificada"
         onConfirmar={() => {
-          onRetirarFactura(deal.id, confirmNoConf, "noConfirmada");
-          setReevalPend(true);
+          onMarcarNoVerificada(deal.id, [confirmNoConf], null);
           setConfirmNoConf(null);
         }}
         onCancelar={() => setConfirmNoConf(null)}
@@ -24168,10 +24242,13 @@ function controlesIntegracion(deal, estado) {
   }
   const pendVerif = verifResumenDeal(deal, estado).pend;
   if (pendVerif > 0) {
+    // La marcada «no verificada» que sigue en la oferta también cuenta acá (regla 67): el control la nombra y dice qué
+    // tiene que hacer el ejecutivo, porque una llamada más no la va a destrabar.
+    const issV = issueVerificacion(deal, estado);
     faltas.push({
       codigo: "VER-01",
       titulo: "Verificación incompleta",
-      detalle: `${pendVerif} factura(s) esperan la verificación telefónica con el deudor`,
+      detalle: `${pendVerif} factura(s) esperan la verificación telefónica con el deudor${issV ? ` · ${issV.n} marcada(s) no verificada(s): el ejecutivo tiene que retirarlas, re-simular y volver a publicar` : ""}`,
     });
   }
   // LA LÍNEA, FACTURA POR FACTURA. El cupo se asigna al armar la oferta y lo que no cabe sale marcado
@@ -24951,7 +25028,7 @@ let SOLICITUD_EXC = repoSolicitudExc.all(); // { [dealId]: { [stKey]: { comentar
 // factura de la verificación telefónica antes del giro. { [dealId]: { [facturaId]: { por, fecha, msg } } }
 let VERIF_EXC = repoVerifExc.all();
 let VERIF_TEL = repoVerifTel.all(); // { [dealId]: { [facturaId]: { por, fecha } } }
-let NO_CONFIRMADAS = repoNoConfirmadas.all(); // { [dealId]: { [facturaId]: { folio, monto, deudor, por, fecha } } }
+let NO_CONFIRMADAS = repoNoConfirmadas.all(); // { [dealId]: { [facturaId]: { folio, monto, deudor, rutRecep, por, fecha, motivo } } } — la marca «no verificada» (regla 67): la factura puede SEGUIR en la oferta hasta que el ejecutivo la retire; el veto no se levanta
 // Folios YA COMPROMETIDOS en una operación, por cliente: { [rutEmisor]: { [folio]: dealId } }. Es lo
 // único de `estadoCandidata` que NO sale de un activo, porque no es un hecho del SII sino de este
 // sistema: qué documento tomó ya otra operación nuestra. Antes también se sorteaba por hash, así que
@@ -25781,6 +25858,27 @@ function avisarCierreNegocio(deal, excPend, pendVerif) {
     ((excPend || []).length ? ` Hay ${excPend.length} criterio(s) por excepcionar antes de poder girar.${detalle}` : " No quedan criterios por excepcionar.") +
     verif +
     ` Ejecutivo a cargo: ${nombreEjec(deal.exec)}.`;
+  hiloEnviar(h, CODE_SISTEMA, texto, null);
+  return h;
+}
+// REGLA 67 (ADR-0018) · LA VERIFICACIÓN FALLIDA AVISA AL EJECUTIVO COMERCIAL, no retira. El molde es el aviso del
+// cierre (regla 50): un hilo por operación, remitente el SISTEMA, destinatario el ejecutivo dueño; dice la operación, el
+// deudor, cada folio, que no se cursará mientras sigan en la oferta, y qué tiene que hacer. Sin facturas marcadas no hay
+// aviso. Se llama FUERA de todo updater de React (regla 22): un envío ahí adentro sale duplicado.
+function avisarNoVerificadas(deal, facs, motivo) {
+  const fs = (facs || []).filter(Boolean);
+  if (!deal || !fs.length) return null;
+  const ejec = deal.exec && USERS[deal.exec] ? deal.exec : null;
+  const asunto = `Verificación fallida · ${deal.id}`;
+  const prev = hilosDeDeal(deal.id).find((h) => h.asunto === asunto);
+  const h = prev || hiloNuevo({ tipo: "requerimiento", dealId: deal.id, cliente: deal.cliente, asunto, participantes: [ejec], creadoPor: CODE_SISTEMA });
+  if (ejec && !h.participantes.includes(ejec)) h.participantes.push(ejec);
+  const neg = deal.negocioNum ? `N° ${deal.negocioNum}` : deal.id;
+  const deudores = Array.from(new Set(fs.map((f) => f.deudor || "—")));
+  const folios = fs.map((f) => `#${f.folio || f.id}`).join(", ");
+  const texto =
+    `La operación ${neg} (${deal.id}) de ${deal.cliente} no se podrá cursar: ${fs.length} factura(s) del deudor ${deudores.join(" y ")} no pudieron ser verificadas (${folios}${motivo ? ` · ${motivo}` : ""}). ` +
+    "Mientras sigan en la oferta la operación no se cursa: abre la operación, retira las facturas de ese deudor, vuelve a simular y publica de nuevo la oferta para que el cliente firme la nueva operación.";
   hiloEnviar(h, CODE_SISTEMA, texto, null);
   return h;
 }
@@ -28111,8 +28209,8 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar, 
         style={{ border: `1px solid ${C.red}`, color: C.red, backgroundColor: "#fff" }}
         title={
           docs.length === 1
-            ? "El deudor NO reconoció este documento: se retira de la oferta y queda vetado"
-            : "El deudor no reconoció ninguna: retira y veta todo lo que le queda pendiente"
+            ? "El deudor NO reconoció este documento: queda marcado no verificado y la operación no se cursa mientras siga en la oferta"
+            : "El deudor no reconoció ninguna: marca todo lo pendiente como no verificado; la operación no se cursa hasta que el ejecutivo lo retire"
         }
       >
         No verificar
@@ -50964,14 +51062,52 @@ export default function PipelineComercial() {
       severidad: "media",
     });
   };
+  // REGLA 67 (ADR-0018) · MARCAR «NO VERIFICADA» NO RETIRA. Escribe el veto —es el hecho de la llamada: el deudor no
+  // la reconoció y no vuelve a entrar (regla 6)—, deja la operación con el issue «facturas no verificadas: no se puede
+  // cursar» (VER-01 sigue mandando), lo anota en la bitácora con actor y hora y avisa al ejecutivo comercial por
+  // mensajería. Quien retira es el EJECUTIVO: abre la operación («Editar la oferta», que revoca la firma, regla 1),
+  // saca las facturas del deudor, vuelve a simular y publica de nuevo para que el cliente firme la nueva operación.
+  // Es el ÚNICO escritor del veto: los tres caminos de la mesa y el diálogo del tab Verificación pasan por acá; cada
+  // uno conserva su propia auditoría, que es donde viajan el motivo y el contacto.
+  const marcarNoVerificada = (id, facs, gestion) => {
+    const fs = (facs || []).filter(Boolean);
+    if (!fs.length) return null;
+    const d0 = (dealsRef.current || []).find((x) => x.id === id) || deals.find((x) => x.id === id) || null;
+    const motivoLbl = (gestion && (gestion.motivoLbl || gestion.motivo)) || "";
+    const fecha = nowStamp();
+    const nc = { ...(repoNoConfirmadas.get(id) || {}) };
+    fs.forEach((fac) => {
+      nc[fac.id] = {
+        folio: fac.folio || fac.id,
+        monto: fac.monto || 0,
+        deudor: fac.deudor || "",
+        rutRecep: fac.rutRecep || "",
+        por: actorEtiqueta(usuario),
+        fecha,
+        motivo: motivoLbl,
+      };
+    });
+    repoNoConfirmadas.set(id, nc);
+    const deudor = fs[0].deudor || "";
+    const folios = fs.map((f) => `#${f.folio || f.id}`).join(", ");
+    logOtorgEvento(
+      id,
+      USERS[usuario] || usuario,
+      `${USERS[usuario] || usuario} marcó ${fs.length} factura(s) del deudor ${deudor} como NO verificada(s) (${folios}): siguen en la oferta y la operación no se cursa hasta que el ejecutivo las retire, re-simule y vuelva a publicar`,
+      motivoLbl,
+    );
+    if (d0) avisarNoVerificadas(d0, fs, motivoLbl);
+    setVerifVer((v) => v + 1);
+    return nc;
+  };
   // Retira una factura de la oferta y la deja disponible como candidata en "Otras facturas".
   // MESA DE VERIFICACIÓN. Se marca por DEUDOR porque una llamada cubre todas sus facturas (regla 6).
-  // «Verificada» registra el contacto de todas ellas; «no verificada» las retira y las veta, que es
-  // el camino que ya recorta la asignación y emite versión nueva.
+  // «Verificada» registra el contacto de todas ellas; «no verificada» las MARCA y avisa (regla 67):
+  // no las retira —eso es del ejecutivo— y no emite versión.
   // Registra el resultado del contacto. `confirmadas` es el set de folios que el deudor SÍ confirmó;
   // si no se pasa, se entiende que confirmó todos. Una llamada puede terminar en confirmación PARCIAL
-  // —confirma unas facturas y no otras—, y entonces las no confirmadas se retiran y quedan vetadas
-  // igual que en el «no verificada» completo: es el mismo hecho, aplicado a menos documentos.
+  // —confirma unas facturas y no otras—, y entonces las no confirmadas quedan marcadas y vetadas igual
+  // que en el «no verificada» completo: es el mismo hecho, aplicado a menos documentos.
   const verificarDeudor = async (fila, confirmadas, llamada) => {
     if (!fila) return;
     const ok = fila.facturas.filter((f) => !confirmadas || confirmadas[f.id]);
@@ -50996,12 +51132,12 @@ export default function PipelineComercial() {
       repoVerifTel.set(fila.deal.id, m),
       congelarVeredicto(fila, no.length ? (ok.length ? "parcial" : "no_verificada") : "verificada"),
     ]);
-    no.forEach((f) => retirarFacturaOferta(fila.deal.id, f, "noConfirmada"));
+    if (no.length) marcarNoVerificada(fila.deal.id, no, llamada);
     registrarAuditoria({
       usuario: USERS[usuario] || usuario,
       modulo: "Verificación de facturas",
       accion: conf.ok ? (no.length ? "Deudor confirmó parcialmente" : "Deudor verificado telefónicamente") : "Verificación rechazada por el contrato",
-      glosa: `${fila.cliente} · ${fila.deudor} · ${ok.length} confirmada(s)${no.length ? ` · ${no.length} NO confirmada(s), retiradas y vetadas` : ""} de ${fila.facturas.length} por ${fmtMM(fila.monto)} · causas: ${fila.causas.map((c) => c.id).join(", ") || "—"}${reg ? ` · contacto: ${reg.contacto.nombre}${reg.contacto.cargo ? ` (${reg.contacto.cargo})` : ""} ${fonoOfuscado(reg.contacto.fono)}${reg.compromiso ? ` · paga ${reg.compromiso}` : ""} · respaldo: ${reg.respaldo.length ? nombresArch(reg.respaldo).join(", ") : "SIN respaldo documental (declarado)"}${notaTextoPlano(reg.notas) ? ` · ${notaTextoPlano(reg.notas)}` : ""}` : ""}`,
+      glosa: `${fila.cliente} · ${fila.deudor} · ${ok.length} confirmada(s)${no.length ? ` · ${no.length} NO confirmada(s): marcadas, siguen en la oferta` : ""} de ${fila.facturas.length} por ${fmtMM(fila.monto)} · causas: ${fila.causas.map((c) => c.id).join(", ") || "—"}${reg ? ` · contacto: ${reg.contacto.nombre}${reg.contacto.cargo ? ` (${reg.contacto.cargo})` : ""} ${fonoOfuscado(reg.contacto.fono)}${reg.compromiso ? ` · paga ${reg.compromiso}` : ""} · respaldo: ${reg.respaldo.length ? nombresArch(reg.respaldo).join(", ") : "SIN respaldo documental (declarado)"}${notaTextoPlano(reg.notas) ? ` · ${notaTextoPlano(reg.notas)}` : ""}` : ""}`,
       exito: !!conf.ok,
     });
     setVerifVer((v) => v + 1);
@@ -51047,16 +51183,15 @@ export default function PipelineComercial() {
         exito: !!conf.ok,
       });
     } else {
-      // Retirar es lo que recorta la asignación y emite versión nueva; el veto lo deja fuera de esta
-      // operación para siempre. Se congela ANTES, porque retirar puede dejar al deudor sin facturas
-      // vivas y entonces el veredicto es lo único que sostiene su fila en la mesa.
+      // Marcar NO retira (regla 67): el veredicto se congela y la factura queda vetada y en la oferta,
+      // con el issue y el aviso al ejecutivo; sacarla es decisión suya.
       congelarVeredicto(fila, estadoDeudorTras(fila, doc, est));
-      retirarFacturaOferta(fila.deal.id, f, "noConfirmada");
+      marcarNoVerificada(fila.deal.id, [f], gestion);
       registrarAuditoria({
         usuario: USERS[usuario] || usuario,
         modulo: "Verificación de facturas",
         accion: "Factura NO confirmada por el deudor",
-        glosa: `${fila.cliente} · ${fila.deudor} · folio ${f.folio || f.id} por ${fmtMM(f.monto || 0)} · retirada de la oferta y vetada para esta operación${reg ? ` · motivo: ${reg.motivo || "—"} · contacto: ${reg.contacto.nombre || "sin contacto"} ${fonoOfuscado(reg.contacto.fono)} · respaldo: ${reg.respaldo.length ? nombresArch(reg.respaldo).join(", ") : "SIN respaldo documental (declarado)"}${notaTextoPlano(reg.notas) ? ` · ${notaTextoPlano(reg.notas)}` : ""}` : ""}`,
+        glosa: `${fila.cliente} · ${fila.deudor} · folio ${f.folio || f.id} por ${fmtMM(f.monto || 0)} · marcada no verificada: sigue en la oferta y la operación no se cursa hasta que el ejecutivo la retire${reg ? ` · motivo: ${reg.motivo || "—"} · contacto: ${reg.contacto.nombre || "sin contacto"} ${fonoOfuscado(reg.contacto.fono)} · respaldo: ${reg.respaldo.length ? nombresArch(reg.respaldo).join(", ") : "SIN respaldo documental (declarado)"}${notaTextoPlano(reg.notas) ? ` · ${notaTextoPlano(reg.notas)}` : ""}` : ""}`,
         exito: true,
       });
     }
@@ -51087,20 +51222,21 @@ export default function PipelineComercial() {
     });
     setVerifVer((v) => v + 1);
   };
-  // Retirar plata de una operación viva DEJA REGISTRO de por qué: el motivo, con quién se habló y el
-  // respaldo llegan desde el panel lateral. Antes esto se resolvía con el sí/no de un diálogo de
-  // confirmación, así que la operación bajaba de monto sin un solo dato que explicara la decisión.
+  // Marcar todo un deudor DEJA REGISTRO de por qué: el motivo, con quién se habló y el respaldo llegan
+  // desde el panel lateral. Antes esto se resolvía con el sí/no de un diálogo de confirmación, así que
+  // la operación bajaba de monto sin un solo dato que explicara la decisión. Desde la regla 67 no baja
+  // de monto: queda marcada y el ejecutivo decide qué sacar.
   const noConfirmoDeudor = (fila, gestion) => {
     if (!fila) return;
     // El teléfono se ofusca EN EL SITIO DEL LOG y no al cargarlo (invariante 12, y es lo que el gate
     // `regla_17` sabe leer): en la bitácora queda el rastro del contacto, no el dato de contacto.
     const cto = (gestion && gestion.contacto) || {};
     repoVerifVeredicto.set(fila.deal.id, veredictoNuevo(fila, "no_verificada"));
-    fila.facturas.forEach((f) => retirarFacturaOferta(fila.deal.id, f, "noConfirmada"));
+    marcarNoVerificada(fila.deal.id, fila.facturas, gestion);
     registrarAuditoria({
       usuario: USERS[usuario] || usuario,
       modulo: "Verificación de facturas",
-      accion: "Deudor NO confirmó: facturas retiradas y vetadas",
+      accion: "Deudor NO confirmó: facturas marcadas no verificadas, siguen en la oferta",
       glosa: `${fila.cliente} · ${fila.deudor} · ${fila.facturas.length} factura(s) por ${fmtMM(fila.monto)}${gestion ? ` · motivo: ${gestion.motivoLbl || gestion.motivo || "—"} · contacto: ${cto.nombre || "sin contacto"} ${fonoOfuscado(cto.fono)} · respaldo: ${(gestion.archs || []).length ? nombresArch(gestion.archs).join(", ") : "SIN respaldo documental (declarado)"}${notaTextoPlano(gestion.notas) ? ` · ${notaTextoPlano(gestion.notas)}` : ""}` : ""}`,
       exito: true,
     });
@@ -51123,56 +51259,21 @@ export default function PipelineComercial() {
   const congelarVeredicto = (fila, est) => repoVerifVeredicto.set(fila.deal.id, veredictoNuevo(fila, est));
   const retirarFacturaOferta = (id, fac, motivo) => {
     if (!fac) return;
-    // Retirar A MANO de un paquete ya cerrado exige pasar por «Editar», por lo mismo que agregar.
-    // `noConfirmada` es la excepción y no un olvido: es la verificación telefónica sacando lo que el
-    // deudor no reconoció, que es la ÚNICA mutación que una operación admite después de cerrada —y
-    // después de firmada— porque la operación sólo puede ENCOGER (regla 13).
-    if (motivo !== "noConfirmada") {
-      const dRet = (dealsRef.current || []).find((x) => x.id === id);
-      if (ofertaCerradaVigente(dRet)) {
-        logSys("warn", "oferta", `Retiro rechazado: la oferta está cerrada · usa «Editar la oferta» para retomar el paquete`, {
-          empresa: dRet ? dRet.cliente : "",
-          operacion: id,
-        });
-        return;
-      }
+    // Retirar de un paquete ya cerrado exige pasar por «Editar la oferta», por lo mismo que agregar. Desde el
+    // 23-09-2026 (regla 67, ADR-0018) NO hay excepción: la verificación fallida ya no retira —marca y avisa—, y quien
+    // saca las facturas del deudor no verificado es el ejecutivo, con la operación reabierta (la firma revocada, regla
+    // 1) para que el cliente firme la nueva. La versión nueva sale de la simulación siguiente, no de un recorte.
+    // `motivo` queda para la bitácora de quien llama.
+    const dRet = (dealsRef.current || []).find((x) => x.id === id);
+    if (ofertaCerradaVigente(dRet)) {
+      logSys("warn", "oferta", `Retiro rechazado: la oferta está cerrada · usa «Editar la oferta» para retomar el paquete`, {
+        empresa: dRet ? dRet.cliente : "",
+        operacion: id,
+        motivo: motivo || "",
+      });
+      return;
     }
-    // El deudor no la confirmó: queda VETADA para esta operación. No se puede volver a seleccionar,
-    // ni siquiera al reabrirla — es el resultado de una llamada, no una preferencia reversible.
-    if (motivo === "noConfirmada") {
-      const nc = {
-        ...(repoNoConfirmadas.get(id) || {}),
-        [fac.id]: { folio: fac.folio || fac.id, monto: fac.monto || 0, deudor: fac.deudor || "", por: actorEtiqueta(usuario), fecha: nowStamp() },
-      };
-      repoNoConfirmadas.set(id, nc);
-    }
-    // Si la operación ya fue aceptada, esto es la verificación retirando lo que el deudor no confirmó:
-    // queda como VERSIÓN nueva —evidencia de por qué el monto a girar bajó respecto de lo firmado— y
-    // se resuelve RECORTANDO la asignación anterior, nunca re-asignando (ver `recortarAsignacion`).
     const d0 = deals.find((x) => x.id === id);
-    if (d0 && ["aceptadas", "cesion", "otorgamiento", "giro"].includes(d0.stage)) {
-      const vs = repoSimVersions.get(id) || [];
-      const prev = vs.length ? vs[vs.length - 1] : null;
-      if (prev && prev.linea) {
-        const ids = (itemizarFacturas(d0) || []).filter((f) => f.id !== fac.id).map((f) => f.id);
-        const nl = recortarAsignacion(prev.linea, ids);
-        repoSimVersions.push(id, {
-          ...prev,
-          v: vs.length + 1,
-          rev: vs.length,
-          ts: nowStamp(),
-          origen: `Verificación · el deudor no confirmó el folio ${fac.folio || fac.id}`,
-          linea: nl,
-        });
-        registrarAuditoria({
-          usuario: USERS[usuario] || usuario,
-          modulo: "Verificación de facturas",
-          accion: "Factura retirada por no confirmación del deudor",
-          glosa: `${d0.cliente || d0.company || id} · folio ${fac.folio || fac.id} · ${fmtMM(fac.monto || 0)} · monto con línea ${fmtMM(prev.linea.cursable)} → ${fmtMM(nl.cursable)} · el cupo liberado sigue reservado hasta que lo liberen en el sistema de líneas`,
-          exito: true,
-        });
-      }
-    }
     // Retirar la ÚLTIMA factura tiene salida (regla 13-sexdecies): en Prospección u Oferta la oferta queda
     // vacía y la oportunidad vuelve al panel de arranque por el MISMO camino que «Eliminar la simulación y
     // vaciar la oferta» (limpiarSimulacion: campos de la simulación borrados, facturas al pool, etapa
@@ -51612,6 +51713,7 @@ export default function PipelineComercial() {
                 onIncorporar={abrirIncorporar}
                 onIncorporarFacturas={incorporarFacturasOferta}
                 onRetirarFactura={retirarFacturaOferta}
+                onMarcarNoVerificada={marcarNoVerificada}
                 onReabrir={reabrirOperacion}
                 onSugerirOferta={aplicarSugerencia}
                 onSimular={simularOferta}

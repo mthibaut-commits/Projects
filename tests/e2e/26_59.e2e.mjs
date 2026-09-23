@@ -180,7 +180,7 @@ export const casos = [
         const nCrit = (conQuizAbierto.match(/criterios del deudor · par cliente-deudor \(3M\)/gi) || []).length;
         if (nCrit !== 1) throw new Error(`los criterios del deudor aparecen ${nCrit} veces: tienen que estar UNA, en el panel del grupo`);
         // …y en informativo no hay con qué firmar. Es la mitad que de verdad protege la regla 6.
-        for (const b of ["Registrar verificación", "El deudor no confirmó · retirar"])
+        for (const b of ["Registrar verificación", "El deudor no confirmó · marcar"])
           if (conQuizAbierto.includes(b))
             throw new Error(`el modo informativo ofrece «${b}» al Ejecutivo de verificación: la compuerta tiene que impedir firmar, no sólo informar`);
 
@@ -193,7 +193,7 @@ export const casos = [
   {
     id: "e2e-59-b",
     titulo:
-      "la otra dirección sobre la MISMA pantalla: pre-evaluar abre la llamada — el cartel informativo desaparece y el Ejecutivo de verificación ya tiene «Registrar verificación» y «El deudor no confirmó · retirar» en el quiz de la factura",
+      "la otra dirección sobre la MISMA pantalla: pre-evaluar abre la llamada — el cartel informativo desaparece y el Ejecutivo de verificación ya tiene «Registrar verificación» y «El deudor no confirmó · marcar» en el quiz de la factura",
     correr: async (h) => {
       let det = null;
       try {
@@ -220,7 +220,7 @@ export const casos = [
         await abrirTabVerif(det);
         const accionable = await abrirPrimerQuiz(det);
         if (/Informativo\./.test(accionable)) throw new Error("tras pre-evaluar el tab sigue diciendo que es informativo");
-        for (const b of ["Registrar verificación", "El deudor no confirmó · retirar"])
+        for (const b of ["Registrar verificación", "El deudor no confirmó · marcar"])
           if (!accionable.includes(b)) throw new Error(`tras pre-evaluar el Ejecutivo de verificación sigue sin «${b}»: la compuerta no se abrió`);
 
         return `${ids[1]} (sesión EV): informativo sin botones → pre-evaluado, cartel retirado y las dos acciones de firma disponibles`;

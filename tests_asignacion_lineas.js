@@ -8128,6 +8128,83 @@
        fixtureOk ? det : "la fixture no trae C07, O05 y D19 del segundo deudor como excepciones: cambió el activo o el catálogo");
   }
 
+  {
+    // 167 · LA VERIFICACIÓN FALLIDA MARCA Y AVISA, NO RETIRA (regla 67, ADR-0018, M-18; G-11 en M-18 y G-36). «Si el
+    //       verificador no verifica una factura, la operación debe quedar marcada con un issue, se debe notificar al
+    //       ejecutivo […] y el ejecutivo deberá abrir la operación y sacar esas facturas de ese deudor no verificado, volver a
+    //       simular, y volver a ejecutar el proceso de publicar la oferta para que el cliente firme la nueva operación» (el
+    //       usuario, 23-09-2026). La marca es el veto (el hecho de la llamada) SIN retiro: la factura sigue en la oferta. Lo
+    //       que la suite puede fijar por nombre: (a) el resumen y el issue nombran las marcadas que siguen en la oferta y VER-01
+    //       las cuenta; (b) la mesa las lista UNA vez, con su estado, y el deudor se deriva de sus documentos; (c) el aviso al
+    //       ejecutivo comercial lo firma el sistema, nombra operación, deudor y folios, se reusa y calla sin marcadas; (d) el
+    //       veto bloquea la reincorporación (regla 6). Que la mesa y el detalle NO retiren y que `retirarFacturaOferta` ya no
+    //       tenga la excepción «noConfirmada» lo fija el gate de texto `regla_67.test.mjs` (son closures de React).
+    const ID = "T-167";
+    const deudorTel = TODOS_LB.map((r) => ({ r, v: verifFactura(fac("x", r, 10), { id: ID, rutEmisor: "76.111.111-1" }) })).find((x) => x.v.est === "tel");
+    if (!deudorTel) { ok("167 la verificación fallida marca y avisa, no retira: el issue nombra las marcadas, la mesa las lista una vez, el aviso al ejecutivo lo firma el sistema y el veto bloquea la reincorporación", false, "ningún deudor de prueba requiere verificación"); }
+    else {
+      const otroRut = TODOS_LB.find((r) => r !== deudorTel.r);
+      const f1 = fac("f1", deudorTel.r, 30), f2 = fac("f2", deudorTel.r, 20), f3 = fac("f3", otroRut, 10);
+      const deal = { id: ID, rutEmisor: "76.111.111-1", cliente: "Cliente 167", exec: "CR", negocioNum: "167", monto: 60 * MMF, facturasOp: [f1, f2, f3] };
+      const veto1 = { [ID]: { [f1.id]: { folio: f1.folio, monto: f1.monto, deudor: f1.deudor, rutRecep: f1.rutRecep, por: "test", fecha: "hoy", motivo: "No reconoce la factura" } } };
+      const sinVeto = { tel: {}, vetadas: {} };
+      const conVeto = { tel: {}, vetadas: veto1 };
+      // (a) El resumen y el issue: la marcada que SIGUE en la oferta se nombra, cuenta como pendiente (VER-01) y el issue
+      //     dice deudor, folio y qué hacer; sin marca no hay issue.
+      const r0 = verifResumenDeal(deal, sinVeto), r1 = verifResumenDeal(deal, conVeto);
+      const iss0 = issueVerificacion(deal, sinVeto), iss1 = issueVerificacion(deal, conVeto);
+      const resumenOk = r0.noVerif === 0 && r0.total === 3 && r1.total === 3 && r1.noVerif === 1 && r1.noVerificadas.length === 1 && r1.noVerificadas[0].folio === f1.folio
+        && r1.noVerificadas[0].deudor === f1.deudor && r1.pend >= 1 && r1.pend >= r0.pend;
+      const issueOk = iss0 === null && !!iss1 && iss1.n === 1 && iss1.deudores.length === 1 && iss1.deudores[0] === f1.deudor && iss1.folios.length === 1 && iss1.folios[0] === f1.folio
+        && iss1.titulo === "Facturas no verificadas: no se puede cursar" && iss1.texto.includes(f1.deudor) && iss1.texto.includes(String(f1.folio)) && /no se cursa/.test(iss1.texto)
+        && /vuelve a simular/.test(iss1.texto) && /firme la nueva operación/.test(iss1.texto);
+      let ver01 = null, ver01Err = "";
+      try {
+        const cc = controlesIntegracion(deal, conVeto);
+        const lista = Array.isArray(cc) ? cc : (cc && (cc.faltas || cc.controles || cc.lista)) || [];
+        ver01 = lista.find((x) => x && x.codigo === "VER-01") || null;
+      } catch (e) { ver01Err = String((e && e.message) || e).slice(0, 120); }
+      const ver01Ok = !!ver01 && /marcada\(s\) no verificada\(s\)/.test(ver01.detalle || "") && /retirarlas, re-simular y volver a publicar/.test(ver01.detalle || "");
+      // (b) La mesa: la marcada que sigue en la oferta aparece UNA vez, «no_verificada», suma al monto (está en la oferta),
+      //     nada se contó como retirado, y el deudor está pendiente mientras le quede un documento sin resolver; con el otro
+      //     registrado, el deudor queda «no_verificada» por sus documentos. Retirada por el ejecutivo (fuera de facturasOp),
+      //     sigue en la mesa como antes (caso 157).
+      const fila = (d, st) => (filasVerificacion([d], st) || []).find((x) => x.rutDeudor === deudorTel.r);
+      const fm = fila(deal, conVeto);
+      const mesaOk = !!fm && fm.docs.length === 2 && fm.docs.filter((d) => d.id === f1.id).length === 1 && (fm.docs.find((d) => d.id === f1.id) || {}).estado === "no_verificada"
+        && (fm.docs.find((d) => d.id === f2.id) || {}).estado === "pendiente" && fm.estado === "pendiente" && fm.nVet === 0 && mm(fm.monto) === 50 && fm.facturas.length === 2;
+      const fm2 = fila(deal, { tel: { [ID]: { [f2.id]: 1 } }, vetadas: veto1 });
+      const deudorOk = !!fm2 && fm2.estado === "no_verificada" && fm2.nPend === 0 && fm2.docs.length === 2;
+      const fr = fila({ ...deal, facturasOp: [f2, f3] }, conVeto);
+      const retiradaOk = !!fr && fr.docs.length === 2 && (fr.docs.find((d) => d.id === f1.id) || {}).estado === "no_verificada" && fr.nVet === 1 && mm(fr.monto) === 20;
+      // (c) El aviso al ejecutivo comercial: remitente el sistema, destinatario el dueño, el texto nombra la operación, el
+      //     deudor, cada folio y que no se cursará; una segunda marca reusa el hilo; sin marcadas, nada.
+      const antes = HILOS.length;
+      let avisoOk = false, mudoOk = false, avisoDet = "";
+      try {
+        const h = avisarNoVerificadas(deal, [f1], "No reconoce la factura");
+        const msg = h && h.mensajes[h.mensajes.length - 1];
+        const h2 = avisarNoVerificadas(deal, [f2], "");
+        avisoOk = !!h && !!msg && msg.de === CODE_SISTEMA && msg.deNombre === NOMBRE_SISTEMA && h.participantes.includes("CR") && !h.participantes.includes(CODE_SISTEMA)
+          && h.asunto === `Verificación fallida · ${ID}` && msg.texto.includes(ID) && msg.texto.includes("N° 167") && msg.texto.includes(f1.deudor) && msg.texto.includes("#" + f1.folio)
+          && /no se podrá cursar/.test(msg.texto) && /No reconoce la factura/.test(msg.texto) && /publica de nuevo la oferta/.test(msg.texto)
+          && h2 === h && h.mensajes.length === 2 && HILOS.filter((x) => x.dealId === ID).length === 1 && hiloNoLeido(h, "CR");
+        mudoOk = avisarNoVerificadas(deal, [], "x") === null && avisarNoVerificadas(null, [f1], "x") === null && HILOS.filter((x) => x.dealId === ID).length === 1;
+        avisoDet = msg ? msg.texto.slice(0, 90) : "sin mensaje";
+      } finally {
+        HILOS.length = antes;
+      }
+      // (d) El veto bloquea la reincorporación (regla 6), con el estado inyectado.
+      const cand = estadoCandidata(f1, deal, { vetadas: veto1 });
+      const vetoOk = noConfirmada(deal, f1, veto1) === true && cand.agregable === false && cand.clave === "noConfirmada" && noConfirmada(deal, f2, veto1) === false;
+      ok("167 la verificación fallida marca y avisa, no retira: el issue nombra las marcadas, la mesa las lista una vez, el aviso al ejecutivo lo firma el sistema y el veto bloquea la reincorporación",
+         resumenOk && issueOk && ver01Ok && mesaOk && deudorOk && retiradaOk && avisoOk && mudoOk && vetoOk,
+         `resumen: 1 de 3 marcada, pendiente ${r1.pend} ${resumenOk} · issue «${iss1 ? iss1.titulo : "—"}» ${issueOk} · VER-01 la nombra ${ver01Ok}${ver01Err ? " (" + ver01Err + ")" : ""}`
+         + ` · mesa: 2 docs, una no_verificada en la oferta, monto ${fm ? mm(fm.monto) : "?"} ${mesaOk} · deudor por sus documentos ${deudorOk} · retirada sigue en la mesa ${retiradaOk}`
+         + ` · aviso del sistema al ejecutivo «${avisoDet}» ${avisoOk} · calla sin marcadas ${mudoOk} · veto ${vetoOk}`);
+    }
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

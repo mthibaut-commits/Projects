@@ -924,8 +924,12 @@ haberla visto. Re-evaluar para borrar un «no» firmado sería deshacer evidenci
 
 ### 14. El deudor no confirma
 
-Se bifurca en la mesa de verificación. La factura sale de la oferta y queda **vetada** para esa
-operación.
+Se bifurca en la mesa de verificación. **Desde el 23-09-2026 (ADR-0018, regla 67) la factura NO sale de la
+oferta:** queda **marcada «no verificada» y vetada**, la operación muestra el issue «facturas no verificadas: no se
+puede cursar» (VER-01 sigue mandando) y el ejecutivo comercial recibe el aviso por mensajería. Es él quien abre la
+operación —«Editar la oferta» la reabre y revoca la firma (§15)—, retira las facturas del deudor, vuelve a simular y
+publica de nuevo; el cliente firma la nueva operación. Marcar la única factura de la oferta no pierde la operación:
+perderla es decisión del ejecutivo, con causa (regla 5).
 
 **El veto no es reversible.** Es el resultado de una llamada, no una preferencia del ejecutivo: si
 fuera reversible, el mismo ejecutivo que no consiguió la confirmación podría reponer el documento y
@@ -937,8 +941,10 @@ siendo del **deudor** y el veto es por **factura**. Es el único punto del pipel
 hermanas dejan de coincidir, y por eso el badge del tab es por factura mientras la cabecera agrupa y
 dice «n de m por verificar».
 
-**Después de la firma la operación sólo ENCOGE.** El retiro no re-asigna contra el estado del día:
-**recorta** la asignación anterior y las demás facturas conservan su línea y su origen.
+**El recorte sin re-asignar quedó para el rechazo del comité** (regla 65): ahí el retiro no re-asigna contra el
+estado del día, **recorta** la asignación anterior y las demás facturas conservan su línea y su origen. Por la
+verificación ya no hay retiro automático, así que tampoco recorte: la versión nueva sale de la simulación del
+ejecutivo sobre el paquete nuevo.
 
 *¿Por qué?* El cupo ya está reservado por un monto **mayor** que el que queda, así que volver a evaluar
 no puede mejorar nada y sí puede empeorarlo: expondría la operación al cupo que otro negocio consumió
@@ -947,8 +953,9 @@ mientras tanto. Una operación firmada no pierde línea por una llamada telefón
 **El cupo liberado no vuelve solo.** Sigue reservado por el monto original hasta que lo liberen en el
 sistema de gestión de líneas. La app **muestra** el monto y dónde pedirlo, y nunca lo toca.
 
-**La oferta no puede quedar vacía por esta vía**: retirar la última factura de la operación no es una
-oferta encogida, es una **pérdida**, y ésa es otra decisión con su propia causa y su propio actor.
+**La oferta no queda vacía por esta vía**: marcar la última factura no la saca de la oferta; si el ejecutivo la
+retira, la operación reabierta vuelve al panel de arranque, y perderla es otra decisión con su propia causa y su
+propio actor.
 
 ### 15. Reapertura
 
