@@ -159,3 +159,25 @@ timestamp: 2026-09-17T15:29:14Z
     - Gates: `regla_58.test.mjs` (forma, con sondas) y **`e2e-58`** (la fila del tubo, en las dos
       direcciones).
 
+62. **NINGUNA EXCEPCIÓN SIN JUSTIFICAR EN LA MUTACIÓN DE CIERRE, Y SOLICITAR SIN JUSTIFICACIÓN NO ESCRIBE** (23-09-2026,
+      M-19 · G-12, decidido el 22-09-2026 sin ADR: «debe ser una exigencia del backend y un gate»). `cerrarOferta` vuelve a
+      contar las excepciones pendientes sin comentario, respaldo ni declaración (`excepcionesSinComentario`) y, si hay
+      alguna, `compuertaExcepcionesMudas` devuelve `{ok: false, n, motivo}`: la mutación no escribe `ofertaCerrada`, no
+      inyecta nada y la bitácora dice «Cierre rechazado · N excepción(es) sin justificar». `ModalCurse` conserva su botón
+      apagado (regla 30), pero la pantalla no es el control (regla 24): al cierre se llega también desde el asistente
+      de alta y desde el tubo, y hasta hoy la mutación re-comprobaba sólo el monto (`giroCursable`, regla 13-septdecies).
+    - **La compuerta es pura y siempre dice por qué**, como `giroCursable`: recibe las excepciones mudas ya calculadas y
+      devuelve el motivo con la cuenta. La suite la prueba por su nombre (caso 161) y el gate de texto
+      `regla_62.test.mjs` fija que `cerrarOferta` la llama y retorna ANTES de armar `patchCierre`.
+    - **`solicitarAprobacionExc` rechaza la solicitud muda** (CA-4 de HU-25): sin comentario, sin respaldo y sin la
+      declaración explícita de que no hay comentarios, no escribe en `SOLICITUD_EXC`, no abre la pre-evaluación ni avisa
+      a nadie — le estaría pidiendo al apoderado que decida sin saber sobre qué. El formulario del tab ya lo exigía
+      (regla 30); ahora lo exige la escritura, a la que llegan los tres caminos.
+    - **«Enviar de todos modos» de la Pre-evaluación ES la declaración.** El diálogo advierte que las excepciones sin
+      comentario se envían igual; al confirmar, cada solicitud sale con `sinComentarios: true` —la declaración explícita
+      del ejecutivo—, así que la pre-evaluación sigue funcionando y las solicitudes ya no son mudas. Sin esto, la pieza
+      anterior la habría dejado sin solicitar nada, en silencio.
+    - Caso **161** (la compuerta en las dos direcciones, la solicitud muda que no escribe, la declaración que sí, y la
+      justificación que vacía la cuenta) y `regla_62.test.mjs` (la llamada en `cerrarOferta`, el rechazo en
+      `solicitarAprobacionExc` y la declaración en `enviarPreEval`, cada uno con sonda).
+

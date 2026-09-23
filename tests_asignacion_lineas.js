@@ -7755,6 +7755,53 @@
        + ` · mira el documento ${documentoOk} · archivo: ${exclArchivo} excluidas por antigüedad, ${capViejas} viejas capturadas, ${capArchivo} capturadas, ${bandejaMal} con «1d» ${archivoOk}`);
   }
 
+  {
+    // 161 · NINGUNA EXCEPCIÓN SIN JUSTIFICAR: la compuerta es de la MUTACIÓN (regla 62, M-19) y solicitar sin
+    //       justificación no escribe (CA-4 de HU-25). Molde: `giroCursable` (caso 108), que el cierre ya aplicaba al
+    //       monto. `cerrarOferta` es un closure de `PipelineComercial`: acá se prueba la compuerta pura que él llama y
+    //       el gate de texto `regla_62.test.mjs` fija que la llama antes de escribir.
+    const ID = "OP-T161-" + Date.now();
+    // Sin evidencia del contrato, O05 queda «sujeta a excepción» (caso 85): una excepción pendiente real, del motor.
+    const deal = { id: ID, rutEmisor: "76.111.111-1", cliente: "Cliente 161", facturasOp: [fac("x1", LB[0], 20), fac("x2", LB[1], 12)], monto: 32 * MMF, negocioNum: "OP-161" };
+    const leer161 = () => repoSolicitudExc.get(ID) || null;
+    let mudas0 = [], c0 = null, r1 = null, sinEscribirOk = false, declaraOk = false, justificaOk = false, sondaOk = false;
+    repoSolicitudExc.del(ID);
+    setPreEval(ID, "CR", false, false);
+    try {
+      // (a) Hay excepciones mudas y la compuerta las cuenta, con motivo.
+      mudas0 = excepcionesSinComentario(deal);
+      c0 = compuertaExcepcionesMudas(mudas0);
+      const x = mudas0.find((it) => it.regla && it.regla.cond === "O05") || mudas0[0];
+      // (b) SOLICITAR SIN JUSTIFICACIÓN NO ESCRIBE: ni la solicitud, ni la pre-evaluación, ni una tarea.
+      const tareas0 = PANEL_TAREAS.filter((t) => (t.ops || []).includes(ID)).length;
+      r1 = x ? solicitarAprobacionExc(deal, x, "CR", "   ", [], false) : null;
+      sinEscribirOk = !!r1 && r1.ok === false && typeof r1.motivo === "string" && leer161() === null && !tienePreEval(ID)
+        && PANEL_TAREAS.filter((t) => (t.ops || []).includes(ID)).length === tareas0 && excepcionesSinComentario(deal).length === mudas0.length;
+      // (c) LA DECLARACIÓN «sin comentarios» SÍ es justificación: escribe, y la cuenta baja en uno.
+      if (x) solicitarAprobacionExc(deal, x, "CR", "", [], true);
+      const s1 = x ? (leer161() || {})[x.stKey] : null;
+      declaraOk = !!s1 && s1.sinComentarios === true && excepcionesSinComentario(deal).length === mudas0.length - 1;
+      // (d) Con TODAS justificadas la compuerta deja pasar.
+      for (const it of excepcionesSinComentario(deal)) solicitarAprobacionExc(deal, it, "CR", "Justificación 161", [], false);
+      const cFin = compuertaExcepcionesMudas(excepcionesSinComentario(deal));
+      justificaOk = excepcionesSinComentario(deal).length === 0 && cFin.ok === true && cFin.n === 0 && cFin.motivo === null;
+      // (e) Sonda de la compuerta pura: sin lista deja pasar; con una muda bloquea y dice cuántas.
+      const c1 = compuertaExcepcionesMudas([{ stKey: "999" }]);
+      sondaOk = compuertaExcepcionesMudas(null).ok === true && compuertaExcepcionesMudas([]).ok === true
+        && c1.ok === false && c1.n === 1 && /Cierre rechazado · 1 excepción\(es\) sin justificar/.test(c1.motivo || "");
+    } finally {
+      repoSolicitudExc.del(ID);
+      setPreEval(ID, "CR", false, false);
+      hilosDeDeal(ID).forEach((h) => repoHilos.del(h.id));
+      for (let i = PANEL_TAREAS.length - 1; i >= 0; i--) if ((PANEL_TAREAS[i].ops || []).includes(ID)) PANEL_TAREAS.splice(i, 1);
+    }
+    const compuertaOk = mudas0.length > 0 && !!c0 && c0.ok === false && c0.n === mudas0.length
+      && new RegExp(`Cierre rechazado · ${mudas0.length} excepción\\(es\\) sin justificar`).test(c0.motivo || "");
+    ok("161 ninguna excepción sin justificar en la mutación de cierre: la compuerta bloquea con motivo y cuenta, solicitar sin justificación no escribe, la declaración «sin comentarios» sí, y con todas justificadas deja pasar",
+       compuertaOk && sinEscribirOk && declaraOk && justificaOk && sondaOk,
+       `${mudas0.length} muda(s) del motor, compuerta bloquea con cuenta ${compuertaOk} · solicitud muda no escribe (${r1 ? r1.ok : "?"}) ${sinEscribirOk} · declaración escribe y descuenta ${declaraOk} · todas justificadas → pasa ${justificaOk} · sonda ${sondaOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

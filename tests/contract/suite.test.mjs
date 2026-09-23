@@ -9,7 +9,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { leer, numerosDeCasos, casosDeSuite } from "./_comun.mjs";
 
-export const CASOS_ESPERADOS = 160;   // snapshot: cambia sólo cuando se agrega o retira un caso a propósito
+export const CASOS_ESPERADOS = 161;   // snapshot: cambia sólo cuando se agrega o retira un caso a propósito
 export function verificarNumeracion(casos) {
   const fallos = [];
   const titulos = new Map();   // n → Set de títulos distintos

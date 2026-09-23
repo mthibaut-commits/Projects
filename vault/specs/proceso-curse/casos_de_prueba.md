@@ -92,7 +92,7 @@ selector y **por qué el sustituto es legítimo** cuando el disparador real no s
 | **MN-09** | Ticket crafteado | `abrirConTicket(h, extra, usuario)` (`e2e-30`): `emitirTicketDetalle("deal", id, usuario, { deal: {...payload.deal, ...últimoPatch, ...extra}, usuario, tab: null, ts })` en el tubo y `ctx.newPage().goto(url + "?t=" + uuid)`. Sirve para menús y compuertas en un estado que el flujo no da rápido (publicada, otra sesión); no para el veredicto (la foto no vuelve al tubo). **Prerrequisito**: `abrirConTicket` toma el PRIMER ticket `tipo: "deal"` de `TICKETS_EMITIDOS` y lanza «no encuentro el ticket del detalle … ¿se abrió el detalle desde el tubo?» si no hay ninguno; por tanto exige un MN-02 previo en la misma sesión (dentro del caso o del archivo) y craftea ESE deal, no uno elegido por id. |
 | **MN-10** | Restauración | `fotoRepos` / `restaurarRepos` de las claves `pc_repo_*` (`e2e-29`, `e2e-15-bis-bis`; barren todo `pc_repo_*`). Las claves reales las arma `crearRepo(nombre)` como `"pc_repo_" + nombre` con forma `{[tenantId]: {[id]: valor}}`: `pc_repo_otorgamiento_visado` (`repoVisado`), `pc_repo_verificacion_telefonica` (`repoVerifTel`), `pc_repo_giro_asignacion` (`repoGiro`), `pc_repo_linea_comite` (`repoLineaComite`), `pc_repo_simulacion_version` (`repoSimVersions`), `pc_repo_solicitud_comite` (`repoSolicitudComite`), `pc_repo_factura_no_confirmada` (`repoNoConfirmadas`, el veto de CP-091; regla 6). En los CP se lee por `repoX.get(id)` desde `evaluate`, nunca por una clave abreviada. Retiro de la solicitud en `api2ListarProcesos()` y de `SOLIC_SEQ`, borrado de `fs_curse_<neg>`, filtro rápido al que estaba, sesión al `usuario0`, `det.close()`, `h.apagarDirectorio()`. Todo en el `finally`. |
 
-Y las capas que la suite exige: un caso nuevo toma el siguiente entero (161 en adelante), sube `CASOS_ESPERADOS` en
+Y las capas que la suite exige: un caso nuevo toma el siguiente entero (162 en adelante), sube `CASOS_ESPERADOS` en
 `tests/contract/suite.test.mjs` y se cita en la regla y en `invariantes.md`; un gate de contrato nuevo lleva
 `sonda negativa` y lee `canonico(src)` (ADR-0006).
 
@@ -538,13 +538,13 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (161 en a
 ## HU-25 · Ninguna excepción sin justificar en la mutación de cierre
 
 ### CP-064 · `cerrarOferta` con una excepción muda devuelve negativa y no escribe
-- **Criterio**: CA-1 de HU-25 · **Dirección**: negativa · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (M-19: «debe ser una exigencia del backend y un gate»; G-12, regla 24, T2: este caso de la suite es el gate y la regla 24 lo cita; el molde es `giroCursable` en el caso 108, que el cierre ya aplica al monto).
-- **Precondición**: deal simulado con `excPend > 0` y `sinComentario = 1`; `cerrarOferta` alcanzable por nombre.
-- **Pasos**: 1) invocar; 2) leer el resultado, `ofertaCerrada` y `SYS_LOG`.
-- **Resultado esperado**: `{ok: false, motivo}`; `ofertaCerrada` sigue `false`; bitácora «Cierre rechazado · 1 excepción(es) sin justificar»; nada inyectado (`api2ListarProcesos()` sin cambio).
+- **Criterio**: CA-1 de HU-25 · **Dirección**: negativa · **Capa**: suite. · **Cobertura actual**: caso **161** y `regla_62.test.mjs` (implementado el 23-09-2026; M-19: «debe ser una exigencia del backend y un gate»; G-12, regla 62 con la 24 como principio y `giroCursable` —caso 108, que el cierre ya aplicaba al monto— como molde).
+- **Precondición**: una operación sin evidencia del contrato (O05 queda «sujeta a excepción», caso 85) y sin solicitudes: `excepcionesSinComentario` devuelve ≥ 1. `cerrarOferta` es un closure de `PipelineComercial`, así que la suite prueba la compuerta pura que él llama (`compuertaExcepcionesMudas`) y el gate de texto fija que la llama antes de escribir.
+- **Pasos**: 1) `compuertaExcepcionesMudas(excepcionesSinComentario(deal))`; 2) leer `ok`, `n` y `motivo`; 3) el gate de texto: la llamada y el `return eChk` en `cerrarOferta` antes de `patchCierre`.
+- **Resultado esperado**: `{ok: false, n, motivo}` con «Cierre rechazado · N excepción(es) sin justificar»; en la mutación `logSys` escribe lo mismo y no se escribe `ofertaCerrada` ni se inyecta nada (`return eChk` antes de `patchCierre`, gate `regla_62.test.mjs`).
 
 ### CP-065 · Todas justificadas: escribe `ofertaCerrada` y aparece «Operación creada»
-- **Criterio**: CA-2 de HU-25 · **Dirección**: positiva · **Capa**: suite + e2e. · **Cobertura actual**: suite NUEVO (el complemento de CP-064); en pantalla parcial: `e2e-15-bis-bis-a` cierra de verdad pero afirma el log y la bandeja, no el chip. NUEVO para el chip.
+- **Criterio**: CA-2 de HU-25 · **Dirección**: positiva · **Capa**: suite + e2e. · **Cobertura actual**: suite: caso **161** (con todas justificadas la compuerta deja pasar); en pantalla parcial: `e2e-15-bis-bis-a` cierra de verdad pero afirma el log y la bandeja, no el chip. NUEVO para el chip.
 - **Precondición**: MN-01 «Con línea» fila 0, MN-03 «Deudores con línea», MN-04. Para el menú «Acciones» hace falta la sesión ADMIN (MN-07 en la pestaña del detalle) y el tab «Bitácora» / «Cobranza» / «Mensajería»: la sesión inicial no ve esos tabs y en Negocio › Detalle el botón no existe (regla 30, `e2e-30`).
 - **Pasos**: 1) tras confirmar, leer `h.texto(det)`; 2) MN-07 a ADMIN → tab «Bitácora» → menú «Acciones».
 - **Resultado esperado**: chip «Operación creada», sin CTA de cierre, ítem «Editar la oferta» (regla 33).
@@ -558,7 +558,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (161 en a
 - **Esbozo e2e**: id `e2e-HU-25-a` · archivo `29_publicacion.e2e.mjs` · `finally`: «Cancelar» si el modal quedó abierto, MN-10.
 
 ### CP-067 · `solicitarAprobacionExc` no guarda una solicitud sin justificación
-- **Criterio**: CA-4 de HU-25 · **Dirección**: negativa y positiva (con texto sí guarda) · **Capa**: suite. · **Cobertura actual**: NUEVO (el caso 114 fija que solicitar no cierra la puerta; no la validación). · **Precondición**: `solicitarAprobacionExc` con `comentario: ""` y luego con texto. · **Resultado esperado**: negativa y `SOLICITUD_EXC` sin entrada; luego una entrada.
+- **Criterio**: CA-4 de HU-25 · **Dirección**: negativa y positiva (con texto sí guarda) · **Capa**: suite. · **Cobertura actual**: caso **161** (implementado el 23-09-2026, regla 62; el caso 114 fija que solicitar no cierra la puerta). · **Precondición**: `solicitarAprobacionExc` con `comentario: "   "`, sin archivos ni declaración; luego con la declaración «sin comentarios»; luego con texto. · **Resultado esperado**: negativa, `SOLICITUD_EXC` sin entrada, sin pre-evaluación abierta y sin tarea; luego una entrada con `sinComentarios: true`; luego una con comentario, y la cuenta de mudas en cero.
 
 ## HU-26 · Solicitud automática al comité al publicar (definición ajustada 23-09-2026: la solicitud sale sólo sin línea suficiente; 070 retirado)
 
@@ -1010,7 +1010,7 @@ Una fila por historia: sus CP, cuáles están cubiertos hoy (con el id que los c
 | HU-22 | 055–057 | 055 (caso 158), 056 (casos 30, 27; 157 por factura), 057 (casos 106, 80, 83, e2e-15-bis-bis-a) | — | — | — |
 | HU-23 | 058–060 | 058 (casos 36, 38, 135), 059 (casos 141, 143), 060 (casos 56, 124) | 058 | — | — |
 | HU-24 [D2 cerrada, ADR-0015; 062 retirado] | 061, 063, 117, 119, 137 | 119 (casos 21–23: vigente hoy · cambia con ADR-0018, se re-ancla al retiro del ejecutivo) | 137 | 061, 063, 117 | — |
-| HU-25 | 064–067 | 065 parcial (e2e-15-bis-bis-a cierra, no afirma el chip), 066 parcial (e2e-15-bis-bis-a sólo bajo `if (isDisabled())`) | 065, 066 | 064, 065, 067 | — |
+| HU-25 [implementada 23-09-2026] | 064–067 | 064 (caso 161, `regla_62`), 067 (caso 161), 065 parcial (caso 161 en la suite; e2e-15-bis-bis-a cierra, no afirma el chip), 066 parcial (e2e-15-bis-bis-a sólo bajo `if (isDisabled())`) | 065, 066 | — | — |
 | HU-26 [definición ajustada 23-09-2026; 070 retirado] | 068–069 | 068 parcial (e2e-15-bis-bis-a/b, casos 106, 126, 146; el rótulo «En gestión» no se lee), 069 (e2e-29-a) | 068, 069 | 069 | — |
 | HU-27 | 071–073 | 072 (caso 106) | 071, 072 | 071, 073 | — |
 | HU-28 | 074–077 | 074 parcial (e2e-58, caso 158), 075 (e2e-58, caso 31), 076 (casos 114, 85), 077 (caso 32, e2e-12-bis-d) | 074, 076 | — | — |
@@ -1088,9 +1088,9 @@ dan vuelta con su mismo id en el commit del ADR: CP-091 (`e2e-6-b`), CP-119 y CP
 Por la capa e2e: `e2e-13-octies-bis-a`, `e2e-13-sexdecies-a/c/d`, `e2e-12-bis-a/b/d`, `e2e-14-a/b/c`, `e2e-29-a/b`,
 `e2e-15-bis-bis-a/b`, `e2e-58`, `e2e-30`, `e2e-13-quaterdecies`. Por la suite: casos 3, 4, 21–33, 36, 38, 47, 52, 55,
 56, 58, 76–81, 83, 85, 86, 88, 99, 100, 105, 106, 110, 112, 114, 117–119, 124–126, 134–136, 140–144, 146–150, 154, 157,
-158, 159, 160 (el 145 —ATR-01, quién autoriza un descuento— no lo cita ningún CP; y `regla_35`, `regla_40`, `regla_transiciones`,
+158, 159, 160, 161 (el 145 —ATR-01, quién autoriza un descuento— no lo cita ningún CP; y `regla_35`, `regla_40`, `regla_transiciones`,
 `regla_estado_pestanas` como texto; `regla_33` vigila la solicitud duplicada, no las mutaciones del paquete). De esos
-66, **31 están cubiertos del todo** —entre ellos los tres que la decisión del usuario dejó **implementados como están**:
+68, **33 están cubiertos del todo** —entre ellos los tres que la decisión del usuario dejó **implementados como están**:
 CP-085 y CP-094 (la clave estable es el versionado, G-13 cerrado) y CP-028 (el gesto explícito, D1), y los dos de HU-42
 que remiten a lo que los casos 21–23 y 157 ya fijan (CP-129, que se da vuelta con ADR-0018, y CP-131)— y **33 son
 parciales** (CP-001, 015, 027, 037, 041, 042, 046, 054, 058, 065, 066, 068, 069, 072, 074, 076, 078, 080, 081, 089, 091,
@@ -1098,18 +1098,18 @@ parciales** (CP-001, 015, 027, 037, 041, 042, 046, 054, 058, 065, 066, 068, 069,
 vecino y falta el caso en pantalla (HU-01, HU-06, HU-10, HU-14, HU-15, HU-16, HU-18, HU-23, HU-25, HU-26, HU-27, HU-28,
 HU-29, HU-33, HU-35, HU-36, HU-38, HU-39, HU-41), falta la dirección negativa (CP-054, CP-069, CP-074, CP-099), el e2e
 que se cita sólo la cubre bajo condición (CP-066) o sólo mide el aviso sin contar versiones (CP-134). CP-141 es parcial
-en la suite (casos 25 y 95 fijan el veto) pero nace con ADR-0018 y se cuenta entre los nuevos. Los otros **67 CP
-son enteramente nuevos**; en total, 100 CP piden al menos un caso nuevo (33 + 67), y 66 + 67 = 133.
+en la suite (casos 25 y 95 fijan el veto) pero nace con ADR-0018 y se cuenta entre los nuevos. Los otros **65 CP
+son enteramente nuevos**; en total, 98 CP piden al menos un caso nuevo (33 + 65), y 68 + 65 = 133.
 
 **Nuevos por capa:** **e2e 50** (en 12 archivos nuevos, `27` … `38`, más tres ids que van a archivos existentes,
 `21_29` y `17_15_bis_bis`; 30 de ellos fijan conducta vigente sin gate en pantalla —CP-001, 015, 027, 037, 041, 046,
 058, 065, 066, 068, 069, 072, 074, 076, 078–081, 089–092, 098, 100, 102, 107, 108, 109, 115, 116; CP-091 se escribe
 fijando lo vigente y se da vuelta con ADR-0018— y 20 dependen de un gap o de una decisión ya tomada —CP-013, 034–036,
 042 (el tooltip, nace en rojo), 071, 095, 110, 118 (`moveTo`), 123, 124, 126, 127, 128, 137, 138–142—; CP-111 es sólo
-de suite porque «Avanzar a» no ofrece «Cesión») · **suite 62** (del 161 en adelante; `CASOS_ESPERADOS` sube en cada
+de suite porque «Avanzar a» no ofrece «Cesión») · **suite 59** (del 162 en adelante; `CASOS_ESPERADOS` sube en cada
 commit que los agrega, y se dice) · **contrato 5** (CP-011, CP-019, CP-031, CP-033, CP-112; todos con sonda negativa
-sobre `canonico(src)`). Un CP suma en dos capas cuando la conducta se prueba en el motor y en la pantalla (50 + 62 + 5 =
-117 casos para 100 CP).
+sobre `canonico(src)`). Un CP suma en dos capas cuando la conducta se prueba en el motor y en la pantalla (50 + 59 + 5 =
+114 casos para 98 CP).
 
 **Decisiones del 22 y del 23-09-2026.** Cerradas y aplicadas: **D1** (ADR-0013: CP-028 y CP-030 protegen el gesto
 explícito; CP-031/033 retiran el anuncio; CP-034–036, CP-122 y CP-123 fijan el evento de evaluación, las cinco versiones
@@ -1147,7 +1147,7 @@ CP-131, CP-132, CP-138 … CP-142).
    decisión previa (§2.2 del documento de gaps): CP-017/018 (G-05), CP-071/073 (G-18),
    CP-049 (G-23), CP-099 negativa (G-24), CP-110/111/118 (b)/112 (G-25), CP-082/083 (G-26), CP-044/045 (G-27), CP-106
    (G-28). Cada uno con su regla ampliada o nueva y su fila en `invariantes.md`.
-3. **Luego, los T2 decididos y los que no esperan decisión**: CP-064/067 (G-12, decidido: T2, regla 24), CP-012/120 (G-31: implementados, caso 160), CP-019/020/121 (G-02, G-03 en el reloj),
+3. **Luego, los T2 decididos y los que no esperan decisión**: CP-064/067 (G-12: implementados, caso 161), CP-012/120 (G-31: implementados, caso 160), CP-019/020/121 (G-02, G-03 en el reloj),
    CP-010 y CP-011 (G-01: el dato; el filtro no cambia), CP-005/006 (G-29), CP-013 (control de configuración), CP-042
    (el tooltip), CP-113 (G-30), CP-054 (junto al 85).
 

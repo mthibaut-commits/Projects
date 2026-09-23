@@ -308,8 +308,8 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-25 · Ninguna excepción sin justificar en la mutación de cierre
 - **Como** Ejecutivo comercial, **quiero** que el cierre rechace una oferta con excepciones sin comentario aunque no pase por el modal, **para** que el control viva en la mutación y no en la pantalla.
-- **Estado**: por implementar (T2; regla 24) → **decidido: implementar**, como exigencia del backend y con gate.
-- **Reglas**: 24, 30, 13-septdecies · **Cláusulas**: M-19 · **Gaps**: G-12.
+- **Estado**: vigente en CA-1, CA-3 y CA-4 (implementada el 23-09-2026: regla 62, caso 161, `regla_62.test.mjs`; CA-3 por `e2e-15-bis-bis-a`); de CA-2 la mutación está en el caso 161 y el chip «Operación creada» sigue por e2e (CP-065).
+- **Reglas**: 24, 30, 13-septdecies, 62 · **Cláusulas**: M-19 · **Gaps**: G-12 (implementado).
 - **Criterios de aceptación**:
   - CA-1 · Dado una excepción sin comentario · Cuando se invoca `cerrarOferta` por cualquier camino · Entonces devuelve negativa, no escribe `ofertaCerrada` y la bitácora dice «Cierre rechazado · N excepción(es) sin justificar».
   - CA-2 · Dado todas justificadas · Cuando cierro · Entonces escribe `ofertaCerrada` y aparece el chip «Operación creada» (regla 33).
@@ -560,10 +560,10 @@ Cada una de las 41 cláusulas y de los 36 gaps aparece al menos una vez.
 | G-31 · G-32 · G-33 · G-34 · G-35 | HU-05 (implementada: regla 61) · HU-21 · HU-35 · HU-37 · HU-32 |
 | G-36 | HU-42 (y HU-33 CA-3, vigente hoy · cambia con ADR-0018) |
 
-**Por estado (42 historias):** 21 vigentes —10 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
+**Por estado (42 historias):** 22 vigentes —10 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
 HU-29, HU-33 —con su CA-3 vigente hoy · cambia con ADR-0018— y HU-41) y 9 por definición ajustada el 22 y 23-09-2026
-(HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-26, HU-31, HU-34) y 2 implementadas el 23-09-2026 (HU-03, ADR-0014: regla 60, caso 159; HU-05, regla 61, caso 160)— · 21 por implementar (HU-02, HU-04,
-HU-07, HU-08, HU-09 ADR-0019, HU-12, HU-13 ADR-0013, HU-17, HU-19, HU-21 ADR-0013, HU-25, HU-27, HU-30, HU-32
+(HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-26, HU-31, HU-34) y 3 implementadas el 23-09-2026 (HU-03, ADR-0014: regla 60, caso 159; HU-05, regla 61, caso 160; HU-25, regla 62, caso 161)— · 20 por implementar (HU-02, HU-04,
+HU-07, HU-08, HU-09 ADR-0019, HU-12, HU-13 ADR-0013, HU-17, HU-19, HU-21 ADR-0013, HU-27, HU-30, HU-32
 ADR-0016, HU-35 ADR-0015, HU-36, HU-37 ADR-0017, HU-38, HU-39, HU-40, HU-42 ADR-0018) · 0 pendientes de confirmar.
 
 **Preguntas abiertas dentro de historias que ya tienen estado:** ninguna desde el 23-09-2026.

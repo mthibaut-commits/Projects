@@ -106,3 +106,24 @@ filtro deja pasar la mayoría y el demo no se apaga; sobre las 8.000 filas del s
 implementada; 27 implementadas · 10 distinto), gaps (G-31 cerrado: implementado; 2 implementados · 16 decididos),
 HU-05 vigente en CA-1/CA-2, CP-012/120 con el caso 160 (66 cubiertos · 67 nuevos · 100 CP piden caso), regla 61 y su
 fila, cifras (160/160; 90 reglas).
+
+## 3 · M-19 · Ninguna excepción sin justificar en la mutación de cierre (regla 62, caso 161)
+
+**Qué cambió.** `cerrarOferta` re-comprueba las excepciones mudas (`compuertaExcepcionesMudas` sobre
+`excepcionesSinComentario`) después del monto y antes de armar `patchCierre`, y devuelve la negativa con «Cierre
+rechazado · N excepción(es) sin justificar». `solicitarAprobacionExc` rechaza la solicitud sin comentario, respaldo ni
+declaración (CA-4 de HU-25). Y «Enviar de todos modos» de la Pre-evaluación pasa `sinComentarios: true`: es la
+declaración explícita del ejecutivo, y sin ella la pieza anterior habría dejado la pre-evaluación sin solicitar nada, en
+silencio — el diálogo lo dice ahora con esas palabras.
+
+**Cómo se probó lo que es un closure.** `cerrarOferta` vive dentro de `PipelineComercial`, así que la suite prueba la
+compuerta PURA que él llama (caso 161: cinco mudas reales del motor sobre una operación sin evidencia del contrato,
+caso 85) y el gate de texto `regla_62.test.mjs` fija que la llama y retorna antes de escribir. Es el mismo reparto que
+la regla 59: lo puro por su nombre, lo cableado por su texto.
+
+**Lo que costó.** `solicitarAprobacionExc` deja tarea, hilo y pre-evaluación al aceptar: el caso limpia los cuatro
+repositorios en `finally` (`repoSolicitudExc`, `repoPreEval` con `difundir=false`, `repoHilos` por `hilosDeDeal`,
+`PANEL_TAREAS` por `ops`) para no dejar rastro con un id de prueba.
+
+**Documentos:** spec del curse (M-19 implementada, §15), gaps (G-12 cerrado: implementado), HU-25 vigente en CA-1/3/4
+(el chip «Operación creada» de CA-2 sigue por e2e, CP-065), CP-064/065/067 (caso 161), regla 62 y su fila, cifras.

@@ -13276,12 +13276,14 @@ function DealDrawer({
                 // del ejecutivo, primero se advierte con un diálogo (puede enviar igual tras el warning).
                 const enviarPreEval = () => {
                   // Al enviar a pre-evaluación, cada regla «sujeta a excepción» que aún no fue solicitada
-                  // queda enviada a su(s) apoderado(s) facultado(s) — sin comentario si el ejecutivo no lo puso.
+                  // queda enviada a su(s) apoderado(s) facultado(s) CON la declaración explícita de que el
+                  // ejecutivo no tiene comentarios: es lo que confirmó en «Enviar de todos modos», y sin ella la
+                  // escritura la rechazaría (regla 62). Si no había excepciones mudas, este conjunto está vacío.
                   const st = (typeof VISADO_STATE !== "undefined" && VISADO_STATE[deal.id]) || {};
                   const sol = (typeof SOLICITUD_EXC !== "undefined" && SOLICITUD_EXC[deal.id]) || {};
                   evaluarOtorgItems(deal)
                     .filter((it) => it.disp === "excepcion" && !st[it.stKey] && !sol[it.stKey])
-                    .forEach((it) => solicitarAprobacionExc(deal, it, usuario, "", []));
+                    .forEach((it) => solicitarAprobacionExc(deal, it, usuario, "", [], true));
                   setPreEval(deal.id, usuario, true);
                   avisarPreEval(deal, usuario);
                   setPreEvalWarn(null);
@@ -17929,8 +17931,8 @@ function DealDrawer({
                 </div>
                 <div className="mt-1 t12" style={{ color: C.sub, lineHeight: 1.5 }}>
                   Hay <b>{preEvalWarn.count}</b> tarea(s) de excepción sin comentarios ni respaldo que deberías revisar antes de enviarlas al proceso de
-                  excepción. Puedes revisarlas en el tab <b>Otorgamiento</b> o, si continúas, quedarán <b>enviadas a cada apoderado facultado</b> sin
-                  comentario.
+                  excepción. Puedes revisarlas en el tab <b>Otorgamiento</b> o, si continúas, quedarán <b>enviadas a cada apoderado facultado</b> con tu
+                  declaración de que no tienes comentarios adicionales.
                 </div>
               </div>
             </div>
@@ -25427,6 +25429,19 @@ function excepcionesSinComentario(deal) {
       })
   );
 }
+// COMPUERTA DEL CIERRE (regla 62, M-19): NINGUNA EXCEPCIÓN SIN JUSTIFICAR. Es exigencia de la MUTACIÓN —`cerrarOferta`—
+// y no sólo del botón de `ModalCurse` (regla 30): al cierre se llega también desde el asistente de alta y desde el
+// tubo, y la pantalla que apaga un botón no es el control (regla 24). Recibe las excepciones mudas ya calculadas
+// (`excepcionesSinComentario`) para ser pura, y siempre dice por qué bloquea, como `giroCursable`.
+function compuertaExcepcionesMudas(mudas) {
+  const n = (mudas || []).length;
+  if (!n) return { ok: true, n: 0, motivo: null };
+  return {
+    ok: false,
+    n,
+    motivo: `Cierre rechazado · ${n} excepción(es) sin justificar: cada excepción pendiente lleva comentario o respaldo del ejecutivo —o la declaración de que no tiene comentarios— antes de cerrar y publicar (tab Otorgamiento).`,
+  };
+}
 // El EJECUTIVO solicita al apoderado responsable (N1–N5) la aprobación de UNA excepción, adjuntando su
 // comentario y archivos de respaldo. Guarda la solicitud, adelanta la operación a la bandeja (pre-eval),
 // registra auditoría/bitácora, avisa por Mensajería interna y genera una tarea a los apoderados hábiles.
@@ -25468,6 +25483,17 @@ function ampliarSolicitudExc(deal, x, execCode, comentario, archivos) {
 }
 function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinComentarios) {
   if (!x || !x.stKey || !x.regla) return;
+  // SIN JUSTIFICACIÓN NO SE SOLICITA (regla 62, CA-4 de HU-25): comentario, respaldo o la declaración explícita de que
+  // no hay comentarios. Una solicitud muda le pide al apoderado que decida sin saber sobre qué. El formulario del tab
+  // ya lo exigía (regla 30); acá lo exige la escritura, que es a la que llegan los tres caminos.
+  const justificada = !!((comentario || "").trim() || (archivos && archivos.length) || sinComentarios);
+  if (!justificada) {
+    logSys("warn", "otorgamiento", `Solicitud de excepción rechazada · #${x.regla.n} ${x.regla.nombre}: sin comentario, respaldo ni declaración`, {
+      operacion: deal.id,
+      regla: x.regla.n,
+    });
+    return { ok: false, motivo: "La solicitud de excepción necesita un comentario, un respaldo o la declaración de que no hay comentarios adicionales." };
+  }
   const nr = rolDeAreaNivel((x.regla && x.regla.area) || "riesgo", x.nivel || 1);
   // Escritura optimista + confirmación (la promesa no se espera aquí: la función es síncrona por sus
   // muchos call sites; el punto de await queda listo para cuando la mutation sea real).
@@ -47422,7 +47448,27 @@ export default function PipelineComercial() {
         empresaId: id,
         exito: false,
       });
-      return;
+      return gChk;
+    }
+    // NINGUNA EXCEPCIÓN SIN JUSTIFICAR (regla 62, M-19). `ModalCurse` apaga el botón con la misma cuenta (regla 30);
+    // ésta es la exigencia del backend: la mutación la vuelve a hacer y, si falla, no escribe nada.
+    const mudas = dChk ? excepcionesSinComentario(dChk) : [];
+    const eChk = compuertaExcepcionesMudas(mudas);
+    if (!eChk.ok) {
+      logSys("warn", "oferta", `Cierre rechazado · ${eChk.n} excepción(es) sin justificar`, {
+        empresa: dChk ? dChk.cliente : "",
+        operacion: id,
+        excepciones: mudas.map((x) => `#${(x.regla || {}).n || x.stKey}`),
+      });
+      registrarAuditoria({
+        usuario: nom,
+        modulo: "Oferta",
+        accion: "Cerrar oferta · rechazada",
+        glosa: `${dChk ? dChk.cliente : id}: ${eChk.motivo}`,
+        empresaId: id,
+        exito: false,
+      });
+      return eChk;
     }
     // EL PATCH SE ARMA ACÁ, NO DENTRO DEL UPDATER. `setDeals(fn)` no ejecuta `fn` en el acto —React
     // lo llama al renderizar—, así que leerlo después para mandárselo al tubo lo encontraría todavía
