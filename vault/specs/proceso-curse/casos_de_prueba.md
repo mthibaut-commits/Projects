@@ -92,7 +92,7 @@ selector y **por qué el sustituto es legítimo** cuando el disparador real no s
 | **MN-09** | Ticket crafteado | `abrirConTicket(h, extra, usuario)` (`e2e-30`): `emitirTicketDetalle("deal", id, usuario, { deal: {...payload.deal, ...últimoPatch, ...extra}, usuario, tab: null, ts })` en el tubo y `ctx.newPage().goto(url + "?t=" + uuid)`. Sirve para menús y compuertas en un estado que el flujo no da rápido (publicada, otra sesión); no para el veredicto (la foto no vuelve al tubo). **Prerrequisito**: `abrirConTicket` toma el PRIMER ticket `tipo: "deal"` de `TICKETS_EMITIDOS` y lanza «no encuentro el ticket del detalle … ¿se abrió el detalle desde el tubo?» si no hay ninguno; por tanto exige un MN-02 previo en la misma sesión (dentro del caso o del archivo) y craftea ESE deal, no uno elegido por id. |
 | **MN-10** | Restauración | `fotoRepos` / `restaurarRepos` de las claves `pc_repo_*` (`e2e-29`, `e2e-15-bis-bis`; barren todo `pc_repo_*`). Las claves reales las arma `crearRepo(nombre)` como `"pc_repo_" + nombre` con forma `{[tenantId]: {[id]: valor}}`: `pc_repo_otorgamiento_visado` (`repoVisado`), `pc_repo_verificacion_telefonica` (`repoVerifTel`), `pc_repo_giro_asignacion` (`repoGiro`), `pc_repo_linea_comite` (`repoLineaComite`), `pc_repo_simulacion_version` (`repoSimVersions`), `pc_repo_solicitud_comite` (`repoSolicitudComite`), `pc_repo_factura_no_confirmada` (`repoNoConfirmadas`, el veto de CP-091; regla 6). En los CP se lee por `repoX.get(id)` desde `evaluate`, nunca por una clave abreviada. Retiro de la solicitud en `api2ListarProcesos()` y de `SOLIC_SEQ`, borrado de `fs_curse_<neg>`, filtro rápido al que estaba, sesión al `usuario0`, `det.close()`, `h.apagarDirectorio()`. Todo en el `finally`. |
 
-Y las capas que la suite exige: un caso nuevo toma el siguiente entero (163 en adelante), sube `CASOS_ESPERADOS` en
+Y las capas que la suite exige: un caso nuevo toma el siguiente entero (165 en adelante), sube `CASOS_ESPERADOS` en
 `tests/contract/suite.test.mjs` y se cita en la regla y en `invariantes.md`; un gate de contrato nuevo lleva
 `sonda negativa` y lee `canonico(src)` (ADR-0006).
 
@@ -225,19 +225,19 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (163 en a
 ## HU-08 · Frecuencia, ventana, hora de corte y hora de reinicio que el job consume (decidido el 22-09-2026: parámetros del tenant; el corte cuelga del reloj y no del conteo de corridas, ADR-0019)
 
 ### CP-019 · `frecuenciaMin` gobierna el intervalo y deja de ser declarativo
-- **Criterio**: CA-1 de HU-08 · **Dirección**: positiva · **Capa**: suite + contrato. · **Cobertura actual**: NUEVO → **decidido: implementar** (M-02, G-02, sin ADR: «debe leer la configuración y correr en base a esa configuración»). El **caso 90** no se toca: NO ejerce `frecuenciaMin` —sus cuatro tramos son el piso de tasa (`evalAtribucion`), `otrosDeudoresPct` sobre la LF4 (`lineasDeCliente`), `ventanaLibroDias` (`candidatasLibro`) y `notaMinCompra` / `vigenciaLineaMeses` en la glosa; la única configuración que mueve es `aplicarCfgActiva({ …, otrosDeudoresPct })` y `frecuenciaMin` aparece sólo en el comentario de su tramo (b)—, así que hacer que el job la consuma no lo pone en rojo y no hay nada que «dar vuelta». La regla 9-bis (`reglas/otorgamiento_y_atribucion.md`) la nombra declarativa: se corrige ahí, en el comentario del caso 90 y en el `hint`, y CP-019 entra como caso nuevo (159 en adelante).
+- **Criterio**: CA-1 de HU-08 · **Dirección**: positiva · **Capa**: suite + contrato. · **Cobertura actual**: caso **163** (`intervaloJobMs`: 15 → 900.000 ms, 60 → 3.600.000) y `regla_64.test.mjs` (el `hint` del campo sin «DECLARATIVA»), implementados el 23-09-2026 (M-02, G-02, sin ADR: «debe leer la configuración y correr en base a esa configuración»). El **caso 90** no se toca: NO ejerce `frecuenciaMin` —sus cuatro tramos son el piso de tasa (`evalAtribucion`), `otrosDeudoresPct` sobre la LF4 (`lineasDeCliente`), `ventanaLibroDias` (`candidatasLibro`) y `notaMinCompra` / `vigenciaLineaMeses` en la glosa; la única configuración que mueve es `aplicarCfgActiva({ …, otrosDeudoresPct })` y `frecuenciaMin` aparece sólo en el comentario de su tramo (b)—, así que hacer que el job la consuma no lo pone en rojo y no hay nada que «dar vuelta». La regla 9-bis (`reglas/otorgamiento_y_atribucion.md`) la nombra declarativa: se corrige ahí, en el comentario del caso 90 y en el `hint`, y CP-019 entra como caso nuevo (159 en adelante).
 - **Precondición**: la función pura que arma el intervalo del job (por definir con G-02/GD-07) recibe `cfg` con `frecuenciaMin: 15`.
 - **Pasos**: 1) llamar con 15 y con 60; 2) gate de contrato: el `hint` del `CfgCampo` «Frecuencia de actualización» de Configuración › Operación (el que hoy dice «DECLARATIVA: es el valor de producción…») ya no contiene `/declarativ/i`. `CFG_OPER_BASE.frecuenciaMin` no tiene `hint`, sólo un comentario de código: el gate busca en el JSX del campo, sobre `canonico(src)`, con sonda negativa plantando la palabra.
 - **Resultado esperado**: 900 000 y 3 600 000 ms; el `hint` del campo no dice «DECLARATIVA».
 
 ### CP-020 · Fuera de la ventana el job no abre y lo registra; dentro sí
-- **Criterio**: CA-3 de HU-08 (la ventana: «fuera de ventana» entre corte y reinicio) · **Dirección**: negativa y positiva · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (M-02: el cron lee la frecuencia Y la ventana del tenant; G-02).
+- **Criterio**: CA-3 de HU-08 (la ventana: «fuera de ventana» entre corte y reinicio) · **Dirección**: negativa y positiva · **Capa**: suite. · **Cobertura actual**: caso **163** (`jobDelReloj` con la ventana 08:00–18:00: 07:30 fuera, 10:00 dentro), implementado el 23-09-2026 (M-02; G-02). En la corrida, `tickCron` sólo abre con `r.enVentana` y registra «Fuera de ventana» (`regla_64.test.mjs`).
 - **Precondición**: `horaInicio: "08:00"`, `horaFin: "18:00"`; `ahora` inyectado a las 07:30 y a las 10:00 (sin reloj configurable en la UI: el sustituto es la hora por parámetro, MN-08).
 - **Pasos**: 1) correr a las 07:30; 2) a las 10:00.
 - **Resultado esperado**: 0 abiertas y bitácora «fuera de ventana»; luego N > 0 abiertas. La ventana no es el corte del día: el corte y el reinicio tienen su propia hora (CP-121), y qué le pasa a cada oportunidad al corte lo fijan CP-022, CP-023 y CP-143 (ADR-0019).
 
 ### CP-121 · El corte y el reinicio corren a la hora del tenant (23:00 / 06:00 por defecto), no por conteo de corridas, y cambiados la siguen
-- **Criterio**: CA-2 y CA-3 de HU-08 (decisión del 22-09-2026 sobre M-07 y M-08: «impleméntala con configuración del tenant» · «implemento ese job en base al parámetro configurable del tenant») · **Dirección**: negativa (a las 22:59 no corta; a las 05:59 no reinicia) y positiva (a las 23:00 corta; a las 06:00 reinicia) · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (G-02 y G-03 en el reloj; el conteo de corridas es un artificio de la demo: en producción el inbound es continuo, ADR-0019 punto 1). Hoy el corte es `corridas % HORAS_DIA === 0` y no existe hora de reinicio: nace en rojo.
+- **Criterio**: CA-2 y CA-3 de HU-08 (decisión del 22-09-2026 sobre M-07 y M-08: «impleméntala con configuración del tenant» · «implemento ese job en base al parámetro configurable del tenant») · **Dirección**: negativa (a las 22:59 no corta; a las 05:59 no reinicia) y positiva (a las 23:00 corta; a las 06:00 reinicia) · **Capa**: suite. · **Cobertura actual**: caso **163** (`jobDelReloj` y `relojSimulado`: 22:59 no corta, 23:00 corta, 05:59 no reinicia, 06:00 reinicia, y con 21:00/07:00 las sigue; ninguna corrida múltiplo de 8 corta) y `regla_64.test.mjs` (el efecto corta por `r.corte`, nunca por conteo), implementados el 23-09-2026 (G-02 y G-03 en el reloj; ADR-0019 punto 1). Nació en rojo: el corte era `corridas % HORAS_DIA === 0` y no existía hora de reinicio.
 - **Precondición**: `cfg` con la hora de corte y la de reinicio (nombres por definir en `CFG_OPER_BASE`, GD-07; 23:00 y 06:00 por defecto) y el job del cierre del día como función pura que recibe `ahora`: es el sustituto legítimo del reloj —el e2e no puede mover la hora y el Directorio silencia el cron (MN-08)—, así que este control es sólo de suite. Una oportunidad `_inbound` sin oferta.
 - **Pasos**: 1) correr a las 22:59 y a las 23:00; 2) correr a las 05:59 y a las 06:00; 3) repetir con corte 21:00 / reinicio 07:00 en `cfg`.
 - **Resultado esperado**: el corte deja bitácora «Cierre del día» sólo a las 23:00 (y a las 21:00 en el paso 3), el reinicio sólo a las 06:00 (07:00), y ninguna corrida intermedia corta aunque `corridas` sea múltiplo de `HORAS_DIA`. **Qué le pasa a cada oportunidad en el corte no se asierta aquí**: lo fijan CP-022, CP-023 y CP-143 (HU-09, ADR-0019); este caso fija sólo el reloj.
@@ -248,19 +248,19 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (163 en a
 - La lectura B de D3 —al corte, `rolloverDia` reabre la no gestionada con el mismo id, el paquete actualizado, su ejecutivo, su bitácora y sus contactos (regla 22)— quedó descartada por ADR-0019: la oportunidad sin oferta se elimina al corte y el inbound la vuelve a originar como oportunidad nueva, con id propio y referencia (CP-022); «el id no cambia» vale sólo para lo que sobrevive al corte (CP-023). El id no se reutiliza.
 
 ### CP-022 · Al corte la oportunidad sin oferta se elimina y deja su cierre en la bitácora del sistema; al reinicio el inbound abre otra, con id propio y referencia, sin simular y con la oferta vacía
-- **Criterio**: CA-1 y CA-2 de HU-09 (ADR-0019 puntos 3 y 4; «gestionada» = tiene oferta) · **Dirección**: positiva (la sin oferta desaparece; nace la nueva con referencia) y negativa (la nueva no hereda el id ni la oferta; ninguna oportunidad conserva el id eliminado) · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0019, G-03; T1). Nace en rojo: hoy `rolloverDia` reabre con el mismo id la `_inbound` que quedó en `etapaNoGestionada`, y ningún caso de la suite ejerce `rolloverDia` (la regla 22 enuncia «el id no cambia con el cierre del día» sin caso que lo titule), así que no hay caso que dar vuelta: la regla 22 se reescribe en el commit que implemente ADR-0019.
+- **Criterio**: CA-1 y CA-2 de HU-09 (ADR-0019 puntos 3 y 4; «gestionada» = tiene oferta) · **Dirección**: positiva (la sin oferta desaparece; nace la nueva con referencia) y negativa (la nueva no hereda el id ni la oferta; ninguna oportunidad conserva el id eliminado) · **Capa**: suite. · **Cobertura actual**: caso **164** (`corteDelDia`, `eventoDeReoriginacion`, `idReoriginado`) y `regla_64.test.mjs` (`corteDia` elimina y deja bitácora, `reinicioDia` devuelve el evento al inbound y `correrProceso` escribe `referencia`), implementados el 23-09-2026 (ADR-0019, G-03; T1). Nació en rojo: `rolloverDia` reabría con el mismo id la `_inbound` que quedó en `etapaNoGestionada`, y ningún caso de la suite ejerce `rolloverDia` (la regla 22 enuncia «el id no cambia con el cierre del día» sin caso que lo titule), así que no hay caso que dar vuelta: la regla 22 se reescribe en el commit que implemente ADR-0019.
 - **Precondición**: el job del corte y el del reinicio como funciones puras que reciben `ahora` y la configuración del tenant (el sustituto legítimo del reloj de CP-121: el e2e no puede mover la hora y el Directorio silencia el cron, MN-08); una oportunidad `_inbound` «X» en `prospeccion` sin oferta (`facturasOp: []`, sin simular), con ejecutivo, bitácora y facturas en «Documentos disponibles», y facturas nuevas del mismo cedente que llegan entre el corte y el reinicio; identidades del padrón (regla 42).
 - **Pasos**: 1) correr el corte a la hora del tenant; 2) listar las oportunidades y leer la bitácora del sistema (`SYS_LOG`); 3) correr el reinicio; 4) listar de nuevo y leer la oportunidad nueva del cedente.
 - **Resultado esperado**: paso 2: «X» ya no existe —ni en el tubo ni por id— y la bitácora del sistema tiene una fila de cierre con el id «X», el cedente y el paquete que tenía; paso 4: existe «Y» ≠ «X» del mismo cedente, en `prospeccion`, con `referencia: "X"`, las facturas de «X» más las que llegaron, `simulado` falso y `facturasOp: []`; ninguna oportunidad tiene el id «X».
 
 ### CP-023 · La que tiene oferta (simulada) o está más adelante no se toca
-- **Criterio**: CA-3 de HU-09 (ADR-0019 punto 2: «gestionada» es la que tiene oferta, cualquiera sea su etapa; punto 5: el id no cambia para lo que sobrevive) · **Dirección**: negativa (el corte no la toca) · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0019, G-03). Con el parámetro por defecto (`etapaNoGestionada: "prospeccion"`) hoy `rolloverDia` tampoco toca la `oferta` simulada, así que esa aserción nace en verde; la que nace en rojo es la del paso 3: el criterio es «tiene oferta», no la etapa configurable, que se retira.
+- **Criterio**: CA-3 de HU-09 (ADR-0019 punto 2: «gestionada» es la que tiene oferta, cualquiera sea su etapa; punto 5: el id no cambia para lo que sobrevive) · **Dirección**: negativa (el corte no la toca) · **Capa**: suite. · **Cobertura actual**: caso **164** (S simulada sin publicar, P publicada, O en otorgamiento y G en giro quedan idénticas; X sin oferta y E con paquete elegido sin simular se eliminan; la manual no se toca), implementado el 23-09-2026 (ADR-0019, G-03). `etapaNoGestionada` se retiró de la configuración (esquema v3, `regla_64.test.mjs`): no hay parámetro que pueda hacer que el corte elimine una con oferta, así que el paso 3 quedó sin objeto.
 - **Precondición**: cuatro oportunidades `_inbound` con oferta: `oferta` simulada SIN `ofertaCerrada` (el caso discriminante), `oferta` con `ofertaCerrada` + `ofertaComunicada`, `otorgamiento` y `giro`; más una sin oferta en `prospeccion` como contraste (la «X» de CP-022).
 - **Pasos**: 1) correr el corte con la configuración por defecto; 2) leer las cinco; 3) repetir con la configuración del tenant que plante `etapaNoGestionada: "oferta"`.
 - **Resultado esperado**: en los dos pasos, las cuatro con oferta idénticas antes y después (`id`, `stage`, paquete, `facturasOp`, `negocioNum`, ejecutivo y bitácora) y sólo la de contraste eliminada (CP-022). El paso 3 nace en rojo: hoy, con ese parámetro, `rolloverDia` reabriría la `oferta` simulada vaciándole la oferta.
 
 ### CP-143 · La oportunidad que recibe oferta justo antes del corte no se elimina; la que sigue sin oferta sí
-- **Criterio**: CA-4 de HU-09 (la dirección que bloquea del control de CP-022, en el borde; ADR-0019 punto 2) · **Dirección**: negativa (la que recibió oferta no se elimina) y positiva (la que sigue sin oferta sí) · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0019, G-03). Nace en rojo: hoy no hay corte por hora y `rolloverDia` reabre en vez de eliminar.
+- **Criterio**: CA-4 de HU-09 (la dirección que bloquea del control de CP-022, en el borde; ADR-0019 punto 2) · **Dirección**: negativa (la que recibió oferta no se elimina) y positiva (la que sigue sin oferta sí) · **Capa**: suite. · **Cobertura actual**: caso **164** (A simulada antes del corte sobrevive, B sin oferta se elimina), implementado el 23-09-2026 (ADR-0019, G-03).
 - **Precondición**: dos oportunidades `_inbound` sin oferta, «A» y «B», en `prospeccion`; el job del corte como función pura que recibe `ahora` (CP-121), con la hora de corte del tenant en su valor por defecto (23:00).
 - **Pasos**: 1) con `ahora` a las 22:59, armar la oferta de «A» con una factura de su pool y simularla (`simularOferta`, por su nombre: la saca de Prospección, regla 12-bis); 2) correr el corte a las 23:00; 3) leer «A», «B» y la bitácora del sistema.
 - **Resultado esperado**: «A» idéntica a como quedó tras simular (mismo `id`, `stage: "oferta"`, `simulado`, `facturasOp`, bitácora); «B» eliminada, con su fila de cierre en la bitácora del sistema (id, cedente, paquete); ninguna otra fila de cierre.
@@ -993,8 +993,8 @@ Una fila por historia: sus CP, cuáles están cubiertos hoy (con el id que los c
 | HU-05 [014 retirado; implementada 23-09-2026] | 012–013, 120 | 012 (caso 160), 120 (caso 160) | 013 | 013 | — |
 | HU-06 [definición ajustada] | 015–016 | 015 parcial (caso 100: el join en pantalla; el chip no se lee) | 015 | 016 | — |
 | HU-07 | 017–018 | — | — | 017, 018 | — |
-| HU-08 [el corte por reloj, ADR-0019] | 019–020, 121 | — | — | 019, 020, 121 | 019 |
-| HU-09 [D3 cerrada, ADR-0019; 021 retirado] | 022–023, 143 | — | — | 022, 023, 143 | — |
+| HU-08 [el corte por reloj, ADR-0019; implementada 23-09-2026] | 019–020, 121 | 019 (caso 163, `regla_64`), 020 (caso 163), 121 (caso 163, `regla_64`) | — | — | — |
+| HU-09 [D3 cerrada, ADR-0019; 021 retirado; implementada 23-09-2026] | 022–023, 143 | 022 (caso 164, `regla_64`), 023 (caso 164), 143 (caso 164) | — | — | — |
 | HU-10 | 024–027 | 024 (e2e-13-octies-bis-a), 025 (e2e-13-sexdecies-a, e2e-12-bis-b), 026 (e2e-13-sexdecies-c/d), 027 parcial (caso 140, e2e-30) | 027 | — | — |
 | HU-11 [D1 cerrada, ADR-0013; 029 retirado] | 028, 030, 134 | 028 (e2e-14-a/b, caso 124), 030 (e2e-14-c, se invierte), 134 parcial (e2e-14-a: mide el aviso, no cuenta versiones) | — | 134 | — |
 | HU-12 [D1 cerrada; 032 retirado] | 031, 033, 135 | — | — | 031, 135 | 031, 033 |
@@ -1088,9 +1088,9 @@ dan vuelta con su mismo id en el commit del ADR: CP-091 (`e2e-6-b`), CP-119 y CP
 Por la capa e2e: `e2e-13-octies-bis-a`, `e2e-13-sexdecies-a/c/d`, `e2e-12-bis-a/b/d`, `e2e-14-a/b/c`, `e2e-29-a/b`,
 `e2e-15-bis-bis-a/b`, `e2e-58`, `e2e-30`, `e2e-13-quaterdecies`. Por la suite: casos 3, 4, 21–33, 36, 38, 47, 52, 55,
 56, 58, 76–81, 83, 85, 86, 88, 99, 100, 105, 106, 110, 112, 114, 117–119, 124–126, 134–136, 140–144, 146–150, 154, 157,
-158, 159, 160, 161, 162 (el 145 —ATR-01, quién autoriza un descuento— no lo cita ningún CP; y `regla_35`, `regla_40`, `regla_transiciones`,
+158, 159, 160, 161, 162, 163, 164 (el 145 —ATR-01, quién autoriza un descuento— no lo cita ningún CP; y `regla_35`, `regla_40`, `regla_transiciones`,
 `regla_estado_pestanas` como texto; `regla_33` vigila la solicitud duplicada, no las mutaciones del paquete). De esos
-70, **34 están cubiertos del todo** —entre ellos los tres que la decisión del usuario dejó **implementados como están**:
+76, **40 están cubiertos del todo** —entre ellos los tres que la decisión del usuario dejó **implementados como están**:
 CP-085 y CP-094 (la clave estable es el versionado, G-13 cerrado) y CP-028 (el gesto explícito, D1), y los dos de HU-42
 que remiten a lo que los casos 21–23 y 157 ya fijan (CP-129, que se da vuelta con ADR-0018, y CP-131)— y **34 son
 parciales** (CP-001, 015, 027, 037, 041, 042, 046, 054, 058, 065, 066, 068, 069, 072, 074, 076, 078, 080, 081, 089, 091,
@@ -1098,18 +1098,18 @@ parciales** (CP-001, 015, 027, 037, 041, 042, 046, 054, 058, 065, 066, 068, 069,
 vecino y falta el caso en pantalla (HU-01, HU-06, HU-10, HU-14, HU-15, HU-16, HU-18, HU-23, HU-25, HU-26, HU-27, HU-28,
 HU-29, HU-33, HU-35, HU-36, HU-38, HU-39, HU-41), falta la dirección negativa (CP-054, CP-069, CP-074, CP-099), el e2e
 que se cita sólo la cubre bajo condición (CP-066) o sólo mide el aviso sin contar versiones (CP-134). CP-141 es parcial
-en la suite (casos 25 y 95 fijan el veto) pero nace con ADR-0018 y se cuenta entre los nuevos. Los otros **63 CP
-son enteramente nuevos**; en total, 97 CP piden al menos un caso nuevo (34 + 63), y 70 + 63 = 133.
+en la suite (casos 25 y 95 fijan el veto) pero nace con ADR-0018 y se cuenta entre los nuevos. Los otros **57 CP
+son enteramente nuevos**; en total, 91 CP piden al menos un caso nuevo (34 + 57), y 76 + 57 = 133.
 
 **Nuevos por capa:** **e2e 50** (en 12 archivos nuevos, `27` … `38`, más tres ids que van a archivos existentes,
 `21_29` y `17_15_bis_bis`; 30 de ellos fijan conducta vigente sin gate en pantalla —CP-001, 015, 027, 037, 041, 046,
 058, 065, 066, 068, 069, 072, 074, 076, 078–081, 089–092, 098, 100, 102, 107, 108, 109, 115, 116; CP-091 se escribe
 fijando lo vigente y se da vuelta con ADR-0018— y 20 dependen de un gap o de una decisión ya tomada —CP-013, 034–036,
 042 (el tooltip, nace en rojo), 071, 095, 110, 118 (`moveTo`), 123, 124, 126, 127, 128, 137, 138–142—; CP-111 es sólo
-de suite porque «Avanzar a» no ofrece «Cesión») · **suite 57** (del 163 en adelante; `CASOS_ESPERADOS` sube en cada
-commit que los agrega, y se dice) · **contrato 5** (CP-011, CP-019, CP-031, CP-033, CP-112; todos con sonda negativa
-sobre `canonico(src)`). Un CP suma en dos capas cuando la conducta se prueba en el motor y en la pantalla (50 + 57 + 5 =
-112 casos para 97 CP).
+de suite porque «Avanzar a» no ofrece «Cesión») · **suite 51** (del 165 en adelante; `CASOS_ESPERADOS` sube en cada
+commit que los agrega, y se dice) · **contrato 4** (CP-011, CP-031, CP-033, CP-112; todos con sonda negativa
+sobre `canonico(src)`). Un CP suma en dos capas cuando la conducta se prueba en el motor y en la pantalla (50 + 51 + 4 =
+105 casos para 91 CP).
 
 **Decisiones del 22 y del 23-09-2026.** Cerradas y aplicadas: **D1** (ADR-0013: CP-028 y CP-030 protegen el gesto
 explícito; CP-031/033 retiran el anuncio; CP-034–036, CP-122 y CP-123 fijan el evento de evaluación, las cinco versiones
@@ -1147,7 +1147,7 @@ CP-131, CP-132, CP-138 … CP-142).
    decisión previa (§2.2 del documento de gaps): CP-017/018 (G-05), CP-071/073 (G-18),
    CP-049 (G-23), CP-099 negativa (G-24), CP-110/111/118 (b)/112 (G-25), CP-082/083 (G-26), CP-044/045 (G-27), CP-106
    (G-28). Cada uno con su regla ampliada o nueva y su fila en `invariantes.md`.
-3. **Luego, los T2 decididos y los que no esperan decisión**: CP-064/067 (G-12: implementados, caso 161), CP-012/120 (G-31: implementados, caso 160), CP-019/020/121 (G-02, G-03 en el reloj),
+3. **Luego, los T2 decididos y los que no esperan decisión**: CP-064/067 (G-12: implementados, caso 161), CP-012/120 (G-31: implementados, caso 160), CP-019/020/121 (G-02, G-03: implementados, casos 163–164),
    CP-010 y CP-011 (G-01: el dato; el filtro no cambia), CP-005/006 (G-29), CP-013 (control de configuración), CP-042
    (el tooltip), CP-113 (G-30), CP-054 (junto al 85).
 

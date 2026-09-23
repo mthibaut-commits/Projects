@@ -120,8 +120,8 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-08 · Frecuencia, hora de corte y hora de reinicio que el job consume
 - **Como** Administrador del tenant, **quiero** que `frecuenciaMin`, la hora de corte (`horaFin`, 23:00 por defecto) y la hora de reinicio (`horaInicio`, 06:00 por defecto) gobiernen la corrida, **para** que lo que edito en Configuración › Operación mande y no sea decorativo.
-- **Estado**: por implementar (T2) → **decidido: implementar** (M-02, M-07, M-08). Qué hace el corte con cada oportunidad lo fija HU-09 (ADR-0019).
-- **Reglas**: 9-bis · **Cláusulas**: M-02, M-07, M-08 · **Gaps**: G-02.
+- **Estado**: vigente (implementada el 23-09-2026: regla 64, caso 163, `regla_64.test.mjs`). Qué hace el corte con cada oportunidad lo fija HU-09 (ADR-0019).
+- **Reglas**: 9-bis, 64 · **Cláusulas**: M-02, M-07, M-08 · **Gaps**: G-02 (implementado).
 - **Criterios de aceptación**:
   - CA-1 · Dado `frecuenciaMin` cambiado y guardado · Cuando se observa la bitácora del inbound · Entonces las corridas se separan por ese intervalo y el `hint` del campo «Frecuencia de actualización» (Configuración › Operación, `CfgCampo`) ya no dice «DECLARATIVA» (hoy lo dice en mayúsculas: «DECLARATIVA: es el valor de producción…»; `CFG_OPER_BASE` no tiene `hint`, sólo un comentario). El caso 90 no asierta nada sobre `frecuenciaMin` —la nombra sólo en un comentario y su aserción mueve `otrosDeudoresPct`—, así que consumirla no lo pone en rojo: se corrige ese comentario y el `hint`, sin tocar el caso.
   - CA-2 · Dado la hora de corte del tenant · Cuando el reloj la alcanza · Entonces el job de corte corre una sola vez y la bitácora dice «Corte del día»; qué hace con cada oportunidad lo fija HU-09 (la que tiene oferta no se toca; la que no, se elimina); a otra hora el corte no corre, aunque el conteo de corridas complete un día (dirección que bloquea).
@@ -130,8 +130,8 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-09 · Cierre del día: la oportunidad sin oferta se elimina y el inbound la vuelve a originar; la que tiene oferta no se toca
 - **Como** Administrador del tenant, **quiero** que al corte del día la oportunidad que nadie gestionó —la que no tiene oferta— se elimine y que al reinicio el inbound la vuelva a abrir como oportunidad nueva, y que la que tiene oferta no se toque, **para** que el ejecutivo empiece el día con lo que llegó sin perder lo que ya trabajó.
-- **Estado**: por implementar (ADR-0019). D3 cerrada del todo el 23-09-2026: el corte y el reinicio son por reloj del tenant (HU-08); «gestionada» es la oportunidad que tiene oferta —el ejecutivo la simuló o la armó: etapa Oferta o posterior— y no se toca; la que no tiene oferta se elimina y el reinicio la re-origina con id propio y referencia. Descartados reabrir con el mismo id (hoy, `rolloverDia`), «no gestionada» como etapa configurable del tenant y un criterio por actividad.
-- **Reglas**: 22, 12-bis, 5 · **Cláusulas**: M-07, M-08 · **Gaps**: G-03.
+- **Estado**: vigente (implementada el 23-09-2026: regla 64, caso 164, `regla_64.test.mjs`). D3 cerrada del todo el 23-09-2026: el corte y el reinicio son por reloj del tenant (HU-08); «gestionada» es la oportunidad que tiene oferta —el ejecutivo la simuló o la armó: etapa Oferta o posterior— y no se toca; la que no tiene oferta se elimina y el reinicio la re-origina con id propio y referencia. Descartados reabrir con el mismo id (hoy, `rolloverDia`), «no gestionada» como etapa configurable del tenant y un criterio por actividad.
+- **Reglas**: 22, 12-bis, 5, 64 · **Cláusulas**: M-07, M-08 · **Gaps**: G-03 (implementado).
 - **Criterios de aceptación**:
   - CA-1 · Dado una oportunidad del inbound sin oferta (en «Sin gestión», con la oferta vacía) · Cuando llega la hora de corte del tenant · Entonces se elimina: desaparece del tubo y de la vista del ejecutivo, y la bitácora del sistema registra el cierre con el id, el cedente y el paquete que tenía.
   - CA-2 · Dado la oportunidad eliminada al corte · Cuando llega la hora de reinicio · Entonces el inbound abre una oportunidad nueva del mismo cedente, con id propio y una referencia a la eliminada, con las facturas que tenía más las que llegaron, sin simular y con la oferta vacía: es una originación, no una reapertura, y ninguna oportunidad conserva el id eliminado.
@@ -560,10 +560,10 @@ Cada una de las 41 cláusulas y de los 36 gaps aparece al menos una vez.
 | G-31 · G-32 · G-33 · G-34 · G-35 | HU-05 (implementada: regla 61) · HU-21 · HU-35 · HU-37 · HU-32 |
 | G-36 | HU-42 (y HU-33 CA-3, vigente hoy · cambia con ADR-0018) |
 
-**Por estado (42 historias):** 23 vigentes —10 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
+**Por estado (42 historias):** 25 vigentes —10 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
 HU-29, HU-33 —con su CA-3 vigente hoy · cambia con ADR-0018— y HU-41) y 9 por definición ajustada el 22 y 23-09-2026
-(HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-26, HU-31, HU-34) y 4 implementadas el 23-09-2026 (HU-03, ADR-0014: regla 60, caso 159; HU-05, regla 61, caso 160; HU-25, regla 62, caso 161; HU-37, ADR-0017: regla 63, caso 162)— · 19 por implementar (HU-02, HU-04,
-HU-07, HU-08, HU-09 ADR-0019, HU-12, HU-13 ADR-0013, HU-17, HU-19, HU-21 ADR-0013, HU-27, HU-30, HU-32
+(HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-26, HU-31, HU-34) y 6 implementadas el 23-09-2026 (HU-03, ADR-0014: regla 60, caso 159; HU-05, regla 61, caso 160; HU-25, regla 62, caso 161; HU-37, ADR-0017: regla 63, caso 162; HU-08 y HU-09, ADR-0019: regla 64, casos 163–164)— · 17 por implementar (HU-02, HU-04,
+HU-07, HU-12, HU-13 ADR-0013, HU-17, HU-19, HU-21 ADR-0013, HU-27, HU-30, HU-32
 ADR-0016, HU-35 ADR-0015, HU-36, HU-38, HU-39, HU-40, HU-42 ADR-0018) · 0 pendientes de confirmar.
 
 **Preguntas abiertas dentro de historias que ya tienen estado:** ninguna desde el 23-09-2026.

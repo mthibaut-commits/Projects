@@ -50,6 +50,11 @@ timestamp: 2026-09-17T22:12:32Z
       contaba —«Tienes 1 factura elegida» no aparecía, «esta operación» no cuadraba con «Total oferta»— y diez casos
       de pantalla cayeron a la vez. Las dos listas de candidatas la rotulan «Cedida a Security». Gate de texto:
       `regla_60.test.mjs` (la cuarta condición, la candidata agregable y el motivo de exclusión, cada uno con sonda).
+    - **El perfil de la Bandeja nombra el motivo** («Cedida a otro factoring (excluida)»), como nombra el bloqueo de
+      riesgo: la diferencia entre «no tenemos regla para esto» y «otro se la llevó» es la que explica por qué no
+      se captura.
+    - Caso **159**, en las dos direcciones y con sonda: el mismo evento sin su cesión en el índice del A2 vuelve a
+      calificar, o sea que la exclusión sale del activo y de nada más.
 
 61. **LA ANTIGÜEDAD MÁXIMA DESDE LA EMISIÓN ES CONDICIÓN DE CANDIDATURA DEL INBOUND, Y EL TOPE ES DEL TENANT** (23-09-2026,
       M-10 · G-31, decidido el 22-09-2026 sin ADR: «necesitamos implementar un criterio para ir a buscar facturas que
@@ -71,8 +76,36 @@ timestamp: 2026-09-17T22:12:32Z
     - Caso **160**, en las dos direcciones y con el tenant moviéndose: 5 y 20 entran, 21 sale; con 10 sale la de 15,
       con 30 entra la de 21; sin la clave en la configuración persistida rige el 20 de `CFG_OPER_BASE`; y sobre 8.000
       filas del stream ninguna captura supera el tope y ninguna fila de la Bandeja lleva el 1 fijo.
-    - **El perfil de la Bandeja nombra el motivo** («Cedida a otro factoring (excluida)»), como nombra el bloqueo de
-      riesgo: la diferencia entre «no tenemos regla para esto» y «otro se la llevó» es la que explica por qué no
-      se captura.
-    - Caso **159**, en las dos direcciones y con sonda: el mismo evento sin su cesión en el índice del A2 vuelve a
-      calificar, o sea que la exclusión sale del activo y de nada más.
+
+64. **EL CORTE Y EL REINICIO DEL DÍA SON POR RELOJ DEL TENANT; AL CORTE LA OPORTUNIDAD SIN OFERTA SE ELIMINA Y AL REINICIO
+    VUELVE COMO OPORTUNIDAD NUEVA, CON ID PROPIO Y REFERENCIA** (23-09-2026, ADR-0019, M-07 · M-08 · M-02, G-02 · G-03; el
+      usuario: «Hoy el corte es por corridas (demo) pero en producción será un continuo. Las oportunidades que han sido
+      gestionadas por el ejecutivo (tienen oferta) no se eliminan»). El job del inbound REINICIA el día a `horaInicio`
+      (06:00 por defecto) y CORTA a `horaFin` (23:00): entre las dos corre la corrida; fuera, no se abre nada. El
+      conteo de corridas no decide: `jobDelReloj(cfg, hora)` dice qué toca y `relojSimulado(corridas, cfg)` traduce la
+      corrida de la demo a una hora del reinicio al corte (18 corridas por día con los defaults; antes eran 8 por
+      `horasDia`, que se retiró). `frecuenciaMin` dejó de ser declarativa: `intervaloJobMs(cfg)` es el intervalo del job
+      en producción.
+    - **«Gestionada» es la oportunidad que TIENE OFERTA** —el ejecutivo la simuló: etapa Oferta o posterior (`tieneOferta`)—
+      y no se toca al corte, cualquiera sea su etapa. Un paquete elegido sin simular no es oferta todavía (regla 12-bis):
+      se elimina como cualquier otra. El criterio es funcional, no una etapa configurable: `etapaNoGestionada` se retiró
+      de la configuración (esquema `cfgOper` v3) para que ningún valor del tenant haga que el corte elimine una con
+      oferta.
+    - **Al corte se ELIMINA** (`corteDelDia`, pura sobre la lista; `corteDia` la aplica): la oportunidad del inbound sin
+      oferta deja de existir para el ejecutivo y para el tubo, y la bitácora del sistema registra el cierre con su id,
+      su cedente y su paquete. Nada de lo eliminado tiene versiones, visados ni verificaciones colgando.
+    - **Al reinicio vuelve como ORIGINACIÓN, no como reapertura** (regla 5): `eventoDeReoriginacion` la devuelve al
+      inbound como un evento más —su paquete entero más lo que llegó del mismo cedente entre el corte y el reinicio— y
+      `correrProceso` la abre con id propio (`idReoriginado`: el de la eliminada más `-R<n>`, nunca el mismo), con
+      `referencia` a la eliminada, sin simular y con la oferta vacía. «El id no cambia» (ADR-0004, regla 22) sigue
+      valiendo para todo lo que SOBREVIVE al corte.
+    - **El esquema v3 migra lo guardado** (regla 39): retira `etapaNoGestionada` y `horasDia`, renombra
+      `reaperturaDiaria` → `corteDiario` conservando la elección, y suelta las horas que eran el default viejo sin efecto
+      (08:00 / 18:00) para que manden 06:00 / 23:00; una hora que el tenant cambió se conserva. La migración es
+      autocontenida a propósito: el gate de la regla 39 evalúa el literal aislado.
+    - Casos **163** (el reloj: 22:59 no corta y 23:00 sí, 05:59 no reinicia y 06:00 sí, la ventana, las horas movidas, el
+      reloj simulado, el intervalo y la migración) y **164** (el corte: la sin oferta y la elegida sin simular se
+      eliminan; la simulada, la publicada, la de otorgamiento, la de giro y la manual quedan idénticas; la simulada a las
+      22:59 sobrevive; el evento del reinicio con `-R1` y referencia). `regla_64.test.mjs` fija lo cableado: el efecto
+      corta por `r.corte`, la corrida no abre fuera de la ventana, el corte elimina, el reinicio devuelve al inbound, la
+      nueva lleva `referencia`, y la pantalla no ofrece etapa ni llama declarativa a la frecuencia.

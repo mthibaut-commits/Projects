@@ -218,9 +218,16 @@ Las facturas que califican se **acumulan**; no crean nada al instante. Cada «ho
 4. **Crea la oportunidad** con su ejecutivo, su CAT, su contactabilidad y su pool de facturas.
 
 **Tope de 40 oportunidades nuevas por corrida.** Lo que excede se **re-encola** para la hora siguiente,
-para que la prospección fluya hora a hora en vez de saturarse de una vez. El tope de documentos
-procesados por corrida (`topeDocsCorrida`, 60) y el tamaño del lote son **configuración del tenant**, no
-constantes del código.
+para que la prospección fluya hora a hora en vez de saturarse de una vez. El tamaño de la Bandeja
+(`topeBandeja`, regla 40) y el del lote son **configuración del tenant**, no constantes del código.
+
+**El día lo gobierna el reloj del tenant (ADR-0019, regla 64).** A la hora de reinicio (`horaInicio`, 06:00 por
+defecto) el job arranca las corridas y vuelve a abrir, como oportunidades **nuevas** con id propio (`-R<n>`) y
+`referencia`, las que el corte eliminó; a la hora de corte (`horaFin`, 23:00) la oportunidad **sin oferta** se elimina
+—queda en la bitácora del sistema con su id, su cedente y su paquete— y la que **tiene oferta** no se toca, cualquiera
+sea su etapa. Entre las dos corre la corrida; fuera, no se abre nada («fuera de ventana»). El conteo de corridas no
+decide: en producción el inbound es continuo (`jobDelReloj`, `intervaloJobMs` sobre `frecuenciaMin`) y en la demo
+cada corrida es una hora simulada del reinicio al corte (`relojSimulado`).
 
 ### 6.1 · Cómo se dimensiona el paquete, y por qué no se recorta igual para todos
 
@@ -344,8 +351,10 @@ Tres observaciones, en orden de importancia:
   en producción las reglas de prospección son **configuración del tenant** y su edición es un evento
   auditable con actor y hora. Un motor que lee sus propias reglas del cliente no decide nada: es el
   mismo argumento de `REGLAS_CLIENTE` en el otorgamiento.
-- **La corrida horaria es un `useEffect` con `setTimeout`.** En producción es un job. Los parámetros ya
-  están fuera del código (configuración del tenant), que es la mitad del camino.
+- **La corrida horaria es un `setInterval` del navegador.** En producción es un job que consume `intervaloJobMs`
+  (`frecuenciaMin`) y las horas de reinicio y corte del tenant (`jobDelReloj`): las tres son puras y reciben la
+  configuración y la hora, así que el job las llama tal cual (regla 64). El reloj simulado (`relojSimulado`) es lo
+  único que queda de la demo.
 - **El acumulador vive en `useState`.** Es una cola: si la pestaña se cierra entre la clasificación y la
   corrida, esas facturas se pierden. Tiene la misma forma que tenía la verificación telefónica antes de
   pasar a `repoVerifTel`.

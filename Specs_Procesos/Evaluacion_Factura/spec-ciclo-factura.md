@@ -1060,10 +1060,11 @@ apoderado, que es evidencia regulatoria.
 
 **No hay reevaluación diaria de la cartera.** La asignación es una **consulta pura**: si el comité
 amplió una línea o si otro negocio se llevó el cupo, la respuesta de hoy ya es la de hoy sin que nadie
-recalcule nada. Lo único que corre al cierre del día es el **rollover**, que cierra y **re-origina** las
-oportunidades del inbound que nadie gestionó, y las devuelve **sin simular** — una cifra vieja se lee
-como cifra. Es una oportunidad **nueva**, con su propio identificador; no es la variante de reapertura,
-que revoca una firma.
+recalcule nada. Lo único que corre al cierre del día es el **corte** (ADR-0019, regla 64): a la hora del tenant, la
+oportunidad del inbound **sin oferta** se elimina —queda en la bitácora del sistema— y al reinicio el inbound la
+**re-origina** como oportunidad **nueva**, con su propio identificador y una `referencia` a la eliminada, sin
+simular y con la oferta vacía — una cifra vieja se lee como cifra. La que tiene oferta no se toca, cualquiera sea
+su etapa. No es la variante de reapertura, que revoca una firma.
 
 ### 18. Rotación de personas y reemplazos
 

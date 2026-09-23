@@ -81,7 +81,8 @@ test("40 · la bandeja tiene tope con nombre honesto, alcanza para un lote, y lo
 const MUTANTES = {
   "vuelve el nombre viejo de la perilla": { src: jsx.replace("  topeBandeja: 500,", "  topeDocsCorrida: 500,"), re: /vuelve `topeDocsCorrida`|no declara `topeBandeja`/ },
   "la bandeja no aguanta un lote": { src: jsx.replace("  topeBandeja: 500,", "  topeBandeja: 60,"), re: /no alcanza a guardar un lote de ingesta/ },
-  "renombrar sin subir el esquema": { src: jsx.replace("  cfgOper: 2,", "  cfgOper: 1,"), re: /sigue en 1/ },
+  // La versión vigente no se escribe a mano: la sonda baja a 1 la que haya (v3 desde ADR-0019).
+  "renombrar sin subir el esquema": { src: jsx.replace(/^(\s*cfgOper: )\d+,/m, "$11,"), re: /sigue en 1/ },
   "el recorte deja de contar": { src: jsx.replace("setBandejaRecortadas((n) => ({ total: n.total + r.fuera, conDueno: n.conDueno + r.fueraConDueno }));", ""), re: /no cuenta lo que saca/ },
   "el recorte vuelve a botar sin mirar de quién es": { src: jsx.replace("  for (let i = arr.length - 1; i >= 0 && fuera.size < sobra; i--) if (!arr[i].esCliente) fuera.add(arr[i].id);\n", ""), re: /no bota PRIMERO lo que no tiene dueño/ },
   "la política mira el estado de la app": { src: jsx.replace("function recortarBandeja(lista, tope) {\n  const arr = lista || [];", "function recortarBandeja(lista, tope) {\n  const arr = lista || streamFeed;"), re: /recortarBandeja lee `streamFeed`/ },

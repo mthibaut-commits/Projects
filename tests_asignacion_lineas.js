@@ -7858,6 +7858,97 @@
        `sin comité = caso 78 ${sinOk} · D1 a comité → GN ${con.porTipo.GN.monto} / GE ${con.porTipo.GE.monto} ${conOk} · catálogo declara sinComite ${catalogoOk} · adaptador lee REQUIERE_COMITE de la versión ${adaptadorOk} · 50 carteras: ${malos} descuadres, ${comiteEnGE} a comité en Express ${oroOk}`);
   }
 
+  {
+    // 163 · EL RELOJ DEL TENANT (ADR-0019, regla 64): el corte y el reinicio corren a la hora configurada —no por conteo
+    //       de corridas—, la corrida sólo abre dentro de la ventana, cambiadas las horas las siguen, y `frecuenciaMin`
+    //       deja de ser declarativa. CP-019, CP-020 y CP-121. Las funciones son puras y reciben la hora: el sustituto
+    //       legítimo del reloj (el e2e no puede moverlo).
+    const cfg163 = { horaInicio: "06:00", horaFin: "23:00", frecuenciaMin: 60 };
+    const j = (h, c) => jobDelReloj(c || cfg163, h);
+    const reloj163 = j("22:59").corte === false && j("23:00").corte === true && j("23:01").corte === false
+      && j("05:59").reinicio === false && j("06:00").reinicio === true && j("06:01").reinicio === false;
+    const ventana = j("07:30").enVentana === true && j("06:00").enVentana === true && j("22:59").enVentana === true
+      && j("23:00").enVentana === false && j("02:00").enVentana === false && j("05:59").enVentana === false;
+    const otra = { horaInicio: "07:00", horaFin: "21:00" };
+    const movidas = j("23:00", otra).corte === false && j("21:00", otra).corte === true && j("06:00", otra).reinicio === false && j("07:00", otra).reinicio === true;
+    // CP-020, con la ventana que la configuración traía antes (08:00–18:00): a las 07:30 fuera, a las 10:00 dentro.
+    const v0818 = { horaInicio: "08:00", horaFin: "18:00" };
+    const cp020 = j("07:30", v0818).enVentana === false && j("10:00", v0818).enVentana === true && j("18:00", v0818).corte === true;
+    // El reloj simulado: la corrida 0 es el reinicio del día 1, la 17 el corte (06:00…23:00 = 18 horas), la 18 el
+    // reinicio del día 2; ninguna corrida intermedia corta aunque sea múltiplo de 8 (el `HORAS_DIA` de antes).
+    const r0 = relojSimulado(0, cfg163), r8 = relojSimulado(8, cfg163), r16 = relojSimulado(16, cfg163), r17 = relojSimulado(17, cfg163),
+      r18 = relojSimulado(18, cfg163), r35 = relojSimulado(35, cfg163);
+    const simulado = r0.dia === 1 && r0.hora === "06:00" && r0.reinicio === true && r0.enVentana === true && r0.horasDia === 18
+      && r8.hora === "14:00" && !r8.corte && !r8.reinicio && r16.hora === "22:00" && !r16.corte && r16.enVentana
+      && r17.dia === 1 && r17.hora === "23:00" && r17.corte === true && r17.enVentana === false
+      && r18.dia === 2 && r18.hora === "06:00" && r18.reinicio === true && r35.dia === 2 && r35.corte === true;
+    // Cambiadas las horas, el reloj simulado las sigue: 07:00–21:00 son 15 corridas por día.
+    const rO = relojSimulado(14, otra), rO15 = relojSimulado(15, otra);
+    const simuladoMovido = rO.horasDia === 15 && rO.hora === "21:00" && rO.corte === true && rO15.dia === 2 && rO15.hora === "07:00" && rO15.reinicio === true;
+    // `frecuenciaMin` gobierna el intervalo del job (CP-019): 15 → 900.000 ms, 60 → 3.600.000 ms; sin valor, 60.
+    const intervalo = intervaloJobMs({ frecuenciaMin: 15 }) === 900000 && intervaloJobMs({ frecuenciaMin: 60 }) === 3600000 && intervaloJobMs({}) === 3600000;
+    // Los defaults del tenant son los del modelo (06:00 / 23:00), la etapa configurable y la jornada en horas se fueron,
+    // y el esquema v3 migra lo guardado: retira lo viejo, renombra conservando la elección y suelta sólo las horas que
+    // eran el default sin efecto.
+    const base = CFG_OPER_BASE.horaInicio === "06:00" && CFG_OPER_BASE.horaFin === "23:00" && CFG_OPER_BASE.corteDiario === true
+      && CFG_OPER_BASE.etapaNoGestionada === undefined && CFG_OPER_BASE.horasDia === undefined && CFG_OPER_BASE.reaperturaDiaria === undefined
+      && SCHEMA_VERSION.cfgOper >= 3;
+    const mig = MIGRACIONES.cfgOper[SCHEMA_VERSION.cfgOper]({
+      security: { horaInicio: "08:00", horaFin: "18:00", horasDia: 8, etapaNoGestionada: "oferta", reaperturaDiaria: false, tasaMinAbsoluta: 0.78, marcaPrimario: "#4F46E5" },
+      otro: { horaInicio: "07:00", reaperturaDiaria: true },
+    }, 2);
+    const migra = !!mig && mig.security.horaInicio === undefined && mig.security.horaFin === undefined && mig.security.horasDia === undefined
+      && mig.security.etapaNoGestionada === undefined && mig.security.reaperturaDiaria === undefined && mig.security.corteDiario === false
+      && mig.security.tasaMinAbsoluta === 0.78 && mig.security.marcaPrimario === undefined
+      && mig.otro.horaInicio === "07:00" && mig.otro.corteDiario === true && mig.otro.reaperturaDiaria === undefined;
+    ok("163 el corte y el reinicio corren a la hora del tenant y no por conteo de corridas: 23:00 corta, 06:00 reinicia, fuera de la ventana la corrida no abre, cambiadas las horas las siguen, y frecuenciaMin gobierna el intervalo del job",
+       reloj163 && ventana && movidas && cp020 && simulado && simuladoMovido && intervalo && base && migra,
+       `corte sólo a las 23:00 y reinicio sólo a las 06:00 ${reloj163} · ventana [06:00, 23:00) ${ventana} · 21:00/07:00 ${movidas} · CP-020 ${cp020}`
+       + ` · reloj simulado 18 corridas/día, la 17 corta y la 18 reinicia ${simulado} · movido 15/día ${simuladoMovido} · intervalo 15→900000 ${intervalo}`
+       + ` · base 06:00/23:00 sin etapaNoGestionada ni horasDia ${base} · migración v3 ${migra}`);
+  }
+
+  {
+    // 164 · AL CORTE LA SIN OFERTA SE ELIMINA Y LA QUE TIENE OFERTA NO SE TOCA; al reinicio vuelve como oportunidad NUEVA
+    //       con id propio y referencia (ADR-0019, regla 64). CP-022, CP-023 y CP-143. El corte es una función pura sobre
+    //       la lista, así que se prueba con las cinco clases de oportunidad a la vez.
+    const mk = (id, extra) => ({
+      id, _inbound: true, stage: "prospeccion", simulado: false, cliente: "Cedente " + id, rutEmisor: "76.164.164-0", deudor: "Deudor 164",
+      facturas: 2, monto: 2e6, exec: "CR", facturasOp: [],
+      facturasDisponibles: [{ id: id + "-f1", folio: 1641, monto: 1e6, deudor: "Deudor 164" }, { id: id + "-f2", folio: 1642, monto: 1e6, deudor: "Deudor 164" }],
+      historialContacto: [{ fecha: "x", canal: "Sistema", resultado: "Captada" }], ...extra });
+    const X = mk("OP-X164");                                                                                       // sin oferta
+    const S = mk("OP-S164", { stage: "oferta", simulado: true, facturasOp: [{ id: "s1", folio: 1651, monto: 1e6, deudor: "Deudor 164" }] }); // simulada, sin publicar
+    const P = mk("OP-P164", { stage: "oferta", simulado: true, ofertaCerrada: true, ofertaComunicada: true, negocioNum: "N-164", facturasOp: [{ id: "p1", folio: 1661, monto: 1e6 }] });
+    const O = mk("OP-O164", { stage: "otorgamiento", simulado: true, facturasOp: [{ id: "o1", folio: 1671, monto: 1e6 }] });
+    const G = mk("OP-G164", { stage: "giro", simulado: true, facturasOp: [{ id: "g1", folio: 1681, monto: 1e6 }] });
+    const M = mk("OP-M164", { _inbound: false });                                                                   // manual: el corte del inbound no la toca
+    const E = mk("OP-E164", { facturasOp: [{ id: "e1", folio: 1691, monto: 1e6 }] });                              // paquete elegido SIN simular: no es oferta
+    const lista = [X, S, P, O, G, M, E];
+    const antes = lista.map((d) => JSON.stringify(d));
+    const r = corteDelDia(lista);
+    const ids = (a) => a.map((d) => d.id).join(",");
+    // (a) CP-022 / CP-023: se eliminan X y E (sin oferta); S, P, O, G quedan; la manual queda; nada se mutó ni se reordenó.
+    const eliminaOk = ids(r.eliminadas) === "OP-X164,OP-E164" && ids(r.quedan) === "OP-S164,OP-P164,OP-O164,OP-G164,OP-M164" && r.gestionadas === 4
+      && lista.every((d, i) => JSON.stringify(d) === antes[i]) && r.quedan[0] === S;
+    // (b) CP-143: la que recibe oferta justo antes del corte no se elimina; la otra sí.
+    const A = mk("OP-A164"), B = mk("OP-B164");
+    const A2 = { ...A, stage: "oferta", simulado: true, facturasOp: [A.facturasDisponibles[0]] };
+    const r2 = corteDelDia([A2, B]);
+    const bordeOk = ids(r2.eliminadas) === "OP-B164" && ids(r2.quedan) === "OP-A164" && tieneOferta(A2) === true && tieneOferta(B) === false;
+    // (c) Al reinicio la eliminada vuelve como EVENTO del inbound: mismo cedente, su paquete entero, id propio y referencia.
+    const ev = eventoDeReoriginacion(X, 1);
+    const eventoOk = ev.cedente === X.cliente && ev.rutEmisor === X.rutEmisor && ev.referencia === "OP-X164" && ev.opId === "OP-X164-R1" && ev.opId !== X.id
+      && ev.facturasOp.length === 2 && ev.nFacturas === 2 && ev.monto === 2e6 && ev.eliminadaDia === 1 && ev.tipo === "factura";
+    // El id nunca se reutiliza: una segunda eliminación da -R2; el que sobrevive conserva el suyo (el corte no lo toca).
+    const idOk = idReoriginado("OP-D123") === "OP-D123-R1" && idReoriginado("OP-D123-R1") === "OP-D123-R2" && idReoriginado("OP-D123-R9") === "OP-D123-R10";
+    // (d) Sin `_inbound` no hay corte, y sin lista tampoco: la función no inventa nada.
+    const vacioOk = corteDelDia([]).eliminadas.length === 0 && corteDelDia(null).quedan.length === 0 && corteDelDia([M]).eliminadas.length === 0;
+    ok("164 al corte la oportunidad del inbound sin oferta se elimina y la que tiene oferta no se toca, cualquiera sea su etapa; al reinicio vuelve como oportunidad nueva con id propio y referencia",
+       eliminaOk && bordeOk && eventoOk && idOk && vacioOk,
+       `elimina X y E (sin oferta) y deja S/P/O/G/M intactas ${eliminaOk} · la simulada antes del corte sobrevive y la otra no ${bordeOk} · evento con referencia y -R1 ${eventoOk} · ids -R1/-R2/-R10 ${idOk} · vacío/manual ${vacioOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

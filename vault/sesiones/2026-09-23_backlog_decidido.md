@@ -147,3 +147,36 @@ que no hubo migración que hacer. La dirección «sin comité» del caso 162 com
 **Documentos:** `spec-modelo-giro.md` (§2 GE con tres condiciones, §2.1, §6, §6.1), spec del curse (M-33 implementada),
 gaps (G-20 y G-34 cerrados), HU-37 vigente, CP-104/128 (caso 162; el chip en pantalla sigue por e2e), regla 63 y la 22
 ampliada, cifras.
+
+## 5 · ADR-0019 · El corte y el reinicio por reloj del tenant; la sin oferta se elimina (regla 64, casos 163–164)
+
+**Qué cambió.** Tres funciones puras nuevas del reloj —`jobDelReloj(cfg, hora)`, `relojSimulado(corridas, cfg)`,
+`intervaloJobMs(cfg)`— y tres del corte —`tieneOferta`, `corteDelDia(deals)`, `eventoDeReoriginacion(d, dia)` con
+`idReoriginado`—. El cron ya no corta «cada `HORAS_DIA` corridas»: el efecto sobre `corridas` traduce la corrida a una
+hora y a la hora de corte cierra el día y corta (`corteDia`: elimina la del inbound sin oferta, deja el cierre en la
+bitácora y guarda el evento para el reinicio), a la hora de reinicio devuelve lo eliminado al inbound (`reinicioDia` →
+`setAcumulado`) y `correrProceso` lo abre como oportunidad nueva con `referencia` y el id `-R<n>`; `tickCron` sólo abre
+dentro de la ventana. `rolloverDia` se fue, y con él `etapaNoGestionada`, `horasDia` y `reaperturaDiaria` (→ `corteDiario`)
+en un esquema v3 con migración autocontenida. La Bandeja dice la hora simulada en vez de «hora N/8».
+
+**Lo que se decidió al escribir.**
+- **El día de la demo pasa de 8 a 18 corridas** (06:00…23:00, ambas incluidas): la semana de 5 días tarda ~5 min con el
+  reloj a 3,5 s por hora, antes ~2,3 min. Es consecuencia directa de «el corte es por reloj del tenant»; el tenant lo
+  acorta moviendo las horas o el reloj. Queda dicho para que nadie lo busque como regresión.
+- **El evento del reinicio va por `acumulado`**, como cualquier factura del stream, y la corrida de esa hora lo origina:
+  así hereda el tope de 40 por corrida, el cupo tentativo, la contactabilidad y el ejecutivo por el mismo camino que
+  todas, y «las facturas que llegaron entre el corte y el reinicio» se juntan solas porque `correrProceso` agrupa por
+  cedente. El id nuevo lo trae el evento (`opId`), porque `ev.opId` es determinista por RUT y habría reproducido el
+  eliminado.
+- **La migración v3 repite la v2 en vez de llamarla**: el gate de la regla 39 evalúa el literal `cfgOper` aislado con
+  `new Function`, así que una referencia a `MIGRACIONES.cfgOper[2]` habría reventado el gate. Está escrito en el
+  comentario de la propia migración.
+- **`intervaloJobMs` casi quedó muerta**: el auditor la cazó (sólo la usaba la suite); viaja ahora en la traza de la
+  corrida, que dice el intervalo del job en producción. Y la sonda «renombrar sin subir el esquema» de `regla_40` tenía
+  el «2» escrito a mano: ahora baja a 1 la versión que haya.
+- **La regla 61 había quedado intercalada** entre las viñetas de la 60 (M-10 la insertó tras la viñeta equivocada); se
+  devolvió a su orden en este commit.
+
+**Documentos:** spec del inbound (§6 el reloj, §10.4 el job, `topeDocsCorrida` → `topeBandeja`), spec del ciclo (§17),
+spec del curse (M-07 y M-08 implementadas; §15), gaps (G-02, G-03, GD-07 cerrados), HU-08 y HU-09 vigentes,
+CP-019/020/121/022/023/143 (casos 163–164), regla 64 y punteros en 22 y 9-bis, cifras.

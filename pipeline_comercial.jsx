@@ -608,7 +608,7 @@ const estampaPoliticas = (ts, tenant) => ({
 const SCHEMA_VERSION = {
   cxc: 1, // saldo CxC por cliente
   reglasInbound: 3, // reglas de clasificación del inbound
-  cfgOper: 2, // configuración operativa y de pricing por tenant (v2: salen los colores de marca de ADR-0005 y `topeDocsCorrida` pasa a `topeBandeja`)
+  cfgOper: 3, // configuración operativa y de pricing por tenant (v2: salen los colores de marca de ADR-0005 y `topeDocsCorrida` pasa a `topeBandeja`; v3, ADR-0019: salen `etapaNoGestionada` y `horasDia`, `reaperturaDiaria` pasa a `corteDiario` y las horas por defecto 08:00/18:00 dejan paso a 06:00/23:00)
   permisos: 1, // permisos de visibilidad por usuario
   roles: 1, // rol de cada usuario (por tenant)
   areas: 1, // areas que aprueban excepciones (por tenant)
@@ -718,6 +718,41 @@ const MIGRACIONES = {
           if (copia.topeBandeja == null) copia.topeBandeja = copia.topeDocsCorrida;
           delete copia.topeDocsCorrida;
         }
+        out[tenantId] = copia;
+      }
+      return out;
+    },
+    // ADR-0019 (regla 64): el corte del día pasó a ser por RELOJ del tenant y a ELIMINAR la oportunidad sin oferta. La
+    // v3 retira `etapaNoGestionada` (el criterio es «tiene oferta», no una etapa) y `horasDia` (el día va del reinicio
+    // al corte), renombra `reaperturaDiaria` → `corteDiario` conservando lo que el tenant eligió, y suelta las horas
+    // que eran el default viejo sin efecto (08:00 / 18:00) para que manden 06:00 / 23:00; una hora que el tenant cambió
+    // se conserva. Repite lo de la v2 en vez de llamarla: el gate de la regla 39 evalúa este literal aislado del resto
+    // del fuente, y una configuración v1 tiene que llegar entera a la v3 por una sola ruta.
+    3: (datos) => {
+      if (!datos || typeof datos !== "object" || Array.isArray(datos)) return null;
+      const out = {};
+      for (const tenantId of Object.keys(datos)) {
+        const cfg = datos[tenantId];
+        if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) {
+          out[tenantId] = cfg;
+          continue;
+        }
+        const copia = { ...cfg };
+        delete copia.marcaPrimario;
+        delete copia.marcaCta;
+        delete copia.marcaPanel;
+        if (copia.topeDocsCorrida != null) {
+          if (copia.topeBandeja == null) copia.topeBandeja = copia.topeDocsCorrida;
+          delete copia.topeDocsCorrida;
+        }
+        delete copia.etapaNoGestionada;
+        delete copia.horasDia;
+        if (copia.reaperturaDiaria !== undefined) {
+          if (copia.corteDiario === undefined) copia.corteDiario = !!copia.reaperturaDiaria;
+          delete copia.reaperturaDiaria;
+        }
+        if (copia.horaInicio === "08:00") delete copia.horaInicio;
+        if (copia.horaFin === "18:00") delete copia.horaFin;
         out[tenantId] = copia;
       }
       return out;
@@ -4644,13 +4679,114 @@ function volumenCesionarios() {
   _volCes = m;
   return m;
 }
+// ── EL RELOJ DEL TENANT Y EL CORTE DEL DÍA (ADR-0019, regla 64) ─────────────────────────────────
+// Puras: reciben la configuración, la hora o la lista, y dicen qué toca. Son el sustituto legítimo del reloj en la
+// suite —el e2e no puede mover la hora— y lo que en producción consume el job del backend.
+const horaAMin = (hhmm) => {
+  const [h, m] = String(hhmm || "00:00")
+    .split(":")
+    .map((x) => +x || 0);
+  return (((h * 60 + m) % 1440) + 1440) % 1440;
+};
+const minAHora = (min) => {
+  const t = ((min % 1440) + 1440) % 1440;
+  return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+};
+// El intervalo del job del inbound en producción, en ms: `frecuenciaMin` deja de ser declarativa.
+const intervaloJobMs = (cfg) => Math.max(1, +((cfg || {}).frecuenciaMin || 60)) * 60000;
+// Qué toca a la hora `ahora` («HH:MM») según el tenant: reinicio, corte y si la corrida puede abrir oportunidades. La
+// ventana es [reinicio, corte): a la hora del corte no se abre nada, se corta. Admite una ventana que cruce medianoche.
+function jobDelReloj(cfg, ahora) {
+  const c = cfg || {};
+  const t = horaAMin(ahora),
+    ini = horaAMin(c.horaInicio || "06:00"),
+    fin = horaAMin(c.horaFin || "23:00");
+  const enVentana = ini <= fin ? t >= ini && t < fin : t >= ini || t < fin;
+  return { hora: minAHora(t), reinicio: t === ini, corte: t === fin, enVentana };
+}
+// El reloj SIMULADO de la demo: cada corrida es una hora del tenant y el día va del reinicio al corte, ambos incluidos.
+// El conteo de corridas ya no decide el cierre: sólo se traduce a una hora, y la hora decide.
+function relojSimulado(corridas, cfg) {
+  const c = cfg || {};
+  const ini = horaAMin(c.horaInicio || "06:00"),
+    fin = horaAMin(c.horaFin || "23:00");
+  const horasDia = Math.floor(((((fin - ini) % 1440) + 1440) % 1440) / 60) + 1;
+  const n = Math.max(0, Math.floor(+corridas || 0));
+  const dia = Math.floor(n / horasDia) + 1;
+  const hora = minAHora(ini + (n % horasDia) * 60);
+  return { dia, hora, horasDia, ...jobDelReloj(c, hora) };
+}
+// ¿La oportunidad tiene oferta? El ejecutivo la simuló —etapa Oferta o posterior— o la oferta ya avanzó. Un paquete
+// elegido sin simular sigue en Prospección: no es oferta todavía (regla 12-bis).
+const tieneOferta = (d) => !!d && (!!d.simulado || (d.stage != null && d.stage !== "prospeccion"));
+// EL CORTE, puro: separa lo que se elimina —del inbound y sin oferta— de lo que queda. Conserva el orden y NO muta la
+// entrada; `gestionadas` cuenta las del inbound que sobreviven, que es la cifra que la bitácora dice.
+function corteDelDia(deals) {
+  const eliminadas = [],
+    quedan = [];
+  let gestionadas = 0;
+  for (const d of deals || []) {
+    if (!d) continue;
+    if (d._inbound && !tieneOferta(d)) eliminadas.push(d);
+    else {
+      quedan.push(d);
+      if (d._inbound) gestionadas++;
+    }
+  }
+  return { eliminadas, quedan, gestionadas };
+}
+// El id de la que se origina de nuevo: el de la eliminada más `-R<n>`. Nunca el mismo: nada de lo eliminado cuelga de él.
+const idReoriginado = (idAnterior) => {
+  const m = /^(.*)-R(\d+)$/.exec(String(idAnterior || ""));
+  return m ? `${m[1]}-R${+m[2] + 1}` : `${idAnterior}-R1`;
+};
+// El EVENTO con que la eliminada vuelve al inbound al reinicio: mismo cedente, su paquete entero (lo que estaba en la
+// oferta vacía más lo disponible) y la referencia. La corrida lo trata como a cualquier otro: agrupa por cedente y
+// origina —con lo que además haya llegado del mismo cedente entre el corte y el reinicio—.
+function eventoDeReoriginacion(d, diaCorte) {
+  const pool = [...(d.facturasOp || []), ...(d.facturasDisponibles || [])].filter(Boolean);
+  const monto = pool.length ? +pool.reduce((s, f) => s + (f.monto || 0), 0).toFixed(1) : d.monto || 0;
+  return {
+    id: `REO-${d.id}-${diaCorte}`,
+    tipo: "factura",
+    cedente: d.cliente,
+    rutEmisor: d.rutEmisor,
+    pagador: d.deudor,
+    deudor: d.deudor,
+    tag: d.tag,
+    sector: d.sector,
+    tasa: d.tasa,
+    anticipo: d.anticipo,
+    esCliente: !!d.esCliente,
+    reglaId: d.reglaId,
+    cat: d.cat,
+    sowTendencia: d.sowTendencia,
+    sowFlecha: d.sowFlecha,
+    sowActualPct: d.sowActualPct,
+    sowTargetPct: d.sowTargetPct,
+    sowGapPct: d.sowGapPct,
+    superaTarget: d.superaTarget,
+    conDescuento: d.conDescuento,
+    spreadPromo: d.spreadPromo,
+    canalRegla: d.canalContacto,
+    nFacturas: pool.length || d.facturas || 0,
+    monto,
+    facturasOp: pool,
+    opId: idReoriginado(d.id),
+    referencia: d.id,
+    eliminadaDia: diaCorte,
+  };
+}
 const CFG_OPER_KEY = "fs_cfg_oper";
 const CFG_OPER_BASE = {
-  horaInicio: "08:00", // ventana horaria de operación (inbound + actualizaciones)
-  horaFin: "18:00",
-  horasDia: 8, // horas hábiles por jornada
+  // EL RELOJ DEL TENANT (ADR-0019, regla 64). El job del inbound REINICIA el día a `horaInicio` —vuelve a abrir, como
+  // oportunidades nuevas, las que el corte eliminó— y CORTA a `horaFin`: la oportunidad sin oferta se elimina y la que
+  // tiene oferta no se toca. Entre las dos horas corre la corrida; fuera de ellas no se abre nada. En la demo cada
+  // corrida es una hora simulada (`cronMs`) y el día va del reinicio al corte: el conteo de corridas ya no decide nada.
+  horaInicio: "06:00", // hora de REINICIO del día (el modelo del negocio: 06:00)
+  horaFin: "23:00", // hora de CORTE del día (el modelo del negocio: 23:00)
   diasSemana: 5,
-  frecuenciaMin: 60, // cada cuántos minutos se consulta el libro de ventas por facturas nuevas
+  frecuenciaMin: 60, // cada cuántos minutos corre el job del inbound en producción (`intervaloJobMs`); la demo comprime la hora en `cronMs`
   cronMs: 3500, // equivalencia en la simulación (1 «hora» = N ms)
   // TAMAÑO DE LA BANDEJA, no «tope por corrida»: es lo único para lo que se usa. Con el nombre viejo y
   // en 60, contra lotes de 250, la bandeja botaba casi todo lo que entraba en cada lote — y con ello
@@ -4661,8 +4797,11 @@ const CFG_OPER_BASE = {
   loteStream: 250, // tamaño de lote de ingesta
   latenciaBaseMs: 700, // latencia simulada del recálculo (API + cómputo)
   latenciaPorDocMs: 45, // incremento por documento — anticipa operaciones con miles de facturas
-  reaperturaDiaria: true, // al cierre del día, eliminar y reabrir las oportunidades no gestionadas
-  etapaNoGestionada: "prospeccion", // se considera «no gestionada» la que quedó en esta etapa
+  // CORTE DIARIO (ADR-0019): a `horaFin` la oportunidad del inbound SIN oferta se elimina —queda en la bitácora del
+  // sistema con su id, su cedente y su paquete— y al reinicio el inbound la vuelve a originar con id propio y
+  // `referencia`. La que tiene oferta no se toca, cualquiera sea su etapa: el criterio es «tiene oferta», no una etapa
+  // configurable (se retiró `etapaNoGestionada`).
+  corteDiario: true,
   // — Simulación y pricing: cómo el factoring construye y valoriza una oferta —
   tasaModo: "mayor", // "riesgo" = siempre la ponderada por riesgo · "ultima" = la del último negocio · "mayor" = la mayor de ambas
   costoFondo: 0.58, // % mensual que se suma al spread del deudor
@@ -18417,7 +18556,7 @@ function InboundStream({
       </div>
       <div className="mt-2 flex items-center justify-between rounded-md px-2 py-1" style={{ backgroundColor: "#F1ECFF" }}>
         <span className="t10" style={{ color: C.indigo }}>
-          Día {dia} · hora {horaDia}/8 · {acumuladas} en cola
+          Día {dia} · {horaDia} · {acumuladas} en cola
         </span>
         <button
           onClick={onCorrer}
@@ -34245,18 +34384,24 @@ function CfgOperacion({ cfgOper, setCfgOper }) {
         distintos.
       </div>
       <div className="mt-3 grid gap-2.5 md:grid-cols-3">
-        <CfgCampo l="Ventana horaria" hint="Horario en que la plataforma ingesta documentos y actualiza oportunidades.">
+        <CfgCampo
+          l="Reinicio y corte del día"
+          hint="Horas del tenant que el job consume: al reinicio el inbound vuelve a abrir, como oportunidades nuevas, las que el corte eliminó; al corte se elimina la oportunidad sin oferta y la que tiene oferta no se toca. Entre las dos corre la corrida; en la demo cada corrida es una hora simulada entre ambas."
+        >
           <div className="flex items-center gap-2">
+            <span className="t10" style={{ color: C.faint }}>
+              reinicio
+            </span>
             <input type="time" value={cfg.horaInicio} onChange={(e) => set("horaInicio", e.target.value)} {...inp} />
             <span className="t10" style={{ color: C.faint }}>
-              a
+              corte
             </span>
             <input type="time" value={cfg.horaFin} onChange={(e) => set("horaFin", e.target.value)} {...inp} />
           </div>
         </CfgCampo>
         <CfgCampo
           l="Frecuencia de actualización"
-          hint="Cada cuántos minutos se consulta el libro de ventas / API por facturas nuevas del cliente. DECLARATIVA: es el valor de producción; en el demo la corrida la marca «1 hora simulada»."
+          hint="Cada cuántos minutos corre el job del inbound en producción: es el intervalo que el job consume. En la demo la corrida es cada «hora» simulada, y esa hora dura lo que diga la velocidad del reloj."
         >
           <div className="flex items-center gap-2">
             <input {...num("frecuenciaMin", 5, 720, 5)} />
@@ -34265,12 +34410,8 @@ function CfgOperacion({ cfgOper, setCfgOper }) {
             </span>
           </div>
         </CfgCampo>
-        <CfgCampo l="Jornada" hint="Horas hábiles por día y días hábiles por semana.">
+        <CfgCampo l="Jornada" hint="Días hábiles por semana. Las horas del día las fijan el reinicio y el corte.">
           <div className="flex items-center gap-2">
-            <input {...num("horasDia", 1, 24)} />
-            <span className="t10" style={{ color: C.faint }}>
-              h/día
-            </span>
             <input {...num("diasSemana", 1, 7)} />
             <span className="t10" style={{ color: C.faint }}>
               d/sem
@@ -34310,29 +34451,12 @@ function CfgOperacion({ cfgOper, setCfgOper }) {
           </div>
         </CfgCampo>
         <CfgCampo
-          l="Reapertura diaria"
-          hint="Al cierre del día, las oportunidades no gestionadas se cierran y se reabren con el paquete de facturas vigente en la BD."
+          l="Corte del día"
+          hint="Al corte del tenant, la oportunidad del inbound sin oferta se elimina y el inbound la vuelve a originar al reinicio, con id propio y referencia; la que tiene oferta no se toca, cualquiera sea su etapa."
         >
           <label className="flex items-center gap-2 t11" style={{ color: C.ink }}>
-            <input type="checkbox" checked={!!cfg.reaperturaDiaria} onChange={(e) => set("reaperturaDiaria", e.target.checked)} /> Activada
+            <input type="checkbox" checked={!!cfg.corteDiario} onChange={(e) => set("corteDiario", e.target.checked)} /> Activado
           </label>
-        </CfgCampo>
-        <CfgCampo
-          l="Etapa «no gestionada»"
-          hint="Etapa en la que una oportunidad se considera sin gestión al cierre del día. Cualquier edición la promueve a Oferta y Negociación."
-        >
-          <select
-            value={cfg.etapaNoGestionada}
-            onChange={(e) => set("etapaNoGestionada", e.target.value)}
-            className="w-full rounded-md px-2 py-1.5 t11"
-            style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}
-          >
-            {STAGES.filter((s) => ["prospeccion", "oferta"].includes(s.id)).map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
         </CfgCampo>
       </div>
       <div className="mt-5 text-lg font-semibold" style={{ color: C.ink }}>
@@ -48699,11 +48823,12 @@ export default function PipelineComercial() {
   const STREAM_LOTE = cfgT.loteStream,
     STREAM_TOPE = cfgT.topeBandeja,
     CRON_MS = cfgT.cronMs,
-    HORAS_DIA = cfgT.horasDia,
     DIAS_SEMANA = cfgT.diasSemana,
     CONT_MS = 600;
-  const dia = Math.floor(corridas / HORAS_DIA) + 1;
-  const horaDia = corridas % HORAS_DIA;
+  // El reloj simulado (ADR-0019, regla 64): cada corrida es una hora del tenant, del reinicio al corte.
+  const reloj = relojSimulado(corridas, cfgT);
+  const dia = reloj.dia;
+  const horaDia = reloj.hora;
   useEffect(() => {
     if (!streaming) return;
     if (streamQueue.length === 0) {
@@ -48873,7 +48998,10 @@ export default function PipelineComercial() {
         };
       } else {
         nuevosCreados++;
-        const ev = facts[0];
+        // Si entre los eventos del cedente viene el de una oportunidad eliminada al corte, ÉSE manda (ADR-0019): trae el id
+        // nuevo (`-R<n>`) y la referencia. Con `facts[0]` a secas, una factura nueva del mismo cedente llegada entre el corte
+        // y el reinicio habría hecho renacer la oportunidad con el id eliminado y sin referencia.
+        const ev = facts.find((f) => f && f.referencia) || facts[0];
         const porDeudor = {};
         if (fopReal.length)
           fopReal.forEach((f) => {
@@ -48906,6 +49034,9 @@ export default function PipelineComercial() {
         const cat = ev.cat || (nCat1 + nCat4 > 0 ? catDeMix(nCat1, nCat4) : pctBlanca >= 60 ? "CAT-1" : "CAT-2");
         const dealObj = {
           id: ev.opId,
+          // La que nace al REINICIO trae la referencia a la que el corte eliminó (ADR-0019): es una originación con
+          // id propio, no una reapertura, y la referencia es lo único que la une con la anterior.
+          referencia: ev.referencia || undefined,
           stage: "prospeccion",
           tag: ev.tag,
           facturas: sumFacts,
@@ -48995,6 +49126,20 @@ export default function PipelineComercial() {
           },
           ...(dealObj.historialContacto || []),
         ];
+        if (ev.referencia) {
+          dealObj.status = `Originada de nuevo al reinicio · desde ${ev.referencia}`;
+          dealObj.historialContacto = [
+            {
+              fecha: nowStamp(),
+              canal: "Sistema",
+              actor: "Sistema",
+              esEvento: true,
+              resultado: `Originada de nuevo al reinicio del día${ev.eliminadaDia != null ? ` ${ev.eliminadaDia + 1}` : ""}: ${ev.referencia} se eliminó al corte sin oferta; ésta nace con id propio, las facturas que tenía más las que llegaron, sin simular y con la oferta vacía`,
+              exito: true,
+            },
+            ...dealObj.historialContacto,
+          ];
+        }
         // La sesión de WhatsApp se arma con el deal completo, para que la oferta del bot tenga la
         // estructura detallada (cantidad, monto, facturas, tasa, monto a girar…).
         if (dealObj.canalContacto === "WhatsApp")
@@ -49051,7 +49196,14 @@ export default function PipelineComercial() {
       "info",
       "motor",
       `Corrida del inbound: ${nuevos.length} oportunidad(es) nueva(s), ${idsWarn.length} actualizada(s) con facturas nuevas, ${pendientes.length} documento(s) re-encolados`,
-      { nuevas: nuevos.length, conWarning: idsWarn.length, reencolados: pendientes.length, topeBandeja: cfgT.topeBandeja },
+      // El intervalo del job en producción viaja en la traza (regla 64): en la demo la corrida es cada «hora» simulada.
+      {
+        nuevas: nuevos.length,
+        conWarning: idsWarn.length,
+        reencolados: pendientes.length,
+        topeBandeja: cfgT.topeBandeja,
+        intervaloJobMs: intervaloJobMs(cfgT),
+      },
     );
     setDeals((prev) => {
       const ids = new Set(prev.map((d) => d.id));
@@ -49541,7 +49693,16 @@ export default function PipelineComercial() {
   };
   const tickCron = () => {
     if (pausaRef.current) return;
-    correrProceso();
+    // La corrida abre oportunidades sólo DENTRO de la ventana del tenant (regla 64): a la hora del corte no se abre
+    // nada —se corta—, y lo que llegue queda acumulado para el reinicio.
+    const r = relojSimulado(corridas, cfgT);
+    if (r.enVentana) correrProceso();
+    else
+      logSys("info", "cierre-dia", `Fuera de ventana (${r.hora}): la corrida no abre oportunidades hasta el reinicio de las ${cfgT.horaInicio}`, {
+        dia: r.dia,
+        hora: r.hora,
+        enCola: acumulado.length,
+      });
     evaluarPerdidas();
     setCorridas((n) => n + 1);
   };
@@ -49579,81 +49740,62 @@ export default function PipelineComercial() {
   //  • La aprobación del especialista en Otorgamiento → Giro.
   // Lo único periódico es el inbound (toma facturas recibidas y aplica las reglas cada 1 hora).
 
-  // Rollover de día: las oportunidades que NO pasaron a Negociación (siguen en Prospección)
-  // se eliminan y se vuelven a crear incorporando las facturas pendientes (re-simuladas).
-  // Las que avanzaron a Oferta/Negociación o más quedan intactas (ejecutivo cerrando).
-  // CIERRE DE DÍA (server-side ready): las oportunidades NO GESTIONADAS —las que quedaron en la etapa
-  // configurada (por defecto «Prospección»)— se ELIMINAN y se REABREN al día siguiente como una
-  // oportunidad nueva, con el paquete de facturas actualizado según lo que exista en la BD: las que ya
-  // tenía más las que llegaron durante el día y no se incorporaron. En producción sería un job nocturno
-  // del backend que cierra y re-origina, notificando por socket a las sesiones abiertas.
-  const rolloverDia = (nDia) => {
-    if (!cfgT.reaperturaDiaria) {
-      logSys("info", "cierre-dia", `Día ${nDia}: reapertura diaria deshabilitada en la configuración del tenant`);
+  // CORTE DEL DÍA (ADR-0019, regla 64): a la hora de corte del tenant, la oportunidad del inbound SIN oferta se
+  // ELIMINA —deja de existir para el ejecutivo y para el tubo, y la bitácora del sistema registra el cierre con su id,
+  // su cedente y su paquete— y la que TIENE oferta no se toca, cualquiera sea su etapa. «Gestionada» es la que tiene
+  // oferta (el ejecutivo la simuló: Oferta o posterior); un paquete elegido sin simular no es oferta todavía. Hasta el
+  // 23-09-2026 esto REABRÍA con el mismo id la que quedaba en la etapa configurada como «no gestionada»: el modelo
+  // dice eliminar y el usuario lo reafirmó al precisar cuáles no se eliminan. Lo eliminado queda pendiente de
+  // REINICIO: el inbound lo vuelve a originar como oportunidad nueva, con id propio y referencia (`reinicioDia`).
+  // En producción son dos jobs del backend a la hora del tenant; acá los dispara el reloj simulado.
+  const pendReinicioRef = useRef([]);
+  const corteDia = (nDia) => {
+    if (!cfgT.corteDiario) {
+      logSys("info", "cierre-dia", `Día ${nDia}: corte diario deshabilitado en la configuración del tenant`);
       return;
     }
-    const etapaNG = cfgT.etapaNoGestionada || "prospeccion";
-    let reabiertas = 0;
-    setDeals((prev) =>
-      prev.map((d) => {
-        if (!(d._inbound && d.stage === etapaNG)) return d;
-        const monto = +((d.monto || 0) + (d.nuevasFacturasMonto || 0)).toFixed(1);
-        const facturas = (d.facturas || 0) + (d.nuevasFacturas || 0);
-        // Paquete re-armado desde la BD: se re-escalan los deudores y se vuelve a itemizar (facturasOp: undefined).
-        const factor = (d.monto || 0) > 0 ? monto / d.monto : 1;
-        const deudores = (d.deudores || []).map((x) => ({
-          ...x,
-          monto: +((x.monto || 0) * factor).toFixed(1),
-          facturas: Math.max(1, Math.round((x.facturas || 1) * factor)),
-        }));
-        // EL ID NO CAMBIA. Reabrir es re-originar el PAQUETE, no darle otra identidad a la operación:
-        // el id es la clave de todo lo que cuelga de ella —el ticket con que se abrió el detalle en su
-        // pestaña, los repositorios por operación (visado, verificaciones, versiones, giro), el índice
-        // de folios comprometidos, la bitácora— y renombrarlo los orfanaba a todos de una vez, en
-        // silencio. Lo que se veía: con el detalle abierto, `nex-simulado` viajaba con el id del día en
-        // que se abrió, el tubo ya tenía otro y el mensaje se descartaba — la oferta quedaba simulada en
-        // el detalle y «Sin simular» en el tubo, que es justo lo que ese aviso viene a evitar.
-        // `OP-R${nDia}${últimos4}` tenía además una colisión propia: dos oportunidades cuyos ids
-        // terminan en los mismos 4 dígitos quedaban con el MISMO id el mismo día. La reapertura se
-        // cuenta en su propio campo, que es lo que el `status` y la bitácora ya decían con palabras.
-        reabiertas++;
-        return {
-          ...d,
-          reabiertaDia: nDia,
-          reaperturas: (d.reaperturas || 0) + 1,
-          stage: etapaNG,
-          monto,
-          facturas,
-          deudores,
-          // Reabrir es originar de nuevo: vuelve SIN SIMULAR y con la oferta vacía. Antes se re-simulaba
-          // con `finanzasDe`, así que al día siguiente aparecían en el tubo con tasa y giro que nadie
-          // había calculado —y ese precio, además, nacía vencido.
-          facturasOp: [],
-          simulado: false,
-          tasaDescuento: undefined,
-          comision: undefined,
-          montoDescuento: undefined,
-          nuevasFacturas: 0,
-          nuevasFacturasMonto: 0,
-          warning: false,
-          actualizando: false,
-          status: `Reabierta (día ${nDia}) · paquete actualizado`,
-          time: nowStamp(),
-          tProsp: Date.now(),
-          subSeed: rndDet(`seed|${d.id}|d${nDia}`),
-          historialContacto: traza(
-            d,
-            `No gestionada al cierre del día ${nDia - 1}: se cierra y se reabre con el paquete vigente en la BD (${facturas} doc. · ${fmtMM(monto)})`,
-          ),
-        };
-      }),
+    const r = corteDelDia(dealsRef.current || []);
+    r.eliminadas.forEach((d) =>
+      logSys(
+        "info",
+        "cierre-dia",
+        `Corte del día ${nDia} (${cfgT.horaFin}): se elimina ${d.id} · ${d.cliente} · ${d.facturas || 0} doc. · ${fmtMM(d.monto || 0)} · sin oferta`,
+        {
+          operacion: d.id,
+          cedente: d.cliente,
+          rutEmisor: d.rutEmisor,
+          facturas: d.facturas || 0,
+          monto: d.monto || 0,
+          paquete: [...(d.facturasOp || []), ...(d.facturasDisponibles || [])].map((f) => f && f.folio).filter(Boolean),
+        },
+      ),
     );
+    pendReinicioRef.current = [...pendReinicioRef.current, ...r.eliminadas.map((d) => eventoDeReoriginacion(d, nDia))];
+    if (r.eliminadas.length) {
+      const idsElim = new Set(r.eliminadas.map((d) => d.id));
+      setDeals((prev) => prev.filter((d) => !idsElim.has(d.id)));
+      setSelected((sel) => (sel && idsElim.has(sel.id) ? null : sel));
+    }
     logSys(
       "info",
       "cierre-dia",
-      `Cierre del día ${nDia - 1}: ${reabiertas} oportunidad(es) no gestionada(s) en «${stageName(etapaNG)}» se cerraron y reabrieron con el paquete vigente`,
-      { dia: nDia, reabiertas, etapaNoGestionada: etapaNG },
+      `Corte del día ${nDia} (${cfgT.horaFin}): ${r.eliminadas.length} oportunidad(es) sin oferta eliminada(s) · ${r.gestionadas} con oferta intacta(s)`,
+      { dia: nDia, eliminadas: r.eliminadas.map((d) => d.id), gestionadas: r.gestionadas },
     );
+  };
+  // REINICIO DEL DÍA: lo que el corte eliminó vuelve al inbound como EVENTOS, y la corrida de esa hora lo origina de
+  // nuevo —id propio, `referencia` a la eliminada, las facturas que tenía más las que llegaron, sin simular y con la
+  // oferta vacía—. No es una reapertura: es una originación (regla 5, regla 64).
+  const reinicioDia = (nDia) => {
+    const evs = pendReinicioRef.current;
+    pendReinicioRef.current = [];
+    logSys(
+      "info",
+      "cierre-dia",
+      `Reinicio del día ${nDia} (${cfgT.horaInicio}): ${evs.length} oportunidad(es) eliminada(s) al corte vuelven al inbound para originarse de nuevo`,
+      { dia: nDia, referencias: evs.map((e) => e.referencia) },
+    );
+    if (evs.length) setAcumulado((prev) => [...prev, ...evs]);
   };
   // Al cerrar un día: pausar, calcular estadísticas y pedir aceptación.
   const statsDelDia = (diaNum) => {
@@ -49680,15 +49822,14 @@ export default function PipelineComercial() {
   };
   // Abre el resumen del día EN CURSO sin cerrar el día (solo vista).
   const verResumenDiario = () => {
-    const diaActual = Math.floor(corridas / HORAS_DIA) + 1;
+    const diaActual = relojSimulado(corridas, cfgT).dia;
     setResumenInfo({ dia: diaActual, stats: statsDelDia(diaActual), soloVista: true });
     setReporteGestion("resumen");
   };
   const cerrarDiaRef = useRef(null);
-  cerrarDiaRef.current = () => {
+  cerrarDiaRef.current = (diaCerrado) => {
     // Cierre de día AUTOMÁTICO (sin modal): acumula el resumen del día y continúa la simulación al día
     // siguiente sin interrumpir. Sólo al terminar la SEMANA se detiene y se muestra el reporte semanal.
-    const diaCerrado = corridas / HORAS_DIA;
     const stats = statsDelDia(diaCerrado);
     setReporte((r) => [...r, stats]);
     setKpiHist((h) =>
@@ -49703,11 +49844,17 @@ export default function PipelineComercial() {
       setStreaming(false);
       setFinSetModal(true);
     } else {
-      rolloverDia(diaCerrado + 1); // la simulación sigue corriendo (no se pausa)
+      corteDia(diaCerrado); // la simulación sigue corriendo (no se pausa): al reinicio vuelve lo eliminado
     }
   };
+  const reinicioDiaRef = useRef(null);
+  reinicioDiaRef.current = reinicioDia;
+  // EL RELOJ DECIDE (regla 64): a la hora de corte se cierra el día y se corta; a la hora de reinicio de un día que no
+  // es el primero, lo eliminado vuelve al inbound. Ya no es «cada N corridas»: el conteo sólo se traduce a una hora.
   useEffect(() => {
-    if (corridas > 0 && corridas % HORAS_DIA === 0) cerrarDiaRef.current();
+    const r = relojSimulado(corridas, cfgT);
+    if (corridas > 0 && r.corte) cerrarDiaRef.current(r.dia);
+    if (corridas > 0 && r.reinicio) reinicioDiaRef.current(r.dia);
   }, [corridas]);
   // Muestreo continuo del conteo por etapa (ventana móvil que avanza con el tiempo).
   const dealsRef = useRef(deals);

@@ -20,7 +20,7 @@ implementaciones cumplen el mismo contrato y hay que mantenerlas en sincronía.*
 npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx   # sin errores TS1
 node build_app.mjs                                                                # valida los sha256 de vendor/
 node --test "tests/contract/*.test.mjs"                                           # gates de contrato (vault, índice, fuente, hooks)
-PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                       # la suite: 162 casos en ChromiumPLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs              # si el cambio toca la UI
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                       # la suite: 164 casos en ChromiumPLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs              # si el cambio toca la UI
 ```
 
 ## Por dónde empezar
