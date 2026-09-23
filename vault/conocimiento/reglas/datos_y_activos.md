@@ -94,7 +94,9 @@ timestamp: 2026-09-17T15:29:14Z
       multiplicaba por mil. Esa última es la peor de las tres: quien implementara la entrega leyendo el layout
       habría enviado cifras **mil veces mayores**, y nada lo habría dicho — un margen de $40.000.000 y uno de
       $40.000.000.000 se ven los dos plausibles en la ficha de una empresa.
-    - **El sufijo `_M` (MILES) sí existe y se queda**, porque está declarado y es consistente de punta a punta:
+    - ~~**El sufijo `_M` (MILES) sí existe y se queda**~~ — **REEMPLAZADO por la regla 48 al día siguiente**:
+      consistente sí, pero consistentemente cuantizado de a $1.000. El texto original se conserva porque explica
+      el criterio con el que se decidió, que es lo que la 48 corrige. Decía:
       el generador lo produce en miles, el layout lo dice y el lector lo pasa a pesos antes de formatear. Lo que
       no puede pasar es que un layout lo llame de una forma y el sistema lo use de otra.
     - **Y se abrevia en UNA escala.** El explicador de criterios rendía los umbrales como «$20M», que es
@@ -105,3 +107,33 @@ timestamp: 2026-09-17T15:29:14Z
       otra mitad de por qué sobrevivió. Cero es una **regla**, no un snapshot: el sistema no tiene ningún campo en
       millones, así que ningún candidato es legítimo. Con su sonda negativa, que planta las dos formas y comprueba
       que multiplicar por MIL no se reporta.
+
+48. **TODO GENERADOR PRODUCE EN PESOS. Ningún activo lleva sufijo de escala** (23-09-2026, instrucción del
+    usuario: «todos los generadores que produzcan en pesos, no en miles ni millones, o si no se pierde
+    precisión»). **Reemplaza el punto de la regla 47 que dejaba vivir el sufijo `_M` (MILES)**: era
+    consistente de punta a punta, sí, pero consistentemente cuantizado de a $1.000.
+    - **Lo que se perdía, medido.** Veinte campos de cuatro activos viajaban en miles. Cada uno quedaba
+      cuantizado al múltiplo de $1.000 más cercano: un pagaré de $450.678.123 se guardaba como `450678` y
+      volvía como $450.678.000. Es el mismo defecto del 14-09-2026 —cuando la factura entraba cuantizada de
+      a $10.000— una escala más abajo, y por eso menos visible.
+    - **Y no era sólo presentación.** `MNT_PAGARES` entra en la comparación de **C02** («Pagaré con Monto
+      Suficiente para Cartera»): el criterio comparaba una cifra cuantizada contra el uso exacto de la
+      cartera más el monto de la simulación. `V03` y `V04` son **denominadores de una razón que decide** en
+      el predictor de verificación.
+    - **Qué cambió**: los acumuladores internos de `verificacion.js` y `plataforma360.js` dejan de llevar
+      millones (`p.mm`) y llevan pesos (`p.pesos`); los rangos de `riesgo_bice.js` se declaran en pesos; y
+      los veinte campos pierden el sufijo — `V03_MNT_COMPRA_3M`, `V04_VENTA_PROM_3M`, `V10_MNT_PAGADO_3M`,
+      `MNT_PAGARES`, `CMF_DEUDA_DIRECTA`, `CMF_DEUDA_INDIRECTA`, `DEUDA_PREVISIONAL`, `ACHEF_VIGENTE`,
+      `PATRIMONIO`, `GENERACION`, `MARGEN_ULT_MES`, `MARGEN_12M`, `COLOC_PROM_12M`, `COMISION_ULT_OP`,
+      `VENTAS_A1..A3` y `VENTAS_SII_A1..A3`. Con ellos se van **veinte multiplicaciones por mil** del
+      fuente: diez en los lectores y diez en los sitios que formateaban.
+    - **El caso 115 se RE-ANCLA, no se afloja.** Comparaba el valor leído contra `celda × 1000`; ahora lo
+      compara contra la celda **tal cual**, que es una exigencia más fuerte: cualquier factor —el ×1.000 de
+      antes o el ÷1.000 del defecto original— rompe la igualdad. Sigue midiendo sobre 200 filas reales del
+      A10 y no contra un orden de magnitud.
+    - **Un layout sin sufijos también es un layout sin ambigüedad.** El `_M` obligaba a que tres cosas
+      dijeran lo mismo —el generador, la declaración y el lector— y el 23-09 se encontró que en A11 no lo
+      decían: el layout declaraba millones donde el generador ponía miles. Sin sufijo no hay nada que
+      sincronizar.
+    - Gate: el caso **115** (el activo calza peso a peso sobre 200 filas), `generador.test.mjs` (el punto
+      fijo se conserva) y la línea base **cero** de `auditar_unidades` en `auditores.test.mjs`.

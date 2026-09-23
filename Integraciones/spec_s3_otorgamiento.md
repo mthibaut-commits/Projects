@@ -1,10 +1,10 @@
 # Spec — s3_otorgamiento.csv (Activo A16)
 
-**Versión 3.0.0 · 23-09-2026 · NEX Factoring**
+**Versión 4.0.0 · 23-09-2026 · NEX Factoring**
 
 **Propósito:** variables del **Modelo de Riesgo v1.0** para evaluar el catálogo de otorgamiento **C01–C52 (cliente)**, **D01–D23 (deudor)** y **O01–O04 (operación)**. Monta la sección OTORGAMIENTO de la **tabla interna**; el motor de NEX evalúa localmente los tramos (risk tiers) y niveles (N1..N5 / Comité) contra esta tabla, sin recalcular nada en origen.
 **Transporte:** S3 · `s3://nex-ingesta-<ambiente>/otorgamiento/OTORGAMIENTO_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** upserts vía API **A22** (dominio `OTORGAMIENTO`, mismos nombres de campo). Full-replace diario + upserts.
-**Unidades:** montos en **pesos**; el sufijo `_M` son **miles** y es la única abreviatura del layout — **ningún campo va en millones**; porcentajes 0–100; booleanos 1/0; fechas ISO `AAAA-MM-DD` (o `AAAAMM` para IVA).
+**Unidades:** montos en **pesos enteros**, sin excepción — **ningún campo lleva sufijo de escala**: ni `_M` (miles) ni `_MM` (millones); porcentajes 0–100; booleanos 1/0; fechas ISO `AAAA-MM-DD` (o `AAAAMM` para IVA).
 
 ---
 
@@ -40,7 +40,7 @@ La clave primaria es **`RUT` + `ROL` (+ `RUT_CONTRAPARTE`)**. Cada entidad de la
 | RUT | — | ambos | RUT de la entidad de la fila (cliente o deudor) |
 | ROL | — | — | `CLIENTE` \| `DEUDOR` |
 | RUT_CONTRAPARTE | — | DEUDOR | En fila DEUDOR: RUT del cliente del par. Vacío en fila CLIENTE |
-| PAGARE_FIRMADO / MNT_PAGARES_M / FCH_VCTO_PAGARE | C01–C03 | CLIENTE | Pagaré: existencia, monto suficiente (cartera+simulación), vigencia (60d post últ. vcto.) |
+| PAGARE_FIRMADO / MNT_PAGARES / FCH_VCTO_PAGARE | C01–C03 | CLIENTE | Pagaré: existencia, monto suficiente (cartera+simulación), vigencia (60d post últ. vcto.) |
 | IVA_ULT_PERIODO (AAAAMM) | C04 | CLIENTE | Información financiera al día (≤ 2 meses) |
 | LINEA_APROBADA / LINEA_EXTENDIDA | C05–C07 | CLIENTE | Línea vigente, extensión por Riesgo (N4), cupo (excedente ≤10% N2 / >10% N4) |
 | VAR_VENTA_MENSUAL_PCT | C08 | CLIENTE | Variación de venta vs promedio L6M (−20 / −40) |
@@ -106,7 +106,8 @@ El archivo de ejemplo trae 5 filas:
 
 | Versión | Fecha | Qué cambió |
 |---|---|---|
-| **3.0.0** | 23-09-2026 | `LINEA_APROBADA_MM` pasa a `LINEA_APROBADA` **en pesos**, y la línea de unidades deja de admitir el sufijo `_MM`: ningún campo del layout va en millones. Quien implementó la entrega enviando millones debe multiplicar por un millón. |
+| **4.0.0** | 23-09-2026 | `MNT_PAGARES_M` pasa a `MNT_PAGARES` **en pesos enteros** y el layout deja de admitir cualquier sufijo de escala. El monto del pagaré entra en la comparación de C02 contra el uso de la cartera: en miles se comparaba una cifra cuantizada de a $1.000 contra un peso exacto. |
+| 3.0.0 | 23-09-2026 | `LINEA_APROBADA_MM` pasa a `LINEA_APROBADA` **en pesos**, y la línea de unidades deja de admitir el sufijo `_MM`: ningún campo del layout va en millones. Quien implementó la entrega enviando millones debe multiplicar por un millón. |
 | 2.0.1 | 18-09-2026 | Tres correcciones: D02–D13 son excepciones no re-evaluables y no bloqueos firmes, C47–C50 salen del catálogo y el tipo `porDeudor` lo declara la regla. |
 | 2.0.0 | 16-09-2026 | El transporte pasa de SFTP a S3. El layout no cambia. |
 | 1.1.0 | 11-09-2026 | Cierra INC-04, INC-06 e INC-07 del motor de otorgamiento. |

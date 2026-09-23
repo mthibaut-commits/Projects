@@ -15,7 +15,7 @@ timestamp: 2026-09-23T14:10:00Z
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
 (`pipeline_comercial.jsx`), build standalone, **151/151 PASA**, **40 archivos de gate de contrato**
 (273 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
-(76 reglas verbatim por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró
+(77 reglas verbatim por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró
 la tabla de invariantes**: cada regla y los 12 del contrato tienen gate. La crónica del 17 al 19-09 vive en
 sus logs (reglas 32–40, ADR-0003 a 0006, y el **linter** en 0 como paso 0-bis).
 
@@ -30,17 +30,16 @@ reconstruido del historial, estampada en cada hoja del PDF, con el gate exigiend
 calcen. Y **`Capturas_Simuladas/`**. De paso, tres defectos de `main`: el **paso 0 en rojo** y dos bloques de
 comandos sin un salto de línea, con lo que la verificación canónica mostraba ocho pasos y no nueve.
 
-El **23-09**, dos cosas. Los **casos de prueba**: `Casos_de_Prueba/casos-de-prueba-pantallas.md`, **97 casos**
-sobre las cinco pantallas del ciclo de una operación, cada uno con la regla que lo fija y su cobertura
-**medida** — 80 automatizados y **17 manuales**, de los cuales **7 están en la Mesa de verificación**: es la
-pantalla menos cubierta y automatizar esos siete es lo que más compra. Y la **regla 47**: el millón es la
-ÚLTIMA CAPA. Ninguna comparación estaba en millones (eso lo cerraron el 14-09 y el 17-09), pero sí **un
-mensaje al cliente que multiplicaba por un millón** —le mostraba su factura 1.000.000 de veces más grande—,
-**tres layouts que declaraban campos en MM$** —A11 contradecía a su propio generador **por mil**— y el
-explicador de criterios rindiendo «$20M». A16, A3/A4 y A11 suben a **3.0.0**. `auditar_unidades` estrena el
-patrón **(d)** (multiplicar por un millón dentro de un formateador), que es lo que no miraba, y **queda
-cableado** en `auditores.test.mjs` con línea base **cero**; era un comando de mano, y ésa es la otra mitad de
-por qué el defecto sobrevivió.
+El **23-09**, tres cosas. Los **casos de prueba**: `Casos_de_Prueba/casos-de-prueba-pantallas.md`, **97 casos**
+sobre las cinco pantallas, cada uno con la regla que lo fija y su cobertura **medida** — 80 automatizados y
+**17 manuales**, **7 de ellos en la Mesa de verificación**, la pantalla menos cubierta. La **regla 47**: el
+millón es la ÚLTIMA CAPA — un mensaje al cliente multiplicaba por un millón y tres layouts declaraban campos
+en MM$ (A11 contradecía a su generador **por mil**). Y la **regla 48**, que reemplaza el punto de la 47 que
+dejaba vivir el sufijo `_M`: **todo generador produce en PESOS**. Veinte campos de cuatro activos viajaban en
+miles, cuantizados de a $1.000, y dos entran en criterios que DECIDEN —`MNT_PAGARES` en C02 y V03/V04 como
+denominadores del predictor—. Se van veinte multiplicaciones por mil del fuente; A10 sube a 3.0.0, A11 y A16
+a 4.0.0; el caso **115 se re-ancla** a comparar contra la celda tal cual, que es más fuerte que el `×1000`
+que tenía. `auditar_unidades` estrena el patrón **(d)** y **queda cableado** con línea base **cero**.
 
 **Las líneas, en un párrafo.** La ESTRUCTURA es un insumo (44, ADR-0010): el **activo A23** reemplaza los 3.170 de
 3.636 objetos que salían del A7; el **nivel 1 es la SUMA** (45) y el **RUT del deudor se resuelve, no se arma** (46).
@@ -77,4 +76,4 @@ Queda **el tag `v0.1.0`** sobre `bd14091` y **borrar las ramas integradas**.
 ## Conocimiento clave
 
 [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto, en [`vault/index.md`](../index.md)
-Últimas: [regla 47](./2026-09-23_el_millon_es_la_ultima_capa.md) · [casos de prueba](./2026-09-23_casos_de_prueba.md) · [versionado](./2026-09-21_versionado_de_entregables.md) · [ordenar la carpeta](./2026-09-21_ordenar_la_carpeta.md) · [mensajería](./2026-09-21_spec_mensajeria.md) · [las tres casuísticas del elenco](./2026-09-20_las_tres_casuisticas_del_elenco.md) · [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md) · [las líneas son un insumo](./2026-09-20_las_lineas_son_un_insumo.md)
+Últimas: [regla 48](./2026-09-23_generadores_en_pesos.md) · [regla 47](./2026-09-23_el_millon_es_la_ultima_capa.md) · [casos de prueba](./2026-09-23_casos_de_prueba.md) · [versionado](./2026-09-21_versionado_de_entregables.md) · [ordenar la carpeta](./2026-09-21_ordenar_la_carpeta.md) · [mensajería](./2026-09-21_spec_mensajeria.md) · [las tres casuísticas del elenco](./2026-09-20_las_tres_casuisticas_del_elenco.md) · [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md) · [las líneas son un insumo](./2026-09-20_las_lineas_son_un_insumo.md)

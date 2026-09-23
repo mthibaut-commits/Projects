@@ -1,6 +1,6 @@
 # Spec — s3_verificacion.csv (Activo A10)
 
-**Versión 2.1.1 · 21-09-2026 · NEX Factoring**
+**Versión 3.0.0 · 23-09-2026 · NEX Factoring**
 
 **Propósito:** variables del **Predictor de Verificación** (V01–V10) por **par cliente-deudor** (ventana 3M/6M). Monta la sección VERIFICACION de la **tabla interna**. NEX decide localmente: VERIFICADA POR MODELO o VERIFICACIÓN TELEFÓNICA antes de girar.
 **Transporte:** S3 · `s3://nex-ingesta-<ambiente>/verificacion/VERIFICACION_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** upserts vía API A22 (dominio `VERIFICACION`) — clave para V07/V08 que son **degradables intramés**.
@@ -10,13 +10,13 @@
 |---|---|---|---|
 | V01_PROTOCOLO_PROPIO | V01 | Existe → prevalece | 1 = el deudor tiene protocolo propio de verificación |
 | V02_PCT_PAGADO_3M | V02 | ≥ 90% | Monto pagado por el deudor / cartera del par Ult3M |
-| **V03_MNT_COMPRA_3M_M** | V03 | razón ≤ 1,3× | **Total comprado al par en 3M móviles, en miles de pesos.** NEX divide el monto de la operación con ese deudor por este total. El archivo trae el **total**, no la razón: la razón depende de la operación que se está evaluando y el archivo no la conoce |
-| **V04_VENTA_PROM_3M_M** | V04 | razón < 1,0× | **Venta mensual promedio del par, en miles de pesos.** Mismo motivo que V03: viaja el denominador, la razón la calcula NEX |
+| **V03_MNT_COMPRA_3M** | V03 | razón ≤ 1,3× | **Total comprado al par en 3M móviles, en pesos enteros.** NEX divide el monto de la operación con ese deudor por este total. El archivo trae el **total**, no la razón: la razón depende de la operación que se está evaluando y el archivo no la conoce |
+| **V04_VENTA_PROM_3M** | V04 | razón < 1,0× | **Venta mensual promedio del par, en pesos enteros.** Mismo motivo que V03: viaja el denominador, la razón la calcula NEX |
 | V05_RECURRENCIA_MESES_6M | V05 | **≥ 4** | Meses con venta C-D > 0 en Ult6M (sin reclamos/anulaciones). El umbral es **≥ 4**, no > 4: con 4 meses el criterio se cumple |
 | **V06_PLAZO_PROM_PAGO_DIAS** | V06 | desviación **≤ 5% del plazo** | **Plazo promedio de pago del par, en días.** NEX calcula la desviación de cada factura contra él —`abs(plazo_doc − plazo_prom) / plazo_prom`— y aplica el 5%. El umbral **no son 5 días**: en un par que paga a 30 días tolera ±1,5 y en uno de 90 tolera ±4,5. El archivo trae el **plazo promedio**, no la diferencia ya calculada: una diferencia agregada no se puede recomputar por factura |
 | V07_PCT_MORA_25D | V07 | < 3% | % pagado con mora >25d — **degradable intramés** |
 | V08_PCT_RECLAMADAS | V08 | < 4% | % facturas reclamadas — **degradable intramés** |
-| V10_MNT_PAGADO_3M_M | V10 | **> MM$1.000** | Historial de pago factoring relevante, en miles de pesos: lo que el **deudor** le pagó al factoring en 3 meses **sumando todos sus cedentes** —es un atributo del deudor, como V01, y viaja repetido en cada fila del par—. Umbral **fijo**: no mira el tamaño de la operación evaluada. El «> 20× la operación ó > MM$1.500» es de la versión anterior del predictor |
+| V10_MNT_PAGADO_3M | V10 | **> MM$1.000** | Historial de pago factoring relevante, en pesos enteros: lo que el **deudor** le pagó al factoring en 3 meses **sumando todos sus cedentes** —es un atributo del deudor, como V01, y viaja repetido en cada fila del par—. Umbral **fijo**: no mira el tamaño de la operación evaluada. El «> 20× la operación ó > MM$1.500» es de la versión anterior del predictor |
 | SEGMENTO | — | `PRIME` \| `OTROS` | Pre-segmentación del origen, **informativa**: NEX la recalcula siempre (ver nota). Los nombres `ELITE`/`OTHERS` son de la versión anterior |
 | CLASIFICACION | — | `PRIME` \| `NORMAL` | Lista Blanca / Deudor Autorizado. Es **una de las dos** puertas de entrada al protocolo recortado |
 | NOTA_DEUDOR | — | **> 4,2** abre por sí sola | Nota 1–5. La **otra** puerta de entrada: una nota > 4,2 basta aunque el deudor no sea PRIME |
@@ -44,7 +44,8 @@
 
 | Versión | Fecha | Qué cambió |
 |---|---|---|
-| **2.1.1** | 21-09-2026 | Rutas de los documentos citados. |
+| **3.0.0** | 23-09-2026 | Los tres montos pierden el sufijo `_M` y van en **pesos enteros**: `V03_MNT_COMPRA_3M`, `V04_VENTA_PROM_3M` y `V10_MNT_PAGADO_3M`. En miles quedaban cuantizados de a $1.000 y ésos son denominadores de una razón que decide. Quien implementó la entrega en miles debe multiplicar por mil. |
+| 2.1.1 | 21-09-2026 | Rutas de los documentos citados. |
 | 2.1.0 | 17-09-2026 | V04 y V10 pasan a ser alcanzables con el A10, y las comparaciones van en pesos: el predictor medía pesos contra millones. |
 | 2.0.0 | 16-09-2026 | El transporte pasa de SFTP a S3. El layout no cambia. |
 | 1.2.0 | 14-09-2026 | El predictor de verificación pasa a leer este activo. |

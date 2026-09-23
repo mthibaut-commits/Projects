@@ -44,7 +44,7 @@ function generar({ DTESYNC, LISTA_BLANCA, DEUDORES_AUTORIZADOS }) {
     return {
       RUT: rut, ROL: "CLIENTE", RUT_CONTRAPARTE: "",
       PAGARE_FIRMADO: pf === "sana" ? 1 : (r() < (pf === "aislada" ? 0.9 : 0.7) ? 1 : 0),
-      MNT_PAGARES_M: Math.round(entre(r, 120000, 900000)),
+      MNT_PAGARES: Math.round(entre(r, 120e6, 900e6)),
       FCH_VCTO_PAGARE: pf === "sana" || r() < 0.85 ? "2027-06-30" : "2026-08-15",
       IVA_ULT_PERIODO: pf === "sana" || r() < 0.88 ? "202606" : "202603",
       LINEA_APROBADA: 0, LINEA_EXTENDIDA: pf === "problematica" && r() < 0.25 ? 1 : 0,
@@ -76,7 +76,7 @@ function generar({ DTESYNC, LISTA_BLANCA, DEUDORES_AUTORIZADOS }) {
     const pd = P_DEUDA[pf], total = Math.round(entre(r, 60, 420) * 1e6), totalInt = Math.round(entre(r, 30, 180) * 1e6);
     return {
       RUT: rutD, ROL: "DEUDOR", RUT_CONTRAPARTE: rutC,
-      PAGARE_FIRMADO: 0, MNT_PAGARES_M: 0, FCH_VCTO_PAGARE: "", IVA_ULT_PERIODO: "",
+      PAGARE_FIRMADO: 0, MNT_PAGARES: 0, FCH_VCTO_PAGARE: "", IVA_ULT_PERIODO: "",
       LINEA_APROBADA: 0, LINEA_EXTENDIDA: 0, VAR_VENTA_MENSUAL_PCT: 0,
       CMF_DIR_MOROSA_30_90: deuda(r, pd, 14), CMF_DIR_MOROSA_90_180: deuda(r, pd * 0.5, 12),
       CMF_DIR_MOROSA_180_3A: deuda(r, pd * 0.35, 10), CMF_DIR_CASTIGADA: deuda(r, pd * 0.3, 9),

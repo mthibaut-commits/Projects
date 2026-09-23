@@ -3483,10 +3483,12 @@
     const fmtOk = val(normal, "V09") === 100 * MMF && eV09.r.fmt(eV09.v) === fmtMM(100 * MMF)
       && /M\$300/.test(eV09.r.thr);
 
-    // (f) EL PAR SALE DEL ACTIVO EN PESOS, medido sobre las filas REALES del A10. El layout trae
-    //     MILES (sufijo `_M`), así que el valor leído tiene que ser 1.000x la celda —y no 1/1.000x,
-    //     que es lo que hacía—. Se compara contra el activo y no contra un orden de magnitud: un
-    //     umbral suelto («>= 1e6») lo pasaría también una conversión equivocada por 10.
+    // (f) EL PAR SALE DEL ACTIVO EN PESOS, medido sobre las filas REALES del A10. Desde el 23-09-2026
+    //     el layout viene en PESOS y sin sufijo de escala (regla 48), así que el valor leído tiene que
+    //     ser la celda TAL CUAL: cualquier factor —el ×1.000 que hacía falta cuando el activo venía en
+    //     miles, o el ÷1.000 del defecto original— rompe la igualdad. Se compara contra el activo y no
+    //     contra un orden de magnitud: un umbral suelto («>= 1e6») lo pasaría también una conversión
+    //     equivocada por 10.
     let activoOk = false, muestra = "(sin A10)";
     {
       const V = typeof VERIFICACION !== "undefined" ? VERIFICACION
@@ -3498,12 +3500,12 @@
           const pr = verifPar(fl[ixv.RUT_CLIENTE], fl[ixv.RUT_DEUDOR], fl[ixv.RUT_DEUDOR]);
           if (!pr || pr.mntCompraOp3M == null) continue;
           n++;
-          if (pr.mntCompraOp3M === Math.round(+fl[ixv.V03_MNT_COMPRA_3M_M] * 1000)
-            && pr.avgVentaProm3M === Math.round(+fl[ixv.V04_VENTA_PROM_3M_M] * 1000)
-            && pr.mntPagoDeudor3M === Math.round(+fl[ixv.V10_MNT_PAGADO_3M_M] * 1000)) cal++;
+          if (pr.mntCompraOp3M === +fl[ixv.V03_MNT_COMPRA_3M]
+            && pr.avgVentaProm3M === +fl[ixv.V04_VENTA_PROM_3M]
+            && pr.mntPagoDeudor3M === +fl[ixv.V10_MNT_PAGADO_3M]) cal++;
         }
         activoOk = n > 0 && cal === n;
-        muestra = cal + "/" + n + " filas del A10 calzan MILES x1000";
+        muestra = cal + "/" + n + " filas del A10 calzan PESO A PESO";
       }
     }
 
