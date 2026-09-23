@@ -321,3 +321,31 @@ bitácora dice «Facturas nuevas … al pool disponible» / «Facturas agregadas
 §7.1, §8 y §15), gaps (G-09/G-10/G-22/G-32 y GD-10 cerrados: 17 implementados · 1 decidido), HU-12/13/21 vigentes (31 · 11),
 CP-031/033/034/053/054/122/123/134/135 (CP-035/036 y las pantallas siguen e2e), cifras (168/168; 97 reglas; 58 archivos de
 gate, 48 por regla; 504 tests).
+
+## 10 · M-01 · El acuse del receptor es una bandera del DTE que el A1 trae y `facturaDeDTE` lee (regla 69, caso 169)
+
+**Qué cambió.** `facturaDeDTE` lee `EstadoDTE.Aceptado` (+ `FchAcuseRecibo`), `Reclamado` (+ `FchReclamo`) y `FchRecepcion`
+en tres estados —`acuse`: aceptada · reclamada · sin_acuse— con `acuseCodigo` y `fchAcuse`, sin derivar nada; el stream y el
+libro del asistente lo llevan con el documento; `acuseLabel` + `ChipAcuse` lo muestran en las tres filas del documento del
+detalle («Con acuse» / «Sin acuse» / «Reclamada», la fecha en el tooltip) y callan sin dato del A1; ningún filtro lo mira
+(«Buena factura», `estadoCandidata`, el perfil de la Bandeja); el Excel de candidatas perdió la columna «Aceptada/Reclamada»
+que un sorteo por RUT llenaba.
+
+**Lo que costó / sorpresas.**
+- **El A1 ya traía la bandera** (§0 lo había medido): 21.974 aceptadas con código «2», 2.088 reclamadas, 5.938 sin acuse
+  ni reclamo (4.637 emitidas en los 8 días anteriores al batch). El spec del curse, el informe de gaps y las HU/CP decían
+  «no la trae» y pedían layout + generador + activo regenerado: nada de eso hizo falta —`DTESYNC` es dataset base y el
+  punto fijo se conserva—. Los documentos se corrigieron en el mismo commit (regla núcleo 2: gana la medición).
+- **El sorteo del Excel**: un candidato es proveedor de un cliente, no cliente, y no tiene documentos en el A1; inventar su
+  acuse era exactamente el G-01. Se retiró la columna con el sorteo (`u = r()` desaparece; el caso 121 mide propiedades,
+  no valores, y sigue verde). El resto del detalle sintético del Excel queda como está, declarado en el fuente.
+- **Abrir la pantalla**: las filas de la oferta van agrupadas por deudor y no dibujan facturas hasta abrir un acordeón o
+  pasar a «Por factura» (`button[title="Todas las facturas de la oferta en una sola lista…"]`); «Todo lo disponible» vacía la
+  lista de disponibles, así que los chips de `filaOtraD` se miran ANTES de simular. Medido: 39 chips en la oferta (33 con
+  acuse · 6 sin acuse) = lo que el A1 dice de esas 39 facturas; 17 en los disponibles del arranque (2 reclamadas, con su
+  candado); sin errores de consola.
+
+**Documentos:** regla 69 en `datos_y_activos.md` (fila en `invariantes.md`), `spec-inbound-facturas.md` §2 y §3,
+`Levantamiento_Activos_Informacion.md` A1, spec del curse (M-01 implementada: 39 · 1 · 0; §16), gaps (G-01 cerrado: 18
+implementados · 0 decididos), HU-04 vigente (32 · 10), CP-010/CP-011 (la fila en pantalla sigue e2e), cifras (169/169; 98
+reglas; 59 archivos de gate, 49 por regla; 515 tests). El backlog decidido del 22-09 quedó entero.

@@ -10,7 +10,7 @@ timestamp: 2026-09-17T15:29:14Z
 
 > Reglas de dominio de NEX, **verbatim** desde el `CLAUDE.md` anterior al 17-09-2026, agrupadas por tema. Se citan por su número (`regla 13-bis`) y **no se renumeran**: el fuente y otros documentos las referencian así. Índice de todas, con qué caso de la suite verifica cada una: [`invariantes.md`](../invariantes.md).
 >
-> Reglas en este archivo: **13-bis** · **13-ter** · **13-quater** · **13-quinquies** · **13-nonies** · **13-undecies** · **13-duodecies**.
+> Reglas en este archivo: **13-bis** · **13-ter** · **13-quater** · **13-quinquies** · **13-nonies** · **13-undecies** · **13-duodecies** · **69**.
 
 13-bis. **El LIBRO DE VENTAS no depende de la oferta** (`candidatasLibro`, 14-09-2026). Es lo que el cliente **emitió**: no cambia porque nosotros elijamos qué comprarle. El folio más alto se anclaba sobre las facturas ya incluidas (`Math.max(...enOferta, ...reales)`) y de ese folio cuelga **todo** —el folio de cada documento, y del folio salen por hash su **deudor** y su **monto**—, así que incorporar una factura corría el ancla y **re-sorteaba el libro entero**: el mismo deudor mostraba dos facturas antes de agregar y siete después, con folios y montos que no existían un segundo antes. El ancla sale ahora **sólo de la identidad de la operación**, que es lo único inmutable ahí: cualquier dato del negocio que se pueda editar reintroduce el defecto. Se resigna que el folio más nuevo quede sobre lo ya en oferta —realismo que costaba la estabilidad del pool— y los choques con folios reales los sigue saltando `usados`. **Y el ancla estable deja un cabo:** el libro volvería a generar la factura recién incorporada y el documento aparecería **dos veces**, una en la oferta y otra en «otras facturas de este deudor»; para eso sirve `enOferta` —excluir, no anclar—, que es lo que hace ahora. Caso 92.
 
@@ -79,3 +79,35 @@ timestamp: 2026-09-17T15:29:14Z
     - **Se mapea por RUT, nunca por nombre.** En el activo sintético había **50 razones sociales compartidas por dos RUT distintos** («Constructora RM SA» era 39663693-3 y 41604007-5): un reemplazo por nombre las habría fusionado. El nombre se deriva siempre del RUT que tiene al lado (`spec_aecsync.md` §81: «la identidad es el RUT, no el nombre»), y de paso las 50 colisiones desaparecen.
     - **Lo que esto arregló, medido.** Antes: 51,5 % de los RUT de deudor fuera del rango de empresa y **39,3 % en rango de persona natural**, con razones sociales reales encima —«Clorox Chile S.A.» llevaba `9.710.034-4`—. Después: **100 % en rango de empresa** y los 1.983 RUT del padrón con dígito verificador válido, que es lo que distingue un RUT real de uno escrito a mano.
     - Gate: `tests/contract/padron.test.mjs` (9 tests, 4 sondas negativas). El punto fijo del generador se conserva (`generador.test.mjs`).
+
+69. **EL ACUSE DEL RECEPTOR ES UNA BANDERA DEL DTE QUE EL A1 TRAE Y `facturaDeDTE` LEE; SE MUESTRA Y NO FILTRA** (23-09-2026,
+    M-01, G-01; el usuario, 22-09-2026: «las aceptaciones son parte de las banderas de DTE»; 23-09-2026: «las facturas los
+      primeros 8 días desde su emisión no tienen acuse de aceptación y/o reclamo y en ese estado de ausencia de acuse sí
+      son candidatas»). El spec del curse y el informe de gaps decían que «el A1 no la trae»: **la trae**. `EstadoDTE`
+      viene con `Aceptado` (código «2» en las 21.974 aceptadas de 30.000, con `FchAcuseRecibo`), `Reclamado` («1» en
+      2.088, con `FchReclamo`), `NotaCredito` (1.487) y `FchRecepcion` (la fecha del batch, 2026-06-23 en todas); 5.938
+      filas no tienen acuse ni reclamo, 4.637 de ellas emitidas en los 8 días anteriores al batch. Lo que faltaba era
+      LEERLO: `facturaDeDTE` lo derivaba en nada y `facturasDeCandidata` lo sorteaba para un Excel.
+    - **Tres estados, leídos tal cual** (`acuse`: `aceptada` · `reclamada` · `sin_acuse`), con `acuseCodigo` (el código
+      que el A1 trae en `Aceptado`), `fchAcuse` (la del acuse o la del reclamo) y `fchRecepcion`. Nada se deriva de la
+      fecha ni del folio: sin acuse es un VALOR del activo (regla 13-ter, regla 13-quater). El stream (`streamDesdeDTE`)
+      y el libro del asistente (`facturasDelLibro`) lo llevan con el documento.
+    - **Se muestra**: `ChipAcuse` en las tres filas del documento del detalle (la oferta, «otras facturas» y los
+      disponibles del tab Detalle), junto al tipo —«Con acuse» / «Sin acuse» / «Reclamada», con la fecha en el tooltip—;
+      `acuseLabel` es la única lectura de pantalla. Sin dato del A1 (XML a mano, fixtures) el chip no dibuja nada:
+      «Sin acuse» es lo que el activo dice, no lo que se afirma de un documento que llegó por otro camino.
+    - **No filtra**: «Buena factura» (`CRITERIO_PRED`), `estadoCandidata` y el perfil de la Bandeja no leen `acuse`.
+      Lo que excluye sigue siendo el reclamo, la nota de crédito, la cesión a un factoring ajeno (regla 60), la venta al
+      contado y la antigüedad (regla 61). Una factura sin acuse en sus primeros 8 días es candidata, y con acuse también.
+    - **El Excel de candidatas dejó de inventarlo**: la columna «Aceptada/Reclamada» salía de un sorteo por RUT
+      (`facturasDeCandidata`), y un candidato —proveedor de un cliente, no cliente— no tiene documentos en el A1. Se
+      retiró la columna con el sorteo; el resto de ese detalle sigue siendo la derivación determinista del agregado que
+      el comentario del fuente declara, hasta que exista el endpoint de detalle.
+    - **Ni el generador ni el activo cambian**: `DTESYNC` es un dataset base que ya trae las banderas; el punto fijo
+      (regla 32) se conserva sin regenerar. El layout lo declara `Levantamiento_Activos_Informacion.md` (A1) y
+      `spec-inbound-facturas.md` §2.
+    - Caso **169** (los tres estados leídos con su fecha y el A1 entero contado por `facturaDeDTE` igual que por
+      `EstadoDTE`; el stream y el libro; «Buena factura» y `estadoCandidata` sin mirar el acuse, en las dos direcciones;
+      el rótulo con sus tres textos y mudo sin dato; el Excel sin `estado`) y `regla_69.test.mjs` (la lectura sin
+      derivar, «Sin acuse» en un solo sitio y nunca como sorteo, el chip en las tres filas y mudo sin dato, el libro, y
+      ningún filtro leyendo `acuse`; diez sondas). La fila en pantalla sigue por e2e (CP-010).

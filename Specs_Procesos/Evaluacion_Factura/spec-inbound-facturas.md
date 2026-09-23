@@ -52,8 +52,9 @@ el proveedor de DTE y acá son los 30.000 registros de `DTESYNC`. Por cada regis
 | `RUTRecep` / `RznSocRecep` | el **deudor**: quién debe pagarla — es a él a quien se clasifica |
 | `Folio`, `TipoDTEDesc`, `MntTotal` | identidad y monto del documento |
 | `FormaPago` | `2` = **crédito**. Es el primer filtro: al contado no hay nada que anticipar |
-| `EstadoDTE.Reclamado` | el deudor la reclamó dentro del plazo legal |
+| `EstadoDTE.Reclamado` (+ `FchReclamo`) | el deudor la reclamó dentro del plazo legal |
 | `EstadoDTE.NotaCredito` | fue anulada o rebajada por nota de crédito |
+| `EstadoDTE.Aceptado` (+ `FchAcuseRecibo`, `FchRecepcion`) | el **acuse de recibo** del receptor (regla 69, M-01; 23-09-2026): `aceptada` con su fecha, `reclamada` si hay reclamo, `sin_acuse` mientras el receptor no se pronuncia —lo normal en los primeros 8 días desde la emisión—. Se lee y se **muestra** en la fila del documento; **no filtra** (§3) |
 
 Cada DTE produce **un evento de inbound** con el documento ya normalizado (`facturasOp: [fac]`), su
 clasificación de deudor y el contexto comercial del cedente: SOW (`SOW_POR_RUT`), estrategia de precio
@@ -72,6 +73,10 @@ Antes de cualquier regla comercial. **Cinco condiciones del documento, todas obl
 | **Sin nota de crédito** | `EstadoDTE.NotaCredito !== "1"` | se descarta |
 | **No cedida a un factoring ajeno** | el A2 no registra una cesión a un factoring distinto de Security (`cedidaAFactoringAjeno`; regla 60) | se descarta |
 | **Emitida hace no más de N días** | `FchEmis` contra el corte del activo, con `N = antiguedadMaxDias` del tenant (20 por defecto; regla 61) | se descarta |
+
+El **acuse del receptor no está en la lista** (regla 69, definición del negocio del 23-09-2026): una factura sin
+acuse —sus primeros 8 días desde la emisión— es candidata igual que una con acuse; sólo el reclamo excluye. Se
+muestra en la fila del documento y no decide.
 
 A eso el criterio «Buena factura» le suma la condición que no es del documento sino del deudor: que
 **abra oportunidad** (§4). Todas juntas:

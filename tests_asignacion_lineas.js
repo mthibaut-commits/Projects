@@ -8317,6 +8317,62 @@
        det + ` · restaurado ${restauradoOk}`);
   }
 
+  {
+    // 169 · EL ACUSE DEL RECEPTOR ES UNA BANDERA DEL DTE QUE EL A1 TRAE Y `facturaDeDTE` LEE; SE MUESTRA Y NO FILTRA (regla 69,
+    //       M-01, G-01; el usuario, 22-09-2026: «las aceptaciones son parte de las banderas de DTE»; 23-09-2026: «las
+    //       facturas los primeros 8 días desde su emisión no tienen acuse de aceptación y/o reclamo y en ese estado de
+    //       ausencia de acuse sí son candidatas»). Lo que fija: (a) `facturaDeDTE` lee `EstadoDTE.Aceptado`/`FchAcuseRecibo`
+    //       y `Reclamado`/`FchReclamo` en tres estados —aceptada, reclamada, sin acuse— sin derivar nada, y sobre el A1
+    //       entero los tres cuentan lo que el activo trae; (b) el stream y el libro del asistente llevan el acuse con el
+    //       documento; (c) «Buena factura» y `estadoCandidata` NO lo miran: sin acuse y con acuse son candidatas igual, la
+    //       reclamada no, y cambiar el acuse no cambia el conteo; (d) el rótulo de pantalla tiene tres textos y sin dato
+    //       del A1 no afirma nada; (e) el Excel de candidatas ya no inventa el acuse (ningún `estado` sorteado).
+    const ID = "T-169";
+    const fila = (est, folio) => ({ RUTEmisor: "76.169.169-0", RznSoc: "Cedente 169", TipoDTE: "33", TipoDTEDesc: "Factura electronica", Folio: folio,
+      FchEmis: diaISO(corteDTE(), -3), FchVenc: diaISO(corteDTE(), 40), RUTRecep: LB[0], RznSocRecep: nomDe(LB[0]), MntTotal: 1000000, FormaPago: "2",
+      EstadoDTE: { NotaCredito: null, FchNotaCredito: null, FolioNotaCredito: null, TipoDTERef: null, FolioDTERef: null, Aceptado: null, Reclamado: null, FchReclamo: null, FchRecepcion: corteDTE(), FchAcuseRecibo: null, ...est } });
+    const rAc = fila({ Aceptado: "2", FchAcuseRecibo: corteDTE() }, 16901), rRe = fila({ Reclamado: "1", FchReclamo: corteDTE() }, 16902), rSin = fila({}, 16903);
+    const fAc = facturaDeDTE(rAc), fRe = facturaDeDTE(rRe), fSin = facturaDeDTE(rSin);
+    // (a) Tres estados leídos tal cual, con su fecha; y el A1 entero cuenta lo que trae.
+    const leeOk = fAc.acuse === "aceptada" && fAc.acuseCodigo === "2" && fAc.fchAcuse === corteDTE() && fAc.reclamada === false && fAc.fchRecepcion === corteDTE()
+      && fRe.acuse === "reclamada" && fRe.reclamada === true && fRe.fchAcuse === corteDTE() && fRe.acuseCodigo === null
+      && fSin.acuse === "sin_acuse" && fSin.fchAcuse === null && fSin.acuseCodigo === null && fSin.reclamada === false;
+    const dte = (window.DTESYNC || []);
+    const cuenta = { aceptada: 0, reclamada: 0, sin_acuse: 0 }, activo = { ac: 0, re: 0, sin: 0 };
+    for (const r of dte) { if (!r || !r.RUTEmisor) continue; cuenta[facturaDeDTE(r).acuse]++; const e = r.EstadoDTE || {}; if (e.Reclamado === "1") activo.re++; else if (e.Aceptado != null && e.Aceptado !== "") activo.ac++; else activo.sin++; }
+    const activoOk = dte.length >= 1000 && cuenta.aceptada === activo.ac && cuenta.reclamada === activo.re && cuenta.sin_acuse === activo.sin && cuenta.aceptada > 0 && cuenta.reclamada > 0 && cuenta.sin_acuse > 0;
+    // (b) El stream y el libro llevan el acuse con el documento.
+    const evs = streamDesdeDTE([rAc, rRe, rSin]);
+    const streamOk = evs.length === 3 && evs[0].facturasOp[0].acuse === "aceptada" && evs[1].facturasOp[0].acuse === "reclamada" && evs[1].reclamada === true && evs[2].facturasOp[0].acuse === "sin_acuse";
+    const libro = facturasDelLibro(EMISOR_LIBRO);
+    const porId = new Map(libroPorEmisor().get(EMISOR_LIBRO).map((f) => [f.id, f]));
+    const libroOk = libro.length > 0 && libro.every((x) => x.acuse === porId.get(x.id).acuse && x.fchAcuse === porId.get(x.id).fchAcuse) && libro.some((x) => x.acuse === "aceptada");
+    // (c) El filtro no mira el acuse: sin acuse y con acuse son candidatas, la reclamada no; cambiar el acuse no mueve nada.
+    const ev = (f) => ({ id: "EV169-" + f.folio, tipo: "factura", cedente: "Cedente 169", rutEmisor: f.rutEmisor || "76.169.169-0", pagador: f.deudor, deudor: f.deudor,
+      tipoDeudor: "Lista Blanca", inboundBucket: "CAT1", histFactoring: "bice", credito: true, reclamada: f.reclamada, notaCredito: false, esCliente: true,
+      sowTendencia: "Manteniendo", diasEmision: 3, monto: f.monto, nFacturas: 1, acuse: f.acuse, facturasOp: [f] });
+    const buena = (f) => CRITERIO_PRED["Buena factura"](ev(f)) === true;
+    const filtroOk = buena(fSin) === true && buena(fAc) === true && buena(fRe) === false && buena({ ...fSin, acuse: "aceptada" }) === true && buena({ ...fAc, acuse: "sin_acuse" }) === true
+      && buena({ ...fRe, acuse: "aceptada" }) === false;
+    const deal = { id: ID, rutEmisor: "76.169.169-0", cliente: "Cedente 169", facturasOp: [] };
+    const cSin = estadoCandidata(fSin, deal), cAc = estadoCandidata(fAc, deal), cRe = estadoCandidata(fRe, deal);
+    const candidataOk = cSin.agregable === true && cSin.bloqueada === false && cAc.agregable === true && cRe.agregable === false && cRe.clave === "reclamada";
+    const perfil = criteriosDesdeFactura(ev(fSin));
+    const perfilOk = perfil.includes("Buena factura") && !perfil.some((c) => /acuse/i.test(c));
+    // (d) El rótulo: tres textos con la fecha, y sin dato no afirma nada.
+    const lAc = acuseLabel(fAc), lRe = acuseLabel(fRe), lSin = acuseLabel(fSin);
+    const rotuloOk = lAc.texto === "Con acuse" && /Acuse de recibo/.test(lAc.title) && lAc.title.includes(fmtFechaDoc(corteDTE())) && lRe.texto === "Reclamada" && /reclamó/.test(lRe.title)
+      && lSin.texto === "Sin acuse" && /primeros 8 días/.test(lSin.title) && /sigue siendo candidata/.test(lSin.title) && ChipAcuse({ f: { folio: 1 } }) === null && ChipAcuse({ f: fSin }) !== null;
+    // (e) El Excel de candidatas no inventa el acuse.
+    const cands = candidatasDeCartera(null);
+    const det = cands.length ? facturasDeCandidata(cands[0], "2026-09-01") : [];
+    const excelOk = det.length > 0 && det.every((x) => !("estado" in x)) && det.every((x) => typeof x.cedido === "string");
+    ok("169 el acuse del receptor es una bandera del DTE que el A1 trae y facturaDeDTE lee en tres estados; viaja con el documento al stream y al libro; se muestra y no filtra (sin acuse es candidata); el Excel de candidatas no lo inventa",
+       leeOk && activoOk && streamOk && libroOk && filtroOk && candidataOk && perfilOk && rotuloOk && excelOk,
+       `tres estados leídos ${leeOk} · A1: ${cuenta.aceptada} aceptadas · ${cuenta.reclamada} reclamadas · ${cuenta.sin_acuse} sin acuse = lo que trae ${activoOk} · stream ${streamOk} · libro ${libroOk}`
+       + ` · filtro no lo mira (sin acuse candidata, reclamada no) ${filtroOk} · estadoCandidata ${candidataOk} · perfil ${perfilOk} · rótulo «${lAc.texto}»/«${lRe.texto}»/«${lSin.texto}» ${rotuloOk} · Excel sin sorteo ${excelOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

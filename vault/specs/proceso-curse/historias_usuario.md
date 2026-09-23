@@ -80,7 +80,7 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-04 · Las aceptaciones son una bandera del DTE
 - **Como** Inbound (sistema), **quiero** que el acuse de recibo / aceptación del receptor llegue en el A1 como bandera del `EstadoDTE`, igual que el reclamo y la nota de crédito, **para** no dimensionar con un dato inventado.
-- **Estado**: por implementar (T2; dato / contrato) → **decidido: implementar**; el filtro no cambia (definición ajustada 23-09-2026).
+- **Estado**: **implementada el 23-09-2026** (regla 69, caso 169, `regla_69.test.mjs`; T2). El A1 ya traía la bandera (`EstadoDTE.Aceptado`/`FchAcuseRecibo`; el informe de gaps la daba por ausente): `facturaDeDTE` la lee en tres estados, `ChipAcuse` la muestra en la fila del documento, el Excel de candidatas dejó de sortearla y el filtro no cambia (definición ajustada 23-09-2026). CA-1 y la mitad del filtro de CA-2 en el caso 169; la fila en pantalla sigue por e2e (CP-010).
 - **Reglas**: — · **Cláusulas**: M-01 · **Gaps**: G-01.
 - **Criterios de aceptación**:
   - CA-1 · Dado el A1 · Cuando llega una factura · Entonces su aceptación es una bandera del `EstadoDTE` junto al reclamo y la NC, y el generador la produce desde esa bandera y no con un sorteo propio «Aceptada / Reclamada / Sin acuse»; el gate del generador (punto fijo) sigue verde.
@@ -551,7 +551,7 @@ Cada una de las 41 cláusulas y de los 36 gaps aparece al menos una vez.
 
 | Gaps | Historias |
 |---|---|
-| G-01 · G-02 · G-03 · G-04 · G-05 | HU-04 · HU-08 · HU-09 · HU-06 (cerrado) · HU-07 |
+| G-01 · G-02 · G-03 · G-04 · G-05 | HU-04 (implementada: regla 69) · HU-08 · HU-09 · HU-06 (cerrado) · HU-07 |
 | G-06 · G-07 · G-08 · G-09 · G-10 | HU-03 (implementada: regla 60) · HU-05 (cerrado; la antigüedad en G-31) · HU-11 (cerrado) · HU-12 (implementada: regla 68) · HU-13 (implementada: regla 68) |
 | G-11 · G-12 · G-13 · G-14 · G-15 | HU-24 (cerrado en M-15), HU-42 (implementada en M-18: reglas 65 y 67) · HU-25 · HU-31, HU-34 (cerrado) · HU-32 (implementada: regla 66) · HU-18 (cerrado) |
 | G-16 · G-17 · G-18 · G-19 · G-20 | HU-16 (cerrado) · HU-26 (cerrado) · HU-27 · HU-35 · HU-37 (implementada: regla 63) |
@@ -560,9 +560,9 @@ Cada una de las 41 cláusulas y de los 36 gaps aparece al menos una vez.
 | G-31 · G-32 · G-33 · G-34 · G-35 | HU-05 (implementada: regla 61) · HU-21 (implementada: regla 68) · HU-35 · HU-37 · HU-32 (implementada: regla 66) |
 | G-36 | HU-42 (implementada: regla 67) y HU-33 CA-3 (dirección nueva desde el 23-09-2026) |
 
-**Por estado (42 historias):** 31 vigentes —10 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
+**Por estado (42 historias):** 32 vigentes —10 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
 HU-29, HU-33 —con su CA-3 vigente hoy · cambia con ADR-0018— y HU-41) y 9 por definición ajustada el 22 y 23-09-2026
-(HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-26, HU-31, HU-34) y 12 implementadas el 23-09-2026 (HU-03, ADR-0014: regla 60, caso 159; HU-05, regla 61, caso 160; HU-25, regla 62, caso 161; HU-37, ADR-0017: regla 63, caso 162; HU-08 y HU-09, ADR-0019: regla 64, casos 163–164; HU-35, ADR-0015: regla 65, caso 165; HU-32, ADR-0016: regla 66, caso 166; HU-42, ADR-0018: regla 67, caso 167; HU-12, HU-13 y HU-21, ADR-0013: regla 68, caso 168)— · 11 por implementar (HU-02, HU-04,
+(HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-26, HU-31, HU-34) y 13 implementadas el 23-09-2026 (HU-03, ADR-0014: regla 60, caso 159; HU-05, regla 61, caso 160; HU-25, regla 62, caso 161; HU-37, ADR-0017: regla 63, caso 162; HU-08 y HU-09, ADR-0019: regla 64, casos 163–164; HU-35, ADR-0015: regla 65, caso 165; HU-32, ADR-0016: regla 66, caso 166; HU-42, ADR-0018: regla 67, caso 167; HU-12, HU-13 y HU-21, ADR-0013: regla 68, caso 168; HU-04, regla 69, caso 169)— · 10 por implementar (HU-02,
 HU-07, HU-17, HU-19, HU-27, HU-30, HU-36, HU-38, HU-39, HU-40) · 0 pendientes de confirmar.
 
 **Preguntas abiertas dentro de historias que ya tienen estado:** ninguna desde el 23-09-2026.

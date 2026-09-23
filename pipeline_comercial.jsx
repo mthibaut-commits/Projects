@@ -4027,10 +4027,59 @@ function facturaDeDTE(r) {
     reclamada: est.Reclamado === "1",
     notaCredito: est.NotaCredito === "1" || est.NotaCredito === 1,
     folioNotaCredito: est.FolioNotaCredito || null,
+    // EL ACUSE DEL RECEPTOR es una bandera del DTE (M-01, regla 69) y el A1 la trae en `EstadoDTE`: `Aceptado` con su
+    // `FchAcuseRecibo`, o `Reclamado` con su `FchReclamo`, o nada mientras el receptor no se pronuncia (sus primeros
+    // 8 días desde la emisión). Acá sólo se LEE, como el reclamo y la nota de crédito; se muestra y NO filtra: sin
+    // acuse la factura sigue siendo candidata (definición del negocio, 23-09-2026).
+    acuse: est.Reclamado === "1" ? "reclamada" : est.Aceptado != null && est.Aceptado !== "" ? "aceptada" : "sin_acuse",
+    acuseCodigo: est.Aceptado != null && est.Aceptado !== "" ? String(est.Aceptado) : null,
+    fchAcuse: est.Reclamado === "1" ? est.FchReclamo || null : est.FchAcuseRecibo || null,
+    fchRecepcion: est.FchRecepcion || null,
     sinXml: false,
     enlaceXml: r.EnlaceXml,
     enlacePdf: r.EnlacePdf,
   };
+}
+// Cómo se rotula el acuse de un documento (regla 69): tres estados en palabras del negocio, con la fecha del acuse o
+// del reclamo cuando el A1 la trae. Es la ÚNICA lectura de `acuse` de la pantalla; ningún filtro lo mira.
+function acuseLabel(f) {
+  const a = (f && f.acuse) || "sin_acuse";
+  const fecha = f && f.fchAcuse ? fmtFechaDoc(f.fchAcuse) : null;
+  if (a === "reclamada")
+    return { clave: a, texto: "Reclamada", title: `El receptor reclamó el documento ante el SII${fecha ? " el " + fecha : ""}: no es cedible.` };
+  if (a === "aceptada")
+    return {
+      clave: a,
+      texto: "Con acuse",
+      title: `Acuse de recibo del receptor${fecha ? " el " + fecha : ""}${f && f.acuseCodigo ? " (código " + f.acuseCodigo + " del A1)" : ""}.`,
+    };
+  return {
+    clave: a,
+    texto: "Sin acuse",
+    title:
+      "El receptor todavía no da acuse ni reclamo: en los primeros 8 días desde la emisión es lo normal, y la factura sigue siendo candidata (M-01, 23-09-2026).",
+  };
+}
+// El chip del acuse en la fila del documento. Sin dato del A1 no dibuja nada: «Sin acuse» es un VALOR del activo, no lo
+// que se dice de una factura que llegó por otro camino (XML a mano, fixtures).
+function ChipAcuse({ f }) {
+  if (!f || !f.acuse) return null;
+  const a = acuseLabel(f);
+  const est =
+    a.clave === "reclamada"
+      ? { bg: "#fef2f2", fg: C.red, bd: "#fecaca" }
+      : a.clave === "aceptada"
+        ? { bg: C.greenBg, fg: C.green, bd: "#bbf7d0" }
+        : { bg: "#F3F4F6", fg: C.sub, bd: C.line };
+  return (
+    <span
+      className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-1 t7 font-semibold"
+      style={{ backgroundColor: est.bg, color: est.fg, border: `1px solid ${est.bd}`, cursor: "help" }}
+      title={a.title}
+    >
+      {a.texto}
+    </span>
+  );
 }
 // LIBRO DE VENTAS DEL CLIENTE (activo A1), indexado por RUT del emisor. Es lo que el cliente EMITIÓ:
 // un hecho del SII, no algo que este sistema pueda producir. Antes `candidatasLibro` SINTETIZABA
@@ -14444,8 +14493,9 @@ function DealDrawer({
                                     >
                                       <Star size={12} style={{ color: f.candidata ? "#F97316" : C.faint }} fill={f.candidata ? "#F97316" : "none"} />
                                     </span>
-                                    <span className="truncate t9" style={{ color: C.sub }} title={tdoc}>
-                                      {tdoc}
+                                    <span className="flex min-w-0 items-center gap-1 t9" style={{ color: C.sub }} title={tdoc}>
+                                      <span className="truncate">{tdoc}</span>
+                                      <ChipAcuse f={f} />
                                     </span>
                                     <span className="font-medium" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>
                                       #{f.folio}
@@ -15010,8 +15060,9 @@ function DealDrawer({
                               className="grid items-center gap-2 py-1 t10"
                               style={{ gridTemplateColumns: plana ? GC_DP : GC_D, borderBottom: "1px solid #F0EFF3", color: GRAY }}
                             >
-                              <span className="truncate t9" title={tdoc}>
-                                {tdoc}
+                              <span className="flex min-w-0 items-center gap-1 t9" title={tdoc}>
+                                <span className="truncate">{tdoc}</span>
+                                <ChipAcuse f={f} />
                               </span>
                               <span style={{ fontVariantNumeric: "tabular-nums" }}>#{f.folio}</span>
                               {plana && (
@@ -15160,7 +15211,7 @@ function DealDrawer({
                                 title={est.label && !bloq ? `${tdoc} · ${est.detalle || est.label}` : tdoc}
                               >
                                 {tdoc}
-                                {est.label && !bloq ? ` · ${est.label}` : ""}
+                                {est.label && !bloq ? ` · ${est.label}` : ""} <ChipAcuse f={f} />
                               </span>
                               <span className="font-medium" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>
                                 #{f.folio}
@@ -19405,6 +19456,8 @@ function facturasDelLibro(rutEmisor, excluir) {
       tipoDeudor: f.tipoDeudor,
       notaCredito: f.notaCredito,
       reclamada: f.reclamada,
+      acuse: f.acuse,
+      fchAcuse: f.fchAcuse,
       credito: f.credito,
     });
   }
@@ -31039,10 +31092,10 @@ function facturasDeCandidata(cand, anclaISO) {
     const fecha = d.toISOString().slice(0, 10);
     const monto = Math.max(50000, Math.round((totalCLP * pesos[i]) / sumaPesos));
     const exenta = r() < 0.1;
-    const u = r();
-    const estado = u < 0.9 ? "Aceptada" : u < 0.96 ? "Reclamada" : "Sin acuse";
+    // El acuse del receptor NO se inventa (regla 69): es una bandera del DTE que sólo el A1 trae, y un candidato no tiene
+    // documentos en el A1. La columna «Aceptada/Reclamada» del Excel se retiró con el sorteo que la llenaba.
     const nc = r() < 0.07;
-    const cedida = estado !== "Reclamada" && r() < pCede; // una factura reclamada no se cede
+    const cedida = r() < pCede;
     const ces = CESIONARIOS_MERCADO[Math.floor(r() * CESIONARIOS_MERCADO.length)];
     out.push({
       mes: fecha.slice(0, 7),
@@ -31050,7 +31103,6 @@ function facturasDeCandidata(cand, anclaISO) {
       folio: 0,
       tipo: exenta ? "34 · Factura exenta electrónica" : "33 · Factura electrónica",
       monto,
-      estado,
       nc: nc ? "Sí" : "No",
       cedido: cedida ? "Sí" : "No",
       cesRut: cedida ? ces.rut : "",
@@ -31083,7 +31135,6 @@ async function exportarCandidatasXlsx(soloExec, usuarioNombre) {
     "Folio",
     "Fecha Emisión",
     "Monto",
-    "Aceptada/Reclamada",
     "Nota de crédito",
     "Cedido",
     "Cesionario RUT",
@@ -31099,7 +31150,7 @@ async function exportarCandidatasXlsx(soloExec, usuarioNombre) {
     for (const f of fs) {
       total += f.monto;
       if (f.cedido === "Sí") cedido += f.monto;
-      filasFact.push([c.rut, c.razonSocial, f.mes, f.tipo, f.folio, f.fecha, f.monto, f.estado, f.nc, f.cedido, f.cesRut, f.cesNombre]);
+      filasFact.push([c.rut, c.razonSocial, f.mes, f.tipo, f.folio, f.fecha, f.monto, f.nc, f.cedido, f.cesRut, f.cesNombre]);
     }
     filasEmp.push([
       c.rut,
