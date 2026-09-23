@@ -172,3 +172,41 @@ test("sonda negativa: un duplicado, un montaje raíz, una t16 y un vendor distin
   assert.deepEqual(c.sinDeclarar, ["t16"]);
   assert.deepEqual(vendorOrdenDe('const vendorOrden = ["a.js", "b.js"];', '$vendorOrden = @("a.js")'), { mjs: ["a.js", "b.js"], ps1: ["a.js"] });
 });
+
+/* EL PASO 0 SE CORRE CON LA VERSIÓN QUE CORRE EL CI (23-09-2026).
+   `npx prettier` sin versión resuelve a la última publicada, y dos versiones NO formatean igual: el
+   ternario de `estPill` en `VerificacionTab` lo quiere en un renglón con 3.8.1 y partido en dos con
+   3.6.2, que es la que `gates.yml` instala. El resultado es una línea que OSCILA —entró pegada el
+   21-09, la mezcla del 22-09 la dejó canónica, la del 23-09 la volvió a pegar— y, cada vez que cae
+   del lado del CI, un `prettier --check` local en verde contra un job en rojo. Y el paso 0 es el
+   PRIMERO del workflow: el job sale con 1 ahí y no corre nada más, así que tres commits de `main`
+   quedaron sin linter, sin tsc, sin build, sin gates, sin suite y sin e2e — mientras el tablero
+   citaba «440/440», cierto en la rama donde se midió y no en `main`.
+   Por eso el comando va PINNEADO en los cuatro sitios que lo escriben, y este gate los mantiene juntos. */
+export function prettierPinDe(texto) {
+  const m = texto.match(/npx prettier@(\d+\.\d+\.\d+) --(?:check|write)/);
+  return m ? m[1] : null;
+}
+export function prettierInstaladoEnCI(yml) {
+  const m = yml.match(/npm i -g [^\n]*\bprettier@(\d+\.\d+\.\d+)/);
+  return m ? m[1] : null;
+}
+
+test("el paso 0 fija la MISMA versión de Prettier que el CI instala, en los cuatro sitios", () => {
+  const yml = leer(".github/workflows/gates.yml");
+  const pin = prettierInstaladoEnCI(yml);
+  assert.ok(pin, "gates.yml ya no instala una versión fija de prettier: sin eso el paso 0 no es reproducible");
+  for (const rel of ["CLAUDE.md", ".claude/rules/testing.md", "vault/conocimiento/verificacion.md", ".github/workflows/gates.yml"]) {
+    const v = prettierPinDe(leer(rel));
+    assert.ok(v, `${rel} escribe el paso 0 sin fijar la versión: \`npx prettier\` a secas resuelve a la última y no formatea igual`);
+    assert.equal(v, pin, `${rel} fija prettier@${v} y el CI instala ${pin}: el fuente va a oscilar entre las dos`);
+  }
+});
+
+test("sonda negativa: una versión suelta o desalineada en cualquiera de los cuatro se caza", () => {
+  assert.equal(prettierPinDe("npx prettier --check pipeline_comercial.jsx"), null, "dio por fijada una versión que no está");
+  assert.equal(prettierPinDe("npx prettier@3.6.2 --check pipeline_comercial.jsx"), "3.6.2");
+  assert.equal(prettierPinDe("npx prettier@3.8.1 --write pipeline_comercial.jsx"), "3.8.1");
+  assert.equal(prettierInstaladoEnCI("npm i -g typescript@6.0.2 prettier@3.6.2 eslint@10.1.0"), "3.6.2");
+  assert.equal(prettierInstaladoEnCI("npm i -g typescript@6.0.2 eslint@10.1.0"), null, "no notó que el CI dejó de fijarla");
+});

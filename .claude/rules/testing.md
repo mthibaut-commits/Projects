@@ -84,7 +84,7 @@ el padrón no declare. Un fixture que necesite una identidad la toma del padrón
   aparece como un `SyntaxError` a decenas de líneas de distancia, en el `})();` del final, y después de dos
   minutos de suite. `node --check` lo localiza en un segundo (18-09-2026: git cortó el `<<<<<<<` justo después
   del `}` que cerraba un caso, así que ese `}` no estaba en NINGUNO de los dos lados).
-- Antes de commitear: el **paso 0** (`npx prettier --check pipeline_comercial.jsx`) y los seis pasos de
+- Antes de commitear: el **paso 0** (`npx prettier@3.6.2 --check pipeline_comercial.jsx`) y los seis pasos de
   `CLAUDE.md` en orden. Ninguno subsume a otro.
 - **Un gate de texto que cae tras formatear el fuente se RE-ANCLA, no se afloja** (ADR-0006). Los gates
   `regla_<slug>` leen el `.jsx` como texto: el patrón se aplica sobre `canonico(src)` —espacios

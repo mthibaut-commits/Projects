@@ -20,7 +20,7 @@ en 0 oportunidades**) en un HTML standalone que se abre en Chrome. El porqué de
 ## Verificación — SIEMPRE tras editar el `.jsx`, en este orden
 
 ```bash
-npx prettier --check pipeline_comercial.jsx                                                                   # 0 · el formato (ADR-0006)
+npx prettier@3.6.2 --check pipeline_comercial.jsx                                                                   # 0 · el formato (ADR-0006)
 npx eslint pipeline_comercial.jsx                                                                             # 0-bis · el linter (0 hallazgos)
 npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx                              # 1 · sin errores TS1
 grep -oE '^(export default )?(async )?(function|const|let|var|class) [A-Za-z_$][A-Za-z0-9_$]*' pipeline_comercial.jsx | awk '{print $NF}' | sort | uniq -d  # 2 · debe salir vacío
@@ -34,7 +34,7 @@ Los pasos **0 y 0-bis** no verifican una conducta: protegen a los otros. El lint
 reglas de estilo —de la forma se encarga Prettier— y cada regla suya cita el incidente de este repo que habría
 cazado; al adoptarlo encontró una clave duplicada en un objeto de pricing. Los gates `regla_<slug>` y los dos auditores
 leen el fuente como TEXTO y están re-anclados contra el `.jsx` formateado (ADR-0006), así que deshacer el formato
-los tumba de a uno en sesiones distintas. Para arreglarlo: `npx prettier --write pipeline_comercial.jsx`.
+los tumba de a uno en sesiones distintas. Para arreglarlo: `npx prettier@3.6.2 --write pipeline_comercial.jsx`.
 Ninguno de los seis subsume a otro, **y los cinco primeros juntos tampoco bastan**: la colisión parámetro/variable local, un
 bloque declarado antes de su dependencia y un componente no importado pasan `tsc` y el build, y sólo aparecen en
 el paso 5 o al abrir la pantalla — que es lo que hace el paso 6 (`tests/e2e/`, con la sesión iniciada y el detalle
