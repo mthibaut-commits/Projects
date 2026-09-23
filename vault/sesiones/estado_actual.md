@@ -13,9 +13,9 @@ timestamp: 2026-09-23T14:10:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **151/151 PASA**, **40 archivos de gate de contrato**
-(275 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
-(77 reglas verbatim por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró
+(`pipeline_comercial.jsx`), build standalone, **151/151 PASA**, **41 archivos de gate de contrato**
+(277 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
+(78 reglas verbatim por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró
 la tabla de invariantes**: cada regla y los 12 del contrato tienen gate. La crónica del 17 al 19-09 vive en
 sus logs (reglas 32–40, ADR-0003 a 0006, y el **linter** en 0 como paso 0-bis).
 
@@ -30,19 +30,18 @@ reconstruido del historial, estampada en cada hoja del PDF, con el gate exigiend
 calcen. Y **`Capturas_Simuladas/`**. De paso, tres defectos de `main`: el **paso 0 en rojo** y dos bloques de
 comandos sin un salto de línea, con lo que la verificación canónica mostraba ocho pasos y no nueve.
 
-El **23-09**, tres cosas. Los **casos de prueba**: `Casos_de_Prueba/casos-de-prueba-pantallas.md`, **97 casos**
-sobre las cinco pantallas, cada uno con la regla que lo fija y su cobertura **medida** — 80 automatizados y
-**17 manuales**, **7 de ellos en la Mesa de verificación**, la pantalla menos cubierta. La **regla 47**: el
-millón es la ÚLTIMA CAPA — un mensaje al cliente multiplicaba por un millón y tres layouts declaraban campos
-en MM$ (A11 contradecía a su generador **por mil**). Y la **regla 48**, que reemplaza el punto de la 47 que
-dejaba vivir el sufijo `_M`: **todo generador produce en PESOS**. Veinte campos de cuatro activos viajaban en
-miles, cuantizados de a $1.000, y dos entran en criterios que DECIDEN —`MNT_PAGARES` en C02 y V03/V04 como
-denominadores del predictor—. Se van veinte multiplicaciones por mil del fuente; A10 sube a 3.0.0, A11 y A16
-a 4.0.0; el caso **115 se re-ancla** a comparar contra la celda tal cual, que es más fuerte que el `×1000`
-que tenía. `auditar_unidades` estrena el patrón **(d)** y **queda cableado** con línea base **cero**. Y los dos
-campos que quedaban con nombre de escala en el activo —`LineaSugeridaMM` (BASE) y `RequeridoParaTargetMM`,
-que guardaba PESOS bajo nombre de millones— **se eliminaron**: nadie los leía. El gate nuevo los mide
-sobre el ARCHIVO, que es donde un bloque BASE esconde lo que ninguna corrida alcanza.
+El **23-09**, cuatro cosas. Los **casos de prueba** (`Casos_de_Prueba/`, **97 casos** sobre las cinco
+pantallas, 80 automatizados y **17 manuales**, 7 en la Mesa de verificación). La **regla 47**: el millón es
+la ÚLTIMA CAPA — un mensaje al cliente multiplicaba por un millón y tres layouts declaraban campos en MM$.
+La **48**, que reemplaza el punto de la 47 que dejaba vivir el `_M`: **todo generador produce en PESOS**,
+porque en miles cada monto se cuantiza de a $1.000 y dos entran en criterios que DECIDEN (C02, y V03/V04
+como denominadores del predictor); se van veinte multiplicaciones por mil del fuente y los dos campos que
+nadie leía. Y la **49**: la **cartera comercial se LEE**. `PC_CLIENTES` sorteaba volumen, competidor y
+«malos deudores» con `pcRng`, y el volumen iba en una escala sin declarar que **cuatro KPI de Reportes
+pasan por `fmtMMc`**: mostraban ~**M$5** donde va la cartera de 500 clientes. Ahora salen del A11
+(colocación y mix por cesionario) y de `NOTA_PRIORITARIA`; el **fallback sintético de 80 empresas** se fue
+entero y las series de mercado pasan a pesos. `auditar_unidades` estrena el patrón **(d)** y queda cableado
+con línea base **cero**.
 
 **Las líneas, en un párrafo.** La ESTRUCTURA es un insumo (44, ADR-0010): el **activo A23** reemplaza los 3.170 de
 3.636 objetos que salían del A7; el **nivel 1 es la SUMA** (45) y el **RUT del deudor se resuelve, no se arma** (46).
@@ -77,4 +76,4 @@ Queda **el tag `v0.1.0`** sobre `bd14091` y **borrar las ramas integradas**.
 ## Conocimiento clave
 
 [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto, en [`vault/index.md`](../index.md)
-Últimas: [regla 48](./2026-09-23_generadores_en_pesos.md) · [regla 47](./2026-09-23_el_millon_es_la_ultima_capa.md) · [casos de prueba](./2026-09-23_casos_de_prueba.md) · [versionado](./2026-09-21_versionado_de_entregables.md) · [ordenar la carpeta](./2026-09-21_ordenar_la_carpeta.md) · [mensajería](./2026-09-21_spec_mensajeria.md) · [las tres casuísticas del elenco](./2026-09-20_las_tres_casuisticas_del_elenco.md) · [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md) · [las líneas son un insumo](./2026-09-20_las_lineas_son_un_insumo.md)
+Últimas: [regla 49](./2026-09-23_cartera_leida_no_inventada.md) · [regla 48](./2026-09-23_generadores_en_pesos.md) · [regla 47](./2026-09-23_el_millon_es_la_ultima_capa.md) · [casos de prueba](./2026-09-23_casos_de_prueba.md) · [versionado](./2026-09-21_versionado_de_entregables.md) · [ordenar la carpeta](./2026-09-21_ordenar_la_carpeta.md) · [mensajería](./2026-09-21_spec_mensajeria.md) · [las tres casuísticas del elenco](./2026-09-20_las_tres_casuisticas_del_elenco.md) · [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md) · [las líneas son un insumo](./2026-09-20_las_lineas_son_un_insumo.md)

@@ -2737,7 +2737,7 @@ const P360 = (() => {
 // cesiones —bancarias y no bancarias— identificando en cada una al cesionario. O sea que el activo
 // contesta la pregunta entera: con quién se financia el cliente y en qué proporción. Se MIDE sobre el
 // A2, se INYECTA en el A11 (Plataforma 360) y de ahí lo lee esta pantalla, que es el mismo camino de
-// `COLOC_PROM_12M_M` y `FECHA_PRIMERA_OPERACION`.
+// `COLOC_PROM_12M` y `FECHA_PRIMERA_OPERACION`.
 //
 // Lo que el archivo trae es el DETALLE por cesionario, que es la medición. La PARTICIÓN en cuatro
 // porciones se aplica acá, al leer, porque una de las cuatro —el factoring target— es política
@@ -27565,12 +27565,16 @@ const PC_COMPETIDORES = [
   { name: "Banco Estado", mm: 82825 },
   { name: "Banco Itaú Corpbanca", mm: 79741 },
 ];
-const PC_MERCADO = [245, 200, 215, 210, 206, 191, 196, 193, 192, 188, 184, 196]; // B CLP/mes (mercado total)
-const PC_SECURITY = [60, 57, 62, 63, 61, 58, 59, 59, 60, 59, 57, 58]; // B CLP/mes (Security)
+// Referencia de mercado del demo, EN PESOS y por mes (regla 48). Venían escritas en miles de millones
+// —«245» por 245 B CLP— y el eje del gráfico de zonas las rotulaba «$13 MM», que dice millones donde
+// el dato son miles de millones. Escribirlas en pesos deja al formateador único resolver la escala.
+const MM = 1e9; // un mil millones de pesos: la unidad en la que estas series se estimaron
+const PC_MERCADO = [245, 200, 215, 210, 206, 191, 196, 193, 192, 188, 184, 196].map((v) => v * MM); // mercado total
+const PC_SECURITY = [60, 57, 62, 63, 61, 58, 59, 59, 60, 59, 57, 58].map((v) => v * MM); // Security
 const PC_ZONA = {
-  Norte: [13.0, 18.2, 15.0, 15.4, 17.0, 12.2, 10.6, 14.3, 14.0, 16.4, 13.2, 15.2],
-  Centro: [30.0, 21.2, 23.4, 26.4, 28.2, 21.4, 23.6, 18.6, 19.0, 19.4, 18.7, 21.6],
-  Sur: [15.4, 13.4, 14.0, 16.0, 11.8, 14.6, 12.8, 13.4, 17.2, 14.9, 17.4, 13.0],
+  Norte: [13.0, 18.2, 15.0, 15.4, 17.0, 12.2, 10.6, 14.3, 14.0, 16.4, 13.2, 15.2].map((v) => v * MM),
+  Centro: [30.0, 21.2, 23.4, 26.4, 28.2, 21.4, 23.6, 18.6, 19.0, 19.4, 18.7, 21.6].map((v) => v * MM),
+  Sur: [15.4, 13.4, 14.0, 16.0, 11.8, 14.6, 12.8, 13.4, 17.2, 14.9, 17.4, 13.0].map((v) => v * MM),
 };
 const fmtMMc = (n) => "M$" + Math.round((n || 0) / 1e6).toLocaleString("es-CL");
 // ============================================================
@@ -31354,7 +31358,7 @@ function PClineas({ series, cols, modo }) {
           <g key={i}>
             <line x1={padL} y1={y} x2={W - padR} y2={y} stroke={C.line} strokeWidth="1" strokeDasharray="3 4" />
             <text x={padL - 4} y={y + 3} textAnchor="end" fontSize="8" fill={C.faint}>
-              {modo === "sow" ? Math.round(v) + "%" : "$" + Math.round(v) + (modo === "vol" ? " MM" : "")}
+              {modo === "sow" ? Math.round(v) + "%" : fmtMM(v)}
             </text>
           </g>
         );
@@ -31371,17 +31375,6 @@ function PClineas({ series, cols, modo }) {
     </svg>
   );
 }
-const PC_COMPET_NAMES = [
-  "Bci Factoring",
-  "Banco De Chile",
-  "BICE Factoring",
-  "Banco Santander Chile",
-  "Scotiabank Chile",
-  "Tanner",
-  "Banco Estado",
-  "Banco Itaú Corpbanca",
-  "Penta Financiero",
-];
 function pcRng(seed) {
   let a = seed >>> 0;
   return () => {
@@ -31400,15 +31393,20 @@ const PC_CLIENTES = (() => {
   const dte = typeof window !== "undefined" && Array.isArray(window.DTESYNC) ? window.DTESYNC : [];
   if (dte.length) {
     const vistos = new Map(); // RUTEmisor -> RznSoc (empresa)
+    const deudoresDe = new Map(); // RUTEmisor -> Set(RUTRecep): con quién factura cada cliente
     for (const r of dte) {
-      if (r && r.RUTEmisor && !vistos.has(r.RUTEmisor)) vistos.set(r.RUTEmisor, r.RznSoc);
+      if (!r || !r.RUTEmisor) continue;
+      if (!vistos.has(r.RUTEmisor)) vistos.set(r.RUTEmisor, r.RznSoc);
+      if (!r.RUTRecep) continue;
+      let s = deudoresDe.get(r.RUTEmisor);
+      if (!s) deudoresDe.set(r.RUTEmisor, (s = new Set()));
+      s.add(r.RUTRecep);
     }
     const out = [];
     let i = 0;
     for (const [rut, nombre] of vistos) {
       const ini = asignarEjecutivo({ cedente: nombre, rutEmisor: rut });
       const ex = PC_EXECS.find((e) => e.ini === ini) || PC_EXECS[0];
-      const r = pcRng(hashStr("cli" + rut));
       const s = SOW_POR_RUT[rut] || null; // SOW real si es cliente; null si prospecto
       const act = s ? Math.round(s.SOWActualPct || 0) : 0;
       const tgt = s ? Math.round(s.SOWTargetPct || 60) : 60;
@@ -31426,10 +31424,32 @@ const PC_CLIENTES = (() => {
         estado = "Security";
         tag = act < tgt ? "CAÍDA" : null;
       } // cliente sano / en caída leve
-      const vol = Math.round((5 + r() * 60) * 1000);
-      const malos = r() < 0.18;
-      const malosPct = 28 + Math.floor(r() * 14);
-      const vaA = PC_COMPET_NAMES[Math.floor(r() * PC_COMPET_NAMES.length)];
+      // LOS CUATRO SE LEEN, NO SE SORTEAN (regla 49). Se sorteaban con `pcRng`, y el `vol` además
+      // salía en una escala que no declaraba nadie —5.000 a 65.000— mientras cuatro KPI de esta misma
+      // pantalla lo pasaban por `fmtMMc`, que divide por un millón: «Brecha de wallet» mostraba M$5.
+      // El volumen que el cliente opera con nosotros lo publica el A11 (colocación promedio 12m, en
+      // pesos), que a su vez lo MIDE sobre las cesiones del A2 — el mismo camino que el mix.
+      const f360 = P360.porRut[rut] || null;
+      const vol = f360 ? +f360[P360.ix.COLOC_PROM_12M] || 0 : 0;
+      // A quién se le va el volumen: el CESIONARIO más grande que no somos nosotros, del detalle que
+      // el A11 publica (regla 13-quindecies). Antes salía de una lista de nombres al azar, así que la
+      // ficha podía nombrar a un factoring que jamás le compró una factura a ese cliente.
+      let vaA = null,
+        mayor = -1;
+      for (const parte of mixSowDe(rut) || []) {
+        if (parte.nuestro) continue;
+        for (const d of parte.detalle || []) if ((+d.pct || 0) > mayor) ((mayor = +d.pct || 0), (vaA = d.nombre || d.rut));
+      }
+      // «Con malos deudores»: la proporción de sus deudores bajo la nota de corte que el propio sistema
+      // usa para decidir a quién le abre oportunidad (`NOTA_PRIORITARIA`). El corte del 50% es de
+      // PANTALLA —parte en dos el panel de segmentos— y no una regla de negocio: la regla es la nota.
+      const deu = [...(deudoresDe.get(rut) || [])];
+      const bajos = deu.filter((rd) => {
+        const n = notaDeudor(null, rd);
+        return n != null && n < NOTA_PRIORITARIA;
+      }).length;
+      const malosPct = deu.length ? Math.round((bajos / deu.length) * 100) : 0;
+      const malos = malosPct >= 50;
       out.push({
         id: i++,
         nombre,
@@ -31450,62 +31470,12 @@ const PC_CLIENTES = (() => {
     }
     return out.sort((a, b) => b.vol - a.vol);
   }
-  // Fallback sintético (sin inyección de datos): universo determinista de 80 empresas.
-  const rnd = pcRng(20260630);
-  const out = [];
-  const pref = [
-    "CONSTRUCTORA",
-    "INGENIERIA",
-    "TRANSPORTES",
-    "COMERCIAL",
-    "SERVICIOS",
-    "INVERSIONES",
-    "DISTRIBUIDORA",
-    "DESARROLLOS",
-    "INDUSTRIAS",
-    "MAESTRANZA",
-    "AGRICOLA",
-    "SOCIEDAD",
-    "INGENIERIA Y CONSTRUCCION",
-  ];
-  const mid = [
-    "CERRO NEVADO",
-    "DEL SUR",
-    "ANDINA",
-    "PACIFICO",
-    "CENTRAL",
-    "DEL VALLE",
-    "AUSTRAL",
-    "CORDILLERA",
-    "DEL MAIPO",
-    "SAN PEDRO",
-    "LOS ANDES",
-    "EL ROBLE",
-    "BAPA GRAMATE",
-    "AVA MONTAJES",
-    "MST",
-    "L Y D",
-    "DIGUA",
-    "QUILIN",
-  ];
-  const suf = ["S.A.", "SPA", "LTDA", "LIMITADA", "EIRL"];
-  for (let i = 0; i < 80; i++) {
-    const ej = PC_EXECS[Math.floor(rnd() * PC_EXECS.length)];
-    const er = rnd();
-    const estado = er < 0.32 ? "Security" : er < 0.68 ? "Competencia" : "Inactivo";
-    const tr = rnd();
-    const tag = estado === "Security" ? (tr < 0.45 ? "CAÍDA" : null) : tr < 0.82 ? "FUGA" : null;
-    const vol = Math.round((5 + rnd() * 60) * 1000);
-    const malos = rnd() < 0.18;
-    const malosPct = 28 + Math.floor(rnd() * 14);
-    const sow = Math.round(rnd() * 55);
-    const target = rnd() < 0.18 ? 80 : 60;
-    const vaA = PC_COMPET_NAMES[Math.floor(rnd() * PC_COMPET_NAMES.length)];
-    const rut = `${76000000 + Math.floor(rnd() * 3900000)}-${"0123456789K"[Math.floor(rnd() * 11)]}`;
-    const nombre = `${pref[Math.floor(rnd() * pref.length)]} ${mid[Math.floor(rnd() * mid.length)]} ${suf[Math.floor(rnd() * suf.length)]}`;
-    out.push({ id: i, nombre, rut, estado, tag, ej: ej.nombre, ejIni: ej.ini, zona: ej.zona, jefatura: ej.jefatura, vol, malos, malosPct, sow, target, vaA });
-  }
-  return out.sort((a, b) => b.vol - a.vol);
+  // SIN ACTIVO NO HAY CARTERA. Acá vivía un universo sintético de 80 empresas —nombres armados con
+  // tres listas, RUT sorteados, volumen y SOW inventados— para cuando `datos_inyectados.js` no está.
+  // Se retiró (regla 49): sin ese archivo el pipeline muestra 0 oportunidades de todos modos, así que
+  // una cartera falsa al lado de un tubo vacío no rescata la demo, la vuelve incoherente — y esas 80
+  // empresas se mezclaban con las reales en cuanto el activo aparecía a medias.
+  return [];
 })();
 // ============================================================
 // CLIENTES — listado de empresas cliente (estilo administración de empresas).
@@ -35854,7 +35824,7 @@ function generarTareasConsolidadas(deals) {
         cat: "retener",
         prio: "critica",
         impacto: Math.round(c.vol * 0.8),
-        detalle: `Dejó de operar; su volumen se va a ${c.vaA}. Contacto directo con oferta de tasa de negocio.`,
+        detalle: `Dejó de operar${c.vaA ? `; su volumen se va a ${c.vaA}` : ""}. Contacto directo con oferta de tasa de negocio.`,
       });
     else if (c.estado === "Security" && c.tag === "CAÍDA")
       t.push({
@@ -35863,7 +35833,7 @@ function generarTareasConsolidadas(deals) {
         cat: "retener",
         prio: "alta",
         impacto: Math.round(c.vol * 0.6),
-        detalle: `Redujo sus operaciones Security y derivó facturas a ${c.vaA}. Visita de retención.`,
+        detalle: `Redujo sus operaciones Security${c.vaA ? ` y derivó facturas a ${c.vaA}` : ""}. Visita de retención.`,
       });
     else if (c.estado === "Competencia")
       t.push({
@@ -35881,7 +35851,7 @@ function generarTareasConsolidadas(deals) {
         cat: "reactivar",
         prio: "media",
         impacto: Math.round(c.vol * 0.5),
-        detalle: `Sin operar en el período. Reabrir la relación (última cesión a ${c.vaA}).`,
+        detalle: `Sin operar en el período. Reabrir la relación${c.vaA ? ` (última cesión a ${c.vaA})` : ""}.`,
       });
   });
   return t;
@@ -36242,7 +36212,7 @@ function TareaPanel({ tarea, deals, onClose, onOpenDeal, onAtender }) {
                 <Row k="Volumen" v={fmtMMc(cli.vol)} />
                 <Row k="SoW / target" v={`${cli.sow}% / ${cli.target}%`} />
                 <Row k="Deudores" v={cli.malos ? `Malos ${cli.malosPct}%` : "Buenos"} />
-                <Row k="Su volumen va a" v={cli.vaA} />
+                <Row k="Su volumen va a" v={cli.vaA || "— sólo cede a Security"} />
               </div>
             </div>
           )}

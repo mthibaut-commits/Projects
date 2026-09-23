@@ -148,3 +148,36 @@ timestamp: 2026-09-17T15:29:14Z
       fijo, más **«ningún campo del activo nombra una escala»**, que se mide sobre el ARCHIVO porque es
       donde el sufijo sobrevive sin que nadie lo note— y la línea base **cero** de `auditar_unidades` en
       `auditores.test.mjs`.
+
+49. **LA CARTERA COMERCIAL SE LEE, NO SE INVENTA: fuera los generadores que quedaban dentro de la app**
+    (23-09-2026, instrucción del usuario: «saca esos generadores y cuando los implementes, que escalen en
+    pesos»). Es la regla núcleo 9 —*el pipeline lee los activos, no los genera*— aplicada al último sitio
+    donde seguía sin cumplirse, y lo que la hace urgente es que **no era sólo suciedad: cuatro KPI estaban
+    mal**.
+    - **`PC_CLIENTES` sorteaba cuatro campos con `pcRng`**: el volumen del cliente, si tenía «malos
+      deudores», en qué proporción, y **a qué competidor se le iba el volumen** —este último de una lista
+      de nombres al azar, así que la ficha podía nombrar a un factoring que jamás le compró una factura a
+      ese cliente—.
+    - **El daño medido.** `vol` salía en una escala que no declaraba nadie (5.000 a 65.000) y cuatro KPI de
+      Reportes lo pasan por `fmtMMc`, que **divide por un millón**: «Brecha de wallet», «cedido», «Buenos»
+      y «Malos» mostraban del orden de **M$5** donde va la cartera de 500 clientes. No es un redondeo: es
+      un factor de un millón, la misma familia del 14-09.
+    - **De dónde sale cada uno ahora**, y todos existían ya: el **volumen** del `COLOC_PROM_12M` del A11
+      —colocación promedio 12m, en pesos, que el propio activo MIDE sobre las cesiones del A2—; el
+      **competidor** del detalle por cesionario del mismo A11, tomando el mayor que no somos nosotros
+      (regla 13-quindecies); y los **malos deudores** de la proporción de sus deudores bajo
+      `NOTA_PRIORITARIA`, que es la nota de corte que el sistema ya usa para decidir a quién le abre
+      oportunidad. El corte del 50% que parte el panel en dos es de **pantalla** y está dicho como tal: la
+      regla es la nota.
+    - **El fallback sintético de 80 empresas se retira entero.** Armaba nombres con tres listas, sorteaba
+      RUT y fabricaba volumen y SOW para cuando falta `datos_inyectados.js`. Sin ese archivo el pipeline
+      muestra **0 oportunidades** de todos modos: una cartera falsa al lado de un tubo vacío no rescata la
+      demo, la vuelve incoherente — y esas 80 empresas se mezclaban con las reales apenas el activo
+      aparecía a medias. Sin activo, `PC_CLIENTES` es `[]`.
+    - **Y las series de referencia del mercado pasan a PESOS.** `PC_MERCADO`, `PC_SECURITY` y `PC_ZONA`
+      estaban escritas en miles de millones («245» por 245 B CLP) y el eje del gráfico de zonas las
+      rotulaba **«$13 MM»**, que dice millones donde el dato son miles de millones. Ahora se escriben en
+      pesos y el eje usa `fmtMM`, el formateador único.
+    - Gate: `regla_49.test.mjs` sobre el texto del fuente —ni `pcRng` ni una lista de competidores dentro
+      de `PC_CLIENTES`, y el catálogo sale de `P360`— más la línea base de `auditar_muerto`, que es la que
+      obliga a que no quede ningún resto sin referencias.
