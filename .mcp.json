@@ -30,6 +30,15 @@
       "args": [
         ".mcp-servers/playwright/lanzar.mjs"
       ]
+    },
+    "graphify": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "graphifyy[mcp]",
+        "graphify-mcp",
+        "graphify-out/graph.json"
+      ]
     }
   }
 }
