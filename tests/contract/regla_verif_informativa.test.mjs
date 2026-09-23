@@ -1,7 +1,7 @@
-/* Gate de contrato de la regla 53 (el tab de Verificación: informativo al simular, el deudor decide y
+/* Gate de contrato de la regla 59 (el tab de Verificación: informativo al simular, el deudor decide y
    la factura se llama), sobre el TEXTO del fuente. `VerificacionTab` es un componente de React y la
    suite no monta componentes —lo dice `.claude/rules/testing.md`—, así que lo que esta regla fija se
-   vigila acá y en el caso `e2e-53`, que abre la pantalla.
+   vigila acá y en los casos `e2e-59-a`/`-b`, que abren la pantalla.
 
    Las tres mitades que se fijan, y por qué ninguna se prueba sola:
 
@@ -46,7 +46,7 @@ export function cuerpoDe(src, decl) {
   return null;
 }
 
-export function auditarRegla53(src) {
+export function auditarRegla59(src) {
   const fallos = [];
   const can = canonico(src);
 
@@ -117,8 +117,8 @@ export function auditarRegla53(src) {
   return fallos;
 }
 
-test("53 · el tab de Verificación: informativo al simular, chip Prime + Nota Deudor, y los criterios del deudor separados del quiz por factura", () => {
-  assert.deepEqual(auditarRegla53(jsx), []);
+test("59 · el tab de Verificación: informativo al simular, chip Prime + Nota Deudor, y los criterios del deudor separados del quiz por factura", () => {
+  assert.deepEqual(auditarRegla59(jsx), []);
 });
 
 const MUTANTES = {
@@ -188,9 +188,9 @@ const MUTANTES = {
 };
 
 for (const [nombre, m] of Object.entries(MUTANTES)) {
-  test(`53 · sonda: el mutante «${nombre}» lo atrapa el auditor`, () => {
+  test(`59 · sonda: el mutante «${nombre}» lo atrapa el auditor`, () => {
     assert.notEqual(m.src, jsx, "el mutante no cambió el fuente: la sonda no probaría nada");
-    const fallos = auditarRegla53(m.src);
+    const fallos = auditarRegla59(m.src);
     assert.ok(
       fallos.some((f) => m.re.test(f)),
       `esperaba un fallo ${m.re}; obtuve ${JSON.stringify(fallos)}`,

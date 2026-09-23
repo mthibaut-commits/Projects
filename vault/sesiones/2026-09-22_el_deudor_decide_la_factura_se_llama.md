@@ -6,7 +6,7 @@ tags: [sesion, verificacion, e2e, pantalla]
 timestamp: 2026-09-22T08:00:00Z
 ---
 
-# El deudor decide, la factura se llama · regla 53
+# El deudor decide, la factura se llama · regla 59
 
 ## Qué pidió el usuario
 

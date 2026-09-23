@@ -38,7 +38,7 @@ destapó que `atribDeRol` resolvía el super-admin por el CÓDIGO «ADMIN» y no
 ([log](./2026-09-21_el_tenant_se_da_de_alta.md)) · y se **ordenó la carpeta**, que las dos ramas hicieron
 a la vez: ganó la de `main` —`Auditoria/` es lo que MIDE y `Regresiones/` lo que COTEJA definición contra
 implementación— y de acá quedó el gate `rutas.test.mjs`
-([log](./2026-09-21_ordenar_las_carpetas.md)) · y el **tab de Verificación** (53): se ve al SIMULAR
+([log](./2026-09-21_ordenar_las_carpetas.md)) · y el **tab de Verificación** (59): se ve al SIMULAR
 —en modo informativo, porque lo que la compuerta de la regla 6 protege es la LLAMADA y no la
 información—, el chip del deudor dice **Prime** y la nota va rotulada en vez de «Lista Blanca», y los
 criterios V00–V10 subieron al panel del DEUDOR dejando en la factura sólo su quiz telefónico

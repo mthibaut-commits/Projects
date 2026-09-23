@@ -1,4 +1,4 @@
-/* Gate e2e de la regla 53: el tab de Verificación con la oferta SÓLO SIMULADA. Lo que la capa de
+/* Gate e2e de la regla 59: el tab de Verificación con la oferta SÓLO SIMULADA. Lo que la capa de
    contrato no puede ver, porque lee el fuente como texto y no monta nada:
 
    · que el tab APAREZCA al simular y no antes (las dos direcciones: con la oferta vacía no está);
@@ -116,7 +116,7 @@ const abrirPrimerQuiz = async (det) => {
 
 export const casos = [
   {
-    id: "e2e-53-a",
+    id: "e2e-59-a",
     titulo:
       "con la oferta SÓLO simulada el tab Verificación aparece (y con la oferta vacía no) en modo INFORMATIVO: cartel puesto, y ni siquiera el Ejecutivo de verificación puede registrar la llamada ni retirar la factura; el deudor va con «Nota Deudor» y sin «Lista Blanca», sus criterios están UNA vez en el panel del grupo y la fila de factura sólo abre el quiz",
     correr: async (h) => {
@@ -185,7 +185,7 @@ export const casos = [
     },
   },
   {
-    id: "e2e-53-b",
+    id: "e2e-59-b",
     titulo:
       "la otra dirección sobre la MISMA pantalla: pre-evaluar abre la llamada — el cartel informativo desaparece y el Ejecutivo de verificación ya tiene «Registrar verificación» y «El deudor no confirmó · retirar» en el quiz de la factura",
     correr: async (h) => {
