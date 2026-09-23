@@ -182,3 +182,68 @@ timestamp: 2026-09-17T15:29:14Z
       justificación que vacía la cuenta) y `regla_66.test.mjs` (la llamada en `cerrarOferta`, el rechazo en
       `solicitarAprobacionExc` y la declaración en `enviarPreEval`, cada uno con sonda).
 
+
+76. **Nadie escribe una transición que no le corresponde, y la máquina de estados NO es una fila** (23-09-2026, instrucción del
+    usuario sobre los gaps G-24, G-25 y G-26 del proceso de curse: «tienes que hacer que se cumplan las reglas del flujo»,
+    «debes hacer que esas transiciones sí se guarden — siempre que haya una pérdida se debe almacenar la causa que la originó,
+    no sólo la transición a pérdida», «la respuesta de WhatsApp no vale como una firma»). Las reglas 1, 5 y 26 estaban escritas
+    y cada una tenía su gate; lo que faltaba era que **todos** los escritores las obedecieran. Tres entraban por la puerta de
+    atrás, y el patrón es siempre el mismo: **la decisión estaba extraída y pura, y el escritor volvía a decidir por su cuenta.**
+    - **LOS DOS TRAMOS** (definición del usuario: «la cesión y otorgamiento no son lineales, son atributos que ocurren en
+      instancias desacopladas por naturaleza»). El tramo **comercial** —`prospeccion` → `oferta`— sí está ordenado, porque ahí
+      una oportunidad progresa. El **posterior a la firma** —`aceptadas`, `cesion`, `otorgamiento`, `giro`— **no tiene orden que
+      violar**: `etapaTrasFirma` deja la operación firmada en `otorgamiento` si falta algo y en `cesion` si no falta nada, y
+      resuelto lo que faltaba vuelve a `cesion` como Pendiente Integración — lo que distingue esos dos `cesion` no es la etapa
+      sino `integracion`. La primera versión de la guarda los puso en una lista lineal y **convirtió el avance normal en un
+      retroceso**, bloqueándolo; lo cazó el caso **172** al primer intento. `perdida` no está en ningún tramo: se pierde desde
+      cualquier parte y no se sale nunca.
+    - **G-24 · tras el otorgamiento se va a OPERACIONES, no a giro.** El `useEffect` de avance escribía `stage: "giro"` con
+      `giroPendiente: false` —«Girada», el dinero dado por transferido— sin pasar por `controlesIntegracion`, o sea saltándose
+      **VER-01** (las llamadas), **LIN-01** (la cobertura de línea) y **GIR-02** (la huella de lo firmado). Es el MISMO salto que
+      la regla 26 ya había cerrado en `etapaTrasFirma` y que volvió por la otra puerta. Ahora decide `avanceTrasOtorgamiento`,
+      pura y de nivel módulo, y la usan **los dos** avances —el del efecto y el de `avanzarPipeline`—: escrita dos veces se
+      desfasaba, y de hecho ya estaba desfasada (`otorgPorExcepcion` salía de `!otorgAuto` en un lado y del visado en el otro).
+      **`stage: "giro"` tiene UN escritor: `aprobarIntegracion`**, que es donde viven la atribución de Operaciones N3 y los cuatro
+      controles. Y **VER-01 se comprueba en la función pura**, no sólo al integrar: `otorgamientoCompleto` mira el VISADO, no las
+      llamadas, así que sin eso una operación por verificar salía hacia Operaciones igual.
+    - **El acumulado del día se mudó a `aprobarIntegracion`.** Contar la venta girada al completar el otorgamiento era la misma
+      mentira por el lado del KPI: una operación esperando a Operaciones figuraba como girada. Cuando el aviso de Tesorería esté
+      modelado (G-28) el conteo se mueve al giro efectivo, y esto pasa a contar lo inyectado, que no es lo mismo.
+    - **G-25 · las transiciones manuales tienen catálogo, y la pérdida SIEMPRE guarda su causa.** `moverEtapa` —el «Avanzar a» del
+      menú y el arrastre del Kanban— tenía guardas y aun así dejaba tres agujeros: escribía `perdida` **sin causa**, escribía
+      `cesion` **sin `integracion`** (la operación se rotulaba «Aceptada», no aparecía en Operaciones y nadie la iba a girar:
+      invisible es peor que bloqueada) y dejaba **retroceder** conservando la firma. Ahora decide `transicionManual`, pura, y el
+      handler sólo escribe lo que ese catálogo autorizó. **La pérdida no se escribe ahí: se DELEGA en `reject`**, que es el único
+      camino que ya registra causa, etapa de origen, actor y fecha — un segundo escritor de la pérdida es el defecto, no la
+      solución. Sin `closeReason` la transición se rechaza con código `REGLA-5`, se registra y se audita.
+    - **LAS DOS PUERTAS, y por poco se cierra una sola.** `moverEtapa` (el «Avanzar a» del detalle) y `moveTo` (el
+      arrastre del Kanban) entran a la misma máquina de estados, y `moveTo` escribía `stage` **directo**, con su
+      propia copia de las guardas. Arreglado `moverEtapa`, **arrastrar la tarjeta a la columna Perdida seguía
+      perdiendo sin causa, sin actor y sin etapa de origen**. Ahora las dos preguntan al mismo catálogo. Y como
+      arrastrar no puede aportar un motivo de cierre, **la pérdida deja de ser un destino manual**: su gesto es
+      «Rechazar», que pide el motivo y lo guarda. El menú de acciones ya la excluía; el `<select>` de «Avanzar
+      a» la ofrecía, y ahí estaba la puerta. El rechazo se registra en la bitácora en las dos puertas.
+    - **`stage: "aceptadas"` no tiene NINGÚN escritor** en todo el fuente, medido: la firma deja la operación en `cesion`
+      (`dealFirmado`). Ofrecerla como destino manual era ofrecer un estado que el proceso no produce.
+    - **Sobre «giro» no se audita nada**, y eso sobrevive: la decisión del 19-09-2026 dice que girar no es un acto de NEX, así que
+      el catálogo lo rechaza con `GIR-01` y el handler **no** lo registra ni lo audita — auditarlo sería NEX adjudicando algo que
+      no le toca. Es el único código de rechazo que calla.
+    - **G-26 · un «sí» en el chat no es una firma.** El intent `cursar` del canal WhatsApp escribía `clienteAcepto: true` con la
+      operación todavía en `oferta` —sin portal, sin OTP validado, sin firma— y `aprobacionFormalCliente` la daba por aceptada:
+      justo lo que la regla 1 impide para el ejecutivo, entrando por la puerta del canal. Definición del usuario: «WhatsApp lo que
+      hace es enviar un link para que el usuario ingrese a la plataforma y firme la operación **tal cual como si el cierre se
+      hubiera hecho a través de email**». Así que el intent manda el enlace y la clave, deja `cierreEnviado` y `ofertaComunicada`,
+      y el estado dice «Enlace de cierre enviado · esperando la firma en el portal». **`telValidado` se queda**: dice que el
+      teléfono es un canal de contacto válido —lo leen `contactoOk` y el badge de contacto— y no tiene nada que ver con aceptar.
+    - Casos **172** (el catálogo) y **173** (el avance a Pendiente Integración, con VER-01 en las dos direcciones) y
+      `regla_76.test.mjs`, que exige el escritor único de `stage: "giro"`, las dos compuertas dentro de la función pura, que
+      `moverEtapa` consulte el catálogo y que el intent `cursar` no escriba `clienteAcepto` — cada uno con su sonda.
+    - **Un gate que mira el texto tiene que mirar el CÓDIGO.** `regla_76` prohibía el identificador `clienteAcepto` dentro del
+      intent y se puso rojo con el arreglo ya hecho: lo nombraba **el comentario** que explica por qué ya no se escribe. Es la
+      trampa del `replace` que pega en un comentario, esta vez del lado del gate. Se resolvió quitando las líneas que son sólo
+      comentario **antes** de canonizar —después no se puede, porque `canonico` colapsa los saltos de línea y un `//` se come el
+      resto— y sólo las que empiezan por `//`: un `//` a media línea puede ser el de `https://fonts.googleapis.com` del `<style>`.
+    - **Y una sonda apretó un gate ajeno.** Al re-anclar `regla_5`, arrancar la guarda de terminalidad dejaba el gate en VERDE:
+      aceptaba cualquier `if` que nombrara «perdida» y mencionara `.stage` en cualquier parte, y el `if (stageId !== "perdida" &&
+      … deal.stage …)` del tramo se lo daba. Ahora exige la comparación misma —`origen === "perdida"`—. La sonda no verificaba el
+      gate: lo estaba **mejorando**.

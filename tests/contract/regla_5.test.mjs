@@ -29,9 +29,14 @@ export function cuerpoDe(src, nombre) {
 /* Cuerpo de una función flecha DENTRO de un componente (`  const nombre = (…) => {` … `\n  };`). */
 export function cuerpoInterno(src, nombre) {
   const i = src.indexOf(`  const ${nombre} = (`);
-  if (i < 0) return null;
-  const fin = src.indexOf("\n  };", i);
-  return fin < 0 ? null : src.slice(i, fin);
+  if (i >= 0) {
+    const fin = src.indexOf("\n  };", i);
+    return fin < 0 ? null : src.slice(i, fin);
+  }
+  const j = src.indexOf(`\nfunction ${nombre}(`);
+  if (j < 0) return null;
+  const finM = src.indexOf("\n}", j + 1);
+  return finM < 0 ? null : src.slice(j, finM);
 }
 
 /* Los ESCRITORES de la pérdida: cada objeto literal que asigna `stage: "perdida"` (con cualquier comilla
@@ -131,15 +136,17 @@ export function reaperturaEnSitio(src) {
    ORIGEN es `perdida` —un `if (…"perdida"…) … return` que mire la etapa de la operación—, no sólo el destino. */
 export function terminalidadDeEtapa(src) {
   const fallos = [];
+  const catalogo = cuerpoInterno(src, "transicionManual") || "";
   for (const nombre of ["moveTo", "moverEtapa"]) {
-    const c = cuerpoInterno(src, nombre);
+    let c = cuerpoInterno(src, nombre);
     if (!c) { fallos.push(`no existe ${nombre}`); continue; }
+    c += " " + catalogo; // las dos delegan en `transicionManual`, y la guarda de origen vive ahí
     // la guarda tiene que leer la etapa de la OPERACIÓN (`orig` o `….stage`) y compararla con perdida; una
     // que sólo mire el destino (`stageId === "perdida"`) no cierra esta puerta
     // La guarda ya no cabe en una línea: se busca sobre la forma canónica con una cota, que es lo que
     // «esta guarda, no otra del archivo» significaba cuando el `if` cabía en una sola.
-    const lineasIf = (canonico(c).match(/if \([\s\S]{0,250}?["'`]perdida["'`][\s\S]{0,120}?\)\s*\{?[\s\S]{0,200}?return/g) || []);
-    const guarda = lineasIf.some((l) => /\borig\b|\.stage\b/.test(l));
+    const lineasIf = (canonico(c).match(/if \([\s\S]{0,250}?(?:\borig\b|\.stage)\s*===\s*["'`]perdida["'`][\s\S]{0,120}?\)\s*\{?[\s\S]{0,200}?return/g) || []);
+    const guarda = lineasIf.length > 0;
     if (!guarda) fallos.push(`${nombre} no mira si el ORIGEN es perdida: arrastrar o mover una perdida la revive sin causa, sin auditoría y sin operación nueva`);
   }
   return { fallos };
@@ -242,15 +249,14 @@ test("SONDA de actor y terminalidad: quitar el actor a un escritor se caza; quit
   assert.notEqual(sinActor, sinActorAuto);
   assert.equal(escritoresDePerdida(sinActor).sinActor.length, escritoresDePerdida(jsx).sinActor.length + 6);
   // Terminalidad: sin la guarda de origen en cada puerta el gate se pone rojo…
-  const sinGuarda = jsx
-    .replace(/\s*if \(orig === "perdida"\) \{\s*setDraggingId\(null\);\s*return;\s*\}/, "")
-    .replace(/\s*if \(\(\(dealsRef\.current \|\| \[\]\)\.find\(\(x\) => x\.id === id\) \|\| \{\}\)\.stage === "perdida"\)\s*return;/, "");
+  const sinGuarda = jsx.replace(/\s*if \(deal\.stage === "perdida"\)\s*return \{ ok: false, codigo: "REGLA-5"[^;]*;/, "");
   assert.notEqual(sinGuarda, jsx);
   assert.equal(terminalidadDeEtapa(sinGuarda).fallos.length, 2);
   // …y una guarda que sólo mira el DESTINO (`stageId === "perdida"`) no abre el gate: la puerta es el origen
-  const soloDestino = sinGuarda
-    .replace(/if \(!draggingId\) return;/, 'if (!draggingId) return;\n    if (stageId === "perdida") { setDraggingId(null); return; }')
-    .replace(/const moverEtapa = \(id, stageId\) => \{/, 'const moverEtapa = (id, stageId) => {\n    if (stageId === "perdida") return;');
+  const soloDestino = sinGuarda.replace(
+    /function transicionManual\(deal, stageId, opts\) \{/,
+    'function transicionManual(deal, stageId, opts) {\n  if (stageId === "perdida") return { ok: false };',
+  );
   assert.notEqual(soloDestino, sinGuarda);
   assert.equal(terminalidadDeEtapa(soloDestino).fallos.length, 2);
   assert.deepEqual(terminalidadDeEtapa(jsx).fallos, []);

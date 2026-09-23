@@ -8545,6 +8545,100 @@
        + ` · VER-01 ${ver01Ok}${ver01Err ? " (" + ver01Err + ")" : ""} · candidata «${cand.label}» ${candOk} · aviso «${avisoDet}» ${avisoOk} · asunto de la llamada intacto ${asuntoOk}`);
   }
 
+  // 172 · EL CATÁLOGO DE TRANSICIONES MANUALES (regla 76, G-25). `moverEtapa` tenía guardas —perdida
+  // terminal, «Aceptada» y giro bloqueados, OTG-02 por su código— y aun así dejaba tres agujeros: perder
+  // sin causa, pasar a cesión sin `integracion` (la operación se rotulaba «Aceptada» y no aparecía en
+  // Operaciones: invisible, no bloqueada) y retroceder de etapa conservando la firma.
+  {
+    const enOferta = { id: "T-172", cliente: "Cliente 172", stage: "oferta" };
+    const enOtorg = { ...enOferta, stage: "otorgamiento" };
+    const perdida = { ...enOferta, stage: "perdida" };
+    // (a) PÉRDIDA SIEMPRE CON CAUSA, y la causa no se escribe acá: se DELEGA en `reject`, que es el único
+    //     camino que ya registra causa, etapa de origen, actor y fecha. Las DOS direcciones.
+    const sinCausa = transicionManual(enOferta, "perdida", {});
+    const conCausa = transicionManual(enOferta, "perdida", { closeReason: "price_rate" });
+    const causaOk = sinCausa.ok === false && sinCausa.codigo === "REGLA-5"
+      && conCausa.ok === true && conCausa.delegar === "reject" && conCausa.closeReason === "price_rate"
+      && !conCausa.patch;   // no hay un segundo escritor de la pérdida
+    // (b) PASAR A CESIÓN ES SALIR DEL TUBO: sin `integracion` nadie la integra y nadie la gira.
+    const aCesion = transicionManual(enOtorg, "cesion", {});
+    const cesionOk = aCesion.ok === true && aCesion.patch.integracion === "pendiente"
+      && aCesion.patch.giroPendiente === true && fueraDelTubo({ ...enOtorg, ...aCesion.patch }) === true
+      && estadoOperacion({ ...enOtorg, ...aCesion.patch }) === "Pendiente Integración";
+    // (c) LOS DESTINOS QUE NO EXISTEN COMO ACCIÓN MANUAL, cada uno con su código: «Aceptada» la fija la
+    //     firma del cliente (regla 1) y girar es de Tesorería vía `aprobarIntegracion` (GIR-01).
+    const aAceptadas = transicionManual(enOferta, "aceptadas", {});
+    const aGiro = transicionManual(enOtorg, "giro", {});
+    const destinosOk = aAceptadas.ok === false && aAceptadas.codigo === "REGLA-1"
+      && aGiro.ok === false && aGiro.codigo === "GIR-01";
+    // (d) NO SE RETROCEDE: la única vuelta atrás es «Reabrir», que revoca la firma y deja constancia.
+    const atras = transicionManual(enOtorg, "oferta", {});
+    const atras2 = transicionManual(enOtorg, "prospeccion", {});
+    const adelante = transicionManual(enOferta, "otorgamiento", {});
+    // `cesion` y `otorgamiento` comparten rango: son el mismo tramo posterior a la firma y se recorre en
+    // los dos sentidos. Ordenarlos en fila convierte el avance normal en retroceso y lo bloquea.
+    const trasFirma = transicionManual({ ...enOferta, stage: "cesion" }, "otorgamiento", {});
+    const ordenOk = atras.ok === false && atras.codigo === "REGLA-26" && atras2.ok === false
+      && adelante.ok === true && adelante.patch.stage === "otorgamiento"
+      && aCesion.ok === true && trasFirma.ok === true;
+    // (e) PERDIDA ES TERMINAL y desde ahí no sale ni con causa; y se puede perder desde cualquier etapa.
+    const desdePerdida = transicionManual(perdida, "oferta", {});
+    const perderDesdeOtorg = transicionManual(enOtorg, "perdida", { closeReason: "documentation" });
+    const terminalOk = desdePerdida.ok === false && desdePerdida.codigo === "REGLA-5"
+      && transicionManual(perdida, "perdida", { closeReason: "other" }).ok === false
+      && perderDesdeOtorg.ok === true;
+    // (f) Y el catálogo es PURO: la misma entrada da la misma salida, y no muta lo que recibe.
+    const antes = JSON.stringify(enOtorg);
+    transicionManual(enOtorg, "cesion", {});
+    const puroOk = JSON.stringify(enOtorg) === antes
+      && JSON.stringify(transicionManual(enOferta, "perdida", {})) === JSON.stringify(sinCausa)
+      && transicionManual(null, "cesion", {}).ok === false;
+    ok("172 el catálogo de transiciones manuales tiene guardas: no se pierde sin causa (se delega en reject), pasar a cesión deja la operación Pendiente Integración y fuera del tubo, «Aceptada» y giro no son acciones del ejecutivo, no se retrocede de etapa y la pérdida es terminal",
+       causaOk && cesionOk && destinosOk && ordenOk && terminalOk && puroOk,
+       `causa ${causaOk} (sin causa «${sinCausa.codigo}» · con causa delega ${conCausa.delegar}) · cesión ${cesionOk} (integracion «${aCesion.patch && aCesion.patch.integracion}» · estado «${estadoOperacion({ ...enOtorg, ...aCesion.patch })}») · destinos ${destinosOk} (aceptadas ${aAceptadas.codigo} · giro ${aGiro.codigo}) · orden ${ordenOk} (atrás ${atras.codigo}) · terminal ${terminalOk} · puro ${puroOk}`);
+  }
+
+  // 173 · TRAS EL OTORGAMIENTO SE VA A OPERACIONES, NO A GIRO (regla 76, G-24). El avance automático
+  // escribía «Girada» directo, con `giroPendiente: false` y el dinero dado por transferido, sin pasar por
+  // `controlesIntegracion`: se saltaba VER-01, LIN-01 y GIR-02. Es el mismo salto que la regla 26 cerró en
+  // `etapaTrasFirma` y que volvió por la otra puerta, porque el efecto decidía de nuevo por su cuenta.
+  {
+    const base173 = { id: "T-173", rutEmisor: "76.111.111-1", cliente: "Cliente 173", monto: 30 * MMF,
+                      stage: "otorgamiento", facturasOp: [], aceptada: true, firmada: true,
+                      clienteAcepto: true, otorgAuto: true, otorgMotivo: "automatico" };
+    const todoAprob173 = {};
+    visadoDeal(base173, { visado: {} }).exc.forEach((e) => { todoAprob173[e.stKey] = "aprobado"; });
+    const sinVisar173 = { visado: todoAprob173 };
+    // (a) El fixture completa el otorgamiento de verdad: sin esto el caso pasaría por vacuidad. Y con el
+    //     visado EN BLANCO no lo completa, que es OTG-02 vigente (las dos direcciones).
+    const listo = otorgamientoCompleto(base173, sinVisar173) === true
+      && otorgamientoCompleto(base173, { visado: {} }) === false
+      && avanceTrasOtorgamiento(base173, { visado: {} }) === null;
+    const patch = avanceTrasOtorgamiento(base173, sinVisar173);
+    // (b) LO QUE ESCRIBE: Pendiente Integración, fuera del tubo, y el giro PENDIENTE — no girado.
+    const destinoOk = !!patch && patch.stage === "cesion" && patch.integracion === "pendiente"
+      && patch.giroPendiente === true && patch.otorgada === true
+      && estadoOperacion({ ...base173, ...patch }) === "Pendiente Integración"
+      && fueraDelTubo({ ...base173, ...patch }) === true;
+    // (c) LO QUE NO ESCRIBE, que es el defecto: ni la etapa de giro ni el «Girada» de `giroPendiente: false`.
+    const noGiraOk = !!patch && patch.stage !== "giro" && patch.giroPendiente !== false
+      && estadoOperacion({ ...base173, ...patch }) !== "Girada";
+    // (d) VER-01 · con una factura inhabilitada por el SII la verificación queda pendiente (regla 75) y el
+    //     avance NO ocurre: `otorgamientoCompleto` mira el VISADO, no las llamadas, así que sin esta
+    //     comprobación una operación por verificar salía hacia Operaciones igual.
+    const conVeto = { ...base173, facturasOp: [{ id: "v1", folio: 900173, monto: 30 * MMF, deudor: LB[3],
+                                                 inhabilitada: { glosa: "Nota de crédito emitida", motivo: "nc" } }] };
+    const pendN = verifResumenDeal(conVeto, sinVisar173).pend;
+    const ver01Ok = pendN > 0 && avanceTrasOtorgamiento(conVeto, sinVisar173) === null;
+    // (e) Y fuera de Otorgamiento no avanza nada: la compuerta no se puede empujar desde otra etapa.
+    const fueraOk = avanceTrasOtorgamiento({ ...base173, stage: "oferta" }, sinVisar173) === null
+      && avanceTrasOtorgamiento({ ...base173, stage: "cesion" }, sinVisar173) === null
+      && avanceTrasOtorgamiento(null, sinVisar173) === null;
+    ok("173 el otorgamiento completo deja la operación Pendiente Integración y fuera del tubo, nunca Girada: el giro queda pendiente para que lo autorice Operaciones, la verificación pendiente detiene el avance (VER-01) y fuera de Otorgamiento no avanza",
+       listo && destinoOk && noGiraOk && ver01Ok && fueraOk,
+       `fixture ${listo} · destino ${destinoOk} (stage «${patch && patch.stage}» · integracion «${patch && patch.integracion}» · estado «${estadoOperacion({ ...base173, ...patch })}») · no gira ${noGiraOk} · VER-01 ${ver01Ok} (${pendN} pendiente(s)) · fuera de otorgamiento ${fueraOk}`);
+  }
+
   console.log(out.join("\n"));
   console.log("\n" + out.filter((x) => x.startsWith("PASA")).length + " de " + out.length + " pasan.");
   return out;

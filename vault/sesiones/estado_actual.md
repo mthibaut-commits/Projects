@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-23T20:30:00Z
+timestamp: 2026-09-23T23:30:00Z
 ---
 
 # Estado actual
@@ -13,66 +13,68 @@ timestamp: 2026-09-23T20:30:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **171/171 PASA**, **65 archivos de gate de contrato**
-(567 tests), **37 casos e2e** (37/37), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
-(104 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
-gate. La crónica del 17 al 22-09 vive en sus logs — ADR-0001 a 0012, el linter como paso 0-bis, todo lo de
-plata del 20-09 (reglas 41–46, ADR-0007 a 0011, casos 145–151) y, del 21 y 22-09 en sesiones paralelas, las
-reglas 47–52 y 59, el **orden de la carpeta** (`Auditoria/` mide, `Regresiones/` coteja, `Specs_Procesos/`
-en cinco temas; 41 renombres y 63 referencias reparadas), los **entregables versionados** (`Versión N.N.N` +
-anexo, estampada en cada hoja del PDF) y `Casos_de_Prueba/`: **97 casos** sobre las cinco pantallas, 80
-automatizados y **17 manuales**, 7 de ellos en la Mesa de verificación.
+(`pipeline_comercial.jsx`), build standalone, **173/173 PASA**, **66 archivos de gate de contrato**
+(575 tests), **37 casos e2e**, `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
+(105 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
+gate. La crónica del 17 al 23-09 vive en sus logs: ADR-0001 a 0021, reglas 41–75, `Casos_de_Prueba/` con 97
+casos, y el backlog del proceso de curse decidido entero.
 
-El **23-09**, la plata otra vez en tres reglas: la **60** (el millón es la ÚLTIMA CAPA), la **61** (todo generador
-produce en PESOS: en miles cada monto se cuantiza de a $1.000 y dos entran en criterios que DECIDEN) y la **62**
-(la cartera se LEE: `PC_CLIENTES` sorteaba en una escala sin declarar y cuatro KPI mostraban ~M$5 donde va la
-cartera de 500 clientes; el fallback de 80 empresas se fue y `auditar_unidades` estrena el patrón **(d)** en cero).
+**Cierre del 23-09 (ADR-0023, regla 76, casos 172 y 173):** las tres transiciones que se escribían por fuera.
+Tras el otorgamiento la operación queda **Pendiente Integración** y nunca «Girada» —`stage: "giro"` tiene UN
+escritor, `aprobarIntegracion`, con la atribución N3 y los cuatro controles—; las transiciones manuales pasan
+por el catálogo puro `transicionManual` —la pérdida **exige causa** y se delega en `reject`, cesión escribe
+`integracion`—; y el intent `cursar` de WhatsApp manda el **enlace**, no la firma. La máquina de estados son
+**DOS TRAMOS**: el comercial ordenado y el posterior a la firma sin orden interno, porque cesión y otorgamiento
+son *atributos desacoplados* (definición del usuario). Con eso **G-30 queda cerrado de hecho**: el catálogo es
+el normativo que el spec decía validar y no definía. [Log](./2026-09-23_nadie_escribe_una_transicion_ajena.md).
 
 > ## 🎯 Siguiente paso
 >
-> 1. **El backlog decidido, en rojo primero** (`Regresiones/Gaps_Proceso_Curse_2026-09-22.md` §2.2; los casos y su
->    orden en `vault/specs/proceso-curse/casos_de_prueba.md`). **Hechos el 23-09** (regla, gate y `CASOS_ESPERADOS` en
->    cada commit): ADR-0013 (un evento, cinco versiones: regla 72, caso 168) · 0014 · 0015 · 0016 · 0017 · 0018 ·
->    0019 · antigüedad ≤20 días · corte y reinicio por hora · M-19 en `cerrarOferta` · M-01 (el acuse del DTE:
->    regla 73, caso 169; el A1 ya lo traía). **El backlog decidido del 22-09 quedó entero**: 18 gaps implementados
->    ([log](./2026-09-23_backlog_decidido.md) §1–§11), con sus pantallas en `28_version_v1.e2e.mjs`. **ADR-0020** (§12): el
->    A1 es un **flujo de eventos por documento** (regla 74, caso 170, `regla_74` + `dtesync.test.mjs`; activo migrado a 55.549
->    eventos, 46 MB). **ADR-0021** (§13): sobre la oferta cerrada, publicada o firmada la NC, el reclamo o la cesión a otro
->    **inhabilitan el documento y dejan la operación no cursable** (regla 75, caso 171; el veto de la regla 71 escrito por el
->    SII; el ejecutivo retira, re-evalúa y vuelve a firmar). Sin decisiones pendientes. Sigue: los T1 sin decisión previa
->    (gaps §2.2: G-05, G-18, G-23 … G-28), cada uno con su caso en rojo.
-> 2. **UI y lo demás**: el selector de sesión 1/3 más angosto con elipsis (desborda a 1366 px) · el chip
->    «Negociación» en una operación ya enviada a comité · **join de empresas SIEMPRE por RUT** (8 sitios; T1) ·
->    `.bat` una vez · regenerar `Capturas_UI/` (deuda 2) · O01 · 28 · 13-quater · `pipeline.zip`.
+> **Cinco gaps con DECISIÓN del usuario tomada el 23-09 y sin implementar** (`Regresiones/Gaps_Proceso_Curse_2026-09-22.md`
+> §2.2), cada uno con su caso en rojo redactado. Orden propuesto por costo y riesgo:
+> 1. **G-23** · el motor YA reparte por plazo de documento y guarda la diferencia de precio en pesos, sin tasa
+>    por documento — lo decidido. El gap está en los **llamadores**: `docsPro` (:14223) y `pricingDeVersion`
+>    (:25327) pasan `dias` **por deudor**, y no promediado: `vencDias` se siembra con la **primera factura**
+>    (:13061), así que **reordenar la oferta cambia el precio**. `vencFecha` es editable POR FOLIO (:13066) y
+>    sólo vive en la UI. Falta decidir el control por deudor (propuesta: manda `vencFecha`).
+> 2. **G-18** · la solicitud al comité debe seguir al MOTIVO (`RESOLUCION_COMITE` los tiene y nadie la usa para
+>    dar forma; cableado en `solicitudComiteDeOferta`, :42395) **y** al subir una línea de par debe subir la del
+>    cliente: es la **regla 45 que nunca llegó al escritor** (`constituirLinea`, :3864, copia `propFactoring`).
+> 3. **G-27** · el proceso es **transaccional por cliente**, no concurrente: la segunda evaluación espera a que
+>    la primera se ejecute, y la reserva de cupo garantiza que no se curse dos veces contra el mismo.
+> 4. **G-28** · contrato de ida a Tesorería: **API REST JSON síncrona**; todo archivo viaja como **URL a un
+>    bucket S3** de las dos cuentas. Con idempotencia y registro del envío contra el cual cotejar la vuelta.
+> 5. **G-05** · **Prime es una enumeración de RUTs** (S3 → tabla) y es distinto de **Buen deudor** (nota > 4,2);
+>    **no son excluyentes**. El código ya los separa: el defecto es que `segmento` (:3258) **nombra PRIME a la
+>    disyunción**, y el comentario de :3213 contradice al de :3243. Arrastra el fallback por razón social
+>    de `tipoDeudor` (:2694) → join por RUT.
+> 6. **G-29** (T2) · el acumulador del inbound en `useState` y los topes cableados (`MAX_NUEVOS = 40`, el de 4):
+>    en producción son parámetro del tenant.
+>
+> **UI y lo demás**: selector de sesión 1/3 más angosto con elipsis (desborda a 1366 px) · chip «Negociación»
+> en una operación ya enviada a comité · `.bat` una vez · `Capturas_UI/` (deuda 2) · O01 · 28 · 13-quater · zip.
 
-## En vuelo · nada: TODO lo pendiente está en `main` — backlog de ADR (64–75)
-Las **skills de terceros y los servidores MCP salieron del repo** (ADR-0022, 23-09: «no aportan nada al proyecto
-ya que instalan librerías»); quedan `datamart-ui` y la regla 63 con su gate de paleta. Verificar el árbol MEZCLADO y no la rama —y que un paso 0 rojo APAGA el CI entero— subió a
-[`flujo_git.md`](../conocimiento/flujo_git.md) ([log](./2026-09-23_el_paso_0_lleva_tres_commits_en_rojo.md)).
-
+## En vuelo · nada: lo de esta sesión está en `claude/ecstatic-ptolemy-f7cb4m`, pendiente de mezclar a `main`
 ## Bloqueos · los dos son del usuario, desde Windows
 
 El relay git bloquea el BORRADO y `refs/tags/*` con **HTTP 403** (los pushes normales funcionan; el MCP tampoco
-expone borrado). Quedan **el tag `v0.1.0`** sobre `bd14091` y **borrar las ramas ya integradas** — al 23-09 son
-todas menos `respaldo/main-2026-09-17`, que no se toca; el listado se hace con `git fetch --prune` primero y
-mirando `git cherry`, nunca `--merged` a secas (`unidades-peso-verificacion` es borrable y no aparece ahí).
+expone borrado). Quedan **el tag `v0.1.0`** sobre `bd14091` y **borrar las ramas ya integradas**; el listado se
+hace con `git fetch --prune` primero y mirando `git cherry`, nunca `--merged` a secas.
 
 ## Deudas anotadas (no bloquean, no olvidar)
-1. **Lista Blanca / Deudor Autorizado, decisiones de negocio**: el activo no trae `VIGENTE_DESDE`/`HASTA`/
-   `ESTADO`/`FECHA_CORTE` —una lista blanca **nunca vence**—; `prime = Lista Blanca || Autorizado` deja **84%**
-   en Prime; `CUPO_SUGERIDO` sin leerse (ADR-0010).
-2. **Mojibake en el padrón**: 38 de 1.983 identidades traen `?` donde va `Ñ`/`Ó`/`Í`; se arregla re-extrayendo
-   del AEC, que no está commiteado. · **`Capturas_UI/` NO es determinista**: el tubo se retrata a mitad del
-   stream, así que capturar en un estado conocido es decisión suya.
+1. **Perder dejó de ser un destino manual** (regla 76): el gesto es «Rechazar», que pide el motivo. Para
+   perder arrastrando habría que abrir ahí el menú de motivos; el contrato ya lo admite
+   (`moverEtapa(id, "perdida", { closeReason })` delega en `reject`) y el caso 172 lo cubre.
+2. **Mojibake en el padrón**: 38 de 1.983 identidades traen `?` donde va `Ñ`/`Ó`/`Í`; se arregla re-extrayendo del
+   AEC, que no está commiteado. · **`Capturas_UI/` NO es determinista**: el tubo se retrata a mitad del stream.
 3. `BASE_MUERTOS` en **1** (`giroDeal`) · **GN como disyunción** (22) · sin gate, la concentración del
-   Directorio (31) · una fila «Sin clasificar» dice «2 deudores» y el desglose suma 0 · dos sitios
-   arman un RUT de CLIENTE (`rutDe` de módulo): no llegan al par, y la regla 46 lo dice.
+   Directorio (31) · «Sin clasificar» dice «2 deudores» y el desglose suma 0 · dos sitios arman un RUT de
+   CLIENTE (`rutDe` de módulo): no llegan al par, y la regla 46 lo dice.
 4. **Dos sesiones paralelas toman el mismo «siguiente entero libre»**, y el turno se pierde MIENTRAS UNO
-   VERIFICA: el 23-09 el mismo bloque se renumeró dos veces (60–71 → 63–74 → 64–75) porque la otra sesión
-   publicó durante los ocho minutos de e2e. Procedimiento y script: [log](./2026-09-23_mezclar_todo_lo_pendiente.md).
-   Al mezclar, `git cherry` y no `--merged`: dice si hay un commit EQUIVALENTE aguas arriba, que es la pregunta.
-5. **Hooks en Windows**: `node verificar_hooks.mjs` una vez · `gitflow_guard.mjs` cree que `git merge-base` integra a `main` (el
-   `\b` de su patrón casa con el guion): usar `git branch -r --merged` · y `invariantes.test.mjs` comprueba
-   que el caso citado EXISTE, no que sea el correcto: cruzar número y título.
+   VERIFICA: el 23-09 el mismo bloque se renumeró dos veces.
+   [Procedimiento](./2026-09-23_mezclar_todo_lo_pendiente.md). Al mezclar, `git cherry` y no `--merged`.
+5. **Hooks en Windows**: `node verificar_hooks.mjs` una vez · `gitflow_guard.mjs` cree que `git merge-base` integra
+   a `main`: usar `git branch -r --merged` · `invariantes.test.mjs` comprueba que el caso citado EXISTE, no que
+   sea el correcto: cruzar número y título.
 
-**Conocimiento clave** · [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto en [`vault/index.md`](../index.md) · últimas: [cartera leída](./2026-09-23_cartera_leida_no_inventada.md) · [generadores en pesos](./2026-09-23_generadores_en_pesos.md) · [el millón es la última capa](./2026-09-23_el_millon_es_la_ultima_capa.md) · [el paso 0 en rojo](./2026-09-23_el_paso_0_lleva_tres_commits_en_rojo.md) · [el deudor decide](./2026-09-22_el_deudor_decide_la_factura_se_llama.md)
+**Conocimiento clave** · [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto en [`vault/index.md`](../index.md) · últimas: [transiciones ajenas](./2026-09-23_nadie_escribe_una_transicion_ajena.md) · [el paso 0 en rojo](./2026-09-23_el_paso_0_lleva_tres_commits_en_rojo.md) · [mezclar todo](./2026-09-23_mezclar_todo_lo_pendiente.md)

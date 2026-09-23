@@ -13372,11 +13372,14 @@ function DealDrawer({
           value={avanzarA}
           onChange={(e) => setAvanzarA(e.target.value)}
           disabled={otorgBloqueado(deal)}
-          title="La etapa «Aceptada» la fija el cliente al firmar el cierre formal; no está disponible como avance manual."
+          title="«Aceptada» la fija el cliente al firmar el cierre formal, y «Perdida» tiene su propio gesto —«Rechazar»—, que pide el motivo de cierre: ninguna de las dos está disponible como avance manual."
           className="rounded-lg px-3 py-2 t12 disabled:opacity-40"
           style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff" }}
         >
-          {STAGES.filter((s) => s.id !== deal.stage && s.id !== "aceptadas").map((s) => (
+          {/* PERDIDA NO ES UN AVANCE (regla 76). El selector la ofrecía y `moverEtapa` la escribía sin causa,
+              sin actor y sin etapa de origen — lo que la regla 5 exige desde siempre. Perder es «Rechazar»,
+              que pide el motivo de cierre y lo guarda; el menú de acciones ya la excluía y esto lo alinea. */}
+          {STAGES.filter((s) => s.id !== deal.stage && s.id !== "aceptadas" && s.id !== "perdida").map((s) => (
             <option key={s.id} value={s.id}>
               {s.id === "giro" ? "Girar (desembolsar)" : s.name}
             </option>
@@ -24545,6 +24548,89 @@ function otorgamientoCompleto(deal, estado) {
   if (v.excPend.length || v.rechReev.length) return false;
   if (deal.otorgAuto) return true;
   return v.exc.length > 0 && v.estado === "aprobada";
+}
+// DESPUÉS DEL OTORGAMIENTO SE VA A OPERACIONES, NO A GIRO (regla 76, que cierra el G-24 del proceso de
+// curse). Firmar es del cliente, otorgar es de la casa y GIRAR es de Tesorería: el permiso lo da
+// Operaciones N3 aprobando la integración al core. El avance automático escribía «Girada» directo
+// —`giroPendiente: false`, el dinero dado por transferido— sin pasar nunca por `controlesIntegracion`,
+// así que se saltaba VER-01 (las llamadas), LIN-01 (la cobertura de línea) y GIR-02 (la huella de lo
+// firmado). Es el MISMO salto que la regla 26 ya había cerrado en `etapaTrasFirma`, que volvió por la
+// otra puerta: la decisión estaba extraída y pura, y el `useEffect` la ignoraba y decidía de nuevo.
+// Por eso vive acá y no dentro del efecto — es lo que en producción resuelve el servidor.
+//
+// VER-01 SE COMPRUEBA ACÁ TAMBIÉN, y no sólo en la integración: `otorgamientoCompleto` mira el VISADO,
+// no las llamadas. Sin esto una operación con facturas por verificar salía del tubo hacia Operaciones y
+// el control recién aparecía al final, cuando ya no queda nada que reordenar.
+// Devuelve el patch o `null`, con el estado por parámetro como el resto del motor (regla 48).
+function avanceTrasOtorgamiento(deal, estado) {
+  if (!otorgamientoCompleto(deal, estado)) return null;
+  if (verifResumenDeal(deal, estado).pend > 0) return null;
+  return {
+    stage: "cesion",
+    otorgada: true,
+    otorgPorExcepcion: visadoDeal(deal, estado).exc.length > 0,
+    integracion: "pendiente",
+    giroPendiente: true,
+    status: "Pendiente Integración · esperando a Operaciones",
+  };
+}
+// LAS ETAPAS NO SON UNA FILA: SON DOS TRAMOS (definición del usuario, 23-09-2026: «la cesión y
+// otorgamiento no son lineales, son atributos que ocurren en instancias desacopladas por naturaleza»).
+//   · TRAMO COMERCIAL — `prospeccion` → `oferta`: acá sí hay orden, porque una oportunidad progresa.
+//   · TRAMO POSTERIOR A LA FIRMA — `aceptadas`, `cesion`, `otorgamiento`, `giro`: NO hay orden que
+//     violar. Son hechos que ocurren en instancias propias y se recorren en los dos sentidos:
+//     `etapaTrasFirma` deja la operación firmada en `otorgamiento` si falta algo y en `cesion` si no
+//     falta nada, y resuelto lo que faltaba vuelve a `cesion` como Pendiente Integración. Lo que
+//     distingue esos dos `cesion` no es la etapa sino `integracion`.
+// Ponerlos en fila —`cesion` antes que `otorgamiento`— convierte el avance normal en un retroceso y lo
+// bloquea; lo encontró el caso 172 al primer intento, con la lista lineal escrita. `perdida` no está en
+// ningún tramo: se pierde desde cualquier parte.
+const TRAMO_COMERCIAL = ["prospeccion", "oferta"];
+const TRAMO_POSFIRMA = ["aceptadas", "cesion", "otorgamiento", "giro"];
+const tramoDeEtapa = (s) => (TRAMO_COMERCIAL.includes(s) ? "comercial" : TRAMO_POSFIRMA.includes(s) ? "posfirma" : null);
+// EL CATÁLOGO DE TRANSICIONES MANUALES, CON SUS GUARDAS (regla 76, que cierra el G-25). El «Avanzar a»
+// del menú y el arrastre del Kanban entran los dos por `moverEtapa`, donde el único control era que el
+// menú filtrara los destinos — la regla 24 otra vez: la pantalla que esconde la acción no es el control.
+// La decisión vive acá, pura y de nivel módulo, por lo mismo que `etapaTrasFirma`: una segunda copia del
+// predicado se desfasa de la tabla del contrato sin que nadie lo note (el patrón de VER-01).
+// Devuelve `{ ok: false, codigo, motivo }` o `{ ok: true, patch }` / `{ ok: true, delegar }`.
+function transicionManual(deal, stageId, opts) {
+  const o = opts || {};
+  if (!deal || !stageId) return { ok: false, codigo: "SIN_DATOS", motivo: "falta la operación o la etapa de destino" };
+  // Pérdida es TERMINAL (regla 5): desde ahí no hay transición hacia ninguna etapa.
+  if (deal.stage === "perdida") return { ok: false, codigo: "REGLA-5", motivo: "la operación está perdida y la pérdida es un estado terminal" };
+  if (stageId === deal.stage) return { ok: false, codigo: "SIN_CAMBIO", motivo: "la operación ya está en esa etapa" };
+  // «Aceptada» es la firma FORMAL del cliente en el portal y NO tiene escritor: medido el 23-09-2026,
+  // en todo el fuente nadie escribe `stage: "aceptadas"` —`dealFirmado` deja la operación en `cesion`—,
+  // así que ofrecerla como destino manual era ofrecer un estado que el proceso no produce.
+  if (stageId === "aceptadas") return { ok: false, codigo: "REGLA-1", motivo: "«Aceptada» la fija la firma del cliente en el portal, no el ejecutivo" };
+  // GIRAR NO ES UNA ACCIÓN DE NEX (19-09-2026). El camino es `aprobarIntegracion` → Tesorería.
+  if (stageId === "giro") return { ok: false, codigo: "GIR-01", motivo: "el giro lo autoriza Operaciones aprobando la integración al core, no el «Avanzar a»" };
+  // NO SE VUELVE DEL TRAMO POSTERIOR A LA FIRMA AL COMERCIAL. La única vuelta atrás es «Reabrir»
+  // (`reabrirOperacion`), que es explícita y revoca la firma; volver a `oferta` o a `prospeccion` con el
+  // selector la conservaba, y una operación en negociación con la firma del cliente todavía puesta es
+  // justo lo que la regla 1 impide. DENTRO del tramo posterior a la firma no hay nada que guardar: sus
+  // etapas son atributos desacoplados y no una secuencia.
+  const tramoDe = tramoDeEtapa(deal.stage),
+    tramoA = tramoDeEtapa(stageId);
+  if (stageId !== "perdida" && tramoDe === "posfirma" && tramoA === "comercial")
+    return { ok: false, codigo: "REGLA-26", motivo: "volver a la etapa comercial es «Reabrir», que revoca la firma y deja constancia" };
+  if (stageId !== "perdida" && tramoDe === "comercial" && tramoA === "comercial" && TRAMO_COMERCIAL.indexOf(stageId) < TRAMO_COMERCIAL.indexOf(deal.stage))
+    return { ok: false, codigo: "REGLA-26", motivo: "retroceder en el tramo comercial borra el avance sin dejar constancia" };
+  // PÉRDIDA CON CAUSA, SIEMPRE (regla 5, pedido del usuario el 23-09-2026: «siempre que haya una pérdida
+  // se debe almacenar la causa que la originó, no sólo la transición a pérdida»). Y no se escribe acá:
+  // se DELEGA en `reject`, que es el único camino que ya registra causa, etapa de origen, actor y fecha.
+  // Un segundo escritor de la pérdida es exactamente el defecto que esta regla cierra.
+  if (stageId === "perdida") {
+    if (!o.closeReason) return { ok: false, codigo: "REGLA-5", motivo: "una pérdida sin causa no se puede analizar después: falta el motivo de cierre" };
+    return { ok: true, delegar: "reject", closeReason: o.closeReason };
+  }
+  // PASAR A CESIÓN ES SALIR DEL TUBO. `integracion` es lo que pone la operación en Operaciones y lo que
+  // `estadoOperacion` traduce a «Pendiente Integración»; sin él la operación se rotulaba «Aceptada», no
+  // aparecía en Operaciones y nadie la iba a girar — invisible, no bloqueada, que es peor.
+  if (stageId === "cesion")
+    return { ok: true, patch: { stage: "cesion", integracion: "pendiente", giroPendiente: true, status: "Pendiente Integración · esperando a Operaciones" } };
+  return { ok: true, patch: { stage: stageId, status: STATUS_ETAPA[stageId] || deal.status } };
 }
 // LA ASIGNACIÓN DE LÍNEA QUE RESPALDA EL PAQUETE. Una operación aceptada se LEE de su versión y no se
 // re-evalúa (regla 12): el cupo ya está reservado en el sistema de líneas, así que recalcular mostraría
@@ -49255,19 +49341,27 @@ export default function PipelineComercial() {
                 canal: "WhatsApp",
                 actor: "Cliente",
                 esEvento: true,
-                resultado: "El cliente aceptó las condiciones → se envió el enlace de cierre con su clave de un solo uso",
+                resultado: "El cliente manifestó interés en cursar → se envió el enlace de cierre con su clave de un solo uso",
+                detalle: "El «sí» del chat NO es la firma: la operación se acepta firmando en el portal de Factoring Security.",
                 exito: true,
               });
+              // UN «SÍ» EN EL CHAT NO ES UNA FIRMA (regla 76, que cierra el G-26; definición del usuario el
+              // 23-09-2026: «WhatsApp lo que hace es enviar un link para que el usuario ingrese a la
+              // plataforma y firme la operación tal cual como si el cierre se hubiera hecho a través de
+              // email»). Acá se escribía `clienteAcepto: true` con la operación todavía en `oferta`, sin
+              // portal, sin OTP validado y sin firma — y `aprobacionFormalCliente` la daba por aceptada,
+              // que es justo lo que la regla 1 impide para el ejecutivo y entraba por la puerta del canal.
+              // `telValidado` SÍ se queda: dice que el teléfono es un canal de contacto válido —lo leen
+              // `contactoOk` y el badge de contacto— y no tiene nada que ver con la aceptación.
               return {
                 ...x,
                 waSesion: wa,
                 historialContacto: hist,
                 telValidado: true,
                 waPendiente: false,
-                clienteAcepto: true,
                 cierreEnviado: true,
                 ofertaComunicada: true,
-                status: "Cliente aceptó · enlace de cierre enviado",
+                status: "Enlace de cierre enviado · esperando la firma en el portal",
               };
             }
             // INTERÉS → el Agente IA envía la oferta (si aún no hay) y avanza/confirma Oferta y Negociación.
@@ -49539,37 +49633,55 @@ export default function PipelineComercial() {
     });
   }, [deals]);
   // Avance explícito desde el drawer a una etapa elegida (con la regla de facturas pendientes al aceptar).
-  const moverEtapa = (id, stageId) => {
-    // Perdida es estado terminal (regla 5): desde ahí no hay transición hacia ninguna etapa.
-    if (((dealsRef.current || []).find((x) => x.id === id) || {}).stage === "perdida") return;
-    // "Aceptada" representa la firma FORMAL del cliente (login + firma en el sitio Factoring Security). La
-    // fija sólo el cliente al aceptar; el ejecutivo no puede asignarla manualmente.
-    if (stageId === "aceptadas") return;
-    // GIR-01 · NO SE GIRA SIN HABER PASADO POR CESIÓN, y OTG-02 · NO SE AVANZA A CESIÓN CON EXCEPCIONES
-    // PENDIENTES. Los dos invariantes tenían su evaluador escrito y probado (casos 136 y 88) y se aplicaban
-    // sólo en el camino AUTOMÁTICO: `etapaTrasFirma` rutea la operación tras la firma del cliente. El
-    // «Avanzar a» del menú y el arrastre del Kanban entran por acá, donde el único control era que el menú
-    // filtrara los destinos — o sea la regla 24 otra vez: la pantalla que esconde la acción no es el control.
-    // El predicado NO se escribe acá: se le pregunta al invariante por su CÓDIGO, porque una segunda copia
-    // de «pasó por cesión» se desfasa de la tabla del contrato sin que nadie lo note. Cada transición lleva
-    // su código literal y no una variable, para que el gate pueda fijar QUÉ invariante cubre QUÉ paso.
-    // GIRAR NO ES UNA ACCIÓN DE NEX (19-09-2026, corrección del usuario). Mismo tratamiento que
-    // «Aceptada» de arriba, y por la misma razón: no la fija este sistema. El camino real es que
-    // OPERACIONES verifique los adjuntos de las excepciones, la verificación telefónica, las excepciones
-    // resueltas y la cobertura de línea, y apriete «Aprobar integración al core» (`aprobarIntegracion`):
-    // eso INYECTA la operación en TESORERÍA, y Tesorería gira. Así que acá no se rechaza ni se audita
-    // nada sobre el giro —el control es del otro sistema—: la transición simplemente no existe como
-    // acción manual. GIR-02, la huella de lo que se inyecta, sigue comprobándose donde sirve, que es
-    // `aprobarIntegracion`: es el último punto ANTES de inyectar, y ese sí es un acto de NEX.
+  // LAS GUARDAS NO SE ESCRIBEN ACÁ: las decide `transicionManual`, el catálogo puro (regla 76). Acá queda
+  // lo que NO puede ser puro —el invariante OTG-02, que consulta la tabla del contrato; la delegación en
+  // `reject`; el log y la auditoría de lo rechazado— y la escritura de lo que el catálogo autorizó.
+  // `opts.closeReason` es obligatorio para perder: la causa se ALMACENA siempre, no sólo la transición.
+  const moverEtapa = (id, stageId, opts) => {
+    const d0 = (dealsRef.current || []).find((x) => x.id === id);
+    const permiso = transicionManual(d0, stageId, opts);
+    if (!permiso.ok) {
+      // TRES CÓDIGOS NO SE AUDITAN. «Ya está en esa etapa» y «faltan datos» porque no hubo intento de
+      // saltarse nada. Y **GIR-01**, por la decisión del 19-09-2026: girar NO es una acción de NEX, así
+      // que acá no se rechaza ni se audita nada sobre el giro —el control es del otro sistema— y la
+      // transición simplemente no existe como acción manual. Auditarla sería NEX adjudicando algo que no
+      // le toca. Los demás SÍ: un avance bloqueado es justo lo que alguien va a querer explicar después.
+      if (permiso.codigo !== "SIN_CAMBIO" && permiso.codigo !== "SIN_DATOS" && permiso.codigo !== "GIR-01") {
+        logSys("warn", "pipeline", `Transición bloqueada (${permiso.codigo}) · ${id} · ${permiso.motivo}`, {
+          operacion: id,
+          codigo: permiso.codigo,
+          destino: stageId,
+        });
+        registrarAuditoria({
+          usuario: USERS[usuario] || usuario,
+          modulo: "Pipeline · Avanzar a",
+          accion: `Avance de etapa bloqueado (${permiso.codigo})`,
+          glosa: `${(d0 && d0.cliente) || id} → ${stageName(stageId)}: ${permiso.motivo}`,
+          empresaId: id,
+          severidad: "alta",
+          exito: false,
+        });
+      }
+      return;
+    }
+    // LA PÉRDIDA LA ESCRIBE `reject` Y NADIE MÁS. Es el único camino que registra causa, etapa de origen,
+    // actor y fecha (regla 5); duplicar el registro acá es exactamente el defecto que la regla 76 cierra.
+    if (permiso.delegar === "reject") {
+      reject(id, permiso.closeReason, (opts || {}).extra);
+      return;
+    }
+    // Lo que sigue es la parte IMPURA de la guarda. OTG-02 · NO SE AVANZA A CESIÓN CON EXCEPCIONES
+    // PENDIENTES: el predicado NO se escribe acá, se le pregunta al invariante por su CÓDIGO —una segunda
+    // copia de «pasó por cesión» se desfasa de la tabla del contrato sin que nadie lo note—, y el código va
+    // literal y no en una variable, para que el gate pueda fijar QUÉ invariante cubre QUÉ paso.
     //
     // PENDIENTE DE DEFINIR (19-09-2026): CÓMO NOS ENTERAMOS DEL GIRO. Hoy `giroPendiente: false` —o sea
     // «Girada»— no tiene quién lo escriba desde afuera: no hay callback de Tesorería, ni consulta, ni
     // archivo. La operación queda en «Pendiente de Giro» y el paso a «Girada» no está modelado como
     // NOTICIA que llega, que es lo que es. Decidirlo (¿push?, ¿pull como el de estados de línea?,
     // ¿batch diario?) cambia qué escribe ese campo y quién lo audita. Está en el tablero.
-    if (stageId === "giro") return;
     if (stageId === "cesion") {
-      const dT = (dealsRef.current || []).find((x) => x.id === id);
+      const dT = d0;
       if (dT && !invarianteCumple("OTG-02", "oportunidad.avanzarEtapa", { deal: dT }).ok) {
         const porQue = "quedan excepciones o rechazos re-evaluables sin resolver en el otorgamiento";
         logSys("warn", "otorgamiento", `Transición bloqueada (OTG-02) · ${id} · ${porQue}`, { operacion: id, codigo: "OTG-02" });
@@ -49585,29 +49697,34 @@ export default function PipelineComercial() {
         return;
       }
     }
+    // LO QUE SE ESCRIBE ES EL PATCH DEL CATÁLOGO, no `stage` a secas: es lo que hace que pasar a cesión
+    // deje también `integracion: "pendiente"` —sin eso la operación se rotula «Aceptada», no aparece en
+    // Operaciones y nadie la va a girar—. Invisible es peor que bloqueada.
+    const patch = permiso.patch;
     setDeals((prev) => {
       const splits = [];
       const mapped = prev.map((d) => {
         if (d.id !== id) return d;
+        // `cesion` es hoy el único destino manual que cierra el paquete; la lista se conserva porque lo
+        // que la gobierna es cerrar, no la etapa, y el catálogo ya decide qué destinos existen.
         if (["aceptadas", "cesion", "giro"].includes(stageId) && d.nuevasFacturas > 0) {
           splits.push(dealPendiente(d));
           return {
             ...d,
-            stage: stageId,
+            ...patch,
             time: nowStamp(),
             stale: false,
-            status: STATUS_ETAPA[stageId] || d.status,
             facturasDisponibles: undefined,
             nuevasFacturas: 0,
             nuevasFacturasMonto: 0,
             warning: false,
           };
         }
-        return { ...d, stage: stageId, time: nowStamp(), stale: false, status: STATUS_ETAPA[stageId] || d.status };
+        return { ...d, ...patch, time: nowStamp(), stale: false };
       });
       return splits.length ? [...splits, ...mapped] : mapped;
     });
-    setSelected((s) => (s && s.id === id ? { ...s, stage: stageId, status: STATUS_ETAPA[stageId] || s.status } : s));
+    setSelected((s) => (s && s.id === id ? { ...s, ...patch } : s));
   };
   // Reabrir una operación aceptada para modificarla. Es la ÚNICA vuelta atrás y es explícita: el
   // arrastre del Kanban y el selector «Avanzar a» siguen sin permitirla. Lo ya hecho se conserva solo,
@@ -49648,26 +49765,29 @@ export default function PipelineComercial() {
       exito: true,
     });
   };
+  // EL ARRASTRE DEL KANBAN ES LA OTRA PUERTA, y pasa por el MISMO catálogo que el «Avanzar a» del detalle
+  // (regla 76). Antes tenía sus propias guardas —«Aceptada», origen perdida, `STAGE_ORDER` hacia atrás—,
+  // o sea una segunda copia de la misma regla: `moverEtapa` dejó de perder sin causa y arrastrar la tarjeta
+  // a la columna Perdida seguía perdiendo sin causa, sin actor y sin etapa de origen. Dos puertas a la misma
+  // máquina de estados y sólo una vigilada es el patrón que esta regla cierra.
   const moveTo = (stageId) => {
     if (!draggingId) return;
-    // "Aceptada" la fija sólo el cliente al firmar el cierre formal: no se puede arrastrar a esa columna.
-    if (stageId === "aceptadas") {
+    const d0 = (deals || []).find((d) => d.id === draggingId);
+    const permiso = transicionManual(d0, stageId, null);
+    if (!permiso.ok || permiso.delegar) {
+      // Arrastrar no puede aportar el motivo de cierre, así que la pérdida NO entra por acá: su gesto es
+      // «Rechazar», que pide el motivo. El rechazo se registra igual que en `moverEtapa` —salvo los tres
+      // códigos que callan— para que el ejecutivo pueda explicar por qué la tarjeta volvió a su columna.
+      if (permiso.codigo && permiso.codigo !== "SIN_CAMBIO" && permiso.codigo !== "SIN_DATOS" && permiso.codigo !== "GIR-01")
+        logSys("warn", "pipeline", `Arrastre bloqueado (${permiso.codigo}) · ${draggingId} · ${permiso.motivo}`, {
+          operacion: draggingId,
+          codigo: permiso.codigo,
+          destino: stageId,
+        });
       setDraggingId(null);
       return;
     }
-    // Tampoco se SALE de Aceptada/Cesión/Giro arrastrando. El selector del detalle ya sólo ofrece
-    // «Avanzar a», pero el Kanban no miraba la etapa de origen: se podía devolver a Oferta una
-    // operación que el cliente ya firmó y que tiene cupo reservado en el sistema de líneas.
-    const orig = (deals.find((d) => d.id === draggingId) || {}).stage;
-    // Perdida es estado terminal (regla 5): no se revive arrastrando; la reapertura es una operación nueva.
-    if (orig === "perdida") {
-      setDraggingId(null);
-      return;
-    }
-    if (["aceptadas", "cesion", "giro"].includes(orig) && STAGE_ORDER.indexOf(stageId) < STAGE_ORDER.indexOf(orig)) {
-      setDraggingId(null);
-      return;
-    }
+    const patch = permiso.patch;
     setDeals((prev) => {
       const splits = [];
       const mapped = prev.map((d) => {
@@ -49676,15 +49796,14 @@ export default function PipelineComercial() {
           splits.push(dealPendiente(d));
           return {
             ...d,
-            stage: stageId,
-            status: STATUS_ETAPA[stageId] || d.status,
+            ...patch,
             facturasDisponibles: undefined,
             nuevasFacturas: 0,
             nuevasFacturasMonto: 0,
             warning: false,
           };
         }
-        return { ...d, stage: stageId, status: STATUS_ETAPA[stageId] || d.status };
+        return { ...d, ...patch };
       });
       return splits.length ? [...splits, ...mapped] : mapped;
     });
@@ -50244,15 +50363,14 @@ export default function PipelineComercial() {
           // atajo no miraba el visado: con `otorgAuto` bastaba que no faltaran llamadas para llegar a
           // «Pendiente Integración» con 38 criterios por aprobar —OTG-02 declarado y no obedecido—.
           // Separadas volverían a separarse: lo único que cambia entre las dos es la GLOSA.
-          if (otorgamientoCompleto(d) && verifResumenDeal(d).pend === 0) {
+          // UN SOLO SITIO DECIDE (regla 76): `avanceTrasOtorgamiento`, la misma función pura que usa el
+          // avance por evento. Escrito dos veces se desfasa —acá el `otorgPorExcepcion` salía de
+          // `!otorgAuto` y allá del visado, y eran dos definiciones de lo mismo—, que es el patrón de VER-01.
+          const patchOp = avanceTrasOtorgamiento(d);
+          if (patchOp) {
             return {
               ...d,
-              stage: "cesion",
-              otorgada: true,
-              ...(d.otorgAuto ? {} : { otorgPorExcepcion: true }),
-              integracion: "pendiente",
-              giroPendiente: true,
-              status: "Pendiente Integración · esperando a Operaciones",
+              ...patchOp,
               time: nowStamp(),
               historialContacto: traza(
                 d,
@@ -51052,6 +51170,18 @@ export default function PipelineComercial() {
       repoGiro.set(id, { ...giroEntregado, congelado: undefined, ts: nowStamp(), por: nom });
       GIRO_STATE = repoGiro.all();
     }
+    // EL ACUMULADO DEL DÍA SE SUMA ACÁ (regla 76). Estaba en el avance automático del otorgamiento, así que
+    // los indicadores —Giro, Cursadas, Venta girada— contaban como girada una operación que todavía estaba
+    // esperando a Operaciones: la misma mentira del `stage`, esta vez por el lado del KPI. Éste es el punto
+    // en que la casa autoriza que el dinero salga. Cuando el aviso de Tesorería esté modelado (G-28), el
+    // conteo se mueve al giro efectivo y esto pasa a contar lo inyectado, que no es lo mismo.
+    const accInt = accDiaRef.current;
+    if (accInt && accInt.giro) {
+      accInt.giro.op++;
+      accInt.giro.fac += d0.facturas || 0;
+      accInt.giro.mm += d0.monto || 0;
+    }
+    if (accInt && accInt.embudo && accInt.embudo.giro != null) accInt.embudo.giro++;
     const upd = (d) =>
       d.id !== id
         ? d
@@ -51976,49 +52106,47 @@ export default function PipelineComercial() {
       }),
     );
   }, [deals, cfgVer]);
-  // AVANCE AUTOMÁTICO A GIRO: una operación en Otorgamiento con TODOS sus criterios aceptados (excepcionados
-  // o aprobados), sin bloqueos firmes y con la aprobación formal del cliente, debe otorgarse y GIRAR. Genera
-  // el evento de otorgamiento, deja la traza en la bitácora y actualiza el acumulado del día (embudo/resumen
-  // diario) para que los indicadores (Giro, Cursadas, Venta girada) se reflejen. Depende de cfgVer para
-  // re-evaluar cuando un aprobador resuelve criterios en la mesa de Otorgamiento.
+  // AVANCE AUTOMÁTICO A OPERACIONES: una operación en Otorgamiento con TODOS sus criterios aceptados
+  // (excepcionados o aprobados), sin bloqueos firmes, con la aprobación formal del cliente y sin llamadas
+  // pendientes SALE DEL TUBO y queda **Pendiente Integración**. No gira: girar es el último paso y lo
+  // autoriza Operaciones N3 desde el detalle (`aprobarIntegracion`), que es donde viven GIR-02, LIN-01 y
+  // la atribución. Hasta el 23-09-2026 esto escribía «Girada» directo con `giroPendiente: false` —el
+  // dinero dado por transferido— y por ahí se cursaba sin ninguna de las tres compuertas (regla 76).
+  // QUIÉN DECIDE es `avanceTrasOtorgamiento`, puro y de nivel módulo: acá sólo se escribe lo que devuelve.
+  // El acumulado del día ya NO se toca acá —una operación esperando a Operaciones no es venta girada, y
+  // contarla ahí era la misma mentira por el lado del KPI—: lo suma `aprobarIntegracion`.
+  // Depende de cfgVer para re-evaluar cuando un aprobador resuelve criterios en la mesa de Otorgamiento.
   useEffect(() => {
-    const listos = deals.filter(otorgamientoCompleto);
-    if (!listos.length) return;
-    const a = accDiaRef.current;
-    listos.forEach((d) => {
-      const exc = visadoDeal(d).exc.length > 0;
+    const avances = new Map();
+    deals.forEach((d) => {
+      const patch = avanceTrasOtorgamiento(d);
+      if (patch) avances.set(d.id, patch);
+    });
+    if (!avances.size) return;
+    deals.forEach((d) => {
+      const patch = avances.get(d.id);
+      if (!patch) return;
       logOtorgEvento(
         d.id,
         "Sistema",
-        exc ? "otorgada-excepcion" : "otorgada",
+        patch.otorgPorExcepcion ? "otorgada-excepcion" : "otorgada",
         "Todos los criterios de otorgamiento quedaron aceptados y el cliente dio su aprobación formal → pasa a Operaciones para su integración al core.",
       );
-      if (a && a.giro) {
-        a.giro.op++;
-        a.giro.fac += d.facturas || 0;
-        a.giro.mm += d.monto || 0;
-      }
-      if (a && a.embudo && a.embudo.giro != null) a.embudo.giro++;
     });
-    const ids = new Set(listos.map((d) => d.id));
     setDeals((prev) =>
       prev.map((d) => {
-        if (!ids.has(d.id)) return d;
-        const exc = visadoDeal(d).exc.length > 0;
+        const patch = avances.get(d.id);
+        if (!patch) return d;
         return {
           ...d,
-          stage: "giro",
-          otorgada: true,
-          otorgPorExcepcion: exc,
-          giroPendiente: false,
-          status: exc ? "Girada · otorgada por excepción" : "Girada · otorgada",
+          ...patch,
           time: nowStamp(),
           historialContacto: traza(
             d,
-            (exc ? "Otorgada por excepción — todos los criterios aceptados" : "Otorgada — todos los criterios aprobados") +
-              ` y con aprobación formal del cliente → giro de ${fmtMM(d.giro || 0)} a la cuenta registrada del cliente`,
+            (patch.otorgPorExcepcion ? "Otorgada por excepción — todos los criterios aceptados" : "Otorgada — todos los criterios aprobados") +
+              " y con aprobación formal del cliente → pasa a Operaciones para su integración al core",
             true,
-            DET_ETAPA.giro,
+            DET_ETAPA.cesion,
           ),
         };
       }),
