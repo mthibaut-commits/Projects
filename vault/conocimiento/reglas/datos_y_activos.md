@@ -37,7 +37,7 @@ timestamp: 2026-09-17T15:29:14Z
     - **Los DOS invariantes del activo, comprobados en el generador antes de escribir** (14-09-2026, a pedido del usuario: «la fecha de cesión no puede ser anterior a la fecha de emisión y el monto de cesión debiera ser igual o menor que el de la factura»). **(1)** No se cede una factura que no se emitió. **(2)** El monto cedido es **igual o menor** que el del documento: la **cesión parcial** existe —se cede una parte del crédito y el resto sigue siendo del cliente— pero ceder MÁS sería transferir un crédito que no existe. Se validan en `cesiones.js` y una cesión que los rompa **no sale del generador**: es el único punto donde todavía se pueden arreglar, porque un consumidor que reciba `MontoCesion > MontoDocumento` no tiene con qué. **Y la cota «o menor» hay que EJERCITARLA**: la entrega anterior tenía las 1.300 cesiones por el total exacto, así que el invariante se cumplía sin que nada lo probara — ahora **160 son parciales** (12%, entre el 30% y el 95% del documento). El pipeline las lee: una cesión parcial deja el documento con dos dueños, así que se bloquea igual pero el mensaje dice por cuánto —«Cedida en parte · …a Tanner Servicios Financieros el 2026-06-22 **por M$147,3 de M$171,6** (cesión parcial)»—, que es lo que el ejecutivo necesita para decidir si vale la pena pedirle al cliente que la resuelva. Y lo que se llevó el otro factoring es el monto **cedido**, no el del documento: sumar el total inflaría la pérdida.
     - **Y lo que el A11 DERIVA de las cesiones estaba mal derivado** (lo destapó la pregunta del usuario, «Plataforma 360 ¿por qué trae cesiones?»). No trae cesiones: trae tres campos que se MIDEN sobre ellas —colocación promedio 12m e historia como cliente—, que su spec declara y que son atributos de la EMPRESA. Pero el fold guardaba el **máximo** de las fechas de cesión y lo escribía en `FECHA_PRIMERA_OPERACION`: una empresa que nos cede hace dos años figuraba como cliente estrenado el mes pasado, al revés de para lo que ese campo sirve al decidir. Y `FECHA_INGRESO` se generaba por hash sin mirarla, así que podía quedar **después** de la primera operación — un cliente que operó antes de existir. Corregido: el fold guarda las dos puntas, «primera» toma el mínimo y el ingreso se acota. Medido sobre los 233 clientes con colocación: 233 correctas, 0 ingresos posteriores. **Antes de reconciliar las cesiones esto no se podía ni comprobar.** Lo que sí sigue generándose por perfil es el pricing histórico (`TASA_ULT_OP_PCT`, `SPREAD_REAL_12M_PCT`, `COMISION_ULT_OP_M`): una cesión traspasa el crédito, no el precio al que se compró, así que no está en ningún activo — la cesión sólo decide si el campo aplica.
     - Verificado en pantalla: los tooltips dicen «AECSync registra la cesión de este folio a **Eurocapital** el 2026-06-23» y «a **Tanner Servicios Financieros** el 2026-06-22», con las cesiones que el activo declara. Caso **95**, que cubre también lo que el A11 deriva.
-    - **(23-09-2026, ADR-0014, regla 60)** La cedida a Security dejó de bloquearse al incorporar: es candidata como cualquier otra y se rotula «Cedida a Security» (el caso 95 ahora fija que ENTRA). La cedida a un factoring ajeno sigue bloqueada al incorporar y, además, ya no es candidata del inbound: caso **159**. La oferta tampoco la excluye ya (`motivoExcl` sólo mira la cesión ajena; gate `regla_60.test.mjs`).
+    - **(23-09-2026, ADR-0014, regla 64)** La cedida a Security dejó de bloquearse al incorporar: es candidata como cualquier otra y se rotula «Cedida a Security» (el caso 95 ahora fija que ENTRA). La cedida a un factoring ajeno sigue bloqueada al incorporar y, además, ya no es candidata del inbound: caso **159**. La oferta tampoco la excluye ya (`motivoExcl` sólo mira la cesión ajena; gate `regla_64.test.mjs`).
 
 13-nonies. **La columna SOW del tubo: el MIX DE FINANCIAMIENTO lo MIDE el A2 y lo PUBLICA el A11** (15-09-2026, pedido del usuario). La fila de la tabla se lee de corrido: cuánto hay que comprarle (Oportunidad), **con quién se compite por eso** (SOW) y qué produce simularlo (Simulación).
     - **El DATO son cuatro porciones que suman 100** —«Otros factoring», «★ Security», «Factoring target», «Otros bancarios»— con el desglose por cesionario (razón social y %). **Lo que la columna DIBUJA son los cesionarios**, no las porciones (15-09-2026, pedido del usuario): la pregunta es con quién se compite y para eso «Otros bancarios · 22%» no sirve para llamar a nadie, «Banco Santander · 14%» sí. Ver 13-quindecies.
@@ -80,7 +80,110 @@ timestamp: 2026-09-17T15:29:14Z
     - **Lo que esto arregló, medido.** Antes: 51,5 % de los RUT de deudor fuera del rango de empresa y **39,3 % en rango de persona natural**, con razones sociales reales encima —«Clorox Chile S.A.» llevaba `9.710.034-4`—. Después: **100 % en rango de empresa** y los 1.983 RUT del padrón con dígito verificador válido, que es lo que distingue un RUT real de uno escrito a mano.
     - Gate: `tests/contract/padron.test.mjs` (9 tests, 4 sondas negativas). El punto fijo del generador se conserva (`generador.test.mjs`).
 
-69. **EL ACUSE DEL RECEPTOR ES UNA BANDERA DEL DTE QUE EL A1 TRAE Y `facturaDeDTE` LEE; SE MUESTRA Y NO FILTRA** (23-09-2026,
+60. **EL MILLÓN ES LA ÚLTIMA CAPA: ningún campo, ningún contrato y ningún mensaje lo nombran** (23-09-2026,
+    instrucción del usuario: «Los M$ son siempre visuales, corrige para que las comparaciones sean siempre en $»).
+    La regla 9-ter ya decía que una COMPARACIÓN se hace en pesos. Ésta cierra las otras tres puertas por las que
+    el millón volvía a entrar: el nombre de un campo, la declaración de un layout y el texto de un mensaje.
+    - **El único sitio que divide por un millón es el formateador** (`fmtMM`, `fmtMMc`), y el único que lo
+      multiplica no existe: **re-inflar un peso a escala de millones es siempre un error**. Sobrevivía uno:
+      `fmtCLP((f.monto || 0) * 1e6)` en el mensaje que se le manda al cliente para pedirle los XML que faltan,
+      resto del patrón `amountMM * 1e6` que la migración del 14-09-2026 retiró de todas partes menos de un
+      template literal. Ese mensaje le mostraba al cliente **su factura un millón de veces más grande**.
+    - **Un campo del layout NUNCA se llama `_MM` ni se declara en `MM$`.** Quedaban tres sitios: `CUPO_SUGERIDO_MM`
+      en A3/A4, `LINEA_APROBADA_MM` en A16 —y su línea de unidades, que **autorizaba explícitamente** el sufijo—,
+      y tres filas de A11 que declaraban `number (M$)` cuando el generador producía **miles** y el lector
+      multiplicaba por mil. Esa última es la peor de las tres: quien implementara la entrega leyendo el layout
+      habría enviado cifras **mil veces mayores**, y nada lo habría dicho — un margen de $40.000.000 y uno de
+      $40.000.000.000 se ven los dos plausibles en la ficha de una empresa.
+    - ~~**El sufijo `_M` (MILES) sí existe y se queda**~~ — **REEMPLAZADO por la regla 61 al día siguiente**:
+      consistente sí, pero consistentemente cuantizado de a $1.000. El texto original se conserva porque explica
+      el criterio con el que se decidió, que es lo que la 48 corrige. Decía:
+      el generador lo produce en miles, el layout lo dice y el lector lo pasa a pesos antes de formatear. Lo que
+      no puede pasar es que un layout lo llame de una forma y el sistema lo use de otra.
+    - **Y se abrevia en UNA escala.** El explicador de criterios rendía los umbrales como «$20M», que es
+      exactamente la forma en que se veía la unidad rota del 14-09 («M$100» salía como «$100M»). Ahora rinde `M$20`.
+    - Gate: **`auditar_unidades.mjs` pasa a estar cableado** en `tests/contract/auditores.test.mjs` con línea base
+      **cero**, y estrena el patrón **(d)**: el argumento de un formateador MULTIPLICADO por un millón. Antes sólo
+      buscaba divisiones —por eso no vio el defecto en un año de existir— y era un comando de mano, que es la
+      otra mitad de por qué sobrevivió. Cero es una **regla**, no un snapshot: el sistema no tiene ningún campo en
+      millones, así que ningún candidato es legítimo. Con su sonda negativa, que planta las dos formas y comprueba
+      que multiplicar por MIL no se reporta.
+
+61. **TODO GENERADOR PRODUCE EN PESOS. Ningún activo lleva sufijo de escala** (23-09-2026, instrucción del
+    usuario: «todos los generadores que produzcan en pesos, no en miles ni millones, o si no se pierde
+    precisión»). **Reemplaza el punto de la regla 60 que dejaba vivir el sufijo `_M` (MILES)**: era
+    consistente de punta a punta, sí, pero consistentemente cuantizado de a $1.000.
+    - **Lo que se perdía, medido.** Veinte campos de cuatro activos viajaban en miles. Cada uno quedaba
+      cuantizado al múltiplo de $1.000 más cercano: un pagaré de $450.678.123 se guardaba como `450678` y
+      volvía como $450.678.000. Es el mismo defecto del 14-09-2026 —cuando la factura entraba cuantizada de
+      a $10.000— una escala más abajo, y por eso menos visible.
+    - **Y no era sólo presentación.** `MNT_PAGARES` entra en la comparación de **C02** («Pagaré con Monto
+      Suficiente para Cartera»): el criterio comparaba una cifra cuantizada contra el uso exacto de la
+      cartera más el monto de la simulación. `V03` y `V04` son **denominadores de una razón que decide** en
+      el predictor de verificación.
+    - **Qué cambió**: los acumuladores internos de `verificacion.js` y `plataforma360.js` dejan de llevar
+      millones (`p.mm`) y llevan pesos (`p.pesos`); los rangos de `riesgo_bice.js` se declaran en pesos; y
+      los veinte campos pierden el sufijo — `V03_MNT_COMPRA_3M`, `V04_VENTA_PROM_3M`, `V10_MNT_PAGADO_3M`,
+      `MNT_PAGARES`, `CMF_DEUDA_DIRECTA`, `CMF_DEUDA_INDIRECTA`, `DEUDA_PREVISIONAL`, `ACHEF_VIGENTE`,
+      `PATRIMONIO`, `GENERACION`, `MARGEN_ULT_MES`, `MARGEN_12M`, `COLOC_PROM_12M`, `COMISION_ULT_OP`,
+      `VENTAS_A1..A3` y `VENTAS_SII_A1..A3`. Con ellos se van **veinte multiplicaciones por mil** del
+      fuente: diez en los lectores y diez en los sitios que formateaban.
+    - **El caso 115 se RE-ANCLA, no se afloja.** Comparaba el valor leído contra `celda × 1000`; ahora lo
+      compara contra la celda **tal cual**, que es una exigencia más fuerte: cualquier factor —el ×1.000 de
+      antes o el ÷1.000 del defecto original— rompe la igualdad. Sigue midiendo sobre 200 filas reales del
+      A10 y no contra un orden de magnitud.
+    - **Un layout sin sufijos también es un layout sin ambigüedad.** El `_M` obligaba a que tres cosas
+      dijeran lo mismo —el generador, la declaración y el lector— y el 23-09 se encontró que en A11 no lo
+      decían: el layout declaraba millones donde el generador ponía miles. Sin sufijo no hay nada que
+      sincronizar.
+    - **Y los bloques BASE no los alcanza ninguna corrida.** Los derivados se arreglan en su generador y se
+      regeneran; los base se copian tal cual desde el activo de entrada. Medido sobre las **119 claves
+      distintas** del activo quedaban **dos** con nombre de escala, ninguna con lectores:
+      `DEUDORES_AUTORIZADOS.LineaSugeridaMM` (599 filas, BASE) y `RequeridoParaTargetMM` del A5 (233,
+      derivado). Se sacaron las dos por instrucción del usuario —«si nadie lo ocupa, elimínalo»—: la
+      derivada en su generador, la base con `GeneradorDatos/sanear_campos_muertos.js`, que corre una vez y
+      queda commiteado como los otros saneadores. **La segunda era una trampa**: guardaba PESOS
+      (202.175.551) bajo un nombre que dice millones, así que quien le creyera al nombre habría
+      multiplicado por un millón. Un campo que nadie lee y que miente sobre su unidad no es información.
+    - Gate: el caso **115** (el activo calza peso a peso sobre 200 filas), `generador.test.mjs` —el punto
+      fijo, más **«ningún campo del activo nombra una escala»**, que se mide sobre el ARCHIVO porque es
+      donde el sufijo sobrevive sin que nadie lo note— y la línea base **cero** de `auditar_unidades` en
+      `auditores.test.mjs`.
+
+62. **LA CARTERA COMERCIAL SE LEE, NO SE INVENTA: fuera los generadores que quedaban dentro de la app**
+    (23-09-2026, instrucción del usuario: «saca esos generadores y cuando los implementes, que escalen en
+    pesos»). Es la regla núcleo 9 —*el pipeline lee los activos, no los genera*— aplicada al último sitio
+    donde seguía sin cumplirse, y lo que la hace urgente es que **no era sólo suciedad: cuatro KPI estaban
+    mal**.
+    - **`PC_CLIENTES` sorteaba cuatro campos con `pcRng`**: el volumen del cliente, si tenía «malos
+      deudores», en qué proporción, y **a qué competidor se le iba el volumen** —este último de una lista
+      de nombres al azar, así que la ficha podía nombrar a un factoring que jamás le compró una factura a
+      ese cliente—.
+    - **El daño medido.** `vol` salía en una escala que no declaraba nadie (5.000 a 65.000) y cuatro KPI de
+      Reportes lo pasan por `fmtMMc`, que **divide por un millón**: «Brecha de wallet», «cedido», «Buenos»
+      y «Malos» mostraban del orden de **M$5** donde va la cartera de 500 clientes. No es un redondeo: es
+      un factor de un millón, la misma familia del 14-09.
+    - **De dónde sale cada uno ahora**, y todos existían ya: el **volumen** del `COLOC_PROM_12M` del A11
+      —colocación promedio 12m, en pesos, que el propio activo MIDE sobre las cesiones del A2—; el
+      **competidor** del detalle por cesionario del mismo A11, tomando el mayor que no somos nosotros
+      (regla 13-quindecies); y los **malos deudores** de la proporción de sus deudores bajo
+      `NOTA_PRIORITARIA`, que es la nota de corte que el sistema ya usa para decidir a quién le abre
+      oportunidad. El corte del 50% que parte el panel en dos es de **pantalla** y está dicho como tal: la
+      regla es la nota.
+    - **El fallback sintético de 80 empresas se retira entero.** Armaba nombres con tres listas, sorteaba
+      RUT y fabricaba volumen y SOW para cuando falta `datos_inyectados.js`. Sin ese archivo el pipeline
+      muestra **0 oportunidades** de todos modos: una cartera falsa al lado de un tubo vacío no rescata la
+      demo, la vuelve incoherente — y esas 80 empresas se mezclaban con las reales apenas el activo
+      aparecía a medias. Sin activo, `PC_CLIENTES` es `[]`.
+    - **Y las series de referencia del mercado pasan a PESOS.** `PC_MERCADO`, `PC_SECURITY` y `PC_ZONA`
+      estaban escritas en miles de millones («245» por 245 B CLP) y el eje del gráfico de zonas las
+      rotulaba **«$13 MM»**, que dice millones donde el dato son miles de millones. Ahora se escriben en
+      pesos y el eje usa `fmtMM`, el formateador único.
+    - Gate: `regla_62.test.mjs` sobre el texto del fuente —ni `pcRng` ni una lista de competidores dentro
+      de `PC_CLIENTES`, y el catálogo sale de `P360`— más la línea base de `auditar_muerto`, que es la que
+      obliga a que no quede ningún resto sin referencias.
+
+73. **EL ACUSE DEL RECEPTOR ES UNA BANDERA DEL DTE QUE EL A1 TRAE Y `facturaDeDTE` LEE; SE MUESTRA Y NO FILTRA** (23-09-2026,
     M-01, G-01; el usuario, 22-09-2026: «las aceptaciones son parte de las banderas de DTE»; 23-09-2026: «las facturas los
       primeros 8 días desde su emisión no tienen acuse de aceptación y/o reclamo y en ese estado de ausencia de acuse sí
       son candidatas»). El spec del curse y el informe de gaps decían que «el A1 no la trae»: **la trae**. `EstadoDTE`
@@ -97,8 +200,8 @@ timestamp: 2026-09-17T15:29:14Z
       `acuseLabel` es la única lectura de pantalla. Sin dato del A1 (XML a mano, fixtures) el chip no dibuja nada:
       «Sin acuse» es lo que el activo dice, no lo que se afirma de un documento que llegó por otro camino.
     - **No filtra**: «Buena factura» (`CRITERIO_PRED`), `estadoCandidata` y el perfil de la Bandeja no leen `acuse`.
-      Lo que excluye sigue siendo el reclamo, la nota de crédito, la cesión a un factoring ajeno (regla 60), la venta al
-      contado y la antigüedad (regla 61). Una factura sin acuse en sus primeros 8 días es candidata, y con acuse también.
+      Lo que excluye sigue siendo el reclamo, la nota de crédito, la cesión a un factoring ajeno (regla 64), la venta al
+      contado y la antigüedad (regla 65). Una factura sin acuse en sus primeros 8 días es candidata, y con acuse también.
     - **El Excel de candidatas dejó de inventarlo**: la columna «Aceptada/Reclamada» salía de un sorteo por RUT
       (`facturasDeCandidata`), y un candidato —proveedor de un cliente, no cliente— no tiene documentos en el A1. Se
       retiró la columna con el sorteo; el resto de ese detalle sigue siendo la derivación determinista del agregado que
@@ -108,13 +211,13 @@ timestamp: 2026-09-17T15:29:14Z
       `spec-inbound-facturas.md` §2.
     - Caso **169** (los tres estados leídos con su fecha y el A1 entero contado por `facturaDeDTE` igual que por
       `EstadoDTE`; el stream y el libro; «Buena factura» y `estadoCandidata` sin mirar el acuse, en las dos direcciones;
-      el rótulo con sus tres textos y mudo sin dato; el Excel sin `estado`) y `regla_69.test.mjs` (la lectura sin
+      el rótulo con sus tres textos y mudo sin dato; el Excel sin `estado`) y `regla_73.test.mjs` (la lectura sin
       derivar, «Sin acuse» en un solo sitio y nunca como sorteo, el chip en las tres filas y mudo sin dato, el libro, y
-      ningún filtro leyendo `acuse`; diez sondas). La fila en pantalla la fija `e2e-69-a` (CP-010): en la oferta y en
+      ningún filtro leyendo `acuse`; diez sondas). La fila en pantalla la fija `e2e-73-a` (CP-010): en la oferta y en
       los disponibles el chip de cada factura coincide con lo que el A1 trae para ese folio, y la reclamada sigue
       bloqueada en su fila.
 
-70. **EL A1 ES UN FLUJO DE EVENTOS POR DOCUMENTO: UNA FILA POR NOTIFICACIÓN, Y EL DOCUMENTO SE PLIEGA EN UN SOLO SITIO**
+74. **EL A1 ES UN FLUJO DE EVENTOS POR DOCUMENTO: UNA FILA POR NOTIFICACIÓN, Y EL DOCUMENTO SE PLIEGA EN UN SOLO SITIO**
     (23-09-2026, ADR-0020; el usuario: «Considera que los eventos de dtesync llegan varias veces para la misma factura una
       vez se crea (notifica nueva factura), después puede llegar nota de crédito, después aceptación. Considera eso para
       modelar el archivo de dtesync»). Hasta ese día el A1 traía una fila por DTE con su estado FINAL y el stream lo
@@ -148,8 +251,8 @@ timestamp: 2026-09-17T15:29:14Z
       (`secuenciaDTE`): una re-entrega no se aplica dos veces. La NC y el reclamo dejan traza en la bitácora («El SII
       notificó una nota de crédito sobre el documento #N: queda bloqueado en…»); el acuse se anota sin traza. **Sobre la
       oferta cerrada o publicada, o después de la firma, la NC, el reclamo o la cesión a otro INHABILITAN el documento y
-      dejan la operación no cursable (ADR-0021, regla 71)**: el documento queda con su estado nuevo y marcado
-      `inhabilitada`, el veto de la regla 67 lo cubre y el ejecutivo retira, re-evalúa y vuelve a publicar para una nueva
+      dejan la operación no cursable (ADR-0021, regla 75)**: el documento queda con su estado nuevo y marcado
+      `inhabilitada`, el veto de la regla 71 lo cubre y el ejecutivo retira, re-evalúa y vuelve a publicar para una nueva
       firma. (Hasta ADR-0021, el mismo día, sólo se avisaba: era la decisión que ADR-0020 dejó abierta.) La corrida
       siguiente reporta en su línea de bitácora del sistema cuántas actualizaciones aplicó y cuántos documentos inhabilitó.
     - **La migración fue una sola vez** (`GeneradorDatos/migrar_dtesync_eventos.js`, como `migrar_padron.js`): cada documento
@@ -160,8 +263,8 @@ timestamp: 2026-09-17T15:29:14Z
       archivo pasó de 35 a 46 MB.
     - Caso **170** (el pliegue en los dos órdenes y la fila plana; el A1 real contado por documentos en el libro, los pares y
       el corte; el stream con la creación sin banderas y la actualización aparte; la NC en los disponibles y en la oferta
-      abierta con traza, la inhabilitación sobre la oferta cerrada (regla 71), la re-entrega, el acuse sin traza, el folio
-      ajeno, el lote y el evento del inbound), `regla_70.test.mjs` (ningún lector del log fuera del pliegue y el stream; los lectores plegados;
+      abierta con traza, la inhabilitación sobre la oferta cerrada (regla 75), la re-entrega, el acuse sin traza, el folio
+      ajeno, el lote y el evento del inbound), `regla_74.test.mjs` (ningún lector del log fuera del pliegue y el stream; los lectores plegados;
       el pliegue del fuente ejecutado en Node contra el del generador; el stream y el tick separando; el aviso sobre la
       oferta cerrada; el contrato; doce sondas) y `dtesync.test.mjs` (el bloque commiteado valida como log —creación
       primero, secuencias contiguas, fechas en ventana, orden de llegada, actualizaciones sin el documento— y `plegar`,

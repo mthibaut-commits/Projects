@@ -1,11 +1,10 @@
-/* Gate de contrato de la regla 68 (ADR-0013: UN evento de evaluación corre los cinco motores y emite una versión con
-   cinco secciones o ninguna; la primera simulación emite la v1; el pricing versiona el modo de tasa y las condiciones),
-   sobre el TEXTO del fuente. Lo que se puede llamar por nombre lo prueba el caso 168 (`evaluarOperacion`, `versionCompleta`,
-   `contarVersiones`, `snapVersionCli` con sus cinco secciones, el motor caído, el pricing, el comité, `reevaluarCliente`);
-   lo que la suite no alcanza son los closures de React: que «Simular la oferta» dispare el evento ANTES de escribir el
-   negocio, que «Re-evaluar operación» sea el mismo evento y la pestaña del detalle lo reciba, que no quede ningún emisor
-   de versión fuera del evento y del comité, que la regularización del origen la pida sólo la re-evaluación de la
-   simulación, y que el anuncio de un recálculo que no ocurre (G-09) no vuelva.
+/* Gate de contrato de la regla 68 (el corte y el reinicio del día son por RELOJ del tenant; al corte la oportunidad sin
+   oferta se elimina y al reinicio vuelve como oportunidad nueva con id propio y referencia), sobre el TEXTO del fuente.
+   Lo puro lo prueban los casos 163 y 164 (`jobDelReloj`, `relojSimulado`, `intervaloJobMs`, `corteDelDia`,
+   `eventoDeReoriginacion`, la migración v3); lo que la suite no puede ver es que el CRON los use —que el efecto corte por
+   `r.corte` y no «cada N corridas», que la corrida no abra fuera de la ventana, que el corte ELIMINE en vez de reabrir y
+   que la oportunidad que nace del reinicio lleve `referencia`—, y que la configuración del tenant ya no ofrezca la etapa
+   «no gestionada» ni diga que la frecuencia es declarativa. Eso se vigila acá.
 
    Con sonda negativa por pieza: un gate verde que no se comprueba en rojo no vigila nada. */
 import test from "node:test";
@@ -14,108 +13,77 @@ import { leer, canonico } from "./_comun.mjs";
 
 const jsx = leer("pipeline_comercial.jsx");
 
-const tramo = (can, desde, hasta, largo) => {
-  const i = can.indexOf(desde);
-  if (i < 0) return "";
-  const j = hasta ? can.indexOf(hasta, i) : -1;
-  return can.slice(i, j < 0 ? i + (largo || 4000) : j);
-};
+/* El literal `CFG_OPER_BASE`, como texto, sin sus comentarios. */
+function baseDe(src) {
+  const i = src.indexOf("const CFG_OPER_BASE = {");
+  const j = i < 0 ? -1 : src.indexOf("const CFG_OPER_DEFAULT", i);
+  return i < 0 || j < 0 ? "" : src.slice(i, j).replace(/\/\/[^\n]*/g, "");
+}
 
 export function auditarRegla68(src) {
   const fallos = [];
   const can = canonico(src);
-  // 1 · La versión es la tupla de los cinco motores, y la emite UN evento que la rechaza a medias.
-  if (!can.includes('const MOTORES_VERSION = ["res", "verificacion", "linea", "giro", "pricing"];')) fallos.push("`MOTORES_VERSION` ya no nombra los cinco motores");
-  if (!can.includes("nRech, linea, verificacion, giro, pricing, motoresFallidos: fallidos, politica:")) fallos.push("`snapVersionCli` ya no devuelve las cinco secciones con los motores fallidos");
-  const ev = tramo(can, "function evaluarOperacion(deal, usuario, opts) {", "function reevaluarCliente(deal, usuario) {");
-  if (!ev) fallos.push("no existe `evaluarOperacion`: no hay evento de evaluación");
+  // 1 · La configuración: las horas del modelo, el corte diario, y NADA de etapa configurable ni jornada en horas.
+  const base = baseDe(src);
+  if (!base) fallos.push("no encuentro `CFG_OPER_BASE`");
   else {
-    const iRech = ev.indexOf("if (!versionCompleta(nv)) {");
-    const iPush = ev.indexOf("repoSimVersions.push(deal.id, nv);");
-    if (iRech < 0 || iPush < 0 || iPush < iRech) fallos.push("el evento emite sin comprobar que la versión esté completa: quedaría una versión a medias");
-    if (!/return \{ok: false, motivo: "motor_fallido"/.test(ev)) fallos.push("el evento no devuelve el rechazo por motor fallido");
-    if (!ev.includes("Evaluación fallida")) fallos.push("la evaluación fallida no queda escrita en la bitácora ni en la auditoría");
-    if ((ev.match(/repoSimVersions\.push\(/g) || []).length !== 1) fallos.push("el evento empuja más de una versión (o ninguna)");
+    if (!/horaInicio:\s*"06:00"/.test(base)) fallos.push("`horaInicio` no es 06:00: el reinicio del día es el del modelo del negocio");
+    if (!/horaFin:\s*"23:00"/.test(base)) fallos.push("`horaFin` no es 23:00: el corte del día es el del modelo del negocio");
+    if (!/corteDiario:\s*true/.test(base)) fallos.push("`corteDiario` no existe o no viene activado");
+    if (/etapaNoGestionada/.test(base)) fallos.push("vuelve `etapaNoGestionada`: el criterio del corte es «tiene oferta», no una etapa configurable (ADR-0019)");
+    if (/\bhorasDia\b/.test(base)) fallos.push("vuelve `horasDia`: el día va del reinicio al corte, no es una jornada en horas");
+    if (/reaperturaDiaria/.test(base)) fallos.push("vuelve `reaperturaDiaria`: el corte ELIMINA, no reabre");
   }
-  // 2 · «Simular la oferta» ES el evento, antes de escribir el negocio; «Re-evaluar operación» es el mismo evento.
-  const sim = tramo(can, "const simularOferta = (id) => {", "const reevaluarOperacion = (id) => {");
-  if (!sim) fallos.push("no encuentro `simularOferta` seguido de `reevaluarOperacion`");
+  const esq = src.match(/^\s*cfgOper:\s*(\d+),/m);
+  if (!esq || +esq[1] < 3) fallos.push("`SCHEMA_VERSION.cfgOper` no llegó a 3: retirar y renombrar claves sube el esquema (regla 39)");
+  // 2 · El reloj decide: el efecto corta por `r.corte` y reinicia por `r.reinicio`; nunca «cada N corridas».
+  if (!can.includes("if (corridas > 0 && r.corte) cerrarDiaRef.current(r.dia);")) fallos.push("el cierre del día no lo dispara la hora de corte del tenant");
+  if (!can.includes("if (corridas > 0 && r.reinicio) reinicioDiaRef.current(r.dia);")) fallos.push("el reinicio del día no lo dispara la hora de reinicio del tenant");
+  if (/corridas % HORAS_DIA/.test(can) || /\bHORAS_DIA\b/.test(can)) fallos.push("vuelve el corte por conteo de corridas (`HORAS_DIA`): en producción el inbound es continuo");
+  // 3 · La corrida sólo abre dentro de la ventana.
+  if (!can.includes("if (r.enVentana) correrProceso();")) fallos.push("la corrida abre oportunidades fuera de la ventana del tenant");
+  // 4 · El corte ELIMINA y deja rastro; lo eliminado vuelve al inbound al reinicio.
+  const iC = can.indexOf("const corteDia = (nDia) => {");
+  const corte = iC < 0 ? "" : can.slice(iC, iC + 2500);
+  if (!corte) fallos.push("no existe `corteDia`: ¿volvió `rolloverDia`?");
   else {
-    const iEv = sim.indexOf("if (d0) evaluarOperacion(");
-    const iSet = sim.indexOf("setDeals((prev) => prev.map(upd));");
-    if (iEv < 0 || iSet < 0 || iSet < iEv) fallos.push("simular no dispara el evento de evaluación antes de escribir el negocio (la v1 no se emite al simular)");
-    if (!sim.includes('origen: (repoSimVersions.get(id) || []).length ? "Re-evaluación de la operación (simulación)" : "Simulación de la oferta"')) fallos.push("la versión de la simulación no dice su origen");
-    if (!sim.includes('motivo: "simulacion"')) fallos.push("la versión de la simulación no lleva el motivo `simulacion`");
-    if (!sim.includes("simulado: true, stage: d0.stage === \"prospeccion\" ? \"oferta\" : d0.stage, monto: monto0, facturas: fs0.length, ...fin0")) fallos.push("el evento no evalúa el negocio tal como va a quedar simulado (etapa, monto, facturas y condiciones)");
+    if (!corte.includes("const r = corteDelDia(dealsRef.current || []);")) fallos.push("`corteDia` no decide con `corteDelDia`: la política del corte tiene que ser pura");
+    if (!corte.includes("setDeals((prev) => prev.filter((d) => !idsElim.has(d.id)));")) fallos.push("el corte no ELIMINA: la sin oferta seguiría en el tubo");
+    if (!corte.includes("eventoDeReoriginacion(d, nDia)")) fallos.push("lo eliminado no queda pendiente de reinicio: al día siguiente no se re-originaría");
+    if (!/logSys\("info", "cierre-dia", `Corte del día \$\{nDia\}/.test(corte)) fallos.push("el corte no deja su cierre en la bitácora del sistema");
   }
-  const reev = tramo(can, "const reevaluarOperacion = (id) => {", "const limpiarSimulacion = (id) => {");
-  if (!reev.includes('return evaluarOperacion(d0, usuario, {origen: "Re-evaluación de la operación", motivo: "reevaluacion"});')) fallos.push("«Re-evaluar operación» ya no es el evento de evaluación");
-  if (!can.includes("onEvaluar={reevaluarOperacion}")) fallos.push("la pestaña del detalle no recibe el evento (`onEvaluar`)");
-  const rl = tramo(can, "const reevaluarLinea = () => {", null, 400);
-  if (!rl.includes("if (onEvaluar) onEvaluar(deal.id);")) fallos.push("el botón «Re-evaluar operación» de la cabecera volvió a ser un spinner: no dispara el evento");
-  const rp = tramo(can, "onReevaluar={() => {", null, 200);
-  if (!rp.includes("if (onEvaluar) onEvaluar(deal.id);")) fallos.push("el aviso «La selección cambió» no dispara el evento al re-evaluar");
-  // 3 · Ningún emisor fuera del evento y del comité, y el comité emite una versión COMPLETA con la línea recortada.
-  const pushes = can.match(/repoSimVersions\.push\([^)]*\)/g) || [];
-  const permitidos = new Set(["repoSimVersions.push(deal.id, nv)", "repoSimVersions.push(id, dec.version)"]);
-  pushes.filter((p) => !permitidos.has(p)).forEach((p) => fallos.push(`emisor de versión fuera del evento y del comité: \`${p}\``));
-  if (pushes.length !== 2) fallos.push(`se esperaban exactamente dos emisores de versión (el evento y el comité), hay ${pushes.length}`);
-  if (!can.includes('snapVersionCli(dealTrasRetiro, vs.length, {linea: recortarAsignacion(prev.linea, quedan.map((f) => f.id)), origen, motivo: "comite_rechazo"})')) fallos.push("la versión del rechazo del comité no es la de los cinco motores sobre lo que queda con la línea recortada (regla 65)");
-  // 4 · La regularización del origen la pide SÓLO «Re-evaluación de la simulación», no cualquier versión con número > 1.
-  const snap = tramo(can, "function snapVersionCli(deal, rev, opts) {", "const nExc = res.filter(");
-  if (!snap.includes("if (o.origenActualizado) {")) fallos.push("la regularización de las variables ya no depende del gesto");
-  if (/if \(\(rev \|\| 0\) >= 1\) \{/.test(snap)) fallos.push("la regularización vuelve a dispararse por el número de versión: toda re-evaluación «arreglaría» el origen");
-  const rc = tramo(can, "function reevaluarCliente(deal, usuario) {", "const VISADO_NO_APLICA =");
-  if (!rc.includes('const r = evaluarOperacion(deal, usuario, {origenActualizado: true, origen: "Re-evaluación · JSON API actualizado tras firma", motivo: "reevaluacion_origen"});')) fallos.push("«Re-evaluación de la simulación» no pasa por el evento con el origen actualizado");
-  if (/snapVersionCli\(/.test(rc)) fallos.push("«Re-evaluación de la simulación» arma la versión por su cuenta en vez de disparar el evento");
-  // 5 · El giro y el pricing salen de los mismos cálculos que la pantalla, y el tab cuenta por motor.
-  if (!can.includes("giro = fsOp.length ? giroDeVersion(deal, fsOp, {linea}) : null;")) fallos.push("la versión no trae el giro sobre la asignación recién evaluada");
-  if (!can.includes("pricing = fsOp.length ? pricingDeVersion(deal, fsOp) : null;")) fallos.push("la versión no trae el pricing");
-  if (!can.includes("const val = giroDeVersion(deal, fs, estado);")) fallos.push("el giro del tubo ya no sale del mismo cálculo que la versión");
-  if (!can.includes("const tn = tasaDelNegocio(deal, tasaPondRiesgo, CFG_ACTIVA);")) fallos.push("la pantalla elige la tasa del negocio por su cuenta: lo que se muestra y lo que se versiona se separan");
-  if (!can.includes("const nMot = contarVersiones(shown);")) fallos.push("el tab Otorgamiento no cuenta las versiones por motor");
-  if (!can.includes('{shown.length} {shown.length === 1 ? "versión" : "versiones"} · {MOTORES_VERSION.length} motores')) fallos.push("el pill de versiones no dice cuántos motores (o vuelve a decir «versiónes»)");
-  // 7 · El tubo relee las versiones por el evento `storage` (la carrera con el postMessage está medida).
-  const st = tramo(can, "const onStorage = (e) => {", "window.addEventListener(\"storage\", onStorage);");
-  if (!st.includes('if (!e || e.key !== "pc_repo_" + repoSimVersions.nombre) return;') || !st.includes("repoSimVersions.recargar(); SIM_VERSIONS = repoSimVersions.all();")) fallos.push("el tubo no relee las versiones cuando otra pestaña las escribe: la fila leería una asignación anterior");
-  // 6 · G-09: el recálculo que no ocurre no se anuncia, y las facturas nuevas se dicen como lo que son.
-  if (/Recálculo aplicado|Recalculando |Se está recalculando la simulación|\bactualizando\b/.test(can)) fallos.push("vuelve el anuncio de un recálculo que no ocurre (G-09)");
-  if (!can.includes("Facturas nuevas para ${idsWarn.length} oportunidad(es): ${totalDocs} documento(s) al pool disponible")) fallos.push("la bitácora no dice que las facturas nuevas van al pool");
-  if (!can.includes("Facturas agregadas al pool en ${idsWarn.length} oportunidad(es)")) fallos.push("la bitácora no cierra la corrida diciendo lo que hizo");
+  if (/const rolloverDia = /.test(can)) fallos.push("vuelve `rolloverDia`: reabrir con el mismo id es lo que ADR-0019 descartó");
+  if (!can.includes("if (evs.length) setAcumulado((prev) => [...prev, ...evs]);")) fallos.push("el reinicio no devuelve al inbound lo que el corte eliminó");
+  // 5 · La que nace del reinicio lleva la referencia.
+  if (!can.includes("referencia: ev.referencia || undefined,")) fallos.push("la oportunidad que nace del reinicio no lleva `referencia`: nada la uniría con la eliminada");
+  // 6 · La pantalla: sin etapa configurable, y la frecuencia ya no es declarativa.
+  if (/l="Etapa «no gestionada»"/.test(src)) fallos.push("Configuración › Operación vuelve a ofrecer la etapa «no gestionada»");
+  const iF = src.indexOf('l="Frecuencia de actualización"');
+  const campo = iF < 0 ? "" : src.slice(iF, iF + 600);
+  if (!campo) fallos.push("no encuentro el campo «Frecuencia de actualización»");
+  else if (/declarativ/i.test(campo)) fallos.push("el campo «Frecuencia de actualización» sigue diciendo que es declarativo: `intervaloJobMs` lo consume");
+  if (!/const intervaloJobMs = \(cfg\) => /.test(src)) fallos.push("no existe `intervaloJobMs`: `frecuenciaMin` vuelve a ser decorativa");
   return fallos;
 }
 
-test("regla 68: un evento de evaluación corre los cinco motores y emite una versión con cinco secciones o ninguna; simular emite la v1; ningún emisor fuera del evento y del comité; el recálculo que no ocurre no se anuncia", () => {
+test("regla 68: el corte y el reinicio son por reloj del tenant, el corte elimina la sin oferta y el reinicio la re-origina con referencia", () => {
   assert.deepEqual(auditarRegla68(jsx), []);
 });
 
+/* Cada mutante planta UNA violación (sobre el fuente crudo o su forma canónica, según lo que mide cada pieza) y el gate
+   tiene que cazarla. */
 const MUTANTES = [
-  ["simular no evalúa", (c) => c.replace("if (d0) evaluarOperacion(", "if (false) evaluarOperacion(")],
-  ["simular evalúa DESPUÉS de escribir el negocio", (c) => {
-    const i = c.indexOf("if (d0) evaluarOperacion("); const j = c.indexOf("const upd = (d) => {", i);
-    const bloque = c.slice(i, j); const k = c.indexOf("setDeals((prev) => prev.map(upd));", j);
-    return c.slice(0, i) + c.slice(j, k) + "setDeals((prev) => prev.map(upd)); " + bloque + c.slice(k + "setDeals((prev) => prev.map(upd));".length);
-  }],
-  ["el evento emite a medias", (c) => c.replace("if (!versionCompleta(nv)) {", "if (false) {")],
-  ["el evento no dice que falló", (c) => c.replace("`Evaluación fallida · ${deal.id}: ${que}", "`Evaluación · ${deal.id}: ${que}").replace('accion: "Evaluación fallida"', 'accion: "Evaluación"')],
-  ["«Re-evaluar operación» vuelve a ser un spinner", (c) => c.replace("const reevaluarLinea = () => {setDetReeval(true); if (onEvaluar) onEvaluar(deal.id);", "const reevaluarLinea = () => {setDetReeval(true);")],
-  ["la pestaña no recibe el evento", (c) => c.replace("onEvaluar={reevaluarOperacion}", "")],
-  ["el aviso «La selección cambió» sólo se apaga", (c) => c.replace("onReevaluar={() => {if (onEvaluar) onEvaluar(deal.id);", "onReevaluar={() => {")],
-  ["un emisor literal fuera del evento", (c) => c.replace("const reabrirOperacion = (id) => {", "const reabrirOperacion = (id) => {repoSimVersions.push(id, {v: 9});")],
-  ["el comité re-asigna en vez de recortar", (c) => c.replace('snapVersionCli(dealTrasRetiro, vs.length, {linea: recortarAsignacion(prev.linea, quedan.map((f) => f.id)), origen, motivo: "comite_rechazo"})', 'snapVersionCli(dealTrasRetiro, vs.length, {origen, motivo: "comite_rechazo"})')],
-  ["la regularización vuelve a ser por número de versión", (c) => c.replace("if (o.origenActualizado) {", "if ((rev || 0) >= 1) {")],
-  ["la re-evaluación de la simulación arma la versión por su cuenta", (c) => c.replace('const r = evaluarOperacion(deal, usuario, {origenActualizado: true, origen: "Re-evaluación · JSON API actualizado tras firma", motivo: "reevaluacion_origen"});', 'const r = {version: snapVersionCli(deal, vs.length, {origenActualizado: true})}; repoSimVersions.push(deal.id, r.version);')],
-  ["la versión pierde el pricing", (c) => c.replace("nRech, linea, verificacion, giro, pricing, motoresFallidos: fallidos, politica:", "nRech, linea, verificacion, giro, motoresFallidos: fallidos, politica:")],
-  ["el giro de la versión no mira la asignación recién evaluada", (c) => c.replace("giro = fsOp.length ? giroDeVersion(deal, fsOp, {linea}) : null;", "giro = fsOp.length ? giroDeVersion(deal, fsOp, {}) : null;")],
-  ["la pantalla elige la tasa por su cuenta", (c) => c.replace("const tn = tasaDelNegocio(deal, tasaPondRiesgo, CFG_ACTIVA);", "const tn = {ultNeg: null, usaUltNeg: false, tasaEfectiva: tasaPondRiesgo};")],
-  ["el tab no cuenta por motor", (c) => c.replace("const nMot = contarVersiones(shown);", "const nMot = {};")],
-  ["el tubo no relee las versiones", (c) => c.replace("repoSimVersions.recargar(); SIM_VERSIONS = repoSimVersions.all();", "")],
-  ["la bitácora vuelve a anunciar el recálculo", (c) => c.replace("Facturas agregadas al pool en ${idsWarn.length} oportunidad(es)", "Recálculo aplicado en ${idsWarn.length} oportunidad(es)")],
+  ["vuelve la etapa configurable", (s) => s.replace('  corteDiario: true,\n', '  corteDiario: true,\n  etapaNoGestionada: "prospeccion",\n')],
+  ["el esquema no sube", (s) => s.replace(/^(\s*cfgOper:\s*)3,/m, "$12,")],
+  ["el cierre vuelve a ser por conteo", (s) => s.replace("if (corridas > 0 && r.corte) cerrarDiaRef.current(r.dia);", "if (corridas > 0 && corridas % 8 === 0) cerrarDiaRef.current(r.dia);")],
+  ["la corrida abre fuera de la ventana", (s) => s.replace("if (r.enVentana) correrProceso();", "correrProceso();")],
+  ["el corte deja de eliminar", (s) => s.replace("setDeals((prev) => prev.filter((d) => !idsElim.has(d.id)));", "setDeals((prev) => prev);")],
+  ["la que nace del reinicio pierde la referencia", (s) => s.replace("referencia: ev.referencia || undefined,", "")],
+  ["la frecuencia vuelve a ser declarativa", (s) => s.replace('l="Frecuencia de actualización"', 'l="Frecuencia de actualización" hint="DECLARATIVA"')],
 ];
 for (const [nombre, mutar] of MUTANTES)
   test(`sonda negativa: ${nombre}`, () => {
-    const can = canonico(jsx);
-    const mut = mutar(can);
-    assert.notEqual(mut, can, "la sonda no cambió el fuente: el ancla ya no existe");
+    const mut = mutar(jsx);
+    assert.notEqual(mut, jsx, "la sonda no plantó nada: el texto quedó igual");
     assert.ok(auditarRegla68(mut).length > 0, "el gate no cazó la violación plantada");
   });

@@ -27,7 +27,7 @@ en el vault: son la foto de un día.
   más chico de lo que el spec de curse y el informe de gaps decían («el A1 no la trae»), y no exige
   regenerar `datos_inyectados.js`. Se corrige en el commit de M-01.
 
-## 1 · ADR-0014 · La cedida a un factoring ajeno no es candidata (regla 60, caso 159)
+## 1 · ADR-0014 · La cedida a un factoring ajeno no es candidata (regla 64, caso 159)
 
 **Qué cambió.** «Buena factura» exige ahora una cuarta condición, `!cedidaAFactoringAjeno(f)`, sobre la misma
 fuente que ya usaba la incorporación (`cesionDeFactura`, el índice del A2 por `RUT del cedente|folio`); el
@@ -58,8 +58,8 @@ la operación del Directorio, y esa factura es una cedida a Security. `estadoCan
 `motivoExcl` —el closure del detalle que decide qué factura de la oferta cuenta— seguía excluyéndola como «Ya
 financiada por Security»: entraba y no contaba, «Tienes 1 factura elegida» no aparecía y «esta operación» no
 cuadraba con «Total oferta». Se corrigió `motivoExcl` (sólo la cesión ajena excluye), las dos listas de candidatas
-rotulan «Cedida a Security» (el `SHORT_EST` del candado perdió sus dos claves de cesión propia) y la regla 60 quedó
-con gate de texto propio, `regla_60.test.mjs`, que fija las tres piezas con sonda cada una: la cuarta condición, la
+rotulan «Cedida a Security» (el `SHORT_EST` del candado perdió sus dos claves de cesión propia) y la regla 64 quedó
+con gate de texto propio, `regla_64.test.mjs`, que fija las tres piezas con sonda cada una: la cuarta condición, la
 candidata agregable y el motivo de exclusión. Lección: una regla que dice «entra» se fija en TODOS los sitios que
 deciden si una factura cuenta; `grep cesionDeFactura(` los enumera (cinco). Y el gate nuevo se equivocó dos veces
 antes de quedar: su ventana sobre el predicado se cortaba en el `{}` del respaldo del evento, y su chequeo global
@@ -73,7 +73,7 @@ tras el clic— leía las pestañas ANTES de que la simulación aterrizara: la l
 `HEAD` al lado: mismo gesto, 17 facturas, 1.465 ms. El caso ahora espera a que el panel de arranque se retire, que es
 la señal, como ya hacía `14_13_sexdecies`. Un tiempo fijo en un e2e es una apuesta sobre el tamaño del dato.
 
-## 2 · M-10 · La antigüedad máxima desde la emisión, configurable (regla 61, caso 160)
+## 2 · M-10 · La antigüedad máxima desde la emisión, configurable (regla 65, caso 160)
 
 **Qué cambió.** «Buena factura» exige una quinta condición, `!superaAntiguedad(f)`: la factura emitida hace más de
 `antiguedadMaxDias` días —contados contra el corte del activo, regla 13-ter— no es candidata. El tope es del tenant
@@ -104,10 +104,10 @@ filtro deja pasar la mayoría y el demo no se apaga; sobre las 8.000 filas del s
 
 **Documentos:** spec del inbound (§3 con las cinco condiciones del documento, §5.1, §5.3, §12.6), spec del curse (M-10
 implementada; 27 implementadas · 10 distinto), gaps (G-31 cerrado: implementado; 2 implementados · 16 decididos),
-HU-05 vigente en CA-1/CA-2, CP-012/120 con el caso 160 (66 cubiertos · 67 nuevos · 100 CP piden caso), regla 61 y su
+HU-05 vigente en CA-1/CA-2, CP-012/120 con el caso 160 (66 cubiertos · 67 nuevos · 100 CP piden caso), regla 65 y su
 fila, cifras (160/160; 90 reglas).
 
-## 3 · M-19 · Ninguna excepción sin justificar en la mutación de cierre (regla 62, caso 161)
+## 3 · M-19 · Ninguna excepción sin justificar en la mutación de cierre (regla 66, caso 161)
 
 **Qué cambió.** `cerrarOferta` re-comprueba las excepciones mudas (`compuertaExcepcionesMudas` sobre
 `excepcionesSinComentario`) después del monto y antes de armar `patchCierre`, y devuelve la negativa con «Cierre
@@ -118,7 +118,7 @@ silencio — el diálogo lo dice ahora con esas palabras.
 
 **Cómo se probó lo que es un closure.** `cerrarOferta` vive dentro de `PipelineComercial`, así que la suite prueba la
 compuerta PURA que él llama (caso 161: cinco mudas reales del motor sobre una operación sin evidencia del contrato,
-caso 85) y el gate de texto `regla_62.test.mjs` fija que la llama y retorna antes de escribir. Es el mismo reparto que
+caso 85) y el gate de texto `regla_66.test.mjs` fija que la llama y retorna antes de escribir. Es el mismo reparto que
 la regla 59: lo puro por su nombre, lo cableado por su texto.
 
 **Lo que costó.** `solicitarAprobacionExc` deja tarea, hilo y pre-evaluación al aceptar: el caso limpia los cuatro
@@ -126,9 +126,9 @@ repositorios en `finally` (`repoSolicitudExc`, `repoPreEval` con `difundir=false
 `PANEL_TAREAS` por `ops`) para no dejar rastro con un id de prueba.
 
 **Documentos:** spec del curse (M-19 implementada, §15), gaps (G-12 cerrado: implementado), HU-25 vigente en CA-1/3/4
-(el chip «Operación creada» de CA-2 sigue por e2e, CP-065), CP-064/065/067 (caso 161), regla 62 y su fila, cifras.
+(el chip «Operación creada» de CA-2 sigue por e2e, CP-065), CP-064/065/067 (caso 161), regla 66 y su fila, cifras.
 
-## 4 · ADR-0017 · El resultado de líneas entra al giro: con facturas a comité, Giro Normal (regla 63, caso 162)
+## 4 · ADR-0017 · El resultado de líneas entra al giro: con facturas a comité, Giro Normal (regla 67, caso 162)
 
 **Qué cambió.** Quinto hecho por deudor en `asignarGiros`, `sinComite`, declarado en `GIRO_HECHOS` y exigido por GE;
 entra por la entrada (`requiereComite`), como los otros cuatro, así que el motor sigue puro (el auditor de aislamiento
@@ -145,10 +145,10 @@ que no hubo migración que hacer. La dirección «sin comité» del caso 162 com
 (la misma entrada del caso 78): fija que el quinto hecho no se cuela en falso.
 
 **Documentos:** `spec-modelo-giro.md` (§2 GE con tres condiciones, §2.1, §6, §6.1), spec del curse (M-33 implementada),
-gaps (G-20 y G-34 cerrados), HU-37 vigente, CP-104/128 (caso 162; el chip en pantalla sigue por e2e), regla 63 y la 22
+gaps (G-20 y G-34 cerrados), HU-37 vigente, CP-104/128 (caso 162; el chip en pantalla sigue por e2e), regla 67 y la 22
 ampliada, cifras.
 
-## 5 · ADR-0019 · El corte y el reinicio por reloj del tenant; la sin oferta se elimina (regla 64, casos 163–164)
+## 5 · ADR-0019 · El corte y el reinicio por reloj del tenant; la sin oferta se elimina (regla 68, casos 163–164)
 
 **Qué cambió.** Tres funciones puras nuevas del reloj —`jobDelReloj(cfg, hora)`, `relojSimulado(corridas, cfg)`,
 `intervaloJobMs(cfg)`— y tres del corte —`tieneOferta`, `corteDelDia(deals)`, `eventoDeReoriginacion(d, dia)` con
@@ -174,14 +174,14 @@ en un esquema v3 con migración autocontenida. La Bandeja dice la hora simulada 
 - **`intervaloJobMs` casi quedó muerta**: el auditor la cazó (sólo la usaba la suite); viaja ahora en la traza de la
   corrida, que dice el intervalo del job en producción. Y la sonda «renombrar sin subir el esquema» de `regla_40` tenía
   el «2» escrito a mano: ahora baja a 1 la versión que haya.
-- **La regla 61 había quedado intercalada** entre las viñetas de la 60 (M-10 la insertó tras la viñeta equivocada); se
+- **La regla 65 había quedado intercalada** entre las viñetas de la 60 (M-10 la insertó tras la viñeta equivocada); se
   devolvió a su orden en este commit.
 
 **Documentos:** spec del inbound (§6 el reloj, §10.4 el job, `topeDocsCorrida` → `topeBandeja`), spec del ciclo (§17),
 spec del curse (M-07 y M-08 implementadas; §15), gaps (G-02, G-03, GD-07 cerrados), HU-08 y HU-09 vigentes,
-CP-019/020/121/022/023/143 (casos 163–164), regla 64 y punteros en 22 y 9-bis, cifras.
+CP-019/020/121/022/023/143 (casos 163–164), regla 68 y punteros en 22 y 9-bis, cifras.
 
-## 6 · ADR-0015 · El comité que rechaza retira, versiona y reabre (regla 65, caso 165)
+## 6 · ADR-0015 · El comité que rechaza retira, versiona y reabre (regla 69, caso 165)
 
 **Qué cambió.** `api3EstadoProceso` resuelve también «Rechazada» (residuo 1 del mock, con `observacion`) y escribe el
 desenlace por línea de detalle; `rechazoComiteDecision` (pura) decide qué facturas salen, la versión `comite_rechazo`
@@ -203,11 +203,11 @@ Líneas › Solicitudes (`onRechazo`), una vez por solicitud. La bandeja y el de
   «Consultar estados» la solicitud vuelve rechazada, la operación se reabre y el ejecutivo la publica de nuevo. Queda
   dicho para que no se lea como un error.
 
-**Documentos:** regla 65, punteros en 13, 15 y 5, contrato de la API 3 (Integraciones y swagger), spec del curse (M-29;
+**Documentos:** regla 69, punteros en 13, 15 y 5, contrato de la API 3 (Integraciones y swagger), spec del curse (M-29;
 M-18 a medias: la mitad de la verificación va con ADR-0018), gaps (G-19, G-33 cerrados), HU-35 vigente, CP-095/096/133
 (caso 165; CP-126/127 siguen por e2e), cifras.
 
-## 7 · ADR-0016 · La excepción que la versión N ya no levanta se marca, no se borra (regla 66, caso 166)
+## 7 · ADR-0016 · La excepción que la versión N ya no levanta se marca, no se borra (regla 70, caso 166)
 
 **Qué cambió.** `reevaluarCliente` llama, tras emitir la versión y con su número, a `marcarExcepcionesQueYaNoAplican`:
 la decisión pura `excepcionesQueYaNoAplican` compara las claves con solicitud o visado contra lo que la evaluación vigente
@@ -245,12 +245,12 @@ propia para las huérfanas (deudor fuera de la oferta); la bandeja de Tareas dic
   así que la tarea creada y cerrada en el DETALLE no existe para la pestaña del tubo: «Tareas» no la muestra ni abierta
   ni cerrada. Es anterior a esta regla y va al tablero.
 
-**Documentos:** regla 66 (puntero en la 4), fila en `invariantes.md`, spec del curse (M-21 implementada: 33 · 6 · 1; §15),
+**Documentos:** regla 70 (puntero en la 4), fila en `invariantes.md`, spec del curse (M-21 implementada: 33 · 6 · 1; §15),
 gaps (G-14 y G-35 cerrados; 11 implementados · 7 decididos; GD-06 escrito), HU-32 vigente (27 · 15), CP-087/088/125 con
 el caso 166 (CP-124 sigue por e2e), `spec-gestion-excepciones.md` §3, §5.5 y §11, cifras (166/166; 95 reglas; 56 archivos
 de gate, 46 por regla; 473 tests).
 
-## 8 · ADR-0018 · La verificación fallida marca y avisa, no retira (regla 67, caso 167)
+## 8 · ADR-0018 · La verificación fallida marca y avisa, no retira (regla 71, caso 167)
 
 **Qué cambió.** `marcarNoVerificada` es el único escritor del veto y no toca la oferta: los tres caminos de la mesa
 (`verificarDeudor` parcial, `marcarFactura`, `noConfirmoDeudor`) y el diálogo del tab Verificación del detalle marcan en
@@ -277,13 +277,13 @@ re-simula y publica de nuevo. La mesa lista la marcada UNA vez y deriva el estad
 - **La cabecera del detalle no tenía chip de verificación** (el «Requiere Verificación» vive en la tarjeta del tubo): se
   agregó «no cursa · N» al tab Verificación.
 
-**Documentos:** regla 67 (punteros en la 6 y en la 13), fila en `invariantes.md`, spec del curse (M-18 implementada
+**Documentos:** regla 71 (punteros en la 6 y en la 13), fila en `invariantes.md`, spec del curse (M-18 implementada
 entera: 34 · 6 · 0; §15 dos filas), gaps (G-11 en M-18 y G-36 cerrados; 13 implementados · 5 decididos), HU-42 vigente y
-HU-33 CA-3 en su dirección nueva (28 · 14), CP-091/119/129/138–142 (caso 167 y `regla_67`; la pantalla sigue por e2e),
+HU-33 CA-3 en su dirección nueva (28 · 14), CP-091/119/129/138–142 (caso 167 y `regla_71`; la pantalla sigue por e2e),
 `spec-verificacion-facturas.md` §1 y §9, `spec-ciclo-factura.md` §14, cifras (167/167; 96 reglas; 57 archivos de gate, 47
 por regla; 486 tests).
 
-## 9 · ADR-0013 · Un evento de evaluación, cinco motores, cinco versiones (regla 68, caso 168)
+## 9 · ADR-0013 · Un evento de evaluación, cinco motores, cinco versiones (regla 72, caso 168)
 
 **Qué cambió.** `evaluarOperacion(deal, usuario, opts)` es el ÚNICO evento: «Simular la oferta» (`simularOferta`, antes de
 escribir el negocio y sobre el negocio tal como va a quedar), «Re-evaluar operación» (`reevaluarOperacion`, desde la
@@ -308,21 +308,21 @@ bitácora dice «Facturas nuevas … al pool disponible» / «Facturas agregadas
   (dispara cuando la escritura ya es visible) y se re-emiten las filas con versión: la fila pasó de «Excede la línea
   M$2.212,2» (caída a `evCli`) a «Requiere comité M$2.381» (la asignación de la versión).
 - **«2 versiónes»**: el pill tenía `versión{… "" : "es"}` desde siempre; se vio al contar por motor. Corregido.
-- **Gates re-anclados, no aflojados**: `regla_66` (la marca la dispara el evento), `regla_14` (4) (la emite
+- **Gates re-anclados, no aflojados**: `regla_70` (la marca la dispara el evento), `regla_14` (4) (la emite
   `evaluarOperacion`; `reevaluarCliente` pasa por él) y (4-bis) (dos emisores: el evento y el comité), `regla_12_bis`
   (la sonda quitaba el primer `simulado: true`, que ahora es el del snapshot del evento y no el del patch).
   `contarVersiones` nació sin lector y `auditar_muerto` lo cazó: el lector es el pill.
 - **`asignarLineas` se reemplaza por nombre en el caso 168** para el motor caído: las funciones de nivel módulo son
   bindings globales del script clásico, así que la suite puede sustituirlas y restaurarlas en el `finally`.
 
-**Documentos:** regla 68 (punteros en la 13 y la 14; la 66 y `ui_detalle_y_tubo.md` apuntan al evento), fila en
+**Documentos:** regla 72 (punteros en la 13 y la 14; la 66 y `ui_detalle_y_tubo.md` apuntan al evento), fila en
 `invariantes.md`, `spec-otorgamiento.md` §2, `spec-gestion-excepciones.md` §4.1 y §5.5, `spec-asignacion-lineas.md` §4.3
 (cinco bloques), `spec-ciclo-factura.md` §23c fila 5, spec del curse (M-13/M-24/M-26/M-36 implementadas: 38 · 2 · 0; §7,
 §7.1, §8 y §15), gaps (G-09/G-10/G-22/G-32 y GD-10 cerrados: 17 implementados · 1 decidido), HU-12/13/21 vigentes (31 · 11),
 CP-031/033/034/053/054/122/123/134/135 (CP-035/036 y las pantallas siguen e2e), cifras (168/168; 97 reglas; 58 archivos de
 gate, 48 por regla; 504 tests).
 
-## 10 · M-01 · El acuse del receptor es una bandera del DTE que el A1 trae y `facturaDeDTE` lee (regla 69, caso 169)
+## 10 · M-01 · El acuse del receptor es una bandera del DTE que el A1 trae y `facturaDeDTE` lee (regla 73, caso 169)
 
 **Qué cambió.** `facturaDeDTE` lee `EstadoDTE.Aceptado` (+ `FchAcuseRecibo`), `Reclamado` (+ `FchReclamo`) y `FchRecepcion`
 en tres estados —`acuse`: aceptada · reclamada · sin_acuse— con `acuseCodigo` y `fchAcuse`, sin derivar nada; el stream y el
@@ -345,20 +345,20 @@ que un sorteo por RUT llenaba.
   acuse · 6 sin acuse) = lo que el A1 dice de esas 39 facturas; 17 en los disponibles del arranque (2 reclamadas, con su
   candado); sin errores de consola.
 
-**Documentos:** regla 69 en `datos_y_activos.md` (fila en `invariantes.md`), `spec-inbound-facturas.md` §2 y §3,
+**Documentos:** regla 73 en `datos_y_activos.md` (fila en `invariantes.md`), `spec-inbound-facturas.md` §2 y §3,
 `Levantamiento_Activos_Informacion.md` A1, spec del curse (M-01 implementada: 39 · 1 · 0; §16), gaps (G-01 cerrado: 18
 implementados · 0 decididos), HU-04 vigente (32 · 10), CP-010/CP-011 (la fila en pantalla sigue e2e), cifras (169/169; 98
 reglas; 59 archivos de gate, 49 por regla; 515 tests). El backlog decidido del 22-09 quedó entero.
 
-## 11 · Las pantallas que los commits dejaron dichas: `28_version_v1.e2e.mjs` (e2e-68-a/b/c/d, e2e-69-a)
+## 11 · Las pantallas que los commits dejaron dichas: `28_version_v1.e2e.mjs` (e2e-72-a/b/c/d, e2e-73-a)
 
 **Qué cambió.** Cinco casos e2e sobre la fila 0 de «Sin línea» del Directorio, encadenados y cada uno dejando el
-estado que necesita si el anterior no llegó: `e2e-68-c` (sin simular: cero versiones, sin titular y sin compuertas
-—el pie no existe todavía, la pantalla muestra el panel de arranque—), `e2e-68-a` (dos facturas a mano y «Simular la
+estado que necesita si el anterior no llegó: `e2e-72-c` (sin simular: cero versiones, sin titular y sin compuertas
+—el pie no existe todavía, la pantalla muestra el panel de arranque—), `e2e-72-a` (dos facturas a mano y «Simular la
 oferta»: la v1/rev 0 con las cinco secciones sobre esos dos folios, contemporánea, el TUBO la ve sin recargar y la
-auditoría tiene el evento), `e2e-68-b` (cerrar y reabrir: misma cantidad de versiones, misma vigente, mismo titular y
-mismo pie), `e2e-68-d` (gear → «Selección de la tasa del negocio» a otro modo → un detalle nuevo lo lee → «Re-evaluar
-simulación» deja v2 con el modo nuevo y la v1 conserva el suyo; el `finally` devuelve el modo) y `e2e-69-a` (el chip del
+auditoría tiene el evento), `e2e-72-b` (cerrar y reabrir: misma cantidad de versiones, misma vigente, mismo titular y
+mismo pie), `e2e-72-d` (gear → «Selección de la tasa del negocio» a otro modo → un detalle nuevo lo lee → «Re-evaluar
+simulación» deja v2 con el modo nuevo y la v1 conserva el suyo; el `finally` devuelve el modo) y `e2e-73-a` (el chip del
 acuse de cada factura de la oferta coincide con el A1 para ese folio; en los disponibles también, y la reclamada sigue
 bloqueada en su fila). Citados en `invariantes.md` (filas 68 y 69) y en las reglas; la capa queda en 37 casos en 19
 archivos.
@@ -374,17 +374,17 @@ archivos.
   del caso es «Re-evaluar simulación» del tab Otorgamiento (el mismo evento) y, si no hubiera re-evaluables, una
   factura más y «Re-evaluar operación». Y el modo cambiado en el tubo lo lee un detalle NUEVO (la config persiste en
   el acto, `guardarCfgOper` en efecto); un detalle ya abierto no.
-- **Los ids de los esbozos (`e2e-13-a`, `e2e-HU-21-a`) se escribieron antes de que existieran las reglas 68 y 69**: los
+- **Los ids de los esbozos (`e2e-13-a`, `e2e-HU-21-a`) se escribieron antes de que existieran las reglas 72 y 69**: los
   casos llevan el número de la regla que fijan, como toda la capa.
 - **La celda del folio**: el chip está dentro de la celda del tipo; la fila es el `div` de grilla que lo contiene y
   sus hijos son las celdas. La primera versión miraba los hijos del padre de la fila (las otras filas). Y en los
   disponibles la reclamada no lleva el emoji del candado: se rotula «Reclamada por el deudor» y el botón «Agregar» va
   apagado; el caso mira las tres formas.
 
-**Documentos:** `invariantes.md` (filas 68 y 69, cifra de la capa), reglas 68 y 69, CP-034/035/036/123/010 (los
+**Documentos:** `invariantes.md` (filas 68 y 69, cifra de la capa), reglas 72 y 69, CP-034/035/036/123/010 (los
 esbozos pasan a casos escritos), HU-13/HU-21/HU-04, cifras (37 casos e2e en 19 archivos), tablero.
 
-## 12 · ADR-0020: el A1 es un flujo de eventos por documento (regla 70, caso 170)
+## 12 · ADR-0020: el A1 es un flujo de eventos por documento (regla 74, caso 170)
 
 **Qué pidió el usuario.** «Considera que los eventos de dtesync llegan varias veces para la misma factura una vez se
 crea (notifica nueva factura), después puede llegar nota de crédito, después aceptación. Considera eso para modelar
@@ -417,7 +417,7 @@ El archivo va por folio estrictamente creciente (globalmente único), no por fec
   dice «N actualizaciones» y «eventos en cola»; `CONTRATOS_DATOS` esquema 2 y el diagnóstico cuenta documentos y eventos.
 - **Suite**: caso 170; los 13 lectores directos de `window.DTESYNC` de la suite pasan a `documentosDTE()` (con el log, un
   `porFolio` por emisor|folio quedaba con la fila slim y el caso 94 caía). `CASOS_ESPERADOS` 169 → 170 (decisión).
-- **Gates**: `regla_70.test.mjs` (14 tests: el pliegue del fuente EXTRAÍDO y ejecutado en Node contra el del generador,
+- **Gates**: `regla_74.test.mjs` (14 tests: el pliegue del fuente EXTRAÍDO y ejecutado en Node contra el del generador,
   sobre el mismo log en orden y al revés; ningún lector fuera del pliegue y el stream; el tick; el aviso; el contrato;
   doce sondas) y `dtesync.test.mjs` (6 tests: el bloque commiteado valida como log; las funciones con sondas).
   535/535 (59 → 61 archivos, 49 → 50 por regla).
@@ -441,12 +441,12 @@ sobre un documento de una oferta **publicada o firmada**. Hoy: el documento no s
 false`) y la corrida cuenta el aviso. La regla candidata es la de ADR-0018 (issue + aviso; el ejecutivo retira,
 re-simula y vuelve a publicar).
 
-**Documentos:** ADR-0020 (+ fila en `adr/index.md`), regla 70 en `datos_y_activos.md` (fila 70 en `invariantes.md`, y las
+**Documentos:** ADR-0020 (+ fila en `adr/index.md`), regla 74 en `datos_y_activos.md` (fila 70 en `invariantes.md`, y las
 filas de gate `dtesync.test.mjs` y `regla_<slug>` 50), `Levantamiento` A1, `spec-inbound-facturas.md` §2/§6/§12,
 `spec-proceso-curse.md` §5 (llegada por eventos, M-01), `GeneradorDatos/README.md` (base y sección nueva),
 `arquitectura.md`, HU-01 CA-5 y CP-144, cifras (170/170; 99 reglas; 61 archivos de gate, 50 por regla; ~46 MB), tablero.
 
-## 13 · ADR-0021: sobre la oferta cerrada, publicada o firmada la NC, el reclamo o la cesión a otro inhabilitan el documento (regla 71, caso 171)
+## 13 · ADR-0021: sobre la oferta cerrada, publicada o firmada la NC, el reclamo o la cesión a otro inhabilitan el documento (regla 75, caso 171)
 
 **Qué decidió el usuario** (la #7 que ADR-0020 dejó abierta): «se debe dejar la oferta como no cursable, el documento
 debe quedar inhabilitado, el ejecutivo debería retirar la factura, re-evaluar, volver a firmar. Cuando una factura está
@@ -464,34 +464,28 @@ tercero, al momento de intentar cederla el SII va a rechazar la cesión de esa f
   su updater, idempotente.
 - `marcarNoVerificada` admite el origen «sii»: `por` = `ACTOR_SII` («SII · DTESync»), la entrada anota `origen` y `cambio`,
   la bitácora de otorgamiento dice que el SII inhabilitó; el aviso sigue siendo `avisarNoVerificadas` (ancla de la regla
-  67), que con documentos marcados usa el asunto «Documentos inhabilitados por el SII · OP» y explica por qué.
-- `vetoDe` (la entrada del veto) al lado de `noConfirmada`; `estadoCandidata` etiqueta «Inhabilitada por el SII» con la
+  67), que con documentos marcados usa el asunto «Documentos inhabilitados en el SII · OP» y explica por qué.
+- `vetoDe` (la entrada del veto) al lado de `noConfirmada`; `estadoCandidata` etiqueta «Inhabilitada en el SII» con la
   instrucción; `verifResumenDeal` cuenta TODO documento vetado como `tel`/`pend` antes de mirar la llamada (la llamada en
   verde no destraba) y devuelve `sii`; `issueVerificacion` nombra aparte lo del SII y titula según haya de una o de las dos
   clases; VER-01, la tarjeta del tubo y `motivoExcl` de la fila lo dicen; `onStorageVeto` relee el veto en el detalle abierto.
-- Caso 170 (d) pasó a fijar la inhabilitación; caso 171 nuevo; `regla_71.test.mjs` (17 tests) y `regla_70` re-anclado.
+- Caso 170 (d) pasó a fijar la inhabilitación; caso 171 nuevo; `regla_75.test.mjs` (17 tests) y `regla_74` re-anclado.
   `CASOS_ESPERADOS` 170 → 171 (decisión). Gates 552/552 (62 archivos, 51 por regla).
 
 **Lo que costó / sorpresas.**
-- **Las anclas de tres gates vecinos.** `regla_60` planta su sonda sobre `const motivoExcl = (f) => {const c = cesionDeFactura(`
-  (la línea nueva va DESPUÉS de la cesión); `regla_68` exige que `onStorage` empiece con su guarda original (el veto tiene
-  su propio oyente, `onStorageVeto`, declarado antes); `regla_67` exige `repoNoConfirmadas.set(id, nc); const deudor = …`
+- **Las anclas de tres gates vecinos.** `regla_64` planta su sonda sobre `const motivoExcl = (f) => {const c = cesionDeFactura(`
+  (la línea nueva va DESPUÉS de la cesión); `regla_72` exige que `onStorage` empiece con su guarda original (el veto tiene
+  su propio oyente, `onStorageVeto`, declarado antes); `regla_71` exige `repoNoConfirmadas.set(id, nc); const deudor = …`
   contiguos y la llamada `avisarNoVerificadas(d0, fs, motivoLbl)` tal cual (el origen viaja en `gestion` y en el documento
   marcado, no en un parámetro nuevo).
 - **El heredoc de la suite dentro de un comando en segundo plano no dejó rastro**: el script de Python no corrió y la suite
   arrancó sobre el archivo viejo. Se mató la corrida (`pkill -f run_tests.mjs` también mata al shell que lo escribe: exit
   144) y se repitió en primer plano. La edición de la suite va en su propio comando, y después se lanza.
-- **`verifResumenDeal` dejaba cursar un documento vetado con la llamada en verde**: la regla 67 decía «cuentan también en
+- **`verifResumenDeal` dejaba cursar un documento vetado con la llamada en verde**: la regla 71 decía «cuentan también en
   pend (no tienen llamada registrada)», o sea que dependía de que la llamada no existiera. Ahora el veto cuenta antes de
   mirar la llamada, para las dos clases.
 
-**Documentos:** ADR-0021 (+ índice), regla 71 en `verificacion.md` (+ lista de la cabecera), regla 70 reescrita en la
+**Documentos:** ADR-0021 (+ índice), regla 75 en `verificacion.md` (+ lista de la cabecera), regla 74 reescrita en la
 viñeta que decía «sólo avisan», filas 70 y 71 de `invariantes.md` (+ `regla_<slug>` 51), `spec-inbound` §6 y §12 (#7
 decidida), `spec-proceso-curse` §5 y M-18, `Levantamiento` A1, HU-01 (CA-5, reglas y cláusulas), CP-144 y CP-145, cifras
 (171/171; 100 reglas; 62 archivos de gate; ~46 MB), tablero.
-
-**Rótulo corregido por el usuario (23-09-2026, T2):** «Inhabilitada **por** el SII» → «Inhabilitada **en** el SII», en todos
-los textos de pantalla (la candidata, la fila de la oferta, el título del issue, el asunto del aviso, VER-01 y la tarjeta
-del tubo): el rótulo dice dónde está inhabilitado el documento —en el registro del SII—, no quién actuó. El veto sigue
-firmado por «SII · DTESync» (ése sí es el autor). ADR-0021 conserva la redacción con que se decidió: los ADR son inmutables
-y el cambio es de rótulo, no de decisión.

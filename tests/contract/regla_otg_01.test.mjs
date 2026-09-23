@@ -1,7 +1,7 @@
 /* OTG-01 · SÓLO APRUEBA QUIEN TIENE ATRIBUCIÓN — la mitad que la suite no alcanza. `validarMutacion` (caso de la
    suite) es la puerta del CONTRATO, pero los cuatro caminos que ESCRIBEN el visado (`aprobarExc`/`revertirVisado`
    en el detalle, `setExc`/`revertirExc` en la mesa de Otorgamientos) viven dentro de componentes de React y no se
-   pueden invocar desde la suite. (El quinto camino, el del SISTEMA que marca «ya no aplica» —regla 66—, no decide y
+   pueden invocar desde la suite. (El quinto camino, el del SISTEMA que marca «ya no aplica» —regla 70—, no decide y
    está exento con su propia comprobación, más abajo.) Lo que sí se puede fijar es la PROPIEDAD DEL TEXTO que CLAUDE.md declara para
    OTG-01: «se comprueba la atribución antes de ESCRIBIR, no sólo al dibujar el botón». Gate: toda función que
    llame `repoVisado.set(` comprueba `puedeAprobarExc(usuario, …)` ANTES de ese `.set`, audita el intento con
@@ -30,7 +30,7 @@ export function sitiosDeEscrituraVisado(src) {
   }
   return sitios;
 }
-/* REGLA 66 · EL SISTEMA TAMBIÉN ESCRIBE EL VISADO, Y NO DECIDE: marca «ya no aplica desde la versión N» lo que la versión
+/* REGLA 70 · EL SISTEMA TAMBIÉN ESCRIBE EL VISADO, Y NO DECIDE: marca «ya no aplica desde la versión N» lo que la versión
    nueva ya no levanta (`marcarExcepcionesQueYaNoAplican`). No hay apoderado cuya atribución comprobar, así que ese camino
    queda exento —con dos condiciones que el gate SÍ comprueba: lo que escribe sale de la decisión pura
    `excepcionesQueYaNoAplican` (que sólo escribe `VISADO_NO_APLICA`) y el tramo no escribe «aprobado» ni «rechazado» por
@@ -90,8 +90,8 @@ test("OTG-01 · SONDA: borrada la comprobación de un camino, el gate lo nombra"
   assert.match(sitiosSinGate(sinReturn).join(" · "), /aprobarExc/);
 });
 
-test("OTG-01 · SONDA regla 66: el camino del sistema está exento sólo mientras se limite a marcar; si aprueba, el gate lo nombra", () => {
-  assert.ok(sitiosDeEscrituraVisado(jsx).some(esMarcaDelSistema), "no se encontró el camino del sistema (regla 66)");
+test("OTG-01 · SONDA regla 70: el camino del sistema está exento sólo mientras se limite a marcar; si aprueba, el gate lo nombra", () => {
+  assert.ok(sitiosDeEscrituraVisado(jsx).some(esMarcaDelSistema), "no se encontró el camino del sistema (regla 70)");
   const plantado = jsx.replace("  if (!r.salen.length) return [];\n  repoSolicitudExc.set(deal.id, r.sol);", '  if (!r.salen.length) return [];\n  r.st[r.salen[0].stKey] = "aprobado";\n  repoSolicitudExc.set(deal.id, r.sol);');
   assert.notEqual(plantado, jsx, "la sonda no cambió el fuente");
   const sin = sitiosSinGate(plantado);

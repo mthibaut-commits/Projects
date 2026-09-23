@@ -1,5 +1,7 @@
 # Spec — s3_cartera.csv (Activo A24)
 
+**Versión 2.0.0 · 16-09-2026 · NEX Factoring**
+
 **Propósito:** la **estructura comercial** del factoring —quién es ejecutivo, de qué equipo, bajo qué jefatura, en qué zona y sucursal— y la **asignación de cada cliente a su ejecutivo**. Es lo que decide **quién ve qué** en el tubo y a quién se le atribuye una operación.
 **Transporte:** S3 · `s3://nex-ingesta-<ambiente>/cartera/CARTERA_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** upserts vía API A22 (dominio `CARTERA`) — un ejecutivo que entra o una cartera que se traspasa no esperan al batch del día siguiente.
 **Clave:** `TIPO` + `COD_EJECUTIVO` + `RUT_CLIENTE`. Full-replace diario + upserts.
@@ -53,3 +55,14 @@ La columna `TIPO` distingue las dos poblaciones:
 - **El archivo mueve EMPRESAS; no mueve OPERACIONES.** `deal.exec` guarda el código congelado en el JSON de la oportunidad. Que mañana el archivo asigne la empresa a otra persona no reasigna los negocios en curso: eso es un acto administrativo con fecha y responsable, y se hace en `Configuración › Oportunidades › Migración › Cambio de ejecutivo`, que va a la bitácora. Sólo se traspasa lo que está **en gestión, hasta antes del giro**: una operación girada ya se desembolsó y moverla sólo reescribiría de quién cuelga una venta que hizo otro.
 - **La razón social de `CARTERA` es copia de conveniencia.** Se emite para que el archivo se pueda leer solo en una revisión manual; el maestro es A11. Si difieren, no se corrige el maestro: se registra la discrepancia (ver `Levantamiento_Activos_Informacion.md` §5).
 - **Un código que el padrón ya no conoce no es «Agente IA».** Ese rótulo es para lo que de verdad no tiene dueño —`exec` vacío, originado por el inbound—. Un código desconocido es alguien que se fue, y se muestra marcado: relabelarlo falsea la atribución de operaciones que sí tuvieron dueño, y el dashboard, el Plan por Ejecutivo y el churn empiezan a contarle al agente lo que negoció una persona.
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **2.0.0** | 16-09-2026 | El transporte pasa de SFTP a S3: cambia la ruta del archivo y el disparo por evento. El layout no cambia. |
+| 1.0.0 | 14-09-2026 | Primera versión: el archivo de cartera (A24). |

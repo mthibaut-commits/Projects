@@ -1,5 +1,7 @@
 # Spec — Inbound de facturas (selección y originación automática)
 
+**Versión 1.0.0 · 12-09-2026 · NEX Factoring**
+
 **Qué es.** El proceso que mira **todas** las facturas electrónicas que emiten los cedentes, decide cuáles
 vale la pena financiar y con cuáles abre una oportunidad comercial. Es el único proceso del pipeline que
 corre **sin que nadie lo pida**: llega un DTE y se decide solo.
@@ -45,7 +47,7 @@ clasificación del deudor descartan la mayor parte, y eso es el comportamiento c
 
 El inbound se alimenta del **stream de DTE** (`streamDesdeDTE`), que en producción es el feed del SII /
 el proveedor de DTE y acá es el **log de notificaciones** de `DTESYNC`: **55.549 eventos sobre 30.000 documentos**
-(ADR-0020, regla 70; 23-09-2026). Cada documento llega **varias veces**: primero su creación (`DTE_SINCRONIZADO`,
+(ADR-0020, regla 74; 23-09-2026). Cada documento llega **varias veces**: primero su creación (`DTE_SINCRONIZADO`,
 `Secuencia` 1, el documento entero y sin banderas) y después cada cambio de estado —el acuse, el reclamo, la nota de
 crédito— como `DTE_ACTUALIZADO`, con la identidad y el `EstadoDTE` acumulado. De la creación se leen:
 
@@ -57,7 +59,7 @@ crédito— como `DTE_ACTUALIZADO`, con la identidad y el `EstadoDTE` acumulado.
 | `FormaPago` | `2` = **crédito**. Es el primer filtro: al contado no hay nada que anticipar |
 | `EstadoDTE.Reclamado` (+ `FchReclamo`) | el deudor la reclamó dentro del plazo legal |
 | `EstadoDTE.NotaCredito` | fue anulada o rebajada por nota de crédito |
-| `EstadoDTE.Aceptado` (+ `FchAcuseRecibo`, `FchRecepcion`) | el **acuse de recibo** del receptor (regla 69, M-01; 23-09-2026): `aceptada` con su fecha, `reclamada` si hay reclamo, `sin_acuse` mientras el receptor no se pronuncia —lo normal en los primeros 8 días desde la emisión—. Se lee y se **muestra** en la fila del documento; **no filtra** (§3) |
+| `EstadoDTE.Aceptado` (+ `FchAcuseRecibo`, `FchRecepcion`) | el **acuse de recibo** del receptor (regla 73, M-01; 23-09-2026): `aceptada` con su fecha, `reclamada` si hay reclamo, `sin_acuse` mientras el receptor no se pronuncia —lo normal en los primeros 8 días desde la emisión—. Se lee y se **muestra** en la fila del documento; **no filtra** (§3) |
 
 Cada creación produce **un evento de inbound** con el documento ya normalizado (`facturasOp: [fac]`), su
 clasificación de deudor y el contexto comercial del cedente: SOW (`SOW_POR_RUT`), estrategia de precio
@@ -79,10 +81,10 @@ Antes de cualquier regla comercial. **Cinco condiciones del documento, todas obl
 | **A crédito** | `FormaPago === "2"` | se descarta del inbound |
 | **Sin reclamo** | `EstadoDTE.Reclamado !== "1"` | se descarta |
 | **Sin nota de crédito** | `EstadoDTE.NotaCredito !== "1"` | se descarta |
-| **No cedida a un factoring ajeno** | el A2 no registra una cesión a un factoring distinto de Security (`cedidaAFactoringAjeno`; regla 60) | se descarta |
-| **Emitida hace no más de N días** | `FchEmis` contra el corte del activo, con `N = antiguedadMaxDias` del tenant (20 por defecto; regla 61) | se descarta |
+| **No cedida a un factoring ajeno** | el A2 no registra una cesión a un factoring distinto de Security (`cedidaAFactoringAjeno`; regla 64) | se descarta |
+| **Emitida hace no más de N días** | `FchEmis` contra el corte del activo, con `N = antiguedadMaxDias` del tenant (20 por defecto; regla 65) | se descarta |
 
-El **acuse del receptor no está en la lista** (regla 69, definición del negocio del 23-09-2026): una factura sin
+El **acuse del receptor no está en la lista** (regla 73, definición del negocio del 23-09-2026): una factura sin
 acuse —sus primeros 8 días desde la emisión— es candidata igual que una con acuse; sólo el reclamo excluye. Se
 muestra en la fila del documento y no decide.
 
@@ -96,13 +98,13 @@ buena_factura = credito  y  no_reclamada  y  no_nota_credito  y  no_cedida_a_fac
 
 > **Un filtro que la política pide y el código NO aplica acá** (ver §11): la marca **«solicitar XML»**
 > cuando el XML no es recuperable. El otro que faltaba —que la factura **no esté ya cedida** a otro
-> factor— se aplica desde el 23-09-2026 (ADR-0014, regla 60): «Buena factura» exige además que el A2
+> factor— se aplica desde el 23-09-2026 (ADR-0014, regla 64): «Buena factura» exige además que el A2
 > no registre una cesión a un factoring **ajeno** a Security (`cedidaAFactoringAjeno`); la cedida a
 > Security es candidata como cualquier otra, porque es cartera propia. Antes la cesión a la
 > competencia se detectaba **después**, como pérdida por AECSync, y la factura ya cedida entraba al
 > monto con que se dimensionaba la oportunidad.
 >
-> La **antigüedad** entró el mismo día (regla 61; M-10, G-31): `antiguedadMaxDias` es del tenant (20 días por
+> La **antigüedad** entró el mismo día (regla 65; M-10, G-31): `antiguedadMaxDias` es del tenant (20 días por
 > defecto, Configuración › Operación), se cuenta contra el corte del activo (regla 13-ter) y «no más de N» incluye
 > el día N; el perfil de la Bandeja nombra «Antigüedad > N días (excluida)». Medido sobre el A1: 25.485 de las
 > 30.000 facturas tienen 20 días o menos, así que el filtro deja pasar la mayoría.
@@ -214,7 +216,7 @@ mismo:
 Sólo la segunda explica por qué una factura que *debería* capturarse no se capturó.
 
 Desde el 23-09-2026 el perfil nombra dos exclusiones más, las dos del **documento**: **«Cedida a otro factoring
-(excluida)»** (regla 60) y **«Antigüedad > N días (excluida)»** (regla 61, con el tope vigente del tenant).
+(excluida)»** (regla 64) y **«Antigüedad > N días (excluida)»** (regla 65, con el tope vigente del tenant).
 
 ---
 
@@ -227,12 +229,12 @@ Las facturas que califican se **acumulan**; no crean nada al instante. Cada «ho
 2. **¿Ya tiene una oportunidad abierta?** Si el cedente tiene una en *Prospección* u *Oferta*, las
    facturas nuevas **la absorben** (`warning`) en vez de crear otra. Si la que existe ya fue aceptada,
    cursada o perdida, **sí** se abre una nueva — así la prospección no se seca.
-   Las **actualizaciones del A1** (regla 70) no esperan a la corrida: en cada lote del stream parchan el documento
+   Las **actualizaciones del A1** (regla 74) no esperan a la corrida: en cada lote del stream parchan el documento
    donde viva (`aplicarActualizacionDTE`) —en los disponibles siempre; en la oferta mientras el paquete sea del
    ejecutivo— y la NC o el reclamo dejan traza («El SII notificó una nota de crédito sobre el documento #N: queda
    bloqueado en…»). Sobre una oferta **cerrada o publicada**, o después de la firma, la NC, el reclamo o la cesión a
-   otro **inhabilitan el documento y dejan la operación no cursable** (ADR-0021, regla 71; decisión #7 de §12): el veto
-   de la regla 67 lo escribe el SII, VER-01 y el issue lo dicen, el ejecutivo recibe el aviso y retira, re-evalúa y
+   otro **inhabilitan el documento y dejan la operación no cursable** (ADR-0021, regla 75; decisión #7 de §12): el veto
+   de la regla 71 lo escribe el SII, VER-01 y el issue lo dicen, el ejecutivo recibe el aviso y retira, re-evalúa y
    vuelve a publicar para una nueva firma. La corrida reporta en su línea de bitácora del sistema cuántas
    actualizaciones aplicó y cuántos documentos inhabilitó.
 3. **Dimensiona el paquete** con el cupo del cliente (§6.1).
@@ -242,7 +244,7 @@ Las facturas que califican se **acumulan**; no crean nada al instante. Cada «ho
 para que la prospección fluya hora a hora en vez de saturarse de una vez. El tamaño de la Bandeja
 (`topeBandeja`, regla 40) y el del lote son **configuración del tenant**, no constantes del código.
 
-**El día lo gobierna el reloj del tenant (ADR-0019, regla 64).** A la hora de reinicio (`horaInicio`, 06:00 por
+**El día lo gobierna el reloj del tenant (ADR-0019, regla 68).** A la hora de reinicio (`horaInicio`, 06:00 por
 defecto) el job arranca las corridas y vuelve a abrir, como oportunidades **nuevas** con id propio (`-R<n>`) y
 `referencia`, las que el corte eliminó; a la hora de corte (`horaFin`, 23:00) la oportunidad **sin oferta** se elimina
 —queda en la bitácora del sistema con su id, su cedente y su paquete— y la que **tiene oferta** no se toca, cualquiera
@@ -374,7 +376,7 @@ Tres observaciones, en orden de importancia:
   mismo argumento de `REGLAS_CLIENTE` en el otorgamiento.
 - **La corrida horaria es un `setInterval` del navegador.** En producción es un job que consume `intervaloJobMs`
   (`frecuenciaMin`) y las horas de reinicio y corte del tenant (`jobDelReloj`): las tres son puras y reciben la
-  configuración y la hora, así que el job las llama tal cual (regla 64). El reloj simulado (`relojSimulado`) es lo
+  configuración y la hora, así que el job las llama tal cual (regla 68). El reloj simulado (`relojSimulado`) es lo
   único que queda de la demo.
 - **El acumulador vive en `useState`.** Es una cola: si la pestaña se cierra entre la clasificación y la
   corrida, esas facturas se pierden. Tiene la misma forma que tenía la verificación telefónica antes de
@@ -386,7 +388,7 @@ Tres observaciones, en orden de importancia:
 
 | PDF | Código | Lectura |
 |---|---|---|
-| Filtro de calidad: **«ya cedida (AECSync) → se excluye»** | el inbound excluye la cedida a un factoring **ajeno** (`cedidaAFactoringAjeno`, cuarta condición de «Buena factura»); la cedida a Security es candidata | **Cerrado el 23-09-2026** (ADR-0014, regla 60, caso 159): la cesión ajena ya no entra al monto con que se dimensiona la oportunidad, y al incorporar sigue bloqueada con el nombre del factoring |
+| Filtro de calidad: **«ya cedida (AECSync) → se excluye»** | el inbound excluye la cedida a un factoring **ajeno** (`cedidaAFactoringAjeno`, cuarta condición de «Buena factura»); la cedida a Security es candidata | **Cerrado el 23-09-2026** (ADR-0014, regla 64, caso 159): la cesión ajena ya no entra al monto con que se dimensiona la oportunidad, y al incorporar sigue bloqueada con el nombre del factoring |
 | Filtro de calidad: **«XML disponible → marca solicitar XML»** | no existe la marca | **No implementado** |
 | «Las reglas consideran sólo Lista Blanca + Autorizados + históricos del último año» | además abre la **Nota > 4,2** | **El código va más allá a propósito**: son dos poblaciones. Conviene que el PDF lo recoja |
 | Clasificación del deudor (§6), buckets CAT1/CAT4/OTRO | calza exacto | — |
@@ -400,7 +402,7 @@ Tres observaciones, en orden de importancia:
 ## 12. Lo que hay que decidir
 
 1. **¿El inbound debe excluir las facturas ya cedidas?** Decidido el 22-09-2026 e implementado el
-   23-09-2026 (ADR-0014, regla 60): sí, las cedidas a un factoring **ajeno**, como cuarta condición del
+   23-09-2026 (ADR-0014, regla 64): sí, las cedidas a un factoring **ajeno**, como cuarta condición del
    filtro de calidad; la cedida a Security no se excluye.
 2. **¿La marca «solicitar XML» se implementa?** Hoy no existe.
 3. **¿El orden de las siete reglas es el orden de prioridad del negocio?** Define qué regla captura y,
@@ -410,10 +412,19 @@ Tres observaciones, en orden de importancia:
 5. **¿El cupo tentativo de los clientes sin línea (MM$300–1.300) es una banda del negocio?** Hoy es
    sintético y determinista por RUT.
 6. **¿La antigüedad máxima desde la emisión es criterio del inbound?** Decidido el 22-09-2026 e implementado el
-   23-09-2026 (regla 61): sí, como condición del filtro de calidad, con el tope como parámetro del tenant
+   23-09-2026 (regla 65): sí, como condición del filtro de calidad, con el tope como parámetro del tenant
    (`antiguedadMaxDias`, 20 días por defecto).
 7. **¿Qué hace el sistema cuando llega una nota de crédito o un reclamo sobre un documento de una oferta ya
-   publicada o firmada?** Decidido el 23-09-2026 e implementado el mismo día (ADR-0021, regla 71, caso 171): «se debe
+   publicada o firmada?** Decidido el 23-09-2026 e implementado el mismo día (ADR-0021, regla 75, caso 171): «se debe
    dejar la oferta como no cursable, el documento debe quedar inhabilitado, el ejecutivo debería retirar la factura,
    re-evaluar, volver a firmar» —un documento reclamado, anulado o cedido a otro no lo va a pagar el deudor, al margen
-   de la verificación telefónica—. El veto es el de la regla 67, escrito por el SII; la salida es la de ADR-0018.
+   de la verificación telefónica—. El veto es el de la regla 71, escrito por el SII; la salida es la de ADR-0018.
+
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.0.0** | 12-09-2026 | Primera versión: qué facturas entran y cuáles abren oportunidad, con su auditoría de aislamiento. |

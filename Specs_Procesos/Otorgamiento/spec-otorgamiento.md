@@ -1,6 +1,6 @@
 # Proceso de Otorgamiento — y cómo encapsular el motor como servicio
 
-**Versión:** 1.0 · **Fecha:** 14-09-2026 · **Sistema:** NEX Factoring · Pipeline Comercial
+**Versión 1.2.1 · 21-09-2026 · NEX Factoring**
 
 Este documento hace dos cosas que conviene no mezclar:
 
@@ -40,7 +40,7 @@ independientes entre sí: ninguna llama a las otras.
 
 | Momento | Qué lo dispara | Qué produce |
 |---|---|---|
-| **La simulación** | el ejecutivo aprieta «Simular la oferta» | **el evento de evaluación** (regla 68, ADR-0013, 23-09-2026): corren los cinco motores —otorgamiento, verificación, líneas, giro y pricing— y queda la **versión v1**, con las cinco secciones o ninguna |
+| **La simulación** | el ejecutivo aprieta «Simular la oferta» | **el evento de evaluación** (regla 72, ADR-0013, 23-09-2026): corren los cinco motores —otorgamiento, verificación, líneas, giro y pricing— y queda la **versión v1**, con las cinco secciones o ninguna |
 | **Pre-evaluación** | el ejecutivo la pide desde el detalle, con la oferta todavía abierta | adelanta el veredicto para que no comprometa un plazo a ciegas (es una lectura: no emite versión) |
 | **Re-evaluación** | el ejecutivo aprieta «Re-evaluar operación» (cabecera o aviso «La selección cambió») o «Re-evaluación de la simulación» (tab Otorgamiento, con el origen actualizado) | el **mismo evento**: veredicto vigente + **versión** nueva (evidencia) |
 | **Al cerrar la oferta** | el gate del curse | decide si la operación puede publicarse |
@@ -389,3 +389,16 @@ listados uno por uno en `Regresiones/Inconsistencias_Motor_Otorgamiento.md` §5.
 | [`spec-pricing-simulacion.md`](../Evaluacion_Factura/spec-pricing-simulacion.md) · [`spec-modelo-giro.md`](../Evaluacion_Factura/spec-modelo-giro.md) | lo que viene después del otorgamiento |
 | `Integraciones/spec_s3_otorgamiento.md` | el layout A16: las variables que alimentan el motor |
 | `Levantamiento_Activos_Informacion.md` | el inventario A1–A23 y, en §5, qué activo es maestro de cada campo |
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.2.1** | 21-09-2026 | Rutas de los documentos citados, tras agrupar la documentación por carpetas. |
+| 1.2.0 | 18-09-2026 | Una regla con un criterio sin área —o sin nadie que pueda firmar su excepción— no se ejecuta ni se verifica, y la salida dice la causa y en qué mantenedor se arregla. |
+| 1.1.0 | 16-09-2026 | El diagrama del visado corrige el orden: la justificación va antes de cerrar. Las entregas diarias que alimentan el motor pasan de SFTP a S3. |
+| 1.0.0 | 14-09-2026 | Primera versión: el proceso de otorgamiento y su contrato como servicio, en un solo documento. |

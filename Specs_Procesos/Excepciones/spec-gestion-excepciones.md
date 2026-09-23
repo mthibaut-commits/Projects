@@ -1,6 +1,6 @@
 # Proceso de Otorgamiento — Gestión de excepciones
 
-**Versión:** 1.0 · **Fecha:** 18-09-2026 · **Sistema:** NEX Factoring · Pipeline Comercial
+**Versión 1.2.1 · 21-09-2026 · NEX Factoring**
 
 Este documento describe **el proceso operativo** con que se gestiona una excepción de otorgamiento:
 cómo nace, quién la justifica, a quién le llega, en qué pantalla se decide, qué queda registrado en
@@ -185,9 +185,9 @@ El motor corre sobre la operación en cinco momentos:
 
 | Momento | Quién lo dispara | Qué produce |
 |---|---|---|
-| **La simulación** | el ejecutivo arma la oferta y simula | la **primera evaluación**: la operación pasa a Oferta con su monto y sus facturas, y cada criterio queda con su disposición. Es la versión **v1** (el evento de evaluación de la regla 68, ADR-0013: corren los cinco motores y la v1 trae las cinco secciones) |
+| **La simulación** | el ejecutivo arma la oferta y simula | la **primera evaluación**: la operación pasa a Oferta con su monto y sus facturas, y cada criterio queda con su disposición. Es la versión **v1** (el evento de evaluación de la regla 72, ADR-0013: corren los cinco motores y la v1 trae las cinco secciones) |
 | **La pre-evaluación** | el ejecutivo, desde el detalle, con la oferta abierta | adelanta el veredicto y abre la bandeja (§4.5) |
-| **«Re-evaluar operación»** | el ejecutivo, después de agregar o quitar facturas | vuelve a evaluar la operación **tal como quedó** —monto, piso, tramos— con las mismas variables del origen y emite una **versión nueva**: es el mismo evento que simular (regla 68) |
+| **«Re-evaluar operación»** | el ejecutivo, después de agregar o quitar facturas | vuelve a evaluar la operación **tal como quedó** —monto, piso, tramos— con las mismas variables del origen y emite una **versión nueva**: es el mismo evento que simular (regla 72) |
 | **«Re-evaluación de la simulación»** | el ejecutivo, desde el tab Otorgamiento, cuando quedan re-evaluables pendientes | pide al origen las variables de hoy y guarda una **versión nueva** (§5.5) —el mismo evento, con el origen actualizado— |
 | **El cierre de la oferta y la firma** | la confirmación del cierre en el modal de curse; el cliente al firmar | decide si la oferta puede publicarse; decide a qué etapa va la operación firmada (§5.3) |
 
@@ -523,11 +523,11 @@ dos gestos distintos con el mismo verbo:
 
 - **«Re-evaluar operación»** (cabecera del detalle). Se usa después de agregar o quitar facturas:
   vuelve a evaluar la operación **tal como quedó** —el monto nuevo mueve el piso por monto y los tramos
-  que dependen de él— con las mismas variables del origen. **Crea una versión** (regla 68, ADR-0013, desde el
+  que dependen de él— con las mismas variables del origen. **Crea una versión** (regla 72, ADR-0013, desde el
   23-09-2026): es el mismo evento que simular, con las cinco secciones.
 - **«Re-evaluación de la simulación»** (tab Otorgamiento). Vuelve a pedir al origen las variables del
   cliente y guarda una **versión nueva** (v2, v3…), inmutable, con las variables recibidas y la
-  disposición de cada criterio. Es el mismo evento de evaluación con el origen actualizado (regla 68). El tab
+  disposición de cada criterio. Es el mismo evento de evaluación con el origen actualizado (regla 72). El tab
   muestra cuántas versiones hay —y que los cinco motores cuentan igual—, deja elegir cualquiera y marca el
   **diff** entre una y la anterior: qué variables cambiaron y qué criterios cambiaron de disposición.
   El botón se habilita sólo mientras queden re-evaluables pendientes —excepciones sin decidir o
@@ -547,7 +547,7 @@ original, una excepción aprobada se reabriría y se perdería la firma del apod
 Las versiones anteriores tampoco se borran: son la constancia de qué se evaluó y cuándo, y por eso
 sobreviven incluso a vaciar la oferta y empezar de cero.
 
-**Qué pasa con la excepción que la versión nueva ya no levanta (regla 66, ADR-0016, 23-09-2026).** No se
+**Qué pasa con la excepción que la versión nueva ya no levanta (regla 70, ADR-0016, 23-09-2026).** No se
 borra ni queda huérfana: la solicitud y el visado pasan a **«ya no aplica desde la versión N»**, con actor
 sistema y hora; la tarea del aprobador se cierra con ese motivo y el hilo «Aprobación de excepciones»
 recibe el aviso del sistema (y se termina sólo cuando no queda ninguna excepción por visar en la
@@ -757,3 +757,16 @@ levanta se marca «ya no aplica desde la versión N» y no se borra; la marcada 
 | [`spec-ciclo-factura.md`](../Evaluacion_Factura/spec-ciclo-factura.md) | en qué orden corren los motores y dónde se bifurca el camino |
 | [`Inconsistencias_Motor_Otorgamiento.md`](../../Regresiones/Inconsistencias_Motor_Otorgamiento.md) | la auditoría de la política contra la implementación y los parámetros abiertos |
 | `Integraciones/spec_s3_otorgamiento.md` | el layout A16: las variables que alimentan el motor |
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.2.1** | 21-09-2026 | Rutas de los documentos citados. |
+| 1.2.0 | 20-09-2026 | Los controles que libera el giro pasan de tres a cinco —entran la línea asignada y la firma de Operaciones— y que el cliente autorice explícitamente la operación queda escrito como regla del otorgamiento, con su comprobante. |
+| 1.1.0 | 19-09-2026 | Revisión con el usuario: los mensajes de alerta cuando la configuración falla, qué es la re-evaluación y la simulación como momento del motor. |
+| 1.0.0 | 18-09-2026 | Primera versión: el proceso operativo de una excepción, de la evaluación que la levanta al visado que libera el giro. |

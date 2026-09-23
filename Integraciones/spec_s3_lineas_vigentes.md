@@ -1,5 +1,7 @@
 # Spec — s3_lineas_vigentes.csv (Activo A7)
 
+**Versión 2.0.0 · 16-09-2026 · NEX Factoring**
+
 **Propósito:** carga diaria de las líneas de crédito vigentes por cliente. Alimenta el tab Líneas (sub-tab Vigentes) y el recomendador. Los montos se refrescan durante el día vía API Montos (A8).
 **Transporte:** S3 · `s3://nex-ingesta-<ambiente>/lineas/LINEAS_VIGENTES_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Montos en PESOS**, enteros, sin separador de miles ni decimales.
 **Clave:** `ID_LINEA` (única). Carga tipo full-replace (snapshot del día).
@@ -30,3 +32,15 @@ El millón es una abreviatura de PANTALLA, no una unidad de dato. Este layout en
 declarado dejaba de cuadrar contra la suma de las facturas cedidas, que sí son pesos exactos. El
 cupo que aprueba el comité puede ser cualquier monto —típicamente es una cifra redonda, pero no
 necesariamente—, así que el layout no supone nada sobre su forma.
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **2.0.0** | 16-09-2026 | El transporte pasa de SFTP a S3. El layout no cambia. |
+| 1.1.0 | 14-09-2026 | Los montos se declaran en pesos enteros: el millón es abreviatura de pantalla. |
+| 1.0.0 | 29-08-2026 | Primera versión: las líneas vigentes (A7). |

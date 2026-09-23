@@ -1,6 +1,6 @@
 # Pricing y simulación de la operación
 
-**Versión 1.2 · 12-09-2026 · NEX Factoring**
+**Versión 1.2.0 · 12-09-2026 · NEX Factoring**
 
 Qué determina la **tasa** de un negocio y cómo se construye el **desglose** que termina en el monto
 que el cliente recibe. Es el tercer proceso aislable del módulo, junto con la asignación de líneas y
@@ -363,3 +363,15 @@ modelo de giro, que decide **cómo** se le hace llegar al cliente y en cuántas 
   («si las facturas se pagan en la fecha informada»), sin un evento que la libere.
 - **Las condiciones originales de una operación** se fijan al abrir la simulación y no se re-leen si
   el tenant cambia sus valores por defecto a mitad de una negociación.
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.2.0** | 12-09-2026 | El §4 con el cálculo por factura, la precisión 6/2/1 y el ajuste en la factura mayor. |
+| 1.1.0 | 12-09-2026 | El prorrateo a nivel de factura, que es lo que el giro necesita para repartir. |
+| 1.0.0 | 12-09-2026 | Primera versión: la tasa, el desglose y el catálogo de conceptos con su fórmula. |

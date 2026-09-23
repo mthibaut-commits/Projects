@@ -13,6 +13,9 @@ Capturas_UI/*.png
 # PNG de referencia de capturar_variantes.mjs (mismo criterio que Capturas_UI)
 Variantes_UI/*.png
 
+# PNG de referencia de capturar_tabla_simulada.mjs (mismo criterio)
+Capturas_Simuladas/*.png
+
 # Configuracion PERSONAL del agente (la compartida, .claude/settings.json con los hooks, SI se versiona:
 # un hook que no viaja con el repo es config personal, no una garantia)
 .claude/settings.local.json
@@ -22,3 +25,9 @@ node_modules/
 
 # Worktrees: solo a pedido explicito del usuario (hook worktree_guard)
 .worktrees/
+
+# Snapshots que @playwright/mcp deja al navegar (regenerables, no son del proyecto)
+.playwright-mcp/
+
+# Grafo de graphify: 1,8 MB GENERADOS por `graphify extract` (regla núcleo 10: se regenera, no se versiona)
+graphify-out/

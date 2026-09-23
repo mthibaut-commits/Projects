@@ -84,7 +84,7 @@ feature: null
   verificador diferencial —resolver contra el árbol viejo y contra el nuevo— es lo que hace la diferencia
   entre reparar y creer que se reparó.
 - **Un enlace Markdown tiene dos mitades y sólo una es una ruta.** Reemplazar el nombre en el texto visible
-  (`` [`spec-x.md`](../Tema/spec-x.md) ``) produce un enlace que funciona y se lee mal. La regla que quedó
+  (el nombre entre corchetes, la ruta entre paréntesis) produce un enlace que funciona y se lee mal. La regla que quedó
   en el reparador: el texto visible no se toca, el destino sí.
 - El repo ya tenía el hábito de un `README.md` por carpeta (`Capturas_UI/`, `Legado/`, `GeneradorDatos/`).
   Lo que faltaba no era la carpeta sino **el criterio escrito de qué entra**: sin él, «auditoría» y

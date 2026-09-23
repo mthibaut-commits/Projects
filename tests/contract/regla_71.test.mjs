@@ -1,106 +1,88 @@
-/* Gate de contrato de la regla 71 (ADR-0021: la NC, el reclamo o la cesión a otro sobre una oferta cerrada, publicada o
-   firmada INHABILITAN el documento y dejan la operación no cursable; el ejecutivo retira, re-evalúa y vuelve a publicar
-   para una nueva firma), sobre el TEXTO del fuente. Lo que se puede llamar por nombre lo prueba el caso 171
-   (`aplicarActualizacionDTE`, `aplicarEventosADeal`, `verifResumenDeal`, `issueVerificacion`, `controlesIntegracion`,
-   `estadoCandidata`, `avisarNoVerificadas`); lo que la suite no alcanza son los closures de React: que el tick escriba el
-   veto por el ÚNICO escritor (`marcarNoVerificada`, regla 67) y FUERA del updater, que ese escritor firme como el SII,
-   que la tarjeta del tubo, VER-01 y la fila de la oferta lo digan, y que el detalle abierto relea el veto que escribió
-   el tubo. Con sonda negativa por pieza. */
+/* Gate de contrato de la regla 71 (ADR-0018: la verificación fallida MARCA y AVISA, no retira; el ejecutivo retira,
+   re-simula y vuelve a publicar), sobre el TEXTO del fuente. Lo que se puede llamar por nombre lo prueba el caso 167
+   (`verifResumenDeal`, `issueVerificacion`, `filasVerificacion`, `avisarNoVerificadas`, el veto); lo que la suite no
+   alcanza son los closures de React: que los tres caminos de la mesa y el diálogo del detalle marquen en vez de retirar,
+   que `retirarFacturaOferta` ya no tenga la excepción «noConfirmada» ni emita versión, que el issue se vea en la cabecera
+   y en el tab, y que ninguna pantalla siga prometiendo el retiro.
+
+   Con sonda negativa por pieza: un gate verde que no se comprueba en rojo no vigila nada. */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { leer, canonico } from "./_comun.mjs";
 
 const jsx = leer("pipeline_comercial.jsx");
-const tramo = (can, desde, hasta, largo) => {
-  const i = can.indexOf(desde);
-  if (i < 0) return "";
-  const j = hasta ? can.indexOf(hasta, i) : -1;
-  return can.slice(i, j < 0 ? i + (largo || 3000) : j);
-};
 
 export function auditarRegla71(src) {
   const fallos = [];
   const can = canonico(src);
-  // 1 · La decisión pura: sobre la oferta cerrada el documento queda con su estado nuevo y marcado `inhabilitada`.
-  const ap = tramo(can, canonico("function aplicarActualizacionDTE(deal, ev) {"), canonico("function aplicarEventosADeal("), 5000);
-  if (!ap) fallos.push("no encuentro `aplicarActualizacionDTE`");
+  // 1 · UN solo escritor del veto, que no retira ni versiona.
+  const iM = can.indexOf("const marcarNoVerificada = (id, facs, gestion) => {");
+  const marca = iM < 0 ? "" : can.slice(iM, can.indexOf("const verificarDeudor = async (fila, confirmadas, llamada) => {", iM));
+  if (!marca) fallos.push("no existe `marcarNoVerificada`: la marca no tiene escritor propio");
   else {
-    if (!ap.includes(canonico("const bloquea = !!(ev.estado && (ev.estado.notaCredito || ev.estado.reclamada || ev.estado.cedida));"))) fallos.push("la NC, el reclamo y la cesión a otro no son los tres motivos que inhabilitan");
-    if (!ap.includes(canonico("const marcado = { ...nf, inhabilitada: { motivo: ev.cambio, glosa: glosaCambioDTE(ev), secuencia: ev.secuencia, fecha: ev.fchNotificacion || null } };"))) fallos.push("sobre la oferta cerrada el documento no queda marcado `inhabilitada` con su motivo, su glosa y su secuencia");
-    if (!ap.includes(canonico('cambio = { donde: "inhabilitada", folio: ev.folio, cambio: ev.cambio, factura: marcado };'))) fallos.push("la decisión no devuelve el documento inhabilitado: el tick no tendría con qué escribir el veto");
-    if (!ap.includes("queda inhabilitado y la operación no se cursa")) fallos.push("la traza de la inhabilitación no dice que la operación no se cursa");
-    if (/avisoDTE/.test(ap)) fallos.push("la oferta cerrada vuelve a recibir sólo un aviso (`avisoDTE`) en vez de la inhabilitación");
+    if (!marca.includes("repoNoConfirmadas.set(id, nc);")) fallos.push("`marcarNoVerificada` no escribe el veto: la factura volvería a entrar (regla 6)");
+    if (!marca.includes("if (d0) avisarNoVerificadas(d0, fs, motivoLbl);")) fallos.push("`marcarNoVerificada` no avisa al ejecutivo comercial");
+    if (!marca.includes("logOtorgEvento(")) fallos.push("`marcarNoVerificada` no deja el evento en la bitácora con actor y hora");
+    if (/retirarFacturaOferta\(|repoSimVersions\.push\(|setDeals\(/.test(marca)) fallos.push("`marcarNoVerificada` RETIRA o VERSIONA: marcar no toca la oferta (ADR-0018)");
   }
-  // 2 · El tick escribe el veto por el único escritor y FUERA del updater.
-  const tk = tramo(can, canonico("const aplicarActualizacionesDTE = (acts) => {"), canonico("setSelected((s) => (s ? aplicarEventosADeal(s, evs).deal : s));"), 4000);
-  if (!tk) fallos.push("no encuentro `aplicarActualizacionesDTE`");
+  // 2 · Los tres caminos de la mesa marcan; ninguno retira con «noConfirmada».
+  if (!can.includes("if (no.length) marcarNoVerificada(fila.deal.id, no, llamada);")) fallos.push("`verificarDeudor` (confirmación parcial) no marca las no confirmadas");
+  if (!can.includes("marcarNoVerificada(fila.deal.id, [f], gestion);")) fallos.push("`marcarFactura` no marca el documento no confirmado");
+  if (!can.includes("marcarNoVerificada(fila.deal.id, fila.facturas, gestion);")) fallos.push("`noConfirmoDeudor` no marca las facturas del deudor");
+  if (can.includes('"noConfirmada")')) fallos.push("alguien vuelve a retirar con el motivo «noConfirmada»: la verificación no retira (ADR-0018)");
+  // 3 · `retirarFacturaOferta` sin excepción: la guarda de sólo lectura aplica siempre, y no recorta ni emite versión.
+  const iR = can.indexOf("const retirarFacturaOferta = (id, fac, motivo) => {");
+  const ret = iR < 0 ? "" : can.slice(iR, can.indexOf("const upd = (d) => {", iR));
+  if (!ret) fallos.push("no encuentro `retirarFacturaOferta`");
   else {
-    const iVeto = tk.indexOf(canonico('marcarNoVerificada(d.id, facs, { origen: "sii", motivoLbl:'));
-    const iUpd = tk.indexOf(canonico("setDeals((prev) => {"));
-    if (iVeto < 0) fallos.push("el tick no escribe el veto del SII por `marcarNoVerificada` (regla 67: un solo escritor)");
-    else if (iUpd < 0 || iVeto > iUpd) fallos.push("el tick escribe el veto dentro del updater de `setDeals` (regla 22: un updater puede correr dos veces)");
-    if (!tk.includes(canonico("for (const d of dealsRef.current || []) {"))) fallos.push("las inhabilitaciones no se deciden sobre la foto vigente del tubo");
+    if (!ret.includes("if (ofertaCerradaVigente(dRet)) {")) fallos.push("`retirarFacturaOferta` ya no comprueba la oferta cerrada");
+    if (/noConfirmada|repoNoConfirmadas\.set\(|repoSimVersions\.push\(|recortarAsignacion\(/.test(ret)) fallos.push("`retirarFacturaOferta` conserva la excepción de la verificación (veto, recorte o versión): la operación firmada volvería a encoger sin nueva firma");
   }
-  if ((can.match(/repoNoConfirmadas\.set\(/g) || []).length !== 1) fallos.push("el veto tiene más de un escritor (o ninguno): la regla 67 exige uno solo");
-  // 3 · El escritor firma como el SII y anota el origen.
-  const mk = tramo(can, canonico("const marcarNoVerificada = (id, facs, gestion) => {"), canonico("const verificarDeudor = async (fila, confirmadas, llamada) => {"), 4000);
-  if (!mk) fallos.push("no encuentro `marcarNoVerificada`");
+  // 4 · El detalle marca, no retira; el rótulo no promete el retiro.
+  if (!can.includes('etiquetaConfirmar="Marcar no verificada" onConfirmar={() => {onMarcarNoVerificada(deal.id, [confirmNoConf], null);')) fallos.push("el diálogo del tab Verificación del detalle no marca (o su rótulo sigue prometiendo retirar)");
+  if (!can.includes("onMarcarNoVerificada={marcarNoVerificada}")) fallos.push("`DealDrawer` no recibe `onMarcarNoVerificada`");
+  if (!can.includes("El deudor no confirmó · marcar")) fallos.push("el botón del tab Verificación no dice «marcar»");
+  if (/El deudor no confirmó · retirar|Retirar factura no confirmada/.test(can)) fallos.push("el detalle sigue prometiendo retirar al no confirmar");
+  // 5 · El issue existe y se ve: resumen, texto, cabecera, tab y VER-01.
+  if (!can.includes("noVerif: noVerificadas.length")) fallos.push("`verifResumenDeal` no cuenta las marcadas que siguen en la oferta");
+  if (!can.includes("function issueVerificacion(deal, estado) {")) fallos.push("no existe `issueVerificacion`: el issue no tiene una sola fuente");
+  if (!can.includes("No se puede cursar · {iss.n} no verificada(s)")) fallos.push("la cabecera del detalle no muestra el issue");
+  if (!can.includes("<b>{iss.titulo}.</b> {iss.texto}")) fallos.push("el tab Verificación no muestra el issue");
+  if (!can.includes("no cursa · {issTab.n}")) fallos.push("la cabecera del detalle (el tab Verificación) no marca el issue");
+  if (!can.includes("marcada(s) no verificada(s): el ejecutivo tiene que retirarlas, re-simular y volver a publicar")) fallos.push("VER-01 no nombra las marcadas ni dice qué hacer");
+  // 6 · El aviso: del sistema al ejecutivo, y calla sin marcadas.
+  const iA = can.indexOf("function avisarNoVerificadas(deal, facs, motivo) {");
+  const av = iA < 0 ? "" : can.slice(iA, can.indexOf("function excepcionesSinComentario(deal) {", iA));
+  if (!av) fallos.push("no existe `avisarNoVerificadas` de nivel módulo");
   else {
-    if (!mk.includes(canonico('const porSII = !!(gestion && gestion.origen === "sii");'))) fallos.push("`marcarNoVerificada` no distingue el origen «sii»");
-    if (!mk.includes(canonico("por: porSII ? ACTOR_SII : actorEtiqueta(usuario),"))) fallos.push("el veto del SII queda firmado por el usuario de la sesión y no por el servicio");
-    if (!mk.includes(canonico('origen: "sii"'))) fallos.push("el veto del SII no anota su origen: la candidata y el issue no podrían decir por qué");
-    if (!mk.includes("inhabilitó")) fallos.push("la bitácora de otorgamiento no dice que el SII inhabilitó el documento");
+    if (!av.includes("if (!deal || !fs.length) return null;")) fallos.push("el aviso no calla sin facturas marcadas");
+    if (!av.includes("hiloEnviar(h, CODE_SISTEMA, texto, null);")) fallos.push("el aviso no lo firma el sistema");
+    if (!av.includes("const ejec = deal.exec && USERS[deal.exec] ? deal.exec : null;")) fallos.push("el aviso no va al ejecutivo dueño de la operación");
   }
-  // 4 · El resumen cuenta el documento vetado como pendiente aunque la llamada esté en verde, y nombra el origen.
-  const vr = tramo(can, canonico("function verifResumenDeal(deal, estado) {"), canonico("function issueVerificacion(deal, estado) {"), 3000);
-  if (!vr) fallos.push("no encuentro `verifResumenDeal`");
-  else {
-    const iVet = vr.indexOf(canonico("if (noConfirmada(deal, f, estado && estado.vetadas)) { tel++; pend++; return; }"));
-    const iVf = vr.indexOf(canonico("const vf = verifFactura(f, deal, estado);"));
-    if (iVet < 0 || iVf < 0 || iVet > iVf) fallos.push("`verifResumenDeal` no cuenta el documento vetado como pendiente antes de mirar la llamada: con la llamada en verde, VER-01 dejaría cursar un documento que el deudor no va a pagar");
-    if (!vr.includes(canonico('sii: noVerificadas.filter((x) => x.origen === "sii").length'))) fallos.push("`verifResumenDeal` no cuenta las vetadas por el SII");
-  }
-  // 5 · El issue, la candidata, el aviso, VER-01, la tarjeta y la fila lo dicen.
-  const iss = tramo(can, canonico("function issueVerificacion(deal, estado) {"), "// ── MESA DE VERIFICACIÓN", 3500);
-  if (!iss.includes('"Documentos inhabilitados en el SII: no se puede cursar"') || !iss.includes('"Facturas no verificadas e inhabilitadas en el SII: no se puede cursar"')) fallos.push("`issueVerificacion` no titula lo que el SII inhabilitó");
-  if (!iss.includes("documento(s) inhabilitado(s) en el SII:")) fallos.push("`issueVerificacion` no nombra aparte los documentos inhabilitados con su motivo");
-  const ec = tramo(can, canonico("function estadoCandidata(f, deal, estado) {"), canonico("function cesionDeFactura("), 3000);
-  if (!ec.includes(canonico('R("inhabilitada", "Inhabilitada en el SII",'))) fallos.push("`estadoCandidata` no etiqueta la inhabilitada en el SII");
-  if (!ec.includes(canonico("const veto = vetoDe(deal, f, estado && estado.vetadas);"))) fallos.push("`estadoCandidata` no lee la entrada del veto (no sabría quién lo escribió)");
-  const av = tramo(can, canonico("function avisarNoVerificadas(deal, facs, motivo) {"), canonico("function excepcionesSinComentario(deal) {"), 3000);
-  if (!av.includes("Documentos inhabilitados en el SII · ${deal.id}")) fallos.push("el aviso al ejecutivo no lleva el asunto del SII");
-  if (!av.includes("no va a pagar")) fallos.push("el aviso no dice por qué el documento está inhabilitado");
-  if (!can.includes("inhabilitada(s) en el SII: reclamo, nota de crédito o cesión a otro, regla 71")) fallos.push("VER-01 no nombra las inhabilitadas en el SII");
-  if (!can.includes(canonico("No se puede cursar · {iss.n} no verificada(s){iss.sii ? ` · ${iss.sii} en el SII` : \"\"}"))) fallos.push("la tarjeta del tubo no dice cuántas inhabilitó el SII");
-  if (!can.includes(canonico("if (f && f.inhabilitada) return `Inhabilitada en el SII · ${f.inhabilitada.glosa}`;"))) fallos.push("la fila de la oferta no rotula el documento inhabilitado con su motivo");
-  // 6 · El detalle abierto relee el veto que escribió el tubo.
-  const st = tramo(can, canonico("const onStorageVeto = (e) => {"), canonico("const onStorage = (e) => {"), 600);
-  if (!st.includes(canonico('if (!e || e.key !== "pc_repo_" + repoNoConfirmadas.nombre) return;')) || !st.includes(canonico("repoNoConfirmadas.recargar(); NO_CONFIRMADAS = repoNoConfirmadas.all();"))) fallos.push("el detalle no relee el veto cuando otra pestaña lo escribe");
-  if (!can.includes(canonico('window.addEventListener("storage", onStorageVeto);'))) fallos.push("el oyente del veto no está registrado");
+  // 7 · La mesa no promete retirar y no duplica la marcada que sigue en la oferta.
+  if (/Retirar y vetar|se retira de la oferta y queda vetado|retira y veta todo/.test(can)) fallos.push("la mesa sigue prometiendo retirar al marcar");
+  if (!can.includes('"Marcar no verificada"}')) fallos.push("el pie del panel de la mesa no dice «Marcar no verificada»");
+  if (!can.includes(".filter(([id]) => !enOfertaIds.has(id))")) fallos.push("la mesa lista dos veces la marcada que sigue en la oferta");
   return fallos;
 }
 
-test("regla 71: sobre la oferta cerrada, publicada o firmada la NC, el reclamo o la cesión a otro inhabilitan el documento; el veto lo escribe el SII por el único escritor, cuenta como pendiente aunque la llamada esté en verde, y el issue, VER-01, la candidata, el aviso, la tarjeta y la fila lo dicen", () => {
+test("regla 71: la verificación fallida marca y avisa, no retira; el ejecutivo retira, re-simula y vuelve a publicar", () => {
   assert.deepEqual(auditarRegla71(jsx), []);
 });
 
 const MUTANTES = [
-  ["la cesión a otro deja de inhabilitar", (c) => c.replace("const bloquea = !!(ev.estado && (ev.estado.notaCredito || ev.estado.reclamada || ev.estado.cedida));", "const bloquea = !!(ev.estado && (ev.estado.notaCredito || ev.estado.reclamada));")],
-  ["la oferta cerrada no marca la inhabilitación", (c) => c.replace("const marcado = {...nf, inhabilitada: {motivo: ev.cambio,", "const marcado = {...nf, marca: {motivo: ev.cambio,")],
-  ["la decisión no devuelve el documento", (c) => c.replace('cambio = {donde: "inhabilitada", folio: ev.folio, cambio: ev.cambio, factura: marcado};', 'cambio = {donde: "inhabilitada", folio: ev.folio, cambio: ev.cambio};')],
-  ["la traza calla", (c) => c.replace("queda inhabilitado y la operación no se cursa", "queda anotado")],
-  ["el tick no escribe el veto", (c) => c.replace('marcarNoVerificada(d.id, facs, {origen: "sii", motivoLbl:', 'console.log(d.id, facs, {origen: "sii", motivoLbl:')],
-  ["el tick escribe el veto dentro del updater", (c) => c.replace("for (const d of dealsRef.current || []) {", "for (const d of []) {").replace("setDeals((prev) => {let toco = false; const out = prev.map((d) => {const r = aplicarEventosADeal(d, evs); if (r.deal !== d) toco = true; return r.deal;});", 'setDeals((prev) => {let toco = false; const out = prev.map((d) => {const r = aplicarEventosADeal(d, evs); if (r.inhabilitadas.length) marcarNoVerificada(d.id, r.inhabilitadas.map((x) => x.factura), {origen: "sii", motivoLbl: "x"}); if (r.deal !== d) toco = true; return r.deal;});')],
-  ["el escritor firma como el usuario", (c) => c.replace("por: porSII ? ACTOR_SII : actorEtiqueta(usuario),", "por: actorEtiqueta(usuario),")],
-  ["el escritor no anota el origen", (c) => c.replace('...(porSII ? {origen: "sii", cambio: (fac.inhabilitada && fac.inhabilitada.motivo) || null} : {})', "...{}")],
-  ["un segundo escritor del veto", (c) => c.replace("repoNoConfirmadas.recargar(); NO_CONFIRMADAS = repoNoConfirmadas.all();", "repoNoConfirmadas.set(id, {}); NO_CONFIRMADAS = repoNoConfirmadas.all();")],
-  ["el resumen deja cursar con la llamada en verde", (c) => c.replace("if (noConfirmada(deal, f, estado && estado.vetadas)) {tel++; pend++; return;}", "")],
-  ["el issue no titula lo del SII", (c) => c.replace('"Documentos inhabilitados en el SII: no se puede cursar"', '"Facturas no verificadas: no se puede cursar"')],
-  ["la candidata no dice por qué", (c) => c.replace('R("inhabilitada", "Inhabilitada en el SII",', 'R("noConfirmada", "El deudor no la confirmó",')],
-  ["el aviso pierde el asunto del SII", (c) => c.replace("Documentos inhabilitados en el SII · ${deal.id}", "Verificación fallida · ${deal.id}")],
-  ["VER-01 calla", (c) => c.replace("inhabilitada(s) en el SII: reclamo, nota de crédito o cesión a otro, regla 71", "")],
-  ["la fila de la oferta no rotula", (c) => c.replace("if (f && f.inhabilitada) return `Inhabilitada en el SII · ${f.inhabilitada.glosa}`;", "")],
-  ["el detalle no relee el veto", (c) => c.replace('window.addEventListener("storage", onStorageVeto);', "")],
+  ["la mesa vuelve a retirar al confirmar parcialmente", (c) => c.replace("if (no.length) marcarNoVerificada(fila.deal.id, no, llamada);", 'no.forEach((f) => retirarFacturaOferta(fila.deal.id, f, "noConfirmada"));')],
+  ["la marca retira", (c) => c.replace("repoNoConfirmadas.set(id, nc); const deudor = fs[0].deudor", "repoNoConfirmadas.set(id, nc); fs.forEach((f) => retirarFacturaOferta(id, f)); const deudor = fs[0].deudor")],
+  ["la marca no avisa", (c) => c.replace("if (d0) avisarNoVerificadas(d0, fs, motivoLbl);", "")],
+  ["el retiro recupera la excepción de la verificación", (c) => c.replace("const dRet = (dealsRef.current || []).find((x) => x.id === id); if (ofertaCerradaVigente(dRet)) {", 'const dRet = (dealsRef.current || []).find((x) => x.id === id); if (motivo !== "noConfirmada" && ofertaCerradaVigente(dRet)) {')],
+  ["el diálogo del detalle retira", (c) => c.replace('etiquetaConfirmar="Marcar no verificada" onConfirmar={() => {onMarcarNoVerificada(deal.id, [confirmNoConf], null);', 'etiquetaConfirmar="Retirar factura no confirmada" onConfirmar={() => {onRetirarFactura(deal.id, confirmNoConf, "noConfirmada");')],
+  ["la cabecera no muestra el issue", (c) => c.replace("No se puede cursar · {iss.n} no verificada(s)", "")],
+  ["el tab no muestra el issue", (c) => c.replace("<b>{iss.titulo}.</b> {iss.texto}", "")],
+  ["la cabecera del detalle calla", (c) => c.replace("no cursa · {issTab.n}", "")],
+  ["VER-01 calla", (c) => c.replace("marcada(s) no verificada(s): el ejecutivo tiene que retirarlas, re-simular y volver a publicar", "")],
+  ["el aviso lo firma el ejecutivo", (c) => c.replace("hiloEnviar(h, CODE_SISTEMA, texto, null); return h;} // Excepciones de la operación PENDIENTES", 'hiloEnviar(h, "CR", texto, null); return h;} // Excepciones de la operación PENDIENTES')],
+  ["la mesa vuelve a prometer retirar", (c) => c.replace('"Marcar no verificada"}', '"Retirar y vetar"}')],
+  ["la marcada se lista dos veces en la mesa", (c) => c.replace(".filter(([id]) => !enOfertaIds.has(id))", "")],
 ];
 for (const [nombre, mutar] of MUTANTES)
   test(`sonda negativa: ${nombre}`, () => {

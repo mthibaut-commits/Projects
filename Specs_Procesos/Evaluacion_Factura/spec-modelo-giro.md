@@ -1,6 +1,6 @@
 # Modelo de giro · asignación de giros
 
-**Versión 1.0 · 12-09-2026 · NEX Factoring**
+**Versión 1.0.0 · 12-09-2026 · NEX Factoring**
 
 Cómo se le entrega el dinero al cliente: en cuántas partes y de qué tipo. Es el último eslabón del
 pipeline comercial — toma el **monto a girar** y su desglose por factura (spec de pricing §4) y
@@ -27,12 +27,12 @@ simulación → monto a girar → prorrateo por factura → ASIGNACIÓN DE GIROS
 
 | Código | Tipo | Califica |
 |---|---|---|
-| **GE** | Giro Express | La verificación la dio por **no necesaria** **y** el otorgamiento **no** dejó marcas de excepción — ni del cliente ni del deudor — **y** la asignación de líneas cubrió sus facturas: ninguna a comité (ADR-0017, regla 63) |
+| **GE** | Giro Express | La verificación la dio por **no necesaria** **y** el otorgamiento **no** dejó marcas de excepción — ni del cliente ni del deudor — **y** la asignación de líneas cubrió sus facturas: ninguna a comité (ADR-0017, regla 67) |
 | **GN** | Giro Normal | Todo lo demás |
 
 **Express exige las tres condiciones a la vez; basta que falle una para caer en Normal.** Eso incluye
 la factura verificada cuyo deudor arrastra una excepción, la factura sin excepciones cuyo deudor
-quedó por verificar, y —desde el 23-09-2026 (ADR-0017, regla 63)— la factura de un deudor cuyas
+quedó por verificar, y —desde el 23-09-2026 (ADR-0017, regla 67)— la factura de un deudor cuyas
 facturas requieren comité porque la línea no las cubre: la operación depende de una línea que todavía
 no existe, así que no gira por la vía rápida aunque cumpla lo demás.
 
@@ -153,3 +153,13 @@ con un ajuste escondería el error en el sitio equivocado.
   detalle de la operación y en el resumen del curse.
 - **La entrega a Tesorería** no está modelada: falta el contrato de salida (qué se le publica, cuándo,
   y con qué idempotencia).
+
+---
+
+## Anexo · Control de versiones
+
+**Mayor** = cambia lo que el sistema decide o el contrato con el servidor · **menor** = entra una sección, un campo o un criterio · **parche** = redacción, una cifra o una referencia.
+
+| Versión | Fecha | Qué cambió |
+|---|---|---|
+| **1.0.0** | 12-09-2026 | Primera versión: los dos tipos de giro (GE/GN), su criterio por deudor y el contrato del motor. |
