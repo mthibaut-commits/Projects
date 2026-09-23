@@ -86,14 +86,25 @@ dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `
 12. **Al dudar sobre el proyecto, busca en `vault/` antes de preguntar o asumir**:
     `grep -rn "^13-ter\." vault/conocimiento/reglas/` encuentra una regla por su número.
 
-13. **Diseño: manda `datamart-ui`.** Las 13 skills de `Leonxlnx/taste-skill` en `.claude/skills/`
-    (`design-taste-frontend`, `industrial-brutalist-ui`, `minimalist-ui`, `high-end-visual-design`,
-    `gpt-taste`, `redesign-existing-projects`, `stitch-design-taste`…) disparan con los mismos pedidos
-    que `datamart-ui` («prototipa una pantalla», «rediseña esto»). Aportan **composición** —ritmo,
-    jerarquía, densidad, motion, estados vacíos—; los **tokens** —color, escala tipográfica, fuente,
-    radios— salen de `datamart-ui` y del objeto `C`, nunca de ellas. Es la **regla 34**, con gate
-    `regla_34.test.mjs`. Ojo con `stitch-design-taste`, que genera archivos `DESIGN.md`: **ninguno va a
-    la raíz del repo** —ahí significa «cómo debe verse ESTE proyecto»— y el gate lo rechaza.
+13. **Las 39 skills de terceros de `.claude/skills/` ACONSEJAN; las reglas de este repo DECIDEN.** Vienen de
+    `Leonxlnx/taste-skill` (13), `addyosmani/agent-skills` (25) y `DietrichGebert/ponytail` (1), disparan con
+    «any code change» y opinan justo sobre lo que acá ya está resuelto con incidentes reales. Aportan lo que
+    el repo no tiene escrito; donde chocan, pierden. Las colisiones concretas, por si se presentan como
+    novedad: `git-workflow-and-versioning` **no** manda sobre la regla 6 ni sobre `flujo_git.md` —el
+    `gitflow_guard` es el que decide—; `test-driven-development` **no** manda sobre `.claude/rules/testing.md`,
+    que ya fija tres capas y por qué no hay una de unidad; `documentation-and-adrs` **no** manda sobre la 7
+    (los ADR son inmutables y no se re-litigan); `code-review-and-quality` **no** manda sobre la 8
+    (`invariantes.md` es lo que un review rechaza sin discusión); y `frontend-ui-engineering`,
+    `industrial-brutalist-ui`, `minimalist-ui` y compañía **no** mandan sobre `datamart-ui`: aportan
+    composición, y los tokens —color, escala tipográfica, fuente, radios— salen del objeto `C`. Eso último
+    es la **regla 34**, con gate `regla_34.test.mjs`.
+    **`ponytail` y `code-simplification` son las de trato más delicado**: piden «la solución más perezosa que
+    funcione» y borrar lo que parece de más. Acá lo que parece de más suele ser una regla ganada con un
+    incidente —la 3 dice que no se resumen ni se renumeran— o un paso de verificación que parece redundante
+    y no lo es (la 4: ninguno de los seis subsume a otro). Sirven para código nuevo; no para podar el vault,
+    las reglas ni los gates.
+    Ojo también con `stitch-design-taste`, que genera archivos `DESIGN.md`: **ninguno va a la raíz** —ahí
+    significa «cómo debe verse ESTE proyecto»— y el gate lo rechaza.
 
 ## Flujo de trabajo con el usuario
 
