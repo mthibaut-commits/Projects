@@ -28,6 +28,9 @@ directorios vacíos hoy es fabricar ceremonia.
 
 ## El ciclo de una tarea
 
+0. **Integrar `main` antes de modificar** (skill `sincronizar-main`, `node sincronizar_main.mjs`; pedido del usuario,
+   23-09-2026). Se trabaja sobre la base más actualizada: el script trae `origin/main`, mide la rama y dice qué
+   comandos correr. Se repite justo antes de mezclar a `main`, y los números libres se toman después de integrar.
 1. **Leer el tablero** (`vault/sesiones/estado_actual.md`). Es lo primero que lee toda sesión.
 2. **Leer la regla que gobierna lo que vas a tocar**, ANTES de tocarlo: `invariantes.md` es el índice y
    `reglas/<tema>.md` el texto (regla núcleo 3). Casi todo lo que parece un defecto ya está explicado ahí,

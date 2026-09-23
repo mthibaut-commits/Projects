@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-23T20:30:00Z
+timestamp: 2026-09-23T22:00:00Z
 ---
 
 # Estado actual
@@ -13,8 +13,8 @@ timestamp: 2026-09-23T20:30:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **171/171 PASA**, **65 archivos de gate de contrato**
-(567 tests), **37 casos e2e** (37/37), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
+(`pipeline_comercial.jsx`), build standalone, **171/171 PASA**, **66 archivos de gate de contrato**
+(584 tests), **37 casos e2e** (37/37), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
 (104 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
 gate. La crónica del 17 al 22-09 vive en sus logs — ADR-0001 a 0012, el linter como paso 0-bis, todo lo de
 plata del 20-09 (reglas 41–46, ADR-0007 a 0011, casos 145–151) y, del 21 y 22-09 en sesiones paralelas, las
@@ -47,15 +47,16 @@ cartera de 500 clientes; el fallback de 80 empresas se fue y `auditar_unidades` 
 
 ## En vuelo · nada: TODO lo pendiente está en `main` — backlog de ADR (64–75)
 Las **skills de terceros y los servidores MCP salieron del repo** (ADR-0022, 23-09: «no aportan nada al proyecto
-ya que instalan librerías»); quedan `datamart-ui` y la regla 63 con su gate de paleta. Verificar el árbol MEZCLADO y no la rama —y que un paso 0 rojo APAGA el CI entero— subió a
+ya que instalan librerías»); quedan `datamart-ui` y la regla 63 con su gate de paleta. **Antes de modificar se integra
+`main`**: skill `sincronizar-main` + `node sincronizar_main.mjs` (paso 0 del ciclo). Verificar el árbol MEZCLADO y no la rama —y que un paso 0 rojo APAGA el CI entero— subió a
 [`flujo_git.md`](../conocimiento/flujo_git.md) ([log](./2026-09-23_el_paso_0_lleva_tres_commits_en_rojo.md)).
 
-## Bloqueos · los dos son del usuario, desde Windows
+## Bloqueos · del usuario, desde Windows
 
 El relay git bloquea el BORRADO y `refs/tags/*` con **HTTP 403** (los pushes normales funcionan; el MCP tampoco
-expone borrado). Quedan **el tag `v0.1.0`** sobre `bd14091` y **borrar las ramas ya integradas** — al 23-09 son
-todas menos `respaldo/main-2026-09-17`, que no se toca; el listado se hace con `git fetch --prune` primero y
-mirando `git cherry`, nunca `--merged` a secas (`unidades-peso-verificacion` es borrable y no aparece ahí).
+expone borrado). Queda **el tag `v0.1.0`** sobre `bd14091`. Las ramas integradas las borró el usuario el 23-09;
+quedan `main`, la de la sesión, `respaldo/main-2026-09-17` (no se toca) y `claude/local-mauricio-20260910`, la
+ÚNICA copia del estado local del 10-09 (`git cherry` la da `+`: borrarla lo pierde).
 
 ## Deudas anotadas (no bloquean, no olvidar)
 1. **Lista Blanca / Deudor Autorizado, decisiones de negocio**: el activo no trae `VIGENTE_DESDE`/`HASTA`/
