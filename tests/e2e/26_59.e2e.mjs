@@ -46,13 +46,19 @@ async function abrirPorId(h, id) {
   det.on("pageerror", (e) => (det._erroresE2E = det._erroresE2E || []).push(String(e).slice(0, 300)));
   return det;
 }
-/* Simula desde el panel de arranque del detalle. Deja la oferta con TODO lo disponible del cliente. */
+/* Simula desde el panel de arranque del detalle. Deja la oferta con TODO lo disponible del cliente.
+   Se espera a que el panel de arranque SE RETIRE —ni «Simulando la oferta…» ni la pregunta—, que es la señal de
+   que la simulación aterrizó, y no un tiempo fijo: la latencia simulada crece con las facturas de la oferta
+   (`latenciaBaseMs + n · latenciaPorDocMs`) y con ADR-0014 «Todo lo disponible» de la primera operación pasó de 17
+   a 39 facturas (las cedidas a Security entran), así que 2,5 s fijos leían las pestañas ANTES de simular. */
 async function simularEnDetalle(det) {
   const chip = det.locator("button").filter({ hasText: /Todo lo disponible/ }).first();
   if (!(await chip.count())) throw new Error("no encuentro el chip «Todo lo disponible» del panel de arranque");
   await chip.click();
-  await det.waitForFunction(() => /condiciones comerciales/i.test(document.body.innerText || ""), null, { timeout: 30000 });
-  await det.waitForTimeout(2500);
+  await det
+    .waitForFunction(() => { const t = document.body.innerText || ""; return !/Simulando la oferta/.test(t) && !/¿Qué facturas quieres incluir en la oferta\?/.test(t); }, null, { timeout: 30000 })
+    .catch(() => { throw new Error("«Todo lo disponible» no simuló: el panel de arranque no se retiró de la pantalla"); });
+  await det.waitForTimeout(1000);
 }
 /* El selector de identidad del detalle (sólo demo). Cambiar a `EV` es lo que hace que el botón de
    firmar dependa de la COMPUERTA y no del permiso. */
@@ -174,7 +180,7 @@ export const casos = [
         const nCrit = (conQuizAbierto.match(/criterios del deudor · par cliente-deudor \(3M\)/gi) || []).length;
         if (nCrit !== 1) throw new Error(`los criterios del deudor aparecen ${nCrit} veces: tienen que estar UNA, en el panel del grupo`);
         // …y en informativo no hay con qué firmar. Es la mitad que de verdad protege la regla 6.
-        for (const b of ["Registrar verificación", "El deudor no confirmó · retirar"])
+        for (const b of ["Registrar verificación", "El deudor no confirmó · marcar"])
           if (conQuizAbierto.includes(b))
             throw new Error(`el modo informativo ofrece «${b}» al Ejecutivo de verificación: la compuerta tiene que impedir firmar, no sólo informar`);
 
@@ -187,7 +193,7 @@ export const casos = [
   {
     id: "e2e-59-b",
     titulo:
-      "la otra dirección sobre la MISMA pantalla: pre-evaluar abre la llamada — el cartel informativo desaparece y el Ejecutivo de verificación ya tiene «Registrar verificación» y «El deudor no confirmó · retirar» en el quiz de la factura",
+      "la otra dirección sobre la MISMA pantalla: pre-evaluar abre la llamada — el cartel informativo desaparece y el Ejecutivo de verificación ya tiene «Registrar verificación» y «El deudor no confirmó · marcar» en el quiz de la factura",
     correr: async (h) => {
       let det = null;
       try {
@@ -214,7 +220,7 @@ export const casos = [
         await abrirTabVerif(det);
         const accionable = await abrirPrimerQuiz(det);
         if (/Informativo\./.test(accionable)) throw new Error("tras pre-evaluar el tab sigue diciendo que es informativo");
-        for (const b of ["Registrar verificación", "El deudor no confirmó · retirar"])
+        for (const b of ["Registrar verificación", "El deudor no confirmó · marcar"])
           if (!accionable.includes(b)) throw new Error(`tras pre-evaluar el Ejecutivo de verificación sigue sin «${b}»: la compuerta no se abrió`);
 
         return `${ids[1]} (sesión EV): informativo sin botones → pre-evaluado, cartel retirado y las dos acciones de firma disponibles`;

@@ -29,7 +29,7 @@ que él mismo midió en la entrega anterior (abajo, «La intención de participa
 
 | Dataset | Qué es |
 |---|---|
-| `DTESYNC` | 30.000 facturas electrónicas emitidas |
+| `DTESYNC` | El **log de notificaciones** del A1: 30.000 facturas electrónicas emitidas en **55.549 eventos** (la creación de cada una, y después cada cambio de estado —21.974 acuses · 2.088 reclamos · 1.487 notas de crédito— como `DTE_ACTUALIZADO`). Los módulos reciben los **documentos**: `derivar` pliega el log una vez con `lib/dtesync.js` (abajo, «El A1 es un flujo de eventos») |
 | `LISTA_BLANCA` | 22 deudores de lista blanca |
 | `DEUDORES_AUTORIZADOS` | 600 deudores autorizados |
 | `SHARE_OF_WALLET` | 233 clientes de cartera. Se copia su **ficha** (razón social, ejecutivo, segmento, horizonte y el `SOWTargetPct`, que es meta comercial); **el SOW se mide y por eso figura también en derivados** |
@@ -47,6 +47,30 @@ que él mismo midió en la entrega anterior (abajo, «La intención de participa
 | `SHARE_OF_WALLET` | A5 | `datasets/share_of_wallet.js` | **Se MIDE sobre AECSync**, que corre antes: la serie semanal con sus montos, la participación actual, la tendencia, el gap, el estado y el diagnóstico salen de las cesiones. Antes A2 y A5 respondían la misma pregunta por caminos independientes y discrepaban **13,8 pto en la mediana**; hoy calzan dentro del redondeo en 233 de 233. Lo único que NO se mide es el `SOWTargetPct` —es una meta, y derivarla del resultado dejaría el gap siempre en cero— |
 | `CARTERA` | A24 | `datasets/cartera.js` | Estructura comercial (código, nombre, equipo, **jefatura**, zona, sucursal) y asignación de cada cliente a su ejecutivo. La asignación se **mide** del `Ejecutivo` que ya declara el A5, para que el activo nuevo no contradiga al que la app venía leyendo; el archivo la vuelve a llavear por **código** y no por nombre |
 | `VERIFICACION` | A10 | `datasets/verificacion.js` | Variables del predictor de verificación por par cliente-deudor. La **factura típica** del par se mide en DTESync; la **frecuencia mensual** con que el par factura y la **fracción que cede** se modelan por perfil de la relación —la ventana del A1 son 47 días con ~2 facturas por par, una muestra corta y no la relación—, nunca por debajo del ritmo que la ventana muestra. De ahí salen la venta mensual (V04) y lo comprado en 3M (V03). **V10 es del DEUDOR**, no del par: lo que le pagó al factoring en 3M sumando todos sus cedentes, como pide la política («que operó una sola vez con Security»). La nota del deudor se **lee del A16 ya generado** para que los dos activos no puedan divergir |
+
+## El A1 es un flujo de eventos por documento
+
+Desde el 23-09-2026 (ADR-0020, regla 73) el bloque `DTESYNC` no es «una fila por documento con su estado final»
+sino el **log de notificaciones** del servicio, en orden de llegada: cada fila es un evento con `Secuencia` (1..n
+por documento) y `FchNotificacion`. La **creación** (`DTE_SINCRONIZADO`, secuencia 1) trae el documento entero y
+`EstadoDTE` sin banderas; cada cambio posterior (`DTE_ACTUALIZADO`) trae la identidad (`RUTEmisor`, `TipoDTE`,
+`Folio`), el envoltorio y el `EstadoDTE` **acumulado**, y no repite el documento. Es lo que el usuario definió:
+«los eventos de dtesync llegan varias veces para la misma factura: una vez se crea, después puede llegar nota de
+crédito, después aceptación».
+
+`lib/dtesync.js` tiene las tres funciones, puras: **`plegar(eventos)`** deja un documento por (emisor, folio) con
+el estado del evento más nuevo, cualquiera sea el orden de llegada, y los devuelve por folio (el orden que el
+activo plano traía); **`expandir(documentos)`** hace lo inverso para la migración; **`validarLog`** dice qué tiene
+que cumplir un log para que plegarlo signifique algo. `derivar` pliega **una vez** y entrega los documentos a los
+módulos en `DTESYNC`: ningún módulo recorre el log. La aplicación pliega con la misma función (`plegarDTE`), y el
+gate `tests/contract/regla_73.test.mjs` las corre a las dos sobre el mismo log y exige el mismo resultado;
+`tests/contract/dtesync.test.mjs` exige que el bloque commiteado valide como log.
+
+La migración fue **`migrar_dtesync_eventos.js`**, una sola vez y commiteada como `migrar_padron.js`: cada documento
+se expandió en su creación y una actualización por bandera, fechada de forma determinista dentro de la ventana del
+negocio (acuse y reclamo hasta 8 días desde la emisión, NC hasta 30) y nunca después de la recepción del batch
+—la entrega original traía las tres fechas como constantes posteriores al corte—. Los derivados salieron byte a
+byte iguales: el pliegue reproduce el documento y ninguno lee las fechas de las banderas.
 
 ## Una cesión tiene que apuntar a una factura que existe
 

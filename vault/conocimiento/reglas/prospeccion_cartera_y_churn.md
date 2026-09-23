@@ -31,3 +31,81 @@ timestamp: 2026-09-17T22:12:32Z
     - **Quién ve qué, en una sola respuesta.** `ofOtrasVisible` es el único predicado y lo usan los DOS contadores y la lista: el **ejecutivo** ve sólo las empresas de SU cartera (`esCliente` y él es el dueño); el **rol inbound y la jefatura** ven sólo las que no son de la cartera de nadie, que es lo que hay que repartir.
     - **EL DEFECTO QUE ESTO CIERRA:** «Otras Empresas» filtraba por rol y **«Todos» no**. `inboundCount` contaba `streamFeed` entero, así que un ejecutivo leía en «Todos» un total que incluía la cartera de sus colegas y las empresas sin dueño — filas que su propia tabla nunca le mostraba. Es el mismo desacuerdo contador/tabla que la regla 40 corrigió en el otro sentido (contar facturas contra una tabla de filas agrupadas), y estaba a la vista desde entonces.
     - **La compuerta del toggle se conserva**: con el Inbound apagado la tabla no dibuja ninguna fila del stream, así que el contador va a 0. Perderla sería volver a dejar el contador por encima de la lista. Gate `regla_40.test.mjs`, que ahora exige las tres cosas —filas agrupadas, mismo filtro por rol y la compuerta— con una sonda por cada una.
+
+63. **LA FACTURA CEDIDA A UN FACTORING AJENO NO ES CANDIDATA DEL INBOUND; LA CEDIDA A SECURITY SÍ** (23-09-2026,
+    ADR-0014; decisión del usuario del 22-09-2026 al revisar el modelo de curse: «sólo si está cedida a una
+    empresa diferente a Factoring Security; si está cedida a Security sí se puede agregar»).
+    - **La cuarta condición de «Buena factura»**: a crédito, sin reclamo, sin nota de crédito **y no cedida a otro
+      factoring** según el A2 (`cedidaAFactoringAjeno`, sobre `cesionDeFactura`: la misma fuente que ya usaba la
+      incorporación). Antes el inbound contaba la cedida y la bloqueaba recién al incorporar, así que el monto con
+      que se dimensionaba la oportunidad traía facturas que nunca se iban a poder comprar
+      (`Specs_Procesos/Evaluacion_Factura/spec-inbound-facturas.md` §11 lo declaraba como desfase con el PDF).
+    - **La cedida a Security no se excluye ni se bloquea**: es cartera propia, no competencia. `estadoCandidata` la
+      devuelve agregable, rotulada «Cedida a Security» (antes «Ya financiada», bloqueada; el caso 95 fijaba lo
+      contrario y se corrigió con esta regla). La cedida a un factoring ajeno sigue bloqueada al incorporar, con el
+      nombre del factoring y la fecha.
+    - **Y la oferta la CUENTA.** `motivoExcl` —lo que deja una factura de la oferta fuera del negocio— excluye sólo la
+      cedida a un factoring ajeno; «Ya financiada por Security» dejó de ser motivo. Se vio en la capa e2e, no en la
+      suite: la primera factura agregable del pool del Directorio es una cedida a Security, entraba a la oferta y no
+      contaba —«Tienes 1 factura elegida» no aparecía, «esta operación» no cuadraba con «Total oferta»— y diez casos
+      de pantalla cayeron a la vez. Las dos listas de candidatas la rotulan «Cedida a Security». Gate de texto:
+      `regla_63.test.mjs` (la cuarta condición, la candidata agregable y el motivo de exclusión, cada uno con sonda).
+    - **El perfil de la Bandeja nombra el motivo** («Cedida a otro factoring (excluida)»), como nombra el bloqueo de
+      riesgo: la diferencia entre «no tenemos regla para esto» y «otro se la llevó» es la que explica por qué no
+      se captura.
+    - Caso **159**, en las dos direcciones y con sonda: el mismo evento sin su cesión en el índice del A2 vuelve a
+      calificar, o sea que la exclusión sale del activo y de nada más.
+
+64. **LA ANTIGÜEDAD MÁXIMA DESDE LA EMISIÓN ES CONDICIÓN DE CANDIDATURA DEL INBOUND, Y EL TOPE ES DEL TENANT** (23-09-2026,
+      M-10 · G-31, decidido el 22-09-2026 sin ADR: «necesitamos implementar un criterio para ir a buscar facturas que
+      tengan cierta antigüedad, ejemplo no más de 20 días desde su emisión, con eso basta»). «Buena factura» exige una
+      quinta condición, `!superaAntiguedad(f)`: la factura emitida hace más de `antiguedadMaxDias` días —contados contra
+      el corte del activo, regla 13-ter— no es candidata, porque nadie la va a comprar y contarla inflaba el monto con
+      que se dimensionaba la oportunidad. El tope vive en `CFG_OPER_BASE` (20 por defecto), se edita en Configuración ›
+      Operación («Antigüedad máxima de la factura») y se lee con `pol("antiguedadMaxDias", 20)`: el valor del código no
+      manda (regla 9-bis). Medido sobre el A1: 25.485 de las 30.000 facturas tienen 20 días o menos contra el corte, así
+      que el filtro deja pasar la mayoría.
+    - **«No más de 20» incluye el día 20** y excluye el 21. La «lista de emisores con tags» y la cesión previa quedaron
+      DESCARTADAS como criterios (M-10, segunda vuelta): el que entra es éste.
+    - **El filtro mira el DOCUMENTO, no la raíz del evento.** El evento del stream lleva la factura en `facturasOp[0]`
+      (con su `FchEmis`) y en la raíz traía `diasEmision: 1` fijo, así que la Bandeja decía «1d» para todas;
+      `diasEmisionEvento` mide el documento y `streamDesdeDTE` estampa esa misma antigüedad en la raíz: lo que el
+      filtro aplica es lo que la pantalla muestra.
+    - **El perfil de la Bandeja nombra el motivo con el tope vigente** («Antigüedad > 20 días (excluida)»), como nombra
+      la cesión ajena y el bloqueo de riesgo.
+    - Caso **160**, en las dos direcciones y con el tenant moviéndose: 5 y 20 entran, 21 sale; con 10 sale la de 15,
+      con 30 entra la de 21; sin la clave en la configuración persistida rige el 20 de `CFG_OPER_BASE`; y sobre 8.000
+      filas del stream ninguna captura supera el tope y ninguna fila de la Bandeja lleva el 1 fijo.
+
+67. **EL CORTE Y EL REINICIO DEL DÍA SON POR RELOJ DEL TENANT; AL CORTE LA OPORTUNIDAD SIN OFERTA SE ELIMINA Y AL REINICIO
+    VUELVE COMO OPORTUNIDAD NUEVA, CON ID PROPIO Y REFERENCIA** (23-09-2026, ADR-0019, M-07 · M-08 · M-02, G-02 · G-03; el
+      usuario: «Hoy el corte es por corridas (demo) pero en producción será un continuo. Las oportunidades que han sido
+      gestionadas por el ejecutivo (tienen oferta) no se eliminan»). El job del inbound REINICIA el día a `horaInicio`
+      (06:00 por defecto) y CORTA a `horaFin` (23:00): entre las dos corre la corrida; fuera, no se abre nada. El
+      conteo de corridas no decide: `jobDelReloj(cfg, hora)` dice qué toca y `relojSimulado(corridas, cfg)` traduce la
+      corrida de la demo a una hora del reinicio al corte (18 corridas por día con los defaults; antes eran 8 por
+      `horasDia`, que se retiró). `frecuenciaMin` dejó de ser declarativa: `intervaloJobMs(cfg)` es el intervalo del job
+      en producción.
+    - **«Gestionada» es la oportunidad que TIENE OFERTA** —el ejecutivo la simuló: etapa Oferta o posterior (`tieneOferta`)—
+      y no se toca al corte, cualquiera sea su etapa. Un paquete elegido sin simular no es oferta todavía (regla 12-bis):
+      se elimina como cualquier otra. El criterio es funcional, no una etapa configurable: `etapaNoGestionada` se retiró
+      de la configuración (esquema `cfgOper` v3) para que ningún valor del tenant haga que el corte elimine una con
+      oferta.
+    - **Al corte se ELIMINA** (`corteDelDia`, pura sobre la lista; `corteDia` la aplica): la oportunidad del inbound sin
+      oferta deja de existir para el ejecutivo y para el tubo, y la bitácora del sistema registra el cierre con su id,
+      su cedente y su paquete. Nada de lo eliminado tiene versiones, visados ni verificaciones colgando.
+    - **Al reinicio vuelve como ORIGINACIÓN, no como reapertura** (regla 5): `eventoDeReoriginacion` la devuelve al
+      inbound como un evento más —su paquete entero más lo que llegó del mismo cedente entre el corte y el reinicio— y
+      `correrProceso` la abre con id propio (`idReoriginado`: el de la eliminada más `-R<n>`, nunca el mismo), con
+      `referencia` a la eliminada, sin simular y con la oferta vacía. «El id no cambia» (ADR-0004, regla 22) sigue
+      valiendo para todo lo que SOBREVIVE al corte.
+    - **El esquema v3 migra lo guardado** (regla 39): retira `etapaNoGestionada` y `horasDia`, renombra
+      `reaperturaDiaria` → `corteDiario` conservando la elección, y suelta las horas que eran el default viejo sin efecto
+      (08:00 / 18:00) para que manden 06:00 / 23:00; una hora que el tenant cambió se conserva. La migración es
+      autocontenida a propósito: el gate de la regla 39 evalúa el literal aislado.
+    - Casos **163** (el reloj: 22:59 no corta y 23:00 sí, 05:59 no reinicia y 06:00 sí, la ventana, las horas movidas, el
+      reloj simulado, el intervalo y la migración) y **164** (el corte: la sin oferta y la elegida sin simular se
+      eliminan; la simulada, la publicada, la de otorgamiento, la de giro y la manual quedan idénticas; la simulada a las
+      22:59 sobrevive; el evento del reinicio con `-R1` y referencia). `regla_67.test.mjs` fija lo cableado: el efecto
+      corta por `r.corte`, la corrida no abre fuera de la ventana, el corte elimina, el reinicio devuelve al inbound, la
+      nueva lleva `referencia`, y la pantalla no ofrece etapa ni llama declarativa a la frecuencia.

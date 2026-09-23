@@ -20,7 +20,7 @@ implementaciones cumplen el mismo contrato y hay que mantenerlas en sincronía.*
 npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx   # sin errores TS1
 node build_app.mjs                                                                # valida los sha256 de vendor/
 node --test "tests/contract/*.test.mjs"                                           # gates de contrato (vault, índice, fuente, hooks)
-PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                       # la suite: 158 casos en ChromiumPLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs              # si el cambio toca la UI
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                       # la suite: 171 casos en ChromiumPLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node capturar_pantallas.mjs              # si el cambio toca la UI
 ```
 
 ## Por dónde empezar
@@ -41,7 +41,7 @@ PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node run_tests.mjs                    
 - **`vendor/`** — dependencias UMD vendorizadas, con `sha256` fijado en `vendor/SBOM.json`. **El build
   falla si un hash no calza.** `.gitattributes` marca `vendor/** -text`: normalizar fines de línea
   cambia los bytes y rompe la integridad.
-- **`datos_inyectados.js`** (~33 MB) — el dataset que alimenta el inbound: 30.000 facturas de DTESync,
+- **`datos_inyectados.js`** (~46 MB) — el dataset que alimenta el inbound: el log de DTESync (30.000 facturas en 55.549 eventos: la creación y cada cambio de estado, ADR-0020),
   lista blanca, AECSync, share of wallet. Sin él el pipeline queda en 0 oportunidades. No editar a mano.
 
 `CLAUDE.md` y el `vault/` son la fuente de verdad operativa y mandan sobre este archivo.

@@ -161,9 +161,9 @@ auditoría, la mensajería y las tareas:
 
 | Registro | Qué guarda | Quién escribe | Cuándo |
 |---|---|---|---|
-| **Solicitud** (por excepción) | comentario, respaldos, la declaración «sin comentarios», quién, cuándo, y el cargo y nivel **al momento de solicitar**; más cada **información agregada después**, con su autor y su fecha | el ejecutivo | al solicitar y al agregar información (§4.2, §4.3) |
-| **Visado** (por excepción) | `aprobado` / `rechazado`; ausente = pendiente | el apoderado | al decidir; se borra al revertir |
-| **Detalle del visado** (por excepción) | justificación de la decisión, respaldos, quién (con su reemplazo, si cubre a otro), cuándo | el apoderado | junto con el visado |
+| **Solicitud** (por excepción) | comentario, respaldos, la declaración «sin comentarios», quién, cuándo, la versión vigente al pedirla y el cargo y nivel **al momento de solicitar**; más cada **información agregada después**, con su autor y su fecha; y, si la versión N deja de levantar la excepción, el estado **«ya no aplica desde la versión N»** con actor sistema y hora (§5.5) —la solicitud nueva que la reemplace la lleva como historia | el ejecutivo (la marca, el sistema) | al solicitar y al agregar información (§4.2, §4.3); al re-evaluar, la marca |
+| **Visado** (por excepción) | `aprobado` / `rechazado`; ausente = pendiente; `no_aplica` = marcado por el sistema porque la versión N ya no levanta la excepción (§5.5): **no es una decisión**, y cuenta como pendiente si la regla vuelve a levantar | el apoderado (la marca, el sistema) | al decidir; se borra al revertir; se marca al re-evaluar |
+| **Detalle del visado** (por excepción) | justificación de la decisión, respaldos, quién (con su reemplazo, si cubre a otro), cuándo; si la versión N dejó sin efecto la excepción, la decisión que tuvo y la marca `{desdeVersion, por: "sistema", fecha}`; un visado nuevo hereda la historia del marcado | el apoderado (la marca, el sistema) | junto con el visado; al re-evaluar, la marca |
 | **Bitácora de otorgamiento** (por operación) | cada evento del proceso con actor y fecha-hora: solicitud, información agregada, pre-evaluación, decisión, pérdida por bloqueo firme, integración | el sistema, en cada acción | en cada acción; sólo se agrega, nunca se edita |
 | **Pre-evaluación** (por operación) | que el ejecutivo pidió adelantar la revisión: quién y cuándo | el ejecutivo | al enviar a pre-evaluación |
 | **Versión de evaluación** (por operación) | la foto de cada corrida del motor: las variables del cliente tal como las entregó el origen y la disposición de cada criterio, con fecha y número (v1, v2…); la v1 es la evaluación de la simulación | el sistema | en cada **re-evaluación de la simulación** (§5.5); sólo se agrega, nunca se edita ni se borra |
@@ -185,10 +185,10 @@ El motor corre sobre la operación en cinco momentos:
 
 | Momento | Quién lo dispara | Qué produce |
 |---|---|---|
-| **La simulación** | el ejecutivo arma la oferta y simula | la **primera evaluación**: la operación pasa a Oferta con su monto y sus facturas, y cada criterio queda con su disposición. Es la versión **v1** |
+| **La simulación** | el ejecutivo arma la oferta y simula | la **primera evaluación**: la operación pasa a Oferta con su monto y sus facturas, y cada criterio queda con su disposición. Es la versión **v1** (el evento de evaluación de la regla 71, ADR-0013: corren los cinco motores y la v1 trae las cinco secciones) |
 | **La pre-evaluación** | el ejecutivo, desde el detalle, con la oferta abierta | adelanta el veredicto y abre la bandeja (§4.5) |
-| **«Re-evaluar operación»** | el ejecutivo, después de agregar o quitar facturas | vuelve a evaluar la operación **tal como quedó** —monto, piso, tramos— con las mismas variables del origen |
-| **«Re-evaluación de la simulación»** | el ejecutivo, desde el tab Otorgamiento, cuando quedan re-evaluables pendientes | pide al origen las variables de hoy y guarda una **versión nueva** (§5.5) |
+| **«Re-evaluar operación»** | el ejecutivo, después de agregar o quitar facturas | vuelve a evaluar la operación **tal como quedó** —monto, piso, tramos— con las mismas variables del origen y emite una **versión nueva**: es el mismo evento que simular (regla 71) |
+| **«Re-evaluación de la simulación»** | el ejecutivo, desde el tab Otorgamiento, cuando quedan re-evaluables pendientes | pide al origen las variables de hoy y guarda una **versión nueva** (§5.5) —el mismo evento, con el origen actualizado— |
 | **El cierre de la oferta y la firma** | la confirmación del cierre en el modal de curse; el cliente al firmar | decide si la oferta puede publicarse; decide a qué etapa va la operación firmada (§5.3) |
 
 Agregar o quitar facturas **no** re-evalúa solo: lo que depende del motor queda en «Por evaluar», sin
@@ -523,10 +523,12 @@ dos gestos distintos con el mismo verbo:
 
 - **«Re-evaluar operación»** (cabecera del detalle). Se usa después de agregar o quitar facturas:
   vuelve a evaluar la operación **tal como quedó** —el monto nuevo mueve el piso por monto y los tramos
-  que dependen de él— con las mismas variables del origen. No crea una versión.
+  que dependen de él— con las mismas variables del origen. **Crea una versión** (regla 71, ADR-0013, desde el
+  23-09-2026): es el mismo evento que simular, con las cinco secciones.
 - **«Re-evaluación de la simulación»** (tab Otorgamiento). Vuelve a pedir al origen las variables del
   cliente y guarda una **versión nueva** (v2, v3…), inmutable, con las variables recibidas y la
-  disposición de cada criterio. El tab muestra cuántas versiones hay, deja elegir cualquiera y marca el
+  disposición de cada criterio. Es el mismo evento de evaluación con el origen actualizado (regla 71). El tab
+  muestra cuántas versiones hay —y que los cinco motores cuentan igual—, deja elegir cualquiera y marca el
   **diff** entre una y la anterior: qué variables cambiaron y qué criterios cambiaron de disposición.
   El botón se habilita sólo mientras queden re-evaluables pendientes —excepciones sin decidir o
   rechazos re-evaluables— y la operación no esté perdida. Es el gesto que corresponde cuando el
@@ -544,6 +546,17 @@ dato de bureau. Y **las excepciones ya decididas conservan su visado**: si el or
 original, una excepción aprobada se reabriría y se perdería la firma del apoderado, que es evidencia.
 Las versiones anteriores tampoco se borran: son la constancia de qué se evaluó y cuándo, y por eso
 sobreviven incluso a vaciar la oferta y empezar de cero.
+
+**Qué pasa con la excepción que la versión nueva ya no levanta (regla 69, ADR-0016, 23-09-2026).** No se
+borra ni queda huérfana: la solicitud y el visado pasan a **«ya no aplica desde la versión N»**, con actor
+sistema y hora; la tarea del aprobador se cierra con ese motivo y el hilo «Aprobación de excepciones»
+recibe el aviso del sistema (y se termina sólo cuando no queda ninguna excepción por visar en la
+operación). El criterio se muestra cumplido en la versión vigente y, debajo, la excepción anterior con su
+estado nuevo; la que perdió a su deudor —porque sus facturas salieron de la oferta— se lista aparte. La
+marca **no es una decisión**: si una versión posterior vuelve a levantar la misma excepción, está pendiente
+otra vez, la solicitud marcada no justifica la de hoy (§4.6) ni se reactiva, y el ejecutivo solicita de
+nuevo; la solicitud nueva anota su versión y lleva la anterior como historia, y el visado nuevo hereda la
+historia del marcado. Es lo que hace auditable que la regla quedó así en el cambio de versión.
 
 ---
 
@@ -728,8 +741,9 @@ las transiciones de etapa tras la firma y tras el visado. Las cifras del catálo
 (el motor decide con el padrón inyectado), **56–59** (el visado y las versiones entran por parámetro),
 **88** (a qué etapa va la operación al firmar, las 16 combinaciones), **90** (los umbrales se leen de la
 configuración), **91** (traspaso de cartera), **96** (O06), **114** (solicitar no cierra la puerta:
-la información agregada se conserva junto a la solicitud original) y **141** (una regla mal definida no
-se ejecuta ni se verifica, y sale nombrada en el veredicto).
+la información agregada se conserva junto a la solicitud original), **141** (una regla mal definida no
+se ejecuta ni se verifica, y sale nombrada en el veredicto) y **166** (la excepción que la versión N ya no
+levanta se marca «ya no aplica desde la versión N» y no se borra; la marcada no se reactiva).
 
 ---
 

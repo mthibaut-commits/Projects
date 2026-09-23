@@ -40,8 +40,9 @@ independientes entre sí: ninguna llama a las otras.
 
 | Momento | Qué lo dispara | Qué produce |
 |---|---|---|
-| **Pre-evaluación** | el ejecutivo la pide desde el detalle, con la oferta todavía abierta | adelanta el veredicto para que no comprometa un plazo a ciegas |
-| **Re-evaluación** | el ejecutivo aprieta «Re-evaluar operación» | veredicto vigente + **versión** nueva (evidencia) |
+| **La simulación** | el ejecutivo aprieta «Simular la oferta» | **el evento de evaluación** (regla 71, ADR-0013, 23-09-2026): corren los cinco motores —otorgamiento, verificación, líneas, giro y pricing— y queda la **versión v1**, con las cinco secciones o ninguna |
+| **Pre-evaluación** | el ejecutivo la pide desde el detalle, con la oferta todavía abierta | adelanta el veredicto para que no comprometa un plazo a ciegas (es una lectura: no emite versión) |
+| **Re-evaluación** | el ejecutivo aprieta «Re-evaluar operación» (cabecera o aviso «La selección cambió») o «Re-evaluación de la simulación» (tab Otorgamiento, con el origen actualizado) | el **mismo evento**: veredicto vigente + **versión** nueva (evidencia) |
 | **Al cerrar la oferta** | el gate del curse | decide si la operación puede publicarse |
 | **Tras la firma del cliente** | automático | decide si queda en *Otorgamiento / Verificación* o pasa a *Pendiente Integración* |
 

@@ -10,10 +10,11 @@ timestamp: 2026-09-17T15:29:14Z
 
 > Reglas de dominio de NEX, **verbatim** desde el `CLAUDE.md` anterior al 17-09-2026, agrupadas por tema. Se citan por su número (`regla 6`) y **no se renumeran**: el fuente y otros documentos las referencian así. Índice de todas, con qué caso de la suite verifica cada una: [`invariantes.md`](../invariantes.md).
 >
-> Reglas en este archivo: **6** · **9-ter** · **53** · **57** · **59**.
+> Reglas en este archivo: **6** · **9-ter** · **53** · **57** · **59** · **67** · **71**.
 
 6. **Verificación de facturas = rutina AISLADA, y la decisión es POR DEUDOR** (`Specs_Procesos/Verificacion/spec-verificacion-facturas.md`). El contacto con el deudor busca dejar por escrito o grabado que pagará; toma **3–4 horas y retrasa el giro**, y si el deudor no confirma **Security retira las facturas no confirmadas**. Por eso el ejecutivo tiene que saber ANTES de comprometer un plazo. `verifDecision(par, facturas)` es la función pura; `verifEvaluar` la adapta a la UI, `verifDeudorDeal` la consulta y `verifFactura` sólo delega — **la verificación de una factura ES la de su deudor**, porque una llamada cubre todas sus facturas y evaluarla por documento daba veredictos distintos entre facturas del mismo deudor. Detalle:
    - **`verifPar(rutCliente, deudor, tipo)`** memoiza en `_VERIF_PAR` el estado del PAR (protocolo propio, % pagado 3M, recurrencia, mora, reclamos, historial). Semilla = el par, **nunca el folio**.
+   - **CORRECCIÓN del 23-09-2026 (ADR-0018, regla 70):** «Security retira las facturas no confirmadas» dejó de ser lo que hace la mesa. Marcar «no verificada» escribe el veto, deja el issue y avisa al ejecutivo comercial; retirar, re-simular y volver a publicar es decisión del ejecutivo, y el cliente firma la nueva operación.
    - **Dos segmentos** (spec §3): `recortado = prime || nota > NOTA_PRIORITARIA` — son DOS poblaciones y basta pertenecer a una. **PRIME** (Lista Blanca o Deudor Autorizado, o nota > 4,2) aplica 6 reglas: **V01, V04, V05, V07, V08, V10**. **OTROS** aplica las 10. Los nombres viejos «ELITE/OTHERS» ya no existen.
    - **REGLA 0 · PRIMERA OPERACIÓN DEL CLIENTE** (12-09-2026): compuerta como V01 y **antes** que ella — en la primera operación se verifican **TODAS** las facturas, cualquiera sea el segmento del deudor. Aplica a los dos segmentos porque no es un criterio de riesgo del DEUDOR sino del CLIENTE. Vive acá y no en el motor de líneas ni en la pantalla del giro: «si hay que llamar a este deudor» es una sola pregunta y tiene un solo dueño. El **estado del cliente** (`nuevo` · `activo` · `suspendido` · `eliminado`) lo devuelve una API de Security al iniciar sesión y sólo `nuevo` es primera operación; entra **por parámetro** (`esPrimeraOperacionCliente(deal, estados)`) y **no se memoiza con el par**, que sí se cachea — si se guardara ahí, el cliente seguiría verificándolo todo para siempre después de cursar.
    - **V01 es COMPUERTA, no atajo:** si el deudor tiene protocolo propio de confirmación **se verifica SIEMPRE** con ese protocolo y no se evalúa nada más. (Antes estaba invertido: el protocolo evitaba la llamada.)
@@ -147,3 +148,82 @@ timestamp: 2026-09-17T15:29:14Z
     - **Los criterios V00–V10 son del DEUDOR y viven en el panel del grupo** (`g.v0`, que abre la cabecera). `verifDecision` los calcula UNA vez sobre el conjunto de facturas del par: repetirlos dentro de cada fila mostraba el mismo dato N veces y —esto es lo que el usuario señaló— **sugería que la factura tenía criterios propios**. No los tiene. La tarjeta del veredicto y el segmento suben al mismo panel.
     - **El quiz telefónico es de la FACTURA**, que es la única pregunta de la verificación que se responde por documento: existencia, recepción conforme y fecha de pago de ESE folio. La fila abre **sólo si hay llamada que mirar** (`tel`) —la pendiente o la ya registrada, que sobrevive al veredicto congelado—: una factura que el modelo dio por verificada no tiene quiz, y su fila no dibuja chevron ni cursor. Ofrecer un panel vacío es peor que no ofrecer nada.
     - Gate: [`tests/contract/regla_verif_informativa.test.mjs`](../../../tests/contract/regla_verif_informativa.test.mjs) (16 tests, 15 sondas) y los casos **`e2e-59-a`** y **`e2e-59-b`**, que abren la pantalla con la oferta simulada **con la sesión del Ejecutivo de verificación** —con cualquier otra, «no aparece el botón de firmar» es cierto por el permiso y no por la compuerta, y la aserción no vigila nada— y prueban las dos direcciones: informativo sin botones, y pre-evaluado con ellos. No hay caso de suite: `VerificacionTab` es un componente y la suite no monta componentes (`.claude/rules/testing.md`).
+
+70. **LA VERIFICACIÓN FALLIDA MARCA Y AVISA, NO RETIRA: EL EJECUTIVO RETIRA, RE-SIMULA Y VUELVE A PUBLICAR PARA UNA NUEVA
+    FIRMA** (23-09-2026, ADR-0018, M-18, G-11 en M-18 · G-36; el usuario: «si el verificador no verifica una factura, la
+      operación debe quedar marcada con un issue, se debe notificar al ejecutivo con un mensaje de que no se podrá cursar
+      porque la oferta tiene facturas que no pudieron ser verificadas y el ejecutivo deberá abrir la operación y sacar esas
+      facturas de ese deudor no verificado, volver a simular, y volver a ejecutar el proceso de publicar la oferta para que
+      el cliente firme la nueva operación»). Antes la mesa retiraba SOLA al marcar: la operación encogía con la firma
+      vigente (la mitad de la regla 13 que hablaba de la verificación) y nadie le avisaba al ejecutivo.
+    - **Marcar es escribir el veto, y nada más.** `marcarNoVerificada(id, facs, gestion)` es el ÚNICO escritor de
+      `repoNoConfirmadas` —los tres caminos de la mesa (`verificarDeudor` parcial, `marcarFactura`, `noConfirmoDeudor`) y
+      el diálogo del tab Verificación del detalle pasan por ahí—: escribe el veto con actor, hora y motivo, deja el evento
+      en la bitácora de otorgamiento y avisa; NO toca `facturasOp`, NO emite versión, NO mueve la etapa ni la firma. La
+      factura sigue en la oferta, vetada: `estadoCandidata` la bloquea cuando salga (regla 6, casos 25 y 95).
+    - **El issue tiene una sola fuente.** `verifResumenDeal` cuenta las marcadas que siguen en la oferta (`noVerif`,
+      `noVerificadas`) —siguen contando en `pend`, así que VER-01 manda igual (regla 41) y dice qué hacer— e
+      `issueVerificacion(deal, estado)` lo pone en palabras: «Facturas no verificadas: no se puede cursar», deudor y folios,
+      y la instrucción. Lo muestran la tarjeta del tubo (chip rojo), el tab Verificación del detalle (banner) y el bloque
+      de pendientes del detalle; el control VER-01 lo nombra.
+    - **El aviso lo firma el sistema** (`avisarNoVerificadas`, el molde del cierre, regla 50): un hilo por operación
+      («Verificación fallida · OP»), al ejecutivo dueño, con la operación, el deudor, cada folio, el motivo y que no se
+      cursará mientras sigan en la oferta; se reusa en la segunda marca y calla sin marcadas. Se llama fuera de todo
+      updater (regla 22).
+    - **Retira el EJECUTIVO, por el camino ordinario.** Abre la operación, «Editar la oferta» (que en una firmada la
+      REABRE y revoca la firma, regla 1 y regla 33), retira las facturas del deudor —o más, o pierde la operación con
+      causa: es decisión suya—, vuelve a simular y publica de nuevo; el cliente firma la nueva operación. Por eso
+      `retirarFacturaOferta` perdió la excepción «noConfirmada»: la guarda de sólo lectura aplica siempre y el retiro ya no
+      recorta ni emite versión —la versión nueva sale de la simulación siguiente sobre el paquete nuevo—. El recorte sin
+      re-asignar (`recortarAsignacion`) queda para el rechazo del comité (regla 68).
+    - **La mesa lo muestra sin duplicar**: la marcada que sigue en la oferta viene de `facturasOp` con estado
+      `no_verificada` y suma al monto (está en la oferta); la que el ejecutivo ya retiró sigue en la mesa desde el veto,
+      como antes (caso 157); el estado del deudor se deriva de sus documentos. Ningún rótulo promete retirar: el botón del
+      detalle dice «El deudor no confirmó · marcar», el pie del panel «Marcar no verificada».
+    - Caso **167** (el resumen y el issue nombran la marcada, VER-01 la cuenta y la nombra; la mesa la lista una vez y
+      deriva el deudor; el aviso del sistema al ejecutivo, reusado y mudo sin marcadas; el veto bloquea) y
+      `regla_70.test.mjs` (el único escritor que no retira ni versiona, los tres caminos y el diálogo, el retiro sin
+      excepción, el issue en cabecera, tab y VER-01, el aviso, los rótulos, la mesa sin duplicar: once sondas). La
+      pantalla sigue por e2e (CP-138 a CP-142).
+
+74. **LA NC, EL RECLAMO O LA CESIÓN A OTRO SOBRE UN DOCUMENTO DE UNA OFERTA CERRADA, PUBLICADA O FIRMADA LO INHABILITAN Y
+    DEJAN LA OPERACIÓN NO CURSABLE: EL EJECUTIVO RETIRA, RE-EVALÚA Y VUELVE A FIRMAR** (23-09-2026, ADR-0021; el usuario:
+      «se debe dejar la oferta como no cursable, el documento debe quedar inhabilitado, el ejecutivo debería retirar la
+      factura, re-evaluar, volver a firmar. Cuando una factura está reclamada, anulada y/o cedida a otro, quiere decir que
+      el deudor no va a pagar esa factura (no la reconoce; por lo que es como que esté no verificada, al margen que la
+      verificación telefónica haya dado por verificada), si está cedida a un tercero, al momento de intentar cederla el
+      SII va a rechazar la cesión de esa factura»). Cierra la decisión #7 que ADR-0020 dejó abierta: hasta entonces la
+      actualización sobre la oferta cerrada sólo avisaba.
+    - **El documento queda con su estado nuevo y marcado.** `aplicarActualizacionDTE` (regla 73) lo parcha también en la
+      oferta cerrada, publicada o firmada, y cuando lo que llega es la NC, el reclamo o la cesión a otro le pone
+      `inhabilitada` (motivo, glosa, secuencia, fecha) y deja la traza en rojo: «queda inhabilitado y la operación no se
+      cursa hasta que el ejecutivo lo retire, re-evalúe y vuelva a publicar para una nueva firma». El acuse se anota y no
+      inhabilita. La fila de la oferta lo rotula «Inhabilitada por el SII · nota de crédito (folio N)».
+    - **El veto es el de la regla 70, escrito por el SII.** El tick del inbound decide las inhabilitaciones sobre la foto
+      vigente del tubo, FUERA de todo updater (regla 22), y las escribe por el ÚNICO escritor del veto,
+      `marcarNoVerificada`, con origen «sii»: `por` es `SII · DTESync`, la entrada anota `origen` y `cambio`, la bitácora
+      de otorgamiento dice «SII · DTESync inhabilitó N documento(s)…» y el aviso al ejecutivo (`avisarNoVerificadas`) sale
+      con el asunto «Documentos inhabilitados por el SII · OP» y dice por qué: el deudor no va a pagar un documento
+      reclamado, anulado o cedido a otro, tenga o no la verificación telefónica en verde. Un veto por motivo y operación;
+      la re-entrega no lo repite (`secuenciaDTE`).
+    - **Cuenta como pendiente aunque la llamada esté en verde.** `verifResumenDeal` cuenta todo documento vetado —por la
+      llamada o por el SII— como `tel` y `pend` ANTES de mirar la llamada, así que VER-01 (regla 41) sigue mandando y lo
+      dice: «N inhabilitada(s) por el SII: reclamo, nota de crédito o cesión a otro». `issueVerificacion` lo nombra aparte
+      con su motivo y titula «Documentos inhabilitados por el SII: no se puede cursar» (o «Facturas no verificadas e
+      inhabilitadas por el SII…» si hay de las dos); la tarjeta del tubo suma «· N por el SII»; `estadoCandidata` etiqueta
+      «Inhabilitada por el SII» con la instrucción; la mesa lo lista como no verificada (regla 70).
+    - **Retira el EJECUTIVO, por el camino de la regla 70**: «Editar la oferta» (reabre y revoca la firma, reglas 1 y 33),
+      retirar el documento, volver a simular y publicar de nuevo; el cliente firma la nueva operación. El veto impide
+      volver a agregarlo.
+    - **La cesión a otro es de la misma familia** (`bloquea` incluye `cedida`): hoy la trae el join con el A2 al incorporar
+      (regla 63) y la pérdida de la oportunidad por cesión sigue en `evaluarPerdidas`; cuando exista el evento del A2
+      sobre un documento ya en la oferta cerrada, entra por este mismo camino.
+    - **El detalle abierto ve el veto que escribió el tubo**: `onStorageVeto` relee `repoNoConfirmadas` por el evento
+      `storage`, como las versiones (regla 71).
+    - Caso **171** (la decisión pura en las dos direcciones y el lote; el veto del SII plantado cuenta como pendiente con
+      la llamada en verde; el issue, VER-01 y la candidata lo dicen con su motivo; mezclado con el veto de la llamada, y
+      sólo con la llamada; el aviso con su asunto, reusado, y el de la llamada intacto) y `regla_74.test.mjs` (la decisión
+      marca y devuelve el documento; el tick escribe por el único escritor y fuera del updater; el escritor firma como el
+      SII; el resumen cuenta antes de la llamada; el issue, la candidata, el aviso, VER-01, la tarjeta, la fila y el
+      oyente; dieciséis sondas). El caso 170 (d) pasó a fijar la inhabilitación. La pantalla queda por e2e cuando el
+      stream sea determinista (CP-145).

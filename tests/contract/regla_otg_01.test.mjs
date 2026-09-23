@@ -1,7 +1,8 @@
 /* OTG-01 · SÓLO APRUEBA QUIEN TIENE ATRIBUCIÓN — la mitad que la suite no alcanza. `validarMutacion` (caso de la
    suite) es la puerta del CONTRATO, pero los cuatro caminos que ESCRIBEN el visado (`aprobarExc`/`revertirVisado`
    en el detalle, `setExc`/`revertirExc` en la mesa de Otorgamientos) viven dentro de componentes de React y no se
-   pueden invocar desde la suite. Lo que sí se puede fijar es la PROPIEDAD DEL TEXTO que CLAUDE.md declara para
+   pueden invocar desde la suite. (El quinto camino, el del SISTEMA que marca «ya no aplica» —regla 69—, no decide y
+   está exento con su propia comprobación, más abajo.) Lo que sí se puede fijar es la PROPIEDAD DEL TEXTO que CLAUDE.md declara para
    OTG-01: «se comprueba la atribución antes de ESCRIBIR, no sólo al dibujar el botón». Gate: toda función que
    llame `repoVisado.set(` comprueba `puedeAprobarExc(usuario, …)` ANTES de ese `.set`, audita el intento con
    «Decisión rechazada por atribución (OTG-01)» y sale con `return`. Con sonda: se planta una copia del fuente con
@@ -29,9 +30,18 @@ export function sitiosDeEscrituraVisado(src) {
   }
   return sitios;
 }
+/* REGLA 69 · EL SISTEMA TAMBIÉN ESCRIBE EL VISADO, Y NO DECIDE: marca «ya no aplica desde la versión N» lo que la versión
+   nueva ya no levanta (`marcarExcepcionesQueYaNoAplican`). No hay apoderado cuya atribución comprobar, así que ese camino
+   queda exento —con dos condiciones que el gate SÍ comprueba: lo que escribe sale de la decisión pura
+   `excepcionesQueYaNoAplican` (que sólo escribe `VISADO_NO_APLICA`) y el tramo no escribe «aprobado» ni «rechazado» por
+   su cuenta. Un camino del sistema que aprobara sería OTG-01 roto con otro nombre, y el gate lo nombra. */
+export function esMarcaDelSistema(s) {
+  return s.fn === "marcarExcepcionesQueYaNoAplican" && /const r = excepcionesQueYaNoAplican\(/.test(s.tramo) && !/"(aprobado|rechazado)"/.test(s.tramo);
+}
 /* El gate en sí: los sitios donde la escritura NO viene precedida por la comprobación + auditoría + return. */
 export function sitiosSinGate(src) {
   return sitiosDeEscrituraVisado(src).filter((s) => {
+    if (esMarcaDelSistema(s)) return false;
     const i = s.tramo.search(/if \(!puedeAprobarExc\(usuario, /);
     if (i < 0) return true;
     const resto = s.tramo.slice(i);
@@ -78,6 +88,15 @@ test("OTG-01 · SONDA: borrada la comprobación de un camino, el gate lo nombra"
   const sinReturn = jsx.replace(s.tramo, s.tramo.replace(bloque[0], bloque[0].replace(/\n      return;\n/, "\n")));
   assert.notEqual(sinReturn, jsx);
   assert.match(sitiosSinGate(sinReturn).join(" · "), /aprobarExc/);
+});
+
+test("OTG-01 · SONDA regla 69: el camino del sistema está exento sólo mientras se limite a marcar; si aprueba, el gate lo nombra", () => {
+  assert.ok(sitiosDeEscrituraVisado(jsx).some(esMarcaDelSistema), "no se encontró el camino del sistema (regla 69)");
+  const plantado = jsx.replace("  if (!r.salen.length) return [];\n  repoSolicitudExc.set(deal.id, r.sol);", '  if (!r.salen.length) return [];\n  r.st[r.salen[0].stKey] = "aprobado";\n  repoSolicitudExc.set(deal.id, r.sol);');
+  assert.notEqual(plantado, jsx, "la sonda no cambió el fuente");
+  const sin = sitiosSinGate(plantado);
+  assert.equal(sin.length, 1, `el gate tenía que nombrar exactamente el camino del sistema: ${sin.join(" · ")}`);
+  assert.match(sin[0], /^marcarExcepcionesQueYaNoAplican /);
 });
 
 /* La comprobación de OTG-01 se pegó copiada en los dos caminos de REVERSIÓN con identificadores que esas funciones

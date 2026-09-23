@@ -96,7 +96,9 @@ export function auditarRegla35(src) {
   //     —dentro del acordeón «N regla(s) aprobada(s)», colapsado—: contada como aprobada y escondida.
   //     Lo encontró la sonda de DOM, no el fuente, y por eso se fija acá.
   if (!/const noEjecRows = active\.rows\.filter\(\(x\) => x\.disp === "no_ejecutada"\)/.test(src)) fallos.push("el tab no separa las no ejecutadas en su propio balde");
-  if (!/const okRows = active\.rows\.filter\(\(x\) => !reqAprob\(x\) && x\.disp !== "no_ejecutada"\)/.test(src)) fallos.push("las no ejecutadas siguen cayendo en `okRows`: se cuentan como aprobadas y se esconden en el acordeón");
+  // El balde de las aprobadas puede excluir más cosas (regla 69: las cumplidas con excepción anterior tienen el suyo),
+  // pero la no ejecutada tiene que estar excluida SIEMPRE.
+  if (!/const okRows = active\.rows\.filter\(\(x\) => !reqAprob\(x\) && x\.disp !== "no_ejecutada"( && [^;]*)?\);/.test(src)) fallos.push("las no ejecutadas siguen cayendo en `okRows`: se cuentan como aprobadas y se esconden en el acordeón");
   if (!/reqRows\.length === 0 && noEjecRows\.length === 0 && /.test(src)) fallos.push("el tab dice «Todas las reglas están aprobadas» con una regla sin ejecutar: afirma que se aprobó un criterio que nadie miró");
   if (!/\{noEjecRows\.map\(\(x\) => reglaCard\(x, active\.key \+ "-ne-"\)\)\}/.test(src)) fallos.push("las no ejecutadas no se dibujan: sin fila, la regla desaparece de la salida");
   if (!/const orden = \{ rechazado: 0, excepcion: 1, no_ejecutada: 2, aprobado: 3 \}/.test(src)) fallos.push("el mapa de orden no conoce `no_ejecutada`: `orden[undefined]` da NaN y el comparador queda indefinido para esas filas");
@@ -191,7 +193,7 @@ const MUTANTES = {
   "la fila muestra el hallazgo de una regla que nadie evaluó": { src: jsx.replace('{x.disp !== "aprobado" && x.disp !== "no_ejecutada" && x.hallazgo', '{x.disp !== "aprobado" && x.hallazgo'), re: /muestra el `hallazgo`/ },
   "el badge va en gris como la clasificación": { src: jsx.replace('no_ejecutada: "#C2410C"', 'no_ejecutada: C.faint'), re: /no va en ámbar/ },
   "el contador la suma a las aprobadas": { src: jsx.replace('const noEjec = items.filter((it) => it.disp === "no_ejecutada").length;', ""), re: /no cuenta aparte las no ejecutadas/ },
-  "vuelven al balde de las aprobadas": { src: jsx.replace('const okRows = active.rows.filter((x) => !reqAprob(x) && x.disp !== "no_ejecutada");', "const okRows = active.rows.filter((x) => !reqAprob(x));"), re: /siguen cayendo en `okRows`/ },
+  "vuelven al balde de las aprobadas": { src: jsx.replace('const okRows = active.rows.filter((x) => !reqAprob(x) && x.disp !== "no_ejecutada" && !tieneExcepcionAnterior(x.stKey));', "const okRows = active.rows.filter((x) => !reqAprob(x) && !tieneExcepcionAnterior(x.stKey));"), re: /siguen cayendo en `okRows`/ },
   "«todas aprobadas» con una sin ejecutar": { src: jsx.replace("{reqRows.length === 0 && noEjecRows.length === 0 && (", "{reqRows.length === 0 && ("), re: /«Todas las reglas están aprobadas» con una regla sin ejecutar/ },
   "el orden no conoce la quinta disposición": { src: jsx.replace("const orden = { rechazado: 0, excepcion: 1, no_ejecutada: 2, aprobado: 3 };", "const orden = { rechazado: 0, excepcion: 1, aprobado: 2 };"), re: /no conoce `no_ejecutada`/ },
   "la compuerta le exige aprobador también al knock out": { src: jsx.replace('  const excs = (regla.tiers || []).filter((t) => t[1] === "excepcion");\n  if (!excs.length) return { noEjecutable: false };', '  const excs = regla.tiers || [];'), re: /no condiciona el aprobador a que la regla tenga un tramo de EXCEPCIÓN/ },

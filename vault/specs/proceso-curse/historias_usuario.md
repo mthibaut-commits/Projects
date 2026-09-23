@@ -50,12 +50,13 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 ### HU-01 · Abrir la oportunidad por cedente y actualizar la abierta
 - **Como** Inbound (sistema), **quiero** abrir una oportunidad por cedente cuando llegan facturas y sumar a la abierta sin tocar su oferta, **para** que el ejecutivo vea una sola oportunidad viva por cliente.
 - **Estado**: vigente.
-- **Reglas**: 40, 49, 11 · **Cláusulas**: M-03, M-04 · **Gaps**: —.
+- **Reglas**: 40, 49, 11, 70, 71 · **Cláusulas**: M-01, M-03, M-04, M-18 · **Gaps**: —.
 - **Criterios de aceptación**:
   - CA-1 · Dado un cedente sin oportunidad abierta · Cuando la corrida trae sus facturas · Entonces aparece una fila del tubo en «Sin gestión» con la oferta vacía y las facturas en «Documentos disponibles».
   - CA-2 · Dado el mismo cedente con oportunidad en «Sin gestión» o «Negociación» · Cuando llegan facturas nuevas · Entonces «Documentos disponibles» crece sin duplicar folios y «Documentos en la oferta» no cambia (lo hace `aplicar`, `spec-inbound-facturas.md` §6, sobre la oportunidad ABIERTA; sin regla del vault ni caso: CP-002 es NUEVO. La regla 33 rige otra cosa: la oferta CERRADA es de sólo lectura hasta «Editar la oferta»).
   - CA-3 · Dado el cedente con oportunidad aceptada, cursada o perdida · Cuando llegan facturas · Entonces se abre otra oportunidad y la terminal no se reabre (regla 5).
   - CA-4 · Dado un stream que excede el tope de la Bandeja Inbound · Cuando entra lo nuevo · Entonces sale primero lo que no es de nadie y la bandeja dice cuánto botó (caso 142).
+  - CA-5 · Dado un documento que ya vive en la oportunidad (disponibles u oferta abierta) · Cuando el A1 notifica una nota de crédito, un reclamo o un acuse sobre él (ADR-0020, regla 73) · Entonces el documento queda con el estado nuevo donde vive —la NC y el reclamo bloqueándolo, con traza—, una re-entrega no se aplica dos veces, y sobre una oferta cerrada, publicada o firmada la NC, el reclamo o la cesión a otro lo inhabilitan y dejan la operación no cursable hasta que el ejecutivo lo retire, re-evalúe y vuelva a publicar para una nueva firma (casos 170 y 171; regla 74, ADR-0021).
 - **Notas**: el stream no es determinista; el caso e2e lo prueba con el Modo Directorio o inyectando por el canal (`e2e-31`).
 
 ### HU-02 · La corrida es un batch del servidor con topes del tenant
@@ -69,7 +70,7 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-03 · Candidata: no reclamada, sin NC y no cedida a un factoring ajeno
 - **Como** Inbound (sistema), **quiero** que una factura cedida a un factoring distinto de Factoring Security no cuente como candidata, y que la cedida a Security sí cuente, **para** que el dimensionamiento de la tarjeta no infle facturas que nunca se van a poder comprar.
-- **Estado**: por implementar (ADR-0014). D6 cerrada el 22-09-2026: la cedida a un factoring ajeno queda fuera del inbound; la cedida a Security entra como cualquier otra.
+- **Estado**: **vigente desde el 23-09-2026** (ADR-0014 implementado: regla 63, caso 159). D6 cerrada el 22-09-2026: la cedida a un factoring ajeno queda fuera del inbound; la cedida a Security entra como cualquier otra.
 - **Reglas**: 13-nonies · **Cláusulas**: M-09 · **Gaps**: G-06.
 - **Criterios de aceptación**:
   - CA-1 · Dado un cedente con una factura cedida en el A2 a un factoring distinto de Factoring Security · Cuando corre el inbound · Entonces la factura no está en «Documentos disponibles» y el contador de la tarjeta no la suma.
@@ -80,7 +81,7 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-04 · Las aceptaciones son una bandera del DTE
 - **Como** Inbound (sistema), **quiero** que el acuse de recibo / aceptación del receptor llegue en el A1 como bandera del `EstadoDTE`, igual que el reclamo y la nota de crédito, **para** no dimensionar con un dato inventado.
-- **Estado**: por implementar (T2; dato / contrato) → **decidido: implementar**; el filtro no cambia (definición ajustada 23-09-2026).
+- **Estado**: **implementada el 23-09-2026** (regla 72, caso 169, `regla_72.test.mjs`; T2). El A1 ya traía la bandera (`EstadoDTE.Aceptado`/`FchAcuseRecibo`; el informe de gaps la daba por ausente): `facturaDeDTE` la lee en tres estados, `ChipAcuse` la muestra en la fila del documento, el Excel de candidatas dejó de sortearla y el filtro no cambia (definición ajustada 23-09-2026). CA-1 y la mitad del filtro de CA-2 en el caso 169; la fila en pantalla en `e2e-72-a` (CP-010).
 - **Reglas**: — · **Cláusulas**: M-01 · **Gaps**: G-01.
 - **Criterios de aceptación**:
   - CA-1 · Dado el A1 · Cuando llega una factura · Entonces su aceptación es una bandera del `EstadoDTE` junto al reclamo y la NC, y el generador la produce desde esa bandera y no con un sorteo propio «Aceptada / Reclamada / Sin acuse»; el gate del generador (punto fijo) sigue verde.
@@ -89,11 +90,11 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-05 · Antigüedad máxima desde la emisión, configurable
 - **Como** Inbound (sistema), **quiero** que sólo sean candidatas las facturas emitidas hace no más de N días, con N como parámetro del tenant (20 por defecto), **para** no ir a buscar facturas que por su antigüedad nadie va a comprar.
-- **Estado**: por implementar (T2) → **decidido: implementar**. La «lista de emisores con tags» y la cesión previa como criterios quedan descartadas (22-09-2026).
-- **Reglas**: 9-bis · **Cláusulas**: M-10 · **Gaps**: G-31 (G-07 quedó cerrado: la antigüedad va en G-31).
+- **Estado**: vigente en CA-1 y CA-2 (implementada el 23-09-2026: regla 64, caso 160); CA-3 sigue por implementar (CP-013, control de configuración sin decisión). La «lista de emisores con tags» y la cesión previa como criterios quedan descartadas (22-09-2026).
+- **Reglas**: 9-bis, 61 · **Cláusulas**: M-10 · **Gaps**: G-31 (implementado; G-07 quedó cerrado: la antigüedad va en G-31).
 - **Criterios de aceptación**:
-  - CA-1 · Dado el parámetro antigüedad máxima = 20 días · Cuando el inbound corre · Entonces una factura emitida hace 21 días no es candidata y el detalle de la tarjeta la cuenta como excluida por antigüedad; una emitida hace 20 días sí lo es.
-  - CA-2 · Dado el parámetro cambiado a 30 días en Configuración › Inbound · Cuando corre de nuevo · Entonces la de 21 días entra: el valor del código no manda (regla 9-bis).
+  - CA-1 · Dado el parámetro antigüedad máxima = 20 días · Cuando el inbound corre · Entonces una factura emitida hace 21 días no es candidata y el perfil de la Bandeja la cuenta como «Antigüedad > 20 días (excluida)»; una emitida hace 20 días sí lo es.
+  - CA-2 · Dado el parámetro cambiado a 30 días en Configuración › Operación («Antigüedad máxima de la factura») · Cuando corre de nuevo · Entonces la de 21 días entra: el valor del código no manda (regla 9-bis).
   - CA-3 · Dado un criterio desconocido en la configuración · Cuando corre el filtro · Entonces no califica nada y Configuración › Inbound lo marca como no ejecutable (hoy califica todo: dirección que bloquea).
 - **Notas**: «Necesitamos implementar un criterio para ir a buscar facturas que tengan cierta antigüedad, ejemplo no más de 20 días desde su emisión, con eso basta» (22-09-2026). Los tags de hoy son del deudor (A3/A4); no se crea una lista de emisores.
 
@@ -120,8 +121,8 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-08 · Frecuencia, hora de corte y hora de reinicio que el job consume
 - **Como** Administrador del tenant, **quiero** que `frecuenciaMin`, la hora de corte (`horaFin`, 23:00 por defecto) y la hora de reinicio (`horaInicio`, 06:00 por defecto) gobiernen la corrida, **para** que lo que edito en Configuración › Operación mande y no sea decorativo.
-- **Estado**: por implementar (T2) → **decidido: implementar** (M-02, M-07, M-08). Qué hace el corte con cada oportunidad lo fija HU-09 (ADR-0019).
-- **Reglas**: 9-bis · **Cláusulas**: M-02, M-07, M-08 · **Gaps**: G-02.
+- **Estado**: vigente (implementada el 23-09-2026: regla 67, caso 163, `regla_67.test.mjs`). Qué hace el corte con cada oportunidad lo fija HU-09 (ADR-0019).
+- **Reglas**: 9-bis, 64 · **Cláusulas**: M-02, M-07, M-08 · **Gaps**: G-02 (implementado).
 - **Criterios de aceptación**:
   - CA-1 · Dado `frecuenciaMin` cambiado y guardado · Cuando se observa la bitácora del inbound · Entonces las corridas se separan por ese intervalo y el `hint` del campo «Frecuencia de actualización» (Configuración › Operación, `CfgCampo`) ya no dice «DECLARATIVA» (hoy lo dice en mayúsculas: «DECLARATIVA: es el valor de producción…»; `CFG_OPER_BASE` no tiene `hint`, sólo un comentario). El caso 90 no asierta nada sobre `frecuenciaMin` —la nombra sólo en un comentario y su aserción mueve `otrosDeudoresPct`—, así que consumirla no lo pone en rojo: se corrige ese comentario y el `hint`, sin tocar el caso.
   - CA-2 · Dado la hora de corte del tenant · Cuando el reloj la alcanza · Entonces el job de corte corre una sola vez y la bitácora dice «Corte del día»; qué hace con cada oportunidad lo fija HU-09 (la que tiene oferta no se toca; la que no, se elimina); a otra hora el corte no corre, aunque el conteo de corridas complete un día (dirección que bloquea).
@@ -130,8 +131,8 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-09 · Cierre del día: la oportunidad sin oferta se elimina y el inbound la vuelve a originar; la que tiene oferta no se toca
 - **Como** Administrador del tenant, **quiero** que al corte del día la oportunidad que nadie gestionó —la que no tiene oferta— se elimine y que al reinicio el inbound la vuelva a abrir como oportunidad nueva, y que la que tiene oferta no se toque, **para** que el ejecutivo empiece el día con lo que llegó sin perder lo que ya trabajó.
-- **Estado**: por implementar (ADR-0019). D3 cerrada del todo el 23-09-2026: el corte y el reinicio son por reloj del tenant (HU-08); «gestionada» es la oportunidad que tiene oferta —el ejecutivo la simuló o la armó: etapa Oferta o posterior— y no se toca; la que no tiene oferta se elimina y el reinicio la re-origina con id propio y referencia. Descartados reabrir con el mismo id (hoy, `rolloverDia`), «no gestionada» como etapa configurable del tenant y un criterio por actividad.
-- **Reglas**: 22, 12-bis, 5 · **Cláusulas**: M-07, M-08 · **Gaps**: G-03.
+- **Estado**: vigente (implementada el 23-09-2026: regla 67, caso 164, `regla_67.test.mjs`). D3 cerrada del todo el 23-09-2026: el corte y el reinicio son por reloj del tenant (HU-08); «gestionada» es la oportunidad que tiene oferta —el ejecutivo la simuló o la armó: etapa Oferta o posterior— y no se toca; la que no tiene oferta se elimina y el reinicio la re-origina con id propio y referencia. Descartados reabrir con el mismo id (hoy, `rolloverDia`), «no gestionada» como etapa configurable del tenant y un criterio por actividad.
+- **Reglas**: 22, 12-bis, 5, 64 · **Cláusulas**: M-07, M-08 · **Gaps**: G-03 (implementado).
 - **Criterios de aceptación**:
   - CA-1 · Dado una oportunidad del inbound sin oferta (en «Sin gestión», con la oferta vacía) · Cuando llega la hora de corte del tenant · Entonces se elimina: desaparece del tubo y de la vista del ejecutivo, y la bitácora del sistema registra el cierre con el id, el cedente y el paquete que tenía.
   - CA-2 · Dado la oportunidad eliminada al corte · Cuando llega la hora de reinicio · Entonces el inbound abre una oportunidad nueva del mismo cedente, con id propio y una referencia a la eliminada, con las facturas que tenía más las que llegaron, sin simular y con la oferta vacía: es una originación, no una reapertura, y ninguna oportunidad conserva el id eliminado.
@@ -168,7 +169,7 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-12 · La bitácora no anuncia un recálculo que no ocurrió
 - **Como** Ejecutivo comercial, **quiero** que «Recalculando N oportunidad(es)…» y «Recálculo aplicado» aparezcan sólo si la oferta se re-simuló, **para** que la bitácora sea evidencia y no promesa.
-- **Estado**: por implementar (T2) → **decidido: se retira el anuncio** (D1 cerrada en B el 22-09-2026, ADR-0013: la única evaluación es el evento explícito).
+- **Estado**: **implementada el 23-09-2026** (regla 71, caso 168, `regla_71.test.mjs`; T2): el anuncio se retiró —la bitácora dice «Facturas nuevas para N oportunidad(es) … al pool disponible» y «Facturas agregadas al pool», sin marca de recálculo ni banner—; CA-2 lo fija el caso 168 (el evento deja versión y auditoría) y CA-3 el gate (la condición del banner no existe).
 - **Reglas**: 14 · **Cláusulas**: M-12 · **Gaps**: G-09.
 - **Criterios de aceptación**:
   - CA-1 · Dado una oportunidad simulada · Cuando llegan facturas nuevas · Entonces la bitácora dice «Facturas agregadas al pool» y no «Recálculo aplicado»; la oferta y su versión no cambian.
@@ -184,7 +185,7 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-13 · Simular o re-evaluar es UN evento: cinco motores, cinco versiones con el mismo número
 - **Como** sistema, **quiero** que «Simular la oferta» y «Re-evaluar» sean el mismo evento, que corra otorgamiento, verificación, líneas, giro y pricing en paralelo y que cada motor emita su versión con el mismo número, **para** que «la versión N» signifique lo mismo en los cinco y lo que el ejecutivo muestra al cliente no dependa del render.
-- **Estado**: por implementar (ADR-0013). D1 cerrada del todo: el 22-09-2026, el gesto explícito es UN evento; el 23-09-2026, «el cliente simula» es una forma de hablar del modelo —simular es la acción del ejecutivo al re-evaluar la oferta y no hay simulación del cliente en ningún canal—.
+- **Estado**: **implementada el 23-09-2026** (ADR-0013, regla 71, caso 168, `regla_71.test.mjs`). D1 cerrada del todo: el 22-09-2026, el gesto explícito es UN evento; el 23-09-2026, «el cliente simula» es una forma de hablar del modelo —simular es la acción del ejecutivo al re-evaluar la oferta y no hay simulación del cliente en ningún canal—.
 - **Reglas**: 13, 14 · **Cláusulas**: M-13, M-24, M-26 · **Gaps**: G-10.
 - **Criterios de aceptación**:
   - CA-1 · Dado una oferta armada sin simular · Cuando aprieto «Simular la oferta» · Entonces existe la versión v1 en los cinco motores —otorgamiento, verificación, líneas, giro y pricing— congelada sobre esas facturas, y no hay v1 retroactiva (caso 124 es el molde).
@@ -192,7 +193,7 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
   - CA-3 · Dado que un motor no completa · Cuando termina el evento · Entonces no existe la versión N de la operación: una evaluación que no completa los cinco no es una versión (dirección que bloquea).
   - CA-4 · Dado la v1 emitida · Cuando cierro y reabro el detalle · Entonces el titular, la mesa de verificación y las compuertas de línea leen la versión, no un recálculo del render (`lineaDeVersion`).
   - CA-5 · Dado una oferta sin simular · Cuando abro el detalle · Entonces no hay versión y las compuertas dicen «Por evaluar».
-- **Notas**: ADR-0013: «Simular y re-evaluar son el mismo evento […] El evento corre los cinco motores […] de forma asíncrona y en paralelo […] Cada motor emite una versión por evento, y el número de versiones es el mismo en los cinco […] La primera simulación emite la v1; no hay v1 retroactiva». Hoy emiten versión dos escritores y ninguno es la simulación: «Re-evaluación de la simulación» (`reevaluarCliente`, que hace nacer la v1 retroactiva) y el retiro por `noConfirmada` sobre una operación aceptada (`retirarFacturaOferta`; casos 21–23, regla 13). Cambian `simularOferta`, los llamadores de `reevaluarCliente`, `snapVersionCli`, y `spec-otorgamiento.md` §2 y `spec-gestion-excepciones.md` §4.1, que describen los tres gestos. «Simular es la acción del ejecutivo que se ejecuta al Re-evaluar la oferta (y que contempla correr el motor de otorgamiento, verificación de facturas, asignación de líneas, motor de giros y motor de precios)» (23-09-2026): el único actor del evento es el ejecutivo y el gesto es «Re-evaluar operación», el botón del resumen del detalle bajo «La selección cambió»; nada nuevo que construir, ni portal de autoservicio ni intent del Agente IA.
+- **Notas**: ADR-0013: «Simular y re-evaluar son el mismo evento […] El evento corre los cinco motores […] de forma asíncrona y en paralelo […] Cada motor emite una versión por evento, y el número de versiones es el mismo en los cinco […] La primera simulación emite la v1; no hay v1 retroactiva». Hoy emiten versión dos escritores y ninguno es la simulación: «Re-evaluación de la simulación» (`reevaluarCliente`, que hace nacer la v1 retroactiva) y el retiro por `noConfirmada` sobre una operación aceptada (`retirarFacturaOferta`; casos 21–23, regla 13). Cambian `simularOferta`, los llamadores de `reevaluarCliente`, `snapVersionCli`, y `spec-otorgamiento.md` §2 y `spec-gestion-excepciones.md` §4.1, que describen los tres gestos. «Simular es la acción del ejecutivo que se ejecuta al Re-evaluar la oferta (y que contempla correr el motor de otorgamiento, verificación de facturas, asignación de líneas, motor de giros y motor de precios)» (23-09-2026): el único actor del evento es el ejecutivo y el gesto es «Re-evaluar operación», el botón del resumen del detalle bajo «La selección cambió»; nada nuevo que construir, ni portal de autoservicio ni intent del Agente IA. **Implementado el 23-09-2026:** `evaluarOperacion` es el evento (lo disparan `simularOferta`, `reevaluarOperacion` y `reevaluarCliente`); la versión trae `res`, `verificacion`, `linea`, `giro` y `pricing` o no se emite (`versionCompleta`); `contarVersiones` cuenta por motor. CA-1, CA-2 y CA-3 en el caso 168; CA-1, CA-4 y CA-5 en pantalla en `e2e-71-a/b/c` (CP-034/035/036).
 
 ### HU-14 · Otorgamiento evalúa por empresa
 - **Como** sistema, **quiero** evaluar las reglas del otorgamiento por cliente y por deudor, no por factura, **para** que una excepción se pida una vez por empresa.
@@ -261,7 +262,7 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-21 · La versión guarda el modo de tasa y las condiciones comerciales
 - **Como** sistema, **quiero** que cada versión congele el modo de tasa con que se simuló (tasa ponderada o última operación) y las condiciones asignadas —descuento, comisiones y anticipo—, **para** poder probar qué se ofreció en la v1 y con qué modelo.
-- **Estado**: por implementar (T1, ADR-0013) → **decidido: implementar**.
+- **Estado**: **implementada el 23-09-2026** (ADR-0013 punto 5, regla 71, caso 168): `pricingDeVersion` guarda el modo de tasa (`tasaModo`: riesgo · ultima · mayor, el que `tasaDelNegocio` le da a la pantalla), la tasa ponderada, la del último negocio, la efectiva, el descuento, la comisión, el anticipo, los gastos y el plazo equivalente; la huella O05 no cambia (caso 168, CP-054 junto al 85); la pantalla —el modo cambiado en Configuración y la versión que lo dice— en `e2e-71-d` (CP-123). El diff entre versiones de pricing sigue sin pantalla propia (CP-053).
 - **Reglas**: 13, 23 · **Cláusulas**: M-36 · **Gaps**: G-22, G-32.
 - **Criterios de aceptación**:
   - CA-1 · Dado una simulación con tasa ponderada · Cuando se emite la versión · Entonces la versión guarda `modo de tasa = ponderada`, el descuento, las comisiones y el anticipo asignados; una simulada con «última operación» guarda ese modo, y el diff entre versiones reporta el cambio de modo o de condición cuando ocurre.
@@ -308,8 +309,8 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-25 · Ninguna excepción sin justificar en la mutación de cierre
 - **Como** Ejecutivo comercial, **quiero** que el cierre rechace una oferta con excepciones sin comentario aunque no pase por el modal, **para** que el control viva en la mutación y no en la pantalla.
-- **Estado**: por implementar (T2; regla 24) → **decidido: implementar**, como exigencia del backend y con gate.
-- **Reglas**: 24, 30, 13-septdecies · **Cláusulas**: M-19 · **Gaps**: G-12.
+- **Estado**: vigente en CA-1, CA-3 y CA-4 (implementada el 23-09-2026: regla 65, caso 161, `regla_65.test.mjs`; CA-3 por `e2e-15-bis-bis-a`); de CA-2 la mutación está en el caso 161 y el chip «Operación creada» sigue por e2e (CP-065).
+- **Reglas**: 24, 30, 13-septdecies, 62 · **Cláusulas**: M-19 · **Gaps**: G-12 (implementado).
 - **Criterios de aceptación**:
   - CA-1 · Dado una excepción sin comentario · Cuando se invoca `cerrarOferta` por cualquier camino · Entonces devuelve negativa, no escribe `ofertaCerrada` y la bitácora dice «Cierre rechazado · N excepción(es) sin justificar».
   - CA-2 · Dado todas justificadas · Cuando cierro · Entonces escribe `ofertaCerrada` y aparece el chip «Operación creada» (regla 33).
@@ -393,8 +394,8 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-32 · La excepción que dejó de aplicar se marca «ya no aplica desde la versión N», no se borra
 - **Como** Apoderado, **quiero** que una excepción que ya no gatilla salga de mi bandeja con un estado que diga que cambió y desde qué versión, **para** no firmar ni rechazar algo que no existe y poder auditar que esa regla quedó así en el cambio de versión.
-- **Estado**: por implementar (T1, ADR-0016) → **decidido: implementar**.
-- **Reglas**: 4, 25 · **Cláusulas**: M-21 · **Gaps**: G-14, G-35.
+- **Estado**: vigente (implementada el 23-09-2026: regla 69, caso 166, `regla_69.test.mjs`; la pantalla completa sigue por e2e, CP-124).
+- **Reglas**: 4, 25, 66 · **Cláusulas**: M-21 · **Gaps**: G-14, G-35 (implementados).
 - **Criterios de aceptación**:
   - CA-1 · Dado una excepción solicitada o visada · Cuando la versión N deja de gatillarla · Entonces la solicitud y el visado pasan a «ya no aplica desde la versión N» con actor «sistema» y hora, la tarea se cierra y el hilo recibe el aviso con ese mismo motivo; el criterio se muestra cumplido en la versión vigente y la excepción anterior sigue visible en el historial del visado con su nuevo estado.
   - CA-2 · Dado la misma excepción que sigue gatillando · Cuando se re-evalúa · Entonces la tarea sigue abierta y nada se marca (dirección que bloquea).
@@ -405,12 +406,12 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-33 · Registrar el contacto con el checklist por factura
 - **Como** Ejecutivo de verificación, **quiero** registrar por factura si existe, si se recibió conforme y la fecha de pago comprometida, **para** que el veredicto tenga respaldo.
-- **Estado**: vigente (sin caso en pantalla: `DrawerVerificacion` no tiene e2e); CA-3 es **vigente hoy · cambia con ADR-0018** (HU-42 trae la dirección contraria).
+- **Estado**: vigente (sin caso en pantalla: `DrawerVerificacion` no tiene e2e); CA-3 cambió de dirección el 23-09-2026 con ADR-0018 (regla 70, caso 167).
 - **Reglas**: 6, 18, 53, 57 · **Cláusulas**: M-22-bis · **Gaps**: — (G-36 en el CA-3, vía HU-42).
 - **Criterios de aceptación**:
   - CA-1 · Dado el panel «Registrar verificación telefónica» · Cuando marco los tres checks y la fecha · Entonces «Registrar verificación» se habilita y la factura pasa a «verificada» en la mesa (caso 157).
   - CA-2 · Dado un check sin marcar · Cuando intento registrar · Entonces el botón sigue deshabilitado (dirección que bloquea).
-  - CA-3 (vigente hoy · cambia con ADR-0018) · Dado «No verificar» · Cuando confirmo «Retirar y vetar» en el panel «Registrar que el deudor NO confirmó» · Entonces HOY la factura sale de la oferta, queda `noConfirmada`, sigue tachada en la mesa y el detalle exige «Re-evaluar» (regla 6). Con ADR-0018 pasa a la dirección contraria: la factura sigue en la oferta marcada «no verificada», la operación queda con el issue y el ejecutivo comercial recibe el aviso (HU-42 CA-1, CA-2); el rótulo del botón de confirmación lo fija la implementación.
+  - CA-3 (desde el 23-09-2026, ADR-0018, regla 70) · Dado «No verificar» · Cuando confirmo «Marcar no verificada» en el panel «Registrar que el deudor NO confirmó» · Entonces la factura SIGUE en la oferta marcada «no verificada», la operación queda con el issue y el ejecutivo recibe el aviso (caso 167). Antes del 23-09 salía de la oferta, queda `noConfirmada`, sigue tachada en la mesa y el detalle exige «Re-evaluar» (regla 6). Con ADR-0018 pasa a la dirección contraria: la factura sigue en la oferta marcada «no verificada», la operación queda con el issue y el ejecutivo comercial recibe el aviso (HU-42 CA-1, CA-2); el rótulo del botón de confirmación lo fija la implementación.
   - CA-4 · Dado una sesión que no es Ejecutivo de verificación · Cuando abre la mesa · Entonces no puede firmar (caso 33).
 - **Notas**: GD-03 documenta el checklist en el spec. El retiro automático que CA-3 describe hoy es el que G-36 (ADR-0018) reemplaza; la mesa sigue marcando, la operación encoge sólo cuando el ejecutivo retira.
 
@@ -425,8 +426,8 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-42 · La verificación fallida marca la operación con un issue y avisa; el ejecutivo retira, re-simula y vuelve a publicar para una nueva firma
 - **Como** Ejecutivo de verificación, **quiero** que marcar una factura como «no verificada» deje la operación con un issue y avise al ejecutivo comercial sin retirar nada, **para** que sea el ejecutivo quien decida qué saca de la oferta y mande al cliente a firmar la nueva operación.
-- **Estado**: por implementar (ADR-0018). D2 cerrada del todo el 23-09-2026: ni el retiro automático con la firma vigente (hoy, regla 13) ni el retiro automático con reapertura (ADR-0015 tal cual); el sistema marca y avisa, el ejecutivo retira, re-simula y vuelve a publicar.
-- **Reglas**: 13, 1, 6, 33, 5, 50, 41, VER-01 · **Cláusulas**: M-18 · **Gaps**: G-11 (en M-18), G-36.
+- **Estado**: vigente (implementada el 23-09-2026: regla 70, caso 167, `regla_70.test.mjs`; la pantalla sigue por e2e, CP-138 a CP-142; el retiro del ejecutivo es el ordinario con la operación reabierta por «Editar la oferta», CP-140). D2 cerrada del todo el 23-09-2026: ni el retiro automático con la firma vigente (hoy, regla 13) ni el retiro automático con reapertura (ADR-0015 tal cual); el sistema marca y avisa, el ejecutivo retira, re-simula y vuelve a publicar.
+- **Reglas**: 13, 1, 6, 33, 5, 50, 41, 67, VER-01 · **Cláusulas**: M-18 · **Gaps**: G-11 (en M-18), G-36 (implementados).
 - **Criterios de aceptación**:
   - CA-1 (control, dirección que bloquea el retiro) · Dado una operación firmada con una factura del deudor X en la oferta · Cuando el Ejecutivo de verificación la marca «no verificada» —«No verificar» en la mesa o «El deudor no confirmó · retirar» en el tab Verificación del detalle— · Entonces la factura sigue en «Documentos en la oferta», no se emite ninguna versión, la etapa no cambia y la firma sigue vigente; la operación muestra el issue «facturas no verificadas: no se puede cursar» con el deudor y los folios, VER-01 bloquea la integración (`controlesIntegracion` lo nombra; regla 41) y la bitácora registra la marca con actor y hora.
   - CA-2 · Dado la misma marca · Cuando se registra · Entonces el ejecutivo comercial de la operación recibe en Mensajería un hilo del sistema que nombra las facturas, el deudor y que la operación no se cursará mientras sigan en la oferta (el molde es el hilo «Cierre de negocio», regla 50); sin marca no hay hilo (dirección que bloquea).
@@ -441,8 +442,8 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-35 · El rechazo del comité retira las facturas del deudor y reabre la operación para una nueva firma
 - **Como** Comité de líneas (comité de crédito, externo a la plataforma), **quiero** que mi rechazo de una línea puntual llegue a NEX y deje a la operación en un estado definido, **para** que no quede firmada sobre una línea que no existe.
-- **Estado**: por implementar (ADR-0015). D4 cerrada el 22-09-2026: ni encoger con la firma vigente ni sólo reabrir — se retiran las facturas del deudor Y se reabre la operación para que el cliente firme de nuevo.
-- **Reglas**: 15, 13, 33, 1, 5 · **Cláusulas**: M-29, M-18 · **Gaps**: G-19, G-33.
+- **Estado**: vigente (implementada el 23-09-2026: regla 68, caso 165, `regla_68.test.mjs`; la pantalla del rechazo sigue por e2e, CP-126 y CP-127). D4 cerrada el 22-09-2026: ni encoger con la firma vigente ni sólo reabrir — se retiran las facturas del deudor Y se reabre la operación para que el cliente firme de nuevo.
+- **Reglas**: 15, 13, 33, 1, 5, 65 · **Cláusulas**: M-29, M-18 · **Gaps**: G-19, G-33 (implementados).
 - **Criterios de aceptación**:
   - CA-1 · Dado una solicitud en la bandeja · Cuando el sistema externo la rechaza · Entonces la API de estado del proceso (API 3) devuelve «Rechazada» por línea de detalle y Líneas › Solicitudes la lista «Rechazada» (hoy sólo «Aprobada» / «Observada»).
   - CA-2 · Dado la operación firmada con esa solicitud · Cuando llega el rechazo de una línea puntual · Entonces las facturas del deudor que dependían de ella se retiran de la oferta, se emite versión con el motivo, la operación vuelve a «Negociación» con `reabierta` revocando la firma (regla 1), y el ejecutivo vuelve a publicar el paquete que queda para que el cliente lo firme.
@@ -472,8 +473,8 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-37 · GE / GN con cinco hechos: si hay facturas a comité, el giro es Normal
 - **Como** sistema, **quiero** decidir Giro Express o Normal con cliente nuevo, otorgamiento, verificación, marcas de excepción y el resultado de líneas, **para** que el Express sea sólo lo que no necesita nada — y una operación que depende de una línea que todavía no existe no gire Express.
-- **Estado**: por implementar (T1, ADR-0017) → **decidido: implementar**.
-- **Reglas**: 22 · **Cláusulas**: M-33 · **Gaps**: G-20, G-34.
+- **Estado**: vigente (implementada el 23-09-2026: regla 66, caso 162); el chip del deudor a comité en pantalla sigue por e2e (CP-128).
+- **Reglas**: 22, 63 · **Cláusulas**: M-33 · **Gaps**: G-20, G-34 (implementados).
 - **Criterios de aceptación**:
   - CA-1 · Dado una factura verificada, sin excepciones y con línea · Cuando se asigna · Entonces es GE; con una marca de excepción es GN (caso 78, vigente).
   - CA-2 · Dado un deudor con facturas `REQUIERE_COMITE` (la asignación de líneas no las cubrió completas) · Cuando se asigna el giro · Entonces sus facturas son Giro Normal aunque estén verificadas, sin excepciones y no sea la primera operación; el mismo deudor con todo cubierto queda en lo que ya decidían los cuatro hechos (dirección que no bloquea).
@@ -551,20 +552,19 @@ Cada una de las 41 cláusulas y de los 36 gaps aparece al menos una vez.
 
 | Gaps | Historias |
 |---|---|
-| G-01 · G-02 · G-03 · G-04 · G-05 | HU-04 · HU-08 · HU-09 · HU-06 (cerrado) · HU-07 |
-| G-06 · G-07 · G-08 · G-09 · G-10 | HU-03 · HU-05 (cerrado; la antigüedad en G-31) · HU-11 (cerrado) · HU-12 · HU-13 |
-| G-11 · G-12 · G-13 · G-14 · G-15 | HU-24 (cerrado en M-15), HU-42 (decidido en M-18, ADR-0018) · HU-25 · HU-31, HU-34 (cerrado) · HU-32 · HU-18 (cerrado) |
-| G-16 · G-17 · G-18 · G-19 · G-20 | HU-16 (cerrado) · HU-26 (cerrado) · HU-27 · HU-35 · HU-37 |
-| G-21 · G-22 · G-23 · G-24 · G-25 | HU-20 (cerrado) · HU-21 · HU-19 · HU-36 · HU-39 |
+| G-01 · G-02 · G-03 · G-04 · G-05 | HU-04 (implementada: regla 72) · HU-08 · HU-09 · HU-06 (cerrado) · HU-07 |
+| G-06 · G-07 · G-08 · G-09 · G-10 | HU-03 (implementada: regla 63) · HU-05 (cerrado; la antigüedad en G-31) · HU-11 (cerrado) · HU-12 (implementada: regla 71) · HU-13 (implementada: regla 71) |
+| G-11 · G-12 · G-13 · G-14 · G-15 | HU-24 (cerrado en M-15), HU-42 (implementada en M-18: reglas 68 y 67) · HU-25 · HU-31, HU-34 (cerrado) · HU-32 (implementada: regla 69) · HU-18 (cerrado) |
+| G-16 · G-17 · G-18 · G-19 · G-20 | HU-16 (cerrado) · HU-26 (cerrado) · HU-27 · HU-35 · HU-37 (implementada: regla 66) |
+| G-21 · G-22 · G-23 · G-24 · G-25 | HU-20 (cerrado) · HU-21 (implementada: regla 71) · HU-19 · HU-36 · HU-39 |
 | G-26 · G-27 · G-28 · G-29 · G-30 | HU-30 · HU-17 · HU-38 · HU-02 · HU-40 |
-| G-31 · G-32 · G-33 · G-34 · G-35 | HU-05 · HU-21 · HU-35 · HU-37 · HU-32 |
-| G-36 | HU-42 (y HU-33 CA-3, vigente hoy · cambia con ADR-0018) |
+| G-31 · G-32 · G-33 · G-34 · G-35 | HU-05 (implementada: regla 64) · HU-21 (implementada: regla 71) · HU-35 · HU-37 · HU-32 (implementada: regla 69) |
+| G-36 | HU-42 (implementada: regla 70) y HU-33 CA-3 (dirección nueva desde el 23-09-2026) |
 
-**Por estado (42 historias):** 19 vigentes —10 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
+**Por estado (42 historias):** 32 vigentes —10 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
 HU-29, HU-33 —con su CA-3 vigente hoy · cambia con ADR-0018— y HU-41) y 9 por definición ajustada el 22 y 23-09-2026
-(HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-26, HU-31, HU-34)— · 23 por implementar (HU-02, HU-03 ADR-0014, HU-04,
-HU-05, HU-07, HU-08, HU-09 ADR-0019, HU-12, HU-13 ADR-0013, HU-17, HU-19, HU-21 ADR-0013, HU-25, HU-27, HU-30, HU-32
-ADR-0016, HU-35 ADR-0015, HU-36, HU-37 ADR-0017, HU-38, HU-39, HU-40, HU-42 ADR-0018) · 0 pendientes de confirmar.
+(HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-26, HU-31, HU-34) y 13 implementadas el 23-09-2026 (HU-03, ADR-0014: regla 63, caso 159; HU-05, regla 64, caso 160; HU-25, regla 65, caso 161; HU-37, ADR-0017: regla 66, caso 162; HU-08 y HU-09, ADR-0019: regla 67, casos 163–164; HU-35, ADR-0015: regla 68, caso 165; HU-32, ADR-0016: regla 69, caso 166; HU-42, ADR-0018: regla 70, caso 167; HU-12, HU-13 y HU-21, ADR-0013: regla 71, caso 168; HU-04, regla 72, caso 169)— · 10 por implementar (HU-02,
+HU-07, HU-17, HU-19, HU-27, HU-30, HU-36, HU-38, HU-39, HU-40) · 0 pendientes de confirmar.
 
 **Preguntas abiertas dentro de historias que ya tienen estado:** ninguna desde el 23-09-2026.
 

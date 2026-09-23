@@ -113,8 +113,8 @@ export function pendienteSinNumero(src) {
 /* (4) La versión congela línea y verificación juntas. */
 export function versionUnica(src) {
   const c = sinComentarios(src); const fallos = [];
-  const i = c.indexOf("function snapVersionCli(deal, rev) {");
-  if (i < 0) return ["no encuentro `function snapVersionCli(deal, rev) {`"];
+  const i = c.indexOf("function snapVersionCli(deal, rev, opts) {");
+  if (i < 0) return ["no encuentro `function snapVersionCli(deal, rev, opts) {`"];
   const resto = c.slice(i); const fin = resto.slice(1).search(/\n(?:function|const|let) [A-Za-z_]/);
   const cuerpo = resto.slice(0, fin < 0 ? undefined : fin + 1);
   const ret = canonico(cuerpo).match(/return \{v: rev \+ 1,[\s\S]*?\};/);
@@ -123,7 +123,9 @@ export function versionUnica(src) {
   if (!/\bverificacion\b/.test(ret[0])) fallos.push("la versión no congela `verificacion`: verificación y líneas se recalculan en la MISMA reevaluación");
   if (!/asignarLineas\(fsOp, deal\.rutEmisor\)/.test(cuerpo)) fallos.push("la línea de la versión no sale de asignarLineas(fsOp, deal.rutEmisor)");
   if (!/verifResumenDeal\(deal\)/.test(cuerpo) || !/verifFactura\(f, deal\)/.test(cuerpo)) fallos.push("la verificación de la versión no sale de verifResumenDeal/verifFactura");
-  if (!/function reevaluarCliente\(deal, usuario\) \{[\s\S]{0,600}repoSimVersions\.push\(deal\.id, nv\)/.test(c)) fallos.push("reevaluarCliente ya no emite la versión (`repoSimVersions.push(deal.id, nv)`)");
+  // Desde la regla 71 (ADR-0013) la emite el EVENTO, `evaluarOperacion`; «Re-evaluación de la simulación» pasa por él.
+  if (!/function evaluarOperacion\(deal, usuario, opts\) \{[\s\S]{0,1600}repoSimVersions\.push\(deal\.id, nv\)/.test(c)) fallos.push("evaluarOperacion ya no emite la versión (`repoSimVersions.push(deal.id, nv)`)");
+  if (!/function reevaluarCliente\(deal, usuario\) \{[\s\S]{0,700}evaluarOperacion\(deal, usuario, \{/.test(c)) fallos.push("reevaluarCliente ya no pasa por el evento de evaluación (regla 71)");
   return fallos;
 }
 /* (4-bis) TODO emisor de versión emite las dos decisiones sobre la misma selección. El segundo argumento de
@@ -144,7 +146,9 @@ export function emisoresCompletos(src) {
     if (/\.\.\.\w+/.test(segundo) && /\blinea:/.test(segundo) && !/\bverificacion:/.test(segundo))
       fallos.push(`línea ${k}: emite una versión que recorta \`linea\` y COPIA \`verificacion\` de la anterior (la factura retirada sigue adentro y el total es el viejo): línea y verificación describen selecciones distintas — «nunca en flujos aparte»`);
   }
-  if (n < 3) fallos.push(`sólo ${n} emisores de versión (se esperaban ≥ 3: v1 y vN de reevaluarCliente, retirarFacturaOferta)`);
+  // Desde la regla 71 los emisores son DOS: el evento (`evaluarOperacion`, que cubre simular y los dos re-evaluar) y el
+  // rechazo del comité (`aplicarRechazoComite`, con la versión que `rechazoComiteDecision` arma con `snapVersionCli`).
+  if (n < 2) fallos.push(`sólo ${n} emisores de versión (se esperaban ≥ 2: evaluarOperacion y aplicarRechazoComite)`);
   return fallos;
 }
 
@@ -210,21 +214,26 @@ test("14 · (4) la versión que emite Re-evaluar congela línea Y verificación 
 /* El segundo emisor, tal como está hoy en el fuente (el formateo lo abre en varias líneas): se localiza por
    regex y se muta con regex, no con un literal pegado. */
 const RE_RECORTE = /origen: `Verificación · el deudor no confirmó el folio \$\{fac\.folio \|\| fac\.id\}`,(\s*)linea: nl,?(\s*)\}\);/;
-test("14 · (4-bis) el gate de emisores distingue las dos direcciones: cazado el recorte que copia la verificación vieja, limpio el que recorta las dos", () => {
-  assert.ok(RE_RECORTE.test(jsx), "no encuentro el segundo emisor de versión de retirarFacturaOferta");
-  // El literal ocupa dos líneas: el gate reporta la del `repoSimVersions.push(` que lo abre.
-  const lineaPush = lineaDe(jsx, jsx.lastIndexOf("repoSimVersions.push(", jsx.search(RE_RECORTE)));
-  const hoy = emisoresCompletos(jsx);
-  assert.ok(hoy.length === 1 && hoy[0].startsWith(`línea ${lineaPush}:`), "el gate no señala (sólo) el emisor de retirarFacturaOferta en su línea: " + JSON.stringify(hoy));
+test("14 · (4-bis) el gate de emisores distingue las dos direcciones: limpio el fuente —desde la regla 70 ningún emisor recorta copiando la verificación vieja— y cazado el que se plante", () => {
+  // HOY: ningún emisor incompleto. El único que lo era —el recorte de `retirarFacturaOferta` por «el deudor no
+  // confirmó»— desapareció con ADR-0018 (regla 70): la verificación fallida ya no retira ni emite versión; quien retira
+  // es el ejecutivo, con la operación reabierta, y la versión nueva sale de la simulación siguiente.
+  assert.ok(!RE_RECORTE.test(jsx), "volvió el emisor de retirarFacturaOferta que recortaba la línea copiando la verificación vieja (regla 70: marcar no retira)");
+  assert.deepEqual(emisoresCompletos(jsx), []);
+  // SONDA: un emisor que copia una versión anterior y reescribe sólo `linea` → cazado, en su línea.
+  const ANCLA = "  const reabrirOperacion = (id) => {\n";
+  assert.ok(jsx.includes(ANCLA), "no encuentro dónde plantar la sonda");
+  const plantado = jsx.replace(ANCLA, ANCLA + "    repoSimVersions.push(id, { ...prev0, v: 9, linea: nl0 });\n");
+  const lineaPush = lineaDe(jsx, jsx.indexOf(ANCLA)) + 1;
+  const f = emisoresCompletos(plantado);
+  assert.ok(f.length === 1 && f[0].startsWith(`línea ${lineaPush}:`), "la sonda no cazó el emisor incompleto en su línea: " + JSON.stringify(f));
   // Dirección limpia: el mismo emisor recortando también la verificación → sin fallos.
-  const reparado = jsx.replace(RE_RECORTE, (m0, s1, s2) => m0.replace(/linea: nl,?/, "linea: nl, verificacion: recortarVerificacion(prev.verificacion, ids),"));
+  const reparado = jsx.replace(ANCLA, ANCLA + "    repoSimVersions.push(id, { ...prev0, v: 9, linea: nl0, verificacion: recortarVerificacion(prev0.verificacion, ids0) });\n");
   assert.deepEqual(emisoresCompletos(reparado), []);
-  // Y snapVersionCli / nv siguen siendo emisores válidos sin mirar su interior.
-  assert.equal(emisoresCompletos(reparado).length, 0);
 });
 
-/* El emisor de `retirarFacturaOferta` (la vía «el deudor no confirmó») recorta la LÍNEA y copia la verificación
-   de la versión anterior: la versión nueva mezcla dos selecciones. Repararlo pide una `recortarVerificacion(prev, ids)`
-   que hoy no existe en el fuente, así que queda como hallazgo del tablero y no como gate rojo: el test de arriba fija
-   el estado de hoy (un solo emisor incompleto, en su línea) y prueba las dos direcciones, y el día que se escriba esa
-   función `emisoresCompletos` devolverá [] y ese test lo dirá. */
+/* Hasta el 23-09-2026 el emisor de `retirarFacturaOferta` (la vía «el deudor no confirmó») recortaba la LÍNEA y copiaba la
+   verificación de la versión anterior: la versión nueva mezclaba dos selecciones, y este test fijaba ese único emisor
+   incompleto como hallazgo del tablero. ADR-0018 (regla 70) retiró ese camino entero —marcar «no verificada» no retira
+   ni emite versión—, así que el hallazgo se cerró por desaparición del emisor: `emisoresCompletos` devuelve [] y la
+   sonda de arriba prueba que el gate sigue cazando uno plantado. */

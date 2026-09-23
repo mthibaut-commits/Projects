@@ -15,6 +15,12 @@
 // Datasets BASE — rescatados del build original, se copian sin tocar:
 //   DTESYNC · LISTA_BLANCA · DEUDORES_AUTORIZADOS · SHARE_OF_WALLET (su ficha) · ESTRATEGIA_PRECIO
 //
+// DTESYNC es un FLUJO DE EVENTOS por documento (ADR-0020, regla 73): una fila por notificación —la
+// creación y después cada cambio de estado—. Los derivados trabajan sobre DOCUMENTOS, así que `derivar`
+// pliega el log UNA vez (`lib/dtesync.js`, `plegar`) y a cada módulo le entrega los documentos en
+// `DTESYNC`; ningún módulo vuelve a recorrer el log. La migración del 23-09-2026 fue
+// `migrar_dtesync_eventos.js`, que corre una sola vez.
+//
 // Datasets DERIVADOS — se regeneran en cada corrida a partir de los base, en este orden:
 //   AECSYNC           activo A2        · cesiones electrónicas, cada una sobre un documento REAL del A1; el
 //                                        cesionario se sortea con la intención de `lib/intencion_sow.js`
@@ -42,6 +48,7 @@
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 const path = require("path");
 const { leer, escribir, serializar } = require("./lib/archivo");
+const { plegar } = require("./lib/dtesync");
 const lineas = require("./datasets/lineas");
 const lineasPar = require("./datasets/lineas_par");
 const shareOfWallet = require("./datasets/share_of_wallet");
@@ -74,9 +81,13 @@ const DERIVADOS = [
 // regenera; `log` recibe una línea por bloque. Es lo que el gate de contrato ejecuta en proceso.
 function derivar(datos, { solo = null, log = () => {} } = {}) {
   const out = {};
+  // El log del A1 se pliega acá y una sola vez: cada módulo recibe los DOCUMENTOS en `DTESYNC` (y los
+  // derivados anteriores, porque `datos` se muta a medida que se generan).
+  const documentos = plegar(datos.DTESYNC);
+  log(`  DTESYNC: ${(datos.DTESYNC || []).length} eventos → ${documentos.length} documentos`);
   for (const [nombre, modulo] of DERIVADOS) {
     if (solo && !solo.has(nombre)) { log(`  ${nombre.padEnd(22)}: se conserva de la entrada`); continue; }
-    const valor = modulo.generar(datos);
+    const valor = modulo.generar({ ...datos, DTESYNC: documentos });
     datos[nombre] = valor;
     out[nombre] = valor;
     const n = Array.isArray(valor) ? valor.length : (valor && valor.filas ? valor.filas.length : 0);

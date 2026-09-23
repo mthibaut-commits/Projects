@@ -19,6 +19,7 @@ timestamp: 2026-09-17T15:29:14Z
    - **La reserva sobrevive a la reapertura** y NEX no la toca: el diálogo dice cuánto quedó reservado de la versión aceptada y que hay que pedir su liberación en el sistema de gestión de líneas; hasta entonces ese cupo aparece tomado al re-evaluar.
 
 5. **Pérdida es estado terminal** (spec Perdida v1.0): causa específica siempre (`causaPerdidaDeal`, nunca el genérico), etapa de origen, actor, cierre de tareas en cascada, badges accionables suprimidos. Reapertura = operación nueva con referencia.
+    - **AMPLIACIÓN del 23-09-2026 (ADR-0015, regla 68):** la causa **«Línea rechazada por el comité»** (`committee_reject`, en `CLOSE_REASONS`) es la de la operación cuyo único deudor tenía la línea puntual que el comité rechazó: no queda factura que reabrir, así que se pierde por el mismo camino (`reject`) y con la causa específica, como esta regla pide.
 
 12-bis. **Lo que saca una oportunidad de Prospección es la SIMULACIÓN** (14-09-2026). «Oferta y Negociación» significa que hay una oferta que negociar, y una oferta sin precio no es una oferta: la tarjeta lo desmentía en la columna de al lado —«Sin simular»— mientras la etapa afirmaba lo contrario. Antes promovía cualquier **edición** del paquete (`stageTrasEdicion`, que corría al incorporar, retirar o actualizar facturas), así que una oportunidad que el inbound detectó y que alguien apenas tocó ya figuraba en negociación con el cliente, sin tasa, sin plazo y sin monto a girar. Ahora la promoción vive en `simularOferta` y viaja **dentro del patch**, no fuera: el detalle está en otra pestaña y el tubo se entera por ese mismo mensaje — fuera del patch la etapa quedaba avanzada en el detalle y en Prospección en el tubo. Hay además un **invariante dual** del que ya existía: si el que había corrige «prospección con oferta publicada → oferta», el nuevo corrige «oferta sin simular → prospección». Se exceptúa lo que YA tiene oferta (número de negocio o la oferta enviada por WhatsApp): eso sí está en negociación aunque su simulación se haya limpiado, que es el caso de una **reapertura**. Con esa guarda los dos son duales exactos y no pueden empujarse uno al otro.
     - **De paso, una trampa de las capturas.** `capturar_pantallas.mjs` esperaba `/Monto|Facturas|Oferta/` para dar por montado el detalle, y las tres palabras sólo aparecen con la operación en «Oferta y Negociación». Con todo en Prospección la captura moría por timeout a los 5 minutos, **como si la app estuviera rota**: el detalle cargaba perfecto y sin un solo error de página. La señal de que una pantalla montó tiene que valer en cualquier estado — ahora es el título, `DETALLE DE OPORTUNIDAD`.
@@ -158,4 +159,26 @@ timestamp: 2026-09-17T15:29:14Z
       se debe empezar a solicitar las acciones de otorgamiento y verificación».
     - Gates: `regla_58.test.mjs` (forma, con sondas) y **`e2e-58`** (la fila del tubo, en las dos
       direcciones).
+
+65. **NINGUNA EXCEPCIÓN SIN JUSTIFICAR EN LA MUTACIÓN DE CIERRE, Y SOLICITAR SIN JUSTIFICACIÓN NO ESCRIBE** (23-09-2026,
+      M-19 · G-12, decidido el 22-09-2026 sin ADR: «debe ser una exigencia del backend y un gate»). `cerrarOferta` vuelve a
+      contar las excepciones pendientes sin comentario, respaldo ni declaración (`excepcionesSinComentario`) y, si hay
+      alguna, `compuertaExcepcionesMudas` devuelve `{ok: false, n, motivo}`: la mutación no escribe `ofertaCerrada`, no
+      inyecta nada y la bitácora dice «Cierre rechazado · N excepción(es) sin justificar». `ModalCurse` conserva su botón
+      apagado (regla 30), pero la pantalla no es el control (regla 24): al cierre se llega también desde el asistente
+      de alta y desde el tubo, y hasta hoy la mutación re-comprobaba sólo el monto (`giroCursable`, regla 13-septdecies).
+    - **La compuerta es pura y siempre dice por qué**, como `giroCursable`: recibe las excepciones mudas ya calculadas y
+      devuelve el motivo con la cuenta. La suite la prueba por su nombre (caso 161) y el gate de texto
+      `regla_65.test.mjs` fija que `cerrarOferta` la llama y retorna ANTES de armar `patchCierre`.
+    - **`solicitarAprobacionExc` rechaza la solicitud muda** (CA-4 de HU-25): sin comentario, sin respaldo y sin la
+      declaración explícita de que no hay comentarios, no escribe en `SOLICITUD_EXC`, no abre la pre-evaluación ni avisa
+      a nadie — le estaría pidiendo al apoderado que decida sin saber sobre qué. El formulario del tab ya lo exigía
+      (regla 30); ahora lo exige la escritura, a la que llegan los tres caminos.
+    - **«Enviar de todos modos» de la Pre-evaluación ES la declaración.** El diálogo advierte que las excepciones sin
+      comentario se envían igual; al confirmar, cada solicitud sale con `sinComentarios: true` —la declaración explícita
+      del ejecutivo—, así que la pre-evaluación sigue funcionando y las solicitudes ya no son mudas. Sin esto, la pieza
+      anterior la habría dejado sin solicitar nada, en silencio.
+    - Caso **161** (la compuerta en las dos direcciones, la solicitud muda que no escribe, la declaración que sí, y la
+      justificación que vacía la cuenta) y `regla_65.test.mjs` (la llamada en `cerrarOferta`, el rechazo en
+      `solicitarAprobacionExc` y la declaración en `enviarPreEval`, cada uno con sonda).
 

@@ -169,8 +169,8 @@ const MUTANTES = {
     re: /no se acota a lo pendiente/,
   },
   "el deudor se da por verificado con documentos pendientes": {
-    src: jsx.replace('        estado: docs.some((x) => x.estado === "pendiente") ? "pendiente" : nVet ? "no_verificada" : "verificada",',
-                     '        estado: nVet ? "no_verificada" : "verificada",'),
+    src: jsx.replace('        estado: docs.some((x) => x.estado === "pendiente") ? "pendiente" : docs.some((x) => x.estado === "no_verificada") ? "no_verificada" : "verificada",',
+                     '        estado: docs.some((x) => x.estado === "no_verificada") ? "no_verificada" : "verificada",'),
     re: /no se deriva de sus documentos/,
   },
 };

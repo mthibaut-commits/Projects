@@ -152,7 +152,9 @@ test("12-bis · sonda: cada garantía plantada rota se caza (incluidos los cinco
   const fe = gatesDe(jsx + "\nconst stageTrasEdicion = (d) => d;\n");
   assert.ok(fe.some((f) => /stageTrasEdicion/.test(f)), "no cazó la vuelta de stageTrasEdicion");
   // (f) simularOferta deja de marcar simulado
-  const ff = gatesDe(mutar(jsx, sim, sim.replace("simulado: true,", "")));
+  // Se ancla al `simulado: true,` DEL PATCH: desde la regla 71 el closure tiene otro antes (el snapshot del deal que
+  // se pasa a `evaluarOperacion`), y quitar ése no cambia lo que el tubo recibe.
+  const ff = gatesDe(mutar(jsx, sim, sim.replace("      const patch = {\n        simulado: true,\n", "      const patch = {\n")));
   assert.ok(ff.some((f) => /simulado: true/.test(f)), "no cazó un patch sin simulado: " + ff.join(" | "));
   // (g) REFUTACIÓN 1: el dual INVERTIDO (`!!d.simulado` empuja a Prospección a las SIMULADAS)
   const fg = gatesDe(mutar(jsx, DUAL, 'const sinPrecio = (d) => d.stage === "oferta" && !!d.simulado && !tieneOferta(d);'));

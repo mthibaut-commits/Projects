@@ -13,9 +13,9 @@ timestamp: 2026-09-23T18:15:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **158/158 PASA**, **53 archivos de gate de contrato**
-(440 tests), **32 casos e2e** (32/32), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
-(91 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
+(`pipeline_comercial.jsx`), build standalone, **171/171 PASA**, **64 archivos de gate de contrato**
+(440 tests), **37 casos e2e** (37/37), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
+(103 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
 gate. La crónica del 17 al 22-09 vive en sus logs — ADR-0001 a 0012, el linter como paso 0-bis, todo lo de
 plata del 20-09 (reglas 41–46, ADR-0007 a 0011, casos 145–151) y, del 21 y 22-09 en sesiones paralelas, las
 reglas 47–52 y 59, el **orden de la carpeta** (`Auditoria/` mide, `Regresiones/` coteja, `Specs_Procesos/`
@@ -23,31 +23,32 @@ en cinco temas; 41 renombres y 63 referencias reparadas), los **entregables vers
 anexo, estampada en cada hoja del PDF) y `Casos_de_Prueba/`: **97 casos** sobre las cinco pantallas, 80
 automatizados y **17 manuales**, 7 de ellos en la Mesa de verificación.
 
-El **23-09**, la plata otra vez, en tres reglas. La **60**: el millón es la ÚLTIMA CAPA — un mensaje al cliente
-multiplicaba por un millón y tres layouts declaraban campos en MM$. La **61**, que reemplaza el punto de la 60
-que dejaba vivir el `_M`: **todo generador produce en PESOS**, porque en miles cada monto se cuantiza de a
-$1.000 y dos entran en criterios que DECIDEN (C02, y V03/V04 como denominadores del predictor). Y la **62**: la
-**cartera comercial se LEE** — `PC_CLIENTES` sorteaba volumen, competidor y «malos deudores» con `pcRng`, en
-una escala sin declarar que **cuatro KPI de Reportes** pasan por `fmtMMc`: mostraban ~**M$5** donde va la
-cartera de 500 clientes. Ahora salen del A11 y de `NOTA_PRIORITARIA`, el **fallback de 80 empresas** se fue
-entero y `auditar_unidades` estrena el patrón **(d)**, con línea base **cero**.
+El **23-09**, la plata otra vez en tres reglas: la **60** (el millón es la ÚLTIMA CAPA — un mensaje al cliente
+multiplicaba por un millón y tres layouts declaraban campos en MM$), la **61** (todo generador produce en PESOS:
+en miles cada monto se cuantiza de a $1.000 y dos entran en criterios que DECIDEN) y la **62** (la cartera se LEE:
+`PC_CLIENTES` sorteaba con `pcRng` en una escala sin declarar y cuatro KPI mostraban ~M$5 donde va la cartera de
+500 clientes; el fallback de 80 empresas se fue entero y `auditar_unidades` estrena el patrón **(d)** en cero).
 
 > ## 🎯 Siguiente paso
 >
 > 1. **El backlog decidido, en rojo primero** (`Regresiones/Gaps_Proceso_Curse_2026-09-22.md` §2.2; los casos y su
->    orden en `vault/specs/proceso-curse/casos_de_prueba.md`): ADR-0013 (un evento, cinco versiones) · 0014 (cedida
->    ajena) · 0015 (comité que rechaza) · 0016 («ya no aplica») · 0017 (giro Normal con comité) · 0018 (la
->    verificación fallida marca y avisa; el ejecutivo retira y republica) · **0019** (al corte, la sin oferta se
->    elimina; la con oferta no se toca) · antigüedad ≤20 días · corte y reinicio por hora del tenant · M-19 en
->    `cerrarOferta` · el acuse como bandera del DTE. Cada uno con su regla, su gate y `CASOS_ESPERADOS` en el commit.
-> 2. **UI**: el selector de sesión de la navbar, 1/3 más angosto y con elipsis (desborda a 1366 px) · el chip
+>    orden en `vault/specs/proceso-curse/casos_de_prueba.md`). **Hechos el 23-09** (regla, gate y `CASOS_ESPERADOS` en
+>    cada commit): ADR-0013 (un evento, cinco versiones: regla 71, caso 168) · 0014 · 0015 · 0016 · 0017 · 0018 ·
+>    0019 · antigüedad ≤20 días · corte y reinicio por hora · M-19 en `cerrarOferta` · M-01 (el acuse del DTE:
+>    regla 72, caso 169; el A1 ya lo traía). **El backlog decidido del 22-09 quedó entero**: 18 gaps implementados
+>    ([log](./2026-09-23_backlog_decidido.md) §1–§11), con sus pantallas en `28_version_v1.e2e.mjs`. **ADR-0020** (§12): el
+>    A1 es un **flujo de eventos por documento** (regla 73, caso 170, `regla_73` + `dtesync.test.mjs`; activo migrado a 55.549
+>    eventos, 46 MB). **ADR-0021** (§13): sobre la oferta cerrada, publicada o firmada la NC, el reclamo o la cesión a otro
+>    **inhabilitan el documento y dejan la operación no cursable** (regla 74, caso 171; el veto de la regla 70 escrito por el
+>    SII; el ejecutivo retira, re-evalúa y vuelve a firmar). Sin decisiones pendientes. Sigue: los T1 sin decisión previa
+>    (gaps §2.2: G-05, G-18, G-23 … G-28), cada uno con su caso en rojo.
+> 2. **UI y lo demás**: el selector de sesión 1/3 más angosto con elipsis (desborda a 1366 px) · el chip
 >    «Negociación» en una operación ya enviada a comité · **join de empresas SIEMPRE por RUT** (8 sitios; T1) ·
->    `.bat` una vez · **regenerar `Capturas_UI/`** (deuda 2) · O01 · 28 · 13-quater · `pipeline.zip`.
+>    `.bat` una vez · regenerar `Capturas_UI/` (deuda 2) · O01 · 28 · 13-quater · `pipeline.zip`.
 
-## En vuelo ahora · nada: todo está en `main` (`abd98ad`), con el **CI verde confirmado** (run 164)
-El 23-09 `main` estuvo **tres commits con el CI muerto en el paso 0**, y el job sale con 1 ahí: no corrió ni el
-linter, ni `tsc`, ni el build, ni los 440 gates, ni la suite, ni los e2e. Causa: mezcla verificada EN LA RAMA y
-no sobre el árbol MEZCLADO, que es donde git rehace la línea — **tercera vez con la misma** ([log](./2026-09-23_el_paso_0_lleva_tres_commits_en_rojo.md)) · antes, 47–49 → 60–62 ([log](./2026-09-23_renumerar_lo_mio.md)).
+## En vuelo ahora · nada: el backlog de ADR entró a `main`, con sus reglas 60–71 renumeradas a **63–74**
+La lección del 23-09 —verificar el árbol MEZCLADO y no la rama, y que un paso 0 rojo APAGA el CI entero— subió a
+[`flujo_git.md`](../conocimiento/flujo_git.md), que es donde dura ([log](./2026-09-23_el_paso_0_lleva_tres_commits_en_rojo.md)).
 
 ## Bloqueos · los dos son del usuario, desde Windows
 
@@ -76,5 +77,4 @@ es borrable pero **no** aparece ahí: su contenido entró por otro commit.
    `\b` de su patrón casa con el guion): usar `git branch -r --merged` · y `invariantes.test.mjs` comprueba
    que el caso citado EXISTE, no que sea el correcto: cruzar número y título.
 
-## Conocimiento clave
-[invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto en [`vault/index.md`](../index.md) · últimas: [cartera leída](./2026-09-23_cartera_leida_no_inventada.md) · [generadores en pesos](./2026-09-23_generadores_en_pesos.md) · [el millón es la última capa](./2026-09-23_el_millon_es_la_ultima_capa.md) · [el paso 0 en rojo](./2026-09-23_el_paso_0_lleva_tres_commits_en_rojo.md) · [el deudor decide](./2026-09-22_el_deudor_decide_la_factura_se_llama.md)
+**Conocimiento clave** · [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto en [`vault/index.md`](../index.md) · últimas: [cartera leída](./2026-09-23_cartera_leida_no_inventada.md) · [generadores en pesos](./2026-09-23_generadores_en_pesos.md) · [el millón es la última capa](./2026-09-23_el_millon_es_la_ultima_capa.md) · [el paso 0 en rojo](./2026-09-23_el_paso_0_lleva_tres_commits_en_rojo.md) · [el deudor decide](./2026-09-22_el_deudor_decide_la_factura_se_llama.md)
