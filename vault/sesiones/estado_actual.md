@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-22T01:00:00Z
+timestamp: 2026-09-22T08:00:00Z
 ---
 
 # Estado actual
@@ -13,9 +13,9 @@ timestamp: 2026-09-22T01:00:00Z
 ## Fase del proyecto
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
-(`pipeline_comercial.jsx`), build standalone, **158/158 PASA**, **50 archivos de gate de contrato**
-(289 tests), **30 casos e2e** (30/30), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
-(87 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
+(`pipeline_comercial.jsx`), build standalone, **158/158 PASA**, **51 archivos de gate de contrato**
+(289 tests), **32 casos e2e** (32/32), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
+(88 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
 gate. La crónica del 17 al 19-09 vive en sus logs (ADR-0001 a 0006, el linter como paso 0-bis).
 El **20-09** entró todo lo de plata: **regla 8 sin proxy** (149, ADR-0008), **girar no es acción de NEX**
 (43, 147, 148), **ATR-01 en el handler** (145), el **id de la solicitud al comité** (146), las
@@ -27,17 +27,20 @@ El **21-09 y 22-09**, en dos sesiones paralelas mezcladas acá: la **identidad d
 (49), el **cierre le escribe a quien firma** (50), **un defecto, tres síntomas** (51, ADR-0012: `PRE_EVAL` y
 `HILOS` eran `let` de módulo y el detalle es pestaña propia), **`Configuración › Tenants`** (52) y el orden de
 la carpeta (`Auditoria/` mide, `Regresiones/` coteja; gate `rutas.test.mjs`). Logs del 21-09 en `sesiones/`.
+Y el **tab de Verificación** (59): se ve al SIMULAR —informativo, porque lo que la compuerta de la regla 6
+protege es la LLAMADA y no la información—, el chip del deudor dice **Prime** y la nota va rotulada en vez
+de «Lista Blanca», y los criterios V00–V10 subieron al panel del DEUDOR dejando en la factura sólo su quiz
+telefónico ([log](./2026-09-22_el_deudor_decide_la_factura_se_llama.md)).
 
 > ## 🎯 Siguiente paso
 >
 > 1. **Cuando el usuario evalúe el spec del curse**: revisar concordancia con lo implementado, la matriz de
 >    **gaps** (funcionales · de proceso · de dato/contrato) desde su Parte IV, las **historias de usuario**
 >    por actor y etapa con criterios de aceptación, y los **casos de prueba** e2e en las dos direcciones.
-> 2. **El tab VERIFICACIÓN**: (a) habilitarlo al SIMULAR; (b) chip **PRIME** + Nota Deudor en vez de «Lista
->    Blanca»; (c) **separar** la evaluación del DEUDOR (V00–V10) del **quiz por FACTURA**.
-> 3. **UI**: el selector de sesión de la navbar, 1/3 más angosto y con elipsis (la página desborda por él a
->    1366 px) · **El join de empresas SIEMPRE por RUT** (8 sitios; T1) · `.bat` una vez · O01 · 28 · 13-quater.
-## En vuelo · esta rama, encima de `main`: lo del **22-09** ([log](./2026-09-22_mesa_por_operacion_y_nota_rica.md))
+> 2. **UI**: el selector de sesión de la navbar, 1/3 más angosto y con elipsis (la página desborda por él a
+>    1366 px) · el chip «Negociación» en una operación ya enviada a comité.
+> 3. **El join de empresas SIEMPRE por RUT** (8 sitios; T1) · `.bat` una vez · O01 · 28 · 13-quater.
+## En vuelo · esta rama, encima de `main`: lo del **22-09** en las DOS sesiones, ya mezclado acá
 La mesa por factura (53, 157) y el color del badge (54, 158); la firma del cliente cruza al tubo (**55**); el
 scroller de la tabla es su propio panel (**56**: la card de «Oferta» se cortaba porque desbordaba la PÁGINA,
 no la celda); la mesa va **operación → deudor colapsable → factura** con **panel lateral para las dos
@@ -71,4 +74,4 @@ borrado. Quedan **el tag `v0.1.0`** sobre `bd14091` y **borrar 6 ramas ya integr
    un merge a `main`: usar `git branch -r --merged` · `invariantes.test.mjs` comprueba que el caso citado
    EXISTE, no que sea el correcto (tres citas corridas en +2 pasaron): cruzar número con título del caso.
 ## Conocimiento clave
-[invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto en [`vault/index.md`](../index.md) · última sesión: [la mesa por operación y la nota rica](./2026-09-22_mesa_por_operacion_y_nota_rica.md)
+[invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto en [`vault/index.md`](../index.md) · últimas: [el deudor decide, la factura se llama](./2026-09-22_el_deudor_decide_la_factura_se_llama.md) · [la mesa por operación y la nota rica](./2026-09-22_mesa_por_operacion_y_nota_rica.md)
