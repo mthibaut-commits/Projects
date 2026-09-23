@@ -50,6 +50,15 @@ feature: null
   copiando el `.jsx` de `main` encima y chequeando: si también falla, no es de la mezcla. **La copia va al
   árbol de trabajo, no al scratchpad**: `.prettierrc` no viaja y fuera del repo el diff sale entero.
 
+- **`git branch -r --merged` sin `git fetch --prune` antes MIENTE, y miente en la dirección peligrosa.** El
+  usuario corrió el listado desde Windows con refs viejas y `migrate-project-session-vui9dl` salía como
+  integrada: lo estaba en `a0f3f17`, pero desde entonces la rama siguió viva y lleva **13 commits sin
+  mezclar** (reglas 63–70, ADR-0020, dos archivos e2e). Borrarla con ese listado en la mano habría tirado
+  trabajo terminado. El orden es **siempre** `git fetch --prune origin` y después el listado.
+- **La inversa también existe**: `unidades-peso-verificacion` (17-09) **no** aparece en `--merged` porque no
+  es ancestro de `main`, y sin embargo es borrable — su contenido entró por otro commit. «No integrada» por
+  ancestro no es lo mismo que «tiene trabajo sin mezclar»: lo que decide es el `git log main..<rama>`.
+
 ## Pendiente / siguiente paso
 
 - El **backlog decidido** de `Regresiones/Gaps_Proceso_Curse_2026-09-22.md` §2.2: diecinueve T1 abiertos —ocho

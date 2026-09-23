@@ -23,14 +23,14 @@ en cinco temas; 41 renombres y 63 referencias reparadas), los **entregables vers
 anexo, estampada en cada hoja del PDF) y `Casos_de_Prueba/`: **97 casos** sobre las cinco pantallas, 80
 automatizados y **17 manuales**, 7 de ellos en la Mesa de verificación.
 
-El **23-09**, la plata otra vez, en tres reglas. La **60**: el millón es la ÚLTIMA CAPA — un mensaje al
-cliente multiplicaba por un millón y tres layouts declaraban campos en MM$. La **61**, que reemplaza el punto
-de la 60 que dejaba vivir el `_M`: **todo generador produce en PESOS**, porque en miles cada monto se cuantiza
-de a $1.000 y dos entran en criterios que DECIDEN (C02, y V03/V04 como denominadores del predictor). Y la
-**62**: la **cartera comercial se LEE** — `PC_CLIENTES` sorteaba volumen, competidor y «malos deudores» con
-`pcRng`, en una escala sin declarar que **cuatro KPI de Reportes** pasan por `fmtMMc`: mostraban ~**M$5** donde
-va la cartera de 500 clientes. Ahora salen del A11 y de `NOTA_PRIORITARIA`, el **fallback de 80 empresas** se
-fue entero y `auditar_unidades` estrena el patrón **(d)**, con línea base **cero**.
+El **23-09**, la plata otra vez, en tres reglas. La **60**: el millón es la ÚLTIMA CAPA — un mensaje al cliente
+multiplicaba por un millón y tres layouts declaraban campos en MM$. La **61**, que reemplaza el punto de la 60
+que dejaba vivir el `_M`: **todo generador produce en PESOS**, porque en miles cada monto se cuantiza de a
+$1.000 y dos entran en criterios que DECIDEN (C02, y V03/V04 como denominadores del predictor). Y la **62**: la
+**cartera comercial se LEE** — `PC_CLIENTES` sorteaba volumen, competidor y «malos deudores» con `pcRng`, en
+una escala sin declarar que **cuatro KPI de Reportes** pasan por `fmtMMc`: mostraban ~**M$5** donde va la
+cartera de 500 clientes. Ahora salen del A11 y de `NOTA_PRIORITARIA`, el **fallback de 80 empresas** se fue
+entero y `auditar_unidades` estrena el patrón **(d)**, con línea base **cero**.
 
 > ## 🎯 Siguiente paso
 >
@@ -44,18 +44,19 @@ fue entero y `auditar_unidades` estrena el patrón **(d)**, con línea base **ce
 >    «Negociación» en una operación ya enviada a comité · **join de empresas SIEMPRE por RUT** (8 sitios; T1) ·
 >    `.bat` una vez · **regenerar `Capturas_UI/`** (deuda 2) · O01 · 28 · 13-quater · `pipeline.zip`.
 
-## En vuelo ahora · nada propio: todo está en `main` (`376cb20`), VERDE ENTERA
+## En vuelo ahora · nada propio: todo está en `main` (`dadecb7`), VERDE ENTERA
 La rama se integró con `merge --no-ff`; al mezclar, **47–49 chocaron** y las mías bajaron a **60–62**, y se
-repararon cuatro cosas que venían de `main`: el **paso 6** perdido en `verificacion.md`, una fila pegada en
-`testing.md`, dos citas corridas (157/158 → reglas 53 y 54) y un entregable sin versionar
-([log](./2026-09-23_renumerar_lo_mio.md)).
+repararon cuatro cosas de `main`: el **paso 6** perdido en `verificacion.md`, una fila pegada en `testing.md`,
+dos citas corridas (157/158 → 53 y 54) y un entregable sin versionar ([log](./2026-09-23_renumerar_lo_mio.md)).
 
 ## Bloqueos · los dos son del usuario, desde Windows
 
-El relay git bloquea el BORRADO y `refs/tags/*` con **HTTP 403** (las 14 ramas están `protected: false` y los
-pushes normales funcionan; el MCP tampoco expone borrado). Quedan **el tag `v0.1.0`** sobre `bd14091` y **borrar
-las 7 ramas ya integradas** (`git branch -r --merged main`), entre ellas `vibrant-hopper-33tg8j` y la stale
-`unidades-peso-verificacion` (17-09, su contenido ya está en `main` por otro commit).
+El relay git bloquea el BORRADO y `refs/tags/*` con **HTTP 403** (los pushes normales funcionan; el MCP tampoco
+expone borrado). Quedan **el tag `v0.1.0`** sobre `bd14091` y **borrar seis ramas**: `ecstatic-ptolemy`,
+`elegant-fermat`, `sleepy-bohr`, `vibrant-hawking`, `vibrant-hopper` y `local-mauricio-11sep`; `respaldo/main-
+2026-09-17` sale integrada y **no se toca**. **`--merged` sin `git fetch --prune` antes MIENTE**: con refs viejas
+`migrate-project-session-vui9dl` sale integrada y lleva 13 commits sin mezclar. Y `unidades-peso-verificacion`
+es borrable pero **no** aparece ahí: su contenido entró por otro commit.
 
 ## Deudas anotadas (no bloquean, no olvidar)
 1. **Lista Blanca / Deudor Autorizado, decisiones de negocio**: el activo no trae `VIGENTE_DESDE`/`HASTA`/
@@ -67,10 +68,9 @@ las 7 ramas ya integradas** (`git branch -r --merged main`), entre ellas `vibran
 3. `BASE_MUERTOS` en **1** (`giroDeal`) · **GN como disyunción** (22) · sin gate, la concentración del
    Directorio (31) · una fila «Sin clasificar» dice «2 deudores» y el desglose suma 0 · dos sitios
    arman un RUT de CLIENTE (`rutDe` de módulo): no llegan al par, y la regla 46 lo dice.
-4. **Dos sesiones paralelas toman el mismo «siguiente entero libre»**: quien mezcla después renumera lo suyo
-   y revisa **las citas del otro lado**. **Está pasando otra vez**: `claude/migrate-project-session-vui9dl`
-   sigue viva y su rama ya usa **60, 61 y 62** para otras reglas (además de 63–70). Al mezclarla, esas tres
-   bajan — las 60–62 de `main` son el millón, los generadores en pesos y la cartera leída.
+4. **Dos sesiones paralelas toman el mismo «siguiente entero libre»**: quien mezcla después renumera lo suyo y
+   revisa **las citas del otro lado**. **Está pasando otra vez**: `migrate-project-session-vui9dl` sigue viva y
+   su rama ya usa **60, 61 y 62** (más 63–70); al integrarla, esas tres bajan.
 5. **Hooks en Windows**: `node verificar_hooks.mjs` una vez · los 13 skills de `taste-skill` viven en el
    `~/.claude/skills/` del CONTENEDOR · `gitflow_guard.mjs` cree que `git merge-base` integra a `main` (el
    `\b` de su patrón casa con el guion): usar `git branch -r --merged` · y `invariantes.test.mjs` comprueba
