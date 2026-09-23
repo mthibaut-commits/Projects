@@ -14,7 +14,7 @@ timestamp: 2026-09-23T14:10:00Z
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
 (`pipeline_comercial.jsx`), build standalone, **151/151 PASA**, **40 archivos de gate de contrato**
-(273 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
+(275 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
 (77 reglas verbatim por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró
 la tabla de invariantes**: cada regla y los 12 del contrato tienen gate. La crónica del 17 al 19-09 vive en
 sus logs (reglas 32–40, ADR-0003 a 0006, y el **linter** en 0 como paso 0-bis).
