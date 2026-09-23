@@ -13,7 +13,8 @@
    · REGLA — nunca se actualiza: no hay `DESIGN.md` en la raíz del repo. Un DESIGN.md ahí es, por
      convención de Google Stitch, «cómo debe verse ESTE proyecto», y este proyecto ya tiene su lenguaje
      (la paleta `C`, la escala t7–t15, la skill datamart-ui y ADR que no se re-litigan). Dejarlo caer no
-     agrega una referencia: la contradice en silencio. Las referencias viven en `Skills/design-md/`. */
+     agrega una referencia: la contradice en silencio. Desde el 23-09-2026 las referencias externas no se versionan
+   en el repo, y las skills de terceros que motivaron la regla salieron con ellas (ADR-0022). */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
