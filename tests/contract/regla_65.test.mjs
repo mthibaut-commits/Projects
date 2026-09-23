@@ -1,8 +1,16 @@
-/* Gate de contrato de la regla 65 (el comité de crédito que rechaza una línea puntual: la API 3 devuelve «Rechazada»
-   por línea de detalle; el rechazo retira las facturas del deudor, emite versión y REABRE la operación; en cero, pérdida
-   con causa), sobre el TEXTO del fuente. La decisión es pura y la prueba el caso 165 (`rechazoComiteDecision`,
-   `api3EstadoProceso`, `CLOSE_REASONS`); lo que la suite no puede ver es que «Consultar estados» la APLIQUE —que el
-   manejador exista, escriba la versión, pierda con la causa o parchee el negocio— y que la bandeja pinte el estado.
+/* Gate de contrato de la regla 65 (ninguna excepción sin justificar en la MUTACIÓN de cierre; solicitar sin
+   justificación no escribe), sobre el TEXTO del fuente. La compuerta es pura y la prueba el caso 161
+   (`compuertaExcepcionesMudas`, `excepcionesSinComentario`, `solicitarAprobacionExc`); lo que la suite no puede ver es
+   que `cerrarOferta` —un closure de `PipelineComercial`— la LLAME antes de escribir, y que la Pre-evaluación envíe
+   sus solicitudes con la declaración explícita. Eso se vigila acá.
+
+   Las tres piezas, y por qué ninguna se prueba sola:
+   1 · `cerrarOferta` re-comprueba las mudas ANTES de armar `patchCierre` y retorna la negativa. Sin esto la compuerta
+       existe y nadie la llama: el defecto exacto que M-19 describía (la exigencia vivía sólo en el botón, regla 30).
+   2 · `solicitarAprobacionExc` rechaza la solicitud muda antes de `repoSolicitudExc.set`. Sin esto la pantalla es el
+       único control (regla 24), y al escritor llegan tres caminos.
+   3 · `enviarPreEval` pasa `sinComentarios = true`: «Enviar de todos modos» ES la declaración. Sin esto la
+       pre-evaluación dejaría de solicitar nada, en silencio, porque la pieza 2 rechazaría cada solicitud.
 
    Con sonda negativa por pieza: un gate verde que no se comprueba en rojo no vigila nada. */
 import test from "node:test";
@@ -14,50 +22,59 @@ const jsx = leer("pipeline_comercial.jsx");
 export function auditarRegla65(src) {
   const fallos = [];
   const can = canonico(src);
-  // 1 · La API 3 resuelve «Rechazada» y lo escribe por línea de detalle.
-  if (!can.includes('const fin = r === 0 ? "Observada" : r === 1 ? "Rechazada" : "Aprobada";')) fallos.push("`api3EstadoProceso` no resuelve «Rechazada»: el comité vuelve a no poder decir que no");
-  if (!/if \(SEQ\.indexOf\(s\.estado\) === SEQ\.length - 1\) \(s\.detalle \|\| \[\]\)\.forEach\(\(d\) => \{if \(d\) d\.estado = s\.estado;\}\);/.test(can)) fallos.push("la API 3 no escribe el desenlace por línea de detalle, que es lo que el comité aprueba o rechaza");
-  // 2 · La decisión pura existe y retira / reabre / pierde.
-  const iD = can.indexOf("function rechazoComiteDecision(deal, sol, versiones) {");
-  const dec = iD < 0 ? "" : can.slice(iD, iD + 3500);
-  if (!dec) fallos.push("no existe `rechazoComiteDecision`: la política del rechazo tiene que ser pura para poder probarla");
+
+  // 0 · La compuerta pura existe y siempre dice por qué.
+  const iC = can.indexOf("function compuertaExcepcionesMudas(mudas) {");
+  const comp = iC < 0 ? "" : can.slice(iC, iC + 600);
+  if (!comp) fallos.push("no existe `compuertaExcepcionesMudas`: la exigencia vuelve a ser sólo de pantalla");
   else {
-    if (!dec.includes("recortarAsignacion(")) fallos.push("el rechazo no recorta la asignación: la versión no encogería (regla 13)");
-    if (!dec.includes('motivo: "comite_rechazo"')) fallos.push("la versión del rechazo no lleva el motivo `comite_rechazo`");
-    if (!dec.includes('closeReason: "committee_reject"')) fallos.push("en cero, el rechazo no pierde con la causa «Línea rechazada por el comité» (regla 5)");
-    if (!dec.includes("...(firmada ? {reabierta: marca} : {})")) fallos.push("el rechazo no revoca la firma al reabrir (regla 1): el cliente firmó un paquete que ya no es el que se va a cursar");
-    if (!dec.includes('stage: "oferta"')) fallos.push("el rechazo no devuelve la operación a Oferta para una nueva firma");
+    if (!comp.includes("if (!n) return {ok: true, n: 0, motivo: null};")) fallos.push("`compuertaExcepcionesMudas` no deja pasar sin mudas");
+    if (!/ok: false, n, motivo: `Cierre rechazado · \$\{n\} excepción\(es\) sin justificar/.test(comp))
+      fallos.push("`compuertaExcepcionesMudas` no bloquea con la cuenta y el motivo «Cierre rechazado · N excepción(es) sin justificar»");
   }
-  if (!/\{k: "committee_reject", label: "Línea rechazada por el comité", result: "lost"\}/.test(can)) fallos.push("`CLOSE_REASONS` no declara la causa «Línea rechazada por el comité»");
-  // 3 · El manejador ESCRIBE lo que la decisión dice, y «Consultar estados» lo dispara.
-  const iA = can.indexOf("const aplicarRechazoComite = (sol) => {");
-  const ap = iA < 0 ? "" : can.slice(iA, iA + 3000);
-  if (!ap) fallos.push("no existe `aplicarRechazoComite`: la decisión existiría y nadie la aplicaría");
+
+  // 1 · `cerrarOferta` la llama y retorna ANTES de armar el patch.
+  const iO = can.indexOf("const cerrarOferta = (id, opts = {}) => {");
+  const iP = iO < 0 ? -1 : can.indexOf("const patchCierre = {", iO);
+  const ventana = iO < 0 || iP < 0 ? "" : can.slice(iO, iP);
+  if (!ventana) fallos.push("no encuentro `cerrarOferta` con su `patchCierre`");
   else {
-    if (!ap.includes("const dec = rechazoComiteDecision(d0, sol, repoSimVersions.get(id) || []);")) fallos.push("`aplicarRechazoComite` no decide con `rechazoComiteDecision` sobre las versiones del negocio");
-    if (!ap.includes("if (dec.version) repoSimVersions.push(id, dec.version);")) fallos.push("el rechazo no deja versión: no habría evidencia de por qué bajó el monto");
-    if (!ap.includes("reject(id, dec.closeReason);")) fallos.push("en cero, el rechazo no pierde la operación por el camino de la pérdida (regla 5)");
-    if (!ap.includes("setDeals((prev) => prev.map((d) => (d.id === id ? {...d, ...patch} : d)));")) fallos.push("el rechazo no parchea el negocio: ni retira ni reabre");
+    if (!ventana.includes("giroCursable(dChk ? dChk.giro : null)")) fallos.push("`cerrarOferta` dejó de re-comprobar el monto a girar (regla 13-septdecies)");
+    if (!ventana.includes("const mudas = dChk ? excepcionesSinComentario(dChk) : [];"))
+      fallos.push("`cerrarOferta` no vuelve a contar las excepciones sin justificar: la compuerta queda sólo en el botón de `ModalCurse`");
+    if (!ventana.includes("const eChk = compuertaExcepcionesMudas(mudas);")) fallos.push("`cerrarOferta` no llama a `compuertaExcepcionesMudas`");
+    if (!/if \(!eChk\.ok\) \{.*?return eChk;/.test(ventana)) fallos.push("`cerrarOferta` no retorna la negativa de la compuerta antes de escribir: con mudas seguiría cerrando");
   }
-  if (!can.includes('if (est === "Rechazada" && onRechazo && !s.rechazoAplicado) onRechazo(s);')) fallos.push("«Consultar estados» no aplica el rechazo: la bandeja diría «Rechazada» y la operación seguiría firmada sobre una línea que no existe");
-  if (!can.includes("<LineasView soloExec={soloExec} usuario={usuario} onRechazo={aplicarRechazoComite} />")) fallos.push("`LineasView` no recibe `onRechazo={aplicarRechazoComite}`");
-  // 4 · La bandeja pinta «Rechazada».
-  if (!/Rechazada: \{bg: "#fef2f2", fg: "#B91C1C"\}/.test(can)) fallos.push("la bandeja de solicitudes no pinta «Rechazada»: caería al color de «En gestión»");
+
+  // 2 · Solicitar sin justificación no escribe.
+  const iS = can.indexOf("function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinComentarios) {");
+  const iW = iS < 0 ? -1 : can.indexOf("repoSolicitudExc.set(deal.id, sol);", iS);
+  const escritor = iS < 0 || iW < 0 ? "" : can.slice(iS, iW);
+  if (!escritor) fallos.push("no encuentro `solicitarAprobacionExc` con su escritura en `repoSolicitudExc`");
+  else {
+    if (!escritor.includes('const justificada = !!((comentario || "").trim() || (archivos && archivos.length) || sinComentarios);'))
+      fallos.push("`solicitarAprobacionExc` no calcula si la solicitud viene justificada (comentario, respaldo o declaración)");
+    if (!/if \(!justificada\) \{.*?return \{ok: false/.test(escritor))
+      fallos.push("`solicitarAprobacionExc` guarda la solicitud muda: la pantalla vuelve a ser el único control (regla 24)");
+  }
+
+  // 3 · La Pre-evaluación envía con la declaración explícita.
+  if (!can.includes('.forEach((it) => solicitarAprobacionExc(deal, it, usuario, "", [], true));'))
+    fallos.push("`enviarPreEval` no pasa la declaración «sin comentarios»: con la pieza 2, «Enviar de todos modos» dejaría de solicitar nada, en silencio");
   return fallos;
 }
 
-test("regla 65: el comité que rechaza retira, versiona y reabre; en cero pierde con causa; «Consultar estados» lo aplica", () => {
+test("regla 65: la mutación de cierre rechaza las excepciones sin justificar, solicitar sin justificación no escribe y la pre-evaluación declara", () => {
   assert.deepEqual(auditarRegla65(jsx), []);
 });
 
+/* Cada mutante planta UNA violación sobre el texto canónico (`canonico` es idempotente) y el gate tiene que cazarla. */
 const MUTANTES = [
-  ["la API 3 deja de rechazar", (c) => c.replace('const fin = r === 0 ? "Observada" : r === 1 ? "Rechazada" : "Aprobada";', 'const fin = r === 0 ? "Observada" : "Aprobada";')],
-  ["el rechazo no revoca la firma", (c) => c.replace("...(firmada ? {reabierta: marca} : {})", "...{}")],
-  ["en cero no se pierde con causa", (c) => c.replace('closeReason: "committee_reject"', 'closeReason: "other"')],
-  ["«Consultar estados» no aplica el rechazo", (c) => c.replace('if (est === "Rechazada" && onRechazo && !s.rechazoAplicado) onRechazo(s);', "")],
-  ["el manejador no deja versión", (c) => c.replace("if (dec.version) repoSimVersions.push(id, dec.version);", "")],
-  // El mapa de colores vive en dos componentes: la sonda lo borra de los dos, o el gate encontraría el otro.
-  ["la bandeja no pinta el rechazo", (c) => c.split('Rechazada: {bg: "#fef2f2", fg: "#B91C1C"}').join("")],
+  ["`cerrarOferta` deja de llamar a la compuerta", (c) => c.replace("const eChk = compuertaExcepcionesMudas(mudas);", "const eChk = {ok: true, n: 0, motivo: null};")],
+  ["`cerrarOferta` no retorna la negativa", (c) => c.replace("return eChk;", "")],
+  ["`solicitarAprobacionExc` guarda la solicitud muda", (c) => c.replace("if (!justificada) {", "if (false && !justificada) {")],
+  ["la pre-evaluación solicita sin declarar", (c) => c.replace('.forEach((it) => solicitarAprobacionExc(deal, it, usuario, "", [], true));', '.forEach((it) => solicitarAprobacionExc(deal, it, usuario, "", []));')],
+  ["la compuerta deja pasar siempre", (c) => c.replace("if (!n) return {ok: true, n: 0, motivo: null};", "return {ok: true, n: 0, motivo: null};")],
 ];
 for (const [nombre, mutar] of MUTANTES)
   test(`sonda negativa: ${nombre}`, () => {

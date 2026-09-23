@@ -96,7 +96,7 @@ export function auditarRegla35(src) {
   //     —dentro del acordeón «N regla(s) aprobada(s)», colapsado—: contada como aprobada y escondida.
   //     Lo encontró la sonda de DOM, no el fuente, y por eso se fija acá.
   if (!/const noEjecRows = active\.rows\.filter\(\(x\) => x\.disp === "no_ejecutada"\)/.test(src)) fallos.push("el tab no separa las no ejecutadas en su propio balde");
-  // El balde de las aprobadas puede excluir más cosas (regla 66: las cumplidas con excepción anterior tienen el suyo),
+  // El balde de las aprobadas puede excluir más cosas (regla 69: las cumplidas con excepción anterior tienen el suyo),
   // pero la no ejecutada tiene que estar excluida SIEMPRE.
   if (!/const okRows = active\.rows\.filter\(\(x\) => !reqAprob\(x\) && x\.disp !== "no_ejecutada"( && [^;]*)?\);/.test(src)) fallos.push("las no ejecutadas siguen cayendo en `okRows`: se cuentan como aprobadas y se esconden en el acordeón");
   if (!/reqRows\.length === 0 && noEjecRows\.length === 0 && /.test(src)) fallos.push("el tab dice «Todas las reglas están aprobadas» con una regla sin ejecutar: afirma que se aprobó un criterio que nadie miró");

@@ -123,9 +123,9 @@ export function versionUnica(src) {
   if (!/\bverificacion\b/.test(ret[0])) fallos.push("la versión no congela `verificacion`: verificación y líneas se recalculan en la MISMA reevaluación");
   if (!/asignarLineas\(fsOp, deal\.rutEmisor\)/.test(cuerpo)) fallos.push("la línea de la versión no sale de asignarLineas(fsOp, deal.rutEmisor)");
   if (!/verifResumenDeal\(deal\)/.test(cuerpo) || !/verifFactura\(f, deal\)/.test(cuerpo)) fallos.push("la verificación de la versión no sale de verifResumenDeal/verifFactura");
-  // Desde la regla 68 (ADR-0013) la emite el EVENTO, `evaluarOperacion`; «Re-evaluación de la simulación» pasa por él.
+  // Desde la regla 71 (ADR-0013) la emite el EVENTO, `evaluarOperacion`; «Re-evaluación de la simulación» pasa por él.
   if (!/function evaluarOperacion\(deal, usuario, opts\) \{[\s\S]{0,1600}repoSimVersions\.push\(deal\.id, nv\)/.test(c)) fallos.push("evaluarOperacion ya no emite la versión (`repoSimVersions.push(deal.id, nv)`)");
-  if (!/function reevaluarCliente\(deal, usuario\) \{[\s\S]{0,700}evaluarOperacion\(deal, usuario, \{/.test(c)) fallos.push("reevaluarCliente ya no pasa por el evento de evaluación (regla 68)");
+  if (!/function reevaluarCliente\(deal, usuario\) \{[\s\S]{0,700}evaluarOperacion\(deal, usuario, \{/.test(c)) fallos.push("reevaluarCliente ya no pasa por el evento de evaluación (regla 71)");
   return fallos;
 }
 /* (4-bis) TODO emisor de versión emite las dos decisiones sobre la misma selección. El segundo argumento de
@@ -146,7 +146,7 @@ export function emisoresCompletos(src) {
     if (/\.\.\.\w+/.test(segundo) && /\blinea:/.test(segundo) && !/\bverificacion:/.test(segundo))
       fallos.push(`línea ${k}: emite una versión que recorta \`linea\` y COPIA \`verificacion\` de la anterior (la factura retirada sigue adentro y el total es el viejo): línea y verificación describen selecciones distintas — «nunca en flujos aparte»`);
   }
-  // Desde la regla 68 los emisores son DOS: el evento (`evaluarOperacion`, que cubre simular y los dos re-evaluar) y el
+  // Desde la regla 71 los emisores son DOS: el evento (`evaluarOperacion`, que cubre simular y los dos re-evaluar) y el
   // rechazo del comité (`aplicarRechazoComite`, con la versión que `rechazoComiteDecision` arma con `snapVersionCli`).
   if (n < 2) fallos.push(`sólo ${n} emisores de versión (se esperaban ≥ 2: evaluarOperacion y aplicarRechazoComite)`);
   return fallos;
@@ -214,11 +214,11 @@ test("14 · (4) la versión que emite Re-evaluar congela línea Y verificación 
 /* El segundo emisor, tal como está hoy en el fuente (el formateo lo abre en varias líneas): se localiza por
    regex y se muta con regex, no con un literal pegado. */
 const RE_RECORTE = /origen: `Verificación · el deudor no confirmó el folio \$\{fac\.folio \|\| fac\.id\}`,(\s*)linea: nl,?(\s*)\}\);/;
-test("14 · (4-bis) el gate de emisores distingue las dos direcciones: limpio el fuente —desde la regla 67 ningún emisor recorta copiando la verificación vieja— y cazado el que se plante", () => {
+test("14 · (4-bis) el gate de emisores distingue las dos direcciones: limpio el fuente —desde la regla 70 ningún emisor recorta copiando la verificación vieja— y cazado el que se plante", () => {
   // HOY: ningún emisor incompleto. El único que lo era —el recorte de `retirarFacturaOferta` por «el deudor no
-  // confirmó»— desapareció con ADR-0018 (regla 67): la verificación fallida ya no retira ni emite versión; quien retira
+  // confirmó»— desapareció con ADR-0018 (regla 70): la verificación fallida ya no retira ni emite versión; quien retira
   // es el ejecutivo, con la operación reabierta, y la versión nueva sale de la simulación siguiente.
-  assert.ok(!RE_RECORTE.test(jsx), "volvió el emisor de retirarFacturaOferta que recortaba la línea copiando la verificación vieja (regla 67: marcar no retira)");
+  assert.ok(!RE_RECORTE.test(jsx), "volvió el emisor de retirarFacturaOferta que recortaba la línea copiando la verificación vieja (regla 70: marcar no retira)");
   assert.deepEqual(emisoresCompletos(jsx), []);
   // SONDA: un emisor que copia una versión anterior y reescribe sólo `linea` → cazado, en su línea.
   const ANCLA = "  const reabrirOperacion = (id) => {\n";
@@ -234,6 +234,6 @@ test("14 · (4-bis) el gate de emisores distingue las dos direcciones: limpio el
 
 /* Hasta el 23-09-2026 el emisor de `retirarFacturaOferta` (la vía «el deudor no confirmó») recortaba la LÍNEA y copiaba la
    verificación de la versión anterior: la versión nueva mezclaba dos selecciones, y este test fijaba ese único emisor
-   incompleto como hallazgo del tablero. ADR-0018 (regla 67) retiró ese camino entero —marcar «no verificada» no retira
+   incompleto como hallazgo del tablero. ADR-0018 (regla 70) retiró ese camino entero —marcar «no verificada» no retira
    ni emite versión—, así que el hallazgo se cerró por desaparición del emisor: `emisoresCompletos` devuelve [] y la
    sonda de arriba prueba que el gate sigue cazando uno plantado. */

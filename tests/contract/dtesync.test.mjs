@@ -1,4 +1,4 @@
-/* El A1 (`DTESYNC` en `datos_inyectados.js`) es un FLUJO DE EVENTOS por documento (ADR-0020, regla 70): una fila por
+/* El A1 (`DTESYNC` en `datos_inyectados.js`) es un FLUJO DE EVENTOS por documento (ADR-0020, regla 73): una fila por
    notificación —la creación con el documento entero y sin banderas, y después cada cambio de estado con la identidad y
    el `EstadoDTE` acumulado—. Este gate fija lo que el bloque commiteado tiene que cumplir para que plegarlo signifique
    algo, y prueba `GeneradorDatos/lib/dtesync.js` sobre logs plantados: `plegar` (el evento más nuevo manda cualquiera

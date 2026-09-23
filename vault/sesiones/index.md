@@ -42,7 +42,7 @@ timestamp: 2026-09-19T00:40:00Z
 
 | 22-09-2026 | [`2026-09-22_mesa_por_factura_y_badges.md`](./2026-09-22_mesa_por_factura_y_badges.md) | La Mesa de verificación pasa a ser un listado de facturas agrupado por deudor, con marcar, adjuntar y anotar por documento (53) —y con ella apareció que la factura retirada desaparecía de la mesa justo después de registrarla—; y los badges de otorgamiento y verificación dejan de nacer rojos mientras se simula (54) |
 | 22-09-2026 | [`2026-09-22_mesa_por_operacion_y_nota_rica.md`](./2026-09-22_mesa_por_operacion_y_nota_rica.md) | La card de «Oferta» se cortaba por la página (56); la mesa pasa a operación → deudor → factura con panel lateral (53 ampliada); la nota rica con captura (57); la oferta publicada en el tubo (58); el spec del proceso de curse, los gaps, las historias, los casos de prueba y las decisiones del usuario (ADR-0013 … 0019) |
-| 23-09-2026 | [`2026-09-23_backlog_decidido.md`](./2026-09-23_backlog_decidido.md) | El backlog decidido, en rojo primero: un ADR por commit con su regla, su gate y la verificación completa; empieza por la candidatura (regla 60, cedida ajena) |
+| 23-09-2026 | [`2026-09-23_backlog_decidido.md`](./2026-09-23_backlog_decidido.md) | El backlog decidido, en rojo primero: un ADR por commit con su regla, su gate y la verificación completa; empieza por la candidatura (regla 63, cedida ajena) |
 
 La historia anterior al vault (02-09 → 16-09-2026) no tiene logs propios: vive dentro de las reglas de
 dominio (cada una trae fecha y qué la motivó) y en `Auditoria/` y `Regresiones/`.

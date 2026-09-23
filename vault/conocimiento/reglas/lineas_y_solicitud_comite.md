@@ -27,15 +27,15 @@ timestamp: 2026-09-17T22:12:32Z
     El versionado ya existía para el otorgamiento (`repoSimVersions` / `snapVersionCli`, append-only e inmutable). Se extendió a las **otras dos decisiones que dependen de datos externos que se mueven solos**: cada versión congela también la **asignación de líneas** (qué línea y qué monto por factura, más los deudores) y la **verificación** (veredicto por deudor y criterio que lo gatilló). La versión es **evidencia, no reserva**.
     - **Una operación ACEPTADA se LEE de su versión, no se re-evalúa** (`leeDeVersion` en el drawer). Su cupo ya está reservado, así que el `disponible` de A23 viene neto de esa reserva: recalcular mostraría menos cursable del que el cliente firmó, que es la cifra que se gira.
     - **Después de aceptar la operación sólo ENCOGE** (`recortarAsignacion`, spec de verificación §9). La verificación telefónica es la única mutación que admite: si el deudor no confirma, esas facturas se retiran y **las demás conservan su línea** — no se re-asigna contra el estado del día, porque la reserva cubre un monto mayor y re-asignar sólo expondría la operación al cupo que otro negocio consumió. El contacto además **congela** el veredicto de verificación: es un hecho, no una nueva predicción. El recorte emite versión nueva.
-    - **PRECISIÓN del 23-09-2026 (ADR-0015, regla 65):** «sólo encoge» describe la verificación telefónica. El **rechazo del comité** también encoge la asignación (`recortarAsignacion`, nunca re-asigna) pero además REABRE la operación —vuelve a Oferta, con `reabierta` si había firma— porque el cliente firmó un paquete que ya no es el que se va a cursar; y si no queda factura, la pierde con causa.
-    - **PRECISIÓN del 23-09-2026 (ADR-0018, regla 67):** la verificación telefónica YA NO retira ni encoge: marca «no verificada», deja el issue y avisa; retira el ejecutivo con la operación reabierta y la versión nueva sale de la simulación siguiente. «Sólo encoge» describe hoy el rechazo del comité (regla 65).
+    - **PRECISIÓN del 23-09-2026 (ADR-0015, regla 68):** «sólo encoge» describe la verificación telefónica. El **rechazo del comité** también encoge la asignación (`recortarAsignacion`, nunca re-asigna) pero además REABRE la operación —vuelve a Oferta, con `reabierta` si había firma— porque el cliente firmó un paquete que ya no es el que se va a cursar; y si no queda factura, la pierde con causa.
+    - **PRECISIÓN del 23-09-2026 (ADR-0018, regla 70):** la verificación telefónica YA NO retira ni encoge: marca «no verificada», deja el issue y avisa; retira el ejecutivo con la operación reabierta y la versión nueva sale de la simulación siguiente. «Sólo encoge» describe hoy el rechazo del comité (regla 68).
     - **El cupo liberado no vuelve solo:** sigue reservado por el monto original hasta que lo liberen en el sistema de gestión de líneas. Por eso los disponibles del snapshot no suben al recortar, y la app **muestra** el monto y dónde pedirlo, pero nunca lo toca.
     - Cerrada la puerta trasera del Kanban: ya no se puede **arrastrar hacia atrás** una operación en Aceptada/Cesión/Giro. El selector del detalle sólo ofrecía «Avanzar a», pero `moveTo` no miraba la etapa de origen y dejaba devolver a Oferta una operación firmada con cupo reservado.
     - **El conteo de facturas del deudor dice de qué es** (13-09-2026). «9 fact. · 4 no disponibles» se leía como «9 en total, 4 de ellas no disponibles» —o sea 5— cuando la cifra ya era la **incorporable** y las otras 4 iban aparte; el usuario lo leyó así y pidió el cambio con el número mal. Ahora dice **«9 fact. disponibles»**, que no admite la otra lectura. Las bloqueadas no se pierden: están en la lista de abajo, cada una con su motivo, y el conteo va en el tooltip. La cabecera «Deudores disponibles» arrastraba la misma ambigüedad con la misma cifra y se corrigió igual.
-    - **PRECISIÓN del 23-09-2026 (ADR-0013, regla 68):** «cada simulación emite una versión» dejó de ser un desfase: la emite el EVENTO de evaluación (`evaluarOperacion`) al simular, y la versión trae cinco secciones —otorgamiento, verificación, línea, giro y pricing—, o no se emite.
+    - **PRECISIÓN del 23-09-2026 (ADR-0013, regla 71):** «cada simulación emite una versión» dejó de ser un desfase: la emite el EVENTO de evaluación (`evaluarOperacion`) al simular, y la versión trae cinco secciones —otorgamiento, verificación, línea, giro y pricing—, o no se emite.
 
 15. **Solicitud de línea:** NEX solo INYECTA (API 1) y consulta (API 2/3; *el callback push que promete el swagger no existe en el prototipo —sólo pull con «Consultar estados»—, anotado el 17-09-2026 por el caso 124*); resuelve el sistema externo. Una solicitud por línea. La bandeja de las nuevas se llama **«Solicitudes»** y no «En proceso»: «en proceso» describe un estado del sistema externo, no lo que la bandeja contiene, que son las solicitudes que el ejecutivo mandó.
-    - **AMPLIACIÓN del 23-09-2026 (ADR-0015, regla 65):** la API 3 devuelve también **«Rechazada»**, por línea de detalle, y NEX la aplica al consultarla: retira las facturas del deudor, deja versión y reabre (o pierde en cero). La bandeja la pinta en rojo con la observación del comité.
+    - **AMPLIACIÓN del 23-09-2026 (ADR-0015, regla 68):** la API 3 devuelve también **«Rechazada»**, por línea de detalle, y NEX la aplica al consultarla: retira las facturas del deudor, deja versión y reabre (o pierde en cero). La bandeja la pinta en rojo con la observación del comité.
 
 15-bis. **La solicitud se genera SOLA al cerrar la oferta** (15-09-2026, pedido del usuario). Cuando el cierre deja deudores sin cupo, `solicitudComiteDeOferta(deal, ev, ejecutivo, aprobadaVigente)` arma **UNA** solicitud con **N líneas de detalle** —una por deudor, con lo que faltó y en línea **PUNTUAL**— y `cerrarOferta` la inyecta por API 1. El ejecutivo no vuelve a escribir a mano la lista que el modal de curse le acaba de mostrar. **Lo pedido se SUMA a la vigente** (`propFactoring = aprobada + pedido`): `constituirLinea` escribe ese campo como la aprobada del cliente, así que mandar sólo lo pedido dejaría al cliente con MENOS línea el día que el comité lo aprueba — una solicitud que castiga por pedir. En el wizard esos deudores vienen pre-cargados con el chip **«Solicitado»** y su tipo de línea en Puntual. Casos 106 y 107.
 
@@ -50,7 +50,7 @@ timestamp: 2026-09-17T22:12:32Z
     - **El DUEÑO DE LA VIDA ÚTIL es el tubo.** La pestaña principal —la que no trae ticket en la URL— arranca los repos en limpio y borra la clave, así que recargar la demo sigue partiendo de cero; una pestaña de detalle **siempre** trae ticket, así que hereda lo que el tubo dejó abierto. Sin esa distinción, persistir habría cambiado el reinicio de la demo, que el usuario usa todo el rato.
     - **Un fallo de cuota no se traga:** un repositorio que dejó de persistir se ve **exactamente igual** que uno vacío, que es el defecto que esto corrige; se registra en el log del sistema.
     - En producción nada de esto existe: un repositorio es una TABLA del servidor y dos pestañas ven la misma fila. Caso **113**.
-    - **PRECISIÓN del 23-09-2026 (regla 68):** releer el repositorio al recibir el `postMessage` NO alcanza: el aviso llega antes de que la escritura de la otra pestaña se propague al renderer (medido con las versiones: el tubo releía y seguía en cero). Lo que sí llega después de la escritura es el evento `storage` del navegador; el tubo lo escucha para `repoSimVersions` y re-emite sólo las filas con versión.
+    - **PRECISIÓN del 23-09-2026 (regla 71):** releer el repositorio al recibir el `postMessage` NO alcanza: el aviso llega antes de que la escritura de la otra pestaña se propague al renderer (medido con las versiones: el tubo releía y seguía en cero). Lo que sí llega después de la escritura es el evento `storage` del navegador; el tubo lo escucha para `repoSimVersions` y re-emite sólo las filas con versión.
 
 15-quater. **La solicitud al comité se ABRE y muestra sus líneas de detalle** (15-09-2026, pedido del usuario). Una solicitud automática es UNA solicitud con N líneas (15-bis) y la bandeja mostraba sólo el total: qué deudores la componen, cuánto se le pide a cada uno y de qué operación salió no estaba en ninguna pantalla — y es exactamente lo que el comité necesita para **aprobar o recortar línea por línea**, que es lo que el propio modal de curse promete.
     - **Ocho columnas: Cliente/Deudor · Aprobada · Utilizada · Disponible · Solicitada · Línea proyectada · Observación · Estado.** La fila es un par **cliente-deudor** —el cliente es el mismo en todas y lo que cambia es el deudor—, así que la primera columna lo dice con las dos palabras y el cliente va en la cabecera del panel.
@@ -120,7 +120,7 @@ timestamp: 2026-09-17T22:12:32Z
     - **El mismo defecto estaba en la evaluación de línea del detalle**, donde un `rutDe` local armaba el RUT del deudor de la operación cuando la fila no lo traía — y eso alimenta los tres niveles del motor. Quedan armando un RUT dos sitios más (`rutDe` de nivel módulo y la rama de degradación de `PC_CLIENTES`), pero son RUT de **cliente** para el alta manual y para cuando no hay activo: no llegan al par cliente-deudor. El gate se ancla en los dos sitios de DEUDOR y lo dice, en vez de prohibir el patrón en todo el archivo y vigilar lo mismo con dos falsos positivos.
     - **Y apareció una identidad que la migración del padrón no alcanzó:** `4.603.315-2 · «Automotriz Puerto Montt y Cía. Ltda.»` en `DEUDORES_AUTORIZADOS`, con RUT en **rango de persona natural** y **dígito verificador inválido**. Sobrevivió porque `migrar_padron.js` mapea por los RUT del A1 y ese deudor no aparece en ninguna factura — y porque el gate `padron.test.mjs` sólo miraba los campos `RUTEmisor` y `RUTRecep`, nunca el `RUT` de los catálogos. El gate ahora mira los cinco campos con RUT, con una sonda por campo, y la fila salió del activo con `sanear_catalogo_deudores.js`: un deudor autorizado sin una sola factura no tiene par, no tiene línea y no abre ninguna oportunidad. Caso **151**.
 
-65. **EL COMITÉ DE CRÉDITO PUEDE RECHAZAR LA LÍNEA PUNTUAL: EL RECHAZO RETIRA LAS FACTURAS DEL DEUDOR, DEJA VERSIÓN Y
+68. **EL COMITÉ DE CRÉDITO PUEDE RECHAZAR LA LÍNEA PUNTUAL: EL RECHAZO RETIRA LAS FACTURAS DEL DEUDOR, DEJA VERSIÓN Y
     REABRE LA OPERACIÓN PARA UNA NUEVA FIRMA; EN CERO, LA PIERDE CON CAUSA** (23-09-2026, ADR-0015, M-29 · M-18, G-19 ·
       G-33; el usuario, 22-09-2026: «este es el comité de crédito, que opera fuera de la plataforma y da la aceptación o
       rechazo de las solicitudes de aumento de línea puntual» y «si se rechaza la línea […] las facturas del deudor se
@@ -144,10 +144,10 @@ timestamp: 2026-09-17T22:12:32Z
       comité también encoge la asignación, pero además REABRE, porque la firma cubría un paquete que ya no existe.
     - Caso **165** (retiro, versión que encoge, reapertura con firma revocada y paquete editable, pérdida en cero con
       causa, «Observada»/«Aprobada»/girada sin efecto, y la API 3 resolviendo «Rechazada» por línea) y
-      `regla_65.test.mjs` (la API 3, la decisión, el manejador, el disparo desde «Consultar estados» y la bandeja, con
+      `regla_68.test.mjs` (la API 3, la decisión, el manejador, el disparo desde «Consultar estados» y la bandeja, con
       sonda cada uno). La pantalla del rechazo sigue por e2e (CP-126, CP-127).
 
-68. **UN EVENTO DE EVALUACIÓN CORRE LOS CINCO MOTORES Y EMITE UNA VERSIÓN CON CINCO SECCIONES, O NINGUNA; LA PRIMERA
+71. **UN EVENTO DE EVALUACIÓN CORRE LOS CINCO MOTORES Y EMITE UNA VERSIÓN CON CINCO SECCIONES, O NINGUNA; LA PRIMERA
     SIMULACIÓN EMITE LA v1** (23-09-2026, ADR-0013, M-13 · M-24 · M-26 · M-36, G-09 · G-10 · G-22 · G-32; el usuario,
       22-09-2026: «al presionar simular se debe generar un evento que gatille todas las evaluaciones de los motores de
       manera asíncrona pero paralela. Cada vez que el cliente simula y/o el ejecutivo simula y/o re-evalúa se debe volver
@@ -176,7 +176,7 @@ timestamp: 2026-09-17T22:12:32Z
       versiona no se separan. La huella O05 sigue fijando el paquete y no el precio (regla 23, caso 85).
     - **Los únicos emisores de versión son el evento y el comité** (`aplicarRechazoComite`, con la versión que
       `rechazoComiteDecision` arma con el mismo `snapVersionCli`: cinco secciones sobre lo que queda y la LÍNEA recortada,
-      regla 65). La regularización de las variables re-evaluables —el mock del origen tras la firma— la pide sólo
+      regla 68). La regularización de las variables re-evaluables —el mock del origen tras la firma— la pide sólo
       «Re-evaluación de la simulación» (`opts.origenActualizado`), no cualquier versión con número mayor que uno.
     - **La regla 14 se conserva**: un cambio de selección no dispara nada; el evento es explícito. Y **G-09 se cierra**: las
       facturas nuevas de la corrida engrosan el pool disponible y la bitácora lo dice con esas palabras («Facturas nuevas
@@ -187,10 +187,10 @@ timestamp: 2026-09-17T22:12:32Z
     - Caso **168** (la v1 con las cinco secciones al primer evento, tres eventos → 3 · 3 · 3 · 3 · 3 y la vigente es la
       tercera, el motor caído sin versión a medias y escrito en la bitácora y la auditoría, el modo de tasa en la versión
       con la huella fija, la versión del comité completa y recortada, la re-evaluación de la simulación por el mismo
-      evento) y `regla_68.test.mjs` (simular dispara el evento antes de escribir el negocio, «Re-evaluar operación» y la
+      evento) y `regla_71.test.mjs` (simular dispara el evento antes de escribir el negocio, «Re-evaluar operación» y la
       pestaña del detalle, el rechazo de la versión incompleta, ningún emisor fuera del evento y del comité, la
       regularización sólo por gesto, el giro y el pricing desde los mismos cálculos, el pill por motor y el anuncio del
-      recálculo que no vuelve; diecisiete sondas). La pantalla la fijan `e2e-68-a/b/c/d` (`28_version_v1.e2e.mjs`;
+      recálculo que no vuelve; diecisiete sondas). La pantalla la fijan `e2e-71-a/b/c/d` (`28_version_v1.e2e.mjs`;
       CP-034/035/036/123): sin simular no hay versión ni compuertas con cifra; dos facturas a mano y «Simular la
       oferta» dejan la v1 con las cinco secciones sobre esas facturas y el TUBO la ve sin recargar; cerrar y reabrir
       el detalle conserva la versión y el titular; el modo de tasa cambiado en Configuración › Simulación deja, al

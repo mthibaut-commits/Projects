@@ -33,13 +33,13 @@ quiz telefónico ([log](./2026-09-22_el_deudor_decide_la_factura_se_llama.md)).
 >
 > 1. **El backlog decidido, en rojo primero** (`Regresiones/Gaps_Proceso_Curse_2026-09-22.md` §2.2; los casos y su
 >    orden en `vault/specs/proceso-curse/casos_de_prueba.md`). **Hechos el 23-09** (regla, gate y `CASOS_ESPERADOS` en
->    cada commit): ADR-0013 (un evento, cinco versiones: regla 68, caso 168) · 0014 · 0015 · 0016 · 0017 · 0018 ·
+>    cada commit): ADR-0013 (un evento, cinco versiones: regla 71, caso 168) · 0014 · 0015 · 0016 · 0017 · 0018 ·
 >    0019 · antigüedad ≤20 días · corte y reinicio por hora · M-19 en `cerrarOferta` · M-01 (el acuse del DTE:
->    regla 69, caso 169; el A1 ya lo traía). **El backlog decidido del 22-09 quedó entero**: 18 gaps implementados
+>    regla 72, caso 169; el A1 ya lo traía). **El backlog decidido del 22-09 quedó entero**: 18 gaps implementados
 >    ([log](./2026-09-23_backlog_decidido.md) §1–§11), con sus pantallas en `28_version_v1.e2e.mjs`. **ADR-0020** (§12): el
->    A1 es un **flujo de eventos por documento** (regla 70, caso 170, `regla_70` + `dtesync.test.mjs`; activo migrado a 55.549
+>    A1 es un **flujo de eventos por documento** (regla 73, caso 170, `regla_73` + `dtesync.test.mjs`; activo migrado a 55.549
 >    eventos, 46 MB). **ADR-0021** (§13): sobre la oferta cerrada, publicada o firmada la NC, el reclamo o la cesión a otro
->    **inhabilitan el documento y dejan la operación no cursable** (regla 71, caso 171; el veto de la regla 67 escrito por el
+>    **inhabilitan el documento y dejan la operación no cursable** (regla 74, caso 171; el veto de la regla 70 escrito por el
 >    SII; el ejecutivo retira, re-evalúa y vuelve a firmar). Sin decisiones pendientes. Sigue: los T1 sin decisión previa
 >    (gaps §2.2: G-05, G-18, G-23 … G-28), cada uno con su caso en rojo.
 > 2. **UI**: el selector de sesión de la navbar, 1/3 más angosto y con elipsis (desborda a 1366 px) · el chip
@@ -69,7 +69,7 @@ ramas ya integradas** (`elegant-fermat-pyfpnm`, `migrate-project-session-vui9dl`
 2. **Mojibake en el padrón**: 38 de 1.983 identidades traen `?` donde va `Ñ`/`Ó`/`Í`. Se arregla
    re-extrayendo del AEC, que no está commiteado. · **`Capturas_UI/` NO es determinista**: el tubo se
    retrata a mitad del stream, así que capturar en un estado conocido es decisión suya.
-3. `BASE_MUERTOS` en **1** (`giroDeal`) · **GN como disyunción** (22) · `PANEL_TAREAS` es `let` de módulo sin storage ni aviso: la tarea creada en el DETALLE no llega al tubo (familia de la 51; medido el 23-09 con la regla 66) · sin gate, la concentración del
+3. `BASE_MUERTOS` en **1** (`giroDeal`) · **GN como disyunción** (22) · `PANEL_TAREAS` es `let` de módulo sin storage ni aviso: la tarea creada en el DETALLE no llega al tubo (familia de la 51; medido el 23-09 con la regla 69) · sin gate, la concentración del
    Directorio (31) · una fila «Sin clasificar» dice «2 deudores» y el desglose suma 0 · **dos sesiones
    paralelas toman el mismo «siguiente entero libre»** (reglas, casos, ADR y archivos e2e): quien mezcla renumera.
 4. **Hooks en Windows**: `node verificar_hooks.mjs` una vez · los 13 skills de `taste-skill` viven en el

@@ -1,16 +1,16 @@
-/* Gate e2e de la regla 68 (ADR-0013: un evento de evaluación, cinco motores, una versión con cinco secciones o
-   ninguna; la primera simulación emite la v1) y de la regla 69 (el acuse del receptor viene del A1 y la fila del
+/* Gate e2e de la regla 71 (ADR-0013: un evento de evaluación, cinco motores, una versión con cinco secciones o
+   ninguna; la primera simulación emite la v1) y de la regla 72 (el acuse del receptor viene del A1 y la fila del
    documento lo muestra), en el detalle REAL: la pestaña propia, con la sesión iniciada y el Modo Directorio.
-     · e2e-68-c (CP-036): SIN simular no hay versión, y la pantalla no afirma ninguna cifra de compuerta: el panel de
+     · e2e-71-c (CP-036): SIN simular no hay versión, y la pantalla no afirma ninguna cifra de compuerta: el panel de
        arranque ofrece las opciones y el pie (otorgamiento · verificación · línea · giros) no existe todavía.
-     · e2e-68-a (CP-034): dos facturas a mano y «Simular la oferta» dejan la v1 —`v: 1`, `rev: 0`, origen «Simulación
+     · e2e-71-a (CP-034): dos facturas a mano y «Simular la oferta» dejan la v1 —`v: 1`, `rev: 0`, origen «Simulación
        de la oferta»— con las CINCO secciones sobre esas dos facturas, contemporánea; el TUBO la ve sin recargar (el
        evento `storage`, regla 15-bis-ter) y la auditoría tiene la fila del evento.
-     · e2e-68-b (CP-035): cerrar y reabrir el detalle no pierde la versión ni cambia el titular: la pestaña nueva lee el
+     · e2e-71-b (CP-035): cerrar y reabrir el detalle no pierde la versión ni cambia el titular: la pestaña nueva lee el
        repositorio, no un recálculo distinto.
-     · e2e-68-d (CP-123): el modo de tasa cambiado en Configuración › Simulación deja, al re-evaluar, una versión que
+     · e2e-71-d (CP-123): el modo de tasa cambiado en Configuración › Simulación deja, al re-evaluar, una versión que
        lo dice (`pricing.modo`), la anterior conserva el suyo y el paquete no se mueve.
-     · e2e-69-a (CP-010): en las filas del documento el chip del acuse («Con acuse» / «Sin acuse» / «Reclamada») coincide,
+     · e2e-72-a (CP-010): en las filas del documento el chip del acuse («Con acuse» / «Sin acuse» / «Reclamada») coincide,
        fila por fila, con lo que el A1 trae para esas facturas, y la reclamada sigue bloqueada en su fila (el filtro no cambió).
    Selectores por texto y por `title`; nada por clases. Los casos se encadenan sobre la misma fila 0 del filtro
    «Sin línea» (con el Directorio encendido es una OP-DIR sin línea aprobada), y cada uno deja el estado que
@@ -85,7 +85,7 @@ const chipsAcuse = (det) => det.evaluate(() => [...document.querySelectorAll("sp
 
 export const casos = [
   {
-    id: "e2e-68-c",
+    id: "e2e-71-c",
     titulo: "SIN simular no hay versión y la pantalla no afirma ninguna compuerta: el panel de arranque ofrece las opciones y el pie no existe todavía",
     correr: async (h) => {
       let det = null;
@@ -105,7 +105,7 @@ export const casos = [
     },
   },
   {
-    id: "e2e-68-a",
+    id: "e2e-71-a",
     titulo: "«Simular la oferta» con dos facturas a mano deja la v1 con las cinco secciones sobre esas facturas, el tubo la ve sin recargar y la auditoría tiene el evento",
     correr: async (h) => {
       let det = null;
@@ -137,7 +137,7 @@ export const casos = [
     },
   },
   {
-    id: "e2e-68-b",
+    id: "e2e-71-b",
     titulo: "cerrar y reabrir el detalle no pierde la versión ni cambia el titular: la pestaña nueva lee el repositorio",
     correr: async (h) => {
       let det = null;
@@ -165,7 +165,7 @@ export const casos = [
     },
   },
   {
-    id: "e2e-68-d",
+    id: "e2e-71-d",
     titulo: "el modo de tasa cambiado en Configuración deja, al re-evaluar, una versión que lo dice; la anterior conserva el suyo y el paquete no se mueve",
     correr: async (h) => {
       let det = null, modo0 = null;
@@ -235,7 +235,7 @@ export const casos = [
     },
   },
   {
-    id: "e2e-69-a",
+    id: "e2e-72-a",
     titulo: "el chip del acuse de cada fila del documento coincide con lo que el A1 trae para esa factura, y la reclamada sigue bloqueada en su fila",
     correr: async (h) => {
       let det = null;
@@ -260,7 +260,7 @@ export const casos = [
         await det.waitForTimeout(600);
         const chipsDisp = await chipsAcuse(det);
         // La reclamada no es agregable: la fila la bloquea («Reclamada por el deudor», el candado de «otras facturas» o el
-        // botón «Agregar» apagado), que es lo que la regla 69 conserva del filtro.
+        // botón «Agregar» apagado), que es lo que la regla 72 conserva del filtro.
         const reclamadas = chipsDisp.filter((c) => c.texto === "Reclamada");
         const sinCandado = reclamadas.filter((c) => !c.bloqueada);
         if (sinCandado.length) throw new Error(`reclamada(s) sin bloqueo en la fila: ${JSON.stringify(sinCandado)}`);

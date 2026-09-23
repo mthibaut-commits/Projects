@@ -15,7 +15,7 @@
 // Datasets BASE — rescatados del build original, se copian sin tocar:
 //   DTESYNC · LISTA_BLANCA · DEUDORES_AUTORIZADOS · SHARE_OF_WALLET (su ficha) · ESTRATEGIA_PRECIO
 //
-// DTESYNC es un FLUJO DE EVENTOS por documento (ADR-0020, regla 70): una fila por notificación —la
+// DTESYNC es un FLUJO DE EVENTOS por documento (ADR-0020, regla 73): una fila por notificación —la
 // creación y después cada cambio de estado—. Los derivados trabajan sobre DOCUMENTOS, así que `derivar`
 // pliega el log UNA vez (`lib/dtesync.js`, `plegar`) y a cada módulo le entrega los documentos en
 // `DTESYNC`; ningún módulo vuelve a recorrer el log. La migración del 23-09-2026 fue

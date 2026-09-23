@@ -10,7 +10,7 @@
      · AECSYNC se genera sólo del A1 y de la intención declarada: quitarle el A2 y el A5 de la entrada
        no cambia una cesión. Es el bucle A2 → A5 → A2, vigilado por su nombre.
 
-   Desde el 23-09-2026 el A1 es un flujo de eventos (ADR-0020, regla 70): `derivar` lo pliega a documentos antes de
+   Desde el 23-09-2026 el A1 es un flujo de eventos (ADR-0020, regla 73): `derivar` lo pliega a documentos antes de
    entregárselo a los módulos, y acá se pliega igual antes de llamar a `cesiones.generar` a mano.
 
    Cuesta ~4 s: leer los 45 MB (~3 s) y correr los ocho derivados (~0,5 s). */

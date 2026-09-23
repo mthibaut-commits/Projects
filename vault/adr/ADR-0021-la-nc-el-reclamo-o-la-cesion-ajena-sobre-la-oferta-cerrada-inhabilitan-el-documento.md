@@ -1,7 +1,7 @@
 ---
 type: adr
 title: "ADR-0021 · La NC, el reclamo o la cesión a otro sobre un documento de una oferta cerrada, publicada o firmada lo inhabilitan y dejan la operación no cursable: el ejecutivo retira, re-evalúa y vuelve a firmar"
-description: "Cierra la decisión #7 que ADR-0020 dejó abierta. El documento queda con su estado nuevo y marcado inhabilitado; el veto es el de la regla 67, escrito por el SII por el único escritor; cuenta como pendiente aunque la verificación telefónica esté en verde, así que VER-01 no deja cursar; el issue, el aviso, la tarjeta y la fila lo dicen; el camino de salida es el de ADR-0018"
+description: "Cierra la decisión #7 que ADR-0020 dejó abierta. El documento queda con su estado nuevo y marcado inhabilitado; el veto es el de la regla 70, escrito por el SII por el único escritor; cuenta como pendiente aunque la verificación telefónica esté en verde, así que VER-01 no deja cursar; el issue, el aviso, la tarjeta y la fila lo dicen; el camino de salida es el de ADR-0018"
 tags: [adr, inbound, dtesync, verificacion, curse]
 estado: aceptado
 timestamp: 2026-09-23T16:30:00Z
@@ -22,7 +22,7 @@ la bitácora avisaba y la corrida contaba el aviso. El usuario respondió el 23-
 > verificada, al margen que la verificación telefónica haya dado por verificada), si está cedida a un
 > tercero, al momento de intentar cederla el SII va a rechazar la cesión de esa factura.»
 
-El sistema ya tenía el ciclo completo para «el deudor no reconoce el documento»: ADR-0018 (regla 67). La
+El sistema ya tenía el ciclo completo para «el deudor no reconoce el documento»: ADR-0018 (regla 70). La
 mesa escribe un veto por documento y operación (`marcarNoVerificada`, único escritor), el veto cuenta como
 pendiente en `verifResumenDeal` y VER-01 no deja cursar, `issueVerificacion` lo nombra en la cabecera, el
 tab y el control, el sistema avisa al ejecutivo por mensajería, y es el ejecutivo quien reabre («Editar la
@@ -34,7 +34,7 @@ oferta» revoca la firma), retira, re-simula y publica de nuevo para que el clie
    también en la oferta cerrada, publicada o firmada; cuando lo que llega es la NC, el reclamo o la cesión a
    otro, además lo marca (motivo, glosa, secuencia, fecha) y deja la traza en rojo. La fila de la oferta lo
    rotula «Inhabilitada por el SII · <motivo>». El acuse se anota y no inhabilita.
-2. **El veto es el de la regla 67, escrito por el SII.** No hay un segundo mecanismo: el tick del inbound
+2. **El veto es el de la regla 70, escrito por el SII.** No hay un segundo mecanismo: el tick del inbound
    decide las inhabilitaciones sobre la foto vigente del tubo, fuera de todo updater, y las escribe por
    `marcarNoVerificada` con origen «sii» (`por` = `SII · DTESync`, la entrada anota el origen y el cambio; la
    bitácora de otorgamiento dice que el SII inhabilitó; el aviso al ejecutivo sale con su propio asunto y
@@ -48,11 +48,11 @@ oferta» revoca la firma), retira, re-simula y publica de nuevo para que el clie
    firma), retira el documento, vuelve a simular y publica de nuevo; el cliente firma la nueva operación.
    El veto impide volver a agregarlo.
 5. **La cesión a otro es de la misma familia.** `bloquea` incluye `cedida`. Hoy la cesión ajena la trae el
-   join con el A2 al incorporar (regla 60) y la pérdida de la oportunidad por cesión sigue en
+   join con el A2 al incorporar (regla 63) y la pérdida de la oportunidad por cesión sigue en
    `evaluarPerdidas`; cuando exista el evento del A2 sobre un documento ya en una oferta cerrada, entra por
    este mismo camino.
 6. **El detalle abierto ve el veto que escribió el tubo**: un oyente del evento `storage` relee el
-   repositorio del veto, como el de las versiones (regla 68).
+   repositorio del veto, como el de las versiones (regla 71).
 
 ## Alternativas descartadas
 
@@ -69,11 +69,11 @@ oferta» revoca la firma), retira, re-simula y publica de nuevo para que el clie
 
 ## Consecuencias
 
-- Es un **T1**: cambia qué operaciones se pueden cursar. Regla 71 (`reglas/verificacion.md`, al lado de la
-  67), caso 171, `regla_71.test.mjs`; el caso 170 (d) y el gate `regla_70` pasan a fijar la inhabilitación en
-  vez del aviso; la viñeta de la regla 70 que decía «sólo avisan» se reescribe en el mismo commit.
+- Es un **T1**: cambia qué operaciones se pueden cursar. Regla 74 (`reglas/verificacion.md`, al lado de la
+  67), caso 171, `regla_74.test.mjs`; el caso 170 (d) y el gate `regla_73` pasan a fijar la inhabilitación en
+  vez del aviso; la viñeta de la regla 73 que decía «sólo avisan» se reescribe en el mismo commit.
 - `verifResumenDeal` cuenta como pendiente TODO documento vetado, también el de la llamada fallida: es lo
-  que la regla 67 quería decir con «cuentan también en `pend`», ahora sin depender de que no haya llamada.
+  que la regla 70 quería decir con «cuentan también en `pend`», ahora sin depender de que no haya llamada.
 - La pantalla (la fila «Inhabilitada por el SII», la tarjeta «· N por el SII», el hilo) queda por e2e cuando
   el stream sea determinista (CP-145); hoy la fija la suite por nombre.
 - `spec-inbound-facturas.md` §12 cierra la decisión #7; §6, `spec-proceso-curse.md` §5 y M-18, el

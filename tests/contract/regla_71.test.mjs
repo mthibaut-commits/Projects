@@ -1,106 +1,116 @@
-/* Gate de contrato de la regla 71 (ADR-0021: la NC, el reclamo o la cesión a otro sobre una oferta cerrada, publicada o
-   firmada INHABILITAN el documento y dejan la operación no cursable; el ejecutivo retira, re-evalúa y vuelve a publicar
-   para una nueva firma), sobre el TEXTO del fuente. Lo que se puede llamar por nombre lo prueba el caso 171
-   (`aplicarActualizacionDTE`, `aplicarEventosADeal`, `verifResumenDeal`, `issueVerificacion`, `controlesIntegracion`,
-   `estadoCandidata`, `avisarNoVerificadas`); lo que la suite no alcanza son los closures de React: que el tick escriba el
-   veto por el ÚNICO escritor (`marcarNoVerificada`, regla 67) y FUERA del updater, que ese escritor firme como el SII,
-   que la tarjeta del tubo, VER-01 y la fila de la oferta lo digan, y que el detalle abierto relea el veto que escribió
-   el tubo. Con sonda negativa por pieza. */
+/* Gate de contrato de la regla 71 (ADR-0013: UN evento de evaluación corre los cinco motores y emite una versión con
+   cinco secciones o ninguna; la primera simulación emite la v1; el pricing versiona el modo de tasa y las condiciones),
+   sobre el TEXTO del fuente. Lo que se puede llamar por nombre lo prueba el caso 168 (`evaluarOperacion`, `versionCompleta`,
+   `contarVersiones`, `snapVersionCli` con sus cinco secciones, el motor caído, el pricing, el comité, `reevaluarCliente`);
+   lo que la suite no alcanza son los closures de React: que «Simular la oferta» dispare el evento ANTES de escribir el
+   negocio, que «Re-evaluar operación» sea el mismo evento y la pestaña del detalle lo reciba, que no quede ningún emisor
+   de versión fuera del evento y del comité, que la regularización del origen la pida sólo la re-evaluación de la
+   simulación, y que el anuncio de un recálculo que no ocurre (G-09) no vuelva.
+
+   Con sonda negativa por pieza: un gate verde que no se comprueba en rojo no vigila nada. */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { leer, canonico } from "./_comun.mjs";
 
 const jsx = leer("pipeline_comercial.jsx");
+
 const tramo = (can, desde, hasta, largo) => {
   const i = can.indexOf(desde);
   if (i < 0) return "";
   const j = hasta ? can.indexOf(hasta, i) : -1;
-  return can.slice(i, j < 0 ? i + (largo || 3000) : j);
+  return can.slice(i, j < 0 ? i + (largo || 4000) : j);
 };
 
 export function auditarRegla71(src) {
   const fallos = [];
   const can = canonico(src);
-  // 1 · La decisión pura: sobre la oferta cerrada el documento queda con su estado nuevo y marcado `inhabilitada`.
-  const ap = tramo(can, canonico("function aplicarActualizacionDTE(deal, ev) {"), canonico("function aplicarEventosADeal("), 5000);
-  if (!ap) fallos.push("no encuentro `aplicarActualizacionDTE`");
+  // 1 · La versión es la tupla de los cinco motores, y la emite UN evento que la rechaza a medias.
+  if (!can.includes('const MOTORES_VERSION = ["res", "verificacion", "linea", "giro", "pricing"];')) fallos.push("`MOTORES_VERSION` ya no nombra los cinco motores");
+  if (!can.includes("nRech, linea, verificacion, giro, pricing, motoresFallidos: fallidos, politica:")) fallos.push("`snapVersionCli` ya no devuelve las cinco secciones con los motores fallidos");
+  const ev = tramo(can, "function evaluarOperacion(deal, usuario, opts) {", "function reevaluarCliente(deal, usuario) {");
+  if (!ev) fallos.push("no existe `evaluarOperacion`: no hay evento de evaluación");
   else {
-    if (!ap.includes(canonico("const bloquea = !!(ev.estado && (ev.estado.notaCredito || ev.estado.reclamada || ev.estado.cedida));"))) fallos.push("la NC, el reclamo y la cesión a otro no son los tres motivos que inhabilitan");
-    if (!ap.includes(canonico("const marcado = { ...nf, inhabilitada: { motivo: ev.cambio, glosa: glosaCambioDTE(ev), secuencia: ev.secuencia, fecha: ev.fchNotificacion || null } };"))) fallos.push("sobre la oferta cerrada el documento no queda marcado `inhabilitada` con su motivo, su glosa y su secuencia");
-    if (!ap.includes(canonico('cambio = { donde: "inhabilitada", folio: ev.folio, cambio: ev.cambio, factura: marcado };'))) fallos.push("la decisión no devuelve el documento inhabilitado: el tick no tendría con qué escribir el veto");
-    if (!ap.includes("queda inhabilitado y la operación no se cursa")) fallos.push("la traza de la inhabilitación no dice que la operación no se cursa");
-    if (/avisoDTE/.test(ap)) fallos.push("la oferta cerrada vuelve a recibir sólo un aviso (`avisoDTE`) en vez de la inhabilitación");
+    const iRech = ev.indexOf("if (!versionCompleta(nv)) {");
+    const iPush = ev.indexOf("repoSimVersions.push(deal.id, nv);");
+    if (iRech < 0 || iPush < 0 || iPush < iRech) fallos.push("el evento emite sin comprobar que la versión esté completa: quedaría una versión a medias");
+    if (!/return \{ok: false, motivo: "motor_fallido"/.test(ev)) fallos.push("el evento no devuelve el rechazo por motor fallido");
+    if (!ev.includes("Evaluación fallida")) fallos.push("la evaluación fallida no queda escrita en la bitácora ni en la auditoría");
+    if ((ev.match(/repoSimVersions\.push\(/g) || []).length !== 1) fallos.push("el evento empuja más de una versión (o ninguna)");
   }
-  // 2 · El tick escribe el veto por el único escritor y FUERA del updater.
-  const tk = tramo(can, canonico("const aplicarActualizacionesDTE = (acts) => {"), canonico("setSelected((s) => (s ? aplicarEventosADeal(s, evs).deal : s));"), 4000);
-  if (!tk) fallos.push("no encuentro `aplicarActualizacionesDTE`");
+  // 2 · «Simular la oferta» ES el evento, antes de escribir el negocio; «Re-evaluar operación» es el mismo evento.
+  const sim = tramo(can, "const simularOferta = (id) => {", "const reevaluarOperacion = (id) => {");
+  if (!sim) fallos.push("no encuentro `simularOferta` seguido de `reevaluarOperacion`");
   else {
-    const iVeto = tk.indexOf(canonico('marcarNoVerificada(d.id, facs, { origen: "sii", motivoLbl:'));
-    const iUpd = tk.indexOf(canonico("setDeals((prev) => {"));
-    if (iVeto < 0) fallos.push("el tick no escribe el veto del SII por `marcarNoVerificada` (regla 67: un solo escritor)");
-    else if (iUpd < 0 || iVeto > iUpd) fallos.push("el tick escribe el veto dentro del updater de `setDeals` (regla 22: un updater puede correr dos veces)");
-    if (!tk.includes(canonico("for (const d of dealsRef.current || []) {"))) fallos.push("las inhabilitaciones no se deciden sobre la foto vigente del tubo");
+    const iEv = sim.indexOf("if (d0) evaluarOperacion(");
+    const iSet = sim.indexOf("setDeals((prev) => prev.map(upd));");
+    if (iEv < 0 || iSet < 0 || iSet < iEv) fallos.push("simular no dispara el evento de evaluación antes de escribir el negocio (la v1 no se emite al simular)");
+    if (!sim.includes('origen: (repoSimVersions.get(id) || []).length ? "Re-evaluación de la operación (simulación)" : "Simulación de la oferta"')) fallos.push("la versión de la simulación no dice su origen");
+    if (!sim.includes('motivo: "simulacion"')) fallos.push("la versión de la simulación no lleva el motivo `simulacion`");
+    if (!sim.includes("simulado: true, stage: d0.stage === \"prospeccion\" ? \"oferta\" : d0.stage, monto: monto0, facturas: fs0.length, ...fin0")) fallos.push("el evento no evalúa el negocio tal como va a quedar simulado (etapa, monto, facturas y condiciones)");
   }
-  if ((can.match(/repoNoConfirmadas\.set\(/g) || []).length !== 1) fallos.push("el veto tiene más de un escritor (o ninguno): la regla 67 exige uno solo");
-  // 3 · El escritor firma como el SII y anota el origen.
-  const mk = tramo(can, canonico("const marcarNoVerificada = (id, facs, gestion) => {"), canonico("const verificarDeudor = async (fila, confirmadas, llamada) => {"), 4000);
-  if (!mk) fallos.push("no encuentro `marcarNoVerificada`");
-  else {
-    if (!mk.includes(canonico('const porSII = !!(gestion && gestion.origen === "sii");'))) fallos.push("`marcarNoVerificada` no distingue el origen «sii»");
-    if (!mk.includes(canonico("por: porSII ? ACTOR_SII : actorEtiqueta(usuario),"))) fallos.push("el veto del SII queda firmado por el usuario de la sesión y no por el servicio");
-    if (!mk.includes(canonico('origen: "sii"'))) fallos.push("el veto del SII no anota su origen: la candidata y el issue no podrían decir por qué");
-    if (!mk.includes("inhabilitó")) fallos.push("la bitácora de otorgamiento no dice que el SII inhabilitó el documento");
-  }
-  // 4 · El resumen cuenta el documento vetado como pendiente aunque la llamada esté en verde, y nombra el origen.
-  const vr = tramo(can, canonico("function verifResumenDeal(deal, estado) {"), canonico("function issueVerificacion(deal, estado) {"), 3000);
-  if (!vr) fallos.push("no encuentro `verifResumenDeal`");
-  else {
-    const iVet = vr.indexOf(canonico("if (noConfirmada(deal, f, estado && estado.vetadas)) { tel++; pend++; return; }"));
-    const iVf = vr.indexOf(canonico("const vf = verifFactura(f, deal, estado);"));
-    if (iVet < 0 || iVf < 0 || iVet > iVf) fallos.push("`verifResumenDeal` no cuenta el documento vetado como pendiente antes de mirar la llamada: con la llamada en verde, VER-01 dejaría cursar un documento que el deudor no va a pagar");
-    if (!vr.includes(canonico('sii: noVerificadas.filter((x) => x.origen === "sii").length'))) fallos.push("`verifResumenDeal` no cuenta las vetadas por el SII");
-  }
-  // 5 · El issue, la candidata, el aviso, VER-01, la tarjeta y la fila lo dicen.
-  const iss = tramo(can, canonico("function issueVerificacion(deal, estado) {"), "// ── MESA DE VERIFICACIÓN", 3500);
-  if (!iss.includes('"Documentos inhabilitados por el SII: no se puede cursar"') || !iss.includes('"Facturas no verificadas e inhabilitadas por el SII: no se puede cursar"')) fallos.push("`issueVerificacion` no titula lo que el SII inhabilitó");
-  if (!iss.includes("documento(s) inhabilitado(s) por el SII:")) fallos.push("`issueVerificacion` no nombra aparte los documentos inhabilitados con su motivo");
-  const ec = tramo(can, canonico("function estadoCandidata(f, deal, estado) {"), canonico("function cesionDeFactura("), 3000);
-  if (!ec.includes(canonico('R("inhabilitada", "Inhabilitada por el SII",'))) fallos.push("`estadoCandidata` no etiqueta la inhabilitada por el SII");
-  if (!ec.includes(canonico("const veto = vetoDe(deal, f, estado && estado.vetadas);"))) fallos.push("`estadoCandidata` no lee la entrada del veto (no sabría quién lo escribió)");
-  const av = tramo(can, canonico("function avisarNoVerificadas(deal, facs, motivo) {"), canonico("function excepcionesSinComentario(deal) {"), 3000);
-  if (!av.includes("Documentos inhabilitados por el SII · ${deal.id}")) fallos.push("el aviso al ejecutivo no lleva el asunto del SII");
-  if (!av.includes("no va a pagar")) fallos.push("el aviso no dice por qué el documento está inhabilitado");
-  if (!can.includes("inhabilitada(s) por el SII: reclamo, nota de crédito o cesión a otro, regla 71")) fallos.push("VER-01 no nombra las inhabilitadas por el SII");
-  if (!can.includes(canonico("No se puede cursar · {iss.n} no verificada(s){iss.sii ? ` · ${iss.sii} por el SII` : \"\"}"))) fallos.push("la tarjeta del tubo no dice cuántas inhabilitó el SII");
-  if (!can.includes(canonico("if (f && f.inhabilitada) return `Inhabilitada por el SII · ${f.inhabilitada.glosa}`;"))) fallos.push("la fila de la oferta no rotula el documento inhabilitado con su motivo");
-  // 6 · El detalle abierto relee el veto que escribió el tubo.
-  const st = tramo(can, canonico("const onStorageVeto = (e) => {"), canonico("const onStorage = (e) => {"), 600);
-  if (!st.includes(canonico('if (!e || e.key !== "pc_repo_" + repoNoConfirmadas.nombre) return;')) || !st.includes(canonico("repoNoConfirmadas.recargar(); NO_CONFIRMADAS = repoNoConfirmadas.all();"))) fallos.push("el detalle no relee el veto cuando otra pestaña lo escribe");
-  if (!can.includes(canonico('window.addEventListener("storage", onStorageVeto);'))) fallos.push("el oyente del veto no está registrado");
+  const reev = tramo(can, "const reevaluarOperacion = (id) => {", "const limpiarSimulacion = (id) => {");
+  if (!reev.includes('return evaluarOperacion(d0, usuario, {origen: "Re-evaluación de la operación", motivo: "reevaluacion"});')) fallos.push("«Re-evaluar operación» ya no es el evento de evaluación");
+  if (!can.includes("onEvaluar={reevaluarOperacion}")) fallos.push("la pestaña del detalle no recibe el evento (`onEvaluar`)");
+  const rl = tramo(can, "const reevaluarLinea = () => {", null, 400);
+  if (!rl.includes("if (onEvaluar) onEvaluar(deal.id);")) fallos.push("el botón «Re-evaluar operación» de la cabecera volvió a ser un spinner: no dispara el evento");
+  const rp = tramo(can, "onReevaluar={() => {", null, 200);
+  if (!rp.includes("if (onEvaluar) onEvaluar(deal.id);")) fallos.push("el aviso «La selección cambió» no dispara el evento al re-evaluar");
+  // 3 · Ningún emisor fuera del evento y del comité, y el comité emite una versión COMPLETA con la línea recortada.
+  const pushes = can.match(/repoSimVersions\.push\([^)]*\)/g) || [];
+  const permitidos = new Set(["repoSimVersions.push(deal.id, nv)", "repoSimVersions.push(id, dec.version)"]);
+  pushes.filter((p) => !permitidos.has(p)).forEach((p) => fallos.push(`emisor de versión fuera del evento y del comité: \`${p}\``));
+  if (pushes.length !== 2) fallos.push(`se esperaban exactamente dos emisores de versión (el evento y el comité), hay ${pushes.length}`);
+  if (!can.includes('snapVersionCli(dealTrasRetiro, vs.length, {linea: recortarAsignacion(prev.linea, quedan.map((f) => f.id)), origen, motivo: "comite_rechazo"})')) fallos.push("la versión del rechazo del comité no es la de los cinco motores sobre lo que queda con la línea recortada (regla 68)");
+  // 4 · La regularización del origen la pide SÓLO «Re-evaluación de la simulación», no cualquier versión con número > 1.
+  const snap = tramo(can, "function snapVersionCli(deal, rev, opts) {", "const nExc = res.filter(");
+  if (!snap.includes("if (o.origenActualizado) {")) fallos.push("la regularización de las variables ya no depende del gesto");
+  if (/if \(\(rev \|\| 0\) >= 1\) \{/.test(snap)) fallos.push("la regularización vuelve a dispararse por el número de versión: toda re-evaluación «arreglaría» el origen");
+  const rc = tramo(can, "function reevaluarCliente(deal, usuario) {", "const VISADO_NO_APLICA =");
+  if (!rc.includes('const r = evaluarOperacion(deal, usuario, {origenActualizado: true, origen: "Re-evaluación · JSON API actualizado tras firma", motivo: "reevaluacion_origen"});')) fallos.push("«Re-evaluación de la simulación» no pasa por el evento con el origen actualizado");
+  if (/snapVersionCli\(/.test(rc)) fallos.push("«Re-evaluación de la simulación» arma la versión por su cuenta en vez de disparar el evento");
+  // 5 · El giro y el pricing salen de los mismos cálculos que la pantalla, y el tab cuenta por motor.
+  if (!can.includes("giro = fsOp.length ? giroDeVersion(deal, fsOp, {linea}) : null;")) fallos.push("la versión no trae el giro sobre la asignación recién evaluada");
+  if (!can.includes("pricing = fsOp.length ? pricingDeVersion(deal, fsOp) : null;")) fallos.push("la versión no trae el pricing");
+  if (!can.includes("const val = giroDeVersion(deal, fs, estado);")) fallos.push("el giro del tubo ya no sale del mismo cálculo que la versión");
+  if (!can.includes("const tn = tasaDelNegocio(deal, tasaPondRiesgo, CFG_ACTIVA);")) fallos.push("la pantalla elige la tasa del negocio por su cuenta: lo que se muestra y lo que se versiona se separan");
+  if (!can.includes("const nMot = contarVersiones(shown);")) fallos.push("el tab Otorgamiento no cuenta las versiones por motor");
+  if (!can.includes('{shown.length} {shown.length === 1 ? "versión" : "versiones"} · {MOTORES_VERSION.length} motores')) fallos.push("el pill de versiones no dice cuántos motores (o vuelve a decir «versiónes»)");
+  // 7 · El tubo relee las versiones por el evento `storage` (la carrera con el postMessage está medida).
+  const st = tramo(can, "const onStorage = (e) => {", "window.addEventListener(\"storage\", onStorage);");
+  if (!st.includes('if (!e || e.key !== "pc_repo_" + repoSimVersions.nombre) return;') || !st.includes("repoSimVersions.recargar(); SIM_VERSIONS = repoSimVersions.all();")) fallos.push("el tubo no relee las versiones cuando otra pestaña las escribe: la fila leería una asignación anterior");
+  // 6 · G-09: el recálculo que no ocurre no se anuncia, y las facturas nuevas se dicen como lo que son.
+  if (/Recálculo aplicado|Recalculando |Se está recalculando la simulación|\bactualizando\b/.test(can)) fallos.push("vuelve el anuncio de un recálculo que no ocurre (G-09)");
+  if (!can.includes("Facturas nuevas para ${idsWarn.length} oportunidad(es): ${totalDocs} documento(s) al pool disponible")) fallos.push("la bitácora no dice que las facturas nuevas van al pool");
+  if (!can.includes("Facturas agregadas al pool en ${idsWarn.length} oportunidad(es)")) fallos.push("la bitácora no cierra la corrida diciendo lo que hizo");
   return fallos;
 }
 
-test("regla 71: sobre la oferta cerrada, publicada o firmada la NC, el reclamo o la cesión a otro inhabilitan el documento; el veto lo escribe el SII por el único escritor, cuenta como pendiente aunque la llamada esté en verde, y el issue, VER-01, la candidata, el aviso, la tarjeta y la fila lo dicen", () => {
+test("regla 71: un evento de evaluación corre los cinco motores y emite una versión con cinco secciones o ninguna; simular emite la v1; ningún emisor fuera del evento y del comité; el recálculo que no ocurre no se anuncia", () => {
   assert.deepEqual(auditarRegla71(jsx), []);
 });
 
 const MUTANTES = [
-  ["la cesión a otro deja de inhabilitar", (c) => c.replace("const bloquea = !!(ev.estado && (ev.estado.notaCredito || ev.estado.reclamada || ev.estado.cedida));", "const bloquea = !!(ev.estado && (ev.estado.notaCredito || ev.estado.reclamada));")],
-  ["la oferta cerrada no marca la inhabilitación", (c) => c.replace("const marcado = {...nf, inhabilitada: {motivo: ev.cambio,", "const marcado = {...nf, marca: {motivo: ev.cambio,")],
-  ["la decisión no devuelve el documento", (c) => c.replace('cambio = {donde: "inhabilitada", folio: ev.folio, cambio: ev.cambio, factura: marcado};', 'cambio = {donde: "inhabilitada", folio: ev.folio, cambio: ev.cambio};')],
-  ["la traza calla", (c) => c.replace("queda inhabilitado y la operación no se cursa", "queda anotado")],
-  ["el tick no escribe el veto", (c) => c.replace('marcarNoVerificada(d.id, facs, {origen: "sii", motivoLbl:', 'console.log(d.id, facs, {origen: "sii", motivoLbl:')],
-  ["el tick escribe el veto dentro del updater", (c) => c.replace("for (const d of dealsRef.current || []) {", "for (const d of []) {").replace("setDeals((prev) => {let toco = false; const out = prev.map((d) => {const r = aplicarEventosADeal(d, evs); if (r.deal !== d) toco = true; return r.deal;});", 'setDeals((prev) => {let toco = false; const out = prev.map((d) => {const r = aplicarEventosADeal(d, evs); if (r.inhabilitadas.length) marcarNoVerificada(d.id, r.inhabilitadas.map((x) => x.factura), {origen: "sii", motivoLbl: "x"}); if (r.deal !== d) toco = true; return r.deal;});')],
-  ["el escritor firma como el usuario", (c) => c.replace("por: porSII ? ACTOR_SII : actorEtiqueta(usuario),", "por: actorEtiqueta(usuario),")],
-  ["el escritor no anota el origen", (c) => c.replace('...(porSII ? {origen: "sii", cambio: (fac.inhabilitada && fac.inhabilitada.motivo) || null} : {})', "...{}")],
-  ["un segundo escritor del veto", (c) => c.replace("repoNoConfirmadas.recargar(); NO_CONFIRMADAS = repoNoConfirmadas.all();", "repoNoConfirmadas.set(id, {}); NO_CONFIRMADAS = repoNoConfirmadas.all();")],
-  ["el resumen deja cursar con la llamada en verde", (c) => c.replace("if (noConfirmada(deal, f, estado && estado.vetadas)) {tel++; pend++; return;}", "")],
-  ["el issue no titula lo del SII", (c) => c.replace('"Documentos inhabilitados por el SII: no se puede cursar"', '"Facturas no verificadas: no se puede cursar"')],
-  ["la candidata no dice por qué", (c) => c.replace('R("inhabilitada", "Inhabilitada por el SII",', 'R("noConfirmada", "El deudor no la confirmó",')],
-  ["el aviso pierde el asunto del SII", (c) => c.replace("Documentos inhabilitados por el SII · ${deal.id}", "Verificación fallida · ${deal.id}")],
-  ["VER-01 calla", (c) => c.replace("inhabilitada(s) por el SII: reclamo, nota de crédito o cesión a otro, regla 71", "")],
-  ["la fila de la oferta no rotula", (c) => c.replace("if (f && f.inhabilitada) return `Inhabilitada por el SII · ${f.inhabilitada.glosa}`;", "")],
-  ["el detalle no relee el veto", (c) => c.replace('window.addEventListener("storage", onStorageVeto);', "")],
+  ["simular no evalúa", (c) => c.replace("if (d0) evaluarOperacion(", "if (false) evaluarOperacion(")],
+  ["simular evalúa DESPUÉS de escribir el negocio", (c) => {
+    const i = c.indexOf("if (d0) evaluarOperacion("); const j = c.indexOf("const upd = (d) => {", i);
+    const bloque = c.slice(i, j); const k = c.indexOf("setDeals((prev) => prev.map(upd));", j);
+    return c.slice(0, i) + c.slice(j, k) + "setDeals((prev) => prev.map(upd)); " + bloque + c.slice(k + "setDeals((prev) => prev.map(upd));".length);
+  }],
+  ["el evento emite a medias", (c) => c.replace("if (!versionCompleta(nv)) {", "if (false) {")],
+  ["el evento no dice que falló", (c) => c.replace("`Evaluación fallida · ${deal.id}: ${que}", "`Evaluación · ${deal.id}: ${que}").replace('accion: "Evaluación fallida"', 'accion: "Evaluación"')],
+  ["«Re-evaluar operación» vuelve a ser un spinner", (c) => c.replace("const reevaluarLinea = () => {setDetReeval(true); if (onEvaluar) onEvaluar(deal.id);", "const reevaluarLinea = () => {setDetReeval(true);")],
+  ["la pestaña no recibe el evento", (c) => c.replace("onEvaluar={reevaluarOperacion}", "")],
+  ["el aviso «La selección cambió» sólo se apaga", (c) => c.replace("onReevaluar={() => {if (onEvaluar) onEvaluar(deal.id);", "onReevaluar={() => {")],
+  ["un emisor literal fuera del evento", (c) => c.replace("const reabrirOperacion = (id) => {", "const reabrirOperacion = (id) => {repoSimVersions.push(id, {v: 9});")],
+  ["el comité re-asigna en vez de recortar", (c) => c.replace('snapVersionCli(dealTrasRetiro, vs.length, {linea: recortarAsignacion(prev.linea, quedan.map((f) => f.id)), origen, motivo: "comite_rechazo"})', 'snapVersionCli(dealTrasRetiro, vs.length, {origen, motivo: "comite_rechazo"})')],
+  ["la regularización vuelve a ser por número de versión", (c) => c.replace("if (o.origenActualizado) {", "if ((rev || 0) >= 1) {")],
+  ["la re-evaluación de la simulación arma la versión por su cuenta", (c) => c.replace('const r = evaluarOperacion(deal, usuario, {origenActualizado: true, origen: "Re-evaluación · JSON API actualizado tras firma", motivo: "reevaluacion_origen"});', 'const r = {version: snapVersionCli(deal, vs.length, {origenActualizado: true})}; repoSimVersions.push(deal.id, r.version);')],
+  ["la versión pierde el pricing", (c) => c.replace("nRech, linea, verificacion, giro, pricing, motoresFallidos: fallidos, politica:", "nRech, linea, verificacion, giro, motoresFallidos: fallidos, politica:")],
+  ["el giro de la versión no mira la asignación recién evaluada", (c) => c.replace("giro = fsOp.length ? giroDeVersion(deal, fsOp, {linea}) : null;", "giro = fsOp.length ? giroDeVersion(deal, fsOp, {}) : null;")],
+  ["la pantalla elige la tasa por su cuenta", (c) => c.replace("const tn = tasaDelNegocio(deal, tasaPondRiesgo, CFG_ACTIVA);", "const tn = {ultNeg: null, usaUltNeg: false, tasaEfectiva: tasaPondRiesgo};")],
+  ["el tab no cuenta por motor", (c) => c.replace("const nMot = contarVersiones(shown);", "const nMot = {};")],
+  ["el tubo no relee las versiones", (c) => c.replace("repoSimVersions.recargar(); SIM_VERSIONS = repoSimVersions.all();", "")],
+  ["la bitácora vuelve a anunciar el recálculo", (c) => c.replace("Facturas agregadas al pool en ${idsWarn.length} oportunidad(es)", "Recálculo aplicado en ${idsWarn.length} oportunidad(es)")],
 ];
 for (const [nombre, mutar] of MUTANTES)
   test(`sonda negativa: ${nombre}`, () => {

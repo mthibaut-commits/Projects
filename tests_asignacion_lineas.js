@@ -2089,7 +2089,7 @@
 
     // (c) El pipeline lo LEE: una factura cedida a otro factoring se bloquea con su nombre y su fecha,
     //     y una cedida a nosotros se distingue —no es competencia, es cartera propia— y desde ADR-0014 ENTRA
-    //     (regla 60, caso 159).
+    //     (regla 63, caso 159).
     const ajena = aec.find((c) => c.RUTFactoring !== BICE_RUT && porFolio[c.RUTCedente + "|" + c.Folio]);
     const propia = aec.find((c) => c.RUTFactoring === BICE_RUT && porFolio[c.RUTCedente + "|" + c.Folio]);
     const dealDe = (c) => ({ id: "OP-CES-95", cliente: "C95", rutEmisor: c.RUTCedente, deudores: [],
@@ -4158,7 +4158,7 @@
       const r = clasificarFactura(ev, INBOUND_RULES);
       if (r) { capturadas++; if (esOtro && !sobreCorte) otroCapturada++; if (esOtro && sobreCorte) otroNotaAbre++; }
       else if (esOtro && !sobreCorte) excluidasOtro++;
-      // …descontando lo que el filtro de calidad excluye por el DOCUMENTO: cesión ajena (regla 60) y antigüedad (regla 61).
+      // …descontando lo que el filtro de calidad excluye por el DOCUMENTO: cesión ajena (regla 63) y antigüedad (regla 64).
       else if (esOtro && sobreCorte && ev.credito && !ev.reclamada && !ev.notaCredito && !cedidaAFactoringAjeno(ev) && !superaAntiguedad(ev)) otroNotaNoAbre++;
     }
     const archivoOk = capturadas > 0 && excluidasOtro > 0 && otroCapturada === 0 && otroNotaAbre > 0 && otroNotaNoAbre === 0;
@@ -7652,7 +7652,7 @@
        `antes ${antesOk} (simulando y cerrada-sin-comunicar no exigen) · al publicar ${despuesOk} · etapas posteriores ${etapasOk} · mismo criterio que ofertaPublicada ${mismoCriterioOk}`);
   }
 
-  // ═══ 159 · ADR-0014 / regla 60: la cedida a un factoring AJENO no es candidata del inbound; la cedida a Security sí ═══
+  // ═══ 159 · ADR-0014 / regla 63: la cedida a un factoring AJENO no es candidata del inbound; la cedida a Security sí ═══
   {
     const aec159 = window.AECSYNC || [], dte159 = documentosDTE();
     const porFolio159 = {}; for (const r of dte159) if (r && r.RUTEmisor) porFolio159[r.RUTEmisor + "|" + r.Folio] = r;
@@ -7700,7 +7700,7 @@
   }
 
   {
-    // 160 · La antigüedad máxima desde la emisión es condición de candidatura del inbound (regla 61) y parámetro del
+    // 160 · La antigüedad máxima desde la emisión es condición de candidatura del inbound (regla 64) y parámetro del
     //       tenant (`antiguedadMaxDias`, 20 por defecto; regla 9-bis): el valor del código no manda.
     const guardado160 = { ...CFG_ACTIVA };
     // El evento del stream lleva el documento en `facturasOp[0]` (con su `fchEmis`) y en la raíz una antigüedad propia:
@@ -7757,10 +7757,10 @@
   }
 
   {
-    // 161 · NINGUNA EXCEPCIÓN SIN JUSTIFICAR: la compuerta es de la MUTACIÓN (regla 62, M-19) y solicitar sin
+    // 161 · NINGUNA EXCEPCIÓN SIN JUSTIFICAR: la compuerta es de la MUTACIÓN (regla 65, M-19) y solicitar sin
     //       justificación no escribe (CA-4 de HU-25). Molde: `giroCursable` (caso 108), que el cierre ya aplicaba al
     //       monto. `cerrarOferta` es un closure de `PipelineComercial`: acá se prueba la compuerta pura que él llama y
-    //       el gate de texto `regla_62.test.mjs` fija que la llama antes de escribir.
+    //       el gate de texto `regla_65.test.mjs` fija que la llama antes de escribir.
     const ID = "OP-T161-" + Date.now();
     // Sin evidencia del contrato, O05 queda «sujeta a excepción» (caso 85): una excepción pendiente real, del motor.
     const deal = { id: ID, rutEmisor: "76.111.111-1", cliente: "Cliente 161", facturasOp: [fac("x1", LB[0], 20), fac("x2", LB[1], 12)], monto: 32 * MMF, negocioNum: "OP-161" };
@@ -7804,7 +7804,7 @@
   }
 
   {
-    // 162 · EL QUINTO HECHO (ADR-0017, regla 63): si las facturas del deudor requieren comité, el giro es Normal aunque
+    // 162 · EL QUINTO HECHO (ADR-0017, regla 66): si las facturas del deudor requieren comité, el giro es Normal aunque
     //       cumpla las cuatro condiciones de Express; sin comité deciden los cuatro hechos como antes (casos 78–81), y la
     //       regla de oro se conserva. «El resultado de la línea sí afecta el tipo de giro; si hay que pedir comité el
     //       giro debe ser Giro Normal» (el usuario, 22-09-2026).
@@ -7860,7 +7860,7 @@
   }
 
   {
-    // 163 · EL RELOJ DEL TENANT (ADR-0019, regla 64): el corte y el reinicio corren a la hora configurada —no por conteo
+    // 163 · EL RELOJ DEL TENANT (ADR-0019, regla 67): el corte y el reinicio corren a la hora configurada —no por conteo
     //       de corridas—, la corrida sólo abre dentro de la ventana, cambiadas las horas las siguen, y `frecuenciaMin`
     //       deja de ser declarativa. CP-019, CP-020 y CP-121. Las funciones son puras y reciben la hora: el sustituto
     //       legítimo del reloj (el e2e no puede moverlo).
@@ -7911,7 +7911,7 @@
 
   {
     // 164 · AL CORTE LA SIN OFERTA SE ELIMINA Y LA QUE TIENE OFERTA NO SE TOCA; al reinicio vuelve como oportunidad NUEVA
-    //       con id propio y referencia (ADR-0019, regla 64). CP-022, CP-023 y CP-143. El corte es una función pura sobre
+    //       con id propio y referencia (ADR-0019, regla 67). CP-022, CP-023 y CP-143. El corte es una función pura sobre
     //       la lista, así que se prueba con las cinco clases de oportunidad a la vez.
     const mk = (id, extra) => ({
       id, _inbound: true, stage: "prospeccion", simulado: false, cliente: "Cedente " + id, rutEmisor: "76.164.164-0", deudor: "Deudor 164",
@@ -7951,11 +7951,11 @@
   }
 
   {
-    // 165 · EL COMITÉ DE CRÉDITO QUE RECHAZA (ADR-0015, regla 65): la API 3 devuelve «Rechazada» por línea de detalle;
+    // 165 · EL COMITÉ DE CRÉDITO QUE RECHAZA (ADR-0015, regla 68): la API 3 devuelve «Rechazada» por línea de detalle;
     //       el rechazo retira de la oferta las facturas del deudor cuya línea se rechazó, emite versión con motivo
     //       `comite_rechazo` (la asignación sólo encoge) y REABRE la operación revocando la firma; si no queda ninguna
     //       factura, la operación se pierde con causa «Línea rechazada por el comité». «Observada» no toca nada.
-    //       CP-095, CP-096 y CP-133. La decisión es pura; el gate `regla_65.test.mjs` fija que «Consultar estados» la aplica.
+    //       CP-095, CP-096 y CP-133. La decisión es pura; el gate `regla_68.test.mjs` fija que «Consultar estados» la aplica.
     const nD = (r) => nomDe(r);
     const fs165 = [fac("c1", LB[0], 20), fac("c2", LB[0], 10), fac("s1", LB[1], 30)];
     const deal = { id: "T-165", rutEmisor: "76.111.111-1", cliente: "Cliente 165", stage: "otorgamiento", clienteAcepto: true, cierreFirmado: true,
@@ -8018,7 +8018,7 @@
   }
 
   {
-    // 166 · LA EXCEPCIÓN QUE LA VERSIÓN N YA NO LEVANTA SE MARCA «ya no aplica desde la versión N», NO SE BORRA (regla 66,
+    // 166 · LA EXCEPCIÓN QUE LA VERSIÓN N YA NO LEVANTA SE MARCA «ya no aplica desde la versión N», NO SE BORRA (regla 69,
     //       ADR-0016, M-21; G-14 y G-35). «No debería quedar huérfano, debería quedar con un estado que identifique que
     //       cambió, para poder auditar que esa regla quedó así en el cambio de versión» (el usuario, 22-09-2026).
     //       Fixture del caso 124 (el cedente con libro): C07 «Cupo suficiente» es excepción en v1 y la re-evaluación la
@@ -8129,7 +8129,7 @@
   }
 
   {
-    // 167 · LA VERIFICACIÓN FALLIDA MARCA Y AVISA, NO RETIRA (regla 67, ADR-0018, M-18; G-11 en M-18 y G-36). «Si el
+    // 167 · LA VERIFICACIÓN FALLIDA MARCA Y AVISA, NO RETIRA (regla 70, ADR-0018, M-18; G-11 en M-18 y G-36). «Si el
     //       verificador no verifica una factura, la operación debe quedar marcada con un issue, se debe notificar al
     //       ejecutivo […] y el ejecutivo deberá abrir la operación y sacar esas facturas de ese deudor no verificado, volver a
     //       simular, y volver a ejecutar el proceso de publicar la oferta para que el cliente firme la nueva operación» (el
@@ -8138,7 +8138,7 @@
     //       las cuenta; (b) la mesa las lista UNA vez, con su estado, y el deudor se deriva de sus documentos; (c) el aviso al
     //       ejecutivo comercial lo firma el sistema, nombra operación, deudor y folios, se reusa y calla sin marcadas; (d) el
     //       veto bloquea la reincorporación (regla 6). Que la mesa y el detalle NO retiren y que `retirarFacturaOferta` ya no
-    //       tenga la excepción «noConfirmada» lo fija el gate de texto `regla_67.test.mjs` (son closures de React).
+    //       tenga la excepción «noConfirmada» lo fija el gate de texto `regla_70.test.mjs` (son closures de React).
     const ID = "T-167";
     const deudorTel = TODOS_LB.map((r) => ({ r, v: verifFactura(fac("x", r, 10), { id: ID, rutEmisor: "76.111.111-1" }) })).find((x) => x.v.est === "tel");
     if (!deudorTel) { ok("167 la verificación fallida marca y avisa, no retira: el issue nombra las marcadas, la mesa las lista una vez, el aviso al ejecutivo lo firma el sistema y el veto bloquea la reincorporación", false, "ningún deudor de prueba requiere verificación"); }
@@ -8206,7 +8206,7 @@
   }
 
   {
-    // 168 · UN EVENTO DE EVALUACIÓN, CINCO MOTORES, CINCO VERSIONES CON EL MISMO NÚMERO (regla 68, ADR-0013; M-13, M-24,
+    // 168 · UN EVENTO DE EVALUACIÓN, CINCO MOTORES, CINCO VERSIONES CON EL MISMO NÚMERO (regla 71, ADR-0013; M-13, M-24,
     //       M-26, M-36; G-09, G-10, G-22, G-32). «Al presionar simular se debe generar un evento que gatille todas las
     //       evaluaciones de los motores […] Cada motor debiera tener una versión como el motor de otorgamiento y siempre
     //       debieran haber la misma cantidad de ejecuciones en todos los motores» (el usuario, 22-09-2026). Lo que fija:
@@ -8218,10 +8218,10 @@
     //       (d) la versión de pricing guarda el modo de tasa y las condiciones (M-36): con `tasaModo` «riesgo» y «ultima»
     //           el modo cambia y la huella O05 no (regla 23, caso 85);
     //       (e) la versión del rechazo del comité es completa: cinco secciones sobre lo que queda y la línea recortada
-    //           (regla 65), sin push (la decisión es pura);
+    //           (regla 68), sin push (la decisión es pura);
     //       (f) «Re-evaluación de la simulación» pasa por el evento: una versión más, con el origen regularizado.
     //       Que «Simular la oferta» y «Re-evaluar operación» disparen el evento, que la pestaña lo reciba y que el anuncio
-    //       del recálculo se haya retirado lo fija el gate de texto `regla_68.test.mjs` (son closures de React).
+    //       del recálculo se haya retirado lo fija el gate de texto `regla_71.test.mjs` (son closures de React).
     const ID = "T-168";
     const habia = repoSimVersions.get(ID);
     const auditSnap = AUDIT_LOG.slice(); const auditDesc = AUDIT_DESCARTADOS;
@@ -8318,7 +8318,7 @@
   }
 
   {
-    // 169 · EL ACUSE DEL RECEPTOR ES UNA BANDERA DEL DTE QUE EL A1 TRAE Y `facturaDeDTE` LEE; SE MUESTRA Y NO FILTRA (regla 69,
+    // 169 · EL ACUSE DEL RECEPTOR ES UNA BANDERA DEL DTE QUE EL A1 TRAE Y `facturaDeDTE` LEE; SE MUESTRA Y NO FILTRA (regla 72,
     //       M-01, G-01; el usuario, 22-09-2026: «las aceptaciones son parte de las banderas de DTE»; 23-09-2026: «las
     //       facturas los primeros 8 días desde su emisión no tienen acuse de aceptación y/o reclamo y en ese estado de
     //       ausencia de acuse sí son candidatas»). Lo que fija: (a) `facturaDeDTE` lee `EstadoDTE.Aceptado`/`FchAcuseRecibo`
@@ -8374,7 +8374,7 @@
   }
 
   {
-    // 170 · EL A1 ES UN FLUJO DE EVENTOS POR DOCUMENTO (regla 70, ADR-0020; el usuario, 23-09-2026: «los eventos de
+    // 170 · EL A1 ES UN FLUJO DE EVENTOS POR DOCUMENTO (regla 73, ADR-0020; el usuario, 23-09-2026: «los eventos de
     //       DTESync llegan varias veces para la misma factura: una vez se crea, después puede llegar nota de crédito,
     //       después aceptación»). Lo que fija: (a) `plegarDTE` deja un documento por (emisor, folio) con los campos de
     //       la creación y el estado del evento más nuevo, cualquiera sea el orden de llegada, y una fila plana se
@@ -8434,7 +8434,7 @@
     const cerrado = { ...deal, ofertaCerrada: true, negocioNum: 170 };
     const r3 = aplicarActualizacionDTE(cerrado, evNC2);
     const r3b = aplicarActualizacionDTE(r3.deal, evNC2);
-    // Sobre la oferta cerrada la NC INHABILITA el documento (regla 71, ADR-0021): queda con su estado, marcado, con traza en rojo; y no dos veces.
+    // Sobre la oferta cerrada la NC INHABILITA el documento (regla 74, ADR-0021): queda con su estado, marcado, con traza en rojo; y no dos veces.
     const avisoOk = !!r3.cambio && r3.cambio.donde === "inhabilitada" && r3.deal.facturasOp[0].notaCredito === true && r3.deal.facturasOp[0].inhabilitada.motivo === "nota_credito"
       && r3.deal.facturasOp[0].inhabilitada.secuencia === 2 && r3.cambio.factura === r3.deal.facturasOp[0] && r3.deal.historialContacto.length === 1
       && r3.deal.historialContacto[0].exito === false && /⚠/.test(r3.deal.historialContacto[0].resultado) && /cerrada/.test(r3.deal.historialContacto[0].resultado) && /inhabilitado/.test(r3.deal.historialContacto[0].resultado)
@@ -8449,7 +8449,7 @@
     const e0 = evs[0], e1 = aplicarActualizacionAEvento(e0, evs[2]);
     const buena = (e) => CRITERIO_PRED["Buena factura"]({ ...e, esCliente: true, tipoDeudor: "Lista Blanca", inboundBucket: "CAT1", histFactoring: "bice", diasEmision: 3 }) === true;
     const eventoOk = e1 !== e0 && e1.notaCredito === true && e1.facturasOp[0].notaCredito === true && buena(e0) === true && buena(e1) === false && aplicarActualizacionAEvento(e1, evs[2]) === e1;
-    ok("170 el A1 es un flujo de eventos por documento: plegarDTE deja un documento por (emisor, folio) con el estado más nuevo cualquiera sea el orden; el libro, los pares y el corte cuentan documentos; el stream lleva la creación sin banderas y la actualización aparte; la NC llegada parcha los disponibles y la oferta abierta con traza, sobre la oferta cerrada la inhabilita (regla 71), y no se aplica dos veces",
+    ok("170 el A1 es un flujo de eventos por documento: plegarDTE deja un documento por (emisor, folio) con el estado más nuevo cualquiera sea el orden; el libro, los pares y el corte cuentan documentos; el stream lleva la creación sin banderas y la actualización aparte; la NC llegada parcha los disponibles y la oferta abierta con traza, sobre la oferta cerrada la inhabilita (regla 74), y no se aplica dos veces",
        plegOk && activoOk && streamOk && dispOk && idemOk && ofertaOk && avisoOk && acuseOk && ajenoOk && loteOk && eventoOk,
        `pliegue ${plegOk} · A1: ${log.length} eventos → ${docs.length} documentos (${nAct} actualizaciones), libro/pares/corte sobre documentos ${activoOk} · stream ${streamOk}`
        + ` · NC en disponibles ${dispOk} · idempotente ${idemOk} · NC en oferta abierta ${ofertaOk} · oferta cerrada: inhabilitada con traza ${avisoOk} · acuse sin traza ${acuseOk} · folio ajeno ${ajenoOk} · lote ${loteOk} · evento del inbound ${eventoOk}`);
@@ -8457,7 +8457,7 @@
 
   {
     // 171 · LA NC, EL RECLAMO O LA CESIÓN A OTRO SOBRE UNA OFERTA CERRADA, PUBLICADA O FIRMADA DEJAN LA OPERACIÓN NO
-    //       CURSABLE (regla 71, ADR-0021; el usuario, 23-09-2026: «se debe dejar la oferta como no cursable, el documento
+    //       CURSABLE (regla 74, ADR-0021; el usuario, 23-09-2026: «se debe dejar la oferta como no cursable, el documento
     //       debe quedar inhabilitado, el ejecutivo debería retirar la factura, re-evaluar, volver a firmar. Cuando una
     //       factura está reclamada, anulada y/o cedida a otro, quiere decir que el deudor no va a pagar esa factura […] es
     //       como que esté no verificada, al margen que la verificación telefónica haya dado por verificada»). Lo que fija
