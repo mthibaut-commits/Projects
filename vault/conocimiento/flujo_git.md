@@ -30,6 +30,12 @@ reescribe con el preset B. Está registrado como supuesto en ADR-0002.
   rojo el CI no dice que lo demás pase: **dice que no lo miró**, y hay que leerlo así al mirar un run.
 - **Lo que uno hereda al mezclar es de uno desde que mezcla.** El rojo del paso 0 lo vio la sesión anterior
   —su log lo anota como «el prettier en rojo que no era mío»— y dejarlo apagó el CI para todos.
+- **Antes de modificar, se integra `main` en la rama** (23-09-2026, pedido del usuario: «antes de partir con una
+  modificación de la rama main debes integrar los cambios para que tu base sea lo más actualizada»). Es la skill
+  `sincronizar-main`: `node sincronizar_main.mjs` trae `origin/main`, mide la rama y propone los comandos —avanzar,
+  tomar el árbol de `main` o mezclar con `--no-ff`—, que se corren uno por uno; nunca empuja ni reescribe. Se
+  repite justo antes de mezclar a `main`. El costo de no hacerlo está medido: el mismo 23-09 un bloque de reglas se
+  renumeró dos veces porque otra sesión publicó mientras ésta trabajaba sobre una base vieja.
 - **El trabajo va en ramas cortas**: `feature/<slug>`, `fix/<slug>`, o la **rama designada de la sesión**
   cuando el trabajo lo hace Claude Code (`claude/<nombre>`), que es lo que ha pasado hasta hoy. Días, no
   semanas; un cambio grande se parte en varias.
