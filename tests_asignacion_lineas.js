@@ -2088,7 +2088,8 @@
     }
 
     // (c) El pipeline lo LEE: una factura cedida a otro factoring se bloquea con su nombre y su fecha,
-    //     y una cedida a nosotros se distingue —no es competencia, es cartera propia—.
+    //     y una cedida a nosotros se distingue —no es competencia, es cartera propia— y desde ADR-0014 ENTRA
+    //     (regla 60, caso 159).
     const ajena = aec.find((c) => c.RUTFactoring !== BICE_RUT && porFolio[c.RUTCedente + "|" + c.Folio]);
     const propia = aec.find((c) => c.RUTFactoring === BICE_RUT && porFolio[c.RUTCedente + "|" + c.Folio]);
     const dealDe = (c) => ({ id: "OP-CES-95", cliente: "C95", rutEmisor: c.RUTCedente, deudores: [],
@@ -2098,7 +2099,7 @@
     const estP = propia ? estadoCandidata(facDe(propia), dealDe(propia)) : null;
     const bloqueoOk = !!estA && estA.clave === "cedida" && estA.bloqueada
       && (estA.detalle || "").includes(ajena.RazonSocialFactoring)
-      && !!estP && estP.clave === "cedidaNuestra" && estP.bloqueada;
+      && !!estP && estP.clave === "cedidaNuestra" && !estP.bloqueada && estP.agregable;
 
     // (d) Y un documento del MISMO cedente que nadie cedió sigue disponible: el bloqueo no se contagia
     //     al cliente entero, que es lo que haría un hash por cedente.
@@ -4157,7 +4158,7 @@
       const r = clasificarFactura(ev, INBOUND_RULES);
       if (r) { capturadas++; if (esOtro && !sobreCorte) otroCapturada++; if (esOtro && sobreCorte) otroNotaAbre++; }
       else if (esOtro && !sobreCorte) excluidasOtro++;
-      else if (esOtro && sobreCorte && ev.credito && !ev.reclamada && !ev.notaCredito) otroNotaNoAbre++;
+      else if (esOtro && sobreCorte && ev.credito && !ev.reclamada && !ev.notaCredito && !cedidaAFactoringAjeno(ev)) otroNotaNoAbre++;
     }
     const archivoOk = capturadas > 0 && excluidasOtro > 0 && otroCapturada === 0 && otroNotaAbre > 0 && otroNotaNoAbre === 0;
     // POOL MANUAL: lo que el inbound deja «disponible para agregar a mano» es TODO bucket OTRO y tipo
@@ -7647,6 +7648,53 @@
     ok("158 mientras se simula los pendientes son un pronóstico; al publicar la oferta pasan a exigirse",
        antesOk && despuesOk && etapasOk && mismoCriterioOk,
        `antes ${antesOk} (simulando y cerrada-sin-comunicar no exigen) · al publicar ${despuesOk} · etapas posteriores ${etapasOk} · mismo criterio que ofertaPublicada ${mismoCriterioOk}`);
+  }
+
+  // ═══ 159 · ADR-0014 / regla 60: la cedida a un factoring AJENO no es candidata del inbound; la cedida a Security sí ═══
+  {
+    const aec159 = window.AECSYNC || [], dte159 = window.DTESYNC || [];
+    const porFolio159 = {}; for (const r of dte159) if (r && r.RUTEmisor) porFolio159[r.RUTEmisor + "|" + r.Folio] = r;
+    const evDe = (r) => streamDesdeDTE([r])[0];
+    // Sobre el A2 real: una cesión ajena y una nuestra cuyos folios existen en el A1 y cuyo deudor abre
+    // oportunidad — si no, «Buena factura» fallaría por el deudor y no por la cesión.
+    const abre = (r) => { const ev = evDe(r); return !!ev && ev.credito && !ev.reclamada && !ev.notaCredito && deudorAbreOportunidad(ev); };
+    const docDe = (c) => porFolio159[c.RUTCedente + "|" + c.Folio];
+    const ajena159 = aec159.find((c) => c.RUTFactoring !== BICE_RUT && docDe(c) && abre(docDe(c)));
+    const propia159 = aec159.find((c) => c.RUTFactoring === BICE_RUT && docDe(c) && abre(docDe(c)));
+    const evA = ajena159 && evDe(docDe(ajena159)), evP = propia159 && evDe(docDe(propia159));
+    // (a) El filtro del inbound: la ajena no es «Buena factura» y ninguna regla la captura; la nuestra sí califica.
+    const filtroOk = !!evA && !!evP && cedidaAFactoringAjeno(evA) === true && cedidaAFactoringAjeno(evP) === false
+      && CRITERIO_PRED["Buena factura"](evA) === false && clasificarFactura(evA, INBOUND_RULES) === null
+      && CRITERIO_PRED["Buena factura"](evP) === true;
+    // (b) El perfil de la Bandeja nombra el motivo, y no la llama «Buena factura».
+    const perfA = evA ? criteriosDesdeFactura(evA) : [], perfP = evP ? criteriosDesdeFactura(evP) : [];
+    const perfilOk = perfA.includes("Cedida a otro factoring (excluida)") && !perfA.includes("Buena factura") && perfP.includes("Buena factura");
+    // (c) Al incorporar: la ajena sigue bloqueada con el nombre del factoring; la nuestra ENTRA, rotulada.
+    const dealDe159 = (c) => ({ id: "OP-159", cliente: "C159", rutEmisor: c.RUTCedente, deudores: [], facturasOp: [], facturasDisponibles: [], facturasRetiradas: [], nuevasFacturas: 0 });
+    const estA159 = ajena159 && estadoCandidata(facturaDeDTE(docDe(ajena159)), dealDe159(ajena159));
+    const estP159 = propia159 && estadoCandidata(facturaDeDTE(docDe(propia159)), dealDe159(propia159));
+    const incorporaOk = !!estA159 && estA159.bloqueada && !estA159.agregable && estA159.clave === "cedida" && (estA159.detalle || "").includes(ajena159.RazonSocialFactoring)
+      && !!estP159 && !estP159.bloqueada && estP159.agregable && /^cedidaNuestra/.test(estP159.clave) && /Security/.test(estP159.label || "");
+    // (d) SONDA: el mismo evento sin su cesión en el índice vuelve a calificar — la exclusión sale del A2 y de nada más.
+    let sondaOk = false;
+    if (evA) {
+      const idx = cesionesPorDocumento(), k = ajena159.RUTCedente + "|" + ajena159.Folio, guardada = idx.get(k);
+      try { idx.delete(k); sondaOk = cedidaAFactoringAjeno(evA) === false && CRITERIO_PRED["Buena factura"](evA) === true; } finally { idx.set(k, guardada); }
+    }
+    // (e) Sobre el archivo: ninguna captura del stream lleva una factura cedida a un factoring ajeno, y las
+    //     cedidas a Security sí se capturan (las dos cotas se ejercitan).
+    const muestra159 = streamDesdeDTE(dte159.slice(0, 8000));
+    let capAjena = 0, exclAjena = 0, capNuestra = 0;
+    for (const ev of muestra159) {
+      const ces = cesionDeFactura(ev.rutEmisor, ev.facturasOp[0].folio), r = clasificarFactura(ev, INBOUND_RULES);
+      if (ces && !ces.nuestra) { if (r) capAjena++; else exclAjena++; }
+      else if (ces && ces.nuestra && r) capNuestra++;
+    }
+    const archivoOk = capAjena === 0 && exclAjena > 0 && capNuestra > 0;
+    ok("159 la factura cedida a un factoring ajeno no es candidata del inbound; la cedida a Security sí, y al incorporar entra",
+       filtroOk && perfilOk && incorporaOk && sondaOk && archivoOk,
+       `ajena a ${ajena159 ? ajena159.RazonSocialFactoring : "?"} excluida ${filtroOk} · perfil ${perfilOk} · incorporar: ajena bloqueada / nuestra entra ${incorporaOk}`
+       + ` · sonda sin cesión califica ${sondaOk} · archivo: ${exclAjena} ajenas excluidas, ${capAjena} capturadas, ${capNuestra} nuestras capturadas ${archivoOk}`);
   }
 
   console.log(out.join("\n"));

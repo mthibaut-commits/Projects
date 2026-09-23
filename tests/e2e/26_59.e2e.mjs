@@ -46,13 +46,19 @@ async function abrirPorId(h, id) {
   det.on("pageerror", (e) => (det._erroresE2E = det._erroresE2E || []).push(String(e).slice(0, 300)));
   return det;
 }
-/* Simula desde el panel de arranque del detalle. Deja la oferta con TODO lo disponible del cliente. */
+/* Simula desde el panel de arranque del detalle. Deja la oferta con TODO lo disponible del cliente.
+   Se espera a que el panel de arranque SE RETIRE —ni «Simulando la oferta…» ni la pregunta—, que es la señal de
+   que la simulación aterrizó, y no un tiempo fijo: la latencia simulada crece con las facturas de la oferta
+   (`latenciaBaseMs + n · latenciaPorDocMs`) y con ADR-0014 «Todo lo disponible» de la primera operación pasó de 17
+   a 39 facturas (las cedidas a Security entran), así que 2,5 s fijos leían las pestañas ANTES de simular. */
 async function simularEnDetalle(det) {
   const chip = det.locator("button").filter({ hasText: /Todo lo disponible/ }).first();
   if (!(await chip.count())) throw new Error("no encuentro el chip «Todo lo disponible» del panel de arranque");
   await chip.click();
-  await det.waitForFunction(() => /condiciones comerciales/i.test(document.body.innerText || ""), null, { timeout: 30000 });
-  await det.waitForTimeout(2500);
+  await det
+    .waitForFunction(() => { const t = document.body.innerText || ""; return !/Simulando la oferta/.test(t) && !/¿Qué facturas quieres incluir en la oferta\?/.test(t); }, null, { timeout: 30000 })
+    .catch(() => { throw new Error("«Todo lo disponible» no simuló: el panel de arranque no se retiró de la pantalla"); });
+  await det.waitForTimeout(1000);
 }
 /* El selector de identidad del detalle (sólo demo). Cambiar a `EV` es lo que hace que el botón de
    firmar dependa de la COMPUERTA y no del permiso. */

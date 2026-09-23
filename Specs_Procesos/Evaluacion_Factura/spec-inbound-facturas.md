@@ -78,12 +78,13 @@ deudor: que **abra oportunidad** (§4). Las cuatro juntas:
 buena_factura = credito  y  no_reclamada  y  no_nota_credito  y  deudor_abre_oportunidad
 ```
 
-> **Dos filtros que la política pide y el código NO aplica acá** (ver §11): que la factura **no esté ya
-> cedida** a otro factor, y la marca **«solicitar XML»** cuando el XML no es recuperable. El estado
-> `cedida` sí existe y sí bloquea la factura más adelante —`estadoCandidata` la marca «Cedida a
-> terceros» y no se puede incorporar—, pero el inbound no la excluye al entrar: la cesión a la
-> competencia se detecta **después**, como pérdida por AECSync. No es un olvido inocuo: una factura ya
-> cedida puede llegar a formar parte del monto con que se dimensiona una oportunidad.
+> **Un filtro que la política pide y el código NO aplica acá** (ver §11): la marca **«solicitar XML»**
+> cuando el XML no es recuperable. El otro que faltaba —que la factura **no esté ya cedida** a otro
+> factor— se aplica desde el 23-09-2026 (ADR-0014, regla 60): «Buena factura» exige además que el A2
+> no registre una cesión a un factoring **ajeno** a Security (`cedidaAFactoringAjeno`); la cedida a
+> Security es candidata como cualquier otra, porque es cartera propia. Antes la cesión a la
+> competencia se detectaba **después**, como pérdida por AECSync, y la factura ya cedida entraba al
+> monto con que se dimensionaba la oportunidad.
 
 ---
 
@@ -344,7 +345,7 @@ Tres observaciones, en orden de importancia:
 
 | PDF | Código | Lectura |
 |---|---|---|
-| Filtro de calidad: **«ya cedida (AECSync) → se excluye»** | el inbound **no** lo filtra; la cesión se detecta después como pérdida | **Desfase real.** Una factura ya cedida puede entrar al monto con que se dimensiona una oportunidad. El estado `cedida` sí bloquea la incorporación más adelante |
+| Filtro de calidad: **«ya cedida (AECSync) → se excluye»** | el inbound excluye la cedida a un factoring **ajeno** (`cedidaAFactoringAjeno`, cuarta condición de «Buena factura»); la cedida a Security es candidata | **Cerrado el 23-09-2026** (ADR-0014, regla 60, caso 159): la cesión ajena ya no entra al monto con que se dimensiona la oportunidad, y al incorporar sigue bloqueada con el nombre del factoring |
 | Filtro de calidad: **«XML disponible → marca solicitar XML»** | no existe la marca | **No implementado** |
 | «Las reglas consideran sólo Lista Blanca + Autorizados + históricos del último año» | además abre la **Nota > 4,2** | **El código va más allá a propósito**: son dos poblaciones. Conviene que el PDF lo recoja |
 | Clasificación del deudor (§6), buckets CAT1/CAT4/OTRO | calza exacto | — |
@@ -357,9 +358,9 @@ Tres observaciones, en orden de importancia:
 
 ## 12. Lo que hay que decidir
 
-1. **¿El inbound debe excluir las facturas ya cedidas?** Hoy no lo hace y el PDF dice que sí. Si la
-   respuesta es sí, entra como cuarta condición del filtro de calidad y cambia el monto con que se
-   dimensionan las oportunidades.
+1. **¿El inbound debe excluir las facturas ya cedidas?** Decidido el 22-09-2026 e implementado el
+   23-09-2026 (ADR-0014, regla 60): sí, las cedidas a un factoring **ajeno**, como cuarta condición del
+   filtro de calidad; la cedida a Security no se excluye.
 2. **¿La marca «solicitar XML» se implementa?** Hoy no existe.
 3. **¿El orden de las siete reglas es el orden de prioridad del negocio?** Define qué regla captura y,
    con ella, el canal del primer contacto. Hoy Rule-01 (recuperar SOW) gana sobre todas.

@@ -31,3 +31,27 @@ timestamp: 2026-09-17T22:12:32Z
     - **Quién ve qué, en una sola respuesta.** `ofOtrasVisible` es el único predicado y lo usan los DOS contadores y la lista: el **ejecutivo** ve sólo las empresas de SU cartera (`esCliente` y él es el dueño); el **rol inbound y la jefatura** ven sólo las que no son de la cartera de nadie, que es lo que hay que repartir.
     - **EL DEFECTO QUE ESTO CIERRA:** «Otras Empresas» filtraba por rol y **«Todos» no**. `inboundCount` contaba `streamFeed` entero, así que un ejecutivo leía en «Todos» un total que incluía la cartera de sus colegas y las empresas sin dueño — filas que su propia tabla nunca le mostraba. Es el mismo desacuerdo contador/tabla que la regla 40 corrigió en el otro sentido (contar facturas contra una tabla de filas agrupadas), y estaba a la vista desde entonces.
     - **La compuerta del toggle se conserva**: con el Inbound apagado la tabla no dibuja ninguna fila del stream, así que el contador va a 0. Perderla sería volver a dejar el contador por encima de la lista. Gate `regla_40.test.mjs`, que ahora exige las tres cosas —filas agrupadas, mismo filtro por rol y la compuerta— con una sonda por cada una.
+
+60. **LA FACTURA CEDIDA A UN FACTORING AJENO NO ES CANDIDATA DEL INBOUND; LA CEDIDA A SECURITY SÍ** (23-09-2026,
+    ADR-0014; decisión del usuario del 22-09-2026 al revisar el modelo de curse: «sólo si está cedida a una
+    empresa diferente a Factoring Security; si está cedida a Security sí se puede agregar»).
+    - **La cuarta condición de «Buena factura»**: a crédito, sin reclamo, sin nota de crédito **y no cedida a otro
+      factoring** según el A2 (`cedidaAFactoringAjeno`, sobre `cesionDeFactura`: la misma fuente que ya usaba la
+      incorporación). Antes el inbound contaba la cedida y la bloqueaba recién al incorporar, así que el monto con
+      que se dimensionaba la oportunidad traía facturas que nunca se iban a poder comprar
+      (`Specs_Procesos/Evaluacion_Factura/spec-inbound-facturas.md` §11 lo declaraba como desfase con el PDF).
+    - **La cedida a Security no se excluye ni se bloquea**: es cartera propia, no competencia. `estadoCandidata` la
+      devuelve agregable, rotulada «Cedida a Security» (antes «Ya financiada», bloqueada; el caso 95 fijaba lo
+      contrario y se corrigió con esta regla). La cedida a un factoring ajeno sigue bloqueada al incorporar, con el
+      nombre del factoring y la fecha.
+    - **Y la oferta la CUENTA.** `motivoExcl` —lo que deja una factura de la oferta fuera del negocio— excluye sólo la
+      cedida a un factoring ajeno; «Ya financiada por Security» dejó de ser motivo. Se vio en la capa e2e, no en la
+      suite: la primera factura agregable del pool del Directorio es una cedida a Security, entraba a la oferta y no
+      contaba —«Tienes 1 factura elegida» no aparecía, «esta operación» no cuadraba con «Total oferta»— y diez casos
+      de pantalla cayeron a la vez. Las dos listas de candidatas la rotulan «Cedida a Security». Gate de texto:
+      `regla_60.test.mjs` (la cuarta condición, la candidata agregable y el motivo de exclusión, cada uno con sonda).
+    - **El perfil de la Bandeja nombra el motivo** («Cedida a otro factoring (excluida)»), como nombra el bloqueo de
+      riesgo: la diferencia entre «no tenemos regla para esto» y «otro se la llevó» es la que explica por qué no
+      se captura.
+    - Caso **159**, en las dos direcciones y con sonda: el mismo evento sin su cesión en el índice del A2 vuelve a
+      calificar, o sea que la exclusión sale del activo y de nada más.

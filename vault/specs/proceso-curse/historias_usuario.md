@@ -69,7 +69,7 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-03 · Candidata: no reclamada, sin NC y no cedida a un factoring ajeno
 - **Como** Inbound (sistema), **quiero** que una factura cedida a un factoring distinto de Factoring Security no cuente como candidata, y que la cedida a Security sí cuente, **para** que el dimensionamiento de la tarjeta no infle facturas que nunca se van a poder comprar.
-- **Estado**: por implementar (ADR-0014). D6 cerrada el 22-09-2026: la cedida a un factoring ajeno queda fuera del inbound; la cedida a Security entra como cualquier otra.
+- **Estado**: **vigente desde el 23-09-2026** (ADR-0014 implementado: regla 60, caso 159). D6 cerrada el 22-09-2026: la cedida a un factoring ajeno queda fuera del inbound; la cedida a Security entra como cualquier otra.
 - **Reglas**: 13-nonies · **Cláusulas**: M-09 · **Gaps**: G-06.
 - **Criterios de aceptación**:
   - CA-1 · Dado un cedente con una factura cedida en el A2 a un factoring distinto de Factoring Security · Cuando corre el inbound · Entonces la factura no está en «Documentos disponibles» y el contador de la tarjeta no la suma.
@@ -552,7 +552,7 @@ Cada una de las 41 cláusulas y de los 36 gaps aparece al menos una vez.
 | Gaps | Historias |
 |---|---|
 | G-01 · G-02 · G-03 · G-04 · G-05 | HU-04 · HU-08 · HU-09 · HU-06 (cerrado) · HU-07 |
-| G-06 · G-07 · G-08 · G-09 · G-10 | HU-03 · HU-05 (cerrado; la antigüedad en G-31) · HU-11 (cerrado) · HU-12 · HU-13 |
+| G-06 · G-07 · G-08 · G-09 · G-10 | HU-03 (implementada: regla 60) · HU-05 (cerrado; la antigüedad en G-31) · HU-11 (cerrado) · HU-12 · HU-13 |
 | G-11 · G-12 · G-13 · G-14 · G-15 | HU-24 (cerrado en M-15), HU-42 (decidido en M-18, ADR-0018) · HU-25 · HU-31, HU-34 (cerrado) · HU-32 · HU-18 (cerrado) |
 | G-16 · G-17 · G-18 · G-19 · G-20 | HU-16 (cerrado) · HU-26 (cerrado) · HU-27 · HU-35 · HU-37 |
 | G-21 · G-22 · G-23 · G-24 · G-25 | HU-20 (cerrado) · HU-21 · HU-19 · HU-36 · HU-39 |
@@ -560,9 +560,9 @@ Cada una de las 41 cláusulas y de los 36 gaps aparece al menos una vez.
 | G-31 · G-32 · G-33 · G-34 · G-35 | HU-05 · HU-21 · HU-35 · HU-37 · HU-32 |
 | G-36 | HU-42 (y HU-33 CA-3, vigente hoy · cambia con ADR-0018) |
 
-**Por estado (42 historias):** 19 vigentes —10 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
+**Por estado (42 historias):** 20 vigentes —10 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
 HU-29, HU-33 —con su CA-3 vigente hoy · cambia con ADR-0018— y HU-41) y 9 por definición ajustada el 22 y 23-09-2026
-(HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-26, HU-31, HU-34)— · 23 por implementar (HU-02, HU-03 ADR-0014, HU-04,
+(HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-26, HU-31, HU-34) y 1 implementada el 23-09-2026 (HU-03, ADR-0014: regla 60, caso 159)— · 22 por implementar (HU-02, HU-04,
 HU-05, HU-07, HU-08, HU-09 ADR-0019, HU-12, HU-13 ADR-0013, HU-17, HU-19, HU-21 ADR-0013, HU-25, HU-27, HU-30, HU-32
 ADR-0016, HU-35 ADR-0015, HU-36, HU-37 ADR-0017, HU-38, HU-39, HU-40, HU-42 ADR-0018) · 0 pendientes de confirmar.
 

@@ -192,11 +192,11 @@ Se presenta partido en dos pestañas y con dos vistas:
 |---|---|
 | Anulada por nota de crédito | `EstadoDTE` del A1 |
 | Reclamada por el deudor | `EstadoDTE` del A1 |
-| Cedida a terceros / Ya financiada | join con el A2 por `RUT cedente + folio` |
+| Cedida a terceros (a un factoring ajeno) | join con el A2 por `RUT cedente + folio` |
 | En otra operación | estado del **pipeline**, no del SII: entra por parámetro |
 
-La cesión se nombra con el factoring y la fecha, y distingue la **cesión propia** («Ya financiada») de
-la ajena. Una **cesión parcial** —el A2 declara un monto menor que el documento— bloquea igual, pero
+La cesión se nombra con el factoring y la fecha, y distingue la **cesión propia** («Cedida a Security»: no bloquea, es cartera propia y entra a la
+oferta con su monto — ADR-0014, regla 60) de la ajena, que sí bloquea. Una **cesión parcial** —el A2 declara un monto menor que el documento— bloquea igual, pero
 el mensaje dice por cuánto: el crédito quedó con dos dueños y el ejecutivo necesita saber si vale la
 pena pedirle al cliente que lo resuelva.
 

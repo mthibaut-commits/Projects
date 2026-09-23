@@ -92,7 +92,7 @@ selector y **por qué el sustituto es legítimo** cuando el disparador real no s
 | **MN-09** | Ticket crafteado | `abrirConTicket(h, extra, usuario)` (`e2e-30`): `emitirTicketDetalle("deal", id, usuario, { deal: {...payload.deal, ...últimoPatch, ...extra}, usuario, tab: null, ts })` en el tubo y `ctx.newPage().goto(url + "?t=" + uuid)`. Sirve para menús y compuertas en un estado que el flujo no da rápido (publicada, otra sesión); no para el veredicto (la foto no vuelve al tubo). **Prerrequisito**: `abrirConTicket` toma el PRIMER ticket `tipo: "deal"` de `TICKETS_EMITIDOS` y lanza «no encuentro el ticket del detalle … ¿se abrió el detalle desde el tubo?» si no hay ninguno; por tanto exige un MN-02 previo en la misma sesión (dentro del caso o del archivo) y craftea ESE deal, no uno elegido por id. |
 | **MN-10** | Restauración | `fotoRepos` / `restaurarRepos` de las claves `pc_repo_*` (`e2e-29`, `e2e-15-bis-bis`; barren todo `pc_repo_*`). Las claves reales las arma `crearRepo(nombre)` como `"pc_repo_" + nombre` con forma `{[tenantId]: {[id]: valor}}`: `pc_repo_otorgamiento_visado` (`repoVisado`), `pc_repo_verificacion_telefonica` (`repoVerifTel`), `pc_repo_giro_asignacion` (`repoGiro`), `pc_repo_linea_comite` (`repoLineaComite`), `pc_repo_simulacion_version` (`repoSimVersions`), `pc_repo_solicitud_comite` (`repoSolicitudComite`), `pc_repo_factura_no_confirmada` (`repoNoConfirmadas`, el veto de CP-091; regla 6). En los CP se lee por `repoX.get(id)` desde `evaluate`, nunca por una clave abreviada. Retiro de la solicitud en `api2ListarProcesos()` y de `SOLIC_SEQ`, borrado de `fs_curse_<neg>`, filtro rápido al que estaba, sesión al `usuario0`, `det.close()`, `h.apagarDirectorio()`. Todo en el `finally`. |
 
-Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en adelante), sube `CASOS_ESPERADOS` en
+Y las capas que la suite exige: un caso nuevo toma el siguiente entero (160 en adelante), sube `CASOS_ESPERADOS` en
 `tests/contract/suite.test.mjs` y se cita en la regla y en `invariantes.md`; un gate de contrato nuevo lleva
 `sonda negativa` y lee `canonico(src)` (ADR-0006).
 
@@ -139,16 +139,16 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Pasos**: 1) correr dos veces con las dos configuraciones sobre el mismo lote.
 - **Resultado esperado**: 5 y 1 abiertas respectivamente; ninguna corrida abre 40.
 
-## HU-03 · Candidata: no reclamada, sin NC y no cedida a un factoring ajeno (D6 cerrada el 22-09-2026: A con una precisión, ADR-0014)
+## HU-03 · Candidata: no reclamada, sin NC y no cedida a un factoring ajeno (D6 cerrada el 22-09-2026: A con una precisión, ADR-0014; implementada el 23-09-2026: regla 60, caso 159)
 
 ### CP-007 · La cedida a un factoring ajeno no es candidata y la tarjeta no la cuenta; la cedida a Factoring Security sí entra
-- **Criterio**: CA-1 y CA-2 de HU-03 · **Dirección**: negativa (la ajena queda fuera) y positiva (la cedida a Security y la no cedida entran) · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0014; G-06). D6 cerrada el 22-09-2026: «sólo si está cedida a una empresa diferente a Factoring Security; si está cedida a Security sí se puede agregar» — la cuarta condición del filtro excluye la cesión a un factoring **distinto de Factoring Security**, según el A2; excluir toda cesión quedó descartado.
+- **Criterio**: CA-1 y CA-2 de HU-03 · **Dirección**: negativa (la ajena queda fuera) y positiva (la cedida a Security y la no cedida entran) · **Capa**: suite. · **Cobertura actual**: **caso 159** (implementado el 23-09-2026, ADR-0014, regla 60): el filtro sobre el A2 real, el perfil de la Bandeja y la sonda sin cesión; G-06 cerrado. D6 cerrada el 22-09-2026: «sólo si está cedida a una empresa diferente a Factoring Security; si está cedida a Security sí se puede agregar» — la cuarta condición del filtro excluye la cesión a un factoring **distinto de Factoring Security**, según el A2; excluir toda cesión quedó descartado.
 - **Precondición**: `CRITERIO_PRED` «Buena factura» (o el criterio nuevo que la implementación de ADR-0014 nombre) con tres facturas iguales salvo la cesión, con identidades del padrón (regla 42, nunca inventadas): una cedida a un cesionario distinto de Security, una cedida a Security y una sin cesión en el A2.
 - **Pasos**: 1) evaluar `facturaCalifica` sobre las tres; 2) contar candidatas; 3) leer el motivo de la excluida (el tooltip del criterio en la tarjeta, `capacidadDeudores` / `chipTramo`, por `evaluate`).
 - **Resultado esperado**: 2 candidatas (la cedida a Security y la no cedida); la ajena queda fuera con motivo «cedida a otro factoring». Nace en rojo: hoy «Buena factura» no consulta `cedida`.
 
 ### CP-008 · Al incorporar, la cedida a un factoring ajeno se bloquea; la no cedida y la cedida a Security entran
-- **Criterio**: CA-3 de HU-03 · **Dirección**: negativa y positiva · **Capa**: suite. · **Cobertura actual**: NUEVO (el caso 95 fija que la cedida existe y su pérdida; no el bloqueo de `estadoCandidata`).
+- **Criterio**: CA-3 de HU-03 · **Dirección**: negativa y positiva · **Capa**: suite. · **Cobertura actual**: **caso 159** (implementado el 23-09-2026, ADR-0014, regla 60): la ajena bloqueada con el nombre del factoring, la cedida a Security entra rotulada; el caso 95 fija además que la nuestra ENTRA.
 - **Precondición**: `estadoCandidata` con una factura cedida a un factoring ajeno en el A2, una cedida a Security y una no cedida (el caso 95 ya distingue la cesión propia de la ajena al incorporar: ADR-0014 lleva esa misma distinción, con la misma fuente, al inbound).
 - **Pasos**: 1) consultar el estado de cada una; 2) intentar `incorporarFacturasOferta` con la cedida.
 - **Resultado esperado**: la cedida a un ajeno devuelve el motivo de cesión y no entra a `facturasOp`; las otras dos entran. En pantalla, el botón de agregar de la cedida está `disabled` y su `title` ya NO es «Agregar a la simulación»: cuando la factura está bloqueada el `title` pasa a ser el rótulo de `estadoCandidata` (`est.label`) seguido de su detalle (o «· no se puede agregar»), así que el selector por ese `title` sólo encuentra botones HABILITADOS (es la razón por la que un caso que agrega por vista plana pide `:not([disabled])`, como el disparador de CP-124). Localizar la fila por folio y leer el `button[disabled]` cuyo `title` contiene el rótulo de cesión (se verifica en el e2e de MN-02 cuando una OP-DIR traiga una cedida; hoy ninguna la trae).
@@ -988,7 +988,7 @@ Una fila por historia: sus CP, cuáles están cubiertos hoy (con el id que los c
 |---|---|---|---|---|---|
 | HU-01 | 001–004 | 001 parcial (e2e-12-bis-a, e2e-13-octies-bis-a sobre OP-DIR), 004 (caso 142) | 001 | 002, 003 | — |
 | HU-02 | 005–006 | — | — | 005, 006 | — |
-| HU-03 [D6 cerrada, ADR-0014] | 007–009 | 009 (casos 99, 105) | — | 007, 008 | — |
+| HU-03 [D6 cerrada, ADR-0014; implementada 23-09-2026] | 007–009 | 007 (caso 159), 008 (casos 159, 95), 009 (casos 99, 105) | — | — | — |
 | HU-04 [el acuse se muestra y no filtra, 23-09-2026] | 010–011 | — | — | 010, 011 | 011 |
 | HU-05 [014 retirado] | 012–013, 120 | — | 013 | 012, 013, 120 | — |
 | HU-06 [definición ajustada] | 015–016 | 015 parcial (caso 100: el join en pantalla; el chip no se lee) | 015 | 016 | — |
@@ -1084,7 +1084,7 @@ del detalle tampoco retira); y **CP-143** es la dirección que bloquea del corte
 oportunidad que recibe oferta justo antes del corte no se elimina; la que sigue sin oferta sí). Tres CP quedan **vigente hoy · cambia con ADR-0018: pasa a la dirección contraria** y se
 dan vuelta con su mismo id en el commit del ADR: CP-091 (`e2e-6-b`), CP-119 y CP-129 (casos 21–23).
 
-**Cubiertos hoy, total o parcialmente: 62 CP** (medidos sobre la matriz: la columna «Cubiertos hoy» nombra 63 CP; CP-141 —parcial en la suite, casos 25 y 95— se cuenta entre los nuevos porque nace con ADR-0018, así que quedan 62).
+**Cubiertos hoy, total o parcialmente: 64 CP** (medidos sobre la matriz: la columna «Cubiertos hoy» nombra 63 CP; CP-141 —parcial en la suite, casos 25 y 95— se cuenta entre los nuevos porque nace con ADR-0018, así que quedan 62).
 Por la capa e2e: `e2e-13-octies-bis-a`, `e2e-13-sexdecies-a/c/d`, `e2e-12-bis-a/b/d`, `e2e-14-a/b/c`, `e2e-29-a/b`,
 `e2e-15-bis-bis-a/b`, `e2e-58`, `e2e-30`, `e2e-13-quaterdecies`. Por la suite: casos 3, 4, 21–33, 36, 38, 47, 52, 55,
 56, 58, 76–81, 83, 85, 86, 88, 99, 100, 105, 106, 110, 112, 114, 117–119, 124–126, 134–136, 140–144, 146–150, 154, 157,
@@ -1098,18 +1098,18 @@ parciales** (CP-001, 015, 027, 037, 041, 042, 046, 054, 058, 065, 066, 068, 069,
 vecino y falta el caso en pantalla (HU-01, HU-06, HU-10, HU-14, HU-15, HU-16, HU-18, HU-23, HU-25, HU-26, HU-27, HU-28,
 HU-29, HU-33, HU-35, HU-36, HU-38, HU-39, HU-41), falta la dirección negativa (CP-054, CP-069, CP-074, CP-099), el e2e
 que se cita sólo la cubre bajo condición (CP-066) o sólo mide el aviso sin contar versiones (CP-134). CP-141 es parcial
-en la suite (casos 25 y 95 fijan el veto) pero nace con ADR-0018 y se cuenta entre los nuevos. Los otros **71 CP
-son enteramente nuevos**; en total, 104 CP piden al menos un caso nuevo (33 + 71), y 62 + 71 = 133.
+en la suite (casos 25 y 95 fijan el veto) pero nace con ADR-0018 y se cuenta entre los nuevos. Los otros **69 CP
+son enteramente nuevos**; en total, 102 CP piden al menos un caso nuevo (33 + 69), y 64 + 69 = 133.
 
 **Nuevos por capa:** **e2e 50** (en 12 archivos nuevos, `27` … `38`, más tres ids que van a archivos existentes,
 `21_29` y `17_15_bis_bis`; 30 de ellos fijan conducta vigente sin gate en pantalla —CP-001, 015, 027, 037, 041, 046,
 058, 065, 066, 068, 069, 072, 074, 076, 078–081, 089–092, 098, 100, 102, 107, 108, 109, 115, 116; CP-091 se escribe
 fijando lo vigente y se da vuelta con ADR-0018— y 20 dependen de un gap o de una decisión ya tomada —CP-013, 034–036,
 042 (el tooltip, nace en rojo), 071, 095, 110, 118 (`moveTo`), 123, 124, 126, 127, 128, 137, 138–142—; CP-111 es sólo
-de suite porque «Avanzar a» no ofrece «Cesión») · **suite 66** (del 159 en adelante; `CASOS_ESPERADOS` sube en cada
+de suite porque «Avanzar a» no ofrece «Cesión») · **suite 64** (del 160 en adelante; `CASOS_ESPERADOS` sube en cada
 commit que los agrega, y se dice) · **contrato 5** (CP-011, CP-019, CP-031, CP-033, CP-112; todos con sonda negativa
-sobre `canonico(src)`). Un CP suma en dos capas cuando la conducta se prueba en el motor y en la pantalla (50 + 66 + 5 =
-121 casos para 104 CP).
+sobre `canonico(src)`). Un CP suma en dos capas cuando la conducta se prueba en el motor y en la pantalla (50 + 64 + 5 =
+119 casos para 102 CP).
 
 **Decisiones del 22 y del 23-09-2026.** Cerradas y aplicadas: **D1** (ADR-0013: CP-028 y CP-030 protegen el gesto
 explícito; CP-031/033 retiran el anuncio; CP-034–036, CP-122 y CP-123 fijan el evento de evaluación, las cinco versiones

@@ -4347,15 +4347,24 @@ function competenciaDeDeal(deal) {
   return { total, bice, bicePct: total ? +((bice / total) * 100).toFixed(1) : 0, comp, sintetico: true };
 }
 
+// ¿Cedida a un factoring AJENO? La factura que otro factor ya se llevó no es candidata del inbound: no se
+// compra dos veces y contarla inflaba el monto con que se dimensionaba la oportunidad (ADR-0014, regla 60).
+// La cedida a Security NO se excluye: es cartera propia, no competencia. La fuente es la misma que usa la
+// incorporación (`cesionDeFactura`, sobre el A2); el evento del stream lleva el folio en `facturasOp[0]`.
+const cedidaAFactoringAjeno = (f) => {
+  const fac = (f && f.facturasOp && f.facturasOp[0]) || f || {};
+  const ces = cesionDeFactura((f && f.rutEmisor) || fac.rutEmisor, fac.folio);
+  return !!(ces && !ces.nuestra);
+};
 // ---- Motor de clasificación: ¿la factura califica alguna regla activa? ----
 const CRITERIO_PRED = {
   // Criterios a nivel FACTURA: una factura ELEGIBLE para inbound es a crédito, no reclamada, sin nota de
-  // crédito y con deudor que abre oportunidad: Lista Blanca, Autorizado o histórico del último año
+  // crédito, no cedida a un factoring ajeno (regla 60) y con deudor que abre oportunidad: Lista Blanca, Autorizado o histórico del último año
   // (con BICE = CAT1, con otro factor = CAT4). Los deudores "Otro" sin historia quedan excluidos.
   // Deudor que abre oportunidad: el que está en una lista (bucket elegible) O el que alcanza la Nota
   // de corte. Antes sólo contaba el bucket, que por construcción excluye a los no listados — así que
   // la lista ND>4,2 no podía capturar nada aunque el deudor tuviera nota 4,6.
-  "Buena factura": (f) => f.credito && !f.reclamada && !f.notaCredito && deudorAbreOportunidad(f),
+  "Buena factura": (f) => f.credito && !f.reclamada && !f.notaCredito && !cedidaAFactoringAjeno(f) && deudorAbreOportunidad(f),
   "Deudor elegible": (f) => deudorAbreOportunidad(f),
   Crédito: (f) => f.credito,
   // TIPO DE DEUDOR de la prospección: tres poblaciones, no cinco. La lista Prime —que junta Lista
@@ -4388,7 +4397,9 @@ function clasificarFactura(f, reglas) {
 }
 function criteriosDesdeFactura(f) {
   const c = [];
-  if (f.credito && !f.reclamada && !f.notaCredito && deudorAbreOportunidad(f)) c.push("Buena factura");
+  // La cesión ajena se nombra igual que el bloqueo de riesgo: «otro se la llevó» explica por qué no se captura.
+  if (cedidaAFactoringAjeno(f)) c.push("Cedida a otro factoring (excluida)");
+  else if (f.credito && !f.reclamada && !f.notaCredito && deudorAbreOportunidad(f)) c.push("Buena factura");
   // Un deudor puede estar en más de una lista —un histórico Security suele pasar también el corte de
   // nota—, así que el perfil nombra la MÁS ESPECÍFICA: primero las listas por pertenencia y al final
   // la de nota, que es la que recoge a los que no están en ninguna otra.
@@ -6130,12 +6141,19 @@ function estadoCandidata(f, deal, estado) {
     // mensaje dice por cuánto, que es lo que el ejecutivo necesita para decidir si vale la pena
     // pedirle al cliente que resuelva la cesión antes.
     const cuanto = (c) => (c.parcial ? ` por ${fmtMM(c.monto)} de ${fmtMM(c.montoDocumento)} (cesión parcial)` : "");
+    // La cedida a SECURITY no se bloquea (ADR-0014, regla 60): es cartera propia y entra como cualquier otra;
+    // se rotula para que el ejecutivo lo sepa. Antes salía «Ya financiada», bloqueada, y el caso 95 lo fijaba.
     if (ces && ces.nuestra)
-      return R(
-        ces.parcial ? "cedidaNuestraParcial" : "cedidaNuestra",
-        ces.parcial ? "Financiada en parte" : "Ya financiada",
-        `Cedida a Security el ${ces.fecha}${cuanto(ces)}.`,
-      );
+      return {
+        clave: ces.parcial ? "cedidaNuestraParcial" : "cedidaNuestra",
+        bloqueada: false,
+        agregable: true,
+        label: ces.parcial ? "Cedida en parte a Security" : "Cedida a Security",
+        detalle: `Cedida a Security el ${ces.fecha}${cuanto(ces)}: cartera propia, no competencia.`,
+        tono: "sub",
+        montoNeto: monto,
+        ncMonto: 0,
+      };
     return R(
       "cedida",
       ces && ces.parcial ? "Cedida en parte" : "Cedida a terceros",
@@ -13559,14 +13577,16 @@ function DealDrawer({
                 const tasaDe = (deudor) =>
                   +((spreadDeudor[deudor] != null ? spreadDeudor[deudor] : spreadSugerido(deudor, deal).spread) + CFG_ACTIVA.costoFondo).toFixed(2);
                 const diasDe = (deudor) => (vencDias[deudor] != null ? vencDias[deudor] : diasPagoDeudor(deudor));
-                // Motivo de exclusión: una factura cedida / reclamada / con nota de crédito no entra al negocio.
+                // Motivo de exclusión: una factura cedida a OTRO factoring / reclamada / con nota de crédito no entra al negocio.
                 // Qué deja fuera a cada factura. La cesión es de UN FOLIO —el A2 dice cuál—, no de
                 // «las primeras N de la lista»: `fi < deal.cedidasOtro` marcaba facturas por su
                 // posición, así que reordenar la oferta cambiaba cuáles figuraban cedidas.
+                // La cedida a SECURITY no se excluye (ADR-0014, regla 60): es cartera propia y entra con su monto.
+                // Antes salía «Ya financiada por Security» y no contaba —la misma factura que la lista de
+                // candidatas ya dejaba agregar—, así que la oferta y su panel decían cosas distintas.
                 const motivoExcl = (f) => {
                   const c = cesionDeFactura(deal.rutEmisor, f && f.folio);
                   if (c && !c.nuestra) return `Cedida a ${c.factoring}${c.parcial ? ` (parcial, ${fmtMM(c.monto)})` : ""}`;
-                  if (c) return `Ya financiada por Security${c.parcial ? ` (parcial, ${fmtMM(c.monto)})` : ""}`;
                   return f.reclamada ? "Reclamada" : f.notaCredito ? "Nota de crédito" : null;
                 };
                 const facturasMarcadas = facturasOp.map((f) => ({ ...f, excl: motivoExcl(f) }));
@@ -13989,8 +14009,6 @@ function DealDrawer({
                                 notaCredito: "Nota de créd.",
                                 reclamada: "Reclamada",
                                 cedida: "Cedida",
-                                cedidaNuestra: "Ya financiada",
-                                cedidaNuestraParcial: "Financ. parcial",
                                 otraOp: "Otra op.",
                                 noConfirmada: "No confirmada",
                               };
@@ -14046,6 +14064,17 @@ function DealDrawer({
                                       style={{ backgroundColor: "#fef2f2", color: C.red, border: "1px solid #fecaca", cursor: "help" }}
                                     >
                                       🔒 {SHORT_EST[est.clave]}
+                                    </span>
+                                  );
+                                // Agregable pero ROTULADA (regla 60): la cedida a Security entra, y el ejecutivo sabe que es cartera propia.
+                                else if (f.candidata && est.label)
+                                  estadoNode = (
+                                    <span
+                                      title={est.detalle || est.label}
+                                      className="justify-self-start inline-flex items-center rounded-full px-1.5 py-0.5 t9 font-semibold"
+                                      style={{ backgroundColor: C.lilac, color: C.sub, border: `1px solid ${C.line}`, cursor: "help" }}
+                                    >
+                                      {est.label}
                                     </span>
                                   );
                                 else
@@ -14795,8 +14824,14 @@ function DealDrawer({
                               className="grid items-center gap-2 py-1 t10"
                               style={{ gridTemplateColumns: plana ? GC_OP : GC_O, borderBottom: `1px solid ${C.line}`, opacity: bloq ? 0.55 : 1 }}
                             >
-                              <span className="truncate t9" style={{ color: C.sub }} title={tdoc}>
+                              {/* La cedida a Security va rotulada (regla 60): entra igual, y el ejecutivo sabe que es cartera propia. */}
+                              <span
+                                className="truncate t9"
+                                style={{ color: C.sub }}
+                                title={est.label && !bloq ? `${tdoc} · ${est.detalle || est.label}` : tdoc}
+                              >
                                 {tdoc}
+                                {est.label && !bloq ? ` · ${est.label}` : ""}
                               </span>
                               <span className="font-medium" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>
                                 #{f.folio}
