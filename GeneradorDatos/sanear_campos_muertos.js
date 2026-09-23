@@ -7,7 +7,7 @@
 // Corre UNA VEZ y queda commiteado para que el cambio sea auditable y repetible, igual que
 // `sanear_catalogo_deudores.js` y `migrar_padron.js`. Después hay que correr `generar.js`.
 //
-// POR QUÉ HIZO FALTA. La regla 48 dice que ningún activo lleva sufijo de escala. Los bloques
+// POR QUÉ HIZO FALTA. La regla 61 dice que ningún activo lleva sufijo de escala. Los bloques
 // DERIVADOS se arreglan en su generador y se regeneran; los bloques **BASE** se copian tal cual desde
 // el activo de entrada, así que un campo heredado ahí dentro no lo alcanza ninguna corrida. Medido
 // sobre las 119 claves distintas del activo, quedaban dos con nombre de escala:
@@ -20,7 +20,7 @@
 //
 // Y era una trampa, no sólo ruido: `RequeridoParaTargetMM` guardaba **pesos** (202.175.551) bajo un
 // nombre que dice millones. Quien lo leyera creyendo al nombre habría multiplicado por un millón —que
-// es exactamente el defecto que la regla 47 describe—. Un campo que nadie lee y que miente sobre su
+// es exactamente el defecto que la regla 60 describe—. Un campo que nadie lee y que miente sobre su
 // unidad no es información: es una mina.
 // ══════════════════════════════════════════════════════
 const fs = require("fs");
@@ -29,7 +29,7 @@ const path = require("path");
 // Bloque → campos a sacar, con el motivo. Sin lectores en todo el repo, verificado a mano.
 const MUERTOS = {
   DEUDORES_AUTORIZADOS: {
-    LineaSugeridaMM: "heredado, en millones, sin lectores y sin layout que lo declare (regla 48)",
+    LineaSugeridaMM: "heredado, en millones, sin lectores y sin layout que lo declare (regla 61)",
   },
 };
 

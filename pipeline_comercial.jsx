@@ -621,6 +621,8 @@ const SCHEMA_VERSION = {
   curse: 3, // payload de curse por negocio (v3: OTP con SHA-256 + sal; v2 usaba un hash de 32 bits)
   snapshot: 1, // snapshots de deal/operación para abrir en otra pestaña
   syslog: 1, // log técnico persistido entre sesiones
+  tenants: 1, // catálogo de FACTORINGS de la plataforma (no lleva sufijo de tenant: es la lista de todos)
+  usuariosTenant: 1, // usuarios dados de alta desde Configuración › Tenants (por tenant)
 };
 
 // ── Contratos de datos externos ─────────────────────────────────────────────────────────────────
@@ -1394,6 +1396,7 @@ const USERS = {
   OP: "Andrés Mella · Operaciones",
   JO: "Ignacio Peña · Jefe de Operaciones",
   EV: "Camila Soto · Ejecutivo de verificación",
+  IB: "Tomás Alcaíno · Ejecutivo de Inbound",
   ADMIN: "Super Administrador (ve todo)",
 };
 // EL NOMBRE DEL EJECUTIVO DE UNA OPERACIÓN. «Agente IA» es una respuesta legítima sólo cuando la
@@ -2693,21 +2696,6 @@ const CAT_META = {
 // calzara se pintaba del verde de la MEJOR categoría. Un desconocido se ve neutro.
 const CAT_NEUTRA = { bg: "#F3F4F6", fg: "#6B7280", q: "sin clasificar", desc: "Todavía no hay facturas con las que clasificar esta operación." };
 const catMeta = (c) => CAT_META[c] || CAT_META[(c || "").slice(0, 5)] || CAT_NEUTRA;
-// Clasificación corta + chip de color por tipo de deudor.
-const DEUDOR_LABEL = {
-  "Lista Blanca": "Lista Blanca",
-  "Deudor Autorizado": "Autorizada",
-  "Histórico BICE": "Histórico BICE",
-  Histórico: "Histórico",
-  Otro: "Otro",
-};
-const DEUDOR_CHIP = {
-  "Lista Blanca": { bg: "#F0FDF4", fg: "#16A34A" },
-  "Deudor Autorizado": { bg: "#eff6ff", fg: "#2563EB" },
-  "Histórico BICE": { bg: "#ecfeff", fg: "#0e7490" },
-  Histórico: { bg: "#fff7ed", fg: "#c2410c" },
-  Otro: { bg: "#F3F4F6", fg: "#4B5563" },
-};
 // Tipo de deudor para MOSTRAR (chip/score): los históricos del último año NO son "Otro" — se distinguen
 // como "Histórico BICE" (ya factorizado con nosotros) o "Histórico" (con otro factor). El resto usa su lista.
 function tipoDeudorDisp(f) {
@@ -3361,7 +3349,10 @@ function verifFactura(f, deal, estado) {
   // invariante VER-01 —«no cursa con verificación pendiente»— fallaba en las dos direcciones: una
   // operación con todas sus llamadas firmadas podía seguir bloqueada, y una SIN NINGUNA podía pasar
   // el control si a cada deudor le tocaba «Completada». Una llamada está registrada o no lo está: no
-  // hay estado intermedio que persistir, porque el repositorio guarda `{por, fecha}` y nada más.
+  // hay estado intermedio que persistir. El repositorio guarda, además de `{por, fecha}`, el registro
+  // de la llamada que firmó el panel lateral —checklist, contacto, fecha comprometida, respaldo y
+  // nota (regla 53)—, y `checks` se lee de ahí; pero lo que decide «registrada» sigue siendo que la
+  // entrada exista.
   let tel = null;
   if (r.est === "tel") {
     const reg = ((estado && estado.tel) || (typeof VERIF_TEL !== "undefined" ? VERIF_TEL : {}) || {})[deal && deal.id] || {};
@@ -3398,6 +3389,7 @@ function verifFactura(f, deal, estado) {
       exc: null,
       nombre,
       tipo: par.tipo,
+      prime: par.prime,
       nota: par.nota,
       sc: par.sc,
       segmento: par.segmento,
@@ -3418,6 +3410,7 @@ function verifFactura(f, deal, estado) {
     exc: null,
     nombre,
     tipo: par.tipo,
+    prime: par.prime,
     nota: par.nota,
     sc: par.sc,
     segmento: par.segmento,
@@ -3478,51 +3471,94 @@ function causasVerif(v) {
 }
 // Filas de la mesa: un deudor por operación, sólo los que el predictor mandó a verificación
 // telefónica. Los que el modelo dio por verificados no aparecen — no hay nada que llamar.
-// El COMMIT de la verificación —qué llamada se registró y qué factura quedó vetada— es estado del
-// SERVIDOR: es evidencia de una conversación con el deudor, con actor y hora. Entra por parámetro
-// (`{ tel, vetadas }` por id de operación) para que esta función sea pura; el default es el estado
-// que hoy vive en el navegador. Ver el contrato VER-01 en `INVARIANTES`.
+// El COMMIT de la verificación —qué llamada se registró, qué factura quedó vetada y qué respaldo se
+// adjuntó— es estado del SERVIDOR: es evidencia de una conversación con el deudor, con actor y hora.
+// Entra por parámetro (`{ tel, vetadas, respaldo }` por id de operación) para que esta función sea
+// pura; el default es el estado que hoy vive en el navegador. Ver el contrato VER-01 en `INVARIANTES`.
+//
+// LA UNIDAD DE TRABAJO ES LA FACTURA (regla 53, 22-09-2026): la fila sigue siendo el DEUDOR —una
+// llamada cubre a todas sus facturas y las causas son suyas— pero trae `docs`, un documento por
+// factura con su estado, su respaldo y su nota. Y `docs` incluye las VETADAS, que ya no están en
+// `facturasOp`: retirar una factura la saca de la oferta, así que listándolas sólo desde ahí la
+// evidencia de «esta no la confirmó» desaparecía de la pantalla justo después de registrarla —y con
+// todas vetadas, el deudor entero se esfumaba de la mesa aunque su veredicto estuviera congelado—.
 function filasVerificacion(deals, estado) {
   const out = [];
   for (const d of deals || []) {
-    const fs = (d && d.facturasOp) || [];
-    if (!fs.length) continue;
-    const grupos = new Map();
-    for (const f of fs) {
-      const k = f.rutRecep || f.deudor || "";
-      let g = grupos.get(k);
-      if (!g) {
-        g = [];
-        grupos.set(k, g);
-      }
-      g.push(f);
-    }
     const tel = (estado && estado.tel && estado.tel[d.id]) || (typeof VERIF_TEL !== "undefined" && VERIF_TEL[d.id]) || {};
     const vet = (estado && estado.vetadas && estado.vetadas[d.id]) || (typeof NO_CONFIRMADAS !== "undefined" && NO_CONFIRMADAS[d.id]) || {};
-    for (const [k, suyas] of grupos) {
-      const v = verifFactura(suyas[0], d, estado);
+    const resp = (estado && estado.respaldo && estado.respaldo[d.id]) || (typeof VERIF_RESPALDO !== "undefined" && VERIF_RESPALDO[d.id]) || {};
+    const fs = (d && d.facturasOp) || [];
+    // Las vetadas vuelven a la lista como documentos de pleno derecho: no están en la oferta —por eso
+    // no suman al monto— pero son el resultado de una verificación y tienen que poder mirarse.
+    const vetadas = Object.entries(vet).map(([id, x]) => ({
+      id,
+      folio: (x && x.folio) || id,
+      monto: (x && x.monto) || 0,
+      deudor: (x && x.deudor) || "",
+      rutRecep: (x && x.rutRecep) || "",
+      retirada: true,
+    }));
+    if (!fs.length && !vetadas.length) continue;
+    const grupos = new Map();
+    const clave = (f) => f.rutRecep || f.deudor || "";
+    for (const f of fs) {
+      const k = clave(f);
+      let g = grupos.get(k);
+      if (!g) {
+        g = { enOferta: [], fuera: [] };
+        grupos.set(k, g);
+      }
+      g.enOferta.push(f);
+    }
+    for (const f of vetadas) {
+      // Una vetada sin grupo propio —su deudor ya no tiene facturas vivas— abre el suyo igual.
+      const k = clave(f);
+      let g = grupos.get(k);
+      if (!g) {
+        g = { enOferta: [], fuera: [] };
+        grupos.set(k, g);
+      }
+      g.fuera.push(f);
+    }
+    for (const [k, g] of grupos) {
+      const suyas = g.enOferta;
+      const muestra = suyas[0] || g.fuera[0];
+      const v = verifFactura(muestra, d, estado);
       // Un deudor con veredicto CONGELADO sigue en la mesa aunque el predictor de hoy ya no lo mandaría
       // a teléfono: es evidencia de una llamada que ocurrió, y la fila es donde consta.
-      if (v.est !== "tel" && !v.congelado) continue;
+      if (v.est !== "tel" && !v.congelado && !g.fuera.length) continue;
       const nTel = suyas.filter((f) => tel[f.id]).length;
-      const nVet = suyas.filter((f) => vet[f.id]).length;
+      const nVet = g.fuera.length;
+      const docEstado = (f) => (f.retirada || vet[f.id] ? "no_verificada" : tel[f.id] ? "verificada" : "pendiente");
+      const docs = [...suyas, ...g.fuera].map((f) => ({
+        f,
+        id: f.id,
+        estado: docEstado(f),
+        tel: tel[f.id] || null,
+        respaldo: resp[f.id] || null,
+      }));
       out.push({
         id: d.id + "|" + k,
         deal: d,
         cliente: d.cliente || d.company || d.id,
         op: d.id,
-        rutDeudor: suyas[0].rutRecep || "",
+        rutDeudor: (muestra && muestra.rutRecep) || "",
         deudor: v.nombre,
         tipo: v.tipo,
         nota: v.nota,
         segmento: v.segmento,
         facturas: suyas,
+        docs,
         exec: d.exec,
         monto: mmRound(suyas.reduce((s, f) => s + (f.monto || 0), 0)),
         causas: causasVerif(v),
         nTel,
         nVet,
-        estado: nVet ? "no_verificada" : nTel === suyas.length ? "verificada" : "pendiente",
+        nPend: docs.filter((x) => x.estado === "pendiente").length,
+        // El estado del DEUDOR es el resumen de sus documentos: pendiente mientras quede uno sin
+        // resolver —que es lo que falta hacer—, y si no, no_verificada si alguno se retiró.
+        estado: docs.some((x) => x.estado === "pendiente") ? "pendiente" : nVet ? "no_verificada" : "verificada",
       });
     }
   }
@@ -4407,7 +4443,41 @@ function borrarReglas() {
 // y estos mismos campos viajarían en la query `configuracionOperativa(tenantId)`. Aquí se persiste en
 // localStorage con idéntica forma para que el reemplazo por la API sea directo.
 // ============================================================
-const TENANTS = [{ id: "security", nombre: "Factoring Security", rut: "96.684.990-8", activo: true }];
+// EL CATÁLOGO DE FACTORINGS ES DE LA PLATAFORMA, NO DE UN TENANT (21-09-2026, pedido del usuario:
+// «un menú Tenant en donde se cree el Tenant de Security y/o otro cliente»). Por eso su clave NO lleva
+// sufijo: `pc_roles_security` es «los roles DE Security», pero la lista de factorings es una sola para
+// toda la instalación —guardarla por tenant sería que cada uno tenga su propia idea de quién existe—.
+// En producción esto es la tabla `tenant` y el alta la hace la plataforma, no el factoring.
+const TENANTS_KEY = "nex_tenants";
+const TENANTS_BASE = [{ id: "security", nombre: "Factoring Security", rut: "96.684.990-8", activo: true }];
+// Misma higiene que roles, áreas y etapas: el storage lo edita el usuario a mano, así que sólo entra lo
+// que tiene la forma declarada. Un tenant sin id válido no es «un tenant raro»: es un id que después
+// compone claves de storage (`pc_roles_<id>`), así que se descarta entero.
+function cargarTenants() {
+  const guardado = leerVersionado(TENANTS_KEY, "tenants", null);
+  if (!Array.isArray(guardado)) return TENANTS_BASE.map((t) => ({ ...t }));
+  const vistos = new Set();
+  const out = [];
+  let ignorados = 0;
+  for (const t of guardado) {
+    const id = t && typeof t.id === "string" ? t.id.trim().toLowerCase() : "";
+    const nombre = t && typeof t.nombre === "string" ? t.nombre.trim().slice(0, 60) : "";
+    if (!/^[a-z][a-z0-9_-]{1,23}$/.test(id) || !nombre || vistos.has(id)) {
+      ignorados++;
+      continue;
+    }
+    vistos.add(id);
+    out.push({ id, nombre, rut: (t.rut || "").toString().slice(0, 15), activo: t.activo !== false });
+  }
+  // El tenant base no se pierde nunca: es el que la demo arranca y el que resuelve el fallback.
+  for (const b of TENANTS_BASE) if (!vistos.has(b.id)) out.unshift({ ...b });
+  if (ignorados) logSys("warn", "app", `Tenants: ${ignorados} entrada(s) del storage ignoradas (id o nombre inválido)`);
+  return out;
+}
+let TENANTS = cargarTenants();
+function guardarTenants() {
+  escribirVersionado(TENANTS_KEY, "tenants", TENANTS);
+}
 // ── Resolución del TENANT (SEGURIDAD / CDN) ─────────────────────────────────────────────────────
 // El tenant NO puede estar escrito en el bundle. La app va a ser un asset estático servido por CDN,
 // el MISMO archivo para todos los factorings: si el id del tenant viene compilado adentro, o hay un
@@ -6911,192 +6981,504 @@ function fonoOfuscado(fono) {
   if (!s) return "—";
   return s.length <= 4 ? "•••" + s : "•••" + s.slice(-4);
 }
-// REGISTRO DE LA LLAMADA de verificación. Hasta ahora una verificación telefónica —3 a 4 horas por
-// deudor, y bloquea el giro— se firmaba con un clic: `repoVerifTel` guardaba `{por, fecha}`, o sea
+// NOTA RICA CON CAPTURA PEGADA. Una verificación telefónica se respalda con lo que se VIO: el correo
+// del deudor, la pantalla del portal, el WhatsApp donde confirma la fecha. Obligar a guardar esa
+// imagen a un archivo, buscarla y adjuntarla por separado es justo el paso donde la evidencia se
+// pierde, así que la nota acepta Ctrl+V de una imagen. Y son DOS cosas, no una: la captura queda
+// INLINE en la nota —que es donde se lee en contexto— y además BAJA AL DISCO, porque el respaldo de
+// un giro se pide fuera de esta pantalla y meses después. Esto es un HTML sin servidor: el único
+// sistema de archivos al que puede escribir es la carpeta de descargas del navegador, así que ahí va,
+// con nombre determinista para que el adjunto registrado y el archivo se puedan aparear a mano.
+// El texto se pega SIEMPRE PLANO: copiar de un correo arrastra su hoja de estilos y la nota termina
+// con tipografías y fondos que no son de esta pantalla.
+const NOTA_RICA_MAX_IMG = 4 * 1024 * 1024; // una captura de pantalla completa en PNG no llega a esto
+function nombreCaptura(prefijo, tipo, n) {
+  const ext = String(tipo || "image/png")
+    .split("/")[1]
+    .replace("jpeg", "jpg")
+    .replace("svg+xml", "svg")
+    .replace(/[^a-z0-9]/g, "");
+  const s = String(prefijo || "captura").replace(/[^A-Za-z0-9_-]+/g, "-");
+  return `${s}-${nowStamp()
+    .replace(/[^0-9]/g, "")
+    .slice(0, 14)}-${n}.${ext || "png"}`;
+}
+// Devuelve la REFERENCIA del archivo escrito (nombre, tipo, tamaño), que es lo mismo que se guarda de
+// un adjunto elegido con el selector: aguas abajo un respaldo pegado y uno adjuntado son el mismo dato.
+function guardarImagenPegada(dataUrl, nombre) {
+  const m = /^data:(image\/[a-z.+-]+);base64,(.*)$/i.exec(String(dataUrl || ""));
+  if (!m) return null;
+  const bin = atob(m[2]);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  const url = URL.createObjectURL(new Blob([buf], { type: m[1] }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  return { nombre, tipo: m[1], tam: buf.length };
+}
+// La bitácora y la auditoría guardan LO QUE SE DIJO, no el marcado: un glosa con `<div>` adentro no se
+// lee, y una captura en base64 son cien mil caracteres en una fila de log. La imagen se nombra.
+function notaTextoPlano(html) {
+  return String(html || "")
+    .replace(/<img[^>]*alt="([^"]*)"[^>]*>/gi, " [imagen: $1] ")
+    .replace(/<img[^>]*>/gi, " [imagen] ")
+    .replace(/<\/(p|div|li|tr)>/gi, " ")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+// ¿La nota tiene algo? El HTML vacío de un `contentEditable` no es la cadena vacía: Chrome deja
+// `<br>` o un `<div><br></div>` en cuanto alguien escribe y borra.
+const notaVacia = (html) => !notaTextoPlano(html) && !/<img/i.test(String(html || ""));
+// Una nota rica se GUARDA y se vuelve a pintar como HTML, así que lo que se pinta pasa por una lista
+// blanca: estos son los únicos elementos que el editor produce, y de todos ellos NO sobrevive ningún
+// atributo salvo el `src` de una imagen embebida y su `alt`. No es una precaución teórica: `execCommand`
+// pega lo que haya en el portapapeles, el respaldo de una verificación se muestra meses después a quien
+// audita un giro, y el árbol se arma en un `<template>`, que es inerte —no carga recursos ni dispara
+// `onerror` mientras se lo recorre—. Un elemento fuera de la lista se DESENVUELVE (se conserva su texto)
+// y una imagen que no venga embebida en `data:` se descarta entera.
+const NOTA_TAGS_OK = ["B", "STRONG", "I", "EM", "U", "BR", "UL", "OL", "LI", "DIV", "P", "SPAN", "IMG"];
+function notaSegura(html) {
+  const entrada = document.createElement("template");
+  entrada.innerHTML = String(html || "");
+  const salida = document.createElement("template");
+  const copiar = (origen, destino) => {
+    for (const n of Array.from(origen.childNodes)) {
+      if (n.nodeType === 3) {
+        destino.appendChild(document.createTextNode(n.nodeValue));
+        continue;
+      }
+      if (n.nodeType !== 1) continue;
+      if (NOTA_TAGS_OK.indexOf(n.tagName) < 0) {
+        copiar(n, destino);
+        continue;
+      }
+      const e = document.createElement(n.tagName.toLowerCase());
+      if (n.tagName === "IMG") {
+        const src = n.getAttribute("src") || "";
+        if (!/^data:image\/[a-z.+-]+;base64,/i.test(src)) continue;
+        e.setAttribute("src", src);
+        e.setAttribute("alt", String(n.getAttribute("alt") || "captura").slice(0, 120));
+        e.setAttribute("class", "nota-img");
+      }
+      destino.appendChild(e);
+      copiar(n, e);
+    }
+  };
+  copiar(entrada.content, salida.content);
+  return salida.innerHTML;
+}
+// Pinta una nota rica ya guardada. Un solo sitio, para que sanear no se olvide en el segundo lector.
+function NotaLeida({ html, className = "t10" }) {
+  return <div className={`nota-leida ${className}`} style={{ color: C.ink }} dangerouslySetInnerHTML={{ __html: notaSegura(html) }} />;
+}
+function NotaRica({ valor, onCambio, onImagen, placeholder, minHeight = 72, escala = "t10" }) {
+  const ref = useRef(null);
+  const [foco, setFoco] = useState(false);
+  // El `innerHTML` se escribe SÓLO cuando lo de afuera y lo del DOM difieren. Reescribirlo en cada
+  // render mueve el cursor al principio y la nota se digita al revés — es el defecto clásico de un
+  // `contentEditable` controlado, y no lo caza ningún gate: sólo se ve tecleando.
+  useEffect(() => {
+    const el = ref.current;
+    if (el && String(valor || "") !== el.innerHTML) el.innerHTML = String(valor || "");
+  }, [valor]);
+  const emitir = () => {
+    const el = ref.current;
+    if (el && onCambio) onCambio(el.innerHTML);
+  };
+  const cmd = (c) => {
+    if (ref.current) ref.current.focus();
+    document.execCommand(c, false, null);
+    emitir();
+  };
+  const pegar = (ev) => {
+    const items = Array.from((ev.clipboardData && ev.clipboardData.items) || []);
+    const img = items.find((x) => x.kind === "file" && /^image\//.test(x.type || ""));
+    ev.preventDefault();
+    if (!img) {
+      document.execCommand("insertText", false, (ev.clipboardData && ev.clipboardData.getData("text/plain")) || "");
+      emitir();
+      return;
+    }
+    const file = img.getAsFile();
+    if (!file) return;
+    if (file.size > NOTA_RICA_MAX_IMG) {
+      document.execCommand("insertText", false, `[captura de ${Math.round(file.size / 1024)} KB: demasiado grande para la nota, adjúntala como archivo]`);
+      emitir();
+      return;
+    }
+    const fr = new FileReader();
+    fr.onload = () => {
+      const dataUrl = String(fr.result || "");
+      const meta = onImagen ? onImagen(dataUrl, file) : null;
+      const alt = ((meta && meta.nombre) || "captura").replace(/"/g, "");
+      document.execCommand("insertHTML", false, `<img src="${dataUrl}" alt="${alt}" class="nota-img" /><br />`);
+      emitir();
+    };
+    fr.readAsDataURL(file);
+  };
+  const boton = (c, etq, tit, estilo) => (
+    <button
+      key={c}
+      type="button"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => cmd(c)}
+      title={tit}
+      className="rounded px-1.5 py-0.5 t10"
+      style={{ color: C.sub, ...estilo }}
+    >
+      {etq}
+    </button>
+  );
+  return (
+    <div className="rounded-lg" style={{ border: `1px solid ${foco ? C.indigo : C.line}`, backgroundColor: "#fff", overflow: "hidden" }}>
+      <div className="flex items-center gap-0.5 px-1 py-0.5" style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: "#FAF9FB" }}>
+        {boton("bold", "B", "Negrita (Ctrl+B)", { fontWeight: 800 })}
+        {boton("italic", "I", "Cursiva (Ctrl+I)", { fontStyle: "italic" })}
+        {boton("insertUnorderedList", "•", "Viñetas")}
+        <span
+          className="ml-auto truncate pr-1 t8"
+          style={{ color: C.faint }}
+          title="La captura queda dentro de la nota y además se guarda como archivo y se registra como adjunto"
+        >
+          Ctrl+V pega una captura
+        </span>
+      </div>
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        role="textbox"
+        aria-multiline="true"
+        aria-label={placeholder}
+        data-vacio={notaVacia(valor) ? "1" : "0"}
+        data-marca={placeholder}
+        onInput={emitir}
+        onBlur={() => {
+          setFoco(false);
+          emitir();
+        }}
+        onFocus={() => setFoco(true)}
+        onPaste={pegar}
+        className={`nota-rica w-full px-2 py-1.5 ${escala} outline-none`}
+        style={{ color: C.ink, minHeight, maxHeight: 260, overflowY: "auto" }}
+      />
+    </div>
+  );
+}
+// REGISTRO DE LA VERIFICACIÓN, en PANEL LATERAL. Hasta ahora una verificación telefónica —3 a 4 horas
+// por deudor, y bloquea el giro— se firmaba con un clic: `repoVerifTel` guardaba `{por, fecha}`, o sea
 // quién y cuándo, sin nada de lo que se preguntó ni de lo que el deudor respondió. El §1 del spec dice
 // que el objetivo del contacto es obtener «un documento —correo o grabación telefónica— donde quede
 // explícito que pagará», y ese documento no tenía dónde guardarse: la evidencia que justifica el giro
 // se perdía en el acto de registrarla.
-// Las tres preguntas van JUNTAS a propósito: confirmar que la factura existe pero no que fue recibida
-// conforme no es una confirmación, y el deudor puede reconocer el documento y discutir la fecha. Por
-// eso habilitan juntas, como la unanimidad del §4.2 del predictor.
-// El veredicto es del DEUDOR (§ mesa), así que la llamada se firma UNA vez para todas sus facturas; el
-// selector de folios existe para la confirmación PARCIAL, donde las que el deudor no reconoce se
-// retiran y quedan vetadas igual que en el «no verificada» completo.
+// LATERAL y no centrado (22-09-2026, pedido del usuario): se registra MIRANDO la lista —qué deudor, qué
+// folio, qué queda pendiente—, y un modal centrado tapa justo eso. Y sirve para las DOS decisiones: el
+// «no verificó» también tiene información que capturar (con quién se habló, por qué no confirmó, el
+// correo donde lo dice), y hasta ahora se resolvía con un sí/no de un diálogo de confirmación, o sea
+// retirando plata de una operación viva sin dejar un solo dato de por qué.
+// Las tres preguntas del modo «verificar» van JUNTAS a propósito: confirmar que la factura existe pero
+// no que fue recibida conforme no es una confirmación, y el deudor puede reconocer el documento y
+// discutir la fecha. Por eso habilitan juntas, como la unanimidad del §4.2 del predictor.
+// El ALCANCE lo trae quien lo abre (`docs`): un folio desde su fila, o todo lo pendiente del deudor
+// desde su cabecera. Un solo panel para los dos, porque lo que se captura es lo mismo.
 // El respaldo se exige o se declara ausente, nunca se calla: es el mismo criterio que la solicitud de
 // excepción —un silencio no distingue «no hubo documento» de «se me olvidó adjuntarlo»—, y acá pesa
 // más, porque esto es lo que se muestra si alguien pregunta por qué se giró contra esta factura.
-function ModalLlamadaVerif({ fila, onCerrar, onConfirmar }) {
-  const facturas = (fila && fila.facturas) || [];
+const MOTIVOS_NO_VERIF = [
+  ["no_reconoce", "No reconoce la factura"],
+  ["reclamo", "Reclamo pendiente o recepción no conforme"],
+  ["ya_pagada", "Dice que ya la pagó"],
+  ["sin_contacto", "No se pudo contactar al deudor"],
+  ["otro", "Otro motivo"],
+];
+function DrawerVerificacion({ fila, docs, modo, onCerrar, onConfirmar }) {
+  const alcance = (docs && docs.length ? docs : (fila && fila.docs) || []).filter((d) => d && d.estado === "pendiente");
+  const verificar = modo !== "no_verificar";
   const [chk, setChk] = useState({ existencia: false, recepcion: false, fechaPago: false });
   const [contacto, setContacto] = useState({ nombre: "", cargo: "", fono: "" });
   const [compromiso, setCompromiso] = useState("");
+  const [motivo, setMotivo] = useState("");
   const [archs, setArchs] = useState([]);
   const [sinRespaldo, setSinRespaldo] = useState(false);
   const [notas, setNotas] = useState("");
-  const [sel, setSel] = useState(() => facturas.reduce((m, f) => ({ ...m, [f.id]: true }), {}));
-  const nSel = facturas.filter((f) => sel[f.id]).length;
-  const completo = chk.existencia && chk.recepcion && chk.fechaPago;
-  const listo = completo && contacto.nombre.trim() && (archs.length > 0 || sinRespaldo) && nSel > 0;
+  const monto = alcance.reduce((s, d) => s + ((d.f && d.f.monto) || 0), 0);
+  // «Fecha de pago» no se cumple con marcar el check: se cumple con la FECHA. Marcado y vacío es
+  // exactamente el caso que el propio rótulo declara imposible —«sin fecha no hay compromiso que
+  // verificar»—, así que el check y su fecha son un solo dato y se validan juntos.
+  const completo = chk.existencia && chk.recepcion && chk.fechaPago && !!compromiso;
+  // Para NO verificar no se piden las tres preguntas —no hubo confirmación que desglosar— pero sí el
+  // motivo: es lo que alguien va a leer cuando pregunte por qué esta factura salió de la oferta. Y con
+  // «no se pudo contactar» no se exige nombre, porque el dato es justamente que no hubo con quién.
+  const listo = verificar
+    ? completo && contacto.nombre.trim() && (archs.length > 0 || sinRespaldo) && alcance.length > 0
+    : !!motivo && (motivo === "sin_contacto" || contacto.nombre.trim()) && (archs.length > 0 || sinRespaldo) && alcance.length > 0;
   const campo = { border: `1px solid ${C.line}`, backgroundColor: "#fff", color: C.ink, borderRadius: 10 };
-  const check = (k, lbl, desc) => (
+  const acento = verificar ? "#16A34A" : C.red;
+  // Una captura pegada en la nota es un RESPALDO: entra a la misma lista que lo adjuntado con el
+  // selector, porque aguas abajo `reg.respaldo` no distingue de dónde vino el archivo — y además es lo
+  // que hace que el botón se habilite sin tener que declarar «no hay respaldo».
+  const capturaPegada = (dataUrl, file) => {
+    const meta = guardarImagenPegada(
+      dataUrl,
+      nombreCaptura(
+        `${verificar ? "verificacion" : "no-verificacion"}-${(fila && fila.deudor) || "deudor"}`,
+        (file && file.type) || "image/png",
+        archs.length + 1,
+      ),
+    );
+    if (meta) setArchs((l) => [...l, meta]);
+    return meta;
+  };
+  const check = (k, lbl, desc, extra) => (
     <label
       key={k}
-      className="flex cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2"
+      className="block cursor-pointer rounded-lg px-2.5 py-2"
       style={{ border: `1px solid ${chk[k] ? "#bbf7d0" : C.line}`, backgroundColor: chk[k] ? "#F0FDF4" : "#fff" }}
     >
-      <input type="checkbox" checked={chk[k]} onChange={(e) => setChk((m) => ({ ...m, [k]: e.target.checked }))} className="mt-0.5" />
-      <span className="min-w-0">
-        <span className="block t11 font-semibold" style={{ color: C.ink }}>
-          {lbl}
-        </span>
-        <span className="block t9" style={{ color: C.sub }}>
-          {desc}
+      <span className="flex items-start gap-2">
+        <input type="checkbox" checked={chk[k]} onChange={(e) => setChk((m) => ({ ...m, [k]: e.target.checked }))} className="mt-0.5" />
+        <span className="min-w-0">
+          <span className="block t11 font-semibold" style={{ color: C.ink }}>
+            {lbl}
+          </span>
+          <span className="block t9" style={{ color: C.sub }}>
+            {desc}
+          </span>
         </span>
       </span>
+      {chk[k] && extra ? <span className="mt-1.5 block pl-6">{extra}</span> : null}
     </label>
   );
+  const rotulo = (t) => (
+    <div className="mt-3 t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>
+      {t}
+    </div>
+  );
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center ovl p-6" onClick={onCerrar}>
+    <div className="fixed inset-0 z-50 flex justify-end ovl" onClick={onCerrar}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl rounded-2xl bg-white p-5 shadow-2xl"
-        style={{ border: `1px solid ${C.line}`, maxHeight: "88vh", overflowY: "auto" }}
+        className="flex h-full w-full max-w-xl flex-col bg-white shadow-2xl"
+        style={{ borderLeft: `1px solid ${C.line}` }}
       >
-        <div className="t13 font-bold" style={{ color: C.ink }}>
-          Registrar verificación telefónica
-        </div>
-        <div className="mt-0.5 t11" style={{ color: C.sub }}>
-          {fila && fila.deudor} · {facturas.length} factura(s){fila && fila.cliente ? ` · ${fila.cliente}` : ""}
-        </div>
-
-        <div className="mt-3 t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>
-          Lo que hay que confirmar en la llamada
-        </div>
-        <div className="mt-1.5 grid gap-1.5" style={{ gridTemplateColumns: "1fr" }}>
-          {check("existencia", "Existencia de la factura", "El deudor reconoce el documento y su monto.")}
-          {check("recepcion", "Recepción conforme", "Recibió la mercadería o el servicio, sin reclamo pendiente.")}
-          {check("fechaPago", "Fecha de pago", "Confirma cuándo pagará; sin fecha no hay compromiso que verificar.")}
-        </div>
-
-        <div className="mt-3 grid gap-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
-          <label className="t9" style={{ color: C.sub }}>
-            Con quién se habló
-            <input
-              value={contacto.nombre}
-              onChange={(e) => setContacto((c) => ({ ...c, nombre: e.target.value }))}
-              placeholder="Nombre y apellido"
-              className="mt-1 w-full px-2 py-1.5 t11 outline-none"
-              style={campo}
-            />
-          </label>
-          <label className="t9" style={{ color: C.sub }}>
-            Cargo
-            <input
-              value={contacto.cargo}
-              onChange={(e) => setContacto((c) => ({ ...c, cargo: e.target.value }))}
-              placeholder="Ej.: Jefe de Cuentas por Pagar"
-              className="mt-1 w-full px-2 py-1.5 t11 outline-none"
-              style={campo}
-            />
-          </label>
-          <label className="t9" style={{ color: C.sub }}>
-            Teléfono
-            <input
-              value={contacto.fono}
-              onChange={(e) => setContacto((c) => ({ ...c, fono: e.target.value }))}
-              placeholder="+56 2 ..."
-              className="mt-1 w-full px-2 py-1.5 t11 outline-none"
-              style={campo}
-            />
-            <span className="mt-0.5 block t8" style={{ color: C.faint }}>
-              En la bitácora queda ofuscado: {fonoOfuscado(contacto.fono)}
-            </span>
-          </label>
-          <label className="t9" style={{ color: C.sub }}>
-            Fecha de pago comprometida
-            <input
-              value={compromiso}
-              onChange={(e) => setCompromiso(e.target.value)}
-              placeholder="dd-mm-aaaa"
-              className="mt-1 w-full px-2 py-1.5 t11 outline-none"
-              style={campo}
-            />
-          </label>
-        </div>
-
-        <div className="mt-3 t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>
-          Respaldo del compromiso
-        </div>
-        <div className="mt-1.5 flex flex-wrap items-center gap-2">
-          <label className="inline-flex cursor-pointer items-center gap-1 t10 font-medium" style={{ color: C.indigo }}>
-            📎 Adjuntar correo o grabación
-            <input
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                setArchs((a) => [...a, ...Array.from(e.target.files || []).map((x) => x.name)]);
-                e.target.value = "";
-              }}
-            />
-          </label>
-          {archs.map((a, i) => (
-            <span key={i} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9" style={{ backgroundColor: C.lilac, color: C.indigo }}>
-              📎 {a}
-              <button onClick={() => setArchs((l) => l.filter((_, j) => j !== i))} style={{ fontWeight: 700 }}>
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
-        <label className="mt-1.5 flex items-center gap-1.5 t9" style={{ color: C.sub, cursor: "pointer" }}>
-          <input type="checkbox" checked={sinRespaldo} onChange={(e) => setSinRespaldo(e.target.checked)} />
-          No hay respaldo documental de esta llamada (queda declarado)
-        </label>
-        <textarea
-          value={notas}
-          onChange={(e) => setNotas(e.target.value)}
-          placeholder="Notas de la llamada (opcional)…"
-          className="mt-2 w-full p-2 t10 outline-none"
-          style={{ ...campo, minHeight: 48 }}
-        />
-
-        {facturas.length > 1 && (
-          <>
-            <div className="mt-3 t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>
-              Folios que el deudor confirmó ({nSel} de {facturas.length})
+        <div className="flex items-start justify-between gap-3 px-5 py-3" style={{ borderBottom: `1px solid ${C.line}` }}>
+          <div className="min-w-0">
+            <div className="t13 font-bold" style={{ color: C.ink }}>
+              {verificar ? "Registrar verificación telefónica" : "Registrar que el deudor NO confirmó"}
             </div>
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {facturas.map((f) => (
-                <label
-                  key={f.id}
-                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-full px-2 py-1 t9 font-medium"
-                  style={{
-                    border: `1px solid ${sel[f.id] ? "#bbf7d0" : "#fecaca"}`,
-                    backgroundColor: sel[f.id] ? "#F0FDF4" : "#FEF2F2",
-                    color: sel[f.id] ? "#16A34A" : "#EF4444",
-                  }}
-                >
-                  <input type="checkbox" checked={!!sel[f.id]} onChange={(e) => setSel((m) => ({ ...m, [f.id]: e.target.checked }))} />
-                  {f.folio || f.id}
-                  {f.monto != null ? ` · ${fmtMM(f.monto)}` : ""}
-                </label>
+            <div className="mt-0.5 t11" style={{ color: C.sub }}>
+              {fila && fila.deudor} · {alcance.length} factura(s) por {fmtMM(monto)}
+              {fila && fila.cliente ? ` · ${fila.cliente} · ${fila.op}` : ""}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {alcance.map((d) => (
+                <span key={d.id} className="rounded px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: "#F5F4F8", color: C.sub }}>
+                  #{(d.f && d.f.folio) || d.id}
+                </span>
               ))}
             </div>
-            {nSel < facturas.length && (
-              <div className="mt-1.5 t9" style={{ color: "#C2410C" }}>
-                Las {facturas.length - nSel} no marcadas se retiran de la oferta y quedan vetadas para esta operación.
-              </div>
-            )}
-          </>
-        )}
+          </div>
+          <button onClick={onCerrar} className="shrink-0 rounded-lg p-1" style={{ color: C.sub }} title="Cerrar">
+            <X size={16} />
+          </button>
+        </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-          <span className="t9" style={{ color: C.faint }}>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+          {verificar ? (
+            <>
+              {rotulo("Lo que hay que confirmar en la llamada")}
+              <div className="mt-1.5 grid gap-1.5" style={{ gridTemplateColumns: "1fr" }}>
+                {check("existencia", "Existencia de la factura", "El deudor reconoce el documento y su monto.")}
+                {check("recepcion", "Recepción conforme", "Recibió la mercadería o el servicio, sin reclamo pendiente.")}
+                {check(
+                  "fechaPago",
+                  "Fecha de pago",
+                  "Confirma cuándo pagará; sin fecha no hay compromiso que verificar.",
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="t9" style={{ color: C.sub }}>
+                      Fecha comprometida
+                    </span>
+                    <input
+                      type="date"
+                      value={compromiso}
+                      onChange={(e) => setCompromiso(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="px-2 py-1 t11 outline-none"
+                      style={{ ...campo, borderColor: compromiso ? "#bbf7d0" : "#FDBA74" }}
+                    />
+                    {compromiso ? (
+                      <span className="t9 font-semibold" style={{ color: "#16A34A" }}>
+                        {fmtFechaDoc(compromiso)}
+                      </span>
+                    ) : (
+                      <span className="t9" style={{ color: "#C2410C" }}>
+                        Falta la fecha
+                      </span>
+                    )}
+                  </span>,
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              {rotulo("Por qué no se pudo verificar")}
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {MOTIVOS_NO_VERIF.map(([k, l]) => (
+                  <button
+                    key={k}
+                    onClick={() => setMotivo(k)}
+                    className="rounded-full px-2.5 py-1 t10 font-medium"
+                    style={{
+                      border: `1px solid ${motivo === k ? C.red : C.line}`,
+                      backgroundColor: motivo === k ? "#FEF2F2" : "#fff",
+                      color: motivo === k ? C.red : C.sub,
+                    }}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-2 rounded-lg px-2.5 py-2 t10" style={{ backgroundColor: "#FEF2F2", border: `1px solid #fecaca`, color: C.red }}>
+                Las {alcance.length} factura(s) salen de la operación, bajan el monto a girar y quedan <b>vetadas</b>: no se podrán volver a seleccionar acá.
+                Las de los demás deudores siguen como están.
+              </div>
+            </>
+          )}
+
+          {rotulo(verificar ? "Con quién se habló" : "Con quién se intentó")}
+          <div className="mt-1.5 grid gap-2" style={{ gridTemplateColumns: "repeat(3, minmax(0,1fr))" }}>
+            <label className="t9" style={{ color: C.sub }}>
+              Nombre
+              <input
+                value={contacto.nombre}
+                onChange={(e) => setContacto((c) => ({ ...c, nombre: e.target.value }))}
+                placeholder="Nombre y apellido"
+                className="mt-1 w-full px-2 py-1.5 t11 outline-none"
+                style={campo}
+              />
+            </label>
+            <label className="t9" style={{ color: C.sub }}>
+              Cargo
+              <input
+                value={contacto.cargo}
+                onChange={(e) => setContacto((c) => ({ ...c, cargo: e.target.value }))}
+                placeholder="Ej.: Jefe de Cuentas por Pagar"
+                className="mt-1 w-full px-2 py-1.5 t11 outline-none"
+                style={campo}
+              />
+            </label>
+            <label className="t9" style={{ color: C.sub }}>
+              Teléfono
+              <input
+                value={contacto.fono}
+                onChange={(e) => setContacto((c) => ({ ...c, fono: e.target.value }))}
+                placeholder="+56 2 ..."
+                className="mt-1 w-full px-2 py-1.5 t11 outline-none"
+                style={campo}
+              />
+              <span className="mt-0.5 block t8" style={{ color: C.faint }}>
+                En la bitácora queda ofuscado: {fonoOfuscado(contacto.fono)}
+              </span>
+            </label>
+          </div>
+
+          {/* LO QUE YA ESTABA ANOTADO en estos folios. Se muestra ANTES de pedir el respaldo nuevo:
+              el correo del deudor suele llegar antes que la decisión, y sin esto quien registra
+              vuelve a escribir lo que ya estaba escrito o lo contradice sin saberlo. */}
+          {alcance.some((d) => d.respaldo && (d.respaldo.nota || (d.respaldo.adjuntos || []).length)) && (
+            <>
+              {rotulo("Respaldo ya guardado")}
+              <div className="mt-1.5 space-y-1.5">
+                {alcance
+                  .filter((d) => d.respaldo && (d.respaldo.nota || (d.respaldo.adjuntos || []).length))
+                  .map((d) => (
+                    <div key={d.id} className="rounded-lg px-2.5 py-2" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
+                      <div className="t9 uppercase tracking-wide" style={{ color: C.faint }}>
+                        #{(d.f && d.f.folio) || d.id}
+                        {d.respaldo.por ? ` · ${d.respaldo.por} · ${d.respaldo.fecha}` : ""}
+                      </div>
+                      {d.respaldo.nota && <NotaLeida html={d.respaldo.nota} className="mt-0.5 t10" />}
+                      {(d.respaldo.adjuntos || []).length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {d.respaldo.adjuntos.map((a, i) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9"
+                              style={{ backgroundColor: C.lilac, color: C.indigo }}
+                            >
+                              📎 {a.nombre}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            </>
+          )}
+
+          {rotulo(verificar ? "Respaldo del compromiso" : "Respaldo de la gestión")}
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-1 t10 font-medium" style={{ color: C.indigo }}>
+              📎 Adjuntar correo o grabación
+              <input
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  // Se guarda la REFERENCIA del archivo, no sus bytes: en producción el documento vive
+                  // en el gestor documental y NEX apunta a él. Nombre, tipo y tamaño son lo que permite
+                  // reconocerlo al auditarlo.
+                  setArchs((a) => [...a, ...Array.from(e.target.files || []).map((x) => ({ nombre: x.name, tipo: x.type || "", tam: x.size || 0 }))]);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            {archs.map((a, i) => (
+              <span key={i} className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t9" style={{ backgroundColor: C.lilac, color: C.indigo }}>
+                📎 {a.nombre}
+                {a.tam ? ` · ${Math.max(1, Math.round(a.tam / 1024)).toLocaleString("es-CL")} KB` : ""}
+                <button onClick={() => setArchs((l) => l.filter((_, j) => j !== i))} style={{ fontWeight: 700 }}>
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+          <label className="mt-1.5 flex items-center gap-1.5 t9" style={{ color: C.sub, cursor: "pointer" }}>
+            <input type="checkbox" checked={sinRespaldo} onChange={(e) => setSinRespaldo(e.target.checked)} />
+            No hay respaldo documental de esta gestión (queda declarado)
+          </label>
+          <div className="mt-2">
+            <NotaRica
+              valor={notas}
+              onCambio={setNotas}
+              onImagen={capturaPegada}
+              placeholder={verificar ? "Notas de la llamada: pega acá la captura del correo o del portal…" : "Qué dijo el deudor, o qué se intentó…"}
+              minHeight={72}
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3" style={{ borderTop: `1px solid ${C.line}` }}>
+          <span className="t9" style={{ color: C.faint, maxWidth: 300 }}>
             {listo
-              ? "Queda firmada con tu nombre, la hora y este respaldo."
-              : "Confirma las tres preguntas, indica con quién hablaste y adjunta el respaldo (o declara que no hay)."}
+              ? `Queda firmada con tu nombre, la hora y este respaldo.`
+              : verificar
+                ? chk.existencia && chk.recepcion && chk.fechaPago && !compromiso
+                  ? "Falta la fecha de pago comprometida: márcala en su recuadro."
+                  : "Confirma las tres preguntas, indica con quién hablaste y adjunta el respaldo (o declara que no hay)."
+                : "Elige el motivo, indica con quién se habló y adjunta el respaldo (o declara que no hay)."}
           </span>
           <div className="flex items-center gap-2">
             <button onClick={onCerrar} className="rounded-lg px-3 py-2 t12 font-medium" style={{ border: `1px solid ${C.line}`, color: C.sub }}>
@@ -7104,11 +7486,24 @@ function ModalLlamadaVerif({ fila, onCerrar, onConfirmar }) {
             </button>
             <button
               disabled={!listo}
-              onClick={() => onConfirmar({ checklist: chk, contacto, compromiso, archs, sinRespaldo, notas, sel })}
+              onClick={() =>
+                onConfirmar({
+                  modo: verificar ? "verificada" : "no_verificada",
+                  docs: alcance,
+                  checklist: chk,
+                  contacto,
+                  compromiso,
+                  motivo,
+                  motivoLbl: (MOTIVOS_NO_VERIF.find((m) => m[0] === motivo) || [])[1] || "",
+                  archs,
+                  sinRespaldo,
+                  notas,
+                })
+              }
               className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 t12 font-semibold text-white disabled:opacity-50"
-              style={{ backgroundColor: "#16A34A" }}
+              style={{ backgroundColor: acento }}
             >
-              <Check size={13} /> Registrar verificación
+              <Check size={13} /> {verificar ? "Registrar verificación" : "Retirar y vetar"}
             </button>
           </div>
         </div>
@@ -11074,13 +11469,21 @@ function DealMensajeria({ deal, usuario }) {
 // pestañas más allá: el mismo documento con dos precios en la misma pantalla.
 // (El mapa `spreadDeudor` se lee en cinco sitios y su setter no se llama nunca: la EDICIÓN del spread
 // por deudor que su forma de estado promete no existe. Ver `Auditoria/Auditoria_Codigo_Muerto.md` §1.4.)
-function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usuario, tasaDe }) {
+function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoConfirmada, usuario, tasaDe }) {
   // Misma compuerta que la mesa: registrar la llamada o retirar una factura es firmar lo que el
   // deudor dijo, y eso lo hace el equipo de verificación. Los demás leen el veredicto del modelo.
   const puedeMarcar = puedeVerificarFacturas((SESION && SESION.usuario) || usuario);
+  // INFORMATIVO: hay oferta simulada, pero la verificación todavía no es trabajo del equipo. Se ve
+  // el veredicto —qué se va a tener que llamar y qué no— y no se puede firmar nada: llamar a un
+  // deudor por facturas que el ejecutivo quizá retire son 3–4 horas tiradas (regla 6). `soloInforma`
+  // es para el CARTEL y `puedeAccionar` para los botones: en Giro/Perdida el tab ya está bloqueado y
+  // repetir ahí el cartel del informativo diría algo falso.
+  const soloInforma = !!informativo && !bloqueado;
+  const puedeAccionar = puedeMarcar && !informativo;
   const [refrescado, setRefrescado] = useState(nowStamp());
   const [filtro, setFiltro] = useState("all");
   const [open, setOpen] = useState({});
+  const [abiertoDeudor, setAbiertoDeudor] = useState({});
   // Columnas de la fila de factura: chevron · folio · tipo · emisión · vencimiento · tasa · monto · verif.
   const GC_VF = "14px minmax(72px,1fr) 104px 88px 88px 56px 82px 112px";
   // Las verificaciones telefónicas se persisten: vivían en este useState y se perdían al cerrar el
@@ -11092,7 +11495,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
   const [, forceTel] = useState(0);
   const telGuardadas = (typeof VERIF_TEL !== "undefined" && VERIF_TEL[deal.id]) || {};
   const [llamando, setLlamando] = useState(null); // factura cuya llamada se está registrando
-  // Abre el registro en vez de firmar con el clic: mismo componente que usa la mesa, para que la
+  // Abre el panel lateral en vez de firmar con el clic: mismo componente que usa la mesa, para que la
   // evidencia sea la misma se entre por donde se entre. Antes esto guardaba `{por, fecha}` y además
   // atribuía la llamada al EJECUTIVO de la operación aunque la firmara otro; ahora firma quien la hizo.
   const registrarTel = (f) => setLlamando(f);
@@ -11111,7 +11514,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
       usuario: USERS[usuario] || usuario,
       modulo: "Verificación de facturas (detalle)",
       accion: conf.ok ? "Deudor verificado telefónicamente" : "Verificación rechazada por el contrato",
-      glosa: `${deal.cliente} · ${f.deudor} · folio ${f.folio || f.id} · contacto: ${reg.contacto.nombre}${reg.contacto.cargo ? ` (${reg.contacto.cargo})` : ""} ${fonoOfuscado(reg.contacto.fono)}${reg.compromiso ? ` · paga ${reg.compromiso}` : ""} · respaldo: ${reg.respaldo.length ? reg.respaldo.join(", ") : "SIN respaldo documental (declarado)"}${reg.notas ? ` · ${reg.notas}` : ""}`,
+      glosa: `${deal.cliente} · ${f.deudor} · folio ${f.folio || f.id} · contacto: ${reg.contacto.nombre}${reg.contacto.cargo ? ` (${reg.contacto.cargo})` : ""} ${fonoOfuscado(reg.contacto.fono)}${reg.compromiso ? ` · paga ${reg.compromiso}` : ""} · respaldo: ${reg.respaldo.length ? nombresArch(reg.respaldo).join(", ") : "SIN respaldo documental (declarado)"}${notaTextoPlano(reg.notas) ? ` · ${notaTextoPlano(reg.notas)}` : ""}`,
       empresaId: deal.id,
       exito: !!conf.ok,
     });
@@ -11138,7 +11541,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
     vistos.forEach((x) => {
       const k = x.f.deudor || "—";
       if (!por[k]) {
-        por[k] = { deudor: k, items: [], tipo: x.v.tipo, nota: x.v.nota, monto: 0 };
+        por[k] = { deudor: k, items: [], prime: x.v.prime, nota: x.v.nota, segmento: x.v.segmento, v0: x.v, monto: 0 };
         orden.push(k);
       }
       por[k].items.push(x);
@@ -11146,13 +11549,29 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
     });
     return orden.map((k) => por[k]);
   })();
-  const notaCol = (n) => (n >= 4 ? "#0a7d3f" : n >= 3 ? "#C2410C" : "#EF4444");
+  // La Nota Deudor viene del maestro de comportamiento de pago: de 1 a 5 con un decimal, y en la UI
+  // con coma. Sin nota en el maestro NO es «0» —que es la peor nota posible— sino ausencia de dato.
+  const fmtNota = (n) => (n > 0 ? String(n).replace(".", ",") : "s/n");
   const CHECKS = ["Existencia de la factura", "Recepción conforme", "Fecha de pago comprometida"];
   return (
     <>
       <div className="mt-1.5 t10 uppercase tracking-wide" style={{ color: C.faint }}>
-        Por documento · folio, deudor, criterios del predictor (V01–V10), verificación telefónica y estado
+        Por deudor · criterios del predictor (V00–V10) y veredicto · por factura · el quiz de la verificación telefónica
       </div>
+      {/* El cartel del modo informativo. Un tab de sólo lectura sin explicación se lee como un tab
+          roto —el usuario aprieta «Registrar verificación», no está, y reporta un defecto—, así que
+          dice las dos cosas: qué SÍ trae esta pantalla hoy y qué abre la llamada. */}
+      {soloInforma && (
+        <div className="mt-1 flex items-start gap-1.5 rounded-lg p-2 t9" style={{ backgroundColor: C.lilac, border: "1px solid #DDD3FF", color: "#5B21D6" }}>
+          <Eye size={11} className="mt-[2px] shrink-0" />
+          <span>
+            <b>Informativo.</b> La oferta está simulada y todavía se puede editar, así que acá se ve{" "}
+            <b>qué facturas van a requerir verificación telefónica y cuáles no</b>, y no se registra ninguna llamada. El contacto con el deudor toma{" "}
+            <b>3–4 horas</b> y retrasa el giro: llamar por facturas que quizá se retiren es lo que esta compuerta evita. Se habilita al <b>pre-evaluar</b> o al{" "}
+            <b>cerrar y publicar</b> la oferta.
+          </span>
+        </div>
+      )}
       <div
         className="mt-1 rounded-lg p-2 t9"
         style={{ backgroundColor: nTel ? "#FFF7ED" : "#F0FDF4", border: `1px solid ${nTel ? "#FED7AA" : "#bbf7d0"}`, color: nTel ? "#C2410C" : "#16A34A" }}
@@ -11230,7 +11649,7 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
       </div>
       <div className="mt-1">
         {grupos.map((g) => {
-          const chip = DEUDOR_CHIP[g.tipo] || DEUDOR_CHIP["Otro"];
+          const abierto = !!abiertoDeudor[g.deudor];
           const nTelG = g.items.filter((y) => y.v.est === "tel").length;
           // Tres estados de grupo, y el tercero es el que importa: con la confirmación parcial el
           // deudor queda partido, y decir sólo «Req. verif.» escondería que la mitad ya está.
@@ -11243,13 +11662,38 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
           return (
             <div key={g.deudor} className="mb-1.5 overflow-hidden rounded-lg" style={{ border: `1px solid ${C.line}` }}>
               {/* El chip, la nota y el nombre viven ACÁ y no en cada fila: son del deudor, y repetidos
-                siete veces tapaban lo único que cambia entre facturas, que es el folio y el monto. */}
-              <div className="flex items-center gap-2 px-2 py-1.5 t11" style={{ backgroundColor: C.page, borderBottom: `1px solid ${C.line}` }}>
-                <span className="shrink-0 rounded-full px-1 py-0.5 t9 font-medium" style={{ backgroundColor: chip.bg, color: chip.fg }}>
-                  {DEUDOR_LABEL[g.tipo] || "Otro"}
+                siete veces tapaban lo único que cambia entre facturas, que es el folio y el monto.
+                El chip nombra el SEGMENTO —**Prime**, que es Lista Blanca ∪ Autorizados y es lo que
+                el predictor usa para recortar el protocolo (regla 6)— y no la lista interna de la
+                que salió: «Lista Blanca» era un rótulo que el negocio ya no usa y que además decía
+                cosas distintas de las dos listas que comparten segmento. La nota va ROTULADA: un
+                número suelto al lado del nombre del deudor no dice de qué es. La cabecera abre y
+                cierra la evaluación del deudor. */}
+              <div
+                onClick={() => setAbiertoDeudor((o) => ({ ...o, [g.deudor]: !o[g.deudor] }))}
+                className="flex items-center gap-2 px-2 py-1.5 t11"
+                style={{ backgroundColor: C.page, borderBottom: `1px solid ${C.line}`, cursor: "pointer" }}
+                title="Ver los criterios V00–V10 y el veredicto de este deudor"
+              >
+                <ChevronRight size={11} style={{ color: C.faint, transform: abierto ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                {g.prime && (
+                  <span
+                    className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-semibold"
+                    style={{ backgroundColor: C.lilac, color: "#5B21D6" }}
+                    title="Deudor Prime: Lista Prime del maestro. Aplica el protocolo recortado de 6 criterios (V01, V04, V05, V07, V08, V10)."
+                  >
+                    Prime
+                  </span>
+                )}
+                <span className="shrink-0 t9" style={{ color: C.faint }}>
+                  Nota Deudor
                 </span>
-                <span className="w-8 shrink-0 text-right font-semibold" style={{ color: notaCol(g.nota) }}>
-                  {g.nota}
+                <span
+                  className="w-8 shrink-0 text-right font-semibold"
+                  style={{ color: g.nota > 0 ? NOTA_COLOR(g.nota) : C.faint }}
+                  title="Nota de comportamiento de pago del deudor (maestro de riesgo), de 1 a 5"
+                >
+                  {fmtNota(g.nota)}
                 </span>
                 <span className="min-w-0 flex-1 truncate font-semibold" style={{ color: C.ink }}>
                   {g.deudor}
@@ -11268,6 +11712,77 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
                   {estG.t}
                 </span>
               </div>
+              {/* LA EVALUACIÓN ES DEL DEUDOR. `verifDecision` calcula V00–V10 UNA vez sobre el conjunto
+                  de facturas del par cliente-deudor: dibujarlos dentro de cada fila mostraba el mismo
+                  dato N veces y, peor, sugería que la factura tenía criterios propios — no los tiene,
+                  y la única pregunta que sí es del documento (¿qué dijo el deudor de ESTE folio?) es
+                  la que vive abajo, en el quiz telefónico. */}
+              {abiertoDeudor[g.deudor] && (
+                <div
+                  className="grid gap-3 px-2 py-2"
+                  style={{ backgroundColor: C.page, borderBottom: `1px solid ${C.line}`, gridTemplateColumns: "1.3fr .85fr" }}
+                >
+                  <div>
+                    <div className="t9 font-bold uppercase tracking-wide mb-1.5" style={{ color: C.ink }}>
+                      Criterios del deudor · par cliente-deudor (3M)
+                    </div>
+                    {g.v0.evals.map((e) => {
+                      const rc =
+                        e.st === "ok"
+                          ? { bg: "#F0FDF4", fg: "#16A34A", t: `✓ ${e.r.fmt(e.v)}` }
+                          : e.st === "no"
+                            ? { bg: "#fef2f2", fg: "#EF4444", t: `✕ ${e.r.fmt(e.v)} · umbral ${e.r.thr}` }
+                            : { bg: "#FAF9FB", fg: "#6B7280", t: "? sin información" };
+                      return (
+                        <div key={e.r.id} className="mb-1.5 rounded-lg bg-white p-2" style={{ border: `1px solid ${C.line}` }}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="t10 font-semibold" style={{ color: C.ink }}>
+                              {e.r.id} · {e.r.name}
+                            </div>
+                            <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: rc.bg, color: rc.fg }}>
+                              {rc.t}
+                            </span>
+                          </div>
+                          <div className="t9" style={{ color: C.sub }}>
+                            {e.r.desc}
+                          </div>
+                          <div className="t9" style={{ color: C.faint }}>
+                            Dominio: <b style={{ color: C.sub }}>{e.r.dom}</b> · Umbral: <b style={{ color: C.sub }}>{e.r.thr}</b>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div>
+                    <div className="rounded-lg bg-white p-2.5" style={{ border: `1px solid ${C.line}` }}>
+                      <div className="t10 font-bold" style={{ color: C.ink }}>
+                        {g.v0.est === "ok" ? (
+                          <>
+                            <span className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#F0FDF4", color: "#16A34A" }}>
+                              ✓ Verificada
+                            </span>{" "}
+                            por el modelo
+                          </>
+                        ) : (
+                          <>
+                            <span className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>
+                              ⚠ Req. verif.
+                            </span>{" "}
+                            verificación telefónica
+                          </>
+                        )}
+                      </div>
+                      <div className="mt-1 t9" style={{ color: C.sub }}>
+                        {g.v0.est === "ok" ? "Todas las reglas dentro de umbral. Puede continuar a cesión y curse." : g.v0.motivo}
+                      </div>
+                      <div className="mt-1.5 t9" style={{ color: C.faint }}>
+                        Segmento <b style={{ color: C.sub }}>{g.segmento}</b> · el veredicto cubre las {g.items.length} factura{g.items.length === 1 ? "" : "s"}{" "}
+                        de este deudor en la oferta: una llamada las cubre todas.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
               {/* Los DATOS DEL DOCUMENTO, en el mismo orden y con los mismos títulos que la tabla de
               candidatas: folio · tipo · emisión · vencimiento · tasa · monto. La fila traía sólo el
               folio y el monto, y quien está por gastar 3–4 horas llamando al deudor necesita saber qué
@@ -11303,11 +11818,16 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
                     return (
                       <div key={f.id} style={{ borderBottom: `1px solid ${C.line}` }}>
                         <div
-                          onClick={() => setOpen((o) => ({ ...o, [f.id]: !o[f.id] }))}
+                          onClick={() => tel && setOpen((o) => ({ ...o, [f.id]: !o[f.id] }))}
                           className="grid items-center gap-2 py-1.5 t11"
-                          style={{ gridTemplateColumns: GC_VF, cursor: "pointer" }}
+                          style={{ gridTemplateColumns: GC_VF, cursor: tel ? "pointer" : "default" }}
+                          title={tel ? "Ver el quiz de la verificación telefónica de este folio" : "Verificada por el modelo: no hay llamada que registrar"}
                         >
-                          <ChevronRight size={11} style={{ color: C.faint, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                          {tel ? (
+                            <ChevronRight size={11} style={{ color: C.faint, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                          ) : (
+                            <span />
+                          )}
                           <span className="truncate font-medium" style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>
                             #{f.folio}
                           </span>
@@ -11333,173 +11853,113 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
                             {estPill.t}
                           </span>
                         </div>
-                        {isOpen && (
-                          <div className="grid gap-3 rounded-lg p-3 mb-1.5" style={{ backgroundColor: C.page, gridTemplateColumns: "1.3fr .85fr" }}>
-                            <div>
-                              <div className="t9 font-bold uppercase tracking-wide mb-1.5" style={{ color: C.ink }}>
-                                Reglas de verificación · cliente-deudor (3M)
+                        {/* EL QUIZ ES DE LA FACTURA: «¿existe este folio, se recibió conforme y cuándo se
+                            paga?» es la única pregunta de la verificación que se responde por documento,
+                            y por eso es lo único que abre esta fila. Abre sólo si hay llamada que mirar
+                            —la pendiente o la ya registrada—: una factura que el modelo dio por verificada
+                            no tiene quiz, y ofrecerle un panel vacío es peor que no ofrecerle nada. */}
+                        {isOpen && tel && (
+                          <div className="rounded-lg p-3 mb-1.5" style={{ backgroundColor: C.page }}>
+                            <div className="rounded-lg bg-white p-2.5" style={{ border: `1px solid ${C.line}`, maxWidth: 620 }}>
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="t9 font-bold uppercase tracking-wide" style={{ color: C.ink }}>
+                                  Verificación telefónica
+                                </span>
+                                <span
+                                  className="rounded-full px-1.5 py-0.5 t9 font-semibold"
+                                  style={{
+                                    backgroundColor: tel.estado === "Completada" ? "#F0FDF4" : tel.estado === "En curso" ? "#FFF7ED" : "#FAF9FB",
+                                    color: tel.estado === "Completada" ? "#16A34A" : tel.estado === "En curso" ? "#C2410C" : "#6B7280",
+                                  }}
+                                >
+                                  {tel.estado}
+                                </span>
                               </div>
-                              {v.evals.map((e) => {
-                                const rc =
-                                  e.st === "ok"
-                                    ? { bg: "#F0FDF4", fg: "#16A34A", t: `✓ ${e.r.fmt(e.v)}` }
-                                    : e.st === "no"
-                                      ? { bg: "#fef2f2", fg: "#EF4444", t: `✕ ${e.r.fmt(e.v)} · umbral ${e.r.thr}` }
-                                      : { bg: "#FAF9FB", fg: "#6B7280", t: "? sin información" };
-                                return (
-                                  <div key={e.r.id} className="mb-1.5 rounded-lg bg-white p-2" style={{ border: `1px solid ${C.line}` }}>
-                                    <div className="flex items-start justify-between gap-2">
-                                      <div className="t10 font-semibold" style={{ color: C.ink }}>
-                                        {e.r.id} · {e.r.name}
-                                      </div>
-                                      <span className="shrink-0 rounded-full px-1.5 py-0.5 t9 font-bold" style={{ backgroundColor: rc.bg, color: rc.fg }}>
-                                        {rc.t}
-                                      </span>
-                                    </div>
-                                    <div className="t9" style={{ color: C.sub }}>
-                                      {e.r.desc}
-                                    </div>
-                                    <div className="t9" style={{ color: C.faint }}>
-                                      Dominio: <b style={{ color: C.sub }}>{e.r.dom}</b> · Umbral: <b style={{ color: C.sub }}>{e.r.thr}</b>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            <div>
-                              <div className="rounded-lg bg-white p-2.5 mb-2" style={{ border: `1px solid ${C.line}` }}>
-                                <div className="t10 font-bold" style={{ color: C.ink }}>
-                                  {v.est === "ok" ? (
-                                    <>
-                                      <span className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#F0FDF4", color: "#16A34A" }}>
-                                        ✓ Verificada
-                                      </span>{" "}
-                                      por el modelo
-                                    </>
-                                  ) : (
-                                    <>
-                                      <span className="rounded-full px-1.5 py-0.5 t9" style={{ backgroundColor: "#FFF7ED", color: "#C2410C" }}>
-                                        ⚠ Req. verif.
-                                      </span>{" "}
-                                      verificación telefónica
-                                    </>
-                                  )}
-                                </div>
-                                <div className="mt-1 t9" style={{ color: C.sub }}>
-                                  {v.est === "ok" ? "Todas las reglas dentro de umbral. Puede continuar a cesión y curse." : v.motivo}
-                                </div>
-                                {v.exc && (
-                                  <div
-                                    className="mt-1.5 rounded-md px-2 py-1 t9"
-                                    style={{ backgroundColor: "#F1ECFF", border: "1px solid #F1ECFF", color: "#5B21D6" }}
+                              {CHECKS.map((c, i) => (
+                                <div
+                                  key={i}
+                                  className="flex items-center gap-2 py-1 t10"
+                                  style={{ borderBottom: i < 2 ? `1px solid ${C.line}` : "none", color: C.sub }}
+                                >
+                                  <span
+                                    className="flex h-4 w-4 items-center justify-center rounded"
+                                    style={{
+                                      border: `1.5px solid ${tel.checks[i] ? "#16a34a" : "#D1D5DB"}`,
+                                      backgroundColor: tel.checks[i] ? "#16a34a" : "#fff",
+                                      color: "#fff",
+                                      fontSize: 9,
+                                      fontWeight: 700,
+                                    }}
                                   >
-                                    🔒 Cursar requiere verificación completada + <b>{v.exc}</b>
-                                  </div>
-                                )}
-                              </div>
-                              {tel && (
-                                <div className="rounded-lg bg-white p-2.5" style={{ border: `1px solid ${C.line}` }}>
-                                  <div className="flex items-center justify-between mb-1">
-                                    <span className="t9 font-bold uppercase tracking-wide" style={{ color: C.ink }}>
-                                      Verificación telefónica
-                                    </span>
-                                    <span
-                                      className="rounded-full px-1.5 py-0.5 t9 font-semibold"
-                                      style={{
-                                        backgroundColor: tel.estado === "Completada" ? "#F0FDF4" : tel.estado === "En curso" ? "#FFF7ED" : "#FAF9FB",
-                                        color: tel.estado === "Completada" ? "#16A34A" : tel.estado === "En curso" ? "#C2410C" : "#6B7280",
-                                      }}
-                                    >
-                                      {tel.estado}
-                                    </span>
-                                  </div>
-                                  {CHECKS.map((c, i) => (
-                                    <div
-                                      key={i}
-                                      className="flex items-center gap-2 py-1 t10"
-                                      style={{ borderBottom: i < 2 ? `1px solid ${C.line}` : "none", color: C.sub }}
-                                    >
-                                      <span
-                                        className="flex h-4 w-4 items-center justify-center rounded"
-                                        style={{
-                                          border: `1.5px solid ${tel.checks[i] ? "#16a34a" : "#D1D5DB"}`,
-                                          backgroundColor: tel.checks[i] ? "#16a34a" : "#fff",
-                                          color: "#fff",
-                                          fontSize: 9,
-                                          fontWeight: 700,
-                                        }}
-                                      >
-                                        {tel.checks[i] ? "✓" : ""}
-                                      </span>
-                                      {c}
-                                    </div>
-                                  ))}
-                                  {tel.who && (
-                                    <div className="mt-1.5 t9" style={{ color: C.faint }}>
-                                      Registrado por {tel.who}
-                                    </div>
-                                  )}
-                                  {/* La EVIDENCIA de la llamada, que es lo que justifica girar contra esta factura.
+                                    {tel.checks[i] ? "✓" : ""}
+                                  </span>
+                                  {c}
+                                </div>
+                              ))}
+                              {tel.who && (
+                                <div className="mt-1.5 t9" style={{ color: C.faint }}>
+                                  Registrado por {tel.who}
+                                </div>
+                              )}
+                              {/* La EVIDENCIA de la llamada, que es lo que justifica girar contra esta factura.
                           Un registro viejo no la trae: se omite en vez de dibujar campos vacíos. */}
-                                  {tel.reg && tel.reg.contacto && (
-                                    <div
-                                      className="mt-1.5 rounded-md px-2 py-1.5 t9"
-                                      style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0", color: "#166534" }}
-                                    >
-                                      <div>
-                                        Habló con <b>{tel.reg.contacto.nombre}</b>
-                                        {tel.reg.contacto.cargo ? ` · ${tel.reg.contacto.cargo}` : ""} · {fonoOfuscado(tel.reg.contacto.fono)}
-                                      </div>
-                                      {tel.reg.compromiso && (
-                                        <div className="mt-0.5">
-                                          Pago comprometido: <b>{tel.reg.compromiso}</b>
-                                        </div>
-                                      )}
-                                      <div className="mt-0.5">
-                                        {tel.reg.respaldo && tel.reg.respaldo.length ? (
-                                          <>
-                                            Respaldo:{" "}
-                                            {tel.reg.respaldo.map((a, i) => (
-                                              <span key={i}>
-                                                📎 {a}
-                                                {i < tel.reg.respaldo.length - 1 ? " · " : ""}
-                                              </span>
-                                            ))}
-                                          </>
-                                        ) : (
-                                          <span style={{ color: "#C2410C" }}>Sin respaldo documental (declarado por quien registró)</span>
-                                        )}
-                                      </div>
-                                      {tel.reg.notas && (
-                                        <div className="mt-0.5" style={{ color: C.sub }}>
-                                          “{tel.reg.notas}”
-                                        </div>
-                                      )}
+                              {tel.reg && tel.reg.contacto && (
+                                <div
+                                  className="mt-1.5 rounded-md px-2 py-1.5 t9"
+                                  style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0", color: "#166534" }}
+                                >
+                                  <div>
+                                    Habló con <b>{tel.reg.contacto.nombre}</b>
+                                    {tel.reg.contacto.cargo ? ` · ${tel.reg.contacto.cargo}` : ""} · {fonoOfuscado(tel.reg.contacto.fono)}
+                                  </div>
+                                  {tel.reg.compromiso && (
+                                    <div className="mt-0.5">
+                                      Pago comprometido: <b>{tel.reg.compromiso}</b>
                                     </div>
                                   )}
-                                  {!bloqueado && puedeMarcar && tel.estado !== "Completada" && (
-                                    <button
-                                      onClick={() => registrarTel(f)}
-                                      className="mt-2 rounded-md px-3 py-1.5 t10 font-semibold"
-                                      style={{ border: "1px solid #F1ECFF", color: "#5B21D6", backgroundColor: "#fff" }}
-                                    >
-                                      Registrar verificación
-                                    </button>
+                                  <div className="mt-0.5">
+                                    {tel.reg.respaldo && tel.reg.respaldo.length ? (
+                                      <>
+                                        Respaldo:{" "}
+                                        {tel.reg.respaldo.map((a, i) => (
+                                          <span key={i}>
+                                            📎 {a}
+                                            {i < tel.reg.respaldo.length - 1 ? " · " : ""}
+                                          </span>
+                                        ))}
+                                      </>
+                                    ) : (
+                                      <span style={{ color: "#C2410C" }}>Sin respaldo documental (declarado por quien registró)</span>
+                                    )}
+                                  </div>
+                                  {tel.reg.notas && (
+                                    <div className="mt-0.5" style={{ color: C.sub }}>
+                                      “{tel.reg.notas}”
+                                    </div>
                                   )}
-                                  {/* Si el deudor NO confirma, Security retira esa factura de la operación (spec de
+                                </div>
+                              )}
+                              {!bloqueado && puedeAccionar && tel.estado !== "Completada" && (
+                                <button
+                                  onClick={() => registrarTel(f)}
+                                  className="mt-2 rounded-md px-3 py-1.5 t10 font-semibold"
+                                  style={{ border: "1px solid #F1ECFF", color: "#5B21D6", backgroundColor: "#fff" }}
+                                >
+                                  Registrar verificación
+                                </button>
+                              )}
+                              {/* Si el deudor NO confirma, Security retira esa factura de la operación (spec de
                           verificación §1). Es la única mutación que admite una operación ya firmada, y
                           sólo puede QUITAR: la asignación de las demás no se toca y no se vuelve a
                           asignar contra el estado nuevo de las líneas (ver `recortarAsignacion`). */}
-                                  {!bloqueado && puedeMarcar && onNoConfirmada && tel.estado !== "Completada" && (
-                                    <button
-                                      onClick={() => onNoConfirmada(f)}
-                                      className="mt-2 ml-1.5 rounded-md px-3 py-1.5 t10 font-semibold"
-                                      style={{ border: `1px solid ${C.red}`, color: C.red, backgroundColor: "#fff" }}
-                                    >
-                                      El deudor no confirmó · retirar
-                                    </button>
-                                  )}
-                                </div>
+                              {!bloqueado && puedeAccionar && onNoConfirmada && tel.estado !== "Completada" && (
+                                <button
+                                  onClick={() => onNoConfirmada(f)}
+                                  className="mt-2 ml-1.5 rounded-md px-3 py-1.5 t10 font-semibold"
+                                  style={{ border: `1px solid ${C.red}`, color: C.red, backgroundColor: "#fff" }}
+                                >
+                                  El deudor no confirmó · retirar
+                                </button>
                               )}
                             </div>
                           </div>
@@ -11518,8 +11978,10 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, onNoConfirmada, usu
         </div>
       </div>
       {llamando && (
-        <ModalLlamadaVerif
-          fila={{ deudor: llamando.deudor, cliente: deal.cliente, facturas: [llamando] }}
+        <DrawerVerificacion
+          fila={{ deudor: llamando.deudor, cliente: deal.cliente, op: deal.id, docs: [{ id: llamando.id, estado: "pendiente", f: llamando }] }}
+          docs={[{ id: llamando.id, estado: "pendiente", f: llamando }]}
+          modo="verificar"
           onCerrar={() => setLlamando(null)}
           onConfirmar={(ll) => confirmarLlamadaTel(llamando, ll)}
         />
@@ -12197,18 +12659,19 @@ function DealDrawer({
       return 0;
     }
   })();
-  // El tab de Verificación aparece cuando la verificación deja de ser una predicción y pasa a ser
-  // trabajo del equipo: al PRE-EVALUAR (el ejecutivo adelanta el proceso, igual que con el
-  // otorgamiento) o con la oferta ya cerrada y PUBLICADA (hay un compromiso con el cliente y la
-  // llamada queda en el camino al giro). Antes de eso la oferta todavía se está armando y llamar a un
-  // deudor por facturas que quizá se retiren es quemar 3–4 horas por deudor (regla 6).
-  // Sin facturas no hay nada que verificar, y en Giro/Perdida el tab se muestra sólo de lectura
+  // VERIFICACIÓN ACCIONABLE: cuándo deja de ser una predicción y pasa a ser trabajo del equipo. Al
+  // PRE-EVALUAR (el ejecutivo adelanta el proceso, igual que con el otorgamiento) o con la oferta ya
+  // cerrada y PUBLICADA (hay un compromiso con el cliente y la llamada queda en el camino al giro).
+  const verifAccionable = !!(deal && (tienePreEval(deal.id) || ofertaPublicada(deal) || ["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage)));
+  // Y el TAB aparece antes: en cuanto hay oferta SIMULADA. Lo que la compuerta de la regla 6 protege
+  // es la LLAMADA —3–4 horas por deudor que se queman si las facturas se retiran—, no la
+  // información: saber qué va a haber que verificar y qué no es justo lo que el ejecutivo necesita
+  // ANTES de comprometer un plazo, y esconderlo hasta publicar lo dejaba prometiendo a ciegas. Con la
+  // oferta sólo simulada el tab entra en modo INFORMATIVO (`informativo`), que muestra el veredicto y
+  // no deja registrar ninguna llamada ni retirar ninguna factura.
+  // Sin facturas no hay nada que verificar, y en Giro/Perdida se muestra sólo de lectura
   // (`bloqueado`), porque la llamada ya es historia y su registro es evidencia.
-  const mostrarVerif = !!(
-    deal &&
-    (deal.facturasOp || []).length &&
-    (tienePreEval(deal.id) || ofertaPublicada(deal) || ["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage))
-  );
+  const mostrarVerif = !!(deal && (deal.facturasOp || []).length && (verifAccionable || deal.simulado));
   const cont = deal.contacto || null;
   // Contacto validado: el cliente respondió por ese canal (WhatsApp/Call → teléfono; Email → correo).
   const telValidado = !!deal.telValidado || (deal.waSesion || []).some((m) => m.from === "cliente");
@@ -12738,7 +13201,7 @@ function DealDrawer({
                             : `${otorgPendOp} criterio(s) de otorgamiento pendientes en esta operación`
                         }
                         className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white"
-                        style={{ backgroundColor: otorgPend > 0 ? "#EF4444" : "#7C3AED" }}
+                        style={{ backgroundColor: exigeAcciones(deal) ? "#EF4444" : "#7C3AED" }}
                       >
                         {otorgPendOp}
                       </span>
@@ -12747,7 +13210,7 @@ function DealDrawer({
                       <span
                         title={`${verifPendOp} deudor(es) esperando la verificación telefónica en esta operación`}
                         className="flex h-4 min-w-4 items-center justify-center rounded-full px-1 t9 font-bold text-white"
-                        style={{ backgroundColor: "#C2410C" }}
+                        style={{ backgroundColor: exigeAcciones(deal) ? "#EF4444" : "#7C3AED" }}
                       >
                         {verifPendOp}
                       </span>
@@ -12774,11 +13237,6 @@ function DealDrawer({
                 // Otorgamientos, que vive en la pestaña del tubo, seguía mostrando cero al aprobador y
                 // el «Ir a aprobar» lo dejaba en una bandeja vacía. Es el mismo agujero que tenía el
                 // aviso de simulación al tubo, y se cierra igual: postMessage al opener.
-                const avisarOpenerPreEval = (encendida) => {
-                  try {
-                    if (window.opener) window.opener.postMessage({ type: "nex-preeval", dealId: deal.id, on: encendida, por: usuario }, ORIGEN_APP);
-                  } catch (_) {}
-                };
                 // Envío explícito al proceso de excepción. Si hay excepciones pendientes sin comentario/respaldo
                 // del ejecutivo, primero se advierte con un diálogo (puede enviar igual tras el warning).
                 const enviarPreEval = () => {
@@ -12791,14 +13249,12 @@ function DealDrawer({
                     .forEach((it) => solicitarAprobacionExc(deal, it, usuario, "", []));
                   setPreEval(deal.id, usuario, true);
                   avisarPreEval(deal, usuario);
-                  avisarOpenerPreEval(true);
                   setPreEvalWarn(null);
                   setReevTick((x) => x + 1);
                 };
                 const onClickPreEval = () => {
                   if (on) {
                     setPreEval(deal.id, usuario, false);
-                    avisarOpenerPreEval(false);
                     setReevTick((x) => x + 1);
                     return;
                   } // cancelar
@@ -12869,6 +13325,7 @@ function DealDrawer({
               <VerificacionTab
                 deal={deal}
                 facturasOp={deal.facturasOp || []}
+                informativo={!verifAccionable}
                 bloqueado={["giro", "perdida"].includes(deal.stage)}
                 onNoConfirmada={(f) => setConfirmNoConf(f)}
                 usuario={usuario}
@@ -12878,19 +13335,19 @@ function DealDrawer({
               />
             </div>
           )}
-          {tab === "otorgamiento" && deal.otorgAuto && (
+          {tab === "otorgamiento" && otorgAutoVigente(deal) && (
             <div className="mt-4 rounded-lg p-3" style={{ backgroundColor: C.greenBg, border: "1px solid #bbf7d0" }}>
               <div className="flex items-center gap-1.5 t11 font-semibold uppercase tracking-wide" style={{ color: C.green }}>
                 <Check size={12} /> Otorgamiento automático
               </div>
               <div className="mt-1.5 t12" style={{ color: C.ink, lineHeight: 1.5 }}>
-                Esta operación solo tiene deudores de Lista Blanca / Autorizados y está dentro de la línea de crédito aprobada ({fmtMM(lineaAprobadaDe(deal))}).
-                Se otorga automáticamente, sin intervención de un especialista, y continúa a Cesión.
+                Esta operación solo tiene deudores de Lista Blanca / Autorizados y está dentro de la línea de crédito aprobada ({fmtMM(lineaAprobadaDe(deal))}),
+                y el visado del cliente no dejó nada por resolver. Se otorga automáticamente, sin intervención de un especialista, y continúa a Cesión.
               </div>
             </div>
           )}
           {tab === "otorgamiento" &&
-            !deal.otorgAuto &&
+            !otorgAutoVigente(deal) &&
             (() => {
               // VISTA DE SOLO LECTURA para el ejecutivo: las reglas del cliente (visado) que dejan la operación
               // en otorgamiento. La aprobación de las excepciones se realiza en el menú "Otorgamientos".
@@ -15120,8 +15577,8 @@ function DealDrawer({
                                             "Criterios por aprobar",
                                             otorgRes.nPend,
                                             otorgRes.total,
-                                            "#7C3AED",
-                                            "#f5f3ff",
+                                            exigeAcciones(deal) ? "#EF4444" : "#7C3AED",
+                                            exigeAcciones(deal) ? "#FEF2F2" : "#f5f3ff",
                                             (otorgOk
                                               ? `Todas las reglas del motor de otorgamiento cumplen (${otorgRes.ok}/${otorgRes.total}).`
                                               : `Con observaciones: ${otorgQuien.toLowerCase()}. Reglas aprobadas ${otorgRes.ok} de ${otorgRes.total}. Se resuelven en el tab Otorgamiento.`) +
@@ -15137,8 +15594,8 @@ function DealDrawer({
                                             "Facturas por verificar",
                                             verifRes.facturas.length,
                                             validas.length,
-                                            "#EF4444",
-                                            "#FEF2F2",
+                                            exigeAcciones(deal) ? "#EF4444" : "#7C3AED",
+                                            exigeAcciones(deal) ? "#FEF2F2" : "#f5f3ff",
                                             verifOkTodo
                                               ? "Ninguna factura de la oferta requiere verificación telefónica."
                                               : `${verifRes.facturas.length} factura(s) de ${verifRes.nDeudores} deudor(es) necesitan verificación telefónica antes de girar.`,
@@ -20320,7 +20777,16 @@ function TablaOportunidades({ deals, onOpen, onMover, onReject, modoAsignar, onA
   const PESO_COL = { Cliente: 250, Línea: 230, Oportunidad: 324, SOW: 214, Oferta: 508, Ejecutivo: 140, Asignar: 124 };
   const cols = ["Cliente", ...(mostrarEjec ? ["Ejecutivo"] : []), "Línea", "Oportunidad", "SOW", "Oferta", ...(modoAsignar ? ["Asignar"] : [])];
   return (
-    <div className="flex flex-1 flex-col gap-2">
+    // `min-w-0` NO es cosmética: sin ella el scroll horizontal de la tabla NO EXISTE y la última
+    // columna se ve cortada (regla 56). Esta raíz es un ITEM del contenedor que el tubo comparte con
+    // el Kanban (`flex items-start gap-3 overflow-x-auto`), y un item flex trae `min-width: auto`, así
+    // que no se encoge por debajo del ancho mínimo de su contenido — que acá lo fija el `minWidth` de
+    // la tabla. Resultado medido a 1366 px: la raíz se quedaba en 1536, el `overflow-x-auto` de su
+    // propio panel medía `scrollWidth === clientWidth` (nada que scrollear) y quien desbordaba era el
+    // contenedor de arriba, o sea la PÁGINA: la card de «Oferta» terminaba 169 px fuera de la ventana
+    // y sus tres chips salían cortados. Con `min-w-0` la raíz cede, el panel blanco vuelve a ser el
+    // que scrollea y la tabla se desplaza DENTRO de su marco.
+    <div className="flex min-w-0 flex-1 flex-col gap-2">
       <div className="flex-1 overflow-x-auto rounded-xl bg-white p-1" style={{ border: `1px solid ${C.line}` }}>
         <table className="w-full border-collapse t11" style={{ minWidth: mostrarEjec ? "1666px" : "1526px", tableLayout: "fixed" }}>
           <thead>
@@ -23115,6 +23581,20 @@ function ofertaPublicada(deal) {
   const comunicada = !!deal.ofertaComunicada || (deal.waSesion || []).some((m) => /Oferta de factoring/i.test(m.text || ""));
   return cerrada && comunicada;
 }
+// ¿LAS ACCIONES DE OTORGAMIENTO Y VERIFICACIÓN YA SE EXIGEN, o todavía son un pronóstico? (regla 54,
+// pedido del usuario el 22-09-2026). Mientras el ejecutivo SIMULA, lo que el motor encuentra es una
+// anticipación —sirve para saber en qué se está metiendo y el paquete todavía puede cambiar entero—.
+// Cuando publica —cierra el paquete Y lo comunica al cliente— la casa se compromete, y esos pendientes
+// pasan a ser trabajo que alguien tiene que hacer: el otorgamiento a visar y las llamadas a los
+// deudores. De ahí en adelante la operación ya no vuelve atrás por sí sola, así que las etapas
+// posteriores a la firma también exigen. Es la MISMA compuerta con que aparece el tab de Verificación
+// (`mostrarVerif`, regla 6), menos la pre-evaluación: pre-evaluar es justamente pedir el pronóstico
+// antes de tiempo, así que muestra el tab y no vuelve rojo lo que todavía nadie tiene que hacer.
+function exigeAcciones(deal) {
+  if (!deal) return false;
+  if (["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage)) return true;
+  return ofertaPublicada(deal);
+}
 // ¿La oferta está cerrada AHORA? «Cerrada» es la aprobación INTERNA del paquete —el gate del
 // ejecutivo, regla 8— y es lo único que «Editar» deshace. Son TRES hechos distintos y confundirlos
 // deja o una oferta que no se puede volver a cerrar o una firma que reaparece sola:
@@ -23174,6 +23654,14 @@ function aprobacionFormalCliente(deal) {
 // ninguna causa era autorizable desde la UI.
 // Lo que LIBERA EL GIRO. Por eso el estado entra por parámetro: en producción esta decisión la toma
 // el resolver con el visado que tiene la base, no con el que el navegador haya cacheado.
+// EL PAQUETE TAL COMO QUEDA AL FIRMAR, en un solo sitio. Lo preguntan DOS: el updater de
+// `confirmarCierre`, que lo guarda, y el aviso a los aprobadores, que se arma FUERA del updater
+// —`setDeals(fn)` no ejecuta `fn` en el acto y un envío ahí adentro se repetiría en cada render—.
+// Dos copias de esta expresión se desfasan sin que nada lo diga: es el patrón de VER-01, dos cómputos
+// del mismo hecho que se separan. El `monto` va aparte porque el curse puede recortar el paquete
+// (`opts.montoValido`) y lo que se evalúa es lo FIRMADO, no lo ofertado.
+const montoFirmado = (deal, opts) => (opts && opts.montoValido != null ? opts.montoValido : deal && deal.monto);
+const dealFirmado = (deal, monto) => ({ ...deal, monto, stage: "cesion", clienteAcepto: true, reabierta: undefined });
 // ¿A QUÉ ETAPA VA UNA OPERACIÓN CUANDO EL CLIENTE FIRMA? Firmar es del CLIENTE; girar es de la casa,
 // y sólo después de que sus controles pasen. La decisión vive acá y no dentro del handler porque es
 // exactamente el tipo de cosa que en producción resuelve el servidor: entra el estado de las tres
@@ -23199,10 +23687,26 @@ function etapaTrasFirma(e) {
   // Todo resuelto en el acto: sale del tubo y queda esperando que Operaciones la integre al core.
   return { stage: "cesion", integracion: "pendiente", motivo: "sin_pendientes" };
 }
+// ¿SIGUE EN PIE EL ATAJO DEL OTORGAMIENTO AUTOMÁTICO? `requiereOtorgamiento` es una heurística vieja
+// —¿supera la línea?, ¿hay deudores «Otro»?— que nació ANTES del motor de reglas y no lo mira: una
+// operación de puros deudores Prime, dentro de línea, puede tener decenas de criterios del CLIENTE
+// (CMF, TGR, concentración…) esperando excepción. El atajo dice quién NO tiene que mirarla por línea
+// o por deudor; no dice que el visado no exista. Con excepciones o rechazos re-evaluables sin resolver
+// el atajo NO está vigente, y es literalmente lo que OTG-02 declara: sin resolverlos no se pasa a
+// Cesión. Es puro y recibe el estado por parámetro, como el resto del motor (regla 48).
+function otorgAutoVigente(deal, estado) {
+  if (!deal || !deal.otorgAuto) return false;
+  const v = visadoDeal(deal, estado);
+  return v.excPend.length === 0 && v.rechReev.length === 0;
+}
 function otorgamientoCompleto(deal, estado) {
   if (!deal || deal.stage !== "otorgamiento" || otorgBloqueado(deal, estado) || !aprobacionFormalCliente(deal)) return false;
-  if (deal.otorgAuto) return true;
   const v = visadoDeal(deal, estado);
+  // OTG-02 PRIMERO, también para el atajo: acá `deal.otorgAuto` devolvía `true` sin mirar el visado, y
+  // por ahí una operación con 38 criterios por aprobar llegaba a «Pendiente Integración» con el
+  // otorgamiento sin hacer. El contrato ya lo decía; lo que faltaba era que el código lo obedeciera.
+  if (v.excPend.length || v.rechReev.length) return false;
+  if (deal.otorgAuto) return true;
   return v.exc.length > 0 && v.estado === "aprobada";
 }
 // LA ASIGNACIÓN DE LÍNEA QUE RESPALDA EL PAQUETE. Una operación aceptada se LEE de su versión y no se
@@ -23606,6 +24110,34 @@ function crearRepo(nombre) {
     // Lecturas (cache local)
     get: (id) => tabla()[id],
     all: (t) => tabla(t),
+    // RELEER EL STORAGE. `datos` se carga UNA vez al montar el módulo, así que una pestaña que ya
+    // estaba abierta no ve lo que otra escribió: el storage sirve para sobrevivir a cerrar la
+    // pestaña, no para enterarse en vivo. Eso lo avisa el postMessage, y esto es lo que aplica el
+    // aviso.
+    //
+    // SE RELLENA LA TABLA DEL TENANT, NO SE REEMPLAZA, y no es un detalle: los alias
+    // (`VISADO_STATE`, `SOLICITUD_EXC`, `PRE_EVAL`…) apuntan a ESE objeto, no a `datos`. La primera
+    // versión de esto vaciaba `datos` y lo rellenaba, con lo que `datos[tenant]` pasaba a ser un
+    // objeto NUEVO y los alias quedaban leyendo la tabla vieja: escribir por el repo dejaba ciego al
+    // alias y al revés. Lo cazó el caso 153, en la aserción de que los dos son la MISMA tabla —es la
+    // misma familia del `_cacheCli` que se daba por construido estando vacío—.
+    recargar() {
+      let v = {};
+      try {
+        v = JSON.parse(localStorage.getItem(KEY) || "{}") || {};
+      } catch (_) {
+        v = {};
+      }
+      if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+      for (const t of Object.keys(datos)) {
+        const dest = datos[t],
+          src = (v[t] && typeof v[t] === "object" && v[t]) || {};
+        for (const k of Object.keys(dest)) delete dest[k];
+        Object.assign(dest, src);
+      }
+      for (const t of Object.keys(v)) if (!datos[t]) datos[t] = v[t];
+      return true;
+    },
     // Escrituras (optimistas; la promesa es la confirmación del servidor)
     set(id, valor) {
       const v = gate("set", id, valor);
@@ -23669,6 +24201,16 @@ const repoVisadoDetalle = crearRepo("otorgamiento_visado_detalle");
 const repoSolicitudExc = crearRepo("solicitud_excepcion");
 const repoVerifExc = crearRepo("verificacion_excepcion");
 const repoOtorgEventos = crearRepo("otorgamiento_evento");
+// LA PRE-EVALUACIÓN ES ESTADO DEL OTORGAMIENTO, NO DE UNA PESTAÑA (21-09-2026, regla 51). Era un
+// `let PRE_EVAL = {}` de módulo, y `excEnBandeja` la consulta para decidir si una operación se puede
+// VISAR: con el detalle en pestaña propia, el ejecutivo solicitaba la aprobación allá y el aprobador
+// —en la pestaña del tubo, que es donde vive la mesa— seguía viendo la bandeja en cero. Mismo trato
+// que el visado y las solicitudes de excepción, que ya eran repositorio.
+const repoPreEval = crearRepo("otorgamiento_preeval");
+// LOS HILOS DE LA MENSAJERÍA, por el mismo motivo: `HILOS` era un array de módulo, así que todo lo
+// que se escribía desde el detalle —la solicitud de aprobación, el requerimiento de información— no
+// llegaba nunca al Centro de mensajería, que se pinta en la pestaña del tubo.
+const repoHilos = crearRepo("mensajeria_hilo");
 // SIM_VERSIONS se declara más arriba (lo usan varias funciones antes de este punto); acá se reapunta a
 // su repositorio. Es el histórico versionado de la decisión de riesgo: hoy se pierde al recargar, y en
 // producción tiene que ser una tabla inmutable con snapshot jsonb.
@@ -23687,6 +24229,13 @@ const repoNoConfirmadas = crearRepo("factura_no_confirmada");
 // evidencia que alguien acababa de firmar. Volver a predecir sobre el monto ya recortado es además
 // circular: bajar el monto sólo puede mejorar esos tres criterios.
 const repoVerifVeredicto = crearRepo("verificacion_veredicto");
+// RESPALDO POR FACTURA (regla 53): la nota y el archivo con que el equipo justifica lo que hizo con
+// ESE documento. Va aparte de `repoVerifTel` —que es el hecho de la llamada— porque se escribe en
+// otro momento y por otra razón: se puede adjuntar el correo del deudor antes de marcar, y se puede
+// anotar por qué una factura no se confirmó después de retirarla. Del archivo se guarda la
+// REFERENCIA (nombre, tipo, tamaño, quién y cuándo), no los bytes: en producción el documento vive
+// en el gestor documental y NEX guarda a qué apunta, igual que el respaldo de una excepción.
+const repoVerifRespaldo = crearRepo("verificacion_respaldo");
 // ════════════════════════════════════════════════════════════════════════════════════════════
 // EVIDENCIA DEL CONTRATO DE CESIÓN (O05) — un HASH del paquete, no una bandera.
 //
@@ -23983,19 +24532,32 @@ let NO_CONFIRMADAS = repoNoConfirmadas.all(); // { [dealId]: { [facturaId]: { fo
 // una factura figuraba «en otra operación» sin que ninguna operación la tuviera. Lo mantiene al día
 // un efecto de `PipelineComercial`; en producción es un índice del servidor.
 let FOLIOS_EN_OPERACION = {};
+let VERIF_RESPALDO = repoVerifRespaldo.all(); // { [dealId]: { [facturaId]: { nota, adjuntos:[{nombre,tipo,tam}], por, fecha } } }
 let VERIF_VEREDICTO = repoVerifVeredicto.all(); // { [dealId]: { [rutOdeudor]: { est, motivo, razon, causas, por, fecha } } }
 // Reapunta los alias a la tabla del tenant activo. Se llama al cambiar de tenant; con un solo tenant
 // (Security) hoy no se ejecuta, pero deja explícito qué hay que hacer cuando entre el segundo factoring.
+// RELEER EL ESTADO DEL OTORGAMIENTO QUE ESCRIBIÓ OTRA PESTAÑA (regla 51). Los repositorios cargan el
+// storage UNA vez al montar el módulo: el detalle escribe el visado, la solicitud de excepción y la
+// pre-evaluación, y la pestaña del tubo —donde vive la mesa de Otorgamientos— sigue mostrando lo que
+// leyó al abrirse. Se releen los del otorgamiento y se invalida el visado memoizado, que es lo que
+// decide qué excepciones quedan pendientes.
+function refrescarEstadoOtorgamiento() {
+  for (const r of [repoVisado, repoVisadoDetalle, repoSolicitudExc, repoPreEval, repoOtorgEventos, repoHilos]) r.recargar();
+  reapuntarRepos();
+}
 function reapuntarRepos() {
   VISADO_STATE = repoVisado.all();
   VISADO_DETALLE = repoVisadoDetalle.all();
   SOLICITUD_EXC = repoSolicitudExc.all();
   VERIF_EXC = repoVerifExc.all();
   VERIF_TEL = repoVerifTel.all();
+  VERIF_RESPALDO = repoVerifRespaldo.all();
   NO_CONFIRMADAS = repoNoConfirmadas.all();
   VERIF_VEREDICTO = repoVerifVeredicto.all();
   OTORG_EVENTOS = repoOtorgEventos.all();
   SIM_VERSIONS = repoSimVersions.all();
+  PRE_EVAL = repoPreEval.all();
+  HILOS = repoHilos.get("lista") || [];
   invalidarVisado();
 }
 // ── PERMISOS DE LA SESIÓN (UX ONLY — la autorización real es del servidor) ──────────────────────
@@ -24087,6 +24649,11 @@ const ROLES_CAT = [
   // cargo que falta, no tocar código. O05 (comprobante del contrato físico) es el primero que lo pide.
   { id: "jefe_operaciones", label: "Jefe de Operaciones", area: "operaciones" },
   { id: "ejec_verif", label: "Ejecutivo de verificación", area: "verificacion" },
+  // INBOUND (21-09-2026, pedido del usuario). Su trabajo es la bandeja de facturas SIN CLASIFICAR:
+  // las empresas que el stream trae y que no son de la cartera de nadie. Existía el trabajo y no el
+  // rol —lo hacía la jefatura de paso—, así que no había a quién asignárselo ni cómo distinguir
+  // «nadie lo está mirando» de «lo está mirando quien corresponde».
+  { id: "inbound", label: "Ejecutivo de Inbound", area: "comercial" },
   { id: "admin", label: "Super administrador", area: "*" },
 ];
 // ── ÁREAS DEL TENANT ─────────────────────────────────────────────────────────────────────
@@ -24222,8 +24789,15 @@ function cargoDeAreaNivel(area, nivel, pad) {
 function rolDeAreaNivel(area, nivel, padron) {
   return cargoDeAreaNivel(area, nivel, padron || padronAprobadores());
 }
+// EL SUPER-ADMIN ES UN ROL, NO UN CÓDIGO (21-09-2026, hallazgo al dar de alta usuarios desde
+// `Configuración › Tenants`). Esta función decía «la atribución sigue al ROL» y sin embargo resolvía
+// el super-admin por el código literal `"ADMIN"`, que es el del elenco de la demo. Medido: un usuario
+// creado con rol `admin` salía con atribución VACÍA y no entraba al padrón —o sea, el administrador
+// del tenant nuevo no podía aprobar nada, que es justo para lo que se lo crea—. `ROL_ATRIB` no lo
+// declara a propósito: cubre las tres áreas en el nivel máximo y no un par (área, nivel).
+const esRolAdmin = (code) => ROL_USUARIO[code] === "admin" || code === "ADMIN";
 function atribDeRol(code) {
-  if (code === "ADMIN") return { riesgo: 5, comercial: 5, operaciones: 5 };
+  if (esRolAdmin(code)) return { riesgo: 5, comercial: 5, operaciones: 5 };
   const a = ROL_ATRIB[ROL_USUARIO[code]];
   return a ? { [a.area]: a.nivel } : {};
 }
@@ -24243,6 +24817,7 @@ const ROLES_DEFAULT = {
   OP: "operaciones",
   JO: "jefe_operaciones",
   EV: "ejec_verif",
+  IB: "inbound",
   ADMIN: "admin",
 };
 const ROLES_KEY = "pc_roles_" + TENANT_ACTUAL;
@@ -24264,6 +24839,77 @@ function cargarRoles() {
   }
   if (ignoradas) logSys("warn", "app", `Roles: ${ignoradas} entrada(s) del storage ignoradas (usuario o rol desconocido)`, { tenant: TENANT_ACTUAL });
   return base;
+}
+// ── USUARIOS DADOS DE ALTA DESDE CONFIGURACIÓN (por tenant) ─────────────────────────────────────
+// `USERS` es el elenco que trae la demo. Un tenant nuevo no tiene ninguno, y alguien tiene que poder
+// entrar a crear al resto: ése es el ADMIN, y se da de alta en `Configuración › Tenants` (regla 52).
+//
+// Se hidrata ACÁ y no más arriba porque necesita el catálogo de roles (`ROL_POR_ID`) para validar, y
+// tiene que correr ANTES de `cargarRoles()`: esa función IGNORA todo código que no esté en `USERS`,
+// así que un usuario creado ayer perdería su rol al recargar si entrara después.
+const USUARIOS_KEY = "pc_usuarios_" + TENANT_ACTUAL;
+// El email es la CREDENCIAL, así que el alta exige uno y no se repite: dos personas con el mismo
+// correo son la misma sesión. El código es la identidad interna (lo guardan `deal.exec`, la auditoría
+// y los hilos) y por eso se deriva del nombre y se deja fijo — renombrar a alguien no lo convierte en
+// otro. `atribDe` lo ignora si no figura en `ATRIB_USUARIO`, así que un usuario sin atribución es un
+// usuario de pipeline: existe, entra, y no aprueba nada hasta que su ROL diga lo contrario.
+let USUARIOS_TENANT = [];
+function cargarUsuariosTenant() {
+  const guardado = leerVersionado(USUARIOS_KEY, "usuariosTenant", null);
+  if (!Array.isArray(guardado)) return [];
+  const vistos = new Set(),
+    correos = new Set();
+  const out = [];
+  let ignoradas = 0;
+  for (const u of guardado) {
+    const code = u && typeof u.code === "string" ? u.code.trim().toUpperCase() : "";
+    const nombre = u && typeof u.nombre === "string" ? u.nombre.trim().slice(0, 60) : "";
+    const email = u && typeof u.email === "string" ? u.email.trim().toLowerCase().slice(0, 80) : "";
+    const rol = u && typeof u.rol === "string" ? u.rol : "";
+    if (
+      !/^[A-Z][A-Z0-9]{1,7}$/.test(code) ||
+      !nombre ||
+      !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) ||
+      !ROL_POR_ID[rol] ||
+      vistos.has(code) ||
+      correos.has(email)
+    ) {
+      ignoradas++;
+      continue;
+    }
+    vistos.add(code);
+    correos.add(email);
+    out.push({ code, nombre, email, rol });
+  }
+  if (ignoradas)
+    logSys("warn", "app", `Usuarios del tenant: ${ignoradas} entrada(s) del storage ignoradas (código, correo o rol inválido)`, { tenant: TENANT_ACTUAL });
+  return out;
+}
+// Los mete en los catálogos que el resto del código ya consulta. Es lo que hace que un usuario creado
+// aparezca en el selector de sesión, en `Configuración › Usuarios` y en el padrón de aprobadores sin
+// que ninguno de esos sitios sepa que existe un alta.
+function montarUsuariosTenant() {
+  for (const u of USUARIOS_TENANT) {
+    USERS[u.code] = u.nombre;
+    ROLES_DEFAULT[u.code] = u.rol;
+    const atrib = atribDeRol2(u.rol);
+    // Sólo entra a `ATRIB_USUARIO` quien su ROL hace aprobador: `atribDe` devuelve atribución vacía a
+    // quien no figure, y dar de alta el cargo sin dar de alta a quien lo ocupa es justo lo que deja un
+    // (área, nivel) con nombre y sin nadie que lo firme (regla 18).
+    if (Object.keys(atrib).length) ATRIB_USUARIO[u.code] = { tipo: "aprobador", atrib };
+  }
+}
+// El nivel y el área que implica un rol, sin pasar por `atribDeRol`, que resuelve por CÓDIGO y todavía
+// no conoce a este usuario. Es la misma tabla: `ROL_ATRIB`.
+function atribDeRol2(rolId) {
+  if (rolId === "admin") return { riesgo: 5, comercial: 5, operaciones: 5 };
+  const a = ROL_ATRIB[rolId];
+  return a ? { [a.area]: a.nivel } : {};
+}
+USUARIOS_TENANT = cargarUsuariosTenant();
+montarUsuariosTenant();
+function guardarUsuariosTenant() {
+  escribirVersionado(USUARIOS_KEY, "usuariosTenant", USUARIOS_TENANT);
 }
 let ROL_USUARIO = cargarRoles();
 function guardarRoles() {
@@ -24403,7 +25049,7 @@ function padronAprobadores(hoy, reemplazos) {
     rol: rolLabel(code),
     etiqueta: USERS[code] || nombreDe(code),
     atrib: atribDe(code).atrib,
-    superAdmin: code === "ADMIN",
+    superAdmin: esRolAdmin(code),
   }));
   // REEMPLAZOS VIGENTES. Quien cubre a alguien suma sus atribuciones, tomando el MAYOR nivel por área:
   // si el reemplazante ya tenía Comercial N2 y el ausente tiene N1, quedarse con N2 es lo correcto; si
@@ -24485,7 +25131,7 @@ const nombreDe = (code) => String(USERS[code] || code).split(" · ")[0];
 // una llamada y las operaciones se pegan en el giro. Quien la cubre la ejerce mientras dure el período,
 // y la bitácora lo deja escrito como reemplazante (`actorEtiqueta`).
 const puedeVerificarFacturas = (code, hoy, lista) => {
-  if (code === "ADMIN") return true;
+  if (esRolAdmin(code)) return true;
   // La delega quien está fuera…
   if (aQuienCubre(code, hoy, lista).some((r) => ROL_USUARIO[r.ausente] === "ejec_verif")) return true;
   if (ROL_USUARIO[code] !== "ejec_verif") return false;
@@ -24493,13 +25139,16 @@ const puedeVerificarFacturas = (code, hoy, lista) => {
   const cubierto = quienCubreA(code, hoy, lista);
   return !(cubierto && cubierto.ausenteAprueba === false);
 };
-const puedeExcepcionarVerif = (code) => code === "ADMIN" || CFG_EXC_VERIF[code] === true;
-const puedeVerBitacora = (code) => code === "ADMIN" || CFG_VER_BITACORA[code] === true;
-const puedeVerMensajeria = (code) => code === "ADMIN" || CFG_VER_MENSAJERIA[code] === true;
-const puedeVerCobranza = (code) => code === "ADMIN" || CFG_VER_COBRANZA[code] === true;
-const puedeVerPlanEjec = (code) => code === "ADMIN" || CFG_VER_PLANEJEC[code] === true;
-const puedeVerFunnel = (code) => code === "ADMIN" || CFG_VER_FUNNEL[code] === true;
-const aprobMasivaHabilitada = (code) => code === "ADMIN" || CFG_APROB_MASIVA[code] !== false; // default: habilitada
+// Los siete permisos de VISIBILIDAD, todos con la misma forma: el administrador ve todo y el resto
+// depende de su fila en `PERMISOS`. Van por `esRolAdmin` y no por el código literal, por lo mismo que
+// `atribDeRol`: el administrador de un tenant recién creado no se llama «ADMIN».
+const puedeExcepcionarVerif = (code) => esRolAdmin(code) || CFG_EXC_VERIF[code] === true;
+const puedeVerBitacora = (code) => esRolAdmin(code) || CFG_VER_BITACORA[code] === true;
+const puedeVerMensajeria = (code) => esRolAdmin(code) || CFG_VER_MENSAJERIA[code] === true;
+const puedeVerCobranza = (code) => esRolAdmin(code) || CFG_VER_COBRANZA[code] === true;
+const puedeVerPlanEjec = (code) => esRolAdmin(code) || CFG_VER_PLANEJEC[code] === true;
+const puedeVerFunnel = (code) => esRolAdmin(code) || CFG_VER_FUNNEL[code] === true;
+const aprobMasivaHabilitada = (code) => esRolAdmin(code) || CFG_APROB_MASIVA[code] !== false; // default: habilitada
 // ── Eventos de otorgamiento por operación (para la bitácora). Se guardan con hora completa (nowStamp, con segundos).
 let OTORG_EVENTOS = repoOtorgEventos.all(); // { [dealId]: [{ fecha, canal:"Otorgamiento", actor, resultado, detalle, esEvento:true }] }
 // Bitácora append-only del otorgamiento. Devuelve la promesa de confirmación: hoy nadie la espera
@@ -24512,9 +25161,9 @@ function logOtorgEvento(dealId, actor, resultado, detalle) {
 // ejecutivo las priorice. { [dealId]: { por, porNombre, ts } }. Se conserva aunque la op se gane/pierda.
 let PRIORIDAD_CURSE = {};
 // ¿El usuario es jefatura o gerencia comercial (puede pedir/quitar prioridad)? Los ejecutivos no.
-const esJefeComercial = (code) => code === "ADMIN" || atribEfectiva(code).comercial != null;
+const esJefeComercial = (code) => esRolAdmin(code) || atribEfectiva(code).comercial != null;
 // Gerente Comercial (o superior): atribución comercial N2+ (autoriza descuentos sobre el máximo de jefatura).
-const esGerenteComercial = (code) => code === "ADMIN" || (atribEfectiva(code).comercial != null && atribEfectiva(code).comercial >= 2);
+const esGerenteComercial = (code) => esRolAdmin(code) || (atribEfectiva(code).comercial != null && atribEfectiva(code).comercial >= 2);
 // ATR-01 · ¿ESTE usuario puede autorizar ESTE descuento? El rol exigido sale del ESTADO de la atribución
 // (`requiereJefe` → jefatura, `requiereGerente` → Gerente Comercial) y la atribución sale del PADRÓN por
 // código, no de un prop: la pantalla puede venir de una sesión vieja, de un rol que cambió o de un
@@ -24555,10 +25204,23 @@ function estadoAtencionPrioridad(deal) {
 }
 // ── Pre-evaluación: el ejecutivo solicita iniciar formalmente la revisión de otorgamiento de una
 // oportunidad con altas chances de cursarse, para adelantar la aprobación antes de la aceptación formal.
-let PRE_EVAL = {};
-function setPreEval(dealId, code, on) {
-  if (on) PRE_EVAL[dealId] = { por: code, porNombre: USERS[code] || code, ts: nowStamp() };
-  else delete PRE_EVAL[dealId];
+let PRE_EVAL = repoPreEval.all();
+// EL AVISO A LA OTRA PESTAÑA, EN UN SOLO SITIO (regla 51). El storage hace que el estado sobreviva a
+// cerrar la pestaña; esto hace que la pestaña que YA está abierta se entere. Son dos cosas distintas y
+// hacen falta las dos: el aprobador tiene el tubo abierto mientras el ejecutivo trabaja en el detalle.
+// Vive a nivel de módulo porque lo llaman funciones que no son componentes (`setPreEval`,
+// `hiloEnviar`), y `window.opener` es null en el tubo, que es donde el aviso termina.
+function avisarOpener(mensaje) {
+  try {
+    if (window.opener) window.opener.postMessage(mensaje, ORIGEN_APP);
+  } catch (_) {}
+}
+// `difundir` en false es para el RECEPTOR del aviso: aplica lo que le contaron sin volver a contarlo.
+// Sin ese corte, dos pestañas que se tengan la una a la otra como opener se rebotan el mensaje.
+function setPreEval(dealId, code, on, difundir = true) {
+  if (on) repoPreEval.set(dealId, { por: code, porNombre: USERS[code] || code, ts: nowStamp() });
+  else repoPreEval.del(dealId);
+  if (difundir) avisarOpener({ type: "nex-preeval", dealId, on: !!on, por: code });
 }
 const tienePreEval = (dealId) => !!PRE_EVAL[dealId];
 // COMPUERTA ÚNICA de la aprobación de excepciones: sólo se puede visar cuando la operación está en la
@@ -24570,6 +25232,50 @@ const tienePreEval = (dealId) => !!PRE_EVAL[dealId];
 // nivel, y el botón lo llevaba a una mesa donde esa operación no aparece mientras cada fila de abajo
 // decía lo contrario. Es el mismo patrón que VER-01: dos cómputos del mismo hecho que se separan.
 const excEnBandeja = (deal) => !!deal && (["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage) || tienePreEval(deal.id));
+// A QUIÉN SE LE ESCRIBE. `aprobadoresExc` devuelve ETIQUETAS —sirve para pintar «Aprueban: …»— y la
+// mensajería necesita CÓDIGOS, que no es lo mismo: escribirle a una etiqueta no le llega a nadie. La
+// lista sale del PADRÓN y no de `ATRIB_USUARIO`, que es sólo quién existe: el padrón ya aplica los
+// reemplazos por vacaciones (regla 19), así que el que cubre a un ausente recibe el aviso mientras lo
+// cubre. El super-administrador queda fuera a propósito: puede firmar todo, así que estaría en cada
+// hilo del sistema y el badge de mensajes dejaría de significar algo.
+// Acepta las dos formas del ítem de excepción que circulan: la de `evaluarOtorgItems` (`x.regla`) y la
+// de `visadoDeal`, que aplana el área sobre el ítem. Una tercera copia de este bucle era lo que tenía
+// `avisarPreEval` escrito a mano, y miraba `ATRIB_USUARIO` — o sea, se saltaba los reemplazos.
+function codigosAprobadoresDe(excPend, padron) {
+  const pad = padron || padronAprobadores();
+  const codes = new Set();
+  (excPend || []).forEach((x) => {
+    const regla = (x && x.regla) || x;
+    pad.usuarios.forEach((u) => {
+      if (!u.superAdmin && puedeAprobarExc(u.code, regla, (x && x.nivel) || 4, pad)) codes.add(u.code);
+    });
+  });
+  return Array.from(codes);
+}
+// LOS TRAMOS (área, nivel) de un conjunto de excepciones pendientes, con cuántas hay en cada uno y
+// quién las firma. Es lo que un aviso tiene que decir para que el que lo lee sepa si le toca: «12
+// criterios» no le dice nada a nadie; «12 de Operaciones N4, las firma Andrés Mella» sí.
+function tramosDeExcepciones(excPend, padron) {
+  const pad = padron || padronAprobadores();
+  const porTramo = new Map();
+  (excPend || []).forEach((x) => {
+    const regla = (x && x.regla) || x;
+    const area = (regla && regla.area) || "";
+    const niv = (x && x.nivel) || 4;
+    const k = area + "|" + niv;
+    const g = porTramo.get(k) || { area, niv, n: 0, quienes: aprobadoresExc(regla, niv, pad) };
+    g.n++;
+    porTramo.set(k, g);
+  });
+  return Array.from(porTramo.values()).sort((a, b) => b.n - a.n || a.niv - b.niv);
+}
+// EL REMITENTE DE LO QUE NO ESCRIBE UNA PERSONA. El cierre del negocio lo gatilla la FIRMA DEL CLIENTE
+// en el portal de Factoring Security, no un clic de nadie en NEX. Mandar ese aviso «de parte» del
+// ejecutivo sería atribuirle un mensaje que no escribió y —peor— `hiloNoLeido` lo daría por leído para
+// él, que es justo a quien el usuario dijo que no le llega nada. Es el mismo actor que ya usa la
+// bitácora de auditoría para lo automático.
+const CODE_SISTEMA = "SIS";
+const NOMBRE_SISTEMA = "-- Sistema --";
 // El ejecutivo solicita la pre-evaluación: registra el evento en la bitácora (hora completa) y avisa por
 // la mensajería de la operación a los aprobadores involucrados (los responsables de las excepciones pendientes).
 function avisarPreEval(deal, execCode) {
@@ -24583,13 +25289,7 @@ function avisarPreEval(deal, execCode) {
     "",
   );
   if (!excPend.length) return;
-  const codes = new Set();
-  excPend.forEach((x) => {
-    Object.keys(ATRIB_USUARIO).forEach((k) => {
-      if (k !== "ADMIN" && USERS[k] && puedeAprobarExc(k, x.regla, x.nivel || 4)) codes.add(k);
-    });
-  });
-  const dests = Array.from(codes);
+  const dests = codigosAprobadoresDe(excPend);
   const asunto = `Pre-evaluación de otorgamiento · ${deal.id}`;
   const prev = hilosDeDeal(deal.id).find((h) => h.asunto === asunto);
   const h =
@@ -24603,6 +25303,60 @@ function avisarPreEval(deal, execCode) {
     `${USERS[execCode] || execCode} solicitó iniciar la PRE-EVALUACIÓN de otorgamiento de ${deal.cliente} (${deal.id}). Hay ${excPend.length} criterio(s) por excepcionar; por favor revisen y gestionen sus aprobaciones para adelantar el curse.`,
     null,
   );
+}
+// EL CIERRE DEL NEGOCIO AVISA A QUIEN TIENE QUE FIRMAR (21-09-2026, reportado por el usuario: «cuando
+// se cierra un negocio no se están enviando los mensajes a los responsables ni al ejecutivo que tienen
+// responsabilidad de aprobar»). Tenía razón y se midió: `confirmarCierre` —162 líneas, la firma del
+// cliente en el portal— no llamaba a `hiloEnviar` ni a `hiloNuevo` una sola vez.
+//
+// Por qué se notaba tan poco: de las DOS puertas a la mesa de otorgamiento sólo una avisaba. La
+// manual —el ejecutivo aprieta «Pre-evaluación»— llama a `avisarPreEval`, y la automática —el cliente
+// firma y «la bandeja de otorgamiento la toma sin que nadie la envíe»— no llamaba a nada. O sea que
+// justo el camino que NO tiene a nadie apretando un botón era el que no le escribía a nadie, y la
+// operación quedaba esperando una firma que sus firmantes no sabían que existía.
+//
+// Va acá, a nivel de módulo y no dentro del updater de React: `setDeals(fn)` no ejecuta `fn` en el
+// acto, así que un envío ahí adentro se repetiría en cada render del updater (StrictMode lo llama dos
+// veces) y mandaría el mismo aviso dos veces. Es el mismo motivo por el que `cerrarOferta` arma su
+// patch afuera.
+function avisarCierreNegocio(deal, excPend, pendVerif) {
+  if (!deal) return null;
+  const ejec = deal.exec && USERS[deal.exec] ? deal.exec : null;
+  const dests = codigosAprobadoresDe(excPend);
+  // Nada que firmar y nada que verificar: no hay aviso. Un mensaje «no tienes nada que hacer» en cada
+  // operación cursada vacía el badge de significado — y las operaciones que se cursan limpias son la
+  // mayoría.
+  if (!dests.length && !(excPend || []).length && !pendVerif) return null;
+  const asunto = `Cierre de negocio · ${deal.id}`;
+  const prev = hilosDeDeal(deal.id).find((h) => h.asunto === asunto);
+  const h =
+    prev ||
+    hiloNuevo({
+      tipo: "requerimiento",
+      dealId: deal.id,
+      cliente: deal.cliente,
+      asunto,
+      participantes: [ejec, ...dests],
+      creadoPor: CODE_SISTEMA,
+    });
+  [ejec, ...dests].forEach((c) => {
+    if (c && !h.participantes.includes(c)) h.participantes.push(c);
+  });
+  const neg = deal.negocioNum ? `N° ${deal.negocioNum}` : deal.id;
+  const tramos = tramosDeExcepciones(excPend);
+  const detalle = tramos.length
+    ? " Por firmar: " +
+      tramos.map((t) => `${t.n} de ${AREA_LBL[t.area] || t.area || "—"} N${t.niv} (${t.quienes.length ? t.quienes.join(", ") : SIN_APROBADOR})`).join(" · ") +
+      "."
+    : "";
+  const verif = pendVerif ? ` Quedan ${pendVerif} factura(s) esperando la verificación telefónica con el deudor.` : "";
+  const texto =
+    `${deal.cliente} firmó el negocio ${neg} (${deal.id}) por ${fmtMM(deal.monto)}: la operación entró a la mesa de otorgamiento.` +
+    ((excPend || []).length ? ` Hay ${excPend.length} criterio(s) por excepcionar antes de poder girar.${detalle}` : " No quedan criterios por excepcionar.") +
+    verif +
+    ` Ejecutivo a cargo: ${nombreEjec(deal.exec)}.`;
+  hiloEnviar(h, CODE_SISTEMA, texto, null);
+  return h;
 }
 // Excepciones de la operación PENDIENTES (no resueltas por un apoderado) que el ejecutivo AÚN no comentó
 // ni respaldó (sin SOLICITUD_EXC con comentario/archivo). Al pre-evaluar se advierte de estas "tareas".
@@ -24696,7 +25450,7 @@ function solicitarAprobacionExc(deal, x, execCode, comentario, archivos, sinCome
     comentario || "",
   );
   // Apoderados hábiles para visar esta excepción → aviso + tarea.
-  const dests = Object.keys(ATRIB_USUARIO).filter((k) => k !== "ADMIN" && USERS[k] && puedeAprobarExc(k, x.regla, x.nivel || 4));
+  const dests = codigosAprobadoresDe([x]);
   const asunto = `Aprobación de excepciones · ${deal.id}`;
   const prev = hilosDeDeal(deal.id).find((h) => h.asunto === asunto);
   const h =
@@ -24744,7 +25498,16 @@ function faseOtorgDeal(deal) {
   return null;
 }
 // ── Mensajería interna: hilos de conversación entre usuarios, opcionalmente atados a una operación.
-let HILOS = []; // [{ id, tipo, dealId, cliente, reglaN, asunto, participantes:[codes], mensajes:[...], creadoPor, ts, leido:{} }]
+// LOS HILOS SON ESTADO DEL PROCESO, NO DE UNA PESTAÑA (21-09-2026, regla 51). Era un array de módulo,
+// así que todo lo que se escribía desde el DETALLE —la solicitud de aprobación de una excepción, el
+// requerimiento de información, el aviso del cierre— no llegaba nunca al Centro de mensajería, que se
+// pinta en la pestaña del tubo: el usuario lo reportó con la bandeja vacía a la vista. Ahora vive en
+// un repositorio (storage, sobrevive a cerrar la pestaña) y cada envío avisa al opener (la pestaña
+// abierta se entera). Guardar la lista COMPLETA bajo una clave y no un hilo por clave es lo que hace
+// que los `id` dejen de colisionar: se numeran con el largo de la lista, y dos pestañas que parten de
+// la misma lista numeran igual.
+let HILOS = repoHilos.get("lista") || []; // [{ id, tipo, dealId, cliente, reglaN, asunto, participantes:[codes], mensajes:[...], creadoPor, ts, leido:{} }]
+const guardarHilos = () => repoHilos.set("lista", HILOS);
 const MSG_TIPOS = {
   requerimiento: { l: "Requerimiento de información para otorgamiento", c: "#5B21D6", bg: "#F1ECFF" },
   general: { l: "Mensaje interno", c: "#0f766e", bg: "#f0fdfa" },
@@ -24765,17 +25528,23 @@ function hiloNuevo({ tipo, dealId, cliente, reglaN, asunto, participantes, cread
     estado: "abierto",
   };
   HILOS.push(h);
+  guardarHilos();
   return h;
 }
 function hiloUltimoTs(h) {
   return h.mensajes.length ? h.mensajes[h.mensajes.length - 1].ts : h.ts;
 }
+// EL NOMBRE DE QUIEN ESCRIBE EN UN HILO. Un solo resolutor porque el remitente puede no ser una
+// persona: `CODE_SISTEMA` no está en `USERS` —no es un login, no tiene atribución y no aparece en el
+// selector de sesión— y sin esto la mensajería mostraría «SIS» como autor y la bitácora registraría
+// «SIS» como usuario.
+const nombreEnHilo = (code) => USERS[code] || (code === CODE_SISTEMA ? NOMBRE_SISTEMA : code);
 function hiloEnviar(h, deCode, texto, arch, menciones) {
   if (!(texto || "").trim() && !arch) return;
   const men = (menciones || []).filter(Boolean);
   h.mensajes.push({
     de: deCode,
-    deNombre: USERS[deCode] || deCode,
+    deNombre: nombreEnHilo(deCode),
     texto: texto || "",
     arch: arch || null,
     menciones: men,
@@ -24783,24 +25552,33 @@ function hiloEnviar(h, deCode, texto, arch, menciones) {
     ts: Date.now(),
   });
   h.leido = { [deCode]: true }; // los demás participantes (incluidos los mencionados) quedan con "no leído"
-  if (!h.participantes.includes(deCode)) h.participantes.push(deCode);
+  // EL SISTEMA POSTEA, NO SE SUMA AL HILO. `participantes` son códigos de USUARIO: `hilosDeUsuario`
+  // filtra por ahí y las cinco pantallas que los listan los resuelven contra `USERS`. Meter a
+  // `CODE_SISTEMA` ahí pondría un «SIS» entre los nombres y un participante al que nadie puede
+  // iniciar sesión. El remitente sí queda en el mensaje (`de`/`deNombre`), que es donde corresponde.
+  if (deCode !== CODE_SISTEMA && !h.participantes.includes(deCode)) h.participantes.push(deCode);
   men.forEach((c) => {
     if (c && !h.participantes.includes(c)) h.participantes.push(c);
   }); // @mención → se suma al hilo
   if (typeof registrarAuditoria === "function")
     registrarAuditoria({
-      usuario: USERS[deCode] || deCode,
+      usuario: nombreEnHilo(deCode),
       modulo: "Mensajería interna",
       accion: "Mensaje enviado",
       glosa: `${h.cliente || ""}${h.dealId ? " · " + h.dealId : ""}${texto ? " · " + texto : ""}`.trim(),
       exito: true,
     });
+  // Storage para que sobreviva a cerrar la pestaña; aviso para que la que está abierta se entere.
+  guardarHilos();
+  avisarOpener({ type: "nex-hilo", hilo: h });
 }
 function hiloMarcarLeido(h, code) {
   h.leido = { ...(h.leido || {}), [code]: true };
+  guardarHilos();
 }
 function hiloTerminar(h, code) {
   h.estado = "terminado";
+  guardarHilos();
   if (typeof registrarAuditoria === "function")
     registrarAuditoria({
       usuario: USERS[code] || code,
@@ -24812,6 +25590,7 @@ function hiloTerminar(h, code) {
 }
 function hiloReabrir(h) {
   h.estado = "abierto";
+  guardarHilos();
 }
 function hiloMatch(h, q) {
   if (!q) return true;
@@ -24834,6 +25613,26 @@ function hilosNoLeidos(usuario) {
 }
 function hilosDeDeal(dealId) {
   return HILOS.filter((h) => h.dealId === dealId).sort((a, b) => hiloUltimoTs(b) - hiloUltimoTs(a));
+}
+// UN HILO QUE NACIÓ EN OTRA PESTAÑA. `HILOS` es memoria de CADA documento y el detalle es pestaña
+// propia —y sin campana: `soloDetalle` monta el `DealDrawer` y nada más—. El aviso del cierre se crea
+// donde el portal devolvió la firma, que es justo esa pestaña, así que sin este puente el mensaje
+// existía y no lo veía nadie. Mismo canal y misma forma que `nex-solicitud` (regla 15-bis-bis).
+// Se identifica por (operación, asunto) y NO por `h.id`, que se numera con el largo de la lista LOCAL
+// y por lo tanto colisiona entre pestañas: dos hilos distintos pueden ser los dos «H1001».
+function recibirHilo(hilo) {
+  if (!hilo || !hilo.asunto) return false;
+  const copia = {
+    ...hilo,
+    mensajes: [...(hilo.mensajes || [])],
+    participantes: [...(hilo.participantes || [])],
+    leido: { ...(hilo.leido || {}) },
+  };
+  const i = HILOS.findIndex((h) => h.dealId === hilo.dealId && h.asunto === hilo.asunto);
+  if (i >= 0) HILOS[i] = { ...copia, id: HILOS[i].id };
+  else HILOS.push({ ...copia, id: "H" + (HILOS.length + 1001) });
+  guardarHilos();
+  return true;
 }
 function notifSolic(usuario) {
   const noLeidos = hilosNoLeidos(usuario);
@@ -25122,10 +25921,48 @@ function VisadoClienteView({ deals, usuario, onChange }) {
         </button>
       </div>
       {ops.length === 0 && (
-        <div className="rounded-xl p-6 text-center t11" style={{ color: C.faint, backgroundColor: C.page, border: `1px solid ${C.line}` }}>
-          {soloMias
-            ? "No tienes operaciones con acciones pendientes. Quita “Sólo mis pendientes” para ver todas."
-            : "No hay operaciones en esta fase de otorgamiento."}
+        <div className="rounded-xl p-6 t11" style={{ color: C.faint, backgroundColor: C.page, border: `1px solid ${C.line}` }}>
+          {(() => {
+            // UNA BANDEJA VACÍA TIENE DOS CAUSAS DISTINTAS Y HAY QUE DECIR CUÁL (21-09-2026, reportado
+            // por el usuario: «en el menú otorgamiento, cuando cambias a uno de los aprobadores no se
+            // lista nada»). Medido: hay 180 excepciones pendientes, y sólo tres cargos las alcanzan
+            // —Gerente General las de comercial N3, Subgerente de Riesgo las de riesgo N5 y
+            // Operaciones las de operaciones N4—; los otros cuatro ven la bandeja vacía. El motor
+            // está bien: `puedeAprobarExc` exige nivel ≥ requerido DENTRO del área del criterio. Lo
+            // que estaba mal era el cartel: «No tienes operaciones con acciones pendientes» se lee
+            // como «no hay nada que hacer» cuando hay 180 cosas que hacer y ninguna es tuya.
+            const pendientes = opsAll.flatMap((o) => o.excPend);
+            if (!pendientes.length)
+              return <div className="text-center">No hay excepciones pendientes en esta fase de otorgamiento: nadie tiene nada que firmar.</div>;
+            if (!soloMias) return <div className="text-center">No hay operaciones en esta fase de otorgamiento.</div>;
+            // Agrupadas por (área, nivel), que es el par con el que se decide quién puede firmarlas.
+            // La misma función que arma el aviso del cierre (regla 50): si el cartel agrupara por su
+            // cuenta, los dos textos que explican lo mismo podrían decir cosas distintas.
+            const tramos = tramosDeExcepciones(pendientes);
+            const mia = atribEfectiva(usuario);
+            const miAtrib = Object.entries(mia)
+              .map(([a2, l]) => AREA_LBL[a2] + " N" + l)
+              .join(" · ");
+            return (
+              <>
+                <div className="t11 font-semibold" style={{ color: C.ink }}>
+                  Hay {pendientes.length} excepción(es) pendiente(s) en {opsAll.filter((o) => o.excPend.length).length} operación(es), pero ninguna requiere tu
+                  atribución{miAtrib ? ` (${miAtrib})` : " (no tienes atribución de otorgamiento)"}.
+                </div>
+                <ul className="mt-2 space-y-1">
+                  {tramos.map((t) => (
+                    <li key={t.area + t.niv} className="t10">
+                      <b style={{ color: C.ink }}>
+                        {t.n} en {AREA_LBL[t.area] || t.area} N{t.niv}
+                      </b>{" "}
+                      · las firma {t.quienes.length ? t.quienes.join(", ") : SIN_APROBADOR}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-2 t10">Quita «Sólo mis pendientes» para verlas igual, en sólo lectura.</div>
+              </>
+            );
+          })()}
         </div>
       )}
       {ops.map((o) => {
@@ -26611,17 +27448,58 @@ function ReglasClienteCatalogo() {
 // Mesa del EQUIPO DE VERIFICACIÓN, hermana de Otorgamientos. Marca por DEUDOR, no por factura: una
 // llamada cubre todas sus facturas (spec §2.1). Es una vista de trabajo, no de análisis — por eso
 // el orden por defecto es «lo que falta llamar, de mayor monto a menor».
-function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }) {
+// Las columnas del documento, una sola vez: la cabecera y las filas tienen que calzar, y dos literales
+// separados se desalinean en cuanto alguien toca uno.
+// Del adjunto se guarda la REFERENCIA (nombre, tipo, tamaño) y no sus bytes: el documento vive en el
+// gestor documental y NEX apunta a él. Esta función es la que traduce esa lista a la glosa de la
+// bitácora, y está una sola vez porque la escriben cuatro registradores distintos.
+const nombresArch = (l) => (l || []).map((a) => (a && a.nombre) || String(a || "")).filter(Boolean);
+// Los tres contadores de una lista de documentos. Vive acá, de nivel módulo y puro, porque lo piden
+// los DOS niveles de la mesa —la operación y cada deudor— y con dos copias el de arriba dejaría de
+// cuadrar con la suma de los de abajo a la primera corrección.
+function cuentaVerif(docs) {
+  const l = docs || [];
+  return {
+    verificadas: l.filter((x) => x && x.estado === "verificada").length,
+    noVerificadas: l.filter((x) => x && x.estado === "no_verificada").length,
+    pendientes: l.filter((x) => x && x.estado === "pendiente").length,
+  };
+}
+// La FECHA DE LA OPORTUNIDAD. `time` es el sello con que la operación entró al tubo (`nowStamp`), y de
+// ahí sale la fecha; el respaldo es la emisión del documento más antiguo, que es lo más cercano que
+// hay cuando la operación no trae sello. Nunca «hoy»: una fecha inventada se lee igual que una real.
+function fechaOportunidad(deal) {
+  const t = String((deal && deal.time) || "");
+  const m = /(\d{1,2}[-/]\d{1,2}[-/]\d{2,4})/.exec(t);
+  if (m) return m[1].replace(/\//g, "-");
+  const fs = (deal && deal.facturasOp) || [];
+  const emis = fs
+    .map((f) => fechasDocumento(f).emision)
+    .filter(Boolean)
+    .sort();
+  return emis.length ? fmtFechaDoc(emis[0]) : t || "—";
+}
+// CUATRO columnas, no siete (22-09-2026, pedido del usuario: «esta sección está con un layout muy
+// complejo»). Las tres que se fueron no llevaban una decisión: «Tipo doc.» decía «Factura electrónica»
+// en todas y baja a subtítulo del folio; las dos fechas son UN dato —el plazo— y van en una celda con
+// la flecha; y «Respaldo» era una columna propia para un solo botón, que ahora vive con el estado
+// porque marcar y respaldar son el mismo gesto. Con siete, la de verificación —la única donde se
+// trabaja— quedaba comprimida y sus botones envolvían.
+const COLS_DOC = "minmax(120px,1fr) minmax(170px,1fr) minmax(110px,0.8fr) minmax(300px,1.6fr)";
+// LA MESA TRABAJA POR OPERACIÓN (22-09-2026, pedido del usuario). Tres niveles y no uno: la
+// OPORTUNIDAD arriba —su número, su fecha y cómo va su verificación completa—, adentro sus DEUDORES
+// como cards colapsables iguales a las del detalle, y al abrir uno, sus FACTURAS con un estado cada
+// una. La mesa listaba deudores sueltos: el verificador llama por operación —es lo que frena un giro—
+// y tenía que reconstruir a qué operación pertenecía cada fila leyendo el enlace del cliente.
+// `onVerificar` (deudor completo) y `onMarcarFactura` (un folio) siguen siendo los dos escritores: lo
+// que cambia es desde dónde se invocan y que los dos pasan ahora por el panel lateral.
+function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar, onMarcarFactura, onRespaldo }) {
   const [tick, force] = useState(0);
   const [filtro, setFiltro] = useState("pendiente");
   const [q, setQ] = useState("");
-  const [abierto, setAbierto] = useState({});
-  const [confirmNo, setConfirmNo] = useState(null);
-  const [llamando, setLlamando] = useState(null); // fila cuya llamada se está registrando
-  // Una llamada puede terminar en confirmación PARCIAL: el deudor reconoce unas facturas y no otras, y
-  // Security retira las no confirmadas. Se guarda lo DESMARCADO, no lo marcado: por defecto el deudor
-  // confirma todo —es el caso normal— y una fila sin nada desmarcado se comporta como antes.
-  const [noConf, setNoConf] = useState({}); // { [filaId]: { [facturaId]: true } }
+  const [abierto, setAbierto] = useState({}); // causas del deudor
+  const [abiertoDeu, setAbiertoDeu] = useState({}); // card del deudor desplegada
+  const [panel, setPanel] = useState(null); // { fila, docs, modo } del panel lateral
   const filas = useMemo(() => filasVerificacion(deals), [deals, tick]);
   const nPend = filas.filter((f) => f.estado === "pendiente").length;
   const nOk = filas.filter((f) => f.estado === "verificada").length;
@@ -26633,45 +27511,93 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
       (filtro === "todas" || f.estado === filtro) &&
       (!ql || f.cliente.toLowerCase().includes(ql) || f.deudor.toLowerCase().includes(ql) || String(f.op).toLowerCase().includes(ql)),
   );
+  // Las filas ya vienen por (operación, deudor): agruparlas por `op` es armar el nivel de arriba sin
+  // tocar el agrupador, que es puro y está gateado. El orden lo fija la plata pendiente: primero lo
+  // que está frenando más giro.
+  const ops = useMemo(() => {
+    const m = new Map();
+    for (const f of vistas) {
+      let o = m.get(f.op);
+      if (!o) {
+        o = { op: f.op, deal: f.deal, cliente: f.cliente, filas: [] };
+        m.set(f.op, o);
+      }
+      o.filas.push(f);
+    }
+    return [...m.values()]
+      .map((o) => {
+        const docs = o.filas.flatMap((f) => f.docs || []);
+        return {
+          ...o,
+          docs,
+          monto: mmRound(o.filas.reduce((s, f) => s + f.monto, 0)),
+          cuenta: cuentaVerif(docs),
+        };
+      })
+      .sort((a, b) => b.cuenta.pendientes - a.cuenta.pendientes || b.monto - a.monto);
+  }, [vistas]);
   const EST = {
-    pendiente: { lbl: "Por verificar", bg: "#FFF7ED", fg: "#C2410C", bd: "#FED7AA" },
+    pendiente: { lbl: "Pendiente", bg: "#FFF7ED", fg: "#C2410C", bd: "#FED7AA" },
     verificada: { lbl: "Verificada", bg: "#F0FDF4", fg: "#16A34A", bd: "#bbf7d0" },
     no_verificada: { lbl: "No verificada", bg: "#fef2f2", fg: "#EF4444", bd: "#fecaca" },
   };
+  // Los tres contadores, al costado del nombre. UN CHIP EN CERO NO SE DIBUJA: el usuario lo pidió para
+  // «Pendientes», y la razón vale para los tres — un cero no es un estado, es la ausencia de uno, y
+  // tres chips donde dos dicen cero esconden al único que había que leer.
+  const chipsVerif = (c) =>
+    [
+      ["verificada", "Verificadas", c.verificadas],
+      ["no_verificada", "No verificadas", c.noVerificadas],
+      ["pendiente", "Pendientes", c.pendientes],
+    ]
+      .filter((x) => x[2] > 0)
+      .map(([k, l, n]) => (
+        <span
+          key={k}
+          className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold"
+          style={{ backgroundColor: EST[k].bg, color: EST[k].fg, border: `1px solid ${EST[k].bd}` }}
+        >
+          {l} {n}
+        </span>
+      ));
   // Marcar una factura es FIRMAR el resultado de una llamada: lo hace quien llamó. El resto de la
   // organización ve la mesa —saber qué está frenando un giro es información de todos— pero no la marca.
   const puedeMarcar = puedeVerificarFacturas((SESION && SESION.usuario) || usuario);
-  const desmarcadas = (f) => noConf[f.id] || {};
-  const nNoConf = (f) => Object.keys(desmarcadas(f)).length;
-  const toggleFac = (f, fid) =>
-    setNoConf((m) => {
-      const d = { ...(m[f.id] || {}) };
-      if (d[fid]) delete d[fid];
-      else d[fid] = true;
-      return { ...m, [f.id]: d };
-    });
-  // Registrar una verificación es FIRMAR el resultado de una llamada, así que ya no se aplica con el
-  // clic: abre el registro, que es donde queda el checklist, con quién se habló y el respaldo. Sin eso
-  // la evidencia que justifica el giro se perdía justo en el acto de registrarla.
-  const marcarOk = (f) => setLlamando(f);
-  const confirmarLlamada = async (f, llamada) => {
-    const d = desmarcadas(f);
-    // Manda el selector del modal; los folios ya desmarcados en la fila siguen contando como no
-    // confirmados, porque son el mismo hecho declarado antes de llamar.
-    const sel =
-      llamada && llamada.sel
-        ? f.facturas.reduce((m, x) => ({ ...m, [x.id]: !!llamada.sel[x.id] && !d[x.id] }), {})
-        : Object.keys(d).length
-          ? f.facturas.reduce((m, x) => ({ ...m, [x.id]: !d[x.id] }), {})
-          : null;
-    if (onVerificar) await onVerificar(f, sel, llamada);
-    setNoConf((m) => ({ ...m, [f.id]: {} }));
-    setLlamando(null);
+  // La llamada del deudor cubre lo que le queda PENDIENTE: lo ya resuelto documento a documento no se
+  // vuelve a tocar —re-registrar una verificada no cambia nada, pero retirar una ya verificada sí—.
+  const soloPendientes = (f) => ({ ...f, facturas: (f.docs || []).filter((x) => x.estado === "pendiente").map((x) => x.f) });
+  // Marcar o anotar UN documento escribe en los repositorios (`repoVerifTel`, `repoVerifRespaldo`) y no
+  // toca `deals`, así que la lista memoizada por `[deals, tick]` no se entera sola: hay que mover el
+  // tick. Retirar sí cambia `deals` —saca la factura de la oferta— y por eso ése se veía y los otros
+  // dos no, que es exactamente lo que la sonda de pantalla midió.
+  const marcarDoc = async (f, doc, est, llamada) => {
+    if (onMarcarFactura) await onMarcarFactura(f, doc, est, llamada);
     force((v) => v + 1);
   };
-  const marcarNo = (f) => {
-    if (onNoConfirmar) onNoConfirmar(f);
-    setConfirmNo(null);
+  const guardarResp = async (f, doc, datos) => {
+    if (onRespaldo) await onRespaldo(f, doc, datos);
+    force((v) => v + 1);
+  };
+  // Lo que el panel devuelve se aplica UNA vez por documento del alcance, y el respaldo —la nota y las
+  // capturas— se guarda en los mismos documentos: así la evidencia se recupera desde el folio, que es
+  // por donde se pregunta cuando alguien audita un giro. Si el alcance es TODO lo pendiente del
+  // deudor, se usa el escritor del deudor (`onVerificar`), que además congela su veredicto de una vez.
+  const aplicarPanel = async (ctx, datos) => {
+    const f = ctx.fila;
+    const ids = new Set((datos.docs || []).map((d) => d.id));
+    const pend = (f.docs || []).filter((x) => x.estado === "pendiente");
+    const respaldo = { nota: datos.notas || "", adjuntos: (datos.archs || []).slice() };
+    const todos = pend.length > 0 && pend.every((x) => ids.has(x.id));
+    if (datos.modo === "verificada" && todos) {
+      const sel = f.facturas.reduce((m, x) => ({ ...m, [x.id]: true }), {});
+      if (onVerificar) await onVerificar(f, sel, datos);
+    } else if (datos.modo === "no_verificada" && todos) {
+      if (onNoConfirmar) await onNoConfirmar(soloPendientes(f), datos);
+    } else {
+      for (const d of datos.docs || []) await marcarDoc(f, d, datos.modo, datos);
+    }
+    for (const d of datos.docs || []) await guardarResp(f, d, respaldo);
+    setPanel(null);
     force((v) => v + 1);
   };
   const kpi = (lbl, val, sub, col) => (
@@ -26691,6 +27617,36 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
       </div>
     </div>
   );
+  // Las dos clases van CONCATENADAS y no interpoladas dentro del template: `auditar_muerto` lee los
+  // `className` con una expresión regular, y un ternario metido en un literal le entrega `t9"` y `t11"}`
+  // como si fueran nombres de clase — un falso positivo que hace caer el gate de clases sin declarar.
+  const clsBoton = (chico) => "inline-flex items-center gap-1 rounded-md font-semibold " + (chico ? "px-2 py-1 t9" : "px-3 py-1.5 t11");
+  const botonesDoc = (f, docs, chico) => (
+    <>
+      <button
+        onClick={() => setPanel({ fila: f, docs, modo: "verificar" })}
+        className={clsBoton(chico) + " text-white"}
+        style={{ backgroundColor: "#16A34A" }}
+        title={
+          docs.length === 1 ? "El deudor confirmó ESTE documento" : `Registra la llamada y da por verificadas las ${docs.length} pendientes de este deudor`
+        }
+      >
+        <Check size={chico ? 10 : 12} /> Verificar
+      </button>
+      <button
+        onClick={() => setPanel({ fila: f, docs, modo: "no_verificar" })}
+        className={clsBoton(chico)}
+        style={{ border: `1px solid ${C.red}`, color: C.red, backgroundColor: "#fff" }}
+        title={
+          docs.length === 1
+            ? "El deudor NO reconoció este documento: se retira de la oferta y queda vetado"
+            : "El deudor no reconoció ninguna: retira y veta todo lo que le queda pendiente"
+        }
+      >
+        No verificar
+      </button>
+    </>
+  );
   return (
     <>
       <div className="flex items-center gap-1 t11" style={{ color: C.faint }}>
@@ -26698,9 +27654,10 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
       </div>
       <h1 className="mt-1 text-2xl font-semibold tracking-tight">Mesa de verificación</h1>
       <p className="mt-1 t11" style={{ color: C.sub }}>
-        El contacto con el deudor busca dejar por escrito o grabado que pagará. La decisión es <b style={{ color: C.ink }}>por deudor</b>: una llamada cubre
-        todas sus facturas en la operación. Cada fila trae <b style={{ color: C.ink }}>las causas</b> que la gatillaron — si son varias, hay que confirmarlas
-        todas en la misma llamada.
+        El contacto con el deudor busca dejar por escrito o grabado que pagará. Se trabaja <b style={{ color: C.ink }}>por operación</b>: adentro, un deudor por
+        card y sus facturas al abrirla. Cada factura se marca verificada o no desde el panel lateral, que es donde queda con quién se habló, la fecha
+        comprometida y el <b style={{ color: C.ink }}>respaldo</b>. Las <b style={{ color: C.ink }}>causas</b> son del deudor —una llamada las confirma todas— y
+        se abren desde su card.
       </p>
       <div className="mt-4 grid gap-2" style={{ gridTemplateColumns: "repeat(3, minmax(0,1fr))" }}>
         {kpi("Por verificar", nPend, montoPend ? fmtMM(montoPend) : "", nPend ? "#C2410C" : C.ink)}
@@ -26744,188 +27701,238 @@ function VerificacionView({ deals, usuario, onOpen, onVerificar, onNoConfirmar }
           />
         </div>
       </div>
-      {!vistas.length ? (
+      {!ops.length ? (
         <div className="mt-6 rounded-xl p-12 text-center t12" style={{ border: `1px dashed ${C.line}`, color: C.faint }}>
           {filtro === "pendiente" ? "No hay deudores esperando verificación telefónica." : "Sin resultados para este filtro."}
         </div>
       ) : (
-        <div className="mt-3 space-y-2 pb-8">
-          {vistas.map((f) => {
-            const e = EST[f.estado];
-            const abrir = !!abierto[f.id];
-            return (
-              <div key={f.id} className="rounded-xl bg-white" style={{ border: `1px solid ${C.line}` }}>
-                <div className="flex flex-wrap items-start justify-between gap-3 p-3">
-                  <div style={{ minWidth: 260 }}>
-                    <div className="flex items-center gap-2">
-                      <span className="t13 font-semibold" style={{ color: C.ink }}>
-                        {f.deudor}
-                      </span>
-                      <span className="rounded-full px-1.5 py-0.5 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}>
-                        {f.segmento}
-                      </span>
-                      <span
-                        className="rounded-full px-1.5 py-0.5 t9 font-semibold"
-                        style={{ backgroundColor: "#F5F4F8", color: NOTA_COLOR ? NOTA_COLOR(f.nota) : C.sub }}
-                      >
-                        Nota {String(f.nota).replace(".", ",")}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 t10" style={{ color: C.sub }}>
-                      {f.rutDeudor || "—"} · {f.tipo}
-                    </div>
-                    <button onClick={() => onOpen && onOpen(f.deal)} className="mt-1 t11 font-medium" style={{ color: C.indigo }}>
-                      {f.cliente} · {f.op}
+        <div className="mt-3 space-y-3 pb-8">
+          {ops.map((o) => (
+            <div key={o.op} className="rounded-xl bg-white" style={{ border: `1px solid ${C.line}` }}>
+              {/* NIVEL 1 · LA OPORTUNIDAD: su número, su fecha y cómo va su verificación completa. */}
+              <div
+                className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-3 py-2.5"
+                style={{ borderBottom: `1px solid ${C.line}`, backgroundColor: "#FAF9FB", borderRadius: "12px 12px 0 0" }}
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <button onClick={() => onOpen && onOpen(o.deal)} className="t12 font-bold" style={{ color: C.indigo }} title="Abrir la operación">
+                      {o.op}
                     </button>
-                  </div>
-                  <div className="text-right" style={{ minWidth: 150 }}>
-                    <div className="t13 font-semibold" style={{ color: C.ink }}>
-                      {fmtMM(f.monto)}
-                    </div>
-                    <div className="t10" style={{ color: C.sub }}>
-                      {f.facturas.length} factura(s)
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 t10 font-semibold"
-                      style={{ backgroundColor: e.bg, color: e.fg, border: `1px solid ${e.bd}` }}
-                    >
-                      {e.lbl}
+                    <span className="t12 font-semibold" style={{ color: C.ink }}>
+                      {o.cliente}
                     </span>
-                    {f.estado === "pendiente" &&
-                      (puedeMarcar ? (
-                        <>
-                          <button
-                            onClick={() => marcarOk(f)}
-                            className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 t11 font-semibold text-white"
-                            style={{ backgroundColor: nNoConf(f) ? "#C2410C" : "#16A34A" }}
-                            title={
-                              nNoConf(f)
-                                ? `Registra la llamada de las ${f.facturas.length - nNoConf(f)} confirmadas y retira las ${nNoConf(f)} que el deudor no reconoció`
-                                : undefined
-                            }
-                          >
-                            <Check size={12} /> {nNoConf(f) ? `Registrar ${f.facturas.length - nNoConf(f)} de ${f.facturas.length}` : "Verificada"}
-                          </button>
-                          <button
-                            onClick={() => setConfirmNo(f)}
-                            className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 t11 font-semibold"
-                            style={{ border: `1px solid ${C.red}`, color: C.red, backgroundColor: "#fff" }}
-                          >
-                            No verificada
-                          </button>
-                        </>
-                      ) : (
-                        <span
-                          className="t10"
-                          style={{ color: C.faint }}
-                          title={`Registrar una verificación es firmar el resultado de una llamada. Lo hace el Ejecutivo de verificación; tu rol es ${rolLabel((SESION && SESION.usuario) || usuario)}.`}
-                        >
-                          Sólo el <b>Ejecutivo de verificación</b> puede marcarla
-                        </span>
-                      ))}
+                  </div>
+                  <div className="mt-0.5 t9" style={{ color: C.sub }}>
+                    Oportunidad del {fechaOportunidad(o.deal)} · {o.filas.length} deudor(es) · {o.docs.length} factura(s)
                   </div>
                 </div>
-                {/* Las causas SIEMPRE visibles en resumen; el detalle (qué mide y por qué) se abre a
-                    demanda: el que llama necesita el titular, el analista necesita el fundamento. */}
-                <div className="px-3 pb-3">
-                  <button
-                    onClick={() => setAbierto((m) => ({ ...m, [f.id]: !abrir }))}
-                    className="flex w-full items-center gap-1.5 t10 uppercase tracking-wide"
-                    style={{ color: C.faint }}
-                  >
-                    {f.causas.length === 1 ? "Causa que gatilló la verificación" : `${f.causas.length} causas que gatillaron la verificación`}
-                    <ChevronRight size={11} style={{ transform: abrir ? "rotate(90deg)" : "none" }} />
-                  </button>
-                  <ul className="mt-1.5 space-y-1">
-                    {f.causas.map((c) => (
-                      <li key={c.id} className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
-                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                          <span className="t10 font-bold" style={{ color: C.indigo }}>
-                            {c.id}
-                          </span>
-                          <span className="t11 font-medium" style={{ color: C.ink }}>
-                            {c.nombre}
-                          </span>
-                          <span className="ml-auto t10 font-semibold" style={{ color: c.sinDato ? C.faint : C.red }}>
-                            {c.valor}
-                          </span>
-                          <span className="t10" style={{ color: C.faint }}>
-                            umbral {c.umbral}
-                          </span>
-                        </div>
-                        {abrir && (
-                          <div className="mt-1 t10" style={{ color: C.sub }}>
-                            {c.desc}
-                            {c.sinDato ? " · Sin dato disponible: la política lo trata como incumplimiento, no como «no aplica»." : ""}
-                          </div>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                  {f.estado === "pendiente" && puedeMarcar && (
-                    <div className="mt-2 rounded-lg p-2" style={{ border: `1px solid ${C.line}`, backgroundColor: "#FAF9FB" }}>
-                      <div className="t10 uppercase tracking-wide" style={{ color: C.faint }}>
-                        Qué confirmó el deudor · desmarca lo que no reconoció
-                      </div>
-                      <div className="mt-1 flex flex-wrap gap-1.5">
-                        {f.facturas.map((x) => {
-                          const off = !!desmarcadas(f)[x.id];
-                          return (
-                            <button
-                              key={x.id}
-                              onClick={() => toggleFac(f, x.id)}
-                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 t10 font-medium"
-                              style={{
-                                border: `1px solid ${off ? "#fecaca" : C.line}`,
-                                backgroundColor: off ? "#fef2f2" : "#fff",
-                                color: off ? C.red : C.ink,
-                                textDecoration: off ? "line-through" : "none",
-                              }}
-                            >
-                              {off ? <X size={10} /> : <Check size={10} style={{ color: "#16A34A" }} />} {x.folio || x.id} · {fmtMM(x.monto || 0)}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {!!nNoConf(f) && (
-                        <div className="mt-1.5 t10" style={{ color: C.red }}>
-                          Al registrar, esas {nNoConf(f)} factura(s) se retiran de la operación y quedan vetadas para ella.
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {f.estado === "verificada" && (
-                    <div className="mt-1.5 t10" style={{ color: "#16A34A" }}>
-                      Confirmada con el deudor: sus {f.facturas.length} factura(s) quedan habilitadas para girar.
-                    </div>
-                  )}
-                  {f.estado === "no_verificada" && (
-                    <div className="mt-1.5 t10" style={{ color: C.red }}>
-                      El deudor no confirmó: {f.nVet} factura(s) retiradas de la operación y vetadas para ella.
-                    </div>
-                  )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="t12 font-semibold" style={{ color: C.ink }}>
+                    {fmtMM(o.monto)}
+                  </span>
+                  {chipsVerif(o.cuenta)}
                 </div>
               </div>
-            );
-          })}
+              {/* NIVEL 2 · LOS DEUDORES, colapsables como en el detalle de la oportunidad. */}
+              {o.filas.map((f) => {
+                const abrirDeu = !!abiertoDeu[f.id];
+                const abrirCausas = !!abierto[f.id];
+                const pendientes = (f.docs || []).filter((x) => x.estado === "pendiente");
+                const cuenta = cuentaVerif(f.docs);
+                return (
+                  <div key={f.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-3 py-2">
+                      <button
+                        onClick={() => setAbiertoDeu((m) => ({ ...m, [f.id]: !abrirDeu }))}
+                        className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                        style={{ minWidth: 300 }}
+                      >
+                        <ChevronRight size={14} className="mt-0.5 shrink-0" style={{ color: C.faint, transform: abrirDeu ? "rotate(90deg)" : "none" }} />
+                        <span className="min-w-0">
+                          <span className="flex flex-wrap items-center gap-1.5">
+                            <span className="t12 font-semibold" style={{ color: C.ink }}>
+                              {f.deudor}
+                            </span>
+                            {chipsVerif(cuenta)}
+                          </span>
+                          <span className="mt-0.5 flex flex-wrap items-center gap-1.5 t9" style={{ color: C.sub }}>
+                            <span>{f.rutDeudor || "—"}</span>
+                            <span className="rounded-full px-1.5 py-0.5 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}>
+                              {f.segmento}
+                            </span>
+                            <span
+                              className="rounded-full px-1.5 py-0.5 font-semibold"
+                              style={{ backgroundColor: "#F5F4F8", color: NOTA_COLOR ? NOTA_COLOR(f.nota) : C.sub }}
+                            >
+                              Nota {String(f.nota).replace(".", ",")}
+                            </span>
+                            <span>{f.tipo}</span>
+                          </span>
+                        </span>
+                      </button>
+                      <div className="flex shrink-0 flex-wrap items-center gap-3">
+                        <div className="text-right">
+                          <div className="t12 font-semibold" style={{ color: C.ink }}>
+                            {fmtMM(f.monto)}
+                          </div>
+                          <div className="t9" style={{ color: C.sub }}>
+                            {f.docs.length} fact.
+                          </div>
+                        </div>
+                        {pendientes.length > 0 &&
+                          (puedeMarcar ? (
+                            botonesDoc(f, pendientes, false)
+                          ) : (
+                            <span
+                              className="t10"
+                              style={{ color: C.faint }}
+                              title={`Registrar una verificación es firmar el resultado de una llamada. Lo hace el Ejecutivo de verificación; tu rol es ${rolLabel((SESION && SESION.usuario) || usuario)}.`}
+                            >
+                              Sólo el <b>Ejecutivo de verificación</b> puede marcarla
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+                    {abrirDeu && (
+                      <div className="px-3 pb-3">
+                        {/* LAS CAUSAS, detrás del deudor. Son de él —una llamada las confirma todas— y por
+                            eso no se repiten en cada documento. Sin causas no hay disclosure: una fila que
+                            dice «0 causas» es ruido con la tipografía de un título. */}
+                        {f.causas.length > 0 && (
+                          <>
+                            <button
+                              onClick={() => setAbierto((m) => ({ ...m, [f.id]: !abrirCausas }))}
+                              className="flex w-full items-center gap-1.5 pb-1.5 t10 uppercase tracking-wide"
+                              style={{ color: C.faint }}
+                            >
+                              {f.causas.length === 1 ? "Causa que gatilló la verificación" : `${f.causas.length} causas que gatillaron la verificación`}
+                              <span className="flex flex-wrap gap-1">
+                                {f.causas.map((c) => (
+                                  <span key={c.id} className="rounded px-1 t9 font-bold" style={{ backgroundColor: C.lilac, color: C.indigo }}>
+                                    {c.id}
+                                  </span>
+                                ))}
+                              </span>
+                              <ChevronRight size={11} style={{ transform: abrirCausas ? "rotate(90deg)" : "none" }} />
+                            </button>
+                            {abrirCausas && (
+                              <ul className="mb-2 space-y-1">
+                                {f.causas.map((c) => (
+                                  <li key={c.id} className="rounded-lg px-2.5 py-1.5" style={{ backgroundColor: "#FAF9FB", border: `1px solid ${C.line}` }}>
+                                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                      <span className="t10 font-bold" style={{ color: C.indigo }}>
+                                        {c.id}
+                                      </span>
+                                      <span className="t11 font-medium" style={{ color: C.ink }}>
+                                        {c.nombre}
+                                      </span>
+                                      <span className="ml-auto t10 font-semibold" style={{ color: c.sinDato ? C.faint : C.red }}>
+                                        {c.valor}
+                                      </span>
+                                      <span className="t10" style={{ color: C.faint }}>
+                                        umbral {c.umbral}
+                                      </span>
+                                    </div>
+                                    <div className="mt-1 t10" style={{ color: C.sub }}>
+                                      {c.desc}
+                                      {c.sinDato ? " · Sin dato disponible: la política lo trata como incumplimiento, no como «no aplica»." : ""}
+                                    </div>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </>
+                        )}
+                        {/* NIVEL 3 · LAS FACTURAS: un estado por documento y, si está pendiente, sus dos acciones. */}
+                        <div className="overflow-hidden rounded-lg" style={{ border: `1px solid ${C.line}` }}>
+                          <div
+                            className="grid items-center gap-2 px-2.5 py-1.5 t9 font-semibold uppercase tracking-wide"
+                            style={{ gridTemplateColumns: COLS_DOC, backgroundColor: "#FAF9FB", color: C.faint }}
+                          >
+                            <span>Documento</span>
+                            <span>Emisión → vencimiento</span>
+                            <span className="text-right">Monto</span>
+                            <span className="text-right">Verificación</span>
+                          </div>
+                          {f.docs.map((doc) => {
+                            const de = EST[doc.estado];
+                            const r = doc.respaldo || {};
+                            const nAdj = (r.adjuntos || []).length;
+                            return (
+                              <div
+                                key={doc.id}
+                                className="grid items-center gap-2 px-2.5 py-2"
+                                style={{
+                                  gridTemplateColumns: COLS_DOC,
+                                  borderTop: `1px solid ${C.line}`,
+                                  backgroundColor: doc.estado === "no_verificada" ? "#FEF7F7" : "#fff",
+                                }}
+                              >
+                                <span className="min-w-0">
+                                  <span
+                                    className="block t11 font-semibold"
+                                    style={{ color: C.ink, textDecoration: doc.estado === "no_verificada" ? "line-through" : "none" }}
+                                  >
+                                    #{doc.f.folio || doc.id}
+                                  </span>
+                                  <span className="block t9" style={{ color: C.faint }}>
+                                    {doc.f.tipoDoc || "Factura electrónica"}
+                                  </span>
+                                </span>
+                                <span className="t10" style={{ color: C.sub }}>
+                                  {fmtFechaDoc(fechasDocumento(doc.f).emision)} → {fmtFechaDoc(fechasDocumento(doc.f).vencimiento)}
+                                </span>
+                                <span className="t11 text-right font-semibold" style={{ color: C.ink }}>
+                                  {fmtCLP(doc.f.monto || 0)}
+                                </span>
+                                <span className="flex flex-wrap items-center justify-end gap-1.5">
+                                  {nAdj > 0 && (
+                                    <span className="t9 font-semibold" style={{ color: C.indigo }} title={(r.adjuntos || []).map((a) => a.nombre).join(" · ")}>
+                                      📎 {nAdj}
+                                    </span>
+                                  )}
+                                  {r.nota ? (
+                                    <span className="t9" style={{ color: C.sub }} title={notaTextoPlano(r.nota)}>
+                                      📝
+                                    </span>
+                                  ) : null}
+                                  {/* UN estado por documento, y punto: el que tiene. */}
+                                  <span
+                                    className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 t9 font-semibold"
+                                    style={{ backgroundColor: de.bg, color: de.fg, border: `1px solid ${de.bd}` }}
+                                    title={doc.tel ? `Registrada por ${doc.tel.por} · ${doc.tel.fecha}` : undefined}
+                                  >
+                                    {de.lbl}
+                                  </span>
+                                  {doc.estado === "pendiente" && puedeMarcar && botonesDoc(f, [doc], true)}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {f.estado === "verificada" && !f.nVet && (
+                          <div className="mt-1.5 t10" style={{ color: "#16A34A" }}>
+                            Confirmada con el deudor: sus {f.docs.length} factura(s) quedan habilitadas para girar.
+                          </div>
+                        )}
+                        {!!f.nVet && (
+                          <div className="mt-1.5 t10" style={{ color: C.red }}>
+                            {f.nVet} factura(s) retiradas de la operación y vetadas para ella: el monto a girar bajó y quedó una versión nueva.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
       )}
-      {/* Marcar «no verificada» retira facturas de una operación viva: va con confirmación. */}
-      <ConfirmDialog
-        abierto={!!confirmNo}
-        titulo="¿El deudor no confirmó estas facturas?"
-        descripcion={
-          confirmNo
-            ? `${confirmNo.deudor} · ${confirmNo.facturas.length} factura(s) por ${fmtMM(confirmNo.monto)} de ${confirmNo.cliente}. Salen de la operación, bajan el monto a girar y quedan vetadas: no se podrán volver a seleccionar en esta operación. Las facturas de los demás deudores conservan su línea.${(confirmNo.deal.facturasOp || []).length <= confirmNo.facturas.length ? " OJO: son todas las facturas de la operación, y una oferta no puede quedar vacía — retira primero las que correspondan o cierra la operación como pérdida." : ""}`
-            : ""
-        }
-        etiquetaConfirmar="Retirar facturas no confirmadas"
-        onConfirmar={() => marcarNo(confirmNo)}
-        onCancelar={() => setConfirmNo(null)}
-      />
-      {llamando && <ModalLlamadaVerif fila={llamando} onCerrar={() => setLlamando(null)} onConfirmar={(ll) => confirmarLlamada(llamando, ll)} />}
+      {panel && (
+        <DrawerVerificacion fila={panel.fila} docs={panel.docs} modo={panel.modo} onCerrar={() => setPanel(null)} onConfirmar={(d) => aplicarPanel(panel, d)} />
+      )}
     </>
   );
 }
@@ -27565,7 +28572,7 @@ const PC_COMPETIDORES = [
   { name: "Banco Estado", mm: 82825 },
   { name: "Banco Itaú Corpbanca", mm: 79741 },
 ];
-// Referencia de mercado del demo, EN PESOS y por mes (regla 48). Venían escritas en miles de millones
+// Referencia de mercado del demo, EN PESOS y por mes (regla 61). Venían escritas en miles de millones
 // —«245» por 245 B CLP— y el eje del gráfico de zonas las rotulaba «$13 MM», que dice millones donde
 // el dato son miles de millones. Escribirlas en pesos deja al formateador único resolver la escala.
 const MM = 1e9; // un mil millones de pesos: la unidad en la que estas series se estimaron
@@ -31424,7 +32431,7 @@ const PC_CLIENTES = (() => {
         estado = "Security";
         tag = act < tgt ? "CAÍDA" : null;
       } // cliente sano / en caída leve
-      // LOS CUATRO SE LEEN, NO SE SORTEAN (regla 49). Se sorteaban con `pcRng`, y el `vol` además
+      // LOS CUATRO SE LEEN, NO SE SORTEAN (regla 62). Se sorteaban con `pcRng`, y el `vol` además
       // salía en una escala que no declaraba nadie —5.000 a 65.000— mientras cuatro KPI de esta misma
       // pantalla lo pasaban por `fmtMMc`, que divide por un millón: «Brecha de wallet» mostraba M$5.
       // El volumen que el cliente opera con nosotros lo publica el A11 (colocación promedio 12m, en
@@ -31472,7 +32479,7 @@ const PC_CLIENTES = (() => {
   }
   // SIN ACTIVO NO HAY CARTERA. Acá vivía un universo sintético de 80 empresas —nombres armados con
   // tres listas, RUT sorteados, volumen y SOW inventados— para cuando `datos_inyectados.js` no está.
-  // Se retiró (regla 49): sin ese archivo el pipeline muestra 0 oportunidades de todos modos, así que
+  // Se retiró (regla 62): sin ese archivo el pipeline muestra 0 oportunidades de todos modos, así que
   // una cartera falsa al lado de un tubo vacío no rescata la demo, la vuelve incoherente — y esas 80
   // empresas se mezclaban con las reales en cuanto el activo aparecía a medias.
   return [];
@@ -32791,6 +33798,7 @@ function CfgCorreo() {
   );
 }
 const CFG_SECCIONES = [
+  { k: "tenants", label: "Tenants", Icon: LayoutGrid },
   { k: "operacion", label: "Operación", Icon: Clock },
   { k: "sistema", label: "Logs y versión", Icon: ShieldCheck },
   { k: "auditoria", label: "Auditoría", Icon: Eye },
@@ -33789,79 +34797,6 @@ function CfgFuncionalidades({ cfgOper, setCfgOper }) {
           Tenant: <b style={{ color: C.sub }}>{t.nombre}</b> · {t.rut}
         </div>
       </div>
-      {/* Marca del tenant: NEX es la plataforma, pero el ejecutivo ve la marca de SU factoring. */}
-      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
-        <div className="t12 font-semibold" style={{ color: C.ink }}>
-          Marca
-        </div>
-        <div className="mt-0.5 mb-3 t11" style={{ color: C.faint }}>
-          Logotipo y colores que ve el ejecutivo en el login y la barra superior. NEX queda como plataforma en el «powered by».
-        </div>
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
-            <Marca variante={cfg.marcaLogo} />
-          </div>
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <span className="t11" style={{ color: C.sub, width: 74 }}>
-                Logotipo
-              </span>
-              {[
-                ["nex", "NEX"],
-                ["security", "Security"],
-              ].map(([k, l]) => (
-                <button
-                  key={k}
-                  onClick={() => set("marcaLogo", k)}
-                  className="rounded-full px-3 py-1 t11 font-semibold"
-                  style={{
-                    backgroundColor: cfg.marcaLogo === k ? C.lilac : "#fff",
-                    color: cfg.marcaLogo === k ? C.indigo : C.sub,
-                    border: `1px solid ${cfg.marcaLogo === k ? C.indigo : C.line}`,
-                  }}
-                >
-                  {l}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="t11" style={{ color: C.sub, width: 74 }}>
-                Nombre
-              </span>
-              <input
-                value={cfg.marcaNombre || ""}
-                onChange={(e) => set("marcaNombre", e.target.value)}
-                className="rounded-lg px-2.5 py-1 t11"
-                style={{ border: `1px solid ${C.line}`, color: C.ink, width: 200 }}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="t11" style={{ color: C.sub, width: 74 }}>
-                Acento
-              </span>
-              <input
-                type="color"
-                value={cfg.marcaPrimario || "#703EFF"}
-                onChange={(e) => set("marcaPrimario", e.target.value)}
-                style={{ width: 34, height: 24, border: `1px solid ${C.line}`, borderRadius: 6, background: "#fff" }}
-              />
-              <span className="t11" style={{ color: C.faint, fontVariantNumeric: "tabular-nums" }}>
-                {cfg.marcaPrimario}
-              </span>
-            </div>
-          </div>
-          <div className="flex-1" style={{ minWidth: 220 }}>
-            <div className="t11" style={{ color: C.sub }}>
-              Panel del login
-            </div>
-            <div className="mt-1 h-12 rounded-xl" style={{ background: cfg.marcaPanel }} />
-            <div className="mt-2 t11" style={{ color: C.sub }}>
-              Botón principal
-            </div>
-            <div className="mt-1 h-7 rounded-full" style={{ background: cfg.marcaCta }} />
-          </div>
-        </div>
-      </div>
       <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
         <div className="t12 font-semibold" style={{ color: C.ink }}>
           Detalle de la oportunidad · sub-tabs del Negocio
@@ -34407,6 +35342,358 @@ function CfgFactoringTarget() {
     </div>
   );
 }
+// Configuración › TENANTS. El alta de un factoring en la plataforma (21-09-2026, pedido del usuario:
+// «un menú Tenant en donde se cree el Tenant de Security y/o otro cliente; saca la configuración del
+// logo y de los colores y déjalos en ese menú; en ese menú también deberías poder crear al admin del
+// Tenant para que pueda ingresar y empezar a crear a los otros usuarios»). Regla 52.
+//
+// SON TRES COSAS EN UN ORDEN, y el orden es el punto: un tenant sin admin es una carpeta vacía —nadie
+// puede entrar a crear al resto— y por eso el alta del admin vive acá y no en `Configuración ›
+// Usuarios`, que asigna roles a gente que ya existe. La marca se mudó desde `Funcionalidades`, donde
+// estaba junto a los toggles de módulos: es identidad del tenant, no una funcionalidad suya.
+function CfgTenants({ cfgOper, setCfgOper }) {
+  const cfg = { ...CFG_ACTIVA, ...(cfgOper || {}) };
+  const set = (k, v) => setCfgOper({ ...(cfgOper || {}), [k]: v });
+  const [, force] = useState(0);
+  const [nuevoT, setNuevoT] = useState({ nombre: "", id: "", rut: "" });
+  const [errT, setErrT] = useState(null);
+  const [nuevoU, setNuevoU] = useState({ nombre: "", email: "", rol: "admin" });
+  const [errU, setErrU] = useState(null);
+  const [creado, setCreado] = useState(null);
+  const auditar = (accion, glosa) => {
+    const actor = (SESION && SESION.usuario) || "—";
+    registrarAuditoria({ usuario: USERS[actor] || actor, modulo: "Tenants", accion, glosa, severidad: "alta" });
+  };
+  const crearTenant = () => {
+    const nombre = nuevoT.nombre.trim();
+    const id = nuevoT.id.trim().toLowerCase();
+    if (!nombre) return setErrT("Ponle un nombre al factoring.");
+    if (!/^[a-z][a-z0-9_-]{1,23}$/.test(id))
+      return setErrT("El identificador va en minúsculas, sin espacios ni acentos, y parte con letra: compone las claves de su configuración.");
+    if (TENANTS.some((t) => t.id === id)) return setErrT(`Ya existe un tenant con el identificador «${id}».`);
+    TENANTS.push({ id, nombre: nombre.slice(0, 60), rut: nuevoT.rut.trim().slice(0, 15), activo: true });
+    guardarTenants();
+    auditar("Tenant creado", `${id} · ${nombre}`);
+    setNuevoT({ nombre: "", id: "", rut: "" });
+    setErrT(null);
+    force((v) => v + 1);
+  };
+  // EL CÓDIGO SE DERIVA DEL NOMBRE Y ES LA IDENTIDAD INTERNA: lo guardan `deal.exec`, la auditoría y
+  // los hilos, así que no puede cambiar cuando alguien se cambia el apellido. Dos iniciales, y si
+  // están tomadas se numera — nunca se reusa uno vivo, que sería atribuirle a alguien lo que hizo otro.
+  const codigoLibre = (nombre) => {
+    const partes = nombre.trim().toUpperCase().split(/\s+/).filter(Boolean);
+    const base = ((partes[0] || "X")[0] + ((partes[1] || partes[0] || "X")[0] || "X")).replace(/[^A-Z]/g, "X");
+    if (!USERS[base]) return base;
+    for (let i = 2; i < 100; i++) if (!USERS[base + i]) return base + i;
+    return base + Date.now().toString().slice(-4);
+  };
+  const crearUsuario = () => {
+    const nombre = nuevoU.nombre.trim();
+    const email = nuevoU.email.trim().toLowerCase();
+    if (!nombre) return setErrU("Ponle nombre y apellido.");
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return setErrU("El correo es la credencial con la que entra: tiene que ser uno válido.");
+    if (USUARIOS_TENANT.some((u) => u.email === email) || CUENTAS_DEMO[email])
+      return setErrU("Ese correo ya tiene una cuenta: dos personas con el mismo correo son la misma sesión.");
+    if (!ROL_POR_ID[nuevoU.rol]) return setErrU("Elige un rol del catálogo.");
+    const code = codigoLibre(nombre);
+    USUARIOS_TENANT.push({ code, nombre: nombre.slice(0, 60), email, rol: nuevoU.rol });
+    guardarUsuariosTenant();
+    montarUsuariosTenant();
+    ROL_USUARIO[code] = nuevoU.rol;
+    guardarRoles();
+    // El padrón no se invalida a mano: se valida por FIRMA, y la firma sale de `ROL_USUARIO`, que
+    // acaba de cambiar. Es justamente el diseño que evita «acordarse de invalidar».
+    auditar("Usuario creado", `${nombre} (${code}) · ${email} · ${ROL_POR_ID[nuevoU.rol].label}`);
+    setCreado({ code, nombre, email, rol: ROL_POR_ID[nuevoU.rol].label });
+    setNuevoU({ nombre: "", email: "", rol: "admin" });
+    setErrU(null);
+    force((v) => v + 1);
+  };
+  const tieneAdmin = (id) => id === TENANT_ACTUAL && (USUARIOS_TENANT.some((u) => u.rol === "admin") || Object.keys(USERS).includes("ADMIN"));
+  return (
+    <div className="grid gap-4">
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div className="text-lg font-semibold" style={{ color: C.ink }}>
+          Tenants
+        </div>
+        <div className="mt-0.5 t12" style={{ color: C.faint }}>
+          Los factorings que viven en esta instalación de NEX. La lista es de la <b>plataforma</b> y no de un tenant (
+          <code style={{ fontFamily: "ui-monospace,monospace" }}>{TENANTS_KEY}</code>): guardarla por tenant sería que cada uno tuviera su propia idea de quién
+          existe. El <b>identificador</b> compone las claves de toda su configuración —roles, áreas, etapas—, así que no se cambia después.
+        </div>
+        <table className="mt-3 w-full border-collapse t11">
+          <thead>
+            <tr>
+              {["Factoring", "Identificador", "RUT", "Estado"].map((h) => (
+                <th
+                  key={h}
+                  className="px-2 py-1 text-left t10 font-semibold uppercase tracking-wide"
+                  style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {TENANTS.map((t) => (
+              <tr key={t.id} style={{ borderBottom: `1px solid ${C.line}` }}>
+                <td className="px-2 py-1.5 font-medium" style={{ color: C.ink }}>
+                  {t.nombre}
+                  {t.id === TENANT_ACTUAL && (
+                    <span className="ml-2 rounded-full px-2 py-0.5 t9 font-semibold" style={{ backgroundColor: C.lilac, color: C.indigo }}>
+                      esta sesión
+                    </span>
+                  )}
+                </td>
+                <td className="px-2 py-1.5 t10" style={{ color: C.faint, fontFamily: "ui-monospace,monospace" }}>
+                  {t.id}
+                </td>
+                <td className="px-2 py-1.5" style={{ color: C.sub }}>
+                  {t.rut || "—"}
+                </td>
+                <td className="px-2 py-1.5 t10" style={{ color: tieneAdmin(t.id) ? C.sub : "#C2410C" }}>
+                  {t.id === TENANT_ACTUAL ? (tieneAdmin(t.id) ? "con administrador" : "⚠ sin administrador") : "sin sesión acá"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="mt-4 rounded-xl p-3" style={{ backgroundColor: C.lilac, border: `1px solid ${C.line}` }}>
+          <div className="t11 font-semibold" style={{ color: C.ink }}>
+            Crear un factoring
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input
+              value={nuevoT.nombre}
+              onChange={(e) => {
+                setNuevoT((v) => ({ ...v, nombre: e.target.value }));
+                setErrT(null);
+              }}
+              placeholder="Nombre, p. ej. Factoring Security"
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 240 }}
+            />
+            <input
+              value={nuevoT.id}
+              onChange={(e) => {
+                setNuevoT((v) => ({ ...v, id: e.target.value }));
+                setErrT(null);
+              }}
+              placeholder="identificador, p. ej. security"
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 210, fontFamily: "ui-monospace,monospace" }}
+            />
+            <input
+              value={nuevoT.rut}
+              onChange={(e) => setNuevoT((v) => ({ ...v, rut: e.target.value }))}
+              placeholder="RUT"
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 130 }}
+            />
+            <button onClick={crearTenant} className="rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>
+              Crear
+            </button>
+          </div>
+          {errT && (
+            <div className="mt-1.5 t10 font-medium" style={{ color: C.red }}>
+              {errT}
+            </div>
+          )}
+          <div className="mt-1.5 t10" style={{ color: C.faint }}>
+            Un tenant nuevo arranca <b>vacío</b>: su configuración se crea la primera vez que alguien entra con su identificador. Lo siguiente es darle un{" "}
+            <b>administrador</b>, acá abajo, porque es quien va a crear al resto.
+          </div>
+        </div>
+      </div>
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div className="t12 font-semibold" style={{ color: C.ink }}>
+          Marca
+        </div>
+        <div className="mt-0.5 mb-3 t11" style={{ color: C.faint }}>
+          Logotipo y colores que ve el ejecutivo en el login y la barra superior. NEX queda como plataforma en el «powered by».
+        </div>
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="rounded-xl p-3" style={{ border: `1px solid ${C.line}`, backgroundColor: "#F9FAFB" }}>
+            <Marca variante={cfg.marcaLogo} />
+          </div>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span className="t11" style={{ color: C.sub, width: 74 }}>
+                Logotipo
+              </span>
+              {[
+                ["nex", "NEX"],
+                ["security", "Security"],
+              ].map(([k, l]) => (
+                <button
+                  key={k}
+                  onClick={() => set("marcaLogo", k)}
+                  className="rounded-full px-3 py-1 t11 font-semibold"
+                  style={{
+                    backgroundColor: cfg.marcaLogo === k ? C.lilac : "#fff",
+                    color: cfg.marcaLogo === k ? C.indigo : C.sub,
+                    border: `1px solid ${cfg.marcaLogo === k ? C.indigo : C.line}`,
+                  }}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="t11" style={{ color: C.sub, width: 74 }}>
+                Nombre
+              </span>
+              <input
+                value={cfg.marcaNombre || ""}
+                onChange={(e) => set("marcaNombre", e.target.value)}
+                className="rounded-lg px-2.5 py-1 t11"
+                style={{ border: `1px solid ${C.line}`, color: C.ink, width: 200 }}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="t11" style={{ color: C.sub, width: 74 }}>
+                Acento
+              </span>
+              <input
+                type="color"
+                value={cfg.marcaPrimario || "#703EFF"}
+                onChange={(e) => set("marcaPrimario", e.target.value)}
+                style={{ width: 34, height: 24, border: `1px solid ${C.line}`, borderRadius: 6, background: "#fff" }}
+              />
+              <span className="t11" style={{ color: C.faint, fontVariantNumeric: "tabular-nums" }}>
+                {cfg.marcaPrimario}
+              </span>
+            </div>
+          </div>
+          <div className="flex-1" style={{ minWidth: 220 }}>
+            <div className="t11" style={{ color: C.sub }}>
+              Panel del login
+            </div>
+            <div className="mt-1 h-12 rounded-xl" style={{ background: cfg.marcaPanel }} />
+            <div className="mt-2 t11" style={{ color: C.sub }}>
+              Botón principal
+            </div>
+            <div className="mt-1 h-7 rounded-full" style={{ background: cfg.marcaCta }} />
+          </div>
+        </div>
+      </div>
+      <div className="rounded-2xl p-4" style={{ backgroundColor: "#fff", border: `1px solid ${C.line}` }}>
+        <div className="t12 font-semibold" style={{ color: C.ink }}>
+          Administrador del tenant
+        </div>
+        <div className="mt-0.5 mb-3 t11" style={{ color: C.faint }}>
+          Un tenant sin administrador no lo puede usar nadie: es el que entra y da de alta al resto en <b>Configuración › Usuarios</b>. El{" "}
+          <b>correo es la credencial</b> y el <b>código</b> se deriva del nombre y queda fijo —lo guardan las operaciones, la auditoría y los mensajes, así que
+          renombrar a alguien no puede convertirlo en otro—.
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div>
+            <div className="t10 mb-1" style={{ color: C.sub }}>
+              Nombre y apellido
+            </div>
+            <input
+              value={nuevoU.nombre}
+              onChange={(e) => {
+                setNuevoU((v) => ({ ...v, nombre: e.target.value }));
+                setErrU(null);
+              }}
+              placeholder="p. ej. Mauricio Thibaut"
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 230 }}
+            />
+          </div>
+          <div>
+            <div className="t10 mb-1" style={{ color: C.sub }}>
+              Correo (con el que entra)
+            </div>
+            <input
+              value={nuevoU.email}
+              onChange={(e) => {
+                setNuevoU((v) => ({ ...v, email: e.target.value }));
+                setErrU(null);
+              }}
+              placeholder="nombre@factoring.cl"
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 240 }}
+            />
+          </div>
+          <div>
+            <div className="t10 mb-1" style={{ color: C.sub }}>
+              Rol
+            </div>
+            <select
+              value={nuevoU.rol}
+              onChange={(e) => {
+                setNuevoU((v) => ({ ...v, rol: e.target.value }));
+                setErrU(null);
+              }}
+              className="rounded-md px-2 py-1.5 t11"
+              style={{ border: `1px solid ${C.line}`, color: C.ink, backgroundColor: "#fff", width: 220 }}
+            >
+              {ROLES_CAT.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button onClick={crearUsuario} className="rounded-md px-3 py-1.5 t11 font-semibold text-white" style={{ backgroundColor: C.indigo }}>
+            Crear usuario
+          </button>
+        </div>
+        {errU && (
+          <div className="mt-1.5 t10 font-medium" style={{ color: C.red }}>
+            {errU}
+          </div>
+        )}
+        {creado && (
+          <div className="mt-2 rounded-xl p-3 t11" style={{ backgroundColor: "#F0FDF4", border: "1px solid #bbf7d0", color: "#166534" }}>
+            <b>{creado.nombre}</b> quedó creado como <b>{creado.rol}</b>, código <code style={{ fontFamily: "ui-monospace,monospace" }}>{creado.code}</code>. Ya
+            puede entrar con <b>{creado.email}</b> y la clave de la demo. En producción acá sale la invitación por correo y la clave la pone él: una clave que
+            el administrador conoce no sirve como evidencia de quién firmó.
+          </div>
+        )}
+        {USUARIOS_TENANT.length > 0 && (
+          <table className="mt-3 w-full border-collapse t11">
+            <thead>
+              <tr>
+                {["Usuario", "Código", "Correo", "Rol"].map((h) => (
+                  <th
+                    key={h}
+                    className="px-2 py-1 text-left t10 font-semibold uppercase tracking-wide"
+                    style={{ color: C.faint, borderBottom: `1px solid ${C.line}` }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {USUARIOS_TENANT.map((u) => (
+                <tr key={u.code} style={{ borderBottom: `1px solid ${C.line}` }}>
+                  <td className="px-2 py-1.5 font-medium" style={{ color: C.ink }}>
+                    {u.nombre}
+                  </td>
+                  <td className="px-2 py-1.5 t10" style={{ color: C.faint, fontFamily: "ui-monospace,monospace" }}>
+                    {u.code}
+                  </td>
+                  <td className="px-2 py-1.5" style={{ color: C.sub }}>
+                    {u.email}
+                  </td>
+                  <td className="px-2 py-1.5" style={{ color: C.sub }}>
+                    {(ROL_POR_ID[ROL_USUARIO[u.code] || u.rol] || {}).label || u.rol}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
 function CfgAreas() {
   const [, force] = useState(0);
   const [nueva, setNueva] = useState({ id: "", label: "" });
@@ -34416,10 +35703,6 @@ function CfgAreas() {
     const actor = (SESION && SESION.usuario) || "—";
     registrarAuditoria({ usuario: USERS[actor] || actor, modulo: "Áreas del tenant", accion, glosa, severidad: "alta" });
   };
-  const usuariosDe = (id) =>
-    Object.keys(USERS)
-      .filter((k) => k !== "ADMIN" && atribDe(k).atrib[id] != null)
-      .map((k) => `${nombreDe(k)} (N${atribDe(k).atrib[id]})`);
   const renombrar = (id, label) => {
     const a = AREAS_CAT.find((x) => x.id === id);
     if (!a || !label.trim()) return;
@@ -34463,12 +35746,13 @@ function CfgAreas() {
           <b>Usuarios</b> los que tienen esa área en ese nivel o superior.
         </div>
         {/* REGLA 35 · ACÁ ES DONDE SE DECLARAN LAS ÁREAS, así que acá tiene que verse cuáles criterios
-            quedaron sin destinatario. Son TRES causas y esta pantalla puede provocar dos: un criterio sin
-            área no rutea a ninguna parte —no aparece en NINGUNA fila de la tabla de abajo, y la suma de
-            «Criterios que rutean acá» deja de cuadrar con el catálogo—, y borrar acá un área que un
-            criterio declara, o dejarla sin nadie en el nivel que pide, lo deja igual de huérfano sin que
-            el catálogo de reglas haya cambiado una coma. Se listan uno por uno —no un contador— con su
-            causa, porque lo que hay que hacer es ir a arreglarlos por su número. */}
+            quedaron sin destinatario. Son TRES causas y esta pantalla puede provocar dos: borrar un área
+            que un criterio declara, y dejarla sin nadie en el nivel que pide; las dos dejan el criterio
+            huérfano sin que el catálogo de reglas haya cambiado una coma. Se listan uno por uno —no un
+            contador— con su causa, porque lo que hay que hacer es ir a arreglarlos por su número.
+            El 21-09-2026 la tabla perdió las columnas «Criterios que rutean acá» y «Quién la tiene»
+            (pedido del usuario), y por eso este aviso pasa a ser la ÚNICA señal de la pantalla: el
+            control de la regla 35 no se fue con las columnas, se quedó acá entero. */}
         {(() => {
           const padron = padronAprobadores();
           const malas = REGLAS_CLIENTE.map((r2) => ({ r: r2, ne: reglaNoEjecutable(r2, padron) })).filter((x) => x.ne.noEjecutable);
@@ -34484,8 +35768,7 @@ function CfgAreas() {
                 {sinArea > 0 && (
                   <>
                     {" "}
-                    {sinArea} de ellos no declara área: no aparecen en ninguna fila de la tabla de abajo, así que el total de «Criterios que rutean acá» no
-                    cuadra con el catálogo.
+                    {sinArea} de ellos <b>no declara área</b>, así que no rutea a ninguna de las de abajo y esta lista es el único sitio donde se ven.
                   </>
                 )}{" "}
                 Cada uno dice dónde se arregla.
@@ -34503,7 +35786,7 @@ function CfgAreas() {
         <table className="mt-3 w-full border-collapse t11">
           <thead>
             <tr>
-              {["Área", "Identificador", "Criterios que rutean acá", "Quién la tiene", ""].map((h, i) => (
+              {["Área", "Identificador", ""].map((h, i) => (
                 <th
                   key={i}
                   className="px-2 py-1 text-left t10 font-semibold uppercase tracking-wide"
@@ -34516,8 +35799,9 @@ function CfgAreas() {
           </thead>
           <tbody>
             {AREAS_CAT.map((a) => {
+              // `n` ya no se MUESTRA (se fueron las columnas), pero sigue decidiendo si el área se
+              // puede borrar: un área con criterios ruteando a ella los dejaría sin aprobador posible.
               const n = tramosDeArea(a.id);
-              const quienes = usuariosDe(a.id);
               const base = esAreaBase(a.id);
               return (
                 <tr key={a.id} style={{ borderBottom: `1px solid ${C.line}` }}>
@@ -34535,12 +35819,6 @@ function CfgAreas() {
                     title="Es lo que el catálogo de criterios compara contra el área de cada regla. No se edita: renombrarlo dejaría reglas apuntando a un área inexistente."
                   >
                     {a.id}
-                  </td>
-                  <td className="px-2 py-1.5" style={{ color: n ? C.ink : C.faint }}>
-                    {n ? `${n} tramo${n === 1 ? "" : "s"}` : "ninguno"}
-                  </td>
-                  <td className="px-2 py-1.5 t10" style={{ color: quienes.length ? C.sub : "#C2410C" }}>
-                    {quienes.length ? quienes.join(" · ") : n ? "⚠ nadie — hay criterios sin aprobador posible" : "nadie"}
                   </td>
                   <td className="px-2 py-1.5 text-right">
                     {base || n ? (
@@ -35674,6 +36952,50 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper, deals, onMigrarExec }
         ))}
       </aside>
       <div>
+        {/* SOBRE QUÉ TENANT SE ESTÁ CONFIGURANDO (21-09-2026, pedido del usuario: «cada uno de los menús
+            de configuración debiera arriba indicar el Tenant en el que está configurando, ya que todas
+            esas configuraciones son específicas para el Tenant»). Va ACÁ, en el contenedor, y no en
+            cada sección: son veinte pantallas y la que se agregue mañana lo tendría que recordar sola.
+            Cada `pc_*_<tenant>` que nombran las bajadas es exactamente eso, y sin este rótulo hay que
+            leer una clave de storage para saberlo.
+            `tenants` es la ÚNICA que no configura un tenant sino la lista de todos, y lo dice en vez
+            de mentir: un rótulo que afirma lo mismo en todas partes deja de significar algo. */}
+        {(() => {
+          const t = TENANTS.find((x) => x.id === TENANT_ACTUAL);
+          const plataforma = sec === "tenants";
+          return (
+            <div
+              className="mb-3 flex flex-wrap items-center gap-2 rounded-xl px-3 py-2"
+              style={{ backgroundColor: plataforma ? "#F9FAFB" : C.lilac, border: `1px solid ${plataforma ? C.line : "#E4DBFF"}` }}
+            >
+              <span className="t10 font-semibold uppercase tracking-wide" style={{ color: C.faint }}>
+                {plataforma ? "Alcance" : "Configurando"}
+              </span>
+              {plataforma ? (
+                <span className="t11" style={{ color: C.sub }}>
+                  Toda la <b style={{ color: C.ink }}>plataforma</b>: acá viven los factorings, no la configuración de uno.
+                </span>
+              ) : (
+                <>
+                  <span className="t12 font-semibold" style={{ color: C.indigo }}>
+                    {(t && t.nombre) || CFG_ACTIVA.marcaNombre || TENANT_ACTUAL}
+                  </span>
+                  <span className="t10" style={{ color: C.faint, fontFamily: "ui-monospace,monospace" }}>
+                    {TENANT_ACTUAL}
+                  </span>
+                  {t && t.rut && (
+                    <span className="t10" style={{ color: C.faint }}>
+                      · {t.rut}
+                    </span>
+                  )}
+                  <span className="t10" style={{ color: C.faint }}>
+                    · «{activa.label}» aplica sólo a este factoring
+                  </span>
+                </>
+              )}
+            </div>
+          );
+        })()}
         {sec === "simulacion" ? (
           <CfgSimulacion usuario={usuario} />
         ) : sec === "correo" ? (
@@ -35694,6 +37016,8 @@ function ConfiguracionView({ usuario, cfgOper, setCfgOper, deals, onMigrarExec }
           <CfgRoles />
         ) : sec === "usuarios" ? (
           <CfgUsuarios />
+        ) : sec === "tenants" ? (
+          <CfgTenants cfgOper={cfgOper} setCfgOper={setCfgOper} />
         ) : sec === "areas" ? (
           <CfgAreas />
         ) : sec === "factoringtarget" ? (
@@ -42944,9 +44268,7 @@ function DocumentoSolicitud({ sol, onClose }) {
               </span>
             </div>
             <div className="mt-1 t10" style={{ color: C.sub }}>
-              {auto
-                ? "Entró sola al cerrar la oferta (API 1): el wizard nunca se abrió, así que esto es el payload tal como se inyectó."
-                : "Armada en el asistente de presentación al comité e inyectada por API 1."}
+              {auto ? "Generado automáticamente a partir del curse comercial." : "Armada en el asistente de presentación al comité e inyectada por API 1."}
             </div>
           </div>
           <button onClick={onClose} className="shrink-0 rounded-md p-1 hover:bg-stone-100" title="Cerrar">
@@ -43293,18 +44615,44 @@ function DetalleSolicitud({ sol }) {
         )}
         {det.length > 0 && (
           <div className="mt-2 grid items-center gap-2 t10" style={{ gridTemplateColumns: GD, paddingTop: 6 }}>
-            <span className="font-semibold" style={{ color: C.sub }}>
-              {det.length} línea(s) de detalle
-            </span>
-            <span></span>
-            <span></span>
-            <span></span>
-            <span className="text-right font-bold" style={{ color: C.indigo }}>
-              {fmtMM(mmRound(det.reduce((a, d) => a + (d.monto || 0), 0)))}
-            </span>
-            <span></span>
-            <span></span>
-            <span></span>
+            {(() => {
+              // SUMA DEL PIE (21-09-2026, pedido del usuario). Se suma SÓLO lo que tiene línea propia:
+              // un par sin línea muestra «—», no 0, y contarlo como cero diría que su disponible es
+              // cero cuando lo que pasa es que no hay línea que consultar. Por eso el pie declara
+              // cuántos pares aportan a la suma: sin ese dato, un total de aprobada más chico que la
+              // cuenta de filas parece un error de cálculo y es la mitad del negocio de esta pantalla.
+              const conL = det.map((d) => lineaParDeSolicitud(d.rutDeudor, lineas)).filter((lp) => lp.propia);
+              const sum = (k) => mmRound(conL.reduce((a, lp) => a + (lp[k] || 0), 0));
+              const solicitada = mmRound(det.reduce((a, d) => a + (d.monto || 0), 0));
+              const tot = (v, color, tip) => (
+                <span className="text-right font-bold" style={{ color }} title={tip}>
+                  {fmtMM(v)}
+                </span>
+              );
+              return (
+                <>
+                  <span className="font-semibold" style={{ color: C.sub }}>
+                    {det.length} línea(s) de detalle
+                    {conL.length !== det.length ? ` · ${conL.length} con línea propia` : ""}
+                  </span>
+                  {tot(
+                    sum("aprobada"),
+                    C.ink,
+                    `Suma de lo aprobado en los ${conL.length} par(es) que HOY tienen línea propia. Los que dicen «Sin línea propia» no entran: no tienen línea que sumar.`,
+                  )}
+                  {tot(sum("utilizada"), C.ink, "Suma de lo utilizado en esos mismos pares.")}
+                  {tot(sum("disponible"), sum("disponible") > 0 ? C.green : C.sub, "Suma de lo disponible en esos mismos pares: aprobada − utilizada.")}
+                  {tot(
+                    solicitada,
+                    C.indigo,
+                    "Total que esta solicitud le pide al comité, sobre TODAS las líneas de detalle — también las de los pares sin línea propia.",
+                  )}
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </>
+              );
+            })()}
           </div>
         )}
       </div>
@@ -44151,6 +45499,16 @@ const AUTH_BLOQUEO_MS = 60000; // duración del bloqueo
 const AUTH_OTP_MAX = 3; // intentos de código antes de volver a credenciales
 const SESION_ABSOLUTA_MS = 8 * 3600000; // vida máxima de la sesión, se renueve o no
 // Cuentas del demo. En producción NO existe un directorio en el bundle: el backend resuelve el usuario.
+// EL CORREO ES LA CREDENCIAL. Se resuelve contra el elenco de la demo Y contra los usuarios que el
+// tenant dio de alta (regla 52): el admin que se acaba de crear tiene que poder entrar SIN recargar,
+// así que se consulta la lista viva y no una copia que se armó al montar el módulo.
+const codigoDeCorreo = (email) => {
+  const k = String(email || "")
+    .trim()
+    .toLowerCase();
+  const u = USUARIOS_TENANT.find((x) => x.email === k);
+  return (u && u.code) || CUENTAS_DEMO[k] || null;
+};
 const CUENTAS_DEMO = {
   "carla.rivas@security.cl": "CR",
   "sofia.herrera@security.cl": "JG",
@@ -44216,7 +45574,7 @@ function verificarCredenciales(email, clave) {
         .toLowerCase();
       const ms = authBloqueo(k);
       if (ms > 0) return res({ ok: false, motivo: "bloqueada", segundos: Math.ceil(ms / 1000) });
-      const code = CUENTAS_DEMO[k];
+      const code = codigoDeCorreo(k);
       // Mensaje único para usuario inexistente y clave incorrecta: distinguirlos permite enumerar cuentas.
       if (!code || String(clave) !== CLAVE_DEMO) {
         const b = authFallo(k);
@@ -44237,6 +45595,28 @@ function abrirSesion(code, via) {
   SESION = { usuario: code, via, tenant: TENANT_ACTUAL, iniciada: ahora, expira: ahora + SESION_ABSOLUTA_MS, actividad: ahora };
   logSys("info", "app", `Sesión iniciada · ${USERS[code] || code} (${via})`, { usuario: code, via, expiraEn: SESION_ABSOLUTA_MS });
   registrarAuditoria({ usuario: USERS[code] || code, modulo: "Autenticación", accion: "Inicio de sesión", glosa: `Ingreso exitoso vía ${via}`, exito: true });
+  return SESION;
+}
+// El selector de usuario de la demo cambia la IDENTIDAD DE LA SESIÓN, no sólo el rótulo de la navbar
+// (regla 47). Hasta el 21-09-2026 sólo movía el estado de React, y los permisos preguntan por
+// `SESION.usuario`: la mesa de verificación le decía «sólo el Ejecutivo de verificación puede marcarla»
+// a la Ejecutiva de verificación, porque la pantalla mostraba a Camila y el permiso seguía preguntando
+// por quién había hecho login. NO se reabre la sesión: los dos relojes —el absoluto y el de
+// inactividad— y el tenant son de la sesión, no de la persona, y reiniciarlos convertiría un cambio de
+// identidad en una sesión eterna. Queda en la bitácora porque es un cambio de identidad, que es
+// exactamente lo que un registro de evidencia tiene que poder explicar.
+function suplantarSesion(code) {
+  if (!SESION || !code || SESION.usuario === code) return SESION;
+  const antes = SESION.usuario;
+  SESION = { ...SESION, usuario: code, suplantado: true, actividad: Date.now() };
+  logSys("warn", "app", `Identidad de la sesión cambiada (demo) · ${USERS[antes] || antes} → ${USERS[code] || code}`, { antes, ahora: code });
+  registrarAuditoria({
+    usuario: USERS[code] || code,
+    modulo: "Autenticación",
+    accion: "Cambio de identidad (demo)",
+    glosa: `La sesión pasa de ${USERS[antes] || antes} a ${USERS[code] || code} sin volver a autenticar`,
+    exito: true,
+  });
   return SESION;
 }
 function LoginScreen({ usuarioInicial, onIngresar }) {
@@ -45011,6 +46391,14 @@ export default function PipelineComercial() {
   const [directorio, setDirectorio] = useState(null); // DIRECTORIO · demo acotada (bloque desechable)
   const [channel, setChannel] = useState("Manual");
   const [usuario, setUsuario] = useState(soloDetalle && detallePayload.usuario ? detallePayload.usuario : USUARIO); // usuario logueado
+  // CAMBIAR DE USUARIO ES CAMBIAR LA SESIÓN (regla 47). Va por acá —y no por `setUsuario` suelto— para
+  // que todo selector que se agregue después mueva las dos cosas: lo que la pantalla muestra y lo que
+  // los permisos preguntan. En la pestaña del detalle `SESION` es null y `suplantarSesion` no hace nada:
+  // ahí el permiso ya cae en el `|| usuario`, que es para lo que ese respaldo existe.
+  const cambiarUsuario = (u) => {
+    suplantarSesion(u);
+    setUsuario(u);
+  };
   const [logueado, setLogueado] = useState(soloDetalle || soloOpDetalle ? true : false); // gate de login; en modo detalle (deal u operación) ya viene autenticado
   const [cmdOpen, setCmdOpen] = useState(false); // command palette Ctrl+K (spec §38)
   // Reportes de Gestión: se abren INLINE en la vista (no como modal). Un solo estado con la clave activa.
@@ -45064,6 +46452,14 @@ export default function PipelineComercial() {
   //  · Jefatura/Gerencia → "Otras facturas": facturas SIN asignar (empresas fuera de cartera / prospectos),
   //    que la jefatura debe repartir a un ejecutivo desde la grilla.
   const esEjecutivoSesion = !!EXECS[usuario];
+  // QUÉ DEL STREAM VE CADA ROL. Una sola respuesta, y la usan los DOS contadores y la lista: hasta el
+  // 21-09-2026 «Otras Empresas» filtraba por rol y «Todos» no, así que un EJECUTIVO veía en «Todos»
+  // el inbound entero —la cartera de sus colegas y las empresas sin dueño— y el mismo dato decía dos
+  // cosas según qué pestaña se mirara. El usuario lo pidió explícito: «los ejecutivos sólo pueden ver
+  // las empresas de su cartera».
+  //   · Ejecutivo → SÓLO las empresas de SU cartera (`esCliente` y él es el dueño).
+  //   · Inbound y jefatura → SÓLO las que no son de la cartera de nadie. Es el trabajo del rol
+  //     `inbound`: repartirlas. La jefatura las conserva porque también asigna.
   const ofOtrasVisible = (ev) => (esEjecutivoSesion ? ev.esCliente && asignarEjecutivo(ev) === usuario : !ev.esCliente);
   const [vistaApp, setVistaApp] = useState("dashboard"); // vista principal in-page; aterriza en el Dashboard tras login
   // Navega a un módulo y registra la acción del usuario en la auditoría (con su nombre).
@@ -45188,7 +46584,7 @@ export default function PipelineComercial() {
     // en 500 eso dejaba la tabla en ~570 filas. Una fila por cliente es lo que ya hacía la pestaña.
     // `soloMias`: la pestaña «Otras Empresas» muestra lo que le toca a ESTA sesión; «Todos» muestra el
     // inbound entero. Los dos agrupan por cliente con la MISMA función de nivel módulo, y el contador de
-    // cada tab cuenta exactamente estas filas (ver `inboundFilas`).
+    // cada tab cuenta exactamente estas filas (ver `inboundMiasFilas`, que filtra por rol).
     const streamAgrupadoCliente = (soloMias = true) =>
       agruparInboundPorCliente(
         streamFeed.filter(
@@ -45866,8 +47262,10 @@ export default function PipelineComercial() {
       const stage = d.stage === "prospeccion" ? "oferta" : d.stage;
       // Publicar la oferta reactiva el flujo por botones (aunque el cliente estuviera en chat libre): ahora
       // corresponde mostrar las opciones de cierre para que confirme.
-      return {
-        ...d,
+      // EL PATCH VA APARTE PORQUE TIENE QUE CRUZAR A LA PESTAÑA DEL TUBO (regla 58). Publicar es lo
+      // que convierte la oportunidad en «Oferta publicada», y el tubo lo leía de su copia vieja: la
+      // fila seguía diciendo «Negociación» con la oferta ya en manos del cliente.
+      const patch = {
         stage,
         negocioNum: neg,
         ofertaComunicada: true,
@@ -45879,6 +47277,8 @@ export default function PipelineComercial() {
         tasaDescuento: nuevaTasa,
         status: `Oferta comunicada por ${canal} · esperando aceptación del cliente`,
       };
+      avisarTubo(id, patch);
+      return { ...d, ...patch };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
@@ -45942,8 +47342,18 @@ export default function PipelineComercial() {
     // paquete es del ejecutivo (`ofertaCerradaVigente`), y volver a cerrar es precisamente lo que lo
     // devuelve. `reabierta` NO se toca acá: esa marca revoca la FIRMA del cliente y sólo la limpia
     // una firma nueva — limpiarla al cerrar dejaría girable una operación que nadie firmó.
+    // `ofertaComunicada` VA ACÁ (regla 58, 22-09-2026, reporte del usuario: «la oportunidad en el tubo
+    // sigue diciendo negociación, ya se envió la oferta»). Este botón dice «y publicar», elige CÓMO se
+    // publica —electrónica o física—, escribe en el historial «correo enviado al cliente con el código
+    // de negocio y su clave de un solo uso» y deja el status en «Oferta publicada»: la publicación ya
+    // ocurrió. Sin la bandera, `ofertaPublicada` seguía en false y la MISMA pantalla decía cuatro cosas
+    // distintas —el botón que publicó, el status que dice publicada, el historial que dice que el correo
+    // salió, y el chip de etapa diciendo «Negociación»—. El predicado NO cambia: sigue exigiendo los dos
+    // hechos, y el camino del Agente IA sigue publicando por su lado sin pasar por el cierre (regla 54,
+    // caso 158). Lo que cambia es que el cierre asienta los DOS, porque hace los dos.
     const patchCierre = {
       ofertaCerrada: true,
+      ofertaComunicada: true,
       ofertaCerradaTs: nowStamp(),
       ofertaSolicitada: false,
       negocioNum: negCierre,
@@ -45972,8 +47382,12 @@ export default function PipelineComercial() {
               : "Todas las facturas candidatas quedaron dentro del paquete.",
         exito: true,
       });
-      // Cerrar la oferta CREA el negocio (asigna N° y avanza a Oferta y Negociación). Todavía NO se
-      // comunica al cliente: el ejecutivo elige después el canal (WhatsApp / Email) para enviarla.
+      // Cerrar la oferta CREA el negocio (asigna N° y avanza a Oferta y Negociación) Y LA PUBLICA: con
+      // publicación electrónica sale el correo con el N° y la clave de un solo uso, y con publicación
+      // física queda el contrato en papel. Lo que viene DESPUÉS —`enviarCierre`— es el enlace para
+      // FIRMAR, que es otro acto: el cliente ya tiene la oferta. Hasta el 22-09-2026 el comentario de acá
+      // decía «todavía NO se comunica al cliente» y el historial de tres líneas más abajo decía que el
+      // correo ya había salido: se corrigió el que estaba equivocado (regla 58).
       // Volver a cerrar una oferta EDITADA conserva el N°: el cliente ya lo tiene, y el negocio es el
       // mismo — lo que cambió es su paquete.
       if (!d.negocioNum)
@@ -46184,8 +47598,9 @@ export default function PipelineComercial() {
         ...(d.historialContacto || []),
         { fecha: stamp, canal, resultado: `Oferta comunicada por ${canal} · enlace para firmar enviado (N° ${neg})`, detalle, exito: true },
       ];
-      return {
-        ...d,
+      // EL PATCH VA APARTE PORQUE TIENE QUE CRUZAR A LA PESTAÑA DEL TUBO (regla 58): el enlace para
+      // firmar sale desde el detalle, y sin el aviso el tubo no se entera de que la oferta salió.
+      const patch = {
         waSesion: wa,
         emailThread,
         historialContacto: hist,
@@ -46194,6 +47609,8 @@ export default function PipelineComercial() {
         ofertaComunicada: true,
         status: `Oferta comunicada por ${canal} · pendiente firma del cliente`,
       };
+      avisarTubo(id, patch);
+      return { ...d, ...patch };
     };
     setDeals((prev) => prev.map((d) => (d.id === id ? makeUpdated(d) : d)));
     setSelected((s) => (s && s.id === id ? makeUpdated(s) : s));
@@ -46292,7 +47709,7 @@ export default function PipelineComercial() {
       // TODA operación aceptada pasa por Otorgamiento. Si solo tiene buenos deudores y está dentro de
       // la línea aprobada → otorgamiento AUTOMÁTICO (se aprueba solo). Si supera la línea y/o incluye
       // deudores "Otro" → otorgamiento MANUAL (lo decide un especialista).
-      const montoFinal = opts && opts.montoValido != null ? opts.montoValido : d.monto;
+      const montoFinal = montoFirmado(d, opts);
       const otorg = requiereOtorgamiento({ ...d, monto: montoFinal, facturasOp: d.facturasOp });
       const auto = !otorg;
 
@@ -46315,7 +47732,7 @@ export default function PipelineComercial() {
       // operación que quedó «Girada» con 42 criterios por aprobar y 8 facturas por verificar a la
       // vista, en la misma pantalla. Firmar es del CLIENTE; girar es de la casa, y sólo después de
       // que sus controles pasen.
-      const dFirmado = { ...d, monto: montoFinal, stage: "cesion", clienteAcepto: true, reabierta: undefined };
+      const dFirmado = dealFirmado(d, montoFinal);
       const visF = visadoDeal(dFirmado);
       const pendVisado = visF.excPend.length + visF.rechReev.length; // OTG-02
       const pendVerif = verifResumenDeal(dFirmado).pend; // VER-01
@@ -46371,8 +47788,14 @@ export default function PipelineComercial() {
         giroFlags = { giroPendiente: true };
       }
       // El cliente volvió a firmar: la reapertura se cierra y la aceptación vuelve a estar vigente.
-      return {
-        ...d,
+      // EL PATCH VA APARTE PORQUE TIENE QUE CRUZAR A LA PESTAÑA DEL TUBO (regla 55). La firma del
+      // cliente llega por `postMessage` a la pestaña que abrió el portal de curse, y ésa es la del
+      // DETALLE: sin avisar, el detalle mostraba «Otorgamiento» y el tubo seguía en «Negociación»
+      // sobre la misma operación, con la bandeja del aprobador vacía porque para ella la operación
+      // nunca fue aceptada. Es el mismo agujero de `nex-simulado`, `nex-preeval` y `nex-hilo`, en la
+      // transición que más importa. `avisarTubo` fusiona por operación, así que llamarlo desde el
+      // updater —que React puede correr más de una vez— no duplica el aviso.
+      const patch = {
         reabierta: undefined,
         waSesion: wa,
         emailThread,
@@ -46400,9 +47823,27 @@ export default function PipelineComercial() {
         desc: +(o.interes + o.comision).toFixed(2),
         giro: o.giro,
       };
+      avisarTubo(id, patch);
+      return { ...d, ...patch };
     };
     setDeals((prev) => prev.map(upd));
     setSelected((s) => (s ? upd(s) : s));
+    // EL CIERRE AVISA A QUIEN TIENE QUE FIRMAR (regla 50). Acá y no dentro del updater, por lo mismo
+    // que `cerrarOferta` arma su patch afuera: `setDeals(fn)` no ejecuta `fn` en el acto y puede
+    // llamarlo más de una vez, así que un envío ahí adentro mandaría el aviso dos veces. Se evalúa el
+    // paquete FIRMADO —`dealFirmado`, la misma expresión que guarda el updater— porque las
+    // excepciones de una operación en cesión no son las mismas que las de la oferta.
+    if (dFirma) {
+      const dCerrado = dealFirmado(dFirma, montoFirmado(dFirma, opts));
+      const visC = visadoDeal(dCerrado);
+      const hCierre = avisarCierreNegocio({ ...dCerrado, negocioNum: dFirma.negocioNum || negDe(dFirma) }, visC.excPend, verifResumenDeal(dCerrado).pend);
+      // La firma vuelve del portal a la pestaña que lo abrió, y ésa puede ser la del DETALLE, que no
+      // tiene campana ni bandeja de mensajes. Sin este aviso el hilo quedaba en la memoria de un
+      // documento que no lo muestra: exactamente el agujero de `nex-solicitud` y `nex-preeval`.
+      try {
+        if (hCierre && window.opener) window.opener.postMessage({ type: "nex-hilo", hilo: hCierre }, ORIGEN_APP);
+      } catch (_) {}
+    }
     setCierreModal(null);
     curseForget(negDe({ id })); // operación cursada: su payload+OTP del cierre ya no se necesitan
   };
@@ -46503,12 +47944,19 @@ export default function PipelineComercial() {
         if (recibirSolicitudLinea(m.registro)) setDeals((prev) => prev.slice()); // re-render: la bandeja lee la lista al pintar
         return;
       }
+      // Hilo de mensajería nacido en la pestaña del detalle: el aviso de cierre (48), la solicitud de
+      // aprobación de una excepción y el requerimiento de información (49).
+      if (m && m.type === "nex-hilo" && m.hilo) {
+        if (recibirHilo(m.hilo)) setDeals((prev) => prev.slice()); // re-render: la campana lee HILOS al pintar
+        return;
+      }
       // Pre-evaluación solicitada (o cancelada) desde la pestaña del detalle. La mesa de Otorgamientos
       // filtra por `tienePreEval`, y ese estado es de CADA documento: sin este aviso el aprobador veía
       // «OPERACIONES EN OTORGAMIENTO (0)» aunque el ejecutivo acabara de enviársela, que es la forma en
       // que esta compuerta se rompía en la práctica. Se re-emite la lista para que la vista recalcule.
       if (m && m.type === "nex-preeval" && m.dealId) {
-        setPreEval(m.dealId, m.por || "EJ", !!m.on);
+        setPreEval(m.dealId, m.por || "EJ", !!m.on, false);
+        refrescarEstadoOtorgamiento();
         setDeals((prev) => prev.slice());
         return;
       }
@@ -47503,48 +48951,30 @@ export default function PipelineComercial() {
       const mapped = prev.map((d) => {
         if (d.stage === "perdida" || d.stage === "giro") return d; // etapas terminales
         if (d.stage === "otorgamiento") {
-          // Otorgamiento ocurre TRAS la cesión y deja la operación lista para INTEGRARSE al core.
-          // AUTOMÁTICO: se aprueba solo, pero tampoco gira solo —y sigue esperando las llamadas del
-          // equipo de verificación, que el otorgamiento automático no cubre—. Antes esta rama
-          // desembolsaba en el acto: el control de Operaciones no existía y VER-01 quedaba fuera.
-          if (d.otorgAuto) {
-            if (verifResumenDeal(d).pend > 0) return d; // faltan llamadas: se queda en Otorgamiento / Verificación
-            return {
-              ...d,
-              stage: "cesion",
-              otorgada: true,
-              integracion: "pendiente",
-              giroPendiente: true,
-              status: "Pendiente Integración · esperando a Operaciones",
-              time: nowStamp(),
-              historialContacto: traza(
-                d,
-                "Otorgamiento automático aprobado (buenos deudores y dentro de línea) y verificación completa → pasa a Operaciones para su integración al core",
-                true,
-                DET_ETAPA.cesion,
-              ),
-            };
-          }
-          // Manual: se libera cuando el VISADO queda resuelto —todas las excepciones aprobadas por quien
-          // tiene la atribución— y el cliente mantiene su aprobación formal. Antes esta rama miraba
-          // `d.causas` del modelo de desvíos, que nadie podía autorizar: una operación derivada a
-          // otorgamiento manual se quedaba acá para siempre salvo que alguien la moviera a mano.
-          // Resuelto el visado, la operación NO gira: sale del tubo comercial y queda esperando que
-          // Operaciones la integre al core. Girar es el último paso y lo autoriza otra área — antes
-          // esta rama desembolsaba sola, así que el control de Operaciones no existía.
+          // Otorgamiento ocurre TRAS la cesión y deja la operación lista para INTEGRARSE al core. Se
+          // libera cuando el VISADO queda resuelto —todas las excepciones aprobadas por quien tiene la
+          // atribución—, el cliente mantiene su aprobación formal y no quedan llamadas pendientes.
+          // Resuelta, la operación NO gira: sale del tubo comercial y queda esperando que Operaciones la
+          // integre al core. Girar es el último paso y lo autoriza otra área.
+          // UNA SOLA RAMA para el automático y el manual (21-09-2026, regla 48). Eran dos, y la del
+          // atajo no miraba el visado: con `otorgAuto` bastaba que no faltaran llamadas para llegar a
+          // «Pendiente Integración» con 38 criterios por aprobar —OTG-02 declarado y no obedecido—.
+          // Separadas volverían a separarse: lo único que cambia entre las dos es la GLOSA.
           if (otorgamientoCompleto(d) && verifResumenDeal(d).pend === 0) {
             return {
               ...d,
               stage: "cesion",
               otorgada: true,
-              otorgPorExcepcion: true,
+              ...(d.otorgAuto ? {} : { otorgPorExcepcion: true }),
               integracion: "pendiente",
               giroPendiente: true,
               status: "Pendiente Integración · esperando a Operaciones",
               time: nowStamp(),
               historialContacto: traza(
                 d,
-                "Otorgada por excepción — visado resuelto y verificación completa → pasa a Operaciones para su integración al core",
+                d.otorgAuto
+                  ? "Otorgamiento automático aprobado (buenos deudores y dentro de línea), visado sin pendientes y verificación completa → pasa a Operaciones para su integración al core"
+                  : "Otorgada por excepción — visado resuelto y verificación completa → pasa a Operaciones para su integración al core",
                 true,
                 DET_ETAPA.cesion,
               ),
@@ -48862,15 +50292,109 @@ export default function PipelineComercial() {
       usuario: USERS[usuario] || usuario,
       modulo: "Verificación de facturas",
       accion: conf.ok ? (no.length ? "Deudor confirmó parcialmente" : "Deudor verificado telefónicamente") : "Verificación rechazada por el contrato",
-      glosa: `${fila.cliente} · ${fila.deudor} · ${ok.length} confirmada(s)${no.length ? ` · ${no.length} NO confirmada(s), retiradas y vetadas` : ""} de ${fila.facturas.length} por ${fmtMM(fila.monto)} · causas: ${fila.causas.map((c) => c.id).join(", ") || "—"}${reg ? ` · contacto: ${reg.contacto.nombre}${reg.contacto.cargo ? ` (${reg.contacto.cargo})` : ""} ${fonoOfuscado(reg.contacto.fono)}${reg.compromiso ? ` · paga ${reg.compromiso}` : ""} · respaldo: ${reg.respaldo.length ? reg.respaldo.join(", ") : "SIN respaldo documental (declarado)"}${reg.notas ? ` · ${reg.notas}` : ""}` : ""}`,
+      glosa: `${fila.cliente} · ${fila.deudor} · ${ok.length} confirmada(s)${no.length ? ` · ${no.length} NO confirmada(s), retiradas y vetadas` : ""} de ${fila.facturas.length} por ${fmtMM(fila.monto)} · causas: ${fila.causas.map((c) => c.id).join(", ") || "—"}${reg ? ` · contacto: ${reg.contacto.nombre}${reg.contacto.cargo ? ` (${reg.contacto.cargo})` : ""} ${fonoOfuscado(reg.contacto.fono)}${reg.compromiso ? ` · paga ${reg.compromiso}` : ""} · respaldo: ${reg.respaldo.length ? nombresArch(reg.respaldo).join(", ") : "SIN respaldo documental (declarado)"}${notaTextoPlano(reg.notas) ? ` · ${notaTextoPlano(reg.notas)}` : ""}` : ""}`,
       exito: !!conf.ok,
     });
     setVerifVer((v) => v + 1);
   };
-  const noConfirmoDeudor = (fila) => {
+  // ── MESA POR FACTURA (regla 53) ───────────────────────────────────────────────
+  // Marcar UN documento es el mismo hecho que marcar al deudor, aplicado a un documento: se registra
+  // su llamada, o se retira y se veta. No es un atajo del anterior ni una regla nueva —`verificarDeudor`
+  // ya escribía factura por factura—: lo que cambia es que ahora el equipo puede resolverlas de a una,
+  // que es como ocurre cuando el deudor reconoce unas y otras no.
+  const estadoDeudorTras = (fila, doc, est) => {
+    const otros = (fila.docs || []).filter((x) => x.id !== doc.id).map((x) => x.estado);
+    const todos = [...otros, est];
+    if (todos.some((e) => e === "pendiente")) return "parcial";
+    if (todos.every((e) => e === "no_verificada")) return "no_verificada";
+    return todos.some((e) => e === "no_verificada") ? "parcial" : "verificada";
+  };
+  // `gestion` es lo que devolvió el panel lateral: el checklist, con quién se habló, la fecha
+  // comprometida, el motivo del rechazo y el respaldo. Viaja CON EL DOCUMENTO —no con el deudor—
+  // porque por acá se marca de a un folio, y la evidencia se pregunta desde el folio.
+  const marcarFactura = async (fila, doc, est, gestion) => {
+    if (!fila || !doc || doc.estado !== "pendiente") return;
+    const f = doc.f;
+    const reg = gestion
+      ? {
+          checklist: gestion.checklist,
+          contacto: gestion.contacto,
+          compromiso: gestion.compromiso || "",
+          respaldo: (gestion.archs || []).slice(),
+          sinRespaldo: !!gestion.sinRespaldo,
+          notas: gestion.notas || "",
+          motivo: gestion.motivoLbl || gestion.motivo || "",
+        }
+      : null;
+    if (est === "verificada") {
+      const m = { ...(repoVerifTel.get(fila.deal.id) || {}) };
+      m[f.id] = { por: actorEtiqueta(usuario), fecha: nowStamp(), ...(reg || {}) };
+      const conf = await confirmarEscrituras([repoVerifTel.set(fila.deal.id, m), congelarVeredicto(fila, estadoDeudorTras(fila, doc, est))]);
+      registrarAuditoria({
+        usuario: USERS[usuario] || usuario,
+        modulo: "Verificación de facturas",
+        accion: conf.ok ? "Factura verificada con el deudor" : "Verificación rechazada por el contrato",
+        glosa: `${fila.cliente} · ${fila.deudor} · folio ${f.folio || f.id} por ${fmtMM(f.monto || 0)}${reg ? ` · contacto: ${reg.contacto.nombre}${reg.contacto.cargo ? ` (${reg.contacto.cargo})` : ""} ${fonoOfuscado(reg.contacto.fono)}${reg.compromiso ? ` · paga ${reg.compromiso}` : ""}` : ""} · respaldo: ${reg && reg.respaldo.length ? nombresArch(reg.respaldo).join(", ") : doc.respaldo && doc.respaldo.adjuntos && doc.respaldo.adjuntos.length ? nombresArch(doc.respaldo.adjuntos).join(", ") : "SIN respaldo documental (declarado)"}${reg && notaTextoPlano(reg.notas) ? ` · ${notaTextoPlano(reg.notas)}` : ""}`,
+        exito: !!conf.ok,
+      });
+    } else {
+      // Retirar es lo que recorta la asignación y emite versión nueva; el veto lo deja fuera de esta
+      // operación para siempre. Se congela ANTES, porque retirar puede dejar al deudor sin facturas
+      // vivas y entonces el veredicto es lo único que sostiene su fila en la mesa.
+      congelarVeredicto(fila, estadoDeudorTras(fila, doc, est));
+      retirarFacturaOferta(fila.deal.id, f, "noConfirmada");
+      registrarAuditoria({
+        usuario: USERS[usuario] || usuario,
+        modulo: "Verificación de facturas",
+        accion: "Factura NO confirmada por el deudor",
+        glosa: `${fila.cliente} · ${fila.deudor} · folio ${f.folio || f.id} por ${fmtMM(f.monto || 0)} · retirada de la oferta y vetada para esta operación${reg ? ` · motivo: ${reg.motivo || "—"} · contacto: ${reg.contacto.nombre || "sin contacto"} ${fonoOfuscado(reg.contacto.fono)} · respaldo: ${reg.respaldo.length ? nombresArch(reg.respaldo).join(", ") : "SIN respaldo documental (declarado)"}${notaTextoPlano(reg.notas) ? ` · ${notaTextoPlano(reg.notas)}` : ""}` : ""}`,
+        exito: true,
+      });
+    }
+    setVerifVer((v) => v + 1);
+  };
+  // El RESPALDO de un documento: la nota de quien llamó y la referencia del archivo. Se guarda aunque
+  // la factura siga pendiente —el correo del deudor suele llegar antes que la decisión— y es
+  // append-only en la auditoría, como todo lo que justifica un giro.
+  const guardarRespaldoFactura = async (fila, doc, datos) => {
+    if (!fila || !doc) return;
+    const m = { ...(repoVerifRespaldo.get(fila.deal.id) || {}) };
+    const previo = m[doc.id] || {};
+    const adjuntos = [...(previo.adjuntos || []), ...((datos && datos.adjuntos) || [])];
+    m[doc.id] = {
+      nota: datos && datos.nota != null ? datos.nota : previo.nota || "",
+      adjuntos,
+      por: actorEtiqueta(usuario),
+      fecha: nowStamp(),
+    };
+    const conf = await confirmarEscrituras([repoVerifRespaldo.set(fila.deal.id, m)]);
+    const nuevos = ((datos && datos.adjuntos) || []).map((a) => a.nombre);
+    registrarAuditoria({
+      usuario: USERS[usuario] || usuario,
+      modulo: "Verificación de facturas",
+      accion: conf.ok ? "Respaldo de verificación guardado" : "Respaldo rechazado por el contrato",
+      glosa: `${fila.cliente} · ${fila.deudor} · folio ${(doc.f && (doc.f.folio || doc.f.id)) || doc.id}${nuevos.length ? ` · adjunta ${nuevos.join(", ")}` : ""}${datos && notaTextoPlano(datos.nota) ? ` · nota: ${notaTextoPlano(datos.nota).slice(0, 120)}` : ""}`,
+      exito: !!conf.ok,
+    });
+    setVerifVer((v) => v + 1);
+  };
+  // Retirar plata de una operación viva DEJA REGISTRO de por qué: el motivo, con quién se habló y el
+  // respaldo llegan desde el panel lateral. Antes esto se resolvía con el sí/no de un diálogo de
+  // confirmación, así que la operación bajaba de monto sin un solo dato que explicara la decisión.
+  const noConfirmoDeudor = (fila, gestion) => {
     if (!fila) return;
+    // El teléfono se ofusca EN EL SITIO DEL LOG y no al cargarlo (invariante 12, y es lo que el gate
+    // `regla_17` sabe leer): en la bitácora queda el rastro del contacto, no el dato de contacto.
+    const cto = (gestion && gestion.contacto) || {};
     repoVerifVeredicto.set(fila.deal.id, veredictoNuevo(fila, "no_verificada"));
     fila.facturas.forEach((f) => retirarFacturaOferta(fila.deal.id, f, "noConfirmada"));
+    registrarAuditoria({
+      usuario: USERS[usuario] || usuario,
+      modulo: "Verificación de facturas",
+      accion: "Deudor NO confirmó: facturas retiradas y vetadas",
+      glosa: `${fila.cliente} · ${fila.deudor} · ${fila.facturas.length} factura(s) por ${fmtMM(fila.monto)}${gestion ? ` · motivo: ${gestion.motivoLbl || gestion.motivo || "—"} · contacto: ${cto.nombre || "sin contacto"} ${fonoOfuscado(cto.fono)} · respaldo: ${(gestion.archs || []).length ? nombresArch(gestion.archs).join(", ") : "SIN respaldo documental (declarado)"}${notaTextoPlano(gestion.notas) ? ` · ${notaTextoPlano(gestion.notas)}` : ""}` : ""}`,
+      exito: true,
+    });
     setVerifVer((v) => v + 1);
   };
   // El veredicto se CONGELA con el contacto: deja de ser una predicción y pasa a ser evidencia, con
@@ -49178,12 +50702,18 @@ export default function PipelineComercial() {
   // Los contadores de los tabs cuentan las MISMAS filas que la tabla dibuja: las del inbound salen de
   // `agruparInboundPorCliente`, la misma función que arma la lista. Contar facturas (`streamFeed.length`)
   // decía «Todos 262» sobre una tabla de 307 filas — medido el 18-09-2026 (regla 40).
-  const inboundFilas = useMemo(() => (showInbound ? agruparInboundPorCliente(streamFeed, asignarEjecutivo).length : 0), [showInbound, streamFeed]);
   const inboundMiasFilas = useMemo(
     () => agruparInboundPorCliente(streamFeed.filter(ofOtrasVisible), asignarEjecutivo).length,
     [streamFeed, usuario, esEjecutivoSesion],
   );
-  const inboundCount = inboundFilas;
+  // «Todos» cuenta lo MISMO que el usuario puede ver, no el stream entero: si contara todo, un
+  // ejecutivo leería un total que incluye filas que la lista de abajo nunca le va a mostrar — el
+  // defecto que la regla 40 ya corrigió una vez en el otro sentido (contar facturas contra una tabla
+  // de filas agrupadas).
+  // …y sigue respetando la compuerta del toggle Inbound, que era de `inboundFilas`: con el toggle
+  // apagado la tabla no dibuja ninguna fila del stream, así que contarlas dejaría el contador por
+  // encima de la lista — el mismo desacuerdo que la regla 40 corrigió en el otro sentido.
+  const inboundCount = showInbound ? inboundMiasFilas : 0;
   const nPrioTubo = dealsVista.filter((d) => tienePrioridadCurse(d.id)).length;
   // «Todos» va PRIMERO (18-09-2026, pedido del usuario): es el tab de entrada, y un tab de entrada al final
   // de la fila se lee como el último recorte de una lista de recortes. Va antes incluso de «Prioritarios»,
@@ -49278,6 +50808,16 @@ export default function PipelineComercial() {
         .skel::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.85),transparent);animation:skel 1.1s infinite}
         @keyframes skel{100%{transform:translateX(100%)}}
         .pl-spin{animation:pl-spin .8s linear infinite;transform-origin:50% 50%}@keyframes pl-spin{to{transform:rotate(360deg)}}
+        /* NOTA RICA (respaldo de una verificacion). El placeholder de un contentEditable no existe:
+           se dibuja con ::before leyendo el propio atributo, y se apaga en cuanto la nota tiene algo
+           —texto O imagen—, que es lo que decide notaVacia(). La captura pegada se acota acá y no en
+           el style inline del img, porque el HTML de la nota se guarda y se vuelve a pintar despues. */
+        .nota-rica[data-vacio="1"]::before{content:attr(data-marca);color:#9CA3AF;pointer-events:none}
+        .nota-rica img.nota-img{max-width:100%;height:auto;border-radius:8px;border:1px solid #E5E7EB;display:block;margin:4px 0}
+        .nota-rica ul{list-style:disc;padding-left:18px;margin:2px 0}
+        .nota-rica b,.nota-rica strong{font-weight:700}
+        .nota-leida img{max-width:220px;height:auto;border-radius:6px;border:1px solid #E5E7EB;display:block;margin:3px 0}
+        .nota-leida ul{list-style:disc;padding-left:16px;margin:2px 0}
         .bgw50{background-color:rgba(255,255,255,0.5)}
         @media print {
           body * { visibility: hidden !important; }
@@ -49377,7 +50917,7 @@ export default function PipelineComercial() {
                 cierre={cierreModal}
                 onConfirmCierre={confirmarCierre}
                 usuario={usuario}
-                onCambiarUsuario={setUsuario}
+                onCambiarUsuario={cambiarUsuario}
                 tabInicial={(detallePayload && detallePayload.tab) || dealTabInicial}
                 onIrOtorgamientos={() => {}}
               />
@@ -49542,7 +51082,7 @@ export default function PipelineComercial() {
                     <User size={14} style={{ color: C.faint }} />
                     <select
                       value={usuario}
-                      onChange={(e) => setUsuario(e.target.value)}
+                      onChange={(e) => cambiarUsuario(e.target.value)}
                       title="Sesión de usuario (sólo demo)"
                       className="rounded-lg px-2 py-1.5 t12 font-medium"
                       style={{ border: `1px dashed ${C.amber}`, color: C.ink, backgroundColor: "#fff" }}
@@ -49729,7 +51269,15 @@ export default function PipelineComercial() {
                 }}
               />
             ) : vistaApp === "verificacion" ? (
-              <VerificacionView deals={deals} usuario={usuario} onOpen={abrirDetalle} onVerificar={verificarDeudor} onNoConfirmar={noConfirmoDeudor} />
+              <VerificacionView
+                deals={deals}
+                usuario={usuario}
+                onOpen={abrirDetalle}
+                onVerificar={verificarDeudor}
+                onNoConfirmar={noConfirmoDeudor}
+                onMarcarFactura={marcarFactura}
+                onRespaldo={guardarRespaldoFactura}
+              />
             ) : (
               <>
                 <div className="flex items-start justify-between gap-3">

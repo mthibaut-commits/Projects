@@ -118,7 +118,7 @@ los chips de producto y categoría. Los tabs son «Negocio», «Otorgamiento» (
 | CP-DET-26 | Intentar cursar sin haber pasado por Cesión | **No gira**: el desembolso exige que la operación haya pasado por Cesión | GIR-01 | suite 136 · `regla_transiciones.test.mjs` |
 | CP-DET-27 | Comprobar que el monto cedido de cada factura es el monto del documento | Un monto cedido distinto del documento **se detecta** (criterio O06) | regla 13-sexies | suite 96 |
 | CP-DET-28 | Revisar las fechas de cada factura de la oferta | Emisión y vencimiento salen **del documento**, no de un cálculo de la pantalla | regla 13-ter | suite 93 |
-| CP-DET-29 | Con facturas sin XML, pulsar «Solicitar XML de N factura(s) faltante(s)» y leer el mensaje que se le va a mandar al cliente | Cada factura sale con **su monto real en pesos**. Hasta el 23-09-2026 el mensaje multiplicaba por un millón y le mostraba al cliente su factura 1.000.000 de veces más grande | regla 47 | `auditores.test.mjs` (línea base 0 de `auditar_unidades`) |
+| CP-DET-29 | Con facturas sin XML, pulsar «Solicitar XML de N factura(s) faltante(s)» y leer el mensaje que se le va a mandar al cliente | Cada factura sale con **su monto real en pesos**. Hasta el 23-09-2026 el mensaje multiplicaba por un millón y le mostraba al cliente su factura 1.000.000 de veces más grande | regla 60 | `auditores.test.mjs` (línea base 0 de `auditar_unidades`) |
 
 ---
 
@@ -239,5 +239,5 @@ atención antes que el resto, por lo que cuesta el error:
 
 | Versión | Fecha | Qué cambió |
 |---|---|---|
-| **1.1.0** | 23-09-2026 | Entra **CP-DET-29**: el mensaje que pide los XML faltantes muestra el monto real. Lo motivó un defecto encontrado ese mismo día — el mensaje multiplicaba por un millón (regla 47). |
+| **1.1.0** | 23-09-2026 | Entra **CP-DET-29**: el mensaje que pide los XML faltantes muestra el monto real. Lo motivó un defecto encontrado ese mismo día — el mensaje multiplicaba por un millón (regla 60). |
 | 1.0.0 | 23-09-2026 | Primera versión: 96 casos sobre las cinco pantallas del ciclo de una operación, con la regla que fija cada uno y su cobertura automática. |

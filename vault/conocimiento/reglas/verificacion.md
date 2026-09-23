@@ -10,7 +10,7 @@ timestamp: 2026-09-17T15:29:14Z
 
 > Reglas de dominio de NEX, **verbatim** desde el `CLAUDE.md` anterior al 17-09-2026, agrupadas por tema. Se citan por su número (`regla 6`) y **no se renumeran**: el fuente y otros documentos las referencian así. Índice de todas, con qué caso de la suite verifica cada una: [`invariantes.md`](../invariantes.md).
 >
-> Reglas en este archivo: **6** · **9-ter**.
+> Reglas en este archivo: **6** · **9-ter** · **53** · **57** · **59**.
 
 6. **Verificación de facturas = rutina AISLADA, y la decisión es POR DEUDOR** (`Specs_Procesos/Verificacion/spec-verificacion-facturas.md`). El contacto con el deudor busca dejar por escrito o grabado que pagará; toma **3–4 horas y retrasa el giro**, y si el deudor no confirma **Security retira las facturas no confirmadas**. Por eso el ejecutivo tiene que saber ANTES de comprometer un plazo. `verifDecision(par, facturas)` es la función pura; `verifEvaluar` la adapta a la UI, `verifDeudorDeal` la consulta y `verifFactura` sólo delega — **la verificación de una factura ES la de su deudor**, porque una llamada cubre todas sus facturas y evaluarla por documento daba veredictos distintos entre facturas del mismo deudor. Detalle:
    - **`verifPar(rutCliente, deudor, tipo)`** memoiza en `_VERIF_PAR` el estado del PAR (protocolo propio, % pagado 3M, recurrencia, mora, reclamos, historial). Semilla = el par, **nunca el folio**.
@@ -28,7 +28,7 @@ timestamp: 2026-09-17T15:29:14Z
    - **`verifPar` resuelve el `tipo` ADENTRO**, desde la identidad del par, y el RUT del deudor entra en la clave de memoización. Antes lo recibía por parámetro sin que formara parte de la clave, y los dos llamadores pasaban cosas distintas (`tipoDeudorDisp(f)` vs `tipoDeudor(null, nombre)`): el primero en llegar fijaba nota, segmento y criterios para toda la sesión.
    - **La confirmación puede ser PARCIAL:** el deudor reconoce unas facturas y no otras. La mesa trae un selector por folio —todas marcadas por defecto— y al registrar, las desmarcadas se retiran y quedan vetadas igual que en el «no verificada» completo.
    - **No hay «reglas duras».** El campo `dura` del catálogo y el `hard` del veredicto se retiraron: `verifFactura` devolvía siempre `hard: false` y ningún criterio tenía un efecto distinto de mandar el deudor al teléfono. El mantenedor `CriteriosVerifMantenedor` **se eliminó**: no estaba enganchado a ninguna vista —no había forma de llegar a él— y además no era de este spec, sino de los criterios de *visado* por área del otorgamiento.
-   - **Tab «Verificación» del detalle** (`VerificacionTab`): es donde el equipo de verificación marca por factura y registra la llamada, dentro de la operación. Aparece en DOS escenarios, y sólo con facturas en la oferta: cuando el ejecutivo aprieta **Pre-evaluación** (`tienePreEval`, adelanta el proceso igual que con el otorgamiento) o cuando la oferta está **cerrada Y publicada** (`ofertaPublicada`: las dos mitades, cerrar es la aprobación interna y publicar el compromiso con el cliente). Desde Aceptada en adelante se muestra siempre. Antes de eso no hay nada que llamar: la oferta todavía se está armando y quemar 3–4 horas por un deudor cuyas facturas quizá se retiren es el error que la compuerta evita. Una verificación **negativa** retira la factura de la oferta y la **veta** (`onRetirarFactura(..., "noConfirmada")`); el ejecutivo tiene que **Re-evaluar** — no se recalcula solo (regla 14). El tab estuvo huérfano un tiempo: el componente existía pero no estaba en la barra de pestañas y no había forma de llegar.
+   - **Tab «Verificación» del detalle** (`VerificacionTab`): es donde el equipo de verificación marca por factura y registra la llamada, dentro de la operación. Aparece en DOS escenarios, y sólo con facturas en la oferta: cuando el ejecutivo aprieta **Pre-evaluación** (`tienePreEval`, adelanta el proceso igual que con el otorgamiento) o cuando la oferta está **cerrada Y publicada** (`ofertaPublicada`: las dos mitades, cerrar es la aprobación interna y publicar el compromiso con el cliente). Desde Aceptada en adelante se muestra siempre. Antes de eso no hay nada que llamar: la oferta todavía se está armando y quemar 3–4 horas por un deudor cuyas facturas quizá se retiren es el error que la compuerta evita. Una verificación **negativa** retira la factura de la oferta y la **veta** (`onRetirarFactura(..., "noConfirmada")`); el ejecutivo tiene que **Re-evaluar** — no se recalcula solo (regla 14). El tab estuvo huérfano un tiempo: el componente existía pero no estaba en la barra de pestañas y no había forma de llegar. **Refinado por la regla 59** (22-09-2026): el tab se ve también con la oferta sólo SIMULADA, en modo informativo — lo que esta compuerta protege es la LLAMADA, no la información.
    - **El tab agrupa por DEUDOR y el badge es por FACTURA** (13-09-2026). El veredicto es del deudor —una llamada cubre todas sus facturas— y la lista plana lo contradecía: repetía el chip, la nota y el nombre en cada fila, y no se veía que siete filas eran UNA decisión. Agrupar lo dice sin explicarlo, y de paso deja a la vista lo único que cambia entre facturas, que es el folio y el monto. El badge sigue siendo **por factura** porque la confirmación puede ser **parcial**: ahí las hermanas dejan de coincidir. La cabecera del grupo resume y dice **«n de m por verificar»** cuando están divididas — decir sólo «Req. verif.» escondería que la mitad ya está.
    - **La fila de factura trae los DATOS DEL DOCUMENTO** (14-09-2026): folio · tipo doc. · f. emisión · f. vencimiento · **tasa** · monto · verif., en el mismo orden y con los mismos títulos que la tabla de candidatas, y con cabecera de columnas dentro de cada grupo —sin ella, dos fechas seguidas no dicen cuál es cuál—. Traía sólo folio y monto, y quien está por gastar 3–4 horas llamando al deudor necesita saber qué factura le va a confirmar. **La tasa entra por parámetro** (`tasaDe`): sale del spread del deudor, que el ejecutivo puede haber pisado en la pestaña Negocio, así que recalcularla con el sugerido mostraría el mismo documento con dos precios en la misma pantalla.
    - **El botón «Pre-evaluación» y el menú «Acciones» NO se muestran en Otorgamiento ni en Verificación** (14-09-2026). En esos dos tabs el ejecutivo no arma la oferta: lee lo que la casa decidió y qué falta llamar. Pre-evaluación pertenece a la oferta —«adelanta el otorgamiento de lo que estoy armando»— y ofrecerla dentro del propio tab de Otorgamiento invita a apretarla mirando el resultado que ya produjo; el menú de acciones, que termina la operación, compite con las acciones por criterio y por factura que esos tabs ya traen. Siguen en Negocio.
@@ -45,3 +45,105 @@ timestamp: 2026-09-17T15:29:14Z
     - **Con la unidad arreglada, el predictor sigue mandando al teléfono a casi todos, y la causa ya es DATO y POLÍTICA, no código** (17-09-2026, medido criterio por criterio sobre los 13.302 pares del A10 que tienen facturas en el libro, con tres ofertas: todas las facturas del par, una sola, las del último mes). V03 pasa del 0% al 100% y V09 al 98%. Pero **V04** —que aplica a los DOS segmentos— lo pasa el 28% de los pares PRIME y el 1% de OTROS **aun con una sola factura**: `V04_VENTA_PROM_3M_M` es la venta mensual del par derivada de una ventana de **47 días con ~2 facturas por par** (`p.mm × 30/47` en `GeneradorDatos/datasets/verificacion.js`), así que una factura sola ya vale más que el «promedio mensual». Y **V10** (MM$1.000 pagados en 3 meses) lo pasa el 15% de PRIME y el 5% de OTROS. Por unanimidad (§4.2) quedan «verificados por modelo» el **5,3% de los pares PRIME y ninguno de OTROS**: Giro Express es alcanzable pero raro. No se tocó nada: V04 hace lo que la política dice sobre un archivo donde casi toda relación parece esporádica, y V10 es un umbral de política sobre pares chicos. La perilla estaba en el **generador**, no en el motor, y se movió el mismo día (abajo).
     - **Cerrado el 17-09-2026 en el generador, sin tocar el motor ni la política.** `datasets/verificacion.js` extrapolaba la ventana de 47 días linealmente (`p.mm × 30/47` como venta mensual, `× 90/47` como compra en 3M), o sea trataba una muestra corta como si fuera la relación entera, y sembraba V10 por PAR. Ahora la **factura típica se mide** y la **frecuencia mensual** y la **fracción cedida se modelan por perfil** de la relación —el mismo perfil que decide la recurrencia V05, nunca por debajo del ritmo que la ventana muestra— y **V10 es del DEUDOR**: lo que le pagó al factoring en 3M sumando todos sus cedentes, que es lo que la política pide («evita el falso positivo del deudor que operó una sola vez con Security… para que *sus* estadísticas sean representativas»). Con flujos de RNG propios, para que V01/V02/V05/V06/V07/V08 quedaran byte a byte iguales: sólo cambiaron V03, V04 y V10. Medido con una factura en la oferta: V04 pasa **80% PRIME / 82% OTROS** (antes 28% / 1%) y V10 **90% / 93%** (antes 15% / 5%); «verificados por modelo» **49,8% / 50,3%** (antes 5,3% / 0). Ninguna cifra se colocó respecto de un umbral: son propiedad emergente del perfil. Y se regeneró **sólo el bloque** (`generar.js --solo=VERIFICACION`) porque la cadena A2 → A5 → A2 del generador no tenía punto fijo (cerrado ese mismo día: regla 32).
     - **V10 a nivel DEUDOR, ratificado por el usuario el 17-09-2026** («ratifica V10 a nivel deudor»). Lo pagado al factoring en 3M se suma sobre todos los cedentes del deudor, como dice la política; el generador lo modela así (`V10_MNT_PAGADO_3M_M` es del deudor, no del par) y el motor lee la misma columna. Volver a par era una línea del generador y dejó de ser una opción abierta: no se re-litiga.
+
+53. **LA MESA DE VERIFICACIÓN TRABAJA POR FACTURA, AGRUPADA POR DEUDOR** (22-09-2026, pedido del usuario:
+    «necesito que esta funcionalidad sea la operación, un listado de facturas agrupada por deudor —a través
+    del deudor se pueda acceder a las razones que gatilló la verificación—, pero que el core sea poder marcar
+    si la factura está verificada o no, adjuntar un archivo y agregar una nota»).
+    - **Qué NO cambia: el agrupamiento y de quién son las causas.** La llamada sigue siendo del DEUDOR —una
+      cubre todas sus facturas— y las causas son suyas, así que no se repiten documento a documento: viven en
+      la cabecera del grupo, detrás de un disclosure con sus códigos a la vista. La regla 6 sigue entera; lo
+      que cambia es la **unidad de trabajo**, no la unidad de decisión.
+    - **Qué SÍ cambia: la unidad de trabajo es el documento.** Cada factura trae folio, tipo, las dos fechas,
+      monto, su estado (`por verificar` · `verificada` · `no verificada`) y sus acciones: marcarla, **adjuntar
+      un archivo** y **anotar**. No es una regla nueva del motor: `verificarDeudor` ya escribía factura por
+      factura y la confirmación PARCIAL ya existía —el deudor reconoce unas y otras no—; lo que faltaba era
+      poder resolverlas de a una, que es como ocurre la llamada.
+    - **TRES NIVELES, no uno** (22-09-2026, pedido del usuario). Arriba la **OPERACIÓN** —su número, su fecha
+      (`fechaOportunidad`) y cómo va su verificación completa—, adentro sus **DEUDORES** como cards colapsables
+      iguales a las del detalle, y al abrir una, sus **FACTURAS** con un estado cada una. La mesa listaba
+      deudores sueltos: el verificador llama POR OPERACIÓN —es lo que frena un giro— y tenía que reconstruir a
+      qué operación pertenecía cada fila leyendo el enlace del cliente. El agrupador (`filasVerificacion`) NO
+      cambió: sigue devolviendo una fila por (operación, deudor) y el nivel de arriba se arma en la vista.
+    - **Los contadores van al costado de la razón social, y UN CHIP EN CERO NO SE DIBUJA** (`cuentaVerif` +
+      `chipsVerif`): «Verificadas 2 · No verificadas 3 · Pendientes 0» deja de mostrar el último. El usuario lo
+      pidió para «Pendientes» y vale para los tres: un cero no es un estado, es la ausencia de uno, y tres chips
+      donde dos dicen cero esconden al único que había que leer. La misma función alimenta los dos niveles, para
+      que el de la operación no pueda dejar de cuadrar con la suma de los de abajo.
+    - **LAS DOS DECISIONES PASAN POR EL PANEL LATERAL** (`DrawerVerificacion`, `fixed inset-0 flex justify-end`).
+      Lateral y no centrado porque se registra MIRANDO la lista —qué deudor, qué folio, qué queda pendiente— y un
+      modal centrado tapa justo eso. Y sirve para las dos: el «no verificó» también tiene información que
+      capturar —con quién se habló, POR QUÉ no confirmó (`MOTIVOS_NO_VERIF`), el correo donde lo dice— y hasta
+      acá se resolvía con el sí/no de un diálogo de confirmación, o sea **retirando plata de una operación viva
+      sin dejar un solo dato de por qué**. El ALCANCE lo trae quien lo abre: un folio desde su fila, o todo lo
+      pendiente del deudor desde su cabecera. Si el alcance cubre TODO lo pendiente se usa el escritor del deudor
+      (`onVerificar`/`onNoConfirmar`), que además congela su veredicto de una vez; si es un folio suelto, el del
+      documento. En los dos casos el respaldo se escribe en CADA documento del alcance, porque la evidencia se
+      pregunta desde el folio.
+    - **La fecha de pago vive DENTRO de su check** y se habilita al marcarlo. Estaba como un campo suelto de la
+      grilla de contacto, así que el check podía quedar marcado y la fecha vacía: exactamente el caso que el
+      propio rótulo declara imposible —«sin fecha no hay compromiso que verificar»—. Ahora son un solo dato y se
+      validan juntos (`completo` exige `compromiso`), y el campo es un `type="date"`, no texto libre.
+    - **Sin causas no hay disclosure**: una fila que dice «0 causas que gatillaron la verificación» es ruido con
+      la tipografía de un título.
+    - **«Verificar» en la cabecera del deudor sigue siendo el atajo del caso normal**, y cubre sólo lo que al deudor le queda
+      PENDIENTE: lo ya resuelto documento a documento no se vuelve a tocar. Re-registrar una verificada no
+      cambiaría nada, pero retirar una ya verificada sí, y por eso el alcance se acota en un solo sitio
+      (`soloPendientes`) en vez de en cada llamador.
+    - **LA RETIRADA SIGUE EN LA MESA, y ése fue el hallazgo.** Retirar una factura la saca de `facturasOp`,
+      así que listándolas sólo desde ahí la evidencia de «ésta no la confirmó» **desaparecía de la pantalla
+      justo después de registrarla** — y con todas retiradas, el deudor entero se esfumaba de la mesa aunque
+      su veredicto estuviera congelado, que es lo contrario de lo que la regla 6 pide. Ahora `filasVerificacion`
+      arma `docs` con las de la oferta **y** las vetadas: las retiradas se ven, tachadas, y no suman al monto
+      porque no están en la oferta. Caso **157**, en sus dos formas: una retirada entre facturas vivas, y el
+      deudor con todas retiradas.
+    - **El RESPALDO es del documento** (`repoVerifRespaldo`, `{ nota, adjuntos, por, fecha }` por factura).
+      Va aparte de `repoVerifTel` —que es el hecho de la llamada— porque se escribe en otro momento y por
+      otra razón: el correo del deudor suele llegar antes que la decisión, y el porqué de una no confirmación
+      se anota después de retirarla. Del archivo se guarda la **referencia** (nombre, tipo, tamaño, quién y
+      cuándo), no los bytes: en producción el documento vive en el gestor documental y NEX apunta a él, igual
+      que el respaldo de una excepción de otorgamiento.
+    - **VER-01 no se tocó.** El contrato cuenta llamadas registradas por factura y eso es exactamente lo que
+      la mesa escribe ahora, documento a documento: el gate del giro sigue diciendo lo mismo.
+    - **Lo que la pantalla escondía y sólo se vio al usarla**: marcar y anotar escriben en los repositorios y
+      no en `deals`, así que la lista memoizada por `[deals, tick]` no se enteraba y el KPI no se movía.
+      Retirar sí cambia `deals` —saca la factura de la oferta— y por eso ése se veía y los otros dos no. Se
+      arregla moviendo el tick en las dos acciones; lo midió una sonda de pantalla, no el fuente.
+    - Gate de forma: `regla_53.test.mjs`.
+
+57. **LA NOTA DE UNA VERIFICACIÓN ES RICA Y ACEPTA UNA CAPTURA PEGADA** (`NotaRica`, 22-09-2026, pedido del
+    usuario: «el editor de texto debe ser un editor rich text que permita pegar un screenshot… al pegar el
+    screenshot el sistema igual debe guardarlo como imagen en el file system»). Una verificación telefónica se
+    respalda con lo que se VIO —el correo del deudor, la pantalla del portal, el WhatsApp donde confirma la
+    fecha—, y obligar a guardar esa imagen a un archivo, buscarla y adjuntarla por separado es justo el paso
+    donde la evidencia se pierde.
+    - **Son DOS cosas y no una.** La captura queda **inline** en la nota —que es donde se lee en contexto— y
+      además **baja al disco** (`guardarImagenPegada`), porque el respaldo de un giro se pide fuera de esta
+      pantalla y meses después. Esto es un HTML sin servidor: el único sistema de archivos al que puede escribir
+      es la carpeta de descargas del navegador, así que ahí va, con nombre determinista (`nombreCaptura`) para
+      poder aparear a mano el archivo con el adjunto registrado.
+    - **Y una tercera: entra como ADJUNTO.** La referencia que devuelve el guardado (`{nombre, tipo, tam}`) se
+      suma a la misma lista que lo elegido con el selector, porque aguas abajo el respaldo no distingue de dónde
+      vino el archivo — y es lo que habilita el botón sin tener que declarar «no hay respaldo».
+    - **El texto se pega SIEMPRE PLANO.** Copiar de un correo arrastra su hoja de estilos y la nota termina con
+      tipografías y fondos que no son de esta pantalla.
+    - **Lo que se guarda se vuelve a pintar SANEADO** (`notaSegura` + `NotaLeida`): lista blanca de elementos
+      (`NOTA_TAGS_OK`), ningún atributo sobrevive salvo el `src` de una imagen embebida en `data:` y su `alt`, y
+      el árbol se arma en un `<template>`, que es inerte. No es una precaución teórica: `execCommand` pega lo que
+      haya en el portapapeles y esto se le muestra meses después a quien audita un giro.
+    - **En la bitácora va TEXTO PLANO** (`notaTextoPlano`): una glosa con `<div>` adentro no se lee, y una
+      captura en base64 son cien mil caracteres en una fila de log. La imagen se nombra: `[imagen: archivo.png]`.
+    - **El `innerHTML` se escribe sólo cuando difiere del DOM.** Reescribirlo en cada render mueve el cursor al
+      principio y la nota se digita al revés — el defecto clásico de un `contentEditable` controlado, que no caza
+      ningún gate: sólo se ve tecleando.
+    - Gate de forma: `regla_57.test.mjs`, con sondas. `atob` y `FileReader` entraron a la lista de globales del
+      linter: la lista dice exactamente qué toca esta app.
+
+59. **El tab de Verificación se ve al SIMULAR —informativo—, el chip del deudor dice PRIME y los criterios son del DEUDOR, no de la factura** (22-09-2026, tres pedidos del usuario mirando la pantalla: «cuando se simula debiera habilitarse el tab de Verificación de manera informativa con el detalle de las facturas que se requieren verificar y cuáles no» · «el concepto Lista Blanca ya no se utiliza, prefiero que incluyas ahí el Chip de Prime y la Nota Deudor» · «separa la información de la evaluación de si el deudor requiere verificación de la información de factura; las causas son asociadas al deudor y el quiz de la verificación telefónica a cada factura, pero no los mezcles»). Refina la regla 6 en la pantalla; el predictor no se tocó.
+    - **Lo que la compuerta protege es la LLAMADA, no la INFORMACIÓN.** La regla 6 escondía el tab hasta pre-evaluar o publicar, y el argumento —quemar 3–4 horas por un deudor cuyas facturas quizá se retiren— **justifica no dejar llamar, no dejar a ciegas a quien está armando la oferta**. Saber qué va a haber que verificar es justo lo que el ejecutivo necesita ANTES de comprometer un plazo, que es lo primero que dice la regla 6. Ahora el tab aparece **en cuanto hay oferta simulada** (`deal.simulado`) y con facturas; `verifAccionable` —pre-evaluación, oferta cerrada Y publicada, o etapa desde Aceptada— se calcula **aparte** y el tab recibe `informativo={!verifAccionable}`. **La negación, no `deal.simulado`:** las dos expresiones dicen lo mismo hoy y dejarían de coincidir en cuanto se agregue un tercer camino accionable — y el tab quedaría mudo justo donde hay que trabajar.
+    - **En informativo no se firma nada.** `puedeAccionar = puedeMarcar && !informativo` gatea las DOS acciones que dejan evidencia: registrar la verificación telefónica y retirar la factura que el deudor no confirmó. Un gate que sólo comprobara que el tab aparece al simular pasaría con el defecto peor puesto. Y el modo **se anuncia** (`soloInforma`): un tab de sólo lectura sin cartel se lee como un tab roto, y quien busca el botón que no está reporta un defecto que no existe. El cartel dice las dos mitades —qué trae hoy la pantalla y qué abre la llamada—. `bloqueado` (Giro/Perdida) **no** lo muestra: ahí la llamada ya es historia y decir «la oferta está simulada y todavía se puede editar» sería falso.
+    - **El chip del deudor nombra el SEGMENTO, no la lista de la que salió.** Decía «Lista Blanca» / «Autorizada», y el usuario da el rótulo por retirado. Dice **Prime**, que es la unión Lista Blanca ∪ Deudores Autorizados y es exactamente lo que el predictor usa para recortar el protocolo a 6 criterios. `verifFactura` **propaga `prime`** en sus DOS salidas —la fresca y la congelada; con una sola, el chip desaparecía justo después de la llamada— para que la UI no tenga que volver a comparar contra la cadena retirada. `DEUDOR_LABEL` y `DEUDOR_CHIP` **se eliminaron**: vivían sólo en este tab, y dejarlos habría sido código muerto con el nombre retirado adentro.
+    - **La Nota Deudor va ROTULADA.** Era un número suelto entre el chip y el nombre del deudor: nada decía de qué era. Sin nota en el maestro se muestra **`s/n`**, no `0` —que es la peor nota posible— y en gris. El color lo fija `NOTA_COLOR`, y se retiró la copia local `notaCol` que decía lo mismo: dos copias del mismo indicador se separan a la primera corrección.
+    - **Los criterios V00–V10 son del DEUDOR y viven en el panel del grupo** (`g.v0`, que abre la cabecera). `verifDecision` los calcula UNA vez sobre el conjunto de facturas del par: repetirlos dentro de cada fila mostraba el mismo dato N veces y —esto es lo que el usuario señaló— **sugería que la factura tenía criterios propios**. No los tiene. La tarjeta del veredicto y el segmento suben al mismo panel.
+    - **El quiz telefónico es de la FACTURA**, que es la única pregunta de la verificación que se responde por documento: existencia, recepción conforme y fecha de pago de ESE folio. La fila abre **sólo si hay llamada que mirar** (`tel`) —la pendiente o la ya registrada, que sobrevive al veredicto congelado—: una factura que el modelo dio por verificada no tiene quiz, y su fila no dibuja chevron ni cursor. Ofrecer un panel vacío es peor que no ofrecer nada.
+    - Gate: [`tests/contract/regla_verif_informativa.test.mjs`](../../../tests/contract/regla_verif_informativa.test.mjs) (16 tests, 15 sondas) y los casos **`e2e-59-a`** y **`e2e-59-b`**, que abren la pantalla con la oferta simulada **con la sesión del Ejecutivo de verificación** —con cualquier otra, «no aparece el botón de firmar» es cierto por el permiso y no por la compuerta, y la aserción no vigila nada— y prueban las dos direcciones: informativo sin botones, y pre-evaluado con ellos. No hay caso de suite: `VerificacionTab` es un componente y la suite no monta componentes (`.claude/rules/testing.md`).

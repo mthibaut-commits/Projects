@@ -79,7 +79,7 @@ timestamp: 2026-09-17T15:29:14Z
     - **Lo que esto arregló, medido.** Antes: 51,5 % de los RUT de deudor fuera del rango de empresa y **39,3 % en rango de persona natural**, con razones sociales reales encima —«Clorox Chile S.A.» llevaba `9.710.034-4`—. Después: **100 % en rango de empresa** y los 1.983 RUT del padrón con dígito verificador válido, que es lo que distingue un RUT real de uno escrito a mano.
     - Gate: `tests/contract/padron.test.mjs` (9 tests, 4 sondas negativas). El punto fijo del generador se conserva (`generador.test.mjs`).
 
-47. **EL MILLÓN ES LA ÚLTIMA CAPA: ningún campo, ningún contrato y ningún mensaje lo nombran** (23-09-2026,
+60. **EL MILLÓN ES LA ÚLTIMA CAPA: ningún campo, ningún contrato y ningún mensaje lo nombran** (23-09-2026,
     instrucción del usuario: «Los M$ son siempre visuales, corrige para que las comparaciones sean siempre en $»).
     La regla 9-ter ya decía que una COMPARACIÓN se hace en pesos. Ésta cierra las otras tres puertas por las que
     el millón volvía a entrar: el nombre de un campo, la declaración de un layout y el texto de un mensaje.
@@ -94,7 +94,7 @@ timestamp: 2026-09-17T15:29:14Z
       multiplicaba por mil. Esa última es la peor de las tres: quien implementara la entrega leyendo el layout
       habría enviado cifras **mil veces mayores**, y nada lo habría dicho — un margen de $40.000.000 y uno de
       $40.000.000.000 se ven los dos plausibles en la ficha de una empresa.
-    - ~~**El sufijo `_M` (MILES) sí existe y se queda**~~ — **REEMPLAZADO por la regla 48 al día siguiente**:
+    - ~~**El sufijo `_M` (MILES) sí existe y se queda**~~ — **REEMPLAZADO por la regla 61 al día siguiente**:
       consistente sí, pero consistentemente cuantizado de a $1.000. El texto original se conserva porque explica
       el criterio con el que se decidió, que es lo que la 48 corrige. Decía:
       el generador lo produce en miles, el layout lo dice y el lector lo pasa a pesos antes de formatear. Lo que
@@ -108,9 +108,9 @@ timestamp: 2026-09-17T15:29:14Z
       millones, así que ningún candidato es legítimo. Con su sonda negativa, que planta las dos formas y comprueba
       que multiplicar por MIL no se reporta.
 
-48. **TODO GENERADOR PRODUCE EN PESOS. Ningún activo lleva sufijo de escala** (23-09-2026, instrucción del
+61. **TODO GENERADOR PRODUCE EN PESOS. Ningún activo lleva sufijo de escala** (23-09-2026, instrucción del
     usuario: «todos los generadores que produzcan en pesos, no en miles ni millones, o si no se pierde
-    precisión»). **Reemplaza el punto de la regla 47 que dejaba vivir el sufijo `_M` (MILES)**: era
+    precisión»). **Reemplaza el punto de la regla 60 que dejaba vivir el sufijo `_M` (MILES)**: era
     consistente de punta a punta, sí, pero consistentemente cuantizado de a $1.000.
     - **Lo que se perdía, medido.** Veinte campos de cuatro activos viajaban en miles. Cada uno quedaba
       cuantizado al múltiplo de $1.000 más cercano: un pagaré de $450.678.123 se guardaba como `450678` y
@@ -149,7 +149,7 @@ timestamp: 2026-09-17T15:29:14Z
       donde el sufijo sobrevive sin que nadie lo note— y la línea base **cero** de `auditar_unidades` en
       `auditores.test.mjs`.
 
-49. **LA CARTERA COMERCIAL SE LEE, NO SE INVENTA: fuera los generadores que quedaban dentro de la app**
+62. **LA CARTERA COMERCIAL SE LEE, NO SE INVENTA: fuera los generadores que quedaban dentro de la app**
     (23-09-2026, instrucción del usuario: «saca esos generadores y cuando los implementes, que escalen en
     pesos»). Es la regla núcleo 9 —*el pipeline lee los activos, no los genera*— aplicada al último sitio
     donde seguía sin cumplirse, y lo que la hace urgente es que **no era sólo suciedad: cuatro KPI estaban
@@ -178,6 +178,6 @@ timestamp: 2026-09-17T15:29:14Z
       estaban escritas en miles de millones («245» por 245 B CLP) y el eje del gráfico de zonas las
       rotulaba **«$13 MM»**, que dice millones donde el dato son miles de millones. Ahora se escriben en
       pesos y el eje usa `fmtMM`, el formateador único.
-    - Gate: `regla_49.test.mjs` sobre el texto del fuente —ni `pcRng` ni una lista de competidores dentro
+    - Gate: `regla_62.test.mjs` sobre el texto del fuente —ni `pcRng` ni una lista de competidores dentro
       de `PC_CLIENTES`, y el catálogo sale de `P360`— más la línea base de `auditar_muerto`, que es la que
       obliga a que no quede ningún resto sin referencias.

@@ -33,7 +33,7 @@ timestamp: 2026-09-18T18:10:00Z
     resuelven lo mismo —esperan a que la palabra **`Bienvenido`** aparezca en el texto de la página— y
     son ocho: `run_tests.mjs`, `tests/e2e/_harness.mjs`, `tests/e2e/24_cry_01.e2e.mjs`,
     `capturar_pantallas.mjs`, `capturar_variantes.mjs`, `capturar_tabla_simulada.mjs`,
-    `regenerar_atribuciones.mjs` y `regresion_diferencial.mjs`. Borrarla del fuente **no rompe nada al
+    `regenerar_atribuciones.mjs` y `Regresiones/regresion_diferencial.mjs`. Borrarla del fuente **no rompe nada al
     instante**: cada uno se cuelga los 300 s de su timeout y recién ahí falla, sin decir por qué. Al
     rediseñar la portada la palabra dejó de ser el titular —ahora el titular es el claim del tenant— y
     pasó a ser **el título de la tarjeta**, que además es donde corresponde saludar. Si algún día hay
@@ -73,3 +73,32 @@ timestamp: 2026-09-18T18:10:00Z
     `null` habría descartado la configuración entera y le habría borrado sus perillas. Vale para
     cualquier otro default: **si cambia un valor que ya pudo quedar guardado, sube el esquema**.
 
+
+47. **LA IDENTIDAD DE LA SESIÓN ES UNA SOLA, Y EL SELECTOR DE LA DEMO LA CAMBIA** (21-09-2026, reportado
+    por el usuario: «revisa por qué el ejecutivo de verificación no puede verificar», con la pantalla
+    mostrando **Camila Soto · Ejecutivo de verificación** y las cuatro filas de la mesa diciendo «sólo el
+    Ejecutivo de verificación puede marcarla»).
+    - **El defecto**: el selector de usuario de la demo llamaba a `setUsuario`, que mueve el estado de
+      React, y **no tocaba `SESION`**. Los permisos preguntan por `SESION.usuario`
+      (`puedeVerificarFacturas((SESION && SESION.usuario) || usuario)`), que es el código con que se hizo
+      login y nunca es `null` en la pestaña principal, así que **ganaba siempre** y el `|| usuario` no se
+      consultaba jamás. Todo lo demás de la pantalla —el rótulo de la navbar, las iniciales del avatar,
+      `esEjecutivoSesion`— lee el estado de React, así que la app mostraba a una persona y le preguntaba
+      los permisos a otra. Medido: con el selector en Camila, `SESION.usuario` seguía en `"CR"`,
+      `puedeVerificarFacturas("EV")` daba `true` y `puedeVerificarFacturas(SESION.usuario)` daba `false`.
+    - **El mismo permiso daba respuestas distintas en cada pestaña.** En la pestaña del DETALLE `SESION`
+      es `null` —se llega por un ticket, no por login— así que ahí el `|| usuario` sí aplicaba y Camila
+      **sí** podía marcar. La misma persona, la misma factura, dos respuestas: el tab del detalle dejaba
+      y la mesa no.
+    - **El arreglo va en el selector, no en el permiso**: `suplantarSesion(code)` cambia la identidad de
+      la sesión en curso y `cambiarUsuario` es el ÚNICO sitio que cambia de persona, para que ningún
+      selector futuro mueva una mitad sola. **No reabre la sesión**: los dos relojes —el absoluto y el de
+      inactividad— y el tenant son de la sesión y no de la persona, y reiniciarlos convertiría un cambio
+      de identidad en una sesión eterna. Queda en la **bitácora** («Cambio de identidad (demo)») porque
+      es exactamente lo que un registro de evidencia tiene que poder explicar. El `|| usuario` se queda:
+      es el respaldo de la pestaña del detalle, donde no hay sesión.
+    - **En producción este selector no existe** (ya estaba escrito en el fuente y sigue valiendo): la
+      identidad la fija el token. Un «ver como» para soporte sería del backend, auditado y con el
+      impersonador registrado en cada acción.
+    - Caso **152**, y prueba las dos mitades: que la identidad cambie **y** que los relojes no se
+      reinicien. Gate de forma: `regla_47.test.mjs`.

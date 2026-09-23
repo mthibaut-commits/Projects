@@ -1,6 +1,6 @@
 ---
 type: sesion
-title: "Sesión 2026-09-23 (cierre) — La cartera comercial se lee, no se inventa (regla 49)"
+title: "Sesión 2026-09-23 (cierre) — La cartera comercial se lee, no se inventa (regla 62)"
 description: "Los dos generadores que quedaban dentro de la app sorteaban el volumen del cliente, su competidor y sus «malos deudores». No era sólo suciedad: el volumen salía en una escala que nadie declaraba y cuatro KPI de Reportes lo pasan por fmtMMc, así que mostraban del orden de M$5 donde va la cartera de 500 clientes. Los cuatro campos pasan a leerse del A11 y de la nota de corte; el fallback sintético de 80 empresas se retira entero; y las series de referencia del mercado pasan a pesos"
 tags: [sesion, unidades, generador, regla-49]
 timestamp: 2026-09-23T16:00:00Z
@@ -19,7 +19,7 @@ feature: null
   y fabricaba volumen y SOW. Sin activo, `PC_CLIENTES` queda en `[]`.
 - **Las series de referencia del mercado pasan a PESOS** (`PC_MERCADO`, `PC_SECURITY`, `PC_ZONA`) y el eje
   del gráfico de zonas usa `fmtMM` en vez de rotular a mano.
-- **Regla 49** con su gate propio, `regla_49.test.mjs`, que lee el fuente como texto y mira tres cosas
+- **Regla 62** con su gate propio, `regla_62.test.mjs`, que lee el fuente como texto y mira tres cosas
   dentro del catálogo: que no vuelva a sortear, que lea el A11, y que **el fallback no vuelva**.
 
 ## Decisiones tomadas con el usuario
@@ -42,7 +42,7 @@ feature: null
   en vez de un competidor de relleno: inventar uno habría sido volver al mismo defecto por la puerta de
   atrás.
 - **El gate de invariantes cazó la regla antes de que existiera.** Al escribir el comentario del código
-  cité «regla 49» y `invariantes.test.mjs` falló con «el .jsx cita «regla 49» y esa regla no está en el
+  cité «regla 62» y `invariantes.test.mjs` falló con «el .jsx cita «regla 62» y esa regla no está en el
   índice». Es el orden correcto: la regla se escribe, no se cita y después se busca.
 - **El gate de cifras cazó seis conteos de una sola vez** —reglas de dominio, archivos de contrato en dos
   documentos, gates por regla en otros dos, y los tests del tablero—. Confirma la nota de las sesiones

@@ -1,6 +1,6 @@
 ---
 type: sesion
-title: "Sesión 2026-09-23 (tarde) — Todo generador produce en pesos (regla 48)"
+title: "Sesión 2026-09-23 (tarde) — Todo generador produce en pesos (regla 61)"
 description: "El usuario reemplazó la decisión de la mañana: el sufijo _M (miles) no se queda. Veinte campos de cuatro activos viajaban en miles, cuantizados de a $1.000, y dos de ellos entran en criterios que deciden (C02 y el predictor de verificación). Los cuatro generadores pasan a pesos, veinte multiplicaciones por mil desaparecen del fuente, tres specs suben de versión mayor y el caso 115 se re-ancla a una exigencia más fuerte"
 tags: [sesion, unidades, generador, regla-48]
 timestamp: 2026-09-23T15:00:00Z
@@ -24,7 +24,7 @@ feature: null
   en los sitios que formateaban (`fmtMM(x * 1000)`).
 - **Tres specs suben de versión MAYOR** —A10 a 3.0.0, A11 y A16 a 4.0.0— con la fila del anexo diciendo qué
   hacer si ya se implementó: multiplicar por mil. Los tres CSV de ejemplo migrados.
-- **Regla 48** en `reglas/datos_y_activos.md`, con su fila en `invariantes.md`.
+- **Regla 61** en `reglas/datos_y_activos.md`, con su fila en `invariantes.md`.
 - **Y los dos campos que quedaban en el activo, fuera** (instrucción del usuario a mitad de camino: «si
   nadie lo ocupa, elimínalo»). Medido sobre las **119 claves distintas** del activo quedaban dos con
   nombre de escala y **ninguna con lectores**: `DEUDORES_AUTORIZADOS.LineaSugeridaMM` (599 filas, bloque
@@ -37,7 +37,7 @@ feature: null
 - **El sufijo `_M` no se queda.** Ayer por la mañana lo dejé vivir con el argumento de que era consistente
   de punta a punta. El usuario lo reemplazó: consistente sí, pero **consistentemente cuantizado de a
   $1.000**. Tenía razón, y el argumento que faltaba es el de abajo.
-- **La regla 47 no se reescribe: se marca el punto reemplazado** y se conserva el texto original tachado,
+- **La regla 60 no se reescribe: se marca el punto reemplazado** y se conserva el texto original tachado,
   porque explica **el criterio con el que se decidió**, que es justo lo que la 48 corrige. Es el mismo
   tratamiento que un ADR reemplazado.
 
@@ -71,7 +71,7 @@ feature: null
 - **El peor de los dos campos muertos no era el inútil: era el que mentía.** `RequeridoParaTargetMM`
   guardaba **pesos** (202.175.551) bajo un nombre que dice millones. Nadie lo leía, pero el día que
   alguien lo leyera le creería al nombre y multiplicaría por un millón — que es literalmente el defecto
-  que la regla 47 acababa de cerrar. Un campo que nadie usa y que miente sobre su unidad no es ruido
+  que la regla 60 acababa de cerrar. Un campo que nadie usa y que miente sobre su unidad no es ruido
   inofensivo: es una mina con el seguro puesto.
 - **Un bloque BASE es un punto ciego del generador.** El punto fijo garantiza que los DERIVADOS se
   reproducen; los base se copian y nadie los mira. Por eso el gate nuevo se mide sobre el **archivo** y no

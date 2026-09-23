@@ -3484,7 +3484,7 @@
       && /M\$300/.test(eV09.r.thr);
 
     // (f) EL PAR SALE DEL ACTIVO EN PESOS, medido sobre las filas REALES del A10. Desde el 23-09-2026
-    //     el layout viene en PESOS y sin sufijo de escala (regla 48), así que el valor leído tiene que
+    //     el layout viene en PESOS y sin sufijo de escala (regla 61), así que el valor leído tiene que
     //     ser la celda TAL CUAL: cualquier factor —el ×1.000 que hacía falta cuando el activo venía en
     //     miles, o el ÷1.000 del defecto original— rompe la igualdad. Se compara contra el activo y no
     //     contra un orden de magnitud: un umbral suelto («>= 1e6») lo pasaría también una conversión
@@ -7279,6 +7279,376 @@
     ok("151 la línea del cliente ES la suma de sus líneas, y el deudor al que el comité le asigna una es un RUT real del sistema",
        !!R && Q.consolidadoOk && Q.rutOk && Q.cerradoOk && Q.propiosOk && Q.marcaOk && Q.cuadraOk && Q.excedenteOk,
        `consolidado: ${Q.revisados} clientes, cabecera ≠ Σ aprobado ${Q.malAprob}, ≠ Σ vigente ${Q.malUso} (antes 217 de 224 descuadraban) ${Q.consolidadoOk} · universo de deudores ${Q.universo}: sin RUT ${Q.sinRut}, DV inválido ${Q.dvMalo} (antes 92%), en rango de persona natural ${Q.personaNatural} ${Q.rutOk} · un nombre desconocido devuelve vacío ${Q.cerradoOk} · candidatos del cliente ${Q.rutCli}: ${Q.nPropios} y son los suyos, por volumen ${Q.propiosOk} · la línea del comité queda marcada ${Q.marcaOk} · tras constituir la cabecera sigue siendo la suma (${Q.antesCab} → ${Q.sumaDespues}) ${Q.cuadraOk} · el excedente del techo va al comodín ${Q.excedenteOk}${err ? " · ERROR " + err : ""}`);
+  }
+
+  // ── 152 · LA IDENTIDAD DE LA SESIÓN ES UNA SOLA ────────────────────────────────────
+  // El selector de usuario de la demo movía sólo el estado de React y los permisos preguntan por
+  // `SESION.usuario`: la pantalla mostraba a Camila Soto y el permiso seguía preguntando por quién
+  // había hecho login, así que la mesa le decía «sólo el Ejecutivo de verificación puede marcarla» a la
+  // Ejecutiva de verificación. El caso mide las DOS mitades: que la identidad cambie y que los relojes
+  // de la sesión no se reinicien —cambiar de persona no puede regalar ocho horas de sesión—.
+  {
+    const previa = typeof SESION !== "undefined" ? SESION : null;
+    let r = {};
+    try {
+      abrirSesion("CR", "prueba");
+      const t0 = { expira: SESION.expira, iniciada: SESION.iniciada, tenant: SESION.tenant };
+      const antesPuede = puedeVerificarFacturas(SESION.usuario);
+      suplantarSesion("EV");
+      r.tras = { u: SESION.usuario, puede: puedeVerificarFacturas(SESION.usuario), relojes: SESION.expira === t0.expira && SESION.iniciada === t0.iniciada && SESION.tenant === t0.tenant, suplantado: SESION.suplantado === true };
+      suplantarSesion("CR");
+      r.vuelta = { u: SESION.usuario, puede: puedeVerificarFacturas(SESION.usuario) };
+      // No-ops: el mismo código, un código vacío y sin sesión no rompen ni inventan identidad.
+      const mismo = suplantarSesion("CR");
+      r.noop = mismo.usuario === "CR" && suplantarSesion("").usuario === "CR" && suplantarSesion(null).usuario === "CR";
+      r.antesPuede = antesPuede;
+      // Y el rol se lee de la identidad de la SESIÓN, no del código que la pantalla esté mostrando.
+      r.rol = rolLabel("EV");
+    } catch (e) {
+      r.err = e.message;
+    } finally {
+      SESION = previa;
+    }
+    ok("152 cambiar de usuario cambia la IDENTIDAD de la sesión, no sólo el rótulo, y no reinicia sus relojes",
+       r.antesPuede === false && r.tras && r.tras.u === "EV" && r.tras.puede === true && r.tras.relojes === true && r.tras.suplantado === true
+       && r.vuelta && r.vuelta.u === "CR" && r.vuelta.puede === false && r.noop === true && !r.err
+       && typeof SESION !== "undefined" && SESION === previa,
+       `CR no puede (${r.antesPuede}) → EV «${r.tras && r.tras.u}» puede ${r.tras && r.tras.puede} (${r.rol}), relojes intactos ${r.tras && r.tras.relojes} · de vuelta a «${r.vuelta && r.vuelta.u}» puede ${r.vuelta && r.vuelta.puede} · no-ops ${r.noop} · sesión restaurada${r.err ? " · ERROR " + r.err : ""}`);
+  }
+
+  // ── 153 · EL ATAJO DEL OTORGAMIENTO AUTOMÁTICO NO PASA POR ENCIMA DEL VISADO (OTG-02) ───────
+  // `requiereOtorgamiento` nació antes del motor de reglas: mira si hay deudores «Otro» y si se supera
+  // la línea, y nada más. Una operación de puros deudores Prime y dentro de línea puede tener decenas
+  // de criterios del CLIENTE esperando excepción —el usuario la vio: cartel verde de «otorgamiento
+  // automático, sin intervención de un especialista» con «Criterios por aprobar 38» al lado—, y con
+  // `otorgAuto` la operación avanzaba a «Pendiente Integración» sin que nadie los mirara.
+  {
+    const deal153 = { id: "T-153", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", monto: 30 * MMF,
+                      stage: "otorgamiento", facturasOp: [fac("w1", LB[3], 30)], aceptada: true, firmada: true,
+                      clienteAcepto: true, otorgAuto: true, otorgMotivo: "automatico" };
+    const sinVisar = { visado: {} };
+    const v0 = visadoDeal(deal153, sinVisar);
+    const todoAprobado = {};
+    v0.exc.forEach((e) => { todoAprobado[e.stKey] = "aprobado"; });
+    const visado = { visado: todoAprobado };
+    const manual = { ...deal153, otorgAuto: false, otorgMotivo: "otros" };
+    // (a) El fixture tiene de verdad criterios por resolver y no está bloqueado por un knock out: sin
+    //     esto el caso pasaría por vacuidad el día que el catálogo deje de gatillar excepciones acá.
+    const fixtureOk = v0.exc.length > 0 && v0.excPend.length === v0.exc.length && otorgBloqueado(deal153, sinVisar) === false;
+    // (b) EL ATAJO NO ESTÁ VIGENTE con criterios pendientes, y sí lo está cuando no queda ninguno.
+    const vigenteOk = otorgAutoVigente(deal153, sinVisar) === false
+      && otorgAutoVigente(deal153, visado) === true
+      && otorgAutoVigente(manual, visado) === false          // sin `otorgAuto` no hay atajo que valga
+      && otorgAutoVigente(null, visado) === false;
+    // (c) OTG-02, que es lo que estaba roto: no se completa el otorgamiento con excepciones pendientes,
+    //     TAMPOCO por el atajo. Las dos direcciones, que es lo que un control exige (VER-01 falló años
+    //     por mirarse en una sola).
+    const otg02Ok = otorgamientoCompleto(deal153, sinVisar) === false
+      && otorgamientoCompleto(deal153, visado) === true
+      && otorgamientoCompleto(manual, sinVisar) === false
+      && otorgamientoCompleto(manual, visado) === true;
+    // (d) Y lo que el atajo SÍ significa no se perdió: una operación automática con el visado limpio no
+    //     necesita que nadie apruebe excepciones —la manual sí las necesita aprobadas, y es la misma
+    //     respuesta porque `todoAprobado` las aprobó—.
+    const sentidoOk = otorgAutoVigente({ ...deal153, stage: "cesion" }, visado) === true
+      && otorgamientoCompleto({ ...deal153, stage: "cesion" }, visado) === false; // fuera de Otorgamiento no se completa
+    ok("153 el otorgamiento automático no se salta el visado: con criterios por aprobar no está vigente ni completa la operación (OTG-02)",
+       fixtureOk && vigenteOk && otg02Ok && sentidoOk,
+       `fixture ${fixtureOk} (${v0.exc.length} excepciones, ${v0.excPend.length} pendientes) · atajo vigente ${vigenteOk} (sin visar ${otorgAutoVigente(deal153, sinVisar)} · visado ${otorgAutoVigente(deal153, visado)}) · OTG-02 ${otg02Ok} (auto sin visar ${otorgamientoCompleto(deal153, sinVisar)} · auto visado ${otorgamientoCompleto(deal153, visado)} · manual sin visar ${otorgamientoCompleto(manual, sinVisar)}) · sentido ${sentidoOk}`);
+  }
+
+  // ── 154 · EL CIERRE DEL NEGOCIO LE ESCRIBE A QUIEN TIENE QUE FIRMAR ─────────────────────────
+  // Reporte del usuario, 21-09-2026: «cuando se cierra un negocio no se están enviando los mensajes
+  // a los responsables ni al ejecutivo que tienen responsabilidad de aprobar». Medido: de las dos
+  // puertas a la mesa de otorgamiento sólo avisaba la MANUAL (`avisarPreEval`); la automática —el
+  // cliente firma y la bandeja la toma sola— no llamaba a `hiloEnviar` ni una vez (regla 50).
+  //
+  // Se prueba en las DOS direcciones, que es lo que pide `testing.md` para un control: avisa cuando
+  // hay algo que firmar, y NO avisa cuando no queda nada — un mensaje «no tienes nada que hacer» en
+  // cada operación cursada limpia vacía la campana de significado, y ésas son la mayoría.
+  {
+    let R = null, err = "";
+    const antes = HILOS.length;
+    try {
+      // El destinatario sale del PADRÓN, así que el escenario se arma con un área y un nivel que el
+      // tenant sí tiene. Se pregunta quién los firma en vez de cablear «GG»: si mañana el cargo lo
+      // ocupa otro, el caso sigue midiendo la regla y no el nombre de una persona.
+      const exc = (n, area, nivel) => ({ regla: { n, area, nombre: "Criterio " + n }, nivel, stKey: "R" + n });
+      const deal = { id: "TEST-CIERRE-154", cliente: "Cliente 154 SpA", exec: "CR", monto: 120e6, negocioNum: "154" };
+      const pend = [exc(9001, "comercial", 3), exc(9002, "comercial", 3), exc(9003, "riesgo", 5)];
+      const esperados = new Set(codigosAprobadoresDe(pend));
+      // (a) EL SUPER-ADMIN NO ENTRA: puede firmar todo, así que estaría en cada hilo del sistema.
+      const sinAdminOk = esperados.size > 0 && !esperados.has("ADMIN");
+      // …y los que salen son de verdad los que pueden firmar alguna de las tres.
+      const codigosOk = [...esperados].every((c) => pend.some((x) => puedeAprobarExc(c, x.regla, x.nivel)));
+
+      const h = avisarCierreNegocio(deal, pend, 4);
+      const dests = new Set(h ? h.participantes : []);
+      // (b) LOS RESPONSABLES Y EL EJECUTIVO. Las dos mitades de lo que el usuario reportó.
+      const aprobadoresOk = !!h && [...esperados].every((c) => dests.has(c));
+      const ejecutivoOk = dests.has("CR");
+      // (c) EL REMITENTE ES EL SISTEMA, no el ejecutivo: la firma la hizo el cliente en el portal.
+      //     Importa además porque `hiloEnviar` marca leído SÓLO al remitente: si el aviso saliera de
+      //     parte del ejecutivo, le llegaría ya leído justo a quien dijo que no le llega nada.
+      const msg = h && h.mensajes[h.mensajes.length - 1];
+      const remitenteOk = !!msg && msg.de === CODE_SISTEMA && msg.deNombre === NOMBRE_SISTEMA && !dests.has(CODE_SISTEMA);
+      const noLeidoOk = !!h && [...dests].every((c) => hiloNoLeido(h, c));
+      // (d) EL TEXTO DICE QUÉ FALTA Y QUIÉN LO FIRMA: «3 criterios» no le sirve a nadie para saber
+      //     si le toca. Lleva los tramos (área, nivel) y la verificación pendiente.
+      const tr = tramosDeExcepciones(pend);
+      const textoOk = !!msg && /3 criterio/.test(msg.texto) && /4 factura/.test(msg.texto)
+        && tr.length === 2 && tr[0].n === 2 && tr[0].area === "comercial" && tr[1].n === 1 && tr[1].area === "riesgo"
+        && tr.every((t) => msg.texto.includes("N" + t.niv) && t.quienes.every((q) => msg.texto.includes(q)));
+      // (e) NO SE DUPLICA: volver a cerrar la misma operación reusa el hilo, no abre uno nuevo.
+      const h2 = avisarCierreNegocio(deal, pend, 0);
+      const unSoloHiloOk = h2 === h && HILOS.filter((x) => x.dealId === deal.id).length === 1 && h.mensajes.length === 2;
+      // (f) LA OTRA DIRECCIÓN: sin excepciones y sin verificación pendiente no se escribe nada.
+      const limpio = { ...deal, id: "TEST-CIERRE-154-LIMPIO" };
+      const mudoOk = avisarCierreNegocio(limpio, [], 0) === null && !HILOS.some((x) => x.dealId === limpio.id);
+
+      R = { sinAdminOk, codigosOk, aprobadoresOk, ejecutivoOk, remitenteOk, noLeidoOk, textoOk, unSoloHiloOk, mudoOk,
+            esperados: [...esperados].join(","), participantes: [...dests].join(","), tramos: tr.length };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    }
+    // El hilo es memoria del documento y la suite corre sobre la app viva: se deshace lo plantado.
+    HILOS.length = antes;
+    const Q = R || {};
+    ok("154 al cerrar el negocio el sistema le escribe a los aprobadores de las excepciones pendientes y al ejecutivo, y calla si no queda nada que firmar",
+       !!R && Q.sinAdminOk && Q.codigosOk && Q.aprobadoresOk && Q.ejecutivoOk && Q.remitenteOk && Q.noLeidoOk && Q.textoOk && Q.unSoloHiloOk && Q.mudoOk,
+       `aprobadores esperados [${Q.esperados}] sin ADMIN ${Q.sinAdminOk} y todos pueden firmar ${Q.codigosOk} · participantes [${Q.participantes}]: los aprobadores ${Q.aprobadoresOk} y el ejecutivo ${Q.ejecutivoOk} · remitente el sistema ${Q.remitenteOk} y a todos les llega sin leer ${Q.noLeidoOk} · el texto trae los ${Q.tramos} tramos con quién firma ${Q.textoOk} · cerrar dos veces no abre dos hilos ${Q.unSoloHiloOk} · sin nada pendiente no escribe ${Q.mudoOk}${err ? " · ERROR " + err : ""}`);
+  }
+
+  // ── 155 · EL ESTADO DEL OTORGAMIENTO CRUZA DE PESTAÑA ───────────────────────────────────────
+  // El usuario reportó tres cosas como si fueran tres defectos —el Gerente Comercial ve la bandeja
+  // en cero con criterios suyos en el detalle, no llega ningún mensaje al Centro de mensajería, y el
+  // Ejecutivo de verificación no puede accionar— y era UNO: `PRE_EVAL` y `HILOS` eran `let` de
+  // módulo, o sea memoria de CADA documento, y el detalle es pestaña propia (regla 51, ADR-0012).
+  //
+  // Se prueba lo que la suite SÍ puede probar sin dos pestañas: que el estado se PERSISTE (que es lo
+  // que lo hace sobrevivir al documento) y que solicitar la aprobación de UNA excepción habilita la
+  // bandeja, que es el camino que no avisaba. El aviso al opener lo fija el gate de contrato.
+  {
+    let R = null, err = "";
+    const ID = "TEST-PESTANA-155";
+    const nHilos = HILOS.length;
+    try {
+      // (a) LA PRE-EVALUACIÓN VIVE EN UN REPOSITORIO, no en un objeto de módulo.
+      setPreEval(ID, "CR", true);
+      const enRepo = !!repoPreEval.get(ID);
+      const enAlias = tienePreEval(ID);
+      // …y el repositorio y el alias son LA MISMA tabla: si no, escribir por uno deja al otro ciego,
+      // que es la forma en que este defecto se disfraza de «a veces sí y a veces no».
+      const mismaTabla = PRE_EVAL === repoPreEval.all();
+      const persisteOk = enRepo && enAlias && mismaTabla;
+      // …y apagarla la saca de los dos.
+      setPreEval(ID, "CR", false);
+      const apagaOk = !repoPreEval.get(ID) && !tienePreEval(ID);
+
+      // (b) RECARGAR RELLENA EL MISMO OBJETO. Es lo que permite que una pestaña ya abierta vea lo que
+      //     otra escribió sin que los alias queden apuntando a una tabla vieja.
+      setPreEval(ID, "CR", true);
+      const antesRef = repoPreEval.all();
+      repoPreEval.recargar();
+      const recargaOk = repoPreEval.all() === antesRef && !!repoPreEval.get(ID) && tienePreEval(ID);
+
+      // (c) LOS HILOS SE PERSISTEN. Un hilo nuevo y su mensaje tienen que quedar en el repositorio:
+      //     sin eso, el Centro de mensajería de la otra pestaña no tiene de dónde leerlos.
+      const h = hiloNuevo({ tipo: "general", dealId: ID, cliente: "Cliente 155", asunto: "Prueba 155", participantes: ["CR"], creadoPor: "CR" });
+      hiloEnviar(h, "CR", "mensaje de prueba", null);
+      const guardados = repoHilos.get("lista") || [];
+      const hg = guardados.find((x) => x.dealId === ID && x.asunto === "Prueba 155");
+      const hilosOk = !!hg && hg.mensajes.length === 1 && hg.mensajes[0].texto === "mensaje de prueba";
+
+      // (d) UN HILO QUE LLEGA DE OTRA PESTAÑA SE FUSIONA POR (operación, asunto), NO POR ID: los id se
+      //     numeran con el largo de la lista LOCAL, así que dos pestañas producen dos «H1001».
+      const copiaAjena = JSON.parse(JSON.stringify(hg));
+      copiaAjena.id = "H1001";
+      copiaAjena.mensajes.push({ de: "JG", deNombre: "Otro", texto: "desde la otra pestaña", fecha: "", ts: Date.now(), menciones: [] });
+      recibirHilo(copiaAjena);
+      const delDeal = HILOS.filter((x) => x.dealId === ID && x.asunto === "Prueba 155");
+      const fusionOk = delDeal.length === 1 && delDeal[0].mensajes.length === 2 && delDeal[0].id === h.id;
+
+      // (e) EL CAMINO QUE NO AVISABA: solicitar la aprobación de UNA excepción habilita la bandeja.
+      //     `excEnBandeja` consulta `tienePreEval`, y es lo que decide si el aprobador puede visar.
+      setPreEval(ID, "CR", false);
+      const deal = { id: ID, cliente: "Cliente 155", exec: "CR", stage: "oferta" };
+      const x = { stKey: "R9001", nivel: 2, regla: { n: 9001, nombre: "Criterio 155", area: "comercial" } };
+      const antesBandeja = excEnBandeja(deal);
+      solicitarAprobacionExc(deal, x, "CR", "justifico", [], false);
+      const despuesBandeja = excEnBandeja(deal);
+      const bandejaOk = antesBandeja === false && despuesBandeja === true;
+      // …y al solicitarla se le escribe a quien puede firmarla, por el padrón y no a mano.
+      const hExc = hilosDeDeal(ID).find((y) => y.asunto === `Aprobación de excepciones · ${ID}`);
+      const esperados = codigosAprobadoresDe([x]);
+      const avisaOk = !!hExc && esperados.length > 0 && esperados.every((c) => hExc.participantes.includes(c));
+
+      R = { persisteOk, apagaOk, recargaOk, hilosOk, fusionOk, bandejaOk, avisaOk, esperados: esperados.join(",") };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    }
+    // Se deshace TODO: los repositorios son storage y sobreviven a la corrida.
+    try { repoPreEval.del(ID); repoSolicitudExc.del(ID); repoOtorgEventos.del(ID); } catch (_) { /* puede no existir */ }
+    HILOS.length = nHilos;
+    try { repoHilos.set("lista", HILOS); } catch (_) { /* idem */ }
+    const Q = R || {};
+    ok("155 el estado del otorgamiento cruza de pestaña: la pre-evaluación y los hilos se persisten, y solicitar UNA excepción habilita la bandeja",
+       !!R && Q.persisteOk && Q.apagaOk && Q.recargaOk && Q.hilosOk && Q.fusionOk && Q.bandejaOk && Q.avisaOk,
+       `pre-eval en repositorio y alias sobre la misma tabla ${Q.persisteOk} · apagarla la saca de los dos ${Q.apagaOk} · recargar rellena el MISMO objeto ${Q.recargaOk} · el hilo y su mensaje quedan guardados ${Q.hilosOk} · un hilo ajeno se fusiona por (operación, asunto) y no por id ${Q.fusionOk} · solicitar una excepción habilita la bandeja ${Q.bandejaOk} · y le escribe a [${Q.esperados}] ${Q.avisaOk}${err ? " · ERROR " + err : ""}`);
+  }
+
+  // ── 156 · EL TENANT SE DA DE ALTA, Y SU ADMINISTRADOR TAMBIÉN ───────────────────────────────
+  // Pedido del usuario: un menú para crear el tenant de Security «y/o otro cliente», con su marca y
+  // con el admin que después crea al resto (regla 52). Lo que este caso fija es lo que se rompió al
+  // construirlo: `atribDeRol` decía «la atribución sigue al ROL» y resolvía el super-admin por el
+  // CÓDIGO literal "ADMIN", así que el administrador de un tenant nuevo salía con atribución vacía y
+  // no entraba al padrón — o sea, no podía aprobar nada, que es justo para lo que se lo crea.
+  {
+    let R = null, err = "";
+    const nT = TENANTS.length, nU = USUARIOS_TENANT.length;
+    try {
+      // (a) EL CATÁLOGO DE FACTORINGS ES DE LA PLATAFORMA: su clave no lleva sufijo de tenant.
+      const claveOk = TENANTS_KEY === "nex_tenants" && !TENANTS_KEY.includes(TENANT_ACTUAL);
+      TENANTS.push({ id: "suite156", nombre: "Factoring Suite 156", rut: "1-9", activo: true });
+      guardarTenants();
+      const crudo = JSON.parse(localStorage.getItem(TENANTS_KEY) || "{}");
+      const persisteOk = (crudo.datos || []).some((t) => t.id === "suite156");
+      // …y la higiene: el id se NORMALIZA a minúsculas —igual que en Áreas, y es lo que el formulario
+      // hace antes de validar— pero lo que no tiene forma de tenant se descarta entero, porque ese id
+      // compone las claves de storage de toda su configuración. El tenant base nunca se pierde.
+      const basura = [{ id: "MAYUS", nombre: "x" }, { id: "ok", nombre: "" }, { id: "b u e n o", nombre: "y" }, { nombre: "sin id" }, { id: "suite156", nombre: "Otro con el mismo id" }];
+      escribirVersionado(TENANTS_KEY, "tenants", basura.concat([{ id: "suite156", nombre: "Factoring Suite 156" }]));
+      const releido = cargarTenants();
+      const ids = releido.map((t) => t.id).sort().join(",");
+      const higieneOk = ids === "mayus,security,suite156" && releido.filter((t) => t.id === "suite156").length === 1;
+
+      // (b) EL SUPER-ADMIN ES UN ROL. Un código cualquiera con rol `admin` tiene que cubrir las tres
+      //     áreas en el nivel máximo y contar como super-admin en el padrón.
+      USUARIOS_TENANT.push({ code: "ZQ", nombre: "Admin Suite 156", email: "suite156@x.cl", rol: "admin" });
+      guardarUsuariosTenant();
+      montarUsuariosTenant();
+      ROL_USUARIO.ZQ = "admin";
+      const at = atribDe("ZQ").atrib;
+      const atribOk = at.riesgo === 5 && at.comercial === 5 && at.operaciones === 5;
+      const uPadron = padronAprobadores().usuarios.find((u) => u.code === "ZQ");
+      const padronOk = !!uPadron && uPadron.superAdmin === true;
+      // …y por lo tanto puede firmar una excepción de cualquier área, que es el punto.
+      const firmaOk = ["comercial", "riesgo", "operaciones"].every((area) => puedeAprobarExc("ZQ", { area }, 5));
+      // …y los permisos de visibilidad lo siguen: iban por el código literal y no lo alcanzaban.
+      const permisosOk = puedeVerBitacora("ZQ") && puedeVerMensajeria("ZQ") && puedeVerificarFacturas("ZQ") && esGerenteComercial("ZQ");
+      // …mientras que un usuario SIN rol de atribución sigue sin nada: el permiso no se regala.
+      const noRegalaOk = !puedeVerBitacora("CR") && Object.keys(atribDe("CR").atrib).length === 0;
+
+      // (c) EL CORREO ES LA CREDENCIAL, y resuelve contra la lista VIVA: el admin recién creado entra
+      //     sin recargar. Un correo desconocido no entra.
+      const loginOk = codigoDeCorreo("suite156@x.cl") === "ZQ" && codigoDeCorreo("SUITE156@X.CL ") === "ZQ" && codigoDeCorreo("nadie@x.cl") === null;
+      // …y el elenco de la demo sigue entrando: la lista nueva se suma, no reemplaza.
+      const demoOk = codigoDeCorreo("carla.rivas@security.cl") === "CR";
+
+      R = { claveOk, persisteOk, higieneOk, atribOk, padronOk, firmaOk, permisosOk, noRegalaOk, loginOk, demoOk, ids };
+    } catch (e) {
+      err = String((e && e.message) || e).slice(0, 300);
+    }
+    // Se deshace TODO: esto es storage y sobrevive a la corrida.
+    TENANTS.length = nT;
+    USUARIOS_TENANT.length = nU;
+    delete USERS.ZQ; delete ATRIB_USUARIO.ZQ; delete ROL_USUARIO.ZQ; delete ROLES_DEFAULT.ZQ;
+    try { guardarTenants(); guardarUsuariosTenant(); } catch (_) { /* idem */ }
+    const Q = R || {};
+    ok("156 el tenant se da de alta en la plataforma y su administrador también: el super-admin es un ROL, no el código «ADMIN»",
+       !!R && Q.claveOk && Q.persisteOk && Q.higieneOk && Q.atribOk && Q.padronOk && Q.firmaOk && Q.permisosOk && Q.noRegalaOk && Q.loginOk && Q.demoOk,
+       `la clave del catálogo es de la plataforma ${Q.claveOk} · el alta persiste ${Q.persisteOk} · la higiene normaliza y descarta: quedan [${Q.ids}] de 6 ${Q.higieneOk} · un rol admin cubre las tres áreas en N5 ${Q.atribOk} · y entra al padrón como super-admin ${Q.padronOk} · y puede firmar en las tres ${Q.firmaOk} · los permisos de visibilidad lo siguen ${Q.permisosOk} · y a un ejecutivo no se le regalan ${Q.noRegalaOk} · el correo es la credencial y resuelve en vivo ${Q.loginOk} · el elenco de la demo sigue entrando ${Q.demoOk}${err ? " · ERROR " + err : ""}`);
+  }
+
+  // ── 157 · LA MESA TRABAJA POR FACTURA, Y LA RETIRADA SIGUE EN LA MESA ──────────────────
+  // Pedido del usuario (22-09-2026): el núcleo de la mesa es marcar CADA factura, adjuntar y anotar;
+  // las causas se llegan a través del deudor. El agrupamiento no cambia —la llamada es del deudor y
+  // las causas son suyas (regla 6)—, lo que cambia es la unidad de trabajo. Y con ella aparece el
+  // defecto que el diseño anterior escondía: retirar una factura la saca de `facturasOp`, así que
+  // listándolas sólo desde ahí la evidencia de «esta no la confirmó» desaparecía de la pantalla.
+  {
+    const deudorTel157 = TODOS_LB.map((r) => ({ r, v: verifFactura(fac("x", r, 10), { id: "T-157", rutEmisor: "76.111.111-1" }) })).find((x) => x.v.est === "tel");
+    if (!deudorTel157) { ok("157 la mesa trabaja por factura: cada documento trae su estado y su respaldo, y la retirada sigue en la mesa", false, "ningún deudor de prueba requiere verificación"); }
+    else {
+      const f1 = fac("f1", deudorTel157.r, 30), f2 = fac("f2", deudorTel157.r, 20), f3 = fac("f3", deudorTel157.r, 10);
+      const deal157 = { id: "T-157", rutEmisor: "76.111.111-1", cliente: "Cliente de prueba", facturasOp: [f1, f2, f3] };
+      const fila = (st) => (filasVerificacion([deal157], st) || []).find((x) => x.rutDeudor === deudorTel157.r);
+
+      // (a) Cada documento trae su propio estado, y el del DEUDOR es el resumen: mientras quede uno
+      //     pendiente, la fila está pendiente —es lo que falta hacer—.
+      const f0 = fila({ tel: {}, vetadas: {} });
+      const unaOk = fila({ tel: { "T-157": { [f1.id]: 1 } }, vetadas: {} });
+      const porDocOk = !!f0 && f0.docs.length === 3 && f0.docs.every((d) => d.estado === "pendiente") && f0.estado === "pendiente" && f0.nPend === 3
+        && !!unaOk && unaOk.docs.filter((d) => d.estado === "verificada").length === 1 && unaOk.nPend === 2 && unaOk.estado === "pendiente";
+
+      // (b) Con TODAS registradas, el deudor queda verificado.
+      const todas = fila({ tel: { "T-157": { [f1.id]: 1, [f2.id]: 1, [f3.id]: 1 } }, vetadas: {} });
+      const todasOk = !!todas && todas.estado === "verificada" && todas.nPend === 0 && todas.docs.every((d) => d.estado === "verificada");
+
+      // (c) LA RETIRADA SIGUE EN LA MESA. Se simula el estado real: la factura sale de `facturasOp`
+      //     —eso hace `retirarFacturaOferta`— y queda en el veto. Antes desaparecía de la pantalla.
+      const dealSin = { ...deal157, facturasOp: [f1, f2] };
+      const conVeto = { tel: { "T-157": { [f1.id]: 1 } }, vetadas: { "T-157": { [f3.id]: { folio: f3.folio, monto: f3.monto, deudor: f3.deudor, rutRecep: f3.rutRecep } } } };
+      const fv = (filasVerificacion([dealSin], conVeto) || []).find((x) => x.rutDeudor === deudorTel157.r);
+      const retiradaOk = !!fv && fv.docs.length === 3
+        && (fv.docs.find((d) => d.id === f3.id) || {}).estado === "no_verificada"
+        && fv.nVet === 1 && fv.facturas.length === 2
+        // y NO suma al monto: no está en la oferta
+        && mm(fv.monto) === 50;
+
+      // (d) Y con TODAS retiradas el deudor no se esfuma: su fila es la evidencia de lo que pasó.
+      const dealVacio = { ...deal157, facturasOp: [] };
+      const todoVetado = { tel: {}, vetadas: { "T-157": {
+        [f1.id]: { folio: f1.folio, monto: f1.monto, deudor: f1.deudor, rutRecep: f1.rutRecep },
+        [f2.id]: { folio: f2.folio, monto: f2.monto, deudor: f2.deudor, rutRecep: f2.rutRecep },
+        [f3.id]: { folio: f3.folio, monto: f3.monto, deudor: f3.deudor, rutRecep: f3.rutRecep } } } };
+      const fz = (filasVerificacion([dealVacio], todoVetado) || []).find((x) => x.rutDeudor === deudorTel157.r);
+      const noSeEsfumaOk = !!fz && fz.docs.length === 3 && fz.estado === "no_verificada" && fz.nVet === 3 && mm(fz.monto) === 0;
+
+      // (e) EL RESPALDO viaja con el documento, no con el deudor: es lo que se adjunta y se anota por
+      //     factura, y tiene que poder leerse desde la fila del documento.
+      const conResp = fila({ tel: {}, vetadas: {}, respaldo: { "T-157": { [f2.id]: { nota: "El deudor pide el AEC", adjuntos: [{ nombre: "correo.eml", tam: 2048 }], por: "Camila Soto", fecha: "22-09-2026 10:00" } } } });
+      const d2 = conResp && conResp.docs.find((d) => d.id === f2.id);
+      const respaldoOk = !!d2 && !!d2.respaldo && d2.respaldo.adjuntos.length === 1 && /AEC/.test(d2.respaldo.nota)
+        && (conResp.docs.find((d) => d.id === f1.id) || {}).respaldo === null;   // y no se contagia
+
+      // (f) La función sigue siendo PURA: el estado entra y no se lee el del navegador.
+      const puraOk = JSON.stringify((fila({ tel: {}, vetadas: {} }) || {}).docs.map((d) => d.estado)) === JSON.stringify(["pendiente", "pendiente", "pendiente"]);
+
+      ok("157 la mesa trabaja por factura: cada documento trae su estado y su respaldo, y la retirada sigue en la mesa",
+         porDocOk && todasOk && retiradaOk && noSeEsfumaOk && respaldoOk && puraOk,
+         `por documento ${porDocOk} (3 pendientes → 1 verificada, deudor sigue pendiente) · todas ${todasOk} · retirada visible ${retiradaOk} (${fv ? fv.docs.length : 0} docs, ${fv ? fv.nVet : 0} vetada, monto ${fv ? mm(fv.monto) : "-"}) · el deudor no se esfuma ${noSeEsfumaOk} · respaldo por documento ${respaldoOk} · pura ${puraOk}`);
+    }
+  }
+
+  // ── 158 · MIENTRAS SE SIMULA ES UN PRONÓSTICO; AL PUBLICAR SE EXIGE ────────────────────
+  // Pedido del usuario (22-09-2026): «al simular muestra el tab de verificación pero con el badge en
+  // morado; cuando el ejecutivo envíe a comité y publicar se debe empezar a solicitar las acciones de
+  // otorgamiento y verificación, por lo que los badges son en rojo». El color no es decoración: dice si
+  // eso ya es trabajo de alguien. Se prueba en las DOS direcciones y en el borde —cerrada sin comunicar—,
+  // porque publicar son dos hechos y con uno solo la casa todavía no se comprometió con el cliente.
+  {
+    const enSimulacion = { stage: "oferta" };
+    const cerradaSinComunicar = { stage: "oferta", ofertaCerrada: true };
+    const publicada = { stage: "oferta", ofertaCerrada: true, ofertaComunicada: true };
+    const porNegocio = { stage: "oferta", negocioNum: "N-158", ofertaComunicada: true };
+    const antesOk = exigeAcciones(null) === false
+      && exigeAcciones(enSimulacion) === false
+      && exigeAcciones(cerradaSinComunicar) === false         // cerrar es interno: todavía no se exige
+      && exigeAcciones({ stage: "prospeccion" }) === false;
+    const despuesOk = exigeAcciones(publicada) === true && exigeAcciones(porNegocio) === true;
+    // Y desde la firma en adelante se exige siempre, publicada o no: la operación ya no vuelve sola.
+    const posteriores = ["aceptadas", "cesion", "otorgamiento", "giro"];
+    const etapasOk = posteriores.every((st) => exigeAcciones({ stage: st }) === true)
+      && ["prospeccion", "oferta", "perdida"].every((st) => exigeAcciones({ stage: st }) === false);
+    // Es EXACTAMENTE `ofertaPublicada` antes de la firma: si divergieran, el tab de Verificación y su
+    // badge dirían cosas distintas sobre la misma operación.
+    const mismoCriterioOk = [enSimulacion, cerradaSinComunicar, publicada, porNegocio].every(
+      (d) => exigeAcciones(d) === ofertaPublicada(d),
+    );
+    ok("158 mientras se simula los pendientes son un pronóstico; al publicar la oferta pasan a exigirse",
+       antesOk && despuesOk && etapasOk && mismoCriterioOk,
+       `antes ${antesOk} (simulando y cerrada-sin-comunicar no exigen) · al publicar ${despuesOk} · etapas posteriores ${etapasOk} · mismo criterio que ofertaPublicada ${mismoCriterioOk}`);
   }
 
   console.log(out.join("\n"));

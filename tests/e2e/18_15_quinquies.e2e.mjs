@@ -172,7 +172,14 @@ export const casos = [
         // ── AUTOMÁTICA ──
         const A = await abrirDocumento(pagina, ID_AUTO);
         if (JSON.stringify(A.secciones) !== JSON.stringify(SECCIONES)) throw new Error("las secciones no son las cinco de DocSec en su orden: " + JSON.stringify(A.secciones));
-        if (!/Entró sola al cerrar la oferta \(API 1\)/.test(A.cabecera)) throw new Error("la cabecera no dice que entró sola por API 1: " + A.cabecera.slice(0, 200));
+        // La cabecera distingue las DOS procedencias: la que entró sola al cerrar la oferta y la que
+        // alguien armó en el asistente. El texto cambió el 21-09-2026 a pedido del usuario («generado
+        // automáticamente a partir del curse comercial»), así que el patrón se re-ancla en lo que la
+        // frase AFIRMA —que fue automática— y se exige además que NO diga lo contrario: un gate que
+        // sólo buscara «automáticamente» pasaría con las dos cabeceras iguales, que es justo el
+        // defecto que esta comprobación existe para impedir.
+        if (!/autom[áa]tica|autom[áa]ticamente/i.test(A.cabecera)) throw new Error("la cabecera no dice que la solicitud se generó automáticamente: " + A.cabecera.slice(0, 200));
+        if (/asistente/i.test(A.cabecera)) throw new Error("la cabecera de la AUTOMÁTICA dice que se armó en el asistente: " + A.cabecera.slice(0, 200));
         // Registro inyectado, no re-derivado: los datos que hoy no existen tienen que estar en el documento.
         const marcas = ["Deudor Sonda Alfa", "99.999.999-9", iny.esperado.clpA, "N° 48123 · OP-15Q-SONDA", TS_AUTO, "Deudor Sonda Beta", "sin RUT"];
         const noEstan = marcas.filter((m) => !A.texto.includes(m));

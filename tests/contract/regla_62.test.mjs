@@ -1,4 +1,4 @@
-/* Regla 49 · LA CARTERA COMERCIAL SE LEE, NO SE INVENTA.
+/* Regla 62 · LA CARTERA COMERCIAL SE LEE, NO SE INVENTA.
    `PC_CLIENTES` sorteaba con `pcRng` el volumen del cliente, su competidor y sus «malos deudores», y el
    volumen salía además en una escala que nadie declaraba: cuatro KPI de Reportes lo pasan por `fmtMMc`
    —que divide por un millón— y mostraban del orden de M$5 donde va la cartera entera.
@@ -38,7 +38,7 @@ export function fallos(src) {
   return out;
 }
 
-test("la cartera comercial se lee de los activos y no se sortea (regla 49)", () => {
+test("la cartera comercial se lee de los activos y no se sortea (regla 62)", () => {
   assert.deepEqual(fallos(jsx), []);
 });
 

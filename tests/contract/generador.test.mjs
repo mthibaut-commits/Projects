@@ -62,7 +62,7 @@ test("AECSYNC se genera sólo del A1 y de la intención declarada: sin el A2 ni 
   assert.ok(!dependeDe(cesiones.generar, entrada, ["AECSYNC", "SHARE_OF_WALLET"]), "cesiones.js lee el A2 anterior o el A5: es el bucle A2 → A5 → A2 otra vez");
 });
 
-/* Regla 48: ningún activo lleva sufijo de escala. Los bloques DERIVADOS se arreglan en su generador,
+/* Regla 61: ningún activo lleva sufijo de escala. Los bloques DERIVADOS se arreglan en su generador,
    pero los BASE se copian tal cual desde el activo de entrada y ninguna corrida los alcanza — por eso
    existe `sanear_campos_muertos.js` y por eso esto se mira sobre el ARCHIVO y no sobre el código. Se
    miden los NOMBRES de campo del activo, que es donde el sufijo sobrevive sin que nadie lo note: al
@@ -72,7 +72,7 @@ export const ESCALA = /(?:MM|_M)$|miles|millones/i;
 export const camposConEscala = (texto) =>
   [...new Set([...texto.matchAll(/"([A-Za-z_][A-Za-z0-9_]*)":/g)].map((m) => m[1]))].filter((c) => ESCALA.test(c)).sort();
 
-test("ningún campo del activo nombra una escala: todo monto va en pesos (regla 48)", () => {
+test("ningún campo del activo nombra una escala: todo monto va en pesos (regla 61)", () => {
   const txt = readFileSync(join(RAIZ, "datos_inyectados.js"), "utf8");
   assert.deepEqual(camposConEscala(txt), [],
     "un campo del activo nombra miles o millones. Si es de un bloque derivado, arréglalo en su generador; si es BASE, va en `sanear_campos_muertos.js`");

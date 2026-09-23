@@ -1,7 +1,7 @@
 ---
 type: sesion
-title: "Sesión 2026-09-23 — El millón es la última capa (regla 47)"
-description: "El usuario pidió que las comparaciones fueran siempre en pesos. Medido: ninguna comparación de la lógica estaba en millones —eso lo cerraron el 14-09 y el 17-09—, pero quedaban cuatro puertas abiertas: un mensaje al cliente que multiplicaba por un millón, tres layouts que declaraban campos en MM$ (uno de ellos contradiciendo a su propio generador por mil), y una notación fuera de la escala única. Regla 47, con auditar_unidades cableado y su patrón (d)"
+title: "Sesión 2026-09-23 — El millón es la última capa (regla 60)"
+description: "El usuario pidió que las comparaciones fueran siempre en pesos. Medido: ninguna comparación de la lógica estaba en millones —eso lo cerraron el 14-09 y el 17-09—, pero quedaban cuatro puertas abiertas: un mensaje al cliente que multiplicaba por un millón, tres layouts que declaraban campos en MM$ (uno de ellos contradiciendo a su propio generador por mil), y una notación fuera de la escala única. Regla 60, con auditar_unidades cableado y su patrón (d)"
 tags: [sesion, unidades, contrato, regla-47]
 timestamp: 2026-09-23T14:00:00Z
 feature: null
@@ -30,7 +30,7 @@ feature: null
     layout habría enviado cifras **mil veces mayores**, y nada lo habría dicho.
 - **La notación**: el explicador de criterios rendía los umbrales como `$20M`, que es exactamente la forma
   en que se veía la unidad rota del 14-09 («M$100» salía como «$100M»). Ahora rinde `M$20`.
-- **Regla 47** en `reglas/datos_y_activos.md`, con su fila en `invariantes.md`. Los tres specs suben a
+- **Regla 60** en `reglas/datos_y_activos.md`, con su fila en `invariantes.md`. Los tres specs suben a
   **3.0.0** —es un cambio de contrato: quien implementó contra la versión anterior queda equivocado—, que
   es la primera vez que el versionado del 21-09 se usa para lo que existe.
 

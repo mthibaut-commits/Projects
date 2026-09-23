@@ -57,7 +57,15 @@ export function auditarRegla40(src) {
   // 6 · EL CONTADOR CUENTA LAS FILAS QUE LA TABLA DIBUJA. Las dos salen de la misma función pura, o
   //     vuelven a contradecirse: medido, el tab decía 262 sobre una tabla de 307.
   if (!/^function agruparInboundPorCliente\(eventos, asignar\) \{/m.test(src)) fallos.push("no existe `agruparInboundPorCliente` de nivel módulo: el contador y la lista tienen que salir de la misma función");
-  if (!/const inboundFilas = useMemo\(\(\) => \(showInbound \? agruparInboundPorCliente\(streamFeed, asignarEjecutivo\)\.length : 0\)/.test(can)) fallos.push("el contador de «Todos» no cuenta las filas agrupadas: contar facturas dice 262 sobre una tabla de 307");
+  // El contador de «Todos» exige ahora DOS cosas, y la segunda se sumó el 21-09-2026 con el rol
+  // `inbound`: que cuente FILAS AGRUPADAS (contar facturas decía 262 sobre una tabla de 307) y que
+  // cuente las que ESTE usuario ve. Contaba `streamFeed` entero mientras la lista filtraba por rol,
+  // así que un ejecutivo leía un total con filas de otras carteras que su tabla nunca le mostraba:
+  // el mismo desacuerdo contador/tabla que esta regla corrigió, en el otro sentido.
+  if (!/const inboundMiasFilas = useMemo\(\s*\(\) => agruparInboundPorCliente\(streamFeed\.filter\(ofOtrasVisible\), asignarEjecutivo\)\.length,/.test(can))
+    fallos.push("el contador del inbound no cuenta las filas agrupadas que el rol puede ver: contar facturas dice 262 sobre una tabla de 307");
+  if (!/const inboundCount = showInbound \? inboundMiasFilas : 0;/.test(can))
+    fallos.push("el contador de «Todos» no sale del mismo filtro por rol, o perdió la compuerta del toggle Inbound: con el toggle apagado la tabla no dibuja ninguna fila del stream");
   if (!/count: directorio \? 0 : inboundMiasFilas/.test(src)) fallos.push("el contador de «Otras Empresas» no cuenta las filas agrupadas que su pestaña dibuja");
   if (!/streamAgrupadoCliente = \(soloMias = true\) => agruparInboundPorCliente\(/.test(can)) fallos.push("la lista de la tabla ya no usa `agruparInboundPorCliente`: contador y lista podrían divergir");
   if (/streamComoFilas/.test(src)) fallos.push("vuelve `streamComoFilas`: apilaba una fila POR FACTURA en «Todos» mientras la pestaña agrupaba por cliente — la misma información en dos formas");
@@ -82,7 +90,9 @@ const MUTANTES = {
   "la bandeja deja de mostrarlo": { src: jsx.replace("      {recortadas.total > 0 && (", "      {false && ("), re: /no muestra cuántas facturas salieron/ },
   "el tab pierde su explicación": { src: jsx.replace("      tip: `Clientes con facturas sin clasificar que hay AHORA en la Bandeja Inbound", "      tip: `Otras"), re: /no explica en su tooltip que es una VENTANA/ },
   "los tabs dejan de dibujar su tooltip": { src: jsx.replace('title={f.tip || "Filtrar oportunidades"}', 'title="Filtrar oportunidades"'), re: /no dibujan el tooltip propio/ },
-  "el contador vuelve a contar facturas": { src: jsx.replace("const inboundFilas = useMemo(() => (showInbound ? agruparInboundPorCliente(streamFeed, asignarEjecutivo).length : 0)", "const inboundFilas = useMemo(() => (showInbound ? streamFeed.length : 0)"), re: /no cuenta las filas agrupadas/ },
+  "el contador vuelve a contar facturas": { src: jsx.replace("agruparInboundPorCliente(streamFeed.filter(ofOtrasVisible), asignarEjecutivo).length", "streamFeed.filter(ofOtrasVisible).length"), re: /no cuenta las filas agrupadas/ },
+  "el contador de «Todos» vuelve a contar el stream entero": { src: jsx.replace("const inboundCount = showInbound ? inboundMiasFilas : 0;", "const inboundCount = showInbound ? agruparInboundPorCliente(streamFeed, asignarEjecutivo).length : 0;"), re: /no sale del mismo filtro por rol/ },
+  "el contador pierde la compuerta del toggle": { src: jsx.replace("const inboundCount = showInbound ? inboundMiasFilas : 0;", "const inboundCount = inboundMiasFilas;"), re: /compuerta del toggle Inbound/ },
   "reiniciar arrastra la cuenta": { src: jsx.replace("setBandejaRecortadas({ total: 0, conDueno: 0 });", ""), re: /no pone en cero lo recortado/ },
 };
 
