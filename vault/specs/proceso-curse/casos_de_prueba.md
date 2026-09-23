@@ -1,20 +1,21 @@
 ---
 type: plan
 title: "Casos de prueba del proceso de curse"
-description: "Un caso de prueba por criterio de aceptación de las 42 historias del proceso de curse, en las dos direcciones cuando el criterio es un control: qué caso e2e o de la suite ya lo protege, y para los nuevos la precondición exacta sobre el harness de tests/e2e, los pasos con selector por rol/texto/title, el resultado observable y el esbozo del archivo; con las decisiones del usuario del 22-09-2026 aplicadas: las decisiones cerradas dejan sólo la lectura elegida, las por confirmar conservan las dos con la pregunta exacta, y las historias que las decisiones crean tienen su caso"
+description: "Un caso de prueba por criterio de aceptación de las 42 historias del proceso de curse, en las dos direcciones cuando el criterio es un control: qué caso e2e o de la suite ya lo protege, y para los nuevos la precondición exacta sobre el harness de tests/e2e, los pasos con selector por rol/texto/title, el resultado observable y el esbozo del archivo; con las decisiones del usuario del 22 y del 23-09-2026 aplicadas: cada decisión cerrada deja sólo la lectura elegida (desde el 23-09-2026 no queda ninguna por confirmar) y las historias que las decisiones crean tienen su caso"
 tags: [plan, proceso-curse, casos-de-prueba, playwright, e2e, suite, gaps, decisiones]
 timestamp: 2026-09-23T12:00:00Z
 ---
 
 # Casos de prueba del proceso de curse
 
-**Fecha:** 23-09-2026 (con las decisiones del usuario del 22-09-2026 aplicadas). Insumos:
+**Fecha:** 23-09-2026 (con las decisiones del usuario del 22 y del 23-09-2026 aplicadas). Insumos:
 `vault/specs/proceso-curse/historias_usuario.md` (HU-01 … HU-42 y sus CA-k), `Regresiones/Gaps_Proceso_Curse_2026-09-22.md`
 (G-01 … G-36, D1 … D6, §4.1 «lo que la capa e2e cubre hoy»), las decisiones del usuario en
 `vault/sesiones/2026-09-22_mesa_por_operacion_y_nota_rica.md` §8 y los ADR que las fijan (ADR-0013 evento de evaluación ·
 ADR-0014 cedida a un factoring ajeno · ADR-0015 el comité que rechaza retira y reabre · ADR-0016 «ya no aplica desde la
 versión N» · ADR-0017 con comité el giro es Normal · ADR-0018 la verificación fallida marca y avisa, el ejecutivo retira y
-vuelve a publicar), el harness `tests/e2e/_harness.mjs` + `correr.mjs` y los 30 casos e2e
+vuelve a publicar · ADR-0019 al corte la oportunidad sin oferta se elimina y la que tiene oferta no se toca), el harness
+`tests/e2e/_harness.mjs` + `correr.mjs` y los 30 casos e2e
 de los 17 archivos `tests/e2e/*.e2e.mjs`.
 
 Cómo se lee:
@@ -28,17 +29,20 @@ Cómo se lee:
   texto (`tests/contract/`, siempre con sonda negativa).
 - **Cobertura actual** cita el id e2e o el número de la suite que YA verifica el criterio —comprobado contra lo que
   ese caso verifica, no contra su título— o dice **NUEVO**. «Parcial» nombra qué falta.
-- **Estado de las decisiones (22-09-2026).** Una decisión cerrada deja en el CP **sólo la lectura elegida** y la
+- **Estado de las decisiones (23-09-2026).** Las seis están cerradas y cada CP trae **sólo la lectura elegida**; la
   descartada se retira: **D1** cerrada (B con la precisión: el gesto es explícito y es UN evento que corre los cinco
-  motores, ADR-0013), **D2** cerrada (no hay bloqueo por deudor; M-18 redefinida, ADR-0015), **D4** cerrada (retirar Y
-  reabrir, ADR-0015), **D6** cerrada (A con una precisión: la cedida a un factoring ajeno, ADR-0014), y **D2 cerrada del
-  todo el 23-09-2026** (ADR-0018: la verificación fallida marca la operación con un issue y avisa al ejecutivo; el
-  ejecutivo retira, re-simula y vuelve a publicar para una nueva firma). Lo que sigue
-  **por confirmar** conserva las dos lecturas y lleva la pregunta exacta: el **destino** de la no gestionada al corte (D3:
-  ¿eliminar o reabrir?), la **unidad** de la verificación (D5 en M-22: ¿el deudor?), si el **acuse** participa del filtro
-  (M-01) y qué significa «**el cliente simula**» (M-13). Un CP que hoy prueba el retiro automático por «No verificar»
+  motores, ADR-0013; el 23-09-2026, el gesto es del ejecutivo —«el cliente simula» es una forma de hablar del modelo—),
+  **D2** cerrada (no hay bloqueo por deudor; M-18 redefinida, ADR-0015) y cerrada del todo el 23-09-2026 (ADR-0018: la
+  verificación fallida marca la operación con un issue y avisa al ejecutivo; el ejecutivo retira, re-simula y vuelve a
+  publicar para una nueva firma), **D3** cerrada (el reloj el 22-09-2026; el 23-09-2026, ADR-0019: la oportunidad sin
+  oferta se elimina al corte y el inbound la re-origina con id propio, y la que tiene oferta no se toca; CP-021 sin
+  caso), **D4** cerrada (retirar Y reabrir, ADR-0015), **D5** cerrada del todo el 23-09-2026 (M-22: la unidad de la
+  verificación es el deudor; CP-048 sin caso) y **D6** cerrada (A con una precisión: la cedida a un factoring ajeno,
+  ADR-0014). Desde el 23-09-2026 no queda nada **por confirmar**: M-01 (el acuse del DTE se muestra y no filtra,
+  CP-010) y M-28 (la errata del modelo: la solicitud al comité sale sólo sin línea suficiente; CP-070 sin caso) se
+  respondieron ese día. Un CP que hoy prueba el retiro automático por «No verificar»
   como conducta vigente lleva «**vigente hoy · cambia con ADR-0018: pasa a la dirección contraria**»: se escribe primero
-  fijando lo vigente y se da vuelta, con el mismo id, en el commit del ADR. Lo que el usuario dio por bueno tal como está queda **implementado (definición ajustada 22-09-2026)**;
+  fijando lo vigente y se da vuelta, con el mismo id, en el commit del ADR. Lo que el usuario dio por bueno tal como está queda **implementado (definición ajustada)**, con la fecha de su respuesta;
   lo que pidió implementar conserva su cobertura medida y suma «→ **decidido: implementar**» con su ADR.
 - Regla de la casa: la evidencia es la definición. Reglas por número, casos por número o id, condiciones del fuente
   por su nombre, secciones de spec por §. Ningún selector por clase de Tailwind (`tr.pl-row` y `header nav button`
@@ -62,8 +66,10 @@ Cómo se lee:
   CP-132 es NUEVO: su mitad de la pérdida —retirar la última pierde con causa— vale hoy y con el ADR, y su mitad de la
   marca —marcar no pierde— nace con ADR-0018), y **CP-138 … CP-142** son los casos que ADR-0018 crea (marcar no retira y deja el issue; el aviso al ejecutivo en
   Mensajería; el ejecutivo retira, re-simula y publica → firma revocada y versión nueva; la retirada no se incorpora; el
-  botón del detalle tampoco retira). Un id cuya lectura quedó **descartada** por
-  una decisión (CP-014, 029, 032, 043, 062, 097, 130) queda sin caso, con la decisión que lo retiró, y no se reutiliza.
+  botón del detalle tampoco retira), y **CP-143** es la dirección que bloquea del corte del día que ADR-0019 crea (la
+  oportunidad que recibe oferta justo antes del corte no se elimina y la que sigue sin oferta sí) y va en la sección de
+  HU-09. Un id cuya lectura quedó **descartada** por una decisión (CP-014, 021, 029, 032, 043, 048, 062, 070, 097, 130)
+  queda sin caso, con la decisión que lo retiró, y no se reutiliza.
 
 ---
 
@@ -150,16 +156,16 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Criterio**: CA-4 de HU-03 · **Dirección**: positiva (la medición no se pierde) · **Capa**: suite. · **Cobertura actual**: **caso 99** (el mix se mide sobre AECSync y se inyecta en el A11) y **caso 105** (la columna nombra a los 4 mayores). Con la decisión (ADR-0014) se vuelven a correr sin cambio: son la dirección que protege —excluir del inbound no borra la medición del SOW—.
 - **Precondición y pasos**: los de los casos 99 y 105. · **Resultado esperado**: sin cambio.
 
-## HU-04 · Las aceptaciones de DTESync son una bandera del DTE (decidido el 22-09-2026; por confirmar si participan del filtro)
+## HU-04 · Las aceptaciones de DTESync son una bandera del DTE (decidido el 22-09-2026: el dato; el 23-09-2026: se muestra y no filtra)
 
-### CP-010 [por confirmar] · «Sin acuse» no es candidata; con acuse sí
-- **Criterio**: CA-2 de HU-04 (por confirmar: el acuse en el filtro) · **Dirección**: negativa y positiva · **Capa**: suite. · **Cobertura actual**: NUEVO. El dato quedó decidido el 22-09-2026 («las aceptaciones son parte de las banderas de DTE»: el A1, el layout y el generador la traen, G-01, sin ADR) · **por confirmar**: ¿el acuse participa del filtro de candidatura o sólo se muestra? Este caso es el que se escribe si participa; si sólo se muestra, la aserción pasa a ser el rótulo del acuse en la fila del documento y la candidatura no cambia.
-- **Precondición**: el A1 con un campo de acuse (nombre por definir en `facturaDeDTE`) y `CRITERIO_PRED` con el criterio nuevo.
-- **Pasos**: 1) evaluar dos facturas, una sin acuse y una con; 2) leer el tooltip del criterio en la tarjeta (`capacidadDeudores` / `chipTramo`) por `evaluate`.
-- **Resultado esperado**: sólo la con acuse es candidata; el tooltip dice «sin acuse» para la excluida.
+### CP-010 · Sin acuse (primeros 8 días) SÍ es candidata; con acuse también; reclamada no
+- **Criterio**: CA-2 de HU-04 (definición ajustada 23-09-2026: el acuse no participa del filtro) · **Dirección**: positiva (la sin acuse y la con acuse entran) y negativa (la reclamada queda fuera) · **Capa**: suite. · **Cobertura actual**: la mitad del reclamo es conducta vigente —el criterio «Buena factura» de `CRITERIO_PRED` ya excluye la reclamada y `estadoCandidata` la bloquea al incorporar (§6 del spec de curse)—, pero ni CP-007 ni la sección de HU-03 nombran un caso de la suite que la ejerza, así que no se cita ninguno; la mitad del acuse es **NUEVA** porque el dato no existe (G-01, CP-011) → **decidido: implementar** el dato; el filtro no cambia. «Las facturas los primeros 8 días desde su emisión no tienen acuse de aceptación y/o reclamo y en ese estado de ausencia de acuse sí son candidatas» (23-09-2026).
+- **Precondición**: el A1 con el campo del acuse (nombre por definir en `facturaDeDTE`, CP-011) y «Buena factura» de `CRITERIO_PRED` tal como está; tres facturas iguales salvo el `EstadoDTE`, con identidades del padrón (regla 42): una emitida hace 3 días sin acuse ni reclamo («Sin acuse»), una con acuse («Aceptada») y una reclamada; `hoy` inyectado (el caso 93 adelanta `Date.now` sin tocar el activo).
+- **Pasos**: 1) evaluar `facturaCalifica` sobre las tres; 2) contar candidatas; 3) leer el acuse de cada una (el dato que la fila del documento muestra); 4) cambiar el acuse de la primera a «Aceptada» y volver a contar.
+- **Resultado esperado**: 2 candidatas —la sin acuse y la con acuse— y la reclamada fuera; cada factura trae su acuse tal como viene en el A1; el paso 4 no cambia el conteo: ningún criterio de candidatura lee el acuse. Nace en rojo sólo por el dato (hoy el acuse no llega a la factura); la exclusión del reclamo ya pasa.
 
 ### CP-011 · El acuse es un campo del A1 y no un sorteo: el layout lo declara, el generador lo produce en punto fijo y `facturaDeDTE` lo lee
-- **Criterio**: CA-1 de HU-04 (el acuse como bandera del `EstadoDTE` en el A1; decidido el 22-09-2026: entra como dato) · **Dirección**: negativa (ningún consumidor sortea el acuse fuera del activo) y positiva (el campo llega a la factura) · **Capa**: contrato + suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (G-01, sin ADR). El gate `generador.test.mjs` fija el punto fijo del generador, no la existencia del campo.
+- **Criterio**: CA-1 de HU-04 (el acuse como bandera del `EstadoDTE` en el A1; decidido el 22-09-2026: entra como dato; el 23-09-2026: se muestra y no filtra, CP-010) · **Dirección**: negativa (ningún consumidor sortea el acuse fuera del activo) y positiva (el campo llega a la factura) · **Capa**: contrato + suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (G-01, sin ADR). El gate `generador.test.mjs` fija el punto fijo del generador, no la existencia del campo.
 - **Precondición**: el layout del A1 (`Levantamiento_Activos_Informacion.md`; `esquema` de `DTESYNC`) con el campo del acuse —nombre por definir en `facturaDeDTE`; una bandera del DTE junto a `Reclamado` y `NotaCredito`, con los valores aceptada / reclamada / sin acuse—; `datos_inyectados.js` regenerado con ese campo por `GeneradorDatos/generar.js`.
 - **Pasos**: 1) gate que lee el fuente como texto y comprueba que «Sin acuse» aparece sólo como VALOR del campo del A1 y no como sorteo de `facturasDeCandidata` (sonda negativa plantando el sorteo); 2) `node GeneradorDatos/generar.js` reproduce el activo byte a byte (`generador.test.mjs` sigue verde); 3) suite: `facturaDeDTE` sobre una fila con cada valor.
 - **Resultado esperado**: el gate pasa y su sonda cae; el generador sigue en punto fijo; la factura trae el acuse tal como viene en el A1, sin derivarlo (regla 13-ter: lo que trae el documento no se recalcula en pantalla).
@@ -215,7 +221,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Criterio**: CA-2 de HU-07 · **Dirección**: negativa · **Capa**: suite. · **Cobertura actual**: NUEVO (rojo).
 - **Precondición**: deudor en listas con nota 3,8. · **Pasos**: como CP-017. · **Resultado esperado**: el mismo segmento en los dos motores.
 
-## HU-08 · Frecuencia, ventana, hora de corte y hora de reinicio que el job consume (decidido el 22-09-2026: parámetros del tenant; D3 cerrada en el reloj)
+## HU-08 · Frecuencia, ventana, hora de corte y hora de reinicio que el job consume (decidido el 22-09-2026: parámetros del tenant; el corte cuelga del reloj y no del conteo de corridas, ADR-0019)
 
 ### CP-019 · `frecuenciaMin` gobierna el intervalo y deja de ser declarativo
 - **Criterio**: CA-1 de HU-08 · **Dirección**: positiva · **Capa**: suite + contrato. · **Cobertura actual**: NUEVO → **decidido: implementar** (M-02, G-02, sin ADR: «debe leer la configuración y correr en base a esa configuración»). El **caso 90** no se toca: NO ejerce `frecuenciaMin` —sus cuatro tramos son el piso de tasa (`evalAtribucion`), `otrosDeudoresPct` sobre la LF4 (`lineasDeCliente`), `ventanaLibroDias` (`candidatasLibro`) y `notaMinCompra` / `vigenciaLineaMeses` en la glosa; la única configuración que mueve es `aplicarCfgActiva({ …, otrosDeudoresPct })` y `frecuenciaMin` aparece sólo en el comentario de su tramo (b)—, así que hacer que el job la consuma no lo pone en rojo y no hay nada que «dar vuelta». La regla 9-bis (`reglas/otorgamiento_y_atribucion.md`) la nombra declarativa: se corrige ahí, en el comentario del caso 90 y en el `hint`, y CP-019 entra como caso nuevo (159 en adelante).
@@ -227,31 +233,36 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Criterio**: CA-3 de HU-08 (la ventana: «fuera de ventana» entre corte y reinicio) · **Dirección**: negativa y positiva · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (M-02: el cron lee la frecuencia Y la ventana del tenant; G-02).
 - **Precondición**: `horaInicio: "08:00"`, `horaFin: "18:00"`; `ahora` inyectado a las 07:30 y a las 10:00 (sin reloj configurable en la UI: el sustituto es la hora por parámetro, MN-08).
 - **Pasos**: 1) correr a las 07:30; 2) a las 10:00.
-- **Resultado esperado**: 0 abiertas y bitácora «fuera de ventana»; luego N > 0 abiertas. La ventana no es el corte del día: el corte y el reinicio tienen su propia hora (CP-121), y qué le pasa a la no gestionada al corte sigue por confirmar (CP-021 / CP-022).
+- **Resultado esperado**: 0 abiertas y bitácora «fuera de ventana»; luego N > 0 abiertas. La ventana no es el corte del día: el corte y el reinicio tienen su propia hora (CP-121), y qué le pasa a cada oportunidad al corte lo fijan CP-022, CP-023 y CP-143 (ADR-0019).
 
 ### CP-121 · El corte y el reinicio corren a la hora del tenant (23:00 / 06:00 por defecto), no por conteo de corridas, y cambiados la siguen
-- **Criterio**: CA-2 y CA-3 de HU-08 (decisión del 22-09-2026 sobre M-07 y M-08: «impleméntala con configuración del tenant» · «implemento ese job en base al parámetro configurable del tenant») · **Dirección**: negativa (a las 22:59 no corta; a las 05:59 no reinicia) y positiva (a las 23:00 corta; a las 06:00 reinicia) · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (G-02 y G-03 en el reloj; sin ADR). Hoy el corte es `corridas % HORAS_DIA === 0` y no existe hora de reinicio: nace en rojo.
-- **Precondición**: `cfg` con la hora de corte y la de reinicio (nombres por definir en `CFG_OPER_BASE`, GD-07; 23:00 y 06:00 por defecto) y el job del cierre del día como función pura que recibe `ahora`: es el sustituto legítimo del reloj —el e2e no puede mover la hora y el Directorio silencia el cron (MN-08)—, así que este control es sólo de suite. Una oportunidad `_inbound` en `etapaNoGestionada`.
+- **Criterio**: CA-2 y CA-3 de HU-08 (decisión del 22-09-2026 sobre M-07 y M-08: «impleméntala con configuración del tenant» · «implemento ese job en base al parámetro configurable del tenant») · **Dirección**: negativa (a las 22:59 no corta; a las 05:59 no reinicia) y positiva (a las 23:00 corta; a las 06:00 reinicia) · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (G-02 y G-03 en el reloj; el conteo de corridas es un artificio de la demo: en producción el inbound es continuo, ADR-0019 punto 1). Hoy el corte es `corridas % HORAS_DIA === 0` y no existe hora de reinicio: nace en rojo.
+- **Precondición**: `cfg` con la hora de corte y la de reinicio (nombres por definir en `CFG_OPER_BASE`, GD-07; 23:00 y 06:00 por defecto) y el job del cierre del día como función pura que recibe `ahora`: es el sustituto legítimo del reloj —el e2e no puede mover la hora y el Directorio silencia el cron (MN-08)—, así que este control es sólo de suite. Una oportunidad `_inbound` sin oferta.
 - **Pasos**: 1) correr a las 22:59 y a las 23:00; 2) correr a las 05:59 y a las 06:00; 3) repetir con corte 21:00 / reinicio 07:00 en `cfg`.
-- **Resultado esperado**: el corte deja bitácora «Cierre del día» sólo a las 23:00 (y a las 21:00 en el paso 3), el reinicio sólo a las 06:00 (07:00), y ninguna corrida intermedia corta aunque `corridas` sea múltiplo de `HORAS_DIA`. **Qué le pasa a la no gestionada en el corte NO se asierta aquí**: es la pregunta por confirmar de HU-09 (CP-021 / CP-022); este caso fija sólo el reloj.
+- **Resultado esperado**: el corte deja bitácora «Cierre del día» sólo a las 23:00 (y a las 21:00 en el paso 3), el reinicio sólo a las 06:00 (07:00), y ninguna corrida intermedia corta aunque `corridas` sea múltiplo de `HORAS_DIA`. **Qué le pasa a cada oportunidad en el corte no se asierta aquí**: lo fijan CP-022, CP-023 y CP-143 (HU-09, ADR-0019); este caso fija sólo el reloj.
 
-## HU-09 · Cierre del día: qué pasa con la no gestionada (D3: el destino sigue **por confirmar**)
+## HU-09 · Cierre del día: la oportunidad sin oferta se elimina y el inbound la vuelve a originar; la que tiene oferta no se toca (D3 cerrada del todo el 23-09-2026, ADR-0019; 021 retirado)
 
-### CP-021 [por confirmar · lectura B, vigente] · El rollover conserva id, ejecutivo, bitácora y actualiza el paquete
-- **Criterio**: CA-1 de HU-09 · **Dirección**: positiva · **Capa**: suite. · **Cobertura actual**: NUEVO · **por confirmar**: ¿eliminar o reabrir las no gestionadas al corte? El modelo dice «elimina las no gestionadas»; hoy se reabren con el mismo id (regla 22); eliminar borra trazas y contactos, y hay que decirlo explícito. Hasta la respuesta, este caso protege la lectura vigente. La regla 22 lo enuncia («el id de la operación no cambia en el cierre del día») pero ningún caso de la suite lo titula ni lo ejerce; `rolloverDia` no es alcanzable por la UI (`corridas % HORAS_DIA`).
-- **Precondición**: `rolloverDia` con una oportunidad `{id: "X", stage: "prospeccion", exec: "CR", bitacora: [...]}` y facturas nuevas del cedente.
-- **Pasos**: 1) correr el rollover; 2) leer la oportunidad por id.
-- **Resultado esperado**: mismo `id`, mismo `exec`, la bitácora anterior intacta con una entrada de reapertura, y el pool con las facturas nuevas.
+### CP-021 · (sin caso: lectura descartada el 23-09-2026)
+- La lectura B de D3 —al corte, `rolloverDia` reabre la no gestionada con el mismo id, el paquete actualizado, su ejecutivo, su bitácora y sus contactos (regla 22)— quedó descartada por ADR-0019: la oportunidad sin oferta se elimina al corte y el inbound la vuelve a originar como oportunidad nueva, con id propio y referencia (CP-022); «el id no cambia» vale sólo para lo que sobrevive al corte (CP-023). El id no se reutiliza.
 
-### CP-022 [por confirmar · lectura A] · Al corte desaparece y al reinicio nace otra con referencia
-- **Criterio**: CA-2 de HU-09 · **Dirección**: positiva · **Capa**: suite. · **Cobertura actual**: NUEVO (no se escribe hasta que se confirme el destino: la misma pregunta de CP-021; si la respuesta es «eliminar», hay que decir además qué pasa con la bitácora y los contactos de «X»).
-- **Precondición**: la de CP-021 con hora de corte inyectada. · **Pasos**: 1) correr el corte; 2) correr el reinicio.
-- **Resultado esperado**: «X» sale del tubo con causa de cierre; existe «Y» con `referencia: "X"`.
+### CP-022 · Al corte la oportunidad sin oferta se elimina y deja su cierre en la bitácora del sistema; al reinicio el inbound abre otra, con id propio y referencia, sin simular y con la oferta vacía
+- **Criterio**: CA-1 y CA-2 de HU-09 (ADR-0019 puntos 3 y 4; «gestionada» = tiene oferta) · **Dirección**: positiva (la sin oferta desaparece; nace la nueva con referencia) y negativa (la nueva no hereda el id ni la oferta; ninguna oportunidad conserva el id eliminado) · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0019, G-03; T1). Nace en rojo: hoy `rolloverDia` reabre con el mismo id la `_inbound` que quedó en `etapaNoGestionada`, y ningún caso de la suite ejerce `rolloverDia` (la regla 22 enuncia «el id no cambia con el cierre del día» sin caso que lo titule), así que no hay caso que dar vuelta: la regla 22 se reescribe en el commit que implemente ADR-0019.
+- **Precondición**: el job del corte y el del reinicio como funciones puras que reciben `ahora` y la configuración del tenant (el sustituto legítimo del reloj de CP-121: el e2e no puede mover la hora y el Directorio silencia el cron, MN-08); una oportunidad `_inbound` «X» en `prospeccion` sin oferta (`facturasOp: []`, sin simular), con ejecutivo, bitácora y facturas en «Documentos disponibles», y facturas nuevas del mismo cedente que llegan entre el corte y el reinicio; identidades del padrón (regla 42).
+- **Pasos**: 1) correr el corte a la hora del tenant; 2) listar las oportunidades y leer la bitácora del sistema (`SYS_LOG`); 3) correr el reinicio; 4) listar de nuevo y leer la oportunidad nueva del cedente.
+- **Resultado esperado**: paso 2: «X» ya no existe —ni en el tubo ni por id— y la bitácora del sistema tiene una fila de cierre con el id «X», el cedente y el paquete que tenía; paso 4: existe «Y» ≠ «X» del mismo cedente, en `prospeccion`, con `referencia: "X"`, las facturas de «X» más las que llegaron, `simulado` falso y `facturasOp: []`; ninguna oportunidad tiene el id «X».
 
-### CP-023 [las dos lecturas] · La publicada o posterior no se toca
-- **Criterio**: CA-3 de HU-09 · **Dirección**: negativa · **Capa**: suite. · **Cobertura actual**: NUEVO.
-- **Precondición**: cuatro oportunidades `_inbound`: `oferta` simulada SIN `ofertaCerrada` (el caso discriminante), `oferta` con `ofertaCerrada`+`ofertaComunicada`, `otorgamiento`, `giro`; `cfgT.etapaNoGestionada` en su valor por defecto (`"prospeccion"`).
-- **Pasos**: 1) correr el rollover/corte. · **Resultado esperado**: la publicada, la de otorgamiento y la de giro idénticas antes y después (`stage`, paquete, `negocioNum`) en las dos lecturas. La `oferta` simulada sin publicar es donde B y la recomendación de D3 difieren: en la lectura B vigente `rolloverDia` reabre sólo `d._inbound && d.stage === etapaNG` (regla 22), así que TAMPOCO se toca; bajo la recomendación técnica de D3 («no gestionada» = Prospección u Oferta sin publicar, §3 del documento de gaps; §15 fila 3 del spec lo deja a decidir) sí entraría al corte. El caso afirma la lectura B hasta la decisión y deja la otra aserción escrita y apagada.
+### CP-023 · La que tiene oferta (simulada) o está más adelante no se toca
+- **Criterio**: CA-3 de HU-09 (ADR-0019 punto 2: «gestionada» es la que tiene oferta, cualquiera sea su etapa; punto 5: el id no cambia para lo que sobrevive) · **Dirección**: negativa (el corte no la toca) · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0019, G-03). Con el parámetro por defecto (`etapaNoGestionada: "prospeccion"`) hoy `rolloverDia` tampoco toca la `oferta` simulada, así que esa aserción nace en verde; la que nace en rojo es la del paso 3: el criterio es «tiene oferta», no la etapa configurable, que se retira.
+- **Precondición**: cuatro oportunidades `_inbound` con oferta: `oferta` simulada SIN `ofertaCerrada` (el caso discriminante), `oferta` con `ofertaCerrada` + `ofertaComunicada`, `otorgamiento` y `giro`; más una sin oferta en `prospeccion` como contraste (la «X» de CP-022).
+- **Pasos**: 1) correr el corte con la configuración por defecto; 2) leer las cinco; 3) repetir con la configuración del tenant que plante `etapaNoGestionada: "oferta"`.
+- **Resultado esperado**: en los dos pasos, las cuatro con oferta idénticas antes y después (`id`, `stage`, paquete, `facturasOp`, `negocioNum`, ejecutivo y bitácora) y sólo la de contraste eliminada (CP-022). El paso 3 nace en rojo: hoy, con ese parámetro, `rolloverDia` reabriría la `oferta` simulada vaciándole la oferta.
+
+### CP-143 · La oportunidad que recibe oferta justo antes del corte no se elimina; la que sigue sin oferta sí
+- **Criterio**: CA-4 de HU-09 (la dirección que bloquea del control de CP-022, en el borde; ADR-0019 punto 2) · **Dirección**: negativa (la que recibió oferta no se elimina) y positiva (la que sigue sin oferta sí) · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0019, G-03). Nace en rojo: hoy no hay corte por hora y `rolloverDia` reabre en vez de eliminar.
+- **Precondición**: dos oportunidades `_inbound` sin oferta, «A» y «B», en `prospeccion`; el job del corte como función pura que recibe `ahora` (CP-121), con la hora de corte del tenant en su valor por defecto (23:00).
+- **Pasos**: 1) con `ahora` a las 22:59, armar la oferta de «A» con una factura de su pool y simularla (`simularOferta`, por su nombre: la saca de Prospección, regla 12-bis); 2) correr el corte a las 23:00; 3) leer «A», «B» y la bitácora del sistema.
+- **Resultado esperado**: «A» idéntica a como quedó tras simular (mismo `id`, `stage: "oferta"`, `simulado`, `facturasOp`, bitácora); «B» eliminada, con su fila de cierre en la bitácora del sistema (id, cedente, paquete); ninguna otra fila de cierre.
 
 ---
 
@@ -323,7 +334,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 
 ## Etapa 3 · Evaluación
 
-## HU-13 · La simulación corre los cinco motores y emite la primera versión (decidido el 22-09-2026: ADR-0013; por confirmar qué significa «el cliente simula»)
+## HU-13 · La simulación corre los cinco motores y emite la primera versión (decidido el 22-09-2026: ADR-0013; el 23-09-2026: simular es el gesto del ejecutivo, «Re-evaluar operación»)
 
 ### CP-034 · «Simular la oferta» deja la v1 con los cinco motores: otorgamiento, verificación, líneas, giro y pricing
 - **Criterio**: CA-1 de HU-13 · **Dirección**: positiva · **Capa**: e2e + suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0013, G-10: simular y re-evaluar son UN evento que corre los cinco motores en paralelo, cada uno emite versión y la primera simulación emite la v1; hoy `simularOferta` no toca `repoSimVersions`: rojo). `e2e-14-a` sólo MIDE `SIM_VERSIONS` sin afirmarlo; el caso 124 es el molde de la versión.
@@ -349,7 +360,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Criterio**: CA-2 y CA-3 de HU-13 (ADR-0013 punto 3: «siempre debieran haber la misma cantidad de ejecuciones en todos los motores») · **Dirección**: positiva (N · N · N · N · N) y negativa (un motor que falla no deja una versión a medias) · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (T1: invariante nuevo, ADR-0013). Hoy sólo el otorgamiento versiona (`repoSimVersions`) y la simulación no emite: nace en rojo.
 - **Precondición**: el evento de evaluación alcanzable por nombre (lo que `simularOferta` y `reevaluarCliente` pasan a disparar) sobre una oportunidad con dos deudores; `n0` = versiones por motor antes.
 - **Pasos**: 1) simular (evento 1); 2) re-evaluar dos veces (eventos 2 y 3); 3) contar versiones de otorgamiento, verificación, líneas, giro y pricing; 4) inyectar un fallo en uno de los motores (por ejemplo `asignarLineas` sin A23) y disparar un cuarto evento; 5) contar de nuevo.
-- **Resultado esperado**: paso 3: 3 · 3 · 3 · 3 · 3, y la primera es `v: 1`, `rev: 0` (no hay v1 retroactiva); paso 5: sigue 3 en los cinco, la bitácora registra la evaluación fallida y la versión vigente no cambia (`revOtorgActual` = 2). **por confirmar**: qué significa «el cliente simula» (¿el portal de curse o el Agente IA por WhatsApp?): decide desde qué canal, además del ejecutivo, se dispara el evento; el caso lo dispara por nombre y no depende de la respuesta.
+- **Resultado esperado**: paso 3: 3 · 3 · 3 · 3 · 3, y la primera es `v: 1`, `rev: 0` (no hay v1 retroactiva); paso 5: sigue 3 en los cinco, la bitácora registra la evaluación fallida y la versión vigente no cambia (`revOtorgActual` = 2). El único actor del evento es el ejecutivo: simular es la acción que se ejecuta al re-evaluar la oferta («Re-evaluar operación») y «el cliente simula» es una forma de hablar del modelo (23-09-2026), así que no hay otro canal que disparar y el caso dispara el evento por su nombre.
 
 ## HU-14 · Otorgamiento evalúa por empresa
 
@@ -407,7 +418,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 ### CP-045 · Si el A23 no cambió, la firma sigue su camino
 - **Criterio**: CA-2 de HU-17 · **Dirección**: positiva · **Capa**: suite · **Cobertura actual**: NUEVO. · **Resultado esperado**: `otorgamiento` o `cesion` por `etapaTrasFirma` (caso 88), sin `requiere_resimulacion`.
 
-## HU-18 · Verificación por deudor y la Regla 0 (D5 cerrada en M-23 el 22-09-2026; M-22 **por confirmar**)
+## HU-18 · Verificación por deudor y la Regla 0 (D5 cerrada del todo: M-23 el 22-09-2026 y M-22 el 23-09-2026, la unidad es el deudor; 048 retirado)
 
 ### CP-046 · La mesa lista al deudor con todas sus causas y sólo sus facturas
 - **Criterio**: CA-1 de HU-18 · **Dirección**: positiva y negativa (las facturas de otro deudor no están «por verificar») · **Capa**: suite + e2e. · **Cobertura actual**: **implementado (definición ajustada 22-09-2026: «todas las facturas de la oferta pasan por el motor de verificación, los que pasan son los deudores», M-23)** — **casos 27–30** (todas las causas, protocolo propio, criterio sin dato, agrupación) y **157** (por factura) en la suite; la Mesa `VerificacionView` es **NUEVA** en e2e.
@@ -419,8 +430,8 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 ### CP-047 · La primera operación del cliente verifica TODAS las facturas
 - **Criterio**: CA-2 de HU-18 · **Capa**: suite · **Cobertura actual**: **caso 76** (Regla 0) y **caso 77** (sólo «nuevo» es primera operación). · **Resultado esperado**: toda la oferta a teléfono.
 
-### CP-048 [por confirmar · lectura A de M-22] · Si falla la empresa emisora, toda la oferta queda «por verificar»
-- **Criterio**: CA-3 de HU-18 · **Dirección**: positiva · **Capa**: suite. · **Cobertura actual**: NUEVO (sólo si M-22 se decide por la empresa emisora; obliga a reescribir V01–V10 sobre el cedente) · **por confirmar**: que la unidad de la verificación es el **deudor** —quien paga la factura y a quien el equipo llama—, no la empresa emisora (el cliente que cede). El usuario pidió más detalle («no la entiendo, dame más detalles»). Si se confirma el deudor, este caso se retira y CP-046 / CP-047 quedan como la definición. · **Precondición**: `verifDecision` con el cedente fallando y dos deudores limpios. · **Resultado esperado**: las facturas de ambos deudores a teléfono.
+### CP-048 · (sin caso: lectura descartada el 23-09-2026)
+- La lectura A de M-22 —la unidad de la verificación es la empresa emisora y, si falla, toda la oferta queda «por verificar»— quedó descartada: el usuario confirmó que «es por deudor», la empresa deudora, quien paga la factura y a quien el equipo llama (D5 cerrada del todo, sin ADR). CP-046 y CP-047 son la definición. El id no se reutiliza.
 
 ## HU-19 · Pricing: tasa por deudor sobre cada documento con su plazo
 
@@ -548,20 +559,20 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 ### CP-067 · `solicitarAprobacionExc` no guarda una solicitud sin justificación
 - **Criterio**: CA-4 de HU-25 · **Dirección**: negativa y positiva (con texto sí guarda) · **Capa**: suite. · **Cobertura actual**: NUEVO (el caso 114 fija que solicitar no cierra la puerta; no la validación). · **Precondición**: `solicitarAprobacionExc` con `comentario: ""` y luego con texto. · **Resultado esperado**: negativa y `SOLICITUD_EXC` sin entrada; luego una entrada.
 
-## HU-26 · Solicitud automática al comité al publicar
+## HU-26 · Solicitud automática al comité al publicar (definición ajustada 23-09-2026: la solicitud sale sólo sin línea suficiente; 070 retirado)
 
 ### CP-068 · Con deudores sin cupo la solicitud se inyecta, cruza y la bandeja la lista
 - **Criterio**: CA-1 de HU-26 · **Capa**: e2e + suite · **Cobertura actual**: **`e2e-15-bis-bis-a`** (log «Solicitud de línea inyectada», registro idéntico en `api2ListarProcesos()` del tubo, y que Líneas › Solicitudes CONTIENE el id: `verEnBandeja` devuelve `t.includes(id)`), **`e2e-15-bis-bis-b`** (idempotencia), **casos 106, 126, 146**. El rótulo «En gestión» de la fila lo escribe `api1Inyeccion` (`SOLICITUDES_LINEA.unshift({ …sol, idProceso, estado: "En gestión", refrescos: 0, … })`) y es vigente, pero ningún e2e lo lee: **parcial** para el rótulo. · **Resultado esperado**: el de esos casos; y, NUEVO, la fila de la bandeja con ese id dice «En gestión» (se lee su `innerText`, dentro de `e2e-15-bis-bis-a` o como `e2e-15-bis-bis-c` en el mismo archivo `17_15_bis_bis.e2e.mjs`, sin pulsar «Consultar estados», que la avanzaría).
 
 ### CP-069 · Con toda la oferta con cupo el CTA dice «Cerrar oferta y publicar» y no se inyecta nada
-- **Criterio**: CA-2 de HU-26 · **Dirección**: negativa · **Capa**: e2e + suite. · **Cobertura actual**: **`e2e-29-a`** (el CTA, sin «Enviar a Comité»); que NO se inyecte tras confirmar es **NUEVO** (suite: `solicitudComiteDeOferta` devuelve `null` sin `requiereComite`).
+- **Criterio**: CA-2 de HU-26 (definición ajustada 23-09-2026, M-28: «En caso de existir suficiente se asigna esa») · **Dirección**: negativa · **Capa**: e2e + suite. · **Cobertura actual**: **`e2e-29-a`** (el CTA, sin «Enviar a Comité»); que NO se inyecte tras confirmar es **NUEVO** (suite: `solicitudComiteDeOferta` devuelve `null` sin `requiereComite`).
 - **Precondición**: MN-01 «Con línea» fila 0, MN-03 «Deudores con línea», MN-04; `n0 = api2ListarProcesos().length` en el tubo.
 - **Pasos**: 1) confirmar «Confirmar curse»; 2) releer `api2ListarProcesos()` y `SYS_LOG`.
 - **Resultado esperado**: `n0` sin cambio; ninguna fila «Solicitud de línea inyectada».
 - **Esbozo e2e**: id `e2e-15-bis-c` · archivo `28_publicacion.e2e.mjs` · `finally`: MN-10.
 
-### CP-070 [si el usuario confirma la lectura literal] · Con cupo igual se inyecta y el CTA lo nombra
-- **Criterio**: CA-3 de HU-26 · **Capa**: suite · **Cobertura actual**: NUEVO (sólo si G-17 se confirma en la lectura literal). · **Resultado esperado**: una solicitud con `requiereComite = 0` y el CTA «Enviar a Comité y Publicar».
+### CP-070 · (sin caso: lectura descartada el 23-09-2026)
+- La lectura literal de M-28 —con línea suficiente se inyecta igual una solicitud al comité y el CTA lo nombra— quedó descartada: el usuario confirmó la errata del modelo, «En caso de no existir suficiente línea se solicita. En caso de existir suficiente se asigna esa.» (G-17 cerrado, sin ADR). CP-068 y CP-069 son la definición. El id no se reutiliza.
 
 ## HU-27 · Lo que se pide al comité sigue al motivo del rechazo
 
@@ -977,12 +988,12 @@ Una fila por historia: sus CP, cuáles están cubiertos hoy (con el id que los c
 | HU-01 | 001–004 | 001 parcial (e2e-12-bis-a, e2e-13-octies-bis-a sobre OP-DIR), 004 (caso 142) | 001 | 002, 003 | — |
 | HU-02 | 005–006 | — | — | 005, 006 | — |
 | HU-03 [D6 cerrada, ADR-0014] | 007–009 | 009 (casos 99, 105) | — | 007, 008 | — |
-| HU-04 [010 por confirmar] | 010–011 | — | — | 010, 011 | 011 |
+| HU-04 [el acuse se muestra y no filtra, 23-09-2026] | 010–011 | — | — | 010, 011 | 011 |
 | HU-05 [014 retirado] | 012–013, 120 | — | 013 | 012, 013, 120 | — |
 | HU-06 [definición ajustada] | 015–016 | 015 parcial (caso 100: el join en pantalla; el chip no se lee) | 015 | 016 | — |
 | HU-07 | 017–018 | — | — | 017, 018 | — |
-| HU-08 [D3 cerrada en el reloj] | 019–020, 121 | — | — | 019, 020, 121 | 019 |
-| HU-09 [D3: destino por confirmar] | 021–023 | — | — | 021, 022, 023 | — |
+| HU-08 [el corte por reloj, ADR-0019] | 019–020, 121 | — | — | 019, 020, 121 | 019 |
+| HU-09 [D3 cerrada, ADR-0019; 021 retirado] | 022–023, 143 | — | — | 022, 023, 143 | — |
 | HU-10 | 024–027 | 024 (e2e-13-octies-bis-a), 025 (e2e-13-sexdecies-a, e2e-12-bis-b), 026 (e2e-13-sexdecies-c/d), 027 parcial (caso 140, e2e-30) | 027 | — | — |
 | HU-11 [D1 cerrada, ADR-0013; 029 retirado] | 028, 030, 134 | 028 (e2e-14-a/b, caso 124), 030 (e2e-14-c, se invierte), 134 parcial (e2e-14-a: mide el aviso, no cuenta versiones) | — | 134 | — |
 | HU-12 [D1 cerrada; 032 retirado] | 031, 033, 135 | — | — | 031, 135 | 031, 033 |
@@ -991,7 +1002,7 @@ Una fila por historia: sus CP, cuáles están cubiertos hoy (con el id que los c
 | HU-15 | 039–041 | 039 (caso 3), 040 (caso 134), 041 parcial (e2e-29-b: el chip, no el «Requiere comité» por factura) | 041 | — | — |
 | HU-16 [043 retirado] | 042, 136 | 042 (caso 4) | 042 (nace en rojo) | 136 | — |
 | HU-17 | 044–045 | — | — | 044, 045 | — |
-| HU-18 [D5: M-22 por confirmar] | 046–048 | 046 (casos 27–30, 157), 047 (casos 76, 77) | 046 | 048 | — |
+| HU-18 [D5 cerrada; 048 retirado] | 046–047 | 046 (casos 27–30, 157), 047 (casos 76, 77) | 046 | — | — |
 | HU-19 | 049–050 | 050 (casos 149, 119) | — | 049 | — |
 | HU-20 | 051–052 | — | — | 051, 052 | — |
 | HU-21 [ADR-0013 punto 5] | 053–054, 123 | 054 parcial (caso 85) | 123 | 053, 054, 123 | — |
@@ -999,7 +1010,7 @@ Una fila por historia: sus CP, cuáles están cubiertos hoy (con el id que los c
 | HU-23 | 058–060 | 058 (casos 36, 38, 135), 059 (casos 141, 143), 060 (casos 56, 124) | 058 | — | — |
 | HU-24 [D2 cerrada, ADR-0015; 062 retirado] | 061, 063, 117, 119, 137 | 119 (casos 21–23: vigente hoy · cambia con ADR-0018, se re-ancla al retiro del ejecutivo) | 137 | 061, 063, 117 | — |
 | HU-25 | 064–067 | 065 parcial (e2e-15-bis-bis-a cierra, no afirma el chip), 066 parcial (e2e-15-bis-bis-a sólo bajo `if (isDisabled())`) | 065, 066 | 064, 065, 067 | — |
-| HU-26 | 068–070 | 068 parcial (e2e-15-bis-bis-a/b, casos 106, 126, 146; el rótulo «En gestión» no se lee), 069 (e2e-29-a) | 068, 069 | 069, 070 | — |
+| HU-26 [definición ajustada 23-09-2026; 070 retirado] | 068–069 | 068 parcial (e2e-15-bis-bis-a/b, casos 106, 126, 146; el rótulo «En gestión» no se lee), 069 (e2e-29-a) | 068, 069 | 069 | — |
 | HU-27 | 071–073 | 072 (caso 106) | 071, 072 | 071, 073 | — |
 | HU-28 | 074–077 | 074 parcial (e2e-58, caso 158), 075 (e2e-58, caso 31), 076 (casos 114, 85), 077 (caso 32, e2e-12-bis-d) | 074, 076 | — | — |
 | HU-29 | 078–081 | 078 (casos 88, 154), 080 (casos 24, 26), 081 parcial (e2e-30) | 078, 079, 080, 081 | — | — |
@@ -1047,11 +1058,13 @@ regla en `reglas/<tema>.md` (regla núcleo 8); el gate `invariantes.test.mjs` ex
 
 ## Resumen
 
-**142 ids emitidos (CP-001 … CP-142) y 135 casos de prueba con contenido** para las 42 historias: cada CA tiene al menos
-un CP y cada control lleva las dos direcciones (dentro del mismo CP o en el par que lo sigue). Siete ids quedaron **sin
+**143 ids emitidos (CP-001 … CP-143) y 133 casos de prueba con contenido** para las 42 historias: cada CA tiene al menos
+un CP y cada control lleva las dos direcciones (dentro del mismo CP o en el par que lo sigue). Diez ids quedaron **sin
 caso** porque su lectura fue descartada por una decisión del 22-09-2026 o del 23-09-2026 y no se reutilizan: CP-014 (tags
-del emisor, M-10), CP-029 y CP-032 (D1-A, ADR-0013), CP-043 (cuatro líneas, M-27), CP-062 (bloqueo por deudor, D2-A,
-ADR-0015), CP-097 (D4-B sola, ADR-0015) y CP-130 (retiro automático con reapertura en la verificación, ADR-0018). CP-117, CP-118, CP-119 y CP-133 … CP-137 son direcciones que faltaban a un control (CP-133: «Observada»
+del emisor, M-10), CP-021 (reabrir con el mismo id al corte, D3-B, ADR-0019), CP-029 y CP-032 (D1-A, ADR-0013), CP-043
+(cuatro líneas, M-27), CP-048 (la empresa emisora como unidad de la verificación, M-22), CP-062 (bloqueo por deudor,
+D2-A, ADR-0015), CP-070 (la lectura literal de M-28, «existiendo suficiente línea»), CP-097 (D4-B sola, ADR-0015) y
+CP-130 (retiro automático con reapertura en la verificación, ADR-0018). CP-117, CP-118, CP-119 y CP-133 … CP-137 son direcciones que faltaban a un control (CP-133: «Observada»
 no retira ni reabre, HU-35; CP-134: un clic de selección no corre motores, HU-11; CP-135: «Re-evaluar» sí registra y
 versiona, HU-12; CP-136: la global holgada no produce motivo `deudor`, HU-16; CP-137: ninguna propuesta de retiro por
 una regla D, HU-24); **CP-120 … CP-128** son los casos que las decisiones crean: CP-120 (HU-05: el tope de antigüedad es del tenant), CP-121 (HU-08: corte y reinicio
@@ -1066,7 +1079,8 @@ son los casos que ADR-0018 crea:
 CP-138 (marcar «no verificada» en la mesa no retira y deja el issue; VER-01 bloquea), CP-139 (el aviso al ejecutivo
 comercial en Mensajería), CP-140 (el ejecutivo retira, re-simula y vuelve a publicar: versión nueva, firma revocada, el
 cliente firma de nuevo), CP-141 (la retirada no se puede volver a incorporar) y CP-142 (el botón del tab Verificación
-del detalle tampoco retira). Tres CP quedan **vigente hoy · cambia con ADR-0018: pasa a la dirección contraria** y se
+del detalle tampoco retira); y **CP-143** es la dirección que bloquea del corte del día que ADR-0019 crea (HU-09: la
+oportunidad que recibe oferta justo antes del corte no se elimina; la que sigue sin oferta sí). Tres CP quedan **vigente hoy · cambia con ADR-0018: pasa a la dirección contraria** y se
 dan vuelta con su mismo id en el commit del ADR: CP-091 (`e2e-6-b`), CP-119 y CP-129 (casos 21–23).
 
 **Cubiertos hoy, total o parcialmente: 62 CP** (medidos sobre la matriz: la columna «Cubiertos hoy» nombra 63 CP; CP-141 —parcial en la suite, casos 25 y 95— se cuenta entre los nuevos porque nace con ADR-0018, así que quedan 62).
@@ -1083,34 +1097,35 @@ parciales** (CP-001, 015, 027, 037, 041, 042, 046, 054, 058, 065, 066, 068, 069,
 vecino y falta el caso en pantalla (HU-01, HU-06, HU-10, HU-14, HU-15, HU-16, HU-18, HU-23, HU-25, HU-26, HU-27, HU-28,
 HU-29, HU-33, HU-35, HU-36, HU-38, HU-39, HU-41), falta la dirección negativa (CP-054, CP-069, CP-074, CP-099), el e2e
 que se cita sólo la cubre bajo condición (CP-066) o sólo mide el aviso sin contar versiones (CP-134). CP-141 es parcial
-en la suite (casos 25 y 95 fijan el veto) pero nace con ADR-0018 y se cuenta entre los nuevos. Los otros **73 CP
-son enteramente nuevos**; en total, 106 CP piden al menos un caso nuevo (33 + 73), y 62 + 73 = 135.
+en la suite (casos 25 y 95 fijan el veto) pero nace con ADR-0018 y se cuenta entre los nuevos. Los otros **71 CP
+son enteramente nuevos**; en total, 104 CP piden al menos un caso nuevo (33 + 71), y 62 + 71 = 133.
 
 **Nuevos por capa:** **e2e 50** (en 12 archivos nuevos, `26` … `37`, más tres ids que van a archivos existentes,
 `21_29` y `17_15_bis_bis`; 30 de ellos fijan conducta vigente sin gate en pantalla —CP-001, 015, 027, 037, 041, 046,
 058, 065, 066, 068, 069, 072, 074, 076, 078–081, 089–092, 098, 100, 102, 107, 108, 109, 115, 116; CP-091 se escribe
 fijando lo vigente y se da vuelta con ADR-0018— y 20 dependen de un gap o de una decisión ya tomada —CP-013, 034–036,
-042 (el tooltip, nace en rojo), 071, 095, 110, 118 (`moveTo`), 123, 124, 126, 127, 128, 137, 138–142—; CP-111 salió de
-la capa e2e porque «Avanzar a» no ofrece «Cesión») · **suite 68** (del 159 en adelante; `CASOS_ESPERADOS` sube en cada
-commit que los agrega, y se dice; CP-130 salió y entraron CP-138 … CP-141) · **contrato 5** (CP-011, CP-019, CP-031,
-CP-033, CP-112; todos con sonda negativa sobre `canonico(src)`). Un CP suma en dos capas cuando la conducta se prueba en
-el motor y en la pantalla (50 + 68 + 5 = 123 casos para 106 CP).
+042 (el tooltip, nace en rojo), 071, 095, 110, 118 (`moveTo`), 123, 124, 126, 127, 128, 137, 138–142—; CP-111 es sólo
+de suite porque «Avanzar a» no ofrece «Cesión») · **suite 66** (del 159 en adelante; `CASOS_ESPERADOS` sube en cada
+commit que los agrega, y se dice) · **contrato 5** (CP-011, CP-019, CP-031, CP-033, CP-112; todos con sonda negativa
+sobre `canonico(src)`). Un CP suma en dos capas cuando la conducta se prueba en el motor y en la pantalla (50 + 66 + 5 =
+121 casos para 104 CP).
 
-**Decisiones del 22-09-2026 y lo que sigue por confirmar.** Cerradas y aplicadas: **D1** (ADR-0013: CP-028 y CP-030
-protegen el gesto explícito; CP-031/033 retiran el anuncio; CP-034–036, CP-122 y CP-123 fijan el evento de evaluación,
-las cinco versiones y su contenido), **D2** (ADR-0015: no hay bloqueo por deudor; CP-061/117 fijan M-15 tal como está),
-**D4** (ADR-0015: CP-096 en la suite, CP-126/127 en pantalla; CP-095 y G-33 para el estado «Rechazada»), **D2 en la
-verificación, 23-09-2026** (ADR-0018: CP-138/139/140/141/142 en rojo, CP-132 en su dirección nueva; CP-091, CP-119 y
-CP-129 fijan lo de hoy y se dan vuelta), **D6**
-(ADR-0014: CP-007/008/009), **M-21** (ADR-0016: CP-087/088/124/125), **M-33** (ADR-0017: CP-104/128), **M-10** (G-31:
-CP-012/120), **M-02/M-07/M-08** en el reloj (CP-019/020/121), **M-19** (CP-064), **M-36** (CP-053/123). Dadas por buenas
-como están: M-05/M-06 (CP-015/016), M-15 (CP-061), M-20/M-25 (CP-085/094), M-23 (CP-046/047), M-27 (CP-042), M-35
-(CP-051/052). **Por confirmar**, con las dos lecturas escritas: (1) **D3, el destino** de la no gestionada al corte: ¿eliminar o
-reabrir? (CP-021 / CP-022); (2) **M-22, la unidad** de la verificación: ¿el deudor, quien paga y a quien se llama?
-(CP-048); (3) **M-01**: ¿el acuse participa del filtro de candidatura o sólo se muestra? (CP-010); (4) **M-13**: qué
-significa «el cliente simula» (CP-122). Y **G-17** (CP-070) sigue sin respuesta porque no estuvo entre las cláusulas
-revisadas. M-18 en la verificación está decidida (ADR-0018, 23-09-2026; HU-42: CP-129, CP-131, CP-132, CP-138 … CP-142)
-y no está entre las que siguen por confirmar.
+**Decisiones del 22 y del 23-09-2026.** Cerradas y aplicadas: **D1** (ADR-0013: CP-028 y CP-030 protegen el gesto
+explícito; CP-031/033 retiran el anuncio; CP-034–036, CP-122 y CP-123 fijan el evento de evaluación, las cinco versiones
+y su contenido), **D2** (ADR-0015: no hay bloqueo por deudor; CP-061/117 fijan M-15 tal como está), **D3** en el
+destino (ADR-0019: CP-022, CP-023 y CP-143), **D4** (ADR-0015: CP-096 en la suite, CP-126/127 en pantalla; CP-095 y
+G-33 para el estado «Rechazada»), **D2 en la verificación, 23-09-2026** (ADR-0018: CP-138/139/140/141/142 en rojo,
+CP-132 en su dirección nueva; CP-091, CP-119 y CP-129 fijan lo de hoy y se dan vuelta), **D6** (ADR-0014:
+CP-007/008/009), **M-21** (ADR-0016: CP-087/088/124/125), **M-33** (ADR-0017: CP-104/128), **M-10** (G-31: CP-012/120),
+**M-02/M-07/M-08** en el reloj (CP-019/020/121), **M-19** (CP-064), **M-36** (CP-053/123), **M-01** en el dato (G-01:
+CP-011). Dadas por buenas como están: M-05/M-06 (CP-015/016), M-15 (CP-061), M-20/M-25 (CP-085/094), M-22 y M-23
+(CP-046/047; CP-048 retirado el 23-09-2026), M-27 (CP-042), M-28 (CP-068/069; CP-070 retirado el 23-09-2026), M-35
+(CP-051/052) y M-01 en el filtro (CP-010). **Por confirmar: nada desde el 23-09-2026.** Las cuatro respuestas de ese
+día fijaron: **D3, el destino** de la no gestionada (ADR-0019) → CP-022, CP-023 y CP-143, con CP-021 sin caso;
+**M-01**, el acuse se muestra y no filtra → CP-010 (y CP-011 para el dato); **M-13**, «el cliente simula» es el gesto
+del ejecutivo → CP-122, que dispara el evento por su nombre; y **G-17** (M-28), la errata del modelo → CP-069 es la
+dirección vigente, con CP-070 sin caso. M-18 en la verificación está decidida (ADR-0018, 23-09-2026; HU-42: CP-129,
+CP-131, CP-132, CP-138 … CP-142).
 
 **Orden sugerido para escribirlos:**
 
@@ -1122,17 +1137,18 @@ y no está entre las que siguen por confirmar.
    `17_15_bis_bis`); en la suite, el caso que EJERCE la guarda OTG-02 de `moverEtapa` (CP-118 (a), nace en verde) y los
    que fijan lo que el usuario dio por bueno tal como está (CP-016, 051, 052, 061, 117, 133, 136). Ninguno cambia el fuente: sólo
    fijan lo que ya pasa. CP-042 no va acá: el tooltip nace en rojo y está en el paso 3.
-2. **Después, los T1 decididos el 22-09-2026, en rojo, cada uno en el commit de su ADR**: ADR-0013 (CP-034–036, 122,
+2. **Después, los T1 decididos el 22 y el 23-09-2026, en rojo, cada uno en el commit de su ADR**: ADR-0013 (CP-034–036, 122,
    123, 053, 134, 135; el vuelco de CP-030 y CP-031/033), ADR-0014 (CP-007/008), ADR-0015 (CP-095 con G-33, CP-096,
    CP-126/127, CP-137, CP-063 con la segunda mutación), ADR-0016 (CP-087/088, 124, 125), ADR-0017 (CP-104/128), ADR-0018
    (CP-138/139/140/141/142 y CP-132 en su dirección nueva; el vuelco de CP-091, CP-119 y CP-129, con los casos 21–23
-   re-anclados al retiro del ejecutivo; GD-12 en el mismo commit). Con ellos los T1 sin
+   re-anclados al retiro del ejecutivo; GD-12 en el mismo commit), ADR-0019 (CP-022, CP-023 y CP-143; la regla 22
+   reescrita en lo que dice del cierre del día, en el mismo commit). Con ellos los T1 sin
    decisión previa (§2.2 del documento de gaps): CP-017/018 (G-05), CP-071/073 (G-18),
    CP-049 (G-23), CP-099 negativa (G-24), CP-110/111/118 (b)/112 (G-25), CP-082/083 (G-26), CP-044/045 (G-27), CP-106
    (G-28). Cada uno con su regla ampliada o nueva y su fila en `invariantes.md`.
 3. **Luego, los T2 decididos y los que no esperan decisión**: CP-064/067 (G-12, decidido: T2, regla 24), CP-012/120 (G-31), CP-019/020/121 (G-02, G-03 en el reloj),
-   CP-011 (G-01, el dato), CP-005/006 (G-29), CP-013 (control de configuración), CP-042 (el tooltip), CP-113 (G-30),
-   CP-054 (junto al 85).
-4. **Al final, los que dependen de lo que sigue por confirmar**, en el commit que lo cierre: CP-010 (M-01 en el filtro),
-   CP-021 / CP-022 (D3, el destino), CP-048 (M-22), CP-070 (G-17).
-   Con cada respuesta también se cierran los gaps documentales GD-01 … GD-11 de §5 que le correspondan.
+   CP-010 y CP-011 (G-01: el dato; el filtro no cambia), CP-005/006 (G-29), CP-013 (control de configuración), CP-042
+   (el tooltip), CP-113 (G-30), CP-054 (junto al 85).
+
+Ningún CP espera una respuesta del usuario desde el 23-09-2026. Los gaps documentales GD-01 … GD-12 de §5 del
+documento de gaps se cierran en el commit de la decisión que los resuelve.

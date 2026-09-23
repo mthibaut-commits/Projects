@@ -1,32 +1,34 @@
 ---
 type: feature
 title: "Historias de usuario del proceso de curse"
-description: "Del inbound al giro, por etapa y por actor: las historias vigentes que protegen conducta con gate, las por implementar que cierran un gap G-nn y las pendientes de una decisión Dn; cada una con sus criterios de aceptación en Dado / Cuando / Entonces y en las dos direcciones cuando el criterio es un control"
+description: "Del inbound al giro, por etapa y por actor: las historias vigentes que protegen conducta con gate y las por implementar que cierran un gap G-nn (desde el 23-09-2026 ninguna queda pendiente de una decisión Dn); cada una con sus criterios de aceptación en Dado / Cuando / Entonces y en las dos direcciones cuando el criterio es un control"
 tags: [feature, proceso-curse, historias-usuario, curse, gaps]
 timestamp: 2026-09-23T13:00:00Z
 ---
 
 # Historias de usuario del proceso de curse
 
-**Fecha:** 22-09-2026 (con ADR-0018 del 23-09-2026 aplicado). Insumos: el modelo M-01…M-40 (más M-22-bis) de
+**Fecha:** 22-09-2026 (con las decisiones del 23-09-2026 aplicadas: ADR-0018, ADR-0019, M-01, M-13, M-22 y M-28). Insumos: el modelo M-01…M-40 (más M-22-bis) de
 `Specs_Procesos/Evaluacion_Factura/spec-proceso-curse.md`, las reglas del vault (`vault/conocimiento/reglas/`, índice
 en `invariantes.md`), la matriz de gaps G-01…G-36 y las seis decisiones D1…D6 de
 `Regresiones/Gaps_Proceso_Curse_2026-09-22.md`, el inventario de la capa e2e (`tests/e2e/`), **las decisiones del
 usuario del 22-09-2026** (`vault/sesiones/2026-09-22_mesa_por_operacion_y_nota_rica.md` §8; las que tuvieron alternativa
-descartada están en ADR-0013 … ADR-0017) y la del 23-09-2026 sobre la verificación fallida (ADR-0018).
+descartada están en ADR-0013 … ADR-0017) y las del 23-09-2026: la verificación fallida (ADR-0018), el cierre del día
+(ADR-0019), el acuse del DTE (M-01), «el cliente simula» (M-13), la unidad de la verificación (M-22) y la errata de M-28.
 
 Cómo se lee:
 
 - Una historia es **vigente** cuando el sistema ya hace lo que dice y hay gate (caso de la suite, `e2e-<regla>` o
   `regla_<slug>.test.mjs`): sus criterios protegen conducta y el caso de prueba que se derive sólo la fija en pantalla.
-  Es **vigente (definición ajustada 22-09-2026)** cuando el usuario, al revisar las diferencias con el modelo, dio por
-  buena la conducta actual: se ajustó el modelo, no el sistema.
+  Es **vigente (definición ajustada)**, con la fecha de su respuesta (22-09-2026 o 23-09-2026), cuando el usuario, al
+  revisar las diferencias con el modelo, dio por buena la conducta actual: se ajustó el modelo, no el sistema.
 - Es **por implementar** cuando cierra un gap G-nn: el criterio de aceptación es la regla que entraría al vault, y el
   caso se escribe **en rojo primero** (`.claude/rules/workflow.md`). Lleva «(ADR-nnnn)» cuando la decisión que faltaba
-  se tomó el 22-09-2026 con una alternativa descartada, y «→ decidido: implementar» cuando el usuario lo pidió tal cual.
-- Es **pendiente de confirmar** cuando queda una pregunta que sólo el usuario puede responder: el estado la trae
-  textual. Las seis decisiones D1…D6 del documento de gaps se cerraron o se acotaron el 22-09-2026 y D2 se cerró del
-  todo el 23-09-2026 (ADR-0018); donde una quedó abierta, la historia conserva sus dos lecturas y la pregunta.
+  se tomó el 22 o el 23-09-2026 con una alternativa descartada, y «→ decidido: implementar» cuando el usuario lo pidió
+  tal cual.
+- Es **pendiente de confirmar** cuando queda una pregunta que sólo el usuario puede responder: desde el 23-09-2026
+  no hay ninguna. Las seis decisiones D1…D6 del documento de gaps están cerradas —D2 del todo con ADR-0018 y D3 con
+  ADR-0019, el 23-09-2026— y cada historia trae una sola lectura.
 - Un criterio es **vigente hoy · cambia con ADR-0018** cuando describe el retiro automático por «No verificar» que el
   sistema hace hoy y que ADR-0018 reemplaza: el criterio vigente queda como lo que hoy pasa (su caso de la suite se da
   vuelta en el commit del ADR) y el criterio nuevo dice la dirección contraria (HU-42).
@@ -78,12 +80,12 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-04 · Las aceptaciones son una bandera del DTE
 - **Como** Inbound (sistema), **quiero** que el acuse de recibo / aceptación del receptor llegue en el A1 como bandera del `EstadoDTE`, igual que el reclamo y la nota de crédito, **para** no dimensionar con un dato inventado.
-- **Estado**: por implementar (T2; dato/contrato) → **decidido: implementar**. **Por confirmar**: si el acuse participa del filtro de candidatura.
+- **Estado**: por implementar (T2; dato / contrato) → **decidido: implementar**; el filtro no cambia (definición ajustada 23-09-2026).
 - **Reglas**: — · **Cláusulas**: M-01 · **Gaps**: G-01.
 - **Criterios de aceptación**:
   - CA-1 · Dado el A1 · Cuando llega una factura · Entonces su aceptación es una bandera del `EstadoDTE` junto al reclamo y la NC, y el generador la produce desde esa bandera y no con un sorteo propio «Aceptada / Reclamada / Sin acuse»; el gate del generador (punto fijo) sigue verde.
-  - CA-2 (por confirmar) · Dado que el acuse entra al filtro · Cuando una factura llega «Sin acuse» · Entonces no es candidata y la tarjeta lo dice en el tooltip del criterio; con acuse, sí. Si no entra al filtro, la bandera se muestra y no decide.
-- **Notas**: «Las aceptaciones son parte de las banderas de DTE» (22-09-2026). Hoy el A1, el layout y el generador no la traen; reclamo y NC sí llegan como banderas del `EstadoDTE`; la cesión por el A2.
+  - CA-2 (control en las dos direcciones) · Dado una factura en sus primeros 8 días desde la emisión, sin acuse de aceptación ni reclamo · Cuando corre el inbound · Entonces sí es candidata —la tarjeta la cuenta y está en «Documentos disponibles»— y la fila del documento muestra «Sin acuse»; con acuse, también es candidata y la fila muestra la aceptación (dirección que no bloquea). Dado una factura reclamada · Cuando corre el inbound · Entonces no es candidata (dirección que bloquea): lo que excluye sigue siendo el reclamo y la NC —más la cesión a un factoring ajeno (HU-03, ADR-0014) y la exigencia de que la venta sea a crédito—; el acuse se muestra y no decide.
+- **Notas**: «Las aceptaciones son parte de las banderas de DTE» (22-09-2026); «Las facturas los primeros 8 días desde su emisión no tienen acuse de aceptación y/o reclamo y en ese estado de ausencia de acuse sí son candidatas» (23-09-2026): se acepta la conducta vigente del filtro, sin ADR. Hoy el A1, el layout y el generador no traen la aceptación; reclamo y NC sí llegan como banderas del `EstadoDTE`; la cesión por el A2.
 
 ### HU-05 · Antigüedad máxima desde la emisión, configurable
 - **Como** Inbound (sistema), **quiero** que sólo sean candidatas las facturas emitidas hace no más de N días, con N como parámetro del tenant (20 por defecto), **para** no ir a buscar facturas que por su antigüedad nadie va a comprar.
@@ -118,23 +120,24 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-08 · Frecuencia, hora de corte y hora de reinicio que el job consume
 - **Como** Administrador del tenant, **quiero** que `frecuenciaMin`, la hora de corte (`horaFin`, 23:00 por defecto) y la hora de reinicio (`horaInicio`, 06:00 por defecto) gobiernen la corrida, **para** que lo que edito en Configuración › Operación mande y no sea decorativo.
-- **Estado**: por implementar (T2) → **decidido: implementar** (M-02, M-07, M-08). Qué hace el corte con la oportunidad no gestionada lo decide HU-09 (por confirmar).
+- **Estado**: por implementar (T2) → **decidido: implementar** (M-02, M-07, M-08). Qué hace el corte con cada oportunidad lo fija HU-09 (ADR-0019).
 - **Reglas**: 9-bis · **Cláusulas**: M-02, M-07, M-08 · **Gaps**: G-02.
 - **Criterios de aceptación**:
   - CA-1 · Dado `frecuenciaMin` cambiado y guardado · Cuando se observa la bitácora del inbound · Entonces las corridas se separan por ese intervalo y el `hint` del campo «Frecuencia de actualización» (Configuración › Operación, `CfgCampo`) ya no dice «DECLARATIVA» (hoy lo dice en mayúsculas: «DECLARATIVA: es el valor de producción…»; `CFG_OPER_BASE` no tiene `hint`, sólo un comentario). El caso 90 no asierta nada sobre `frecuenciaMin` —la nombra sólo en un comentario y su aserción mueve `otrosDeudoresPct`—, así que consumirla no lo pone en rojo: se corrige ese comentario y el `hint`, sin tocar el caso.
-  - CA-2 · Dado la hora de corte del tenant · Cuando el reloj la alcanza · Entonces el job de corte corre una sola vez, la bitácora dice «Corte del día» y las oportunidades en «Oferta publicada» o posterior no se tocan; a otra hora el corte no corre (dirección que bloquea).
-  - CA-3 · Dado la hora de reinicio del tenant · Cuando el reloj la alcanza · Entonces el job de reinicio arranca las corridas del día y la bitácora lo registra; entre el corte y el reinicio no se abren oportunidades y se registra «fuera de ventana». Cambiar cualquiera de las dos horas en Configuración › Operación mueve el corte o el reinicio.
-- **Notas**: «Debe leer la configuración y correr en base a esa configuración» (M-02); «Impleméntala con configuración del tenant» (M-07); «Implemento ese job en base al parámetro configurable del tenant» (M-08). En la demo el cron es un `setInterval` bajo `modoDemo`; el caso e2e no puede mover el reloj.
+  - CA-2 · Dado la hora de corte del tenant · Cuando el reloj la alcanza · Entonces el job de corte corre una sola vez y la bitácora dice «Corte del día»; qué hace con cada oportunidad lo fija HU-09 (la que tiene oferta no se toca; la que no, se elimina); a otra hora el corte no corre, aunque el conteo de corridas complete un día (dirección que bloquea).
+  - CA-3 · Dado la hora de reinicio del tenant · Cuando el reloj la alcanza · Entonces el job de reinicio arranca las corridas del día —y el inbound vuelve a abrir, como oportunidades nuevas, las que el corte eliminó (HU-09)— y la bitácora lo registra; entre el corte y el reinicio no se abren oportunidades y se registra «fuera de ventana». Cambiar cualquiera de las dos horas en Configuración › Operación mueve el corte o el reinicio.
+- **Notas**: «Debe leer la configuración y correr en base a esa configuración» (M-02); «Impleméntala con configuración del tenant» (M-07); «Implemento ese job en base al parámetro configurable del tenant» (M-08). En producción el inbound es un proceso continuo: el corte y el reinicio cuelgan del reloj del tenant y no del conteo de corridas, que es un artificio de la demo («Hoy el corte es por corridas (demo) pero en producción será un continuo», 23-09-2026; ADR-0019). En la demo el cron es un `setInterval` bajo `modoDemo`; el caso e2e no puede mover el reloj.
 
-### HU-09 · Cierre del día: qué pasa con la no gestionada
-- **Como** Administrador del tenant, **quiero** que al corte del día las oportunidades no gestionadas tengan un destino definido, **para** que el ejecutivo sepa qué verá al día siguiente y las trazas no se pierdan.
-- **Estado**: **pendiente de confirmar**: «¿Al corte del día, la oportunidad no gestionada se ELIMINA (como dice el modelo) o se REABRE con el mismo id (como hoy, regla 22)? Eliminar borra las trazas y los contactos». El corte y el reinicio por hora del tenant ya están decididos (HU-08).
-- **Reglas**: 22, 5 · **Cláusulas**: M-07, M-08 · **Gaps**: G-03.
+### HU-09 · Cierre del día: la oportunidad sin oferta se elimina y el inbound la vuelve a originar; la que tiene oferta no se toca
+- **Como** Administrador del tenant, **quiero** que al corte del día la oportunidad que nadie gestionó —la que no tiene oferta— se elimine y que al reinicio el inbound la vuelva a abrir como oportunidad nueva, y que la que tiene oferta no se toque, **para** que el ejecutivo empiece el día con lo que llegó sin perder lo que ya trabajó.
+- **Estado**: por implementar (ADR-0019). D3 cerrada del todo el 23-09-2026: el corte y el reinicio son por reloj del tenant (HU-08); «gestionada» es la oportunidad que tiene oferta —el ejecutivo la simuló o la armó: etapa Oferta o posterior— y no se toca; la que no tiene oferta se elimina y el reinicio la re-origina con id propio y referencia. Descartados reabrir con el mismo id (hoy, `rolloverDia`), «no gestionada» como etapa configurable del tenant y un criterio por actividad.
+- **Reglas**: 22, 12-bis, 5 · **Cláusulas**: M-07, M-08 · **Gaps**: G-03.
 - **Criterios de aceptación**:
-  - CA-1 (lectura B, vigente) · Dado una oportunidad en «Sin gestión» al corte · Cuando pasa el rollover · Entonces sigue con el mismo id, el paquete actualizado, su ejecutivo y su bitácora (regla 22).
-  - CA-2 (lectura A) · Dado la misma oportunidad · Cuando pasa el corte · Entonces desaparece del tubo y al reinicio aparece una nueva con referencia a la anterior.
-  - CA-3 (ambas) · Dado una oportunidad en «Oferta publicada» o posterior · Cuando pasa el corte · Entonces no la toca. Qué es «no gestionada» difiere: en la lectura B (vigente) es sólo la etapa `etapaNoGestionada` del tenant (Prospección por defecto; `rolloverDia` reabre únicamente `_inbound` en esa etapa, regla 22), así que una Oferta simulada sin publicar NO se toca; «Prospección u Oferta sin publicar» es la recomendación técnica de D3 (§3 del documento de gaps), no un hecho común a A y B, y §15 fila 3 del spec lo deja como pregunta a decidir. CP-023 monta una `oferta` simulada sin `ofertaCerrada` como caso discriminante.
-- **Notas**: `spec-ciclo-factura.md` §17 contradice al vault (GD-02). Recomendación técnica: B en el id (regla 22 tiene gate y las trazas, el ejecutivo y los contactos sobreviven).
+  - CA-1 · Dado una oportunidad del inbound sin oferta (en «Sin gestión», con la oferta vacía) · Cuando llega la hora de corte del tenant · Entonces se elimina: desaparece del tubo y de la vista del ejecutivo, y la bitácora del sistema registra el cierre con el id, el cedente y el paquete que tenía.
+  - CA-2 · Dado la oportunidad eliminada al corte · Cuando llega la hora de reinicio · Entonces el inbound abre una oportunidad nueva del mismo cedente, con id propio y una referencia a la eliminada, con las facturas que tenía más las que llegaron, sin simular y con la oferta vacía: es una originación, no una reapertura, y ninguna oportunidad conserva el id eliminado.
+  - CA-3 (dirección que bloquea) · Dado una oportunidad con oferta —en «Negociación» (simulada, sin publicar), «Oferta publicada» o posterior— · Cuando pasa el corte · Entonces no la toca, cualquiera sea su etapa: mismo id, misma etapa, mismo paquete y misma oferta. El criterio es «tiene oferta», no una etapa configurable del tenant: ningún valor de la configuración hace que el corte elimine una oportunidad con oferta.
+  - CA-4 (control en las dos direcciones, en el borde) · Dado dos oportunidades del inbound sin oferta · Cuando el ejecutivo simula una antes de la hora de corte y la otra sigue sin oferta · Entonces al corte la simulada no se elimina y la otra sí.
+- **Notas**: «Hoy el corte es por corridas (demo) pero en producción será un continuo. Las oportunidades que han sido gestionadas por el ejecutivo (tienen oferta) no se eliminan» (23-09-2026). ADR-0019: la no gestionada se elimina a la hora de corte y al reinicio el inbound la vuelve a abrir «como una **oportunidad nueva, con su propio id** y una referencia a la eliminada, sin simular y con la oferta vacía. No es una reapertura: es una originación»; «el id no cambia» sigue valiendo para todo lo que sobrevive al corte. Cambian, en el commit que lo implemente, `rolloverDia` (elimina en vez de reabrir y salta las que tienen oferta), el job por hora del tenant (HU-08, G-02), la configuración del tenant (se retira `etapaNoGestionada`) y la regla 22 en lo que dice del cierre del día; `spec-ciclo-factura.md` §17 ya describe la originación con id propio (GD-02 cerrado). Un detalle abierto sobre una oportunidad eliminada queda huérfano: su aviso de simulación llega con un id que ya no existe y se descarta, que es la conducta actual ante un id desconocido; cerrar esa pestaña con un mensaje es una mejora de pantalla, no parte de esta historia.
 
 ---
 
@@ -181,7 +184,7 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-13 · Simular o re-evaluar es UN evento: cinco motores, cinco versiones con el mismo número
 - **Como** sistema, **quiero** que «Simular la oferta» y «Re-evaluar» sean el mismo evento, que corra otorgamiento, verificación, líneas, giro y pricing en paralelo y que cada motor emita su versión con el mismo número, **para** que «la versión N» signifique lo mismo en los cinco y lo que el ejecutivo muestra al cliente no dependa del render.
-- **Estado**: por implementar (ADR-0013). D1 cerrada el 22-09-2026. **Por confirmar**: qué significa «el cliente simula» (¿el portal de curse o el Agente IA por WhatsApp?).
+- **Estado**: por implementar (ADR-0013). D1 cerrada del todo: el 22-09-2026, el gesto explícito es UN evento; el 23-09-2026, «el cliente simula» es una forma de hablar del modelo —simular es la acción del ejecutivo al re-evaluar la oferta y no hay simulación del cliente en ningún canal—.
 - **Reglas**: 13, 14 · **Cláusulas**: M-13, M-24, M-26 · **Gaps**: G-10.
 - **Criterios de aceptación**:
   - CA-1 · Dado una oferta armada sin simular · Cuando aprieto «Simular la oferta» · Entonces existe la versión v1 en los cinco motores —otorgamiento, verificación, líneas, giro y pricing— congelada sobre esas facturas, y no hay v1 retroactiva (caso 124 es el molde).
@@ -189,7 +192,7 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
   - CA-3 · Dado que un motor no completa · Cuando termina el evento · Entonces no existe la versión N de la operación: una evaluación que no completa los cinco no es una versión (dirección que bloquea).
   - CA-4 · Dado la v1 emitida · Cuando cierro y reabro el detalle · Entonces el titular, la mesa de verificación y las compuertas de línea leen la versión, no un recálculo del render (`lineaDeVersion`).
   - CA-5 · Dado una oferta sin simular · Cuando abro el detalle · Entonces no hay versión y las compuertas dicen «Por evaluar».
-- **Notas**: ADR-0013: «Simular y re-evaluar son el mismo evento […] El evento corre los cinco motores […] de forma asíncrona y en paralelo […] Cada motor emite una versión por evento, y el número de versiones es el mismo en los cinco […] La primera simulación emite la v1; no hay v1 retroactiva». Hoy emiten versión dos escritores y ninguno es la simulación: «Re-evaluación de la simulación» (`reevaluarCliente`, que hace nacer la v1 retroactiva) y el retiro por `noConfirmada` sobre una operación aceptada (`retirarFacturaOferta`; casos 21–23, regla 13). Cambian `simularOferta`, los llamadores de `reevaluarCliente`, `snapVersionCli`, y `spec-otorgamiento.md` §2 y `spec-gestion-excepciones.md` §4.1, que describen los tres gestos.
+- **Notas**: ADR-0013: «Simular y re-evaluar son el mismo evento […] El evento corre los cinco motores […] de forma asíncrona y en paralelo […] Cada motor emite una versión por evento, y el número de versiones es el mismo en los cinco […] La primera simulación emite la v1; no hay v1 retroactiva». Hoy emiten versión dos escritores y ninguno es la simulación: «Re-evaluación de la simulación» (`reevaluarCliente`, que hace nacer la v1 retroactiva) y el retiro por `noConfirmada` sobre una operación aceptada (`retirarFacturaOferta`; casos 21–23, regla 13). Cambian `simularOferta`, los llamadores de `reevaluarCliente`, `snapVersionCli`, y `spec-otorgamiento.md` §2 y `spec-gestion-excepciones.md` §4.1, que describen los tres gestos. «Simular es la acción del ejecutivo que se ejecuta al Re-evaluar la oferta (y que contempla correr el motor de otorgamiento, verificación de facturas, asignación de líneas, motor de giros y motor de precios)» (23-09-2026): el único actor del evento es el ejecutivo y el gesto es «Re-evaluar operación», el botón del resumen del detalle bajo «La selección cambió»; nada nuevo que construir, ni portal de autoservicio ni intent del Agente IA.
 
 ### HU-14 · Otorgamiento evalúa por empresa
 - **Como** sistema, **quiero** evaluar las reglas del otorgamiento por cliente y por deudor, no por factura, **para** que una excepción se pida una vez por empresa.
@@ -230,13 +233,13 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-18 · Verificación por deudor y la Regla 0
 - **Como** sistema, **quiero** que todas las facturas de la oferta pasen por el motor de verificación, que se decida por deudor a quién llamar, y que toda la oferta se verifique sólo para el cliente nuevo, **para** que el equipo llame a quien paga la factura.
-- **Estado**: vigente (definición ajustada 22-09-2026: todas las facturas entran al motor y se decide por deudor, M-23; D5 cerrada en esa mitad). **Por confirmar**: que la unidad de las reglas V01–V10 es el deudor y no la empresa emisora (M-22).
-- **Reglas**: 6, 9-ter · **Cláusulas**: M-22, M-23 · **Gaps**: G-15.
+- **Estado**: vigente (definición ajustada: el 22-09-2026 todas las facturas entran al motor y se decide por deudor, M-23; el 23-09-2026 la unidad de las reglas V01–V10 es el **deudor** —la empresa deudora, quien paga y a quien se llama—, M-22: «es por deudor»). D5 cerrada del todo; G-15 cerrado.
+- **Reglas**: 6, 9-ter · **Cláusulas**: M-22, M-23 · **Gaps**: G-15 (cerrado).
 - **Criterios de aceptación**:
   - CA-1 · Dado un deudor que falla V01–V10 · Cuando se abre la mesa · Entonces la fila es del deudor con todas sus causas y sólo sus facturas están «por verificar»; los deudores que pasan no requieren verificación (casos 27–30, 157).
   - CA-2 · Dado un cliente en su primera operación · Cuando se evalúa · Entonces todas las facturas de la oferta van a verificación (caso 76).
-  - CA-3 (lectura A, sólo si M-22 se confirma como empresa emisora) · Dado que falla la empresa emisora · Cuando se evalúa · Entonces todas las facturas de la oferta, de todos los deudores, quedan «por verificar».
-- **Notas**: «Todas las facturas de la oferta pasan por el motor de verificación (los que pasan son los deudores); ahí podrían salir deudores que no requieren verificación» (M-23, 22-09-2026). GD-03 y GD-04 corrigen los textos.
+  - CA-3 · (retirado el 23-09-2026: la lectura «empresa emisora» quedó descartada; CA-1 y CA-2 son la definición).
+- **Notas**: «Todas las facturas de la oferta pasan por el motor de verificación (los que pasan son los deudores); ahí podrían salir deudores que no requieren verificación» (M-23, 22-09-2026); «es por deudor» (M-22, 23-09-2026). GD-03 y GD-04 corrigen los textos.
 
 ### HU-19 · Pricing: tasa por deudor sobre cada documento con su plazo
 - **Como** sistema, **quiero** que el descuento racional use el plazo del documento y la tasa del deudor, **para** que la diferencia de precio sea la de cada factura y no la de un plazo promedio.
@@ -316,13 +319,13 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 
 ### HU-26 · Solicitud automática al comité al publicar
 - **Como** Ejecutivo comercial, **quiero** que al publicar con parte sin cupo la solicitud al comité se arme sola y cruce al tubo, **para** no presentarla a mano.
-- **Estado**: vigente bajo la lectura «no existir línea»; la lectura literal («existiendo suficiente línea») está a confirmar por el usuario (G-17).
-- **Reglas**: 15-bis, 15-bis-bis, 15 · **Cláusulas**: M-28 · **Gaps**: G-17.
+- **Estado**: vigente (definición ajustada 23-09-2026): la solicitud automática sale sólo cuando no existe línea suficiente; cuando existe, la cascada asigna esa línea y no se pide nada.
+- **Reglas**: 15-bis, 15-bis-bis, 15 · **Cláusulas**: M-28 · **Gaps**: G-17 (cerrado).
 - **Criterios de aceptación**:
   - CA-1 · Dado deudores sin cupo · Cuando confirmo «Enviar a Comité y Publicar» · Entonces la bitácora dice «Solicitud de línea inyectada» con id y el tubo la tiene idéntica (`e2e-15-bis-bis-a`, que además comprueba que Líneas › Solicitudes CONTIENE el id —`verEnBandeja`—, no que la fila diga «En gestión»). El estado inicial «En gestión» lo escribe `api1Inyeccion` (`estado: "En gestión", refrescos: 0`) y es vigente pero sin gate en pantalla: leer el rótulo de la fila de la bandeja es NUEVO (CP-068).
   - CA-2 · Dado toda la oferta con cupo · Cuando cierro · Entonces el CTA dice «Cerrar oferta y publicar» y no se inyecta nada (`e2e-29-a`; dirección que bloquea).
-  - CA-3 (si el usuario confirma la lectura literal) · Dado toda la oferta con cupo · Cuando cierro · Entonces igual se inyecta una solicitud y el CTA lo nombra.
-- **Notas**: el id lo propone la pestaña y lo asigna el tubo (caso 146).
+  - CA-3 · (retirado el 23-09-2026: la lectura literal de M-28 —con línea suficiente, pedir igual al comité— quedó descartada; CA-1 y CA-2 son la definición).
+- **Notas**: «En caso de no existir suficiente línea se solicita. En caso de existir suficiente se asigna esa.» (M-28, 23-09-2026): el «existir» del modelo es una errata y es lo que el sistema hace (`solicitudComiteDeOferta` devuelve `null` salvo `ev.requiereComite > 0`; regla 15-bis; casos 106, 107). Que lo pedido siga al motivo es HU-27 (G-18, sin decisión). El id lo propone la pestaña y lo asigna el tubo (caso 146).
 
 ### HU-27 · Lo que se pide al comité sigue al motivo del rechazo
 - **Como** Ejecutivo comercial, **quiero** que la solicitud pida ampliar el tope del cliente cuando el motivo es `cliente`, LF1 cuando es `lf1` y una puntual cuando es el par, **para** que el comité resuelva lo que falta.
@@ -550,23 +553,20 @@ Cada una de las 41 cláusulas y de los 36 gaps aparece al menos una vez.
 |---|---|
 | G-01 · G-02 · G-03 · G-04 · G-05 | HU-04 · HU-08 · HU-09 · HU-06 (cerrado) · HU-07 |
 | G-06 · G-07 · G-08 · G-09 · G-10 | HU-03 · HU-05 (cerrado; la antigüedad en G-31) · HU-11 (cerrado) · HU-12 · HU-13 |
-| G-11 · G-12 · G-13 · G-14 · G-15 | HU-24 (cerrado en M-15), HU-42 (decidido en M-18, ADR-0018) · HU-25 · HU-31, HU-34 (cerrado) · HU-32 · HU-18 |
-| G-16 · G-17 · G-18 · G-19 · G-20 | HU-16 (cerrado) · HU-26 · HU-27 · HU-35 · HU-37 |
+| G-11 · G-12 · G-13 · G-14 · G-15 | HU-24 (cerrado en M-15), HU-42 (decidido en M-18, ADR-0018) · HU-25 · HU-31, HU-34 (cerrado) · HU-32 · HU-18 (cerrado) |
+| G-16 · G-17 · G-18 · G-19 · G-20 | HU-16 (cerrado) · HU-26 (cerrado) · HU-27 · HU-35 · HU-37 |
 | G-21 · G-22 · G-23 · G-24 · G-25 | HU-20 (cerrado) · HU-21 · HU-19 · HU-36 · HU-39 |
 | G-26 · G-27 · G-28 · G-29 · G-30 | HU-30 · HU-17 · HU-38 · HU-02 · HU-40 |
 | G-31 · G-32 · G-33 · G-34 · G-35 | HU-05 · HU-21 · HU-35 · HU-37 · HU-32 |
 | G-36 | HU-42 (y HU-33 CA-3, vigente hoy · cambia con ADR-0018) |
 
-**Por estado (42 historias):** 19 vigentes —11 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
-HU-29, HU-33 —con su CA-3 vigente hoy · cambia con ADR-0018—, HU-41 y HU-26 bajo la lectura «no existir línea») y 8 por
-definición ajustada el 22-09-2026 (HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-31, HU-34)— · 22 por implementar (HU-02,
-HU-03 ADR-0014, HU-04, HU-05, HU-07, HU-08, HU-12, HU-13 ADR-0013, HU-17, HU-19, HU-21 ADR-0013, HU-25, HU-27, HU-30, HU-32
-ADR-0016, HU-35 ADR-0015, HU-36, HU-37 ADR-0017, HU-38, HU-39, HU-40, HU-42 ADR-0018) · 1 pendiente de confirmar (HU-09:
-eliminar o reabrir al corte).
+**Por estado (42 historias):** 19 vigentes —10 por conducta con gate (HU-01, HU-10, HU-14, HU-15, HU-22, HU-23, HU-28,
+HU-29, HU-33 —con su CA-3 vigente hoy · cambia con ADR-0018— y HU-41) y 9 por definición ajustada el 22 y 23-09-2026
+(HU-06, HU-11, HU-16, HU-18, HU-20, HU-24, HU-26, HU-31, HU-34)— · 23 por implementar (HU-02, HU-03 ADR-0014, HU-04,
+HU-05, HU-07, HU-08, HU-09 ADR-0019, HU-12, HU-13 ADR-0013, HU-17, HU-19, HU-21 ADR-0013, HU-25, HU-27, HU-30, HU-32
+ADR-0016, HU-35 ADR-0015, HU-36, HU-37 ADR-0017, HU-38, HU-39, HU-40, HU-42 ADR-0018) · 0 pendientes de confirmar.
 
-**Preguntas abiertas dentro de historias que ya tienen estado:** HU-04 (si el acuse entra al filtro de candidatura) ·
-HU-13 (qué significa «el cliente simula») · HU-18 (que la unidad de V01–V10 es el deudor, M-22) · HU-26 (la lectura
-literal de M-28, G-17).
+**Preguntas abiertas dentro de historias que ya tienen estado:** ninguna desde el 23-09-2026.
 
 **Lo que los casos de prueba tienen que pedir con maniobra nueva:** la firma del cliente (HU-29, HU-30, HU-35, HU-36,
 HU-42), el tab de Otorgamiento con un visado real (HU-23, HU-31, HU-32), el `DrawerVerificacion` con las dos
