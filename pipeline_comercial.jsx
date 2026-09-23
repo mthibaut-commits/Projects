@@ -11808,7 +11808,8 @@ function VerificacionTab({ deal, facturasOp = [], bloqueado, informativo, onNoCo
                       v = x.v,
                       isOpen = !!open[f.id];
                     const tel = v.tel;
-                    const estPill = v.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
+                    const estPill =
+                      v.est === "ok" ? { bg: "#F0FDF4", fg: "#16A34A", t: "✓ Verificada" } : { bg: "#FFF7ED", fg: "#C2410C", t: "⚠ Req. verif." };
                     const tdn = ((f.tipo || "").match(/\((\d+)\)/) || [])[1] || "33";
                     const tdoc = tdn === "34" ? "Factura exenta 34" : tdn === "46" ? "Factura compra 46" : tdn === "61" ? "Nota créd. 61" : "Factura 33";
                     const fd = fechasDocumento(f);
