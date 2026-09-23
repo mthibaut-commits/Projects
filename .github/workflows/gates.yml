@@ -34,7 +34,7 @@ jobs:
       # el .jsx formateado (ADR-0005). Un commit que deshaga el formato los vuelve a tumbar de a uno, en
       # sesiones distintas, sin que nadie relacione la caída con el formato.
       - name: 0 · Formato del fuente
-        run: npx prettier --check pipeline_comercial.jsx
+        run: npx prettier@3.6.2 --check pipeline_comercial.jsx
 
       # El LINTER, que cierra el cuarteto de gates. No trae reglas de estilo —de la forma se encarga
       # Prettier, y duplicar esa autoridad es cómo se pelean—: cada regla de `eslint.config.mjs` cita el

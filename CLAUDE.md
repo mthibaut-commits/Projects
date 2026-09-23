@@ -20,7 +20,7 @@ en 0 oportunidades**) en un HTML standalone que se abre en Chrome. El porqué de
 ## Verificación — SIEMPRE tras editar el `.jsx`, en este orden
 
 ```bash
-npx prettier --check pipeline_comercial.jsx                                                                   # 0 · el formato (ADR-0006)
+npx prettier@3.6.2 --check pipeline_comercial.jsx                                                                   # 0 · el formato (ADR-0006)
 npx eslint pipeline_comercial.jsx                                                                             # 0-bis · el linter (0 hallazgos)
 npx tsc --jsx preserve --allowJs --noEmit --skipLibCheck pipeline_comercial.jsx                              # 1 · sin errores TS1
 grep -oE '^(export default )?(async )?(function|const|let|var|class) [A-Za-z_$][A-Za-z0-9_$]*' pipeline_comercial.jsx | awk '{print $NF}' | sort | uniq -d  # 2 · debe salir vacío
@@ -34,12 +34,12 @@ Los pasos **0 y 0-bis** no verifican una conducta: protegen a los otros. El lint
 reglas de estilo —de la forma se encarga Prettier— y cada regla suya cita el incidente de este repo que habría
 cazado; al adoptarlo encontró una clave duplicada en un objeto de pricing. Los gates `regla_<slug>` y los dos auditores
 leen el fuente como TEXTO y están re-anclados contra el `.jsx` formateado (ADR-0006), así que deshacer el formato
-los tumba de a uno en sesiones distintas. Para arreglarlo: `npx prettier --write pipeline_comercial.jsx`.
+los tumba de a uno en sesiones distintas. Para arreglarlo: `npx prettier@3.6.2 --write pipeline_comercial.jsx`.
 Ninguno de los seis subsume a otro, **y los cinco primeros juntos tampoco bastan**: la colisión parámetro/variable local, un
 bloque declarado antes de su dependencia y un componente no importado pasan `tsc` y el build, y sólo aparecen en
 el paso 5 o al abrir la pantalla — que es lo que hace el paso 6 (`tests/e2e/`, con la sesión iniciada y el detalle
 abierto). El CI (`.github/workflows/gates.yml`) corre los seis en toda rama y todo PR, idénticos. Qué cubre cada caso de la suite: `vault/conocimiento/verificacion.md`; qué fija cada gate de
-contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ninguna regla queda «sin gate»**: las 103 de dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `regla_<slug>.test.mjs`.
+contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ninguna regla queda «sin gate»**: las 104 de dominio y los 12 del contrato citan su caso de la suite, su `e2e-<regla>` o su `regla_<slug>.test.mjs`.
 
 ## Otros comandos
 
@@ -49,6 +49,7 @@ contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ni
 | ¿Los hooks están corriendo acá? | `node verificar_hooks.mjs` — **la primera vez en cada máquina**, y cuando un hook «no saltó» |
 | Código muerto | `node auditar_muerto.mjs` (`--csv` para el inventario en crudo) |
 | Aislamiento de los motores | `node auditar_aislamiento.mjs` |
+| Skills de terceros que chocan con una regla | `node auditar_skills.mjs` (`--csv`) — gate: `skills.test.mjs` |
 | Unidades (millones donde va un peso) | `node auditar_unidades.mjs` — candidatos, se verifican a mano |
 | Regenerar atribuciones | `node build_app.mjs && PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node regenerar_atribuciones.mjs` |
 | Regenerar los activos sintéticos | `node GeneradorDatos/generar.js` — tiene punto fijo: reproduce el archivo commiteado byte a byte (gate `generador.test.mjs`) · un solo bloque: `--solo=VERIFICACION` |
@@ -95,6 +96,32 @@ contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ni
     núcleos y frena las corridas de pruebas (17-09-2026: cuatro `rev` colgados, uno casi seis horas).
 12. **Al dudar sobre el proyecto, busca en `vault/` antes de preguntar o asumir**:
     `grep -rn "^13-ter\." vault/conocimiento/reglas/` encuentra una regla por su número.
+
+13. **Una skill de terceros que contradice una regla de este repo se CORRIGE, no se la deja diciendo lo
+    contrario.** Las 39 de `.claude/skills/` vienen de `Leonxlnx/taste-skill`, `addyosmani/agent-skills` y
+    `DietrichGebert/ponytail`; son buen consejo genérico y disparan solas —la de TDD declara que aplica a
+    «any new logic, any bug fix, any change that could break existing behavior»—. Una regla del vault, en
+    cambio, está ganada con un incidente medido acá. Anotar en este archivo quién manda no alcanza: el agente
+    lee la skill, no la nota. Así que **cada skill que choca lleva su bloque `AJUSTE-LOCAL-NEX` arriba del
+    todo**, con la regla citada, y el gate `skills.test.mjs` comprueba que siga puesto — una reinstalación lo
+    borraría en silencio. El cuerpo ajeno **no se reescribe**: se le antepone lo que acá manda.
+    **Medido** (`node auditar_skills.mjs`, 23-09-2026): **12 de 39** chocan, en tres frentes. **Unidad** (4:
+    `test-driven-development`, `constraint-driven-development`, `ci-cd-and-automation`,
+    `browser-testing-with-devtools`) piden capa unitaria, Jest/vitest y umbral de cobertura, y acá no hay esa
+    capa a propósito (`.claude/rules/testing.md`) — el ciclo rojo→verde sí vale, sólo cambia dónde vive el
+    caso. **Git** (1: `git-workflow-and-versioning`) prescribe Conventional Commits en inglés, y acá el
+    mensaje va en español diciendo qué y por qué. **Tokens** (7, las de diseño) traen su propia paleta y
+    tipografía: aportan COMPOSICIÓN y los tokens salen del objeto `C` — es la **regla 63**, gate
+    `regla_63.test.mjs`, y `stitch-design-taste` además genera `DESIGN.md`, que no va a la raíz.
+    **Tres colisiones que se daban por ciertas y la medición refuta**, anotadas para que no se re-inventen:
+    `documentation-and-adrs` **no** choca con la regla 7 —dice `PROPOSED → ACCEPTED → SUPERSEDED`, que es
+    exactamente ADR inmutable reemplazado por otro—; `code-review-and-quality` **no** choca con la 8 —argumenta
+    contra el «LGTM sin evidencia»—; y los cinco `Vite`/`webpack` son ejemplos incidentales, no prescripciones.
+    **`ponytail` y `code-simplification` son las de trato más delicado** y no las caza ningún patrón: piden «la
+    solución más perezosa que funcione» y borrar lo que parece de más. Acá lo que parece de más suele ser una
+    regla ganada con un incidente —la 3 dice que no se resumen ni se renumeran— o un paso de verificación que
+    parece redundante y no lo es (la 4: ninguno de los seis subsume a otro). Sirven para código nuevo; no para
+    podar el vault, las reglas ni los gates.
 
 ## Flujo de trabajo con el usuario
 
