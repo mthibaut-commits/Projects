@@ -263,8 +263,12 @@ confirmación pendiente**: lo que sigue es el backlog decidido, en rojo primero 
   CP-132; (4) G-11 pasó de proceso a funcional; (5) `spec-verificacion-facturas.md` §9,
   `spec-ciclo-factura.md` §14 y la regla 13 del vault **no se tocan** hasta el commit que implemente ADR-0018,
   con su caso en rojo primero (GD-12).
-- **Dos sesiones paralelas y el «siguiente entero libre»** (deuda del tablero) vale también para los ADR: esta
-  rama emitió 0013–0018 encima de 0012; quien mezcle otra rama con ADR renumera.
+- **Dos sesiones paralelas y el «siguiente entero libre»** (deuda del tablero) vale también para los ADR y para los
+  archivos e2e: esta rama emitió 0013–0019 encima de 0012, y al mezclar `main` (que traía la regla 59 y su
+  `26_59.e2e.mjs`) los doce archivos e2e que `casos_de_prueba.md` planificaba como 26 … 37 pasaron a 27 … 38, y el
+  tablero tomó la medición nueva (51 gates, 32 e2e, 88 reglas). La regla 59 hizo además el punto 2 del «Siguiente
+  paso» (el tab de Verificación al simular) y dejó desfasadas tres afirmaciones de estos documentos —el tab «aparece
+  al publicar»—: se corrigieron a «se ve al simular, informativo; accionable al pre-evaluar o publicar».
 
 ## Verificación
 

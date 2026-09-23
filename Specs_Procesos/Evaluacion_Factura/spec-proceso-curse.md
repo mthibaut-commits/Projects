@@ -309,7 +309,7 @@ C30–C32».
 
 | | |
 |---|---|
-| Cuándo corre | En el **render del detalle** (`verifFactura`), en la misma pasada que líneas (regla 14, gate 124), y con evidencia sólo en `snapVersionCli.verificacion` al hacer «Re-evaluación de la simulación»; ningún evento de evaluación la invoca: `simularOferta` no llama a `verifDecision` y «Re-evaluar operación» sólo apaga `reevalPend` (§7); al cerrar y publicar aparece el tab (regla 58) |
+| Cuándo corre | En el **render del detalle** (`verifFactura`), en la misma pasada que líneas (regla 14, gate 124), y con evidencia sólo en `snapVersionCli.verificacion` al hacer «Re-evaluación de la simulación»; ningún evento de evaluación la invoca: `simularOferta` no llama a `verifDecision` y «Re-evaluar operación» sólo apaga `reevalPend` (§7); el tab se ve desde la simulación en modo informativo y se vuelve accionable al pre-evaluar o publicar (regla 59) |
 | Unidad de decisión | El **deudor** dentro de la operación; la verificación de una factura es la de su deudor (`verifDecision`, regla 6) |
 | Qué recibe | El par cliente-deudor y **todas** las facturas de ese deudor en la operación (`verifFactura`); el estado del cliente por parámetro (regla 6, «Regla 0» de verificación; `spec-verificacion-facturas.md` §4.0) |
 | Qué devuelve | `requiere_verificacion` con motivo y la lista completa de criterios evaluados (`spec-verificacion-facturas.md` §2.3); por operación, `verifResumenDeal` cuyo `.pend` es VER-01 |
@@ -469,8 +469,8 @@ existe línea suficiente; cuando existe, la cascada asigna esa línea y no se pi
  oferta no tiene cupo (`spec-ciclo-factura.md` §6). `cerrarOferta` escribe `patchCierre`
  (`ofertaCerrada`, `ofertaComunicada`, `negocioNum`, `publicacion: "electronica" | "fisica"`),
  invalida el cache del visado y, en la vía electrónica, llama a `enviarCierre` dentro del gesto del
- clic. Con eso los pendientes pasan de pronóstico (morado) a exigidos (rojo) (regla 54) y aparece el
- tab Verificación (regla 58).
+ clic. Con eso los pendientes pasan de pronóstico (morado) a exigidos (rojo) (regla 54) y el tab
+ Verificación pasa de informativo a accionable (regla 59).
 - *Enviar a comité.* Lo genera el cierre: `asignarLineas` → `solicitudComiteDeOferta` (una
  solicitud con N líneas de detalle `tipoLinea: "puntual"`, una por deudor sin cupo, `propFactoring =
  aprobada + pedido`) → `api1Inyeccion` → `repoSolicitudComite` y `deal.solicitudComite`;
@@ -735,7 +735,8 @@ nombra lo que prueba.
 | 43 | curse_firma_y_etapas | Girar no es acción de NEX: termina en `aprobarIntegracion`; el giro vuelve como callback (`recibirGiroTesoreria` pura); la asignación se congela en la inyección | 147, 148, regla_transiciones.test.mjs |
 | 50 | otorgamiento_y_atribucion | Al firmar el cliente, el sistema escribe el hilo «Cierre de negocio» a ejecutivo y aprobadores pendientes | 154, regla_aviso_cierre.test.mjs |
 | 55 | curse_firma_y_etapas | La firma cruza a la pestaña del tubo (`avisarTubo` antes de aplicar el patch) | regla_estado_pestanas.test.mjs |
-| 58 | curse_firma_y_etapas | La oferta publicada es un estado (`ETAPA_PUBLICADA`); `patchCierre` asienta `ofertaComunicada`; el tab Verificación aparece al cerrar | e2e-58, regla_58.test.mjs |
+| 58 | curse_firma_y_etapas | La oferta publicada es un estado (`ETAPA_PUBLICADA`); `patchCierre` asienta `ofertaComunicada`; el tab Verificación pasa a accionable al cerrar | e2e-58, regla_58.test.mjs |
+| 59 | verificacion | El tab de Verificación se ve con la oferta simulada, en modo informativo (la compuerta de la regla 6 protege la llamada, no la información) y se vuelve accionable al pre-evaluar o publicar; el chip del deudor dice Prime y la nota va rotulada; los criterios V00–V10 son del deudor y el quiz telefónico es de la factura | e2e-59-a, e2e-59-b, regla_verif_informativa.test.mjs |
 | 54 | ui_detalle_y_tubo | Pendientes de otorgamiento y verificación: pronóstico (morado) mientras se simula, exigidos (rojo) al publicar | 158, regla_54.test.mjs |
 | 8 | oferta_pricing_y_giro | «Cerrar oferta» es prerequisito de publicar; el Agente IA es opcional; el piso de la operación es el del deudor más exigente | 119, 149 |
 | 13-quaterdecies | oferta_pricing_y_giro | «Eliminar la simulación y vaciar la oferta» devuelve al estado de entrada sin tocar la evidencia; sólo mientras la oferta sea del ejecutivo | e2e-13-quaterdecies, regla_13_quaterdecies.test.mjs |

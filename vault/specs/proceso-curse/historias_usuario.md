@@ -526,8 +526,8 @@ Actores: **Inbound (sistema)** · **Ejecutivo comercial** · **Agente IA** · **
 - **Estado**: vigente.
 - **Reglas**: 54, 6, 58 · **Cláusulas**: M-37, M-38 · **Gaps**: —.
 - **Criterios de aceptación**:
-  - CA-1 · Dado la oferta simulada sin publicar · Cuando miro los badges · Entonces van en morado y el tab de Verificación no aparece (caso 31).
-  - CA-2 · Dado cerrada Y comunicada · Cuando miro · Entonces van en rojo y aparece el tab de Verificación (la compuerta del tab la fijan los casos 31 —cerrar sin publicar no lo habilita— y 32 —la publicación del Agente IA cuenta—; el color, el caso 158; `e2e-58` mira la fila del TUBO, no el tab del detalle: en pantalla el tab es NUEVO, CP-116).
+  - CA-1 · Dado la oferta simulada sin publicar · Cuando miro los badges · Entonces van en morado y el tab de Verificación se ve en modo informativo, sin las dos acciones (regla 59, `e2e-59-a`; la compuerta la fija el caso 31).
+  - CA-2 · Dado cerrada Y comunicada · Cuando miro · Entonces van en rojo y el tab de Verificación pasa a accionable (regla 59: la compuerta de la regla 6 protege la LLAMADA, no la información; los casos 31 —cerrar sin publicar no lo habilita— y 32 —la publicación del Agente IA cuenta— fijan qué lo abre; el color, el caso 158; `e2e-58` mira la fila del TUBO y `e2e-59-b` las acciones del tab: en pantalla el color es NUEVO, CP-116).
 - **Notas**: la compuerta de Línea no cambia con la publicación.
 
 ---

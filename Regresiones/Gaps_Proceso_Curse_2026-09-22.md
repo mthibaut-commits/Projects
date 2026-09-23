@@ -316,7 +316,8 @@ se pide nada» la ve hoy sólo el CTA de `e2e-29-a`: que no se inyecte tras conf
 
 ### 4.1 · Lo que la capa e2e cubre hoy del proceso de curse
 
-Para que las historias de usuario no pidan lo que ya existe. Los 30 casos de `tests/e2e/` cubren, del curse:
+Para que las historias de usuario no pidan lo que ya existe. Los 32 casos de `tests/e2e/` (los dos de `26_59.e2e.mjs`, `e2e-59-a/-b`, fijan el tab de Verificación
+informativo al simular y accionable al pre-evaluar, regla 59) cubren, del curse:
 
 - **Armar, simular, editar y vaciar la oferta**: `e2e-12-bis-a…e` (simular promueve, editar no, el dual, eliminar
   la simulación), `e2e-13-octies-bis-a/b` (la oferta vacía se ve), `e2e-13-sexdecies-a…d` (armar a mano y retirar

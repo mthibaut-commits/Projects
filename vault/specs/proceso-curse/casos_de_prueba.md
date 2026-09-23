@@ -15,8 +15,9 @@ timestamp: 2026-09-23T12:00:00Z
 ADR-0014 cedida a un factoring ajeno · ADR-0015 el comité que rechaza retira y reabre · ADR-0016 «ya no aplica desde la
 versión N» · ADR-0017 con comité el giro es Normal · ADR-0018 la verificación fallida marca y avisa, el ejecutivo retira y
 vuelve a publicar · ADR-0019 al corte la oportunidad sin oferta se elimina y la que tiene oferta no se toca), el harness
-`tests/e2e/_harness.mjs` + `correr.mjs` y los 30 casos e2e
-de los 17 archivos `tests/e2e/*.e2e.mjs`.
+`tests/e2e/_harness.mjs` + `correr.mjs` y los 32 casos e2e
+de los 18 archivos `tests/e2e/*.e2e.mjs` (los dos de `26_59.e2e.mjs`, `e2e-59-a/-b`, fijan el tab de Verificación
+informativo al simular, regla 59).
 
 Cómo se lee:
 
@@ -47,7 +48,7 @@ Cómo se lee:
 - Regla de la casa: la evidencia es la definición. Reglas por número, casos por número o id, condiciones del fuente
   por su nombre, secciones de spec por §. Ningún selector por clase de Tailwind (`tr.pl-row` y `header nav button`
   son las excepciones aceptadas por forma). Todo monto es un peso entero; `M$` es abreviatura de pantalla.
-- Los archivos e2e nuevos se numeran a continuación del último existente (`25_58.e2e.mjs`): **26 en adelante**.
+- Los archivos e2e nuevos se numeran a continuación del último existente (`26_59.e2e.mjs`, el de la regla 59): **27 en adelante**.
   Los ids nuevos son `e2e-<regla>` (con sufijo por dirección) cuando la regla existe, si no `e2e-HU-nn-<letra>`.
   Los sufijos parten de `-a` (`e2e-14-a/b/c`, `e2e-29-a/b`): un `-b` sin `-a` queda huérfano. Si la regla ya tiene
   un id SIN sufijo (`e2e-15`), el nuevo toma `-b` y el existente se renombra a `-a` sólo en un commit que toque
@@ -106,7 +107,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: sesión iniciada, Directorio APAGADO (silencia el stream y es la condición para que la barra muestre Start / Reiniciar / Inbound: con Directorio encendido los tres se ocultan, `e2e-31`), «Gestión diaria», tubo «0 de 0», y el filtro rápido en **«Todos»**: la Bandeja Inbound sólo se concatena al tubo bajo `quickFilter === "todos" && showInbound && !directorio`, y la línea base de la capa es «Con línea» (`reiniciar` del harness), que sólo deja oferta/prospección `!fueraDeLinea`; con la base puesta la fila del stream puede no verse nunca.
 - **Pasos**: 1) filtro «Todos» (`button[title="Filtrar oportunidades"]` con texto `^Todos`); 2) el `button` con texto «Start» de la barra del tubo (`title` «Sólo demo · iniciar la simulación del inbound»; al correr pasa a «Pausar» con `title` «Sólo demo · pausar la simulación»; el botón de ícono con `title` «Reproducir streaming de facturas» / «Pausar» es OTRO control, la cabecera del `InboundPanel` del Kanban); 3) `waitForFunction` hasta que exista una `tr.pl-row` (tolerancia 120 s: el stream no es determinista en tiempo); 4) «Pausar»; 5) leer la etapa de la primera fila; 6) abrir su detalle (MN-02) y leer «Documentos en la oferta».
 - **Resultado esperado**: la fila dice «Sin gestión» y «Sin simular»; el detalle dice «Documentos en la oferta» 0 · 0, el panel de arranque pregunta qué facturas incluir y «Documentos disponibles» tiene ≥ 1 folio.
-- **Esbozo e2e**: id `e2e-HU-01-a` · archivo `26_inbound_stream.e2e.mjs` · `filtroRapido(h.pagina, "Todos")`, `h.pagina.locator("button", {hasText: /^\s*Start\s*$/})`, `h.abrirDetalle(0)`, `h.texto(det)` · `finally`: `button` «Reiniciar» de la barra (`title` «Sólo demo · reiniciar la simulación (todo a cero)»), `det.close()`, `filtroRapido(h.pagina, "Con línea")`, `h.reiniciar()`.
+- **Esbozo e2e**: id `e2e-HU-01-a` · archivo `27_inbound_stream.e2e.mjs` · `filtroRapido(h.pagina, "Todos")`, `h.pagina.locator("button", {hasText: /^\s*Start\s*$/})`, `h.abrirDetalle(0)`, `h.texto(det)` · `finally`: `button` «Reiniciar» de la barra (`title` «Sólo demo · reiniciar la simulación (todo a cero)»), `det.close()`, `filtroRapido(h.pagina, "Con línea")`, `h.reiniciar()`.
 
 ### CP-002 · Las facturas nuevas de un cedente abierto suman al pool sin duplicar y no tocan la oferta
 - **Criterio**: CA-2 de HU-01 · **Dirección**: positiva (crece) y negativa (la oferta no cambia, ningún folio repetido) · **Capa**: suite. · **Cobertura actual**: NUEVO. El caso 142 fija la ventana de la bandeja, no la fusión del pool.
@@ -183,7 +184,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: configuración del tenant con un criterio `"no_existe"` en las reglas del inbound. Configuración NO tiene sección «Inbound» (sus secciones son Tenants, Operación, Logs y versión, Auditoría, Usuarios, Roles, Áreas, Factoring target, Etapas, Vacaciones y reemplazos, Simulación, Correo saliente, Oportunidades, Otorgamiento, Productos, Monedas, Costo de fondo, Funcionalidades y Bancos): las reglas (`INBOUND_RULES`, leídas por `leerVersionado(RULES_KEY, "reglasInbound")`) se ven en el `InboundPanel` (las `RuleCard` con «Pausar regla» / «Activar regla»), que se renderiza ÚNICAMENTE en la vista Kanban, dentro de la `MacroColumn` «Bandeja Inbound», bajo `showInbound && !directorio`. El botón «Inbound» de la barra del tubo existe pero hace otra cosa: muestra u oculta la columna (`title` «Mostrar columna Inbound» / «Ocultar columna Inbound (más espacio)»), no abre las reglas. Dos disparadores que no se pueden provocar sin sustituto: (1) las reglas se leen UNA vez al montar la app (`useState(cargarReglas)`, que llama `leerVersionado(RULES_KEY, "reglasInbound", INBOUND_RULES)`), así que plantar `"no_existe"` en `RULES_KEY` de `localStorage` por `evaluate` exige `page.reload()`, y recargar pierde la sesión —`SESION` es memoria del módulo (`SESION = { usuario, via, tenant, iniciada, expira, actividad }`, `suplantar` la reescribe en memoria) y nada la persiste en storage—; el harness inicia sesión sólo dentro de `abrirApp`, así que el caso repite la secuencia de login de `abrirApp` tras recargar (Ingresar → OTP leído de pantalla → «Verificar y entrar»), o el harness exporta `iniciarSesion(pagina)`, y el caso lo dice. (2) El panel vive en el Kanban: selector de vista `button[title="Cambiar la vista del tubo (Tabla / Kanban / Tamaño)"]` → «Kanban» (por defecto carga en Tabla).
 - **Pasos**: suite: 1) evaluar el filtro; e2e: 2) plantar `RULES_KEY`, `page.reload()`, volver a iniciar sesión, `h.irA("Gestión diaria")` (no el gear: `h.irA` sólo sirve para los rótulos de la navbar, y el gear es `button[title="Configuración"]`, fuera del `nav`); 3) selector de vista → «Kanban» → abrir el panel (`onToggleOpen`, el `button` de la cabecera «Bandeja Inbound»); 4) leer la fila del criterio en el panel.
 - **Resultado esperado**: cero candidatas por ese criterio; la fila dice «no ejecutable» (molde: `reglaNoEjecutable`, caso 141).
-- **Esbozo e2e**: id `e2e-HU-05-a` · archivo `26_inbound_stream.e2e.mjs` · `h.pagina.evaluate` sobre `RULES_KEY`, `page.reload()` + login, selector de vista, `button` de la cabecera «Bandeja Inbound», texto de la fila · `finally`: el pie del propio panel «Restablecer reglas a las predeterminadas» (`onResetRules`, la restauración legítima; los botones de Configuración «Restaurar valores por defecto» / «Restaurar el catálogo base» no tocan las reglas del inbound), volver a la vista «Tabla», `h.reiniciar()`.
+- **Esbozo e2e**: id `e2e-HU-05-a` · archivo `27_inbound_stream.e2e.mjs` · `h.pagina.evaluate` sobre `RULES_KEY`, `page.reload()` + login, selector de vista, `button` de la cabecera «Bandeja Inbound», texto de la fila · `finally`: el pie del propio panel «Restablecer reglas a las predeterminadas» (`onResetRules`, la restauración legítima; los botones de Configuración «Restaurar valores por defecto» / «Restaurar el catálogo base» no tocan las reglas del inbound), volver a la vista «Tabla», `h.reiniciar()`.
 
 ### CP-014 · (sin caso: lectura descartada el 22-09-2026)
 - La «lista de emisores con tags» y la cesión previa quedaron **descartadas** como criterios del inbound (M-10, segunda vuelta: «con eso basta»; G-07 cerrado). El criterio que sí entra es la antigüedad (CP-012, CP-120). El id no se reutiliza.
@@ -201,7 +202,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: MN-01 con filtro «Todos» y un MN-02 sobre la fila 0 (para tener su foto en `TICKETS_EMITIDOS[…].payload.deal`, `e2e-30`).
 - **Pasos**: 1) leer el TEXTO de los TRES chips de la columna «Oportunidad» de la fila 0: `chipTramo(k, txt, fg, bg, tip)` pinta un chip por tramo —`"primeConLinea"` (rótulo «Prime con línea»), `"otrosConLinea"` («Otros con línea») y `"sinLinea"`— sobre `capacidadDeudores(an.lista, d.rutEmisor)`, con contenido `«n · M$monto»` cuando hay (o `0`) y el `title` es el tip explicativo del tramo, no las cifras; se localizan por su rótulo y de cada uno se separan `n` y `monto`; 2) en el tubo, `evaluate` que llame `capacidadDeudores` sobre la misma oportunidad y devuelva conteo y monto por tramo; 3) leer las claves de la oportunidad.
 - **Resultado esperado**: `n` y `monto` de cada chip = lo que devuelve la función (en pesos; el chip abrevia con `fmtMM`); la oportunidad NO trae campos de segmentación persistidos (la dirección que la definición ajustada fija).
-- **Esbozo e2e**: id `e2e-13-decies-a` · archivo `35_tubo_segmentacion.e2e.mjs` · `h.encenderDirectorio`, `filtroRapido(h.pagina, "Todos")`, `h.abrirDetalle(0)`, `h.pagina.evaluate` · `finally`: `det.close()`, `h.apagarDirectorio()`, `filtroRapido(h.pagina, "Con línea")` (la precondición pone «Todos» y `correr.mjs` sólo reinicia el filtro al cambiar de ARCHIVO).
+- **Esbozo e2e**: id `e2e-13-decies-a` · archivo `36_tubo_segmentacion.e2e.mjs` · `h.encenderDirectorio`, `filtroRapido(h.pagina, "Todos")`, `h.abrirDetalle(0)`, `h.pagina.evaluate` · `finally`: `det.close()`, `h.apagarDirectorio()`, `filtroRapido(h.pagina, "Con línea")` (la precondición pone «Todos» y `correr.mjs` sólo reinicia el filtro al cambiar de ARCHIVO).
 
 ### CP-016 · Constituida una línea, el join la refleja al redibujar, sin esperar una corrida
 - **Criterio**: CA-2 de HU-06 (definición ajustada 22-09-2026: el join es una consulta en pantalla) · **Dirección**: positiva (cambia tras constituir) y negativa (nada queda persistido que pueda quedarse atrás) · **Capa**: suite. · **Cobertura actual**: NUEVO, y fija conducta vigente (moldes: caso 150, la línea constituida la usa la asignación siguiente; caso 100, el lookup).
@@ -287,7 +288,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: MN-01, una OP-DIR simulada con MN-03 «Deudores con línea» y cerrada con MN-04; o MN-09 con `{ofertaCerrada: true, ofertaComunicada: true, negocioNum}` y `usuario` ADMIN en el payload (MN-09 exige el MN-02 previo). El botón «Acciones» sólo existe en los tabs Bitácora, Cobranza y Mensajería (regla 30), que la sesión inicial (Ejecutivo Comercial) NO ve: hay que cambiar la sesión a ADMIN (MN-07 en la pestaña del detalle, o el `usuario` del ticket) y abrir el tab «Bitácora» antes de buscar el menú (`e2e-30` hace exactamente eso).
 - **Pasos**: 1) en Negocio › Detalle, contar `button[title="Agregar a la simulación"]` y `button[title="Retirar esta factura de la oferta"]`; 2) sesión ADMIN → tab «Bitácora» → abrir el menú «Acciones» y leer sus ítems; 3) contraste: en un detalle sin cerrar los botones del paso 1 existen.
 - **Resultado esperado**: 0 y 0 en la cerrada; «Editar la oferta» presente; > 0 en la abierta.
-- **Esbozo e2e**: id `e2e-33-a` · archivo `28_publicacion.e2e.mjs` · `abrirConTicket`, `det.locator(...)`, tab «Bitácora», `itemAcciones` · `finally`: `sel.selectOption(usuario0)`, cerrar pestañas extra, MN-10.
+- **Esbozo e2e**: id `e2e-33-a` · archivo `29_publicacion.e2e.mjs` · `abrirConTicket`, `det.locator(...)`, tab «Bitácora», `itemAcciones` · `finally`: `sel.selectOption(usuario0)`, cerrar pestañas extra, MN-10.
 
 ## HU-11 · Re-evaluar cuando cambia la selección (D1 cerrada el 22-09-2026: el gesto es explícito, ADR-0013)
 
@@ -341,20 +342,20 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: MN-01, MN-02 sobre una OP-DIR sin simular; `n0 = (SIM_VERSIONS[id] || []).length` por `evaluate`. `SIM_VERSIONS` NO es una lista que se filtre: es el objeto `{ [dealId]: [ { v, rev, ts, origen, vars, estado, nApr, nExc, nRech } ] }` que se reapunta a `repoSimVersions.all()` tras cada rehidratación (todos los lectores hacen `SIM_VERSIONS[deal.id] || []`: `revOtorgActual`, `lineaDeVersion`, el diff); se lee `SIM_VERSIONS[id]` o `repoSimVersions.get(id)` (clave real `pc_repo_simulacion_version`).
 - **Pasos**: 1) dos facturas a mano (`e2e-13-sexdecies-a`); 2) `button` «Simular la oferta · 2 fact.»; 3) esperar `/Se puede cursar|No se puede cursar/`; 4) `evaluate` sobre `SIM_VERSIONS[id]`.
 - **Resultado esperado**: una versión más con `v: 1` y `rev: 0` (el registro no tiene campo `numero`: lleva `v` 1-based y `rev` 0-based, «v1 se emite con rev = 0», `revOtorgActual` = nº de versiones − 1). Campos observables HOY en el molde: `v, rev, ts, origen, vars, estado, nApr, nExc, nRech`, más `linea` (singular, con `cursable` y `facturas` por factura en `CON_LINEA` / `REQUIERE_COMITE`), que sólo la empuja el retiro por «no confirmó» (`repoSimVersions.push(id, { ...prev, v, rev, ts, origen, linea })`) y que `reabrirOperacion` lee (`linea.cursable` de la última). **`verificacion` y `res` no existen en ninguna versión**: que la v1 los traiga —y traiga `linea` al simular, no sólo al retirar— es exactamente el gap G-10 que este caso pone en rojo, no un campo del molde. Los `vars` van sobre esos dos folios exactos. Con ADR-0013 la v1 trae los CINCO resultados: además de `linea` y `verificacion`, el giro por deudor y el pricing (su contenido lo fijan CP-053 y CP-123; que los cinco cuenten igual, CP-122).
-- **Esbozo e2e**: id `e2e-13-a` · archivo `27_version_v1.e2e.mjs` · `h.abrirDetalle`, agregar por vista plana, `evaluate` · `finally`: Opciones → «Eliminar la simulación», MN-10.
+- **Esbozo e2e**: id `e2e-13-a` · archivo `28_version_v1.e2e.mjs` · `h.abrirDetalle`, agregar por vista plana, `evaluate` · `finally`: Opciones → «Eliminar la simulación», MN-10.
 
 ### CP-035 · Cerrar y reabrir el detalle lee la versión, no el render
 - **Criterio**: CA-4 de HU-13 · **Dirección**: positiva · **Capa**: e2e. · **Cobertura actual**: NUEVO (`lineaDeVersion` lo fija el caso 124 en la suite; en pantalla no).
 - **Precondición**: la de CP-034 ya simulada; leer el titular y la compuerta «Línea» (por `title`).
 - **Pasos**: 1) `det.close()`; 2) abrir de nuevo por id (MN-02); 3) releer titular y compuerta; 4) `evaluate`: modificar en memoria el A23 del par (sin persistir, `LINEAS_DATA`) y releer.
 - **Resultado esperado**: idénticos antes y después del cierre; tras el paso 4 la compuerta NO cambia (lee la versión), y sólo «Re-evaluar operación» la mueve.
-- **Esbozo e2e**: id `e2e-13-b` · archivo `27_version_v1.e2e.mjs` · `finally`: restaurar `LINEAS_DATA` desde la foto, MN-10.
+- **Esbozo e2e**: id `e2e-13-b` · archivo `28_version_v1.e2e.mjs` · `finally`: restaurar `LINEAS_DATA` desde la foto, MN-10.
 
 ### CP-036 · Sin simular no hay versión y las compuertas dicen «Por evaluar»
 - **Criterio**: CA-5 de HU-13 · **Dirección**: negativa · **Capa**: e2e. · **Cobertura actual**: NUEVO.
 - **Precondición**: MN-01, MN-02 sobre OP-DIR sin simular. · **Pasos**: 1) `SIM_VERSIONS` del id; 2) leer compuertas por `title`.
 - **Resultado esperado**: cero versiones; «Por evaluar» sin número.
-- **Esbozo e2e**: id `e2e-13-c` · archivo `27_version_v1.e2e.mjs` · `finally`: `det.close()`, `h.apagarDirectorio()`.
+- **Esbozo e2e**: id `e2e-13-c` · archivo `28_version_v1.e2e.mjs` · `finally`: `det.close()`, `h.apagarDirectorio()`.
 
 ### CP-122 · Tras N eventos de evaluación los cinco motores cuentan N versiones; una evaluación que no completa los cinco no es versión
 - **Criterio**: CA-2 y CA-3 de HU-13 (ADR-0013 punto 3: «siempre debieran haber la misma cantidad de ejecuciones en todos los motores») · **Dirección**: positiva (N · N · N · N · N) y negativa (un motor que falla no deja una versión a medias) · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (T1: invariante nuevo, ADR-0013). Hoy sólo el otorgamiento versiona (`repoSimVersions`) y la simulación no emite: nace en rojo.
@@ -369,7 +370,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: MN-01 «Sin línea» fila 0, MN-03 «Todo lo disponible» (trae excepciones del cliente y de deudores, `e2e-15-bis-bis-a`); tab «Otorgamiento».
 - **Pasos**: 1) leer las filas de criterios D por RUT de deudor; 2) contar filas por (criterio, RUT).
 - **Resultado esperado**: como máximo una fila por (criterio, deudor) aunque el deudor tenga varias facturas en la oferta.
-- **Esbozo e2e**: id `e2e-4-a` (primer id e2e de la regla 4: los sufijos parten de `-a`, como `e2e-14-a/b/c`, `e2e-29-a/b`; un `-b` sin `-a` queda huérfano) · archivo `30_otorgamiento_visado.e2e.mjs` · el tab NO es `role="tab"` (no hay ninguno en el fuente): los tabs del detalle son `button`s con el rótulo y un badge numérico opcional, y se abre con el selector que ya usa `e2e-15-bis-bis-a`, `det.locator("button").filter({ hasText: /^\s*Otorgamiento\s*\d*\s*$/ }).first()` · `finally`: MN-10.
+- **Esbozo e2e**: id `e2e-4-a` (primer id e2e de la regla 4: los sufijos parten de `-a`, como `e2e-14-a/b/c`, `e2e-29-a/b`; un `-b` sin `-a` queda huérfano) · archivo `31_otorgamiento_visado.e2e.mjs` · el tab NO es `role="tab"` (no hay ninguno en el fuente): los tabs del detalle son `button`s con el rótulo y un badge numérico opcional, y se abre con el selector que ya usa `e2e-15-bis-bis-a`, `det.locator("button").filter({ hasText: /^\s*Otorgamiento\s*\d*\s*$/ }).first()` · `finally`: MN-10.
 
 ### CP-038 · Una regla C es una fila del cliente y no se repite por deudor
 - **Criterio**: CA-2 de HU-14 · **Dirección**: negativa · **Capa**: suite. · **Cobertura actual**: NUEVO (los casos 44 y 46 fijan el catálogo y el padrón, no la unicidad de la fila del cliente).
@@ -396,7 +397,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: MN-01 filtro «Todos»; fila con un deudor cuya global esté agotada (se identifica leyendo `LINEAS_DATA` por `evaluate`, sin inventar RUT, regla 46).
 - **Pasos**: 1) leer el `title` del chip «Oportunidad» de esa fila.
 - **Resultado esperado**: contiene «Nivel 3» y «línea global del deudor» y cuenta esa factura en `sinLinea`. **Nace en rojo**: hoy «Nivel 3: la línea GLOBAL del deudor» existe sólo como comentario de `capacidadDeudores` y «línea global del deudor» no aparece en ningún `title` renderizado.
-- **Esbozo e2e**: id `e2e-13-decies-b` (el chip «Oportunidad» del tubo es la regla 13-decies —parte los deudores por LÍNEA con un lookup— y no la regla 7, que es el motor `asignarLineas` de la suite; CP-015 toma `e2e-13-decies-a`) · archivo `35_tubo_segmentacion.e2e.mjs` · `finally`: `h.apagarDirectorio()` y luego `filtroRapido(h.pagina, "Con línea")`: la precondición pone «Todos», `correr.mjs` sólo reinicia el filtro al cambiar de ARCHIVO y el filtro es la línea base de la capa (`_harness.mjs`), así que sin esto el caso siguiente de `35_tubo_segmentacion` hereda «Todos» (como `restaurarTubo` de `10_12_bis` y el `finally` de `25_58`). Este caso **nace en rojo** (G-16, §16 del spec): no fija conducta vigente y va en el paso 3 del orden sugerido, no en el 1.
+- **Esbozo e2e**: id `e2e-13-decies-b` (el chip «Oportunidad» del tubo es la regla 13-decies —parte los deudores por LÍNEA con un lookup— y no la regla 7, que es el motor `asignarLineas` de la suite; CP-015 toma `e2e-13-decies-a`) · archivo `36_tubo_segmentacion.e2e.mjs` · `finally`: `h.apagarDirectorio()` y luego `filtroRapido(h.pagina, "Con línea")`: la precondición pone «Todos», `correr.mjs` sólo reinicia el filtro al cambiar de ARCHIVO y el filtro es la línea base de la capa (`_harness.mjs`), así que sin esto el caso siguiente de `36_tubo_segmentacion` hereda «Todos» (como `restaurarTubo` de `10_12_bis` y el `finally` de `25_58`). Este caso **nace en rojo** (G-16, §16 del spec): no fija conducta vigente y va en el paso 3 del orden sugerido, no en el 1.
 
 ### CP-043 · (sin caso: lectura descartada el 22-09-2026)
 - La lectura «la global del deudor es un control aparte y el modelo tiene cuatro líneas» quedó descartada: el usuario dio por buenas las cinco líneas (M-27 «ok», G-16 cerrado, §16 del spec respondido). LIN-01 sigue en la integración (caso 144) como control aguas abajo, no como sustituto del tercer nivel. El id no se reutiliza.
@@ -425,7 +426,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: MN-01 «Sin línea» fila 0, MN-03 «Todo lo disponible»; `h.irA("Verificación")`, h1 «Mesa de verificación». No hace falta MN-04: la Mesa (`VerificacionView`) recibe `deals` completo y `filasVerificacion` recorre TODO deal con `facturasOp` (o vetadas) agrupando por deudor con `verifFactura`, sin mirar `ofertaPublicada` (caso 30 obtiene su fila sin `ofertaCerrada` ni `ofertaComunicada`); una OP-DIR simulada y sin publicar ya aparece. El caso 31 gatea otra cosa: el TAB «Verificación» del detalle (`mostrarVerif`), no la mesa. Publicar antes sería una elección del caso, no una condición.
 - **Pasos**: 1) localizar la operación por su N°; 2) leer la cabecera del deudor (causas) y sus filas; 3) contrastar con las facturas de otro deudor de la misma operación que el predictor no mandó a teléfono.
 - **Resultado esperado**: un card por deudor con ≥ 1 causa; sus facturas «por verificar»; las del otro deudor no aparecen.
-- **Esbozo e2e**: id `e2e-6-a` · archivo `31_verificacion_mesa.e2e.mjs` · `h.irA`, `button[title="Abrir la operación"]` · `finally`: MN-10 (repos, `fs_curse_<neg>`, Directorio).
+- **Esbozo e2e**: id `e2e-6-a` · archivo `32_verificacion_mesa.e2e.mjs` · `h.irA`, `button[title="Abrir la operación"]` · `finally`: MN-10 (repos, `fs_curse_<neg>`, Directorio).
 
 ### CP-047 · La primera operación del cliente verifica TODAS las facturas
 - **Criterio**: CA-2 de HU-18 · **Capa**: suite · **Cobertura actual**: **caso 76** (Regla 0) y **caso 77** (sólo «nuevo» es primera operación). · **Resultado esperado**: toda la oferta a teléfono.
@@ -470,7 +471,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: MN-01 «Con línea» fila 0, MN-02, MN-03 «Deudores con línea»; `v0 = SIM_VERSIONS[id]` por `evaluate` (con ADR-0013 la simulación ya emitió la v1, CP-034). El modo se cambia en pantalla, que sí existe: gear `button[title="Configuración"]` → sección «Simulación y pricing» → `CfgCampo` «Selección de la tasa del negocio» (`select` con «Ponderada por riesgo del deudor» = `riesgo`, «Tasa del último negocio cursado» = `ultima`, «La mayor de ambas (no bajar de la última)» = `mayor`); `modo0 = select.inputValue()`.
 - **Pasos**: 1) leer la última versión: su modo de tasa y sus condiciones (tasa efectiva, comisiones, anticipo) por deudor; 2) en el detalle «Re-evaluar operación» sin tocar nada → versión n+1; 3) cambiar el modo a uno distinto de `modo0`, volver al detalle → «Re-evaluar operación» → versión n+2; 4) leer las tres.
 - **Resultado esperado**: paso 2: la n+1 repite modo y condiciones de la anterior; paso 4: la n+2 trae el modo nuevo y, si la tasa efectiva cambió, condiciones distintas, y el diff entre n+1 y n+2 reporta el cambio de modo. La huella O05 no cambia entre las tres (CP-054, caso 85). Suite: `snapVersionCli` con `CFG_ACTIVA.tasaModo` en `"riesgo"` y en `"ultima"` produce dos snapshots que difieren en el modo y no en el paquete.
-- **Esbozo e2e**: id `e2e-HU-21-a` · archivo `27_version_v1.e2e.mjs` · `h.abrirDetalle`, `evaluate(() => SIM_VERSIONS)`, `button[title="Configuración"]` · `finally`: `select.selectOption(modo0)`, Opciones → «Eliminar la simulación», MN-10.
+- **Esbozo e2e**: id `e2e-HU-21-a` · archivo `28_version_v1.e2e.mjs` · `h.abrirDetalle`, `evaluate(() => SIM_VERSIONS)`, `button[title="Configuración"]` · `finally`: `select.selectOption(modo0)`, Opciones → «Eliminar la simulación», MN-10.
 
 ## HU-22 · El resultado versionado se muestra
 
@@ -490,7 +491,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: MN-01 «Sin línea» fila 0, MN-03 «Todo lo disponible», tab «Otorgamiento». El e2e monta UNO de los tres escenarios que CA-1 enuncia y dice cuál: (i) una excepción de Operaciones N1 (C01), visada por un cargo de Operaciones y negada a `GG` (comercial N3); (ii) una de Riesgo N5 (C21), negada a `RG` (N4) y visada por `SR` (N5); (iii) un cargo vacante cubierto por su jefatura (caso 36). Si la OP-DIR no gatilla ninguna de esas reglas, el caso declara que verifica el mismo control OTG-01 con otro par (área, nivel) y nombra la regla que sí gatilló. Los códigos se eligen por `USERS` con MN-07 en la pestaña del detalle (regla 4), nunca fijos.
 - **Pasos**: 1) con el cargo SIN atribución (el comercial en (i), `RG` en (ii)): buscar en esa fila `getByRole("button", { name: /^Aprobar excepción/ })` (el botón se rotula «Aprobar excepción» y abre el panel «Aprobar excepción · comentario y respaldo»); 2) con el cargo CON atribución: «Aprobar excepción» → comentario → confirmar; 3) leer el estado de la fila; 4) `evaluate` con `repoVisado.get(id)` (clave real `pc_repo_otorgamiento_visado`, `crearRepo("otorgamiento_visado")`, forma `{[tenantId]: {[dealId]: {[stKey]: …}}}`).
 - **Resultado esperado**: paso 1: **ausente** —cuando la sesión no tiene atribución la rama `puedeVisar` (`x.regla && puedeAprobarExc(usuario, x.regla, x.nivel || 4)`) no se renderiza y aparece el panel de solicitud en su lugar, así que la aserción es «cero botones», no «disabled con OTG-01»; el rechazo con código OTG-01 lo fija `validarMutacion` en la suite (caso 135)—; paso 3: «Aprobada» con el nombre del apoderado (padrón, caso 59); paso 4: la entrada por `stKey`.
-- **Esbozo e2e**: id `e2e-OTG-01` · archivo `30_otorgamiento_visado.e2e.mjs` · MN-07 en la pestaña del detalle, `det.getByRole("button", { name: /^Aprobar excepción/ })` · `finally`: `sel.selectOption(usuario0)`, MN-10.
+- **Esbozo e2e**: id `e2e-OTG-01` · archivo `31_otorgamiento_visado.e2e.mjs` · MN-07 en la pestaña del detalle, `det.getByRole("button", { name: /^Aprobar excepción/ })` · `finally`: `sel.selectOption(usuario0)`, MN-10.
 
 ### CP-059 · Una regla cuyo tramo no llega a nadie sale `no_ejecutada` y no bloquea
 - **Criterio**: CA-2 de HU-23 · **Dirección**: negativa · **Capa**: suite · **Cobertura actual**: **casos 141 y 143**, `regla_35.test.mjs`. · **Resultado esperado**: nombrada en el veredicto, sin bloquear.
@@ -528,7 +529,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: MN-01 con una fila cuyo deudor gatilla una regla D (el tab Otorgamiento la lista como excepción por firmar; molde `e2e-15-bis-bis-a`), MN-02, MN-03.
 - **Pasos**: 1) MN-03; 2) abrir el tab Otorgamiento; 3) leer los botones y textos del panel del deudor; 4) leer «Documentos en la oferta».
 - **Resultado esperado**: la fila del deudor con su regla D y los gestos de visado según atribución (CP-058); ningún botón ni texto que proponga sacar sus facturas (el único retiro es el manual por factura, `button[title="Retirar esta factura de la oferta"]`; «Sacar facturas sin línea» es del motor de líneas, `e2e-29-b`); las facturas del deudor siguen en «Documentos en la oferta».
-- **Esbozo e2e**: id `e2e-HU-24-a` · archivo `30_otorgamiento_visado.e2e.mjs` · `finally`: MN-10.
+- **Esbozo e2e**: id `e2e-HU-24-a` · archivo `31_otorgamiento_visado.e2e.mjs` · `finally`: MN-10.
 
 ---
 
@@ -547,14 +548,14 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: MN-01 «Con línea» fila 0, MN-03 «Deudores con línea», MN-04. Para el menú «Acciones» hace falta la sesión ADMIN (MN-07 en la pestaña del detalle) y el tab «Bitácora» / «Cobranza» / «Mensajería»: la sesión inicial no ve esos tabs y en Negocio › Detalle el botón no existe (regla 30, `e2e-30`).
 - **Pasos**: 1) tras confirmar, leer `h.texto(det)`; 2) MN-07 a ADMIN → tab «Bitácora» → menú «Acciones».
 - **Resultado esperado**: chip «Operación creada», sin CTA de cierre, ítem «Editar la oferta» (regla 33).
-- **Esbozo e2e**: id `e2e-33-b` (la conducta es la regla 33 —cerrada la oferta, el CTA se va y queda «Operación creada» + Acciones › Editar— y no la 24, que es el gate de inyección al core; el id se cita en la fila 33 de `invariantes.md`) · archivo `28_publicacion.e2e.mjs` · MN-04, MN-07, `itemAcciones` · `finally`: `sel.selectOption(usuario0)`, MN-10.
+- **Esbozo e2e**: id `e2e-33-b` (la conducta es la regla 33 —cerrada la oferta, el CTA se va y queda «Operación creada» + Acciones › Editar— y no la 24, que es el gate de inyección al core; el id se cita en la fila 33 de `invariantes.md`) · archivo `29_publicacion.e2e.mjs` · MN-04, MN-07, `itemAcciones` · `finally`: `sel.selectOption(usuario0)`, MN-10.
 
 ### CP-066 · El modal sigue deshabilitado con «Pendiente: N excepción(es) por aclarar…»
 - **Criterio**: CA-3 de HU-25 · **Dirección**: negativa · **Capa**: e2e · **Cobertura actual**: **parcial** — `e2e-15-bis-bis-a` lee el `title` «Pendiente: N excepción(es)…» y destraba por el tab Otorgamiento, pero sólo dentro de `if (await conf.isDisabled()) { … } else { await conf.click(); }`, con `excepciones = "sin excepciones pendientes"` por defecto: si la operación no trae excepciones sin justificar confirma directo y el caso pasa igual. Es cobertura CONDICIONAL, no un gate: nadie exige que el botón ESTÉ deshabilitado cuando hay excepciones mudas. **NUEVO** como caso propio.
 - **Precondición**: MN-01 «Sin línea» fila 0, MN-03 «Todo lo disponible» (trae excepciones del cliente y de deudores, `e2e-15-bis-bis-a`); se comprueba por `evaluate` que la simulación deja ≥ 1 excepción sin comentario (o se planta una: retirar el comentario de la solicitud en `SOLICITUD_EXC`), y el caso reporta cuántas.
 - **Pasos**: 1) CTA `button` `/^\s*Enviar a Comité y Publicar\s*$/` → tarjeta `/Electrónicamente · vía email/`; 2) leer `disabled` y `title` del `button` `/^\s*(Confirmar y enviar|Confirmar curse)\s*$/`; 3) «Cancelar» → tab «Otorgamiento» → «Marcar sin comentarios y solicitar (N)» → «Enviar N solicitud(es)»; 4) volver a «Negocio», repetir el paso 1 y releer.
 - **Resultado esperado**: paso 2: `disabled` y `title` «Pendiente: N excepción(es) por aclarar en el tab Otorgamiento» con N = las contadas (compuerta de `ModalCurse`: `disabled={sinComentario > 0 || !gOk}`); paso 4: habilitado y sin ese `title`.
-- **Esbozo e2e**: id `e2e-HU-25-a` · archivo `28_publicacion.e2e.mjs` · `finally`: «Cancelar» si el modal quedó abierto, MN-10.
+- **Esbozo e2e**: id `e2e-HU-25-a` · archivo `29_publicacion.e2e.mjs` · `finally`: «Cancelar» si el modal quedó abierto, MN-10.
 
 ### CP-067 · `solicitarAprobacionExc` no guarda una solicitud sin justificación
 - **Criterio**: CA-4 de HU-25 · **Dirección**: negativa y positiva (con texto sí guarda) · **Capa**: suite. · **Cobertura actual**: NUEVO (el caso 114 fija que solicitar no cierra la puerta; no la validación). · **Precondición**: `solicitarAprobacionExc` con `comentario: ""` y luego con texto. · **Resultado esperado**: negativa y `SOLICITUD_EXC` sin entrada; luego una entrada.
@@ -569,7 +570,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: MN-01 «Con línea» fila 0, MN-03 «Deudores con línea», MN-04; `n0 = api2ListarProcesos().length` en el tubo.
 - **Pasos**: 1) confirmar «Confirmar curse»; 2) releer `api2ListarProcesos()` y `SYS_LOG`.
 - **Resultado esperado**: `n0` sin cambio; ninguna fila «Solicitud de línea inyectada».
-- **Esbozo e2e**: id `e2e-15-bis-c` · archivo `28_publicacion.e2e.mjs` · `finally`: MN-10.
+- **Esbozo e2e**: id `e2e-15-bis-c` · archivo `29_publicacion.e2e.mjs` · `finally`: MN-10.
 
 ### CP-070 · (sin caso: lectura descartada el 23-09-2026)
 - La lectura literal de M-28 —con línea suficiente se inyecta igual una solicitud al comité y el CTA lo nombra— quedó descartada: el usuario confirmó la errata del modelo, «En caso de no existir suficiente línea se solicita. En caso de existir suficiente se asigna esa.» (G-17 cerrado, sin ADR). CP-068 y CP-069 son la definición. El id no se reutiliza.
@@ -581,14 +582,14 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: suite: `solicitudComiteDeOferta` con `ev` cuyo `solicitudes` traen motivo `cliente`; e2e: registro inyectado por consola con `recibirSolicitudLinea` (como `e2e-15-quinquies`) con ese motivo.
 - **Pasos**: suite: 1) armar; 2) leer `propGlobal`, `tipoLinea`. e2e: 3) `h.irA("Líneas")` → «Solicitudes» → «Ver documento» → leer la sección «Línea propuesta».
 - **Resultado esperado**: `propGlobal` > 0, `tipoLinea ≠ "puntual"`; el documento dice «ampliación del tope».
-- **Esbozo e2e**: id `e2e-15-bis-a` · archivo `34_comite_resolucion.e2e.mjs` · `finally`: retirar el registro de `SOLICITUDES_LINEA`, limpiar `_cacheCli`, cerrar el modal por «Cerrar».
+- **Esbozo e2e**: id `e2e-15-bis-a` · archivo `35_comite_resolucion.e2e.mjs` · `finally`: retirar el registro de `SOLICITUDES_LINEA`, limpiar `_cacheCli`, cerrar el modal por «Cerrar».
 
 ### CP-072 · Motivo `deudor`: puntual cliente-deudor y chip «Solicitado» en el wizard
 - **Criterio**: CA-2 de HU-27 · **Dirección**: positiva · **Capa**: suite + e2e. · **Cobertura actual**: **caso 106** (puntual); el chip «Solicitado» en el wizard es **NUEVO** (`e2e-15-quater-bis` declara que no lo cubre).
 - **Precondición**: el caso inyecta él mismo el registro con `recibirSolicitudLinea(...)` por `evaluate` (molde `18_15_quinquies`: `recibirSolicitudLinea(auto)` y limpieza de `_cacheCli`), con `rut` = el cliente que abrirá el wizard. No puede apoyarse en `e2e-15-bis-bis-a`: su `finally` retira la solicitud de `api2ListarProcesos()` en las dos pestañas y restaura `SOLIC_SEQ` («al salir: retirada de las dos pestañas»), y además vive en otro archivo, que `correr.mjs [34_…]` no corre. Luego `h.irA("Líneas")` → «Solicitudes» → `getByRole("button", { name: /Nueva línea$/ })` (el botón se rotula «Nueva línea» con icono, no «+ Nueva línea») con el mismo cliente; el chip lo alimenta `deudoresSolicitadosLinea(rut)`.
 - **Pasos**: 1) paso Deudores; 2) leer los chips de la fila del deudor solicitado.
 - **Resultado esperado**: chip «Solicitado» en ese deudor y no en los demás.
-- **Esbozo e2e**: id `e2e-15-bis-b` · archivo `34_comite_resolucion.e2e.mjs` · `finally`: cerrar el wizard, retirar el registro (`api2ListarProcesos().splice`), `_cacheCli.delete(RUT)`, MN-10.
+- **Esbozo e2e**: id `e2e-15-bis-b` · archivo `35_comite_resolucion.e2e.mjs` · `finally`: cerrar el wizard, retirar el registro (`api2ListarProcesos().splice`), `_cacheCli.delete(RUT)`, MN-10.
 
 ### CP-073 · Motivo `lf1`: pide LF1 y no una puntual
 - **Criterio**: CA-3 de HU-27 · **Dirección**: negativa (no puntual) · **Capa**: suite · **Cobertura actual**: NUEVO. · **Resultado esperado**: `tipoLinea: "lf1"` (o el nombre que `RESOLUCION_COMITE.pide` fije) y sin línea de detalle por par.
@@ -600,7 +601,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: MN-01 «Con línea» fila 0, MN-03 «Deudores con línea».
 - **Pasos**: 1) MN-04 con `const [p] = await Promise.all([ctx.waitForEvent("page"), confirmar.click()])`; 2) `await p.waitForURL(/email\.html\?n=/, { timeout: 30000 })` y sólo entonces leer la URL: la pestaña nace en `about:blank` (`window.open("", "_blank")` en el clic, y `win.location.href = href` después, con `href = emailHref(updated)` para el canal Email), así que leerla recién capturada devuelve `about:blank`; 3) `esperarEtapa(h.pagina, id, "Oferta publicada")`; 4) en el detalle, `getComputedStyle` del badge de pendientes.
 - **Resultado esperado**: URL `email.html?n=<neg>#d=…` (de ahí se lee `<neg>`); fila «Oferta publicada»; badges en `rgb(239, 68, 68)` (`#EF4444`, CP-116) y el tab «Verificación» presente.
-- **Esbozo e2e**: id `e2e-23-a` · archivo `28_publicacion.e2e.mjs` · `finally`: cerrar `email.html`, borrar `fs_curse_<neg>`, MN-10.
+- **Esbozo e2e**: id `e2e-23-a` · archivo `29_publicacion.e2e.mjs` · `finally`: cerrar `email.html`, borrar `fs_curse_<neg>`, MN-10.
 
 ### CP-075 · Sólo `ofertaCerrada` sin comunicar: sigue «Negociación»
 - **Criterio**: CA-2 de HU-28 · **Dirección**: negativa · **Capa**: e2e + suite · **Cobertura actual**: **`e2e-58`** (dirección B) y **caso 31** (cerrar sin publicar no habilita la verificación). · **Resultado esperado**: el de esos casos.
@@ -610,7 +611,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: la de CP-074, pero en el modal `button` `/Físicamente · con contrato adjunto/`.
 - **Pasos**: 1) confirmar; 2) tab «Otorgamiento»; 3) localizar la tarjeta del criterio O05.
 - **Resultado esperado**: fila O05 «Operaciones · N3» pendiente, con el control de carga del contrato y el cargo derivado (regla 30-ter); no se abre `email.html`.
-- **Esbozo e2e**: id `e2e-23-b` · archivo `28_publicacion.e2e.mjs` · `finally`: MN-10.
+- **Esbozo e2e**: id `e2e-23-b` · archivo `29_publicacion.e2e.mjs` · `finally`: MN-10.
 
 ### CP-077 · La oferta publicada por el Agente IA cuenta como comunicada
 - **Criterio**: CA-4 de HU-28 · **Capa**: suite + e2e · **Cobertura actual**: **caso 32** y **`e2e-12-bis-d`** (`waSesion` con la oferta promueve y el dual no la devuelve). · **Resultado esperado**: `ofertaPublicada` verdadero con `negocioNum` + mensaje `/Oferta de factoring/i`.
@@ -626,28 +627,28 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: MN-01 «Sin línea» fila 0 (deja excepciones y deudores sin cupo: la firma no deja nada listo), MN-03 «Todo lo disponible», MN-04; `neg` de la URL de `email.html`.
 - **Pasos**: 1) MN-05 en la pestaña del detalle; 2) esperar la cabecera del detalle; 3) `esperarEtapa` en el tubo; 4) MN-07 a ADMIN en el detalle → «Mensajería».
 - **Resultado esperado**: cabecera «Otorgamiento / Verificación» (falta línea, excepciones y verificación); la fila del tubo dice «Otorgamiento»; el hilo «Cierre de negocio · <id>» existe con remitente el sistema.
-- **Esbozo e2e**: id `e2e-55` · archivo `29_firma.e2e.mjs` · MN-04, MN-05, `esperarEtapa` · `finally`: MN-10 completo (repos, solicitud, `fs_curse_<neg>`, sesión, Directorio).
+- **Esbozo e2e**: id `e2e-55` · archivo `30_firma.e2e.mjs` · MN-04, MN-05, `esperarEtapa` · `finally`: MN-10 completo (repos, solicitud, `fs_curse_<neg>`, sesión, Directorio).
 
 ### CP-079 · Con todo en verde la firma va a «Pendiente Integración» (y el camino real una vez)
 - **Criterio**: CA-1 de HU-29 (segunda rama) · **Dirección**: positiva · **Capa**: e2e. · **Cobertura actual**: NUEVO.
 - **Precondición**: MN-01 «Con línea» fila 0, MN-03 «Deudores con línea», MN-04; excepciones resueltas con la maniobra de CP-058 y la verificación con la de CP-089 (tres checks y fecha → la factura pasa a «verificada», caso 157, regla 53) antes de firmar —no CP-091, que es la marca «No verificar» y deja la factura `noConfirmada` (hoy retirada y el detalle exigiendo «Re-evaluar»; con ADR-0018, en la oferta con el issue), lo contrario del «todo en verde» que este caso necesita (regla 26, caso 88)— (o una fila sin pendientes, que el caso busca entre las tres y reporta cuál). Las maniobras se rehacen dentro de este caso: el `finally` de los otros las deshace.
 - **Pasos**: 1) MN-06 (camino real: `email.html` → `curse.html` → `#pt-cursar`); 2) esperar; 3) `h.irA("Operaciones")`.
 - **Resultado esperado**: cabecera «Pendiente Integración»; la fila sale del tubo (`fueraDelTubo`) y aparece en Operaciones con ese rótulo (regla 26).
-- **Esbozo e2e**: id `e2e-1-a` · archivo `29_firma.e2e.mjs` · `ctx.waitForEvent("page")` ×2 · `finally`: MN-10; si `ES_FILE` es falso el caso lo dice y cae a MN-05.
+- **Esbozo e2e**: id `e2e-1-a` · archivo `30_firma.e2e.mjs` · `ctx.waitForEvent("page")` ×2 · `finally`: MN-10; si `ES_FILE` es falso el caso lo dice y cae a MN-05.
 
 ### CP-080 · «Editar la oferta» revoca la firma y volver a firmar la restituye
 - **Criterio**: CA-2 de HU-29 · **Dirección**: negativa y positiva · **Capa**: suite + e2e. · **Cobertura actual**: **casos 24 y 26** (suite). En pantalla **NUEVO**.
 - **Precondición**: la cadena de CP-078 rehecha dentro del caso (MN-01 «Sin línea» fila 0 → MN-03 → MN-04 → MN-05): la firmada de CP-078 NO sobrevive, porque su `finally` es MN-10 completo y `h.apagarDirectorio()` retira las OP-DIR por su marca `_directorio` (el siguiente encendido las regenera de cero con `construirDirectorio`). Alternativa: escribir el archivo 29 como UN caso encadenado (CP-078 → 080) con un solo `finally`. Luego MN-07 a ADMIN en la pestaña del detalle y tab «Bitácora»: el menú «Acciones» sólo existe en Bitácora / Cobranza / Mensajería (regla 30, `e2e-30`).
 - **Pasos**: 1) menú «Acciones» → «Editar la oferta»; como la firma se revoca, el `ConfirmDialog` se titula «¿Reabrir esta operación para modificarla?» y su botón se rotula «Reabrir operación» (no «Editar la oferta»; `edicionOperacion(...).revocaFirma`) → confirmar; 2) leer cabecera y tubo; 3) MN-05 de nuevo.
 - **Resultado esperado**: el diálogo con ese título y ese botón; la cabecera vuelve a «Oferta y Negociación» con la marca de reabierta; el tubo «Negociación»; tras el paso 3 vuelve a «Otorgamiento».
-- **Esbozo e2e**: id `e2e-1-b` · archivo `29_firma.e2e.mjs` · `finally`: `sel.selectOption(usuario0)`, MN-10.
+- **Esbozo e2e**: id `e2e-1-b` · archivo `30_firma.e2e.mjs` · `finally`: `sel.selectOption(usuario0)`, MN-10.
 
 ### CP-081 · El ejecutivo no tiene acción para mover a «Aceptada»
 - **Criterio**: CA-3 de HU-29 · **Dirección**: negativa · **Capa**: e2e. · **Cobertura actual**: parcial — `e2e-30` fija que «Avanzar a» iguala el catálogo, no que excluya «Aceptada» antes de la firma. **NUEVO**.
 - **Precondición**: un detalle real abierto antes (MN-01, MN-02 sobre la fila 0), porque MN-09 toma el primer ticket `tipo: "deal"` de `TICKETS_EMITIDOS` y lanza si no hay ninguno; luego MN-09 con `{ofertaCerrada: true, ofertaComunicada: true, negocioNum}` sin `clienteAcepto` y `usuario` ADMIN en el payload (para que exista el tab «Bitácora» con el menú «Acciones», regla 30).
 - **Pasos**: 1) menú del botón principal; 2) listar los ítems bajo «Avanzar a»; 3) tab «Bitácora» → menú «Acciones» → listar sus ítems.
 - **Resultado esperado**: ninguno dice «Aceptada» ni «Cesión»; el menú «Acciones» tampoco.
-- **Esbozo e2e**: id `e2e-1-c` · archivo `29_firma.e2e.mjs` · `h.abrirDetalle(0)`, `abrirConTicket` · `finally`: cerrar las dos pestañas, `h.apagarDirectorio()`.
+- **Esbozo e2e**: id `e2e-1-c` · archivo `30_firma.e2e.mjs` · `h.abrirDetalle(0)`, `abrirConTicket` · `finally`: cerrar las dos pestañas, `h.apagarDirectorio()`.
 
 ## HU-30 · El «cursar» del chat no es una firma
 
@@ -693,7 +694,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: MN-01 «Sin línea» fila 0, MN-02, MN-03 «Todo lo disponible» (trae excepciones de deudores, `e2e-15-bis-bis-a`); tab «Otorgamiento» (`det.locator("button").filter({ hasText: /^\s*Otorgamiento\s*\d*\s*$/ }).first()`) → «Marcar sin comentarios y solicitar (N)» → «Enviar N solicitud(es)»: queda una solicitud por `stKey` de un criterio D de un deudor X; `n0 = SIM_VERSIONS[id].length`. El disparador que deja de gatillar SÍ existe en la UI, sin sustituto: en Negocio › Detalle, vista plana `button[title^="Todas las facturas en una sola lista"]` → `button[title="Retirar esta factura de la oferta"]` de TODAS las facturas del deudor X → «Re-evaluar operación» (la regla D de X ya no tiene sujeto en la versión N = n0 + 1).
 - **Pasos**: 1) retirar las facturas de X y re-evaluar; 2) tab «Otorgamiento»: leer la fila del criterio de X; 3) `h.irA("Tareas")` en el tubo y buscar la tarea del aprobador por el id de la operación; 4) MN-07 a ADMIN en el detalle → tab «Mensajería» → el hilo de la excepción; 5) `evaluate`: `repoVisado.get(id)[stKey]`, `SOLICITUD_EXC[id][stKey]` y la última auditoría de la operación.
 - **Resultado esperado**: la fila del criterio de X ya no está pendiente y muestra la excepción anterior con el rótulo «ya no aplica desde la versión N» (N = n0 + 1), sin botón «Aprobar excepción»; la tarea aparece cerrada con ese motivo; el hilo tiene un mensaje del sistema con la versión; el repositorio conserva la entrada con `desdeVersion: N` y `por: "sistema"`; la auditoría tiene la fila. Nada se borró: `SOLICITUD_EXC[id][stKey]` existe.
-- **Esbozo e2e**: id `e2e-HU-32-a` · archivo `30_otorgamiento_visado.e2e.mjs` · el `button` del tab «Otorgamiento», `button[title="Retirar esta factura de la oferta"]`, `h.irA("Tareas")` · `finally`: `sel.selectOption(usuario0)`, MN-10 (incluye `pc_repo_otorgamiento_visado` y la solicitud en `SOLICITUD_EXC`).
+- **Esbozo e2e**: id `e2e-HU-32-a` · archivo `31_otorgamiento_visado.e2e.mjs` · el `button` del tab «Otorgamiento», `button[title="Retirar esta factura de la oferta"]`, `h.irA("Tareas")` · `finally`: `sel.selectOption(usuario0)`, MN-10 (incluye `pc_repo_otorgamiento_visado` y la solicitud en `SOLICITUD_EXC`).
 
 ### CP-125 · Si una versión posterior vuelve a levantar la misma excepción, se abre una solicitud nueva y la marcada no se reactiva
 - **Criterio**: CA-3 de HU-32 (ADR-0016: «si una versión posterior vuelve a levantar la misma excepción, se abre una solicitud nueva: la marcada no se reactiva») · **Dirección**: negativa (la marcada sigue «ya no aplica») y positiva (existe una solicitud nueva) · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0016, G-35).
@@ -708,7 +709,7 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (159 en a
 - **Precondición**: autocontenida —MN-01 «Sin línea» fila 0, MN-03 «Todo lo disponible», `h.irA("Verificación")`— porque la mesa NO queda poblada tras CP-046: su `finally` (MN-10) apaga el Directorio y restaura los repos, y `correr.mjs` cierra las pestañas extra tras cada caso (así lo hacen `10_12_bis` y `21_29`). Alternativa: el archivo 31 encadena CP-046 → 089 → 090 → 091 en un caso con un solo `finally`. Luego MN-07 en el tubo eligiendo por `USERS` el Ejecutivo de verificación (regla 18).
 - **Pasos**: 1) `button[title="El deudor confirmó ESTE documento"]` de una factura; 2) en el panel «Registrar verificación telefónica», marcar «Existencia de la factura», «Recepción conforme», «Fecha de pago» y llenar la fecha comprometida; 3) `button` «Registrar verificación»; 4) leer el estado de la fila.
 - **Resultado esperado**: el botón pasa de `disabled` a habilitado sólo con los tres checks + fecha (en `DrawerVerificacion`, sobre el estado `chk`: `completo = chk.existencia && chk.recepcion && chk.fechaPago && !!compromiso`); la fila dice «verificada»; `repoVerifTel.get(dealId)` por `evaluate` (clave real `pc_repo_verificacion_telefonica`, `crearRepo("verificacion_telefonica")`, indexada por `deal.id` bajo el tenant y no por folio: `repoVerifTel.set(fila.deal.id, m)`) contiene para ese folio un registro con la forma `{ por, fecha, checklist: { existencia, recepcion, fechaPago }, contacto, compromiso, respaldo, sinRespaldo, notas }`: los tres booleanos van ANIDADOS en `checklist` (el panel devuelve `checklist: chk` en `onConfirmar` y `verificarDeudor` copia `llamada.checklist` al registro `reg`, que se guarda como `m[f.id] = { por, fecha, ...reg }`), así que el paso 4 lee `m[folio].checklist.existencia`, `.recepcion`, `.fechaPago` y `m[folio].compromiso` (regla 53, caso 157).
-- **Esbozo e2e**: id `e2e-53-a` · archivo `31_verificacion_mesa.e2e.mjs` · `h.encenderDirectorio`, `h.irA("Verificación")`, `button[title="Cerrar"]` · `finally`: `sel.selectOption(usuario0)`, MN-10.
+- **Esbozo e2e**: id `e2e-53-a` · archivo `32_verificacion_mesa.e2e.mjs` · `h.encenderDirectorio`, `h.irA("Verificación")`, `button[title="Cerrar"]` · `finally`: `sel.selectOption(usuario0)`, MN-10.
 
 ### CP-090 · Con un check sin marcar el botón sigue deshabilitado
 - **Criterio**: CA-2 de HU-33 · **Dirección**: negativa · **Capa**: e2e. · **Cobertura actual**: NUEVO.
@@ -773,7 +774,7 @@ el tab «Mensajería» del detalle.
 - **Precondición**: MN-01 «Sin línea» fila 0 (deja un deudor por verificar, `e2e-15-bis-bis-a`), MN-02, MN-03 «Todo lo disponible», MN-04, MN-05 (la firmada: cabecera «Otorgamiento / Verificación», `e2e-55`); `neg` de la URL de `email.html`; `n0 = SIM_VERSIONS[id].length` y `fo0 = facturasOp` por `evaluate`; `h.irA("Verificación")` (h1 «Mesa de verificación», la operación por su N°); MN-07 en el tubo al Ejecutivo de verificación elegido por `USERS` (regla 18). Encadenado con CP-139 … CP-141 en un solo caso con un solo `finally` (la firmada no sobrevive a MN-10).
 - **Pasos**: 1) `button` «No verificar» de una factura del deudor X (hoy con `title` «El deudor NO reconoció este documento: se retira de la oferta y queda vetado»; con ADR-0018 el `title` ya no promete el retiro: el caso lo localiza por rol y texto dentro de la fila); 2) panel lateral «Registrar que el deudor NO confirmó» → motivo (`MOTIVOS_NO_VERIF`), contacto, respaldo o «sin respaldo» → el botón de confirmación del panel (hoy «Retirar y vetar»; el rótulo con ADR-0018 lo fija la implementación y el caso lo lee como el único `button` habilitado del pie del panel); 3) leer la fila en la mesa; 4) abrir la operación por `button[title="Abrir la operación"]` (pestaña propia, MN-02); 5) leer «Documentos en la oferta» y el issue de la cabecera / del bloque de pendientes; 6) `evaluate`: `SIM_VERSIONS[id].length`, `facturasOp`, `stage`, `aprobacionFormalCliente(deal)`, `verifResumenDeal(deal).pend`, `controlesIntegracion(deal)` y la última fila de auditoría de la operación.
 - **Resultado esperado**: fila tachada «no verificada» con su veredicto (regla 53); el folio SIGUE en «Documentos en la oferta» (conteo y monto iguales a los de antes); el detalle muestra el issue «facturas no verificadas: no se puede cursar» con el deudor X y sus folios; `SIM_VERSIONS[id].length === n0`; `facturasOp` igual a `fo0`; `stage` sin cambio (sigue «Otorgamiento / Verificación»); `aprobacionFormalCliente` verdadera; `verifResumenDeal(deal).pend > 0` y `controlesIntegracion(deal)` nombra VER-01 (regla 41); auditoría «Deudor NO confirmó» con actor y hora y sin «facturas retiradas». La suite ejerce lo mismo por nombre: `marcarFactura` / `verificarDeudor` / `noConfirmoDeudor` con la decisión «no verificada» dejan `facturasOp` y `SIM_VERSIONS` intactos y `verifResumenDeal(deal).pend > 0`.
-- **Esbozo e2e**: id `e2e-HU-42-a` · archivo `37_verificacion_fallida.e2e.mjs` · MN-04, MN-05, `h.irA("Verificación")`, MN-07, `button` «No verificar», `button[title="Abrir la operación"]`, `evaluate` · `finally`: `sel.selectOption(usuario0)`, MN-10 completo (repos —incluido `pc_repo_factura_no_confirmada`—, solicitud y `SOLIC_SEQ`, `fs_curse_<neg>`, sesión, Directorio).
+- **Esbozo e2e**: id `e2e-HU-42-a` · archivo `38_verificacion_fallida.e2e.mjs` · MN-04, MN-05, `h.irA("Verificación")`, MN-07, `button` «No verificar», `button[title="Abrir la operación"]`, `evaluate` · `finally`: `sel.selectOption(usuario0)`, MN-10 completo (repos —incluido `pc_repo_factura_no_confirmada`—, solicitud y `SOLIC_SEQ`, `fs_curse_<neg>`, sesión, Directorio).
 
 ### CP-139 · El aviso al ejecutivo comercial llega a Mensajería: facturas, deudor y «no se cursará mientras sigan en la oferta»
 - **Criterio**: CA-2 de HU-42 · **Dirección**: positiva (el hilo existe tras la marca) y negativa (sin marca no hay hilo) · **Capa**: e2e + suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0018 punto 2, G-36). El molde del hilo del sistema es el «Cierre de negocio · <id>» de la firma (regla 50, caso 154, `regla_aviso_cierre.test.mjs`).
@@ -812,7 +813,7 @@ el tab «Mensajería» del detalle.
 - **Precondición**: solicitud inyectada en el caso con `recibirSolicitudLinea` por `evaluate` (molde `18_15_quinquies`; no `e2e-15-bis-bis-a`, cuyo `finally` la retira). El comité real no es alcanzable y **plantar el string no sirve**: «Consultar estados» llama `api3EstadoProceso`, que SOBREESCRIBE `s.estado` con `SEQ[min(3, s.refrescos)]` y decide el fin por `hashStr(idProceso)` (caso 125), así que un `estado: "Rechazada"` forzado se pierde en el siguiente clic. Cuando G-33 agregue la rama «Rechazada» a la API 3, el caso elige un `idProceso` cuyo `hashStr` caiga en ella y pone `s.refrescos = 3` (o pulsa «Consultar estados» tres veces), como CP-098. Si sólo se quiere la bandeja, se aserta SIN pulsar «Consultar estados».
 - **Pasos**: 1) inyectar con el `idProceso` elegido y `refrescos = 3`; 2) `h.irA("Líneas")` → «Solicitudes» → «Consultar estados»; 3) leer la fila.
 - **Resultado esperado**: estado «Rechazada»; en Vigentes la línea deja de decir «Solicitud en curso».
-- **Esbozo e2e**: id `e2e-15-b` (la regla 15 ya tiene `e2e-15` sin sufijo en `16_15.e2e.mjs`; el nuevo toma `-b` y el existente se renombra a `-a` sólo en un commit que toque también ese archivo y la fila 15 de `invariantes.md`) · archivo `34_comite_resolucion.e2e.mjs` · `finally`: retirar el registro, `_cacheCli`, MN-10.
+- **Esbozo e2e**: id `e2e-15-b` (la regla 15 ya tiene `e2e-15` sin sufijo en `16_15.e2e.mjs`; el nuevo toma `-b` y el existente se renombra a `-a` sólo en un commit que toque también ese archivo y la fila 15 de `invariantes.md`) · archivo `35_comite_resolucion.e2e.mjs` · `finally`: retirar el registro, `_cacheCli`, MN-10.
 
 ### CP-096 · El rechazo retira las facturas del deudor sin línea, emite versión con motivo `comite_rechazo` y REABRE la operación revocando la firma; en cero, pérdida
 - **Criterio**: CA-2 y CA-3 de HU-35, fundidos por la decisión (D4 cerrada el 22-09-2026: retirar Y reabrir, ADR-0015) · **Dirección**: positiva (retiro, versión, reapertura) y negativa (no re-asigna contra el estado nuevo; ninguna factura del deudor con línea se toca) · **Capa**: suite. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0015 puntos 2 y 3; G-19). Los casos 22 y 23 son el molde de `recortarAsignacion`; el 24, el de la firma revocada (`reabierta`, `aprobacionFormalCliente` falsa). Descartado encoger sin nueva firma: «el cliente firmó un paquete que ya no es el que se va a cursar».
@@ -828,7 +829,7 @@ el tab «Mensajería» del detalle.
 - **Precondición**: solicitud inyectada como en CP-095. Llamar `api3EstadoProceso(id)` N veces NO avanza: la API lee `s.refrescos` sin incrementarlo; quien lo incrementa es el handler «Consultar estados» de la bandeja (`onRefrescar`: `s.refrescos = (s.refrescos || 0) + 1` antes de consultar). Se avanza pulsando «Consultar estados» tres veces, o poniendo `s.refrescos = 3` por `evaluate` y pulsando una vez (si `hashStr(idProceso)` la deja en «Observada», el caso lo reporta y elige otro id).
 - **Pasos**: 1) avanzar por «Consultar estados» ×3 (o `refrescos = 3` y ×1); 2) leer la fila; 3) pestaña «Vigentes».
 - **Resultado esperado**: fila «Aprobada»; la línea del par aparece en Vigentes con la aprobada = propuesta; auditoría «Línea constituida».
-- **Esbozo e2e**: id `e2e-44` · archivo `34_comite_resolucion.e2e.mjs` · `finally`: restaurar `repoLineaComite` (clave real `pc_repo_linea_comite`, `crearRepo("linea_comite")`) con `fotoRepos` / `restaurarRepos` (MN-10) y además retirar de `LINEAS_DATA` la fila que `constituirLinea` insertó (`e2e-15` la retira por `lineaId`) y el registro de `api2ListarProcesos()`.
+- **Esbozo e2e**: id `e2e-44` · archivo `35_comite_resolucion.e2e.mjs` · `finally`: restaurar `repoLineaComite` (clave real `pc_repo_linea_comite`, `crearRepo("linea_comite")`) con `fotoRepos` / `restaurarRepos` (MN-10) y además retirar de `LINEAS_DATA` la fila que `constituirLinea` insertó (`e2e-15` la retira por `lineaId`) y el registro de `api2ListarProcesos()`.
 
 ### CP-133 · «Observada» no retira ni reabre: la operación sigue esperando
 - **Criterio**: CA-4 de HU-35 · **Dirección**: negativa (el control no dispara) · **Capa**: suite. · **Cobertura actual**: NUEVO; el caso 125 fija la secuencia de estados de `api3EstadoProceso` («Observada» entre ellos) pero ningún caso comprueba que la operación firmada no se toque. Es la dirección que bloquea del control de CP-096.
@@ -841,7 +842,7 @@ el tab «Mensajería» del detalle.
 - **Precondición**: MN-01 «Sin línea» fila 0 (dos deudores, uno sin cupo: la solicitud al comité nace sola, `e2e-29-b`), MN-02, MN-03 «Todo lo disponible», MN-04 (inyecta la solicitud: log «Solicitud de línea inyectada», `e2e-15-bis-bis-a`), MN-05 (la firma cruza al tubo: cabecera «Otorgamiento / Verificación», `e2e-55`); `neg` de la URL de `email.html`; `n0 = SIM_VERSIONS[id].length`. **El disparador real es «Consultar estados»** en Líneas › Solicitudes, que hoy nunca rechaza: cuando G-33 agregue la rama, el caso pone `s.refrescos = 3` por `evaluate` sobre el registro de `api2ListarProcesos()` y fuerza el desenlace por el mecanismo que G-33 defina para la demo (hoy es `hashStr(idProceso) % 5`); si el id no cae en «Rechazada», el caso lo dice y aplica el rechazo con el MISMO manejador que la bandeja llama, por `evaluate` —la conducta real del receptor, no una función privada: el argumento de MN-08—. No se usa `nex-simulado`: parchar `stage: "oferta"` a mano probaría el patch, no el manejador.
 - **Pasos**: 1) `h.irA("Líneas")` → «Solicitudes» → «Consultar estados»; 2) leer la fila (estado); 3) `esperarEtapa(h.pagina, id, "Negociación")`; 4) en el detalle, la cabecera y el texto de reapertura («Operación reabierta el … el cliente deberá volver a firmar», el sub que `reabierta` agrega); 5) «Documentos disponibles»: los folios del deudor sin línea, con el motivo; «Documentos en la oferta»: sólo los del deudor con línea; 6) `evaluate`: `SIM_VERSIONS[id].length` y el motivo de la última; 7) MN-04 de nuevo (la oferta que queda se publica) y MN-05: la firma nueva.
 - **Resultado esperado**: fila «Rechazada»; tubo «Negociación»; detalle «Oferta y Negociación» con la marca de reabierta; los folios repartidos como dice el paso 5; `n0 + 1` versiones con motivo `comite_rechazo`; tras el paso 7 la cabecera vuelve a «Otorgamiento / Verificación» y el hilo «Cierre de negocio · <id>» tiene la segunda firma.
-- **Esbozo e2e**: id `e2e-HU-35-a` · archivo `36_comite_rechaza.e2e.mjs` · MN-04, MN-05, `h.irA("Líneas")`, `esperarEtapa` · `finally`: MN-10 completo (repos, solicitud y `SOLIC_SEQ`, `fs_curse_<neg>`, sesión, Directorio).
+- **Esbozo e2e**: id `e2e-HU-35-a` · archivo `37_comite_rechaza.e2e.mjs` · MN-04, MN-05, `h.irA("Líneas")`, `esperarEtapa` · `finally`: MN-10 completo (repos, solicitud y `SOLIC_SEQ`, `fs_curse_<neg>`, sesión, Directorio).
 
 ### CP-127 · En pantalla: si el rechazo deja la oferta en cero, la fila pasa a «Perdida» con la causa «línea rechazada por el comité», sin nueva firma que pedir
 - **Criterio**: CA-3 de HU-35 (en pantalla; ADR-0015 punto 3) · **Dirección**: negativa (no se reabre: se pierde) · **Capa**: e2e. · **Cobertura actual**: NUEVO → **decidido: implementar** (ADR-0015, regla 5). Nace en rojo.
@@ -867,7 +868,7 @@ el tab «Mensajería» del detalle.
 - **Precondición**: la cadena de CP-078 rehecha en el caso (MN-01 «Sin línea» fila 0 → MN-03 → MN-04 → MN-05: la firmada de CP-078 no sobrevive a su `finally`). El botón «Aprobar integración al core» NO vive en la fila de `OperacionesView` (que recibe `deals` y `onOpen`) sino en el DETALLE, tab «Negocio», bloque de integración de `DealDrawer`, y sólo se renderiza cuando `puedeAprobarExc(usuario, {area: "operaciones"}, 3)` es verdadero (regla 41); con la sesión inicial no existe el `button` y en su lugar se lee «La aprueba un usuario de Operaciones con atribución N3 o superior».
 - **Pasos**: 1) `h.irA("Operaciones")` → localizar la fila por N° → abrir la operación (`onOpen` → pestaña propia, MN-02); 2) en esa pestaña MN-07 a un usuario de Operaciones con atribución N3 (elegido por `USERS`); 3) tab «Negocio» → `getByRole("button", { name: "Aprobar integración al core" })` y su `title`.
 - **Resultado esperado**: `disabled` y el `title` nombra OTG-02 / VER-01 / LIN-01 según falte; con la sesión inicial, el texto «La aprueba un usuario de Operaciones con atribución N3 o superior» y cero botones.
-- **Esbozo e2e**: id `e2e-41` · archivo `32_integracion_giro.e2e.mjs` · `finally`: `sel.selectOption(usuario0)`, MN-10.
+- **Esbozo e2e**: id `e2e-41` · archivo `33_integracion_giro.e2e.mjs` · `finally`: `sel.selectOption(usuario0)`, MN-10.
 
 ### CP-101 · Huella O05 que no calza: `no_calza` y auditado
 - **Criterio**: CA-3 de HU-36 · **Dirección**: negativa · **Capa**: suite · **Cobertura actual**: **caso 86** (`sin_evidencia` / `no_calza`). · **Resultado esperado**: el de ese caso.
@@ -877,7 +878,7 @@ el tab «Mensajería» del detalle.
 - **Precondición**: la cadena de CP-079 rehecha en el caso (MN-01 «Con línea» → MN-03 → MN-04 → MN-05/MN-06 con excepciones y verificación resueltas, evidencia O05 creada por la firma electrónica): la «Pendiente Integración» de CP-079 NO sobrevive, porque su `finally` es MN-10 con `h.apagarDirectorio()`, que retira las OP-DIR por su marca `_directorio` y el siguiente encendido las regenera de cero con `construirDirectorio`. Alternativa: el archivo 32 encadena CP-079 → 102 → 107 en un solo caso con un solo `finally`. El botón está en el detalle, tab «Negocio» (mismo camino que CP-100), con MN-07 a Operaciones N3 en la pestaña del detalle.
 - **Pasos**: 1) Operaciones → abrir la operación → MN-07 (OP N3) → tab «Negocio» → `getByRole("button", { name: "Aprobar integración al core" })` habilitado → clic; 2) `h.irA("Operaciones")` y leer el rótulo de la fila; 3) `evaluate` con `repoGiro.get(id)` (clave real `pc_repo_giro_asignacion`, `crearRepo("giro_asignacion")`, forma `{[tenantId]: {[dealId]: valor}}`); 4) en el detalle, menú del botón principal y, con sesión ADMIN en Bitácora, «Acciones».
 - **Resultado esperado**: «Pendiente de Giro»; en `repoGiro` lo que `aprobarIntegracion` congela: `giroResumenDeal` con GE/GN por deudor, `ts` y `por` (regla 43); ningún ítem «Girar».
-- **Esbozo e2e**: id `e2e-43-a` · archivo `32_integracion_giro.e2e.mjs` · `finally`: `sel.selectOption(usuario0)`, MN-10.
+- **Esbozo e2e**: id `e2e-43-a` · archivo `33_integracion_giro.e2e.mjs` · `finally`: `sel.selectOption(usuario0)`, MN-10.
 
 ## HU-37 · GE / GN con los hechos que el modelo pide, y con líneas (decidido el 22-09-2026: con comité el giro es Normal, ADR-0017, G-34)
 
@@ -908,7 +909,7 @@ el tab «Mensajería» del detalle.
 - **Precondición**: la cadena de CP-102 rehecha en el caso (firma con todo en verde y la aprobación de la integración), o el archivo 32 escrito como un caso encadenado CP-079 → 102 → 107: la «Pendiente de Giro» de CP-102 no sobrevive a su `finally` (MN-10 apaga el Directorio). Tesorería no es alcanzable: MN-08 `nex-giro` sobre el tubo con `{evento: {operacionId, referencia: "TES-E2E-1", montoGirado}}` —el campo es `montoGirado`, que `recibirGiroTesoreria` redondea a `giroMonto`; un `monto` se ignora en silencio y el caso no probaría que el monto girado se registró; molde: el `EV` del caso 147.
 - **Pasos**: 1) postear; 2) `h.irA("Operaciones")` y leer la fila; 3) auditoría por `evaluate`.
 - **Resultado esperado**: «Girada»; acción «Giro notificado por Tesorería» con la referencia; `giroMonto` = el `montoGirado` posteado.
-- **Esbozo e2e**: id `e2e-43-b` · archivo `32_integracion_giro.e2e.mjs` · `finally`: MN-10.
+- **Esbozo e2e**: id `e2e-43-b` · archivo `33_integracion_giro.e2e.mjs` · `finally`: MN-10.
 
 ### CP-108 · Un aviso sin referencia, repetido o de una no inyectada se descarta y nada cambia
 - **Criterio**: CA-3 de HU-38 · **Dirección**: negativa · **Capa**: suite + e2e. · **Cobertura actual**: **caso 147** (las cuatro salidas). En pantalla **NUEVO** (la más barata: `no_inyectada` sobre cualquier OP-DIR recién simulada).
@@ -927,7 +928,7 @@ el tab «Mensajería» del detalle.
 - **Precondición**: MN-01 filtro «Todos», MN-02 fila 0 (sin simular basta).
 - **Pasos**: 1) menú del botón principal → «Rechazar…»; 2) en «¿Por qué se pierde esta operación?» hacer clic en una causa DISTINTA de `competitor`: el catálogo ofrecido es `CLOSE_REASONS` sin `grant_block` ni `inactivity`, y el clic llama `onReject(deal.id, r.k)` de inmediato —no hay paso «confirmar»—; sólo `competitor` abre un segundo paso cuyo botón queda `disabled` hasta elegir contra qué factoring se perdió (`rechComp.quien`, `title` «Elige contra qué factoring se perdió») e ingresar una tasa > 0 (`rechComp.tasa`, `title` «Ingresa la tasa de cierre»), y confirma con `onReject(deal.id, "competitor", { competidor, tasaCierre })`; si el caso quiere esa causa, llena los dos campos; 3) `esperarEtapa(h.pagina, id, "Perdida")`; 4) leer la bitácora del detalle.
 - **Resultado esperado**: fila «Perdida»; bitácora con la causa específica, la etapa de origen «Prospección» y el actor; sin badges accionables (regla 5).
-- **Esbozo e2e**: id `e2e-5-a` · archivo `33_perdida_transiciones.e2e.mjs` · `finally`: `h.apagarDirectorio()` (regenera) y `filtroRapido(h.pagina, "Con línea")`: la precondición pone «Todos» y `correr.mjs` sólo reinicia el filtro entre archivos.
+- **Esbozo e2e**: id `e2e-5-a` · archivo `34_perdida_transiciones.e2e.mjs` · `finally`: `h.apagarDirectorio()` (regenera) y `filtroRapido(h.pagina, "Con línea")`: la precondición pone «Todos» y `correr.mjs` sólo reinicia el filtro entre archivos.
 
 ### CP-110 · `moverEtapa` o el Kanban hacia pérdida sin causa se rechaza
 - **Criterio**: CA-2 de HU-39 · **Dirección**: negativa · **Capa**: suite + e2e. · **Cobertura actual**: NUEVO (G-25; hoy `moverEtapa` y `moveTo` escriben `perdida` sin causa: rojo). La mitad «Avanzar a» del criterio es SÓLO suite: el menú del botón principal nunca ofrece «Perdida» (`destinos` excluye `aceptadas`, `cesion` y `perdida`; regla 30, `e2e-30`), así que en e2e el único camino es el Kanban.
@@ -963,18 +964,18 @@ el tab «Mensajería» del detalle.
 
 ## HU-41 · Mientras se simula los pendientes son pronóstico; al publicar se exigen
 
-### CP-115 · Simulada sin publicar: badges en morado y sin tab «Verificación»
-- **Criterio**: CA-1 de HU-41 · **Dirección**: negativa (no exige) · **Capa**: suite + e2e. · **Cobertura actual**: **caso 31** y **caso 158** (suite). En pantalla **NUEVO**.
+### CP-115 · Simulada sin publicar: badges en morado y el tab «Verificación» en modo informativo, sin acciones
+- **Criterio**: CA-1 de HU-41 · **Dirección**: negativa (no exige) · **Capa**: suite + e2e. · **Cobertura actual**: **caso 31** y **caso 158** (suite); en pantalla, **`e2e-59-a`** fija el tab informativo (regla 59) y el color del badge es **NUEVO**.
 - **Precondición**: MN-01 «Sin línea» fila 0, MN-03 «Todo lo disponible».
-- **Pasos**: 1) `getComputedStyle` del badge de pendientes del tab «Otorgamiento» (por `title`); 2) contar el tab «Verificación».
-- **Resultado esperado**: `getComputedStyle(...).backgroundColor === "rgb(124, 58, 237)"` (`#7C3AED`: los dos badges de la barra de tabs del detalle y los dos del bloque de pendientes usan literalmente `backgroundColor: exigeAcciones(deal) ? "#EF4444" : "#7C3AED"`, no `C.indigo` `#703EFF`; `exigeAcciones` devuelve `ofertaPublicada(deal)` fuera de aceptadas/cesión/otorgamiento/giro, regla 54), o al menos distinto del rojo `rgb(239, 68, 68)`; cero tabs «Verificación».
-- **Esbozo e2e**: id `e2e-54-a` · archivo `28_publicacion.e2e.mjs` · `finally`: Opciones → «Eliminar la simulación», MN-10.
+- **Pasos**: 1) `getComputedStyle` del badge de pendientes del tab «Otorgamiento» (por `title`); 2) contar el tab «Verificación» y sus acciones.
+- **Resultado esperado**: `getComputedStyle(...).backgroundColor === "rgb(124, 58, 237)"` (`#7C3AED`: los dos badges de la barra de tabs del detalle y los dos del bloque de pendientes usan literalmente `backgroundColor: exigeAcciones(deal) ? "#EF4444" : "#7C3AED"`, no `C.indigo` `#703EFF`; `exigeAcciones` devuelve `ofertaPublicada(deal)` fuera de aceptadas/cesión/otorgamiento/giro, regla 54), o al menos distinto del rojo `rgb(239, 68, 68)`; un tab «Verificación» en modo informativo, sin los botones de firmar y con el cartel que dice qué los abre (regla 59, `e2e-59-a`).
+- **Esbozo e2e**: id `e2e-54-a` · archivo `29_publicacion.e2e.mjs` · `finally`: Opciones → «Eliminar la simulación», MN-10.
 
-### CP-116 · Cerrada Y comunicada: badges en rojo y el tab «Verificación» aparece
-- **Criterio**: CA-2 de HU-41 · **Dirección**: positiva · **Capa**: suite + e2e. · **Cobertura actual**: **caso 158** y **`e2e-58`** (el tubo). En el detalle **NUEVO** (lo comparte CP-074).
+### CP-116 · Cerrada Y comunicada: badges en rojo y el tab «Verificación» pasa a accionable
+- **Criterio**: CA-2 de HU-41 · **Dirección**: positiva · **Capa**: suite + e2e. · **Cobertura actual**: **caso 158** y **`e2e-58`** (el tubo); **`e2e-59-b`** fija que pre-evaluar abre las acciones del tab (regla 59). En el detalle, el color es **NUEVO** (lo comparte CP-074).
 - **Precondición**: la de CP-115 y MN-04 (o MN-09 con `{ofertaCerrada, ofertaComunicada, negocioNum}`).
 - **Pasos**: 1) releer el badge; 2) contar el tab «Verificación»; 3) leer la compuerta «Línea» antes y después.
-- **Resultado esperado**: rojo `rgb(239, 68, 68)` (`#EF4444`, el literal de los cuatro badges y también `C.red` en la paleta; el `#dc2626` de `code_style.md` no está en el fuente); un tab «Verificación»; la compuerta de Línea idéntica (no cambia con la publicación).
+- **Resultado esperado**: rojo `rgb(239, 68, 68)` (`#EF4444`, el literal de los cuatro badges y también `C.red` en la paleta; el `#dc2626` de `code_style.md` no está en el fuente); el tab «Verificación» con sus dos acciones habilitadas (regla 59); la compuerta de Línea idéntica (no cambia con la publicación).
 - **Esbozo e2e**: id `e2e-54-b` · mismo archivo · `finally`: MN-10.
 
 ---
@@ -1028,26 +1029,26 @@ Una fila por historia: sus CP, cuáles están cubiertos hoy (con el id que los c
 | HU-40 | 113–114 | 114 (casos 110, 112) | — | 113 | — |
 | HU-41 | 115–116 | 115 (casos 31, 158), 116 (caso 158, e2e-58) | 115, 116 | — | — |
 
-Archivos e2e propuestos (26 en adelante) y los ids que declaran:
+Archivos e2e propuestos (27 en adelante) y los ids que declaran:
 
 | Archivo | Ids | Historias |
 |---|---|---|
-| `26_inbound_stream.e2e.mjs` | e2e-HU-01-a, e2e-HU-05-a | HU-01, HU-05 |
-| `27_version_v1.e2e.mjs` | e2e-13-a, e2e-13-b, e2e-13-c, e2e-HU-21-a | HU-13, HU-21 (CP-123: el modo de tasa en la versión) |
-| `28_publicacion.e2e.mjs` | e2e-33-a, e2e-33-b, e2e-HU-25-a, e2e-15-bis-c, e2e-23-a, e2e-23-b, e2e-54-a, e2e-54-b | HU-10, HU-25, HU-26, HU-28, HU-41 |
-| `29_firma.e2e.mjs` | e2e-55, e2e-1-a, e2e-1-b, e2e-1-c | HU-29 |
-| `30_otorgamiento_visado.e2e.mjs` | e2e-4-a, e2e-OTG-01, e2e-HU-32-a, e2e-HU-24-a | HU-14, HU-23, HU-32 (CP-124: «ya no aplica desde la versión N» en el tab), HU-24 (CP-137: ninguna propuesta de retiro por una regla D) |
-| `31_verificacion_mesa.e2e.mjs` | e2e-6-a, e2e-53-a, e2e-53-b, e2e-6-b, e2e-18 | HU-18, HU-33 |
-| `32_integracion_giro.e2e.mjs` | e2e-41, e2e-43-a, e2e-43-b, e2e-43-c | HU-36, HU-38 |
-| `33_perdida_transiciones.e2e.mjs` | e2e-5-a, e2e-5-b, e2e-5-c | HU-39 (CP-111 es sólo suite y la guarda de `moverEtapa` en CP-118 también: «Avanzar a» no ofrece «Cesión»; `e2e-5-c` es el `moveTo` del Kanban) |
-| `34_comite_resolucion.e2e.mjs` | e2e-15-bis-a, e2e-15-bis-b, e2e-15-b, e2e-44 | HU-27, HU-35 |
-| `35_tubo_segmentacion.e2e.mjs` | e2e-13-decies-a, e2e-13-decies-b | HU-06, HU-16 |
-| `36_comite_rechaza.e2e.mjs` | e2e-HU-35-a, e2e-HU-35-b | HU-35 (CP-126, CP-127: el rechazo del comité retira, reabre y exige nueva firma; en cero, pérdida) |
-| `37_verificacion_fallida.e2e.mjs` | e2e-HU-42-a, e2e-HU-42-b, e2e-HU-42-c, e2e-HU-42-d, e2e-HU-42-e | HU-42 (CP-138 … CP-142: marcar no retira y deja el issue; el aviso al ejecutivo en Mensajería; el ejecutivo retira, re-simula y publica → firma revocada y versión nueva; la retirada no se incorpora; el botón del detalle tampoco retira) |
+| `27_inbound_stream.e2e.mjs` | e2e-HU-01-a, e2e-HU-05-a | HU-01, HU-05 |
+| `28_version_v1.e2e.mjs` | e2e-13-a, e2e-13-b, e2e-13-c, e2e-HU-21-a | HU-13, HU-21 (CP-123: el modo de tasa en la versión) |
+| `29_publicacion.e2e.mjs` | e2e-33-a, e2e-33-b, e2e-HU-25-a, e2e-15-bis-c, e2e-23-a, e2e-23-b, e2e-54-a, e2e-54-b | HU-10, HU-25, HU-26, HU-28, HU-41 |
+| `30_firma.e2e.mjs` | e2e-55, e2e-1-a, e2e-1-b, e2e-1-c | HU-29 |
+| `31_otorgamiento_visado.e2e.mjs` | e2e-4-a, e2e-OTG-01, e2e-HU-32-a, e2e-HU-24-a | HU-14, HU-23, HU-32 (CP-124: «ya no aplica desde la versión N» en el tab), HU-24 (CP-137: ninguna propuesta de retiro por una regla D) |
+| `32_verificacion_mesa.e2e.mjs` | e2e-6-a, e2e-53-a, e2e-53-b, e2e-6-b, e2e-18 | HU-18, HU-33 |
+| `33_integracion_giro.e2e.mjs` | e2e-41, e2e-43-a, e2e-43-b, e2e-43-c | HU-36, HU-38 |
+| `34_perdida_transiciones.e2e.mjs` | e2e-5-a, e2e-5-b, e2e-5-c | HU-39 (CP-111 es sólo suite y la guarda de `moverEtapa` en CP-118 también: «Avanzar a» no ofrece «Cesión»; `e2e-5-c` es el `moveTo` del Kanban) |
+| `35_comite_resolucion.e2e.mjs` | e2e-15-bis-a, e2e-15-bis-b, e2e-15-b, e2e-44 | HU-27, HU-35 |
+| `36_tubo_segmentacion.e2e.mjs` | e2e-13-decies-a, e2e-13-decies-b | HU-06, HU-16 |
+| `37_comite_rechaza.e2e.mjs` | e2e-HU-35-a, e2e-HU-35-b | HU-35 (CP-126, CP-127: el rechazo del comité retira, reabre y exige nueva firma; en cero, pérdida) |
+| `38_verificacion_fallida.e2e.mjs` | e2e-HU-42-a, e2e-HU-42-b, e2e-HU-42-c, e2e-HU-42-d, e2e-HU-42-e | HU-42 (CP-138 … CP-142: marcar no retira y deja el issue; el aviso al ejecutivo en Mensajería; el ejecutivo retira, re-simula y publica → firma revocada y versión nueva; la retirada no se incorpora; el botón del detalle tampoco retira) |
 | `21_29.e2e.mjs` (existente) | e2e-29-c, e2e-HU-37-a | HU-15 (CP-041: el «Requiere comité» por factura va al archivo de la regla 29), HU-37 (CP-128: el chip de giro del deudor a comité dice Normal, misma precondición) |
 | `17_15_bis_bis.e2e.mjs` (existente) | e2e-15-bis-bis-c (o dentro de `-a`) | HU-26 (CP-068: el rótulo «En gestión» de la bandeja) |
 
-Ningún id nuevo choca con los 30 declarados hoy en `tests/e2e/*.e2e.mjs`: no existe `e2e-4-*`, `e2e-13-decies*` ni
+Ningún id nuevo choca con los 32 declarados hoy en `tests/e2e/*.e2e.mjs`: no existe `e2e-4-*`, `e2e-13-decies*` ni
 `e2e-HU-42-*`, y el único sin sufijo que se comparte es `e2e-15`, por eso CP-095 toma `e2e-15-b`.
 
 Los ids `e2e-<regla>` nuevos entran a la fila de su regla en `vault/conocimiento/invariantes.md` y al texto de la
@@ -1100,7 +1101,7 @@ que se cita sólo la cubre bajo condición (CP-066) o sólo mide el aviso sin co
 en la suite (casos 25 y 95 fijan el veto) pero nace con ADR-0018 y se cuenta entre los nuevos. Los otros **71 CP
 son enteramente nuevos**; en total, 104 CP piden al menos un caso nuevo (33 + 71), y 62 + 71 = 133.
 
-**Nuevos por capa:** **e2e 50** (en 12 archivos nuevos, `26` … `37`, más tres ids que van a archivos existentes,
+**Nuevos por capa:** **e2e 50** (en 12 archivos nuevos, `27` … `38`, más tres ids que van a archivos existentes,
 `21_29` y `17_15_bis_bis`; 30 de ellos fijan conducta vigente sin gate en pantalla —CP-001, 015, 027, 037, 041, 046,
 058, 065, 066, 068, 069, 072, 074, 076, 078–081, 089–092, 098, 100, 102, 107, 108, 109, 115, 116; CP-091 se escribe
 fijando lo vigente y se da vuelta con ADR-0018— y 20 dependen de un gap o de una decisión ya tomada —CP-013, 034–036,
@@ -1130,10 +1131,10 @@ CP-131, CP-132, CP-138 … CP-142).
 **Orden sugerido para escribirlos:**
 
 1. **Primero, la conducta vigente sin gate en pantalla** (todo desde la firma en adelante está protegido sólo por la
-   suite, §4 del documento de gaps): `29_firma` (CP-078, 079, 080, 081) es la maniobra que los demás necesitan;
-   después `31_verificacion_mesa` (CP-046, 089–092), `30_otorgamiento_visado` (CP-037, 058), `32_integracion_giro`
-   (CP-100, 102, 107, 108), `28_publicacion` (CP-027, 065, 066, 069, 074, 076, 115, 116), `33_perdida_transiciones`
-   (CP-109), `35_tubo_segmentacion` (CP-015) y los dos que se suman a archivos existentes (CP-041 en `21_29`, CP-068 en
+   suite, §4 del documento de gaps): `30_firma` (CP-078, 079, 080, 081) es la maniobra que los demás necesitan;
+   después `32_verificacion_mesa` (CP-046, 089–092), `31_otorgamiento_visado` (CP-037, 058), `33_integracion_giro`
+   (CP-100, 102, 107, 108), `29_publicacion` (CP-027, 065, 066, 069, 074, 076, 115, 116), `34_perdida_transiciones`
+   (CP-109), `36_tubo_segmentacion` (CP-015) y los dos que se suman a archivos existentes (CP-041 en `21_29`, CP-068 en
    `17_15_bis_bis`); en la suite, el caso que EJERCE la guarda OTG-02 de `moverEtapa` (CP-118 (a), nace en verde) y los
    que fijan lo que el usuario dio por bueno tal como está (CP-016, 051, 052, 061, 117, 133, 136). Ninguno cambia el fuente: sólo
    fijan lo que ya pasa. CP-042 no va acá: el tooltip nace en rojo y está en el paso 3.
