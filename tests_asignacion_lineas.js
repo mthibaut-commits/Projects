@@ -8506,11 +8506,11 @@
     const r0 = verifResumenDeal(dealV, { tel: telOk, vetadas: {} }), r1 = verifResumenDeal(dealV, { tel: telOk, vetadas: vetoSII });
     const resumenOk = r0.noVerif === 0 && r1.noVerif === 1 && r1.sii === 1 && r1.pend === r0.pend + 1 && r1.noVerificadas[0].origen === "sii" && /nota de crédito/.test(r1.noVerificadas[0].motivo) && r1.noVerificadas[0].folio === f1.folio;
     const iss1 = issueVerificacion(dealV, { tel: telOk, vetadas: vetoSII });
-    const issueOk = !!iss1 && iss1.n === 1 && iss1.sii === 1 && iss1.titulo === "Documentos inhabilitados por el SII: no se puede cursar" && iss1.texto.includes("#" + f1.folio) && /nota de crédito/.test(iss1.texto)
-      && /inhabilitado\(s\) por el SII/.test(iss1.texto) && /no se cursa/.test(iss1.texto) && /firme la nueva operación/.test(iss1.texto) && iss1.folios[0] === f1.folio && iss1.deudores[0] === f1.deudor;
+    const issueOk = !!iss1 && iss1.n === 1 && iss1.sii === 1 && iss1.titulo === "Documentos inhabilitados en el SII: no se puede cursar" && iss1.texto.includes("#" + f1.folio) && /nota de crédito/.test(iss1.texto)
+      && /inhabilitado\(s\) en el SII/.test(iss1.texto) && /no se cursa/.test(iss1.texto) && /firme la nueva operación/.test(iss1.texto) && iss1.folios[0] === f1.folio && iss1.deudores[0] === f1.deudor;
     const vetoLlamada = { folio: f2.folio, monto: f2.monto, deudor: f2.deudor, rutRecep: f2.rutRecep, por: "test", fecha: "hoy", motivo: "No reconoce la factura" };
     const issM = issueVerificacion(dealV, { tel: telOk, vetadas: { [ID]: { ...vetoSII[ID], [f2.id]: vetoLlamada } } });
-    const mixtoOk = !!issM && issM.n === 2 && issM.sii === 1 && issM.titulo === "Facturas no verificadas e inhabilitadas por el SII: no se puede cursar" && /no pudieron ser verificadas/.test(issM.texto) && /inhabilitado\(s\) por el SII/.test(issM.texto);
+    const mixtoOk = !!issM && issM.n === 2 && issM.sii === 1 && issM.titulo === "Facturas no verificadas e inhabilitadas en el SII: no se puede cursar" && /no pudieron ser verificadas/.test(issM.texto) && /inhabilitado\(s\) en el SII/.test(issM.texto);
     const issL = issueVerificacion(dealV, { tel: telOk, vetadas: { [ID]: { [f2.id]: vetoLlamada } } });
     const llamadaOk = !!issL && issL.sii === 0 && issL.n === 1 && issL.titulo === "Facturas no verificadas: no se puede cursar" && !/SII/.test(issL.texto);
     let ver01 = null, ver01Err = "";
@@ -8519,9 +8519,9 @@
       const lista = Array.isArray(cc) ? cc : (cc && (cc.faltas || cc.controles || cc.lista)) || [];
       ver01 = lista.find((x) => x && x.codigo === "VER-01") || null;
     } catch (e) { ver01Err = String((e && e.message) || e).slice(0, 120); }
-    const ver01Ok = !!ver01 && /inhabilitada\(s\) por el SII/.test(ver01.detalle || "") && /retirarlas, re-simular y volver a publicar/.test(ver01.detalle || "");
+    const ver01Ok = !!ver01 && /inhabilitada\(s\) en el SII/.test(ver01.detalle || "") && /retirarlas, re-simular y volver a publicar/.test(ver01.detalle || "");
     const cand = estadoCandidata(fA, dealV, { vetadas: vetoSII }), candL = estadoCandidata(f2, dealV, { vetadas: { [ID]: { [f2.id]: vetoLlamada } } });
-    const candOk = cand.agregable === false && cand.bloqueada === true && cand.clave === "inhabilitada" && cand.label === "Inhabilitada por el SII" && /nota de crédito/.test(cand.detalle) && /retirarlo/.test(cand.detalle)
+    const candOk = cand.agregable === false && cand.bloqueada === true && cand.clave === "inhabilitada" && cand.label === "Inhabilitada en el SII" && /nota de crédito/.test(cand.detalle) && /retirarlo/.test(cand.detalle)
       && candL.clave === "noConfirmada" && candL.label === "El deudor no la confirmó";
     // (c) El aviso al ejecutivo, con el asunto del SII; el de la llamada sigue siendo el suyo.
     const antes = HILOS.length;
@@ -8530,7 +8530,7 @@
       const h = avisarNoVerificadas(dealV, [fA], "El SII notificó una nota de crédito (folio 517101)");
       const msg = h && h.mensajes[h.mensajes.length - 1];
       const h2 = avisarNoVerificadas(dealV, [fA], "otra vez");
-      avisoOk = !!h && !!msg && msg.de === CODE_SISTEMA && h.asunto === `Documentos inhabilitados por el SII · ${ID}` && h.participantes.includes("CR") && !h.participantes.includes(CODE_SISTEMA)
+      avisoOk = !!h && !!msg && msg.de === CODE_SISTEMA && h.asunto === `Documentos inhabilitados en el SII · ${ID}` && h.participantes.includes("CR") && !h.participantes.includes(CODE_SISTEMA)
         && msg.texto.includes(ID) && msg.texto.includes("N° 171") && msg.texto.includes("#" + f1.folio) && /nota de crédito/.test(msg.texto) && /no se podrá cursar/.test(msg.texto) && /no va a pagar/.test(msg.texto)
         && /publica de nuevo la oferta/.test(msg.texto) && h2 === h && h.mensajes.length === 2 && hiloNoLeido(h, "CR");
       const hL = avisarNoVerificadas(dealV, [f2], "No reconoce la factura");

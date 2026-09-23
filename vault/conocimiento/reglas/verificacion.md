@@ -198,20 +198,26 @@ timestamp: 2026-09-17T15:29:14Z
       oferta cerrada, publicada o firmada, y cuando lo que llega es la NC, el reclamo o la cesión a otro le pone
       `inhabilitada` (motivo, glosa, secuencia, fecha) y deja la traza en rojo: «queda inhabilitado y la operación no se
       cursa hasta que el ejecutivo lo retire, re-evalúe y vuelva a publicar para una nueva firma». El acuse se anota y no
-      inhabilita. La fila de la oferta lo rotula «Inhabilitada por el SII · nota de crédito (folio N)».
+      inhabilita. La fila de la oferta lo rotula «Inhabilitada en el SII · nota de crédito (folio N)».
     - **El veto es el de la regla 71, escrito por el SII.** El tick del inbound decide las inhabilitaciones sobre la foto
       vigente del tubo, FUERA de todo updater (regla 22), y las escribe por el ÚNICO escritor del veto,
       `marcarNoVerificada`, con origen «sii»: `por` es `SII · DTESync`, la entrada anota `origen` y `cambio`, la bitácora
       de otorgamiento dice «SII · DTESync inhabilitó N documento(s)…» y el aviso al ejecutivo (`avisarNoVerificadas`) sale
-      con el asunto «Documentos inhabilitados por el SII · OP» y dice por qué: el deudor no va a pagar un documento
+      con el asunto «Documentos inhabilitados en el SII · OP» y dice por qué: el deudor no va a pagar un documento
       reclamado, anulado o cedido a otro, tenga o no la verificación telefónica en verde. Un veto por motivo y operación;
       la re-entrega no lo repite (`secuenciaDTE`).
     - **Cuenta como pendiente aunque la llamada esté en verde.** `verifResumenDeal` cuenta todo documento vetado —por la
       llamada o por el SII— como `tel` y `pend` ANTES de mirar la llamada, así que VER-01 (regla 41) sigue mandando y lo
-      dice: «N inhabilitada(s) por el SII: reclamo, nota de crédito o cesión a otro». `issueVerificacion` lo nombra aparte
-      con su motivo y titula «Documentos inhabilitados por el SII: no se puede cursar» (o «Facturas no verificadas e
-      inhabilitadas por el SII…» si hay de las dos); la tarjeta del tubo suma «· N por el SII»; `estadoCandidata` etiqueta
-      «Inhabilitada por el SII» con la instrucción; la mesa lo lista como no verificada (regla 71).
+      dice: «N inhabilitada(s) en el SII: reclamo, nota de crédito o cesión a otro». `issueVerificacion` lo nombra aparte
+      con su motivo y titula «Documentos inhabilitados en el SII: no se puede cursar» (o «Facturas no verificadas e
+      inhabilitadas en el SII…» si hay de las dos); la tarjeta del tubo suma «· N en el SII»; `estadoCandidata` etiqueta
+      «Inhabilitada en el SII» con la instrucción; la mesa lo lista como no verificada (regla 71).
+    - **Rótulo corregido por el usuario (23-09-2026):** «Inhabilitada **por** el SII» → «Inhabilitada **en** el SII», en
+      todos los textos de PANTALLA —la candidata, la fila de la oferta, el título del issue, el asunto del aviso, VER-01 y
+      la tarjeta del tubo—: el rótulo dice **dónde** está inhabilitado el documento, en el registro del SII, no quién
+      actuó. El veto sigue firmado por «SII · DTESync», que ése sí es el autor, y los comentarios que describen el veto
+      («escrito por el SII») tampoco cambian. **ADR-0021 conserva la redacción con que se decidió**: los ADR son
+      inmutables (regla núcleo 7) y esto es un rótulo, no una decisión.
     - **Retira el EJECUTIVO, por el camino de la regla 71**: «Editar la oferta» (reabre y revoca la firma, reglas 1 y 33),
       retirar el documento, volver a simular y publicar de nuevo; el cliente firma la nueva operación. El veto impide
       volver a agregarlo.

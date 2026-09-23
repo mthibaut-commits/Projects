@@ -45,7 +45,7 @@ cartera de 500 clientes; el fallback de 80 empresas se fue y `auditar_unidades` 
 >    «Negociación» en una operación ya enviada a comité · **join de empresas SIEMPRE por RUT** (8 sitios; T1) ·
 >    `.bat` una vez · regenerar `Capturas_UI/` (deuda 2) · O01 · 28 · 13-quater · `pipeline.zip`.
 
-## En vuelo · nada: entraron el **backlog de ADR** (reglas 64–75) y las **39 skills de terceros** (63)
+## En vuelo · nada: TODO lo pendiente está en `main` — backlog de ADR (64–75) y 39 skills de terceros (63)
 Las skills se CORRIGEN, no se descartan: 12 llevan su bloque `AJUSTE-LOCAL-NEX` citando la regla, con auditor y
 gate. Verificar el árbol MEZCLADO y no la rama —y que un paso 0 rojo APAGA el CI entero— subió a
 [`flujo_git.md`](../conocimiento/flujo_git.md) ([log](./2026-09-23_el_paso_0_lleva_tres_commits_en_rojo.md)).
@@ -53,11 +53,9 @@ gate. Verificar el árbol MEZCLADO y no la rama —y que un paso 0 rojo APAGA el
 ## Bloqueos · los dos son del usuario, desde Windows
 
 El relay git bloquea el BORRADO y `refs/tags/*` con **HTTP 403** (los pushes normales funcionan; el MCP tampoco
-expone borrado). Quedan **el tag `v0.1.0`** sobre `bd14091` y **borrar seis ramas**: `ecstatic-ptolemy`,
-`elegant-fermat`, `sleepy-bohr`, `vibrant-hawking`, `vibrant-hopper` y `local-mauricio-11sep`; `respaldo/main-
-2026-09-17` sale integrada y **no se toca**. **`--merged` sin `git fetch --prune` antes MIENTE**: con refs viejas
-`migrate-project-session-vui9dl` sale integrada y lleva 13 commits sin mezclar. Y `unidades-peso-verificacion`
-es borrable pero **no** aparece ahí: su contenido entró por otro commit.
+expone borrado). Quedan **el tag `v0.1.0`** sobre `bd14091` y **borrar las ramas ya integradas** — al 23-09 son
+todas menos `respaldo/main-2026-09-17`, que no se toca; el listado se hace con `git fetch --prune` primero y
+mirando `git cherry`, nunca `--merged` a secas (`unidades-peso-verificacion` es borrable y no aparece ahí).
 
 ## Deudas anotadas (no bloquean, no olvidar)
 1. **Lista Blanca / Deudor Autorizado, decisiones de negocio**: el activo no trae `VIGENTE_DESDE`/`HASTA`/
@@ -69,9 +67,10 @@ es borrable pero **no** aparece ahí: su contenido entró por otro commit.
 3. `BASE_MUERTOS` en **1** (`giroDeal`) · **GN como disyunción** (22) · sin gate, la concentración del
    Directorio (31) · una fila «Sin clasificar» dice «2 deudores» y el desglose suma 0 · dos sitios
    arman un RUT de CLIENTE (`rutDe` de módulo): no llegan al par, y la regla 46 lo dice.
-4. **Dos sesiones paralelas toman el mismo «siguiente entero libre»**: quien mezcla después renumera lo suyo y
-   revisa **las citas del otro lado**. **Está pasando otra vez**: `migrate-project-session-vui9dl` sigue viva y
-   su rama ya usa **60, 61 y 62** (más 63–70); al integrarla, esas tres bajan.
+4. **Dos sesiones paralelas toman el mismo «siguiente entero libre»**, y el turno se pierde MIENTRAS UNO
+   VERIFICA: el 23-09 el mismo bloque se renumeró dos veces (60–71 → 63–74 → 64–75) porque la otra sesión
+   publicó durante los ocho minutos de e2e. Procedimiento y script: [log](./2026-09-23_mezclar_todo_lo_pendiente.md).
+   Al mezclar, `git cherry` y no `--merged`: dice si hay un commit EQUIVALENTE aguas arriba, que es la pregunta.
 5. **Hooks en Windows**: `node verificar_hooks.mjs` una vez · los 13 skills de `taste-skill` viven en el
    `~/.claude/skills/` del CONTENEDOR · `gitflow_guard.mjs` cree que `git merge-base` integra a `main` (el
    `\b` de su patrón casa con el guion): usar `git branch -r --merged` · y `invariantes.test.mjs` comprueba

@@ -3565,7 +3565,7 @@ function issueVerificacion(deal, estado) {
   if (llamada.length) partes.push(`${llamada.length} factura(s) no pudieron ser verificadas con el deudor: ${detalleDe(llamada)}`);
   if (sii.length)
     partes.push(
-      `${sii.length} documento(s) inhabilitado(s) por el SII: ${sii.map((f) => `#${f.folio} (${f.deudor || "—"}${f.motivo ? " · " + f.motivo : ""})`).join(", ")}`,
+      `${sii.length} documento(s) inhabilitado(s) en el SII: ${sii.map((f) => `#${f.folio} (${f.deudor || "—"}${f.motivo ? " · " + f.motivo : ""})`).join(", ")}`,
     );
   return {
     n: r.noVerif,
@@ -3575,8 +3575,8 @@ function issueVerificacion(deal, estado) {
     titulo: !sii.length
       ? "Facturas no verificadas: no se puede cursar"
       : !llamada.length
-        ? "Documentos inhabilitados por el SII: no se puede cursar"
-        : "Facturas no verificadas e inhabilitadas por el SII: no se puede cursar",
+        ? "Documentos inhabilitados en el SII: no se puede cursar"
+        : "Facturas no verificadas e inhabilitadas en el SII: no se puede cursar",
     texto: `${partes.join(". ")}. Mientras sigan en la oferta la operación no se cursa: retíralas, vuelve a simular y publica de nuevo la oferta para que el cliente firme la nueva operación.`,
   };
 }
@@ -6600,7 +6600,7 @@ function estadoCandidata(f, deal, estado) {
     return veto.origen === "sii"
       ? R(
           "inhabilitada",
-          "Inhabilitada por el SII",
+          "Inhabilitada en el SII",
           `${veto.motivo || "El SII reportó el documento reclamado, anulado o cedido a otro"}. El deudor no lo va a pagar: no se cursa; hay que retirarlo, re-evaluar y volver a publicar.`,
         )
       : R("noConfirmada", "El deudor no la confirmó");
@@ -8259,7 +8259,7 @@ function DealCard({ deal, onOpen, onDragStart }) {
                 >
                   <AlertTriangle size={10} />{" "}
                   <span>
-                    No se puede cursar · {iss.n} no verificada(s){iss.sii ? ` · ${iss.sii} por el SII` : ""}
+                    No se puede cursar · {iss.n} no verificada(s){iss.sii ? ` · ${iss.sii} en el SII` : ""}
                   </span>
                 </div>
               )}
@@ -14208,7 +14208,7 @@ function DealDrawer({
                   const c = cesionDeFactura(deal.rutEmisor, f && f.folio);
                   if (c && !c.nuestra) return `Cedida a ${c.factoring}${c.parcial ? ` (parcial, ${fmtMM(c.monto)})` : ""}`;
                   // REGLA 75 · Lo que el SII inhabilitó sobre la oferta cerrada o firmada se dice con su motivo.
-                  if (f && f.inhabilitada) return `Inhabilitada por el SII · ${f.inhabilitada.glosa}`;
+                  if (f && f.inhabilitada) return `Inhabilitada en el SII · ${f.inhabilitada.glosa}`;
                   return f.reclamada ? "Reclamada" : f.notaCredito ? "Nota de crédito" : null;
                 };
                 const facturasMarcadas = facturasOp.map((f) => ({ ...f, excl: motivoExcl(f) }));
@@ -24596,7 +24596,7 @@ function controlesIntegracion(deal, estado) {
     faltas.push({
       codigo: "VER-01",
       titulo: "Verificación incompleta",
-      detalle: `${pendVerif} factura(s) esperan la verificación telefónica con el deudor${issV ? ` · ${issV.n} marcada(s) no verificada(s): el ejecutivo tiene que retirarlas, re-simular y volver a publicar${issV.sii ? ` (${issV.sii} inhabilitada(s) por el SII: reclamo, nota de crédito o cesión a otro, regla 75)` : ""}` : ""}`,
+      detalle: `${pendVerif} factura(s) esperan la verificación telefónica con el deudor${issV ? ` · ${issV.n} marcada(s) no verificada(s): el ejecutivo tiene que retirarlas, re-simular y volver a publicar${issV.sii ? ` (${issV.sii} inhabilitada(s) en el SII: reclamo, nota de crédito o cesión a otro, regla 75)` : ""}` : ""}`,
     });
   }
   // LA LÍNEA, FACTURA POR FACTURA. El cupo se asigna al armar la oferta y lo que no cabe sale marcado
@@ -26275,7 +26275,7 @@ function avisarNoVerificadas(deal, facs, motivo) {
   // REGLA 75 (ADR-0021) · Cuando quien inhabilita es el SII, el hilo y el texto lo dicen: no es una llamada que faltó, es
   // que el deudor no va a pagar ese documento (reclamado, anulado o cedido a otro). La salida es la misma.
   const sii = fs.filter((f) => f && f.inhabilitada);
-  const asunto = sii.length ? `Documentos inhabilitados por el SII · ${deal.id}` : `Verificación fallida · ${deal.id}`;
+  const asunto = sii.length ? `Documentos inhabilitados en el SII · ${deal.id}` : `Verificación fallida · ${deal.id}`;
   const prev = hilosDeDeal(deal.id).find((h) => h.asunto === asunto);
   const h = prev || hiloNuevo({ tipo: "requerimiento", dealId: deal.id, cliente: deal.cliente, asunto, participantes: [ejec], creadoPor: CODE_SISTEMA });
   if (ejec && !h.participantes.includes(ejec)) h.participantes.push(ejec);

@@ -464,8 +464,8 @@ tercero, al momento de intentar cederla el SII va a rechazar la cesión de esa f
   su updater, idempotente.
 - `marcarNoVerificada` admite el origen «sii»: `por` = `ACTOR_SII` («SII · DTESync»), la entrada anota `origen` y `cambio`,
   la bitácora de otorgamiento dice que el SII inhabilitó; el aviso sigue siendo `avisarNoVerificadas` (ancla de la regla
-  67), que con documentos marcados usa el asunto «Documentos inhabilitados por el SII · OP» y explica por qué.
-- `vetoDe` (la entrada del veto) al lado de `noConfirmada`; `estadoCandidata` etiqueta «Inhabilitada por el SII» con la
+  67), que con documentos marcados usa el asunto «Documentos inhabilitados en el SII · OP» y explica por qué.
+- `vetoDe` (la entrada del veto) al lado de `noConfirmada`; `estadoCandidata` etiqueta «Inhabilitada en el SII» con la
   instrucción; `verifResumenDeal` cuenta TODO documento vetado como `tel`/`pend` antes de mirar la llamada (la llamada en
   verde no destraba) y devuelve `sii`; `issueVerificacion` nombra aparte lo del SII y titula según haya de una o de las dos
   clases; VER-01, la tarjeta del tubo y `motivoExcl` de la fila lo dicen; `onStorageVeto` relee el veto en el detalle abierto.
