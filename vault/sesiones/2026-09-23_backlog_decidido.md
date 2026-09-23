@@ -489,3 +489,9 @@ tercero, al momento de intentar cederla el SII va a rechazar la cesión de esa f
 viñeta que decía «sólo avisan», filas 70 y 71 de `invariantes.md` (+ `regla_<slug>` 51), `spec-inbound` §6 y §12 (#7
 decidida), `spec-proceso-curse` §5 y M-18, `Levantamiento` A1, HU-01 (CA-5, reglas y cláusulas), CP-144 y CP-145, cifras
 (171/171; 100 reglas; 62 archivos de gate; ~46 MB), tablero.
+
+**Rótulo corregido por el usuario (23-09-2026, T2):** «Inhabilitada **por** el SII» → «Inhabilitada **en** el SII», en todos
+los textos de pantalla (la candidata, la fila de la oferta, el título del issue, el asunto del aviso, VER-01 y la tarjeta
+del tubo): el rótulo dice dónde está inhabilitado el documento —en el registro del SII—, no quién actuó. El veto sigue
+firmado por «SII · DTESync» (ése sí es el autor). ADR-0021 conserva la redacción con que se decidió: los ADR son inmutables
+y el cambio es de rótulo, no de decisión.
