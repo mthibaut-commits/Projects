@@ -12,7 +12,10 @@
    nadie mide se desfasa en silencio.
 
    `Integraciones_APIs_y_S3.md` es GENERADO: su versión y su historial viven en `armar_integraciones.mjs`, y
-   este gate los lee en el archivo producido, que es lo que el lector recibe. */
+   este gate los lee en el archivo producido, que es lo que el lector recibe.
+
+   `Casos_de_Prueba/` entró el 23-09-2026: es un entregable igual que un spec —alguien lo recibe y lo
+   ejecuta— y por eso tiene que poder decir de qué versión es. */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
@@ -20,8 +23,9 @@ import { RAIZ, leer, caminar, rel } from "./_comun.mjs";
 
 /* Los ENTREGABLES: lo que el cliente recibe y contra lo que alguien implementa. `Auditoria/` y
    `Regresiones/` quedan fuera a propósito — son fotos con fecha y no se re-emiten: se escribe otra. */
+export const CARPETAS_ENTREGABLES = ["Specs_Procesos", "Integraciones", "Casos_de_Prueba"];
 export const ENTREGABLES = () =>
-  [...caminar(join(RAIZ, "Specs_Procesos")), ...caminar(join(RAIZ, "Integraciones"))]
+  CARPETAS_ENTREGABLES.flatMap((d) => caminar(join(RAIZ, d)))
     .map(rel).filter((p) => !p.endsWith("README.md")).sort();
 
 export const CABECERA = /^\*\*Versión (\d+\.\d+\.\d+) · (\d{2}-\d{2}-\d{4}) · NEX Factoring\*\*$/m;
@@ -60,9 +64,9 @@ export function fallos(texto, nombre = "doc") {
   return out;
 }
 
-test("los 23 entregables declaran versión y cierran con su anexo de control de versiones", () => {
+test("los 24 entregables declaran versión y cierran con su anexo de control de versiones", () => {
   const docs = ENTREGABLES();
-  assert.ok(docs.length >= 23, `se esperaban al menos 23 entregables y hay ${docs.length}`);
+  assert.ok(docs.length >= 24, `se esperaban al menos 24 entregables y hay ${docs.length}`);
   const malos = docs.flatMap((d) => fallos(leer(d), d));
   assert.deepEqual(malos, []);
 });

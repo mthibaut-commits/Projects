@@ -120,4 +120,5 @@ contrato: `vault/conocimiento/invariantes.md` § Gates. **Desde el 17-09-2026 ni
 - `GeneradorDatos/` — produce los activos sintéticos (`datos_inyectados.js`, `proveedores_clientes.json`)
 - `Capturas_UI/` (el estado por defecto) · `Variantes_UI/` (los estados del detalle) · `Capturas_Simuladas/` (lo que
   exige conducir la app) — el DOM real capturado, fuente para Figma; `Figma_Export/` quedó obsoleto como fuente
+- `Casos_de_Prueba/` — qué hay que mirar en pantalla para aceptar una entrega (96 casos, con su regla y su cobertura)
 - `Auditoria/` — los informes que MIDEN (el repo, el fuente, el generador) · `Regresiones/` — lo que cotejó definición contra implementación y dejó hallazgos; la historia del proyecto vive ahí y en `vault/sesiones/`

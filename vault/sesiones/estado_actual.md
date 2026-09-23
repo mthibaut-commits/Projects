@@ -19,27 +19,30 @@ vault (75 reglas verbatim por tema, índice en `invariantes.md`), cableó sus ga
 **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen gate. La crónica del 17 al 19-09
 vive en sus logs (reglas 32–40, ADR-0003 a 0006, y el **linter** en 0 como paso 0-bis).
 
-El **20-09** entró todo lo de esta rama, sobre plata: la **regla 8 deja de ser proxy** (149, ADR-0008),
-**girar no es una acción de NEX** (43, 147, 148), **ATR-01 en el handler** (145), el **id de la solicitud al
-comité** (146), las **identidades reales del AEC** (42, ADR-0009) y las **líneas** (44–46, casos 150–151,
-ADR-0010 y 0011). De `main`, los **controles de la integración al core** (41, ADR-0007) y la mensajería.
+El **20-09** entró lo de esta rama, sobre plata: la **regla 8 deja de ser proxy** (149, ADR-0008), **girar
+no es una acción de NEX** (43, 147, 148), **ATR-01 en el handler** (145), el **id de la solicitud al comité**
+(146), las **identidades reales del AEC** (42, ADR-0009) y las **líneas** (44–46, 150–151, ADR-0010 y 0011).
 
 El **21-09**, tres pedidos del usuario. **Ordenar la carpeta**: la raíz baja a tres `.md`, nacen `Auditoria/`
 (lo que mide) y `Regresiones/` (lo que cotejó definición contra implementación), los PDF de contrato se van a
 `Integraciones/` y `Specs_Procesos/` queda en cinco temas. Son **41 renombres**; las **77 referencias** que
 rompieron se midieron con un verificador diferencial y se repararon 63 — los logs y el ADR citan las rutas
-viejas **a propósito** y el mapa las resuelve. **Versionar los entregables**: los 23 declaran `Versión N.N.N`
-y cierran con su anexo de control de versiones, reconstruido del historial del repo; `md_a_pdf.mjs` la
-estampa en el encabezado de **cada hoja** y el **gate 40** exige que la cabecera y la primera fila calcen. Y
-**`Capturas_Simuladas/`**, la tercera clase de captura: la que exige conducir la app. De paso, tres defectos
-que venían de `main`: el **paso 0 en rojo** y dos bloques de comandos a los que les faltaba un salto de
-línea, con lo que la verificación canónica mostraba ocho pasos y no nueve. Los tres cerrados.
+viejas **a propósito** y el mapa las resuelve. **Versionar los entregables**: declaran `Versión N.N.N` y
+cierran con su anexo, reconstruido del historial del repo; `md_a_pdf.mjs` la estampa en **cada hoja** y el
+gate exige que la cabecera y la primera fila calcen. Y **`Capturas_Simuladas/`**, la captura que exige
+conducir la app. De paso, tres defectos de `main`: el **paso 0 en rojo** y dos bloques de comandos sin un
+salto de línea, con lo que la verificación canónica mostraba ocho pasos y no nueve. Los tres cerrados.
 
-**Las líneas, en un párrafo.** La ESTRUCTURA es un insumo (44, ADR-0010): el **activo A23** reemplaza los
-3.170 de 3.636 objetos que el pipeline fabricaba desde el A7, que el levantamiento §5.4 prohíbe. El **nivel 1
-es el CONSOLIDADO** (45, ADR-0011): la cabecera ES la suma, y las superaba en 217 de 224 clientes. El **RUT
-del deudor se resuelve, no se arma** (46): el wizard lo inventaba con 92 % de DV inválidos. Con los tres, el
-bucle del comité cierra por los dos caminos (150–151); `lineaMinima` y `otrosDeudoresPct` son declarativas.
+El **23-09**, los **casos de prueba**: `Casos_de_Prueba/casos-de-prueba-pantallas.md`, **96 casos** sobre las
+cinco pantallas del ciclo de una operación, cada uno con la regla que lo fija y su cobertura **medida** — 79
+automatizados y **17 manuales**, de los cuales **7 están en la Mesa de verificación**: es la pantalla menos
+cubierta, y automatizar esos siete es lo que más compra. La carpeta entra al gate de versiones (24
+entregables). `code_style.md` decía «Vigentes/En proceso» y «wizard 6 pasos»: son **Vigentes/Solicitudes** y
+**3 pasos**.
+
+**Las líneas, en un párrafo.** La ESTRUCTURA es un insumo (44, ADR-0010): el **activo A23** reemplaza los 3.170
+de 3.636 objetos que el pipeline fabricaba desde el A7. El **nivel 1 es el CONSOLIDADO** (45, ADR-0011): la
+cabecera ES la suma y las superaba en 217 de 224 clientes. El **RUT se resuelve, no se arma** (46).
 
 > ## 🎯 Siguiente paso
 >
@@ -74,4 +77,4 @@ Queda **el tag `v0.1.0`** sobre `bd14091` y **borrar las ramas integradas**.
 ## Conocimiento clave
 
 [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto, en [`vault/index.md`](../index.md)
-Últimas: [versionado](./2026-09-21_versionado_de_entregables.md) · [ordenar la carpeta](./2026-09-21_ordenar_la_carpeta.md) · [mensajería](./2026-09-21_spec_mensajeria.md) · [las tres casuísticas del elenco](./2026-09-20_las_tres_casuisticas_del_elenco.md) · [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md) · [las líneas son un insumo](./2026-09-20_las_lineas_son_un_insumo.md)
+Últimas: [casos de prueba](./2026-09-23_casos_de_prueba.md) · [versionado](./2026-09-21_versionado_de_entregables.md) · [ordenar la carpeta](./2026-09-21_ordenar_la_carpeta.md) · [mensajería](./2026-09-21_spec_mensajeria.md) · [las tres casuísticas del elenco](./2026-09-20_las_tres_casuisticas_del_elenco.md) · [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md) · [las líneas son un insumo](./2026-09-20_las_lineas_son_un_insumo.md)
