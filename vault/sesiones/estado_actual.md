@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-23T17:45:00Z
+timestamp: 2026-09-23T18:15:00Z
 ---
 
 # Estado actual
@@ -14,7 +14,7 @@ timestamp: 2026-09-23T17:45:00Z
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
 (`pipeline_comercial.jsx`), build standalone, **158/158 PASA**, **53 archivos de gate de contrato**
-(289 tests), **32 casos e2e** (32/32), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
+(440 tests), **32 casos e2e** (32/32), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
 (91 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
 gate. La crónica del 17 al 22-09 vive en sus logs — ADR-0001 a 0012, el linter como paso 0-bis, todo lo de
 plata del 20-09 (reglas 41–46, ADR-0007 a 0011, casos 145–151) y, del 21 y 22-09 en sesiones paralelas, las
@@ -44,10 +44,10 @@ entero y `auditar_unidades` estrena el patrón **(d)**, con línea base **cero**
 >    «Negociación» en una operación ya enviada a comité · **join de empresas SIEMPRE por RUT** (8 sitios; T1) ·
 >    `.bat` una vez · **regenerar `Capturas_UI/`** (deuda 2) · O01 · 28 · 13-quater · `pipeline.zip`.
 
-## En vuelo ahora · nada propio: todo está en `main` (`dadecb7`), VERDE ENTERA
-La rama se integró con `merge --no-ff`; al mezclar, **47–49 chocaron** y las mías bajaron a **60–62**, y se
-repararon cuatro cosas de `main`: el **paso 6** perdido en `verificacion.md`, una fila pegada en `testing.md`,
-dos citas corridas (157/158 → 53 y 54) y un entregable sin versionar ([log](./2026-09-23_renumerar_lo_mio.md)).
+## En vuelo ahora · nada: todo está en `main` (`abd98ad`), con el **CI verde confirmado** (run 164)
+El 23-09 `main` estuvo **tres commits con el CI muerto en el paso 0**, y el job sale con 1 ahí: no corrió ni el
+linter, ni `tsc`, ni el build, ni los 440 gates, ni la suite, ni los e2e. Causa: mezcla verificada EN LA RAMA y
+no sobre el árbol MEZCLADO, que es donde git rehace la línea — **tercera vez con la misma** ([log](./2026-09-23_el_paso_0_lleva_tres_commits_en_rojo.md)) · antes, 47–49 → 60–62 ([log](./2026-09-23_renumerar_lo_mio.md)).
 
 ## Bloqueos · los dos son del usuario, desde Windows
 
@@ -77,4 +77,4 @@ es borrable pero **no** aparece ahí: su contenido entró por otro commit.
    que el caso citado EXISTE, no que sea el correcto: cruzar número y título.
 
 ## Conocimiento clave
-[invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto en [`vault/index.md`](../index.md) · últimas: [cartera leída](./2026-09-23_cartera_leida_no_inventada.md) · [generadores en pesos](./2026-09-23_generadores_en_pesos.md) · [el millón es la última capa](./2026-09-23_el_millon_es_la_ultima_capa.md) · [casos de prueba](./2026-09-23_casos_de_prueba.md) · [el deudor decide](./2026-09-22_el_deudor_decide_la_factura_se_llama.md) · [la mesa por operación](./2026-09-22_mesa_por_operacion_y_nota_rica.md)
+[invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto en [`vault/index.md`](../index.md) · últimas: [cartera leída](./2026-09-23_cartera_leida_no_inventada.md) · [generadores en pesos](./2026-09-23_generadores_en_pesos.md) · [el millón es la última capa](./2026-09-23_el_millon_es_la_ultima_capa.md) · [el paso 0 en rojo](./2026-09-23_el_paso_0_lleva_tres_commits_en_rojo.md) · [el deudor decide](./2026-09-22_el_deudor_decide_la_factura_se_llama.md)

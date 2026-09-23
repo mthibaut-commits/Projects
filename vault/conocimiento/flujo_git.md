@@ -16,8 +16,20 @@ reescribe con el preset B. Está registrado como supuesto en ADR-0002.
 
 ## Reglas
 
-- **`main` es siempre estable.** Todo commit en `main` pasa los cinco pasos de verificación (CI corre los
+- **`main` es siempre estable.** Todo commit en `main` pasa los seis pasos de verificación (CI corre los
   mismos en toda rama: si dos ramas tuvieran gates distintos, la de gate más débil sería la puerta de atrás).
+- **La verificación se corre sobre el árbol MEZCLADO, no sobre la rama** (23-09-2026, tercera vez con la
+  misma línea). Una mezcla puede producir texto que **no está en ninguno de los dos lados**: git junta y el
+  resultado es nuevo. El caso real es un ternario que Prettier parte en dos y que la resolución dejó pegado
+  en un renglón de 158 columnas — la rama estaba verde, `main` quedó rojo. «Verifiqué antes de mezclar» no
+  cubre esto: hay que volver a correr los seis pasos **después de resolver conflictos**, por cortos que sean.
+- **Un paso 0 en rojo apaga el CI entero, no sólo el formato.** `gates.yml` corre `prettier --check` como
+  PRIMER paso y el job sale con 1 ahí mismo: no llegan a correr el linter, `tsc`, el chequeo de duplicados,
+  el build, los gates de contrato, la suite ni los e2e. `main` pasó tres commits así el 23-09 mientras el
+  tablero citaba «440/440» —cierto en la rama donde se midió, falso sobre `main`—. Mientras el paso 0 esté
+  rojo el CI no dice que lo demás pase: **dice que no lo miró**, y hay que leerlo así al mirar un run.
+- **Lo que uno hereda al mezclar es de uno desde que mezcla.** El rojo del paso 0 lo vio la sesión anterior
+  —su log lo anota como «el prettier en rojo que no era mío»— y dejarlo apagó el CI para todos.
 - **El trabajo va en ramas cortas**: `feature/<slug>`, `fix/<slug>`, o la **rama designada de la sesión**
   cuando el trabajo lo hace Claude Code (`claude/<nombre>`), que es lo que ha pasado hasta hoy. Días, no
   semanas; un cambio grande se parte en varias.
