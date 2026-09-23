@@ -349,3 +349,37 @@ que un sorteo por RUT llenaba.
 `Levantamiento_Activos_Informacion.md` A1, spec del curse (M-01 implementada: 39 · 1 · 0; §16), gaps (G-01 cerrado: 18
 implementados · 0 decididos), HU-04 vigente (32 · 10), CP-010/CP-011 (la fila en pantalla sigue e2e), cifras (169/169; 98
 reglas; 59 archivos de gate, 49 por regla; 515 tests). El backlog decidido del 22-09 quedó entero.
+
+## 11 · Las pantallas que los commits dejaron dichas: `28_version_v1.e2e.mjs` (e2e-68-a/b/c/d, e2e-69-a)
+
+**Qué cambió.** Cinco casos e2e sobre la fila 0 de «Sin línea» del Directorio, encadenados y cada uno dejando el
+estado que necesita si el anterior no llegó: `e2e-68-c` (sin simular: cero versiones, sin titular y sin compuertas
+—el pie no existe todavía, la pantalla muestra el panel de arranque—), `e2e-68-a` (dos facturas a mano y «Simular la
+oferta»: la v1/rev 0 con las cinco secciones sobre esos dos folios, contemporánea, el TUBO la ve sin recargar y la
+auditoría tiene el evento), `e2e-68-b` (cerrar y reabrir: misma cantidad de versiones, misma vigente, mismo titular y
+mismo pie), `e2e-68-d` (gear → «Selección de la tasa del negocio» a otro modo → un detalle nuevo lo lee → «Re-evaluar
+simulación» deja v2 con el modo nuevo y la v1 conserva el suyo; el `finally` devuelve el modo) y `e2e-69-a` (el chip del
+acuse de cada factura de la oferta coincide con el A1 para ese folio; en los disponibles también, y la reclamada sigue
+bloqueada en su fila). Citados en `invariantes.md` (filas 68 y 69) y en las reglas; la capa queda en 37 casos en 19
+archivos.
+
+**Lo que costó / sorpresas.**
+- **CP-036 decía «Por evaluar» sin número**: medido, sin simular el detalle no dibuja el pie —ni otorgamiento, ni
+  verificación, ni línea, ni chips de giro— y muestra el panel de arranque; «Por evaluar» es el rótulo de la
+  selección cambiada (regla 14). El caso afirma lo que la regla quiere (ninguna cifra) con lo que la pantalla hace.
+- **CP-035 paso 4 (mover el A23 en memoria) no se afirma**: en la etapa Oferta el detalle dibuja la evaluación viva;
+  leer desde la versión es de la ACEPTADA (regla 13, `regla_12.test.mjs`). Leer la versión también en la oferta sería
+  una decisión nueva; quedó dicho en el CP.
+- **CP-123 pedía «Re-evaluar operación» sin tocar nada**: ese botón sólo existe con «La selección cambió». El gesto
+  del caso es «Re-evaluar simulación» del tab Otorgamiento (el mismo evento) y, si no hubiera re-evaluables, una
+  factura más y «Re-evaluar operación». Y el modo cambiado en el tubo lo lee un detalle NUEVO (la config persiste en
+  el acto, `guardarCfgOper` en efecto); un detalle ya abierto no.
+- **Los ids de los esbozos (`e2e-13-a`, `e2e-HU-21-a`) se escribieron antes de que existieran las reglas 68 y 69**: los
+  casos llevan el número de la regla que fijan, como toda la capa.
+- **La celda del folio**: el chip está dentro de la celda del tipo; la fila es el `div` de grilla que lo contiene y
+  sus hijos son las celdas. La primera versión miraba los hijos del padre de la fila (las otras filas). Y en los
+  disponibles la reclamada no lleva el emoji del candado: se rotula «Reclamada por el deudor» y el botón «Agregar» va
+  apagado; el caso mira las tres formas.
+
+**Documentos:** `invariantes.md` (filas 68 y 69, cifra de la capa), reglas 68 y 69, CP-034/035/036/123/010 (los
+esbozos pasan a casos escritos), HU-13/HU-21/HU-04, cifras (37 casos e2e en 19 archivos), tablero.

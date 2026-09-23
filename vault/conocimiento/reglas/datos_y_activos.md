@@ -110,4 +110,6 @@ timestamp: 2026-09-17T15:29:14Z
       `EstadoDTE`; el stream y el libro; «Buena factura» y `estadoCandidata` sin mirar el acuse, en las dos direcciones;
       el rótulo con sus tres textos y mudo sin dato; el Excel sin `estado`) y `regla_69.test.mjs` (la lectura sin
       derivar, «Sin acuse» en un solo sitio y nunca como sorteo, el chip en las tres filas y mudo sin dato, el libro, y
-      ningún filtro leyendo `acuse`; diez sondas). La fila en pantalla sigue por e2e (CP-010).
+      ningún filtro leyendo `acuse`; diez sondas). La fila en pantalla la fija `e2e-69-a` (CP-010): en la oferta y en
+      los disponibles el chip de cada factura coincide con lo que el A1 trae para ese folio, y la reclamada sigue
+      bloqueada en su fila.

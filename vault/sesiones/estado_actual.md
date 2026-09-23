@@ -14,7 +14,7 @@ timestamp: 2026-09-23T09:45:00Z
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
 (`pipeline_comercial.jsx`), build standalone, **169/169 PASA**, **59 archivos de gate de contrato**
-(515 tests), **32 casos e2e** (32/32), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
+(515 tests), **37 casos e2e** (37/37), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
 (98 reglas verbatim por tema) y **cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen
 gate. La crónica del 17 al 19-09 vive en sus logs (ADR-0001 a 0006, el linter como paso 0-bis).
 El **20-09** entró todo lo de plata: **regla 8 sin proxy** (149, ADR-0008), **girar no es acción de NEX**
@@ -39,8 +39,8 @@ telefónico ([log](./2026-09-22_el_deudor_decide_la_factura_se_llama.md)).
 >    cada commit): ADR-0013 (un evento, cinco versiones: regla 68, caso 168) · 0014 · 0015 · 0016 · 0017 · 0018 ·
 >    0019 · antigüedad ≤20 días · corte y reinicio por hora · M-19 en `cerrarOferta` · M-01 (el acuse del DTE:
 >    regla 69, caso 169; el A1 ya lo traía). **El backlog decidido del 22-09 quedó entero**: 18 gaps implementados
->    ([log](./2026-09-23_backlog_decidido.md) §1–§10). Sigue: los **e2e NUEVOS** que dejaron dichos —`28_version_v1`
->    (CP-034/035/036/123) y la fila del acuse (CP-010)— y los T1 sin decisión previa (gaps §2.2: G-05, G-18, G-23 … G-28).
+>    ([log](./2026-09-23_backlog_decidido.md) §1–§11), con sus pantallas en `28_version_v1.e2e.mjs` (`e2e-68-a/b/c/d`,
+>    `e2e-69-a`). Sigue: los T1 sin decisión previa (gaps §2.2: G-05, G-18, G-23 … G-28), cada uno con su caso en rojo.
 > 2. **UI**: el selector de sesión de la navbar, 1/3 más angosto y con elipsis (desborda a 1366 px) · el chip
 >    «Negociación» en una operación ya enviada a comité · **join de empresas SIEMPRE por RUT** (8 sitios; T1) ·
 >    `.bat` una vez · O01 · 28 · 13-quater.

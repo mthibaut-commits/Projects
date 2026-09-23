@@ -190,5 +190,8 @@ timestamp: 2026-09-17T22:12:32Z
       evento) y `regla_68.test.mjs` (simular dispara el evento antes de escribir el negocio, «Re-evaluar operación» y la
       pestaña del detalle, el rechazo de la versión incompleta, ningún emisor fuera del evento y del comité, la
       regularización sólo por gesto, el giro y el pricing desde los mismos cálculos, el pill por motor y el anuncio del
-      recálculo que no vuelve; dieciséis sondas). La pantalla —el botón, la versión leída al reabrir, «Por evaluar» sin
-      simular, el modo cambiado en Configuración— sigue por e2e (CP-034, CP-035, CP-036, CP-123).
+      recálculo que no vuelve; diecisiete sondas). La pantalla la fijan `e2e-68-a/b/c/d` (`28_version_v1.e2e.mjs`;
+      CP-034/035/036/123): sin simular no hay versión ni compuertas con cifra; dos facturas a mano y «Simular la
+      oferta» dejan la v1 con las cinco secciones sobre esas facturas y el TUBO la ve sin recargar; cerrar y reabrir
+      el detalle conserva la versión y el titular; el modo de tasa cambiado en Configuración › Simulación deja, al
+      re-evaluar desde un detalle nuevo, una versión con ese modo y la anterior conserva el suyo.
