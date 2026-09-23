@@ -383,3 +383,65 @@ archivos.
 
 **Documentos:** `invariantes.md` (filas 68 y 69, cifra de la capa), reglas 68 y 69, CP-034/035/036/123/010 (los
 esbozos pasan a casos escritos), HU-13/HU-21/HU-04, cifras (37 casos e2e en 19 archivos), tablero.
+
+## 12 · ADR-0020: el A1 es un flujo de eventos por documento (regla 70, caso 170)
+
+**Qué pidió el usuario.** «Considera que los eventos de dtesync llegan varias veces para la misma factura una vez se
+crea (notifica nueva factura), después puede llegar nota de crédito, después aceptación. Considera eso para modelar
+el archivo de dtesync.»
+
+**Qué se midió antes de tocar.** El A1 traía una fila por documento con su estado FINAL. `Notificacion` no tenía
+relación con las banderas (22.630 `DTE_SINCRONIZADO` · 7.370 `DTE_ACTUALIZADO`, repartidos igual entre aceptadas,
+reclamadas y con NC) y las fechas de las banderas eran **tres constantes posteriores al corte**: todos los acuses el
+23-06, todas las NC el 24-06, todos los reclamos el 25-06 (emisiones del 06-05 al 22-06, `FchRecepcion` 23-06 en todas).
+El archivo va por folio estrictamente creciente (globalmente único), no por fecha. Las banderas son exclusivas
+(AC 21.974 · RE 2.088 · NC 1.487 · ninguna 4.451). La documentación de DTE-Sync no fue alcanzable (egreso bloqueado).
+
+**Qué cambió.**
+- **El activo**: `migrar_dtesync_eventos.js` (una vez, commiteado como `migrar_padron.js`) expandió cada documento en su
+  creación (`DTE_SINCRONIZADO`, `Secuencia` 1, sin banderas, `FchNotificacion` = emisión) más una actualización por
+  bandera (`DTE_ACTUALIZADO`: identidad + envoltorio + `EstadoDTE` acumulado, sin repetir el documento), fechada de forma
+  determinista (acuse y reclamo 1–8 días desde la emisión, NC 1–30; nunca después de la recepción) y ordenó el log por
+  llegada. 30.000 documentos → **55.549 eventos**; el bloque pasó de 22,2 a 32,9 MB y el archivo de 35 a 46 MB. Los
+  derivados salieron **byte a byte iguales** (el pliegue reproduce el documento y ninguno lee las fechas de las banderas).
+- **El generador**: `lib/dtesync.js` (`plegar` · `expandir` · `ordenarLog` · `validarLog` · `diferenciasDeMigracion` ·
+  `resumen`); `derivar` pliega una vez y entrega documentos a los módulos; `generador.test.mjs` pliega antes del
+  `dependeDe`.
+- **El fuente**: `plegarDTE` + `documentosDTE()` (memo) —los ocho lectores de `window.DTESYNC` pasan por ahí; el stream es
+  el único que recorre el log—; `estadoDeDTE` como único lector de `EstadoDTE` (`facturaDeDTE` lo esparce y lleva
+  `secuenciaDTE`); `streamDesdeDTE` emite `eventoActualizacionDTE` para las filas con `Secuencia > 1` **sin `FchEmis`**;
+  `parcharDocumentoDTE`, `aplicarActualizacionAEvento`, `aplicarActualizacionDTE` (pura: disponibles siempre, la oferta
+  mientras sea del ejecutivo, aviso con `avisoDTE` sobre la cerrada/publicada/firmada) y `aplicarEventosADeal`; el tick
+  separa las actualizaciones antes de clasificar (`aplicarActualizacionesDTE`: acumulado, bandeja, deals, selected;
+  contadores en `actDTERef` que la corrida reporta y pone a cero); «facturas recibidas» cuenta documentos; la Bandeja
+  dice «N actualizaciones» y «eventos en cola»; `CONTRATOS_DATOS` esquema 2 y el diagnóstico cuenta documentos y eventos.
+- **Suite**: caso 170; los 13 lectores directos de `window.DTESYNC` de la suite pasan a `documentosDTE()` (con el log, un
+  `porFolio` por emisor|folio quedaba con la fila slim y el caso 94 caía). `CASOS_ESPERADOS` 169 → 170 (decisión).
+- **Gates**: `regla_70.test.mjs` (14 tests: el pliegue del fuente EXTRAÍDO y ejecutado en Node contra el del generador,
+  sobre el mismo log en orden y al revés; ningún lector fuera del pliegue y el stream; el tick; el aviso; el contrato;
+  doce sondas) y `dtesync.test.mjs` (6 tests: el bloque commiteado valida como log; las funciones con sondas).
+  535/535 (59 → 61 archivos, 49 → 50 por regla).
+
+**Lo que costó / sorpresas.**
+- **Un documento plegado también tiene `Secuencia > 1`.** La primera versión del stream tomaba «`Secuencia > 1`» como
+  actualización, así que `streamDesdeDTE(documentosDTE())` —lo que hacen los casos de muestreo 111, 159 y 160— devolvía
+  eventos sin `facturasOp` y la suite cayó con «Cannot read properties of undefined (reading '0')». El discriminador es
+  «trae `FchEmis`»: una actualización no trae el documento; una fila que lo trae es un documento, plegado o no.
+- **`window.DTESYNC` aparece seis veces en el fuente**, no tres: la sentencia del pliegue lo nombra dos veces y la del
+  stream tres. El gate quita las dos sentencias del texto y exige que quede sólo el comentario.
+- **El orden**: plegar por folio reproduce EXACTAMENTE el orden del activo plano (folios únicos y crecientes), así que
+  `PC_CLIENTES`, el elenco del Directorio y los `.slice(0, 4000)` de la suite no cambian. El log, en cambio, va por fecha:
+  el stream arranca con los documentos de mayo (excluidos por antigüedad, ~12 s a 250 eventos por tick) y después llega
+  junio. `e2e-31` compara antes/después, no cifras.
+- **El aviso sobre la oferta cerrada** se marca en el documento (`avisoDTE`), no en su estado: si se marcara el estado, la
+  re-entrega no se distinguiría de la primera; si no se marcara nada, cada re-entrega repetiría la traza.
+
+**Pendiente del usuario** (decisión #7 de `spec-inbound-facturas.md` §12): qué hacer cuando una NC o un reclamo llega
+sobre un documento de una oferta **publicada o firmada**. Hoy: el documento no se toca, la bitácora avisa (`exito:
+false`) y la corrida cuenta el aviso. La regla candidata es la de ADR-0018 (issue + aviso; el ejecutivo retira,
+re-simula y vuelve a publicar).
+
+**Documentos:** ADR-0020 (+ fila en `adr/index.md`), regla 70 en `datos_y_activos.md` (fila 70 en `invariantes.md`, y las
+filas de gate `dtesync.test.mjs` y `regla_<slug>` 50), `Levantamiento` A1, `spec-inbound-facturas.md` §2/§6/§12,
+`spec-proceso-curse.md` §5 (llegada por eventos, M-01), `GeneradorDatos/README.md` (base y sección nueva),
+`arquitectura.md`, HU-01 CA-5 y CP-144, cifras (170/170; 99 reglas; 61 archivos de gate, 50 por regla; ~46 MB), tablero.

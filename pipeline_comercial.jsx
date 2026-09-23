@@ -630,7 +630,15 @@ const SCHEMA_VERSION = {
 // valida al arrancar: si el proveedor cambia un campo, hoy la app simplemente deja de clasificar
 // facturas sin decir por qué. Con esto queda un diagnóstico legible en Configuración › Versión.
 const CONTRATOS_DATOS = [
-  { coleccion: "DTESYNC", esquema: 1, requeridos: ["RUTEmisor", "RznSoc", "Folio", "FchEmis", "RUTRecep", "RznSocRecep", "MntTotal"] },
+  // El A1 es un FLUJO DE EVENTOS por documento (ADR-0020, regla 70): una fila por notificación, con `Secuencia` y
+  // `FchNotificacion`. La primera fila del log es una creación y trae el documento entero; por eso los requeridos se
+  // contrastan contra ella. Un archivo con el layout anterior (una fila por documento) se diagnostica como
+  // «faltan campos»: la app lo pliega igual, pero el contrato entregado no es el esperado.
+  {
+    coleccion: "DTESYNC",
+    esquema: 2,
+    requeridos: ["RUTEmisor", "RznSoc", "Folio", "FchEmis", "RUTRecep", "RznSocRecep", "MntTotal", "Notificacion", "FchNotificacion", "Secuencia"],
+  },
   { coleccion: "AECSYNC", esquema: 1, requeridos: [] },
   { coleccion: "LISTA_BLANCA", esquema: 1, requeridos: [] },
   { coleccion: "DEUDORES_AUTORIZADOS", esquema: 1, requeridos: [] },
@@ -667,7 +675,16 @@ function validarContratosDatos() {
     const n = Array.isArray(col) ? col.length : Object.keys(col).length;
     const muestra = Array.isArray(col) ? col[0] : null;
     const faltantes = muestra && c.requeridos.length ? c.requeridos.filter((k) => !(k in muestra)) : [];
-    return { ...c, estado: faltantes.length ? "campos_faltantes" : "ok", n, faltantes, esquemaRecibido: meta ? meta[c.coleccion] : undefined };
+    // El A1 se cuenta en DOCUMENTOS (lo que el log pliega) y se dice cuántos eventos los trajeron.
+    const docs = c.coleccion === "DTESYNC" && Array.isArray(col) ? documentosDTE().length : null;
+    return {
+      ...c,
+      estado: faltantes.length ? "campos_faltantes" : "ok",
+      n: docs == null ? n : docs,
+      eventos: docs == null ? undefined : n,
+      faltantes,
+      esquemaRecibido: meta ? meta[c.coleccion] : undefined,
+    };
   });
 }
 
@@ -2925,13 +2942,44 @@ function mixSowDeal(deal) {
 // carga manual de XML sí las leía, así que una factura cargada a mano tenía fechas reales y una del
 // inbound no—.
 //
+// ── EL A1 ES UN FLUJO DE EVENTOS POR DOCUMENTO (ADR-0020, regla 70) ─────────────────────────────
+// DTESync notifica el mismo documento varias veces: primero que existe (`DTE_SINCRONIZADO`, `Secuencia` 1, el
+// documento entero y sin banderas) y después cada cambio de su estado —el acuse del receptor, el reclamo, la
+// nota de crédito— como `DTE_ACTUALIZADO` con la `Secuencia` siguiente, la identidad del documento y el
+// `EstadoDTE` ACUMULADO. `window.DTESYNC` es ese log, en orden de llegada. Nada que quiera «un documento» lo
+// lee directo: lo pliega `documentosDTE()`, la ÚNICA lectura del log fuera del stream —el stream sí lo
+// recorre evento a evento, porque su trabajo es que lleguen en orden—. El pliegue es el mismo que hace el
+// generador (`GeneradorDatos/lib/dtesync.js`, `plegar`): `regla_70.test.mjs` corre los dos sobre el mismo log
+// y exige el mismo resultado. Los documentos salen por folio, el orden del libro, que es el que el activo
+// plano traía: ningún lector cambia de orden por el pliegue.
+function plegarDTE(eventos) {
+  const docs = new Map();
+  for (const e of eventos || []) {
+    if (!e || !e.RUTEmisor || e.Folio == null) continue;
+    const k = e.RUTEmisor + "|" + e.Folio;
+    const prev = docs.get(k);
+    if (!prev) {
+      docs.set(k, { ...e });
+      continue;
+    }
+    // El evento más nuevo manda; uno atrasado sólo completa lo que falta.
+    docs.set(k, (+e.Secuencia || 1) >= (+prev.Secuencia || 1) ? { ...prev, ...e } : { ...e, ...prev });
+  }
+  return [...docs.values()].sort((a, b) => +a.Folio - +b.Folio || (a.RUTEmisor < b.RUTEmisor ? -1 : a.RUTEmisor > b.RUTEmisor ? 1 : 0));
+}
+let _DOCS_DTE = null;
+function documentosDTE() {
+  if (_DOCS_DTE) return _DOCS_DTE;
+  _DOCS_DTE = plegarDTE((typeof window !== "undefined" && Array.isArray(window.DTESYNC) && window.DTESYNC) || []);
+  return _DOCS_DTE;
+}
 // `CORTE_DTE` es la fecha de corte del activo: la emisión más reciente que trae el batch. Es una
 // propiedad del DATO, no del reloj, y es el ancla de los documentos sintéticos del libro de ventas.
 let _CORTE_DTE = null;
 function corteDTE() {
   if (_CORTE_DTE) return _CORTE_DTE;
   let max = "";
-  for (const r of (typeof window !== "undefined" && window.DTESYNC) || []) {
+  for (const r of documentosDTE()) {
     const f = r && r.FchEmis;
     if (f && f > max) max = f;
   }
@@ -4024,20 +4072,31 @@ function facturaDeDTE(r) {
     fchVenc: r.FchVenc || null,
     venc: plazoDTE(r),
     credito: r.FormaPago === "2" || r.FormaPago === 2,
+    ...estadoDeDTE(est),
+    // Hasta qué notificación del A1 sabe este documento (regla 70): una actualización que llegue después se aplica
+    // sólo si es más nueva, así una re-entrega no se aplica dos veces.
+    secuenciaDTE: +r.Secuencia || 1,
+    fchNotificacion: r.FchNotificacion || null,
+    sinXml: false,
+    enlaceXml: r.EnlaceXml,
+    enlacePdf: r.EnlacePdf,
+  };
+}
+// EL ESTADO DEL DOCUMENTO que el A1 trae en `EstadoDTE`, leído en UN solo sitio: lo usa `facturaDeDTE` al construir
+// el documento y `eventoActualizacionDTE` cuando llega una actualización (regla 70). EL ACUSE DEL RECEPTOR es una
+// bandera del DTE (M-01, regla 69): `Aceptado` con su `FchAcuseRecibo`, o `Reclamado` con su `FchReclamo`, o nada
+// mientras el receptor no se pronuncia (sus primeros 8 días desde la emisión). Acá sólo se LEE, como el reclamo y la
+// nota de crédito; se muestra y NO filtra: sin acuse la factura sigue siendo candidata (definición del negocio,
+// 23-09-2026).
+function estadoDeDTE(est) {
+  return {
     reclamada: est.Reclamado === "1",
     notaCredito: est.NotaCredito === "1" || est.NotaCredito === 1,
     folioNotaCredito: est.FolioNotaCredito || null,
-    // EL ACUSE DEL RECEPTOR es una bandera del DTE (M-01, regla 69) y el A1 la trae en `EstadoDTE`: `Aceptado` con su
-    // `FchAcuseRecibo`, o `Reclamado` con su `FchReclamo`, o nada mientras el receptor no se pronuncia (sus primeros
-    // 8 días desde la emisión). Acá sólo se LEE, como el reclamo y la nota de crédito; se muestra y NO filtra: sin
-    // acuse la factura sigue siendo candidata (definición del negocio, 23-09-2026).
     acuse: est.Reclamado === "1" ? "reclamada" : est.Aceptado != null && est.Aceptado !== "" ? "aceptada" : "sin_acuse",
     acuseCodigo: est.Aceptado != null && est.Aceptado !== "" ? String(est.Aceptado) : null,
     fchAcuse: est.Reclamado === "1" ? est.FchReclamo || null : est.FchAcuseRecibo || null,
     fchRecepcion: est.FchRecepcion || null,
-    sinXml: false,
-    enlaceXml: r.EnlaceXml,
-    enlacePdf: r.EnlacePdf,
   };
 }
 // Cómo se rotula el acuse de un documento (regla 69): tres estados en palabras del negocio, con la fecha del acuse o
@@ -4093,8 +4152,7 @@ let _libroEmisor = null;
 function libroPorEmisor() {
   if (_libroEmisor) return _libroEmisor;
   _libroEmisor = new Map();
-  const dte = typeof window !== "undefined" && Array.isArray(window.DTESYNC) ? window.DTESYNC : [];
-  for (const r of dte) {
+  for (const r of documentosDTE()) {
     if (!r || !r.RUTEmisor) continue;
     let a = _libroEmisor.get(r.RUTEmisor);
     if (!a) {
@@ -4217,11 +4275,134 @@ function cesionesAjenasDeDeal(deal) {
   out.factoring = orden[0] || null;
   return out;
 }
+// ── LAS ACTUALIZACIONES DEL A1 (regla 70) ────────────────────────────────────────────────────────
+// Una notificación posterior a la creación no es una factura nueva: es el documento que ya llegó, con su estado
+// nuevo. El stream la lleva como evento `actualizacion` y el inbound la aplica donde el documento viva.
+function eventoActualizacionDTE(r, i) {
+  const est = estadoDeDTE(r.EstadoDTE || {});
+  return {
+    id: `DTE-${i}`,
+    tipo: "actualizacion",
+    rutEmisor: r.RUTEmisor,
+    folio: r.Folio,
+    docId: `F-${r.RUTEmisor}-${r.Folio}`,
+    secuencia: +r.Secuencia || 1,
+    notificacion: r.Notificacion || "DTE_ACTUALIZADO",
+    fchNotificacion: r.FchNotificacion || null,
+    estado: est,
+    // Qué trae el estado acumulado, nombrado por lo que más pesa: la NC anula, el reclamo bloquea, el acuse informa.
+    cambio: est.notaCredito ? "nota_credito" : est.reclamada ? "reclamo" : est.acuse === "aceptada" ? "acuse" : "estado",
+    nFacturas: 0,
+    monto: 0,
+  };
+}
+const glosaCambioDTE = (ev) =>
+  ev.cambio === "nota_credito"
+    ? `una nota de crédito${ev.estado && ev.estado.folioNotaCredito ? ` (folio ${ev.estado.folioNotaCredito})` : ""}`
+    : ev.cambio === "reclamo"
+      ? "el reclamo del receptor"
+      : ev.cambio === "acuse"
+        ? "el acuse de recibo"
+        : "un cambio de estado";
+// Aplica una actualización a un documento que ya vive en un pool: devuelve el MISMO objeto si el evento no es más
+// nuevo que lo que el documento ya sabe (una re-entrega no se aplica dos veces), o una copia con el estado nuevo.
+function parcharDocumentoDTE(f, ev) {
+  if (!f || !ev || f.id !== ev.docId || (f.secuenciaDTE || 1) >= ev.secuencia) return f;
+  return { ...f, ...ev.estado, secuenciaDTE: ev.secuencia, fchNotificacion: ev.fchNotificacion };
+}
+// Un evento del inbound (acumulado o bandeja) lleva su documento en `facturasOp[0]` y las banderas espejadas en la
+// raíz, que es lo que «Buena factura» y el perfil de la Bandeja miran.
+function aplicarActualizacionAEvento(e, ev) {
+  const f = e && e.facturasOp && e.facturasOp[0];
+  const nf = parcharDocumentoDTE(f, ev);
+  if (!f || nf === f) return e;
+  return { ...e, facturasOp: [nf, ...e.facturasOp.slice(1)], reclamada: nf.reclamada, notaCredito: nf.notaCredito };
+}
+const aplicarEventosAEvento = (e, porDoc) => {
+  const f = e && e.facturasOp && e.facturasOp[0];
+  const ev = f && porDoc.get(f.id);
+  return ev ? aplicarActualizacionAEvento(e, ev) : e;
+};
+// QUÉ HACE UNA ACTUALIZACIÓN CON UNA OPORTUNIDAD (regla 70). El documento se parcha donde viva: en los disponibles
+// siempre; en la oferta mientras el paquete sea del ejecutivo. Si la oferta ya está cerrada o publicada y llega una NC
+// o un reclamo, el documento NO se toca —lo que se cursa no cambia solo (regla 14)— y la bitácora deja el aviso: qué
+// hacer con eso es una decisión pendiente del negocio (ADR-0020, Consecuencias). El acuse se anota siempre, sin traza.
+// Pura y de nivel módulo: la suite la prueba en las dos direcciones (caso 170).
+function aplicarActualizacionDTE(deal, ev) {
+  if (!deal || !ev || !ev.docId) return { deal, cambio: null };
+  const enOferta = (deal.facturasOp || []).find((f) => f && f.id === ev.docId) || null;
+  const enDisp = (deal.facturasDisponibles || []).find((f) => f && f.id === ev.docId) || null;
+  if (!enOferta && !enDisp) return { deal, cambio: null };
+  const bloquea = !!(ev.estado && (ev.estado.notaCredito || ev.estado.reclamada));
+  const paqueteCerrado = ofertaCerradaVigente(deal) || ofertaPublicada(deal) || ["aceptadas", "cesion", "otorgamiento", "giro"].includes(deal.stage);
+  let d = deal;
+  let cambio = null;
+  if (enDisp) {
+    const nf = parcharDocumentoDTE(enDisp, ev);
+    if (nf !== enDisp) {
+      d = { ...d, facturasDisponibles: d.facturasDisponibles.map((f) => (f === enDisp ? nf : f)) };
+      cambio = { donde: "disponibles", folio: ev.folio, cambio: ev.cambio };
+    }
+  }
+  if (enOferta) {
+    if (bloquea && paqueteCerrado) {
+      if ((enOferta.avisoDTE || 0) < ev.secuencia) {
+        d = {
+          ...d,
+          facturasOp: d.facturasOp.map((f) => (f === enOferta ? { ...f, avisoDTE: ev.secuencia } : f)),
+          historialContacto: traza(
+            d,
+            `⚠ El SII notificó ${glosaCambioDTE(ev)} sobre el documento #${ev.folio}, que está en la oferta ${ofertaPublicada(deal) ? "publicada" : "cerrada"}: el paquete no se toca solo; revisar la operación`,
+            false,
+          ),
+        };
+        cambio = { donde: "aviso", folio: ev.folio, cambio: ev.cambio };
+      }
+    } else {
+      const nf = parcharDocumentoDTE(enOferta, ev);
+      if (nf !== enOferta) {
+        d = { ...d, facturasOp: d.facturasOp.map((f) => (f === enOferta ? nf : f)) };
+        cambio = { donde: "oferta", folio: ev.folio, cambio: ev.cambio };
+      }
+    }
+  }
+  if (cambio && bloquea && cambio.donde !== "aviso")
+    d = {
+      ...d,
+      historialContacto: traza(
+        d,
+        `El SII notificó ${glosaCambioDTE(ev)} sobre el documento #${ev.folio}: queda bloqueado en ${cambio.donde === "oferta" ? "la oferta" : "los documentos disponibles"}`,
+      ),
+    };
+  return { deal: d, cambio };
+}
+// Todas las actualizaciones de un lote sobre una oportunidad; cuenta cuántas la tocaron y cuántas quedaron en aviso.
+function aplicarEventosADeal(deal, evs) {
+  let d = deal;
+  let n = 0;
+  let avisos = 0;
+  for (const ev of evs) {
+    const r = aplicarActualizacionDTE(d, ev);
+    if (r.cambio) {
+      d = r.deal;
+      if (r.cambio.donde === "aviso") avisos++;
+      else n++;
+    }
+  }
+  return { deal: d, n, avisos };
+}
 function streamDesdeDTE(dte) {
   const out = [];
   for (let i = 0; i < dte.length; i++) {
     const r = dte[i];
     if (!r || !r.RUTEmisor) continue;
+    // La actualización trae la identidad y el estado, no el documento: sin `FchEmis` no hay factura que abrir. Una
+    // fila que SÍ lo trae es un documento —la creación, o un documento ya plegado con la secuencia hasta la que sabe—
+    // y entra como factura con el estado que trae.
+    if ((+r.Secuencia || 1) > 1 && !("FchEmis" in r)) {
+      out.push(eventoActualizacionDTE(r, i));
+      continue;
+    }
     const fac = facturaDeDTE(r);
     const credito = fac.credito,
       reclamada = fac.reclamada,
@@ -4282,8 +4463,7 @@ function streamDesdeDTE(dte) {
 // operación (y al agregarlas, ésta requerirá Otorgamiento por incluir deudores "Otro").
 const OTRO_FOP_POR_CEDENTE = (() => {
   const m = {};
-  const dte = typeof window !== "undefined" && Array.isArray(window.DTESYNC) ? window.DTESYNC : [];
-  for (const r of dte) {
+  for (const r of documentosDTE()) {
     if (!r || !r.RUTEmisor) continue;
     if (clasifInbound(r.RUTEmisor, r.RUTRecep, r.RznSocRecep).bucket !== "OTRO") continue; // sólo deudores excluidos
     const est = r.EstadoDTE || {};
@@ -4357,8 +4537,7 @@ const DIAS_VENTANA_DTE = 47,
   DIAS_MES_SENAL = 30;
 const SENALES_CLIENTE = (() => {
   const m = {};
-  const dte = typeof window !== "undefined" && Array.isArray(window.DTESYNC) ? window.DTESYNC : [];
-  for (const d of dte) {
+  for (const d of documentosDTE()) {
     if (!d || !d.RUTEmisor) continue;
     const g = m[d.RUTEmisor] || (m[d.RUTEmisor] = { buenos: 0, nBuenos: 0 });
     if (tipoDeudor(d.RUTRecep, d.RznSocRecep) !== "Otro") {
@@ -18693,6 +18872,7 @@ function InboundStream({
   queueLen,
   total,
   recibidas,
+  actualizadas = 0,
   acumuladas,
   corridas,
   dia,
@@ -18740,8 +18920,12 @@ function InboundStream({
       <div className="mt-1 flex flex-wrap items-center gap-x-1.5 t10" style={{ color: C.faint }}>
         <span>{recibidas} facturas</span>·<span style={{ color: C.indigo }}>{acumuladas} por procesar</span>·
         <span style={{ color: C.amber }}>{feed.length} sin clasificar</span>·
+        <span title="Notificaciones posteriores a la creación del documento —acuse, reclamo, nota de crédito— aplicadas donde el documento vive (regla 70)">
+          {actualizadas} actualizaciones
+        </span>
+        ·
         <span>
-          {queueLen}/{total} en cola
+          {queueLen}/{total} eventos en cola
         </span>
       </div>
       {/* REGLA 40 · El recorte de la bandeja SE DICE. Sin esta línea, las facturas más antiguas salían
@@ -21923,8 +22107,7 @@ const PERIODO_CORTE = 202606;
 // RUT del deudor a partir de su razón social (el A16 se indexa por RUT; la UI suele tener el nombre).
 const RUT_DEUDOR_POR_NOMBRE = (() => {
   const m = {};
-  const dte = typeof window !== "undefined" && Array.isArray(window.DTESYNC) ? window.DTESYNC : [];
-  for (const r of dte) {
+  for (const r of documentosDTE()) {
     if (r && r.RUTRecep && r.RznSocRecep && m[r.RznSocRecep] === undefined) m[r.RznSocRecep] = r.RUTRecep;
   }
   return m;
@@ -33129,7 +33312,7 @@ const PC_CLIENTES = (() => {
   // distintos de DTESync. Cada empresa se asigna a su ejecutivo con la MISMA regla que el pipeline
   // (asignarEjecutivo → dueño del maestro SOW; prospecto → hash estable), de modo que TODA empresa
   // con oportunidades queda en la cartera de su ejecutivo (consistencia por construcción).
-  const dte = typeof window !== "undefined" && Array.isArray(window.DTESYNC) ? window.DTESYNC : [];
+  const dte = documentosDTE();
   if (dte.length) {
     const vistos = new Map(); // RUTEmisor -> RznSoc (empresa)
     for (const r of dte) {
@@ -35327,7 +35510,7 @@ function CfgVersion() {
   const colorEstado = (e) => (e === "ok" ? C.green : e === "ausente" ? C.red : C.amber);
   const textoEstado = (c) =>
     c.estado === "ok"
-      ? `OK · ${c.n.toLocaleString("es-CL")} registros`
+      ? `OK · ${c.n.toLocaleString("es-CL")} ${c.eventos != null ? `documentos en ${c.eventos.toLocaleString("es-CL")} eventos` : "registros"}`
       : c.estado === "ausente"
         ? "Ausente — no se inyectó"
         : `Faltan campos: ${c.faltantes.join(", ")}`;
@@ -41856,9 +42039,8 @@ let _dtePares = null;
 function paresPorEmisor() {
   if (_dtePares) return _dtePares;
   _dtePares = new Map();
-  const dte = typeof window !== "undefined" && Array.isArray(window.DTESYNC) ? window.DTESYNC : [];
   const m = new Map();
-  for (const r of dte) {
+  for (const r of documentosDTE()) {
     if (!r || !r.RUTEmisor || !r.RUTRecep) continue;
     let g = m.get(r.RUTEmisor);
     if (!g) {
@@ -47408,6 +47590,8 @@ export default function PipelineComercial() {
     return () => clearInterval(t);
   }, [streaming, cfgT.cronMs]);
   const [recibidas, setRecibidas] = useState(0);
+  const [actualizadas, setActualizadas] = useState(0); // notificaciones posteriores a la creación aplicadas (regla 70)
+  const actDTERef = useRef({ total: 0, acuses: 0, reclamos: 0, notasCredito: 0, otros: 0, enOportunidades: 0, avisos: 0 });
   const [acumulado, setAcumulado] = useState([]); // facturas calificadas esperando la corrida
   const [corridas, setCorridas] = useState(0);
   const [fDeudor, setFDeudor] = useState("todos");
@@ -49510,9 +49694,14 @@ export default function PipelineComercial() {
     }
     const t = setTimeout(() => {
       const lote = streamQueue.slice(0, STREAM_LOTE);
+      // Las actualizaciones del A1 (regla 70) no se clasifican: parchan el documento donde ya vive —acumulado,
+      // bandeja, oportunidades— y la bitácora de la oportunidad dice qué llegó. Lo demás del lote son facturas nuevas.
+      const actualizaciones = lote.filter((e) => e && e.tipo === "actualizacion");
+      const facturas = actualizaciones.length ? lote.filter((e) => !(e && e.tipo === "actualizacion")) : lote;
+      if (actualizaciones.length) aplicarActualizacionesDTE(actualizaciones);
       const califican = [],
         resto = [];
-      for (const f of lote) {
+      for (const f of facturas) {
         const ds = deudorStatsRef.current;
         const dk = f.tipoDeudor === "Lista Blanca" ? "buenos" : f.tipoDeudor === "Deudor Autorizado" ? "autorizados" : "otros";
         ds[dk].fac += f.nFacturas || 1;
@@ -49568,10 +49757,50 @@ export default function PipelineComercial() {
           return r.lista;
         });
       setStreamQueue((q) => q.slice(STREAM_LOTE));
-      setRecibidas((n) => n + lote.length);
+      setRecibidas((n) => n + facturas.length);
     }, 350);
     return () => clearTimeout(t);
   }, [streaming, streamQueue, rules]);
+  // Aplica un lote de actualizaciones del A1 (regla 70): la más nueva por documento manda dentro del lote; el
+  // acumulado y la bandeja parchan su documento; cada oportunidad aplica lo suyo (`aplicarActualizacionDTE`). Los
+  // contadores los reporta la corrida siguiente en su línea de bitácora.
+  const aplicarActualizacionesDTE = (acts) => {
+    const porDoc = new Map();
+    for (const a of acts) {
+      const p = porDoc.get(a.docId);
+      if (!p || p.secuencia < a.secuencia) porDoc.set(a.docId, a);
+    }
+    const evs = [...porDoc.values()];
+    const c = actDTERef.current;
+    c.total += acts.length;
+    for (const a of evs) c[a.cambio === "nota_credito" ? "notasCredito" : a.cambio === "reclamo" ? "reclamos" : a.cambio === "acuse" ? "acuses" : "otros"]++;
+    setActualizadas((n) => n + acts.length);
+    const parchar = (lista) => {
+      let toco = false;
+      const out = lista.map((e) => {
+        const ne = aplicarEventosAEvento(e, porDoc);
+        if (ne !== e) toco = true;
+        return ne;
+      });
+      return toco ? out : lista;
+    };
+    setAcumulado(parchar);
+    setStreamFeed(parchar);
+    setDeals((prev) => {
+      let toco = false;
+      const out = prev.map((d) => {
+        const r = aplicarEventosADeal(d, evs);
+        if (r.deal !== d) {
+          toco = true;
+          c.enOportunidades += r.n;
+          c.avisos += r.avisos;
+        }
+        return r.deal;
+      });
+      return toco ? out : prev;
+    });
+    setSelected((s) => (s ? aplicarEventosADeal(s, evs).deal : s));
+  };
 
   // Cálculo financiero: diferencia de precio, comisión, descuento (CxC) y giro.
   // Giro = Valor factura − diferencia de precio (tasa × días de colocación) − comisión − descuento (CxC).
@@ -49865,10 +50094,18 @@ export default function PipelineComercial() {
     // al pool disponible tras una latencia proporcional al volumen de documentos — anticipando
     // operaciones con miles de facturas. No re-simula ni marca nada (regla 14, regla 68).
     const idsWarn = Object.keys(warn);
+    // Las actualizaciones del A1 aplicadas desde la corrida anterior (regla 70) van en la misma línea, y el contador
+    // vuelve a cero: una línea por evento habría sido ruido (25.000 en un stream entero).
+    const act = { ...actDTERef.current };
+    actDTERef.current = { total: 0, acuses: 0, reclamos: 0, notasCredito: 0, otros: 0, enOportunidades: 0, avisos: 0 };
     logSys(
       "info",
       "motor",
-      `Corrida del inbound: ${nuevos.length} oportunidad(es) nueva(s), ${idsWarn.length} actualizada(s) con facturas nuevas, ${pendientes.length} documento(s) re-encolados`,
+      `Corrida del inbound: ${nuevos.length} oportunidad(es) nueva(s), ${idsWarn.length} actualizada(s) con facturas nuevas, ${pendientes.length} documento(s) re-encolados${
+        act.total
+          ? `; ${act.total} actualización(es) del SII (${act.acuses} acuses · ${act.reclamos} reclamos · ${act.notasCredito} notas de crédito), ${act.enOportunidades} aplicada(s) en oportunidades, ${act.avisos} aviso(s) sobre ofertas cerradas`
+          : ""
+      }`,
       // El intervalo del job en producción viaja en la traza (regla 64): en la demo la corrida es cada «hora» simulada.
       {
         nuevas: nuevos.length,
@@ -49876,6 +50113,7 @@ export default function PipelineComercial() {
         reencolados: pendientes.length,
         topeBandeja: cfgT.topeBandeja,
         intervaloJobMs: intervaloJobMs(cfgT),
+        actualizacionesDTE: act,
       },
     );
     setDeals((prev) => {
@@ -50615,6 +50853,8 @@ export default function PipelineComercial() {
     setBandejaRecortadas({ total: 0, conDueno: 0 });
     setAcumulado([]);
     setRecibidas(0);
+    setActualizadas(0);
+    actDTERef.current = { total: 0, acuses: 0, reclamos: 0, notasCredito: 0, otros: 0, enOportunidades: 0, avisos: 0 };
     setCorridas(0);
     setDeals([]);
     setHistoria([]);
@@ -52719,6 +52959,7 @@ export default function PipelineComercial() {
                                 queueLen={streamQueue.length}
                                 total={INBOUND_STREAM.length}
                                 recibidas={recibidas}
+                                actualizadas={actualizadas}
                                 acumuladas={acumulado.length}
                                 corridas={corridas}
                                 dia={dia}

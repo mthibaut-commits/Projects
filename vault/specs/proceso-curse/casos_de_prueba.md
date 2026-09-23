@@ -121,6 +121,12 @@ Y las capas que la suite exige: un caso nuevo toma el siguiente entero (168 en a
 - **Pasos**: 1) correr la agrupación por cedente (`correrProceso` con estado inyectado); 2) listar oportunidades de X.
 - **Resultado esperado**: las dos terminales conservan `stage` y paquete; existe una tercera en `prospeccion` con las facturas nuevas.
 
+### CP-144 · La actualización del A1 llega al documento donde vive, y sobre la oferta cerrada sólo avisa
+- **Criterio**: CA-5 de HU-01 · **Dirección**: positiva (la NC parcha los disponibles y la oferta abierta, con traza) y negativa (sobre la oferta cerrada el documento no cambia y queda el aviso; la re-entrega no se aplica dos veces; un folio ajeno no toca nada) · **Capa**: suite. · **Cobertura actual**: **caso 170** (23-09-2026, ADR-0020, regla 70) y `regla_70.test.mjs` (el tick separa las actualizaciones antes de clasificar; el pliegue del fuente ≡ el del generador).
+- **Precondición**: `aplicarActualizacionDTE` y `eventoActualizacionDTE` alcanzables por nombre; una oportunidad `{facturasOp: [B], facturasDisponibles: [A]}` con los documentos de `facturaDeDTE` (secuencia 1) y los eventos de actualización plantados con `Secuencia` 2 y 3.
+- **Pasos**: 1) aplicar la NC de A → `estadoCandidata(A)` bloqueada por `notaCredito`, traza en la bitácora; 2) volver a aplicarla → mismo objeto, sin segunda traza; 3) aplicar la NC de B con la oferta abierta → B bloqueada en la oferta; 4) con `ofertaCerrada` → B intacta, traza `exito: false` con «el paquete no se toca solo», marcada con `avisoDTE`; 5) un acuse → se anota sin traza; 6) un folio ajeno → la oportunidad es el mismo objeto.
+- **Resultado esperado**: el de cada paso; la pantalla que lo dibuja (el chip y el candado de la fila) queda para un e2e cuando el stream sea determinista.
+
 ### CP-004 · La Bandeja Inbound bota primero lo que no es de nadie y lo dice
 - **Criterio**: CA-4 de HU-01 · **Dirección**: ambas · **Capa**: suite. · **Cobertura actual**: **caso 142** (lo nuevo entra adelante, sale primero lo que no es de nadie, lo que sale se cuenta) y `regla_40.test.mjs`.
 - **Precondición y pasos**: los del caso 142. · **Resultado esperado**: el descarte cuenta exactamente lo botado.

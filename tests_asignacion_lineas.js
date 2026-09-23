@@ -28,7 +28,7 @@
   // inventado no tiene libro: los casos que lo miran tienen que sembrar un cedente que el archivo
   // declare. Se elige el que más facturas trae, para que los recortes por ventana dejen muestra.
   const EMISOR_LIBRO = (() => {
-    const c = {}; for (const r of (window.DTESYNC || [])) { if (r && r.RUTEmisor) c[r.RUTEmisor] = (c[r.RUTEmisor] || 0) + 1; }
+    const c = {}; for (const r of documentosDTE()) { if (r && r.RUTEmisor) c[r.RUTEmisor] = (c[r.RUTEmisor] || 0) + 1; }
     return Object.keys(c).sort((a, b) => c[b] - c[a])[0] || "";
   })();
 
@@ -1706,7 +1706,7 @@
   // re-inflaba esa cifra a pesos, asi que la «regla de oro» del prorrateo cuadraba contra un total
   // que ya venia equivocado. Este caso fija que el peso es la unidad y que nada la redondea.
   {
-    const dte = (window.DTESYNC || []).slice(0, 4000);
+    const dte = documentosDTE().slice(0, 4000);
     const facturas = dte.map((r) => ({ monto: Math.round(+r.MntTotal || 0) }));
     const perdidos = dte.reduce((a, r, i) => a + Math.abs((+r.MntTotal || 0) - facturas[i].monto), 0);
     const noEnteros = facturas.filter((f) => !Number.isInteger(f.monto)).length;
@@ -1955,14 +1955,14 @@
     const noFuturo = resp.emision <= corte;
     const corteEsDelDato = (() => {
       let max = "";
-      for (const r of (window.DTESYNC || [])) { if (r && r.FchEmis && r.FchEmis > max) max = r.FchEmis; }
+      for (const r of documentosDTE()) { if (r && r.FchEmis && r.FchEmis > max) max = r.FchEmis; }
       return !max || max === corte;
     })();
 
     // (e) El plazo sale de las DOS fechas del activo. Con `venc: 45` a mano había un solo plazo en
     //     todo el sistema y el prorrateo —que descuenta por plazo— cobraba igual a 30 que a 90 días.
     const plazos = new Set();
-    for (const r of (window.DTESYNC || []).slice(0, 4000)) plazos.add(plazoDTE(r));
+    for (const r of documentosDTE().slice(0, 4000)) plazos.add(plazoDTE(r));
     const plazoReal = plazos.size > 1;
     const plazoEsLaResta = plazoDTE({ FchEmis: "2026-05-04", FchVenc: "2026-07-03" }) === 60
       && plazoDTE({ FchEmis: "2026-05-04" }) === 45;
@@ -1983,7 +1983,7 @@
   // documento estaba anulado por nota de crédito o cedido a terceros. Eran documentos que no existen
   // en ningún activo, con razones sociales y montos inventados, al lado de los reales del inbound.
   {
-    const dte = window.DTESYNC || [];
+    const dte = documentosDTE();
     const porFolio = {};
     for (const r of dte) { if (r && r.RUTEmisor) porFolio[r.RUTEmisor + "|" + r.Folio] = r; }
 
@@ -2041,7 +2041,7 @@
   // que cuelga de ella se inventaba aguas abajo: «cedida a terceros» salía de un hash del folio,
   // `perdidaCesion` de un `rndDetBool(id, 0.12)` y `cedidasOtro` quedaba siempre en 0.
   {
-    const dte = window.DTESYNC || [], aec = window.AECSYNC || [];
+    const dte = documentosDTE(), aec = window.AECSYNC || [];
     const porFolio = {};
     for (const r of dte) { if (r && r.RUTEmisor) porFolio[r.RUTEmisor + "|" + r.Folio] = r; }
 
@@ -2157,7 +2157,7 @@
   // comercial. Ninguna mira el monto de UN documento, y el área de Operaciones sólo tenía O05. El
   // control faltaba justo donde el dato podía romperse, que es lo que destapó tener cesiones parciales.
   {
-    const dte = window.DTESYNC || [], aec = window.AECSYNC || [];
+    const dte = documentosDTE(), aec = window.AECSYNC || [];
     const porFolio = {};
     for (const r of dte) { if (r && r.RUTEmisor) porFolio[r.RUTEmisor + "|" + r.Folio] = r; }
     const regla = REGLAS_CLIENTE.find((r) => r.cond === "O06");
@@ -4033,12 +4033,12 @@
   {
     const ks = Object.keys(EXECS);
     const sinComentarios = (fn) => String(fn).replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
-    const nombrePorRut = (() => { const m = {}; for (const r of (window.DTESYNC || [])) if (r && r.RUTEmisor && !m[r.RUTEmisor]) m[r.RUTEmisor] = r.RznSoc; return m; })();
+    const nombrePorRut = (() => { const m = {}; for (const r of documentosDTE()) if (r && r.RUTEmisor && !m[r.RUTEmisor]) m[r.RUTEmisor] = r.RznSoc; return m; })();
 
     // Una fila REAL del A1 cuyo deudor cae en el bucket OTRO y no alcanza la nota de corte, y su evento
     // con la forma real del stream (`streamDesdeDTE`); la MISMA fila con el receptor cambiado a Lista
     // Blanca da el evento «elegible». Las usan (a) —campos DERIVADOS del deudor— y (b).
-    const filaOtro = (window.DTESYNC || []).find((r) => r && r.RUTEmisor && r.FormaPago === "2"
+    const filaOtro = documentosDTE().find((r) => r && r.RUTEmisor && r.FormaPago === "2"
       && clasifInbound(r.RUTEmisor, r.RUTRecep, r.RznSocRecep).bucket === "OTRO"
       && (notaDeudor(r.RznSocRecep, r.RUTRecep) || 0) <= NOTA_PRIORITARIA
       && (r.EstadoDTE || {}).Reclamado !== "1" && !((r.EstadoDTE || {}).NotaCredito === "1" || (r.EstadoDTE || {}).NotaCredito === 1));
@@ -4151,7 +4151,7 @@
     // captura de bucket OTRO con nota ≤ corte; hay capturas Y excluidos, o la medición no mide; y
     // el diseño de DOS poblaciones queda fijado: un deudor de bucket OTRO con nota > corte SÍ abre
     // (lista ND>4,2, Rule-04/05), que es la parte que el texto de la regla 11 no nombra.
-    const muestra = streamDesdeDTE((window.DTESYNC || []).slice(0, 4000));
+    const muestra = streamDesdeDTE(documentosDTE().slice(0, 4000));
     let capturadas = 0, excluidasOtro = 0, otroCapturada = 0, otroNotaAbre = 0, otroNotaNoAbre = 0;
     for (const ev of muestra) {
       const esOtro = ev.inboundBucket === "OTRO", sobreCorte = notaDeudorEvento(ev) > NOTA_PRIORITARIA;
@@ -7654,7 +7654,7 @@
 
   // ═══ 159 · ADR-0014 / regla 60: la cedida a un factoring AJENO no es candidata del inbound; la cedida a Security sí ═══
   {
-    const aec159 = window.AECSYNC || [], dte159 = window.DTESYNC || [];
+    const aec159 = window.AECSYNC || [], dte159 = documentosDTE();
     const porFolio159 = {}; for (const r of dte159) if (r && r.RUTEmisor) porFolio159[r.RUTEmisor + "|" + r.Folio] = r;
     const evDe = (r) => streamDesdeDTE([r])[0];
     // Sobre el A2 real: una cesión ajena y una nuestra cuyos folios existen en el A1 y cuyo deudor abre
@@ -7742,7 +7742,7 @@
       documentoOk = ev21.diasEmision === 1 && diasEmisionEvento(ev21) === 21 && diasEmisionEvento(ev5) === 5;
       // (g) Sobre el archivo (8.000 filas del stream): ninguna captura supera el tope, hay excluidas por antigüedad,
       //     y la Bandeja lleva la antigüedad del documento y no un 1 fijo.
-      const muestra160 = streamDesdeDTE((window.DTESYNC || []).slice(0, 8000));
+      const muestra160 = streamDesdeDTE(documentosDTE().slice(0, 8000));
       for (const ev of muestra160) {
         if (ev.diasEmision !== diasDesdeEmision(ev.facturasOp[0])) bandejaMal++;
         const vieja = diasEmisionEvento(ev) > 20, r = clasificarFactura(ev, INBOUND_RULES);
@@ -8337,7 +8337,7 @@
     const leeOk = fAc.acuse === "aceptada" && fAc.acuseCodigo === "2" && fAc.fchAcuse === corteDTE() && fAc.reclamada === false && fAc.fchRecepcion === corteDTE()
       && fRe.acuse === "reclamada" && fRe.reclamada === true && fRe.fchAcuse === corteDTE() && fRe.acuseCodigo === null
       && fSin.acuse === "sin_acuse" && fSin.fchAcuse === null && fSin.acuseCodigo === null && fSin.reclamada === false;
-    const dte = (window.DTESYNC || []);
+    const dte = documentosDTE();
     const cuenta = { aceptada: 0, reclamada: 0, sin_acuse: 0 }, activo = { ac: 0, re: 0, sin: 0 };
     for (const r of dte) { if (!r || !r.RUTEmisor) continue; cuenta[facturaDeDTE(r).acuse]++; const e = r.EstadoDTE || {}; if (e.Reclamado === "1") activo.re++; else if (e.Aceptado != null && e.Aceptado !== "") activo.ac++; else activo.sin++; }
     const activoOk = dte.length >= 1000 && cuenta.aceptada === activo.ac && cuenta.reclamada === activo.re && cuenta.sin_acuse === activo.sin && cuenta.aceptada > 0 && cuenta.reclamada > 0 && cuenta.sin_acuse > 0;
@@ -8371,6 +8371,85 @@
        leeOk && activoOk && streamOk && libroOk && filtroOk && candidataOk && perfilOk && rotuloOk && excelOk,
        `tres estados leídos ${leeOk} · A1: ${cuenta.aceptada} aceptadas · ${cuenta.reclamada} reclamadas · ${cuenta.sin_acuse} sin acuse = lo que trae ${activoOk} · stream ${streamOk} · libro ${libroOk}`
        + ` · filtro no lo mira (sin acuse candidata, reclamada no) ${filtroOk} · estadoCandidata ${candidataOk} · perfil ${perfilOk} · rótulo «${lAc.texto}»/«${lRe.texto}»/«${lSin.texto}» ${rotuloOk} · Excel sin sorteo ${excelOk}`);
+  }
+
+  {
+    // 170 · EL A1 ES UN FLUJO DE EVENTOS POR DOCUMENTO (regla 70, ADR-0020; el usuario, 23-09-2026: «los eventos de
+    //       DTESync llegan varias veces para la misma factura: una vez se crea, después puede llegar nota de crédito,
+    //       después aceptación»). Lo que fija: (a) `plegarDTE` deja un documento por (emisor, folio) con los campos de
+    //       la creación y el estado del evento más nuevo, cualquiera sea el orden de llegada, y una fila plana se
+    //       pliega a sí misma; (b) sobre el A1 real: el log tiene más filas que documentos, `documentosDTE()` cuenta
+    //       las claves distintas, y el libro, los pares y el corte cuentan documentos y no eventos; (c) el stream
+    //       lleva la creación como factura sin banderas y la actualización como evento `actualizacion`; (d)
+    //       `aplicarActualizacionDTE`: la NC parcha el documento en los disponibles y en la oferta abierta —queda
+    //       bloqueado en `estadoCandidata`— con traza; sobre la oferta cerrada NO toca el documento y deja el aviso;
+    //       la re-entrega no se aplica dos veces; el acuse se anota sin traza; un folio ajeno no cambia nada;
+    //       (e) sobre un evento del inbound la NC apaga «Buena factura».
+    const RUT170 = "76.170.170-K";
+    const estadoVacio = () => ({ NotaCredito: null, FchNotaCredito: null, FolioNotaCredito: null, TipoDTERef: null, FolioDTERef: null, Aceptado: null, Reclamado: null, FchReclamo: null, FchRecepcion: corteDTE(), FchAcuseRecibo: null });
+    const fila = (folio, est, extra) => ({ RUTEmisor: RUT170, RznSoc: "Cedente 170", TipoDTE: "33", TipoDTEDesc: "Factura electronica", Folio: folio,
+      FchEmis: diaISO(corteDTE(), -3), FchVenc: diaISO(corteDTE(), 40), RUTRecep: LB[0], RznSocRecep: nomDe(LB[0]), MntTotal: 1000000, FormaPago: "2",
+      EstadoDTE: { ...estadoVacio(), ...(est || {}) }, Servicio: "DTESync", Notificacion: "DTE_SINCRONIZADO", FchNotificacion: diaISO(corteDTE(), -3), Secuencia: 1, Extras: null, ...(extra || {}) });
+    const act = (folio, seq, est, fecha) => ({ RUTEmisor: RUT170, TipoDTE: "33", Folio: folio, EstadoDTE: { ...estadoVacio(), ...(est || {}) },
+      Servicio: "DTESync", Notificacion: "DTE_ACTUALIZADO", FchNotificacion: fecha || diaISO(corteDTE(), -1), Secuencia: seq, Extras: null });
+    const c1 = fila(17001), a1 = act(17001, 2, { Aceptado: "2", FchAcuseRecibo: diaISO(corteDTE(), -2) }, diaISO(corteDTE(), -2)),
+      n1 = act(17001, 3, { Aceptado: "2", FchAcuseRecibo: diaISO(corteDTE(), -2), NotaCredito: "1", FchNotaCredito: diaISO(corteDTE(), -1), FolioNotaCredito: 517001 });
+    const c2 = fila(17002), plana = fila(17003, { Reclamado: "1", FchReclamo: corteDTE() }, { Notificacion: undefined, FchNotificacion: undefined, Secuencia: undefined });
+    // (a) El pliegue.
+    const p1 = plegarDTE([c1, a1, n1, c2]), p2 = plegarDTE([n1, c2, a1, c1]);
+    const d1 = p1.find((d) => d.Folio === 17001);
+    const plegOk = p1.length === 2 && p1[0].Folio === 17001 && p1[1].Folio === 17002 && !!d1 && d1.RznSoc === "Cedente 170" && d1.MntTotal === 1000000
+      && d1.EstadoDTE.NotaCredito === "1" && d1.EstadoDTE.Aceptado === "2" && d1.Secuencia === 3 && d1.Notificacion === "DTE_ACTUALIZADO" && d1.FchNotificacion === n1.FchNotificacion
+      && JSON.stringify(p2) === JSON.stringify(p1) && Object.keys(d1)[0] === "RUTEmisor" && Object.keys(d1).indexOf("RznSoc") === 1
+      && JSON.stringify(plegarDTE([plana])) === JSON.stringify([plana]) && plegarDTE([]).length === 0;
+    // (b) Sobre el A1 real: eventos → documentos, y los lectores cuentan documentos.
+    const log = window.DTESYNC || [], docs = documentosDTE();
+    const claves = new Set(); for (const r of log) if (r && r.RUTEmisor) claves.add(r.RUTEmisor + "|" + r.Folio);
+    const nAct = log.filter((r) => r && (+r.Secuencia || 1) > 1).length;
+    let porEmisor = 0; for (const [, a] of libroPorEmisor()) porEmisor += a.length;
+    const emisorDocs = docs.filter((d) => d.RUTEmisor === EMISOR_LIBRO);
+    const volPar = paresPorEmisor().get(EMISOR_LIBRO).reduce((s, p) => s + p.vol, 0), volDocs = emisorDocs.reduce((s, d) => s + (+d.MntTotal || 0), 0);
+    const maxEmis = docs.reduce((m, d) => (d.FchEmis > m ? d.FchEmis : m), "");
+    const activoOk = log.length > docs.length && nAct > 0 && docs.length === claves.size && porEmisor === docs.length && libroPorEmisor().get(EMISOR_LIBRO).length === emisorDocs.length
+      && volPar === volDocs && corteDTE() === maxEmis && docs.every((d, i) => i === 0 || +d.Folio >= +docs[i - 1].Folio) && docs.every((d) => d.RznSoc && d.MntTotal != null);
+    // (c) El stream: la creación sin banderas, la actualización aparte.
+    const evs = streamDesdeDTE([c1, a1, n1]);
+    const streamOk = evs.length === 3 && evs[0].tipo === "factura" && evs[0].facturasOp[0].acuse === "sin_acuse" && evs[0].notaCredito === false && evs[0].facturasOp[0].secuenciaDTE === 1
+      && evs[1].tipo === "actualizacion" && evs[1].docId === evs[0].facturasOp[0].id && evs[1].secuencia === 2 && evs[1].cambio === "acuse" && evs[1].estado.acuse === "aceptada"
+      && evs[2].tipo === "actualizacion" && evs[2].secuencia === 3 && evs[2].cambio === "nota_credito" && evs[2].estado.notaCredito === true && evs[2].rutEmisor === RUT170;
+    // (d) La oportunidad, en las dos direcciones.
+    const f1 = facturaDeDTE(c1), f2 = facturaDeDTE(c2);
+    const deal = { id: "T-170", rutEmisor: RUT170, cliente: "Cedente 170", stage: "oferta", facturasOp: [f2], facturasDisponibles: [f1], historialContacto: [] };
+    const r1 = aplicarActualizacionDTE(deal, evs[2]);
+    const nd1 = r1.deal.facturasDisponibles[0];
+    const dispOk = !!r1.cambio && r1.cambio.donde === "disponibles" && r1.cambio.cambio === "nota_credito" && nd1.notaCredito === true && nd1.folioNotaCredito === 517001 && nd1.secuenciaDTE === 3
+      && estadoCandidata(nd1, r1.deal).clave === "notaCredito" && estadoCandidata(f1, deal).agregable === true && r1.deal.facturasOp === deal.facturasOp
+      && r1.deal.historialContacto.length === 1 && /nota de crédito/.test(r1.deal.historialContacto[0].resultado) && /#17001/.test(r1.deal.historialContacto[0].resultado);
+    const r1b = aplicarActualizacionDTE(r1.deal, evs[2]);
+    const idemOk = r1b.cambio === null && r1b.deal === r1.deal;
+    const evNC2 = eventoActualizacionDTE(act(17002, 2, { NotaCredito: "1", FchNotaCredito: corteDTE(), FolioNotaCredito: 517002 }), 9);
+    const r2 = aplicarActualizacionDTE(deal, evNC2);
+    const ofertaOk = !!r2.cambio && r2.cambio.donde === "oferta" && r2.deal.facturasOp[0].notaCredito === true && r2.deal.facturasDisponibles === deal.facturasDisponibles
+      && r2.deal.historialContacto.length === 1 && /la oferta/.test(r2.deal.historialContacto[0].resultado);
+    const cerrado = { ...deal, ofertaCerrada: true, negocioNum: 170 };
+    const r3 = aplicarActualizacionDTE(cerrado, evNC2);
+    const r3b = aplicarActualizacionDTE(r3.deal, evNC2);
+    const avisoOk = !!r3.cambio && r3.cambio.donde === "aviso" && r3.deal.facturasOp[0].notaCredito === false && r3.deal.facturasOp[0].avisoDTE === 2 && r3.deal.historialContacto.length === 1
+      && r3.deal.historialContacto[0].exito === false && /⚠/.test(r3.deal.historialContacto[0].resultado) && /cerrada/.test(r3.deal.historialContacto[0].resultado) && r3b.cambio === null && r3b.deal === r3.deal;
+    const r4 = aplicarActualizacionDTE(cerrado, evs[1]); // el acuse sí se anota con la oferta cerrada, y sin traza
+    const acuseOk = !!r4.cambio && r4.cambio.donde === "disponibles" && r4.deal.facturasDisponibles[0].acuse === "aceptada" && r4.deal.historialContacto.length === 0;
+    const r5 = aplicarActualizacionDTE(deal, eventoActualizacionDTE(act(17999, 2, { NotaCredito: "1" }), 8));
+    const ajenoOk = r5.cambio === null && r5.deal === deal;
+    const lote = aplicarEventosADeal(cerrado, [evs[1], evNC2]);
+    const loteOk = lote.n === 1 && lote.avisos === 1 && lote.deal.facturasDisponibles[0].acuse === "aceptada" && lote.deal.facturasOp[0].notaCredito === false;
+    // (e) El evento del inbound: la NC apaga «Buena factura».
+    const e0 = evs[0], e1 = aplicarActualizacionAEvento(e0, evs[2]);
+    const buena = (e) => CRITERIO_PRED["Buena factura"]({ ...e, esCliente: true, tipoDeudor: "Lista Blanca", inboundBucket: "CAT1", histFactoring: "bice", diasEmision: 3 }) === true;
+    const eventoOk = e1 !== e0 && e1.notaCredito === true && e1.facturasOp[0].notaCredito === true && buena(e0) === true && buena(e1) === false && aplicarActualizacionAEvento(e1, evs[2]) === e1;
+    ok("170 el A1 es un flujo de eventos por documento: plegarDTE deja un documento por (emisor, folio) con el estado más nuevo cualquiera sea el orden; el libro, los pares y el corte cuentan documentos; el stream lleva la creación sin banderas y la actualización aparte; la NC llegada parcha los disponibles y la oferta abierta con traza, sobre la oferta cerrada sólo avisa, y no se aplica dos veces",
+       plegOk && activoOk && streamOk && dispOk && idemOk && ofertaOk && avisoOk && acuseOk && ajenoOk && loteOk && eventoOk,
+       `pliegue ${plegOk} · A1: ${log.length} eventos → ${docs.length} documentos (${nAct} actualizaciones), libro/pares/corte sobre documentos ${activoOk} · stream ${streamOk}`
+       + ` · NC en disponibles ${dispOk} · idempotente ${idemOk} · NC en oferta abierta ${ofertaOk} · oferta cerrada: aviso sin tocar ${avisoOk} · acuse sin traza ${acuseOk} · folio ajeno ${ajenoOk} · lote ${loteOk} · evento del inbound ${eventoOk}`);
   }
 
   console.log(out.join("\n"));

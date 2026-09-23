@@ -44,7 +44,10 @@ clasificación del deudor descartan la mayor parte, y eso es el comportamiento c
 ## 2. Entrada: qué trae un DTE
 
 El inbound se alimenta del **stream de DTE** (`streamDesdeDTE`), que en producción es el feed del SII /
-el proveedor de DTE y acá son los 30.000 registros de `DTESYNC`. Por cada registro se leen:
+el proveedor de DTE y acá es el **log de notificaciones** de `DTESYNC`: **55.549 eventos sobre 30.000 documentos**
+(ADR-0020, regla 70; 23-09-2026). Cada documento llega **varias veces**: primero su creación (`DTE_SINCRONIZADO`,
+`Secuencia` 1, el documento entero y sin banderas) y después cada cambio de estado —el acuse, el reclamo, la nota de
+crédito— como `DTE_ACTUALIZADO`, con la identidad y el `EstadoDTE` acumulado. De la creación se leen:
 
 | Campo del DTE | Para qué |
 |---|---|
@@ -56,9 +59,14 @@ el proveedor de DTE y acá son los 30.000 registros de `DTESYNC`. Por cada regis
 | `EstadoDTE.NotaCredito` | fue anulada o rebajada por nota de crédito |
 | `EstadoDTE.Aceptado` (+ `FchAcuseRecibo`, `FchRecepcion`) | el **acuse de recibo** del receptor (regla 69, M-01; 23-09-2026): `aceptada` con su fecha, `reclamada` si hay reclamo, `sin_acuse` mientras el receptor no se pronuncia —lo normal en los primeros 8 días desde la emisión—. Se lee y se **muestra** en la fila del documento; **no filtra** (§3) |
 
-Cada DTE produce **un evento de inbound** con el documento ya normalizado (`facturasOp: [fac]`), su
+Cada creación produce **un evento de inbound** con el documento ya normalizado (`facturasOp: [fac]`), su
 clasificación de deudor y el contexto comercial del cedente: SOW (`SOW_POR_RUT`), estrategia de precio
-(`PRECIO_POR_CLAVE`) y si ya es cliente.
+(`PRECIO_POR_CLAVE`) y si ya es cliente. Cada **actualización** produce un evento `actualizacion`
+(`eventoActualizacionDTE`: `docId`, `secuencia`, `estado`) que **no se clasifica**: el tick lo separa antes de las
+reglas y lo aplica donde el documento vive —el acumulado, la Bandeja y las oportunidades (§6)—, sólo si es más
+nuevo que lo que el documento ya sabe. Una factura puede así ser candidata al llegar y quedar bloqueada cuando
+llega su NC, que es lo que pasa en el SII. Quien necesite **el documento** (el libro de ventas, los pares, el
+corte) no lee el log: lee `documentosDTE()`, el pliegue.
 
 ---
 
@@ -219,6 +227,12 @@ Las facturas que califican se **acumulan**; no crean nada al instante. Cada «ho
 2. **¿Ya tiene una oportunidad abierta?** Si el cedente tiene una en *Prospección* u *Oferta*, las
    facturas nuevas **la absorben** (`warning`) en vez de crear otra. Si la que existe ya fue aceptada,
    cursada o perdida, **sí** se abre una nueva — así la prospección no se seca.
+   Las **actualizaciones del A1** (regla 70) no esperan a la corrida: en cada lote del stream parchan el documento
+   donde viva (`aplicarActualizacionDTE`) —en los disponibles siempre; en la oferta mientras el paquete sea del
+   ejecutivo— y la NC o el reclamo dejan traza («El SII notificó una nota de crédito sobre el documento #N: queda
+   bloqueado en…»). Sobre una oferta **cerrada o publicada**, o después de la firma, la NC o el reclamo **no tocan el
+   documento**: la bitácora avisa y la corrida cuenta el aviso (decisión #7 de §12). La corrida reporta en su línea
+   de bitácora del sistema cuántas actualizaciones aplicó.
 3. **Dimensiona el paquete** con el cupo del cliente (§6.1).
 4. **Crea la oportunidad** con su ejecutivo, su CAT, su contactabilidad y su pool de facturas.
 
@@ -396,3 +410,8 @@ Tres observaciones, en orden de importancia:
 6. **¿La antigüedad máxima desde la emisión es criterio del inbound?** Decidido el 22-09-2026 e implementado el
    23-09-2026 (regla 61): sí, como condición del filtro de calidad, con el tope como parámetro del tenant
    (`antiguedadMaxDias`, 20 días por defecto).
+7. **¿Qué hace el sistema cuando llega una nota de crédito o un reclamo sobre un documento de una oferta ya
+   publicada o firmada?** (ADR-0020, regla 70; 23-09-2026). Hoy el documento **no se toca**, la bitácora de la
+   operación avisa (`exito: false`) y la corrida cuenta el aviso: la decisión es del ejecutivo. La regla candidata
+   es la de ADR-0018 —marcar la operación con un issue, avisar por el centro de notificaciones, y que el ejecutivo
+   retire el documento, re-simule y vuelva a publicar para una nueva firma—. No está decidido.

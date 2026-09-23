@@ -10,7 +10,10 @@
      · AECSYNC se genera sólo del A1 y de la intención declarada: quitarle el A2 y el A5 de la entrada
        no cambia una cesión. Es el bucle A2 → A5 → A2, vigilado por su nombre.
 
-   Cuesta ~3 s: leer los 34 MB (~2 s) y correr los ocho derivados (~0,5 s). */
+   Desde el 23-09-2026 el A1 es un flujo de eventos (ADR-0020, regla 70): `derivar` lo pliega a documentos antes de
+   entregárselo a los módulos, y acá se pliega igual antes de llamar a `cesiones.generar` a mano.
+
+   Cuesta ~4 s: leer los 45 MB (~3 s) y correr los ocho derivados (~0,5 s). */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -20,6 +23,7 @@ import { RAIZ } from "./_comun.mjs";
 const require = createRequire(import.meta.url);
 const { leer, serializar } = require(join(RAIZ, "GeneradorDatos/lib/archivo.js"));
 const { derivar, DERIVADOS } = require(join(RAIZ, "GeneradorDatos/generar.js"));
+const { plegar } = require(join(RAIZ, "GeneradorDatos/lib/dtesync.js"));
 const cesiones = require(join(RAIZ, "GeneradorDatos/datasets/cesiones.js"));
 
 /* Qué bloques derivados difieren entre lo commiteado (`bloques`: nombre → texto `window.X=…`) y lo recién
@@ -57,7 +61,7 @@ test("el archivo commiteado es un punto fijo del generador: una corrida completa
 
 test("AECSYNC se genera sólo del A1 y de la intención declarada: sin el A2 ni el A5 en la entrada no cambia una cesión", () => {
   const { datos } = cargar();
-  const entrada = { DTESYNC: datos.DTESYNC, AECSYNC: datos.AECSYNC, SHARE_OF_WALLET: datos.SHARE_OF_WALLET };
+  const entrada = { DTESYNC: plegar(datos.DTESYNC), AECSYNC: datos.AECSYNC, SHARE_OF_WALLET: datos.SHARE_OF_WALLET };
   assert.ok(!dependeDe(cesiones.generar, entrada, ["AECSYNC", "SHARE_OF_WALLET"]), "cesiones.js lee el A2 anterior o el A5: es el bucle A2 → A5 → A2 otra vez");
 });
 
