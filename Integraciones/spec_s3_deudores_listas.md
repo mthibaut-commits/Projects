@@ -1,6 +1,6 @@
 # Spec — s3_deudores_listas.csv (Activos A3 + A4)
 
-**Versión 2.0.0 · 16-09-2026 · NEX Factoring**
+**Versión 3.0.0 · 23-09-2026 · NEX Factoring**
 
 **Propósito:** catálogo diario de **buenos deudores** — Lista Blanca (A3) y Deudores Autorizados (A4) — en un archivo único diferenciado por la columna `LISTA`. Monta la sección de listas de la **tabla interna**. Gobierna la clasificación de deudores, las reglas de prospección (CAT), y la elegibilidad del inbound (sólo LB/Autorizados/históricos abren oportunidad).
 **Transporte:** S3 · `s3://nex-ingesta-<ambiente>/listas/DEUDORES_LISTAS_AAAAMMDD.csv` · diaria · UTF-8 · `;` · header. El `PutObject` emite `s3:ObjectCreated:*` y el backoffice lo procesa al llegar, sin cron (**A25 · ingesta por S3**). **Intradía:** altas/bajas urgentes vía API A22 si se requiere (dominio a habilitar) o esperan al batch siguiente.
@@ -11,7 +11,7 @@
 | RUT_DEUDOR | string | RUT del deudor (sin puntos, con guión y DV) |
 | RAZON_SOCIAL | string | Razón social |
 | LISTA | BLANCA \| AUTORIZADA | BLANCA = Lista Blanca (A3) · AUTORIZADA = Deudores Autorizados (A4) |
-| CUPO_SUGERIDO_MM | number | Cupo sugerido de exposición por deudor (MM$), informativo |
+| CUPO_SUGERIDO | number | Cupo sugerido de exposición por deudor, en **pesos enteros**; informativo |
 | VIGENTE_DESDE / VIGENTE_HASTA | date | Ventana de vigencia en la lista |
 | ESTADO | VIGENTE \| SUSPENDIDO | SUSPENDIDO mantiene el registro pero lo excluye de elegibilidad |
 | FECHA_CORTE | date | Generación del archivo |
@@ -28,6 +28,7 @@
 
 | Versión | Fecha | Qué cambió |
 |---|---|---|
-| **2.0.0** | 16-09-2026 | El transporte pasa de SFTP a S3. El layout no cambia. |
+| **3.0.0** | 23-09-2026 | `CUPO_SUGERIDO_MM` pasa a `CUPO_SUGERIDO` **en pesos enteros**: el millón es una abreviatura de pantalla y ningún campo del layout lo lleva. Quien implementó la entrega en MM$ debe multiplicar por un millón. |
+| 2.0.0 | 16-09-2026 | El transporte pasa de SFTP a S3. El layout no cambia. |
 | 1.1.0 | 14-09-2026 | El layout se ajusta a lo que produce el generador de activos. |
 | 1.0.0 | 29-08-2026 | Primera versión: las listas de deudores (A3/A4). |

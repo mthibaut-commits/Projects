@@ -13811,10 +13811,7 @@ function DealDrawer({
                                         const msg =
                                           "Para poder ceder las facturas y cursar se requiere que envíe las siguientes facturas:\n" +
                                           faltantes
-                                            .map(
-                                              (f, i) =>
-                                                `${i + 1}) ${f.tipo} Folio #${f.folio} Deudor: ${f.deudor}, Monto Total: ${fmtCLP((f.monto || 0) * 1e6)}`,
-                                            )
+                                            .map((f, i) => `${i + 1}) ${f.tipo} Folio #${f.folio} Deudor: ${f.deudor}, Monto Total: ${fmtCLP(f.monto || 0)}`)
                                             .join("\n");
                                         return (
                                           <button
@@ -22696,8 +22693,11 @@ function tramoCond(fn) {
   s = s.replace(/[{}]/g, " ").replace(/;/g, " ").trim();
   if (/^true$/.test(s)) return "cualquier otro caso";
   s = s.replace(/0?\.(\d+)\s*\*\s*v\.([a-zA-Z0-9_]+)/g, (m, d, v) => Math.round(parseFloat("0." + d) * 100) + "% de " + (VAR_LBL[v] || v));
-  s = s.replace(/(\d+)e6\b/g, (m, n) => "$" + n + "M");
-  s = s.replace(/\b(\d{7,})\b/g, (m, n) => "$" + +n / 1e6 + "M");
+  // El umbral se compara en PESOS y se MUESTRA en la escala única de la casa, `M$` (regla 9-ter y
+  // «los montos se abrevian en una sola escala»). Decía «$20M», que es justo la forma en que se veía
+  // la unidad rota del 14-09-2026: «M$100» salía como «$100M» cuando el monto venía ya dividido.
+  s = s.replace(/(\d+)e6\b/g, (m, n) => "M$" + (+n).toLocaleString("es-CL"));
+  s = s.replace(/\b(\d{7,})\b/g, (m, n) => "M$" + (+n / 1e6).toLocaleString("es-CL", { maximumFractionDigits: 1 }));
   s = s.replace(/\[([^\]]*)\]\.includes\(v\.([a-zA-Z0-9_]+)\)/g, (m, arr, v) => (VAR_LBL[v] || v) + " está en {" + arr.replace(/["\s]/g, "") + "}");
   s = s.replace(/!\s*v\.([a-zA-Z0-9_]+)/g, (m, v) => "no " + (VAR_LBL[v] || v));
   s = s.replace(/v\.([a-zA-Z0-9_]+)/g, (m, v) => VAR_LBL[v] || v);

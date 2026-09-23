@@ -13,6 +13,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { RAIZ } from "./_comun.mjs";
 
 /* Hallazgos conocidos de auditar_muerto. «Vivos sólo entre ellos» y «sólo en scripts» son para REVISAR A
@@ -101,10 +103,17 @@ export function compararBase(base, actual) {
   return { nuevos: [...a].filter((x) => !b.has(x)).sort(), desaparecidos: [...b].filter((x) => !a.has(x)).sort() };
 }
 
-const correr = (script) => {
-  const r = spawnSync(process.execPath, [script], { cwd: RAIZ, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+const correr = (script, ...args) => {
+  const r = spawnSync(process.execPath, [script, ...args], { cwd: RAIZ, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   assert.equal(r.status, 0, `${script} salió con ${r.status}: ${(r.stderr || "").slice(0, 400)}`);
   return r.stdout;
+};
+
+/* auditar_unidades sale con 1 cuando encuentra candidatos, así que acá no se usa `correr`. */
+const unidades = (fuente) => {
+  const r = spawnSync(process.execPath, ["auditar_unidades.mjs", ...(fuente ? [fuente] : [])],
+    { cwd: RAIZ, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  return { salida: r.stdout, n: +((r.stdout.match(/^(\d+) candidato/m) || [])[1] ?? -1) };
 };
 
 const muerto = parsearMuerto(correr("auditar_muerto.mjs"));
@@ -132,6 +141,30 @@ test("auditar_aislamiento: lo que se desacopló no se vuelve a acoplar (las pura
   const { nuevos, desaparecidos } = compararBase(BASE_PURAS, puras);
   assert.deepEqual(desaparecidos, [], `funciones que eran puras y ahora leen algo global: ${desaparecidos.join(", ")} — el motor tiene que recibir por parámetro lo que decide (regla 4 del otorgamiento)`);
   if (nuevos.length) console.log(`  (info) funciones que ahora son puras y no están en BASE_PURAS: ${nuevos.join(", ")} — súmalas cuando quieras protegerlas`);
+});
+
+/* auditar_unidades NO estaba gateado —era un comando de mano— y por eso el 23-09-2026 sobrevivió un
+   `fmtCLP((f.monto || 0) * 1e6)` en el mensaje que se le manda al cliente: le mostraba su factura un
+   millón de veces más grande. Acá es línea base CERO, que es una regla y no un snapshot: el sistema no
+   tiene ningún campo en millones, así que ningún candidato es legítimo. Si aparece uno, se mira. */
+test("auditar_unidades: ningún candidato — el millón no cruza a un formateador (línea base 0)", () => {
+  const { n, salida } = unidades();
+  assert.equal(n, 0, `el auditor de unidades encontró ${n} candidato(s):\n${salida}`);
+});
+
+test("sonda negativa: el auditor de unidades caza el millón multiplicado y el dividido", () => {
+  const f = join(RAIZ, "tests", "contract", ".sonda_unidades.jsx");
+  try {
+    writeFileSync(f, ["const a = fmtCLP(monto * 1e6);", "const b = fmtMM(total / 1e6);", "const ok = fmtMM(miles * 1000);"].join("\n"));
+    const { n, salida } = unidades(f);
+    assert.equal(n, 2, `se esperaban 2 candidatos plantados y hubo ${n}:\n${salida}`);
+    assert.match(salida, /\(d\) FORMATEADOR CON EL ARGUMENTO MULTIPLICADO — 1/);
+    assert.match(salida, /\(a\) FORMATEADOR CON EL ARGUMENTO YA DIVIDIDO — 1/);
+    // Multiplicar por MIL es legítimo: los layouts declaran campos en miles con el sufijo `_M`.
+    assert.doesNotMatch(salida, /miles \* 1000/);
+  } finally {
+    rmSync(f, { force: true });
+  }
 });
 
 test("sonda negativa: un hallazgo plantado, una t16 y una pura que se acopla se detectan", () => {

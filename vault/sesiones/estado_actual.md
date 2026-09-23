@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-21T23:40:00Z
+timestamp: 2026-09-23T14:10:00Z
 ---
 
 # Estado actual
@@ -14,43 +14,43 @@ timestamp: 2026-09-21T23:40:00Z
 
 Demo funcional del pipeline comercial de factoring para BICE / Factoring Security: un solo fuente
 (`pipeline_comercial.jsx`), build standalone, **151/151 PASA**, **40 archivos de gate de contrato**
-(271 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su
-vault (75 reglas verbatim por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y
-**cerró la tabla de invariantes**: cada regla y los 12 del contrato tienen gate. La crónica del 17 al 19-09
-vive en sus logs (reglas 32–40, ADR-0003 a 0006, y el **linter** en 0 como paso 0-bis).
+(273 tests), **29 casos e2e** (29/29), `tsc` limpio, 0 duplicados. El 17-09-2026 el repo abrió su vault
+(76 reglas verbatim por tema, índice en `invariantes.md`), cableó sus gates (ADR-0001, ADR-0002) y **cerró
+la tabla de invariantes**: cada regla y los 12 del contrato tienen gate. La crónica del 17 al 19-09 vive en
+sus logs (reglas 32–40, ADR-0003 a 0006, y el **linter** en 0 como paso 0-bis).
 
-El **20-09** entró lo de esta rama, sobre plata: la **regla 8 deja de ser proxy** (149, ADR-0008), **girar
-no es una acción de NEX** (43, 147, 148), **ATR-01 en el handler** (145), el **id de la solicitud al comité**
-(146), las **identidades reales del AEC** (42, ADR-0009) y las **líneas** (44–46, 150–151, ADR-0010 y 0011).
+El **20-09** entró lo de esta rama, sobre plata: la **regla 8 deja de ser proxy** (149, ADR-0008), **girar no es
+de NEX** (43, 147, 148), **ATR-01** (145), el **id al comité** (146), el **padrón real** (42) y las **líneas** (44–46).
 
-El **21-09**, tres pedidos del usuario. **Ordenar la carpeta**: la raíz baja a tres `.md`, nacen `Auditoria/`
-(lo que mide) y `Regresiones/` (lo que cotejó definición contra implementación), los PDF de contrato se van a
-`Integraciones/` y `Specs_Procesos/` queda en cinco temas. Son **41 renombres**; las **77 referencias** que
-rompieron se midieron con un verificador diferencial y se repararon 63 — los logs y el ADR citan las rutas
-viejas **a propósito** y el mapa las resuelve. **Versionar los entregables**: declaran `Versión N.N.N` y
-cierran con su anexo, reconstruido del historial del repo; `md_a_pdf.mjs` la estampa en **cada hoja** y el
-gate exige que la cabecera y la primera fila calcen. Y **`Capturas_Simuladas/`**, la captura que exige
-conducir la app. De paso, tres defectos de `main`: el **paso 0 en rojo** y dos bloques de comandos sin un
-salto de línea, con lo que la verificación canónica mostraba ocho pasos y no nueve. Los tres cerrados.
+El **21-09**, tres pedidos. **Ordenar la carpeta**: la raíz baja a tres `.md`, nacen `Auditoria/` y
+`Regresiones/`, los PDF de contrato se van a `Integraciones/` y `Specs_Procesos/` queda en cinco temas — 41
+renombres y 77 referencias rotas medidas con un verificador diferencial, 63 reparadas (los logs y el ADR
+citan las viejas a propósito y el mapa las resuelve). **Versionar los entregables**: `Versión N.N.N` y anexo
+reconstruido del historial, estampada en cada hoja del PDF, con el gate exigiendo que cabecera y primera fila
+calcen. Y **`Capturas_Simuladas/`**. De paso, tres defectos de `main`: el **paso 0 en rojo** y dos bloques de
+comandos sin un salto de línea, con lo que la verificación canónica mostraba ocho pasos y no nueve.
 
-El **23-09**, los **casos de prueba**: `Casos_de_Prueba/casos-de-prueba-pantallas.md`, **96 casos** sobre las
-cinco pantallas del ciclo de una operación, cada uno con la regla que lo fija y su cobertura **medida** — 79
-automatizados y **17 manuales**, de los cuales **7 están en la Mesa de verificación**: es la pantalla menos
-cubierta, y automatizar esos siete es lo que más compra. La carpeta entra al gate de versiones (24
-entregables). `code_style.md` decía «Vigentes/En proceso» y «wizard 6 pasos»: son **Vigentes/Solicitudes** y
-**3 pasos**.
+El **23-09**, dos cosas. Los **casos de prueba**: `Casos_de_Prueba/casos-de-prueba-pantallas.md`, **97 casos**
+sobre las cinco pantallas del ciclo de una operación, cada uno con la regla que lo fija y su cobertura
+**medida** — 80 automatizados y **17 manuales**, de los cuales **7 están en la Mesa de verificación**: es la
+pantalla menos cubierta y automatizar esos siete es lo que más compra. Y la **regla 47**: el millón es la
+ÚLTIMA CAPA. Ninguna comparación estaba en millones (eso lo cerraron el 14-09 y el 17-09), pero sí **un
+mensaje al cliente que multiplicaba por un millón** —le mostraba su factura 1.000.000 de veces más grande—,
+**tres layouts que declaraban campos en MM$** —A11 contradecía a su propio generador **por mil**— y el
+explicador de criterios rindiendo «$20M». A16, A3/A4 y A11 suben a **3.0.0**. `auditar_unidades` estrena el
+patrón **(d)** (multiplicar por un millón dentro de un formateador), que es lo que no miraba, y **queda
+cableado** en `auditores.test.mjs` con línea base **cero**; era un comando de mano, y ésa es la otra mitad de
+por qué el defecto sobrevivió.
 
-**Las líneas, en un párrafo.** La ESTRUCTURA es un insumo (44, ADR-0010): el **activo A23** reemplaza los 3.170
-de 3.636 objetos que el pipeline fabricaba desde el A7. El **nivel 1 es el CONSOLIDADO** (45, ADR-0011): la
-cabecera ES la suma y las superaba en 217 de 224 clientes. El **RUT se resuelve, no se arma** (46).
+**Las líneas, en un párrafo.** La ESTRUCTURA es un insumo (44, ADR-0010): el **activo A23** reemplaza los 3.170 de
+3.636 objetos que salían del A7; el **nivel 1 es la SUMA** (45) y el **RUT del deudor se resuelve, no se arma** (46).
 
 > ## 🎯 Siguiente paso
 >
-> 1. **Subir a `main`** con `merge --no-ff`, **confirmando antes con el usuario**: es a quien le toca
->    autorizar el push. La rama trae la mudanza de documentos y queda verde entera (los seis pasos).
+> 1. **Subir a `main`** con `merge --no-ff`, **confirmando con el usuario**: la rama trae tres commits y va verde.
 > 2. **Correr el `.bat` una vez** (`build_app.ps1` cambió y acá no se ejecuta: la simetría está gateada, no
 >    probada) · 3. **Regenerar `Capturas_UI/`**, desfasadas desde el padrón real (deuda 2) · 4. **Motor O01**
->    (el hueco débil de la regla 8) · 5. **Regla 28** y **13-quater**, de negocio · 6. Sacar `pipeline.zip`.
+>    (el hueco débil de la regla 8) · 5. **Regla 28** y **13-quater** · 6. Sacar `pipeline.zip`.
 
 ## En vuelo ahora · nada: la rama queda VERDE ENTERA (6/6 pasos)
 
@@ -77,4 +77,4 @@ Queda **el tag `v0.1.0`** sobre `bd14091` y **borrar las ramas integradas**.
 ## Conocimiento clave
 
 [invariantes y gates](../conocimiento/invariantes.md) · [reglas](../conocimiento/index.md) · [decisiones](../adr/index.md) · el resto, en [`vault/index.md`](../index.md)
-Últimas: [casos de prueba](./2026-09-23_casos_de_prueba.md) · [versionado](./2026-09-21_versionado_de_entregables.md) · [ordenar la carpeta](./2026-09-21_ordenar_la_carpeta.md) · [mensajería](./2026-09-21_spec_mensajeria.md) · [las tres casuísticas del elenco](./2026-09-20_las_tres_casuisticas_del_elenco.md) · [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md) · [las líneas son un insumo](./2026-09-20_las_lineas_son_un_insumo.md)
+Últimas: [regla 47](./2026-09-23_el_millon_es_la_ultima_capa.md) · [casos de prueba](./2026-09-23_casos_de_prueba.md) · [versionado](./2026-09-21_versionado_de_entregables.md) · [ordenar la carpeta](./2026-09-21_ordenar_la_carpeta.md) · [mensajería](./2026-09-21_spec_mensajeria.md) · [las tres casuísticas del elenco](./2026-09-20_las_tres_casuisticas_del_elenco.md) · [el nivel 1 es el consolidado](./2026-09-20_el_nivel_1_es_el_consolidado.md) · [las líneas son un insumo](./2026-09-20_las_lineas_son_un_insumo.md)

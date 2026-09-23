@@ -91,6 +91,7 @@ timestamp: 2026-09-18T02:18:36Z
 | 44 | La ESTRUCTURA de líneas es un INSUMO: los tres niveles llegan por el activo A23 y el pipeline sólo los lee; lo que el comité constituye se superpone | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 150, `regla_lineas_activo.test.mjs` |
 | 45 | La línea del RUT cliente ES la suma de sus líneas (por par y comodín), en los tres estados y también en el utilizado | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 151, `regla_lineas_activo.test.mjs` |
 | 46 | El RUT de un deudor se RESUELVE contra el universo conocido, nunca se arma: uno inventado es, para el motor, otro deudor | [`reglas/lineas_y_solicitud_comite.md`](./reglas/lineas_y_solicitud_comite.md) | 151, `regla_lineas_activo.test.mjs`, `padron.test.mjs` |
+| 47 | El millón es la ÚLTIMA CAPA: ningún campo, contrato ni mensaje lo nombra; el único que divide es el formateador | [`reglas/datos_y_activos.md`](./reglas/datos_y_activos.md) | `auditores.test.mjs` (línea base 0 de `auditar_unidades`, patrón (d)) |
 | 17 | Teléfonos ofuscados en logs | [`contrato_servidor_y_auditoria.md`](./contrato_servidor_y_auditoria.md) | 130, `regla_17.test.mjs` |
 
 ## Contrato con el servidor (12 invariantes, `INVARIANTES` en el fuente)

@@ -78,3 +78,30 @@ timestamp: 2026-09-17T15:29:14Z
     - **Se mapea por RUT, nunca por nombre.** En el activo sintético había **50 razones sociales compartidas por dos RUT distintos** («Constructora RM SA» era 39663693-3 y 41604007-5): un reemplazo por nombre las habría fusionado. El nombre se deriva siempre del RUT que tiene al lado (`spec_aecsync.md` §81: «la identidad es el RUT, no el nombre»), y de paso las 50 colisiones desaparecen.
     - **Lo que esto arregló, medido.** Antes: 51,5 % de los RUT de deudor fuera del rango de empresa y **39,3 % en rango de persona natural**, con razones sociales reales encima —«Clorox Chile S.A.» llevaba `9.710.034-4`—. Después: **100 % en rango de empresa** y los 1.983 RUT del padrón con dígito verificador válido, que es lo que distingue un RUT real de uno escrito a mano.
     - Gate: `tests/contract/padron.test.mjs` (9 tests, 4 sondas negativas). El punto fijo del generador se conserva (`generador.test.mjs`).
+
+47. **EL MILLÓN ES LA ÚLTIMA CAPA: ningún campo, ningún contrato y ningún mensaje lo nombran** (23-09-2026,
+    instrucción del usuario: «Los M$ son siempre visuales, corrige para que las comparaciones sean siempre en $»).
+    La regla 9-ter ya decía que una COMPARACIÓN se hace en pesos. Ésta cierra las otras tres puertas por las que
+    el millón volvía a entrar: el nombre de un campo, la declaración de un layout y el texto de un mensaje.
+    - **El único sitio que divide por un millón es el formateador** (`fmtMM`, `fmtMMc`), y el único que lo
+      multiplica no existe: **re-inflar un peso a escala de millones es siempre un error**. Sobrevivía uno:
+      `fmtCLP((f.monto || 0) * 1e6)` en el mensaje que se le manda al cliente para pedirle los XML que faltan,
+      resto del patrón `amountMM * 1e6` que la migración del 14-09-2026 retiró de todas partes menos de un
+      template literal. Ese mensaje le mostraba al cliente **su factura un millón de veces más grande**.
+    - **Un campo del layout NUNCA se llama `_MM` ni se declara en `MM$`.** Quedaban tres sitios: `CUPO_SUGERIDO_MM`
+      en A3/A4, `LINEA_APROBADA_MM` en A16 —y su línea de unidades, que **autorizaba explícitamente** el sufijo—,
+      y tres filas de A11 que declaraban `number (M$)` cuando el generador producía **miles** y el lector
+      multiplicaba por mil. Esa última es la peor de las tres: quien implementara la entrega leyendo el layout
+      habría enviado cifras **mil veces mayores**, y nada lo habría dicho — un margen de $40.000.000 y uno de
+      $40.000.000.000 se ven los dos plausibles en la ficha de una empresa.
+    - **El sufijo `_M` (MILES) sí existe y se queda**, porque está declarado y es consistente de punta a punta:
+      el generador lo produce en miles, el layout lo dice y el lector lo pasa a pesos antes de formatear. Lo que
+      no puede pasar es que un layout lo llame de una forma y el sistema lo use de otra.
+    - **Y se abrevia en UNA escala.** El explicador de criterios rendía los umbrales como «$20M», que es
+      exactamente la forma en que se veía la unidad rota del 14-09 («M$100» salía como «$100M»). Ahora rinde `M$20`.
+    - Gate: **`auditar_unidades.mjs` pasa a estar cableado** en `tests/contract/auditores.test.mjs` con línea base
+      **cero**, y estrena el patrón **(d)**: el argumento de un formateador MULTIPLICADO por un millón. Antes sólo
+      buscaba divisiones —por eso no vio el defecto en un año de existir— y era un comando de mano, que es la
+      otra mitad de por qué sobrevivió. Cero es una **regla**, no un snapshot: el sistema no tiene ningún campo en
+      millones, así que ningún candidato es legítimo. Con su sonda negativa, que planta las dos formas y comprueba
+      que multiplicar por MIL no se reporta.
