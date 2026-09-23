@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-22T01:00:00Z
+timestamp: 2026-09-23T01:30:00Z
 ---
 
 # Estado actual
@@ -30,22 +30,28 @@ la carpeta (`Auditoria/` mide, `Regresiones/` coteja; gate `rutas.test.mjs`). Lo
 
 > ## 🎯 Siguiente paso
 >
-> 1. **Cuando el usuario evalúe el spec del curse**: revisar concordancia con lo implementado, la matriz de
->    **gaps** (funcionales · de proceso · de dato/contrato) desde su Parte IV, las **historias de usuario**
->    por actor y etapa con criterios de aceptación, y los **casos de prueba** e2e en las dos direcciones.
-> 2. **El tab VERIFICACIÓN**: (a) habilitarlo al SIMULAR; (b) chip **PRIME** + Nota Deudor en vez de «Lista
->    Blanca»; (c) **separar** la evaluación del DEUDOR (V00–V10) del **quiz por FACTURA**.
-> 3. **UI**: el selector de sesión de la navbar, 1/3 más angosto y con elipsis (la página desborda por él a
->    1366 px) · **El join de empresas SIEMPRE por RUT** (8 sitios; T1) · `.bat` una vez · O01 · 28 · 13-quater.
-## En vuelo · esta rama, encima de `main`: lo del **22-09** ([log](./2026-09-22_mesa_por_operacion_y_nota_rica.md))
-La mesa por factura (53, 157) y el color del badge (54, 158); la firma del cliente cruza al tubo (**55**); el
-scroller de la tabla es su propio panel (**56**: la card de «Oferta» se cortaba porque desbordaba la PÁGINA,
-no la celda); la mesa va **operación → deudor colapsable → factura** con **panel lateral para las dos
-decisiones** (53 ampliada: retirar plata ya no se resuelve con un sí/no sin motivo); la nota es **rica con
-captura pegada** (**57**); la **oferta publicada se ve en el tubo** (**58**: el estado ya existía — cerrar no
-asentaba `ofertaComunicada` y dos de los tres escritores no avisaban; `e2e-58`); y el **spec del proceso de
-curse** (`Specs_Procesos/Evaluacion_Factura/spec-proceso-curse.md`): el modelo del negocio conciliado
-cláusula por cláusula —16 implementadas · 19 distinto · 3 pendientes · 3 decisiones— con 6 contradicciones.
+> 1. **Las cinco confirmaciones que debe el negocio** (ninguna frena lo demás): M-22 (la unidad de la verificación es
+>    el DEUDOR), M-07 (al corte, ¿eliminar o reabrir con el mismo id?), M-13 («el cliente simula»: ¿portal o Agente
+>    IA?), M-01 (¿el acuse entra al filtro de candidatura?) y M-28 (la lectura «no existir suficiente línea»).
+> 2. **El backlog decidido, en rojo primero** (`Regresiones/Gaps_Proceso_Curse_2026-09-22.md` §2.2; los casos y su
+>    orden en `vault/specs/proceso-curse/casos_de_prueba.md`): ADR-0013 (un evento, cinco versiones) · 0014 (cedida
+>    ajena) · 0015 (comité que rechaza) · 0016 («ya no aplica») · 0017 (giro Normal con comité) · **0018** (la
+>    verificación fallida marca y avisa; el ejecutivo retira y republica) · antigüedad ≤20 días · corte y reinicio por
+>    hora del tenant · M-19 en `cerrarOferta`. Cada uno con su regla, su gate y `CASOS_ESPERADOS` dicho en el commit.
+> 3. **El tab VERIFICACIÓN**: (a) habilitarlo al SIMULAR; (b) chip PRIME + Nota Deudor en vez de «Lista Blanca»;
+>    (c) separar la evaluación del DEUDOR (V00–V10) del quiz por FACTURA · **UI**: el selector de sesión de la navbar,
+>    1/3 más angosto y con elipsis (desborda a 1366 px) · **join de empresas SIEMPRE por RUT** (8 sitios; T1).
+## En vuelo · esta rama, encima de `main`: lo del **22 y 23-09** ([log](./2026-09-22_mesa_por_operacion_y_nota_rica.md))
+La mesa por factura (53, 157) y el color del badge (54, 158); la firma cruza al tubo (**55**); el scroller de la
+tabla es su propio panel (**56**); la mesa va **operación → deudor colapsable → factura** con **panel lateral** para
+las dos decisiones (53 ampliada); la nota es **rica con captura pegada** (**57**); la **oferta publicada se ve en el
+tubo** (**58**, `e2e-58`). Y el **proceso de curse documentado de punta a punta**: el spec
+(`Specs_Procesos/Evaluacion_Factura/spec-proceso-curse.md`; 40 cláusulas: 24 implementadas · 12 distinto · 3
+pendientes · 1 abierta), el informe de **gaps** (36 G-nn + 12 documentales: 6 cerrados · 18 decididos · 1 por
+confirmar · 11 sin decisión), las **42 historias de usuario** (19 vigentes · 22 por implementar · 1 por confirmar) y
+los **casos de prueba** (142 ids, 135 con caso; 123 casos nuevos: e2e 50 · suite 68 · contrato 5). Las decisiones del
+usuario del 22 y 23-09 están en el log §8 y en **ADR-0013 … ADR-0018**; la evidencia de todo esto es la DEFINICIÓN,
+nunca la línea de código (`Specs_Procesos/README.md`, regla 3).
 
 ## Bloqueos · los dos son del usuario, desde Windows
 

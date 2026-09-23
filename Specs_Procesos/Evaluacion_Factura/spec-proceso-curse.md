@@ -2,6 +2,14 @@
 
 **Versión:** 1.0 · **Fecha:** 22-09-2026 · **Sistema:** NEX Factoring · Pipeline Comercial
 
+El 22-09-2026 el usuario revisó las diferencias de la Parte IV cláusula por cláusula y decidió: lo que
+dio por bueno tal como está figura como **implementado (definición ajustada 22-09-2026)**, lo que pidió
+construir conserva su estado medido y lleva «**decidido: implementar**», y lo que sigue abierto lleva
+«**por confirmar**» con la pregunta exacta. Las decisiones que descartan una alternativa están en los
+ADR 0013–0018 (`vault/adr/`): un evento de evaluación con cinco versiones, la cedida a un factoring
+ajeno, el comité que rechaza, la excepción que deja de aplicar, el giro Normal cuando hay comité y, el
+23-09-2026, la verificación fallida que marca la operación y avisa al ejecutivo (ADR-0018).
+
 Este documento describe **el curse de una operación** tal como el negocio lo define: la máquina de
 estados por la que pasa un negocio de factoring desde que el inbound lo abre hasta que Tesorería
 gira, quién actúa en cada estado y qué produce cada evaluación. La unidad es la **operación** —el
@@ -49,8 +57,10 @@ unidad —la factura en líneas y prorrateo, el deudor en verificación y giro, 
 otorgamiento, la operación en pricing (`spec-ciclo-factura.md` §0, tabla «Los siete motores»)— y la
 operación agrega esos veredictos. Tres consecuencias que el resto del documento usa:
 
-- La operación **cambia de estado**; la factura **entra o sale** de ella. Un deudor que no confirma
- retira sus facturas y la operación encoge (§11); un rechazo firme del cliente pierde la operación
+- La operación **cambia de estado**; la factura **entra o sale** de ella. Hoy un deudor que no confirma
+ retira sus facturas y la operación encoge con la firma vigente (§11); decidido (ADR-0018): marcar
+ «no verificada» deja la operación con un issue y avisa, y es el ejecutivo quien retira, re-simula y
+ vuelve a publicar para una nueva firma. Un rechazo firme del cliente pierde la operación
  entera (§13).
 - Lo que un motor decide **se versiona como evidencia** de la operación (§8), y la evidencia no
  reserva ni decide la evaluación siguiente (`spec-ciclo-factura.md` §17).
@@ -124,10 +134,10 @@ Dos colapsos de pantalla que no son estados: `displayStageId` muestra `giro` com
 | Actor | Qué hace en el curse | Dónde lo fija el sistema |
 |---|---|---|
 | **Inbound (sistema)** | Clasifica el stream, agrupa por cedente, abre o actualiza la oportunidad, cierra el día y reabre lo no gestionado | `tickCron`, `correrProceso`, `rolloverDia`; `spec-inbound-facturas.md` §6 |
-| **Ejecutivo comercial** | Arma la oferta, pide la evaluación, justifica cada excepción, cierra y publica, puede reabrir, puede perder | `incorporarFacturasOferta` / `retirarFacturaOferta` (regla 33), `reevaluarLinea`, `solicitarAprobacionExc`, `cerrarOferta`, `reabrirOperacion`, `reject` |
+| **Ejecutivo comercial** | Arma la oferta, pide la evaluación, justifica cada excepción, cierra y publica, puede reabrir, puede perder; con ADR-0018, recibe el aviso de la verificación fallida, retira las facturas del deudor no verificado, re-simula y vuelve a publicar para una nueva firma | `incorporarFacturasOferta` / `retirarFacturaOferta` (regla 33), `reevaluarLinea`, `solicitarAprobacionExc`, `cerrarOferta`, `reabrirOperacion`, `reject` |
 | **Agente IA** | Canal opcional del primer contacto y de la publicación por WhatsApp; ofrece dentro del piso del deudor | `canalDeRegla` (`spec-inbound-facturas.md` §5.2), `SPREAD_MIN_DEUDOR`, regla 8 |
 | **Apoderados por (área, nivel)** | Aprueban o rechazan excepciones en la mesa Otorgamientos o en el tab del detalle; nivel igual o superior de la misma área | `aprobarExc` con OTG-01 antes de escribir; `puedeAprobarExc` (regla 18); `spec-gestion-excepciones.md` §2.2 |
-| **Ejecutivo de verificación** | Contacta al deudor, firma verificada / no verificada por factura, retira lo no confirmado | `verificarDeudor`, `DrawerVerificacion` (regla 53), `puedeVerificarFacturas` (regla 18) |
+| **Ejecutivo de verificación** | Contacta al deudor, firma verificada / no verificada por factura; hoy retira lo no confirmado (con ADR-0018 marca y el sistema avisa: no retira) | `verificarDeudor`, `marcarFactura`, `noConfirmoDeudor`, `DrawerVerificacion` (regla 53), `puedeVerificarFacturas` (regla 18) |
 | **Comité de líneas** (sistema externo) | Resuelve la solicitud de líneas que el cierre inyecta; NEX sólo inyecta y consulta | `solicitudComiteDeOferta` → `api1Inyeccion`; `api3EstadoProceso`; regla 15 |
 | **Operaciones N3** | Visa O05 en la vía física; aprueba la integración al core tras los controles | `aprobarExc` (O05), `aprobarIntegracion` con `controlesIntegracion`; regla 41 |
 | **Tesorería** (fuera de NEX) | Gira y avisa | `recibirGiroTesoreria` (pura); regla 43 |
@@ -190,9 +200,10 @@ etiquetada.
  el estado `actualizando: true` (que sólo dura la latencia) y los dos mensajes de bitácora
  `logSys` «Recalculando N oportunidad(es) por M documento(s) nuevo(s) · latencia estimada …»
  y «Recálculo aplicado»; pero `aplicar` sólo anexa a `facturasDisponibles` y
- apaga `actualizando`: sin `simulado`, sin `finanzasDe`, sin versión. Es la re-evaluación automática
- que M-12 pide y la regla 14 prohíbe; el comentario y la bitácora deben corregirse (y el banner muerto
- retirarse) o la decisión #1 de §15 contemplarlo (§16).
+ apaga `actualizando`: sin `simulado`, sin `finanzasDe`, sin versión. Es una re-evaluación automática
+ que la regla 14 prohíbe y que la decisión #1 de §15 descartó el 22-09-2026 (ADR-0013: el gesto de
+ simular / re-evaluar es explícito): el comentario y los mensajes de bitácora se corrigen y el banner
+ muerto se retira (§16; G-09, GD-10).
 - *Segmentación Prime / Otros y join con líneas.* `capacidadDeudores` devuelve tres
  tramos con `n` y `monto`: `primeConLinea`, `otrosConLinea`, `sinLinea`. Prime = `tipoDeudor` Lista
  Blanca o Deudor Autorizado (`CRITERIO_PRED`, `esPrime`). «Con línea» se decide en el
@@ -218,13 +229,13 @@ etiquetada.
 
 | Cláusula | Estado medido | Qué difiere |
 |---|---|---|
-| M-01 | implementado distinto | Las cesiones llegan por A2, no por DTESync; NC sin monto en el A1; **«Aceptaciones» no existe** como campo ni regla en ningún activo ni spec (el `EstadoDTE` del A1 trae sólo `Reclamado`, `NotaCredito`, `FolioNotaCredito`, `facturaDeDTE`); en el fuente sólo como dato **sintético sin consumidor**: `facturasDeCandidata` sortea `estado: "Aceptada" \| "Reclamada" \| "Sin acuse"` por RNG (única aparición de «Sin acuse»), que habría que retirar o conectar al A1 si el modelo confirma que la aceptación (acuse de recibo, Ley 19.983) es criterio de candidatura |
-| M-05 | implementado distinto | La cuantificación se calcula en el render de la tarjeta (`capacidadDeudores`, cuyo único llamador es la tarjeta del tubo), no se persiste en la oportunidad ni la produce el inbound. «Prime» acá es sólo listas; en verificación el protocolo recortado es prime **o** nota > 4,2 (regla 6). El modelo debe fijar cuál «Prime» segmenta la oportunidad |
-| M-06 | implementado distinto | Los tramos son `primeConLinea · otrosConLinea · sinLinea` (sin distinguir prime u otro en el último), y son cota superior, no asignación; se calculan en el render de la tarjeta, no en la oportunidad (M-05) |
-| M-07 | implementado distinto | Corte por N corridas, no por hora (la ventana `horaInicio` / `horaFin` es un parámetro declarado sin efecto); y `rolloverDia` **reabre** con el mismo id, no elimina. `spec-ciclo-factura.md` §17 dice que el rollover «cierra y **re-origina** las oportunidades del inbound que nadie gestionó» y que «Es una oportunidad **nueva**, con su propio identificador»: contradice al fuente («EL ID NO CAMBIA») y a la regla 22 (§15) |
-| M-08 | **pendiente** (con parámetro huérfano) | La ventana `horaInicio` / `horaFin` se edita en pantalla y nadie la consume: `rolloverDia` reabre en el mismo tick del cierre. Falta que el corte 23:00 y el reinicio 06:00 sean parámetros y que el job los use; hoy la ventana configurada es decorativa |
-| M-09 | implementado distinto | «Buena factura» **no** consulta `cedida`; la cesión bloquea sólo al incorporar (`estadoCandidata`) y como pérdida por AECSync. Y la candidata exige «a crédito», que el modelo no menciona |
-| M-10 | implementado distinto | No existe criterio por **fecha de emisión** (el descarte < 8 días ocurre al **cerrar**, `intentarCerrar`; al publicar «ya se resolvió al cerrar»), ni por **cesión previa**; reclamo y NC sólo como parte de «Buena factura», no seleccionables; ni una **lista de emisores con tags**: los tags son del deudor (A3/A4) y del cedente sólo `esCliente` / SOW |
+| M-01 | implementado distinto | Las cesiones llegan por A2, no por DTESync; NC sin monto en el A1. **La aceptación es una bandera del DTE** (definición del negocio, 22-09-2026: el acuse de recibo / aceptación del receptor viaja con el documento, como el reclamo y la NC), y **ni el A1, ni el layout de la integración, ni el generador la traen**: el `EstadoDTE` sintético sólo distingue `Reclamado` y `NotaCredito`, `facturaDeDTE` no la lee, y en el fuente aparece sólo como un sorteo sin consumidor (`facturasDeCandidata`: «Aceptada / Reclamada / Sin acuse»). Gap de **dato / contrato** (§16) → **decidido: implementar** (la bandera entra al A1, al layout de la integración y al generador, y `facturaDeDTE` la lee junto a reclamo y NC) · **por confirmar**: si la aceptación participa del filtro de candidatura |
+| M-05 | implementado (definición ajustada 22-09-2026) | La cuantificación Prime / Otros es un **join en pantalla**, no un dato que produzca el inbound: se calcula al dibujar la tarjeta (`capacidadDeudores`, cuyo único llamador es la tarjeta del tubo) y no se persiste en la oportunidad. «Prime» acá es sólo listas; en verificación el protocolo recortado es prime **o** nota > 4,2 (regla 6): cuál «Prime» segmenta la oportunidad sigue en §16 |
+| M-06 | implementado (definición ajustada 22-09-2026) | El join con líneas es una consulta en pantalla: los tramos son `primeConLinea · otrosConLinea · sinLinea` (sin distinguir prime u otro en el último), y son cota superior, no asignación; se calculan en el render de la tarjeta, no en la oportunidad (M-05) |
+| M-07 | implementado distinto → **decidido: implementar** | La hora de corte (23:00 por defecto) pasa a ser un parámetro del tenant que el job consume; hoy el corte es por N corridas, no por hora (la ventana `horaInicio` / `horaFin` es un parámetro declarado sin efecto). **por confirmar**: eliminar o reabrir — el modelo dice «elimina las no gestionadas» y `rolloverDia` **reabre** con el mismo id (regla 22); eliminar borra trazas y contactos, así que hay que decirlo explícito. `spec-ciclo-factura.md` §17 dice que el rollover «cierra y **re-origina** las oportunidades del inbound que nadie gestionó» y que «Es una oportunidad **nueva**, con su propio identificador»: contradice al fuente («EL ID NO CAMBIA») y a la regla 22 (§15) |
+| M-08 | **pendiente** (con parámetro huérfano) → **decidido: implementar** | El job de reinicio se implementa sobre un parámetro configurable del tenant (06:00 por defecto). Hoy la ventana `horaInicio` / `horaFin` se edita en pantalla y nadie la consume: `rolloverDia` reabre en el mismo tick del cierre; la ventana configurada es decorativa |
+| M-09 | implementado distinto → **decidido: implementar** (ADR-0014) | El inbound excluye la factura cedida a un factoring **ajeno** a Factoring Security; la cedida a Security **no** se excluye (decisión #6 de §15, cerrada). Hoy «Buena factura» **no** consulta `cedida`; la cesión bloquea sólo al incorporar (`estadoCandidata`) y como pérdida por AECSync. Y la candidata exige «a crédito», que el modelo no menciona |
+| M-10 | implementado distinto | No existe criterio por **fecha de emisión** (el descarte < 8 días ocurre al **cerrar**, `intentarCerrar`; al publicar «ya se resolvió al cerrar»), ni por **cesión previa**; reclamo y NC sólo como parte de «Buena factura», no seleccionables; ni una **lista de emisores con tags**: los tags son del deudor (A3/A4) y del cedente sólo `esCliente` / SOW. **decidido: implementar** un criterio de **antigüedad máxima desde la emisión**, configurable (20 días por defecto); la «lista de emisores con tags» y la cesión previa quedan **descartadas** como criterios |
 
 ### 6. La oportunidad y la selección del ejecutivo
 
@@ -247,11 +258,11 @@ La re-evaluación **se pide**: editar la oferta actualiza al instante sólo lo a
 conteos, monto por deudor) y deja «Por evaluar», sin número, todo lo que depende de líneas o
 verificación hasta apretar Re-evaluar (`reevaluarLinea`; regla 14, gate 124, e2e-14).
 
-**Diferencias y pendientes.** M-11 implementado. **M-12 es decisión abierta** y la primera
-contradicción de la Parte IV (§15): el modelo pide re-evaluación automática en cada cambio de
-selección; la regla 14 y tres specs (`spec-otorgamiento.md` §2, `spec-asignacion-lineas.md` §8.4,
-`spec-ciclo-factura.md` §3) fijan la explícita. No se cierra programando: es decidir si cada clic
-emite evidencia y consulta la API de líneas A23, y reemplazar la regla 14 por ADR.
+**Diferencias y pendientes.** M-11 implementado. **M-12 implementado (definición ajustada
+22-09-2026)**: cuando cambia la selección de facturas, el ejecutivo presiona simular para volver a
+evaluar las condiciones de la operación y todos los motores; el gesto es explícito, la regla 14 se
+conserva (con `spec-otorgamiento.md` §2, `spec-asignacion-lineas.md` §8.4 y `spec-ciclo-factura.md`
+§3) y «simular» es el evento de evaluación de M-13 (decisión #1 de §15 cerrada, ADR-0013).
 
 ### 7. La evaluación: cinco motores en paralelo
 
@@ -346,22 +357,32 @@ fuente dice «Tasa del ÚLTIMO negocio cursado del cliente». Es sintético, sem
 del último negocio, el prorrateo pasa a top-down.
 
 **Diferencias y pendientes (M-13, M-14 a M-17, M-22 a M-27, M-30 a M-35).** Las fichas de la Parte
-IV lo detallan; lo que importa a nivel de proceso: (a) tres gestos de evaluación y no uno; (b) el
-resultado de líneas **no entra** al criterio de giro (LIN-01 bloquea la integración aparte, regla
-41), contra M-33; (c) el pricing compara contra **el** último negocio del cliente (no del par) y no
-contra «los últimos negocios»: `spec-pricing-simulacion.md` §4.2 fija **el** último negocio, en
-singular, como tasa top-down, y lo que ningún spec define es una ventana de N negocios ni un promedio
-(M-35); (d) el modelo (M-22) dice «empresa emisora» para la unidad de verificación, mientras
-`spec-verificacion-facturas.md` §2.1 fija la unidad en el deudor («La decisión es por deudor dentro de
-la operación») y el sistema decide así (`verifDecision`; `verifFactura` evalúa todas las
-facturas del deudor): decisión abierta (§15); (e) el contacto de verificación **sí registra** los tres
+IV lo detallan; lo que importa a nivel de proceso: (a) tres gestos de evaluación y no uno, y ningún
+evento que invoque verificación ni líneas (M-13, M-24, M-26) → **decidido: implementar** (ADR-0013):
+simular o re-evaluar es **un evento** que corre los cinco motores en paralelo, cada uno emite versión y
+las cinco cuentan igual; **por confirmar**: qué significa «el cliente simula» (el portal de curse o el
+Agente IA por WhatsApp); (b) el resultado de líneas **no entra** al criterio de giro (LIN-01 bloquea la
+integración aparte, regla 41), contra M-33 → **decidido: implementar** (ADR-0017): si hay que pedir
+comité, el giro es Normal; (c) el pricing compara contra **el** último negocio del cliente (no del par)
+y no contra «los últimos negocios»: `spec-pricing-simulacion.md` §4.2 fija **el** último negocio, en
+singular, como tasa top-down, y ningún spec define una ventana de N negocios ni un promedio (M-35,
+**definición confirmada**: en la demo ese historial es dato generado y en producción la fuente es el
+último negocio cursado del cliente en el core, dato / contrato, §16); (d) el modelo (M-22) dice
+«empresa emisora» para la unidad de verificación, mientras `spec-verificacion-facturas.md` §2.1 fija
+la unidad en el deudor («La decisión es por deudor dentro de la operación») y el sistema decide así
+(`verifDecision`; `verifFactura` evalúa todas las facturas del deudor): **por confirmar** que la unidad
+es el deudor (§15 #5); M-23, en cambio, quedó **implementado (definición ajustada 22-09-2026)**: todas
+las facturas de la oferta pasan por el motor, la decisión es por deudor y sólo las del deudor que falla
+se verifican; (e) el contacto de verificación **sí registra** los tres
 hechos que el modelo pide obtener: `DrawerVerificacion` lleva el checklist `{existencia,
 recepcion, fechaPago}` (rótulos «Existencia de la factura», «Recepción conforme», «Fecha de
 pago»; en la mesa `CHECKS`) y exige los tres más la fecha de pago comprometida
 antes de confirmar (`completo = chk.existencia && chk.recepcion && chk.fechaPago && !!compromiso`), y `verificarDeudor` lo persiste por factura en `repoVerifTel`, de
 donde `verifFactura` lo lee (`checks`). Lo pendiente es sólo documental: `spec-verificacion-facturas.md`
 no describe el checklist
-(M-22-bis, §14 y §16).
+(M-22-bis, §14 y §16). Además, M-15 («bloqueante» = el rechazo firme del catálogo, hoy C30–C32, y
+las que en el futuro se clasifiquen como rechazo firme) y M-27 (cinco líneas: LF1–LF4 más la global del
+deudor) quedaron **implementadas (definición ajustada 22-09-2026)**.
 
 ### 8. El resultado versionado de una evaluación
 
@@ -379,26 +400,31 @@ repoSimVersions.push(deal.id, snapVersionCli(deal, 0))` —«persiste la evaluac
 en `reevaluarCliente`— y luego la nueva. Esa v1 es **retroactiva**: se calcula con los datos del momento de
 la re-evaluación, no de la simulación, así que la evidencia de la evaluación inicial no es
 contemporánea (el único emisor es `reevaluarCliente`). El retiro por verificación emite una
-versión con la línea recortada (`retirarFacturaOferta`). Desde Aceptada en adelante una versión
+versión con la línea recortada (`retirarFacturaOferta`; hoy lo dispara la marca «no verificada», con
+ADR-0018 lo dispara el ejecutivo). Desde Aceptada en adelante una versión
 nueva no re-asigna: recorta la anterior (`recortarAsignacion`, llamada en `snapVersionCli`).
 
 | Lo que produce la evaluación | Dónde queda | Sobrevive a la re-evaluación siguiente |
 |---|---|---|
 | **Condiciones comerciales** (tasa, comisión, anticipo, monto a girar) | Campos de `finanzasDe` en la operación; **no** en la versión ni en la huella (regla 23) | Se recalculan; ninguna evidencia las congela (M-36, implementado distinto) |
-| **Requisitos de excepción** (ítems con disposición, área, nivel, aprobadores) | `snapVersionCli.res` (disposición por regla) + `repoVisado` / `VISADO_STATE` por `stKey` + `SOLICITUD_EXC` | La versión es foto; el **visado sobrevive por clave estable** (`reevaluarCliente`: «NO se tocan las excepciones ya resueltas»). Si la regla deja de gatillar, el ítem sale aprobado y el visado, la solicitud, el hilo y la tarea quedan **huérfanos** en el repositorio: no se eliminan ni se marcan (M-21) |
+| **Requisitos de excepción** (ítems con disposición, área, nivel, aprobadores) | `snapVersionCli.res` (disposición por regla) + `repoVisado` / `VISADO_STATE` por `stKey` + `SOLICITUD_EXC` | La versión es foto; el **visado sobrevive por clave estable** (`reevaluarCliente`: «NO se tocan las excepciones ya resueltas»). Si la regla deja de gatillar, el ítem sale aprobado y el visado, la solicitud, el hilo y la tarea quedan **huérfanos** en el repositorio: no se eliminan ni se marcan (M-21; ADR-0016 decide marcarlos «ya no aplica desde la versión N») |
 | **Requisitos de verificación** (por deudor, con causas) | `snapVersionCli.verificacion` + `repoVerifTel` por (operación, factura) + `repoVerifVeredicto` por (operación, deudor) | El contacto y el veredicto congelado sobreviven por clave estable; `limpiarSimulacion` y reabrir no los tocan (regla 1). No es versionado: es clave estable (M-25) |
 | **Asignación de líneas y solicitudes** | `snapVersionCli.linea` (por factura, con origen) + `repoSolicitudComite` al cerrar | La versión anterior es evidencia, no reserva ni entrada del cálculo (`spec-ciclo-factura.md` §17); el diff `gano_linea · perdio_linea · cambio_de_linea` sólo explica |
 | **Giro GE / GN** | Cálculo del día (`giroDeal`) hasta la inyección; después `repoGiro` (`giroCongelado`) | Se recalcula en cada re-evaluación y se congela al inyectar (regla 43) |
 | **Huella del paquete** | `huellaOperacion`: `op · rut · nd · nf · monto · deudores[rut:monto]` + SHA-256, en `repoContratoEvidencia` | Si el paquete cambia, la huella no calza y O05 vuelve a ser excepción por sí solo (regla 23) |
 
-**Diferencias y pendientes.** M-37, M-38, M-39, M-40 implementados. M-36 implementado distinto: lo
-que se versiona es el veredicto de los motores, no las condiciones comerciales, y la v1 no es
-contemporánea de la simulación. M-20 y M-25
-implementado distinto: sobreviven, pero por clave estable (`stKey`, `facturaId`, deudor), no dentro de
-la versión; el spec debe decir cuál de los dos modelos de datos quiere (§15). M-21 implementado
-distinto: el «marcar como cumple» ocurre solo; el «eliminar la excepción» no ocurre (buscado
-«huérfan» —sólo en Configuración › Áreas, sobre criterios que rutean a un área
-borrada—, «ya no levanta», «ya no aplica», «visado obsoleto»: nada sobre visados obsoletos). `spec-modelo-giro.md` §7 todavía dice que no hay
+**Diferencias y pendientes.** M-37, M-38, M-39, M-40 implementados. M-36 implementado distinto →
+**decidido: implementar** (ADR-0013): la simulación emite versión, y la versión guarda el modo de tasa
+con que se simuló (tasa ponderada o última operación) y las condiciones asignadas (descuento y
+comisiones); hoy lo que se versiona es el veredicto de los motores, no las condiciones comerciales, y
+la v1 no es contemporánea de la simulación. M-20 y M-25 **implementado (definición ajustada
+22-09-2026)**: sobreviven por clave estable (`stKey`, `facturaId`, deudor), no dentro de la versión, y
+esa clave estable basta como versionado. M-21 implementado distinto → **decidido: implementar**
+(ADR-0016): la excepción que la versión N ya no levanta **no se elimina**; el visado, la solicitud, la
+tarea y el hilo quedan marcados «ya no aplica desde la versión N», auditable, y si una versión
+posterior la vuelve a levantar se abre una solicitud nueva. Hoy el «marcar como cumple» ocurre solo y
+nada marca ni elimina (buscado «huérfan» —sólo en Configuración › Áreas, sobre criterios que rutean a
+un área borrada—, «ya no levanta», «ya no aplica», «visado obsoleto»: nada sobre visados obsoletos). `spec-modelo-giro.md` §7 todavía dice que no hay
 pantalla de la asignación mientras la regla 22 cita `ChipGiro` en tres sitios: uno de los dos está
 desactualizado.
 
@@ -451,7 +477,8 @@ línea» —**errata del modelo, a confirmar por el usuario**—; el sistema só
 - *Bloqueo firme.* `visadoDealCalc` marca `rechFirme` sólo con rechazos no re-evaluables
  (C30–C32 del cliente); `bloqueoFirmeInfo` arma la causa y el efecto de pérdida por bloqueo firme pasa
  la operación **entera** a `perdida` con `perdidaPor: "sistema"`. `retirarFacturaOferta`
- tiene tres llamadores y los tres son de verificación con motivo `"noConfirmada"`: ningún camino retira facturas por otorgamiento.
+ tiene tres llamadores y los tres son de verificación con motivo `"noConfirmada"` (retiro automático al marcar;
+ cambia con ADR-0018: la marca deja de llamarlo y retira el ejecutivo): ningún camino retira facturas por otorgamiento.
 
 **Diferencias y pendientes.** M-28 implementado **bajo la lectura «no existir», a confirmar** (la
 solicitud sale al cerrar, no al simular; siempre líneas puntuales por deudor; publicar exige además
@@ -460,13 +487,24 @@ Monto a Girar > 0), con un pendiente si el modelo quiere que el tipo de la solic
 igual para dejar constituida la línea del par—, el sistema NO lo hace: `solicitudComiteDeOferta`
 devuelve `null` salvo `ev.requiereComite > 0` y `cerrarOferta` sólo inyecta si hay
 solicitud, y la cláusula pasa a «implementado distinto». **M-19 implementado
-distinto**: la exigencia de justificación es de pantalla, no de la mutación; por el principio de la
-regla 24, que el propio cierre aplica al monto, falta la guarda en `cerrarOferta` (§16). **M-18
-pendiente**: no existe una disposición bloqueante a
-nivel deudor (D02–D13 son excepciones visables no re-evaluables, `spec-gestion-excepciones.md` §2.4)
-ni un retiro automático de facturas por otorgamiento; implementarlo choca con la regla 33 (paquete
-cerrado sólo lectura) y con la regla 13 (después de aceptar, la única mutación es la verificación).
-Es la segunda contradicción de §15.
+distinto → decidido: implementar** (T2; regla 24): la compuerta «sin excepciones sin justificar» pasa a
+ser una exigencia del backend, en la mutación (`cerrarOferta`), con gate; hoy la exigencia es de
+pantalla, no de la mutación, aunque el propio cierre aplica ese principio al monto (§16). **M-18
+pendiente → decidido: implementar** (ADR-0015 para el comité, ADR-0018 para la verificación), **redefinida el
+22-09-2026** y **cerrada el 23-09-2026**: no es un bloqueo de otorgamiento a nivel deudor —esa disposición no
+existe (D02–D13 son excepciones visables no re-evaluables, `spec-gestion-excepciones.md` §2.4) y no se crea—
+sino la consecuencia del comité que rechaza la línea o de la verificación que no confirma al deudor; los dos
+caminos terminan igual —el cliente firma la nueva operación— y difieren en quién retira. **Comité (ADR-0015):**
+NEX recibe el rechazo, retira las facturas del deudor, emite versión y reabre. **Verificación (ADR-0018):**
+marcar una factura «no verificada» **no la retira**; deja la operación con un **issue** visible —«facturas no
+verificadas: no se puede cursar»—, VER-01 sigue mandando, y el sistema **notifica al ejecutivo comercial** por
+mensajería (cuáles facturas, de qué deudor, y que no se cursará mientras sigan en la oferta); el **ejecutivo**
+retira las facturas del deudor no verificado, **re-simula** (el evento de evaluación de ADR-0013, que emite
+versión) y **vuelve a publicar**, lo que revoca la firma anterior (regla 1) para que el cliente firme la nueva
+operación; las retiradas quedan vetadas. Hoy ningún camino retira facturas por otorgamiento ni por comité, y el
+botón «No verificar» de la mesa y del detalle retira solo y la operación encoge conservando la firma (regla 13,
+§11): ese retiro automático y la mitad de la regla 13 que lo describe se reemplazan. La decisión #2 de §15
+queda cerrada.
 
 ### 10. Aceptación formal del cliente y reapertura
 
@@ -534,12 +572,16 @@ sin línea y se re-evalúa la operación, quedando cumplido el criterio de líne
  `otorgamiento`, sin bloqueo, con aprobación formal vigente, sin `excPend` ni `rechReev` (OTG-02
  primero, regla 48) y con el atajo `otorgAuto` o todas las excepciones aprobadas. **No mira VER-01**
  por sí misma.
-- *Verificación post-firma.* `verificarDeudor` registra las confirmadas en `repoVerifTel`
- y retira las no confirmadas con `retirarFacturaOferta(id, fac, "noConfirmada")`: quedan vetadas en
+- *Verificación post-firma (lo que hace el sistema HOY).* `verificarDeudor` registra las confirmadas en
+ `repoVerifTel` y **retira solo** las no confirmadas con `retirarFacturaOferta(id, fac, "noConfirmada")`;
+ lo mismo hacen `marcarFactura` (por folio) y `noConfirmoDeudor` (por deudor) desde el botón «No verificar»
+ de la mesa y el diálogo «Retirar factura no confirmada» del tab Verificación del detalle: quedan vetadas en
  `repoNoConfirmadas`, y si la operación ya está aceptada se emite versión nueva con
  `recortarAsignacion` y la auditoría «el cupo liberado sigue reservado». La operación **encoge, no se
- pierde**; retirar la última factura es pérdida (`spec-ciclo-factura.md` §14). El veredicto se
- congela con el contacto (`congelarVeredicto`) y el predictor no vuelve a opinar.
+ pierde**, **la firma del cliente sigue valiendo** y nadie avisa al ejecutivo comercial; retirar la última
+ factura es pérdida (`spec-ciclo-factura.md` §14). El veredicto se congela con el contacto
+ (`congelarVeredicto`) y el predictor no vuelve a opinar. Lo decidido en su lugar está en «Diferencias y
+ pendientes» (ADR-0018).
 - *Líneas del comité.* NEX sólo consulta (`api3EstadoProceso`, pull con «Consultar
  estados», regla 15). El estado final simulado es «Aprobada» u «Observada» por `hash(idProceso) % 5`;
  Aprobada constituye la línea (`constituirLinea`: LF3 si puntual, LF2 si no) y se superpone al activo
@@ -555,13 +597,28 @@ sin línea y se re-evalúa la operación, quedando cumplido el criterio de líne
  `deals.filter(otorgamientoCompleto)` pasa **directo** a `stage: "giro"`, «Girada · otorgada», sin
  Pendiente Integración, sin VER-01 y sin Operaciones N3 (`spec-ciclo-factura.md` §23c fila 4).
 
-**Diferencias y pendientes.** M-20 y M-25 implementado distinto (§8). **M-23 decisión abierta**: la
-lectura «todas las facturas del deudor que falla» está implementada (regla 6); la lectura «todas las
-facturas de toda la oferta» sólo la hace la «Regla 0» de verificación (regla 6; `spec-verificacion-facturas.md`
-§4.0, cliente nuevo) y contradice la unidad por deudor.
-**M-29 pendiente**: no existe estado «Rechazada» del comité (buscado `rechazarSolicitud`,
-`resolverComite`, `decisionComite`: nada), ni retiro automático de las facturas sin línea, ni
-re-evaluación posterior; además choca con las reglas 13 y 33 (§15). Y el desfase del avance a Girada
+**Diferencias y pendientes.** M-20 y M-25 implementado (definición ajustada 22-09-2026, §8). **M-23
+implementado (definición ajustada 22-09-2026)**: todas las facturas de la oferta pasan por el motor de
+verificación, la decisión es por deudor y sólo las del deudor que falla se verifican —pueden salir
+deudores que no requieren verificación—; es lo que el sistema hace (regla 6) y cierra la segunda mitad
+de la decisión #5 de §15. La «Regla 0» de verificación (regla 6; `spec-verificacion-facturas.md` §4.0,
+cliente nuevo) sigue como el único caso que verifica toda la oferta.
+**M-18 en la verificación → decidido: implementar** (ADR-0018, 23-09-2026): marcar una factura «no
+verificada» **no la retira**; la operación queda con el issue «facturas no verificadas: no se puede cursar»
+(VER-01 sigue mandando: `verifResumenDeal.pend` y `controlesIntegracion`), con actor y hora en la bitácora, y
+el sistema notifica al ejecutivo comercial por el centro de mensajería; el ejecutivo retira las facturas del
+deudor no verificado, re-simula (evento de ADR-0013, con versión) y vuelve a publicar: publicar de nuevo revoca
+la firma (regla 1) y el cliente firma la nueva operación; las retiradas quedan vetadas, como hoy. Cambian el
+botón «No verificar» de la mesa y del detalle (`marcarFactura`, `verificarDeudor`, `noConfirmoDeudor` dejan de
+llamar al retiro), `verifResumenDeal` (el issue) y el centro de mensajería (el aviso); la regla 13 pierde la
+mitad «después de aceptar sólo encoge».
+**M-29 pendiente → decidido: implementar** (ADR-0015): el comité es el **comité de crédito**, opera
+fuera de la plataforma y da la aceptación o el rechazo de las solicitudes de aumento de línea puntual;
+NEX tiene que recibir el rechazo (estado «Rechazada» por línea de detalle en la API 3, dato / contrato)
+y aplicar M-18: retirar las facturas del deudor, emitir versión con el motivo y reabrir para una nueva
+firma; si no queda ninguna factura, pérdida con causa (regla 5). Hoy no existe estado «Rechazada»
+(buscado `rechazarSolicitud`, `resolverComite`, `decisionComite`: nada), ni retiro de las facturas sin
+línea, ni reapertura por comité (decisión #4 de §15 cerrada). Y el desfase del avance a Girada
 es del sistema, no del modelo: el camino vivo desde Otorgamiento se salta tres controles.
 
 ### 12. Giro
@@ -589,8 +646,11 @@ resultado de la evaluación son los montos a girar por giro normal o express.
  el 148 el congelado en la inyección; la regla 43 del vault todavía cita «caso 145», desfase de la
  renumeración del merge de la sesión paralela). El monto no se inventa.
 
-**Diferencias y pendientes.** M-40 implementado. **M-33 implementado distinto**: el resultado de
-líneas no entra al criterio de giro (LIN-01 bloquea la integración aparte); dos tipos y no tres
+**Diferencias y pendientes.** M-40 implementado. **M-33 implementado distinto → decidido:
+implementar** (ADR-0017): el resultado de líneas entra al criterio del giro —si las facturas del
+deudor requieren comité, el giro es **Normal** aunque cumpla las condiciones de Express—; hoy
+`asignarGiros` recibe cuatro hechos y ninguno de líneas (LIN-01 bloquea la integración aparte); dos
+tipos y no tres
 (`spec-modelo-giro.md` §7); GN como disyunción pendiente de confirmar (§2 «Supuesto explícito»). El
 contrato de entrega a Tesorería (payload, endpoint, idempotencia, evento) no está modelado
 (`spec-ciclo-factura.md` §23b).
@@ -624,16 +684,21 @@ referencia. Ocho escritores de `stage: "perdida"` (seis con causa y dos manuales
 
 Dos puertas de negocio a la pérdida por otorgamiento (`spec-ciclo-factura.md` §13): el rechazo firme
 (C30–C32 del cliente, nunca del deudor) y la excepción rechazada por un apoderado con atribución (no
-hay apelación dentro de la operación). El bloqueo firme tiene precedencia en la causa. Un deudor que
-no confirma **no** es pérdida: es encogimiento (§11), salvo que retire la última factura.
+hay apelación dentro de la operación). El bloqueo firme tiene precedencia en la causa. Hoy un deudor que
+no confirma **no** es pérdida: es encogimiento (§11), salvo que retire la última factura; con ADR-0018 la marca
+tampoco pierde la operación —la deja con un issue— y es el ejecutivo quien, al retirar, decide si sigue con
+menos facturas o la pierde con causa (regla 5).
 
-**Diferencias y pendientes.** **M-15 implementado distinto**: el modelo define «bloqueante» como una
-regla que detiene la operación hasta que se retiran las facturas del deudor (M-18: a nivel deudor y
-reversible); el sistema tiene el rechazo firme sólo en tres reglas del **cliente** (C30–C32, `tHard`, rótulo «bloqueo firme») y su efecto no es «impedir avanzar» sino **pérdida automática y
-terminal** de la operación entera (`useEffect` escribe `stage: "perdida"` con
+**Diferencias y pendientes.** **M-15 implementado (definición ajustada 22-09-2026)**: «bloqueante» es
+el **rechazo firme** del catálogo —hoy las tres reglas del **cliente** C30–C32 (`tHard`, rótulo «bloqueo
+firme»), y las que en el futuro se clasifiquen como rechazo firme— y su efecto es la **pérdida
+automática y terminal** de la operación entera (`useEffect` escribe `stage: "perdida"` con
 `perdidaPor: "sistema"` para toda operación activa con `bloqueoFirmeInfo`; `snapVersionCli`
-`estado = nRechFirme ? "rechazada" …`; reglas 4 y 5), sin vía de destrabe. M-18 pendiente (§9): no hay pérdida ni retiro a
-nivel deudor porque no hay bloqueo a nivel deudor. La pérdida por cesión externa vive en dos sitios,
+`estado = nRechFirme ? "rechazada" …`; reglas 4 y 5), aceptado así. M-18 redefinida y **decidido:
+implementar** (ADR-0015 para el comité, ADR-0018 para la verificación, §9): no hay bloqueo a nivel deudor; el
+retiro de las facturas de un deudor es la consecuencia del comité que rechaza (el sistema retira y reabre) o de
+la verificación que no confirma (el sistema marca y avisa; el ejecutivo retira, re-simula y vuelve a publicar),
+y en los dos caminos el cliente firma la nueva operación. La pérdida por cesión externa vive en dos sitios,
 uno vivo (cron, sintético al 12%) y uno sin llamador (documento a documento por A2): decidir cuál es el
 camino de producción es parte de la limpieza del inbound, no de este modelo.
 
@@ -677,7 +742,7 @@ nombra lo que prueba.
 | 6 | verificacion | Verificación aislada y por deudor; dos segmentos; «Regla 0» (primera operación del cliente, viñeta de la regla 6); V01 compuerta; unanimidad; el veredicto se congela con el contacto; confirmación parcial | ~27–32, ~52–55, ~76–77 |
 | 7 | lineas_y_solicitud_comite | `asignarLineas` pura; cinco líneas; cabe en los tres niveles; recálculo siempre completo | ~1–15, ~89 |
 | 12 | lineas_y_solicitud_comite | La reserva no es de NEX: el sistema de líneas reserva al firmar, el core commitea al aprobar; `requiere_resimulacion` si el curse reevalúa distinto | 122, regla_12.test.mjs |
-| 13 | lineas_y_solicitud_comite | Cada simulación emite una versión append-only; una aceptada se lee de su versión; después de aceptar sólo encoge | ~16–23 |
+| 13 | lineas_y_solicitud_comite | Cada simulación emite una versión append-only; una aceptada se lee de su versión; después de aceptar sólo encoge (mitad reemplazada: el comité que rechaza reabre, ADR-0015, y la verificación fallida marca y avisa sin retirar, ADR-0018) | ~16–23 |
 | 15 | lineas_y_solicitud_comite | NEX sólo inyecta (API 1) y consulta (API 2/3, pull); resuelve el sistema externo | 125, e2e-15, regla_15.test.mjs |
 | 15-bis | lineas_y_solicitud_comite | La solicitud se genera sola al cerrar: una solicitud con N líneas puntuales; lo pedido se suma a la vigente | 106–107 |
 | 15-bis-bis | lineas_y_solicitud_comite | La solicitud inyectada cruza de pestaña; idempotente por la solicitud; la inyección no exige la firma | 126, 146, e2e-15-bis-bis-a/b, regla_15_bis_bis.test.mjs |
@@ -696,78 +761,85 @@ nombra lo que prueba.
 ### 14. Cláusula por cláusula
 
 Estados: **implementado** · **implementado distinto** (con otra forma o alcance, y se dice cuál) ·
-**pendiente** (no existe) · **decisión abierta** (el modelo y una regla vigente se contradicen). La
+**pendiente** (no existe) · **decisión abierta** (el modelo y una regla vigente se contradicen). Una
+cláusula que el usuario dio por buena el 22-09-2026 figura **implementado (definición ajustada
+22-09-2026)**; la que pidió construir conserva su estado medido más «→ **decidido: implementar**» (y el
+ADR si lo hay); lo que sigue abierto lleva «**por confirmar**» con la pregunta. La
 evidencia es la **definición**: la regla del vault por su número, la sección del spec, o la condición del
 fuente por su nombre —el símbolo que la encarna—, medida al 22-09-2026. Nunca una línea de código: la
 línea cambia con el próximo commit; la definición, no.
 
 | Id | Cláusula | Estado | Evidencia |
 |---|---|---|---|
-| M-01 | Las facturas llegan por DTESync con cesiones, NC, aceptaciones y reclamos | implementado distinto | `facturaDeDTE` (reclamo y NC como banderas de `EstadoDTE`); cesiones por A2 (`spec-ciclo-factura.md` §1); «Aceptaciones» no existe en el A1 ni en ningún spec; en el fuente sólo como dato sintético sin consumidor (`facturasDeCandidata`: `"Aceptada" \| "Reclamada" \| "Sin acuse"`) |
-| M-02 | Cada hora corren los motores de inbound | implementado distinto | La corrida horaria es una **simulación en el navegador**: `setInterval(…, CRON_MS)` sólo si `CFG_ACTIVA.modoDemo !== false` (su comentario: sin modo demo no corre) → `tickCron` → `correrProceso`; `CRON_MS = cfgT.cronMs` (`cronMs: 3500`). `frecuenciaMin: 60` es un **parámetro huérfano**: se edita en Configuración › Operación y ningún cron lo lee, como `horaInicio` / `horaFin`. El job real del backend está pendiente (`spec-inbound-facturas.md` §10.4) |
+| M-01 | Las facturas llegan por DTESync con cesiones, NC, aceptaciones y reclamos | implementado distinto → **decidido: implementar** (dato / contrato) · **por confirmar**: si la aceptación participa del filtro de candidatura | `facturaDeDTE` (reclamo y NC como banderas de `EstadoDTE`); cesiones por A2 (`spec-ciclo-factura.md` §1); la **aceptación es una bandera del DTE** por definición del negocio (22-09-2026) y falta en el A1, en el layout de la integración y en el generador — en el fuente sólo como dato sintético sin consumidor (`facturasDeCandidata`: «Aceptada / Reclamada / Sin acuse»): gap de dato / contrato |
+| M-02 | Cada hora corren los motores de inbound | implementado distinto → **decidido: implementar** (el cron lee `frecuenciaMin` y la ventana del tenant y corre con eso) | La corrida horaria es una **simulación en el navegador**: `setInterval(…, CRON_MS)` sólo si `CFG_ACTIVA.modoDemo !== false` (su comentario: sin modo demo no corre) → `tickCron` → `correrProceso`; `CRON_MS = cfgT.cronMs` (`cronMs: 3500`). `frecuenciaMin: 60` es un **parámetro huérfano**: se edita en Configuración › Operación y ningún cron lo lee, como `horaInicio` / `horaFin`. El job real del backend está pendiente (`spec-inbound-facturas.md` §10.4) |
 | M-03 | Al detectar facturas se abre una oportunidad al cliente | implementado | `correrProceso` agrupa por cedente; tope `MAX_NUEVOS = 40`; `spec-inbound-facturas.md` §6 |
 | M-04 | Si ya existe una oportunidad abierta se actualiza | implementado | `aplicar(warn)`: suma a `facturasDisponibles` deduplicando; la oferta no se toca; aceptada/cursada/perdida → otra |
-| M-05 | Cuantifica facturas segmentadas en Prime y Otros | implementado distinto | `capacidadDeudores` tiene un solo llamador, la tarjeta del tubo al dibujarse (lookup sobre A23, «no una corrida del motor», dice su comentario): se calcula en el render, no se persiste en la oportunidad ni la produce el inbound (`correrProceso` no la escribe); en producción no habría dónde consultarlo fuera de la pantalla. `chipTramo`; Prime = listas (`CRITERIO_PRED`) |
-| M-06 | Join con líneas: con línea, Prime con línea, otros sin línea | implementado distinto | `capacidadDeudores`: `primeConLinea · otrosConLinea · sinLinea`, cota superior (lo declara el tooltip del chip); se calcula en el render de la tarjeta, no en la oportunidad (M-05); `lineaCreditoDe` |
-| M-07 | Hora de corte 23:00 elimina las no gestionadas | implementado distinto | Sin hora de reloj en la lógica (`horaInicio` / `horaFin` son parámetro declarado sin efecto); `corridas % HORAS_DIA === 0` → `rolloverDia` **reabre** con el mismo id; `reaperturaDiaria` / `etapaNoGestionada` |
-| M-08 | A las 06:00 se reinicia el proceso | pendiente (parámetro huérfano) | Buscado `06:00`, hora de reinicio: nada. `CFG_OPER_BASE.horaInicio = "08:00"` / `horaFin = "18:00"` («ventana horaria de operación (inbound + actualizaciones)») se editan en Configuración › Operación y ningún job los lee: el cron es `setInterval(…, CRON_MS)` y el cierre es `corridas % HORAS_DIA === 0`; `rolloverDia` reabre en el mismo tick del cierre |
-| M-09 | Candidata si no cedida, no reclamada, sin NC | implementado distinto | el criterio «Buena factura» de `CRITERIO_PRED` no consulta `cedida`; `estadoCandidata` la bloquea al incorporar; exige además `credito` |
-| M-10 | Reglas por RUT emisor, fecha de emisión, reclamo, NC, cesiones previas; lista de emisores con tags | implementado distinto | `INBOUND_RULES` + `CRITERIO_PRED`; sin criterio por fecha ni cesión previa; reclamo y NC sólo dentro de «Buena factura», no seleccionables por sí solos; tags del deudor, no del emisor; criterio desconocido califica todo |
+| M-05 | Cuantifica facturas segmentadas en Prime y Otros | implementado (definición ajustada 22-09-2026: es un join en pantalla, no parte del inbound) | `capacidadDeudores` tiene un solo llamador, la tarjeta del tubo al dibujarse (lookup sobre A23, «no una corrida del motor», dice su comentario): se calcula en el render, no se persiste en la oportunidad ni la produce el inbound (`correrProceso` no la escribe); en producción no habría dónde consultarlo fuera de la pantalla. `chipTramo`; Prime = listas (`CRITERIO_PRED`) |
+| M-06 | Join con líneas: con línea, Prime con línea, otros sin línea | implementado (definición ajustada 22-09-2026: es un join en pantalla, no parte del inbound) | `capacidadDeudores`: `primeConLinea · otrosConLinea · sinLinea`, cota superior (lo declara el tooltip del chip); se calcula en el render de la tarjeta, no en la oportunidad (M-05); `lineaCreditoDe` |
+| M-07 | Hora de corte 23:00 elimina las no gestionadas | implementado distinto → **decidido: implementar** (hora de corte como parámetro del tenant) · **por confirmar**: eliminar o reabrir las no gestionadas | Sin hora de reloj en la lógica (`horaInicio` / `horaFin` son parámetro declarado sin efecto); `corridas % HORAS_DIA === 0` → `rolloverDia` **reabre** con el mismo id; `reaperturaDiaria` / `etapaNoGestionada` |
+| M-08 | A las 06:00 se reinicia el proceso | pendiente (parámetro huérfano) → **decidido: implementar** (job de reinicio por parámetro del tenant) | Buscado `06:00`, hora de reinicio: nada. `CFG_OPER_BASE.horaInicio = "08:00"` / `horaFin = "18:00"` («ventana horaria de operación (inbound + actualizaciones)») se editan en Configuración › Operación y ningún job los lee: el cron es `setInterval(…, CRON_MS)` y el cierre es `corridas % HORAS_DIA === 0`; `rolloverDia` reabre en el mismo tick del cierre |
+| M-09 | Candidata si no cedida, no reclamada, sin NC | implementado distinto → **decidido: implementar** (ADR-0014: excluye la cedida a un factoring ajeno; la cedida a Security es candidata) | el criterio «Buena factura» de `CRITERIO_PRED` no consulta `cedida`; `estadoCandidata` la bloquea al incorporar; exige además `credito` |
+| M-10 | Reglas por RUT emisor, fecha de emisión, reclamo, NC, cesiones previas; lista de emisores con tags | implementado distinto → **decidido: implementar** (criterio de antigüedad máxima desde la emisión, 20 días por defecto; lista con tags y cesión previa descartadas) | `INBOUND_RULES` + `CRITERIO_PRED`; sin criterio por fecha ni cesión previa; reclamo y NC sólo dentro de «Buena factura», no seleccionables por sí solos; tags del deudor, no del emisor; criterio desconocido califica todo |
 | M-11 | El ejecutivo toma la oportunidad sin oferta y selecciona | implementado | `facturasOp: []` al nacer; `estadoCandidata`; `incorporarFacturasOferta` / `retirarFacturaOferta` (regla 33); regla 13-sexdecies |
-| M-12 | Cada cambio de selección re-evalúa | decisión abierta | Regla 14 (gate 124, e2e-14): la re-evaluación se pide; `reevaluarLinea`; `spec-otorgamiento.md` §2, `spec-asignacion-lineas.md` §8.4, `spec-ciclo-factura.md` §3 |
-| M-13 | Cinco motores en paralelo, independientes | implementado distinto | Independientes (`spec-ciclo-factura.md` §0 punto 1) pero tres gestos de evaluación (`reevaluarCliente`; `spec-gestion-excepciones.md` §4.1, §5.5); pricing en el render |
+| M-12 | Cada cambio de selección re-evalúa | implementado (definición ajustada 22-09-2026: el gesto de simular es explícito; regla 14; ADR-0013) | Regla 14 (gate 124, e2e-14): la re-evaluación se pide; `reevaluarLinea`; `spec-otorgamiento.md` §2, `spec-asignacion-lineas.md` §8.4, `spec-ciclo-factura.md` §3 |
+| M-13 | Cinco motores en paralelo, independientes | implementado distinto → **decidido: implementar** (ADR-0013) · **por confirmar**: qué significa «el cliente simula» (portal o Agente IA) | Independientes (`spec-ciclo-factura.md` §0 punto 1) pero tres gestos de evaluación (`reevaluarCliente`; `spec-gestion-excepciones.md` §4.1, §5.5); pricing en el render |
 | M-14 | Otorgamiento evalúa por empresa, no por factura | implementado | `evaluarOtorgItems`, `stKey`; `deudorBlock`; regla 4 |
-| M-15 | Reglas bloqueantes impiden avanzar | implementado distinto | El modelo define «bloqueante» como lo que detiene la operación hasta retirar las facturas del deudor (M-18: por deudor y reversible); el sistema tiene rechazo firme sólo en C30–C32 del **cliente** (`tHard`, «bloqueo firme»; `visadoDealCalc` `rechFirme`) y su efecto es **pérdida automática y terminal** de la operación entera (`useEffect`, `perdidaPor: "sistema"`; `snapVersionCli` `estado = "rechazada"`; reglas 4 y 5), sin vía de destrabe |
+| M-15 | Reglas bloqueantes impiden avanzar | implementado (definición ajustada 22-09-2026: «bloqueante» = rechazo firme del catálogo, hoy C30–C32 y las que se clasifiquen así) | El modelo llamaba «bloqueante» a lo que detiene la operación hasta retirar las facturas del deudor; el 22-09-2026 se fijó que bloqueante es el rechazo firme del catálogo y que el retiro por deudor no es un bloqueo de otorgamiento (M-18, ADR-0015); el sistema tiene rechazo firme sólo en C30–C32 del **cliente** (`tHard`, «bloqueo firme»; `visadoDealCalc` `rechFirme`) y su efecto es **pérdida automática y terminal** de la operación entera (`useEffect`, `perdidaPor: "sistema"`; `snapVersionCli` `estado = "rechazada"`; reglas 4 y 5), sin vía de destrabe |
 | M-16 | Reglas re-evaluables | implementado | `NO_REEV_CLIENTE` es la lista de las **no** re-evaluables (`reglaReev`), vigente —la IIFE del Modelo de Riesgo la rellena— con los 28 de `spec-gestion-excepciones.md` §2.4 (el literal inicial está muerto); `rechReev` es su complemento → sujeta; `reevaluarCliente` emite versión |
 | M-17 | Reglas excepcionables por apoderado según criticidad | implementado | Ruteo (área, nivel) + piso `PISO_ATRIB_MONTO` / `CFG_TRAMOS` (regla 4); `puedeAprobarExc` (regla 18); `aprobarExc` con OTG-01 |
-| M-18 | Deudor bloqueado → el sistema retira sus facturas automáticamente | pendiente | `retirarFacturaOferta`: tres llamadores, todos `"noConfirmada"`; el bloqueo firme pierde la operación entera; no hay knockout de deudor (`spec-gestion-excepciones.md` §2.4) |
-| M-19 | Justificar cada excepcionable antes de enviar a comité y publicar | implementado distinto | La justificación la exige la pantalla del tab, no `solicitarAprobacionExc` (guarda sin validar); la Pre-evaluación solicita todas las pendientes sin justificar; `cerrarOferta` re-comprueba sólo el monto (`giroCursable`) y la compuerta de excepciones vive sólo en `ModalCurse` (regla 30): falta la guarda en la mutación (regla 24); CTA «Enviar a Comité y Publicar» |
-| M-20 | Excepción resuelta no se vuelve a pedir; versionadas | implementado distinto | `reevaluarCliente`; `repoVisado` por `dealId + stKey`, `VISADO_STATE`; sobrevive por clave estable, no dentro de la versión |
-| M-21 | Si ya no era necesaria, se marca cumple y se elimina | implementado distinto | `visadoDealCalc` consulta sólo lo que gatilla hoy; la entrada en `repoVisado`, `SOLICITUD_EXC`, el hilo y la tarea quedan huérfanos |
-| M-22 | Verificación por empresa para decidir el contacto | decisión abierta | Modelo: «empresa emisora» (= cedente); sistema: por deudor (`verifDecision`; `verifFactura` evalúa todas las facturas del deudor); regla 6; `spec-verificacion-facturas.md` §2.1 («La decisión es por deudor dentro de la operación, no por factura»; «empresa emisora» no aparece en ese spec: es el texto de M-22 y contradice a ambos). §15 #5 |
-| M-22-bis | El contacto obtiene si la factura es verídica, si los bienes/servicios se prestaron según lo pactado y confirma la fecha de pago (cláusula del motor b del modelo, agregada en esta versión) | implementado | Por factura, en `repoVerifTel`; no versionado, clave estable como M-25. `DrawerVerificacion` lleva el checklist `{existencia, recepcion, fechaPago}` (rótulos «Existencia de la factura» / «Recepción conforme» / «Fecha de pago»; mesa `CHECKS`) y exige los tres checks más la fecha comprometida antes de confirmar (`completo`); `verificarDeudor` y `confirmarLlamadaTel` de `VerificacionTab` persisten `{por, fecha, checklist, contacto, compromiso, respaldo, sinRespaldo, notas}`; `verifFactura` lo lee (`checks: [existencia, recepcion, fechaPago]`); regla 6 («checklist existencia/recepción/fecha»). El veredicto congelado sigue siendo por deudor (`VERIF_VEREDICTO`). Pendiente sólo documental: `spec-verificacion-facturas.md` no describe el checklist (§2.1: el detalle por factura «no es responsabilidad de esta función») |
-| M-23 | Si el deudor no pasa, todas las facturas de la oferta se verifican | decisión abierta | `verifFactura` (todas las del deudor); «Regla 0» de verificación (regla 6; `spec-verificacion-facturas.md` §4.0: todas las de la oferta sólo para cliente nuevo) |
-| M-24 | La verificación corre en cada evaluación | implementado distinto | Corre en el **render del detalle** (`verifFactura`) y en la versión (`snapVersionCli.verificacion`, sólo al hacer «Re-evaluación de la simulación»); ningún evento de evaluación la invoca: `simularOferta` no llama a `verifDecision` y «Re-evaluar operación» (`reevaluarLinea`) sólo apaga `reevalPend` tras 700 ms; regla 14 (gate 124); tras el contacto se congela |
-| M-25 | Factura verificada no se vuelve a pedir; versionadas | implementado distinto | `repoVerifTel` por (deal, factura); `congelarVeredicto`; `limpiarSimulacion` no los toca; clave estable, no versión |
-| M-26 | Líneas en cada evaluación, cada factura con línea asignada | implementado distinto | `asignarLineas` (`CON_LINEA` / `REQUIERE_COMITE`) corre en el **render del detalle** (`evalLin`) y en la versión (`snapVersionCli`, sólo desde `reevaluarCliente` y `retirarFacturaOferta`); la simulación no lo ejecuta (`simularOferta` sólo escribe `simulado`, `stage` y `finanzasDe`) ni «Re-evaluar operación» (`reevaluarLinea`); LIN-01 en `controlesIntegracion` |
-| M-27 | Cuatro líneas LF1–LF4 | implementado distinto | El modelo dice cuatro; el sistema asigna contra **cinco**: LF1–LF4 (cascada por estado del cliente, `spec-asignacion-lineas.md` §3.5; `asignarLineas`) más la línea **global** del deudor como tercer nivel obligatorio —una factura cursa sólo si `m ≤ restPar && m ≤ dispCliente && m ≤ restDeudor`; `capacidadDeudores` «Nivel 3: la línea GLOBAL del deudor»— (regla 7 «cinco líneas»; origen A23 bloque `LINEA_DEUDOR`, regla 44; y la línea del RUT cliente ES la suma de sus líneas, regla 45, ADR-0011). El modelo debe decir si la línea global del deudor es parte del modelo de líneas o un control aparte (§16) |
+| M-18 | Deudor bloqueado → el sistema retira sus facturas automáticamente | pendiente → **decidido: implementar** (ADR-0015 para el comité, ADR-0018 para la verificación; redefinida: retiro y nueva firma por comité que rechaza —el sistema retira y reabre— o por verificación fallida —el sistema marca la operación con un issue y avisa al ejecutivo comercial; el ejecutivo retira, re-simula y vuelve a publicar—) | `retirarFacturaOferta`: tres llamadores, todos `"noConfirmada"` y todos disparados por la marca de la verificación (`verificarDeudor`, `marcarFactura`, `noConfirmoDeudor`; el detalle por el diálogo «Retirar factura no confirmada»): hoy retira solo y la operación encoge con la firma vigente (regla 13); el bloqueo firme pierde la operación entera; no hay knockout de deudor (`spec-gestion-excepciones.md` §2.4); `verifResumenDeal` no produce el issue y ningún hilo avisa al ejecutivo |
+| M-19 | Justificar cada excepcionable antes de enviar a comité y publicar | implementado distinto → **decidido: implementar** (exigencia del backend en `cerrarOferta`, con gate; T2, regla 24) | La justificación la exige la pantalla del tab, no `solicitarAprobacionExc` (guarda sin validar); la Pre-evaluación solicita todas las pendientes sin justificar; `cerrarOferta` re-comprueba sólo el monto (`giroCursable`) y la compuerta de excepciones vive sólo en `ModalCurse` (regla 30): falta la guarda en la mutación (regla 24); CTA «Enviar a Comité y Publicar» |
+| M-20 | Excepción resuelta no se vuelve a pedir; versionadas | implementado (definición ajustada 22-09-2026: la clave estable basta como versionado) | `reevaluarCliente`; `repoVisado` por `dealId + stKey`, `VISADO_STATE`; sobrevive por clave estable, no dentro de la versión |
+| M-21 | Si ya no era necesaria, se marca cumple y se elimina | implementado distinto → **decidido: implementar** (ADR-0016: marcar «ya no aplica desde la versión N», no eliminar) | `visadoDealCalc` consulta sólo lo que gatilla hoy; la entrada en `repoVisado`, `SOLICITUD_EXC`, el hilo y la tarea quedan huérfanos |
+| M-22 | Verificación por empresa para decidir el contacto | decisión abierta · **por confirmar**: que la unidad de la verificación es el deudor (M-23 ya lo dice) | Modelo: «empresa emisora» (= cedente); sistema: por deudor (`verifDecision`; `verifFactura` evalúa todas las facturas del deudor); regla 6; `spec-verificacion-facturas.md` §2.1 («La decisión es por deudor dentro de la operación, no por factura»; «empresa emisora» no aparece en ese spec: es el texto de M-22 y contradice a ambos). §15 #5 |
+| M-22-bis | El contacto obtiene si la factura es verídica, si los bienes/servicios se prestaron según lo pactado y confirma la fecha de pago (cláusula del motor b del modelo, sin número propio en el modelo) | implementado | Por factura, en `repoVerifTel`; no versionado, clave estable como M-25. `DrawerVerificacion` lleva el checklist `{existencia, recepcion, fechaPago}` (rótulos «Existencia de la factura» / «Recepción conforme» / «Fecha de pago»; mesa `CHECKS`) y exige los tres checks más la fecha comprometida antes de confirmar (`completo`); `verificarDeudor` y `confirmarLlamadaTel` de `VerificacionTab` persisten `{por, fecha, checklist, contacto, compromiso, respaldo, sinRespaldo, notas}`; `verifFactura` lo lee (`checks: [existencia, recepcion, fechaPago]`); regla 6 («checklist existencia/recepción/fecha»). El veredicto congelado sigue siendo por deudor (`VERIF_VEREDICTO`). Pendiente sólo documental: `spec-verificacion-facturas.md` no describe el checklist (§2.1: el detalle por factura «no es responsabilidad de esta función») |
+| M-23 | Si el deudor no pasa, todas las facturas de la oferta se verifican | implementado (definición ajustada 22-09-2026: todas entran, se decide por deudor, se verifican las del deudor que falla) | `verifFactura` (todas las del deudor); «Regla 0» de verificación (regla 6; `spec-verificacion-facturas.md` §4.0: todas las de la oferta sólo para cliente nuevo) |
+| M-24 | La verificación corre en cada evaluación | implementado distinto → **decidido: implementar** (ADR-0013: la invoca el evento de evaluación y emite versión) | Corre en el **render del detalle** (`verifFactura`) y en la versión (`snapVersionCli.verificacion`, sólo al hacer «Re-evaluación de la simulación»); ningún evento de evaluación la invoca: `simularOferta` no llama a `verifDecision` y «Re-evaluar operación» (`reevaluarLinea`) sólo apaga `reevalPend` tras 700 ms; regla 14 (gate 124); tras el contacto se congela |
+| M-25 | Factura verificada no se vuelve a pedir; versionadas | implementado (definición ajustada 22-09-2026: la clave estable basta como versionado) | `repoVerifTel` por (deal, factura); `congelarVeredicto`; `limpiarSimulacion` no los toca; clave estable, no versión |
+| M-26 | Líneas en cada evaluación, cada factura con línea asignada | implementado distinto → **decidido: implementar** (ADR-0013: la invoca el evento de evaluación y emite versión) | `asignarLineas` (`CON_LINEA` / `REQUIERE_COMITE`) corre en el **render del detalle** (`evalLin`) y en la versión (`snapVersionCli`, sólo desde `reevaluarCliente` y `retirarFacturaOferta`); la simulación no lo ejecuta (`simularOferta` sólo escribe `simulado`, `stage` y `finanzasDe`) ni «Re-evaluar operación» (`reevaluarLinea`); LIN-01 en `controlesIntegracion` |
+| M-27 | Cuatro líneas LF1–LF4 | implementado (definición ajustada 22-09-2026: cinco líneas, LF1–LF4 más la global del deudor) | El modelo dice cuatro; el sistema asigna contra **cinco**: LF1–LF4 (cascada por estado del cliente, `spec-asignacion-lineas.md` §3.5; `asignarLineas`) más la línea **global** del deudor como tercer nivel obligatorio —una factura cursa sólo si `m ≤ restPar && m ≤ dispCliente && m ≤ restDeudor`; `capacidadDeudores` «Nivel 3: la línea GLOBAL del deudor»— (regla 7 «cinco líneas»; origen A23 bloque `LINEA_DEUDOR`, regla 44; y la línea del RUT cliente ES la suma de sus líneas, regla 45, ADR-0011). |
 | M-28 | Al publicar, solicitud automática al comité | implementado (a confirmar) | `cerrarOferta` → `solicitudComiteDeOferta` (siempre `tipoLinea: "puntual"`, `propGlobal: 0`; el motivo sólo rotula) → `api1Inyeccion`; regla 15-bis. Estado **bajo la lectura «no existir», a confirmar por el usuario** (§9); si el modelo quiso decir literalmente «existiendo suficiente línea», el sistema NO lo hace —`solicitudComiteDeOferta` devuelve `null` salvo `ev.requiereComite > 0` y `cerrarOferta` sólo inyecta si hay solicitud— y la cláusula pasa a «implementado distinto» |
-| M-29 | Comité no aprueba → retirar facturas sin línea y re-evaluar | pendiente | `api3EstadoProceso`: sólo «Aprobada» / «Observada»; sin manejador de rechazo; choca con reglas 13 y 33 |
+| M-29 | Comité no aprueba → retirar facturas sin línea y re-evaluar | pendiente → **decidido: implementar** (ADR-0015: comité de crédito externo; «Rechazada» por línea en la API 3, dato / contrato) | `api3EstadoProceso`: sólo «Aprobada» / «Observada»; sin manejador de rechazo; choca con reglas 13 y 33 |
 | M-30 | La línea es un monto; la asignación es por factura | implementado | `asignarLineas` `resFacturas` con su `origen`; regla núcleo 9; `spec-asignacion-lineas.md` §2.1, §2.4 |
 | M-31 | Una factura puede asociarse a más de una línea (LF2–LF3) | implementado | `origen.push`; «una factura se reparte entre ambas», dice el comentario de `asignarLineas`; sólo dentro de la cascada del par |
 | M-32 | No se cursa con línea por monto parcial | implementado | La condición de `asignarLineas`: `m ≤ restPar` y ≤ `dispCliente` y ≤ `restDeudor`; si no, completa a `REQUIERE_COMITE`; LIN-01 (regla 41) |
-| M-33 | Giro GE / GN según cliente nuevo, otorgamiento, verificación y líneas | implementado distinto | `asignarGiros`: líneas no entran al criterio; dos tipos; GN disyunción (`spec-modelo-giro.md` §2) |
+| M-33 | Giro GE / GN según cliente nuevo, otorgamiento, verificación y líneas | implementado distinto → **decidido: implementar** (ADR-0017: con comité el giro es Normal) | `asignarGiros`: líneas no entran al criterio; dos tipos; GN disyunción (`spec-modelo-giro.md` §2) |
 | M-34 | Pricing asigna tasa por deudor | implementado | `spreadSugerido`; `SPREAD_MIN_DEUDOR`; `tasaDe`; `prorratearOperacion` |
-| M-35 | Tasa equivalente vs. tasa de los últimos negocios | implementado distinto | `tasaEquivalente`; `tasaUltimoNegocio` (**el** último negocio del **cliente**, sintético y sembrado sólo por cliente en `historialComercial`, no del par); `tasaModo` |
-| M-36 | Condiciones comerciales versionadas | implementado distinto | `snapVersionCli` y `huellaOperacion` no contienen tasa, comisión ni anticipo; la simulación inicial no emite versión y la v1 se emite retroactiva en la primera re-evaluación |
+| M-35 | Tasa equivalente vs. tasa de los últimos negocios | implementado (definición ajustada 22-09-2026: contra el último negocio del cliente; en producción la fuente es el core, dato / contrato) | `tasaEquivalente`; `tasaUltimoNegocio` (**el** último negocio del **cliente**, sintético y sembrado sólo por cliente en `historialComercial`, no del par); `tasaModo` |
+| M-36 | Condiciones comerciales versionadas | implementado distinto → **decidido: implementar** (ADR-0013: la simulación emite versión con el modo de tasa y las condiciones) | `snapVersionCli` y `huellaOperacion` no contienen tasa, comisión ni anticipo; la simulación inicial no emite versión y la v1 se emite retroactiva en la primera re-evaluación |
 | M-37 | Resultado: requisitos de excepción | implementado | `evaluarOtorgItems`; tab Otorgamiento y mesa; regla 54 |
 | M-38 | Resultado: requisitos de verificación | implementado | `verifResumenDeal`; tab y mesa `VerificacionView` (regla 53) |
 | M-39 | Resultado: asignación de líneas y solicitudes | implementado | `asignarLineas` devuelve `solicitudes`; `lineaDeVersion`; `solicitudComiteDeOferta` |
 | M-40 | Resultado: montos a girar GE / GN | implementado | `asignarGiros` `porTipo` / `porDeudor`; `giroDeal` / `giroCongelado`; regla 22 |
 
-Conteo sobre las 40 cláusulas: 15 implementadas (M-28 bajo la lectura «no existir», a confirmar) · 19
-implementadas distinto (M-02, M-15, M-24 y M-26 pasaron a esta columna en la revisión contra el fuente:
-la corrida horaria es simulación con parámetro huérfano, el bloqueo firme es pérdida terminal y no
-freno, y ni la simulación ni «Re-evaluar operación» invocan los motores) · 3 pendientes (M-08 es de
-calendario, con parámetro huérfano; M-18 y M-29 son de máquina de estados) · 3 decisiones abiertas
-(M-12, M-22, M-23); más M-22-bis, agregada en esta versión e **implementada** (por factura, clave
-estable; pendiente sólo documentarla en el spec de verificación). Las «implementadas distinto»
-no son defectos por sí solas: cada una tiene una lectura del modelo que el sistema no adoptó, y va a
-§15 o §16.
+Conteo sobre las 40 cláusulas: **24 implementadas** (15 medidas, con M-28 bajo la lectura «no existir», a
+confirmar, más 9 por definición ajustada el 22-09-2026: M-05, M-06, M-12, M-15, M-20, M-23, M-25, M-27,
+M-35) · **12 implementadas distinto** (M-01, M-02, M-07, M-09, M-10, M-13, M-19, M-21, M-24, M-26, M-33,
+M-36: las doce con «decidido: implementar»; M-01, M-07 y M-13 además con algo por confirmar) · **3
+pendientes** (M-08 es de calendario, con parámetro huérfano; M-18 y M-29 son de máquina de estados: las
+tres con «decidido: implementar»; M-18 con ADR-0015 para el comité y ADR-0018 para la verificación) · **1 decisión
+abierta** (M-22: la unidad de la verificación, por confirmar); más M-22-bis, **implementada** (por factura,
+clave estable; pendiente sólo documentarla en el spec de verificación).
+Las «implementadas distinto» no son defectos por sí solas: cada una tiene una lectura del modelo que el
+sistema no adoptó, y va a §15 o §16.
 
 ### 15. Las contradicciones que hay que decidir
 
 Cada una con las dos lecturas. Ninguna se cierra programando: se cierra con un ADR que reemplace la
-regla vigente o con una corrección del modelo.
+regla vigente o con una corrección del modelo. El 22-09-2026 el usuario cerró cuatro (#1, #2, #4, #6) y
+dejó dos a medias (#3, #5); el 23-09-2026 cerró la mitad de #2 sobre la verificación (ADR-0018).
+Hoy: **cuatro cerradas** (#1, #2, #4, #6; a #1 le queda sólo qué significa «el cliente simula») y **dos a
+medias** (#3, #5). La última columna dice qué quedó de cada una.
 
 | # | Tema | Lectura A (modelo) | Lectura B (vigente, con evidencia) | Qué hay que decidir |
 |---|---|---|---|---|
-| 1 | Re-evaluación al cambiar la selección (M-12) | Cada vez que el ejecutivo selecciona o modifica su selección, la oferta se evalúa o re-evalúa | La re-evaluación se pide y cada evaluación deja evidencia; editar sólo actualiza lo aritmético (regla 14, gate 124, e2e-14-a/b/c; `spec-otorgamiento.md` §2; `spec-asignacion-lineas.md` §8.4; `spec-ciclo-factura.md` §3; `reevaluarLinea`) | Si cada clic emite versión y consume la API de líneas A23, o sólo el gesto explícito; reemplazar la regla 14 por ADR |
-| 2 | Deudor bloqueado → retiro automático de sus facturas (M-18) | Existe un bloqueo a nivel deudor y el sistema retira sus facturas como resultado de la simulación | Los knockouts son C30–C32 del cliente (`spec-ciclo-factura.md` §13); un rechazo firme pierde la operación entera (reglas 4 y 5; `useEffect`); D02–D13 son excepciones no re-evaluables (`spec-gestion-excepciones.md` §2.4); paquete cerrado sólo lectura (regla 33); `retirarFacturaOferta` sólo por `noConfirmada` | Si existe la disposición «bloqueante del deudor»; retiro automático o del ejecutivo; en qué momento (simulación, cierre, después de la firma) |
-| 3 | Cierre del día: eliminar vs reabrir (M-07, M-08) | A la hora de corte se eliminan las oportunidades no gestionadas y al día siguiente se reinicia | `rolloverDia` reabre con el mismo id y el paquete actualizado (regla 22); el corte es por conteo de corridas. `spec-ciclo-factura.md` §17 dice que el rollover «cierra y **re-origina** las oportunidades del inbound que nadie gestionó» y que «Es una oportunidad **nueva**, con su propio identificador»: el vault y el fuente («EL ID NO CAMBIA») contradicen a ese spec | Hora de reloj o conteo; id nuevo o el mismo; qué se conserva (trazas, ejecutivo, contactos); qué es «no gestionada» (sólo Prospección u Oferta sin publicar); hora de corte y de reinicio como parámetros que el job consuma —la ventana `horaInicio` / `horaFin` ya existe en `CFG_OPER_BASE` y nadie la lee— y qué hace el job con el stream entre corte y reinicio |
-| 4 | Comité que no aprueba (M-29) | Se retiran las facturas de los deudores sin línea y se re-evalúa; el criterio de línea queda cumplido | Después de aceptar la operación sólo encoge y la única mutación es el retiro por verificación (regla 13; `spec-asignacion-lineas.md` §4.3); paquete cerrado sólo lectura y reabrir revoca la firma (reglas 33 y 1); el comité simulado nunca rechaza (`api3EstadoProceso`) | Un estado «Rechazada» por línea de detalle; retiro automático o del ejecutivo; antes o después de la firma (segunda mutación admitida, con versión y motivo); qué pasa si la operación queda en cero |
-| 5 | Unidad de la verificación (M-22, M-23) | Las reglas corren a nivel de la empresa emisora y, si falla, todas las facturas de la oferta se verifican | La unidad es el deudor: V01–V10 son atributos del deudor o del par (regla 6; `spec-verificacion-facturas.md` §2.1 «La decisión es por deudor dentro de la operación» —«empresa emisora» no aparece en ese spec, es el texto de M-22—; `verifDecision`; `verifFactura`); sólo la «Regla 0» de verificación (regla 6; `spec-verificacion-facturas.md` §4.0) verifica toda la oferta | Si «empresa emisora» quiso decir deudor; si «todas las facturas de la oferta» son las del deudor que falla o las de todos |
-| 6 | Cedida como exclusión del inbound (M-09) | Candidata sólo si no está cedida a otro factoring | El inbound no excluye la cedida (`CRITERIO_PRED`); bloquea al incorporar (`estadoCandidata`); declarado desfase con el PDF de política (`spec-inbound-facturas.md` §3, §11 fila 1, §12.1; `spec-ciclo-factura.md` §23c fila 6) | Agregar la cesión como cuarta condición del filtro; hoy infla el dimensionamiento |
+| 1 | Re-evaluación al cambiar la selección (M-12) | Cada vez que el ejecutivo selecciona o modifica su selección, la oferta se evalúa o re-evalúa | La re-evaluación se pide y cada evaluación deja evidencia; editar sólo actualiza lo aritmético (regla 14, gate 124, e2e-14-a/b/c; `spec-otorgamiento.md` §2; `spec-asignacion-lineas.md` §8.4; `spec-ciclo-factura.md` §3; `reevaluarLinea`) | **Cerrada el 22-09-2026**: sólo el gesto explícito —simular o re-evaluar— dispara la evaluación, y ese gesto es **un evento** que corre los cinco motores y emite las cinco versiones; la regla 14 se conserva (ADR-0013). **por confirmar**: qué significa «el cliente simula» (portal o Agente IA) |
+| 2 | Deudor bloqueado → retiro automático de sus facturas (M-18) | Existe un bloqueo a nivel deudor y el sistema retira sus facturas como resultado de la simulación | Los knockouts son C30–C32 del cliente (`spec-ciclo-factura.md` §13); un rechazo firme pierde la operación entera (reglas 4 y 5; `useEffect`); D02–D13 son excepciones no re-evaluables (`spec-gestion-excepciones.md` §2.4); paquete cerrado sólo lectura (regla 33); `retirarFacturaOferta` sólo por `noConfirmada` | **Cerrada el 22-09-2026 y cerrada del todo el 23-09-2026 (ADR-0015 y ADR-0018)**: no existe ni se crea una disposición «bloqueante del deudor» en el otorgamiento; M-18 se redefine como la consecuencia del comité que rechaza la línea o de la verificación que no confirma, y en los dos casos el cliente firma la nueva operación. Comité (ADR-0015): el sistema retira las facturas del deudor, emite versión y reabre. Verificación (ADR-0018): marcar «no verificada» no retira; la operación queda con el issue «facturas no verificadas: no se puede cursar», el sistema avisa al ejecutivo comercial por mensajería, y el ejecutivo retira las facturas del deudor, re-simula y vuelve a publicar, lo que revoca la firma (regla 1); las retiradas quedan vetadas. Descartados el retiro automático con la firma vigente (hoy, regla 13) y el retiro automático con reapertura (ADR-0015 tal cual) |
+| 3 | Cierre del día: eliminar vs reabrir (M-07, M-08) | A la hora de corte se eliminan las oportunidades no gestionadas y al día siguiente se reinicia | `rolloverDia` reabre con el mismo id y el paquete actualizado (regla 22); el corte es por conteo de corridas. `spec-ciclo-factura.md` §17 dice que el rollover «cierra y **re-origina** las oportunidades del inbound que nadie gestionó» y que «Es una oportunidad **nueva**, con su propio identificador»: el vault y el fuente («EL ID NO CAMBIA») contradicen a ese spec | **Parcialmente cerrada el 22-09-2026**: hora de reloj, no conteo —la hora de corte (23:00 por defecto) y la de reinicio (06:00 por defecto) son parámetros del tenant que el job consume (M-07, M-08, sin ADR: no se descartó una alternativa)—. **Sigue abierta**: eliminar o reabrir (id nuevo o el mismo; qué se conserva: trazas, ejecutivo, contactos); qué es «no gestionada» (sólo Prospección u Oferta sin publicar); y qué hace el job con el stream entre corte y reinicio |
+| 4 | Comité que no aprueba (M-29) | Se retiran las facturas de los deudores sin línea y se re-evalúa; el criterio de línea queda cumplido | Después de aceptar la operación sólo encoge y la única mutación es el retiro por verificación (regla 13; `spec-asignacion-lineas.md` §4.3); paquete cerrado sólo lectura y reabrir revoca la firma (reglas 33 y 1); el comité simulado nunca rechaza (`api3EstadoProceso`) | **Cerrada el 22-09-2026**: el comité de crédito es externo y responde aceptación o rechazo; la API 3 devuelve «Rechazada» por línea de detalle; al recibirlo NEX retira las facturas del deudor, emite versión con el motivo y **reabre** la operación (la firma se revoca, regla 1, y el cliente firma el paquete que queda); si no queda ninguna factura, pérdida con causa «línea rechazada por el comité» (regla 5). La regla 13 pierde su mitad «sólo encoge»: el rechazo del comité reabre (ADR-0015) y la verificación fallida marca y avisa, y el ejecutivo retira y vuelve a publicar (ADR-0018) |
+| 5 | Unidad de la verificación (M-22, M-23) | Las reglas corren a nivel de la empresa emisora y, si falla, todas las facturas de la oferta se verifican | La unidad es el deudor: V01–V10 son atributos del deudor o del par (regla 6; `spec-verificacion-facturas.md` §2.1 «La decisión es por deudor dentro de la operación» —«empresa emisora» no aparece en ese spec, es el texto de M-22—; `verifDecision`; `verifFactura`); sólo la «Regla 0» de verificación (regla 6; `spec-verificacion-facturas.md` §4.0) verifica toda la oferta | **Parcialmente cerrada el 22-09-2026**: la segunda mitad quedó resuelta —todas las facturas de la oferta pasan por el motor, se decide por deudor y sólo las del deudor que falla se verifican (M-23; sin ADR: se aceptó la conducta vigente)—. **por confirmar**: que «empresa emisora» quiso decir deudor, es decir, que la unidad de la verificación es el deudor (M-22) |
+| 6 | Cedida como exclusión del inbound (M-09) | Candidata sólo si no está cedida a otro factoring | El inbound no excluye la cedida (`CRITERIO_PRED`); bloquea al incorporar (`estadoCandidata`); declarado desfase con el PDF de política (`spec-inbound-facturas.md` §3, §11 fila 1, §12.1; `spec-ciclo-factura.md` §23c fila 6) | **Cerrada el 22-09-2026**: la cesión a un factoring **ajeno** a Factoring Security es la cuarta condición del filtro; la cedida a Security **no** se excluye (ADR-0014) |
 
 ### 16. Lo pendiente, por motor
 
@@ -775,32 +847,30 @@ Cada ítem dice qué pide el modelo o el spec, qué se buscó en el fuente y qu�
 
 | Motor | Pendiente o decisión abierta | Qué se buscó y qué se encontró |
 |---|---|---|
-| Inbound | Hora de corte y de reinicio (M-07, M-08) y frecuencia de la corrida (M-02) como parámetros del tenant que el job del backend consuma (`spec-inbound-facturas.md` §10.4); hoy la ventana y la frecuencia existen como parámetros huérfanos | `23:00`, `06:00`, `hora de corte`, `HORA_CORTE`, `corte diario`: nada; `horaInicio` / `horaFin`: cuatro resultados, todos de configuración (`CFG_OPER_BASE` y los `<input type="time">`) y ningún consumidor; `frecuenciaMin: 60`: editable en Configuración › Operación y sin consumidor: el cron es `setInterval(…, CRON_MS)` (sólo con `modoDemo !== false`) y el cierre es por conteo; la ventana y la frecuencia configuradas son decorativas |
-| Inbound | Criterios por fecha de emisión, cesión previa y lista de emisores con tags (M-10): qué tags, quién la mantiene, si es un activo nuevo del cedente | No existen en `CRITERIO_PRED`; reclamo y NC sólo dentro de «Buena factura», no seleccionables por sí solos; los tags son del deudor (A3/A4) |
-| Inbound | «Aceptaciones» de DTESync (M-01): qué es y si participa del filtro | No existe como campo ni regla en ningún activo ni spec (el `EstadoDTE` del A1 trae sólo `Reclamado`, `NotaCredito`, `FolioNotaCredito`; `facturaDeDTE`); en el fuente sólo como dato sintético sin consumidor: `facturasDeCandidata` sortea `estado: "Aceptada" \| "Reclamada" \| "Sin acuse"` (única aparición), que habría que retirar o conectar al A1 si el modelo confirma que la aceptación (acuse de recibo, Ley 19.983) es criterio de candidatura |
-| Inbound | El fuente anuncia una re-simulación automática al llegar facturas que no ocurre —en el comentario y en la bitácora, no en la pantalla del detalle—: es la re-evaluación automática que M-12 pide y la regla 14 prohíbe; corregir el comentario y los mensajes de bitácora, retirar el banner muerto, o que la decisión #1 de §15 lo contemple | La pantalla del detalle no anuncia nada: el banner «Se está recalculando la simulación con el paquete actualizado» es inalcanzable por `deal.actualizando && !fullPage` (y lo mismo su gemelo en la pestaña de deudores), porque el único `<DealDrawer` pasa `fullPage`. Lo que promete la re-simulación es el comentario «el resultado re-simulado llega tras una latencia», el estado `actualizando: true` y los `logSys` «Recalculando N oportunidad(es) … latencia estimada …» y «Recálculo aplicado»; `aplicar` sólo anexa a `facturasDisponibles` y apaga `actualizando`, sin `simulado`, sin `finanzasDe`, sin versión |
+| Inbound | Hora de corte y de reinicio (M-07, M-08) y frecuencia de la corrida (M-02) como parámetros del tenant que el job del backend consuma (`spec-inbound-facturas.md` §10.4) → **decidido: implementar** (los tres: 23:00, 06:00 y `frecuenciaMin` por defecto, configurables); hoy la ventana y la frecuencia existen como parámetros huérfanos. **por confirmar**: si a la hora de corte las no gestionadas se **eliminan** (el modelo) o se **reabren** con el mismo id (hoy, regla 22) | `23:00`, `06:00`, `hora de corte`, `HORA_CORTE`, `corte diario`: nada; `horaInicio` / `horaFin`: cuatro resultados, todos de configuración (`CFG_OPER_BASE` y los `<input type="time">`) y ningún consumidor; `frecuenciaMin: 60`: editable en Configuración › Operación y sin consumidor: el cron es `setInterval(…, CRON_MS)` (sólo con `modoDemo !== false`) y el cierre es por conteo; la ventana y la frecuencia configuradas son decorativas |
+| Inbound | Criterio de **antigüedad máxima desde la emisión** (M-10), configurable, 20 días por defecto → **decidido: implementar**; la cesión previa y la lista de emisores con tags quedaron **descartadas** como criterios | No existen en `CRITERIO_PRED`; reclamo y NC sólo dentro de «Buena factura», no seleccionables por sí solos; los tags son del deudor (A3/A4) |
+| Inbound | La **aceptación del DTE** (M-01) es una bandera del documento —definición del negocio, 22-09-2026—, y el sistema no la trae: hay que agregarla al layout de DTESync (A1) y al generador, leerla en `facturaDeDTE` junto a reclamo y NC, → **decidido: implementar** (dato / contrato) · **por confirmar**: si participa del filtro de candidatura (hoy «Buena factura» mira sólo reclamo y NC) | No existe como campo en ningún activo ni layout (`Levantamiento_Activos_Informacion.md` e `Integraciones/` no la mencionan; el `EstadoDTE` del A1 trae sólo `Reclamado`, `NotaCredito`, `FolioNotaCredito`); en el fuente sólo como dato sintético sin consumidor: `facturasDeCandidata` sortea `estado: "Aceptada" \| "Reclamada" \| "Sin acuse"` y nadie lo lee |
+| Inbound | El fuente anuncia una re-simulación automática al llegar facturas que no ocurre —en el comentario y en la bitácora, no en la pantalla del detalle—: la decisión #1 de §15 quedó cerrada a favor del gesto explícito (ADR-0013), así que hay que corregir el comentario y los mensajes de bitácora y retirar el banner muerto | La pantalla del detalle no anuncia nada: el banner «Se está recalculando la simulación con el paquete actualizado» es inalcanzable por `deal.actualizando && !fullPage` (y lo mismo su gemelo en la pestaña de deudores), porque el único `<DealDrawer` pasa `fullPage`. Lo que promete la re-simulación es el comentario «el resultado re-simulado llega tras una latencia», el estado `actualizando: true` y los `logSys` «Recalculando N oportunidad(es) … latencia estimada …» y «Recálculo aplicado»; `aplicar` sólo anexa a `facturasDisponibles` y apaga `actualizando`, sin `simulado`, sin `finanzasDe`, sin versión |
 | Inbound | Definición única de «Prime» para segmentar (M-05): sólo listas, o listas + nota > 4,2 | Listas en `CRITERIO_PRED` y `capacidadDeudores`; disyunción con la nota en `verifDecision` (regla 6) |
 | Inbound | El acumulador de la corrida en `useState` se pierde al cerrar la pestaña; topes de 40 y 4 en el código | `spec-inbound-facturas.md` §10.4 y §12.4 |
-| Otorgamiento | Disposición «bloqueante del deudor» y retiro automático (M-18): contradicción 2 | Llamador de `retirarFacturaOferta` con motivo distinto de `noConfirmada`: ninguno |
-| Otorgamiento | Excepción que deja de ser necesaria (M-21): eliminar visado, solicitud, tarea e hilo, o marcarlos «ya no aplica» | `huérfan`: sólo en Configuración › Áreas (criterios que rutean a un área borrada), nada sobre visados; `ya no levanta`, `ya no aplica`, `visado obsoleto`: nada; `spec-gestion-excepciones.md` §5.5 no lo define |
-| Otorgamiento | Visados «versionados» (M-20): dentro de cada versión o clave estable por criterio | `repoVisado` (`VISADO_STATE`) por `stKey`; `snapVersionCli` no lo contiene |
-| Otorgamiento | Compuerta «sin excepciones sin justificar» en la mutación (M-19): hoy sólo en `ModalCurse`; por el principio de la regla 24, que el cierre ya aplica al monto, falta la guarda en `cerrarOferta` | `cerrarOferta` re-comprueba sólo `giroCursable`; no consulta `excPend`, `sinComentario` ni el visado; el botón de `ModalCurse` `disabled={sinComentario > 0 \|\| !gOk}` y `if (!datosCurse) return;` son de pantalla; la Pre-evaluación solicita sin justificar |
-| Otorgamiento | Tres gestos de evaluación: si el modelo quiere uno solo que siempre emita versión | `reevaluarCliente` único emisor con variables frescas; `spec-gestion-excepciones.md` §4.1 |
+| Otorgamiento | La disposición «bloqueante del deudor» **no se crea** (contradicción 2, cerrada); M-18 pasa a Líneas y Verificación: retiro de las facturas del deudor y nueva firma → **decidido: implementar** (ADR-0015 para el comité: el sistema retira y reabre; ADR-0018 para la verificación: el sistema marca y avisa, el ejecutivo retira, re-simula y vuelve a publicar) | Llamador de `retirarFacturaOferta` con motivo distinto de `noConfirmada`: ninguno; ningún camino reabre tras un retiro; ningún hilo avisa al ejecutivo |
+| Otorgamiento | Excepción que deja de ser necesaria (M-21): el visado, la solicitud, la tarea y el hilo se marcan «ya no aplica desde la versión N», con actor «sistema» y hora; nada se elimina; una versión posterior que la vuelva a levantar abre solicitud nueva → **decidido: implementar** (ADR-0016; T1) | `huérfan`: sólo en Configuración › Áreas (criterios que rutean a un área borrada), nada sobre visados; `ya no levanta`, `ya no aplica`, `visado obsoleto`: nada; `spec-gestion-excepciones.md` §5.5 no lo define |
+| Otorgamiento | Compuerta «sin excepciones sin justificar» en la mutación (M-19): exigencia del backend en `cerrarOferta` y gate → **decidido: implementar** (T2; regla 24); hoy sólo en `ModalCurse` | `cerrarOferta` re-comprueba sólo `giroCursable`; no consulta `excPend`, `sinComentario` ni el visado; el botón de `ModalCurse` `disabled={sinComentario > 0 \|\| !gOk}` y `if (!datosCurse) return;` son de pantalla; la Pre-evaluación solicita sin justificar |
+| Otorgamiento | Tres gestos de evaluación → **decidido: implementar** un solo evento de evaluación (simular / re-evaluar) que corre los cinco motores en paralelo, cada uno emite versión y las cinco cuentan igual; la primera simulación emite la v1 (ADR-0013; T1) · **por confirmar**: qué significa «el cliente simula» | `reevaluarCliente` único emisor con variables frescas; `spec-gestion-excepciones.md` §4.1 |
 | Otorgamiento | El camino vivo a giro salta Pendiente Integración, VER-01 y Operaciones N3 (desfase del sistema) | `useEffect` escribe Girada; `avanzarPipeline` sin llamador; `spec-ciclo-factura.md` §23c fila 4 |
-| Verificación | «Todas las facturas de la oferta» (M-23): las del deudor que falla o las de todos | Regla 6, que contiene la «Regla 0» de verificación (`spec-verificacion-facturas.md` §2.1, §4.0) |
-| Verificación | Verificaciones «versionadas» (M-25): mismo dilema que los visados | `repoVerifTel` por factura y `repoVerifVeredicto` por deudor, fuera de la versión |
+| Verificación | Verificación y líneas invocadas por el evento de evaluación y con versión propia (M-24, M-26) → **decidido: implementar** (ADR-0013) | Hoy corren en el render del detalle (`verifFactura`, `evalLin`) y sólo `reevaluarCliente` las congela en `snapVersionCli` |
+| Verificación | La verificación fallida **marca y avisa, no retira** (M-18, ADR-0018): marcar «no verificada» deja la operación con el issue «facturas no verificadas: no se puede cursar» (VER-01 sigue mandando) y con actor y hora en la bitácora; el sistema notifica al ejecutivo comercial por el centro de mensajería (facturas, deudor, y que no se cursará mientras sigan en la oferta); el ejecutivo retira las facturas del deudor, re-simula (evento de ADR-0013, con versión) y vuelve a publicar, lo que revoca la firma (regla 1) para la nueva firma del cliente; las retiradas quedan vetadas → **decidido: implementar** (ADR-0018; T1) | Hoy el botón «No verificar» de la mesa (`verificarDeudor`, `marcarFactura`, `noConfirmoDeudor`) y el diálogo «Retirar factura no confirmada» del tab Verificación del detalle llaman a `retirarFacturaOferta` con `noConfirmada`: la operación encoge con la firma vigente (regla 13, casos 21–23); `verifResumenDeal` no produce un issue y `repoHilos` no recibe ningún aviso al ejecutivo |
 | Verificación | Quién y cómo registra el contacto (la operación en cero tras retirar todo ya está definida: `spec-ciclo-factura.md` §14, retirar la última factura es pérdida, citado en §11) | No está en `spec-verificacion-facturas.md`; el vault sí (`DrawerVerificacion`, regla 53) |
 | Verificación | Qué obtiene el contacto (M-22-bis): **implementado**; pendiente sólo que `spec-verificacion-facturas.md` documente el checklist | `DrawerVerificacion`: checklist `{existencia, recepcion, fechaPago}`, rótulos, `completo = chk.existencia && chk.recepcion && chk.fechaPago && !!compromiso`, devuelve `checklist: chk`; `verificarDeudor` y `VerificacionTab` persisten `{por, fecha, checklist, contacto, compromiso, respaldo, sinRespaldo, notas}` en `repoVerifTel`; `verifFactura` lee `checks`; mesa `CHECKS`; `VERIF_VEREDICTO` sigue por deudor; la fecha de pago además como criterio previo (`spec-verificacion-facturas.md` §5 fila 6) |
-| Líneas | Comité que no aprueba (M-29): contradicción 4 | `Rechazada por el comité`, `rechazarSolicitud`, `resolverComite`, `decisionComite`: nada; `api3EstadoProceso` sólo Aprobada / Observada |
+| Líneas | Comité de crédito que rechaza (M-29): estado «Rechazada» por línea de detalle en la API 3 (dato / contrato), retiro de las facturas del deudor, versión con motivo y reapertura para nueva firma; en cero, pérdida → **decidido: implementar** (ADR-0015; T1; contradicción 4 cerrada) | `Rechazada por el comité`, `rechazarSolicitud`, `resolverComite`, `decisionComite`: nada; `api3EstadoProceso` sólo Aprobada / Observada |
 | Líneas | La consulta A23 sin consumidor; transacción, lock y `requiere_resimulacion` inexistentes | `spec-ciclo-factura.md` §23a; `spec-asignacion-lineas.md` §6 |
 | Líneas | LF1 tras la primera operación; qué se pide al comité en estado A | `spec-ciclo-factura.md` §24 |
 | Líneas | Si el tipo de la solicitud debe seguir al motivo (M-28): hoy la solicitud automática pide siempre líneas puntuales cliente-deudor aunque el motivo sea `cliente`, `deudor` o `lf1` | `solicitudComiteDeOferta` (`tipo: "modificar"`, `subtipo: "agregar_deudores"`, `propGlobal: 0`, `tipoLinea: "puntual"`); `RESOLUCION_COMITE` sólo aporta `pide` / `alcance`; `api1Inyeccion` no transforma |
-| Líneas | Si la línea global del deudor (compartida por todos los clientes que le ceden) forma parte del modelo de líneas (M-27 dice cuatro) o es un control aparte | `asignarLineas` (`lineaDeudorDe`) y su condición `m ≤ restDeudor`; `capacidadDeudores` «Nivel 3: la línea GLOBAL del deudor»; regla 7 (cinco líneas); regla 44 (A23 bloque `LINEA_DEUDOR`); regla 45 (la línea del RUT cliente ES la suma de sus líneas, ADR-0011) |
-| Giro | El resultado de líneas no entra al criterio (M-33): que entre, o que siga sólo como LIN-01 | `asignarGiros` recibe cuatro hechos, ninguno de líneas |
+| Giro | El resultado de líneas entra al criterio (M-33): un deudor con facturas a comité califica Giro Normal aunque cumpla Express; `asignarGiros` recibe el quinto hecho y `giroResumenDeal` lo pasa → **decidido: implementar** (ADR-0017; T1) | `asignarGiros` recibe cuatro hechos, ninguno de líneas |
 | Giro | Tercer tipo; GN disyunción o conjunción; pantalla de la asignación (§7 del spec vs regla 22) | `spec-modelo-giro.md` §2, §7 |
 | Giro | Contrato de entrega a Tesorería (payload, endpoint, idempotencia, evento) | No modelado (`spec-ciclo-factura.md` §23b); `recibirGiroTesoreria` es sólo el callback |
-| Pricing | Tasa de referencia (M-35): el último negocio del cliente o una ventana de N negocios | «últimos negocios» (plural) o promedio: no existe; sólo `tasaUltimoNegocio`, del **cliente** (sintético, `historialComercial` siembra sólo por cliente), no del par; `spec-pricing-simulacion.md` §4.2 fija **el** último negocio, en singular, como tasa top-down, y ningún spec define una ventana ni un promedio |
-| Pricing | Condiciones comerciales en la versión (M-36); la simulación inicial no emite versión | `snapVersionCli` y `huellaOperacion` no las contienen; `simularOferta` no toca `repoSimVersions`; la v1 la emite retroactiva la primera re-evaluación; `spec-ciclo-factura.md` §23c fila 5 |
+| Pricing | Tasa de referencia (M-35): **definición confirmada**, el último negocio del cliente; lo pendiente es la fuente en producción —el último negocio cursado del cliente en el core (dato / contrato)— porque en la demo ese historial es dato generado | «últimos negocios» (plural) o promedio: no existe; sólo `tasaUltimoNegocio`, del **cliente** (sintético, `historialComercial` siembra sólo por cliente), no del par; `spec-pricing-simulacion.md` §4.2 fija **el** último negocio, en singular, como tasa top-down, y ningún spec define una ventana ni un promedio |
+| Pricing | Condiciones comerciales en la versión (M-36): la simulación emite versión y la versión guarda el modo de tasa (ponderada o última operación) y las condiciones asignadas (descuento, comisiones) → **decidido: implementar** (ADR-0013; T1) | `snapVersionCli` y `huellaOperacion` no las contienen; `simularOferta` no toca `repoSimVersions`; la v1 la emite retroactiva la primera re-evaluación; `spec-ciclo-factura.md` §23c fila 5 |
 | Pricing | El plazo por documento no llega al prorrateo (plazo por deudor) | Desfase medido, `spec-ciclo-factura.md` §23c fila 1 |
 | Máquina de estados | No hay catálogo formal de transiciones: `spec-ciclo-factura.md` §20 dice que el resolver valida «contra la máquina de estados» sin definirla. La tabla de §2 es la primera enumeración, y es medida, no normativa | Transiciones repartidas entre `simularOferta`, `cerrarOferta`, `confirmarCierre` / `etapaTrasFirma`, `aprobarIntegracion`, `recibirGiroTesoreria`, `reabrirOperacion`, los dos escritores manuales `moverEtapa` y `moveTo` —con guardas parciales: `cesion` entra sin `integracion`, `perdida` sin causa, y volver a `oferta` / `prospeccion` no tiene guarda en `moverEtapa`— y los ocho escritores de pérdida |
 | Máquina de estados | El id `aceptadas` sin escritor; si `Aceptada` y `Cesión` deben ser dos estados con la inscripción de la AEC entre medio (`spec-ciclo-factura.md` §23b) | `stage: "aceptadas"` como cadena literal: ningún escritor; la firma escribe `cesion` u `otorgamiento` (`patch` de `confirmarCierre`) |
@@ -816,8 +886,8 @@ Cada ítem dice qué pide el modelo o el spec, qué se buscó en el fuente y qu�
 | `Specs_Procesos/Evaluacion_Factura/spec-inbound-facturas.md` | la corrida horaria, el filtro de calidad, las siete reglas y el dimensionamiento (§5, §6, §10.4, §12) |
 | `Specs_Procesos/Otorgamiento/spec-otorgamiento.md` | el catálogo, la atribución, el ciclo del visado y el contrato del motor como servicio (§2, §3, §4, §5, §9) |
 | `Specs_Procesos/Excepciones/spec-gestion-excepciones.md` | qué pasa entre que el motor levanta una excepción y un apoderado la resuelve; los cinco momentos de evaluación (§4.1), qué libera el giro (§5.3), la re-evaluación (§5.5) |
-| `Specs_Procesos/Verificacion/spec-verificacion-facturas.md` | la decisión por deudor, los dos protocolos, la «Regla 0» (primera operación del cliente) y el veredicto congelado (§2.1, §4.0, §9) |
-| `Specs_Procesos/Lineas/spec-asignacion-lineas.md` | las cinco líneas, la cascada, la versión y el diff, «después de aceptar sólo encoge» (§3.5, §3.7, §4.3, §6, §8.8) |
+| `Specs_Procesos/Verificacion/spec-verificacion-facturas.md` | la decisión por deudor, los dos protocolos, la «Regla 0» (primera operación del cliente) y el veredicto congelado (§2.1, §4.0, §9; §9 y `spec-ciclo-factura.md` §14 cambian con ADR-0018: la verificación fallida marca y avisa, no retira) |
+| `Specs_Procesos/Lineas/spec-asignacion-lineas.md` | las cinco líneas, la cascada, la versión y el diff, «después de aceptar sólo encoge» (§3.5, §3.7, §4.3, §6, §8.8; la mitad del «sólo encoge» que hablaba de la verificación la reemplaza ADR-0018) |
 | `Specs_Procesos/Evaluacion_Factura/spec-pricing-simulacion.md` | la tasa por deudor, el catálogo de conceptos y el prorrateo (§2, §3, §4) |
 | `Specs_Procesos/Evaluacion_Factura/spec-modelo-giro.md` | GE / GN, la calificación por deudor, el congelado y lo no resuelto (§2, §5, §6.1, §7) |
 | `vault/conocimiento/invariantes.md` | el índice de las reglas de dominio y del contrato con el servidor citadas en la Parte III |
