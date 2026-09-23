@@ -3,7 +3,7 @@ type: sesion
 title: "Estado actual"
 description: "Foto del estado del proyecto para la próxima sesión: fase, siguiente paso, en vuelo, bloqueos y deudas anotadas. Se sobrescribe; ≤80 líneas"
 tags: [handoff]
-timestamp: 2026-09-23T18:15:00Z
+timestamp: 2026-09-23T18:05:00Z
 ---
 
 # Estado actual
@@ -26,28 +26,26 @@ automatizados y **17 manuales**, 7 de ellos en la Mesa de verificación.
 El **23-09**, la plata otra vez, en tres reglas. La **60**: el millón es la ÚLTIMA CAPA — un mensaje al cliente
 multiplicaba por un millón y tres layouts declaraban campos en MM$. La **61**, que reemplaza el punto de la 60
 que dejaba vivir el `_M`: **todo generador produce en PESOS**, porque en miles cada monto se cuantiza de a
-$1.000 y dos entran en criterios que DECIDEN (C02, y V03/V04 como denominadores del predictor). Y la **62**: la
-**cartera comercial se LEE** — `PC_CLIENTES` sorteaba volumen, competidor y «malos deudores» con `pcRng`, en
-una escala sin declarar que **cuatro KPI de Reportes** pasan por `fmtMMc`: mostraban ~**M$5** donde va la
-cartera de 500 clientes. Ahora salen del A11 y de `NOTA_PRIORITARIA`, el **fallback de 80 empresas** se fue
-entero y `auditar_unidades` estrena el patrón **(d)**, con línea base **cero**.
+$1.000 y dos entran en criterios que DECIDEN (C02, y V03/V04 del predictor). Y la **62**: la **cartera
+comercial se LEE** — `PC_CLIENTES` la sorteaba con `pcRng` en una escala sin declarar, y cuatro KPI de
+Reportes mostraban ~**M$5** donde va la cartera de 500 clientes. Detalle en los tres logs del 23-09.
 
 > ## 🎯 Siguiente paso
 >
-> 1. **El backlog decidido, en rojo primero** (`Regresiones/Gaps_Proceso_Curse_2026-09-22.md` §2.2; los casos y su
->    orden en `vault/specs/proceso-curse/casos_de_prueba.md`): ADR-0013 (un evento, cinco versiones) · 0014 (cedida
->    ajena) · 0015 (comité que rechaza) · 0016 («ya no aplica») · 0017 (giro Normal con comité) · 0018 (la
->    verificación fallida marca y avisa; el ejecutivo retira y republica) · **0019** (al corte, la sin oferta se
->    elimina; la con oferta no se toca) · antigüedad ≤20 días · corte y reinicio por hora del tenant · M-19 en
->    `cerrarOferta` · el acuse como bandera del DTE. Cada uno con su regla, su gate y `CASOS_ESPERADOS` en el commit.
+> 1. **El backlog decidido, en rojo primero**: los **19 T1** de `Regresiones/Gaps_Proceso_Curse_2026-09-22.md`
+>    §2.2, cada uno con su caso en rojo ya escrito y la regla que lo recibe. Ocho sin decisión previa (G-05,
+>    G-18, G-23 … G-28) y once fijados por ADR-0013 … ADR-0019. Cada uno con su gate y `CASOS_ESPERADOS`.
 > 2. **UI**: el selector de sesión de la navbar, 1/3 más angosto y con elipsis (desborda a 1366 px) · el chip
 >    «Negociación» en una operación ya enviada a comité · **join de empresas SIEMPRE por RUT** (8 sitios; T1) ·
 >    `.bat` una vez · **regenerar `Capturas_UI/`** (deuda 2) · O01 · 28 · 13-quater · `pipeline.zip`.
 
-## En vuelo ahora · nada: todo está en `main` (`abd98ad`), con el **CI verde confirmado** (run 164)
-El 23-09 `main` estuvo **tres commits con el CI muerto en el paso 0**, y el job sale con 1 ahí: no corrió ni el
-linter, ni `tsc`, ni el build, ni los 440 gates, ni la suite, ni los e2e. Causa: mezcla verificada EN LA RAMA y
-no sobre el árbol MEZCLADO, que es donde git rehace la línea — **tercera vez con la misma** ([log](./2026-09-23_el_paso_0_lleva_tres_commits_en_rojo.md)) · antes, 47–49 → 60–62 ([log](./2026-09-23_renumerar_lo_mio.md)).
+## En vuelo ahora · nada propio: todo en `main` (`298e134`)
+Entran las **39 skills de terceros** y los 4 MCP, y —por instrucción del usuario— **la skill que está mal se
+CORRIGE**: 12 de 39 llevan su bloque `AJUSTE-LOCAL-NEX` con la regla citada (auditor `auditar_skills.mjs`,
+gate `skills.test.mjs`). Y se cerró por qué tres commits de `main` salieron con el CI rojo: **no era falta de
+correr el paso 0**, era que `npx prettier` acá da **3.8.1** y el CI instala **3.6.2** — la línea oscilaba, por
+eso era la tercera vez. La versión queda fijada en los cuatro sitios, con gate
+([log](./2026-09-23_la_skill_se_corrige.md)).
 
 ## Bloqueos · los dos son del usuario, desde Windows
 
